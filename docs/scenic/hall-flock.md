@@ -1,4 +1,139 @@
-# Hall flock (round 1, prototype)
+# Hall flock (round 2: tune, prototype)
+
+The user flew round 1 and found it had too many birds, looked a bit
+skittery, and always left by the same exit. This round fixes those three.
+
+## What changed in round 2
+
+- **Fewer birds:** `COUNT` 480 -> 180 per piece. `BODY` (the flock's
+  extents) is smaller to match.
+- **Smoother motion** (`scripts/hall_flock.gd`):
+  - Ways: the weave is broad and low (`WEAVE_STEP` 6 -> 14 m, `WEAVE`
+    0.5-1.6 m). Each way is then relaxed: three running-mean passes at
+    1 m, 4 points either side (`_relax`, a Gaussian of σ ~3.5 m). A point
+    that would come near the stone or into the lane moves only part way.
+    The ledge and the climb-out are held. Wiggles shorter than ~15 m go;
+    loops and broad curves stay.
+  - Heading and bank come from the bird's closed-form way at t ± 0.1 s,
+    no longer from frame-to-frame differences. Uneven frames or late
+    worker poses can't shake them. The shown heading is eased (16/s) and
+    the bank eased (5/s).
+  - The joins into and out of the flock are Hermite curves from the way's
+    end velocity to the flock's velocity. Round 1 overshot straight up
+    and hooked back.
+  - The flock's middle runs on a little, then wheels round one broad
+    circle (`WHEEL_R` 20-28 m at `WHEEL_V` 13-16 m/s, left or right per
+    piece), kept over the piece. Round 1's course slowed to a near hover,
+    so the birds' own ripples spun their headings. The ripples in the body
+    are slower and smaller.
+  - The clamp over the roof (`_clear`) is eased, so a bird rounds up over
+    the roof instead of snapping onto it.
+  - Wingbeat: the shader's `beat_rate` is 7.5 -> 4.2 Hz and `sweep`
+    0.85 -> 0.75. Each bird flaps in bursts and glides with its wings held
+    out, on its own cycle (`FLAP_CYCLE` 1.6-2.8 s, `FLAP_SHARE` 35-55%
+    flapping), eased in and out. Takeoff, steep climbs, hard turns and
+    landing force full beats.
+  - The pose group task runs at high priority. `status()` reports
+    `late_frames` (frames whose poses came late) next to `up_frames`.
+- **Varied exits:**
+  - `_openings` finds each piece's openings: where an open cell under the
+    roof and inside the walls meets open air (roof breaks, side arches,
+    open bays). They are clustered and named `kind@m`
+    (`left@41`, `right@66` ...), and those at the nave's ends are left out.
+    A piece has 7-21 of them.
+  - Per piece (seeded), up to `NEAR_EXITS` (4) openings get a near-way
+    field, and up to `STREAM_EXITS` (2) in the far half get a stream field
+    that stays low in the lane until `RISE` (10 m) short of the opening.
+    The far end's open roof stays one of the stream's ends.
+  - Birds roosting within `GROUP` (9 m) of each other on one side go
+    together: the stream (`FAR_SHARE` 0.6 of the groups) or an opening
+    near them, never one back toward the plane. `SPLIT` (20%) pick their
+    own.
+  - `LOOP_SHARE` (35%) of the stream groups loop once in the nave (a level
+    circle, `LOOP_R` 4.5-7 m, slower at `LOOP_SPEED`) where the grid has
+    room, then leave.
+- **Safety:** any way that crosses the lane's column, up to `LANE_OVER`
+  (6 m) over the lane, is timed like the stream. It goes only while a
+  plane at `PLANE_PACE` would stay `GAP` behind it, and with no stagger.
+  Without this, a near bird crossing the nave to an opening on the far
+  side passed 3.5 m over the plane.
+- `--hall-flock=0`, `--hall-flock=<n>` and `--hall-flock-size=` are
+  unchanged.
+
+## Round 2 proof (headless, `--near-ring --autopilot`, real loop)
+
+Exits: birds that went, by the opening they left by. `open-roost` birds
+roost outside the roof and walls already (wall heads, roof edges by
+breaks) and simply rise where they sit.
+
+| Piece | Went | By opening |
+|---|---|---|
+| 0 | 79 | left@85 30, left@41 3, open-roost 42, none 4 |
+| 2 | 180 | left@87 16, left@63 16, right@45 15, left@76 13, left@29 10, left@54 8, right@71 6, left@14 6, right@92 5, left@41 4, left@68 3, right@29 3, right@48 2, right@98 2, right@25 1, open-roost 67, none 3 |
+| 3 | 172 | left@37 29, left@75 22, right@59 15, left@64 5, right@29 4, right@49 1, open-roost 95, none 1 |
+| 4 | 71 | left@72 9, left@99 7, far-end 1, open-roost 38, none 16 |
+| 5 | 120 | left@66 21, far-end 19, left@76 9, right@49 3, left@43 3, right@57 3, open-roost 62 |
+
+Pieces stood late in headless runs keep their birds (by design), so not
+every piece flies in every run.
+
+- 0 birds inside the hull boxes and 0 inside the collision, over 6000
+  frames.
+- Closest bird to the plane's box: 6.6 m and 9.2 m in two runs. Round 1's
+  run was 9.4 m. The 6.6 m bird was off the lane, 8.6 m to its side.
+- Smoke passed with 0 errors.
+- `test_isle_hall_chain.gd` was run once and passed.
+
+Smoothness: every flying bird, every frame, from the poses as shown.
+Both versions were driven the same way over 4200 frames.
+
+| | Round 1 (480) | Round 2 (180) |
+|---|---|---|
+| Turn rate, on its way, p95 / max | 17.2 / 128 rad/s | 4.6 / 18.6 rad/s |
+| Turn rate, joining, p95 / max | 4.0 / 79 rad/s | 2.9 / 4.3 rad/s |
+| Turn rate, in the flock, p95 / max | 2.5 / 180 rad/s | 0.87 / 2.8 rad/s |
+| Frame-to-frame heading flips | 119 | 0 |
+| Wiggles (yaw-rate reversals over 2 rad/s within 0.5 s) | 4334 in 4554 bird-s | 0 in 1658 bird-s |
+| Frame steps over 11° | 14672 (5.4%) | 55 (0.06%) |
+| Flapping / gliding share | 82% / 7% | 60% / 23% |
+| Late pose frames | not counted | 0 of 1615 |
+
+The remaining highs on the ways are takeoffs and pitch-ups out of roof
+breaks.
+
+## Round 2 cost (headless)
+
+| Item | Measured |
+|---|---|
+| Worker poses, summed over the flocks in flight | ~0.6-1.7 ms/frame, worst 2.6-4.7 ms. Fewer birds, but 3 closed-form samples each |
+| Main thread | ~40 µs/frame, worst 0.33-0.54 ms |
+| Plan per piece, once, on a worker | 0.8-1.7 s (round 1: 0.8-1.2 s); the extra opening fields |
+| Triangles | ~8k per flying piece (round 1: ~21k) |
+
+## Drivers (round 2, `scratch/`, git-ignored)
+
+- `flock_tune.gd`: the exit table, stone checks and closest bird. With
+  `--smooth`, it gives the turn, wiggle and wingbeat numbers instead.
+- `flock_follow.gd` (`--rendered`): a fixed camera that follows the
+  flock's centroid.
+- `geo_probe.gd`: ASCII slices of a piece's plan grid.
+
+## Round 2 unfinished
+
+- Birds leaving one opening rise in a narrow column, which reads as a
+  string of beads for a second before they join the body. Spreading the
+  climb-out (fanning the tail) would help.
+- About a third to a half of each piece's birds roost in the open and
+  rise where they sit.
+- The wheel can carry the flock up to ~2 radii off to one side of the
+  piece. That is checked clear of this piece's stone, but a line that
+  curves could put a neighbour there (0 hits in these runs).
+- I didn't get a good chase-camera still of the stream. At sheet scale
+  the birds are too small, so judge it by flying it.
+
+---
+
+# Round 1
 
 A flock of swifts roosts in every real piece of the Sundered line and
 bursts ahead of the plane as it flies the nave.

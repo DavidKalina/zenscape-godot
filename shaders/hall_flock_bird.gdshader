@@ -9,8 +9,8 @@ shader_type spatial;
 render_mode cull_disabled, diffuse_lambert_wrap, specular_disabled;
 
 uniform vec3 tone : source_color = vec3(0.075, 0.066, 0.060);
-uniform float beat_rate = 7.5;
-uniform float sweep = 0.85;
+uniform float beat_rate = 4.2;
+uniform float sweep = 0.75;
 // A faint rim where the light behind them catches the edges (they read
 // against the dim stone).
 uniform vec3 rim_tone : source_color = vec3(0.55, 0.6, 0.7);
