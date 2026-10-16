@@ -10,7 +10,9 @@ extends RefCounted
 ## it. Where that ray starts inside something solid (a wall the feet are
 ## against), the ground is that thing's top, found by a second ray from
 ## REACH over the feet; a top higher still is the ray's start, a wall too
-## tall to matter. Nothing under it within DEPTH is no ground (-INF).
+## tall to matter. Hollow land (a trimesh) counts as something solid when
+## the ray starts under its open top (`_under_top`). Nothing under it
+## within DEPTH is no ground (-INF).
 ##
 ## The body is an upright cylinder RADIUS round, from BODY_LOW over the
 ## feet (everything lower is the ground's to step over or to stop as a
@@ -170,11 +172,33 @@ func ground(p: Vector2) -> float:
 func height_from(p: Vector2, y: float) -> float:
 	var from := y+PilotMotor.STEP_UP+LOOK_OVER
 	var hit := _down(p,from)
+	if hit != INF and hit < y-PilotMotor.STEP_UP and _under_top(p,from,y): hit = INF
 	if hit == INF:
 		# In something: its top, if it is within reach.
 		var top := _down(p,y+REACH)
 		return from if top == INF or top < from else top
 	return hit
+
+## True if `from` (over feet at `y`) lies under the open top of hollow
+## land: a ray up from it meets something within REACH, and that something
+## is the topmost surface there (a ray down from TOWER lands on the same
+## height). KitLand's land is a hollow trimesh, so on steep turf the ray
+## down from under its sheet passes through and finds the sides far below,
+## or nothing; this sees it as being inside, as a convex start is. Facing
+## isn't used (Jolt flips the normal on back-face hits). Only asked when the
+## ray down fell more than a step, so flat walking pays nothing. An
+## overhang, a rim's hanging side or a deck isn't the top seen from TOWER
+## (a deck's top is its thickness higher): reads under them and at cliff
+## edges in the air stay as they were. Known limit: a collided overhang
+## whose underside is also the topmost surface still passes.
+const TOP_SAME := 0.02
+func _under_top(p: Vector2, from: float, y: float) -> bool:
+	_ray.from = Vector3(p.x,from,p.y)
+	_ray.to = Vector3(p.x,y+REACH,p.y)
+	var up := space.intersect_ray(_ray)
+	if up.is_empty(): return false
+	var over := _down(p,y+TOWER)
+	return is_finite(over) and absf(over-(up.position as Vector3).y) < TOP_SAME
 
 ## The first thing under `p` from height `from`: its height, INF if `from`
 ## is inside it, -INF if there is nothing.
