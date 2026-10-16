@@ -106,3 +106,41 @@ enemy feel). Every agent carries an `ITER-BUDGET` line. Each lane runs as
 its own short loop if it needs more than one agent. Keep public interfaces
 stable: other code (layer_flyers.gd, the Pilgrim's Ladder build) uses the
 guacharo.
+
+## Trunk notes (orchestrator, after merging both lanes)
+
+Both lanes are merged (14af3892 hunt, 8e072289 body). The import and the
+three smokes pass. Read both lanes' merge notes:
+`git log --format=%B -1 4ca2f4c3` and `docs/design/guacharo/handoff-guacharo-hunt.md`
+for hunt, and `git log --format=%B -1 12ced99f` for body. The lanes' throwaway
+drivers are copied into scratch/: hunt_measure, hunt_rules, hunt_gap,
+hunt_floor, hunt_tell, hunt_shadow, hunt_sound, guac_play and others.
+
+Trunk tasks, in order:
+1. **Anchor the scream glare on the new head bone** (`look._skel`,
+   `look._bone.head`), replacing the hunt lane's offset guess in
+   `_tell_place`. Check that every look field the body reads still exists in
+   the merged mind, because a renamed field silently falls back to the
+   glide.
+2. **Re-run the hunt proofs with the new body** on the fair floor
+   (`hunt_floor.gd`: stand, dodge, cover, struggle), plus `hunt_gap.gd`
+   stand and the clearance log. The new body's model `lift` and the mind's
+   ground clearance must agree: never buried, and no visible floating.
+3. **Rendered captures of a whole hunt** in the flyer yard: circle, marked,
+   stalk in view, scream with glare and wings up, fold, stoop, flare, a
+   dodge, then a hit, a snatch and a carry. Look at them.
+4. **Judge the weak spots both lanes flagged**, and fix what reads wrong:
+   - the bird out of frame while it circles after marking;
+   - the stalk only in view for its last second;
+   - the shadow pop flattening to a streak from a low camera;
+   - the stoop's shudder at range;
+   - the circle's roll when the bank switches sides.
+
+   A camera or screen cue only if the others can't carry it (the spec's
+   "only if needed").
+5. **Smokes:** `studies/flyer_yard.tscn`, `studies/guacharo_poses.tscn` and
+   `studies/run_layer.tscn -- --flyers=1`.
+
+The Pilgrim's Ladder (branch `iter/pilgrims-ladder`) isn't on this branch.
+The orchestrator merges the guacharo into it afterwards, and joins
+`layer_flyers.gd`; the roof-gap stand in its real hood is done there.
