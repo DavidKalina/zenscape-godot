@@ -264,5 +264,4 @@ on them in the handoff.
 
 - Branch `iter/editor-traps`, worktree `.claude/worktrees/iter-editor-traps`.
 - No lanes: the work is ordered and mostly in the editor.
-- Model Opus (input, placement, live bodies). Cap: the iterate skill's default (.claude/skills/iterate/SKILL.md, The cap), budget
-  150000 tokens per iteration.
+- Model Opus (input, placement, live bodies). Cap: the iterate skill's default (.claude/skills/iterate/SKILL.md, The cap), budget: the iterate skill's default (The budget).
