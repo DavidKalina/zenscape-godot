@@ -106,8 +106,9 @@ extends "res://studies/kit_isle.gd"
 ## roams the archipelago, now and then low over the isle; V puts the camera
 ## on it. Its other flags are its own.
 ## --watcher: a stranger on the south rim, telescope up, watching a glint
-## on the rune serpent's back, the plane's tail fin (scripts/kit_isle/
-## watcher.gd, docs/design/watcher/round1.md).
+## on the ferry's foredeck, the plane's tail fin (scripts/kit_isle/
+## watcher.gd, docs/design/watcher/round1.md, docs/design/airship-ferry/
+## round2.md).
 ## --sluice: the Sluice Flush trap on the channel (scripts/traps/
 ## sluice_aqueduct.gd); --sluice=head starts at the top of the rubble slope.
 ## The plane's parts (scripts/plane_arc/plane_arc.gd, docs/design/
@@ -573,7 +574,7 @@ func _add_life() -> void:
 	plane_arc = PlaneArc.new()
 	add_child(plane_arc)
 	plane_arc.setup(self)
-	if Watcher.wanted() and sky != null and sky.get("serpent") != null:
+	if Watcher.wanted() and sky != null and (sky.get("ferry") != null or sky.get("serpent") != null):
 		watcher = Watcher.new()
 		add_child(watcher)
 		watcher.setup(self)
@@ -585,12 +586,12 @@ func _add_life() -> void:
 # --- The watcher (scripts/kit_isle/watcher.gd, --watcher) ----------------------------
 
 ## A stranger on the south rim, telescope up, following a glint on the
-## serpent's back (docs/design/watcher/round1.md): the plane's tail fin
+## ferry's foredeck (docs/design/watcher/round1.md): the plane's tail fin
 ## riding it (`watched_find`); null without --watcher.
 const Watcher = preload("res://scripts/kit_isle/watcher.gd")
 var watcher: Node3D = null
 
-## What the watcher watches: the tail fin while it rides the serpent
+## What the watcher watches: the tail fin while it rides the ferry
 ## (scripts/plane_arc/plane_arc.gd `fin_holder`), else null.
 func watched_find() -> Node3D:
 	return plane_arc.fin_holder() if plane_arc != null else null

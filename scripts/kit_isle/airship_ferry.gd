@@ -1,11 +1,12 @@
 extends Node3D
-## The sky folk's ferry (docs/design/airship-ferry/round1.md): one of the
-## aqueduct isle's airships (studies/aqueduct_isle_sky.gd, the ship
-## scripts/sky_airship.gd builds, scripts/airship_build.gd) flown on a fixed
-## loop that comes to rest beside two edges and carries the pilot on foot
-## across, as the rune serpent does (scripts/kit_isle/serpent_rider.gd).
-## It is the way to the bell spires on foot, where the plane's cowl is
-## jammed under the belfry's bell (scripts/plane_arc/part_spots.gd).
+## The sky folk's ferry (docs/design/airship-ferry/round1.md, round2.md):
+## one of the aqueduct isle's airships (studies/aqueduct_isle_sky.gd, the
+## ship scripts/sky_airship.gd builds, scripts/airship_build.gd) flown on a
+## fixed loop that shuttles round five isles, comes to rest beside a turf
+## edge at each and carries the pilot on foot between them. It is the way
+## to the bell spires on foot, where the plane's cowl is jammed under the
+## belfry's bell, and the plane's tail fin lies on its foredeck
+## (scripts/plane_arc/part_spots.gd).
 ##
 ## The ship is SCALE times the sky folk's own, so its foredeck (about 4 m
 ## by 2.5) takes him; its solid (the hull's half shell up to the flat
@@ -13,24 +14,35 @@ extends Node3D
 ## body of its own, moved with it each frame and at once in the physics
 ## space, so his ground reads the deck where it is now.
 ##
-## The loop (ROUTE, a closed Catmull-Rom through the points, about 750 m,
-## three minutes a lap), measured off the isles and the serpent's way
-## (scripts/kit_isle/serpent_route.gd):
+## The loop (ROUTE, a closed Catmull-Rom through the points, about 1950 m,
+## some seven and a half minutes a lap). Each stop was found by rays on the
+## stood isles: the deck level with the turf (the gorge's a step under),
+## the hull's side 0.3 to 0.6 m off the edge by the foredeck, its
+## neighbours along the edge so it rests square to it (a stop's departure
+## veers out from the edge: going straight on, the hull met the rim's
+## jags); the whole lap keeps hull, cabin and envelope off every
+## isle and its kit, and passes some 25 m under the tarn's airship's loop
+## (studies/aqueduct_isle_sky.gd ROUTES, raised for it).
 ##   home   it comes in from the east along the aqueduct isle's south edge,
-##          past the parked plane, and rests heading west by the start, its
-##          deck level with the turf and its starboard side a hand off the
-##          edge (ROUTE's "home"); a walk or a hop gets on.
-##   out    it climbs away west over the serpent's home ledge (some 8 m
-##          over it), turns south and back east well above the serpent's
-##          south rim run and its dip, and on east-north-east to the bell
-##          spires, coming round to them from the north.
-##   bell   it rests heading south beside the bell spires' west lobe, its
-##          port side to the edge, the deck level with the turf: off, the
+##          past the parked plane, and rests heading west by the start, the
+##          isle to starboard.
+##   gorge  west along the isle's south side and on west to the Sundered
+##          gorge, resting heading south by its east half's east edge (the
+##          isle to starboard), the deck a step (0.3 m) under the turf: the
+##          rim there is bevelled, and level with it a walk aboard went down
+##          the bevel into the gap; the gate tower and the rope bridge are
+##          across the half, west.
+##   nave   south down the gap to the drowned nave, resting heading south
+##          by its west edge (the isle to port).
+##   tarn   round the nave's south tip, east under the cloister tarn and up
+##          its east side, resting heading north by its east edge just south
+##          of the falls (the isle to port).
+##   bell   north-east to the bell spires, round their north and down their
+##          west lobe, resting heading south (the isle to port): off, the
 ##          low stair's foot is some twenty-five metres east, the belfry up
 ##          it and the hero's stair (PartSpots `cowl`).
 ##   back   it turns west short of the floating stone south of the lobe
-##          and goes home, high over the serpent's way, coming down to
-##          the south edge from the east.
+##          and goes home, coming down to the south edge from the east.
 ## Between the stops it eases up to CRUISE and down again at EASE (a
 ## long, slow glide in and out), and rests HOLD s at each. Its place is a
 ## function of its clock alone (`pose_at`), so a start can put it anywhere
@@ -52,12 +64,17 @@ extends Node3D
 ##
 ## Flags (the game's, after --):
 ##   --no-ferry                 the ferry left out (--no-airships leaves
-##                              every ship out; --serpent-old-route it too)
+##                              every ship out; --serpent --serpent-old-route
+##                              it too)
 ##   --ferry-aboard[=<stop>]    start on its foredeck: at home (the
 ##                              default) a few seconds before it leaves;
-##                              =bell coming in to the bell spires
+##                              at another stop, ARRIVE_LEAD s before it
+##                              comes to rest there
 ##   --ferry-at=<stop>          start on foot at the stop's edge, the
 ##                              ferry coming in (WAIT_LEAD s off)
+## A stop is home, gorge, nave, tarn or bell, or its isle's motif id
+## (STOP_ISLES: sundered_gorge, drowned_nave, cloister_tarn, bell_spires);
+## its isle is stood up at once.
 const AirshipBuild = preload("res://scripts/airship_build.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
@@ -65,23 +82,52 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 ## The ferry's size over the sky folk's ship (AirshipBuild's metres).
 const SCALE := 1.8
 ## The loop (world): [point (the ship's origin, its deck DECK over it), the
-## stop resting there, or ""]. A stop's neighbours lie along its edge, so
-## it rests square to it.
+## stop resting there, or "", and for a stop its isle's side (+1 starboard,
+## -1 port)]. A stop's neighbours lie along its edge, so it rests square to
+## it.
 const ROUTE := [
-	[Vector3(92.0,29.93,18.5),"home"],
+	[Vector3(92.0,29.93,18.5),"home",1.0],
 	[Vector3(82.0,30.8,20.6),""],
 	[Vector3(73.0,37.0,25.0),""],
 	[Vector3(62.0,43.0,34.0),""],
-	[Vector3(54.0,45.5,48.0),""],
-	[Vector3(64.0,46.0,63.0),""],
-	[Vector3(90.0,46.0,68.0),""],
-	[Vector3(160.0,46.0,52.0),""],
-	[Vector3(240.0,46.0,28.0),""],
-	[Vector3(310.0,45.0,14.0),""],
+	[Vector3(40.0,46.0,46.0),""],
+	[Vector3(-20.0,46.0,54.0),""],
+	[Vector3(-100.0,45.0,58.0),""],
+	[Vector3(-170.0,43.0,56.0),""],
+	[Vector3(-215.0,40.5,56.0),""],
+	[Vector3(-240.0,39.0,58.0),""],
+	[Vector3(-250.0,38.0,73.0),""],
+	[Vector3(-250.65,37.26,84.0),"gorge",1.0],
+	[Vector3(-250.2,37.9,94.0),""],
+	[Vector3(-249.5,38.5,108.0),""],
+	[Vector3(-256.0,38.0,160.0),""],
+	[Vector3(-282.0,36.0,230.0),""],
+	[Vector3(-294.0,33.0,290.0),""],
+	[Vector3(-294.5,31.4,331.0),""],
+	[Vector3(-294.5,31.04,341.0),"nave",-1.0],
+	[Vector3(-294.6,31.4,351.0),""],
+	[Vector3(-295.5,32.0,372.0),""],
+	[Vector3(-276.0,33.0,402.0),""],
+	[Vector3(-235.0,34.0,420.0),""],
+	[Vector3(-150.0,35.0,420.0),""],
+	[Vector3(-50.0,35.0,414.0),""],
+	[Vector3(20.0,34.0,414.0),""],
+	[Vector3(70.0,33.5,414.0),""],
+	[Vector3(93.0,32.5,406.0),""],
+	[Vector3(96.0,31.6,385.0),""],
+	[Vector3(96.55,31.24,375.03),"tarn",-1.0],
+	[Vector3(97.9,31.7,365.1),""],
+	[Vector3(100.5,32.5,353.0),""],
+	[Vector3(108.0,34.0,338.0),""],
+	[Vector3(125.0,37.0,322.0),""],
+	[Vector3(175.0,41.0,260.0),""],
+	[Vector3(250.0,46.0,150.0),""],
+	[Vector3(275.0,46.0,60.0),""],
+	[Vector3(310.0,45.0,16.0),""],
 	[Vector3(360.0,44.0,14.0),""],
 	[Vector3(380.0,43.0,26.0),""],
 	[Vector3(385.6,42.4,41.0),""],
-	[Vector3(385.8,41.73,52.5),"bell"],
+	[Vector3(385.8,41.73,52.5),"bell",-1.0],
 	[Vector3(384.0,42.8,62.0),""],
 	[Vector3(376.0,44.5,68.0),""],
 	[Vector3(362.0,47.0,70.0),""],
@@ -114,15 +160,18 @@ const CAM_TURN := 0.6
 ## he left; past that, or under the sail, it fades over AIR_FADE s.
 const AIR_HOLD := 6.0
 const AIR_FADE := 1.5
-## --ferry-aboard=bell starts this long (s) before it comes to rest there;
-## --ferry-aboard (home) this long before it leaves; --ferry-at this long
-## before it comes to rest.
-const BELL_LEAD := 25.0
+## --ferry-aboard=<stop> (not home) starts this long (s) before it comes
+## to rest there; --ferry-aboard (home) this long before it leaves;
+## --ferry-at this long before it comes to rest.
+const ARRIVE_LEAD := 25.0
 const LEAVE_LEAD := 4.0
 const WAIT_LEAD := 20.0
 ## Where the clock starts by default: coming in to home, this long before
 ## it rests there (s), so it is seen gliding in by the start.
 const START_LEAD := 12.0
+## Each stop's motif isle (stood up at once by a start there), its id also
+## a name for the stop in the flags.
+const STOP_ISLES := {"gorge":"sundered_gorge","nave":"drowned_nave","tarn":"cloister_tarn","bell":"bell_spires"}
 ## The solid's layer (the sky's SOLID_LAYER: the plane bumps it, his ground
 ## reads it).
 const LAYER := 1
@@ -174,13 +223,12 @@ func _init() -> void:
 	name = "Ferry"
 	process_priority = -100
 
-## Whether the ferry flies: the sky's ships do, and not --no-ferry. It
-## belongs with the serpent's route between the isles: the serpent's old
-## long way (--serpent-old-route) runs down under the bell spires through
-## its loop, so there it is left out.
+## Whether the ferry flies: the sky's ships do, and not --no-ferry. The
+## serpent's old long way (--serpent with --serpent-old-route) runs down
+## under the bell spires through its loop, so there it is left out.
 static func wanted() -> bool:
 	var args := LaunchArgs.user_args()
-	return not args.has("--no-ferry") and not args.has("--serpent-old-route")
+	return not args.has("--no-ferry") and not (args.has("--serpent") and args.has("--serpent-old-route"))
 
 ## Made round `airship` (a SkyAirship whose ship is made) for `study`.
 func setup(study: Node3D, airship: Node3D) -> void:
@@ -520,29 +568,43 @@ func wait_spot(n: String) -> Dictionary:
 	var p := point(float(s.arc))
 	var h := heading_at(float(s.arc))
 	var basis := Basis(Vector3.UP,h)
-	# The isle's side: home has it to starboard (+X), the bell spires to port.
+	# The isle's side: +1 starboard (+X), -1 port (ROUTE's).
 	var side := float(s.get("side",1.0 if n == "home" else -1.0))
 	var deck := basis*FOREDECK+p
 	var out := basis.x*side
 	var spot := deck+out*(AirshipBuild.HULL.x*SCALE+1.4)
 	return {"stand":Vector3(spot.x,deck.y-DECK+0.05,spot.z),"face":Vector2(-out.x,-out.z).normalized()}
 
-## The flags' start, once the isle is up: the stop's motif isle stood up
-## at once if it isn't yet.
+## The stop named `n` or by its isle's motif id (STOP_ISLES), or "".
+func stop_named(n: String) -> String:
+	if not stop(n).is_empty(): return n
+	for k: String in STOP_ISLES:
+		if STOP_ISLES[k] == n and not stop(k).is_empty(): return k
+	return ""
+
+## The flags' start, once the isle is up.
 func _flag_start() -> void:
-	var n := start_aboard if start_aboard != "" else start_at
-	if stop(n).is_empty():
-		push_warning("ferry: no stop '%s' (home, bell)" % n)
-		return
-	_stand_up("bell_spires")
-	if start_aboard != "":
-		set_clock(clock_before("home",-(HOLD-LEAVE_LEAD)) if n == "home" else clock_before(n,BELL_LEAD))
+	start(start_aboard if start_aboard != "" else start_at,start_aboard != "")
+
+## A start at stop `n` (its isle stood up at once if a motif's): `aboard`,
+## on its foredeck (at home a few seconds before it leaves, elsewhere
+## ARRIVE_LEAD s before it comes to rest); else on foot at the stop's edge,
+## the ferry WAIT_LEAD s off. False if there is no such stop.
+func start(n: String, aboard: bool) -> bool:
+	var named := stop_named(n)
+	if named == "":
+		push_warning("ferry: no stop '%s' (%s)" % [n,", ".join(PackedStringArray(stops.map(func(s: Dictionary) -> String: return str(s.name))))])
+		return false
+	if STOP_ISLES.has(named): _stand_up(str(STOP_ISLES[named]))
+	if aboard:
+		set_clock(clock_before("home",-(HOLD-LEAVE_LEAD)) if named == "home" else clock_before(named,ARRIVE_LEAD))
 		board_now()
-		return
-	set_clock(clock_before(n,WAIT_LEAD))
-	var w := wait_spot(n)
+		return true
+	set_clock(clock_before(named,WAIT_LEAD))
+	var w := wait_spot(named)
 	scene.place(w.stand,w.face)
 	scene.set("_last_stood",w.stand)
+	return true
 
 ## Motif isle `id` stood up now, if the sky has it and it isn't up.
 func _stand_up(id: String) -> void:

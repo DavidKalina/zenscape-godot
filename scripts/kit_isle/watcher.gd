@@ -3,10 +3,11 @@ extends Node3D
 ## default): a stranger on the aqueduct isle's south rim, a few steps west
 ## of where the plane stands parked, his telescope up, slowly following
 ## something far off. Follow his gaze with your own telescope (scripts/
-## telescope.gd) and you find it: a glint on the rune serpent's back as it
-## flies its loop (scripts/kit_isle/serpent_route.gd). Ride the serpent and
-## touch it to take it. The question: does following his gaze lead you to
-## the find, with no text pointing and no aim help?
+## telescope.gd) and you find it: a glint on the sky folk's ferry's
+## foredeck as it shuttles round its isles (scripts/kit_isle/
+## airship_ferry.gd; on the rune serpent's back where --serpent flies it).
+## Board it and touch the glint to take it. The question: does following
+## his gaze lead you to the find, with no text pointing and no aim help?
 ##
 ## - **He** is the pilot's own body (scripts/pilot_figure.gd, assets/models/
 ##   pilot.glb) in his own colours (PALETTE: a teal cap, an olive coat, a
@@ -18,16 +19,15 @@ extends Node3D
 ##   the gaze's pitch, and his whole body turns, on an ease (TRACK_EASE),
 ##   to face the find. Every WATCH_TIME s or so he lowers it a while
 ##   (REST s) and, if the pilot is within GLANCE_NEAR m, glances at him,
-##   then raises it and looks back. When the serpent is out of his sight
-##   (behind the hill, in the gorge, a moment behind the home ledge's
-##   steps) he lowers it and waits, still turned to it if it's near, else
-##   to where it comes home.
+##   then raises it and looks back. When the find is out of his sight
+##   (behind the hill or an isle) he lowers it and waits, still turned to
+##   it if it's near, else to where its carrier comes home.
 ## - **Where he stands:** from the isle's own ground, never moving it: a ray
 ##   march from STAND_FROM south over the turf to the rim's edge, and back
 ##   STAND_BACK m from it. A column on the parked plane's layer keeps the
 ##   pilot from walking through him.
 ## - **The find:** the host's, if it has one (`watched_find`): on the
-##   aqueduct isle, the plane's tail fin riding the serpent's back
+##   aqueduct isle, the plane's tail fin on the ferry's foredeck
 ##   (scripts/plane_arc/plane_arc.gd, which places it, makes it glint and
 ##   takes it; docs/design/plane-arc/round1.md). On foot within TAKE m of it
 ##   he takes it, and once it's gone (taken now or in an earlier run) the
@@ -84,8 +84,9 @@ const SEE_FAR := 1400.0
 const SEE_EVERY := 0.25
 const HIDE_AFTER := 1.5
 ## Where he waits facing: toward the find while it's within WAIT_NEAR m
-## (behind the home ledge's steps, say), else the serpent's way RETURN_LEAD
-## m before its home pass, where it comes out from behind the hill.
+## (the ferry resting at home, say), else its carrier's way RETURN_LEAD m
+## before home: the serpent's, where it comes out from behind the hill; the
+## ferry's, where it comes down to the south edge from the east.
 const WAIT_NEAR := 300.0
 const RETURN_LEAD := 220.0
 ## The find: m back from the snout along its body, m over its back's crest,
@@ -98,6 +99,7 @@ const TAKE := 1.6
 ## His line: said within LINE_NEAR m, once a LINE_AGAIN s; characters a
 ## second; held after it's all in (s); fades past LINE_FAR m, over LINE_FADE s.
 const LINE := "Something's caught on the old snake's back."
+const FERRY_LINE := "Something's glinting on the ferry's deck."
 const LINE_NEAR := 4.0
 const LINE_AGAIN := 45.0
 const LINE_RATE := 32.0
@@ -110,6 +112,8 @@ const COLUMN_LAYER := 1 << 13
 
 var isle: Node3D
 var serpent: Node3D
+## The ferry (scripts/kit_isle/airship_ferry.gd) the host's find rides, or null.
+var ferry: Node3D
 var body: Node3D
 var glass: Node3D
 var find: Node3D
@@ -157,6 +161,7 @@ func setup(host: Node3D) -> void:
 	_state_left = _rng.randf_range(WATCH_TIME.x,WATCH_TIME.y)
 	var sky: Node3D = isle.get("sky")
 	serpent = sky.get("serpent") if sky != null else null
+	ferry = sky.get("ferry") if sky != null else null
 	body = PilotFigure.new()
 	body.name = "WatcherBody"
 	body.scale = Vector3.ONE*size
@@ -317,7 +322,10 @@ func _see(delta: float) -> void:
 		sees = far < SEE_FAR
 		if sees:
 			var ray := PhysicsRayQueryParameters3D.create(from,from.move_toward(at,far-2.0))
-			ray.exclude = [serpent.solid_rid()] if serpent.has_method("solid_rid") else []
+			var past: Array[RID] = []
+			if serpent != null and serpent.has_method("solid_rid"): past.append(serpent.solid_rid())
+			if ferry != null: past.append(ferry.body.get_rid())
+			ray.exclude = past
 			sees = isle.get_world_3d().direct_space_state.intersect_ray(ray).is_empty()
 	_unseen = 0.0 if sees else _unseen+delta
 
@@ -348,6 +356,8 @@ func _states(delta: float, near: float) -> void:
 func _turn(delta: float, pilot: Vector3, near: float) -> void:
 	var target := Vector3.INF
 	if find != null and (state != "wait" or eye().distance_to(find.global_position) < WAIT_NEAR): target = find.global_position
+	elif state != "done" and borrowed and ferry != null:
+		target = ferry.point(float(ferry.stop("home").get("arc",0.0))-RETURN_LEAD)
 	elif serpent != null and state != "done":
 		var home := float(serpent.marks().get("home",0.0))
 		target = serpent.route_point(fposmod(home-RETURN_LEAD,float(serpent.route_length)))
@@ -422,7 +432,7 @@ func _build_line() -> void:
 	_line.add_theme_color_override("font_color",Color(1.0,0.97,0.9))
 	_line.add_theme_color_override("font_outline_color",Color(0.0,0.0,0.0,0.75))
 	_line.add_theme_constant_override("outline_size",6)
-	_line.text = LINE
+	_line.text = FERRY_LINE if ferry != null and isle.has_method("watched_find") else LINE
 	_line.visible = false
 	_line_layer.add_child(_line)
 
@@ -439,7 +449,7 @@ func _line_frame(delta: float, near: float) -> void:
 		return
 	_line_t += delta
 	_line.visible_characters = int(_line_t*LINE_RATE)
-	var done := float(LINE.length())/LINE_RATE+LINE_HOLD
+	var done := float(_line.text.length())/LINE_RATE+LINE_HOLD
 	if near > LINE_FAR or _line_t > done: _line_fade += delta/LINE_FADE
 	_line.modulate.a = 1.0-clampf(_line_fade,0.0,1.0)
 	if _line_fade >= 1.0:

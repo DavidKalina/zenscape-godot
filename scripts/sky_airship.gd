@@ -197,6 +197,8 @@ var _halos: MultiMeshInstance3D
 var _light: OmniLight3D
 var _cargo: SpotLight3D
 var _crew: Array[Node3D] = []
+## No crew on deck unless asked for (the sky folk's figures left every ship).
+var crewed := false
 var _lines: MeshInstance3D
 var _grapples: Array[MeshInstance3D] = []
 var _dust: Node3D
@@ -1005,7 +1007,7 @@ func _make_ship() -> void:
 	_cargo.rotation = Vector3(-PI*0.5,0.0,0.0)
 	_cargo.visible = false
 	_ship.add_child(_cargo)
-	for i in range(Build.CREW.size()):
+	for i in range(Build.CREW.size() if crewed else 0):
 		var figure := IslanderFigure.new(IslanderFigure.SCARVES[(i*2+1) % IslanderFigure.SCARVES.size()])
 		figure.scale = Vector3.ONE*IslanderFigure.SKY_SCALE
 		figure.position = Build.CREW[i]+Vector3.UP*0.06

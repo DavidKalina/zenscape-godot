@@ -30,6 +30,8 @@ change `motif_greybox.gd` for one motif.
    shoot the arrival view (`python tools/shot.py studies/motif_yard.tscn
    --frame Motif_gb_<slug> --view three -- --motif=<slug> --sky`) before
    and after, and to iterate on what it sees.
+   A pass that spans several stages runs as an `/iterate` loop: this
+   skill's steps are its spec's rules.
 2. Split a grey-box motif into **ground** and **body**:
    - Ground (walked tiers: pads, terraces, ledges, decks, catches) becomes
      `KitLand.island(spec)` islands: an outline (one simple polygon each;

@@ -2,6 +2,8 @@
 
 > **Since 2026-10-11** (`consolidate/motif-sky`, docs/scenic/motif-sky.md): the far isles, the clusters and the pierced isle are gone from this sky. The four ruin motif isles stand in it instead, and the airships, traffic, motes, gulls, tokens and the rune serpent's way were re-pointed at them.
 
+> **Since 2026-10-15** (docs/design/airship-ferry/round2.md): the rune serpent is out of this sky unless `--serpent` asks for it. The ferry shuttles round five isles instead (home, the Sundered gorge, the drowned nave, the cloister tarn, the bell spires), and the plane's tail fin lies on its foredeck.
+
 Branch `look/aqueduct-isle-sky`. This round makes the sky round the aqueduct isle
 feel lived in. It only wires up systems the game already has and adds no new ones.
 

@@ -73,8 +73,9 @@ Place: the landform and what's on it; the view on arrival.
 Top (ASCII, ~40x16, 1 char ≈ 4 m) and Side (ASCII) — symbols: digits isles,
   '.' route, '~' gulf, '@' landmark, '#' stone, '"' growth, 'o' threat,
   '^' rim, 'A' arena, 'C' cover, 'P' perch.
-Play: the routes through it, beat by beat, naming the pilot's moves; what
-  the player chooses between.
+Play: 2-4 plain sentences: what the player does there and the feeling it
+  leaves them with. The beats live in the Layout's moments, not here.
+Set pieces: 2-4 lines, one each: the piece, and what happens at it.
 Threat (if any): the trap/enemy/hazard here.
 Ports: what it catches from outside and what it throws out.
 Kit used: existing pieces by id (verify each exists).
@@ -83,7 +84,32 @@ Family knobs: 2-4 knobs and their values (what a seed varies).
 Sockets: rims (where, facing), arenas, cover, perches.
 Fit: role, rough footprint and height span.
 Distinct from: the nearest existing motif and why this isn't it.
+Layout: the rough map tools/motif_cards_html.py draws (below).
 ```
+
+The **Layout** block is a fenced `json` block after the `Layout:` line, in
+metres in the card's own frame (x east, z south, y up). Rough is fine; it
+is a sketch, kept in step with the ASCII:
+
+```json
+{
+  "isles":   [{"id": "1", "name": "spine", "x": 0, "z": 0, "rx": 90, "rz": 14,
+               "top": 30, "keel": -10, "set_piece": "temple"}],
+  "links":   [{"from": "1", "to": "2", "kind": "rope|stair|stones|span|climb"}],
+  "pilot":   [[x, y, z], ...],
+  "threat":  [[x, y, z], ...],
+  "tips":    [[x, y, z]],
+  "landing": [x0, z0, x1, z1],
+  "end":     [x, y, z],
+  "moments": [{"at": [x, y, z], "label": "The gable falls", "note": "what the player sees and does"}],
+  "notes":   [{"at": [x, y, z], "text": "a short label"}]
+}
+```
+
+`pilot` and `threat` are routes in order (drawn as arrows). `moments` are
+the beats the player should remember, in the order met: 3-6 of them,
+numbered on the map and listed under it. `notes` pin short labels (a safe
+room, a gap's width, a cliff he hauls up). Only `isles` is required.
 
 **Kit piece card**:
 
@@ -105,16 +131,22 @@ Model budget: which tricks in docs/art/model-budget.md apply.
 ## 4. From card to isle
 
 1. **Card** (`/motif-brainstorm`): text and ASCII, cheap, many.
-2. **Place** (`/motif-greybox`: `scripts/kit_isle/greybox/gb_<slug>.gd`,
+2. **Plan** (`/motif-plan`, a pick only): the card worked out in detail
+   with real numbers, collectibles, enemy spawns, the landing strip and its
+   page of map layers, in `docs/design/motifs/plans/<slug>/`.
+3. **Place** (`/motif-greybox`: `scripts/kit_isle/greybox/gb_<slug>.gd`,
    played in the motif yard, `studies/motif_yard.tscn --motif=<slug>`): on
    the real terrain from the start (`KitLand.island`: outline, stepped
    height function whose steps are grabbable cliffs, keel; RuinKit pieces;
    sky, light, flora, water), then the routes walked with the real pilot,
    then any hazards. Grey boxes only for a piece the kit lacks, labelled
    STAND-IN. The layout lives in one data table.
-3. **Dressing pass** (`/motif-turf`, the picks only): growth, wear, life,
+4. **Dressing pass** (`/motif-turf`, the picks only): growth, wear, life,
    the model budget.
 
 ## 5. Rounds
 
-None yet. Rounds go in docs/design/motifs/brainstorm/roundN/.
+Rounds go in docs/design/motifs/brainstorm/roundN/.
+
+- `round1-olmec-climb`: six variations of the colonnade spine as a mini
+  level the Olmec climbs after you (m1-m6; maps in its index.html).

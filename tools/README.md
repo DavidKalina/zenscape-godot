@@ -17,6 +17,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
 | The test suite | `python tools/run_tests.py [--tests 'test_x*.gd'] [--quick]` |
+| A brainstorm round's cards as one page of maps | `python tools/motif_cards_html.py docs/design/motifs/brainstorm/<round> [--open]` |
 | Find an existing tool | `python tools/index.py <word>` |
 
 ## godot.py: the base

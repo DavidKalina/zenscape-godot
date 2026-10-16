@@ -1,9 +1,21 @@
-# Place agent brief (fill in CARD, SLUG, FOCUS)
+# Place agent brief (fill in CARD, PLAN, SLUG, SCENE, FOCUS)
 
-Build one motif card as a playable place for this Godot 4.7 game, in the
-motif yard. Your card: CARD. Read it, plus
+Build one motif card as a playable place for this Godot 4.7 game. Your
+card: CARD. Your plan: PLAN (or none). It is played in: SCENE. Read them, plus
 docs/design/motifs/motif-brief.md and AGENTS.md (Prototyping, Sizes, Test
 execution, Models).
+
+**The spec.** A plan, when there is one, is the spec: build its numbers,
+collectibles (real tokens and ledger rows), enemies (sleep spots, wake
+triggers, routes) and landing strip as written, and say where you had to
+depart from it. Without a plan, the card is the spec.
+
+**The real look.** The place is a slice of the real map: the game's
+terrain, pieces, turf, flora, life, sky and light, judged in rendered
+stills. Use grey boxes only for a piece the kit lacks. If SCENE is an
+existing isle's study, build onto that isle's motif as an opt-in knob (off,
+it builds as before) and add a `run-SLUG.command` launcher modelled on the
+isle's own.
 
 **Work in this order, and look at each before the next:**
 1. **Land.** The landform as `KitLand.island` islands (outline, height
@@ -36,7 +48,8 @@ execution, Models).
   pieces, traps, enemies: place and facing), built from that table.
 - A missing kit piece or mechanic (the card's "Kit asks") gets the nearest
   stand-in, labelled "STAND-IN: ...". Do not edit any existing file other
-  than the registry (motor, traps, enemies, cannon, KitLand, RuinKit). If no
+  than the registry and, for an existing isle, its motif and study (motor,
+  traps, enemies, cannon, KitLand, RuinKit stay as they are). If no
   stand-in works, leave the gap labelled.
 - Append "## Place (round N)" to the card: yard command, the routes, the
   threat, real vs stand-in, distances you changed, your read of the stills,
@@ -46,9 +59,10 @@ execution, Models).
 write your own runner. Headless for everything but stills.
 1. Smoke: `python tools/smoke.py studies/motif_yard.tscn -- --motif=SLUG`.
    It must PASS.
-2. Stills, one window at a time, watchdog-closed: `python tools/shot.py
-   studies/motif_yard.tscn --frame Motif_gb_SLUG --view three -- --motif=SLUG
-   --sky`. Look at them yourself and iterate.
+2. Stills in SCENE with the real look, one window at a time,
+   watchdog-closed (e.g. `python tools/shot.py studies/motif_yard.tscn
+   --frame Motif_gb_SLUG --view three -- --motif=SLUG --sky`). Look at them
+   yourself and iterate until it reads as the real world, not boxes.
 3. Routes through the real play loop: `scratch/SLUG_routes.gd` extending
    `tools/harness/drive.gd`, run with `python tools/drive.py
    scratch/SLUG_routes.gd -- --scene-args --motif=SLUG` (the driver calls
