@@ -97,6 +97,9 @@ const SEG_CHAIN := 0.6          # each further updraft in one airtime rises this
 const SEG_UP_P := 0.5           # charge-equivalent look (ring, dip) of a one-segment updraft
 const SEG_BURST_P := 0.6        # charge-equivalent strength of a one-segment forward burst
 const SEG_SHOT_P := 0.7         # charge-equivalent strength handed to the gust shot
+## Segmented only: Q / RB in a grounded slide is the forward burst along the
+## slide's travel, whatever the stick (off: the old stick-toward-travel rule).
+const SLIDE_BOOST := true
 
 # --- Look: the charge is a wake of wind behind him, drawn in the breeze
 # ribbons' brush (shaders/breeze_ribbon.gdshader), as the dragon's breath is.
@@ -289,7 +292,9 @@ func spend(m: PilotMotor, drift := Vector3.ZERO) -> float:
 ## keeps sliding); in the air it is a share, no lift. Returns false when it is
 ## not a forward burst (the caller then fires the updraft).
 func burst(m: PilotMotor, want: Vector2) -> bool:
-	if not BURST_ON or not can_spend() or want.length() < BURST_STICK: return false
+	var slide_boost := segmented and SLIDE_BOOST and m.grounded and m.move == "slide"
+	if not BURST_ON or not can_spend(): return false
+	if not slide_boost and want.length() < BURST_STICK: return false
 	if m.recovering() or m.swimming or m.seized() or m.rider != null or m.hold != "": return false
 	if not m.grounded and not BURST_AIR_ON: return false
 	# On the ground only a slide takes the forward burst; running, it is the updraft.
@@ -297,7 +302,10 @@ func burst(m: PilotMotor, want: Vector2) -> bool:
 	var h := Vector2(m.velocity.x,m.velocity.z)
 	var pace := h.length()
 	var dir := want.normalized()
-	if pace > BURST_SLOW*UNIT:
+	if slide_boost:
+		# The slide boost: always along the slide, the stick plays no part.
+		dir = h/pace if pace > 0.05*UNIT else Vector2(-sin(m.facing),-cos(m.facing))
+	elif pace > BURST_SLOW*UNIT:
 		var vdir := h/pace
 		if rad_to_deg(acos(clampf(vdir.dot(dir),-1.0,1.0))) > BURST_CONE: return false
 		dir = (vdir+dir).normalized()
