@@ -3,7 +3,8 @@ extends SceneTree
 ## The rune serpent's route between the isles (scripts/kit_isle/
 ## serpent_route.gd, ridden: scripts/kit_isle/serpent_rider.gd), headless,
 ## in the aqueduct isle's sky with its motif isles stood up:
-##   - the serpent flies the route by default, round the aqueduct isle and
+##   - with --serpent (the game's sky has none without it) the serpent
+##     flies the route, round the aqueduct isle and
 ##     three motif isles, a lap in a few minutes; its way's tube is clear of
 ##     every isle's rock and ground (the ledges aside) and of the airships'
 ##     loops (the ferry's kept clear by tests/test_airship_ferry.gd);
@@ -46,14 +47,15 @@ func check(ok: bool, label: String) -> void:
 
 func run() -> void:
 	create_timer(420.0).timeout.connect(func() -> void: push_error("serpent route test timed out"); quit(2))
-	LaunchArgs.set_override(["--no-life","--no-flora"])
+	# The serpent is out of the game's sky unless --serpent asks for it.
+	LaunchArgs.set_override(["--no-life","--no-flora","--serpent"])
 	study = load("res://studies/aqueduct_isle.tscn").instantiate()
 	study.scripted = true
 	root.add_child(study)
 	current_scene = study
 	while not study.isle_up: await process_frame
 	route = study.sky.get("route")
-	check(route != null,"The serpent flies the route between the isles by default")
+	check(route != null,"With --serpent the serpent flies the route between the isles")
 	if route == null:
 		_finish()
 		return
@@ -332,7 +334,7 @@ func _off_over_sky() -> void:
 func _old_route() -> void:
 	study.queue_free()
 	await process_frame
-	LaunchArgs.set_override(["--no-life","--no-flora","--serpent-old-route"])
+	LaunchArgs.set_override(["--no-life","--no-flora","--serpent","--serpent-old-route"])
 	var old: Node3D = load("res://studies/aqueduct_isle.tscn").instantiate()
 	old.scripted = true
 	root.add_child(old)
