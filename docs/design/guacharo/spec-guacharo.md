@@ -57,6 +57,16 @@ the clips match.
      you somewhere survivable, or over a void that's honestly your fault.
 
    Tune and fix `guacharo.gd` to that.
+   - **A gap in cover is a real danger (user's call).** Standing under an
+     open patch of sky inside covered ground (e.g. the pent hood's fallen
+     roof bay in the Pilgrim's Ladder, `gb_pilgrims_ladder.gd`) must let it
+     dive on you, so crossing the gap is a quick dash under open sky.
+     Today it gets hungry there but never starts a dive, because the stalk
+     point it dives from (out toward the camera) has no clear line past the
+     neighbouring roofs. It waits and pounces only once you step out. Fix
+     that: a dive line down through the gap, or a stalk point chosen for a
+     clear line to him. Prove it with a drive check standing in a roof
+     gap.
 2. **Readability:**
    - its shadow, sharper and growing as it closes;
    - sound, as distinct cues for marked, clicking (faster as it commits),
