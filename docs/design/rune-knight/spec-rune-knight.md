@@ -25,20 +25,25 @@ foot on the isle, and:
 2. **He sees you.** In range and in sight (from the deck or the meadow
    below), he stops, turns to face you and tracks you. Out of sight long
    enough, he goes back to patrolling.
-3. **He grabs wind and throws it.** A tell you can read from a distance:
-   he raises his arms, the air visibly streams into his hands (streaks
-   drawn in from round him) and builds into a held ball or crescent of
-   wind, about a second. Then he throws it: it flies on an arc (lobbed,
-   not straight), slow enough to sidestep or jump. A hit knocks the
-   wanderer with the shared gust knock (`scripts/traps/gust.gd`), so it
-   can throw you off the aqueduct or across the meadow. Reuse the dragon's
-   air-blast ball (`scripts/dragon_air_blast.gd`) or the wind horn's shot
-   for its look and flight if they fit; don't copy them.
+3. **He grabs wind and slashes it at you.** His main attack is an arc of
+   air, like a sword beam: a crescent blade of wind cut off his arm, not a
+   ball tossed on an arc. The tell, readable from a distance: the air
+   visibly streams into his right gauntlet and builds along his forearm
+   into a blade of wind (about a second, runes lit). Then a big sweeping
+   slash, wound up and followed through, and the crescent leaves along the
+   slash's line: wide, thin, flying flat and fast-ish in a straight line,
+   its curve the slash's curve. Horizontal slashes you jump over; diagonal
+   or vertical ones you sidestep; he picks between them, and the pose
+   tells you which before it leaves. A hit knocks the wanderer with the
+   shared gust knock (`scripts/traps/gust.gd`), so it can throw you off
+   the aqueduct or across the meadow. The lobbed ball built in task 2
+   stays as a knob (`attack`: `slash` the default, `lob`), not his main
+   move.
 4. **Tennis.** The wanderer has a wind blast (see "The player's blast").
    A blast that comes at the knight from in front of him, within his
    reach, he intercepts: he catches it (the wind wraps round his hands, a
-   short hold so you see it), then throws it back at you, faster than it
-   came. You can blast the returned shot back at him. Each return in a
+   short hold so you see it), then wraps it onto his blade and slashes
+   it back at you as a crescent, faster than it came. You can blast the returned shot back at him. Each return in a
    rally is faster and gives him less time; past his limit he misses it,
    it hits him, and he staggers back heavily (a few steps, off balance; at
    the deck's edge, over it). A blast from behind or the side hits him
@@ -46,7 +51,7 @@ foot on the isle, and:
    user's call later; no health or death yet.
 
 Every shot, his and yours, is a visible thing in the air with a readable
-silhouette, and every phase (patrol, notice, gather, throw, catch, return,
+silhouette, and every phase (patrol, notice, gather, slash, catch, return,
 stagger) reads at a glance in a still.
 
 ## The player's blast
@@ -105,17 +110,20 @@ changing. Names here are final once built on; change one only by a
 - **Clips and beats** (lengths are the stand-in's starting values; the
   mind waits on beats, never on its own timers for body motion):
   `idle` (loop), `walk` (loop; beat `plant` per footfall), `turn`
-  (`plant`), `notice`, `gather` (`grab`, `full`), `throw` (`release`),
+  (`plant`), `notice`, `gather` (`grab`, `full`), `slash` (`release`; the
+  windup tells horizontal or diagonal), `throw` (`release`; the lob knob),
   `catch` (`contact`, `hold`), `return` (`release`), `stagger`
   (`plant`, `recover`). Every one-shot clip (all but `idle` and `walk`;
   `turn` loops too) also sends `end` at its length, so the mind can wait
   on a clip with no beat of its own (`notice`) or on its follow-through.
 - **Sockets**: `hand_r`, `hand_l`, `hands_mid` (where a held shot sits),
+  `blade` (along the right forearm, where the wind blade forms),
   `chest_rune`, `eye`.
 - **Shape**: capsule radius and height, eye height, reach (the catch
   range) and stride, all from `WorldScale` and his knobs.
 - **Effects**: `rune_glow` (lines lit while he holds wind),
-  `wind_gather` (streaks drawn into `hands_mid`).
+  `wind_gather` (streaks drawn into `hands_mid`, or into `blade` before
+  a slash), `wind_blade` (the blade of air along his forearm).
 
 ## Tasks (the first iteration orders these; keep each one a checkpoint)
 
@@ -128,7 +136,14 @@ changing. Names here are final once built on; change one only by a
 4. Catch and return, the rally speeding up, the miss and his stagger.
    A play-loop check of a rally (blast, catch, return, blast back) and of
    a miss; stills of the catch and the stagger.
-5. A feel pass on timings from the stills and checks, and a short rendered
+5. The slash (spec change after the user played task 2): the blade
+   tell, the `slash` clip (horizontal and diagonal), the crescent shot
+   (a shape of `wind_shot.gd`, same group and seam), the `attack` knob,
+   and his return in a rally becomes a slash. Stills of the blade tell,
+   both slashes and the crescent in flight; play-loop checks that a
+   jump clears a horizontal crescent, a sidestep a diagonal one, and a
+   hit knocks.
+6. A feel pass on timings from the stills and checks, and a short rendered
    clip (a few frames strung) of one full rally.
 
 ## Checks
