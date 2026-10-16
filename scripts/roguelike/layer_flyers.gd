@@ -11,7 +11,9 @@ extends Node3D
 ## `danger`). `--flyers=N` pins the count (0 none). Home is over the widest
 ## gulf (else the longest crossing), HOME_UP over its lips; a second over
 ## the crossing furthest from the first. A plan's own `flyers` list ([{home,
-## grace, range}]: the flyer yard's) is taken as it is.
+## grace, range}]: the flyer yard's) is taken as it is. A laid flyer may
+## give a `floor` (world y): his feet under it are out of its reach (a
+## place's low refuge under the bird's isle, as pilgrims_ladder's Cellar).
 ##
 ## They hunt him (`hunting`) once the layer's GRACE is out and he is within
 ## RANGE of a home or NEAR_EDGE of a crossing's lip; one dives at a time
@@ -115,6 +117,7 @@ func setup(stage: Node3D, layer: Dictionary, laid: Array) -> void:
 		var bird = Guacharo.new()
 		add_child(bird)
 		bird.setup(self,f.home,int(layer.get("seed",0))*31+i,mine)
+		bird.set_meta(&"floor",float(f.get("floor",-INF)))
 		bird.beat.connect(_beat.bind(bird))
 		birds.append(bird)
 		i += 1
@@ -125,6 +128,7 @@ func hunting() -> bool:
 	if _clock < grace: return false
 	var feet: Vector3 = motor.feet
 	for b in birds:
+		if feet.y < float(b.get_meta(&"floor",-INF)): continue
 		if Vector2(feet.x-b.home.x,feet.z-b.home.z).length() < range_m: return true
 	for z: Vector3 in zones:
 		if Vector2(feet.x-z.x,feet.z-z.z).length() < NEAR_EDGE: return true

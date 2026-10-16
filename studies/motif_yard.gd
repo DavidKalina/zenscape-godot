@@ -149,6 +149,7 @@ static func yard_plan(slug: String, at: Vector3, knobs := {}) -> Dictionary:
 		plan.flyers = (m.flyers() as Array).map(func(f: Dictionary) -> Dictionary:
 			var o := f.duplicate()
 			o.home = (f.home as Vector3)+at
+			if f.has("floor"): o.floor = float(f.floor)+at.y
 			return o)
 	LayerGreybox.lay_heads(plan,LayerEnemies.numbers())
 	return plan

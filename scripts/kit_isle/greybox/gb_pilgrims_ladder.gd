@@ -85,11 +85,13 @@ const LAYOUT := {
 	],
 	## The guacharo (scripts/enemies/guacharo.gd, laid by LayerFlyers): home
 	## high over the Crown, it hunts once his feet are within `range` (flat)
-	## of it: the Crown, the plinth, the Cellar, not the high horn (28 m).
+	## of it: the Crown and the plinth, not the high horn (28 m). `floor`
+	## 15: under it (the stair's lower half, the Cellar at 10) he is out of
+	## its reach, so the stair down is the escape.
 	## `rim_r` 2.5 (default 1.4): it reads the Crown's turf within about
 	## 6.4 m of the lip as a rim (hungry), not only the last 3.6 m, so the
 	## landing, the hood's front and the south lip are open to it.
-	"flyers":[{"home":Vector3(91.0,46.0,0.0),"grace":0.0,"range":22.0,"knobs":{"rim_r":2.5}}],
+	"flyers":[{"home":Vector3(91.0,46.0,0.0),"grace":0.0,"range":22.0,"floor":15.0,"knobs":{"rim_r":2.5}}],
 	## The on-foot tokens (the plan's walked collectibles; scripts/kit_isle/
 	## greybox/pilgrims_ladder_life.gd lays them): `at` his middle where he
 	## stands for it (feet + 0.85, as the kit isles' tokens), `move` the way
