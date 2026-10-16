@@ -21,6 +21,8 @@ const SAMPLE := 1.0
 
 var study: Node3D
 var threaded := DisplayServer.get_name() != "headless"
+## Set to tell a running worker build to stop between pieces (exit).
+var _stop := {}
 ## The running worker job ({} none): task, gen, out, items, keys, land.
 var job: Dictionary = {}
 ## Bumped by each rebuild; a job of an older gen is dropped when it lands.
@@ -273,6 +275,26 @@ func step(settled: bool) -> void:
 	if _owed.is_empty() or not settled: return
 	_start()
 
+## At exit: the worker's build waited out, so quitting never hangs. Its
+## renderer calls wait on the main thread's command queue, which nothing
+## flushes once the tree is gone: the engine's own wait for the pool at
+## quit then deadlocks. So the queue is flushed here while it runs (it is
+## told to stop between pieces), and what it made is freed.
+func wait_out() -> void:
+	if job.is_empty(): return
+	_stop["now"] = true
+	var task := int(job.task)
+	while not WorkerThreadPool.is_task_completed(task):
+		RenderingServer.force_sync()
+		OS.delay_usec(500)
+	WorkerThreadPool.wait_for_task_completion(task)
+	var done := job
+	job = {}
+	_stop = {}
+	for key: String in done.out:
+		var n: Variant = done.out[key]
+		if n is Node and is_instance_valid(n): (n as Node).free()
+
 ## A landed job taken in (swapped, or dropped if a newer rebuild came);
 ## false while it still runs. Also called while playing (play drops it).
 func collect() -> bool:
@@ -311,10 +333,11 @@ func _job_motif() -> RefCounted:
 	return m
 
 ## What a job builds: {"land": Node3D?, "P3": node, "Run0": node}.
-static func _build(m: RefCounted, owed: Dictionary) -> Dictionary:
+static func _build(m: RefCounted, owed: Dictionary, stop: Dictionary = {}) -> Dictionary:
 	var out := {}
 	if bool(owed.land): out.land = m.build_land(false)
 	for it: Array in owed.late:
+		if stop.get("now", false): break
 		var node: Node3D = m.make_piece(int(it[1])) if str(it[0]) == "P" else m.make_run(int(it[1]))
 		if node != null: out["%s%d" % [str(it[0]),int(it[1])]] = node
 	return out
@@ -329,8 +352,9 @@ func _start() -> void:
 		done.out = _build(m,owed)
 		_swap(done)
 		return
+	var stop := _stop
 	done.task = WorkerThreadPool.add_task(func() -> void:
-		var o := _build(m,owed)
+		var o := _build(m,owed,stop)
 		for key: String in o: out[key] = o[key],false,"Motif editor detail")
 	job = done
 

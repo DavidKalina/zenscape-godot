@@ -632,6 +632,7 @@ func toggle_play(under_camera := false) -> void:
 func _exit_tree() -> void:
 	# What the rebuild let go of and has not freed yet.
 	if rb != null:
+		rb.wait_out()
 		rb.reset()
 		rb.sweep_all()
 	super._exit_tree()
