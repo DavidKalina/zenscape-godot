@@ -1,0 +1,76 @@
+# Spec: kit-breaks
+
+Every kit piece can come down the way the colonnade does: piers, lintels,
+arch rings and gables split along real stone joints, fall, and settle into
+rubble. Which sources can break things is a toggle. For now only the
+Olmec breaks things; the plane, the dragon and the slam are wired but off.
+
+## Done looks like
+
+- In the colonnade scene (`studies/colonnade_spine_isle.gd`, run with
+  `--olmec`), the Olmec breaks the colonnade exactly as before, through
+  the shared code.
+- In the motif yard, the Olmec breaks ordinary RuinKit pieces (towers,
+  halls, aqueduct spans, belfries, cloisters, walls, stairs) at the
+  colonnade's quality. No piece has hand-written break code.
+- City kit break pieces answer to the same hub and toggles, keeping their
+  own choreography.
+- The motif editor can mark a piece or a whole motif unbreakable. Saved
+  motifs build exactly as before.
+- Agents can break things in a headless check with `hit()` in
+  `tools/harness/drive.gd`.
+
+## Tasks (all trunk, in order; no lanes: each needs the one before)
+
+1. **Shared breakable + source toggles.** Lift `scripts/kit_isle/colonnade_breaks.gd`'s
+   behaviour out of the colonnade into a shared breakable on the
+   `scripts/kit_isle/breakables.gd` hub. That behaviour is:
+   - cuts along real joints via `masonry_cuts.gd` / RuinKit `Build.keep_only`;
+   - the Jolt fall under the 24-body cap;
+   - settling to frozen rubble, then `changed(box)` so enemies re-plan.
+
+   Add named breakers with a strength (`olmec` on; `plane`, `dragon`,
+   `slam` off) and one entry point, `hit(at, radius, strength, source)`.
+   The Olmec's breaker calls (`met`, `wave`, `smash` in
+   `scripts/enemies/headless_body.gd`) go through it.
+
+   Proof:
+   - The colonnade breaks as before, judged by before and after `film()`
+     contact sheets of the same moment.
+   - Measure the frame cost of a cut at hit time.
+2. **Break points per RuinKit part kind** (pier, lintel, arch, gable, wall,
+   stair, and whatever else the kit builds from), so any RuinKit piece
+   breaks with no per-piece code.
+   - Cut lazily, on the first hit strong enough to break it; until then the
+     build is untouched.
+   - Per-piece toughness.
+   - If the step 1 measurement showed a hitch, pre-cut when a breaker wakes
+     nearby.
+
+   Proof: motif yard pieces broken by the Olmec, filmed.
+3. **City kit onto the hub.** `scripts/city_kit_breaks*.gd` and
+   `scripts/city_breaks/` join the same hub and source toggles, keeping
+   their own choreography. The slam keeps working on them when `slam` is
+   on.
+4. **Editor toggle and harness.**
+   - Breakable on/off per piece and per motif in the motif editor. It must
+     be opt-in-safe, keep piece ids stable, and build saved
+     `motifs/authored/*.json` as before.
+   - `hit()` in `tools/harness/drive.gd` for headless checks; regenerate the
+     index with `python tools/drive.py --api --update`.
+
+## Constraints
+
+- KitLand ground stays solid: no terrain breaking. Every isle keeps its
+  landing strip. Flora is out.
+- Nothing about a piece's build changes until it is hit (AGENTS.md, The
+  motif editor). Smoke a kit motif and an `editor_*` motif in the motif
+  yard.
+- The aqueduct isle has no Olmec, so it must build and play as before.
+- Use the harness: `python tools/drive.py --api` (`route`, `watch`,
+  `film`, `shot_at`, `ray`, `what_is_at`).
+- Scenes to smoke:
+  - `studies/colonnade_spine_isle.tscn -- --olmec`
+  - the motif yard with a kit motif and an `editor_*` motif
+  - a city yard that uses breaks
+  - `studies/aqueduct_isle.tscn`
