@@ -16,19 +16,21 @@ extends RefCounted
 
 const Builds = preload("res://scripts/showcase_builds.gd")
 
-const CANVAS := Color("efe4cc")
-const CANVAS_SHADE := Color("dccdb0")
-const RUST := Color("a8644a")
-const RUST_DARK := Color("7e4636")
-const SAGE := Color("7f9474")
-const WOOD := Color("6f5238")
-const WOOD_DARK := Color("4c3a2a")
-const PLANK := Color("8a6a4a")
-const LIME := Color("e6dccb")
-const ROOF := Color("8a4a36")
-const BRASS := Color("d6ad62")
-const IRON := Color("4a4640")
-const ROPE := Color("8f7b58")
+## Aged: a smoke-yellowed canvas, oxide rust, a dull sage, tarred wood
+## (shaders/airship_surface.gdshader streaks and dirties it on top).
+const CANVAS := Color("d2c6aa")
+const CANVAS_SHADE := Color("beb194")
+const RUST := Color("85513f")
+const RUST_DARK := Color("643a2e")
+const SAGE := Color("5f6656")
+const WOOD := Color("5c4430")
+const WOOD_DARK := Color("3e3024")
+const PLANK := Color("73583e")
+const LIME := Color("c4b8a0")
+const ROOF := Color("70402f")
+const BRASS := Color("a8884c")
+const IRON := Color("3f3c37")
+const ROPE := Color("7a6849")
 
 ## The envelope: its middle over the deck, its length along Z, its fattest
 ## radius, how far forward of its middle the fattest ring stands (share of

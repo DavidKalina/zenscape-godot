@@ -48,6 +48,10 @@ varying vec3 local;
 #ifdef ZS_STONE_WEATHER
 #include "res://shaders/kit_weather.gdshaderinc"
 #endif
+#ifdef ZS_CRAFT_GRIME
+// The flying craft's grime (shaders/craft_grime.gdshaderinc).
+#include "res://shaders/craft_grime.gdshaderinc"
+#endif
 varying vec3 gleam_world;
 #ifdef ZS_NIGHT_STONE
 // The ruins at night (night light round 2, docs/design/night-light/
@@ -123,6 +127,9 @@ void fragment() {
 		rough_add = kit_weather(base, bumped, wn, local, VERTEX, 1.0 - clamp(COLOR.a, 0.0, 1.0), stone_weather);
 		NORMAL = bumped;
 	}
+#endif
+#ifdef ZS_CRAFT_GRIME
+	rough_add += craft_grime(base, local, normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz));
 #endif
 	ALBEDO = base;
 	ROUGHNESS = clamp(mix(roughness_value, 1.0, dull * 0.6) + rough_add, 0.0, 1.0);
