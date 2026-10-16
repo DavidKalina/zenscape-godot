@@ -28,7 +28,8 @@ Rest = gliding: wings spread, tail half fanned, legs tucked.
     /opt/homebrew/bin/blender -b --python art/blender/guacharo/guacharo_build.py -- [--out=DIR] [--blend] [--render=DIR]
 
 Writes assets/models/guacharo.glb (or into DIR), printing GUACHARO_TRIS;
---render=DIR also writes Workbench stills of the rest pose there.
+--render=DIR also writes Workbench stills of the rest pose there, and a
+sheet a clip (--sheets=stalk,fold: only those).
 """
 import math
 import random
@@ -46,10 +47,12 @@ _args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 OUT = ROOT / "assets/models"
 SAVE_BLEND = False
 RENDER = None
+SHEETS = None       # --sheets=a,b: clip sheets only for these (default: all)
 for a in _args:
     if a.startswith("--out="): OUT = Path(a.split("=", 1)[1])
     elif a == "--blend": SAVE_BLEND = True
     elif a.startswith("--render="): RENDER = Path(a.split("=", 1)[1])
+    elif a.startswith("--sheets="): SHEETS = set(a.split("=", 1)[1].split(","))
 GLB = OUT / "guacharo.glb"
 rng = random.Random(7)
 
@@ -714,6 +717,8 @@ if RENDER:
     for tr in rig.animation_data.nla_tracks:
         tr.mute = True      # else the strips override the pose set here
     for c in CLIPS:
+        if SHEETS is not None and c.name not in SHEETS:
+            continue
         cols = SHEET_N if c.loop else SHEET_N
         rows = []
         for eye, at, lens in sheet_views:

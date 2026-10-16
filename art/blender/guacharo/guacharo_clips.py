@@ -321,5 +321,134 @@ def circle():
     ], extra=_circle_extra)
 
 
+# ------------------------------------------------------------------ the hunt
+# The hunt's lengths (lane guacharo-hunt, guacharo.gd): TELL 0.6 s, the scream
+# for its first TELL_SCREAM (0.45) of it, the rest the teardrop's hold; the
+# dive up to STOOP_MAX 2.5 s; clicks every CLICK_SLOW 0.42 .. CLICK_FAST 0.07 s.
+# The one-shot clips (scream, fold) do their move early and end on a held pose:
+# a longer tell only lengthens the hold (the player clamps on the last frame).
+TELL = 0.6
+TELL_SCREAM = 0.45
+SCREAM = TELL * TELL_SCREAM      # 0.27 s
+FOLD = TELL - SCREAM             # 0.33 s
+
+# hovering: body raised steep, tail fanned down as a brake, feet let down a
+# little, the head held level and staring down at him
+STALK = dict(pitch=38, tail=-22, fan=1.2, reach=0.12, toes=0.3, neck=-14, head=-30, stretch=1.0,
+             **both(elev=20, sweep=-6, fold=0.1, twist=0, spread=1.0, hand=0))
+# the teardrop: wings shut against the body, primaries and tail closed,
+# drawn long, the head pushed forward along the line of the dive
+TEARDROP = dict(pitch=-6, stretch=1.16, tail=2, fan=0.0, reach=0.0, toes=0.0,
+                neck=8, head=-4, head_yaw=0, head_roll=0, jaw=0.25, bob=0.0, roll=0.0,
+                **both(elev=0, sweep=0, fold=1.0, twist=0, spread=0.0, hand=0))
+
+
+def _click(t, at, v, big=1.0):
+    """One click at time `at`: a quick dip of the head with the beak snapped
+    a crack open (40 ms down, 80 ms back)."""
+    d = t - at
+    if d < 0.0 or d > 0.12:
+        return
+    k = d / 0.04 if d < 0.04 else 1.0 - (d - 0.04) / 0.08
+    k = k * k * (3 - 2 * k)
+    v["head"] -= 9.0 * big * k
+    v["jaw"] += 0.22 * big * k
+    v["neck"] += 3.0 * big * k
+
+
+def _stalk_extra(t, v):
+    # a click on each beat's bottom hold: CLICK_SLOW's rate (the look adds
+    # the faster clicks of a committing bird procedurally at the mind's rate)
+    for at in (0.14, 0.64):
+        _click(t, at, v)
+    v["tail_roll"] += 3.0 * math.sin(t * math.tau / 1.0 + 0.7)
+
+
+def stalk():
+    """1 s loop, two hovering beats (the hunt beats at 2 Hz in the stalk).
+    The body hangs steep, the wings row forward and down on the stroke and
+    flick back and up with the wrist turned, the tail fanned as a brake;
+    the head stays put while the body heaves under it (a hovering bird's
+    stare) and clicks on each beat's low point."""
+    top = dict(STALK, **both(elev=54, sweep=4, fold=0.12, twist=14, spread=1.12, hand=8),
+               bob=-0.03, stretch=1.03, head=-26, neck=-12)
+    stroke = dict(**both(elev=4, sweep=-26, fold=0.0, twist=-16, spread=1.05, hand=-6),
+                  bob=0.02, stretch=0.99, head=-31, neck=-15)
+    bottom = dict(**both(elev=-10, sweep=-22, fold=0.06, twist=-8, spread=0.95, hand=-6),
+                  bob=0.05, stretch=0.94, pitch=35, head=-34, neck=-16)
+    up = dict(**both(elev=24, sweep=10, fold=0.38, twist=22, spread=0.55, hand=-8),
+              bob=0.0, stretch=1.02, pitch=39, head=-29, neck=-14)
+    keys = []
+    for o in (0.0, 0.5):
+        keys += [(o + 0.00, top, True), (o + 0.13, stroke), (o + 0.24, bottom, True), (o + 0.38, up)]
+    return Clip("stalk", 1.0, keys, extra=_stalk_extra)
+
+
+def scream():
+    """0.27 s one-shot (the tell's first TELL_SCREAM), ends held. From the
+    hover it ducks (head pulled in, wings dipped forward, the body squashed:
+    the anticipation), then throws the wings straight up and back with the
+    primaries and tail splayed wide, rears, stretches tall and opens the
+    beak full; a little overshoot, then the hold."""
+    return Clip("scream", SCREAM, [
+        (0.00, dict(STALK), False),
+        # the duck: everything drawn in and down
+        (0.07, dict(**both(elev=-14, sweep=-18, fold=0.25, twist=-10, spread=0.8, hand=-12),
+                    pitch=22, stretch=0.88, bob=-0.04, neck=-24, head=-18, jaw=0.1, tail=-30, fan=0.9), True),
+        # the throw: past the hold pose
+        (0.16, dict(**both(elev=88, sweep=14, fold=0.0, twist=18, spread=1.22, hand=14),
+                    pitch=40, stretch=1.12, bob=0.05, neck=10, head=14, jaw=1.05, tail=-36, fan=1.3,
+                    reach=0.35, toes=0.8)),
+        # the hold: wide, rearing, beak open
+        (0.21, dict(**both(elev=80, sweep=10, fold=0.0, twist=14, spread=1.18, hand=10),
+                    pitch=38, stretch=1.07, bob=0.04, neck=8, head=10, jaw=1.0, tail=-34, fan=1.25,
+                    reach=0.3, toes=0.7), True),
+        (SCREAM, dict(), True),
+    ], loop=False)
+
+
+def fold():
+    """0.33 s one-shot (the tell's rest), ends held on the teardrop. From
+    the scream's thrown-up wings it snaps them shut in one beat (the arms
+    drop and fold, the primaries close last), tips its nose down and draws
+    itself long, beak still parted; the stretch overshoots and settles."""
+    thrown = dict(**both(elev=80, sweep=10, fold=0.0, twist=14, spread=1.18, hand=10),
+                  pitch=38, stretch=1.07, bob=0.04, neck=8, head=10, jaw=1.0, tail=-34, fan=1.25,
+                  reach=0.3, toes=0.7)
+    return Clip("fold", FOLD, [
+        (0.00, thrown, True),
+        # the snap: arms half in, still high; the body tips over
+        (0.07, dict(**both(elev=40, sweep=40, fold=0.6, twist=6, spread=0.5, hand=4),
+                    pitch=8, stretch=1.0, bob=0.02, neck=0, head=0, jaw=0.6, tail=-10, fan=0.5,
+                    reach=0.1, toes=0.2)),
+        # shut, and overshooting long
+        (0.13, dict(TEARDROP, stretch=1.22, pitch=-10, jaw=0.4, **both(elev=-3, spread=0.0, fold=1.0, sweep=0))),
+        (0.20, dict(TEARDROP), True),
+        (FOLD, dict(), True),
+    ], loop=False)
+
+
+def _stoop_extra(t, v):
+    # the shudder of the air past it: a fast tremor in the shut wings and tail
+    for s, ph in (("L", 0.0), ("R", 1.9)):
+        v[f"elev.{s}"] += 1.6 * math.sin(t * math.tau * 9.0 + ph) + 0.8 * math.sin(t * math.tau * 14.0 + ph * 2)
+        v[f"hand.{s}"] += 1.2 * math.sin(t * math.tau * 11.0 + ph)
+    v["roll"] += 1.2 * math.sin(t * math.tau * 7.0)
+    v["tail_roll"] += 3.0 * math.sin(t * math.tau * 8.0 + 0.5)
+    v["head_roll"] -= 0.6 * math.sin(t * math.tau * 7.0)   # the head steadier than the body
+
+
+def stoop():
+    """1 s loop, the dive: the teardrop shuddering in the rush of air, the
+    wrists trimmed open a crack and shut again (steering), the head locked
+    forward on him."""
+    return Clip("stoop", 1.0, [
+        (0.00, dict(TEARDROP), True),
+        (0.35, dict(**both(fold=0.9, elev=3, sweep=-3, spread=0.08), stretch=1.13, tail=4), True),
+        (0.55, dict(**both(fold=1.0, elev=0, sweep=0, spread=0.0), stretch=1.17, tail=1)),
+        (0.75, dict(TEARDROP), True),
+    ], extra=_stoop_extra)
+
+
 def clips():
-    return [glide(), flap(), circle()]
+    return [glide(), flap(), circle(), stalk(), scream(), fold(), stoop()]
