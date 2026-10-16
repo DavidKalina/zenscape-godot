@@ -159,3 +159,8 @@ Rounds go in docs/design/motifs/brainstorm/roundN/.
 - `round3-new-kit-isles`: six variations of sky isles built round the new
   kit (pent_hood, relic_nimbus, keel_hung_stair, relic_torana); maps in its
   index.html, picks in its README.
+- `round4`: spread, five motif cards (m1 chase, m2 carry, m3 hide in the
+  Olmec city, m4 defend, m5 descend) and twenty kit pieces in five themes
+  (k1 grab/climb, k2 moving, k3 launch/carry, k4 state-change, k5 hide and
+  dark in the city); kit-ask tally, picks and engine gaps in its README,
+  maps in its index.html.
