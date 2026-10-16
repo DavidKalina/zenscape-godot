@@ -84,6 +84,20 @@ const BURST_FOV_TIME := 0.5     # s the kick takes to settle
 const UP_SLIDE_SCALE := 1.35    # rise multiplier when the updraft fires out of a fast slide
 const UP_SLIDE_PACE := 8.0      # m/s: "fast slide" for that
 
+# --- Segments (the wind gauge, docs/design/wind-gauge/spec-wind-gauge.md).
+## Off (the default): every unleash spends all the charge, its strength
+## scaled by it. On (`segmented`, set by kit_isle): the charge is SEGMENTS
+## equal parts, and each unleash (updraft, burst, gust shot) spends one at a
+## fixed strength; the partial part above them is kept.
+const SEGMENTS := 3
+const SEG := 1.0/SEGMENTS
+const SEG_HAIR := 0.002         # charge this short of a segment still counts as one
+const SEG_RISE := 3.2           # m one segment's updraft lifts him (from a standstill in the air)
+const SEG_CHAIN := 0.6          # each further updraft in one airtime rises this share of the one before
+const SEG_UP_P := 0.5           # charge-equivalent look (ring, dip) of a one-segment updraft
+const SEG_BURST_P := 0.6        # charge-equivalent strength of a one-segment forward burst
+const SEG_SHOT_P := 0.7         # charge-equivalent strength handed to the gust shot
+
 # --- Look: the charge is a wake of wind behind him, drawn in the breeze
 # ribbons' brush (shaders/breeze_ribbon.gdshader), as the dragon's breath is.
 const WAKE_STRANDS := 3         # strokes in the wake at full charge
@@ -102,6 +116,12 @@ const LOOSE_DRIFT := 3.0        # m/s it drifts back along the burst
 const FLARE_TIME := 0.5         # s a burst flares the loose strands wider
 
 var charge := 0.0
+## Segments on (SEG*): see above.
+var segmented := false
+## A press of the key with no segment to spend (segmented only): the wind
+## gauge's empty cue.
+signal empty_press
+var _air_ups := 0               # updrafts since he last stood on the ground
 var updrafts := 0
 var last_rise := 0.0            # m planned for the last updraft
 var _quiet := 0.0               # s since the last gain
@@ -168,7 +188,9 @@ func update(delta: float, m: PilotMotor, pressed: bool, want := Vector2.ZERO) ->
 	_cool = maxf(_cool-delta,0.0)
 	_unlock(delta,m)
 	_charge(delta,m)
-	if pressed and not burst(m,want): updraft(m)
+	if m.grounded: _air_ups = 0
+	if pressed and not burst(m,want) and not updraft(m) and segmented and not can_spend():
+		empty_press.emit()
 	_ride_top(delta,m)
 	_step_rings(delta)
 	_track(delta,m)
@@ -209,17 +231,37 @@ func _decay(delta: float) -> void:
 	_quiet += delta
 	if _quiet > GRACE: charge = maxf(charge-DECAY*delta,0.0)
 
+## The least charge an unleash takes: a segment, or MIN_RELEASE unsegmented.
+func least() -> float:
+	return SEG-SEG_HAIR if segmented else MIN_RELEASE
+
+## Whether there is a segment (or, unsegmented, enough charge) to spend.
+func can_spend() -> bool:
+	return charge >= least()
+
+## Spends what one unleash takes and returns its strength (0..1, as charge):
+## one segment at `fixed`, or unsegmented all of it at its own size.
+func _take(fixed: float) -> float:
+	_quiet = 0.0
+	if segmented:
+		charge = maxf(charge-SEG,0.0)
+		if charge < SEG_HAIR: charge = 0.0
+		return fixed
+	var p := charge
+	charge = 0.0
+	return p
+
 ## The updraft: all the charge straight up through `toss`, his flat pace kept
 ## (a fall is cancelled: vy is set, not added), and a ring blast at his feet.
 ## Returns false if there is too little charge.
 func updraft(m: PilotMotor) -> bool:
-	if charge < MIN_RELEASE or m.recovering() or m.swimming or m.seized():
+	if not can_spend() or m.recovering() or m.swimming or m.seized():
 		return false
-	var p := charge
-	charge = 0.0
-	_quiet = 0.0
+	var p := _take(SEG_UP_P)
 	updrafts += 1
 	last_rise = lerpf(UP_RISE_MIN,UP_RISE_MAX,p)*UNIT
+	if segmented: last_rise = SEG_RISE*pow(SEG_CHAIN,_air_ups)*UNIT
+	_air_ups += 1
 	if m.move == "slide" and m.speed() > UP_SLIDE_PACE*UNIT: last_rise *= UP_SLIDE_SCALE
 	var vy := sqrt(2.0*PilotMotor.GRAVITY*last_rise)
 	var face := m.facing
@@ -232,14 +274,12 @@ func updraft(m: PilotMotor) -> bool:
 	_dip_amp = DIP*p*UNIT
 	return true
 
-## All the charge spent on something else (the gust shot,
+## The charge (segmented: one segment) spent on something else (the gust shot,
 ## scripts/lock_on/gust_shot.gd): the wake comes away drifting `drift` m/s.
 ## Returns what was spent, 0 (nothing spent) under MIN_RELEASE.
 func spend(m: PilotMotor, drift := Vector3.ZERO) -> float:
-	if charge < MIN_RELEASE or m.recovering() or m.swimming or m.seized(): return 0.0
-	var p := charge
-	charge = 0.0
-	_quiet = 0.0
+	if not can_spend() or m.recovering() or m.swimming or m.seized(): return 0.0
+	var p := _take(SEG_SHOT_P)
 	_let_go(drift)
 	return p
 
@@ -249,7 +289,7 @@ func spend(m: PilotMotor, drift := Vector3.ZERO) -> float:
 ## keeps sliding); in the air it is a share, no lift. Returns false when it is
 ## not a forward burst (the caller then fires the updraft).
 func burst(m: PilotMotor, want: Vector2) -> bool:
-	if not BURST_ON or charge < MIN_RELEASE or want.length() < BURST_STICK: return false
+	if not BURST_ON or not can_spend() or want.length() < BURST_STICK: return false
 	if m.recovering() or m.swimming or m.seized() or m.rider != null or m.hold != "": return false
 	if not m.grounded and not BURST_AIR_ON: return false
 	# On the ground only a slide takes the forward burst; running, it is the updraft.
@@ -262,9 +302,7 @@ func burst(m: PilotMotor, want: Vector2) -> bool:
 		if rad_to_deg(acos(clampf(vdir.dot(dir),-1.0,1.0))) > BURST_CONE: return false
 		dir = (vdir+dir).normalized()
 	if _cool > 0.0: return true   # a forward press inside the cooldown does nothing, not an updraft
-	var p := charge
-	charge = 0.0
-	_quiet = 0.0
+	var p := _take(SEG_BURST_P)
 	bursts += 1
 	_cool = BURST_COOLDOWN
 	spent = true
@@ -392,7 +430,7 @@ func _let_go(drift: Vector3) -> void:
 		var a := _strand_alpha(i)
 		if a <= 0.01: continue
 		_loose.append({"path":_strand(i),"width":WAKE_WIDTH*1.3*UNIT,"alpha":a*1.6,"seed":float(i)*13.0,"t":0.0,"drift":drift})
-	_shown = 0.0
+	_shown = charge   # what is left (0 unless segmented)
 
 ## A strand's opacity at the charge shown: the first shows from a little
 ## charge, the rest join as it builds.

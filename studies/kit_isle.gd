@@ -493,11 +493,13 @@ func _ready() -> void:
 	audio.isle = self
 	add_child(audio)
 	# The wind gauge: the updraft's charge in three segments (scripts/wind_gauge.gd).
+	if updraft != null: updraft.segmented = SEGMENTED_CHARGE
 	if updraft != null and WIND_GAUGE_ON:
 		wind_gauge = WindGauge.new()
 		wind_gauge.name = "WindGauge"
 		wind_gauge.setup(updraft,wind_gauge_shown)
 		add_child(wind_gauge)
+		updraft.empty_press.connect(wind_gauge.empty_cue)
 	if _place != Vector4.INF:
 		var turn := deg_to_rad(_place.w)
 		start = Vector3(_place.x,_place.y,_place.z)
@@ -1325,7 +1327,7 @@ func _gust_input() -> void:
 	if not Input.is_action_just_pressed(&"walk_twirl") or _tuning(): return
 	if updraft == null or not foot_lock_allowed(): return
 	if telescope != null and telescope.busy(): return
-	if updraft.charge < updraft.MIN_RELEASE: return
+	if not updraft.can_spend(): return
 	var target: Node3D = null
 	if foot_lock != null and foot_lock.locked(): target = foot_lock.target
 	var heading := -camera.global_transform.basis.z
@@ -1338,6 +1340,9 @@ func _gust_input() -> void:
 	gust_shot.fire(motor.feet,heading,target,spent)
 	twirl_held_off = true
 
+## The updraft's charge in segments (scripts/updraft.gd SEG*): each unleash
+## spends one at a fixed strength. Off: all of it at once, as before.
+const SEGMENTED_CHARGE := true
 ## The wind gauge (scripts/wind_gauge.gd); off: no gauge, as before.
 const WIND_GAUGE_ON := true
 const WindGauge = preload("res://scripts/wind_gauge.gd")
