@@ -199,6 +199,38 @@ func crescent_points(at: Vector3, way: Vector3, n := CRESCENT_POINTS) -> Array[V
 func absorb() -> void:
 	if state != "done": _end(global_position,Vector3.UP,false)
 
+## The parry seam (scripts/wind_parry.gd): how many seconds till this shot,
+## flying on as it is, reaches `motor` standing where he is, looking at
+## most `horizon` s ahead; -1 if it won't (not flying, his own, or past
+## him). `slack` widens his body by that many metres: the parry reads the
+## timing, not the exact touch.
+func parry_eta(motor: Object, horizon: float, slack := 0.0) -> float:
+	if state != "flying" or motor == null or shooter == motor: return -1.0
+	var t := walker_tall()
+	var feet: Vector3 = motor.feet
+	var a := feet+Vector3.UP*0.02*t
+	var b := feet+Vector3.UP*0.92*t
+	var reach := radius()+PhysicsGround.RADIUS*WorldScale.wanderer+FUSE*t+slack
+	var p := global_position
+	var v := velocity
+	var step := 1.0/120.0
+	var time := 0.0
+	while time <= horizon:
+		var nv := v+Vector3.DOWN*fall*step
+		var q := p+nv*step
+		if form == "crescent":
+			var p0 := crescent_points(p,nv)
+			var p1 := crescent_points(q,nv)
+			for i in range(p0.size()):
+				if _segments_closest(p0[i],p1[i],a,b).x <= PhysicsGround.RADIUS*WorldScale.wanderer+CRESCENT_THICK*t*0.5+slack:
+					return time
+		elif _segments_closest(p,q,a,b).x <= reach:
+			return time
+		p = q
+		v = nv
+		time += step
+	return -1.0
+
 ## Burst on a body at `at` (the knight's hit test; no knock here).
 func strike(at: Vector3) -> void:
 	if state == "done": return

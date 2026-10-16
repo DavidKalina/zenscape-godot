@@ -701,6 +701,18 @@ func _build_spark(placed: Transform3D) -> void:
 	if _head >= 0:
 		_spark_rest = _skeleton.get_bone_global_rest(_head).affine_inverse()*placed.affine_inverse()*Transform3D(Basis(),SPARK_AT)
 
+## The parry's guard (scripts/wind_parry.gd), a light layer over the clips:
+## `guard` 0..1 how far the forearms are up crossed before his face, the
+## chest hunched behind them; `guard_draw` 0..1 how far the fists are
+## drawn back in to his chest (the wind taken in). Both set from outside
+## each frame; 0 leaves the clips as they are.
+var guard := 0.0
+var guard_draw := 0.0
+const GUARD_ARMS := Vector3(1.15,0.45,1.75)   # rad: upper arm forward, in; forearm bent
+const GUARD_DRAWN := Vector3(0.55,0.2,2.3)    # the same, drawn in to the chest
+const GUARD_HUNCH := 0.22                     # rad the chest bows behind the guard
+const GUARD_PROUD := 0.12                     # rad it lifts back, the wind taken in
+
 ## Shows a face for `seconds`: "happy", "surprise", "squint" ("" neutral).
 func express(mood: String, seconds: float) -> void:
 	_mood = mood
@@ -1509,6 +1521,7 @@ func _springs(delta: float) -> void:
 	_turn_bone(_upper_arms[1],Vector3.BACK,arms)
 	_holding_sail()
 	if _wade > 0.001: _wading()
+	if guard > 0.001: _guarding()
 
 ## Under the pocket sail (the motor's move "sail"), the sheet's float with
 ## cap: hanging from his hat, the legs loose under him and a little behind,
@@ -1629,6 +1642,20 @@ func _wading() -> void:
 	_turn_bone(_upper_arms[1],Vector3.BACK,WADE_ARMS*arms)
 	if not _forearms.has(-1):
 		for bone in _forearms: _turn_bone(bone,Vector3.RIGHT,WADE_ELBOWS*arms)
+
+## The parry's guard over the clips (`guard`, `guard_draw`).
+func _guarding() -> void:
+	var g := smoothstep(0.0,1.0,guard)
+	var d := smoothstep(0.0,1.0,guard_draw)
+	var arms := GUARD_ARMS.lerp(GUARD_DRAWN,d)*g
+	_turn_bone(_chest,Vector3.RIGHT,lerpf(GUARD_HUNCH,-GUARD_PROUD,d)*g)
+	_turn_bone(_head,Vector3.RIGHT,-lerpf(GUARD_HUNCH,-GUARD_PROUD,d)*g*0.6)
+	_turn_bone(_upper_arms[0],Vector3.RIGHT,-arms.x)
+	_turn_bone(_upper_arms[1],Vector3.RIGHT,-arms.x)
+	_turn_bone(_upper_arms[0],Vector3.BACK,arms.y)
+	_turn_bone(_upper_arms[1],Vector3.BACK,-arms.y)
+	if not _forearms.has(-1):
+		for bone in _forearms: _turn_bone(bone,Vector3.RIGHT,arms.z)
 
 ## Turns `bone` by `angle` about `axis` (the model's), on top of its pose.
 func _turn_bone(bone: int, axis: Vector3, angle: float) -> void:

@@ -112,7 +112,8 @@ extends "res://studies/kit_isle.gd"
 ## --rune-knight: a stone knight patrols the aqueduct's deck (scripts/
 ## enemies/rune_knight.gd, docs/design/rune-knight/spec-rune-knight.md);
 ## Z on foot fires the wanderer's stand-in wind blast at him (scripts/
-## enemies/wind_blast_standin.gd).
+## enemies/wind_blast_standin.gd); Q (RB) timed as his wind reaches you
+## parries it into a gauge segment (scripts/wind_parry.gd).
 ## --sluice: the Sluice Flush trap on the channel (scripts/traps/
 ## sluice_aqueduct.gd); --sluice=head starts at the top of the rubble slope.
 ## The plane's parts (scripts/plane_arc/plane_arc.gd, docs/design/
@@ -592,6 +593,9 @@ func _add_life() -> void:
 		wind_blast = WindBlastStandin.new()
 		add_child(wind_blast)
 		wind_blast.setup(self)
+		wind_parry = WindParry.new()
+		add_child(wind_parry)
+		wind_parry.setup(self)
 	if NightLights.wanted(preload("res://scripts/launch_args.gd").user_args()):
 		night_lights = NightLights.new()
 		add_child(night_lights)
@@ -607,6 +611,10 @@ var rune_knight: Node3D = null
 ## wind_blast_standin.gd), with the knight only; null without him.
 const WindBlastStandin = preload("res://scripts/enemies/wind_blast_standin.gd")
 var wind_blast: Node = null
+## The parry (scripts/wind_parry.gd): the updraft's press, timed, takes his
+## wind in as a gauge segment. With the knight only; null without him.
+const WindParry = preload("res://scripts/wind_parry.gd")
+var wind_parry: Node3D = null
 
 # --- The lock-on target (docs/design/lock-on/spec-lock-on.md) ---------------------------
 

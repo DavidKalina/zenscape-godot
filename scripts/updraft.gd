@@ -140,6 +140,10 @@ var segmented := false
 ## A press of the key with no segment to spend (segmented only): the wind
 ## gauge's empty cue.
 signal empty_press
+## Asked first on each press (scripts/wind_parry.gd): `try(motor) -> bool`,
+## true when the press parried wind thrown at him and is spent. Null (the
+## default): every press is the updraft's, as before.
+var parry: Object = null
 var _air_ups := 0               # updrafts since he last stood on the ground
 var updrafts := 0
 var last_rise := 0.0            # m planned for the last updraft
@@ -208,6 +212,7 @@ func update(delta: float, m: PilotMotor, pressed: bool, want := Vector2.ZERO) ->
 	_unlock(delta,m)
 	_charge(delta,m)
 	if m.grounded: _air_ups = 0
+	if pressed and parry != null and parry.call("try",m): pressed = false
 	if pressed and not burst(m,want) and not updraft(m) and segmented and not can_spend():
 		empty_press.emit()
 	_ride_top(delta,m)
@@ -393,6 +398,7 @@ func _ride_top(delta: float, m: PilotMotor) -> void:
 ## The camera dips, then rises, after an updraft; a burst kicks the FOV.
 func apply_feel(camera: Camera3D) -> void:
 	_cam = camera
+	if parry != null and parry.has_method("apply_feel"): parry.call("apply_feel",camera)
 	if _fov > 0.01 and camera != null:
 		_fov = maxf(_fov-BURST_FOV*get_process_delta_time()/BURST_FOV_TIME,0.0)
 		camera.fov += _fov
