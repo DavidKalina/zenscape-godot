@@ -59,3 +59,17 @@ No lanes: the three parts build on each other, so this is one trunk.
 Damage, health, enemies that react to lock-on, more than one target type
 (several instances of the one target are fine if lock-on cycles among them,
 but one is enough).
+
+## Spec change: a focused blast (after the user played it)
+
+The user loved the build. One change: the gust shot reads as mist. It
+spreads into a bunch of puffs and haze on the way and at the hit. Make it
+look like a **focused blast**: a tight, dense, fast shot with a clear
+core and a crisp streak behind it, little or no drifting puff trail, and
+an impact that is a short sharp burst (a quick ring or snap of air and
+the stone's dust), not a lingering cloud. Keep it painterly and in the
+isle's look; keep the mechanics (charge, homing, the stone's rock) as
+they are. The dragon's own air blast (`scripts/dragon_air_blast.gd`) must
+look as before: change only the wanderer's shot. This is the one
+remaining task, then the loop is complete (the pose/recoil stays open,
+not part of this round).
