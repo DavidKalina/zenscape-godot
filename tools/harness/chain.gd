@@ -42,6 +42,7 @@ extends "res://tools/harness/drive.gd"
 ##                        t = {i, jitter (a Vector3, +-jitter m in x and z),
 ##                        delay}; fn returns {ok, ...} (or a bool). A ROW a
 ##                        trial; RESULT gets passed, trials, rate.
+##   walk_motif_paths(opts)  drive.gd walk_paths on the motif, in the world
 ##   rest(region, frames, most)
 ##                        waits till he comes to rest (grounded, still, not
 ##                        in a cannon) for `frames`, at most `most` frames:
@@ -277,6 +278,11 @@ func rest(region := AABB(), still := 20, most := 1800) -> Vector3:
 		if motor.feet.y < floor_y: return Vector3.INF
 		await frames(1)
 	return Vector3.INF
+
+## Walks the motif's paths (drive.gd `walk_paths`: its `walks()`, else its
+## worn `paths()`), moved into the world: {name: route summary}.
+func walk_motif_paths(opts := {}, s := "") -> Dictionary:
+	return await walk_paths(motif(s),motif_offset(s),opts)
 
 ## A rect of the motif's frame (x, z), from `bottom` to `top` (its y), as a
 ## world AABB.

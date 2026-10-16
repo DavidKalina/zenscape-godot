@@ -14,6 +14,10 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | The same over seeds and knobs | `python tools/sweep.py scratch/x.gd --seed 1..8 --knob gulf=40,60` |
 | One motif alone on the real stage (the yard) | `python tools/smoke.py studies/motif_yard.tscn -- --motif=plumb_well [--grey] [--bodies=0] [--rims]` |
 | A motif's chain, 10 jittered trials | write `scratch/x_chain.gd` extending `tools/harness/chain.gd`, then `python tools/drive.py scratch/x_chain.gd -- --trials=10 --scene-args --motif=x [--grey]` |
+| Walk points through real input (lips, walls, falls, stuns) | in a driver: `await route([start, p1, {"to": p2, "jump": "long"}])`; a motif's paths: `walk_paths(owner, offset)` / chain.gd `walk_motif_paths()` (drive.gd, Routes) |
+| Log an enemy over time while he stands, flees, dodges or walks | in a driver: `await watch(enemy, {"pilot": "flee", "frames": 600})`; `--pilot-at=`, `--enemy-at=` (drive.gd, Watching an enemy) |
+| Who's at a point, what a ray hits | in a driver: `say(hit_text(ray(a, b)))`, `pierce(a, b)`, `what_is_at(p, r)`, `what_is_in(box)`, `colliders(node)` (drive.gd, Collider probes) |
+| Check a land outline (bowtie, wrong winding) | `KitLand.outline_problems(outline, winding)`; `KitLand.island` warns on its own |
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
 | The test suite | `python tools/run_tests.py [--tests 'test_x*.gd'] [--quick]` |
