@@ -67,6 +67,28 @@ coordinate.
      unchanged: the grey look is the editor's view only.
    Measure the frame time while editing an `editor_*` motif before and
    after (a rendered run; say how), and put both numbers in the commit.
+10. **Snappy edits** (the next task after the one in progress when this
+   was added). In the grey look an edit still blocks about 1.4 s
+   (iteration 3: ~1019 ms rebuilding every piece, ~355 ms the land). Aim:
+   an edit answers within about 100 ms, and the full-detail rebuild never
+   freezes the editor for longer than a frame or two at a time.
+   - **Rebuild only what changed.** A land stroke, stamp or slider
+     re-seats and rebuilds only the pieces and traps whose footprint the
+     changed ground touches (the stroke's region, grown by the brush);
+     moving, turning or adding a piece rebuilds that piece alone. Pieces
+     untouched keep their meshes.
+   - **A cheap land proxy while working is fine**, and so is something odd:
+     a coarse or wireframe terrain, a low-resolution height mesh, only the
+     region near the camera at full detail. Use whatever makes dragging a
+     brush or a slider feel immediate. The full-detail land (grabbable
+     lips, collision) is built when the hand stops, and must be in place
+     before play (P waits for it).
+   - **Spread the full rebuild** across frames, or move it off the main
+     thread where GDScript allows, so the editor keeps answering.
+   - Saved files and what the yard and generator build are unchanged.
+   Measure, in a rendered run, the time from an edit (a brush stroke, a
+   slider step, moving a piece) to the editor answering and to full detail
+   in place, before and after; put the numbers in the commit.
 9. **Inspecting up close** (the last task). The fly camera
    is hard to judge a place from, so give the user two close views,
    without leaving the editor or playing:
