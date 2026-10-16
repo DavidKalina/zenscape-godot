@@ -56,7 +56,10 @@ You launch `./run-olmec-field.command` and play this fight:
    much more mobile and dangerous: he hunts the wanderer, not his head;
    faster, leaps across the field, slams that shock the ground, swats, and
    uses the puff attacks from up high (quicker, aimed while he moves).
-   The lock target is the body (head on). After enough hits he crumbles
+   The lock target is the body (head on).
+   The user played the arrival and loved it as built, including the lock's
+   depth of field blurring the body while it climbs and crosses behind the
+   head: keep that blur, it is not a bug to fix. After enough hits he crumbles
    (existing `crumble`).
 4. **Flow.** R restarts the whole fight from phase 1 with the arena whole.
    The top-left card shows the phase, his hits, and the attack he's on.
