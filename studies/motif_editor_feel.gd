@@ -1,25 +1,22 @@
 extends Node
 ## The motif editor's feel (round 3): the early game's tool sound
-## (scripts/clay_sound.gd) and tremor (scripts/clay_tremor.gd over
-## scripts/reference_tremor.gd) run unchanged, fed by this node standing in
-## for the clay they listen to (scripts/land_clay.gd: its `state`, `tool_id`,
+## (scripts/clay_sound.gd) runs unchanged, fed by this node standing in
+## for the clay it listens to (scripts/land_clay.gd: its `state`, `tool_id`,
 ## `tool` with its `lift`, the Ravine's `busy`/`cut_share`, and `sounded`).
 ## The editor says what the hand is doing (`hold`, `cutting`, `rest`) and
-## asks for one-shots (`cue`); the camera's shake is `shake(base)`.
+## asks for one-shots (`cue`). The camera no longer shakes.
 ##
 ## Also the palette's thumbnails, rendered from the real meshes as the old
 ## build palette rendered its tiles (scripts/native_build_palette.gd
 ## `_render`): a small world each, lit, the camera framing the piece.
 
 const ClaySound = preload("res://scripts/clay_sound.gd")
-const ClayTremor = preload("res://scripts/clay_tremor.gd")
-const ReferenceTremor = preload("res://scripts/reference_tremor.gd")
 
 signal sounded(cue_name: StringName, at: Vector3, strength: float)
 
 enum State { IDLE, PENDING, DRAG, HOLD, RUN, PAINT }
 
-## What ClaySound and ClayTremor read off the clay.
+## What ClaySound reads off the clay.
 var state: int = State.IDLE
 var tool_id := ""
 var tool: Hand = null
@@ -32,10 +29,8 @@ var scene = null
 var editor: Hand = null
 
 var sound: Node
-var trembler: Node
-var tremor: RefCounted
 
-## The tool in hand as the sound and tremor read it.
+## The tool in hand as the sound reads it.
 class Hand extends RefCounted:
 	var lift := 0.0
 	var head := 0.0
@@ -54,10 +49,6 @@ func setup(owner_scene: Node3D) -> void:
 	sound = ClaySound.new()
 	add_child(sound)
 	sound.setup(self)
-	tremor = ReferenceTremor.new()
-	trembler = ClayTremor.new()
-	add_child(trembler)
-	trembler.setup(self,tremor)
 
 func ground_at(p: Variant) -> Vector3:
 	return p if p is Vector3 else center
@@ -85,14 +76,6 @@ func rest() -> void:
 
 func cue(cue_name: StringName, at: Vector3, strength := 1.0) -> void:
 	if sound != null: sound.play(cue_name,at,strength)
-
-func kick(amount: float) -> void:
-	tremor.add(amount)
-
-## The camera's shake over `base`, advanced by `delta`.
-func shake(base: Transform3D, delta: float) -> Transform3D:
-	tremor.advance(delta,false)
-	return tremor.apply(base)
 
 # --- Thumbnails ---------------------------------------------------------------------
 

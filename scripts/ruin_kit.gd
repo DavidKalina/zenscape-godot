@@ -1375,6 +1375,9 @@ static func bridge_anchor(seed_value: int, weathered := 0.4, width := 0.74, spec
 	var post_x: float = spec.get("post_x",width*0.5+0.42)
 	var post_z: float = spec.get("post_z",-0.15)
 	var tops: Array = []
+	# The ground (the anchor's frame), if the isle gives it: rubble lies on
+	# it (none over a drop) and nothing is drawn under it.
+	if spec.has("terrain"): b.terrain = spec.terrain
 	# The base: a head block, or a sill (on a plinth).
 	if spec.has("head"):
 		var head: Vector3 = spec.head
@@ -1430,7 +1433,7 @@ static func bridge_anchor(seed_value: int, weathered := 0.4, width := 0.74, spec
 			b.solid(cap,foot*Transform3D(Basis.IDENTITY,Vector3(0.0,post.y+0.1,0.0)),_stone(b,1.05),false)
 		b.solid(_box(b,Vector3(post.x*0.5+0.025,0.055,post.x*0.5+0.025),0.01),foot*Transform3D(Basis.IDENTITY,Vector3(0.0,0.86,0.0)),ANCHOR_LASHING,false,false,[],-1,1.0,false)
 		tops.append(foot*Vector3(0.0,post.y+0.12,0.0))
-	_rubble(b,post_x+0.9,int(round(weathered*b.rng.randf_range(1.0,3.0))))
+	_rubble(b,post_x+0.9,int(round(weathered*b.rng.randf_range(1.0,3.0))),0.35 if spec.has("terrain") else INF)
 	var node := b.finish()
 	node.set_meta("posts",tops)
 	return node
@@ -2343,14 +2346,19 @@ static func _drift(b: Build, at: Vector3, reach: float, count: int) -> void:
 
 ## Rubble scattered round a weathered piece: `count` small broken stones
 ## within `reach` and a little beyond.
-static func _rubble(b: Build, reach: float, count: int) -> void:
+## `drop`: a stone whose ground lies more than this under the piece's foot
+## (over a cliff's edge) is left out.
+static func _rubble(b: Build, reach: float, count: int, drop := INF) -> void:
 	if b.weathered <= 0.0: return
 	count = int(round(count*b.level))
 	for i in range(count):
 		var a := b.rng.randf()*TAU
 		var dist := reach+b.rng.randf_range(-0.3,1.0)
 		var s := Vector3(b.rng.randf_range(0.1,0.26),b.rng.randf_range(0.07,0.16),b.rng.randf_range(0.1,0.24))
-		var pose := Transform3D(Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.RIGHT,b.rng.randf_range(-0.3,0.3)),Vector3(cos(a)*dist,s.y*0.8+b.floor_at(cos(a)*dist,sin(a)*dist),sin(a)*dist))
+		var floor_y := b.floor_at(cos(a)*dist,sin(a)*dist)
+		var pose := Transform3D(Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.RIGHT,b.rng.randf_range(-0.3,0.3)),Vector3(cos(a)*dist,s.y*0.8+floor_y,sin(a)*dist))
+		if floor_y < -drop:
+			continue
 		b.solid(_box(b,s),pose,_stone(b),false,true,[],-1,2.0)
 
 ## Planes cutting a drum's head (`h` tall, radius `r`) in a ragged break

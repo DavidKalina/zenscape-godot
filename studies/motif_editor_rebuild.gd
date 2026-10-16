@@ -120,6 +120,9 @@ static func run_base(m: RefCounted, k: int) -> String:
 	return "run|"+var_to_str(r)+"|"+str(bool(m.data.get("breakable",true)))
 
 ## Run k's key: its recipe and the ground along it (and 3 m either side).
+## A rope bridge's anchors may stand well inland of its ends (the lip found
+## again up to RuinKitFit.BRIDGE_LIP_BACK back, the seat BRIDGE_LOOK_FAR
+## behind that): its ground is read that far past each end, and between.
 static func run_key(m: RefCounted, k: int) -> String:
 	var r: Dictionary = m.data.runs[k]
 	var from := Vector2(float(r.from[0]),float(r.from[1]))
@@ -129,9 +132,14 @@ static func run_key(m: RefCounted, k: int) -> String:
 	var g: Callable = m.ground_fn()
 	var ys: Array = []
 	var n := maxi(int(ceil(from.distance_to(to)/SAMPLE)),1)
-	for i in range(-2,n+3):
+	var past := 2
+	var sides: Array = [-3.0,0.0,3.0]
+	if str(r.run) == "bridge":
+		past = int(ceil((MotifAuthored.RuinKitFit.BRIDGE_LIP_BACK+MotifAuthored.RuinKitFit.BRIDGE_LOOK_FAR+1.0)/SAMPLE))
+		sides = [-3.0,-1.5,0.0,1.5,3.0]
+	for i in range(-past,n+past+1):
 		var q := from+along*SAMPLE*i
-		for s: float in [-3.0,0.0,3.0]:
+		for s: float in sides:
 			var w := q+side*s
 			ys.append(snappedf(float(g.call(w.x,w.y)),0.01))
 	return run_base(m,k)+"|"+str(hash(var_to_str(ys)))
