@@ -553,6 +553,7 @@ func _after_land() -> void:
 	if traps != null:
 		traps.reseat()
 		traps.sync()
+	EditorSlope.mark(self)
 	_show_status()
 
 ## New pieces drawn flat when the grey look is on.
@@ -1521,6 +1522,7 @@ func _place_markers() -> void:
 
 func _set_markers_visible(on: bool) -> void:
 	for k: String in _marker_nodes: (_marker_nodes[k] as Node3D).visible = on
+	EditorSlope.show_marks(self,on)
 
 # --- Save and load --------------------------------------------------------------------------
 
