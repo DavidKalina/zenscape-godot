@@ -90,6 +90,31 @@ settle on each step), not authored Blender clips: those come if the user
 keeps him. Note in the handoff which `docs/art/model-budget.md` tricks
 would apply to a real model.
 
+## The contract (skill `enemy-build`)
+
+This loop is the mind lane. A Blender body lane opens after the user has
+played the greybox and keeps him, so the greybox body is a **stand-in**
+behind the API below, and the real body drops in without the mind
+changing. Names here are final once built on; change one only by a
+`spec change` commit.
+
+- **Body API** (`scripts/enemies/rune_knight_body_standin.gd`):
+  `play(clip)`, signal `beat_reached(clip, beat)`, `socket(name) ->
+  Node3D`, `set_effect(name, on)`. The mind drives the body only
+  through these.
+- **Clips and beats** (lengths are the stand-in's starting values; the
+  mind waits on beats, never on its own timers for body motion):
+  `idle` (loop), `walk` (loop; beat `plant` per footfall), `turn`
+  (`plant`), `notice`, `gather` (`grab`, `full`), `throw` (`release`),
+  `catch` (`contact`, `hold`), `return` (`release`), `stagger`
+  (`plant`, `recover`).
+- **Sockets**: `hand_r`, `hand_l`, `hands_mid` (where a held shot sits),
+  `chest_rune`, `eye`.
+- **Shape**: capsule radius and height, eye height, reach (the catch
+  range) and stride, all from `WorldScale` and his knobs.
+- **Effects**: `rune_glow` (lines lit while he holds wind),
+  `wind_gather` (streaks drawn into `hands_mid`).
+
 ## Tasks (the first iteration orders these; keep each one a checkpoint)
 
 1. His body on the deck and his patrol, with the flag. Still of him on the
