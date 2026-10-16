@@ -40,6 +40,8 @@ const Registry = preload("res://scripts/kit_isle/greybox/registry.gd")
 const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
 const YardSky = preload("res://studies/motif_yard_sky.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const Breakables = preload("res://scripts/kit_isle/breakables.gd")
+const KitBreaks = preload("res://scripts/kit_isle/kit_breaks.gd")
 
 ## Each greybox motif's own grey flag (its `grey()`), which --grey sets.
 const GREY_FLAGS := {
@@ -274,6 +276,7 @@ func tick(delta: float) -> void:
 		# Held at the start till the motif stands under him.
 		if not motif_stands(): return
 		_held = false
+		_kit_breaks()
 		respawn()
 	super.tick(delta)
 	if flying: return
@@ -294,6 +297,32 @@ func reset_yard() -> void:
 	if stage != null: stage.reset()
 	_end_fall()
 	respawn()
+
+# --- The breaks --------------------------------------------------------------------------
+
+## The motif's kit pieces breakable (scripts/kit_isle/kit_breaks.gd): in
+## the layer's breakables hub (LayerOlmec's) or one of its own. Nothing
+## about a piece changes until a breaker hits it.
+var hub: Node3D = null
+var kit_breaks: Node3D = null
+
+func _kit_breaks() -> void:
+	if kit_breaks != null or motifs == null: return
+	var found := stage.find_children("Breakables","",true,false) if stage != null else []
+	if found.is_empty():
+		hub = Breakables.new()
+		hub.field = stage.get("enemies") if stage != null else null
+		add_child(hub)
+	else: hub = found[0]
+	kit_breaks = KitBreaks.new()
+	kit_breaks.name = "KitBreaks"
+	kit_breaks.hub = hub
+	kit_breaks.field = hub.field
+	add_child(kit_breaks)
+	var n := 0
+	for isle: Node3D in motifs.isles: n += kit_breaks.adopt(isle)
+	hub.others.append(kit_breaks)
+	print("motif yard: %d kit piece(s) breakable" % n)
 
 # --- The card --------------------------------------------------------------------------
 

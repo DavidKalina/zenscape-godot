@@ -363,8 +363,15 @@ const FLOAT_TOUCH := 0.2
 const FLOAT_MOST := 3
 
 
-## The piece with PIECES id `id`.
+## The piece with PIECES id `id`, its recipe kept as meta "kit_piece"
+## ([id, seed, weathered]: a break, scripts/kit_isle/kit_breaks.gd, builds
+## it again in parts from it).
 static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
+	var node := _piece_of(id,seed_value,weathered)
+	if node != null: node.set_meta("kit_piece",[id,seed_value,weathered])
+	return node
+
+static func _piece_of(id: String, seed_value: int, weathered: float) -> Node3D:
 	match id:
 		"pier": return pier(seed_value,weathered)
 		"arch": return arch(seed_value,weathered)
