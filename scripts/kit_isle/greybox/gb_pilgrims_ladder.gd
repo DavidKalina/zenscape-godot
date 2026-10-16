@@ -72,6 +72,50 @@ const LAYOUT := {
 		{"id":"keel_hung_stair","seed":5350,"weathered":0.5,"at":Vector3(86.0,15.5,18.0),"rot":0.0,"plinth":true,
 			"box":AABB(Vector3(-3.2,-8.3,-4.6),Vector3(7.7,8.5,7.4))},
 	],
+	## The pilgrimage's ruin dressing round the stations (RuinKit pieces,
+	## low and broken, weathered 0.7: stumps and walls 2-2.6 m, slabs and
+	## chests about 1 m): id, seed, `at` (its foot on the turf, world),
+	## `rot` (deg about Y). Kept off the strip's clear band, the walked ways,
+	## the gate's flown line (x 22..36 across Threshold), under the ring's
+	## opening on the Halo, the Crown's landing, hood and south lip path,
+	## and the Cellar's door and west rim.
+	"dressing":[
+		# Threshold: the precinct before the gate (pier stumps either side
+		# of its line), the pilgrims' way flanked by slabs, a wayside shrine
+		# north of it (a floor, its back wall and stumps, a fallen pier), a
+		# ruined stair and wall south, more fallen stone off the strip.
+		{"id":"pier","seed":5401,"at":Vector3(19.0,0.0,-12.0),"rot":15.0},
+		{"id":"pier","seed":5402,"at":Vector3(19.0,0.0,12.0),"rot":-20.0},
+		{"id":"floor","seed":5403,"at":Vector3(4.0,0.0,-4.8),"rot":4.0},
+		{"id":"floor","seed":5404,"at":Vector3(12.0,0.0,5.6),"rot":-6.0},
+		{"id":"tomb_chest","seed":5405,"at":Vector3(15.0,0.0,-6.5),"rot":12.0},
+		{"id":"floor","seed":5420,"at":Vector3(7.8,0.0,-12.0),"rot":0.0},
+		{"id":"floor","seed":5421,"at":Vector3(12.1,0.0,-12.0),"rot":0.0},
+		{"id":"wall","seed":5422,"at":Vector3(10.0,0.0,-16.0),"rot":0.0},
+		{"id":"pier","seed":5423,"at":Vector3(4.5,0.0,-15.5),"rot":30.0},
+		{"id":"fallen_pier","seed":5406,"at":Vector3(1.5,0.0,-10.0),"rot":30.0},
+		{"id":"tomb_chest","seed":5424,"at":Vector3(10.0,0.0,-8.4),"rot":0.0},
+		{"id":"wall","seed":5408,"at":Vector3(-6.0,0.0,17.0),"rot":8.0},
+		{"id":"stairs","seed":5425,"at":Vector3(-11.0,0.0,14.0),"rot":90.0},
+		{"id":"fallen_pier","seed":5407,"at":Vector3(-1.0,0.0,12.5),"rot":-25.0},
+		{"id":"pier","seed":5426,"at":Vector3(-16.0,0.0,16.0),"rot":-10.0},
+		{"id":"wall","seed":5409,"at":Vector3(-22.0,0.0,-15.0),"rot":-5.0},
+		{"id":"stairs","seed":5410,"at":Vector3(-32.0,0.0,13.0),"rot":180.0},
+		{"id":"tomb_chest","seed":5411,"at":Vector3(-14.0,0.0,-14.0),"rot":-10.0},
+		# The Halo: behind the ring (north), off the ways and the Cellar's
+		# sail in (it lands about (65.5, 5.7); a stump at (70, 5) caught it),
+		# a fallen pier, a chest and a stump.
+		{"id":"fallen_pier","seed":5412,"at":Vector3(61.0,7.0,-8.6),"rot":0.0},
+		{"id":"tomb_chest","seed":5413,"at":Vector3(68.5,7.0,-6.5),"rot":-30.0},
+		{"id":"pier","seed":5414,"at":Vector3(65.0,7.0,-9.5),"rot":40.0},
+		# The Crown: the reliquary's chest and its floor east of the middle,
+		# a fallen pier toward the east lip.
+		{"id":"floor","seed":5415,"at":Vector3(96.5,20.0,3.0),"rot":10.0},
+		{"id":"tomb_chest","seed":5416,"at":Vector3(101.0,20.0,0.0),"rot":10.0},
+		{"id":"fallen_pier","seed":5417,"at":Vector3(100.0,20.0,7.0),"rot":60.0},
+		# The Cellar: a worn floor where the stair lets out.
+		{"id":"floor","seed":5418,"at":Vector3(80.0,10.0,8.0),"rot":10.0},
+	],
 	## Bands kept clear of tall flora round the pieces' feet (x, z).
 	"clear":[Rect2(20.0,-4.0,11.0,8.0),Rect2(52.0,-6.0,20.0,10.0),Rect2(83.0,-14.0,18.0,9.0),Rect2(79.0,14.0,5.0,5.5)],
 	"strip":Rect2(-38.0,-5.0,30.0,10.0),
@@ -223,6 +267,9 @@ func _solids() -> Array:
 		var box := Rect2(ring[0],Vector2.ZERO)
 		for p: Vector2 in ring: box = box.expand(p)
 		out.append([box.grow(-1.0),float(i.top)-float(i.depth)*KEEL_REACH,float(i.top),null])
+	for p: Dictionary in LAYOUT.dressing:
+		var b: AABB = pose(p)*DRESS_BOX
+		out.append([Rect2(b.position.x,b.position.z,b.size.x,b.size.z),b.position.y,b.end.y,null])
 	for p: Dictionary in LAYOUT.pieces:
 		var b: AABB = pose(p)*(p.box as AABB)
 		out.append([Rect2(b.position.x,b.position.z,b.size.x,b.size.z),b.position.y,b.end.y,null])
@@ -249,6 +296,7 @@ func build(into: Node3D) -> void:
 		root.add_child(land)
 		turf(land)
 	_pieces(root)
+	_dress(root)
 	built_ms = Time.get_ticks_msec()-began
 
 ## The stations' pieces (LAYOUT.pieces), each at its foot and turn.
@@ -264,6 +312,23 @@ func _pieces(root: Node3D) -> void:
 			var built := plinth(int(p.seed)+7,float(p.weathered))
 			built.transform = pose(p)
 			root.add_child(built)
+
+## The ruin dressing (LAYOUT.dressing), each piece at its foot and turn.
+## DRESS_BOX: the bounds any of them keeps within (piece frame; dumped
+## headless at weathered 0.7: the walls and fallen piers reach 3.7 m out,
+## the stumps and stairs 2.8 m up), for the occupancy.
+const DRESS := 0.7
+const DRESS_BOX := AABB(Vector3(-3.8,-0.25,-3.8),Vector3(7.6,3.0,7.6))
+func _dress(root: Node3D) -> void:
+	var holder := Node3D.new()
+	holder.name = "Dressing"
+	root.add_child(holder)
+	for p: Dictionary in LAYOUT.dressing:
+		var node := RuinKit.piece(str(p.id),int(p.seed),DRESS)
+		if node == null: continue
+		node.name = "%s_%d" % [str(p.id),int(p.seed)]
+		node.transform = pose(p)
+		holder.add_child(node)
 
 ## A piece of LAYOUT.pieces built (the torana with its rope count and dry
 ## rope; the hood with its bays and fallen count; the others by
