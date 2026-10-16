@@ -48,7 +48,26 @@ coordinate.
    so `studies/motif_yard.tscn --motif=<editor slug>` and the generator run
    them too.
 
-8. **Inspecting up close** (the last task, after 1-7). The fly camera
+9. **A grey editing look** (do this next, right after the task in
+   progress when it was added: it makes every later task cheaper to
+   check). Editing is slow because the editor keeps the full look live
+   (it re-dresses on its own ~250 ms after each change: turf, flora,
+   life, sky shaders). Instead:
+   - **Editing is grey by default:** the bare land (`rebuild_bare`) and
+     pieces in plain flat materials (one grey for stone, one for land, the
+     trap tell colours kept so traps read), no grass, flora, life, water
+     shaders or cloud sky; one plain static sun and ambient light. It no
+     longer dresses on its own.
+   - **Play is grey too by default** (P / Shift+P): the same grey world,
+     traps live, so build-play-tweak is fast.
+   - **Dress on demand:** one key (G, which today re-dresses; or a tool-roll
+     button) dresses into the full look as a preview, editing or playing;
+     the same key goes back to grey. A small label says which look is on.
+   - Saving, the file format and what the yard and generator build are
+     unchanged: the grey look is the editor's view only.
+   Measure the frame time while editing an `editor_*` motif before and
+   after (a rendered run; say how), and put both numbers in the commit.
+10. **Inspecting up close** (the last task, after 1-7). The fly camera
    is hard to judge a place from, so give the user two close views,
    without leaving the editor or playing:
    - **Frame (F):** the camera swings in to the selected trap or piece
