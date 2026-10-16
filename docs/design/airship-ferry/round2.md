@@ -115,3 +115,16 @@ round.
   or HOLD would shorten it.
 - Hops on and off weren't driven, only walks.
 - The model budget doesn't apply: no model changed.
+
+## Follow-up: no pilot
+
+The ferry carries no crew figure. `SkyAirship.crewed` (default true) gates
+the crew loop in `_make_ship`; the main scene's ferry (`_new_airship(name,
+false)`) and the roguelike's generated ferries (`layer_rides.gd` `_ferry`)
+set it false. The two non-rideable airships keep their crew. Shape, solid
+and motion are untouched. `_crew` is just empty on a ferry: the wave logic
+(`_advance_airships`), `_night_lights` and `_set_fade` already guard on its
+size or emptiness. Smoke on the main scene, plain and `--ferry-aboard`:
+0 errors. Tests naming crew: `tests/test_kit_drops.gd` counts crew over the
+non-ferry ships only if the kit sky builds no ferry; it may break if it sees
+a ferry (not run).

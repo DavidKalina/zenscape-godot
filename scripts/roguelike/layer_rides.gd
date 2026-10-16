@@ -94,6 +94,7 @@ func _ferry(e: Dictionary, g: Dictionary, n: int) -> void:
 	var ship: Node3D = SkyAirship.new()
 	ship.name = "FerryShip%d" % n
 	ship.scene = study
+	ship.crewed = false
 	# No islets: the tow event never runs.
 	ship.islets = null
 	add_child(ship)

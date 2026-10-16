@@ -304,7 +304,7 @@ func _build_airships() -> void:
 			"u":float(k+1)*0.37,"heading":0.0,"bank":0.0,"at":Vector3.ZERO})
 		_place_airship(airships[-1],0.0)
 	if AirshipFerry.wanted():
-		var ship := _new_airship("Airship%d" % ROUTES.size())
+		var ship := _new_airship("Airship%d" % ROUTES.size(),false)
 		ferry = AirshipFerry.new()
 		add_child(ferry)
 		ferry.setup(scene,ship)
@@ -316,8 +316,9 @@ func _build_airships() -> void:
 	drone.visible = false
 
 ## A ship of the sky folk's, made and shown, its tow gear hidden.
-func _new_airship(ship_name: String) -> Node3D:
+func _new_airship(ship_name: String, crewed := true) -> Node3D:
 	var ship: Node3D = SkyAirship.new()
+	ship.crewed = crewed
 	ship.name = ship_name
 	ship.scene = scene
 	# No islets: the tow event never runs (`_process` waits on them).
