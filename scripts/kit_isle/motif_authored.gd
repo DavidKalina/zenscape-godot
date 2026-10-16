@@ -147,6 +147,15 @@ const SLOPE_HALF := 0.6
 const SLOPE_HALF_MIN := 1.5
 const SLOPE_BLEND := 2.5
 const SLOPE_STEP := RuinKit.SET_OFF
+## The ramp's solid wedge (Slope.hull): this far under its faces at the
+## top crease and at the foot, this far in from its sides, this deep under
+## its foot (m). A ramp shorter than SLOPE_RUN_FELT is said to be short
+## (he walks its first metre in before he surfs: PilotMotor SLOPE_FAR).
+const HULL_CREST := 0.4
+const SLOPE_RUN_FELT := 4.0
+const HULL_SIDE := 0.4
+const HULL_SINK := 0.06
+const HULL_DEEP := 1.5
 ## Pooled water: the grid it is found on (m) and how far under the spill
 ## a full pond stands (m).
 const POOL_CELL := 0.5
@@ -881,6 +890,32 @@ class Slope extends RefCounted:
 		if steps: return maxf(top-floorf(along*grade/SLOPE_STEP+0.0001)*SLOPE_STEP,bottom)
 		return maxf(top-along*grade,bottom)
 
+	## The ramp's core as a solid wedge (points of a convex hull) just under
+	## its faces, or [] (steps, dead, too short). The land's trimesh is
+	## hollow: the pilot's ground ray (PilotPhysicsGround) started under a
+	## steep face falls through to whatever is below, so a ramp read a
+	## metre up its fall line (PilotMotor._surfing, SLOPE_FAR) came out far
+	## lower and he never surfed. Inside this wedge the ray looks again from
+	## over the feet and finds the face. Its top HULL_SINK under the faces
+	## at the foot, HULL_CREST under them at the top crease (the faces'
+	## chords dip there, up to a quarter cell times the grade), HULL_SIDE in
+	## from the band's sides.
+	func hull() -> PackedVector3Array:
+		var out := PackedVector3Array()
+		if dead or steps or run < 1.0: return out
+		var side := Vector2(-dir.y,dir.x)*maxf(half-HULL_SIDE,0.3)
+		var y0 := top-HULL_CREST
+		var y1 := bottom-HULL_SINK
+		var low := bottom-HULL_SINK-HULL_DEEP
+		for s in [-1.0,1.0]:
+			var p0: Vector2 = a+side*s
+			var p1: Vector2 = a+dir*run+side*s
+			out.append(Vector3(p0.x,y0,p0.y))
+			out.append(Vector3(p1.x,y1,p1.y))
+			out.append(Vector3(p0.x,low,p0.y))
+			out.append(Vector3(p1.x,low,p1.y))
+		return out
+
 	## The height at (x, z) over the ground `y` there.
 	func cut(x: float, z: float, y: float) -> float:
 		if dead: return y
@@ -921,6 +956,7 @@ static func ground_of(d: Dictionary, parts := {}) -> Callable:
 		if kind in ["ravine","slope"] and not (stroke.get("pts",[]) as Array).is_empty():
 			var under := soft if ravines.is_empty() else _carved(soft,ravines.duplicate())
 			ravines.append(Ravine.new(stroke,under) if kind == "ravine" else Slope.new(stroke,under))
+	parts.slopes = ravines.filter(func(r: Object) -> bool: return r is Slope)
 	if ravines.is_empty(): return soft
 	return _carved(soft,ravines)
 
@@ -1174,6 +1210,13 @@ func land_spec(fast := false) -> Dictionary:
 			# The isle's own cell kept (2 m) round the ravine's fine box: a
 			# ravine then changes the grid only where it is (stable).
 	if not ramps.is_empty():
+		# Each ramp's solid wedge, so the pilot's ground reads its faces
+		# from under them too (Slope.hull).
+		var hulls: Array = []
+		for sl: Slope in _ground_parts.get("slopes",[]):
+			var h := sl.hull()
+			if not h.is_empty(): hulls.append(h)
+		spec.solid_more = hulls
 		spec.cliff_skip = func(p: Vector2) -> bool:
 			for band: Dictionary in ramps:
 				if Slope.inside(band,p,0.3): return true

@@ -558,6 +558,8 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 ##   winding   1 (counter-clockwise, Geometry2D's boundary) or -1: the
 ##             outline is checked for it (`outline_problems`; none: either)
 ##   name      what the outline warnings call it (or `motif`, `id`)
+##   solid_more  more convex hulls (PackedVector3Array) collided with the
+##             cliffs' prisms (a ramp's solid core: MotifAuthored Slope.hull)
 ##   collide_sides  the hanging sides collided as drawn ("Sides", last
 ##             child: the bodies climb them, a fall past a flank meets it),
 ##             `sides_backface` (true) its faces solid from both sides
@@ -599,7 +601,9 @@ static func island(spec: Dictionary) -> Node3D:
 		var sides := ring_sides(ring,rims,centre,top,depth,rng,true,bool(spec.get("hang",false)),true,bool(spec.get("whole_sides",false)))
 		drawn = sides.node("Mesh")
 		if drawn != null: node.add_child(drawn)
-	bodies(node,built.faces,built.solid,not bool(spec.get("apart",false)))
+	var solid: Array = built.solid
+	if spec.has("solid_more"): solid = solid+(spec.solid_more as Array)
+	bodies(node,built.faces,solid,not bool(spec.get("apart",false)))
 	node.set_meta("outline",g.poly)
 	node.set_meta("ground_points",g.points.size())
 	if bool(spec.get("collide_sides",false)): collide_sides(node,drawn,bool(spec.get("sides_backface",true)))

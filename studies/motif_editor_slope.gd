@@ -35,8 +35,9 @@ static func drag(e: Node, pts: Array) -> void:
 			return
 		e.snapshot()
 		strokes.append(stroke)
-		e._status_line = "Slope: %.0f deg, %.1f m down over %.1f m%s" % [rad_to_deg(atan(made.grade)),made.top-made.bottom,made.run,
-			", %.0f m run-out" % (made.length-made.run) if made.length-made.run > 0.5 else ""]
+		e._status_line = "Slope: %.0f deg, %.1f m down over %.1f m%s%s" % [rad_to_deg(atan(made.grade)),made.top-made.bottom,made.run,
+			", %.0f m run-out" % (made.length-made.run) if made.length-made.run > 0.5 else "",
+			" · short: little slide (drag from higher ground to lower for more)" if made.run < MotifAuthored.SLOPE_RUN_FELT else ""]
 	var mid := (a+b)*0.5
 	e.feel.cue(&"lurch",Vector3(mid.x,float(e.motif.ground(mid.x,mid.y)),mid.y),0.5)
 	e._changed_at = Time.get_ticks_msec()
