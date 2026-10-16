@@ -47,8 +47,8 @@ foot on the isle, and:
    rally is faster and gives him less time; past his limit he misses it,
    it hits him, and he staggers back heavily (a few steps, off balance; at
    the deck's edge, over it). A blast from behind or the side hits him
-   without a catch. What a hit does to him beyond the stagger is the
-   user's call later; no health or death yet.
+   without a catch. How a hit wears him down and how he dies: "His runes,
+   his deaths, his drop" below.
 
 Every shot, his and yours, is a visible thing in the air with a readable
 silhouette, and every phase (patrol, notice, gather, slash, catch, return,
@@ -95,14 +95,18 @@ read `docs/design/wind-gauge/handoff-wind-gauge.md`).
 
 - **What can be parried:** any `wind_shot` thrown at him that isn't his:
   the knight's crescents (level and high), his rally returns, the lob.
-- **The window:** the press counts as a parry when the shot will reach
-  him within a short window (time to contact, a knob; start near 0.2 s,
-  and tune by play). A press outside the window is the plain updraft, as
+- **Tricky but satisfying** (the user's words). The window: the press
+  counts as a parry when the shot will reach him within 0.15 s (time to
+  contact, a knob). A fair cue: a shot entering parry range gives a small
+  flash or ring just before contact, so the player times a cue, not a
+  guess. A press outside the window with charge is the plain updraft, as
   today (spends a segment, lifts him), so a mistimed parry still has its
-  own use against a level slash. A parry press needs no charge.
+  own use against a level slash. An empty press (no charge, outside the
+  window) locks the parry out for about 0.4 s, so mashing fails. A parry
+  press needs no charge.
 - **Absorb:** the shot is gone, its wind visibly spirals into him (the
-  crescent unwinds into streaks drawn to his chest), a short hit-stop and
-  a flash sell the timing, and the gauge gains a full segment (capped at
+  crescent unwinds into streaks drawn to his chest), about 0.1 s of
+  hit-stop, a camera punch, a flash and a sound sell the timing, and the gauge gains a full segment (capped at
   full), pulsing as a filled segment does. A late press is a hit as now.
 - **The loop it closes:** the segment he absorbs pays for the X focus
   blast back at the knight, so parry then blast is the rally from the
@@ -115,6 +119,47 @@ read `docs/design/wind-gauge/handoff-wind-gauge.md`).
   updraft press additively: the updraft asks the parry first, then does
   what it does today. Off the isle and without `--rune-knight` nothing
   changes, except that a parry seam other wind can join later.
+
+## His runes, his deaths, his drop (spec change: the user's go)
+
+The fight has a goal: wear him down or knock him off the aqueduct.
+
+- **His runes are his health.** Three: chest, left gauntlet, right
+  gauntlet. No health bar; you read him off his body. A **rally miss** (a
+  return past his limit hits him) cracks one rune: it splits, flickers
+  and goes dark. Hits from the side or behind crack nothing; they shove.
+- **Knockback is a heavy skid**, not a stumble: he stays on his feet and
+  scrapes back along the deck, dust off his heels, fighting to stop.
+  Starting values (knobs, tune by play): a side or back hit (X) 3 to 4 m;
+  a rally miss 6 to 8 m plus the crack. The deck is narrow, so a hit
+  from the side is the way to put him off it.
+- **The teeter.** A skid that ends at the deck's edge leaves him
+  teetering about a second: arms wheeling, runes flickering, over the
+  drop. Any hit during it sends him over. A skid that carries well past
+  the edge sends him straight over.
+- **Death one, broken:** all three runes dark, he drops to one knee, the
+  wind going out of him. One more hit and he crumbles to a heap of
+  blocks, and the last of his wind bursts out of him: a wind shot the
+  wanderer can parry to absorb (a full gauge, every segment).
+- **Death two, off the edge:** he falls from the deck and shatters on
+  the meadow below (his blocks thrown apart, runes out), whatever his
+  runes.
+- **The drop: his core rune.** Where he dies (in his heap on the deck, or
+  where he shattered on the meadow) his core rune rises and hangs,
+  glowing, until the wanderer walks into it. Taking it marks a ledger
+  objective (`scripts/ledger/ledger.gd`, `data/ledger/`; read
+  `docs/design/ledger/round1.md`): a new type `rune` with its own card row
+  (e.g. "guardians"), the objective `aqueduct_isle/rune_knight` in
+  `data/ledger/ruins.json`. Additive: tokens and every other row
+  unchanged; the ledger's registry errors stay empty.
+- **Staying dead.** Once the rune is taken he is gone for good (not
+  placed on later runs, as a taken token isn't). Killed but his rune not
+  taken, he reforms on the deck when the isle is next loaded.
+- **Contract additions:** clips `skid` (`plant`, `end`), `teeter`
+  (`end`), `kneel` (`end`), `fall` (`land`), `shatter`, `crumble`; effect
+  `rune_crack` with a form per rune (`chest`, `hand_l`, `hand_r`).
+  Procedural on the stand-in this loop; the Blender body lane authors
+  them later.
 
 ## Where code goes
 
@@ -204,8 +249,22 @@ changing. Names here are final once built on; change one only by a
    press: a timed press on a level and a high crescent absorbs it and
    fills a segment; an early press is the plain updraft; a late press is
    a hit; parry then X lands a blast on him. Stills of the absorb.
-8. A feel pass on timings from the stills and checks, and a short rendered
-   clip (a few frames strung) of one full rally.
+8. His runes and the heavy knockback: three runes, the crack on a rally
+   miss, the skid (side or back 3 to 4 m, miss 6 to 8 m), the teeter at
+   the edge. Play-loop checks: a miss cracks a rune, a side hit skids him
+   3 m or more, a skid to the edge teeters him and a hit then puts him
+   over. Stills of a cracked rune, the skid and the teeter.
+9. Both deaths: kneel then crumble after the third rune, with the last
+   wind burst you can parry; the fall and shatter off the edge. Play-loop
+   checks of each death; stills of the kneel, the heap and the shatter.
+10. The core rune and the ledger: the drop where he dies, taking it marks
+   `aqueduct_isle/rune_knight`, he stays gone once it's taken and reforms
+   if it wasn't. Play-loop checks across two runs (`--ledger` /
+   `--fresh-ledger`, as tests/test_ledger.gd runs them); still of the
+   rune hanging and of the isle card's new row.
+11. A feel pass on timings from the stills and checks, and a short rendered
+   clip (a few frames strung) of one full fight: slash, parry, blast,
+   rally, a crack, the knockoff.
 
 ## Checks
 
