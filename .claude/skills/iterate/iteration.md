@@ -48,7 +48,7 @@ before you commit:
   (`tools/smoke.py`, tools/README.md). It must PASS.
 - **Movement, routes, enemies, anything played:** a throwaway check through
   the real play loop (`scratch/<name>.gd` on `tools/harness/drive.gd`, run
-  with `tools/drive.py`), left uncommitted.
+  with `tools/drive.py`; `python tools/drive.py --api` lists its helpers), left uncommitted.
 - **Anything seen:** rendered stills (`tools/shot.py`). Open them and look.
   Fix what reads wrong and shoot again before you commit.
 

@@ -26,20 +26,80 @@ extends SceneTree
 ##                                     checks, failures, frames, seconds
 ## and quits 0, or 1 with a failed check, 2 on the timeout.
 ##
+## Index (`python tools/drive.py --api [word]` adds the docs; `--api --update` rewrites it):
+##   The driver
+##     drive() -> void
+##   Args
+##     arg(name, default = null) -> Variant
+##     arg_int(name, default = 0) -> int
+##     arg_float(name, default = 0.0) -> float
+##     flag(name) -> bool
+##     arg_vec3(name, default = Vector3.ZERO) -> Vector3
+##     scene_args() -> PackedStringArray
+##   The scene
+##     open(scene, args = null, ready_frames = 3000) -> int
+##     place(at, face = Vector2(0.0,-1.0)) -> void
+##     go_to(key) -> void
+##   Time
+##     frames(n) -> void
+##     physics_frames(n) -> void
+##     until(cond, max_frames = 600) -> int
+##   Input (the real path: actions the study reads)
+##     hold(action, on = true, strength = 1.0) -> void
+##     press(action, n = 1) -> void
+##     let_go() -> void
+##     stick(v) -> void
+##     stick_toward(point) -> Vector2
+##     walk_to(point, max_frames = 900, near = 0.6, jump_at = -1.0) -> bool
+##     jump(n = 8) -> void
+##   Scripted ticks (no input path: faster, but not the play loop)
+##     scripted_ticks(n, want = Vector2.ZERO, jump_held = false) -> void
+##     unscripted() -> void
+##   Looking around
+##     find(pattern, under = null) -> Array[Node]
+##     first(pattern, under = null) -> Node
+##   Collider probes
+##     space() -> PhysicsDirectSpaceState3D
+##     ray(from, to, mask = ALL_LAYERS, inside = false, exclude = [], areas = false) -> Dictionary
+##     pierce(from, to, mask = ALL_LAYERS, most = 8, step = 0.05) -> Array[Dictionary]
+##     what_is_at(pos, radius = 0.25, mask = ALL_LAYERS, most = 16, areas = false) -> Array[Dictionary]
+##     what_is_in(box, mask = ALL_LAYERS, most = 16, areas = false) -> Array[Dictionary]
+##     colliders(node) -> Array[Dictionary]
+##     collision_box(node, local = false) -> AABB
+##     hit_text(h) -> String
+##   Shots
+##     shot(path, hud = false, size = Vector2i.ZERO) -> void
+##   Routes: walks through the real input
+##     walk_leg(to, opts = {}) -> Dictionary
+##     route(points, opts = {}) -> Dictionary
+##     walk_paths(owner = null, offset = Vector3.ZERO, opts = {}) -> Dictionary
+##   Watching an enemy
+##     watch(enemy, opts = {}) -> Dictionary
+##   Reporting
+##     check(ok, label, detail = "") -> bool
+##     result(key, value) -> void
+##     row(values) -> void
+##     say(text) -> void
+##     note(text) -> void
+##     finish() -> void
+## (end of index)
+##
 ## Typing: the project warns on untyped `:=` it can't infer, which is a
 ## parse error. Write `var d: Dictionary = x.get("k")`, never
 ## `var d := x.get("k")`; `study` and `motor` are Variants on purpose.
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
+## One frame's time at --fixed-fps 60.
 const DT := 1.0/60.0
 ## The actions a driver may hold; `let_go` releases them all.
 const ACTIONS: Array[StringName] = [&"move_forward",&"move_back",&"move_left",&"move_right",
 	&"walk_jump",&"walk_twirl",&"walk_crouch",&"walk_wind",&"telescope"]
 
-## The scene `open` opened, and its pilot motor (scripts/pilot_motor.gd) if
-## it has one.
+## The scene `open` opened.
 var study: Node = null
+## Its pilot motor (scripts/pilot_motor.gd), if it has one: feet, grounded,
+## velocity, stunned, knocks, jumps, size, run.
 var motor: Variant = null
 ## Frames stepped through `frames` / `until` / `walk_to` since start.
 var frame := 0
@@ -104,12 +164,15 @@ func _watch() -> void:
 func arg(name: String, default: Variant = null) -> Variant:
 	return _args.get(name,_scene_kv.get(name,default))
 
+## `arg` as an int.
 func arg_int(name: String, default := 0) -> int:
 	return int(arg(name,default))
 
+## `arg` as a float.
 func arg_float(name: String, default := 0.0) -> float:
 	return float(arg(name,default))
 
+## True if `--name` or `--name=...` was given (driver's or scene's).
 func flag(name: String) -> bool:
 	return _args.has(name) or _scene_kv.has(name)
 
@@ -174,6 +237,7 @@ func frames(n: int) -> void:
 		if not _hooks.is_empty():
 			for h: Callable in _hooks.duplicate(): h.call()
 
+## `n` physics frames, nothing else stepped by hand.
 func physics_frames(n: int) -> void:
 	for i in n: await physics_frame
 
@@ -186,6 +250,7 @@ func until(cond: Callable, max_frames := 600) -> int:
 
 # --- Input (the real path: actions the study reads) --------------------------
 
+## `action` held (at `strength`) or, with `on` false, released.
 func hold(action: StringName, on := true, strength := 1.0) -> void:
 	if on: Input.action_press(action,strength)
 	else: Input.action_release(action)
@@ -196,6 +261,7 @@ func press(action: StringName, n := 1) -> void:
 	await frames(n)
 	hold(action,false)
 
+## Every action in ACTIONS released.
 func let_go() -> void:
 	for a in ACTIONS:
 		if InputMap.has_action(a): Input.action_release(a)
@@ -257,6 +323,7 @@ func scripted_ticks(n: int, want := Vector2.ZERO, jump_held := false) -> void:
 	study.script_want = Vector2.ZERO
 	study.script_jump = false
 
+## Back to the input path after `scripted_ticks`.
 func unscripted() -> void:
 	study.scripted = false
 
@@ -272,6 +339,7 @@ func find(pattern: String, under: Node = null) -> Array[Node]:
 			out.append(n)
 	return out
 
+## The first of `find(pattern)`, or null.
 func first(pattern: String, under: Node = null) -> Node:
 	var hits := find(pattern,under)
 	return hits[0] if not hits.is_empty() else null
@@ -455,6 +523,8 @@ static func _rids(exclude: Array) -> Array[RID]:
 		if e is RID: out.append(e)
 		elif e is CollisionObject3D: out.append((e as CollisionObject3D).get_rid())
 	return out
+
+# --- Shots --------------------------------------------------------------------
 
 ## A still of the window to `path` (a rendered run only; headless prints SKIP).
 ## The HUD's canvas layers are hidden for it unless `hud`; scaled to
@@ -780,6 +850,10 @@ static func _vtext(p: Variant) -> String:
 #           --enemy-at=); the enemy's `home` moves with it if it has one
 #   wake    a method of the enemy called at the start (e.g. "wake")
 #   label   the name in its lines (its node name, else its script's file)
+#   row     true: a closing `ROW {watch, pilot, frames, changes, closest,
+#           knocks, stuns, set_back, hearts_lost, state (the one held
+#           longest), last_state}` for tools/sweep.py; a Dictionary: those
+#           and its own columns (e.g. {"trial": t}). Default --watch-row.
 # Change lines come for any field whose value is a String, bool or int. If
 # the study makes its enemies again (a reset after a fall), it goes on with
 # the new one of the same script. Returns {frames, changes, closest, states
@@ -930,6 +1004,16 @@ func watch(enemy: Variant, opts := {}) -> Dictionary:
 	var out := {"frames":frame-int(w.f0),"changes":w.changes,"closest":snappedf(float(w.closest),0.01),"states":w.states,
 		"knocks":int(motor.knocks)-int(w.knocks0),"stuns":w.stuns,"set_back":w.set_back,"hearts_lost":(int(w.hearts0)-h1) if h1 >= 0 else -1,"last":w.last}
 	if not walked.is_empty(): out.route = walked
+	var want_row: Variant = opts.get("row",flag("watch-row"))
+	if want_row is Dictionary or bool(want_row):
+		var held := ""
+		for st: String in out.states:
+			if held == "" or int(out.states[st]) > int(out.states[held]): held = st
+		var line := {"watch":label,"pilot":(mode if mode is String else ("route" if mode is Array else "callable")),"frames":out.frames,
+			"changes":out.changes,"closest":out.closest,"knocks":out.knocks,"stuns":out.stuns,"set_back":out.set_back,
+			"hearts_lost":out.hearts_lost,"state":held,"last_state":str((w.last as Dictionary).get(names[0],"")) if not names.is_empty() else ""}
+		if want_row is Dictionary: line.merge(want_row,true)
+		row(line)
 	say("WATCH %s %d frames, %d changes, closest %.1f m, states %s, knocks %d stuns %d set back %d%s" % [label,out.frames,out.changes,
 		out.closest,str(out.states),out.knocks,out.stuns,out.set_back," hearts lost %d" % out.hearts_lost if h1 >= 0 else ""])
 	return out
@@ -1008,12 +1092,14 @@ func _dodge_way(from: Vector3) -> Vector3:
 
 # --- Reporting ----------------------------------------------------------------
 
+## `OK label` or `FAIL label: detail`; a fail makes the run exit 1. Returns `ok`.
 func check(ok: bool, label: String, detail := "") -> bool:
 	checks += 1
 	if not ok: failures += 1
 	print(("OK   " if ok else "FAIL ")+label+("" if detail == "" else ": "+detail))
 	return ok
 
+## `key` into the closing `RESULT {json}` line (a sweep's columns).
 func result(key: String, value: Variant) -> void:
 	results[key] = value
 
@@ -1029,6 +1115,7 @@ func say(text: String) -> void:
 func note(text: String) -> void:
 	print("| "+text)
 
+## Ends the run now: RESULT, then quit (`drive()` returning does this).
 func finish() -> void:
 	if _done: return
 	_done = true

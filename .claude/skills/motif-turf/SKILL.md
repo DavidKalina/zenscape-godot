@@ -87,7 +87,8 @@ Never change `motif_greybox.gd` for one motif.
    --motif=<slug>`, tools/README.md "The motif yard"): a driver on
    `tools/harness/drive.gd` that walks each route rim in to rim out through
    the input (`tools/harness/chain.gd`'s trials and jitter help: ±0.5 m
-   start), and checks every trap and enemy builds and ticks. Long runs go
+   start), and checks every trap and enemy builds and ticks (helpers:
+   `route()` / `walk_motif_paths()`, `watch()`, `ray()` / `what_is_at()`; `python tools/drive.py --api WORD`). Long runs go
    through `tools/bg.py`, one heavy run at a time. Rendered stills to judge the
    look: `python tools/shot.py` (one
    window, watchdog-closed; AGENTS.md, Test execution).
