@@ -570,6 +570,7 @@ func _capture_flying() -> void:
 ## The life, then the dragon over it.
 func _add_life() -> void:
 	super._add_life()
+	_build_lock_target()
 	if dragon_on: _build_sky_dragon()
 	elif dragon_roost: _build_roost_dragon()
 	# The plane's arc, before the watcher, who watches its tail fin.
@@ -584,6 +585,31 @@ func _add_life() -> void:
 		night_lights = NightLights.new()
 		add_child(night_lights)
 		night_lights.setup(self,night_lamp_spots)
+
+# --- The lock-on target (docs/design/lock-on/spec-lock-on.md) ---------------------------
+
+## A standing stone to lock onto and shoot (scripts/lock_on/target_stone.gd):
+## on the turf ahead and to the right of where the plane parks to begin
+## with (LOCK_TARGET_AT: m along its heading, m to its right), well off its
+## take-off run, in view from the start; --no-lock-target leaves it out.
+const TargetStone = preload("res://scripts/lock_on/target_stone.gd")
+const LOCK_TARGET_AT := Vector2(5.0,8.0)
+var lock_stone: Node3D = null
+
+func _build_lock_target() -> void:
+	if preload("res://scripts/launch_args.gd").user_args().has("--no-lock-target"): return
+	var home := plane_home()
+	var heading := home.w
+	var forward := Vector3(-sin(heading),0.0,-cos(heading))
+	var right := Vector3(cos(heading),0.0,-sin(heading))
+	var at := Vector3(home.x,0.0,home.z)+forward*LOCK_TARGET_AT.x+right*LOCK_TARGET_AT.y
+	var y := floor_at(Vector2(at.x,at.z))
+	if is_nan(y): return
+	at.y = y
+	# Its broad face turned back toward the plane's side, where he starts.
+	var to := Vector3(home.x,0.0,home.z)-at
+	lock_stone = TargetStone.make(at,atan2(to.x,to.z))
+	add_child(lock_stone)
 
 # --- The watcher (scripts/kit_isle/watcher.gd, --watcher) ----------------------------
 
