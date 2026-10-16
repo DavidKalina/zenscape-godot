@@ -105,7 +105,8 @@ func _twirl() -> void:
 		spun = spun or o.has("twirl")
 		if m.grounded: break
 	check(out.has("long") and not spun,"Crouch held into the long jump, or pressed again in the air, does not twirl")
-	# Jump pressed again twirling low over the ground: no sail (no room).
+	# Jump pressed again twirling low over the ground (0.7 m up): the pocket
+	# sail opens from any ordinary jump (CLEAR 0.25 m), never the plane.
 	m.reset(Vector3.ZERO,0.0)
 	m.crouch = false
 	_step(m,Vector2.ZERO,false)
@@ -115,7 +116,7 @@ func _twirl() -> void:
 	_step(m,Vector2.ZERO,false)
 	m.twirl = false
 	out = _step(m,Vector2.ZERO,true)
-	check(not out.has("sail") and not out.has("fly") and m.move == "twirl","Twirling low, Jump pressed again neither opens the sail nor flies")
+	check(out.has("sail") and not out.has("fly") and m.move == "sail","Twirling low, Jump pressed again opens the sail, never flies")
 
 ## A slope `degrees` steep falling to +x from x 0 to `length`, a platform
 ## over it before, flat after, then a gap from `gap_at` `gap` wide (the
@@ -329,6 +330,7 @@ func _along_wall(pace: float, degrees: float, kick_at := -1) -> Dictionary:
 		return to
 	var way := Vector2(cos(deg_to_rad(degrees)),-sin(deg_to_rad(degrees)))
 	var m := PilotMotor.new()
+	m.wallrun_on = true # an unlock, off by default
 	m.reset(Vector3(0.0,0.0,0.7),PilotMotor.facing_of(way),pace)
 	var got := {"ran":false,"slid":false,"along":0.0,"rise":0.0,"kick":Vector3.ZERO}
 	var started := -1

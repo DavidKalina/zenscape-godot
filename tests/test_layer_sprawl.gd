@@ -19,11 +19,13 @@ extends "res://tests/test_run_layer.gd"
 ##   - laid on a worker the plan leaves its next region for later, and laid
 ##     then it is the one laid at once;
 ##   - built and driven through the study's own `tick` (test_run_layer.gd's
-##     moves): every route and chain edge crossed on foot, the chain's
+##     moves; the layers in the sky, --world=sky): every route and chain
+##     edge crossed on foot (the Broken Viaduct's flown), the chain's
 ##     cannon landing him on its catch, the greed cannon, every gulf ridden
 ##     over on its serpent or ferry;
 ##   - through the gate the next layer is the region seen (its seed, its
 ##     isles where they were drawn), and it has a next region of its own;
+##     into the void the climb ends on its card;
 ##   - the dragon's roost (round 5) stands in every sprawl layer: its turf over
 ##     every isle's highest solid, ROOST_GAP clear of every isle, edge and
 ##     ride, off the exit side; built, a physics ray from the start's eye
@@ -32,6 +34,7 @@ extends "res://tests/test_run_layer.gd"
 ## SPRAWL_SEEDS=15,2 picks the driven seeds (RL_TRACE=<seed> as before).
 const LayerSprawl = preload("res://scripts/roguelike/layer_sprawl.gd")
 const NextRegionLod = preload("res://scripts/roguelike/next_region_lod.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 ## Driven through the play loop (6: a ferry gulf rising 30 m; 3: a serpent
 ## gulf rising 35 m with a cannon up it); planned and checked only.
@@ -48,13 +51,19 @@ const PAST_GATE := 100.0
 ## The spawn faces where the next region was to stand (laid before it), its
 ## landmark within this of straight ahead (degrees).
 const FACING := 30.0
-## A neighbourhood's isles stand this much higher than the last's (m, the
-## mean of their highest walked points).
-const HOOD_CLIMB := 15.0
+## A neighbourhood's isles stand higher than the last's (m, the mean of
+## their highest walked points). The planner holds each gulf's rise
+## (RISE_ROLL, checked on its own), not the means: a neighbourhood's tier
+## climb can lift its mean near the next one's (seed 1: 7 m), so only
+## "higher" is held here.
+const HOOD_CLIMB := 0.0
 
 func run() -> void:
 	create_timer(1200.0).timeout.connect(func() -> void: push_error("layer sprawl test timed out"); quit(2))
 	_sprawl_plans()
+	# The driven layers in the sky (a run's first regions are city layers
+	# underground now, with no sky kit and no roost: layer_worlds.gd).
+	LaunchArgs.set_override(["--no-title","--world=sky"])
 	study = load("res://studies/run_layer.tscn").instantiate()
 	study.scripted = true
 	study.layer_seed = DRIVE[0]
@@ -73,6 +82,7 @@ func run() -> void:
 		print("layer sprawl test: seed %d stood in %d ms (flushed)" % [DRIVE[k],Time.get_ticks_msec()-began])
 		await _sprawl_layer(DRIVE[k])
 	_sprawl_gate()
+	LaunchArgs.set_override(null)
 	print("PASS: layer sprawl" if failures == 0 else "FAIL: layer sprawl (%d)" % failures)
 	quit(1 if failures > 0 else 0)
 
@@ -113,11 +123,15 @@ func _sprawl_plan(s: int, plan: Dictionary) -> void:
 	for i: int in hoods[hoods.size()-1]: last_mid += LayerPlan._rect(plan.isles[i]).get_center()
 	last_mid /= (hoods[hoods.size()-1] as Array).size()
 	check((last_mid-Vector2(LayerPlan.MIDDLE.x,LayerPlan.MIDDLE.z)).dot(h) > 0.0,"seed %d: the last neighbourhood stands on the exit side (%s)" % [s,LayerSprawl.compass(h)])
-	# The chain.
+	# The chain, and past its threshold the Broken Viaduct when the hazards
+	# roll it (scripts/roguelike/layer_hazards.gd): its far rim then holds
+	# the gate.
 	var chain: Array = plan.chain
 	var kinds: Array = chain.map(func(i: int) -> String: return str(plan.edges[i].kind))
-	check(chain.size() >= LayerSprawl.LINKS.x and chain.size() <= LayerSprawl.LINKS.y and kinds.has("stones") and kinds.has("bridge") and kinds.has("trap") and kinds.has("cannon"),
-		"seed %d: an exit chain of %d crossings (%s)" % [s,chain.size(),", ".join(PackedStringArray(kinds))])
+	var viaduct: bool = kinds.back() == "viaduct"
+	var links: Array = chain.slice(0,chain.size()-1) if viaduct else chain
+	check(links.size() >= LayerSprawl.LINKS.x and links.size() <= LayerSprawl.LINKS.y and kinds.has("stones") and kinds.has("bridge") and kinds.has("trap") and kinds.has("cannon") and kinds.count("viaduct") == (1 if viaduct else 0),
+		"seed %d: an exit chain of %d crossings (%s)" % [s,links.size(),", ".join(PackedStringArray(kinds))])
 	var first: Dictionary = plan.edges[chain[0]]
 	check(int(first.from[0]) in hoods[hoods.size()-1] and plan.isles[int(first.from[0])].role != "greed","seed %d: it leaves a rim of the last neighbourhood (%d.%s)" % [s,int(first.from[0]),str(first.from[1])])
 	var on := true
@@ -128,10 +142,18 @@ func _sprawl_plan(s: int, plan: Dictionary) -> void:
 		up += (e.b as Vector3).y-(e.a as Vector3).y
 	check(on and up > 0.0,"seed %d: each crossing goes on toward the exit side, climbing %.1f m in all" % [s,up])
 	var gate: Vector3 = plan.exit.at
-	var last_edge: Dictionary = plan.edges[chain[chain.size()-1]]
-	var threshold: Dictionary = (last_edge.stones as Array).filter(func(st: Dictionary) -> bool: return str(st.name).ends_with("threshold"))[0]
-	var on_slab := Vector2(gate.x-(threshold.at as Vector3).x,gate.z-(threshold.at as Vector3).z).length() < float((threshold.size as Vector3).x)*0.5-1.0 and absf(gate.y-(threshold.at as Vector3).y) < 0.01
-	check(on_slab,"seed %d: the gate on the chain's last slab" % s)
+	var last_edge: Dictionary = plan.edges[links[links.size()-1]]
+	var thresholds: Array = (last_edge.stones as Array).filter(func(st: Dictionary) -> bool: return str(st.name).ends_with("threshold"))
+	check(not thresholds.is_empty(),"seed %d: the chain ends on its threshold slab" % s)
+	if thresholds.is_empty(): return
+	var threshold: Dictionary = thresholds[0]
+	if viaduct:
+		var v: Dictionary = plan.edges[chain[chain.size()-1]]
+		var from_slab := Vector2((v.a as Vector3).x-(threshold.at as Vector3).x,(v.a as Vector3).z-(threshold.at as Vector3).z).length() <= float((threshold.size as Vector3).x)*0.5+0.01
+		check(from_slab and (v.b as Vector3).is_equal_approx(gate),"seed %d: the Broken Viaduct goes on from the threshold slab, the gate on its far rim" % s)
+	else:
+		var on_slab := Vector2(gate.x-(threshold.at as Vector3).x,gate.z-(threshold.at as Vector3).z).length() < float((threshold.size as Vector3).x)*0.5-1.0 and absf(gate.y-(threshold.at as Vector3).y) < 0.01
+		check(on_slab,"seed %d: the gate on the chain's last slab" % s)
 	# Past every isle of the other neighbourhoods (the planner wants it past
 	# the last one's middle too, LayerSprawl GATE_PAST, but keeps the
 	# furthest gate it can lay: a bent layout's last isles may reach on).
@@ -301,10 +323,11 @@ func _sprawl_layer(s: int) -> void:
 		if e.kind in ["gulf","cannon"]: continue
 		var hit_at := _corridor(space,e)
 		check(hit_at == "","seed %d %s %s: its corridor is clear %s" % [s,e.branch,e.kind,hit_at])
-	# Driven across: the route, the greed branch and the chain on foot.
+	# Driven across: the route, the greed branch and the chain on foot (not
+	# the Broken Viaduct: its gust arrows and updrafts carry him over).
 	var trap_n := 0
 	for e: Dictionary in plan.edges:
-		if e.kind in ["gulf","cannon"]: continue
+		if e.kind in ["gulf","cannon","viaduct"]: continue
 		var ok := _cross(e)
 		check(ok,"seed %d %s %s (%s): crossed on foot, %s" % [s,e.branch,e.kind,", ".join(PackedStringArray(e.parts)),_feet()])
 		if not (e.trap as Dictionary).is_empty():
@@ -365,7 +388,8 @@ func _chain_cannon(s: int, i: int, e: Dictionary) -> void:
 	check(landed and miss < 2.5 and absf(m.feet.y-target.y) < 1.0,"seed %d: the chain's cannon lands him on its catch (%.1f m off its mark, %s)" % [s,miss,_feet()])
 
 ## Through the gate: the next layer is the region that was seen, with a
-## next region of its own; the void as before.
+## next region of its own; the void ends the climb (scripts/roguelike/
+## run_loop.gd: the dark, then the card, a new climb laid behind it).
 func _sprawl_gate() -> void:
 	var seen: Dictionary = study.layer.next
 	var exit: Dictionary = study.layer.exit
@@ -382,7 +406,9 @@ func _sprawl_gate() -> void:
 	check(study.layer.has("roost") and study.roost_dragon != null,"And a dragon's roost of its own")
 	var spawn: Vector3 = study.layer.spawn.at
 	check(Vector2(m.feet.x-spawn.x,m.feet.z-spawn.z).length() < 1.0 and absf(m.feet.y-spawn.y) < 2.0,"He starts the new layer at its spawn (%s, the spawn %s)" % [_feet(),spawn.snapped(Vector3.ONE*0.01)])
-	was = study.layer_seed
 	study.place(Vector3(m.feet.x,float(study.layer.void_y)+1.0,m.feet.z),Vector2(1.0,0.0))
-	for i in range(30): tick(Vector2.ZERO)
-	check(study.layer_seed == was+1 and study.last_end.begins_with("Into the void"),"Into the void, the next layer (seed %d -> %d)" % [was,study.layer_seed])
+	var loop: Node = study.run_loop
+	for i in range(600):
+		tick(Vector2.ZERO)
+		if loop == null or loop.state == "card": break
+	check(loop != null and loop.state == "card" and str(study.last_end).to_lower().contains("into the void"),"Into the void, the climb ends on its card (%s: %s)" % [loop.state if loop != null else "no run loop",study.last_end])

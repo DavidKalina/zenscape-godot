@@ -1,8 +1,8 @@
 extends SceneTree
 ## What the kit drops (docs/design/consolidation-audit.md, round 5), headless,
 ## on the aqueduct isle: no sky folk (none stands anywhere, even with every
-## motif isle stood, docs/scenic/motif-sky.md; the airships' crews are left
-## as they were) and no peak ring (SkyWorld's ring off, no layout
+## motif isle stood, docs/scenic/motif-sky.md; the airships carry a crew
+## only when crewed, off by default) and no peak ring (SkyWorld's ring off, no layout
 ## worked out, no ring ranges), then the flags handed back when the isle
 ## leaves, so the old game's sky is as it was.
 ##   godot --headless --path . --script tests/test_kit_drops.gd
@@ -43,11 +43,14 @@ func run() -> void:
 	_folk(study, ships, found)
 	check(sky.isles_ready(), "Every motif isle stands")
 	check(found.is_empty(), "No sky folk stand anywhere but on airships (%d found)" % found.size())
-	var crews := 0
-	var crewed: Array = []
-	for ship in ships: _folk_in(ship, crewed)
-	crews = crewed.size()
-	check(ships.is_empty() or crews > 0, "The airships' crews are left as they were (%d aboard)" % crews)
+	# Airships carry a crew only when crewed (SkyAirship.crewed, off by
+	# default): none aboard any ship that isn't.
+	var stray_crew := 0
+	for ship in ships:
+		var aboard: Array = []
+		_folk_in(ship, aboard)
+		if not bool(ship.crewed): stray_crew += aboard.size()
+	check(stray_crew == 0, "No crew aboard an airship that isn't crewed (%d aboard)" % stray_crew)
 	check(not SkyHomes.ring and not SkyWorld.ring_on(), "The peak ring is off for the kit")
 	check(SkyWorld.sea_peaks() == 0.0 and SkyWorld.painted_ridges() == 0.0, "and the painted sky stays as it was")
 	check(SkyWorld._layout.is_empty(), "No ring layout was worked out")

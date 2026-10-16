@@ -39,7 +39,12 @@ func _run() -> void:
 	var closest := INF
 	for i in range(random.size()):
 		var s: Dictionary = random[i]
-		if not cells.spots_near(s.at,SkyClusters.ISLAND_CLEAR).is_empty(): near_island = true
+		# The Sundered hall is long and narrow: its whole footprint keeps
+		# HALL_ISLAND (less than a cluster's ISLAND_CLEAR) off the islands.
+		if s.motif == "sundered":
+			for f: Vector3 in s.footprint:
+				if not cells.spots_near(s.at+Vector3(f.x,0.0,f.y),SkyClusters.HALL_ISLAND+f.z).is_empty(): near_island = true
+		elif not cells.spots_near(s.at,SkyClusters.ISLAND_CLEAR).is_empty(): near_island = true
 		for j in range(i+1,random.size()): closest = minf(closest,Vector2(s.at.x-random[j].at.x,s.at.z-random[j].at.z).length())
 	check(not near_island,"None stands by an island's spot")
 	check(closest > SkyClusters.SPACING*0.35,"Open sky between them (closest two %.0f m apart)" % closest)
@@ -96,7 +101,9 @@ func _run() -> void:
 		if Vector2(home.x-SkyClusters.SHOWCASE_AT.x,home.z-SkyClusters.SHOWCASE_AT.z).length() < SkyClusters.KEEP: crowding = true
 	check(not crowding,"No seeded islet stands in its room")
 	# Streamed: the eye by a random cluster plans it, nearest first.
-	var target: Dictionary = random[0]
+	# A cell's cluster (the Sundered hall, when this world has one, is
+	# laid apart and streamed per piece: tests/test_sundered_hall.gd).
+	var target: Dictionary = random.filter(func(s: Dictionary) -> bool: return s.motif != "sundered")[0]
 	for i in range(240):
 		field.advance(1.0/60.0,target.at+cells.origin)
 		if not field.members_of(target.key).is_empty() and (field.clusters[target.key].waiting as Array).is_empty() and int(field.clusters[target.key].task) < 0: break

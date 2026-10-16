@@ -44,6 +44,8 @@ func run() -> void:
 	current_scene = study
 	while not study.walk_ready: await process_frame
 	m = study.motor
+	# The wall run is an unlock (off by default); these routes are run with it, as `--wallrun` gives it.
+	m.wallrun_on = true
 	var tris: int = study.triangles(study.art)
 	check(tris > 0 and tris < BUDGET,"The isle draws %d triangles (budget %d)" % [tris,BUDGET])
 	check(study.stations.size() == 1 and study.start.distance_to(Art.START) < 0.01,"Station 2 alone, started at the rubble slope's foot (%s)" % Art.START)

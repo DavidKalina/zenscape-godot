@@ -1,7 +1,7 @@
 extends SceneTree
 ## The rune serpent round the aqueduct isle (scripts/rune_serpent.gd, wired
-## by studies/aqueduct_isle_sky.gd), headless: it stands in the sky by
-## default, its body laid out behind its head; it flies its whole way round
+## by studies/aqueduct_isle_sky.gd), headless: it stands in the sky with
+## --serpent (the game's sky has none without it), its body laid out behind its head; it flies its whole way round
 ## (every mark on it passed); every ring behind the neck lies where the head
 ## was when it had come that far, and slides along its own line, never
 ## sideways; nothing on it pops (no frame's acceleration of any ring or the
@@ -14,7 +14,7 @@ extends SceneTree
 ## the plane back out); a plane flying alongside is noticed, watched (the
 ## head turned toward it), paced and then left; --no-serpent leaves it out.
 ## This is its old long way (--serpent-old-route); the route between the
-## isles it flies by default is tests/test_serpent_route.gd's.
+## isles it flies otherwise is tests/test_serpent_route.gd's.
 ##   godot --headless --path . --script tests/test_rune_serpent.gd
 const IsleSky = preload("res://studies/aqueduct_isle_sky.gd")
 const RuneSerpent = preload("res://scripts/rune_serpent.gd")
@@ -46,7 +46,7 @@ func check(ok: bool, label: String) -> void:
 
 func run() -> void:
 	create_timer(300.0).timeout.connect(func() -> void: push_error("rune serpent test timed out"); quit(2))
-	LaunchArgs.set_override(["--serpent-old-route"])
+	LaunchArgs.set_override(["--serpent","--serpent-old-route"])
 	study = load("res://studies/aqueduct_isle.tscn").instantiate()
 	study.scripted = true
 	root.add_child(study)
@@ -54,7 +54,7 @@ func run() -> void:
 	while not study.flora_ready: await process_frame
 	sky = study.sky
 	serpent = sky.serpent
-	check(serpent != null and bool(sky.on.get("serpent",false)),"The serpent is in the sky by default")
+	check(serpent != null and bool(sky.on.get("serpent",false)),"With --serpent the serpent is in the sky")
 	if serpent == null:
 		_finish()
 		return
@@ -304,12 +304,13 @@ func _plane() -> void:
 	check(closest > 15.0,"It never comes at the plane (closest %.1f m)" % closest)
 	study.leave_plane()
 
-## --no-serpent leaves it out; without it, a sky has one.
+## The aqueduct isle's sky (the game's) has no serpent unless --serpent asks
+## for it; --no-serpent leaves it out even then.
 func _flag() -> void:
 	var others := ["--no-far-isles","--no-airships","--no-traffic","--no-sky-life","--no-motes","--no-sky-tokens"]
 	var out: Array = []
-	for with_flag in [true,false]:
-		LaunchArgs.set_override(others+(["--no-serpent"] if with_flag else []))
+	for flags: Array in [["--serpent","--no-serpent"],["--serpent"],[]]:
+		LaunchArgs.set_override(others+flags)
 		var other: Node3D = IsleSky.new()
 		study.add_child(other)
 		other.setup(study)
@@ -318,4 +319,5 @@ func _flag() -> void:
 		await process_frame
 	LaunchArgs.set_override(null)
 	check(out[0] == [false,false],"--no-serpent leaves it out (%s)" % str(out[0]))
-	check(out[1] == [true,true],"Without it, a sky has its serpent (%s)" % str(out[1]))
+	check(out[1] == [true,true],"With --serpent alone, the sky has its serpent (%s)" % str(out[1]))
+	check(out[2][1] == false,"With neither, the game's sky has no serpent (%s)" % str(out[2]))
