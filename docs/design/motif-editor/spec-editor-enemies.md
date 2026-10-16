@@ -34,6 +34,10 @@ the motif yard and in the generator.
    `scripts/traps/trap_registry.gd`) naming each placeable enemy, its kind
    (field / head / flyer), its script and display name. Keys are saved ids:
    keep them stable. The enemy yard reads it if that is a small change.
+   Shape it to the registry contract in `idea-editor-api.md` (id, kind,
+   script, name, knobs, size, asks, snaps, save, live, thumb), so the
+   palette, knob panel and save code the traps loop built serve it without
+   copies; where that code is trap-specific, make it read the contract.
 2. **An Enemies pocket in the palette**; a ghost of the real enemy (its
    look, at its real size) placed on the ground, a piece top or the pilot
    grid, facing set with Z / X; select, drag, delete, undo as traps.

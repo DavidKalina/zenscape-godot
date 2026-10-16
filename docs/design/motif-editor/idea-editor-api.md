@@ -38,6 +38,40 @@ plays. For that, the editor and the agents share one set of operations.
    and the diff between an agent's motif and the user's fix of it, as
    examples of what the user changes.
 
+## The path for new things: code, register, compose
+
+Code stays the way to invent (a kit piece, a set piece, an enemy, a
+landform type). Once it works, it is **registered**, and from then on
+recipes place it: the user in the editor, agents through the API. What
+exists: kit pieces (`tools/kit_piece.py new` registers into the palette),
+traps (`scripts/traps/trap_registry.gd`, from loop editor-traps); queued:
+enemies (spec-editor-enemies.md). Next: landform types (the editor's
+presets and stamps, a fixed list today), then set pieces (own state and
+triggers: the belfry's bell, the roost).
+
+## The registry contract
+
+Every kind registers the same way, so the palette, the knob panel, save
+and load, play and reset, and the catalogue are built once and every new
+kind gets them. An entry answers:
+
+| Field | What |
+|---|---|
+| id | stable key, saved in recipes; never renamed |
+| kind | piece, trap, enemy, landform, set piece |
+| script | what builds it |
+| name | display name for the palette |
+| knobs | defaults, read from the built thing (not a copied table), with types, so the panel and the save of changed knobs are generic |
+| size | in pilot terms (jumps, ledges, openings via WorldScale), for the catalogue and the grid |
+| asks | the moves it asks of the pilot (the trap contract's `verbs`) |
+| snaps | connectors and snap rules (lip, top, post, end, grid; `ruin_kit_fit.gd`'s kinds) |
+| save | its recipe entry: the fields beyond id, at, turn, knobs (a trap's `on`, an enemy's wake and route) |
+| live | how it goes live for play and back to its built state (`go_live` / reset), or "static" |
+| thumb | a palette picture, or a drawn stand-in, labelled |
+
+The existing registries (RuinKit's FAMILIES and `ruin_kit_fit.gd`, the
+trap registry) are brought to this shape when touched, additively; ids stay.
+
 ## An agent's build, with all of it
 
 Pick a silhouette, pick a theme, place sections from the catalogue, walk
