@@ -7,7 +7,8 @@ extends "res://studies/kit_isle.gd"
 ## theirs), saved as a recipe the generator places
 ## (scripts/kit_isle/motif_authored.gd).
 ##
-##   godot --path . res://studies/motif_editor.tscn -- --no-title [--load=<slug>]
+##   godot --path . res://studies/motif_editor.tscn -- --no-title [--load=<slug>] [--load-base=<pool id>]
+##   (a base: a coded pool motif stood read-only to build on, motif_editor_base.gd)
 ##
 ## Editing (the pilot put away):
 ##   hold right mouse + move      look round      W A S D / Q E  fly / down, up
@@ -16,9 +17,12 @@ extends "res://studies/kit_isle.gd"
 ##   palette item, then left click on the ground  place it (Shift: keep placing)
 ##   Z / X                        turn the selected piece 15 deg (Shift: 5)
 ##   Delete / Backspace           delete the selected piece
-##   G                            dress again (turf, flora, life)
+##   F / V                        frame the selected (or pointed) trap or piece and orbit it /
+##                                the eye view at his height, WASD walks (motif_editor_views.gd)
+##   G                            the full look (turf, flora, life, sky) or back to grey
+##                                (editing and playing are grey by default: motif_editor_grey.gd)
 ##   Ctrl+S                       save          P / Shift+P   play from the spawn / under the camera
-##   1-8                          tools: select raise lower smooth flatten ravine water outline
+##   1-9                          tools: select raise lower smooth flatten ravine water outline slope
 ##   brush: LMB drag (hold still to pile up), wheel or [ ] radius, panel strength
 ##   water: click a hollow (Shift: take it away); outline: drag handles,
 ##   Shift+click add, Alt+click or Delete remove; Ctrl+Z / Ctrl+Shift+Z undo, redo
@@ -33,6 +37,8 @@ extends "res://studies/kit_isle.gd"
 ## under it (studies/motif_editor_feel.gd).
 ##   stamps (Mountain, Hills, Crater, Mesa, Island): click, drag out to size
 ##   Ravine: draw a line (a ravine) or a loop (a lake, dug and filled)
+##   Slope (the Ravine's second mode, or 9): drag from the top down: a ramp
+##   he slides; the same drag along a slope turns it to steps and back
 ##   New land: draw a loop out past the edge; Trash: click a thing away
 ## Playing: the real pilot, motor and input; P back to editing, as it was.
 const MotifAuthored = preload("res://scripts/kit_isle/motif_authored.gd")
@@ -42,6 +48,14 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const LandformPanel = preload("res://studies/motif_editor_panel.gd")
 const EditorPalette = preload("res://studies/motif_editor_palette.gd")
 const Feel = preload("res://studies/motif_editor_feel.gd")
+const EditorTraps = preload("res://studies/motif_editor_traps.gd")
+const EditorKnobs = preload("res://studies/motif_editor_knobs.gd")
+const EditorGrid = preload("res://studies/motif_editor_grid.gd")
+const EditorViews = preload("res://studies/motif_editor_views.gd")
+const EditorBase = preload("res://studies/motif_editor_base.gd")
+const GreyLook = preload("res://studies/motif_editor_grey.gd")
+const Rebuild = preload("res://studies/motif_editor_rebuild.gd")
+const EditorSlope = preload("res://studies/motif_editor_slope.gd")
 const ToolRoll = preload("res://scripts/tool_roll.gd")
 const ClaySound = preload("res://scripts/clay_sound.gd")
 const RuinKitFit = preload("res://scripts/ruin_kit_fit.gd")
@@ -86,7 +100,7 @@ var _arrows := {}
 
 ## The land tools (round 2): [id, label, key].
 const TOOLS := [["select","Select","1"],["raise","Raise","2"],["lower","Lower","3"],["smooth","Smooth","4"],
-	["flatten","Flatten","5"],["ravine","Ravine","6"],["water","Water","7"],["outline","Outline","8"]]
+	["flatten","Flatten","5"],["ravine","Ravine","6"],["water","Water","7"],["outline","Outline","8"],["slope","Slope","9"]]
 const BRUSHES := ["raise","lower","smooth","flatten"]
 ## Round 3: the stamps (click, drag out to size) and their landform; the
 ## tools that draw a path (applied on release); the stamps' height as a
@@ -94,17 +108,17 @@ const BRUSHES := ["raise","lower","smooth","flatten"]
 const STAMPS := {"stamp_mountain":"mountain","stamp_hills":"hills","stamp_crater":"crater","stamp_mesa":"mesa","stamp_island":"island"}
 const STAMP_TALL := {"mountain":0.7,"hills":0.26,"crater":0.38,"mesa":0.42,"island":0.25}
 const STAMP_FEEL := {"mountain":"mountain","hills":"mountain","crater":"crater","mesa":"chisel","island":"island"}
-const PATHS := ["ravine","new_land"]
+const PATHS := ["ravine","new_land","slope"]
 ## Each tool's pocket on the tool roll and its mode there ("" none).
 const POCKET := {"select":["",""],"raise":["hand","pinch"],"lower":["hand","groove"],"smooth":["paddle","plane"],
-	"flatten":["paddle","pat"],"ravine":["wire",""],"water":["can",""],"outline":["",""],"stamp_mountain":["mountain",""],
+	"flatten":["paddle","pat"],"ravine":["wire","carve"],"slope":["wire","slope"],"water":["can",""],"outline":["",""],"stamp_mountain":["mountain",""],
 	"stamp_hills":["hills",""],"stamp_crater":["crater",""],"stamp_mesa":["chisel",""],"stamp_island":["island","spread"],
 	"new_land":["island","draw"],"trash":["trash",""],"run_aqueduct":["",""],"run_wall":["",""],"run_bridge":["",""]}
 ## A pocket's modes, and the tool a pocket (or a pocket's mode) gives.
-const POCKET_MODES := {"hand":["pinch","groove"],"paddle":["plane","pat"],"island":["spread","draw"]}
+const POCKET_MODES := {"wire":["carve","slope"],"hand":["pinch","groove"],"paddle":["plane","pat"],"island":["spread","draw"]}
 const POCKET_TOOL := {"hand":"raise","hills":"stamp_hills","mountain":"stamp_mountain","crater":"stamp_crater","island":"stamp_island",
 	"wire":"ravine","chisel":"stamp_mesa","paddle":"smooth","can":"water","trash":"trash"}
-const MODE_TOOL := {"hand:pinch":"raise","hand:groove":"lower","paddle:plane":"smooth","paddle:pat":"flatten","island:spread":"stamp_island","island:draw":"new_land"}
+const MODE_TOOL := {"hand:pinch":"raise","hand:groove":"lower","paddle:plane":"smooth","paddle:pat":"flatten","island:spread":"stamp_island","island:draw":"new_land","wire:carve":"ravine","wire:slope":"slope"}
 ## The roll's three size pips: the brush radius each gives.
 const PIP_RADIUS := [3.0,5.0,8.5]
 const HINTS := {
@@ -114,6 +128,7 @@ const HINTS := {
 	"smooth":"Smooth: drag over the land · wheel or [ ] radius",
 	"flatten":"Flatten: drag; levels to where the stroke began",
 	"ravine":"Ravine: draw a line for a ravine, a loop for a lake · strength is depth",
+	"slope":"Slope: drag from the top down for a ramp he slides · the same drag along a slope turns it to steps, and back · radius is its width",
 	"water":"Water: click a hollow to pour a pond · Shift+click takes one away",
 	"outline":"Outline: drag the edge points · Shift+click adds · Alt+click or Del removes",
 	"stamp_mountain":"Mountain: click inside the ring to stamp, drag up to pull it taller · pips or wheel size the ring",
@@ -166,6 +181,24 @@ var panel: LandformPanel = null
 var roll: ToolRoll = null
 var palette: EditorPalette = null
 var feel: Feel = null
+## The placed traps (studies/motif_editor_traps.gd).
+var traps: EditorTraps = null
+## The selected trap's knobs (studies/motif_editor_knobs.gd).
+var knobs: EditorKnobs = null
+## The pilot grid (H): cells of his jump; T held steps trap heights in ledges.
+var grid: EditorGrid = null
+## The close views: F frame and orbit, V the eye view (motif_editor_views.gd).
+var views: EditorViews = null
+## A coded pool motif as the base (motif_editor_base.gd; on when data has "base").
+var based: EditorBase = null
+## The grey editing look (studies/motif_editor_grey.gd), and whether the
+## full look is on instead (G): editing and playing are grey by default.
+var grey: GreyLook = null
+## The snappy rebuild (studies/motif_editor_rebuild.gd): coarse land and
+## kept pieces at once, full detail from a worker.
+var rb: Rebuild = null
+var dressed := false
+var _look_label: Label = null
 ## A stamp being sized ({} none): its stroke, its middle, the outline
 ## before it (an island grows the outline from that), its press.
 var _stamp: Dictionary = {}
@@ -221,10 +254,16 @@ var edit_look := START_LOOK
 func _ready() -> void:
 	_args = LaunchArgs.user_args()
 	var slug := ""
+	var base_id := ""
 	for a: String in _args:
 		if a.begins_with("--load="): slug = a.get_slice("=",1)
+		elif a.begins_with("--load-base="): base_id = a.get_slice("=",1)
 		elif a.begins_with("--look=") and SceneLookPresets.PRESETS.has(a.get_slice("=",1)): edit_look = a.get_slice("=",1)
 	if slug != "" and FileAccess.file_exists(MotifAuthored.path_of(slug)): data = MotifAuthored.read(MotifAuthored.path_of(slug))
+	elif base_id != "":
+		data = EditorBase.fresh(base_id)
+		if data.is_empty(): push_warning("motif editor: no pool motif %s to stand as a base" % base_id)
+	based = EditorBase.new(self)
 	if data.is_empty():
 		if slug != "": push_warning("motif editor: no %s; a fresh hill" % MotifAuthored.path_of(slug))
 		data = MotifAuthored.blank(slug if slug != "" else "untitled")
@@ -274,7 +313,11 @@ func _first_stand() -> void:
 	_build_editor_ui()
 	set_tool("select")
 	_build_markers()
-	dress()
+	grey = GreyLook.new(self)
+	grey.set_on(not dressed)
+	if traps != null: traps.tint()
+	_build_look_label()
+	stand()
 	frame_hill()
 	enter_edit()
 	# The study captures the mouse once he can walk (character_study.gd
@@ -282,7 +325,7 @@ func _first_stand() -> void:
 	# isle's `_ready` resumes inside that emit). In the editor the mouse
 	# stays free: `_hold_mouse` frees it every frame while editing.
 	_free_mouse_if_editing.call_deferred()
-	print("motif editor: %s stood, dressed in %d ms" % [str(data.slug),dress_ms])
+	print("motif editor: %s stood %s in %d ms" % [str(data.slug),"dressed" if dressed else "grey",dress_ms if dressed else bare_ms])
 
 func _free_mouse_if_editing() -> void:
 	if editing and not _looking: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -309,8 +352,10 @@ func _clear_stand() -> void:
 		motifs.free()
 		motifs = null
 	if bare != null:
-		remove_child(bare)
-		bare.free()
+		if rb != null: rb.trash(bare)
+		else:
+			remove_child(bare)
+			bare.free()
 		bare = null
 	if _shown != null:
 		remove_child(_shown)
@@ -355,6 +400,51 @@ func _swap_step() -> void:
 	if _stamp.is_empty() and _stroke.is_empty() and _cut.is_empty() and not _want_live: _drop_edit_ghost()
 	else: _ghost_old.clear()
 
+## The motif stood again in the look that is on: dressed, or the grey bare
+## land and pieces (full detail).
+func stand() -> void:
+	if based != null and based.on() and not dressed: based.stand()
+	elif dressed: dress()
+	else: rebuild_bare(false,true)
+
+## G: the full look as a preview (editing or playing), or back to grey.
+func toggle_dress() -> void:
+	dressed = not dressed
+	_want_dress = false
+	grey.set_on(not dressed)
+	if traps != null: traps.tint()
+	if not editing and dressed: apply_look(KitWeather.LIVE,false)
+	elif editing and dressed and (look_id != edit_look or weather.live): apply_look(edit_look,false)
+	stand()
+	_show_look_label()
+	say("Full look (G: back to grey)" if dressed else "Grey look (G: the full look)")
+
+func _build_look_label() -> void:
+	var layer := CanvasLayer.new()
+	layer.name = "LookLabel"
+	layer.layer = 7
+	add_child(layer)
+	_look_label = Label.new()
+	_look_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_look_label.offset_left = -360.0
+	_look_label.offset_right = -16.0
+	_look_label.offset_top = 10.0
+	_look_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_look_label.add_theme_font_size_override("font_size",22)
+	_look_label.add_theme_color_override("font_outline_color",Color(0.0,0.0,0.0,0.5))
+	_look_label.add_theme_constant_override("outline_size",5)
+	_look_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_look_label)
+	_show_look_label()
+
+func _show_look_label() -> void:
+	if _look_label != null: _look_label.text = "Look: full · G grey" if dressed else "Look: grey · G full"
+
+## The grey look skips the live sky's stepping (weather, air, clouds, look pass).
+func _advance_look(delta: float) -> void:
+	if grey != null and grey.on: return
+	super._advance_look(delta)
+
 ## The motif dressed as the generator stands it: its art built now (land
 ## and pieces), its turf, plants and life coming over the next frames in
 ## the sky's budget (scripts/kit_isle/motif_isle.gd).
@@ -376,6 +466,7 @@ func dress() -> void:
 		motifs = null
 		_turf_rids.resize(_rid_base)
 		_swap_began = began
+	if rb != null: rb.reset()
 	motif = MotifAuthored.from_data(data)
 	motif.warm()
 	motifs = MotifSky.new()
@@ -399,16 +490,21 @@ func dress() -> void:
 	_after_land()
 
 ## The bare land and pieces only (a slider dragging): no plants, no life.
-func rebuild_bare(live := false) -> void:
+func rebuild_bare(live := false, settled := false) -> void:
 	var began := Time.get_ticks_msec()
+	if rb == null: rb = Rebuild.new(self)
+	# What stands kept: a piece or run whose build is unchanged stands again.
+	var cache: Dictionary = rb.harvest(pieces_holder()) if bare != null else {}
 	_clear_stand()
 	motif = MotifAuthored.from_data(data)
 	bare = Node3D.new()
 	bare.name = "Bare"
 	add_child(bare)
-	# A live stroke or outline drag: coarse. Else the full land if the last
-	# full one took under a quarter second, else coarse.
-	var coarse := live or full_ms > 250
+	# Settled and headless: the whole stand here and now. Else (rendered, or
+	# a slider dragging) the land coarse and the changed pieces stale, the
+	# full detail built on a worker once the hand stops (`rb.step`).
+	var whole := settled and not live and not rb.threaded
+	var coarse := not whole
 	if live: motif.fast_cell = LIVE_CELL
 	var land: Node3D = motif.build_land(coarse)
 	bare.add_child(land)
@@ -416,17 +512,23 @@ func rebuild_bare(live := false) -> void:
 	var holder := Node3D.new()
 	holder.name = "Pieces"
 	bare.add_child(holder)
-	motif.build_pieces(holder)
+	var late: Array = rb.fill(motif,holder,cache,whole)
+	rb.free_cache(cache)
+	rb.began_at(began)
+	rb.owe(coarse,late)
+	if not dressed and grey != null: grey.paint(bare)
 	bare_ms = Time.get_ticks_msec()-began
+	rb.quick_ms = bare_ms
 	if live:
 		live_ms = bare_ms
 		live_count += 1
-	elif not coarse: full_ms = bare_ms
+	elif whole: full_ms = bare_ms
 	rebuilds += 1
 	_bare_done_at = Time.get_ticks_msec()
 	_after_land()
 
 func _after_land() -> void:
+	if based != null and based.on(): based.bake()
 	_set_net()
 	hang_ropes()
 	start = motif.start()
@@ -448,7 +550,14 @@ func _after_land() -> void:
 		a[1] = snappedf(float(motif.ground(float(a[0]),float(a[2]))),0.001)
 	_place_markers()
 	_show_handles()
+	if traps != null:
+		traps.reseat()
+		traps.sync()
 	_show_status()
+
+## New pieces drawn flat when the grey look is on.
+func _grey_new(node: Node) -> void:
+	if not dressed and grey != null and bare != null: grey.paint(node)
 
 ## The Pieces holder of what stands now.
 func pieces_holder() -> Node3D:
@@ -463,15 +572,22 @@ func piece_node(k: int) -> Node3D:
 func refresh_pieces() -> void:
 	var holder := pieces_holder()
 	if holder == null: return
-	for c: Node in holder.get_children():
-		holder.remove_child(c)
-		c.free()
-	motif.build_pieces(holder)
+	if rb == null: rb = Rebuild.new(self)
+	var cache := rb.harvest(holder)
+	rb.fill(motif,holder,cache,true)
+	rb.free_cache(cache)
+	# Indices may have moved: a worker's pieces are dropped, its land still owed.
+	if not rb.detailed: rb.owe(rb.coarse_land,[])
+	_grey_new(holder)
 	hang_ropes()
 
 # --- Edit and play --------------------------------------------------------------------------
 
 func frame_hill() -> void:
+	if views != null: views.release()
+	if based != null and based.on():
+		based.frame()
+		return
 	var s: Dictionary = motif.sliders()
 	var top := float(motif.crest_top())
 	var far := maxf(float(s.length),float(s.width))
@@ -492,6 +608,7 @@ func _hints(on: bool) -> void:
 
 func enter_edit() -> void:
 	editing = true
+	if traps != null: traps.go_still()
 	# The sky held while editing: one pleasant daylight, never turning.
 	if look_id != edit_look or weather.live: apply_look(edit_look,false)
 	_hints(false)
@@ -503,6 +620,9 @@ func enter_edit() -> void:
 
 ## The pilot dropped at the spawn (or under the camera's middle), live.
 func play(under_camera := false) -> void:
+	# He stands on the full-detail land (lips, collision): what is owed built now.
+	if rb != null: rb.finish_now()
+	if views != null: views.release()
 	_edit_cam = camera.global_transform
 	editing = false
 	_end_drag()
@@ -519,12 +639,14 @@ func play(under_camera := false) -> void:
 		face = Vector2(-f.x,-f.z)
 	start = at
 	start_face = face
-	# Playing, the sky turns again (from the held hour).
-	apply_look(KitWeather.LIVE,false)
+	# Playing, the sky turns again (from the held hour); grey, it stays grey.
+	if dressed: apply_look(KitWeather.LIVE,false)
 	figure.visible = true
 	_hints(true)
 	_end_fall()
 	place(at+Vector3.UP*0.1,face)
+	# The placed traps run live round him (back to editing: reset, still).
+	if traps != null: traps.go_live(motor)
 	if get_tree().current_scene == self: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func back_to_edit() -> void:
@@ -536,9 +658,20 @@ func toggle_play(under_camera := false) -> void:
 	if editing: play(under_camera)
 	else: back_to_edit()
 
+func _exit_tree() -> void:
+	# What the rebuild let go of and has not freed yet.
+	if rb != null:
+		rb.wait_out()
+		rb.reset()
+		rb.sweep_all()
+	super._exit_tree()
+
 func _process(delta: float) -> void:
+	if rb != null: rb.sweep()
 	_swap_step()
 	if not editing or motif == null or _ui == null:
+		# A worker's build dropped by play is freed when it lands.
+		if rb != null: rb.collect()
 		super._process(delta)
 		return
 	_hold_mouse()
@@ -562,11 +695,14 @@ func _edit_step(delta: float) -> void:
 		if Input.is_key_pressed(KEY_D): way.x += 1.0
 		if Input.is_key_pressed(KEY_E): way.y += 1.0
 		if Input.is_key_pressed(KEY_Q): way.y -= 1.0
+		var fast := Input.is_key_pressed(KEY_SHIFT)
+		if views != null and views.step(delta,Vector3(way.x,way.z,way.y),fast): way = Vector3.ZERO
 		if way != Vector3.ZERO:
 			var b := camera.global_basis
 			var move := b*Vector3(way.x,0.0,way.z)+Vector3.UP*way.y
-			_cam_pos += move.normalized()*_cam_speed*(3.0 if Input.is_key_pressed(KEY_SHIFT) else 1.0)*delta
+			_cam_pos += move.normalized()*_cam_speed*(3.0 if fast else 1.0)*delta
 			_apply_cam()
+	elif views != null: views.step(delta,Vector3.ZERO,false)
 	var now := Time.get_ticks_msec()
 	# A held brush stamps again where it stands.
 	if not _stroke.is_empty() and str(_stroke.tool) in ["raise","lower","smooth"] and now-_stroke_at > DWELL_MS:
@@ -584,15 +720,21 @@ func _edit_step(delta: float) -> void:
 		_want_bare = false
 		rebuild_bare()
 	_cut_step()
-	if _want_dress and not _want_bare and not _want_live and not _slider_drag and _stroke.is_empty() and _stamp.is_empty() and _path.is_empty() and _cut.is_empty() and handle_drag() == false and now-_changed_at > 250:
+	if _want_dress and not _want_bare and not _want_live and not _slider_drag and _stroke.is_empty() and _stamp.is_empty() and _path.is_empty() and _cut.is_empty() and handle_drag() == false and now-_changed_at > (250 if dressed else 60):
 		_want_dress = false
-		dress()
+		stand()
+	# Full detail once the hand stops (a worker's build swapped in when done).
+	if rb != null: rb.step(not _want_dress and not _want_bare and not _want_live and not _slider_drag and _stroke.is_empty() and _stamp.is_empty() and _path.is_empty() and _cut.is_empty() and not handle_drag())
 
 # --- Input ---------------------------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_P and walk_ready and _ui != null:
 		toggle_play((event as InputEventKey).shift_pressed)
+		get_viewport().set_input_as_handled()
+		return
+	if not editing and event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_G and grey != null:
+		toggle_dress()
 		get_viewport().set_input_as_handled()
 		return
 	if not editing or _ui == null:
@@ -612,23 +754,28 @@ func _edit_input(event: InputEvent) -> void:
 				if not mb.pressed and get_tree().current_scene == self: get_viewport().warp_mouse(_look_from)
 			MOUSE_BUTTON_WHEEL_UP:
 				if mb.pressed and _sized() and not mb.shift_pressed: set_radius(brush_r*1.12)
+				elif mb.pressed and views != null and views.mode == "orbit": views.zoom(1)
 				elif mb.pressed: _cam_speed = minf(_cam_speed*1.2,120.0)
 			MOUSE_BUTTON_WHEEL_DOWN:
 				if mb.pressed and _sized() and not mb.shift_pressed: set_radius(brush_r/1.12)
+				elif mb.pressed and views != null and views.mode == "orbit": views.zoom(-1)
 				elif mb.pressed: _cam_speed = maxf(_cam_speed/1.2,2.0)
 			MOUSE_BUTTON_LEFT:
 				if mb.pressed:
 					if roll_click(mb.position): return
 					if panel != null and panel.contains_pointer(mb.position) and _held_piece.is_empty(): return
+					if knobs != null and knobs.contains_pointer(mb.position): return
 					click(mb.position,mb.shift_pressed,mb.alt_pressed)
 				else: release(mb.position)
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
-		if _looking:
+		if _looking and views != null and views.active(): views.look(mm.relative)
+		elif _looking:
 			_cam_yaw -= mm.relative.x*LOOK_RATE
 			_cam_pitch = clampf(_cam_pitch-mm.relative.y*LOOK_RATE,-1.5,1.5)
 			_apply_cam()
 		elif not _held_piece.is_empty(): ghost_to(mm.position)
+		elif traps != null and traps.holding(): traps.ghost_to(mm.position)
 		elif not _stamp.is_empty(): size_stamp(mm.position)
 		elif not _path.is_empty(): path_to(mm.position)
 		elif not _run.is_empty(): run_to(mm.position)
@@ -636,6 +783,8 @@ func _edit_input(event: InputEvent) -> void:
 		elif handle >= 0 and _dragging: handle_to(mm.position)
 		elif _dragging: drag_to(mm.position)
 		_show_cursor(mm.position)
+		if grid != null: grid.show_at(mm.position)
+		if views != null and not _looking: views.pointer = mm.position
 	elif event is InputEventKey and event.pressed:
 		var k := event as InputEventKey
 		if k.keycode == KEY_S and (k.ctrl_pressed or k.meta_pressed):
@@ -649,7 +798,7 @@ func _edit_input(event: InputEvent) -> void:
 			redo()
 			return
 		if get_viewport().gui_get_focus_owner() is LineEdit: return
-		if k.keycode >= KEY_1 and k.keycode <= KEY_8 and not k.echo:
+		if k.keycode >= KEY_1 and k.keycode <= KEY_9 and not k.echo:
 			set_tool(str(TOOLS[k.keycode-KEY_1][0]))
 			return
 		if k.keycode == KEY_BRACKETLEFT:
@@ -665,10 +814,16 @@ func _edit_input(event: InputEvent) -> void:
 			KEY_DELETE, KEY_BACKSPACE:
 				if tool == "outline" and handle >= 0: remove_handle(handle)
 				else: delete_selected()
-			KEY_G: dress()
+			KEY_G: toggle_dress()
 			KEY_B: toggle_breakable()
+			KEY_H: if grid != null: grid.toggle()
+			KEY_F: if views != null: views.frame(views.pointer)
+			KEY_V: if views != null: views.eye(views.pointer)
 			KEY_ESCAPE:
 				if not _held_piece.is_empty(): _drop_ghost()
+				if traps != null:
+					traps.drop_ghost()
+					traps.select(-1)
 				if not _stroke.is_empty() or not _stamp.is_empty() or not _path.is_empty(): release(Vector2.ZERO)
 				armed = ""
 				if tool != "select": set_tool("select")
@@ -730,6 +885,9 @@ func click(at: Vector2, keep := false, alt := false) -> void:
 	if not _held_piece.is_empty():
 		place_ghost(at)
 		return
+	if traps != null and traps.holding():
+		traps.place_ghost(at)
+		return
 	if armed == "" and tool in BRUSHES:
 		begin_stroke(at)
 		return
@@ -767,9 +925,16 @@ func click(at: Vector2, keep := false, alt := false) -> void:
 			_pop(k)
 			if not keep: armed = ""
 		return
+	var t := traps.hit(at) if traps != null and tool == "select" else -1
+	if t >= 0:
+		snapshot()
+		traps.select(t)
+		_dragging = true
+		return
 	var k := piece_hit(at)
 	if k >= 0: snapshot()
 	select(k)
+	if traps != null: traps.select(-1)
 	_dragging = k >= 0
 
 func drag_to(at: Vector2) -> void:
@@ -779,7 +944,14 @@ func drag_to(at: Vector2) -> void:
 	if sel_marker != "":
 		data.markers[sel_marker] = [snappedf(p.x,0.001),snappedf(float(motif.ground(p.x,p.z)),0.001),snappedf(p.z,0.001)]
 		_place_markers()
-	elif selected >= 0: move_piece(selected,p)
+	elif selected >= 0: move_piece(selected,_on_grid(p))
+	elif traps != null and traps.selected >= 0: traps.drag_to(at)
+
+## Ground point `p` on its pilot grid cell's centre (as it is, grid off).
+func _on_grid(p: Vector3) -> Vector3:
+	if grid == null or not grid.on: return p
+	var c: Vector2 = grid.centre(Vector2(p.x,p.z))
+	return Vector3(c.x,p.y,c.y)
 
 func _end_drag() -> void:
 	_dragging = false
@@ -802,7 +974,10 @@ func place_piece(id_name: String, at: Vector3, seed_value := -1, turn := 0.0, sn
 	pieces.append(entry)
 	var k := pieces.size()-1
 	var node: Node3D = motif.make_piece(k)
-	if node != null: pieces_holder().add_child(node)
+	if node != null:
+		if rb != null: rb.tag_piece(motif,k,node)
+		pieces_holder().add_child(node)
+		_grey_new(node)
 	_after_pieces()
 	select(k)
 	return k
@@ -820,6 +995,7 @@ func move_piece(k: int, at: Vector3) -> void:
 	_show_selection()
 
 func turn_selected(deg: float) -> void:
+	if traps != null and traps.turn(deg): return
 	if selected < 0: return
 	snapshot()
 	var p: Dictionary = data.pieces[selected]
@@ -867,6 +1043,7 @@ func _reseat(k: int) -> void:
 	if node.has_meta("ropes"): hang_ropes()
 
 func delete_selected() -> void:
+	if traps != null and traps.delete_selected(): return
 	if selected < 0: return
 	snapshot()
 	forget_piece(selected)
@@ -906,6 +1083,7 @@ var _sel_ring: MeshInstance3D = null
 func select(k: int) -> void:
 	selected = k
 	sel_marker = ""
+	if k >= 0 and traps != null and traps.selected >= 0: traps.select(-1)
 	_show_status()
 
 ## A ring round the selected piece's footprint, drawn over everything.
@@ -934,6 +1112,7 @@ func _show_selection() -> void:
 # --- The land tools (round 2) -------------------------------------------------------------
 
 func set_tool(id_name: String) -> void:
+	if based != null and not based.allows(id_name): return
 	if not _stroke.is_empty(): release(Vector2.ZERO)
 	_drop_run()
 	tool = id_name
@@ -1000,6 +1179,9 @@ func release(at: Vector2) -> void:
 	if not _held_piece.is_empty():
 		place_ghost(at)
 		return
+	if traps != null and traps.holding() and bool(traps.held.get("dragged",false)):
+		traps.place_ghost(at)
+		return
 	if not _stamp.is_empty():
 		end_stamp()
 		return
@@ -1042,7 +1224,7 @@ func pour_at(at: Vector2, take := false) -> void:
 				snapshot()
 				waters.remove_at(i)
 				_status_line = "Pond taken away"
-				dress()
+				stand()
 				return
 		return
 	var found: Dictionary = motif.pour(p.x,p.z,brush_s)
@@ -1053,7 +1235,7 @@ func pour_at(at: Vector2, take := false) -> void:
 	snapshot()
 	waters.append({"at":[snappedf(p.x,0.001),snappedf(p.z,0.001)],"fill":snappedf(brush_s,0.01)})
 	_status_line = "Poured: level %.2f m (spills at %.2f)" % [float(found.level),float(found.spill)]
-	dress()
+	stand()
 
 ## The outline's points (x, z) as stood.
 func outline_points() -> Array:
@@ -1117,7 +1299,7 @@ func outline_click(at: Vector2, add := false, take := false) -> void:
 				best = i
 		ring.insert(best+1,[snappedf(p.x,0.001),snappedf(p.y,0.001)])
 		handle = best+1
-		dress()
+		stand()
 		return
 	handle = -1
 	_show_handles()
@@ -1132,7 +1314,7 @@ func remove_handle(k: int) -> void:
 	snapshot()
 	ring.remove_at(k)
 	handle = -1
-	dress()
+	stand()
 
 ## The dragged handle to under screen point `at` (on the level plane it
 ## was picked at, so it moves where the mouse points even off the land).
@@ -1152,7 +1334,7 @@ func reset_outline() -> void:
 	snapshot()
 	data.outline = []
 	handle = -1
-	dress()
+	stand()
 
 ## The outline's handles (the outline tool's), the picked one yellow.
 func _show_handles() -> void:
@@ -1207,18 +1389,19 @@ func _show_cursor(at: Vector2) -> void:
 		mat.albedo_color = Color(1.0,1.0,1.0,0.85)
 		_cursor.material_override = mat
 		add_child(_cursor)
-	var on := editing and (tool in BRUSHES or tool in ["water","ravine"] or STAMPS.has(tool)) and _held_piece.is_empty()
+	var on := editing and (tool in BRUSHES or tool in ["water","ravine","slope"] or STAMPS.has(tool)) and _held_piece.is_empty()
 	var hit := ground_hit(at) if on else {}
 	_cursor.visible = on and not hit.is_empty()
 	if not _cursor.visible: return
 	var r := brush_r*(RAVINE_HALF_SHOWN if tool == "ravine" else 1.0) if tool != "water" else 0.6
 	if STAMPS.has(tool): r = brush_r*2.0
+	if tool == "slope": r = maxf(brush_r*MotifAuthored.SLOPE_HALF,MotifAuthored.SLOPE_HALF_MIN)
 	var torus := TorusMesh.new()
 	torus.inner_radius = r
 	torus.outer_radius = r+maxf(0.08,r*0.03)
 	_cursor.mesh = torus
 	_cursor.global_position = hit.position+Vector3.UP*0.15
-	(_cursor.material_override as StandardMaterial3D).albedo_color = {"raise":Color(1.0,0.85,0.4),"lower":Color(0.5,0.75,1.0),"smooth":Color(0.8,1.0,0.8),"flatten":Color(1.0,1.0,1.0),"ravine":Color(1.0,0.5,0.35),"water":Color(0.3,0.7,1.0)}.get(tool,Color(0.95,0.85,0.65))
+	(_cursor.material_override as StandardMaterial3D).albedo_color = {"raise":Color(1.0,0.85,0.4),"lower":Color(0.5,0.75,1.0),"smooth":Color(0.8,1.0,0.8),"flatten":Color(1.0,1.0,1.0),"ravine":Color(1.0,0.5,0.35),"slope":Color(0.95,0.75,0.45),"water":Color(0.3,0.7,1.0)}.get(tool,Color(0.95,0.85,0.65))
 const RAVINE_HALF_SHOWN := MotifAuthored.RAVINE_HALF
 
 # --- Undo ------------------------------------------------------------------------------------
@@ -1259,7 +1442,7 @@ func _apply_data(d: Dictionary) -> void:
 	if panel != null:
 		if str(data.preset) != preset_was: panel.fill()
 		else: panel.sync()
-	dress()
+	stand()
 
 ## The landform preset changed: its sliders at their defaults (the size
 ## kept), the strokes and waters kept, the outline the preset's.
@@ -1271,7 +1454,7 @@ func set_preset(name_: String) -> void:
 	for spec: Array in MotifAuthored.PRESETS[name_]: data.sliders[spec[0]] = float(spec[5])
 	data.outline = []
 	if panel != null: panel.fill()
-	dress()
+	stand()
 	frame_hill()
 
 # --- The markers ---------------------------------------------------------------------------
@@ -1366,16 +1549,33 @@ func load_motif(slug: String) -> bool:
 		panel.slug_edit.text = str(data.slug)
 		panel.fill()
 	select(-1)
-	dress()
+	stand()
 	frame_hill()
 	_status_line = "Loaded %s" % path
 	_show_status()
 	return true
 
+## A fresh file on pool motif `id_name` (motif_editor_base.gd), stood.
+func load_base(id_name: String) -> bool:
+	var d := EditorBase.fresh(id_name)
+	if d.is_empty(): return false
+	snapshot()
+	data = d
+	if panel != null:
+		panel.slug_edit.text = str(data.slug)
+		panel.fill()
+	select(-1)
+	stand()
+	frame_hill()
+	_status_line = "On %s (read-only base)" % id_name
+	_show_status()
+	return true
+
 func reroll() -> void:
+	if based != null and not based.allows("reroll"): return
 	snapshot()
 	data.seed = randi()%99999+1
-	dress()
+	stand()
 	if panel != null: panel.sync()
 
 # --- The UI (round 3: the early game's) ----------------------------------------------------
@@ -1397,6 +1597,19 @@ func _build_editor_ui() -> void:
 	_ui.add_child(roll)
 	roll.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	roll.want(true)
+	traps = EditorTraps.new()
+	add_child(traps)
+	traps.setup(self)
+	traps.sync()
+	grid = EditorGrid.new()
+	add_child(grid)
+	grid.setup(self)
+	views = EditorViews.new()
+	add_child(views)
+	views.setup(self)
+	knobs = EditorKnobs.new()
+	_ui.add_child(knobs)
+	knobs.setup(self)
 	palette = EditorPalette.new()
 	_ui.add_child(palette)
 	palette.setup_editor(self)
@@ -1470,6 +1683,17 @@ func arm(id_name: String) -> void:
 	armed = id_name
 	_show_status()
 
+## A trap carried in from the palette (dragged out: let go to set it
+## down; taken with a click: click the ground).
+func begin_trap(key: String, at: Vector2, dragged := false) -> void:
+	set_tool("select")
+	armed = ""
+	_drop_ghost()
+	traps.begin_ghost(key,at)
+	traps.held.dragged = dragged
+	ClaySound.cue(&"ui_take")
+	say("Carrying %s: %s · Z X turn it · Esc drops it" % [traps.TrapRegistry.display_name(key),"let go over the ground" if dragged else "click the ground"])
+
 func palette_opened() -> void:
 	if _cursor != null: _cursor.visible = false
 
@@ -1479,7 +1703,7 @@ func world_verb(id_name: String) -> String:
 		"redo": redo()
 		"save": save()
 		"play": toggle_play()
-		"dress": dress()
+		"dress": toggle_dress()
 		"reroll": reroll()
 		"frame": frame_hill()
 		_: return "Not a verb here"
@@ -1491,11 +1715,13 @@ func say(line: String) -> void:
 
 ## The landform panel's sliders.
 func slider_began() -> void:
+	if based != null and based.on(): return
 	snapshot()
 	_slider_undo_at = Time.get_ticks_msec()
 	_slider_drag = true
 
 func slider_moved(key: String, value: float) -> void:
+	if based != null and not based.allows("slider"): return
 	# A click or a nudge (not a drag) is its own undo step, closely spaced
 	# ones one step.
 	if not _slider_drag and Time.get_ticks_msec()-_slider_undo_at > 500: snapshot()
@@ -1726,7 +1952,10 @@ func end_path() -> void:
 	_draw_path()
 	var length := _path_length(pts)
 	var loop := pts.size() >= 6 and length >= LOOP_MIN and (pts[0] as Vector2).distance_to(pts[-1]) <= maxf(LOOP_GAP,brush_r)
-	if kind == "new_land":
+	if kind == "slope":
+		if length < 2.0: say("Drag a slope from its top down")
+		else: EditorSlope.drag(self,pts)
+	elif kind == "new_land":
 		if length < 8.0:
 			say("Draw a loop out past the edge for new land")
 			return
@@ -1802,7 +2031,7 @@ func make_lake(pts: Array) -> void:
 	feel.cue(&"water_splash",mid,0.9)
 	feel.cue(&"lurch",mid,0.6)
 	feel.kick(0.18)
-	dress()
+	stand()
 
 ## A point well inside `poly`: its middle if inside, else the inside cell
 ## furthest from the edge.
@@ -1848,13 +2077,18 @@ func grow_land(pts: Array) -> void:
 	_status_line = "New land: the isle grown to the loop, at %.1f m" % level
 	feel.cue(&"lurch",Vector3(loop[0].x,level,loop[0].y),0.7)
 	feel.kick(0.2)
-	dress()
+	stand()
 
 # --- Trash (round 3: the old trash can) -----------------------------------------------------
 
 ## Takes away what is under screen point `at`: a piece, else a stamp whose
 ## middle is near, else a pond, else a lake's or new land's loop.
 func trash_at(at: Vector2) -> void:
+	var t := traps.hit(at) if traps != null else -1
+	if t >= 0:
+		traps.remove(t)
+		say("Trap taken away")
+		return
 	var run := run_hit(at)
 	if run >= 0:
 		snapshot()
@@ -1894,7 +2128,7 @@ func trash_at(at: Vector2) -> void:
 		strokes.remove_at(best)
 		say("%s stamp taken away" % form.capitalize())
 		feel.cue(&"crumble",hit.position,0.8)
-		dress()
+		stand()
 		return
 	var ponds: Array = motif.ponds()
 	var waters: Array = data.waters
@@ -1910,7 +2144,7 @@ func trash_at(at: Vector2) -> void:
 					break
 			say("Pond taken away")
 			feel.cue(&"water_pop",hit.position,0.8)
-			dress()
+			stand()
 			return
 	for j in range(strokes.size()-1,-1,-1):
 		var s: Dictionary = strokes[j]
@@ -1918,7 +2152,7 @@ func trash_at(at: Vector2) -> void:
 			snapshot()
 			strokes.remove_at(j)
 			say("%s taken away (the outline stays: Outline tool to pull it back)" % ("Lake bed" if str(s.tool) == "basin" else "New land"))
-			dress()
+			stand()
 			return
 	say("Nothing there to take away")
 
@@ -1961,7 +2195,7 @@ func ghost_to(at: Vector2) -> void:
 	_show_snap({})
 	node.visible = not hit.is_empty()
 	if hit.is_empty(): return
-	var p: Vector3 = hit.position
+	var p: Vector3 = _on_grid(hit.position)
 	var turn := float(_held_piece.get("turn",0.0))
 	var y := MotifAuthored.seat(motif.ground_fn(),node,p.x,p.z,turn)
 	node.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(turn)),Vector3(p.x,y,p.z))
@@ -2396,6 +2630,7 @@ func end_run() -> void:
 	run_ms = Time.get_ticks_msec()-began
 	if node != null:
 		pieces_holder().add_child(node)
+		_grey_new(node)
 		feel.cue(&"stone_drop",node.global_position,0.9)
 		feel.kick(0.12)
 	say("%s run laid (%.0f m, %d ms)" % [str(r.kind).capitalize(),from.distance_to(to),run_ms])

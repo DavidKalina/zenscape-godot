@@ -37,7 +37,10 @@ const RISE := 12.0
 static func isles_of(plan: Dictionary) -> Array:
 	var out: Array = []
 	for i in range((plan.isles as Array).size()):
-		if Registry.has(str(plan.isles[i].id)): out.append(i)
+		# A motif built in the editor on a pool base (motif_based.gd) keeps
+		# the base's id, so it is asked.
+		var m: Variant = plan.isles[i].get("motif")
+		if Registry.has(str(plan.isles[i].id)) or (m is Object and (m as Object).has_method("based_on")): out.append(i)
 	return out
 
 ## Each greybox isle's heads into `plan.heads` (`n` the pilot's numbers,

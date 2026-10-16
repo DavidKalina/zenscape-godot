@@ -862,8 +862,9 @@ static func _motif_isle(pick: Array, rng: RandomNumberGenerator) -> Dictionary:
 	if m.id() == "colonnade_spine" and str(m.knobs.get("bridges","intact")) != "intact":
 		own = own.filter(func(s: Dictionary) -> bool: return s.name != "tail")
 	var occ := LayerPieces.occupancy(m.id())
-	# A rolled ring moves its isles: its occupancy from its plan.
-	if m.id() == "broken_ring": occ = _ring_occ(m)
+	# A rolled ring moves its isles: its occupancy from its plan (a motif
+	# built in the editor on a base, scripts/kit_isle/motif_based.gd: its base's).
+	if m.id() == "broken_ring": occ = _ring_occ(m.base() if m.has_method("based_on") else m)
 	# A greybox motif computes its own (scripts/kit_isle/motif_greybox.gd).
 	elif occ.is_empty() and m.has_method("occupancy"): occ = m.occupancy()
 	elif occ.is_empty(): occ = _box_occ(m.footprint(),m.height_span())

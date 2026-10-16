@@ -16,11 +16,19 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##    pts:[[x,z]...]}, (format 3, round 3:) {tool "stamp", form
 ##    (mountain hills crater mesa island), at:[x,z], r, h, seed, y?},
 ##    {tool "basin" (a lake's bed), pts (a loop), depth, bank},
-##    {tool "fill" (new land), pts (a loop), y, bank}] (in order, over the
-##    preset), "waters":[{at:[x,z],
+##    {tool "fill" (new land), pts (a loop), y, bank},
+##    (round 4:) {tool "slope", pts:[[x,z] top, [x,z] foot], r, steps?
+##    (true: terraces in ledge steps; absent/false: a ramp to slide)}]
+##    (in order, over the preset), "waters":[{at:[x,z],
 ##    fill}] (poured; the level found from the land as built),
 ##    "pieces":[{id, seed, weathered, at:[x,y,z], turn (deg), sink}],
 ##    "markers":{"spawn":[x,y,z], "rim_in":[x,y,z], "rim_out":[x,y,z]},
+##    "traps" (optional, absent = none):[{id (scripts/traps/trap_registry.gd
+##    key), at:[x,y,z] (its way in), turn (deg), on? (TRAP_SEATS: "lip",
+##    "piece", "grid" (the pilot grid, on the ground), "ledge" (the grid
+##    with ledge steps): set at that y;
+##    absent = the ground: its y found from the land as built), knobs?:{only
+##    those changed from the trap's defaults()}}],
 ##    "breakable" (optional; false: no piece of it breaks)}
 ## A piece's "breakable" (optional; false: it never breaks) and the motif's
 ## only set meta "breakable" false on the built piece, which the kit
@@ -40,6 +48,9 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 const HeroTrees = preload("res://scripts/hero_trees.gd")
 const RuinKitFit = preload("res://scripts/ruin_kit_fit.gd")
+const TrapRegistry = preload("res://scripts/traps/trap_registry.gd")
+## What a trap's "on" may say (else it is a ground trap).
+const TRAP_SEATS := ["lip","piece","grid","ledge"]
 
 ## The trees the palette offers beside the kit's pieces: the game's
 ## Blender-authored hero trees (scripts/hero_trees.gd, the glbs the flora
@@ -123,6 +134,28 @@ const RAVINE_WOBBLE := 0.35
 ## a share of the brush's radius.
 const RAVINE_DEPTH := Vector2(2.0,12.0)
 const RAVINE_HALF := 0.45
+## The slope tool (round 4): an even ramp the pilot can't stand on, so he
+## surfs down it (PilotMotor SLIDE_AUTO, past which he slides, and a margin
+## for the mesh's facets), at most SLOPE_HIGH (under the lips' least step,
+## cliff_drop 0.8 across a 0.5 m probe, 58 deg); its half-width a share of
+## the brush's radius (at least SLOPE_HALF_MIN), blended over SLOPE_BLEND
+## to the ground round it. As steps: risers of the kit's set-off (grabbed
+## lips) on treads the ramp's own angle gives.
+const SLOPE_LOW := PilotMotor.SLIDE_AUTO+4.0
+const SLOPE_HIGH := 54.0
+const SLOPE_HALF := 0.6
+const SLOPE_HALF_MIN := 1.5
+const SLOPE_BLEND := 2.5
+const SLOPE_STEP := RuinKit.SET_OFF
+## The ramp's solid wedge (Slope.hull): this far under its faces at the
+## top crease and at the foot, this far in from its sides, this deep under
+## its foot (m). A ramp shorter than SLOPE_RUN_FELT is said to be short
+## (he walks its first metre in before he surfs: PilotMotor SLOPE_FAR).
+const HULL_CREST := 0.4
+const SLOPE_RUN_FELT := 4.0
+const HULL_SIDE := 0.4
+const HULL_SINK := 0.06
+const HULL_DEEP := 1.5
 ## Pooled water: the grid it is found on (m) and how far under the spill
 ## a full pond stands (m).
 const POOL_CELL := 0.5
@@ -156,9 +189,22 @@ func file() -> String:
 
 ## A motif over `d` (the editor's, live).
 static func from_data(d: Dictionary) -> RefCounted:
+	if d.has("base"): return load("res://scripts/kit_isle/motif_based.gd").over(d)
 	var m: RefCounted = load("res://scripts/kit_isle/motif_authored.gd").new()
 	m.data = d
 	return m
+
+## A motif script reading `motifs/authored/<slug>.json`, made at run time
+## (the two-line au_*.gd subclass the registry wants, unwritten), so a slug
+## saved from the editor opens in the motif yard before it is registered.
+## Null when there is no such file.
+static func script_for(slug_name: String) -> GDScript:
+	if not FileAccess.file_exists(path_of(slug_name)): return null
+	var s := GDScript.new()
+	var over := "motif_based" if read(path_of(slug_name)).has("base") else "motif_authored"
+	s.source_code = 'extends "res://scripts/kit_isle/%s.gd"\nfunc file() -> String:\n\treturn "%s"\n' % [over,path_of(slug_name)]
+	if s.reload() != OK: return null
+	return s
 
 static func path_of(slug_name: String) -> String:
 	return "%s/%s.json" % [DIR,slug_name]
@@ -181,9 +227,52 @@ static func write(path: String, d: Dictionary) -> Error:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	var f := FileAccess.open(path,FileAccess.WRITE)
 	if f == null: return FileAccess.get_open_error()
-	f.store_string(JSON.stringify(d,"\t",false)+"\n")
+	f.store_string(JSON.stringify(saved_form(d),"\t",false)+"\n")
 	f.close()
 	return OK
+
+## `d` as it is written: the traps as recipes (keys in a fixed order, only
+## their changed knobs), and no "traps" key at all when there are none, so a
+## motif without traps writes as before. `d` itself is left as it was.
+static func saved_form(d: Dictionary) -> Dictionary:
+	if not d.has("traps") and not d.has("base"): return d
+	var out := d.duplicate()
+	# A based file (motif_based.gd) has no land of its own to write.
+	if d.has("base"):
+		for key: String in ["preset","sliders","outline","strokes","waters"]: out.erase(key)
+	if not d.has("traps"): return out
+	out.erase("traps")
+	var list: Array = []
+	for e: Variant in d.traps if d.traps is Array else []:
+		if not e is Dictionary: continue
+		var id := str(e.get("id",""))
+		var a: Array = e.get("at",[0.0,0.0,0.0])
+		var t := {"id":id,"at":[snappedf(float(a[0]),0.001),snappedf(float(a[1]),0.001),snappedf(float(a[2]),0.001)],
+			"turn":snappedf(float(e.get("turn",0.0)),0.001)}
+		if str(e.get("on","")) in TRAP_SEATS: t.on = str(e.on)
+		var knobs := TrapRegistry.changed_knobs(id,e.get("knobs",{}) if e.get("knobs") is Dictionary else {})
+		if not knobs.is_empty(): t.knobs = knobs
+		list.append(t)
+	if not list.is_empty(): out.traps = list
+	return out
+
+## The traps of a file read back: entries that aren't objects dropped, at
+## and turn made numbers, knobs typed as the trap's defaults. An unknown id
+## is kept (the editor and build warn and skip it), so a save never loses it.
+static func _read_traps(d: Dictionary) -> void:
+	if not d.has("traps"): return
+	var list: Array = []
+	for e: Variant in d.traps if d.traps is Array else []:
+		if not e is Dictionary or not e.has("id"): continue
+		var a: Variant = e.get("at")
+		if not (a is Array and (a as Array).size() == 3): a = [0.0,0.0,0.0]
+		var t := {"id":str(e.id),"at":[float(a[0]),float(a[1]),float(a[2])],"turn":float(e.get("turn",0.0))}
+		if str(e.get("on","")) in TRAP_SEATS: t.on = str(e.on)
+		if e.get("knobs") is Dictionary and not (e.knobs as Dictionary).is_empty():
+			t.knobs = TrapRegistry.typed_knobs(t.id,e.knobs)
+		list.append(t)
+	if list.is_empty(): d.erase("traps")
+	else: d.traps = list
 
 ## The authored files' slugs.
 static func saved() -> PackedStringArray:
@@ -211,6 +300,7 @@ static func normalise(d: Dictionary) -> Dictionary:
 		if not d.get(key) is Array: d[key] = []
 	if not d.get("markers") is Dictionary: d.markers = {}
 	if not d.get("sliders") is Dictionary: d.sliders = {}
+	_read_traps(d)
 	d.preset = preset_of(d)
 	for spec: Array in PRESETS[d.preset]:
 		if not (d.sliders as Dictionary).has(spec[0]): d.sliders[spec[0]] = float(spec[5])
@@ -724,6 +814,120 @@ class Ravine extends RefCounted:
 		var k := ceilf((best-half)/(RAVINE_LEDGE*wob))
 		return minf(y,floor_y+k*RAVINE_STEP)
 
+## A slope over a ground (round 4, the slope tool): a band along the
+## stroke's two points, its top at the higher one's ground, falling evenly
+## at the steepness the ground's own fall asks (SLOPE_LOW..SLOPE_HIGH) to
+## the lower one's ground and running out level from there to the end
+## (gentler ground: a cut and a level run-out; steeper: the top cut down).
+## No step and no lip inside its band; blended to the ground over
+## SLOPE_BLEND round it. `steps`: the same ramp in risers of SLOPE_STEP.
+class Slope extends RefCounted:
+	var a := Vector2.ZERO
+	var dir := Vector2.RIGHT
+	var length := 0.0
+	var half := SLOPE_HALF_MIN
+	var top := 0.0
+	var bottom := 0.0
+	var grade := 1.0
+	var run := 0.0
+	var steps := false
+	var dead := true
+	var box := Rect2()
+
+	func _init(stroke: Dictionary, under: Callable) -> void:
+		var band := Slope.band_of(stroke)
+		if band.is_empty(): return
+		a = band.a
+		var b: Vector2 = band.b
+		half = float(band.half)
+		steps = bool(band.steps)
+		var ha := float(under.call(a.x,a.y))
+		var hb := float(under.call(b.x,b.y))
+		# Drawn uphill: the top is the higher end all the same.
+		if hb > ha:
+			var t := a
+			a = b
+			b = t
+			var th := ha
+			ha = hb
+			hb = th
+		length = a.distance_to(b)
+		dir = (b-a)/maxf(length,0.001)
+		var fall := ha-hb
+		if fall < 0.3: return
+		grade = tan(deg_to_rad(clampf(rad_to_deg(atan(fall/length)),SLOPE_LOW,SLOPE_HIGH)))
+		bottom = hb
+		top = minf(ha,hb+length*grade)
+		run = (top-bottom)/grade
+		box = band.box
+		dead = false
+
+	## The band a stroke covers: {a, b, half, steps, box} ({} none).
+	static func band_of(stroke: Dictionary) -> Dictionary:
+		var pts: Array = stroke.get("pts",[])
+		if pts.size() < 2: return {}
+		var a := Vector2(float(pts[0][0]),float(pts[0][1]))
+		var b := Vector2(float(pts[-1][0]),float(pts[-1][1]))
+		if a.distance_to(b) < 1.0: return {}
+		var half := maxf(float(stroke.get("r",4.0))*SLOPE_HALF,SLOPE_HALF_MIN)
+		var box := Rect2(a,Vector2.ZERO).expand(b).grow(half+SLOPE_BLEND+0.5)
+		return {"a":a,"b":b,"half":half,"steps":bool(stroke.get("steps",false)),"box":box}
+
+	## Whether (x, z) is inside the band (its ramp's own faces), `pad` past it.
+	static func inside(band: Dictionary, p: Vector2, pad := 0.0) -> bool:
+		var a: Vector2 = band.a
+		var ab: Vector2 = band.b-a
+		var l := ab.length()
+		var u := (p-a).dot(ab/l)
+		var v := absf((p-a).cross(ab/l))
+		return u > -pad and u < l+pad and v < float(band.half)+pad
+
+	## The ramp's height `u` metres along from its top.
+	func height_at(u: float) -> float:
+		var along := clampf(u,0.0,length)
+		# Steps: a riser of SLOPE_STEP each tread (the ramp's own run for
+		# that rise), each tread level.
+		if steps: return maxf(top-floorf(along*grade/SLOPE_STEP+0.0001)*SLOPE_STEP,bottom)
+		return maxf(top-along*grade,bottom)
+
+	## The ramp's core as a solid wedge (points of a convex hull) just under
+	## its faces, or [] (steps, dead, too short). The land's trimesh is
+	## hollow: the pilot's ground ray (PilotPhysicsGround) started under a
+	## steep face falls through to whatever is below, so a ramp read a
+	## metre up its fall line (PilotMotor._surfing, SLOPE_FAR) came out far
+	## lower and he never surfed. Inside this wedge the ray looks again from
+	## over the feet and finds the face. Its top HULL_SINK under the faces
+	## at the foot, HULL_CREST under them at the top crease (the faces'
+	## chords dip there, up to a quarter cell times the grade), HULL_SIDE in
+	## from the band's sides.
+	func hull() -> PackedVector3Array:
+		var out := PackedVector3Array()
+		if dead or steps or run < 1.0: return out
+		var side := Vector2(-dir.y,dir.x)*maxf(half-HULL_SIDE,0.3)
+		var y0 := top-HULL_CREST
+		var y1 := bottom-HULL_SINK
+		var low := bottom-HULL_SINK-HULL_DEEP
+		for s in [-1.0,1.0]:
+			var p0: Vector2 = a+side*s
+			var p1: Vector2 = a+dir*run+side*s
+			out.append(Vector3(p0.x,y0,p0.y))
+			out.append(Vector3(p1.x,y1,p1.y))
+			out.append(Vector3(p0.x,low,p0.y))
+			out.append(Vector3(p1.x,low,p1.y))
+		return out
+
+	## The height at (x, z) over the ground `y` there.
+	func cut(x: float, z: float, y: float) -> float:
+		if dead: return y
+		var p := Vector2(x,z)
+		if not box.has_point(p): return y
+		var u := (p-a).dot(dir)
+		var v := absf((p-a).cross(dir))
+		var off := maxf(maxf(-u,u-length),0.0)
+		var w := (1.0-smoothstep(0.0,SLOPE_BLEND,off))*(1.0-smoothstep(half,half+SLOPE_BLEND,v))
+		if w <= 0.0: return y
+		return lerpf(y,height_at(u),w)
+
 ## The ground (x, z) -> y of `d`: the preset, the brushes, the terraces,
 ## the ravines.
 static func ground_of(d: Dictionary, parts := {}) -> Callable:
@@ -735,7 +939,7 @@ static func ground_of(d: Dictionary, parts := {}) -> Callable:
 	var sculpt := Sculpt.new(box.grow(12.0),SCULPT_CELL)
 	var ravines: Array = []
 	for stroke: Dictionary in d.get("strokes",[]):
-		if str(stroke.get("tool","")) != "ravine": sculpt.apply(stroke,raw)
+		if not str(stroke.get("tool","")) in ["ravine","slope"]: sculpt.apply(stroke,raw)
 	parts.sculpt = sculpt
 	var soft := func(x: float, z: float) -> float:
 		var y := float(raw.call(x,z))+sculpt.sample(x,z)
@@ -745,18 +949,22 @@ static func ground_of(d: Dictionary, parts := {}) -> Callable:
 			# Under a smooth stamp the terraces give way to its slopes.
 			y = lerpf(stepped,y,sculpt.smooth_at(x,z))
 		return y
+	# The ravines and the slopes, in their order: each reads its heights off
+	# the ground before it.
 	for stroke: Dictionary in preset_ravines(d)+(d.get("strokes",[]) as Array):
-		if str(stroke.get("tool","")) == "ravine" and not (stroke.get("pts",[]) as Array).is_empty():
-			# Each ravine's floor is read off the ground before it.
+		var kind := str(stroke.get("tool",""))
+		if kind in ["ravine","slope"] and not (stroke.get("pts",[]) as Array).is_empty():
 			var under := soft if ravines.is_empty() else _carved(soft,ravines.duplicate())
-			ravines.append(Ravine.new(stroke,under))
+			ravines.append(Ravine.new(stroke,under) if kind == "ravine" else Slope.new(stroke,under))
+	parts.slopes = ravines.filter(func(r: Object) -> bool: return r is Slope)
 	if ravines.is_empty(): return soft
 	return _carved(soft,ravines)
 
+## `soft` cut by each of `ravines` (Ravine, Slope) in turn.
 static func _carved(soft: Callable, ravines: Array) -> Callable:
 	return func(x: float, z: float) -> float:
 		var y := float(soft.call(x,z))
-		for r: Ravine in ravines: y = r.cut(x,z,y)
+		for r in ravines: y = r.cut(x,z,y)
 		return y
 
 ## Where the ravines' crisp walls are: one box round them all (none: no
@@ -871,8 +1079,85 @@ func keel_top() -> float:
 	return float(_raw_span().top)
 
 func depth() -> float:
-	var s := _box().size
-	return clampf(maxf(s.x,s.y)*0.3+maxf(keel_top()-float(_raw_span().low),0.0)*0.3,12.0,36.0)
+	if _depth_cache < 0.0:
+		var s := _box().size
+		_depth_cache = maxf(clampf(maxf(s.x,s.y)*0.3+maxf(keel_top()-float(_raw_span().low),0.0)*0.3,12.0,36.0),_keel_need())
+	return _depth_cache
+var _depth_cache := -1.0
+
+## KitLand.ring_sides' rock rings: [inset toward the middle, share of the
+## depth under the top], the rim's (0, 0) first and the keel's (1, 1) last.
+const KEEL_RINGS := [Vector2(0.0,0.0),Vector2(0.1,0.22),Vector2(0.32,0.48),Vector2(0.6,0.74),Vector2(0.82,0.92),Vector2(1.0,1.0)]
+## How far under the carved ground the keel's underside is kept (m), and
+## the least share of a ring's drop its jitter leaves (ring_sides: 0.85).
+const KEEL_CLEAR := 2.0
+const KEEL_JITTER := 0.85
+## The deepest the keel is let hang to clear a cut (m).
+const KEEL_MOST := 60.0
+
+## The depth the keel needs so its underside stays under the carved ground
+## (spec-editor-traps item 13): the sides' inner rings hang from the
+## landform's crest at shares of the depth, so a ravine (or a dug lake)
+## cut deeper than the keel's underside there came out through it, and the
+## keel's long faces showed as a sheet across the cut (and collided).
+## Each ground sample (a 2 m grid, and each ravine's drawn points, its
+## floor) wants the underside under it at its inset from the rim (on the
+## line from the middle), the surface between the rings taken as straight,
+## each ring hung from the lower of the crest and the rim's ground. 0 where
+## the ground is clear; only ground an edit lowered is asked, so a motif
+## with no cut or dug ground keeps its keel.
+func _keel_need() -> float:
+	var ring := outline()
+	var poly := PackedVector2Array(ring)
+	var even := RandomNumberGenerator.new()
+	even.seed = seed_of()
+	var centre := KitLand.centre_of(KitLand.resample(ring,64,even))
+	var g := ground_fn()
+	var top := keel_top()
+	var samples: Array[Vector2] = []
+	var box := _box()
+	var x := box.position.x+1.0
+	while x < box.end.x:
+		var z := box.position.y+1.0
+		while z < box.end.y:
+			samples.append(Vector2(x,z))
+			z += 2.0
+		x += 2.0
+	for stroke: Dictionary in preset_ravines(data)+(data.get("strokes",[]) as Array):
+		if str(stroke.get("tool","")) != "ravine": continue
+		for p: Array in stroke.get("pts",[]): samples.append(Vector2(float(p[0]),float(p[1])))
+	var raw := raw_of(data)
+	var need := 0.0
+	for p: Vector2 in samples:
+		# Only where an edit lowered the ground (the landform's own clears).
+		var y := float(g.call(p.x,p.y))
+		if y > float(raw.call(p.x,p.y))-0.05 or not Geometry2D.is_point_in_polygon(p,poly): continue
+		var out := p-centre
+		var r := out.length()
+		if r < 0.01: out = Vector2.RIGHT
+		# The rim on the line out from the middle through p.
+		var far := centre+out.normalized()*10000.0
+		var rim := Vector2.INF
+		for i in range(poly.size()):
+			var hit: Variant = Geometry2D.segment_intersects_segment(centre,far,poly[i],poly[(i+1)%poly.size()])
+			if hit != null and centre.distance_to(hit) < centre.distance_to(rim): rim = hit
+		if rim == Vector2.INF: continue
+		var s := clampf(1.0-r/maxf(centre.distance_to(rim),0.01),0.0,1.0)
+		var share := 0.0
+		for k in range(1,KEEL_RINGS.size()):
+			var a: Vector2 = KEEL_RINGS[k-1]
+			var b: Vector2 = KEEL_RINGS[k]
+			if s <= b.x:
+				share = lerpf(a.y,b.y,(s-a.x)/(b.x-a.x))
+				break
+		# The rings hang from the lower of the crest and the rim's ground
+		# (ring_sides' `hang`), the rim's earth 2.1 m under the rim.
+		var hang := minf(float(g.call(rim.x,rim.y)),top)-2.1*(1.0-clampf(s/0.1,0.0,1.0))
+		var want := hang-(y-KEEL_CLEAR)
+		if want <= 0.0: continue
+		if share*KEEL_JITTER < 0.01: continue
+		need = maxf(need,want/(share*KEEL_JITTER))
+	return minf(need,KEEL_MOST)
 
 ## The land's KitLand.island spec (`tone` its turf). Crisp cliffs where
 ## there are terraces (everywhere) or ravines (round them, a finer grid
@@ -880,7 +1165,7 @@ func depth() -> float:
 func land_spec(fast := false) -> Dictionary:
 	var ring := outline()
 	var box := _box()
-	var spec := {"outline":ring,"seed":seed_of(),"ground":ground_fn(),"top":keel_top(),"depth":depth(),"hang":true,"stable":true,
+	var spec := {"outline":ring,"seed":seed_of(),"ground":ground_fn(),"top":keel_top(),"depth":depth(),"hang":true,"stable":true,"whole_sides":true,
 		"resample":[80.0,clampi(int(KitLand.perimeter(ring)/1.5),32,260),32],"tone":KitLook.turf(seed_of(),Callable())}
 	if fast:
 		spec.cell = 2.5 if fast_cell <= 0.0 else fast_cell
@@ -898,22 +1183,60 @@ func land_spec(fast := false) -> Dictionary:
 	# would be all cliff points at the kit's 0.3).
 	var step := slider(data,"step")
 	spec.cliff_drop = clampf(step*0.5,0.3,0.8) if step > 0.3 else 0.8
+	# The slopes' bands (round 4): a ramp's faces are turf and never a lip;
+	# steps get their lips (crisp cliffs, a fine grid) as a ravine does.
+	var ramps: Array = []
+	var stairs := Rect2()
+	for band: Dictionary in slope_bands():
+		if bool(band.steps): stairs = band.box if stairs.size == Vector2.ZERO else stairs.merge(band.box)
+		else: ramps.append(band)
+	var smooth_skip := Callable()
 	if step > 0.3:
 		spec.cliffs = box.grow(1.0)
 		spec.fine = 1.3
 		# No terrace cliffs under a smooth stamp (its own slopes).
 		ground_fn()
 		var sc: Variant = _ground_parts.get("sculpt")
-		if sc != null and bool(sc.smooth_any): spec.cliff_skip = func(p: Vector2) -> bool: return float(sc.smooth_at(p.x,p.y)) > 0.35
+		if sc != null and bool(sc.smooth_any):
+			smooth_skip = func(p: Vector2) -> bool: return float(sc.smooth_at(p.x,p.y)) > 0.35
+			spec.cliff_skip = smooth_skip
 	else:
 		var rb := ravine_box()
+		if stairs.size != Vector2.ZERO: rb = stairs if rb.size == Vector2.ZERO else rb.merge(stairs)
 		if rb.size != Vector2.ZERO:
 			spec.cliffs = rb.intersection(box.grow(1.0))
 			spec.fine_box = spec.cliffs
 			spec.fine = 1.0
 			# The isle's own cell kept (2 m) round the ravine's fine box: a
 			# ravine then changes the grid only where it is (stable).
+	if not ramps.is_empty():
+		# Each ramp's solid wedge, so the pilot's ground reads its faces
+		# from under them too (Slope.hull).
+		var hulls: Array = []
+		for sl: Slope in _ground_parts.get("slopes",[]):
+			var h := sl.hull()
+			if not h.is_empty(): hulls.append(h)
+		spec.solid_more = hulls
+		spec.cliff_skip = func(p: Vector2) -> bool:
+			for band: Dictionary in ramps:
+				if Slope.inside(band,p,0.3): return true
+			return smooth_skip.is_valid() and bool(smooth_skip.call(p))
+		var was: Callable = spec.get("rocky",Callable())
+		spec.rocky = func(mid: Vector2, normal: Vector3) -> bool:
+			for band: Dictionary in ramps:
+				if Slope.inside(band,mid): return false
+			if was.is_valid(): return bool(was.call(mid,normal))
+			return KitLook.is_rock(normal,KitLook.palette())
 	return spec
+
+## The slope strokes' bands (Slope.band_of), in order.
+func slope_bands() -> Array:
+	var out: Array = []
+	for stroke: Dictionary in data.get("strokes",[]):
+		if str(stroke.get("tool","")) != "slope": continue
+		var band := Slope.band_of(stroke)
+		if not band.is_empty(): out.append(band)
+	return out
 
 ## The bare land: the hill, collided, its sides collided as drawn.
 func build_land(fast := false) -> Node3D:
@@ -1237,7 +1560,7 @@ func build_pieces(holder: Node3D) -> void:
 		if run != null: holder.add_child(run)
 
 func make_run(k: int) -> Node3D:
-	var node: Node3D = RuinKitFit.build_run(data.runs[k],ground_fn())
+	var node: Node3D = RuinKitFit.build_run(data.runs[k],ground_fn(),outline())
 	if node != null: node.name = "Run%d" % k
 	if node != null and not bool(data.get("breakable",true)): node.set_meta("breakable",false)
 	return node
@@ -1281,9 +1604,10 @@ static func hang_ropes(specs: Array, frame: Transform3D, hang: Callable) -> Arra
 		out.append(rope)
 	return out
 
-## The pieces' live parts: each piece carrying ropes (relic_torana) has them
+## The live parts: each piece carrying ropes (relic_torana) has them
 ## hung by the host (scripts/roguelike/layer_greybox.gd `rope`), where the
-## piece stands.
+## piece stands; each saved trap (`trap_of`) goes to the host's `g.trap`,
+## stepped round the motor in its TrapField.
 func live(g: Node) -> void:
 	for k in range((data.get("pieces",[]) as Array).size()):
 		var p: Dictionary = data.pieces[k]
@@ -1291,6 +1615,28 @@ func live(g: Node) -> void:
 		if specs.is_empty(): continue
 		var pose := pose_of(k)
 		hang_ropes(specs,Transform3D(Basis(Vector3.UP,deg_to_rad(float(pose[1]))),g.w(pose[0])),Callable(g,"rope"))
+	for t: Dictionary in data.get("traps",[]):
+		var trap := trap_of(t)
+		if trap == null: continue
+		trap.position = g.w(trap.position)
+		g.trap(trap)
+
+## The trap of saved entry `t` (TrapRegistry, its knobs over the defaults),
+## posed in the motif's frame: its way in at `at`, turned `turn` degrees.
+## A ground trap ("on" absent) stands on the land as built (as a marker
+## does); a lip or piece trap keeps the y the editor seated it at. Null
+## (warned) for an unknown id.
+func trap_of(t: Dictionary) -> Node3D:
+	var trap := TrapRegistry.make(str(t.get("id","")),t.get("knobs",{}) if t.get("knobs") is Dictionary else {})
+	if trap == null:
+		push_warning("motif authored %s: no trap %s" % [slug(),t.get("id","")])
+		return null
+	var a: Array = t.get("at",[0.0,0.0,0.0])
+	var at := Vector3(float(a[0]),float(a[1]),float(a[2]))
+	if not t.has("on"): at.y = ground(at.x,at.z)
+	trap.position = at
+	trap.rotation_degrees.y = float(t.get("turn",0.0))
+	return trap
 
 # --- The motif contract ------------------------------------------------------------------
 

@@ -287,6 +287,9 @@ static func _build() -> void:
 	_add("paddle","Paddle","Smooth","#c49a5e",["M5.5 12 Q5.5 9.5 8 9.5 H16 Q18.5 9.5 18.5 12 V19 Q18.5 22 15.5 22 H8.5 Q5.5 22 5.5 19Z","M10.7 9.6 V2.9 A1.3 1.3 0 0 1 13.3 2.9 V9.6Z"],["M9 13 V19 M15 13 V19","M10.9 5.6 H13.1"],11)
 	_add("chisel","Chisel","Cut","#6f8aa6",["M6 2.8 Q6 2 6.8 2 H10.2 Q11 2 11 2.8 V10.5 H6Z","M6.8 10.5 H10.2 V18.5 L9.2 21.8 H7.8 L6.8 18.5Z","M13 4 Q13 3 14 3 H21 Q22 3 22 4 V8.5 Q22 9.5 21 9.5 H14 Q13 9.5 13 8.5Z","M16.6 9.5 H18.4 V21 Q18.4 22 17.5 22 Q16.6 22 16.6 21Z"],["M5.8 10.5 H11.2","M6.8 18.5 H10.2","M15.5 3 V9.5"],12)
 	_add("wire","Ravine","Carve","#b8683f",["M2 9.4 H8.2 L10.8 21.2 H13.2 L15.8 9.4 H22 V22.5 H2Z"],["M3.4 5.4 Q7.6 2.6 12 5.4 Q16.4 8.2 20.6 5.4"],13)
+	# The Ravine's modes: the cut in profile, and a ramp falling evenly.
+	_add("wire_carve","Carve","Ravine","#b8683f",["M2 9.4 H8.2 L10.8 21.2 H13.2 L15.8 9.4 H22 V22.5 H2Z"],[],72,1.0,1.5)
+	_add("wire_slope","Slope","Ravine","#b8683f",["M2 7.4 H6 L18 19.4 H22 V22.5 H2Z"],["M9.6 4.8 L15.6 10.8","M13.2 10.8 H15.6 V8.4"],73,1.0,1.5)
 	_add("hammer","Hammer","Break","#7a6a5a",["M3 5.5 Q3 4.5 4 4.5 H15 L20.5 7.2 L15 9.8 H4 Q3 9.8 3 8.8Z","M8.2 9.8 H10.8 V20.8 A1.3 1.3 0 0 1 8.2 20.8Z"],["M12.5 4.5 V9.8"],14)
 	# The Feather, "Gust" (HUD 5, lowpoly.js SHAPING_TOOLS[5]): wind held in
 	# hand, below the tools after the roll's divider. A finer quill line (1.2).
