@@ -23,6 +23,8 @@ extends Node3D
 ##
 ## Everything is in world space; nothing is saved.
 const Body = preload("res://scripts/songbird_body.gd")
+## A flock of species "crow" gets crows (their own body and moves) instead.
+const Crow = preload("res://scripts/crow_body.gd")
 const Songbirds = preload("res://scripts/songbirds.gd")
 const Disturbance = preload("res://scripts/disturbance.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
@@ -184,7 +186,7 @@ static func perches_from(space: PhysicsDirectSpaceState3D, candidates: Dictionar
 # --- Birds --------------------------------------------------------------------------
 
 func _new_bird(flock: Dictionary) -> Dictionary:
-	var body := Body.new()
+	var body: Node3D = Crow.new() if Crow.SPECIES.has(flock.species) else Body.new()
 	body.build(flock.species)
 	add_child(body)
 	var bird := {"flock":flock.index,"state":"gone","p":Vector3.ZERO,"v":Vector3.ZERO,"heading":Vector3.FORWARD,"body":body,
@@ -634,6 +636,10 @@ func _pose_all(delta: float) -> void:
 		body.global_position = bird.p
 		var heading: Vector3 = bird.heading
 		var yaw := atan2(-heading.x,-heading.z)
+		if body is Crow:
+			# A crow poses itself from the bird's state (scripts/crow_body.gd).
+			body.animate(bird,delta,yaw)
+			continue
 		var pitch := 0.0
 		var airborne: bool = bird.state in ["flying","landing","wheeling","leaving"]
 		if airborne:

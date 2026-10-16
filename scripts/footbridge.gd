@@ -576,7 +576,14 @@ static func build_mesh(a: Vector3, b: Vector3, seed: int) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	if roped(span):
+		# Each box also carries its own frame for the rope bridge's shader
+		# (shaders/rope_bridge.gdshader): UV the face's metres along its
+		# longer and its shorter side (offset per box), CUSTOM0 the part (see
+		# the KIND_ constants), a per-box random, the box's short half-size.
+		st.set_custom_format(0,SurfaceTool.CUSTOM_RGBA_FLOAT)
+		_tagging = true
 		_rope_bridge(st,a,b,span,across,curve,rng)
+		_tagging = false
 		return st.commit()
 	# Planks across the arch, each on the curve's slope.
 	var planks := maxi(4,roundi(span/PLANK))
@@ -614,6 +621,15 @@ static func build_mesh(a: Vector3, b: Vector3, seed: int) -> ArrayMesh:
 			_beam(st,curve,offset+Vector3.UP*(tall-0.03),pieces,Vector2(0.028,0.032),RAIL,rng,stops[0],stops[-1])
 	return st.commit()
 
+## The parts a rope bridge's shader tells apart (CUSTOM0.x).
+const KIND_TIMBER := 0.0
+const KIND_PLANK := 1.0
+const KIND_ROPE := 2.0
+const KIND_CORD := 3.0
+const KIND_POST := 4.0
+static var _tagging := false
+static var _kind := 0.0
+
 ## A rope bridge from `a` to `b` (plate, on the ground) along `curve`, its
 ## sagging deck: spaced planks laid on two foot ropes, two hand ropes that
 ## sag less, cords between them, and a pair of tall posts at each end, sunk
@@ -633,15 +649,18 @@ static func _rope_bridge(st: SurfaceTool, a: Vector3, b: Vector3, span: float, a
 		var yaw := Basis(up,rng.randf_range(-0.07,0.07))
 		var centre: Vector3 = curve.call(t)+across*rng.randf_range(-0.03,0.03)
 		var half := Vector3(span/planks*0.34,(0.022+rng.randf_range(0.0,0.006))*k,WIDTH*0.5+rng.randf_range(-0.05,0.02))
+		_kind = KIND_PLANK
 		_box(st,centre-up*half.y,yaw*along,up,yaw*across,half,DECK.darkened(rng.randf_range(0.0,0.16)),rng)
 	var pieces := maxi(12,roundi(span*2.0))
 	for side in [-1.0,1.0]:
 		# The foot ropes under the planks' ends, the hand ropes above.
+		_kind = KIND_ROPE
 		_beam(st,curve,across*side*WIDTH*0.42+Vector3.DOWN*0.05*k,pieces,Vector2(0.02,0.02)*k,ROPE,rng)
 		var rail: Vector3 = across*side*(WIDTH*0.5+0.04*k)
 		_beam(st,hand,rail,pieces,Vector2(0.022,0.022)*k,ROPE,rng,0.0,1.0)
 		# Cords from the hand rope down to the deck's edge, about every 0.5 m.
 		var cords := maxi(4,roundi(span/0.5))
+		_kind = KIND_CORD
 		for c in range(1,cords):
 			var t := float(c)/cords
 			var top: Vector3 = hand.call(t)+rail
@@ -650,12 +669,14 @@ static func _rope_bridge(st: SurfaceTool, a: Vector3, b: Vector3, span: float, a
 			var side_axis := up.cross(flat_way).normalized()
 			_box(st,(top+foot)*0.5,flat_way,up,side_axis,Vector3(0.01*k,top.distance_to(foot)*0.5,0.01*k),ROPE.darkened(rng.randf_range(0.05,0.15)),rng)
 		# A tall post at each end, sunk in the footing, just outside the deck.
+		_kind = KIND_POST
 		for t in [0.0,1.0]:
 			var outward := -flat_way if t == 0.0 else flat_way
 			var foot: Vector3 = curve.call(t)+rail+outward*0.08*k+Vector3.DOWN*0.15*k
 			var tall := HAND_ROPE+(0.15+0.15)*k
 			_box(st,foot+Vector3.UP*tall*0.5,flat_way,Vector3.UP,across,Vector3(0.055,tall*0.5,0.055)*Vector3(k,1.0,k),POST.darkened(rng.randf_range(0.0,0.12)),rng)
 	# A sill log across under each end of the deck.
+	_kind = KIND_TIMBER
 	for t in [0.0,1.0]:
 		_box(st,curve.call(t)+Vector3.DOWN*0.1*k,flat_way,Vector3.UP,across,Vector3(0.09*k,0.08*k,WIDTH*0.62),SILL.darkened(rng.randf_range(0.0,0.1)),rng)
 
@@ -683,6 +704,7 @@ static func _box(st: SurfaceTool, centre: Vector3, x: Vector3, y: Vector3, z: Ve
 		[z,[corner.call(1,-1,1),corner.call(-1,-1,1),corner.call(-1,1,1),corner.call(1,1,1)],0.96],
 		[-z,[corner.call(-1,-1,-1),corner.call(1,-1,-1),corner.call(1,1,-1),corner.call(-1,1,-1)],0.84],
 	]
+	var tag := rng.randf() if _tagging else 0.0
 	for face: Array in faces:
 		var normal: Vector3 = face[0]
 		var quad: Array = face[1]
@@ -692,7 +714,20 @@ static func _box(st: SurfaceTool, centre: Vector3, x: Vector3, y: Vector3, z: Ve
 		var order := [0,1,2,0,2,3]
 		var n: Vector3 = ((quad[1]-quad[0]) as Vector3).cross(quad[2]-quad[0])
 		if n.dot(normal) > 0.0: order = [0,2,1,0,3,2]
+		# The face's two tangent axes, the longer side's first.
+		var axes := [x,y,z]
+		var halves := [half.x,half.y,half.z]
+		var tangents: Array = []
+		for ax in range(3):
+			if absf((axes[ax] as Vector3).dot(normal)) < 0.5: tangents.append(ax)
+		if halves[tangents[0]] < halves[tangents[1]]: tangents.reverse()
+		var long_axis: Vector3 = axes[tangents[0]]
+		var short_axis: Vector3 = axes[tangents[1]]
 		for index: int in order:
 			st.set_color(tone)
 			st.set_normal(normal)
+			if _tagging:
+				var rel: Vector3 = quad[index]-centre
+				st.set_uv(Vector2(rel.dot(long_axis)+tag*41.0,rel.dot(short_axis)+tag*67.0))
+				st.set_custom(0,Color(_kind,tag,float(halves[tangents[1]]),float(halves[tangents[0]])))
 			st.add_vertex(quad[index])
