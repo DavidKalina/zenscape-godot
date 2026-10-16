@@ -69,6 +69,7 @@ var head_top := HEAD
 func _init(physics: PhysicsDirectSpaceState3D, walker: PilotMotor) -> void:
 	space = physics
 	motor = walker
+	walker.ground_from = height_from
 	_ray.hit_from_inside = true
 	_ray.collision_mask = mask
 	var body := CylinderShape3D.new()
