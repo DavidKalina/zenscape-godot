@@ -151,6 +151,14 @@ var _mouse_rate := 0.0
 var _roll_time := 0.0
 ## The bank the turn alone would give it, under the knife edge.
 var _free_bank := 0.0
+## A line's pull on it (m/s², world; a towed load, scripts/interactables/
+## plane_hitch.gd), zero for no line: the share along its path slows or
+## speeds it, the rest knocks it off its path (`tow_drift`, m/s), which
+## the wings take back over TOW_SETTLE s. A steady pull down is a steady
+## sink of the pull times TOW_SETTLE.
+var tow := Vector3.ZERO
+var tow_drift := Vector3.ZERO
+const TOW_SETTLE := 0.5
 
 func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 	super.launch(from,towards,pace,drop)
@@ -313,12 +321,19 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	target = lerpf(target,minf(target,FLAP_SPEED),flap)
 	var slow := lerpf(SLOW,FLAP_SLOW,flap)
 	speed += (-SWING*sin(pitch)-THROTTLE*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
+	var towed := tow != Vector3.ZERO or tow_drift != Vector3.ZERO
+	if towed:
+		var way := travel()
+		speed += tow.dot(way)*delta
+		tow_drift += (tow-way*tow.dot(way))*delta
+		tow_drift *= exp(-delta/TOW_SETTLE)
 	speed = clampf(speed,slow,FAST)
 	lift = clampf((floor_y-position.y)*CUSHION,0.0,CUSHION_MAX)
 	var fall := FALL*minf(airborne,FALL_TIME)*(1.0-smoothstep(FALL_TIME,FALL_TIME+CATCH,airborne))
 	var drop := approach_drop(ground) if approach else 0.0
 	var side := Vector3(cos(heading),0.0,-sin(heading))
 	velocity = travel()*speed+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap)+wind
+	if towed: velocity += tow_drift
 	var was := position
 	position += velocity*delta
 	_skim(delta,ground,was)

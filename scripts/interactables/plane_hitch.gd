@@ -46,6 +46,19 @@ const DAMP := 0.8
 const PULL := 1800.0
 const CRANK_STALL := 6000.0
 const SNAP := 25000.0
+## In the plane (boarded, on its wheels or flying) the line is the air's:
+## softer (K_AIR, so the plane's frame steps don't jerk it), and the reel
+## slips over BRAKE, paying out line under that brake up to MAX_LINE, so a
+## snatch is a lurch, not a snap; only at MAX_LINE can it reach SNAP. The
+## plane feels the line (SkyPlane `tow`): its pull over PLANE_HEFT (N per
+## m/s²), the heft its engine and wings answer with. With PUSH 4.5 m/s² on
+## the wheels the brake's pull straight back (6.7 m/s²) holds it: a load the brake can't
+## drag (the big boulder) keeps it on the ground. A load in the air drags
+## AIR_DRAG x its size² x speed² (N) against the way it moves.
+const K_AIR := 3000.0
+const BRAKE := 6000.0
+const PLANE_HEFT := 900.0
+const AIR_DRAG := 0.6
 ## Winding (m/s): the slack, and the line under no load (slower as it pulls).
 const CRANK_SLACK := 2.4
 const CRANK := 0.9
@@ -65,6 +78,8 @@ const DRAG_RUN := 0.7
 ## plane_figure.gd: the tail skid at z 0.66).
 const TAIL := Vector3(0.0,0.05,0.56)
 const SEGMENTS := 20
+## The line drawn this thick in the plane (of the swing rope's).
+const AIR_THIN := 0.55
 const ROPE_LIFT := 0.035
 ## A crank's tick every this much line wound (m).
 const TICK_EVERY := 0.25
@@ -87,6 +102,11 @@ var length := 0.0
 var tension := 0.0
 var cranking := false
 var snapped := 0
+## In the plane: the reel slipping now, line it has paid out under the
+## brake since hitched (m), the most pull since hitched (N).
+var slipping := false
+var slipped := 0.0
+var peak := 0.0
 var _base_run := -1.0
 var _base_walk := -1.0
 var _wound := 0.0
@@ -219,7 +239,10 @@ func before(_delta: float) -> void:
 
 func after(delta: float, _events: Dictionary) -> void:
 	cranking = false
-	if cargo != null and cargo.global_position.y < float(isle.get("lost")):
+	# (Hung from the plane on a taut line, under an edge or below the isle
+	# in flight, it isn't lost: it's carried.)
+	var hung := state == "hitched" and _other_end_from("load") == "plane" and tension > 0.0
+	if cargo != null and not hung and cargo.global_position.y < float(isle.get("lost")):
 		_let_go("The load fell away")
 		return
 	if state == "carrying": _carry(delta)
@@ -285,26 +308,77 @@ func pose(figure: Node3D) -> void:
 
 func _physics_process(_delta: float) -> void:
 	tension = 0.0
-	if cargo == null or state == "idle": return
+	slipping = false
+	var aloft := _in_plane()
+	# In the plane the loads are off layer 1, so the plane's checks for
+	# stone (its bumps, what blocks its wheels) don't meet its own load.
+	var layer := 0 if aloft else 1
+	for body: HitchLoad in loads:
+		if body.collision_layer != layer: body.collision_layer = layer
+	if cargo == null or state == "idle":
+		_tow(Vector3.ZERO)
+		return
+	var other := _other_end_from("load")
+	var towing := aloft and other == "plane"
+	if towing:
+		cargo.sleeping = false
+		_drag_air()
 	var p := cargo.to_global(tie)
-	var e := _end_point(_other_end_from("load"))
+	var e := _end_point(other)
 	var d := p.distance_to(e)
-	if d <= length or d < 1e-4: return
+	if d <= length or d < 1e-4:
+		_tow(Vector3.ZERO)
+		return
 	var u := (e-p)/d
 	var arm := p-cargo.global_position
 	var v_p := cargo.linear_velocity+cargo.angular_velocity.cross(arm)
-	var v_e := motor.velocity if _other_end_from("load") == "hand" else Vector3.ZERO
+	var v_e := Vector3.ZERO
+	if other == "hand": v_e = motor.velocity
+	elif aloft: v_e = isle.plane.velocity
 	var closing := (v_p-v_e).dot(u)
-	var t := K*(d-length)-2.0*sqrt(K*cargo.mass)*DAMP*closing
-	if t <= 0.0: return
-	if _other_end_from("load") == "hand": t = minf(t,PULL)
-	elif t > SNAP:
+	var k := K_AIR if towing else K
+	var damp := 2.0*sqrt(k*cargo.mass)*DAMP*closing
+	var t := k*(d-length)-damp
+	if t <= 0.0:
+		_tow(Vector3.ZERO)
+		return
+	if other == "hand": t = minf(t,PULL)
+	elif towing and t > BRAKE and length < MAX_LINE:
+		# The reel slips: line out until the stretch holds just the brake's
+		# pull (the drum turning takes the stretch's rate, so no damping).
+		var was := length
+		length = clampf(d-BRAKE/k,was,MAX_LINE)
+		slipped += length-was
+		slipping = true
+		t = BRAKE if length < MAX_LINE else maxf(k*(d-length)-damp,BRAKE)
+	if other != "hand" and t > SNAP:
 		snapped += 1
+		_tow(Vector3.ZERO)
 		_let_go("The line parted")
 		return
 	tension = t
+	peak = maxf(peak,t)
 	cargo.sleeping = false
 	cargo.apply_force(u*t,arm)
+	if towing: _tow(-u*t/PLANE_HEFT)
+	else: _tow(Vector3.ZERO)
+
+## The line's pull on the plane (SkyPlane `tow`, m/s²), while in it.
+func _tow(accel: Vector3) -> void:
+	if not _in_plane(): return
+	var plane: RefCounted = isle.plane
+	plane.tow = accel
+
+## The air against a load swinging under the plane.
+func _drag_air() -> void:
+	var v := cargo.linear_velocity
+	var s := v.length()
+	if s < 0.5: return
+	cargo.apply_central_force(-v*s*AIR_DRAG*cargo.size*cargo.size)
+
+## In the plane: boarded, on its wheels or flying (isle.plane a SkyPlane).
+func _in_plane() -> bool:
+	return isle != null and bool(isle.get("flying")) and isle.get("plane") != null and "tow" in isle.plane
 
 # --- Input ----------------------------------------------------------------------
 
@@ -373,6 +447,9 @@ func _tie_on(body: HitchLoad) -> void:
 	tie = body.tie_point(_hand())
 
 func _let_go(why: String) -> void:
+	_tow(Vector3.ZERO)
+	slipped = 0.0
+	peak = 0.0
 	state = "idle"
 	end_a = ""
 	end_b = ""
@@ -462,8 +539,10 @@ func _draw_line() -> void:
 			var hit := space.intersect_ray(_ray)
 			if not hit.is_empty() and (hit.position as Vector3).y+ROPE_LIFT > p.y: p.y = (hit.position as Vector3).y+ROPE_LIFT
 		points.append(p)
+	# Thinner in the plane, against the toy-sized plane in flight.
+	var thin := Basis.from_scale(Vector3(AIR_THIN,1.0,AIR_THIN)) if _in_plane() else Basis.IDENTITY
 	for i in range(SEGMENTS):
-		_segments[i].transform = Transform3D(SwingRope._segment_basis(points[i],points[i+1]),points[i])
+		_segments[i].transform = Transform3D(SwingRope._segment_basis(points[i],points[i+1])*thin,points[i])
 	if cargo != null: _knot.global_position = cargo.to_global(tie)
 
 func _on_foot_or_hitched() -> bool:
@@ -564,7 +643,8 @@ func _update_ui(delta: float) -> void:
 	if state != "idle":
 		var d := _end_point(end_a).distance_to(_end_point(end_b))
 		lines.append("line %.1f m  ·  slack %.1f m" % [length,maxf(length-d,0.0)])
-		lines.append("pull %d N%s" % [int(tension)," · stalled" if cranking and tension > CRANK_STALL*0.97 else ""])
+		lines.append("pull %d N%s%s" % [int(tension)," · stalled" if cranking and tension > CRANK_STALL*0.97 else ""," · reel slipping" if slipping else ""])
+		if state == "hitched" and _in_plane(): lines.append("paid out %.1f m  ·  most %d N" % [slipped,int(peak)])
 	_readout.text = "\n".join(lines)
 
 func _prompt() -> String:

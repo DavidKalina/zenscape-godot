@@ -560,12 +560,18 @@ func _dip(delta: float, input: Dictionary, out: Dictionary) -> void:
 	if is_zero_approx(float(input.get("pitch",0.0))) and is_zero_approx(look.y):
 		plane.pitch = lerpf(float(plane.pitch),DIP_NOSE,1.0-exp(-delta/EASE_DIP))
 	var boost := clampf(float(input.get("boost",0.0)),0.0,1.0)
-	_dip_speed = clampf(_dip_speed+(-DIP_GAIN*sin(float(plane.pitch))+boost*PUSH)*delta,0.0,SkyPlane.FAST)
+	var tow := _tow()
+	_dip_speed = clampf(_dip_speed+(-DIP_GAIN*sin(float(plane.pitch))+boost*PUSH+tow.dot(plane.travel()))*delta,0.0,SkyPlane.FAST)
 	plane.speed = maxf(_dip_speed,SkyPlane.SLOW)
 	if _dip_speed >= FLY_SPEED or _dip_time >= DIP_MAX:
 		_dip_time = -1.0
 		plane.speed = maxf(_dip_speed,FLY_SPEED)
 		out["wings"] = {"speed":_dip_speed}
+
+## A line's pull on the plane (SkyPlane `tow`), zero if it has none.
+func _tow() -> Vector3:
+	var t: Variant = plane.get("tow")
+	return t if t is Vector3 else Vector3.ZERO
 
 ## The dive now: Vector2(radians nose down, m/s down the nose's line).
 func _dive_now() -> Vector2:
@@ -700,6 +706,14 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 	var heading := float(plane.heading)
 	# The slope pulls it, any way it leans.
 	_v -= _gradient(floor_at,at)*SLOPE_PULL*delta
+	# A line's pull (SkyPlane `tow`, a towed load): along the ground, never
+	# so far as to roll it backwards (the wheels hold).
+	var tow := _tow()
+	if tow != Vector3.ZERO and not reversing:
+		var was := _v
+		_v += Vector2(tow.x,tow.z)*delta
+		var fwd_now := Vector2(-sin(heading),-cos(heading))
+		if _v.dot(fwd_now) < 0.0 and was.dot(fwd_now) >= 0.0: _v -= fwd_now*_v.dot(fwd_now)
 	var speed := _v.length()
 	var track := atan2(-_v.x,-_v.y) if speed > 0.3 else heading
 	# Backing up: Boost calls it off (it stops, then rolls on forwards).
