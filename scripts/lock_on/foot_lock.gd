@@ -14,6 +14,7 @@ extends Node3D
 const TargetStone = preload("res://scripts/lock_on/target_stone.gd")
 
 ## Reach (m from his feet): locks within ACQUIRE, lets go past RELEASE.
+## A target with `lock_reach()` (Vector2: acquire, release) sets its own.
 const ACQUIRE := 22.0
 const RELEASE := 28.0
 ## Roughly in view: within this of the camera's flat heading (rad).
@@ -99,12 +100,13 @@ func acquire(feet: Vector3, camera: Camera3D) -> bool:
 		var aim: Vector3 = t.call("aim_point")
 		var d := aim-feet
 		var across := Vector2(d.x,d.z).length()
-		if across > ACQUIRE: continue
+		var reach := _reach(t)
+		if across > reach.x: continue
 		var from_cam := aim-camera.global_position
 		var off := absf(flat_ahead.angle_to(Vector2(from_cam.x,from_cam.z).normalized()))
 		if off > VIEW: continue
 		if not _seen(t,camera): continue
-		var score := across/ACQUIRE+off/VIEW
+		var score := across/reach.x+off/VIEW
 		if score < best_score:
 			best_score = score
 			best = t
@@ -114,6 +116,10 @@ func acquire(feet: Vector3, camera: Camera3D) -> bool:
 	_lost = 0.0
 	_pop = 0.0
 	return true
+
+## `t`'s reach (acquire, release, m): its own, else ACQUIRE and RELEASE.
+static func _reach(t: Node3D) -> Vector2:
+	return t.call("lock_reach") if t.has_method("lock_reach") else Vector2(ACQUIRE,RELEASE)
 
 func release(why := "pressed") -> void:
 	if target != null: let_go_why = why
@@ -129,7 +135,7 @@ func step(delta: float, feet: Vector3, camera: Camera3D, allowed: bool) -> void:
 		if not allowed: release("not allowed")
 		else:
 			var aim: Vector3 = target.call("aim_point")
-			var far := Vector2(aim.x-feet.x,aim.z-feet.z).length() > RELEASE
+			var far := Vector2(aim.x-feet.x,aim.z-feet.z).length() > _reach(target).y
 			if far or not _seen(target,camera): _lost += delta
 			else: _lost = 0.0
 			if _lost > LOSE_AFTER: release("range" if far else "sight")

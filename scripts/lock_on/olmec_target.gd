@@ -17,6 +17,9 @@ extends "res://scripts/enemies/headless_body.gd"
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 
 const GROUP := &"lock_targets"
+## His lock reach (m, acquire and release): he towers, so the lock
+## takes him from across the field (scripts/lock_on/foot_lock.gd).
+const REACH := Vector2(48.0,58.0)
 ## Hits to bring him down.
 const HITS := 6
 ## The rock: kick (rad/s per unit strength), spring, damping, most tip (rad).
@@ -54,6 +57,9 @@ func setup(host: Node, at: Vector3, face: Vector2, overrides := {}) -> void:
 ## His chest: halfway up his torso.
 func aim_point() -> Vector3:
 	return global_position+Vector3.UP*(legs_h+torso_h*0.55)
+
+func lock_reach() -> Vector2:
+	return REACH
 
 ## His top: over his head when whole, his stump's cut when not.
 func tall() -> float:
