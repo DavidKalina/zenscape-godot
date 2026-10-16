@@ -194,12 +194,32 @@ func height_from(p: Vector2, y: float) -> float:
 ## whose underside is also the topmost surface still passes.
 const TOP_SAME := 0.02
 func _under_top(p: Vector2, from: float, y: float) -> bool:
-	_ray.from = Vector3(p.x,from,p.y)
-	_ray.to = Vector3(p.x,y+REACH,p.y)
-	var up := space.intersect_ray(_ray)
-	if up.is_empty(): return false
-	var over := _down(p,y+TOWER)
-	return is_finite(over) and absf(over-(up.position as Vector3).y) < TOP_SAME
+	return not is_nan(top_over(space,_ray,Vector3(p.x,from,p.y),y+REACH,y+TOWER))
+
+## The shared form of `_under_top`, for any reader (the enemies' too,
+## scripts/enemies/enemy_field.gd floor_under, headless_body _floor): the
+## height of the open top over `from` if `from` lies under it in hollow
+## land (a ray up to `reach_y` meets it, and a ray down from `tower_y`
+## lands on it within TOP_SAME), else NAN. `ray` keeps its mask and
+## exclusions; only its ends are set.
+static func top_over(at: PhysicsDirectSpaceState3D, ray: PhysicsRayQueryParameters3D, from: Vector3, reach_y: float, tower_y: float) -> float:
+	ray.from = from
+	ray.to = Vector3(from.x,reach_y,from.z)
+	var up := at.intersect_ray(ray)
+	if up.is_empty(): return NAN
+	var top := (up.position as Vector3).y
+	ray.from = Vector3(from.x,tower_y,from.z)
+	ray.to = Vector3(from.x,tower_y-DEPTH,from.z)
+	var over := at.intersect_ray(ray)
+	if over.is_empty() or (over.normal as Vector3) == Vector3.ZERO: return NAN
+	return top if absf((over.position as Vector3).y-top) < TOP_SAME else NAN
+
+## A down read from `up` over `p` that met nothing: the open top over its
+## start if the start lies in hollow land (`top_over`, within REACH), else
+## -INF, a void as before.
+static func land_top(at: PhysicsDirectSpaceState3D, ray: PhysicsRayQueryParameters3D, p: Vector3, up: float) -> float:
+	var top := top_over(at,ray,p+Vector3.UP*up,p.y+up+REACH,p.y+TOWER)
+	return -INF if is_nan(top) else top
 
 ## The first thing under `p` from height `from`: its height, INF if `from`
 ## is inside it, -INF if there is nothing.
