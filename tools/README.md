@@ -18,6 +18,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
 | The test suite | `python tools/run_tests.py [--tests 'test_x*.gd'] [--quick]` |
 | A brainstorm round's cards as one page of maps | `python tools/motif_cards_html.py docs/design/motifs/brainstorm/<round> [--open]` |
+| A new RuinKit piece: scaffold, sizes, recipe, yard, check | `python tools/kit_piece.py new\|numbers\|recipe\|yard\|check` |
 | Find an existing tool | `python tools/index.py <word>` |
 
 ## godot.py: the base
@@ -158,6 +159,42 @@ The views are three, front, back, left, right, top and close. The HUD is
 hidden unless you pass `--hud`. Files go to `captures/shots/<scene>_<view>.png`
 unless `--out` says otherwise. Read the PNGs and judge them yourself.
 Headless runs can't take stills.
+
+## kit_piece.py: a new RuinKit piece
+
+```
+python tools/kit_piece.py new <id> --family <family> [--name "Display name"]
+python tools/kit_piece.py numbers                  # GRAB_TOP, CHAIN_TOP, SET_OFF, STAND, HEAD, SLIDE_AUTO, opening(TOY_THREAD)...
+python tools/kit_piece.py recipe                   # tools/kit_piece_recipe.md
+python tools/kit_piece.py yard <id> [--seed 3 --weathered 0.4]
+python tools/kit_piece.py check <id> [--shots]
+```
+
+- `new` writes `scripts/ruin_kit_<id>.gd` from a stub (one worn block on a
+  clean walk box) and registers it in `scripts/ruin_kit.gd` (a
+  `<ID>_PIECES` const, FAMILIES, ALL_PIECES, NAMES, the `piece` line) and a
+  connector arm in `scripts/ruin_kit_fit.gd`. It never overwrites a file
+  and skips edits already made; the piece is in the editor palette and
+  passes tests/test_ruin_kit.gd straight away.
+- `numbers` prints the sizing constants read live from the code (a
+  headless `tools/kit_piece_numbers.gd`), each with its file and name.
+  Carries are ballistic estimates: prove a gap with a drive.
+- `recipe` is the Build helpers, collision, ledges, meta, ropes, live
+  rigs, connectors and LOD by symbol name.
+- `yard` prints the shot.py and drive.py lines for
+  `studies/kit_piece_yard.tscn` (`--piece=<id> --seed= --weathered=
+  --turn=`; the piece is node "Piece" at the origin, its ropes hung live).
+  The drive skeleton is `tools/harness/examples/kit_piece_drive.gd`.
+- `check` prints one PASS/FAIL line each: the editor round trip
+  (`tools/harness/kit_piece_editor.gd`: palette, place, turn, save,
+  reload rebuilds the same after a dress, ropes, temp save deleted),
+  tests/test_ruin_kit.gd, smokes of the motif editor, motif_yard
+  editor_aqueduct_gorge and bell_spires, and the yard; `--shots` adds a
+  still sheet. Exits 1 on any failure (about 40 s). Run one `check` at a
+  time: the editor round trip uses one temp slug.
+- Tool and study scripts get the editor's FootPieces with
+  `load("res://scripts/roguelike/layer_greybox.gd").FootPieces` at run
+  time; a const preload of it leaks the script graph at exit.
 
 ## bg.py: runs past the tool limit
 

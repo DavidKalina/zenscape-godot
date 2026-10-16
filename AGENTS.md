@@ -39,7 +39,8 @@ each of these: finding Godot and keeping the import fresh (`tools/godot.py`),
 the smoke check (`tools/smoke.py`), checks through the real play loop
 (`tools/harness/drive.gd` with `tools/drive.py`), seed and knob tables
 (`tools/sweep.py`), rendered stills (`tools/shot.py`) and runs longer than the tool-call
-limit (`tools/bg.py`). `python tools/index.py <word>` finds the older
+limit (`tools/bg.py`). A new RuinKit piece: `tools/kit_piece.py` (scaffold,
+numbers, recipe, yard, check). `python tools/index.py <word>` finds the older
 one-off tools. Throwaway drivers go in `scratch/` (git-ignored). If a
 round needs a tool the harness lacks, say so in its handoff.
 
