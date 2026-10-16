@@ -48,7 +48,7 @@ coordinate.
    so `studies/motif_yard.tscn --motif=<editor slug>` and the generator run
    them too.
 
-9. **A grey editing look** (do this next, right after the task in
+8. **A grey editing look** (do this next, right after the task in
    progress when it was added: it makes every later task cheaper to
    check). Editing is slow because the editor keeps the full look live
    (it re-dresses on its own ~250 ms after each change: turf, flora,
@@ -67,7 +67,7 @@ coordinate.
      unchanged: the grey look is the editor's view only.
    Measure the frame time while editing an `editor_*` motif before and
    after (a rendered run; say how), and put both numbers in the commit.
-10. **Inspecting up close** (the last task, after 1-7). The fly camera
+9. **Inspecting up close** (the last task). The fly camera
    is hard to judge a place from, so give the user two close views,
    without leaving the editor or playing:
    - **Frame (F):** the camera swings in to the selected trap or piece
