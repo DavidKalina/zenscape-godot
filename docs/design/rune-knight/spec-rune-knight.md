@@ -56,18 +56,35 @@ stagger) reads at a glance in a still.
 
 ## The player's blast
 
-The user is building the wanderer's own wind blast elsewhere; it is not
-on main. This loop adds a **stand-in**: a key (pick one free in
-`scripts/kit_isle/dev_keys.gd` and the motor's input; say which in the
-commit) that fires a straight wind shot from the wanderer the way he
-faces, only with `--rune-knight`. Keep it in its own file, small, and
-behind one seam: a shot is a node in a group (e.g. `wind_shot`) with its
-position, velocity, owner and strength, which the knight reads and
-reflects. The real blast should only have to join that group to play
-tennis. Both his shot and yours use the same shot script.
+The real one is on main now (merged at b6602a4f): **lock-on**
+(`scripts/lock_on/foot_lock.gd`: R3 / Tab / middle mouse locks the nearest
+`lock_targets` member that answers `aim_point()` and `tall()`) and the
+**gust shot** (`scripts/lock_on/gust_shot.gd`: X with updraft charge; a
+locked shot homes and calls `hit(at, way, strength)` on its target, its
+strength from the charge spent). Read `docs/design/lock-on/handoff-lock-on.md`.
+These are the player's side of the knight; extend them additively and
+keep the target stone working as before.
 
-The deflected shot's knock on a body is the gust knock; on the wanderer
-that's `Gust.knock`.
+- **He is a lock target.** In `lock_targets`, `aim_point()` his chest,
+  `tall()` so the marker hangs over his helm, while he stands; off the
+  list while he's down off the deck only if that reads better in play.
+- **The gust shot knocks him back.** `hit()` shoves him along the shot's
+  flat way, farther with more strength, into a heavy stagger (the
+  `stagger` clip, planted steps, real weight); at the deck's edge, over
+  it, as task 4 built for a miss.
+- **Tennis on the real shot.** A gust shot that reaches him from in front
+  while he is under his rally limit he catches instead (the task-4 catch,
+  then `_send_return`). From the side or behind, or past his limit, it
+  knocks him back. Fired while his return is coming at you, your gust
+  ball meets it in the air and sends it back at him, the way the stand-in
+  does. The gust shot's balls have to be readable by the knight for that;
+  the smallest additive seam in `gust_shot.gd` (e.g. its live balls in
+  the `wind_shot` group, or a query) is fine.
+- **From the meadow:** the deck's buttresses pop a shot aimed from below
+  (found in task 4). A locked homing shot should be able to reach him
+  from the meadow; fix the line, not the stone.
+- **The Z stand-in stays** as a dev key that needs no charge, for checks
+  and quick play; X is the game's blast.
 
 ## Where code goes
 
@@ -136,14 +153,21 @@ changing. Names here are final once built on; change one only by a
 4. Catch and return, the rally speeding up, the miss and his stagger.
    A play-loop check of a rally (blast, catch, return, blast back) and of
    a miss; stills of the catch and the stagger.
-5. The slash (spec change after the user played task 2): the blade
+5. Lock-on and the gust shot on him (spec change after the user pushed
+   lock-on and the gust shot to main): lock target, knockback from
+   `hit()`, catch and rally on the real shot, the meadow line. Play-loop
+   checks through the real inputs (lock key, X with charge set): lock
+   him, a hit from the side knocks him back, a hit from in front is
+   caught and returned, X blasts the return back, a hit at the edge puts
+   him over. Stills of the lock marker on him and the knockback.
+6. The slash (spec change after the user played task 2): the blade
    tell, the `slash` clip (horizontal and diagonal), the crescent shot
    (a shape of `wind_shot.gd`, same group and seam), the `attack` knob,
    and his return in a rally becomes a slash. Stills of the blade tell,
    both slashes and the crescent in flight; play-loop checks that a
    jump clears a horizontal crescent, a sidestep a diagonal one, and a
    hit knocks.
-6. A feel pass on timings from the stills and checks, and a short rendered
+7. A feel pass on timings from the stills and checks, and a short rendered
    clip (a few frames strung) of one full rally.
 
 ## Checks
