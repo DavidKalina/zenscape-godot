@@ -137,6 +137,39 @@ coordinate.
    the demo's wind blaster so it sits on the turf, and check the demo
    route still walks clean. Stills before and after.
 
+13. **Ravine artifact** (from the user's play of the demo; a bug, first of
+   13-15). Carving a ravine left a webby sheet of terrain spanning across a
+   slice of the ravine. Diagnose before fixing: reproduce it (carve ravines
+   on editor_trap_demo and editor_hill, several widths and depths; stills
+   looking along and across the cut), find whether it is in the coarse
+   land proxy (snappy edits), the full KitLand build, the cliff/lip prisms
+   or the ravine stroke itself, in grey and full look, editing and after P.
+   Fix it at its source; check old motifs with ravines (editor_*.json)
+   still build as before or better, and say which changed.
+14. **Slope tool** (the user's ask: "take something and turn it into a slope
+   you can slide on, and vice versa"). A land tool on the tool roll's land
+   tools (or the palette, if the roll has no room; say which):
+   - **To slope:** drag a line from top to bottom (or across a band); the
+     land there becomes an even ramp the pilot slides down, its angle from
+     the pilot's real slide numbers (`tools/kit_piece.py numbers`:
+     SLIDE_AUTO and the motor's slide), not a typed angle; no cliff steps
+     or grabbable lips inside the ramp, blended at its edges.
+   - **To steps (vice versa):** the same gesture turns a slope into
+     terraces in ledge steps (the set-off, 1.6 m) with grabbable lips.
+   - A recipe stroke like the others (additive format), undo, the snappy
+     rebuild. Prove with real input: carve a slope on editor_trap_demo, P,
+     the pilot slides it end to end; turn it back to steps, he climbs it.
+15. **Rope bridge anchors** (the user: "rope bridges need better anchor
+   points"; read here as: the bridge's ends and posts should sit on solid
+   ground at the lip, posts footed in the turf, the deck meeting the walk
+   height at each end, and the user able to drag each end's anchor; if the
+   stills show a different fault, fix that and say so). Look first: stills
+   of the bridges in editor_aqueduct_gorge and a few new runs across
+   ravines of different depths, close (F, V). Then fix the anchor seating
+   in the bridge run (`ruin_kit_fit.gd` bridge_run, the rope-bridge heads)
+   additively: saved bridges rebuild, better seated. Prove the pilot walks
+   on and off each end with real input.
+
 ## Rules for this loop
 
 - **One trap list.** Lift the trap yard's `TRAPS` table into a shared
