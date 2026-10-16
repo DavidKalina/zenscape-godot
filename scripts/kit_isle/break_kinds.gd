@@ -43,6 +43,7 @@ extends RefCounted
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Cuts = preload("res://scripts/kit_isle/masonry_cuts.gd")
 const Build = RuinKit.Build
+const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 
 ## At most this many parts a break (each part a build of the piece).
 const MOST_PARTS := 6
@@ -96,8 +97,16 @@ static func toughness(node: Node, kind: String) -> float:
 ## Target `t` cut as its kind: {stands, parts} ({} if it can't be).
 static func cut(kind: String, t: Dictionary) -> Dictionary:
 	var j := job(kind,t)
-	while not step(j): pass
+	finish(j)
 	return result(j)
+
+## Job `j` run to its end now (a threaded one waited for, its asks all
+## served meanwhile).
+static func finish(j: Dictionary) -> void:
+	while not step(j):
+		if bool(j.get("threaded",false)):
+			serve(true)
+			OS.delay_usec(100)
 
 ## A cut done a build at a time (`step` each frame), so a big piece's cut
 ## spreads over frames before the hit instead of one long frame at it. {}
@@ -110,12 +119,91 @@ static func job(kind: String, t: Dictionary) -> Dictionary:
 	var todo: Array = [""]
 	for a in range(int(frame.along)):
 		for u in range(int(frame.up)): todo.append("%d_%d" % [a,u])
-	return {"t":t,"shape":shape,"frame":frame,"todo":todo,"i":0,
+	# ctl: the main thread's own (a worker never touches it).
+	return {"t":t,"shape":shape,"frame":frame,"todo":todo,"i":0,"detail":Build.detail,
+		"threaded":bool(t.get("threaded",false)),"ctl":{"task":-1,"ran":false,"cancel":false},
 		"out":{"stands":null,"parts":[],"topple":bool(shape.get("topple",false))}}
 
-## One build of `j` done; true when it's all done (or `j` is {}).
+# --- Builds on a worker -------------------------------------------------------------------------
+
+static var _asks: Array = []
+static var _asks_lock := Mutex.new()
+static var _dropped: Array = []
+## The main thread's time in `serve` so far (ms): workers' meshes and bodies made.
+static var serve_ms := 0.0
+## The main thread's share of workers' asks a frame (ms): one more is begun
+## while under it (one ask, a piece's mesh, is up to ~6 ms).
+const SERVE_MS := 2.5
+static var _served_frame := -1
+static var _served_this := 0.0
+
+## On a worker: `fn` run on the main thread (its next `serve`), waited for.
+## The renderer's and physics' RIDs are made there (the headless dummy
+## renderer's aren't safe to make on a worker, godot#124183).
+static func _on_main(fn: Callable) -> void:
+	var sem := Semaphore.new()
+	_asks_lock.lock()
+	_asks.append([fn,sem])
+	_asks_lock.unlock()
+	sem.wait()
+
+## On the main thread, each frame and while waiting on a job: runs what
+## workers asked for, the frame's first SERVE_MS of it (all of it when
+## `all`: a hit waiting on its cut), and frees dropped jobs whose worker
+## has stopped.
+static func serve(all := false) -> void:
+	var began := Time.get_ticks_usec()
+	var frame := Engine.get_process_frames()
+	if frame != _served_frame:
+		_served_frame = frame
+		_served_this = 0.0
+	while not _asks.is_empty() and (all or _served_this < SERVE_MS):
+		_asks_lock.lock()
+		var a: Array = _asks.pop_front()
+		_asks_lock.unlock()
+		var b := Time.get_ticks_usec()
+		(a[0] as Callable).call()
+		(a[1] as Semaphore).post()
+		_served_this += (Time.get_ticks_usec()-b)/1000.0
+	for k in range(_dropped.size()-1,-1,-1):
+		var j: Dictionary = _dropped[k]
+		if not WorkerThreadPool.is_task_completed(int(j.ctl.task)): continue
+		WorkerThreadPool.wait_for_task_completion(int(j.ctl.task))
+		j.ctl.task = -1
+		_dropped.remove_at(k)
+		drop(j)
+	serve_ms += (Time.get_ticks_usec()-began)/1000.0
+
+## The rest of job `j`, a build at a time, on a worker (stopping when dropped).
+static func _run(j: Dictionary) -> void:
+	var ctl: Dictionary = j.ctl
+	while not bool(ctl.cancel) and not _build(j,_on_main): pass
+
+## One build of `j` done; true when it's all done (or `j` is {}). A
+## threaded job (target "threaded") runs its builds on a worker instead:
+## step starts it, then says whether it is done.
 static func step(j: Dictionary) -> bool:
 	if j.is_empty(): return true
+	if bool(j.get("threaded",false)):
+		serve()
+		var ctl: Dictionary = j.ctl
+		if bool(ctl.ran): return true
+		if int(ctl.task) < 0:
+			# Made once, here, so no worker makes them.
+			Build.materials()
+			RuinGrowth.material()
+			ctl.task = WorkerThreadPool.add_task(_run.bind(j),false,"Kit cut")
+			return false
+		if not WorkerThreadPool.is_task_completed(int(ctl.task)): return false
+		WorkerThreadPool.wait_for_task_completion(int(ctl.task))
+		ctl.task = -1
+		ctl.ran = true
+		return true
+	return _build(j,Callable())
+
+## One build of `j` (on whichever thread), its settings its own
+## (Build.per_thread); `hand` the main thread's, on a worker.
+static func _build(j: Dictionary, hand: Callable) -> bool:
 	if int(j.i) >= (j.todo as Array).size(): return true
 	var want: String = j.todo[j.i]
 	j.i = int(j.i)+1
@@ -126,19 +214,17 @@ static func step(j: Dictionary) -> bool:
 	var shape: Dictionary = j.shape
 	var frame: Dictionary = j.frame
 	var kept: Callable = t.get("keep",Callable())
-	Build.keep_only = func(c: Vector3) -> bool: return (not kept.is_valid() or bool(kept.call(c))) and part_of(c,t,shape,frame) == want
-	var was := Build.detail
-	if want != "": Build.detail = 0.0
+	Build.per_thread({"keep_only":func(c: Vector3) -> bool: return (not kept.is_valid() or bool(kept.call(c))) and part_of(c,t,shape,frame) == want,
+		"detail":0.0 if want != "" else float(j.detail),"hand":hand})
 	var built: Node3D = (t.rebuild as Callable).call()
-	Build.keep_only = Callable()
-	Build.detail = was
+	Build.per_thread({})
 	if want == "":
 		if built != null:
 			built.name = "Stands"
 			# Nothing of it stands: none left to keep.
 			var mi := built.get_node_or_null("Mesh") as MeshInstance3D
 			if mi == null or mi.mesh == null or mi.mesh.get_surface_count() == 0:
-				built.free()
+				_free(built,hand)
 				built = null
 		j.out.stands = built
 		# What stands keeps: what the piece kept before and this cut's
@@ -146,8 +232,13 @@ static func step(j: Dictionary) -> bool:
 		var seed_only := {"seed":t.seed}
 		j.out.keep = func(c: Vector3) -> bool: return (not kept.is_valid() or bool(kept.call(c))) and part_of(c,seed_only,shape,frame) == ""
 	elif built != null:
-		var part := Cuts._part(built,str(shape.fall))
-		built.free()
+		var made := {}
+		var cut_part := func() -> void:
+			made.part = Cuts._part(built,str(shape.fall))
+			built.free()
+		if hand.is_valid(): hand.call(cut_part)
+		else: cut_part.call()
+		var part: Dictionary = made.part
 		if not part.is_empty():
 			part.id = want
 			(j.out.parts as Array).append(part)
@@ -167,16 +258,33 @@ static func serves(j: Dictionary, at: Vector3, tol: float) -> bool:
 	if float(shape.reach) > 0.0 and absf(at[int(j.frame.long)]-was[int(j.frame.long)]) > tol: return false
 	return true
 
+static func _free(n: Node, hand: Callable) -> void:
+	if hand.is_valid(): hand.call(n.free)
+	else: n.free()
+
 static func done(j: Dictionary) -> bool:
-	return j.is_empty() or int(j.i) >= (j.todo as Array).size()
+	if j.is_empty(): return true
+	if bool(j.get("threaded",false)): return bool(j.ctl.ran)
+	return int(j.i) >= (j.todo as Array).size()
 
 ## A finished job's {stands, parts[, topple]} ({} for an empty job).
 static func result(j: Dictionary) -> Dictionary:
 	return {} if j.is_empty() else j.out
 
+## Every dropped job's worker let finish (a hub leaving the tree).
+static func settle_all() -> void:
+	while not _dropped.is_empty():
+		serve(true)
+		OS.delay_usec(200)
+
 ## A job's builds not yet made, freed (a pre-cut never used).
 static func drop(j: Dictionary) -> void:
 	if j.is_empty(): return
+	# Its worker still building: stopped after this build, freed by `serve`.
+	if j.has("ctl") and int(j.ctl.task) >= 0:
+		j.ctl.cancel = true
+		if not _dropped.has(j): _dropped.append(j)
+		return
 	var st: Variant = (j.out as Dictionary).get("stands")
 	if st is Node3D and is_instance_valid(st) and not (st as Node3D).is_inside_tree(): (st as Node3D).free()
 

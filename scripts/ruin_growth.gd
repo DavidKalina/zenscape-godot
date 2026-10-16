@@ -176,7 +176,7 @@ static func curtains(b) -> void:
 	if not vines: return
 	for hi in range(b.hangs.size()):
 		var h: Array = b.hangs[hi]
-		if b.detail < 1.0 and fmod(hi*0.618,1.0) >= b.detail: continue
+		if b.level < 1.0 and fmod(hi*0.618,1.0) >= b.level: continue
 		curtain(b,h[0],h[1],h[3])
 
 ## One curtain under the underside over `at` (x, z; from height `from`, or
@@ -221,7 +221,7 @@ static func fringes(b) -> void:
 		area += float(t[1])
 	if high.is_empty(): return
 	var cap: int = FRINGES_LEAN if b.lean else FRINGES
-	var count := int(mini(cap,int(area*FRINGE_RATE*(0.4+b.weathered)+b.rng.randf()))*b.detail)
+	var count := int(mini(cap,int(area*FRINGE_RATE*(0.4+b.weathered)+b.rng.randf()))*b.level)
 	for i in range(count):
 		for attempt in range(8):
 			var roll: float = b.rng.randf()*area

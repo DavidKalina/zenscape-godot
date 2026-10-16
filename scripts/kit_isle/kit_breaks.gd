@@ -64,11 +64,15 @@ func add(node: Node3D, kind: String, rebuild := Callable(), seed_value := -1) ->
 	var box := _box_of(node)
 	if box.size == Vector3.ZERO: return -1
 	var recipe: Array = node.get_meta("kit_piece",[]) as Array
+	# A RuinKit recipe's pre-cut builds on a worker (bar the aqueduct's,
+	# whose water makes its own meshes mid-build).
+	var threaded := false
 	if not rebuild.is_valid() and recipe.size() == 3:
 		rebuild = func() -> Node3D: return RuinKit.piece(str(recipe[0]),int(recipe[1]),float(recipe[2]))
+		threaded = not str(recipe[0]) in RuinKit.AQUEDUCT_PIECES
 	if seed_value < 0: seed_value = int(recipe[1]) if recipe.size() == 3 else hash(node.name)
 	targets.append({"node":node,"kind":kind,"tough":Kinds.toughness(node,kind),"box":box,"seed":seed_value,
-		"rebuild":rebuild,"alive":true,"pre":{},"keep":Callable()})
+		"rebuild":rebuild,"alive":true,"pre":{},"keep":Callable(),"threaded":threaded})
 	_refresh_rids()
 	return targets.size()-1
 
@@ -132,6 +136,7 @@ func hit(at: Vector3, radius: float, strength: float, _source: StringName) -> in
 ## His bulk this frame: a piece he's strong enough for that it touches
 ## breaks where it meets him, over the way he goes.
 func met(body: Node3D) -> void:
+	Kinds.serve()
 	var olmec := float(hub.strength_of(&"olmec")) if hub != null else 1.0
 	var hh: float = body.hh
 	var hw := hh*HeadlessBody.BULK_W
@@ -165,6 +170,13 @@ func met(body: Node3D) -> void:
 			q = at
 			# Its cut made a build a frame first (he leans on it a beat),
 			# not all in this one.
+			prepare(i,q)
+			if not Kinds.done(t.pre):
+				_step_pre(i)
+				continue
+		elif bool(t.threaded):
+			# Its cut still building on its worker (or none guessed): he
+			# leans on it till it's made, not a fresh cut in this frame.
 			prepare(i,q)
 			if not Kinds.done(t.pre):
 				_step_pre(i)
@@ -297,20 +309,23 @@ func prepare(i: int, at: Vector3) -> void:
 		if Kinds.serves(t.pre,local,PRE_TOL): return
 		Kinds.drop(t.pre)
 		pre_missed += 1
-	t.pre = Kinds.job(str(t.kind),{"node":t.node,"box":t.box,"at":local,"dir":Vector3.FORWARD,"seed":t.seed,"rebuild":t.rebuild,"keep":t.keep})
+	t.pre = Kinds.job(str(t.kind),{"node":t.node,"box":t.box,"at":local,"dir":Vector3.FORWARD,"seed":t.seed,"rebuild":t.rebuild,"keep":t.keep,"threaded":t.threaded})
 	if not (t.pre as Dictionary).is_empty(): pre_made += 1
 
 ## One build of target `i`'s pre-cut.
 func _step_pre(i: int) -> void:
 	var began := Time.get_ticks_usec()
+	var served := Kinds.serve_ms
 	Kinds.step(targets[i].pre)
-	var ms := (Time.get_ticks_usec()-began)/1000.0
+	# Less what the step's serve took (counted in Kinds.serve_ms).
+	var ms := (Time.get_ticks_usec()-began)/1000.0-(Kinds.serve_ms-served)
 	pre_step_ms = maxf(pre_step_ms,ms)
 	build_ms += ms
 
 func _exit_tree() -> void:
 	for t: Dictionary in targets:
 		if t.alive: Kinds.drop(t.pre)
+	Kinds.settle_all()
 
 # --- A break --------------------------------------------------------------------------------
 
@@ -328,7 +343,7 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> b
 	var pre: Dictionary = t.pre
 	var cut := {}
 	if Kinds.serves(pre,cut_t.at as Vector3,PRE_TOL):
-		while not Kinds.step(pre): pass
+		Kinds.finish(pre)
 		cut = Kinds.result(pre)
 		pre_used += 1
 	else:
@@ -367,6 +382,7 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> b
 		var again := add(stands,str(t.kind),t.rebuild,int(t.seed))
 		if again >= 0:
 			targets[again].keep = cut.keep
+			targets[again].threaded = t.threaded
 			targets[again].tough = t.tough
 			group.stump = null
 	var foot := xf*Vector3((t.box as AABB).get_center().x,(t.box as AABB).position.y,(t.box as AABB).get_center().z)

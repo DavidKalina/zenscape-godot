@@ -2311,7 +2311,7 @@ static func _ruin_line(b: Build, x0: float, x1: float, low: float, high: float, 
 static func _drift(b: Build, at: Vector3, reach: float, count: int) -> void:
 	# Lean stone: fewer, the more so with less detail (a drift's few big
 	# stones still read).
-	if b.lean: count = int(ceil(count*(0.4+0.3*Build.detail)))
+	if b.lean: count = int(ceil(count*(0.4+0.3*b.level)))
 	if count <= 0: return
 	at.y += b.floor_at(at.x,at.z)
 	var keep := b.frame
@@ -2328,7 +2328,7 @@ static func _drift(b: Build, at: Vector3, reach: float, count: int) -> void:
 ## within `reach` and a little beyond.
 static func _rubble(b: Build, reach: float, count: int) -> void:
 	if b.weathered <= 0.0: return
-	count = int(round(count*Build.detail))
+	count = int(round(count*b.level))
 	for i in range(count):
 		var a := b.rng.randf()*TAU
 		var dist := reach+b.rng.randf_range(-0.3,1.0)
@@ -2569,6 +2569,24 @@ class Build extends RefCounted:
 	## joints). The blocks are laid as ever (the same draws), then those
 	## not kept taken out at `finish`, after `drop_floating`.
 	static var keep_only := Callable()
+	## This build's `keep_only` and `detail`, taken when it begins: the
+	## statics, or what `per_thread` set for the thread it runs on (a build
+	## on a worker, its settings its own, not the main thread's statics).
+	var keeps := Callable()
+	var level := 1.0
+	## With `per_thread`'s "hand": finish makes its mesh, instance and body
+	## (the renderer's and physics' RIDs) through it, on the main thread.
+	var hand := Callable()
+	static var _threads := {}
+	static var _threads_lock := Mutex.new()
+
+	## Settings for builds begun on this thread from now on ({keep_only,
+	## detail, hand}), or {} to go back to the statics.
+	static func per_thread(settings: Dictionary) -> void:
+		_threads_lock.lock()
+		if settings.is_empty(): _threads.erase(OS.get_thread_caller_id())
+		else: _threads[OS.get_thread_caller_id()] = settings
+		_threads_lock.unlock()
 
 	static func materials() -> Dictionary:
 		if _materials.is_empty():
@@ -2597,6 +2615,16 @@ class Build extends RefCounted:
 		return false
 
 	func _init(seed_value: int, amount: float, label: String) -> void:
+		keeps = keep_only
+		level = detail
+		if not _threads.is_empty():
+			_threads_lock.lock()
+			var mine: Dictionary = _threads.get(OS.get_thread_caller_id(),{})
+			_threads_lock.unlock()
+			if not mine.is_empty():
+				keeps = mine.get("keep_only",Callable())
+				level = float(mine.get("detail",1.0))
+				hand = mine.get("hand",Callable())
 		rng.seed = hash([seed_value,label,"gothic"])
 		weathered = clampf(amount,0.0,1.0)
 		age = AGE+(1.0-AGE)*weathered
@@ -2714,7 +2742,7 @@ class Build extends RefCounted:
 			made = _polys(cut,points,open)
 		if points.size() < 4: return PackedVector3Array()
 		var block: Array = []
-		if (check_floating or drop_floating or keep_only.is_valid()) and growable:
+		if (check_floating or drop_floating or keeps.is_valid()) and growable:
 			var corners := PackedVector3Array()
 			for q in points: corners.append(xf*q)
 			var faces: Array[Plane] = []
@@ -2806,7 +2834,7 @@ class Build extends RefCounted:
 	## `solid` in the native kernel (isle_kernels.h `ruin_solid`): the very
 	## same draws, faces, tops, solid, hull and block, appended here.
 	func _solid_native(kernel: Object, planes: Array[Plane], pose: Transform3D, colour: Color, collide: bool, wear: bool, extra: Array[Plane], open: int, rough: float, growable: bool) -> PackedVector3Array:
-		var flags := int(collide)|int(wear)<<1|int(growable)<<2|int(lean)<<3|int(rigid)<<4|int(path != null)<<5|int(check_floating or keep_only.is_valid())<<6|int(drop_floating)<<7
+		var flags := int(collide)|int(wear)<<1|int(growable)<<2|int(lean)<<3|int(rigid)<<4|int(path != null)<<5|int(check_floating or keeps.is_valid())<<6|int(drop_floating)<<7
 		var out: Array = kernel.ruin_solid(_solid_consts(),noise,bevels,rng.state,PackedFloat64Array([weathered,age,ground,pending.size(),tops.size(),hulls.size(),solids.size()]),
 			flags,planes,extra,pose,frame,colour,stone,open,rough,grow)
 		rng.state = out[0]
@@ -2930,7 +2958,7 @@ class Build extends RefCounted:
 	## The piece: ivy and moss grown on it, then the mesh and the body.
 	func finish() -> Node3D:
 		frame = Transform3D.IDENTITY
-		if keep_only.is_valid(): _keep_only()
+		if keeps.is_valid(): _keep_only()
 		elif drop_floating: _drop_floating()
 		if check_floating:
 			var found := floating()
@@ -2943,6 +2971,16 @@ class Build extends RefCounted:
 			RuinGrowth.fringes(self)
 			_cushions()
 			_draw()
+		if hand.is_valid(): hand.call(_nodes)
+		else: _nodes()
+		_body()
+		root.set_meta("weathered",weathered)
+		draws = hash([draws,rng.state])
+		return root
+
+	## The mesh and its instance made from what finish drew (on the main
+	## thread, through `hand`, for a build on a worker: the renderer's RIDs).
+	func _nodes() -> void:
 		var mesh := ArrayMesh.new()
 		var m := materials()
 		for part: Array in [[faces,m.stone]]:
@@ -2965,6 +3003,10 @@ class Build extends RefCounted:
 		instance.mesh = mesh
 		root.add_child(instance)
 		root.move_child(instance,0)
+
+	## The body, of the hulls finish drew (physics' RIDs are made on a
+	## worker too, as the isles' threaded builds do).
+	func _body() -> void:
 		var body := StaticBody3D.new()
 		body.name = "Body"
 		for i in range(hulls.size()):
@@ -2979,9 +3021,6 @@ class Build extends RefCounted:
 			holder.shape = shape
 			body.add_child(holder)
 		root.add_child(body)
-		root.set_meta("weathered",weathered)
-		draws = hash([draws,rng.state])
-		return root
 
 	## The kit's constants the native finish reads (made once).
 	static var _native_consts := {}
@@ -3018,7 +3057,7 @@ class Build extends RefCounted:
 		build.state = rng.state
 		build.weathered = weathered
 		build.age = age
-		build.detail = detail
+		build.detail = level
 		build.ground = ground
 		build.lean = lean
 		build.vines = RuinGrowth.vines
@@ -3090,7 +3129,7 @@ class Build extends RefCounted:
 			var pts: PackedVector3Array = blocks[i][0]
 			var mid := Vector3.ZERO
 			for q in pts: mid += q
-			if pts.is_empty() or not bool(keep_only.call(mid/pts.size())): gone.append(i)
+			if pts.is_empty() or not bool(keeps.call(mid/pts.size())): gone.append(i)
 		if not gone.is_empty(): _drop_blocks(gone)
 
 	## Blocks `gone` (indices into `blocks`) taken out: their faces, tops
@@ -3621,7 +3660,7 @@ class Build extends RefCounted:
 			area += float(t[1])
 		# As many strands as the tops' area asks, capped (lean stone, fewer),
 		# then thinned by the detail (so a big ruin thins too).
-		var count := int(mini(IVY_LEAN if lean else IVY_MOST,int(area*lerpf(IVY_STRANDS.x,IVY_STRANDS.y,weathered)+rng.randf()))*detail)
+		var count := int(mini(IVY_LEAN if lean else IVY_MOST,int(area*lerpf(IVY_STRANDS.x,IVY_STRANDS.y,weathered)+rng.randf()))*level)
 		var longest := lerpf(IVY_LENGTH.x,IVY_LENGTH.y,weathered)
 		for i in range(count):
 			if high.is_empty(): break
@@ -3724,7 +3763,7 @@ class Build extends RefCounted:
 	## `height` tall, each a thin cut sliver leaning its own way, in the
 	## plate's olive greens; never solid.
 	func tuft(at: Vector3, height: float, count := 7) -> void:
-		count = int(round(count*detail*(0.5 if lean else 1.0)))
+		count = int(round(count*level*(0.5 if lean else 1.0)))
 		var keep := frame
 		frame = Transform3D.IDENTITY
 		# Standing up from its root, bending as the grass does.
@@ -3745,14 +3784,14 @@ class Build extends RefCounted:
 
 	## Moss cushions on mossy tops: low faceted mounds, not solid.
 	func _cushions() -> void:
-		if detail <= 0.0: return
+		if level <= 0.0: return
 		# Moss never moves: still growth, on the growth's surface.
 		grow = RuinGrowth.still()
 		var found := tops.duplicate()
 		for t: Array in found:
 			var poly: PackedVector3Array = t[0]
 			var area: float = t[1]
-			var odds := (0.08+0.55*weathered)*minf(1.0,area*2.0)*detail*(0.5 if lean else 1.0)
+			var odds := (0.08+0.55*weathered)*minf(1.0,area*2.0)*level*(0.5 if lean else 1.0)
 			if rng.randf() > odds: continue
 			for j in range(1+int(area*2.0*weathered)):
 				var k := rng.randi()%poly.size()
