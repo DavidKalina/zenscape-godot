@@ -143,6 +143,13 @@ static func yard_plan(slug: String, at: Vector3, knobs := {}) -> Dictionary:
 		"spawn":{"at":spawn_at,"face":face},
 		"void_y":span.x-NET,"problems":[],
 	}
+	# A motif's own guacharos (`flyers()`: [{home, grace, range}] in its
+	# frame), laid by LayerFlyers as the flyer yard's are.
+	if m.has_method("flyers"):
+		plan.flyers = (m.flyers() as Array).map(func(f: Dictionary) -> Dictionary:
+			var o := f.duplicate()
+			o.home = (f.home as Vector3)+at
+			return o)
 	LayerGreybox.lay_heads(plan,LayerEnemies.numbers())
 	return plan
 

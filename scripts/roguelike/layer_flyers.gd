@@ -102,12 +102,19 @@ func setup(stage: Node3D, layer: Dictionary, laid: Array) -> void:
 		zones.append(e.a)
 		zones.append(e.b)
 	var i := 0
+	# A laid `range` is taken as it is (the widest of them); RANGE only
+	# where none gives one.
+	var given := laid.filter(func(f: Dictionary) -> bool: return f.has("range"))
+	if not given.is_empty(): range_m = 0.0
 	for f: Dictionary in laid:
 		grace = minf(grace,float(f.get("grace",GRACE)))
 		range_m = maxf(range_m,float(f.get("range",RANGE)))
+		# A laid flyer's own `knobs` (a place's tuning) under the flags'.
+		var mine: Dictionary = over.duplicate()
+		mine.merge(f.get("knobs",{}),false)
 		var bird = Guacharo.new()
 		add_child(bird)
-		bird.setup(self,f.home,int(layer.get("seed",0))*31+i,over)
+		bird.setup(self,f.home,int(layer.get("seed",0))*31+i,mine)
 		bird.beat.connect(_beat.bind(bird))
 		birds.append(bird)
 		i += 1

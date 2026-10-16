@@ -51,7 +51,7 @@ Set pieces:
 | keel_hung_stair | exists (scripts/ruin_kit_keel.gd + scripts/keel_hung_stair.gd) | boss at (86, 15.5, 18) on the plinth, rot 0 (hung front +Z, south, over the void) |
 | plinth (shaft) | built (gb_pilgrims_ladder.gd `plinth`, RuinKit.Build stone in courses) | deck x 83..90.4, z 13.4..19.3, top 15.5, hatch x 86.4..88.8, z 15.1..17.3; north wall on z 13.4..14.7 against the Crown's flank, east wall x 89.6..90.4, lintel over the west door, south side open under the deck (the hung flight swings out there); a shaft floor (top 12.3) east of the head, its lip on the stair's head cut |
 | wall, floor, buttress, fallen_pier, arch, stairs | exist (RuinKit PIECES) | Crown dressing, the hood's kit wall line, the plinth's walls |
-| guacharo | exists (scripts/enemies/guacharo.gd); no motif-yard host yet | LayerFlyers-style host stepping one bird round the motor |
+| guacharo | exists (scripts/enemies/guacharo.gd); hosted by LayerFlyers through the motif yard (`flyers()` -> plan `flyers`) | LAYOUT.flyers [{home, grace, range, knobs}] |
 | foot tokens / buried finds | exist (scripts/kit_isle/kit_tokens.gd, scripts/buried_find.gd) | the collectibles below |
 
 ## Corrections from the card (code over card)
@@ -70,15 +70,16 @@ Set pieces:
 - **The hatch is x 86.4..88.8, z 15.1..17.3** (clear of the boss), and the shaft has a floor east of the head (top 12.3, lip on the stair's head cut), so a drop through the hatch lands on stone whether the stair is turned or hung.
 - **The sail off the high horn takes a run-up.** A standing jump off the high perch peaks 0.8 m over it and comes down on the ring's outer top before the sail has room to open. Run east down the outer top 2-4.5 m (slope 13-30 deg), jump and open the sail at once (driven).
 - **Cellar to Halo is a short sail, not a hop.** From the Cellar's west rim (77.2, 10, 9.4) a running jump falls about 5.7 m short into the sky; a jump and the sail at its top lands on the Halo at about (65.5, 7, 5.7) (driven). The Halo's west lip to Threshold is a sail along z 4.5, south of the lintel and its ropes; it lands at about x 19.
+- **The bird reads the Crown with `rim_r` 2.5, not 1.4.** It only gets hungry where he is exposed (exposure 0.4 or more: a rim, a leap, a rope, a ledge). On open turf it reads 0.12 and never stalks. With the default rim_r 1.4, only the last 3.6 m before a lip counts, so the Crown was nearly safe and the hood did not matter. At 2.5 (a laid flyer's own `knobs`, new in LayerFlyers), the band within about 6.4 m of the lip counts: the landing, the hood's front and the south lip. The Crown's middle stays safe. LayerFlyers also takes a laid `range` as it is now; before, it was floored at its 140 m default.
 
 ## Open questions
 - Answered (drive check): the last rope's backswing release lands on the lintel's top, and a running hop off its end lands on the Halo.
 - Answered (drive check): the sail from the high horn reaches the Crown with room. Run 2-4.5 m down the ring's east outer top, jump, open the sail: it lands 21-26 m on, at x 84-88 on the Crown's turf (the west lip is at 75).
-- Can the hood's fallen gap (1.6-2.4 m) be crossed under the bird's stalk without a snatch? Is that the right amount of fear?
+- Can the hood's fallen gap (1.6-2.4 m) be crossed under the bird's stalk without a snatch? Is that the right amount of fear? (Drive check: stood in the gap, it reads "rim" and its hunger fills to 3, but it never stalks. Its stalk point, 8.4 m out and 1.6-3.4 m up, toward the camera, has no clear line past the bays' roofs. So the gap is safe while you are in it, and the bird is ready the moment you step out.)
 - Is 12 s (the hold) enough to drop into the shaft and walk the flight, or too generous? Knob `hold` 8-16.
 - The Cellar can also be reached by sailing down off the Crown's south lip (10 m). Does that make the stair optional, and is that fine?
 - Does the plinth read as built stone and not a box? (Stills: from the Crown's lip the deck, hatch and boss read; from the south and west the plinth sits in the Crown's shadow and reads near-black.) Does the hung soffit read as a slide from the Crown?
-- Does the guacharo's 22 m range wake it as you land on the Crown and not on the high horn (28 m)?
+- Answered (drive check): the 22 m range keeps it asleep on the Halo and the high horn, and it wakes on the Crown at the sail's landing.
 
 Layout:
 ```json

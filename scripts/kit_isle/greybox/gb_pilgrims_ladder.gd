@@ -84,6 +84,13 @@ const LAYOUT := {
 		[Vector2(86.0,4.0),Vector2(86.0,12.0)],
 		[Vector2(79.0,12.0),Vector2(84.0,15.0)],
 	],
+	## The guacharo (scripts/enemies/guacharo.gd, laid by LayerFlyers): home
+	## high over the Crown, it hunts once his feet are within `range` (flat)
+	## of it: the Crown, the plinth, the Cellar, not the high horn (28 m).
+	## `rim_r` 2.5 (default 1.4): it reads the Crown's turf within about
+	## 6.4 m of the lip as a rim (hungry), not only the last 3.6 m, so the
+	## landing, the hood's front and the south lip are open to it.
+	"flyers":[{"home":Vector3(91.0,46.0,0.0),"grace":0.0,"range":22.0,"knobs":{"rim_r":2.5}}],
 }
 
 func slug() -> String:
@@ -171,6 +178,11 @@ func flora_seed() -> int:
 
 func life_script() -> Script:
 	return KitLife
+
+## The place's guacharos ([{home, grace, range}], this frame): the motif
+## yard lays them (studies/motif_yard.gd `yard_plan`).
+func flyers() -> Array:
+	return LAYOUT.flyers
 
 func summit() -> Vector3:
 	return Vector3(91.0,20.0,0.0)
