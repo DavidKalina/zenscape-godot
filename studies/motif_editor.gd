@@ -33,7 +33,7 @@ extends "res://studies/kit_isle.gd"
 ## (studies/motif_editor_palette.gd over scripts/command_palette.gd) with the
 ## kit's pieces and trees as thumbnails to drag into the world; the
 ## landform's sliders sit top left on the same linen
-## (studies/motif_editor_panel.gd); the old tools' sound and tremor run
+## (studies/motif_editor_panel.gd); the old tools' sound runs
 ## under it (studies/motif_editor_feel.gd).
 ##   stamps (Mountain, Hills, Crater, Mesa, Island): click, drag out to size
 ##   Ravine: draw a line (a ravine) or a loop (a lake, dug and filled)
@@ -104,7 +104,7 @@ const TOOLS := [["select","Select","1"],["raise","Raise","2"],["lower","Lower","
 const BRUSHES := ["raise","lower","smooth","flatten"]
 ## Round 3: the stamps (click, drag out to size) and their landform; the
 ## tools that draw a path (applied on release); the stamps' height as a
-## share of their radius at strength 0.5, and their sound and tremor tool.
+## share of their radius at strength 0.5, and their sound tool.
 const STAMPS := {"stamp_mountain":"mountain","stamp_hills":"hills","stamp_crater":"crater","stamp_mesa":"mesa","stamp_island":"island"}
 const STAMP_TALL := {"mountain":0.7,"hills":0.26,"crater":0.38,"mesa":0.42,"island":0.25}
 const STAMP_FEEL := {"mountain":"mountain","hills":"mountain","crater":"crater","mesa":"chisel","island":"island"}
@@ -1620,7 +1620,7 @@ func _build_editor_ui() -> void:
 		for entry: Array in MotifAuthored.palette(): _thumbs_left.append(str(entry[0]))
 
 ## The roll stood under the panel (its own height centred in its rect, so
-## the rect is sized to put it there), and the shake.
+## the rect is sized to put it there).
 func _feel_step(delta: float) -> void:
 	if roll != null:
 		var screen := get_viewport().get_visible_rect().size
@@ -1630,8 +1630,6 @@ func _feel_step(delta: float) -> void:
 		roll.position = Vector2.ZERO
 		roll.size = Vector2(screen.x,top*2.0+extent)
 		roll.quiet = not _stamp.is_empty() or not _path.is_empty() or not _stroke.is_empty() or not _held_piece.is_empty()
-	if feel != null and not _looking:
-		camera.global_transform = feel.shake(_cam_base,delta)
 	var made := 0
 	while not _thumbs_left.is_empty() and made < 3 and palette != null and palette.shown > 0.0:
 		var id := str(_thumbs_left.pop_front())
@@ -1830,7 +1828,6 @@ func end_stamp() -> void:
 	var form := str(_stamp.form)
 	feel.rest()
 	feel.cue(&"lurch" if form in ["mountain","mesa","crater"] else &"rock_settle",_stamp_mid,clampf(float(_stamp.h)/8.0,0.3,1.0))
-	feel.kick(0.25 if form == "mountain" else 0.15)
 	_status_line = "%s stamped: %.0f m across, %.1f m %s" % [form.capitalize(),float(_stamp.r)*2.0,float(_stamp.h),"deep" if form == "crater" else "tall"]
 	_stamp = {}
 	_want_live = false
@@ -2030,7 +2027,6 @@ func make_lake(pts: Array) -> void:
 	var mid := Vector3(inside.x,float(motif.ground(inside.x,inside.y)),inside.y)
 	feel.cue(&"water_splash",mid,0.9)
 	feel.cue(&"lurch",mid,0.6)
-	feel.kick(0.18)
 	stand()
 
 ## A point well inside `poly`: its middle if inside, else the inside cell
@@ -2076,7 +2072,6 @@ func grow_land(pts: Array) -> void:
 	(data.strokes as Array).append({"tool":"fill","pts":ring,"y":snappedf(level,0.001),"bank":2.0})
 	_status_line = "New land: the isle grown to the loop, at %.1f m" % level
 	feel.cue(&"lurch",Vector3(loop[0].x,level,loop[0].y),0.7)
-	feel.kick(0.2)
 	stand()
 
 # --- Trash (round 3: the old trash can) -----------------------------------------------------
@@ -2240,7 +2235,6 @@ func _pop(k: int) -> void:
 	tw.tween_property(node,"scale",full,0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	var id_name := str((data.pieces[k] as Dictionary).id)
 	feel.cue(&"plant" if id_name.begins_with("tree_") else &"stone_drop",node.global_position,0.8)
-	if not id_name.begins_with("tree_"): feel.kick(0.08)
 
 # --- The ghost (live editing) ------------------------------------------------------------
 
@@ -2632,7 +2626,6 @@ func end_run() -> void:
 		pieces_holder().add_child(node)
 		_grey_new(node)
 		feel.cue(&"stone_drop",node.global_position,0.9)
-		feel.kick(0.12)
 	say("%s run laid (%.0f m, %d ms)" % [str(r.kind).capitalize(),from.distance_to(to),run_ms])
 
 var run_ms := 0

@@ -19,7 +19,7 @@ extends Node
 ##
 ## Both glide (EASE s, smoothstep) and leave the trap ghost, the grid and
 ## selection alone. The views write the editor's own camera (_cam_pos,
-## _cam_yaw, _cam_pitch, then _apply_cam), so picking, the shake and P
+## _cam_yaw, _cam_pitch, then _apply_cam), so picking and P
 ## carry on as in free flight; P, a load or a new motif drop the view.
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
