@@ -86,6 +86,36 @@ keep the target stone working as before.
 - **The Z stand-in stays** as a dev key that needs no charge, for checks
   and quick play; X is the game's blast.
 
+## The parry (spec change after the user played the slash)
+
+The wanderer's answer to wind thrown at him. **RB (Q on keyboard), the
+updraft button, pressed at the right moment parries a shot and he absorbs
+its wind** into his wind gauge (`scripts/updraft.gd`, `scripts/wind_gauge.gd`;
+read `docs/design/wind-gauge/handoff-wind-gauge.md`).
+
+- **What can be parried:** any `wind_shot` thrown at him that isn't his:
+  the knight's crescents (level and high), his rally returns, the lob.
+- **The window:** the press counts as a parry when the shot will reach
+  him within a short window (time to contact, a knob; start near 0.2 s,
+  and tune by play). A press outside the window is the plain updraft, as
+  today (spends a segment, lifts him), so a mistimed parry still has its
+  own use against a level slash. A parry press needs no charge.
+- **Absorb:** the shot is gone, its wind visibly spirals into him (the
+  crescent unwinds into streaks drawn to his chest), a short hit-stop and
+  a flash sell the timing, and the gauge gains a full segment (capped at
+  full), pulsing as a filled segment does. A late press is a hit as now.
+- **The loop it closes:** the segment he absorbs pays for the X focus
+  blast back at the knight, so parry then blast is the rally from the
+  wanderer's side. Blasting a crescent back mid-air (Z, or X when the
+  ball meets it) stays as built.
+- **A pose:** a quick guard-and-draw-in on the wanderer while he absorbs
+  (procedural is fine for this round; the wanderer's clips are authored,
+  so keep it a light layer over them).
+- **Code:** its own file (e.g. `scripts/wind_parry.gd`), hooked into the
+  updraft press additively: the updraft asks the parry first, then does
+  what it does today. Off the isle and without `--rune-knight` nothing
+  changes, except that a parry seam other wind can join later.
+
 ## Where code goes
 
 - `scripts/enemies/rune_knight.gd`: the knight (body, patrol, sense,
@@ -169,7 +199,12 @@ changing. Names here are final once built on; change one only by a
    both slashes and the crescent in flight; play-loop checks that a
    jump clears a horizontal crescent, a sidestep a diagonal one, and a
    hit knocks.
-7. A feel pass on timings from the stills and checks, and a short rendered
+7. The parry (above): the window, the absorb into a gauge segment, the
+   look and hit-stop, the pose. Play-loop checks through the real RB / Q
+   press: a timed press on a level and a high crescent absorbs it and
+   fills a segment; an early press is the plain updraft; a late press is
+   a hit; parry then X lands a blast on him. Stills of the absorb.
+8. A feel pass on timings from the stills and checks, and a short rendered
    clip (a few frames strung) of one full rally.
 
 ## Checks
