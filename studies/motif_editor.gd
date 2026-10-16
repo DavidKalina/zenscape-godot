@@ -108,7 +108,7 @@ const MODE_TOOL := {"hand:pinch":"raise","hand:groove":"lower","paddle:plane":"s
 ## The roll's three size pips: the brush radius each gives.
 const PIP_RADIUS := [3.0,5.0,8.5]
 const HINTS := {
-	"select":"Select: click a piece or marker, drag it along the ground · Z X turn · Del delete · Cmd/Ctrl K the palette",
+	"select":"Select: click a piece or marker, drag it along the ground · Z X turn · B breakable · Del delete · Cmd/Ctrl K the palette",
 	"raise":"Raise: drag over the land, hold still to pile it up · wheel or [ ] radius",
 	"lower":"Lower: drag over the land · wheel or [ ] radius",
 	"smooth":"Smooth: drag over the land · wheel or [ ] radius",
@@ -664,6 +664,7 @@ func _edit_input(event: InputEvent) -> void:
 				if tool == "outline" and handle >= 0: remove_handle(handle)
 				else: delete_selected()
 			KEY_G: dress()
+			KEY_B: toggle_breakable()
 			KEY_ESCAPE:
 				if not _held_piece.is_empty(): _drop_ghost()
 				if not _stroke.is_empty() or not _stamp.is_empty() or not _path.is_empty(): release(Vector2.ZERO)
@@ -827,6 +828,30 @@ func turn_selected(deg: float) -> void:
 		_show_status()
 		return
 	_reseat(selected)
+	_show_status()
+
+## The selected piece breakable or not (its "breakable"; absent is
+## breakable, so a saved motif reads as before). The build only tags it
+## (scripts/kit_isle/motif_authored.gd `make_piece`): nothing else changes.
+func toggle_breakable() -> void:
+	if selected < 0 or selected >= (data.pieces as Array).size(): return
+	snapshot()
+	var p: Dictionary = data.pieces[selected]
+	if bool(p.get("breakable",true)): p.breakable = false
+	else: p.erase("breakable")
+	var node := piece_node(selected)
+	if node != null:
+		if p.has("breakable"): node.set_meta("breakable",false)
+		else: node.remove_meta("breakable")
+	_status_line = "%s #%d %s" % [str(p.id),selected,"breakable" if not p.has("breakable") else "unbreakable"]
+	_show_status()
+
+## The whole motif breakable or not (its "breakable"; absent is breakable).
+func toggle_motif_breakable() -> void:
+	snapshot()
+	if bool(data.get("breakable",true)): data.breakable = false
+	else: data.erase("breakable")
+	_status_line = "Motif %s" % ("breakable" if not data.has("breakable") else "unbreakable: no piece of it breaks")
 	_show_status()
 
 func _reseat(k: int) -> void:
@@ -1468,7 +1493,7 @@ func _show_status() -> void:
 	if sel_marker != "": sel = " · marker %s" % sel_marker
 	elif selected >= 0 and selected < (data.pieces as Array).size():
 		var p: Dictionary = data.pieces[selected]
-		sel = " · %s #%d turned %d deg" % [str(p.id),selected,int(p.get("turn",0.0))]
+		sel = " · %s #%d turned %d deg%s" % [str(p.id),selected,int(p.get("turn",0.0))," · unbreakable" if not bool(p.get("breakable",true)) else ""]
 	var line := "%d strokes · %d ponds · %d pieces · radius %.1f m · live %d ms, dressed %d ms%s" % [(data.strokes as Array).size(),(data.waters as Array).size(),(data.pieces as Array).size(),brush_r,live_ms,dress_ms,sel]
 	if _status_line != "": line = _status_line+"   ·   "+line
 	panel.say(hint,line,tool in BRUSHES or tool in ["ravine","water"] or STAMPS.has(tool))

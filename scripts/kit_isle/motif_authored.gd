@@ -20,7 +20,12 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##    preset), "waters":[{at:[x,z],
 ##    fill}] (poured; the level found from the land as built),
 ##    "pieces":[{id, seed, weathered, at:[x,y,z], turn (deg), sink}],
-##    "markers":{"spawn":[x,y,z], "rim_in":[x,y,z], "rim_out":[x,y,z]}}
+##    "markers":{"spawn":[x,y,z], "rim_in":[x,y,z], "rim_out":[x,y,z]},
+##    "breakable" (optional; false: no piece of it breaks)}
+## A piece's "breakable" (optional; false: it never breaks) and the motif's
+## only set meta "breakable" false on the built piece, which the kit
+## breaks skip (scripts/kit_isle/kit_breaks.gd `adopt`); absent, a piece
+## breaks by its kind and builds exactly as before.
 ## A piece's y in the file is where the editor seated it; the build seats
 ## it again on the land (`seat`), so a re-rolled hill never leaves one
 ## floating. A marker's y likewise (`ground` under it).
@@ -1176,6 +1181,7 @@ func make_piece(k: int) -> Node3D:
 	else: piece = make(str(p.id),int(p.seed),float(p.get("weathered",0.0)))
 	if piece == null: return null
 	piece.name = "P%d" % k
+	if not bool(p.get("breakable",true)) or not bool(data.get("breakable",true)): piece.set_meta("breakable",false)
 	piece.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(turn)),pose[0])
 	return piece
 
@@ -1233,6 +1239,7 @@ func build_pieces(holder: Node3D) -> void:
 func make_run(k: int) -> Node3D:
 	var node: Node3D = RuinKitFit.build_run(data.runs[k],ground_fn())
 	if node != null: node.name = "Run%d" % k
+	if node != null and not bool(data.get("breakable",true)): node.set_meta("breakable",false)
 	return node
 
 static var _drawn := {}

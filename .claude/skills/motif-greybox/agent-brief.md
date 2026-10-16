@@ -51,6 +51,8 @@ isle's own.
   than the registry and, for an existing isle, its motif and study (motor,
   traps, enemies, cannon, KitLand, RuinKit stay as they are). If no
   stand-in works, leave the gap labelled.
+- A new kit piece tags its parts with a break kind or registers a cut
+  (docs/design/kit-breaks/kit-breaks-handoff.md, The break contract).
 - Append "## Place (round N)" to the card: yard command, the routes, the
   threat, real vs stand-in, distances you changed, your read of the stills,
   and the model-budget tricks that apply (docs/art/model-budget.md).

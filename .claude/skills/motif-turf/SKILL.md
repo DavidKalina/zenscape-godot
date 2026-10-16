@@ -63,7 +63,9 @@ Never change `motif_greybox.gd` for one motif.
      every motif at once. A motif's own script stays light: layout and
      placement. Heavy bespoke geometry (long loops over vertices, strands,
      scatter) becomes a new kit piece any motif can reuse, or gets its own
-     kernel. Don't leave it in the motif. No work per shader parameter on a
+     kernel. A new kit piece tags its parts with a break kind or
+     registers a cut (docs/design/kit-breaks/kit-breaks-handoff.md, The
+     break contract). Don't leave it in the motif. No work per shader parameter on a
      worker either: each one waits a rendered frame.
 3. Size the routes from the pilot's numbers (AGENTS.md, Sizes). Measure,
    don't assume: a throwaway probe

@@ -34,7 +34,8 @@ var pre_step_ms := 0.0
 
 ## Every piece at or under `root` with a kind (Kinds `kind_of`) noted as a
 ## target. Returns how many were added. A piece with meta "breakable" false
-## is left out.
+## (the motif editor's toggle, per piece or per motif) is left out, and so
+## is everything under it.
 func adopt(root: Node) -> int:
 	var n := 0
 	var all: Array[Node] = [root]
@@ -42,11 +43,20 @@ func adopt(root: Node) -> int:
 	for node: Node in all:
 		if not node is Node3D: continue
 		if not node.has_meta("kit_piece") and not node.has_meta("break_kind"): continue
-		if node.has_meta("breakable") and not bool(node.get_meta("breakable")): continue
+		if _held(node,root): continue
 		var kind := Kinds.kind_of(node)
 		if kind == "" or not Kinds.has(kind): continue
 		if add(node as Node3D,kind) >= 0: n += 1
 	return n
+
+## Whether `node`, or anything over it up to `root`, is marked unbreakable.
+static func _held(node: Node, root: Node) -> bool:
+	var at := node
+	while at != null:
+		if at.has_meta("breakable") and not bool(at.get_meta("breakable")): return true
+		if at == root: return false
+		at = at.get_parent()
+	return false
 
 ## `node` a target of `kind`; `rebuild` builds it again (honouring RuinKit
 ## Build.keep_only): by default its "kit_piece" recipe. Its index, or -1.
