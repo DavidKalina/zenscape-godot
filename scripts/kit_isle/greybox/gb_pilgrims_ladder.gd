@@ -15,6 +15,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 
 const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 const Torana = preload("res://scripts/ruin_kit_torana.gd")
+const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
 
 const TURF_SEED := 5300
 ## How far a keel's spurs can hang under top-depth (KitLand ring_sides),
@@ -49,15 +50,23 @@ const LAYOUT := {
 		## into. Box: its mesh AABB.
 		{"id":"relic_nimbus","seed":5330,"weathered":0.5,"at":Vector3(62.0,7.0,-3.0),"rot":0.0,
 			"box":AABB(Vector3(-10.4,0.0,-2.2),Vector3(19.8,17.3,8.3))},
+		## The pent hood along the Crown's north rim: 3 bays (15.6 m), the
+		## back wall north (its line z -11.18), eaves south (z -8.3). Seed
+		## 5342 puts its one fallen roof gap in the middle bay (piece x
+		## -0.41..1.68). Set at x 92, z -10, not the plan's (94, -11): the
+		## rim pulls in to z -12 at x 84 and 100 and to -10.5 at x 102, so
+		## the plan's east end hung over the void. Box: its mesh AABB.
+		{"id":"pent_hood","seed":5342,"weathered":0.5,"at":Vector3(92.0,20.0,-10.0),"rot":0.0,"bays":3,"fallen":1,
+			"box":AABB(Vector3(-8.0,-0.14,-3.4),Vector3(16.0,5.3,8.5))},
 	],
 	## Bands kept clear of tall flora round the pieces' feet (x, z).
-	"clear":[Rect2(20.0,-4.0,11.0,8.0),Rect2(52.0,-6.0,20.0,10.0)],
+	"clear":[Rect2(20.0,-4.0,11.0,8.0),Rect2(52.0,-6.0,20.0,10.0),Rect2(83.0,-14.0,18.0,9.0)],
 	"strip":Rect2(-38.0,-5.0,30.0,10.0),
 	"strip_clear":Rect2(-45.0,-8.0,42.0,16.0),
 	"paths":[
 		[Vector2(-8.0,0.0),Vector2(10.0,1.5),Vector2(26.0,0.0)],
 		[Vector2(52.0,1.0),Vector2(60.0,2.0)],
-		[Vector2(77.0,2.0),Vector2(86.0,-4.0),Vector2(94.0,-8.5)],
+		[Vector2(77.0,2.0),Vector2(84.0,-4.0),Vector2(84.5,-9.5)],
 		[Vector2(86.0,4.0),Vector2(86.0,12.0)],
 		[Vector2(79.0,12.0),Vector2(84.0,15.0)],
 	],
@@ -205,10 +214,13 @@ func _pieces(root: Node3D) -> void:
 		root.add_child(node)
 
 ## A piece of LAYOUT.pieces built (the torana with its rope count and dry
-## rope; the others by RuinKit.piece).
+## rope; the hood with its bays and fallen count; the others by
+## RuinKit.piece).
 static func piece_of(p: Dictionary) -> Node3D:
 	if p.id == "relic_torana":
 		return Torana.torana(int(p.seed),float(p.weathered),int(p.get("ropes",4)),Torana.TILT,int(p.get("dry",-1)))
+	if p.id == "pent_hood":
+		return Cloister.pent_hood(int(p.seed),float(p.weathered),int(p.get("bays",Cloister.HOOD_BAYS)),int(p.get("fallen",-1)))
 	return RuinKit.piece(str(p.id),int(p.seed),float(p.weathered))
 
 static func pose(p: Dictionary) -> Transform3D:

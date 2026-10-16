@@ -47,7 +47,7 @@ Set pieces:
 |---|---|---|
 | relic_torana | real piece (merged) | Threshold east lip: jamb at (25, 0, 0), lintel to (46.2, 10.5, 0) |
 | relic_nimbus | exists (scripts/ruin_kit_relic.gd) | Halo (62, 7, -3), rot 0 (ring in XY, plane flies along Z) |
-| pent_hood | exists (scripts/ruin_kit_cloister.gd), bays 3, fallen 1 | Crown north rim, centre (94, 20, -11), rot 0 (back wall north, eaves south) |
+| pent_hood | exists (scripts/ruin_kit_cloister.gd), bays 3, fallen 1 | Crown north rim, centre (92, 20, -10), rot 0 (back wall north, eaves south), seed 5342 (its fallen gap in the middle bay) |
 | keel_hung_stair | exists (scripts/ruin_kit_keel.gd + scripts/keel_hung_stair.gd) | boss at (86, 15.5, 18) on the plinth, rot 0 (hung front +Z, south, over the void) |
 | plinth (shaft) | build from RuinKit wall + floor | built block round the turned flight: foot on the Cellar at 10, top 15.5, a hatch over the head |
 | wall, floor, buttress, fallen_pier, arch, stairs | exist (RuinKit PIECES) | Crown dressing, the hood's kit wall line, the plinth's walls |
@@ -63,6 +63,7 @@ Set pieces:
 - **The way home is Cellar -> Halo -> Threshold.** A sail from the Cellar (10) straight to Threshold covers 48 m, past the 37 m it can carry. The Cellar's west rim is about 5 m from the Halo's east rim and 3 m above it: a hop or a short sail down. From the Halo's west lip (50), a 7 m drop sails 26 m, against a 20 m gap to Threshold's east lip (30).
 - **The real torana sets the numbers**: all ropes 5.6 m, rings rising 1.6 per 5.6 m along the lintel's top front edge (16 deg). The jamb moved from x 28 to 25 so rope 1 (3.2 m out from the jamb) hangs over turf (the lip is at about x 30). The snapped end (x 46.2, top 10.5) is about 4 m short of the Halo's lip, 3.5 m over it: a running hop carries it.
 - **The nimbus stands 3 m north of the Halo's centre line** (62, 7, -3). At z 0 its ring's lower outer face (x 55.7 at head height) is where the torana's hop lands; set back, the hop lands in front (+Z) of the ring, two steps from its trough.
+- **The hood stands at (92, 20, -10), not (94, 20, -11).** The Crown's north rim pulls in to z -12 at x 84 and 100 and to -10.5 at x 102, so the plan's 15.6 m hood hung its east end over the void. Seed 5342 puts its one fallen gap in the middle bay (x 91.6..93.7); the reliquary moves to the gallery's east end (99, 20.4, -10).
 
 ## Open questions
 - Answered (drive check): the last rope's backswing release lands on the lintel's top, and a running hop off its end lands on the Halo.
@@ -92,7 +93,7 @@ Layout:
   "pieces": [
     {"id":"relic_torana","at":[25,0,0],"rot":0,"note":"jamb on the lip; lintel east to (46.2, 10.5, 0); rings at x 28.2, 33.8, 39.4, 45.0, z 1.58, all 5.6 m, knots 0.9, 2.5, 4.1, 5.7 over turf 0; rope 3 dry"},
     {"id":"relic_nimbus","at":[62,7,-3],"rot":0,"note":"low horn perch (57.6, 22.5, -3), high horn perch (62.8, 24.1, -3)"},
-    {"id":"pent_hood","at":[94,20,-11],"rot":0,"bays":3,"fallen":1,"note":"back wall on z -12.2, gallery z -11.6..-10.4, eaves z -9.3"},
+    {"id":"pent_hood","at":[92,20,-10],"rot":0,"bays":3,"fallen":1,"seed":5342,"note":"x 84.2..99.8, back wall on z -11.2, gallery z -10.6..-9.4, eaves z -8.3, roof gap x 91.6..93.7"},
     {"id":"keel_hung_stair","at":[86,15.5,18],"rot":0,"note":"boss on plinth top 15.5; head 12.3, foot 10.06 on the Cellar"},
     {"id":"plinth","at":[86,10,16.6],"size":[7,5.5,4],"note":"built walls round the turned flight; hatch over the head end; door at the foot onto the Cellar"}
   ],
@@ -105,7 +106,7 @@ Layout:
     {"at":[36,3,0],"label":"The ropes","note":"You run in, swing, release rising and catch the next rope up under the lintel; the dry third rope snaps and you twirl on to the fourth."},
     {"at":[62,15.2,-3],"label":"The wheel","note":"You climb the broken ring by inner rays, the spoke and outer brackets to the low horn; the plane threads the same ring."},
     {"at":[60.2,23.5,0],"label":"The leap","note":"A twirled leap over the 3.9 m crown gap to the high horn, the whole stack in view."},
-    {"at":[94,20.2,-10.6],"label":"Under the hood","note":"The bird wakes as you land; you creep the gallery under its circle, dash the fallen roof gap and take the reliquary."},
+    {"at":[92,20.2,-10],"label":"Under the hood","note":"The bird wakes as you land; you creep the gallery under its circle, dash the fallen roof gap and take the reliquary."},
     {"at":[86,15.5,18],"label":"The slam","note":"Off the south lip (or in off the horn) you slam the boss; the stair grinds over and you have twelve seconds."},
     {"at":[84,10,16.6],"label":"The cellar","note":"Down the shaft and the flight before it turns back and throws the late; then hop to the Halo and sail home."}
   ],
@@ -114,7 +115,7 @@ Layout:
     {"at":[62,15.2,6],"text":"ring clear 11.4 m: plane fits (7.0 needed)"},
     {"at":[69,22,4],"text":"horn to Crown: sail 12 m, drop 4.1"},
     {"at":[86,13,23],"text":"hung soffit: 50 deg slide into the sky"},
-    {"at":[94,20,-15],"text":"pent_hood gallery 3 bays, middle fallen"},
+    {"at":[92,20,-14],"text":"pent_hood gallery 3 bays, middle fallen"},
     {"at":[76,8.5,8],"text":"Cellar to Halo: 5 m hop, 3 m down"}
   ],
   "collectibles": [
@@ -123,7 +124,7 @@ Layout:
     {"at":[29.6,1.9,0],"kind":"flown","name":"threshold/gate_thread","how":"fly the plane through the torana gate under the lintel (7.0 m opening)","plane":true},
     {"at":[62,15.2,-3],"kind":"flown","name":"halo/ring_thread","how":"fly the plane through the nimbus ring along Z","plane":true},
     {"at":[62.8,24.6,-3],"kind":"token","name":"halo/high_horn","how":"the twirled leap from the low horn to the high horn's perch"},
-    {"at":[101.5,20.6,-10.8],"kind":"token","name":"crown/reliquary","how":"creep the hood's gallery to its east end, past the fallen gap, under the bird"},
+    {"at":[99,20.4,-10],"kind":"token","name":"crown/reliquary","how":"creep the hood's gallery to its east end, past the fallen gap, under the bird"},
     {"at":[85,10.5,16.6],"kind":"token","name":"cellar/stair_foot","how":"slam the boss, drop into the shaft and walk the turned flight down inside its 12 s"}
   ],
   "enemies": [
