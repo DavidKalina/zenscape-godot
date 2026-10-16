@@ -69,6 +69,26 @@ var whole_olmec := false
 var phase := 1
 var phase_one_over := false
 var _head_knobs := {}
+## Phase 2's beat: the body comes up over the rim BODY_AFTER s after the
+## head cries out, behind the head as you see it, crosses to it (breaking
+## what's in its way) and puts it on; then he is whole and the lock target.
+## `arrival`: "" (none yet), "climbing" (on the face), "crossing", "whole".
+const BODY_AFTER := 2.2
+## Its climb starts this far (m, at most) down a crag's face (CRAGS), so
+## it is seen coming.
+const BODY_BELOW := 4.0
+## The field's sides slope in under its lip (no face to climb), so crags
+## hang off the rim where he may come up: [angle (deg, as STONES), breadth,
+## depth out, how far down (m)], none over the plane's run (west).
+const CRAGS := [[-90.0,7.5,4.0,17.0],[-38.0,7.0,4.0,15.0],[12.0,7.5,3.6,16.0],[102.0,6.5,3.6,15.0]]
+## How far past the rim a crag's outer face stands (m).
+const CRAG_OUT := 1.6
+signal body_arrived(body)
+signal olmec_whole(body)
+var arrival := ""
+var _body_t := -1.0
+var _spawner: Node
+var _crag_lips: Array[Vector3] = []
 
 ## Hides the figure while the head holds him, and steps the enemies
 ## (studies/whole_body_chase.gd's).
@@ -170,7 +190,31 @@ func _build_art() -> void:
 		stone.rotation.y = -a+PI*0.5+(0.25 if i%3 == 0 else -0.15)
 		stone.rotation.z = 0.06 if i%2 == 0 else -0.04
 		art.add_child(stone)
+	_build_crags()
 	print("olmec field: %d triangles, built in %d ms" % [triangles(art),Time.get_ticks_msec()-began])
+
+## The crags off the rim (CRAGS): weathered stone hung from the turf's
+## edge, its top flush with the turf, narrowing as it goes down, the outer
+## face steep enough for him to climb. Their lips in `_crag_lips`.
+func _build_crags() -> void:
+	_crag_lips.clear()
+	for i in range(CRAGS.size()):
+		var c: Array = CRAGS[i]
+		var a := deg_to_rad(float(c[0]))
+		var n := Vector3(cos(a),0.0,sin(a))
+		var rim := FIELD_R*(1.0+0.05*sin(a*3.0+0.7)+0.03*sin(a*7.0+2.1))
+		var depth := float(c[2])
+		var mid := n*(rim+CRAG_OUT-depth*0.5)
+		var top := _ground_y(mid.x,mid.z)-0.08
+		var b := RuinKit.Build.new(5200+i,0.7,"Crag%d" % i)
+		b.ground = -INF
+		# Upside down: from the turf down, its taper narrowing it below.
+		RuinKit._sarsen(b,Transform3D(Basis(Vector3.RIGHT,PI),Vector3.ZERO),Vector3(float(c[1]),float(c[3]),depth),0.9)
+		var crag := b.finish()
+		crag.position = Vector3(mid.x,top,mid.z)
+		crag.rotation.y = PI*0.5-a
+		art.add_child(crag)
+		_crag_lips.append(Vector3(n.x*(rim+CRAG_OUT-0.4),top,n.z*(rim+CRAG_OUT-0.4)))
 
 # --- The Olmec ---------------------------------------------------------------------------
 
@@ -218,6 +262,8 @@ func _wire() -> void:
 	if b != null and h != null: b.make_whole(h)
 	phase = 1
 	phase_one_over = false
+	arrival = ""
+	_body_t = -1.0
 	if h != null and h.has_signal("phase_done") and not h.is_connected("phase_done",_phase_one_done):
 		h.connect("phase_done",_phase_one_done)
 	_gone_t = 0.0
@@ -241,7 +287,16 @@ func tick(delta: float) -> void:
 	if free_charge and updraft != null and not flying: updraft.charge = 1.0
 	_see_through()
 	super.tick(delta)
+	if _body_t >= 0.0:
+		_body_t += delta
+		if _body_t >= BODY_AFTER:
+			_body_t = -1.0
+			_bring_body()
 	var b := olmec()
+	if b != null and arrival == "climbing" and not (str(b.state) in ["climb","mantle"]):
+		arrival = "crossing"
+		# Over the rim: it has its head in its sights, and strides for it.
+		if str(b.state) in ["listen","roam"]: b._home()
 	if b == null and not whole_olmec: pass
 	elif b == null:
 		_gone_t += delta
@@ -314,6 +369,10 @@ func _show_card() -> void:
 		line += "\nOlmec  %s  %s" % [pips,"down" if bool(b.crumbled) else str(b.state)]
 		if foot_lock != null and foot_lock.locked(): line += "  ·  locked"
 	var h := olmec_head()
+	if b != null and arrival in ["climbing","crossing"]:
+		line += "\nPhase 1 done  ·  his body %s" % ("climbs the rim" if arrival == "climbing" else "comes for his head")
+	elif b != null and arrival == "whole":
+		line = line.replace("\nOlmec","\nPhase 2  ·  Olmec")
 	if b == null and h != null and h.has_method("pick_puff"):
 		var n := int(h.hits)
 		var most := int(h.knobs.phase_hits)
@@ -329,6 +388,62 @@ func _phase_one_done(h: Node3D) -> void:
 	phase_one_over = true
 	_say("The head cries out across the field...",4.0)
 	phase_one_done.emit(h)
+	_body_t = 0.0
+
+## The body up the rim, behind the head as he sees it (the cliff spawn's
+## fit, scripts/enemies/body_spawner.gd), climbing; its head calls it over.
+func _bring_body() -> void:
+	var h := olmec_head()
+	if h == null or olmec() != null: return
+	if _spawner == null:
+		_spawner = BodySpawner.new()
+		add_child(_spawner)
+		_spawner.setup(self,enemies)
+	var away := Vector2(h.position.x-motor.feet.x,h.position.z-motor.feet.z)
+	away = away.normalized() if away.length() > 0.5 else Vector2(0.0,-1.0)
+	var ways: Array = []
+	for lip: Vector3 in _crag_lips:
+		var n := Vector2(lip.x,lip.z).normalized()
+		ways.append([n.dot(away),lip,n])
+	ways.sort_custom(func(x: Array, y: Array) -> bool: return float(x[0]) > float(y[0]))
+	for w: Array in ways:
+		var fitted: Array = _spawner.fit(w[1],w[2])
+		if fitted.is_empty(): continue
+		# It knows where its head is across the whole field (sense, lose),
+		# so the beat is short: over the rim, straight for it.
+		var knobs := {"chase":0.0 if calm else 1.0,"relentless":1.0,"periscope":0.0,"sense":FIELD_R*2.0,"lose":8.0}
+		knobs.merge(_body_knobs,true)
+		var b: Node3D = enemies.add(OlmecTarget,fitted[0],-(fitted[1] as Vector2),knobs)
+		# Ahead of its head in the field, so the head reads its neck this frame.
+		enemies.enemies.erase(b)
+		enemies.enemies.insert(maxi(enemies.enemies.find(h),0),b)
+		b.cling(fitted[0],fitted[1],_spawner.face_below(fitted[0],fitted[1],BODY_BELOW))
+		b.body.force_update_transform()
+		# Not a target till the head is on.
+		b.remove_from_group(OlmecTarget.GROUP)
+		b.reunited.connect(_body_whole)
+		enemies.sound(&"body_rumble",b.position)
+		arrival = "climbing"
+		_say("Something climbs the rim behind the head...",4.0)
+		print("olmec field: body up the rim at (%.1f, %.1f), %.1f m down the face" % [b.position.x,b.position.z,float(fitted[0].y)-b.position.y])
+		body_arrived.emit(b)
+		return
+	push_warning("olmec field: no rim face fits the body (%s)" % _spawner.fit_why)
+
+## The head on: phase 2. He is the lock target now (a lock on the head
+## moves to him).
+func _body_whole(b: Node3D) -> void:
+	phase = 2
+	arrival = "whole"
+	var h := olmec_head()
+	if h != null: h.remove_from_group(BossHead.GROUP)
+	b.add_to_group(OlmecTarget.GROUP)
+	if foot_lock != null and foot_lock.target == h:
+		foot_lock.target = b
+		foot_lock._last = b
+	_say("The Olmec stands whole!",4.0)
+	print("olmec field: whole at (%.1f, %.1f), phase 2" % [b.position.x,b.position.z])
+	olmec_whole.emit(b)
 
 func _voice(sound_name: StringName, at: Vector3) -> void:
 	var key := String(sound_name)
