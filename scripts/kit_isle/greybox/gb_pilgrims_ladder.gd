@@ -13,7 +13,6 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## table LAYOUT below; the occupancy is computed from it (`_solids`).
 ## Plan frame: x east, z south (+Z), y up.
 
-const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 const Torana = preload("res://scripts/ruin_kit_torana.gd")
 const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
 const Keel = preload("res://scripts/ruin_kit_keel.gd")
@@ -91,6 +90,18 @@ const LAYOUT := {
 	## 6.4 m of the lip as a rim (hungry), not only the last 3.6 m, so the
 	## landing, the hood's front and the south lip are open to it.
 	"flyers":[{"home":Vector3(91.0,46.0,0.0),"grace":0.0,"range":22.0,"knobs":{"rim_r":2.5}}],
+	## The on-foot tokens (the plan's walked collectibles; scripts/kit_isle/
+	## greybox/pilgrims_ladder_life.gd lays them): `at` his middle where he
+	## stands for it (feet + 0.85, as the kit isles' tokens), `move` the way
+	## to it. The stair's foot token is on the Cellar's turf west of the cut
+	## (x 83.85), where the turned flight's foot walks out of the plinth's door.
+	"tokens":[
+		{"name":"niche_sill","at":Vector3(24.3,7.25,0.0),"move":"The slow way: up the offering steps to the jamb's head"},
+		{"name":"lintel_end","at":Vector3(45.6,11.2,0.0),"move":"Let go of the fourth rope onto the lintel's broken end"},
+		{"name":"high_horn","at":Vector3(62.8,24.95,-3.0),"move":"The twirled leap from the low horn to the high horn"},
+		{"name":"reliquary","at":Vector3(99.0,20.85,-10.0),"move":"Creep the hood's gallery to its east end, under the bird"},
+		{"name":"stair_foot","at":Vector3(82.9,10.85,16.4),"move":"Slam the hung stair and run its flight down to the Cellar"},
+	],
 }
 
 func slug() -> String:
@@ -176,8 +187,10 @@ func flora_site() -> KitFlora.Site:
 func flora_seed() -> int:
 	return TURF_SEED+9
 
+## The kit isles' life plus its tokens (loaded, not preloaded: it reads
+## this script's LAYOUT).
 func life_script() -> Script:
-	return KitLife
+	return load("res://scripts/kit_isle/greybox/pilgrims_ladder_life.gd")
 
 ## The place's guacharos ([{home, grace, range}], this frame): the motif
 ## yard lays them (studies/motif_yard.gd `yard_plan`).

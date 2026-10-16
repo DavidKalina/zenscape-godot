@@ -71,6 +71,8 @@ Set pieces:
 - **The sail off the high horn takes a run-up.** A standing jump off the high perch peaks 0.8 m over it and comes down on the ring's outer top before the sail has room to open. Run east down the outer top 2-4.5 m (slope 13-30 deg), jump and open the sail at once (driven).
 - **Cellar to Halo is a short sail, not a hop.** From the Cellar's west rim (77.2, 10, 9.4) a running jump falls about 5.7 m short into the sky; a jump and the sail at its top lands on the Halo at about (65.5, 7, 5.7) (driven). The Halo's west lip to Threshold is a sail along z 4.5, south of the lintel and its ropes; it lands at about x 19.
 - **The bird reads the Crown with `rim_r` 2.5, not 1.4.** It only gets hungry where he is exposed (exposure 0.4 or more: a rim, a leap, a rope, a ledge). On open turf it reads 0.12 and never stalks. With the default rim_r 1.4, only the last 3.6 m before a lip counts, so the Crown was nearly safe and the hood did not matter. At 2.5 (a laid flyer's own `knobs`, new in LayerFlyers), the band within about 6.4 m of the lip counts: the landing, the hood's front and the south lip. The Crown's middle stays safe. LayerFlyers also takes a laid `range` as it is now; before, it was floored at its 140 m default.
+- **Tokens stand at his middle (feet + 0.85), and the stair's foot token is on the Cellar's turf at (82.9, 10.85, 16.4),** west of the cut edge, where the flight's foot walks out of the plinth's door; at (85, 16.6) it was over the cut. The five walked tokens are laid by the place's life (scripts/kit_isle/greybox/pilgrims_ladder_life.gd) from LAYOUT.tokens; their ledger ids (gb_pilgrims_ladder/<name>) aren't in data/ledger, so they're kept but not counted. The two flown threads have no token kind (kit tokens are on-foot only; the plane passes through) and aren't laid.
+- **The plinth's dark side is the light, not the stone.** A 1.4x lighter stone tone made no visible difference from the south-west: the Crown's keel rock is as black there. From above and the east the deck, hatch and boss read.
 
 ## Open questions
 - Answered (drive check): the last rope's backswing release lands on the lintel's top, and a running hop off its end lands on the Halo.
@@ -78,7 +80,8 @@ Set pieces:
 - Can the hood's fallen gap (1.6-2.4 m) be crossed under the bird's stalk without a snatch? Is that the right amount of fear? (Drive check: stood in the gap, it reads "rim" and its hunger fills to 3, but it never stalks. Its stalk point, 8.4 m out and 1.6-3.4 m up, toward the camera, has no clear line past the bays' roofs. So the gap is safe while you are in it, and the bird is ready the moment you step out.)
 - Is 12 s (the hold) enough to drop into the shaft and walk the flight, or too generous? Knob `hold` 8-16.
 - The Cellar can also be reached by sailing down off the Crown's south lip (10 m). Does that make the stair optional, and is that fine?
-- Does the plinth read as built stone and not a box? (Stills: from the Crown's lip the deck, hatch and boss read; from the south and west the plinth sits in the Crown's shadow and reads near-black.) Does the hung soffit read as a slide from the Crown?
+- The Cellar is inside the bird's 22 m range. Walking out of the stair's door and standing on the Cellar, the bird struck and carried him (the stair drive, re-run with the bird in place). Should the Cellar be a safe haven (a smaller range, or home further north)?
+- Does the plinth read as built stone and not a box? (Stills: from the Crown's lip the deck, hatch and boss read; from the south and west the plinth sits in the Crown's shadow and reads near-black, as the Crown's keel does.) Does the hung soffit read as a slide from the Crown?
 - Answered (drive check): the 22 m range keeps it asleep on the Halo and the high horn, and it wakes on the Crown at the sail's landing.
 
 Layout:
@@ -126,13 +129,13 @@ Layout:
     {"at":[76,8.5,8],"text":"Cellar to Halo: a short sail, 3 m down"}
   ],
   "collectibles": [
-    {"at":[24.3,6.4,0],"kind":"token","name":"threshold/niche_sill","how":"the slow way: climb the offering steps, one SET_OFF apart, to the head's top (6.4)"},
-    {"at":[46,10.5,0],"kind":"token","name":"threshold/lintel_end","how":"a well-timed release off the fourth rope onto the lintel's outer end"},
+    {"at":[24.3,7.25,0],"kind":"token","name":"threshold/niche_sill","how":"the slow way: climb the offering steps, one SET_OFF apart, to the head's top (6.4)"},
+    {"at":[45.6,11.2,0],"kind":"token","name":"threshold/lintel_end","how":"a well-timed release off the fourth rope onto the lintel's outer end"},
     {"at":[29.6,1.9,0],"kind":"flown","name":"threshold/gate_thread","how":"fly the plane through the torana gate under the lintel (7.0 m opening)","plane":true},
     {"at":[62,15.2,-3],"kind":"flown","name":"halo/ring_thread","how":"fly the plane through the nimbus ring along Z","plane":true},
-    {"at":[62.8,24.6,-3],"kind":"token","name":"halo/high_horn","how":"the twirled leap from the low horn to the high horn's perch"},
-    {"at":[99,20.4,-10],"kind":"token","name":"crown/reliquary","how":"creep the hood's gallery to its east end, past the fallen gap, under the bird"},
-    {"at":[85,10.5,16.6],"kind":"token","name":"cellar/stair_foot","how":"slam the boss, drop into the shaft and walk the turned flight down inside its 12 s"}
+    {"at":[62.8,24.95,-3],"kind":"token","name":"halo/high_horn","how":"the twirled leap from the low horn to the high horn's perch"},
+    {"at":[99,20.85,-10],"kind":"token","name":"crown/reliquary","how":"creep the hood's gallery to its east end, past the fallen gap, under the bird"},
+    {"at":[82.9,10.85,16.4],"kind":"token","name":"cellar/stair_foot","how":"slam the boss, drop into the shaft and walk the turned flight down inside its 12 s"}
   ],
   "enemies": [
     {"id":"guacharo","kind":"giant oilbird (scripts/enemies/guacharo.gd)","sleep":[91,46,0],"wake":{"at":[91,20,0],"r":22,"by":"the pilot's feet within 22 m (flat) of the Crown's centre: landing on the Crown, the plinth or the Cellar; grace 0"},"route":[[91,31,-19],[110,31,0],[91,31,19],[72,31,0]],"note":"Home is high over the Crown. Woken, it circles 19 m out and 11.2 m over him and reads his exposure; under the hood's roof it reads 'cover' and its hunger falls. In the open (the fallen gap, the turf, the boss's plinth top, the turned flight) it stalks, folds and stoops. A hit on foot is a snatch out over the void."},
