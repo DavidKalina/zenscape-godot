@@ -235,7 +235,7 @@ func step(delta: float, cam_fwd: Vector3) -> void:
 	position += vel*delta
 	_orient(delta)
 	_animate(delta)
-	_shadow_place()
+	_shadow_place(delta)
 
 ## After the motor's step: the dive's contact with him.
 func after_step(_delta: float) -> void:
@@ -672,24 +672,46 @@ func _animate(delta: float) -> void:
 
 # --- The shadow -----------------------------------------------------------------------
 
-## A soft dark bird-shape thrown straight down (the abyss's light is from
-## above), sharper and darker the nearer it is to what's under it: as it
-## stalks and dives, its shadow grows and closes on him.
-func _shadow_make() -> void:
-	_shadow = Decal.new()
-	_shadow.name = "Shadow"
-	_shadow.texture_albedo = _shadow_texture()
-	_shadow.cull_mask = 0xFFFFF & ~Look.LAYER
-	_shadow.upper_fade = 0.0
-	_shadow.lower_fade = 0.15
-	_shadow.albedo_mix = 1.0
-	add_child(_shadow)
-	_shadow.top_level = true
+## Thrown straight down (the abyss's light is from above) as two decals: a
+## soft wide penumbra and a hard dark core. Both grow and darken the nearer
+## it is to him (SHADOW_FAR, in his heights) and to what's under it; the
+## core only shows while it commits (stalk, fold, stoop, carry), so a hard
+## shadow on the ground means it is coming. While it commits the shadow is
+## also pulled off the plumb line toward his feet (SHADOW_PULL of the way):
+## its stalk point is often over the void, where a true shadow lands on
+## nothing, so the shadow slides in toward him on the stalk, then sits on
+## the spot the dive is locked on (`aim`) through the tell and the stoop:
+## step off it on the scream and the shadow stays where you were.
+const SHADOW_FAR := 20.0
+const SHADOW_COMMIT := {"stalk":0.6, "fold":1.0, "stoop":1.0, "carry":0.7, "pull":0.4}
+const SHADOW_PULL := {"stalk":0.55, "fold":1.0, "stoop":1.0}
+var _shadow_core: Decal
+var _shadow_commit := 0.0
+var _shadow_pull := 0.0
 
-static var _shadow_tex: ImageTexture = null
-static func _shadow_texture() -> ImageTexture:
-	if _shadow_tex != null: return _shadow_tex
-	var n := 96
+func _shadow_make() -> void:
+	_shadow = _shadow_decal("Shadow",_shadow_texture(false))
+	_shadow_core = _shadow_decal("ShadowCore",_shadow_texture(true))
+	_shadow_core.sorting_offset = 1.0
+	_shadow_core.visible = false
+
+func _shadow_decal(n: String, tex: Texture2D) -> Decal:
+	var d := Decal.new()
+	d.name = n
+	d.texture_albedo = tex
+	d.cull_mask = 0xFFFFF & ~Look.LAYER
+	d.upper_fade = 0.0
+	d.lower_fade = 0.15
+	d.albedo_mix = 1.0
+	add_child(d)
+	d.top_level = true
+	return d
+
+static var _shadow_tex := {}
+static func _shadow_texture(hard: bool) -> ImageTexture:
+	if _shadow_tex.has(hard): return _shadow_tex[hard]
+	var n := 128 if hard else 96
+	var e := 0.25 if hard else 1.0
 	var img := Image.create(n,n,false,Image.FORMAT_RGBA8)
 	for j in range(n):
 		for i in range(n):
@@ -698,24 +720,45 @@ static func _shadow_texture() -> ImageTexture:
 			var ax := absf(x)
 			var mid := -0.05+0.18*ax
 			var chord := 0.2*(1.0-ax*0.55)
-			var wing := (1.0-smoothstep(chord-0.06,chord+0.08,absf(z-mid)))*(1.0-smoothstep(0.82,1.0,ax))
-			var body := 1.0-smoothstep(0.7,1.15,Vector2(x/0.13,(z-0.05)/0.45).length())
-			var tail := 1.0-smoothstep(0.7,1.2,Vector2(x/0.12,(z-0.55)/0.2).length())
+			var wing := (1.0-smoothstep(chord-0.06*e,chord+0.08*e,absf(z-mid)))*(1.0-smoothstep(1.0-0.18*e,1.0,ax))
+			var body := 1.0-smoothstep(1.0-0.3*e,1.0+0.15*e,Vector2(x/0.13,(z-0.05)/0.45).length())
+			var tail := 1.0-smoothstep(1.0-0.3*e,1.0+0.2*e,Vector2(x/0.12,(z-0.55)/0.2).length())
 			var a := clampf(maxf(wing,maxf(body,tail)),0.0,1.0)
 			img.set_pixel(i,j,Color(0.02,0.018,0.02,a))
-	_shadow_tex = ImageTexture.create_from_image(img)
-	return _shadow_tex
+	_shadow_tex[hard] = ImageTexture.create_from_image(img)
+	return _shadow_tex[hard]
 
-func _shadow_place() -> void:
+func _shadow_place(dt: float) -> void:
+	var want := float(SHADOW_COMMIT.get(state,0.0))
+	_shadow_commit = move_toward(_shadow_commit,want,dt*(6.0 if want > _shadow_commit else 2.0))
+	var pull := float(SHADOW_PULL.get(state,0.0))
+	_shadow_pull = move_toward(_shadow_pull,pull,dt*(4.0 if pull > _shadow_pull else 1.5))
+	var on: Vector3 = motor.feet if state == "stalk" or aim == Vector3.ZERO else aim-Vector3.UP*unit*0.55
 	var h := position.y-_ground_y if _ground_y != -INF else 40.0
+	h = lerpf(h,position.y-on.y,_shadow_pull)
 	var near := clampf(1.0-h/(14.0*unit),0.0,1.0)
+	var close := clampf(1.0-position.distance_to(_middle())/(SHADOW_FAR*unit),0.0,1.0)
 	var open := 1.0-clampf(float(_pose.get("wrist",0.0))/2.5,0.0,0.7)
-	var size := span*(1.0+(1.0-near)*0.8)
-	_shadow.size = Vector3(size*open,80.0,size*0.55)
-	_shadow.global_position = position-Vector3.UP*40.0
 	var f := -global_basis.z
-	_shadow.global_rotation = Vector3(0.0,atan2(-f.x,-f.z),0.0)
-	_shadow.modulate = Color(1,1,1,lerpf(0.18,0.72,near))
+	var rot := Vector3(0.0,atan2(-f.x,-f.z),0.0)
+	var at := position
+	if _shadow_pull > 0.0:
+		at.x = lerpf(at.x,on.x,_shadow_pull)
+		at.z = lerpf(at.z,on.z,_shadow_pull)
+		at.y = maxf(at.y,on.y+unit*2.0)
+	at -= Vector3.UP*40.0
+	var size := span*(1.0+(1.0-near)*0.8)*(1.0+0.4*close)
+	_shadow.size = Vector3(size*open,80.0,size*0.55)
+	_shadow.global_position = at
+	_shadow.global_rotation = rot
+	_shadow.modulate = Color(1,1,1,lerpf(0.16,0.62,maxf(near,close*0.85))*(1.0-0.45*_shadow_commit))
+	_shadow_core.visible = _shadow_commit > 0.01
+	if not _shadow_core.visible: return
+	var core := span*(0.7+0.5*close)*(0.75+0.25*_shadow_commit)
+	_shadow_core.size = Vector3(core*maxf(open,0.6),80.0,core*0.55)
+	_shadow_core.global_position = at
+	_shadow_core.global_rotation = rot
+	_shadow_core.modulate = Color(1,1,1,_shadow_commit*lerpf(0.5,0.92,maxf(near,close)))
 
 # --- Voice and feathers ---------------------------------------------------------------
 
