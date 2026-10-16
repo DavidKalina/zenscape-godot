@@ -38,11 +38,13 @@ Note the change in the commit.
 
 ## Lanes
 
-- **`relic_torana`** is still being built in its own lane (`lane/torana`).
-  The orchestrator merges it into this branch when it lands. Until then,
-  the place uses a grey STAND-IN at the torana's spot, with the card's
-  sizes and a few SwingRopes, and the next iteration swaps in the real
-  piece.
+- `relic_torana` is merged (commit 5575f797): use the real piece, no
+  stand-in. Its code changed the card: ropes hang from iron arms on posts
+  along the lintel's top front edge (not the soffit), the lintel slopes
+  16 deg, the last rope's backswing release lands on the top, and the slow
+  way is three offering steps up the jamb's head. Read
+  `git log -1 --format=%B ec376068` before placing it; the plan may need
+  its torana numbers updated.
 
 ## Rules
 
