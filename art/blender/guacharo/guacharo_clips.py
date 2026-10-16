@@ -40,7 +40,7 @@ REST = {
     "bob": 0.0, "pitch": 0.0, "roll": 0.0, "yaw": 0.0, "stretch": 1.0,
     "neck": 0.0, "head": 0.0, "head_yaw": 0.0, "head_roll": 0.0, "jaw": 0.0,
     "tail": 0.0, "fan": 1.0, "tail_roll": 0.0,
-    "reach": 0.0, "toes": 0.0,
+    "reach": 0.0, "toes": 0.0, "strike": 0.0,
 }
 for _s in "LR":
     for _k, _v in WING.items():
@@ -192,8 +192,10 @@ class Rig:
                 out[n.replace(".L", f".{s}")] = (None, _rot(m((0.0, pfollow * (0.3 + 0.7 * k), close))), None)
             r = v["reach"]
             out[f"thigh.{s}"] = (None, _rot(m((95 * r, -6 * r, 0))), None)
-            out[f"shin.{s}"] = (None, _rot(m((-25 * r, 0, 0))), None)
-            out[f"foot.{s}"] = (None, _rot(m((-40 * r + 30 * v["toes"], 0, 0))), None)
+            # strike: the shin and foot thrown straight out ahead (the talons at him)
+            k = v["strike"]
+            out[f"shin.{s}"] = (None, _rot(m((-25 * r + 45 * k, 0, 0))), None)
+            out[f"foot.{s}"] = (None, _rot(m((-40 * r + 30 * v["toes"] + 55 * k, 0, 0))), None)
             out[f"toes.{s}"] = (None, _rot(m((-50 * v["toes"], 0, 0))), None)
         return out
 
@@ -322,15 +324,19 @@ def circle():
 
 
 # ------------------------------------------------------------------ the hunt
-# The hunt's lengths (lane guacharo-hunt, guacharo.gd): TELL 0.6 s, the scream
+# The hunt's lengths (lane guacharo-hunt, guacharo.gd): TELL 0.95 s, the scream
 # for its first TELL_SCREAM (0.45) of it, the rest the teardrop's hold; the
 # dive up to STOOP_MAX 2.5 s; clicks every CLICK_SLOW 0.42 .. CLICK_FAST 0.07 s.
 # The one-shot clips (scream, fold) do their move early and end on a held pose:
 # a longer tell only lengthens the hold (the player clamps on the last frame).
-TELL = 0.6
+TELL = 0.95
 TELL_SCREAM = 0.45
-SCREAM = TELL * TELL_SCREAM      # 0.27 s
-FOLD = TELL - SCREAM             # 0.33 s
+SCREAM = TELL * TELL_SCREAM      # 0.43 s
+FOLD = TELL - SCREAM             # 0.52 s
+FLARE = 0.22                     # the strike's flare, before contact
+LIFT = 0.7                       # the snatch's first hard beats
+CARRY = 1.5
+PULL = 1.1
 
 # hovering: body raised steep, tail fanned down as a brake, feet let down a
 # little, the head held level and staring down at him
@@ -385,7 +391,7 @@ def stalk():
 
 
 def scream():
-    """0.27 s one-shot (the tell's first TELL_SCREAM), ends held. From the
+    """0.43 s one-shot (the tell's first TELL_SCREAM), ends held. From the
     hover it ducks (head pulled in, wings dipped forward, the body squashed:
     the anticipation), then throws the wings straight up and back with the
     primaries and tail splayed wide, rears, stretches tall and opens the
@@ -393,14 +399,15 @@ def scream():
     return Clip("scream", SCREAM, [
         (0.00, dict(STALK), False),
         # the duck: everything drawn in and down
-        (0.07, dict(**both(elev=-14, sweep=-18, fold=0.25, twist=-10, spread=0.8, hand=-12),
+        (0.09, dict(**both(elev=-14, sweep=-18, fold=0.25, twist=-10, spread=0.8, hand=-12),
                     pitch=22, stretch=0.88, bob=-0.04, neck=-24, head=-18, jaw=0.1, tail=-30, fan=0.9), True),
+        (0.13, dict(stretch=0.86, neck=-26, bob=-0.045), True),   # held a beat: the breath in
         # the throw: past the hold pose
-        (0.16, dict(**both(elev=88, sweep=14, fold=0.0, twist=18, spread=1.22, hand=14),
+        (0.21, dict(**both(elev=88, sweep=14, fold=0.0, twist=18, spread=1.22, hand=14),
                     pitch=40, stretch=1.12, bob=0.05, neck=10, head=14, jaw=1.05, tail=-36, fan=1.3,
                     reach=0.35, toes=0.8)),
         # the hold: wide, rearing, beak open
-        (0.21, dict(**both(elev=80, sweep=10, fold=0.0, twist=14, spread=1.18, hand=10),
+        (0.27, dict(**both(elev=80, sweep=10, fold=0.0, twist=14, spread=1.18, hand=10),
                     pitch=38, stretch=1.07, bob=0.04, neck=8, head=10, jaw=1.0, tail=-34, fan=1.25,
                     reach=0.3, toes=0.7), True),
         (SCREAM, dict(), True),
@@ -408,7 +415,7 @@ def scream():
 
 
 def fold():
-    """0.33 s one-shot (the tell's rest), ends held on the teardrop. From
+    """0.52 s one-shot (the tell's rest), ends held on the teardrop. From
     the scream's thrown-up wings it snaps them shut in one beat (the arms
     drop and fold, the primaries close last), tips its nose down and draws
     itself long, beak still parted; the stretch overshoots and settles."""
@@ -450,5 +457,125 @@ def stoop():
     ], extra=_stoop_extra)
 
 
+# the flare: wings thrown open forward as air brakes, the body reared, the
+# legs swung through with the talons spread at him, the head down on him
+FLARED = dict(**both(elev=62, sweep=-24, fold=0.0, twist=34, spread=1.2, hand=12),
+              pitch=52, stretch=0.92, bob=0.02, neck=-10, head=-44, head_yaw=0, jaw=0.9,
+              tail=-40, fan=1.35, reach=1.3, toes=-0.6, strike=1.0)
+
+
+def flare():
+    """0.22 s one-shot (FLARE before contact), ends held. From the teardrop
+    the wings burst open (the arms first, the hands and primaries flung
+    out after: the follow-through), the body slams up against the brake
+    (the squash), the legs swing through and the talons open; it overshoots
+    and settles into the strike pose."""
+    return Clip("flare", FLARE, [
+        (0.00, dict(TEARDROP), False),
+        # the burst: arms out, still swept back, the body starting up
+        (0.05, dict(**both(elev=30, sweep=20, fold=0.45, twist=10, spread=0.5, hand=-6),
+                    pitch=14, stretch=1.05, neck=0, head=-20, jaw=0.6, tail=-14, fan=0.7,
+                    reach=0.45, toes=0.2, strike=0.3)),
+        # past the pose: reared further, squashed by the brake, talons wide
+        (0.12, dict(FLARED, **both(elev=70, sweep=-30, twist=40, spread=1.28, hand=16),
+                    pitch=60, stretch=0.86, reach=1.42, toes=-0.8, strike=1.15, head=-50, jaw=1.05, fan=1.45)),
+        (0.17, dict(FLARED), True),
+        (FLARE, dict(), True),
+    ], loop=False)
+
+
+def _carry_extra(t, v):
+    # the load swings under it: the body rolls and the legs trail the beat
+    v["roll"] += 4.0 * math.sin(t * math.tau / 0.5 + 0.8)
+    v["tail_roll"] += 5.0 * math.sin(t * math.tau / 0.5 + 2.0)
+    v["reach"] += 0.05 * math.sin(t * math.tau / 0.5 - 1.2)
+
+
+def carry():
+    """0.5 s loop, one hard beat with a load (a 2 Hz beat; the hunt beats
+    at 2.4 Hz: the look plays it at freq/2). Deeper than the flap: the body
+    hangs upright from the load, the legs locked down with the talons shut;
+    the wings reach far up and back (a straining hold at the top), the power
+    stroke drives all the way under it and the body heaves up on it, then
+    sags back as the wings come up (the weight)."""
+    base = dict(pitch=30, reach=0.75, toes=1.0, neck=-8, head=-12, tail=-18, fan=1.15)
+    return Clip("carry", 0.5, [
+        # the top: wings high and back, the body sagged under the load
+        (0.00, dict(base, **both(elev=72, sweep=12, fold=0.05, twist=14, spread=1.2, hand=12),
+                    bob=-0.07, stretch=1.07, jaw=0.15), True),
+        # the drive: fast, forward, leading edge down
+        (0.13, dict(**both(elev=10, sweep=-18, fold=0.0, twist=-16, spread=1.1, hand=-4),
+                    bob=0.0, stretch=1.0, pitch=26, jaw=0.35)),
+        # the bottom: far under, the body heaved up and squashed
+        (0.24, dict(**both(elev=-44, sweep=-20, fold=0.06, twist=-8, spread=0.95, hand=-10),
+                    bob=0.06, stretch=0.9, pitch=24, head=-8, tail=-24, jaw=0.2), True),
+        # the recovery: wrists flexed, primaries shut, the body sagging again
+        (0.38, dict(**both(elev=26, sweep=14, fold=0.42, twist=22, spread=0.5, hand=-10),
+                    bob=-0.04, stretch=1.03, pitch=31, head=-12, tail=-16)),
+    ], extra=_carry_extra)
+
+
+def pull():
+    """1.1 s one-shot (PULL), ends held. Out of the dive (or the drop): the
+    wings snap open, the body pitches up against the pull (squashed by it),
+    then two heavy climbing beats, slower on the second, and it settles
+    level into the glide."""
+    up = dict(**both(elev=64, sweep=8, fold=0.06, twist=12, spread=1.18, hand=10), stretch=1.05, bob=-0.03)
+    drive = dict(**both(elev=6, sweep=-14, fold=0.0, twist=-12, spread=1.08, hand=-4), stretch=1.0, bob=0.02)
+    low = dict(**both(elev=-34, sweep=-14, fold=0.05, twist=-6, spread=0.95, hand=-8), stretch=0.92, bob=0.06)
+    rec = dict(**both(elev=22, sweep=12, fold=0.35, twist=16, spread=0.55, hand=-8), stretch=1.02, bob=0.0)
+    return Clip("pull", PULL, [
+        (0.00, dict(TEARDROP, pitch=-12), False),
+        # the snap open: wings out against the rush, the body levering up
+        (0.10, dict(**both(elev=36, sweep=6, fold=0.2, twist=26, spread=1.0, hand=4),
+                    pitch=22, stretch=0.84, bob=0.03, tail=-20, fan=1.2, neck=-6, head=-10, jaw=0.3)),
+        (0.18, dict(up, pitch=30, tail=-14, fan=1.1, head=-6, jaw=0.1), True),
+        # beat one
+        (0.30, dict(drive, pitch=28)),
+        (0.40, dict(low, pitch=26), True),
+        (0.52, dict(rec, pitch=24)),
+        # beat two, slower
+        (0.62, dict(up, pitch=20, tail=-8), True),
+        (0.76, dict(drive, pitch=16)),
+        (0.88, dict(low, pitch=12, stretch=0.95), True),
+        # settle into the glide
+        (1.00, dict(**both(elev=6, sweep=0, fold=0.0, twist=2, spread=1.0, hand=-3),
+                    pitch=2, stretch=1.0, bob=0.0, tail=-3, fan=0.85, head=-6, neck=-4, jaw=0.0)),
+        (PULL, dict(**both(elev=4), pitch=0), True),
+    ], loop=False)
+
+
+def hurt():
+    """0.5 s one-shot flinch, ends held on the glide. Struck: the head
+    snaps back and the beak gapes, the wings fling up crooked (one higher,
+    the primaries splayed), the body jolts back and rolls off its line
+    (squash, then a stretch on the rebound); then it shakes itself and
+    catches the air again, the right wing a beat behind the left."""
+    glide_pose = dict(**both(elev=4, sweep=0, fold=0.0, twist=2, spread=1.0, hand=-3),
+                      pitch=0, roll=0, stretch=1.0, bob=0.0, tail=-3, fan=0.85, head=-6, neck=-4,
+                      head_yaw=0, head_roll=0, jaw=0.0, reach=0.0, toes=0.0)
+    return Clip("hurt", 0.5, [
+        (0.00, glide_pose, False),
+        # the jolt: hit, everything thrown back, squashed
+        (0.05, dict(**{"elev.L": 58, "sweep.L": 26, "twist.L": 20, "spread.L": 1.3, "hand.L": 18,
+                       "elev.R": 34, "sweep.R": 34, "twist.R": 8, "spread.R": 1.25, "hand.R": 24,
+                       "fold.L": 0.1, "fold.R": 0.25},
+                    pitch=18, roll=16, stretch=0.82, bob=0.05, neck=16, head=26, head_roll=-18,
+                    jaw=1.0, tail=16, fan=1.4, reach=0.5, toes=-0.6)),
+        # the rebound: stretched, rolled the other way, held a moment (stunned)
+        (0.13, dict(**{"elev.L": 20, "sweep.L": 6, "twist.L": 4, "spread.L": 1.1, "hand.L": 0,
+                       "elev.R": 46, "sweep.R": 18, "twist.R": 12, "spread.R": 1.2, "hand.R": 14,
+                       "fold.L": 0.05, "fold.R": 0.15},
+                    pitch=6, roll=-10, stretch=1.1, bob=-0.02, neck=4, head=6, head_roll=10,
+                    jaw=0.6, tail=-6, fan=1.1, reach=0.3, toes=0.2), True),
+        (0.22, dict(roll=-12, stretch=1.08, head_roll=12), True),
+        # the shake and the catch: the right wing comes down last
+        (0.32, dict(**{"elev.L": -2, "elev.R": 22, "twist.R": 6, "hand.R": 4, "spread.R": 1.05},
+                    roll=4, pitch=1, stretch=0.97, head=-8, head_roll=-4, jaw=0.2, tail=-4, reach=0.05, toes=0.0)),
+        (0.42, dict(glide_pose, roll=-2, **{"elev.R": 2}), False),
+        (0.5, dict(glide_pose), True),
+    ], loop=False)
+
+
 def clips():
-    return [glide(), flap(), circle(), stalk(), scream(), fold(), stoop()]
+    return [glide(), flap(), circle(), stalk(), scream(), fold(), stoop(), flare(), carry(), pull(), hurt()]

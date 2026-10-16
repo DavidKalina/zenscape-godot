@@ -199,9 +199,13 @@ EL = V((0.46, 0.06, 0.07))     # the elbow
 WR = V((0.92, 0.15, 0.065))    # the wrist (the leading edge's bend)
 KN = V((1.22, 0.09, 0.06))     # the hand's end (the primaries' root)
 HIP = V((0.065, -0.10, -0.07))
-KNEE = V((0.075, -0.05, -0.13))
-ANKLE = V((0.07, -0.21, -0.13))
-TOE = V((0.07, -0.27, -0.125))
+# a real oilbird's feet are small; this one's are drawn larger (LEG) so the
+# talons read when the flare and the carry swing them forward
+LEG = 1.6
+TALON = 1.7
+KNEE = HIP + (V((0.075, -0.05, -0.13)) - HIP) * LEG
+ANKLE = HIP + (V((0.07, -0.21, -0.13)) - HIP) * LEG
+TOE = HIP + (V((0.07, -0.27, -0.125)) - HIP) * LEG
 NECK0 = V((0, 0.30, 0.03))
 HEAD0 = V((0, 0.44, 0.06))
 HEAD1 = V((0, 0.66, 0.07))
@@ -584,9 +588,9 @@ build(cov)
 legs = Part("legs")
 for n, s in (("L", -1.0), ("R", 1.0)):
     hb = f"thigh.{n}"
-    for (p0, p1, r0, r1, bw) in ((HIP, KNEE, 0.03, 0.022, {f"thigh.{n}": 1.0}),
-                                  (KNEE, ANKLE, 0.016, 0.013, {f"shin.{n}": 1.0}),
-                                  (ANKLE, TOE, 0.014, 0.012, {f"foot.{n}": 1.0})):
+    for (p0, p1, r0, r1, bw) in ((HIP, KNEE, 0.036, 0.028, {f"thigh.{n}": 1.0}),
+                                  (KNEE, ANKLE, 0.021, 0.017, {f"shin.{n}": 1.0}),
+                                  (ANKLE, TOE, 0.019, 0.016, {f"foot.{n}": 1.0})):
         d = (p1 - p0).normalized()
         u = d.cross(V((1, 0, 0))).normalized()
         w = d.cross(u).normalized()
@@ -598,20 +602,20 @@ for n, s in (("L", -1.0), ("R", 1.0)):
         bw = {f"toes.{n}": 1.0} if k < 3 else {f"foot.{n}": 1.0}
         d = V((dx, dy, -0.15)).normalized()
         p0 = TOE + V((0, 0, 0))
-        p1 = p0 + d * (0.05 if k < 3 else 0.035)
+        p1 = p0 + d * (0.05 if k < 3 else 0.035) * TALON
         uu = d.cross(V((0, 0, 1))).normalized()
         ww = d.cross(uu).normalized()
         rs = [[mx(p + (uu * math.cos(a) + ww * math.sin(a)) * r, s) for a in (2 * math.pi * j / 5 for j in range(5))]
-              for p, r in ((p0, 0.009), (p1, 0.008))]
+              for p, r in ((p0, 0.009 * TALON), (p1, 0.008 * TALON))]
         loft(legs, rs, lambda i, k: (0.3, 0.5), "guacharo_foot", lambda i, p, bw=bw: bw)
         # the talon: a curved cone hooking down
         c0 = p1
-        rr = [0.008, 0.006, 0.0035]
-        pts = [c0, c0 + d * 0.022 + V((0, 0, -0.006)), c0 + d * 0.034 + V((0, 0, -0.024))]
+        rr = [0.008 * TALON, 0.006 * TALON, 0.0035 * TALON]
+        pts = [c0, c0 + (d * 0.022 + V((0, 0, -0.006))) * TALON, c0 + (d * 0.034 + V((0, 0, -0.024))) * TALON]
         rs = []
         for p, r in zip(pts, rr):
             rs.append([mx(p + (uu * math.cos(a) + ww * math.sin(a)) * r, s) for a in (2 * math.pi * j / 5 for j in range(5))])
-        tipp = mx(c0 + d * 0.036 + V((0, 0, -0.04)), s)
+        tipp = mx(c0 + (d * 0.036 + V((0, 0, -0.04))) * TALON, s)
         loft(legs, rs, lambda i, k: (0.3, 0.5), "guacharo_horn", lambda i, p, bw=bw: bw, cap_end=tipp)
 build(legs)
 
