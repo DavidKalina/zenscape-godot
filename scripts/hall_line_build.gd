@@ -240,9 +240,30 @@ static func stand_island(islets: Node3D, made: Dictionary, root: Node3D) -> Node
 		var tufts := Node3D.new()
 		tufts.name = "Tufts"
 		for part: Dictionary in parts:
-			tufts.add_child(KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer))
+			var batch: Node = KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer)
+			if batch is GeometryInstance3D:
+				var geo := batch as GeometryInstance3D
+				geo.material_override = evergreen(geo.material_override)
+			tufts.add_child(batch)
 		node.add_child(tufts)
 	return node
+
+static var _evergreens := {}
+
+## A copy of `source` that stays summer green whatever the season: its
+## `leaf_season.x` (autumn's gold, spring's freshness) at 0. The hall
+## line's turf and tufts wear these.
+static func evergreen(source: Material) -> Material:
+	if not source is ShaderMaterial: return source
+	var id := source.get_instance_id()
+	if _evergreens.has(id): return _evergreens[id]
+	var material := source.duplicate() as ShaderMaterial
+	var season: Variant = material.get_shader_parameter("leaf_season")
+	var held: Vector4 = season if season is Vector4 else Vector4(1.0,0.0,0.0,0.0)
+	held.x = 0.0
+	material.set_shader_parameter("leaf_season",held)
+	_evergreens[id] = material
+	return material
 
 ## Frees what a built piece holds that is in no tree (a piece never stood:
 ## the line reset, or let go).
