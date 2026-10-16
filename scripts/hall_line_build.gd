@@ -44,6 +44,7 @@ const HallPath = Hall.HallPath
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const SkyIslet = preload("res://scripts/sky_islet.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
+const HallShafts = preload("res://scripts/hall_shafts.gd")
 const KitFlora = preload("res://scripts/kit_isle/kit_flora.gd")
 
 ## Sundered's hall frame in a line piece's frame.
@@ -128,6 +129,8 @@ static func build(piece: Dictionary, palette: Dictionary) -> Dictionary:
 	var island_usec := Time.get_ticks_usec()-began
 	var near_began := Time.get_ticks_usec()
 	var near: Node3D = SunderedBuild.near(hp)
+	# Light shafts through the roof breaks, hung under Near (scripts/hall_shafts.gd).
+	var shafts := HallShafts.attach(near,hp.plans,int(hp.seed))
 	var far_mesh: ArrayMesh = SunderedBuild.far(hp)
 	var near_usec := Time.get_ticks_usec()-near_began
 	var bodies := _regroup(near.get_meta("bodies",[]))
@@ -212,7 +215,7 @@ static func build(piece: Dictionary, palette: Dictionary) -> Dictionary:
 	if merged != null and merged.mesh != null:
 		for k in range(merged.mesh.get_surface_count()): tris += merged.mesh.surface_get_array_len(k)/3
 	return {"node":root,"bodies":bodies,"island":dressed,"island_at":at*island_frame,"pivot":pivot,"lo":lo,"hi":hi,"boxes":boxes,"rim":rim,
-		"samples":samples,"usec":Time.get_ticks_usec()-began,"near_usec":near_usec,"island_usec":island_usec,"flora":flora,"flora_usec":flora_usec,"hulls":hulls,"triangles":tris,"hall":hp}
+		"samples":samples,"shafts":shafts,"usec":Time.get_ticks_usec()-began,"near_usec":near_usec,"island_usec":island_usec,"flora":flora,"flora_usec":flora_usec,"hulls":hulls,"triangles":tris,"hall":hp}
 
 ## A built piece as the hall rise's plan (scripts/hall_rise_plan.gd's
 ## shape): one chunk, the built root its `node` (HallRise takes it as
