@@ -48,6 +48,20 @@ coordinate.
    so `studies/motif_yard.tscn --motif=<editor slug>` and the generator run
    them too.
 
+8. **Inspecting up close** (the last task, after 1-7). The fly camera
+   is hard to judge a place from, so give the user two close views,
+   without leaving the editor or playing:
+   - **Frame (F):** the camera swings in to the selected trap or piece
+     (or what's under the cursor) and orbits it: right-drag turns round
+     it, wheel moves in and out, WASD still breaks back to free flight.
+   - **Eye view (V):** the camera at the pilot's eye height (from his
+     real size), at the selected trap's entry looking along its route, or
+     on the ground under the cursor. WASD walks it over the ground at eye
+     height (it follows the land and steps up ledges, no collision needed);
+     V again returns to where the camera was.
+   Both glide (a short ease), and both work with a trap's ghost and the
+   grid showing. Prove with stills from each view.
+
 ## Rules for this loop
 
 - **One trap list.** Lift the trap yard's `TRAPS` table into a shared
