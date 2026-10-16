@@ -42,6 +42,7 @@ const SunderedBuild = preload("res://scripts/sundered_build.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const HallPath = Hall.HallPath
 const SkyIslets = preload("res://scripts/sky_islets.gd")
+const SkyIslet = preload("res://scripts/sky_islet.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 
 ## Sundered's hall frame in a line piece's frame.
@@ -106,6 +107,7 @@ static func build(piece: Dictionary, palette: Dictionary) -> Dictionary:
 	var island_frame := HALL*Transform3D(Basis(Vector3.UP,float(member.yaw)),member.offset)
 	var home_y := float((piece.origin as Vector3).y)+island_frame.origin.y
 	var dressed := SkyIslets.dress(shape,palette,home_y)
+	_soften_top(dressed)
 	var island_usec := Time.get_ticks_usec()-began
 	var near_began := Time.get_ticks_usec()
 	var near: Node3D = SunderedBuild.near(hp)
@@ -220,6 +222,33 @@ static func release(made: Dictionary) -> void:
 		if is_instance_valid(body) and not body.is_inside_tree(): body.free()
 	var node: Variant = made.get("node")
 	if node != null and is_instance_valid(node) and not (node as Node).is_inside_tree(): (node as Node).free()
+
+## The island's top painted as the aqueduct isle's turf is (KitLook
+## GroundMesh): each face carries its own flat tone (three grass tones by
+## a patch noise, a shimmer per face), which read as a checkered quilt of
+## triangles; the tone at a point is instead the mean of the faces that
+## meet there, so colour runs across the turf and only the patches' broad
+## drift is left. Positions and normals stay (the collision reads them).
+static func _soften_top(dressed: Dictionary) -> void:
+	var top: Array = dressed.top
+	var v: PackedVector3Array = top[Mesh.ARRAY_VERTEX]
+	var c: PackedColorArray = top[Mesh.ARRAY_COLOR]
+	var sums := {}
+	for i in range(0,v.size()-2,3):
+		var a := v[i]
+		var b := v[i+1]
+		var d := v[i+2]
+		var w := (b-a).cross(d-a).length()
+		for k in range(3):
+			var key := Vector3i(roundi(v[i+k].x*500.0),roundi(v[i+k].y*500.0),roundi(v[i+k].z*500.0))
+			var t: Color = c[i+k]
+			sums[key] = (sums.get(key,Vector4.ZERO) as Vector4)+Vector4(t.r,t.g,t.b,1.0)*w
+	for i in range(v.size()):
+		var key := Vector3i(roundi(v[i].x*500.0),roundi(v[i].y*500.0),roundi(v[i].z*500.0))
+		var t: Vector4 = sums[key]
+		if t.w > 1e-9: c[i] = Color(t.x/t.w,t.y/t.w,t.z/t.w,1.0)
+	top[Mesh.ARRAY_COLOR] = c
+	(dressed.meshes as Dictionary).top = SkyIslet.mesh_from(top,null)
 
 ## The near build's hull bodies (SunderedBuild CHUNK hulls each) cut into
 ## bodies of BODY_HULLS (the old ones freed).

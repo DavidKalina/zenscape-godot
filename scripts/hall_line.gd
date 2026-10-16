@@ -179,6 +179,8 @@ func configure(line_opts: Dictionary, given_rise: Dictionary) -> void:
 			islets.name = "Islets"
 			# The sky's own host releases the shared pieces at the end.
 			islets.owns_shared = false
+			# The turf drawn as the aqueduct isle's is (smoothed, wet).
+			islets.ground_source = preload("res://scripts/kit_isle/kit_look.gd").ground_material()
 			add_child(islets)
 		_palette = islets.prepare_authored()
 		RuinKit.materials()
