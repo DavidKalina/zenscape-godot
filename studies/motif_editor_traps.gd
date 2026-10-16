@@ -566,7 +566,7 @@ func _tint_one(root: Node, on: bool) -> void:
 
 func show_marks() -> void:
 	var node: Node3D = null
-	if bool(editor.editing):
+	if _marks_on():
 		if not held.is_empty() and (held.node as Node3D).visible: node = held.node
 		elif selected >= 0: node = node_of(selected)
 	_entry_mark.visible = node != null
@@ -587,7 +587,14 @@ func show_marks() -> void:
 
 func _process(_delta: float) -> void:
 	# Hidden while playing, back when editing.
-	if _entry_mark.visible != (bool(editor.editing) and (selected >= 0 or not held.is_empty())): show_marks()
+	if _entry_mark.visible != (_marks_on() and (selected >= 0 or not held.is_empty())): show_marks()
+
+## The marks show while editing, but not in the eye view (at his height
+## they stand over the route he looks along).
+func _marks_on() -> bool:
+	if not bool(editor.editing): return false
+	var v: Node = editor.get("views")
+	return v == null or str(v.mode) != "eye"
 
 func _mark(mesh: Mesh, tint: Color) -> MeshInstance3D:
 	var m := MeshInstance3D.new()

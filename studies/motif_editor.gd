@@ -16,6 +16,8 @@ extends "res://studies/kit_isle.gd"
 ##   palette item, then left click on the ground  place it (Shift: keep placing)
 ##   Z / X                        turn the selected piece 15 deg (Shift: 5)
 ##   Delete / Backspace           delete the selected piece
+##   F / V                        frame the selected (or pointed) trap or piece and orbit it /
+##                                the eye view at his height, WASD walks (motif_editor_views.gd)
 ##   G                            the full look (turf, flora, life, sky) or back to grey
 ##                                (editing and playing are grey by default: motif_editor_grey.gd)
 ##   Ctrl+S                       save          P / Shift+P   play from the spawn / under the camera
@@ -46,6 +48,7 @@ const Feel = preload("res://studies/motif_editor_feel.gd")
 const EditorTraps = preload("res://studies/motif_editor_traps.gd")
 const EditorKnobs = preload("res://studies/motif_editor_knobs.gd")
 const EditorGrid = preload("res://studies/motif_editor_grid.gd")
+const EditorViews = preload("res://studies/motif_editor_views.gd")
 const GreyLook = preload("res://studies/motif_editor_grey.gd")
 const Rebuild = preload("res://studies/motif_editor_rebuild.gd")
 const ToolRoll = preload("res://scripts/tool_roll.gd")
@@ -178,6 +181,8 @@ var traps: EditorTraps = null
 var knobs: EditorKnobs = null
 ## The pilot grid (H): cells of his jump, heights in ledge steps.
 var grid: EditorGrid = null
+## The close views: F frame and orbit, V the eye view (motif_editor_views.gd).
+var views: EditorViews = null
 ## The grey editing look (studies/motif_editor_grey.gd), and whether the
 ## full look is on instead (G): editing and playing are grey by default.
 var grey: GreyLook = null
@@ -563,6 +568,7 @@ func refresh_pieces() -> void:
 # --- Edit and play --------------------------------------------------------------------------
 
 func frame_hill() -> void:
+	if views != null: views.release()
 	var s: Dictionary = motif.sliders()
 	var top := float(motif.crest_top())
 	var far := maxf(float(s.length),float(s.width))
@@ -597,6 +603,7 @@ func enter_edit() -> void:
 func play(under_camera := false) -> void:
 	# He stands on the full-detail land (lips, collision): what is owed built now.
 	if rb != null: rb.finish_now()
+	if views != null: views.release()
 	_edit_cam = camera.global_transform
 	editing = false
 	_end_drag()
@@ -669,11 +676,14 @@ func _edit_step(delta: float) -> void:
 		if Input.is_key_pressed(KEY_D): way.x += 1.0
 		if Input.is_key_pressed(KEY_E): way.y += 1.0
 		if Input.is_key_pressed(KEY_Q): way.y -= 1.0
+		var fast := Input.is_key_pressed(KEY_SHIFT)
+		if views != null and views.step(delta,Vector3(way.x,way.z,way.y),fast): way = Vector3.ZERO
 		if way != Vector3.ZERO:
 			var b := camera.global_basis
 			var move := b*Vector3(way.x,0.0,way.z)+Vector3.UP*way.y
-			_cam_pos += move.normalized()*_cam_speed*(3.0 if Input.is_key_pressed(KEY_SHIFT) else 1.0)*delta
+			_cam_pos += move.normalized()*_cam_speed*(3.0 if fast else 1.0)*delta
 			_apply_cam()
+	elif views != null: views.step(delta,Vector3.ZERO,false)
 	var now := Time.get_ticks_msec()
 	# A held brush stamps again where it stands.
 	if not _stroke.is_empty() and str(_stroke.tool) in ["raise","lower","smooth"] and now-_stroke_at > DWELL_MS:
@@ -725,9 +735,11 @@ func _edit_input(event: InputEvent) -> void:
 				if not mb.pressed and get_tree().current_scene == self: get_viewport().warp_mouse(_look_from)
 			MOUSE_BUTTON_WHEEL_UP:
 				if mb.pressed and _sized() and not mb.shift_pressed: set_radius(brush_r*1.12)
+				elif mb.pressed and views != null and views.mode == "orbit": views.zoom(1)
 				elif mb.pressed: _cam_speed = minf(_cam_speed*1.2,120.0)
 			MOUSE_BUTTON_WHEEL_DOWN:
 				if mb.pressed and _sized() and not mb.shift_pressed: set_radius(brush_r/1.12)
+				elif mb.pressed and views != null and views.mode == "orbit": views.zoom(-1)
 				elif mb.pressed: _cam_speed = maxf(_cam_speed/1.2,2.0)
 			MOUSE_BUTTON_LEFT:
 				if mb.pressed:
@@ -738,7 +750,8 @@ func _edit_input(event: InputEvent) -> void:
 				else: release(mb.position)
 	elif event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion
-		if _looking:
+		if _looking and views != null and views.active(): views.look(mm.relative)
+		elif _looking:
 			_cam_yaw -= mm.relative.x*LOOK_RATE
 			_cam_pitch = clampf(_cam_pitch-mm.relative.y*LOOK_RATE,-1.5,1.5)
 			_apply_cam()
@@ -752,6 +765,7 @@ func _edit_input(event: InputEvent) -> void:
 		elif _dragging: drag_to(mm.position)
 		_show_cursor(mm.position)
 		if grid != null: grid.show_at(mm.position)
+		if views != null and not _looking: views.pointer = mm.position
 	elif event is InputEventKey and event.pressed:
 		var k := event as InputEventKey
 		if k.keycode == KEY_S and (k.ctrl_pressed or k.meta_pressed):
@@ -784,6 +798,8 @@ func _edit_input(event: InputEvent) -> void:
 			KEY_G: toggle_dress()
 			KEY_B: toggle_breakable()
 			KEY_H: if grid != null: grid.toggle()
+			KEY_F: if views != null: views.frame(views.pointer)
+			KEY_V: if views != null: views.eye(views.pointer)
 			KEY_ESCAPE:
 				if not _held_piece.is_empty(): _drop_ghost()
 				if traps != null:
@@ -1550,6 +1566,9 @@ func _build_editor_ui() -> void:
 	grid = EditorGrid.new()
 	add_child(grid)
 	grid.setup(self)
+	views = EditorViews.new()
+	add_child(views)
+	views.setup(self)
 	knobs = EditorKnobs.new()
 	_ui.add_child(knobs)
 	knobs.setup(self)
