@@ -42,6 +42,8 @@ const YardSky = preload("res://studies/motif_yard_sky.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Breakables = preload("res://scripts/kit_isle/breakables.gd")
 const KitBreaks = preload("res://scripts/kit_isle/kit_breaks.gd")
+const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
+const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
 
 ## Each greybox motif's own grey flag (its `grey()`), which --grey sets.
 const GREY_FLAGS := {
@@ -77,6 +79,14 @@ func _ready() -> void:
 		elif a == "--grey": grey = true
 		elif a == "--rims": rims_on = true
 		elif a.begins_with("--at="): offset = _vec(a.get_slice("=",1))
+		elif a == "--olmec": olmec = true
+		elif a.begins_with("--olmec-at="):
+			olmec = true
+			_olmec_at = _xz(a.get_slice("=",1))
+		elif a.begins_with("--head-at="): _head_at = _xz(a.get_slice("=",1))
+		elif a.begins_with("--body-knob="):
+			var kv := a.trim_prefix("--body-knob=")
+			_body_knobs[kv.get_slice("=",0)] = float(kv.get_slice("=",1))
 	if motif_slug == "":
 		push_warning("motif yard: no --motif=<slug> (%s); plumb_well" % ", ".join(PackedStringArray(Registry.MOTIFS.keys())))
 		motif_slug = "plumb_well"
@@ -277,7 +287,12 @@ func tick(delta: float) -> void:
 		if not motif_stands(): return
 		_held = false
 		_kit_breaks()
+		if olmec: _olmec()
 		respawn()
+	if hub != null and stage != null and stage.get("enemies") != null:
+		# Every body (a new one after R too) breaks through the hub.
+		for e: Node in stage.enemies.enemies:
+			if is_instance_valid(e) and e.has_method("world_changed") and e.get("breaker") == null: e.breaker = hub
 	super.tick(delta)
 	if flying: return
 	# The net (off the edge the study's own `lost` is held off).
@@ -323,6 +338,97 @@ func _kit_breaks() -> void:
 	for isle: Node3D in motifs.isles: n += kit_breaks.adopt(isle)
 	hub.others.append(kit_breaks)
 	print("motif yard: %d kit piece(s) breakable" % n)
+
+## --olmec: a headless body (scripts/enemies/headless_body.gd) and its head
+## set down so his way to it runs through the motif's tallest breakable
+## piece: him OLMEC_BEFORE m before its face, the head OLMEC_PAST m past
+## it (the farthest of each with ground he walks the whole way) (--olmec-at=x,z / --head-at=x,z, world, set either). He breaks what
+## he walks into through `hub`.
+var olmec := false
+var _olmec_at := Vector2(INF,INF)
+var _head_at := Vector2(INF,INF)
+var _body_knobs := {}
+const OLMEC_BEFORE := [14.0,10.0,7.0]
+const OLMEC_PAST := [10.0,6.0]
+
+func _olmec() -> void:
+	var field: Node = stage.get("enemies") if stage != null else null
+	if field == null or kit_breaks == null:
+		push_warning("motif yard: --olmec needs the stage's enemies")
+		return
+	var at := _olmec_at
+	var head := _head_at
+	if at.x == INF or head.x == INF:
+		var line := _olmec_line()
+		if line.is_empty():
+			push_warning("motif yard: --olmec: no breakable piece to aim him through")
+			return
+		if at.x == INF: at = line.at
+		if head.x == INF: head = line.head
+	var at3 := _ground_at(at)
+	var head3 := _ground_at(head)
+	if at3.y == -INF or head3.y == -INF:
+		push_warning("motif yard: --olmec: no ground at %s / %s" % [at,head])
+		return
+	var face := Vector2(head3.x-at3.x,head3.z-at3.z).normalized()
+	var knobs := {"chase":1.0,"listen":1.2,"listen_every":12.0}
+	knobs.merge(_body_knobs,true)
+	field.spawn(HeadlessBody,at3,face,knobs)
+	field.spawn(InhalerHead,head3,-face)
+	print("motif yard: olmec at %s, head at %s" % [at3,head3])
+
+## {at, head} (x, z): the line through the tallest piece he can break,
+## across its long side, from whichever side has walkable ground the whole
+## way (no drop or rise over his step between samples, the pieces he
+## breaks looked through); {} none.
+func _olmec_line() -> Dictionary:
+	var order: Array = []
+	for t: Dictionary in kit_breaks.targets:
+		if not t.alive or float(t.tough) > 1.0 or str(t.kind) in ["slab","stair"]: continue
+		order.append(t)
+	order.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return (a.box as AABB).size.y > (b.box as AABB).size.y)
+	var skip: Array[RID] = kit_breaks._standing_bodies()
+	for t: Dictionary in order:
+		var node: Node3D = t.node
+		var box: AABB = t.box
+		var xf := node.global_transform
+		var c := xf*box.get_center()
+		var long := xf.basis.x if box.size.x >= box.size.z else xf.basis.z
+		var across := Vector3.UP.cross(long.normalized()).normalized()
+		var half := minf(box.size.x,box.size.z)*0.5
+		for before: float in OLMEC_BEFORE:
+			for past: float in OLMEC_PAST:
+				for side: float in [1.0,-1.0]:
+					var a := c+across*side*(before+half)
+					var h := c-across*side*(past+half)
+					if _walkable(a,h,skip): return {"at":Vector2(a.x,a.z),"head":Vector2(h.x,h.z)}
+	return {}
+
+## Ground the whole way from `a` to `b` (x, z), a sample each half metre,
+## each within OLMEC_RISE m of the last (a terrace's step wall he'd climb,
+## and climbing a knee-high one stalls him).
+const OLMEC_RISE := 0.6
+func _walkable(a: Vector3, b: Vector3, skip: Array[RID]) -> bool:
+	var n := ceili(Vector2(b.x-a.x,b.z-a.z).length()*2.0)
+	var was := NAN
+	for i in range(n+1):
+		var p := a.lerp(b,float(i)/float(n))
+		var y := _ground_at(Vector2(p.x,p.z),skip).y
+		if y < net_y+1.0: return false
+		if not is_nan(was) and absf(y-was) > OLMEC_RISE: return false
+		was = y
+	return true
+
+## The ground under (x, z), world (`skip`'s bodies looked through).
+func _ground_at(xz: Vector2, skip: Array[RID] = []) -> Vector3:
+	var q := PhysicsRayQueryParameters3D.create(Vector3(xz.x,400.0,xz.y),Vector3(xz.x,-400.0,xz.y))
+	q.exclude = skip
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	return hit.position if not hit.is_empty() else Vector3(xz.x,-INF,xz.y)
+
+static func _xz(s: String) -> Vector2:
+	var p := s.split(",")
+	return Vector2(float(p[0]),float(p[1]) if p.size() > 1 else 0.0)
 
 # --- The card --------------------------------------------------------------------------
 
