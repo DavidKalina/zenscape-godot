@@ -61,7 +61,7 @@ given a directory after `--`, writes them there), printing PILOT_TRIS and
 each clip's length and the legs' worst reach; pilot_preview.py renders
 stills of it:
 
-    /opt/homebrew/bin/blender -b --python art/blender/pilot/pilot_build.py [-- DIR]
+    python tools/blender.py run art/blender/pilot/pilot_build.py [-- DIR]
 
 Conventions: 1 unit = 1 m, real size (about 1.1 m tall). Blender Z up, facing
 +Y (the glTF exporter turns that into Godot's -Z), the right hand at +X; the

@@ -1,7 +1,7 @@
 """Stills of the pilot's clips for checking by eye (tests/test_pilot_figure.gd
 measures the planted boots in the game).
 
-    /opt/homebrew/bin/blender -b art/blender/pilot/pilot.blend --python art/blender/pilot/pilot_preview.py -- [OUT_DIR] [CLIP ...]
+    python tools/blender.py run --blend art/blender/pilot/pilot.blend art/blender/pilot/pilot_preview.py -- [OUT_DIR] [CLIP ...]
 
 Writes OUT_DIR/<clip>_<view>_<frame>.png (default /tmp/pilot_preview): about
 ten stills through each of walk, run and skid, the idle once a second

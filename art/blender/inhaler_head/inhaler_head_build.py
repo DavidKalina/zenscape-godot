@@ -27,7 +27,7 @@ Objects (the game finds them by name):
   Maw     the dark throat behind the lips and the nostrils
   Mouth   an empty at the lips' parting, the way in
 
-    /opt/homebrew/bin/blender -b --python art/blender/inhaler_head/inhaler_head_build.py -- [--out=DIR] [--blend] [--render=PNG] [--open=RAD]
+    python tools/blender.py run art/blender/inhaler_head/inhaler_head_build.py -- [--out=DIR] [--blend] [--render=PNG] [--open=RAD]
 
 Writes assets/models/inhaler_head.glb, printing INHALER_TRIS per object;
 --blend saves art/blender/inhaler_head/inhaler_head.blend; --render writes a

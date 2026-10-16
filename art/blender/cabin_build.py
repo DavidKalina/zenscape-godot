@@ -10,7 +10,7 @@ no textures.
 
 Regenerates art/blender/cabin.blend and assets/models/cabin.glb from nothing.
 
-    /opt/homebrew/bin/blender -b --python art/blender/cabin_build.py
+    python tools/blender.py run art/blender/cabin_build.py
 
 Conventions: 1 unit = 1 m, real-world size (zenscape draws it at 0.8).
 Blender Z up; the glTF exporter converts to Godot Y up. Blender -Y (the door side) is Godot +Z.

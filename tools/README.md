@@ -25,6 +25,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
 | A still of a moment in a driven run (him mid-jump, a piece by its AABB) | in a driver: `await shot_at("side", motor, {"when": cond})`, then `route()`/`watch()`; run with `drive.py --rendered` (drive.gd, Shots) |
 | A short film and contact sheet while a route or watch plays | in a driver: `var f := film(enemy, {"view": "shoulder", "every": 6, "seconds": 3})`, `await watch(enemy)`, `await film_end(f)` (drive.gd, Shots) |
+| Run a Blender script (Mac, Windows, the Store build) | `python tools/blender.py run art/blender/x/x_build.py [--blend F] [--timeout S] -- args`; `--where`; `--expr "..."` |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
 | The test suite | `python tools/run_tests.py [--tests 'test_x*.gd'] [--quick]` |
 | A brainstorm round's cards as one page of maps | `python tools/motif_cards_html.py docs/design/motifs/brainstorm/<round> [--open]` |
@@ -214,6 +215,27 @@ python tools/kit_piece.py check <id> [--shots]
 - Tool and study scripts get the editor's FootPieces with
   `load("res://scripts/roguelike/layer_greybox.gd").FootPieces` at run
   time; a const preload of it leaks the script graph at exit.
+
+## blender.py: Blender scripts
+
+```
+python tools/blender.py --where
+python tools/blender.py run art/blender/guacharo/guacharo_build.py -- --out=scratch/g --render=scratch/g
+python tools/blender.py run --blend art/blender/plane/plane.blend art/blender/plane/plane_render.py -- scratch/r
+python tools/blender.py --expr "import bpy; print(bpy.app.version_string)"
+```
+
+It finds Blender from `$BLENDER`, a Program Files install, the Microsoft
+Store build's launcher (`%LOCALAPPDATA%\Microsoft\WindowsAppslender-launcher.exe`;
+the Store's `blender.exe` gives Access denied), the Mac app or
+`/opt/homebrew/bin/blender`. The script runs `-b` inside a bootstrap that
+logs its output and writes its exit code, so the detaching launcher still
+gives both back: the run prints the output as it comes and exits 0, the
+script's `sys.exit` code, or 1 on an exception (Blender alone exits 0
+then). `--timeout S` (default 1800) kills it with exit 124. The script sees
+its args after `--` as usual, runs from the repo root, and has its own
+folder and `art/blender/` on `sys.path` (the shared helpers,
+`art/blender/blendkit/`). Don't write a scratch wrapper.
 
 ## bg.py: runs past the tool limit
 

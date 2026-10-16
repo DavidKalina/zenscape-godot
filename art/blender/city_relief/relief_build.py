@@ -36,7 +36,7 @@ Objects (the game finds them by name):
   Hold_NN     empties, one per hold: location its box's middle, scale its
               size (m); the game makes a clean walker-only box of each
 
-    /opt/homebrew/bin/blender -b --python art/blender/city_relief/relief_build.py -- [--render=PNG] [--res=0.03] [--low=12000]
+    python tools/blender.py run art/blender/city_relief/relief_build.py -- [--render=PNG] [--res=0.03] [--low=12000]
 
 Writes assets/models/city_relief.glb and assets/textures/city_relief_{normal,cavity}.png,
 printing RELIEF_TRIS; --render writes a workbench still of the low mesh.

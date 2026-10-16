@@ -60,7 +60,7 @@ itself (headless_body_look.gd), so a clip's length is only its span:
 The phase-driven loops start on their first contact (walk and stride: the
 left foot down; climb: the left hand on the wall).
 
-    /opt/homebrew/bin/blender -b --python art/blender/headless_body/headless_body_build.py -- [--out=DIR] [--blend] [--no-bake] [--render=DIR] [--clips=a,b]
+    python tools/blender.py run art/blender/headless_body/headless_body_build.py -- [--out=DIR] [--blend] [--no-bake] [--render=DIR] [--clips=a,b]
 
 Writes assets/models/headless_body.glb (or into DIR), printing BODY_TRIS
 and each clip; --blend also saves art/blender/headless_body/headless_body.blend;

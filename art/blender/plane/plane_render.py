@@ -1,6 +1,6 @@
 """Renders of the plane concepts (plane_build.py) for choosing between them.
 
-    /opt/homebrew/bin/blender -b art/blender/plane/plane.blend --python art/blender/plane/plane_render.py -- [OUT_DIR] [SHOT ...]
+    python tools/blender.py run --blend art/blender/plane/plane.blend art/blender/plane/plane_render.py -- [OUT_DIR] [SHOT ...]
 
 Writes OUT_DIR (default art/blender/plane/renders) PNGs:
   <D>_hero.png    3/4 front, banking, the stone seated and glowing, a ruin

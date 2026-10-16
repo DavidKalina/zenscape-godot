@@ -8,7 +8,7 @@ Concept only: nothing here is exported to the game. Saves the three
 variants, a stand-in pilot each (plane_build.pilot) and the ruin island
 (plane_build.ruin) to art/blender/plane/stone.blend; stone_render.py renders.
 
-    /opt/homebrew/bin/blender -b --python art/blender/plane/stone_build.py
+    python tools/blender.py run art/blender/plane/stone_build.py
 
 Variants, most plane-like to strangest:
   A  Swift    a monoplane, an ancient glider: long tapering shoulder wing in

@@ -2,7 +2,7 @@
 dragon_body_build.py): a sheet with a row per dress and a column per view
 (side, head on, three-quarter, head close-up, top).
 
-    /opt/homebrew/bin/blender -b --python art/blender/rim_dragon/dragon_body_sheet.py -- [OUT.png] [--styles=c] [--jaw=0.5] [--tiles]
+    python tools/blender.py run art/blender/rim_dragon/dragon_body_sheet.py -- [OUT.png] [--styles=c] [--jaw=0.5] [--tiles]
 
 Reads assets/models/rim_dragon_<style>.glb; writes OUT.png (default
 docs/design/rim-dragon/dragon_sheet.png). --jaw=<rad> opens the jaw to

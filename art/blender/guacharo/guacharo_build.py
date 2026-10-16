@@ -25,7 +25,7 @@ origin is the body's middle between the wing roots.
   pelvis thigh shin foot toes                      (.L/.R)
 Rest = gliding: wings spread, tail half fanned, legs tucked.
 
-    /opt/homebrew/bin/blender -b --python art/blender/guacharo/guacharo_build.py -- [--out=DIR] [--blend] [--render=DIR]
+    python tools/blender.py run art/blender/guacharo/guacharo_build.py -- [--out=DIR] [--blend] [--render=DIR]
 
 Writes assets/models/guacharo.glb (or into DIR), printing GUACHARO_TRIS;
 --render=DIR also writes Workbench stills of the rest pose there, and a

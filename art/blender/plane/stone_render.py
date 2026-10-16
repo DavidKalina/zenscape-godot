@@ -1,6 +1,6 @@
 """Renders of the stone plane concepts (stone_build.py).
 
-    /opt/homebrew/bin/blender -b art/blender/plane/stone.blend --python art/blender/plane/stone_render.py -- [OUT_DIR] [A B C] [SHOT ...]
+    python tools/blender.py run --blend art/blender/plane/stone.blend art/blender/plane/stone_render.py -- [OUT_DIR] [A B C] [SHOT ...]
 
 OUT_DIR defaults to art/blender/plane/renders/stone (PNGs are gitignored).
 Shots (all by default):

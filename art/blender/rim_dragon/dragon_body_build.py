@@ -37,7 +37,7 @@ forward). The origin is the body's middle between the wing roots.
 Rest = gliding: wings spread flat, legs hanging. No clips; the game poses
 the bones.
 
-    /opt/homebrew/bin/blender -b --python art/blender/rim_dragon/dragon_body_build.py -- --style=c [--out=DIR] [--blend]
+    python tools/blender.py run art/blender/rim_dragon/dragon_body_build.py -- --style=c [--out=DIR] [--blend]
 
 Writes assets/models/rim_dragon_<style>.glb (or into DIR), printing
 DRAGON_TRIS and each part's count; --blend also saves

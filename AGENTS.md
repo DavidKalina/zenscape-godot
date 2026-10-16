@@ -58,8 +58,7 @@ headless import in the worktree before anything else.
 # Running on Windows
 
 The user develops on a Mac and sometimes on a Windows PC. The `run-*.command`
-launchers, the Mac Godot path in the tools and the `/opt/homebrew/bin/blender`
-lines in the Blender scripts' docstrings are Mac-only. On Windows, work in
+launchers and the Mac Godot path in the tools are Mac-only. On Windows, work in
 PowerShell from the repo root:
 
 - Install Godot **4.7.2** standard (win64, not .NET), Python 3.13 and
@@ -77,8 +76,11 @@ PowerShell from the repo root:
   A study: put its scene after `--path .`, e.g. `studies/motif_yard.tscn -- --motif=sundered_gorge`.
   A `run-*.command` file shows the scene and flags it launches.
 - Tests: `python tools/run_tests.py` (same flags as above).
-- Blender scripts: `& "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b --python art/blender/plane/plane_build.py`
-  (or `blender` if it's on PATH).
+- Blender scripts: `python tools/blender.py run art/blender/plane/plane_build.py [-- args]`.
+  It finds Blender (a Program Files install, else the Microsoft Store
+  build's `blender-launcher.exe`, whose `blender.exe` gives Access denied
+  and whose launcher drops the output and exit code), waits, relays the
+  output and exits with the script's code. `--where` prints the one it uses.
 - The native terrain kernels are optional; without them the GDScript
   versions run. Building them needs Visual Studio's C++ tools and SCons
   (`docs/desktop-builds.md`).

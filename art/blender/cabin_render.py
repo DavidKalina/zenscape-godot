@@ -1,6 +1,6 @@
 """A look at the cabin at zenscape's scale (headless): docs/scenic/cabin-render.png.
 
-    /opt/homebrew/bin/blender -b --python art/blender/cabin_render.py
+    python tools/blender.py run art/blender/cabin_render.py
 
 Imports assets/models/cabin.glb (what Godot gets) at the game's 0.8 and stands
 grey scale markers beside it: a 1 m post (the stone lamp), a 0.62 m post (a

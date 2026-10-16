@@ -7,7 +7,7 @@ stand-in pilot (head and shoulders, as scripts/plane_pilot.gd seats them)
 and a small gothic ruin on a sky island for context are saved to
 art/blender/plane/plane.blend; plane_render.py renders the shots.
 
-    /opt/homebrew/bin/blender -b --python art/blender/plane/plane_build.py
+    python tools/blender.py run art/blender/plane/plane_build.py
 
 Directions:
   A  Salvager    the pilot's warm wood-and-cream biplane, patched with what

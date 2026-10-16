@@ -50,7 +50,7 @@ Objects (the game finds them by name):
   Tuft_NN    flat polygons where grass tufts grow (the game reads the corners)
   Hold_NN    her bosses up the head's west flank (empties: middle and size)
 
-    /opt/homebrew/bin/blender -b --python art/blender/face_colossus/colossus_build.py -- [--render=PNG] [--hull=8000] [--head=14000]
+    python tools/blender.py run art/blender/face_colossus/colossus_build.py -- [--render=PNG] [--hull=8000] [--head=14000]
 
 Writes assets/models/face_colossus.glb, printing COLOSSUS_TRIS.
 """
