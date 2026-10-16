@@ -70,6 +70,20 @@ const HEAD_MAX := 1.0
 ## CLICK_BACK s back.
 const CLICK_DOWN := 0.04
 const CLICK_BACK := 0.08
+## Each clip's swept box (glb units, CPU-skinned over every frame by
+## scratch/guac_extent.gd): the ground lift keeps its lowest corner over
+## the ground, and SWEPT_ALL (grown) is the mesh's custom AABB, so a wing
+## swung past the rest pose's box is never culled.
+const SWEPT := {"carry":[-1.13,1.59,2.11,-0.83,1.23],"circle":[-0.99,1.41,2.15,-0.78,1.18],
+	"flap":[-0.86,1.48,2.22,-0.84,1.22],"flare":[-0.51,1.68,1.80,-0.97,1.48],"fold":[-0.42,1.66,0.56,-1.01,1.50],
+	"glide":[-0.26,0.20,2.21,-0.81,1.18],"hurt":[-0.38,1.65,2.21,-0.91,1.29],"pull":[-0.86,1.50,2.21,-0.95,1.34],
+	"scream":[-0.44,1.65,2.17,-0.72,1.50],"stalk":[-0.48,1.22,2.19,-0.71,1.19],"stoop":[-0.22,0.13,0.61,-0.98,1.37]}
+const SWEPT_ALL := AABB(Vector3(-2.45,-1.35,-1.2),Vector3(4.9,3.25,2.95))
+## Ground lift: the clearance (m) kept under the bird's lowest point, the
+## most it lifts (m) and how fast the lift lets go (m/s).
+const GROUND_CLEAR := 0.06
+const LIFT_MAX := 1.6
+const LIFT_FALL := 2.0
 
 ## A clip to play when no mind drives it (studies); "" picks from the mind.
 var clip := ""
@@ -90,6 +104,8 @@ var _talon_w := 0.0
 var _click_age := 1.0
 var _click_prev := 0.0
 var _hurt_t := 0.0
+## How far (m) the body is lifted off the ground now.
+var lift := 0.0
 
 func _init() -> void:
 	name = "GuacharoLook"
@@ -136,6 +152,8 @@ func _build_glb(scene: PackedScene) -> void:
 		_ap.get_animation(a).loop_mode = Animation.LOOP_LINEAR if String(a) in LOOPS else Animation.LOOP_NONE
 	# Advanced by drive(), so the procedural layers go on after the clip.
 	_ap.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	for mi: Node in g.find_children("*","MeshInstance3D",true,false):
+		(mi as MeshInstance3D).custom_aabb = SWEPT_ALL
 	_set_layers(self)
 	glb = true
 	_play("glide",0.0,1.0)
@@ -203,7 +221,9 @@ func _drive_glb(dt: float) -> void:
 	var side := -1.0 if _mirror else 1.0
 	_model.scale = Vector3(side,1.0,1.0)
 	_model.rotation = Vector3(0.0,0.0,-side*CIRCLE_ROLL*_circle_w)
+	_model.position = Vector3.ZERO
 	if not minded or not is_inside_tree(): return
+	_ground_lift(m,dt)
 	var st := String(m.get("state"))
 	var target: Variant = m.call("_middle") if m.has_method("_middle") else null
 	# The head on him.
@@ -231,6 +251,26 @@ func _drive_glb(dt: float) -> void:
 	if _talon_w > 0.01 and talon_to != null:
 		for s: String in ["L","R"]:
 			_aim_bone(int(_bone["thigh."+s]),"toes."+s,talon_to,_talon_w,0.7)
+
+## Lifts the body (the Model, not the mind) so the playing clip's swept box
+## stays over the ground under it: the flap's downstroke, the carry's legs
+## and the pull's first beat never sink in, however low the mind flies.
+func _ground_lift(m: Node, dt: float) -> void:
+	var field: Variant = m.get("field")
+	if field == null or not (field as Object).has_method("floor_under"): return
+	var box: Array = SWEPT.get(playing,SWEPT.glide)
+	var xf := global_transform*Transform3D(_model.basis,Vector3.ZERO)
+	var low := INF
+	for c in 8:
+		var p := Vector3(float(box[2])*(1.0 if c & 1 else -1.0),float(box[1]) if c & 2 else float(box[0]),
+			float(box[4]) if c & 4 else float(box[3]))
+		low = minf(low,(xf*p).y)
+	var o := global_position
+	var want := 0.0
+	var ground: float = field.floor_under(o,0.5,o.y-low+GROUND_CLEAR+0.5)
+	if ground != -INF: want = clampf(ground+GROUND_CLEAR-low,0.0,LIFT_MAX)
+	lift = want if want > lift else move_toward(lift,want,dt*LIFT_FALL)
+	if lift > 0.001: _model.position = global_basis.inverse()*Vector3.UP*lift
 
 ## Turns bone `b` (in the skeleton's frame, over its clip pose) so the line
 ## from it to bone `tip` swings toward `at` (world), by `w` of the way, at
