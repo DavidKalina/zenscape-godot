@@ -21,10 +21,11 @@ const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
+const Keel = preload("res://scripts/ruin_kit_keel.gd")
 
 ## Which kinds mate (each way round).
 const MATES := {"column":["column"],"wall_end":["wall_end"],"channel":["channel"],"aq_pier":["aq_pier"],
-	"flight_top":["flight_foot"],"flight_foot":["flight_top"]}
+	"flight_top":["flight_foot"],"flight_foot":["flight_top"],"hinge":["hinge"]}
 
 ## A cliff lip: the ground falls at least LIP_DROP m within LIP_REACH m out.
 const LIP_DROP := 1.2
@@ -92,6 +93,18 @@ static func connectors(id: String, node: Node3D = null) -> Array:
 			return [_c("left",Vector3(-h,0.0,zm),Vector3.LEFT,"wall_end","end"),
 				_c("right",Vector3(h,0.0,zm),Vector3.RIGHT,"wall_end","end"),
 				_c("top",Vector3(0.0,float(lines.wall_top),zm),Vector3.UP,"top","top")]
+		"keel_hung_stair":
+			# The hinge beam's ends where it goes into the keel (two hung
+			# flights chain end to end along one hinge), and the turned
+			# flight's foot (onto a ledge or a kit flight's landing) and
+			# head (a kit flight's foot, or the shaft's floor).
+			var hl := Keel.lines()
+			var f := Keel.flight_frame()
+			var d: Vector3 = hl.dir
+			return [_c("hinge_foot",hl.from,-Vector3(d.x,0.0,d.z).normalized(),"hinge","end"),
+				_c("hinge_head",hl.to,Vector3(d.x,0.0,d.z).normalized(),"hinge","end"),
+				_c("foot",f*Vector3(0.0,0.0,Keel.FRONT),f.basis*Vector3.BACK,"flight_foot","end"),
+				_c("head",f*Vector3(0.0,Keel.STEPS*Keel.RISER,Keel.BACK+Keel.head_back()),f.basis*Vector3.FORWARD,"flight_top","end")]
 	return []
 
 ## Whether a connector of kind `a` mates one of kind `b`.
