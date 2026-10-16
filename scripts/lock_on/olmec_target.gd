@@ -40,6 +40,8 @@ const RUBBLE_SIZE := Vector2(0.35,0.8)
 const RUBBLE_SETTLE := 7.0
 
 var hits := 0
+## Hits to bring him down (HITS; a subclass may ask more).
+var most_hits := HITS
 var crumbled := false
 var _tip := 0.0
 var _tip_v := 0.0
@@ -86,8 +88,8 @@ func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
 	_puff(at-Vector3.UP*0.2,hh*0.9)
 	_puff(global_position,hh*1.6)
 	field.sound(&"body_land",global_position)
-	print("olmec target: hit %d/%d at (%.1f, %.1f, %.1f), strength %.2f, now %s" % [hits,HITS,at.x,at.y,at.z,strength,state])
-	if hits >= HITS: crumble()
+	print("olmec target: hit %d/%d at (%.1f, %.1f, %.1f), strength %.2f, now %s" % [hits,most_hits,at.x,at.y,at.z,strength,state])
+	if hits >= most_hits: crumble()
 
 func step(delta: float) -> void:
 	if crumbled:

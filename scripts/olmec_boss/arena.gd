@@ -312,6 +312,8 @@ func _process(delta: float) -> void:
 		p.t = float(p.t)-delta
 		if float(p.t) > 0.0: continue
 		_pending.erase(p)
+		# Broken meanwhile another way (a shockwave through the hub): gone.
+		if not is_instance_valid(p.node): continue
 		_fell(p.node,p.at,p.dir)
 
 ## Every headless body breaks through the hub (a new one after R too).

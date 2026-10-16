@@ -29,6 +29,9 @@ const Arena = preload("res://scripts/olmec_boss/arena.gd")
 ## The boss fight's phase 1 (docs/design/olmec-boss/spec-olmec-boss.md):
 ## the head alone, absorbing and puffing (scripts/olmec_boss/boss_head.gd).
 const BossHead = preload("res://scripts/olmec_boss/boss_head.gd")
+## Phase 2: the body that comes for it, and hunts you whole
+## (scripts/olmec_boss/boss_body.gd).
+const BossBody = preload("res://scripts/olmec_boss/boss_body.gd")
 
 ## Phase 1 is done: the head has taken its hits and cried out (the body's
 ## cue, for the trunk to hook).
@@ -365,8 +368,11 @@ func _show_card() -> void:
 	var line := CARD
 	if b != null:
 		var n := int(b.hits)
-		var pips := "●".repeat(mini(n,OlmecTarget.HITS))+"○".repeat(maxi(OlmecTarget.HITS-n,0))
-		line += "\nOlmec  %s  %s" % [pips,"down" if bool(b.crumbled) else str(b.state)]
+		var most := int(b.most_hits)
+		var pips := "●".repeat(mini(n,most))+"○".repeat(maxi(most-n,0))
+		var doing := str(b.state)
+		if str(b.get("move")) not in ["","<null>"]: doing = str(b.move)+" ("+doing+")"
+		line += "\nOlmec  %s  %s" % [pips,"down" if bool(b.crumbled) else doing]
 		if foot_lock != null and foot_lock.locked(): line += "  ·  locked"
 	var h := olmec_head()
 	if b != null and arrival in ["climbing","crossing"]:
@@ -413,7 +419,7 @@ func _bring_body() -> void:
 		# so the beat is short: over the rim, straight for it.
 		var knobs := {"chase":0.0 if calm else 1.0,"relentless":1.0,"periscope":0.0,"sense":FIELD_R*2.0,"lose":8.0}
 		knobs.merge(_body_knobs,true)
-		var b: Node3D = enemies.add(OlmecTarget,fitted[0],-(fitted[1] as Vector2),knobs)
+		var b: Node3D = enemies.add(BossBody,fitted[0],-(fitted[1] as Vector2),knobs)
 		# Ahead of its head in the field, so the head reads its neck this frame.
 		enemies.enemies.erase(b)
 		enemies.enemies.insert(maxi(enemies.enemies.find(h),0),b)
@@ -438,6 +444,7 @@ func _body_whole(b: Node3D) -> void:
 	var h := olmec_head()
 	if h != null: h.remove_from_group(BossHead.GROUP)
 	b.add_to_group(OlmecTarget.GROUP)
+	if b.has_method("phase_two"): b.phase_two()
 	if foot_lock != null and foot_lock.target == h:
 		foot_lock.target = b
 		foot_lock._last = b
