@@ -26,6 +26,7 @@ const MOTIFS := {
 	"weir_stair":preload("res://scripts/kit_isle/greybox/gb_weir_stair.gd"),
 	"procession":preload("res://scripts/kit_isle/greybox/gb_procession.gd"),
 	"city_landing":preload("res://scripts/kit_isle/greybox/gb_city_landing.gd"),
+	"pilgrims_ladder":preload("res://scripts/kit_isle/greybox/gb_pilgrims_ladder.gd"),
 	"editor_hill":preload("res://scripts/kit_isle/greybox/au_editor_hill.gd"),
 	"editor_mountain":preload("res://scripts/kit_isle/greybox/au_editor_mountain.gd"),
 	"editor_tarn_peak":preload("res://scripts/kit_isle/greybox/au_editor_tarn_peak.gd"),
