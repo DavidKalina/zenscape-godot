@@ -771,6 +771,9 @@ func _carry(delta: float) -> void:
 
 # --- Flight and the body --------------------------------------------------------------
 
+const ORIENT_RATE := 14.0
+const ORIENT_DIVE := 30.0
+var _level_fwd := Vector3.FORWARD
 func _orient(delta: float) -> void:
 	var fwd := vel
 	if state == "fold" or state == "carry" or fwd.length() < 1.0:
@@ -786,10 +789,18 @@ func _orient(delta: float) -> void:
 	var lat := acc.dot(right.normalized()) if right.length() > 0.01 else 0.0
 	var want_bank := clampf(-lat/9.8*0.9,-1.15,1.15) if state in ["home","circle","stalk","pull"] else 0.0
 	bank = lerpf(bank,want_bank,1.0-exp(-3.0*delta))
-	var up := Vector3.UP if absf(fwd.y) < 0.97 else global_basis.y
+	# Straight up or down its back faces the way it was flying level (not
+	# its own last up: the bank would wind on every frame and spin it).
+	var flat := Vector3(fwd.x,0.0,fwd.z)
+	if flat.length() > 0.25: _level_fwd = flat.normalized()
+	var up := Vector3.UP if absf(fwd.y) < 0.97 else _level_fwd*(-signf(fwd.y))
 	var b := Basis.looking_at(fwd,up)
 	b = Basis(fwd,bank)*b
-	global_basis = b.orthonormalized()
+	# Turned at most so fast (ORIENT_RATE, faster in the dive): a graze off
+	# stone that kills its speed into the rock doesn't snap its heading.
+	var rate := ORIENT_DIVE if state in ["stoop","fold"] else ORIENT_RATE
+	var q := global_basis.orthonormalized().get_rotation_quaternion()
+	global_basis = Basis(q.slerp(b.orthonormalized().get_rotation_quaternion(),1.0-exp(-rate*delta)))
 
 ## Poses the body for its state, eased; the beats' phase run.
 func _animate(delta: float) -> void:
