@@ -48,16 +48,39 @@ signal beat(what: String)
 
 const CAUSE := "the guácharo"
 
+## The state timings (s): the contract guacharo_look.gd's clips match.
+## STALK_MIN..STALK_MAX: the stalk's hover with clicks, the clicks from
+## CLICK_SLOW to CLICK_FAST apart as it commits. TELL: the fold (the
+## scream with the beak wide and wings thrown up for TELL*TELL_SCREAM, then
+## folded into the teardrop for the rest). STOOP_MAX: the longest dive;
+## FLARE: the flare, talons forward, starts this long before contact. LIFT
+## then CARRY: the snatch's hard beats, then out over the void, let go at
+## CARRY. PULL: the heavy beats back up. COOL_MIN..COOL_MAX: the back-off
+## after a strike or a miss before it can mark him again.
+const STALK_MIN := 1.6
+const STALK_MAX := 5.5
+const CLICK_SLOW := 0.42
+const CLICK_FAST := 0.07
+const TELL := 0.6
+const TELL_SCREAM := 0.45
+const STOOP_MAX := 2.5
+const FLARE := 0.22
+const LIFT := 0.7
+const CARRY := 1.5
+const PULL := 1.1
+const COOL_MIN := 7.0
+const COOL_MAX := 12.0
+
 ## Its knobs (sizes in his heights, speeds m/s, times s); `--flyer-<knob>=`
 ## overrides one (layer_flyers.gd).
 const KNOBS := {
 	"span":3.0, "circle_r":17.0, "circle_up":10.0, "circle_speed":10.5,
 	"stalk_out":7.5, "stalk_side":0.45, "stalk_up":1.4, "stalk_r":2.6, "stalk_speed":8.0,
-	"stalk_at":0.9, "stalk_min":1.6, "stalk_max":5.5, "abort":1.6,
-	"fold":0.6, "lead":0.9, "home_turn":0.12, "stoop_accel":58.0, "stoop_top":30.0,
+	"stalk_at":0.9, "stalk_min":STALK_MIN, "stalk_max":STALK_MAX, "abort":1.6,
+	"fold":TELL, "lead":0.9, "home_turn":0.12, "stoop_accel":58.0, "stoop_top":30.0,
 	"hit":0.8, "buffet_out":4.5, "buffet_up":0.9, "buffet_down":0.0,
-	"snatch":1.0, "lift":0.7, "carry":1.5, "carry_speed":5.5, "carry_rise":1.8, "struggle":4,
-	"cool_min":7.0, "cool_max":12.0, "cover_up":30.0, "void_down":14.0, "rim_r":1.4,
+	"snatch":1.0, "lift":LIFT, "carry":CARRY, "carry_speed":5.5, "carry_rise":1.8, "struggle":4,
+	"cool_min":COOL_MIN, "cool_max":COOL_MAX, "cover_up":30.0, "void_down":14.0, "rim_r":1.4,
 }
 
 var knobs: Dictionary = KNOBS.duplicate()
@@ -337,7 +360,7 @@ func _stalk(delta: float, hunting: bool) -> void:
 	var ready := clampf(state_t/float(knobs.stalk_max),0.0,1.0)
 	_click_t -= delta
 	if _click_t <= 0.0:
-		_click_t = lerpf(0.42,0.07,ready)
+		_click_t = lerpf(CLICK_SLOW,CLICK_FAST,ready)
 		_say(&"click")
 	if not hunting or _safe_t >= float(knobs.abort):
 		_give_up()
@@ -384,7 +407,7 @@ func _stoop(delta: float) -> void:
 	var short := minf(speed*0.2,position.distance_to(_middle())-1.5*unit)
 	var blocked: bool = short > 0.3 and field.blocked(position,stoop_dir*short)
 	var ground_close := _ground_y != -INF and position.y-_ground_y < 0.6*unit and vel.y < 0.0 and passed
-	if passed or blocked or ground_close or state_t > 2.5:
+	if passed or blocked or ground_close or state_t > STOOP_MAX:
 		misses += 1
 		last_strike = "miss"
 		_end_dive()
@@ -401,7 +424,7 @@ func _pull(delta: float) -> void:
 	up = up.normalized() if up.length() > 0.5 else Vector3(_cam_fwd.x,0.0,_cam_fwd.z).normalized()
 	_steer(position+up*20.0+Vector3.UP*14.0,13.0,34.0,delta,false)
 	_flap_w = 1.0
-	if state_t >= 1.1: _go("circle")
+	if state_t >= PULL: _go("circle")
 
 ## Touched him: snatched stood or hanging, buffeted in the air.
 func _strike() -> void:
@@ -515,7 +538,7 @@ func _animate(delta: float) -> void:
 			want.tail = 1.0
 		"fold":
 			var f := state_t/float(knobs.fold)
-			if f < 0.45:
+			if f < TELL_SCREAM:
 				# Thrown up: the anticipation, the beak wide, the scream.
 				want = {"elev":1.15,"sweep":-0.15,"wrist":0.05,"droop":0.25,"spread":1.0,"tail":1.0,"pitch":0.45,"head":-0.2,"jaw":1.0,"stretch":0.86}
 				k = 16.0
@@ -525,7 +548,7 @@ func _animate(delta: float) -> void:
 				k = 18.0
 		"stoop":
 			var left := (_middle()-position).length()/maxf(vel.length(),1.0)
-			if left < 0.22:
+			if left < FLARE:
 				# The flare: wings thrown wide, talons forward.
 				want = {"elev":0.55,"sweep":-0.25,"wrist":0.0,"droop":0.3,"spread":1.0,"tail":1.0,"pitch":0.9,"head":-0.3,"jaw":0.8,"talons":1.0,"stretch":0.82}
 				k = 26.0
