@@ -69,6 +69,14 @@ well. Now it should lose two things and gain some life:
    rule. Re-run the route drives after it, and take before and after
    stills of each station and the whole place. Look at them.
 
+9. **The Cellar is safe.** Reaching it down the stair is the escape, so
+   the guacharo must not reach a pilot standing on the Cellar. Pull its
+   home or range in, or stop it following below the Crown. Then the stair
+   drive's "still safe on the Cellar" check must pass. The plinth's
+   near-black shadow side is lighting, not stone, so the dressing pass
+   (item 8) should break it up with growth and wear. The two plane tokens
+   stay unplaced: there's no token the plane can take.
+
 ## Rules
 
 Prototyping (AGENTS.md): smoke checks plus throwaway drive checks, no new
