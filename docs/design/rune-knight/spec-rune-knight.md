@@ -161,6 +161,39 @@ The fight has a goal: wear him down or knock him off the aqueduct.
   Procedural on the stand-in this loop; the Blender body lane authors
   them later.
 
+## The brutal parry, the riposte, the brace (spec change after the user played task 8)
+
+The user played the parry of task 7: "way way too easy. I want it more
+like dark souls. Like you have to eye it. Satisfying, brutal window."
+This section overrides the parry's window, cue and lockout above.
+
+- **No prompt.** The cue ring is off (kept as a knob, `cue`, default
+  off, for checks). The player reads his windup and the crescent itself.
+- **A brutal window:** about 0.1 s (six frames) of time to contact, a
+  knob. Tune it by play, not by drivers.
+- **Whiffs are punished.** While one of his shots is coming at the
+  wanderer (it will reach him within about 0.6 s, a knob), RB / Q is a
+  parry attempt only, never the updraft. Inside the window: the parry.
+  Outside it: a whiff: the guard pose held about 0.5 s with no other
+  action, and a hit taken in it knocks harder. With nothing coming at
+  him, RB / Q is the updraft (and the slide boost in a slide) as always.
+  The 0.4 s lockout of task 7 goes; the whiff replaces it.
+- **The payoff stays and grows:** the hit-stop, camera punch, sound, the
+  wind unwinding into him, the gauge segment. Make the landed parry the
+  best-feeling moment in the fight.
+- **The riposte.** A parry rips his own wind from him: he reels (a new
+  clip `reel`, beats `open`, `end`), runes flaring, open about a second
+  (a knob). An X gust shot that reaches him in the reel can't be caught,
+  and from any side it cracks a rune and skids him as a rally miss does.
+  It needs the segment the parry gave. Parry then riposte is the skilled
+  way to wear him down; the rally the patient way; the edge the
+  positional way.
+- **The brace.** A hit from the side no longer throws him straight off
+  the 2.5 m deck: he braces and his skid turns along the deck, so the
+  side shove ends at the lip as a teeter at most. A knock-off from the
+  side takes a teeter and a second hit. A rally miss or a riposte from
+  the side still carries him straight over.
+
 ## Where code goes
 
 - `scripts/enemies/rune_knight.gd`: the knight (body, patrol, sense,
@@ -257,14 +290,21 @@ changing. Names here are final once built on; change one only by a
 9. Both deaths: kneel then crumble after the third rune, with the last
    wind burst you can parry; the fall and shatter off the edge. Play-loop
    checks of each death; stills of the kneel, the heap and the shatter.
-10. The core rune and the ledger: the drop where he dies, taking it marks
+10. The brutal parry, the riposte and the brace (above). Play-loop checks
+   through the real presses: a press 0.05 s before contact parries, one
+   0.2 s before is a whiff that holds him and the shot knocks him harder,
+   Q with nothing coming is the updraft, parry then X in the reel
+   cracks a rune, X after the reel is caught as before; a side X on
+   the deck teeters him at the lip rather than throwing him over, and a
+   second hit then puts him over. Stills of the reel and the riposte.
+11. The core rune and the ledger: the drop where he dies, taking it marks
    `aqueduct_isle/rune_knight`, he stays gone once it's taken and reforms
    if it wasn't. Play-loop checks across two runs (`--ledger` /
    `--fresh-ledger`, as tests/test_ledger.gd runs them); still of the
    rune hanging and of the isle card's new row.
-11. A feel pass on timings from the stills and checks, and a short rendered
+12. A feel pass on timings from the stills and checks, and a short rendered
    clip (a few frames strung) of one full fight: slash, parry, blast,
-   rally, a crack, the knockoff.
+   rally, a parry and riposte, a crack, the knockoff.
 
 ## Checks
 
