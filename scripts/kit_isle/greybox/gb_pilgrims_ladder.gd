@@ -129,7 +129,7 @@ const LAYOUT := {
 	## willow 6.5; a trunk collider), at their trunk's foot: Threshold's
 	## four corners off the strip's band (12 m and more off its line), the
 	## south rim's run-up (x 0..8) and the gate's line; two on the Crown's
-	## east. None on the Halo (the plane threads its ring) or the Cellar.
+	## east, a willow west of the hood and a birch on the south-west. None on the Halo (the plane threads its ring) or the Cellar.
 	"trees":[
 		{"id":"tree_oak","seed":5601,"at":Vector3(-30.0,0.0,-14.5)},
 		{"id":"tree_birch","seed":5602,"at":Vector3(-25.5,0.0,-17.0)},
@@ -142,6 +142,10 @@ const LAYOUT := {
 		{"id":"tree_willow","seed":5609,"at":Vector3(15.0,0.0,12.0)},
 		{"id":"tree_oak","seed":5610,"at":Vector3(99.5,20.0,9.5)},
 		{"id":"tree_birch","seed":5611,"at":Vector3(104.0,20.0,-4.0)},
+		# The Crown's west and south, off its landing (77, 2: 6.4 m and
+		# more), the paths and the bird drive's south-lip walk (x 86..93).
+		{"id":"tree_willow","seed":5612,"at":Vector3(79.0,20.0,-6.5)},
+		{"id":"tree_birch","seed":5613,"at":Vector3(80.5,20.0,8.5)},
 	],
 	## Bands kept clear of tall flora round the pieces' feet (x, z).
 	"clear":[Rect2(20.0,-4.0,11.0,8.0),Rect2(52.0,-6.0,20.0,10.0),Rect2(83.0,-14.0,18.0,9.0),Rect2(79.0,14.0,5.0,5.5)],
@@ -422,7 +426,41 @@ static func plinth(seed_value: int, weathered: float) -> Node3D:
 	var local: Array[Plane] = []
 	for q: Plane in planes: local.append(Plane(q.normal,q.d-q.normal.dot(c)))
 	b.solid(local,Transform3D(Basis.IDENTITY,c),RuinKit._stone(b,0.9))
+	_plinth_growth(b)
 	return b.finish()
+
+## Vines down the plinth's faces (its near-black shadow sides): clumps of
+## strands (RuinGrowth.strand, hugging the stone) from under the deck's
+## edge, long on the east wall and the north wall's open ends, short over
+## the west door and the south fascia (over the flight's swing; never
+## collided). Grown after every stone, the stones' draw left as it was
+## (the rng's state put back), the ground let down under the walls' feet
+## only while they grow.
+## Each clump: [start (x, z on the face), out (the face's way), along, strands, longest].
+const PLINTH_VINES := [
+	[Vector2(4.47,-2.6),Vector3.RIGHT,Vector3.BACK,9,5.5],[Vector2(4.47,0.3),Vector3.RIGHT,Vector3.BACK,7,4.0],
+	[Vector2(-3.07,-3.9),Vector3.LEFT,Vector3.BACK,5,5.0],
+	[Vector2(-1.9,1.37),Vector3.BACK,Vector3.RIGHT,7,1.1],[Vector2(1.6,1.37),Vector3.BACK,Vector3.RIGHT,6,1.0],
+	[Vector2(-3.07,-1.0),Vector3.LEFT,Vector3.BACK,6,1.6],[Vector2(-3.07,0.7),Vector3.LEFT,Vector3.BACK,5,1.8],
+	[Vector2(-3.07,-2.5),Vector3.LEFT,Vector3.BACK,4,1.4],
+	[Vector2(0.6,-3.21),Vector3.BACK,Vector3.RIGHT,8,3.6],[Vector2(-2.0,-3.21),Vector3.BACK,Vector3.RIGHT,7,5.0],
+	[Vector2(2.7,-3.21),Vector3.BACK,Vector3.RIGHT,6,4.5],
+]
+static func _plinth_growth(b: RuinKit.Build) -> void:
+	var state := b.rng.state
+	b.terrain = func(_x: float, _z: float) -> float: return float(PLINTH.low)-1.0
+	for v: Array in PLINTH_VINES:
+		var at: Vector2 = v[0]
+		var out: Vector3 = v[1]
+		var along: Vector3 = v[2]
+		var n := int(v[3])
+		for j in range(n):
+			var t := (j+0.5)/n
+			var start := Vector3(at.x,-PLINTH_DECK-0.04,at.y)+along*(t-0.5)*n*0.17
+			var l := float(v[4])*(0.45+0.55*sin(PI*t))*b.rng.randf_range(0.7,1.1)
+			RuinKit.RuinGrowth.strand(b,start,l,out,false)
+	b.terrain = Callable()
+	b.rng.state = state
 
 ## A run of slabs filling `r` (x, z) from y0 to y1.
 static func _slabs(b: RuinKit.Build, r: Rect2, y0: float, y1: float) -> void:
