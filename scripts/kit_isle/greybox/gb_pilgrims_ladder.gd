@@ -42,9 +42,16 @@ const LAYOUT := {
 	"pieces":[
 		{"id":"relic_torana","seed":5320,"weathered":0.5,"at":Vector3(25.0,0.0,0.0),"rot":0.0,"ropes":4,"dry":2,
 			"box":AABB(Vector3(-3.2,-0.2,-2.4),Vector3(24.4,11.8,4.8))},
+		## The nimbus on the Halo, its ring in XY (the plane threads it along
+		## Z), set 3 m north of the isle's centre line so the torana's hop
+		## lands at about (52..56, 7, 0) in front (+Z) of the ring's lower
+		## outer face (x 55.7 at head height), where its trough is stepped
+		## into. Box: its mesh AABB.
+		{"id":"relic_nimbus","seed":5330,"weathered":0.5,"at":Vector3(62.0,7.0,-3.0),"rot":0.0,
+			"box":AABB(Vector3(-10.4,0.0,-2.2),Vector3(19.8,17.3,8.3))},
 	],
 	## Bands kept clear of tall flora round the pieces' feet (x, z).
-	"clear":[Rect2(20.0,-4.0,11.0,8.0)],
+	"clear":[Rect2(20.0,-4.0,11.0,8.0),Rect2(52.0,-6.0,20.0,10.0)],
 	"strip":Rect2(-38.0,-5.0,30.0,10.0),
 	"strip_clear":Rect2(-45.0,-8.0,42.0,16.0),
 	"paths":[

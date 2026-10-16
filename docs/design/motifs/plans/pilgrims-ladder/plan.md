@@ -5,7 +5,7 @@ Fit: role hero/vertical. Footprint about 160 x 45 m (x -50..107, z -14..24). Hei
 Play: You land on the foot isle, walk to the jamb and ride the ropes up under the lintel onto its top, then drop onto the Halo. You climb the nimbus's ring by its stubs, spoke and brackets to the low horn, and a twirled leap takes you to the high horn. From there you sail across to the Crown, where the bird wakes. You creep under the hood to the reliquary, then jump off the south lip and slam the boss, drop into the shaft and run down the turned stair before its 12 s run out. From the Cellar you hop down to the Halo and sail home.
 Set pieces:
 - relic_torana (the real piece), its jamb on Threshold's east lip at x 25: 4 SwingRopes, all 5.6 m, from iron arms on posts along the lintel's top front (+Z) edge, rings at x 28.2, 33.8, 39.4, 45.0 (heights 6.5, 8.1, 9.7, 11.3), z 1.58. Each knot is one SET_OFF higher than the last, and the 3rd rope is dry. The last rope's backswing release lands on the lintel's top (16 deg); the slow way is three offering steps up the jamb's head (6.4), a drop onto the lintel's root and a walk up its top to the snapped end (x 46.2, top 10.5), then a hop down onto the Halo (7).
-- relic_nimbus, at the Halo's centre: the inner rays, the spoke, the outer rays, the low horn, then a twirled leap over the 3.9 m crown gap to the high horn. The plane threads the 11.4 m ring.
+- relic_nimbus, on the Halo at (62, 7, -3), 3 m north of its centre line so the torana's hop lands in front of the ring: the inner rays, the spoke, the outer rays, the low horn, then a twirled leap over the 3.9 m crown gap to the high horn. The plane threads the 11.4 m ring.
 - pent_hood, along the Crown's north rim: 3 bays with the middle roof fallen. The gallery is cover from the bird's up-ray, the roof gap is an open dash, and the roof's 20 deg pitch is a surf down to the Crown's turf.
 - keel_hung_stair, on a built plinth off the Crown's south lip. Hung, its soffit is a 50 deg slide off into the sky. Slammed from 4 m or more, it turns into a stair from the plinth's shaft down to the Cellar for 12 s, and it throws anyone still on it when it turns back.
 
@@ -46,7 +46,7 @@ Set pieces:
 | Piece | Exists / stand-in / build | Where it's used |
 |---|---|---|
 | relic_torana | real piece (merged) | Threshold east lip: jamb at (25, 0, 0), lintel to (46.2, 10.5, 0) |
-| relic_nimbus | exists (scripts/ruin_kit_relic.gd) | Halo centre (62, 7, 0), rot 0 (ring in XY, plane flies along Z) |
+| relic_nimbus | exists (scripts/ruin_kit_relic.gd) | Halo (62, 7, -3), rot 0 (ring in XY, plane flies along Z) |
 | pent_hood | exists (scripts/ruin_kit_cloister.gd), bays 3, fallen 1 | Crown north rim, centre (94, 20, -11), rot 0 (back wall north, eaves south) |
 | keel_hung_stair | exists (scripts/ruin_kit_keel.gd + scripts/keel_hung_stair.gd) | boss at (86, 15.5, 18) on the plinth, rot 0 (hung front +Z, south, over the void) |
 | plinth (shaft) | build from RuinKit wall + floor | built block round the turned flight: foot on the Cellar at 10, top 15.5, a hatch over the head |
@@ -62,6 +62,7 @@ Set pieces:
 - **Horizontal spacing is tightened.** Halo x 62 (rx 12). Crown x 91 (rx 16), west lip 75. The high horn is at x 62.8, so the sail is 12 m.
 - **The way home is Cellar -> Halo -> Threshold.** A sail from the Cellar (10) straight to Threshold covers 48 m, past the 37 m it can carry. The Cellar's west rim is about 5 m from the Halo's east rim and 3 m above it: a hop or a short sail down. From the Halo's west lip (50), a 7 m drop sails 26 m, against a 20 m gap to Threshold's east lip (30).
 - **The real torana sets the numbers**: all ropes 5.6 m, rings rising 1.6 per 5.6 m along the lintel's top front edge (16 deg). The jamb moved from x 28 to 25 so rope 1 (3.2 m out from the jamb) hangs over turf (the lip is at about x 30). The snapped end (x 46.2, top 10.5) is about 4 m short of the Halo's lip, 3.5 m over it: a running hop carries it.
+- **The nimbus stands 3 m north of the Halo's centre line** (62, 7, -3). At z 0 its ring's lower outer face (x 55.7 at head height) is where the torana's hop lands; set back, the hop lands in front (+Z) of the ring, two steps from its trough.
 
 ## Open questions
 - Answered (drive check): the last rope's backswing release lands on the lintel's top, and a running hop off its end lands on the Halo.
@@ -90,7 +91,7 @@ Layout:
   ],
   "pieces": [
     {"id":"relic_torana","at":[25,0,0],"rot":0,"note":"jamb on the lip; lintel east to (46.2, 10.5, 0); rings at x 28.2, 33.8, 39.4, 45.0, z 1.58, all 5.6 m, knots 0.9, 2.5, 4.1, 5.7 over turf 0; rope 3 dry"},
-    {"id":"relic_nimbus","at":[62,7,0],"rot":0,"note":"low horn perch (57.6, 22.5, 0), high horn perch (62.8, 24.1, 0)"},
+    {"id":"relic_nimbus","at":[62,7,-3],"rot":0,"note":"low horn perch (57.6, 22.5, -3), high horn perch (62.8, 24.1, -3)"},
     {"id":"pent_hood","at":[94,20,-11],"rot":0,"bays":3,"fallen":1,"note":"back wall on z -12.2, gallery z -11.6..-10.4, eaves z -9.3"},
     {"id":"keel_hung_stair","at":[86,15.5,18],"rot":0,"note":"boss on plinth top 15.5; head 12.3, foot 10.06 on the Cellar"},
     {"id":"plinth","at":[86,10,16.6],"size":[7,5.5,4],"note":"built walls round the turned flight; hatch over the head end; door at the foot onto the Cellar"}
@@ -102,7 +103,7 @@ Layout:
   "end": [-30,0,0],
   "moments": [
     {"at":[36,3,0],"label":"The ropes","note":"You run in, swing, release rising and catch the next rope up under the lintel; the dry third rope snaps and you twirl on to the fourth."},
-    {"at":[62,15.2,0],"label":"The wheel","note":"You climb the broken ring by inner rays, the spoke and outer brackets to the low horn; the plane threads the same ring."},
+    {"at":[62,15.2,-3],"label":"The wheel","note":"You climb the broken ring by inner rays, the spoke and outer brackets to the low horn; the plane threads the same ring."},
     {"at":[60.2,23.5,0],"label":"The leap","note":"A twirled leap over the 3.9 m crown gap to the high horn, the whole stack in view."},
     {"at":[94,20.2,-10.6],"label":"Under the hood","note":"The bird wakes as you land; you creep the gallery under its circle, dash the fallen roof gap and take the reliquary."},
     {"at":[86,15.5,18],"label":"The slam","note":"Off the south lip (or in off the horn) you slam the boss; the stair grinds over and you have twelve seconds."},
@@ -120,8 +121,8 @@ Layout:
     {"at":[24.3,6.4,0],"kind":"token","name":"threshold/niche_sill","how":"the slow way: climb the offering steps, one SET_OFF apart, to the head's top (6.4)"},
     {"at":[46,10.5,0],"kind":"token","name":"threshold/lintel_end","how":"a well-timed release off the fourth rope onto the lintel's outer end"},
     {"at":[29.6,1.9,0],"kind":"flown","name":"threshold/gate_thread","how":"fly the plane through the torana gate under the lintel (7.0 m opening)","plane":true},
-    {"at":[62,15.2,0],"kind":"flown","name":"halo/ring_thread","how":"fly the plane through the nimbus ring along Z","plane":true},
-    {"at":[62.8,24.6,0],"kind":"token","name":"halo/high_horn","how":"the twirled leap from the low horn to the high horn's perch"},
+    {"at":[62,15.2,-3],"kind":"flown","name":"halo/ring_thread","how":"fly the plane through the nimbus ring along Z","plane":true},
+    {"at":[62.8,24.6,-3],"kind":"token","name":"halo/high_horn","how":"the twirled leap from the low horn to the high horn's perch"},
     {"at":[101.5,20.6,-10.8],"kind":"token","name":"crown/reliquary","how":"creep the hood's gallery to its east end, past the fallen gap, under the bird"},
     {"at":[85,10.5,16.6],"kind":"token","name":"cellar/stair_foot","how":"slam the boss, drop into the shaft and walk the turned flight down inside its 12 s"}
   ],
