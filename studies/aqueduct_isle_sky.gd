@@ -16,7 +16,7 @@ extends Node3D
 ##               them out.
 ##   airships    the sky folk's cargo airship (scripts/sky_airship.gd's ship,
 ##               scripts/airship_build.gd) on slow loops between the motif
-##               isles, propellers turning, crew waving when you pass, lit
+##               isles, propellers turning, lit
 ##               at night, solid to the plane; one passing close hums with
 ##               the plane's own propeller drone (scripts/glide_air.gd
 ##               `engine`). One is the ferry (scripts/kit_isle/
@@ -69,7 +69,6 @@ const SkyMotes = preload("res://scripts/sky_motes.gd")
 const SkyCollectibles = preload("res://scripts/sky_collectibles.gd")
 const SkyCells = preload("res://scripts/sky_cells.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
-const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const RuneSerpent = preload("res://scripts/rune_serpent.gd")
 const KitClouds = preload("res://scripts/kit_isle/kit_clouds.gd")
 const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
@@ -100,8 +99,6 @@ const SHIP_BANK_MAX := 0.14
 ## The drone: heard from DRONE_FAR m, full at DRONE_NEAR.
 const DRONE_FAR := 170.0
 const DRONE_NEAR := 45.0
-## The crew wave within this (m) of the camera.
-const WAVE_NEAR := 70.0
 
 ## The tokens: [line id, category, kind, points (world)]; each a moment
 ## (see the doc for the flying line each asks for).
@@ -263,7 +260,7 @@ class IsleTraffic extends SkyTraffic:
 # --- Airships -----------------------------------------------------------------------
 
 ## The sky folk's airships: the tow event's own ship (SkyAirship `_make_ship`:
-## envelope, gondola, crew, windows and lantern for the night), flown on
+## envelope, gondola, windows and lantern for the night), flown on
 ## slow loops (ROUTES); a body each for the plane to bump; the ferry on its
 ## own loop (scripts/kit_isle/airship_ferry.gd, its own body: he rides it);
 ## and the drone.
@@ -304,7 +301,7 @@ func _build_airships() -> void:
 			"u":float(k+1)*0.37,"heading":0.0,"bank":0.0,"at":Vector3.ZERO})
 		_place_airship(airships[-1],0.0)
 	if AirshipFerry.wanted():
-		var ship := _new_airship("Airship%d" % ROUTES.size(),false)
+		var ship := _new_airship("Airship%d" % ROUTES.size())
 		ferry = AirshipFerry.new()
 		add_child(ferry)
 		ferry.setup(scene,ship)
@@ -316,9 +313,8 @@ func _build_airships() -> void:
 	drone.visible = false
 
 ## A ship of the sky folk's, made and shown, its tow gear hidden.
-func _new_airship(ship_name: String, crewed := true) -> Node3D:
+func _new_airship(ship_name: String) -> Node3D:
 	var ship: Node3D = SkyAirship.new()
-	ship.crewed = crewed
 	ship.name = ship_name
 	ship.scene = scene
 	# No islets: the tow event never runs (`_process` waits on them).
@@ -356,8 +352,8 @@ func _place_airship(a: Dictionary, delta: float) -> void:
 	var ship: Node3D = a.ship
 	ship._ship.transform = Transform3D(Basis(Vector3.UP,heading)*Basis(Vector3.BACK,float(a.bank)),at)
 
-## Each frame: along their loops, the propellers turning, the crew waving
-## at a passing camera, the lights at night; the nearest one's drone.
+## Each frame: along their loops, the propellers turning, the lights at
+## night; the nearest one's drone.
 func _advance_airships(delta: float, eye: Vector3) -> void:
 	var nearest := INF
 	for a: Dictionary in airships:
@@ -368,9 +364,6 @@ func _advance_airships(delta: float, eye: Vector3) -> void:
 		for p: Node3D in ship._props: p.rotate_object_local(Vector3.BACK,14.0*delta)
 		var d := (a.at as Vector3).distance_to(eye)
 		nearest = minf(nearest,d)
-		if ship._crew.size() >= 2:
-			var bow := "wave" if d < WAVE_NEAR else "idle"
-			if (ship._crew[0] as IslanderFigure).move != bow: ship._crew[0].play(bow)
 		ship._night_lights(delta)
 	if drone != null:
 		var running := 1.0-smoothstep(DRONE_NEAR,DRONE_FAR,nearest)

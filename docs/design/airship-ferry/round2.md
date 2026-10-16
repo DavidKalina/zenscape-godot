@@ -128,3 +128,11 @@ size or emptiness. Smoke on the main scene, plain and `--ferry-aboard`:
 0 errors. Tests naming crew: `tests/test_kit_drops.gd` counts crew over the
 non-ferry ships only if the kit sky builds no ferry; it may break if it sees
 a ferry (not run).
+
+## Follow-up: no crew on any airship
+
+SkyAirship `crewed` now defaults to false, so no airship anywhere carries the
+sky folk's figures (the main scene's two loop ships, the ferry, the
+roguelike's ferries, the old tow-event ship). The aqueduct sky's wave code is
+gone with them. Smoke: studies/zenscape.tscn passes. Breaks
+`tests/test_kit_drops.gd` ("The airships' crews are left as they were").

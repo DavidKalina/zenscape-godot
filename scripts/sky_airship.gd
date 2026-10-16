@@ -193,8 +193,8 @@ var _halos: MultiMeshInstance3D
 var _light: OmniLight3D
 var _cargo: SpotLight3D
 var _crew: Array[Node3D] = []
-## False for the ferry (and the roguelike's ferries): no crew on deck.
-var crewed := true
+## No crew on deck unless asked for (the sky folk's figures left every ship).
+var crewed := false
 var _lines: MeshInstance3D
 var _grapples: Array[MeshInstance3D] = []
 var _dust: Node3D
