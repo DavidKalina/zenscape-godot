@@ -46,6 +46,8 @@ extends "res://studies/kit_isle.gd"
 ## --no-flora leaves the grass and flowers out (to compare cost).
 ## --no-turf-lips leaves the turf cut square at its crags and rims
 ## (scripts/kit_isle/turf_lips.gd).
+## --vertex-paths bakes the worn paths into the turf's colours as before
+## (scripts/kit_isle/path_dirt.gd draws them per pixel).
 ## Life (studies/aqueduct_isle_life.gd, docs/scenic/aqueduct-isle-life.md):
 ## undergrowth, butterflies, fireflies, songbirds on the stones, the wind
 ## made visible and seven on-foot tokens; --no-undergrowth, --no-butterflies,
@@ -307,6 +309,9 @@ func _build_art() -> void:
 			var dressed: Node3D = TurfLips.dress(land,hash(land.name))
 			if dressed != null: lips += int(dressed.get_meta("edges"))
 		print("aqueduct isle: turf lips on %d edges" % lips)
+	# The worn paths drawn per pixel on the ground (scripts/kit_isle/
+	# path_dirt.gd; --vertex-paths: baked into the turf as before).
+	print("aqueduct isle: %d path segments drawn" % preload("res://scripts/kit_isle/path_dirt.gd").paint(KitLook.ground_material(),Art.paths()))
 	print("aqueduct isle: %d triangles" % triangles(art))
 	# The on-foot pieces' route (balustrades, ropes, a ferry, bobbing slabs).
 	preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)
