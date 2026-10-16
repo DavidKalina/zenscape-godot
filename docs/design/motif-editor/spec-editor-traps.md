@@ -180,6 +180,22 @@ coordinate.
    sundered_gorge lips found for snapping (or say why not); broken_ring's
    walk on a ledge wide enough.
 
+17. **Whole undersides everywhere** (the user saw the broken stitching
+   under other isles too; after 14-16, or earlier if an iteration has
+   room). Item 13 added KitLand's opt-in `"whole_sides"` (ring_sides joins
+   rings point by point) for editor motifs. Find every isle whose ring
+   point count isn't a multiple of 16 (greybox isles with 260, 140, 40;
+   the kit motifs; the aqueduct isle and anything else that calls
+   `KitLand.island`), list them, and turn `whole_sides` on for each one
+   that has long faces or holes (measure: longest underside edge before
+   and after, as item 13's `scratch/sides_same.gd`). Deepen a keel only
+   where a cut reaches under it. Isles at a multiple of 16 build the same,
+   so leave them as they are. Stills from below before and after for the
+   worst few; smoke each changed isle's scene (the motif yard, its own
+   study, `studies/zenscape.tscn -- --no-title`,
+   `studies/aqueduct_isle.tscn`). This changes isles outside the editor,
+   with the user's go (2026-10-16).
+
 ## Rules for this loop
 
 - **One trap list.** Lift the trap yard's `TRAPS` table into a shared
