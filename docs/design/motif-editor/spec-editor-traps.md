@@ -198,5 +198,5 @@ on them in the handoff.
 
 - Branch `iter/editor-traps`, worktree `.claude/worktrees/iter-editor-traps`.
 - No lanes: the work is ordered and mostly in the editor.
-- Model Opus (input, placement, live bodies). Cap 15 iterations, budget
+- Model Opus (input, placement, live bodies). Cap 20 iterations, budget
   150000 tokens per iteration.
