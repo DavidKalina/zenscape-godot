@@ -19,8 +19,9 @@ extends Node3D
 ## - **The other clips** (`notice`, `gather`, `throw`, `catch`, `return`,
 ##   `stagger`) run their CLIPS length and send their beats at their times,
 ##   then `end`. Their key poses are KEYS (arms, lean, head, sink), eased
-##   key to key; a clip starts from the pose he was in (BLEND s). `catch`,
-##   `return` and `stagger` have no keys yet (he stands in `idle`'s pose).
+##   key to key; a clip starts from the pose he was in (BLEND s). In
+##   `stagger` his feet step after the pushed root in quick STAGGER_STEP
+##   steps; falling (the root dropping fast) they hang under him.
 ## - **hands_mid** follows the midpoint of his fists, so a held shot sits
 ##   between them wherever the pose puts them.
 ## - **wind_gather:** streaks of air drawn in from round him to hands_mid
@@ -61,7 +62,19 @@ const KEYS := {
 	# Wound back and up (anticipation), a two-handed overhead heave at
 	# `release`, the follow-through down and forward, a heavy settle.
 	"throw": [[0.0,[2.85,0.22,0.85,-0.2,0.3,0.005]],[0.22,[3.3,0.22,1.15,-0.4,0.38,0.02]],[0.35,[1.7,0.18,0.2,0.3,-0.05,0.04]],[0.5,[0.6,0.24,0.1,0.48,-0.18,0.07]],[0.7,[0.45,0.2,0.2,0.3,-0.08,0.045]]],
+	# Both gauntlets thrust out to meet it at `contact`, the blow taken back
+	# into the chest (lean back, sink), held there till `hold`.
+	"catch": [[0.0,[1.2,0.45,0.3,0.05,0.05,0.02]],[0.1,[1.5,0.3,0.15,0.12,0.0,0.02]],[0.25,[1.05,0.22,1.25,-0.22,0.12,0.07]],[0.42,[1.0,0.2,1.35,-0.12,0.06,0.05]],[0.6,[1.0,0.2,1.3,-0.1,0.05,0.045]]],
+	# Drawn in tighter and back (anticipation), a two-handed shove out at
+	# `release`, the follow-through leaning after it, back to guard.
+	"return": [[0.0,[1.0,0.2,1.3,-0.1,0.05,0.045]],[0.15,[0.75,0.18,1.7,-0.3,0.1,0.06]],[0.22,[1.55,0.15,0.05,0.35,-0.05,0.06]],[0.34,[1.45,0.2,0.05,0.42,-0.1,0.07]],[0.5,[0.35,0.35,0.9,0.1,0.0,0.03]]],
+	# Struck: thrown back, arms flung wide, head up; arms wheel as he
+	# goes back off balance; a heavy plant (deep sink) at `plant`, hunched;
+	# he gathers himself back up to his guard by `recover`.
+	"stagger": [[0.0,REST],[0.08,[0.9,1.15,0.3,-0.5,0.45,0.0]],[0.4,[1.8,0.95,0.5,-0.38,0.3,0.04]],[0.75,[0.7,0.8,0.4,-0.2,0.0,0.08]],[0.9,[0.25,0.6,0.6,0.25,-0.2,0.11]],[1.3,[0.3,0.45,0.8,0.18,-0.08,0.07]],[1.8,[0.3,0.35,0.95,0.06,0.0,0.025]]],
 }
+## Steps in `stagger` are quick and short (s).
+const STAGGER_STEP := 0.42
 ## A clip's first BLEND s ease from the pose he was in.
 const BLEND := 0.14
 ## The gather's streaks: how many, how far out they start (shares of tall),
@@ -215,9 +228,13 @@ func _step(delta: float) -> void:
 			_swing = pick
 			_swing_from = feet[pick]
 			_swing_t = 0.0
-			_swing_len = float(CLIPS[clip].length) if moving else float(CLIPS.walk.length)
+			_swing_len = float(CLIPS[clip].length) if moving else (STAGGER_STEP if clip == "stagger" else float(CLIPS.walk.length))
 	var lift := 0.0
 	var s := 0.0
+	if _root_v.y < -2.0:
+		# Falling: the feet hang under him.
+		_swing = -1
+		for i in range(2): feet[i] = _home(i,0.0)+Vector3.DOWN*0.02*tall
 	if _swing >= 0:
 		_swing_t += delta
 		var swing_time := _swing_len*SWING_SHARE

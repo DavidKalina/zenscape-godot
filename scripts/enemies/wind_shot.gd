@@ -15,6 +15,13 @@ extends Node3D
 ##   of `target`'s chest (a PilotMotor, not its shooter), it bursts on him:
 ##   the gust's knock (scripts/traps/gust.gd `knock`) along its way,
 ##   `strength` times the gust's defaults. Past `flight` m it fades out.
+## - **Struck back:** a flying shot met by a newer flying shot of another
+##   shooter (the wanderer's blast meeting the knight's return) takes the
+##   newer one's way and shooter, MEET_GAIN times the faster of the two,
+##   and the newer one is `absorb`ed: one shot goes on, faster. A non-shot
+##   in the group (a real blast later) only lends its way and shooter.
+## - **Struck:** `strike(at)` bursts it on a body that reads shots itself
+##   (the knight's hit test), with no knock of its own.
 ## - **done**: popped or burst: puffs, then it frees itself.
 ##
 ## The look (no hard mesh, as the dragon's air blast, scripts/
@@ -36,6 +43,8 @@ const BALL := 0.3
 const FUSE := 0.15
 const GROW := 0.75
 const FLIGHT := 70.0
+## A struck-back shot's speed over the faster of the two that met.
+const MEET_GAIN := 1.15
 ## Stone (layer 1) and turf (layer 11) pop it.
 const MASK := 1 | (1 << 11)
 ## The look's counts and tint (the knight's rune light in the air).
@@ -62,6 +71,9 @@ var look := true
 var grown := 0.0
 var age := 0.0
 var travelled := 0.0
+## Metres flown before stone or turf can pop it (a shot sent off a deck
+## clears its lip).
+var grace := 0.0
 var _growing := false
 var _socket: Node3D
 var _clock := 0.0
@@ -117,15 +129,28 @@ func hold(socket: Node3D) -> void:
 func grow() -> void:
 	_growing = true
 
-## Sent on along `vel`, pulled down `fall_` m/s/s.
-func launch(vel: Vector3, fall_ := 0.0) -> void:
+## Sent on along `vel`, pulled down `fall_` m/s/s, `grace_` m flown
+## before stone or turf can pop it.
+func launch(vel: Vector3, fall_ := 0.0, grace_ := 0.0) -> void:
 	state = "flying"
 	_socket = null
 	velocity = vel
 	fall = fall_
+	grace = grace_
 	grown = 1.0
 	travelled = 0.0
 	_trail.clear()
+
+## Taken into a shot that met it: gone, quietly.
+func absorb() -> void:
+	if state != "done": _end(global_position,Vector3.UP,false)
+
+## Burst on a body at `at` (the knight's hit test; no knock here).
+func strike(at: Vector3) -> void:
+	if state == "done": return
+	print("wind shot: struck a body at (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
+	burst_on.emit(null)
+	_end(at,-velocity.normalized() if velocity.length() > 0.1 else Vector3.UP,true)
 
 ## The way to send it from `from` so that it comes down through `to`,
 ## `time` s on, pulled down `fall_` m/s/s.
@@ -157,9 +182,11 @@ func _fly(delta: float) -> void:
 	var from := global_position
 	velocity += Vector3.DOWN*fall*delta
 	var to := from+velocity*delta
+	if _meets_other(from,to,delta):
+		to = from+velocity*delta
 	if _hits_target(from,to): return
 	var space := get_world_3d().direct_space_state if is_inside_tree() else null
-	if space != null:
+	if space != null and travelled >= grace:
 		var ray := PhysicsRayQueryParameters3D.new()
 		ray.collision_mask = MASK
 		ray.from = from
@@ -173,6 +200,44 @@ func _fly(delta: float) -> void:
 	_trail.push_front(to)
 	if _trail.size() > 24: _trail.pop_back()
 	if travelled >= flight: _end(to,Vector3.UP,false)
+
+## Whether a newer flying shot of another shooter met this one on its
+## step: then this one takes that one's way and shooter, faster, and that
+## one is absorbed.
+func _meets_other(from: Vector3, to: Vector3, delta: float) -> bool:
+	if not is_inside_tree(): return false
+	var t := walker_tall()
+	for node: Node in get_tree().get_nodes_in_group(GROUP):
+		if node == self or not node is Node3D: continue
+		if node.get("state") != "flying": continue
+		var other_shooter = node.get("shooter")
+		if other_shooter == shooter: continue
+		var other_age = node.get("age")
+		if other_age != null and float(other_age) >= age: continue
+		var ov: Vector3 = node.get("velocity") if node.get("velocity") != null else Vector3.ZERO
+		var op := (node as Node3D).global_position
+		var near := _segments_closest(from,to,op-ov*delta,op)
+		if near.x > radius()*2.0+FUSE*t*2.0: continue
+		var speed := maxf(velocity.length(),ov.length())*MEET_GAIN
+		velocity = (ov.normalized() if ov.length() > 0.1 else -velocity.normalized())*speed
+		var of = node.get("fall")
+		fall = float(of) if of != null else 0.0
+		shooter = other_shooter
+		target = node.get("target")
+		var os = node.get("strength")
+		if os != null: strength = maxf(strength,float(os))
+		travelled = 0.0
+		grace = 0.0
+		flight = FLIGHT
+		_trail.clear()
+		if node.has_method("absorb"): node.call("absorb")
+		print("wind shot: struck back at (%.1f, %.1f, %.1f), now %.1f m/s" % [from.x,from.y,from.z,speed])
+		if look:
+			for i in range(10):
+				var d := Vector3(_rng.randf_range(-1,1),_rng.randf_range(-1,1),_rng.randf_range(-1,1)).normalized()
+				_free_puff(from,d*_rng.randf_range(3.0,6.0),radius()*0.8,radius()*2.2,0.45,TINT,0.6)
+		return true
+	return false
 
 ## Whether its step `from` -> `to` passed the target's chest: then it
 ## bursts on him (the gust's knock along its way).
