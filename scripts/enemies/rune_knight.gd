@@ -35,6 +35,19 @@ extends Node3D
 ##   KNOBS.shot_pace m/s along the ground at most, pulled down
 ##   KNOBS.shot_fall, climbing KNOBS.shot_rise first; at
 ##   `end` he tracks again. A shot that meets you knocks you (the gust's).
+## - **The slash** (his main attack, KNOBS.attack "slash"; "lob" or
+##   `--rune-attack=lob` brings back the gather and throw above): tracking
+##   and faced as for a throw, he picks a form (`level` or `high`,
+##   KNOBS.level_share) and plays `gather` "blade" with `wind_gather` and
+##   `wind_blade` on: the air streams into his right gauntlet and builds
+##   along his forearm into a blade. At `full` he plays `slash` in that
+##   form (its windup tells which); at `release` a crescent
+##   (scripts/enemies/wind_shot.gd, form "crescent") leaves the `blade`
+##   socket straight at you, KNOBS.slash_speed m/s: a level one, flat
+##   (tilt 0), at KNOBS.slash_low of your height over your feet, to jump;
+##   a high one rolled KNOBS.slash_tilt, at your chest, to sidestep. Aimed
+##   at where you were, not led. It flies KNOBS.slash_grace m before stone
+##   can pop it (off his deck's lip).
 ## - **Tennis:** each frame he reads every node in the `wind_shot` group
 ##   (scripts/enemies/wind_shot.gd's seam: position, velocity, shooter,
 ##   strength, state; `hold`, `launch`). A flying shot not his own, coming
@@ -42,8 +55,10 @@ extends Node3D
 ##   come within his reach (`shape().reach` of his chest), no faster than
 ##   KNOBS.catch_speed and caught fewer than KNOBS.rally_limit times
 ##   (meta `rally` on the shot), he catches: it held on `hands_mid`,
-##   `catch` (`contact`, `hold`), then `return`; at `release` it goes back
-##   at your chest KNOBS.return_gain times as fast as it came (at least
+##   `catch` (`contact`, `hold`), then (state "return") he wraps it onto
+##   his blade (`wind_blade`) and plays `slash` in a form he picks; at
+##   `release` it goes back at you as a crescent of that form,
+##   KNOBS.return_gain times as fast as it came (at least
 ##   KNOBS.return_min), its strength up KNOBS.rally_strength (`_send_return`,
 ##   the one place a return leaves his hands). A gather in his hands when
 ##   he catches fizzles. Any other shot of another's passing his body (a
@@ -105,17 +120,14 @@ const KNOBS := {
 	"shot_strength": 1.0,
 	# Tennis: the half angle in front he catches in (rad); the fastest shot
 	# he catches (m/s); catches of one shot before he misses it; a return's
-	# speed over the shot's (and its floor, m/s), its pull down (m/s/s),
-	# the strength it gains; the metres it flies before stone can pop it
-	# (his deck's lip).
+	# speed over the shot's (and its floor, m/s), the strength it gains (it
+	# goes back as a slash's crescent).
 	"catch_cone": 1.0,
 	"catch_speed": 30.0,
 	"rally_limit": 3,
 	"return_gain": 1.3,
 	"return_min": 14.0,
-	"return_fall": 1.5,
 	"rally_strength": 0.25,
-	"return_grace": 2.5,
 	# A hit: how far it pushes him back (m); the deck's half width he
 	# keeps to (m, off its sides he falls); the fall's pull (m/s/s).
 	"stagger_push": 1.1,
@@ -125,6 +137,17 @@ const KNOBS := {
 	"hit_push_strength": 0.4,
 	"deck_half": 1.25,
 	"gravity": 22.0,
+	# His attack: "slash" (the crescent) or "lob" (the gathered ball).
+	"attack": "slash",
+	# The slash: the crescent's speed (m/s); the share of level slashes (the
+	# rest high); a level one's height over your feet (your heights); a high
+	# one's roll (rad); metres before stone can pop it; its knock's share.
+	"slash_speed": 15.0,
+	"level_share": 0.5,
+	"slash_low": 0.3,
+	"slash_tilt": 1.0,
+	"slash_grace": 6.0,
+	"slash_strength": 1.0,
 }
 ## What hides you from him: stone (layer 1) and turf (layer 11).
 const SIGHT_MASK := 1 | (1 << 11)
@@ -170,6 +193,13 @@ var push := Vector3.ZERO
 var fall_v := Vector3.ZERO
 var off_deck := false
 var _caught_speed := 0.0
+## His attack ("slash" or "lob"), the form of the slash under way, the
+## next form when set ("" picks by KNOBS.level_share), slashes sent.
+var attack := "slash"
+var slash_form := "level"
+var next_form := ""
+var slashes := 0
+var _rng := RandomNumberGenerator.new()
 
 static func wanted() -> bool:
 	return LaunchArgs.user_args().has("--rune-knight")
@@ -195,6 +225,10 @@ func aim_point() -> Vector3:
 func setup(host: Node3D) -> void:
 	isle = host
 	height = WorldScale.wanderer_tall*knob("tall_ratio")
+	_rng.randomize()
+	attack = String(KNOBS.attack)
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--rune-attack="): attack = a.get_slice("=",1)
 	var margin := knob("end_margin")
 	ends = [Art.AQ*Vector3(Art.HEAD+margin,Art.DECK,0.0),Art.AQ*Vector3(Art.SNAP-margin,Art.DECK,0.0)]
 	yaw = _yaw_to(ends[1]-ends[0])
@@ -261,7 +295,7 @@ func _process(delta: float) -> void:
 				print("rune knight: landed at (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
 			else:
 				at += step
-		"catch", "return":
+		"catch", "return", "slash":
 			if last_seen != Vector3.INF:
 				yaw_goal = yaw+wrapf(_yaw_to(last_seen-at)-yaw,-PI,PI)
 		"notice", "track", "gather", "throw":
@@ -293,13 +327,28 @@ func _on_beat(clip: String, beat: String) -> void:
 			if shot != null: shot.grow()
 		elif beat == "full":
 			body.set_effect("wind_gather",false)
-			state = "throw"
-			body.play("throw")
+			if attack == "lob":
+				state = "throw"
+				body.play("throw")
+			else:
+				state = "slash"
+				body.play("slash",slash_form)
+	elif clip == "slash" and state == "slash":
+		if beat == "release": _release_slash()
+		elif beat == "end":
+			state = "track"
+			cool = knob("throw_gap")
+			body.play("idle")
 	elif clip == "catch" and state == "catch":
 		if beat == "hold":
 			state = "return"
-			body.play("return")
-	elif clip == "return" and state == "return":
+			slash_form = _pick_form()
+			body.play("slash",slash_form)
+			body.set_effect("wind_blade",true)
+			if caught != null and is_instance_valid(caught):
+				caught.call("hold",body.socket("blade"))
+				caught.set("form","crescent")
+	elif clip == "slash" and state == "return":
 		if beat == "release": _return_caught()
 		elif beat == "end":
 			state = "track"
@@ -372,6 +421,13 @@ func _noticeable() -> bool:
 
 func _gather() -> void:
 	state = "gather"
+	if attack != "lob":
+		slash_form = _pick_form()
+		body.play("gather","blade")
+		body.set_effect("wind_gather",true)
+		body.set_effect("wind_blade",true)
+		shot = null
+		return
 	body.play("gather")
 	body.set_effect("wind_gather",true)
 	shot = WindShot.new()
@@ -397,6 +453,49 @@ func _release() -> void:
 	throws += 1
 	print("rune knight: throws at (%.1f, %.1f, %.1f), %.1f m off, %.1f s aloft" % [to.x,to.y,to.z,flat,t])
 	shot = null
+
+## The next slash's form: `next_form` if set (then cleared), else level
+## KNOBS.level_share of the time, high the rest.
+func _pick_form() -> String:
+	if next_form != "":
+		var f := next_form
+		next_form = ""
+		return f
+	return "level" if _rng.randf() < knob("level_share") else "high"
+
+## The slash's crescent leaves his blade at where he last saw you.
+func _release_slash() -> void:
+	body.set_effect("rune_glow",false)
+	body.set_effect("wind_blade",false)
+	var node: Node3D = WindShot.new()
+	isle.add_child(node)
+	node.global_position = body.socket("blade").global_position
+	node.set("strength",knob("slash_strength"))
+	_send_crescent(node,slash_form,knob("slash_speed"))
+	slashes += 1
+
+## Where a crescent of `form` aims: a level one low over your feet, a
+## high one at your chest (where he last saw you).
+func _crescent_aim(form: String, from: Vector3) -> Vector3:
+	var chest := _target()
+	var to := chest if chest != Vector3.INF and sees else last_seen
+	if to == Vector3.INF: return from+_forward()*10.0
+	if form == "level":
+		to += Vector3.DOWN*(0.6-knob("slash_low"))*WindShot.walker_tall()
+	return to
+
+## `node` sent from where it is as a crescent of `form`, straight at its
+## aim `speed` m/s, his, at the wanderer.
+func _send_crescent(node: Node3D, form: String, speed: float) -> void:
+	var from := node.global_position
+	var to := _crescent_aim(form,from)
+	node.set("shooter",self)
+	node.set("target",isle.get("motor"))
+	node.set("flight",WindShot.FLIGHT)
+	node.set("tilt",0.0 if form == "level" else -knob("slash_tilt"))
+	node.call("launch",(to-from).normalized()*speed,0.0,knob("slash_grace"))
+	node.set("form","crescent")
+	print("rune knight: slashes (%s) at %.1f m/s toward (%.1f, %.1f, %.1f)" % [form,speed,to.x,to.y,to.z])
 
 ## Whether the walker stands on the deck just ahead of him.
 func _blocked(fwd: Vector3) -> bool:
@@ -507,35 +606,31 @@ func _catch(node: Node3D, v: Vector3) -> void:
 ## A gather in his hands when a catch or a hit comes: it fizzles.
 func _drop_gather() -> void:
 	body.set_effect("wind_gather",false)
+	body.set_effect("wind_blade",false)
 	if shot != null and is_instance_valid(shot): shot.absorb()
 	shot = null
 
 ## The caught shot back at your chest, faster.
 func _return_caught() -> void:
 	body.set_effect("rune_glow",false)
+	body.set_effect("wind_blade",false)
+	# Sent: the slash's follow-through, in which he can catch again.
+	state = "slash"
 	var node := caught
 	caught = null
 	if node == null or not is_instance_valid(node): return
-	var chest := _target()
-	var to := chest if chest != Vector3.INF and sees else last_seen
-	if to == Vector3.INF: to = node.global_position+_forward()*10.0
 	var speed := maxf(_caught_speed*knob("return_gain"),knob("return_min"))
-	_send_return(node,to,speed)
+	_send_return(node,speed)
 	returns += 1
 
-## The one place a return leaves his hands: `node` (held) sent at `to`
-## `speed` m/s along its line, a flat arc that comes down through `to`,
-## his, at the wanderer, a little stronger.
-func _send_return(node: Node3D, to: Vector3, speed: float) -> void:
-	var from := node.global_position
-	var t := maxf(from.distance_to(to)/speed,0.05)
-	node.set("shooter",self)
-	node.set("target",isle.get("motor"))
+## The one place a return leaves his hands: `node` (held on his blade)
+## slashed back at you `speed` m/s as a crescent of the slash's form, a
+## little stronger.
+func _send_return(node: Node3D, speed: float) -> void:
 	var st = node.get("strength")
 	if st != null: node.set("strength",float(st)+knob("rally_strength"))
-	if node.get("flight") != null: node.set("flight",WindShot.FLIGHT)
-	node.call("launch",WindShot.lob(from,to,t,knob("return_fall")),knob("return_fall"),knob("return_grace"))
-	print("rune knight: returns it at %.1f m/s toward (%.1f, %.1f, %.1f)" % [speed,to.x,to.y,to.z])
+	_send_crescent(node,slash_form,speed)
+	print("rune knight: returns it at %.1f m/s" % speed)
 
 ## A gust shot's ball burst on him (scripts/lock_on/gust_shot.gd): he
 ## staggers back along its flat way, farther with more strength.

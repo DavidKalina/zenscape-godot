@@ -24,6 +24,15 @@ extends Node3D
 ## - **Struck:** `strike(at)` bursts it on a body that reads shots itself
 ##   (the knight's hit test), with no knock of its own.
 ## - **done**: popped or burst: puffs, then it frees itself.
+## - **Its form:** `form` "ball" (the lob, the blasts, anything held) or
+##   "crescent" (the knight's slash, a sword beam of air): a thin arc
+##   CRESCENT_SPAN walker heights wide, its middle at the shot's position,
+##   its horns trailing behind along its way, in the plane of its way and
+##   its `tilt` (rad, rolled about its way from level: 0 a level crescent
+##   you jump over, near PI/3 a diagonal one you sidestep). A crescent hits
+##   the wanderer anywhere along its arc and meets other shots along its
+##   width (`meet_reach`). Held, a crescent draws nothing (the knight's
+##   blade effect shows it).
 ##
 ## The look (no hard mesh, as the dragon's air blast, scripts/
 ## dragon_air_blast.gd, whose lens, streak and puff meshes it borrows): a
@@ -46,6 +55,13 @@ const GROW := 0.75
 const FLIGHT := 70.0
 ## A struck-back shot's speed over the faster of the two that met.
 const MEET_GAIN := 1.15
+## The crescent: its width (chord) and thickness in walker heights, the
+## half angle of its arc (rad), how many points its hit and look sample.
+const CRESCENT_SPAN := 2.2
+const CRESCENT_THICK := 0.12
+const CRESCENT_ARC := 1.05
+const CRESCENT_POINTS := 9
+const CRESCENT_STREAKS := 16
 ## Stone (layer 1) and turf (layer 11) pop it.
 const MASK := 1 | (1 << 11)
 ## The look's counts and tint (the knight's rune light in the air).
@@ -54,6 +70,8 @@ const TRAIL := 12
 const TRAIL_PUFFS := 8
 const FREE_PUFFS := 28
 const TINT := Color(0.84,0.94,1.0)
+## The crescent's wake: the knight's blade's rune blue.
+const BLADE_TINT := Color(0.55,0.88,1.0)
 
 signal burst_on(body: Object)
 signal popped(at: Vector3)
@@ -68,6 +86,9 @@ var state := "held"
 ## The body it bursts on: a PilotMotor (the wanderer), never its shooter.
 var target: Object = null
 var look := true
+## "ball" or "crescent"; the crescent's roll about its way (rad).
+var form := "ball"
+var tilt := 0.0
 ## How full (0..1): grows while held after `grow()`, 1 in flight.
 var grown := 0.0
 var age := 0.0
@@ -106,7 +127,7 @@ func _ready() -> void:
 		_streak_mesh = DragonCyclone._streak_mesh()
 		_puff_mesh = DragonGale._puff_mesh()
 	_lens = _batch("Lens",_lens_mesh,1)
-	_streaks = _batch("Streaks",_streak_mesh,RING+TRAIL)
+	_streaks = _batch("Streaks",_streak_mesh,RING+TRAIL+CRESCENT_STREAKS*2)
 	_puffs = _batch("Puffs",_puff_mesh,TRAIL_PUFFS+FREE_PUFFS)
 	for i in range(FREE_PUFFS): _free.append({"life":0.0})
 
@@ -122,6 +143,7 @@ static func radius() -> float:
 ## Held on `socket` (it follows it), not growing till `grow()`.
 func hold(socket: Node3D) -> void:
 	state = "held"
+	form = "ball"
 	_socket = socket
 	velocity = Vector3.ZERO
 	if socket != null: global_position = socket.global_position
@@ -141,6 +163,37 @@ func launch(vel: Vector3, fall_ := 0.0, grace_ := 0.0) -> void:
 	grown = 1.0
 	travelled = 0.0
 	_trail.clear()
+
+## How far from its position it meets another shot (m): its radius, or a
+## crescent's half width.
+func meet_reach() -> float:
+	return CRESCENT_SPAN*walker_tall()*0.5 if form == "crescent" else radius()
+
+## The crescent's arc radius (m), from its width and arc.
+static func crescent_radius() -> float:
+	return CRESCENT_SPAN*walker_tall()*0.5/sin(CRESCENT_ARC)
+
+## The crescent's frame at `at` flying along `way`: [way, side] (side its
+## width's axis, `tilt` rolled from level).
+func crescent_axes(way: Vector3) -> Array:
+	var w := way.normalized() if way.length() > 0.01 else Vector3.FORWARD
+	var side := w.cross(Vector3.UP)
+	if side.length() < 0.05: side = Vector3.RIGHT
+	side = side.normalized().rotated(w,tilt)
+	return [w,side]
+
+## The crescent's arc's points at `at` along `way`, horn to horn (its
+## middle leading, the horns trailing).
+func crescent_points(at: Vector3, way: Vector3, n := CRESCENT_POINTS) -> Array[Vector3]:
+	var ax := crescent_axes(way)
+	var w: Vector3 = ax[0]
+	var side: Vector3 = ax[1]
+	var r := crescent_radius()
+	var out: Array[Vector3] = []
+	for i in range(n):
+		var a := lerpf(-CRESCENT_ARC,CRESCENT_ARC,float(i)/float(n-1))
+		out.append(at+side*r*sin(a)-w*r*(1.0-cos(a)))
+	return out
 
 ## Taken into a shot that met it: gone, quietly.
 func absorb() -> void:
@@ -218,7 +271,8 @@ func _meets_other(from: Vector3, to: Vector3, delta: float) -> bool:
 		var ov: Vector3 = node.get("velocity") if node.get("velocity") != null else Vector3.ZERO
 		var op := (node as Node3D).global_position
 		var near := _segments_closest(from,to,op-ov*delta,op)
-		if near.x > radius()*2.0+FUSE*t*2.0: continue
+		var other_reach: float = node.call("meet_reach") if node.has_method("meet_reach") else radius()
+		if near.x > meet_reach()+other_reach+FUSE*t*2.0: continue
 		# A gust shot's ball (scripts/lock_on/gust_shot.gd) counts at its rally pace.
 		var other_pace = node.get("rally_speed")
 		var speed := maxf(velocity.length(),float(other_pace) if other_pace != null else ov.length())*MEET_GAIN
@@ -254,13 +308,34 @@ func _hits_target(from: Vector3, to: Vector3) -> bool:
 	var b := feet+Vector3.UP*0.85*t
 	var near := _segments_closest(from,to,a,b)
 	var reach := radius()+PhysicsGround.RADIUS*WorldScale.wanderer+FUSE*t
-	if near.x > reach: return false
+	if form == "crescent":
+		near = _crescent_meets(from,to,feet,t)
+		if near.x < 0.0: return false
+	elif near.x > reach: return false
 	var way := velocity
 	var v := Gust.knock(motor,way,float(_knock.blast_out)*strength,float(_knock.blast_up)*strength,shooter if shooter != null else self)
 	print("wind shot: burst on the wanderer at (%.1f, %.1f, %.1f), knock (%.1f, %.1f, %.1f) m/s" % [feet.x,feet.y,feet.z,v.x,v.y,v.z])
 	burst_on.emit(motor)
 	_end(from.lerp(to,near.y),-velocity.normalized(),true)
 	return true
+
+## Whether the crescent's arc, stepping `from` -> `to`, cut the walker
+## standing on `feet` (`t` his height): any arc point's step passing within
+## his radius plus its thickness of his body's axis, between his feet and
+## his head. (0, share along the step) if it did, else (-1, 0).
+func _crescent_meets(from: Vector3, to: Vector3, feet: Vector3, t: float) -> Vector2:
+	var way := to-from
+	if way.length() < 0.0001: return Vector2(-1.0,0.0)
+	var p0 := crescent_points(from,way)
+	var p1 := crescent_points(to,way)
+	var thick := CRESCENT_THICK*t*0.5
+	var r := PhysicsGround.RADIUS*WorldScale.wanderer+thick
+	var a := feet+Vector3.UP*0.02*t
+	var b := feet+Vector3.UP*0.92*t
+	for i in range(p0.size()):
+		var near := _segments_closest(p0[i],p1[i],a,b)
+		if near.x <= r: return Vector2(0.0,near.y)
+	return Vector2(-1.0,0.0)
 
 ## The nearest approach of segment p0-p1 to q0-q1: (distance, share along p).
 static func _segments_closest(p0: Vector3, p1: Vector3, q0: Vector3, q1: Vector3) -> Vector2:
@@ -343,6 +418,10 @@ func _draw() -> void:
 	var r := radius()*maxf(grown,0.0)
 	var at := global_position
 	var live := state != "done" and grown > 0.01
+	if form == "crescent":
+		lm.visible_instance_count = 0
+		if live and state == "flying": si = _draw_crescent(sm,eye)
+		live = false
 	lm.visible_instance_count = 1 if live else 0
 	if live:
 		var pulse := 1.0+0.1*sin(_clock*30.0)
@@ -365,7 +444,7 @@ func _draw() -> void:
 			sm.set_instance_custom_data(si,Color(0.85*grown,0,0,0))
 			sm.set_instance_color(si,TINT)
 			si += 1
-	if live and state == "flying" and _trail.size() > 2:
+	if live and state == "flying" and _trail.size() > 2 and form == "ball":
 		var n := mini(TRAIL,_trail.size()-1)
 		for i in range(n):
 			var u := float(i)/float(TRAIL)
@@ -395,3 +474,27 @@ func _draw() -> void:
 		pj += 1
 	sm.visible_instance_count = si
 	pm.visible_instance_count = pj
+
+## The crescent in flight: a bright arc of streaks horn to horn, thick in
+## its middle and thin at its horns, and a fainter echo just behind it
+## (its wake). The streaks' count used.
+func _draw_crescent(sm: MultiMesh, eye: Vector3) -> int:
+	var t := walker_tall()
+	var way := velocity if velocity.length() > 0.1 else Vector3.FORWARD
+	var at := global_position
+	var flick := 1.0+0.08*sin(_clock*40.0)
+	var si := 0
+	for layer in range(2):
+		var back := way.normalized()*t*0.22*float(layer)
+		var pts := crescent_points(at-back,way,CRESCENT_STREAKS+1)
+		for i in range(CRESCENT_STREAKS):
+			var u := (float(i)+0.5)/float(CRESCENT_STREAKS)
+			var mid_w := sin(u*PI)
+			var p0: Vector3 = pts[i]
+			var p1: Vector3 = pts[i+1]
+			var w := CRESCENT_THICK*t*lerpf(0.3,1.8,mid_w)*flick*(1.0 if layer == 0 else 2.0)
+			sm.set_instance_transform(si,_streak((p0+p1)*0.5,(p1-p0)*1.25,w,eye))
+			sm.set_instance_custom_data(si,Color((1.0 if layer == 0 else 0.45)*lerpf(0.6,1.0,mid_w),0,0,0))
+			sm.set_instance_color(si,TINT if layer == 0 else BLADE_TINT)
+			si += 1
+	return si
