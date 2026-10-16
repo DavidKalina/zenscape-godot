@@ -258,7 +258,7 @@ func _burst(p: Dictionary) -> Array:
 		piece.linear_velocity = lin
 		piece.angular_velocity = ang
 		group.pieces.append(piece)
-		out.append({"rb":piece,"t":0.0,"still":0.0,"group":group,"v":lin,"kind":String(s.get("kind","drum")),"wait":0.0,"lin":lin,"ang":ang,"burst":[]})
+		out.append({"rb":piece,"t":0.0,"still":0.0,"group":group,"v":lin,"kind":String(s.get("kind","drum")),"wait":0.0,"lin":lin,"ang":ang,"burst":[],"soft":String(s.get("kind","drum")) in ["slab","column","chunk"]})
 	group.pieces.erase(rb)
 	rb.queue_free()
 	return out
@@ -294,9 +294,18 @@ func _physics_process(delta: float) -> void:
 			var hard := minf(lost_v,7.0)
 			var low := _ground_under(rb)
 			var first: bool = not p.get("landed",false)
+			# A knock in the air (stone on stone, well off the ground) only
+			# puffs, for a piece that asks (`soft_air`): the plume is the ground's.
+			if p.get("soft_air",false) and rb.global_position.y-low.y > 2.5:
+				Dust.puff(self,rb.global_position,0.8+0.15*hard)
+				p.v = v
+				continue
 			p["landed"] = true
-			if p.kind == "slab" and not first:
-				Dust.puff(self,rb.global_position,1.6+0.2*hard)
+			# A burst's parts (and a slab's later knocks) only puff: the
+			# landing that burst them made the plume.
+			if (p.kind == "slab" and not first) or p.get("soft",false):
+				Dust.puff(self,rb.global_position,1.2+0.2*hard)
+				if lost_v > 3.5 and first: _sound(&"ruin_thud",rb.global_position)
 			elif p.kind == "slab":
 				Dust.plume(self,low,2.6+0.35*hard)
 				Dust.rocks(self,low+Vector3.UP*0.6,Vector3(v.x,0.0,v.z).normalized() if Vector2(v.x,v.z).length() > 0.1 else Vector3.UP,8,0.3)

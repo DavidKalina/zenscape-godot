@@ -12,6 +12,9 @@ extends "res://scripts/kit_isle/break_pieces.gd"
 ## cap, rubble and `changed`), out from where it was hit.
 const Kinds = preload("res://scripts/kit_isle/break_kinds.gd")
 const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
+## A stack going over: its turn at first (rad/s), more for his push (m/s).
+const TOPPLE_W := 0.55
+const TOPPLE_PUSH := 0.12
 
 ## The pieces: [{node, kind, tough, box (its frame), xf, seed, rebuild, alive}].
 var targets: Array = []
@@ -170,6 +173,9 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> v
 	group.stump = stands
 	var foot := xf*Vector3((t.box as AABB).get_center().x,(t.box as AABB).position.y,(t.box as AABB).get_center().z)
 	var fall: Array = cut.get("parts",[])
+	if bool(cut.get("topple",false)):
+		_topple(fall,xf,t.box as AABB,at,dir,push,his,group)
+		fall = []
 	for part: Dictionary in fall:
 		var pat: Vector3 = xf*(part.at as Vector3)
 		var out := Vector3(pat.x-at.x,0.0,pat.z-at.z)
@@ -186,9 +192,56 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> v
 		# The top goes a beat after the bottom: it falls on what fell.
 		_go_piece(rb,group,str(part.kind),lin,ang,0.08*high,away,high)
 	if group.pieces.is_empty(): _settled(group)
-	Dust.plume(self,at,4.0)
-	Dust.rocks(self,at,dir,12,0.3)
+	Dust.plume(self,at,3.2)
+	Dust.rocks(self,at+Vector3.UP*0.5,dir,10,0.24)
 	_sound(&"ruin_crack",at)
 	_sound(&"ruin_fall",foot)
 	_shake(QUAKE_PIER*1.2)
 	_refresh_rids()
+
+## Parts "<along>_<up>" (the piece's frame, `xf` its place) going over as
+## stacks: each along's parts one body about its foot (the colonnade's
+## column: slow at first, gravity doing the rest), a beat apart, bursting
+## into its parts where it lands.
+func _topple(parts: Array, xf: Transform3D, box: AABB, at: Vector3, dir: Vector3, push: Vector3, his: Variant, group: Dictionary) -> void:
+	var stacks := {}
+	for part: Dictionary in parts:
+		var along := str(part.get("id","0_0")).get_slice("_",0)
+		if not stacks.has(along): stacks[along] = []
+		(stacks[along] as Array).append(part)
+	var flat := Vector3(push.x,0.0,push.z)
+	var axis := Vector3.UP.cross(dir).normalized()
+	var keys := stacks.keys()
+	keys.sort()
+	for k: int in range(keys.size()):
+		var stack: Array = stacks[keys[k]]
+		var lo := INF
+		var hi := -INF
+		var mid := Vector3.ZERO
+		var kg := 0.0
+		for part: Dictionary in stack:
+			var c: Vector3 = part.at
+			var half := float((part.size as Vector3).y)*0.5
+			lo = minf(lo,c.y-half)
+			hi = maxf(hi,c.y+half)
+			mid += c*float(part.kg)
+			kg += float(part.kg)
+		mid /= maxf(kg,1.0)
+		var subs: Array = []
+		for part: Dictionary in stack:
+			subs.append({"mesh":part.mesh,"shape":part.shape,"local":Transform3D(Basis.IDENTITY,(part.at as Vector3)-mid),
+				"kg":float(part.kg),"kind":str(part.kind)})
+		var rb := _body_of(subs,Transform3D(xf.basis,xf*mid))
+		if his is PhysicsBody3D: rb.add_collision_exception_with(his)
+		for other: Variant in group.pieces:
+			if is_instance_valid(other): rb.add_collision_exception_with(other as RigidBody3D)
+		var lever := maxf(mid.y-lo,0.3)
+		var high := clampf((mid.y-box.position.y)/maxf(box.size.y,0.5),0.0,1.0)
+		var w := TOPPLE_W+TOPPLE_PUSH*flat.length()+_rng.randf_range(-0.1,0.15)
+		var ang := axis*w+Vector3.UP*_rng.randf_range(-0.25,0.25)
+		var lin := dir*w*lever+flat*0.15
+		var whole := subs.size() > 1
+		_go_piece(rb,group,"column" if whole else str(stack[0].kind),lin,ang,0.07*k,dir,high)
+		var entry: Dictionary = live[-1] if not live.is_empty() and live[-1].rb == rb else {}
+		if not entry.is_empty(): entry["soft_air"] = true
+		if whole and not entry.is_empty(): entry["burst"] = subs

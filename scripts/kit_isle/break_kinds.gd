@@ -14,6 +14,10 @@ extends RefCounted
 ##   - answering the hub itself (scripts/kit_isle/breakables.gd), with its
 ##     own choreography (the city kit's set pieces).
 ##
+## A cut's result may say "topple": true (its parts' ids "<along>_<up>":
+## each stack of one `along` goes over as one body, bursting into its parts
+## where it lands); else every part falls on its own.
+##
 ## `t` (a target, kit_breaks.gd `add`): node (the piece, still whole),
 ## box (its stone's bounds, its frame), at (the hit, its frame), dir (the
 ## way the hit goes, its frame), seed, rebuild (a Callable() -> Node3D that
@@ -38,12 +42,14 @@ const Build = RuinKit.Build
 const MOST_PARTS := 6
 
 ## kind: {stump (share of the hit's height; < 0 none), reach (m each way
-## along; 0 all), chunk (Vector2: m along, m up), fall, tough}.
+## along; 0 all), chunk (Vector2: m along, m up), fall, tough, topple (the
+## parts one over the other go over as one body about their foot, like the
+## colonnade's column, and burst into their parts where they hit)}.
 const SHAPES := {
-	"pier":{"stump":0.6,"reach":0.0,"chunk":Vector2(9.0,1.6),"fall":"chunk","tough":0.5},
-	"post":{"stump":0.5,"reach":0.0,"chunk":Vector2(9.0,2.4),"fall":"column","tough":0.4},
-	"wall":{"stump":0.5,"reach":3.0,"chunk":Vector2(2.4,2.2),"fall":"slab","tough":0.6},
-	"arch":{"stump":0.45,"reach":3.5,"chunk":Vector2(2.6,2.6),"fall":"chunk","tough":0.6},
+	"pier":{"stump":0.6,"reach":0.0,"chunk":Vector2(9.0,1.6),"fall":"chunk","tough":0.5,"topple":true},
+	"post":{"stump":0.5,"reach":0.0,"chunk":Vector2(9.0,2.4),"fall":"chunk","tough":0.4,"topple":true},
+	"wall":{"stump":0.5,"reach":3.0,"chunk":Vector2(2.4,2.2),"fall":"slab","tough":0.6,"topple":true},
+	"arch":{"stump":0.45,"reach":3.5,"chunk":Vector2(2.6,2.6),"fall":"chunk","tough":0.6,"topple":true},
 	"lintel":{"stump":-1.0,"reach":0.0,"chunk":Vector2(2.2,9.0),"fall":"slab","tough":0.4},
 	"stair":{"stump":0.5,"reach":2.5,"chunk":Vector2(2.0,1.5),"fall":"chunk","tough":0.9},
 	"slab":{"stump":-1.0,"reach":2.0,"chunk":Vector2(1.6,9.0),"fall":"slab","tough":1.6},
@@ -157,4 +163,4 @@ static func by_joints(t: Dictionary, shape: Dictionary) -> Dictionary:
 		if mi == null or mi.mesh == null or mi.mesh.get_surface_count() == 0:
 			stands.free()
 			stands = null
-	return {"stands":stands,"parts":parts}
+	return {"stands":stands,"parts":parts,"topple":bool(shape.get("topple",false))}
