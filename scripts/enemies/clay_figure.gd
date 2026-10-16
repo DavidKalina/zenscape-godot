@@ -6,7 +6,7 @@ extends "res://scripts/pilot_figure.gd"
 ## head (HEAD) and puffier limbs (PUFF, the body widened about its middle).
 ## No eyes, no glow: the face is a smoother, darker slip.
 ##
-## It is driven like the wanderer's figure, from a stand-in motor the
+## It is driven like the wanderer's figure, from a stand-in pose the
 ## footprint trail sets each frame (scripts/enemies/foot_trail.gd `pose`),
 ## so it plays his run, jumps, wall kicks, hangs and climbs as he did.
 const SLIP := Color("d8cdb9")
@@ -61,7 +61,7 @@ static func clay_material() -> StandardMaterial3D:
 	return m
 
 ## As the wanderer's, then the heavy head.
-func drive(motor: RefCounted, delta: float) -> Dictionary:
-	var out := super.drive(motor,delta)
+func drive(pose: PilotPose, delta: float) -> Dictionary:
+	var out := super.drive(pose,delta)
 	if _head >= 0: _skeleton.set_bone_pose_scale(_head,Vector3.ONE*HEAD)
 	return out

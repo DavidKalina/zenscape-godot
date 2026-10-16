@@ -156,7 +156,6 @@ class Isle extends Node3D:
 var stage: Node3D
 var study: Node3D
 var hosts: Array = []
-var _air_was: Callable
 var _hud: CanvasLayer
 var _label: Label
 ## The isle the walker is on (its host), how long, and whether the card is
@@ -195,13 +194,8 @@ func build(owner_stage: Node3D, plan: Dictionary, gb: Array) -> void:
 		hosts.append(host)
 		print("greybox: %s live on isle %d at %s" % [str(isle.id),i,str((isle.offset as Vector3).round())])
 	# The traps' air (a vent's thermal) into the motor's, over what was.
-	var motor: Object = study.motor
-	_air_was = motor.air
-	var was := _air_was
 	var me := self
-	motor.air = func(p: Vector3) -> Dictionary:
-		var here: Dictionary = was.call(p) if was.is_valid() else {}
-		if not is_instance_valid(me): return here
+	study.motor.push_air(self,func(p: Vector3,here: Dictionary) -> Dictionary:
 		var out := here
 		var copied := false
 		for h: Node3D in me.hosts:
@@ -211,11 +205,11 @@ func build(owner_stage: Node3D, plan: Dictionary, gb: Array) -> void:
 				out = here.duplicate()
 				copied = true
 			for key: Variant in extra: out[key] = (out[key]+extra[key]) if out.has(key) else extra[key]
-		return out
+		return out)
 	_build_hud()
 
 func _exit_tree() -> void:
-	if study != null and _air_was.is_valid(): study.motor.air = _air_was
+	if study != null: study.motor.pop_air(self)
 
 func before(delta: float) -> void:
 	for h: Node3D in hosts: h.before(delta)

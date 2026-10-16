@@ -122,7 +122,7 @@ func _process(delta: float) -> bool:
 	if motor.skidding: motor.pace = move_toward(motor.pace,0.0,SKID_SLOWING*delta)
 	else: motor.pace = move_toward(motor.pace,want,(14.0 if want > motor.pace else 18.0)*delta)
 	_place(delta)
-	figure.drive(motor,delta)
+	figure.drive(motor.pose(),delta)
 	if circling and not follow: orbit.x += delta*0.25
 	_aim()
 	return false

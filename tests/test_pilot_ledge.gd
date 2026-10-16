@@ -191,7 +191,7 @@ func _step(want: Vector2, jump: bool, top := PilotMotor.RUN) -> Dictionary:
 	var out := m.step(DT,want,top,jump,ground,slide,ledge)
 	figure.position = m.origin()
 	figure.rotation = Vector3(0.0,m.facing,0.0)
-	figure.drive(m,DT)
+	figure.drive(m.pose(),DT)
 	# The body against the way the motor moves it: a fall or a run is no
 	# jump, nor is the origin's own jump under the climb's clip.
 	var hips := _bone("hips")

@@ -39,7 +39,7 @@ func run() -> void:
 		m.step(DT,Vector2(1.0,0.0),PilotMotor.RUN,false,ground,slide)
 		figure.position = m.feet
 		figure.rotation.y = m.facing
-		var out := figure.drive(m,DT)
+		var out := figure.drive(m.pose(),DT)
 		if out.has("set_off"): set_off += 1
 		if out.has("footfall"):
 			falls.append([i,int(out.footfall)])
@@ -54,22 +54,22 @@ func run() -> void:
 	# Stood still.
 	for i in range(40):
 		m.step(DT,Vector2.ZERO,PilotMotor.RUN,false,ground,slide)
-		figure.drive(m,DT)
+		figure.drive(m.pose(),DT)
 	var still := 0
 	for i in range(60):
 		m.step(DT,Vector2.ZERO,PilotMotor.RUN,false,ground,slide)
-		if figure.drive(m,DT).has("footfall"): still += 1
+		if figure.drive(m.pose(),DT).has("footfall"): still += 1
 	check(still == 0,"Stood still, no footfalls (%d)" % still)
 	# The skid.
 	m.reset(Vector3.ZERO,PilotMotor.facing_of(Vector2(1.0,0.0)),PilotMotor.RUN)
-	for i in range(10): figure.drive(m,DT)
+	for i in range(10): figure.drive(m.pose(),DT)
 	var skid_frames := 0
 	var turned := 0
 	var whipped_at := -1
 	for i in range(60):
 		m.step(DT,Vector2(-1.0,0.0),PilotMotor.RUN,false,ground,slide)
 		if m.skidding: skid_frames += 1
-		var out := figure.drive(m,DT)
+		var out := figure.drive(m.pose(),DT)
 		if out.has("turned"):
 			turned += 1
 			whipped_at = i
@@ -122,7 +122,7 @@ func _springs(m: RefCounted, figure: Node3D, skeleton: Skeleton3D) -> void:
 		if out.has("landed"):
 			figure.land(float(out.landed))
 			landed = i
-		figure.drive(m,DT)
+		figure.drive(m.pose(),DT)
 		if landed < 0:
 			tallest = maxf(tallest,pivot.scale.y)
 			widest = maxf(widest,_at(skeleton,hands[0]).distance_to(_at(skeleton,hands[1])))
@@ -139,12 +139,12 @@ func _springs(m: RefCounted, figure: Node3D, skeleton: Skeleton3D) -> void:
 	figure.settle()
 	for i in range(60):
 		m.step(DT,Vector2(0.0,-1.0),PilotMotor.RUN,false,ground,slide)
-		figure.drive(m,DT)
+		figure.drive(m.pose(),DT)
 	var forward := 0.0
 	var back := 0.0
 	for i in range(60):
 		m.step(DT,Vector2.ZERO,PilotMotor.RUN,false,ground,slide)
-		figure.drive(m,DT)
+		figure.drive(m.pose(),DT)
 		forward = minf(forward,tilt.rotation.x)
 		back = maxf(back,tilt.rotation.x)
 	check(forward < -0.1,"Stopping from a run it tips forward (%.2f rad)" % forward)
@@ -158,7 +158,7 @@ func _springs(m: RefCounted, figure: Node3D, skeleton: Skeleton3D) -> void:
 		var mean := 0.0
 		for i in range(90):
 			m.step(DT,Vector2(0.0,-float(gait[0])),PilotMotor.RUN,false,gait[1],slide)
-			figure.drive(m,DT)
+			figure.drive(m.pose(),DT)
 			if i >= 70: mean += _forward_lean(figure,tilt,skeleton,chest)/20.0
 		leans.append(mean)
 	check(leans[1] > leans[0]+0.1,"Running, its chest leans further forward than walking (%.2f rad, %.2f)" % [leans[1],leans[0]])
@@ -169,12 +169,12 @@ func _springs(m: RefCounted, figure: Node3D, skeleton: Skeleton3D) -> void:
 	figure.settle()
 	for i in range(40):
 		m.step(DT,Vector2(0.0,-1.0),PilotMotor.RUN,false,ground,slide)
-		figure.drive(m,DT)
+		figure.drive(m.pose(),DT)
 	var looked := 0.0
 	var rolled := 0.0
 	for i in range(12):
 		m.step(DT,Vector2(-1.0,0.0),PilotMotor.RUN,false,ground,slide)
-		figure.drive(m,DT)
+		figure.drive(m.pose(),DT)
 		var body := figure.global_basis*tilt.basis
 		var face := skeleton.global_basis*skeleton.get_bone_global_pose(head).basis
 		# The head's turn about up past the body's, left positive.

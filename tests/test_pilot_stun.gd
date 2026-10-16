@@ -281,7 +281,7 @@ func _until_up(m: PilotMotor) -> float:
 
 func _step(m: PilotMotor, want: Vector2, jump: bool) -> Dictionary:
 	var out := m.step(DT,want,m.run,jump,ground,slide)
-	figure.drive(m,DT)
+	figure.drive(m.pose(),DT)
 	return out
 
 func _step_release() -> void:

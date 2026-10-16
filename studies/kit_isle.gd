@@ -2233,7 +2233,7 @@ func keep_stone() -> void:
 func _inspect_step(delta: float) -> void:
 	_pick += delta
 	motor.velocity = Vector3.ZERO
-	body.drive(motor,delta)
+	body.drive(motor.pose(),delta)
 	_raise_arms(smoothstep(0.0,0.6,_pick))
 	var hold: Vector3 = (body.mitt(0)+body.mitt(1))*0.5+Vector3.UP*HOLD_UP
 	var t := smoothstep(0.15,PICKUP,_pick)

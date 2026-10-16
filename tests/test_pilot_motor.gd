@@ -54,7 +54,7 @@ func _initialize() -> void:
 		# again on it, with the buffer.
 		jump = not (m.velocity.y < 0.0 and m.feet.y < 0.3) if not m.grounded else not jump
 		var out := m.step(DT,Vector2(0.0,1.0),PilotMotor.RUN,jump,ground,slide)
-		figure.drive(m,DT)
+		figure.drive(m.pose(),DT)
 		if out.has("jumped"):
 			chained.append(out.jumped)
 			peaks.append(0.0)
@@ -144,7 +144,7 @@ func _settle(m: RefCounted) -> void:
 func _run(m: RefCounted, figure: Node3D, want: Vector2, top: float, jump: bool, frames: int) -> void:
 	for i in range(frames):
 		m.step(DT,want,top,jump,ground,slide)
-		figure.drive(m,DT)
+		figure.drive(m.pose(),DT)
 
 ## The highest a jump from a stand goes, Space held `frames` frames.
 func _jump_height(m: RefCounted, figure: Node3D, frames: int) -> float:
@@ -153,7 +153,7 @@ func _jump_height(m: RefCounted, figure: Node3D, frames: int) -> float:
 	var high := 0.0
 	for i in range(240):
 		m.step(DT,Vector2.ZERO,PilotMotor.RUN,i < frames,ground,slide)
-		figure.drive(m,DT)
+		figure.drive(m.pose(),DT)
 		high = maxf(high,m.feet.y)
 		if i > 2 and m.grounded: break
 	return high

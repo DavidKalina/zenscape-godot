@@ -45,7 +45,7 @@ func check(ok: bool, what: String) -> void:
 
 func _step(m: PilotMotor, want: Vector2, jump: bool, ground: Callable = flat, ledge := Callable()) -> Dictionary:
 	var out := m.step(DT,want,PilotMotor.RUN,jump,ground,free,ledge)
-	figure.drive(m,DT)
+	figure.drive(m.pose(),DT)
 	return out
 
 ## A held jump from a stand, the twirl pressed `at` s after takeoff (never if
@@ -303,7 +303,7 @@ func _wall_loop(twirl_at: int) -> Dictionary:
 		var jump: bool = i < 14 or (m.move == "wall" and i > 20 and i%2 == 0)
 		m.twirl = twirl_at >= 0 and kicked >= 0 and i-kicked == twirl_at
 		var out := m.step(DT,Vector2(-1.0,0.0),PilotMotor.RUN,jump,wall,blocked)
-		figure.drive(m,DT)
+		figure.drive(m.pose(),DT)
 		if out.has("wall_jump"):
 			kicked = i
 			kicks.append(snappedf(m.feet.y,0.01))
@@ -336,7 +336,7 @@ func _along_wall(pace: float, degrees: float, kick_at := -1) -> Dictionary:
 	for i in range(240):
 		var jump: bool = i < 12 or (kick_at >= 0 and started >= 0 and i-started == kick_at)
 		var out := m.step(DT,way,pace,jump,wall,blocked)
-		figure.drive(m,DT)
+		figure.drive(m.pose(),DT)
 		if out.get("wallrun",null) == true:
 			got.ran = true
 			started = i

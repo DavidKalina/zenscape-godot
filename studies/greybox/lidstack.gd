@@ -265,10 +265,7 @@ class CatchCannon extends "res://scripts/traps/trap.gd":
 			return
 		if motor.rider != null or motor.move != "tumble": return
 		if not zone().has_point(motor.feet+Vector3.UP*0.6): return
-		motor.rider = self
-		motor.grounded = false
-		motor.velocity = Vector3.ZERO
-		motor.feet = cannon.pivot()
+		motor.mount(self,cannon.pivot(),false)
 		holding = 0.0
 		catches += 1
 		tell_sound(&"catch",cannon.pivot())
@@ -280,15 +277,12 @@ class CatchCannon extends "res://scripts/traps/trap.gd":
 	func _fire() -> void:
 		holding = -1.0
 		var v: Vector3 = cannon.fire()
-		motor.rider = null
-		motor.grounded = false
-		motor.feet = cannon.mouth()
-		motor.toss(v)
+		motor.dismount(cannon.mouth(),v)
 		fired += 1
 		if motor.move == "tumble": fired_stunned += 1
 	func reset() -> void:
 		super()
-		if motor != null and motor.rider == self: motor.rider = null
+		if motor != null: motor.release(self)
 		holding = -1.0
 		catches = 0
 		fired = 0

@@ -230,13 +230,15 @@ signal harmed(amount: int, cause: String, source: Object)
 ##   poise starts again; on his feet, a `toss`), and after `stun_chain_cap` s stunned in a row any press
 ##   breaks out (in the air the twirl, on the ground up at once).
 ##
-## Ridden (`rider`: a swing rope, scripts/interactables/):
+## Ridden (`rider`: a swing rope, scripts/interactables/; a cannon; a Sky
+## Ray's rail):
 ## while set, the step reads the buttons and hands itself to the rider's
 ## `ride(motor, delta, want, pressed)`, which moves him (his feet, pace,
 ## facing, `move` or `hold` for the figure: "swing" hangs as the ledge's
-## hang) and gives the step's events back. The rider lets go with `toss`
-## (which clears it), `hop` keeping the slide hop's weave for the air after
-## it. A reset or a knock clears it too. A rope may snag him tumbling: he
+## hang) and gives the step's events back. A rider takes him with `mount`
+## and lets go with `dismount` (off at a point, thrown), `toss` (where he
+## is) or `release` (left where he is); `toss`'s `hop` keeps the slide
+## hop's weave for the air after it. A reset or a knock clears it too. A rope may snag him tumbling: he
 ## rides it still stunned (move "tumble"), the twirl arming the tech, till
 ## the rope gives him his poise back (`regain`) or throws him on stunned.
 ##
@@ -809,10 +811,14 @@ var _clock := 0.0
 var _sources := {}
 ## The pocket sail (see the header), and the air it flies in: anything
 ## `air` answers for the feet's point (Vector3, the frame's), {wind,
-## thermal}; none, still air.
+## thermal}; none, still air. Layers pushed over it (`push_air`: a run
+## layer's vents, a head's wind) are added in `air_at`, which the sail
+## reads: [{id, layer}], the first pushed applied first.
 const PocketSail = preload("res://scripts/pocket_sail.gd")
+const PilotPose = preload("res://scripts/pilot_pose.gd")
 var sail := PocketSail.new()
 var air := Callable()
+var _air_layers: Array[Dictionary] = []
 ## Riding something that moves him itself (see the header), or null.
 var rider: Object = null
 ## The slam's pace (m/s down) while move is "slam".
@@ -1143,6 +1149,30 @@ static func facing_of(way: Vector2) -> float:
 
 func speed() -> float:
 	return Vector2(velocity.x,velocity.z).length()
+
+## What he is doing now, for the figure (scripts/pilot_pose.gd): a fresh
+## copy, not kept in step.
+func pose() -> PilotPose:
+	var p := PilotPose.new()
+	p.feet = feet
+	p.velocity = velocity
+	p.facing = facing
+	p.grounded = grounded
+	p.skidding = skidding
+	p.move = move
+	p.hold = hold
+	p.hold_t = hold_t
+	p.shimmy = shimmy
+	p.lip = lip
+	p.lip_out = lip_out
+	p.swimming = swimming
+	p.wade = wade
+	p.wall_out = wall_out
+	p.carve = carve
+	p.carving = carving
+	p.knocks = knocks
+	p.seized = _seized
+	return p
 
 ## One step. `want` is the way asked, at most 1 long; `top` the pace it
 ## asks for at full stick; `jump` whether the jump is held (and `crouch`,
@@ -1859,7 +1889,7 @@ func _sail_open(h: Vector2, out: Dictionary) -> Vector2:
 ## air at the feet carrying it and holding it up. The run's new pace (the
 ## rise is set on `velocity`).
 func _sail_step(delta: float, want: Vector2, h: Vector2) -> Vector2:
-	var here: Dictionary = air.call(feet) if air.is_valid() else {}
+	var here := air_at(feet)
 	var v := sail.step(delta,Vector3(h.x,velocity.y,h.y),feet.y,PocketSail.steer(sail.heading,want),-1.0 if crouch else 0.0,here)
 	velocity.y = v.y
 	facing = sail.heading
@@ -1889,6 +1919,65 @@ func toss(push: Vector3, hop := false) -> void:
 	_regrab = REGRAB
 	if Vector2(push.x,push.z).length() > 0.3: facing = facing_of(Vector2(push.x,push.z))
 	feet.y += 0.02
+
+## Taken by a rider (see the header): `by` steps him from the next step
+## (its `ride`), his own pace stopped, his feet set at `at`, on the ground
+## (`on_ground`) or held off it, facing `towards` (NAN: as he faces): a
+## cannon's breech or barrel, a catch. `grip` (a hand on a rope or a rail):
+## out of any chain and skid too, the sail packed. The rest of the rider's
+## pose (a hold, a move) it sets after.
+func mount(by: Object, at: Vector3, on_ground: bool, towards := NAN, grip := false) -> void:
+	rider = by
+	velocity = Vector3.ZERO
+	grounded = on_ground
+	feet = at
+	if not is_nan(towards): facing = towards
+	if grip:
+		chain = 0
+		skidding = false
+		sail.rest()
+
+## Let go by the rider into the air: off it at `at`, thrown at `v` (m/s) as
+## `toss` throws him (a stunned body thrown on still stunned). With
+## `stun_by` (a cannon spitting a stunned body), stunned he is knocked by
+## it instead: a fresh stun if it may (`knock`).
+func dismount(at: Vector3, v: Vector3, stun_by: Object = null) -> void:
+	rider = null
+	grounded = false
+	feet = at
+	if stun_by != null and move == "tumble": knock(v,stun_by)
+	else: toss(v)
+
+## Let go by `by` where he is, if it is his rider; nothing else changes (a
+## stage reset, a freed rope). Whether it was.
+func release(by: Object) -> bool:
+	if by == null or rider != by: return false
+	rider = null
+	return true
+
+## The air (see the header) at `p`: `air`'s, then each layer pushed over
+## it (`push_air`) in turn, a freed owner's skipped.
+func air_at(p: Vector3) -> Dictionary:
+	var here: Dictionary = air.call(p) if air.is_valid() else {}
+	for l: Dictionary in _air_layers:
+		if is_instance_id_valid(int(l.id)): here = (l.layer as Callable).call(p,here)
+	return here
+
+## A layer of air over `air` and the layers under it, owned by `by`:
+## `layer` takes a point and the air there so far ({wind, thermal}) and
+## gives it with its own added. One layer an owner: pushed again, it
+## replaces its last and goes on top. `pop_air(by)` takes it off wherever
+## it lies, so layers come off in any order; `air` itself may be set under
+## them at any time.
+func push_air(by: Object, layer: Callable) -> void:
+	pop_air(by)
+	_air_layers.append({"id":by.get_instance_id(),"layer":layer})
+
+## Takes `by`'s layer off (see `push_air`); none, nothing.
+func pop_air(by: Object) -> void:
+	var id := by.get_instance_id()
+	for i in range(_air_layers.size()-1,-1,-1):
+		if int(_air_layers[i].id) == id: _air_layers.remove_at(i)
 
 ## Driven down by the slam (see the header): from `kick` m/s down on
 ## toward `pace`, his flat pace as it is, the sail folded. Not from the
