@@ -10,7 +10,9 @@ extends RefCounted
 ## it. Where that ray starts inside something solid (a wall the feet are
 ## against), the ground is that thing's top, found by a second ray from
 ## REACH over the feet; a top higher still is the ray's start, a wall too
-## tall to matter. Nothing under it within DEPTH is no ground (-INF).
+## tall to matter. Hollow land (a trimesh) counts as something solid when
+## the ray starts under its open top (`_under_top`). Nothing under it
+## within DEPTH is no ground (-INF).
 ##
 ## The body is an upright cylinder RADIUS round, from BODY_LOW over the
 ## feet (everything lower is the ground's to step over or to stop as a
@@ -67,6 +69,7 @@ var head_top := HEAD
 func _init(physics: PhysicsDirectSpaceState3D, walker: PilotMotor) -> void:
 	space = physics
 	motor = walker
+	walker.ground_from = height_from
 	_ray.hit_from_inside = true
 	_ray.collision_mask = mask
 	var body := CylinderShape3D.new()
@@ -170,11 +173,53 @@ func ground(p: Vector2) -> float:
 func height_from(p: Vector2, y: float) -> float:
 	var from := y+PilotMotor.STEP_UP+LOOK_OVER
 	var hit := _down(p,from)
+	if hit != INF and hit < y-PilotMotor.STEP_UP and _under_top(p,from,y): hit = INF
 	if hit == INF:
 		# In something: its top, if it is within reach.
 		var top := _down(p,y+REACH)
 		return from if top == INF or top < from else top
 	return hit
+
+## True if `from` (over feet at `y`) lies under the open top of hollow
+## land: a ray up from it meets something within REACH, and that something
+## is the topmost surface there (a ray down from TOWER lands on the same
+## height). KitLand's land is a hollow trimesh, so on steep turf the ray
+## down from under its sheet passes through and finds the sides far below,
+## or nothing; this sees it as being inside, as a convex start is. Facing
+## isn't used (Jolt flips the normal on back-face hits). Only asked when the
+## ray down fell more than a step, so flat walking pays nothing. An
+## overhang, a rim's hanging side or a deck isn't the top seen from TOWER
+## (a deck's top is its thickness higher): reads under them and at cliff
+## edges in the air stay as they were. Known limit: a collided overhang
+## whose underside is also the topmost surface still passes.
+const TOP_SAME := 0.02
+func _under_top(p: Vector2, from: float, y: float) -> bool:
+	return not is_nan(top_over(space,_ray,Vector3(p.x,from,p.y),y+REACH,y+TOWER))
+
+## The shared form of `_under_top`, for any reader (the enemies' too,
+## scripts/enemies/enemy_field.gd floor_under, headless_body _floor): the
+## height of the open top over `from` if `from` lies under it in hollow
+## land (a ray up to `reach_y` meets it, and a ray down from `tower_y`
+## lands on it within TOP_SAME), else NAN. `ray` keeps its mask and
+## exclusions; only its ends are set.
+static func top_over(at: PhysicsDirectSpaceState3D, ray: PhysicsRayQueryParameters3D, from: Vector3, reach_y: float, tower_y: float) -> float:
+	ray.from = from
+	ray.to = Vector3(from.x,reach_y,from.z)
+	var up := at.intersect_ray(ray)
+	if up.is_empty(): return NAN
+	var top := (up.position as Vector3).y
+	ray.from = Vector3(from.x,tower_y,from.z)
+	ray.to = Vector3(from.x,tower_y-DEPTH,from.z)
+	var over := at.intersect_ray(ray)
+	if over.is_empty() or (over.normal as Vector3) == Vector3.ZERO: return NAN
+	return top if absf((over.position as Vector3).y-top) < TOP_SAME else NAN
+
+## A down read from `up` over `p` that met nothing: the open top over its
+## start if the start lies in hollow land (`top_over`, within REACH), else
+## -INF, a void as before.
+static func land_top(at: PhysicsDirectSpaceState3D, ray: PhysicsRayQueryParameters3D, p: Vector3, up: float) -> float:
+	var top := top_over(at,ray,p+Vector3.UP*up,p.y+up+REACH,p.y+TOWER)
+	return -INF if is_nan(top) else top
 
 ## The first thing under `p` from height `from`: its height, INF if `from`
 ## is inside it, -INF if there is nothing.

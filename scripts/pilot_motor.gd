@@ -842,6 +842,10 @@ var turned_by := 0.0
 ## Soft ground (see the header), and what it gave under him last.
 var soft := Callable()
 var soft_now := {}
+## The ground under a plate point seen from feet at a height ((p, y) ->
+## float, PilotPhysicsGround `height_from`), or empty: the surf check
+## chains its uphill read through it (`_climbed`). Heightfields leave it empty.
+var ground_from := Callable()
 
 ## Stood at `at`, facing `towards`, moving `speed` the way it faces.
 func reset(at: Vector3, towards: float, speed := 0.0) -> void:
@@ -2637,7 +2641,23 @@ func _surfing(crouched: bool, ground: Callable) -> bool:
 	var fall := -slope.normalized()
 	var up := (float(ground.call(p-fall*SLOPE_FAR))-feet.y)/SLOPE_FAR
 	var down := (feet.y-float(ground.call(p+fall*SLOPE_FAR)))/SLOPE_FAR
-	return is_finite(up) and is_finite(down) and rad_to_deg(atan(minf(up,down))) > slide_auto
+	if not is_finite(down) or rad_to_deg(atan(down)) <= slide_auto: return false
+	if is_finite(up) and rad_to_deg(atan(up)) > slide_auto: return true
+	if not ground_from.is_valid(): return false
+	up = (_climbed(p,-fall,SLOPE_FAR)-feet.y)/SLOPE_FAR
+	return is_finite(up) and rad_to_deg(atan(up)) > slide_auto
+
+## The ground `far` m from `p` along `way`, read in SURF_RUNG steps, each
+## from the last one's height (`ground_from`): a single read from the feet
+## starts under steep ground uphill and can fall through it.
+const SURF_RUNG := 0.25
+func _climbed(p: Vector2, way: Vector2, far: float) -> float:
+	var y := feet.y
+	var n := ceili(far/SURF_RUNG)
+	for i in range(1,n+1):
+		y = float(ground_from.call(p+way*far*i/n,y))
+		if not is_finite(y): return y
+	return y
 
 ## Boot-surfing: pulled down the fall line, steered across it (on the flat
 ## only uncrouched: the crouched slide runs straight; carving, his way

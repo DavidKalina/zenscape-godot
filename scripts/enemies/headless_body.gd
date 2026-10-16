@@ -102,6 +102,7 @@ const Routes = preload("res://scripts/enemies/body_routes.gd")
 const Sight = preload("res://scripts/enemies/body_sight.gd")
 const Hearing = preload("res://scripts/enemies/body_hearing.gd")
 const OlmecVoid = preload("res://scripts/enemies/olmec_void.gd")
+const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
 
 ## The head it looks for (found among the field's enemies: the one with a mouth).
 var head: Node3D = null
@@ -3677,8 +3678,17 @@ func _feet_floor(up: float, down: float) -> float:
 	return g
 
 ## Round 11: a steep face met on the way down (a rail's rounded top, a
-## lamp, a prop's side) is looked past to the floor under it.
+## lamp, a prop's side) is looked past to the floor under it. A start
+## under the open top of hollow land (steep turf rising over `p`) reads
+## that top, not the land's sides far below or a void (asked only past
+## REACH under `p`, so a real step down never pays or changes).
 func _floor(p: Vector3, up: float, down: float) -> float:
+	var g := _floor_down(p,up,down)
+	if g >= p.y-PhysicsGround.REACH: return g
+	var top := PhysicsGround.land_top(field.study.get_world_3d().direct_space_state,_ray,p,up)
+	return top if top != -INF else g
+
+func _floor_down(p: Vector3, up: float, down: float) -> float:
 	var from := p+Vector3.UP*up
 	var to := p-Vector3.UP*down
 	for i in 3:

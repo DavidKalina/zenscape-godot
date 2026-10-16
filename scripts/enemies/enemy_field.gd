@@ -98,14 +98,17 @@ func sound(sound_name: StringName, at: Vector3) -> void:
 
 ## The height of the first thing under `p` (looked for from `up` over it
 ## to `down` under it), -INF if there is nothing; `exclude` (a body's RID)
-## is not looked at.
+## is not looked at. A start under the open top of hollow land (steep
+## turf rising over the probe) reads that top, as the pilot's ground does.
 func floor_under(p: Vector3, up: float, down: float, exclude := RID()) -> float:
 	_ray.from = p+Vector3.UP*up
 	_ray.to = p-Vector3.UP*down
 	_ray.collision_mask = WalkerOnly.strip(study.ground.mask)
 	_ray.exclude = [exclude] if exclude.is_valid() else []
-	var hit := study.get_world_3d().direct_space_state.intersect_ray(_ray)
-	return -INF if hit.is_empty() else (hit.position as Vector3).y
+	var space := study.get_world_3d().direct_space_state
+	var hit := space.intersect_ray(_ray)
+	if not hit.is_empty(): return (hit.position as Vector3).y
+	return PhysicsGround.land_top(space,_ray,p,up)
 
 ## Whether something stands from `from` along `along`.
 func blocked(from: Vector3, along: Vector3, exclude := RID()) -> bool:
