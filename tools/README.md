@@ -8,6 +8,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 
 | Need | Command |
 |---|---|
+| A fresh worktree made runnable (kernels, caches, import) | `python tools/worktree.py setup <path> [--cache toad_tex] [--from DIR]`; `check <path>` |
 | Run any Godot command | `python tools/godot.py <godot args>` |
 | Smoke a scene (400 frames, no errors) | `python tools/smoke.py studies/x.tscn [-- scene flags]` |
 | A check through the real play loop | write `scratch/x.gd` extending `tools/harness/drive.gd`, then `python tools/drive.py scratch/x.gd` |
@@ -236,6 +237,21 @@ then). `--timeout S` (default 1800) kills it with exit 124. The script sees
 its args after `--` as usual, runs from the repo root, and has its own
 folder and `art/blender/` on `sys.path` (the shared helpers,
 `art/blender/blendkit/`). Don't write a scratch wrapper.
+
+## worktree.py: a fresh worktree
+
+```
+python tools/worktree.py setup ../my-lane                     # kernels + import
+python tools/worktree.py setup . --cache toad_tex --from ../lane-toad-body
+python tools/worktree.py check ../my-lane --cache all
+```
+
+Copies the git-ignored native kernels (`native/terrain_kernels/bin/`,
+`zenscape_kernels.gdextension` and its `.uid`) from the main checkout, or
+`--from`, and each `--cache NAME` (`scratch/cache/NAME`, else
+`scratch/NAME`; `all` for every stage), then runs the headless import
+there. Unchanged files are skipped. `check` lists what's missing and
+changes nothing.
 
 ## bg.py: runs past the tool limit
 

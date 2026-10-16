@@ -52,8 +52,10 @@ the harness's watchdogs or `tools/bg.py`.
 
 `native/terrain_kernels/bin/`, `zenscape_kernels.gdextension` and its
 `.uid` are git-ignored, so a fresh worktree fails with "Could not find type
-NativeTerrainData". Copy those three from the main checkout, then run a
-headless import in the worktree before anything else.
+NativeTerrainData". Before anything else, run
+`python tools/worktree.py setup <path>`: it copies those three from the main
+checkout and runs the headless import. `--cache NAME` also copies a build's
+cached stages (scratch/cache/NAME, art/blender/blendkit/README.md).
 
 # Running on Windows
 
