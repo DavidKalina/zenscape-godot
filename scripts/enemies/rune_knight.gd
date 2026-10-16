@@ -123,6 +123,10 @@ func _init() -> void:
 func knob(key: String) -> float:
 	return float(KNOBS[key])
 
+## Where a blast aimed at him goes: his chest rune.
+func aim_point() -> Vector3:
+	return body.socket("chest_rune").global_position if body != null else global_position+Vector3.UP*tall*0.7
+
 ## Him on `host`'s aqueduct deck (the aqueduct isle), at the head end,
 ## facing along it.
 func setup(host: Node3D) -> void:
@@ -138,6 +142,8 @@ func setup(host: Node3D) -> void:
 	body.setup(tall)
 	body.beat_reached.connect(_on_beat)
 	_shape = body.shape()
+	# The stand-in blast (scripts/enemies/wind_blast_standin.gd) aims at him.
+	add_to_group("wind_shot_aim")
 	_build_room()
 	body.play("walk")
 

@@ -110,7 +110,9 @@ extends "res://studies/kit_isle.gd"
 ## watcher.gd, docs/design/watcher/round1.md, docs/design/airship-ferry/
 ## round2.md).
 ## --rune-knight: a stone knight patrols the aqueduct's deck (scripts/
-## enemies/rune_knight.gd, docs/design/rune-knight/spec-rune-knight.md).
+## enemies/rune_knight.gd, docs/design/rune-knight/spec-rune-knight.md);
+## Z on foot fires the wanderer's stand-in wind blast at him (scripts/
+## enemies/wind_blast_standin.gd).
 ## --sluice: the Sluice Flush trap on the channel (scripts/traps/
 ## sluice_aqueduct.gd); --sluice=head starts at the top of the rubble slope.
 ## The plane's parts (scripts/plane_arc/plane_arc.gd, docs/design/
@@ -586,6 +588,9 @@ func _add_life() -> void:
 		rune_knight = RuneKnight.new()
 		add_child(rune_knight)
 		rune_knight.setup(self)
+		wind_blast = WindBlastStandin.new()
+		add_child(wind_blast)
+		wind_blast.setup(self)
 	if NightLights.wanted(preload("res://scripts/launch_args.gd").user_args()):
 		night_lights = NightLights.new()
 		add_child(night_lights)
@@ -597,6 +602,10 @@ func _add_life() -> void:
 ## spec-rune-knight.md); null without --rune-knight.
 const RuneKnight = preload("res://scripts/enemies/rune_knight.gd")
 var rune_knight: Node3D = null
+## The wanderer's stand-in wind blast (Z on foot; scripts/enemies/
+## wind_blast_standin.gd), with the knight only; null without him.
+const WindBlastStandin = preload("res://scripts/enemies/wind_blast_standin.gd")
+var wind_blast: Node = null
 
 # --- The watcher (scripts/kit_isle/watcher.gd, --watcher) ----------------------------
 

@@ -4,7 +4,8 @@ extends RefCounted
 ## character study and the kit isle answer that a player shouldn't meet.
 ## On foot: F1 (the numbers), F2 (the feel panel), F3 (carving), F5-F8 (the
 ## recorder and its replays), the station keys 0-9, -, =, [, ] and \, L and
-## Shift+L (the look presets), B (a gust front). In the plane: F1 (the
+## Shift+L (the look presets), B (a gust front), Z (with --rune-knight,
+## the stand-in wind blast: scripts/enemies/wind_blast_standin.gd). In the plane: F1 (the
 ## numbers) and R (the study's reset: the plane home, the pilot at the
 ## start). Both: F9-F12 (the time and weather, scripts/kit_isle/
 ## kit_weather.gd). The capture flags: --capture=, --capture-seq=, --capture-wait=,
@@ -23,7 +24,7 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const IN_RELEASE := false
 const SETTING := "zenscape/dev/dev_keys"
 ## The keys that are the study's on foot, and in the plane.
-const FOOT_KEYS := [KEY_F1,KEY_F2,KEY_F3,KEY_F5,KEY_F6,KEY_F7,KEY_F8,KEY_F9,KEY_F10,KEY_F11,KEY_F12,KEY_L,KEY_B,
+const FOOT_KEYS := [KEY_F1,KEY_F2,KEY_F3,KEY_F5,KEY_F6,KEY_F7,KEY_F8,KEY_F9,KEY_F10,KEY_F11,KEY_F12,KEY_L,KEY_B,KEY_Z,
 	KEY_0,KEY_1,KEY_2,KEY_3,KEY_4,KEY_5,KEY_6,KEY_7,KEY_8,KEY_9,
 	KEY_MINUS,KEY_EQUAL,KEY_BRACKETLEFT,KEY_BRACKETRIGHT,KEY_BACKSLASH]
 const PLANE_KEYS := [KEY_F1,KEY_R,KEY_L,KEY_B,KEY_F9,KEY_F10,KEY_F11,KEY_F12]
