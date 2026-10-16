@@ -2,7 +2,7 @@
 Card: docs/design/motifs/brainstorm/round3-new-kit-isles/motif-m1-pilgrims-ladder.md
 Pitch: Four sky isles stepped up and east like a pilgrimage, one new piece at each station. The torana's ropes lift you off the landing isle. The broken nimbus is the climb up to its horns. A pent hood on the Crown hides you from the guacharo. A slam on the hung stair's boss turns its flight into the way down to the Cellar, and from there two easy hops and a sail take you home to the plane. The plane lands on Threshold, threads the torana gate and flies out through the ring.
 Fit: role hero/vertical. Footprint about 160 x 45 m (x -50..107, z -14..24). Height span 0 (Threshold) to 20 (Crown), the high horn at 24.1. It stands alone in the sky. Keep 20 m clear round it for the plane, and 12 m clear of anything north and south of the nimbus so the plane can line up on the ring.
-Play: You land on the foot isle, walk to the jamb and ride the ropes up under the lintel onto its top, then drop onto the Halo. You climb the nimbus's ring by its stubs, spoke and brackets to the low horn, and a twirled leap takes you to the high horn. From there you sail across to the Crown, where the bird wakes. You creep under the hood to the reliquary, then jump off the south lip and slam the boss, drop into the shaft and run down the turned stair before its 12 s run out. From the Cellar you hop down to the Halo and sail home.
+Play: You land on the foot isle, walk to the jamb and ride the ropes up under the lintel onto its top, then drop onto the Halo. You climb the nimbus's ring by its stubs, spoke and brackets to the low horn, and a twirled leap takes you to the high horn. From there you sail across to the Crown, where the bird wakes. You creep under the hood to the reliquary, then jump off the south lip and slam the boss, drop into the shaft and run down the turned stair before its 12 s run out. From the Cellar you sail down to the Halo and sail on home.
 Set pieces:
 - relic_torana (the real piece), its jamb on Threshold's east lip at x 25: 4 SwingRopes, all 5.6 m, from iron arms on posts along the lintel's top front (+Z) edge, rings at x 28.2, 33.8, 39.4, 45.0 (heights 6.5, 8.1, 9.7, 11.3), z 1.58. Each knot is one SET_OFF higher than the last, and the 3rd rope is dry. The last rope's backswing release lands on the lintel's top (16 deg); the slow way is three offering steps up the jamb's head (6.4), a drop onto the lintel's root and a walk up its top to the snapped end (x 46.2, top 10.5), then a hop down onto the Halo (7).
 - relic_nimbus, on the Halo at (62, 7, -3), 3 m north of its centre line so the torana's hop lands in front of the ring: the inner rays, the spoke, the outer rays, the low horn, then a twirled leap over the 3.9 m crown gap to the high horn. The plane threads the 11.4 m ring.
@@ -68,10 +68,12 @@ Set pieces:
 - **The Cellar's turf is cut back at x 83.85 south of z 14.** The stair's turn sweeps down to y 7.3 under the plinth (x 84..89.4, z 14.9..20.7, dumped headless), through a full Cellar's turf. The flight's foot (84, 10.06) steps west off the cut edge onto the turf.
 - **The slam off the lip takes a jump.** Walking off the Crown's south lip and slamming at once gives a 3.4 m drop, under DECENT's 4.0; a jump off the lip and a slam at its top turns the stair (driven).
 - **The hatch is x 86.4..88.8, z 15.1..17.3** (clear of the boss), and the shaft has a floor east of the head (top 12.3, lip on the stair's head cut), so a drop through the hatch lands on stone whether the stair is turned or hung.
+- **The sail off the high horn takes a run-up.** A standing jump off the high perch peaks 0.8 m over it and comes down on the ring's outer top before the sail has room to open. Run east down the outer top 2-4.5 m (slope 13-30 deg), jump and open the sail at once (driven).
+- **Cellar to Halo is a short sail, not a hop.** From the Cellar's west rim (77.2, 10, 9.4) a running jump falls about 5.7 m short into the sky; a jump and the sail at its top lands on the Halo at about (65.5, 7, 5.7) (driven). The Halo's west lip to Threshold is a sail along z 4.5, south of the lintel and its ropes; it lands at about x 19.
 
 ## Open questions
 - Answered (drive check): the last rope's backswing release lands on the lintel's top, and a running hop off its end lands on the Halo.
-- Is the 12 m sail from the high horn to the Crown comfortable, or does it need a nearer lip?
+- Answered (drive check): the sail from the high horn reaches the Crown with room. Run 2-4.5 m down the ring's east outer top, jump, open the sail: it lands 21-26 m on, at x 84-88 on the Crown's turf (the west lip is at 75).
 - Can the hood's fallen gap (1.6-2.4 m) be crossed under the bird's stalk without a snatch? Is that the right amount of fear?
 - Is 12 s (the hold) enough to drop into the shaft and walk the flight, or too generous? Knob `hold` 8-16.
 - The Cellar can also be reached by sailing down off the Crown's south lip (10 m). Does that make the stair optional, and is that fine?
@@ -120,7 +122,7 @@ Layout:
     {"at":[69,22,4],"text":"horn to Crown: sail 12 m, drop 4.1"},
     {"at":[86,13,23],"text":"hung soffit: 50 deg slide into the sky"},
     {"at":[92,20,-14],"text":"pent_hood gallery 3 bays, middle fallen"},
-    {"at":[76,8.5,8],"text":"Cellar to Halo: 5 m hop, 3 m down"}
+    {"at":[76,8.5,8],"text":"Cellar to Halo: a short sail, 3 m down"}
   ],
   "collectibles": [
     {"at":[24.3,6.4,0],"kind":"token","name":"threshold/niche_sill","how":"the slow way: climb the offering steps, one SET_OFF apart, to the head's top (6.4)"},
