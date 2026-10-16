@@ -7,7 +7,8 @@ extends "res://studies/kit_isle.gd"
 ## theirs), saved as a recipe the generator places
 ## (scripts/kit_isle/motif_authored.gd).
 ##
-##   godot --path . res://studies/motif_editor.tscn -- --no-title [--load=<slug>]
+##   godot --path . res://studies/motif_editor.tscn -- --no-title [--load=<slug>] [--load-base=<pool id>]
+##   (a base: a coded pool motif stood read-only to build on, motif_editor_base.gd)
 ##
 ## Editing (the pilot put away):
 ##   hold right mouse + move      look round      W A S D / Q E  fly / down, up
@@ -49,6 +50,7 @@ const EditorTraps = preload("res://studies/motif_editor_traps.gd")
 const EditorKnobs = preload("res://studies/motif_editor_knobs.gd")
 const EditorGrid = preload("res://studies/motif_editor_grid.gd")
 const EditorViews = preload("res://studies/motif_editor_views.gd")
+const EditorBase = preload("res://studies/motif_editor_base.gd")
 const GreyLook = preload("res://studies/motif_editor_grey.gd")
 const Rebuild = preload("res://studies/motif_editor_rebuild.gd")
 const ToolRoll = preload("res://scripts/tool_roll.gd")
@@ -183,6 +185,8 @@ var knobs: EditorKnobs = null
 var grid: EditorGrid = null
 ## The close views: F frame and orbit, V the eye view (motif_editor_views.gd).
 var views: EditorViews = null
+## A coded pool motif as the base (motif_editor_base.gd; on when data has "base").
+var based: EditorBase = null
 ## The grey editing look (studies/motif_editor_grey.gd), and whether the
 ## full look is on instead (G): editing and playing are grey by default.
 var grey: GreyLook = null
@@ -246,10 +250,16 @@ var edit_look := START_LOOK
 func _ready() -> void:
 	_args = LaunchArgs.user_args()
 	var slug := ""
+	var base_id := ""
 	for a: String in _args:
 		if a.begins_with("--load="): slug = a.get_slice("=",1)
+		elif a.begins_with("--load-base="): base_id = a.get_slice("=",1)
 		elif a.begins_with("--look=") and SceneLookPresets.PRESETS.has(a.get_slice("=",1)): edit_look = a.get_slice("=",1)
 	if slug != "" and FileAccess.file_exists(MotifAuthored.path_of(slug)): data = MotifAuthored.read(MotifAuthored.path_of(slug))
+	elif base_id != "":
+		data = EditorBase.fresh(base_id)
+		if data.is_empty(): push_warning("motif editor: no pool motif %s to stand as a base" % base_id)
+	based = EditorBase.new(self)
 	if data.is_empty():
 		if slug != "": push_warning("motif editor: no %s; a fresh hill" % MotifAuthored.path_of(slug))
 		data = MotifAuthored.blank(slug if slug != "" else "untitled")
@@ -389,7 +399,8 @@ func _swap_step() -> void:
 ## The motif stood again in the look that is on: dressed, or the grey bare
 ## land and pieces (full detail).
 func stand() -> void:
-	if dressed: dress()
+	if based != null and based.on() and not dressed: based.stand()
+	elif dressed: dress()
 	else: rebuild_bare(false,true)
 
 ## G: the full look as a preview (editing or playing), or back to grey.
@@ -513,6 +524,7 @@ func rebuild_bare(live := false, settled := false) -> void:
 	_after_land()
 
 func _after_land() -> void:
+	if based != null and based.on(): based.bake()
 	_set_net()
 	hang_ropes()
 	start = motif.start()
@@ -569,6 +581,9 @@ func refresh_pieces() -> void:
 
 func frame_hill() -> void:
 	if views != null: views.release()
+	if based != null and based.on():
+		based.frame()
+		return
 	var s: Dictionary = motif.sliders()
 	var top := float(motif.crest_top())
 	var far := maxf(float(s.length),float(s.width))
@@ -1093,6 +1108,7 @@ func _show_selection() -> void:
 # --- The land tools (round 2) -------------------------------------------------------------
 
 func set_tool(id_name: String) -> void:
+	if based != null and not based.allows(id_name): return
 	if not _stroke.is_empty(): release(Vector2.ZERO)
 	_drop_run()
 	tool = id_name
@@ -1534,7 +1550,24 @@ func load_motif(slug: String) -> bool:
 	_show_status()
 	return true
 
+## A fresh file on pool motif `id_name` (motif_editor_base.gd), stood.
+func load_base(id_name: String) -> bool:
+	var d := EditorBase.fresh(id_name)
+	if d.is_empty(): return false
+	snapshot()
+	data = d
+	if panel != null:
+		panel.slug_edit.text = str(data.slug)
+		panel.fill()
+	select(-1)
+	stand()
+	frame_hill()
+	_status_line = "On %s (read-only base)" % id_name
+	_show_status()
+	return true
+
 func reroll() -> void:
+	if based != null and not based.allows("reroll"): return
 	snapshot()
 	data.seed = randi()%99999+1
 	stand()
@@ -1677,11 +1710,13 @@ func say(line: String) -> void:
 
 ## The landform panel's sliders.
 func slider_began() -> void:
+	if based != null and based.on(): return
 	snapshot()
 	_slider_undo_at = Time.get_ticks_msec()
 	_slider_drag = true
 
 func slider_moved(key: String, value: float) -> void:
+	if based != null and not based.allows("slider"): return
 	# A click or a nudge (not a drag) is its own undo step, closely spaced
 	# ones one step.
 	if not _slider_drag and Time.get_ticks_msec()-_slider_undo_at > 500: snapshot()

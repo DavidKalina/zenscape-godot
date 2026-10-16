@@ -165,6 +165,7 @@ func file() -> String:
 
 ## A motif over `d` (the editor's, live).
 static func from_data(d: Dictionary) -> RefCounted:
+	if d.has("base"): return load("res://scripts/kit_isle/motif_based.gd").over(d)
 	var m: RefCounted = load("res://scripts/kit_isle/motif_authored.gd").new()
 	m.data = d
 	return m
@@ -176,7 +177,8 @@ static func from_data(d: Dictionary) -> RefCounted:
 static func script_for(slug_name: String) -> GDScript:
 	if not FileAccess.file_exists(path_of(slug_name)): return null
 	var s := GDScript.new()
-	s.source_code = 'extends "res://scripts/kit_isle/motif_authored.gd"\nfunc file() -> String:\n\treturn "%s"\n' % path_of(slug_name)
+	var over := "motif_based" if read(path_of(slug_name)).has("base") else "motif_authored"
+	s.source_code = 'extends "res://scripts/kit_isle/%s.gd"\nfunc file() -> String:\n\treturn "%s"\n' % [over,path_of(slug_name)]
 	if s.reload() != OK: return null
 	return s
 
@@ -209,8 +211,12 @@ static func write(path: String, d: Dictionary) -> Error:
 ## their changed knobs), and no "traps" key at all when there are none, so a
 ## motif without traps writes as before. `d` itself is left as it was.
 static func saved_form(d: Dictionary) -> Dictionary:
-	if not d.has("traps"): return d
+	if not d.has("traps") and not d.has("base"): return d
 	var out := d.duplicate()
+	# A based file (motif_based.gd) has no land of its own to write.
+	if d.has("base"):
+		for key: String in ["preset","sliders","outline","strokes","waters"]: out.erase(key)
+	if not d.has("traps"): return out
 	out.erase("traps")
 	var list: Array = []
 	for e: Variant in d.traps if d.traps is Array else []:

@@ -92,6 +92,9 @@ func _build_items() -> void:
 		_items.append({"kind":"trap","cat":6,"id":key,"name":TrapRegistry.display_name(key),"sub":"Trap · drag it in","desc":"Drag onto the ground or a piece's top. Z X turn it.","glyph":""})
 	for slug: String in MotifAuthored.saved():
 		_items.append({"kind":"open","cat":5,"id":slug,"name":"Open "+slug,"sub":MotifAuthored.path_of(slug),"glyph":"O","desc":""})
+	# A coded pool motif stood read-only to build on (motif_editor_base.gd).
+	for id_name: String in load("res://scripts/kit_isle/motif_based.gd").bases():
+		_items.append({"kind":"base","cat":5,"id":id_name,"name":"Base: "+id_name,"sub":"build on "+id_name+" (read-only)","glyph":"B","desc":""})
 
 func _locked(_item: Dictionary) -> bool:
 	return false
@@ -233,6 +236,7 @@ func _take(item: Dictionary) -> void:
 		"trap": editor.begin_trap(str(item.id),editor.get_viewport().get_mouse_position())
 		"preset": editor.set_preset(str(item.id))
 		"open": if not editor.load_motif(str(item.id)): refusal = "Could not open %s" % item.id
+		"base": if not editor.load_base(str(item.id)): refusal = "Could not stand %s" % item.id
 		"world": refusal = editor.world_verb(str(item.id))
 	if not refusal.is_empty():
 		last_refusal = refusal
