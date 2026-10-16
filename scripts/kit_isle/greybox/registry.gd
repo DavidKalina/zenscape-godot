@@ -85,9 +85,11 @@ static func entries(knobs: Dictionary) -> Array:
 static func forced(knobs: Dictionary) -> bool:
 	return int(knobs.get("greybox_force",1)) != 0 and not wanted(knobs).is_empty()
 
-## Whether a pool id is a greybox motif's.
+## Whether a pool id is a greybox motif's (or an authored file's not yet
+## registered, as the motif yard picks one: motif_authored.gd `script_for`).
 static func has(id: String) -> bool:
-	return id.begins_with("gb_") and MOTIFS.has(id.trim_prefix("gb_"))
+	if not id.begins_with("gb_"): return false
+	return MOTIFS.has(id.trim_prefix("gb_")) or FileAccess.file_exists("res://motifs/authored/%s.json" % id.trim_prefix("gb_"))
 
 ## Whether a forced plan lacks one (its isles' ids).
 static func missing(plan: Dictionary) -> bool:

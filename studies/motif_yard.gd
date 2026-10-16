@@ -132,6 +132,10 @@ static func yard_plan(slug: String, at: Vector3, knobs := {}) -> Dictionary:
 	else:
 		for p: Array in LayerPlan.POOL:
 			if str(p[0]) == slug: pick = p
+	# A motif saved from the editor but not yet in the registry.
+	if pick.is_empty():
+		var authored: GDScript = load("res://scripts/kit_isle/motif_authored.gd").script_for(slug)
+		if authored != null: pick = ["gb_"+slug,authored,Registry.WEIGHT]
 	if pick.is_empty(): return {}
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([slug,"yard"])

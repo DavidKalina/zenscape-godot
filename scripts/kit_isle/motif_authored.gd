@@ -165,6 +165,17 @@ static func from_data(d: Dictionary) -> RefCounted:
 	m.data = d
 	return m
 
+## A motif script reading `motifs/authored/<slug>.json`, made at run time
+## (the two-line au_*.gd subclass the registry wants, unwritten), so a slug
+## saved from the editor opens in the motif yard before it is registered.
+## Null when there is no such file.
+static func script_for(slug_name: String) -> GDScript:
+	if not FileAccess.file_exists(path_of(slug_name)): return null
+	var s := GDScript.new()
+	s.source_code = 'extends "res://scripts/kit_isle/motif_authored.gd"\nfunc file() -> String:\n\treturn "%s"\n' % path_of(slug_name)
+	if s.reload() != OK: return null
+	return s
+
 static func path_of(slug_name: String) -> String:
 	return "%s/%s.json" % [DIR,slug_name]
 
@@ -1326,9 +1337,10 @@ static func hang_ropes(specs: Array, frame: Transform3D, hang: Callable) -> Arra
 		out.append(rope)
 	return out
 
-## The pieces' live parts: each piece carrying ropes (relic_torana) has them
+## The live parts: each piece carrying ropes (relic_torana) has them
 ## hung by the host (scripts/roguelike/layer_greybox.gd `rope`), where the
-## piece stands.
+## piece stands; each saved trap (`trap_of`) goes to the host's `g.trap`,
+## stepped round the motor in its TrapField.
 func live(g: Node) -> void:
 	for k in range((data.get("pieces",[]) as Array).size()):
 		var p: Dictionary = data.pieces[k]
@@ -1336,6 +1348,28 @@ func live(g: Node) -> void:
 		if specs.is_empty(): continue
 		var pose := pose_of(k)
 		hang_ropes(specs,Transform3D(Basis(Vector3.UP,deg_to_rad(float(pose[1]))),g.w(pose[0])),Callable(g,"rope"))
+	for t: Dictionary in data.get("traps",[]):
+		var trap := trap_of(t)
+		if trap == null: continue
+		trap.position = g.w(trap.position)
+		g.trap(trap)
+
+## The trap of saved entry `t` (TrapRegistry, its knobs over the defaults),
+## posed in the motif's frame: its way in at `at`, turned `turn` degrees.
+## A ground trap ("on" absent) stands on the land as built (as a marker
+## does); a lip or piece trap keeps the y the editor seated it at. Null
+## (warned) for an unknown id.
+func trap_of(t: Dictionary) -> Node3D:
+	var trap := TrapRegistry.make(str(t.get("id","")),t.get("knobs",{}) if t.get("knobs") is Dictionary else {})
+	if trap == null:
+		push_warning("motif authored %s: no trap %s" % [slug(),t.get("id","")])
+		return null
+	var a: Array = t.get("at",[0.0,0.0,0.0])
+	var at := Vector3(float(a[0]),float(a[1]),float(a[2]))
+	if not t.has("on"): at.y = ground(at.x,at.z)
+	trap.position = at
+	trap.rotation_degrees.y = float(t.get("turn",0.0))
+	return trap
 
 # --- The motif contract ------------------------------------------------------------------
 
