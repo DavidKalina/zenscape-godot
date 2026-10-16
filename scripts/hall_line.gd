@@ -49,6 +49,8 @@ const RuinKit = preload("res://scripts/ruin_kit.gd")
 const FarTrees = preload("res://scripts/far_trees.gd")
 const HallShafts = preload("res://scripts/hall_shafts.gd")
 const ShaftsDirector = preload("res://scripts/hall_shafts_director.gd")
+const HallFlock = preload("res://scripts/hall_flock.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 ## The way in: the route starts this far (m) before the first piece's
 ## entry, on its heading.
@@ -105,6 +107,9 @@ var _islands_due: Array = []
 var _warm: Array = []
 var rise_opts := {}
 var materials := {}
+## The swifts roosting in the real pieces (scripts/hall_flock.gd; null with
+## --hall-flock=0 or the greybox look).
+var flock: Node3D = null
 ## The pieces up now, oldest first: {index, pose (the plan's piece record),
 ## rise (HallRise), s_in, s_out (m along the route: its entry and exit),
 ## reached (the plane has got to its entry), born, pace}.
@@ -193,6 +198,10 @@ func configure(line_opts: Dictionary, given_rise: Dictionary) -> void:
 			add_child(_shafts)
 		RuinKit.materials()
 		_first_template = {}
+		if flock == null and HallFlock.enabled(LaunchArgs.user_args()):
+			flock = HallFlock.new()
+			flock.line = self
+			add_child(flock)
 	else:
 		_first_template = LinePlan.template(LinePlan.content(int(cfg.seed),0,cfg))
 
@@ -345,6 +354,7 @@ func advance(delta: float, plane_at: Variant) -> void:
 			_trim_route()
 			continue
 		k += 1
+	if flock != null: flock.advance(delta,plane_at)
 
 ## Whether the next piece should start rising now (see the header).
 func _due() -> bool:
