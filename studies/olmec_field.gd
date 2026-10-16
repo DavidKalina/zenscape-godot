@@ -25,6 +25,13 @@ const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
 const FieldSky = preload("res://studies/olmec_field_sky.gd")
+## The boss fight's phase 1 (docs/design/olmec-boss/spec-olmec-boss.md):
+## the head alone, absorbing and puffing (scripts/olmec_boss/boss_head.gd).
+const BossHead = preload("res://scripts/olmec_boss/boss_head.gd")
+
+## Phase 1 is done: the head has taken its hits and cried out (the body's
+## cue, for the trunk to hook).
+signal phase_one_done(head)
 
 ## The field: its radius (m), the turf's datum, the land's depth under it.
 const FIELD_R := 40.0
@@ -52,6 +59,12 @@ var _voices := {}
 var _card: Label
 var _gone_t := 0.0
 var _down_t := -1.0
+## The fight: phase 1 opens with the head alone (`--whole-olmec`: the old
+## greybox, the Olmec whole); `--head-knob=<knob>=<value>` over its knobs.
+var whole_olmec := false
+var phase := 1
+var phase_one_over := false
+var _head_knobs := {}
 
 ## Hides the figure while the head holds him, and steps the enemies
 ## (studies/whole_body_chase.gd's).
@@ -72,6 +85,10 @@ func _ready() -> void:
 		elif arg.begins_with("--olmec-at="):
 			var p := arg.get_slice("=",1).split(",")
 			_olmec_at = Vector2(float(p[0]),float(p[1]) if p.size() > 1 else 0.0)
+		elif arg == "--whole-olmec": whole_olmec = true
+		elif arg.begins_with("--head-knob="):
+			var hk: String = arg.trim_prefix("--head-knob=")
+			_head_knobs[hk.get_slice("=",0)] = float(hk.get_slice("=",1))
 		elif arg.begins_with("--body-knob="):
 			var kv: String = arg.trim_prefix("--body-knob=")
 			_body_knobs[kv.get_slice("=",0)] = float(kv.get_slice("=",1))
@@ -162,6 +179,11 @@ func _build_enemies() -> void:
 	add_child(slot)
 	foot_pieces = slot
 	var at := Vector3(_olmec_at.x,_ground_y(_olmec_at.x,_olmec_at.y),_olmec_at.y)
+	if not whole_olmec:
+		# Phase 1: the head alone, facing the start.
+		enemies.spawn(BossHead,at,Vector2(0.0,1.0),_head_knobs)
+		_wire()
+		return
 	# Side on to you: he faces east.
 	var face := Vector2(1.0,0.0)
 	var knobs := {"chase":0.0 if calm else 1.0,"periscope":0.0}
@@ -187,6 +209,10 @@ func _wire() -> void:
 	var b := olmec()
 	var h := olmec_head()
 	if b != null and h != null: b.make_whole(h)
+	phase = 1
+	phase_one_over = false
+	if h != null and h.has_signal("phase_done") and not h.is_connected("phase_done",_phase_one_done):
+		h.connect("phase_done",_phase_one_done)
 	_gone_t = 0.0
 	_down_t = -1.0
 
@@ -208,7 +234,8 @@ func tick(delta: float) -> void:
 	_see_through()
 	super.tick(delta)
 	var b := olmec()
-	if b == null:
+	if b == null and not whole_olmec: pass
+	elif b == null:
 		_gone_t += delta
 		if _gone_t > 3.0: reset_olmec()
 	else:
@@ -278,8 +305,22 @@ func _show_card() -> void:
 		var pips := "●".repeat(mini(n,OlmecTarget.HITS))+"○".repeat(maxi(OlmecTarget.HITS-n,0))
 		line += "\nOlmec  %s  %s" % [pips,"down" if bool(b.crumbled) else str(b.state)]
 		if foot_lock != null and foot_lock.locked(): line += "  ·  locked"
+	var h := olmec_head()
+	if b == null and h != null and h.has_method("pick_puff"):
+		var n := int(h.hits)
+		var most := int(h.knobs.phase_hits)
+		var pips := "●".repeat(mini(n,most))+"○".repeat(maxi(most-n,0))
+		var doing: String = h.state
+		if str(h.puff) != "": doing += " " + str(h.puff)
+		line += "\nHead  %s  %s" % [pips,doing]
+		if foot_lock != null and foot_lock.locked(): line += "  ·  locked"
 	_card.text = line
 	_card.visible = not flying and _capture == ""
+
+func _phase_one_done(h: Node3D) -> void:
+	phase_one_over = true
+	_say("The head cries out across the field...",4.0)
+	phase_one_done.emit(h)
 
 func _voice(sound_name: StringName, at: Vector3) -> void:
 	var key := String(sound_name)
