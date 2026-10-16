@@ -47,7 +47,7 @@ into the spec so every iteration knows which pieces are built elsewhere.
 4. **The model** per AGENTS.md, Subagent models: the same for every
    iteration of the loop.
 5. **The cap.** 20 iterations, for every loop. Specs say "the skill's default" rather than a number, so changing it here changes it everywhere; a spec names its own number only when the user asks for one.
-6. **The budget.** Each agent's context: a budget, 150000 tokens unless
+6. **The budget.** Each agent's context: a budget, 250000 tokens unless
    the user says otherwise (an agent starts near 20000), and a wrap-up
    buffer past it, a quarter of the budget unless set
    (`ITER-BUDGET: 200000 +40000`). The `ITER-BUDGET:` line in its launch
@@ -58,7 +58,9 @@ into the spec so every iteration knows which pieces are built elsewhere.
    buffer every call but git and the hand-back is denied. That is what
    keeps any one task inside the budget: an agent that runs out commits what
    works and the next fresh agent carries on from its Notes. Lanes carry
-   the line too.
+   the line too. The budget is a safety cap for a task that runs away, not
+   the pace of the loop: the user gets a checkpoint per task, so small
+   tasks are what keep checkpoints frequent.
 
 ## Run
 
@@ -72,10 +74,10 @@ comes back:
 - Read its last line: `<promise>COMPLETE</promise>`, `<promise>ABORT</promise>`
   or none.
 - Read its commit: `git log -1 --format=%B`. It must carry the
-  `ITER(<slug>):` prefix and its Decisions, Checks and Notes. Look at any
-  stills it lists.
-- Tell the user in one or two lines: the task done, its checks, and what's
-  next.
+  `ITER(<slug>):` prefix and its Decisions, Checks, Look at and Notes.
+  Look at any stills it lists.
+- Tell the user in one or two lines: the task done, its checks, what to
+  look at (its Look at line), and what's next.
 
 Then:
 

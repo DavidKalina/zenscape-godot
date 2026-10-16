@@ -36,8 +36,11 @@ halfway point, so the budget never strands working code.
 
 Break the spec into small, ordered tasks, each one commit that leaves the
 place playable: land, then pieces, then routes, then threat, then look, as
-the spec needs. Pick the first one not yet done. If it is too big for one
-iteration, do a playable first half and leave the rest in your notes.
+the spec needs. Each task is a checkpoint the user reviews, so size it to
+end in something they can look at: a still, a clip, or a scene to launch.
+Pick the first one not yet done. If it is too big for one iteration, do a
+playable first half and leave the rest in your notes. If the budget stops
+you mid-task, say so in your notes and split the rest smaller.
 
 ## 3. Do it, then check it
 
@@ -74,6 +77,7 @@ ITER(SLUG): <the one task, imperative>
 Decisions: <choices made and why, anything the diff doesn't say>
 Files: <the main files>
 Checks: <each check run and its result line; still paths>
+Look at: <the stills, clips or launcher command the user opens to judge this step>
 Notes for next iteration: <what's left, the next task, gotchas>
 ```
 
