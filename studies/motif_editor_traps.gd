@@ -17,7 +17,17 @@ extends Node3D
 
 const TrapRegistry = preload("res://scripts/traps/trap_registry.gd")
 const MotifAuthored = preload("res://scripts/kit_isle/motif_authored.gd")
+const RuinKitFit = preload("res://scripts/ruin_kit_fit.gd")
 const PICK_PX := 40.0
+## The lip's edge is sought along the drop in steps this long (m); the top
+## ends where the ground falls this far under the lip.
+const LIP_SNAP := 2.5
+const LIP_PROBE := 0.1
+const LIP_STEP := 0.25
+const LIP_RAYS := 36
+## The grey look's clay: multiplied over a trap's own colours (tells keep
+## their hue) so traps read against grey stone; the full look leaves them.
+const CLAY := Color(1.0,0.72,0.5)
 const ENTRY_TINT := Color(0.08,0.62,0.22)
 const EXIT_TINT := Color(1.0,0.55,0.2)
 
@@ -32,6 +42,7 @@ var _ring: MeshInstance3D
 var _entry_mark: MeshInstance3D
 var _exit_mark: MeshInstance3D
 var traps_made := 0
+var _clay: StandardMaterial3D
 
 func setup(owner_editor: Node) -> void:
 	editor = owner_editor
@@ -74,6 +85,7 @@ func rebuild() -> void:
 		placed.add_child(node)
 	_built = var_to_str(list)
 	selected = -1
+	tint()
 	show_marks()
 
 func _make(e: Dictionary) -> Node3D:
@@ -104,17 +116,69 @@ func begin_ghost(key: String, at: Vector2) -> void:
 		b.collision_layer = 0
 		b.collision_mask = 0
 	held = {"id":key,"node":node,"turn":0.0}
+	_tint_one(node,_grey())
 	select(-1)
 	ghost_to(at)
 
-## Where a trap goes under screen point `at`: a placed piece's top, else
-## the ground ({position} or {}).
+## Where a trap goes under screen point `at`, in snap order: its way in on
+## a cliff lip near the cursor (RuinKitFit.lip_near), facing out over the
+## drop as in the trap yard; else a placed piece's top; else the ground.
+## Alt held skips the lip. {position, on, turn (lip only)} or {}.
 func spot(at: Vector2) -> Dictionary:
+	if not Input.is_key_pressed(KEY_ALT):
+		var lip := lip_spot(at)
+		if not lip.is_empty(): return lip
 	var top: Dictionary = editor._top_hit(at)
 	if not top.is_empty(): return {"position":top.position,"on":"piece"}
 	var hit: Dictionary = editor.ground_hit(at)
 	if hit.is_empty(): return {}
 	return {"position":hit.position,"on":"ground"}
+
+## The cliff lip near the ground under `at`: the trap's origin (its way in)
+## on the edge itself, turned so its route (local -z) runs out over the
+## drop. {} when no lip is within the editor's LIP_SNAP.
+func lip_spot(at: Vector2) -> Dictionary:
+	var motif: RefCounted = editor.motif
+	if motif == null: return {}
+	var hit: Dictionary = editor.ground_hit(at)
+	if hit.is_empty(): return {}
+	var g: Callable = motif.ground_fn()
+	var p := Vector2(hit.position.x,hit.position.z)
+	var lip := RuinKitFit.lip_near(g,p,LIP_SNAP,motif.outline())
+	if lip.is_empty(): return {}
+	var out := lip_out(g,lip.at,lip.out)
+	var edge := lip_edge(g,lip.at,out)
+	var y := float(g.call(edge.x,edge.y))
+	# Route (local -z) along `out`: Basis(UP, a) * (0,0,-1) = (-sin a, 0, -cos a).
+	var turn := fposmod(snappedf(rad_to_deg(atan2(-out.x,-out.y)),1.0),360.0)
+	return {"position":Vector3(edge.x,y,edge.y),"on":"lip","turn":turn}
+
+## The way off the lip at `p`, square to the edge: the fall round it
+## (LIP_REACH out, LIP_RAYS ways) summed by direction, so a straight edge
+## faces straight out rather than to lip_near's nearest twelfth. `rough`
+## (lip_near's) when the sum says nothing.
+static func lip_out(g: Callable, p: Vector2, rough: Vector2) -> Vector2:
+	var here := float(g.call(p.x,p.y))
+	var sum := Vector2.ZERO
+	for k in range(LIP_RAYS):
+		var dir := Vector2.from_angle(TAU*k/LIP_RAYS)
+		var q := p+dir*RuinKitFit.LIP_REACH
+		sum += dir*maxf(here-float(g.call(q.x,q.y)),0.0)
+	if sum.length() < 0.01 or sum.normalized().dot(rough) < 0.0: return rough
+	return sum.normalized()
+
+## The last point along `out` from `from` still on the top (before the
+## ground falls LIP_STEP under it), so the way in sits at the edge.
+static func lip_edge(g: Callable, from: Vector2, out: Vector2) -> Vector2:
+	var top := float(g.call(from.x,from.y))
+	var edge := from
+	var d := LIP_PROBE
+	while d <= RuinKitFit.LIP_REACH+0.001:
+		var q := from+out*d
+		if float(g.call(q.x,q.y)) < top-LIP_STEP: break
+		edge = q
+		d += LIP_PROBE
+	return edge
 
 func ghost_to(at: Vector2) -> void:
 	if held.is_empty(): return
@@ -125,7 +189,8 @@ func ghost_to(at: Vector2) -> void:
 	if s.is_empty():
 		show_marks()
 		return
-	node.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(float(held.turn))),s.position)
+	var turn := float(s.get("turn",held.turn))
+	node.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(turn)),s.position)
 	show_marks()
 
 ## The ghost set down where it hangs (nothing off the land). The new
@@ -137,7 +202,7 @@ func place_ghost(at: Vector2) -> int:
 	var key := str(held.id)
 	var on := node.visible
 	var p := node.position
-	var turn := float(held.turn)
+	var turn := rad_to_deg(node.basis.get_euler().y)
 	var where := str((held.get("spot",{}) as Dictionary).get("on","ground"))
 	drop_ghost()
 	if not on:
@@ -145,7 +210,7 @@ func place_ghost(at: Vector2) -> int:
 		return -1
 	editor.snapshot()
 	var k := place(key,p,turn)
-	editor.say("Placed %s%s" % [TrapRegistry.display_name(key)," on a piece" if where == "piece" else ""])
+	editor.say("Placed %s%s" % [TrapRegistry.display_name(key),{"piece":" on a piece","lip":" on the cliff lip"}.get(where,"")])
 	return k
 
 func drop_ghost() -> void:
@@ -225,6 +290,7 @@ func drag_to(at: Vector2) -> void:
 	var p: Vector3 = s.position
 	var e: Dictionary = entries()[selected]
 	e.at = [snappedf(p.x,0.001),snappedf(p.y,0.001),snappedf(p.z,0.001)]
+	if s.has("turn"): e.turn = float(s.turn)
 	_refit(selected)
 
 ## The held ghost or the selected trap turned `deg` degrees.
@@ -266,6 +332,29 @@ func delete_selected() -> bool:
 	remove(selected)
 	editor.say("Trap taken away")
 	return true
+
+# --- The grey look's tint -----------------------------------------------------------------
+
+func _grey() -> bool:
+	return editor.get("grey") != null and bool(editor.grey.on)
+
+## Placed traps and the ghost in clay while the grey look is on; as built
+## in the full look (called on every build and when the look changes).
+func tint() -> void:
+	var on := _grey()
+	for c: Node in placed.get_children(): _tint_one(c,on)
+	if not held.is_empty(): _tint_one(held.node,on)
+
+## A clay overlay multiplied over the trap's own materials: nothing of the
+## trap's is changed, so its tells still write their colours under it.
+func _tint_one(root: Node, on: bool) -> void:
+	if on and _clay == null:
+		_clay = StandardMaterial3D.new()
+		_clay.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_clay.blend_mode = BaseMaterial3D.BLEND_MODE_MUL
+		_clay.albedo_color = CLAY
+	for g: GeometryInstance3D in root.find_children("*","GeometryInstance3D",true,false):
+		g.material_overlay = _clay if on else null
 
 # --- The marks: way in, way out, the selection ring ---------------------------------------
 

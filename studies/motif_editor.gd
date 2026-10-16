@@ -286,6 +286,7 @@ func _first_stand() -> void:
 	_build_markers()
 	grey = GreyLook.new(self)
 	grey.set_on(not dressed)
+	if traps != null: traps.tint()
 	_build_look_label()
 	stand()
 	frame_hill()
@@ -379,6 +380,7 @@ func toggle_dress() -> void:
 	dressed = not dressed
 	_want_dress = false
 	grey.set_on(not dressed)
+	if traps != null: traps.tint()
 	if not editing and dressed: apply_look(KitWeather.LIVE,false)
 	elif editing and dressed and (look_id != edit_look or weather.live): apply_look(edit_look,false)
 	stand()
