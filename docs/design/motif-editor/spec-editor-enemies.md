@@ -14,9 +14,10 @@ the motif yard and in the generator.
 
 ## Three ways enemies are laid today (read these first)
 
-- **Field enemies** (`scripts/enemies/enemy.gd` and its children: plinth
-  ram, millstone beetle, weeper, sun keeper, ...): stepped by an
-  `EnemyField`; an authored motif's `live(g)` lays one with
+- **Field enemies** (`scripts/enemies/enemy.gd` and its children; the
+  plinth ram, millstone beetle, weeper, sun keepers, second walker and
+  hollow child were cut in b2b13f45, so check what still extends it):
+  stepped by an `EnemyField`; an authored motif's `live(g)` lays one with
   `g.enemy(script, at, face, knobs)` (`scripts/roguelike/layer_greybox.gd`).
   Table of record: `studies/enemy_yard.gd` ENEMIES.
 - **The Olmec head and its body** (`scripts/enemies/inhaler_head.gd`,
@@ -72,12 +73,13 @@ the motif yard and in the generator.
 
 ## Order (the loop's trunk)
 
-1. Registry and **one field enemy end to end** (the plinth ram: place,
-   knobs, wake ring, play, reset, save, reload, motif yard).
-2. **The Olmec head and body** pair, with route and the "no body" toggle.
+1. Registry and **the Olmec head end to end** (place, knobs, wake rule,
+   play, reset, save, reload, motif yard), its body still off.
+2. **The head's body**: the pair, with route and the "no body" toggle.
 3. **The guacharo** home point.
-4. **The rest** of the field enemies that build and reset cleanly in the
-   editor; any that don't are left out and listed.
+4. **Any other enemies** still in `scripts/enemies/` that build and reset
+   cleanly in the editor (field enemies, if any remain); any that don't
+   are left out and listed.
 5. Wake-now key; a demo motif `motifs/authored/editor_enemy_demo.json`
    (traps and enemies on one landform) and its open command; the end
    proof.
@@ -102,7 +104,7 @@ the motif yard and in the generator.
 ## Checks every iteration
 
 - `python tools/smoke.py studies/motif_editor.tscn` (plain and
-  `-- --load=editor_aqueduct_gorge`), `studies/enemy_yard.tscn`,
+  `-- --load=editor_aqueduct_gorge`), `studies/enemy_yard.tscn` (empty since b2b13f45),
   `studies/trap_yard.tscn`.
 - Motif yard on `editor_aqueduct_gorge` and `bell_spires` when
   `motif_authored.gd` changed.
@@ -111,10 +113,10 @@ the motif yard and in the generator.
 
 ## Proof at the end
 
-A driver that in the editor places a ram (with a wake ring), an Olmec head
-with its body and a route, and the guacharo home; saves to a temporary
-slug; reloads (all kept); plays and walks the pilot into the ram's ring
-with real input until it wakes and acts on him; returns to editing (all
+A driver that in the editor places an Olmec head with its body and a
+route, and the guacharo home; saves to a temporary slug; reloads (all
+kept); plays and walks the pilot near the head with real input until it
+wakes and the body comes; returns to editing (all
 asleep where placed); then opens the motif yard on that slug and sees the
 enemies stepping. The temporary save is deleted. Stills of the editor with
 an enemy selected (ring, route and body link showing).
