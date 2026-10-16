@@ -55,8 +55,8 @@ const MIN_DARK := 1
 ## own cap, SUN_FLOOR the lowest sun it still draws for).
 const MAX_LEN := 46.0
 ## Motes a square metre of opening, the most and least a beam gets.
-const MOTE_DENSITY := 1.7
-const MOTES := Vector2i(36,150)
+const MOTE_DENSITY := 3.2
+const MOTES := Vector2i(60,320)
 ## Beams further than this from the camera are not drawn (m).
 const FAR := 170.0
 ## The wake trail the dust shader reads: points, seconds between them, how
@@ -178,11 +178,13 @@ static func dust_material() -> ShaderMaterial:
 		_dust_material = m
 	return _dust_material
 
-## Every beam's four walls: each wall a quad from the opening's edge at the
-## roof (UV.y 0) to the same edge at the floor (UV.y 1, before the vertex
-## stage shears it along the light), UV.x the distance round the opening (m),
-## UV2 the distance along this wall and its length (m), COLOR.r the beam's
-## own random.
+## Every beam as a closed prism (8 corners: the opening's four at the roof,
+## then the same four flagged far, which the vertex stage shears down the
+## light). The fragment stage sees only its back faces (`cull_front`) and
+## integrates the beam's light along the whole ray through the box, so the
+## beam is a volume, not four cards. UV = the opening's (x0, z0), UV2 its
+## (x1, z1) (hall frame, m), COLOR.r the beam's own random, COLOR.g 0 at the
+## roof and 1 at the far end.
 static func _beam_mesh(open: Array) -> ArrayMesh:
 	var v := PackedVector3Array()
 	var uv := PackedVector2Array()
@@ -196,26 +198,22 @@ static func _beam_mesh(open: Array) -> ArrayMesh:
 	for o: Dictionary in open:
 		var r := rng.randf()
 		var corners := [Vector2(o.x0,o.z0),Vector2(o.x1,o.z0),Vector2(o.x1,o.z1),Vector2(o.x0,o.z1)]
-		var run := 0.0
+		var base := v.size()
+		for end in range(2):
+			for c: Vector2 in corners:
+				v.append(Vector3(c.x,ROOF_Y,c.y))
+				uv.append(Vector2(o.x0,o.z0))
+				uv2.append(Vector2(o.x1,o.z1))
+				col.append(Color(r,float(end),0.0,1.0))
+				lo = lo.min(Vector3(c.x,FLOOR_Y,c.y))
+				hi = hi.max(Vector3(c.x,ROOF_Y,c.y))
+		# Outward, clockwise from outside (Godot's front), so `cull_front` keeps the far faces.
+		idx.append_array([base,base+1,base+2,base,base+2,base+3])
+		idx.append_array([base+4,base+6,base+5,base+4,base+7,base+6])
 		for k in range(4):
-			var a: Vector2 = corners[k]
-			var b: Vector2 = corners[(k+1)%4]
-			var len := a.distance_to(b)
-			var base := v.size()
-			v.append(Vector3(a.x,ROOF_Y,a.y))
-			v.append(Vector3(b.x,ROOF_Y,b.y))
-			v.append(Vector3(b.x,ROOF_Y,b.y))
-			v.append(Vector3(a.x,ROOF_Y,a.y))
-			uv.append(Vector2(run,0.0))
-			uv.append(Vector2(run+len,0.0))
-			uv.append(Vector2(run+len,1.0))
-			uv.append(Vector2(run,1.0))
-			for j in range(4): uv2.append(Vector2(0.0 if j == 0 or j == 3 else len,len))
-			for j in range(4): col.append(Color(r,float(k)/4.0,0.0,1.0))
-			idx.append_array([base,base+1,base+2,base,base+2,base+3])
-			run += len
-			lo = lo.min(Vector3(a.x,FLOOR_Y,a.y))
-			hi = hi.max(Vector3(a.x,ROOF_Y,a.y))
+			var a := k
+			var b := (k+1)%4
+			idx.append_array([base+b,base+4+a,base+4+b,base+b,base+a,base+4+a])
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = v

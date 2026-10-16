@@ -74,3 +74,34 @@ key. Not run: the full suite. Unverified: the flare while the plane itself
 flies through a beam (the autopilot's lane mostly misses the beam; the
 camera's edge-catch was seen), and day-clock re-aiming at dusk (the shader
 reads the live globals, not exercised over a day).
+
+## Polish round (soft volume, fine dust, fly-through)
+
+- Beams are now a fake volume. The mesh is a closed prism per beam
+  (`_beam_mesh`: 8 corners, roof four plus four sheared down the light);
+  `hall_shaft_beam.gdshader` draws only its back faces (`cull_front`,
+  `depth_test_disabled`) and each pixel integrates light along the whole view
+  ray through the box (6 jittered steps, ray cut by scene depth). Density thins
+  smoothly toward the sides (`edge_soft`, a part of the beam's width), fades up
+  into the roof and down toward the floor, is ignored right round the eye
+  (smoothstep 1.5-12 m), and a ray lights at most `path_cap` (11 m) from where
+  it enters, so a ray running along a side no longer draws a line. The old
+  glass-card edges are gone at every angle and from inside.
+- Dust: specks 1.2-5 cm (min about 1.7 px, dimmer as they shrink), mostly a
+  faint 0.22 glow with sharp glints, shown only while inside the beam's column
+  (`lit`, tested in the vertex stage, so wake-stirred motes fade as they leave
+  it). More of them: `MOTE_DENSITY` 3.2, `MOTES` (60, 320).
+- Knobs: `edge_soft` 0.32, `path_cap` 11, `per_metre` 0.11 and the 0.5 ceiling
+  and x2.4 gain in the beam shader's end; dust gain x6 and size floor 0.003.
+- Fly-through: the plane was flown by the real stick (turn from the lane's own
+  steering, pitch to hold 6.5 m above the nave floor), day clock frozen at
+  phase 0.68 so the light slants along the lane. Entering, inside and past
+  read as soft light; no pop or wash-out seen. The flare is faint (sun is
+  behind the chase camera there). Dust swirl in the wake is too fine to judge
+  in stills: unverified by eye.
+- Cost (this PC, rendered, piece 1, clock frozen phase 0.4): shafts off GPU
+  4.22 ms; before this round 4.21; after 4.87 ms median (5.69 mean, spiky),
+  CPU 0.63 vs 0.57. The disabled depth test makes the beam draw its whole
+  prism's back faces even behind geometry. Worth a follow-up if it matters
+  (cheaper: fewer steps, or depth test back on with a cap fix).
+- Unfinished: cost trim above; sunset/other-phase look not re-checked.

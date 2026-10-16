@@ -64,15 +64,28 @@ void vertex() {
 	float stirred = clamp(length(moved) * 0.35, 0.0, 1.0);
 	vec3 eye = CAMERA_POSITION_WORLD;
 	float dist = length(pos - eye);
-	float real = 0.09 + 0.16 * c.x * c.y + 0.05 * c.w;
-	float size = max(real, dist * 0.0032);
+	// Fine specks: a centimetre or two across, never less than about a
+	// pixel and a half (then dimmer, by what they lose in size).
+	float real = 0.012 + 0.022 * c.x * c.y + 0.012 * c.w;
+	float size = max(real, dist * 0.0030);
+	// In the light only: back along the light to the roof, is it in the
+	// opening? (The instance frame maps the opening to a unit square at the
+	// roof, so the test is the same for every beam.)
+	mat4 inv_model = inverse(MODEL_MATRIX);
+	vec3 q = (inv_model * vec4(pos, 1.0)).xyz;
+	vec3 wf = mat3(inv_model) * way;
+	vec2 top = q.xz + wf.xz / max(-wf.y, 0.05) * q.y;
+	float in_u = min(top.x, 1.0 - top.x);
+	float in_v = min(top.y, 1.0 - top.y);
+	float lit = smoothstep(-0.02, 0.1, min(in_u, in_v));
 	// Looking into the sun the motes flare.
 	vec3 look = (pos - eye) / max(dist, 0.001);
 	float into = max(dot(look, normalize(zs_key_direction + vec3(0.0, 1e-4, 0.0))), 0.0);
-	float twinkle = 0.55 + 0.45 * sin(TIME * (1.3 + 2.0 * c.w) + c.z * 31.0);
+	// Mostly a faint glow, now and then a glint.
+	float twinkle = 0.22 + 1.6 * pow(0.5 + 0.5 * sin(TIME * (1.3 + 2.0 * c.w) + c.z * 31.0), 5.0);
 	float along_fade = smoothstep(0.0, 0.08, t) * (1.0 - smoothstep(0.5, 0.98, t));
 	bright = gain * light_strength() * live * along_fade * twinkle * (0.55 + 1.7 * pow(into, 3.0)) * (1.0 + 1.2 * stirred)
-		* clamp(real / size, 0.3, 1.0) * smoothstep(0.6, 3.5, dist) * (1.0 - smoothstep(55.0, 90.0, dist));
+		* lit * clamp(real / size, 0.15, 1.0) * smoothstep(0.6, 3.5, dist) * (1.0 - smoothstep(55.0, 90.0, dist));
 	vec3 kk = zs_key_irradiance;
 	float lum = max((kk.x + kk.y + kk.z) / 3.0, 1e-3);
 	tint = mix(kk / lum, vec3(1.0, 0.88, 0.66), 0.4);
@@ -85,5 +98,5 @@ void vertex() {
 void fragment() {
 	float d = length(UV * 2.0 - 1.0);
 	float soft = exp(-d * d * 3.5) * (1.0 - smoothstep(0.8, 1.0, d));
-	ALBEDO = tint * bright * soft * 1.6;
+	ALBEDO = tint * bright * soft * 6.0;
 }
