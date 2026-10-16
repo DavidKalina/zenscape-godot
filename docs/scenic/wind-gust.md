@@ -58,7 +58,7 @@ The heading costs one branch and one vec4 read per parcel, inside one include.
 - The passing band's sheen came from a sine raised to the 6th power: regular bright stripes across the lane. The shade was a hard noise threshold at up to 0.24, with a straight lateral edge. For a burst, the noise was carried outward from the centre, which smeared it into a sunburst of rays.
 - The leaves were 0.16 to 0.3 m diamonds, and the seed fluff was opaque pale diamonds of the same kind, like confetti.
 
-The style rule settled with the user is faceted solids, soft everything that flows or glows; air is fully soft. The air now shows mostly through what it moves: foliage leaning (see "Foliage"), leaves, petals, seed fluff and glints. The streaks are few, thin, tapered and lit, and the shade band is faint.
+Air is fully soft here. It shows mostly through what it moves: foliage leaning (see "Foliage"), leaves, petals, seed fluff and glints. The streaks are few, thin, tapered and lit, and the shade band is faint.
 
 - **The mark** is the water ball's mark adapted to air. It is a pale two-tone lane (0.2 and 0.07 shade, lighter than the ball's) with a rim of air light, lit by sky and sun with a night floor.
   - The lane's back is half a 12-gon. Its tip is an arrow `TIP_FLARE` (1.25) times its width.

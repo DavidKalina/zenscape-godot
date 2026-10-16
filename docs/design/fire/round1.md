@@ -1,6 +1,6 @@
 # Fire, round 1: real flames
 
-Ask: a really good fire for torches, bonfires and flames in general, in the game's art style: gritty, slightly realistic, not cartoonish (AGENTS.md, Art direction). The old campfire flame (`shaders/campfire_flame.gdshader`) is deliberately toon-banded card art and is left alone. This round is a new, shared fire.
+Ask: a really good fire for torches, bonfires and flames in general, gritty and slightly realistic. The old campfire flame (`shaders/campfire_flame.gdshader`) is deliberately toon-banded card art and is left alone. This round is a new, shared fire.
 
 ## What it is
 - `shaders/flame_volume.gdshader`: a flame as a volume. It is drawn on the back faces of a unit box and marches the view ray through it (22 jittered steps), summing a teardrop of fire torn by three scales of rising noise. Licks break off the tip, and the colour comes from heat along a blackbody ramp: dark red, orange, gold, a cream heart. It stops at the scene's depth, so logs and stone inside it occlude correctly. It reads as fire from any angle, including the high play camera. Additive and unshaded: **its colour goes in ALBEDO**, because EMISSION is ignored in unshaded shaders (the first build drew nothing for that reason).
