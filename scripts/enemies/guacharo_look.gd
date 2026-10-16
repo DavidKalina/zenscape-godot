@@ -1,23 +1,32 @@
 extends Node3D
-## The guacharo's body: a giant
-## oilbird, the cave bird of the Americas that screams in the dark and finds
-## its way by clicks. Built in code: an ellipsoid body, neck and head, a
-## hooked horn beak that opens (the scream), big dark eyes, a long graduated
-## tail, and two wings of real feathers (each one a quad drawn by shaders/
-## guacharo_feather.gdshader: rufous, white-spotted, dusky-tipped, ragged)
-## on a shoulder and a wrist each, the outer primaries slotted into
-## fingers, and talons that come down for the strike.
+## The guacharo's body: a giant oilbird, the cave bird of the Americas that
+## screams in the dark and finds its way by clicks.
+##
+## The body is assets/models/guacharo.glb (built by
+## art/blender/guacharo/guacharo_build.py): a sculpted, rigged oilbird and
+## its clips (glide, flap, circle, stalk, scream, fold, stoop, flare, carry,
+## pull, hurt). `drive(p)` picks and crossfades them from the mind's state
+## (the parent's `state`, `state_t`, `bank`, `_flap_w`, read only), then
+## layers procedural corrections on top: the circle clip's bank mirrored to
+## the turn and its roll handed back to the mind's bank, the head tracking
+## him, the mind's clicks on the head and jaw, and the talons reaching for
+## him. Without a mind (a study) it plays `clip`.
+##
+## If the glb is missing, the old body built in code stands in: an ellipsoid
+## body, neck and head, a hooked horn beak, big dark eyes, a long tail and
+## two wings of feather quads (shaders/guacharo_feather.gdshader), posed by
+## the pose dictionary.
 ##
 ## Local frame: -Z forward, +Y up, +X the right wing; the design is
 ## HALF_SPAN m to a wing tip; `size_to(span)` scales it.
 ##
-## Posed by `drive(p)` with a pose dictionary (any key missing keeps its
-## rest value): elev (the wings' rise, rad), sweep (the arm swept back),
-## wrist (the hand folded back), droop (the hand bent down), twist, spread
-## (the primaries' fan 0..1), tail (the tail's fan 0..1), pitch (nose up,
-## rad), head (the head's nod), jaw (0..1 open), talons (0..1 down),
-## stretch (>1 long and thin, <1 squashed). Blending and timing are the
-## brain's (scripts/enemies/guacharo.gd).
+## The pose dictionary `drive(p)` takes (any key missing keeps its rest
+## value): elev (the wings' rise, rad), sweep (the arm swept back), wrist
+## (the hand folded back), droop (the hand bent down), twist, spread (the
+## primaries' fan 0..1), tail (the tail's fan 0..1), pitch (nose up, rad),
+## head (the head's nod), jaw (0..1 open), talons (0..1 down), stretch (>1
+## long and thin, <1 squashed). The glb body reads only `talons` (the flare
+## in the stoop); the fallback is posed by all of it.
 const SHADER = preload("res://shaders/guacharo_feather.gdshader")
 
 const HALF_SPAN := 2.15
@@ -44,10 +53,70 @@ var _wrists: Array[Node3D] = []
 var _hands: Array[MeshInstance3D] = []
 var _arms: Array[MeshInstance3D] = []
 
+const GLB := "res://assets/models/guacharo.glb"
+## The looping clips; the rest are one-shots, played at speed 1 and held on
+## their last frame (a longer state only lengthens the hold).
+const LOOPS := ["glide","flap","circle","stalk","stoop","carry"]
+## Crossfade (s) into each clip.
+const BLEND := {"glide":0.4,"flap":0.2,"circle":0.5,"stalk":0.3,"scream":0.06,"fold":0.05,"stoop":0.1,
+	"flare":0.04,"carry":0.12,"pull":0.15,"hurt":0.04}
+## The circle clip's own bank (left), handed back so the mind's bank is
+## the bird's bank.
+const CIRCLE_ROLL := 0.384
+## The head on him: its weight per state and the most it turns (rad).
+const HEAD_AIM := {"home":0.0,"circle":0.4,"stalk":0.9,"fold":0.6,"stoop":0.85,"carry":0.0,"pull":0.2}
+const HEAD_MAX := 1.0
+## A click: the head dips CLICK_HEAD rad and the beak cracks CLICK_JAW rad,
+## CLICK_DOWN s down, then CLICK_BACK s back (the baked clicks are the same
+## size: 12 deg, jaw 0.4 x 38 deg).
+const CLICK_HEAD := 0.21
+const CLICK_JAW := 0.27
+const CLICK_DOWN := 0.04
+const CLICK_BACK := 0.08
+## Each clip's swept box (glb units, CPU-skinned over every frame by
+## scratch/guac_extent.gd): the ground lift keeps its lowest corner over
+## the ground, and SWEPT_ALL (grown) is the mesh's custom AABB, so a wing
+## swung past the rest pose's box is never culled.
+const SWEPT := {"carry":[-1.13,1.59,2.11,-0.83,1.23],"circle":[-0.99,1.41,2.15,-0.78,1.18],
+	"flap":[-0.86,1.48,2.22,-0.84,1.22],"flare":[-0.51,1.68,1.80,-0.97,1.48],"fold":[-0.42,1.66,0.56,-1.01,1.50],
+	"glide":[-0.26,0.20,2.21,-0.81,1.18],"hurt":[-0.38,1.65,2.21,-0.91,1.29],"pull":[-0.86,1.50,2.21,-0.95,1.34],
+	"scream":[-0.44,1.65,2.17,-0.72,1.50],"stalk":[-0.48,1.22,2.19,-0.71,1.19],"stoop":[-0.22,0.13,0.61,-0.98,1.37]}
+const SWEPT_ALL := AABB(Vector3(-2.45,-1.35,-1.2),Vector3(4.9,3.25,2.95))
+## Ground lift: the clearance (m) kept under the bird's lowest point, the
+## most it lifts (m) and how fast the lift lets go (m/s).
+const GROUND_CLEAR := 0.06
+const LIFT_MAX := 1.6
+const LIFT_FALL := 2.0
+
+## A clip to play when no mind drives it (studies); "" picks from the mind.
+var clip := ""
+## The clip playing now (glb body).
+var playing := ""
+## True when the glb body stands (false: the fallback built in code).
+var glb := false
+
+var _model: Node3D
+var _ap: AnimationPlayer
+var _skel: Skeleton3D
+var _bone := {}
+var _mirror := false
+var _circle_w := 0.0
+var _circle_on := false
+var _head_w := 0.0
+var _talon_w := 0.0
+var _click_age := 1.0
+var _click_prev := 0.0
+var _hurt_t := 0.0
+## How far (m) the body is lifted off the ground now.
+var lift := 0.0
+
 func _init() -> void:
 	name = "GuacharoLook"
 	_materials()
-	_build()
+	if ResourceLoader.exists(GLB):
+		var scene := load(GLB) as PackedScene
+		if scene != null: _build_glb(scene)
+	if not glb: _build()
 
 func size_to(span: float) -> void:
 	scale = Vector3.ONE*(span*0.5/HALF_SPAN)
@@ -66,7 +135,183 @@ func _materials() -> void:
 	eye_mat.roughness = 0.08
 	eye_mat.metallic_specular = 0.9
 
-# --- Building it -----------------------------------------------------------------------
+# --- The glb body ----------------------------------------------------------------------
+
+func _build_glb(scene: PackedScene) -> void:
+	_model = Node3D.new()
+	_model.name = "Model"
+	add_child(_model)
+	var g := scene.instantiate() as Node3D
+	_model.add_child(g)
+	_ap = g.find_child("AnimationPlayer",true,false) as AnimationPlayer
+	_skel = g.find_child("Skeleton3D",true,false) as Skeleton3D
+	if _ap == null or _skel == null:
+		_model.queue_free()
+		_model = null
+		return
+	for n: String in ["head","jaw","neck","thigh.L","thigh.R","toes.L","toes.R"]:
+		_bone[n] = _skel.find_bone(n)
+	for a: StringName in _ap.get_animation_list():
+		_ap.get_animation(a).loop_mode = Animation.LOOP_LINEAR if String(a) in LOOPS else Animation.LOOP_NONE
+	# Advanced by drive(), so the procedural layers go on after the clip.
+	_ap.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+	for mi: Node in g.find_children("*","MeshInstance3D",true,false):
+		(mi as MeshInstance3D).custom_aabb = SWEPT_ALL
+	_set_layers(self)
+	glb = true
+	_play("glide",0.0,1.0)
+	_ap.advance(0.0)
+
+func _play(n: String, blend: float, speed: float) -> void:
+	if not _ap.has_animation(n): n = "glide"
+	if n == playing:
+		_ap.speed_scale = speed
+		return
+	playing = n
+	_ap.speed_scale = speed
+	_ap.play(n,blend)
+	if not n in LOOPS: _ap.seek(0.0,false)
+
+## A hit: the hurt flinch, over whatever it was doing.
+func flinch() -> void:
+	if not glb: return
+	_hurt_t = _ap.get_animation("hurt").length
+	_play("hurt",BLEND.hurt,1.0)
+
+## The clip for the mind's state, and its speed.
+func _pick(m: Object) -> Array:
+	var st := String(m.get("state"))
+	var t := float(m.get("state_t"))
+	var flap_w := float(m.get("_flap_w")) if m.get("_flap_w") != null else 0.0
+	var bank := float(m.get("bank")) if m.get("bank") != null else 0.0
+	var freq := 1.7 if st in ["home","circle"] else (2.4 if st in ["pull","carry"] else 2.0)
+	match st:
+		"stalk": return ["stalk",1.0]
+		"fold":
+			var knobs: Variant = m.get("knobs")
+			var fold := float((knobs as Dictionary).get("fold",0.95)) if knobs is Dictionary else 0.95
+			var consts: Dictionary = (m.get_script() as Script).get_script_constant_map() if m.get_script() else {}
+			var scream := float(consts.get("TELL_SCREAM",0.45))
+			return ["scream" if t < fold*scream else "fold",1.0]
+		"stoop": return ["flare" if float(pose.talons) > 0.3 else "stoop",1.0]
+		"carry": return ["carry",freq*0.5]
+		"pull": return ["pull",1.0]
+	# Riding the air: the beats, else the glide, the circle in a steep bank.
+	_circle_on = absf(bank) > (0.15 if _circle_on else 0.25)
+	if flap_w > 0.5: return ["flap",freq*0.5]
+	return ["circle" if _circle_on else "glide",1.0]
+
+func _drive_glb(dt: float) -> void:
+	var m: Node = get_parent()
+	var minded := m != null and m.get("state") != null
+	var want := [clip,1.0]
+	if clip == "" and minded: want = _pick(m)
+	elif clip == "": want = ["glide",1.0]
+	var n: String = want[0]
+	if _hurt_t > 0.0:
+		_hurt_t -= dt
+		n = "hurt"
+	elif n != playing and playing == "flap" and n in ["glide","circle"]:
+		# A beat is let finish: back to the glide only at its top.
+		var f := _ap.current_animation_position/maxf(_ap.current_animation_length,0.01)
+		if f > 0.06 and f < 0.9: n = "flap"
+	if n == "circle":
+		# The circle clip banks left: mirrored for a right turn. The side is
+		# switched only with no circle weight left: a turn the other way
+		# rolls out through the glide (BLEND.circle s) and in again, never
+		# a flip of the banked pose.
+		var right := float(m.get("bank") if minded else 0.0) > 0.0
+		if right != _mirror:
+			if _circle_w < 0.05: _mirror = right
+			else: n = "glide"
+	_play(n,float(BLEND.get(n,0.2)),float(want[1]) if n == want[0] else _ap.speed_scale)
+	_ap.advance(dt)
+	_circle_w = move_toward(_circle_w,1.0 if playing == "circle" else 0.0,dt/BLEND.circle)
+	var side := -1.0 if _mirror else 1.0
+	_model.scale = Vector3(side,1.0,1.0)
+	_model.rotation = Vector3(0.0,0.0,-side*CIRCLE_ROLL*_circle_w)
+	_model.position = Vector3.ZERO
+	if not minded or not is_inside_tree(): return
+	_ground_lift(m,dt)
+	var st := String(m.get("state"))
+	var target: Variant = m.call("_middle") if m.has_method("_middle") else null
+	# The head on him.
+	_head_w = move_toward(_head_w,float(HEAD_AIM.get(st,0.0)) if target != null else 0.0,dt*3.0)
+	if _head_w > 0.01: _aim_bone(int(_bone.head),"jaw",target,_head_w,HEAD_MAX)
+	# The clicks: the mind's clock (`_click_t` restarts on each).
+	var ct: Variant = m.get("_click_t")
+	if ct != null:
+		if st == "stalk" and float(ct) > _click_prev+0.02: _click_age = 0.0
+		_click_prev = float(ct)
+	_click_age += dt
+	var a := 0.0
+	if _click_age < CLICK_DOWN: a = _click_age/CLICK_DOWN
+	elif _click_age < CLICK_DOWN+CLICK_BACK: a = 1.0-(_click_age-CLICK_DOWN)/CLICK_BACK
+	if a > 0.0:
+		_dip_bone(int(_bone.head),CLICK_HEAD*a)
+		_dip_bone(int(_bone.jaw),CLICK_JAW*a)
+	# The talons for him: on the flare at his middle, in the carry at his
+	# shoulders under it.
+	var talon_to: Variant = null
+	if playing == "flare": talon_to = target
+	elif playing == "carry" and m.get("motor") != null:
+		talon_to = (m.get("motor") as Object).get("feet")+Vector3.UP*float(m.get("unit"))*0.9
+	_talon_w = move_toward(_talon_w,0.7 if talon_to != null else 0.0,dt*6.0)
+	if _talon_w > 0.01 and talon_to != null:
+		for s: String in ["L","R"]:
+			_aim_bone(int(_bone["thigh."+s]),"toes."+s,talon_to,_talon_w,0.7)
+
+## Lifts the body (the Model, not the mind) so the playing clip's swept box
+## stays over the ground under it: the flap's downstroke, the carry's legs
+## and the pull's first beat never sink in, however low the mind flies.
+func _ground_lift(m: Node, dt: float) -> void:
+	var field: Variant = m.get("field")
+	if field == null or not (field as Object).has_method("floor_under"): return
+	var box: Array = SWEPT.get(playing,SWEPT.glide)
+	var xf := global_transform*Transform3D(_model.basis,Vector3.ZERO)
+	var low := INF
+	for c in 8:
+		var p := Vector3(float(box[2])*(1.0 if c & 1 else -1.0),float(box[1]) if c & 2 else float(box[0]),
+			float(box[4]) if c & 4 else float(box[3]))
+		low = minf(low,(xf*p).y)
+	var o := global_position
+	var want := 0.0
+	var ground: float = field.floor_under(o,0.5,o.y-low+GROUND_CLEAR+0.5)
+	if ground != -INF: want = clampf(ground+GROUND_CLEAR-low,0.0,LIFT_MAX)
+	lift = want if want > lift else move_toward(lift,want,dt*LIFT_FALL)
+	if lift > 0.001: _model.position = global_basis.inverse()*Vector3.UP*lift
+
+## Turns bone `b` (in the skeleton's frame, over its clip pose) so the line
+## from it to bone `tip` swings toward `at` (world), by `w` of the way, at
+## most `most` rad.
+func _aim_bone(b: int, tip: String, at: Vector3, w: float, most: float) -> void:
+	if b < 0 or int(_bone.get(tip,-1)) < 0: return
+	var g := _skel.get_bone_global_pose(b)
+	var t := _skel.get_bone_global_pose(int(_bone[tip]))
+	var fwd := (t.origin-g.origin).normalized()
+	var to := ((_skel.global_transform.affine_inverse()*at)-g.origin).normalized()
+	var ang := fwd.angle_to(to)
+	var axis := fwd.cross(to)
+	if ang < 0.001 or axis.length() < 0.0001: return
+	_turn_bone(b,Basis(axis.normalized(),minf(ang,most)*w))
+
+## Dips bone `b` (its line nodded toward the skeleton's down) by `ang` rad.
+func _dip_bone(b: int, ang: float) -> void:
+	if b < 0: return
+	var g := _skel.get_bone_global_pose(b)
+	var fwd := g.basis.y.normalized()
+	var axis := fwd.cross(Vector3.DOWN)
+	if axis.length() < 0.001: return
+	_turn_bone(b,Basis(axis.normalized(),ang))
+
+func _turn_bone(b: int, r: Basis) -> void:
+	var g := _skel.get_bone_global_pose(b)
+	var p := _skel.get_bone_parent(b)
+	var pg := _skel.get_bone_global_pose(p) if p >= 0 else Transform3D.IDENTITY
+	var local := pg.basis.inverse()*(r*g.basis)
+	_skel.set_bone_pose_rotation(b,local.get_rotation_quaternion())
+
+# --- Building it (the fallback) ----------------------------------------------------------
 
 func _build() -> void:
 	_body = Node3D.new()
@@ -289,10 +534,15 @@ static func _tail_mesh() -> ArrayMesh:
 
 # --- Posing it ------------------------------------------------------------------------
 
-## Poses the rig: `p`'s keys over REST's.
+## Poses it: `p`'s keys over REST's (the glb body plays its clips from
+## the mind's state; the fallback is posed by `p`).
 func drive(p: Dictionary) -> void:
 	for k: String in REST:
 		pose[k] = float(p.get(k,REST[k]))
+	if glb:
+		var dt := get_physics_process_delta_time() if Engine.is_in_physics_frame() else get_process_delta_time()
+		_drive_glb(clampf(dt,0.0,0.1))
+		return
 	var elev: float = pose.elev
 	var sweep: float = pose.sweep
 	for i in range(_shoulders.size()):
