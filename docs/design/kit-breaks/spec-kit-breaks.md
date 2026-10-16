@@ -97,3 +97,13 @@ Olmec breaks things; the plane, the dragon and the slam are wired but off.
   - the motif yard with a kit motif and an `editor_*` motif
   - a city yard that uses breaks
   - `studies/aqueduct_isle.tscn`
+
+## Added: frame time (spec change after iteration 7)
+
+5. **No visible stutter.** Do this after task 4, or sooner if it blocks
+   anything. A step of a cut built ahead (and a re-cut of what stands)
+   cost 100–185 ms a frame in iteration 7. Bring each frame's share under
+   about 8 ms. Options: split the stands build further, or run builds on a
+   worker thread with the build settings passed per build rather than read
+   from shared statics. Prove it with the worst frame over a headless
+   `--olmec` run on sundered_gorge, and say whether the machine was loaded.
