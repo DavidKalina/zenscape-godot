@@ -2594,18 +2594,27 @@ func run_release(at: Vector2) -> void:
 	# A drag laid it out; a click waits for the second click.
 	if at.distance_to(_run.press) > 12.0 and (_run.from as Vector2).distance_to(_run.to) > 3.0: end_run()
 
-## The ground point under `at` for a run's end (a bridge's or a wall's
-## snapped to the nearest cliff lip within 4 m), or INF.
+## The ground point under `at` for a run's end (a wall's snapped to the
+## nearest cliff lip), or INF. A bridge's ends are the clicks as they are:
+## each is snapped to its bank's lip along the line between them once both
+## are known (`_bridge_ends`).
 func _run_point(at: Vector2) -> Vector2:
 	var hit := ground_hit(at)
 	if hit.is_empty(): return Vector2.INF
 	var p := Vector2(hit.position.x,hit.position.z)
 	var kind := str(RUNS.get(tool,""))
-	if kind in ["bridge","wall"]:
-		# A bridge's end: the bank's top (the highest lip near), not a step down the wall.
-		var lip := RuinKitFit.lip_near(motif.ground_fn(),p,4.0 if kind == "bridge" else LIP_SNAP,motif.outline(),kind == "bridge")
+	if kind == "wall":
+		var lip := RuinKitFit.lip_near(motif.ground_fn(),p,LIP_SNAP,motif.outline())
 		if not lip.is_empty(): return snapped_v(lip.at)
 	return snapped_v(p)
+
+## A bridge's two clicks snapped: each end on its bank's lip, the top of
+## the bank where it breaks into the gap along the line between them, not
+## a step down the wall nor a point up the hillside behind.
+func _bridge_ends(from: Vector2, to: Vector2) -> Array:
+	if from.distance_to(to) < 1.0: return [from,to]
+	var ends := RuinKitFit.bridge_ends(from,to,motif.ground_fn(),motif.outline())
+	return [snapped_v(ends[0]),snapped_v(ends[1])]
 
 static func snapped_v(p: Vector2) -> Vector2:
 	return Vector2(snappedf(p.x,0.001),snappedf(p.y,0.001))
@@ -2616,6 +2625,10 @@ func end_run() -> void:
 	_drop_run()
 	var from: Vector2 = r.from
 	var to: Vector2 = r.to
+	if str(r.kind) == "bridge":
+		var ends := _bridge_ends(from,to)
+		from = ends[0]
+		to = ends[1]
 	if from.distance_to(to) < 3.0:
 		say("Too short for a run")
 		return
@@ -2653,6 +2666,10 @@ func _draw_run() -> void:
 		var g: Callable = motif.ground_fn()
 		var a: Vector2 = _run.from
 		var b: Vector2 = _run.to
+		if str(_run.kind) == "bridge":
+			var ends := _bridge_ends(a,b)
+			a = ends[0]
+			b = ends[1]
 		if str(_run.kind) == "aqueduct" and a.distance_to(b) > 0.5:
 			var plan := RuinKitFit.aqueduct_plan(a,b,g)
 			b = a+(plan.dir as Vector2)*float(plan.length)
