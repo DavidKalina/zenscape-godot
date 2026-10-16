@@ -21,6 +21,7 @@ const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
+const Torana = preload("res://scripts/ruin_kit_torana.gd")
 
 ## Which kinds mate (each way round).
 const MATES := {"column":["column"],"wall_end":["wall_end"],"channel":["channel"],"aq_pier":["aq_pier"],
@@ -92,6 +93,13 @@ static func connectors(id: String, node: Node3D = null) -> Array:
 			return [_c("left",Vector3(-h,0.0,zm),Vector3.LEFT,"wall_end","end"),
 				_c("right",Vector3(h,0.0,zm),Vector3.RIGHT,"wall_end","end"),
 				_c("top",Vector3(0.0,float(lines.wall_top),zm),Vector3.UP,"top","top")]
+		"relic_torana":
+			# The jamb's head (behind the lintel's root) and the lintel's top
+			# near its snapped end (a pilgrim's next lintel, tier on tier).
+			var tl := Torana.lines()
+			var tip := float(tl.x_end)-1.0
+			return [_c("jamb_top",Vector3(-Torana.JAMB.x*0.5+Torana.ROOT_BACK*0.5,Torana.JAMB_HEAD,0.0),Vector3.UP,"top","top"),
+				_c("top",Vector3(tip,Torana.soffit(tl,tip)+float(tl.depth),0.0),Vector3.UP,"top","top")]
 	return []
 
 ## Whether a connector of kind `a` mates one of kind `b`.
