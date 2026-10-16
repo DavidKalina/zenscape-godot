@@ -49,6 +49,9 @@ Inside each motif: land, then routes, then threat.
    (`python tools/shot.py studies/motif_yard.tscn --frame Motif_gb_<slug>
    --view three -- --motif=<slug> --sky`, or the isle's study scene). Send
    back any place that reads as boxes where the kit has the real piece.
+   Also look at a far still, the place small against the sky from about
+   its approach distance, next to the silhouette the plan says the user
+   chose. Send back a place whose far shape doesn't match it.
 5. Write a "Place" section into the round's README: a table of card, yard
    command, the routes, the threat, what is stood in, and your read of the
    stills.
