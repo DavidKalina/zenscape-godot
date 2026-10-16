@@ -84,6 +84,39 @@ const BURST_FOV_TIME := 0.5     # s the kick takes to settle
 const UP_SLIDE_SCALE := 1.35    # rise multiplier when the updraft fires out of a fast slide
 const UP_SLIDE_PACE := 8.0      # m/s: "fast slide" for that
 
+# --- Segments (the wind gauge, docs/design/wind-gauge/spec-wind-gauge.md).
+## Off (the default): every unleash spends all the charge, its strength
+## scaled by it. On (`segmented`, set by kit_isle): the charge is SEGMENTS
+## equal parts, and each unleash (updraft, burst, gust shot) spends one at a
+## fixed strength; the partial part above them is kept.
+const SEGMENTS := 3
+const SEG := 1.0/SEGMENTS
+const SEG_HAIR := 0.002         # charge this short of a segment still counts as one
+const SEG_RISE := 3.2           # m one segment's updraft lifts him (from a standstill in the air)
+const SEG_CHAIN := 0.6          # each further updraft in one airtime rises this share of the one before
+const SEG_UP_P := 0.5           # charge-equivalent look (ring, dip) of a one-segment updraft
+const SEG_BURST_P := 0.6        # charge-equivalent strength of a one-segment forward burst
+const SEG_SHOT_P := 0.7         # charge-equivalent strength handed to the gust shot
+## Segmented only: Q / RB in a grounded slide is the forward burst along the
+## slide's travel, whatever the stick (off: the old stick-toward-travel rule).
+const SLIDE_BOOST := true
+## Segmented only: the charge comes from moves through the air, not the
+## ground. Running and sliding build nothing; each air move starting bumps it
+## (SEG_BUMPS, about three to a segment), held air moves add per second
+## (SEG_HOLDS), and airtime at pace over FLOW_PACE adds SEG_AIR a second (not
+## while his own updrafts carry him). Off: the old pace-and-moves rule.
+const AIR_CHARGE := true
+const SEG_BUMPS := {"flip":0.14,"kick":0.14,"long":0.12,"wallrun":0.12,"rope":0.12,"twirl":0.09,"pump":0.06}
+const SEG_HOLDS := {"wallrun":0.10,"rope":0.08}
+const SEG_AIR := 0.06           # a second airborne above FLOW_PACE
+## The gentler drain (segmented): the lull before it starts, then per second
+## for the partial part over the full segments; full segments are held till
+## SEG_HELD_GRACE s of lull, then drain at SEG_DECAY_HELD (~22 s a segment).
+const SEG_GRACE := 3.0
+const SEG_DECAY := 0.04
+const SEG_HELD_GRACE := 15.0
+const SEG_DECAY_HELD := 0.015
+
 # --- Look: the charge is a wake of wind behind him, drawn in the breeze
 # ribbons' brush (shaders/breeze_ribbon.gdshader), as the dragon's breath is.
 const WAKE_STRANDS := 3         # strokes in the wake at full charge
@@ -102,6 +135,12 @@ const LOOSE_DRIFT := 3.0        # m/s it drifts back along the burst
 const FLARE_TIME := 0.5         # s a burst flares the loose strands wider
 
 var charge := 0.0
+## Segments on (SEG*): see above.
+var segmented := false
+## A press of the key with no segment to spend (segmented only): the wind
+## gauge's empty cue.
+signal empty_press
+var _air_ups := 0               # updrafts since he last stood on the ground
 var updrafts := 0
 var last_rise := 0.0            # m planned for the last updraft
 var _quiet := 0.0               # s since the last gain
@@ -168,7 +207,9 @@ func update(delta: float, m: PilotMotor, pressed: bool, want := Vector2.ZERO) ->
 	_cool = maxf(_cool-delta,0.0)
 	_unlock(delta,m)
 	_charge(delta,m)
-	if pressed and not burst(m,want): updraft(m)
+	if m.grounded: _air_ups = 0
+	if pressed and not burst(m,want) and not updraft(m) and segmented and not can_spend():
+		empty_press.emit()
 	_ride_top(delta,m)
 	_step_rings(delta)
 	_track(delta,m)
@@ -185,6 +226,9 @@ func _unlock(delta: float, m: PilotMotor) -> void:
 		_prev_move = m.move
 
 func _charge(delta: float, m: PilotMotor) -> void:
+	if segmented and AIR_CHARGE:
+		_air_charge(delta,m)
+		return
 	# Gliding on the pocket sail is riding the air, not flowing: it builds nothing.
 	if spent or m.recovering() or m.swimming or m.sail.open:
 		_decay(delta)
@@ -205,21 +249,69 @@ func _charge(delta: float, m: PilotMotor) -> void:
 		_quiet = 0.0
 	else: _decay(delta)
 
+## Segmented charge from the air (AIR_CHARGE). A burst's `spent` lock does
+## not block it: the ground pace a burst gives builds nothing here.
+func _air_charge(delta: float, m: PilotMotor) -> void:
+	if m.recovering() or m.swimming or m.sail.open:
+		_decay(delta)
+		_prev_move = ""
+		return
+	var key: String = m.move if m.rider == null else "rope"
+	var gain := 0.0
+	if key in SEG_BUMPS and key != _prev_move:
+		charge = minf(charge+float(SEG_BUMPS[key]),1.0)
+		_quiet = 0.0
+	if key in SEG_HOLDS: gain += float(SEG_HOLDS[key])
+	if not m.grounded and m.rider == null and _air_ups == 0 and m.speed() > FLOW_PACE*UNIT:
+		gain += SEG_AIR
+	_prev_move = key
+	if gain > 0.0:
+		charge = minf(charge+gain*delta,1.0)
+		_quiet = 0.0
+	elif key in SEG_BUMPS: _quiet = 0.0   # mid flip, mid kick: no drain
+	else: _decay(delta)
+
 func _decay(delta: float) -> void:
 	_quiet += delta
-	if _quiet > GRACE: charge = maxf(charge-DECAY*delta,0.0)
+	if not (segmented and AIR_CHARGE):
+		if _quiet > GRACE: charge = maxf(charge-DECAY*delta,0.0)
+		return
+	if _quiet <= SEG_GRACE: return
+	var whole := floorf((charge+SEG_HAIR)/SEG)*SEG
+	if charge > whole+SEG_HAIR: charge = maxf(charge-SEG_DECAY*delta,whole)
+	elif _quiet > SEG_HELD_GRACE: charge = maxf(charge-SEG_DECAY_HELD*delta,0.0)
+
+## The least charge an unleash takes: a segment, or MIN_RELEASE unsegmented.
+func least() -> float:
+	return SEG-SEG_HAIR if segmented else MIN_RELEASE
+
+## Whether there is a segment (or, unsegmented, enough charge) to spend.
+func can_spend() -> bool:
+	return charge >= least()
+
+## Spends what one unleash takes and returns its strength (0..1, as charge):
+## one segment at `fixed`, or unsegmented all of it at its own size.
+func _take(fixed: float) -> float:
+	_quiet = 0.0
+	if segmented:
+		charge = maxf(charge-SEG,0.0)
+		if charge < SEG_HAIR: charge = 0.0
+		return fixed
+	var p := charge
+	charge = 0.0
+	return p
 
 ## The updraft: all the charge straight up through `toss`, his flat pace kept
 ## (a fall is cancelled: vy is set, not added), and a ring blast at his feet.
 ## Returns false if there is too little charge.
 func updraft(m: PilotMotor) -> bool:
-	if charge < MIN_RELEASE or m.recovering() or m.swimming or m.seized():
+	if not can_spend() or m.recovering() or m.swimming or m.seized():
 		return false
-	var p := charge
-	charge = 0.0
-	_quiet = 0.0
+	var p := _take(SEG_UP_P)
 	updrafts += 1
 	last_rise = lerpf(UP_RISE_MIN,UP_RISE_MAX,p)*UNIT
+	if segmented: last_rise = SEG_RISE*pow(SEG_CHAIN,_air_ups)*UNIT
+	_air_ups += 1
 	if m.move == "slide" and m.speed() > UP_SLIDE_PACE*UNIT: last_rise *= UP_SLIDE_SCALE
 	var vy := sqrt(2.0*PilotMotor.GRAVITY*last_rise)
 	var face := m.facing
@@ -232,13 +324,24 @@ func updraft(m: PilotMotor) -> bool:
 	_dip_amp = DIP*p*UNIT
 	return true
 
+## The charge (segmented: one segment) spent on something else (the gust shot,
+## scripts/lock_on/gust_shot.gd): the wake comes away drifting `drift` m/s.
+## Returns what was spent, 0 (nothing spent) under MIN_RELEASE.
+func spend(m: PilotMotor, drift := Vector3.ZERO) -> float:
+	if not can_spend() or m.recovering() or m.swimming or m.seized(): return 0.0
+	var p := _take(SEG_SHOT_P)
+	_let_go(drift)
+	return p
+
 ## The forward burst: stick toward his travel (or any way when slow) plus the
 ## key adds flat pace along it, scaled by charge and eased off near BURST_CAP.
 ## No ring; wind streaks behind him and a FOV kick. Grounded he stays down (and
 ## keeps sliding); in the air it is a share, no lift. Returns false when it is
 ## not a forward burst (the caller then fires the updraft).
 func burst(m: PilotMotor, want: Vector2) -> bool:
-	if not BURST_ON or charge < MIN_RELEASE or want.length() < BURST_STICK: return false
+	var slide_boost := segmented and SLIDE_BOOST and m.grounded and m.move == "slide"
+	if not BURST_ON or not can_spend(): return false
+	if not slide_boost and want.length() < BURST_STICK: return false
 	if m.recovering() or m.swimming or m.seized() or m.rider != null or m.hold != "": return false
 	if not m.grounded and not BURST_AIR_ON: return false
 	# On the ground only a slide takes the forward burst; running, it is the updraft.
@@ -246,14 +349,15 @@ func burst(m: PilotMotor, want: Vector2) -> bool:
 	var h := Vector2(m.velocity.x,m.velocity.z)
 	var pace := h.length()
 	var dir := want.normalized()
-	if pace > BURST_SLOW*UNIT:
+	if slide_boost:
+		# The slide boost: always along the slide, the stick plays no part.
+		dir = h/pace if pace > 0.05*UNIT else Vector2(-sin(m.facing),-cos(m.facing))
+	elif pace > BURST_SLOW*UNIT:
 		var vdir := h/pace
 		if rad_to_deg(acos(clampf(vdir.dot(dir),-1.0,1.0))) > BURST_CONE: return false
 		dir = (vdir+dir).normalized()
 	if _cool > 0.0: return true   # a forward press inside the cooldown does nothing, not an updraft
-	var p := charge
-	charge = 0.0
-	_quiet = 0.0
+	var p := _take(SEG_BURST_P)
 	bursts += 1
 	_cool = BURST_COOLDOWN
 	spent = true
@@ -381,7 +485,7 @@ func _let_go(drift: Vector3) -> void:
 		var a := _strand_alpha(i)
 		if a <= 0.01: continue
 		_loose.append({"path":_strand(i),"width":WAKE_WIDTH*1.3*UNIT,"alpha":a*1.6,"seed":float(i)*13.0,"t":0.0,"drift":drift})
-	_shown = 0.0
+	_shown = charge   # what is left (0 unless segmented)
 
 ## A strand's opacity at the charge shown: the first shows from a little
 ## charge, the rest join as it builds.

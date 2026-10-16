@@ -117,6 +117,8 @@ const RopeBridge = preload("res://scripts/rope_bridge.gd")
 const GlideAir = preload("res://scripts/glide_air.gd")
 const IsleLock = preload("res://scripts/isle_lock.gd")
 const IsleSplash = preload("res://scripts/isle_splash.gd")
+const FootLock = preload("res://scripts/lock_on/foot_lock.gd")
+const GustShot = preload("res://scripts/lock_on/gust_shot.gd")
 const ManualLanding = preload("res://scripts/manual_landing.gd")
 const LandingReadout = preload("res://scripts/landing_readout.gd")
 const PlaneLanding = preload("res://scripts/plane_landing.gd")
@@ -490,6 +492,14 @@ func _ready() -> void:
 	audio = KitAudio.new()
 	audio.isle = self
 	add_child(audio)
+	# The wind gauge: the updraft's charge in three segments (scripts/wind_gauge.gd).
+	if updraft != null: updraft.segmented = SEGMENTED_CHARGE
+	if updraft != null and WIND_GAUGE_ON:
+		wind_gauge = WindGauge.new()
+		wind_gauge.name = "WindGauge"
+		wind_gauge.setup(updraft,wind_gauge_shown)
+		add_child(wind_gauge)
+		updraft.empty_press.connect(wind_gauge.empty_cue)
 	if _place != Vector4.INF:
 		var turn := deg_to_rad(_place.w)
 		start = Vector3(_place.x,_place.y,_place.z)
@@ -845,6 +855,7 @@ func _process(delta: float) -> void:
 	if delta > 0.0:
 		if not flying: super._process(delta)
 		elif walk_ready and not scripted: fly_step(delta,_fly_input(delta))
+	if foot_lock != null and delta > 0.0: foot_lock.step(delta,motor.feet,camera,foot_lock_allowed())
 	_advance_look(delta)
 	_lode_frame(delta)
 	# Not while it is put away (the run's city layers hide the aqueduct
@@ -912,7 +923,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				step_look(-1 if (event as InputEventKey).shift_pressed else 1)
 				return
 	if Pad.pressed(event,&"camera_reset"):
-		if not (flying and toggle_lock()): reset_camera()
+		if flying:
+			if not toggle_lock(): reset_camera()
+		elif not toggle_foot_lock(): reset_camera()
+		return
+	if not flying and ((event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_TAB) 			or (event is InputEventMouseButton and event.pressed and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_MIDDLE)):
+		toggle_foot_lock()
 		return
 	if lode_state == "inspecting":
 		_inspect_event(event)
@@ -1274,6 +1290,91 @@ func reset_camera() -> void:
 	_yaw = motor.facing
 	_polar = CAM_POLAR
 	_look_rest = 0.0
+
+## Lock-on on foot (scripts/lock_on/foot_lock.gd): R3 / Tab / the middle
+## mouse lock onto a target stone in range and in view, or let go. False
+## if there was nothing to lock onto (R3 then resets the camera as before).
+var foot_lock: Node3D = null
+## How hard the locked camera swings round to frame him and the target
+## (s, the ease's time constant), its pitch over the default (rad) and how
+## far its gaze leans from him toward the target (0 him .. 1 the target).
+const FOOT_LOCK_TURN := 0.35
+const FOOT_LOCK_PITCH := 0.08
+const FOOT_LOCK_LEAN := 0.35
+const FOOT_LOCK_LEAN_MOST := 8.0
+
+func toggle_foot_lock() -> bool:
+	if not foot_lock_allowed(): return false
+	if foot_lock == null:
+		foot_lock = FootLock.new()
+		foot_lock.name = "FootLock"
+		foot_lock.sight_mask = 0xFFFFFFFF & ~PARKED_LAYER
+		add_child(foot_lock)
+	if foot_lock.locked():
+		foot_lock.release()
+		return true
+	return foot_lock.acquire(motor.feet,camera)
+
+## The gust shot (scripts/lock_on/gust_shot.gd): on foot, X (pad X) with
+## the updraft charge at its release threshold or more spends it on a ball
+## of air: at the locked target, else along the camera's flat heading.
+## Without the charge X is the twirl, as ever; the press that shot holds
+## the twirl off until X is let go.
+var gust_shot: Node3D = null
+
+func _gust_input() -> void:
+	if not Input.is_action_pressed(&"walk_twirl"): twirl_held_off = false
+	if not Input.is_action_just_pressed(&"walk_twirl") or _tuning(): return
+	if updraft == null or not foot_lock_allowed(): return
+	if telescope != null and telescope.busy(): return
+	if not updraft.can_spend(): return
+	var target: Node3D = null
+	if foot_lock != null and foot_lock.locked(): target = foot_lock.target
+	var heading := -camera.global_transform.basis.z
+	if target != null: heading = target.global_position-motor.feet
+	var spent: float = updraft.spend(motor,-Vector3(heading.x,0.0,heading.z).normalized()*1.5)
+	if spent <= 0.0: return
+	if gust_shot == null:
+		gust_shot = GustShot.new()
+		add_child(gust_shot)
+	gust_shot.fire(motor.feet,heading,target,spent)
+	twirl_held_off = true
+
+## The updraft's charge in segments (scripts/updraft.gd SEG*): each unleash
+## spends one at a fixed strength. Off: all of it at once, as before.
+const SEGMENTED_CHARGE := true
+## The wind gauge (scripts/wind_gauge.gd); off: no gauge, as before.
+const WIND_GAUGE_ON := true
+const WindGauge = preload("res://scripts/wind_gauge.gd")
+var wind_gauge: CanvasLayer = null
+
+## Whether the wind gauge may show: on foot (not in the plane, or held off
+## while a capture runs).
+func wind_gauge_shown() -> bool:
+	return walk_ready and not flying and _capture == ""
+
+## On foot, walking (not flying, stranded, off the edge or holding the stone up).
+func foot_lock_allowed() -> bool:
+	return walk_ready and not flying and not off_edge and _stranded_left < 0.0 and lode_state != "inspecting"
+
+## The on-foot camera; locked on, it first swings behind him toward the
+## target (the stick and mouse still nudge it, the pull takes it back), and
+## after, leans its gaze from him toward the target.
+func _frame(delta: float) -> void:
+	var w: float = foot_lock.weight if foot_lock != null else 0.0
+	if w > 0.0 and foot_lock.locked() and delta > 0.0:
+		var aim: Vector3 = foot_lock.target.call("aim_point")
+		var d := aim-motor.feet
+		if Vector2(d.x,d.z).length() > 0.5:
+			_yaw = lerp_angle(_yaw,atan2(-d.x,-d.z),_ease(FOOT_LOCK_TURN,delta)*w)
+		_polar = lerpf(_polar,CAM_POLAR+FOOT_LOCK_PITCH,_ease(FOOT_LOCK_TURN*2.0,delta)*w)
+		_look_rest = 0.0
+	super._frame(delta)
+	if w > 0.0 and foot_lock._last != null and is_instance_valid(foot_lock._last):
+		var pivot := Vector3(_cam_at.x,_cam_y,_cam_at.y)
+		var toward: Vector3 = foot_lock._last.call("aim_point")-pivot
+		var gaze := pivot+toward.limit_length(FOOT_LOCK_LEAN_MOST)*FOOT_LOCK_LEAN*w
+		if camera.global_position.distance_to(gaze) > 0.1: camera.look_at(gaze)
 
 ## Locks onto the isle if the plane is in reach of it, or lets go if
 ## locked (R3 / Tab in the plane); false if neither (out of reach). Locking
@@ -2095,8 +2196,10 @@ func tick(delta: float) -> void:
 	# Off the edge the stranding rule is the net, not the study's `lost`.
 	var keep := lost
 	if off_edge: lost = -INF
+	if not scripted: _gust_input()
 	super.tick(delta)
 	lost = keep
+	if gust_shot != null and delta > 0.0: gust_shot.step(delta,motor.feet,get_world_3d().direct_space_state)
 	_lode_step(delta)
 	if life != null: life.step_pilot()
 	if plane_arc != null: plane_arc.step_pilot(delta)
