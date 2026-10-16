@@ -327,8 +327,10 @@ func _clear_stand() -> void:
 		motifs.free()
 		motifs = null
 	if bare != null:
-		remove_child(bare)
-		bare.free()
+		if rb != null: rb.trash(bare)
+		else:
+			remove_child(bare)
+			bare.free()
 		bare = null
 	if _shown != null:
 		remove_child(_shown)
@@ -466,7 +468,7 @@ func rebuild_bare(live := false, settled := false) -> void:
 	var began := Time.get_ticks_msec()
 	if rb == null: rb = Rebuild.new(self)
 	# What stands kept: a piece or run whose build is unchanged stands again.
-	var cache: Dictionary = Rebuild.harvest(pieces_holder()) if bare != null else {}
+	var cache: Dictionary = rb.harvest(pieces_holder()) if bare != null else {}
 	_clear_stand()
 	motif = MotifAuthored.from_data(data)
 	bare = Node3D.new()
@@ -485,7 +487,7 @@ func rebuild_bare(live := false, settled := false) -> void:
 	holder.name = "Pieces"
 	bare.add_child(holder)
 	var late: Array = rb.fill(motif,holder,cache,whole)
-	Rebuild.free_cache(cache)
+	rb.free_cache(cache)
 	rb.began_at(began)
 	rb.owe(coarse,late)
 	if not dressed and grey != null: grey.paint(bare)
@@ -521,7 +523,9 @@ func _after_land() -> void:
 		a[1] = snappedf(float(motif.ground(float(a[0]),float(a[2]))),0.001)
 	_place_markers()
 	_show_handles()
-	if traps != null: traps.sync()
+	if traps != null:
+		traps.reseat()
+		traps.sync()
 	_show_status()
 
 ## New pieces drawn flat when the grey look is on.
@@ -542,9 +546,9 @@ func refresh_pieces() -> void:
 	var holder := pieces_holder()
 	if holder == null: return
 	if rb == null: rb = Rebuild.new(self)
-	var cache := Rebuild.harvest(holder)
+	var cache := rb.harvest(holder)
 	rb.fill(motif,holder,cache,true)
-	Rebuild.free_cache(cache)
+	rb.free_cache(cache)
 	# Indices may have moved: a worker's pieces are dropped, its land still owed.
 	if not rb.detailed: rb.owe(rb.coarse_land,[])
 	_grey_new(holder)
@@ -619,7 +623,15 @@ func toggle_play(under_camera := false) -> void:
 	if editing: play(under_camera)
 	else: back_to_edit()
 
+func _exit_tree() -> void:
+	# What the rebuild let go of and has not freed yet.
+	if rb != null:
+		rb.reset()
+		rb.sweep_all()
+	super._exit_tree()
+
 func _process(delta: float) -> void:
+	if rb != null: rb.sweep()
 	_swap_step()
 	if not editing or motif == null or _ui == null:
 		# A worker's build dropped by play is freed when it lands.

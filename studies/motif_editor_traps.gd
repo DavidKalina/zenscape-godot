@@ -42,6 +42,12 @@ var _ring: MeshInstance3D
 var _entry_mark: MeshInstance3D
 var _exit_mark: MeshInstance3D
 var traps_made := 0
+## Traps moved by `reseat` so far.
+var reseats := 0
+## The ground round each trap when last seen: its pose key -> a hash of
+## the ground sampled round it (`reseat` moves only those it changed for).
+var _seats := {}
+const SEAT_REACH := 3.0
 var _clay: StandardMaterial3D
 
 func setup(owner_editor: Node) -> void:
@@ -84,6 +90,7 @@ func rebuild() -> void:
 		node.name = "T%d" % k
 		placed.add_child(node)
 	_built = var_to_str(list)
+	_note_seats()
 	selected = -1
 	tint()
 	show_marks()
@@ -142,8 +149,12 @@ func lip_spot(at: Vector2) -> Dictionary:
 	if motif == null: return {}
 	var hit: Dictionary = editor.ground_hit(at)
 	if hit.is_empty(): return {}
+	return lip_at(motif,Vector2(hit.position.x,hit.position.z))
+
+## The lip within LIP_SNAP of ground point `p` of `motif`, as `lip_spot`
+## gives it, or {}.
+static func lip_at(motif: RefCounted, p: Vector2) -> Dictionary:
 	var g: Callable = motif.ground_fn()
-	var p := Vector2(hit.position.x,hit.position.z)
 	var lip := RuinKitFit.lip_near(g,p,LIP_SNAP,motif.outline())
 	if lip.is_empty(): return {}
 	var out := lip_out(g,lip.at,lip.out)
@@ -209,7 +220,7 @@ func place_ghost(at: Vector2) -> int:
 		editor.say("Dropped off the land: no trap placed")
 		return -1
 	editor.snapshot()
-	var k := place(key,p,turn)
+	var k := place(key,p,turn,where)
 	editor.say("Placed %s%s" % [TrapRegistry.display_name(key),{"piece":" on a piece","lip":" on the cliff lip"}.get(where,"")])
 	return k
 
@@ -222,10 +233,14 @@ func drop_ghost() -> void:
 	show_marks()
 
 ## A new trap `key` at `at` turned `turn` degrees; selected. Its index.
-func place(key: String, at: Vector3, turn := 0.0) -> int:
+## `on`: what it was set on ("lip", "piece"; ground when left out), so a
+## change of ground re-seats it the same way (`reseat`).
+func place(key: String, at: Vector3, turn := 0.0, on := "") -> int:
 	if not (editor.data as Dictionary).has("traps"): editor.data.traps = []
 	var list: Array = editor.data.traps
-	list.append({"id":key,"at":[snappedf(at.x,0.001),snappedf(at.y,0.001),snappedf(at.z,0.001)],"turn":snappedf(fposmod(turn,360.0),0.001)})
+	var e := {"id":key,"at":[snappedf(at.x,0.001),snappedf(at.y,0.001),snappedf(at.z,0.001)],"turn":snappedf(fposmod(turn,360.0),0.001)}
+	if on in ["lip","piece"]: e.on = on
+	list.append(e)
 	rebuild()
 	traps_made += 1
 	var k := list.size()-1
@@ -291,7 +306,70 @@ func drag_to(at: Vector2) -> void:
 	var e: Dictionary = entries()[selected]
 	e.at = [snappedf(p.x,0.001),snappedf(p.y,0.001),snappedf(p.z,0.001)]
 	if s.has("turn"): e.turn = float(s.turn)
+	if str(s.on) in ["lip","piece"]: e.on = str(s.on)
+	else: e.erase("on")
 	_refit(selected)
+
+## Every trap set down again on the ground as it stands now (after a land
+## edit): one on a lip onto the lip near it (its edge and facing as the lip
+## snap gives them), or, the lip gone, onto the ground where it stood; one
+## on the ground onto the ground; one on a piece stays. Only a trap whose
+## ground (SEAT_REACH round it) changed since it was last seen is set down
+## again, so a lip trap does not creep along its lip on edits elsewhere;
+## its node is re-posed, nothing rebuilt. How many moved.
+static func _seat_key(e: Dictionary) -> String:
+	return var_to_str([e.get("at"),e.get("turn",0.0),e.get("on","")])
+
+## A hash of the ground round `p` (a 1 m grid out to SEAT_REACH, cm).
+static func _ground_round(g: Callable, p: Vector2) -> int:
+	var ys := PackedFloat32Array()
+	var n := int(SEAT_REACH)
+	for i in range(-n,n+1):
+		for j in range(-n,n+1):
+			ys.append(snappedf(float(g.call(p.x+i,p.y+j)),0.01))
+	return hash(ys)
+
+func reseat() -> int:
+	var motif: RefCounted = editor.motif
+	if motif == null: return 0
+	var g: Callable = motif.ground_fn()
+	var moved := 0
+	var list := entries()
+	var seen := {}
+	for k in range(list.size()):
+		var e: Dictionary = list[k]
+		var on := str(e.get("on","ground"))
+		if on == "piece": continue
+		var a: Array = e.get("at",[0.0,0.0,0.0])
+		var p := Vector2(float(a[0]),float(a[2]))
+		var was := _seat_key(e)
+		var ground := _ground_round(g,p)
+		var known: Variant = _seats.get(was)
+		seen[was] = ground
+		if known == null or int(known) == ground: continue
+		var at := Vector3(p.x,float(g.call(p.x,p.y)),p.y)
+		var turn := float(e.get("turn",0.0))
+		if on == "lip":
+			var lip := lip_at(motif,p)
+			if lip.is_empty(): e.erase("on")
+			else:
+				at = lip.position
+				turn = float(lip.turn)
+		var now := [snappedf(at.x,0.001),snappedf(at.y,0.001),snappedf(at.z,0.001)]
+		if now == a and is_equal_approx(turn,float(e.get("turn",0.0))): continue
+		e.at = now
+		e.turn = snappedf(turn,0.001)
+		var node := node_of(k)
+		if node != null: node.transform = _frame(e)
+		seen.erase(was)
+		seen[_seat_key(e)] = _ground_round(g,Vector2(float(e.at[0]),float(e.at[2])))
+		moved += 1
+	_seats = seen
+	if moved > 0:
+		_built = var_to_str(entries())
+		show_marks()
+	reseats += moved
+	return moved
 
 ## The held ghost or the selected trap turned `deg` degrees.
 func turn(deg: float) -> bool:
@@ -313,7 +391,18 @@ func _refit(k: int) -> void:
 	var node := node_of(k)
 	if node != null: node.transform = _frame(entries()[k])
 	_built = var_to_str(entries())
+	_note_seats()
 	show_marks()
+
+## The ground round every trap noted as it stands (placed, moved, turned).
+func _note_seats() -> void:
+	var motif: RefCounted = editor.motif
+	if motif == null: return
+	var g: Callable = motif.ground_fn()
+	_seats = {}
+	for e: Dictionary in entries():
+		var a: Array = e.get("at",[0.0,0.0,0.0])
+		_seats[_seat_key(e)] = _ground_round(g,Vector2(float(a[0]),float(a[2])))
 
 ## Trap `k` taken away (one undo step).
 func remove(k: int) -> void:

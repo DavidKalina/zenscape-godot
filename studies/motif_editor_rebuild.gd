@@ -43,11 +43,47 @@ var swap_us := 0
 var _queue: Array = []
 var _hill_in: Node3D = null
 ## A frame's share of the swap (us).
-const BUDGET_US := 6000
+const BUDGET_US := 4000
 var built := 0
+## Nodes let go of, freed a few at a time (`sweep`): a dropped job's land
+## and pieces freed at once held the frame ~60 ms (its collision and
+## meshes); leaf by leaf they cost well under a millisecond each.
+var _trash: Array[Node] = []
+const SWEEP_US := 2000
 
 func _init(s: Node3D) -> void:
 	study = s
+
+# --- Letting go ----------------------------------------------------------------------------
+
+## `n` out of the tree and freed over the next frames.
+func trash(n: Node) -> void:
+	if n == null or not is_instance_valid(n): return
+	var p := n.get_parent()
+	if p != null: p.remove_child(n)
+	_trash.append(n)
+
+## Trashed nodes freed leaf first for up to `budget_us` (at least one free).
+func sweep(budget_us: int = SWEEP_US) -> void:
+	var t0 := Time.get_ticks_usec()
+	while not _trash.is_empty():
+		var n: Node = _trash.back()
+		if not is_instance_valid(n):
+			_trash.pop_back()
+			continue
+		var c := n.get_child_count()
+		if c > 0:
+			var last := n.get_child(c-1)
+			n.remove_child(last)
+			_trash.append(last)
+			continue
+		_trash.pop_back()
+		n.free()
+		if Time.get_ticks_usec()-t0 > budget_us: break
+
+## Everything trashed freed now (the editor leaving).
+func sweep_all() -> void:
+	sweep(1 << 40)
 
 # --- Keys ---------------------------------------------------------------------------------
 
@@ -101,23 +137,23 @@ static func run_key(m: RefCounted, k: int) -> String:
 # --- The stand ----------------------------------------------------------------------------
 
 ## The nodes standing in `holder` taken out of it: base -> [[key, node]].
-static func harvest(holder: Node3D) -> Dictionary:
+func harvest(holder: Node3D) -> Dictionary:
 	var out := {}
 	if holder == null: return out
 	for c: Node in holder.get_children():
 		holder.remove_child(c)
 		if not c.has_meta("rb_base"):
-			c.free()
+			trash(c)
 			continue
 		var base := str(c.get_meta("rb_base"))
 		if not out.has(base): out[base] = []
 		(out[base] as Array).append([str(c.get_meta("rb_key")),c])
 	return out
 
-static func free_cache(cache: Dictionary) -> void:
+func free_cache(cache: Dictionary) -> void:
 	for base: String in cache:
 		for e: Array in cache[base]:
-			if is_instance_valid(e[1]): (e[1] as Node).free()
+			trash(e[1])
 	cache.clear()
 
 ## The node in `cache` built as `key` (exact), else one of its base (a
@@ -164,7 +200,7 @@ func fill(m: RefCounted, holder: Node3D, cache: Dictionary, build_missing: bool)
 			else: reused += 1
 			holder.add_child(node)
 			continue
-		if node != null: node.free()
+		if node != null: trash(node)
 		if not build_missing:
 			late.append(["P",k,key])
 			continue
@@ -186,7 +222,7 @@ func fill(m: RefCounted, holder: Node3D, cache: Dictionary, build_missing: bool)
 			else: reused += 1
 			holder.add_child(node)
 			continue
-		if node != null: node.free()
+		if node != null: trash(node)
 		if not build_missing:
 			late.append(["Run",k,key])
 			continue
@@ -301,13 +337,16 @@ func _start() -> void:
 func _drop(done: Dictionary) -> void:
 	for key: String in done.out:
 		var n: Variant = done.out[key]
-		if n is Node and is_instance_valid(n): (n as Node).free()
+		if n is Node: trash(n)
 	# What it was for is still owed (a newer rebuild owes its own).
 
 ## A finished build stood in place of the coarse land and the stale
-## pieces, spread over frames (`_drain`): the new land's parts entered one
-## at a time beside the old (its collision shapes are the cost, ~40 ms
-## whole), then the old land freed, then each piece, then the ropes.
+## pieces, spread over frames (`_drain`). Each new node goes in bare and
+## its children after it, a few leaves a step (`_enter`): a whole land part
+## or aqueduct run entering at once held a frame ~30 ms, nearly all of it
+## its hundreds of collision shapes. The new land comes in beside the old,
+## then the old is let go; a piece comes in beside its stale stand-in,
+## then takes its place. Last, the ropes.
 func _swap(done: Dictionary) -> void:
 	var out: Dictionary = done.out
 	var bare: Node3D = study.bare
@@ -318,24 +357,16 @@ func _swap(done: Dictionary) -> void:
 	if out.has("land"):
 		var land: Node3D = out.land
 		land.name = "HillIn"
-		var parts: Array = land.get_children()
-		for c: Node in parts: land.remove_child(c)
 		_hill_in = land
-		_queue.append([func() -> void: bare.add_child(land),land])
-		for c: Node in parts: _queue.append([func() -> void: land.add_child(c),c])
+		_enter(bare,land,true)
 		_queue.append([func() -> void:
 			var old := bare.get_node_or_null("Hill")
-			if old != null:
-				bare.remove_child(old)
-				old.free()
+			if old != null: trash(old)
 			land.name = "Hill"
 			bare.move_child(land,0)
 			for body: StaticBody3D in KitLand.turf_bodies(land): body.collision_layer |= study.TURF_LAYER
-			# Painted from the stand down (its "Hill" reads as land, not stone).
-			if not study.dressed and study.grey != null:
-				for gi: Node in land.find_children("*","GeometryInstance3D",true,false): study.grey.paint_one(gi as GeometryInstance3D,bare)
 			_hill_in = null
-			coarse_land = false,null])
+			coarse_land = false,[]])
 	var holder: Node3D = bare.get_node_or_null("Pieces")
 	for it: Array in done.late:
 		var name := "%s%d" % [str(it[0]),int(it[1])]
@@ -344,24 +375,75 @@ func _swap(done: Dictionary) -> void:
 		var key := str(it[2])
 		var k := int(it[1])
 		var kind := str(it[0])
+		node.name = name+"In"
+		_enter(holder,node,false)
 		_queue.append([func() -> void:
 			var old := holder.get_node_or_null(name)
 			var base := ""
 			if old != null:
 				base = str(old.get_meta("rb_base",""))
-				holder.remove_child(old)
-				old.free()
+				trash(old)
 			if base == "": base = _base(study.data,study.data.pieces[k]) if kind == "P" else run_base(study.motif,k)
 			_tag(node,base,key)
 			node.name = name
-			holder.add_child(node)
-			study._grey_new(node)
-			built += 1,node])
+			built += 1,[]])
 	_queue.append([func() -> void:
 		detailed = true
 		detail_ms = Time.get_ticks_msec()-_began
 		study.full_ms = detail_ms
-		study.hang_ropes(),null])
+		study.hang_ropes(),[]])
+
+## A step's share of a node's leaves.
+const LEAF_BATCH := 8
+
+## The steps that stand `node` under `parent`: the node with its children
+## taken off, then each child the same way (a leaf `LEAF_BATCH` at a time).
+## Whole: a body (its shapes one by one cost far more than all at once,
+## the body's shape list rebuilt each time: 2048 shapes ~130 ms against
+## ~6 ms), and a scripted node (a rope bridge: its script may want its
+## children when it enters). Each node is painted grey as it goes in.
+static func _whole(n: Node) -> bool:
+	return n is CollisionObject3D or n.get_script() != null
+
+func _enter(parent: Node, node: Node, land: bool) -> void:
+	var kids: Array[Node] = [] if _whole(node) else node.get_children()
+	for c: Node in kids: node.remove_child(c)
+	_queue.append([func() -> void:
+		parent.add_child(node)
+		_paint(node,land,not kids.is_empty()),[node]])
+	var batch: Array[Node] = []
+	for c: Node in kids:
+		if c.get_child_count() > 0:
+			# A body or a branch: a step (or steps) of its own.
+			_leaves(node,batch,land)
+			batch = []
+			if _whole(c): _leaves(node,[c],land)
+			else: _enter(node,c,land)
+			continue
+		batch.append(c)
+		if batch.size() >= LEAF_BATCH:
+			_leaves(node,batch,land)
+			batch = []
+	_leaves(node,batch,land)
+
+func _leaves(parent: Node, batch: Array[Node], land: bool) -> void:
+	if batch.is_empty(): return
+	_queue.append([func() -> void:
+		for c: Node in batch:
+			parent.add_child(c)
+			_paint(c,land,false),batch])
+
+## `n` (alone, or with what is under it) in the grey look's flat colours.
+func _paint(n: Node, land: bool, alone: bool) -> void:
+	var grey: RefCounted = study.grey
+	if study.dressed or grey == null: return
+	var list: Array = [n] if alone else [n]+n.find_children("*","GeometryInstance3D",true,false)
+	for g: Node in list:
+		if not g is GeometryInstance3D: continue
+		var gi := g as GeometryInstance3D
+		if grey._is_water(gi): gi.material_override = grey.water
+		elif land: gi.material_override = grey.land
+		else: gi.material_override = grey.stone
 
 ## The swap's steps run for up to `budget_us` (at least one); the longest
 ## step's cost kept in `swap_us`.
@@ -374,11 +456,12 @@ func _drain(budget_us: int) -> void:
 		swap_us = maxi(swap_us,Time.get_ticks_usec()-t)
 		if Time.get_ticks_usec()-t0 > budget_us: break
 
-## A swap under way given up (a newer rebuild): its nodes not yet stood freed.
+## A swap under way given up (a newer rebuild): its nodes not yet stood
+## (taken off and waiting for their step) let go.
 func _abort() -> void:
 	for it: Array in _queue:
-		var n: Variant = it[1]
-		if n is Node and is_instance_valid(n) and (n as Node).get_parent() == null: (n as Node).free()
+		for n: Variant in it[1]:
+			if n is Node and is_instance_valid(n) and (n as Node).get_parent() == null: trash(n)
 	_queue.clear()
-	if _hill_in != null and is_instance_valid(_hill_in): _hill_in.free()
+	if _hill_in != null and is_instance_valid(_hill_in): trash(_hill_in)
 	_hill_in = null
