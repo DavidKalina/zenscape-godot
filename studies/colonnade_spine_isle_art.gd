@@ -405,6 +405,22 @@ static func _sides(ring: Array[Vector2], rng: RandomNumberGenerator) -> MeshInst
 	var flat := PackedVector2Array()
 	for p: Vector3 in last: flat.append(Vector2(p.x,p.z))
 	var idx := Geometry2D.triangulate_polygon(flat)
+	if idx.is_empty():
+		# The ring pulled 0.93 of the way to the axis crosses itself, so it
+		# has no triangulation and the keel was left open (a hole under the
+		# spine, spec-editor-traps item 17): close it with a strip from each
+		# last-ring edge down to the keel line under the axis instead.
+		var under: Array[Vector3] = []
+		for p: Vector3 in last:
+			var ax := _axis_point(Vector2(p.x,p.z))
+			under.append(Vector3(ax.x,minf(keel(p.x),p.y-0.5),ax.y))
+		for j in range(last.size()):
+			var k := (j+1)%last.size()
+			var a: Vector3 = last[j]
+			var b: Vector3 = last[k]
+			for tri: Array in [[a,b,under[j]],[b,under[k],under[j]]]:
+				var m := ((tri[0] as Vector3)+(tri[1] as Vector3)+(tri[2] as Vector3))/3.0
+				rock.add(tri,ground(m.x,m.z),_out(m)+Vector3.DOWN,1.0)
 	for t in range(0,idx.size(),3):
 		var a: Vector3 = last[idx[t]]
 		var b: Vector3 = last[idx[t+1]]

@@ -57,6 +57,12 @@ func top() -> float:
 func summit() -> Vector3:
 	return Vector3(Gorge.WEST_TOR[0].x,Gorge.plane_w(Gorge.WEST_TOR[0].x)+float(Gorge.WEST_TOR[1]),Gorge.WEST_TOR[0].y)
 
+## Where the gorge's own study starts him: the editor's spawn on this base
+## (motif_based `own_start`). Not `start`: the motif yard spawns a motif
+## with `start` there.
+func own_start() -> Vector3:
+	return Gorge.start()
+
 ## The plants keep off the paths and the pool (Gorge `path_wear`); their
 ## rays reach the ledges and fragments far down the gorge; a sparser sowing
 ## for its larger land.
