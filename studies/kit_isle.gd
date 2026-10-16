@@ -492,6 +492,12 @@ func _ready() -> void:
 	audio = KitAudio.new()
 	audio.isle = self
 	add_child(audio)
+	# The wind gauge: the updraft's charge in three segments (scripts/wind_gauge.gd).
+	if updraft != null and WIND_GAUGE_ON:
+		wind_gauge = WindGauge.new()
+		wind_gauge.name = "WindGauge"
+		wind_gauge.setup(updraft,wind_gauge_shown)
+		add_child(wind_gauge)
 	if _place != Vector4.INF:
 		var turn := deg_to_rad(_place.w)
 		start = Vector3(_place.x,_place.y,_place.z)
@@ -1331,6 +1337,16 @@ func _gust_input() -> void:
 		add_child(gust_shot)
 	gust_shot.fire(motor.feet,heading,target,spent)
 	twirl_held_off = true
+
+## The wind gauge (scripts/wind_gauge.gd); off: no gauge, as before.
+const WIND_GAUGE_ON := true
+const WindGauge = preload("res://scripts/wind_gauge.gd")
+var wind_gauge: CanvasLayer = null
+
+## Whether the wind gauge may show: on foot (not in the plane, or held off
+## while a capture runs).
+func wind_gauge_shown() -> bool:
+	return walk_ready and not flying and _capture == ""
 
 ## On foot, walking (not flying, stranded, off the edge or holding the stone up).
 func foot_lock_allowed() -> bool:

@@ -82,6 +82,10 @@ func back_to_plane() -> void:
 	_return_to_plane()
 	reset_camera()
 
+## The wind gauge stays down while the title is up.
+func wind_gauge_shown() -> bool:
+	return super.wind_gauge_shown() and not (front_door != null and front_door.titled)
+
 ## Nothing reaches the isle while the title is up: its card has the keys.
 ## The study's developer keys only where they're on (DevKeys); R on foot is
 ## Back to the plane.
