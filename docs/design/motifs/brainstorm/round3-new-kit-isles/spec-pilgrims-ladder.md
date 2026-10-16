@@ -46,6 +46,29 @@ Note the change in the commit.
   `git log -1 --format=%B ec376068` before placing it; the plan may need
   its torana numbers updated.
 
+## Spec change after the user played it (strip and populate)
+
+The user played the place at 9ef1e363 and likes it. The ring reads very
+well. Now it should lose two things and gain some life:
+
+7. **Strip the merchant and the beetle from this place.** Today the
+   merchant's stall spawns on the Halo's perch, and a beetle walks a lane
+   on Threshold. Turn both off for `pilgrims_ladder` only: a per-motif
+   opt-out, so other places keep them. Don't delete them from the game.
+8. **Populate it: it reads sparse and barren.** Do a dressing pass that
+   follows `.claude/skills/motif-turf/SKILL.md`. Use existing kit and
+   flora only, and keep it additive:
+   - ruin and pilgrimage dressing round each station (fallen piers, tomb
+     chests, floor slabs, walls and stairs from the kit);
+   - growth (vines on the stone, trees and shrubs where they won't block
+     a route or the landing strip);
+   - life (birds, the wind's movement).
+
+   It must not cover the landing strip, block a route or the plane's
+   lines through the ring and the gate, or remove the guacharo's cover
+   rule. Re-run the route drives after it, and take before and after
+   stills of each station and the whole place. Look at them.
+
 ## Rules
 
 Prototyping (AGENTS.md): smoke checks plus throwaway drive checks, no new
