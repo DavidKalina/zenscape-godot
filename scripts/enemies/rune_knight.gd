@@ -52,6 +52,15 @@ extends Node3D
 ##   (eased out by `plant`), then at `recover` he tracks again. Pushed off
 ##   the deck (past its side or end), he falls to the ground below, lands
 ##   in another stagger, and stays there off his patrol.
+## - **Lock-on and the gust shot** (scripts/lock_on/): he is in
+##   "lock_targets" (`aim_point` his chest, `tall` his height, so the
+##   marker hangs over his helm). The gust shot's live balls are in the
+##   `wind_shot` group too (gust_shot.gd's Seam): caught like any shot
+##   (made a wind shot in his hands, counted at its `rally_speed`), or,
+##   from the side or behind or past his limit, struck on him. A locked
+##   ball that bursts on him calls `hit(at, way, strength)`: a stagger
+##   pushed KNOBS.stagger_push x (hit_push_base + hit_push_strength x
+##   strength) m along its flat way.
 ##
 ## The host (studies/aqueduct_isle.gd) makes him in `_add_life` when
 ## `wanted`. His knobs are the one dictionary below so a field (enemy.gd)
@@ -110,6 +119,10 @@ const KNOBS := {
 	# A hit: how far it pushes him back (m); the deck's half width he
 	# keeps to (m, off its sides he falls); the fall's pull (m/s/s).
 	"stagger_push": 1.1,
+	# A gust shot's hit (`hit`): the push's share of stagger_push at no
+	# strength and per unit of it (0.6..1.0 from the charge).
+	"hit_push_base": 0.7,
+	"hit_push_strength": 0.4,
 	"deck_half": 1.25,
 	"gravity": 22.0,
 }
@@ -122,7 +135,7 @@ const ROOM_LAYER := 1 << 13
 
 var isle: Node3D
 var body: Node3D
-var tall := 1.9
+var height := 1.9
 ## "patrol", "turn", "held", "notice", "track", "gather", "throw",
 ## "catch", "return", "stagger", "fall".
 var state := "patrol"
@@ -169,15 +182,19 @@ func _init() -> void:
 func knob(key: String) -> float:
 	return float(KNOBS[key])
 
+## His height (m), for the lock marker over his helm.
+func tall() -> float:
+	return height
+
 ## Where a blast aimed at him goes: his chest rune.
 func aim_point() -> Vector3:
-	return body.socket("chest_rune").global_position if body != null else global_position+Vector3.UP*tall*0.7
+	return body.socket("chest_rune").global_position if body != null else global_position+Vector3.UP*height*0.7
 
 ## Him on `host`'s aqueduct deck (the aqueduct isle), at the head end,
 ## facing along it.
 func setup(host: Node3D) -> void:
 	isle = host
-	tall = WorldScale.wanderer_tall*knob("tall_ratio")
+	height = WorldScale.wanderer_tall*knob("tall_ratio")
 	var margin := knob("end_margin")
 	ends = [Art.AQ*Vector3(Art.HEAD+margin,Art.DECK,0.0),Art.AQ*Vector3(Art.SNAP-margin,Art.DECK,0.0)]
 	yaw = _yaw_to(ends[1]-ends[0])
@@ -185,11 +202,13 @@ func setup(host: Node3D) -> void:
 	transform = Transform3D(Basis(Vector3.UP,yaw),ends[0])
 	body = BodyStandin.new()
 	add_child(body)
-	body.setup(tall)
+	body.setup(height)
 	body.beat_reached.connect(_on_beat)
 	_shape = body.shape()
 	# The stand-in blast (scripts/enemies/wind_blast_standin.gd) aims at him.
 	add_to_group("wind_shot_aim")
+	# Lock-on (scripts/lock_on/foot_lock.gd) and the gust shot's hit.
+	add_to_group("lock_targets")
 	_build_room()
 	body.play("walk")
 
@@ -384,7 +403,7 @@ func _blocked(fwd: Vector3) -> bool:
 	var motor = isle.get("motor") if isle != null else null
 	if motor == null: return false
 	var feet: Vector3 = motor.feet
-	if absf(feet.y-position.y) > tall*0.6: return false
+	if absf(feet.y-position.y) > height*0.6: return false
 	var off := feet-position
 	var ahead := off.dot(fwd)
 	var room: float = _shape.radius
@@ -421,8 +440,8 @@ func _read_shots(delta: float) -> void:
 	var chest := aim_point()
 	var reach: float = _shape.reach
 	var hit_r: float = WindShot.radius()+float(_shape.radius)+WindShot.FUSE*WindShot.walker_tall()
-	var a := position+Vector3.UP*tall*0.15
-	var b := position+Vector3.UP*tall*0.9
+	var a := position+Vector3.UP*height*0.15
+	var b := position+Vector3.UP*height*0.9
 	for node: Node in get_tree().get_nodes_in_group(WindShot.GROUP):
 		if not node is Node3D or node == shot or node == caught: continue
 		if node.get("state") != "flying" or node.get("shooter") == self: continue
@@ -443,11 +462,11 @@ func _read_shots(delta: float) -> void:
 ## caught KNOBS.rally_limit times.
 func _can_catch(node: Node, p: Vector3, v: Vector3) -> bool:
 	if state in ["catch","return","stagger","fall"]: return false
-	if not node.has_method("hold") or not node.has_method("launch"): return false
+	if not (node.has_method("hold") and node.has_method("launch")) and not node.has_method("absorb"): return false
 	var off := p-position
 	if absf(wrapf(_yaw_to(off)-yaw,-PI,PI)) > knob("catch_cone"): return false
 	var why := ""
-	if v.length() > knob("catch_speed"): why = "too fast to catch (%.1f m/s)" % v.length()
+	if _pace(node,v) > knob("catch_speed"): why = "too fast to catch (%.1f m/s)" % _pace(node,v)
 	elif int(node.get_meta("rally",0)) >= int(knob("rally_limit")): why = "past his rally limit"
 	if why != "":
 		if not node.has_meta("missed"):
@@ -456,10 +475,27 @@ func _can_catch(node: Node, p: Vector3, v: Vector3) -> bool:
 		return false
 	return true
 
+## A shot's pace as a rally counts it: its `rally_speed` if it has one
+## (the gust shot's balls), else its speed.
+static func _pace(node: Node, v: Vector3) -> float:
+	var r = node.get("rally_speed")
+	return float(r) if r != null else v.length()
+
 func _catch(node: Node3D, v: Vector3) -> void:
 	_drop_gather()
+	_caught_speed = _pace(node,v)
+	if not node.has_method("hold"):
+		# Not a wind shot (a gust shot's ball): taken into one in his hands.
+		var held: Node3D = WindShot.new()
+		isle.add_child(held)
+		held.global_position = node.global_position
+		held.set("shooter",node.get("shooter"))
+		var st = node.get("strength")
+		if st != null: held.set("strength",float(st))
+		held.set_meta("rally",int(node.get_meta("rally",0)))
+		node.call("absorb")
+		node = held
 	caught = node
-	_caught_speed = v.length()
 	node.set_meta("rally",int(node.get_meta("rally",0))+1)
 	node.call("hold",body.socket("hands_mid"))
 	catches += 1
@@ -501,9 +537,26 @@ func _send_return(node: Node3D, to: Vector3, speed: float) -> void:
 	node.call("launch",WindShot.lob(from,to,t,knob("return_fall")),knob("return_fall"),knob("return_grace"))
 	print("rune knight: returns it at %.1f m/s toward (%.1f, %.1f, %.1f)" % [speed,to.x,to.y,to.z])
 
-## A shot burst on him: he staggers back along it.
+## A gust shot's ball burst on him (scripts/lock_on/gust_shot.gd): he
+## staggers back along its flat way, farther with more strength.
+func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
+	_stagger(way,knob("stagger_push")*(knob("hit_push_base")+knob("hit_push_strength")*strength))
+	print("rune knight: gust shot hit at (%.1f, %.1f, %.1f), strength %.2f, staggers (%d hits)" % [at.x,at.y,at.z,strength,hits])
+
+## A shot burst on him: he staggers back along it (a gust shot's ball as
+## `hit` would push him).
 func _hit(node: Node, at: Vector3, v: Vector3) -> void:
 	if node.has_method("strike"): node.call("strike",at)
+	var meters := knob("stagger_push")
+	if not node.has_method("hold"):
+		var st = node.get("strength")
+		meters *= knob("hit_push_base")+knob("hit_push_strength")*(float(st) if st != null else 1.0)
+	_stagger(v,meters)
+	print("rune knight: hit at %.1f m/s, staggers (%d hits)" % [v.length(),hits])
+
+## Staggered back `meters` m along `v`'s flat way (any gather or held shot
+## lost).
+func _stagger(v: Vector3, meters: float) -> void:
 	_drop_gather()
 	if caught != null and is_instance_valid(caught) and caught.has_method("absorb"): caught.call("absorb")
 	caught = null
@@ -513,10 +566,9 @@ func _hit(node: Node, at: Vector3, v: Vector3) -> void:
 	if flat.length() < 0.1: flat = -_forward()
 	if state != "fall":
 		# Eased out over the clip: push decays exp(-3 t), so it goes push/3.
-		push = flat.normalized()*knob("stagger_push")*3.0
+		push = flat.normalized()*meters*3.0
 		state = "stagger"
 		body.play("stagger")
-	print("rune knight: hit at %.1f m/s, staggers (%d hits)" % [v.length(),hits])
 
 ## The deck's frame: x along it, z across.
 func _deck_local(at: Vector3) -> Vector3:

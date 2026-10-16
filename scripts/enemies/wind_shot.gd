@@ -19,7 +19,8 @@ extends Node3D
 ##   shooter (the wanderer's blast meeting the knight's return) takes the
 ##   newer one's way and shooter, MEET_GAIN times the faster of the two,
 ##   and the newer one is `absorb`ed: one shot goes on, faster. A non-shot
-##   in the group (a real blast later) only lends its way and shooter.
+##   in the group (the gust shot's ball, scripts/lock_on/gust_shot.gd)
+##   lends its way and shooter, its pace counted at its `rally_speed`.
 ## - **Struck:** `strike(at)` bursts it on a body that reads shots itself
 ##   (the knight's hit test), with no knock of its own.
 ## - **done**: popped or burst: puffs, then it frees itself.
@@ -218,7 +219,9 @@ func _meets_other(from: Vector3, to: Vector3, delta: float) -> bool:
 		var op := (node as Node3D).global_position
 		var near := _segments_closest(from,to,op-ov*delta,op)
 		if near.x > radius()*2.0+FUSE*t*2.0: continue
-		var speed := maxf(velocity.length(),ov.length())*MEET_GAIN
+		# A gust shot's ball (scripts/lock_on/gust_shot.gd) counts at its rally pace.
+		var other_pace = node.get("rally_speed")
+		var speed := maxf(velocity.length(),float(other_pace) if other_pace != null else ov.length())*MEET_GAIN
 		velocity = (ov.normalized() if ov.length() > 0.1 else -velocity.normalized())*speed
 		var of = node.get("fall")
 		fall = float(of) if of != null else 0.0
