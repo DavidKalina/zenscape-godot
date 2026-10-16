@@ -100,6 +100,22 @@ const SEG_SHOT_P := 0.7         # charge-equivalent strength handed to the gust 
 ## Segmented only: Q / RB in a grounded slide is the forward burst along the
 ## slide's travel, whatever the stick (off: the old stick-toward-travel rule).
 const SLIDE_BOOST := true
+## Segmented only: the charge comes from moves through the air, not the
+## ground. Running and sliding build nothing; each air move starting bumps it
+## (SEG_BUMPS, about three to a segment), held air moves add per second
+## (SEG_HOLDS), and airtime at pace over FLOW_PACE adds SEG_AIR a second (not
+## while his own updrafts carry him). Off: the old pace-and-moves rule.
+const AIR_CHARGE := true
+const SEG_BUMPS := {"flip":0.14,"kick":0.14,"long":0.12,"wallrun":0.12,"rope":0.12,"twirl":0.09,"pump":0.06}
+const SEG_HOLDS := {"wallrun":0.10,"rope":0.08}
+const SEG_AIR := 0.06           # a second airborne above FLOW_PACE
+## The gentler drain (segmented): the lull before it starts, then per second
+## for the partial part over the full segments; full segments are held till
+## SEG_HELD_GRACE s of lull, then drain at SEG_DECAY_HELD (~22 s a segment).
+const SEG_GRACE := 3.0
+const SEG_DECAY := 0.04
+const SEG_HELD_GRACE := 15.0
+const SEG_DECAY_HELD := 0.015
 
 # --- Look: the charge is a wake of wind behind him, drawn in the breeze
 # ribbons' brush (shaders/breeze_ribbon.gdshader), as the dragon's breath is.
@@ -210,6 +226,9 @@ func _unlock(delta: float, m: PilotMotor) -> void:
 		_prev_move = m.move
 
 func _charge(delta: float, m: PilotMotor) -> void:
+	if segmented and AIR_CHARGE:
+		_air_charge(delta,m)
+		return
 	# Gliding on the pocket sail is riding the air, not flowing: it builds nothing.
 	if spent or m.recovering() or m.swimming or m.sail.open:
 		_decay(delta)
@@ -230,9 +249,37 @@ func _charge(delta: float, m: PilotMotor) -> void:
 		_quiet = 0.0
 	else: _decay(delta)
 
+## Segmented charge from the air (AIR_CHARGE). A burst's `spent` lock does
+## not block it: the ground pace a burst gives builds nothing here.
+func _air_charge(delta: float, m: PilotMotor) -> void:
+	if m.recovering() or m.swimming or m.sail.open:
+		_decay(delta)
+		_prev_move = ""
+		return
+	var key: String = m.move if m.rider == null else "rope"
+	var gain := 0.0
+	if key in SEG_BUMPS and key != _prev_move:
+		charge = minf(charge+float(SEG_BUMPS[key]),1.0)
+		_quiet = 0.0
+	if key in SEG_HOLDS: gain += float(SEG_HOLDS[key])
+	if not m.grounded and m.rider == null and _air_ups == 0 and m.speed() > FLOW_PACE*UNIT:
+		gain += SEG_AIR
+	_prev_move = key
+	if gain > 0.0:
+		charge = minf(charge+gain*delta,1.0)
+		_quiet = 0.0
+	elif key in SEG_BUMPS: _quiet = 0.0   # mid flip, mid kick: no drain
+	else: _decay(delta)
+
 func _decay(delta: float) -> void:
 	_quiet += delta
-	if _quiet > GRACE: charge = maxf(charge-DECAY*delta,0.0)
+	if not (segmented and AIR_CHARGE):
+		if _quiet > GRACE: charge = maxf(charge-DECAY*delta,0.0)
+		return
+	if _quiet <= SEG_GRACE: return
+	var whole := floorf((charge+SEG_HAIR)/SEG)*SEG
+	if charge > whole+SEG_HAIR: charge = maxf(charge-SEG_DECAY*delta,whole)
+	elif _quiet > SEG_HELD_GRACE: charge = maxf(charge-SEG_DECAY_HELD*delta,0.0)
 
 ## The least charge an unleash takes: a segment, or MIN_RELEASE unsegmented.
 func least() -> float:
