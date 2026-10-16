@@ -84,6 +84,17 @@ const COOL_MAX := 12.0
 ## the gap, hanging on a ring GAP_RING of the usual over it.
 const STALK_PITCHES: Array[float] = [50.0,62.0,72.0,80.0,86.0]
 const GAP_RING := 0.25
+## It stalks where he can see it: with a camera, the stalk point must sit
+## inside STALK_FRAME of the half-frame; failing the usual point, nearer
+## (STALK_NEAR of STALK_OUT) and lower (STALK_LOW of STALK_UP).
+const STALK_FRAME := 0.62
+const STALK_NEAR: Array[float] = [1.0,0.8,0.65,0.5]
+const STALK_LOW: Array[float] = [1.0,0.6,0.3,0.0]
+const STALK_SEEN := 0.8
+## The least gap (his heights) its body keeps off stone and turf; in the
+## dive less, so it still reaches his middle.
+const CLEAR := 0.6
+const CLEAR_STOOP := 0.15
 
 ## Its knobs (sizes in his heights, speeds m/s, times s); `--flyer-<knob>=`
 ## overrides one (layer_flyers.gd).
@@ -149,6 +160,8 @@ var _stalk_up := 1.0
 ## The stalk point's lift off the level (rad): 0 for the usual point out
 ## toward the camera; steep for a point up through a gap in his cover.
 var _stalk_pitch := 0.0
+var _stalk_near := 1.0
+var _seen_t := 0.0
 var _stalk_check := 0.0
 var _safe_t := 0.0
 var _cover_t := 0.0
@@ -158,6 +171,8 @@ var _click_t := 0.0
 var _click_ready := 0.0
 var _flap_c := 0.0
 var _prev := Vector3.ZERO
+var _clear_ray := PhysicsRayQueryParameters3D.new()
+var _grazed := false
 var _vel_prev := Vector3.ZERO
 var _carry_dir := Vector3.ZERO
 var _struggles := 0
@@ -208,6 +223,7 @@ func _go(s: String) -> void:
 	if s == state: return
 	state = s
 	state_t = 0.0
+	_seen_t = 0.0
 	beat.emit(s)
 
 # --- Each step -----------------------------------------------------------------------
@@ -240,6 +256,7 @@ func step(delta: float, cam_fwd: Vector3) -> void:
 		"carry": _carry(delta)
 		"pull": _pull(delta)
 	position += vel*delta
+	_keep_clear()
 	_orient(delta)
 	_animate(delta)
 	_shadow_place(delta)
@@ -340,6 +357,11 @@ func _circle(delta: float, hunting: bool) -> void:
 		_centre = feet
 	_glide_round(_centre,ring,up,pace,delta)
 	var close := position.distance_to(feet) < float(knobs.circle_r)*unit*2.0
+	# It drops to the stalk from the far half of its ring (out past him,
+	# away from the camera), so it comes down in view, not over the
+	# camera from behind.
+	var flat_fwd := Vector3(_cam_fwd.x,0.0,_cam_fwd.z).normalized()
+	if (position-feet).dot(flat_fwd) < 0.0: close = false
 	if close and ready_to:
 		if _pick_stalk():
 			_go("stalk")
@@ -390,6 +412,13 @@ func _pick_stalk() -> bool:
 	var side := float(knobs.stalk_side)
 	# In view first; failing that wider round him, then higher.
 	var sides: Array[float] = [side,-side,side*0.4,-side*0.4,side*1.8,-side*1.8,side*3.0,-side*3.0,0.0]
+	# Where the player can see it: well inside the camera's frame
+	# (STALK_FRAME of the half-frame), nearer and lower if need be.
+	if _view() != null:
+		for out: float in STALK_NEAR:
+			for up: float in STALK_LOW:
+				for a: float in sides:
+					if _try_stalk(mid,fwd,a*turn,0.0,up,out,true): return true
 	for up: float in [1.0,2.2]:
 		for a: float in sides:
 			if _try_stalk(mid,fwd,a*turn,0.0,up): return true
@@ -401,22 +430,74 @@ func _pick_stalk() -> bool:
 ## The stalk point for a heading `ang` off the camera's forward, `pitch`
 ## off the level (0: STALK_OUT out, STALK_UP*`up` over him; else STALK_OUT
 ## away on that slope).
-func _stalk_point(mid: Vector3, fwd: Vector3, ang: float, pitch: float, up: float) -> Vector3:
+func _stalk_point(mid: Vector3, fwd: Vector3, ang: float, pitch: float, up: float, near := 1.0) -> Vector3:
 	var way := fwd.rotated(Vector3.UP,ang)
-	var out := float(knobs.stalk_out)*unit
+	var out := float(knobs.stalk_out)*unit*near
 	if pitch <= 0.0: return mid+way*out+Vector3.UP*float(knobs.stalk_up)*up*unit
 	return mid+(way*cos(pitch)+Vector3.UP*sin(pitch))*out
 
-func _try_stalk(mid: Vector3, fwd: Vector3, ang: float, pitch: float, up: float) -> bool:
-	var p := _stalk_point(mid,fwd,ang,pitch,up)
+func _try_stalk(mid: Vector3, fwd: Vector3, ang: float, pitch: float, up: float, near := 1.0, framed := false) -> bool:
+	var p := _stalk_point(mid,fwd,ang,pitch,up,near)
+	if framed and not _in_view(p,STALK_FRAME): return false
 	if field.blocked(mid+Vector3.UP*0.3,p-mid-Vector3.UP*0.3): return false
 	# Room under it to hang (not in the grass).
 	if field.floor_under(p,0.5,1.4*unit) != -INF: return false
 	_stalk_ang = ang
 	_stalk_up = up
 	_stalk_pitch = pitch
+	_stalk_near = near
 	_stalk_at = p
 	return true
+
+## Its body never goes into stone: after each move, a sweep from where it
+## was (its way into a cliff or a keel) and a probe down from the higher
+## of then and now (into turf below) hold it CLEAR of his heights off
+## whatever it met (CLEAR_STOOP in the dive, so it still reaches his
+## middle), and take out the speed into it. `_grazed` says it touched.
+func _keep_clear() -> void:
+	_grazed = false
+	var need := (CLEAR_STOOP if state == "stoop" else CLEAR)*unit
+	var mask := WalkerOnly.strip(field.study.ground.mask)
+	var space := get_world_3d().direct_space_state
+	var moved := position-_prev
+	if moved.length() > 0.001:
+		var dir := moved.normalized()
+		_clear_ray.from = _prev
+		_clear_ray.to = position+dir*need
+		_clear_ray.collision_mask = mask
+		var hit := space.intersect_ray(_clear_ray)
+		if not hit.is_empty():
+			var n: Vector3 = hit.normal
+			position = (hit.position as Vector3)+n*need
+			vel -= n*minf(vel.dot(n),0.0)
+			_grazed = true
+	_clear_ray.from = Vector3(position.x,maxf(_prev.y,position.y)+0.05,position.z)
+	_clear_ray.to = position-Vector3.UP*need
+	_clear_ray.collision_mask = mask
+	var under := space.intersect_ray(_clear_ray)
+	if not under.is_empty():
+		var floor_y := (under.position as Vector3).y
+		if position.y < floor_y+need:
+			position.y = floor_y+need
+			vel.y = maxf(vel.y,0.0)
+			_grazed = true
+
+## The camera the player sees through (null without one).
+func _view() -> Camera3D:
+	var vp := get_viewport()
+	return vp.get_camera_3d() if vp != null else null
+
+## Whether `p` lies inside `frame` of the camera's half-frame (1.0: the
+## frame's edge). True without a camera.
+func _in_view(p: Vector3, frame: float) -> bool:
+	var cam := _view()
+	if cam == null: return true
+	var q := cam.global_transform.affine_inverse()*p
+	if q.z > -0.5: return false
+	var size := get_viewport().get_visible_rect().size
+	var ty := tan(deg_to_rad(cam.fov)*0.5)
+	var tx := ty*(size.x/maxf(size.y,1.0))
+	return absf(q.x/-q.z) <= tx*frame and absf(q.y/-q.z) <= ty*frame
 
 func _stalk(delta: float, hunting: bool) -> void:
 	_stalk_check -= delta
@@ -427,7 +508,7 @@ func _stalk(delta: float, hunting: bool) -> void:
 			return
 	var mid := _middle()
 	var fwd := Vector3(_cam_fwd.x,0.0,_cam_fwd.z).normalized()
-	_stalk_at = _stalk_at.lerp(_stalk_point(mid,fwd,_stalk_ang,_stalk_pitch,_stalk_up),1.0-exp(-2.0*delta))
+	_stalk_at = _stalk_at.lerp(_stalk_point(mid,fwd,_stalk_ang,_stalk_pitch,_stalk_up,_stalk_near),1.0-exp(-2.0*delta))
 	# Over a gap it hangs on a tight ring, so it stays over the gap.
 	var r := float(knobs.stalk_r)*unit*(GAP_RING if _stalk_pitch > 0.0 else 1.0)
 	var ang := state_t*float(knobs.stalk_speed)/maxf(r,0.5)*0.5*turn
@@ -450,6 +531,10 @@ func _stalk(delta: float, hunting: bool) -> void:
 	var near := position.distance_to(_stalk_at) < r*2.0 and vel.length() < float(knobs.stalk_speed)*1.6
 	# Only with its own line to him clear (over a gap, not over the roof).
 	if near and _stalk_pitch > 0.0: near = not field.blocked(position,(mid-position)*0.9)
+	# In the open it screams only once he has seen it hang there in view
+	# STALK_SEEN s (or at its longest).
+	if _in_view(position,0.92): _seen_t += delta
+	if near and _stalk_pitch <= 0.0 and state_t < float(knobs.stalk_max): near = _seen_t >= STALK_SEEN and _in_view(position,0.92)
 	if near and state_t >= float(knobs.stalk_min) and (exposure >= 0.85 or (state_t >= float(knobs.stalk_max) and exposure >= 0.4)):
 		# The aim is locked with the scream: where he will be if he keeps
 		# on as he is (LEAD of his pace over the fold and the dive). Kept
@@ -509,6 +594,8 @@ func _stoop(delta: float) -> void:
 	var short := minf(speed*0.2,position.distance_to(_middle())-1.5*unit)
 	var blocked: bool = short > 0.3 and field.blocked(position,stoop_dir*short)
 	var ground_close := _ground_y != -INF and position.y-_ground_y < 0.6*unit and vel.y < 0.0 and passed
+	# Stopped dead against stone or turf short of him: it pulls out.
+	if _grazed and vel.length() < 3.0 and position.distance_to(_middle()) > float(knobs.hit)*unit*1.5: ground_close = true
 	if passed or blocked or ground_close or state_t > STOOP_MAX:
 		misses += 1
 		last_strike = "miss"
