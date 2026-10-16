@@ -33,7 +33,8 @@ parents it there. Stone does not bend: each piece rides one bone, and the
 body throws pieces loose for `crumble` and `shatter`.
   bones: hips spine chest head shoulder_l/r upper_arm_l/r forearm_l/r
          hand_l/r thigh_l/r shin_l/r foot_l/r tabard_f tabard_b skirt_l/r
-Materials: `stone`, `slit` (the visor's dark), `rune` (the three rune
+Materials: `stone`, `slit` (the visor's dark), `eye` (the back wall of
+the visor's bar, where the eye glows), `rune` (the three rune
 tablets: chest-rune, hand_l-rune, hand_r-rune). A tablet's front carries
 its glyph square in UV (u along its row of RUNE_GLYPHS glyphs, v across,
 both 0..1; -1 off the front); the game turns that into the rune data the
@@ -97,7 +98,7 @@ def srgb(hx):
 
 
 MATS = {}
-for key, hx, rough in (("stone", "5a5d63", 0.95), ("slit", "0c0b0b", 1.0), ("rune", "5a5d63", 0.95)):
+for key, hx, rough in (("stone", "5a5d63", 0.95), ("slit", "0c0b0b", 1.0), ("rune", "5a5d63", 0.95), ("eye", "0c0b0b", 1.0)):
     m = bpy.data.materials.new(key)
     m.diffuse_color = (*srgb(hx), 1.0)
     m.roughness = rough
@@ -235,16 +236,19 @@ def rbox(bone, name, center, half, r, mat="stone", shape=None, wear=1.0, chunks=
             pass
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    # A rune tablet's glyph square: on its front (+y local), u down its row
-    # (top to bottom), v across (his left to right as seen).
+    # A rune tablet's glyph square: on its front (+y local), u along its row
+    # of glyphs (left to right as seen from in front: his right to his
+    # left, -x local), v across, foot to top (world up, whichever way the
+    # tablet's local z points), so the glyphs stand upright.
     uvl = bm.loops.layers.uv.new("UVMap")
     Minv = M.inverted()
+    up = 1.0 if (Minv @ V((0, 0, 1))).z >= 0.0 else -1.0
     for f in bm.faces:
         ln = Minv @ f.normal
         for lp in f.loops:
             if rune and ln.y > 0.6:
                 q = Minv @ (lp.vert.co - c)
-                lp[uvl].uv = ((hz - q.z) / (2 * hz), (q.x + hx) / (2 * hx))
+                lp[uvl].uv = ((hx - q.x) / (2 * hx), (up * q.z + hz) / (2 * hz))
             else:
                 lp[uvl].uv = (-1.0, -1.0)
     PIECES.append([f"{bone}-{name}", bone, bm, mat, rune])
@@ -361,7 +365,8 @@ rbox("chest", "barrel", (0, 0, HIP_Y + 0.245 * h), (0.18 * h, 0.11 * h, 0.088 * 
 rbox("chest", "gorget", (0, -0.005 * h, NECK_Y - 0.012 * h), (0.09 * h, 0.08 * h, 0.03 * h), (0.06, 0.06, 0.025),
      seed=12, chunks=1)
 # the chest's rune tablet, set into the keel
-rbox("chest", "rune", (0, 0.137 * h, HIP_Y + 0.245 * h), (0.028 * h, 0.012 * h, 0.07 * h), (0.02, 0.008, 0.02),
+# (a row of glyphs across, each cell about 0.8 as long as it is high)
+rbox("chest", "rune", (0, 0.137 * h, HIP_Y + 0.245 * h), (0.068 * h, 0.012 * h, 0.03 * h), (0.02, 0.008, 0.02),
      mat="rune", rot=turn(rx=0.14), seed=13, wear=0.4, rune="chest", steps=2)
 
 # --- the helm: a swollen bucket, a fin crest, the T slit cut in
@@ -432,7 +437,7 @@ for sd in ("l", "r"):
     rbox(f"hand_{sd}", "thumb", gc + R @ V((-s * 0.065 * h, 0.04 * h, -0.01 * h)), (0.022 * h, 0.03 * h, 0.042 * h),
          0.02, rot=R @ turn(ry=s * 0.3), seed=k + 44, steps=2)
     # the gauntlet's rune tablet, on its back (his front at rest)
-    rbox(f"hand_{sd}", "rune", gc + R @ V((0, 0.079 * h, -0.01 * h)), (0.03 * h, 0.01 * h, 0.05 * h),
+    rbox(f"hand_{sd}", "rune", gc + R @ V((0, 0.079 * h, -0.01 * h)), (0.05 * h, 0.01 * h, 0.03 * h),
          (0.018, 0.007, 0.018), mat="rune", rot=R, seed=k + 45, wear=0.4, rune=f"hand_{sd}", steps=2)
 
 # ------------------------------------------------------------------ objects
@@ -480,8 +485,12 @@ def cutter(name, center, half):
 
 helm = objs["head-helm"]
 front_y = HELM_C.y + HELM_HALF[1]
-slit_bar = cutter("cut_bar", (0, front_y, HY + 0.112 * h), (0.072 * h, 0.03 * h, 0.009 * h))
-slit_stem = cutter("cut_stem", (0, front_y, HY + 0.07 * h), (0.0095 * h, 0.03 * h, 0.04 * h))
+# Cut deep (about 6 cm behind the face) so it reads as a dark gash with the
+# eye's light at its back; the bar a little taller than the stem is wide.
+SLIT_Z = HY + 0.112 * h
+SLIT_HALF_Z = 0.012 * h
+slit_bar = cutter("cut_bar", (0, front_y, SLIT_Z), (0.072 * h, 0.045 * h, SLIT_HALF_Z))
+slit_stem = cutter("cut_stem", (0, front_y, HY + 0.07 * h), (0.0105 * h, 0.04 * h, 0.04 * h))
 helm.data.materials.append(MATS["slit"])
 bpy.context.view_layer.objects.active = helm
 for c in (slit_bar, slit_stem):
@@ -495,8 +504,15 @@ for c in (slit_bar, slit_stem):
         pass
     bpy.ops.object.modifier_apply(modifier=mod.name)
     bpy.data.objects.remove(c)
+# The bar's back wall is the eye (material `eye`, lit by the game's
+# eye_glow); the rest of the cut stays the dark `slit`.
+helm.data.materials.append(MATS["eye"])
+eye_i = len(helm.data.materials) - 1
 for p in helm.data.polygons:
-    p.use_smooth = helm.data.materials[p.material_index].name != "slit"
+    is_slit = helm.data.materials[p.material_index].name == "slit"
+    p.use_smooth = not is_slit
+    if is_slit and p.normal.y > 0.7 and p.center.z + helm.location.z > SLIT_Z - SLIT_HALF_Z - 1e-4:
+        p.material_index = eye_i
 
 # ------------------------------------------------------------------ sockets
 def socket(name, bone, at):

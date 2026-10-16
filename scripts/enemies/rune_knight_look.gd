@@ -16,9 +16,21 @@ extends Node3D
 ## and its glyph count, from the model's UV). Each rune has its own
 ## material, so it lights (`rune_energy`) and goes dark on its own.
 ##
+## The visor's eye (the back wall of the T slit's bar, material `eye`) glows
+## his runes' light: dim at rest, lit while he watches or tracks you
+## (`eye_glow`, which the trunk wires to the mind's notice and tracking).
+##
+## He is a small, deeply creviced figure, so against a bright sky the
+## Olmec's stone reads murky on him: his own material lifts the hemisphere
+## fill and the sky rim and eases the crevice grime (the shader's knobs on
+## his material only; its defaults, the Olmec's, are unchanged), and his
+## tone is lifted a little (STONE_LIFT).
+##
 ## Built `height` m to the helm's crown, his feet at the origin, facing -Z.
 ## Pieces: `pieces` (name -> MeshInstance3D, `<bone>-<piece>`), sockets
 ## `socket-<name>` (Node3D). Not yet rigged (task 3).
+##   rune_energy(key, share)  a rune's light, 0 dark, 1 at rest
+##   eye_glow(share)          the eye, 0 dark, EYE_REST at rest, 1 full
 
 const Style = preload("res://scripts/ruin_stone_style.gd")
 const MODEL := "res://assets/models/rune_knight.glb"
@@ -28,8 +40,14 @@ const MODEL_HEIGHT := 1.904
 ## The grain's scale on the rest position: the Olmec's stone, a little finer
 ## for a figure this size.
 const GRAIN := 1.25
-const AO_FLOOR := 0.6
-const AO_EASE := 0.5
+const AO_FLOOR := 0.72
+const AO_EASE := 0.45
+## His stone's tone lifted over the kit's, and his material's knobs (the
+## shader's defaults: fill 1.2, rim 0.14, grime_mul 0.34).
+const STONE_LIFT := 1.55
+const FILL := 2.0
+const RIM := 0.4
+const GRIME := Vector3(0.52,0.5,0.48)
 const MOSS := Color("374726")
 const MOSS_LIGHT := Color("4e612e")
 const MOSS_UP := 0.6
@@ -38,8 +56,14 @@ const MOSS_MOST := 0.7
 const RUNE := Color(0.45,0.85,1.0)
 const RUNE_REST := 1.2
 const RUNE_LIT := 4.0
-## Glyphs per tablet (rune_knight_build.py RUNE_GLYPHS) and its seed.
+## Glyphs per tablet (rune_knight_build.py RUNE_GLYPHS), and a glyph cell's
+## length over its height on each (the tablets' fronts, a row across).
 const GLYPHS := {"chest": 3, "hand_l": 2, "hand_r": 2}
+const CELL := {"chest": 0.76, "hand_l": 0.83, "hand_r": 0.83}
+## The eye: its light (the runes'), its energy at full, its share at rest.
+const EYE := Color(0.55,0.9,1.0)
+const EYE_ENERGY := 4.0
+const EYE_REST := 0.15
 const SLIT := Color(0.02,0.018,0.016)
 
 var height := MODEL_HEIGHT
@@ -47,6 +71,7 @@ var model: Node3D
 var pieces := {}
 var runes := {}
 var _stone: ShaderMaterial
+var _eye := StandardMaterial3D.new()
 
 func build(h: float, seed_value := 7) -> void:
 	height = h
@@ -57,7 +82,15 @@ func build(h: float, seed_value := 7) -> void:
 	_stone.shader = STONE_SHADER
 	_stone.set_shader_parameter("roughness_value",0.95)
 	Style.dress(_stone)
+	_stone.set_shader_parameter("fill",FILL)
+	_stone.set_shader_parameter("rim",RIM)
+	_stone.set_shader_parameter("grime_mul",GRIME)
 	var stone := Style.stone_of(seed_value) if Style.ruled() else Color("5a5d63")
+	stone = Color(stone.r*STONE_LIFT,stone.g*STONE_LIFT,stone.b*STONE_LIFT)
+	_eye.albedo_color = SLIT
+	_eye.roughness = 1.0
+	_eye.emission_enabled = true
+	_eye.emission = EYE
 	var slit := StandardMaterial3D.new()
 	slit.albedo_color = SLIT
 	slit.roughness = 1.0
@@ -74,12 +107,20 @@ func build(h: float, seed_value := 7) -> void:
 			var mname := m.resource_name if m != null else ""
 			if mname == "slit":
 				mi.set_surface_override_material(s,slit)
+			elif mname == "eye":
+				mi.set_surface_override_material(s,_eye)
 			elif mname == "rune":
 				var rm := _rune_material()
 				runes[key] = rm
 				mi.set_surface_override_material(s,rm)
 			else:
 				mi.set_surface_override_material(s,_stone)
+	eye_glow(EYE_REST)
+
+## The eye lit `share`: 0 dark, EYE_REST at rest, 1 watching you.
+func eye_glow(share: float) -> void:
+	var s := clampf(share,0.0,1.0)
+	_eye.emission_energy_multiplier = EYE_ENERGY*s
 
 func _rune_material() -> ShaderMaterial:
 	var m := _stone.duplicate() as ShaderMaterial
@@ -147,7 +188,7 @@ func _dressed(mesh: Mesh, stone: Color, offset: Vector3, key: String) -> ArrayMe
 				var g: int = GLYPHS.get(key,2)
 				# glTF flips v: the build's (along, across) is (u, 1 - v).
 				c0[i*4] = 2.0
-				c0[i*4+1] = 0.83
+				c0[i*4+1] = CELL.get(key,0.83)
 				c0[i*4+2] = 0.0
 				c0[i*4+3] = float(hash(key)%97)
 				c1[i*4] = uv[i].x
