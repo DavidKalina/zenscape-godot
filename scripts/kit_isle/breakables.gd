@@ -23,9 +23,28 @@ extends Node3D
 ## hit-stop), `shake(k)` (the ground's quake: the study's camera adds
 ## `quake`), `sound(name, at)`, `changed(box)` (rubble or a felled piece at
 ## rest: every body's routes read the box afresh), `knocked(source, kind,
-## v)` (a hit on the wanderer, logged).
+## v)` (a hit on the wanderer, logged), `live_count()` (pieces falling now,
+## across the hub, against the shared cap: scripts/kit_isle/break_pieces.gd).
+##
+## Who may break things (spec: docs/design/kit-breaks/spec-kit-breaks.md):
+## named breakers, each on or off with a strength. The Olmec's calls above
+## all go through `olmec` (off, he breaks nothing; a piece may still be in
+## his way); anything else breaks through `hit(at, radius, strength,
+## source)`, which a source that is off does nothing with. Launch flag
+## `--breakers=olmec,slam` (exactly those on) or `--breakers=+plane,-olmec`
+## (changes). A piece in the group answers `hit` as `take_hit(hub, at,
+## radius, strength, source)`; a breakable in `others` as `hit(at, ...)`.
 const BREAKABLE := &"breakable"
 const QUAKE_FADE := 1.4
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+## The breakers as they start: on, and their hits' strength (1 the Olmec's;
+## a piece's toughness is measured against it).
+const BREAKERS := {
+	&"olmec":{"on":true,"strength":1.0},
+	&"plane":{"on":false,"strength":0.6},
+	&"dragon":{"on":false,"strength":1.2},
+	&"slam":{"on":false,"strength":0.5},
+}
 
 ## The scene's enemies (scripts/enemies/enemy_field.gd).
 var field: Node = null
@@ -38,10 +57,71 @@ var quake := 0.0
 var hits: Array = []
 ## Calls handed out, counted (for checks): met frames, waves.
 var waves := 0
+## Hits handed on through `hit` (for checks): [source, at, radius, strength, broke].
+var hit_log: Array = []
+## The breakers now: {name: {on, strength}}.
+var breakers: Dictionary = BREAKERS.duplicate(true)
 var _hitstop := 0
 
 func _init() -> void:
 	name = "Breakables"
+	for arg in LaunchArgs.user_args():
+		if arg.begins_with("--breakers="): set_breakers(arg.get_slice("=",1))
+
+# --- Who breaks things ----------------------------------------------------------------------
+
+## True if `source` is a breaker and on.
+func allows(source: StringName) -> bool:
+	return bool((breakers.get(source,{}) as Dictionary).get("on",false))
+
+## `source` on or off; its strength too, when `strength` >= 0 (a new name
+## is a new breaker).
+func set_breaker(source: StringName, on: bool, strength := -1.0) -> void:
+	var b: Dictionary = breakers.get(source,{"on":false,"strength":1.0})
+	b.on = on
+	if strength >= 0.0: b.strength = strength
+	breakers[source] = b
+
+## "olmec,slam": exactly those on; "+plane,-olmec": those changed.
+func set_breakers(spec: String) -> void:
+	var names := spec.split(",",false)
+	var exact := true
+	for n: String in names:
+		if n.begins_with("+") or n.begins_with("-"): exact = false
+	if exact:
+		for k: StringName in breakers: breakers[k].on = false
+	for n: String in names:
+		var on := not n.begins_with("-")
+		set_breaker(StringName(n.trim_prefix("+").trim_prefix("-")),on)
+
+func strength_of(source: StringName) -> float:
+	return float((breakers.get(source,{}) as Dictionary).get("strength",0.0))
+
+## A break from anything but the Olmec's own bulk: every piece and breakable
+## in reach of `at` (`radius` m) takes it at `strength` (< 0: the
+## breaker's own), if `source` is on. How many things broke.
+func hit(at: Vector3, radius: float, strength := -1.0, source: StringName = &"olmec") -> int:
+	if not allows(source): return 0
+	var s := strength if strength >= 0.0 else strength_of(source)
+	var n := 0
+	for p: Node in pieces():
+		# (A piece's `hit` is a hit on the wanderer: stone_break.gd.)
+		if p.has_method("take_hit"): n += int(p.take_hit(self,at,radius,s,source))
+	for o: Object in others:
+		if o.has_method("hit"): n += int(o.hit(at,radius,s,source))
+	hit_log.append([source,at,radius,s,n])
+	return n
+
+## Pieces falling now, across the hub (the shared cap).
+func live_count() -> int:
+	var n := 0
+	for p: Node in pieces():
+		var l: Variant = p.get("live")
+		if l is Array: n += (l as Array).size()
+	for o: Object in others:
+		var l: Variant = o.get("live")
+		if l is Array: n += (l as Array).size()
+	return n
 
 func pieces() -> Array:
 	if not is_inside_tree(): return []
@@ -65,15 +145,18 @@ func rubble_rids() -> Array[RID]:
 	return out
 
 func met(body: Node3D) -> void:
+	if not allows(&"olmec"): return
 	for p: Node in pieces(): p.met(self,body)
 	for o: Object in others: o.met(body)
 
 func wave(body: Node3D, w: Dictionary) -> void:
+	if not allows(&"olmec"): return
 	waves += 1
 	for p: Node in pieces(): p.wave(self,body,w)
 	for o: Object in others: o.wave(body,w)
 
 func veer(body: Node3D, heading: float) -> float:
+	if not allows(&"olmec"): return heading
 	var h := heading
 	for p: Node in pieces():
 		if p.has_method("veer"): h = p.veer(self,body,h)
@@ -81,14 +164,17 @@ func veer(body: Node3D, heading: float) -> float:
 	return h
 
 func ahead(body: Node3D) -> bool:
+	if not allows(&"olmec"): return false
 	for o: Object in others:
 		if o.ahead(body): return true
 	return false
 
 func smash(body: Node3D) -> void:
+	if not allows(&"olmec"): return
 	for o: Object in others: o.smash(body)
 
 func takes_shock(body: Node3D, w: Dictionary) -> bool:
+	if not allows(&"olmec"): return false
 	for p: Node in pieces():
 		if p.has_method("takes_shock") and p.takes_shock(self,body,w): return true
 	return false
