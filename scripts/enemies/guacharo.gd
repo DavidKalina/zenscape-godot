@@ -189,6 +189,7 @@ func setup(owner_flyers: Variant, at_home: Vector3, seed_value: int, over := {})
 	_prev = position
 	_theta = _rng.randf()*TAU
 	_shadow_make()
+	_tell_make()
 	_voices_make()
 	_feathers_make()
 
@@ -242,6 +243,7 @@ func step(delta: float, cam_fwd: Vector3) -> void:
 	_orient(delta)
 	_animate(delta)
 	_shadow_place(delta)
+	_tell_place(delta)
 
 ## After the motor's step: the dive's contact with him.
 func after_step(_delta: float) -> void:
@@ -457,6 +459,7 @@ func _stalk(delta: float, hunting: bool) -> void:
 		aim = mid+flat*(float(knobs.fold)+dive)*float(knobs.lead)
 		_go("fold")
 		_say(&"scream")
+		_tell_pop = 1.0
 
 ## Marks or unmarks him: the noticing (a call), or letting him go.
 func _mark(on: bool) -> void:
@@ -773,18 +776,105 @@ func _shadow_place(dt: float) -> void:
 		at.z = lerpf(at.z,on.z,_shadow_pull)
 		at.y = maxf(at.y,on.y+unit*2.0)
 	at -= Vector3.UP*40.0
-	var size := span*(1.0+(1.0-near)*0.8)*(1.0+0.4*close)
+	var pop := _tell_pop*_tell_pop
+	var size := span*(1.0+(1.0-near)*0.8)*(1.0+0.4*close)*(1.0+0.5*pop)
 	_shadow.size = Vector3(size*open,80.0,size*0.55)
 	_shadow.global_position = at
 	_shadow.global_rotation = rot
 	_shadow.modulate = Color(1,1,1,lerpf(0.16,0.62,maxf(near,close*0.85))*(1.0-0.45*_shadow_commit))
 	_shadow_core.visible = _shadow_commit > 0.01
 	if not _shadow_core.visible: return
-	var core := span*(0.7+0.5*close)*(0.75+0.25*_shadow_commit)
+	var core := span*(0.7+0.5*close)*(0.75+0.25*_shadow_commit)*(1.0+TELL_POP*pop)
 	_shadow_core.size = Vector3(core*maxf(open,0.6),80.0,core*0.55)
 	_shadow_core.global_position = at
 	_shadow_core.global_rotation = rot
-	_shadow_core.modulate = Color(1,1,1,_shadow_commit*lerpf(0.5,0.92,maxf(near,close)))
+	_shadow_core.modulate = Color(1,1,1,maxf(_shadow_commit*lerpf(0.5,0.92,maxf(near,close)),0.97*pop))
+
+# --- The tell -------------------------------------------------------------------------
+
+## The tell is the biggest beat. With the scream (the loudest voice) come:
+## the shadow's pop (the hard core thrown out TELL_POP wider and full dark,
+## then drawn in onto the locked spot over the scream) and the glare (its
+## eyes catch: a hot ember glow at the head, a fixed size on screen so it
+## reads at any range, and a small light on the bird and the ground under
+## it; alpha-blended, not added, so it reads on bright cloud). The glare is full through the scream, a pinpoint through the folded
+## hold and the stoop (it tracks the drop), and out after.
+const TELL_POP := 0.9
+const GLARE_COLOR := Color(1.0,0.3,0.06)
+## The glare's size as a fraction of the screen-ish (fixed-size quad).
+const GLARE_SIZE := 0.3
+const GLARE := {"scream":1.0, "hold":0.45, "stoop":0.3}
+var _tell_pop := 0.0
+var _glare_w := 0.0
+var _glare: MeshInstance3D
+var _glare_light: OmniLight3D
+
+func _tell_make() -> void:
+	var q := QuadMesh.new()
+	q.size = Vector2.ONE*GLARE_SIZE
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m.fixed_size = true
+	m.no_depth_test = true
+	m.albedo_texture = _glare_texture()
+	m.albedo_color = GLARE_COLOR
+	m.render_priority = 10
+	q.material = m
+	_glare = MeshInstance3D.new()
+	_glare.name = "Glare"
+	_glare.mesh = q
+	_glare.layers = Look.LAYER
+	_glare.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_glare.visible = false
+	add_child(_glare)
+	_glare.top_level = true
+	_glare_light = OmniLight3D.new()
+	_glare_light.name = "GlareLight"
+	_glare_light.light_color = GLARE_COLOR
+	_glare_light.omni_range = span*2.5
+	_glare_light.shadow_enabled = false
+	_glare_light.visible = false
+	add_child(_glare_light)
+	_glare_light.top_level = true
+
+## A soft round glow with a hot centre: two eyes' worth of eyeshine.
+static var _glare_tex: ImageTexture
+static func _glare_texture() -> ImageTexture:
+	if _glare_tex: return _glare_tex
+	var n := 64
+	var img := Image.create(n,n,false,Image.FORMAT_RGBA8)
+	for j in range(n):
+		for i in range(n):
+			var r := Vector2((float(i)+0.5)/n*2.0-1.0,(float(j)+0.5)/n*2.0-1.0).length()
+			var a := clampf(pow(maxf(1.0-r,0.0),1.4)*0.85+exp(-r*r*40.0),0.0,1.0)
+			var hot := exp(-r*r*30.0)
+			img.set_pixel(i,j,Color(1.0,0.75+0.25*hot,0.6+0.4*hot,a))
+	_glare_tex = ImageTexture.create_from_image(img)
+	return _glare_tex
+
+func _tell_place(dt: float) -> void:
+	_tell_pop = move_toward(_tell_pop,0.0,dt/(TELL*TELL_SCREAM))
+	var want := 0.0
+	match state:
+		"fold": want = GLARE.scream if state_t < TELL*TELL_SCREAM else GLARE.hold
+		"stoop": want = GLARE.stoop
+	# On fast at the scream, out slower after the dive.
+	_glare_w = want if want > _glare_w else move_toward(_glare_w,want,dt*3.0)
+	var on := _glare_w > 0.01
+	_glare.visible = on
+	_glare_light.visible = on
+	if not on: return
+	# Flicker through the scream: the throat working.
+	var flick := 1.0
+	if state == "fold" and state_t < TELL*TELL_SCREAM: flick = 0.85+0.15*sin(state_t*TAU*11.0)
+	var head := position-global_basis.z*span*0.16+Vector3.UP*span*0.05
+	_glare.global_position = head
+	_glare.scale = Vector3.ONE*lerpf(0.35,1.0,_glare_w)*(1.0+0.5*_tell_pop)*flick
+	_glare.transparency = 1.0-clampf(_glare_w*flick,0.0,1.0)
+	_glare_light.global_position = head
+	_glare_light.light_energy = 4.0*_glare_w*flick
 
 # --- Voice and feathers ---------------------------------------------------------------
 
