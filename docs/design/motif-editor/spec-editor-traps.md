@@ -222,6 +222,13 @@ landform), and a `run-*.command` line or the exact command to open it.
 
 ## Out of scope (later rounds)
 
+**Parked by the user: the aqueduct isle as a base.** It is a study, not a
+motif (studies/aqueduct_isle.gd, art from aqueduct_isle_base.gd, the foot
+route and sluice hosted by the study). It needs a KitMotif adapter over
+BaseArt and a new host for the foot route and sluice; the options are in
+commit cc471269's Notes. Not this loop.
+
+
 Swing ropes, moving and drifting stones, cannons and enemies in the
 palette; typed section ends and the join check between sections; agents
 writing variations of the user's motifs. Note anything learned that bears
