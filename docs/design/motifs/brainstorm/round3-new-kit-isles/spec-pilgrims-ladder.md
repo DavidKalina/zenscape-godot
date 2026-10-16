@@ -91,6 +91,19 @@ well. Now it should lose two things and gain some life:
     turf. Fix it here if it's a per-place setting; report it if it's
     global.
 
+11. **The plane in the scene (the user, after playing the dressed place).**
+    The user wants to play the same scene with the plane. The motif yard
+    parks no plane today (`studies/motif_yard.gd` `park_home()` is a no-op:
+    "it would stand on the motif"). Add an opt-in yard flag, e.g.
+    `--plane`, that parks the plane on the motif's landing strip (this place
+    reports a landing run on Threshold, x -45..-3), the way the game parks it
+    beside the pilot. He can board it, take off, fly the gate and the ring,
+    and land back on the strip. With the flag off, the yard behaves as
+    before. Prove it through the real play loop and input: board, take off,
+    fly a lap, land on the strip by hand. Also check, by flying it, the open
+    question from the handoff: the strip's clearance from the trees. Take
+    stills of the plane parked on the strip and in the air over the place.
+
 ## Rules
 
 Prototyping (AGENTS.md): smoke checks plus throwaway drive checks, no new
