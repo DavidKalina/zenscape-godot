@@ -324,23 +324,84 @@ static func wall_run(seed_value: int, weathered: float, from: Vector2, to: Vecto
 		root.add_child(node)
 	return root
 
+## A rope bridge end's lip on the line from `p` toward `toward` (x, z) on
+## ground `g`: where the bank's top breaks into the gap the bridge crosses.
+## Each point from BRIDGE_LIP_BACK behind `p` to halfway to `toward`
+## (BRIDGE_LIP_AHEAD at most) is a lip where the ground falls at least
+## BRIDGE_LIP_FALL ahead, steeply (BRIDGE_LIP_STEEP a metre, and steeper by
+## far than the ground climbs behind it: a hillside or the face of a wall's
+## next step up is no lip). The deeper the fall ahead, the higher (a stepped
+## wall's top, not a ledge partway down) and the nearer `p`, the better.
+## None: `p`. Outside `outline` (the isle's, x z) is the void.
+const BRIDGE_LIP_BACK := 4.0
+const BRIDGE_LIP_AHEAD := 4.0
+const BRIDGE_LIP_FALL := 0.6
+const BRIDGE_LIP_STEEP := 0.8
+static func bridge_lip(g: Callable, p: Vector2, toward: Vector2, outline: Array = []) -> Vector2:
+	if p.distance_to(toward) < 1.0: return p
+	var u := (toward-p).normalized()
+	var poly := PackedVector2Array(outline)
+	var h := func(q: Vector2) -> float:
+		if not poly.is_empty() and not Geometry2D.is_point_in_polygon(q,poly): return -1000.0
+		return float(g.call(q.x,q.y))
+	var base := float(h.call(p))
+	var best := p
+	var score := -INF
+	var reach := minf(BRIDGE_LIP_AHEAD,p.distance_to(toward)*0.5)
+	var t := -BRIDGE_LIP_BACK
+	while t <= reach+0.001:
+		var q := p+u*t
+		var y := float(h.call(q))
+		if y > -999.0:
+			var fall := 0.0
+			var steep := 0.0
+			for s: float in [0.3,0.6,1.0,1.5,2.0,2.5]:
+				var f := y-float(h.call(q+u*s))
+				fall = maxf(fall,f)
+				if s <= 1.0: steep = maxf(steep,f/s)
+			var climb := 0.0
+			for s: float in [0.5,1.0,1.5,2.0]:
+				climb = maxf(climb,(float(h.call(q-u*s))-y)/s)
+			if fall >= BRIDGE_LIP_FALL and steep >= maxf(BRIDGE_LIP_STEEP,climb*2.5):
+				var k := minf(fall,6.0)*0.4+clampf(y-base,-3.0,4.0)-absf(t)*0.25
+				if k > score:
+					score = k
+					best = q
+		t += 0.1
+	return best
+
+## Both ends of a rope bridge clicked (or saved) at `from` and `to`: each
+## on its bank's lip along the line between them (`bridge_lip`), the second
+## looked for again along the line the first lip makes.
+static func bridge_ends(from: Vector2, to: Vector2, g: Callable, outline: Array = []) -> Array:
+	var a := bridge_lip(g,from,to,outline)
+	var b := bridge_lip(g,to,a,outline)
+	a = bridge_lip(g,a,b,outline)
+	return [a,b]
+
 ## A rope bridge anchor's seat. The sill (RuinKit.bridge_anchor's: it
 ## reaches BRIDGE_SILL_FRONT before the anchor's origin, BRIDGE_SILL_BACK
-## behind, BRIDGE_SEAT_HALF to each side) wants ground near level under all
-## of it (no more than BRIDGE_FLAT between its highest and lowest point, the
-## leveller the better: on a slope its high side sinks in the turf), and its
-## front BRIDGE_SEAT_IN short of the real edge (where the ground first falls
-## BRIDGE_EDGE_FALL under the seat). A ravine's lip is often a narrow tongue
-## or a wobbling, slanted edge, so the seat is looked for round the picked
-## lip (BRIDGE_LOOK_BACK inland, BRIDGE_LOOK_SIDE to each side), the nearest
-## level spot that meets the edge, the higher bank first. With `outline`
-## (the isle's, x z), no corner stands off the isle.
+## behind, BRIDGE_SEAT_HALF to each side) stands with its top BRIDGE_SINK
+## under the highest ground under it; where the ground under it falls
+## further than the sill is deep, a coursed plinth grows down under it to
+## BRIDGE_FOOT under the lowest (`bridge_run`), so no part of it stands in
+## the air. The ground under it may vary by BRIDGE_FLAT at most, the
+## leveller the better. Its front wants to stand BRIDGE_SEAT_IN short of
+## the real edge (where the ground first falls BRIDGE_EDGE_FALL under the
+## seat), the deck's end at the lip. A ravine's lip is often a narrow
+## tongue or a wobbling, slanted edge, so the seat is looked for round the
+## lip (BRIDGE_LOOK_BACK inland, BRIDGE_LOOK_SIDE to each side). With
+## `outline` (the isle's, x z), no corner stands off the isle.
 const BRIDGE_SEAT_IN := 0.25
 const BRIDGE_EDGE_FALL := 0.5
 static var BRIDGE_SEAT_HALF: float = Footbridge.WIDTH*0.5+0.8
 const BRIDGE_SILL_FRONT := 0.2
 const BRIDGE_SILL_BACK := 0.6
-const BRIDGE_FLAT := 0.6
+const BRIDGE_FLAT := 1.2
+const BRIDGE_SINK := 0.05
+const BRIDGE_FOOT := 0.3
+## How deep the anchor's own sill reaches under its top (RuinKit.bridge_anchor).
+const BRIDGE_SILL_DEEP := 0.21
 ## Nothing rises more than BRIDGE_RISE over the seat between the sill and the
 ## edge (the deck would run into it); BRIDGE_BEHIND behind the sill the bank
 ## is within BRIDGE_RISE of the seat (he walks on and off without a climb or
@@ -349,119 +410,183 @@ const BRIDGE_RISE := 0.35
 const BRIDGE_BEHIND := 0.8
 const BRIDGE_LOOK_BACK := 3.0
 const BRIDGE_LOOK_SIDE := 1.5
-## Nothing level that near (a terrace's narrow ledges): looked for again
-## BRIDGE_LOOK_FAR inland.
+## The edge counts as met within BRIDGE_EDGE_NEAR of the sill's front.
+const BRIDGE_EDGE_NEAR := 0.8
+## Nothing that meets the edge that near (a terrace's narrow ledges):
+## looked for again BRIDGE_LOOK_FAR inland.
 const BRIDGE_LOOK_FAR := 6.0
 
+## The lowest and highest ground under a seat at `at` facing `out` ([low,
+## high]; [] when a point is off `poly`). `dense`: a 9 x 5 grid over the
+## whole sill, else 5 x 3.
+static func _seat_ground(at: Vector2, out: Vector2, g: Callable, poly: PackedVector2Array, dense := false) -> Array:
+	var across := Vector2(-out.y,out.x)
+	var low := INF
+	var high := -INF
+	var fs: Array = [-1.0,-0.75,-0.5,-0.25,0.0,0.25,0.5,0.75,1.0] if dense else [0.0,-1.0,1.0,-0.5,0.5]
+	var zs: Array = [BRIDGE_SILL_FRONT,0.0,-0.2,-0.4,-BRIDGE_SILL_BACK] if dense else [BRIDGE_SILL_FRONT,-0.2,-BRIDGE_SILL_BACK]
+	for f: float in fs:
+		for z: float in zs:
+			var q := at+across*f*BRIDGE_SEAT_HALF+out*z
+			if not poly.is_empty() and not Geometry2D.is_point_in_polygon(q,poly): return []
+			var y := float(g.call(q.x,q.y))
+			low = minf(low,y)
+			high = maxf(high,y)
+		if not dense and high-low > BRIDGE_FLAT: break
+	return [low,high]
+
+## The lowest ground on a ring BRIDGE_MESH round a seat's sill.
+const BRIDGE_MESH := 0.8
+static func _seat_ring_low(at: Vector2, out: Vector2, g: Callable) -> float:
+	var across := Vector2(-out.y,out.x)
+	var half := BRIDGE_SEAT_HALF+BRIDGE_MESH
+	var front := BRIDGE_SILL_FRONT+BRIDGE_MESH
+	var back := BRIDGE_SILL_BACK+BRIDGE_MESH
+	var low := INF
+	for i in range(9):
+		var f := lerpf(-half,half,i/8.0)
+		for z: float in [front,-back]:
+			var q := at+across*f+out*z
+			low = minf(low,float(g.call(q.x,q.y)))
+	for j in range(5):
+		var z := lerpf(-back,front,j/4.0)
+		for f: float in [-half,half]:
+			var q := at+across*f+out*z
+			low = minf(low,float(g.call(q.x,q.y)))
+	return low
+
 ## Where a bridge end's anchor stands for lip `lip`, the gap toward `out`
-## (unit, x z), on ground `g`: {at: Vector2, y, level: bool}. y keeps the
-## sill's top at the ground under it, its foot under the lowest point (the
-## posts footed in the turf), the deck's end level with the bank. Nowhere
-## level near: LIP_BACK inland of the lip, as before (level false).
+## (unit, x z), on ground `g`: {at: Vector2, y (the sill's top, the deck's
+## end), low (the lowest ground under the sill), level: bool (it meets the
+## edge)}. Seats that meet the edge with the bank behind walkable first,
+## then those that meet it, then further edges; nowhere at all: on the lip
+## itself, its plinth down to the ground (level false).
 ## `side` narrows the look to each side (the second pass, once the bridge's
-## line is known); `back` how far inland; `behind` false lets the bank behind
-## the sill rise or fall past a step (the last try).
-static func bridge_seat(lip: Vector2, out: Vector2, g: Callable, outline: Array = [], side := BRIDGE_LOOK_SIDE, back := BRIDGE_LOOK_BACK, behind := true) -> Dictionary:
+## line is known); `back` how far inland.
+static func bridge_seat(lip: Vector2, out: Vector2, g: Callable, outline: Array = [], side := BRIDGE_LOOK_SIDE, back := BRIDGE_LOOK_BACK) -> Dictionary:
 	var across := Vector2(-out.y,out.x)
 	var top := float(g.call(lip.x,lip.y))
 	var poly := PackedVector2Array(outline)
 	var best := {}
 	var cost := INF
 	var t := -back
-	while t <= 1.0:
+	while t <= 0.6:
 		var c := -side
 		while c <= side+0.01:
 			var at := lip+out*t+across*c
-			var low := INF
-			var high := -INF
-			var sum := 0.0
-			for f: float in [0.0,-1.0,1.0,-0.5,0.5]:
-				for z: float in [BRIDGE_SILL_FRONT,-0.2,-BRIDGE_SILL_BACK]:
-					var q := at+across*f*BRIDGE_SEAT_HALF+out*z
-					if not poly.is_empty() and not Geometry2D.is_point_in_polygon(q,poly): low = -INF
-					var h := float(g.call(q.x,q.y))
-					low = minf(low,h)
-					high = maxf(high,h)
-					sum += h
-				if high-low > BRIDGE_FLAT: break
-			if high-low <= BRIDGE_FLAT:
-				var y := clampf(sum/15.0,high-0.06,low+0.16)
+			var f := _seat_ground(at,out,g,poly)
+			if not f.is_empty() and float(f[1])-float(f[0]) <= BRIDGE_FLAT:
+				var y := float(f[1])-BRIDGE_SINK
 				# The edge ahead of the sill's front, along the deck's line, with
 				# nothing rising in the deck's way before it.
-				# No edge within 3 m (the gap past the snapped lip is further, or
-				# the lip faced away): allowed, dearly.
-				var d := 0.0
+				var d := 3.0
 				var clear := true
-				while d < 3.0:
-					var q := at+out*(BRIDGE_SILL_FRONT+d)
+				var s := 0.0
+				while s < 3.0:
+					var q := at+out*(BRIDGE_SILL_FRONT+s)
 					var h := float(g.call(q.x,q.y))
-					if h < y-BRIDGE_EDGE_FALL: break
+					if h < y-BRIDGE_EDGE_FALL:
+						d = s
+						break
 					if h > y+BRIDGE_RISE:
 						clear = false
 						break
-					d += 0.05
+					s += 0.1
 				# He walks on from behind: no step up there he can't take.
-				for f: float in ([-0.4,0.0,0.4] if behind else []):
-					var q := at+across*f*BRIDGE_SEAT_HALF-out*(BRIDGE_SILL_BACK+BRIDGE_BEHIND)
-					if absf(float(g.call(q.x,q.y))-y) > BRIDGE_RISE: clear = false
-				var k := absf(d-BRIDGE_SEAT_IN)*2.0+absf(c)+maxf(top-y,0.0)*1.5+(high-low)*3.0
-				if clear and k < cost:
-					cost = k
-					best = {"at":at,"y":y,"level":true}
+				var behind := true
+				for k: float in [-0.4,0.0,0.4]:
+					var q := at+across*k*BRIDGE_SEAT_HALF-out*(BRIDGE_SILL_BACK+BRIDGE_BEHIND)
+					if absf(float(g.call(q.x,q.y))-y) > BRIDGE_RISE: behind = false
+				if clear:
+					var tier := (0 if d <= BRIDGE_EDGE_NEAR else (2 if d < 3.0 else 4))+(0 if behind else 1)
+					var k := tier*100.0+absf(d-BRIDGE_SEAT_IN)*2.0+absf(c)+absf(y-top)+maxf(top-y,0.0)*1.5+(float(f[1])-float(f[0]))*2.0+absf(t)*0.2
+					if k < cost:
+						cost = k
+						best = {"at":at,"y":y,"level":tier <= 1,"cost":k}
 			c += 0.5
 		t += 0.2 if side > 0.0 else 0.1
-	if best.is_empty() and back < BRIDGE_LOOK_FAR:
-		return bridge_seat(lip,out,g,outline,side,BRIDGE_LOOK_FAR,behind)
-	# On a ridge (nowhere to walk on from behind without a climb or a drop):
-	# the best seat on it all the same.
-	if best.is_empty() and behind:
-		return bridge_seat(lip,out,g,outline,side,BRIDGE_LOOK_BACK,false)
+	# Nothing that meets the edge near: further inland too, the better kept.
+	if (best.is_empty() or float(best.cost) >= 200.0) and back < BRIDGE_LOOK_FAR:
+		var far := bridge_seat(lip,out,g,outline,side,BRIDGE_LOOK_FAR)
+		if not far.is_empty() and (best.is_empty() or float(far.cost) < float(best.cost)): best = far
 	if best.is_empty():
-		var at := lip-out*LIP_BACK
-		best = {"at":at,"y":float(g.call(at.x,at.y)),"level":false}
+		var at := lip-out*(BRIDGE_SILL_FRONT+BRIDGE_SEAT_IN)
+		var f := _seat_ground(at,out,g,PackedVector2Array(),true)
+		best = {"at":at,"y":float(f[1])-BRIDGE_SINK,"level":false,"cost":INF}
+	var under := _seat_ground(best.at,out,g,PackedVector2Array(),true)
+	best.low = float(under[0])
+	# Its top never under the ground anywhere under it.
+	best.y = maxf(float(best.y),float(under[1])-BRIDGE_SINK)
 	return best
 
-## A rope bridge from lip `from` to lip `to` (x, z, on ground `g`): a stone
-## anchor seated just inside the real edge at each end (`bridge_seat`), the
-## live rope bridge (scripts/footbridge.gd `live`) between their fronts.
+## A rope bridge from lip `from` to lip `to` (x, z, on ground `g`): each end
+## on its bank's lip along the line between them (`bridge_ends`: a save's
+## ends, or ends whose land changed since, found again), a stone anchor
+## seated just inside the real edge at each (`bridge_seat`) on a coursed
+## plinth grown down to the ground where it falls away under it, the live
+## rope bridge (scripts/footbridge.gd `live`) between their fronts.
 static func bridge_run(seed_value: int, from: Vector2, to: Vector2, g: Callable, outline: Array = []) -> Node3D:
 	var root := Node3D.new()
 	root.name = "BridgeRun"
+	var lips := bridge_ends(from,to,g,outline)
+	from = lips[0]
+	to = lips[1]
 	var dir := (to-from).normalized() if to.distance_to(from) > 0.01 else Vector2.RIGHT
-	var ends: Array = []
+	var seats: Array = []
 	for k in range(2):
 		var lip: Vector2 = from if k == 0 else to
 		var out := dir if k == 0 else -dir
-		var seat := bridge_seat(lip,out,g,outline)
-		var at: Vector2 = seat.at
-		ends.append(Vector3(at.x,float(seat.y),at.y))
+		seats.append(bridge_seat(lip,out,g,outline))
 	# Again along the line the two seats make (a seat may have stepped to a
 	# side), each seat only along it, so each sill squares to the deck.
-	var seats := ends.duplicate()
+	var first := seats.duplicate()
 	for k in range(2):
-		var at: Vector3 = seats[k]
-		var other: Vector3 = seats[1-k]
-		var out := Vector2(other.x-at.x,other.z-at.z).normalized()
+		var at: Vector2 = (first[k] as Dictionary).at
+		var other: Vector2 = (first[1-k] as Dictionary).at
+		var out := (other-at).normalized()
 		var lip: Vector2 = from if k == 0 else to
 		# The lip moved onto the new line, level with the first seat.
-		var seat := bridge_seat(Vector2(at.x,at.z)+out*(lip-Vector2(at.x,at.z)).dot(out),out,g,outline,0.0)
-		if bool(seat.level):
-			var p: Vector2 = seat.at
-			ends[k] = Vector3(p.x,float(seat.y),p.y)
+		var seat := bridge_seat(at+out*(lip-at).dot(out),out,g,outline,0.0)
+		if bool(seat.level) or not bool((first[k] as Dictionary).level): seats[k] = seat
+	var ends: Array = []
+	for k in range(2):
+		var p: Vector2 = (seats[k] as Dictionary).at
+		ends.append(Vector3(p.x,float((seats[k] as Dictionary).y),p.y))
 	for k in range(2):
 		var at: Vector3 = ends[k]
 		var other: Vector3 = ends[1-k]
 		var out := Vector2(other.x-at.x,other.z-at.z).normalized()
-		var anchor := RuinKit.bridge_anchor(seed_value+k,0.4,Footbridge.WIDTH)
+		var frame := Transform3D(Basis(Vector3.UP,atan2(out.x,out.y)),at)
+		var seat: Dictionary = seats[k]
+		var under := _seat_ground(Vector2(at.x,at.z),out,g,PackedVector2Array(),true)
+		var low := minf(float(seat.low),float(under[0]))
+		# The land's mesh is drawn on a grid (crisp at its cliffs), a cell's
+		# triangles cutting under the ground's own curve at a lip: the foot
+		# goes as low as the ground BRIDGE_MESH round the sill (a metre under
+		# its own lowest at most), so the turf drawn never shows under it.
+		low = minf(low,maxf(_seat_ring_low(Vector2(at.x,at.z),out,g),low-1.0))
+		var spec := {"terrain":func(x: float, z: float) -> float:
+			var w := frame*Vector3(x,0.0,z)
+			return float(g.call(w.x,w.z))-at.y}
+		# The sill's foot under the ground everywhere, else a coursed plinth
+		# under it down to the lowest ground (and a little under: the land's
+		# mesh cuts a lip's corner under the ground's own curve).
+		if low <= at.y-BRIDGE_SILL_DEEP+0.1:
+			spec.plinth = Vector3(Footbridge.WIDTH*0.5+0.75,(at.y-BRIDGE_SILL_DEEP)-(low-BRIDGE_FOOT),0.38)
+			spec.plinth_z = -0.2
+		var anchor := RuinKit.bridge_anchor(seed_value+k,0.4,Footbridge.WIDTH,spec)
 		# The anchor's posts stand across its +Z: +Z out over the gap, to the other anchor.
-		anchor.transform = Transform3D(Basis(Vector3.UP,atan2(out.x,out.y)),at)
+		anchor.transform = frame
 		anchor.name = "Anchor%d" % k
+		# Its base as built, for probes (the land hides its faces under the ground).
+		anchor.set_meta("base",{"plinth":spec.get("plinth",Vector3.ZERO),"plinth_z":float(spec.get("plinth_z",0.0))})
 		root.add_child(anchor)
 	var mesh: ArrayMesh = Footbridge.build_mesh(ends[0],ends[1],seed_value)
 	var bridge: MeshInstance3D = Footbridge.live(mesh,ends[0],ends[1],seed_value)
 	bridge.name = "Bridge"
 	root.add_child(bridge)
 	root.set_meta("ends",ends)
+	root.set_meta("lips",[from,to])
 	return root
 
 ## A run entry ({run, from, to, seed, weathered}) built on ground `g`.
