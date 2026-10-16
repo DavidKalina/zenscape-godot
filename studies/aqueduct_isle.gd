@@ -109,6 +109,8 @@ extends "res://studies/kit_isle.gd"
 ## on the ferry's foredeck, the plane's tail fin (scripts/kit_isle/
 ## watcher.gd, docs/design/watcher/round1.md, docs/design/airship-ferry/
 ## round2.md).
+## --rune-knight: a stone knight patrols the aqueduct's deck (scripts/
+## enemies/rune_knight.gd, docs/design/rune-knight/spec-rune-knight.md).
 ## --sluice: the Sluice Flush trap on the channel (scripts/traps/
 ## sluice_aqueduct.gd); --sluice=head starts at the top of the rubble slope.
 ## The plane's parts (scripts/plane_arc/plane_arc.gd, docs/design/
@@ -580,10 +582,21 @@ func _add_life() -> void:
 		watcher = Watcher.new()
 		add_child(watcher)
 		watcher.setup(self)
+	if RuneKnight.wanted():
+		rune_knight = RuneKnight.new()
+		add_child(rune_knight)
+		rune_knight.setup(self)
 	if NightLights.wanted(preload("res://scripts/launch_args.gd").user_args()):
 		night_lights = NightLights.new()
 		add_child(night_lights)
 		night_lights.setup(self,night_lamp_spots)
+
+# --- The rune knight (scripts/enemies/rune_knight.gd, --rune-knight) -------------------
+
+## A stone knight patrolling the aqueduct's deck (docs/design/rune-knight/
+## spec-rune-knight.md); null without --rune-knight.
+const RuneKnight = preload("res://scripts/enemies/rune_knight.gd")
+var rune_knight: Node3D = null
 
 # --- The watcher (scripts/kit_isle/watcher.gd, --watcher) ----------------------------
 
