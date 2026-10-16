@@ -656,6 +656,17 @@ hi = V((max(v.co.x for v in vs), max(v.co.y for v in vs), max(v.co.z for v in vs
 print("GUACHARO_TRIS", sum(len(p.vertices) - 2 for p in body_ob.data.polygons), "bones", len(BONES),
       "bounds", tuple(round(c, 3) for c in lo), tuple(round(c, 3) for c in hi))
 
+# ================================================================== clips
+sys.path.insert(0, str(HERE))
+import guacharo_clips as gc  # noqa: E402
+rig.animation_data_create()
+for pb in rig.pose.bones:
+    pb.rotation_mode = "QUATERNION"
+GRIG = gc.Rig(rig)
+CLIPS = gc.clips()
+ACTIONS = {c.name: gc.bake(GRIG, c) for c in CLIPS}
+gc.reset(rig)
+
 if SAVE_BLEND:
     bpy.ops.wm.save_as_mainfile(filepath=str(HERE / "guacharo.blend"))
 
@@ -692,6 +703,52 @@ if RENDER:
         bpy.ops.render.render(write_still=True)
     print("GUACHARO_STILLS", RENDER)
 
+    # a sheet a clip: SHEET_N frames across, a row a view
+    import numpy as np
+    SHEET_N = 8
+    scene.render.resolution_x, scene.render.resolution_y = 400, 300
+    sheet_views = [(V((0.0, 6.0, 0.9)), V((0, 0, 0.1)), 40),      # head on
+                   (V((3.6, 3.4, 2.6)), V((0, -0.1, 0.1)), 40),     # three-quarter, above
+                   (V((-6.0, -0.2, 0.4)), V((0, -0.1, 0.1)), 45)]   # the left side
+    rig.animation_data.action = None
+    for tr in rig.animation_data.nla_tracks:
+        tr.mute = True      # else the strips override the pose set here
+    for c in CLIPS:
+        cols = SHEET_N if c.loop else SHEET_N
+        rows = []
+        for eye, at, lens in sheet_views:
+            cam.location = eye
+            cam.rotation_euler = (at - eye).normalized().to_track_quat("-Z", "Y").to_euler()
+            cam_data.lens = lens
+            row = []
+            for j in range(cols):
+                t = c.length * j / (cols if c.loop else cols - 1)
+                P = GRIG.pose(c, t)
+                for pb in rig.pose.bones:
+                    loc, rot, scl = P.get(pb.name, (None, gc.q(), None))
+                    pb.rotation_quaternion = GRIG.local(pb.name, rot)
+                    pb.location = GRIG.rest[pb.name].inverted() @ loc if loc is not None else V()
+                    pb.scale = scl if scl is not None else V((1, 1, 1))
+                bpy.context.view_layer.update()
+                fp = RENDER / "_cell.png"
+                scene.render.filepath = str(fp)
+                bpy.ops.render.render(write_still=True)
+                img = bpy.data.images.load(str(fp), check_existing=False)
+                a = np.array(img.pixels[:], dtype=np.float32).reshape(img.size[1], img.size[0], 4)
+                bpy.data.images.remove(img)
+                row.append(a)
+            rows.append(np.concatenate(row, axis=1))
+        full = np.concatenate(rows[::-1], axis=0)   # pixels run bottom-up
+        out = bpy.data.images.new(f"sheet_{c.name}", full.shape[1], full.shape[0])
+        out.pixels = full.ravel()
+        out.filepath_raw = str(RENDER / f"clip_{c.name}.png")
+        out.file_format = "PNG"
+        out.save()
+        print("GUACHARO_SHEET", c.name, RENDER / f"clip_{c.name}.png")
+    gc.reset(rig)
+    for tr in rig.animation_data.nla_tracks:
+        tr.mute = False
+
 bpy.ops.object.select_all(action="DESELECT")
 rig.select_set(True)
 body_ob.select_set(True)
@@ -699,6 +756,7 @@ bpy.context.view_layer.objects.active = rig
 GLB.parent.mkdir(parents=True, exist_ok=True)
 bpy.ops.export_scene.gltf(
     filepath=str(GLB), export_format="GLB", use_selection=True, export_yup=True,
-    export_apply=False, export_animations=False, export_materials="EXPORT",
+    export_apply=False, export_animations=True, export_animation_mode="ACTIONS",
+    export_force_sampling=True, export_frame_step=1, export_materials="EXPORT",
     export_normals=True, export_extras=False, export_def_bones=False)
 print("GUACHARO_EXPORTED", GLB)
