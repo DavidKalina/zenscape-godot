@@ -815,11 +815,8 @@ func _grab(i: int, z: float, hs: float) -> void:
 	_grip_away = 0.0
 	slip = Vector2.ZERO
 	grabs += 1
-	motor.rider = self
-	motor.velocity = Vector3.ZERO
-	motor.skidding = false
-	motor.chain = 0
-	motor.sail.rest()
+	# Taken where he is; the grip's pose (below) sets him on it.
+	motor.mount(self,motor.feet,motor.grounded,NAN,true)
 	var g := _grip_pose()
 	_grip_hang = g.hang
 	_grip_snap = motor.feet-(g.feet as Vector3)

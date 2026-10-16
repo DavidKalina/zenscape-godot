@@ -32,6 +32,7 @@ const Lodestone = preload("res://scripts/lodestone.gd")
 const Minis = preload("res://scripts/lodestone_miniatures.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
+const PilotPose = preload("res://scripts/pilot_pose.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://studies/celestial.gd")
@@ -122,7 +123,9 @@ var _label: Label
 var _help: Label
 var _stone: Node3D
 var _pilot: Node3D
-var _motor: FakeMotor
+## The pose the pilot figure reads (scripts/pilot_pose.gd, `drive`): a
+## plain walker on flat ground.
+var _motor: PilotPose
 var _plane: Node3D
 var _glide: FakeGlide
 var _gimbal_outer: Node3D
@@ -153,21 +156,6 @@ var _wait := 5.0
 var _cost := {}
 ## The arms' pose (ARMS; --arms=raise,forward,forearms to try others).
 var _arms := ARMS
-
-## The motor the pilot figure reads (scripts/pilot_figure.gd `drive`): a
-## plain walker on flat ground.
-class FakeMotor extends RefCounted:
-	var swimming := false
-	var wade := 0.0
-	var hold := ""
-	var facing := 0.0
-	var skidding := false
-	var grounded := true
-	var flip := -1.0
-	var velocity := Vector3.ZERO
-	var feet := Vector3.ZERO
-	func speed() -> float:
-		return Vector2(velocity.x,velocity.z).length()
 
 ## The flight the plane figure reads (scripts/plane_figure.gd `update`): a
 ## steady cruise in place.
@@ -337,7 +325,7 @@ func _build_island() -> void:
 	_sill_point = Vector3(SILL_X,SILL+HOVER,0.0)
 	_pilot = PilotFigure.new()
 	_world.add_child(_pilot)
-	_motor = FakeMotor.new()
+	_motor = PilotPose.new()
 	_pilot.settle()
 
 ## The plane, out off the island, cruising in place; its gimbal on the

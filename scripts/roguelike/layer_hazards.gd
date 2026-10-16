@@ -433,7 +433,6 @@ var arrows: GustArrows
 var viaduct: Node3D
 var stones: Node3D
 var currents: Node3D
-var _air_was: Callable
 var _beds: Array = []
 ## The viaduct while its worker builds and its children stand: {v, task, node, stand, held}.
 var _waiting := {}
@@ -585,20 +584,16 @@ func _finish_viaduct(made: Node3D, v: Dictionary) -> void:
 	look.set_shader_parameter("opacity",CrossingYard.UPDRAFT_OPACITY)
 	look.set_shader_parameter("width_scale",CrossingYard.UPDRAFT_WIDTH)
 	look.set_shader_parameter("glow",CrossingYard.UPDRAFT_GLOW)
-	var motor: Object = study.motor
-	_air_was = motor.air
-	var was := _air_was
 	var air := currents
-	motor.air = func(p: Vector3) -> Dictionary:
-		var here: Dictionary = was.call(p) if was.is_valid() else {}
+	study.motor.push_air(self,func(p: Vector3,here: Dictionary) -> Dictionary:
 		if not is_instance_valid(air): return here
 		var lift: Dictionary = air.air_at(p)
-		return {"wind":(here.get("wind",Vector3.ZERO) as Vector3)+(lift.wind as Vector3),"thermal":maxf(float(here.get("thermal",0.0)),float(lift.thermal))}
+		return {"wind":(here.get("wind",Vector3.ZERO) as Vector3)+(lift.wind as Vector3),"thermal":maxf(float(here.get("thermal",0.0)),float(lift.thermal))})
 
 func _exit_tree() -> void:
 	if _waiting.has("task") and not _waiting.has("stand"):
 		WorkerThreadPool.wait_for_task_completion(_waiting.task)
-	if viaduct != null and study != null and _air_was.is_valid(): study.motor.air = _air_was
+	if viaduct != null and study != null: study.motor.pop_air(self)
 
 func set_on(value: bool) -> void:
 	if arrows != null: arrows.set_on(value)

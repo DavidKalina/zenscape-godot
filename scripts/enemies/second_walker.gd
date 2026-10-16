@@ -37,6 +37,7 @@ extends Node3D
 ## Olmec can't see or swat it yet.
 const FootTrail = preload("res://scripts/enemies/foot_trail.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
+const PilotPose = preload("res://scripts/pilot_pose.gd")
 const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
 const ClayFigure = preload("res://scripts/enemies/clay_figure.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
@@ -112,7 +113,9 @@ var last_fall := {}
 ## Its size (walker heights): the wanderer's.
 var size: float = WorldScale.wanderer
 
-var puppet := PilotMotor.new()
+## What its clay body is doing (scripts/pilot_pose.gd), set from the
+## trail each frame and drawn.
+var puppet := PilotPose.new()
 var ground: PhysicsGround
 var body: Node3D
 var _root: Node3D
@@ -134,7 +137,6 @@ func setup(at: Vector3, face: float, motors: Array) -> void:
 	seat = at
 	seat_face = face
 	wanderers = motors
-	puppet.set_size(size)
 	if not is_inside_tree(): return
 	_build()
 	reset()
@@ -146,7 +148,9 @@ func _ready() -> void:
 
 func _build() -> void:
 	if body != null: return
-	ground = PhysicsGround.new(get_world_3d().direct_space_state,puppet)
+	# Its own footing is asked from a height (`height_from`), never from a
+	# motor's feet: a motor only to hand the ground.
+	ground = PhysicsGround.new(get_world_3d().direct_space_state,PilotMotor.new())
 	ground.see(1|WalkerOnly.LAYER)
 	_root = Node3D.new()
 	_root.name = "Figure"
@@ -170,8 +174,9 @@ func reset() -> void:
 	_last_i = -1
 	pos = seat
 	facing = seat_face
-	puppet.reset(seat,seat_face)
-	puppet.knocks = 0
+	puppet = PilotPose.new()
+	puppet.feet = seat
+	puppet.facing = seat_face
 	_to("seated")
 	if body != null:
 		_root.visible = true
@@ -319,8 +324,8 @@ func _step_off(f: Dictionary) -> void:
 
 func _fall(delta: float) -> void:
 	var was := pos
-	_fall_v.y -= puppet.gravity*(puppet.fall if _fall_v.y < 0.0 else 1.0)*delta
-	_fall_v.y = maxf(_fall_v.y,-puppet.terminal)
+	_fall_v.y -= PilotMotor.GRAVITY*(PilotMotor.FALL if _fall_v.y < 0.0 else 1.0)*delta
+	_fall_v.y = maxf(_fall_v.y,-PilotMotor.TERMINAL)
 	pos += _fall_v*delta
 	puppet.feet = pos
 	puppet.velocity = _fall_v
@@ -375,7 +380,7 @@ func _step_sherds(delta: float) -> void:
 		var n: Node3D = s.node
 		var v: Vector3 = s.v
 		if n.global_position.y <= float(s.floor)+0.02 and v.y <= 0.0: continue
-		v.y -= puppet.gravity*delta
+		v.y -= PilotMotor.GRAVITY*delta
 		var p := n.global_position+v*delta
 		if p.y <= float(s.floor)+0.02:
 			p.y = float(s.floor)+0.02

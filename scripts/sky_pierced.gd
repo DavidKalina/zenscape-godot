@@ -490,16 +490,8 @@ func bump(glide: RefCounted, frame := Transform3D.IDENTITY) -> bool:
 		push = 0.25
 	bumps += 1
 	glide.position = at+normal*push
-	var way: Vector3 = glide.forward()
-	var along := way-normal*way.dot(normal)
-	if along.length() > 0.05:
-		along = along.normalized()
-		var flat := Vector2(along.x,along.z)
-		if flat.length() > 0.05: glide.heading = atan2(-flat.x,-flat.y)
-		glide.pitch = clampf(asin(clampf(along.y,-1.0,1.0)),-0.6,0.6)
 	var least: float = (glide.get_script() as Script).get_script_constant_map().get("SLOW",3.5)
-	glide.speed = maxf(least,float(glide.speed)*BUMP_KEEP)
-	glide.velocity = glide.forward()*float(glide.speed)
+	glide.glance(normal,BUMP_KEEP,least)
 	return true
 
 ## The plane's body turned as it flies: heading, pitch, bank and roll.

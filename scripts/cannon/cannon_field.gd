@@ -265,11 +265,7 @@ func operate(c: Node3D) -> void:
 	cannon = c
 	_last_cannon = c
 	mode = "operating"
-	motor.rider = self
-	motor.velocity = Vector3.ZERO
-	motor.grounded = true
-	motor.feet = stand(c)
-	motor.facing = c.yaw()
+	motor.mount(self,stand(c),true,c.yaw())
 	study.figure.visible = true
 	study._yaw = c.yaw()
 
@@ -319,7 +315,6 @@ func step_away() -> void:
 	var c: Node3D = cannon
 	cannon = null
 	mode = ""
-	motor.rider = null
 	motor.reset(stand(c),c.yaw())
 	study.figure.visible = true
 
@@ -349,11 +344,8 @@ func launch_self() -> bool:
 	var v: Vector3 = c.fire()
 	cannon = null
 	mode = ""
-	motor.rider = null
-	motor.grounded = false
-	motor.feet = c.mouth()
 	study.figure.visible = true
-	motor.toss(v)
+	motor.dismount(c.mouth(),v)
 	return true
 
 ## The motor's rider contract: his step while at a cannon. The jump's press
@@ -444,10 +436,7 @@ func catch_body(c: Node3D) -> void:
 		motor.move = ""
 		motor.sail.rest()
 	catches.append({"cannon":c,"stunned":_caught_stunned,"at":motor.feet,"t":_clock})
-	motor.rider = self
-	motor.velocity = Vector3.ZERO
-	motor.grounded = false
-	motor.feet = c.pivot()
+	motor.mount(self,c.pivot(),false)
 	study.figure.visible = false
 	c.swallow()
 
@@ -469,13 +458,9 @@ func spit() -> bool:
 	var v: Vector3 = c.fire()
 	cannon = null
 	mode = ""
-	motor.rider = null
-	motor.grounded = false
-	motor.feet = c.mouth()-Vector3.UP*float(study.ground.head_top)*0.4
 	study.figure.visible = true
 	var stunned := motor.move == "tumble"
-	if stunned: motor.knock(v,c)
-	else: motor.toss(v)
+	motor.dismount(c.mouth()-Vector3.UP*float(study.ground.head_top)*0.4,v,c)
 	spits.append({"cannon":c,"stunned":stunned,"v":v,"t":_clock})
 	return true
 

@@ -376,7 +376,6 @@ func board(at_start := false) -> void:
 		from = ChainPlan.approach_of(pose)-ChainPlan.ahead(head)*BOARD_OUT
 		route_at = _route_index_of(ChainPlan.approach_of(pose))
 	plane.launch(from+Vector3.UP*PLANE_UP,head,SkyPlane.CRUISE_SPEED,false)
-	plane.velocity = plane.forward()*float(plane.speed)
 	if figure == null:
 		figure = PlaneFigure.new()
 		figure.name = "Plane"

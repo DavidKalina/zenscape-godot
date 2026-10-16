@@ -54,9 +54,7 @@ func _init(on: Dictionary, who := "human", skill := {}, start := "normal") -> vo
 	approach = start
 	started = Time.get_datetime_string_from_system(true)+"Z"
 	plane.launch(Course.start_at(on,start),0.0,Course.start_speed(start),false)
-	plane.speed = Course.start_speed(start)
-	plane.velocity = plane.forward()*plane.speed
-	plane.pitch = 0.0
+	plane.set_pace(Course.start_speed(start))
 	ml.begin(plane)
 
 ## Goes on from `flying` (a SkyPlane in the air: after a takeoff or a

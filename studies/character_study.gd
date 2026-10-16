@@ -911,7 +911,7 @@ func tick(delta: float) -> void:
 	_sync_figure()
 	if events.has("grabbed") or events.has("climbed"): steps.step(_surface(),0.4)
 	_motor_events(events)
-	var drawn: Dictionary = body.drive(motor,delta)
+	var drawn: Dictionary = body.drive(motor.pose(),delta)
 	sail_wing.update(delta,motor.move == "sail",PocketSail.steer(motor.sail.heading,want) if motor.move == "sail" else 0.0,1.0 if motor.sail.riding else 0.0)
 	_measure_glide(events)
 	_body_events(drawn,delta)
@@ -1115,7 +1115,7 @@ func _body_events(out: Dictionary, delta: float) -> void:
 	_skid_was = motor.skidding
 
 func _water_events(events: Dictionary, drawn: Dictionary, delta: float) -> void:
-	for at in body.soak(motor,delta): puffs.drip(at,at.y-figure.global_position.y)
+	for at in body.soak(motor.pose(),delta): puffs.drip(at,at.y-figure.global_position.y)
 	if not is_finite(motor.surface):
 		ripples.dry()
 		return

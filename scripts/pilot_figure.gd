@@ -108,6 +108,7 @@ extends Node3D
 ## puts it where the motor's feet are and turns it to its facing.
 
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
+const PilotPose = preload("res://scripts/pilot_pose.gd")
 const PersonKit = preload("res://scripts/person_kit.gd")
 const PilotPaint = preload("res://scripts/pilot_paint.gd")
 const Spring = PersonKit.Spring
@@ -708,8 +709,8 @@ func express(mood: String, seconds: float) -> void:
 ## The face's cues this frame from the motor: happy after a pump, a flip, a
 ## twirl or a big jump's landing; surprised knocked; squinting into a skid
 ## or down a wall.
-func _face_cues(motor: RefCounted, delta: float) -> void:
-	var move: String = motor.move if "move" in motor else ""
+func _face_cues(pose: PilotPose, delta: float) -> void:
+	var move: String = pose.move
 	if move != _cue_move:
 		match move:
 			"pump", "flip": express("happy",HAPPY_TIME)
@@ -717,14 +718,14 @@ func _face_cues(motor: RefCounted, delta: float) -> void:
 			"tumble": express("surprise",SURPRISE_TIME)
 		_cue_move = move
 	if move == "tumble": express("surprise",SURPRISE_TIME)
-	elif ("skidding" in motor and motor.skidding) or move == "wall": express("squint",SQUINT_TIME)
-	var grounded: bool = motor.grounded if "grounded" in motor else true
-	if grounded or move == "sail" or ("hold" in motor and motor.hold != ""):
+	elif pose.skidding or move == "wall": express("squint",SQUINT_TIME)
+	var grounded: bool = pose.grounded
+	if grounded or move == "sail" or pose.hold != "":
 		if grounded and _airtime > BIG_AIR and move != "tumble": express("happy",HAPPY_TIME)
 		_airtime = 0.0
 	else:
 		_airtime += delta
-	_cape_rise = float(motor.velocity.y) if "velocity" in motor else 0.0
+	_cape_rise = pose.velocity.y
 
 ## The face this frame: the mood eased in and out, the blinks, the spark.
 func _face_step(delta: float) -> void:
@@ -753,47 +754,48 @@ func _face_step(delta: float) -> void:
 			_spark.transform = t.scaled_local(Vector3.ONE*maxf(smoothstep(0.0,1.0,pop),0.01))
 	for paint in _hat_paints: paint.set_shader_parameter("gone",1.0 if _hat_gone else 0.0)
 
-## One frame of the motor's state. Returns what the body did this frame:
-## "footfall" (0 the left boot touched down, 1 the right), "set_off" (moving
-## from a stand), "turned" (whipped round out of a skid).
-func drive(motor: RefCounted, delta: float) -> Dictionary:
-	_face_cues(motor,delta)
+## One frame of a pose (scripts/pilot_pose.gd: the motor's `pose()`, or a
+## stand-in's own, as the Second Walker's). Returns what the body did this
+## frame: "footfall" (0 the left boot touched down, 1 the right), "set_off"
+## (moving from a stand), "turned" (whipped round out of a skid).
+func drive(pose: PilotPose, delta: float) -> Dictionary:
+	_face_cues(pose,delta)
 	_cape_turn = 0.0
 	_hat_gone = false
-	var swimming: bool = "swimming" in motor and motor.swimming
-	var depth := float(motor.get("wade")) if "wade" in motor else 0.0
+	var swimming := pose.swimming
+	var depth := pose.wade
 	_wade = move_toward(_wade,0.0 if swimming else clampf(depth/WADE_FULL,0.0,1.0),delta*4.0)
 	if _has_swim and swimming:
 		_moves("",delta)
-		return _drive_swim(motor,delta)
+		return _drive_swim(pose,delta)
 	_swimming_was = false
 	_swim = move_toward(_swim,0.0,delta/SWIM_FADE)
-	var hold: String = motor.hold if _has_ledge and "hold" in motor else ""
-	var move: String = motor.move if "move" in motor and hold == "" else ""
+	var hold: String = pose.hold if _has_ledge else ""
+	var move: String = pose.move if hold == "" else ""
 	_moves(move,delta)
-	if hold != "" or _hold_was != "": return _drive_ledge(motor,hold,delta)
+	if hold != "" or _hold_was != "": return _drive_ledge(pose,hold,delta)
 	_ledge = move_toward(_ledge,0.0,delta/GRAB_FADE)
 	var out := {}
 	var turned := 0.0
 	if _facing_was != INF:
 		# The body keeps facing where it did; its spring swings it round
 		# after the motor's way (out of a skid, all the way round at once).
-		var swung := angle_difference(_facing_was,motor.facing)
+		var swung := angle_difference(_facing_was,pose.facing)
 		_yaw.x = wrapf(_yaw.x-swung,-PI,PI)
-		if _skidding_was and not motor.skidding and absf(swung) > 1.0:
+		if _skidding_was and not pose.skidding and absf(swung) > 1.0:
 			_hop = HOP_TIME
 			out["turned"] = true
 		elif delta > 0.0: turned = swung/delta
-	_facing_was = motor.facing
-	if _has_skid and motor.skidding and not _skidding_was:
+	_facing_was = pose.facing
+	if _has_skid and pose.skidding and not _skidding_was:
 		_tree.set(&"parameters/skid_at/seek_request",0.0)
 		_lean.v += SKID_KICK
-	_skidding_was = motor.skidding
+	_skidding_was = pose.skidding
 	# His pace in his own lengths: drawn smaller (`size`), the same pace
 	# is a quicker gait.
-	var speed: float = motor.speed()/size
+	var speed := pose.speed()/size
 	# Running along a wall runs as on the ground.
-	if (motor.grounded or move == "wallrun") and not motor.skidding and move != "crouch" and move != "slide":
+	if (pose.grounded or move == "wallrun") and not pose.skidding and move != "crouch" and move != "slide":
 		var moving := speed > STILL
 		_moving = move_toward(_moving,1.0 if moving else 0.0,delta/FADE)
 		if moving:
@@ -807,28 +809,28 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 		elif not _standing:
 			_standing = true
 			_idle_anywhere()
-	_skid = move_toward(_skid,1.0 if motor.skidding else 0.0,delta/(SKID_IN if motor.skidding else SKID_OUT))
+	_skid = move_toward(_skid,1.0 if pose.skidding else 0.0,delta/(SKID_IN if pose.skidding else SKID_OUT))
 	# Setting off and stopping, it tips forward, and wobbles back upright.
-	var accel := (speed-_speed_was)/delta if delta > 0.0 and motor.grounded else 0.0
+	var accel := (speed-_speed_was)/delta if delta > 0.0 and pose.grounded else 0.0
 	_speed_was = speed
 	var tip := -minf(absf(accel)*(TIP_GO if accel > 0.0 else TIP_STOP),TIP_MOST)
 	var pace := clampf(speed/RUN_SPEED,0.0,1.0)
-	var feet: Vector3 = motor.feet
+	var feet := pose.feet
 	var across := Vector2(feet.x-_feet_was.x,feet.z-_feet_was.z).length() if _feet_was.is_finite() else 0.0
-	var climb := clampf((feet.y-_feet_was.y)/across,-1.5,1.5) if motor.grounded and across > 0.001 else 0.0
+	var climb := clampf((feet.y-_feet_was.y)/across,-1.5,1.5) if pose.grounded and across > 0.001 else 0.0
 	_feet_was = feet
-	var bank_to := clampf(turned*BANK*pace,-BANK_MOST,BANK_MOST) if motor.grounded else 0.0
+	var bank_to := clampf(turned*BANK*pace,-BANK_MOST,BANK_MOST) if pose.grounded else 0.0
 	# Carving a slide, leant into the carve as a snowboard is.
-	if move == "slide" and "carve" in motor and motor.carve: bank_to = clampf(float(motor.carving)*speed*CARVE_LEAN,-CARVE_LEAN_MOST,CARVE_LEAN_MOST)
+	if move == "slide" and pose.carve: bank_to = clampf(pose.carving*speed*CARVE_LEAN,-CARVE_LEAN_MOST,CARVE_LEAN_MOST)
 	if move == "wallrun":
 		# Leant off the wall, the head away from it: rolled left with the
 		# wall on his right.
-		var f: Vector2 = motor.forward(motor.facing)
+		var f := PilotMotor.forward(pose.facing)
 		var right := Vector2(-f.y,f.x)
-		bank_to = WALLRUN_BANK if (motor.wall_out as Vector2).dot(right) < 0.0 else -WALLRUN_BANK
+		bank_to = WALLRUN_BANK if pose.wall_out.dot(right) < 0.0 else -WALLRUN_BANK
 	var bank := _bank.step(bank_to,delta)
 	var lean_to := tip
-	if motor.skidding: lean_to = 0.0 if _has_skid else SKID_LEAN
+	if pose.skidding: lean_to = 0.0 if _has_skid else SKID_LEAN
 	elif move == "long": lean_to = LONG_LEAN
 	elif move == "slide": lean_to = clampf(atan(climb)*SLIDE_TILT,-SLIDE_TIP_MOST,0.15)
 	var lean := _lean.step(lean_to,delta)
@@ -836,10 +838,10 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	# Off the ground: a dip taking off, then stretched along the way it
 	# goes; the head nods with it and the arms fly out (the air's clips
 	# throw them most of the way).
-	var rise: float = motor.velocity.y
-	if not motor.grounded and _grounded_was and rise > 0.0: _stretch.v -= TAKE_OFF_DIP
-	_grounded_was = motor.grounded
-	var aloft: bool = not motor.grounded and (move == "" or move == "jump")
+	var rise := pose.velocity.y
+	if not pose.grounded and _grounded_was and rise > 0.0: _stretch.v -= TAKE_OFF_DIP
+	_grounded_was = pose.grounded
+	var aloft: bool = not pose.grounded and (move == "" or move == "jump")
 	# Under the sail, the float's pose over the idle (as the dive's is), not
 	# over the air's clips, whose arms are already up.
 	_sail = move_toward(_sail,1.0 if move == "sail" else 0.0,delta/SAIL_ARMS_TIME)
@@ -853,30 +855,30 @@ func drive(motor: RefCounted, delta: float) -> Dictionary:
 	_air = move_toward(_air,1.0 if aloft else 0.0,delta/(AIR_IN if aloft else AIR_OUT))
 	_air_fall = move_toward(_air_fall,clampf((AIR_RISEN-rise)/(AIR_RISEN-AIR_FALLEN),0.0,1.0),delta*5.0)
 	_air_time = fmod(_air_time+delta,AIR_LENGTH)
-	_stretch_to = 1.0 if motor.grounded else 1.0+AIR_STRETCH*clampf(absf(rise)/AIR_FAST,0.0,1.0)
-	_nod_to = 0.0 if motor.grounded else clampf(rise*NOD,-NOD_MOST,NOD_MOST)
-	_arms_to = 0.0 if motor.grounded or move == "sail" or (_has_moves and not aloft) else (AIR_ARMS if _has_air else 1.0)
-	_look_to = clampf(turned*LOOK,-LOOK_MOST,LOOK_MOST) if motor.grounded else 0.0
+	_stretch_to = 1.0 if pose.grounded else 1.0+AIR_STRETCH*clampf(absf(rise)/AIR_FAST,0.0,1.0)
+	_nod_to = 0.0 if pose.grounded else clampf(rise*NOD,-NOD_MOST,NOD_MOST)
+	_arms_to = 0.0 if pose.grounded or move == "sail" or (_has_moves and not aloft) else (AIR_ARMS if _has_air else 1.0)
+	_look_to = clampf(turned*LOOK,-LOOK_MOST,LOOK_MOST) if pose.grounded else 0.0
 	# The chest leans into the run and the slope climbed, and rolls into a
 	# turn.
-	_hunch_to = -(RUN_LEAN*pace*_running+clampf(climb*SLOPE_LEAN,-SLOPE_MOST,SLOPE_MOST)) if motor.grounded and not motor.skidding and move != "crouch" and move != "slide" else 0.0
-	_roll_to = clampf(turned*CHEST_BANK*pace,-CHEST_BANK_MOST,CHEST_BANK_MOST) if motor.grounded else 0.0
+	_hunch_to = -(RUN_LEAN*pace*_running+clampf(climb*SLOPE_LEAN,-SLOPE_MOST,SLOPE_MOST)) if pose.grounded and not pose.skidding and move != "crouch" and move != "slide" else 0.0
+	_roll_to = clampf(turned*CHEST_BANK*pace,-CHEST_BANK_MOST,CHEST_BANK_MOST) if pose.grounded else 0.0
 	var spun := _spun(delta)
-	_pivot.quaternion = Quaternion.from_euler(spun)*_ragdoll(motor,move,delta)
+	_pivot.quaternion = Quaternion.from_euler(spun)*_ragdoll(pose,move,delta)
 	_advance(delta)
-	_limp_step(motor,move,delta)
-	_dizzy_step(motor,move,delta)
+	_limp_step(pose,move,delta)
+	_dizzy_step(pose,move,delta)
 	return out
 
 ## The ragdoll's turn of the body this frame (see the header): spun by
 ## the throw in the air, eased flat down on the ground, held tipped in a
 ## grab, unwound after; the roll on top of it.
-func _ragdoll(motor: RefCounted, move: String, delta: float) -> Quaternion:
+func _ragdoll(pose: PilotPose, move: String, delta: float) -> Quaternion:
 	var tumbling := move == "tumble"
-	var knocks: int = int(motor.get("knocks")) if "knocks" in motor else 0
-	if tumbling and knocks != _knocks_seen: _throw(motor)
+	var knocks := pose.knocks
+	if tumbling and knocks != _knocks_seen: _throw(pose)
 	_knocks_seen = knocks
-	if _was_tumble and not tumbling and not motor.grounded and move != "roll":
+	if _was_tumble and not tumbling and not pose.grounded and move != "roll":
 		# Poise back in the air: he gathers himself.
 		_gather = GATHER_TIME
 		_stretch.v += GATHER_STRETCH
@@ -888,12 +890,12 @@ func _ragdoll(motor: RefCounted, move: String, delta: float) -> Quaternion:
 		_stretch.v -= CROUCH_SQUASH
 	if tumbling:
 		_flail_time += delta
-		var held: bool = motor.has_method("seized") and motor.seized()
+		var held := pose.seized
 		if held:
 			_rag = _rag.slerp(Quaternion(Vector3.RIGHT,0.35),1.0-exp(-delta/0.1)).normalized()
 			_rag_w = Vector3.ZERO
 			_tumble_low = move_toward(_tumble_low,0.0,delta/0.1)
-		elif motor.grounded:
+		elif pose.grounded:
 			# Down: over to lying flat, on the side it came down on.
 			var up := _rag*Vector3.UP
 			var flat := Vector3(up.x,0.0,up.z)
@@ -905,7 +907,7 @@ func _ragdoll(motor: RefCounted, move: String, delta: float) -> Quaternion:
 			_rag_w = Vector3.ZERO
 			_tumble_low = move_toward(_tumble_low,1.0,delta/0.12)
 		else:
-			if _rag_w == Vector3.ZERO: _throw(motor)
+			if _rag_w == Vector3.ZERO: _throw(pose)
 			var w := _rag_w.length()
 			if w > 1e-4: _rag = (Quaternion(_rag_w/w,w*delta)*_rag).normalized()
 			_rag_w *= exp(-RAG_DRAG*delta)
@@ -928,9 +930,9 @@ func _ragdoll(motor: RefCounted, move: String, delta: float) -> Quaternion:
 
 ## Thrown (a fresh knock): spinning head back along the throw, by its pace,
 ## with a little twist and roll at random.
-func _throw(motor: RefCounted) -> void:
-	var v: Vector3 = motor.velocity
-	var facing: float = motor.facing
+func _throw(pose: PilotPose) -> void:
+	var v := pose.velocity
+	var facing := pose.facing
 	var local := Basis(Vector3.UP,facing).inverse()*v
 	var flat := Vector3(local.x,0.0,local.z)
 	var rate := clampf(v.length()*RAG_SPIN,RAG_SPIN_MOST.x,RAG_SPIN_MOST.y)
@@ -942,8 +944,8 @@ func _throw(motor: RefCounted) -> void:
 ## The limp limbs (see the header): each angle on its soft spring after
 ## where the air and gravity pull it, in the body's frame, the spin
 ## flinging them out; blended in as he tumbles and out as he gets up.
-func _limp_step(motor: RefCounted, move: String, delta: float) -> void:
-	var tumbling: bool = move == "tumble" and not (motor.has_method("seized") and motor.seized())
+func _limp_step(pose: PilotPose, move: String, delta: float) -> void:
+	var tumbling: bool = move == "tumble" and not pose.seized
 	_limp_w = move_toward(_limp_w,1.0 if tumbling else 0.0,delta/(0.06 if tumbling else 0.2))
 	if _limp_w <= 0.0:
 		for spring: Spring in _limp:
@@ -951,20 +953,20 @@ func _limp_step(motor: RefCounted, move: String, delta: float) -> void:
 			spring.v = 0.0
 		return
 	if _upper_arms.has(-1) or _thighs.has(-1) or _shins.has(-1) or _head < 0: return
-	var facing: float = motor.facing
-	var v: Vector3 = Basis(Vector3.UP,facing).inverse()*(motor.velocity as Vector3)
-	var pull := Vector3.DOWN if motor.grounded else (Vector3.DOWN*0.6-v*RAG_AIR)
+	var facing := pose.facing
+	var v: Vector3 = Basis(Vector3.UP,facing).inverse()*pose.velocity
+	var pull := Vector3.DOWN if pose.grounded else (Vector3.DOWN*0.6-v*RAG_AIR)
 	if pull.length() < 0.01: pull = Vector3.DOWN
 	var d := _rag.inverse()*pull.normalized()
 	var p := atan2(-d.z,-d.y)
 	var q := atan2(d.x,-d.y)
-	var fling := minf(_rag_w.length()*RAG_FLING,RAG_FLING_MOST)+(0.9 if motor.grounded else 0.0)
+	var fling := minf(_rag_w.length()*RAG_FLING,RAG_FLING_MOST)+(0.9 if pose.grounded else 0.0)
 	var goals := [
 		clampf(p,-1.5,2.8),clampf(q-fling,-2.6,0.2),
 		clampf(p,-1.5,2.8),clampf(q+fling,-0.2,2.6),
 		clampf(p,-0.5,1.6),clampf(q-fling*0.35,-0.9,0.1),
 		clampf(p,-0.5,1.6),clampf(q+fling*0.35,-0.1,0.9),
-		-0.15 if motor.grounded else -0.6,-0.15 if motor.grounded else -0.6,
+		-0.15 if pose.grounded else -0.6,-0.15 if pose.grounded else -0.6,
 		clampf(p*0.4,-0.6,0.6)]
 	var a: Array[float] = []
 	for i in range(_limp.size()): a.append((_limp[i] as Spring).step(float(goals[i]),delta)*_limp_w)
@@ -1007,9 +1009,9 @@ func _build_dizzy() -> void:
 	add_child(_dizzy)
 
 ## The dizzy over the head while he is down stunned, turning.
-func _dizzy_step(motor: RefCounted, move: String, delta: float) -> void:
+func _dizzy_step(pose: PilotPose, move: String, delta: float) -> void:
 	if _dizzy == null: return
-	var down: bool = move == "tumble" and motor.grounded and not (motor.has_method("seized") and motor.seized())
+	var down: bool = move == "tumble" and pose.grounded and not pose.seized
 	_dizzy.visible = down and _head >= 0
 	if not _dizzy.visible:
 		_dizzy_t = 0.0
@@ -1078,7 +1080,7 @@ func _moves(move: String, delta: float) -> void:
 ## paddle in step with it; turning a beat behind its way as on foot, banked
 ## a little into a turn, bobbing on the water. Returns "stroke" (0 the left
 ## mitt's pull, 1 the right's) as the paddle or the tread pushes the water.
-func _drive_swim(motor: RefCounted, delta: float) -> Dictionary:
+func _drive_swim(pose: PilotPose, delta: float) -> Dictionary:
 	var out := {}
 	if not _swimming_was:
 		# Into the water: the run's and the air's springs let go of.
@@ -1097,11 +1099,11 @@ func _drive_swim(motor: RefCounted, delta: float) -> Dictionary:
 	_climbing = 0.0
 	var turned := 0.0
 	if _facing_was != INF:
-		var swung := angle_difference(_facing_was,motor.facing)
+		var swung := angle_difference(_facing_was,pose.facing)
 		_yaw.x = wrapf(_yaw.x-swung,-PI,PI)
 		if delta > 0.0: turned = swung/delta
-	_facing_was = motor.facing
-	var speed: float = motor.speed()/size
+	_facing_was = pose.facing
+	var speed := pose.speed()/size
 	_swim = move_toward(_swim,1.0,delta/SWIM_FADE)
 	_moving = move_toward(_moving,0.0,delta/FADE)
 	_standing = true
@@ -1135,15 +1137,15 @@ func _drive_swim(motor: RefCounted, delta: float) -> Dictionary:
 	_pivot.position.y += BOB*sin(TAU*BOB_RATE*_bob_time)
 	return out
 
-## One frame of the water on him (the motor's `wade` and `swimming`): in it
+## One frame of the water on him (the pose's `wade` and `swimming`): in it
 ## he is soaked up to where it reaches; out of it he drips for DRIP_TIME s,
 ## less and less, and dries over DRY_TIME s. Returns the points (world) a
 ## drip falls from this frame: off the wet mitts, the jacket's hem and the
 ## trousers.
-func soak(motor: RefCounted, delta: float) -> PackedVector3Array:
+func soak(pose: PilotPose, delta: float) -> PackedVector3Array:
 	var drips := PackedVector3Array()
-	var depth := float(motor.get("wade")) if "wade" in motor else 0.0
-	var swimming: bool = "swimming" in motor and motor.swimming
+	var depth := pose.wade
+	var swimming := pose.swimming
 	if swimming or depth > 0.02:
 		wet = 1.0
 		wet_line = minf(maxf(wet_line,depth*WET_REST+0.03),WET_MOST)
@@ -1183,7 +1185,7 @@ func _scatter() -> Vector3:
 	return Vector3(_rng.randf_range(-1.0,1.0),0.0,_rng.randf_range(-1.0,1.0)).limit_length(1.0)
 
 ## One frame on a ledge (and the one coming off it).
-func _drive_ledge(motor: RefCounted, hold: String, delta: float) -> Dictionary:
+func _drive_ledge(pose: PilotPose, hold: String, delta: float) -> Dictionary:
 	var was := _hold_was
 	_hold_was = hold
 	if was == "":
@@ -1197,8 +1199,8 @@ func _drive_ledge(motor: RefCounted, hold: String, delta: float) -> Dictionary:
 		_spin = Vector2.ZERO
 		_air = 0.0
 	if _facing_was != INF:
-		_yaw.x = wrapf(_yaw.x-angle_difference(_facing_was,motor.facing),-PI,PI)
-	_facing_was = motor.facing
+		_yaw.x = wrapf(_yaw.x-angle_difference(_facing_was,pose.facing),-PI,PI)
+	_facing_was = pose.facing
 	match hold:
 		"":
 			if was == "climb":
@@ -1221,7 +1223,7 @@ func _drive_ledge(motor: RefCounted, hold: String, delta: float) -> Dictionary:
 				_still_springs()
 			_ledge = 1.0
 			_climbing = move_toward(_climbing,1.0,delta/CLIMB_FADE)
-			_climb_at = clampf(float(motor.hold_t),0.0,1.0)*CLIMB_LENGTH
+			_climb_at = clampf(pose.hold_t,0.0,1.0)*CLIMB_LENGTH
 		"hang", "swing":
 			# A swing rope's hold (scripts/interactables/swing_rope.gd) hangs
 			# as the ledge's does, the rope's tilt the caller's.
@@ -1234,8 +1236,8 @@ func _drive_ledge(motor: RefCounted, hold: String, delta: float) -> Dictionary:
 			_ledge = move_toward(_ledge,1.0,delta/GRAB_FADE)
 			_climbing = move_toward(_climbing,0.0,delta/HUNG_FADE)
 			_hang_time = fmod(_hang_time+delta,HANG_LENGTH)
-			var pace := absf(float(motor.shimmy))
-			if pace > 0.01: _shimmy_way = move_toward(_shimmy_way,1.0 if float(motor.shimmy) > 0.0 else 0.0,delta/SHIMMY_TURN)
+			var pace := absf(pose.shimmy)
+			if pace > 0.01: _shimmy_way = move_toward(_shimmy_way,1.0 if pose.shimmy > 0.0 else 0.0,delta/SHIMMY_TURN)
 			_shimmying = clampf(pace/(SHIMMY_SPEED*0.4),0.0,1.0)
 			_shimmy_phase = fmod(_shimmy_phase+pace/(SHIMMY_SPEED*SHIMMY_CYCLE)*delta,1.0)
 	var hanging := hold == "hang" or hold == "swing"
