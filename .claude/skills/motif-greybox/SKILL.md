@@ -35,7 +35,10 @@ Inside each motif: land, then routes, then threat.
    any), the slug, the scene it is played in, and one
    **focus** line: the card's riskiest question (e.g. "is the cliff route
    a real alternative to the stair"). A card that needs a motor/trap/enemy
-   change is out of scope: stand it in and list it.
+   change is out of scope: stand it in and list it. A place that will take
+   several stages (land, pieces, routes, threat, look), as a picked card
+   with a plan usually does, runs as an `/iterate` loop instead: the plan
+   (or card) is its spec, with agent-brief.md as its rules.
 3. When all are back, check whether the branch moved under the round
    (`git log` since the round began, for scripts/kit_isle, scripts/traps,
    scripts/enemies, scripts/pilot_motor.gd): other sessions land work here.

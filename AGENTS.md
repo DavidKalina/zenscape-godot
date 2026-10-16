@@ -97,7 +97,8 @@ existing test its change breaks. Run the full suite only when the user asks.
   asks to a running agent, only on an explicit go.
 - Delegated work goes one round per agent. A round ends with its commits and
   a short handoff doc, and the next round is a fresh agent briefed from that
-  doc. Size the brief to the ask: a demo or experiment gets the smallest
+  doc. A build that spans several stages, or would run long in one agent,
+  runs as a loop of fresh agents instead (skill `iterate`). Size the brief to the ask: a demo or experiment gets the smallest
   playable build, a smoke check and a few-line note, with no bot sweeps,
   perf passes or extra tests unless asked.
 - The user explores what the game is by playing it. Don't write a game
