@@ -26,20 +26,86 @@ extends SceneTree
 ##                                     checks, failures, frames, seconds
 ## and quits 0, or 1 with a failed check, 2 on the timeout.
 ##
+## Index (`python tools/drive.py --api [word]` adds the docs; `--api --update` rewrites it):
+##   The driver
+##     drive() -> void
+##   Args
+##     arg(name, default = null) -> Variant
+##     arg_int(name, default = 0) -> int
+##     arg_float(name, default = 0.0) -> float
+##     flag(name) -> bool
+##     arg_vec3(name, default = Vector3.ZERO) -> Vector3
+##     scene_args() -> PackedStringArray
+##   The scene
+##     open(scene, args = null, ready_frames = 3000) -> int
+##     place(at, face = Vector2(0.0,-1.0)) -> void
+##     go_to(key) -> void
+##   Time
+##     frames(n) -> void
+##     physics_frames(n) -> void
+##     until(cond, max_frames = 600) -> int
+##   Input (the real path: actions the study reads)
+##     hold(action, on = true, strength = 1.0) -> void
+##     press(action, n = 1) -> void
+##     let_go() -> void
+##     stick(v) -> void
+##     stick_toward(point) -> Vector2
+##     walk_to(point, max_frames = 900, near = 0.6, jump_at = -1.0) -> bool
+##     jump(n = 8) -> void
+##   Scripted ticks (no input path: faster, but not the play loop)
+##     scripted_ticks(n, want = Vector2.ZERO, jump_held = false) -> void
+##     unscripted() -> void
+##   Looking around
+##     find(pattern, under = null) -> Array[Node]
+##     first(pattern, under = null) -> Node
+##   Collider probes
+##     space() -> PhysicsDirectSpaceState3D
+##     ray(from, to, mask = ALL_LAYERS, inside = false, exclude = [], areas = false) -> Dictionary
+##     pierce(from, to, mask = ALL_LAYERS, most = 8, step = 0.05) -> Array[Dictionary]
+##     what_is_at(pos, radius = 0.25, mask = ALL_LAYERS, most = 16, areas = false) -> Array[Dictionary]
+##     what_is_in(box, mask = ALL_LAYERS, most = 16, areas = false) -> Array[Dictionary]
+##     colliders(node) -> Array[Dictionary]
+##     collision_box(node, local = false) -> AABB
+##     hit_text(h) -> String
+##   Shots
+##     shot(path, hud = false, size = Vector2i.ZERO) -> void
+##     shot_at(view, target, opts = {}) -> String
+##     film(target, opts = {}) -> Dictionary
+##     film_end(f, now = false) -> Dictionary
+##     make_sheet(paths, out, cols = 2, width = 720) -> Error
+##     mesh_box(tops) -> AABB
+##     view_eye(view, box, ahead, him, fov = 50.0, dist = 1.0) -> Dictionary
+##   Routes: walks through the real input
+##     walk_leg(to, opts = {}) -> Dictionary
+##     route(points, opts = {}) -> Dictionary
+##     walk_paths(owner = null, offset = Vector3.ZERO, opts = {}) -> Dictionary
+##   Watching an enemy
+##     watch(enemy, opts = {}) -> Dictionary
+##   Reporting
+##     check(ok, label, detail = "") -> bool
+##     result(key, value) -> void
+##     row(values) -> void
+##     say(text) -> void
+##     note(text) -> void
+##     finish() -> void
+## (end of index)
+##
 ## Typing: the project warns on untyped `:=` it can't infer, which is a
 ## parse error. Write `var d: Dictionary = x.get("k")`, never
 ## `var d := x.get("k")`; `study` and `motor` are Variants on purpose.
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
+## One frame's time at --fixed-fps 60.
 const DT := 1.0/60.0
 ## The actions a driver may hold; `let_go` releases them all.
 const ACTIONS: Array[StringName] = [&"move_forward",&"move_back",&"move_left",&"move_right",
 	&"walk_jump",&"walk_twirl",&"walk_crouch",&"walk_wind",&"telescope"]
 
-## The scene `open` opened, and its pilot motor (scripts/pilot_motor.gd) if
-## it has one.
+## The scene `open` opened.
 var study: Node = null
+## Its pilot motor (scripts/pilot_motor.gd), if it has one: feet, grounded,
+## velocity, stunned, knocks, jumps, size, run.
 var motor: Variant = null
 ## Frames stepped through `frames` / `until` / `walk_to` since start.
 var frame := 0
@@ -104,12 +170,15 @@ func _watch() -> void:
 func arg(name: String, default: Variant = null) -> Variant:
 	return _args.get(name,_scene_kv.get(name,default))
 
+## `arg` as an int.
 func arg_int(name: String, default := 0) -> int:
 	return int(arg(name,default))
 
+## `arg` as a float.
 func arg_float(name: String, default := 0.0) -> float:
 	return float(arg(name,default))
 
+## True if `--name` or `--name=...` was given (driver's or scene's).
 func flag(name: String) -> bool:
 	return _args.has(name) or _scene_kv.has(name)
 
@@ -174,6 +243,7 @@ func frames(n: int) -> void:
 		if not _hooks.is_empty():
 			for h: Callable in _hooks.duplicate(): h.call()
 
+## `n` physics frames, nothing else stepped by hand.
 func physics_frames(n: int) -> void:
 	for i in n: await physics_frame
 
@@ -186,6 +256,7 @@ func until(cond: Callable, max_frames := 600) -> int:
 
 # --- Input (the real path: actions the study reads) --------------------------
 
+## `action` held (at `strength`) or, with `on` false, released.
 func hold(action: StringName, on := true, strength := 1.0) -> void:
 	if on: Input.action_press(action,strength)
 	else: Input.action_release(action)
@@ -196,6 +267,7 @@ func press(action: StringName, n := 1) -> void:
 	await frames(n)
 	hold(action,false)
 
+## Every action in ACTIONS released.
 func let_go() -> void:
 	for a in ACTIONS:
 		if InputMap.has_action(a): Input.action_release(a)
@@ -257,6 +329,7 @@ func scripted_ticks(n: int, want := Vector2.ZERO, jump_held := false) -> void:
 	study.script_want = Vector2.ZERO
 	study.script_jump = false
 
+## Back to the input path after `scripted_ticks`.
 func unscripted() -> void:
 	study.scripted = false
 
@@ -272,6 +345,7 @@ func find(pattern: String, under: Node = null) -> Array[Node]:
 			out.append(n)
 	return out
 
+## The first of `find(pattern)`, or null.
 func first(pattern: String, under: Node = null) -> Node:
 	var hits := find(pattern,under)
 	return hits[0] if not hits.is_empty() else null
@@ -456,13 +530,454 @@ static func _rids(exclude: Array) -> Array[RID]:
 		elif e is CollisionObject3D: out.append((e as CollisionObject3D).get_rid())
 	return out
 
+# --- Shots --------------------------------------------------------------------
+#
+#   await shot_at("side", motor)                                # him, framed by his size
+#   await shot_at("three", first("Motif_"), {"out": "scratch/shots/well.png"})
+#   await shot_at(Vector3(1, 0.4, 0), box, {"dist": 1.4})       # an AABB, a way of your own
+#   await shot_at("side", motor, {"when": func() -> bool: return not motor.grounded})
+#   await route(points)                     # the armed still is taken mid-jump, mid-route
+#   var f := film(bird, {"view": "shoulder", "every": 6, "seconds": 3})
+#   await watch(bird, {"frames": 240})
+#   f = await film_end(f)                   # {shots: [paths], sheet: path}
+#   [f120] saved scratch/shots/jump.png: side of him at (12.0, 3.1, -4.0), 3.6 m off
+#   [f360] FILM bird shoulder: 30 stills every 6 frames, scratch/shots, sheet scratch/shots/bird_sheet.png
+#
+# A target is a Node3D (framed by the box of its visible meshes), `motor`
+# or "him" (his figure), a pattern for `first`, a Vector3 (a point
+# `radius` m round, default his height) or an AABB. The camera stands
+# off it by its size: `dist` 1 fits it in the frame.
+# Views: the world ones shot.py has (three, front, back, left, right, top,
+# close), and ones that turn with him (his facing when the target is him,
+# else the line from the target to him): side (square across it; the
+# other side when a collider hides the target from the first), ahead
+# (on it: his face, or the target from his side), behind, shoulder
+# (behind him, over his shoulder, at the target), high (from above), play
+# (the study's own camera, not moved). A Vector3 is a way out from the target.
+# Opts, both:
+#   out     the PNG (shot_at) or the prefix (film); default
+#           captures/drive/<driver>_<n>_<view>
+#   dist (1.0)  fov (50)  radius (a Vector3 target's, m)
+#   with    a second target framed too (e.g. "him" with an enemy)
+#   eye     a Vector3: the camera stands there;  offset: at target + offset (m)
+#   size    Vector2i: the PNG's size (shot_at 1440 wide, film 640, both
+#           shaped like the window)
+#   hud     true: the HUD kept in (the play view only; the others are drawn
+#           by a camera of their own, in a SubViewport, so the study's
+#           camera stays current and what acts on it, the Weeper, plays on)
+#   when    Callable() -> bool: shot_at returns at once, armed, and takes
+#           the still the first frame it is true, while a route() or
+#           watch() plays; film starts then
+# film only: every (6 frames), seconds (2.0) or count (stills), sheet
+# (true: <out>_sheet.png, `cols` 4 wide), follow (true: the eye goes with
+# the target; false: it stays and turns), turn (false: the view's way held
+# from the first frame). A film runs in the frame hooks, so it goes on
+# through whatever the driver awaits; film_end waits for it (or, `now`,
+# stops it). finish() closes any film still open.
+# Headless, both print one SKIP line and save nothing (shot_at returns "",
+# film a finished film with no shots), so a driver runs either way.
+
+## The world views (shot.py's): a way out from the target.
+const VIEWS := {"three":Vector3(1.0,0.75,1.0),"front":Vector3(0.0,0.25,1.0),"back":Vector3(0.0,0.25,-1.0),
+	"left":Vector3(-1.0,0.25,0.0),"right":Vector3(1.0,0.25,0.0),"top":Vector3(0.0,1.0,0.05),"close":Vector3(1.0,0.5,0.8)}
+## The views that turn with him (see above).
+const TURN_VIEWS: Array[String] = ["side","ahead","behind","shoulder","high"]
+var _shots := 0
+var _films: Array[Dictionary] = []
+var _armed: Array[Dictionary] = []
+
 ## A still of the window to `path` (a rendered run only; headless prints SKIP).
 ## The HUD's canvas layers are hidden for it unless `hud`; scaled to
 ## `size` if given (a window on a scaled display is bigger than asked).
 func shot(path: String, hud := false, size := Vector2i.ZERO) -> void:
-	if DisplayServer.get_name() == "headless":
+	if _headless():
 		print("SKIP shot %s: headless" % path)
 		return
+	var err := await _grab(path,hud,size)
+	print("saved %s" % path if err == OK else "FAIL shot %s: error %d" % [path,err])
+
+## A still of `target` from `view`, the camera placed by its size (opts
+## above); the PNG's path ("" headless or failed). With `when`: armed.
+func shot_at(view: Variant, target: Variant, opts := {}) -> String:
+	_shots += 1
+	var path := str(opts.get("out",_default_out(view,_shots)+".png"))
+	if not path.ends_with(".png"): path += ".png"
+	var what := "%s of %s" % [_view_name(view),_target_name(target)]
+	if _headless():
+		print("SKIP shot_at %s: headless has no pixels (drive.py --rendered)" % what)
+		return ""
+	if opts.has("when"):
+		var cond: Callable = opts.when
+		var st := {"hook":Callable(),"what":what}
+		st.hook = func() -> void:
+			if not cond.call(): return
+			_hooks.erase(st.hook)
+			_armed.erase(st)
+			st.clear()
+			_shot_now.call(view,target,opts,path,what)
+		_hooks.append(st.hook)
+		_armed.append(st)
+		return path
+	return await _shot_now(view,target,opts,path,what)
+
+## Stills of `target` every few frames while the run goes on, the camera
+## following it (opts above); `film_end` waits for it and its sheet.
+func film(target: Variant, opts := {}) -> Dictionary:
+	_shots += 1
+	var view: Variant = opts.get("view","side")
+	var every := maxi(1,int(opts.get("every",6)))
+	var f := {"shots":[] as Array[String],"sheet":"","done":false,"what":"%s %s" % [_target_name(target),_view_name(view)],
+		"view":view,"target":target,"opts":opts,"every":every,"out":str(opts.get("out",_default_out(view,_shots))).trim_suffix(".png"),
+		"count":int(opts.get("count",ceili(float(opts.get("seconds",2.0))*60.0/every))),"started":false,"f0":0,
+		"view_port":null,"rig":{},"hidden":[],"hook":Callable()}
+	if _headless():
+		print("SKIP film %s: headless has no pixels (drive.py --rendered)" % f.what)
+		f.done = true
+		return f
+	var when: Callable = opts.get("when",Callable())
+	f.hook = func() -> void: _film_tick(f,when)
+	_hooks.append(f.hook)
+	_films.append(f)
+	return f
+
+## Waits until film `f` has its stills (stops it at once with `now`), makes
+## its sheet; returns it: {shots, sheet, done}.
+func film_end(f: Dictionary, now := false) -> Dictionary:
+	var most := int(f.count)*int(f.every)+1200
+	while not bool(f.done) and not now and most > 0:
+		await frames(1)
+		most -= 1
+	_film_close(f)
+	return f
+
+## A contact sheet: the PNGs at `paths` in a grid `cols` wide, each scaled
+## to `width`, to `out`. An Error. (tools/harness/sheet.gd, shot.py --sheet.)
+static func make_sheet(paths: Array, out: String, cols := 2, width := 720) -> Error:
+	var images: Array[Image] = []
+	for p: Variant in paths:
+		var img := Image.load_from_file(ProjectSettings.globalize_path(String(p)))
+		if img == null: continue
+		img.convert(Image.FORMAT_RGB8)
+		img.resize(width,int(round(float(img.get_height())*width/img.get_width())),Image.INTERPOLATE_LANCZOS)
+		images.append(img)
+	if images.is_empty(): return ERR_FILE_NOT_FOUND
+	cols = clampi(cols,1,images.size())
+	var rows := ceili(float(images.size())/cols)
+	var cell_h := 0
+	for img in images: cell_h = maxi(cell_h,img.get_height())
+	var gap := 4
+	var sheet := Image.create_empty(cols*width+(cols-1)*gap,rows*cell_h+(rows-1)*gap,false,Image.FORMAT_RGB8)
+	sheet.fill(Color(0.1,0.1,0.1))
+	for i in images.size():
+		var img := images[i]
+		sheet.blit_rect(img,Rect2i(Vector2i.ZERO,img.get_size()),Vector2i((i%cols)*(width+gap),(i/cols)*(cell_h+gap)))
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(out).get_base_dir())
+	return sheet.save_png(out)
+
+## The world box of the visible meshes under `tops`; sky domes, sea planes,
+## particles and what is loose in the world's frame (`_loose`) left out.
+## AABB() if none.
+func mesh_box(tops: Array) -> AABB:
+	var box := AABB()
+	var any := false
+	for top: Variant in tops:
+		if not (top is Node) or not is_instance_valid(top): continue
+		var meshes: Array[Node] = (top as Node).find_children("*","GeometryInstance3D",true,false)
+		if top is GeometryInstance3D: meshes.append(top)
+		for m: Node in meshes:
+			var g := m as GeometryInstance3D
+			if not g.is_visible_in_tree() or g is GPUParticles3D or g is CPUParticles3D: continue
+			if _loose(g,top): continue
+			var b := g.global_transform*g.get_aabb()
+			if b.size.length() > 3000.0 or b.size.length() < 0.001: continue
+			box = b if not any else box.merge(b)
+			any = true
+	return box if any else AABB()
+
+## The camera for `view` of `box`: {eye, look}, by its size (shot.py's
+## framing). `ahead`: the turning views' way (x, z); `him`: his box (shoulder).
+func view_eye(view: Variant, box: AABB, ahead: Vector3, him: AABB, fov := 50.0, dist := 1.0) -> Dictionary:
+	var middle := box.get_center()
+	var radius := maxf(box.size.length()*0.5,0.3)
+	var d := radius/tan(deg_to_rad(fov)*0.5)*dist*1.05
+	var way: Vector3
+	if view is Vector3: way = view
+	else:
+		match str(view):
+			"side": way = ahead.cross(Vector3.UP)+Vector3.UP*0.25
+			"ahead": way = ahead+Vector3.UP*0.25
+			"behind": way = -ahead+Vector3.UP*0.3
+			"high": way = -ahead*0.35+Vector3.UP
+			"shoulder":
+				# Behind him and up, looking past his head at the target.
+				var hr := maxf(him.size.length()*0.5,0.3)
+				var hc := him.get_center()
+				if him.has_point(middle) or him.is_equal_approx(box):
+					return {"eye":hc-ahead*hr*3.2*dist+Vector3.UP*hr*1.4*dist,"look":hc+ahead*hr*3.0}
+				var line := Vector3(middle.x-hc.x,0.0,middle.z-hc.z).normalized()
+				return {"eye":hc-line*hr*3.2*dist+Vector3.UP*hr*1.6*dist,"look":middle}
+			"close":
+				way = VIEWS.close
+				d *= 0.6
+			_: way = VIEWS.get(str(view),VIEWS.three)
+	return {"eye":middle+way.normalized()*d,"look":middle}
+
+## True if `g` is in the world's frame, not `top`'s: it or a parent under
+## `top` is top_level (his puffs and ripples, a trail).
+static func _loose(g: Node, top: Node) -> bool:
+	var n := g
+	while n != null and n != top:
+		if n is Node3D and (n as Node3D).top_level: return true
+		n = n.get_parent()
+	return false
+
+func _headless() -> bool:
+	return DisplayServer.get_name() == "headless"
+
+func _default_out(view: Variant, n: int) -> String:
+	var me := (get_script() as Script).resource_path.get_file().get_basename()
+	return "captures/drive/%s_%02d_%s" % [me,n,_view_name(view)]
+
+static func _view_name(view: Variant) -> String:
+	if view is Vector3: return "way(%.1f,%.1f,%.1f)" % [view.x,view.y,view.z]
+	return str(view)
+
+func _is_him(target: Variant) -> bool:
+	if target is String: return target == "him"
+	if typeof(target) != TYPE_OBJECT or not is_instance_valid(target): return false
+	return (motor != null and is_same(target,motor)) or (study != null and is_same(target,study.get("figure")))
+
+func _target_name(target: Variant) -> String:
+	if _is_him(target): return "him"
+	if target is AABB: return "a box %.1f m across" % (target as AABB).size.length()
+	if target is Vector3: return "point %s" % _vtext(target)
+	if target is Node:
+		var n := str((target as Node).name)
+		var sc: Script = (target as Node).get_script()
+		return sc.resource_path.get_file().get_basename() if n.begins_with("@") and sc != null else n
+	return str(target)
+
+## His box: his figure's meshes, else his height round his feet.
+func _him_box() -> AABB:
+	var fig: Variant = study.get("figure") if study != null else null
+	var box := mesh_box([fig]) if fig is Node else AABB()
+	if box.size == Vector3.ZERO and motor != null:
+		var h := 1.8*float(motor.size)
+		box = AABB(Vector3(motor.feet)-Vector3(h*0.25,0.0,h*0.25),Vector3(h*0.5,h,h*0.5))
+	return box
+
+## The box a target is framed by (AABB() if it is gone).
+func _box_of(target: Variant, opts: Dictionary) -> AABB:
+	if _is_him(target): return _him_box()
+	if target is AABB: return target
+	if target is Vector3:
+		var r := float(opts.get("radius",_him_box().size.y*0.5 if motor != null else 1.0))
+		return AABB(target-Vector3.ONE*r,Vector3.ONE*r*2.0)
+	var n: Variant = first(target) if target is String else target
+	if not (n is Node3D) or not is_instance_valid(n): return AABB()
+	var box := mesh_box([n])
+	if box.size == Vector3.ZERO: box = AABB((n as Node3D).global_position-Vector3.ONE*0.5,Vector3.ONE)
+	return box
+
+## The turning views' way: his facing, or from the target to him.
+func _ahead_of(target: Variant, middle: Vector3) -> Vector3:
+	if motor == null: return Vector3.BACK
+	if _is_him(target):
+		var f2: Vector2 = PilotMotor.forward(float(motor.facing))
+		return Vector3(f2.x,0.0,f2.y)
+	var d := Vector3(motor.feet.x-middle.x,0.0,motor.feet.z-middle.z)
+	return d.normalized() if d.length() > 0.01 else Vector3.BACK
+
+## The eye and look for `view` of `target` now; `rig` keeps the turning
+## way once set (`ahead`) and the size (`radius`), for a film.
+func _aim(cam: Camera3D, view: Variant, target: Variant, opts: Dictionary, rig: Dictionary) -> bool:
+	var box := _box_of(target,opts)
+	if box.size == Vector3.ZERO: return false
+	if opts.has("with"):
+		var w := _box_of(opts.with,opts)
+		if w.size != Vector3.ZERO: box = box.merge(w)
+	if rig.has("half"):
+		# A film: the size held from its first frame, the middle eased.
+		var mid: Vector3 = (rig.mid as Vector3).lerp(box.get_center(),0.5)
+		rig.mid = mid
+		box = AABB(mid-rig.half,rig.half*2.0)
+	var ahead: Vector3 = rig.get("ahead",_ahead_of(target,box.get_center()))
+	var at: Dictionary
+	if opts.has("eye"): at = {"eye":opts.eye,"look":box.get_center()}
+	elif opts.has("offset"): at = {"eye":box.get_center()+(opts.offset as Vector3),"look":box.get_center()}
+	else:
+		var him := _him_box() if motor != null else box
+		var fov := float(opts.get("fov",50.0))
+		var dist := float(opts.get("dist",1.0))
+		at = view_eye(view,box,ahead,him,fov,dist)
+		if str(view) == "side" and not rig.has("flip"):
+			# Stone between the eye and what it frames: the other side, if
+			# that one is clear (a film decides once).
+			rig.flip = _hidden_from(at.eye,target,opts) and not _hidden_from(view_eye(view,box,-ahead,him,fov,dist).eye,target,opts)
+		if bool(rig.get("flip",false)): at = view_eye(view,box,-ahead,him,fov,dist)
+	if rig.has("eye_fixed"): at.eye = rig.eye_fixed
+	var eye: Vector3 = at.eye
+	var look: Vector3 = at.look
+	if eye.is_equal_approx(look): return false
+	var up := Vector3.UP if absf((look-eye).normalized().y) < 0.99 else Vector3.BACK
+	cam.fov = float(opts.get("fov",50.0))
+	cam.far = maxf(4000.0,eye.distance_to(look)*4.0)
+	cam.look_at_from_position(eye,look,up)
+	rig.eye_now = eye
+	rig.look_now = look
+	return true
+
+## True if a collider stands between `eye` and the target (or `with`).
+func _hidden_from(eye: Vector3, target: Variant, opts: Dictionary) -> bool:
+	for t: Variant in [target,opts.get("with")]:
+		if t == null: continue
+		var b := _box_of(t,opts)
+		if b.size == Vector3.ZERO: continue
+		var p := b.get_center()
+		var h := ray(eye,p)
+		if not h.is_empty() and float(h.distance) < eye.distance_to(p)-b.size.length()*0.5: return true
+	return false
+
+## A view of the world of its own (a SubViewport on the same World3D), so
+## the study's camera stays current: enemies that act on what the camera
+## sees (the Weeper) play on as they would. Its camera takes the play
+## camera's environment, attributes and cull mask; the window's AA.
+func _cap_view(label: String, size: Vector2i) -> SubViewport:
+	var sv := SubViewport.new()
+	sv.name = label
+	sv.size = size
+	sv.world_3d = root.find_world_3d()
+	sv.msaa_3d = root.msaa_3d
+	sv.screen_space_aa = root.screen_space_aa
+	sv.use_taa = root.use_taa
+	sv.use_debanding = root.use_debanding
+	sv.scaling_3d_mode = root.scaling_3d_mode
+	sv.scaling_3d_scale = root.scaling_3d_scale
+	sv.mesh_lod_threshold = root.mesh_lod_threshold
+	sv.positional_shadow_atlas_size = root.positional_shadow_atlas_size
+	sv.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	var cam := Camera3D.new()
+	var play := root.get_camera_3d()
+	if play != null:
+		cam.environment = play.environment
+		cam.attributes = play.attributes
+		cam.cull_mask = play.cull_mask
+		cam.near = minf(play.near,0.05)
+	sv.add_child(cam)
+	root.add_child(sv)
+	cam.make_current()
+	return sv
+
+func _cap_cam(sv: SubViewport) -> Camera3D:
+	return sv.get_child(0) as Camera3D
+
+func _shot_now(view: Variant, target: Variant, opts: Dictionary, path: String, what: String) -> String:
+	var rig := {}
+	var err := OK
+	if str(view) == "play":
+		var size: Vector2i = opts.get("size",Vector2i(1440,0))
+		err = await _grab(path,bool(opts.get("hud",false)),size)
+	else:
+		var sv := _cap_view("HarnessShotAt",_cap_size(opts,Vector2i(1440,900)))
+		if not _aim(_cap_cam(sv),view,target,opts,rig):
+			sv.queue_free()
+			check(false,"shot_at "+what,"nothing to frame (gone, or no visible meshes)")
+			return ""
+		# Two draws: the first fills the temporal AA's history.
+		await RenderingServer.frame_post_draw
+		await RenderingServer.frame_post_draw
+		var img := sv.get_texture().get_image()
+		sv.queue_free()
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path).get_base_dir())
+		err = img.save_png(path)
+	if err != OK:
+		check(false,"shot_at "+what,"saving %s: error %d" % [path,err])
+		return ""
+	var off := ""
+	if rig.has("eye_now"): off = ", %.1f m off" % (rig.eye_now as Vector3).distance_to(rig.look_now)
+	var where := " at "+_vtext(rig.look_now) if rig.has("look_now") else ""
+	say("saved %s: %s%s%s" % [path,what,where,off])
+	return path
+
+## `opts.size`, else `fallback`, shaped like the window.
+func _cap_size(opts: Dictionary, fallback: Vector2i) -> Vector2i:
+	if opts.has("size"): return opts.size
+	var win := root.get_visible_rect().size
+	if win.x <= 0.0: return fallback
+	return Vector2i(fallback.x,int(round(fallback.x*win.y/win.x)))
+
+func _film_tick(f: Dictionary, when: Callable) -> void:
+	if bool(f.done): return
+	var opts: Dictionary = f.opts
+	if not bool(f.started):
+		if when.is_valid() and not when.call(): return
+		f.started = true
+		f.f0 = frame
+		if str(f.view) != "play":
+			var sv := _cap_view("HarnessFilm",_cap_size(opts,Vector2i(640,400)))
+			var box := _box_of(f.target,opts)
+			if opts.has("with"): box = box.merge(_box_of(opts.with,opts))
+			var rig := {"half":box.size*0.5,"mid":box.get_center()}
+			if not bool(opts.get("turn",false)): rig.ahead = _ahead_of(f.target,box.get_center())
+			if box.size == Vector3.ZERO or not _aim(_cap_cam(sv),f.view,f.target,opts,rig):
+				sv.queue_free()
+				check(false,"film "+str(f.what),"nothing to frame (gone, or no visible meshes)")
+				_film_close(f)
+				return
+			if not bool(opts.get("follow",true)): rig.eye_fixed = rig.eye_now
+			f.view_port = sv
+			f.rig = rig
+		elif not bool(opts.get("hud",false)):
+			for c: Node in root.find_children("*","CanvasLayer",true,false):
+				if c.visible:
+					c.visible = false
+					(f.hidden as Array).append(c)
+		return
+	# What is drawn now is from the camera set a frame ago.
+	var n := frame-int(f.f0)
+	if (n-1) % int(f.every) == 0:
+		var shots: Array[String] = f.shots
+		var path := "%s_%03d.png" % [f.out,shots.size()]
+		var img: Image
+		if f.get("view_port") != null: img = (f.view_port as SubViewport).get_texture().get_image()
+		else:
+			img = root.get_texture().get_image()
+			var size := _cap_size(opts,Vector2i(640,400))
+			if img.get_size() != size: img.resize(size.x,size.y,Image.INTERPOLATE_BILINEAR)
+		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path).get_base_dir())
+		if img.save_png(path) == OK: shots.append(path)
+		if shots.size() >= int(f.count):
+			_film_close(f)
+			return
+	if f.get("view_port") != null and not _aim(_cap_cam(f.view_port),f.view,f.target,opts,f.rig):
+		say("film %s: the target is gone" % f.what)
+		_film_close(f)
+
+func _film_close(f: Dictionary) -> void:
+	if bool(f.get("closed",false)): return
+	f.closed = true
+	f.done = true
+	_hooks.erase(f.hook)
+	f.hook = Callable()
+	_films.erase(f)
+	for c: Variant in f.get("hidden",[]):
+		if is_instance_valid(c): (c as Node).set("visible",true)
+	if f.get("view_port") != null and is_instance_valid(f.view_port): (f.view_port as Node).queue_free()
+	f.view_port = null
+	var shots: Array[String] = f.shots
+	if shots.is_empty():
+		if not _headless(): say("FILM %s: no stills (%s)" % [f.what,"it never began" if not bool(f.started) else "none saved"])
+		return
+	if bool(f.opts.get("sheet",true)) and shots.size() > 1:
+		var sheet := str(f.out)+"_sheet.png"
+		var cols := int(f.opts.get("cols",mini(4,shots.size())))
+		if make_sheet(shots,sheet,cols,int(f.opts.get("cell",480))) == OK: f.sheet = sheet
+	say("FILM %s: %d stills every %d frames, %s%s" % [f.what,shots.size(),f.every,shots[0].get_base_dir(),
+		", sheet "+str(f.sheet) if str(f.sheet) != "" else ""])
+
+## The window's last frame to `path`, the HUD hidden unless `hud`; `size`
+## (y 0: that width at most, the shape kept).
+func _grab(path: String, hud: bool, size: Vector2i) -> Error:
 	var hidden: Array[Node] = []
 	if not hud:
 		for c: Node in root.find_children("*","CanvasLayer",true,false):
@@ -471,11 +986,13 @@ func shot(path: String, hud := false, size := Vector2i.ZERO) -> void:
 				hidden.append(c)
 	await RenderingServer.frame_post_draw
 	var image := root.get_texture().get_image()
-	if size != Vector2i.ZERO and image.get_size() != size: image.resize(size.x,size.y,Image.INTERPOLATE_LANCZOS)
-	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	if size.y == 0 and size.x > 0 and image.get_width() > size.x:
+		image.resize(size.x,int(round(float(image.get_height())*size.x/image.get_width())),Image.INTERPOLATE_LANCZOS)
+	elif size.y > 0 and image.get_size() != size: image.resize(size.x,size.y,Image.INTERPOLATE_LANCZOS)
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path).get_base_dir())
 	var err := image.save_png(path)
-	print("saved %s" % path if err == OK else "FAIL shot %s: error %d" % [path,err])
-	for c in hidden: c.visible = true
+	for c in hidden: if is_instance_valid(c): c.visible = true
+	return err
 
 # --- Routes: walks through the real input -------------------------------------
 #
@@ -780,6 +1297,10 @@ static func _vtext(p: Variant) -> String:
 #           --enemy-at=); the enemy's `home` moves with it if it has one
 #   wake    a method of the enemy called at the start (e.g. "wake")
 #   label   the name in its lines (its node name, else its script's file)
+#   row     true: a closing `ROW {watch, pilot, frames, changes, closest,
+#           knocks, stuns, set_back, hearts_lost, state (the one held
+#           longest), last_state}` for tools/sweep.py; a Dictionary: those
+#           and its own columns (e.g. {"trial": t}). Default --watch-row.
 # Change lines come for any field whose value is a String, bool or int. If
 # the study makes its enemies again (a reset after a fall), it goes on with
 # the new one of the same script. Returns {frames, changes, closest, states
@@ -930,6 +1451,16 @@ func watch(enemy: Variant, opts := {}) -> Dictionary:
 	var out := {"frames":frame-int(w.f0),"changes":w.changes,"closest":snappedf(float(w.closest),0.01),"states":w.states,
 		"knocks":int(motor.knocks)-int(w.knocks0),"stuns":w.stuns,"set_back":w.set_back,"hearts_lost":(int(w.hearts0)-h1) if h1 >= 0 else -1,"last":w.last}
 	if not walked.is_empty(): out.route = walked
+	var want_row: Variant = opts.get("row",flag("watch-row"))
+	if want_row is Dictionary or bool(want_row):
+		var held := ""
+		for st: String in out.states:
+			if held == "" or int(out.states[st]) > int(out.states[held]): held = st
+		var line := {"watch":label,"pilot":(mode if mode is String else ("route" if mode is Array else "callable")),"frames":out.frames,
+			"changes":out.changes,"closest":out.closest,"knocks":out.knocks,"stuns":out.stuns,"set_back":out.set_back,
+			"hearts_lost":out.hearts_lost,"state":held,"last_state":str((w.last as Dictionary).get(names[0],"")) if not names.is_empty() else ""}
+		if want_row is Dictionary: line.merge(want_row,true)
+		row(line)
 	say("WATCH %s %d frames, %d changes, closest %.1f m, states %s, knocks %d stuns %d set back %d%s" % [label,out.frames,out.changes,
 		out.closest,str(out.states),out.knocks,out.stuns,out.set_back," hearts lost %d" % out.hearts_lost if h1 >= 0 else ""])
 	return out
@@ -1008,12 +1539,14 @@ func _dodge_way(from: Vector3) -> Vector3:
 
 # --- Reporting ----------------------------------------------------------------
 
+## `OK label` or `FAIL label: detail`; a fail makes the run exit 1. Returns `ok`.
 func check(ok: bool, label: String, detail := "") -> bool:
 	checks += 1
 	if not ok: failures += 1
 	print(("OK   " if ok else "FAIL ")+label+("" if detail == "" else ": "+detail))
 	return ok
 
+## `key` into the closing `RESULT {json}` line (a sweep's columns).
 func result(key: String, value: Variant) -> void:
 	results[key] = value
 
@@ -1029,10 +1562,16 @@ func say(text: String) -> void:
 func note(text: String) -> void:
 	print("| "+text)
 
+## Ends the run now: RESULT, then quit (`drive()` returning does this).
 func finish() -> void:
 	if _done: return
 	_done = true
 	let_go()
+	for f: Dictionary in _films.duplicate(): _film_close(f)
+	for st: Dictionary in _armed:
+		print("SKIP shot_at %s: its `when` never came true" % st.what)
+		st.clear()
+	_armed.clear()
 	_print_result()
 	LaunchArgs.set_override(null)
 	quit(1 if failures > 0 else 0)

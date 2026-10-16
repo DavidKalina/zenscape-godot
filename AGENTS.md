@@ -41,7 +41,8 @@ the smoke check (`tools/smoke.py`), checks through the real play loop
 (`tools/sweep.py`), rendered stills (`tools/shot.py`) and runs longer than the tool-call
 limit (`tools/bg.py`). A new RuinKit piece: `tools/kit_piece.py` (scaffold,
 numbers, recipe, yard, check). `python tools/index.py <word>` finds the older
-one-off tools. Throwaway drivers go in `scratch/` (git-ignored). If a
+one-off tools. Throwaway drivers go in `scratch/` (git-ignored); before
+writing one, run `python tools/drive.py --api` for the helpers it can call. If a
 round needs a tool the harness lacks, say so in its handoff.
 
 macOS has no `timeout`; wrapping a command in it silently does nothing. Use
