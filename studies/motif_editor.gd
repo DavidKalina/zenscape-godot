@@ -577,6 +577,7 @@ func _hints(on: bool) -> void:
 
 func enter_edit() -> void:
 	editing = true
+	if traps != null: traps.go_still()
 	# The sky held while editing: one pleasant daylight, never turning.
 	if look_id != edit_look or weather.live: apply_look(edit_look,false)
 	_hints(false)
@@ -612,6 +613,8 @@ func play(under_camera := false) -> void:
 	_hints(true)
 	_end_fall()
 	place(at+Vector3.UP*0.1,face)
+	# The placed traps run live round him (back to editing: reset, still).
+	if traps != null: traps.go_live(motor)
 	if get_tree().current_scene == self: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func back_to_edit() -> void:

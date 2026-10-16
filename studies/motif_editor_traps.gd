@@ -14,10 +14,15 @@ extends Node3D
 ## While editing the traps stand still: their holder is process-disabled,
 ## so nothing steps and their bodies are out of the physics space (rigid
 ## blocks hang where they are built, the editor's rays pass through).
+## Playing (P / Shift+P) they run live in a TrapField round the motor
+## (`go_live`); back to editing they are reset and frozen (`go_still`).
 
 const TrapRegistry = preload("res://scripts/traps/trap_registry.gd")
 const MotifAuthored = preload("res://scripts/kit_isle/motif_authored.gd")
 const RuinKitFit = preload("res://scripts/ruin_kit_fit.gd")
+const TrapField = preload("res://scripts/traps/trap_field.gd")
+const Trap = preload("res://scripts/traps/trap.gd")
+const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PICK_PX := 40.0
 ## The lip's edge is sought along the drop in steps this long (m); the top
 ## ends where the ground falls this far under the lip.
@@ -90,6 +95,7 @@ func rebuild() -> void:
 		node.name = "T%d" % k
 		placed.add_child(node)
 	_built = var_to_str(list)
+	if field != null: _fill_field()
 	_note_seats()
 	selected = -1
 	tint()
@@ -421,6 +427,89 @@ func delete_selected() -> bool:
 	remove(selected)
 	editor.say("Trap taken away")
 	return true
+
+# --- Live while playing ---------------------------------------------------------------------
+# P / Shift+P: the placed traps run in a TrapField round the editor's real
+# motor, as in the trap yard: this node takes the study's `foot_pieces`
+# slot (handing each frame on to what held it before, the pieces' ropes,
+# then the field) and pushes the field's winds onto the motor's air.
+# Back to editing: every trap reset() as built, then frozen again
+# (holder process-disabled), and the slot and the air given back.
+
+## The field stepping the placed traps while playing (null editing).
+var field: TrapField = null
+var _under: Node = null
+## Times the traps went live / were reset back (for checks).
+var lives := 0
+var resets := 0
+
+func live() -> bool:
+	return field != null
+
+## The placed traps live round `motor` (from play()).
+func go_live(motor: PilotMotor) -> void:
+	if field != null: return
+	drop_ghost()
+	field = TrapField.new()
+	field.name = "LiveTraps"
+	field.study = editor
+	field.motor = motor
+	add_child(field)
+	_fill_field()
+	placed.process_mode = Node.PROCESS_MODE_INHERIT
+	_under = editor.foot_pieces
+	editor.foot_pieces = self
+	motor.push_air(self,_air_layer)
+	lives += 1
+
+## Back as built and still (from back_to_edit()).
+func go_still() -> void:
+	if field == null: return
+	# Reset while still in the physics space, so bodies take their built pose.
+	field.reset()
+	resets += 1
+	placed.process_mode = Node.PROCESS_MODE_DISABLED
+	if editor.foot_pieces == self: editor.foot_pieces = _under
+	_under = null
+	field.motor.pop_air(self)
+	field.traps.clear()
+	remove_child(field)
+	field.free()
+	field = null
+	# Meshes a trap made while playing get the grey look's clay too.
+	tint()
+	show_marks()
+
+## The field holds the placed traps where they stand (not re-parented).
+func _fill_field() -> void:
+	field.traps.clear()
+	for c: Node in placed.get_children():
+		if c is Trap:
+			(c as Trap).motor = field.motor
+			field.traps.append(c)
+
+func _air_layer(p: Vector3, here: Dictionary) -> Dictionary:
+	if field == null: return here
+	var out := here.duplicate()
+	var add: Dictionary = field._air(p)
+	for key: Variant in add:
+		out[key] = (out[key]+add[key]) if out.has(key) else add[key]
+	return out
+
+# The study's foot_pieces slot while live: what held it, then the field.
+func before(delta: float) -> void:
+	if _under != null: _under.before(delta)
+	if field != null: field.before(delta)
+
+func after(delta: float, events: Dictionary) -> void:
+	if _under != null: _under.after(delta,events)
+	if field != null: field.after(delta,events)
+
+func pose(figure: Node3D) -> void:
+	if _under != null: _under.pose(figure)
+
+func frame(cam: Camera3D, delta: float) -> void:
+	if _under != null and _under.has_method("frame"): _under.frame(cam,delta)
 
 # --- The grey look's tint -----------------------------------------------------------------
 
