@@ -153,6 +153,10 @@ var _stalk_check := 0.0
 var _safe_t := 0.0
 var _cover_t := 0.0
 var _click_t := 0.0
+## How far the stalk has made up its mind (0..1): the clicks' pace, pitch
+## and loudness; it only rises within a stalk.
+var _click_ready := 0.0
+var _flap_c := 0.0
 var _prev := Vector3.ZERO
 var _vel_prev := Vector3.ZERO
 var _carry_dir := Vector3.ZERO
@@ -162,6 +166,8 @@ var _shadow: Decal
 var _voices := {}
 var _feathers: CPUParticles3D
 var _rng := RandomNumberGenerator.new()
+## The voices' own dice (pitch wobble), so sound never shifts the hunt.
+var _voice_rng := RandomNumberGenerator.new()
 
 # --- Standing it ---------------------------------------------------------------------
 
@@ -336,7 +342,17 @@ func _circle(delta: float, hunting: bool) -> void:
 		if _pick_stalk():
 			_go("stalk")
 			flyers.stalker = self
-			_click_t = 0.0
+			# The first click waits out the marking call (it may mark and
+			# stalk in one step).
+			_click_t = 0.45
+			_click_ready = 0.0
+			return
+	# Marked and swinging in: a few slow, quiet clicks (it has you).
+	if marked:
+		_click_t -= delta
+		if _click_t <= 0.0:
+			_click_t = CLICK_MARKED
+			_say(&"click",-7.0,0.9)
 
 ## Circles `centre` at `radius`, `up` over it, at `speed`: pursuing a point
 ## LEAD rad ahead of where it is on the circle; kept over the ground under
@@ -416,12 +432,16 @@ func _stalk(delta: float, hunting: bool) -> void:
 	var target := _stalk_at+Vector3(cos(ang)*r,sin(state_t*1.7)*0.3*unit,sin(ang)*r)
 	_steer(target,float(knobs.stalk_speed)+position.distance_to(target)*0.6,16.0,delta,false)
 	_flap_w = move_toward(_flap_w,0.6,delta*2.0)
-	# The clicks: slow, then fast as it makes up its mind.
-	var ready := clampf(state_t/float(knobs.stalk_max),0.0,1.0)
+	# The clicks: slow, then fast, higher and louder as it makes up its
+	# mind; paced on when it will fold (STALK_MIN with him wide open, else
+	# STALK_MAX), so the clicks run to a buzz just before the scream.
+	var due := float(knobs.stalk_min) if exposure >= 0.85 else float(knobs.stalk_max)
+	_click_ready = maxf(_click_ready,clampf(state_t/maxf(due,0.1),0.0,1.0))
+	var ready := _click_ready*_click_ready
 	_click_t -= delta
 	if _click_t <= 0.0:
 		_click_t = lerpf(CLICK_SLOW,CLICK_FAST,ready)
-		_say(&"click")
+		_say(&"click",lerpf(-4.0,2.0,ready),lerpf(1.0,1.4,ready)*_voice_rng.randf_range(0.97,1.03))
 	if not hunting or _safe_t >= float(knobs.abort) or _cover_t >= float(knobs.cover_break):
 		_give_up()
 		return
@@ -436,7 +456,7 @@ func _stalk(delta: float, hunting: bool) -> void:
 		var dive := mid.distance_to(position)/(float(knobs.stoop_top)*0.55)
 		aim = mid+flat*(float(knobs.fold)+dive)*float(knobs.lead)
 		_go("fold")
-		_say(&"cry")
+		_say(&"scream")
 
 ## Marks or unmarks him: the noticing (a call), or letting him go.
 func _mark(on: bool) -> void:
@@ -629,6 +649,12 @@ func _animate(delta: float) -> void:
 	_flap += delta*freq*TAU
 	var s := sin(_flap)
 	var c := cos(_flap)
+	# A wingbeat's whump on each downstroke (the top of the beat), as loud
+	# as the beat is full; heavier with him in its talons.
+	if _flap_c >= 0.0 and c < 0.0 and _flap_w > 0.35 and state not in ["fold","stoop"]:
+		var heavy := state in ["carry","pull"]
+		_say(&"wing",linear_to_db(_flap_w)+(2.0 if heavy else 0.0),(0.8 if heavy else 1.0)*_voice_rng.randf_range(0.92,1.08))
+	_flap_c = c
 	var glide := {"elev":0.14+sin(state_t*0.9)*0.04,"sweep":0.06,"wrist":0.14,"droop":-0.12,"spread":1.0,"tail":0.75}
 	var beat_pose := {"elev":0.15+0.85*s,"sweep":0.1-0.15*s,"wrist":0.15+0.6*maxf(c,0.0),"droop":-0.25*s,
 		"spread":0.8+0.2*s,"tail":0.65,"pitch":0.05*c}
@@ -762,28 +788,50 @@ func _shadow_place(dt: float) -> void:
 
 # --- Voice and feathers ---------------------------------------------------------------
 
-## The voices: a click (its sonar), the cry (a harsh, snarling scream:
-## the tell), the rush of the stoop, the hit's thump and a wingbeat.
+## The voices, each a distinct cue: the marking call (two rising barks:
+## it has noticed you), the click (its sonar: slow and quiet while marked,
+## then faster, higher and louder through the stalk), the scream (the tell,
+## the loudest beat: as long as the fold, loud through the scream, choked
+## off into a held silence before the drop), the rush of the stoop, the
+## hit's thump, the wingbeat's whump and the cry (snatch over: a let-go).
+## VOICES: per voice, its level (dB) and its reach (unit_size, m).
+const VOICES := {
+	&"mark":[0.0,40.0], &"click":[-3.0,16.0], &"scream":[8.0,70.0], &"rush":[0.0,40.0],
+	&"hit":[2.0,40.0], &"wing":[-4.0,20.0], &"cry":[-3.0,40.0],
+}
+## The marked circle's slow clicks (s apart).
+const CLICK_MARKED := 0.9
 static var _streams := {}
 func _voices_make() -> void:
 	if _streams.is_empty():
 		_streams[&"click"] = _synth_click()
 		_streams[&"cry"] = _synth_cry()
+		_streams[&"scream"] = _synth_scream()
 		_streams[&"rush"] = _synth_rush()
 		_streams[&"hit"] = _synth_hit()
 		_streams[&"mark"] = _synth_mark()
+		_streams[&"wing"] = _synth_wing()
 	for k: StringName in _streams:
 		var p := AudioStreamPlayer3D.new()
+		p.name = "Voice_"+String(k)
 		p.stream = _streams[k]
-		p.unit_size = 14.0 if k == &"click" else 40.0
-		p.max_db = 3.0
+		p.unit_size = float(VOICES[k][1])
+		p.max_db = maxf(3.0,float(VOICES[k][0])+2.0)
 		add_child(p)
 		_voices[k] = p
 
-func _say(what: StringName) -> void:
+## Plays a voice, `db` over its level, at `pitch`; logged as a beat
+## ("sound <voice>") with the level it played at.
+var last_voice := {}
+func _say(what: StringName, db := 0.0, pitch := 1.0) -> void:
+	var lvl := float(VOICES.get(what,[0.0])[0])+db
+	last_voice = {"what":what,"db":lvl,"pitch":pitch}
 	beat.emit("sound "+String(what))
 	var p: AudioStreamPlayer3D = _voices.get(what)
-	if p != null and p.is_inside_tree(): p.play()
+	if p == null or not p.is_inside_tree(): return
+	p.volume_db = lvl
+	p.pitch_scale = pitch
+	p.play()
 
 static func _wav(data: PackedFloat32Array, rate: int) -> AudioStreamWAV:
 	var bytes := PackedByteArray()
@@ -830,6 +878,55 @@ static func _synth_cry() -> AudioStreamWAV:
 		var saw2 := fposmod(ph2,1.0)*2.0-1.0
 		low = lerpf(low,rng.randf_range(-1.0,1.0),0.5)
 		out[i] = (saw*0.45+saw2*0.2+low*0.5)*env*0.85
+	return _wav(out,rate)
+
+## The tell's scream: TELL long. Harsh and full (two detuned saws, noise,
+## a rough flutter, driven into soft clipping) through the scream
+## (TELL*TELL_SCREAM), pitch rising then breaking down; then choked off by
+## 0.75 of the tell, so the folded hold before the drop is silent.
+static func _synth_scream() -> AudioStreamWAV:
+	var rate := 22050
+	var dur := TELL
+	var cut := TELL*TELL_SCREAM
+	var n := int(dur*rate)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 13
+	var ph := 0.0
+	var ph2 := 0.0
+	var low := 0.0
+	for i in range(n):
+		var t := float(i)/rate
+		var env := minf(t/0.015,1.0)
+		if t > cut: env *= pow(clampf(1.0-(t-cut)/(dur*0.75-cut),0.0,1.0),2.0)
+		env *= 0.8+0.2*sin(TAU*38.0*t)
+		var f := lerpf(1150.0,1450.0,clampf(t/(cut*0.6),0.0,1.0))
+		if t > cut*0.6: f = lerpf(1450.0,620.0,clampf((t-cut*0.6)/(dur*0.75-cut*0.6),0.0,1.0))
+		f *= 1.0+0.04*sin(TAU*9.0*t)
+		ph += f/rate
+		ph2 += f*1.49/rate
+		var saw := fposmod(ph,1.0)*2.0-1.0
+		var saw2 := fposmod(ph2,1.0)*2.0-1.0
+		low = lerpf(low,rng.randf_range(-1.0,1.0),0.55)
+		out[i] = tanh((saw*0.6+saw2*0.35+low*0.55)*2.2)*env*0.95
+	return _wav(out,rate)
+
+## A wingbeat: a soft low whump (low-passed air and a 60 Hz thud).
+static func _synth_wing() -> AudioStreamWAV:
+	var rate := 22050
+	var dur := 0.26
+	var n := int(dur*rate)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 21
+	var low := 0.0
+	for i in range(n):
+		var t := float(i)/rate
+		var env := minf(t/0.035,1.0)*exp(-maxf(t-0.035,0.0)*16.0)
+		low = lerpf(low,rng.randf_range(-1.0,1.0),0.06)
+		out[i] = (low*2.2+sin(TAU*60.0*t)*0.35)*env*0.8
 	return _wav(out,rate)
 
 ## The marking call: two short harsh barks, rising, quieter than the cry.
