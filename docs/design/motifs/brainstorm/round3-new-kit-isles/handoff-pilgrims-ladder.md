@@ -12,6 +12,12 @@ its Corrections, is in `docs/design/motifs/plans/pilgrims-ladder/`.
   res://studies/motif_yard.tscn -- --no-title --motif=pilgrims_ladder --sky
 ```
 
+Add `--plane` to park the plane on the strip, behind the start, nosed
+west: walk to it, Space to climb in, Space held (Boost; Shift brakes) to roll off
+the west lip, fly the ring and the gate (both along Z), come in from the
+west over the lip, touch on the strip, brake, F to get out. Without
+`--plane` the yard has no plane, as before.
+
 R resets. The layout lives in one table:
 `scripts/kit_isle/greybox/gb_pilgrims_ladder.gd`.
 
@@ -63,8 +69,9 @@ The merchant and the beetle are off for this place only.
   the season.
 - **The plinth's west face** reads dark in the Crown's shadow.
 - **The Crown's birch** is thin.
-- **The strip's clearance** from the trees was checked by numbers only, not
-  flown.
+- **The strip's clearance** from the trees is flown (a driven landing from
+  the west, 12.4 m off the nearest tree, no bumps); the driven lap also
+  threads the ring and the gate with no bumps.
 - **No plane tokens:** there's no token the plane can take, so the gate and
   ring threads have none.
 - **The tokens aren't counted:** they aren't in `data/ledger`, so the game

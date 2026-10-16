@@ -27,6 +27,10 @@ extends "res://studies/kit_isle.gd"
 ##     [--at=x,y,z]      the motif's offset (default the origin)
 ##     [--sky]           the sky's clouds, motes, gulls and tokens too (off
 ##                       by default: the yard is for checks; stills want it)
+##     [--plane]         the plane parked on the motif's landing strip (its
+##                       `plane_park()`, else open turf near the start, as
+##                       the kit isle parks it), once the motif stands: board,
+##                       fly and land it by hand as in the game. Off: no plane
 ## `<slug>`: a greybox motif (scripts/kit_isle/greybox/registry.gd: sunken_
 ## giant, wardens_well, lidstack, plumb_well, vigil_bellows, noon_weir) or a
 ## kit motif of LayerPlan POOL (bell_spires...: stood, no heads).
@@ -57,6 +61,8 @@ var motif_slug := ""
 var grey := false
 var offset := Vector3.ZERO
 var rims_on := false
+## --plane: the plane parked on the motif's strip (`park_home`).
+var plane_on := false
 ## The one-isle plan (`yard_plan`) and the stage stood from it.
 var layer: Dictionary = {}
 var stage: Node3D = null
@@ -74,6 +80,7 @@ func _ready() -> void:
 		if a.begins_with("--motif="): motif_slug = a.get_slice("=",1).trim_prefix("gb_")
 		elif a == "--grey": grey = true
 		elif a == "--rims": rims_on = true
+		elif a == "--plane": plane_on = true
 		elif a.begins_with("--at="): offset = _vec(a.get_slice("=",1))
 	if motif_slug == "":
 		push_warning("motif yard: no --motif=<slug> (%s); plumb_well" % ", ".join(PackedStringArray(Registry.MOTIFS.keys())))
@@ -251,9 +258,21 @@ func isle_summit() -> Vector3:
 func capture_look() -> Vector3:
 	return isle_summit()
 
-## No plane parked: it would stand on the motif.
+## No plane parked unless --plane (it would stand on the motif); with it,
+## parked at `plane_home` once the motif stands under it (`tick`), so its
+## wheels rest on the motif's turf.
 func park_home() -> void:
-	pass
+	if not plane_on or not motif_stands(): return
+	super.park_home()
+
+## The motif's own parking spot (`plane_park()`: x, y, z its turf, w its
+## heading, in its frame), else the kit isle's search round the start.
+func plane_home() -> Vector4:
+	var isle: Dictionary = layer.isles[0] if not layer.is_empty() else {}
+	if not isle.is_empty() and isle.motif.has_method("plane_park"):
+		var p: Vector4 = isle.motif.plane_park()
+		return Vector4(p.x+offset.x,p.y+offset.y,p.z+offset.z,p.w)
+	return super.plane_home()
 
 ## The yard's own ground has no plants or life (the motif's isle has its own).
 func _grow() -> void:
@@ -283,6 +302,7 @@ func tick(delta: float) -> void:
 		if not motif_stands(): return
 		_held = false
 		respawn()
+		if plane_on and not flying and not parked: park_home()
 	super.tick(delta)
 	if flying: return
 	# The net (off the edge the study's own `lost` is held off).
@@ -316,4 +336,4 @@ func _build_card() -> void:
 	_card.position = Vector2(16.0,12.0)
 	holder.add_child(_card)
 	var isle: Dictionary = layer.isles[0]
-	_card.text = "Motif yard · %s (%s)%s · R start again" % [str(isle.motif.isle_name()),"grey" if grey else "turf",", rims" if rims_on else ""]
+	_card.text = "Motif yard · %s (%s)%s%s · R start again" % [str(isle.motif.isle_name()),"grey" if grey else "turf",", rims" if rims_on else "",", plane" if plane_on else ""]

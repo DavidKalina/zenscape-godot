@@ -205,6 +205,12 @@ func start() -> Vector3:
 func landing_run() -> bool:
 	return true
 
+## Where the plane stands parked (the motif yard's --plane): on the strip's
+## line, behind the start, nosed west down the strip to roll off the west
+## lip (x, y, z its turf, w its heading: PI/2 faces -x).
+func plane_park() -> Vector4:
+	return Vector4(-14.0,0.0,0.0,PI*0.5)
+
 ## In off Threshold's west lip (the strip's approach), out off its south
 ## side, where you come home.
 func rims() -> Array:
