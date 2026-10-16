@@ -92,6 +92,25 @@ Olmec head and its headless body: the same family of carved stone.
 - **Judge him beside the Olmec:** task 2's stills include him and the
   Olmec head (or its body) in the same light, at the same range.
 
+## Model fixes before the rig (spec change after the user saw task 2)
+
+The user approved the bastion in the Olmec's stone and asked for these
+before the rig (task 2b):
+
+- **The visor reads.** Cut the T slit deeper and give it a faint inner
+  glow, like the Olmec's eyes: dim at rest, lit while he watches or
+  tracks you (an `eye_glow` effect on the body; the trunk wires it to the
+  mind's notice and tracking). The helm should have a face from the game
+  camera.
+- **The glyphs upright** on their tablets (they sit turned 90 degrees).
+- **Not murky backlit.** Lift his stone tone so he reads as well as the
+  Olmec head against a bright sky, by the material's knobs or his own
+  tint, not by changing the shared shader's defaults.
+- Triangle trim waits for task 6's budget pass.
+
+Stills: the same views as task 2 (`game_sheet`, `game_close`), backlit
+and sunlit, beside the Olmec, so the user can compare before and after.
+
 ## Tasks (the first iteration orders these; keep each one a checkpoint)
 
 1. **Silhouette options.** Three distinct takes on him, blocked out in
