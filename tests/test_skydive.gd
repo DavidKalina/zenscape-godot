@@ -32,6 +32,13 @@ func check(ok: bool, label: String) -> void:
 func frames(n: int) -> void:
 	for i in range(n): await process_frame
 
+## Waits `t` seconds of game time (the frames' own deltas).
+func seconds(t: float) -> void:
+	var waited := 0.0
+	while waited < t:
+		await process_frame
+		waited += get_root().get_process_delta_time()
+
 func _key(code: Key, pressed := true) -> InputEventKey:
 	var event := InputEventKey.new()
 	event.keycode = code
@@ -56,7 +63,10 @@ func run() -> void:
 	eye = scene.wanderer
 	check(eye.skydive_start(PackedStringArray(["--skydive"])) == "plane" and eye.skydive_start(PackedStringArray(["--skydive=fall"])) == "fall" and eye.skydive_start(PackedStringArray()) == "","--skydive starts in the plane, --skydive=fall falling")
 	check("X to eject" in eye.PLANE_HINT and "{X} eject" in eye.PAD_HINTS[eye.PLANE_HINT],"The plane's hints name the eject, on the keys and the pad")
-	Engine.time_scale = 3.0
+	# Real time: under a sped-up clock a hitch in the heavy scene's frame
+	# was a long step for the fall, which could carry it past the 20 m
+	# mark (or onto the land) in one frame.
+	Engine.time_scale = 1.0
 	await _eject_and_land()
 	await _plane_comes_back()
 	await _open_by_hand()
@@ -100,8 +110,16 @@ func _eject_and_land() -> void:
 	check(eye.diving and eye.glide is SkyDive and eye.dive.phase == SkyDive.POP,"X ejects: out of the cockpit")
 	check(eye.drone is SkyPlane and eye.glider.visible and not eye.glider._pilot[0].visible,"The plane flies on by itself, its pilot gone from it")
 	check(eye.figure.visible and eye._hint.text == eye.DIVE_HINT,"The pilot is drawn falling, the dive's hint up")
-	await frames(10)
-	check(eye.dive.velocity.y > -3.0 and eye.dive.position.y > eye.drone.position.y-3.0,"A pop up out of it first")
+	# The pop, watched through (POP_TIME of game time; a frame count would
+	# depend on the frame rate).
+	var start_y: float = eye.dive.position.y
+	var peak := start_y
+	var popped := 0
+	while eye.dive.phase == SkyDive.POP and popped < 600:
+		peak = maxf(peak,eye.dive.position.y)
+		popped += 1
+		await process_frame
+	check(peak > start_y+0.3,"A pop up out of it first (%.2f m)" % (peak-start_y))
 	# Falling, nothing opens by itself; Space 20 m over the land opens the
 	# sail, and it circles down (left held).
 	var began := Time.get_ticks_msec()
@@ -170,7 +188,7 @@ func _open_by_hand() -> void:
 	await frames(60)
 	var heading: float = eye.dive.heading
 	Input.action_press(&"move_left")
-	await frames(12)
+	await seconds(0.6)
 	Input.action_release(&"move_left")
 	check(absf(angle_difference(heading,eye.dive.heading)) > 0.5,"The stick steers it (%.2f rad)" % angle_difference(heading,eye.dive.heading))
 	check(eye.sail_wing.visible,"The sail is drawn over the pilot")
@@ -207,11 +225,13 @@ func _lake() -> void:
 	eye.dive.tilt = 0.0
 	eye.dive.velocity = Vector3.DOWN*1.5
 	await _until_down(10.0)
+	# Where he came down (swimming on, he may paddle out of it).
+	var off := Vector2(eye._feet.x,eye._feet.z).distance_to(pond)
+	check(eye.active and not eye.flying and off < 6.0,"Down in the pond (%.1f m from its middle)" % off)
 	var swum := false
 	for i in range(60):
 		await process_frame
 		if eye.motor.swimming: swum = true
-	check(eye.active and not eye.flying and Vector2(eye._feet.x,eye._feet.z).distance_to(pond) < 6.0,"Down in the pond")
 	check(swum,"In it: swimming")
 	eye.motor.water = real
 	await frames(5)
