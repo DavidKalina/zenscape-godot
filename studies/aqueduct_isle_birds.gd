@@ -1,13 +1,13 @@
 extends "res://scripts/kit_isle/kit_birds.gd"
-## Songbirds on the aqueduct isle's ruins (docs/scenic/aqueduct-isle-life.md):
-## the kit isles' songbirds (scripts/kit_isle/kit_birds.gd) perched on this
+## Crows on the aqueduct isle's ruins (docs/scenic/aqueduct-isle-life.md):
+## the kit isles' birds (scripts/kit_isle/kit_birds.gd), as crows, perched on this
 ## isle's stone: the aqueduct's parapets and channel lip, the castellum's
 ## crown and steps, the stone circle's lintels, the heel stone, the gate on
 ## the far island, the stepping stumps and the floating stones.
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 
 ## The flocks: [species, birds, home group].
-const FLOCKS := [["sparrow",5,"aqueduct"],["goldfinch",4,"circle"],["robin",2,"castellum"],["sparrow",3,"gate"]]
+const FLOCKS := [["crow",5,"aqueduct"],["crow",4,"circle"],["crow",2,"castellum"],["crow",3,"gate"]]
 ## The stepping stumps' tops (studies/aqueduct_isle_art.gd `stumps`, x
 ## and the middle of each z span).
 static func stump_tops() -> Array:
