@@ -1237,6 +1237,8 @@ func make_run(k: int) -> Node3D:
 
 static var _drawn := {}
 static var _box_lock := Mutex.new()
+## Each built piece's "ropes" meta (relic_torana's), kept with its box.
+static var _ropes := {}
 ## A piece's drawn box, built once (main thread, `warm`).
 static func box_of(id_name: String, seed_value: int, weathered: float) -> AABB:
 	var key := "%s/%d/%s" % [id_name,seed_value,weathered]
@@ -1244,10 +1246,44 @@ static func box_of(id_name: String, seed_value: int, weathered: float) -> AABB:
 	if not _drawn.has(key):
 		var piece: Node3D = make(id_name,seed_value,weathered)
 		_drawn[key] = piece_box(piece) if piece != null else AABB()
+		if piece != null and piece.has_meta("ropes"): _ropes[key] = piece.get_meta("ropes")
 		if piece != null: piece.free()
 	var out: AABB = _drawn[key]
 	_box_lock.unlock()
 	return out
+
+## A piece's swing ropes as it carries them (its "ropes" meta: [{anchor,
+## length, dry?, tag?}] in its frame), [] for most.
+static func ropes_of(id_name: String, seed_value: int, weathered: float) -> Array:
+	box_of(id_name,seed_value,weathered)
+	return _ropes.get("%s/%d/%s" % [id_name,seed_value,weathered],[])
+
+## Ropes `specs` (a piece's "ropes" meta) hung live at `frame` (the piece's,
+## world): `hang` a Callable(anchor (world), length) -> SwingRope (a
+## FootPieces' `rope`, a live host's `rope`); a dry one dried, a tag hung
+## beside each. The ropes made.
+static func hang_ropes(specs: Array, frame: Transform3D, hang: Callable) -> Array:
+	var out: Array = []
+	var yaw := frame.basis.get_euler().y
+	for k in range(specs.size()):
+		var r: Dictionary = specs[k]
+		var rope: Node3D = hang.call(frame*(r.anchor as Vector3),float(r.length))
+		if rope == null: continue
+		if bool(r.get("dry",false)): rope.set_dry(true)
+		if r.has("tag"): rope.add_tag(frame*(r.tag as Vector3),yaw,k+int(absf((r.anchor as Vector3).x)*10.0))
+		out.append(rope)
+	return out
+
+## The pieces' live parts: each piece carrying ropes (relic_torana) has them
+## hung by the host (scripts/roguelike/layer_greybox.gd `rope`), where the
+## piece stands.
+func live(g: Node) -> void:
+	for k in range((data.get("pieces",[]) as Array).size()):
+		var p: Dictionary = data.pieces[k]
+		var specs := ropes_of(str(p.id),int(p.seed),float(p.get("weathered",0.0)))
+		if specs.is_empty(): continue
+		var pose := pose_of(k)
+		hang_ropes(specs,Transform3D(Basis(Vector3.UP,deg_to_rad(float(pose[1]))),g.w(pose[0])),Callable(g,"rope"))
 
 # --- The motif contract ------------------------------------------------------------------
 
