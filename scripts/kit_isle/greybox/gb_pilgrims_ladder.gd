@@ -16,6 +16,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 const Torana = preload("res://scripts/ruin_kit_torana.gd")
 const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
+const Keel = preload("res://scripts/ruin_kit_keel.gd")
 
 const TURF_SEED := 5300
 ## How far a keel's spurs can hang under top-depth (KitLand ring_sides),
@@ -32,7 +33,12 @@ const LAYOUT := {
 		{"name":"Threshold","at":Vector2(-10.0,0.0),"r":Vector2(40.0,22.0),"top":0.0,"depth":14.0,"wobble":0.06,"seed":0},
 		{"name":"Halo","at":Vector2(62.0,0.0),"r":Vector2(12.0,12.0),"top":7.0,"depth":12.0,"wobble":0.08,"seed":1},
 		{"name":"Crown","at":Vector2(91.0,0.0),"r":Vector2(16.0,14.0),"top":20.0,"depth":8.0,"wobble":0.07,"seed":2},
-		{"name":"Cellar","at":Vector2(84.0,11.0),"r":Vector2(8.0,8.0),"top":10.0,"depth":7.0,"wobble":0.08,"seed":3},
+		## `cut`: the outline's points inside this rect (x, z) pulled back to
+		## its west edge: the hung stair's turn sweeps down to 7.3 under the
+		## plinth (x 84..89.4, z 14.9..20.7), so the turf ends at x 83.85
+		## there and the flight's foot steps west onto it.
+		{"name":"Cellar","at":Vector2(84.0,11.0),"r":Vector2(8.0,8.0),"top":10.0,"depth":7.0,"wobble":0.08,"seed":3,
+			"cut":Rect2(83.85,14.0,20.0,20.0)},
 	],
 	## The stations' pieces: id, seed, weathered, `at` (its foot, world),
 	## `rot` (deg about Y), `box` its bounds (piece frame, the occupancy). The torana's jamb stands on Threshold's east
@@ -58,9 +64,17 @@ const LAYOUT := {
 		## the plan's east end hung over the void. Box: its mesh AABB.
 		{"id":"pent_hood","seed":5342,"weathered":0.5,"at":Vector3(92.0,20.0,-10.0),"rot":0.0,"bays":3,"fallen":1,
 			"box":AABB(Vector3(-8.0,-0.14,-3.4),Vector3(16.0,5.3,8.5))},
+		## The hung stair, its boss on the plinth's deck (15.5, 4.5 m under
+		## the Crown's south lip) at z 18, its hinge 3.2 m under it, hung out
+		## south over the void. Turned, its flight lies in the plinth's shaft
+		## (x 84..88, z 15..18.2), head (87.8, 12.3) under the deck's hatch,
+		## foot (84, 10.06) at the Cellar's cut edge. `plinth`: build it
+		## (`plinth`, the stair's frame). Box: the plinth and the turn's sweep.
+		{"id":"keel_hung_stair","seed":5350,"weathered":0.5,"at":Vector3(86.0,15.5,18.0),"rot":0.0,"plinth":true,
+			"box":AABB(Vector3(-3.2,-8.3,-4.6),Vector3(7.7,8.5,7.4))},
 	],
 	## Bands kept clear of tall flora round the pieces' feet (x, z).
-	"clear":[Rect2(20.0,-4.0,11.0,8.0),Rect2(52.0,-6.0,20.0,10.0),Rect2(83.0,-14.0,18.0,9.0)],
+	"clear":[Rect2(20.0,-4.0,11.0,8.0),Rect2(52.0,-6.0,20.0,10.0),Rect2(83.0,-14.0,18.0,9.0),Rect2(79.0,14.0,5.0,5.5)],
 	"strip":Rect2(-38.0,-5.0,30.0,10.0),
 	"strip_clear":Rect2(-45.0,-8.0,42.0,16.0),
 	"paths":[
@@ -130,7 +144,9 @@ static func outline_of(i: Dictionary) -> Array:
 	for k in 64:
 		var a := TAU*k/64.0
 		var ripple := 1.0+w*(0.6*sin(3.0*a+s)+0.4*sin(5.0*a+s*2.3))
-		out.append(c+Vector2(cos(a)*r.x,sin(a)*r.y)*ripple)
+		var p := c+Vector2(cos(a)*r.x,sin(a)*r.y)*ripple
+		if i.has("cut") and (i.cut as Rect2).has_point(p): p.x = (i.cut as Rect2).position.x
+		out.append(p)
 	return out
 
 ## The worn ways, plus the strip lightly worn so nothing tall grows on it.
@@ -212,6 +228,10 @@ func _pieces(root: Node3D) -> void:
 		node.transform = pose(p)
 		_specs["%s/%d" % [str(p.id),int(p.seed)]] = node.get_meta("ropes",[])
 		root.add_child(node)
+		if p.get("plinth",false):
+			var built := plinth(int(p.seed)+7,float(p.weathered))
+			built.transform = pose(p)
+			root.add_child(built)
 
 ## A piece of LAYOUT.pieces built (the torana with its rope count and dry
 ## rope; the hood with its bays and fallen count; the others by
@@ -222,6 +242,89 @@ static func piece_of(p: Dictionary) -> Node3D:
 	if p.id == "pent_hood":
 		return Cloister.pent_hood(int(p.seed),float(p.weathered),int(p.get("bays",Cloister.HOOD_BAYS)),int(p.get("fallen",-1)))
 	return RuinKit.piece(str(p.id),int(p.seed),float(p.weathered))
+
+## The hung stair's plinth, in the stair's frame (the boss at the origin on
+## the deck's top, y 0; the hinge along +X 3.2 m under it at z 0; the
+## turned flight on its -Z side). Clear of the turn's sweep (x -2.01..3.40,
+## z -3.11..2.73, y -8.23..-2.77, dumped headless): a deck of slabs with a
+## hatch over the flight's head, a north wall against the Crown's flank,
+## an east wall, a lintel over the west door (the flight's foot walks out
+## under it onto the Cellar) and a fascia on the south; under the deck the
+## south side is open, where the hung flight swings out. The shaft's floor
+## east of the head, flush with its top, its lip cut on the stair's
+## `head_cut` (nothing of the turn crosses it): hung or turned, a drop
+## through the hatch's east half lands on stone.
+const PLINTH_DECK := 0.36
+const PLINTH := {"x":Vector2(-3.0,4.4),"z":Vector2(-4.6,1.3),"hatch_x":Vector2(0.4,2.8),"hatch_z":Vector2(-2.9,-0.75),
+	"north":-3.28,"east":3.62,"low":-7.2,"lintel":-2.4,"fascia":-1.3,"floor":Vector2(-3.75,-3.2)}
+static func plinth(seed_value: int, weathered: float) -> Node3D:
+	var b := RuinKit.Build.new(seed_value,weathered,"Plinth")
+	b.settle = 0.4
+	var P: Dictionary = PLINTH
+	var x: Vector2 = P.x
+	var z: Vector2 = P.z
+	var hx: Vector2 = P.hatch_x
+	var hz: Vector2 = P.hatch_z
+	var top := -PLINTH_DECK
+	# The deck round the hatch: north and south strips the deck's width, the
+	# west and east between them.
+	for r: Array in [[x.x,x.y,z.x,hz.x],[x.x,x.y,hz.y,z.y],[x.x,hx.x,hz.x,hz.y],[hx.y,x.y,hz.x,hz.y]]:
+		_slabs(b,Rect2(r[0],r[2],r[1]-r[0],r[3]-r[2]),top,0.0)
+	# The walls in courses of long stones: north (against the Crown), east.
+	_courses(b,Vector3(x.x,float(P.low),z.x),Vector3(x.y,top,float(P.north)),true)
+	_courses(b,Vector3(float(P.east),float(P.low),float(P.north)),Vector3(x.y,top,z.y),false)
+	# The west door's lintel and the south fascia, both over the sweep.
+	_courses(b,Vector3(x.x,float(P.lintel),float(P.north)),Vector3(x.x+0.8,top,z.y),false)
+	_courses(b,Vector3(x.x+0.8,float(P.fascia),z.y-0.5),Vector3(float(P.east),top,z.y),true)
+	# The shaft's floor at the head, its lip on the head cut.
+	var fy: Vector2 = P.floor
+	var hc: Plane = Keel.flight_frame()*Keel.head_cut()
+	var c := Vector3((1.6+float(P.east))*0.5,(fy.x+fy.y)*0.5,(float(P.north)-0.05)*0.5)
+	var planes: Array[Plane] = [Plane(Vector3.LEFT,-1.4),Plane(Vector3.RIGHT,float(P.east)),Plane(Vector3.DOWN,-fy.x),
+		Plane(Vector3.UP,fy.y),Plane(Vector3.FORWARD,-float(P.north)),Plane(Vector3.BACK,-0.05),Plane(-hc.normal,-(hc.d+0.05))]
+	var local: Array[Plane] = []
+	for q: Plane in planes: local.append(Plane(q.normal,q.d-q.normal.dot(c)))
+	b.solid(local,Transform3D(Basis.IDENTITY,c),RuinKit._stone(b,0.9))
+	return b.finish()
+
+## A run of slabs filling `r` (x, z) from y0 to y1.
+static func _slabs(b: RuinKit.Build, r: Rect2, y0: float, y1: float) -> void:
+	var zz := r.position.y
+	while zz < r.end.y-0.05:
+		var d := minf(b.rng.randf_range(0.8,1.3),r.end.y-zz)
+		if r.end.y-(zz+d) < 0.35: d = r.end.y-zz
+		var xx := r.position.x
+		while xx < r.end.x-0.05:
+			var w := minf(b.rng.randf_range(0.9,1.7),r.end.x-xx)
+			if r.end.x-(xx+w) < 0.35: w = r.end.x-xx
+			var half := Vector3(w*0.5-0.02,(y1-y0)*0.5,d*0.5-0.02)
+			var at := Vector3(xx+w*0.5,(y0+y1)*0.5+b.rng.randf_range(-0.03,0.0),zz+d*0.5)
+			b.solid(RuinKit._box(b,half),RuinKit._jiggle(b,Transform3D(Basis.IDENTITY,at),0.3),RuinKit._stone(b,1.0))
+			xx += w
+		zz += d
+
+## A wall from `lo` to `hi` in courses (0.5-0.7 m) of stones laid along X
+## (`along_x`) or Z, each course's joints offset.
+static func _courses(b: RuinKit.Build, lo: Vector3, hi: Vector3, along_x: bool) -> void:
+	var y := lo.y
+	var row := 0
+	while y < hi.y-0.05:
+		var h := minf(b.rng.randf_range(0.5,0.7),hi.y-y)
+		if hi.y-(y+h) < 0.25: h = hi.y-y
+		var a0 := lo.x if along_x else lo.z
+		var a1 := hi.x if along_x else hi.z
+		var s := a0
+		var first := true
+		while s < a1-0.05:
+			var l := minf(b.rng.randf_range(0.9,1.6)*(0.5 if first and row%2 == 1 else 1.0),a1-s)
+			if a1-(s+l) < 0.4: l = a1-s
+			first = false
+			var mid := Vector3(s+l*0.5,y+h*0.5,(lo.z+hi.z)*0.5) if along_x else Vector3((lo.x+hi.x)*0.5,y+h*0.5,s+l*0.5)
+			var half := Vector3(l*0.5-0.02,h*0.5-0.01,(hi.z-lo.z)*0.5) if along_x else Vector3((hi.x-lo.x)*0.5,h*0.5-0.01,l*0.5-0.02)
+			b.solid(RuinKit._box(b,half),RuinKit._jiggle(b,Transform3D(Basis.IDENTITY,mid),0.25),RuinKit._stone(b,0.96))
+			s += l
+		y += h
+		row += 1
 
 static func pose(p: Dictionary) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP,deg_to_rad(float(p.rot))),p.at)

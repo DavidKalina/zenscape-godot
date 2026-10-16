@@ -49,7 +49,7 @@ Set pieces:
 | relic_nimbus | exists (scripts/ruin_kit_relic.gd) | Halo (62, 7, -3), rot 0 (ring in XY, plane flies along Z) |
 | pent_hood | exists (scripts/ruin_kit_cloister.gd), bays 3, fallen 1 | Crown north rim, centre (92, 20, -10), rot 0 (back wall north, eaves south), seed 5342 (its fallen gap in the middle bay) |
 | keel_hung_stair | exists (scripts/ruin_kit_keel.gd + scripts/keel_hung_stair.gd) | boss at (86, 15.5, 18) on the plinth, rot 0 (hung front +Z, south, over the void) |
-| plinth (shaft) | build from RuinKit wall + floor | built block round the turned flight: foot on the Cellar at 10, top 15.5, a hatch over the head |
+| plinth (shaft) | built (gb_pilgrims_ladder.gd `plinth`, RuinKit.Build stone in courses) | deck x 83..90.4, z 13.4..19.3, top 15.5, hatch x 86.4..88.8, z 15.1..17.3; north wall on z 13.4..14.7 against the Crown's flank, east wall x 89.6..90.4, lintel over the west door, south side open under the deck (the hung flight swings out there); a shaft floor (top 12.3) east of the head, its lip on the stair's head cut |
 | wall, floor, buttress, fallen_pier, arch, stairs | exist (RuinKit PIECES) | Crown dressing, the hood's kit wall line, the plinth's walls |
 | guacharo | exists (scripts/enemies/guacharo.gd); no motif-yard host yet | LayerFlyers-style host stepping one bird round the motor |
 | foot tokens / buried finds | exist (scripts/kit_isle/kit_tokens.gd, scripts/buried_find.gd) | the collectibles below |
@@ -65,13 +65,17 @@ Set pieces:
 - **The nimbus stands 3 m north of the Halo's centre line** (62, 7, -3). At z 0 its ring's lower outer face (x 55.7 at head height) is where the torana's hop lands; set back, the hop lands in front (+Z) of the ring, two steps from its trough.
 - **The hood stands at (92, 20, -10), not (94, 20, -11).** The Crown's north rim pulls in to z -12 at x 84 and 100 and to -10.5 at x 102, so the plan's 15.6 m hood hung its east end over the void. Seed 5342 puts its one fallen gap in the middle bay (x 91.6..93.7); the reliquary moves to the gallery's east end (99, 20.4, -10).
 
+- **The Cellar's turf is cut back at x 83.85 south of z 14.** The stair's turn sweeps down to y 7.3 under the plinth (x 84..89.4, z 14.9..20.7, dumped headless), through a full Cellar's turf. The flight's foot (84, 10.06) steps west off the cut edge onto the turf.
+- **The slam off the lip takes a jump.** Walking off the Crown's south lip and slamming at once gives a 3.4 m drop, under DECENT's 4.0; a jump off the lip and a slam at its top turns the stair (driven).
+- **The hatch is x 86.4..88.8, z 15.1..17.3** (clear of the boss), and the shaft has a floor east of the head (top 12.3, lip on the stair's head cut), so a drop through the hatch lands on stone whether the stair is turned or hung.
+
 ## Open questions
 - Answered (drive check): the last rope's backswing release lands on the lintel's top, and a running hop off its end lands on the Halo.
 - Is the 12 m sail from the high horn to the Crown comfortable, or does it need a nearer lip?
 - Can the hood's fallen gap (1.6-2.4 m) be crossed under the bird's stalk without a snatch? Is that the right amount of fear?
 - Is 12 s (the hold) enough to drop into the shaft and walk the flight, or too generous? Knob `hold` 8-16.
 - The Cellar can also be reached by sailing down off the Crown's south lip (10 m). Does that make the stair optional, and is that fine?
-- Does the plinth read as built stone and not a box? Does the hung soffit read as a slide from the Crown?
+- Does the plinth read as built stone and not a box? (Stills: from the Crown's lip the deck, hatch and boss read; from the south and west the plinth sits in the Crown's shadow and reads near-black.) Does the hung soffit read as a slide from the Crown?
 - Does the guacharo's 22 m range wake it as you land on the Crown and not on the high horn (28 m)?
 
 Layout:
@@ -95,7 +99,7 @@ Layout:
     {"id":"relic_nimbus","at":[62,7,-3],"rot":0,"note":"low horn perch (57.6, 22.5, -3), high horn perch (62.8, 24.1, -3)"},
     {"id":"pent_hood","at":[92,20,-10],"rot":0,"bays":3,"fallen":1,"seed":5342,"note":"x 84.2..99.8, back wall on z -11.2, gallery z -10.6..-9.4, eaves z -8.3, roof gap x 91.6..93.7"},
     {"id":"keel_hung_stair","at":[86,15.5,18],"rot":0,"note":"boss on plinth top 15.5; head 12.3, foot 10.06 on the Cellar"},
-    {"id":"plinth","at":[86,10,16.6],"size":[7,5.5,4],"note":"built walls round the turned flight; hatch over the head end; door at the foot onto the Cellar"}
+    {"id":"plinth","at":[86.7,11.9,16.35],"size":[7.4,7.2,5.9],"note":"built walls round the turned flight; hatch over the head end; door at the foot onto the Cellar"}
   ],
   "pilot": [[-30,0,0],[20,0,1.6],[28.2,0.9,1.6],[45,5.7,1.6],[44,10.2,0],[52,7,2],[62,7.8,1],[57.6,22.5,0],[62.8,24.1,0],[76,20,2],[88,20.2,-10.6],[101,20.2,-10.6],[86,20,13],[86,15.5,18],[87.8,12.3,16.6],[84,10,16.6],[80,10,12],[72,7,4],[50,7,0],[28,0,0],[-30,0,0]],
   "threat": [[91,31,-19],[110,31,0],[91,31,19],[72,31,0],[91,31,-19]],
