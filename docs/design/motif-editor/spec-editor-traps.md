@@ -103,6 +103,27 @@ coordinate.
    Both glide (a short ease), and both work with a trap's ghost and the
    grid showing. Prove with stills from each view.
 
+11. **Existing isles as a base** (after item 10; added late, the cap
+   raised for it). The user wants to open the coded isles in the editor
+   (colonnade_spine, broken_ring, bell_spires, ... and the aqueduct isle,
+   the game's own, if it can be stood as one) and build on them. They are
+   code, not recipes (land from functions, pieces placed by script), so:
+   - **First, a short feasibility read** (in the commit): how the motif
+     yard stands a kit pool motif or greybox slug, whether the aqueduct
+     isle's place is a motif the yard can stand or needs an adapter, and
+     whether a motif lists its pieces (parts, occupancy) in a form the
+     editor could select.
+   - **Then a base:** `--load-base=<motif id>` (and a palette / panel
+     entry) stands that motif in the editor in the grey look, read-only,
+     the land and its pieces collided, lips found for snapping. The user
+     places traps (and anything else the editor places) on it, plays it
+     (P) with its own live parts and the user's traps, and saves a recipe
+     `{"base": "<motif id>", "seed", traps, pieces, markers}` that loads
+     back the same and stands in the motif yard (additive format).
+   - **Stretch, only if the read says it's cheap:** the base's own pieces
+     selectable and movable, saved as overrides.
+   Smoke a base load for at least colonnade_spine and bell_spires.
+
 ## Rules for this loop
 
 - **One trap list.** Lift the trap yard's `TRAPS` table into a shared
@@ -164,5 +185,5 @@ on them in the handoff.
 
 - Branch `iter/editor-traps`, worktree `.claude/worktrees/iter-editor-traps`.
 - No lanes: the work is ordered and mostly in the editor.
-- Model Opus (input, placement, live bodies). Cap 12 iterations, budget
+- Model Opus (input, placement, live bodies). Cap 14 iterations (raised from 12 for item 11), budget
   150000 tokens per iteration.
