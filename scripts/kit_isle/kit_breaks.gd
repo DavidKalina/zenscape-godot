@@ -55,7 +55,7 @@ func add(node: Node3D, kind: String, rebuild := Callable(), seed_value := -1) ->
 		rebuild = func() -> Node3D: return RuinKit.piece(str(recipe[0]),int(recipe[1]),float(recipe[2]))
 	if seed_value < 0: seed_value = int(recipe[1]) if recipe.size() == 3 else hash(node.name)
 	targets.append({"node":node,"kind":kind,"tough":Kinds.toughness(node,kind),"box":box,"seed":seed_value,
-		"rebuild":rebuild,"alive":true,"pre":{}})
+		"rebuild":rebuild,"alive":true,"pre":{},"keep":Callable()})
 	_refresh_rids()
 	return targets.size()-1
 
@@ -112,8 +112,7 @@ func hit(at: Vector3, radius: float, strength: float, _source: StringName) -> in
 		var out := Vector3(q.x-at.x,0.0,q.z-at.z)
 		var centre: Vector3 = (t.node as Node3D).global_transform*(t.box as AABB).get_center()
 		if out.length() < 0.05: out = Vector3(centre.x-at.x,0.0,centre.z-at.z)
-		_break(i,q,out.normalized() if out.length() > 0.05 else Vector3.FORWARD,Vector3.ZERO,null)
-		n += 1
+		if _break(i,q,out.normalized() if out.length() > 0.05 else Vector3.FORWARD,Vector3.ZERO,null): n += 1
 	if n > 0: _pause()
 	return n
 
@@ -130,17 +129,95 @@ func met(body: Node3D) -> void:
 	var fwd: Vector3 = body._forward3()
 	_wake(body,olmec,(low+high)*0.5,fwd,hw,hl)
 	var any := false
+	var mid := Vector3(body.position.x,(low+high)*0.5,body.position.z)
+	var touched := {}
+	var read := false
 	for i in range(targets.size()):
 		var t: Dictionary = targets[i]
 		if not t.alive or not is_instance_valid(t.node) or olmec < float(t.tough): continue
-		var mid := Vector3(body.position.x,(low+high)*0.5,body.position.z)
 		var q := _nearest(t,mid)
 		if q.y < low or q.y > high: continue
 		var rel := inv*(q-body.position)
 		if absf(rel.x) > hw or absf(rel.z) > hl: continue
-		_break(i,q,fwd,body.vel,body)
-		any = true
+		# What stands of a broken piece (or one whose box met him with no
+		# stone there) is much air in its box: it meets him only where a
+		# block of it is in his bulk, and breaks there, low enough that
+		# the block goes.
+		if _by_block(t):
+			if not read:
+				touched = _touched(body,low,high,hw,hl)
+				read = true
+			var at: Variant = _block_in(t,touched,mid)
+			if at == null: continue
+			q = at
+			# Its cut made a build a frame first (he leans on it a beat),
+			# not all in this one.
+			prepare(i,q)
+			if not Kinds.done(t.pre):
+				_step_pre(i)
+				continue
+		if _break(i,q,fwd,body.vel,body): any = true
 	if any: _pause()
+
+## Whether target `t` meets him by its blocks, not its box: what stands of
+## a broken piece, or one whose box met him with no stone there.
+func _by_block(t: Dictionary) -> bool:
+	return (t.keep as Callable).is_valid() or int(t.get("duds",0)) > 0
+
+## The blocks his bulk is in: {Body RID: [shape index]}.
+func _touched(body: Node3D, low: float, high: float, hw: float, hl: float) -> Dictionary:
+	var box := BoxShape3D.new()
+	box.size = Vector3(hw*2.0,high-low,hl*2.0)
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = box
+	q.transform = Transform3D(Basis(Vector3.UP,float(body.facing)),Vector3(body.position.x,(low+high)*0.5,body.position.z))
+	q.exclude = rubble_rids()
+	var out := {}
+	for h: Dictionary in get_world_3d().direct_space_state.intersect_shape(q,64):
+		var rid: RID = h.rid
+		if not out.has(rid): out[rid] = []
+		(out[rid] as Array).append(int(h.shape))
+	return out
+
+## Of target `t`'s blocks in `touched`, the middle (world) of the one
+## nearest `mid`, or null.
+func _block_in(t: Dictionary, touched: Dictionary, mid: Vector3) -> Variant:
+	var best: Variant = null
+	var best_d := INF
+	for b: Node in (t.node as Node).find_children("*","CollisionObject3D",true,false):
+		var co := b as CollisionObject3D
+		if not touched.has(co.get_rid()): continue
+		for idx: int in touched[co.get_rid()]:
+			var owner_id := co.shape_find_owner(idx)
+			var holder := co.shape_owner_get_owner(owner_id) as CollisionShape3D
+			if holder == null or not holder.shape is ConvexPolygonShape3D: continue
+			var pts := (holder.shape as ConvexPolygonShape3D).points
+			if pts.is_empty(): continue
+			var c := Vector3.ZERO
+			var lo := INF
+			for p: Vector3 in pts:
+				c += p
+				lo = minf(lo,(holder.global_transform*p).y)
+			var w := holder.global_transform*(c/pts.size())
+			var d := w.distance_to(mid)
+			if d < best_d:
+				best_d = d
+				best = _under(t,w,lo)
+	return best
+
+## `w` (a block's middle, world) lowered to the hit height whose stump line
+## (its kind's share of it, less the line's wobble) is under `lo`, the
+## block's foot: the block falls.
+func _under(t: Dictionary, w: Vector3, lo: float) -> Vector3:
+	var shape: Dictionary = Kinds.SHAPES.get(str(t.kind),{})
+	var share := float(shape.get("stump",-1.0))
+	if share <= 0.0: return w
+	var xf := (t.node as Node3D).global_transform
+	var local := xf.affine_inverse()*w
+	var floor_y: float = (t.box as AABB).position.y
+	var foot := (xf.affine_inverse()*Vector3(w.x,lo,w.z)).y
+	local.y = floor_y+maxf(foot-0.65-floor_y,0.0)/share
+	return xf*local
 
 func wave(_body: Node3D, _w: Dictionary) -> void:
 	pass
@@ -165,6 +242,8 @@ func _wake(body: Node3D, olmec: float, mid_y: float, fwd: Vector3, hw: float, hl
 	for i in range(targets.size()):
 		var t: Dictionary = targets[i]
 		if not t.alive or not is_instance_valid(t.node) or olmec < float(t.tough): continue
+		# Cut where a block of it meets him (met), not guessed from its box.
+		if _by_block(t): continue
 		var from := Vector3(body.position.x,mid_y,body.position.z)
 		var q := _nearest(t,from)
 		var d := Vector2(q.x-from.x,q.z-from.z).length()
@@ -205,7 +284,7 @@ func prepare(i: int, at: Vector3) -> void:
 		if Kinds.serves(t.pre,local,PRE_TOL): return
 		Kinds.drop(t.pre)
 		pre_missed += 1
-	t.pre = Kinds.job(str(t.kind),{"node":t.node,"box":t.box,"at":local,"dir":Vector3.FORWARD,"seed":t.seed,"rebuild":t.rebuild})
+	t.pre = Kinds.job(str(t.kind),{"node":t.node,"box":t.box,"at":local,"dir":Vector3.FORWARD,"seed":t.seed,"rebuild":t.rebuild,"keep":t.keep})
 	if not (t.pre as Dictionary).is_empty(): pre_made += 1
 
 ## One build of target `i`'s pre-cut.
@@ -225,13 +304,13 @@ func _exit_tree() -> void:
 ## Target `i` cut by its kind where `at` (world) met it, its parts going
 ## over along `dir` (flat), with `push` (his way) on them; `his` a body its
 ## parts pass through, or null.
-func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> void:
+func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> bool:
 	var t: Dictionary = targets[i]
 	t.alive = false
 	var node: Node3D = t.node
 	var xf := node.global_transform
 	var inv := xf.affine_inverse()
-	var cut_t := {"node":node,"box":t.box,"at":inv*at,"dir":inv.basis*dir,"seed":t.seed,"rebuild":t.rebuild}
+	var cut_t := {"node":node,"box":t.box,"at":inv*at,"dir":inv.basis*dir,"seed":t.seed,"rebuild":t.rebuild,"keep":t.keep}
 	var began := Time.get_ticks_usec()
 	var pre: Dictionary = t.pre
 	var cut := {}
@@ -247,9 +326,18 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> v
 	t.pre = {}
 	cut_ms = (Time.get_ticks_usec()-began)/1000.0
 	build_ms += cut_ms
-	if cut.is_empty():
+	# Nothing falls (what stands of a piece hit where it is already gone):
+	# no break. One that keeps coming to nothing stops being a target.
+	if cut.is_empty() or (cut.get("parts",[]) as Array).is_empty():
+		var st: Variant = cut.get("stands")
+		if st is Node3D and is_instance_valid(st) and not (st as Node3D).is_inside_tree(): (st as Node3D).free()
 		t.alive = true
-		return
+		if his == null: return false
+		t.duds = int(t.get("duds",0))+1
+		if int(t.duds) >= 3:
+			t.tough = INF
+			_refresh_rids()
+		return false
 	broken += 1
 	var parent := node.get_parent()
 	var stands: Node3D = cut.get("stands")
@@ -260,6 +348,14 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> v
 	node.queue_free()
 	var group := _new_group(at)
 	group.stump = stands
+	# What stands breaks again: a target of its own, built only of what is
+	# left (kept out of the rubble's merged mesh, so its break takes it).
+	if stands != null and (cut.get("keep",Callable()) as Callable).is_valid():
+		var again := add(stands,str(t.kind),t.rebuild,int(t.seed))
+		if again >= 0:
+			targets[again].keep = cut.keep
+			targets[again].tough = t.tough
+			group.stump = null
 	var foot := xf*Vector3((t.box as AABB).get_center().x,(t.box as AABB).position.y,(t.box as AABB).get_center().z)
 	var fall: Array = cut.get("parts",[])
 	if bool(cut.get("topple",false)):
@@ -287,6 +383,7 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> v
 	_sound(&"ruin_fall",foot)
 	_shake(QUAKE_PIER*1.2)
 	_refresh_rids()
+	return true
 
 ## Parts "<along>_<up>" (the piece's frame, `xf` its place) going over as
 ## stacks: each along's parts one body about its foot (the colonnade's

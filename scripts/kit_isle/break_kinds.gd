@@ -21,7 +21,11 @@ extends RefCounted
 ## `t` (a target, kit_breaks.gd `add`): node (the piece, still whole),
 ## box (its stone's bounds, its frame), at (the hit, its frame), dir (the
 ## way the hit goes, its frame), seed, rebuild (a Callable() -> Node3D that
-## builds the piece again honouring RuinKit `Build.keep_only`, or invalid).
+## builds the piece again honouring RuinKit `Build.keep_only`, or invalid),
+## keep (optional: a Callable(block middle, its frame) -> bool, the blocks
+## left of it by earlier cuts; a built-in cut builds only those). A built-in
+## cut's result has "keep" too: its stands' kept set, so what stands of a
+## broken piece breaks again as what is left.
 ## A part: masonry_cuts.gd `_part`'s {mesh, shape, at, kg, kind, size}, in
 ## the piece's frame; `kind` one of the fall's: "slab" (laid flat), "drum"
 ## or "column" (laid on its side), "chunk".
@@ -119,7 +123,8 @@ static func step(j: Dictionary) -> bool:
 	var t: Dictionary = j.t
 	var shape: Dictionary = j.shape
 	var frame: Dictionary = j.frame
-	Build.keep_only = func(c: Vector3) -> bool: return part_of(c,t,shape,frame) == want
+	var kept: Callable = t.get("keep",Callable())
+	Build.keep_only = func(c: Vector3) -> bool: return (not kept.is_valid() or bool(kept.call(c))) and part_of(c,t,shape,frame) == want
 	var was := Build.detail
 	if want != "": Build.detail = 0.0
 	var built: Node3D = (t.rebuild as Callable).call()
@@ -134,6 +139,10 @@ static func step(j: Dictionary) -> bool:
 				built.free()
 				built = null
 		j.out.stands = built
+		# What stands keeps: what the piece kept before and this cut's
+		# stump, so a later cut of it builds only what is left.
+		var seed_only := {"seed":t.seed}
+		j.out.keep = func(c: Vector3) -> bool: return (not kept.is_valid() or bool(kept.call(c))) and part_of(c,seed_only,shape,frame) == ""
 	elif built != null:
 		var part := Cuts._part(built,str(shape.fall))
 		built.free()
