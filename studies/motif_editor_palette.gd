@@ -12,10 +12,11 @@ extends "res://scripts/command_palette.gd"
 ## (click the ground to set it down).
 
 const MotifAuthored = preload("res://scripts/kit_isle/motif_authored.gd")
+const TrapRegistry = preload("res://scripts/traps/trap_registry.gd")
 const RuinKitScript = preload("res://scripts/ruin_kit.gd")
 const DRAG_SLOP := 8.0
-const POCKETS := ["All","Land","Kit","Trees","Landforms","World"]
-const POCKET_ICONS := ["all","mountain","stone","oak","island","globe"]
+const POCKETS := ["All","Land","Kit","Trees","Landforms","World","Traps"]
+const POCKET_ICONS := ["all","mountain","stone","oak","island","globe","hammer"]
 ## The land tools: [editor tool, name, sub, roll icon, description, keys].
 const LAND := [
 	["select","Select","Move","","Pick a piece or marker; drag it along the ground. Z X turn it.",["1"]],
@@ -85,6 +86,10 @@ func _build_items() -> void:
 		_items.append({"kind":"preset","cat":4,"id":key,"name":str(MotifAuthored.PRESET_NAMES.get(key,key)),"sub":"Landform: its sliders top left","desc":"","icon":"island"})
 	for e: Array in WORLD_VERBS:
 		_items.append({"kind":"world","cat":5,"id":e[0],"name":e[1],"sub":e[2],"glyph":e[3],"keys":e[4],"desc":""})
+	# The traps (scripts/traps/trap_registry.gd), one tile each; "trap" in
+	# the sub so typing "trap" finds them all.
+	for key: String in TrapRegistry.keys():
+		_items.append({"kind":"trap","cat":6,"id":key,"name":TrapRegistry.display_name(key),"sub":"Trap · drag it in","desc":"Drag onto the ground or a piece's top. Z X turn it.","glyph":""})
 	for slug: String in MotifAuthored.saved():
 		_items.append({"kind":"open","cat":5,"id":slug,"name":"Open "+slug,"sub":MotifAuthored.path_of(slug),"glyph":"O","desc":""})
 
@@ -103,7 +108,7 @@ func open() -> void:
 ## tiles (TILE px, the thumbnail large over its name), picked by eye.
 const TILE := Vector2(142.0,156.0)
 const TILE_GAP := 6.0
-const TILE_TABS := [2,3]
+const TILE_TABS := [2,3,6]
 
 func _tiled() -> bool:
 	return tab in TILE_TABS
@@ -146,14 +151,30 @@ func _draw_tile(entry: Dictionary, rect: Rect2, line: float) -> void:
 	_patch(tile,10.0,WELL if on else Color(WELL,0.45),WELL_SHADE)
 	var side := tile.size.x-14.0*px
 	var pic := Rect2(Vector2(tile.position.x+7.0*px,tile.position.y+7.0*px),Vector2(side,side))
-	var texture: Texture2D = thumbs.get(str(item.id))
+	var texture: Texture2D = thumbs.get(str(item.id)) if str(item.kind) != "trap" else null
 	if texture != null: _body.draw_texture_rect(texture,pic,false)
+	elif str(item.kind) == "trap": _draw_trap_stand_in(pic,line)
 	else: Linen.dashed_round(_body,pic.grow(-6.0*px),8.0*px,GLYPH_STITCH,line,px)
 	var name_ := str(item.name)
 	var size := roundi(13.0*px)
 	var w := _text_font.get_string_size(name_,HORIZONTAL_ALIGNMENT_LEFT,-1,size).x
 	_body.draw_string(_text_font,Vector2(tile.get_center().x-minf(w,side)*0.5,tile.end.y-9.0*px),name_,HORIZONTAL_ALIGNMENT_LEFT,side,size,T1)
 	if on: Linen.dashed_round(_body,tile.grow(-2.0*px),8.0*px,ON_STITCH,line,px)
+
+## A trap's tile picture, a drawn stand-in (no rendered thumbnail yet,
+## and labelled so): a lane, its way in (green arrow) and out (orange ring).
+func _draw_trap_stand_in(pic: Rect2, line: float) -> void:
+	var px := ui_scale
+	var inner := pic.grow(-10.0*px)
+	Linen.dashed_round(_body,inner,8.0*px,GLYPH_STITCH,line,px)
+	var cx := inner.get_center().x
+	var lane := Rect2(Vector2(cx-12.0*px,inner.position.y+22.0*px),Vector2(24.0*px,inner.size.y-40.0*px))
+	_body.draw_rect(lane,Color(T1,0.25))
+	var low := Vector2(cx,lane.end.y+4.0*px)
+	_body.draw_colored_polygon(PackedVector2Array([low+Vector2(-9.0,8.0)*px,low+Vector2(9.0,8.0)*px,low+Vector2(0.0,-6.0)*px]),Color(0.3,0.75,0.4))
+	_body.draw_arc(Vector2(cx,lane.position.y-6.0*px),7.0*px,0.0,TAU,20,Color(0.9,0.5,0.2),2.5*px)
+	var size := roundi(10.0*px)
+	_body.draw_string(_text_font,Vector2(inner.position.x+6.0*px,inner.position.y+14.0*px),"stand-in",HORIZONTAL_ALIGNMENT_LEFT,-1,size,Color(T1,0.6))
 
 ## A piece's row: the parent's row with the thumbnail in its glyph box.
 func _draw_row(entry: Dictionary, rect: Rect2, line: float) -> void:
@@ -177,7 +198,7 @@ func handle_event(event: InputEvent) -> bool:
 		var mb := event as InputEventMouseButton
 		if mb.pressed:
 			var row := _row_at(mb.position)
-			if row >= 0 and str(_rows[row].item.kind) == "piece":
+			if row >= 0 and str(_rows[row].item.kind) in ["piece","trap"]:
 				sel = row
 				_pending = {"item":_rows[row].item,"at":mb.position}
 				return true
@@ -193,7 +214,8 @@ func handle_event(event: InputEvent) -> bool:
 			_pending = {}
 			_remember(item)
 			close()
-			editor.begin_ghost(str(item.id),mm.position)
+			if str(item.kind) == "trap": editor.begin_trap(str(item.id),mm.position,true)
+			else: editor.begin_ghost(str(item.id),mm.position)
 			return true
 	return super.handle_event(event)
 
@@ -208,6 +230,7 @@ func _take(item: Dictionary) -> void:
 	match str(item.kind):
 		"tool": editor.pick_tool(str(item.id))
 		"piece": editor.arm(str(item.id))
+		"trap": editor.begin_trap(str(item.id),editor.get_viewport().get_mouse_position())
 		"preset": editor.set_preset(str(item.id))
 		"open": if not editor.load_motif(str(item.id)): refusal = "Could not open %s" % item.id
 		"world": refusal = editor.world_verb(str(item.id))

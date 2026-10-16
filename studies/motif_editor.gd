@@ -42,6 +42,7 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const LandformPanel = preload("res://studies/motif_editor_panel.gd")
 const EditorPalette = preload("res://studies/motif_editor_palette.gd")
 const Feel = preload("res://studies/motif_editor_feel.gd")
+const EditorTraps = preload("res://studies/motif_editor_traps.gd")
 const ToolRoll = preload("res://scripts/tool_roll.gd")
 const ClaySound = preload("res://scripts/clay_sound.gd")
 const RuinKitFit = preload("res://scripts/ruin_kit_fit.gd")
@@ -166,6 +167,8 @@ var panel: LandformPanel = null
 var roll: ToolRoll = null
 var palette: EditorPalette = null
 var feel: Feel = null
+## The placed traps (studies/motif_editor_traps.gd).
+var traps: EditorTraps = null
 ## A stamp being sized ({} none): its stroke, its middle, the outline
 ## before it (an island grows the outline from that), its press.
 var _stamp: Dictionary = {}
@@ -448,6 +451,7 @@ func _after_land() -> void:
 		a[1] = snappedf(float(motif.ground(float(a[0]),float(a[2]))),0.001)
 	_place_markers()
 	_show_handles()
+	if traps != null: traps.sync()
 	_show_status()
 
 ## The Pieces holder of what stands now.
@@ -629,6 +633,7 @@ func _edit_input(event: InputEvent) -> void:
 			_cam_pitch = clampf(_cam_pitch-mm.relative.y*LOOK_RATE,-1.5,1.5)
 			_apply_cam()
 		elif not _held_piece.is_empty(): ghost_to(mm.position)
+		elif traps != null and traps.holding(): traps.ghost_to(mm.position)
 		elif not _stamp.is_empty(): size_stamp(mm.position)
 		elif not _path.is_empty(): path_to(mm.position)
 		elif not _run.is_empty(): run_to(mm.position)
@@ -669,6 +674,9 @@ func _edit_input(event: InputEvent) -> void:
 			KEY_B: toggle_breakable()
 			KEY_ESCAPE:
 				if not _held_piece.is_empty(): _drop_ghost()
+				if traps != null:
+					traps.drop_ghost()
+					traps.select(-1)
 				if not _stroke.is_empty() or not _stamp.is_empty() or not _path.is_empty(): release(Vector2.ZERO)
 				armed = ""
 				if tool != "select": set_tool("select")
@@ -730,6 +738,9 @@ func click(at: Vector2, keep := false, alt := false) -> void:
 	if not _held_piece.is_empty():
 		place_ghost(at)
 		return
+	if traps != null and traps.holding():
+		traps.place_ghost(at)
+		return
 	if armed == "" and tool in BRUSHES:
 		begin_stroke(at)
 		return
@@ -767,9 +778,16 @@ func click(at: Vector2, keep := false, alt := false) -> void:
 			_pop(k)
 			if not keep: armed = ""
 		return
+	var t := traps.hit(at) if traps != null and tool == "select" else -1
+	if t >= 0:
+		snapshot()
+		traps.select(t)
+		_dragging = true
+		return
 	var k := piece_hit(at)
 	if k >= 0: snapshot()
 	select(k)
+	if traps != null: traps.select(-1)
 	_dragging = k >= 0
 
 func drag_to(at: Vector2) -> void:
@@ -780,6 +798,7 @@ func drag_to(at: Vector2) -> void:
 		data.markers[sel_marker] = [snappedf(p.x,0.001),snappedf(float(motif.ground(p.x,p.z)),0.001),snappedf(p.z,0.001)]
 		_place_markers()
 	elif selected >= 0: move_piece(selected,p)
+	elif traps != null and traps.selected >= 0: traps.drag_to(at)
 
 func _end_drag() -> void:
 	_dragging = false
@@ -820,6 +839,7 @@ func move_piece(k: int, at: Vector3) -> void:
 	_show_selection()
 
 func turn_selected(deg: float) -> void:
+	if traps != null and traps.turn(deg): return
 	if selected < 0: return
 	snapshot()
 	var p: Dictionary = data.pieces[selected]
@@ -867,6 +887,7 @@ func _reseat(k: int) -> void:
 	if node.has_meta("ropes"): hang_ropes()
 
 func delete_selected() -> void:
+	if traps != null and traps.delete_selected(): return
 	if selected < 0: return
 	snapshot()
 	forget_piece(selected)
@@ -906,6 +927,7 @@ var _sel_ring: MeshInstance3D = null
 func select(k: int) -> void:
 	selected = k
 	sel_marker = ""
+	if k >= 0 and traps != null and traps.selected >= 0: traps.select(-1)
 	_show_status()
 
 ## A ring round the selected piece's footprint, drawn over everything.
@@ -999,6 +1021,9 @@ func stroke_to(at: Vector2) -> void:
 func release(at: Vector2) -> void:
 	if not _held_piece.is_empty():
 		place_ghost(at)
+		return
+	if traps != null and traps.holding() and bool(traps.held.get("dragged",false)):
+		traps.place_ghost(at)
 		return
 	if not _stamp.is_empty():
 		end_stamp()
@@ -1397,6 +1422,10 @@ func _build_editor_ui() -> void:
 	_ui.add_child(roll)
 	roll.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	roll.want(true)
+	traps = EditorTraps.new()
+	add_child(traps)
+	traps.setup(self)
+	traps.sync()
 	palette = EditorPalette.new()
 	_ui.add_child(palette)
 	palette.setup_editor(self)
@@ -1469,6 +1498,17 @@ func arm(id_name: String) -> void:
 	set_tool("select")
 	armed = id_name
 	_show_status()
+
+## A trap carried in from the palette (dragged out: let go to set it
+## down; taken with a click: click the ground).
+func begin_trap(key: String, at: Vector2, dragged := false) -> void:
+	set_tool("select")
+	armed = ""
+	_drop_ghost()
+	traps.begin_ghost(key,at)
+	traps.held.dragged = dragged
+	ClaySound.cue(&"ui_take")
+	say("Carrying %s: %s · Z X turn it · Esc drops it" % [traps.TrapRegistry.display_name(key),"let go over the ground" if dragged else "click the ground"])
 
 func palette_opened() -> void:
 	if _cursor != null: _cursor.visible = false
@@ -1855,6 +1895,11 @@ func grow_land(pts: Array) -> void:
 ## Takes away what is under screen point `at`: a piece, else a stamp whose
 ## middle is near, else a pond, else a lake's or new land's loop.
 func trash_at(at: Vector2) -> void:
+	var t := traps.hit(at) if traps != null else -1
+	if t >= 0:
+		traps.remove(t)
+		say("Trap taken away")
+		return
 	var run := run_hit(at)
 	if run >= 0:
 		snapshot()
