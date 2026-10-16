@@ -44,6 +44,10 @@ extends "res://studies/kit_isle.gd"
 ##   ./run-aqueduct-isle.command [--look=first_snow]
 ##   godot --path . res://studies/aqueduct_isle.tscn -- --no-title [--look=<preset id>] [--stone=mass] [--capture=out.png --at=x,y,z --look=x,y,z]
 ## --no-flora leaves the grass and flowers out (to compare cost).
+## --no-turf-lips leaves the turf cut square at its crags and rims
+## (scripts/kit_isle/turf_lips.gd).
+## --vertex-paths bakes the worn paths into the turf's colours as before
+## (scripts/kit_isle/path_dirt.gd draws them per pixel).
 ## Life (studies/aqueduct_isle_life.gd, docs/scenic/aqueduct-isle-life.md):
 ## undergrowth, butterflies, fireflies, songbirds on the stones, the wind
 ## made visible and seven on-foot tokens; --no-undergrowth, --no-butterflies,
@@ -121,6 +125,7 @@ extends "res://studies/kit_isle.gd"
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const BaseArt = preload("res://studies/aqueduct_isle_base.gd")
+const TurfLips = preload("res://scripts/kit_isle/turf_lips.gd")
 const FixedCache = preload("res://scripts/roguelike/fixed_cache.gd")
 const Life = preload("res://studies/aqueduct_isle_life.gd")
 const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
@@ -297,6 +302,17 @@ func _build_art() -> void:
 	# The turf the grass and flowers grow on (`_grow`, once it all stands
 	# in the physics space): the islands' and islets' ground.
 	for land: Node3D in [near,far]+islets: add_turf(land)
+	# The turf rolled over its crags' tops and its rims (scripts/kit_isle/
+	# turf_lips.gd); --no-turf-lips leaves the cut edge.
+	if not "--no-turf-lips" in preload("res://scripts/launch_args.gd").user_args():
+		var lips := 0
+		for land: Node3D in [near,far]+islets:
+			var dressed: Node3D = TurfLips.dress(land,hash(land.name))
+			if dressed != null: lips += int(dressed.get_meta("edges"))
+		print("aqueduct isle: turf lips on %d edges" % lips)
+	# The worn paths drawn per pixel on the ground (scripts/kit_isle/
+	# path_dirt.gd; --vertex-paths: baked into the turf as before).
+	print("aqueduct isle: %d path segments drawn" % preload("res://scripts/kit_isle/path_dirt.gd").paint(KitLook.ground_material(),Art.paths()))
 	print("aqueduct isle: %d triangles" % triangles(art))
 	# The on-foot pieces' route (balustrades, ropes, a ferry, bobbing slabs).
 	preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)

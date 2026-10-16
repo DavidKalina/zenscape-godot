@@ -16,6 +16,17 @@ extends "res://scripts/kit_isle/kit_motif.gd"
 ## neighbourhood; with the greybox motifs most of the pool, heroes would
 ## leave a layer short of isles).
 ##
+## A turfed greybox (the grey boxes remade on the real look, skill
+## motif-turf) supplies its turf as data too: `turf_seed()` (>= 0 turns the
+## pass on), `turf_islands()` (KitLand island specs, collided as drawn),
+## `turf_paths()` (its worn ways), `turf_cost()`, and `dress(root)` for its
+## stone and water; `grey_flag()` names the launch flag that builds the
+## grey boxes instead (`grey()`). This builds the islands, registers their
+## turf, adds their keels to the occupancy, warms the look and answers
+## `life_script`, `flora_site`, `flora_seed` and `build_cost` from them.
+## A motif whose land diverges (seeds of its own, islands not collided)
+## keeps its own `build` and asks KitLand for `"collide_sides"` itself.
+##
 ## HOW TO CONVERT THE NEXT GREYBOX (one file, one registry line):
 ## 1. Copy scripts/kit_isle/greybox/gb_sunken_giant.gd to gb_<slug>.gd. Copy
 ##    the study's numbers and LAYOUT verbatim (same geometry, so its chains
@@ -73,6 +84,13 @@ const WATER := Color(0.22,0.5,0.86,0.5)
 const GRID := preload("res://shaders/character_study_grid.gdshader")
 ## The occupancy's cell (m), the bake's.
 const CELL := 2.0
+## The turf's life and its stone (`warm_turf`).
+const TurfLife = preload("res://scripts/kit_isle/kit_life.gd")
+const TurfStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
+## How far a turf island's keel spurs hang under top-depth (KitLand
+## ring_sides: the last ring 0.92 deep x 1.15, a spur 0.3 more), for the
+## occupancy.
+const TURF_KEEL_REACH := 1.4
 
 static var _materials := {}
 static var _cache := {}
@@ -117,6 +135,62 @@ func start() -> Vector3:
 ## Everything else that moves, made in the layer (`g` the live host).
 func live(_g: Node) -> void:
 	pass
+
+# --- What a turfed subclass supplies (all optional) ------------------------------
+
+## The launch flag that builds the grey boxes instead of the turf (A/B
+## checks; studies/motif_yard.gd `--grey` passes it): "" none.
+func grey_flag() -> String:
+	return ""
+
+## The turf's seed: its islands' (seed+k unless a spec gives its own), its
+## tone's, its flora's (+9). -1: no turf pass (the grey boxes, or a
+## subclass that builds its own).
+func turf_seed() -> int:
+	return -1
+
+## The turf's islands, built in order: KitLand.island specs plus `name`.
+## Left out: `seed` (turf_seed()+k), `ground` (flat at `top`), `hang`
+## (true), `tone` (`turf_tone`), `collide_sides` (true). Each island's
+## keel joins the occupancy (`keel`: false to leave it out).
+func turf_islands() -> Array:
+	return []
+
+## The worn ways (KitLand.wear_of), for the tone and the flora.
+func turf_paths() -> Array:
+	return []
+
+## The turf's tone (KitLook.turf).
+func turf_tone() -> Callable:
+	return KitLook.turf(turf_seed(),KitLand.wear_of(turf_paths()))
+
+## Roughly how long the turf build takes (ms, headless).
+func turf_cost() -> int:
+	return 0
+
+## The look its turf build needs, made on the main thread (`warm`).
+func warm_turf() -> void:
+	warm_look()
+	RuinKit.materials()
+	TurfStone.warm()
+
+## Everything past the islands (stone, water), into `root`.
+func dress(_root: Node3D) -> void:
+	pass
+
+# --- The grey / turf switch ----------------------------------------------------------
+
+## Whether `flag` was passed at launch ("" never).
+static func flagged(flag: String) -> bool:
+	return flag != "" and preload("res://scripts/launch_args.gd").user_args().has(flag)
+
+## Built as grey boxes (its grey flag passed).
+func grey() -> bool:
+	return flagged(grey_flag())
+
+## Built on the real look (a turf pass, and not grey).
+func has_turf() -> bool:
+	return turf_seed() >= 0 and not grey()
 
 # --- The motif contract, answered from the data -----------------------------------
 
@@ -178,11 +252,44 @@ func occupancy() -> Dictionary:
 func warm() -> void:
 	materials()
 	_computed()
+	if has_turf(): warm_turf()
+
+func life_script() -> Script:
+	return TurfLife if has_turf() else null
+
+func build_cost() -> int:
+	return turf_cost() if has_turf() else 0
+
+func flora_site() -> KitFlora.Site:
+	if turf_seed() < 0: return super.flora_site()
+	return KitFlora.Site.new(top(),KitLand.wear_of(turf_paths()))
+
+func flora_seed() -> int:
+	return turf_seed()+9 if turf_seed() >= 0 else super.flora_seed()
 
 # --- Computed from the parts ----------------------------------------------------
 
-## Each solid part as [Rect2 (x, z), bottom, top, ramp (or null)].
+## Each solid as [Rect2 (x, z), bottom, top, ramp (or null)]: the parts'
+## and, with turf, its islands' keels.
 func _solids() -> Array:
+	var out := _part_solids()
+	if has_turf(): out.append_array(_keels())
+	return out
+
+## Under each turf island its keel's reach (inside its outline's box).
+func _keels() -> Array:
+	var out: Array = []
+	for spec: Dictionary in turf_islands():
+		if not bool(spec.get("keel",true)): continue
+		var ring: Array = spec.outline
+		var box := Rect2(ring[0],Vector2.ZERO)
+		for p: Vector2 in ring: box = box.expand(p)
+		var high := float(spec.top)
+		out.append([box.grow(-1.0),high-float(spec.depth)*TURF_KEEL_REACH,high,null])
+	return out
+
+## Each solid part as [Rect2 (x, z), bottom, top, ramp (or null)].
+func _part_solids() -> Array:
 	var out: Array = []
 	for p: Array in parts():
 		match p[0]:
@@ -276,7 +383,36 @@ static func materials() -> Dictionary:
 		_materials["water"] = water
 	return _materials
 
+## The turf (its islands, then `dress`), or the grey boxes.
 func build(into: Node3D) -> void:
+	if not has_turf():
+		build_grey(into)
+		return
+	art = into
+	var began := Time.get_ticks_msec()
+	var root := Node3D.new()
+	root.name = slug().to_pascal_case()
+	into.add_child(root)
+	var tone := turf_tone()
+	var specs := turf_islands()
+	for k in range(specs.size()):
+		var spec: Dictionary = (specs[k] as Dictionary).duplicate()
+		if not spec.has("seed"): spec.seed = turf_seed()+k
+		if not spec.has("ground"):
+			var y := float(spec.top)
+			spec.ground = func(_x: float, _z: float) -> float: return y
+		if not spec.has("hang"): spec.hang = true
+		if not spec.has("tone"): spec.tone = tone
+		if not spec.has("collide_sides"): spec.collide_sides = true
+		var land := KitLand.island(spec)
+		land.name = str(spec.name)
+		root.add_child(land)
+		turf(land)
+	dress(root)
+	built_ms = Time.get_ticks_msec()-began
+
+## The grey boxes: the parts as the study draws them.
+func build_grey(into: Node3D) -> void:
 	art = into
 	var began := Time.get_ticks_msec()
 	materials()

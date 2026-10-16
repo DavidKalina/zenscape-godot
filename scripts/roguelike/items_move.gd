@@ -274,7 +274,7 @@ func _bitten(at: Vector3, lip: Dictionary) -> void:
 
 func _drop_rope() -> void:
 	if rope != null and is_instance_valid(rope):
-		if motor.rider == rope: motor.rider = null
+		motor.release(rope)
 		rope.queue_free()
 	rope = null
 

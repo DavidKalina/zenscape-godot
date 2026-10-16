@@ -959,7 +959,6 @@ func board() -> void:
 	for i in range(12):
 		if not _in_stone(): break
 		plane.position += Vector3.UP*2.0
-	plane.velocity = plane.forward()*float(plane.speed)
 	takeoff = null
 	hand_landing.begin(plane)
 	_into_plane()
@@ -982,16 +981,10 @@ func board_parked() -> void:
 	plane = SkyPlane.new()
 	plane.use_game_speed()
 	plane.floor_y = isle_top()-FLOOR_BELOW
-	plane.launch(at,heading,SkyPlane.SLOW,false)
 	var r := PlaneStrip.rest(_floor_from(at.y),Vector2(at.x,at.z),heading)
-	plane.position = Vector3(at.x,r.x,at.z)
-	plane.pitch = r.y
-	plane.bank = r.z
-	plane.speed = 0.0
-	plane.velocity = Vector3.ZERO
+	plane.park(Vector3(at.x,r.x,at.z),heading,r.y,r.z)
 	takeoff = PlaneLanding.new()
 	takeoff.take_off(plane,takeoff_run(Vector2(at.x,at.z),heading,at.y),Callable(self,"floor_at"))
-	plane.engine = 0.0
 	hand_landing.begin(plane,true)
 	_into_plane()
 	# Hopping in from where he stood (the hop run backwards: `hop` 1 out,
@@ -1646,7 +1639,6 @@ func fly_from(at: Vector3, heading: float) -> void:
 	if not flying: return
 	takeoff = null
 	plane.launch(at,heading,plane.cruise(),false)
-	plane.velocity = plane.forward()*float(plane.speed)
 	hand_landing.begin(plane)
 	plane_figure.reset(plane)
 	figure.visible = false
@@ -1846,19 +1838,11 @@ func _bump(was: Vector3) -> bool:
 	if not space.get_rest_info(_plane_query()).is_empty(): plane.position = was+normal*0.6
 	# Failing both (a corner), back where it was, clear last frame.
 	if not space.get_rest_info(_plane_query()).is_empty(): plane.position = was
-	var way: Vector3 = plane.forward()
-	var along := way-normal*way.dot(normal)
-	if along.length() > 0.05:
-		along = along.normalized()
-		var flat := Vector2(along.x,along.z)
-		if flat.length() > 0.05: plane.heading = atan2(-flat.x,-flat.y)
-		plane.pitch = clampf(asin(clampf(along.y,-1.0,1.0)),-0.6,0.6)
+	plane.glance(normal,BUMP_KEEP,SkyPlane.SLOW)
 	# Turned, its wings may reach into the face again: out along it.
 	for i in range(10):
 		if space.get_rest_info(_plane_query()).is_empty(): break
 		plane.position += normal*0.1
-	plane.speed = maxf(SkyPlane.SLOW,float(plane.speed)*BUMP_KEEP)
-	plane.velocity = plane.forward()*float(plane.speed)
 	return true
 
 ## On a top (a face whose normal is up past FLOOR_NORMAL: a ramp, a
@@ -2233,7 +2217,7 @@ func keep_stone() -> void:
 func _inspect_step(delta: float) -> void:
 	_pick += delta
 	motor.velocity = Vector3.ZERO
-	body.drive(motor,delta)
+	body.drive(motor.pose(),delta)
 	_raise_arms(smoothstep(0.0,0.6,_pick))
 	var hold: Vector3 = (body.mitt(0)+body.mitt(1))*0.5+Vector3.UP*HOLD_UP
 	var t := smoothstep(0.15,PICKUP,_pick)

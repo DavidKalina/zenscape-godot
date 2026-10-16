@@ -202,7 +202,6 @@ func live(g: Node) -> void:
 # --- Turf pass: the land and the stone --------------------------------------------------
 
 const GiantStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
-const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 
 const TURF_SEED := 4100
 ## The chest: the carved breastplate between the set-offs and the deck, its
@@ -223,16 +222,10 @@ const HOLE_END := 54.0
 const HAND_DEPTH := 7.0
 const TORSO_DEPTH := 14.0
 const KNEE_DEPTH := 12.0
-## How far a keel's spurs can hang under top-depth (KitLand ring_sides:
-## the last ring 0.92 deep x 1.15, a spur 0.3 more), for the occupancy.
-const KEEL_REACH := 1.4
 ## The forearm beam's thickness under its walked top (m).
 const FOREARM_THICK := 2.6
 ## The thumb's foot (m; the greybox's stood on 0).
 const THUMB_FOOT := 8.0
-
-static func grey() -> bool:
-	return preload("res://scripts/launch_args.gd").user_args().has("--giant-grey")
 
 ## The hand's ground: the fingertip pad, flat at 0 (the knuckles stand on it).
 static func hand_outline() -> Array:
@@ -272,88 +265,40 @@ static func paths() -> Array:
 	return [[Vector2(-12.5,0.0),Vector2(-3.5,0.0)],[Vector2(31.8,0.0),Vector2(36.6,0.0)],
 		[Vector2(55.0,0.0),Vector2(62.0,6.0),Vector2(72.0,8.0),Vector2(84.0,6.0)]]
 
-func flora_site() -> KitFlora.Site:
-	return KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+func grey_flag() -> String:
+	return "--giant-grey"
 
-func flora_seed() -> int:
-	return TURF_SEED+9
+func turf_seed() -> int:
+	return TURF_SEED
 
-## The kit isles' life at its defaults (undergrowth, butterflies, fireflies,
-## the wind's loose bits; no birds or tokens of its own).
-func life_script() -> Script:
-	return null if grey() else KitLife
-
-func warm() -> void:
-	super.warm()
-	if grey(): return
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
-	RuinKit.materials()
-	GiantStone.warm()
-
-## The greybox's solids and the keels under the three islands (their
-## spurs' reach), so the occupancy keeps the generator off the rock.
-func _solids() -> Array:
-	var out := super._solids()
-	if grey(): return out
-	for keel: Array in [[hand_outline(),0.0,HAND_DEPTH],[torso_outline(),Y_ELBOW,TORSO_DEPTH],[knee_outline(),Y_DECK-2.0,KNEE_DEPTH]]:
-		var ring: Array = keel[0]
-		var box := Rect2(ring[0],Vector2.ZERO)
-		for p: Vector2 in ring: box = box.expand(p)
-		out.append([box.grow(-1.0),float(keel[1])-float(keel[2])*KEEL_REACH,float(keel[1]),null])
-	# The forearm beam's underside.
-	out.append([Rect2(9.0,-2.5,14.0,5.0),Y_K3-FOREARM_THICK,Y_END,null])
-	return out
+func turf_paths() -> Array:
+	return paths()
 
 ## Measured headless on the Windows PC (the turf build, 2026-10-13).
-func build_cost() -> int:
-	return 0 if grey() else 750
+func turf_cost() -> int:
+	return 750
 
-## Turf on the tiers, the body in stone.
-func build(into: Node3D) -> void:
-	if grey():
-		super.build(into)
-		return
-	art = into
-	var began := Time.get_ticks_msec()
-	var root := Node3D.new()
-	root.name = "SunkenGiant"
-	into.add_child(root)
-	var tone := KitLook.turf(TURF_SEED,KitLand.wear_of(paths()))
-	var hand := KitLand.island({"outline":hand_outline(),"seed":TURF_SEED,"ground":func(_x: float, _z: float) -> float: return 0.0,
-		"top":0.0,"depth":HAND_DEPTH,"hang":true,"resample":[40.0,90,32],"tone":tone})
-	hand.name = "Hand"
-	var torso := KitLand.island({"outline":torso_outline(),"seed":TURF_SEED+1,"ground":func(x: float, z: float) -> float: return torso_ground(x,z),
-		"top":Y_ELBOW,"depth":TORSO_DEPTH,"cliffs":Rect2(30.5,-14.5,62.5,35.0),"fine":1.2,"hang":true,"resample":[60.0,220,32],"tone":tone})
-	torso.name = "Torso"
-	var knee := KitLand.island({"outline":knee_outline(),"seed":TURF_SEED+2,"ground":func(_x: float, _z: float) -> float: return Y_DECK-2.0,
-		"top":Y_DECK-2.0,"depth":KNEE_DEPTH,"hang":true,"resample":[40.0,100,32],"tone":tone})
-	knee.name = "Knee"
-	for land: Node3D in [hand,torso,knee]:
-		_collide_sides(land)
-		root.add_child(land)
-		turf(land)
+## The greybox's solids, the keels under the three islands and the forearm
+## beam's underside, so the occupancy keeps the generator off the rock.
+func _solids() -> Array:
+	var out := super._solids()
+	if has_turf(): out.append([Rect2(9.0,-2.5,14.0,5.0),Y_K3-FOREARM_THICK,Y_END,null])
+	return out
+
+## Turf on the tiers (their sides collided as drawn: the greybox's masses
+## were solid down to their base, so the headless bodies climbed the
+## giant's flanks to the heads, and a fall past a flank meets it), the body
+## in stone.
+func turf_islands() -> Array:
+	return [
+		{"name":"Hand","outline":hand_outline(),"top":0.0,"depth":HAND_DEPTH,"resample":[40.0,90,32]},
+		{"name":"Torso","outline":torso_outline(),"ground":func(x: float, z: float) -> float: return torso_ground(x,z),
+			"top":Y_ELBOW,"depth":TORSO_DEPTH,"cliffs":Rect2(30.5,-14.5,62.5,35.0),"fine":1.2,"resample":[60.0,220,32]},
+		{"name":"Knee","outline":knee_outline(),"top":Y_DECK-2.0,"depth":KNEE_DEPTH,"resample":[40.0,100,32]},
+	]
+
+func dress(root: Node3D) -> void:
 	_stone(root)
-	built_ms = Time.get_ticks_msec()-began
-
-## An island's hanging sides collided as drawn ("Sides"): KitLand draws
-## them only, and the greybox's masses were solid down to their base, so
-## the headless bodies climbed the giant's flanks to the heads (and a fall
-## past a flank meets it). As the Stair to the Clouds' mesa collides its own.
-static func _collide_sides(land: Node3D) -> void:
-	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
-	if sides == null or sides.mesh == null: return
-	var body := StaticBody3D.new()
-	body.name = "Sides"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(sides.mesh.get_faces())
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	land.add_child(body)
 
 ## The body: drawn as one mesh of the giant's stone, collided as the
 ## greybox's walk boxes.

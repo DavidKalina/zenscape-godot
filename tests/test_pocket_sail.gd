@@ -234,7 +234,7 @@ func _initialize() -> void:
 
 func _step(m: RefCounted, figure: Node3D, ground: Callable, want: Vector2, jump: bool) -> Dictionary:
 	var out: Dictionary = m.step(DT,want,PilotMotor.RUN,jump,ground,slide)
-	figure.drive(m,DT)
+	figure.drive(m.pose(),DT)
 	flew = flew or out.has("fly")
 	return out
 
@@ -317,7 +317,7 @@ func _drop_and_open(m: RefCounted, figure: Node3D, when: float) -> float:
 		jump = due and m.move != "sail" and not jump
 		var fell: float = -m.velocity.y
 		var out: Dictionary = m.step(DT,Vector2(1.0,0.0),PilotMotor.RUN,jump,drop,slide)
-		figure.drive(m,DT)
+		figure.drive(m.pose(),DT)
 		t += DT
 		if out.has("landed"): return maxf(float(out.landed),fell)
 	return INF

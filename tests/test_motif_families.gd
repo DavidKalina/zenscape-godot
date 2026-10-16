@@ -16,10 +16,11 @@ const Fingerprint = preload("res://tests/motif_fingerprint.gd")
 const KitMotif = preload("res://scripts/kit_isle/kit_motif.gd")
 const Ring = preload("res://studies/broken_ring_isle_art.gd")
 
-## Today's isles, hashed before the families were cut (default flags).
+## Today's isles (default flags), hashed before the families were cut and
+## re-recorded as the motifs changed since (at 03040a6f).
 const TODAY := {
-	"colonnade_spine":"26064:480f7f35b61f549190a479b4594e150f",
-	"broken_ring":"3318:ca883fcb72ca9a6b38c320bacd26bc2c",
+	"colonnade_spine":"26064:94f49c4c834c4999862a4aa2eb4c1d18",
+	"broken_ring":"3318:79c7ae1e4e16c664a4f52a5b0aee3731",
 }
 const FAMILIES := {
 	"colonnade_spine":preload("res://scripts/kit_isle/motif_colonnade_spine.gd"),

@@ -478,7 +478,6 @@ func _fly(delta: float) -> void:
 	var level := Vector2(way.x,way.z).length()
 	var heading := atan2(-way.x,-way.z) if level > 0.0001 else float(plane.heading)
 	var climb := way.y/maxf(level,0.0001)
-	plane.position = p
 	var turned := angle_difference(_heading_was,heading)
 	_heading_was = heading
 	plane.heading = heading
@@ -488,9 +487,8 @@ func _fly(delta: float) -> void:
 	plane.pitch = lerpf(float(plane.pitch),aim,1.0-exp(-delta/0.25))
 	# Down the final the wheels' height is planned for the planned pitch;
 	# the nose easing to it keeps them there.
-	if phase != LINE_UP: plane.position.y += PlaneStrip.contact(plane.pitch)-PlaneStrip.contact(_pitch_at(s))
-	plane.speed = v*sqrt(1.0+climb*climb)
-	plane.velocity = Vector3(-sin(heading),climb,-cos(heading))*v
+	if phase != LINE_UP: p.y += PlaneStrip.contact(plane.pitch)-PlaneStrip.contact(_pitch_at(s))
+	plane.carry(p,Vector3(-sin(heading),climb,-cos(heading))*v,v*sqrt(1.0+climb*climb))
 	plane.spin = 0.0
 	plane.rolling = false
 	plane.skimming = false
@@ -526,9 +524,7 @@ func _roll(delta: float) -> void:
 	var pitch := lerpf(FLARE_PITCH,_rest.y,settle)-bounce*0.6
 	plane.pitch = pitch
 	plane.bank = lerpf(float(plane.bank),_rest.z*settle,1.0-exp(-delta/0.2))
-	plane.position = Vector3(p.x,ground+PlaneStrip.contact(pitch)+bounce,p.z)
-	plane.speed = v
-	plane.velocity = dir*v
+	plane.carry(Vector3(p.x,ground+PlaneStrip.contact(pitch)+bounce,p.z),dir*v,v)
 	throttle = -1.0
 	if phase == TOUCHDOWN and time >= BOUNCE_TIME.x+BOUNCE_TIME.y: _enter(ROLLOUT)
 	if phase == ROLLOUT and v <= 0.0:
@@ -549,15 +545,10 @@ func _stop_here() -> void:
 	var p: Vector3 = plane.position
 	_rest = PlaneStrip.rest(floor_at,Vector2(p.x,p.z),float(plane.heading))
 	if is_nan(_rest.x): _rest = Vector4(p.y,PlaneStrip.REST_PITCH,0.0,p.y-PlaneStrip.contact(PlaneStrip.REST_PITCH))
-	plane.position = Vector3(p.x,_rest.x,p.z)
-	plane.pitch = _rest.y
-	plane.bank = _rest.z
-	plane.speed = 0.0
-	plane.velocity = Vector3.ZERO
+	plane.rest_on(Vector3(p.x,_rest.x,p.z),_rest.y,_rest.z)
 
 func _hold() -> void:
-	plane.speed = 0.0
-	plane.velocity = Vector3.ZERO
+	plane.set_pace(0.0)
 
 ## Where the wheels stopped: the plane's rest (Vector4 as PlaneStrip
 ## `rest`).
@@ -631,15 +622,13 @@ func _takeoff(delta: float) -> void:
 			plane.heading = _run_heading
 			plane.pitch = pitch
 			plane.bank = lerpf(float(plane.bank),0.0,1.0-exp(-delta/0.2))
-			plane.speed = v
-			plane.velocity = dir*v
 			_rolled = s
 			if is_nan(ground):
 				# Off the shore: it flies off the edge from here.
-				plane.position = Vector3(p.x,plane.position.y,p.z)
+				plane.carry(Vector3(p.x,plane.position.y,p.z),dir*v,v)
 				_leave(v)
 				return
-			plane.position = Vector3(p.x,ground+PlaneStrip.contact(pitch),p.z)
+			plane.carry(Vector3(p.x,ground+PlaneStrip.contact(pitch),p.z),dir*v,v)
 			var room: float = float(_run.length)-0.5
 			if v >= LIFT_SPEED or (not bool(_run.edge) and s >= maxf(room,0.5)):
 				_lift_from = v
@@ -650,10 +639,8 @@ func _takeoff(delta: float) -> void:
 			var v := lerpf(_lift_from,LEAVE_SPEED,u)
 			var rise := LIFT_CLIMB*smoothstep(0.0,0.6,u)
 			var dir: Vector3 = _run.dir
-			plane.position += dir*v*delta+Vector3.UP*rise*delta
 			plane.pitch = lerpf(float(plane.pitch),atan2(rise,v)+0.08,1.0-exp(-delta/0.2))
-			plane.speed = v
-			plane.velocity = dir*v+Vector3.UP*rise
+			plane.carry(plane.position+(dir*v*delta+Vector3.UP*rise*delta),dir*v+Vector3.UP*rise,v)
 			if time >= LIFT_TIME: _leave(v)
 
 func _leave(v: float) -> void:

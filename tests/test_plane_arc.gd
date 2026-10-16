@@ -7,7 +7,7 @@ extends SceneTree
 ##     and Space by it plays the won't-start beat and doesn't take off;
 ##   - each part is laid by name from its isle's geometry: the wheel on the
 ##     stone circle's east lintel, high, near the plane; the wingtip under
-##     the cloister tarn's deep water; the fin on the serpent's back; the
+##     the cloister tarn's deep water; the fin on the ferry's foredeck; the
 ##     windscreen in the drowned nave's water; the propeller on the
 ##     salvager's rope, its pass by the gate tower's crown never within
 ##     reach of anyone standing on it; the cowl under the belfry's bell;
@@ -15,7 +15,7 @@ extends SceneTree
 ##   - the ledger lists the six as "part" objectives (needs_plane false)
 ##     and the region counts by it;
 ##   - a pickup on foot stamps the ledger at once and rides at his side;
-##     the propeller is snatched off the rope; the fin off the serpent;
+##     the propeller is snatched off the rope; the fin off the ferry's deck;
 ##   - a carried part survives a fall off the isle and a respawn;
 ##   - Space by the plane fits what he carries, one after another, the paint
 ##     cleaning, saved; the save reads back carried and fitted;
@@ -84,10 +84,11 @@ func run() -> void:
 	print("PASS: plane arc" if failures == 0 else "FAIL: plane arc (%d)" % failures)
 	quit(1 if failures > 0 else 0)
 
-## Frames of the scene: the serpent, the arc, the pilot and the figure.
+## Frames of the scene: the serpent (only with --serpent), the arc, the
+## pilot and the figure.
 func _frames(seconds: float) -> void:
 	for i in range(int(round(seconds/DT))):
-		study.sky.serpent.advance(DT)
+		if study.sky.serpent != null: study.sky.serpent.advance(DT)
 		arc.snag.advance(DT)
 		arc.advance(DT)
 		arc.cough.advance(DT)
@@ -180,12 +181,12 @@ func _laid() -> void:
 		var pivot := bell.global_position
 		check(Vector2(cowl.x-pivot.x,cowl.z-pivot.z).length() < 0.05 and pivot.y-cowl.y > Belfry.BELL.y and pivot.y-cowl.y < Belfry.BELL.y+0.6,"The cowl is jammed under the bell (%.2f under its pivot)" % (pivot.y-cowl.y))
 	else: check(false,"The bell spires' belfry stands")
-	# The fin: on the serpent's back.
-	var serpent: Node3D = study.sky.serpent
+	# The fin: on the ferry's foredeck (the game's sky has no serpent).
+	var ferry: Node3D = study.sky.ferry
 	arc.place_fin()
 	var fin: Vector3 = arc.holders.fin.global_position
-	var frame: Transform3D = serpent.ring_frame(arc.fin_ring)
-	check(fin.distance_to(frame.origin) < 4.0 and (fin-frame.origin).dot(frame.basis.y.normalized()) > 0.5,"The tail fin rides the serpent's back (%.1f m off its ring's middle)" % fin.distance_to(frame.origin))
+	var on_deck: Vector3 = PartSpots.on_ferry(ferry).origin if ferry != null else Vector3.INF
+	check(arc.kind("fin") == "ferry" and fin.distance_to(on_deck) < 0.05,"The tail fin lies on the ferry's foredeck (%.2f m off its spot)" % fin.distance_to(on_deck))
 	check(arc.holders.fin.is_in_group(Telescope.GROUP) and arc.holders.wheel.is_in_group(Telescope.GROUP),"The parts glint through the telescope")
 	# The propeller: on the salvager's rope; over a lap its pass comes by the
 	# gate tower's crown but never in reach of anyone standing on it.
@@ -324,7 +325,7 @@ func _fin() -> void:
 	var fin: Node3D = arc.holders.fin
 	study.place(fin.global_position+Vector3.DOWN*0.55,Vector2(0.0,-1.0))
 	arc.touch(study.motor.feet+Vector3.UP*0.55)
-	check(arc.state.fin == "carried" and book.is_done("aqueduct_isle/fin") and arc.fin_holder() == null,"On the serpent's back he takes the tail fin")
+	check(arc.state.fin == "carried" and book.is_done("aqueduct_isle/fin") and arc.fin_holder() == null,"On the ferry's deck he takes the tail fin")
 
 func _round_trip() -> void:
 	var b: Node = LedgerScript.new()

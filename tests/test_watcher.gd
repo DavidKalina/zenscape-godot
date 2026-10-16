@@ -1,10 +1,13 @@
 extends SceneTree
 ## The watcher (scripts/kit_isle/watcher.gd, docs/design/watcher/round1.md),
-## headless, on the aqueduct isle with --watcher: he stands on the south
-## rim's turf near the start; with the serpent coming home in sight he
-## turns to its find and holds his telescope up on it; the find glints
-## through the pilot's telescope aimed his way, and not once it's down;
-## near him his line streams in; on foot at the find, it's taken.
+## headless, on the aqueduct isle with --watcher (and --plane-arc: a script
+## run otherwise starts the plane repaired): he stands on the south rim's
+## turf near the start; his find is the plane's tail fin on the ferry's
+## foredeck (docs/design/airship-ferry/round2.md; the game's sky has no
+## serpent); with the ferry coming home in sight he turns to it and holds
+## his telescope up on it; the find glints through the pilot's telescope
+## aimed his way, and not once it's down; near him his line streams in; on
+## foot at the find, it's taken.
 ##   godot --headless --path . --script tests/test_watcher.gd
 const DT := 1.0/60.0
 const Telescope = preload("res://scripts/telescope.gd")
@@ -22,7 +25,7 @@ func check(ok: bool, label: String) -> void:
 
 func run() -> void:
 	create_timer(150.0).timeout.connect(func() -> void: push_error("watcher test timed out"); quit(2))
-	LaunchArgs.set_override(["--no-title","--watcher"])
+	LaunchArgs.set_override(["--no-title","--watcher","--plane-arc"])
 	study = load("res://studies/aqueduct_isle.tscn").instantiate()
 	study.scripted = true
 	study.chain_on = false
@@ -31,10 +34,11 @@ func run() -> void:
 	while not study.isle_up: await process_frame
 	await physics_frame
 	watcher = study.watcher
-	check(watcher != null and watcher.find != null,"With --watcher he stands, the find on the serpent")
-	if watcher == null:
+	check(watcher != null and watcher.find != null and watcher.find == study.plane_arc.fin_holder(),"With --watcher he stands, the find the tail fin on the ferry")
+	if watcher == null or study.sky.ferry == null:
 		quit(1)
 		return
+	study.sky.ferry.manual = true
 	_stands()
 	_tracks()
 	_glints()
@@ -44,10 +48,10 @@ func run() -> void:
 	print("PASS: watcher" if failures == 0 else "FAIL: watcher (%d)" % failures)
 	quit(1 if failures > 0 else 0)
 
-## Frames of the serpent, his frame and the scene's.
+## Frames of the ferry, his frame and the scene's.
 func _frames(seconds: float) -> void:
 	for i in range(int(round(seconds/DT))):
-		study.sky.serpent.advance(DT)
+		study.sky.ferry.step(DT)
 		watcher._process(DT)
 		study.tick(DT)
 
@@ -58,14 +62,12 @@ func _stands() -> void:
 	check(absf(at.y-30.0) < 2.0 and at.z > 10.0,"On the south rim's turf (%s)" % at)
 
 func _tracks() -> void:
-	var serpent: Node3D = study.sky.serpent
-	var home := float(serpent.marks()["home"])
-	serpent.place(fposmod(home+60.0,float(serpent.route_length)))
-	study.sky.route.rider.reset()
+	var ferry: Node3D = study.sky.ferry
+	ferry.set_clock(ferry.clock_before("home",30.0))
 	_frames(4.0)
 	var to: Vector3 = watcher.find.global_position-watcher.eye()
 	var off := rad_to_deg(watcher.gaze().angle_to(to))
-	check(watcher.sees and watcher.state in ["watch","rest"],"The serpent coming home, he sees the find (%s, %.0f m)" % [watcher.state,to.length()])
+	check(watcher.sees and watcher.state in ["watch","rest"],"The ferry coming home, he sees the find (%s, %.0f m)" % [watcher.state,to.length()])
 	var worst := 0.0
 	var up_frames := 0
 	for i in range(180):
@@ -97,7 +99,7 @@ func _line() -> void:
 	_frames(0.6)
 	check(watcher.speaking() and watcher.state == "rest","Near him his line starts and he lowers it (%s)" % watcher.state)
 	var chars := int(watcher._line.visible_characters)
-	check(chars > 0 and chars < watcher.LINE.length(),"It streams in (%d of %d)" % [chars,watcher.LINE.length()])
+	check(chars > 0 and chars < watcher.FERRY_LINE.length(),"It streams in (%d of %d)" % [chars,watcher.FERRY_LINE.length()])
 	check(not study.get_tree().paused,"Nothing pauses")
 	study.place(watcher.global_position+Vector3(14.0,0.0,-8.0),Vector2(1.0,0.0))
 	_frames(1.0)
@@ -109,4 +111,4 @@ func _take() -> void:
 	watcher._check_take()
 	check(watcher.taken and watcher.find == null and watcher.state == "done","At the find on foot, it's taken")
 	var moments: Node = study.get("_moments")
-	check(moments != null and str(moments.last_pop).contains("serpent"),"A moments pop says so (%s)" % (moments.last_pop if moments != null else ""))
+	check(moments != null and str(moments.last_pop).contains("tail fin"),"A moments pop says so (%s)" % (moments.last_pop if moments != null else ""))

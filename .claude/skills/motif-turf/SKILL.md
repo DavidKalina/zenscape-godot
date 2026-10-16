@@ -17,11 +17,17 @@ card to isle"). Two inputs, two jobs:
 
 Either way the motif lives in one data table, in `studies/greybox/<slug>.gd`
 (a round 1 study only) or as `scripts/kit_isle/greybox/gb_<slug>.gd` on
-`motif_greybox.gd`. If it is a `gb_` motif, work **in place**: override `build` (and `warm`, `flora_site`,
-`flora_seed`, `life_script`, `build_cost`, `_solids`) in `gb_<slug>.gd`,
-keep `parts()`/LAYOUT as the data the occupancy is computed from, and keep
-the grey path behind a flag (`--giant-grey` style) for A/B checks. Never
-change `motif_greybox.gd` for one motif.
+`motif_greybox.gd`. If it is a `gb_` motif, work **in place** in
+`gb_<slug>.gd` and answer the base's turf hooks: `turf_seed()`,
+`turf_islands()` (KitLand specs plus `name`), `turf_paths()`,
+`turf_cost()`, `dress(root)` for the stone and water, and `grey_flag()`
+(`--giant-grey` style) for the A/B grey path. The base then builds the
+islands with their sides collided, adds their keels to the occupancy and
+answers `warm`, `flora_site`, `flora_seed`, `life_script` and
+`build_cost` (gb_plumb_well.gd is the small example). Override `build`
+only where the land diverges, and ask KitLand for `"collide_sides": true`
+there. Keep `parts()`/LAYOUT as the data the occupancy is computed from.
+Never change `motif_greybox.gd` for one motif.
 
 1. One agent per motif. **Opus** for a remake (terrain and routes move
    under the real motor) or when it needs a new kit piece, collision or
@@ -67,9 +73,9 @@ change `motif_greybox.gd` for one motif.
    leans out 0.15-0.25 m at its foot (1.6 m step) to 0.5-0.75 m (6 m), its
    lip stays put; the sides push out up to 0.4 m under the lip. Rays that
    start inside a walk box pass through it (Jolt): probe from above.
-4. The occupancy: add the keels (and any body hanging under its greybox
-   base) to `_solids`, at the spurs' reach (about 1.4 x depth under the
-   datum).
+4. The occupancy: the islands' keels come from `turf_islands()` (at the
+   spurs' reach, 1.4 x depth under the top); add any other body hanging
+   under its greybox base in `_solids` (`super._solids()` first).
 5. Flora and life come almost free: `turf(land)` each island, a
    `flora_site` with worn paths, and `life_script` the plain
    `scripts/kit_isle/kit_life.gd` (undergrowth, butterflies, fireflies,

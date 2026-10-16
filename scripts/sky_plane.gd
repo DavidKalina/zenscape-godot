@@ -193,6 +193,34 @@ func resume(pace: float, nose: float) -> void:
 	_roll_time = 0.0
 	velocity = forward()*speed
 
+## Parked at `at` on its wheels: nose on `towards`, sat at `nose` and
+## `lean` (PlaneStrip `rest`'s pitch and bank), stopped, the engine off,
+## everything else as launch leaves it (the parked plane boarded, studies/
+## kit_isle.gd `board_parked`).
+func park(at: Vector3, towards: float, nose: float, lean: float) -> void:
+	launch(at,towards,SLOW,false)
+	rest_on(at,nose,lean)
+	engine = 0.0
+
+## Sat still on its wheels at `at`, `nose` and `lean` (its heading kept):
+## stopped, velocity nothing. A landing's stop (scripts/plane_landing.gd).
+func rest_on(at: Vector3, nose: float, lean: float) -> void:
+	position = at
+	pitch = nose
+	bank = lean
+	set_pace(0.0)
+
+## Carried along a path from outside (a landing's or takeoff's scripted
+## run, a ground roll; scripts/plane_landing.gd, scripts/manual_landing.gd):
+## at `at`, moving at `moving` (m/s, the path's, not the nose's: on the
+## wheels or flown in, the nose need not point the way it goes) and `pace`
+## m/s along the path. Its attitude (heading, pitch, bank) is the caller's.
+## The one setter that does not keep velocity along the nose.
+func carry(at: Vector3, moving: Vector3, pace: float) -> void:
+	position = at
+	velocity = moving
+	speed = pace
+
 ## The drift strength asked for on the command line (`--drift=<x>`), else 1.
 static func drift_flag(args: PackedStringArray) -> float:
 	for arg in args:

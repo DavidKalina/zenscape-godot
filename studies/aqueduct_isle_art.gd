@@ -29,6 +29,7 @@ extends RefCounted
 ## less 100), y over the island.
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const PathDirt = preload("res://scripts/kit_isle/path_dirt.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Build = RuinKit.Build
@@ -753,13 +754,18 @@ const PATHS := [
 ]
 static var _paths: Array = []
 
-## How worn the ground is at `at` (0 off the paths, 1 on their middle).
-static func path_wear(at: Vector2) -> float:
+## The worn paths (world polylines): PATHS and the way up the hill.
+static func paths() -> Array:
 	if _paths.is_empty():
 		_paths = PATHS.duplicate()
 		var hill: Array = way_up().slice(1)
 		hill.pop_back()
 		_paths.append(hill)
+	return _paths
+
+## How worn the ground is at `at` (0 off the paths, 1 on their middle).
+static func path_wear(at: Vector2) -> float:
+	paths()
 	var best := INF
 	for path: Array in _paths:
 		for i in range(path.size()-1):
@@ -890,7 +896,9 @@ const BOULDERS := 22
 ## (scripts/kit_isle/kit_land.gd `island`).
 static func island(outline: Array, depth: float, seed_value: int, flat: Callable, top := TOP, hill := false) -> Node3D:
 	var spec := {"outline":outline,"depth":depth,"seed":seed_value,"ground":flat,"top":top,
-		"tone":KitLook.turf(seed_value,func(p: Vector2) -> float: return path_wear(p))}
+		# The paths' wear is drawn per pixel by the ground (scripts/kit_isle/
+		# path_dirt.gd) unless --vertex-paths bakes it in as before.
+		"tone":KitLook.turf(seed_value,func(p: Vector2) -> float: return path_wear(p) if PathDirt.baked() else 0.0)}
 	if hill:
 		var box := Rect2(HILL.x-23.0,HILL.y-23.0,EAST_FACE+1.0-(HILL.x-23.0),46.0)
 		# Probed off the round numbers (the isle's axis is z 0): no row of

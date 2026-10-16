@@ -1249,15 +1249,7 @@ func _bump(was: Vector3) -> void:
 	query.transform = Transform3D(turn,_plane_flight.position)
 	if not space.get_rest_info(query).is_empty(): _plane_flight.position = was+normal*0.6
 	# Turned along the face, eased level against a floor or ceiling.
-	var way: Vector3 = _plane_flight.forward()
-	var along := way-normal*way.dot(normal)
-	if along.length() > 0.05:
-		along = along.normalized()
-		var flat := Vector2(along.x,along.z)
-		if flat.length() > 0.05: _plane_flight.heading = atan2(-flat.x,-flat.y)
-		_plane_flight.pitch = clampf(asin(clampf(along.y,-1.0,1.0)),-0.6,0.6)
-	_plane_flight.speed = maxf(SkyPlane.SLOW,float(_plane_flight.speed)*BUMP_KEEP)
-	_plane_flight.velocity = _plane_flight.forward()*float(_plane_flight.speed)
+	_plane_flight.glance(normal,BUMP_KEEP,SkyPlane.SLOW)
 
 ## Whether a point is inside stone (the camera stays out of it).
 func _inside_stone(p: Vector3) -> bool:

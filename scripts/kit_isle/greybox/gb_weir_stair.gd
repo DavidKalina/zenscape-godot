@@ -740,10 +740,7 @@ func life_script() -> Script:
 	return null if Underground.on() else KitLife
 
 func warm() -> void:
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
+	warm_look()
 	CityStone.warm()
 	Hang.warm()
 	for k: String in CityStone.WEAR: CityStone.wear(k)
@@ -773,10 +770,9 @@ func build(into: Node3D) -> void:
 	for p: Vector2 in poly: box = box.expand(p)
 	var land := KitLand.island({"outline":poly,"seed":SEED+1,"ground":func(x: float, z: float) -> float: return cliff_ground(x,z),
 		"top":head_y(),"depth":head_y()+8.0,"hang":true,"resample":[200.0,220,64],"cell":2.0,
-		"cliffs":box.grow(2.0),"cliff_drop":0.55,"tone":KitLook.turf(SEED+1,KitLand.wear_of(paths()))})
+		"cliffs":box.grow(2.0),"cliff_drop":0.55,"tone":KitLook.turf(SEED+1,KitLand.wear_of(paths())),"collide_sides":true})
 	land.name = "HeadAndRib"
 	root.add_child(land)
-	_collide_sides(land)
 	turf(land)
 	pieces.head = land
 	# The far isle.
@@ -785,10 +781,9 @@ func build(into: Node3D) -> void:
 	for p: Vector2 in fpoly: fbox = fbox.expand(p)
 	var far := KitLand.island({"outline":fpoly,"seed":SEED+4,"ground":func(x: float, z: float) -> float: return far_ground(x,z),
 		"top":float(LAYOUT.far.y)+float(LAYOUT.far.shelf[2]),"depth":40.0,"hang":true,"resample":[200.0,160,48],"cell":2.0,
-		"cliffs":fbox.grow(2.0),"cliff_drop":0.55,"tone":KitLook.turf(SEED+4,KitLand.wear_of(paths()))})
+		"cliffs":fbox.grow(2.0),"cliff_drop":0.55,"tone":KitLook.turf(SEED+4,KitLand.wear_of(paths())),"collide_sides":true})
 	far.name = "FarIsle"
 	root.add_child(far)
-	_collide_sides(far)
 	turf(far)
 	pieces.far = far
 	# The stacks in the gap.
@@ -796,10 +791,9 @@ func build(into: Node3D) -> void:
 	for st: Array in LAYOUT.stacks:
 		var sy := float(st[3])
 		var stack := KitLand.island({"outline":KitLand.blob(Vector2(float(st[0]),float(st[1])),float(st[2]),SEED+6+si),"seed":SEED+6+si,
-			"ground":func(_x: float, _z: float) -> float: return sy,"top":sy,"depth":30.0,"hang":true,"resample":[24.0,30,20],"cell":1.0,"tone":KitLook.turf(SEED+6+si)})
+			"ground":func(_x: float, _z: float) -> float: return sy,"top":sy,"depth":30.0,"hang":true,"resample":[24.0,30,20],"cell":1.0,"tone":KitLook.turf(SEED+6+si),"collide_sides":true})
 		stack.name = "Stack%d" % si
 		root.add_child(stack)
-		_collide_sides(stack)
 		turf(stack)
 		si += 1
 	_caps(root)
@@ -1601,20 +1595,6 @@ static func _oshape(body: StaticBody3D, xf: Transform3D, size: Vector3) -> void:
 	c.shape = s
 	c.transform = xf
 	body.add_child(c)
-
-## An island's hanging sides collided as drawn (the bodies climb them).
-static func _collide_sides(land: Node3D) -> void:
-	var mesh := land.get_node_or_null("Mesh") as MeshInstance3D
-	if mesh == null or mesh.mesh == null: return
-	var body := StaticBody3D.new()
-	body.name = "Sides"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(mesh.mesh.get_faces())
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	land.add_child(body)
 
 func _triangles() -> int:
 	var n := 0

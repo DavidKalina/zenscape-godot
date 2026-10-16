@@ -209,7 +209,6 @@ func live(g: Node) -> void:
 ## mystery). `--well-grey` builds the grey boxes instead (A/B checks).
 
 const GiantStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
-const KitLife = preload("res://scripts/kit_isle/kit_life.gd")
 
 const TURF_SEED := 4400
 ## The islands' keels (m under their tops).
@@ -217,8 +216,6 @@ const CAP_DEPTH := 3.0
 const FOOT_DEPTH := 8.0
 const TERRACE_DEPTH := 5.0
 const LANDING_DEPTH := 6.0
-## A keel's spurs reach about this times its depth (KitLand ring_sides).
-const KEEL_REACH := 1.4
 ## Oculus 1's stone collar (m round the hole) and how far the cap's turf
 ## keeps back from the hole under it: the turf's wobbled edge stays under
 ## the collar, so the hole's edge is the collar's, exact.
@@ -226,9 +223,6 @@ const COLLAR := 1.2
 const TURF_BACK := 0.8
 ## The collar stands this proud of the turf (no z-fight).
 const PROUD := 0.03
-
-static func grey() -> bool:
-	return preload("res://scripts/launch_args.gd").user_args().has("--well-grey")
 
 static func cap_top() -> float:
 	return float(PLATES[0].top)
@@ -264,85 +258,40 @@ static func paths() -> Array:
 	return [[Vector2(0.0,-13.0),Vector2(0.0,7.0)],[Vector2(-2.4,5.0),Vector2(-2.4,-3.5)],
 		[Vector2(15.0,-9.2),Vector2(26.0,-10.0)]]
 
+func grey_flag() -> String:
+	return "--well-grey"
+
+func turf_seed() -> int:
+	return TURF_SEED
+
+func turf_paths() -> Array:
+	return paths()
+
+## Measured headless (the turf build).
+func turf_cost() -> int:
+	return 350
+
 func flora_site() -> KitFlora.Site:
-	var site := KitFlora.Site.new(top(),KitLand.wear_of(paths()))
+	var site := super.flora_site()
 	# Rays from over the cap down past the landing (the plates are stone).
 	site.ray = Vector2(top()+60.0,LANDING_Y-8.0)
 	return site
 
-func flora_seed() -> int:
-	return TURF_SEED+9
-
-func life_script() -> Script:
-	return null if grey() else KitLife
-
-func warm() -> void:
-	super.warm()
-	if grey(): return
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
+func warm_turf() -> void:
+	warm_look()
 	GiantStone.warm()
 
-## The greybox's solids and the islands' keels (their spurs' reach).
-func _solids() -> Array:
-	var out := super._solids()
-	if grey(): return out
-	for keel: Array in [[cap_outline(),cap_top(),CAP_DEPTH],[foot_outline(),0.0,FOOT_DEPTH],
-			[terrace_outline(),TERRACE_Y,TERRACE_DEPTH],[landing_outline(),LANDING_Y,LANDING_DEPTH]]:
-		var ring: Array = keel[0]
-		var box := Rect2(ring[0],Vector2.ZERO)
-		for p: Vector2 in ring: box = box.expand(p)
-		out.append([box.grow(-1.0),float(keel[1])-float(keel[2])*KEEL_REACH,float(keel[1]),null])
-	return out
-
-## Measured headless (the turf build).
-func build_cost() -> int:
-	return 0 if grey() else 350
-
-func build(into: Node3D) -> void:
-	if grey():
-		super.build(into)
-		return
-	art = into
-	var began := Time.get_ticks_msec()
-	var root := Node3D.new()
-	root.name = "PlumbWell"
-	into.add_child(root)
-	var tone := KitLook.turf(TURF_SEED,KitLand.wear_of(paths()))
-	var lands := [
-		["Cap",cap_outline(),cap_top(),CAP_DEPTH,[90.0,220,64]],
-		["Foot",foot_outline(),0.0,FOOT_DEPTH,[60.0,120,40]],
-		["Terrace",terrace_outline(),TERRACE_Y,TERRACE_DEPTH,[50.0,90,32]],
-		["Landing",landing_outline(),LANDING_Y,LANDING_DEPTH,[50.0,90,32]],
+## The islands, flat at the greybox's tops (their keels in the occupancy).
+func turf_islands() -> Array:
+	return [
+		{"name":"Cap","outline":cap_outline(),"top":cap_top(),"depth":CAP_DEPTH,"resample":[90.0,220,64]},
+		{"name":"Foot","outline":foot_outline(),"top":0.0,"depth":FOOT_DEPTH,"resample":[60.0,120,40]},
+		{"name":"Terrace","outline":terrace_outline(),"top":TERRACE_Y,"depth":TERRACE_DEPTH,"resample":[50.0,90,32]},
+		{"name":"Landing","outline":landing_outline(),"top":LANDING_Y,"depth":LANDING_DEPTH,"resample":[50.0,90,32]},
 	]
-	for k in range(lands.size()):
-		var spec: Array = lands[k]
-		var y: float = spec[2]
-		var land := KitLand.island({"outline":spec[1],"seed":TURF_SEED+k,"ground":func(_x: float, _z: float) -> float: return y,
-			"top":y,"depth":float(spec[3]),"hang":true,"resample":spec[4],"tone":tone})
-		land.name = str(spec[0])
-		_collide_sides(land)
-		root.add_child(land)
-		turf(land)
-	_stone(root)
-	built_ms = Time.get_ticks_msec()-began
 
-## An island's hanging sides collided as drawn (the giant's rule: the
-## greybox's plates were solid to their bottoms).
-static func _collide_sides(land: Node3D) -> void:
-	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
-	if sides == null or sides.mesh == null: return
-	var body := StaticBody3D.new()
-	body.name = "Sides"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(sides.mesh.get_faces())
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	land.add_child(body)
+func dress(root: Node3D) -> void:
+	_stone(root)
 
 ## The shaft's masonry: drawn as one mesh of cut stone, collided as the
 ## greybox's walk boxes.

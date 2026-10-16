@@ -1,6 +1,6 @@
 ---
 name: iterate
-description: Run a build as a loop of fresh agents, one task each, remembered through a commit trail, until the spec is done. Use for builds that span several stages or would run long in one agent (a place study, a dressing pass, a big feature), or when the user asks to iterate, loop or run something in iterations.
+description: Run a build as parallel lanes (independent parts, one agent each) and a loop of fresh agents for the steps that must come in order, one task each, remembered through a commit trail, until the spec is done. Use for builds that span several stages or would run long in one agent (a place study, a dressing pass, a big feature), or when the user asks to iterate, loop or run something in iterations.
 ---
 
 # Iterate
@@ -12,6 +12,27 @@ context, and every step is one commit you can read, revert or resume from.
 
 Single short jobs (cards, plans, a quick fix) stay one agent; they gain
 nothing from a loop.
+
+## Split first
+
+A loop runs one agent at a time, so only use it for work that has to come
+in order. Before setting up, split the spec:
+
+- **Lanes:** parts that don't need each other (one kit piece, one enemy,
+  one isle) and fit in one agent each. Run every lane at once, one agent
+  per lane, each in its own worktree branched from the loop's branch
+  (`lane/<part>`). A lane too big for one agent runs as its own short loop.
+- **The trunk:** the steps that need the lanes merged (a place built from
+  the pieces, its routes, its stills), in order. This is the loop.
+
+Brief each lane to keep its code in its own new file and its edits to
+shared files (family lists, connector tables, editor build paths) small and
+additive, and to end its commit with **Notes for merge**: the shared lines
+it touched. Lane commits carry the loop's prefix, `ITER(<slug>): lane
+<part>: <task>`. When the lanes land, merge them into the loop's branch
+yourself, joining the shared lines, run the smoke checks, and commit the
+merge under the prefix. Then run the trunk. Write the lanes and the trunk
+into the spec so every iteration knows which pieces are built elsewhere.
 
 ## Set up
 
@@ -26,12 +47,26 @@ nothing from a loop.
 4. **The model** per AGENTS.md, Subagent models: the same for every
    iteration of the loop.
 5. **The cap.** 12 iterations unless the user says otherwise.
+6. **The budget.** Each agent's context: a budget, 150000 tokens unless
+   the user says otherwise (an agent starts near 20000), and a wrap-up
+   buffer past it, a quarter of the budget unless set
+   (`ITER-BUDGET: 200000 +40000`). The `ITER-BUDGET:` line in its launch
+   prompt opts it into the hook in `.claude/settings.json`
+   (`.claude/skills/iterate/iter_budget.py`). Past the budget every call
+   still runs, and after each one the agent is told to wrap up: finish the
+   run in progress, start nothing new, commit and hand back. Past budget +
+   buffer every call but git and the hand-back is denied. That is what
+   keeps any one task inside the budget: an agent that runs out commits what
+   works and the next fresh agent carries on from its Notes. Lanes carry
+   the line too.
 
 ## Run
 
 For each iteration, launch one **new** agent in the background (never resume
 an earlier one: a fresh context is the point) with
-[iteration.md](iteration.md), filling in SLUG, SPEC and WORKTREE. When it
+[iteration.md](iteration.md) filled in (SLUG, SPEC, WORKTREE, TOKENS: the budget) as its
+prompt: the text itself, not a pointer to a file, since the hook reads the
+`ITER-BUDGET` line from the launch prompt. When it
 comes back:
 
 - Read its last line: `<promise>COMPLETE</promise>`, `<promise>ABORT</promise>`
@@ -44,7 +79,8 @@ comes back:
 
 Then:
 
-- **No token, a good commit:** launch the next iteration.
+- **No token, a good commit** (a budget stop included): launch the next
+  iteration.
 - **ABORT:** stop. Bring the blocker to the user.
 - **No commit, or the same task twice without progress:** stop. Tell the
   user what it tried.

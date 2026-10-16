@@ -215,6 +215,39 @@ func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 func forward() -> Vector3:
 	return Vector3(-sin(heading)*cos(pitch),sin(pitch),-cos(heading)*cos(pitch))
 
+# --- Set from outside ----------------------------------------------------------------
+# Each of these leaves `velocity` along the nose at `speed` (forward()*speed),
+# as launch does, so nothing outside restates that. `step` makes its own
+# velocity (wind, lift, the slip) on the next frame.
+
+## Flying on at `pace` m/s (as given, not clamped), the way it points.
+func set_pace(pace: float) -> void:
+	speed = pace
+	velocity = forward()*speed
+
+## Put at `at`, nose on `towards` (the scene's yaw) and `nose` (pitch, up
+## positive), flying on at `pace` m/s. Nothing else about it is reset (its
+## controls, its roll, its air), unlike launch.
+func place(at: Vector3, towards: float, nose: float, pace: float) -> void:
+	position = at
+	heading = towards
+	pitch = nose
+	set_pace(pace)
+
+## Glanced off a face (`normal`, out of it) it has flown into: the nose
+## turned along the face and eased to within 0.6 rad of level, `keep` of
+## its speed kept, never under `least` m/s. Never a crash. Moving it back
+## out of the face is the caller's (it knows the solid).
+func glance(normal: Vector3, keep: float, least: float) -> void:
+	var way := forward()
+	var along := way-normal*way.dot(normal)
+	if along.length() > 0.05:
+		along = along.normalized()
+		var flat := Vector2(along.x,along.z)
+		if flat.length() > 0.05: heading = atan2(-flat.x,-flat.y)
+		pitch = clampf(asin(clampf(along.y,-1.0,1.0)),-0.6,0.6)
+	set_pace(maxf(least,speed*keep))
+
 ## One step. `input` holds:
 ##   turn, pitch: -1..1 held rates (keys, stick), right and nose-up positive;
 ##   look: Vector2 of radians to turn and pitch directly (the mouse);

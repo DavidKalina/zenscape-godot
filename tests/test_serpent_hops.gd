@@ -35,14 +35,15 @@ func check(ok: bool, label: String) -> void:
 
 func run() -> void:
 	create_timer(300.0).timeout.connect(func() -> void: push_error("serpent hops test timed out"); quit(2))
-	LaunchArgs.set_override(["--no-life","--no-flora"])
+	# The serpent is out of the game's sky unless --serpent asks for it.
+	LaunchArgs.set_override(["--no-life","--no-flora","--serpent"])
 	study = load("res://studies/aqueduct_isle.tscn").instantiate()
 	study.scripted = true
 	root.add_child(study)
 	current_scene = study
 	while not study.isle_up: await process_frame
 	route = study.sky.get("route")
-	check(route != null,"The serpent flies the route between the isles")
+	check(route != null,"With --serpent the serpent flies the route between the isles")
 	if route == null:
 		_finish()
 		return

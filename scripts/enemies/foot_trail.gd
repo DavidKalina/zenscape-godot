@@ -19,13 +19,14 @@ extends RefCounted
 ## facing by the short way, the states the earlier sample's), with the
 ## sample index it came from (`i`), so a reader can visit every footprint
 ## it passes (`since(i0, i1)`). `pose(puppet, sample)` sets a stand-in
-## motor (a PilotMotor.new() that is never stepped) to the sample, so a
+## pose (scripts/pilot_pose.gd) to the sample, so a
 ## PilotFigure drives off it and plays the wanderer's own clips.
 ##
 ## Samples older than `keep` s behind the newest are let go (a reader that
 ## lags further reads the oldest kept). Plain dictionaries in an Array,
 ## trimmed in chunks: a minute at 60 Hz is 3600 small dictionaries.
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
+const PilotPose = preload("res://scripts/pilot_pose.gd")
 
 ## Seconds kept behind the newest sample.
 const KEEP := 30.0
@@ -166,9 +167,9 @@ func _at(x: float, key: String) -> Dictionary:
 	if String(a.hold) == String(b.hold): out["hold_t"] = lerpf(float(a.hold_t),float(b.hold_t),u)
 	return out
 
-## `puppet` (a PilotMotor never stepped) set to `s`, for a PilotFigure to
+## `puppet` (a stand-in pose, scripts/pilot_pose.gd) set to `s`, for a PilotFigure to
 ## draw: its feet, pace, facing and state.
-static func pose(puppet: Object, s: Dictionary) -> void:
+static func pose(puppet: PilotPose, s: Dictionary) -> void:
 	puppet.feet = s.feet
 	puppet.velocity = s.vel
 	puppet.facing = float(s.facing)

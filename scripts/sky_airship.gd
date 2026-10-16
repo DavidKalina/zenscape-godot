@@ -40,6 +40,10 @@ const IslanderFigure = preload("res://scripts/islander_figure.gd")
 const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const SURFACE := preload("res://shaders/airship_surface.gdshader")
 const HALO := preload("res://shaders/cluster_halo.gdshader")
+## The grime's cells a metre on the ship and how heavy it lies (shaders/
+## craft_grime.gdshaderinc): a big canvas seen far off takes it strong.
+const GRIT_SCALE := 0.9
+const GRIT := 1.7
 
 ## Seconds of open sky before the first event (least, most) and between
 ## events after.
@@ -912,9 +916,12 @@ func _make_ship() -> void:
 	if _ship != null: return
 	var solid := ShaderMaterial.new()
 	solid.shader = SURFACE
-	solid.set_shader_parameter("fill",1.25)
-	solid.set_shader_parameter("rim",0.45)
+	solid.set_shader_parameter("fill",1.5)
+	solid.set_shader_parameter("rim",0.18)
 	solid.set_shader_parameter("roughness_value",0.85)
+	solid.set_shader_parameter("grit_scale",GRIT_SCALE)
+	solid.set_shader_parameter("grit",GRIT)
+	solid.set_shader_parameter("grit_grade",0.4)
 	_line_material = solid
 	_ship = Node3D.new()
 	_ship.name = "Ship"

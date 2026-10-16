@@ -86,6 +86,65 @@ static func area(ring: Array) -> float:
 		s += a.x*b.y-b.x*a.y
 	return s*0.5
 
+## Outline checks (`island` warns, the build never reads them). The
+## builder takes either winding (`outward` asks, KitFlora takes |area|),
+## and the isles wind both ways: the aqueduct isle's and many greyboxes'
+## run clockwise (`area` < 0), Geometry2D's clip/merge/offset hand back
+## boundaries counter-clockwise (`area` > 0) and holes clockwise. So a
+## winding is checked only where a spec says which it means (`winding`
+## 1 or -1): a clipped piece that is a hole, or a list reversed, then warns.
+## False: `island` checks nothing.
+static var check_outlines := true
+
+## What is wrong with `outline` (x, z points) as a land's outline, one
+## line each (none: nothing): too few points or no area, edges crossing
+## (a bowtie or a fold: the land's inside is ambiguous) and, with
+## `winding` 1 (counter-clockwise, `area` > 0, Geometry2D's boundary) or
+## -1 (clockwise), wound the other way.
+static func outline_problems(outline: Array, winding := 0) -> PackedStringArray:
+	var out := PackedStringArray()
+	var n := outline.size()
+	if n < 3:
+		out.append("%d points, not a ring" % n)
+		return out
+	var a := area(outline)
+	if absf(a) < 1e-6:
+		out.append("no area")
+		return out
+	var crossing := _first_crossing(outline)
+	if not crossing.is_empty():
+		out.append("self-intersecting: edge %d crosses edge %d near (%.1f, %.1f)" % [crossing[0],crossing[1],(crossing[2] as Vector2).x,(crossing[2] as Vector2).y])
+	elif winding != 0 and signf(a) != signf(winding):
+		out.append("reversed: %s, signed area %.1f m², the spec wants %s (a clipped hole, or the list reversed)" % ["clockwise" if a < 0.0 else "counter-clockwise",a,"counter-clockwise" if winding > 0 else "clockwise"])
+	return out
+
+## Edges i and j of `ring` that cross (not neighbours) and where: [i, j,
+## point], or [] when none do. Edges are swept along x, so a long ring
+## checks only the edges whose x spans overlap.
+static func _first_crossing(ring: Array) -> Array:
+	var n := ring.size()
+	var spans: Array = []
+	for i in range(n):
+		var p: Vector2 = ring[i]
+		var q: Vector2 = ring[(i+1)%n]
+		spans.append([minf(p.x,q.x),maxf(p.x,q.x),i])
+	spans.sort_custom(func(u: Array, v: Array) -> bool: return float(u[0]) < float(v[0]))
+	for s in range(spans.size()):
+		var i: int = spans[s][2]
+		var a0: Vector2 = ring[i]
+		var a1: Vector2 = ring[(i+1)%n]
+		for t in range(s+1,spans.size()):
+			if float(spans[t][0]) > float(spans[s][1]): break
+			var j: int = spans[t][2]
+			if absi(i-j) <= 1 or absi(i-j) == n-1: continue
+			var b0: Vector2 = ring[j]
+			var b1: Vector2 = ring[(j+1)%n]
+			# Edges meeting at a repeated point (a closing point given twice).
+			if a0.is_equal_approx(b1) or a1.is_equal_approx(b0) or a0.is_equal_approx(b0) or a1.is_equal_approx(b1): continue
+			var hit: Variant = Geometry2D.segment_intersects_segment(a0,a1,b0,b1)
+			if hit != null: return [mini(i,j),maxi(i,j),hit]
+	return []
+
 static func edge_distance(p: Vector2, poly: PackedVector2Array) -> float:
 	# The native kernel's is this very loop (native/terrain_kernels/isle_kernels.h).
 	var kernel: Object = NativeIsleKernels.get_kernel()
@@ -480,12 +539,23 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 ##             edit changes the land only where it changed (the editor's)
 ##   prism_drop  how far the cliffs' prisms hang under their faces away from
 ##             the rim (PRISM_DROP)
+##   sides     false: no hanging sides drawn ("Mesh"; a caller that draws
+##             its own skirt, the Stair to the Clouds' mesa)
+##   winding   1 (counter-clockwise, Geometry2D's boundary) or -1: the
+##             outline is checked for it (`outline_problems`; none: either)
+##   name      what the outline warnings call it (or `motif`, `id`)
+##   collide_sides  the hanging sides collided as drawn ("Sides", last
+##             child: the bodies climb them, a fall past a flank meets it),
+##             `sides_backface` (true) its faces solid from both sides
 ## Meta: outline, ground_points, cliff_prisms.
 static func island(spec: Dictionary) -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(spec.seed)
 	if bool(spec.get("stable",false)): rng.set_meta("stable",int(spec.seed))
 	var outline: Array = spec.outline
+	if check_outlines:
+		for problem in outline_problems(outline,int(spec.get("winding",0))):
+			push_warning("KitLand.island %s: outline %s" % [_label(spec),problem])
 	var ground: Callable = spec.ground
 	var top: float = spec.top
 	var depth: float = spec.depth
@@ -510,9 +580,37 @@ static func island(spec: Dictionary) -> Node3D:
 	draw(node,built)
 	var rims := PackedFloat32Array()
 	for p: Vector2 in ring: rims.append(float(ground.call(p.x,p.y)))
-	var sides := ring_sides(ring,rims,centre,top,depth,rng,true,bool(spec.get("hang",false)))
-	node.add_child(sides.node("Mesh"))
+	var drawn: MeshInstance3D = null
+	if bool(spec.get("sides",true)):
+		var sides := ring_sides(ring,rims,centre,top,depth,rng,true,bool(spec.get("hang",false)))
+		drawn = sides.node("Mesh")
+		if drawn != null: node.add_child(drawn)
 	bodies(node,built.faces,built.solid,not bool(spec.get("apart",false)))
 	node.set_meta("outline",g.poly)
 	node.set_meta("ground_points",g.points.size())
+	if bool(spec.get("collide_sides",false)): collide_sides(node,drawn,bool(spec.get("sides_backface",true)))
 	return node
+
+## The island's name in a warning: the spec's `name` (or `motif`, `id`)
+## if it has one, its seed, and its outline's first point.
+static func _label(spec: Dictionary) -> String:
+	var bits := PackedStringArray()
+	for key in ["motif","name","id"]:
+		if spec.has(key): bits.append("%s=%s" % [key,str(spec[key])])
+	bits.append("seed=%s" % str(spec.get("seed","?")))
+	var outline: Array = spec.get("outline",[])
+	if not outline.is_empty(): bits.append("from (%.1f, %.1f)" % [(outline[0] as Vector2).x,(outline[0] as Vector2).y])
+	return "[%s]" % ", ".join(bits)
+
+## `drawn` (an island's hanging sides) collided as drawn: "Sides" under `node`.
+static func collide_sides(node: Node3D, drawn: MeshInstance3D, backface := true) -> void:
+	if drawn == null or drawn.mesh == null: return
+	var body := StaticBody3D.new()
+	body.name = "Sides"
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(drawn.mesh.get_faces())
+	shape.backface_collision = backface
+	var holder := CollisionShape3D.new()
+	holder.shape = shape
+	body.add_child(holder)
+	node.add_child(body)

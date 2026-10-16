@@ -2,6 +2,8 @@ shader_type spatial;
 #include "res://shaders/world_play_bend.gdshaderinc"
 #include "res://shaders/scene_palette.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
+// Worn paths drawn per pixel on the ground (0 segments: none).
+#include "res://shaders/path_dirt.gdshaderinc"
 #include "res://shaders/grass_look.gdshaderinc"
 #include "res://shaders/meadow_flower.gdshaderinc"
 #include "res://shaders/conifer_wind.gdshaderinc"
@@ -20,6 +22,8 @@ shader_type spatial;
 // The kit isles' weathered rock (shaders/kit_weather.gdshaderinc; KitLook sets
 // `stone_weather` on its rock and ground, 0 everywhere else).
 #include "res://shaders/kit_weather.gdshaderinc"
+// The look pass's cloud bounce and sky fill (shaders/look_fill.gdshaderinc).
+#include "res://shaders/look_fill.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
 uniform bool brush_visible = false;
@@ -707,13 +711,27 @@ void fragment() {
 	// which leans `ground_soft` of the way to the smoothed ground.
 	vec3 light_normal = world_normal;
 	bool ground = zs_is_ground();
+	// Worn paths drawn per pixel (shaders/path_dirt.gdshaderinc): the dirt
+	// goes in as the ground's source colour, so the ground's look takes it
+	// as it took the turf's baked-in wear.
+	vec3 ground_src = COLOR.rgb;
+	float path_worn = 0.0;
+	vec2 path_way = vec2(1.0, 0.0);
+	float path_px = length(fwidth(world_position.xz));
+	if (ground && path_count > 0) {
+		float crown;
+		path_worn = zs_path_wear(world_position.xz, crown, path_way);
+		if (path_worn > 0.0) ground_src = zs_path_colour(COLOR.rgb, world_position.xz, path_worn, crown, path_way, path_px);
+	}
 	float ground_grass = 0.0;
 	if (ground) {
 		vec3 facet = normalize(cross(dFdx(world_position), dFdy(world_position)));
 		if (dot(facet, world_normal) < 0.0) facet = -facet;
-		ground_grass = peak_rock ? 0.0 : zs_ground_grassness(base_color.rgb * COLOR.rgb);
+		ground_grass = peak_rock ? 0.0 : zs_ground_grassness(base_color.rgb * ground_src);
 		face_normal = facet;
-		light_normal = normalize(mix(facet, normalize(world_normal), max(ground_soft * ground_grass, facet_soft)));
+		// A path keeps the turf's soft light, so its facets don't show through.
+		light_normal = normalize(mix(facet, normalize(world_normal), max(ground_soft * max(ground_grass, path_worn), facet_soft)));
+		if (path_worn > 0.0) light_normal = zs_path_normal(light_normal, world_position.xz, path_worn, path_way, path_px);
 		NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
 	}
 	if (grass_blades || flower_heads) {
@@ -738,7 +756,7 @@ void fragment() {
 	// Where the look is read: the world point, less a far chunk's shift.
 	vec3 look_world = world_position - look_shift;
 	vec3 look_position = look_world / look_scale;
-	vec3 surface = COLOR.rgb;
+	vec3 surface = ground_src;
 	if (sea_cut > -1.0e8) {
 		// A sky peak: its basalt's fine grain, and its snow line following
 		// the season down to its floor (sky_season): the fall and the floor
@@ -935,6 +953,9 @@ void fragment() {
 	if (earth_sides) contact = 1.0;
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, light_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION = emissive_color + tint * hemi * contact;
+	// Look pass: the sunlit cloud sea below lighting the bellies and keels;
+	// its sky fill into the sun's shade is in light() (reference_direct_light).
+	EMISSION += tint * zs_look_bounce_light(light_normal);
 	if (underglow > 0.0 && !grass_blades && !flower_heads) EMISSION += tint * vec3(1.0, 0.88, 0.62) * underglow * grass_along * (0.6 + 0.4 * zs_hemi_energy / PI);
 	// A seed clock holds light through itself: a soft sky glow of its own.
 	if (flower_heads && grass_along > 0.95) EMISSION += tint * mix(zs_hemi_sky, vec3(1.0), 0.5) * zs_hemi_energy / PI * ZS_FLOWER_PUFF_LIGHT;

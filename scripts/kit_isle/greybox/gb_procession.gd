@@ -563,10 +563,7 @@ func life_script() -> Script:
 	return null if Underground.on() else KitLife
 
 func warm() -> void:
-	KitLook.palette()
-	KitLook.ground_material()
-	KitLook.rock_material()
-	KitLook.rock_tone(Vector3.ZERO,30.0,Vector3.UP)
+	warm_look()
 	CityStone.warm()
 	for kk: String in CityStone.WEAR: CityStone.wear(kk)
 	GiantStone.warm()
@@ -616,12 +613,12 @@ func build(into: Node3D) -> void:
 			sp["stable"] = true
 			sp["cliff_drop"] = 0.55
 			sp["fine"] = 1.2
+	for sp: Dictionary in [a_spec,f_spec]: sp["collide_sides"] = true
 	var a_land := KitLand.island(a_spec)
 	a_land.name = "Arrival"
 	var f_land := KitLand.island(f_spec)
 	f_land.name = "FarIsle"
 	for land: Node3D in [a_land,f_land]:
-		_collide_sides(land)
 		root.add_child(land)
 		turf(land)
 	pieces.arrival = a_land
@@ -1307,19 +1304,6 @@ static func _rail(sb: StaticBody3D, a: Vector3, b: Vector3, half: Vector2) -> vo
 	cs.shape = shape
 	cs.transform = Transform3D(Basis(side,up,dir),(a+b)*0.5-up*half.y)
 	sb.add_child(cs)
-
-static func _collide_sides(land: Node3D) -> void:
-	var sides := land.get_node_or_null("Mesh") as MeshInstance3D
-	if sides == null or sides.mesh == null: return
-	var body := StaticBody3D.new()
-	body.name = "Sides"
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(sides.mesh.get_faces())
-	shape.backface_collision = true
-	var holder := CollisionShape3D.new()
-	holder.shape = shape
-	body.add_child(holder)
-	land.add_child(body)
 
 ## Its stone's triangles (the lying meshes at full LOD, each body).
 func _triangles() -> int:
