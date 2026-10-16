@@ -52,6 +52,7 @@ extends SceneTree
 ##     stick_toward(point) -> Vector2
 ##     walk_to(point, max_frames = 900, near = 0.6, jump_at = -1.0) -> bool
 ##     jump(n = 8) -> void
+##     tap(key, n = 2, opts = {}) -> void
 ##   Scripted ticks (no input path: faster, but not the play loop)
 ##     scripted_ticks(n, want = Vector2.ZERO, jump_held = false) -> void
 ##     unscripted() -> void
@@ -317,6 +318,45 @@ func walk_to(point: Vector3, max_frames := 900, near := 0.6, jump_at := -1.0) ->
 ## A jump: held `n` frames (longer is higher), then released.
 func jump(n := 8) -> void:
 	await press(&"walk_jump",n)
+
+## A real key tap: pressed, held `n` frames, released, through
+## Input.parse_input_event, so it reaches `_input` / `_unhandled_input`
+## (where the studies read Space to board the parked plane, E to pick up,
+## R to reset) and the actions mapped to it. `key` is a Key (KEY_SPACE) or
+## an action name (its first key in the InputMap). `press`/`hold` only set
+## an action's state, which no event handler sees. Opts: shift, ctrl, alt.
+func tap(key: Variant, n := 2, opts := {}) -> void:
+	var e := _key_event(key)
+	if e == null:
+		check(false,"tap %s" % key,"no key: give a Key or an action with a key")
+		return
+	e.shift_pressed = bool(opts.get("shift",false))
+	e.ctrl_pressed = bool(opts.get("ctrl",false))
+	e.alt_pressed = bool(opts.get("alt",false))
+	e.pressed = true
+	Input.parse_input_event(e)
+	await frames(maxi(n,1))
+	var up: InputEventKey = e.duplicate()
+	up.pressed = false
+	Input.parse_input_event(up)
+	await frames(1)
+
+func _key_event(key: Variant) -> InputEventKey:
+	var e := InputEventKey.new()
+	if key is int:
+		e.keycode = key
+		e.physical_keycode = key
+		return e
+	var action := StringName(str(key))
+	if not InputMap.has_action(action): return null
+	for ev: InputEvent in InputMap.action_get_events(action):
+		if ev is InputEventKey:
+			var k := ev as InputEventKey
+			var code := k.keycode if k.keycode != KEY_NONE else k.physical_keycode
+			e.keycode = code
+			e.physical_keycode = k.physical_keycode if k.physical_keycode != KEY_NONE else code
+			return e
+	return null
 
 # --- Scripted ticks (no input path: faster, but not the play loop) ------------
 

@@ -11,7 +11,7 @@ worktrees).
 Copied from the main checkout (the first `git worktree list` entry), or
 --from DIR:
   native/terrain_kernels/bin/  zenscape_kernels.gdextension  its .uid
-  scratch/cache/<NAME>/ for each --cache NAME (blendkit.cache stages; a
+  scratch/cache/<NAME>/ for each --cache NAME (a build's cached stages; a
   NAME with no stage there is looked for as scratch/<NAME> too, for the
   older loose caches like scratch/toad_tex/ or scratch/toad_low.blend);
   --cache all copies every stage.

@@ -55,7 +55,7 @@ the harness's watchdogs or `tools/bg.py`.
 NativeTerrainData". Before anything else, run
 `python tools/worktree.py setup <path>`: it copies those three from the main
 checkout and runs the headless import. `--cache NAME` also copies a build's
-cached stages (scratch/cache/NAME, art/blender/blendkit/README.md).
+cached files (scratch/cache/NAME, else scratch/NAME).
 
 # Running on Windows
 

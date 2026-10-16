@@ -14,8 +14,7 @@ exits 0 after a failed --python script; this doesn't.
 
 The script sees the args after `--` the usual way:
 `sys.argv[sys.argv.index("--") + 1:]`. Its own folder is on `sys.path`, and
-so is `art/blender/` (the shared helpers: `import blendkit as bk`;
-art/blender/blendkit/README.md). The working directory is the repo root.
+so is `art/blender/`. The working directory is the repo root.
 
 Blender is found from $BLENDER, then the usual installs:
   Windows  C:\\Program Files\\Blender Foundation\\Blender */blender.exe,

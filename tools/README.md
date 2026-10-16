@@ -86,7 +86,10 @@ func drive() -> void:
 - **Input.** `stick(v)` (Godot's convention: (0, -1) is forward),
   `stick_toward(point)`, `walk_to(point, max, near, jump_at)`,
   `jump(n)`, `press(action, n)`, `hold(action, on)` and `let_go()`.
-  `yaw_follows_facing = true` holds the camera behind him.
+  `yaw_follows_facing = true` holds the camera behind him. `press` only
+  sets an action's state: a key a study reads as an event (Space by the
+  parked plane boards it, E picks up, R resets) needs `tap(KEY_SPACE)` or
+  `tap(&"walk_jump")`, a real key event through `Input.parse_input_event`.
 - **Scripted ticks.** `scripted_ticks(n, want, jump)` uses the study's
   scripted ticks (`script_want`, `tick`). It is faster, but it skips the
   input path. Use it for setup, and prove the result with real input
@@ -227,7 +230,7 @@ python tools/blender.py --expr "import bpy; print(bpy.app.version_string)"
 ```
 
 It finds Blender from `$BLENDER`, a Program Files install, the Microsoft
-Store build's launcher (`%LOCALAPPDATA%\Microsoft\WindowsAppslender-launcher.exe`;
+Store build's launcher (`%LOCALAPPDATA%\Microsoft\WindowsApps\blender-launcher.exe`;
 the Store's `blender.exe` gives Access denied), the Mac app or
 `/opt/homebrew/bin/blender`. The script runs `-b` inside a bootstrap that
 logs its output and writes its exit code, so the detaching launcher still
@@ -235,8 +238,8 @@ gives both back: the run prints the output as it comes and exits 0, the
 script's `sys.exit` code, or 1 on an exception (Blender alone exits 0
 then). `--timeout S` (default 1800) kills it with exit 124. The script sees
 its args after `--` as usual, runs from the repo root, and has its own
-folder and `art/blender/` on `sys.path` (the shared helpers,
-`art/blender/blendkit/`). Don't write a scratch wrapper.
+folder on `sys.path`. Don't give it an arg starting `--cycles`: Blender's
+Cycles add-on reads `sys.argv` and exits on one. Don't write a scratch wrapper.
 
 ## worktree.py: a fresh worktree
 
