@@ -1,3 +1,15 @@
+# The game
+
+The game is the aqueduct isle. The project's main scene,
+`studies/zenscape.tscn` (`run-zenscape.command`), shows the title over the
+aqueduct isle (`studies/aqueduct_isle.gd`, `scripts/kit_isle/`), and
+**Begin** or `-- --no-title` puts you on foot beside the parked plane.
+`run-aqueduct-isle.command` opens the isle directly. When the user says
+"the game" or "the main scene", they mean this one. They do not mean the old
+plate builder that starts you on a claimable chunk
+(`studies/cozy_worlds.tscn` and its `fidelity.gd` chain), and they do not
+mean `run-game.command` (`studies/game_title.tscn`).
+
 # Test execution
 
 Run automated Godot tests and imports with `--headless`. The user does not want
