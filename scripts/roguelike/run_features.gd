@@ -25,6 +25,12 @@ static func opted(feature: StringName) -> bool:
 	if "--loot=off" in _args: return false
 	return ("--%s" % feature) in _args
 
+## A motif's own opt-out: false when `motif` (an isle's) lists `feature` in
+## its `without()` (e.g. ["merchant", "beetle"]); every other motif keeps it.
+static func motif_lets(feature: StringName, motif: Variant) -> bool:
+	if not (motif is Object) or not (motif as Object).has_method("without"): return true
+	return not String(feature) in ((motif as Object).call("without") as Array)
+
 ## The value of `--<name>=` (`fallback` when not given), e.g. `--linger=serpent`.
 static func value(knob: String, fallback := "") -> String:
 	if not _read:

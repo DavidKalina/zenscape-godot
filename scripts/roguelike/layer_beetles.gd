@@ -97,6 +97,7 @@ func _candidates() -> Array:
 	var prize: Vector3 = (plan.get("prize",{}) as Dictionary).get("at",Vector3.INF)
 	for i in range(isles.size()):
 		var isle: Dictionary = isles[i]
+		if not RunFeatures.motif_lets(&"beetle",isle.get("motif")): continue
 		for s: Dictionary in isle.get("sockets",[]):
 			if not str(s.get("kind","")) in ["arena","perch","cover"]: continue
 			var at: Vector3 = s.at

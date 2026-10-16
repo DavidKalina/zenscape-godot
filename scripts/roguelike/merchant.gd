@@ -77,6 +77,9 @@ func _init() -> void:
 
 ## Whether `layer` has a stall (data only).
 static func lays(layer: Dictionary) -> bool:
+	# Not where every isle's motif opts out (`without()`, RunFeatures.motif_lets).
+	var isles: Array = layer.get("isles",[])
+	if not isles.is_empty() and isles.all(func(i: Dictionary) -> bool: return not RunFeatures.motif_lets(&"merchant",i.get("motif"))): return false
 	return MerchantNook.wanted(layer)
 
 ## Where it stands (data only): {at, face, shut, nook}. The plan's nook (a
@@ -99,6 +102,7 @@ static func lay(layer: Dictionary) -> Dictionary:
 		var spots: Array = []
 		for isle: Dictionary in layer.get("isles",[]):
 			if str(isle.get("role","")) in ["base","greed"]: continue
+			if not RunFeatures.motif_lets(&"merchant",isle.get("motif")): continue
 			for s: Dictionary in Collectibles.spots_of(isle):
 				if str(s.kind) in ["cover","perch"] and float(s.room) >= 2.0: spots.append(s)
 		if not spots.is_empty(): best = spots[rng.randi() % spots.size()]
