@@ -5,7 +5,8 @@ extends RefCounted
 ## the holder turns, so it orbits the diamond diagonally. Both glow
 ## (shaders/rune_token.gdshader), the ring the brighter; the uniforms are
 ## the glyph token's (`glow`, `inner`, `glow_tint`), so the pickup lights
-## and spins it as it does the glyphs.
+## and spins it as it does the glyphs. The diamond's shape goes to the
+## shader too, so its runes sit on the facets.
 const RUNE_SHADER = preload("res://shaders/rune_token.gdshader")
 
 ## The diamond: its half-width at the girdle, its tip above and below it,
@@ -35,7 +36,7 @@ static func diamond(size: float, tint: Color) -> MeshInstance3D:
 	var node := MeshInstance3D.new()
 	node.name = "Diamond"
 	node.mesh = st.commit()
-	node.material_override = _material(tint,0.0)
+	node.material_override = _material(tint,0.0,size)
 	return node
 
 ## The ring round a diamond `size` m across, tilted, in `tint`.
@@ -50,7 +51,7 @@ static func ring(size: float, tint: Color) -> MeshInstance3D:
 	node.mesh = torus
 	node.rotation.x = TILT
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	node.material_override = _material(tint,1.0)
+	node.material_override = _material(tint,1.0,size)
 	return node
 
 ## A facet, flat: its own normal on all three corners.
@@ -60,10 +61,14 @@ static func _facet(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:
 		st.set_normal(n)
 		st.add_vertex(v)
 
-static func _material(tint: Color, band: float) -> ShaderMaterial:
+static func _material(tint: Color, band: float, size: float) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
 	material.shader = RUNE_SHADER
 	material.set_shader_parameter("tint",tint)
 	material.set_shader_parameter("glow_tint",tint.lightened(0.35))
 	material.set_shader_parameter("band",band)
+	material.set_shader_parameter("size",size)
+	material.set_shader_parameter("girdle",GIRDLE)
+	material.set_shader_parameter("top",TOP)
+	material.set_shader_parameter("bottom",BOTTOM)
 	return material

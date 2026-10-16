@@ -213,6 +213,9 @@ var pond_top := 0.0
 var life: KitAudioLife
 ## The beasts (the sky dragon, the rune serpent): round 3's.
 var beasts: KitAudioBeasts
+## The room's hold on the engine (gain, pitch: multipliers), set by the
+## Sundered line's room sound (scripts/hall_sound.gd).
+var room_engine := Vector2.ONE
 
 var _probe := PackedFloat32Array()
 var _probe_next := 0
@@ -682,8 +685,8 @@ func _plane(delta: float) -> void:
 	# Started on the turf it coughs awake; boarded in the air it is running.
 	if running > 0.02 and _engine_was <= 0.02 and on_wheels: shot("start",ENGINE_START)
 	_engine_was = running
-	engine.goal = running*(ENGINE+ENGINE_THROTTLE*maxf(throttle,0.0)-0.025*maxf(-throttle,0.0)+0.03*fast)*(1.0-0.3*muffle)
-	engine.pitch_goal = clampf(ENGINE_PITCH+ENGINE_PER*speed+ENGINE_PITCH_THROTTLE*throttle,0.6,1.7)*lerpf(ENGINE_SPUN_DOWN,1.0,running)
+	engine.goal = running*(ENGINE+ENGINE_THROTTLE*maxf(throttle,0.0)-0.025*maxf(-throttle,0.0)+0.03*fast)*(1.0-0.3*muffle)*room_engine.x
+	engine.pitch_goal = clampf(ENGINE_PITCH+ENGINE_PER*speed+ENGINE_PITCH_THROTTLE*throttle,0.6,1.7)*lerpf(ENGINE_SPUN_DOWN,1.0,running)*room_engine.y
 	# Strain: the wires sing on the knife edge and in a drift; the frame
 	# creaks now and then while it is held, and as a roll starts.
 	var knife := absf(float(plane.knife))

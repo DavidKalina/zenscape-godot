@@ -110,6 +110,17 @@ class Site extends RefCounted:
 	## (or newly let in) by an edit doesn't move every plant after it. Off
 	## by default: every isle grows as before.
 	var stable := false
+	## Opt-in, for an isle with no physics bodies (a flown piece built on a
+	## worker: scripts/hall_line_build.gd): (p, reach) -> the turf's height
+	## under p, or NAN where it isn't open turf, in place of `prober`'s
+	## rays (Grow ignores its `space` and `turf` then).
+	var probe := Callable()
+	## Opt-in: the tufts' size range (zero: TUFT_SIZE).
+	var tuft_size := Vector2.ZERO
+	## Opt-in: Grow's draw gives its batches as plain data (`Grow.parts`:
+	## key, tile, count, buffer), no nodes or materials made, so it can run
+	## on a worker; `batch_node` stands one on the main thread.
+	var plain := false
 
 	func _init(top := 30.0, wear_fn := Callable(), wet_fn := Callable()) -> void:
 		ray = Vector2(top+60.0,top-8.0)
@@ -265,6 +276,8 @@ static func grow(seed_value: int, space: PhysicsDirectSpaceState3D, turf: Array,
 ## in the same order as `grow`.
 class Grow extends RefCounted:
 	var node: Node3D
+	## The draw's batches when the site is `plain`.
+	var parts: Array = []
 	var _site: Site
 	var _outlines: Array
 	var _rng := RandomNumberGenerator.new()
@@ -294,7 +307,7 @@ class Grow extends RefCounted:
 		_meadow = MeadowTypes.new(MEADOW,seed_value+9)
 		# The isle stands far off the plate: no plate rim thins its drifts.
 		_meadow.rim_band = Vector2(1.0e6,2.0e6)
-		_probe = KitFlora.prober(space,turf,site)
+		_probe = site.probe if site.probe.is_valid() else KitFlora.prober(space,turf,site)
 		var ba := KitFlora.box_and_area(outlines)
 		_box = ba[0]
 		_area = ba[1]
@@ -328,13 +341,15 @@ class Grow extends RefCounted:
 			var worn := _site.worn(p)
 			if worn > PATH_BARE or _rng.randf() > thick*(1.0-smoothstep(PATH_THIN,PATH_BARE,worn)): continue
 			if _edges.upto(p) < RIM: continue
-			_add("grass_tuft",p,_rng.randf_range(TUFT_SIZE.x,TUFT_SIZE.y)*lerpf(1.0,0.75,worn))
+			var tuft := _site.tuft_size if _site.tuft_size != Vector2.ZERO else TUFT_SIZE
+			_add("grass_tuft",p,_rng.randf_range(tuft.x,tuft.y)*lerpf(1.0,0.75,worn))
 		# Flowers: the meadow type's drifts, sown sparse.
 		var sizes: Dictionary = _meadow.type.sizes
 		while _phase == 1:
 			if _n >= _flowers:
 				_phase = 2
 				_draw = Draw.new(_records,_ground,_area)
+				_draw.plain = _site.plain
 				break
 			_n += 1
 			if usec >= 0 and _n % 32 == 0 and Time.get_ticks_usec() > end:
@@ -357,6 +372,7 @@ class Grow extends RefCounted:
 		if _phase == 2:
 			if not _draw.step(maxi(end-Time.get_ticks_usec(),0) if usec >= 0 else -1): return false
 			node = _draw.node
+			parts = _draw.parts
 			_phase = 3
 		return true
 
@@ -509,6 +525,9 @@ static func draw(records: Array, ground: Ground, area: float, tile_size := TILE)
 ## `draw` in steps, a tile at a time.
 class Draw extends RefCounted:
 	var node := Node3D.new()
+	## Plain data in place of nodes (see Site.plain): [{key, tile, count, buffer}].
+	var plain := false
+	var parts: Array = []
 	var _records: Array
 	var _ground: Ground
 	var _area: float
@@ -548,26 +567,15 @@ class Draw extends RefCounted:
 				var list: Array = transforms[key]
 				if list.is_empty() or not meshes.has(key): continue
 				var colours: Array = tints[key]
-				var multimesh := MultiMesh.new()
-				multimesh.transform_format = MultiMesh.TRANSFORM_3D
-				multimesh.use_colors = true
-				multimesh.mesh = meshes[key]
-				multimesh.instance_count = list.size()
 				# One upload, not two renderer calls an instance (each tile's
 				# went 20-30 ms over its slice rendered).
-				multimesh.buffer = KitFlora.batch_buffer(list,colours)
-				var batch := MultiMeshInstance3D.new()
-				batch.name = "%s_%d_%d" % [key.replace(":","_"),tile.x,tile.y]
-				batch.multimesh = multimesh
-				batch.material_override = SkyIslets._plant_material(key)
-				batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-				batch.visibility_range_end = GRASS_RANGE if key.begins_with("grass") else FLOWER_RANGE
-				batch.visibility_range_end_margin = FADE
-				batch.visibility_range_fade_mode = KitFlora.fade_mode()
-				batch.set_meta("part",key)
-				node.add_child(batch)
+				var buffer := KitFlora.batch_buffer(list,colours)
+				if plain:
+					parts.append({"key":key,"tile":tile,"count":list.size(),"buffer":buffer})
+				else:
+					node.add_child(KitFlora.batch_node(key,tile,list.size(),buffer))
 				_instances[key] = int(_instances.get(key,0))+list.size()
-				_triangles += KitFlora._mesh_triangles(meshes[key])*list.size()
+				if not plain: _triangles += KitFlora._mesh_triangles(meshes[key])*list.size()
 		var counts := {}
 		for item: Dictionary in _records: counts[item.asset] = int(counts.get(item.asset,0))+1
 		node.set_meta("records",_records)
@@ -576,6 +584,26 @@ class Draw extends RefCounted:
 		node.set_meta("triangles",_triangles)
 		node.set_meta("area",_area)
 		return true
+
+## One tile's batch of one catalog part, as Draw makes it (the main
+## thread: it makes a material). `buffer` as `batch_buffer`.
+static func batch_node(key: String, tile: Vector2i, count: int, buffer: PackedFloat32Array) -> MultiMeshInstance3D:
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_colors = true
+	multimesh.mesh = SkyIslets.catalog().meshes[key]
+	multimesh.instance_count = count
+	multimesh.buffer = buffer
+	var batch := MultiMeshInstance3D.new()
+	batch.name = "%s_%d_%d" % [key.replace(":","_"),tile.x,tile.y]
+	batch.multimesh = multimesh
+	batch.material_override = SkyIslets._plant_material(key)
+	batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	batch.visibility_range_end = GRASS_RANGE if key.begins_with("grass") else FLOWER_RANGE
+	batch.visibility_range_end_margin = FADE
+	batch.visibility_range_fade_mode = KitFlora.fade_mode()
+	batch.set_meta("part",key)
+	return batch
 
 ## Each mesh's triangle count, by its instance id: reading a mesh's arrays
 ## back from the renderer waits for the GPU to finish every frame in flight,
