@@ -22,10 +22,11 @@ const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const Cloister = preload("res://scripts/ruin_kit_cloister.gd")
 const Relic = preload("res://scripts/ruin_kit_relic.gd")
+const Keel = preload("res://scripts/ruin_kit_keel.gd")
 
 ## Which kinds mate (each way round).
 const MATES := {"column":["column"],"wall_end":["wall_end"],"channel":["channel"],"aq_pier":["aq_pier"],
-	"flight_top":["flight_foot"],"flight_foot":["flight_top"]}
+	"flight_top":["flight_foot"],"flight_foot":["flight_top"],"hinge":["hinge"]}
 
 ## A cliff lip: the ground falls at least LIP_DROP m within LIP_REACH m out.
 const LIP_DROP := 1.2
@@ -99,6 +100,18 @@ static func connectors(id: String, node: Node3D = null) -> Array:
 			var nl := Relic.nimbus_lines()
 			return [_c("low_horn",Vector3((float(nl.low_end)+float(nl.low_start))*0.5,float(nl.low_perch),0.0),Vector3.UP,"top","top"),
 				_c("high_horn",Vector3(float(nl.high_end)+0.5,float(nl.high_perch),0.0),Vector3.UP,"top","top")]
+		"keel_hung_stair":
+			# The hinge beam's ends where it goes into the keel (two hung
+			# flights chain end to end along one hinge), and the turned
+			# flight's foot (onto a ledge or a kit flight's landing) and
+			# head (a kit flight's foot, or the shaft's floor).
+			var hl := Keel.lines()
+			var f := Keel.flight_frame()
+			var d: Vector3 = hl.dir
+			return [_c("hinge_foot",hl.from,-Vector3(d.x,0.0,d.z).normalized(),"hinge","end"),
+				_c("hinge_head",hl.to,Vector3(d.x,0.0,d.z).normalized(),"hinge","end"),
+				_c("foot",f*Vector3(0.0,0.0,Keel.FRONT),f.basis*Vector3.BACK,"flight_foot","end"),
+				_c("head",f*Vector3(0.0,Keel.STEPS*Keel.RISER,Keel.BACK+Keel.head_back()),f.basis*Vector3.FORWARD,"flight_top","end")]
 	return []
 
 ## Whether a connector of kind `a` mates one of kind `b`.
