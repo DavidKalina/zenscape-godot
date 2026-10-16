@@ -3,10 +3,15 @@ extends Node3D
 ## updraft charge at least its release threshold spends it all and throws a
 ## ball of air from his chest. Locked on (scripts/lock_on/foot_lock.gd) it
 ## homes on the target and bursts on it (`hit(at, way, strength)`); free, it
-## flies level along the camera's flat heading. The ball, its trail and its
-## burst are the dragon's air blast (scripts/dragon_air_blast.gd) with the
-## gust arrows' brighter look; no one ever asks it for a knock, so it never
-## throws him (or the plane).
+## flies level along the camera's flat heading. The ball's flight, homing
+## and burst are the dragon's air blast (scripts/dragon_air_blast.gd, built
+## with `look` false: none of its shimmer, puffs or haze); no one ever asks
+## it for a knock, so it never throws him (or the plane). Its look is its
+## own, a focused blast: a tight bright core stretched along its flight, a
+## crisp tapered streak of its real path behind it, no puffs; a snap of a
+## ring at his chest as it leaves; at the hit a quick flash, a thin ring of
+## air thrown out and a few short spokes, gone in a fifth of a second (the
+## stone puffs its own dust).
 
 const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
 const TargetStone = preload("res://scripts/lock_on/target_stone.gd")
@@ -26,10 +31,20 @@ const FUSE := 0.45
 const HIT_NEAR := 1.6
 ## The hit's strength at charge MIN_RELEASE .. full.
 const STRENGTH := Vector2(0.6,1.0)
-## The look: as the gust arrows' (studies/crossings/gust_arrows.gd).
-const GLOW := 1.6
-const TINT := Color(0.92,0.97,1.0)
-const TRAIL := 3.0
+## The look: the tint (pale air; the hit's a touch warm), the core's half
+## size (ball radii) and its stretch along the flight, the streak's length
+## (m) and half width at the head (ball radii), the snaps' lives (s).
+const TINT := Color(0.86,0.94,1.0)
+const SNAP_TINT := Color(1.0,0.97,0.9)
+const CORE := 0.3
+const STRETCH := 2.2
+const TRAIL := 4.5
+const TRAIL_WIDE := 0.3
+const RING_LIFE := 0.22
+const FLASH_LIFE := 0.08
+const SPOKE_LIFE := 0.16
+const SPOKES := 9
+const MUZZLE_LIFE := 0.14
 
 var blast: DragonAirBlast
 ## Counts and the last shot, for checks: shots fired, hits landed on a
@@ -41,6 +56,16 @@ var last_locked := false
 var _strength := 1.0
 var _from := Vector3.ZERO
 var _target: Node3D = null
+## The look: one ImmediateMesh redrawn each frame (world space); the
+## streak's path (newest first) and its fade once the ball is gone; the
+## snaps alive, each {at, way, age, kind, spin}.
+var _mesh: ImmediateMesh
+var _draw_node: MeshInstance3D
+var _material: ShaderMaterial
+var _path: Array[Vector3] = []
+var _path_fade := 0.0
+var _snaps: Array = []
+var _rng := RandomNumberGenerator.new()
 
 func _init() -> void:
 	name = "GustShot"
@@ -49,14 +74,23 @@ func _ready() -> void:
 	blast = DragonAirBlast.new()
 	blast.name = "GustBall"
 	blast.on = false
+	blast.look = false
 	blast.speed = SPEED
 	blast.flight = FLIGHT
-	blast.glow = GLOW
-	blast.tint = TINT
-	blast.span = TRAIL/0.12
 	add_child(blast)
 	blast.landed.connect(_landed)
 	blast.broke.connect(_landed)
+	_rng.seed = 7
+	_mesh = ImmediateMesh.new()
+	_material = ShaderMaterial.new()
+	_material.shader = _shader()
+	_draw_node = MeshInstance3D.new()
+	_draw_node.name = "GustLook"
+	_draw_node.top_level = true
+	_draw_node.mesh = _mesh
+	_draw_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_draw_node.extra_cull_margin = 2000.0
+	add_child(_draw_node)
 
 ## Fires from his `feet` (facing `heading`, flat) at `target` (null: along
 ## `heading`), with `charge` spent.
@@ -73,6 +107,9 @@ func fire(feet: Vector3, heading: Vector3, target: Node3D, charge: float) -> voi
 	last_locked = target != null
 	blast.homing = HOMING if target != null else 0.0
 	blast.fire(from,aim)
+	_path = [from]
+	_path_fade = 1.0
+	_snaps.append({"at":from,"way":flat,"age":0.0,"kind":"muzzle","spin":0.0})
 	print("gust shot: charge %.2f, %s" % [charge,"at %s" % target.name if target != null else "free"])
 
 ## A frame: flies the balls; a locked ball bursts on its target's middle.
@@ -84,12 +121,15 @@ func step(delta: float, feet: Vector3, space: PhysicsDirectSpaceState3D) -> void
 		blast._catch(aim,DragonAirBlast.ball_radius()+FUSE)
 	var mouth := feet+Vector3.UP*CHEST*DragonAirBlast.walker_tall()
 	blast.advance(delta,space,false,mouth,aim)
+	_look(delta)
 
 func flying() -> bool:
 	return blast != null and not blast.balls.is_empty()
 
 func _landed(at: Vector3) -> void:
 	var way := at-_from
+	if _path.is_empty() or _path[0].distance_to(at) > 0.01: _path.push_front(at)
+	_snaps.append({"at":at,"way":way.normalized() if way.length() > 0.01 else Vector3.FORWARD,"age":0.0,"kind":"hit","spin":_rng.randf()*TAU})
 	for t: Node in get_tree().get_nodes_in_group(TargetStone.GROUP):
 		var n := t as Node3D
 		if n == null or not n.has_method("hit"): continue
@@ -99,3 +139,179 @@ func _landed(at: Vector3) -> void:
 		hits += 1
 		print("gust shot: hit %s %.2f m from its middle" % [n.name,mid.distance_to(at)])
 		return
+
+# --- The look ---------------------------------------------------------------------------
+
+## Ages the streak and the snaps and draws them all.
+func _look(delta: float) -> void:
+	if _mesh == null: return
+	var ball: Dictionary = {} if blast.balls.is_empty() else blast.balls[0]
+	if not ball.is_empty():
+		var at: Vector3 = ball.pos
+		if _path.is_empty() or _path[0].distance_to(at) > 0.05: _path.push_front(at)
+		_path_fade = 1.0
+	else:
+		# Gone: the streak snaps shut behind it, fast.
+		_path_fade = maxf(0.0,_path_fade-delta/0.07)
+		if _path_fade <= 0.0: _path.clear()
+	# Only the last TRAIL m of the path.
+	var long := 0.0
+	for i in range(1,_path.size()):
+		long += _path[i].distance_to(_path[i-1])
+		if long > TRAIL:
+			_path.resize(i+1)
+			break
+	for s: Dictionary in _snaps.duplicate():
+		s.age = float(s.age)+delta
+		if float(s.age) > maxf(RING_LIFE,SPOKE_LIFE): _snaps.erase(s)
+	_mesh.clear_surfaces()
+	if ball.is_empty() and _path.size() < 2 and _snaps.is_empty(): return
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam == null: return
+	var eye := cam.global_position
+	var r := DragonAirBlast.ball_radius()
+	_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES,_material)
+	_strip(eye,_path,r*TRAIL_WIDE,TINT,0.8*_path_fade)
+	_strip(eye,_path,r*TRAIL_WIDE*0.4,Color(1,1,1),0.95*_path_fade)
+	if not ball.is_empty():
+		var at: Vector3 = ball.pos
+		var way := (ball.vel as Vector3).normalized()
+		var grown := smoothstep(0.0,0.06,float(ball.age))
+		var fade := grown*(1.0-smoothstep(FLIGHT*0.85,FLIGHT,float(ball.travelled)))
+		var pulse := 1.0+0.06*sin(float(ball.age)*55.0)
+		var size := r*CORE*lerpf(0.5,1.0,grown)*pulse
+		# A faint tight halo, then the dense core, both stretched along it.
+		_round(eye,at,way,size*1.35,STRETCH*1.05,0.0,TINT,0.15*fade)
+		_round(eye,at,way,size,STRETCH,0.0,TINT,fade)
+	for s: Dictionary in _snaps: _snap(eye,s,r)
+	_mesh.surface_end()
+
+## A muzzle ring, or a hit: a flash, a ring and spokes, eased out fast.
+func _snap(eye: Vector3, s: Dictionary, r: float) -> void:
+	var t := float(s.age)
+	var at: Vector3 = s.at
+	if s.kind == "muzzle":
+		var um := t/MUZZLE_LIFE
+		if um >= 1.0: return
+		var em := 1.0-pow(1.0-um,3.0)
+		_round(eye,at,Vector3.ZERO,r*lerpf(0.25,0.9,em),1.0,lerpf(0.55,0.86,um),TINT,(1.0-um)*0.85)
+		return
+	var ur := t/RING_LIFE
+	if ur < 1.0:
+		var e := 1.0-pow(1.0-ur,3.0)
+		_round(eye,at,Vector3.ZERO,r*lerpf(0.6,3.0,e),1.0,lerpf(0.6,0.9,ur),SNAP_TINT,pow(1.0-ur,1.5))
+	var uf := t/FLASH_LIFE
+	if uf < 1.0:
+		_round(eye,at,Vector3.ZERO,r*lerpf(0.9,0.4,uf),1.0,0.0,Color(1,1,1),1.0-uf*uf)
+	var us := t/SPOKE_LIFE
+	if us < 1.0:
+		var e := 1.0-pow(1.0-us,2.0)
+		var view := (eye-at).normalized()
+		var side := view.cross(Vector3.UP if absf(view.y) < 0.95 else Vector3.RIGHT).normalized()
+		var up := side.cross(view).normalized()
+		for i in range(SPOKES):
+			var a := float(s.spin)+TAU*float(i)/float(SPOKES)+0.25*sin(float(i)*5.1)
+			var d := side*cos(a)+up*sin(a)
+			var reach := 1.0+0.3*sin(float(i)*3.7)
+			var tip := at+d*r*lerpf(0.7,3.4,e)*reach
+			var tail := at+d*r*lerpf(0.4,2.4,e)*reach
+			_strip(eye,[tip,tail],r*0.12*(1.0-us),SNAP_TINT,0.9*(1.0-us))
+
+## A camera-facing ribbon through `pts` (head first), `wide` m each side
+## at the head, tapering to nothing and fading to the tail. UV.x along,
+## UV.y across; UV2.y 0 marks a strip for the shader.
+func _strip(eye: Vector3, pts: Array, wide: float, col: Color, alpha: float) -> void:
+	if pts.size() < 2 or alpha <= 0.0: return
+	var total := 0.0
+	for i in range(1,pts.size()): total += (pts[i] as Vector3).distance_to(pts[i-1])
+	if total < 0.01: return
+	var run := 0.0
+	var prev_l := Vector3.ZERO
+	var prev_r := Vector3.ZERO
+	var prev_u := 0.0
+	for i in range(pts.size()):
+		var p: Vector3 = pts[i]
+		if i > 0: run += p.distance_to(pts[i-1])
+		var u := run/total
+		var along: Vector3 = (pts[maxi(i-1,0)] as Vector3)-(pts[mini(i+1,pts.size()-1)] as Vector3)
+		var across := along.cross(eye-p)
+		across = across.normalized() if across.length() > 0.0001 else Vector3.UP
+		var w := wide*(1.0-u)*(0.6+0.4*(1.0-u))
+		var l := p+across*w
+		var rr := p-across*w
+		if i > 0:
+			var c0 := Color(col.r,col.g,col.b,alpha*pow(1.0-prev_u,1.4))
+			var c1 := Color(col.r,col.g,col.b,alpha*pow(1.0-u,1.4))
+			_vert(prev_l,Vector2(prev_u,0),Vector2.ZERO,c0)
+			_vert(prev_r,Vector2(prev_u,1),Vector2.ZERO,c0)
+			_vert(rr,Vector2(u,1),Vector2.ZERO,c1)
+			_vert(prev_l,Vector2(prev_u,0),Vector2.ZERO,c0)
+			_vert(rr,Vector2(u,1),Vector2.ZERO,c1)
+			_vert(l,Vector2(u,0),Vector2.ZERO,c1)
+		prev_l = l
+		prev_r = rr
+		prev_u = u
+
+## A camera-facing round at `at`, `size` m to its rim, stretched `stretch`
+## along `way` as the screen sees it; `inner` > 0 a ring with that inner
+## share, 0 a filled disc with a white-hot middle.
+func _round(eye: Vector3, at: Vector3, way: Vector3, size: float, stretch: float, inner: float, col: Color, alpha: float) -> void:
+	if alpha <= 0.0 or size <= 0.0: return
+	var view := (eye-at).normalized()
+	var along := way-view*way.dot(view)
+	if along.length() < 0.05:
+		along = view.cross(Vector3.RIGHT if absf(view.x) < 0.9 else Vector3.UP)
+		stretch = 1.0
+	along = along.normalized()
+	var across := along.cross(view).normalized()
+	var a := along*size*stretch
+	var b := across*size
+	var c := Color(col.r,col.g,col.b,clampf(alpha,0.0,1.0))
+	var k := Vector2(inner,1.0)
+	_vert(at-a-b,Vector2(0,0),k,c)
+	_vert(at+a-b,Vector2(1,0),k,c)
+	_vert(at+a+b,Vector2(1,1),k,c)
+	_vert(at-a-b,Vector2(0,0),k,c)
+	_vert(at+a+b,Vector2(1,1),k,c)
+	_vert(at-a+b,Vector2(0,1),k,c)
+
+func _vert(p: Vector3, uv: Vector2, uv2: Vector2, c: Color) -> void:
+	_mesh.surface_set_color(c)
+	_mesh.surface_set_uv(uv)
+	_mesh.surface_set_uv2(uv2)
+	_mesh.surface_add_vertex(p)
+
+## Strips: a crisp edge, a hotter middle line, faint brush streaks along.
+## Rounds: a dense disc (white at its heart) or a thin ring, the edges
+## wobbling a touch so they read painted rather than cut.
+static func _shader() -> Shader:
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled, depth_draw_never, blend_mix, shadows_disabled;
+void fragment() {
+	vec2 c = UV * 2.0 - 1.0;
+	vec3 col = COLOR.rgb;
+	float a;
+	if (UV2.y < 0.5) {
+		float d = abs(c.y);
+		a = 1.0 - smoothstep(0.45, 1.0, d);
+		col = mix(col, vec3(1.0), (1.0 - smoothstep(0.0, 0.35, d)) * 0.5);
+		a *= 0.85 + 0.15 * sin(UV.x * 40.0 + c.y * 6.0 - TIME * 30.0);
+	} else {
+		float r = length(c);
+		float ang = atan(c.y, c.x);
+		float wob = 0.035 * sin(ang * 5.0 + TIME * 23.0) + 0.02 * sin(ang * 11.0 - TIME * 31.0);
+		a = 1.0 - smoothstep(0.9 + wob, 1.0 + wob, r);
+		if (UV2.x > 0.0) {
+			a *= smoothstep(UV2.x - 0.06 + wob, UV2.x + wob, r);
+		} else {
+			col = mix(col, vec3(1.0), 1.0 - smoothstep(0.0, 0.6, r));
+			col = mix(col, vec3(0.55, 0.7, 0.92), smoothstep(0.72, 0.92, r) * 0.6);
+		}
+	}
+	ALBEDO = col;
+	ALPHA = clamp(a * COLOR.a, 0.0, 1.0);
+}
+"""
+	return sh
