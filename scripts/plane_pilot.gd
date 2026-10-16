@@ -7,9 +7,10 @@ extends Node3D
 ## models/pilot.glb, in his paint, scripts/pilot_paint.gd), the dark faceless
 ## head with the glowing eyes painted on it that blink now and then, the
 ## terracotta hat with its low crown, brown band and wide floppy brim; and
-## soft and rounded in the plane's paint (scripts/soft_mesh.gd, shaders/
-## plane_paint.gdshader) in his colours, a chunky navy scarf wound at the
-## neck, the charcoal-brown jacket, brown mitts. The sky's other
+## its brim drawn in to suit the cockpit (`_trim_brim`); and soft and
+## rounded in the plane's paint (scripts/soft_mesh.gd, shaders/
+## plane_surface.gdshader) in his worn colours, a chunky navy scarf wound
+## at the neck, the charcoal-brown jacket, brown mitts. The sky's other
 ## pilots (a livery's) keep the folk's faceted leather cap and brass
 ## goggles (scripts/person_kit.gd `chest`, `head`).
 ##
@@ -28,7 +29,7 @@ const PersonKit = preload("res://scripts/person_kit.gd")
 const FacetMesh = preload("res://scripts/facet_mesh.gd")
 const SoftMesh = preload("res://scripts/soft_mesh.gd")
 const PilotPaint = preload("res://scripts/pilot_paint.gd")
-const PLANE_PAINT := preload("res://shaders/plane_paint.gdshader")
+const PLANE_SURFACE := preload("res://shaders/plane_surface.gdshader")
 const Spring = PersonKit.Spring
 
 ## The seat in the figure's frame.
@@ -43,9 +44,29 @@ const HEAD_SCALE := 0.9
 const IDLE_EVERY := Vector2(2.5,6.0)
 ## The walker's colours (scripts/pilot_paint.gd, the character sheet's):
 ## the scarf's navy, the jacket's charcoal brown, the mitts' brown.
-const NAVY := Color("2e4fa3")
-const JACKET := Color("4a403c")
-const MITT := Color("7a4e38")
+## Aged as the plane's paint is, the walker's worn look's own colours
+## (scripts/pilot_paint.gd LOOKS "worn").
+const NAVY := Color("3b4a6b")
+const JACKET := Color("534739")
+const MITT := Color("6c4632")
+## His paint's light and grime, as the plane's (scripts/plane_figure.gd
+## PAINT_FILL, PAINT_RIM; shaders/craft_grime.gdshaderinc): the grime's
+## cells a toy unit and how heavy it lies.
+const PAINT_FILL := 1.3
+const PAINT_RIM := 0.18
+const PAINT_ROUGH := 0.88
+const GRIT_SCALE := 9.0
+const GRIT := 0.7
+## The hat's brim in the cockpit (head frame, drawn to HEAD_RADIUS): what
+## lies past CROWN from the head's axis is drawn in to BRIM_FIT of its
+## reach, so the walker's wide brim suits the biplane's slim cockpit and
+## clears its upper wing. The crown and band are left as they are.
+const CROWN := 0.11
+const BRIM_FIT := 0.5
+## The hat's felt in the cockpit: the plane's oxide red, and less of the
+## sky in its shade (scripts/pilot_paint.gd's paint `fill`, 3.2 on foot).
+const HAT_FELT := Color("8c4a37")
+const HAT_FILL := 2.2
 ## The walker's head and hat, lifted off his model: the head's middle there
 ## (m, rest; art/blender/pilot/pilot_build.py PILOT_HEAD, its radius), and
 ## the head's radius here and its middle over the neck (the pilot's units).
@@ -124,13 +145,18 @@ func _init(materials: Dictionary, wanderer := true) -> void:
 		_reach.append([Spring.new(3.2,0.5),Spring.new(3.2,0.5),Spring.new(3.2,0.5)])
 	animate(0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0)
 
-## The plane's paint (shaders/plane_paint.gdshader) in `color`, `own` its
-## colour shift.
+## The plane's paint (shaders/plane_surface.gdshader) in `color`, `own`
+## its colour shift.
 static func _painted(color: Color, own: float) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
-	m.shader = PLANE_PAINT
+	m.shader = PLANE_SURFACE
 	m.set_shader_parameter("albedo",color)
 	m.set_shader_parameter("own",own)
+	m.set_shader_parameter("fill",PAINT_FILL)
+	m.set_shader_parameter("rim",PAINT_RIM)
+	m.set_shader_parameter("roughness_value",PAINT_ROUGH)
+	m.set_shader_parameter("grit_scale",GRIT_SCALE)
+	m.set_shader_parameter("grit",GRIT)
 	return m
 
 ## The wanderer's chest, as PersonKit `chest` but soft: the charcoal coat
@@ -170,12 +196,38 @@ func _wanderer_head(m: Dictionary) -> Array:
 static var _head_mesh: ArrayMesh
 
 ## The walker's head and hat (scripts/pilot_paint.gd `lift`), the head's
-## middle at the origin, drawn to HEAD_RADIUS; made once.
+## middle at the origin, drawn to HEAD_RADIUS, the brim drawn in
+## (`_trim_brim`); made once.
 static func head_mesh() -> ArrayMesh:
 	if _head_mesh == null:
 		var at := Transform3D(Basis.from_scale(Vector3.ONE*HEAD_RADIUS/WALKER_HEAD_RADIUS),Vector3.ZERO)*Transform3D(Basis(),-WALKER_HEAD)
-		_head_mesh = PilotPaint.lift(["pilot_face"]+PilotPaint.HAT,at,PilotPaint.outfit())
+		_head_mesh = _trim_brim(PilotPaint.lift(["pilot_face"]+PilotPaint.HAT,at,PilotPaint.outfit()))
 	return _head_mesh
+
+## `mesh` with its hat's points past CROWN from the head's axis drawn in to
+## BRIM_FIT of their reach past it (the brim narrower, the crown kept), and
+## the felt in HAT_FELT.
+static func _trim_brim(mesh: ArrayMesh) -> ArrayMesh:
+	var out := ArrayMesh.new()
+	for i in range(mesh.get_surface_count()):
+		var arrays := mesh.surface_get_arrays(i)
+		var material := mesh.surface_get_material(i)
+		if material != null and material.resource_name == "pilot_hat":
+			material = material.duplicate()
+			material.set_shader_parameter("albedo",HAT_FELT)
+			material.set_shader_parameter("fill",HAT_FILL)
+		if material != null and material.resource_name in PilotPaint.HAT:
+			var points: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			for k in range(points.size()):
+				var p := points[k]
+				var reach := Vector2(p.x,p.z).length()
+				if reach <= CROWN: continue
+				var fit := (CROWN+(reach-CROWN)*BRIM_FIT)/reach
+				points[k] = Vector3(p.x*fit,p.y,p.z*fit)
+			arrays[Mesh.ARRAY_VERTEX] = points
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+		out.surface_set_material(i,material)
+	return out
 
 ## The scarf's knot in the figure's frame.
 func knot() -> Vector3:

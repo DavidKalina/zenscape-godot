@@ -47,6 +47,15 @@ uniform float gleam_width = 0.12;
 varying vec3 local;
 #ifdef ZS_STONE_WEATHER
 #include "res://shaders/kit_weather.gdshaderinc"
+// The ruins' stone takes the look pass's cloud bounce and sky fill, as the
+// isles' rock does (shaders/look_fill.gdshaderinc).
+global uniform vec3 zs_cloud_sun;
+global uniform vec3 zs_key_direction;
+#include "res://shaders/look_fill.gdshaderinc"
+#endif
+#ifdef ZS_CRAFT_GRIME
+// The flying craft's grime (shaders/craft_grime.gdshaderinc).
+#include "res://shaders/craft_grime.gdshaderinc"
 #endif
 varying vec3 gleam_world;
 #ifdef ZS_NIGHT_STONE
@@ -124,6 +133,9 @@ void fragment() {
 		NORMAL = bumped;
 	}
 #endif
+#ifdef ZS_CRAFT_GRIME
+	rough_add += craft_grime(base, local, normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz));
+#endif
 	ALBEDO = base;
 	ROUGHNESS = clamp(mix(roughness_value, 1.0, dull * 0.6) + rough_add, 0.0, 1.0);
 	METALLIC = metallic_value;
@@ -139,6 +151,12 @@ void fragment() {
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	vec3 diffuse = base * (1.0 - metallic_value);
 	EMISSION = diffuse * hemi * fill + mix(diffuse, vec3(0.5), 0.4) * rim_sky * edge * rim;
+#ifdef ZS_STONE_WEATHER
+	// No light() here to see the sun's shadow: faces turned from the sun take
+	// the sky fill, the rest a little of it. Both out underground.
+	float sunward = clamp(dot(normal, zs_key_direction), 0.0, 1.0);
+	EMISSION += diffuse * (zs_look_bounce_light(normal) + zs_look_fill_light(1.0 - 0.75 * sunward)) * (1.0 - zs_under);
+#endif
 	if (gleam > 0.0) {
 		float band = 1.0 - smoothstep(0.0, gleam_width, abs(dot(gleam_world, gleam_dir) - gleam_at));
 		EMISSION += (base * 0.9 + vec3(1.0, 0.8, 0.5) * 0.4) * band * band * gleam * (0.6 + 0.4 * edge);
