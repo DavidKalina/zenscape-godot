@@ -100,8 +100,13 @@ func _eject_and_land() -> void:
 	check(eye.diving and eye.glide is SkyDive and eye.dive.phase == SkyDive.POP,"X ejects: out of the cockpit")
 	check(eye.drone is SkyPlane and eye.glider.visible and not eye.glider._pilot[0].visible,"The plane flies on by itself, its pilot gone from it")
 	check(eye.figure.visible and eye._hint.text == eye.DIVE_HINT,"The pilot is drawn falling, the dive's hint up")
-	await frames(10)
-	check(eye.dive.velocity.y > -3.0 and eye.dive.position.y > eye.drone.position.y-3.0,"A pop up out of it first")
+	# The pop, watched frame by frame (a headless frame of the live game is
+	# long, at 3x a tenth of a second or more of the dive): a kick up first.
+	var kicked := -INF
+	for i in range(10):
+		await process_frame
+		if eye.dive.phase == SkyDive.POP: kicked = maxf(kicked,eye.dive.velocity.y)
+	check(kicked > 0.0,"A pop up out of it first (%.1f m/s up)" % kicked)
 	# Falling, nothing opens by itself; Space 20 m over the land opens the
 	# sail, and it circles down (left held).
 	var began := Time.get_ticks_msec()

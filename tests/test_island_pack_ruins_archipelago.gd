@@ -32,6 +32,8 @@ func run() -> void:
 	current_scene = study
 	while not study.walk_ready: await process_frame
 	m = study.motor
+	# The wall run is an unlock (off by default); these routes are run with it, as `--wallrun` gives it.
+	m.wallrun_on = true
 	check(study.stations.size() >= 6,"The pack builds %d stations" % study.stations.size())
 	_temple_easy()
 	_temple_chain()

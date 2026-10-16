@@ -34,6 +34,8 @@ func run() -> void:
 	while not study.walk_ready or study.life == null: await process_frame
 	life = study.life
 	m = study.motor
+	# The wall run is an unlock (off by default); these routes are run with it, as `--wallrun` gives it.
+	m.wallrun_on = true
 	_flags()
 	_undergrowth()
 	_butterflies()

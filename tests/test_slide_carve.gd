@@ -328,14 +328,23 @@ func _study() -> void:
 	study._replay = {}
 	print("MEASURE the carving run replayed with carving off: %.2f m from its end" % stray.off)
 	check(float(stray.off) > 0.5,"Without its carve the run goes elsewhere (%.2f m off): the recording keeps it" % stray.off)
-	# A run made before carving, replayed with F3 on: as it was.
-	m.carve = true
+	# A run made before carving, replayed with F3 on: as it was, ending where
+	# the same run replayed with F3 off does. (Its recorded end is not the
+	# yardstick: the motor has changed since in other ways, and
+	# test_character_recordings says when a saved run strays.)
 	var before := Recording.read(OLD_RUN)
+	m.wallrun_on = true # recorded with the wall run, now an unlock
+	m.carve = false
+	study.begin_replay(before)
+	while study.replay_step(): pass
+	var off_end := m.feet
+	study._end_replay()
+	m.carve = true
 	check(study.begin_replay(before) and not m.carve,"A run made before carving replays as it was, F3 on")
 	while study.replay_step(): pass
-	var was: Dictionary = study.replay_verdict()
+	var on_end := m.feet
 	study._end_replay()
-	check(float(was.off) < 0.01 and m.carve,"It ends where it did (%.3f m), and carving is on again after" % was.off)
+	check(on_end.distance_to(off_end) < 0.01 and m.carve,"It ends where it does with F3 off (%.3f m apart), and carving is on again after" % on_end.distance_to(off_end))
 	study.queue_free()
 	await process_frame
 

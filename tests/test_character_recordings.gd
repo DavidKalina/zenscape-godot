@@ -74,6 +74,8 @@ func _open(pack: String) -> void:
 	root.add_child(study)
 	current_scene = study
 	while not study.walk_ready: await process_frame
+	# The runs were recorded with the wall run, now an unlock `--wallrun` gives.
+	study.motor.wallrun_on = true
 
 ## These saved runs replayed on the feel now.
 func _saved_runs(paths: Array) -> void:
