@@ -41,8 +41,9 @@ read steep turf as a void edge; `headless_body._floor` skips faces over 60°.
 - A list, in the handoff, of motif routes that were walkable uphill only
   because of the bug and are now slide-only (colonnade_spine,
   editor_mountain, editor_tarn_peak at least). **Do not change any isle's
-  terrain to fix them**; softening a slope or adding a step is the user's
-  call per motif.
+  terrain to fix them.** The user accepts the lost climbs: the fix wins
+  over climbability, so don't hold back a fix (option A included) to keep
+  a slope walkable.
 - Enemies read steep turf as ground, not a void edge.
 
 ## The fix (option B, in the reader)
