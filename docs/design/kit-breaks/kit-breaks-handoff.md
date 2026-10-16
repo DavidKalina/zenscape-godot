@@ -65,3 +65,63 @@ hit.
 `hit(at, radius, strength, source)` in `tools/harness/drive.gd` hits
 through every hub in the scene and returns how many things broke; step
 frames after it for the parts to settle.
+
+## The loop's result (ITER(kit-breaks), 11 iterations)
+
+**Where to play it**
+- `studies/motif_yard.tscn -- --motif=sundered_gorge --olmec`: the
+  Olmec walks into ordinary kit pieces and breaks them. What's left standing
+  breaks again, so he keeps going (15 pieces and 31.5 m in a headless run).
+  `--olmec-at=x,z`, `--head-at=x,z` and `--body-knob=k=v` set where he and
+  the head start, and his settings.
+- `studies/colonnade_spine_isle.tscn -- --olmec`: the colonnade, now
+  through the shared code, breaking as before.
+- `studies/city_breaks_yard.tscn` (add `--breakers=+slam` for the slam).
+- `--breakers=olmec,slam` or `--breakers=+plane,-olmec` sets the breakers.
+
+**What's built**
+- **The hub and its breakers** (`scripts/kit_isle/breakables.gd`): named
+  breakers that can be switched on and off, and one `hit()`.
+- **The shared fall** (`break_pieces.gd`): pieces fall as physics bodies,
+  settle into rubble, and the hub tells enemies to re-plan.
+- **The kind registry** (`break_kinds.gd`): seven kinds, plus `register()`
+  for new ones.
+- **Kit adoption** (`kit_breaks.gd`): a piece is only noted at build time
+  and is cut only when hit hard enough.
+- **Cutting ahead of the Olmec:** cuts are built on a worker thread as he
+  nears a piece, with each build's settings passed in rather than read from
+  shared statics.
+- **City kit** pieces answer `take_hit()` on the same hub.
+- **Editor toggle:** **B** marks a piece unbreakable, and the panel's
+  **Breakable** button covers a whole motif.
+- **Harness:** `hit()` in `tools/harness/drive.gd`.
+
+**Frame time** (headless `--olmec` sundered_gorge, 1800 frames)
+- Breaks' own share of a frame: worst 248.8 ms before, 6.9 ms after; p95
+  62.7 ms before, 0.33 ms after.
+
+**Defaults the user still has to decide**
+- **`slam` is off.** The slam used to break city pieces directly; it now
+  goes through the hub, so city slam breaks need `--breakers=+slam` until
+  it is turned on by default.
+- **Tough slabs** (`tomb_chest`, `fallen_pier`) have toughness 1.6, above
+  the Olmec's 1.0, so he walks around them.
+
+**Open**
+- **The black first-plume disc** comes from shared dust
+  (`scripts/enemies/body_dust.gd`, traced in aa87c153). The colonnade has
+  it too, and it is not fixed.
+- **Whole-frame hitches of about 200–320 ms** in the `--olmec` yard happen
+  with breaks off too. They come from something else in the yard or the
+  Olmec's own per-frame work.
+- **Pre-cuts thrown away** went up to 13–19 a run, because a cut on the
+  worker takes longer and more guesses go stale.
+- **Fitted aqueduct pieces aren't breakable yet.** They have no stored
+  recipe, and aren't threaded because their water makes meshes mid-build.
+- **Look:** heavy landing dust on big arches, and pieces near a gorge edge
+  sliding off.
+- **On `editor_hill` the Olmec's automatic path doesn't reach a piece.**
+- **Not seen in a rendered window:** a threaded break, a slam through real
+  player input, and the roguelike city layers.
+- **The editor's bottom hint strip is cut off.** It was already too long
+  before this loop.
