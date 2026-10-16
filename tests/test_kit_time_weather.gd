@@ -320,7 +320,10 @@ func _season_row() -> void:
 	GameSettings.choose("season",0,study)
 	var day := clock.day
 	check(clock.season_override < 0.0 and GameSettings.index_of("season") == 0,"Live gives the year back")
-	check(absf(fposmod(clock.season-KitWeather.date_season(Time.get_date_dict_from_system()),1.0)) < 0.05 or clock.season > 0.95,"at the real date's season")
+	# Either side of the date: the clock counts whole days from its start hour.
+	var date_season := KitWeather.date_season(Time.get_date_dict_from_system())
+	var off := fposmod(clock.season-date_season,1.0)
+	check(minf(off,1.0-off) < 0.05,"at the real date's season (%.3f, the date's %.3f)" % [clock.season,date_season])
 	var before := clock.season
 	clock.day_length = 30.0
 	_run(60.0)

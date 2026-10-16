@@ -19,6 +19,8 @@ func check(ok: bool, label: String) -> void:
 
 func _run() -> void:
 	create_timer(600).timeout.connect(func() -> void: push_error("collectibles pickup timed out"); quit(2))
+	# A window-sized root: headless it is 64x64, too small for the shell's layout.
+	root.size = Vector2i(1440,900)
 	scene = load("res://studies/cozy_worlds.tscn").instantiate()
 	scene.set_meta("no_title",true)
 	var dir := OS.get_user_data_dir().path_join("test-collectibles-pickup-%d" % Time.get_ticks_usec())

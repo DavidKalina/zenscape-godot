@@ -337,7 +337,7 @@ func _drawn_over_fading_ranges() -> void:
 	check(ground.render_priority < SkyTowers.RENDER_PRIORITY and ground.render_priority < sea_priority,"A fading range draws before the tower and the cloud sea (%d, %d, %d)" % [ground.render_priority,SkyTowers.RENDER_PRIORITY,sea_priority])
 	peaks.free()
 
-## Deep in a tower the wind closes down and quietens, and the streaks thicken.
+## Deep in a tower the wind closes down and quietens, the streaks fade and the mist comes.
 func _muffled() -> void:
 	var open_air: Node3D = GlideAir.new()
 	var cloud: Node3D = GlideAir.new()
@@ -347,7 +347,11 @@ func _muffled() -> void:
 		open_air.advance(1.0/60.0,Vector3(0.0,0.0,-20.0),0.0,0.0,0.0,0.0)
 		cloud.advance(1.0/60.0,Vector3(0.0,0.0,-20.0),0.0,0.0,0.0,1.0)
 	check(cloud._open < open_air._open*0.5 and cloud._gain < open_air._gain*0.8,"In cloud the wind is muffled (open %.3f vs %.3f, gain %.3f vs %.3f)" % [cloud._open,open_air._open,cloud._gain,open_air._gain])
-	check(cloud._shown > open_air._shown,"And the streaks thicken into the cloud's wisps")
+	# Since the cloud wakes (17f9a08b) the streaks fade in a cloud and its own mist wraps round the eye.
+	var streaks_cloud: float = cloud._material.get_shader_parameter("strength")
+	var streaks_open: float = open_air._material.get_shader_parameter("strength")
+	check(cloud.mist > 0.9 and open_air.mist < 0.01 and cloud._mist.visible and not open_air._mist.visible,"And the cloud's mist wraps round the eye (%.2f vs %.2f)" % [cloud.mist,open_air.mist])
+	check(streaks_cloud < streaks_open*0.5,"While the streaks fade (%.3f vs %.3f)" % [streaks_cloud,streaks_open])
 	open_air.queue_free()
 	cloud.queue_free()
 	await process_frame
