@@ -12,20 +12,23 @@ extends Node3D
 ##           over the ground; it reads how exposed he is (`_sense`): in the
 ##           air over the void, hanging on a ledge or a wall, on a rope, or
 ##           stood by a rim with the void round him; never under cover (stone
-##           over his head) or when he is down. Exposure fills its hunger.
-##   stalk   marked (it first closes to within two circles of him): it
+##           over his head) or when he is down. Exposure fills its hunger;
+##           full, it marks him (a call, beat "marked") and swings in fast on
+##           a tighter, lower ring; COVER_BREAK s under stone unmarks him.
+##   stalk   marked and within two circles of him: it
 ##           drops to a stalk point in the camera's view, STALK_SIDE rad off
 ##           its forward, STALK_OUT out and STALK_UP over him (so the dive
 ##           comes across the screen and knocks him sideways off a narrow
 ##           way), its line to him clear, and hangs there circling tight,
 ##           clicking (oilbirds find their way by clicks), the clicks faster
 ##           as it makes up its mind; its shadow tightens on him. Gets up
-##           again if he stays covered or safe ABORT s.
+##           again if he stays safe ABORT s or covered COVER_BREAK s.
 ##   fold    the tell: a scream, the beak wide, wings thrown up (the
 ##           anticipation), then folded into a teardrop, braking to a hang;
 ##           FOLD s. The aim is locked with the scream on where he will be
 ##           if he keeps on (LEAD of his pace): kept on, he is hit; stopped,
-##           turned or started, he is missed.
+##           turned or started, he is missed. Under stone in the fold, it
+##           balks (beat "balked") and gets up again.
 ##   stoop   the dive: accelerating to STOOP_TOP, turning towards him at
 ##           only HOME_TURN rad/s (so a sidestep or a turn back on the
 ##           scream dodges it), talons thrown forward and wings flared at
@@ -37,7 +40,9 @@ extends Node3D
 ##           he struggles free (STRUGGLE presses of jump or twirl). Both
 ##           harm a heart through the motor's `harm`. The carry's first LIFT
 ##           s it beats hard to get him up (he drops back where he was if he
-##           struggles free now); then out over the void.
+##           struggles free now); then out over the void if his exposure put
+##           a void within VOID_CARRY of him (rim, hold, wall, rope, leap),
+##           else along over the ground and dropped there (`drop_over_void`).
 ##   pull    heavy beats back up; then a cool-down (COOL s) before it can
 ##           mark him again.
 ## Every size is in his heights (`unit`, the study's ground `head_top`).
@@ -61,7 +66,7 @@ const STALK_MIN := 1.6
 const STALK_MAX := 5.5
 const CLICK_SLOW := 0.42
 const CLICK_FAST := 0.07
-const TELL := 0.6
+const TELL := 0.95
 const TELL_SCREAM := 0.45
 const STOOP_MAX := 2.5
 const FLARE := 0.22
@@ -75,12 +80,13 @@ const COOL_MAX := 12.0
 ## overrides one (layer_flyers.gd).
 const KNOBS := {
 	"span":3.0, "circle_r":17.0, "circle_up":10.0, "circle_speed":10.5,
-	"stalk_out":7.5, "stalk_side":0.45, "stalk_up":1.4, "stalk_r":2.6, "stalk_speed":8.0,
+	"stalk_out":9.5, "stalk_side":0.45, "stalk_up":1.4, "stalk_r":2.6, "stalk_speed":8.0,
 	"stalk_at":0.9, "stalk_min":STALK_MIN, "stalk_max":STALK_MAX, "abort":1.6,
 	"fold":TELL, "lead":0.9, "home_turn":0.12, "stoop_accel":58.0, "stoop_top":30.0,
 	"hit":0.8, "buffet_out":4.5, "buffet_up":0.9, "buffet_down":0.0,
 	"snatch":1.0, "lift":LIFT, "carry":CARRY, "carry_speed":5.5, "carry_rise":1.8, "struggle":4,
 	"cool_min":COOL_MIN, "cool_max":COOL_MAX, "cover_up":30.0, "void_down":14.0, "rim_r":1.4,
+	"mark_swing":2.2, "cover_break":0.3, "void_carry":4.0,
 }
 
 var knobs: Dictionary = KNOBS.duplicate()
@@ -111,6 +117,11 @@ var snatches := 0
 var misses := 0
 var dives := 0
 var last_strike := ""
+## Marked: it has noticed him exposed (a call, then it swings in on him).
+var marked := false
+## The last snatch's drop: over a void (his exposure took him there) or
+## back on the ground.
+var drop_over_void := false
 
 var _pose: Dictionary = Look.REST.duplicate()
 var _flap := 0.0
@@ -128,6 +139,7 @@ var _stalk_ang := 0.0
 var _stalk_up := 1.0
 var _stalk_check := 0.0
 var _safe_t := 0.0
+var _cover_t := 0.0
 var _click_t := 0.0
 var _prev := Vector3.ZERO
 var _vel_prev := Vector3.ZERO
@@ -167,6 +179,7 @@ func reset() -> void:
 	state_t = 0.0
 	hunger = 0.0
 	cool = 0.0
+	marked = false
 	position = home+Vector3(float(knobs.circle_r)*unit,0.0,0.0)
 	_prev = position
 	vel = Vector3(8.0,0.0,0.0)
@@ -274,6 +287,8 @@ func _sense() -> void:
 	else: hunger = maxf(hunger-0.1*0.6,0.0)
 	if e < 0.3: _safe_t += 0.1
 	else: _safe_t = 0.0
+	if kind == "cover": _cover_t += 0.1
+	else: _cover_t = 0.0
 
 # --- The states ----------------------------------------------------------------------
 
@@ -287,11 +302,25 @@ func _circle(delta: float, hunting: bool) -> void:
 		return
 	var feet := motor.feet
 	_centre = feet if _centre == Vector3.INF else _centre.lerp(feet,1.0-exp(-1.2*delta))
-	# Far off, it comes on fast (twice its circling pace).
+	var ready_to: bool = cool <= 0.0 and hunger >= float(knobs.stalk_at) and exposure >= 0.4 and flyers.may_stalk(self)
+	# Marking him: it has noticed him exposed; a call, and it swings in.
+	if ready_to and not marked: _mark(true)
+	# Cover (or safety long enough) unmarks him.
+	if marked and (_cover_t >= float(knobs.cover_break) or _safe_t >= float(knobs.abort) or cool > 0.0): _mark(false)
+	# Far off, it comes on fast (twice its circling pace); marked, faster
+	# still and on a tighter, lower ring, straight for him.
 	var far := clampf(position.distance_to(feet)/(float(knobs.circle_r)*unit*3.0)-1.0,0.0,1.0)
-	_glide_round(_centre,float(knobs.circle_r)*unit,float(knobs.circle_up)*unit,float(knobs.circle_speed)*(1.0+far),delta)
+	var pace := float(knobs.circle_speed)*(1.0+far)
+	var ring := float(knobs.circle_r)*unit
+	var up := float(knobs.circle_up)*unit
+	if marked:
+		pace *= float(knobs.mark_swing)
+		ring *= 0.6
+		up *= 0.7
+		_centre = feet
+	_glide_round(_centre,ring,up,pace,delta)
 	var close := position.distance_to(feet) < float(knobs.circle_r)*unit*2.0
-	if close and cool <= 0.0 and hunger >= float(knobs.stalk_at) and exposure >= 0.4 and flyers.may_stalk(self):
+	if close and ready_to:
 		if _pick_stalk():
 			_go("stalk")
 			flyers.stalker = self
@@ -362,7 +391,7 @@ func _stalk(delta: float, hunting: bool) -> void:
 	if _click_t <= 0.0:
 		_click_t = lerpf(CLICK_SLOW,CLICK_FAST,ready)
 		_say(&"click")
-	if not hunting or _safe_t >= float(knobs.abort):
+	if not hunting or _safe_t >= float(knobs.abort) or _cover_t >= float(knobs.cover_break):
 		_give_up()
 		return
 	var near := position.distance_to(_stalk_at) < r*2.0 and vel.length() < float(knobs.stalk_speed)*1.6
@@ -376,8 +405,20 @@ func _stalk(delta: float, hunting: bool) -> void:
 		_go("fold")
 		_say(&"cry")
 
+## Marks or unmarks him: the noticing (a call), or letting him go.
+func _mark(on: bool) -> void:
+	if on == marked: return
+	marked = on
+	if on:
+		beat.emit("marked")
+		_say(&"mark")
+	else:
+		beat.emit("unmarked")
+		hunger = 0.0
+
 func _give_up() -> void:
 	if flyers.stalker == self: flyers.stalker = null
+	marked = false
 	hunger = 0.0
 	cool = float(knobs.cool_min)*0.5
 	_go("circle")
@@ -385,6 +426,11 @@ func _give_up() -> void:
 ## The tell: thrown up, then folded; the aim locked at the end.
 func _fold(delta: float) -> void:
 	var f := float(knobs.fold)
+	# Ducked under stone on the scream: it balks (no dive at stone).
+	if exposure_kind == "cover":
+		beat.emit("balked")
+		_give_up()
+		return
 	# Rearing back: it rises a little and nearly stops.
 	vel = vel.move_toward(Vector3.UP*1.2*unit,45.0*delta)
 	_flap_w = move_toward(_flap_w,0.0,delta*6.0)
@@ -415,6 +461,7 @@ func _stoop(delta: float) -> void:
 
 func _end_dive() -> void:
 	if flyers.stalker == self: flyers.stalker = null
+	marked = false
 	hunger = 0.0
 	cool = _rng.randf_range(float(knobs.cool_min),float(knobs.cool_max))
 	_go("pull")
@@ -443,7 +490,17 @@ func _strike() -> void:
 		m.seize()
 		m.harm(CAUSE,1,self)
 		flyers.carrier = self
-		_carry_dir = _void_way(m.feet,Vector3(way.x,0.0,way.y))
+		# Over the void only if his exposure put the void by him (a rim, a
+		# hold, a wall, a rope, a leap); else lifted and dropped back on the
+		# ground, the fall short.
+		var fallback := Vector3(way.x,0.0,way.y)
+		drop_over_void = false
+		_carry_dir = fallback.normalized() if fallback.length() > 0.01 else Vector3.FORWARD
+		if exposure_kind in ["rim","hold","wall","rope","leap"]:
+			var v := _void_way(m.feet,fallback,float(knobs.void_carry))
+			if v != Vector3.ZERO:
+				_carry_dir = v
+				drop_over_void = true
 		_struggles = 0
 		vel = vel*0.15
 		_go("carry")
@@ -454,10 +511,11 @@ func _strike() -> void:
 		_end_dive()
 	beat.emit(last_strike)
 
-## The way from `at` to the nearest void (a ring of rays out to 8 of his
-## heights), or `fallback`.
-func _void_way(at: Vector3, fallback: Vector3) -> Vector3:
+## The way from `at` to the nearest void (a ring of rays out to `reach` of
+## his heights, at most 8), or ZERO if none that near.
+func _void_way(at: Vector3, fallback: Vector3, reach := 8.0) -> Vector3:
 	for r: float in [2.0,4.0,6.0,8.0]:
+		if r > reach: break
 		var best := Vector3.ZERO
 		var best_dot := -INF
 		for i in range(12):
@@ -469,7 +527,7 @@ func _void_way(at: Vector3, fallback: Vector3) -> Vector3:
 				best_dot = d
 				best = w
 		if best != Vector3.ZERO: return best
-	return fallback.normalized() if fallback.length() > 0.01 else Vector3.FORWARD
+	return Vector3.ZERO
 
 ## Carrying him: out over the void, rising, then let go; he can struggle free.
 func _carry(delta: float) -> void:
@@ -481,6 +539,12 @@ func _carry(delta: float) -> void:
 	var want := Vector3.UP*float(knobs.carry_rise)*0.8+_carry_dir*1.0 if lifting else _carry_dir*float(knobs.carry_speed)+Vector3.UP*float(knobs.carry_rise)
 	vel = vel.move_toward(want,(30.0 if lifting else 10.0)*delta)
 	if _blocked_ahead: vel.y = maxf(vel.y,4.0)
+	# Dropping him on the ground: it never takes him out past the floor.
+	if not drop_over_void and not lifting:
+		var ahead := m.feet+Vector3(vel.x,0.0,vel.z).normalized()*unit*1.5
+		if Vector2(vel.x,vel.z).length() > 0.1 and field.floor_under(ahead,2.0*unit,6.0*unit) == -INF:
+			vel.x = 0.0
+			vel.z = 0.0
 	_flap_w = 1.0
 	if state_t > 0.1 and (Input.is_action_just_pressed(&"walk_jump") or Input.is_action_just_pressed(&"walk_twirl")):
 		_struggles += 1
@@ -625,6 +689,7 @@ func _voices_make() -> void:
 		_streams[&"cry"] = _synth_cry()
 		_streams[&"rush"] = _synth_rush()
 		_streams[&"hit"] = _synth_hit()
+		_streams[&"mark"] = _synth_mark()
 	for k: StringName in _streams:
 		var p := AudioStreamPlayer3D.new()
 		p.stream = _streams[k]
@@ -683,6 +748,25 @@ static func _synth_cry() -> AudioStreamWAV:
 		var saw2 := fposmod(ph2,1.0)*2.0-1.0
 		low = lerpf(low,rng.randf_range(-1.0,1.0),0.5)
 		out[i] = (saw*0.45+saw2*0.2+low*0.5)*env*0.85
+	return _wav(out,rate)
+
+## The marking call: two short harsh barks, rising, quieter than the cry.
+static func _synth_mark() -> AudioStreamWAV:
+	var rate := 22050
+	var dur := 0.42
+	var n := int(dur*rate)
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var ph := 0.0
+	for i in range(n):
+		var t := float(i)/rate
+		var b := 0 if t < 0.17 else 1
+		var bt := t-0.22*float(b)
+		var env := 0.0 if bt < 0.0 else minf(bt/0.012,1.0)*exp(-bt*16.0)
+		var f := lerpf(520.0,760.0,clampf(bt/0.12,0.0,1.0))*(1.0+0.25*float(b))
+		ph += f/rate
+		var saw := fposmod(ph,1.0)*2.0-1.0
+		out[i] = (saw*0.6+sin(TAU*ph*2.0)*0.3)*env*0.7
 	return _wav(out,rate)
 
 static func _synth_rush() -> AudioStreamWAV:
