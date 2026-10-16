@@ -11,7 +11,8 @@ option only when the user explicitly requests a graphical test.
 
 Rendered captures to judge visual work (animation, models, looks, layouts)
 are allowed without asking: one window at a time, short, quit by a watchdog.
-Look at them yourself and iterate before handing off.
+Look at them yourself and iterate before handing off. Every windowed run
+passes `-- --no-title`, or the title world shows up in the capture.
 
 Run the suite with `python3 tools/run_tests.py` (headless, 8 jobs). A new test
 that needs a real renderer gets a `## suite: gpu` line under `extends`, and one
@@ -29,6 +30,16 @@ the smoke check (`tools/smoke.py`), checks through the real play loop
 limit (`tools/bg.py`). `python tools/index.py <word>` finds the older
 one-off tools. Throwaway drivers go in `scratch/` (git-ignored). If a
 round needs a tool the harness lacks, say so in its handoff.
+
+macOS has no `timeout`; wrapping a command in it silently does nothing. Use
+the harness's watchdogs or `tools/bg.py`.
+
+# Fresh worktrees
+
+`native/terrain_kernels/bin/`, `zenscape_kernels.gdextension` and its
+`.uid` are git-ignored, so a fresh worktree fails with "Could not find type
+NativeTerrainData". Copy those three from the main checkout, then run a
+headless import in the worktree before anything else.
 
 # Running on Windows
 
@@ -66,13 +77,31 @@ headless import, then its scene loaded for a few hundred frames with no script
 errors) plus whatever throwaway check through the real play loop it needs,
 left uncommitted. Committed tests come in a lock-in round the user asks for,
 which also reconciles the tests prototypes broke. A round's handoff lists any
-existing test its change breaks.
+existing test its change breaks. Run the full suite only when the user asks.
+
+# Working with the user
+
+- When the user is talking through ideas, only discuss. Start work, or add
+  asks to a running agent, only on an explicit go.
+- Delegated work goes one round per agent. A round ends with its commits and
+  a short handoff doc, and the next round is a fresh agent briefed from that
+  doc. Size the brief to the ask: a demo or experiment gets the smallest
+  playable build, a smoke check and a few-line note, with no bot sweeps,
+  perf passes or extra tests unless asked.
+- The user explores what the game is by playing it. Don't write a game
+  pitch, pillars, taste rules or comparisons to other games into docs,
+  comments, skills or handoffs unless the user asks. Skills describe
+  mechanics (steps, contracts, proof) and stay general. Code, assets and
+  tools built for earlier directions stay; they are tools.
 
 # Motifs
 
 New motifs and kit pieces go through the pipeline in
 `docs/design/motifs/motif-brief.md`: card, then place, then dressing
 pass (skills `motif-brainstorm`, `motif-greybox`, `motif-turf`).
+
+Every isle the plane can reach keeps a clear stretch of turf long enough
+to land the plane by hand. Terrain added to an isle must not take it away.
 
 # The motif editor
 
