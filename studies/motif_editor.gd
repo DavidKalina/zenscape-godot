@@ -428,6 +428,7 @@ func rebuild_bare(live := false) -> void:
 
 func _after_land() -> void:
 	_set_net()
+	hang_ropes()
 	start = motif.start()
 	# A marker the land shrank away from comes back onto it: along the way
 	# to the middle until it is 1.5 m inside the outline.
@@ -466,6 +467,7 @@ func refresh_pieces() -> void:
 		holder.remove_child(c)
 		c.free()
 	motif.build_pieces(holder)
+	hang_ropes()
 
 # --- Edit and play --------------------------------------------------------------------------
 
@@ -837,6 +839,7 @@ func _reseat(k: int) -> void:
 	var turn := float(p.get("turn",0.0))
 	a[1] = snappedf(MotifAuthored.seat(motif.ground_fn(),node,float(a[0]),float(a[2]),turn,float(p.get("sink",MotifAuthored.SINK))),0.001)
 	node.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(turn)),Vector3(float(a[0]),float(a[1]),float(a[2])))
+	if node.has_meta("ropes"): hang_ropes()
 
 func delete_selected() -> void:
 	if selected < 0: return
@@ -847,7 +850,31 @@ func delete_selected() -> void:
 	_after_pieces()
 
 func _after_pieces() -> void:
+	hang_ropes()
 	_show_status()
+
+## The live ropes of the pieces that carry them (a piece's "ropes" meta,
+## relic_torana's: MotifAuthored `hang_ropes`), hung again where the pieces
+## stand now, in a FootPieces in the study's slot (stepped while playing).
+var rope_host: Node3D = null
+func hang_ropes() -> void:
+	if rope_host == null:
+		# FootPieces through the live host's script, loaded now: preloaded
+		# here, or foot_pieces.gd loaded on its own, the whole script graph
+		# leaks at exit (headless "Pages in use" errors; load order).
+		rope_host = load("res://scripts/roguelike/layer_greybox.gd").FootPieces.new()
+		rope_host.name = "PieceRopes"
+		add_child(rope_host)
+		rope_host.study = self
+		rope_host.motor = motor
+		if foot_pieces == null: foot_pieces = rope_host
+	for r: Node3D in rope_host.ropes.duplicate(): rope_host.remove_rope(r)
+	var holder := pieces_holder()
+	if holder == null: return
+	for node: Node in holder.get_children():
+		if node is Node3D and node.has_meta("ropes"):
+			var at: Transform3D = (node as Node3D).global_transform if node.is_inside_tree() else (node as Node3D).transform
+			MotifAuthored.hang_ropes(node.get_meta("ropes"),at,Callable(rope_host,"rope"))
 
 var _sel_ring: MeshInstance3D = null
 
