@@ -31,6 +31,10 @@ the exit code. So the script always runs inside a small bootstrap that
 writes its output to a log and its exit code to a done-marker, which this
 tool follows and relays. That works the same for a plain install.
 
+Blender's Cycles add-on reads sys.argv itself and exits on an arg that
+abbreviates one of its own (`--cycles` matches `--cycles-device`): don't
+give a script an arg that starts with `--cycles`.
+
 Flags (after `run`, before the script):
   --blend FILE     open FILE first (`blender -b FILE --python script`)
   --timeout S      kill after S seconds, exit 124 (default 1800, or
@@ -65,8 +69,21 @@ CANDIDATES = [
 # The bootstrap Blender runs with --python. Its first lines set LOG, DONE,
 # PIDF, SCRIPT, ARGS, EXPR, CWD, PATHS.
 BOOT = r'''
-import os, sys, runpy, traceback
+import atexit, os, sys, runpy, traceback
 os.chdir(CWD)
+
+def _left_early():
+    # Blender exiting from outside the script (an add-on's argparse, a
+    # sys.exit at render time) skips the code below: still leave a marker.
+    if not os.path.exists(DONE):
+        try:
+            print("blender.py: Blender exited before the script returned")
+            sys.stdout.flush()
+        except Exception:
+            pass
+        with open(DONE, "w") as f:
+            f.write("1")
+atexit.register(_left_early)
 log = open(LOG, "w", encoding="utf-8", buffering=1)
 sys.stdout = sys.stderr = log
 open(PIDF, "w").write(str(os.getpid()))
@@ -112,6 +129,17 @@ def is_launcher(exe: str) -> bool:
     return Path(exe).name.lower() == "blender-launcher.exe"
 
 
+def _alive(pid: int) -> bool:
+    if os.name == "nt":
+        r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True)
+        return str(pid) in r.stdout
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 def _kill(pid: int) -> None:
     try:
         if os.name == "nt":
@@ -150,6 +178,7 @@ def run(script: str | None, args: list[str], expr: str | None = None, blend: str
     errh = open(errf, "w", encoding="utf-8", errors="replace")
     proc = subprocess.Popen(cmd, cwd=str(ROOT), stdout=errh, stderr=errh)
     t0, pos, code = time.time(), 0, None
+    last_alive = t0
 
     def relay() -> None:
         nonlocal pos
@@ -176,9 +205,21 @@ def run(script: str | None, args: list[str], expr: str | None = None, blend: str
                 print(Path(errf).read_text(encoding="utf-8", errors="replace")[-4000:], end="")
                 print(f"\nblender.py: Blender exited {proc.returncode} before the script finished")
                 return proc.returncode or 1
-            if is_launcher(exe) and time.time() - t0 > 60 and not os.path.exists(pidf):
-                print("\nblender.py: the launcher started no Blender in 60 s")
-                return 1
+            if is_launcher(exe):
+                if time.time() - t0 > 60 and not os.path.exists(pidf):
+                    print("\nblender.py: the launcher started no Blender in 60 s")
+                    return 1
+                # The launcher's Blender is not our child: watch its pid.
+                if os.path.exists(pidf) and time.time() - last_alive > 3.0:
+                    last_alive = time.time()
+                    pid = int(open(pidf).read().strip() or 0)
+                    if pid and not _alive(pid):
+                        time.sleep(0.5)
+                        if os.path.exists(done):
+                            break
+                        relay()
+                        print("\nblender.py: Blender died before the script finished (a crash?)")
+                        return 1
             if time.time() - t0 > timeout:
                 relay()
                 if os.path.exists(pidf):
