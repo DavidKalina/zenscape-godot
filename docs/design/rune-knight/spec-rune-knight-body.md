@@ -59,6 +59,39 @@ A knight carved out of stone, not stacked boxes. Design for:
   (helm, plates, limb segments) that the body script can throw loose for
   `crumble` and `shatter`, not one welded skin.
 
+## The pick and the look (spec change after the user saw task 1)
+
+The user picked **A, "bastion"** (`art/blender/rune_knight/rune_knight_options.py`):
+the fin-crest bucket helm with the T visor, boulder pauldrons, keeled
+barrel chest, flared forearm guards and block gauntlets, the slab skirt
+with its long tabard. Build that one.
+
+The user, on the look: "He still doesn't match the look of the game
+though. Lacks that slight grittiness." He should be of a piece with the
+Olmec head and its headless body: the same family of carved stone.
+
+- **Forms like the Olmec's:** chunky, rounded volumes with big soft
+  bevels and swollen, simplified shapes, read at a glance; not crisp
+  boxes. Exaggerate the proportions a little (the helm, the gauntlets,
+  the pauldrons) the way the Olmec's features are. Look at
+  `art/blender/face_colossus/colossus_build.py` and the head and body glbs
+  (`assets/models/inhaler_head.glb`, `headless_body.glb`) before modelling.
+- **The Olmec's stone, exactly:** `shaders/olmec_stone.gdshader`, as the
+  rune serpent wears it (`scripts/rune_serpent.gd`, its `runes` knob):
+  the gritty weathering (washes, rain streaks, flecks and pits, cracks,
+  chipped pale high points, grime in crevices, a hint of lichen), and the
+  runes cut in as lit grooves (`shaders/rune_serpent_runes.gdshaderinc`).
+  The mesh carries what that shader reads: rest position in UV/UV2 (so
+  the grain rides on the skinned body), baked occlusion in vertex alpha,
+  rune data in CUSTOM0/CUSTOM1. Read `docs/art/olmec-weathered.md` in
+  full. Add to the shader only behind a new knob that defaults off, so the
+  Olmec, its body and the serpent are unchanged.
+- **Real chips at the edges:** a few geometric chips and broken corners
+  on his plates (the shader paints the rest); the user's eye goes to
+  edges first.
+- **Judge him beside the Olmec:** task 2's stills include him and the
+  Olmec head (or its body) in the same light, at the same range.
+
 ## Tasks (the first iteration orders these; keep each one a checkpoint)
 
 1. **Silhouette options.** Three distinct takes on him, blocked out in
