@@ -17,14 +17,20 @@ extends Node3D
 ##   Each footfall sends `plant`. In `idle` a foot left out of place steps
 ##   home and he stands.
 ## - **The other clips** (`notice`, `gather`, `throw`, `catch`, `return`,
-##   `stagger`) run their CLIPS length and send their beats at their times;
-##   their key poses come with the tasks that play them (until then he
-##   stands in `idle`'s pose through them).
+##   `stagger`) run their CLIPS length and send their beats at their times,
+##   then `end`. Their key poses are KEYS (arms, lean, head, sink), eased
+##   key to key; a clip starts from the pose he was in (BLEND s). `catch`,
+##   `return` and `stagger` have no keys yet (he stands in `idle`'s pose).
+## - **hands_mid** follows the midpoint of his fists, so a held shot sits
+##   between them wherever the pose puts them.
+## - **wind_gather:** streaks of air drawn in from round him to hands_mid
+##   (the dragon cyclone's streak), faded in and out with the effect.
 ## - **His look:** a blocky helm with a visor slit and a crest, a broad
 ##   chest over a narrow belly, pauldrons, big gauntlets, legs on hip and
 ##   knee pivots; rune lines on the chest and gauntlets, dim, lit by
 ##   `rune_glow`.
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const DragonCyclone = preload("res://scripts/dragon_cyclone.gd")
 
 signal beat_reached(clip: String, beat: String)
 
@@ -42,6 +48,28 @@ const CLIPS := {
 	"stagger": {"length": 1.8, "loop": false, "beats": {"plant": 0.9, "recover": 1.8}},
 }
 const SOCKETS := ["hand_r","hand_l","hands_mid","chest_rune","eye"]
+## Key poses: clip -> [[time (s), [arm (rad, forward-up), spread (rad,
+## out), forearm (rad, bent), lean (rad, forward), head (rad, up), sink
+## (share of tall)]], ...]. REST is idle's (and walk's, under its swing).
+const REST := [0.0,0.12,0.25,0.0,0.0,0.0]
+const KEYS := {
+	# A jolt: he straightens, arms start out, then settles into a guard.
+	"notice": [[0.0,REST],[0.12,[0.35,0.55,0.6,-0.15,0.22,-0.01]],[0.35,[0.3,0.4,1.0,0.1,-0.05,0.035]],[0.6,[0.3,0.35,0.95,0.06,0.0,0.025]]],
+	# A dip (anticipation), arms flung up and wide at `grab`, drawn in over
+	# his head, fists closing round the ball at `full`.
+	"gather": [[0.0,REST],[0.13,[-0.35,0.3,0.5,0.15,-0.1,0.04]],[0.3,[2.45,1.0,0.25,-0.12,0.25,-0.01]],[0.7,[2.75,0.6,0.55,-0.18,0.3,0.0]],[1.0,[2.85,0.22,0.85,-0.2,0.3,0.005]]],
+	# Wound back and up (anticipation), a two-handed overhead heave at
+	# `release`, the follow-through down and forward, a heavy settle.
+	"throw": [[0.0,[2.85,0.22,0.85,-0.2,0.3,0.005]],[0.22,[3.3,0.22,1.15,-0.4,0.38,0.02]],[0.35,[1.7,0.18,0.2,0.3,-0.05,0.04]],[0.5,[0.6,0.24,0.1,0.48,-0.18,0.07]],[0.7,[0.45,0.2,0.2,0.3,-0.08,0.045]]],
+}
+## A clip's first BLEND s ease from the pose he was in.
+const BLEND := 0.14
+## The gather's streaks: how many, how far out they start (shares of tall),
+## how fast each runs in (a second), their width (share of tall).
+const GATHER_STREAKS := 30
+const GATHER_REACH := 1.15
+const GATHER_RATE := 1.4
+const GATHER_WIDTH := 0.085
 ## The walk, as shares of his height: the swing's share of a step (the rest
 ## is the plant's settle), the feet's spacing along his line, the swing
 ## foot's lift, the plant's sink, the hips' sway over the standing foot; a
@@ -82,6 +110,14 @@ var _settle_t := 9.0
 var _root_last := Vector3.ZERO
 var _root_v := Vector3.ZERO
 var _sent: Dictionary = {}
+## The pose now (KEYS' layout) and the one the clip blends from.
+var _now_pose: Array = REST.duplicate()
+var _from_pose: Array = REST.duplicate()
+var _gather_fade := 0.0
+var _gather_dirs: Array[Vector3] = []
+var _gather_phase: Array[float] = []
+var _gather_mm: MultiMeshInstance3D
+var _clock := 0.0
 
 var _hips: Node3D
 var _waist: Node3D
@@ -129,6 +165,7 @@ func play(name_: String) -> void:
 	clip = name_
 	clip_time = 0.0
 	_sent = {}
+	_from_pose = _now_pose.duplicate()
 
 func socket(name_: String) -> Node3D:
 	return _sockets.get(name_)
@@ -152,8 +189,12 @@ func _process(delta: float) -> void:
 			beat_reached.emit(clip,beat)
 	if not c.loop and clip_time >= float(c.length) and not _sent.has("_end"):
 		_sent["_end"] = true
+		beat_reached.emit(clip,"end")
+	_clock += delta
+	_gather_fade = move_toward(_gather_fade,1.0 if effects.wind_gather else 0.0,delta*(3.0 if effects.wind_gather else 4.0))
 	glow = move_toward(glow,1.0 if effects.rune_glow else 0.0,delta*RUNE_EASE*0.5)
 	_step(delta)
+	_draw_gather()
 
 ## The feet: a step under way goes on; else in `walk`/`turn` the trailing
 ## foot steps, in anything else a foot off its spot steps home.
@@ -215,19 +256,77 @@ func _pose(lift: float, swing: float) -> void:
 	if _swing >= 0:
 		var stand := 1-_swing
 		sway = (1.0 if stand == 1 else -1.0)*sin(swing*PI)*SWAY*tall
-	_hips.position = Vector3(sway,_hip_y+lift,0.0)
+	var k := _key_pose()
+	_hips.position = Vector3(sway,_hip_y+lift-float(k[5])*tall,0.0)
 	_hips.rotation.z = -sway*0.6
 	_waist.rotation.z = sway*0.9
+	_waist.rotation.x = -float(k[3])
 	for i in range(2): _reach(i)
 	var arm := 0.0
 	if _swing >= 0 and clip == "walk":
 		arm = sin(swing*PI)*0.22*(1.0 if _swing == 0 else -1.0)
-	_arm[0].rotation.x = arm
-	_arm[1].rotation.x = -arm
-	_forearm[0].rotation.x = 0.25+maxf(arm,0.0)*0.5
-	_forearm[1].rotation.x = 0.25+maxf(-arm,0.0)*0.5
-	_head.rotation.x = -lift*2.5
+	for i in range(2):
+		var sx := 1.0 if i == 1 else -1.0
+		var a := arm if i == 0 else -arm
+		_arm[i].rotation.x = float(k[0])+a
+		_arm[i].rotation.z = float(k[1])*sx
+		_forearm[i].rotation.x = float(k[2])+maxf(a,0.0)*0.5
+	_head.rotation.x = -lift*2.5+float(k[4])
+	var hl: Node3D = _sockets.hand_l
+	var hr: Node3D = _sockets.hand_r
+	(_sockets.hands_mid as Node3D).global_position = (hl.global_position+hr.global_position)*0.5
 	_rune_mat.emission_energy_multiplier = lerpf(RUNE_DIM,RUNE_LIT,glow)
+
+## The clip's key pose now (REST for a clip with none), eased from the
+## pose he was in over its first BLEND s.
+func _key_pose() -> Array:
+	var want: Array = REST
+	if KEYS.has(clip):
+		var keys: Array = KEYS[clip]
+		want = keys[keys.size()-1][1]
+		for j in range(keys.size()-1):
+			var t0: float = keys[j][0]
+			var t1: float = keys[j+1][0]
+			if clip_time < t1:
+				var u := clampf((clip_time-t0)/maxf(t1-t0,0.001),0.0,1.0)
+				want = _mix(keys[j][1],keys[j+1][1],u*u*(3.0-2.0*u))
+				break
+	var b := clampf(clip_time/BLEND,0.0,1.0)
+	_now_pose = _mix(_from_pose,want,b*b*(3.0-2.0*b))
+	return _now_pose
+
+static func _mix(a: Array, b: Array, u: float) -> Array:
+	var out := []
+	for i in range(a.size()): out.append(lerpf(float(a[i]),float(b[i]),u))
+	return out
+
+## The gather's streaks: each runs in from round him to hands_mid and
+## starts again, faded by the effect.
+func _draw_gather() -> void:
+	if _gather_mm == null: return
+	var mm := _gather_mm.multimesh
+	if _gather_fade <= 0.001:
+		mm.visible_instance_count = 0
+		return
+	var cam := get_viewport().get_camera_3d()
+	var mid: Vector3 = (_sockets.hands_mid as Node3D).global_position
+	var eye := cam.global_position if cam != null else mid+Vector3(0,0,10)
+	var reach := GATHER_REACH*tall
+	for i in range(GATHER_STREAKS):
+		var u := fposmod(_clock*GATHER_RATE+_gather_phase[i],1.0)
+		var d: Vector3 = _gather_dirs[i]
+		var head := mid+d*reach*pow(1.0-u,1.3)
+		var long := reach*0.45*(1.0-u*0.6)
+		var along := -d*long
+		var way := along.normalized()
+		var across := way.cross((eye-head).normalized())
+		if across.length() < 0.01: across = Vector3.UP.cross(way)
+		across = across.normalized()
+		var w := GATHER_WIDTH*tall*(1.0-u*0.5)
+		mm.set_instance_transform(i,Transform3D(Basis(along,across*w,way.cross(across).normalized()),head-along*0.5))
+		mm.set_instance_custom_data(i,Color(_gather_fade*sin(u*PI)*0.95,0,0,0))
+		mm.set_instance_color(i,Color(0.86,0.95,1.0))
+	mm.visible_instance_count = GATHER_STREAKS
 
 ## Leg `i` (0 left) reaching its foot: two-bone IK in his walking plane.
 func _reach(i: int) -> void:
@@ -317,6 +416,32 @@ func _build() -> void:
 		arm.rotation.z = 0.12*sx
 		_arm.append(arm)
 		_forearm.append(fore)
+	_build_gather()
+
+## The gather's streak batch (world space) and each streak's way in.
+func _build_gather() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	for i in range(GATHER_STREAKS):
+		# Round him, more from the sides and above than below.
+		var a := float(i)/float(GATHER_STREAKS)*TAU+rng.randf_range(-0.2,0.2)
+		_gather_dirs.append(Vector3(cos(a),rng.randf_range(-0.35,0.9),sin(a)).normalized())
+		_gather_phase.append(rng.randf())
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.use_colors = true
+	mm.mesh = DragonCyclone._streak_mesh()
+	mm.instance_count = GATHER_STREAKS
+	mm.visible_instance_count = 0
+	_gather_mm = MultiMeshInstance3D.new()
+	_gather_mm.name = "WindGather"
+	_gather_mm.multimesh = mm
+	_gather_mm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_gather_mm.extra_cull_margin = 50.0
+	_gather_mm.top_level = true
+	add_child(_gather_mm)
+	_gather_mm.global_transform = Transform3D.IDENTITY
 
 func _pivot(parent: Node3D, label: String, at: Vector3) -> Node3D:
 	var n := Node3D.new()
