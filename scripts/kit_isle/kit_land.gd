@@ -451,7 +451,7 @@ static func turf_bodies(land: Node3D) -> Array:
 ## high rim's own height, the rock from `top`. Draws the islets' rock. The
 ## rng is drawn as the aqueduct isle drew its sides.
 static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, top: float, depth: float, rng: RandomNumberGenerator,
-		spurs := true, hang := false, stop_small := true, whole := false) -> KitLook.RockMesh:
+		spurs := true, hang := false, stop_small := true, whole := true) -> KitLook.RockMesh:
 	var count := ring.size()
 	var out := outward(ring)
 	var rims: Array = []
@@ -497,7 +497,8 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 		# `count` is a multiple of 16; with any other count the plain ratio
 		# leaves part of the upper ring unstitched and spans the keel with
 		# long faces (a sheet across a ravine cut under it, collided:
-		# spec-editor-traps item 13), kept so as not to change old isles.
+		# spec-editor-traps item 13). Whole is the default for every isle
+		# (item 17); `whole` false keeps the old stitch for a comparison.
 		var ratio := upper.size()/lower.size()
 		for j in range(lower.size()):
 			var l0: Vector3 = lower[j]
@@ -552,7 +553,8 @@ static func ring_sides(ring: Array, rim_y: PackedFloat32Array, centre: Vector2, 
 ##   prism_drop  how far the cliffs' prisms hang under their faces away from
 ##             the rim (PRISM_DROP)
 ##   whole_sides  the sides stitched whole for any ring count (ring_sides'
-##             `whole`; off: as they always were)
+##             `whole`, the default; false: the old stitch, holes and long
+##             faces at counts not a multiple of 16)
 ##   sides     false: no hanging sides drawn ("Mesh"; a caller that draws
 ##             its own skirt, the Stair to the Clouds' mesa)
 ##   winding   1 (counter-clockwise, Geometry2D's boundary) or -1: the
@@ -598,7 +600,7 @@ static func island(spec: Dictionary) -> Node3D:
 	for p: Vector2 in ring: rims.append(float(ground.call(p.x,p.y)))
 	var drawn: MeshInstance3D = null
 	if bool(spec.get("sides",true)):
-		var sides := ring_sides(ring,rims,centre,top,depth,rng,true,bool(spec.get("hang",false)),true,bool(spec.get("whole_sides",false)))
+		var sides := ring_sides(ring,rims,centre,top,depth,rng,true,bool(spec.get("hang",false)),true,bool(spec.get("whole_sides",true)))
 		drawn = sides.node("Mesh")
 		if drawn != null: node.add_child(drawn)
 	var solid: Array = built.solid
