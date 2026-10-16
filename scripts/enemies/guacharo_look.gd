@@ -87,6 +87,9 @@ const SWEPT_ALL := AABB(Vector3(-2.45,-1.35,-1.2),Vector3(4.9,3.25,2.95))
 const GROUND_CLEAR := 0.06
 const LIFT_MAX := 1.6
 const LIFT_FALL := 2.0
+## The point between the eyes in the skeleton's rest frame (the build's
+## eye centres, x mirrored to the middle): where the scream's glare sits.
+const EYES := Vector3(0.0,0.078,-0.612)
 
 ## A clip to play when no mind drives it (studies); "" picks from the mind.
 var clip := ""
@@ -99,6 +102,7 @@ var _model: Node3D
 var _ap: AnimationPlayer
 var _skel: Skeleton3D
 var _bone := {}
+var _eyes_local := Vector3.ZERO
 var _mirror := false
 var _circle_w := 0.0
 var _circle_on := false
@@ -151,6 +155,7 @@ func _build_glb(scene: PackedScene) -> void:
 		return
 	for n: String in ["head","jaw","neck","thigh.L","thigh.R","toes.L","toes.R"]:
 		_bone[n] = _skel.find_bone(n)
+	if int(_bone.head) >= 0: _eyes_local = _skel.get_bone_global_rest(int(_bone.head)).affine_inverse()*EYES
 	for a: StringName in _ap.get_animation_list():
 		_ap.get_animation(a).loop_mode = Animation.LOOP_LINEAR if String(a) in LOOPS else Animation.LOOP_NONE
 	# Advanced by drive(), so the procedural layers go on after the clip.
@@ -171,6 +176,14 @@ func _play(n: String, blend: float, speed: float) -> void:
 	_ap.speed_scale = speed
 	_ap.play(n,blend)
 	if not n in LOOPS: _ap.seek(0.0,false)
+
+## The point between the eyes (world), riding the head bone through the
+## clip, the head aim and the clicks; the fallback body's head otherwise.
+func eyes() -> Vector3:
+	if glb and int(_bone.get("head",-1)) >= 0:
+		return _skel.global_transform*(_skel.get_bone_global_pose(int(_bone.head))*_eyes_local)
+	if _head != null: return _head.global_transform*Vector3(0.0,0.035,-0.13)
+	return global_position
 
 ## A hit: the hurt flinch, over whatever it was doing.
 func flinch() -> void:

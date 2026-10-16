@@ -942,10 +942,11 @@ static func _glare_texture() -> ImageTexture:
 	return _glare_tex
 
 func _tell_place(dt: float) -> void:
-	_tell_pop = move_toward(_tell_pop,0.0,dt/(TELL*TELL_SCREAM))
+	var scream := float(knobs.fold)*TELL_SCREAM
+	_tell_pop = move_toward(_tell_pop,0.0,dt/scream)
 	var want := 0.0
 	match state:
-		"fold": want = GLARE.scream if state_t < TELL*TELL_SCREAM else GLARE.hold
+		"fold": want = GLARE.scream if state_t < scream else GLARE.hold
 		"stoop": want = GLARE.stoop
 	# On fast at the scream, out slower after the dive.
 	_glare_w = want if want > _glare_w else move_toward(_glare_w,want,dt*3.0)
@@ -955,8 +956,9 @@ func _tell_place(dt: float) -> void:
 	if not on: return
 	# Flicker through the scream: the throat working.
 	var flick := 1.0
-	if state == "fold" and state_t < TELL*TELL_SCREAM: flick = 0.85+0.15*sin(state_t*TAU*11.0)
-	var head := position-global_basis.z*span*0.16+Vector3.UP*span*0.05
+	if state == "fold" and state_t < scream: flick = 0.85+0.15*sin(state_t*TAU*11.0)
+	# On the head bone: it rides the scream's rear-back and the stoop's tuck.
+	var head: Vector3 = look.eyes()
 	_glare.global_position = head
 	_glare.scale = Vector3.ONE*lerpf(0.35,1.0,_glare_w)*(1.0+0.5*_tell_pop)*flick
 	_glare.transparency = 1.0-clampf(_glare_w*flick,0.0,1.0)
