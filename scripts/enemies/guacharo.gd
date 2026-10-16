@@ -162,6 +162,8 @@ var _stalk_up := 1.0
 var _stalk_pitch := 0.0
 var _stalk_near := 1.0
 var _seen_t := 0.0
+## Marked: it has swung round into his view (_swing_in) and rings him.
+var _swung_in := false
 var _stalk_check := 0.0
 var _safe_t := 0.0
 var _cover_t := 0.0
@@ -350,18 +352,23 @@ func _circle(delta: float, hunting: bool) -> void:
 	var pace := float(knobs.circle_speed)*(1.0+far)
 	var ring := float(knobs.circle_r)*unit
 	var up := float(knobs.circle_up)*unit
+	var flat_fwd := Vector3(_cam_fwd.x,0.0,_cam_fwd.z)
+	flat_fwd = flat_fwd.normalized() if flat_fwd.length() > 0.1 else Vector3.FORWARD
 	if marked:
 		pace *= float(knobs.mark_swing)
 		ring *= 0.6
 		up *= 0.7
 		_centre = feet
-	_glide_round(_centre,ring,up,pace,delta)
+	if marked and not _swung_in:
+		_swing_in(feet,flat_fwd,ring,up,pace,delta)
+	else:
+		_glide_round(_centre,ring,up,pace,delta)
 	var close := position.distance_to(feet) < float(knobs.circle_r)*unit*2.0
 	# It drops to the stalk from the far half of its ring (out past him,
 	# away from the camera), so it comes down in view, not over the
 	# camera from behind.
-	var flat_fwd := Vector3(_cam_fwd.x,0.0,_cam_fwd.z).normalized()
 	if (position-feet).dot(flat_fwd) < 0.0: close = false
+	if marked and not _swung_in: close = false
 	if close and ready_to:
 		if _pick_stalk():
 			_go("stalk")
@@ -377,6 +384,52 @@ func _circle(delta: float, hunting: bool) -> void:
 		if _click_t <= 0.0:
 			_click_t = CLICK_MARKED
 			_say(&"click",-7.0,0.9)
+
+## Marked, it swings in on him where he can see it: from wherever it is
+## (home is often far below and behind the camera), round wide on its own
+## side (SWING_SIDE rings out), then in to a point out ahead along the
+## camera's look (SWING_AHEAD rings out, SWING_UP of the marked ring's
+## height), low enough to sit in the frame. There it starts its ring and
+## may drop to the stalk.
+const SWING_SIDE := 1.3
+const SWING_AHEAD := 1.4
+const SWING_UP := 0.45
+const SWING_LOOK := 1.6
+func _swing_in(feet: Vector3, fwd: Vector3, ring: float, up: float, pace: float, delta: float) -> void:
+	var flat := Vector3(position.x-feet.x,0.0,position.z-feet.z)
+	var right := fwd.cross(Vector3.UP)
+	var side := signf(flat.dot(right))
+	if side == 0.0: side = turn
+	var ahead := flat.dot(fwd)
+	# The entry, lowered until it sits well inside the frame.
+	var entry := feet+fwd*ring*SWING_AHEAD+right*side*ring*0.35
+	for k: float in [1.0,0.5,0.0]:
+		if _in_view(entry+Vector3.UP*up*SWING_UP*k,0.7):
+			entry += Vector3.UP*up*SWING_UP*k
+			break
+	var target := entry
+	# Behind or beside him: round wide on its side first, low (at the
+	# entry's height), so it doesn't climb out over the frame's top.
+	var wide := feet+right*side*ring*SWING_SIDE+fwd*ring*0.6
+	wide.y = entry.y
+	if ahead < -ring*0.2 and position.distance_to(wide) > ring*0.8: target = wide
+	# Its way in cut by the floor he stands on (it comes up from below),
+	# or the floor over where it will be in SWING_LOOK s: up where it is
+	# first; already under it, back out the way it came.
+	var rise := target.y-position.y
+	var soon := position+Vector3(vel.x,0.0,vel.z)*SWING_LOOK
+	if rise > 0.0 and (field.blocked(position,target-position) or field.blocked(soon,Vector3.UP*(rise+unit))):
+		if not field.blocked(position,Vector3.UP*(rise+unit)):
+			target = position+Vector3.UP*(rise+unit)
+		else:
+			var back := Vector3(-vel.x,0.0,-vel.z)
+			target = position+(back.normalized() if back.length() > 0.1 else -fwd)*ring
+	if _ground_y != -INF: target.y = maxf(target.y,_ground_y+3.0*unit)
+	if _blocked_ahead: target.y += 12.0*unit
+	_steer(target,pace,12.0,delta,true)
+	_flap_w = move_toward(_flap_w,1.0 if vel.y > 0.8 else 0.4,delta*2.5)
+	if position.distance_to(entry) < ring*0.7 or (ahead > ring*0.6 and _in_view(position,0.85)):
+		_swung_in = true
 
 ## Circles `centre` at `radius`, `up` over it, at `speed`: pursuing a point
 ## LEAD rad ahead of where it is on the circle; kept over the ground under
@@ -550,6 +603,7 @@ func _stalk(delta: float, hunting: bool) -> void:
 func _mark(on: bool) -> void:
 	if on == marked: return
 	marked = on
+	_swung_in = false
 	if on:
 		beat.emit("marked")
 		_say(&"mark")
@@ -887,13 +941,17 @@ func _shadow_place(dt: float) -> void:
 ## the shadow's pop (the hard core thrown out TELL_POP wider and full dark,
 ## then drawn in onto the locked spot over the scream) and the glare (its
 ## eyes catch: a hot ember glow at the head, a fixed size on screen so it
-## reads at any range, and a small light on the bird and the ground under
-## it; alpha-blended, not added, so it reads on bright cloud). The glare is full through the scream, a pinpoint through the folded
-## hold and the stoop (it tracks the drop), and out after.
+## reads at any range, and a small light on the bird alone; alpha-blended,
+## not added, so it reads on bright cloud). The glare is full through the
+## scream, a pinpoint through the folded hold and the stoop (it tracks
+## the drop), and out after.
 const TELL_POP := 0.9
 const GLARE_COLOR := Color(1.0,0.3,0.06)
 ## The glare's size as a fraction of the screen-ish (fixed-size quad).
 const GLARE_SIZE := 0.3
+## The glare's light: energy at the scream, reach (spans).
+const GLARE_LIGHT := 1.0
+const GLARE_REACH := 0.6
 const GLARE := {"scream":1.0, "hold":0.45, "stoop":0.3}
 var _tell_pop := 0.0
 var _glare_w := 0.0
@@ -924,7 +982,11 @@ func _tell_make() -> void:
 	_glare_light = OmniLight3D.new()
 	_glare_light.name = "GlareLight"
 	_glare_light.light_color = GLARE_COLOR
-	_glare_light.omni_range = span*2.5
+	# It lights the bird alone (its head, neck and wing roots), not the
+	# floor or the cloud deck behind it, and softly, so the plumage reads.
+	_glare_light.light_cull_mask = Look.LAYER
+	_glare_light.omni_range = span*GLARE_REACH
+	_glare_light.omni_attenuation = 1.6
 	_glare_light.shadow_enabled = false
 	_glare_light.visible = false
 	add_child(_glare_light)
@@ -967,7 +1029,7 @@ func _tell_place(dt: float) -> void:
 	_glare.scale = Vector3.ONE*lerpf(0.35,1.0,_glare_w)*(1.0+0.5*_tell_pop)*flick
 	_glare.transparency = 1.0-clampf(_glare_w*flick,0.0,1.0)
 	_glare_light.global_position = head
-	_glare_light.light_energy = 4.0*_glare_w*flick
+	_glare_light.light_energy = GLARE_LIGHT*_glare_w*flick
 
 # --- Voice and feathers ---------------------------------------------------------------
 
