@@ -312,6 +312,9 @@ func _build_art() -> void:
 	preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)
 	# --sluice: the Sluice Flush on the channel (scripts/traps/sluice_aqueduct.gd).
 	preload("res://scripts/traps/sluice_aqueduct.gd").build(self)
+	# The plane's hitch, a greybox (scripts/interactables/plane_hitch.gd):
+	# crates and boulders round the parked plane; --no-hitch leaves it out.
+	preload("res://scripts/interactables/plane_hitch.gd").build(self)
 
 ## A quit while the base's copy is still being kept: the save finished
 ## first (scripts/roguelike/fixed_cache.gd `finish_save`).

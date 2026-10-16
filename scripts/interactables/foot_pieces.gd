@@ -60,6 +60,10 @@ var _held: Node3D = null
 var last_rail_top := 0.0
 ## The balustrade whose coping he is on now, or null.
 var on_rail: Node3D = null
+## Other pieces stepped round the motor (the plane's hitch, scripts/
+## interactables/plane_hitch.gd): each has `before(delta)`,
+## `after(delta, events)` and `pose(figure)`.
+var extras: Array = []
 
 func _init() -> void:
 	name = "FootPieces"
@@ -150,6 +154,7 @@ func before(delta: float) -> void:
 	_held = motor.rider if motor.rider in ropes else null
 	for slab: Node3D in slabs: slab.advance(delta)
 	for r: Node3D in ropes: r.advance(delta)
+	for x: Node in extras: x.before(delta)
 	if on == null or motor.rider != null or motor.swimming: return
 	if motor.grounded or motor.on_ledge(): motor.carry(on.moved(),on.turn())
 
@@ -201,6 +206,7 @@ func after(_delta: float, events: Dictionary) -> void:
 	if events.has("rope_jump") or (events.has("swing") and not events.swing):
 		last_release = motor.velocity
 		if _held != null: last_timing = _held.last_timing
+	for x: Node in extras: x.after(_delta,events)
 
 ## What is right under `p` (its body's RID), or none.
 func _under(p: Vector3) -> RID:
@@ -214,6 +220,7 @@ func _under(p: Vector3) -> RID:
 ## The drawn body along the rope he hangs from (its hands on the rope),
 ## eased back upright after letting go.
 func pose(figure: Node3D) -> void:
+	for x: Node in extras: x.pose(figure)
 	for r: Node3D in ropes:
 		if r.held():
 			_tilt = r.tilt
