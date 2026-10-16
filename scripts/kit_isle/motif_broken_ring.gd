@@ -178,6 +178,12 @@ func plan() -> Dictionary:
 func _plan_changed() -> void:
 	_plan = {}
 
+## Where the ring's own study starts him (the lowest isle, looking at the
+## first hop): the editor's spawn on this base (motif_based `own_start`).
+## Not `start`: the motif yard spawns a motif with `start` there.
+func own_start() -> Vector3:
+	return Ring.start(plan())
+
 func role() -> String:
 	return "filler"
 

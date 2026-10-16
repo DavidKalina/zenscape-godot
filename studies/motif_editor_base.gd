@@ -58,6 +58,20 @@ func bake() -> void:
 	if m == null or not m.has_method("bake"): return
 	turf_layer(m.base_root)
 	m.bake(editor.get_world_3d().direct_space_state)
+	seat_markers()
+
+## Each marker where he can stand on the stood base: one in the air, on a
+## lip, a step or a column's top goes to the nearest standing room at about
+## its height (the spawn drops him there on P).
+func seat_markers() -> void:
+	var m: RefCounted = editor.motif
+	var marks: Dictionary = editor.data.get("markers",{})
+	for k: String in marks:
+		var a: Array = marks[k]
+		var at: Vector3 = m.stand_near(Vector2(float(a[0]),float(a[2])),float(a[1]))
+		if not at.is_finite(): at = m.stand_near(Vector2(float(a[0]),float(a[2])),NAN,30.0)
+		if not at.is_finite(): continue
+		marks[k] = [snappedf(at.x,0.001),snappedf(at.y,0.001),snappedf(at.z,0.001)]
 
 ## Whether tool `id_name` may be picked; says why not.
 func allows(id_name: String) -> bool:

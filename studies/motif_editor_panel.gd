@@ -38,6 +38,11 @@ var _text: FontVariation
 var slug_edit: LineEdit
 var _presets := {}
 var _slider_box: VBoxContainer
+## The landform's caption, presets and Re-roll: on a base (read-only land)
+## the caption names the base and the rest hide.
+var _land_caption: Label
+var _preset_flow: HFlowContainer
+var _reroll: Button
 var sliders := {}
 var _values := {}
 var _seed: Label
@@ -82,8 +87,10 @@ func setup(owner_editor: Node) -> void:
 	top.add_child(_button("Save","Save (Ctrl+S): motifs/authored/<name>.json",func() -> void: editor.save()))
 	_box.add_child(top)
 	_box.add_child(_rule())
-	_box.add_child(_caption("Landform"))
+	_land_caption = _caption("Landform")
+	_box.add_child(_land_caption)
 	var flow := HFlowContainer.new()
+	_preset_flow = flow
 	flow.add_theme_constant_override("h_separation",roundi(2.0*ui_scale))
 	flow.add_theme_constant_override("v_separation",roundi(2.0*ui_scale))
 	for key: String in MotifAuthored.PRESETS:
@@ -102,6 +109,7 @@ func setup(owner_editor: Node) -> void:
 	seed_row.add_child(_seed)
 	var reroll := _button("Re-roll","A new seed, the same sliders",func() -> void: editor.reroll())
 	reroll.name = "Reroll"
+	_reroll = reroll
 	seed_row.add_child(reroll)
 	seed_row.add_child(_button("Full look","The full look (turf, flora, life, sky) or back to grey (G)",func() -> void: editor.toggle_dress()))
 	_box.add_child(seed_row)
@@ -179,8 +187,12 @@ func fill() -> void:
 	for c: Node in _slider_box.get_children(): c.free()
 	sliders.clear()
 	_values.clear()
-	var preset := str(editor.data.preset)
-	for spec: Array in MotifAuthored.PRESETS[preset]:
+	var base_id := str(editor.data.get("base",""))
+	_land_caption.text = ("Base: "+base_id.replace("_"," ")).to_upper() if base_id != "" else "LANDFORM"
+	_preset_flow.visible = base_id == ""
+	_reroll.visible = base_id == ""
+	var preset := str(editor.data.get("preset","hill"))
+	for spec: Array in ([] if base_id != "" else MotifAuthored.PRESETS[preset]):
 		var key := str(spec[0])
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation",roundi(6.0*ui_scale))

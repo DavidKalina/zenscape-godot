@@ -55,9 +55,22 @@ static func blank_on(slug_name: String, id_name: String) -> Dictionary:
 	var at := func(v: Vector3) -> Array: return [snappedf(v.x,0.001),snappedf(v.y,0.001),snappedf(v.z,0.001)]
 	var first: Vector3 = rims[0].at if not rims.is_empty() else Vector3.ZERO
 	var face: Vector3 = rims[0].face if not rims.is_empty() else Vector3.BACK
-	d.markers = {"spawn":at.call(first-face*2.0),"rim_in":at.call(first),
+	# The spawn: the base's own start where it has one, else a few steps in
+	# from its way in. The editor seats every marker on the stood base's
+	# ground once baked (`stand_near`).
+	var own: Vector3 = m.own_start()
+	var spawn: Vector3 = own if own.is_finite() else first-face*SPAWN_IN
+	d.markers = {"spawn":at.call(spawn),"rim_in":at.call(first),
 		"rim_out":at.call((rims[1].at if rims.size() > 1 else first) as Vector3)}
 	return normalise(d)
+
+## How far in from the base's first rim a fresh spawn stands (m).
+const SPAWN_IN := 3.0
+
+## The base's own start (where its study starts him), INF if it has none.
+func own_start() -> Vector3:
+	if base() != null and inner.has_method("own_start"): return inner.own_start()
+	return Vector3.INF
 
 ## The base motif, configured with the file's seed.
 func base() -> RefCounted:
@@ -95,23 +108,75 @@ func bake(space: PhysicsDirectSpaceState3D) -> void:
 		for col in range(cols):
 			var x := r.position.x+col*FIELD_CELL
 			var z := r.position.y+row*FIELD_CELL
-			q.from = Vector3(x,span.y+8.0,z)
-			q.to = Vector3(x,low,z)
-			q.exclude = []
-			var y := low
-			for _t in range(6):
-				var hit := space.intersect_ray(q)
-				if hit.is_empty(): break
-				var co: Object = hit.collider
-				if co is Node and base_root.is_ancestor_of(co):
-					y = float(hit.position.y)
-					break
-				var ex: Array[RID] = q.exclude
-				ex.append(hit.rid)
-				q.exclude = ex
+			var y := _ray_top(space,q,x,z,span.y+8.0,low)
+			# Some of the bases' land meshes are wound so their tops face down
+			# (the colonnade's spine in strips): a ray that only takes front
+			# faces falls through what he stands on. On a miss, once more
+			# taking back faces too.
+			if y <= low:
+				q.hit_back_faces = true
+				y = _ray_top(space,q,x,z,span.y+8.0,low)
+				q.hit_back_faces = false
 			ys[row*cols+col] = y
 	_field = {"origin":r.position,"cols":cols,"rows":rows,"ys":ys,"low":low}
 	_ground = Callable()
+
+## The base's top under (x, z) by one ray from `y_from` to `low`, other
+## bodies passed through; `low` if none.
+func _ray_top(space: PhysicsDirectSpaceState3D, q: PhysicsRayQueryParameters3D, x: float, z: float, y_from: float, low: float) -> float:
+	q.from = Vector3(x,y_from,z)
+	q.to = Vector3(x,low,z)
+	var ex: Array[RID] = []
+	q.exclude = ex
+	for _t in range(6):
+		var hit := space.intersect_ray(q)
+		if hit.is_empty(): return low
+		var co: Object = hit.collider
+		if co is Node and base_root.is_ancestor_of(co): return float(hit.position.y)
+		ex.append(hit.rid)
+		q.exclude = ex
+	return low
+
+## Standing room (m): the ground within STAND_R of a point within
+## STAND_EVEN of it (his feet), and within STAND_NEAR_EVEN out to
+## STAND_NEAR (not on a lip, a step or a column's top).
+const STAND_R := 0.6
+const STAND_EVEN := 0.3
+const STAND_NEAR := 1.2
+const STAND_NEAR_EVEN := 0.6
+
+## Whether he can stand at (x, z) on the baked field.
+func standable(x: float, z: float) -> bool:
+	if _field.is_empty(): return false
+	var y := _field_y(x,z)
+	if y <= float(_field.low)+1.0: return false
+	for i in range(8):
+		var d := Vector2.from_angle(TAU*i/8.0)
+		if absf(_field_y(x+d.x*STAND_R,z+d.y*STAND_R)-y) > STAND_EVEN: return false
+		if absf(_field_y(x+d.x*STAND_NEAR,z+d.y*STAND_NEAR)-y) > STAND_NEAR_EVEN: return false
+	return true
+
+## The nearest point he can stand to (x, z) within `reach` (0.5 m steps),
+## keeping near height `want_y` (NAN: any), on the baked field; INF if none.
+func stand_near(p: Vector2, want_y := NAN, reach := 10.0) -> Vector3:
+	if standable(p.x,p.y):
+		var y0 := _field_y(p.x,p.y)
+		if is_nan(want_y) or absf(y0-want_y) < 0.5: return Vector3(p.x,y0,p.y)
+	var best := Vector3.INF
+	var best_cost := INF
+	var n := int(reach/0.5)
+	for i in range(-n,n+1):
+		for j in range(-n,n+1):
+			var q := p+Vector2(i,j)*0.5
+			var dist := q.distance_to(p)
+			if dist > reach or dist >= best_cost: continue
+			if not standable(q.x,q.y): continue
+			var y := _field_y(q.x,q.y)
+			var cost := dist+(0.0 if is_nan(want_y) else absf(y-want_y)*2.0)
+			if cost < best_cost:
+				best_cost = cost
+				best = Vector3(q.x,y,q.y)
+	return best
 
 func baked() -> bool:
 	return not _field.is_empty()
