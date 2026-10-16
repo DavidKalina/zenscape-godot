@@ -25,6 +25,11 @@ Spec: `spec-lock-on.md`. Trail: `git log --grep='^ITER(lock-on)'`.
   (no knock on the shooter). Locked: homes on the target and rocks it.
   Unlocked: flies level along the camera heading. No charge: X twirls as
   before.
+- **Focused blast look** (after the user played it): the shot is a tight
+  white core with a cool rim and a crisp tapered streak, a small ring as
+  it leaves, and a quick flash, thin ring and spokes at the hit; no puffs.
+  Its own look on a `look=false` dragon blast; the dragon's blast is
+  unchanged.
 
 ## Play it
 
@@ -34,6 +39,7 @@ the stone, then X.
 
 ## Open
 
+- The lock's depth of field softens the ball a little near the camera.
 - No shooting pose or recoil yet; he doesn't turn to face the shot, and
   the shot has no whoosh of its own (task 5 in the plan).
 - Charge was set by hand in the driver checks; building it through real
