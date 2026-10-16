@@ -44,6 +44,7 @@ const LandformPanel = preload("res://studies/motif_editor_panel.gd")
 const EditorPalette = preload("res://studies/motif_editor_palette.gd")
 const Feel = preload("res://studies/motif_editor_feel.gd")
 const EditorTraps = preload("res://studies/motif_editor_traps.gd")
+const EditorKnobs = preload("res://studies/motif_editor_knobs.gd")
 const GreyLook = preload("res://studies/motif_editor_grey.gd")
 const Rebuild = preload("res://studies/motif_editor_rebuild.gd")
 const ToolRoll = preload("res://scripts/tool_roll.gd")
@@ -172,6 +173,8 @@ var palette: EditorPalette = null
 var feel: Feel = null
 ## The placed traps (studies/motif_editor_traps.gd).
 var traps: EditorTraps = null
+## The selected trap's knobs (studies/motif_editor_knobs.gd).
+var knobs: EditorKnobs = null
 ## The grey editing look (studies/motif_editor_grey.gd), and whether the
 ## full look is on instead (G): editing and playing are grey by default.
 var grey: GreyLook = null
@@ -726,6 +729,7 @@ func _edit_input(event: InputEvent) -> void:
 				if mb.pressed:
 					if roll_click(mb.position): return
 					if panel != null and panel.contains_pointer(mb.position) and _held_piece.is_empty(): return
+					if knobs != null and knobs.contains_pointer(mb.position): return
 					click(mb.position,mb.shift_pressed,mb.alt_pressed)
 				else: release(mb.position)
 	elif event is InputEventMouseMotion:
@@ -1531,6 +1535,9 @@ func _build_editor_ui() -> void:
 	add_child(traps)
 	traps.setup(self)
 	traps.sync()
+	knobs = EditorKnobs.new()
+	_ui.add_child(knobs)
+	knobs.setup(self)
 	palette = EditorPalette.new()
 	_ui.add_child(palette)
 	palette.setup_editor(self)

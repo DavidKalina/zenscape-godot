@@ -7,7 +7,8 @@ extends Node3D
 ## piece's top, then selected, dragged, turned (Z X), trashed or deleted;
 ## every change is one undo step (the editor's `snapshot` of `data`).
 ##
-## The data: `data.traps`, [{id, at:[x,y,z], turn}] (knobs come later).
+## The data: `data.traps`, [{id, at:[x,y,z], turn, on?, knobs?}] (knobs:
+## only the changed ones; set in the knobs panel, motif_editor_knobs.gd).
 ## What stands is built again from it whenever it differs from what was
 ## built (`sync`, after every land build, so undo and load follow).
 ##
@@ -98,6 +99,27 @@ func rebuild() -> void:
 	if field != null: _fill_field()
 	_note_seats()
 	selected = -1
+	tint()
+	show_marks()
+
+## Trap `k` alone built again from its entry (a knob changed), in the same
+## place in the holder; still selected, in the live field if playing.
+func rebuild_one(k: int) -> void:
+	if k < 0 or k >= count(): return
+	var old := node_of(k)
+	var node := _make(entries()[k])
+	if old != null:
+		placed.remove_child(old)
+		old.queue_free()
+	if node != null:
+		node.name = "T%d" % k
+		placed.add_child(node)
+		var at := 0
+		for j in range(k):
+			if node_of(j) != null: at += 1
+		placed.move_child(node,at)
+	_built = var_to_str(entries())
+	if field != null: _fill_field()
 	tint()
 	show_marks()
 
