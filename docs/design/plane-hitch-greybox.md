@@ -169,3 +169,7 @@ cameras), `2_cruise.png` and `3_cruise_late.png` (chase camera),
   from the hand).
 - No existing tests are known to break: the tow is zero unless the hitch
   sets it. The full suite was not run.
+
+## Playtest, round 2 (the user, 2026-10-15)
+
+"Pretty buggy still." Parked on this branch.
