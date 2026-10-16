@@ -699,6 +699,10 @@ func _carry(delta: float) -> void:
 		_struggles += 1
 		vel += Vector3(_rng.randf_range(-1.0,1.0),-0.6,_rng.randf_range(-1.0,1.0))*1.5
 	var held := position+vel*delta-Vector3.UP*(unit*0.95+span*0.06)
+	# Snatched off the ground, he stays on it until the bird's climb takes
+	# him up (the bird is held off the stone lower than his height).
+	var under := maxf(field.floor_under(m.feet,unit*0.5,unit*1.5),field.floor_under(held,unit*1.5,unit*0.5))
+	if under != -INF and held.y < under: held.y = under
 	if m.seized():
 		m.feet = held
 		m.velocity = vel
