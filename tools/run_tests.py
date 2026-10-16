@@ -65,7 +65,7 @@ NATIVE = ROOT / "native" / "terrain_kernels"
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 ERROR_START = re.compile(r"^(?:SCRIPT ERROR:|ERROR:|USER ERROR:|FATAL:|Parse Error:)", re.M)
 SUITE_TAG = re.compile(r"^##\s*suite:\s*(.+)$")
-EXIT_LEAK = re.compile(r"^ERROR: (?:\d+ resources still in use at exit|\d+ RID allocations of type .* were leaked at exit)")
+EXIT_LEAK = re.compile(r"^ERROR: (?:\d+ resources still in use at exit|\d+ RID allocations of type .* were leaked at exit|Pages in use exist at exit)")
 
 
 def diagnostics(output: str) -> dict:
