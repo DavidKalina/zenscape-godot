@@ -373,9 +373,15 @@ func _settled(group: Dictionary) -> void:
 			holder.transform = root.global_transform.affine_inverse()*owner_node.global_transform*mesh.transform
 			owner_node.remove_child(mesh)
 			mesh.transform = Transform3D.IDENTITY
+			root.add_child(holder)
+			# A mesh not built as RuinKit stone (a registered kind's own)
+			# stays itself in the rubble; the stone merges into one.
+			if not _stone(mesh.mesh):
+				mesh.name = "Own"
+				holder.add_child(mesh)
+				continue
 			mesh.name = "Mesh"
 			holder.add_child(mesh)
-			root.add_child(holder)
 			holders.append(holder)
 	for piece: Variant in group.pieces:
 		if not is_instance_valid(piece): continue
@@ -389,6 +395,14 @@ func _settled(group: Dictionary) -> void:
 	for h: Node3D in holders: h.free()
 	box = box.grow(2.5)
 	_changed(box)
+
+## Whether `mesh` merges as RuinKit stone (RuinKit.merge): one surface of
+## unindexed triangles with vertex colours.
+static func _stone(mesh: Mesh) -> bool:
+	if mesh == null or mesh.get_surface_count() != 1: return false
+	if mesh.has_meta("arrays"): return true
+	var arrays := mesh.surface_get_arrays(0)
+	return arrays[Mesh.ARRAY_COLOR] != null and arrays[Mesh.ARRAY_INDEX] == null
 
 ## Rubble at rest in `box`: every body's routes read it afresh.
 func _changed(box: AABB) -> void:

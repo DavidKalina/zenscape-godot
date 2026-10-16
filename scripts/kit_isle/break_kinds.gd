@@ -28,7 +28,9 @@ extends RefCounted
 ## broken piece breaks again as what is left.
 ## A part: masonry_cuts.gd `_part`'s {mesh, shape, at, kg, kind, size}, in
 ## the piece's frame; `kind` one of the fall's: "slab" (laid flat), "drum"
-## or "column" (laid on its side), "chunk".
+## or "column" (laid on its side), "chunk". A registered cut's parts and
+## stands may be any meshes (a primitive with its own material): only RuinKit
+## stone merges into the rubble's one mesh; the rest lies there as itself.
 ##
 ## The built-in kinds cut along the stone's own joints: the piece built
 ## again once per part, each time keeping only the blocks whose middles

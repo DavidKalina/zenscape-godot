@@ -32,12 +32,15 @@ var pre_used := 0
 var pre_missed := 0
 var pre_step_ms := 0.0
 
-## Every piece under `root` with a kind (Kinds `kind_of`) noted as a
-## target. Returns how
-## many were added. A piece with meta "breakable" false is left out.
+## Every piece at or under `root` with a kind (Kinds `kind_of`) noted as a
+## target. Returns how many were added. A piece with meta "breakable" false
+## is left out.
 func adopt(root: Node) -> int:
 	var n := 0
-	for node: Node in root.find_children("*","Node3D",true,false):
+	var all: Array[Node] = [root]
+	all.append_array(root.find_children("*","Node3D",true,false))
+	for node: Node in all:
+		if not node is Node3D: continue
 		if not node.has_meta("kit_piece") and not node.has_meta("break_kind"): continue
 		if node.has_meta("breakable") and not bool(node.get_meta("breakable")): continue
 		var kind := Kinds.kind_of(node)
