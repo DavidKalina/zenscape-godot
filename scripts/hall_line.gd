@@ -47,6 +47,8 @@ const LineBuild = preload("res://scripts/hall_line_build.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const FarTrees = preload("res://scripts/far_trees.gd")
+const HallShafts = preload("res://scripts/hall_shafts.gd")
+const ShaftsDirector = preload("res://scripts/hall_shafts_director.gd")
 
 ## The way in: the route starts this far (m) before the first piece's
 ## entry, on its heading.
@@ -85,6 +87,8 @@ var look := "real"
 ## palette; the height (world) the islands' falls are planned from.
 var islets: Node3D = null
 var _palette := {}
+## The light shafts' director (scripts/hall_shafts_director.gd), null if off.
+var _shafts: Node = null
 var home_y := 0.0
 ## Real pieces built or building, by index: {task, out (`made`: scripts/
 ## hall_line_build.gd `build`)}; the one building, -1 none.
@@ -181,6 +185,9 @@ func configure(line_opts: Dictionary, given_rise: Dictionary) -> void:
 			islets.owns_shared = false
 			add_child(islets)
 		_palette = islets.prepare_authored()
+		if HallShafts.enabled() and _shafts == null:
+			_shafts = ShaftsDirector.new()
+			add_child(_shafts)
 		RuinKit.materials()
 		_first_template = {}
 	else:
@@ -319,6 +326,7 @@ func advance(delta: float, plane_at: Variant) -> void:
 		s.bodies = h.rise.body_frame_usec
 		s.frame = maxi(maxi(int(s.setup)+int(s.take),int(s.island)),int(s.bodies))
 		s.total = int(s.setup)+int(h.rise.take_total_usec)+int(s.island)+int(h.rise.body_total_usec)
+	if _shafts != null: _shafts.tick(delta,plane_at)
 	if look == "real":
 		_stand_islands()
 		_pump()
