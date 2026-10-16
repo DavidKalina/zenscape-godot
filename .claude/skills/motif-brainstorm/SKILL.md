@@ -45,7 +45,8 @@ Arguments: $ARGUMENTS
    RuinKit's Scale section, WorldScale; scripts/pilot_motor.gd's header
    for knocks, tosses and stun locks); write cards in the brief's format to
    the round folder (motif-mK-<slug>.md, one per card; kit-kK-<theme>.md,
-   one per agent); brainstorm only, no code edits, no Godot runs.
+   one per agent), each motif card with its Layout block; brainstorm only,
+   no code edits, no Godot runs.
 5. When all are back, write the round folder's `README.md`:
    - a table of every card (name, lenses/theme, one line, cost);
    - **the kit-ask tally**: group the "Kit asks" and match them to any kit
@@ -55,9 +56,16 @@ Arguments: $ARGUMENTS
      beat the literal baseline and whether the contrarian found something;
    - overlaps and duplicates between agents; engine gaps that keep pieces
      from combining.
+
+   Then draw the round: `python tools/motif_cards_html.py <round folder>`
+   writes its `index.html` (each card's top and side views, routes,
+   moments and notes). A card whose Layout is missing or won't parse
+   shows its ASCII instead: send it back to its agent to fix. Look at the
+   page yourself (a headless Chrome `--screenshot` of it) and send back
+   any card whose map contradicts its text.
 6. Add the round to the brief's "Rounds" list. Leave everything
-   uncommitted (AGENTS.md, Prototyping). Hand the user the picks and let
-   them choose. Next stages: `/motif-greybox`, then `/motif-turf`.
+   uncommitted (AGENTS.md, Prototyping). Hand the user the picks and the page
+   (`open <round folder>/index.html`) and let them choose. Next stages: `/motif-plan` for a pick, then `/motif-greybox`, then `/motif-turf`.
 
 If the user changes the brief mid round, message every running agent and
 re-brief any that already finished.

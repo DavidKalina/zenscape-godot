@@ -109,8 +109,9 @@ existing test its change breaks. Run the full suite only when the user asks.
 # Motifs
 
 New motifs and kit pieces go through the pipeline in
-`docs/design/motifs/motif-brief.md`: card, then place, then dressing
-pass (skills `motif-brainstorm`, `motif-greybox`, `motif-turf`).
+`docs/design/motifs/motif-brief.md`: card, then plan, then place, then dressing
+pass (skills `motif-brainstorm`, `motif-plan`, `motif-greybox`,
+`motif-turf`).
 
 Every isle the plane can reach keeps a clear stretch of turf long enough
 to land the plane by hand. Terrain added to an isle must not take it away.
