@@ -45,6 +45,7 @@ const EditorPalette = preload("res://studies/motif_editor_palette.gd")
 const Feel = preload("res://studies/motif_editor_feel.gd")
 const EditorTraps = preload("res://studies/motif_editor_traps.gd")
 const GreyLook = preload("res://studies/motif_editor_grey.gd")
+const Rebuild = preload("res://studies/motif_editor_rebuild.gd")
 const ToolRoll = preload("res://scripts/tool_roll.gd")
 const ClaySound = preload("res://scripts/clay_sound.gd")
 const RuinKitFit = preload("res://scripts/ruin_kit_fit.gd")
@@ -174,6 +175,9 @@ var traps: EditorTraps = null
 ## The grey editing look (studies/motif_editor_grey.gd), and whether the
 ## full look is on instead (G): editing and playing are grey by default.
 var grey: GreyLook = null
+## The snappy rebuild (studies/motif_editor_rebuild.gd): coarse land and
+## kept pieces at once, full detail from a worker.
+var rb: Rebuild = null
 var dressed := false
 var _look_label: Label = null
 ## A stamp being sized ({} none): its stroke, its middle, the outline
@@ -434,6 +438,7 @@ func dress() -> void:
 		motifs = null
 		_turf_rids.resize(_rid_base)
 		_swap_began = began
+	if rb != null: rb.reset()
 	motif = MotifAuthored.from_data(data)
 	motif.warm()
 	motifs = MotifSky.new()
@@ -459,14 +464,19 @@ func dress() -> void:
 ## The bare land and pieces only (a slider dragging): no plants, no life.
 func rebuild_bare(live := false, settled := false) -> void:
 	var began := Time.get_ticks_msec()
+	if rb == null: rb = Rebuild.new(self)
+	# What stands kept: a piece or run whose build is unchanged stands again.
+	var cache: Dictionary = Rebuild.harvest(pieces_holder()) if bare != null else {}
 	_clear_stand()
 	motif = MotifAuthored.from_data(data)
 	bare = Node3D.new()
 	bare.name = "Bare"
 	add_child(bare)
-	# A live stroke or outline drag: coarse. Else the full land if the last
-	# full one took under a quarter second, else coarse.
-	var coarse := live or (not settled and full_ms > 250)
+	# Settled and headless: the whole stand here and now. Else (rendered, or
+	# a slider dragging) the land coarse and the changed pieces stale, the
+	# full detail built on a worker once the hand stops (`rb.step`).
+	var whole := settled and not live and not rb.threaded
+	var coarse := not whole
 	if live: motif.fast_cell = LIVE_CELL
 	var land: Node3D = motif.build_land(coarse)
 	bare.add_child(land)
@@ -474,13 +484,17 @@ func rebuild_bare(live := false, settled := false) -> void:
 	var holder := Node3D.new()
 	holder.name = "Pieces"
 	bare.add_child(holder)
-	motif.build_pieces(holder)
+	var late: Array = rb.fill(motif,holder,cache,whole)
+	Rebuild.free_cache(cache)
+	rb.began_at(began)
+	rb.owe(coarse,late)
 	if not dressed and grey != null: grey.paint(bare)
 	bare_ms = Time.get_ticks_msec()-began
+	rb.quick_ms = bare_ms
 	if live:
 		live_ms = bare_ms
 		live_count += 1
-	elif not coarse: full_ms = bare_ms
+	elif whole: full_ms = bare_ms
 	rebuilds += 1
 	_bare_done_at = Time.get_ticks_msec()
 	_after_land()
@@ -527,10 +541,12 @@ func piece_node(k: int) -> Node3D:
 func refresh_pieces() -> void:
 	var holder := pieces_holder()
 	if holder == null: return
-	for c: Node in holder.get_children():
-		holder.remove_child(c)
-		c.free()
-	motif.build_pieces(holder)
+	if rb == null: rb = Rebuild.new(self)
+	var cache := Rebuild.harvest(holder)
+	rb.fill(motif,holder,cache,true)
+	Rebuild.free_cache(cache)
+	# Indices may have moved: a worker's pieces are dropped, its land still owed.
+	if not rb.detailed: rb.owe(rb.coarse_land,[])
 	_grey_new(holder)
 	hang_ropes()
 
@@ -568,6 +584,8 @@ func enter_edit() -> void:
 
 ## The pilot dropped at the spawn (or under the camera's middle), live.
 func play(under_camera := false) -> void:
+	# He stands on the full-detail land (lips, collision): what is owed built now.
+	if rb != null: rb.finish_now()
 	_edit_cam = camera.global_transform
 	editing = false
 	_end_drag()
@@ -604,6 +622,8 @@ func toggle_play(under_camera := false) -> void:
 func _process(delta: float) -> void:
 	_swap_step()
 	if not editing or motif == null or _ui == null:
+		# A worker's build dropped by play is freed when it lands.
+		if rb != null: rb.collect()
 		super._process(delta)
 		return
 	_hold_mouse()
@@ -652,6 +672,8 @@ func _edit_step(delta: float) -> void:
 	if _want_dress and not _want_bare and not _want_live and not _slider_drag and _stroke.is_empty() and _stamp.is_empty() and _path.is_empty() and _cut.is_empty() and handle_drag() == false and now-_changed_at > (250 if dressed else 60):
 		_want_dress = false
 		stand()
+	# Full detail once the hand stops (a worker's build swapped in when done).
+	if rb != null: rb.step(not _want_dress and not _want_bare and not _want_live and not _slider_drag and _stroke.is_empty() and _stamp.is_empty() and _path.is_empty() and _cut.is_empty() and not handle_drag())
 
 # --- Input ---------------------------------------------------------------------------------
 
@@ -887,6 +909,7 @@ func place_piece(id_name: String, at: Vector3, seed_value := -1, turn := 0.0, sn
 	var k := pieces.size()-1
 	var node: Node3D = motif.make_piece(k)
 	if node != null:
+		if rb != null: rb.tag_piece(motif,k,node)
 		pieces_holder().add_child(node)
 		_grey_new(node)
 	_after_pieces()
