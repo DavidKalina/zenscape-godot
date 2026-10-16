@@ -194,6 +194,39 @@ This section overrides the parry's window, cue and lockout above.
   side takes a teeter and a second hit. A rally miss or a riposte from
   the side still carries him straight over.
 
+## The leap: down to the meadow and back up (spec change: the user's ask)
+
+So the fight has room, he isn't stuck on the deck: he leaps down to the
+meadow to come for you, and if you climb onto the aqueduct while he's
+below, he leaps straight back up to it.
+
+- **Down:** when the wanderer is on the meadow near the aqueduct and he
+  has had no clean slash at him for a while (the buttresses in the way,
+  a knob in seconds), or the wanderer is close below, he walks to the lip
+  over him and leaps down, landing near him on the turf.
+- **Up:** when the wanderer is on the deck and he is on the meadow (after
+  a leap down, or after a teeter he recovered from below), he goes to the
+  aqueduct's foot below the wanderer, crouches and leaps straight up onto
+  the deck. The deck is about 10 m above the meadow; a huge, deliberate
+  leap for stone: a deep crouch (the tell), the launch, a hang at the
+  top, a landing that shakes.
+- **The landing hits.** Each landing throws a ring of dust and wind: a
+  wanderer within a few metres is knocked (the gust knock, a knob). It's
+  a wind shot in every other way, so it can be parried, a brutal one
+  timed to the touchdown.
+- **On the meadow he fights as on the deck:** patrol is off, he tracks,
+  slashes, catches, rallies, skids (no lip, so no teeter; a skid into the
+  aqueduct's wall stops him). Knocked off the deck is still a fall and a
+  shatter; a leap is controlled and he lands it.
+- **He goes home:** with the wanderer gone a while, he leaps back up and
+  walks his patrol again.
+- **Contract additions:** clip `leap` with form `down` or `up`, beats
+  `crouch`, `launch`, `apex`, `land`, `end`.
+- **Routes:** find the leap spots from the aqueduct's real shape (where
+  its foot meets turf on each side, clear of the buttresses, the stair
+  and the foot-route ropes), not from guessed numbers. The landing strip
+  stays clear (AGENTS.md, Motifs): he never stands on it as a rule.
+
 ## Where code goes
 
 - `scripts/enemies/rune_knight.gd`: the knight (body, patrol, sense,
@@ -297,12 +330,18 @@ changing. Names here are final once built on; change one only by a
    cracks a rune, X after the reel is caught as before; a side X on
    the deck teeters him at the lip rather than throwing him over, and a
    second hit then puts him over. Stills of the reel and the riposte.
-11. The core rune and the ledger: the drop where he dies, taking it marks
+11. The leap (above): down to the meadow, back up to the deck, home again,
+   the landing's knock. Play-loop checks: the wanderer on the meadow
+   with no clean line draws him down; climbing the deck brings him up;
+   the landing knocks a wanderer near it and a timed parry takes it;
+   he fights on the meadow (slash, catch, skid into the wall). Stills of
+   the crouch, the apex and the landing.
+12. The core rune and the ledger: the drop where he dies, taking it marks
    `aqueduct_isle/rune_knight`, he stays gone once it's taken and reforms
    if it wasn't. Play-loop checks across two runs (`--ledger` /
    `--fresh-ledger`, as tests/test_ledger.gd runs them); still of the
    rune hanging and of the isle card's new row.
-12. A feel pass on timings from the stills and checks, and a short rendered
+13. A feel pass on timings from the stills and checks, and a short rendered
    clip (a few frames strung) of one full fight: slash, parry, blast,
    rally, a parry and riposte, a crack, the knockoff.
 
