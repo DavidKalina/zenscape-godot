@@ -14,12 +14,15 @@ The ground shader now draws the paths per pixel, in `shaders/path_dirt.gdshaderi
 - The edge wanders with noise, so grass pushes in.
 - Tufts of grass hold on as small islands away from the trodden middle.
 
-**Dirt.** The dirt is the old baked colour, lifted (×1.35) and greyed toward dust (0.3). On top of it:
-- damp patches, darker and cooler;
-- a paler trodden crown down the middle;
-- a fine grain that fades out with distance;
-- sparse pebbles a shade off the dirt;
-- a low relief for the light.
+**Dirt.** The dirt is the old baked colour, lifted (×1.35) and greyed toward dust (0.3). It reads as a soil texture, with no pebbles; round 1's pebbles read as dots.
+- Soil in clumps, at three sizes.
+- Warmer and greyer earths in patches.
+- Damp hollows, darker and cooler.
+- A paler, dustier trodden crown down the middle.
+- Soft scuff streaks running along the path.
+- Fine crumbs and dust specks up close, faded out with distance.
+- A darker, richer soil band where the grass gives way.
+- A low relief, with the scuffs, for the light.
 
 **Lighting and colour.** The path keeps the turf's soft lighting normal, so the mesh facets don't show through. The dirt enters as the ground's source colour, so the ground's own look (palette, sun warmth, wet sheen) treats it as it treated the baked wear.
 
@@ -38,4 +41,5 @@ The ground shader now draws the paths per pixel, in `shaders/path_dirt.gdshaderi
 ## Not done
 
 - Stones and flagstones along the edges (option 3).
+- No look presets other than Alpine morning were captured.
 - The motif isles' paths. `PathDirt.paint` works on any ground material once an isle has path polylines.

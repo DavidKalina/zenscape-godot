@@ -5,8 +5,10 @@
 // scripts/kit_isle/path_dirt.gd), and each pixel finds how worn it is from
 // its distance to them, so the edge is the path's own, ragged, with grass
 // pushing in, not the turf mesh's facets blurred. Inside, packed earth in the
-// isle's dirt colour: damp patches darker, the trodden crown paler, a grain,
-// pebbles, and a little relief for the light. 0 segments (the default): no
+// isle's dirt colour: soil in clumps and tones, damp patches darker, the
+// trodden crown paler and dustier, scuffs along the way it is walked, fine
+// crumbs and dust up close, a richer, darker soil at the grass's edge, and a
+// little relief for the light. 0 segments (the default): no
 // path, the ground as before. Include after reference_wind (zs_noise).
 uniform int path_count = 0;
 uniform vec4 path_segs[48];
@@ -15,25 +17,30 @@ uniform vec3 path_dirt : source_color = vec3(0.16, 0.12, 0.08);
 // The wear's reach (m) and how much of it is full: wear = full - d / reach,
 // as the isle's own path_wear (1.25 - d / 1.5).
 uniform vec2 path_wear_curve = vec2(1.25, 1.5);
-// The pebbles: their share of cells and a cell's size (m).
-uniform vec2 path_pebbles = vec2(0.13, 0.22);
 
-float zs_path_distance(vec2 p) {
+// The nearest segment's distance, and in `way` its direction.
+float zs_path_distance(vec2 p, out vec2 way) {
 	float d = 1.0e9;
+	way = vec2(1.0, 0.0);
 	for (int i = 0; i < 48; i++) {
 		if (i >= path_count) break;
 		vec2 a = path_segs[i].xy;
 		vec2 b = path_segs[i].zw;
 		vec2 ab = b - a;
 		float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
-		d = min(d, length(p - a - ab * t));
+		float di = length(p - a - ab * t);
+		if (di < d) {
+			d = di;
+			way = ab / max(length(ab), 1e-6);
+		}
 	}
 	return d;
 }
 
-// How worn `p` is (0..1), and in `crown` how near the middle (0..1).
-float zs_path_wear(vec2 p, out float crown) {
-	float d = zs_path_distance(p);
+// How worn `p` is (0..1); in `crown` how near the middle (0..1), in `way`
+// the way the path runs there.
+float zs_path_wear(vec2 p, out float crown, out vec2 way) {
+	float d = zs_path_distance(p, way);
 	// The edge wanders: a broad sway and a finer tear.
 	float rag = (zs_noise(p * 0.45) - 0.5) * 0.9 + (zs_noise(p * 2.3 + 11.0) - 0.5) * 0.4;
 	float raw = clamp(path_wear_curve.x - (d + rag) / path_wear_curve.y, 0.0, 1.0);
@@ -44,55 +51,50 @@ float zs_path_wear(vec2 p, out float crown) {
 	return wear * (1.0 - island * 0.9);
 }
 
-// A pebble at `p`: its cover (0..1) and its rise (for the light), faded out
-// where a pixel is wider than a pebble.
-float zs_path_pebble(vec2 p, float px, out float rise) {
-	vec2 cell = floor(p / path_pebbles.y);
-	float pick = zs_noise_hash(cell + 3.1);
-	rise = 0.0;
-	if (pick > path_pebbles.x) return 0.0;
-	vec2 at = (cell + 0.25 + 0.5 * vec2(zs_noise_hash(cell + 7.7), zs_noise_hash(cell + 1.9))) * path_pebbles.y;
-	float r = path_pebbles.y * mix(0.14, 0.3, zs_noise_hash(cell + 5.3));
-	float d = length((p - at) * vec2(1.0, mix(0.7, 1.3, zs_noise_hash(cell + 9.1)))) / r;
-	float cover = 1.0 - smoothstep(0.8, 1.0, d);
-	rise = sqrt(max(0.0, 1.0 - d * d));
-	return cover * (1.0 - smoothstep(0.02, 0.06, px));
-}
-
 // The ground's colour `ground` (linear) worn to dirt by `wear` at `p`.
-vec3 zs_path_colour(vec3 ground, vec2 p, float wear, float crown, float px) {
+vec3 zs_path_colour(vec3 ground, vec2 p, float wear, float crown, vec2 way, float px) {
+	// Detail fades out as a pixel grows wider than it (no shimmer far off).
+	float fine = 1.0 - smoothstep(0.012, 0.05, px);
+	float mid = 1.0 - smoothstep(0.05, 0.25, px);
+	vec2 q = vec2(dot(p, way), dot(p, vec2(-way.y, way.x)));
 	vec3 dirt = path_dirt;
-	// Damp hollows darker and a little cooler; the trodden crown paler.
-	float damp = smoothstep(0.55, 0.8, zs_noise(p * 0.32 + 5.0));
-	dirt *= mix(vec3(1.0), vec3(0.74, 0.76, 0.82), damp);
-	dirt = mix(dirt, dirt * 1.22 + vec3(0.012, 0.01, 0.006), crown * (1.0 - damp) * 0.7);
-	// Grain: a scuffed, uneven earth.
-	dirt *= mix(1.0, 0.86 + 0.28 * zs_noise(p * 7.0), 1.0 - smoothstep(0.03, 0.1, px));
-	dirt *= 0.93 + 0.14 * zs_noise(p * 1.7 + 3.0);
-	// Pebbles: pale stone, a shade apart each.
-	float rise;
-	float pebble = zs_path_pebble(p, px, rise) * smoothstep(0.35, 0.7, wear);
-	// A shade or two off the dirt, greyer: stones in it, not dots on it.
+	// Soil in clumps, three sizes over each other.
+	float clump = zs_noise(p * 0.6) * 0.5 + zs_noise(p * 1.7 + 3.0) * 0.3 + zs_noise(p * 4.3 + 9.0) * 0.2 * mid;
+	dirt *= mix(0.8, 1.16, clump);
+	// Here a warmer, redder earth, there a greyer one.
+	float warm = zs_noise(p * 0.22 + 17.0);
+	dirt *= mix(vec3(0.96, 0.98, 1.04), vec3(1.07, 0.98, 0.86), warm);
+	// Damp hollows darker and a little cooler.
+	float damp = smoothstep(0.58, 0.82, zs_noise(p * 0.32 + 5.0));
+	dirt *= mix(vec3(1.0), vec3(0.78, 0.79, 0.84), damp);
+	// The trodden crown: paler, dustier, greyer.
 	float luma = dot(dirt, vec3(0.2126, 0.7152, 0.0722));
-	vec3 stone = mix(dirt, vec3(luma), 0.6) * mix(0.8, 1.45, zs_noise_hash(floor(p / path_pebbles.y) + 2.2)) * (0.75 + 0.35 * rise);
-	dirt = mix(dirt, stone, pebble);
+	dirt = mix(dirt, mix(dirt, vec3(luma), 0.35) * 1.18, crown * (1.0 - damp) * 0.65);
+	// Scuffs along the way it is walked: soft streaks, long and narrow.
+	float scuff = zs_noise(vec2(q.x * 0.8, q.y * 6.5) + 21.0) * 0.6 + zs_noise(vec2(q.x * 2.0, q.y * 14.0) + 4.0) * 0.4;
+	dirt *= mix(1.0, mix(0.88, 1.1, scuff), mid * smoothstep(0.4, 0.9, wear));
+	// Up close, crumbs of darker earth and specks of pale dust.
+	float crumb = smoothstep(0.7, 0.92, zs_noise(p * 31.0 + 2.0)) * fine;
+	float dust = smoothstep(0.78, 0.95, zs_noise(p * 24.0 + 13.0)) * fine * (0.4 + 0.6 * crown);
+	dirt *= (1.0 - 0.26 * crumb) * (1.0 + 0.3 * dust);
+	dirt *= mix(1.0, 0.9 + 0.2 * zs_noise(p * 12.0 + 6.0), fine);
+	// Where the grass gives way, a richer, darker soil among its roots.
+	float rim = smoothstep(0.02, 0.3, wear) * (1.0 - smoothstep(0.4, 0.8, wear));
+	dirt *= mix(vec3(1.0), vec3(0.74, 0.72, 0.7), rim);
 	return mix(ground, dirt, wear);
 }
 
-// The light's normal on the path: the earth's low relief and the pebbles' rise.
-vec3 zs_path_normal(vec3 n, vec2 p, float wear, float px) {
-	float e = 0.06;
-	float h0 = zs_noise(p * 2.2);
-	float hx = zs_noise((p + vec2(e, 0.0)) * 2.2);
-	float hz = zs_noise((p + vec2(0.0, e)) * 2.2);
-	vec2 slope = vec2(hx - h0, hz - h0) / e * 0.05;
-	float rise;
-	float rx;
-	float rz;
-	float c = zs_path_pebble(p, px, rise);
-	zs_path_pebble(p + vec2(0.02, 0.0), px, rx);
-	zs_path_pebble(p + vec2(0.0, 0.02), px, rz);
-	slope += vec2(rx - rise, rz - rise) / 0.02 * 0.025 * c;
+// The light's normal on the path: the earth's low relief and its scuffs.
+vec3 zs_path_normal(vec3 n, vec2 p, float wear, vec2 way, float px) {
+	float e = 0.05;
+	float mid = 1.0 - smoothstep(0.05, 0.25, px);
+	vec2 across = vec2(-way.y, way.x);
+	float h0 = zs_noise(p * 2.2) + 0.35 * zs_noise(vec2(dot(p, way) * 0.8, dot(p, across) * 6.5) + 21.0) * mid;
+	vec2 px1 = p + vec2(e, 0.0);
+	vec2 pz1 = p + vec2(0.0, e);
+	float hx = zs_noise(px1 * 2.2) + 0.35 * zs_noise(vec2(dot(px1, way) * 0.8, dot(px1, across) * 6.5) + 21.0) * mid;
+	float hz = zs_noise(pz1 * 2.2) + 0.35 * zs_noise(vec2(dot(pz1, way) * 0.8, dot(pz1, across) * 6.5) + 21.0) * mid;
+	vec2 slope = vec2(hx - h0, hz - h0) / e * 0.045;
 	return normalize(mix(n, normalize(n - vec3(slope.x, 0.0, slope.y)), wear));
 }
 #endif

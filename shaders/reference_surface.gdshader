@@ -716,11 +716,12 @@ void fragment() {
 	// as it took the turf's baked-in wear.
 	vec3 ground_src = COLOR.rgb;
 	float path_worn = 0.0;
+	vec2 path_way = vec2(1.0, 0.0);
 	float path_px = length(fwidth(world_position.xz));
 	if (ground && path_count > 0) {
 		float crown;
-		path_worn = zs_path_wear(world_position.xz, crown);
-		if (path_worn > 0.0) ground_src = zs_path_colour(COLOR.rgb, world_position.xz, path_worn, crown, path_px);
+		path_worn = zs_path_wear(world_position.xz, crown, path_way);
+		if (path_worn > 0.0) ground_src = zs_path_colour(COLOR.rgb, world_position.xz, path_worn, crown, path_way, path_px);
 	}
 	float ground_grass = 0.0;
 	if (ground) {
@@ -730,7 +731,7 @@ void fragment() {
 		face_normal = facet;
 		// A path keeps the turf's soft light, so its facets don't show through.
 		light_normal = normalize(mix(facet, normalize(world_normal), max(ground_soft * max(ground_grass, path_worn), facet_soft)));
-		if (path_worn > 0.0) light_normal = zs_path_normal(light_normal, world_position.xz, path_worn, path_px);
+		if (path_worn > 0.0) light_normal = zs_path_normal(light_normal, world_position.xz, path_worn, path_way, path_px);
 		NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
 	}
 	if (grass_blades || flower_heads) {
