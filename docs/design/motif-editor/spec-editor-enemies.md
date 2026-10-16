@@ -129,4 +129,4 @@ stones, section ends and the join check.
 - Branch `iter/editor-enemies`, from `iter/editor-traps` once that loop
   finishes; its own worktree.
 - No lanes (ordered, mostly in the editor).
-- Model Opus. Cap 20 iterations, budget 150000 tokens per iteration.
+- Model Opus. Cap: the iterate skill's default (.claude/skills/iterate/SKILL.md, The cap), budget 150000 tokens per iteration.
