@@ -232,6 +232,17 @@ func updraft(m: PilotMotor) -> bool:
 	_dip_amp = DIP*p*UNIT
 	return true
 
+## All the charge spent on something else (the gust shot,
+## scripts/lock_on/gust_shot.gd): the wake comes away drifting `drift` m/s.
+## Returns what was spent, 0 (nothing spent) under MIN_RELEASE.
+func spend(m: PilotMotor, drift := Vector3.ZERO) -> float:
+	if charge < MIN_RELEASE or m.recovering() or m.swimming or m.seized(): return 0.0
+	var p := charge
+	charge = 0.0
+	_quiet = 0.0
+	_let_go(drift)
+	return p
+
 ## The forward burst: stick toward his travel (or any way when slow) plus the
 ## key adds flat pace along it, scaled by charge and eased off near BURST_CAP.
 ## No ring; wind streaks behind him and a FOV kick. Grounded he stays down (and

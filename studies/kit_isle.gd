@@ -118,6 +118,7 @@ const GlideAir = preload("res://scripts/glide_air.gd")
 const IsleLock = preload("res://scripts/isle_lock.gd")
 const IsleSplash = preload("res://scripts/isle_splash.gd")
 const FootLock = preload("res://scripts/lock_on/foot_lock.gd")
+const GustShot = preload("res://scripts/lock_on/gust_shot.gd")
 const ManualLanding = preload("res://scripts/manual_landing.gd")
 const LandingReadout = preload("res://scripts/landing_readout.gd")
 const PlaneLanding = preload("res://scripts/plane_landing.gd")
@@ -1306,6 +1307,31 @@ func toggle_foot_lock() -> bool:
 		return true
 	return foot_lock.acquire(motor.feet,camera)
 
+## The gust shot (scripts/lock_on/gust_shot.gd): on foot, X (pad X) with
+## the updraft charge at its release threshold or more spends it on a ball
+## of air: at the locked target, else along the camera's flat heading.
+## Without the charge X is the twirl, as ever; the press that shot holds
+## the twirl off until X is let go.
+var gust_shot: Node3D = null
+
+func _gust_input() -> void:
+	if not Input.is_action_pressed(&"walk_twirl"): twirl_held_off = false
+	if not Input.is_action_just_pressed(&"walk_twirl") or _tuning(): return
+	if updraft == null or not foot_lock_allowed(): return
+	if telescope != null and telescope.busy(): return
+	if updraft.charge < updraft.MIN_RELEASE: return
+	var target: Node3D = null
+	if foot_lock != null and foot_lock.locked(): target = foot_lock.target
+	var heading := -camera.global_transform.basis.z
+	if target != null: heading = target.global_position-motor.feet
+	var spent: float = updraft.spend(motor,-Vector3(heading.x,0.0,heading.z).normalized()*1.5)
+	if spent <= 0.0: return
+	if gust_shot == null:
+		gust_shot = GustShot.new()
+		add_child(gust_shot)
+	gust_shot.fire(motor.feet,heading,target,spent)
+	twirl_held_off = true
+
 ## On foot, walking (not flying, stranded, off the edge or holding the stone up).
 func foot_lock_allowed() -> bool:
 	return walk_ready and not flying and not off_edge and _stranded_left < 0.0 and lode_state != "inspecting"
@@ -2149,8 +2175,10 @@ func tick(delta: float) -> void:
 	# Off the edge the stranding rule is the net, not the study's `lost`.
 	var keep := lost
 	if off_edge: lost = -INF
+	if not scripted: _gust_input()
 	super.tick(delta)
 	lost = keep
+	if gust_shot != null and delta > 0.0: gust_shot.step(delta,motor.feet,get_world_3d().direct_space_state)
 	_lode_step(delta)
 	if life != null: life.step_pilot()
 	if plane_arc != null: plane_arc.step_pilot(delta)

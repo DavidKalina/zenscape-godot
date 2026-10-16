@@ -387,6 +387,9 @@ var script_want := Vector2.ZERO
 var script_jump := false
 var script_crouch := false
 var script_twirl := false
+## X spent on something else this press (the aqueduct isle's gust shot):
+## no twirl until it is let go.
+var twirl_held_off := false
 ## A scripted press of the flow charge's key (Q, pad RB), this tick only.
 var script_wind := false
 ## The last jump, measured: its number, peak over the takeoff, reach across
@@ -871,7 +874,7 @@ func tick(delta: float) -> void:
 		want = _want(delta)
 		jump = Input.is_action_pressed(&"walk_jump") and not _tuning()
 		motor.crouch = Input.is_action_pressed(&"walk_crouch") and not _tuning()
-		motor.twirl = Input.is_action_pressed(&"walk_twirl") and not _tuning()
+		motor.twirl = Input.is_action_pressed(&"walk_twirl") and not _tuning() and not twirl_held_off
 	var looking := false
 	if telescope != null:
 		var hold: bool = script_telescope if scripted else Input.is_action_pressed(&"telescope") and not _tuning()
