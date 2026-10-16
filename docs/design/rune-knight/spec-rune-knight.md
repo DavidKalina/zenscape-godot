@@ -121,9 +121,11 @@ changing. Names here are final once built on; change one only by a
 `spec change` commit.
 
 - **Body API** (`scripts/enemies/rune_knight_body_standin.gd`):
-  `play(clip)`, signal `beat_reached(clip, beat)`, `socket(name) ->
-  Node3D`, `set_effect(name, on)`. The mind drives the body only
-  through these.
+  `play(clip, form := "")`, signal `beat_reached(clip, beat)`,
+  `socket(name) -> Node3D`, `set_effect(name, on)`. The mind drives the
+  body only through these. A clip's `form` picks its variant: `gather`
+  "blade" (the wind drawn into the right gauntlet; "" the two-handed ball
+  of the lob), `slash` "level" or "high".
 - **Clips and beats** (lengths are the stand-in's starting values; the
   mind waits on beats, never on its own timers for body motion):
   `idle` (loop), `walk` (loop; beat `plant` per footfall), `turn`
