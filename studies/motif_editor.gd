@@ -22,7 +22,7 @@ extends "res://studies/kit_isle.gd"
 ##   G                            the full look (turf, flora, life, sky) or back to grey
 ##                                (editing and playing are grey by default: motif_editor_grey.gd)
 ##   Ctrl+S                       save          P / Shift+P   play from the spawn / under the camera
-##   1-8                          tools: select raise lower smooth flatten ravine water outline
+##   1-9                          tools: select raise lower smooth flatten ravine water outline slope
 ##   brush: LMB drag (hold still to pile up), wheel or [ ] radius, panel strength
 ##   water: click a hollow (Shift: take it away); outline: drag handles,
 ##   Shift+click add, Alt+click or Delete remove; Ctrl+Z / Ctrl+Shift+Z undo, redo
@@ -37,6 +37,8 @@ extends "res://studies/kit_isle.gd"
 ## under it (studies/motif_editor_feel.gd).
 ##   stamps (Mountain, Hills, Crater, Mesa, Island): click, drag out to size
 ##   Ravine: draw a line (a ravine) or a loop (a lake, dug and filled)
+##   Slope (the Ravine's second mode, or 9): drag from the top down: a ramp
+##   he slides; the same drag along a slope turns it to steps and back
 ##   New land: draw a loop out past the edge; Trash: click a thing away
 ## Playing: the real pilot, motor and input; P back to editing, as it was.
 const MotifAuthored = preload("res://scripts/kit_isle/motif_authored.gd")
@@ -53,6 +55,7 @@ const EditorViews = preload("res://studies/motif_editor_views.gd")
 const EditorBase = preload("res://studies/motif_editor_base.gd")
 const GreyLook = preload("res://studies/motif_editor_grey.gd")
 const Rebuild = preload("res://studies/motif_editor_rebuild.gd")
+const EditorSlope = preload("res://studies/motif_editor_slope.gd")
 const ToolRoll = preload("res://scripts/tool_roll.gd")
 const ClaySound = preload("res://scripts/clay_sound.gd")
 const RuinKitFit = preload("res://scripts/ruin_kit_fit.gd")
@@ -97,7 +100,7 @@ var _arrows := {}
 
 ## The land tools (round 2): [id, label, key].
 const TOOLS := [["select","Select","1"],["raise","Raise","2"],["lower","Lower","3"],["smooth","Smooth","4"],
-	["flatten","Flatten","5"],["ravine","Ravine","6"],["water","Water","7"],["outline","Outline","8"]]
+	["flatten","Flatten","5"],["ravine","Ravine","6"],["water","Water","7"],["outline","Outline","8"],["slope","Slope","9"]]
 const BRUSHES := ["raise","lower","smooth","flatten"]
 ## Round 3: the stamps (click, drag out to size) and their landform; the
 ## tools that draw a path (applied on release); the stamps' height as a
@@ -105,17 +108,17 @@ const BRUSHES := ["raise","lower","smooth","flatten"]
 const STAMPS := {"stamp_mountain":"mountain","stamp_hills":"hills","stamp_crater":"crater","stamp_mesa":"mesa","stamp_island":"island"}
 const STAMP_TALL := {"mountain":0.7,"hills":0.26,"crater":0.38,"mesa":0.42,"island":0.25}
 const STAMP_FEEL := {"mountain":"mountain","hills":"mountain","crater":"crater","mesa":"chisel","island":"island"}
-const PATHS := ["ravine","new_land"]
+const PATHS := ["ravine","new_land","slope"]
 ## Each tool's pocket on the tool roll and its mode there ("" none).
 const POCKET := {"select":["",""],"raise":["hand","pinch"],"lower":["hand","groove"],"smooth":["paddle","plane"],
-	"flatten":["paddle","pat"],"ravine":["wire",""],"water":["can",""],"outline":["",""],"stamp_mountain":["mountain",""],
+	"flatten":["paddle","pat"],"ravine":["wire","carve"],"slope":["wire","slope"],"water":["can",""],"outline":["",""],"stamp_mountain":["mountain",""],
 	"stamp_hills":["hills",""],"stamp_crater":["crater",""],"stamp_mesa":["chisel",""],"stamp_island":["island","spread"],
 	"new_land":["island","draw"],"trash":["trash",""],"run_aqueduct":["",""],"run_wall":["",""],"run_bridge":["",""]}
 ## A pocket's modes, and the tool a pocket (or a pocket's mode) gives.
-const POCKET_MODES := {"hand":["pinch","groove"],"paddle":["plane","pat"],"island":["spread","draw"]}
+const POCKET_MODES := {"wire":["carve","slope"],"hand":["pinch","groove"],"paddle":["plane","pat"],"island":["spread","draw"]}
 const POCKET_TOOL := {"hand":"raise","hills":"stamp_hills","mountain":"stamp_mountain","crater":"stamp_crater","island":"stamp_island",
 	"wire":"ravine","chisel":"stamp_mesa","paddle":"smooth","can":"water","trash":"trash"}
-const MODE_TOOL := {"hand:pinch":"raise","hand:groove":"lower","paddle:plane":"smooth","paddle:pat":"flatten","island:spread":"stamp_island","island:draw":"new_land"}
+const MODE_TOOL := {"hand:pinch":"raise","hand:groove":"lower","paddle:plane":"smooth","paddle:pat":"flatten","island:spread":"stamp_island","island:draw":"new_land","wire:carve":"ravine","wire:slope":"slope"}
 ## The roll's three size pips: the brush radius each gives.
 const PIP_RADIUS := [3.0,5.0,8.5]
 const HINTS := {
@@ -125,6 +128,7 @@ const HINTS := {
 	"smooth":"Smooth: drag over the land · wheel or [ ] radius",
 	"flatten":"Flatten: drag; levels to where the stroke began",
 	"ravine":"Ravine: draw a line for a ravine, a loop for a lake · strength is depth",
+	"slope":"Slope: drag from the top down for a ramp he slides · the same drag along a slope turns it to steps, and back · radius is its width",
 	"water":"Water: click a hollow to pour a pond · Shift+click takes one away",
 	"outline":"Outline: drag the edge points · Shift+click adds · Alt+click or Del removes",
 	"stamp_mountain":"Mountain: click inside the ring to stamp, drag up to pull it taller · pips or wheel size the ring",
@@ -794,7 +798,7 @@ func _edit_input(event: InputEvent) -> void:
 			redo()
 			return
 		if get_viewport().gui_get_focus_owner() is LineEdit: return
-		if k.keycode >= KEY_1 and k.keycode <= KEY_8 and not k.echo:
+		if k.keycode >= KEY_1 and k.keycode <= KEY_9 and not k.echo:
 			set_tool(str(TOOLS[k.keycode-KEY_1][0]))
 			return
 		if k.keycode == KEY_BRACKETLEFT:
@@ -1385,18 +1389,19 @@ func _show_cursor(at: Vector2) -> void:
 		mat.albedo_color = Color(1.0,1.0,1.0,0.85)
 		_cursor.material_override = mat
 		add_child(_cursor)
-	var on := editing and (tool in BRUSHES or tool in ["water","ravine"] or STAMPS.has(tool)) and _held_piece.is_empty()
+	var on := editing and (tool in BRUSHES or tool in ["water","ravine","slope"] or STAMPS.has(tool)) and _held_piece.is_empty()
 	var hit := ground_hit(at) if on else {}
 	_cursor.visible = on and not hit.is_empty()
 	if not _cursor.visible: return
 	var r := brush_r*(RAVINE_HALF_SHOWN if tool == "ravine" else 1.0) if tool != "water" else 0.6
 	if STAMPS.has(tool): r = brush_r*2.0
+	if tool == "slope": r = maxf(brush_r*MotifAuthored.SLOPE_HALF,MotifAuthored.SLOPE_HALF_MIN)
 	var torus := TorusMesh.new()
 	torus.inner_radius = r
 	torus.outer_radius = r+maxf(0.08,r*0.03)
 	_cursor.mesh = torus
 	_cursor.global_position = hit.position+Vector3.UP*0.15
-	(_cursor.material_override as StandardMaterial3D).albedo_color = {"raise":Color(1.0,0.85,0.4),"lower":Color(0.5,0.75,1.0),"smooth":Color(0.8,1.0,0.8),"flatten":Color(1.0,1.0,1.0),"ravine":Color(1.0,0.5,0.35),"water":Color(0.3,0.7,1.0)}.get(tool,Color(0.95,0.85,0.65))
+	(_cursor.material_override as StandardMaterial3D).albedo_color = {"raise":Color(1.0,0.85,0.4),"lower":Color(0.5,0.75,1.0),"smooth":Color(0.8,1.0,0.8),"flatten":Color(1.0,1.0,1.0),"ravine":Color(1.0,0.5,0.35),"slope":Color(0.95,0.75,0.45),"water":Color(0.3,0.7,1.0)}.get(tool,Color(0.95,0.85,0.65))
 const RAVINE_HALF_SHOWN := MotifAuthored.RAVINE_HALF
 
 # --- Undo ------------------------------------------------------------------------------------
@@ -1947,7 +1952,10 @@ func end_path() -> void:
 	_draw_path()
 	var length := _path_length(pts)
 	var loop := pts.size() >= 6 and length >= LOOP_MIN and (pts[0] as Vector2).distance_to(pts[-1]) <= maxf(LOOP_GAP,brush_r)
-	if kind == "new_land":
+	if kind == "slope":
+		if length < 2.0: say("Drag a slope from its top down")
+		else: EditorSlope.drag(self,pts)
+	elif kind == "new_land":
 		if length < 8.0:
 			say("Draw a loop out past the edge for new land")
 			return

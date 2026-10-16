@@ -16,8 +16,10 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##    pts:[[x,z]...]}, (format 3, round 3:) {tool "stamp", form
 ##    (mountain hills crater mesa island), at:[x,z], r, h, seed, y?},
 ##    {tool "basin" (a lake's bed), pts (a loop), depth, bank},
-##    {tool "fill" (new land), pts (a loop), y, bank}] (in order, over the
-##    preset), "waters":[{at:[x,z],
+##    {tool "fill" (new land), pts (a loop), y, bank},
+##    (round 4:) {tool "slope", pts:[[x,z] top, [x,z] foot], r, steps?
+##    (true: terraces in ledge steps; absent/false: a ramp to slide)}]
+##    (in order, over the preset), "waters":[{at:[x,z],
 ##    fill}] (poured; the level found from the land as built),
 ##    "pieces":[{id, seed, weathered, at:[x,y,z], turn (deg), sink}],
 ##    "markers":{"spawn":[x,y,z], "rim_in":[x,y,z], "rim_out":[x,y,z]},
@@ -132,6 +134,19 @@ const RAVINE_WOBBLE := 0.35
 ## a share of the brush's radius.
 const RAVINE_DEPTH := Vector2(2.0,12.0)
 const RAVINE_HALF := 0.45
+## The slope tool (round 4): an even ramp the pilot can't stand on, so he
+## surfs down it (PilotMotor SLIDE_AUTO, past which he slides, and a margin
+## for the mesh's facets), at most SLOPE_HIGH (under the lips' least step,
+## cliff_drop 0.8 across a 0.5 m probe, 58 deg); its half-width a share of
+## the brush's radius (at least SLOPE_HALF_MIN), blended over SLOPE_BLEND
+## to the ground round it. As steps: risers of the kit's set-off (grabbed
+## lips) on treads the ramp's own angle gives.
+const SLOPE_LOW := PilotMotor.SLIDE_AUTO+4.0
+const SLOPE_HIGH := 54.0
+const SLOPE_HALF := 0.6
+const SLOPE_HALF_MIN := 1.5
+const SLOPE_BLEND := 2.5
+const SLOPE_STEP := RuinKit.SET_OFF
 ## Pooled water: the grid it is found on (m) and how far under the spill
 ## a full pond stands (m).
 const POOL_CELL := 0.5
@@ -790,6 +805,94 @@ class Ravine extends RefCounted:
 		var k := ceilf((best-half)/(RAVINE_LEDGE*wob))
 		return minf(y,floor_y+k*RAVINE_STEP)
 
+## A slope over a ground (round 4, the slope tool): a band along the
+## stroke's two points, its top at the higher one's ground, falling evenly
+## at the steepness the ground's own fall asks (SLOPE_LOW..SLOPE_HIGH) to
+## the lower one's ground and running out level from there to the end
+## (gentler ground: a cut and a level run-out; steeper: the top cut down).
+## No step and no lip inside its band; blended to the ground over
+## SLOPE_BLEND round it. `steps`: the same ramp in risers of SLOPE_STEP.
+class Slope extends RefCounted:
+	var a := Vector2.ZERO
+	var dir := Vector2.RIGHT
+	var length := 0.0
+	var half := SLOPE_HALF_MIN
+	var top := 0.0
+	var bottom := 0.0
+	var grade := 1.0
+	var run := 0.0
+	var steps := false
+	var dead := true
+	var box := Rect2()
+
+	func _init(stroke: Dictionary, under: Callable) -> void:
+		var band := Slope.band_of(stroke)
+		if band.is_empty(): return
+		a = band.a
+		var b: Vector2 = band.b
+		half = float(band.half)
+		steps = bool(band.steps)
+		var ha := float(under.call(a.x,a.y))
+		var hb := float(under.call(b.x,b.y))
+		# Drawn uphill: the top is the higher end all the same.
+		if hb > ha:
+			var t := a
+			a = b
+			b = t
+			var th := ha
+			ha = hb
+			hb = th
+		length = a.distance_to(b)
+		dir = (b-a)/maxf(length,0.001)
+		var fall := ha-hb
+		if fall < 0.3: return
+		grade = tan(deg_to_rad(clampf(rad_to_deg(atan(fall/length)),SLOPE_LOW,SLOPE_HIGH)))
+		bottom = hb
+		top = minf(ha,hb+length*grade)
+		run = (top-bottom)/grade
+		box = band.box
+		dead = false
+
+	## The band a stroke covers: {a, b, half, steps, box} ({} none).
+	static func band_of(stroke: Dictionary) -> Dictionary:
+		var pts: Array = stroke.get("pts",[])
+		if pts.size() < 2: return {}
+		var a := Vector2(float(pts[0][0]),float(pts[0][1]))
+		var b := Vector2(float(pts[-1][0]),float(pts[-1][1]))
+		if a.distance_to(b) < 1.0: return {}
+		var half := maxf(float(stroke.get("r",4.0))*SLOPE_HALF,SLOPE_HALF_MIN)
+		var box := Rect2(a,Vector2.ZERO).expand(b).grow(half+SLOPE_BLEND+0.5)
+		return {"a":a,"b":b,"half":half,"steps":bool(stroke.get("steps",false)),"box":box}
+
+	## Whether (x, z) is inside the band (its ramp's own faces), `pad` past it.
+	static func inside(band: Dictionary, p: Vector2, pad := 0.0) -> bool:
+		var a: Vector2 = band.a
+		var ab: Vector2 = band.b-a
+		var l := ab.length()
+		var u := (p-a).dot(ab/l)
+		var v := absf((p-a).cross(ab/l))
+		return u > -pad and u < l+pad and v < float(band.half)+pad
+
+	## The ramp's height `u` metres along from its top.
+	func height_at(u: float) -> float:
+		var along := clampf(u,0.0,length)
+		# Steps: a riser of SLOPE_STEP each tread (the ramp's own run for
+		# that rise), each tread level.
+		if steps: return maxf(top-floorf(along*grade/SLOPE_STEP+0.0001)*SLOPE_STEP,bottom)
+		return maxf(top-along*grade,bottom)
+
+	## The height at (x, z) over the ground `y` there.
+	func cut(x: float, z: float, y: float) -> float:
+		if dead: return y
+		var p := Vector2(x,z)
+		if not box.has_point(p): return y
+		var u := (p-a).dot(dir)
+		var v := absf((p-a).cross(dir))
+		var off := maxf(maxf(-u,u-length),0.0)
+		var w := (1.0-smoothstep(0.0,SLOPE_BLEND,off))*(1.0-smoothstep(half,half+SLOPE_BLEND,v))
+		if w <= 0.0: return y
+		return lerpf(y,height_at(u),w)
+
 ## The ground (x, z) -> y of `d`: the preset, the brushes, the terraces,
 ## the ravines.
 static func ground_of(d: Dictionary, parts := {}) -> Callable:
@@ -801,7 +904,7 @@ static func ground_of(d: Dictionary, parts := {}) -> Callable:
 	var sculpt := Sculpt.new(box.grow(12.0),SCULPT_CELL)
 	var ravines: Array = []
 	for stroke: Dictionary in d.get("strokes",[]):
-		if str(stroke.get("tool","")) != "ravine": sculpt.apply(stroke,raw)
+		if not str(stroke.get("tool","")) in ["ravine","slope"]: sculpt.apply(stroke,raw)
 	parts.sculpt = sculpt
 	var soft := func(x: float, z: float) -> float:
 		var y := float(raw.call(x,z))+sculpt.sample(x,z)
@@ -811,18 +914,21 @@ static func ground_of(d: Dictionary, parts := {}) -> Callable:
 			# Under a smooth stamp the terraces give way to its slopes.
 			y = lerpf(stepped,y,sculpt.smooth_at(x,z))
 		return y
+	# The ravines and the slopes, in their order: each reads its heights off
+	# the ground before it.
 	for stroke: Dictionary in preset_ravines(d)+(d.get("strokes",[]) as Array):
-		if str(stroke.get("tool","")) == "ravine" and not (stroke.get("pts",[]) as Array).is_empty():
-			# Each ravine's floor is read off the ground before it.
+		var kind := str(stroke.get("tool",""))
+		if kind in ["ravine","slope"] and not (stroke.get("pts",[]) as Array).is_empty():
 			var under := soft if ravines.is_empty() else _carved(soft,ravines.duplicate())
-			ravines.append(Ravine.new(stroke,under))
+			ravines.append(Ravine.new(stroke,under) if kind == "ravine" else Slope.new(stroke,under))
 	if ravines.is_empty(): return soft
 	return _carved(soft,ravines)
 
+## `soft` cut by each of `ravines` (Ravine, Slope) in turn.
 static func _carved(soft: Callable, ravines: Array) -> Callable:
 	return func(x: float, z: float) -> float:
 		var y := float(soft.call(x,z))
-		for r: Ravine in ravines: y = r.cut(x,z,y)
+		for r in ravines: y = r.cut(x,z,y)
 		return y
 
 ## Where the ravines' crisp walls are: one box round them all (none: no
@@ -1041,22 +1147,53 @@ func land_spec(fast := false) -> Dictionary:
 	# would be all cliff points at the kit's 0.3).
 	var step := slider(data,"step")
 	spec.cliff_drop = clampf(step*0.5,0.3,0.8) if step > 0.3 else 0.8
+	# The slopes' bands (round 4): a ramp's faces are turf and never a lip;
+	# steps get their lips (crisp cliffs, a fine grid) as a ravine does.
+	var ramps: Array = []
+	var stairs := Rect2()
+	for band: Dictionary in slope_bands():
+		if bool(band.steps): stairs = band.box if stairs.size == Vector2.ZERO else stairs.merge(band.box)
+		else: ramps.append(band)
+	var smooth_skip := Callable()
 	if step > 0.3:
 		spec.cliffs = box.grow(1.0)
 		spec.fine = 1.3
 		# No terrace cliffs under a smooth stamp (its own slopes).
 		ground_fn()
 		var sc: Variant = _ground_parts.get("sculpt")
-		if sc != null and bool(sc.smooth_any): spec.cliff_skip = func(p: Vector2) -> bool: return float(sc.smooth_at(p.x,p.y)) > 0.35
+		if sc != null and bool(sc.smooth_any):
+			smooth_skip = func(p: Vector2) -> bool: return float(sc.smooth_at(p.x,p.y)) > 0.35
+			spec.cliff_skip = smooth_skip
 	else:
 		var rb := ravine_box()
+		if stairs.size != Vector2.ZERO: rb = stairs if rb.size == Vector2.ZERO else rb.merge(stairs)
 		if rb.size != Vector2.ZERO:
 			spec.cliffs = rb.intersection(box.grow(1.0))
 			spec.fine_box = spec.cliffs
 			spec.fine = 1.0
 			# The isle's own cell kept (2 m) round the ravine's fine box: a
 			# ravine then changes the grid only where it is (stable).
+	if not ramps.is_empty():
+		spec.cliff_skip = func(p: Vector2) -> bool:
+			for band: Dictionary in ramps:
+				if Slope.inside(band,p,0.3): return true
+			return smooth_skip.is_valid() and bool(smooth_skip.call(p))
+		var was: Callable = spec.get("rocky",Callable())
+		spec.rocky = func(mid: Vector2, normal: Vector3) -> bool:
+			for band: Dictionary in ramps:
+				if Slope.inside(band,mid): return false
+			if was.is_valid(): return bool(was.call(mid,normal))
+			return KitLook.is_rock(normal,KitLook.palette())
 	return spec
+
+## The slope strokes' bands (Slope.band_of), in order.
+func slope_bands() -> Array:
+	var out: Array = []
+	for stroke: Dictionary in data.get("strokes",[]):
+		if str(stroke.get("tool","")) != "slope": continue
+		var band := Slope.band_of(stroke)
+		if not band.is_empty(): out.append(band)
+	return out
 
 ## The bare land: the hill, collided, its sides collided as drawn.
 func build_land(fast := false) -> Node3D:

@@ -27,6 +27,7 @@ const LAND := [
 	["ravine","Ravine","Carve","wire","Draw a line: a ravine. Draw a loop: a lake, dug and filled.",["6"]],
 	["water","Watering can","Pour","can","Pour a pond into the hollow you click. Shift takes one away.",["7"]],
 	["outline","Outline","Edge","","Drag the isle's edge points. Shift adds one, Alt takes one away.",["8"]],
+	["slope","Ravine","Slope","wire_slope","Drag from the top down: a ramp he slides. The same drag along a slope turns it to steps, and back.",["9"]],
 	["stamp_mountain","Mountain","Peak","mountain","Click to stamp a mountain the size of the ring; drag up to pull it taller.",[]],
 	["stamp_hills","Hills","Roll","hills","Click to stamp rolling hills; drag up for taller.",[]],
 	["stamp_crater","Crater","Hollow","crater","Click to stamp a crater; drag down to dig deeper. Pour water in it.",[]],
