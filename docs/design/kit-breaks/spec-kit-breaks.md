@@ -48,6 +48,22 @@ Olmec breaks things; the plane, the dragon and the slam are wired but off.
      nearby.
 
    Proof: motif yard pieces broken by the Olmec, filmed.
+
+   **Build the part kinds as the public contract for any kit, current or
+   future.** A new kit gets breakable by one of these, with no break code
+   of its own:
+   - **Tag its parts with a break kind.** Kinds are things like `pier`,
+     `lintel`, `arch`, `wall`, `slab`, `post`. Each kind owns how it
+     splits, falls and settles.
+   - **Register one cut function for a new kind.** Do this only when a kit
+     has a genuinely new shape (a bell, a hanging bridge, a statue). Every
+     piece of that kind then breaks.
+   - **Answer the hub itself, with its own choreography.** This is for
+     set pieces, as the city kit does.
+
+   The hub, source toggles, `hit()`, the body cap, rubble and the re-plan
+   are never a kit's job. Prove the contract by making one non-RuinKit
+   shape breakable through a registered kind, in a scratch check.
 3. **City kit onto the hub.** `scripts/city_kit_breaks*.gd` and
    `scripts/city_breaks/` join the same hub and source toggles, keeping
    their own choreography. The slam keeps working on them when `slam` is
@@ -58,6 +74,13 @@ Olmec breaks things; the plane, the dragon and the slam are wired but off.
      `motifs/authored/*.json` as before.
    - `hit()` in `tools/harness/drive.gd` for headless checks; regenerate the
      index with `python tools/drive.py --api --update`.
+   - **Teach the contract**, using the `writing-for-agents` skill:
+     - a short contract section in the loop's handoff doc (tag a kind,
+       register a cut, or answer the hub);
+     - one line each where new kit pieces are made: `docs/design/motifs/motif-brief.md`
+       (its kit-piece pipeline), and the `motif-greybox` and `motif-turf`
+       briefs. The line is: a new kit piece tags its parts with a break
+       kind or registers a cut.
 
 ## Constraints
 
