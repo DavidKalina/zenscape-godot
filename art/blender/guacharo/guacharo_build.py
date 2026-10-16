@@ -146,11 +146,24 @@ def paint_atlas():
         if srng.random() > 0.35 + 0.6 * bk and cv_ < 0.8: continue
         r = srng.uniform(0.006, 0.011) * (0.7 if cv_ > 0.82 else 1.0)
         spot(cu_, cv_, r, r * 1.5)
-    for row in range(4):
-        for k in range(26):
-            spot(0.52 + row * 0.055 + srng.uniform(-0.005, 0.005), 0.03 + k * 0.038 + srng.uniform(-0.006, 0.006), 0.008, 0.011)
-    for k in range(3):
-        spot(0.75 + 0.25 * 0.78, 0.38 + k * 0.13, 0.25 * 0.07, 0.022)
+    # Coverts: scattered, not in rows: thicker at the leading edge (the
+    # marginal coverts), sizes jittered, kept apart (u is ~3x squeezed
+    # against v on the wing, so distance is measured with u stretched).
+    placed = []
+    tries = 0
+    while len(placed) < 92 and tries < 6000:
+        tries += 1
+        cu_ = srng.uniform(0.505, 0.745)
+        cv_ = srng.uniform(0.02, 0.985)
+        if srng.random() > 1.0 - 0.75 * (cu_ - 0.505) / 0.24: continue
+        if any(((cu_ - a) * 2.6) ** 2 + (cv_ - b) ** 2 < 0.034 ** 2 for a, b in placed): continue
+        placed.append((cu_, cv_))
+        k = srng.uniform(0.7, 1.2)
+        spot(cu_, cv_, 0.008 * k, 0.011 * k * srng.uniform(0.85, 1.15))
+    # Feathers: the spots on the outer vane at uneven heights and sizes
+    # (each card also takes its own stretch of the strip, see feather()).
+    for cv_, k, du in ((0.34, 1.0, 0.0), (0.47, 0.75, 0.02), (0.6, 0.9, -0.015)):
+        spot(0.75 + 0.25 * (0.78 + du), cv_, 0.25 * 0.07 * k, 0.022 * k)
 
     img = bpy.data.images.new("guacharo_plumage", TEX, TEX, alpha=False)
     rgba = np.ones((TEX, TEX, 4), dtype=np.float32)
@@ -187,7 +200,7 @@ def make_mat(name, rgb_hex=None, rough=0.6, image=None, spec=0.5):
 materials = {
     "guacharo_plumage": make_mat("guacharo_plumage", rough=0.9, image=ATLAS, spec=0.12),
     "guacharo_horn": make_mat("guacharo_horn", "3a2c20", 0.4),
-    "guacharo_mouth": make_mat("guacharo_mouth", "4a1c1c", 0.55),
+    "guacharo_mouth": make_mat("guacharo_mouth", "b0524c", 0.5),
     "guacharo_eye": make_mat("guacharo_eye", "070504", 0.05, spec=1.0),
     "guacharo_foot": make_mat("guacharo_foot", "5a4636", 0.7),
 }
@@ -474,6 +487,10 @@ build(eyes)
 # ================================================================== feathers
 feathers = Part("feathers", smooth=True)
 FEA_U0 = 0.75
+# Each card takes its own stretch of the strip (scale, offset), so the
+# vane spots don't line up in rows across the wing. Its own rng: the
+# geometry's draws are unchanged.
+fea_rng = random.Random(23)
 
 def feather(base, along, side, length, width, camber, bone_w, segs=3, notch=0.0, twist=0.0, u0=FEA_U0, u1=1.0):
     """A feather card from base along `along` (unit), `width` across `side`
@@ -497,10 +514,13 @@ def feather(base, along, side, length, width, camber, bone_w, segs=3, notch=0.0,
         idx.append((feathers.v(a, bone_w), feathers.v(b, bone_w), t))
     tip = base + along * length * 1.06 - normal * camber * length
     ti = feathers.v(tip, bone_w)
+    vs, vo = fea_rng.uniform(0.8, 1.12), fea_rng.uniform(-0.1, 0.07)
+    def fv(t):
+        return min(max(vo + t * 0.94 * vs, 0.0), 0.94) if t < 1.0 else 0.94
     for i in range(segs):
         (a0, b0, t0), (a1, b1, t1) = idx[i], idx[i + 1]
         feathers.f((a0, b0, b1, a1), "guacharo_plumage",
-                   ((u0, t0 * 0.94), (u1, t0 * 0.94), (u1, t1 * 0.94), (u0, t1 * 0.94)))
+                   ((u0, fv(t0)), (u1, fv(t0)), (u1, fv(t1)), (u0, fv(t1))))
     a0, b0, t0 = idx[-1]
     feathers.f((a0, b0, ti), "guacharo_plumage", ((u0, 0.94), (u1, 0.94), ((u0 + u1) * 0.5, 1.0)))
 

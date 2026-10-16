@@ -66,8 +66,11 @@ const CIRCLE_ROLL := 0.384
 ## The head on him: its weight per state and the most it turns (rad).
 const HEAD_AIM := {"home":0.0,"circle":0.4,"stalk":0.9,"fold":0.6,"stoop":0.85,"carry":0.0,"pull":0.2}
 const HEAD_MAX := 1.0
-## A click: the head dips and the beak cracks, CLICK_DOWN s down, then
-## CLICK_BACK s back.
+## A click: the head dips CLICK_HEAD rad and the beak cracks CLICK_JAW rad,
+## CLICK_DOWN s down, then CLICK_BACK s back (the baked clicks are the same
+## size: 12 deg, jaw 0.4 x 38 deg).
+const CLICK_HEAD := 0.21
+const CLICK_JAW := 0.27
 const CLICK_DOWN := 0.04
 const CLICK_BACK := 0.08
 ## Each clip's swept box (glb units, CPU-skinned over every frame by
@@ -212,9 +215,15 @@ func _drive_glb(dt: float) -> void:
 		# A beat is let finish: back to the glide only at its top.
 		var f := _ap.current_animation_position/maxf(_ap.current_animation_length,0.01)
 		if f > 0.06 and f < 0.9: n = "flap"
-	if n == "circle" and playing != "circle" and _circle_w < 0.05:
-		# The circle clip banks left: mirrored for a right turn.
-		_mirror = float(m.get("bank") if minded else 0.0) > 0.0
+	if n == "circle":
+		# The circle clip banks left: mirrored for a right turn. The side is
+		# switched only with no circle weight left: a turn the other way
+		# rolls out through the glide (BLEND.circle s) and in again, never
+		# a flip of the banked pose.
+		var right := float(m.get("bank") if minded else 0.0) > 0.0
+		if right != _mirror:
+			if _circle_w < 0.05: _mirror = right
+			else: n = "glide"
 	_play(n,float(BLEND.get(n,0.2)),float(want[1]) if n == want[0] else _ap.speed_scale)
 	_ap.advance(dt)
 	_circle_w = move_toward(_circle_w,1.0 if playing == "circle" else 0.0,dt/BLEND.circle)
@@ -239,8 +248,8 @@ func _drive_glb(dt: float) -> void:
 	if _click_age < CLICK_DOWN: a = _click_age/CLICK_DOWN
 	elif _click_age < CLICK_DOWN+CLICK_BACK: a = 1.0-(_click_age-CLICK_DOWN)/CLICK_BACK
 	if a > 0.0:
-		_dip_bone(int(_bone.head),0.16*a)
-		_dip_bone(int(_bone.jaw),0.4*a)
+		_dip_bone(int(_bone.head),CLICK_HEAD*a)
+		_dip_bone(int(_bone.jaw),CLICK_JAW*a)
 	# The talons for him: on the flare at his middle, in the carry at his
 	# shoulders under it.
 	var talon_to: Variant = null

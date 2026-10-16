@@ -357,9 +357,9 @@ def _click(t, at, v, big=1.0):
         return
     k = d / 0.04 if d < 0.04 else 1.0 - (d - 0.04) / 0.08
     k = k * k * (3 - 2 * k)
-    v["head"] -= 9.0 * big * k
-    v["jaw"] += 0.22 * big * k
-    v["neck"] += 3.0 * big * k
+    v["head"] -= 12.0 * big * k
+    v["jaw"] += 0.4 * big * k
+    v["neck"] += 4.0 * big * k
 
 
 def _stalk_extra(t, v):
@@ -404,11 +404,11 @@ def scream():
         (0.13, dict(stretch=0.86, neck=-26, bob=-0.045), True),   # held a beat: the breath in
         # the throw: past the hold pose
         (0.21, dict(**both(elev=88, sweep=14, fold=0.0, twist=18, spread=1.22, hand=14),
-                    pitch=40, stretch=1.12, bob=0.05, neck=10, head=14, jaw=1.05, tail=-36, fan=1.3,
+                    pitch=40, stretch=1.12, bob=0.05, neck=10, head=14, jaw=1.3, tail=-36, fan=1.3,
                     reach=0.35, toes=0.8)),
         # the hold: wide, rearing, beak open
         (0.27, dict(**both(elev=80, sweep=10, fold=0.0, twist=14, spread=1.18, hand=10),
-                    pitch=38, stretch=1.07, bob=0.04, neck=8, head=10, jaw=1.0, tail=-34, fan=1.25,
+                    pitch=38, stretch=1.07, bob=0.04, neck=8, head=10, jaw=1.2, tail=-34, fan=1.25,
                     reach=0.3, toes=0.7), True),
         (SCREAM, dict(), True),
     ], loop=False)
@@ -420,7 +420,7 @@ def fold():
     drop and fold, the primaries close last), tips its nose down and draws
     itself long, beak still parted; the stretch overshoots and settles."""
     thrown = dict(**both(elev=80, sweep=10, fold=0.0, twist=14, spread=1.18, hand=10),
-                  pitch=38, stretch=1.07, bob=0.04, neck=8, head=10, jaw=1.0, tail=-34, fan=1.25,
+                  pitch=38, stretch=1.07, bob=0.04, neck=8, head=10, jaw=1.2, tail=-34, fan=1.25,
                   reach=0.3, toes=0.7)
     return Clip("fold", FOLD, [
         (0.00, thrown, True),
@@ -436,13 +436,16 @@ def fold():
 
 
 def _stoop_extra(t, v):
-    # the shudder of the air past it: a fast tremor in the shut wings and tail
+    # the shudder of the air past it: a tremor in the shut wings and tail,
+    # slow enough (5-10 Hz) to survive the 30 fps bake and big enough to
+    # read at range (a 14 Hz tremor aliased into a pulsing 2 Hz flutter)
     for s, ph in (("L", 0.0), ("R", 1.9)):
-        v[f"elev.{s}"] += 1.6 * math.sin(t * math.tau * 9.0 + ph) + 0.8 * math.sin(t * math.tau * 14.0 + ph * 2)
-        v[f"hand.{s}"] += 1.2 * math.sin(t * math.tau * 11.0 + ph)
-    v["roll"] += 1.2 * math.sin(t * math.tau * 7.0)
-    v["tail_roll"] += 3.0 * math.sin(t * math.tau * 8.0 + 0.5)
-    v["head_roll"] -= 0.6 * math.sin(t * math.tau * 7.0)   # the head steadier than the body
+        v[f"elev.{s}"] += 3.5 * math.sin(t * math.tau * 6.0 + ph) + 1.5 * math.sin(t * math.tau * 10.0 + ph * 2)
+        v[f"hand.{s}"] += 2.5 * math.sin(t * math.tau * 7.0 + ph)
+    v["roll"] += 2.5 * math.sin(t * math.tau * 5.0)
+    v["stretch"] += 0.015 * math.sin(t * math.tau * 8.0 + 1.1)
+    v["tail_roll"] += 6.0 * math.sin(t * math.tau * 6.0 + 0.5)
+    v["head_roll"] -= 1.8 * math.sin(t * math.tau * 5.0)   # the head steadier than the body
 
 
 def stoop():
