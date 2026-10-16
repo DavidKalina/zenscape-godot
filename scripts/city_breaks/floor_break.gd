@@ -104,6 +104,14 @@ func wave(hub: Node, _body: Node3D, w: Dictionary) -> void:
 	if local.x > box.position.x-1.0 and local.x < box.end.x+1.0 and local.z > box.position.z-1.0 and local.z < box.end.z+1.0 and absf(local.y-box.end.y) < 1.5:
 		break_now(hub,w.at,Vector3.ZERO)
 
+## The hub's `hit` from a breaker that is on (scripts/kit_isle/breakables.gd):
+## taken as his landing's shockwave at `at` (it goes if that is on it). The
+## slam is too light for it. True if it went.
+func take_hit(hub: Node, at: Vector3, radius: float, strength: float, source: StringName) -> bool:
+	if not alive or source == &"slam": return false
+	wave(hub,null,{"at":at,"r":radius,"max":radius,"power":strength,"t":0.0})
+	return not alive
+
 ## It goes: its body out of the world, its pieces live, the nearest to
 ## `at` first, each tipping out from under it (`push` his way, flat).
 func break_now(hub: Node, at: Vector3, push: Vector3) -> void:

@@ -34,6 +34,8 @@ const Slam = preload("res://scripts/slam.gd")
 
 ## The hop at the landing and at the wave's rim (m), its parts (s): the
 ## crouch, the rise, the fall back, the rebound.
+## The Olmec's length (m: head_size 3 x depth 0.72) for a hit with no body.
+const FOOT_L := 2.2
 const HOP := Vector2(0.7,0.2)
 const HOP_T := Vector4(0.05,0.12,0.23,0.16)
 const DIP := 0.14
@@ -227,7 +229,8 @@ func wave(hub: Node, b: Node3D, w: Dictionary) -> void:
 		w[key] = {}
 		hub.sound(&"drum_ring",at)
 	var done: Dictionary = w[key]
-	var foot: float = float(b.length)*0.5+1.4
+	# (No body: a hit from the hub, `take_hit`; his foot's length as the card's.)
+	var foot: float = (float(b.length) if b != null else FOOT_L)*0.5+1.4
 	for k in slabs.size():
 		if done.has(k): continue
 		var top := slab_top(k)
@@ -238,6 +241,22 @@ func wave(hub: Node, b: Node3D, w: Dictionary) -> void:
 		var share := clampf(d/maxf(float(w.max),0.1),0.0,1.0)
 		var amp := lerpf(HOP.x,HOP.y,share)*sqrt(float(w.power))
 		_hop(k,amp,d < foot,Vector3(top.x-at.x,0.0,top.z-at.z),1.0-share*0.5,true)
+
+## The hub's `hit` from a breaker that is on (scripts/kit_isle/breakables.gd):
+## taken as his landing's shockwave at `at`, grown to `radius`, of power
+## `strength`: the slabs round it hop. The slam is not taken here: the court
+## stays in scripts/slam.gd GROUP (its hop is no break, so no toggle holds
+## it). True if a slab hopped.
+func take_hit(hub: Node, at: Vector3, radius: float, strength: float, source: StringName) -> bool:
+	if source == &"slam": return false
+	var near := false
+	for k in slabs.size():
+		var top := slab_top(k)
+		if Vector2(top.x-at.x,top.z-at.z).length() <= radius: near = true
+	if not near: return false
+	var w := {"at":at,"r":radius,"max":radius,"power":strength,"t":0.0}
+	wave(hub,null,w)
+	return not (w.get("drum_%d" % get_instance_id(),{}) as Dictionary).is_empty()
 
 ## The slam (scripts/slam.gd) landing on the court: the slabs round it hop
 ## (his own: no hit on him).

@@ -190,6 +190,10 @@ func down_count() -> int:
 		if col.state != "whole": n += 1
 	return n
 
+## A hit's mark (stone_break.gd take_hit): a column peeled is a change.
+func _mark() -> String:
+	return "%s %d" % [state,down_count()]
+
 # --- Triggers ------------------------------------------------------------------------------
 
 func _wave(_b: Node3D, w: Dictionary) -> bool:

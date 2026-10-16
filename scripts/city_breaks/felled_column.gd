@@ -255,6 +255,15 @@ func wave(hub: Node, _b: Node3D, w: Dictionary) -> void:
 	hub.shake(QUAKE_HIT)
 	fell(hub,signf(along),"shock",1.0)
 
+## The hub's `hit` from a breaker that is on (scripts/kit_isle/breakables.gd):
+## taken as his landing's shockwave at `at`, grown to `radius`, of power
+## `strength` (it fells away from the hit, as ever). The slam is nothing to
+## a column. True if it went over.
+func take_hit(hub: Node, at: Vector3, radius: float, strength: float, source: StringName) -> bool:
+	if state != "standing" or source == &"slam": return false
+	wave(hub,null,{"at":at,"r":radius,"max":radius,"power":strength,"t":0.0})
+	return state != "standing"
+
 ## A brute's veer (as the colonnade's piers): standing just off his way
 ## ahead, it draws him round into it, a little.
 func veer(_hub: Node, b: Node3D, heading: float) -> float:

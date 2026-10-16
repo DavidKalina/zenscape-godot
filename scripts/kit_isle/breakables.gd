@@ -34,7 +34,15 @@ extends Node3D
 ## `--breakers=olmec,slam` (exactly those on) or `--breakers=+plane,-olmec`
 ## (changes). A piece in the group answers `hit` as `take_hit(hub, at,
 ## radius, strength, source)`; a breakable in `others` as `hit(at, ...)`.
+## The city kit's pieces (scripts/city_breaks/) answer `take_hit` with their
+## own choreography: the slam's as their slam, any other as his landing's
+## shockwave of that reach and power. The slam reaches breakables only
+## through here (scripts/slam.gd `blast`), so it breaks nothing while
+## `slam` is off; the drum court's hop (no break) still hears it directly.
 const BREAKABLE := &"breakable"
+## Every hub's group: the slam (scripts/slam.gd `blast`) hands each hub its
+## hit as `hit(at, radius, strength, &"slam")`.
+const HUBS := &"breakables_hub"
 const QUAKE_FADE := 1.4
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 ## The breakers as they start: on, and their hits' strength (1 the Olmec's;
@@ -65,6 +73,7 @@ var _hitstop := 0
 
 func _init() -> void:
 	name = "Breakables"
+	add_to_group(HUBS)
 	for arg in LaunchArgs.user_args():
 		if arg.begins_with("--breakers="): set_breakers(arg.get_slice("=",1))
 
