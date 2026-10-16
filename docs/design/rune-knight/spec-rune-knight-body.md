@@ -1,0 +1,93 @@
+# Spec: the rune knight's body (lane `body` of loop `rune-knight`)
+
+The body lane of skill `enemy-build`. The mind lane (`iter/rune-knight`,
+`docs/design/rune-knight/spec-rune-knight.md`) plays him on a stand-in of
+blocks (`scripts/enemies/rune_knight_body_standin.gd`). The user played it
+and said he "looks a bit blocky, generic". This lane makes his real body:
+a Blender model, rig and clips exported to glb, and a body script that
+drops in behind the same API.
+
+Branch `lane/rune-knight-body`, worktree
+`.claude/worktrees/lane-rune-knight-body`, branched from `iter/rune-knight`
+at ba8684a1. Commits: `ITER(rune-knight): lane body: <task>`. Cap and
+budget: the skill's default.
+
+The pattern to follow is the guacharo's body lane: `art/blender/guacharo/
+guacharo_build.py` and `guacharo_clips.py` (scripts that build the model
+and author the clips, run with Blender headless) and its trail
+(`git log --grep='^ITER(guacharo-body)'`). AGENTS.md's Animation and
+Models sections are the bar.
+
+## The contract is the mind lane's
+
+The body implements the API and the clips, beats, sockets, effects and
+shape in the main spec's **The contract** section and every later spec
+section that adds to it (runes and deaths, the brutal parry's `reel`, the
+leap). The mind lane keeps changing that spec while this lane runs, so
+read it from the mind's branch tip, not your own copy:
+
+```
+git show iter/rune-knight:docs/design/rune-knight/spec-rune-knight.md
+```
+
+Read the stand-in's code too: it is the working reference for every
+clip's timing, beats and forms. Names are final; a clip that needs
+different beats to read well is a note in your commit for the trunk, not
+a rename.
+
+## What he looks like
+
+A knight carved out of stone, not stacked boxes. Design for:
+
+- **A silhouette you know at a glance** from the game camera at 15 to 30 m
+  against sky, turf and the aqueduct's grey stone: a distinct helm (crest,
+  visor slit, the line of the eye), broad pauldrons, heavy forearms and
+  gauntlets (the blade of wind forms along the right one and the catch
+  reads in both), a tabard or plated skirt that gives his walk a swing,
+  planted legs. Larger than the wanderer, about 1.6 of his height, far
+  short of the Olmec head's bulk (sizes from `WorldScale`, as the mind's
+  knobs give them).
+- **Stone that matches the isle.** Weathered and chipped, the kit's stone
+  look (`scripts/kit_isle/kit_look.gd`, `docs/art/olmec-weathered.md`), a
+  little moss in the crevices. Not a new palette.
+- **Runes carved into him:** chest, left gauntlet, right gauntlet, as
+  grooves that glow from inside (the `rune_glow` effect) and can each
+  crack and go dark on their own (`rune_crack` with form `chest`,
+  `hand_l`, `hand_r`).
+- **Made of pieces that come apart.** He crumbles into a heap and
+  shatters off the edge, so the mesh is built from separate stone pieces
+  (helm, plates, limb segments) that the body script can throw loose for
+  `crumble` and `shatter`, not one welded skin.
+
+## Tasks (the first iteration orders these; keep each one a checkpoint)
+
+1. **Silhouette options.** Three distinct takes on him, blocked out in
+   Blender at his real size, rendered from the game camera's distance and
+   up close, beside the wanderer and the stand-in. The user picks one (or
+   mixes) before any detail. Stop after this task for the pick.
+2. **The model** of the picked take: pieces, carved runes, materials,
+   rendered turntable and in the isle's light (a still in the game, on
+   the deck).
+3. **The rig and the first clips:** `idle`, `walk`, `turn`, `notice`,
+   with planted feet and weight; stills of key poses and a clip strip.
+4. **The fight clips:** `gather` (both forms), `slash` (`level`, `high`),
+   `throw`, `catch`, `return`, `skid`, `teeter`, `reel`; anticipation,
+   holds and follow-through, beats as timeline markers.
+5. **The end and travel clips:** `kneel`, `fall`, `leap` (`down`, `up`),
+   and the `crumble` and `shatter` break-up of his pieces.
+6. **The body script** (`scripts/enemies/rune_knight_body.gd`) on the glb,
+   implementing the API; the mind chooses it by default, the stand-in
+   behind `--rune-body=standin`. Every mind-lane driver passes on the real
+   body. The model-budget assessment (`docs/art/model-budget.md`) with
+   triangle and frame-time estimates, and the lane's **Notes for merge**.
+
+## Checks
+
+- Blender scripts run headless and export cleanly; the glb imports with
+  no errors (headless import).
+- Stills (`tools/shot.py`, `-- --no-title --rune-knight`) of each task's
+  work in the isle; open them and judge them against the animation bar.
+- Smoke `studies/aqueduct_isle.tscn` with and without `--rune-knight`.
+- From task 6, the mind lane's play-loop drivers on the real body (they are
+  uncommitted: copy them from `../iter-rune-knight/scratch/rk_*.gd`).
+- Prototype rules: no committed tests, no full suite.
