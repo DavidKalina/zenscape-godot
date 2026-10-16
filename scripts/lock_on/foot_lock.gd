@@ -6,6 +6,10 @@ extends Node3D
 ## release, so the camera (studies/kit_isle.gd `_frame`) and later the depth
 ## of field blend in and out, never snapping. A small marker hangs over the
 ## locked target: a down-pointing wedge that pops in, bobs and turns.
+## While the weight is up the camera gets its own CameraAttributesPractical
+## with depth of field: him and the target sharp, what lies past them (and
+## the very near foreground) softly blurred; it hands back whatever the
+## camera had once the weight is back to 0.
 
 const TargetStone = preload("res://scripts/lock_on/target_stone.gd")
 
@@ -29,6 +33,17 @@ const MARK_MOST := 3.0
 const MARK_BOB := Vector2(0.05,0.9)
 const MARK_TURN := 1.4
 const MARK_COLOUR := Color(0.93,0.87,0.72)
+## Depth of field: the blur at full weight (Godot's dof_blur_amount; photo
+## mode's lens uses 0.09), where the far blur starts past the farther of
+## him and the target (m, plus a share of that distance), and how long it
+## takes to come in fully (m, plus a share). The near blur ends at
+## DOF_NEAR of the nearer one's distance.
+const DOF_AMOUNT := 0.075
+const DOF_FAR_PAST := Vector2(1.5,0.15)
+const DOF_FAR_RAMP := Vector2(5.0,1.0)
+const DOF_NEAR := 0.45
+## His chest over his feet (m): where the camera focuses on him.
+const DOF_CHEST := 0.9
 
 ## The target locked onto (null when free).
 var target: Node3D = null
@@ -46,6 +61,10 @@ var _clock := 0.0
 var _pop := 0.0
 var _mark: MeshInstance3D
 var _mat: StandardMaterial3D
+## The lens while locked, and what the camera had before (handed back).
+var dof: CameraAttributesPractical = null
+var _dof_before: CameraAttributes = null
+var _dof_on := false
 
 func _ready() -> void:
 	top_level = true
@@ -118,6 +137,37 @@ func step(delta: float, feet: Vector3, camera: Camera3D, allowed: bool) -> void:
 	if delta > 0.0: weight = lerpf(weight,goal,1.0-exp(-delta/BLEND))
 	if absf(weight-goal) < 0.002: weight = goal
 	_draw_mark(delta,camera)
+	_focus(camera,feet)
+
+## The depth of field: on with the weight, focused across him and the
+## target, eased by the weight; off and handed back at weight 0.
+func _focus(camera: Camera3D, feet: Vector3) -> void:
+	if weight <= 0.0 or _last == null or not is_instance_valid(_last):
+		if _dof_on:
+			if camera.attributes == dof: camera.attributes = _dof_before
+			_dof_on = false
+			_dof_before = null
+		return
+	if not _dof_on:
+		_dof_before = camera.attributes
+		dof = CameraAttributesPractical.new() if _dof_before == null else _dof_before.duplicate() as CameraAttributesPractical
+		if dof == null: dof = CameraAttributesPractical.new()
+		camera.attributes = dof
+		_dof_on = true
+	elif camera.attributes != dof: return # something else took the lens: leave it be
+	var eye := camera.global_position
+	var him := eye.distance_to(feet+Vector3.UP*DOF_CHEST)
+	var aim: Vector3 = _last.call("aim_point")
+	var it := eye.distance_to(aim)
+	var near := minf(him,it)
+	var far := maxf(him,it)
+	dof.dof_blur_far_enabled = true
+	dof.dof_blur_near_enabled = true
+	dof.dof_blur_far_distance = far+DOF_FAR_PAST.x+far*DOF_FAR_PAST.y
+	dof.dof_blur_far_transition = DOF_FAR_RAMP.x+far*DOF_FAR_RAMP.y
+	dof.dof_blur_near_distance = maxf(near*DOF_NEAR,0.1)
+	dof.dof_blur_near_transition = maxf(near*DOF_NEAR*0.8,0.05)
+	dof.dof_blur_amount = DOF_AMOUNT*smoothstep(0.0,1.0,weight)
 
 ## Whether `camera` sees `t`'s aim point: nothing in between but the target.
 func _seen(t: Node3D, camera: Camera3D) -> bool:
