@@ -100,6 +100,18 @@ extends Node3D
 ##   dropping) he plays `shatter` on the ground below. Dead ("dead"), he
 ##   leaves the lock targets and his room, reads no shots, and `died_at`
 ##   and `death` ("crumble" or "shatter") say where and how.
+## - **The riposte** (spec "The brutal parry, the riposte, the brace"): a
+##   parry of one of his shots (scripts/wind_parry.gd calls `parried`)
+##   rips his wind from him: `reel` (state "reel", till its `end`), runes
+##   flaring. A shot that reaches him reeling (a gust shot's ball, X) can't
+##   be caught and, from any side, cracks a rune and skids him as a rally
+##   miss does (`ripostes`).
+## - **The brace:** a shove that cracks nothing (a side or back hit) never
+##   throws him straight off the deck: he braces and his skid turns along
+##   the deck (its across share at most KNOBS.brace_across), and where it
+##   still reaches the lip it ends there teetering. A knock-off from the
+##   side takes a teeter and a second hit. A rally miss or a riposte keeps
+##   its line (and may carry him straight over).
 ##
 ## The host (studies/aqueduct_isle.gd) makes him in `_add_life` when
 ## `wanted`. His knobs are the one dictionary below so a field (enemy.gd)
@@ -177,6 +189,9 @@ const KNOBS := {
 	"teeter_reach": 1.2,
 	"teeter_lip": 0.9,
 	"over_push": 3.0,
+	# The brace: a shove's skid turned along the deck, its across share at
+	# most this (0 straight along, 1 unbraced).
+	"brace_across": 0.4,
 	# His attack: "slash" (the crescent) or "lob" (the gathered ball).
 	"attack": "slash",
 	# The slash: the crescent's speed (m/s); the share of level slashes (the
@@ -259,6 +274,11 @@ var skids := 0
 var skid_from := Vector3.ZERO
 var skid_meters := 0.0
 var teeters := 0
+## Parries of his shots that set him reeling, hits that landed in a reel.
+var reels := 0
+var ripostes := 0
+## Whether the last skid was braced (turned along the deck).
+var braced := false
 ## His attack ("slash" or "lob"), the form of the slash under way, the
 ## next form when set ("" picks by KNOBS.level_share), slashes sent.
 var attack := "slash"
@@ -363,7 +383,7 @@ func _process(delta: float) -> void:
 					if kept.distance_to(to) > 0.01: _skid_left = 0.0
 					at = kept
 				if state == "skid" and _skid_left <= 0.0: _skid_stopped(at)
-		"teeter", "kneel", "down":
+		"teeter", "kneel", "down", "reel":
 			pass
 		"stagger":
 			at += push*delta
@@ -456,6 +476,12 @@ func _on_beat(clip: String, beat: String) -> void:
 	elif clip == "skid" and beat == "end":
 		_skid_ended = true
 		if state == "skid" and _skid_left <= 0.0: _skid_stopped(position)
+	elif clip == "reel" and beat == "end" and state == "reel":
+		print("rune knight: gathers himself out of the reel")
+		state = "track"
+		cool = knob("throw_gap")
+		body.set_effect("rune_glow",false)
+		body.play("idle")
 	elif clip == "teeter" and beat == "end" and state == "teeter":
 		# Caught his balance: back to tracking you (or, broken, to his knee).
 		print("rune knight: recovers from the teeter")
@@ -668,7 +694,7 @@ func _read_shots(delta: float) -> void:
 ## staggered or falling), the shot from in front, slow enough, and not yet
 ## caught KNOBS.rally_limit times.
 func _can_catch(node: Node, p: Vector3, v: Vector3) -> bool:
-	if state in ["catch","return","stagger","fall","skid","teeter","kneel","down","dead"]: return false
+	if state in ["catch","return","stagger","fall","skid","teeter","kneel","down","dead","reel"]: return false
 	if not (node.has_method("hold") and node.has_method("launch")) and not node.has_method("absorb"): return false
 	var off := p-position
 	if absf(wrapf(_yaw_to(off)-yaw,-PI,PI)) > knob("catch_cone"): return false
@@ -743,8 +769,9 @@ func _send_return(node: Node3D, speed: float) -> void:
 ## A gust shot's ball burst on him (scripts/lock_on/gust_shot.gd): a
 ## shove, he skids back along its flat way, farther with more strength.
 func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
-	_skid(way,_skid_meters(false,strength),false)
-	print("rune knight: gust shot hit at (%.1f, %.1f, %.1f), strength %.2f, skids (%d hits)" % [at.x,at.y,at.z,strength,hits])
+	var riposte := _riposte()
+	_skid(way,_skid_meters(riposte,strength),riposte)
+	print("rune knight: gust shot hit at (%.1f, %.1f, %.1f), strength %.2f, %s (%d hits)" % [at.x,at.y,at.z,strength,"a riposte" if riposte else "skids",hits])
 
 ## A shot burst on him: a rally miss (one from in front he let go, past
 ## his limit or too fast) cracks a rune and skids him far; any other (the
@@ -752,9 +779,29 @@ func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
 func _hit(node: Node, at: Vector3, v: Vector3) -> void:
 	if node.has_method("strike"): node.call("strike",at)
 	var st = node.get("strength")
-	var miss := node.has_meta("missed")
+	var riposte := _riposte()
+	var miss := node.has_meta("missed") or riposte
 	_skid(v,_skid_meters(miss,float(st) if st != null else 1.0),miss)
-	print("rune knight: hit at %.1f m/s (%s), skids (%d hits)" % [v.length(),"a rally miss" if miss else "a shove",hits])
+	print("rune knight: hit at %.1f m/s (%s), skids (%d hits)" % [v.length(),"a riposte" if riposte else ("a rally miss" if miss else "a shove"),hits])
+
+## A hit landing while he reels: a riposte (it cracks and skids as a miss).
+func _riposte() -> bool:
+	if state != "reel": return false
+	ripostes += 1
+	return true
+
+## One of his shots parried (scripts/wind_parry.gd): his wind ripped from
+## him, he reels, open, till the clip's `end`.
+func parried(_shot: Node) -> void:
+	if state in ["dead","down","fall","kneel","teeter","skid"]: return
+	_drop_gather()
+	if caught != null and is_instance_valid(caught) and caught.has_method("absorb"): caught.call("absorb")
+	caught = null
+	reels += 1
+	state = "reel"
+	body.set_effect("rune_glow",true)
+	body.play("reel")
+	print("rune knight: his wind parried, he reels (%d)" % reels)
 
 ## A skid's metres: a shove's or a miss's span, by the shot's strength
 ## (0.6 the weakest gust shot, 1.0 and up the strongest).
@@ -797,6 +844,8 @@ func _skid(v: Vector3, meters: float, crack: bool) -> void:
 		body.play("fall")
 		print("rune knight: hit teetering, goes over")
 		return
+	braced = false
+	if not crack: flat = _brace(flat)
 	skid_way = flat
 	skid_from = position
 	skid_meters = meters
@@ -805,13 +854,33 @@ func _skid(v: Vector3, meters: float, crack: bool) -> void:
 	_skid_len = meters
 	_skid_teeter = false
 	var lip := _lip_along(position,flat)
-	if lip < meters and meters-lip <= knob("teeter_reach"):
+	if lip < meters and (braced or meters-lip <= knob("teeter_reach")):
 		_skid_len = maxf(lip,0.0)
 		_skid_teeter = true
 	_skid_left = _skid_len
 	_skid_ended = false
 	state = "skid"
 	body.play("skid")
+
+## The brace: a shove's flat way turned along the deck till its across
+## share is KNOBS.brace_across at most (along the way it leaned, or, square
+## across, toward the deck's middle). Braced, a skid that still reaches
+## the lip ends there teetering, never over.
+func _brace(flat: Vector3) -> Vector3:
+	var w := Art.AQ.basis.inverse()*flat
+	w.y = 0.0
+	if w.length() < 0.001: return flat
+	w = w.normalized()
+	var most := knob("brace_across")
+	if absf(w.z) > most:
+		var along := signf(w.x)
+		if absf(w.x) < 0.05:
+			along = 1.0 if _deck_local(position).x < (Art.HEAD+Art.SNAP)*0.5 else -1.0
+		w = Vector3(along*sqrt(1.0-most*most),0.0,signf(w.z)*most)
+	braced = true
+	var out := Art.AQ.basis*w
+	out.y = 0.0
+	return out.normalized()
 
 ## How far from `at` along `way` (flat) his feet reach the lip
 ## (KNOBS.teeter_lip of deck_half off the deck's middle), or INF.

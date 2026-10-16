@@ -54,6 +54,8 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Whether he can blast now: on foot, walking, the title down, rested.
 func ready_to_fire() -> bool:
 	if isle == null or cool > 0.0: return false
+	var parry = isle.get("wind_parry")
+	if parry != null and is_instance_valid(parry) and parry.call("holds"): return false
 	if bool(isle.get("flying")): return false
 	if isle.get("walk_ready") != null and not bool(isle.get("walk_ready")): return false
 	var door = isle.get("front_door")

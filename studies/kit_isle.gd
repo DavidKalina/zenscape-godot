@@ -1328,6 +1328,7 @@ func _gust_input() -> void:
 	if updraft == null or not foot_lock_allowed(): return
 	if telescope != null and telescope.busy(): return
 	if not updraft.can_spend(): return
+	if updraft.parry != null and updraft.parry.call("holds"): return
 	var target: Node3D = null
 	if foot_lock != null and foot_lock.locked(): target = foot_lock.target
 	var heading := -camera.global_transform.basis.z

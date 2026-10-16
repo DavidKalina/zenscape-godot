@@ -83,6 +83,9 @@ const CLIPS := {
 	"slash": {"length": 1.0, "loop": false, "beats": {"release": 0.52}},
 	"skid": {"length": 1.6, "loop": false, "beats": {"plant": 0.1}},
 	"teeter": {"length": 1.1, "loop": false, "beats": {}},
+	# The reel (his wind parried): open from `open` to `end` (the riposte's
+	# window, about a second: tune here).
+	"reel": {"length": 1.25, "loop": false, "beats": {"open": 0.08}},
 	"fall": {"length": 0.8, "loop": true, "beats": {}},
 	"kneel": {"length": 1.1, "loop": false, "beats": {}},
 	"crumble": {"length": 2.2, "loop": false, "beats": {}},
@@ -136,6 +139,11 @@ const KEYS := {
 	# Over the drop: up on his toes, arms wide (they windmill on top of
 	# this), leaning out (turned to the drop, rocking on top of this).
 	"teeter": [[0.0,[0.8,0.8,0.6,0.34,-0.06,0.12]],[0.15,[1.5,1.2,0.3,0.3,0.25,-0.02]],[1.1,[1.5,1.2,0.3,0.25,0.2,0.0]]],
+	# Reeling, his wind ripped from him: wrenched back at `open` (arms
+	# flung up and wide, head thrown back, up on his heels), the arms
+	# dropping wide and slack, chest bared, rocked back and sunk, held
+	# open; gathered back to his guard by `end`.
+	"reel": [[0.0,REST],[0.08,[1.9,1.25,0.15,-0.55,0.5,-0.02]],[0.3,[1.0,1.15,0.25,-0.42,0.32,0.07]],[0.6,[0.55,1.0,0.35,-0.3,0.2,0.09]],[0.95,[0.45,0.85,0.45,-0.22,0.12,0.08]],[1.25,[0.3,0.35,0.95,0.06,0.0,0.025]]],
 	# Falling: arms flung up and wide, head back.
 	"fall": [[0.0,REST],[0.2,[2.6,1.0,0.2,-0.3,0.4,-0.02]],[0.8,[2.8,0.9,0.3,-0.25,0.35,-0.02]]],
 	# Broken: a sag (knees going), then down onto the knee at 0.45 with a
@@ -327,6 +335,11 @@ func play(name_: String, form := "") -> void:
 	clip_time = 0.0
 	_sent = {}
 	_from_pose = _now_pose.duplicate()
+	if name_ == "reel":
+		# The wind torn out of his chest: a burst of air off the rune.
+		var at: Node3D = _sockets.get("chest_rune")
+		var host := get_parent().get_parent() if get_parent() != null and get_parent().get_parent() != null else self
+		if at != null and is_inside_tree(): BodyDust.puff(host,at.global_position,0.16*tall,-global_transform.basis.z)
 
 func socket(name_: String) -> Node3D:
 	return _sockets.get(name_)
@@ -834,6 +847,10 @@ func _crack(parent: Node3D, at: Vector3, size: Vector3, roll: float, group: Stri
 func _light_runes() -> void:
 	var lit := lerpf(RUNE_DIM,RUNE_LIT,glow)
 	if clip == "teeter": lit *= 1.0 if sin(clip_time*47.0)+sin(clip_time*29.0) > -0.3 else 0.35
+	if clip == "reel":
+		# Flaring as the wind is torn out, then guttering, flickering low.
+		var flare := maxf(1.0-clip_time/0.35,0.0)
+		lit = RUNE_LIT*(1.0+1.4*flare) if clip_time < 0.35 else lerpf(RUNE_DIM,RUNE_LIT,0.8)*(1.0 if sin(clip_time*53.0)+sin(clip_time*31.0) > 0.2 else 0.25)
 	for group: String in _rune_mats:
 		var mat: StandardMaterial3D = _rune_mats[group]
 		var t: float = crack_t[group]

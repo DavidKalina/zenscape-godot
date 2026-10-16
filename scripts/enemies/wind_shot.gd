@@ -345,8 +345,10 @@ func _hits_target(from: Vector3, to: Vector3) -> bool:
 		if near.x < 0.0: return false
 	elif near.x > reach: return false
 	var way := velocity
-	var v := Gust.knock(motor,way,float(_knock.blast_out)*strength,float(_knock.blast_up)*strength,shooter if shooter != null else self)
-	print("wind shot: burst on the wanderer at (%.1f, %.1f, %.1f), knock (%.1f, %.1f, %.1f) m/s" % [feet.x,feet.y,feet.z,v.x,v.y,v.z])
+	# Caught in a whiffed parry (scripts/wind_parry.gd) it knocks harder.
+	var mult := float(motor.get_meta("knock_mult",1.0))
+	var v := Gust.knock(motor,way,float(_knock.blast_out)*strength*mult,float(_knock.blast_up)*strength*mult,shooter if shooter != null else self)
+	print("wind shot: burst on the wanderer at (%.1f, %.1f, %.1f), knock (%.1f, %.1f, %.1f) m/s%s" % [feet.x,feet.y,feet.z,v.x,v.y,v.z," (in a whiff, x%.1f)" % mult if mult != 1.0 else ""])
 	burst_on.emit(motor)
 	_end(from.lerp(to,near.y),-velocity.normalized(),true)
 	return true
