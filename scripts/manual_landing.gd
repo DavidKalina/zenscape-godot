@@ -823,18 +823,15 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		_dip_time = 0.0
 		plane.slip = -clampf(beta,-1.2,1.2)
 		return
-	plane.position = Vector3(next_at.x,plane.position.y,next_at.y)
+	plane.carry(Vector3(next_at.x,plane.position.y,next_at.y),Vector3(_v.x,0.0,_v.y),speed)
 	_place_on(land,floor_at,smoothstep(0.0,TAIL_DOWN,_since_touch))
-	plane.speed = speed
-	plane.velocity = Vector3(_v.x,0.0,_v.y)
 	# Stopped: slow with the throttle shut or the brakes on; backing up, once
 	# the brake is let go.
 	var held := (brake <= 0.3 and boost <= 0.0) if reversing else (boost <= 0.0 or brake > 0.3)
 	_slow_for = _slow_for+delta if speed < STOP_SPEED and held else 0.0
 	if _slow_for >= STOP_HOLD:
 		_v = Vector2.ZERO
-		plane.speed = 0.0
-		plane.velocity = Vector3.ZERO
+		plane.set_pace(0.0)
 		sliding = false
 		slip = 0.0
 		grit = 0.0
@@ -921,8 +918,7 @@ func _hops(t: float) -> float:
 ## Stood still where it is, on its wheels and tail skid.
 func _hold(floor_at: Callable) -> void:
 	_v = Vector2.ZERO
-	plane.speed = 0.0
-	plane.velocity = Vector3.ZERO
+	plane.set_pace(0.0)
 	slip = 0.0
 	var at := Vector2(plane.position.x,plane.position.z)
 	var land := float(floor_at.call(at))

@@ -371,7 +371,6 @@ func board() -> void:
 	plane = SkyPlane.new()
 	plane.floor_y = SEA_Y
 	plane.launch(Vector3(0.0,_hall_y+PLANE_UP,PLANE_OUT),0.0,SkyPlane.CRUISE_SPEED,false)
-	plane.velocity = plane.forward()*float(plane.speed)
 	if figure == null:
 		figure = PlaneFigure.new()
 		figure.name = "Plane"
