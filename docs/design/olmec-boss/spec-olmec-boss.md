@@ -61,6 +61,35 @@ You launch `./run-olmec-field.command` and play this fight:
    depth of field blurring the body while it climbs and crosses behind the
    head: keep that blur, it is not a bug to fix. After enough hits he crumbles
    (existing `crumble`).
+   **His run and the charge (user's playtest of phase 2):** "I don't like
+   him chasing with the outstretched arms. I want more of like a shoulder
+   check, him leading with his shoulder." And "add a new attack where he
+   just kinda charges after you."
+   - *His hunting run, whole:* no arms reaching forward. He leads with a
+     shoulder: torso turned a quarter, that shoulder dropped and forward,
+     the near arm tucked in, the far arm pumping, head down, heavy
+     strides. The reaching arms can stay for the headless body (blind,
+     feeling for its head), elsewhere and in the arrival.
+   - *The charge:* a new phase 2 attack. Tell: he plants, drops his
+     shoulder, scrapes a foot (dust), a held beat. Then he barrels at the
+     wanderer in a straight line, fast (well past his hunt pace), steering
+     only a little, shoulder first, smashing through arena pieces in his
+     path (`arena.hit_at`). A hit throws the wanderer hard. Beat it by
+     sidestepping late; if he misses he overruns, skids and stumbles to a
+     stop (a recovery window to shoot him). Into a big piece or the rim's
+     edge he stops short with a stagger. Mixed in with the slam, bound and
+     puffs by distance.
+   - *How:* new clips authored in Blender on the body's rig
+     (art/blender/headless_body/, exported into
+     assets/models/headless_body.glb) per AGENTS.md, Animation: the
+     shoulder-led run, the charge tell, the charge run, the overrun skid
+     and stumble, the impact stagger. Add clips; don't change or rename
+     the existing ones (other scenes use them). Procedural layers on top
+     where they help. Judge by eye in rendered captures (a contact sheet
+     or short filmstrip of each).
+   - *Order:* these come after the flow task (4) and before tuning, as
+     two tasks: (5) the shoulder-led run, (6) the charge. Tuning is last.
+
 4. **Flow.** R restarts the whole fight from phase 1 with the arena whole.
    The top-left card shows the phase, his hits, and the attack he's on.
    A flag can start in phase 2 (`--phase=2`) for testing.
