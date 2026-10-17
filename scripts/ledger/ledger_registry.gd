@@ -6,6 +6,9 @@ extends RefCounted
 ## (ruins.json) lists its isles and, for each, its objectives: {slug, type,
 ## name, row (optional: the type's row if left out), needs_plane (whether
 ## it can only be done with the plane: false if left out; the 80/20 split)}.
+## A type, row or objective may carry a "flag" (a launch flag, e.g.
+## "--rune-knight"): it exists only when the game was launched with that
+## flag, so a feature that's off by default leaves no row or count behind.
 ##
 ## An objective's id is "<isle>/<slug>" (the challenge recorder's key style,
 ## scripts/challenges/challenge_progress.gd on feature/challenge-recorder):
@@ -23,6 +26,7 @@ const DIR := "res://data/ledger"
 const FORMAT := 1
 ## A slug: lower case letters, digits, "_" and "-".
 const SLUG := "^[a-z0-9_-]+$"
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 ## type -> {row}
 var types := {}
@@ -37,18 +41,23 @@ var objectives := {}
 ## What was wrong with the data (a duplicate id, an unknown type, a bad
 ## slug, a file that won't parse); an objective with an error is left out.
 var errors: PackedStringArray = []
+## The launch flags a flagged entry is checked against (the launch's own
+## user args unless `read` is given others).
+var flags := PackedStringArray()
 
-static func make(index := INDEX) -> RefCounted:
+static func make(index := INDEX, with_flags: Variant = null) -> RefCounted:
 	var registry: RefCounted = new()
-	registry.read(index)
+	registry.read(index,with_flags)
 	return registry
 
 ## An objective's id: "<isle>/<slug>".
 static func objective_id(isle: String, slug: String) -> String:
 	return "%s/%s" % [isle,slug]
 
-## Reads the index at `index` and every region it names (from its folder).
-func read(index := INDEX) -> void:
+## Reads the index at `index` and every region it names (from its folder);
+## flagged entries against `with_flags` (the launch's user args if null).
+func read(index := INDEX, with_flags: Variant = null) -> void:
+	flags = PackedStringArray(with_flags) if with_flags != null else LaunchArgs.user_args()
 	types = {}
 	rows = []
 	regions = []
@@ -61,9 +70,10 @@ func read(index := INDEX) -> void:
 	if t is Dictionary:
 		for type: Variant in t:
 			var spec: Variant = t[type]
+			if not _flagged_on(spec): continue
 			types[str(type)] = {"row":str((spec as Dictionary).get("row","")) if spec is Dictionary else ""}
 	for row: Variant in data.get("rows",[]):
-		if row is Dictionary: rows.append({"id":str(row.get("id","")),"icon":str(row.get("icon","")),"label":str(row.get("label",""))})
+		if row is Dictionary and _flagged_on(row): rows.append({"id":str(row.get("id","")),"icon":str(row.get("icon","")),"label":str(row.get("label",""))})
 	var dir := index.get_base_dir()
 	for region: Variant in data.get("regions",[]):
 		_read_region("%s/%s.json" % [dir,str(region)])
@@ -84,7 +94,13 @@ func _read_region(path: String) -> void:
 		var listed: Array[String] = []
 		isles[isle_id] = {"id":isle_id,"region":region,"objectives":listed}
 		for o: Variant in isle.get("objectives",[]):
-			if o is Dictionary: _add(o,isle_id,region,listed,path)
+			if o is Dictionary and _flagged_on(o): _add(o,isle_id,region,listed,path)
+
+## Whether a type, row or objective's entry is on: no "flag", or its flag
+## among `flags`.
+func _flagged_on(entry: Variant) -> bool:
+	if not entry is Dictionary or not (entry as Dictionary).has("flag"): return true
+	return flags.has(str(entry.flag))
 
 func _add(o: Dictionary, isle: String, region: String, listed: Array[String], path: String) -> void:
 	var slug := str(o.get("slug",""))

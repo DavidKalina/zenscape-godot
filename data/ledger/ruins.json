@@ -13,8 +13,12 @@
 			{"slug": "drift", "type": "token", "needs_plane": false, "name": "Beneath the Drifting Lintel"},
 			{"slug": "stumps", "type": "token", "needs_plane": false, "name": "Back Across the Broken Piers"},
 			{"slug": "buried", "type": "token", "needs_plane": false, "name": "What the Turf Keeps"},
+			{"slug": "rune_knight_hand_l", "type": "token", "needs_plane": false, "flag": "--rune-knight", "name": "The Knight's Left Hand"},
+			{"slug": "rune_knight_hand_r", "type": "token", "needs_plane": false, "flag": "--rune-knight", "name": "The Knight's Right Hand"},
+			{"slug": "rune_knight_chest", "type": "token", "needs_plane": false, "flag": "--rune-knight", "name": "The Knight's Heart Stone"},
 			{"slug": "wheel", "type": "part", "needs_plane": false, "name": "What Rolled to the Stones"},
-			{"slug": "fin", "type": "part", "needs_plane": false, "name": "Riding the Old Serpent's Ridge"}
+			{"slug": "fin", "type": "part", "needs_plane": false, "name": "Riding the Old Serpent's Ridge"},
+			{"slug": "rune_knight", "type": "rune", "needs_plane": false, "flag": "--rune-knight", "name": "The Knight on the Aqueduct"}
 		]},
 		{"id": "bell_spires", "objectives": [
 			{"slug": "chimney", "type": "token", "needs_plane": false, "name": "Between the Twin Stacks"},

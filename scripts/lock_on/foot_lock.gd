@@ -14,6 +14,10 @@ extends Node3D
 const TargetStone = preload("res://scripts/lock_on/target_stone.gd")
 
 ## Reach (m from his feet): locks within ACQUIRE, lets go past RELEASE.
+## A target with `lock_reach()` (Vector2: acquire, release) sets its own;
+## one whose `lock_anywhere()` is true (the Olmec while he tips the field)
+## locks at any range, in view or not, and the lock never lets go of it for
+## range or sight.
 const ACQUIRE := 22.0
 const RELEASE := 28.0
 ## Roughly in view: within this of the camera's flat heading (rad).
@@ -30,6 +34,11 @@ const MARK_SIZE := Vector3(0.3,0.34,0.08)
 ## at range, up to MARK_MOST times.
 const MARK_NEAR := 6.0
 const MARK_MOST := 3.0
+## A target locked from anywhere (`lock_anywhere`) may be far off: its
+## marker grows up to this many times.
+const MARK_FAR := 9.0
+## ...and is a warm ember, to read against the pale sky and cloud.
+const MARK_FAR_COLOUR := Color(0.98,0.5,0.22)
 const MARK_BOB := Vector2(0.05,0.9)
 const MARK_TURN := 1.4
 const MARK_COLOUR := Color(0.93,0.87,0.72)
@@ -96,15 +105,19 @@ func acquire(feet: Vector3, camera: Camera3D) -> bool:
 	for node: Node in get_tree().get_nodes_in_group(TargetStone.GROUP):
 		var t := node as Node3D
 		if t == null or not t.is_visible_in_tree(): continue
+		if _anywhere(t):
+			best = t
+			break
 		var aim: Vector3 = t.call("aim_point")
 		var d := aim-feet
 		var across := Vector2(d.x,d.z).length()
-		if across > ACQUIRE: continue
+		var reach := _reach(t)
+		if across > reach.x: continue
 		var from_cam := aim-camera.global_position
 		var off := absf(flat_ahead.angle_to(Vector2(from_cam.x,from_cam.z).normalized()))
 		if off > VIEW: continue
 		if not _seen(t,camera): continue
-		var score := across/ACQUIRE+off/VIEW
+		var score := across/reach.x+off/VIEW
 		if score < best_score:
 			best_score = score
 			best = t
@@ -114,6 +127,14 @@ func acquire(feet: Vector3, camera: Camera3D) -> bool:
 	_lost = 0.0
 	_pop = 0.0
 	return true
+
+## Whether `t` asks to be locked from anywhere (`lock_anywhere()`).
+static func _anywhere(t: Node3D) -> bool:
+	return t.has_method("lock_anywhere") and bool(t.call("lock_anywhere"))
+
+## `t`'s reach (acquire, release, m): its own, else ACQUIRE and RELEASE.
+static func _reach(t: Node3D) -> Vector2:
+	return t.call("lock_reach") if t.has_method("lock_reach") else Vector2(ACQUIRE,RELEASE)
 
 func release(why := "pressed") -> void:
 	if target != null: let_go_why = why
@@ -127,9 +148,10 @@ func step(delta: float, feet: Vector3, camera: Camera3D, allowed: bool) -> void:
 	if target != null and not is_instance_valid(target): target = null
 	if locked():
 		if not allowed: release("not allowed")
+		elif _anywhere(target): _lost = 0.0
 		else:
 			var aim: Vector3 = target.call("aim_point")
-			var far := Vector2(aim.x-feet.x,aim.z-feet.z).length() > RELEASE
+			var far := Vector2(aim.x-feet.x,aim.z-feet.z).length() > _reach(target).y
 			if far or not _seen(target,camera): _lost += delta
 			else: _lost = 0.0
 			if _lost > LOSE_AFTER: release("range" if far else "sight")
@@ -191,9 +213,10 @@ func _draw_mark(delta: float, camera: Camera3D) -> void:
 	var top: float = _last.call("tall") if _last.has_method("tall") else 1.5
 	var over := Vector3.UP*(top+MARK_OVER+sin(_clock*TAU*MARK_BOB.y)*MARK_BOB.x)
 	var turn := Basis(Vector3.UP,_clock*MARK_TURN)*Basis(Vector3.FORWARD,PI)
-	grow *= clampf(camera.global_position.distance_to(_last.global_position+over)/MARK_NEAR,1.0,MARK_MOST)
+	grow *= clampf(camera.global_position.distance_to(_last.global_position+over)/MARK_NEAR,1.0,MARK_FAR if _anywhere(_last) else MARK_MOST)
 	_mark.global_transform = Transform3D(turn.scaled(Vector3.ONE*maxf(grow,0.01)),_last.global_position+over)
-	_mat.albedo_color.a = clampf(weight*1.2,0.0,0.92)
+	var col := MARK_FAR_COLOUR if _anywhere(_last) else MARK_COLOUR
+	_mat.albedo_color = Color(col.r,col.g,col.b,clampf(weight*1.2,0.0,0.92))
 
 static func _back_out(u: float) -> float:
 	var s := 1.9

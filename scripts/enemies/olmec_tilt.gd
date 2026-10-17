@@ -63,6 +63,11 @@ class Tip:
 	## What rides it (a place's live bits: its fires, its hub), and their rests.
 	var riders: Array = []
 	var rider_rest: Array = []
+	## The steep mode's (`steep`): held at `hold` (rad, x and z) on its own
+	## spring, its riders carry the walker too, no lurch (his motor's own
+	## surf takes him down it).
+	var held := false
+	var hold := Vector2.ZERO
 
 var field: Node = null
 var study: Node3D = null
@@ -83,6 +88,20 @@ var last_node := ""
 var last_size := 0.0
 var _size_cache := {}
 var _clock := 0.0
+
+## The steep mode (the Olmec field's tilt set piece, docs/design/olmec-boss/
+## spec-olmec-boss.md "The tilt"): a whole field, past TIP_MOST, tipped on
+## purpose about `pivot` toward `way` to `deg` and held there (far past
+## TIP_MOST_DEG: too steep to walk up) on a slower, heavier spring, till
+## `steep_release` eases it back. Only `steep` makes one: every other use of
+## this tilt is as before.
+const STEEP_W := 1.25
+const STEEP_ZETA := 0.62
+## Its spring once let go (rad/s, damping): its own, so a release can be
+## made to snap (STEEP_ZETA under 1 overshoots).
+var steep_w := STEEP_W
+var steep_zeta := STEEP_ZETA
+var steep_tip: Tip = null
 
 func _init() -> void:
 	name = "OlmecTilt"
@@ -109,6 +128,59 @@ func weigh(body: Node3D, at: Vector3, power: float) -> Tip:
 	last_node = str(t.node.name)
 	last_size = t.size
 	return t
+
+## The steep mode: `node` (a whole field) tipped about `pivot` toward
+## `way` (x, z: that side goes down) to `deg`, held; `riders` (Node3D) are
+## posed with it and carry the walker as it does. Again while one is on:
+## its goal set anew.
+func steep(node: Node3D, pivot: Vector3, way: Vector2, deg: float, ride: Array = []) -> Tip:
+	if steep_tip != null and steep_tip.node == node and is_instance_valid(node):
+		steep_tip.hold = way.normalized()*deg_to_rad(deg)
+		steep_tip.held = true
+		return steep_tip
+	var t := Tip.new()
+	t.node = node
+	t.rest = node.global_transform
+	t.before = t.rest
+	t.pivot = pivot
+	var box := _flat_box(node)
+	t.size = maxf(box.size.x,box.size.z)
+	t.r = t.size*0.5
+	for r: Variant in ride:
+		if r == null or not is_instance_valid(r) or r == node or node.is_ancestor_of(r): continue
+		t.riders.append(r)
+		t.rider_rest.append((r as Node3D).global_transform)
+	t.held = true
+	t.hold = way.normalized()*deg_to_rad(deg)
+	t.kicked = _clock
+	steep_tip = t
+	tips.append(t)
+	kicks += 1
+	tipped += 1
+	last_node = str(node.name)
+	last_size = t.size
+	return t
+
+## The steep tip let go: it eases (or snaps) back to rest on its spring.
+func steep_release() -> void:
+	if steep_tip != null: steep_tip.held = false
+
+## The steep tip now (deg), 0 with none.
+func steep_deg() -> float:
+	return rad_to_deg(steep_tip.tip.length()) if steep_tip != null else 0.0
+
+## The steep tip's turn now (identity with none): a rest point times it is
+## where that point stands tipped.
+func steep_turn() -> Transform3D:
+	if steep_tip == null or steep_tip.tip.length() < 1e-6: return Transform3D.IDENTITY
+	return _turn(steep_tip)
+
+## A rider added to the steep tip as it stands (its rest read back through
+## the tip now), e.g. the rubble of a piece broken meanwhile.
+func steep_ride(r: Node3D) -> void:
+	if steep_tip == null or r == null or steep_tip.riders.has(r): return
+	steep_tip.riders.append(r)
+	steep_tip.rider_rest.append(steep_turn().affine_inverse()*r.global_transform)
 
 ## The tip for the stone under `at` (made once), or null.
 func tip_at(at: Vector3, body: Node3D = null) -> Tip:
@@ -181,7 +253,7 @@ func _flat_box(n: Node3D) -> AABB:
 ## stones posed, the walker carried and lurched.
 func step(delta: float, bodies: Array) -> void:
 	_clock += delta
-	for t: Tip in tips: t.goal = Vector2.ZERO
+	for t: Tip in tips: t.goal = t.hold if t.held else Vector2.ZERO
 	for b: Node3D in bodies:
 		if not is_instance_valid(b) or not bool(b.grounded) or str(b.state) in ["climb","mantle","hang","grab_leap","leap","fall"]: continue
 		var t := _tip_holding(b)
@@ -199,9 +271,14 @@ func step(delta: float, bodies: Array) -> void:
 			continue
 		var h := 1.0/240.0
 		var left := delta
+		var w := W
+		var zeta := ZETA
+		if t == steep_tip:
+			w = STEEP_W if t.held else steep_w
+			zeta = STEEP_ZETA if t.held else steep_zeta
 		while left > 0.0:
 			var dt := minf(h,left)
-			t.v += (W*W*(t.goal-t.tip)-2.0*ZETA*W*t.v)*dt
+			t.v += (w*w*(t.goal-t.tip)-2.0*zeta*w*t.v)*dt
 			t.tip += t.v*dt
 			left -= dt
 		most_deg = maxf(most_deg,rad_to_deg(t.tip.length()))
@@ -214,7 +291,7 @@ func step(delta: float, bodies: Array) -> void:
 		var moved: Transform3D = t.node.global_transform*t.before.affine_inverse()
 		# The walker on it: carried as it tips, and lurched toward the low
 		# side while a kick is fresh.
-		if m != null and under != null and under is Node and (under == t.node or t.node.is_ancestor_of(under)):
+		if m != null and under != null and under is Node and (under == t.node or t.node.is_ancestor_of(under) or (t.held or t == steep_tip) and _on_rider(t,under)):
 			if m.grounded and m.rider == null and not m.seized():
 				m.carry(moved,0.0)
 				carried += 1
@@ -231,9 +308,21 @@ func step(delta: float, bodies: Array) -> void:
 			t.peak = 0.0
 			t.v = Vector2.ZERO
 			t.tip = Vector2.ZERO
-			if _clock-t.kicked > 3.0: continue
+			if t == steep_tip and not t.held:
+				# Let go and come to rest: done (its riders exactly back).
+				for k in range(t.riders.size()):
+					if is_instance_valid(t.riders[k]): (t.riders[k] as Node3D).global_transform = t.rider_rest[k]
+				steep_tip = null
+				continue
+			if _clock-t.kicked > 3.0 and not t.held: continue
 		keep.append(t)
 	tips = keep
+
+## Whether `under` is one of `t`'s riders or under one.
+func _on_rider(t: Tip, under: Object) -> bool:
+	for r: Variant in t.riders:
+		if is_instance_valid(r) and (r == under or (r as Node).is_ancestor_of(under as Node)): return true
+	return false
 
 ## The stone's pose at its tip: turned about its pivot, the rim along the
 ## tip's way going down.
@@ -263,3 +352,4 @@ func settle_all() -> void:
 		for k in range(t.riders.size()):
 			if is_instance_valid(t.riders[k]): (t.riders[k] as Node3D).global_transform = t.rider_rest[k]
 	tips.clear()
+	steep_tip = null
