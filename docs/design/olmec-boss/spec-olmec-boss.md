@@ -123,6 +123,21 @@ You launch `./run-olmec-field.command` and play this fight:
    - *Repeat:* first at 3 of his 8 hits, then again no sooner than about
      40 s later, only from phase 2. A flag starts it at once for testing
      (e.g. `--tilt-now`).
+   - *User's playtest of (8), "solid", three fixes (task 10, right after
+     (9), before tuning):*
+     1. Slide about 10% faster while the field is tipped (the cap step 8
+        set, 8.5 m/s, to about 9.4; the arcs' timing kept fair).
+     2. The grass lifts off the ground when the field tips: the blades
+        float detached from the tipped turf. They must stay rooted on
+        the turf through the tilt, the snap and back to level (the
+        grass/flora multimeshes follow the turf's pose).
+     3. The debris (pieces and stones sliding off the lane and the loose
+        stones from the slam) is "an incredible touch, but it reads a
+        bit buggy". Keep it; make it read as real stone sliding: it sits
+        on the turf (no floating, sinking or passing through the
+        ground), tumbles and slides with weight, no popping, jitter or
+        sudden vanishing, and goes over the low edge in view. Film it
+        from the play camera and fix what reads wrong.
    - *Order:* after the charge, as three tasks: (7) the tilt slam, the
      steep tilt and the slide; (8) the air arcs and the counter (shots
      break his brace); (9) the release, the fling, the glide back and his
