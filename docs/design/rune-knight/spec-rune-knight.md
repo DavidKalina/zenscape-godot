@@ -354,7 +354,11 @@ changing. Names here are final once built on; change one only by a
    the landing knocks a wanderer near it and a timed parry takes it;
    he fights on the meadow (slash, catch, skid into the wall). Stills of
    the crouch, the apex and the landing.
-12. The riposte's spill and no kill on a parry (above). Play-loop checks:
+12. The riposte's spill and no kill on a parry (above). Also the
+   island's own rim (found in task 11): a skid on the meadow that would
+   carry him off the island is an edge like the deck's (brace, teeter,
+   a hit puts him over; a riposte never does), and a knight gone over the
+   rim falls a little way, then is dead (gone below, his rune with him). Play-loop checks:
    a riposte from the side at the edge leaves him teetering, not over;
    three ripostes leave him kneeling, alive; X then crumbles him. Stills
    of the spill.
