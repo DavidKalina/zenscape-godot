@@ -90,6 +90,44 @@ You launch `./run-olmec-field.command` and play this fight:
    - *Order:* these come after the flow task (4) and before tuning, as
      two tasks: (5) the shoulder-led run, (6) the charge. Tuning is last.
 
+   **The tilt (user's ask, after the charge):** "He gets to the edge,
+   ground slams, and tilts up the arena pretty steeply. You slide toward
+   him, build up charge, launch a couple of attacks at him, then he
+   releases, the arena goes back up and you're popped in the air, so you
+   hang glide around and get back on." While you slide, "attacks are
+   coming in and you're sliding left and right, dodging these vertical
+   arcs of air." The user picked the slam (not a ledge grab: too awkward
+   to animate) and that he can repeat it; the rest is ours.
+   - *Start:* in phase 2 he bounds to the rim (never over the plane's
+     run), slams, and stays braced there leaning his weight on it: the
+     whole field tips toward him, steeply (about 25-30 deg, past what the
+     wanderer can walk up: he slides and surfs down, steering left and
+     right). Build it as a steep mode on the existing tilt
+     (scripts/enemies/olmec_tilt.gd: today it caps at 9 deg and a field
+     this size only groans), additive so its other users are unchanged.
+     The camera reads it: the field tipped, him braced at the low edge.
+   - *The slide:* the wanderer is carried down toward him. Loose rubble
+     and toppled pieces slide too. He fires vertical arcs of air (blades
+     of wind standing on edge, a crescent, sweeping up the slope at the
+     wanderer, a few at a time with gaps) to dodge by steering left and
+     right. A hit knocks him back up the slope or sideways, not off.
+   - *The counter:* sliding fills the gust charge (the wind gauge already
+     charges from slides); 2-3 gust shots into him while braced break
+     his brace. If the wanderer slides past him off the low edge, he
+     falls and glides back (the cost is the lost chance, the fall).
+   - *The release:* his brace breaks, he staggers back off the rim and
+     drops out of sight, the field springs back up and overshoots, and
+     the snap flings the wanderer high into the air: he glides (the
+     pocket sail) round and lands back on. The Olmec climbs back up the
+     rim as in his arrival (the beat the user liked) and the fight goes on.
+   - *Repeat:* first at 3 of his 8 hits, then again no sooner than about
+     40 s later, only from phase 2. A flag starts it at once for testing
+     (e.g. `--tilt-now`).
+   - *Order:* after the charge, as three tasks: (7) the tilt slam, the
+     steep tilt and the slide; (8) the air arcs and the counter (shots
+     break his brace); (9) the release, the fling, the glide back and his
+     climb back. Tuning is last.
+
 4. **Flow.** R restarts the whole fight from phase 1 with the arena whole.
    The top-left card shows the phase, his hits, and the attack he's on.
    A flag can start in phase 2 (`--phase=2`) for testing.
