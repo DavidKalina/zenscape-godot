@@ -21,7 +21,7 @@ const ARC_BOW := 0.9
 const ARC_THICK := 0.32
 ## The gap between two arcs of a volley (m) and their pace (m/s).
 const ARC_GAP := 3.4
-const ARC_SPEED := 10.5
+const ARC_SPEED := 9.6
 ## How far an arc runs before it fades (m), and the fade (s).
 const ARC_RUN := 90.0
 const ARC_FADE := 0.35

@@ -122,7 +122,7 @@ const TILT_SLIDE_AUTO := 16.0
 ## motor's carve off: SLIDE_STEER m/s² at full stick), so a sidestep of an
 ## arc is quick, and his slide is held to TILT_SLIDE_TOP m/s so the arcs
 ## come at a pace he can read.
-const TILT_SLIDE_TOP := 8.5
+const TILT_SLIDE_TOP := 9.4
 ## And on top of the motor's own steer, more across the fall line (m/s² at
 ## full stick), up to TILT_SIDE_TOP m/s across: a dodge of an arc is a
 ## clear step aside.
@@ -876,7 +876,11 @@ func _slide_shoved(delta: float, deg: float) -> void:
 		p.z += v.y*delta
 		p.y = _ground_y(p.x,p.z)+float(c.y)
 		node.position = p
-		if pace > 0.1: node.rotate(c.spin as Vector3,pace*delta*0.05)
+		# Turned a little about the turf's up as it goes, never rolled over:
+		# rolled about its foot it sank half into the turf, and a kit
+		# piece's buried faces are left out of its mesh, so it read as a
+		# cutout. Upright, its foot stays in the turf.
+		if pace > 0.1: node.rotate(Vector3.UP,pace*delta*0.04*signf((c.spin as Vector3).x+(c.spin as Vector3).z+0.01))
 		var a := atan2(p.z,p.x)
 		var rim := FIELD_R*(1.0+0.05*sin(a*3.0+0.7)+0.03*sin(a*7.0+2.1))
 		if Vector2(p.x,p.z).length() > rim-1.0:
@@ -918,6 +922,7 @@ func tilt_begin(b: Node3D, at: Vector3) -> void:
 	tilts_begun += 1
 	var ride: Array = [arena]
 	if get("_park_body") != null: ride.append(get("_park_body"))
+	_ride_life()
 	tilt.steep(art,Vector3(0.0,FIELD_TOP,0.0),tilt_way,TILT_DEG,ride)
 	_plane_tipped = parked and plane_figure != null
 	if _plane_tipped:
@@ -930,6 +935,17 @@ func tilt_begin(b: Node3D, at: Vector3) -> void:
 	if arena != null and arena.hub != null: arena.hub.quake = maxf(float(arena.hub.quake),1.0)
 	_say("He slams the rim: the field tips toward him!",3.0)
 	print("olmec field: tilt %d from (%.1f, %.1f), the field tips %.0f deg toward him" % [tilts_begun,at.x,at.z,TILT_DEG])
+
+## What the life grows on the turf (the undergrowth, the leaf litter, the
+## grass chaff and kicked blades: scripts/kit_isle/kit_life.gd, children of
+## the life, not the art) moved into the art while it is level, so it tips
+## with the turf and stays rooted on it (it floated off the tipped turf).
+func _ride_life() -> void:
+	if life == null or art == null: return
+	for key: String in ["undergrowth","leaf_litter","grass_chaff","kicked_blades"]:
+		var n: Variant = life.get(key)
+		if n is Node3D and is_instance_valid(n) and (n as Node3D).get_parent() != art:
+			(n as Node3D).reparent(art,true)
 
 ## The rest-frame point `p` where the tipped field has it now.
 func tipped(p: Vector3) -> Vector3:
@@ -1133,19 +1149,43 @@ func _shake_scree(at: Vector3) -> void:
 			if p.length() < FIELD_R*0.85 and not Arena.RUN.has_point(p) and p.distance_to(Vector2(at.x,at.z)) > 8.0: break
 		var size := rng.randf_range(SCREE_SIZE.x,SCREE_SIZE.y)
 		var bld := RuinKit.Build.new(9200+i+tilts_begun*31,0.5,"Scree%d" % i)
-		bld.ground = 0.0
-		RuinKit._sarsen(bld,Transform3D.IDENTITY,Vector3(size,size*rng.randf_range(0.5,0.9),size*rng.randf_range(0.7,1.1)),0.45)
+		# Whole stone, every face drawn (no ground cut: it was cut off flat
+		# at its foot, and rolled, that open foot and the half sunk in the
+		# turf read as a cutout), its middle at the node's origin.
+		var tall := size*rng.randf_range(0.5,0.9)
+		RuinKit._sarsen(bld,Transform3D(Basis.IDENTITY,Vector3(0.0,-(tall*0.5-0.15),0.0)),Vector3(size,tall,size*rng.randf_range(0.7,1.1)),0.45)
 		var node := bld.finish()
+		var hull := PackedVector3Array()
+		for mi: Node in node.find_children("*","MeshInstance3D",true,false):
+			var mesh := (mi as MeshInstance3D).mesh
+			if mesh == null: continue
+			var xf: Transform3D = node.global_transform.affine_inverse()*(mi as MeshInstance3D).global_transform if mi.is_inside_tree() else (mi as MeshInstance3D).transform
+			for si in range(mesh.get_surface_count()):
+				var verts: PackedVector3Array = mesh.surface_get_arrays(si)[Mesh.ARRAY_VERTEX]
+				var seen := {}
+				for v: Vector3 in verts:
+					var key := Vector3i((v*50.0).round())
+					if seen.has(key): continue
+					seen[key] = true
+					hull.append(xf*v)
 		# Its colliders off: it is loose stone to see slide, not ground.
 		for body: Node in node.find_children("*","CollisionObject3D",true,false):
 			(body as CollisionObject3D).collision_layer = 0
 			(body as CollisionObject3D).collision_mask = 0
 		add_child(node)
-		var q := Vector3(p.x,_ground_y(p.x,p.y)-0.15,p.y)
 		var spin := Basis(Vector3.UP,rng.randf_range(-PI,PI))
-		_scree.append({"node":node,"q":q,"v":Vector2.ZERO,"basis":spin,"roll":rng.randf_range(0.6,1.4),"size":size,"off":false,"vy":0.0,"t":0.0,"side":rng.randf_range(-0.2,0.2)})
+		var q := Vector3(p.x,_ground_y(p.x,p.y)+_scree_lift(hull,spin),p.y)
+		_scree.append({"node":node,"q":q,"v":Vector2.ZERO,"basis":spin,"roll":rng.randf_range(0.6,1.4),"size":size,"off":false,"vy":0.0,"t":0.0,"side":rng.randf_range(-0.2,0.2),"hull":hull})
 		node.global_transform = Transform3D(spin,tipped(q))
 		Dust.puff(enemies,tipped(q),size*1.6,Vector3.UP)
+
+## How high over the turf a scree stone's middle rides turned by `basis`
+## (rest frame): its lowest point SCREE_SINK m into the turf.
+const SCREE_SINK := 0.04
+static func _scree_lift(hull: PackedVector3Array, basis: Basis) -> float:
+	var low := 0.0
+	for v: Vector3 in hull: low = minf(low,(basis*v).y)
+	return -low-SCREE_SINK
 
 ## The scree down the tipped field (in its rest frame along the fall),
 ## tumbling as it goes; over the lip it drops away; level, it stays.
@@ -1179,12 +1219,13 @@ func _slide_scree(delta: float, deg: float, turn: Transform3D) -> void:
 		var r := Vector2(q.x,q.z).length()
 		var a := atan2(q.z,q.x)
 		var rim := FIELD_R*(1.0+0.05*sin(a*3.0+0.7)+0.03*sin(a*7.0+2.1))
-		q.y = _ground_y(q.x,q.z)-0.15
-		c.q = q
-		# Rolled over as it goes (about the axis across its way).
+		# Rolled over as it goes (about the axis across its way), about its
+		# middle, its lowest point kept on the turf.
 		if pace > 0.05:
-			c.basis = (c.basis as Basis).rotated(Vector3(v.y,0.0,-v.x).normalized(),-pace*delta/maxf(float(c.size)*0.5,0.2)*float(c.roll))
+			c.basis = (c.basis as Basis).rotated(Vector3(v.y,0.0,-v.x).normalized(),-pace*delta/maxf(float(c.size)*0.5,0.2)*float(c.roll)).orthonormalized()
 			if randf() < delta*pace*0.25: Dust.puff(enemies,turn*q,float(c.size)*1.2,Vector3.UP)
+		q.y = _ground_y(q.x,q.z)+_scree_lift(c.hull,c.basis)
+		c.q = q
 		node.global_transform = Transform3D(turn.basis*(c.basis as Basis),turn*q)
 		if r > rim+0.6:
 			c.off = true
