@@ -22,6 +22,8 @@ const TargetStone = preload("res://scripts/lock_on/target_stone.gd")
 const SPEED := 38.0
 const FLIGHT := 70.0
 const HOMING := 5.0
+## A shot at a target locked from anywhere flies this far past it (m).
+const FAR_PAST := 15.0
 ## Leaves from his chest (walker heights over his feet), this far out (m).
 const CHEST := 0.6
 const OUT := 0.7
@@ -106,6 +108,11 @@ func fire(feet: Vector3, heading: Vector3, target: Node3D, charge: float) -> voi
 	last_charge = charge
 	last_locked = target != null
 	blast.homing = HOMING if target != null else 0.0
+	# A target locked from anywhere (foot_lock's `lock_anywhere`) is
+	# reached however far it is: the ball flies past it before it fades.
+	blast.flight = FLIGHT
+	if target != null and target.has_method("lock_anywhere") and bool(target.call("lock_anywhere")):
+		blast.flight = maxf(FLIGHT,from.distance_to(aim)*1.25+FAR_PAST)
 	blast.fire(from,aim)
 	_path = [from]
 	_path_fade = 1.0

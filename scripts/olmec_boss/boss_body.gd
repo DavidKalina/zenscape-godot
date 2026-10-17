@@ -290,6 +290,11 @@ func think(delta: float) -> void:
 		if move.begins_with("puff"): move = ""
 		if _hunt_pace > 0.0: knobs.chase_speed = _hunt_pace
 
+## Braced on the rim, tipping the field: the lock takes him from anywhere
+## on it (scripts/lock_on/foot_lock.gd), and the gust shot reaches him.
+func lock_anywhere() -> bool:
+	return phase2 and not crumbled and state == "tilt_brace" and not brace_broken
+
 ## A gust shot in his head's absorb or tell breaks the puff.
 func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
 	# Off the rim and out of sight: nothing to hit.

@@ -14,7 +14,10 @@ extends Node3D
 const TargetStone = preload("res://scripts/lock_on/target_stone.gd")
 
 ## Reach (m from his feet): locks within ACQUIRE, lets go past RELEASE.
-## A target with `lock_reach()` (Vector2: acquire, release) sets its own.
+## A target with `lock_reach()` (Vector2: acquire, release) sets its own;
+## one whose `lock_anywhere()` is true (the Olmec while he tips the field)
+## locks at any range, in view or not, and the lock never lets go of it for
+## range or sight.
 const ACQUIRE := 22.0
 const RELEASE := 28.0
 ## Roughly in view: within this of the camera's flat heading (rad).
@@ -97,6 +100,9 @@ func acquire(feet: Vector3, camera: Camera3D) -> bool:
 	for node: Node in get_tree().get_nodes_in_group(TargetStone.GROUP):
 		var t := node as Node3D
 		if t == null or not t.is_visible_in_tree(): continue
+		if _anywhere(t):
+			best = t
+			break
 		var aim: Vector3 = t.call("aim_point")
 		var d := aim-feet
 		var across := Vector2(d.x,d.z).length()
@@ -117,6 +123,10 @@ func acquire(feet: Vector3, camera: Camera3D) -> bool:
 	_pop = 0.0
 	return true
 
+## Whether `t` asks to be locked from anywhere (`lock_anywhere()`).
+static func _anywhere(t: Node3D) -> bool:
+	return t.has_method("lock_anywhere") and bool(t.call("lock_anywhere"))
+
 ## `t`'s reach (acquire, release, m): its own, else ACQUIRE and RELEASE.
 static func _reach(t: Node3D) -> Vector2:
 	return t.call("lock_reach") if t.has_method("lock_reach") else Vector2(ACQUIRE,RELEASE)
@@ -133,6 +143,7 @@ func step(delta: float, feet: Vector3, camera: Camera3D, allowed: bool) -> void:
 	if target != null and not is_instance_valid(target): target = null
 	if locked():
 		if not allowed: release("not allowed")
+		elif _anywhere(target): _lost = 0.0
 		else:
 			var aim: Vector3 = target.call("aim_point")
 			var far := Vector2(aim.x-feet.x,aim.z-feet.z).length() > _reach(target).y
