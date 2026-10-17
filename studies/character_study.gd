@@ -392,6 +392,8 @@ var script_twirl := false
 var twirl_held_off := false
 ## A scripted press of the flow charge's key (Q, pad RB), this tick only.
 var script_wind := false
+## The key held, scripted (the side slam's hold).
+var script_wind_held := false
 ## The last jump, measured: its number, peak over the takeoff, reach across
 ## the ground, the drop to where it came down; the one in the air now; the
 ## last side flip's; the surf's fastest pace now (or last); the last twirl's
@@ -463,6 +465,13 @@ var slam: Node3D
 ## The dust thrown round on a slam's touch: puffs, out from his feet, the
 ## weakest hit's and the full one's.
 const SLAM_DUST := Vector2i(5,12)
+## The side slam (scripts/side_slam.gd): at full charge in a slide, the
+## updraft's key held is a horizontal slam along it, rebounding off what it
+## meets. On unless `--no-side-slam` (or `--no-updraft`).
+const SideSlam = preload("res://scripts/side_slam.gd")
+var side_slam: Node3D
+## The dust thrown off a side slam's hit, out from the wall.
+const SIDE_SLAM_DUST := 5
 
 ## The telescope (scripts/telescope.gd, docs/design/telescope/round2.md):
 ## held (right mouse, pad LB) on foot on the ground, it comes up to his
@@ -489,6 +498,9 @@ func _ready() -> void:
 	if not preload("res://scripts/launch_args.gd").user_args().has("--no-slam") and slam == null:
 		slam = Slam.new()
 		slam.setup(self)
+	if updraft != null and not preload("res://scripts/launch_args.gd").user_args().has("--no-side-slam") and side_slam == null:
+		side_slam = SideSlam.new()
+		side_slam.setup(self,updraft)
 	telescope = Telescope.new()
 	telescope.setup(self)
 	# The bodies are in the space after a physics step. (A scene changed or
@@ -819,6 +831,7 @@ func place(at: Vector3, face: Vector2) -> void:
 	motor.reset(at,PilotMotor.facing_of(face))
 	if updraft != null: updraft.reset()
 	if slam != null: slam.reset()
+	if side_slam != null: side_slam.reset()
 	if telescope != null:
 		telescope.drop()
 		telescope.restore(camera)
@@ -887,6 +900,8 @@ func tick(delta: float) -> void:
 			motor.twirl = false
 	_asked = want.length()
 	if updraft != null and not _tuning():
+		if side_slam != null: side_slam.ground = ground
+		updraft.held = (script_wind_held if scripted else Input.is_action_pressed(&"walk_wind")) and not looking
 		updraft.update(delta,motor,(script_wind if scripted else Input.is_action_just_pressed(&"walk_wind")) and not looking,want)
 	script_wind = false
 	# A whiffed parry (scripts/wind_parry.gd) holds him in his guard.
@@ -902,6 +917,7 @@ func tick(delta: float) -> void:
 	var events := motor.step(delta,want,motor.run,jump,ground.ground_callable(),ground.slide_callable(),ground.ledge_callable())
 	_cam_go_with(delta)
 	if slam != null: events.merge(slam.after(events,motor))
+	if side_slam != null: events.merge(side_slam.after(events,motor))
 	if foot_pieces != null: foot_pieces.after(delta,events)
 	if _rec != null: _rec.add(delta,want,jump,motor.crouch,motor.twirl,_yaw,_polar,motor,state(),events)
 	if motor.grounded: _last_stood = motor.feet
@@ -920,6 +936,7 @@ func tick(delta: float) -> void:
 	_sync_figure()
 	if events.has("grabbed") or events.has("climbed"): steps.step(_surface(),0.4)
 	_motor_events(events)
+	if side_slam != null: body.set("lunge_coil",side_slam.coil())
 	var drawn: Dictionary = body.drive(motor.pose(),delta)
 	sail_wing.update(delta,motor.move == "sail",PocketSail.steer(motor.sail.heading,want) if motor.move == "sail" else 0.0,1.0 if motor.sail.riding else 0.0)
 	_measure_glide(events)
@@ -931,6 +948,7 @@ func tick(delta: float) -> void:
 	if foot_pieces != null and foot_pieces.has_method("frame"): foot_pieces.frame(camera,delta)
 	if updraft != null: updraft.apply_feel(camera)
 	if slam != null: slam.apply_feel(camera)
+	if side_slam != null: side_slam.apply_feel(camera)
 	if looking: _telescope_view(delta)
 	_show_hud()
 
@@ -1096,6 +1114,16 @@ func _motor_events(events: Dictionary) -> void:
 		steps.step(_surface(),clampf(hard/8.0,0.3,1.0))
 		body.land(hard)
 		if hard > PUFF_LAND: puffs.burst(_puff_at(figure.global_position),_surface(),(hard-PUFF_LAND)/PUFF_LAND_FULL)
+	if events.has("side_slam"):
+		# The side slam's hit: dust thrown off the wall, out along its face
+		# and back toward him.
+		var hit: Dictionary = events.side_slam
+		var n: Vector3 = hit.normal
+		var side := n.cross(Vector3.UP).normalized()
+		for i in range(SIDE_SLAM_DUST):
+			var a := lerpf(-1.2,1.2,float(i)/float(SIDE_SLAM_DUST-1))
+			var way := (n*0.8+side*sin(a)+Vector3.UP*cos(a)*0.5).normalized()
+			puffs.burst(_puff_at(hit.at),_surface(),0.8,way*5.0*wanderer_scale)
 	if events.has("slam"):
 		# The touch: dust thrown out round his feet with the shockwave,
 		# more and further the harder.

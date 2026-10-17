@@ -144,6 +144,11 @@ signal empty_press
 ## true when the press parried wind thrown at him and is spent. Null (the
 ## default): every press is the updraft's, as before.
 var parry: Object = null
+## The side slam (scripts/side_slam.gd), set by its `setup`: asked on each
+## press (`arm`) and each frame (`before`); null, the key is as ever.
+var side_slam: Object = null
+## Whether the key is held this frame (the host's), for the side slam's hold.
+var held := false
 var _air_ups := 0               # updrafts since he last stood on the ground
 var updrafts := 0
 var last_rise := 0.0            # m planned for the last updraft
@@ -213,6 +218,9 @@ func update(delta: float, m: PilotMotor, pressed: bool, want := Vector2.ZERO) ->
 	_charge(delta,m)
 	if m.grounded: _air_ups = 0
 	if pressed and parry != null and parry.call("try",m): pressed = false
+	if side_slam != null:
+		if pressed and side_slam.call("arm",m,self): pressed = false
+		side_slam.call("before",delta,m,held,want)
 	if pressed and not burst(m,want) and not updraft(m) and segmented and not can_spend():
 		empty_press.emit()
 	_ride_top(delta,m)
@@ -267,7 +275,7 @@ func _air_charge(delta: float, m: PilotMotor) -> void:
 		charge = minf(charge+float(SEG_BUMPS[key]),1.0)
 		_quiet = 0.0
 	if key in SEG_HOLDS: gain += float(SEG_HOLDS[key])
-	if not m.grounded and m.rider == null and _air_ups == 0 and m.speed() > FLOW_PACE*UNIT:
+	if not m.grounded and m.rider == null and _air_ups == 0 and m.move != "lunge" and m.speed() > FLOW_PACE*UNIT:
 		gain += SEG_AIR
 	_prev_move = key
 	if gain > 0.0:
@@ -335,6 +343,19 @@ func updraft(m: PilotMotor) -> bool:
 func spend(m: PilotMotor, drift := Vector3.ZERO) -> float:
 	if not can_spend() or m.recovering() or m.swimming or m.seized(): return 0.0
 	var p := _take(SEG_SHOT_P)
+	_let_go(drift)
+	return p
+
+## The whole charge spent at once (the side slam, scripts/side_slam.gd):
+## the wake comes away drifting `drift` m/s, and charging locks as after a
+## burst. What was spent.
+func spend_all(m: PilotMotor, drift := Vector3.ZERO) -> float:
+	var p := charge
+	charge = 0.0
+	_quiet = 0.0
+	spent = true
+	_spent_t = 0.0
+	_spent_pace = m.speed()
 	_let_go(drift)
 	return p
 
