@@ -12,10 +12,14 @@ extends "res://studies/aqueduct_isle.gd"
 ##   godot --path . res://studies/inhaler_isle.tscn -- --no-title
 ##     [--head-at=x,z] [--head-knob=<knob>=<value>] (repeatable, e.g.
 ##     --head-knob=pull=9 --head-knob=reach=16)
+##     [--head=coin] the rolling coin (scripts/enemies/rolling_coin.gd) in
+##     place of the heaving head (its own study, with breaking:
+##     studies/rolling_coin_isle.tscn).
 ## Placeholder sounds: the enemy yard's synthesized ones (InhalerHead.VOICES:
 ## a grind, a long hiss, a gulp, a whoosh, thuds, a strain, a scrape, a call).
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
 const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
+const RollingCoin = preload("res://scripts/enemies/rolling_coin.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 
 ## Where the head is set down (x, z) and its round (x, z): on the turf, up
@@ -43,6 +47,7 @@ var _slot: Node
 var _voices := {}
 var _head_at := HEAD_AT
 var _head_knobs := {}
+var _head_kind := "heave"
 
 ## Steps what stood in the study's slot and the enemies, and hides the
 ## figure while the head holds him.
@@ -71,6 +76,8 @@ func _ready() -> void:
 		elif arg.begins_with("--head-knob="):
 			var pair := arg.trim_prefix("--head-knob=")
 			_head_knobs[pair.get_slice("=",0)] = float(pair.get_slice("=",1))
+		elif arg.begins_with("--head="):
+			_head_kind = arg.get_slice("=",1)
 	chain_on = false
 	dragon_roost = false
 	_no_lode = true
@@ -114,7 +121,10 @@ func _stand_head() -> void:
 	var knobs := {"route":route}
 	knobs.merge(_head_knobs,true)
 	var at := Vector3(_head_at.x,_turf_y(_head_at),_head_at.y)
-	head = enemies.spawn(InhalerHead,at,(START_AT-_head_at).normalized(),knobs)
+	var face := (START_AT-_head_at).normalized()
+	match _head_kind:
+		"coin","wheel": head = enemies.spawn(RollingCoin,at,face,knobs)
+		_: head = enemies.spawn(InhalerHead,at,face,knobs)
 	_slot = Slot.new()
 	_slot.study = self
 	if foot_pieces != null: _slot.parts.append(foot_pieces)
@@ -167,6 +177,9 @@ func _show_hud() -> void:
 	var lines := PackedStringArray([_hud.text,""])
 	for e in enemies.enemies:
 		if not is_instance_valid(e): continue
+		if e.has_method("hud_lines"):
+			lines.append_array(e.hud_lines())
+			continue
 		lines.append("head  %s %.1fs · %s · draw %.2f · pull on him %.1f m/s · gulps %d" % [e.state,e.state_t,e._act if e._act != "" else "rest",e.draw_share,e.pulling,e.gulps])
 		lines.append("      heaves %d · notches %d · balks %d · calls %d%s · falls %d · y over turf %.2f" % [e.heaves,e.notches,e.balks,e.calls," (calling)" if e.calling() else "",e.falls,e.position.y-e.ground_y()])
 	_hud.text = "\n".join(lines)

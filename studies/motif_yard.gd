@@ -61,7 +61,10 @@ const NET := 60.0
 const SEED := 1
 
 ## The motif asked for (its slug or pool id), grey or turf, its offset.
+## `motif_script`: a motif script not in the registry (a bench sets it, and
+## `motif_slug`, before this `_ready`; e.g. studies/coin_track_bench.gd).
 var motif_slug := ""
+var motif_script: Script = null
 var grey := false
 var offset := Vector3.ZERO
 var rims_on := false
@@ -106,7 +109,7 @@ func _ready() -> void:
 	var knobs := LayerPlan.knobs_from(LaunchArgs.user_args())
 	for a: String in args:
 		if a.begins_with("--bodies="): knobs.bodies = int(a.get_slice("=",1))
-	layer = yard_plan(motif_slug,offset,knobs)
+	layer = yard_plan(motif_slug,offset,knobs,motif_script)
 	if layer.is_empty():
 		push_error("motif yard: no motif '%s'" % motif_slug)
 		layer = yard_plan("plumb_well",offset,{})
@@ -126,9 +129,10 @@ func _ready() -> void:
 ## LayerGreybox, LayerEnemies `dress` and LayerBodies `cliffs` read, the
 ## isle made as the generator makes one (LayerPlan `_motif_isle`), its
 ## heads laid by LayerGreybox `lay_heads`. {} for an unknown slug.
-static func yard_plan(slug: String, at: Vector3, knobs := {}) -> Dictionary:
+static func yard_plan(slug: String, at: Vector3, knobs := {}, script: Script = null) -> Dictionary:
 	var pick: Array = []
-	if Registry.MOTIFS.has(slug): pick = ["gb_"+slug,Registry.MOTIFS[slug],Registry.WEIGHT]
+	if script != null: pick = ["gb_"+slug,script,Registry.WEIGHT]
+	elif Registry.MOTIFS.has(slug): pick = ["gb_"+slug,Registry.MOTIFS[slug],Registry.WEIGHT]
 	else:
 		for p: Array in LayerPlan.POOL:
 			if str(p[0]) == slug: pick = p
@@ -141,6 +145,9 @@ static func yard_plan(slug: String, at: Vector3, knobs := {}) -> Dictionary:
 	rng.seed = hash([slug,"yard"])
 	var isle: Dictionary = LayerPlan._motif_isle(pick,rng)
 	isle.role = "route"
+	# A script's motif is a greybox (its live parts dressed) though the
+	# registry hasn't it.
+	if script != null: isle.greybox = true
 	isle.hood = 0
 	isle.offset = at
 	isle.sockets = []

@@ -54,6 +54,10 @@ const UNDER_ENERGY := 4.5
 const MAW := Color(0.012,0.009,0.008)
 
 var height := MODEL_HEIGHT
+## The model built from, and its authored height (the rolling heads'
+## coin sets its own: scripts/enemies/rolling_coin.gd).
+var model_path := MODEL
+var model_height := MODEL_HEIGHT
 var model: Node3D
 var jaw: Node3D
 var eyes: MeshInstance3D
@@ -76,8 +80,8 @@ static func stone_material() -> ShaderMaterial:
 ## Builds the head `h` m tall from the stone of `seed_value`.
 func build(h: float, seed_value := 7) -> void:
 	height = h
-	model = (load(MODEL) as PackedScene).instantiate()
-	model.scale = Vector3.ONE*(h/MODEL_HEIGHT)
+	model = (load(model_path) as PackedScene).instantiate()
+	model.scale = Vector3.ONE*(h/model_height)
 	add_child(model)
 	jaw = model.get_node("Jaw")
 	eyes = model.get_node("Eyes")

@@ -258,7 +258,7 @@ def readouts(L):
 
 
 def panel(path):
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     name = re.search(r"^# (.+)$", text, re.M)
     name = name.group(1) if name else path.stem
     L, err = layout_of(text)
@@ -334,7 +334,7 @@ def main():
     page = (f"<!doctype html><meta charset=utf-8><title>{e(title)}</title><style>{STYLE}</style>"
             f"<svg width=0 height=0><defs>{DEFS}</defs></svg><h1>{e(title)}</h1>{BAR}{LEGEND}"
             + "\n".join(panel(f) for f in files))
-    out.write_text(page)
+    out.write_text(page, encoding="utf-8")
     print(f"wrote {out} ({len(files)} {'cards' if path.is_dir() else 'file'})")
     if a.open and sys.platform == "darwin":
         subprocess.run(["open", str(out)])
