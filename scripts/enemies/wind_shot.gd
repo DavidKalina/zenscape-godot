@@ -62,6 +62,8 @@ const CRESCENT_THICK := 0.12
 const CRESCENT_ARC := 1.05
 const CRESCENT_POINTS := 9
 const CRESCENT_STREAKS := 16
+## Each wake echo's streaks (the crescent's `wake`).
+const WAKE_STREAKS := 8
 ## Stone (layer 1) and turf (layer 11) pop it.
 const MASK := 1 | (1 << 11)
 ## The look's counts and tint (the knight's rune light in the air).
@@ -98,6 +100,18 @@ var tilt := 0.0
 ## A crescent's size over its walker-scaled width and thickness (the
 ## knight's crescent at the plane is bigger, to read from the cockpit).
 var size := 1.0
+## A crescent's horns bent from straight back toward its face (rad, about
+## its width's axis): 0 a flat arc in the plane of its way (edge-on to what
+## it flies at), near 1 its arc turned to face what it flies at (the
+## knight's crescent at the plane, so the cockpit sees its curve).
+var face := 0.0
+## A crescent's long wake: how many fading echoes of its arc it leaves
+## along its path, with streaks from its horns and middle back along it
+## (0: the short echo only, the foot crescent).
+var wake := 0
+## A crescent's least width on screen: its streaks never thinner than this
+## share of their distance from the camera (0: none), so it reads from far.
+var far_width := 0.0
 ## How full (0..1): grows while held after `grow()`, 1 in flight.
 var grown := 0.0
 var age := 0.0
@@ -136,7 +150,7 @@ func _ready() -> void:
 		_streak_mesh = DragonCyclone._streak_mesh()
 		_puff_mesh = DragonGale._puff_mesh()
 	_lens = _batch("Lens",_lens_mesh,1)
-	_streaks = _batch("Streaks",_streak_mesh,RING+TRAIL+CRESCENT_STREAKS*2)
+	_streaks = _batch("Streaks",_streak_mesh,RING+TRAIL+CRESCENT_STREAKS*2+(WAKE_STREAKS+3*TRAIL)*wake)
 	_puffs = _batch("Puffs",_puff_mesh,TRAIL_PUFFS+FREE_PUFFS)
 	for i in range(FREE_PUFFS): _free.append({"life":0.0})
 
@@ -189,7 +203,7 @@ func crescent_axes(way: Vector3) -> Array:
 	var side := w.cross(Vector3.UP)
 	if side.length() < 0.05: side = Vector3.RIGHT
 	side = side.normalized().rotated(w,tilt)
-	return [w,side]
+	return [w,side,w.rotated(side,face)]
 
 ## The crescent's arc's points at `at` along `way`, horn to horn (its
 ## middle leading, the horns trailing).
@@ -197,11 +211,12 @@ func crescent_points(at: Vector3, way: Vector3, n := CRESCENT_POINTS) -> Array[V
 	var ax := crescent_axes(way)
 	var w: Vector3 = ax[0]
 	var side: Vector3 = ax[1]
+	var back: Vector3 = ax[2]
 	var r := crescent_radius()*size
 	var out: Array[Vector3] = []
 	for i in range(n):
 		var a := lerpf(-CRESCENT_ARC,CRESCENT_ARC,float(i)/float(n-1))
-		out.append(at+side*r*sin(a)-w*r*(1.0-cos(a)))
+		out.append(at+side*r*sin(a)-back*r*(1.0-cos(a)))
 	return out
 
 ## Taken into a shot that met it: gone, quietly.
@@ -294,7 +309,7 @@ func _fly(delta: float) -> void:
 	global_position = to
 	travelled += from.distance_to(to)
 	_trail.push_front(to)
-	if _trail.size() > 24: _trail.pop_back()
+	if _trail.size() > maxi(24,wake*8): _trail.pop_back()
 	if travelled >= flight: _end(to,Vector3.UP,false)
 
 ## Whether a newer flying shot of another shooter met this one on its
@@ -562,8 +577,53 @@ func _draw_crescent(sm: MultiMesh, eye: Vector3) -> int:
 			var p0: Vector3 = pts[i]
 			var p1: Vector3 = pts[i+1]
 			var w := CRESCENT_THICK*t*size*lerpf(0.3,1.8,mid_w)*flick*(1.0 if layer == 0 else 2.0)
+			if far_width > 0.0: w = maxf(w,far_width*eye.distance_to(p0)*lerpf(0.4,1.0,mid_w)*(1.0 if layer == 0 else 1.6))
 			sm.set_instance_transform(si,_streak((p0+p1)*0.5,(p1-p0)*1.25,w,eye))
-			sm.set_instance_custom_data(si,Color((1.0 if layer == 0 else 0.45)*lerpf(0.6,1.0,mid_w),0,0,0))
+			# With a long wake (the sky crescent) its blue echo is near solid, so
+			# it reads against white cloud.
+			var echo := 0.45 if wake == 0 else 0.85
+			sm.set_instance_custom_data(si,Color((1.0 if layer == 0 else echo)*lerpf(0.6,1.0,mid_w),0,0,0))
 			sm.set_instance_color(si,TINT if layer == 0 else BLADE_TINT)
+			si += 1
+	if wake > 0: si = _draw_wake(sm,eye,si,way)
+	return si
+
+## The crescent's long wake (`wake` > 0): fading, widening echoes of its
+## arc at its past positions, and streaks from its horns and middle back
+## along its path. The streaks' count used.
+func _draw_wake(sm: MultiMesh, eye: Vector3, si: int, way: Vector3) -> int:
+	var t := walker_tall()
+	var n := _trail.size()
+	if n < 3: return si
+	var stride := maxi(1,(n-1)/(wake+1))
+	for e in range(wake):
+		var k := mini((e+1)*stride,n-1)
+		var u := float(e+1)/float(wake+1)
+		var pts := crescent_points(_trail[k],way,WAKE_STREAKS+1)
+		for i in range(WAKE_STREAKS):
+			var mid_w := sin((float(i)+0.5)/float(WAKE_STREAKS)*PI)
+			var p0: Vector3 = pts[i]
+			var p1: Vector3 = pts[i+1]
+			var w := CRESCENT_THICK*t*size*lerpf(1.0,2.6,mid_w)*lerpf(1.2,2.2,u)
+			if far_width > 0.0: w = maxf(w,far_width*eye.distance_to(p0)*1.4)
+			sm.set_instance_transform(si,_streak((p0+p1)*0.5,(p1-p0)*1.3,w,eye))
+			sm.set_instance_custom_data(si,Color(0.8*(1.0-u)*lerpf(0.5,1.0,mid_w),0,0,0))
+			sm.set_instance_color(si,BLADE_TINT)
+			si += 1
+	# The streaks back along the path from its two horns and its middle.
+	var rails := []
+	for k in range(0,n,maxi(1,n/TRAIL)):
+		rails.append(crescent_points(_trail[k],way,3))
+	for j in range(3):
+		for i in range(mini(rails.size()-1,TRAIL)):
+			var u := float(i)/float(maxi(1,rails.size()-1))
+			var p0: Vector3 = rails[i][j]
+			var p1: Vector3 = rails[i+1][j]
+			if p0.distance_to(p1) < 0.01: continue
+			var w := CRESCENT_THICK*t*size*(1.4 if j == 1 else 0.9)*lerpf(1.0,0.4,u)
+			if far_width > 0.0: w = maxf(w,far_width*eye.distance_to(p0)*lerpf(1.0,0.5,u))
+			sm.set_instance_transform(si,_streak((p0+p1)*0.5,(p0-p1)*1.2,w,eye))
+			sm.set_instance_custom_data(si,Color(lerpf(0.75,0.1,u)*(1.0 if j == 1 else 0.7),0,0,0))
+			sm.set_instance_color(si,TINT if j == 1 else BLADE_TINT)
 			si += 1
 	return si

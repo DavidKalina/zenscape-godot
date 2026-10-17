@@ -329,10 +329,21 @@ const KNOBS := {
 	"sky_pitch": 1.2,
 	"sky_yaw": 0.8,
 	"sky_roll": 6.0,
+	# Task 18b, read from the cockpit: the crescent's horns bent sky_face
+	# rad toward what it flies at (its arc faces the plane, not edge-on),
+	# rolled sky_tilt rad from level (a diagonal cut), a wake of sky_wake
+	# fading echoes, its streaks never thinner than sky_far_width of their
+	# distance from the camera; a flare on his blade while he gathers
+	# (scripts/enemies/rune_sky_flare.gd).
+	"sky_face": 1.0,
+	"sky_tilt": 0.35,
+	"sky_wake": 5,
+	"sky_far_width": 0.006,
 }
 ## What hides you from him: stone (layer 1) and turf (layer 11).
 const SIGHT_MASK := 1 | (1 << 11)
 const WindShot = preload("res://scripts/enemies/wind_shot.gd")
+const SkyFlare = preload("res://scripts/enemies/rune_sky_flare.gd")
 ## The parked plane's layer (studies/kit_isle.gd PARKED_LAYER): only the
 ## walker and his ground probes see it.
 const ROOM_LAYER := 1 << 13
@@ -510,11 +521,15 @@ func setup(host: Node3D) -> void:
 	# Lock-on (scripts/lock_on/foot_lock.gd) and the gust shot's hit.
 	add_to_group("lock_targets")
 	_build_room()
+	_flare = SkyFlare.new()
+	add_child(_flare)
+	_flare.follow(body.socket("blade"))
 	body.play("walk")
 
 func _process(delta: float) -> void:
 	var at := position
 	_buffet_t = maxf(0.0,_buffet_t-delta)
+	if _flare != null: _flare.on = _flare_live and sky and state in ["gather","slash"]
 	if state == "dead": return
 	_read_shots(delta)
 	at = position
@@ -665,6 +680,7 @@ func _on_beat(clip: String, beat: String) -> void:
 			if shot != null: shot.grow()
 		elif beat == "full":
 			body.set_effect("wind_gather",false)
+			if sky and _flare != null: _flare.catch_light()
 			if attack == "lob" and not sky:
 				state = "throw"
 				body.play("throw")
@@ -673,6 +689,7 @@ func _on_beat(clip: String, beat: String) -> void:
 				body.play("slash",slash_form)
 	elif clip == "slash" and state == "slash":
 		if beat == "release":
+			_flare_live = false
 			if sky and _plane() != null: _release_sky()
 			elif sky:
 				# The plane down (or gone) mid-gather: the blade's wind let go.
@@ -794,6 +811,7 @@ func _gather() -> void:
 		_bout = 0.0
 		slash_form = "high"
 		sky_gathers += 1
+		_flare_live = true
 		print("rune knight: gathers his blade at the plane")
 		body.play("gather","blade")
 		body.set_effect("wind_gather",true)
@@ -1809,6 +1827,8 @@ func _foot_step(at: Vector3, way: String, delta: float) -> Dictionary:
 
 ## True while the one he sees (or last saw) is the plane, not the walker.
 var sky := false
+var _flare: Node3D
+var _flare_live := false
 var sky_gathers := 0
 var sky_slashes := 0
 var sky_hits := 0
@@ -1881,16 +1901,20 @@ func _release_sky() -> void:
 	var t := intercept(from,at,vel,speed)
 	var lead := at+vel*t
 	var node: Node3D = WindShot.new()
+	# Its wake sizes its streak batch, built when it enters the tree.
+	node.set("wake",int(knob("sky_wake")))
 	isle.add_child(node)
 	node.global_position = from
 	node.set("strength",knob("slash_strength"))
 	node.set("shooter",self)
 	node.set("target",null)
 	node.set("plane",plane)
+	node.set("face",knob("sky_face"))
+	node.set("far_width",knob("sky_far_width"))
 	node.set("plane_reach",knob("sky_reach")*WorldScale.span)
 	node.set("on_plane",Callable(self,"_plane_struck"))
 	node.set("flight",knob("sky_flight"))
-	node.set("tilt",0.0)
+	node.set("tilt",knob("sky_tilt"))
 	node.set("size",knob("sky_size"))
 	node.call("launch",(lead-from).normalized()*speed,0.0,knob("slash_grace"))
 	node.set("form","crescent")
