@@ -465,6 +465,9 @@ var slam: Node3D
 ## The dust thrown round on a slam's touch: puffs, out from his feet, the
 ## weakest hit's and the full one's.
 const SLAM_DUST := Vector2i(5,12)
+## The grit thrown off a bobbing slab's spring as it launches him
+## (scripts/interactables/foot_pieces.gd "spring_launch").
+const SPRING_DUST := 7
 ## The side slam (scripts/side_slam.gd): at full charge on the ground, the
 ## updraft's key held is a horizontal slam, rebounding off what it
 ## meets. On unless `--no-side-slam` (or `--no-updraft`).
@@ -1131,6 +1134,17 @@ func _motor_events(events: Dictionary) -> void:
 			var a := lerpf(-1.2,1.2,float(i)/float(SIDE_SLAM_DUST-1))
 			var way := (n*0.8+side*sin(a)+Vector3.UP*cos(a)*0.5).normalized()
 			puffs.burst(_puff_at(hit.at),_surface(),0.8,way*5.0*wanderer_scale)
+	if events.has("spring_launch"):
+		# A slab's spring let go under him (scripts/interactables/
+		# foot_pieces.gd): a thump, a ring of grit off its top, air torn
+		# round him as he goes.
+		var at := _puff_at(figure.global_position)
+		steps.step("stone",1.0)
+		var turn := randf()*TAU
+		for i in range(SPRING_DUST):
+			var way := Vector3.FORWARD.rotated(Vector3.UP,turn+TAU*float(i)/float(SPRING_DUST))
+			puffs.burst(at+way*0.5,"stone",0.9,way*4.0*wanderer_scale)
+		puffs.swirl(figure.global_position+Vector3.UP*0.5,1.0,1.0)
 	if events.has("slam"):
 		# The touch: dust thrown out round his feet with the shockwave,
 		# more and further the harder.

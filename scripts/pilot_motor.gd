@@ -799,6 +799,15 @@ var _seized := false
 var stunned := ""
 var knocks := 0
 var _fall_top := 0.0
+## The drop a spring launch forgives (`launch`, m), this airtime; 0 none.
+var _launch_free := 0.0
+## A spring launch's hang at its top (`launch`), this airtime.
+var _launch_hang := false
+## The hang: within LAUNCH_HANG_V m/s of the top of a spring launch (rising
+## or falling, plain air: no twirl, sail or slam), his gravity is
+## LAUNCH_HANG_G of itself, so he floats a moment at the top.
+const LAUNCH_HANG_V := 3.2
+const LAUNCH_HANG_G := 0.28
 var _stun_t := 0.0
 var _poise := 0.0
 var _stunned_for := 0.0
@@ -1327,7 +1336,10 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 	else:
 		_calm += delta
 		if _calm >= STUN_CALM: _stunned_for = 0.0
-	if grounded or hold != "" or swimming or rider != null: _fall_top = feet.y
+	if grounded or hold != "" or swimming or rider != null:
+		_fall_top = feet.y
+		_launch_free = 0.0
+		_launch_hang = false
 	if rider != null:
 		# Snagged stunned (a rope's catch of a tumbling body, still move
 		# "tumble"): the twirl arms the tech as in the air, and past the
@@ -1504,7 +1516,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 	# earlier with the twirl spent, the button is locked out a while.
 	if twirl_pressed and not grounded and fall_stun and velocity.y < 0.0 and move != "sail" and move != "wall" and (move != "slam" or slam_stuns):
 		var under: float = ground.call(Vector2(feet.x,feet.z))
-		if is_finite(under) and _fall_top-under >= fall_stun_height() and _tech_lock <= 0.0:
+		if is_finite(under) and _fall_top-under-_launch_free >= fall_stun_height() and _tech_lock <= 0.0:
 			if _time_to_ground(ground) <= tech_window:
 				_roll = tech_window+delta
 				twirl_pressed = false
@@ -1612,7 +1624,8 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 			return out
 		if y <= under and velocity.y <= 0.0:
 			var came := move
-			var drop := _fall_top-under
+			var drop := maxf(_fall_top-under-_launch_free,0.0)
+			_launch_free = 0.0
 			out["landed"] = -velocity.y
 			if move == "slam": out["slammed"] = -velocity.y
 			if move == "wall": out["wall"] = false
@@ -1928,6 +1941,32 @@ func toss(push: Vector3, hop := false) -> void:
 	if Vector2(push.x,push.z).length() > 0.3: facing = facing_of(Vector2(push.x,push.z))
 	feet.y += 0.02
 
+## Launched by a spring (a bob slab slammed, scripts/interactables/
+## foot_slab.gd): thrown up as `toss` throws him (a fresh airtime, the
+## stick steering as in any jump, the twirl and the sail ready, the hold of
+## Jump not cutting it), off the ground at once, and the first `free` m of
+## the drop that follows forgiven by the fall stun and its hurt (the height
+## the spring threw him, so coming back down onto it, or onto ground within
+## a stun's height under it, doesn't lay him down).
+func launch(push: Vector3, free: float) -> void:
+	toss(push)
+	if move == "tumble" or swimming: return
+	move = ""
+	grounded = false
+	_launch_free = maxf(free,0.0)
+	_launch_hang = true
+
+## The upward pace (m/s) that rises `height` m on his own rising gravity,
+## the hold of Jump not cutting it (as `toss` throws him); with `hang`, as
+## `launch` throws him, its hang at the top counted.
+func rise_for(height: float, hang := false) -> float:
+	height = maxf(height,0.0)
+	if not hang: return sqrt(2.0*gravity*height)
+	var b := LAUNCH_HANG_V
+	var top := b*b/(2.0*gravity*LAUNCH_HANG_G)
+	if height <= top: return sqrt(2.0*gravity*LAUNCH_HANG_G*height)
+	return sqrt(2.0*gravity*(height-top)+b*b)
+
 ## Taken by a rider (see the header): `by` steps him from the next step
 ## (its `ride`), his own pace stopped, his feet set at `at`, on the ground
 ## (`on_ground`) or held off it, facing `towards` (NAN: as he faces): a
@@ -2014,7 +2053,7 @@ func slam(pace: float, kick: float) -> void:
 func _arc(delta: float, jump: bool) -> float:
 	var dy := 0.0
 	var left := delta
-	for i in range(4):
+	for i in range(6):
 		if left <= 0.0: break
 		var v := velocity.y
 		var low := -wall_slide if move == "wall" else (-TWIRL_FALL if move == "twirl" else (-WALLRUN_FALL if move == "wallrun" else (-maxf(terminal,_slam) if move == "slam" else -terminal)))
@@ -2034,6 +2073,14 @@ func _arc(delta: float, jump: bool) -> float:
 		elif v <= 0.0: g *= fall
 		elif not jump and not _no_cut: g *= cut
 		var t := left
+		if _launch_hang and move == "":
+			# The hang at a spring launch's top: its band's edges split the
+			# step, so the height is the same at any frame rate.
+			var b := LAUNCH_HANG_V
+			if v > b+1e-5: t = minf(t,(v-b)/g)
+			elif v > -b+1e-5:
+				g *= LAUNCH_HANG_G
+				if v <= 0.0: t = minf(t,(v+b)/g)
 		if v > 0.0: t = minf(t,v/g)
 		if v-g*t < low: t = minf(t,(v-low)/g)
 		dy += v*t-0.5*g*t*t

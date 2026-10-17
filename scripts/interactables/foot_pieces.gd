@@ -21,7 +21,9 @@ extends Node3D
 ## is `on_rail` (counted, its top pace kept for the HUD and tests), and
 ## the motor does everything else. The events of the step get "slab"
 ## (landed on one), "swing" (true on a rope) and "rail" (true onto a
-## balustrade's coping, false off it). `pose` tilts the drawn body along a
+## balustrade's coping, false off it), "spring_coil" (slammed onto a
+## springing slab: its spring coiled, the point) and "spring_launch" (its
+## release threw him: the point, his rise m/s). `pose` tilts the drawn body along a
 ## rope he swings on, and eases it back upright over UPRIGHT s after.
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const FootSlab = preload("res://scripts/interactables/foot_slab.gd")
@@ -35,6 +37,10 @@ const Balustrade = preload("res://scripts/interactables/balustrade.gd")
 ## body takes to stand upright off a rope.
 const RISE_KEEP := 3.0
 const UPRIGHT := 0.25
+## The spring (foot_slab.gd): a slam's touch landing on a springing slab
+## coils it; let go with him still on it, he is launched (PilotMotor
+## `launch`) the slab's SPRING_PUMPS of his pump high, his flat pace kept,
+## the height forgiven by the fall stun on the way down.
 ## Pieces this far from him (m) are still stepped but skip their catch.
 const NEAR := 30.0
 
@@ -60,6 +66,11 @@ var _held: Node3D = null
 var last_rail_top := 0.0
 ## The balustrade whose coping he is on now, or null.
 var on_rail: Node3D = null
+## Counted: spring launches, and the last one's rise (m/s) and height (m).
+var launches := 0
+var last_launch := {}
+## Events from `before` (a launch) for the step's, given in `after`.
+var _pending := {}
 
 func _init() -> void:
 	name = "FootPieces"
@@ -148,10 +159,24 @@ func slab_of(rid: RID) -> Node3D:
 ## Every piece on a frame; he is carried by the slab under him.
 func before(delta: float) -> void:
 	_held = motor.rider if motor.rider in ropes else null
-	for slab: Node3D in slabs: slab.advance(delta)
+	var sprang: Node3D = null
+	for slab: Node3D in slabs:
+		slab.advance(delta)
+		if slab.sprung(): sprang = slab
 	for r: Node3D in ropes: r.advance(delta)
 	if on == null or motor.rider != null or motor.swimming: return
 	if motor.grounded or motor.on_ledge(): motor.carry(on.moved(),on.turn())
+	if sprang == on and motor.grounded and motor.move != "tumble": _launch(on)
+
+## Thrown up off `slab`'s spring (see SPRING above).
+func _launch(slab: Node3D) -> void:
+	var height: float = slab.spring_pumps*float(motor.jumps[motor.jumps.size()-1])
+	var up := motor.rise_for(height,true)
+	motor.launch(Vector3(motor.velocity.x,up,motor.velocity.z),height)
+	launches += 1
+	last_launch = {"at":motor.feet,"rise":up,"height":height}
+	_pending["spring_launch"] = last_launch
+	on = null
 
 ## After the motor's step: what he is on, the slabs' weight and blows, his
 ## leaving pace, the catches.
@@ -164,10 +189,13 @@ func after(_delta: float, events: Dictionary) -> void:
 		elif motor.on_ledge():
 			under = _under(motor.lip-Vector3(motor.lip_out.x,0.0,motor.lip_out.y)*0.1)
 		now = slab_of(under)
+	events.merge(_pending)
+	_pending = {}
 	if now != null and events.has("landed"):
 		now.land(motor.feet,float(events.landed))
 		events["slab"] = true
 		counts.slab += 1
+		if events.has("slam") and now.coil(motor.feet): events["spring_coil"] = motor.feet
 	if on != null and now == null and not motor.grounded and not motor.on_ledge() and motor.rider == null and not motor.swimming:
 		# Off it: its pace at his feet goes with him.
 		var v: Vector3 = on.velocity_at(motor.feet)
