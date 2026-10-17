@@ -347,10 +347,15 @@ func isle_summit() -> Vector3:
 	return Vector3(Art.HILL.x,Art.TOP,Art.HILL.y)
 
 func flora_site() -> KitFlora.Site:
-	return KitFlora.Site.new(Art.TOP,func(p: Vector2) -> float: return Art.path_wear(p))
+	return preload("res://studies/aqueduct_isle_flora.gd").site()
 
 func flora_seed() -> int:
 	return SEED+4
+
+## The grass carpet's calmer ground and tufts (studies/aqueduct_isle_flora.gd).
+func _grow() -> void:
+	super._grow()
+	preload("res://studies/aqueduct_isle_flora.gd").calm(flora)
 
 func life_script() -> Script:
 	return Life

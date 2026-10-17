@@ -54,6 +54,30 @@ const PATH_BARE := 0.5
 const PATH_THIN := 0.1
 const REACH := 0.25
 const STEEP_SHARE := 0.85
+## Wild grass (Site `shag`): full wild within SHAG_RIM.x of the rim, none
+## past .y; at a foot if what stands is within SHAG_FOOT.x (full) or .y
+## (half), read on a SHAG_CELL m grid; the broad noise's share and scale.
+const SHAG_RIM := Vector2(0.3,3.0)
+const SHAG_FOOT := Vector2(1.0,2.2)
+const SHAG_CELL := 1.0
+const SHAG_VARY := 0.18
+const SHAG_NOISE := 2.3
+## The grass's variety (Site `variety`): a tussock's share (times 0.4 +
+## wild), its form (x, y, z of a tuft's size) and its two satellites' reach
+## (m); thatch's share at a full foot, its form and straw (sRGB); seed heads'
+## share (times 0.3 + wild) and size range.
+const TUSSOCK_SHARE := 0.08
+const TUSSOCK_FORM := Vector3(1.3,1.6,1.3)
+const TUSSOCK_REACH := Vector2(0.14,0.3)
+const THATCH_SHARE := 0.35
+const THATCH_FORM := Vector3(1.45,0.5,1.45)
+const THATCH_STRAW := Color("b59c62")
+const SEED_SHARE := 0.025
+const SEED_SIZE := Vector2(0.7,1.0)
+## The rolling height (Site `height_field`): its noise's scale (1/m) and
+## how much denser (or sparser) the tall (or short) patches grow.
+const HEIGHT_SCALE := 0.12
+const HEIGHT_THICK := 0.3
 ## Tiles (m: the grass and flowers', the undergrowth's, sparser, larger)
 ## and how far each kind draws (m), with the fade's margin.
 const TILE := 24.0
@@ -121,6 +145,30 @@ class Site extends RefCounted:
 	## key, tile, count, buffer), no nodes or materials made, so it can run
 	## on a worker; `batch_node` stands one on the main thread.
 	var plain := false
+	## Opt-in: the grass as a carpet, not drifts: every candidate at full
+	## thickness (only the paths thin it), drawn out to `grass_range` (m,
+	## zero: GRASS_RANGE) so it covers the turf seen from the plane too.
+	var carpet := false
+	var grass_range := 0.0
+	## Opt-in: how far in from the rim the grass keeps (m, below zero:
+	## RIM); in that close, a tuft's probe reaches only as far as the rim.
+	var rim := -1.0
+	## Opt-in: the grass grows wild (taller by up to `shag` more of its
+	## size) toward the rim and at what stands' feet, every tuft `tuft_bump`
+	## times its size, and a broad noise of SHAG_VARY either way.
+	var shag := 0.0
+	var tuft_bump := 1.0
+	## Opt-in (with `shag`): more than one grass. Tussocks (a tall tuft
+	## and two by it), flattened straw thatch at what stands' feet and a few
+	## seed heads (wheat), most where the grass grows wild; and the tufts at
+	## a foot darkened by `contact` (0..1).
+	var variety := false
+	var contact := 0.0
+	## Opt-in: the meadow's height rolls (each tuft up to `height_field`
+	## of its size taller or shorter on a HEIGHT_SCALE noise, the tall
+	## patches denser), and each tuft leans up to `tilt` radians.
+	var height_field := 0.0
+	var tilt := 0.0
 
 	func _init(top := 30.0, wear_fn := Callable(), wet_fn := Callable()) -> void:
 		ray = Vector2(top+60.0,top-8.0)
@@ -295,6 +343,7 @@ class Grow extends RefCounted:
 	var _draw: Draw
 	var _edges: EdgeIndex
 	var _seed := 0
+	var _feet := {}
 
 	func _init(seed_value: int, space: PhysicsDirectSpaceState3D, turf: Array, outlines: Array, site: Site) -> void:
 		_site = site
@@ -314,8 +363,77 @@ class Grow extends RefCounted:
 		_grass = int(_box.get_area()*site.tufts)
 		_flowers = int(_box.get_area()*FLOWER_TRIES)
 
-	func _add(asset: String, p: Vector2, size: float, extra := {}) -> bool:
-		var h: float = _probe.call(p,REACH)
+	## 1 where something not turf stands within SHAG_FOOT.x of p's cell, 0.5
+	## within .y, else 0 (the rim's drop counts too).
+	func _foot(p: Vector2) -> float:
+		var key := Vector2i(floori(p.x/SHAG_CELL),floori(p.y/SHAG_CELL))
+		if _feet.has(key): return _feet[key]
+		var c := (Vector2(key)+Vector2(0.5,0.5))*SHAG_CELL
+		var f := 0.0
+		for ring: float in [SHAG_FOOT.x,SHAG_FOOT.y]:
+			for k in range(8):
+				if is_nan(_probe.call(c+Vector2.from_angle(k*TAU/8.0+0.2)*ring,0.0)):
+					f = 1.0 if ring == SHAG_FOOT.x else 0.5
+					break
+			if f > 0.0: break
+		_feet[key] = f
+		return f
+
+	## The rolling height's noise at p (-1..1, about).
+	func _rolling(p: Vector2) -> float:
+		return clampf(_drift.get_noise_2d(p.x/DRIFT_FREQUENCY*HEIGHT_SCALE-57.0,p.y/DRIFT_FREQUENCY*HEIGHT_SCALE+89.0)*1.6,-1.0,1.0)
+
+	## A tuft's basis turned `angle` round up, leaning up to the site's
+	## tilt, `form` its size on each axis.
+	func _lean(angle: float, form: Vector3) -> Basis:
+		var b := Basis(Vector3.UP,angle).scaled(form)
+		if _site.tilt <= 0.0: return b
+		var axis := Vector3.RIGHT.rotated(Vector3.UP,_rng.randf()*TAU)
+		return Basis(axis,_rng.randf()*_site.tilt)*b
+
+	## How wild the grass grows at p (0..1), `e` from the rim.
+	func _wild(p: Vector2, e: float) -> float:
+		return maxf(1.0-smoothstep(SHAG_RIM.x,SHAG_RIM.y,e),_foot(p))
+
+	## A tuft's size factor for the site's wild grass.
+	func _shag(p: Vector2, wild: float) -> float:
+		var n := _drift.get_noise_2d(p.x*SHAG_NOISE+31.0,p.y*SHAG_NOISE-17.0)
+		return _site.tuft_bump*lerpf(1.0,1.0+_site.shag,wild)*(1.0+n*SHAG_VARY)
+
+	## A tuft's grass (Site `variety`): a tussock, thatch, a seed head by
+	## it, or a plain tuft; darkened at a foot away from the rim.
+	func _tuft(p: Vector2, size: float, e: float, wild: float, reach: float) -> void:
+		var foot := _foot(p) if e > SHAG_FOOT.y else 0.0
+		var shade := 1.0-_site.contact*foot
+		var angle := _rng.randf()*TAU
+		var roll := _rng.randf()
+		if foot > 0.0 and roll < THATCH_SHARE*foot:
+			var straw := THATCH_STRAW.srgb_to_linear()*shade
+			_add("grass_tuft",p,size,{"tint":NativeObjectPose.encode_tint(straw),"pose":NativeObjectPose.make(_lean(angle,THATCH_FORM*size),0.0)},reach)
+			return
+		var tint := {} if shade >= 1.0 else {"tint":NativeObjectPose.encode_tint(Color(shade,shade,shade))}
+		roll = _rng.randf()
+		if roll < TUSSOCK_SHARE*(0.4+wild):
+			var tall := tint.duplicate()
+			tall.pose = NativeObjectPose.make(_lean(angle,TUSSOCK_FORM*size),0.0)
+			_add("grass_tuft",p,size,tall,reach)
+			for k in range(2):
+				var q := p+Vector2.from_angle(angle+PI*(0.3+k*1.1))*_rng.randf_range(TUSSOCK_REACH.x,TUSSOCK_REACH.y)
+				_add("grass_tuft",q,size*_rng.randf_range(1.0,1.25),tint,minf(reach,REACH))
+		else:
+			var plain := tint.duplicate()
+			if _site.tilt > 0.0: plain.pose = NativeObjectPose.make(_lean(angle,Vector3.ONE*size),0.0)
+			_add("grass_tuft",p,size,plain,reach)
+		if _rng.randf() < SEED_SHARE*(0.3+wild):
+			var formed: Array = MeadowTypes.form("wheat",_rng.randf_range(SEED_SIZE.x,SEED_SIZE.y),_rng.randf()*TAU)
+			var extra := {}
+			var wheat_tint := MeadowTypes.tint("wheat",_rng.randf())
+			if wheat_tint != "": extra.tint = wheat_tint
+			if not (formed[1] as Dictionary).is_empty(): extra.pose = formed[1]
+			_add(MeadowTypes.asset("wheat"),p+Vector2.from_angle(_rng.randf()*TAU)*0.2,float(formed[0]),extra,reach)
+
+	func _add(asset: String, p: Vector2, size: float, extra := {}, reach := REACH) -> bool:
+		var h: float = _probe.call(p,reach)
 		if is_nan(h) or _site.is_wet(p): return false
 		var item := {"id":_records.size()+1,"asset":asset,"x":p.x,"z":p.y,"angle":_rng.randf()*TAU,"scale":size}
 		item.merge(extra,true)
@@ -337,12 +455,21 @@ class Grow extends RefCounted:
 				return false
 			if _site.stable: _rng.seed = hash([_seed,0,_n])
 			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
-			var thick := clampf(0.6+_drift.get_noise_2d(p.x,p.y)*1.3,THIN,1.0)
+			var thick := 1.0 if _site.carpet else clampf(0.6+_drift.get_noise_2d(p.x,p.y)*1.3,THIN,1.0)
+			var rolling := _rolling(p) if _site.height_field > 0.0 else 0.0
+			if _site.height_field > 0.0: thick *= 1.0-HEIGHT_THICK*0.5*(1.0-rolling)
 			var worn := _site.worn(p)
 			if worn > PATH_BARE or _rng.randf() > thick*(1.0-smoothstep(PATH_THIN,PATH_BARE,worn)): continue
-			if _edges.upto(p) < RIM: continue
+			var e := _edges.upto(p)
+			if e < (_site.rim if _site.rim >= 0.0 else RIM): continue
+			var reach := REACH if _site.rim < 0.0 else clampf(e-0.02,0.0,REACH)
 			var tuft := _site.tuft_size if _site.tuft_size != Vector2.ZERO else TUFT_SIZE
-			_add("grass_tuft",p,_rng.randf_range(tuft.x,tuft.y)*lerpf(1.0,0.75,worn))
+			var size := _rng.randf_range(tuft.x,tuft.y)*lerpf(1.0,0.75,worn)
+			var wild := _wild(p,e) if _site.shag > 0.0 or _site.variety else 0.0
+			if _site.shag > 0.0 or _site.tuft_bump != 1.0: size *= _shag(p,wild)
+			if _site.height_field > 0.0: size *= 1.0+_site.height_field*rolling
+			if _site.variety: _tuft(p,size,e,wild,reach)
+			else: _add("grass_tuft",p,size,{},reach)
 		# Flowers: the meadow type's drifts, sown sparse.
 		var sizes: Dictionary = _meadow.type.sizes
 		while _phase == 1:
@@ -350,6 +477,7 @@ class Grow extends RefCounted:
 				_phase = 2
 				_draw = Draw.new(_records,_ground,_area)
 				_draw.plain = _site.plain
+				if _site.grass_range > 0.0: _draw.grass_range = _site.grass_range
 				break
 			_n += 1
 			if usec >= 0 and _n % 32 == 0 and Time.get_ticks_usec() > end:
@@ -527,6 +655,8 @@ class Draw extends RefCounted:
 	var node := Node3D.new()
 	## Plain data in place of nodes (see Site.plain): [{key, tile, count, buffer}].
 	var plain := false
+	## How far the grass draws (m).
+	var grass_range := GRASS_RANGE
 	var parts: Array = []
 	var _records: Array
 	var _ground: Ground
@@ -573,7 +703,7 @@ class Draw extends RefCounted:
 				if plain:
 					parts.append({"key":key,"tile":tile,"count":list.size(),"buffer":buffer})
 				else:
-					node.add_child(KitFlora.batch_node(key,tile,list.size(),buffer))
+					node.add_child(KitFlora.batch_node(key,tile,list.size(),buffer,grass_range))
 				_instances[key] = int(_instances.get(key,0))+list.size()
 				if not plain: _triangles += KitFlora._mesh_triangles(meshes[key])*list.size()
 		var counts := {}
@@ -587,7 +717,7 @@ class Draw extends RefCounted:
 
 ## One tile's batch of one catalog part, as Draw makes it (the main
 ## thread: it makes a material). `buffer` as `batch_buffer`.
-static func batch_node(key: String, tile: Vector2i, count: int, buffer: PackedFloat32Array) -> MultiMeshInstance3D:
+static func batch_node(key: String, tile: Vector2i, count: int, buffer: PackedFloat32Array, grass_range := GRASS_RANGE) -> MultiMeshInstance3D:
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
@@ -599,7 +729,7 @@ static func batch_node(key: String, tile: Vector2i, count: int, buffer: PackedFl
 	batch.multimesh = multimesh
 	batch.material_override = SkyIslets._plant_material(key)
 	batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	batch.visibility_range_end = GRASS_RANGE if key.begins_with("grass") else FLOWER_RANGE
+	batch.visibility_range_end = grass_range if key.begins_with("grass") else FLOWER_RANGE
 	batch.visibility_range_end_margin = FADE
 	batch.visibility_range_fade_mode = KitFlora.fade_mode()
 	batch.set_meta("part",key)
