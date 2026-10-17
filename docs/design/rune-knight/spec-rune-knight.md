@@ -370,9 +370,21 @@ changing. Names here are final once built on; change one only by a
    if it wasn't. Play-loop checks across two runs (`--ledger` /
    `--fresh-ledger`, as tests/test_ledger.gd runs them); still of the
    rune hanging and of the isle card's new row.
-14. A feel pass on timings from the stills and checks, and a short rendered
-   clip (a few frames strung) of one full fight: slash, parry, blast,
-   rally, a parry and riposte, a crack, the knockoff.
+14. A feel pass on the mechanics, on the stand-in (the real body is coming
+   from the body lane, so leave poses alone): timings from the stills and
+   checks; the known bugs (a fall that "lands" without dropping leaves him
+   down for good; the leftovers in the trail's notes); the camera shake on
+   a leap's landing; the shatter and the spill read from the game camera
+   (bigger shards, a shatter clear of the arch bays where it can be);
+   bring the scratch drivers up to today's rules (the brace, the brutal
+   parry) so every one passes again, and list them in the commit so the
+   body lane and the trunk can rerun them.
+15. After the body lane merges (skill `enemy-build`, Trunk): the real body
+   in behind the API, procedural layers (feet on the real ground, hands
+   to the real target, the eye glow on notice), timings re-tuned to the
+   real clips, every driver passing on the real body, and a short
+   rendered clip (a few frames strung) of one full fight: slash, parry,
+   blast, rally, a parry and riposte, a crack, the knockoff.
 
 ## Checks
 
