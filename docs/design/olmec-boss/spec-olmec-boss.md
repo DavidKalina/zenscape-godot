@@ -164,6 +164,15 @@ You launch `./run-olmec-field.command` and play this fight:
         one aimed at him, mixed so no two volleys repeat in a row. Hits
         knock as before (never off), and every pattern stays dodgeable at
         the slide speed (10)'s fix sets.
+        **Correction (user):** "I misspoke. I don't want them to come
+        across as walls. Imagine the arcs rotated 90 degrees: a slice
+        coming at you, but not coming at you horizontally." So: thin
+        upright crescent slashes travelling edge-first (the blade's plane
+        holds its direction of travel), like a sword stroke or a fin
+        cutting up the slope; from the wanderer's view a sharp vertical
+        line coming at him, sidestepped left or right. Not walls, not
+        bands across the slope, not arches facing him. The variety comes
+        from how many slices, where, when and on what lines.
      2. **Can't lock on to him during the tilt.** "I can't lock onto him
         because he's so far away, so I can't shoot him." From the high
         side he's ~60+ m off, past the lock's reach (48/58 m), so the
