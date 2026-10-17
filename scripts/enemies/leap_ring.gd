@@ -73,7 +73,10 @@ func touch() -> void:
 		if way.length() < 0.1: way = Vector3.FORWARD
 		var k := Gust.wanderer_defaults()
 		var mult := float(motor.get_meta("knock_mult",1.0))
-		var v := Gust.knock(motor,way,float(k.blast_out)*strength*mult,float(k.blast_up)*strength*mult,shooter if shooter != null else self)
+		# Kept on the island by its shooter (the rune knight's `knock_reach`).
+		var out := float(k.blast_out)*strength*mult
+		if shooter != null and is_instance_valid(shooter) and shooter.has_method("knock_reach"): out = shooter.knock_reach(motor,way,out,float(k.blast_up)*strength*mult)
+		var v := Gust.knock(motor,way,out,float(k.blast_up)*strength*mult,shooter if shooter != null else self)
 		knocked = true
 		print("leap ring: knocks the wanderer at (%.1f, %.1f, %.1f), (%.1f, %.1f, %.1f) m/s" % [feet.x,feet.y,feet.z,v.x,v.y,v.z])
 

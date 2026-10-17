@@ -255,6 +255,9 @@ func _build_body() -> void:
 	body = StaticBody3D.new()
 	body.name = "FerrySolid"
 	body.collision_layer = LAYER
+	# Passing through the sky, not the island's ground (the rune knight's
+	# knocks, scripts/enemies/rune_knight.gd `knock_reach`, look past it).
+	body.set_meta(&"aloft",true)
 	body.collision_mask = 0
 	for part: Vector3 in (envelope_parts if not envelope_parts.is_empty() else ship.get_parent().envelope_solid()):
 		var envelope := CollisionShape3D.new()

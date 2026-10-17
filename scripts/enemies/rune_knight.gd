@@ -132,11 +132,16 @@ extends Node3D
 ##   (scripts/enemies/leap_ring.gd, set at the launch) knocks a wanderer
 ##   within KNOBS.leap_ring m; a parry timed to the touchdown takes it, and
 ##   he reels as he lands. In the air shots crack but don't turn him.
+## - **His knocks keep you on the isle** (`knock_reach`): a slash, a burst
+##   or a landing ring whose throw would carry you past the island's rim
+##   (off the deck, down the ramp behind the start) is cut to the longest
+##   that comes to rest on the turf, so his hits never strand you.
 ##
 ## The host (studies/aqueduct_isle.gd) makes him in `_add_life` when
 ## `wanted`. His knobs are the one dictionary below so a field (enemy.gd)
 ## or the motif editor can adopt him later.
 const WorldScale = preload("res://scripts/world_scale.gd")
+const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const BodyStandin = preload("res://scripts/enemies/rune_knight_body_standin.gd")
@@ -279,6 +284,14 @@ const KNOBS := {
 	"rim_depth": 2.5,
 	"rim_drop": 5.0,
 	"fall_drop": 40.0,
+	# His knocks keep the wanderer on the island (`knock_reach`): a slash,
+	# a burst or a landing ring that would carry him past the rim (no
+	# ground within keep_depth m under where he was hit) is cut, keep_step
+	# m at a time, to the longest that comes to rest on the isle with ground
+	# keep_margin m on past where he stops.
+	"keep_depth": 14.0,
+	"keep_step": 0.5,
+	"keep_margin": 1.5,
 	# The feel pass: a landing (leap or fall) shakes the camera, land_shake
 	# at his feet, fading to nothing shake_reach m off. A fall whose body
 	# never sends `land` (no drop to read) shatters down_wait s after.
@@ -1683,6 +1696,85 @@ func _rim_along(at: Vector3, way: Vector3, most: float) -> float:
 		if is_nan(_ground_y(at+way*d)): return maxf(d-step,0.0)
 		d += step
 	return INF
+
+## A knock of his on `motor` (the wanderer) along flat `way`, `out` m and
+## `up` m (scripts/traps/gust.gd `knock`), kept on the island: `out` as it
+## is when the throw comes to rest on the isle, else the longest throw
+## (to KNOBS.keep_step m) that does, so he is never thrown past the rim
+## (stranded and put back beside the plane, which reads as the scene
+## resetting). `_knock_stays` flies each throw on the motor's own arc.
+func knock_reach(motor: Object, way: Vector3, out: float, up: float) -> float:
+	var flat := Vector2(way.x,way.z)
+	if motor == null or flat.length() < 0.05 or out <= 0.0 or not is_inside_tree(): return out
+	flat = flat.normalized()
+	var space := get_world_3d().direct_space_state
+	if _knock_stays(space,motor,flat,out,up): return out
+	var keep := 0.0
+	var d := knob("keep_step")
+	while d < out:
+		if not _knock_stays(space,motor,flat,d,up): break
+		keep = d
+		d += knob("keep_step")
+	print("rune knight: keeps his knock on the isle, %.1f m of %.1f" % [keep,out])
+	return keep
+
+## Whether a knock of `out` m and `up` m along `flat` (unit) leaves
+## `motor` at rest on the island: flown on the motor's tumble (its
+## gravity, FALL times as hard coming down, held to `terminal`; its flat
+## pace kept in the air, then the skid at TUMBLE_SKID) every 1/60 s
+## till it lands and stops, with ground (`_keep_ground`, KNOBS.keep_depth
+## m under where he was hit) under every step and KNOBS.keep_margin m on
+## past where he stops (the motor's own skid runs a little long), off a
+## lip into the fall again where the ground drops away. A wall doesn't stop
+## the throw here (the motor slides along one), so a cut is never short of
+## a real fall.
+func _knock_stays(space: PhysicsDirectSpaceState3D, motor: Object, flat: Vector2, out: float, up: float) -> bool:
+	var v: Vector3 = motor.knock_velocity(flat,out,up)
+	var g: float = motor.gravity
+	var fall: float = motor.fall
+	var terminal: float = motor.terminal
+	var feet: Vector3 = motor.feet
+	var p := feet
+	var pace := Vector2(v.x,v.z).length()
+	var vy := v.y
+	var grounded := false
+	var dt := 1.0/60.0
+	for i in range(900):
+		if grounded:
+			pace = maxf(pace-PilotMotor.TUMBLE_SKID*dt,0.0)
+			if pace <= 0.0: return not is_nan(_keep_ground(space,p+Vector3(flat.x,0.0,flat.y)*knob("keep_margin"),feet.y))
+		else:
+			vy = maxf(vy-g*(1.0 if vy > 0.0 else fall)*dt,-terminal)
+			p.y += vy*dt
+		p += Vector3(flat.x,0.0,flat.y)*pace*dt
+		var gy := _keep_ground(space,p,feet.y)
+		if is_nan(gy): return false
+		# Ground rising past a step is a wall: the motor slides along one
+		# (it may not stop him), so here it is passed by, never landed on.
+		if gy > p.y+PilotMotor.STEP_UP+absf(vy)*dt: continue
+		if grounded and gy < p.y-PilotMotor.STEP_UP:
+			grounded = false
+			vy = 0.0
+		elif not grounded and p.y <= gy and vy <= 0.0:
+			grounded = true
+		if grounded: p.y = gy
+	return true
+
+## The island's ground facing up at `p` (flat) within KNOBS.keep_depth m
+## under `y` (and up to 3 m over it, a ramp rising ahead): its height, or
+## NAN. A solid passing through the sky (meta `aloft`, the airship ferry)
+## isn't the island's.
+func _keep_ground(space: PhysicsDirectSpaceState3D, p: Vector3, y: float) -> float:
+	var ray := PhysicsRayQueryParameters3D.new()
+	ray.collision_mask = SIGHT_MASK
+	ray.from = Vector3(p.x,y+3.0,p.z)
+	ray.to = Vector3(p.x,y-knob("keep_depth"),p.z)
+	for i in range(6):
+		var hit := space.intersect_ray(ray)
+		if hit.is_empty(): return NAN
+		if (hit.normal as Vector3).y > 0.6 and not (hit.collider as Object).has_meta(&"aloft"): return (hit.position as Vector3).y
+		ray.from = (hit.position as Vector3)+Vector3.DOWN*0.05
+	return NAN
 
 ## A skid on the meadow: over the turf, its lip the island's rim; stone in the way (the
 ## aqueduct's wall) stops it; the turf falling away under him, he falls.
