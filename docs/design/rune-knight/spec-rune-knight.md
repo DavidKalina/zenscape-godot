@@ -481,6 +481,15 @@ changing. Names here are final once built on; change one only by a
    or turn after the release dodges it; a plane on the strip draws
    nothing. Stills from the cockpit view of the gather and the crescent
    coming up.
+18b. His slash at the plane reads from the cockpit (found in task 18:
+   from the chase camera he is a speck and a level crescent coming at
+   you is edge-on, a white streak). A flare on his blade at the gather
+   that shows from 90 m (a bright point and a short vertical glint, like
+   a lighthouse catching), the sky crescent tilted toward the plane so
+   its arc faces it, and a longer, brighter trail behind it. Judge it
+   only from the game's own chase camera on a real fly-past; stills of
+   the flare at range and the crescent coming up. The foot crescent is
+   unchanged.
 19. A short rendered clip (a few frames strung, the harness's `film()`)
    of one full fight on the real body: slash, parry, blast, rally, a parry
    and riposte with its rune token spilling, a strafe, a crack, the
