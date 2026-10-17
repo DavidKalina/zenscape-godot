@@ -111,6 +111,9 @@ var head: Node3D = null
 var head_home := Vector3.INF
 ## Reunited: the head on its neck.
 var whole := false
+## Whole, its chase runs on this clip ("" the stride, arms out; the Olmec
+## boss sets "shoulder_run").
+var run_clip := ""
 ## Counted, for the HUD and checks.
 var climbs := 0
 var leaps := 0
@@ -282,7 +285,7 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# Round 3, the clips: a step's length walking and striding home (Hh;
 		# the clips are made for these, other values slide the feet), and
 		# the beat of triumph once whole (s; it was straight to listening).
-		"stride":Look.WALK_STEP,"stride_home":Look.STRIDE_STEP,"triumph":1.8,
+		"stride":Look.WALK_STEP,"stride_home":Look.STRIDE_STEP,"stride_run":Look.RUN_STEP,"triumph":1.8,
 		# The whole body's chase: 1 on (its
 		# study's), 0 off (as ever: whole, it roams). Ranges in Hh, flat.
 		"chase":0,"chase_speed":n.run*0.9,"chase_turn":1.8,"chase_memory":16.0,
@@ -3185,7 +3188,7 @@ func _move(delta: float) -> void:
 		else: position.y = move_toward(position.y,g,maxf(absf(g-position.y)*8.0,2.0)*delta) if g > position.y else g
 		# A step each phase (the clips' feet come down on whole phases).
 		var was := _phase
-		_phase += Vector2(vel.x,vel.z).length()*delta/(hh*float(knobs.stride_home if state in ["home","chase"] else knobs.stride))
+		_phase += Vector2(vel.x,vel.z).length()*delta/(hh*float(knobs.stride_run if _running() else (knobs.stride_home if state in ["home","chase"] else knobs.stride)))
 		if floori(was) != floori(_phase):
 			field.sound(&"body_step",position)
 			quake = maxf(quake,0.06)
@@ -3425,6 +3428,11 @@ func _pose_every() -> float:
 		if d > float(a[0]): every = float(a[1])
 	return every
 
+## Whole and chasing on its own run clip (`run_clip`, the Olmec boss's
+## shoulder-led "shoulder_run"), not the stride with its arms out.
+func _running() -> bool:
+	return run_clip != "" and whole and state == "chase"
+
 ## The clips its state wants, at the places its own clocks say (the walk's
 ## and the climb's phase, its state's time over that state's knob), then
 ## the corrections on top: hands on the real wall and lip.
@@ -3451,7 +3459,7 @@ func _animate(delta: float) -> void:
 			else: look.want("listen",state_t/float(knobs.listen)*float(look.lengths.listen))
 		"feel": look.want("feel",_feel_k()*float(look.lengths.feel))
 		"roam","home","chase","return":
-			var gait := "stride" if state in ["home","chase"] else "walk"
+			var gait := run_clip if _running() else ("stride" if state in ["home","chase"] else "walk")
 			var pace := float(knobs.home) if state == "home" else (float(knobs.chase_speed) if state == "chase" else float(knobs.walk))
 			var m := clampf(Vector2(vel.x,vel.z).length()/maxf(pace*0.5,0.1),0.0,1.0)
 			look.want(gait,look.loop_time(gait,_phase,2.0),m)

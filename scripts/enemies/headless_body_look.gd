@@ -35,10 +35,12 @@ const SEAT_Y := 6.7536
 ## CLIMB_RISE): the phase-driven loops cover two steps or two hand moves.
 const WALK_STEP := 0.5
 const STRIDE_STEP := 0.68
+## The whole Olmec's shoulder-led run (the build's RUN_STEP; Olmec boss).
+const RUN_STEP := 0.8
 const CLIMB_RISE := 0.99
 const CLIPS := ["idle","listen","walk","stride","climb","haul","spawn_haul","mantle","windup",
 	"jump_air","drop_air","land","drop_land","reach","triumph","feel","mantle_pull",
-	"turn_open_l","turn_close_l","turn_open_r","turn_close_r","scope_lift","scope_look","scope_lower"]
+	"turn_open_l","turn_close_l","turn_open_r","turn_close_r","scope_lift","scope_look","scope_lower","shoulder_run"]
 ## Round 4: the turn steps (headless_body_steps.gd), blended over the trunk
 ## and legs only (the arms keep the clip under them), faded in and out fast.
 const TURNS := ["turn_open_l","turn_close_l","turn_open_r","turn_close_r"]

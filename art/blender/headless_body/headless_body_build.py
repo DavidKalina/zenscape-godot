@@ -41,6 +41,8 @@ itself (headless_body_look.gd), so a clip's length is only its span:
                a climb, slid up, a nod
   walk         loop over two steps of WALK_STEP m (the phase from distance)
   stride       loop over two steps of STRIDE_STEP m: homing, arms out for it
+  shoulder_run loop over two steps of RUN_STEP m (Olmec boss): whole, hunting,
+               the right shoulder leading, that arm tucked, the far one pumping
   climb        loop over two hand moves, CLIMB_RISE m up: hand over hand,
                the feet pushing on the wall CLIMB_WALL m ahead of the middle
   haul         loop: both hands on the lip (the game pins them), heaving
@@ -118,6 +120,7 @@ SHIN = (LEGS - ANKLE) - THIGH
 ## The clips' measures, for the game (headless_body_look.gd keeps copies).
 WALK_STEP = 0.5 * HH        # m a step, walking
 STRIDE_STEP = 0.68 * HH     # m a step, striding home
+RUN_STEP = 0.8 * HH         # m a step, the whole Olmec's shoulder-led run
 CLIMB_RISE = 2.0 * (1.1 * HH) * 0.45   # m up over the climb's loop (two hand moves)
 CLIMB_WALL = DEPTH * 0.5 + 0.25        # the wall ahead of the middle, climbing
 LISTEN = 2.6
@@ -1021,6 +1024,68 @@ def _stride_keys():
 
 clip(Clip("stride", STRIDE_LEN, _stride_keys(), loop=True, extra=_sx))
 
+# ------------------------------------------------------------------ the shoulder-led run (Olmec boss, phase 2)
+## Whole, he hunts shoulder first: the trunk turned a quarter so the right
+## shoulder leads, dropped and forward; that arm tucked in with the fist at
+## the chest; the left (far) arm pumping hard with the strides; the head
+## down behind the shoulder; heavy strides with a deep drop on each
+## contact and a short float between. Loop over two steps of RUN_STEP m.
+RUN_LEN = 1.0
+## The trunk's held turn and lean (degrees), on every key.
+_RUN_HOLD = {"hp": 8.0, "ht": 14.0, "st": 12.0, "ct": 26.0, "sr": 3.0, "cr": 8.0, "nt": -38.0, "nr": -12.0,
+             "aRo": 3.0, "aRt": 40.0, "fR": 72.0, "tR": 34.0, "fL": 62.0, "tL": 30.0}
+
+
+def run_extra(step, stance, lift):
+    feet = gait(step, stance, lift, 0.78)
+
+    def extra(t, v):
+        u = t / RUN_LEN
+        feet(u % 1.0, v)
+        sn = math.sin(2 * math.pi * u + 0.35)
+        # The weight thrown over each planted foot, rolling the hips.
+        v["hx"] += -0.26 * sn
+        v["hr"] += -6.0 * sn
+        v["sr"] += 3.0 * sn
+        v["cr"] += 2.0 * math.sin(2 * math.pi * (u - 0.06) + 0.35)
+        # The trunk winds with the legs on top of its held quarter turn.
+        c = math.cos(2 * math.pi * u)
+        v["ht"] += -7.0 * c
+        v["ct"] += 8.0 * math.cos(2 * math.pi * (u - 0.06))
+        # The far arm pumps against the left leg (back as that foot lands),
+        # bent, its elbow opening on the back swing.
+        pump = math.cos(2 * math.pi * (u - 0.07))
+        v["aLp"] = 12.0 - 50.0 * pump
+        v["aLo"] = 10.0 + 2.0 * max(0.0, pump)
+        v["eL"] = 72.0 + 26.0 * max(0.0, -pump)
+        # The near arm tucked, fist up at the chest, braced: a small jolt
+        # down on each contact.
+        jolt = math.cos(2 * math.pi * 2 * (u - 0.09))
+        v["aRp"] = 8.0 + 5.0 * jolt
+        v["eR"] = 92.0 - 6.0 * jolt
+    return extra
+
+
+_rx = run_extra(RUN_STEP, 0.4, 0.95)
+
+
+def _run_keys():
+    """The beats of each step, heavy: contact, the deep drop (held), the
+    push off and the float."""
+    keys = []
+    for o in (0.0, 0.5):
+        keys += [
+            (o + 0.0, {**_RUN_HOLD, "hy": -0.62, "sq": 1.0, "sp": 20.0, "cp": 12.0, "np": -6.0}, ""),
+            (o + 0.07, {"hy": -1.0, "sq": 0.965, "sp": 22.5, "cp": 13.0, "np": -4.0}, "h"),
+            (o + 0.14, {"hy": -0.92, "sq": 0.98, "sp": 21.5}, ""),
+            (o + 0.28, {"hy": -0.46, "sq": 1.01, "sp": 19.5, "cp": 11.5, "np": -7.0}, ""),
+            (o + 0.40, {"hy": -0.34, "sq": 1.02, "sp": 19.0, "np": -8.0}, ""),
+        ]
+    return [(t * RUN_LEN, p, e) for t, p, e in keys]
+
+
+clip(Clip("shoulder_run", RUN_LEN, _run_keys(), loop=True, extra=_rx))
+
 # ------------------------------------------------------------------ climb
 CLIMB_LEN = 2.0
 WALL_WRIST = CLIMB_WALL - 0.42
@@ -1712,6 +1777,9 @@ if RENDER:
         scene.render.filepath = str(path)
         bpy.ops.render.render(write_still=True)
 
+    ## The head he wears whole (inhaler_head.gd at size 3: x, up, depth).
+    WORN_HEAD = (3.36 * 1.04, 3.36, 3.36 * 0.84)
+    WORN_CLIPS = ("shoulder_run",)
     rig.animation_data.action = None
     rig.animation_data.use_nla = False
     for tr in rig.animation_data.nla_tracks: tr.mute = True
@@ -1743,12 +1811,30 @@ if RENDER:
             hd.name = "ScopeHead"
             hd.scale = (SCOPE_HEAD_W, 2.6 * 1.12 * 0.84, 2.6 * 1.12)
         if "ScopeHead" in bpy.data.objects: bpy.data.objects["ScopeHead"].hide_render = not scoping
+        # The whole Olmec's clips: his head (a stand-in box) worn on the
+        # stump, turned with the neck; shot from the side, the front, head on (as the wanderer sees him come) and
+        # behind and above (as the play camera chases him).
+        worn = c.name in WORN_CLIPS
+        if worn and "WornHead" not in bpy.data.objects:
+            bpy.ops.mesh.primitive_cube_add(size=1)
+            bpy.context.active_object.name = "WornHead"
+        if "WornHead" in bpy.data.objects: bpy.data.objects["WornHead"].hide_render = not worn
+        views = (("", None),) if not worn else (("side_", F(-24, 6.5, 0.5)), ("front_", F(-10, 6.0, 12)), ("toward_", F(1.5, 8.5, 24)), ("chase_", F(5, 13, -21)))
         n = 8
         for i in range(n):
             f = round(frames * i / (n - 1)) if not c.loop else round(frames * i / n)
             scene.frame_set(f)
             # The root's way as the game moves it, so the stills show it.
             rig.location = (0, 0, 0)
+            if worn:
+                bpy.context.view_layer.update()
+                hm = rig.matrix_world @ rig.pose.bones["neck"].matrix @ Matrix.Translation(V((0, SEAT - NECK + WORN_HEAD[1] * 0.5, 0)))
+                hd = bpy.data.objects["WornHead"]
+                hd.matrix_world = hm @ Matrix.Diagonal(V((WORN_HEAD[0], WORN_HEAD[1], WORN_HEAD[2], 1.0)))
+                for pre, frm in views:
+                    look(frm, F(0, 4.6, 0))
+                    shot(out / f"{c.name}_{pre}{i:02d}.png")
+                continue
             if c.name in ("mantle", "mantle_pull"):
                 up, over = mantle_root(f / frames, c.name == "mantle_pull")
                 rig.location = (0, over, up)

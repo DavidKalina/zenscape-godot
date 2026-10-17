@@ -89,6 +89,8 @@ func phase_two() -> void:
 	knobs.chase_speed = run*CHASE_RUN
 	knobs.relentless = 1
 	knobs.chase = 1
+	# He hunts shoulder first (the "shoulder_run" clip), no arms out.
+	run_clip = "shoulder_run"
 	# A beat after the triumph before the big moves.
 	_bound_ready = _clock+2.0
 	_slam_ready = _clock+1.0
