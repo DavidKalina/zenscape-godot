@@ -121,6 +121,11 @@ class Site extends RefCounted:
 	## key, tile, count, buffer), no nodes or materials made, so it can run
 	## on a worker; `batch_node` stands one on the main thread.
 	var plain := false
+	## Opt-in: the grass as a carpet, not drifts: every candidate at full
+	## thickness (only the paths thin it), drawn out to `grass_range` (m,
+	## zero: GRASS_RANGE) so it covers the turf seen from the plane too.
+	var carpet := false
+	var grass_range := 0.0
 
 	func _init(top := 30.0, wear_fn := Callable(), wet_fn := Callable()) -> void:
 		ray = Vector2(top+60.0,top-8.0)
@@ -337,7 +342,7 @@ class Grow extends RefCounted:
 				return false
 			if _site.stable: _rng.seed = hash([_seed,0,_n])
 			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
-			var thick := clampf(0.6+_drift.get_noise_2d(p.x,p.y)*1.3,THIN,1.0)
+			var thick := 1.0 if _site.carpet else clampf(0.6+_drift.get_noise_2d(p.x,p.y)*1.3,THIN,1.0)
 			var worn := _site.worn(p)
 			if worn > PATH_BARE or _rng.randf() > thick*(1.0-smoothstep(PATH_THIN,PATH_BARE,worn)): continue
 			if _edges.upto(p) < RIM: continue
@@ -350,6 +355,7 @@ class Grow extends RefCounted:
 				_phase = 2
 				_draw = Draw.new(_records,_ground,_area)
 				_draw.plain = _site.plain
+				if _site.grass_range > 0.0: _draw.grass_range = _site.grass_range
 				break
 			_n += 1
 			if usec >= 0 and _n % 32 == 0 and Time.get_ticks_usec() > end:
@@ -527,6 +533,8 @@ class Draw extends RefCounted:
 	var node := Node3D.new()
 	## Plain data in place of nodes (see Site.plain): [{key, tile, count, buffer}].
 	var plain := false
+	## How far the grass draws (m).
+	var grass_range := GRASS_RANGE
 	var parts: Array = []
 	var _records: Array
 	var _ground: Ground
@@ -573,7 +581,7 @@ class Draw extends RefCounted:
 				if plain:
 					parts.append({"key":key,"tile":tile,"count":list.size(),"buffer":buffer})
 				else:
-					node.add_child(KitFlora.batch_node(key,tile,list.size(),buffer))
+					node.add_child(KitFlora.batch_node(key,tile,list.size(),buffer,grass_range))
 				_instances[key] = int(_instances.get(key,0))+list.size()
 				if not plain: _triangles += KitFlora._mesh_triangles(meshes[key])*list.size()
 		var counts := {}
@@ -587,7 +595,7 @@ class Draw extends RefCounted:
 
 ## One tile's batch of one catalog part, as Draw makes it (the main
 ## thread: it makes a material). `buffer` as `batch_buffer`.
-static func batch_node(key: String, tile: Vector2i, count: int, buffer: PackedFloat32Array) -> MultiMeshInstance3D:
+static func batch_node(key: String, tile: Vector2i, count: int, buffer: PackedFloat32Array, grass_range := GRASS_RANGE) -> MultiMeshInstance3D:
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
@@ -599,7 +607,7 @@ static func batch_node(key: String, tile: Vector2i, count: int, buffer: PackedFl
 	batch.multimesh = multimesh
 	batch.material_override = SkyIslets._plant_material(key)
 	batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	batch.visibility_range_end = GRASS_RANGE if key.begins_with("grass") else FLOWER_RANGE
+	batch.visibility_range_end = grass_range if key.begins_with("grass") else FLOWER_RANGE
 	batch.visibility_range_end_margin = FADE
 	batch.visibility_range_fade_mode = KitFlora.fade_mode()
 	batch.set_meta("part",key)
