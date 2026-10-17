@@ -136,6 +136,79 @@ and sunlit, beside the Olmec, so the user can compare before and after.
    edit the drivers minimally; say which in the commit. The model-budget assessment (`docs/art/model-budget.md`) with
    triangle and frame-time estimates, and the lane's **Notes for merge**.
 
+## Model budget (task 6c)
+
+Counted headless from `assets/models/rune_knight.glb` and the dressed look
+(`scratch/rk_tris.gd`, uncommitted): **28,776 triangles in 43 pieces, 48
+surfaces** (helm 3: stone, slit, eye; each rune tablet 2: stone, rune; the
+rest 1). Every piece is a skinned mesh weighted wholly to one bone. The
+heaviest pieces are the tabard slabs (1,020 each), belly and belt (~960),
+helm and chest (~900); the lightest the thumbs and gauntlet tablets (340).
+The look's `generate_lods` gives a chain summed over the pieces of 14.4k,
+7.2k, 3.5k, 1.7k, 0.84k, 0.37k triangles.
+
+Frame-time figures below are estimates from those counts, not measured on
+a GPU (headless can't): he is one figure on the isle, so his cost is mostly
+draw calls and skinning, not triangles.
+
+| Trick | Applies? | Estimate |
+|---|---|---|
+| Import LODs | **Yes, done.** The look generates LODs per piece. From the game camera at 15-30 m he is ~60-120 px tall, which picks roughly the 3.5k-7k level instead of 28.8k. | ~22-25k tris saved at play range (and in the shadow pass); under 0.05 ms GPU. A visibility range doesn't apply: there is one knight. |
+| Silhouette geometry | **Yes, done.** Chipped corners (`chunks`) and broken edges on the plates; the shader paints the faces. | Already in the count: chips are a few dozen tris per piece. |
+| Rigid parts on bones | **Applies, not done.** Each piece already moves rigidly with one bone, but through 43 skinned meshes. As meshes on `BoneAttachment3D`s they would skip 43 skinning passes a frame, and the break-up would no longer need to drop the skin and rebuild the pose (`rune_knight_breakup.gd` `_posed`). | 0 tris; ~0.1-0.2 ms CPU+GPU a frame for skin updates. Cost: re-export with pieces parented to bones, and the look's rest-position UVs taken in bone space plus the bone's rest. Worth doing if the knight shows in a profile; not before. |
+| Triangle trim | **Applies, cheap.** Flat faces carry a 0.1 m grid (`SPACING`) with 3 round steps per arris, for the `shape` swelling and the wear noise. 0.14 m spacing on the flat faces keeps the bevels. | ~30-40% off the base mesh (~9-11k tris); negligible frame time at play range, since the LODs already cut him there. Matters only close up. |
+| Sculpt high, bake low | **No.** His grain, grime and runes are procedural on the rest position (`olmec_stone.gdshader`), with no texture UVs to bake into; he is already in the 5-15k band at LOD1. | Would save ~14k tris close up (<0.02 ms) for an unwrap and texture set that fights the shared shader. |
+| Parallax depth | **No.** The shader's pits and cracks already read on a 1.9 m figure; parallax costs per-pixel loop work on every stone pixel. | Would add cost (~0.05-0.1 ms full screen close up), not save it. |
+| Vertex-colour grime | **Yes, done.** Occlusion baked in Blender into COLOR_0, kept in vertex alpha for the shader's grime and crevice moss. | Free; no AO texture or extra pass. |
+
+The biggest cost is **draw calls**: 48 surfaces, drawn in the depth
+prepass, the colour pass and each shadow cascade he is in, so ~150-250
+draws, roughly 0.2-0.4 ms CPU. Merging pieces would cut that but breaks
+the crumble and shatter (each piece must move on its own). One cheap win if
+needed: `cast_shadow` off on the thumbs, tablets, lames and cuffs (12
+pieces, ~16 surfaces) saves their shadow draws with no visible change at
+play range.
+
+## Notes for merge (body lane into iter/rune-knight)
+
+- **The real body is the default.** `rune_knight.gd` builds
+  `rune_knight_body.gd`; `--rune-body=standin` brings back the blocks. The
+  real body shares the stand-in's CLIPS, LEAP, SOCKETS and numbers (consts
+  read off `rune_knight_body_standin.gd`), so a timing change made in the
+  stand-in reaches both. Keep the stand-in file.
+- **Driver internals.** The real body names what the drivers read:
+  `clip`, `clip_form`, `clip_time`, `_sent`, `_flying`,
+  `blocks_at_rest()`, `feet`, `effects`, `crack_t`, `spills`, `broken`,
+  `_root_v`. One driver changed: `rk_parry.gd`'s `stand_ahead` (and
+  `rk_brutal`, which extends it) stands the wanderer 0.22 m to his right
+  on the real body, because the real slash leaves the blade 0.22 m further
+  right (x 0.80 vs 0.58 at release) and the knock ran him off the deck's
+  side. The mind's copy in `../iter-rune-knight/scratch` doesn't have it.
+- **Spills from wide hands.** The real `reel` throws the gauntlets 1.19 m
+  out (the deck is 1.25 half wide), so a rune further out than
+  `SPILL_WIDE` (0.25 of his height) sprays back in toward him from a
+  point pulled half way in; the stand-in sprays from the hand.
+- **Streaks.** The real body has its own gather and blade numbers
+  (`GATHER_REACH` 0.8, `GATHER_WIDTH` 0.055, `GATHER_ON_BLADE` 0.45,
+  `BLADE_WIDTH` 0.1); the stand-in keeps 1.15 / 0.085 / 0.085. Tune the real
+  body's in `rune_knight_body.gd`.
+- **The shared shader.** `olmec_stone.gdshader` gained `split` (0..1,
+  default 0): a seam across a rune tablet's face for `rune_crack`. At 0 the
+  Olmec head, its body and the rune serpent are unchanged. His stone lift
+  (fill, rim, grime) is on his own material only.
+- **`eye_glow`.** The body lights the visor's eye itself at `notice`, eases
+  it back to rest on `walk` and puts it out once he kneels. The mind never
+  calls `set_effect("eye_glow", ...)`; the trunk wires it to tracking (on
+  while he tracks or winds up at you, off when he loses you) if notice and
+  walk aren't enough.
+- **Break-up.** A crumbling piece stops drifting over a drop deeper than
+  0.4 m below his base (`rune_knight_breakup.gd` LEDGE), so pieces don't
+  roll off the deck's side when he kneels near the edge.
+- **Untracked `.uid` files.** Godot writes `.uid` files for the loop's new
+  scripts (the mind's and the body's, e.g. `rune_knight_body.gd`,
+  `rune_knight_breakup.gd`, `rune_knight_look.gd`); neither lane committed
+  them. The trunk commits them once, after the merge's import.
+
 ## Checks
 
 - Blender scripts run headless and export cleanly; the glb imports with
