@@ -450,9 +450,8 @@ changing. Names here are final once built on; change one only by a
 15. After the body lane merges (skill `enemy-build`, Trunk): the real body
    in behind the API, procedural layers (feet on the real ground, hands
    to the real target, the eye glow on notice), timings re-tuned to the
-   real clips, every driver passing on the real body, and a short
-   rendered clip (a few frames strung) of one full fight: slash, parry,
-   blast, rally, a parry and riposte, a crack, the knockoff.
+   real clips, every driver passing on the real body. (The
+   full-fight clip moved to task 19, after the fight's last changes.)
 16. The collectible runes spill (above): a riposte bursts out that
    tablet's glyph token. Play-loop checks through the real presses: a
    riposte spills one token that comes to rest on the deck; walking into
@@ -476,6 +475,10 @@ changing. Names here are final once built on; change one only by a
    or turn after the release dodges it; a plane on the strip draws
    nothing. Stills from the cockpit view of the gather and the crescent
    coming up.
+19. A short rendered clip (a few frames strung, the harness's `film()`)
+   of one full fight on the real body: slash, parry, blast, rally, a parry
+   and riposte with its rune token spilling, a strafe, a crack, the
+   knockoff; and one fly-past drawing a crescent at the plane.
 
 ## Checks
 
