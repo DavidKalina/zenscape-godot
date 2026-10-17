@@ -32,8 +32,12 @@ extends "res://scripts/lock_on/olmec_target.gd"
 ##     in, both fists up and down on the rim ("tilt_slam"), and stays
 ##     braced on it, fists on the turf, leaning his weight on it
 ##     ("tilt_brace"): the field (`tilt_begin`) tips steeply toward him and
-##     the wanderer slides down to him. The field lets him go
-##     (`tilt_let_go`): he stands up off it ("tilt_let") and hunts again;
+##     the wanderer slides down to him. Braced, he sends volleys of air
+##     arcs up the slope at him (the field's `tilt_arcs`: ARC_FIRST s in,
+##     then every ARC_EVERY s, ARC_N at a time). TILT_BREAK gust shots
+##     into him braced break his brace (the field's `tilt_broken`). The
+##     field lets him go (`tilt_let_go`): he stands up off it
+##     ("tilt_let") and hunts again;
 ## His fists, landings and slams hit the arena (scripts/olmec_boss/arena.gd
 ## `hit_at`), and his shockwaves break what they pass as they always have
 ## (the hub is his breaker). PHASE2_HITS gust shots bring him down
@@ -155,6 +159,17 @@ var _tilt_at := Vector3.INF
 ## Where he braces (the field at rest: the field's tilt turns it).
 var tilt_rest := Vector3.INF
 var _tilt_hit := false
+## Braced: his air arcs (the first after ARC_FIRST s, then every ARC_EVERY
+## s, ARC_N a volley, a heave of his weight as each goes) and the shots
+## that break his brace (TILT_BREAK; `brace_hits` so far this brace).
+const ARC_FIRST := 1.4
+const ARC_EVERY := 1.8
+const ARC_N := 3
+const TILT_BREAK := 3
+var brace_hits := 0
+var volleys := 0
+var brace_broken := false
+var _arc_next := 0.0
 
 func phase_two() -> void:
 	if phase2: return
@@ -259,6 +274,15 @@ func think(delta: float) -> void:
 
 ## A gust shot in his head's absorb or tell breaks the puff.
 func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
+	if phase2 and not crumbled and state == "tilt_brace":
+		brace_hits += 1
+		super.hit(at,way,strength)
+		print("olmec boss: shot braced, %d/%d" % [brace_hits,TILT_BREAK])
+		if brace_hits >= TILT_BREAK and not brace_broken and not crumbled:
+			brace_broken = true
+			var st: Node = field.study if field != null else null
+			if st != null and st.has_method("tilt_broken"): st.tilt_broken(self)
+		return
 	if phase2 and not crumbled:
 		var h := _boss_head()
 		if h != null and h.break_worn(): _puff_ready = maxf(_puff_ready,_clock+PUFF_REST*0.5)
@@ -349,6 +373,9 @@ func _tilt_slam(delta: float) -> void:
 		field.sound(&"body_rumble",at)
 		quake = maxf(quake,1.0)
 		tilt_rest = position
+		brace_hits = 0
+		brace_broken = false
+		_arc_next = ARC_FIRST
 		var st: Node = field.study
 		if st != null and st.has_method("tilt_begin"): st.tilt_begin(self,at)
 		_go("tilt_brace")
@@ -365,6 +392,15 @@ func _tilt_brace(delta: float) -> void:
 		position.z = p.z
 		if position.y > p.y+0.5 or position.y < p.y-2.0: position.y = p.y
 	quake = maxf(quake,0.12)
+	# His air arcs up the slope, a volley at a time.
+	if state_t >= _arc_next and st != null and st.has_method("tilt_arcs"):
+		_arc_next = state_t+ARC_EVERY
+		if st.tilt_arcs(self,ARC_N):
+			volleys += 1
+			quake = maxf(quake,0.3)
+			_tip_v += 0.5
+			field.sound(&"body_windup",position)
+		else: _arc_next = state_t+0.3
 
 ## The field lets him go: up off the rim, then the hunt.
 func tilt_let_go() -> void:

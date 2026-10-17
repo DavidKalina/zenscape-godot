@@ -39,6 +39,8 @@ const BossBody = preload("res://scripts/olmec_boss/boss_body.gd")
 ## braced on its rim, the steep mode of the Olmec's tilt.
 const OlmecTilt = preload("res://scripts/enemies/olmec_tilt.gd")
 const Dust = preload("res://scripts/enemies/body_dust.gd")
+## His air arcs up the tipped field (scripts/olmec_boss/air_arcs.gd).
+const AirArcs = preload("res://scripts/olmec_boss/air_arcs.gd")
 
 ## Phase 1 is done: the head has taken its hits and cried out (the body's
 ## cue, for the trunk to hook).
@@ -108,12 +110,41 @@ var _crag_lips: Array[Vector3] = []
 ## TILT_DEG toward him about its middle, on the tilt's steep spring. Too
 ## steep to stand on (the wanderer's slide_auto held at TILT_SLIDE_AUTO
 ## while it is over TILT_SURF deg): he surfs down it, steering with the
-## stick. For now it ends on a timer (TILT_HOLD s braced): he lets go and
-## the field eases back level. TILT_RIM: how far in from the lip he
-## braces; TILT_KEEP_OFF: never within this of the plane's run (west).
+## stick. Braced, he sends air arcs up the slope (`tilt_arcs`); gust shots
+## into him (BossBody.TILT_BREAK) break his brace (`tilt_broken`), and he
+## lets go and the field eases back level; TILT_HOLD s braced is only the
+## fallback. TILT_RIM: how far in from the lip he braces; TILT_KEEP_OFF:
+## never within this of the plane's run (west).
 const TILT_DEG := 27.0
-const TILT_HOLD := 9.0
+const TILT_HOLD := 30.0
 const TILT_SLIDE_AUTO := 16.0
+## On the tipped field the stick pushes him across the fall line (the
+## motor's carve off: SLIDE_STEER m/s² at full stick), so a sidestep of an
+## arc is quick, and his slide is held to TILT_SLIDE_TOP m/s so the arcs
+## come at a pace he can read.
+const TILT_SLIDE_TOP := 8.5
+## And on top of the motor's own steer, more across the fall line (m/s² at
+## full stick), up to TILT_SIDE_TOP m/s across: a dodge of an arc is a
+## clear step aside.
+const TILT_STEER := 11.0
+const TILT_SIDE_TOP := 6.5
+const TILT_SIDE_EASE := 5.0
+## The slide's lane: from where he stands at the slam down to the low rim,
+## across from his line to the Olmec's and LANE_W m past either. Standing
+## pieces and rubble in it are shoved: they slide off down the slope,
+## out to the lane's sides, no longer in his way. The spot is picked for
+## the clearest lane among the far ones (LANE_COST m of slide a big piece
+## in it costs, half that another).
+const LANE_W := 6.0
+const LANE_COST := 4.0
+const SHOVE_PULL := 1.15
+const SHOVE_KICK := 2.5
+const SHOVE_OUT := 3.0
+## The play camera while tipped and locked on him: raised (rad off its
+## polar) and its gaze halfway between the wanderer and him, so both are
+## in the frame.
+const TILT_LOCK_UP := 0.32
+const TILT_LOCK_GAZE := 0.5
 const TILT_SURF := 12.0
 const TILT_RIM := 3.0
 const TILT_KEEP_OFF := 8.0
@@ -144,8 +175,14 @@ var _plane_rest := Transform3D.IDENTITY
 var _plane_park_rest := Transform3D.IDENTITY
 var _plane_tipped := false
 var _scree: Array = []
+var _stick := Vector2.ZERO
+var _shoved: Array = []
+var arcs: Node3D = null
+## The lock on him the tilt took (let go when it ends, unless he locked it).
+var _tilt_locked := false
 ## Counted, for checks.
 var tilts_begun := 0
+var tilts_broken := 0
 var tilt_most_deg := 0.0
 
 ## Hides the figure while the head holds him, and steps the enemies
@@ -228,6 +265,10 @@ func _build_room() -> void:
 	tilt.field = enemies
 	tilt.study = self
 	add_child(tilt)
+	arcs = AirArcs.new()
+	arcs.study = self
+	arcs.motor = motor
+	add_child(arcs)
 
 func _build_art() -> void:
 	art = Node3D.new()
@@ -373,6 +414,7 @@ func tick(delta: float) -> void:
 			_body_t = -1.0
 			_bring_body()
 	_tilt_tick(delta)
+	_tilt_steer(delta)
 	var b := olmec()
 	if b != null and arrival == "climbing" and not (str(b.state) in ["climb","mantle"]):
 		arrival = "crossing"
@@ -396,6 +438,36 @@ func tick(delta: float) -> void:
 				camera.position += Vector3(sin(t*61.0),sin(t*53.0+1.0),sin(t*47.0+2.0))*q*0.5
 	_show_card()
 
+## The stick this frame (world x, z), for the tilt's steer.
+func _want(delta: float) -> Vector2:
+	_stick = super._want(delta)
+	return _stick
+
+## Sliding down the tipped field, the stick across the fall line pushes him
+## aside harder than the motor's own steer (TILT_STEER).
+func _tilt_steer(delta: float) -> void:
+	if tilt == null or tilt_phase == "" or delta <= 0.0 or str(motor.move) != "slide": return
+	if float(tilt.steep_deg()) <= TILT_SURF: return
+	var w3: Vector3 = tilt.steep_turn().basis*Vector3(tilt_way.x,0.0,tilt_way.y)
+	var down := Vector2(w3.x,w3.z).normalized()
+	var side := Vector2(-down.y,down.x)
+	var across := clampf((scripted_want() if scripted else _stick).dot(side),-1.0,1.0)
+	var v: Vector3 = motor.velocity
+	var lat := Vector2(v.x,v.z).dot(side)
+	if absf(across) < 0.05:
+		# Let go: the drift across eases off (TILT_SIDE_EASE m/s²).
+		var eased := move_toward(lat,0.0,TILT_SIDE_EASE*delta)
+		var dv0 := side*(eased-lat)
+		motor.velocity = Vector3(v.x+dv0.x,v.y,v.z+dv0.y)
+		return
+	var want_lat := clampf(lat+across*TILT_STEER*delta,-TILT_SIDE_TOP,TILT_SIDE_TOP)
+	if absf(want_lat) < absf(lat) and signf(lat) == signf(across): return
+	var dv := side*(want_lat-lat)
+	motor.velocity = Vector3(v.x+dv.x,v.y,v.z+dv.y)
+
+func scripted_want() -> Vector2:
+	return script_want
+
 ## Locked on him the kit's camera (studies/kit_isle.gd `_frame`) frames a
 ## man-sized target; he stands ten metres: it drops lower behind the
 ## wanderer (TALL_POLAR over the lock's own) and its gaze leans up toward
@@ -411,6 +483,18 @@ func _frame(delta: float) -> void:
 	var b := olmec()
 	if b == null or foot_lock._last != b: return
 	var w: float = foot_lock.weight
+	var k := clampf(float(tilt.steep_deg())/TILT_DEG,0.0,1.0) if tilt != null else 0.0
+	if k > 0.01:
+		# The field tipped: raised over the slope, the gaze between him (the
+		# wanderer) and the Olmec at its foot, so both are in the frame.
+		if foot_lock.locked() and delta > 0.0:
+			_polar = lerpf(_polar,CAM_POLAR-TILT_LOCK_UP*k,(1.0-exp(-delta/TALL_EASE))*w)
+		var eye := camera.global_position
+		var to_me := (Vector3(_cam_at.x,_cam_y,_cam_at.y)-eye).normalized()
+		var to_him: Vector3 = (b.global_position+Vector3.UP*float(b.neck_h)*0.5-eye).normalized()
+		var look := to_me.slerp(to_him,TILT_LOCK_GAZE*w)
+		camera.look_at(eye+look*10.0)
+		return
 	if foot_lock.locked() and delta > 0.0:
 		_polar = lerpf(_polar,CAM_POLAR+FOOT_LOCK_PITCH+TALL_POLAR,(1.0-exp(-delta/TALL_EASE))*w)
 	var pivot := Vector3(_cam_at.x,_cam_y,_cam_at.y)
@@ -489,7 +573,8 @@ func attack_line() -> String:
 		var st := str(b.state)
 		if mv == "tilt":
 			return {"tilt_run":"makes for the rim","windup":"bounds for the rim","leap":"bounds for the rim",
-				"land":"on the rim","tilt_slam":"slams the rim","tilt_brace":"tilts the field!","tilt_let":"lets go"}.get(st,"tilt")
+				"land":"on the rim","tilt_slam":"slams the rim","tilt_brace":"tilts the field!  ·  brace %s" % _pips(int(b.get("brace_hits")),int(BossBody.TILT_BREAK)),
+					"tilt_let":"lets go"}.get(st,"tilt")
 		if mv == "charge":
 			return {"charge_tell":"charge coming","charge":"charge!","charge_skid":"overran  ·  shoot him now",
 				"charge_stagger":"stopped short"}.get(st,"charge")
@@ -598,11 +683,172 @@ func tilt_spot(from: Vector3) -> Vector3:
 			var sr := STONE_R+(1.5 if i%2 == 0 else -1.0)
 			if p.distance_to(Vector2(cos(sa),sin(sa))*sr) < 5.0: clear = false
 		if not clear: continue
-		var score := p.distance_to(me)-0.35*p.distance_to(Vector2(from.x,from.z))
+		var score := p.distance_to(me)-0.35*p.distance_to(Vector2(from.x,from.z))-_lane_cost(_lane(me,p))
 		if score > best_score:
 			best_score = score
 			best = Vector3(p.x,_ground_y(p.x,p.y),p.y)
 	return best
+
+## The slide's lane from `me` down to the rim spot `spot` (flat, rest
+## frame): the fall line `u` (out toward the spot), across it `l`, and its
+## spans along (from behind him to past the lip) and across (both lines,
+## LANE_W past either).
+func _lane(me: Vector2, spot: Vector2) -> Dictionary:
+	var u := spot.normalized()
+	var l := Vector2(-u.y,u.x)
+	return {"u":u,"l":l,"a0":me.dot(u)-4.0,"a1":FIELD_R+4.0,
+		"l0":minf(me.dot(l),spot.dot(l))-LANE_W,"l1":maxf(me.dot(l),spot.dot(l))+LANE_W}
+
+## Whether the flat points `pts` (rest frame) reach into `lane`.
+static func _in_lane(lane: Dictionary, pts: Array) -> bool:
+	var a := Vector2(INF,-INF)
+	var c := Vector2(INF,-INF)
+	for p: Vector2 in pts:
+		var pa := p.dot(lane.u)
+		var pl := p.dot(lane.l)
+		a = Vector2(minf(a.x,pa),maxf(a.y,pa))
+		c = Vector2(minf(c.x,pl),maxf(c.y,pl))
+	return a.y > float(lane.a0) and a.x < float(lane.a1) and c.y > float(lane.l0) and c.x < float(lane.l1)
+
+## What stands in `lane`: big pieces cost LANE_COST, the rest half.
+func _lane_cost(lane: Dictionary) -> float:
+	if arena == null or arena.kit_breaks == null: return 0.0
+	var cost := 0.0
+	for t: Dictionary in arena.kit_breaks.targets:
+		if not t.alive or not is_instance_valid(t.node): continue
+		var node: Node3D = t.node
+		var box: AABB = t.box
+		var pts: Array = []
+		for k in range(4):
+			var w: Vector3 = node.transform*(box.position+Vector3(box.size.x*float(k%2),0.0,box.size.z*float(k/2)))
+			pts.append(Vector2(w.x,w.z))
+		if _in_lane(lane,pts): cost += LANE_COST*(1.0 if node.has_meta("arena_big") else 0.5)
+	return cost
+
+## The arena's pieces and rubble in the lane from the wanderer down to
+## `at` shoved: their colliders off, set sliding off down the slope (and
+## out to the lane's nearer side), their breaks done with.
+func _shove_lane(at: Vector3) -> void:
+	_shoved.clear()
+	if arena == null: return
+	var lane := _lane(Vector2(motor.feet.x,motor.feet.z),Vector2(at.x,at.z))
+	var mid := (float(lane.l0)+float(lane.l1))*0.5
+	var cands: Array = []
+	for holder: Node in [arena.pieces,arena.kit_breaks]:
+		if holder == null: continue
+		for c: Node in holder.get_children():
+			if c is CPUParticles3D or c is GPUParticles3D or not (c is Node3D) or not (c as Node3D).visible: continue
+			# A heap's holder: its blocks one by one.
+			if c.name.begins_with("Rubble"):
+				for r: Node in c.get_children():
+					if r is Node3D and (r as Node3D).visible: cands.append(r)
+				continue
+			cands.append(c)
+	var inv: Transform3D = arena.global_transform.affine_inverse()
+	for node: Node3D in cands:
+		var pts: Array = []
+		var any := false
+		for v: Node in node.find_children("*","VisualInstance3D",true,false):
+			var vi := v as VisualInstance3D
+			var box := vi.get_aabb()
+			if box.size.length() < 0.01: continue
+			any = true
+			var xf: Transform3D = inv*vi.global_transform
+			for k in range(8):
+				var w: Vector3 = xf*(box.position+box.size*Vector3(float(k%2),float((k/2)%2),float(k/4)))
+				pts.append(Vector2(w.x,w.z))
+		if node is VisualInstance3D:
+			var box2 := (node as VisualInstance3D).get_aabb()
+			var xf2: Transform3D = inv*node.global_transform
+			for k in range(8):
+				var w2: Vector3 = xf2*(box2.position+box2.size*Vector3(float(k%2),float((k/2)%2),float(k/4)))
+				pts.append(Vector2(w2.x,w2.z))
+			any = true
+		if not any or not _in_lane(lane,pts): continue
+		var layers := {}
+		var bodies: Array = node.find_children("*","CollisionObject3D",true,false)
+		if node is CollisionObject3D: bodies.append(node)
+		for bo: Node in bodies:
+			var co := bo as CollisionObject3D
+			layers[co] = [co.collision_layer,co.collision_mask]
+			co.collision_layer = 0
+			co.collision_mask = 0
+			if co is RigidBody3D: (co as RigidBody3D).freeze = true
+		for t: Dictionary in arena.kit_breaks.targets:
+			if t.node == node: t.alive = false
+		var centre := Vector2.ZERO
+		for p: Vector2 in pts: centre += p
+		centre /= float(pts.size())
+		var out_side := 1.0 if centre.dot(lane.l) >= mid else -1.0
+		var u: Vector2 = lane.u
+		var l: Vector2 = lane.l
+		_shoved.append({"node":node,"v":u*SHOVE_KICK+l*out_side*SHOVE_OUT,"y":node.position.y-_ground_y(node.position.x,node.position.z),
+			"off":false,"vy":0.0,"t":0.0,"spin":Vector3(l.x,0.0,l.y)*out_side,"wait":clampf((float(lane.a1)-centre.dot(u))*0.004,0.0,0.25)})
+	if not _shoved.is_empty(): print("olmec field: %d piece(s) in the slide's lane shoved off down the slope" % _shoved.size())
+
+## The shoved pieces down the tipped field (the arena's frame is the rest
+## frame), over the lip and gone.
+func _slide_shoved(delta: float, deg: float) -> void:
+	if _shoved.is_empty(): return
+	var keep: Array = []
+	for c: Dictionary in _shoved:
+		if not is_instance_valid(c.node): continue
+		var node: Node3D = c.node
+		c.t = float(c.t)+delta
+		if float(c.t) < float(c.wait):
+			keep.append(c)
+			continue
+		var p := node.position
+		if bool(c.off):
+			c.vy = float(c.vy)-9.8*delta
+			p += Vector3(c.v.x,float(c.vy),c.v.y)*delta
+			node.position = p
+			if p.y < FIELD_TOP-30.0:
+				node.visible = false
+				node.process_mode = Node.PROCESS_MODE_DISABLED
+				continue
+			keep.append(c)
+			continue
+		var v: Vector2 = c.v
+		if deg > SCREE_HOLD_DEG: v += tilt_way*9.8*sin(deg_to_rad(deg))*SHOVE_PULL*delta
+		var pace := move_toward(v.length(),0.0,0.6*delta)
+		v = v.normalized()*pace if v.length() > 1e-4 else Vector2.ZERO
+		c.v = v
+		p.x += v.x*delta
+		p.z += v.y*delta
+		p.y = _ground_y(p.x,p.z)+float(c.y)
+		node.position = p
+		if pace > 0.1: node.rotate(c.spin as Vector3,pace*delta*0.05)
+		var a := atan2(p.z,p.x)
+		var rim := FIELD_R*(1.0+0.05*sin(a*3.0+0.7)+0.03*sin(a*7.0+2.1))
+		if Vector2(p.x,p.z).length() > rim-1.0:
+			c.off = true
+			c.vy = -pace*sin(deg_to_rad(deg))
+		if pace > 0.5 and randf() < delta*2.0: Dust.puff(enemies,arena.global_transform*p,2.0,Vector3.UP)
+		keep.append(c)
+	_shoved = keep
+
+## His air arcs: a volley of `n` from his braced feet up the slope, the
+## middle one at the wanderer (rest frame). Not once the wanderer is within
+## ARC_NEAR m of him (too near to dodge: there it's his to shoot). Whether
+## it went.
+const ARC_NEAR := 13.0
+func tilt_arcs(b: Node3D, n: int) -> bool:
+	if arcs == null or tilt_phase != "tipping": return false
+	var turn: Transform3D = tilt.steep_turn()
+	var from: Vector3 = b.get("tilt_rest") if b.get("tilt_rest") != Vector3.INF else turn.affine_inverse()*b.global_position
+	var me: Vector3 = turn.affine_inverse()*motor.feet
+	if Vector2(me.x-from.x,me.z-from.z).length() < ARC_NEAR: return false
+	arcs.volley(from,me,n)
+	return true
+
+## Shot enough braced: his brace breaks, he lets go.
+func tilt_broken(b: Node3D) -> void:
+	if tilt_phase != "tipping" or b != _tilt_body: return
+	tilts_broken += 1
+	_say("His brace breaks!",2.5)
+	print("olmec field: brace broken after %.1f s" % tilt_t)
+	_tilt_release()
 
 ## His fists down on the rim at `at`: the field tips toward him.
 func tilt_begin(b: Node3D, at: Vector3) -> void:
@@ -619,8 +865,10 @@ func tilt_begin(b: Node3D, at: Vector3) -> void:
 	if _plane_tipped:
 		_plane_rest = plane_figure.transform
 		_plane_park_rest = plane_figure.get("_parked_at")
-	_motor_knobs = {"slide_auto":motor.slide_auto}
+	_motor_knobs = {"slide_auto":motor.slide_auto,"carve":motor.carve,"slide_top":motor.slide_top}
 	_shake_scree(at)
+	_shove_lane(b.global_position)
+	_tilt_lock(b)
 	if arena != null and arena.hub != null: arena.hub.quake = maxf(float(arena.hub.quake),1.0)
 	_say("He slams the rim: the field tips toward him!",3.0)
 	print("olmec field: tilt %d from (%.1f, %.1f), the field tips %.0f deg toward him" % [tilts_begun,at.x,at.z,TILT_DEG])
@@ -642,7 +890,11 @@ func _tilt_tick(delta: float) -> void:
 		var off := b == null or b != _tilt_body or bool(b.crumbled) or not (str(b.state) == "tilt_brace")
 		if tilt_t >= TILT_HOLD or (off and tilt_t > 0.2):
 			_tilt_release()
+		elif _tilt_locked and foot_lock != null and not foot_lock.locked() and foot_lock.let_go_why != "pressed" and foot_lock_allowed():
+			# Out of reach or behind a column: back on him while tipped.
+			_tilt_lock(b)
 	tilt.step(delta,[])
+	if arcs != null: arcs.step(delta)
 	var deg: float = tilt.steep_deg()
 	tilt_most_deg = maxf(tilt_most_deg,deg)
 	var turn: Transform3D = tilt.steep_turn()
@@ -652,18 +904,47 @@ func _tilt_tick(delta: float) -> void:
 			plane_figure.transform = turn*_plane_rest
 		else: _plane_tipped = false
 	if _motor_knobs.has("slide_auto"):
-		motor.slide_auto = TILT_SLIDE_AUTO if deg > TILT_SURF else float(_motor_knobs.slide_auto)
+		var steep := deg > TILT_SURF
+		motor.slide_auto = TILT_SLIDE_AUTO if steep else float(_motor_knobs.slide_auto)
+		motor.carve = false if steep else bool(_motor_knobs.carve)
+		motor.slide_top = TILT_SLIDE_TOP if steep else float(_motor_knobs.slide_top)
 	_slide_scree(delta,deg,turn)
+	_slide_shoved(delta,deg)
 	if tilt_phase == "easing" and tilt.steep_tip == null:
 		tilt_phase = ""
 		_put_plane_back()
-		if _motor_knobs.has("slide_auto"): motor.slide_auto = float(_motor_knobs.slide_auto)
-		_motor_knobs.clear()
+		_motor_back()
 		print("olmec field: the field is level again (most %.1f deg)" % tilt_most_deg)
+
+## The wanderer's motor as it was before the tilt.
+func _motor_back() -> void:
+	if _motor_knobs.has("slide_auto"): motor.slide_auto = float(_motor_knobs.slide_auto)
+	if _motor_knobs.has("carve"): motor.carve = bool(_motor_knobs.carve)
+	if _motor_knobs.has("slide_top"): motor.slide_top = float(_motor_knobs.slide_top)
+	_motor_knobs.clear()
+
+## Locked on him while the field is tipped, so the camera frames him at the
+## bottom of the slope (and the gust shot goes at him).
+func _tilt_lock(b: Node3D) -> void:
+	if b == null or not foot_lock_allowed(): return
+	if foot_lock == null:
+		foot_lock = FootLock.new()
+		foot_lock.name = "FootLock"
+		foot_lock.sight_mask = 0xFFFFFFFF & ~PARKED_LAYER
+		add_child(foot_lock)
+	if foot_lock.locked() and foot_lock.target == b: return
+	if not foot_lock.locked(): _tilt_locked = true
+	foot_lock.target = b
+	foot_lock._last = b
+	foot_lock._lost = 0.0
+	foot_lock.let_go_why = ""
 
 func _tilt_release() -> void:
 	tilt_phase = "easing"
 	tilt.steep_release()
+	if arcs != null: arcs.fade_all()
+	if _tilt_locked and foot_lock != null and foot_lock.locked(): foot_lock.release("tilt over")
+	_tilt_locked = false
 	if _tilt_body != null and is_instance_valid(_tilt_body) and _tilt_body.has_method("tilt_let_go"): _tilt_body.tilt_let_go()
 	_say("He lets go: the field eases back",2.5)
 	print("olmec field: let go after %.1f s braced" % tilt_t)
@@ -679,8 +960,10 @@ func tilt_reset() -> void:
 	if tilt == null: return
 	tilt.settle_all()
 	_put_plane_back()
-	if _motor_knobs.has("slide_auto"): motor.slide_auto = float(_motor_knobs.slide_auto)
-	_motor_knobs.clear()
+	_motor_back()
+	if arcs != null: arcs.clear()
+	_shoved.clear()
+	_tilt_locked = false
 	tilt_phase = ""
 	_tilt_body = null
 	_tilt_now_done = false
