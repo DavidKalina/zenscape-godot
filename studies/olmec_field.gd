@@ -39,7 +39,7 @@ const BossBody = preload("res://scripts/olmec_boss/boss_body.gd")
 ## braced on its rim, the steep mode of the Olmec's tilt.
 const OlmecTilt = preload("res://scripts/enemies/olmec_tilt.gd")
 const Dust = preload("res://scripts/enemies/body_dust.gd")
-## His air arcs up the tipped field (scripts/olmec_boss/air_arcs.gd).
+## His lines of wind up the tipped field (scripts/olmec_boss/air_arcs.gd).
 const AirArcs = preload("res://scripts/olmec_boss/air_arcs.gd")
 
 ## Phase 1 is done: the head has taken its hits and cried out (the body's
@@ -950,13 +950,13 @@ func _slide_shoved(delta: float, deg: float) -> void:
 		keep.append(c)
 	_shoved = keep
 
-## His air arcs: a volley of `n` from his braced feet up the slope, the
-## middle one at the wanderer (rest frame). Not once the wanderer is within
-## ARC_NEAR m of him (too near to dodge: there it's his to shoot). Whether
-## it went.
+## His lines of wind: a pattern from his braced feet up the slope at the
+## wanderer (rest frame; scripts/olmec_boss/air_arcs.gd), not before the
+## last one has had its time. Not once the wanderer is within ARC_NEAR m
+## of him (too near to dodge: there it's his to shoot). Whether it went.
 const ARC_NEAR := 13.0
 func tilt_arcs(b: Node3D, n: int) -> bool:
-	if arcs == null or tilt_phase != "tipping": return false
+	if arcs == null or tilt_phase != "tipping" or not arcs.can_send(): return false
 	var turn: Transform3D = tilt.steep_turn()
 	var from: Vector3 = b.get("tilt_rest") if b.get("tilt_rest") != Vector3.INF else turn.affine_inverse()*b.global_position
 	var me: Vector3 = turn.affine_inverse()*motor.feet

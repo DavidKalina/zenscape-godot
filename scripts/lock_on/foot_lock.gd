@@ -34,6 +34,11 @@ const MARK_SIZE := Vector3(0.3,0.34,0.08)
 ## at range, up to MARK_MOST times.
 const MARK_NEAR := 6.0
 const MARK_MOST := 3.0
+## A target locked from anywhere (`lock_anywhere`) may be far off: its
+## marker grows up to this many times.
+const MARK_FAR := 9.0
+## ...and is a warm ember, to read against the pale sky and cloud.
+const MARK_FAR_COLOUR := Color(0.98,0.5,0.22)
 const MARK_BOB := Vector2(0.05,0.9)
 const MARK_TURN := 1.4
 const MARK_COLOUR := Color(0.93,0.87,0.72)
@@ -208,9 +213,10 @@ func _draw_mark(delta: float, camera: Camera3D) -> void:
 	var top: float = _last.call("tall") if _last.has_method("tall") else 1.5
 	var over := Vector3.UP*(top+MARK_OVER+sin(_clock*TAU*MARK_BOB.y)*MARK_BOB.x)
 	var turn := Basis(Vector3.UP,_clock*MARK_TURN)*Basis(Vector3.FORWARD,PI)
-	grow *= clampf(camera.global_position.distance_to(_last.global_position+over)/MARK_NEAR,1.0,MARK_MOST)
+	grow *= clampf(camera.global_position.distance_to(_last.global_position+over)/MARK_NEAR,1.0,MARK_FAR if _anywhere(_last) else MARK_MOST)
 	_mark.global_transform = Transform3D(turn.scaled(Vector3.ONE*maxf(grow,0.01)),_last.global_position+over)
-	_mat.albedo_color.a = clampf(weight*1.2,0.0,0.92)
+	var col := MARK_FAR_COLOUR if _anywhere(_last) else MARK_COLOUR
+	_mat.albedo_color = Color(col.r,col.g,col.b,clampf(weight*1.2,0.0,0.92))
 
 static func _back_out(u: float) -> float:
 	var s := 1.9
