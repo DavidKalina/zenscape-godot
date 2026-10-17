@@ -28,7 +28,11 @@ extends Node3D
 ##
 ## Built `height` m to the helm's crown, his feet at the origin, facing -Z.
 ## Pieces: `pieces` (name -> MeshInstance3D, `<bone>-<piece>`), sockets
-## `socket-<name>` (Node3D). Not yet rigged (task 3).
+## `socket-<name>` (Node3D, each riding its bone). Rigged (task 3): every
+## piece is skinned rigidly to one bone of the glb's Skeleton3D, so its
+## vertices are in the model's space at rest; the clips are the glb's
+## animations (`play`).
+##   play(clip, blend)        idle, walk, turn, notice
 ##   rune_energy(key, share)  a rune's light, 0 dark, 1 at rest
 ##   eye_glow(share)          the eye, 0 dark, EYE_REST at rest, 1 full
 
@@ -66,8 +70,12 @@ const EYE_ENERGY := 4.0
 const EYE_REST := 0.15
 const SLIT := Color(0.02,0.018,0.016)
 
+## The clips that loop.
+const LOOPS := ["idle","walk","turn"]
+
 var height := MODEL_HEIGHT
 var model: Node3D
+var player: AnimationPlayer
 var pieces := {}
 var runes := {}
 var _stone: ShaderMaterial
@@ -94,14 +102,17 @@ func build(h: float, seed_value := 7) -> void:
 	var slit := StandardMaterial3D.new()
 	slit.albedo_color = SLIT
 	slit.roughness = 1.0
-	for node in model.get_children():
+	player = model.find_child("AnimationPlayer",true,false) as AnimationPlayer
+	if player != null:
+		for a in LOOPS:
+			if player.has_animation(a): player.get_animation(a).loop_mode = Animation.LOOP_LINEAR
+	for node in model.find_children("*","MeshInstance3D",true,false):
 		var mi := node as MeshInstance3D
-		if mi == null: continue
 		pieces[String(mi.name)] = mi
 		var key := ""
 		if String(mi.name).ends_with("-rune"):
 			key = String(mi.name).get_slice("-",0)
-		mi.mesh = _dressed(mi.mesh,stone,mi.position,key)
+		mi.mesh = _dressed(mi.mesh,stone,_rest_of(mi),key)
 		for s in range(mi.mesh.get_surface_count()):
 			var m := mi.mesh.surface_get_material(s)
 			var mname := m.resource_name if m != null else ""
@@ -134,9 +145,23 @@ func _rune_material() -> ShaderMaterial:
 func rune_energy(key: String, share: float) -> void:
 	if runes.has(key): (runes[key] as ShaderMaterial).set_shader_parameter("energy",RUNE_REST*share)
 
-## A socket (rest pose): hand_r, hand_l, hands_mid, blade, chest_rune, eye.
+## A socket (riding its bone): hand_r, hand_l, hands_mid, blade, chest_rune, eye.
 func socket(name_: String) -> Node3D:
-	return model.get_node_or_null("socket-"+name_)
+	return model.find_child("socket-"+name_,true,false) as Node3D
+
+## Play a clip of the glb (rune_knight_clips.py): idle, walk, turn, notice.
+func play(clip: String, blend := 0.15) -> void:
+	if player != null and player.has_animation(clip): player.play(clip,blend)
+
+## Where a piece's mesh sits in the model at rest (its vertices are in the
+## skeleton's space when skinned, so this is the skeleton's place).
+func _rest_of(mi: MeshInstance3D) -> Vector3:
+	var t := Transform3D.IDENTITY
+	var n: Node = mi
+	while n != null and n != model:
+		if n is Node3D: t = (n as Node3D).transform*t
+		n = n.get_parent()
+	return t.origin
 
 ## The piece's mesh coloured as the kit's stone, its rest in UV/UV2, its
 ## occlusion in alpha, and (a rune tablet, `key`) its glyph square in CUSTOM.

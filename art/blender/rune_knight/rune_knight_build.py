@@ -4,9 +4,11 @@ rune_knight_options.py, carved in the Olmec's stone.
 
     /opt/homebrew/bin/blender -b --python art/blender/rune_knight/rune_knight_build.py -- [--out=DIR] [--blend] [--render=DIR]
 
-Writes assets/models/rune_knight.glb in his rest pose, printing RK_PIECE /
-RK_TRIS; --render writes Workbench stills (a turntable, a far crop) to DIR
-(default scratch/rk_model); --blend saves rune_knight.blend here.
+Writes assets/models/rune_knight.glb (rest pose, the rig and the clips of
+rune_knight_clips.py), printing RK_PIECE / RK_TRIS / RK_CLIP / RK_WALK_SLIDE;
+--render writes Workbench stills (a turntable, a close pair, a sheet a
+clip `clip_<name>.png`) to DIR (default scratch/rk_model); --blend saves
+rune_knight.blend here.
 
 The forms are the Olmec's (art/blender/inhaler_head/inhaler_head_build.py,
 headless_body_build.py): every piece is a rounded box (a grid mapped onto a
@@ -28,8 +30,8 @@ Frame (Blender): +z up, +y his front (glTF -> Godot -z), +x his right.
 
 Pieces: every piece is its own object, named `<bone>-<piece>` (a dash:
 Godot node names take no dots), its origin at its bone's joint in rest, no
-rotation, so the game finds the joint from the object and the rig (task 3)
-parents it there. Stone does not bend: each piece rides one bone, and the
+rotation; each is skinned rigidly (one vertex group, weight 1) to its
+bone of `RuneKnightRig` (task 3), sockets bone-parented. Stone does not bend: each piece rides one bone, and the
 body throws pieces loose for `crumble` and `shatter`.
   bones: hips spine chest head shoulder_l/r upper_arm_l/r forearm_l/r
          hand_l/r thigh_l/r shin_l/r foot_l/r tabard_f tabard_b skirt_l/r
@@ -569,15 +571,105 @@ print("RK_TRIS pieces", len(meshes), "total", tris)
 zs = [(ob.matrix_world @ v.co).z for ob in meshes for v in ob.data.vertices]
 print("RK_BOUNDS z", round(min(zs), 3), round(max(zs), 3), "helm crown", round(HELM_C.z + HELM_HALF[2], 3))
 
+# ------------------------------------------------------------------ the rig
+# Bones from JOINT (rune_knight_clips.py poses them). Each piece rides its
+# bone rigidly: one vertex group, weight 1, under an Armature modifier, so
+# it stays its own object (the body throws pieces loose). Sockets ride
+# their bones as bone-parented empties.
+UP = V((0, 0, 1))
+BONES = {   # name: (head, tail, parent)
+    "root": (V((0, 0, 0)), V((0, 0.15 * h, 0)), None),
+    "hips": (JOINT["hips"], JOINT["hips"] + UP * 0.03 * h, "root"),
+    "spine": (JOINT["spine"], JOINT["chest"], "hips"),
+    "chest": (JOINT["chest"], JOINT["head"], "spine"),
+    "head": (JOINT["head"], JOINT["head"] + UP * 0.15 * h, "chest"),
+    "tabard_f": (JOINT["tabard_f"], JOINT["tabard_f"] - UP * 0.2 * h, "hips"),
+    "tabard_b": (JOINT["tabard_b"], JOINT["tabard_b"] - UP * 0.2 * h, "hips"),
+}
+for sd in ("l", "r"):
+    s, sh, el, wr, fdir = ARM[sd]
+    BONES[f"shoulder_{sd}"] = (JOINT[f"shoulder_{sd}"], JOINT[f"shoulder_{sd}"] + V((s * 0.08 * h, 0, 0)), "chest")
+    BONES[f"upper_arm_{sd}"] = (sh, el, "chest")
+    BONES[f"forearm_{sd}"] = (el, wr, f"upper_arm_{sd}")
+    BONES[f"hand_{sd}"] = (wr, wr + fdir * 0.08 * h, f"forearm_{sd}")
+    BONES[f"thigh_{sd}"] = (JOINT[f"thigh_{sd}"], JOINT[f"shin_{sd}"], "hips")
+    BONES[f"shin_{sd}"] = (JOINT[f"shin_{sd}"], JOINT[f"foot_{sd}"], f"thigh_{sd}")
+    BONES[f"foot_{sd}"] = (JOINT[f"foot_{sd}"], JOINT[f"foot_{sd}"] + V((0, 0.12 * h, -ANKLE * 0.5)), f"shin_{sd}")
+    BONES[f"skirt_{sd}"] = (JOINT[f"skirt_{sd}"], JOINT[f"skirt_{sd}"] - UP * 0.15 * h, "hips")
+arm_data = bpy.data.armatures.new("RuneKnightRig")
+rig = bpy.data.objects.new("RuneKnightRig", arm_data)
+scene.collection.objects.link(rig)
+bpy.context.view_layer.objects.active = rig
+bpy.ops.object.mode_set(mode="EDIT")
+eb = {}
+for name, (hd, tl, parent) in BONES.items():
+    b = arm_data.edit_bones.new(name)
+    b.head, b.tail = hd, tl
+    b.roll = 0.0
+    b.use_deform = name != "root"
+    eb[name] = b
+for name, (hd, tl, parent) in BONES.items():
+    if parent:
+        eb[name].parent = eb[parent]
+        eb[name].use_connect = False
+bpy.ops.object.mode_set(mode="OBJECT")
+for ob in meshes:
+    bone = ob["bone"]
+    assert bone in BONES, (ob.name, bone)
+    vg = ob.vertex_groups.new(name=bone)
+    vg.add(list(range(len(ob.data.vertices))), 1.0, "REPLACE")
+    ob.parent = rig
+    ob.modifiers.new("Rig", "ARMATURE").object = rig
+for e in sockets:
+    mw = e.matrix_world.copy()
+    e.parent = rig
+    e.parent_type = "BONE"
+    e.parent_bone = e["bone"]
+    bpy.context.view_layer.update()
+    e.matrix_world = mw
+print("RK_RIG bones", len(BONES))
+
+# ------------------------------------------------------------------ clips
+sys.path.insert(0, str(HERE))
+import rune_knight_clips as kc  # noqa: E402
+rig.animation_data_create()
+for pb in rig.pose.bones:
+    pb.rotation_mode = "QUATERNION"
+KRIG = kc.Rig(rig, JOINT, ARM)
+CLIPS = kc.clips()
+ACTIONS = {c.name: kc.bake(KRIG, c) for c in CLIPS}
+kc.reset(rig)
+# The walk's planted feet, checked: the sole under a flat foot (ankle down
+# SOLE) carried forward at the mind's pace must not move.
+wc = next(c for c in CLIPS if c.name == "walk")
+slide = 0.0
+prev = None
+for f in range(int(wc.length * kc.FPS) + 1):
+    t = f / kc.FPS
+    D = KRIG.moves(wc, t)
+    v = wc.values(t)
+    p = D["foot_l"] @ JOINT["foot_l"] + V((0, kc.PACE * t, 0))
+    flat = abs(v["pitch.l"]) < 0.5 and v["fz.l"] < 1e-4
+    if flat and prev is not None:
+        slide = max(slide, (p - prev).length)
+    prev = p if flat else None
+print("RK_WALK_SLIDE max per frame (m)", round(slide, 5))
+
 if SAVE_BLEND:
     bpy.ops.wm.save_as_mainfile(filepath=str(HERE / "rune_knight.blend"))
 
 # ------------------------------------------------------------------ export
 bpy.ops.object.select_all(action="DESELECT")
-for ob in meshes + sockets: ob.select_set(True)
+for ob in meshes + sockets + [rig]: ob.select_set(True)
+bpy.context.view_layer.objects.active = rig
 GLB.parent.mkdir(parents=True, exist_ok=True)
+# Keyed a frame per 1/FPS s; the export reads time from the scene rate.
+scene.render.fps = kc.FPS
+scene.render.fps_base = 1.0
 kw = dict(filepath=str(GLB), export_format="GLB", use_selection=True, export_yup=True,
-          export_apply=False, export_animations=False, export_materials="EXPORT",
+          export_apply=False, export_animations=True, export_animation_mode="ACTIONS",
+          export_force_sampling=True, export_frame_step=1, export_def_bones=False,
+          export_materials="EXPORT",
           export_normals=True, export_extras=True, export_texcoords=True)
 try:
     bpy.ops.export_scene.gltf(**kw, export_vertex_color="ACTIVE")
@@ -623,6 +715,9 @@ if RENDER:
         out.file_format = "PNG"
         out.save()
 
+    for tr_ in rig.animation_data.nla_tracks:
+        tr_.mute = True      # else the strips pose him
+    kc.reset(rig)
     cells = []
     for ang in (0, 45, 90, 135, 180, 270):
         a = math.radians(ang)
@@ -634,3 +729,34 @@ if RENDER:
     c2 = shoot(RENDER / "_cell.png", (1.6, 1.6, 0.9), (0.5, 0.2, 0.85), lens=60, res=(700, 700))
     save(np.concatenate([c1, c2], axis=1), RENDER / "close.png")
     print("RK_STILLS", RENDER)
+
+    # A sheet a clip: SHEET_N frames across; rows: three-quarter front, his
+    # left side (carried forward at the mind's pace in the walk, so planted
+    # feet stand still in the frame), a floor line under him.
+    floor_me = bpy.data.meshes.new("floor")
+    bmf = bmesh.new()
+    bmesh.ops.create_grid(bmf, x_segments=24, y_segments=24, size=3.0)
+    bmf.to_mesh(floor_me)
+    bmf.free()
+    floor = bpy.data.objects.new("floor", floor_me)
+    scene.collection.objects.link(floor)
+    shd.show_xray = False
+    SHEET_N = 6
+    rows_v = [((2.3, 3.3, 1.45), (0, 0.15, 0.95), 42), ((-4.6, 0.3, 0.95), (0, 0.3, 0.9), 42)]
+    for c in CLIPS:
+        rows = []
+        for ri, (eye, at, lens) in enumerate(rows_v):
+            row = []
+            for j in range(SHEET_N):
+                t = c.length * j / (SHEET_N if c.loop else SHEET_N - 1)
+                KRIG.apply(c, t)
+                carry = kc.PACE * t if (c.name == "walk" and ri == 1) else 0.0
+                rig.location = (0, carry - (kc.PACE * c.length * 0.5 if c.name == "walk" and ri == 1 else 0.0), 0)
+                bpy.context.view_layer.update()
+                row.append(shoot(RENDER / "_cell.png", eye, at, lens=lens, res=(400, 520)))
+            rows.append(np.concatenate(row, axis=1))
+        rig.location = (0, 0, 0)
+        save(np.concatenate(rows[::-1], axis=0), RENDER / f"clip_{c.name}.png")
+        print("RK_SHEET", c.name, RENDER / f"clip_{c.name}.png")
+    kc.reset(rig)
+    bpy.data.objects.remove(floor)
