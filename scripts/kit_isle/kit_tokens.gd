@@ -70,11 +70,11 @@ func setup(isle: Node3D) -> void:
 	tokens = spots_for(isle)
 	isle_id = Ledger.isle_id_of(isle)
 	for t: Dictionary in tokens:
-		t.at = (t.at as Vector3)+offset
+		if t.at != Vector3.INF: t.at = (t.at as Vector3)+offset
 		if Ledger.shared().is_done(objective(t.name)): taken.append(t.name)
 	for i in range(tokens.size()):
 		var t: Dictionary = tokens[i]
-		if taken.has(t.name): continue
+		if taken.has(t.name) or t.at == Vector3.INF: continue
 		var holder := GlyphPickup.make(GLYPH,SIZE,float(i)*1.3,true)
 		holder.name = "Token_%s" % t.name
 		holder.position = t.at
@@ -122,8 +122,35 @@ func touch(point: Vector3) -> void:
 		if taken.has(t.name): continue
 		if buried.has(t.name) and not buried[t.name].takeable(): continue
 		var at: Vector3 = t.at
+		if at == Vector3.INF: continue
 		var near := Geometry3D.get_closest_point_to_segment(at,from,point)
 		if near.distance_to(at) < Lines.WALKER_REACH+SIZE*0.5: take(t.name)
+
+## Whether token `name` is one laid later (its spot `at` INF: a spot
+## that waits, like the rune knight's spilled runes) and still waits: not
+## taken (in this run or an earlier one) and not laid yet.
+func waiting(token_name: String) -> bool:
+	if taken.has(token_name) or _holders.has(token_name): return false
+	for t: Dictionary in tokens:
+		if t.name == token_name: return t.at == Vector3.INF
+	return false
+
+## Waiting token `name` laid at `at` (world) in `holder` (a GlyphPickup the
+## caller made, flew in and lets go of here): from now it stands, glints
+## through the telescope and is taken like the rest. False (holder left
+## alone) if it doesn't wait.
+func lay(token_name: String, at: Vector3, holder: Node3D) -> bool:
+	if not waiting(token_name): return false
+	for t: Dictionary in tokens:
+		if t.name == token_name: t.at = at
+	if holder.get_parent() != null: holder.get_parent().remove_child(holder)
+	holder.name = "Token_%s" % token_name
+	add_child(holder)
+	holder.global_position = at
+	holder.motes_on(true)
+	Telescope.spottable(holder,objective(token_name))
+	_holders[token_name] = holder
+	return true
 
 ## Token `name` taken: it twists away, the readout climbs a step.
 func take(name: String) -> void:

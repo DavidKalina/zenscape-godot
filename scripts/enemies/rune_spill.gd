@@ -9,9 +9,10 @@ extends Node3D
 ## socket, top level in the isle; frees itself when its light is out.
 
 ## Shards, their size (share of his height), the burst's speed (m/s, out
-## and up, share of his height per s), the fall (m/s^2).
-const SHARDS := 40
-const SHARD := 0.09
+## and up, share of his height per s), the fall (m/s^2). A little grit
+## since the rune itself spills out as a glyph token (rune_spill_token.gd).
+const SHARDS := 14
+const SHARD := 0.045
 const OUT := 0.85
 const UP := 1.3
 const FALL := 16.0

@@ -3,6 +3,7 @@ extends "res://scripts/kit_isle/kit_tokens.gd"
 ## the kit isles' (scripts/kit_isle/kit_tokens.gd), set where each asks for
 ## a move on this isle.
 const Art = preload("res://studies/aqueduct_isle_art.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 func spots_for(isle: Node3D) -> Array[Dictionary]:
 	return spots(isle)
@@ -54,7 +55,18 @@ static func spots(isle: Node3D) -> Array[Dictionary]:
 	var ground := buried_ground()
 	out.append({"name":"buried","at":ground+Vector3.UP*BURIED_HOVER,"ground":ground,"buried":true,
 		"move":"Spot the shimmer off the north path and slam down onto it from a height"})
+	# 9-11. With the rune knight (--rune-knight, scripts/enemies/
+	# rune_knight.gd), his three tablets' runes: no spot of their own (at
+	# INF, laid later by kit_tokens `lay`), a riposte that cracks a tablet
+	# spills its token out onto the deck or the turf by him.
+	if LaunchArgs.user_args().has("--rune-knight"):
+		for tablet: String in KNIGHT_TABLETS:
+			out.append({"name":"rune_knight_"+tablet,"at":Vector3.INF,
+				"move":"Parry the rune knight's slash and riposte to spill his %s rune" % tablet.replace("_l"," left").replace("_r"," right")})
 	return out
+
+## The rune knight's tablets, as his runes are named (rune_knight.gd `runes`).
+const KNIGHT_TABLETS := ["hand_l","hand_r","chest"]
 
 ## The buried token: along the north path's middle run (Art.PATHS[1], its
 ## second leg), and in from it, away from the edge (m).

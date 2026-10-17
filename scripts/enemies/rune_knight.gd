@@ -193,6 +193,15 @@ const KNOBS := {
 	"hit_push_base": 0.7,
 	"hit_push_strength": 0.4,
 	"deck_half": 1.25,
+	# A riposte's spilled token (spec "Runes that really spill"): how far
+	# from him it rests at most (m), how far in from the deck's sides and
+	# ends (m), and its middle's height over the ground (m; the kit tokens'
+	# foot height, scripts/collectible_lines.gd FOOT_Y).
+	"spill_far": 2.2,
+	"spill_margin": 0.35,
+	"spill_rest_y": 0.55,
+	# ...and how far apart from another spilled token lying out (m).
+	"spill_apart": 1.0,
 	"gravity": 22.0,
 	# The skid (a hit's knockback): how far a side or back hit skids him
 	# (m, from the weakest shot to the strongest, strength 0.6..1.0); how
@@ -1012,6 +1021,7 @@ func _skid(v: Vector3, meters: float, crack: bool, riposte := false) -> void:
 			# The riposte spills it: shards and light pour out of him.
 			spills += 1
 			body.set_effect("rune_spill",true,rune)
+			_spill_token(rune,v)
 		print("rune knight: the %s rune cracks%s (%d left)" % [rune," and spills" if riposte else "",runes.size()])
 	if state == "fall": return
 	var flat := Vector3(v.x,0.0,v.z)
@@ -1055,6 +1065,96 @@ func _skid(v: Vector3, meters: float, crack: bool, riposte := false) -> void:
 	_skid_ended = false
 	state = "skid"
 	body.play("skid")
+
+# --- The spilled runes (spec "Runes that really spill") ---------------------------------
+
+const SpillToken = preload("res://scripts/enemies/rune_spill_token.gd")
+## His tablet tokens' names in the isle's tokens ("rune_knight_<rune>").
+const TOKEN_PREFIX := "rune_knight_"
+## Tokens spilled (a token, not only the crack), and where the last one
+## comes to rest.
+var tokens_spilled := 0
+var last_token_rest := Vector3.INF
+
+## The isle's tokens (scripts/kit_isle/kit_tokens.gd), or null.
+func _isle_tokens() -> Node3D:
+	var life = isle.get("life") if isle != null else null
+	return life.get("tokens") if life != null else null
+
+## A riposte cracked tablet `rune`, shoved him along `v`: its glyph token
+## bursts out of the tablet and arcs to rest by him, if the isle's tokens
+## still wait for it (not taken in this run or a saved earlier one, not
+## lying out already).
+func _spill_token(rune: String, v: Vector3) -> void:
+	var tokens := _isle_tokens()
+	var name_ := TOKEN_PREFIX+rune
+	if tokens == null or not tokens.has_method("waiting") or not tokens.call("waiting",name_):
+		print("rune knight: the %s rune's token is not his to spill" % rune)
+		return
+	var sock: Node3D = body.socket("chest_rune" if rune == "chest" else rune)
+	var from: Vector3 = sock.global_position if sock != null else position+Vector3.UP*height*0.6
+	var rest := _spill_rest(rune,v)
+	if rest == Vector3.INF:
+		print("rune knight: no clear spot for the %s rune's token" % rune)
+		return
+	var fly: Node3D = SpillToken.new()
+	isle.add_child(fly)
+	fly.call("setup",tokens,name_,from,rest)
+	tokens_spilled += 1
+	last_token_rest = rest
+	print("rune knight: the %s rune's token bursts out" % rune)
+
+## Where a spilled token rests (its middle, the kit tokens' height over the
+## ground), or INF: back the way the riposte came from (against `v`), off
+## to the tablet's side, KNOBS.spill_far m or nearer; on the deck kept
+## KNOBS.spill_margin in from its sides and ends, on the meadow on turf at
+## his level (never past the rim) and off the landing strip; never in stone.
+func _spill_rest(rune: String, v: Vector3) -> Vector3:
+	var back := -Vector3(v.x,0.0,v.z)
+	if back.length() < 0.1: back = _forward()
+	back = back.normalized()
+	var side := -1.0 if rune == "hand_l" else (1.0 if rune == "hand_r" else 0.0)
+	var space := get_world_3d().direct_space_state
+	var ball := SphereShape3D.new()
+	ball.radius = 0.3
+	var far := knob("spill_far")
+	# Spilled tokens lying out or in flight: a new one rests apart from them.
+	var lying: Array[Vector3] = []
+	var tokens := _isle_tokens()
+	if tokens != null:
+		for t: Dictionary in tokens.get("tokens"):
+			if String(t.name).begins_with(TOKEN_PREFIX) and t.at != Vector3.INF and not tokens.get("taken").has(t.name): lying.append(t.at)
+	for c: Node in isle.get_children():
+		if c is SpillToken: lying.append(c.get("rest"))
+	for d: float in [far,far*0.75,far*0.5]:
+		for deg: float in [35.0,0.0,70.0,-35.0,110.0,-70.0,150.0,-110.0,180.0]:
+			var way := back.rotated(Vector3.UP,deg_to_rad(deg*(side if side != 0.0 else 1.0)))
+			var p := position+way*d
+			if not on_meadow:
+				var l := _deck_local(p)
+				if absf(l.z) > knob("deck_half")-knob("spill_margin") or l.x < Art.HEAD+knob("spill_margin") or l.x > Art.SNAP-knob("spill_margin"): continue
+			elif _on_strip(p): continue
+			var ray := PhysicsRayQueryParameters3D.new()
+			ray.collision_mask = SIGHT_MASK
+			ray.from = p+Vector3.UP*1.5
+			ray.to = p+Vector3.DOWN*1.5
+			var hit := space.intersect_ray(ray)
+			if hit.is_empty() or (hit.normal as Vector3).y < 0.8: continue
+			# On the deck its own top (not a step up off it); on the meadow
+			# turf near his level.
+			var level := Art.TOP+Art.DECK if not on_meadow else position.y
+			if absf((hit.position as Vector3).y-level) > (0.08 if not on_meadow else 0.5): continue
+			var at: Vector3 = (hit.position as Vector3)+Vector3.UP*knob("spill_rest_y")
+			var crowded := false
+			for o: Vector3 in lying: if o.distance_to(at) < knob("spill_apart"): crowded = true
+			if crowded: continue
+			var q := PhysicsShapeQueryParameters3D.new()
+			q.shape = ball
+			q.collision_mask = 1
+			q.transform = Transform3D(Basis.IDENTITY,at)
+			if not space.intersect_shape(q,1).is_empty(): continue
+			return at
+	return Vector3.INF
 
 ## The brace: a shove's flat way turned along the deck till its across
 ## share is KNOBS.brace_across at most (along the way it leaned, or, square
