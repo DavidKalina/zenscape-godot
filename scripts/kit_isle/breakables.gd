@@ -52,6 +52,9 @@ const BREAKERS := {
 	&"plane":{"on":false,"strength":0.6},
 	&"dragon":{"on":false,"strength":1.2},
 	&"slam":{"on":true,"strength":0.5},
+	## The side slam's hit (scripts/side_slam.gd): posts, piers, walls,
+	## arches and lintels give; stairs and slabs hold.
+	&"side_slam":{"on":true,"strength":0.65},
 }
 
 ## The scene's enemies (scripts/enemies/enemy_field.gd).

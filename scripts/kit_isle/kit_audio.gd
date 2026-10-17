@@ -501,6 +501,15 @@ func body(events: Dictionary) -> void:
 		var hard := float(events.landed)
 		if hard > 6.5: shot("pat",clampf((hard-6.5)/12.0,0.0,1.0)*0.12,1.1)
 		if _surface == "wood": shot("creak",0.04+0.06*clampf(hard/10.0,0.0,1.0),1.15)
+	# The side slam (scripts/side_slam.gd): the coil's cloth, the launch's
+	# swish, and on the hit the slam's full thump and impact, a little
+	# higher (his shoulder, not his whole fall), with the grit.
+	if events.has("side_slam_coil"): shot("cloth",0.06,0.8)
+	if events.has("side_slam_launch"): shot("swish",0.14,0.85)
+	if events.has("side_slam"):
+		shot("thump",SLAM_THUMP.y*0.9,SLAM_PITCH.y*1.25)
+		shot("impact",SLAM_IMPACT*0.8,1.1)
+		shot("debris",SLAM_DEBRIS,1.3)
 	# The slam (scripts/slam.gd): his body dropping through the air, and
 	# on the touch his weight: the thump, deeper and louder from higher,
 	# the deep impact under it from a real height, turf and grit thrown.
