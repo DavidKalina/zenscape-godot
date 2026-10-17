@@ -558,6 +558,10 @@ const STUN_CHAIN_CAP := 3.0
 const STUN_CALM := 1.0
 ## The slam: its pull toward the pace asked, times his falling gravity.
 const SLAM_PULL := 2.0
+## The side slam's lunge (move "lunge", set by scripts/side_slam.gd, which
+## sets its pace each step): flat through the air, not steered, no wall,
+## wall run, ledge, twirl or sail taking him; this share of his gravity.
+const LUNGE_GRAVITY := 0.3
 
 ## The feel, this motor's own: each starts as its constant above, which the
 ## game keeps; a study (studies/character_study.gd) may turn them live. The
@@ -1413,7 +1417,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 		else: h = _run(h,want,top,delta)
 		surfing = move == "slide"
 		if surfing != surfed: out["slide"] = surfing
-	elif move == "wallrun" or move == "slam": pass
+	elif move == "wallrun" or move == "slam" or move == "lunge": pass
 	elif move == "sail": h = _sail_step(delta,want,h)
 	elif move != "wall" and _hop_air and _lock <= 0.0: h = _strafe(h,want,top,delta,twirl_steer if move == "twirl" else air_accel)
 	elif move != "wall": h = _steer(h,Vector2.ZERO if _lock > 0.0 else want,side_speed if move == "flip" else top,delta,twirl_steer if move == "twirl" else air_accel)
@@ -1483,7 +1487,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 		out["sail"] = false
 	elif _buffer > 0.0 and not grounded and move == "wallrun":
 		h = _wallrun_kick(h,out)
-	elif _buffer > 0.0 and not grounded and move != "slam" and (move == "wall" or _wall_since <= WALL_TOUCH):
+	elif _buffer > 0.0 and not grounded and move != "slam" and move != "lunge" and (move == "wall" or _wall_since <= WALL_TOUCH):
 		h = _kick_off(out)
 	elif pressed and not grounded and move == "slam" and not _from_water and sail.can_open(feet.y-ground_y,velocity.y):
 		# The slam cancelled: its drive past his fall given up, the sail out.
@@ -1492,7 +1496,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 		velocity.y = maxf(velocity.y,-terminal)
 		out["slam_cancel"] = true
 		h = _sail_open(h,out)
-	elif pressed and not grounded and move != "slam" and not _from_water and sail.can_open(feet.y-ground_y,velocity.y) \
+	elif pressed and not grounded and move != "slam" and move != "lunge" and not _from_water and sail.can_open(feet.y-ground_y,velocity.y) \
 			and _wall_near(want,h,ground,WALL_PROBE+0.8) == Vector2.ZERO:
 		h = _sail_open(h,out)
 	# The roll: falling from a height that stuns, the twirl pressed with the
@@ -1507,7 +1511,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 				out["roll_ready"] = true
 			elif _twirled: _tech_lock = tech_lockout
 	# The twirl: its button pressed anywhere in the air, once an airtime.
-	if twirl_pressed and not grounded and not _twirled and move != "wall" and move != "sail":
+	if twirl_pressed and not grounded and not _twirled and move != "wall" and move != "sail" and move != "lunge":
 		_twirled = true
 		_twirl = twirl_time
 		move = "twirl"
@@ -1528,7 +1532,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 	# The wall run: begun along a wall met at a glance, or run on.
 	if not grounded:
 		if move == "wallrun": h = _wallrun_step(delta,want,h,ground,out)
-		elif wallrun_on and not _wallran and move != "wall" and move != "flip" and move != "sail" and move != "slam": h = _wallrun_start(want,h,ground,out)
+		elif wallrun_on and not _wallran and move != "wall" and move != "flip" and move != "sail" and move != "slam" and move != "lunge": h = _wallrun_start(want,h,ground,out)
 	var moved: Vector3 = slide.call(feet,h*delta)
 	var under := _footing(ground,Vector2(moved.x,moved.z))
 	if grounded and under > feet.y+STEP_UP:
@@ -1584,7 +1588,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 				_no_cut = true
 				out["sail"] = false
 			else: move = "sail"
-		elif move != "wallrun" and move != "sail" and move != "slam": h = _on_wall(delta,want,h,going,ground,under,out)
+		elif move != "wallrun" and move != "sail" and move != "slam" and move != "lunge": h = _on_wall(delta,want,h,going,ground,under,out)
 		if move == "wall":
 			moved = feet
 			under = ground.call(Vector2(feet.x,feet.z))
@@ -1663,7 +1667,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 		elif y < under:
 			y = under
 		feet = Vector3(moved.x,y,moved.z)
-		if not grounded and move != "slam" and ledge.is_valid() and _grab(ledge,ground,slide):
+		if not grounded and move != "slam" and move != "lunge" and ledge.is_valid() and _grab(ledge,ground,slide):
 			if move == "wall": out["wall"] = false
 			out["grabbed"] = "air"
 			return out
@@ -2025,6 +2029,7 @@ func _arc(delta: float, jump: bool) -> float:
 		elif move == "twirl": g *= twirl_gravity
 		elif move == "wallrun": g *= wallrun_gravity
 		elif move == "slam": g *= fall*SLAM_PULL
+		elif move == "lunge": g *= LUNGE_GRAVITY
 		elif _light: g = long_gravity
 		elif v <= 0.0: g *= fall
 		elif not jump and not _no_cut: g *= cut

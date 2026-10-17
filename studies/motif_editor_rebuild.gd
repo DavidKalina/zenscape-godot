@@ -90,8 +90,11 @@ func sweep_all() -> void:
 # --- Keys ---------------------------------------------------------------------------------
 
 static func _base(d: Dictionary, p: Dictionary) -> String:
-	return var_to_str([str(p.id),int(p.seed),snappedf(float(p.get("weathered",0.0)),0.001),bool(p.get("fit",false)),
+	var base := var_to_str([str(p.id),int(p.seed),snappedf(float(p.get("weathered",0.0)),0.001),bool(p.get("fit",false)),
 		bool(p.get("breakable",true)) and bool(d.get("breakable",true))])
+	# What it holds (a kit cache's meta), only when it holds something.
+	if str(p.get("holds","")) != "": base += "|holds="+str(p.holds)
+	return base
 
 static func _fits(p: Dictionary) -> bool:
 	return bool(p.get("fit",false)) and str(p.id) in RuinKit.AQUEDUCT_PIECES

@@ -63,7 +63,14 @@ static func spots(isle: Node3D) -> Array[Dictionary]:
 		for tablet: String in KNIGHT_TABLETS:
 			out.append({"name":"rune_knight_"+tablet,"at":Vector3.INF,
 				"move":"Parry the rune knight's slash and riposte to spill his %s rune" % tablet.replace("_l"," left").replace("_r"," right")})
+	# With --kit-caches (studies/aqueduct_isle_caches.gd), a rune hidden in
+	# each glowing ruin piece: laid when a slam breaks it open.
+	if Caches.wanted():
+		for cache: String in Caches.names():
+			out.append({"name":cache,"at":Vector3.INF,"move":"Slam the glowing ruin open"})
 	return out
+
+const Caches = preload("res://studies/aqueduct_isle_caches.gd")
 
 ## The rune knight's tablets, as his runes are named (rune_knight.gd `runes`).
 const KNIGHT_TABLETS := ["hand_l","hand_r","chest"]

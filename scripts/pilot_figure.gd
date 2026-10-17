@@ -180,7 +180,20 @@ const WET_MOST := 0.8
 ## stretch, a crouch's squash, the long jump's tip forward (and the lean it
 ## holds, radians), the slap onto a wall, the stretch of a kick off it.
 const MOVE_CLIPS := {"crouch":["crouch",1.0],"long":["long_jump",0.5],"wall":["wall_slide",0.5],"kick":["wall_kick",0.4],"pump":["pump",0.5],
-	"slide":["slide",0.8],"twirl":["twirl",0.4],"flip":["side_flip",0.7]}
+	"slide":["slide",0.8],"twirl":["twirl",0.4],"flip":["side_flip",0.7],"lunge":["long_jump",0.5]}
+## The side slam (scripts/side_slam.gd), over its clip: the coil (the host
+## sets `lunge_coil`, 0..1, through the hold) winds him back low (yaw, rad;
+## lean, rad; squash); the lunge turns him side-on to his way, a shoulder
+## leading (yaw), rolled into it (bank) and tipped forward (lean), with a
+## stretch kick as it leaves. The weight eases in over LUNGE_IN s.
+const COIL_YAW := -0.7
+const COIL_LEAN := 0.25
+const COIL_SQUASH := 0.22
+const LUNGE_YAW := 1.35
+const LUNGE_BANK := -0.75
+const LUNGE_LEAN := -0.1
+const LUNGE_KICK := 6.0
+const LUNGE_IN := 0.05
 ## Under the pocket sail, the sheet's "float with cap": he holds on to his
 ## hat overhead (scripts/pocket_sail_figure.gd), a mitt gripping the brim
 ## either side, and hangs from it. The seconds his arms take to go up; his
@@ -395,6 +408,9 @@ var _has_moves := false
 var _move_weights := {}
 var _move_times := {}
 var _move_was := ""
+## The side slam's coil now (0..1), set by the host each frame.
+var lunge_coil := 0.0
+var _lunge := 0.0
 ## The air: the model has its clips; 0 to 1 into them, the fall's share over
 ## the rise, and the loops' time. The spins: the yaw's and the roll's angle
 ## now, where each started, its seconds in and its whole (turns, seconds).
@@ -784,6 +800,9 @@ func drive(pose: PilotPose, delta: float) -> Dictionary:
 	_swim = move_toward(_swim,0.0,delta/SWIM_FADE)
 	var hold: String = pose.hold if _has_ledge else ""
 	var move: String = pose.move if hold == "" else ""
+	# The side slam's coil off a slide: crouched back (the crouch's clip
+	# under the coil's wind-back), from the press on.
+	if lunge_coil > 0.0 and pose.grounded and (move == "" or move == "roll"): move = "crouch"
 	_moves(move,delta)
 	if hold != "" or _hold_was != "": return _drive_ledge(pose,hold,delta)
 	_ledge = move_toward(_ledge,0.0,delta/GRAB_FADE)
@@ -846,7 +865,10 @@ func drive(pose: PilotPose, delta: float) -> Dictionary:
 	elif move == "long": lean_to = LONG_LEAN
 	elif move == "slide": lean_to = clampf(atan(climb)*SLIDE_TILT,-SLIDE_TIP_MOST,0.15)
 	var lean := _lean.step(lean_to,delta)
-	_tilt.rotation = Vector3(lean,_yaw.step(0.0,delta),bank)
+	_lunge = move_toward(_lunge,1.0 if move == "lunge" else 0.0,delta/LUNGE_IN)
+	var lw := smoothstep(0.0,1.0,_lunge)
+	var cw := smoothstep(0.0,1.0,lunge_coil)
+	_tilt.rotation = Vector3(lean+LUNGE_LEAN*lw+COIL_LEAN*cw,_yaw.step(0.0,delta)+LUNGE_YAW*lw+COIL_YAW*cw,bank+LUNGE_BANK*lw)
 	# Off the ground: a dip taking off, then stretched along the way it
 	# goes; the head nods with it and the arms fly out (the air's clips
 	# throw them most of the way).
@@ -868,6 +890,8 @@ func drive(pose: PilotPose, delta: float) -> Dictionary:
 	_air_fall = move_toward(_air_fall,clampf((AIR_RISEN-rise)/(AIR_RISEN-AIR_FALLEN),0.0,1.0),delta*5.0)
 	_air_time = fmod(_air_time+delta,AIR_LENGTH)
 	_stretch_to = 1.0 if pose.grounded else 1.0+AIR_STRETCH*clampf(absf(rise)/AIR_FAST,0.0,1.0)
+	if lunge_coil > 0.0: _stretch_to = 1.0-COIL_SQUASH*smoothstep(0.0,1.0,lunge_coil)
+	elif move == "lunge": _stretch_to = 1.0
 	_nod_to = 0.0 if pose.grounded else clampf(rise*NOD,-NOD_MOST,NOD_MOST)
 	_arms_to = 0.0 if pose.grounded or move == "sail" or (_has_moves and not aloft) else (AIR_ARMS if _has_air else 1.0)
 	_look_to = clampf(turned*LOOK,-LOOK_MOST,LOOK_MOST) if pose.grounded else 0.0
@@ -1081,6 +1105,7 @@ func _moves(move: String, delta: float) -> void:
 			"long": _lean.v -= LONG_TIP
 			"wall": _stretch.v -= WALL_SLAP
 			"kick": _stretch.v += KICK_STRETCH
+			"lunge": _stretch.v += LUNGE_KICK
 		if _move_was == "crouch" and move == "": _stretch.v += CROUCH_SQUASH*0.5
 		_move_was = move
 	if _move_times.has(move): _move_times[move] += delta

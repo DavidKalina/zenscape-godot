@@ -42,6 +42,7 @@ extends "res://studies/kit_isle.gd"
 ##   New land: draw a loop out past the edge; Trash: click a thing away
 ## Playing: the real pilot, motor and input; P back to editing, as it was.
 const MotifAuthored = preload("res://scripts/kit_isle/motif_authored.gd")
+const KitCaches = preload("res://scripts/kit_isle/kit_caches.gd")
 const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
 const YardSky = preload("res://studies/motif_yard_sky.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
@@ -122,7 +123,7 @@ const MODE_TOOL := {"hand:pinch":"raise","hand:groove":"lower","paddle:plane":"s
 ## The roll's three size pips: the brush radius each gives.
 const PIP_RADIUS := [3.0,5.0,8.5]
 const HINTS := {
-	"select":"Select: click a piece or marker, drag it along the ground · Z X turn · B breakable · Del delete · Cmd/Ctrl K the palette",
+	"select":"Select: click a piece or marker, drag it along the ground · Z X turn · B breakable · I holds a rune · Del delete · Cmd/Ctrl K the palette",
 	"raise":"Raise: drag over the land, hold still to pile it up · wheel or [ ] radius",
 	"lower":"Lower: drag over the land · wheel or [ ] radius",
 	"smooth":"Smooth: drag over the land · wheel or [ ] radius",
@@ -817,6 +818,7 @@ func _edit_input(event: InputEvent) -> void:
 				else: delete_selected()
 			KEY_G: toggle_dress()
 			KEY_B: toggle_breakable()
+			KEY_I: cycle_holds()
 			KEY_H: if grid != null: grid.toggle()
 			KEY_F: if views != null: views.frame(views.pointer)
 			KEY_V: if views != null: views.eye(views.pointer)
@@ -1025,6 +1027,33 @@ func toggle_breakable() -> void:
 	_status_line = "%s #%d %s" % [str(p.id),selected,"breakable" if not p.has("breakable") else "unbreakable"]
 	_show_status()
 
+## What the selected piece holds, the next of KitCaches HOLDS and then
+## nothing again (its "holds"; absent: nothing, so a saved motif reads as
+## before). The build only tags it (meta "holds": scripts/kit_isle/
+## kit_caches.gd glints it and lets the find out when it breaks); here it
+## shows the glint.
+func cycle_holds() -> void:
+	if selected < 0 or selected >= (data.pieces as Array).size(): return
+	snapshot()
+	var p: Dictionary = data.pieces[selected]
+	var order: Array = [""]+KitCaches.HOLDS
+	var next: String = order[(order.find(str(p.get("holds","")))+1)%order.size()]
+	if next == "": p.erase("holds")
+	else: p.holds = next
+	refresh_pieces()
+	var node := piece_node(selected)
+	var breaks := bool(p.get("breakable",true)) and bool(data.get("breakable",true))
+	_status_line = "%s #%d %s" % [str(p.id),selected,("holds a %s%s" % [next,"" if breaks else " (but it is unbreakable: B)"]) if next != "" else "holds nothing"]
+	if node == null: _status_line += " (no node)"
+	_show_status()
+
+## The glint on every piece that holds something (the game's look of a cache).
+func mark_caches() -> void:
+	var holder := pieces_holder()
+	if holder == null: return
+	for node: Node in holder.get_children():
+		if node is Node3D: KitCaches.dress(node as Node3D,not node.has_meta("holds"),KitCaches.tint_of(str(node.get_meta("holds",""))))
+
 ## The whole motif breakable or not (its "breakable"; absent is breakable).
 func toggle_motif_breakable() -> void:
 	snapshot()
@@ -1072,6 +1101,7 @@ func hang_ropes() -> void:
 		rope_host.motor = motor
 		if foot_pieces == null: foot_pieces = rope_host
 	for r: Node3D in rope_host.ropes.duplicate(): rope_host.remove_rope(r)
+	mark_caches()
 	var holder := pieces_holder()
 	if holder == null: return
 	for node: Node in holder.get_children():
@@ -1746,7 +1776,8 @@ func _show_status() -> void:
 	if sel_marker != "": sel = " · marker %s" % sel_marker
 	elif selected >= 0 and selected < (data.pieces as Array).size():
 		var p: Dictionary = data.pieces[selected]
-		sel = " · %s #%d turned %d deg%s" % [str(p.id),selected,int(p.get("turn",0.0))," · unbreakable" if not bool(p.get("breakable",true)) else ""]
+		sel = " · %s #%d turned %d deg%s%s" % [str(p.id),selected,int(p.get("turn",0.0))," · unbreakable" if not bool(p.get("breakable",true)) else "",
+			(" · holds a %s" % p.holds) if p.has("holds") else ""]
 	var line := "%d strokes · %d ponds · %d pieces · radius %.1f m · live %d ms, dressed %d ms%s" % [(data.strokes as Array).size(),(data.waters as Array).size(),(data.pieces as Array).size(),brush_r,live_ms,dress_ms,sel]
 	if _status_line != "": line = _status_line+"   ·   "+line
 	panel.say(hint,line,tool in BRUSHES or tool in ["ravine","water"] or STAMPS.has(tool))

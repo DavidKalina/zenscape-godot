@@ -5,8 +5,8 @@ extends Node3D
 ## Charge (0..1) builds from moving well, never from a button: pace over
 ## FLOW_PACE, the notable moves (slide, long jump, wall run / kick, side flip,
 ## twirl, a rope ride, the jump chain) and fast airtime. Walking and plain
-## running add nothing, and the open pocket sail builds nothing. After GRACE s
-## without a gain it drains at DECAY a second.
+## running add nothing, and the open pocket sail builds nothing. It never
+## drains over time (DRAIN off): only spending it takes it down.
 ##
 ## Press the key with at least MIN_RELEASE charge: all of it is spent, he is
 ## tossed straight up (flat pace kept, a fall cancelled, the sail ready again)
@@ -35,6 +35,9 @@ const MOVE_GAIN := 0.12      # a second in a notable move or a chain
 const AIR_GAIN := 0.10       # a second airborne above FLOW_PACE
 const MOVE_BUMP := 0.06      # on starting a notable move
 const FLOW_MOVES := ["slide","long","wallrun","kick","flip","twirl"]
+## Off (the default): the charge never drains over time; it only goes down
+## when spent. On: the old drains below (GRACE/DECAY, the SEG_* ones).
+const DRAIN := false
 const GRACE := 0.9           # s after the last gain before it drains
 const DECAY := 0.4           # per s once draining
 const MIN_RELEASE := 0.15    # least charge that does anything
@@ -144,6 +147,11 @@ signal empty_press
 ## true when the press parried wind thrown at him and is spent. Null (the
 ## default): every press is the updraft's, as before.
 var parry: Object = null
+## The side slam (scripts/side_slam.gd), set by its `setup`: asked on each
+## press (`arm`) and each frame (`before`); null, the key is as ever.
+var side_slam: Object = null
+## Whether the key is held this frame (the host's), for the side slam's hold.
+var held := false
 var _air_ups := 0               # updrafts since he last stood on the ground
 var updrafts := 0
 var last_rise := 0.0            # m planned for the last updraft
@@ -213,6 +221,9 @@ func update(delta: float, m: PilotMotor, pressed: bool, want := Vector2.ZERO) ->
 	_charge(delta,m)
 	if m.grounded: _air_ups = 0
 	if pressed and parry != null and parry.call("try",m): pressed = false
+	if side_slam != null:
+		if pressed and side_slam.call("arm",m,self): pressed = false
+		side_slam.call("before",delta,m,held,want)
 	if pressed and not burst(m,want) and not updraft(m) and segmented and not can_spend():
 		empty_press.emit()
 	_ride_top(delta,m)
@@ -267,7 +278,7 @@ func _air_charge(delta: float, m: PilotMotor) -> void:
 		charge = minf(charge+float(SEG_BUMPS[key]),1.0)
 		_quiet = 0.0
 	if key in SEG_HOLDS: gain += float(SEG_HOLDS[key])
-	if not m.grounded and m.rider == null and _air_ups == 0 and m.speed() > FLOW_PACE*UNIT:
+	if not m.grounded and m.rider == null and _air_ups == 0 and m.move != "lunge" and m.speed() > FLOW_PACE*UNIT:
 		gain += SEG_AIR
 	_prev_move = key
 	if gain > 0.0:
@@ -278,6 +289,7 @@ func _air_charge(delta: float, m: PilotMotor) -> void:
 
 func _decay(delta: float) -> void:
 	_quiet += delta
+	if not DRAIN: return
 	if not (segmented and AIR_CHARGE):
 		if _quiet > GRACE: charge = maxf(charge-DECAY*delta,0.0)
 		return
@@ -335,6 +347,19 @@ func updraft(m: PilotMotor) -> bool:
 func spend(m: PilotMotor, drift := Vector3.ZERO) -> float:
 	if not can_spend() or m.recovering() or m.swimming or m.seized(): return 0.0
 	var p := _take(SEG_SHOT_P)
+	_let_go(drift)
+	return p
+
+## The whole charge spent at once (the side slam, scripts/side_slam.gd):
+## the wake comes away drifting `drift` m/s, and charging locks as after a
+## burst. What was spent.
+func spend_all(m: PilotMotor, drift := Vector3.ZERO) -> float:
+	var p := charge
+	charge = 0.0
+	_quiet = 0.0
+	spent = true
+	_spent_t = 0.0
+	_spent_pace = m.speed()
 	_let_go(drift)
 	return p
 
