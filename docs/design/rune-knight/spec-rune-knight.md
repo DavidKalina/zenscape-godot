@@ -368,6 +368,11 @@ changing. Names here are final once built on; change one only by a
 - **Contract additions (task 12):** effect `rune_spill` (form: the rune's
   name; one-shot: the riposte's spill), clip `gone` (over the island's
   rim, out of sight below: the body hides; `death` "gone").
+- **Contract addition (task 15):** `aim(point: Vector3)`, where he looks
+  (Vector3.INF lets go): the real body turns his head and some of his
+  chest to it on the clips that face you; the stand-in ignores it. The
+  mind wires it, and `eye_glow` (`set_effect`), to his fight: on while he
+  tracks, winds up, catches or teeters, off once he has lost you.
 
 ## Tasks (the first iteration orders these; keep each one a checkpoint)
 
