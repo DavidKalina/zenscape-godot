@@ -432,6 +432,122 @@ def turn():
                 beats={"plant": [0.0, TURN_STEP]})
 
 
+# ------------------------------------------------------------------ footwork
+# The fight's footwork (task 17), in place at the mind's paces like the walk:
+# a strafe step STRAFE_STRIDE to his side every STRAFE_STEP s, a back step
+# BACK_STRIDE every STEP s.
+STRAFE_STEP = 0.85
+STRAFE_STRIDE = 0.13 * H
+STRAFE_PACE = STRAFE_STRIDE / STRAFE_STEP
+STRAFE_WIDE = 0.03      # m: each foot set out wider than its rest
+BACK_STRIDE = 0.2 * H
+BACK_PACE = BACK_STRIDE / STEP
+# The strafe's and the back walk's held top: his guard, sunk lower.
+FOOT_GUARD = {"lean": 6.0, "chest": 1.5, "nod": -4.0, "hpitch": 3.0,
+              **both(swing=20.0, out=14.0, bend=50.0, wrist=9.0)}
+
+
+def _strafe_gait(d):
+    """d +1 to his right, -1 to his left. The lead foot (the side he goes)
+    steps out and plants heavy at 0, the trail foot closes and plants at a
+    step; the feet never cross (the gap swings wide and narrow by a stride).
+    The weight rocks onto each planted foot, the hips drop on the side that
+    lifts, the spine counters it, the lead arm opens on the step out."""
+    lead, trail = ("r", "l") if d > 0 else ("l", "r")
+    cyc = 2 * STRAFE_STEP
+    sw = SWING_SHARE * STRAFE_STEP
+    stance = cyc - sw
+    a = STRAFE_PACE * stance * 0.5
+    lift = 0.05 * H
+
+    def gait(t, v):
+        for s, off in ((lead, 0.0), (trail, STRAFE_STEP)):
+            sg = 1.0 if s == "r" else -1.0
+            tl = (t - off) % cyc
+            base = sg * STRAFE_WIDE
+            if tl < stance:
+                v[f"fx.{s}"] = base + d * (a - STRAFE_PACE * tl)
+                v[f"fz.{s}"] = 0.0
+                v[f"pitch.{s}"] = 0.0
+            else:
+                u = (tl - stance) / sw
+                e = smooth(u)
+                e = e + 0.05 * math.sin(math.pi * e)
+                v[f"fx.{s}"] = base + d * (-a + 2 * a * min(e, 1.0))
+                v[f"fz.{s}"] = lift * math.sin(math.pi * min(u ** 0.8, 1.0))
+                v[f"pitch.{s}"] = -7.0 * math.sin(math.pi * u)   # toe a touch down
+            v[f"yaw.{s}"] = -sg * 7.0                          # toes out, braced
+        v["fy.l"] = 0.05
+        v["fy.r"] = -0.07
+        ph = (t % STRAFE_STEP) / STRAFE_STEP
+        v["bob"] = settle(ph, -0.105, -0.07)
+        c = math.cos(2 * math.pi * (t - 0.12) / cyc)          # +1: on the lead foot
+        v["sway"] = d * 0.03 * c
+        v["roll"] = -d * 2.8 * c
+        v["side"] = d * 1.6 * c
+        v["twist"] = d * 1.5 * c
+        op = _bump((t % cyc) / cyc, 0.0, 0.3)                 # the step out
+        v[f"out.{lead}"] += 6.0 * op
+        v[f"swing.{lead}"] -= 4.0 * op
+        v[f"out.{trail}"] += 3.0 * _bump((t % cyc) / cyc, 0.5, 0.3)
+        v["lean"] += 1.0 * math.cos(4 * math.pi * t / cyc)
+    return gait
+
+
+def strafe(form):
+    """A heavy side-step, helm and chest on you (the mind keeps his root
+    facing you): out with the lead foot, planted hard, the trail foot
+    dragged in after, the guard held up."""
+    d = 1.0 if form == "right" else -1.0
+    return Clip(f"strafe-{form}", 2 * STRAFE_STEP, [(0.0, dict(FOOT_GUARD))], extra=_strafe_gait(d),
+                beats={"plant": [0.0, STRAFE_STEP]})
+
+
+def _back_gait(t, v):
+    cyc = 2 * STEP
+    sw = SWING_SHARE * STEP
+    stance = cyc - sw
+    half = BACK_PACE * stance * 0.5
+    lift = 0.05 * H
+    for s, off in (("l", 0.0), ("r", STEP)):
+        tl = (t - off) % cyc
+        if tl < stance:
+            # down on the toe behind him, rolled flat, then the toes come up
+            # as the heel takes the last of it in front
+            v[f"fy.{s}"] = -half + BACK_PACE * tl
+            v[f"fz.{s}"] = 0.0
+            toe = -12.0 * (1 - smooth(tl / 0.2))
+            heel = 14.0 * smooth((tl - (stance - 0.28)) / 0.28)
+            v[f"pitch.{s}"] = toe + heel
+        else:
+            u = (tl - stance) / sw
+            e = smooth(u)
+            v[f"fy.{s}"] = half - 2 * half * min(e, 1.0)
+            v[f"fz.{s}"] = lift * math.sin(math.pi * min(u ** 0.85, 1.0))
+            v[f"pitch.{s}"] = 14.0 * (1 - smooth(u / 0.4)) - 12.0 * smooth((u - 0.45) / 0.55)
+    v["fx.l"] = -0.02
+    v["fx.r"] = 0.02
+    ph = (t % STEP) / STEP
+    v["bob"] = settle(ph, -0.095, -0.06)
+    a = 2 * math.pi * t / cyc
+    left_support = math.cos(a - 2 * math.pi * 0.62 / cyc)
+    v["sway"] = -0.028 * left_support
+    v["roll"] = 2.2 * left_support
+    v["side"] = 1.0 * left_support
+    v["yaw"] = 3.0 * math.cos(a)
+    v["twist"] = -2.5 * math.cos(a)
+    aa = a - 2 * math.pi * 0.12 / cyc
+    v["swing.l"] += 5.0 * math.cos(aa)
+    v["swing.r"] -= 5.0 * math.cos(aa)
+
+
+def walk_back():
+    """Backing off a step at a time, guard up and glaring: each foot reached
+    back and set down on its toe, the weight settling onto it heavily."""
+    return Clip("walk-back", 2 * STEP, [(0.0, {**FOOT_GUARD, "lean": 3.0})], extra=_back_gait,
+                beats={"plant": [0.0, STEP]})
+
+
 def notice():
     """A start: a flinch (head dips, he gathers), then he snaps upright, head
     up, arms flung out, shoulders up; then sinks into a guard, knees bent,
@@ -832,6 +948,6 @@ def leap_land():
 
 
 def clips():
-    return [idle(), walk(), turn(), notice(), gather(), gather_blade(), slash("level"), slash("high"),
+    return [idle(), walk(), turn(), strafe("left"), strafe("right"), walk_back(), notice(), gather(), gather_blade(), slash("level"), slash("high"),
             throw(), catch(), ret(), skid(), teeter(), reel(),
             kneel(), crumble(), fall(), leap_up(), leap_down(), leap_land()]

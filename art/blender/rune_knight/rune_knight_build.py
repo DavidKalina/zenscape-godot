@@ -642,20 +642,25 @@ CLIPS = kc.clips()
 ACTIONS = {c.name: kc.bake(KRIG, c) for c in CLIPS}
 kc.reset(rig)
 # The walk's planted feet, checked: the sole under a flat foot (ankle down
-# SOLE) carried forward at the mind's pace must not move.
-wc = next(c for c in CLIPS if c.name == "walk")
-slide = 0.0
-prev = None
-for f in range(int(wc.length * kc.FPS) + 1):
-    t = f / kc.FPS
-    D = KRIG.moves(wc, t)
-    v = wc.values(t)
-    p = D["foot_l"] @ JOINT["foot_l"] + V((0, kc.PACE * t, 0))
-    flat = abs(v["pitch.l"]) < 0.5 and v["fz.l"] < 1e-4
-    if flat and prev is not None:
-        slide = max(slide, (p - prev).length)
-    prev = p if flat else None
-print("RK_WALK_SLIDE max per frame (m)", round(slide, 5))
+# SOLE) carried along at the mind's pace must not move. Likewise the
+# footwork (task 17): the strafe sideways, the back walk backwards.
+GAITS = {"walk": V((0, kc.PACE, 0)), "walk-back": V((0, -kc.BACK_PACE, 0)),
+         "strafe-right": V((kc.STRAFE_PACE, 0, 0)), "strafe-left": V((-kc.STRAFE_PACE, 0, 0))}
+for gname, vel in GAITS.items():
+    wc = next(c for c in CLIPS if c.name == gname)
+    slide = 0.0
+    for fs in kc.SIDES:
+        prev = None
+        for f in range(int(wc.length * kc.FPS) + 1):
+            t = f / kc.FPS
+            D = KRIG.moves(wc, t)
+            v = wc.values(t)
+            p = D[f"foot_{fs}"] @ JOINT[f"foot_{fs}"] + vel * t
+            flat = abs(v[f"pitch.{fs}"]) < 0.5 and v[f"fz.{fs}"] < 1e-4
+            if flat and prev is not None:
+                slide = max(slide, (p - prev).length)
+            prev = p if flat else None
+    print("RK_WALK_SLIDE", gname, "max per frame (m)", round(slide, 5))
 
 if SAVE_BLEND:
     bpy.ops.wm.save_as_mainfile(filepath=str(HERE / "rune_knight.blend"))
@@ -755,8 +760,8 @@ if RENDER:
             row = []
             for t in times:
                 KRIG.apply(c, t)
-                carry = kc.PACE * t if (c.name == "walk" and ri == 1) else 0.0
-                rig.location = (0, carry - (kc.PACE * c.length * 0.5 if c.name == "walk" and ri == 1 else 0.0), 0)
+                vy = GAITS[c.name].y if (c.name in GAITS and ri == 1) else 0.0
+                rig.location = (0, vy * (t - c.length * 0.5), 0)
                 bpy.context.view_layer.update()
                 row.append(shoot(RENDER / "_cell.png", eye, at, lens=lens, res=(400, 520)))
             rows.append(np.concatenate(row, axis=1))

@@ -85,6 +85,10 @@ const CLIPS := {
 	"idle": {"length": 2.0, "loop": true, "beats": {}},
 	"walk": {"length": 0.95, "loop": true, "beats": {"plant": -1.0}},
 	"turn": {"length": 0.8, "loop": true, "beats": {"plant": -1.0}},
+	# The fight's footwork (task 17): `strafe` forms "left"/"right" (a heavy
+	# side-step, a step's length; the mind carries him at shape().strafe_pace)
+	# and `walk` form "back" (backing off at shape().back_pace).
+	"strafe": {"length": 0.85, "loop": true, "beats": {"plant": -1.0}},
 	"notice": {"length": 0.6, "loop": false, "beats": {}},
 	"gather": {"length": 1.0, "loop": false, "beats": {"grab": 0.25, "full": 1.0}},
 	"throw": {"length": 0.7, "loop": false, "beats": {"release": 0.35}},
@@ -187,6 +191,10 @@ const KEYS := {
 	"kneel": [[0.0,REST],[0.2,[0.15,0.25,0.4,0.15,-0.15,0.06]],[0.45,[0.35,0.2,0.3,0.5,-0.3,0.215]],[0.65,[0.75,0.1,0.55,0.5,-0.45,0.205,0.2,0.35,-1.35,0.15,0.0]],[1.1,[0.85,0.08,0.65,0.48,-0.55,0.21,0.22,0.3,-1.4,0.15,0.0]]],
 	# Crumble's shudder before he comes apart (then the blocks fall).
 	"crumble": [[0.0,[0.85,0.08,0.65,0.48,-0.55,0.21,0.22,0.3,-1.4,0.15,0.0]],[0.2,[0.6,0.1,0.5,0.6,-0.7,0.22,0.3,0.3,-1.45,0.1,0.0]]],
+	# The footwork: his guard held, sunk a little lower (the feet step under
+	# it procedurally, wherever his root goes).
+	"strafe": [[0.0,[0.32,0.42,1.0,0.07,-0.02,0.045]]],
+	"walk:back": [[0.0,[0.3,0.36,0.95,0.03,-0.03,0.035]]],
 	"stagger": [[0.0,REST],[0.08,[0.9,1.15,0.3,-0.5,0.45,0.0]],[0.4,[1.8,0.95,0.5,-0.38,0.3,0.04]],[0.75,[0.7,0.8,0.4,-0.2,0.0,0.08]],[0.9,[0.25,0.6,0.6,0.25,-0.2,0.11]],[1.3,[0.3,0.45,0.8,0.18,-0.08,0.07]],[1.8,[0.3,0.35,0.95,0.06,0.0,0.025]]],
 }
 ## Steps in `stagger` are quick and short (s).
@@ -214,6 +222,10 @@ const BLADE_GROW := 0.8
 ## foot further than HOME_SLOP (m) from its spot steps in idle.
 const SWING_SHARE := 0.62
 const STRIDE := 0.3
+## The footwork's steps (shares of tall): the strafe's side-step, the back
+## walk's step (rune_knight_clips.py STRAFE_STRIDE, BACK_STRIDE).
+const STRAFE_STRIDE := 0.13
+const BACK_STRIDE := 0.2
 const LIFT := 0.09
 const SETTLE := 0.035
 const SWAY := 0.035
@@ -362,7 +374,9 @@ func shape() -> Dictionary:
 	var step: float = CLIPS.walk.length
 	var stride := STRIDE*tall
 	return {"radius":ROOM*tall,"height":tall,"eye":_sockets.eye.position.y if _sockets.has("eye") else 0.9*tall,
-		"reach":REACH*tall,"stride":stride,"step_time":step,"pace":stride/step}
+		"reach":REACH*tall,"stride":stride,"step_time":step,"pace":stride/step,
+		"strafe_pace":STRAFE_STRIDE*tall/float(CLIPS.strafe.length),
+		"back_pace":BACK_STRIDE*tall/step}
 
 # --- The API ------------------------------------------------------------------------
 
@@ -370,7 +384,7 @@ func play(name_: String, form := "") -> void:
 	if not CLIPS.has(name_):
 		push_warning("rune knight body: no clip %s" % name_)
 		return
-	if name_ == clip and CLIPS[name_].loop: return
+	if name_ == clip and form == clip_form and CLIPS[name_].loop: return
 	clip = name_
 	clip_form = form
 	clip_time = 0.0
@@ -477,7 +491,7 @@ func _leap_beats() -> void:
 ## The feet: a step under way goes on; else in `walk`/`turn` the trailing
 ## foot steps, in anything else a foot off its spot steps home.
 func _step(delta: float) -> void:
-	var moving := clip == "walk" or clip == "turn"
+	var moving := clip == "walk" or clip == "turn" or clip == "strafe"
 	if _swing < 0:
 		var pick := -1
 		if moving:
@@ -599,7 +613,7 @@ func _pose(lift: float, swing: float) -> void:
 		_waist.rotation.z = -amt*u.x+sway*0.9
 	for i in range(2): _reach(i)
 	var arm := 0.0
-	if _swing >= 0 and clip == "walk":
+	if _swing >= 0 and clip == "walk" and clip_form != "back":
 		arm = sin(swing*PI)*0.22*(1.0 if _swing == 0 else -1.0)
 	_arm[0].rotation = Vector3(float(k[0])+arm,0.0,-float(k[1]))
 	_forearm[0].rotation.x = float(k[2])+maxf(arm,0.0)*0.5

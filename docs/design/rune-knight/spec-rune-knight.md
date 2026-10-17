@@ -374,6 +374,12 @@ changing. Names here are final once built on; change one only by a
   mind wires it, and `eye_glow` (`set_effect`), to his fight: on while he
   tracks, winds up, catches or teeters, off once he has lost you.
 
+- **Contract addition (task 17):** clip `strafe` (loop, forms `left`,
+  `right`; `plant` per footfall) and `walk` form `back`; `shape()` gains
+  `strafe_pace` and `back_pace` (m/s), the paces the mind carries his root
+  at so the planted feet hold. A loop clip played again with another form
+  restarts.
+
 ## Tasks (the first iteration orders these; keep each one a checkpoint)
 
 1. His body on the deck and his patrol, with the flag. Still of him on the

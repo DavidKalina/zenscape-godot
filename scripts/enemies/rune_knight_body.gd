@@ -56,7 +56,8 @@ const CLIPS: Dictionary = Standin.CLIPS
 const LEAP: Dictionary = Standin.LEAP
 const SOCKETS: Array = Standin.SOCKETS
 ## The walk's and turn's footfalls in their glb loops (s).
-const PLANTS := {"walk": [0.0,0.95], "turn": [0.0,0.8]}
+const PLANTS := {"walk": [0.0,0.95], "turn": [0.0,0.8], "walk-back": [0.0,0.95],
+	"strafe-left": [0.0,0.85], "strafe-right": [0.0,0.85]}
 ## Clips the glb names otherwise (the stand-in's old `stagger` is the reel).
 const ANIM_OF := {"stagger": "reel"}
 const BLEND := 0.14
@@ -180,7 +181,9 @@ func shape() -> Dictionary:
 		var y := to_local(e.global_position).y
 		if y > 0.75*tall and y < 0.98*tall: eye_y = y
 	return {"radius":ROOM*tall,"height":tall,"eye":eye_y,
-		"reach":REACH*tall,"stride":stride,"step_time":step,"pace":stride/step}
+		"reach":REACH*tall,"stride":stride,"step_time":step,"pace":stride/step,
+		"strafe_pace":Standin.STRAFE_STRIDE*tall/float(CLIPS.strafe.length),
+		"back_pace":Standin.BACK_STRIDE*tall/step}
 
 # --- The API ------------------------------------------------------------------------
 
@@ -188,7 +191,7 @@ func play(name_: String, form := "") -> void:
 	if not CLIPS.has(name_):
 		push_warning("rune knight body: no clip %s" % name_)
 		return
-	if name_ == clip and CLIPS[name_].loop: return
+	if name_ == clip and form == clip_form and CLIPS[name_].loop: return
 	clip = name_
 	clip_form = form
 	clip_time = 0.0
@@ -258,7 +261,7 @@ func _process(delta: float) -> void:
 		if at >= 0.0 and clip_time >= at and not _sent.has(beat):
 			_sent[beat] = true
 			beat_reached.emit(clip,beat)
-	if clip == "walk" or clip == "turn": _plants()
+	if clip == "walk" or clip == "turn" or clip == "strafe": _plants()
 	if not c.loop and clip_time >= float(c.length) and not _sent.has("_end"):
 		_sent["_end"] = true
 		beat_reached.emit(clip,"end")

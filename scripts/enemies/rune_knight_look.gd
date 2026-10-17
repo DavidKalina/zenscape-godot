@@ -72,7 +72,7 @@ const EYE_REST := 0.15
 const SLIT := Color(0.02,0.018,0.016)
 
 ## The clips that loop.
-const LOOPS := ["idle","walk","turn","fall"]
+const LOOPS := ["idle","walk","turn","fall","walk-back","strafe-left","strafe-right"]
 
 var height := MODEL_HEIGHT
 var model: Node3D

@@ -24,10 +24,10 @@ const REACH_UP := 0.12
 ## How fast a foot's ground offset follows (1/s).
 const FOOT_EASE := 14.0
 ## Clips with his feet planted on the ground.
-const GROUNDED := ["idle","walk","turn","notice","gather","slash","throw","catch",
+const GROUNDED := ["idle","walk","turn","strafe","notice","gather","slash","throw","catch",
 	"return","stagger","reel","skid","teeter","kneel","crumble"]
 ## Aim: clips that face you, with the chest's share; caps (rad).
-const AIM_CLIPS := {"idle":0.3,"walk":0.25,"turn":0.25,"notice":0.35,"gather":0.45,
+const AIM_CLIPS := {"idle":0.3,"walk":0.25,"turn":0.25,"strafe":0.5,"notice":0.35,"gather":0.45,
 	"throw":0.3,"slash":0.15,"catch":0.6,"return":0.3}
 const AIM_YAW := 0.7
 const AIM_PITCH := 0.4
