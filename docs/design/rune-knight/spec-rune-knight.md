@@ -245,6 +245,36 @@ below, he leaps straight back up to it.
   and the foot-route ropes), not from guessed numbers. The landing strip
   stays clear (AGENTS.md, Motifs): he never stands on it as a rule.
 
+## Runes that really spill; he moves while he fights (spec change after the user played the real body)
+
+The user: "I want runes to actually spill out. And I want him to
+actually be able to walk a bit while on the ground. And kinda strafe
+around you."
+
+- **The runes spill out, as runes.** Today a riposte throws small
+  shards and light. Instead, the cracked tablet's glyphs come out of
+  him as glyphs: each carved rune of that tablet (the same glyph shapes
+  the tablet carries, `scripts/enemies/rune_knight_look.gd`) pops out of
+  the groove as a glowing rune-stone you can read, tumbles out and
+  bounces across the deck or turf, lies there glowing, then gutters out.
+  The tablet is left empty and dark where they were. Fewer, bigger,
+  readable pieces over many glints. The crack seam stays.
+- **He walks while he fights.** Engaged on the ground (the meadow, and
+  along the deck as far as it allows), he doesn't stand planted between
+  moves: he closes or opens distance at a walk toward the range he slashes
+  from, and **strafes round you**, side-stepping in a slow circle while
+  he keeps his helm on you, changing direction now and then, stopping to
+  gather and slash. On the 2.5 m deck the strafe is a step along it, never
+  off it; on the meadow a real circle, kept off the aqueduct's wall and
+  the island's rim and clear of the landing strip.
+- **Clips:** `strafe` with forms `left` and `right` (a heavy side-step
+  with planted feet, `plant` per footfall, helm and chest kept on you)
+  and `walk` with form `back` (backing off a step at a time), authored in
+  Blender in `art/blender/rune_knight/rune_knight_clips.py` to the same
+  bar as the rest, exported to the glb, wired in the body script; the
+  stand-in gets plain procedural versions so `--rune-body=standin` still
+  plays.
+
 ## Where code goes
 
 - `scripts/enemies/rune_knight.gd`: the knight (body, patrol, sense,
@@ -385,6 +415,17 @@ changing. Names here are final once built on; change one only by a
    real clips, every driver passing on the real body, and a short
    rendered clip (a few frames strung) of one full fight: slash, parry,
    blast, rally, a parry and riposte, a crack, the knockoff.
+16. Runes that really spill (above): the glyphs out of the tablet as
+   readable glowing rune-stones. Play-loop check that a riposte throws
+   that tablet's glyphs and they come to rest on the deck; stills of the
+   pour, the stones at rest and the empty tablet.
+17. He walks and strafes while he fights (above): the `strafe` and
+   `walk back` clips in Blender and the stand-in, the mind's footwork on
+   the meadow and the deck. Play-loop checks: on the meadow he circles
+   the wanderer both ways keeping his facing, closes to slash range and
+   backs off; on the deck he steps along it and never off; he never walks
+   into the landing strip, the wall or the rim; every older driver still
+   passes. Stills and a short clip strip of the strafe.
 
 ## Checks
 
