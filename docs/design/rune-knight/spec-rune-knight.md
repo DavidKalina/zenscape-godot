@@ -251,14 +251,23 @@ The user: "I want runes to actually spill out. And I want him to
 actually be able to walk a bit while on the ground. And kinda strafe
 around you."
 
-- **The runes spill out, as runes.** Today a riposte throws small
-  shards and light. Instead, the cracked tablet's glyphs come out of
-  him as glyphs: each carved rune of that tablet (the same glyph shapes
-  the tablet carries, `scripts/enemies/rune_knight_look.gd`) pops out of
-  the groove as a glowing rune-stone you can read, tumbles out and
-  bounces across the deck or turf, lies there glowing, then gutters out.
-  The tablet is left empty and dark where they were. Fewer, bigger,
-  readable pieces over many glints. The crack seam stays.
+- **The runes spill out, as the collectible runes.** The user: "I want the
+  real, physical collectible runes that we litter throughout the map to
+  spill out." A riposte that cracks a rune bursts out a real glyph token,
+  the same pickup the isles lay (`scripts/glyph_pickup.gd`, laid by
+  `scripts/kit_isle/kit_tokens.gd`; same look, halo, pickup reach, readout
+  climb and chime). It pops out of the tablet, arcs out and bounces to rest
+  on the deck or turf near him (never off the deck's side or the island's
+  rim, never inside stone), and waits there to be walked into, mid-fight
+  or after. Each is a ledger objective in the isle's glyphs row (the
+  `token` type), one per tablet: `aqueduct_isle/rune_knight_hand_l`,
+  `_hand_r`, `_chest` in `data/ledger/ruins.json`, so the isle's glyph
+  count grows by three. A token taken stays taken (saved); a knight who
+  reforms cracks that tablet again without spilling it. A spilled token
+  not taken is gone when the isle reloads and spills again next fight.
+  Only a riposte spills one (a rally miss cracks without a spill), so the
+  skilled way pays. The crack seam and a short flare of light stay; the
+  task-12 shards go or shrink to a little grit round the token.
 - **He walks while he fights.** Engaged on the ground (the meadow, and
   along the deck as far as it allows), he doesn't stand planted between
   moves: he closes or opens distance at a walk toward the range he slashes
@@ -415,10 +424,15 @@ changing. Names here are final once built on; change one only by a
    real clips, every driver passing on the real body, and a short
    rendered clip (a few frames strung) of one full fight: slash, parry,
    blast, rally, a parry and riposte, a crack, the knockoff.
-16. Runes that really spill (above): the glyphs out of the tablet as
-   readable glowing rune-stones. Play-loop check that a riposte throws
-   that tablet's glyphs and they come to rest on the deck; stills of the
-   pour, the stones at rest and the empty tablet.
+16. The collectible runes spill (above): a riposte bursts out that
+   tablet's glyph token. Play-loop checks through the real presses: a
+   riposte spills one token that comes to rest on the deck; walking into
+   it marks `aqueduct_isle/rune_knight_<tablet>` and the readout climbs;
+   next run (a named `--ledger` file, as rk_core does) a reformed knight's
+   riposte on that tablet spills nothing; a rally miss spills nothing;
+   no token rests off the deck or in stone. Stills of the burst and the
+   token at rest. The ledger's registry errors stay empty (the test that
+   counts objectives will need its numbers; list it).
 17. He walks and strafes while he fights (above): the `strafe` and
    `walk back` clips in Blender and the stand-in, the mind's footwork on
    the meadow and the deck. Play-loop checks: on the meadow he circles
