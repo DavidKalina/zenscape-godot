@@ -104,7 +104,7 @@ func _build_pieces() -> void:
 		var piece: Node3D = RuinKit.piece(piece_id,seed_value,weathered)
 		piece.transform = Transform3D(Basis(Vector3.UP,yaw),Vector3(at.x,TarnArt.satellite_ground(spec,at.x,at.y),at.y))
 		art.add_child(piece)
-	place.call("lancet_wall",TARN_SEED+30,0.5,"west",Vector2(-1.2,0.0),PI*0.5)
+	place.call("lancet_wall",TARN_SEED+30,0.5,"west",Vector2(0.0,0.0),PI*0.5)
 	place.call("pier",TARN_SEED+31,0.75,"southwest",Vector2(0.8,-1.0),0.4)
 	place.call("tomb_chest",TARN_SEED+32,0.5,"southwest",Vector2(-1.8,1.6),1.1)
 	# The arch faces the north-east bridge across the isle's middle: the

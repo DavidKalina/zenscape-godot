@@ -41,14 +41,14 @@ const BREAK := 54.6
 
 ## The satellites: [ruin note, angle (degrees round C), distance from C, radius, rise over W].
 const SATS := [
-	["arch",200.0,26.0,7.0,0.0],
+	["arch",200.0,30.5,9.8,0.0],
 	["piers",242.0,26.0,6.0,3.0],
 	["fallen",294.0,26.0,6.5,8.4],
-	["lancet",336.0,26.0,7.6,11.4],
+	["lancet",336.0,27.5,8.0,11.4],
 	["chest",13.0,26.0,7.5,12.0],
 	["buttress",65.0,27.5,6.0,17.4],
 	["wall",107.0,26.0,7.6,20.4],
-	["gable",145.4,26.0,7.5,21.0],
+	["gable",145.4,35.5,12.5,21.0],
 ]
 ## The spiral's hops: [from, to, how]. "bridge": a rope bridge; "stones":
 ## floating stones; "jump": a gap to jump. The central isle's bridge is
@@ -418,11 +418,11 @@ static func note_for(s: Dictionary) -> Array:
 		"arch": return [["arch",91,0.4,Vector2(0.0,1.0),0.0,0.0]]
 		"piers": return [["pier",92,0.7,Vector2(-1.6,0.3),0.4],["pier",93,0.45,Vector2(1.6,-0.2),1.3]]
 		"fallen": return [["fallen_pier",94,0.6,Vector2(-0.4,0.2),0.9]]
-		"lancet": return [["lancet_wall",95,0.65,Vector2(0.0,-1.0),0.0]]
+		"lancet": return [["lancet_wall",95,0.65,Vector2(0.0,-1.0),0.0,0.0]]
 		"chest": return [["tomb_chest",96,0.5,Vector2(0.3,0.0),0.5]]
 		"buttress": return [["buttress",97,0.55,Vector2(0.0,0.0),0.0]]
 		"wall": return [["wall",98,0.7,Vector2(0.0,0.0),0.0]]
-		"gable": return [["rose_gable",99,0.5,Vector2(0.0,0.0),0.0]]
+		"gable": return [["rose_gable",99,0.5,Vector2(0.0,0.0),0.0,0.0]]
 	return []
 
 ## The note's piece frames: [piece id, seed, weathered, Transform3D]. Each
