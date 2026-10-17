@@ -70,6 +70,9 @@ const AIR := Color(0.9,0.95,1.0)
 
 var head
 var look := true
+## The tells' pace: 1 the head alone's; under 1 quicker (worn on his neck,
+## phase 2).
+var quick := 1.0
 var history: Array = []
 ## Counts, for the card and checks: puffs let go, knocks on him by kind,
 ## rings he jumped.
@@ -142,7 +145,7 @@ static func tall() -> float:
 # --- The head's poses through a puff --------------------------------------------------
 
 func tell_len(kind: String) -> float:
-	return float(TELLS.get(kind,1.0))
+	return float(TELLS.get(kind,1.0))*quick
 
 ## The head's pose at `k` (0..1) through `kind`'s tell: {open, lean, shake,
 ## swell (over full), aim (it keeps turning onto him), roll}.
@@ -259,6 +262,11 @@ func absorbing(share: float, delta: float) -> void:
 		var to := mouth-p
 		var s := _rng.randf_range(0.2,0.4)*tall()
 		_dust._free_puff(p,to/maxf(to.length(),0.1)*_rng.randf_range(7.0,11.0)*share,s,s*1.5,minf(to.length()/9.0,0.9),DUST,0.45*share)
+
+## Its balls fly through `rid` too (his body, worn).
+func see_through_also(rid: RID) -> void:
+	for b: DragonAirBlast in _blasts:
+		if not b.see_through.has(rid): b.see_through.append(rid)
 
 func stop() -> void:
 	shots.clear()

@@ -153,6 +153,11 @@ func hit_arena(point: Vector3, radius: float, strength: float) -> void:
 # --- A frame -----------------------------------------------------------------------------
 
 func think(delta: float) -> void:
+	if _worn_puff:
+		if perch != null and is_instance_valid(perch) and not swallowed:
+			_worn_frame(delta)
+			return
+		_end_worn()
 	if perch != null or _falling or not (state in MINE):
 		super.think(delta)
 		# Its own round again once the base's gulp and blow-out are done.
@@ -322,3 +327,177 @@ func _pose_skin() -> void:
 func _calls(m: PilotMotor, delta: float) -> void:
 	if state in MINE: return
 	super._calls(m,delta)
+
+# --- Worn: puffs from his neck (phase 2) ---------------------------------------------------
+## His body (scripts/olmec_boss/boss_body.gd) asks for a puff (`worn_puff`)
+## while he hunts: a short absorb on the neck ("w_absorb", WORN_ABSORB s,
+## the jaw wide, dust drawn up to it, the stone swelling), the puff's own
+## tell at WORN_QUICK of its length, then the puff, aimed from up there
+## while he moves (the body turns it; the volley aims itself at him). A
+## gust shot on him in the absorb or the tell breaks it (`break_worn`).
+## Then back to "perched".
+
+const WORN_KINDS := ["volley","whirl","breath"]
+const WORN_ABSORB := 0.7
+const WORN_QUICK := 0.6
+## How far it pitches up on his neck (share of the lean the tells ask).
+const WORN_LEAN := 0.7
+
+var worn_puffs := 0
+var worn_breaks := 0
+var _worn_puff := false
+
+## A puff from his neck: `kind` one of WORN_KINDS ("" its own pick). False
+## if it can't now.
+func worn_puff(kind := "") -> bool:
+	if perch == null or _worn_puff or swallowed or gone: return false
+	var m: PilotMotor = field.motor
+	puff = kind if kind != "" else (next_puff if next_puff in WORN_KINDS else pick_worn(_chest(m)))
+	next_puff = ""
+	_worn_puff = true
+	puffs.quick = WORN_QUICK
+	if perch.get("body") != null: puffs.see_through_also(perch.body.get_rid())
+	_go("w_absorb")
+	absorbs += 1
+	field.sound(&"head_inhale",mouth())
+	print("boss head: worn puff %s (absorb)" % puff)
+	return true
+
+## Whether a worn puff is on (absorb, tell or puff).
+func worn_puffing() -> bool:
+	return _worn_puff
+
+## In its absorb or tell (a hit breaks it).
+func worn_winding() -> bool:
+	return _worn_puff and state in ["w_absorb","puff_tell"]
+
+## What it is on, for the card: "" none, else "<kind> absorb/tell/puff".
+func worn_doing() -> String:
+	if not _worn_puff: return ""
+	return "%s %s" % [puff,{"w_absorb":"absorb","puff_tell":"tell","puff":"puff"}.get(state,state)]
+
+## A hit on him in the absorb or tell: what it held bursts out harmless.
+func break_worn() -> bool:
+	if not worn_winding(): return false
+	worn_breaks += 1
+	interrupts += 1
+	air.blast(mouth(),face_flat())
+	field.sound(&"head_blast",mouth())
+	print("boss head: worn %s broken in %s" % [puff,state])
+	_end_worn()
+	_flap = 0.5
+	return true
+
+func _end_worn() -> void:
+	_worn_puff = false
+	puff = ""
+	puffs.quick = 1.0
+	_swell_want = 0.0
+	draw_share = 0.0
+	state = "perched"
+	state_t = 0.0
+
+## Which puff from up high, by his distance; never the same three times.
+func pick_worn(chest: Vector3) -> String:
+	var d := Vector2(chest.x-position.x,chest.z-position.z).length()
+	var w := {"volley":1.0 if d < 14.0 else 2.6,
+		"breath":2.2 if d < 20.0 else 0.5,
+		"whirl":1.4}
+	var hist: Array = puffs.history
+	if hist.size() >= 2 and hist[-1] == hist[-2] and w.has(hist[-1]): w[hist[-1]] = 0.0
+	var total := 0.0
+	for k: String in w: total += float(w[k])
+	var r := _hit_rng.randf()*total
+	for k: String in w:
+		r -= float(w[k])
+		if r <= 0.0: return k
+	return "volley"
+
+func _worn_frame(delta: float) -> void:
+	_clock += delta
+	state_t += delta
+	var m: PilotMotor = field.motor
+	var chest := _chest(m)
+	var want_open := 0.0
+	var want_draw := 0.0
+	var want_lean := 0.0
+	var fast := false
+	match state:
+		"w_absorb":
+			var k := clampf(state_t/WORN_ABSORB,0.0,1.0)
+			want_open = 0.85*smoothstep(0.0,0.3,k)+0.04*sin(_clock*17.0)
+			want_draw = 1.0
+			want_lean = 0.08*smoothstep(0.0,0.4,k)
+			_shake = 0.01*k
+			_swell_want = k
+			puffs.absorbing(maxf(draw_share,0.6),delta)
+			if state_t >= WORN_ABSORB:
+				_go("puff_tell")
+				puffs.tell(puff)
+				field.sound(&"head_strain",mouth())
+		"puff_tell":
+			var span: float = puffs.tell_len(puff)
+			var k := clampf(state_t/span,0.0,1.0)
+			var p: Dictionary = puffs.tell_pose(puff,k,_clock)
+			want_open = float(p.open)
+			want_lean = float(p.lean)
+			_shake = float(p.shake)*1.4
+			_swell_want = 1.0+float(p.swell)
+			_roll = float(p.get("roll",0.0))
+			if state_t >= span:
+				_roll = 0.0
+				_go("puff")
+				puffs.release(puff,chest)
+				worn_puffs += 1
+				puffed.emit(puff)
+		"puff":
+			fast = true
+			var p: Dictionary = puffs.puff_pose(puff,state_t,_clock)
+			want_open = float(p.open)
+			want_lean = float(p.lean)
+			_shake = float(p.shake)
+			_swell_want = maxf(0.0,1.0-state_t/maxf(puffs.puff_len(puff),0.1))
+			if state_t >= puffs.puff_len(puff):
+				_end_worn()
+		_:
+			_end_worn()
+	_flap = maxf(0.0,_flap-delta)
+	_open = move_toward(_open,want_open,(9.0 if fast else 4.0)*delta)
+	_glow = move_toward(_glow,1.0,2.0*delta)
+	_lean = lerpf(_lean,want_lean*WORN_LEAN,1.0-exp(-(14.0 if fast else 6.0)*delta))
+	_lean_kick = move_toward(_lean_kick,0.0,delta*0.5)
+	look.open(_open)
+	look.glow(_glow)
+	swell = move_toward(swell,_swell_want,delta*(1.6 if _swell_want > swell else 2.5))
+	draw_share = move_toward(draw_share,want_draw,(4.0 if want_draw > draw_share else 3.0)*delta)
+	air.draw(draw_share,delta)
+	puffs.step(delta)
+
+var _roll := 0.0
+
+## On his neck the turf is under his feet, not under its chin: looked for
+## from his feet's height, through his body.
+func ground_at(p: Vector3) -> float:
+	if perch == null or not is_instance_valid(perch): return super.ground_at(p)
+	return field.floor_under(Vector3(p.x,perch.position.y,p.z),6.0,12.0,perch.body.get_rid())
+
+func rest_point() -> Vector3:
+	if perch == null or not is_instance_valid(perch): return super.rest_point()
+	return Vector3(position.x,perch.position.y,position.z)
+
+## On his neck: the perch's pose, and over it (worn puffing) the tell's
+## pitch and roll, a tremble and the swell.
+func _move(delta: float) -> void:
+	super._move(delta)
+	if perch == null: return
+	if not _worn_puff:
+		_lean = move_toward(_lean,0.0,delta*0.5)
+		swell = move_toward(swell,0.0,delta*2.0)
+		if absf(_lean) < 0.001 and swell < 0.001: return
+	var b := skin.transform.basis
+	b = b*Basis(Vector3.RIGHT,_lean+_lean_kick)*Basis(Vector3.FORWARD,_roll)
+	var s := swell*float(knobs.swell)
+	if s > 0.001: b = b*Basis.from_scale(Vector3(1.0+s,1.0+s*0.55,1.0+s*0.8))
+	var shake := Vector3.ZERO
+	if _shake > 0.0: shake = Vector3(sin(_clock*53.0),sin(_clock*47.0+1.0),sin(_clock*59.0+2.0))*_shake*height
+	skin.transform = Transform3D(b,skin.transform.origin+shake)
