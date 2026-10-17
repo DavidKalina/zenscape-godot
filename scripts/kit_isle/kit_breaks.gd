@@ -21,6 +21,13 @@ const WAKE := 9.0
 ## A pre-cut serves a hit this near (m, the piece's frame) the point it guessed.
 const PRE_TOL := 1.5
 
+## A piece broken (a kit cache's cue: scripts/kit_isle/kit_caches.gd):
+## its node, whole and in the tree still, and where it was hit (world).
+signal broke(node: Node3D, at: Vector3)
+## A `hit` in reach of a piece too tough for it: its node, the piece's
+## point nearest the hit (world), the hit's strength and source.
+signal withstood(node: Node3D, at: Vector3, strength: float, source: StringName)
+
 ## The pieces: [{node, kind, tough, box (its frame), xf, seed, rebuild, alive}].
 var targets: Array = []
 ## Pieces broken, and the cut of the last (ms).
@@ -119,13 +126,16 @@ func _nearest(t: Dictionary, at: Vector3) -> Vector3:
 
 # --- The hub's calls --------------------------------------------------------------------------
 
-func hit(at: Vector3, radius: float, strength: float, _source: StringName) -> int:
+func hit(at: Vector3, radius: float, strength: float, source: StringName) -> int:
 	var n := 0
 	for i in range(targets.size()):
 		var t: Dictionary = targets[i]
-		if not t.alive or not is_instance_valid(t.node) or strength < float(t.tough): continue
+		if not t.alive or not is_instance_valid(t.node): continue
 		var q := _nearest(t,at)
 		if q.distance_to(at) > radius: continue
+		if strength < float(t.tough):
+			withstood.emit(t.node,q,strength,source)
+			continue
 		var out := Vector3(q.x-at.x,0.0,q.z-at.z)
 		var centre: Vector3 = (t.node as Node3D).global_transform*(t.box as AABB).get_center()
 		if out.length() < 0.05: out = Vector3(centre.x-at.x,0.0,centre.z-at.z)
@@ -367,6 +377,7 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> b
 			_refresh_rids()
 		return false
 	broken += 1
+	broke.emit(node,at)
 	var parent := node.get_parent()
 	var stands: Node3D = cut.get("stands")
 	if stands != null:

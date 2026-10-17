@@ -352,6 +352,8 @@ func reset_yard() -> void:
 ## about a piece changes until a breaker hits it.
 var hub: Node3D = null
 var kit_breaks: Node3D = null
+var kit_caches: Node3D = null
+const KitCaches = preload("res://scripts/kit_isle/kit_caches.gd")
 
 func _kit_breaks() -> void:
 	if kit_breaks != null or motifs == null: return
@@ -370,6 +372,14 @@ func _kit_breaks() -> void:
 	for isle: Node3D in motifs.isles: n += kit_breaks.adopt(isle)
 	hub.others.append(kit_breaks)
 	print("motif yard: %d kit piece(s) breakable" % n)
+	# Pieces holding a find (meta "holds": scripts/kit_isle/kit_caches.gd).
+	kit_caches = KitCaches.new()
+	kit_caches.motor = motor
+	add_child(kit_caches)
+	kit_caches.watch(kit_breaks)
+	var held := 0
+	for isle: Node3D in motifs.isles: held += kit_caches.adopt(isle,kit_breaks)
+	if held > 0: print("motif yard: %d kit cache(s)" % held)
 
 ## --olmec: a headless body (scripts/enemies/headless_body.gd) and its head
 ## set down so his way to it runs through the motif's tallest breakable

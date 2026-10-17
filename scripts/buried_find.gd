@@ -19,7 +19,13 @@ extends Node3D
 ##   (`takeable`), and it glints through the telescope in its own right.
 ##
 ## Use: make one, `setup(find, at, id)` with `at` the turf's point in the
-## find's parent's frame, and add it as the find's sibling. The owner asks
+## find's parent's frame, and add it as the find's sibling.
+##
+## Bare (`bare` true before it's added): no hump, no shimmer, no clods and
+## deaf to the slam; something else hides the find and calls `reveal()`
+## (a kit cache, scripts/kit_isle/kit_caches.gd: a find inside a breakable
+## piece). With `from` set (the parent's frame) the find comes up out of
+## that point, not out of the turf under it. The owner asks
 ## `takeable()` before letting the find be taken; `revealed` says when it
 ## breaks open. `reveal()` breaks it open from code.
 const Telescope = preload("res://scripts/telescope.gd")
@@ -58,6 +64,10 @@ var id := ""
 var at := Vector3.ZERO
 var over := 0.85
 var size := WorldScale.wanderer
+## No hump, shimmer or clods, and deaf to the slam (see the header).
+var bare := false
+## Where the find comes up from (the parent's frame); INF: DEPTH under `at`.
+var from := Vector3.INF
 var shimmer: MeshInstance3D
 var mound: MeshInstance3D
 var _t := 0.0
@@ -80,6 +90,7 @@ func setup(find_node: Node3D, where: Vector3, objective := "", hover := 0.85) ->
 		find.remove_from_group(Telescope.GROUP)
 
 func _ready() -> void:
+	if bare: return
 	add_to_group(Slam.GROUP)
 	if state != "buried": return
 	mound = MeshInstance3D.new()
@@ -151,14 +162,18 @@ func reveal() -> void:
 		shimmer.remove_from_group(Telescope.GROUP)
 		shimmer.queue_free()
 		shimmer = null
-	_throw_clods()
+	if not bare: _throw_clods()
 	if mound != null:
 		mound.queue_free()
 		mound = null
 	if find != null:
 		find.visible = true
-		find.position = at+Vector3.DOWN*DEPTH
+		find.position = _start()
 	revealed.emit()
+
+## Where the find comes up from.
+func _start() -> Vector3:
+	return from if from != Vector3.INF else at+Vector3.DOWN*DEPTH
 
 func _process(delta: float) -> void:
 	advance(delta)
@@ -176,7 +191,10 @@ func advance(delta: float) -> void:
 		# Up fast out of the ground, past its hover, settling back.
 		var rise := 1.0-pow(1.0-u,3.0)
 		var settle := sin(u*PI)*OVERSHOOT*(1.0-u)
-		if find != null: find.position = at+Vector3.UP*(lerpf(-DEPTH,over,rise)+settle*(over+DEPTH))
+		if find != null and from != Vector3.INF:
+			var to := at+Vector3.UP*over
+			find.position = from.lerp(to,rise)+Vector3.UP*settle*maxf(from.distance_to(to),0.5)
+		elif find != null: find.position = at+Vector3.UP*(lerpf(-DEPTH,over,rise)+settle*(over+DEPTH))
 		if u >= 1.0:
 			state = "up"
 			if find != null:

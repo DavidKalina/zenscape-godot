@@ -114,6 +114,10 @@ extends "res://studies/kit_isle.gd"
 ## Z on foot fires the wanderer's stand-in wind blast at him (scripts/
 ## enemies/wind_blast_standin.gd); Q (RB) timed as his wind reaches you
 ## parries it into a gauge segment (scripts/wind_parry.gd).
+## --kit-caches: runes hidden in four glowing ruin pieces on the west turf
+## by the aqueduct (studies/aqueduct_isle_caches.gd, scripts/kit_isle/
+## kit_caches.gd); a slam off the deck breaks the pier, buttress or wall
+## open, the tomb chest by the rubble slope only flares.
 ## --sluice: the Sluice Flush trap on the channel (scripts/traps/
 ## sluice_aqueduct.gd); --sluice=head starts at the top of the rubble slope.
 ## The plane's parts (scripts/plane_arc/plane_arc.gd, docs/design/
@@ -232,6 +236,8 @@ var roost_air: Node3D = null
 ## Each motif isle's record for the dragon, once it stands (its id ->
 ## {node, shape, home, radius, frame, pivot}).
 var _dragon_isles := {}
+## --kit-caches: the caches (scripts/kit_isle/kit_caches.gd), else null.
+var kit_caches: Node3D = null
 
 func _ready() -> void:
 	pack = "ruins_archipelago"
@@ -576,6 +582,9 @@ func _capture_flying() -> void:
 func _add_life() -> void:
 	super._add_life()
 	_build_lock_target()
+	# --kit-caches: runes hidden in glowing ruin pieces the slam breaks open
+	# (studies/aqueduct_isle_caches.gd).
+	kit_caches = preload("res://studies/aqueduct_isle_caches.gd").build(self)
 	if dragon_on: _build_sky_dragon()
 	elif dragon_roost: _build_roost_dragon()
 	# The plane's arc, before the watcher, who watches its tail fin.

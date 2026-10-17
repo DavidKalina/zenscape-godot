@@ -34,6 +34,9 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ## only set meta "breakable" false on the built piece, which the kit
 ## breaks skip (scripts/kit_isle/kit_breaks.gd `adopt`); absent, a piece
 ## breaks by its kind and builds exactly as before.
+## A piece's "holds" (optional; e.g. "rune") only sets meta "holds" on the
+## built piece: a kit cache (scripts/kit_isle/kit_caches.gd) glows it and
+## lets the find out when it breaks; absent, nothing changes.
 ## A piece's y in the file is where the editor seated it; the build seats
 ## it again on the land (`seat`), so a re-rolled hill never leaves one
 ## floating. A marker's y likewise (`ground` under it).
@@ -1505,6 +1508,7 @@ func make_piece(k: int) -> Node3D:
 	if piece == null: return null
 	piece.name = "P%d" % k
 	if not bool(p.get("breakable",true)) or not bool(data.get("breakable",true)): piece.set_meta("breakable",false)
+	if str(p.get("holds","")) != "": piece.set_meta("holds",str(p.holds))
 	piece.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(turn)),pose[0])
 	return piece
 
