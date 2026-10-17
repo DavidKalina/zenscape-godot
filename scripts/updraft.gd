@@ -341,6 +341,17 @@ func updraft(m: PilotMotor) -> bool:
 	_dip_amp = DIP*p*UNIT
 	return true
 
+## Filled at once (an air ring, scripts/interactables/air_ring.gd): the
+## whole charge back, the air chain started afresh (the next updraft rises
+## its full SEG_RISE, as off the ground), a burst's charging lock lifted,
+## and a gust ring off `at`.
+func refill(at: Vector3) -> void:
+	charge = 1.0
+	_air_ups = 0
+	_quiet = 0.0
+	spent = false
+	_blast_ring(at,0.6)
+
 ## The charge (segmented: one segment) spent on something else (the gust shot,
 ## scripts/lock_on/gust_shot.gd): the wake comes away drifting `drift` m/s.
 ## Returns what was spent, 0 (nothing spent) under MIN_RELEASE.

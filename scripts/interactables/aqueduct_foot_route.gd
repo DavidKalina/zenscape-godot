@@ -15,7 +15,12 @@ extends RefCounted
 ##   3. back across the gap east of it on a drifting slab, a ferry out and
 ##      back;
 ##   4. off the near island's east rim, three bobbing slabs climbing out to
-##      the east islet (the lodestone's floating stone just north of them).
+##      the east islet (the lodestone's floating stone just north of them);
+##   5. over the first slab, the air rings (scripts/interactables/
+##      air_ring.gd): slam the slab, its spring throws him up through the
+##      first, and each ring's refilled updraft takes him up to the next,
+##      stepping back west over the rim to a turfed perch high over the
+##      meadow.
 ## The stair to the clouds' own pieces (scripts/interactables/
 ## stair_clouds_foot_route.gd) stand on it in the sky.
 ##
@@ -64,6 +69,38 @@ static var FERRY: Array = [Vector3(FERRY_X,TOP+0.3,near_rim(FERRY_X)-FERRY_OUT),
 static var FERRY_PERIOD: float = 2.0*absf((FERRY[1] as Vector3).z-(FERRY[0] as Vector3).z)/FERRY_PACE
 ## The bobbing slabs off the east rim to the east islet.
 const BOBS := [Vector3(129.6,TOP+0.3,3.4),Vector3(132.6,TOP+0.8,2.0),Vector3(135.0,TOP+1.4,-1.4)]
+## The air rings over the first slab (docs/design/air-ring/air-ring-handoff.md),
+## sized from the motor as measured on it (scratch drivers, size 1, the
+## slab's rest top): no spring, a jump, three updrafts and a twirl reach
+## 7.1 m; the slab's launch alone 8.0 m (with one updraft 11.8, two 14.1).
+## The first ring's middle RING_FIRST over the slab: his chest (feet + 0.9)
+## crosses it at the launch's top and never off a jump. From a ring (popped
+## AirRing.POP up, the charge refilled and its chain fresh) one updraft
+## doesn't reach the next, two do: each ring RING_STEP over the last and
+## RING_OUT out along RING_WAY. The perch PERCH_UP over the last ring's
+## middle, PERCH_OUT on, its top turfed.
+const RING_FIRST := 9.1
+## The first slab, under the rings, throws a pump higher than the others
+## (BobSlab.SPRING_PUMPS 6): at 6 its launch tops out 7.5 to 8.1 m, too
+## near the 7.1 m a jump and three updrafts reach for a ring between them.
+const RING_SLAB_PUMPS := 7.0
+const RING_STEP := 7.5
+const RING_OUT := 3.0
+const RING_COUNT := 3
+const RING_WAY := Vector2(-0.954,-0.3)
+const PERCH_UP := 4.5
+const PERCH_OUT := 3.6
+const PERCH := Vector3(3.8,1.3,3.6)
+static var RINGS: Array = _rings()
+static var PERCH_AT: Vector3 = (RINGS[-1] as Vector3)+Vector3(RING_WAY.x,0.0,RING_WAY.y)*PERCH_OUT+Vector3.UP*PERCH_UP
+
+static func _rings() -> Array:
+	var out: Array = []
+	var base: Vector3 = BOBS[0]
+	for i in range(RING_COUNT):
+		out.append(base+Vector3(RING_WAY.x,0.0,RING_WAY.y)*RING_OUT*i+Vector3.UP*(RING_FIRST+RING_STEP*i))
+	return out
+
 ## Where --foot-at= starts him: [feet, the way faced (x, z)]. Ropes: 10 m
 ## short of the first; ferry: 1.1 m in on the far island behind its end.
 static var SPOTS: Dictionary = {
@@ -121,7 +158,15 @@ static func build(study: Node3D) -> Node3D:
 	# 3: the ferry back across.
 	host.drift_slab(PackedVector3Array(FERRY),FERRY_PERIOD,false,0.0,Vector3(2.4,0.6,2.4),0.0,330)
 	# 4: the bobbing slabs out to the east islet.
-	for i in range(BOBS.size()): host.bob_slab(BOBS[i],Vector3(2.3,0.7,2.2),0.4+0.5*i,340+i)
+	for i in range(BOBS.size()):
+		var slab: Node3D = host.bob_slab(BOBS[i],Vector3(2.3,0.7,2.2),0.4+0.5*i,340+i)
+		if i == 0: slab.spring_pumps = RING_SLAB_PUMPS
+	# 5: the air rings over the first slab, up to the perch.
+	for i in range(RINGS.size()): host.air_ring(RINGS[i],350+i,0.3*i)
+	var perch := Art.floating_stones(360,[{"name":"perch","at":PERCH_AT,"size":PERCH,"yaw":0.35,"kind":"block"},
+		{"name":"marker","at":PERCH_AT+Vector3(1.1,1.5,-0.9),"size":Vector3(0.55,1.9,0.45),"yaw":0.6,"kind":"sarsen","grounded":true}])
+	perch.name = "RingPerch"
+	host.add_child(perch)
 	# The stair to the clouds, where the sky stands it.
 	StairClouds.build(study,StairClouds.SKY_OFFSET)
 	start_at(study,SPOTS.merged(StairClouds.spots(StairClouds.SKY_OFFSET)))

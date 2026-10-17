@@ -32,6 +32,7 @@ const DriftSlab = preload("res://scripts/interactables/drift_slab.gd")
 const SinkSlab = preload("res://scripts/interactables/sink_slab.gd")
 const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
 const Balustrade = preload("res://scripts/interactables/balustrade.gd")
+const AirRing = preload("res://scripts/interactables/air_ring.gd")
 
 ## The most of a slab's rise kept leaving it (m/s), and the seconds the
 ## body takes to stand upright off a rope.
@@ -49,6 +50,13 @@ var motor: PilotMotor
 var slabs: Array = []
 var ropes: Array = []
 var rails: Array = []
+## The air rings (scripts/interactables/air_ring.gd): passed through, the
+## updraft's charge filled and its air chain started afresh (its `refill`),
+## and he is popped up the ring's POP m as a spring launch throws him (the
+## drop under him forgiven by the fall stun). The step gets "air_ring"
+## (the ring's middle); `rings_taken` counts them.
+var rings: Array = []
+var rings_taken := 0
 ## The slab he stands on (or hangs from) now, or null; the body by RID.
 var on: Node3D = null
 var _ray := PhysicsRayQueryParameters3D.new()
@@ -145,6 +153,15 @@ func balustrade(points: PackedVector3Array, seed_value := 0, weathered := 0.3, f
 	rails.append(r)
 	return r
 
+## An air ring lying flat at `at` (its middle), turned `yaw`, tipped `tip`
+## (rad about its own x) if given.
+func air_ring(at: Vector3, seed_value := 0, yaw := 0.0, tip := 0.0) -> Node3D:
+	var r: Node3D = AirRing.new()
+	r.setup(Transform3D(Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,tip),at),seed_value)
+	add_child(r)
+	rings.append(r)
+	return r
+
 func _add_slab(slab: Node3D) -> void:
 	add_child(slab)
 	slabs.append(slab)
@@ -164,6 +181,7 @@ func before(delta: float) -> void:
 		slab.advance(delta)
 		if slab.sprung(): sprang = slab
 	for r: Node3D in ropes: r.advance(delta)
+	for r: Node3D in rings: r.advance(delta)
 	if on == null or motor.rider != null or motor.swimming: return
 	if motor.grounded or motor.on_ledge(): motor.carry(on.moved(),on.turn())
 	if sprang == on and motor.grounded and motor.move != "tumble": _launch(on)
@@ -177,6 +195,24 @@ func _launch(slab: Node3D) -> void:
 	last_launch = {"at":motor.feet,"rise":up,"height":height}
 	_pending["spring_launch"] = last_launch
 	on = null
+
+## Through an air ring: the charge filled, popped up (see `rings`).
+func _take_ring(r: Node3D) -> void:
+	rings_taken += 1
+	var drafts: Node = study.get("updraft")
+	if drafts != null and drafts.has_method("refill"): drafts.refill(r.middle())
+	var pop: float = AirRing.POP*motor.size
+	var up := motor.rise_for(pop,true)
+	var free := pop+_drop_under(motor.feet)+0.5
+	motor.launch(Vector3(motor.velocity.x,maxf(motor.velocity.y,up),motor.velocity.z),free)
+	on = null
+
+## The drop from `p` to what is under it (m), or a long way if nothing is.
+func _drop_under(p: Vector3) -> float:
+	var space: PhysicsDirectSpaceState3D = study.get_world_3d().direct_space_state
+	var q := PhysicsRayQueryParameters3D.create(p,p-Vector3.UP*400.0,study.ground.mask)
+	var hit := space.intersect_ray(q)
+	return p.y-(hit.position as Vector3).y if not hit.is_empty() else 400.0
 
 ## After the motor's step: what he is on, the slabs' weight and blows, his
 ## leaving pace, the catches.
@@ -213,6 +249,13 @@ func after(_delta: float, events: Dictionary) -> void:
 					# Snagged stunned.
 					events["snag"] = true
 					counts.snag += 1
+				break
+	if motor.rider == null and not motor.swimming and motor.move != "tumble":
+		var chest: Vector3 = motor.feet+Vector3.UP*AirRing.CHEST*motor.size
+		for r: Node3D in rings:
+			if r.middle().distance_to(chest) < NEAR and r.try_take(chest,motor.size):
+				_take_ring(r)
+				events["air_ring"] = r.middle()
 				break
 	# On a balustrade's coping: only noted.
 	var rail: Node3D = null
