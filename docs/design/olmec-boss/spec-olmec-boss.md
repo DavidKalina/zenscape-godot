@@ -138,6 +138,17 @@ You launch `./run-olmec-field.command` and play this fight:
         ground), tumbles and slides with weight, no popping, jitter or
         sudden vanishing, and goes over the low edge in view. Film it
         from the play camera and fix what reads wrong.
+        What the user saw: "it looked like we were doing some geometry
+        trick; at different angles they looked like cutouts, like 3/4 of
+        the item was missing texture." Likely open, uncapped or
+        single-sided meshes (the break's pre-cut chunks with their cut
+        faces open, back faces culled, or a shell/impostor seen from
+        behind or below) that show as hollow from some angles. Every
+        debris piece must read solid from every angle, underside and cut
+        faces included: find the cause (kit-breaks chunks, the lane
+        shove, the slam's loose stones), cap or close it, and prove it
+        with stills of the same piece orbited from several angles,
+        including from below.
    - *Order:* after the charge, as three tasks: (7) the tilt slam, the
      steep tilt and the slide; (8) the air arcs and the counter (shots
      break his brace); (9) the release, the fling, the glide back and his
