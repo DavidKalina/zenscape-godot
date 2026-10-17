@@ -286,6 +286,29 @@ const KNOBS := {
 	"shatter_shake": 0.8,
 	"shake_reach": 30.0,
 	"down_wait": 0.6,
+	# Footwork (task 17): engaged on the ground between moves he walks in
+	# when you are farther than foot_far m (flat) and backs off when nearer
+	# than foot_near (each with foot_give m of slack once going), else
+	# strafes round you, holding a way foot_switch_min..max s, standing a
+	# beat foot_rest of the time; faced within foot_face rad he steps. After
+	# a gather the next waits the throw gap plus up to foot_extra s of it.
+	"foot_near": 5.0,
+	"foot_far": 11.0,
+	"foot_give": 1.5,
+	"foot_switch_min": 1.6,
+	"foot_switch_max": 3.6,
+	"foot_rest": 0.2,
+	"foot_face": 0.45,
+	"foot_extra": 1.4,
+	# On the deck: a strafe only along it (its way's share along the deck at
+	# least foot_along), his room kept foot_side m in from its sides. On the
+	# meadow: stone kept foot_wall m past his room, the ground lasting
+	# foot_rim m ahead (the island's rim), the landing run foot_strip m off.
+	"foot_along": 0.7,
+	"foot_side": 0.25,
+	"foot_wall": 1.2,
+	"foot_rim": 3.0,
+	"foot_strip": 1.5,
 }
 ## What hides you from him: stone (layer 1) and turf (layer 11).
 const SIGHT_MASK := 1 | (1 << 11)
@@ -586,8 +609,12 @@ func _process(delta: float) -> void:
 					pass
 				elif unseen > knob("give_up"):
 					_turn_to(_yaw_to(ends[heading_to]-at))
-				elif sees and cool <= 0.0 and absf(yaw_goal-yaw) < knob("face_ok") and close_below <= 0.0:
+				elif sees and cool <= 0.0 and _bout <= 0.0 and absf(yaw_goal-yaw) < knob("face_ok") and close_below <= 0.0:
 					_gather()
+			if state == "track":
+				_bout = maxf(0.0,_bout-delta)
+				at = _footwork(at,delta)
+	if state != "track": foot = ""
 	if state != "fall": _fall_top = INF
 	yaw = move_toward(yaw,yaw_goal,knob("turn_rate")*delta)
 	transform = Transform3D(Basis(Vector3.UP,yaw),at)
@@ -729,6 +756,7 @@ func _noticeable() -> bool:
 
 func _gather() -> void:
 	state = "gather"
+	_bout = knob("throw_gap")+_rng.randf()*knob("foot_extra")
 	if attack != "lob":
 		slash_form = _pick_form()
 		body.play("gather","blade")
@@ -1621,3 +1649,115 @@ func _skid_meadow(at: Vector3, delta: float) -> Vector3:
 	to.y = gy
 	if _skid_left <= 0.0: _skid_stopped(to)
 	return to
+
+# --- Footwork (task 17) ---------------------------------------------------------------
+
+## His step between moves: "" (standing), "walk", "back", "left", "right".
+var foot := ""
+## Footwork time left (s, counted in track) before the next gather.
+var _bout := 0.0
+## The strafe he holds ("" a beat standing) and for how long yet (s).
+var _strafe := ""
+var _strafe_t := 0.0
+## Metres stepped each way, and steps refused (an edge, stone, the strip),
+## for the drivers.
+var foot_metres := {"walk":0.0,"back":0.0,"left":0.0,"right":0.0}
+var foot_refused := 0
+
+## Tracking you on the ground: in to slash range, back off, or round you;
+## his root carried at the clip's pace along his own facing so the feet
+## hold, each step refused where it would take him off the deck, into
+## stone, onto the landing run or toward the island's rim.
+func _footwork(at: Vector3, delta: float) -> Vector3:
+	var want := ""
+	var motor = isle.get("motor") if isle != null else null
+	var ground := not off_deck or on_meadow
+	if ground and death == "" and sees and last_seen != Vector3.INF and motor != null \
+			and close_below <= 0.0 and no_line <= 0.0 and absf(yaw_goal-yaw) < knob("foot_face"):
+		var feet: Vector3 = motor.feet
+		var d := Vector2(feet.x-at.x,feet.z-at.z).length()
+		var give := knob("foot_give")
+		# The way round you he holds (it runs on while he walks in or backs
+		# off, so a shut in-or-out falls to it, changing now and then).
+		_strafe_t -= delta
+		if _strafe_t <= 0.0:
+			if _rng.randf() < knob("foot_rest") and _strafe != "":
+				_strafe = ""
+				_strafe_t = _rng.randf_range(0.6,1.2)
+			else:
+				_strafe = "left" if _rng.randf() < 0.5 else "right"
+				_strafe_t = _rng.randf_range(knob("foot_switch_min"),knob("foot_switch_max"))
+		if d > knob("foot_far") or (foot == "walk" and d > knob("foot_far")-give): want = "walk"
+		elif d < knob("foot_near") or (foot == "back" and d < knob("foot_near")+give): want = "back"
+		else: want = _strafe
+	var step := Vector3.ZERO
+	var gy := at.y
+	if want != "":
+		var r := _foot_step(at,want,delta)
+		if r.is_empty() and want in ["walk","back"]:
+			# In or out is shut (the deck's side, stone, the rim): round you.
+			foot_refused += 1
+			if _strafe == "": _strafe = "left" if _rng.randf() < 0.5 else "right"
+			want = _strafe
+			r = _foot_step(at,want,delta)
+		if r.is_empty() and want in ["left","right"]:
+			# That way is shut: the other way round, held a fresh while.
+			foot_refused += 1
+			want = "right" if want == "left" else "left"
+			_strafe = want
+			_strafe_t = _rng.randf_range(knob("foot_switch_min"),knob("foot_switch_max"))
+			r = _foot_step(at,want,delta)
+		if r.is_empty():
+			want = ""
+			if _strafe != "": _strafe_t = minf(_strafe_t,0.4)
+		else:
+			step = r.step
+			gy = r.y
+	if want != foot:
+		foot = want
+		match want:
+			"": body.play("idle")
+			"walk": body.play("walk")
+			"back": body.play("walk","back")
+			_: body.play("strafe",want)
+	if want == "": return at
+	foot_metres[want] = float(foot_metres[want])+step.length()
+	return Vector3(at.x+step.x,gy,at.z+step.z)
+
+## The step `way` takes from `at` this frame ({step, y}), or {} where it
+## is refused.
+func _foot_step(at: Vector3, way: String, delta: float) -> Dictionary:
+	var b := Basis(Vector3.UP,yaw)
+	var dir: Vector3 = {"walk":-b.z,"back":b.z,"left":-b.x,"right":b.x}[way]
+	var pace := float(_shape.pace)
+	if way == "back": pace = float(_shape.back_pace)
+	elif way != "walk": pace = float(_shape.strafe_pace)
+	var step := dir*pace*delta
+	var to := at+step
+	if not on_meadow:
+		var axis := (Art.AQ.basis*Vector3.RIGHT).normalized()
+		if way in ["left","right"] and absf(dir.dot(axis)) < knob("foot_along"): return {}
+		var l := _deck_local(to)
+		var margin := knob("end_margin")*0.5
+		var side := knob("deck_half")-float(_shape.radius)-knob("foot_side")
+		if l.x < Art.HEAD+margin or l.x > Art.SNAP-margin: return {}
+		if absf(l.z) > side:
+			# At the side a strafe runs on along it (the across share,
+			# small past foot_along, held at the side); in or out stops.
+			if not way in ["left","right"]: return {}
+			l.z = signf(l.z)*side
+			step = Art.AQ*l-at
+			step.y = 0.0
+		if way == "walk" and _blocked(dir): return {}
+		return {"step":step,"y":at.y}
+	var g := _turf_at(to,1.0,1.5)
+	if g.is_empty() or absf((g.position as Vector3).y-at.y) > 0.4: return {}
+	if _on_strip(to+dir*knob("foot_strip")): return {}
+	var ray := PhysicsRayQueryParameters3D.new()
+	ray.collision_mask = 1
+	ray.from = at+Vector3.UP*height*0.4
+	ray.to = ray.from+dir*(float(_shape.radius)+knob("foot_wall"))
+	if not get_world_3d().direct_space_state.intersect_ray(ray).is_empty(): return {}
+	for k: float in [1.0,2.0,knob("foot_rim")]:
+		if is_nan(_ground_y(at+dir*k)): return {}
+	return {"step":step,"y":(g.position as Vector3).y}
