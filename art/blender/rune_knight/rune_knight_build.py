@@ -2,7 +2,7 @@
 rune-knight/spec-rune-knight-body.md, task 2): take A, "bastion", of
 rune_knight_options.py, carved in the Olmec's stone.
 
-    /opt/homebrew/bin/blender -b --python art/blender/rune_knight/rune_knight_build.py -- [--out=DIR] [--blend] [--render=DIR]
+    /opt/homebrew/bin/blender -b --python art/blender/rune_knight/rune_knight_build.py -- [--out=DIR] [--blend] [--render=DIR] [--sheets=clip,clip]
 
 Writes assets/models/rune_knight.glb (rest pose, the rig and the clips of
 rune_knight_clips.py), printing RK_PIECE / RK_TRIS / RK_CLIP / RK_WALK_SLIDE;
@@ -62,9 +62,11 @@ _args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 OUT = ROOT / "assets/models"
 SAVE_BLEND = False
 RENDER = None
+SHEETS = None
 for a in _args:
     if a.startswith("--out="): OUT = Path(a.split("=", 1)[1])
     elif a == "--blend": SAVE_BLEND = True
+    elif a.startswith("--sheets="): SHEETS = set(a.split("=", 1)[1].split(","))
     elif a.startswith("--render"): RENDER = Path(a.split("=", 1)[1]) if "=" in a else ROOT / "scratch/rk_model"
 GLB = OUT / "rune_knight.glb"
 
@@ -744,11 +746,14 @@ if RENDER:
     SHEET_N = 6
     rows_v = [((2.3, 3.3, 1.45), (0, 0.15, 0.95), 42), ((-4.6, 0.3, 0.95), (0, 0.3, 0.9), 42)]
     for c in CLIPS:
+        if SHEETS and c.name not in SHEETS:
+            continue
+        # loops and generated motion: SHEET_N even steps; one-shots: a frame at each key pose
+        times = [c.length * j / SHEET_N for j in range(SHEET_N)] if (c.loop or c.extra) else sorted({k[0] for k in c.keys})
         rows = []
         for ri, (eye, at, lens) in enumerate(rows_v):
             row = []
-            for j in range(SHEET_N):
-                t = c.length * j / (SHEET_N if c.loop else SHEET_N - 1)
+            for t in times:
                 KRIG.apply(c, t)
                 carry = kc.PACE * t if (c.name == "walk" and ri == 1) else 0.0
                 rig.location = (0, carry - (kc.PACE * c.length * 0.5 if c.name == "walk" and ri == 1 else 0.0), 0)

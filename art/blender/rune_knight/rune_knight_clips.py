@@ -26,9 +26,13 @@ Channels (degrees and metres; REST is the model's pose, knees a touch soft):
   lean twist side           the spine (+ forward, to his left, top to his right)
   chest chest_twist         the chest over the spine (+ forward, to his left)
   nod look tilt             the head (+ up, to his left, top to his right)
-  swing.S out.S bend.S wrist.S shrug.S
-                            an arm (+ forward, away from him, elbow more bent,
-                            hand up; the pauldron up, m)
+  swing.S out.S arc.S bend.S wrist.S shrug.S
+                            an arm (+ forward, away from him, round across his
+                            front about the vertical, elbow more bent, hand up;
+                            the pauldron up, m). `out` turns the hanging arm
+                            first, `swing` raises it, `arc` sweeps the raised
+                            arm round (+ toward his other side, - out behind
+                            his own): a level slash is swing 90, arc -130 -> 90.
   fx.S fy.S fz.S pitch.S yaw.S
                             a foot (m off its rest spot; + toes up, toes to
                             his left). Toes up turns it on its heel, toes
@@ -73,7 +77,7 @@ TABARD_DROP = 260.0  # deg per m the hips' bob outruns the tabard
 SKIRT_GAIN = 0.55
 
 SIDES = ("l", "r")
-ARM_CH = {"swing": 0.0, "out": 0.0, "bend": 0.0, "wrist": 0.0, "shrug": 0.0}
+ARM_CH = {"swing": 0.0, "out": 0.0, "arc": 0.0, "bend": 0.0, "wrist": 0.0, "shrug": 0.0}
 FOOT_CH = {"fx": 0.0, "fy": 0.0, "fz": 0.0, "pitch": 0.0, "yaw": 0.0}
 REST = {
     "bob": -0.015, "sway": 0.0, "surge": 0.0, "hpitch": 0.0, "roll": 0.0, "yaw": 0.0,
@@ -224,8 +228,9 @@ class Rig:
             # the arms: the pauldron rides up with the shrug and lags the bob
             shrug = v[f"shrug.{s}"] + SHRUG_GAIN * (vl["bob"] - v["bob"])
             out = sg * -v[f"out.{s}"]
-            D[f"shoulder_{s}"] = D["chest"] @ tr((0, 0, shrug)) @ about(J[f"shoulder_{s}"], ry(0.4 * out) @ rx(0.25 * v[f"swing.{s}"]))
-            D[f"upper_arm_{s}"] = D["chest"] @ tr((0, 0, 0.5 * shrug)) @ about(J[f"upper_arm_{s}"], rx(v[f"swing.{s}"]) @ ry(out))
+            arc = sg * v[f"arc.{s}"]
+            D[f"shoulder_{s}"] = D["chest"] @ tr((0, 0, shrug)) @ about(J[f"shoulder_{s}"], rz(0.3 * arc) @ ry(0.4 * out) @ rx(0.25 * min(v[f"swing.{s}"], 120.0)))
+            D[f"upper_arm_{s}"] = D["chest"] @ tr((0, 0, 0.5 * shrug)) @ about(J[f"upper_arm_{s}"], rz(arc) @ rx(v[f"swing.{s}"]) @ ry(out))
             _, sh, el, wr, fdir = self.arm[s]
             hinge = (el - sh).normalized().cross(fdir).normalized()
             D[f"forearm_{s}"] = D[f"upper_arm_{s}"] @ about(el, Matrix.Rotation(math.radians(v[f"bend.{s}"]), 4, hinge))
@@ -443,5 +448,226 @@ def notice():
     ], loop=False, beats={"end": [0.6]})
 
 
+# ------------------------------------------------------------------ the fight
+# His guard (notice's last pose): knees bent, forearms up, glaring down.
+GUARD = {"bob": -0.06, "lean": 5.0, "chest": 1.5, "nod": -3.0, "hpitch": 2.0,
+         **both(swing=18.0, out=12.0, bend=44.0, wrist=9.0)}
+# Fighting feet: a little wider, the right a step back (his slashing side).
+STANCE = {"fx.l": -0.03, "fy.l": 0.05, "fx.r": 0.03, "fy.r": -0.07, "yaw.r": -8.0}
+# The blade gather's held pose (slash starts here): the right arm raised out
+# beside him, the forearm up so the blade stands skyward off the gauntlet,
+# the left hand out at you, aiming; the chest turned a touch to his right.
+BLADE_HELD = {"bob": -0.07, "lean": 3.0, "twist": -10.0, "chest_twist": -6.0, "nod": -2.0, "look": 8.0,
+              "swing.r": 80.0, "out.r": 0.0, "arc.r": -75.0, "bend.r": 88.0, "wrist.r": 12.0, "shrug.r": 0.03,
+              "swing.l": 70.0, "out.l": 0.0, "arc.l": 10.0, "bend.l": 12.0, "wrist.l": 18.0, **STANCE}
+# The skid's brace: pushed back (the push at his face), leaning hard into
+# it, sunk deep, arms out and low; the right foot back and dug in heel first
+# (the way he slides), the left ahead.
+BRACE = {"bob": -0.21, "hpitch": 14.0, "lean": 18.0, "chest": 6.0, "nod": 6.0,
+         **both(swing=34.0, out=42.0, bend=30.0, wrist=-8.0, shrug=0.02),
+         "fx.l": -0.06, "fy.l": 0.2, "pitch.l": 0.0, "fx.r": 0.07, "fy.r": -0.27, "pitch.r": 14.0, "yaw.r": -12.0}
+
+
+def gather():
+    """The lob's gather: a dip (anticipation), the arms flung up and wide at
+    `grab`, drawn in over his head, the fists closing round the ball at
+    `full`; up on the balls of his feet a touch, leaning back under it."""
+    return Clip("gather", 1.0, [
+        (0.0, {}),
+        (0.13, {"bob": -0.09, "lean": 10.0, "hpitch": 4.0, "nod": -6.0, **both(swing=-22.0, out=14.0, bend=20.0, wrist=-10.0)}, True),
+        (0.3, {"bob": -0.01, "lean": -7.0, "hpitch": -2.0, "chest": -6.0, "nod": 16.0,
+               **both(swing=40.0, out=135.0, bend=8.0, wrist=-14.0, shrug=0.04)}),
+        (0.7, {"bob": -0.03, "lean": -7.0, "chest": -5.0, "nod": 10.0,
+               **both(swing=148.0, out=24.0, bend=40.0, wrist=10.0, shrug=0.025)}),
+        (1.0, {"bob": -0.035, "lean": -7.0, "chest": -5.0, "nod": 8.0,
+               **both(swing=156.0, out=-22.0, bend=62.0, wrist=22.0, shrug=0.025)}, True),
+    ], loop=False, beats={"grab": [0.25], "full": [1.0], "end": [1.0]})
+
+
+def gather_blade():
+    """The blade gather (form "blade"): a short sink as the right arm swings
+    low across him (anticipation), then up and out beside him, the forearm
+    snapping upright so the blade can grow off the gauntlet at `grab`, the
+    left hand thrust out at you; held, a slow tightening, to `full`."""
+    return Clip("gather-blade", 1.0, [
+        (0.0, {}),
+        (0.15, {"bob": -0.085, "lean": 9.0, "twist": 8.0, "nod": -5.0, "hpitch": 3.0,
+                "swing.r": 20.0, "arc.r": 25.0, "bend.r": 55.0, "wrist.r": -20.0, "out.r": 0.0,
+                "swing.l": 30.0, "bend.l": 30.0, "out.l": 8.0, **STANCE}, True),
+        (0.35, {**BLADE_HELD, "bob": -0.06, "twist": -13.0, "bend.r": 96.0, "wrist.r": 18.0, "shrug.r": 0.045}),
+        (0.5, {**BLADE_HELD}, True),
+        (1.0, {**BLADE_HELD, "bob": -0.075, "twist": -12.0, "swing.r": 84.0, "bend.r": 90.0}, True),
+    ], loop=False, beats={"grab": [0.25], "full": [1.0], "end": [1.0]})
+
+
+def slash(form):
+    """The slash off the blade gather. `level`: wound back low and wide behind
+    his right (chest turned away, crouched: it will go flat), held a beat,
+    swept flat across at `release` (arm straight at you), followed through
+    far to his left, settled into his guard. `high`: raised over his right
+    shoulder (tall, leaning back), held a beat, cut down across at `release`,
+    followed through low to his left, bent over it. The windup tells which."""
+    if form == "level":
+        wind = {"bob": -0.16, "hpitch": 6.0, "lean": 10.0, "twist": -32.0, "chest_twist": -16.0, "yaw": -14.0,
+                "look": 30.0, "nod": -2.0, "side": -4.0,
+                "swing.r": 84.0, "out.r": 0.0, "arc.r": -128.0, "bend.r": 22.0, "wrist.r": -6.0, "shrug.r": 0.035,
+                "swing.l": 62.0, "arc.l": 30.0, "bend.l": 18.0, "wrist.l": 10.0,
+                "fx.l": -0.05, "fy.l": 0.14, "fx.r": 0.06, "fy.r": -0.14, "yaw.r": -16.0, "pitch.r": 0.0}
+        held = {**wind, "bob": -0.17, "twist": -35.0, "arc.r": -134.0}
+        cut = {"bob": -0.15, "lean": 16.0, "twist": 2.0, "chest_twist": 4.0, "yaw": 0.0, "look": 0.0, "side": 1.0,
+               "swing.r": 86.0, "arc.r": 0.0, "bend.r": 4.0, "wrist.r": 0.0,
+               "swing.l": 30.0, "arc.l": -20.0, "out.l": 30.0, "bend.l": 30.0}
+        thru = {"bob": -0.165, "lean": 20.0, "twist": 34.0, "chest_twist": 16.0, "yaw": 12.0, "look": -14.0, "side": 3.0,
+                "swing.r": 80.0, "arc.r": 92.0, "bend.r": 12.0, "wrist.r": -8.0, "shrug.r": 0.0,
+                "swing.l": 10.0, "arc.l": -30.0, "out.l": 45.0, "bend.l": 30.0, "pitch.r": -12.0}
+    else:
+        wind = {"bob": -0.03, "hpitch": -3.0, "lean": -12.0, "chest": -6.0, "twist": -24.0, "chest_twist": -12.0,
+                "yaw": -10.0, "look": 22.0, "nod": 10.0, "side": -6.0,
+                "swing.r": 150.0, "out.r": 0.0, "arc.r": -45.0, "bend.r": 40.0, "wrist.r": -10.0, "shrug.r": 0.06,
+                "swing.l": 70.0, "arc.l": 25.0, "bend.l": 20.0, "wrist.l": 10.0,
+                "fx.l": -0.04, "fy.l": 0.12, "fx.r": 0.05, "fy.r": -0.12, "yaw.r": -14.0, "pitch.r": -10.0}
+        held = {**wind, "lean": -14.0, "swing.r": 158.0, "bob": -0.025}
+        cut = {"bob": -0.12, "hpitch": 6.0, "lean": 16.0, "chest": 5.0, "twist": 6.0, "chest_twist": 4.0, "yaw": 0.0,
+               "look": 0.0, "nod": -6.0, "side": 3.0,
+               "swing.r": 72.0, "arc.r": 18.0, "bend.r": 6.0, "wrist.r": 0.0, "shrug.r": 0.0,
+               "swing.l": 25.0, "arc.l": -20.0, "out.l": 30.0, "bend.l": 30.0, "pitch.r": 0.0}
+        thru = {"bob": -0.19, "hpitch": 12.0, "lean": 30.0, "chest": 8.0, "twist": 28.0, "chest_twist": 12.0, "yaw": 10.0,
+                "look": -10.0, "nod": -10.0, "side": 5.0,
+                "swing.r": 8.0, "arc.r": 60.0, "out.r": -10.0, "bend.r": 14.0, "wrist.r": -10.0,
+                "swing.l": -5.0, "arc.l": -20.0, "out.l": 45.0, "bend.l": 26.0, "pitch.r": -14.0}
+    return Clip(f"slash-{form}", 1.0, [
+        (0.0, dict(BLADE_HELD)),
+        (0.3, wind),
+        (0.44, held, True),
+        (0.52, cut),
+        (0.64, thru, True),
+        (0.78, {**thru, "bob": thru["bob"] + 0.015}),
+        (1.0, {**GUARD, **STANCE, "twist": 0.0, "chest_twist": 0.0, "yaw": 0.0, "look": 0.0, "side": 0.0,
+               "arc.r": 0.0, "arc.l": 0.0, "pitch.r": 0.0}, True),
+    ], loop=False, beats={"release": [0.52], "end": [1.0]})
+
+
+def throw():
+    """The lob's throw, from the gather's ball overhead: wound back and up
+    (anticipation, up on his toes), a two-handed overhead heave at
+    `release`, the follow-through down and forward, a heavy settle."""
+    return Clip("throw", 0.7, [
+        (0.0, {"bob": -0.035, "hpitch": -2.0, "lean": -7.0, "chest": -5.0, "nod": 8.0,
+               **both(swing=156.0, out=-22.0, bend=62.0, wrist=22.0, shrug=0.025)}),
+        (0.22, {"bob": -0.02, "hpitch": -4.0, "lean": -13.0, "chest": -6.0, "nod": 8.0,
+                **both(swing=176.0, out=-20.0, bend=52.0, wrist=28.0, shrug=0.03),
+                "fy.r": -0.08, "pitch.r": -12.0, "fy.l": 0.06}, True),
+        (0.35, {"bob": -0.1, "hpitch": 8.0, "lean": 18.0, "chest": 6.0, "nod": -4.0,
+                **both(swing=92.0, out=-8.0, bend=6.0, wrist=-6.0, shrug=0.0), "pitch.r": 0.0}),
+        (0.5, {"bob": -0.15, "hpitch": 12.0, "lean": 27.0, "chest": 8.0, "nod": -10.0,
+               **both(swing=32.0, out=0.0, bend=8.0, wrist=-12.0)}, True),
+        (0.7, {"bob": -0.1, "hpitch": 7.0, "lean": 17.0, "chest": 4.0, "nod": -6.0,
+               **both(swing=26.0, out=10.0, bend=14.0, wrist=-4.0)}, True),
+    ], loop=False, beats={"release": [0.35], "end": [0.7]})
+
+
+def catch():
+    """Both gauntlets thrust out to meet it at `contact`, the blow taken back
+    into the chest (lean back, sink, the right foot back to take it), held
+    there till `hold`."""
+    return Clip("catch", 0.6, [
+        (0.0, {**GUARD, **STANCE, **both(swing=60.0, out=18.0, bend=24.0, wrist=10.0), "lean": 5.0}),
+        (0.1, {"bob": -0.06, "lean": 9.0, "nod": -2.0, **both(swing=86.0, out=-4.0, bend=8.0, wrist=24.0, shrug=0.02)}),
+        (0.25, {"bob": -0.14, "hpitch": -2.0, "lean": -13.0, "chest": -5.0, "nod": 6.0,
+                **both(swing=24.0, out=-8.0, bend=52.0, wrist=24.0, shrug=0.03),
+                "fy.r": -0.12, "pitch.l": 8.0}),
+        (0.42, {"bob": -0.11, "lean": -7.0, "chest": -3.0, "nod": 3.0,
+                **both(swing=20.0, out=-8.0, bend=54.0, wrist=22.0, shrug=0.015), "pitch.l": 0.0}),
+        (0.6, {"bob": -0.105, "lean": -6.0, "chest": -2.0, "nod": 2.0,
+               **both(swing=20.0, out=-8.0, bend=52.0, wrist=22.0, shrug=0.015)}, True),
+    ], loop=False, beats={"contact": [0.1], "hold": [0.6], "end": [0.6]})
+
+
+def ret():
+    """The return: drawn in tighter and back (anticipation), a two-handed
+    shove out at `release`, the left foot stamping forward, the
+    follow-through leaning after it, back to his guard."""
+    return Clip("return", 0.5, [
+        (0.0, {"bob": -0.105, "lean": -6.0, "chest": -2.0, "nod": 2.0, **STANCE, "fy.r": -0.12,
+               **both(swing=20.0, out=-8.0, bend=52.0, wrist=22.0, shrug=0.015)}),
+        (0.15, {"bob": -0.13, "lean": -16.0, "chest": -6.0, "nod": 4.0, "twist": -6.0,
+                **both(swing=12.0, out=-6.0, bend=70.0, wrist=28.0, shrug=0.03), "fz.l": 0.04, "fy.l": 0.1}, True),
+        (0.22, {"bob": -0.12, "hpitch": 8.0, "lean": 20.0, "chest": 6.0, "nod": -4.0, "twist": 2.0,
+                **both(swing=88.0, out=-6.0, bend=4.0, wrist=30.0, shrug=0.0), "fz.l": 0.0, "fy.l": 0.16}),
+        (0.34, {"bob": -0.13, "hpitch": 10.0, "lean": 24.0, "chest": 7.0, "nod": -6.0,
+                **both(swing=84.0, out=-2.0, bend=6.0, wrist=26.0)}, True),
+        (0.5, {**GUARD, **STANCE, "fy.l": 0.16, "twist": 0.0}, True),
+    ], loop=False, beats={"release": [0.22], "end": [0.5]})
+
+
+def skid():
+    """Struck from the front: thrown back for a blink (head up, arms flung
+    forward), then leaning hard into the push, arms out and low for balance,
+    sunk deep, the back foot dug in heel first, held while he scrapes
+    (the body slides his root); straightened back to his guard by `end`.
+    Authored with the push at his face; the body turns the model to it."""
+    return Clip("skid", 1.6, [
+        (0.0, {}),
+        (0.07, {"bob": -0.04, "hpitch": -6.0, "lean": -18.0, "chest": -6.0, "nod": 18.0,
+                **both(swing=62.0, out=50.0, bend=14.0, wrist=-20.0, shrug=0.05),
+                "fy.r": -0.08, "pitch.l": 14.0}),
+        (0.25, {**BRACE}, True),
+        (0.9, {**BRACE, "bob": -0.2, "lean": 16.0, "nod": 3.0, **both(swing=30.0, out=40.0, bend=34.0)}),
+        (1.25, {"bob": -0.1, "hpitch": 6.0, "lean": 9.0, "chest": 3.0, "nod": 0.0,
+                **both(swing=22.0, out=22.0, bend=40.0, wrist=4.0, shrug=0.0),
+                "fy.l": 0.1, "fy.r": -0.14, "pitch.r": 0.0, "yaw.r": -8.0, "fx.l": -0.04, "fx.r": 0.04}),
+        (1.6, {**GUARD, **STANCE}, True),
+    ], loop=False, beats={"plant": [0.1], "end": [1.6]})
+
+
+def _teeter_extra(t, v):
+    u = smooth(t / 0.15)
+    w = 2 * math.pi * 1.7 * t
+    for s, ph in (("l", 0.0), ("r", math.pi)):
+        v[f"swing.{s}"] += u * 95.0 * math.sin(w + ph)
+        v[f"out.{s}"] += u * 18.0 * math.cos(w + ph)
+        v[f"bend.{s}"] += u * 12.0 * math.sin(w + ph + 0.8)
+    rock = math.sin(2 * math.pi * 1.3 * t)
+    v["lean"] += u * -8.0 * rock
+    v["hpitch"] += u * -3.0 * rock
+    v["nod"] += u * 6.0 * rock
+
+
+def teeter():
+    """Over the drop (behind him: the skid carried him back to the lip): up
+    on the toes of the back foot, the front one lifted, leaning out over
+    it and rocking, the arms wheeling round at his sides out of step."""
+    return Clip("teeter", 1.1, [
+        (0.0, {**BRACE}),
+        (0.15, {"bob": -0.03, "hpitch": -8.0, "lean": -16.0, "chest": -6.0, "nod": 12.0,
+                **both(swing=80.0, out=60.0, bend=16.0, wrist=0.0, shrug=0.05),
+                "fx.l": -0.04, "fy.l": 0.1, "fz.l": 0.06, "pitch.l": 10.0,
+                "fx.r": 0.05, "fy.r": -0.14, "pitch.r": -16.0, "yaw.r": -8.0}),
+        (1.1, {"bob": -0.035, "hpitch": -7.0, "lean": -14.0, "chest": -5.0, "nod": 10.0,
+               **both(swing=80.0, out=60.0, bend=16.0)}),
+    ], loop=False, extra=_teeter_extra, beats={"end": [1.1]})
+
+
+def reel():
+    """His wind ripped from him: wrenched back at `open` (arms flung up and
+    wide, head thrown back, up on his heels), the arms dropping wide and
+    slack, the chest bared, rocked back and sunk, held open; gathered back
+    to his guard by `end`."""
+    return Clip("reel", 1.25, [
+        (0.0, {}),
+        (0.08, {"bob": -0.02, "hpitch": -8.0, "lean": -24.0, "chest": -9.0, "nod": 18.0,
+                **both(swing=92.0, out=82.0, bend=8.0, wrist=-24.0, shrug=0.025),
+                "pitch.l": 16.0, "fy.r": -0.1, "pitch.r": 8.0}),
+        (0.3, {"bob": -0.12, "hpitch": -6.0, "lean": -20.0, "chest": -8.0, "nod": 18.0,
+               **both(swing=40.0, out=58.0, bend=14.0, wrist=-16.0, shrug=0.015), "pitch.l": 0.0, "pitch.r": 0.0}),
+        (0.6, {"bob": -0.15, "hpitch": -4.0, "lean": -15.0, "chest": -6.0, "nod": 10.0,
+               **both(swing=16.0, out=40.0, bend=20.0, wrist=-10.0, shrug=0.0)}),
+        (0.95, {"bob": -0.14, "hpitch": -2.0, "lean": -11.0, "chest": -4.0, "nod": 6.0,
+                **both(swing=12.0, out=32.0, bend=24.0, wrist=-6.0)}, True),
+        (1.25, {**GUARD, **STANCE}, True),
+    ], loop=False, beats={"open": [0.08], "end": [1.25]})
+
+
 def clips():
-    return [idle(), walk(), turn(), notice()]
+    return [idle(), walk(), turn(), notice(), gather(), gather_blade(), slash("level"), slash("high"),
+            throw(), catch(), ret(), skid(), teeter(), reel()]
