@@ -31,7 +31,8 @@ extends Node3D
 ## - **Effects:** `rune_glow` (his runes lit), `wind_gather` (streaks drawn
 ##   in to hands_mid, or the right fist with the blade), `wind_blade` (a
 ##   blade of air along the right forearm, the `blade` socket in it),
-##   `rune_crack` form chest/hand_l/hand_r (flare, flicker, dark for good),
+##   `rune_crack` form chest/hand_l/hand_r (a seam splits the tablet across
+##   in the flare, then the rune flickers and goes dark for good),
 ##   `rune_spill` form a rune (its shards burst out, scripts/enemies/
 ##   rune_spill.gd), `eye_glow` (the visor's eye lit; lit at `notice`, dim
 ##   again when he walks, dark when he breaks).
@@ -78,14 +79,19 @@ const SPILL_WIDE := 0.25
 const EYE_EASE := 4.0
 ## The model's turn to the push in a skid (rad a second).
 const PUSH_TURN := 14.0
-## The streaks (the stand-in's).
+## The streaks: the stand-in's count, rate and blade reach. On the real
+## body the stand-in's gather (1.15 tall out, 0.085 wide) read as speed
+## lines filling the frame and buried the blade, so the gather draws in from
+## nearer and thinner, and thinner again round a forming blade, and the
+## blade's streaks are a little wider to read past the heavy gauntlet.
 const GATHER_STREAKS := Standin.GATHER_STREAKS
-const GATHER_REACH := Standin.GATHER_REACH
+const GATHER_REACH := 0.8
 const GATHER_RATE := Standin.GATHER_RATE
-const GATHER_WIDTH := Standin.GATHER_WIDTH
+const GATHER_WIDTH := 0.055
+const GATHER_ON_BLADE := 0.45
 const BLADE_STREAKS := Standin.BLADE_STREAKS
 const BLADE_REACH := Standin.BLADE_REACH
-const BLADE_WIDTH := Standin.BLADE_WIDTH
+const BLADE_WIDTH := 0.1
 const BLADE_TINT := Standin.BLADE_TINT
 const BLADE_GROW := Standin.BLADE_GROW
 const SKID_DUST := Standin.SKID_DUST
@@ -411,6 +417,11 @@ func _light_runes() -> void:
 				e = lit_share*fade if _rng.randf() < 0.45 else 0.03
 			else: e = 0.0
 		look.rune_energy(key,e)
+		# The seam runs across the tablet in the flare and opens a little more
+		# as the light gutters.
+		var open := 0.0
+		if t >= 0.0: open = 0.75*clampf(t/CRACK_FLARE,0.0,1.0)+0.25*clampf((t-CRACK_FLARE)/CRACK_FLICKER,0.0,1.0)
+		look.rune_split(key,open)
 
 func _rune_at(group: String) -> Node3D:
 	return _sockets.get("chest_rune" if group == "chest" else group)
@@ -495,9 +506,9 @@ func _draw_gather() -> void:
 		var across := way.cross((eye_at-head).normalized())
 		if across.length() < 0.01: across = Vector3.UP.cross(way)
 		across = across.normalized()
-		var w := GATHER_WIDTH*tall*(1.0-u*0.5)*(0.6 if effects.wind_blade else 1.0)
+		var w := GATHER_WIDTH*tall*(1.0-u*0.5)*(GATHER_ON_BLADE if effects.wind_blade else 1.0)
 		mm.set_instance_transform(i,Transform3D(Basis(along,across*w,way.cross(across).normalized()),head-along*0.5))
-		mm.set_instance_custom_data(i,Color(_gather_fade*sin(u*PI)*(0.6 if effects.wind_blade else 0.95),0,0,0))
+		mm.set_instance_custom_data(i,Color(_gather_fade*sin(u*PI)*(0.45 if effects.wind_blade else 0.9),0,0,0))
 		mm.set_instance_color(i,Color(0.86,0.95,1.0))
 	mm.visible_instance_count = GATHER_STREAKS
 

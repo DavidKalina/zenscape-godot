@@ -34,6 +34,7 @@ extends Node3D
 ## animations (`play`).
 ##   play(clip, blend)        a glb clip by name (rune_knight_clips.py clips())
 ##   rune_energy(key, share)  a rune's light, 0 dark, 1 at rest
+##   rune_split(key, share)   a rune's tablet split across, 0 whole, 1 open
 ##   eye_glow(share)          the eye, 0 dark, EYE_REST at rest, 1 full
 
 const Style = preload("res://scripts/ruin_stone_style.gd")
@@ -144,6 +145,11 @@ func _rune_material() -> ShaderMaterial:
 ## A rune's light: 0 dark, 1 at rest, up to RUNE_LIT/RUNE_REST lit.
 func rune_energy(key: String, share: float) -> void:
 	if runes.has(key): (runes[key] as ShaderMaterial).set_shader_parameter("energy",RUNE_REST*share)
+
+## A rune's tablet split: 0 whole, 1 a seam across its glyphs, open (the
+## stone shader's `split`, on the tablet's face only).
+func rune_split(key: String, share: float) -> void:
+	if runes.has(key): (runes[key] as ShaderMaterial).set_shader_parameter("split",clampf(share,0.0,1.0))
 
 ## A socket (riding its bone): hand_r, hand_l, hands_mid, blade, chest_rune, eye.
 func socket(name_: String) -> Node3D:
