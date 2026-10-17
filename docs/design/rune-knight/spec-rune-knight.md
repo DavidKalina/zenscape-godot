@@ -284,6 +284,30 @@ around you."
   stand-in gets plain procedural versions so `--rune-body=standin` still
   plays.
 
+## He slashes at the plane (spec change: the user's ask)
+
+The user: "I want him to be able to launch at the plane", and picked:
+he slashes crescents at it.
+
+- **When:** the wanderer is flying the plane and it comes within his
+  sight and range (a knob, longer than his foot range; the plane is big
+  and fast). He tracks it with his helm, gathers the blade and slashes
+  a crescent up at it, leading it: aimed where the plane will be when the
+  crescent gets there, from its velocity. The crescent flies faster than
+  his foot slash (a knob) so a lead can land; a plane that turns or climbs
+  after the release dodges it.
+- **A hit buffets the plane,** the way the dragon's air blast does
+  (`scripts/dragon_air_blast.gd` `plane_air(p, nose)`: a shove of wind on
+  the plane, no damage), knocking it off its line: a rough jolt, not a
+  crash. Read how the plane takes the dragon's air and offer the crescent
+  to it the same way, additively.
+- **Rhythm:** a slower cadence than on foot (a knob), so a fly-past
+  draws one or two crescents, readable from the cockpit: the blade's
+  glow at the gather, the crescent's silhouette against the sky.
+- **Nothing else changes:** he stays on his ground (no leap at the
+  plane); landing the plane by hand on its strip stays possible (he
+  doesn't slash at a plane on the ground or rolling on the strip).
+
 ## Where code goes
 
 - `scripts/enemies/rune_knight.gd`: the knight (body, patrol, sense,
@@ -440,6 +464,13 @@ changing. Names here are final once built on; change one only by a
    backs off; on the deck he steps along it and never off; he never walks
    into the landing strip, the wall or the rim; every older driver still
    passes. Stills and a short clip strip of the strafe.
+18. He slashes at the plane (above). Play-loop checks with the wanderer
+   flying (the harness's flying helpers): a fly-past within range draws a
+   gathered, led crescent; flying straight it hits and the plane is
+   shoved off its line (its velocity jolts, it doesn't crash); a climb
+   or turn after the release dodges it; a plane on the strip draws
+   nothing. Stills from the cockpit view of the gather and the crescent
+   coming up.
 
 ## Checks
 
