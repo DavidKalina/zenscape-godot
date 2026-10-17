@@ -18,6 +18,7 @@ extends "res://studies/kit_isle.gd"
 ##     [--earn-charge] (charge the gust shot by moving, as everywhere else)
 ##     [--calm] (the Olmec doesn't hunt you: he stands and listens)
 ##     [--olmec-at=x,z] [--body-knob=<knob>=<value>]
+##     [--phase=2] (start whole, the head on: phase 2; R starts it so again)
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
 const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
 const OlmecTarget = preload("res://scripts/lock_on/olmec_target.gd")
@@ -70,6 +71,9 @@ var _down_t := -1.0
 ## greybox, the Olmec whole); `--head-knob=<knob>=<value>` over its knobs.
 var whole_olmec := false
 var phase := 1
+## The phase the fight starts in (and R starts it in again): 1, or 2 with
+## `--phase=2` (for testing: the body set down whole, the head on).
+var start_phase := 1
 var phase_one_over := false
 var _head_knobs := {}
 ## Phase 2's beat: the body comes up over the rim BODY_AFTER s after the
@@ -113,6 +117,7 @@ func _ready() -> void:
 			var p := arg.get_slice("=",1).split(",")
 			_olmec_at = Vector2(float(p[0]),float(p[1]) if p.size() > 1 else 0.0)
 		elif arg == "--whole-olmec": whole_olmec = true
+		elif arg.begins_with("--phase="): start_phase = clampi(int(arg.get_slice("=",1)),1,2)
 		elif arg.begins_with("--head-knob="):
 			var hk: String = arg.trim_prefix("--head-knob=")
 			_head_knobs[hk.get_slice("=",0)] = float(hk.get_slice("=",1))
@@ -234,6 +239,9 @@ func _build_enemies() -> void:
 	foot_pieces = slot
 	var at := Vector3(_olmec_at.x,_ground_y(_olmec_at.x,_olmec_at.y),_olmec_at.y)
 	if not whole_olmec:
+		# Phase 2 from the start: the body there, facing you, its head on
+		# (it first, so the head reads its neck each frame).
+		if start_phase == 2: enemies.spawn(BossBody,at,Vector2(0.0,1.0),_boss_knobs())
 		# Phase 1: the head alone, facing the start.
 		enemies.spawn(BossHead,at,Vector2(0.0,1.0),_head_knobs)
 		_wire()
@@ -271,6 +279,18 @@ func _wire() -> void:
 		h.connect("phase_done",_phase_one_done)
 	_gone_t = 0.0
 	_down_t = -1.0
+	if b != null and h != null and not whole_olmec and start_phase == 2:
+		# Phase 1 as if played out: the head done and silent on his neck.
+		h.phase1_done = true
+		h.state = "done"
+		phase_one_over = true
+		_body_whole(b)
+
+## The boss body's knobs: it knows the whole field (sense, lose), hunts.
+func _boss_knobs() -> Dictionary:
+	var knobs := {"chase":0.0 if calm else 1.0,"relentless":1.0,"periscope":0.0,"sense":FIELD_R*2.0,"lose":8.0}
+	knobs.merge(_body_knobs,true)
+	return knobs
 
 ## The Olmec back as he began, whole.
 func reset_olmec() -> void:
@@ -362,33 +382,61 @@ func _build_card() -> void:
 	_card.position = Vector2(16.0,12.0)
 	holder.add_child(_card)
 
+## The card: the field's keys, then the fight: the phase, his hits (pips)
+## and the attack he's on (`attack_line`).
 func _show_card() -> void:
 	if _card == null: return
-	var b := olmec()
-	var line := CARD
-	if b != null:
-		var n := int(b.hits)
-		var most := int(b.most_hits)
-		var pips := "●".repeat(mini(n,most))+"○".repeat(maxi(most-n,0))
-		var doing := str(b.state)
-		if str(b.get("move")) not in ["","<null>"]: doing = str(b.move)+" ("+doing+")"
-		line += "\nOlmec  %s  %s" % [pips,"down" if bool(b.crumbled) else doing]
-		if foot_lock != null and foot_lock.locked(): line += "  ·  locked"
-	var h := olmec_head()
-	if b != null and arrival in ["climbing","crossing"]:
-		line += "\nPhase 1 done  ·  his body %s" % ("climbs the rim" if arrival == "climbing" else "comes for his head")
-	elif b != null and arrival == "whole":
-		line = line.replace("\nOlmec","\nPhase 2  ·  Olmec")
-	if b == null and h != null and h.has_method("pick_puff"):
-		var n := int(h.hits)
-		var most := int(h.knobs.phase_hits)
-		var pips := "●".repeat(mini(n,most))+"○".repeat(maxi(most-n,0))
-		var doing: String = h.state
-		if str(h.puff) != "": doing += " " + str(h.puff)
-		line += "\nHead  %s  %s" % [pips,doing]
-		if foot_lock != null and foot_lock.locked(): line += "  ·  locked"
-	_card.text = line
+	_card.text = CARD+"\n"+fight_line()
 	_card.visible = not flying and _capture == ""
+
+static func _pips(n: int, most: int) -> String:
+	return "●".repeat(mini(n,most))+"○".repeat(maxi(most-n,0))+" %d/%d" % [mini(n,most),most]
+
+## The fight's card line: "Phase 1  ·  Head ●●○○○○  absorbing", the body's
+## arrival, "Phase 2  ·  Olmec ●○○○○○○○  slam!" or "... down".
+func fight_line() -> String:
+	var b := olmec()
+	var h := olmec_head()
+	var lock := "  ·  locked" if foot_lock != null and foot_lock.locked() else ""
+	if whole_olmec:
+		if b == null: return ""
+		return "Olmec  %s  %s%s" % [_pips(int(b.hits),int(b.most_hits)),"down" if bool(b.crumbled) else str(b.state),lock]
+	if b != null and arrival in ["climbing","crossing"]:
+		return "Phase 1 done  ·  his body %s" % ("climbs the rim" if arrival == "climbing" else "comes for his head")
+	if b != null:
+		return "Phase 2  ·  Olmec  %s  %s%s" % [_pips(int(b.hits),int(b.most_hits)),attack_line(),lock]
+	if h != null:
+		return "Phase 1  ·  Head  %s  %s%s" % [_pips(int(h.hits),int(h.knobs.phase_hits)),attack_line(),lock]
+	return ""
+
+## What he is on, in words: phase 1 the head's round and its puff, phase 2
+## his move (slam, bound, swat, pounce, suck, a puff from up high) or how he
+## hunts.
+func attack_line() -> String:
+	var b := olmec()
+	var h := olmec_head()
+	if b != null and arrival in ["whole",""]:
+		if bool(b.crumbled): return "down"
+		var mv := str(b.get("move"))
+		if mv in ["","<null>"]:
+			return {"chase":"hunting you","seek":"looking for you","alert":"looking for you","listen":"listening",
+				"triumph":"triumphant","stagger":"rocked back","spent":"winded","home":"striding in"}.get(str(b.state),str(b.state))
+		if mv.begins_with("puff "):
+			# "puff volley tell": his head, up high.
+			var p := mv.split(" ")
+			var kind := p[1] if p.size() > 1 else ""
+			var step := p[2] if p.size() > 2 else ""
+			return {"absorb":"absorbs (%s)" % kind,"tell":"%s coming" % kind,"puff":"%s!" % kind}.get(step,mv)+"  ·  from up high"
+		var st := str(b.state)
+		# The windup is the tell (a gust shot in it stops a slam or a swat).
+		if st == "windup" or (mv == "slam" and not bool(b.get("_slam_hit"))) or (mv == "swat" and float(b.state_t) < float(b.knobs.swat_windup)):
+			return mv+" coming"
+		return {"suck":"sucking you in"}.get(mv,mv+"!")
+	if h == null: return ""
+	var puff := str(h.puff)
+	return {"ready":"turning to you","absorb_tell":"about to absorb","absorb":"absorbing the air",
+		"puff_tell":"%s coming" % puff,"puff":"%s!" % puff,"spent":"spent (shoot it now)","stagger":"staggered",
+		"cry":"cries out","done":"silent, lit"}.get(str(h.state),str(h.state))
 
 func _phase_one_done(h: Node3D) -> void:
 	phase_one_over = true
@@ -417,9 +465,7 @@ func _bring_body() -> void:
 		if fitted.is_empty(): continue
 		# It knows where its head is across the whole field (sense, lose),
 		# so the beat is short: over the rim, straight for it.
-		var knobs := {"chase":0.0 if calm else 1.0,"relentless":1.0,"periscope":0.0,"sense":FIELD_R*2.0,"lose":8.0}
-		knobs.merge(_body_knobs,true)
-		var b: Node3D = enemies.add(BossBody,fitted[0],-(fitted[1] as Vector2),knobs)
+		var b: Node3D = enemies.add(BossBody,fitted[0],-(fitted[1] as Vector2),_boss_knobs())
 		# Ahead of its head in the field, so the head reads its neck this frame.
 		enemies.enemies.erase(b)
 		enemies.enemies.insert(maxi(enemies.enemies.find(h),0),b)
