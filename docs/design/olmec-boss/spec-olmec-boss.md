@@ -172,6 +172,15 @@ You launch `./run-olmec-field.command` and play this fight:
         the slam on, Tab re-locks at any range), and gust shots fired
         from anywhere on the slope must reach and hit him. Prove it from
         the far high side with real Tab and X.
+   - *For tuning (user, after playing (10): "much better"):* the debris
+     that goes over the edge falls wrong: "some of the pillars stay
+     perfectly upright while falling off. Kinda looks odd." (10) made
+     the shoved lane pieces slide upright so their buried, open faces
+     never show. As a piece reaches the low edge and drops, it should tip
+     over the lip and tumble with weight (pivot on the edge, topple,
+     spin as it falls, out of view below), believable every time it
+     happens, without showing open faces (close or hide them, or pick
+     the turn so they stay away from the camera).
    - *Order:* after the charge, as three tasks: (7) the tilt slam, the
      steep tilt and the slide; (8) the air arcs and the counter (shots
      break his brace); (9) the release, the fling, the glide back and his
