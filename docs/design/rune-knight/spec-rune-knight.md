@@ -302,6 +302,9 @@ changing. Names here are final once built on; change one only by a
 - **Effects**: `rune_glow` (lines lit while he holds wind),
   `wind_gather` (streaks drawn into `hands_mid`, or into `blade` before
   a slash), `wind_blade` (the blade of air along his forearm).
+- **Contract additions (task 12):** effect `rune_spill` (form: the rune's
+  name; one-shot: the riposte's spill), clip `gone` (over the island's
+  rim, out of sight below: the body hides; `death` "gone").
 
 ## Tasks (the first iteration orders these; keep each one a checkpoint)
 

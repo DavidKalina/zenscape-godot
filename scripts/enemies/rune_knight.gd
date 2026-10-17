@@ -99,7 +99,8 @@ extends Node3D
 ##   (`fall`); at its `land` beat (the body's, when his root stops
 ##   dropping) he plays `shatter` on the ground below. Dead ("dead"), he
 ##   leaves the lock targets and his room, reads no shots, and `died_at`
-##   and `death` ("crumble" or "shatter") say where and how.
+##   and `death` ("crumble", "shatter", or "gone": over the island's rim, his
+##   rune with him) say where and how.
 ## - **The riposte** (spec "The brutal parry, the riposte, the brace"): a
 ##   parry of one of his shots (scripts/wind_parry.gd calls `parried`)
 ##   rips his wind from him: `reel` (state "reel", till its `end`), runes
@@ -258,6 +259,15 @@ const KNOBS := {
 	"leap_ring_strength": 0.8,
 	# Home: on the meadow, the wanderer unseen this long (s), he leaps back up.
 	"home_wait": 6.0,
+	# The island's rim (task 12): a meadow skid's lip is where the ground
+	# under him ends (nothing within rim_depth m below); gone over, he
+	# falls rim_drop m, then, nothing under him for fall_drop m, is gone
+	# (dead, out of sight below; ground under him, he lands and shatters).
+	# A fall off the deck is gone the same after fall_drop m.
+	"rim_step": 0.25,
+	"rim_depth": 2.5,
+	"rim_drop": 5.0,
+	"fall_drop": 40.0,
 }
 ## What hides you from him: stone (layer 1) and turf (layer 11).
 const SIGHT_MASK := 1 | (1 << 11)
@@ -334,7 +344,7 @@ var attack := "slash"
 var slash_form := "level"
 var next_form := ""
 var slashes := 0
-## His death: "" alive, "crumble" or "shatter"; where it was; the wind
+## His death: "" alive, "crumble", "shatter" or "gone"; where it was; the wind
 ## burst out of him as he crumbled (null none).
 var death := ""
 var died_at := Vector3.INF
@@ -364,6 +374,11 @@ var on_meadow := false
 var leaps := 0
 var landings := 0
 var no_line := 0.0
+## The fall's top (y), INF when not falling; the rim's out way (flat) while
+## he teeters on it; ripostes' spills.
+var _fall_top := INF
+var _rim_out := Vector3.ZERO
+var spills := 0
 var close_below := 0.0
 const LEAP_DT := 1.0/240.0
 const LeapRing = preload("res://scripts/enemies/leap_ring.gd")
@@ -481,6 +496,12 @@ func _process(delta: float) -> void:
 			elif not off_deck:
 				at = _keep_on_deck(at)
 		"fall":
+			if _fall_top == INF: _fall_top = at.y
+			if at.y < _fall_top-(knob("rim_drop") if on_meadow else knob("fall_drop")) and _fall_hit(at,Vector3.DOWN*knob("fall_drop")).is_empty():
+				# Over the island's rim, nothing under him: out of sight below, gone.
+				print("rune knight: falls past the rim, gone below")
+				_die("gone")
+				return
 			fall_v += Vector3.DOWN*knob("gravity")*delta
 			var step := fall_v*delta
 			var hit := _fall_hit(at,step)
@@ -511,6 +532,7 @@ func _process(delta: float) -> void:
 					_turn_to(_yaw_to(ends[heading_to]-at))
 				elif sees and cool <= 0.0 and absf(yaw_goal-yaw) < knob("face_ok") and close_below <= 0.0:
 					_gather()
+	if state != "fall": _fall_top = INF
 	yaw = move_toward(yaw,yaw_goal,knob("turn_rate")*delta)
 	transform = Transform3D(Basis(Vector3.UP,yaw),at)
 	if _room != null: _room.global_transform = Transform3D(Basis.IDENTITY,at)
@@ -857,7 +879,7 @@ func _send_return(node: Node3D, speed: float) -> void:
 ## shove, he skids back along its flat way, farther with more strength.
 func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
 	var riposte := _riposte()
-	_skid(way,_skid_meters(riposte,strength),riposte)
+	_skid(way,_skid_meters(riposte,strength),riposte,riposte)
 	print("rune knight: gust shot hit at (%.1f, %.1f, %.1f), strength %.2f, %s (%d hits)" % [at.x,at.y,at.z,strength,"a riposte" if riposte else "skids",hits])
 
 ## A shot burst on him: a rally miss (one from in front he let go, past
@@ -868,7 +890,7 @@ func _hit(node: Node, at: Vector3, v: Vector3) -> void:
 	var st = node.get("strength")
 	var riposte := _riposte()
 	var miss := node.has_meta("missed") or riposte
-	_skid(v,_skid_meters(miss,float(st) if st != null else 1.0),miss)
+	_skid(v,_skid_meters(miss,float(st) if st != null else 1.0),miss,riposte)
 	print("rune knight: hit at %.1f m/s (%s), skids (%d hits)" % [v.length(),"a riposte" if riposte else ("a rally miss" if miss else "a shove"),hits])
 
 ## A hit landing while he reels: a riposte (it cracks and skids as a miss).
@@ -907,7 +929,7 @@ func _skid_meters(miss: bool, strength: float) -> float:
 ## lost; `crack` a rune cracks). Teetering, any hit puts him over. A skid
 ## that would carry past the deck's side by KNOBS.teeter_reach or less
 ## ends at the lip, teetering; farther, it carries him over.
-func _skid(v: Vector3, meters: float, crack: bool) -> void:
+func _skid(v: Vector3, meters: float, crack: bool, riposte := false) -> void:
 	if state in ["dead","down"]: return
 	if state == "kneel":
 		hits += 1
@@ -930,7 +952,11 @@ func _skid(v: Vector3, meters: float, crack: bool) -> void:
 		var rune: String = runes.pop_front()
 		cracks += 1
 		body.set_effect("rune_crack",true,rune)
-		print("rune knight: the %s rune cracks (%d left)" % [rune,runes.size()])
+		if riposte:
+			# The riposte spills it: shards and light pour out of him.
+			spills += 1
+			body.set_effect("rune_spill",true,rune)
+		print("rune knight: the %s rune cracks%s (%d left)" % [rune," and spills" if riposte else "",runes.size()])
 	if state == "fall": return
 	var flat := Vector3(v.x,0.0,v.z)
 	if flat.length() < 0.1: flat = -_forward()
@@ -938,14 +964,25 @@ func _skid(v: Vector3, meters: float, crack: bool) -> void:
 	if state == "teeter":
 		off_deck = true
 		state = "fall"
-		var out := _deck_local(position)
-		var side := (Art.AQ.basis*Vector3(0.0,0.0,signf(out.z) if out.z != 0.0 else 1.0)).normalized()
+		var side: Vector3
+		if on_meadow:
+			# Over the island's rim: carried out past its last turf first.
+			side = _rim_out
+			var d := 0.0
+			while d < 1.5 and not is_nan(_ground_y(position+side*d)): d += 0.05
+			position += side*(d+0.05)
+		else:
+			var out := _deck_local(position)
+			side = (Art.AQ.basis*Vector3(0.0,0.0,signf(out.z) if out.z != 0.0 else 1.0)).normalized()
 		fall_v = (side+flat*0.5).normalized()*knob("over_push")
 		body.play("fall")
 		print("rune knight: hit teetering, goes over")
 		return
+	# Braced (a shove, or a riposte: never a kill), a skid reaching the
+	# lip ends there teetering; on the deck it also turns along it.
 	braced = false
-	if not crack and not on_meadow: flat = _brace(flat)
+	if (not crack or riposte) and not on_meadow: flat = _brace(flat)
+	elif (not crack or riposte): braced = true
 	skid_way = flat
 	skid_from = position
 	skid_meters = meters
@@ -953,7 +990,8 @@ func _skid(v: Vector3, meters: float, crack: bool) -> void:
 	_skid_v0 = sqrt(2.0*knob("skid_decel")*meters)
 	_skid_len = meters
 	_skid_teeter = false
-	var lip := _lip_along(position,flat) if not on_meadow else INF
+	var lip := _lip_along(position,flat) if not on_meadow else _rim_along(position,flat,meters+knob("teeter_reach")+0.5)
+	if on_meadow: _rim_out = flat
 	if lip < meters and (braced or meters-lip <= knob("teeter_reach")):
 		_skid_len = maxf(lip,0.0)
 		_skid_teeter = true
@@ -1344,7 +1382,33 @@ func _leap_done() -> void:
 	cool = minf(cool,knob("throw_gap")*0.5)
 	body.play("idle")
 
-## A skid on the meadow: over the turf, no lip; stone in the way (the
+## Ground under `p` for a meadow skid: turf, or anything within
+## KNOBS.rim_depth below; its y, or NAN past the island's rim.
+func _ground_y(p: Vector3) -> float:
+	var g := _turf_at(p,1.0,1.5)
+	if not g.is_empty(): return (g.position as Vector3).y
+	var any := _fall_hit(p+Vector3.UP*1.0,Vector3.DOWN*(1.0+knob("rim_depth")))
+	if any.is_empty(): return NAN
+	return (any.position as Vector3).y
+
+## How far from `at` along `way` (flat) the ground under him lasts before
+## the island's rim (the last step with ground), or INF within `most` m
+## (or stone stops him first).
+func _rim_along(at: Vector3, way: Vector3, most: float) -> float:
+	var step := knob("rim_step")
+	var d := step
+	var ray := PhysicsRayQueryParameters3D.new()
+	ray.collision_mask = 1
+	ray.from = at+Vector3.UP*height*0.4
+	ray.to = ray.from+way*(most+float(_shape.radius))
+	var wall := get_world_3d().direct_space_state.intersect_ray(ray)
+	var stop := most if wall.is_empty() else minf(most,ray.from.distance_to(wall.position as Vector3)-float(_shape.radius))
+	while d <= stop:
+		if is_nan(_ground_y(at+way*d)): return maxf(d-step,0.0)
+		d += step
+	return INF
+
+## A skid on the meadow: over the turf, its lip the island's rim; stone in the way (the
 ## aqueduct's wall) stops it; the turf falling away under him, he falls.
 func _skid_meadow(at: Vector3, delta: float) -> Vector3:
 	var v := _skid_v0*sqrt(_skid_left/maxf(_skid_len,0.001))
@@ -1360,17 +1424,13 @@ func _skid_meadow(at: Vector3, delta: float) -> Vector3:
 		_skid_stopped(at)
 		return at
 	var to := at+skid_way*step
-	var g := _turf_at(to,1.0,1.5)
-	if g.is_empty():
-		var any := _fall_hit(to+Vector3.UP*1.0,Vector3.DOWN*2.5)
-		if any.is_empty():
-			state = "fall"
-			fall_v = skid_way*maxf(v,knob("over_push"))
-			body.play("fall")
-			print("rune knight: skids off the turf at (%.1f, %.1f, %.1f)" % [to.x,to.y,to.z])
-			return to
-		to.y = (any.position as Vector3).y
-	else:
-		to.y = (g.position as Vector3).y
+	var gy := _ground_y(to)
+	if is_nan(gy):
+		state = "fall"
+		fall_v = skid_way*maxf(v,knob("over_push"))
+		body.play("fall")
+		print("rune knight: skids over the island's rim at (%.1f, %.1f, %.1f)" % [to.x,to.y,to.z])
+		return to
+	to.y = gy
 	if _skid_left <= 0.0: _skid_stopped(to)
 	return to

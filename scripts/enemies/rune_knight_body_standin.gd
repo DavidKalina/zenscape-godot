@@ -67,8 +67,14 @@ extends Node3D
 ##   `hand_l` or `hand_r`): that rune's lines flare, split apart, a dark
 ##   crack shows across them, they flicker CRACK_FLICKER s and go dark for
 ##   good (dust off the rune).
+## - **rune_spill** (`set_effect("rune_spill", true, form)`, a rune's
+##   name): a riposte's crack spills it: its shards and light burst out of
+##   the groove, scatter round him onto the deck, flare and gutter out
+##   over a few seconds (scripts/enemies/rune_spill.gd). One-shot; `on`
+##   false does nothing.
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const BodyDust = preload("res://scripts/enemies/body_dust.gd")
+const RuneSpill = preload("res://scripts/enemies/rune_spill.gd")
 const DragonCyclone = preload("res://scripts/dragon_cyclone.gd")
 
 signal beat_reached(clip: String, beat: String)
@@ -95,6 +101,8 @@ const CLIPS := {
 	"kneel": {"length": 1.1, "loop": false, "beats": {}},
 	"crumble": {"length": 2.2, "loop": false, "beats": {}},
 	"shatter": {"length": 2.0, "loop": false, "beats": {}},
+	# Gone over the island's rim, out of sight below: the body hides.
+	"gone": {"length": 0.1, "loop": false, "beats": {}},
 	# The leap (forms "up", "down"): its beats are LEAP's (`crouch`, `launch`
 	# at their times; `apex` and `land` from his root's motion, the mind
 	# flying him; `end` LEAP.land_len s after `land`). It never ends on its
@@ -312,6 +320,8 @@ var _rune_mats: Dictionary = {}
 var _rune_bars: Dictionary = {}
 var _crack_line: Dictionary = {}
 var crack_t: Dictionary = {"chest": -1.0, "hand_l": -1.0, "hand_r": -1.0}
+## Runes spilled by ripostes (for the drivers).
+var spills := 0
 var _rng := RandomNumberGenerator.new()
 ## The way his last skid went (world, flat), the dust's clock.
 var _skid_dir := Vector3.BACK
@@ -368,6 +378,9 @@ func play(name_: String, form := "") -> void:
 	_land_t = -1.0
 	_leap_drop = false
 	_from_pose = _now_pose.duplicate()
+	if name_ == "gone":
+		visible = false
+		return
 	if name_ == "reel":
 		# The wind torn out of his chest: a burst of air off the rune.
 		var at: Node3D = _sockets.get("chest_rune")
@@ -384,6 +397,9 @@ func set_effect(name_: String, on: bool, form := "") -> void:
 			return
 		crack_t[form] = 0.0 if on else -1.0
 		if on: _crack_burst(form)
+		return
+	if name_ == "rune_spill":
+		if on: _spill(form)
 		return
 	effects[name_] = on
 
@@ -955,6 +971,23 @@ func _crack_burst(group: String) -> void:
 	var at: Node3D = _sockets.chest_rune if group == "chest" else _sockets[group]
 	var host := get_parent().get_parent() if get_parent() != null and get_parent().get_parent() != null else self
 	BodyDust.puff(host,at.global_position,0.12*tall,-global_transform.basis.z)
+
+## A riposte's spill: the rune's shards and light burst out of its groove
+## and scatter round him (scripts/enemies/rune_spill.gd), with a puff of
+## dust; the crack's flare flares harder.
+func _spill(group: String) -> void:
+	if not crack_t.has(group): group = "chest"
+	var at: Node3D = _sockets.chest_rune if group == "chest" else _sockets[group]
+	var host := get_parent().get_parent() if get_parent() != null and get_parent().get_parent() != null else self
+	if at == null or not is_inside_tree(): return
+	var s: Node3D = RuneSpill.new()
+	s.set("tint",RUNE)
+	s.set("tall",tall)
+	s.set("out_way",-global_transform.basis.z)
+	host.add_child(s)
+	s.global_position = at.global_position
+	spills += 1
+	BodyDust.puff(host,at.global_position,0.2*tall,-global_transform.basis.z*1.5+Vector3.UP)
 
 ## Dust off his heels while he skids fast.
 func _skid_dust(delta: float, speed: float) -> void:
