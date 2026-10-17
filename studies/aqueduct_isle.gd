@@ -587,9 +587,12 @@ func _add_life() -> void:
 		add_child(watcher)
 		watcher.setup(self)
 	if RuneKnight.wanted():
-		rune_knight = RuneKnight.new()
-		add_child(rune_knight)
-		rune_knight.setup(self)
+		# His core rune taken in an earlier run, he is gone for good.
+		if RuneKnight.placed_on(self):
+			rune_knight = RuneKnight.new()
+			add_child(rune_knight)
+			rune_knight.setup(self)
+		else: print("aqueduct isle: the rune knight's core rune is taken; he is gone")
 		wind_blast = WindBlastStandin.new()
 		add_child(wind_blast)
 		wind_blast.setup(self)
@@ -904,6 +907,17 @@ func _flush_isle_birds(at: Vector3) -> void:
 	host.flushed = 0.0
 	host.armed = false
 	host.stir = 1.0
+
+## The rune knight's core rune taken (scripts/enemies/core_rune.gd): a pop
+## and the flourish, a crystal on the readout.
+func knight_rune_taken() -> void:
+	if _moments == null:
+		_moments = MomentsHud.new()
+		add_child(_moments)
+	_moments.pop("The knight's core rune: the aqueduct is still",2.8)
+	_moments.flourish()
+	var sky_tokens = sky.get("collectibles") if sky != null else null
+	if sky_tokens != null and sky_tokens.get("hud") != null: sky_tokens.hud.show_pickup("crystal",1,1,1)
 
 ## The treasure taken: a pop and the flourish, a crystal on the readout.
 func _dragon_yielded() -> void:

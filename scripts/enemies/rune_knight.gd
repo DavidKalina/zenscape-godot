@@ -382,10 +382,27 @@ var spills := 0
 var close_below := 0.0
 const LEAP_DT := 1.0/240.0
 const LeapRing = preload("res://scripts/enemies/leap_ring.gd")
+const CoreRune = preload("res://scripts/enemies/core_rune.gd")
+const Ledger = preload("res://scripts/ledger/ledger.gd")
+## His objective's slug in the ledger (data/ledger/ruins.json): taking his
+## core rune marks "<isle>/rune_knight".
+const OBJECTIVE := "rune_knight"
+## His core rune once he is dead and it is laid (null before; never for
+## death "gone", his rune going down with him).
+var core_rune: Node3D = null
 var _rng := RandomNumberGenerator.new()
 
 static func wanted() -> bool:
 	return LaunchArgs.user_args().has("--rune-knight")
+
+## His objective's id on `isle` ("aqueduct_isle/rune_knight").
+static func objective_of(isle: Node) -> String:
+	return Ledger.objective_id(Ledger.isle_id_of(isle),OBJECTIVE)
+
+## Whether he is placed on `isle`: wanted, and his core rune not taken
+## (taken, he is gone for good; killed but not taken, he reforms).
+static func placed_on(isle: Node) -> bool:
+	return wanted() and not Ledger.shared().is_done(objective_of(isle))
 
 func _init() -> void:
 	name = "RuneKnight"
@@ -1095,6 +1112,11 @@ func _die(how: String) -> void:
 	if _room != null:
 		_room.queue_free()
 		_room = null
+	# His core rune rises where he died; over the rim it goes with him.
+	if how != "gone" and isle != null:
+		core_rune = CoreRune.new()
+		isle.add_child(core_rune)
+		core_rune.call("setup",isle,died_at,objective_of(isle))
 
 ## The deck's frame: x along it, z across.
 func _deck_local(at: Vector3) -> Vector3:
