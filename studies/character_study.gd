@@ -465,8 +465,8 @@ var slam: Node3D
 ## The dust thrown round on a slam's touch: puffs, out from his feet, the
 ## weakest hit's and the full one's.
 const SLAM_DUST := Vector2i(5,12)
-## The side slam (scripts/side_slam.gd): at full charge in a slide, the
-## updraft's key held is a horizontal slam along it, rebounding off what it
+## The side slam (scripts/side_slam.gd): at full charge on the ground, the
+## updraft's key held is a horizontal slam, rebounding off what it
 ## meets. On unless `--no-side-slam` (or `--no-updraft`).
 const SideSlam = preload("res://scripts/side_slam.gd")
 var side_slam: Node3D
@@ -906,6 +906,13 @@ func tick(delta: float) -> void:
 	script_wind = false
 	# A whiffed parry (scripts/wind_parry.gd) holds him in his guard.
 	if updraft != null and updraft.parry != null and updraft.parry.call("holds"):
+		want = Vector2.ZERO
+		jump = false
+		motor.crouch = false
+		motor.twirl = false
+	# The side slam's coil off a slide (scripts/side_slam.gd) plants him:
+	# the stick aims it (read there), it doesn't walk him.
+	if side_slam != null and side_slam.holds():
 		want = Vector2.ZERO
 		jump = false
 		motor.crouch = false

@@ -800,6 +800,9 @@ func drive(pose: PilotPose, delta: float) -> Dictionary:
 	_swim = move_toward(_swim,0.0,delta/SWIM_FADE)
 	var hold: String = pose.hold if _has_ledge else ""
 	var move: String = pose.move if hold == "" else ""
+	# The side slam's coil off a slide: crouched back (the crouch's clip
+	# under the coil's wind-back), from the press on.
+	if lunge_coil > 0.0 and pose.grounded and (move == "" or move == "roll"): move = "crouch"
 	_moves(move,delta)
 	if hold != "" or _hold_was != "": return _drive_ledge(pose,hold,delta)
 	_ledge = move_toward(_ledge,0.0,delta/GRAB_FADE)

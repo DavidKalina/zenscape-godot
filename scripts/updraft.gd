@@ -5,8 +5,8 @@ extends Node3D
 ## Charge (0..1) builds from moving well, never from a button: pace over
 ## FLOW_PACE, the notable moves (slide, long jump, wall run / kick, side flip,
 ## twirl, a rope ride, the jump chain) and fast airtime. Walking and plain
-## running add nothing, and the open pocket sail builds nothing. After GRACE s
-## without a gain it drains at DECAY a second.
+## running add nothing, and the open pocket sail builds nothing. It never
+## drains over time (DRAIN off): only spending it takes it down.
 ##
 ## Press the key with at least MIN_RELEASE charge: all of it is spent, he is
 ## tossed straight up (flat pace kept, a fall cancelled, the sail ready again)
@@ -35,6 +35,9 @@ const MOVE_GAIN := 0.12      # a second in a notable move or a chain
 const AIR_GAIN := 0.10       # a second airborne above FLOW_PACE
 const MOVE_BUMP := 0.06      # on starting a notable move
 const FLOW_MOVES := ["slide","long","wallrun","kick","flip","twirl"]
+## Off (the default): the charge never drains over time; it only goes down
+## when spent. On: the old drains below (GRACE/DECAY, the SEG_* ones).
+const DRAIN := false
 const GRACE := 0.9           # s after the last gain before it drains
 const DECAY := 0.4           # per s once draining
 const MIN_RELEASE := 0.15    # least charge that does anything
@@ -286,6 +289,7 @@ func _air_charge(delta: float, m: PilotMotor) -> void:
 
 func _decay(delta: float) -> void:
 	_quiet += delta
+	if not DRAIN: return
 	if not (segmented and AIR_CHARGE):
 		if _quiet > GRACE: charge = maxf(charge-DECAY*delta,0.0)
 		return

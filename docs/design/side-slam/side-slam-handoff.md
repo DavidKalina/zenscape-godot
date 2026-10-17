@@ -1,8 +1,52 @@
 # Side slam: handoff (prototype round)
 
-Branch `iter/side-slam`. Prototype only. No committed tests.
+Branch `iter/side-slam` (round 1), then `iter/caches-slam` (round 2, with
+the kit caches merged in). Prototype only. No committed tests.
 
-## What was built
+## Round 2: from the ground, and no drain
+
+- **The charge doesn't drain.** `scripts/updraft.gd` `DRAIN` (false) turns
+  off every drain over time (the old GRACE/DECAY and the segmented
+  SEG_GRACE/SEG_DECAY/SEG_HELD_GRACE ones). The charge only goes down when
+  spent. How it fills is unchanged. The wind-gauge docs still describe the
+  old drain; `DRAIN = true` brings it back.
+- **The side slam arms on the ground, not only in a slide.** At full charge,
+  standing, walking, running or crouched (motor move `""` or `"crouch"`),
+  holding Q / RB past `HOLD` coils and launches him the same way. In a slide
+  it works as before. Below full charge, and in the air, nothing changes.
+- **The coil from the ground** (`GROUND_COIL`, 0.24 s) plants him: his pace
+  bleeds away (`PLANT`, 14/s, he is stopped within a few frames), the host
+  keeps the stick, jump and crouch from the motor (`side_slam.holds()`), and
+  the figure plays the crouch clip under the coil's wind-back and squash.
+  The stick, if held, turns him to aim (`AIM_TURN`), and the lunge goes
+  along the stick. If the stick isn't held, it goes the way he faces.
+  The lunge is the same as from a slide: 22 m/s, same reach, same hit,
+  rebound and miss.
+- **The wind-up shows from the press.** Through the `HOLD` wait the coil
+  pose already runs to `WAIT_COIL` (0.3) of the full coil, and off a slide
+  he dips into the crouch. So the wait reads as the start of the wind-up.
+- **What a tap feels like now.** At full charge on the ground, the press
+  waits for the release. A tap standing or running gives the updraft on the
+  release, about a tap's length (~0.1 s) after the press, with a small dip
+  into a crouch first, which reads as the updraft's own anticipation. A tap
+  in a slide is the burst, as in round 1. Below full charge, the press
+  fires at once, as ever. Jump during the wait and keep holding: at `HOLD`
+  he is in the air, so it is the updraft.
+- **Feelers.** The lunge also counts a hit when one of five rays from his
+  body along his way meets a steep face against it (`FEEL_*`): three heights
+  (0.1, 0.45, 0.85 m over the feet) and two at the sides. Without them he
+  skimmed over the tomb chest (his body's cylinder starts over the motor's
+  step) and glanced off a pier's corner without counting a hit. Slopes
+  (|normal.y| > 0.6) are ridden, not hit.
+- **Open issues.** After a side slam the charge creeps back up a hair
+  (about 0.01) from the rebound's airtime (`SEG_AIR`); harmless but not
+  zero. The standing coil is still procedural over the crouch clip; the
+  authored clips below would serve it too.
+- **Kit caches.** With `--kit-caches` on the isle, a side slam from standing
+  into the pier, the buttress and the wall opens each, and the rune comes
+  out and is taken. Into the tomb chest it only flares (0.65 against 1.6).
+
+## What was built (round 1; round 2 above widens the trigger)
 
 When the charge is full (all three segments) and he is in a grounded slide,
 **holding** Q / pad RB turns the slide into a horizontal slam.
@@ -46,12 +90,14 @@ When the charge is full (all three segments) and he is in a grounded slide,
 ## Play it
 
 ```
-python3 tools/godot.py --rendered studies/aqueduct_isle.tscn -- --no-title
+python3 tools/godot.py --rendered studies/aqueduct_isle.tscn -- --no-title --kit-caches --ledger=/tmp/slam.json
 ```
 
 (or `run-aqueduct-isle.command`). Build charge from air moves (flips, wall
-kicks, long jumps) until the gauge is full. Then run, hold Shift or C (pad LT)
-to slide, and **hold Q (pad RB)** while sliding toward a wall or pier.
+kicks, long jumps) until the gauge is full; it now keeps. Then, standing,
+running or sliding, **hold Q (pad RB)** toward a wall or pier. The caches
+(`--kit-caches`) stand west of the aqueduct: the tomb chest by the rubble
+slope, and the pier, buttress and wall under the deck.
 
 The aqueduct isle has **no breakables hub**, so nothing breaks there and the
 rebound still works. To see a piece break:
@@ -66,13 +112,16 @@ Its pier broke in the check. `--no-side-slam` turns the move off;
 ## Knobs
 
 - `scripts/side_slam.gd`, top of the file:
-  - trigger: `HOLD`, `COIL`, `COIL_BRAKE`
+  - trigger: `HOLD`, `COIL`, `COIL_BRAKE`; from the ground `GROUND_COIL`,
+    `PLANT`, `AIM_TURN`, `WAIT_COIL`, `GROUND_MOVES`
+  - feelers: `FEEL_HIGH`, `FEEL_AHEAD`, `FEEL_SIDE`, `FEEL_FACING`, `FEEL_STEEP`
   - lunge: `LUNGE_PACE`, `REACH`, `HOVER`, `CLIMB`, `SINK`, `LIFT`, `MISS_KEEP`
   - hit: `HIT_SHARE`, `ENEMY_REACH`, `HIT_RADIUS`, `PUSH`, `KNOCK`
   - rebound: `REBOUND_OUT`, `REBOUND_RISE`, `BOUNCE`
   - feel: `HITSTOP_*`, `FOV_*`, `KICK*`, `SHAKE*`, `PULSE`
   - look: `STREAK*`, `BURST_*`
   - master switch: `ON`
+- `scripts/updraft.gd`: `DRAIN` (false), the charge's drain over time.
 - `scripts/pilot_motor.gd`: `LUNGE_GRAVITY` (0.3), the share of gravity he has
   during the lunge.
 - `scripts/pilot_figure.gd`: `COIL_*` and `LUNGE_*` for the procedural pose.
@@ -110,6 +159,38 @@ To reach the bar in AGENTS.md, it needs these authored Blender clips:
    into the air pose.
 
 ## Proof
+
+### Round 2
+
+- **Smoke:** `aqueduct_isle.tscn` and `zenscape.tscn` with `--no-title
+  --kit-caches`, and the isle without flags: PASS, 0 errors.
+- **`scratch/side_slam_ground.gd`** (git-ignored), real input on the isle,
+  18/18 OK:
+  - 20 s standing idle keeps the charge at 1.0, 0.8 and 0.5 exactly;
+  - standing at full, Q held: wait, coil, planted (pace 0), lunge at
+    22 m/s, hits the wall, rebounds 9.2 m/s up and 6.4 m/s off it, the
+    whole charge spent;
+  - facing away from the wall, the stick toward it: the lunge goes along
+    the stick and hits;
+  - running at the wall, Q held: he plants, launches and hits;
+  - a tap standing at full: the updraft (3.2 m, one segment);
+  - below full, a hold standing: the updraft at once, no wait;
+  - a tap in a slide: the burst; a hold in a slide: the side slam.
+- **`--caches`** (same driver, `--scene-args --kit-caches --ledger=/tmp/x.json`),
+  20/20 OK: the pier, buttress and wall each opened by a standing side slam,
+  the rune came out and was taken; the tomb chest met, held and flared.
+- Round 1's `side_slam_drive.gd` (slide hold, tap, below-full, miss) and
+  `side_slam_yard.gd` (editor_hill pier breaks) pass unchanged.
+- **Stills** (rendered, `scratch/side_slam_still.gd -- --view=q --off=8`):
+  `scratch/shots/coilq_0_stand.png`, `coilq_1_wait.png` (the dip from the
+  press), `coilq_3_full.png` (the full coil, low and wound back),
+  `coilq_4_lunge.png`. Judged: the coil reads as a plant and a low crouch
+  back; the grass hides some of the legs.
+- **Tests:** `test_slam.gd` still fails its two updraft checks, as on main.
+  `test_wind_*`, `test_dragon_downwash`, `test_sky_tepui` pass. No test
+  checks the drain, so none breaks from it. The full suite was not run.
+
+### Round 1
 
 - **Smoke:** headless import. These all pass, 400 frames each with no errors:
   - `aqueduct_isle.tscn`, with and without `--rune-knight`
