@@ -85,10 +85,19 @@ var flight := FLIGHT
 var state := "held"
 ## The body it bursts on: a PilotMotor (the wanderer), never its shooter.
 var target: Object = null
+## The plane it can burst on (a SkyPlane, the knight's crescent at the
+## plane), within `plane_reach` m of its position; then `on_plane` is
+## called with (where, its velocity). Null: it passes planes by.
+var plane: Object = null
+var plane_reach := 0.0
+var on_plane := Callable()
 var look := true
 ## "ball" or "crescent"; the crescent's roll about its way (rad).
 var form := "ball"
 var tilt := 0.0
+## A crescent's size over its walker-scaled width and thickness (the
+## knight's crescent at the plane is bigger, to read from the cockpit).
+var size := 1.0
 ## How full (0..1): grows while held after `grow()`, 1 in flight.
 var grown := 0.0
 var age := 0.0
@@ -167,7 +176,7 @@ func launch(vel: Vector3, fall_ := 0.0, grace_ := 0.0) -> void:
 ## How far from its position it meets another shot (m): its radius, or a
 ## crescent's half width.
 func meet_reach() -> float:
-	return CRESCENT_SPAN*walker_tall()*0.5 if form == "crescent" else radius()
+	return CRESCENT_SPAN*walker_tall()*0.5*size if form == "crescent" else radius()
 
 ## The crescent's arc radius (m), from its width and arc.
 static func crescent_radius() -> float:
@@ -188,7 +197,7 @@ func crescent_points(at: Vector3, way: Vector3, n := CRESCENT_POINTS) -> Array[V
 	var ax := crescent_axes(way)
 	var w: Vector3 = ax[0]
 	var side: Vector3 = ax[1]
-	var r := crescent_radius()
+	var r := crescent_radius()*size
 	var out: Array[Vector3] = []
 	for i in range(n):
 		var a := lerpf(-CRESCENT_ARC,CRESCENT_ARC,float(i)/float(n-1))
@@ -271,6 +280,7 @@ func _fly(delta: float) -> void:
 	if _meets_other(from,to,delta):
 		to = from+velocity*delta
 	if _hits_target(from,to): return
+	if _hits_plane(from,to): return
 	var space := get_world_3d().direct_space_state if is_inside_tree() else null
 	if space != null and travelled >= grace:
 		var ray := PhysicsRayQueryParameters3D.new()
@@ -351,6 +361,31 @@ func _hits_target(from: Vector3, to: Vector3) -> bool:
 	print("wind shot: burst on the wanderer at (%.1f, %.1f, %.1f), knock (%.1f, %.1f, %.1f) m/s%s" % [feet.x,feet.y,feet.z,v.x,v.y,v.z," (in a whiff, x%.1f)" % mult if mult != 1.0 else ""])
 	burst_on.emit(motor)
 	_end(from.lerp(to,near.y),-velocity.normalized(),true)
+	return true
+
+## Whether its step `from` -> `to` (any point of a crescent's arc) passed
+## within `plane_reach` of the plane: then it bursts on it, `on_plane`
+## told where and how it flew.
+func _hits_plane(from: Vector3, to: Vector3) -> bool:
+	if plane == null: return false
+	var q: Vector3 = plane.get("position")
+	var near := Vector2(-1.0,0.0)
+	if form == "crescent":
+		var p0 := crescent_points(from,to-from)
+		var p1 := crescent_points(to,to-from)
+		var best := INF
+		for i in range(p0.size()):
+			var c := _segments_closest(p0[i],p1[i],q,q)
+			if c.x < best:
+				best = c.x
+				near = c
+	else: near = _segments_closest(from,to,q,q)
+	if near.x < 0.0 or near.x > plane_reach: return false
+	var at := from.lerp(to,near.y)
+	print("wind shot: burst on the plane at (%.1f, %.1f, %.1f), %.1f m from its middle" % [q.x,q.y,q.z,near.x])
+	if on_plane.is_valid(): on_plane.call(at,velocity)
+	burst_on.emit(plane)
+	_end(at,-velocity.normalized(),true)
 	return true
 
 ## Whether the crescent's arc, stepping `from` -> `to`, cut the walker
@@ -519,14 +554,14 @@ func _draw_crescent(sm: MultiMesh, eye: Vector3) -> int:
 	var flick := 1.0+0.08*sin(_clock*40.0)
 	var si := 0
 	for layer in range(2):
-		var back := way.normalized()*t*0.22*float(layer)
+		var back := way.normalized()*t*0.22*size*float(layer)
 		var pts := crescent_points(at-back,way,CRESCENT_STREAKS+1)
 		for i in range(CRESCENT_STREAKS):
 			var u := (float(i)+0.5)/float(CRESCENT_STREAKS)
 			var mid_w := sin(u*PI)
 			var p0: Vector3 = pts[i]
 			var p1: Vector3 = pts[i+1]
-			var w := CRESCENT_THICK*t*lerpf(0.3,1.8,mid_w)*flick*(1.0 if layer == 0 else 2.0)
+			var w := CRESCENT_THICK*t*size*lerpf(0.3,1.8,mid_w)*flick*(1.0 if layer == 0 else 2.0)
 			sm.set_instance_transform(si,_streak((p0+p1)*0.5,(p1-p0)*1.25,w,eye))
 			sm.set_instance_custom_data(si,Color((1.0 if layer == 0 else 0.45)*lerpf(0.6,1.0,mid_w),0,0,0))
 			sm.set_instance_color(si,TINT if layer == 0 else BLADE_TINT)

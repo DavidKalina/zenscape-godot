@@ -592,6 +592,8 @@ func _add_life() -> void:
 			rune_knight = RuneKnight.new()
 			add_child(rune_knight)
 			rune_knight.setup(self)
+			# His crescents buffet the plane (task 18): through the isle's air.
+			if not plane_air.is_valid(): plane_air = _dragon_air
 		else: print("aqueduct isle: the rune knight's core rune is taken; he is gone")
 		wind_blast = WindBlastStandin.new()
 		add_child(wind_blast)
@@ -802,14 +804,16 @@ func _wash_air() -> void:
 		return flier.downwash.merge(here,flier.downwash.pilot_air(p,PocketSail.THERMAL))
 
 ## The air the plane flies in: the dragon's blast (scripts/dragon_gale.gd
-## `plane_gust`) and its downwash, or still air.
+## `plane_gust`) and its downwash, the rune knight's crescent buffet
+## (scripts/enemies/rune_knight.gd `plane_air`), or still air.
 func _dragon_air(p: Vector3) -> Dictionary:
 	if plane == null: return {}
+	var knight: Dictionary = rune_knight.plane_air(p,plane.forward()) if rune_knight != null and is_instance_valid(rune_knight) else {}
 	var flier := dragon if dragon != null else roost_dragon
-	if flier == null: return {}
+	if flier == null: return knight
 	var wash: Dictionary = flier.downwash.plane_air(p,plane.forward())
-	if dragon == null or dragon.gale == null: return wash
-	return flier.downwash.merge(dragon.gale.plane_gust(p,plane.forward()),wash)
+	if dragon != null and dragon.gale != null: wash = flier.downwash.merge(dragon.gale.plane_gust(p,plane.forward()),wash)
+	return flier.downwash.merge(wash,knight)
 
 ## --dragon-fly-test: each time the dragon breathes in on a rim, the plane
 ## is put on a pass through its blast (cross: 40 m to the side of the line

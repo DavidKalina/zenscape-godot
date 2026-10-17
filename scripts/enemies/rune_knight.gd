@@ -309,6 +309,26 @@ const KNOBS := {
 	"foot_wall": 1.2,
 	"foot_rim": 3.0,
 	"foot_strip": 1.5,
+	# The plane (task 18): flying, in his sight out to sky_sight m with a
+	# clear line, it draws a gathered crescent every sky_gap s (from a
+	# slash's end), sky_speed m/s straight at where the plane will be when
+	# it gets there, flying out to sky_flight m. It bursts on the plane
+	# within sky_reach of its spans of its middle and buffets it for
+	# sky_linger s: wind sky_wind m/s along the crescent's way, the nose
+	# kicked up sky_pitch, swung sky_yaw and the wings rolled sky_roll
+	# (rad/s, as the dragon's blast's shove, scripts/dragon_air_blast.gd).
+	"sky_sight": 90.0,
+	"sky_gap": 4.5,
+	"sky_speed": 42.0,
+	"sky_flight": 120.0,
+	"sky_reach": 0.6,
+	# The crescent at the plane this many times the foot crescent's size.
+	"sky_size": 2.5,
+	"sky_linger": 0.8,
+	"sky_wind": 16.0,
+	"sky_pitch": 1.2,
+	"sky_yaw": 0.8,
+	"sky_roll": 6.0,
 }
 ## What hides you from him: stone (layer 1) and turf (layer 11).
 const SIGHT_MASK := 1 | (1 << 11)
@@ -494,6 +514,7 @@ func setup(host: Node3D) -> void:
 
 func _process(delta: float) -> void:
 	var at := position
+	_buffet_t = maxf(0.0,_buffet_t-delta)
 	if state == "dead": return
 	_read_shots(delta)
 	at = position
@@ -644,17 +665,23 @@ func _on_beat(clip: String, beat: String) -> void:
 			if shot != null: shot.grow()
 		elif beat == "full":
 			body.set_effect("wind_gather",false)
-			if attack == "lob":
+			if attack == "lob" and not sky:
 				state = "throw"
 				body.play("throw")
 			else:
 				state = "slash"
 				body.play("slash",slash_form)
 	elif clip == "slash" and state == "slash":
-		if beat == "release": _release_slash()
+		if beat == "release":
+			if sky and _plane() != null: _release_sky()
+			elif sky:
+				# The plane down (or gone) mid-gather: the blade's wind let go.
+				body.set_effect("rune_glow",false)
+				body.set_effect("wind_blade",false)
+			else: _release_slash()
 		elif beat == "end":
 			state = "track"
-			cool = knob("throw_gap")
+			cool = knob("sky_gap") if sky else knob("throw_gap")
 			body.play("idle")
 	elif clip == "catch" and state == "catch":
 		if beat == "hold":
@@ -721,10 +748,11 @@ func _next_turn() -> void:
 
 # --- Sense --------------------------------------------------------------------------
 
-## The wanderer's chest, or INF when he isn't on foot.
+## The wanderer's chest, or INF when he isn't on foot (ridden, or in the
+## plane: the isle's `flying`, the plane being his target then).
 func _target() -> Vector3:
 	var motor = isle.get("motor") if isle != null else null
-	if motor == null or motor.get("rider") != null: return Vector3.INF
+	if motor == null or motor.get("rider") != null or bool(isle.get("flying")): return Vector3.INF
 	return (motor.feet as Vector3)+Vector3.UP*0.6*WindShot.walker_tall()
 
 ## Whether he sees the wanderer: in sight range, nothing of stone or turf
@@ -732,7 +760,11 @@ func _target() -> Vector3:
 func _sense() -> void:
 	sees = false
 	var chest := _target()
-	if chest == Vector3.INF or not is_inside_tree(): return
+	if chest == Vector3.INF:
+		_sense_plane()
+		return
+	sky = false
+	if not is_inside_tree(): return
 	var eye: Vector3 = body.socket("eye").global_position
 	if eye.distance_to(chest) > knob("sight"): return
 	var ray := PhysicsRayQueryParameters3D.new()
@@ -757,6 +789,17 @@ func _noticeable() -> bool:
 func _gather() -> void:
 	state = "gather"
 	_bout = knob("throw_gap")+_rng.randf()*knob("foot_extra")
+	if sky:
+		# At the plane: always the blade, the upward (high) slash.
+		_bout = 0.0
+		slash_form = "high"
+		sky_gathers += 1
+		print("rune knight: gathers his blade at the plane")
+		body.play("gather","blade")
+		body.set_effect("wind_gather",true)
+		body.set_effect("wind_blade",true)
+		shot = null
+		return
 	if attack != "lob":
 		slash_form = _pick_form()
 		body.play("gather","blade")
@@ -1672,7 +1715,7 @@ func _footwork(at: Vector3, delta: float) -> Vector3:
 	var want := ""
 	var motor = isle.get("motor") if isle != null else null
 	var ground := not off_deck or on_meadow
-	if ground and death == "" and sees and last_seen != Vector3.INF and motor != null \
+	if ground and death == "" and sees and not sky and last_seen != Vector3.INF and motor != null \
 			and close_below <= 0.0 and no_line <= 0.0 and absf(yaw_goal-yaw) < knob("foot_face"):
 		var feet: Vector3 = motor.feet
 		var d := Vector2(feet.x-at.x,feet.z-at.z).length()
@@ -1761,3 +1804,122 @@ func _foot_step(at: Vector3, way: String, delta: float) -> Dictionary:
 	for k: float in [1.0,2.0,knob("foot_rim")]:
 		if is_nan(_ground_y(at+dir*k)): return {}
 	return {"step":step,"y":(g.position as Vector3).y}
+
+# --- The plane (task 18) ------------------------------------------------------------
+
+## True while the one he sees (or last saw) is the plane, not the walker.
+var sky := false
+var sky_gathers := 0
+var sky_slashes := 0
+var sky_hits := 0
+## Where his last crescent at the plane was aimed (the lead), and the
+## plane's spot and velocity then (for drivers).
+var sky_lead := Vector3.INF
+var sky_plane_at := Vector3.INF
+var sky_plane_v := Vector3.ZERO
+var _buffet := {}
+var _buffet_t := 0.0
+
+## The plane, flying (off its wheels, past the take-off), else null: on
+## the strip, rolling or parked it draws nothing.
+func _plane() -> Object:
+	if isle == null or not bool(isle.get("flying")): return null
+	var plane = isle.get("plane")
+	if plane == null or isle.get("takeoff") != null: return null
+	var landing = isle.get("hand_landing")
+	if landing != null and not landing.flying(): return null
+	return plane
+
+## Whether he sees the plane: flying, within KNOBS.sky_sight of his eye,
+## nothing of stone or turf between. Sets `sees`, `last_seen`, `sky`.
+func _sense_plane() -> void:
+	var plane := _plane()
+	if plane == null or not is_inside_tree() or death != "": return
+	var at: Vector3 = plane.get("position")
+	var eye: Vector3 = body.socket("eye").global_position
+	if eye.distance_to(at) > knob("sky_sight"): return
+	var ray := PhysicsRayQueryParameters3D.new()
+	ray.collision_mask = SIGHT_MASK
+	ray.from = eye
+	ray.to = at
+	if not get_world_3d().direct_space_state.intersect_ray(ray).is_empty(): return
+	sees = true
+	sky = true
+	last_seen = at
+
+## When a shot from `from` at `speed` m/s meets a body at `at` moving at
+## `vel`: the soonest time (s), or the straight flight time if it can't.
+static func intercept(from: Vector3, at: Vector3, vel: Vector3, speed: float) -> float:
+	var d := at-from
+	var a := vel.dot(vel)-speed*speed
+	var b := 2.0*d.dot(vel)
+	var c := d.dot(d)
+	var plain := d.length()/maxf(speed,0.01)
+	if absf(a) < 0.0001:
+		return -c/b if b < 0.0 else plain
+	var disc := b*b-4.0*a*c
+	if disc < 0.0: return plain
+	var r := sqrt(disc)
+	var t0 := (-b-r)/(2.0*a)
+	var t1 := (-b+r)/(2.0*a)
+	var t := INF
+	if t0 > 0.0: t = t0
+	if t1 > 0.0: t = minf(t,t1)
+	return t if t != INF else plain
+
+## The crescent leaves his blade straight at where the plane will be when
+## it gets there (its velocity held), a level crescent across its wings,
+## KNOBS.sky_size times the foot crescent's size.
+func _release_sky() -> void:
+	body.set_effect("rune_glow",false)
+	body.set_effect("wind_blade",false)
+	var plane := _plane()
+	var from: Vector3 = body.socket("blade").global_position
+	var at: Vector3 = plane.get("position")
+	var vel: Vector3 = plane.get("velocity") if plane.get("velocity") != null else Vector3.ZERO
+	var speed := knob("sky_speed")
+	var t := intercept(from,at,vel,speed)
+	var lead := at+vel*t
+	var node: Node3D = WindShot.new()
+	isle.add_child(node)
+	node.global_position = from
+	node.set("strength",knob("slash_strength"))
+	node.set("shooter",self)
+	node.set("target",null)
+	node.set("plane",plane)
+	node.set("plane_reach",knob("sky_reach")*WorldScale.span)
+	node.set("on_plane",Callable(self,"_plane_struck"))
+	node.set("flight",knob("sky_flight"))
+	node.set("tilt",0.0)
+	node.set("size",knob("sky_size"))
+	node.call("launch",(lead-from).normalized()*speed,0.0,knob("slash_grace"))
+	node.set("form","crescent")
+	sky_slashes += 1
+	sky_lead = lead
+	sky_plane_at = at
+	sky_plane_v = vel
+	print("rune knight: slashes at the plane, %.1f m/s, led %.2f s to (%.1f, %.1f, %.1f); the plane at (%.1f, %.1f, %.1f) going %.1f m/s" % [speed,t,lead.x,lead.y,lead.z,at.x,at.y,at.z,vel.length()])
+
+## His crescent burst on the plane at `at`, flying along `way`: the buffet
+## (`plane_air`) for KNOBS.sky_linger s.
+func _plane_struck(at: Vector3, way: Vector3) -> void:
+	var plane := _plane()
+	var w := way.normalized() if way.length() > 0.01 else Vector3.UP
+	var nose: Vector3 = plane.forward() if plane != null else -w
+	var right := Vector3(-nose.z,0.0,nose.x)
+	var mid: Vector3 = plane.get("position") if plane != null else at
+	var tip := signf((mid-at).dot(right)+w.dot(right)*0.5)
+	if tip == 0.0: tip = 1.0
+	_buffet = {"wind":w*knob("sky_wind"),"shove":Vector3(knob("sky_pitch"),knob("sky_yaw")*tip,knob("sky_roll")*tip),"gust":1.0,"thermal":0.0}
+	_buffet_t = knob("sky_linger")
+	sky_hits += 1
+	print("rune knight: his crescent buffets the plane at (%.1f, %.1f, %.1f), wind (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z,w.x*knob("sky_wind"),w.y*knob("sky_wind"),w.z*knob("sky_wind")])
+
+## His crescent's buffet as air for the plane at `p` (`nose` its forward),
+## as the dragon's blast's: {wind, shove, gust, thermal}, eased out over
+## KNOBS.sky_linger s; empty with none. The isle reads it each frame.
+func plane_air(_p: Vector3, _nose: Vector3) -> Dictionary:
+	if _buffet_t <= 0.0 or _buffet.is_empty(): return {}
+	var u := _buffet_t/knob("sky_linger")
+	var e := u*u*(3.0-2.0*u)
+	return {"wind":(_buffet.wind as Vector3)*e,"shove":(_buffet.shove as Vector3)*e,"gust":float(_buffet.gust)*e,"thermal":0.0}
