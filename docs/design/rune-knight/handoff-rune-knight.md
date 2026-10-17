@@ -68,15 +68,13 @@ default), `scripts/world_scale.gd` (`WANDERER_TALL`, `wanderer_tall`),
 
 ## Breaks
 
-- `tests/test_ledger.gd`: three places (lines near 99, 161, 166): the
-  four new objectives, and the aqueduct isle counting 11 tokens with the
-  flag. Not run (prototype rules); a lock-in round fixes it.
-- The full suite was not run.
+None known. The knight's ledger entries (`rune` type, Guardians row, his
+four objectives) carry `"flag": "--rune-knight"` and the registry skips
+them without it (a5797382), so main without the flag is unchanged and
+`tests/test_ledger.gd` passes. The full suite was not run.
 
 ## Open (the user's calls)
 
-- The card shows "Guardians 0/1" on the default isle, earnable only with
-  the flag: hide it until he's on by default?
 - A riposte from the front at the deck's far end skids him 0 to 1 m (the
   end is a wall). Proposed: make the end an edge he teeters on.
 - His strafe is slow (0.29 m/s, the clip's pace); faster means re-timing
