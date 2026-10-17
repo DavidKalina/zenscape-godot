@@ -149,6 +149,29 @@ You launch `./run-olmec-field.command` and play this fight:
         shove, the slam's loose stones), cap or close it, and prove it
         with stills of the same piece orbited from several angles,
         including from below.
+   - *User's playtest of (9), two fixes (task 11, right after (10)):*
+     1. **The arcs read wrong.** "The arcs are like arches instead of
+        lines that come at you and you have to bob and weave out of the
+        way. They look like they go through you or that you can go
+        through them. And they're the same every time, an alternating
+        pattern, which is not very interesting." Replace the crescents
+        with lines of wind: solid-reading streaks/blades that clearly
+        block where they are (no arch shape, nothing that looks like you
+        could pass under or through), coming up the slope at the
+        wanderer to weave between. Patterns vary and read as a sequence:
+        e.g. a wall with one gap that shifts, a line sweeping across the
+        slope, staggered diagonals, two lines closing in, a single fast
+        one aimed at him, mixed so no two volleys repeat in a row. Hits
+        knock as before (never off), and every pattern stays dodgeable at
+        the slide speed (10)'s fix sets.
+     2. **Can't lock on to him during the tilt.** "I can't lock onto him
+        because he's so far away, so I can't shoot him." From the high
+        side he's ~60+ m off, past the lock's reach (48/58 m), so the
+        auto-lock step 8 added doesn't hold. While the tilt is on, the
+        lock must reach him from anywhere on the field (auto-locked from
+        the slam on, Tab re-locks at any range), and gust shots fired
+        from anywhere on the slope must reach and hit him. Prove it from
+        the far high side with real Tab and X.
    - *Order:* after the charge, as three tasks: (7) the tilt slam, the
      steep tilt and the slide; (8) the air arcs and the counter (shots
      break his brace); (9) the release, the fling, the glide back and his
