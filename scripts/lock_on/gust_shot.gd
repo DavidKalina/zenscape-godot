@@ -12,6 +12,18 @@ extends Node3D
 ## ring at his chest as it leaves; at the hit a quick flash, a thin ring of
 ## air thrown out and a few short spokes, gone in a fifth of a second (the
 ## stone puffs its own dust).
+##
+## Tennis (the rune knight, docs/design/rune-knight/spec-rune-knight.md):
+## each live ball shows itself to whoever plays tennis as a Seam, a node in
+## the "wind_shot" group (scripts/enemies/wind_shot.gd's seam: position,
+## velocity, shooter, strength, state, age, fall), with `absorb()` (taken
+## by a catch or a shot it met: gone quietly) and `strike(at)` (burst on a
+## body that reads shots itself: no `hit` call). Its `rally_speed`,
+## RALLY_PACE, is the pace a rally counts it at (the stand-in blast's), not
+## its 38 m/s. A locked ball whose straight line to its target is blocked
+## by stone (a knight on a deck seen from below its buttresses) homes on a
+## point over what blocks it till the line is clear (`_steer`), so it comes
+## in over the lip rather than into it.
 
 const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
 const TargetStone = preload("res://scripts/lock_on/target_stone.gd")
@@ -47,6 +59,35 @@ const FLASH_LIFE := 0.08
 const SPOKE_LIFE := 0.16
 const SPOKES := 9
 const MUZZLE_LIFE := 0.14
+## Tennis: the pace a rally counts a ball at (m/s); the most a blocked
+## locked ball's way is lifted over what blocks it (m) and the lift's steps.
+const RALLY_PACE := 16.0
+const LIFT_MOST := 12.0
+const LIFT_STEPS := 8
+## The straight line counts as clear only with this much room under its
+## start (m): the ball's turn onto it lags, so it cuts a little low.
+const LIFT_MARGIN := 1.2
+const SeamGroup := "wind_shot"
+
+## A live ball as the tennis seam sees it (see the header).
+class Seam extends Node3D:
+	var shot: Node
+	var ball: Dictionary
+	var velocity := Vector3.ZERO
+	var shooter: Object = null
+	var strength := 1.0
+	var state := "flying"
+	var age := 0.0
+	var fall := 0.0
+	var target: Object = null
+	var rally_speed := 16.0
+	func _init() -> void:
+		name = "GustSeam"
+		top_level = true
+	func absorb() -> void:
+		if shot != null and is_instance_valid(shot): shot.call("_seam_gone",ball,Vector3.INF)
+	func strike(at: Vector3) -> void:
+		if shot != null and is_instance_valid(shot): shot.call("_seam_gone",ball,at)
 
 var blast: DragonAirBlast
 ## Counts and the last shot, for checks: shots fired, hits landed on a
@@ -68,6 +109,14 @@ var _path: Array[Vector3] = []
 var _path_fade := 0.0
 var _snaps: Array = []
 var _rng := RandomNumberGenerator.new()
+## Tennis: the seams (one per live ball) and a strike under way (its burst
+## calls no `hit`).
+var _seams: Array = []
+## Off: a locked ball flies its straight line into whatever blocks it, as
+## before `_steer`.
+var steer := true
+var _struck := false
+var _verts := 0
 
 func _init() -> void:
 	name = "GustShot"
@@ -108,6 +157,7 @@ func fire(feet: Vector3, heading: Vector3, target: Node3D, charge: float) -> voi
 	last_charge = charge
 	last_locked = target != null
 	blast.homing = HOMING if target != null else 0.0
+	if target != null and is_inside_tree(): aim = _steer(from,aim,get_world_3d().direct_space_state)
 	# A target locked from anywhere (foot_lock's `lock_anywhere`) is
 	# reached however far it is: the ball flies past it before it fades.
 	blast.flight = FLIGHT
@@ -126,9 +176,82 @@ func step(delta: float, feet: Vector3, space: PhysicsDirectSpaceState3D) -> void
 	if _target != null and is_instance_valid(_target) and not blast.balls.is_empty():
 		aim = _target.call("aim_point")
 		blast._catch(aim,DragonAirBlast.ball_radius()+FUSE)
+		if not blast.balls.is_empty():
+			var b: Dictionary = blast.balls[0]
+			var real := aim
+			aim = _steer(b.pos,aim,space)
+			# Steering over a lip it may pass its waypoint: it homes on while
+			# the target is still ahead of it.
+			if aim != real and (b.vel as Vector3).dot(real-(b.pos as Vector3)) > 0.0: b.homing = true
 	var mouth := feet+Vector3.UP*CHEST*DragonAirBlast.walker_tall()
 	blast.advance(delta,space,false,mouth,aim)
+	_sync_seams()
 	_look(delta)
+
+## Where a locked ball at `from` homes: `aim`, or, when stone stands
+## between, a point over what stands there (LIFT_MARGIN, then up in steps
+## to LIFT_MOST) with clear lines from the ball and on to `aim`: it goes
+## over the lip and comes down onto him.
+func _steer(from: Vector3, aim: Vector3, space: PhysicsDirectSpaceState3D) -> Vector3:
+	if not steer or space == null or _clear(from+Vector3.DOWN*LIFT_MARGIN,aim,space): return aim
+	var ray := PhysicsRayQueryParameters3D.create(from,aim,DragonAirBlast.SOLID)
+	var hit := space.intersect_ray(ray)
+	if hit.is_empty(): return aim
+	var over: Vector3 = hit.position
+	for i in range(LIFT_STEPS+1):
+		var wp := over+Vector3.UP*(LIFT_MARGIN+(LIFT_MOST-LIFT_MARGIN)*float(i)/float(LIFT_STEPS))
+		if _clear(from,wp,space,false) and _clear(wp,aim,space): return wp
+	return aim
+
+## Whether nothing of stone stands between `from` and `to` (the target's
+## own stone, or with `at_target` a hit at `to`, its middle, counts as
+## clear).
+func _clear(from: Vector3, to: Vector3, space: PhysicsDirectSpaceState3D, at_target := true) -> bool:
+	var ray := PhysicsRayQueryParameters3D.create(from,to,DragonAirBlast.SOLID)
+	var hit := space.intersect_ray(ray)
+	if hit.is_empty(): return true
+	var body := hit.collider as Node
+	if body != null and _target != null and is_instance_valid(_target) and (body == _target or _target.is_ancestor_of(body)): return true
+	return at_target and (hit.position as Vector3).distance_to(to) < 0.6
+
+# --- Tennis -------------------------------------------------------------------------------
+
+## One seam per live ball, kept on it.
+func _sync_seams() -> void:
+	for seam: Seam in _seams.duplicate():
+		if not blast.balls.has(seam.ball):
+			_seams.erase(seam)
+			seam.queue_free()
+	for b: Dictionary in blast.balls:
+		var seam: Seam = null
+		for s: Seam in _seams:
+			if is_same(s.ball,b): seam = s
+		if seam == null:
+			seam = Seam.new()
+			seam.shot = self
+			seam.ball = b
+			var who = get_parent().get("motor") if get_parent() != null else null
+			seam.shooter = who if who != null else self
+			seam.strength = _strength
+			seam.rally_speed = RALLY_PACE
+			add_child(seam)
+			seam.add_to_group(SeamGroup)
+			_seams.append(seam)
+		seam.global_position = b.pos
+		seam.velocity = b.vel
+		seam.age = float(b.age)
+
+## A seam's ball taken (`at` INF: quietly, else burst there with no hit).
+func _seam_gone(b: Dictionary, at: Vector3) -> void:
+	if not blast.balls.has(b): return
+	if at == Vector3.INF:
+		blast.balls.erase(b)
+		if _path.is_empty() or _path[0].distance_to(b.pos) > 0.01: _path.push_front(b.pos)
+	else:
+		_struck = true
+		blast.burst(b,at)
+		_struck = false
+	_sync_seams()
 
 func flying() -> bool:
 	return blast != null and not blast.balls.is_empty()
@@ -137,6 +260,7 @@ func _landed(at: Vector3) -> void:
 	var way := at-_from
 	if _path.is_empty() or _path[0].distance_to(at) > 0.01: _path.push_front(at)
 	_snaps.append({"at":at,"way":way.normalized() if way.length() > 0.01 else Vector3.FORWARD,"age":0.0,"kind":"hit","spin":_rng.randf()*TAU})
+	if _struck: return
 	for t: Node in get_tree().get_nodes_in_group(TargetStone.GROUP):
 		var n := t as Node3D
 		if n == null or not n.has_method("hit"): continue
@@ -177,6 +301,7 @@ func _look(delta: float) -> void:
 	if cam == null: return
 	var eye := cam.global_position
 	var r := DragonAirBlast.ball_radius()
+	_verts = 0
 	_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES,_material)
 	_strip(eye,_path,r*TRAIL_WIDE,TINT,0.8*_path_fade)
 	_strip(eye,_path,r*TRAIL_WIDE*0.4,Color(1,1,1),0.95*_path_fade)
@@ -191,6 +316,9 @@ func _look(delta: float) -> void:
 		_round(eye,at,way,size*1.35,STRETCH*1.05,0.0,TINT,0.15*fade)
 		_round(eye,at,way,size,STRETCH,0.0,TINT,fade)
 	for s: Dictionary in _snaps: _snap(eye,s,r)
+	# (A ball taken quietly, a catch, may leave nothing to draw this frame.)
+	if _verts == 0:
+		for i in range(3): _vert(eye,Vector2.ZERO,Vector2.ZERO,Color(1,1,1,0))
 	_mesh.surface_end()
 
 ## A muzzle ring, or a hit: a flash, a ring and spokes, eased out fast.
@@ -283,6 +411,7 @@ func _round(eye: Vector3, at: Vector3, way: Vector3, size: float, stretch: float
 	_vert(at-a+b,Vector2(0,1),k,c)
 
 func _vert(p: Vector3, uv: Vector2, uv2: Vector2, c: Color) -> void:
+	_verts += 1
 	_mesh.surface_set_color(c)
 	_mesh.surface_set_uv(uv)
 	_mesh.surface_set_uv2(uv2)

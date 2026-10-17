@@ -45,9 +45,15 @@ const PILOT_RATIO := 2.4
 ## the cockpit (his head and shoulders clear of its rim and windscreen).
 const PILOT_MOST := 1.25
 
+## The walker's clips' height, cap top over his soles (m): his drawn
+## height is this times `wanderer` (`wanderer_tall`).
+const WANDERER_TALL := 1.19
+
 ## The sizes in force (the flags', or the knobs).
 static var plane: float = _flag("--plane-scale=",PLANE)
 static var wanderer: float = _flag("--wanderer-scale=",WANDERER)
+## The walker's drawn height (m): what a figure sized against him asks.
+static var wanderer_tall: float = WANDERER_TALL*wanderer
 ## The plane's span as drawn, and how much wider and taller than the toy
 ## (drawn about its wheels it grows only upward).
 static var span: float = TOY_SPAN*plane

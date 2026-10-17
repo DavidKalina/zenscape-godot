@@ -60,6 +60,11 @@ uniform float rune_cut = 0.6;
 uniform float pebble = 0.0;
 uniform float pebble_size = 0.3;
 uniform vec2 pebble_head = vec2(0.0, 1.0);
+// A rune tablet split across (the rune knight's cracked runes, scripts/
+// enemies/rune_knight_look.gd; 0, whole, for everything else): on a tablet's
+// face (`runes`, what 2) a jagged seam grows across its glyphs, 0 none, 1
+// split open, dark, its light leaking out of it while the rune still glows.
+uniform float split : hint_range(0.0, 1.0) = 0.0;
 
 #include "res://shaders/rune_serpent_runes.gdshaderinc"
 
@@ -126,6 +131,40 @@ vec3 cells(vec3 p) {
 	return vec3(d1, d2, id);
 }
 
+// A jagged line's offset at `y` (x) and its slope (y): straight runs
+// between hashed kinks, `steps` of them over 0..1.
+vec2 rk_jag(float y, float seed, float steps, float amp) {
+	float s = y * steps;
+	float i = floor(s);
+	float a = h31(vec3(i, seed, 3.0)) - 0.5;
+	float b = h31(vec3(i + 1.0, seed, 3.0)) - 0.5;
+	return vec2(mix(a, b, fract(s)) * amp, (b - a) * amp * steps);
+}
+
+// The split on a tablet's face `f` (0..1 along, across), `aspect` its length
+// over its height: a main seam from one long edge to the other, a branch off
+// it from half way, both growing in from the edge as `open` goes 0 to 1.
+float rk_split(vec2 f, float aspect, float seed, float open) {
+	vec2 p = vec2(f.x * aspect, f.y);
+	vec2 m = rk_jag(p.y, seed, 6.0, 0.22);
+	float lean = 0.35 * (h31(vec3(seed, 4.0, 1.0)) < 0.5 ? -1.0 : 1.0);
+	float xm = aspect * (0.38 + 0.24 * h31(vec3(seed, 1.0, 7.0))) + lean * (p.y - 0.5) + m.x;
+	float dm = abs(p.x - xm) / sqrt(1.0 + (lean + m.y) * (lean + m.y));
+	vec2 b = rk_jag(p.y, seed + 5.0, 9.0, 0.12);
+	float side = h31(vec3(seed, 2.0, 5.0)) < 0.5 ? -1.0 : 1.0;
+	float past = max(p.y - 0.45, 0.0);
+	float xb = xm + side * 1.2 * past + b.x * step(0.45, p.y);
+	float sb = lean + m.y + side * 1.2 + b.y;
+	float db = abs(p.x - xb) / sqrt(1.0 + sb * sb);
+	float aa = max(fwidth(p.y) * 1.5, 1e-4);
+	float reach = open * 1.3;
+	float wm = mix(0.012, 0.034, open) * (1.0 - 0.35 * p.y);
+	float wb = wm * 0.6 * (1.0 - past);
+	float seam = (1.0 - smoothstep(wm, wm + aa, dm)) * (1.0 - smoothstep(reach - 0.05, reach, p.y));
+	float twig = (1.0 - smoothstep(wb, wb + aa, db)) * step(0.45, p.y) * (1.0 - smoothstep(reach - 0.4, reach - 0.3, p.y));
+	return max(seam, twig);
+}
+
 bool f_far_ok(float px) {
 	return px < 0.8;
 }
@@ -143,6 +182,7 @@ void fragment() {
 	float r_dark = 1.0;
 	float r_lit = 0.0;
 	float carve = 0.0;
+	float r_split = 0.0;
 	vec2 eye_e = vec2(0.0);
 	float eye = 0.0;
 	float e_crease = 0.0;
@@ -163,6 +203,8 @@ void fragment() {
 		if (what > 4.5 && what < 6.5) w = 0.0;
 		carve = clamp(r_lit, 0.0, 1.0) * step(what, 3.5);
 		base *= r_dark;
+		float on_tablet = (what > 1.5 && what < 2.5) ? 1.0 : 0.0;
+		r_split = rk_split(rune_face.xy, max(rune_info.y * rune_face.z, 0.1), rune_info.w, split) * on_tablet * step(0.001, split);
 	}
 	// How big a pixel is on the stone (m): fine layers fade as it grows.
 	float px = length(fwidth(rest));
@@ -295,7 +337,7 @@ void fragment() {
 	c *= 1.0 - 0.85 * e_crease;
 
 	// The normal: pits and cracks cut in, the grain a little raised.
-	float height = (tooth * 0.35 - pit * 0.6 - cracks * 0.9 + fleck_light * 0.1 - joint * 1.8 + chamfer * 0.35) * 0.02 * w * (1.0 - eye) - carve * rune_cut * 0.02;
+	float height = (tooth * 0.35 - pit * 0.6 - cracks * 0.9 + fleck_light * 0.1 - joint * 1.8 + chamfer * 0.35) * 0.02 * w * (1.0 - eye) - carve * rune_cut * 0.02 - r_split * 0.03;
 	vec3 sx = dFdx(VERTEX);
 	vec3 sy = dFdy(VERTEX);
 	vec3 r1 = cross(sy, NORMAL);
@@ -310,6 +352,7 @@ void fragment() {
 	vec3 grad_pb = sign(det) * (dFdx(pb) * r1 + dFdy(pb) * r2);
 	NORMAL = normalize(abs(det) * NORMAL - bump * grad - grad_eye - grad_pb);
 
+	c = mix(c, c * 0.06, r_split);
 	ALBEDO = c;
 	ROUGHNESS = mix(clamp(roughness_value + (pit + cracks) * 0.05 - worn * 0.1, 0.5, 1.0), 0.35, eye);
 	METALLIC = 0.0;
@@ -321,5 +364,6 @@ void fragment() {
 	float edge = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
 	EMISSION = c * hemi * fill + mix(c, vec3(0.5), 0.4) * rim_sky * edge * rim;
 	EMISSION += r_tint * r_lit * energy * r_boost;
+	EMISSION += glow * energy * r_split * 0.9;
 	EMISSION += eye_glow * eye_energy * eye * (0.45 + 0.55 * e_dome);
 }

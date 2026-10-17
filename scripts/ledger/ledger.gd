@@ -29,6 +29,7 @@ extends Node
 ## test never reads or writes the player's save (user:// is shared by every
 ## checkout of the project).
 const Registry = preload("res://scripts/ledger/ledger_registry.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const PATH := "user://progress.json"
 const FORMAT := 1
@@ -38,7 +39,15 @@ const NODE := "GameState"
 ## One done ({id}), on every objective done (not on a load or a reset).
 signal changed(id: String)
 
-var registry: RefCounted
+## What there is to do. Read again when the launch flags change (a scene
+## opened in-game on other flags, scripts/launch_args.gd), since a flagged
+## entry (data/ledger/ledger.json's note) exists only with its flag.
+var registry: RefCounted:
+	get:
+		if _registry == null or _registry.flags != LaunchArgs.user_args(): _read_registry()
+		return _registry
+	set(value): _registry = value
+var _registry: RefCounted
 ## Where it's kept, "" for memory only.
 var path := PATH
 ## objective id -> {done: true, at: ISO time}. Ids the registry no longer
@@ -62,8 +71,11 @@ static func shared() -> Node:
 	return _stand_in
 
 func _init() -> void:
-	registry = Registry.make()
-	for error in registry.errors: push_warning("Ledger: "+error)
+	_read_registry()
+
+func _read_registry() -> void:
+	_registry = Registry.make()
+	for error in _registry.errors: push_warning("Ledger: "+error)
 
 func _ready() -> void:
 	var args := _args()

@@ -109,6 +109,11 @@ extends "res://studies/kit_isle.gd"
 ## on the ferry's foredeck, the plane's tail fin (scripts/kit_isle/
 ## watcher.gd, docs/design/watcher/round1.md, docs/design/airship-ferry/
 ## round2.md).
+## --rune-knight: a stone knight patrols the aqueduct's deck (scripts/
+## enemies/rune_knight.gd, docs/design/rune-knight/spec-rune-knight.md);
+## Z on foot fires the wanderer's stand-in wind blast at him (scripts/
+## enemies/wind_blast_standin.gd); Q (RB) timed as his wind reaches you
+## parries it into a gauge segment (scripts/wind_parry.gd).
 ## --sluice: the Sluice Flush trap on the channel (scripts/traps/
 ## sluice_aqueduct.gd); --sluice=head starts at the top of the rubble slope.
 ## The plane's parts (scripts/plane_arc/plane_arc.gd, docs/design/
@@ -581,10 +586,40 @@ func _add_life() -> void:
 		watcher = Watcher.new()
 		add_child(watcher)
 		watcher.setup(self)
+	if RuneKnight.wanted():
+		# His core rune taken in an earlier run, he is gone for good.
+		if RuneKnight.placed_on(self):
+			rune_knight = RuneKnight.new()
+			add_child(rune_knight)
+			rune_knight.setup(self)
+			# His crescents buffet the plane (task 18): through the isle's air.
+			if not plane_air.is_valid(): plane_air = _dragon_air
+		else: print("aqueduct isle: the rune knight's core rune is taken; he is gone")
+		wind_blast = WindBlastStandin.new()
+		add_child(wind_blast)
+		wind_blast.setup(self)
+		wind_parry = WindParry.new()
+		add_child(wind_parry)
+		wind_parry.setup(self)
 	if NightLights.wanted(preload("res://scripts/launch_args.gd").user_args()):
 		night_lights = NightLights.new()
 		add_child(night_lights)
 		night_lights.setup(self,night_lamp_spots)
+
+# --- The rune knight (scripts/enemies/rune_knight.gd, --rune-knight) -------------------
+
+## A stone knight patrolling the aqueduct's deck (docs/design/rune-knight/
+## spec-rune-knight.md); null without --rune-knight.
+const RuneKnight = preload("res://scripts/enemies/rune_knight.gd")
+var rune_knight: Node3D = null
+## The wanderer's stand-in wind blast (Z on foot; scripts/enemies/
+## wind_blast_standin.gd), with the knight only; null without him.
+const WindBlastStandin = preload("res://scripts/enemies/wind_blast_standin.gd")
+var wind_blast: Node = null
+## The parry (scripts/wind_parry.gd): the updraft's press, timed, takes his
+## wind in as a gauge segment. With the knight only; null without him.
+const WindParry = preload("res://scripts/wind_parry.gd")
+var wind_parry: Node3D = null
 
 # --- The lock-on target (docs/design/lock-on/spec-lock-on.md) ---------------------------
 
@@ -769,14 +804,16 @@ func _wash_air() -> void:
 		return flier.downwash.merge(here,flier.downwash.pilot_air(p,PocketSail.THERMAL))
 
 ## The air the plane flies in: the dragon's blast (scripts/dragon_gale.gd
-## `plane_gust`) and its downwash, or still air.
+## `plane_gust`) and its downwash, the rune knight's crescent buffet
+## (scripts/enemies/rune_knight.gd `plane_air`), or still air.
 func _dragon_air(p: Vector3) -> Dictionary:
 	if plane == null: return {}
+	var knight: Dictionary = rune_knight.plane_air(p,plane.forward()) if rune_knight != null and is_instance_valid(rune_knight) else {}
 	var flier := dragon if dragon != null else roost_dragon
-	if flier == null: return {}
+	if flier == null: return knight
 	var wash: Dictionary = flier.downwash.plane_air(p,plane.forward())
-	if dragon == null or dragon.gale == null: return wash
-	return flier.downwash.merge(dragon.gale.plane_gust(p,plane.forward()),wash)
+	if dragon != null and dragon.gale != null: wash = flier.downwash.merge(dragon.gale.plane_gust(p,plane.forward()),wash)
+	return flier.downwash.merge(wash,knight)
 
 ## --dragon-fly-test: each time the dragon breathes in on a rim, the plane
 ## is put on a pass through its blast (cross: 40 m to the side of the line
@@ -874,6 +911,17 @@ func _flush_isle_birds(at: Vector3) -> void:
 	host.flushed = 0.0
 	host.armed = false
 	host.stir = 1.0
+
+## The rune knight's core rune taken (scripts/enemies/core_rune.gd): a pop
+## and the flourish, a crystal on the readout.
+func knight_rune_taken() -> void:
+	if _moments == null:
+		_moments = MomentsHud.new()
+		add_child(_moments)
+	_moments.pop("The knight's core rune: the aqueduct is still",2.8)
+	_moments.flourish()
+	var sky_tokens = sky.get("collectibles") if sky != null else null
+	if sky_tokens != null and sky_tokens.get("hud") != null: sky_tokens.hud.show_pickup("crystal",1,1,1)
 
 ## The treasure taken: a pop and the flourish, a crystal on the readout.
 func _dragon_yielded() -> void:

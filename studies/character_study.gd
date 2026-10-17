@@ -889,6 +889,12 @@ func tick(delta: float) -> void:
 	if updraft != null and not _tuning():
 		updraft.update(delta,motor,(script_wind if scripted else Input.is_action_just_pressed(&"walk_wind")) and not looking,want)
 	script_wind = false
+	# A whiffed parry (scripts/wind_parry.gd) holds him in his guard.
+	if updraft != null and updraft.parry != null and updraft.parry.call("holds"):
+		want = Vector2.ZERO
+		jump = false
+		motor.crouch = false
+		motor.twirl = false
 	if slam != null: slam.update(delta,motor,ground.ground_callable())
 	ground.head(delta)
 	if foot_pieces != null: foot_pieces.before(delta)
