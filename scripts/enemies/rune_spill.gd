@@ -11,13 +11,13 @@ extends Node3D
 ## Shards, their size (share of his height), the burst's speed (m/s, out
 ## and up, share of his height per s), the fall (m/s^2).
 const SHARDS := 40
-const SHARD := 0.055
+const SHARD := 0.09
 const OUT := 0.85
 const UP := 1.3
 const FALL := 16.0
 ## The light: a flare (s), the glow held (s), then guttering out (s).
 const FLARE := 0.25
-const HOLD := 1.4
+const HOLD := 2.2
 const GUTTER := 2.4
 const LIT := 10.0
 const LIGHT := 10.0

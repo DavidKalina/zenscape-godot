@@ -207,7 +207,7 @@ const KNOBS := {
 	"skid_decel": 9.0,
 	"teeter_reach": 1.2,
 	"teeter_lip": 0.9,
-	"over_push": 3.0,
+	"over_push": 5.0,
 	# The brace: a shove's skid turned along the deck, its across share at
 	# most this (0 straight along, 1 unbraced).
 	"brace_across": 0.4,
@@ -268,6 +268,13 @@ const KNOBS := {
 	"rim_depth": 2.5,
 	"rim_drop": 5.0,
 	"fall_drop": 40.0,
+	# The feel pass: a landing (leap or fall) shakes the camera, land_shake
+	# at his feet, fading to nothing shake_reach m off. A fall whose body
+	# never sends `land` (no drop to read) shatters down_wait s after.
+	"land_shake": 1.0,
+	"shatter_shake": 0.8,
+	"shake_reach": 30.0,
+	"down_wait": 0.6,
 }
 ## What hides you from him: stone (layer 1) and turf (layer 11).
 const SIGHT_MASK := 1 | (1 << 11)
@@ -380,6 +387,7 @@ var _fall_top := INF
 var _rim_out := Vector3.ZERO
 var spills := 0
 var close_below := 0.0
+var _down_t := 0.0
 const LEAP_DT := 1.0/240.0
 const LeapRing = preload("res://scripts/enemies/leap_ring.gd")
 const CoreRune = preload("res://scripts/enemies/core_rune.gd")
@@ -475,7 +483,14 @@ func _process(delta: float) -> void:
 		"turn":
 			pass
 		"to_leap":
-			at = _walk_to_leap(at,delta)
+			if leap_form == "down" and not on_meadow and unseen > knob("give_up") and not _below_me():
+				# You've gone (off the meadow below) while he walked to the
+				# lip: he lets the leap go.
+				print("rune knight: lost you on the way to the lip; back on the deck")
+				state = "track"
+				body.play("idle")
+			else:
+				at = _walk_to_leap(at,delta)
 		"leap":
 			at = _fly_leap(at,delta)
 		"skid":
@@ -499,7 +514,15 @@ func _process(delta: float) -> void:
 					if kept.distance_to(to) > 0.01: _skid_left = 0.0
 					at = kept
 				if state == "skid" and _skid_left <= 0.0: _skid_stopped(at)
-		"teeter", "kneel", "down", "reel":
+		"down":
+			# Landed from a fall: the body's `land` shatters him; a fall that
+			# barely dropped sends none, so he doesn't wait on it for good.
+			_down_t += delta
+			if _down_t >= knob("down_wait"):
+				print("rune knight: down with no land beat; shatters")
+				_shatter()
+				return
+		"teeter", "kneel", "reel":
 			pass
 		"stagger":
 			at += push*delta
@@ -533,6 +556,7 @@ func _process(delta: float) -> void:
 				push = Vector3.ZERO
 				# The body sends `land` once his root stops dropping: he shatters.
 				state = "down"
+				_down_t = 0.0
 				print("rune knight: landed at (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
 			else:
 				at += step
@@ -1096,6 +1120,7 @@ func _crumble() -> void:
 
 ## Landed from a fall off the deck: he shatters on the ground below.
 func _shatter() -> void:
+	_quake(position,knob("shatter_shake"))
 	_die("shatter")
 	print("rune knight: shatters at (%.1f, %.1f, %.1f)" % [position.x,position.y,position.z])
 
@@ -1117,6 +1142,16 @@ func _die(how: String) -> void:
 		core_rune = CoreRune.new()
 		isle.add_child(core_rune)
 		core_rune.call("setup",isle,died_at,objective_of(isle))
+
+## A camera shake through the parry's camera feel (scripts/wind_parry.gd
+## `quake`), `power` at `at`, fading linearly out to KNOBS.shake_reach m
+## from the wanderer.
+func _quake(at: Vector3, power: float) -> void:
+	var wp = isle.get("wind_parry") if isle != null else null
+	var me := _target()
+	if wp == null or me == Vector3.INF or not wp.has_method("quake"): return
+	var k := 1.0-clampf(me.distance_to(at)/knob("shake_reach"),0.0,1.0)
+	if k > 0.0: wp.call("quake",power*k)
 
 ## The deck's frame: x along it, z across.
 func _deck_local(at: Vector3) -> Vector3:
@@ -1255,13 +1290,21 @@ func _leap_think(delta: float) -> void:
 		return
 	if off_deck: return
 	var l := _deck_local(feet)
-	var below := feet.y < position.y-3.0 and absf(l.z) < knob("leap_reach") and l.x > Art.HEAD-4.0 and l.x < Art.SNAP+4.0
+	var below := _below_me()
 	no_line = no_line+delta if below and not sees else 0.0
 	var flat := Vector2(feet.x-position.x,feet.z-position.z).length()
 	close_below = close_below+delta if below and flat < knob("leap_close") else 0.0
 	if state == "track" and (no_line > knob("leap_wait") or close_below > knob("leap_close_wait")):
 		var s := _spot_near(l.x,signf(l.z) if l.z != 0.0 else 1.0)
 		if not s.is_empty(): _go_down(s,feet)
+
+## Whether the wanderer is on the meadow below the deck, near the aqueduct.
+func _below_me() -> bool:
+	var motor = isle.get("motor") if isle != null else null
+	if motor == null or _target() == Vector3.INF: return false
+	var feet: Vector3 = motor.feet
+	var l := _deck_local(feet)
+	return feet.y < position.y-3.0 and absf(l.z) < knob("leap_reach") and l.x > Art.HEAD-4.0 and l.x < Art.SNAP+4.0
 
 ## Down to `feet` from spot `s`: he walks along the deck to over it, then
 ## leaps, landing KNOBS.leap_short m short of you (at most KNOBS.leap_far
@@ -1350,7 +1393,10 @@ func _launch() -> void:
 	# His feet go across while he is over the lip (up: from clearing it to
 	# the touchdown; down: off the deck before he drops past it).
 	if leap_form == "up": _leap_across = Vector2(maxf(above_from,0.0),t)
-	else: _leap_across = Vector2(0.0,maxf(above_to,t*0.3))
+	# Down (the feel pass): across the whole flight, front-loaded (ease out)
+	# so he is off the deck's side while still over its lip, then carries
+	# on out as he drops: one arc, not a hop and a straight fall.
+	else: _leap_across = Vector2(0.0,t)
 	_leap_t = 0.0
 	leaps += 1
 	ring = LeapRing.new()
@@ -1374,6 +1420,9 @@ func _fly_leap(at: Vector3, delta: float) -> Vector3:
 	var i1 := mini(i0+1,_leap_ys.size()-1)
 	var y := lerpf(_leap_ys[i0],_leap_ys[i1],i-float(int(i)))
 	var u := smoothstep(_leap_across.x,_leap_across.y,_leap_t) if _leap_across.y > _leap_across.x else 1.0
+	if leap_form == "down" and _leap_len > 0.0:
+		var s := clampf(_leap_t/_leap_len,0.0,1.0)
+		u = 1.0-(1.0-s)*(1.0-s)
 	var flat := Vector3(_leap_from.x,0.0,_leap_from.z).lerp(Vector3(_leap_to.x,0.0,_leap_to.z),u)
 	at = Vector3(flat.x,y,flat.z)
 	if ring != null and is_instance_valid(ring): ring.set("eta",_leap_len-_leap_t)
@@ -1385,6 +1434,7 @@ func _fly_leap(at: Vector3, delta: float) -> Vector3:
 		off_deck = on_meadow
 		if ring != null and is_instance_valid(ring): ring.call("touch")
 		ring = null
+		_quake(at,knob("land_shake"))
 		print("rune knight: lands at (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
 	return at
 

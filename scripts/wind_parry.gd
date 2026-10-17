@@ -95,6 +95,10 @@ var _cue_was := -1.0
 var _cue_pop := 0.0
 var _cue_at := Vector3.ZERO
 var _punch := 0.0
+## A quake on the camera (`quake`), 0..1, easing out over QUAKE_TIME s.
+var _quake := 0.0
+const QUAKE_TIME := 0.55
+const QUAKE_SHAKE := 0.22    # m of shake at a full quake
 var _fov_applied := 0.0
 var _cam: Camera3D
 var _sound: AudioStreamPlayer
@@ -268,6 +272,7 @@ func _process(delta: float) -> void:
 	_veil.visible = _flash > 0.0
 	if _veil.visible: _veil.color.a = float(KNOBS.flash_alpha)*pow(_flash/float(KNOBS.flash),1.5)
 	_punch = maxf(_punch-real,0.0)
+	_quake = maxf(_quake-real/QUAKE_TIME,0.0)
 	_cue_pop = maxf(_cue_pop-real,0.0)
 	_clock += delta
 	if since != INF: since += delta
@@ -309,6 +314,10 @@ func apply_feel(camera: Camera3D) -> void:
 	if _cam == camera and _fov_applied != 0.0: camera.fov -= _fov_applied
 	_cam = camera
 	_fov_applied = 0.0
+	if _quake > 0.0:
+		# A heavy landing: a low, rolling shake, mostly up and down.
+		var q := QUAKE_SHAKE*_quake*_quake
+		camera.global_position += Vector3(sin(_clock*41.0)*0.6,sin(_clock*29.0+0.7),sin(_clock*37.0+2.3)*0.6)*q
 	if _punch <= 0.0: return
 	var u := _punch/float(KNOBS.punch_time)
 	var k := u*u
@@ -316,6 +325,12 @@ func apply_feel(camera: Camera3D) -> void:
 	camera.fov += _fov_applied
 	var shake := float(KNOBS.punch_shake)*k
 	camera.global_position += Vector3(sin(_clock*97.0),sin(_clock*83.0+1.3),sin(_clock*71.0+2.1))*shake
+
+## Shakes the camera, `power` 0..1 (a heavy landing near the wanderer: the
+## rune knight's leap and shatter). The stronger of this and any shake
+## under way.
+func quake(power: float) -> void:
+	_quake = maxf(_quake,clampf(power,0.0,1.0))
 
 ## The figure's guard layer from the time since the parry.
 func _pose() -> void:
