@@ -130,7 +130,10 @@ and sunlit, beside the Olmec, so the user can compare before and after.
 6. **The body script** (`scripts/enemies/rune_knight_body.gd`) on the glb,
    implementing the API; the mind chooses it by default, the stand-in
    behind `--rune-body=standin`. Every mind-lane driver passes on the real
-   body. The model-budget assessment (`docs/art/model-budget.md`) with
+   body. The drivers (list and commands in the mind's commit bd228a3a)
+   read a few stand-in internals: `body.clip`, `body._sent`,
+   `body._flying`, `blocks_at_rest()`. Give the real body the same, or
+   edit the drivers minimally; say which in the commit. The model-budget assessment (`docs/art/model-budget.md`) with
    triangle and frame-time estimates, and the lane's **Notes for merge**.
 
 ## Checks
