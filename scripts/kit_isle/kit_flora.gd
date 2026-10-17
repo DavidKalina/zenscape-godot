@@ -62,6 +62,18 @@ const SHAG_FOOT := Vector2(1.0,2.2)
 const SHAG_CELL := 1.0
 const SHAG_VARY := 0.18
 const SHAG_NOISE := 2.3
+## The grass's variety (Site `variety`): a tussock's share (times 0.4 +
+## wild), its form (x, y, z of a tuft's size) and its two satellites' reach
+## (m); thatch's share at a full foot, its form and straw (sRGB); seed heads'
+## share (times 0.3 + wild) and size range.
+const TUSSOCK_SHARE := 0.05
+const TUSSOCK_FORM := Vector3(1.3,1.6,1.3)
+const TUSSOCK_REACH := Vector2(0.14,0.3)
+const THATCH_SHARE := 0.35
+const THATCH_FORM := Vector3(1.45,0.5,1.45)
+const THATCH_STRAW := Color("b59c62")
+const SEED_SHARE := 0.025
+const SEED_SIZE := Vector2(0.7,1.0)
 ## Tiles (m: the grass and flowers', the undergrowth's, sparser, larger)
 ## and how far each kind draws (m), with the fade's margin.
 const TILE := 24.0
@@ -142,6 +154,12 @@ class Site extends RefCounted:
 	## times its size, and a broad noise of SHAG_VARY either way.
 	var shag := 0.0
 	var tuft_bump := 1.0
+	## Opt-in (with `shag`): more than one grass. Tussocks (a tall tuft
+	## and two by it), flattened straw thatch at what stands' feet and a few
+	## seed heads (wheat), most where the grass grows wild; and the tufts at
+	## a foot darkened by `contact` (0..1).
+	var variety := false
+	var contact := 0.0
 
 	func _init(top := 30.0, wear_fn := Callable(), wet_fn := Callable()) -> void:
 		ray = Vector2(top+60.0,top-8.0)
@@ -352,11 +370,44 @@ class Grow extends RefCounted:
 		_feet[key] = f
 		return f
 
-	## A tuft's size factor for the site's wild grass, `e` from the rim.
-	func _shag(p: Vector2, e: float) -> float:
-		var wild := maxf(1.0-smoothstep(SHAG_RIM.x,SHAG_RIM.y,e),_foot(p))
+	## How wild the grass grows at p (0..1), `e` from the rim.
+	func _wild(p: Vector2, e: float) -> float:
+		return maxf(1.0-smoothstep(SHAG_RIM.x,SHAG_RIM.y,e),_foot(p))
+
+	## A tuft's size factor for the site's wild grass.
+	func _shag(p: Vector2, wild: float) -> float:
 		var n := _drift.get_noise_2d(p.x*SHAG_NOISE+31.0,p.y*SHAG_NOISE-17.0)
 		return _site.tuft_bump*lerpf(1.0,1.0+_site.shag,wild)*(1.0+n*SHAG_VARY)
+
+	## A tuft's grass (Site `variety`): a tussock, thatch, a seed head by
+	## it, or a plain tuft; darkened at a foot away from the rim.
+	func _tuft(p: Vector2, size: float, e: float, wild: float, reach: float) -> void:
+		var foot := _foot(p) if e > SHAG_FOOT.y else 0.0
+		var shade := 1.0-_site.contact*foot
+		var angle := _rng.randf()*TAU
+		var roll := _rng.randf()
+		if foot > 0.0 and roll < THATCH_SHARE*foot:
+			var straw := THATCH_STRAW.srgb_to_linear()*shade
+			_add("grass_tuft",p,size,{"tint":NativeObjectPose.encode_tint(straw),"pose":NativeObjectPose.make(Basis(Vector3.UP,angle).scaled(THATCH_FORM*size),0.0)},reach)
+			return
+		var tint := {} if shade >= 1.0 else {"tint":NativeObjectPose.encode_tint(Color(shade,shade,shade))}
+		roll = _rng.randf()
+		if roll < TUSSOCK_SHARE*(0.4+wild):
+			var tall := tint.duplicate()
+			tall.pose = NativeObjectPose.make(Basis(Vector3.UP,angle).scaled(TUSSOCK_FORM*size),0.0)
+			_add("grass_tuft",p,size,tall,reach)
+			for k in range(2):
+				var q := p+Vector2.from_angle(angle+PI*(0.3+k*1.1))*_rng.randf_range(TUSSOCK_REACH.x,TUSSOCK_REACH.y)
+				_add("grass_tuft",q,size*_rng.randf_range(1.0,1.25),tint,minf(reach,REACH))
+		else:
+			_add("grass_tuft",p,size,tint,reach)
+		if _rng.randf() < SEED_SHARE*(0.3+wild):
+			var formed: Array = MeadowTypes.form("wheat",_rng.randf_range(SEED_SIZE.x,SEED_SIZE.y),_rng.randf()*TAU)
+			var extra := {}
+			var wheat_tint := MeadowTypes.tint("wheat",_rng.randf())
+			if wheat_tint != "": extra.tint = wheat_tint
+			if not (formed[1] as Dictionary).is_empty(): extra.pose = formed[1]
+			_add(MeadowTypes.asset("wheat"),p+Vector2.from_angle(_rng.randf()*TAU)*0.2,float(formed[0]),extra,reach)
 
 	func _add(asset: String, p: Vector2, size: float, extra := {}, reach := REACH) -> bool:
 		var h: float = _probe.call(p,reach)
@@ -389,8 +440,10 @@ class Grow extends RefCounted:
 			var reach := REACH if _site.rim < 0.0 else clampf(e-0.02,0.0,REACH)
 			var tuft := _site.tuft_size if _site.tuft_size != Vector2.ZERO else TUFT_SIZE
 			var size := _rng.randf_range(tuft.x,tuft.y)*lerpf(1.0,0.75,worn)
-			if _site.shag > 0.0 or _site.tuft_bump != 1.0: size *= _shag(p,e)
-			_add("grass_tuft",p,size,{},reach)
+			var wild := _wild(p,e) if _site.shag > 0.0 or _site.variety else 0.0
+			if _site.shag > 0.0 or _site.tuft_bump != 1.0: size *= _shag(p,wild)
+			if _site.variety: _tuft(p,size,e,wild,reach)
+			else: _add("grass_tuft",p,size,{},reach)
 		# Flowers: the meadow type's drifts, sown sparse.
 		var sizes: Dictionary = _meadow.type.sizes
 		while _phase == 1:

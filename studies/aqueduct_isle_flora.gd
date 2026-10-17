@@ -21,6 +21,14 @@ const CARPET_RANGE := 220.0
 const CARPET_RIM := 0.05
 const CARPET_BUMP := 1.12
 const CARPET_SHAG := 0.6
+## More than one grass, darkened where it meets stone (KitFlora Site
+## `variety`, `contact`); muted toward olive, tufts and turf, and a passing
+## gust paling the blades more (shaders/reference_surface.gdshader
+## `grass_mute`, `ground_mute`, `grass_wave_sheen`, 0.34).
+const CARPET_CONTACT := 0.3
+const CARPET_MUTE := 0.7
+const CARPET_GROUND_MUTE := 0.6
+const CARPET_SHEEN := 0.55
 
 ## Under the carpet the dry patches calm (shaders/ground_look.gdshaderinc
 ## `ground_dry`, 0.45, and its light patches `ground_patch`, 1.3; the
@@ -38,9 +46,15 @@ static func calm(flora: Node3D) -> void:
 	var ground := KitLook.ground_material()
 	ground.set_shader_parameter("ground_dry",CARPET_GROUND_DRY)
 	ground.set_shader_parameter("ground_patch",CARPET_GROUND_PATCH)
+	var graded := not "--grass-plain-look" in preload("res://scripts/launch_args.gd").user_args()
+	if graded: ground.set_shader_parameter("ground_mute",CARPET_GROUND_MUTE)
 	for batch: Node in flora.get_children():
 		if batch is MultiMeshInstance3D and str(batch.get_meta("part","")).begins_with("grass"):
-			((batch as MultiMeshInstance3D).material_override as ShaderMaterial).set_shader_parameter("grass_dry",CARPET_GRASS_DRY)
+			var m := (batch as MultiMeshInstance3D).material_override as ShaderMaterial
+			m.set_shader_parameter("grass_dry",CARPET_GRASS_DRY)
+			if not graded: continue
+			m.set_shader_parameter("grass_mute",CARPET_MUTE)
+			m.set_shader_parameter("grass_wave_sheen",CARPET_SHEEN)
 
 ## The isle's ground as the growers read it.
 static func site() -> KitFlora.Site:
@@ -52,6 +66,8 @@ static func site() -> KitFlora.Site:
 		s.rim = CARPET_RIM
 		s.tuft_bump = CARPET_BUMP
 		s.shag = CARPET_SHAG
+		s.variety = not "--grass-one-kind" in preload("res://scripts/launch_args.gd").user_args()
+		s.contact = CARPET_CONTACT
 	return s
 
 ## The plants (KitFlora `grow`: meta records, counts, instances, triangles).

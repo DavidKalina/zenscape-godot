@@ -148,6 +148,15 @@ uniform vec3 flower_ripen_green_straw = vec3(0.30, 0.62, 0.12);
 uniform vec2 grass_root_blend = vec2(0.92, 0.6);
 // How far the tuft's living green leans to the ground's colour under it.
 uniform float grass_ground_pull = 0.4;
+// Opt-in: the grass muted, greyed toward a grey tinted `grass_mute_hue`
+// (red kept under green, or it reads straw) and a little darker:
+// `grass_mute` on the tufts, `ground_mute` on the turf (studies/
+// aqueduct_isle_flora.gd). 0 leaves the colour as it was.
+uniform float grass_mute = 0.0;
+uniform float ground_mute = 0.0;
+uniform vec3 grass_mute_hue = vec3(0.72, 1.0, 0.78);
+// How much a passing wave's bow pales the blades (ZS_GRASS_WAVE_SHEEN).
+uniform float grass_wave_sheen = 0.34;
 uniform bool source_bird_flight = false;
 // How this part follows the seasons (scripts/scene_look.gd leaf_season): x
 // autumn gold and spring freshness, y winter leaf fall, z spring blossom
@@ -681,6 +690,14 @@ const float NIGHT_NEAR_BLUE = 0.6;
 const vec2 NIGHT_TIP_SHEEN = vec2(0.5, 0.5);
 global uniform vec4 zs_moon_light;
 
+// `g_color` muted `g_amount` of the way: half toward its luminance's
+// grass_mute_hue grey, and 0.85 as light (grass_mute, ground_mute).
+vec3 zs_grass_mute(vec3 g_color, float g_amount) {
+	float g_lum = dot(g_color, vec3(0.30, 0.55, 0.15));
+	vec3 g_muted = mix(g_color, grass_mute_hue * g_lum, 0.5) * 0.85;
+	return mix(g_color, g_muted, clamp(g_amount, 0.0, 1.0));
+}
+
 void fragment() {
 	float sea_mist = 0.0;
 	// A sky peak's point in its range's own frame (sky_peak_look).
@@ -827,7 +844,7 @@ void fragment() {
 		// The root grows out of the ground's own colour (ground_look) and
 		// only the upper blade is the tuft's, so no dark base rings it.
 		tint = mix(ground_under * grass_root_blend.x, tint, smoothstep(0.0, grass_root_blend.y, grass_along));
-		tint *= 1.0 + ZS_GRASS_WAVE_SHEEN * grass_bow * grass_along;
+		tint *= 1.0 + grass_wave_sheen * grass_bow * grass_along;
 	}
 	if (terrain_growth && !peak_rock && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,look_position,face_normal);
 	vec3 before_autumn = tint;
@@ -845,6 +862,9 @@ void fragment() {
 	// darkens warm there instead of failing to turn (ground_look); tufts
 	// share it.
 	if (ground) tint = zs_ground_shaded(tint, earth_side.z, ground_grass);
+	// Muted after the seasons, which read the grass's greenness.
+	if (ground && ground_mute > 0.0) tint = zs_grass_mute(tint, ground_mute * ground_grass);
+	if (grass_blades && grass_mute > 0.0) tint = zs_grass_mute(tint, grass_mute);
 	else if (grass_blades) tint = zs_ground_shaded(tint, zs_ground_shade_at(plant_root), 1.0);
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
