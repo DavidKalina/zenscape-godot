@@ -390,6 +390,10 @@ func play(name_: String, form := "") -> void:
 func socket(name_: String) -> Node3D:
 	return _sockets.get(name_)
 
+## Where he looks (contract, task 15): the blocks don't turn their head.
+func aim(_at: Vector3) -> void:
+	pass
+
 func set_effect(name_: String, on: bool, form := "") -> void:
 	if name_ == "rune_crack":
 		if not crack_t.has(form):

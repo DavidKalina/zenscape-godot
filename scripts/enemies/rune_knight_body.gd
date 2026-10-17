@@ -47,6 +47,7 @@ const BodyDust = preload("res://scripts/enemies/body_dust.gd")
 const RuneSpill = preload("res://scripts/enemies/rune_spill.gd")
 const DragonCyclone = preload("res://scripts/dragon_cyclone.gd")
 const Standin = preload("res://scripts/enemies/rune_knight_body_standin.gd")
+const Rig = preload("res://scripts/enemies/rune_knight_rig.gd")
 
 signal beat_reached(clip: String, beat: String)
 
@@ -129,6 +130,8 @@ var _skel: Skeleton3D
 var _bone := {}
 var _sockets := {}
 var _breakup: Node3D
+## The procedural layers (feet on the ground, head and chest to the target).
+var rig: SkeletonModifier3D
 var _gather_fade := 0.0
 var _gather_dirs: Array[Vector3] = []
 var _gather_phase: Array[float] = []
@@ -154,6 +157,12 @@ func setup(height: float) -> void:
 	for b in ["foot_l","foot_r","shin_r","forearm_r","hand_r","hand_l"]:
 		_bone[b] = _skel.find_bone(b) if _skel != null else -1
 	for s: String in SOCKETS: _sockets[s] = look.socket(s)
+	if _skel != null:
+		rig = Rig.new()
+		rig.name = "RuneKnightRig"
+		rig.body = self
+		_skel.add_child(rig)
+		rig.bind(_skel)
 	_root_last = global_position
 	_build_gather()
 	_build_blade()
@@ -207,6 +216,11 @@ func play(name_: String, form := "") -> void:
 		# The wind torn out of his chest: a burst of air off the rune.
 		var at: Node3D = _sockets.get("chest_rune")
 		if at != null and is_inside_tree(): BodyDust.puff(_host(),at.global_position,0.16*tall,-global_transform.basis.z)
+
+## Where he looks (world): his head and some of his chest turn to it on the
+## clips that face you. Vector3.INF lets go.
+func aim(at: Vector3) -> void:
+	if rig != null: rig.aim = at
 
 func socket(name_: String) -> Node3D:
 	return _sockets.get(name_)

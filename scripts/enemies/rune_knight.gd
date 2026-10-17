@@ -284,6 +284,8 @@ const WindShot = preload("res://scripts/enemies/wind_shot.gd")
 ## The parked plane's layer (studies/kit_isle.gd PARKED_LAYER): only the
 ## walker and his ground probes see it.
 const ROOM_LAYER := 1 << 13
+## States in which he is fighting you (the eye lit, the head on you).
+const ENGAGED := ["notice","track","gather","throw","slash","catch","return","to_leap","teeter","reel"]
 
 var isle: Node3D
 var body: Node3D
@@ -581,6 +583,15 @@ func _process(delta: float) -> void:
 	yaw = move_toward(yaw,yaw_goal,knob("turn_rate")*delta)
 	transform = Transform3D(Basis(Vector3.UP,yaw),at)
 	if _room != null: _room.global_transform = Transform3D(Basis.IDENTITY,at)
+	_look_layer()
+
+## The eye lit and the head (some of the chest) on you while he fights you;
+## dark and let go once he has lost you (trunk task 15). The body keeps the
+## eye dark once he kneels.
+func _look_layer() -> void:
+	var engaged := state in ENGAGED and unseen <= knob("give_up") and last_seen != Vector3.INF
+	body.set_effect("eye_glow",engaged)
+	body.aim(last_seen if engaged else Vector3.INF)
 
 func _on_beat(clip: String, beat: String) -> void:
 	if clip == "turn" and beat == "plant" and state == "turn":
