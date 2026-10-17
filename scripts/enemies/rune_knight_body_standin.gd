@@ -58,6 +58,11 @@ extends Node3D
 ##   where he was (stacked, each on what is under it); shatter thrown
 ##   apart off the ground, spinning, runes out. Each block stops on stone
 ##   or turf (a ray down its step) or on a block under it.
+## - **The leap** (`leap`, forms "up" and "down"): sunk into a crouch
+##   (arms swung back; `crouch` the tell), thrown up at `launch`, feet
+##   tucked under him in the air (the mind flies his root), arms wide at
+##   the top (`apex` when his root stops rising), the landing taken deep
+##   (`land` when it has dropped and stops), up into his guard, `end`.
 ## - **rune_crack** (`set_effect("rune_crack", on, form)`, form `chest`,
 ##   `hand_l` or `hand_r`): that rune's lines flare, split apart, a dark
 ##   crack shows across them, they flicker CRACK_FLICKER s and go dark for
@@ -90,6 +95,17 @@ const CLIPS := {
 	"kneel": {"length": 1.1, "loop": false, "beats": {}},
 	"crumble": {"length": 2.2, "loop": false, "beats": {}},
 	"shatter": {"length": 2.0, "loop": false, "beats": {}},
+	# The leap (forms "up", "down"): its beats are LEAP's (`crouch`, `launch`
+	# at their times; `apex` and `land` from his root's motion, the mind
+	# flying him; `end` LEAP.land_len s after `land`). It never ends on its
+	# own before the landing.
+	"leap": {"length": 9.0, "loop": true, "beats": {}},
+}
+## The leap's beats by form (s): down in the crouch (the tell), the
+## launch, the landing's recovery after `land`.
+const LEAP := {
+	"up": {"crouch": 0.6, "launch": 0.75, "land_len": 0.9},
+	"down": {"crouch": 0.32, "launch": 0.42, "land_len": 0.8},
 }
 const SOCKETS := ["hand_r","hand_l","hands_mid","blade","chest_rune","eye"]
 ## Key poses: clip -> [[time (s), [arm (rad, forward-up), spread (rad,
@@ -144,6 +160,17 @@ const KEYS := {
 	# dropping wide and slack, chest bared, rocked back and sunk, held
 	# open; gathered back to his guard by `end`.
 	"reel": [[0.0,REST],[0.08,[1.9,1.25,0.15,-0.55,0.5,-0.02]],[0.3,[1.0,1.15,0.25,-0.42,0.32,0.07]],[0.6,[0.55,1.0,0.35,-0.3,0.2,0.09]],[0.95,[0.45,0.85,0.45,-0.22,0.12,0.08]],[1.25,[0.3,0.35,0.95,0.06,0.0,0.025]]],
+	# The leap up: sinking into a deep crouch (arms swung back, looking up
+	# at the deck) at `crouch`, thrown up at `launch` (arms flung over his
+	# head, up on his toes), rising, arms opening wide at the top (the
+	# hang), coming down with them wide, looking down at his landing.
+	"leap:up": [[0.0,REST],[0.3,[0.2,0.3,0.7,0.3,0.05,0.1]],[0.6,[-0.7,0.35,0.35,0.55,0.25,0.22]],[0.75,[2.7,0.35,0.15,-0.2,0.35,-0.05]],[1.1,[2.2,0.6,0.5,-0.05,0.2,0.0]],[1.5,[1.3,0.95,0.6,0.1,0.0,0.0]],[2.0,[0.9,1.1,0.4,0.2,-0.15,0.0]]],
+	# The leap down: a quicker crouch, looking down at you, the spring off
+	# the lip, arms out wide as he drops.
+	"leap:down": [[0.0,REST],[0.32,[-0.5,0.3,0.4,0.45,-0.15,0.17]],[0.42,[1.8,0.5,0.2,0.1,-0.1,-0.04]],[0.8,[1.2,1.0,0.5,0.15,-0.2,0.0]],[1.5,[0.9,1.15,0.4,0.25,-0.25,0.0]]],
+	# The landing (time from `land`): the blow taken deep (sunk, leaning
+	# over, fists driven down and out), held, then up into his guard.
+	"leap:land": [[0.0,[0.9,1.1,0.4,0.2,-0.15,0.0]],[0.08,[-0.1,0.8,0.5,0.55,-0.3,0.24]],[0.4,[0.1,0.7,0.6,0.5,-0.2,0.22]],[0.8,[0.3,0.35,0.95,0.06,0.0,0.025]]],
 	# Falling: arms flung up and wide, head back.
 	"fall": [[0.0,REST],[0.2,[2.6,1.0,0.2,-0.3,0.4,-0.02]],[0.8,[2.8,0.9,0.3,-0.25,0.35,-0.02]]],
 	# Broken: a sag (knees going), then down onto the knee at 0.45 with a
@@ -252,6 +279,10 @@ var _settle_t := 9.0
 var _root_last := Vector3.ZERO
 var _root_v := Vector3.ZERO
 var _sent: Dictionary = {}
+## The leap: when it landed (clip time, -1 not yet), whether he has dropped
+## since its top.
+var _land_t := -1.0
+var _leap_drop := false
 ## The pose now and the one the clip blends from: [floats (KEYS' first
 ## seven: arms, lean, head, sink, twist), the right forearm's bend, the
 ## right arm's turn (Quaternion)].
@@ -334,6 +365,8 @@ func play(name_: String, form := "") -> void:
 	clip_form = form
 	clip_time = 0.0
 	_sent = {}
+	_land_t = -1.0
+	_leap_drop = false
 	_from_pose = _now_pose.duplicate()
 	if name_ == "reel":
 		# The wind torn out of his chest: a burst of air off the rune.
@@ -378,6 +411,7 @@ func _process(delta: float) -> void:
 	_blade_fade = move_toward(_blade_fade,1.0 if effects.wind_blade else 0.0,delta/(BLADE_GROW if effects.wind_blade else 0.12))
 	for r: String in crack_t:
 		if crack_t[r] >= 0.0: crack_t[r] += delta
+	if clip == "leap": _leap_beats()
 	if clip == "fall":
 		# Landed: his root, having dropped, stops.
 		if _fall_vy < -3.0: _fell = true
@@ -395,6 +429,30 @@ func _process(delta: float) -> void:
 	_skid_dust(delta,flat_v.length())
 	_draw_gather()
 	_draw_blade()
+
+## The leap's beats: `crouch` and `launch` at LEAP's times; `apex` once
+## his root stops rising after the launch; `land` once it has dropped
+## since and stops; `end` LEAP.land_len s on.
+func _leap_beats() -> void:
+	var L: Dictionary = LEAP.get(clip_form,LEAP.up)
+	for b: String in ["crouch","launch"]:
+		if clip_time >= float(L[b]) and not _sent.has(b):
+			_sent[b] = true
+			beat_reached.emit(clip,b)
+	if not _sent.has("launch"): return
+	if not _sent.has("apex") and clip_time > float(L.launch)+0.05 and _fall_vy <= 0.0:
+		_sent["apex"] = true
+		beat_reached.emit(clip,"apex")
+	if _sent.has("apex") and _fall_vy < -1.0: _leap_drop = true
+	if _leap_drop and _land_t < 0.0 and absf(_fall_vy) < 0.3:
+		_land_t = clip_time
+		_sent["land"] = true
+		for i in range(2): feet[i] = _home(i,0.0)
+		_settle_t = 0.0
+		beat_reached.emit(clip,"land")
+	if _land_t >= 0.0 and clip_time-_land_t >= float(L.land_len) and not _sent.has("_end"):
+		_sent["_end"] = true
+		beat_reached.emit(clip,"end")
 
 ## The feet: a step under way goes on; else in `walk`/`turn` the trailing
 ## foot steps, in anything else a foot off its spot steps home.
@@ -432,6 +490,15 @@ func _step(delta: float) -> void:
 			BodyDust.plume(host,g.origin+fwd*0.02*tall+g.basis.x.normalized()*_hip_x,0.22*tall)
 			BodyDust.puff(host,(_sockets.chest_rune as Node3D).global_position,0.16*tall,fwd*1.5+Vector3.UP)
 			effects.wind_gather = false
+		_settle_t += delta
+		_pose(0.0,0.0)
+		return
+	if clip == "leap" and _sent.has("launch") and _land_t < 0.0:
+		# In the air: the feet tucked up under him.
+		_swing = -1
+		var L: Dictionary = LEAP.get(clip_form,LEAP.up)
+		var tuck := sin(clampf((clip_time-float(L.launch))/0.45,0.0,1.0)*PI*0.5)
+		for i in range(2): feet[i] = _home(i,0.0)+Vector3.UP*(0.03+0.12*tuck)*tall
 		_settle_t += delta
 		_pose(0.0,0.0)
 		return
@@ -539,6 +606,10 @@ func _pose(lift: float, swing: float) -> void:
 func _key_pose() -> Array:
 	var want: Array = _unpack(REST)
 	var label := clip+":"+clip_form
+	var tt := clip_time
+	if clip == "leap" and _land_t >= 0.0:
+		label = "leap:land"
+		tt = clip_time-_land_t
 	if not KEYS.has(label): label = clip
 	if KEYS.has(label):
 		var keys: Array = KEYS[label]
@@ -546,8 +617,8 @@ func _key_pose() -> Array:
 		for j in range(keys.size()-1):
 			var t0: float = keys[j][0]
 			var t1: float = keys[j+1][0]
-			if clip_time < t1:
-				var u := clampf((clip_time-t0)/maxf(t1-t0,0.001),0.0,1.0)
+			if tt < t1:
+				var u := clampf((tt-t0)/maxf(t1-t0,0.001),0.0,1.0)
 				want = _blend(_unpack(keys[j][1]),_unpack(keys[j+1][1]),u*u*(3.0-2.0*u))
 				break
 	var b := clampf(clip_time/BLEND,0.0,1.0)

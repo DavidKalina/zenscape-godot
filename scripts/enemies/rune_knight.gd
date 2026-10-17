@@ -112,6 +112,24 @@ extends Node3D
 ##   still reaches the lip it ends there teetering. A knock-off from the
 ##   side takes a teeter and a second hit. A rally miss or a riposte keeps
 ##   its line (and may carry him straight over).
+## - **The leap** (spec "The leap"): his spots (`leap_spots`) are found
+##   once from the aqueduct's real shape: turf beside its foot each side,
+##   the column up to the deck clear of stone (the buttress, the footings),
+##   off the plane's landing run. On the deck tracking you, with you on the
+##   meadow near the aqueduct and no clean line on you KNOBS.leap_wait s
+##   (or close below him KNOBS.leap_close_wait s, when he holds his
+##   slash), he walks along the deck over the spot nearest you (`to_leap`)
+##   and leaps down (`leap` "down"), landing KNOBS.leap_short m short of
+##   you where the turf takes him. On the meadow (`on_meadow`) he fights as
+##   on the deck (no lip, no brace: a skid into stone stops). You on the
+##   deck, he walks to the spot below you and leaps up (`leap` "up"); you
+##   unseen KNOBS.home_wait s, he leaps home to his patrol. The arc is his
+##   (sampled at the body's `launch`; a hang at the top, his feet going
+##   across only while he is over the lip); the body sends `crouch`,
+##   `launch`, `apex`, `land`, `end`. Each landing's ring
+##   (scripts/enemies/leap_ring.gd, set at the launch) knocks a wanderer
+##   within KNOBS.leap_ring m; a parry timed to the touchdown takes it, and
+##   he reels as he lands. In the air shots crack but don't turn him.
 ##
 ## The host (studies/aqueduct_isle.gd) makes him in `_add_life` when
 ## `wanted`. His knobs are the one dictionary below so a field (enemy.gd)
@@ -210,6 +228,36 @@ const KNOBS := {
 	"burst_strength": 1.0,
 	"burst_grace": 3.0,
 	"burst_gain": 1.0,
+	# The leap (spec "The leap"): his spots on the turf beside the
+	# aqueduct's foot are this far (m) past his room off the deck's side,
+	# looked for every leap_step m along the deck; the column over one is
+	# clear of stone this much wider than his room (m).
+	"leap_out": 1.2,
+	"leap_step": 1.0,
+	"leap_clear": 0.6,
+	# Down: the wanderer on the meadow this near the aqueduct's side (m,
+	# flat) and unseen (no clean line) this long (s) draws him down; this
+	# near him (m, flat) and below, this long (s) does too. He lands this
+	# short of the wanderer (m), at most leap_far m out from his spot.
+	"leap_reach": 24.0,
+	"leap_wait": 2.5,
+	"leap_close": 7.0,
+	"leap_close_wait": 0.6,
+	"leap_short": 2.5,
+	"leap_far": 7.0,
+	# The arc: the top's height over the higher end (m; up, then down); near
+	# the top (|v up| under leap_hang_v m/s) his pull is leap_hang of
+	# gravity (the hang).
+	"leap_rise_up": 1.3,
+	"leap_rise_down": 1.0,
+	"leap_hang": 0.3,
+	"leap_hang_v": 3.5,
+	# The landing's ring: the wanderer within leap_ring m (flat) of where he
+	# lands and within a body's height of it is knocked, the knock's share.
+	"leap_ring": 4.0,
+	"leap_ring_strength": 0.8,
+	# Home: on the meadow, the wanderer unseen this long (s), he leaps back up.
+	"home_wait": 6.0,
 }
 ## What hides you from him: stone (layer 1) and turf (layer 11).
 const SIGHT_MASK := 1 | (1 << 11)
@@ -223,7 +271,8 @@ var body: Node3D
 var height := 1.9
 ## "patrol", "turn", "held", "notice", "track", "gather", "throw",
 ## "slash", "catch", "return", "skid", "teeter", "stagger", "fall", "down"
-## (landed from a fall, waiting on the body's `land`), "kneel", "dead".
+## (landed from a fall, waiting on the body's `land`), "kneel", "dead",
+## "to_leap" (walking to a leap's launch), "leap".
 var state := "patrol"
 ## His yaw (he faces -Z of Basis(UP, yaw)) and the one it eases to.
 var yaw := 0.0
@@ -290,6 +339,34 @@ var slashes := 0
 var death := ""
 var died_at := Vector3.INF
 var burst: Node3D = null
+## The leap: his spots (found once, `leap_spots`: {at (world, on the turf),
+## side (+1/-1, deck z), x (deck x)}); the leap under way: its form ("up",
+## "down"), where he walks to first (the launch point), its ends, the
+## arc's heights (sampled every LEAP_DT s from launch), its length and the
+## span of it his feet go across in, the time into it (-1 before the
+## launch); whether a parry of its ring sets him reeling on landing, and
+## whether it takes him home to his patrol. `on_meadow` he leapt down.
+var leap_spots: Array = []
+var _spots_found := false
+var leap_form := ""
+var _leap_goal := Vector3.INF
+var _leap_from := Vector3.ZERO
+var _leap_to := Vector3.ZERO
+var _leap_ys := PackedFloat32Array()
+var _leap_len := 0.0
+var _leap_across := Vector2.ZERO
+var _leap_t := -1.0
+var _leap_reel := false
+var _leap_home := false
+var ring: Node3D = null
+var on_meadow := false
+## Leaps launched and landed; how long below him unseen, how long close below.
+var leaps := 0
+var landings := 0
+var no_line := 0.0
+var close_below := 0.0
+const LEAP_DT := 1.0/240.0
+const LeapRing = preload("res://scripts/enemies/leap_ring.gd")
 var _rng := RandomNumberGenerator.new()
 
 static func wanted() -> bool:
@@ -345,6 +422,7 @@ func _process(delta: float) -> void:
 	_sense()
 	cool = maxf(0.0,cool-delta)
 	unseen = 0.0 if sees else unseen+delta
+	_leap_think(delta)
 	if state in ["patrol","held","turn"] and sees and _noticeable() and not off_deck:
 		state = "notice"
 		body.play("notice")
@@ -364,8 +442,14 @@ func _process(delta: float) -> void:
 				at += fwd*minf(float(_shape.pace)*delta,left)
 		"turn":
 			pass
+		"to_leap":
+			at = _walk_to_leap(at,delta)
+		"leap":
+			at = _fly_leap(at,delta)
 		"skid":
-			if _skid_left > 0.0:
+			if _skid_left > 0.0 and on_meadow:
+				at = _skid_meadow(at,delta)
+			elif _skid_left > 0.0:
 				# Constant deceleration to the planned stop: v = v0 sqrt(left/len).
 				var v := _skid_v0*sqrt(_skid_left/maxf(_skid_len,0.001))
 				var step := minf(maxf(v,0.6)*delta,_skid_left)
@@ -425,7 +509,7 @@ func _process(delta: float) -> void:
 					pass
 				elif unseen > knob("give_up"):
 					_turn_to(_yaw_to(ends[heading_to]-at))
-				elif sees and cool <= 0.0 and absf(yaw_goal-yaw) < knob("face_ok"):
+				elif sees and cool <= 0.0 and absf(yaw_goal-yaw) < knob("face_ok") and close_below <= 0.0:
 					_gather()
 	yaw = move_toward(yaw,yaw_goal,knob("turn_rate")*delta)
 	transform = Transform3D(Basis(Vector3.UP,yaw),at)
@@ -473,6 +557,9 @@ func _on_beat(clip: String, beat: String) -> void:
 			state = "track"
 			cool = knob("throw_gap")
 			body.play("idle")
+	elif clip == "leap" and state == "leap":
+		if beat == "launch": _launch()
+		elif beat == "end": _leap_done()
 	elif clip == "skid" and beat == "end":
 		_skid_ended = true
 		if state == "skid" and _skid_left <= 0.0: _skid_stopped(position)
@@ -694,7 +781,7 @@ func _read_shots(delta: float) -> void:
 ## staggered or falling), the shot from in front, slow enough, and not yet
 ## caught KNOBS.rally_limit times.
 func _can_catch(node: Node, p: Vector3, v: Vector3) -> bool:
-	if state in ["catch","return","stagger","fall","skid","teeter","kneel","down","dead","reel"]: return false
+	if state in ["catch","return","stagger","fall","skid","teeter","kneel","down","dead","reel","leap"]: return false
 	if not (node.has_method("hold") and node.has_method("launch")) and not node.has_method("absorb"): return false
 	var off := p-position
 	if absf(wrapf(_yaw_to(off)-yaw,-PI,PI)) > knob("catch_cone"): return false
@@ -794,6 +881,11 @@ func _riposte() -> bool:
 ## him, he reels, open, till the clip's `end`.
 func parried(_shot: Node) -> void:
 	if state in ["dead","down","fall","kneel","teeter","skid"]: return
+	if state == "leap":
+		# His landing's ring parried: he reels as he lands.
+		_leap_reel = true
+		print("rune knight: his landing's wind parried")
+		return
 	_drop_gather()
 	if caught != null and is_instance_valid(caught) and caught.has_method("absorb"): caught.call("absorb")
 	caught = null
@@ -821,6 +913,14 @@ func _skid(v: Vector3, meters: float, crack: bool) -> void:
 		hits += 1
 		_crumble()
 		return
+	if state == "leap":
+		# Stone in flight: the hit tells (a crack), it doesn't turn him.
+		hits += 1
+		if crack and not runes.is_empty():
+			var r: String = runes.pop_front()
+			cracks += 1
+			body.set_effect("rune_crack",true,r)
+		return
 	_drop_gather()
 	if caught != null and is_instance_valid(caught) and caught.has_method("absorb"): caught.call("absorb")
 	caught = null
@@ -845,7 +945,7 @@ func _skid(v: Vector3, meters: float, crack: bool) -> void:
 		print("rune knight: hit teetering, goes over")
 		return
 	braced = false
-	if not crack: flat = _brace(flat)
+	if not crack and not on_meadow: flat = _brace(flat)
 	skid_way = flat
 	skid_from = position
 	skid_meters = meters
@@ -853,7 +953,7 @@ func _skid(v: Vector3, meters: float, crack: bool) -> void:
 	_skid_v0 = sqrt(2.0*knob("skid_decel")*meters)
 	_skid_len = meters
 	_skid_teeter = false
-	var lip := _lip_along(position,flat)
+	var lip := _lip_along(position,flat) if not on_meadow else INF
 	if lip < meters and (braced or meters-lip <= knob("teeter_reach")):
 		_skid_len = maxf(lip,0.0)
 		_skid_teeter = true
@@ -982,3 +1082,295 @@ func _fall_hit(at: Vector3, step: Vector3) -> Dictionary:
 	ray.from = at
 	ray.to = at+step+Vector3.DOWN*0.05
 	return get_world_3d().direct_space_state.intersect_ray(ray)
+
+# --- The leap -------------------------------------------------------------------------
+
+## Whether `at` is on the turf: a ray down from over it meets turf (layer
+## 11, not stone) facing up; the hit or empty.
+func _turf_at(at: Vector3, over := 3.0, under := 30.0) -> Dictionary:
+	var ray := PhysicsRayQueryParameters3D.new()
+	ray.collision_mask = SIGHT_MASK
+	ray.from = at+Vector3.UP*over
+	ray.to = at+Vector3.DOWN*under
+	var hit := get_world_3d().direct_space_state.intersect_ray(ray)
+	if hit.is_empty() or (hit.normal as Vector3).y < 0.8: return {}
+	var c = hit.collider
+	if not c is CollisionObject3D or ((c as CollisionObject3D).collision_layer & (1 << 11)) == 0: return {}
+	return hit
+
+## Whether he could stand on the turf at `ground` with nothing of stone
+## round him up to `tall_` m: the turf level under his room's rim (within
+## half a metre) and a column of his room's width (plus KNOBS.leap_clear)
+## clear of stone.
+func _clear_stand(ground: Vector3, tall_: float) -> bool:
+	var r: float = float(_shape.radius)+knob("leap_clear")
+	for k in range(6):
+		var a := float(k)/6.0*TAU
+		var rim := _turf_at(ground+Vector3(cos(a),0.0,sin(a))*r,1.5,2.0)
+		if rim.is_empty() or absf((rim.position as Vector3).y-ground.y) > 0.5: return false
+	var box := BoxShape3D.new()
+	box.size = Vector3(r*2.0,maxf(tall_-0.4,0.5),r*2.0)
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = box
+	q.collision_mask = 1
+	q.transform = Transform3D(Art.AQ.basis,ground+Vector3.UP*(0.4+box.size.y*0.5))
+	return get_world_3d().direct_space_state.intersect_shape(q,1).is_empty()
+
+## His leap spots, found once from the aqueduct's real shape: every
+## KNOBS.leap_step m along the deck, each side, KNOBS.leap_out m past his
+## room off the deck's side, where the turf lies under the deck (no void,
+## no stone) and the column up to the deck is clear of stone (the
+## buttress, a pier's footing, the stair), and off the plane's landing
+## run.
+func _find_spots() -> void:
+	_spots_found = true
+	leap_spots.clear()
+	var off := knob("deck_half")+float(_shape.radius)+knob("leap_out")
+	var deck_y := Art.TOP+Art.DECK
+	var x := Art.HEAD+1.0
+	while x <= Art.SNAP-1.0:
+		for side: float in [-1.0,1.0]:
+			var top := Art.AQ*Vector3(x,Art.DECK,side*off)
+			var hit := _turf_at(top,1.0,Art.DECK+6.0)
+			if hit.is_empty(): continue
+			var g: Vector3 = hit.position
+			if g.y > deck_y-4.0 or _on_strip(g): continue
+			if not _clear_stand(g,deck_y-g.y): continue
+			leap_spots.append({"at":g,"side":side,"x":x})
+		x += knob("leap_step")
+	print("rune knight: %d leap spots" % leap_spots.size())
+
+## Whether `p` lies on the plane's landing run: the turf ahead of where it
+## parks (the isle's parked_at/parked_heading; WorldScale `gap` wide, from
+## behind its tail to well ahead), kept clear (AGENTS.md).
+func _on_strip(p: Vector3) -> bool:
+	if isle == null or isle.get("parked") != true: return false
+	var at: Vector3 = isle.get("parked_at")
+	var h: float = isle.get("parked_heading")
+	var fwd := Vector3(-sin(h),0.0,-cos(h))
+	var off := Vector3(p.x-at.x,0.0,p.z-at.z)
+	var along := off.dot(fwd)
+	return along > -12.0 and along < 80.0 and absf(off.dot(Vector3(fwd.z,0.0,-fwd.x))) < WorldScale.gap()*0.5
+
+## The spot on `side` (0: either) nearest along the deck to deck x `x`,
+## or {} none.
+func _spot_near(x: float, side: float) -> Dictionary:
+	if not _spots_found: _find_spots()
+	var best := {}
+	var d := INF
+	for s: Dictionary in leap_spots:
+		if side != 0.0 and float(s.side) != side: continue
+		var e := absf(float(s.x)-x)
+		if e < d:
+			d = e
+			best = s
+	return best
+
+## Whether the wanderer stands on the deck (over it, by the deck's top).
+func _on_deck(feet: Vector3) -> bool:
+	return not _off_deck(feet) and feet.y > Art.TOP+Art.DECK-0.6
+
+## Each frame: whether to leap. On the deck tracking you, with you on the
+## meadow near the aqueduct and no clean line on you KNOBS.leap_wait s (or
+## close below him KNOBS.leap_close_wait s), he goes down to you. On the
+## meadow tracking, with you on the deck, he goes up below you; with you
+## unseen KNOBS.home_wait s, he goes home.
+func _leap_think(delta: float) -> void:
+	if not state in ["track","notice","gather","slash","throw"] or death != "":
+		no_line = 0.0
+		close_below = 0.0
+		return
+	var motor = isle.get("motor") if isle != null else null
+	var chest := _target()
+	if chest == Vector3.INF: return
+	var feet: Vector3 = motor.feet
+	if on_meadow:
+		if state != "track": return
+		if _on_deck(feet):
+			var s := _spot_near(_deck_local(feet).x,signf(_deck_local(position).z))
+			if not s.is_empty(): _go_up(s,false)
+		elif unseen > knob("home_wait"):
+			var s := _spot_near(_deck_local(position).x,signf(_deck_local(position).z))
+			if not s.is_empty(): _go_up(s,true)
+		return
+	if off_deck: return
+	var l := _deck_local(feet)
+	var below := feet.y < position.y-3.0 and absf(l.z) < knob("leap_reach") and l.x > Art.HEAD-4.0 and l.x < Art.SNAP+4.0
+	no_line = no_line+delta if below and not sees else 0.0
+	var flat := Vector2(feet.x-position.x,feet.z-position.z).length()
+	close_below = close_below+delta if below and flat < knob("leap_close") else 0.0
+	if state == "track" and (no_line > knob("leap_wait") or close_below > knob("leap_close_wait")):
+		var s := _spot_near(l.x,signf(l.z) if l.z != 0.0 else 1.0)
+		if not s.is_empty(): _go_down(s,feet)
+
+## Down to `feet` from spot `s`: he walks along the deck to over it, then
+## leaps, landing KNOBS.leap_short m short of you (at most KNOBS.leap_far
+## m out from the spot), where turf takes him; else on the spot.
+func _go_down(s: Dictionary, feet: Vector3) -> void:
+	var base: Vector3 = s.at
+	var way := Vector3(feet.x-base.x,0.0,feet.z-base.z)
+	var d := clampf(way.length()-knob("leap_short"),0.0,knob("leap_far"))
+	var land := base
+	if d > 0.5:
+		var hit := _turf_at(base+way.normalized()*d,6.0,10.0)
+		if not hit.is_empty() and not _on_strip(hit.position) and _clear_stand(hit.position,float(_shape.height)):
+			land = hit.position
+	_start_leap("down",Art.AQ*Vector3(float(s.x),Art.DECK,float(s.side)*knob("deck_half")*0.55),land,false)
+	print("rune knight: goes down to you, over (%.1f, %.1f, %.1f) to (%.1f, %.1f, %.1f)" % [_leap_goal.x,_leap_goal.y,_leap_goal.z,land.x,land.y,land.z])
+
+## Up from spot `s` to the deck over it (`home`: then to his patrol).
+func _go_up(s: Dictionary, home: bool) -> void:
+	_start_leap("up",s.at,Art.AQ*Vector3(float(s.x),Art.DECK,float(s.side)*0.3),home)
+	print("rune knight: goes %s, to the spot at (%.1f, %.1f, %.1f)" % ["home" if home else "up to you",_leap_goal.x,_leap_goal.y,_leap_goal.z])
+
+func _start_leap(form: String, from: Vector3, to: Vector3, home: bool) -> void:
+	_drop_gather()
+	leap_form = form
+	_leap_goal = from
+	_leap_to = to
+	_leap_home = home
+	_leap_reel = false
+	_leap_t = -1.0
+	no_line = 0.0
+	close_below = 0.0
+	state = "to_leap"
+	body.play("walk")
+
+## Walking to the launch point (on the deck along it, on the meadow over
+## the turf); there, he faces his landing and crouches into the leap.
+func _walk_to_leap(at: Vector3, delta: float) -> Vector3:
+	var off := Vector3(_leap_goal.x-at.x,0.0,_leap_goal.z-at.z)
+	var left := off.length()
+	if left < 0.05:
+		at = Vector3(_leap_goal.x,at.y,_leap_goal.z)
+		var look := _leap_to-at
+		if leap_form == "down" and last_seen != Vector3.INF: look = last_seen-at
+		yaw_goal = yaw+wrapf(_yaw_to(look)-yaw,-PI,PI)
+		state = "leap"
+		body.play("leap",leap_form)
+		print("rune knight: crouches to leap %s" % leap_form)
+		return at
+	yaw_goal = yaw+wrapf(_yaw_to(off)-yaw,-PI,PI)
+	# He turns before he walks off (planted, not sliding sideways).
+	if absf(yaw_goal-yaw) > 0.6: return at
+	at += off/left*minf(float(_shape.pace)*delta,left)
+	if on_meadow:
+		var g := _turf_at(at,1.5,3.0)
+		if not g.is_empty(): at.y = (g.position as Vector3).y
+	return at
+
+## The launch (the body's `launch`): the arc from here to the landing, its
+## heights sampled; the landing's ring set where he will come down.
+func _launch() -> void:
+	_leap_from = position
+	var g := knob("gravity")
+	var hang := knob("leap_hang")
+	var hv := knob("leap_hang_v")
+	var top := maxf(_leap_from.y,_leap_to.y)+knob("leap_rise_up" if leap_form == "up" else "leap_rise_down")
+	var h := top-_leap_from.y
+	var h2 := hv*hv/(2.0*g*hang)
+	var v := sqrt(2.0*g*(h-h2)+hv*hv) if h > h2 else sqrt(2.0*g*hang*h)
+	var y := _leap_from.y
+	_leap_ys = PackedFloat32Array([y])
+	var t := 0.0
+	var above_from := -1.0
+	var above_to := -1.0
+	var lip := _leap_to.y+0.3 if leap_form == "up" else _leap_from.y+0.2
+	while t < 6.0:
+		v -= g*(hang if absf(v) < hv else 1.0)*LEAP_DT
+		y += v*LEAP_DT
+		t += LEAP_DT
+		if v < 0.0 and y <= _leap_to.y:
+			_leap_ys.append(_leap_to.y)
+			break
+		_leap_ys.append(y)
+		if y >= lip and above_from < 0.0: above_from = t
+		if y >= lip: above_to = t
+	_leap_len = t
+	# His feet go across while he is over the lip (up: from clearing it to
+	# the touchdown; down: off the deck before he drops past it).
+	if leap_form == "up": _leap_across = Vector2(maxf(above_from,0.0),t)
+	else: _leap_across = Vector2(0.0,maxf(above_to,t*0.3))
+	_leap_t = 0.0
+	leaps += 1
+	ring = LeapRing.new()
+	isle.add_child(ring)
+	ring.global_position = _leap_to
+	ring.set("shooter",self)
+	ring.set("target",isle.get("motor"))
+	ring.set("strength",knob("leap_ring_strength"))
+	ring.set("reach",knob("leap_ring"))
+	ring.set("tall",float(_shape.height))
+	ring.set("eta",_leap_len)
+	print("rune knight: leaps %s, %.2f s aloft, top %.1f m" % [leap_form,_leap_len,top])
+
+## In the air: along the sampled arc, across in its span; at the
+## touchdown the ring goes off and he is on the deck or the meadow.
+func _fly_leap(at: Vector3, delta: float) -> Vector3:
+	if _leap_t < 0.0: return at
+	_leap_t = minf(_leap_t+delta,_leap_len)
+	var i := _leap_t/LEAP_DT
+	var i0 := mini(int(i),_leap_ys.size()-1)
+	var i1 := mini(i0+1,_leap_ys.size()-1)
+	var y := lerpf(_leap_ys[i0],_leap_ys[i1],i-float(int(i)))
+	var u := smoothstep(_leap_across.x,_leap_across.y,_leap_t) if _leap_across.y > _leap_across.x else 1.0
+	var flat := Vector3(_leap_from.x,0.0,_leap_from.z).lerp(Vector3(_leap_to.x,0.0,_leap_to.z),u)
+	at = Vector3(flat.x,y,flat.z)
+	if ring != null and is_instance_valid(ring): ring.set("eta",_leap_len-_leap_t)
+	if _leap_t >= _leap_len:
+		at = _leap_to
+		_leap_t = -1.0
+		landings += 1
+		on_meadow = leap_form == "down"
+		off_deck = on_meadow
+		if ring != null and is_instance_valid(ring): ring.call("touch")
+		ring = null
+		print("rune knight: lands at (%.1f, %.1f, %.1f)" % [at.x,at.y,at.z])
+	return at
+
+## The leap's `end`: reeling if its ring was parried, home to his patrol,
+## or tracking you.
+func _leap_done() -> void:
+	if _leap_t >= 0.0: return
+	if _leap_reel:
+		_leap_reel = false
+		state = "track"
+		parried(null)
+		return
+	if _leap_home and not on_meadow:
+		_turn_to(_yaw_to(ends[heading_to]-position))
+		return
+	state = "track"
+	cool = minf(cool,knob("throw_gap")*0.5)
+	body.play("idle")
+
+## A skid on the meadow: over the turf, no lip; stone in the way (the
+## aqueduct's wall) stops it; the turf falling away under him, he falls.
+func _skid_meadow(at: Vector3, delta: float) -> Vector3:
+	var v := _skid_v0*sqrt(_skid_left/maxf(_skid_len,0.001))
+	var step := minf(maxf(v,0.6)*delta,_skid_left)
+	_skid_left -= step
+	var ray := PhysicsRayQueryParameters3D.new()
+	ray.collision_mask = 1
+	ray.from = at+Vector3.UP*height*0.4
+	ray.to = ray.from+skid_way*(step+float(_shape.radius))
+	if not get_world_3d().direct_space_state.intersect_ray(ray).is_empty():
+		print("rune knight: skids into stone")
+		_skid_left = 0.0
+		_skid_stopped(at)
+		return at
+	var to := at+skid_way*step
+	var g := _turf_at(to,1.0,1.5)
+	if g.is_empty():
+		var any := _fall_hit(to+Vector3.UP*1.0,Vector3.DOWN*2.5)
+		if any.is_empty():
+			state = "fall"
+			fall_v = skid_way*maxf(v,knob("over_push"))
+			body.play("fall")
+			print("rune knight: skids off the turf at (%.1f, %.1f, %.1f)" % [to.x,to.y,to.z])
+			return to
+		to.y = (any.position as Vector3).y
+	else:
+		to.y = (g.position as Vector3).y
+	if _skid_left <= 0.0: _skid_stopped(to)
+	return to
