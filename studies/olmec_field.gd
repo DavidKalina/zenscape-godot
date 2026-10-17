@@ -19,6 +19,8 @@ extends "res://studies/kit_isle.gd"
 ##     [--calm] (the Olmec doesn't hunt you: he stands and listens)
 ##     [--olmec-at=x,z] [--body-knob=<knob>=<value>]
 ##     [--phase=2] (start whole, the head on: phase 2; R starts it so again)
+##     [--tilt-now] (in phase 2, he makes for the rim and tilts the field
+##       at once: the set piece, `tilt_begin`)
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
 const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
 const OlmecTarget = preload("res://scripts/lock_on/olmec_target.gd")
@@ -33,6 +35,10 @@ const BossHead = preload("res://scripts/olmec_boss/boss_head.gd")
 ## Phase 2: the body that comes for it, and hunts you whole
 ## (scripts/olmec_boss/boss_body.gd).
 const BossBody = preload("res://scripts/olmec_boss/boss_body.gd")
+## The tilt set piece (spec "The tilt"): the field tipped steeply toward him
+## braced on its rim, the steep mode of the Olmec's tilt.
+const OlmecTilt = preload("res://scripts/enemies/olmec_tilt.gd")
+const Dust = preload("res://scripts/enemies/body_dust.gd")
 
 ## Phase 1 is done: the head has taken its hits and cried out (the body's
 ## cue, for the trunk to hook).
@@ -97,6 +103,51 @@ var _body_t := -1.0
 var _spawner: Node
 var _crag_lips: Array[Vector3] = []
 
+## The tilt: braced on the rim, he tips the whole field (Art: the turf, its
+## grass, the rim stones and crags; the arena and the parked plane ride it)
+## TILT_DEG toward him about its middle, on the tilt's steep spring. Too
+## steep to stand on (the wanderer's slide_auto held at TILT_SLIDE_AUTO
+## while it is over TILT_SURF deg): he surfs down it, steering with the
+## stick. For now it ends on a timer (TILT_HOLD s braced): he lets go and
+## the field eases back level. TILT_RIM: how far in from the lip he
+## braces; TILT_KEEP_OFF: never within this of the plane's run (west).
+const TILT_DEG := 27.0
+const TILT_HOLD := 9.0
+const TILT_SLIDE_AUTO := 16.0
+const TILT_SURF := 12.0
+const TILT_RIM := 3.0
+const TILT_KEEP_OFF := 8.0
+## Loose stone shaken out by the slam that slides down the tipped field:
+## how many, their sizes (m), their slide (a share of the pull down a
+## slope; m/s² of friction), and how flat the field must be to hold them.
+const SCREE_N := 14
+const SCREE_SIZE := Vector2(0.5,1.5)
+const SCREE_PULL := 0.75
+const SCREE_GRIP := 1.2
+const SCREE_HOLD_DEG := 9.0
+## The camera while the field is tipped: raised (rad off its polar, by the
+## tip's share) and turned toward him at the low edge.
+const TILT_CAM_UP := 0.42
+const TILT_CAM_TURN := 1.4
+const TILT_CAM_SIDE := 0.5
+var _tilt_cam_side := 0.0
+var tilt: Node = null
+var tilt_now := false
+var _tilt_now_done := false
+## "" none, "tipping" (braced, held), "easing" (let go, coming back level).
+var tilt_phase := ""
+var tilt_t := 0.0
+var tilt_way := Vector2.ZERO
+var _tilt_body: Node3D = null
+var _motor_knobs := {}
+var _plane_rest := Transform3D.IDENTITY
+var _plane_park_rest := Transform3D.IDENTITY
+var _plane_tipped := false
+var _scree: Array = []
+## Counted, for checks.
+var tilts_begun := 0
+var tilt_most_deg := 0.0
+
 ## Hides the figure while the head holds him, and steps the enemies
 ## (studies/whole_body_chase.gd's).
 class Slot extends Node:
@@ -117,6 +168,7 @@ func _ready() -> void:
 			var p := arg.get_slice("=",1).split(",")
 			_olmec_at = Vector2(float(p[0]),float(p[1]) if p.size() > 1 else 0.0)
 		elif arg == "--whole-olmec": whole_olmec = true
+		elif arg == "--tilt-now": tilt_now = true
 		elif arg.begins_with("--phase="): start_phase = clampi(int(arg.get_slice("=",1)),1,2)
 		elif arg.begins_with("--head-knob="):
 			var hk: String = arg.trim_prefix("--head-knob=")
@@ -172,6 +224,10 @@ func _build_room() -> void:
 	arena = Arena.new()
 	add_child(arena)
 	arena.setup(self)
+	tilt = OlmecTilt.new()
+	tilt.field = enemies
+	tilt.study = self
+	add_child(tilt)
 
 func _build_art() -> void:
 	art = Node3D.new()
@@ -301,6 +357,7 @@ func reset_olmec() -> void:
 	_wire()
 
 func respawn() -> void:
+	tilt_reset()
 	super.respawn()
 	reset_olmec()
 	if arena != null: arena.rebuild()
@@ -315,6 +372,7 @@ func tick(delta: float) -> void:
 		if _body_t >= BODY_AFTER:
 			_body_t = -1.0
 			_bring_body()
+	_tilt_tick(delta)
 	var b := olmec()
 	if b != null and arrival == "climbing" and not (str(b.state) in ["climb","mantle"]):
 		arrival = "crossing"
@@ -347,6 +405,7 @@ const TALL_GAZE := 0.5
 const TALL_EASE := 0.12
 
 func _frame(delta: float) -> void:
+	_tilt_frame(delta)
 	super._frame(delta)
 	if foot_lock == null or foot_lock.weight <= 0.0: return
 	var b := olmec()
@@ -428,6 +487,9 @@ func attack_line() -> String:
 			var step := p[2] if p.size() > 2 else ""
 			return {"absorb":"absorbs (%s)" % kind,"tell":"%s coming" % kind,"puff":"%s!" % kind}.get(step,mv)+"  ·  from up high"
 		var st := str(b.state)
+		if mv == "tilt":
+			return {"tilt_run":"makes for the rim","windup":"bounds for the rim","leap":"bounds for the rim",
+				"land":"on the rim","tilt_slam":"slams the rim","tilt_brace":"tilts the field!","tilt_let":"lets go"}.get(st,"tilt")
 		if mv == "charge":
 			return {"charge_tell":"charge coming","charge":"charge!","charge_skid":"overran  ·  shoot him now",
 				"charge_stagger":"stopped short"}.get(st,"charge")
@@ -513,3 +575,208 @@ func _voice(sound_name: StringName, at: Vector3) -> void:
 	add_child(player)
 	player.finished.connect(player.queue_free)
 	player.play()
+
+# --- The tilt ----------------------------------------------------------------------------
+
+## Where he braces for the tilt, from `from`: a spot TILT_RIM m in from the
+## lip, on the turf, off the plane's run and the rim stones, the far side of
+## the field from the wanderer if it can (the longest slide), not too far
+## from him. INF none.
+func tilt_spot(from: Vector3) -> Vector3:
+	var run: Rect2 = Arena.RUN.grow(TILT_KEEP_OFF)
+	var best := Vector3.INF
+	var best_score := -INF
+	var me := Vector2(motor.feet.x,motor.feet.z)
+	for k in range(36):
+		var a := float(k)*TAU/36.0
+		var rim := FIELD_R*(1.0+0.05*sin(a*3.0+0.7)+0.03*sin(a*7.0+2.1))
+		var p := Vector2(cos(a),sin(a))*(rim-TILT_RIM)
+		if run.has_point(p) or p.x < -12.0: continue
+		var clear := true
+		for i in range(STONES.size()):
+			var sa := deg_to_rad(float(STONES[i][0]))
+			var sr := STONE_R+(1.5 if i%2 == 0 else -1.0)
+			if p.distance_to(Vector2(cos(sa),sin(sa))*sr) < 5.0: clear = false
+		if not clear: continue
+		var score := p.distance_to(me)-0.35*p.distance_to(Vector2(from.x,from.z))
+		if score > best_score:
+			best_score = score
+			best = Vector3(p.x,_ground_y(p.x,p.y),p.y)
+	return best
+
+## His fists down on the rim at `at`: the field tips toward him.
+func tilt_begin(b: Node3D, at: Vector3) -> void:
+	if tilt == null or art == null: return
+	tilt_way = Vector2(at.x,at.z).normalized()
+	_tilt_body = b
+	tilt_phase = "tipping"
+	tilt_t = 0.0
+	tilts_begun += 1
+	var ride: Array = [arena]
+	if get("_park_body") != null: ride.append(get("_park_body"))
+	tilt.steep(art,Vector3(0.0,FIELD_TOP,0.0),tilt_way,TILT_DEG,ride)
+	_plane_tipped = parked and plane_figure != null
+	if _plane_tipped:
+		_plane_rest = plane_figure.transform
+		_plane_park_rest = plane_figure.get("_parked_at")
+	_motor_knobs = {"slide_auto":motor.slide_auto}
+	_shake_scree(at)
+	if arena != null and arena.hub != null: arena.hub.quake = maxf(float(arena.hub.quake),1.0)
+	_say("He slams the rim: the field tips toward him!",3.0)
+	print("olmec field: tilt %d from (%.1f, %.1f), the field tips %.0f deg toward him" % [tilts_begun,at.x,at.z,TILT_DEG])
+
+## The rest-frame point `p` where the tipped field has it now.
+func tipped(p: Vector3) -> Vector3:
+	return tilt.steep_turn()*p if tilt != null else p
+
+## The tilt's frame: the timer, the tip stepped, what rides it posed, the
+## wanderer too steep to stand, the scree sliding.
+func _tilt_tick(delta: float) -> void:
+	if tilt == null: return
+	var b := olmec()
+	if tilt_now and not _tilt_now_done and b != null and arrival == "whole" and phase == 2 and b.has_method("tilt_now") and str(b.state) in ["chase","listen","seek","alert","land"]:
+		_tilt_now_done = bool(b.tilt_now())
+	if tilt_phase == "tipping":
+		tilt_t += delta
+		# Let go: his time braced up, or he is down or gone off his brace.
+		var off := b == null or b != _tilt_body or bool(b.crumbled) or not (str(b.state) == "tilt_brace")
+		if tilt_t >= TILT_HOLD or (off and tilt_t > 0.2):
+			_tilt_release()
+	tilt.step(delta,[])
+	var deg: float = tilt.steep_deg()
+	tilt_most_deg = maxf(tilt_most_deg,deg)
+	var turn: Transform3D = tilt.steep_turn()
+	if _plane_tipped and plane_figure != null:
+		if parked:
+			plane_figure.set("_parked_at",turn*_plane_park_rest)
+			plane_figure.transform = turn*_plane_rest
+		else: _plane_tipped = false
+	if _motor_knobs.has("slide_auto"):
+		motor.slide_auto = TILT_SLIDE_AUTO if deg > TILT_SURF else float(_motor_knobs.slide_auto)
+	_slide_scree(delta,deg,turn)
+	if tilt_phase == "easing" and tilt.steep_tip == null:
+		tilt_phase = ""
+		_put_plane_back()
+		if _motor_knobs.has("slide_auto"): motor.slide_auto = float(_motor_knobs.slide_auto)
+		_motor_knobs.clear()
+		print("olmec field: the field is level again (most %.1f deg)" % tilt_most_deg)
+
+func _tilt_release() -> void:
+	tilt_phase = "easing"
+	tilt.steep_release()
+	if _tilt_body != null and is_instance_valid(_tilt_body) and _tilt_body.has_method("tilt_let_go"): _tilt_body.tilt_let_go()
+	_say("He lets go: the field eases back",2.5)
+	print("olmec field: let go after %.1f s braced" % tilt_t)
+
+func _put_plane_back() -> void:
+	if _plane_tipped and plane_figure != null and parked:
+		plane_figure.set("_parked_at",_plane_park_rest)
+		plane_figure.transform = _plane_rest
+	_plane_tipped = false
+
+## All level at once (R).
+func tilt_reset() -> void:
+	if tilt == null: return
+	tilt.settle_all()
+	_put_plane_back()
+	if _motor_knobs.has("slide_auto"): motor.slide_auto = float(_motor_knobs.slide_auto)
+	_motor_knobs.clear()
+	tilt_phase = ""
+	_tilt_body = null
+	_tilt_now_done = false
+	for c: Dictionary in _scree:
+		if is_instance_valid(c.node): (c.node as Node3D).queue_free()
+	_scree.clear()
+
+## Loose stone shaken out over the field by the slam (rest frame), to slide.
+func _shake_scree(at: Vector3) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9100+tilts_begun
+	for i in range(SCREE_N):
+		var p := Vector2.ZERO
+		for _try in range(8):
+			p = Vector2(rng.randf_range(-1.0,1.0),rng.randf_range(-1.0,1.0))*FIELD_R*0.85
+			if p.length() < FIELD_R*0.85 and not Arena.RUN.has_point(p) and p.distance_to(Vector2(at.x,at.z)) > 8.0: break
+		var size := rng.randf_range(SCREE_SIZE.x,SCREE_SIZE.y)
+		var bld := RuinKit.Build.new(9200+i+tilts_begun*31,0.5,"Scree%d" % i)
+		bld.ground = 0.0
+		RuinKit._sarsen(bld,Transform3D.IDENTITY,Vector3(size,size*rng.randf_range(0.5,0.9),size*rng.randf_range(0.7,1.1)),0.45)
+		var node := bld.finish()
+		# Its colliders off: it is loose stone to see slide, not ground.
+		for body: Node in node.find_children("*","CollisionObject3D",true,false):
+			(body as CollisionObject3D).collision_layer = 0
+			(body as CollisionObject3D).collision_mask = 0
+		add_child(node)
+		var q := Vector3(p.x,_ground_y(p.x,p.y)-0.15,p.y)
+		var spin := Basis(Vector3.UP,rng.randf_range(-PI,PI))
+		_scree.append({"node":node,"q":q,"v":Vector2.ZERO,"basis":spin,"roll":rng.randf_range(0.6,1.4),"size":size,"off":false,"vy":0.0,"t":0.0,"side":rng.randf_range(-0.2,0.2)})
+		node.global_transform = Transform3D(spin,tipped(q))
+		Dust.puff(enemies,tipped(q),size*1.6,Vector3.UP)
+
+## The scree down the tipped field (in its rest frame along the fall),
+## tumbling as it goes; over the lip it drops away; level, it stays.
+func _slide_scree(delta: float, deg: float, turn: Transform3D) -> void:
+	if _scree.is_empty(): return
+	var g := 9.8
+	var keep: Array = []
+	for c: Dictionary in _scree:
+		var node: Node3D = c.node
+		if not is_instance_valid(node): continue
+		if bool(c.off):
+			c.t = float(c.t)+delta
+			c.vy = float(c.vy)-g*delta
+			node.global_position += Vector3(float(c.v.x),float(c.vy),float(c.v.y))*delta
+			node.global_basis = node.global_basis.rotated(Vector3(c.v.y,0.0,-c.v.x).normalized() if (c.v as Vector2).length() > 0.1 else Vector3.RIGHT,delta*2.0)
+			if float(c.t) > 4.0:
+				node.queue_free()
+				continue
+			keep.append(c)
+			continue
+		var v: Vector2 = c.v
+		var pull := g*sin(deg_to_rad(deg))*SCREE_PULL
+		var down := tilt_way.rotated(float(c.side))
+		if deg > SCREE_HOLD_DEG: v += down*pull*delta
+		var pace := move_toward(v.length(),0.0,SCREE_GRIP*delta)
+		v = v.normalized()*pace if v.length() > 1e-4 else Vector2.ZERO
+		c.v = v
+		var q: Vector3 = c.q
+		q.x += v.x*delta
+		q.z += v.y*delta
+		var r := Vector2(q.x,q.z).length()
+		var a := atan2(q.z,q.x)
+		var rim := FIELD_R*(1.0+0.05*sin(a*3.0+0.7)+0.03*sin(a*7.0+2.1))
+		q.y = _ground_y(q.x,q.z)-0.15
+		c.q = q
+		# Rolled over as it goes (about the axis across its way).
+		if pace > 0.05:
+			c.basis = (c.basis as Basis).rotated(Vector3(v.y,0.0,-v.x).normalized(),-pace*delta/maxf(float(c.size)*0.5,0.2)*float(c.roll))
+			if randf() < delta*pace*0.25: Dust.puff(enemies,turn*q,float(c.size)*1.2,Vector3.UP)
+		node.global_transform = Transform3D(turn.basis*(c.basis as Basis),turn*q)
+		if r > rim+0.6:
+			c.off = true
+			var w3 := turn.basis*Vector3(v.x,0.0,v.y)
+			c.v = Vector2(w3.x,w3.z)
+			c.vy = w3.y
+		keep.append(c)
+	_scree = keep
+
+## While the field is tipped the camera rises and turns a little toward him
+## braced at the low edge, so the tip reads (not while locked: the lock frames him).
+func _tilt_frame(delta: float) -> void:
+	if tilt == null or delta <= 0.0: return
+	var k := clampf(float(tilt.steep_deg())/TILT_DEG,0.0,1.0)
+	if k <= 0.01: return
+	if foot_lock != null and foot_lock.locked(): return
+	_polar = lerpf(_polar,CAM_POLAR-TILT_CAM_UP*k,1.0-exp(-delta*2.5))
+	var b := olmec()
+	if b != null:
+		var d := b.global_position-motor.feet
+		if Vector2(d.x,d.z).length() > 2.0:
+			# Down the fall line but a little across it (TILT_CAM_SIDE, the
+			# side it already looks from), so the tipped rim and the
+			# horizon cross the frame aslant.
+			var at := atan2(-d.x,-d.z)
+			var side := TILT_CAM_SIDE*(1.0 if angle_difference(at,_yaw) <= 0.0 else -1.0)
+			if _tilt_cam_side == 0.0: _tilt_cam_side = side
+			_yaw = lerp_angle(_yaw,at+_tilt_cam_side,(1.0-exp(-delta*TILT_CAM_TURN))*k)
+	if tilt_phase == "": _tilt_cam_side = 0.0

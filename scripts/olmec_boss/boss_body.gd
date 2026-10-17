@@ -25,6 +25,15 @@ extends "res://scripts/lock_on/olmec_target.gd"
 ##     (arena.gd BIG) or the rim's edge ahead: he stops short with a
 ##     stagger ("charge_stagger");
 ##   - the swat as before, quicker.
+##   - the tilt (the set piece, spec "The tilt"): first at TILT_AT_HITS
+##     hits, again no sooner than TILT_REST s after, he makes for the rim
+##     (the field's `tilt_spot`: never over the plane's run), running
+##     ("tilt_run") till a bound reaches it, bounds there (a "jump"), turns
+##     in, both fists up and down on the rim ("tilt_slam"), and stays
+##     braced on it, fists on the turf, leaning his weight on it
+##     ("tilt_brace"): the field (`tilt_begin`) tips steeply toward him and
+##     the wanderer slides down to him. The field lets him go
+##     (`tilt_let_go`): he stands up off it ("tilt_let") and hunts again;
 ## His fists, landings and slams hit the arena (scripts/olmec_boss/arena.gd
 ## `hit_at`), and his shockwaves break what they pass as they always have
 ## (the hub is his breaker). PHASE2_HITS gust shots bring him down
@@ -130,6 +139,23 @@ var _scraped := 0
 var _charge_caught := -1.0
 
 ## Whole: the boss's moveset on, his hits counted afresh.
+## The tilt: first at this many hits (phase 2), then no sooner than
+## TILT_REST s after the last; a bound reaches the rim from TILT_LEAP m at
+## most (else he runs nearer first); the slam's windup and its fists down
+## (s), the beat after the field let him go (s).
+const TILT_AT_HITS := 3
+const TILT_REST := 40.0
+const TILT_LEAP := 28.0
+const TILT_WINDUP := 0.9
+const TILT_LET := 1.4
+var tilts := 0
+var _tilt_ready := INF
+var _tilt_step := ""
+var _tilt_at := Vector3.INF
+## Where he braces (the field at rest: the field's tilt turns it).
+var tilt_rest := Vector3.INF
+var _tilt_hit := false
+
 func phase_two() -> void:
 	if phase2: return
 	phase2 = true
@@ -170,6 +196,9 @@ func _attack(m: PilotMotor, flat: float, dy: float) -> bool:
 	if _head_puffing():
 		if flat <= float(knobs.catch_reach)*hh and absf(dy) < neck_h*0.6: return super._attack(m,flat,dy)
 		return false
+	if _tilt_due():
+		tilt_now()
+		return true
 	var level := absf(dy) < neck_h*0.6
 	if level and flat >= CHARGE_NEAR and flat <= CHARGE_FAR and _clock >= _charge_ready:
 		_start_charge()
@@ -250,6 +279,107 @@ func _start_charge() -> void:
 	chase_beat.emit("charge")
 	print("olmec boss: charge from %.1f m" % _flat_to_him())
 
+# --- The tilt -----------------------------------------------------------------
+
+func _tilt_due() -> bool:
+	if not phase2 or crumbled: return false
+	if tilts == 0: return hits >= TILT_AT_HITS or _clock >= _tilt_ready
+	return _clock >= _tilt_ready and hits >= TILT_AT_HITS
+
+## Off for the rim at once (the field's `--tilt-now`, or due): false if the
+## field has no spot for it.
+func tilt_now() -> bool:
+	var st: Node = field.study if field != null else null
+	if st == null or not st.has_method("tilt_spot"): return false
+	var at: Vector3 = st.tilt_spot(position)
+	if at == Vector3.INF:
+		_tilt_ready = _clock+5.0
+		return false
+	tilts += 1
+	_tilt_ready = INF
+	_tilt_at = at
+	tilt_rest = Vector3.INF
+	move = "tilt"
+	_tilt_step = "run"
+	_end_slam()
+	_go("tilt_run")
+	chase_beat.emit("tilt")
+	print("olmec boss: tilt %d, for the rim at (%.1f, %.1f), %.1f m off" % [tilts,at.x,at.z,Vector2(at.x-position.x,at.z-position.z).length()])
+	return true
+
+func _in_tilt() -> bool:
+	return move == "tilt"
+
+## For the rim: the run, then the bound once it reaches.
+func _tilt_run(delta: float) -> void:
+	var to := Vector2(_tilt_at.x-position.x,_tilt_at.z-position.z)
+	var d := to.length()
+	if d < 1.5:
+		_brake(delta)
+		_go("tilt_slam")
+		return
+	var top := float(knobs.chase_speed)
+	facing = lerp_angle(facing,PilotMotor.facing_of(to/d),1.0-exp(-5.0*delta))
+	var f := PilotMotor.forward(facing)
+	var pace := move_toward(Vector2(vel.x,vel.z).length(),top,float(knobs.accel)*delta)
+	vel.x = f.x*pace
+	vel.z = f.y*pace
+	if d <= TILT_LEAP and state_t > 0.3 and _arc_clear(_tilt_at,"jump"):
+		_tilt_step = "leap"
+		_leap_to = _tilt_at
+		leap_kind = "jump"
+		_go("windup")
+		field.sound(&"body_windup",position)
+
+## Turned in from the rim, fists up, then down on it: the field tips.
+func _tilt_slam(delta: float) -> void:
+	_brake(delta)
+	_tilt_step = "slam"
+	var inward := Vector2(-position.x,-position.z)
+	if inward.length() > 0.1 and state_t < TILT_WINDUP-0.15:
+		facing = lerp_angle(facing,PilotMotor.facing_of(inward.normalized()),1.0-exp(-7.0*delta))
+	if not _tilt_hit and state_t >= TILT_WINDUP:
+		_tilt_hit = true
+		var at := position+_forward3()*(length*0.5+arm_l*0.5)
+		var g := _floor(at+Vector3.UP*1.0,2.0,4.0)
+		if g != -INF: at.y = g
+		_puff(at,hh*2.2)
+		Dust.plume(field,at,hh*3.0)
+		field.sound(&"body_land",at)
+		field.sound(&"body_rumble",at)
+		quake = maxf(quake,1.0)
+		tilt_rest = position
+		var st: Node = field.study
+		if st != null and st.has_method("tilt_begin"): st.tilt_begin(self,at)
+		_go("tilt_brace")
+
+## Braced on the rim, fists on the turf, his weight on it: held where the
+## tipped field has his spot.
+func _tilt_brace(delta: float) -> void:
+	vel = Vector3.ZERO
+	_push = Vector3.ZERO
+	var st: Node = field.study
+	if st != null and st.has_method("tipped") and tilt_rest != Vector3.INF:
+		var p: Vector3 = st.tipped(tilt_rest)
+		position.x = p.x
+		position.z = p.z
+		if position.y > p.y+0.5 or position.y < p.y-2.0: position.y = p.y
+	quake = maxf(quake,0.12)
+
+## The field lets him go: up off the rim, then the hunt.
+func tilt_let_go() -> void:
+	if state != "tilt_brace": return
+	_tilt_step = "let"
+	_go("tilt_let")
+
+func _tilt_let(delta: float) -> void:
+	_brake(delta)
+	if state_t >= TILT_LET:
+		_tilt_step = ""
+		_tilt_ready = _clock+TILT_REST
+		move = ""
+		_go(_resume())
+
 func _flat_to_him() -> float:
 	var m: PilotMotor = field.motor
 	return Vector2(m.feet.x-position.x,m.feet.z-position.z).length()
@@ -260,6 +390,10 @@ func _think_more(delta: float) -> void:
 		"charge": _charge(delta)
 		"charge_skid": _charge_skid(delta)
 		"charge_stagger": _charge_stagger(delta)
+		"tilt_run": _tilt_run(delta)
+		"tilt_slam": _tilt_slam(delta)
+		"tilt_brace": _tilt_brace(delta)
+		"tilt_let": _tilt_let(delta)
 
 func _pose_more(_idle: float) -> bool:
 	match state:
@@ -267,10 +401,21 @@ func _pose_more(_idle: float) -> bool:
 		"charge": look.want("charge_run",look.loop_time("charge_run",_phase,2.0))
 		"charge_skid": look.want("charge_skid",minf(state_t,float(look.lengths.charge_skid)))
 		"charge_stagger": look.want("charge_stagger",minf(state_t,float(look.lengths.charge_stagger)))
+		"tilt_run": look.want("shoulder_run",look.loop_time("shoulder_run",_phase,2.0))
+		"tilt_slam","tilt_brace","tilt_let":
+			# The triumph's fists up, down on the rim (the slam's), held
+			# there braced; let go, the rest of it as he stands up.
+			var whole_t := float(look.lengths.triumph)
+			var at := TRIUMPH_HIT*whole_t
+			var t := at
+			if state == "tilt_slam": t = minf(state_t/TILT_WINDUP,1.0)*at
+			elif state == "tilt_let": t = at+minf(state_t/TILT_LET,1.0)*(whole_t-at)
+			look.want("triumph",t)
 		_: return false
 	return true
 
 func _step_len() -> float:
+	if state == "tilt_run": return Look.RUN_STEP
 	return Look.CHARGE_STEP if state == "charge" else super._step_len()
 
 ## Planted, turned to him, the back foot scraping; then off.
@@ -441,9 +586,17 @@ func _end_slam() -> void:
 		knobs.swat_after = _swat_knobs[1]
 
 func _go(to: String) -> void:
+	# Down from the bound to the rim: straight into the slam.
+	if move == "tilt" and _tilt_step == "leap" and state == "land" and to != "land": to = "tilt_slam"
+	# A bound that would not go (its arc not clear): run on for the rim.
+	if move == "tilt" and _tilt_step == "leap" and state == "windup" and to != "leap" and to != "land":
+		_tilt_step = "run"
+		to = "tilt_run"
+	if to == "tilt_slam": _tilt_hit = false
+	if move == "tilt" and not to.begins_with("tilt") and not (to in ["windup","leap","land","fall"]): move = ""
 	if _slam and to != "swat": _end_slam()
 	if _bound and not (to in ["windup","leap","land"]): _bound = false
-	if to in ["chase","seek","alert","return","roam","listen","home","land","spent"] and not (to == "land" and _bound): move = ""
+	if to in ["chase","seek","alert","return","roam","listen","home","land","spent"] and not (to == "land" and (_bound or move == "tilt")): move = ""
 	super._go(to)
 
 func _windup_s() -> float:
