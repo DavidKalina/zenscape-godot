@@ -41,6 +41,9 @@ const HEAP_SLIP := 3.0
 const NEST := 0.7
 ## Rays see the world's stone and turf (layer 1) and the aqueduct (12).
 const MASK := 1 | (1 << 11)
+## A crumbling piece drifting over a drop deeper than this (m) below his
+## base stops drifting, so the heap stays on the deck.
+const LEDGE := 0.4
 ## A piece still not at rest after this long is left where it is (s).
 const GIVE_UP := 8.0
 
@@ -136,6 +139,13 @@ func _physics_process(delta: float) -> void:
 		var at := m.global_position
 		var to := at+v*delta
 		var half: float = f[3]
+		if not thrown and (to.x != at.x or to.z != at.z):
+			# A crumble stays where he knelt: a piece about to drift off an
+			# edge (no floor under it near his base) stops drifting.
+			var edge := PhysicsRayQueryParameters3D.create(Vector3(to.x,at.y+half,to.z),Vector3(to.x,heap_at.y-LEDGE,to.z),MASK)
+			if space.intersect_ray(edge).is_empty():
+				v = Vector3(0.0,v.y,0.0)
+				to = Vector3(at.x,to.y,at.z)
 		var floor_y := -INF
 		var ray := PhysicsRayQueryParameters3D.create(at+Vector3.UP*half,to+Vector3.DOWN*half,MASK)
 		var hit := space.intersect_ray(ray)

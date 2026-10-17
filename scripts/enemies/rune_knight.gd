@@ -6,8 +6,9 @@ extends Node3D
 ## end to end.
 ##
 ## - **His body** is behind the contract's API (`play`, `beat_reached`,
-##   `socket`, `set_effect`, `shape`): today the stand-in
-##   (scripts/enemies/rune_knight_body_standin.gd), later a Blender body.
+##   `socket`, `set_effect`, `shape`): the Blender body
+##   (scripts/enemies/rune_knight_body.gd), or with `--rune-body=standin`
+##   the stand-in of blocks (scripts/enemies/rune_knight_body_standin.gd).
 ##   The mind touches it only through those.
 ## - **The patrol:** he walks the deck's line (studies/aqueduct_isle_art.gd
 ##   `AQ`, from the head to the snap, KNOBS.end_margin m short of each) at
@@ -139,6 +140,7 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const BodyStandin = preload("res://scripts/enemies/rune_knight_body_standin.gd")
+const BodyReal = preload("res://scripts/enemies/rune_knight_body.gd")
 
 const KNOBS := {
 	# His height over the wanderer's.
@@ -442,7 +444,9 @@ func setup(host: Node3D) -> void:
 	yaw = _yaw_to(ends[1]-ends[0])
 	yaw_goal = yaw
 	transform = Transform3D(Basis(Vector3.UP,yaw),ends[0])
-	body = BodyStandin.new()
+	# His body: the Blender one (scripts/enemies/rune_knight_body.gd), or the
+	# stand-in of blocks with --rune-body=standin.
+	body = BodyStandin.new() if "--rune-body=standin" in LaunchArgs.user_args() else BodyReal.new()
 	add_child(body)
 	body.setup(height)
 	body.beat_reached.connect(_on_beat)
