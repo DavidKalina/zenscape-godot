@@ -183,6 +183,16 @@ func _on_deck(local: Vector3) -> Vector3:
 	var top := lerpf(a.y,b.y,tc)+bow*pow(sin(PI*tc),2.0)+float(sim.drop(tc,side-sim.sway(tc)))
 	return Vector3(t,side,local.y-top)
 
+## More than a deck ever sways off its middle line (m), for `_near_deck`.
+const SWAY_ROOM := 2.0
+## Whether a point of this bridge's frame could stand on the deck: between
+## its ends and within `reach` (m) of its middle line, read without the sim
+## (`_on_deck`'s t and side), so a probe passes far bridges cheaply.
+func _near_deck(local: Vector3, reach: float) -> bool:
+	var rel := Vector2(local.x-a.x,local.z-a.z)
+	var t := rel.dot(Vector2(b.x-a.x,b.z-a.z))/(span*span)
+	return t > 0.0 and t < 1.0 and absf(rel.dot(Vector2(across.x,across.z))) <= reach
+
 # --- The walker and the plane -------------------------------------------------------
 
 ## The pilot this frame: `frame` the node whose frame `feet` are in (the
@@ -195,8 +205,12 @@ static func tread(frame: Node3D, feet: Vector3, grounded: bool, events: Dictiona
 	if frame == null or not frame.is_inside_tree(): return Vector3.ZERO
 	var world := frame.global_transform*feet
 	for bridge: MeshInstance3D in _live:
-		var on: Vector3 = bridge._on_deck(bridge.global_transform.affine_inverse()*world)
+		var local: Vector3 = bridge.global_transform.affine_inverse()*world
 		var width := float(bridge.sim.width)
+		if not bridge._near_deck(local,width*0.5+STAND_SLACK+SWAY_ROOM):
+			if bridge._carry_t >= 0.0: bridge._carry_t = -1.0
+			continue
+		var on: Vector3 = bridge._on_deck(local)
 		if on.x <= 0.0 or on.x >= 1.0 or absf(on.y-bridge.sim.sway(on.x)) > width*0.5+STAND_SLACK or on.z > STAND_OVER or on.z < -0.3:
 			if bridge._carry_t >= 0.0: bridge._carry_t = -1.0
 			continue
@@ -222,8 +236,9 @@ static func hold(frame: Node3D, feet: Vector3, to: Vector2) -> Vector2:
 	if frame == null or not frame.is_inside_tree(): return to
 	for bridge: MeshInstance3D in _live:
 		var into: Transform3D = bridge.global_transform.affine_inverse()*frame.global_transform
-		var on: Vector3 = bridge._on_deck(into*feet)
 		var width := float(bridge.sim.width)
+		if not bridge._near_deck(into*feet,width*0.5+STAND_SLACK+SWAY_ROOM): continue
+		var on: Vector3 = bridge._on_deck(into*feet)
 		if on.x <= 0.0 or on.x >= 1.0 or absf(on.y-bridge.sim.sway(on.x)) > width*0.5+STAND_SLACK: continue
 		if on.z > hand_rope+OVER_ROPE or on.z < -0.5: continue
 		var next: Vector3 = into*Vector3(to.x,feet.y,to.y)

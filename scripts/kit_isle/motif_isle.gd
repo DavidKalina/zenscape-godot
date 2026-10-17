@@ -35,6 +35,9 @@ var art: Node3D
 ## The turf bodies and their outlines (world x, z), as kit_isle keeps its own.
 var _turf: Array = []
 var _outlines: Array = []
+## `circle` as last worked out, and the outlines it was worked out from.
+var _circle := Vector3.ZERO
+var _circle_of := -1
 var flora: Node3D
 var life: Node3D
 ## Where it is: "waiting" for its worker, "building" on it, "standing" its
@@ -175,6 +178,9 @@ static func placed_site(site: KitFlora.Site, by: Vector3) -> KitFlora.Site:
 ## Its circle (x, z its middle, z its radius; kit_isle `isle_circle`), from
 ## its turf's outlines once registered, else the motif's own frame's.
 func circle() -> Vector3:
+	# Kept once the outlines are in (they only grow, in `_register`): the
+	# sky asks it of every isle many times a frame.
+	if not _outlines.is_empty() and _circle_of == _outlines.size(): return _circle
 	var lo := Vector2(INF,INF)
 	var hi := -lo
 	for outline: PackedVector2Array in _outlines:
@@ -186,7 +192,9 @@ func circle() -> Vector3:
 	var reach := 0.0
 	for outline: PackedVector2Array in _outlines:
 		for p in outline: reach = maxf(reach,p.distance_to(mid))
-	return Vector3(mid.x,mid.y,reach)
+	_circle = Vector3(mid.x,mid.y,reach)
+	_circle_of = _outlines.size()
+	return _circle
 
 ## True once it stands whole, its life up.
 func is_up() -> bool:
