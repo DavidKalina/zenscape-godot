@@ -6,16 +6,16 @@ extends Node3D
 ## No per-piece code: the meta is the whole tag, and a piece without it is
 ## as before.
 ##
-## - **The glow.** The piece's own meshes get one shared overlay
-##   (shaders/kit_cache_glow.gdshader: a soft edge glow breathing slowly, a
-##   faint shimmer band climbing it, a few twinkling specks) and a few motes
-##   drift up off it (MOTES). Semi-loud: it reads from walking distance in
-##   daylight, never a beacon. The telescope glints it while it's hidden.
+## - **The glint.** One small point on the piece's surface
+##   (scripts/kit_isle/kit_cache_glint.gd: where it sits, how often it
+##   catches): mostly a faint point, now and then a short star and a mote
+##   or two. Found by looking around, not seen across the isle. The
+##   telescope glints the piece while it's hidden.
 ## - **Too weak.** A hit in reach the piece withstands (kit_breaks
-##   `withstood`) flares the glow (FLARE, fading over FLARE_TIME) and puffs a
-##   little dust off it: something's in there, not with that.
-## - **Broken.** The glow goes with the piece; the find comes up out of the
-##   piece's middle (scripts/buried_find.gd, bare, with `from`) and settles
+##   `withstood`) flares the glint and puffs a little dust off that spot
+##   (PUFF): something's in there, not with that.
+## - **Broken.** The glint goes with the piece; the find comes up from the
+##   spot (scripts/buried_find.gd, bare, with `from`) and settles
 ##   hovering HOVER m over the ground on the side the hit came from, STEP_OUT
 ##   m past the piece's footprint, out of the rubble's way.
 ## - **Taken.** With `tokens` (an isle's scripts/kit_isle/kit_tokens.gd) a
@@ -33,7 +33,7 @@ const Telescope = preload("res://scripts/telescope.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
 const Dust = preload("res://scripts/enemies/body_dust.gd")
 const HudIcons = preload("res://scripts/hud_icons.gd")
-const GLOW_SHADER = preload("res://shaders/kit_cache_glow.gdshader")
+const Glint = preload("res://scripts/kit_isle/kit_cache_glint.gd")
 
 const META := "holds"
 const NAME_META := "holds_name"
@@ -49,18 +49,12 @@ const STEP_OUT := 0.7
 ## stay HOVER over what lies under it; then it is the isle's token.
 const SETTLE := 1.6
 const LIFT := 2.5
-## A weak hit's flare (the shader's `flare`, 1 at the hit) and its fade (s).
-const FLARE := 1.0
-const FLARE_TIME := 0.9
-## The motes off a cache: how many at once, s each, m/s up.
-const MOTES := 9
-const MOTE_LIFE := 2.8
-const MOTE_RISE := Vector2(0.12,0.3)
-const MOTE_SIZE := 0.085
-## The glow and motes when the find has no HUD tint (a rune's is pale cyan).
+## The dust a weak hit puffs off the spot (body_dust's size).
+const PUFF := 0.3
+## The glint when the find has no HUD tint (a rune's is pale cyan).
 const TINT := Color(0.62,0.86,0.94)
 
-## {node, holds, name, box (its frame), flare, phase, meshes} per cache still hidden.
+## {node, holds, name, box (its frame), glint} per cache still hidden.
 var caches: Array[Dictionary] = []
 ## Finds out: {name, find, dig, taken}.
 var finds: Array[Dictionary] = []
@@ -72,8 +66,8 @@ var motor: Object = null
 var flares := 0
 var opened := 0
 var took := 0
-static var _material: ShaderMaterial = null
-static var _mote_mesh: QuadMesh = null
+## Where the last weak hit flared (world: the spot), for checks.
+var flared_at := Vector3.INF
 
 func _init() -> void:
 	name = "KitCaches"
@@ -103,14 +97,12 @@ static func _targeted(breaks: Node, node: Node) -> bool:
 		if t.node == node and t.alive: return true
 	return false
 
-## `node` holding `holds`: glowing, glinting, its find made when it breaks.
+## `node` holding `holds`: its glint, its find made when it breaks.
 ## False if there's nothing to hold (its token taken in an earlier run).
 func add(node: Node3D, holds: String) -> bool:
 	var cache_name := str(node.get_meta(NAME_META,node.name))
 	if tokens != null and _token_named(cache_name) and not tokens.waiting(cache_name): return false
-	var c := {"node":node,"holds":holds,"name":cache_name,"box":_box_of(node),"flare":0.0,"phase":randf(),"meshes":[]}
-	dress(node,float(c.phase),c.meshes,false,tint_of(holds))
-	_motes(node,c.box as AABB)
+	var c := {"node":node,"holds":holds,"name":cache_name,"box":_box_of(node),"glint":dress(node,false,tint_of(holds),Glint.world_clear(node))}
 	Telescope.spottable(node,tokens.objective(cache_name) if tokens != null and _token_named(cache_name) else "")
 	caches.append(c)
 	return true
@@ -121,35 +113,18 @@ func _token_named(cache_name: String) -> bool:
 		if t.name == cache_name: return true
 	return false
 
-## The glow's colour for a find of `holds`: its HUD tint, a touch lighter.
+## The glint's colour for a find of `holds`: its HUD tint, a touch lighter.
 static func tint_of(holds: String) -> Color:
 	var item: Dictionary = HudIcons.item(holds)
 	return Color(item.tint).lightened(0.15) if item.has("tint") else TINT
 
-## The glow laid over every mesh at or under `node` (the editor's marking
-## too) in `tint`; `into` collects them. `off` takes it away.
-static func dress(node: Node3D, phase := 0.0, into: Array = [], off := false, tint := TINT) -> void:
-	var all: Array[Node] = [node]
-	all.append_array(node.find_children("*","MeshInstance3D",true,false))
-	for m: Node in all:
-		if not m is MeshInstance3D: continue
-		var mi := m as MeshInstance3D
-		if off:
-			if mi.material_overlay == material(): mi.material_overlay = null
-			continue
-		mi.material_overlay = material()
-		mi.set_instance_shader_parameter("phase",phase)
-		mi.set_instance_shader_parameter("flare",0.0)
-		mi.set_instance_shader_parameter("tint",tint)
-		into.append(mi)
-
-## The one glow material every cache shares.
-static func material() -> ShaderMaterial:
-	if _material == null:
-		_material = ShaderMaterial.new()
-		_material.shader = GLOW_SHADER
-		_material.set_shader_parameter("tint",TINT)
-	return _material
+## The glint on `node` (the editor's marking too) in `tint`; `off` takes it
+## away (null). `clear_of`: Glint.place's.
+static func dress(node: Node3D, off := false, tint := TINT, clear_of := Callable()) -> Node3D:
+	if off:
+		Glint.clear(node)
+		return null
+	return Glint.place(node,tint,clear_of)
 
 static func _box_of(node: Node3D) -> AABB:
 	var out := AABB()
@@ -163,53 +138,6 @@ static func _box_of(node: Node3D) -> AABB:
 		first = false
 	return out
 
-## A few motes drifting up off the piece's box.
-func _motes(node: Node3D, box: AABB) -> void:
-	var p := CPUParticles3D.new()
-	p.name = "CacheMotes"
-	p.amount = MOTES
-	p.lifetime = MOTE_LIFE
-	p.preprocess = MOTE_LIFE
-	p.position = box.get_center()
-	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-	p.emission_box_extents = box.size*0.5*Vector3(0.9,0.85,0.9)
-	p.direction = Vector3.UP
-	p.spread = 25.0
-	p.gravity = Vector3.ZERO
-	p.initial_velocity_min = MOTE_RISE.x
-	p.initial_velocity_max = MOTE_RISE.y
-	p.mesh = mote_mesh()
-	var fade := Curve.new()
-	fade.add_point(Vector2(0.0,0.0))
-	fade.add_point(Vector2(0.25,1.0))
-	fade.add_point(Vector2(1.0,0.0))
-	p.scale_amount_curve = fade
-	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	node.add_child(p)
-
-static func mote_mesh() -> QuadMesh:
-	if _mote_mesh == null:
-		_mote_mesh = QuadMesh.new()
-		_mote_mesh.size = Vector2.ONE*MOTE_SIZE
-		var gradient := Gradient.new()
-		gradient.set_color(0,Color(1,1,1,1))
-		gradient.set_color(1,Color(1,1,1,0))
-		var tex := GradientTexture2D.new()
-		tex.gradient = gradient
-		tex.fill = GradientTexture2D.FILL_RADIAL
-		tex.fill_from = Vector2(0.5,0.5)
-		tex.fill_to = Vector2(1.0,0.5)
-		var mat := StandardMaterial3D.new()
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-		mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-		mat.albedo_texture = tex
-		mat.albedo_color = TINT.lightened(0.35)
-		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-		_mote_mesh.material = mat
-	return _mote_mesh
-
 func _index_of(node: Node) -> int:
 	for i in range(caches.size()):
 		if caches[i].node == node: return i
@@ -220,9 +148,14 @@ func _index_of(node: Node) -> int:
 func _on_withstood(node: Node3D, at: Vector3, _strength: float, _source: StringName) -> void:
 	var i := _index_of(node)
 	if i < 0: return
-	caches[i].flare = FLARE
 	flares += 1
-	Dust.puff(self,at,0.7)
+	var g: Node3D = caches[i].glint
+	if not is_instance_valid(g):
+		Dust.puff(self,at,PUFF)
+		return
+	g.flare()
+	flared_at = g.global_position
+	Dust.puff(self,g.global_position,PUFF,g.global_basis.z)
 
 func _on_broke(node: Node3D, at: Vector3) -> void:
 	var i := _index_of(node)
@@ -234,11 +167,16 @@ func _on_broke(node: Node3D, at: Vector3) -> void:
 	var xf := node.global_transform
 	var box: AABB = c.box
 	var mid := xf*box.get_center()
+	var g: Node3D = c.glint
+	var spot: Vector3 = g.global_position if is_instance_valid(g) and g.is_inside_tree() else mid
 	var foot := xf*Vector3(box.get_center().x,box.position.y,box.get_center().z)
 	# Toward the hit, flat; past the footprint's edge that way.
 	var way := Vector3(at.x-mid.x,0.0,at.z-mid.z)
 	if way.length() < 0.05: way = xf.basis.z
 	way = way.normalized()
+	# From the glint's spot when it faces the hit's side; else through the
+	# middle (not out of the far face and back through the stone).
+	if Vector3(spot.x-mid.x,0.0,spot.z-mid.z).dot(way) <= 0.0: spot = mid
 	var local_way := (xf.basis.inverse()*way)
 	var reach := absf(local_way.x)*box.size.x*0.5+absf(local_way.z)*box.size.z*0.5
 	var ground := foot+way*(minf(reach,maxf(box.size.x,box.size.z)*0.5)+STEP_OUT)
@@ -250,7 +188,7 @@ func _on_broke(node: Node3D, at: Vector3) -> void:
 	var dig := BuriedFind.new()
 	dig.bare = true
 	dig.setup(holder,ground,"",HOVER)
-	dig.from = mid
+	dig.from = spot
 	add_child(dig)
 	dig.reveal()
 	finds.append({"name":c.name,"find":holder,"dig":dig,"taken":false,"laid":false})
@@ -271,12 +209,6 @@ func _ground_y(p: Vector3, fallback: float, skip: Node3D) -> float:
 # --- The frame ------------------------------------------------------------------------------
 
 func _process(delta: float) -> void:
-	for c: Dictionary in caches:
-		if float(c.flare) <= 0.0: continue
-		c.flare = maxf(float(c.flare)-delta/FLARE_TIME,0.0)
-		var k := float(c.flare)
-		for mi: Variant in c.meshes:
-			if is_instance_valid(mi): (mi as MeshInstance3D).set_instance_shader_parameter("flare",k*k)
 	for f: Dictionary in finds:
 		if bool(f.taken): continue
 		var dig: Node3D = f.dig

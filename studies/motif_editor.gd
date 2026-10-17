@@ -1030,8 +1030,8 @@ func toggle_breakable() -> void:
 ## What the selected piece holds, the next of KitCaches HOLDS and then
 ## nothing again (its "holds"; absent: nothing, so a saved motif reads as
 ## before). The build only tags it (meta "holds": scripts/kit_isle/
-## kit_caches.gd glows it and lets the find out when it breaks); here it
-## shows the glow.
+## kit_caches.gd glints it and lets the find out when it breaks); here it
+## shows the glint.
 func cycle_holds() -> void:
 	if selected < 0 or selected >= (data.pieces as Array).size(): return
 	snapshot()
@@ -1047,12 +1047,12 @@ func cycle_holds() -> void:
 	if node == null: _status_line += " (no node)"
 	_show_status()
 
-## The glow on every piece that holds something (the game's look of a cache).
+## The glint on every piece that holds something (the game's look of a cache).
 func mark_caches() -> void:
 	var holder := pieces_holder()
 	if holder == null: return
 	for node: Node in holder.get_children():
-		if node is Node3D: KitCaches.dress(node as Node3D,0.0,[],not node.has_meta("holds"),KitCaches.tint_of(str(node.get_meta("holds",""))))
+		if node is Node3D: KitCaches.dress(node as Node3D,not node.has_meta("holds"),KitCaches.tint_of(str(node.get_meta("holds",""))))
 
 ## The whole motif breakable or not (its "breakable"; absent is breakable).
 func toggle_motif_breakable() -> void:

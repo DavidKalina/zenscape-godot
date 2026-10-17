@@ -114,7 +114,7 @@ extends "res://studies/kit_isle.gd"
 ## Z on foot fires the wanderer's stand-in wind blast at him (scripts/
 ## enemies/wind_blast_standin.gd); Q (RB) timed as his wind reaches you
 ## parries it into a gauge segment (scripts/wind_parry.gd).
-## --kit-caches: runes hidden in four glowing ruin pieces on the west turf
+## --kit-caches: runes hidden in four glinting ruin pieces on the west turf
 ## by the aqueduct (studies/aqueduct_isle_caches.gd, scripts/kit_isle/
 ## kit_caches.gd); a slam off the deck breaks the pier, buttress or wall
 ## open, the tomb chest by the rubble slope only flares.
@@ -582,7 +582,7 @@ func _capture_flying() -> void:
 func _add_life() -> void:
 	super._add_life()
 	_build_lock_target()
-	# --kit-caches: runes hidden in glowing ruin pieces the slam breaks open
+	# --kit-caches: runes hidden in glinting ruin pieces the slam breaks open
 	# (studies/aqueduct_isle_caches.gd).
 	kit_caches = preload("res://studies/aqueduct_isle_caches.gd").build(self)
 	if dragon_on: _build_sky_dragon()

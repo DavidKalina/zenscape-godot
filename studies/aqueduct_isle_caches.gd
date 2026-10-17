@@ -13,7 +13,7 @@ extends RefCounted
 ## along the deck's west side, each more than a full slam's reach (8.5 m)
 ## from the next, so one slam off the deck opens one. The tomb chest
 ## (toughness 1.6, its kind's) by the rubble slope never breaks to a slam:
-## its glow only flares.
+## its glint only flares.
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Breakables = preload("res://scripts/kit_isle/breakables.gd")
 const KitBreaks = preload("res://scripts/kit_isle/kit_breaks.gd")
