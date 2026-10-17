@@ -43,6 +43,14 @@ itself (headless_body_look.gd), so a clip's length is only its span:
   stride       loop over two steps of STRIDE_STEP m: homing, arms out for it
   shoulder_run loop over two steps of RUN_STEP m (Olmec boss): whole, hunting,
                the right shoulder leading, that arm tucked, the far one pumping
+  charge_tell  once, CHARGE_TELL s (the boss's charge): planted, the shoulder
+               dropped, the back foot scraping twice, a held coiled beat
+  charge_run   loop over two steps of CHARGE_STEP m: the shoulder run lower,
+               harder and longer
+  charge_skid  once, CHARGE_SKID s: missed, dug in and slid, pitched on, a
+               hand down, held heaving, up
+  charge_stagger once, CHARGE_STAGGER s: stopped short, jammed, rocked back
+               two steps, dazed, squared
   climb        loop over two hand moves, CLIMB_RISE m up: hand over hand,
                the feet pushing on the wall CLIMB_WALL m ahead of the middle
   haul         loop: both hands on the lip (the game pins them), heaving
@@ -1086,6 +1094,192 @@ def _run_keys():
 
 clip(Clip("shoulder_run", RUN_LEN, _run_keys(), loop=True, extra=_rx))
 
+# ------------------------------------------------------------------ the charge (Olmec boss, phase 2)
+## The tell, CHARGE_TELL s: he plants wide, the right foot ahead, drops the
+## right shoulder low and forward (the run's quarter turn, deeper), the
+## left fist cocked back; the back (left) foot scrapes the turf twice like
+## a bull's (the game puffs dust at CHARGE_SCRAPES), then a held, coiled
+## beat with a shiver through it. The game holds the last frame.
+CHARGE_TELL = 1.25
+CHARGE_SCRAPES = (0.6, 0.84)
+_CH_COIL = {"hy": -1.12, "sq": 0.94, "hp": 10.0, "ht": 18.0, "hr": 2.0, "sp": 27.0, "st": 14.0, "sr": 4.0,
+            "cp": 14.0, "ct": 30.0, "cr": 12.0, "np": -10.0, "nt": -42.0, "nr": -13.0,
+            "aRp": 6.0, "aRo": 4.0, "aRt": 42.0, "eR": 98.0, "fR": 90.0, "tR": 40.0,
+            "aLp": -46.0, "aLo": 16.0, "eL": 84.0, "fL": 92.0, "tL": 40.0,
+            "kRz": 0.75, "kRx": 0.32, "kRp": 0.0, "kLz": -0.95, "kLx": 0.3, "kLy": 0.0, "kLp": -18.0}
+
+
+def _tell_extra(t, v):
+    k = smooth01(0.88, 0.98, t)
+    v["hy"] += tremble(t, 0.022 * k)
+    v["cr"] += tremble(t, 1.4 * k, 9.0, 1.0)
+    v["aLp"] += tremble(t, 2.0 * k, 11.0, 2.0)
+    v["np"] += tremble(t, 1.0 * k, 8.0, 3.0)
+
+
+clip(Clip("charge_tell", CHARGE_TELL, [
+    (0.0, {}, ""),
+    # Planted: up a hair, chest high, the stump lifted at him.
+    (0.16, {"hy": -0.32, "sq": 1.03, "sp": -2.0, "cp": -3.0, "np": -8.0, "kRz": 0.5, "kRx": 0.3, "kLz": -0.6,
+            "kLx": 0.28, "aLp": 14.0, "aRp": 14.0, "eL": 30.0, "eR": 30.0, "fL": 70.0, "fR": 70.0}, ""),
+    # The shoulder drops.
+    (0.38, {**_CH_COIL, "hy": -1.2, "sq": 0.92, "cr": 15.0}, "o"),
+    (0.46, {"hy": -1.06, "sq": 0.95, "cr": 12.0, "kLz": -0.95, "kLy": 0.0}, ""),
+    # Scrape, scrape: the back foot drawn forward, then dragged back flat.
+    (0.52, {"kLz": -0.45, "kLy": 0.32, "kLp": 8.0, "hy": -1.02}, ""),
+    (CHARGE_SCRAPES[0], {"kLz": -1.45, "kLy": 0.0, "kLp": -24.0, "hy": -1.14, "sq": 0.93, "ct": 33.0}, "o"),
+    (0.74, {"kLz": -0.5, "kLy": 0.3, "kLp": 8.0, "hy": -1.04, "ct": 30.0}, ""),
+    (CHARGE_SCRAPES[1], {"kLz": -1.5, "kLy": 0.0, "kLp": -26.0, "hy": -1.16, "sq": 0.93, "ct": 34.0}, "o"),
+    # The held beat, coiled lowest, leaning into it.
+    (0.96, {"kLz": -1.2, "kLp": -20.0, "hy": -1.22, "sq": 0.92, "sp": 30.0, "hz": 0.15, "np": -12.0}, ""),
+    (CHARGE_TELL, {"kLz": -1.2, "hy": -1.24, "sq": 0.92, "sp": 31.0, "hz": 0.2, "np": -12.0}, "h"),
+], extra=_tell_extra))
+
+## The charge's run: loop over two steps of CHARGE_STEP m, the shoulder
+## run's lines pushed further: lower, pitched harder, the right shoulder
+## turned further ahead and the arm locked in, the left arm driving short
+## and hard, longer and flatter strides with a deeper drop on each contact.
+CHARGE_STEP = 1.0 * HH
+CHARGE_LEN = 0.84
+_CH_HOLD = {"hp": 12.0, "ht": 18.0, "st": 14.0, "ct": 32.0, "sr": 4.0, "cr": 12.0, "nt": -44.0, "nr": -14.0,
+            "aRo": 4.0, "aRt": 44.0, "fR": 88.0, "tR": 40.0, "fL": 80.0, "tL": 36.0}
+
+
+def charge_extra(step, stance, lift):
+    feet = gait(step, stance, lift, 0.74)
+
+    def extra(t, v):
+        u = t / CHARGE_LEN
+        feet(u % 1.0, v)
+        sn = math.sin(2 * math.pi * u + 0.35)
+        v["hx"] += -0.22 * sn
+        v["hr"] += -5.0 * sn
+        v["sr"] += 2.5 * sn
+        v["cr"] += 2.0 * math.sin(2 * math.pi * (u - 0.06) + 0.35)
+        c = math.cos(2 * math.pi * u)
+        v["ht"] += -6.0 * c
+        v["ct"] += 6.0 * math.cos(2 * math.pi * (u - 0.06))
+        pump = math.cos(2 * math.pi * (u - 0.07))
+        v["aLp"] = 6.0 - 42.0 * pump
+        v["aLo"] = 12.0 + 3.0 * max(0.0, pump)
+        v["eL"] = 84.0 + 20.0 * max(0.0, -pump)
+        jolt = math.cos(2 * math.pi * 2 * (u - 0.09))
+        v["aRp"] = 4.0 + 4.0 * jolt
+        v["eR"] = 100.0 - 5.0 * jolt
+    return extra
+
+
+_cx = charge_extra(CHARGE_STEP, 0.38, 0.85)
+
+
+def _charge_keys():
+    keys = []
+    for o in (0.0, 0.5):
+        keys += [
+            (o + 0.0, {**_CH_HOLD, "hy": -0.9, "sq": 1.0, "sp": 28.0, "cp": 14.0, "np": -12.0}, ""),
+            (o + 0.07, {"hy": -1.22, "sq": 0.955, "sp": 30.0, "cp": 15.0, "np": -10.0}, "h"),
+            (o + 0.14, {"hy": -1.14, "sq": 0.975, "sp": 29.0}, ""),
+            (o + 0.28, {"hy": -0.74, "sq": 1.015, "sp": 27.0, "cp": 13.0, "np": -13.0}, ""),
+            (o + 0.40, {"hy": -0.62, "sq": 1.025, "sp": 26.5, "np": -14.0}, ""),
+        ]
+    return [(t * CHARGE_LEN, p, e) for t, p, e in keys]
+
+
+clip(Clip("charge_run", CHARGE_LEN, _charge_keys(), loop=True, extra=_cx))
+
+## The overrun, CHARGE_SKID s: missed, he throws his weight back and digs
+## the leading foot in (the game slides him to a stop over CHARGE_SLIDE s),
+## arms flung out for balance; his own speed pitches him on, a staggering
+## step with the left, a hand slapped down on the turf to catch himself;
+## held there bent over, heaving (the window to shoot him), then up.
+CHARGE_SKID = 2.3
+CHARGE_SLIDE = 0.62
+
+
+def _skid_extra(t, v):
+    # The slide's judder, then heaving breaths while he is down.
+    k = smooth01(0.08, 0.14, t) * (1 - smooth01(0.5, 0.62, t))
+    v["hy"] += tremble(t, 0.035 * k, 14.0)
+    v["cr"] += tremble(t, 2.0 * k, 10.0, 1.0)
+    b = smooth01(0.98, 1.1, t) * (1 - smooth01(1.7, 1.95, t))
+    br = math.sin((t - 0.98) * 6.283 / 0.55)
+    v["cp"] += -4.0 * br * b
+    v["sp"] += -2.0 * br * b
+    v["hy"] += 0.05 * br * b
+    v["np"] += 3.0 * br * b
+
+
+clip(Clip("charge_skid", CHARGE_SKID, [
+    (0.0, {**_CH_HOLD, "hy": -0.9, "sp": 28.0, "cp": 14.0, "np": -12.0, "aRp": 6.0, "eR": 98.0, "aLp": 0.0,
+           "eL": 88.0}, ""),
+    # Dug in: the right heel driven ahead, the weight thrown back, the
+    # shoulder squared, the arms flung out.
+    (0.1, {"hy": -1.25, "sq": 0.9, "hz": -0.5, "hp": -6.0, "ht": 6.0, "sp": -10.0, "cp": -14.0, "ct": 8.0,
+           "cr": 0.0, "st": 4.0, "np": 10.0, "nt": -10.0, "nr": 0.0,
+           "kRz": 1.35, "kRy": 0.0, "kRp": 26.0, "kRx": 0.3, "kLz": -1.05, "kLy": 0.0, "kLp": -26.0, "kLx": 0.3,
+           "aLp": 52.0, "aLo": 62.0, "eL": 30.0, "aRp": 40.0, "aRo": 58.0, "aRt": 10.0, "eR": 36.0,
+           "fL": 30.0, "fR": 30.0, "tL": 20.0, "tR": 20.0}, "o"),
+    (CHARGE_SLIDE - 0.08, {"hy": -1.2, "sq": 0.92, "hz": -0.45, "sp": -8.0, "cp": -12.0, "np": 8.0,
+                           "aLo": 66.0, "aRo": 62.0}, "h"),
+    # Pitched on: the left steps through, the trunk tips over.
+    (CHARGE_SLIDE + 0.1, {"hy": -0.95, "sq": 1.03, "hz": 0.2, "hp": 10.0, "sp": 30.0, "cp": 16.0, "np": 16.0,
+                          "kLz": 0.6, "kLy": 0.75, "kLp": 10.0, "kRz": 0.4, "kRp": 0.0,
+                          "aLp": 40.0, "aLo": 40.0, "aRp": 60.0, "aRo": 30.0, "eR": 30.0}, ""),
+    # Down: the foot slammed, the right hand on the turf, sunk.
+    (CHARGE_SLIDE + 0.24, {"hy": -1.45, "sq": 0.86, "hz": 0.35, "hp": 14.0, "sp": 42.0, "cp": 14.0, "np": 26.0,
+                           "ct": 4.0, "kLz": 1.15, "kLy": 0.0, "kLp": 0.0, "kRz": -0.55, "kRp": -40.0,
+                           "hRx": 1.35, "hRy": 0.45, "hRz": 2.3, "hRw": 1.0, "fR": 70.0, "tR": 30.0,
+                           "aLp": -30.0, "aLo": 44.0, "eL": 40.0, "fL": 70.0}, "i"),
+    (CHARGE_SLIDE + 0.32, {"hy": -1.52, "sq": 0.84, "sp": 44.0, "np": 30.0, "hRy": 0.4}, "h"),
+    # Held there, heaving (the window).
+    (CHARGE_SLIDE + 0.5, {"hy": -1.38, "sq": 0.98, "sp": 40.0, "np": 24.0, "aLp": -20.0, "eL": 50.0}, ""),
+    (1.75, {"hy": -1.36, "sq": 0.98, "sp": 40.0, "np": 22.0, "hRy": 0.5, "hRw": 1.0}, "h"),
+    # Up: shoved off the hand, the stump shaken, squared.
+    (1.98, {"hy": -0.55, "sq": 1.02, "hz": 0.1, "hp": 4.0, "sp": 14.0, "cp": 2.0, "np": 0.0, "nt": 8.0,
+            "hRw": 0.0, "aRp": 10.0, "aRo": 18.0, "eR": 30.0, "aLp": 0.0, "aLo": 16.0, "eL": 24.0,
+            "fL": 60.0, "fR": 60.0, "kLz": 0.35, "kRz": -0.25, "kRp": 0.0, "kRy": 0.0}, ""),
+    (CHARGE_SKID, {"_base": 1}, ""),
+], extra=_skid_extra))
+
+## The impact stagger, CHARGE_STAGGER s: stopped short (a big stone, the
+## rim's edge), the shoulder jams in, the whole of him squashed, the stump
+## snapping back late; rocked back two steps, arms thrown out, dazed (a
+## sway and a shake of the stump), then gathered and squared.
+CHARGE_STAGGER = 1.7
+
+
+def _stagger_extra(t, v):
+    k = smooth01(0.5, 0.65, t) * (1 - smooth01(1.05, 1.25, t))
+    v["nt"] += 16.0 * k * math.sin((t - 0.5) * 6.283 * 2.2)
+    v["nr"] += 6.0 * k * math.sin((t - 0.5) * 6.283 * 1.1 + 0.6)
+    v["sr"] += 5.0 * k * math.sin((t - 0.5) * 6.283 * 1.1)
+
+
+clip(Clip("charge_stagger", CHARGE_STAGGER, [
+    (0.0, {**_CH_HOLD, "hy": -0.9, "sp": 28.0, "cp": 14.0, "np": -12.0, "aRp": 6.0, "eR": 98.0, "aLp": 0.0,
+           "eL": 88.0}, ""),
+    # The blow: jammed into the shoulder, squashed flat.
+    (0.06, {"hy": -1.35, "sq": 0.82, "hz": 0.2, "sp": 34.0, "cp": 18.0, "ct": 40.0, "cr": 16.0, "np": -18.0,
+            "aRp": -10.0, "aRo": 20.0, "eR": 80.0, "aLp": 30.0, "aLo": 30.0, "eL": 50.0, "fR": 95.0}, "o"),
+    # Rocked back: up and over backward, the stump snapping back late.
+    (0.22, {"hy": -0.45, "sq": 1.06, "hz": -0.45, "hp": -8.0, "sp": -10.0, "cp": -14.0, "ct": 12.0, "cr": 2.0,
+            "ht": 6.0, "st": 4.0, "np": -24.0, "nt": -14.0, "nr": 4.0,
+            "aLp": 50.0, "aLo": 70.0, "eL": 30.0, "aRp": 40.0, "aRo": 64.0, "aRt": 10.0, "eR": 34.0,
+            "fL": 30.0, "fR": 30.0, "kRz": 0.5, "kRy": 0.35, "kRp": 10.0, "kLz": -0.6}, ""),
+    # A step back with the right, planted; then the left.
+    (0.36, {"hy": -0.95, "sq": 0.93, "hz": -0.55, "sp": 4.0, "cp": -6.0, "np": -6.0, "kRz": -0.85, "kRy": 0.0,
+            "kRp": 0.0, "kLz": -0.2}, "o"),
+    (0.5, {"kLz": -0.4, "kLy": 0.45, "hy": -0.75, "sq": 1.0}, ""),
+    (0.62, {"kLz": -1.0, "kLy": 0.0, "hy": -1.0, "sq": 0.95, "sp": 14.0, "cp": 4.0, "np": 8.0,
+            "aLp": 20.0, "aLo": 40.0, "aRp": 18.0, "aRo": 40.0, "eL": 50.0, "eR": 50.0, "fL": 50.0,
+            "fR": 50.0}, "o"),
+    # Dazed, swaying; then gathered, the fists closed.
+    (1.0, {"hy": -0.9, "sp": 16.0, "np": 10.0, "aLo": 30.0, "aRo": 30.0}, ""),
+    (1.3, {"hy": -0.5, "sq": 1.02, "sp": 10.0, "cp": 6.0, "np": -4.0, "ct": 0.0, "fL": 85.0, "fR": 85.0,
+           "kLz": -0.45, "kRz": -0.4, "aLp": 6.0, "aRp": 6.0, "aLo": 16.0, "aRo": 16.0, "eL": 30.0, "eR": 30.0}, ""),
+    (CHARGE_STAGGER, {"_base": 1}, ""),
+], extra=_stagger_extra))
+
 # ------------------------------------------------------------------ climb
 CLIMB_LEN = 2.0
 WALL_WRIST = CLIMB_WALL - 0.42
@@ -1779,7 +1973,7 @@ if RENDER:
 
     ## The head he wears whole (inhaler_head.gd at size 3: x, up, depth).
     WORN_HEAD = (3.36 * 1.04, 3.36, 3.36 * 0.84)
-    WORN_CLIPS = ("shoulder_run",)
+    WORN_CLIPS = ("shoulder_run", "charge_tell", "charge_run", "charge_skid", "charge_stagger")
     rig.animation_data.action = None
     rig.animation_data.use_nla = False
     for tr in rig.animation_data.nla_tracks: tr.mute = True

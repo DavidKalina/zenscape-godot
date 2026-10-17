@@ -504,7 +504,21 @@ func think(delta: float) -> void:
 			if state_t >= float(knobs.spent): _go(_resume())
 		"feel": _feel(delta)
 		"scope": _scope(delta)
+		_: _think_more(delta)
 	_animate(delta)
+
+## A subclass's own states (the Olmec boss's charge), thought each frame.
+func _think_more(_delta: float) -> void:
+	pass
+
+## A subclass's own states posed (clips wanted); false: not one of them.
+func _pose_more(_idle: float) -> bool:
+	return false
+
+## The length of one step of its gait now, in head heights (its phase
+## steps by it).
+func _step_len() -> float:
+	return float(knobs.stride_run if _running() else (knobs.stride_home if state in ["home","chase"] else knobs.stride))
 
 func _go(to: String) -> void:
 	state = to
@@ -3188,7 +3202,7 @@ func _move(delta: float) -> void:
 		else: position.y = move_toward(position.y,g,maxf(absf(g-position.y)*8.0,2.0)*delta) if g > position.y else g
 		# A step each phase (the clips' feet come down on whole phases).
 		var was := _phase
-		_phase += Vector2(vel.x,vel.z).length()*delta/(hh*float(knobs.stride_run if _running() else (knobs.stride_home if state in ["home","chase"] else knobs.stride)))
+		_phase += Vector2(vel.x,vel.z).length()*delta/(hh*_step_len())
 		if floori(was) != floori(_phase):
 			field.sound(&"body_step",position)
 			quake = maxf(quake,0.06)
@@ -3406,7 +3420,7 @@ func _tuck(delta: float) -> void:
 ## The cross-fade into each state (s); others take FADE.
 const FADE := 0.22
 const FADES := {"scope":0.12,"land":0.05,"leap":0.08,"fall":0.15,"mantle":0.12,"windup":0.1,"triumph":0.08,"reach":0.3,"swat":0.08,"smash":0.06,"plant":0.15,
-	"grab_windup":0.12,"grab_leap":0.06,"hang":0.05}
+	"grab_windup":0.12,"grab_leap":0.06,"hang":0.05,"charge_tell":0.12,"charge":0.1,"charge_skid":0.06,"charge_stagger":0.04}
 ## The slap of the hands onto a lip: up and over (s), then down on it.
 const GRAB := 0.32
 
@@ -3513,7 +3527,7 @@ func _animate(delta: float) -> void:
 			var at := TRIUMPH_HIT*whole_t
 			var t := state_t/float(knobs.swat_windup)*at if state_t < float(knobs.swat_windup) else at+(state_t-float(knobs.swat_windup))/float(knobs.swat_after)*(whole_t-at)
 			look.want("triumph",t)
-		_: look.want("idle",idle)
+		_: if not _pose_more(idle): look.want("idle",idle)
 	# Round 4: turns stepped and feet planted (headless_body_steps.gd).
 	var mode := _steps_mode()
 	if not look.steps.floor_at.is_valid(): look.steps.floor_at = func(p: Vector3) -> float: return _floor(p,float(knobs.step)*STAIR,float(knobs.step))

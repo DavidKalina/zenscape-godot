@@ -65,6 +65,9 @@ const BALL_REACH := 0.8
 const CRACK_SHARE := 0.3
 ## A standing stone's toughness (a column's, `pier`, is 0.5).
 const STONE_TOUGH := 0.6
+## The big pieces (the columns too): his charge stops short at them
+## (`big_ahead`) and smashes through the rest.
+const BIG := ["arch","hall_column"]
 ## A crack to its fall (s).
 const CRACK_BEAT := 0.22
 ## A crack's lean (rad), the most cracks lean it.
@@ -121,9 +124,9 @@ func _build() -> void:
 		var a := deg_to_rad(float(COLUMN_AT[i]))
 		var at := Vector2(cos(a),sin(a))*COLUMN_R
 		# Every other one broken off low (weathered: shorter, rubble at its foot).
-		_place(RuinKit.piece("hall_column",7200+i,0.05 if i%2 == 0 else 0.32),at,float(i)*37.0)
+		_place(RuinKit.piece("hall_column",7200+i,0.05 if i%2 == 0 else 0.32),at,float(i)*37.0,true)
 	for p: Array in PIECES:
-		_place(RuinKit.piece(str(p[0]),int(p[4]),float(p[5])),Vector2(float(p[1]),float(p[2])),float(p[3]))
+		_place(RuinKit.piece(str(p[0]),int(p[4]),float(p[5])),Vector2(float(p[1]),float(p[2])),float(p[3]),str(p[0]) in BIG)
 	for i in range(STONES.size()):
 		var s: Array = STONES[i]
 		_place(_stone(i),Vector2(float(s[0]),float(s[1])),float(s[2]))
@@ -139,8 +142,9 @@ func _build() -> void:
 	hub.others.append(kit_breaks)
 	print("olmec arena: %d breakable piece(s)" % n)
 
-func _place(node: Node3D, at: Vector2, face_deg: float) -> void:
+func _place(node: Node3D, at: Vector2, face_deg: float, big := false) -> void:
 	if node == null: return
+	if big: node.set_meta("arena_big",true)
 	pieces.add_child(node)
 	node.position = Vector3(at.x,_ground(at.x,at.y)-0.15,at.y)
 	node.rotation.y = deg_to_rad(face_deg)
@@ -181,14 +185,14 @@ func _ground(x: float, z: float) -> float:
 ## breaker: &"olmec" by default; one that is off does nothing). Every
 ## piece within reach cracks or, hit hard enough, cracks and topples a
 ## beat later. Returns how many pieces it cracked or set falling.
-func hit_at(point: Vector3, radius: float, strength: float, source: StringName = &"olmec") -> int:
+func hit_at(point: Vector3, radius: float, strength: float, source: StringName = &"olmec", spare_big := false) -> int:
 	if kit_breaks == null or hub == null or not hub.allows(source): return 0
 	var n := 0
 	for i in range(kit_breaks.targets.size()):
 		var t: Dictionary = kit_breaks.targets[i]
 		if not t.alive or not is_instance_valid(t.node): continue
 		var node: Node3D = t.node
-		if _is_pending(node): continue
+		if _is_pending(node) or (spare_big and node.has_meta("arena_big")): continue
 		var q: Vector3 = kit_breaks._nearest(t,point)
 		if q.distance_to(point) > radius: continue
 		var tough := float(t.tough)
@@ -202,6 +206,26 @@ func hit_at(point: Vector3, radius: float, strength: float, source: StringName =
 		if strength >= tough or sum >= tough:
 			_pending.append({"node":node,"at":q,"dir":dir,"t":CRACK_BEAT})
 	return n
+
+## How far along `way` (flat, unit) from `from` a big piece still standing
+## comes within `half_w` m of the line, looked at up to `reach` m (INF
+## none).
+func big_ahead(from: Vector3, way: Vector3, reach: float, half_w: float) -> float:
+	if kit_breaks == null: return INF
+	var best := INF
+	for t: Dictionary in kit_breaks.targets:
+		if not t.alive or not is_instance_valid(t.node): continue
+		var node: Node3D = t.node
+		if not node.has_meta("arena_big") or _is_pending(node): continue
+		var d := 0.0
+		while d <= minf(reach,best):
+			var p := from+way*d
+			var q: Vector3 = kit_breaks._nearest(t,p)
+			if Vector2(q.x-p.x,q.z-p.z).length() < half_w and q.y > from.y-0.5:
+				best = d
+				break
+			d += 0.5
+	return best
 
 ## Air balls from `blast` (a DragonAirBlast) hit pieces where they pop or
 ## burst, at `strength`, from `source`.

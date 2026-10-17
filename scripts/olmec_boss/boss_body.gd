@@ -14,6 +14,16 @@ extends "res://scripts/lock_on/olmec_target.gd"
 ##     fists high (SLAM_WINDUP s, turned to him), then down on the turf in
 ##     front of him: a shockwave (SLAM_SHOCK) rolls out; jump it. A gust
 ##     shot in the windup stops it;
+##   - the charge: from CHARGE_NEAR..CHARGE_FAR m, a tell (planted, the
+##     shoulder dropped, the back foot scraping dust twice, a held beat:
+##     "charge_tell"), then he barrels at him shoulder first, fast
+##     (CHARGE_RUN x the walker's run), steering only a little and not at
+##     all the last CHARGE_LOCK m ("charge"), smashing the arena pieces in
+##     his path. Caught, the wanderer is thrown hard (CHARGE_THROW). A late
+##     sidestep beats it: he overruns, skids and stumbles to a stop, a hand
+##     on the turf ("charge_skid", the window to shoot him). A big piece
+##     (arena.gd BIG) or the rim's edge ahead: he stops short with a
+##     stagger ("charge_stagger");
 ##   - the swat as before, quicker.
 ## His fists, landings and slams hit the arena (scripts/olmec_boss/arena.gd
 ## `hit_at`), and his shockwaves break what they pass as they always have
@@ -50,6 +60,34 @@ const SLAM_AHEAD := 4.0
 const FIST_HIT := [2.5,0.7]
 const SLAM_HIT := [4.0,1.0]
 const LAND_HIT := [4.5,1.0]
+## The charge: its reach (m off him), its rest (s), the first after the
+## triumph (s), its pace (x the walker's run) and how quickly he gets up to
+## it (m/s²), his steering (rad/s) and the last stretch he no longer
+## steers (m), its longest run (s), what a catch throws (x the swat's out
+## and up, and the time laid down), his breaking ahead ([radius, strength],
+## looked CHARGE_SMASH_AHEAD s ahead) and the clips' beats (the build's).
+const CHARGE_NEAR := 9.0
+const CHARGE_FAR := 26.0
+const CHARGE_REST := 7.0
+const CHARGE_FIRST := 4.0
+const CHARGE_RUN := 2.0
+const CHARGE_ACCEL := 22.0
+const CHARGE_TURN := 0.55
+const CHARGE_LOCK := 10.0
+const CHARGE_MOST := 2.8
+const CHARGE_THROW := [1.7,1.4,1.25]
+const CHARGE_HIT := [3.2,1.0]
+## How far past his shoulder's side a catch still reaches (m), and how
+## long he carries on past a catch before he digs in (s).
+const CHARGE_SIDE := -0.4
+const CHARGE_CARRY := 0.3
+const CHARGE_SMASH_AHEAD := 0.3
+const CHARGE_TELL := 1.25
+const CHARGE_SCRAPES := [0.6,0.84]
+const CHARGE_SLIDE := 0.62
+const CHARGE_SKID := 2.3
+const CHARGE_STAGGER := 1.7
+
 ## Puffs from up high (his head's, scripts/olmec_boss/boss_head.gd
 ## `worn_puff`): his reach (m off him), the rest between (s), the first
 ## after the triumph (s), and his pace while his head winds up and lets go
@@ -77,6 +115,19 @@ var _pounce_shock := 0.0
 var _puff_ready := 0.0
 var _hunt_pace := 0.0
 var puffs_asked := 0
+## The charge: counts for checks (charges, caught, overrun, stopped short
+## and why), its ready time, its way (rad) and the pace it ended at.
+var charges := 0
+var charge_hits := 0
+var charge_overruns := 0
+var charge_stops := 0
+var charge_stop_why := ""
+var _charge_ready := 0.0
+var _charge_way := 0.0
+var _charge_v := 0.0
+var _charge_smash_t := 0.0
+var _scraped := 0
+var _charge_caught := -1.0
 
 ## Whole: the boss's moveset on, his hits counted afresh.
 func phase_two() -> void:
@@ -95,8 +146,9 @@ func phase_two() -> void:
 	_bound_ready = _clock+2.0
 	_slam_ready = _clock+1.0
 	_puff_ready = _clock+PUFF_FIRST
+	_charge_ready = _clock+CHARGE_FIRST
 	_hunt_pace = float(knobs.chase_speed)
-	print("olmec boss: phase 2, chase %.1f m/s (walker run %.1f), hh %.2f, neck %.2f" % [float(knobs.chase_speed),run,hh,neck_h])
+	print("olmec boss: phase 2, chase %.1f m/s (walker run %.1f), hh %.2f, neck %.2f, width %.2f, length %.2f" % [float(knobs.chase_speed),run,hh,neck_h,width,length])
 
 func _arena() -> Node:
 	if field == null or field.study == null: return null
@@ -119,6 +171,9 @@ func _attack(m: PilotMotor, flat: float, dy: float) -> bool:
 		if flat <= float(knobs.catch_reach)*hh and absf(dy) < neck_h*0.6: return super._attack(m,flat,dy)
 		return false
 	var level := absf(dy) < neck_h*0.6
+	if level and flat >= CHARGE_NEAR and flat <= CHARGE_FAR and _clock >= _charge_ready:
+		_start_charge()
+		return true
 	if level and flat >= SLAM_NEAR and flat <= SLAM_FAR and _clock >= _slam_ready:
 		_start_slam()
 		return true
@@ -179,6 +234,190 @@ func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
 		var h := _boss_head()
 		if h != null and h.break_worn(): _puff_ready = maxf(_puff_ready,_clock+PUFF_REST*0.5)
 	super.hit(at,way,strength)
+
+# --- The charge ---------------------------------------------------------------
+
+func _start_charge() -> void:
+	charges += 1
+	move = "charge"
+	_charge_ready = _clock+CHARGE_REST
+	# The others wait a little after it.
+	_slam_ready = maxf(_slam_ready,_clock+CHARGE_TELL+2.5)
+	_bound_ready = maxf(_bound_ready,_clock+CHARGE_TELL+3.5)
+	_scraped = 0
+	_go("charge_tell")
+	field.sound(&"body_windup",position)
+	chase_beat.emit("charge")
+	print("olmec boss: charge from %.1f m" % _flat_to_him())
+
+func _flat_to_him() -> float:
+	var m: PilotMotor = field.motor
+	return Vector2(m.feet.x-position.x,m.feet.z-position.z).length()
+
+func _think_more(delta: float) -> void:
+	match state:
+		"charge_tell": _charge_tell(delta)
+		"charge": _charge(delta)
+		"charge_skid": _charge_skid(delta)
+		"charge_stagger": _charge_stagger(delta)
+
+func _pose_more(_idle: float) -> bool:
+	match state:
+		"charge_tell": look.want("charge_tell",minf(state_t,float(look.lengths.charge_tell)))
+		"charge": look.want("charge_run",look.loop_time("charge_run",_phase,2.0))
+		"charge_skid": look.want("charge_skid",minf(state_t,float(look.lengths.charge_skid)))
+		"charge_stagger": look.want("charge_stagger",minf(state_t,float(look.lengths.charge_stagger)))
+		_: return false
+	return true
+
+func _step_len() -> float:
+	return Look.CHARGE_STEP if state == "charge" else super._step_len()
+
+## Planted, turned to him, the back foot scraping; then off.
+func _charge_tell(delta: float) -> void:
+	_brake(delta)
+	var m: PilotMotor = field.motor
+	var to := Vector2(m.feet.x-position.x,m.feet.z-position.z)
+	if to.length() > 0.1 and state_t < CHARGE_TELL-0.15:
+		facing = lerp_angle(facing,PilotMotor.facing_of(to.normalized()),1.0-exp(-6.0*delta))
+	if _scraped < CHARGE_SCRAPES.size() and state_t >= float(CHARGE_SCRAPES[_scraped]):
+		_scraped += 1
+		# The left (back) foot, dragged back.
+		var at := position-_forward3()*(length*0.5+hh*0.35)-_right3()*hh*0.3
+		_puff(at,hh*1.0)
+		field.sound(&"body_step",at)
+		quake = maxf(quake,0.15)
+	if state_t >= CHARGE_TELL:
+		_charge_way = facing
+		_charge_v = Vector2(vel.x,vel.z).length()
+		_charge_smash_t = 0.0
+		_charge_caught = -1.0
+		field.sound(&"body_land",position)
+		_go("charge")
+
+## Barrelling at him: a little steering, pieces in the way smashed, a big
+## piece or the edge ahead stops him short, him caught thrown, him past
+## and he overruns.
+func _charge(delta: float) -> void:
+	var m: PilotMotor = field.motor
+	var top := float(field.motor.run)*CHARGE_RUN
+	var to := Vector2(m.feet.x-position.x,m.feet.z-position.z)
+	var fwd2 := PilotMotor.forward(facing)
+	var along := to.dot(fwd2)
+	if along > CHARGE_LOCK and to.length() > 0.1:
+		var off := angle_difference(facing,PilotMotor.facing_of(to.normalized()))
+		facing = wrapf(facing+clampf(off,-CHARGE_TURN*delta,CHARGE_TURN*delta),-PI,PI)
+	_charge_v = minf(top,_charge_v+CHARGE_ACCEL*delta)
+	var f := PilotMotor.forward(facing)
+	vel.x = f.x*_charge_v
+	vel.z = f.y*_charge_v
+	var fwd := _forward3()
+	# Caught: carried on a moment, then he digs in.
+	if _charge_caught < 0.0: _charge_catch(m)
+	elif state_t-_charge_caught >= CHARGE_CARRY:
+		_charge_overrun(false)
+		return
+	# A big piece, a wall or the edge just ahead: stopped short.
+	var stop := length*0.5+maxf(_charge_v*0.2,0.8)
+	var a := _arena()
+	var why := ""
+	if a != null and a.has_method("big_ahead") and a.big_ahead(position,fwd,stop,width*0.4) < INF: why = "big piece"
+	elif _floor(position+fwd*(stop+0.5),float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF: why = "edge"
+	if why != "":
+		_charge_stop(why)
+		return
+	# What's ahead in his path smashed (a column of the rim's ring is big).
+	_charge_smash_t -= delta
+	if _charge_smash_t <= 0.0:
+		_charge_smash_t = 0.1
+		# (The big ones he stops short at.)
+		var a2 := _arena()
+		if a2 != null: a2.hit_at(position+fwd*(length*0.5+_charge_v*CHARGE_SMASH_AHEAD),float(CHARGE_HIT[0]),float(CHARGE_HIT[1]),&"olmec",true)
+	if along < -length*0.4 or state_t >= CHARGE_MOST: _charge_overrun()
+
+func _charge_catch(m: PilotMotor) -> bool:
+	if m.seized() or (m.recovering() and not m.stunnable(self)): return false
+	var d := m.feet-position
+	var fwd := _forward3()
+	var along := d.dot(fwd)
+	var side := absf(d.dot(_right3()))
+	if along < -length*0.3 or along > length*0.5+0.6 or side > width*0.5+CHARGE_SIDE: return false
+	if m.feet.y > position.y+neck_h or m.feet.y < position.y-1.0: return false
+	# Thrown off his shoulder, away and on the way he runs.
+	var way := Vector2(d.x,d.z)
+	way = way.normalized() if way.length() > 0.1 else PilotMotor.forward(facing)
+	way = (way+PilotMotor.forward(facing)*1.2).normalized()
+	if float(knobs.void_push) > 0.0: way = OlmecVoid.toward(field,m.feet,way,float(knobs.void_push))
+	m.knock(m.knock_velocity(way,float(knobs.swat_out)*float(CHARGE_THROW[0]),float(knobs.swat_up)*float(CHARGE_THROW[1])),self,float(knobs.swat_down)*float(CHARGE_THROW[2]))
+	m.harm(harm_cause(),1,self)
+	_cool = 0.5
+	hit_pilot.emit(self)
+	catches += 1
+	charge_hits += 1
+	if state == "charge": _charge_caught = state_t
+	last_catch = "charge"
+	quake = maxf(quake,0.7)
+	_puff(m.feet,hh*1.0)
+	field.sound(&"body_land",m.feet)
+	chase_beat.emit("caught charge")
+	print("olmec boss: charge caught him, along %.1f side %.1f" % [along,side])
+	return true
+
+## Bumping into him charging is the charge's catch, not the walk's shove.
+func touch(m: PilotMotor, v_pre: Vector3) -> void:
+	if state == "charge":
+		_charge_catch(m)
+		return
+	super.touch(m,v_pre)
+
+func _charge_overrun(missed := true) -> void:
+	if missed: charge_overruns += 1
+	_charge_v = Vector2(vel.x,vel.z).length()
+	_go("charge_skid")
+	_puff(position+_forward3()*length*0.5,hh*1.2)
+	field.sound(&"body_land",position)
+	if missed: chase_beat.emit("overran")
+	print("olmec boss: charge overran at %.1f m/s" % _charge_v)
+
+func _charge_stop(why: String) -> void:
+	charge_stops += 1
+	charge_stop_why = why
+	_go("charge_stagger")
+	var at := position+_forward3()*(length*0.5+0.4)
+	_puff(at,hh*1.4)
+	field.sound(&"body_land",at)
+	quake = maxf(quake,0.8)
+	# Into a big piece: it takes the blow (cracked, maybe felled).
+	if why != "edge": _hit_arena(at+_forward3()*0.8,[2.0,0.5])
+	chase_beat.emit("stopped short")
+	print("olmec boss: charge stopped short (%s) at (%.1f, %.1f)" % [why,position.x,position.z])
+
+## The overrun: slid to a stop on his dug-in heel, a stumble step on,
+## then down on a hand (the window), then up.
+func _charge_skid(delta: float) -> void:
+	var f := PilotMotor.forward(facing)
+	var v := 0.0
+	if state_t < CHARGE_SLIDE: v = _charge_v*(1.0-state_t/CHARGE_SLIDE)
+	elif state_t < CHARGE_SLIDE+0.3: v = 1.6*(1.0-(state_t-CHARGE_SLIDE)/0.3)
+	# Don't slide over the edge.
+	if v > 0.0 and _floor(position+_forward3()*(length*0.5+v*0.3+0.3),float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF: v = 0.0
+	vel.x = f.x*v
+	vel.z = f.y*v
+	if state_t < CHARGE_SLIDE and fmod(state_t,0.12) < delta: _puff(position+_forward3()*(length*0.4),hh*0.6)
+	if state_t >= CHARGE_SKID:
+		move = ""
+		_go(_resume())
+
+## Stopped short: jammed, rocked back a step or two, dazed, squared.
+func _charge_stagger(delta: float) -> void:
+	var f := PilotMotor.forward(facing)
+	var v := 0.0
+	if state_t > 0.12 and state_t < 0.6: v = -1.8*(1.0-(state_t-0.12)/0.48)
+	vel.x = f.x*v
+	vel.z = f.y*v
+	if state_t >= CHARGE_STAGGER:
+		move = ""
+		_go(_resume())
 
 ## The slam: the swat's arms up, longer, then the fists on the turf.
 func _start_slam() -> void:

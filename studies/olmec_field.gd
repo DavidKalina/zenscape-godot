@@ -428,6 +428,9 @@ func attack_line() -> String:
 			var step := p[2] if p.size() > 2 else ""
 			return {"absorb":"absorbs (%s)" % kind,"tell":"%s coming" % kind,"puff":"%s!" % kind}.get(step,mv)+"  ·  from up high"
 		var st := str(b.state)
+		if mv == "charge":
+			return {"charge_tell":"charge coming","charge":"charge!","charge_skid":"overran  ·  shoot him now",
+				"charge_stagger":"stopped short"}.get(st,"charge")
 		# The windup is the tell (a gust shot in it stops a slam or a swat).
 		if st == "windup" or (mv == "slam" and not bool(b.get("_slam_hit"))) or (mv == "swat" and float(b.state_t) < float(b.knobs.swat_windup)):
 			return mv+" coming"
