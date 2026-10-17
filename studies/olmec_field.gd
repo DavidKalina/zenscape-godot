@@ -510,6 +510,7 @@ func _frame(delta: float) -> void:
 	super._frame(delta)
 	_frame_tall(delta)
 	_cam_over_turf()
+	_cam_out_of_him()
 
 ## The camera kept over the tipped (or snapping) turf: the field swings up
 ## faster than the camera's own ground check follows (CAM_OVER m over it).
@@ -526,6 +527,65 @@ func _cam_over_turf() -> void:
 	p.y = floor_y
 	camera.global_position = turn*p
 	camera.look_at(camera.global_position+look)
+
+## Through the tilt's release (his stagger off the rim, the snap, the
+## fling) the camera is kept CAM_OUT m out of his body and head: out of a
+## ball round each of his posed bones (CAM_BONES, m: the fists and chest
+## move far from the skinned mesh's rest box) and out of each rigid mesh's
+## box (the head: pushed out through its nearest face), the look kept.
+## Without it the swing put the eye inside his fist and head for a few
+## frames.
+const CAM_OUT := 0.5
+const CAM_BONES := {"hips":1.8,"spine":1.8,"chest":2.1,"neck":1.5,"upper_arm.L":1.2,"upper_arm.R":1.2,"forearm.L":1.0,"forearm.R":1.0,
+	"hand.L":1.1,"hand.R":1.1,"fingers.L":0.9,"fingers.R":0.9}
+## Counted, for checks: frames the camera was pushed out of him.
+var cam_pushed := 0
+func _cam_out_of_him() -> void:
+	if camera == null or not (tilt_phase in ["breaking","easing"]): return
+	var look := -camera.global_transform.basis.z
+	var eye: Vector3 = camera.global_position
+	var moved := false
+	var b := olmec()
+	if b != null and b.is_visible_in_tree():
+		for sk: Node in b.find_children("*","Skeleton3D",true,false):
+			var skel := sk as Skeleton3D
+			for bone: String in CAM_BONES:
+				var i := skel.find_bone(bone)
+				if i < 0: continue
+				var at: Vector3 = skel.global_transform*skel.get_bone_global_pose(i).origin
+				var r: float = float(CAM_BONES[bone])+CAM_OUT
+				var off := eye-at
+				if off.length() >= r: continue
+				eye = at+(off.normalized() if off.length() > 1e-3 else -look)*r
+				moved = true
+	for top: Node3D in [b,olmec_head()]:
+		if top == null or not top.is_visible_in_tree(): continue
+		for n: Node in top.find_children("*","MeshInstance3D",true,false):
+			var mi := n as MeshInstance3D
+			if not mi.is_visible_in_tree() or mi.skin != null or mi.get_parent() is Skeleton3D: continue
+			var box := mi.get_aabb().grow(CAM_OUT)
+			if box.size.length() < 0.05: continue
+			var xf := mi.global_transform
+			var q := xf.affine_inverse()*eye
+			if not box.has_point(q): continue
+			# Out through the nearest face, measured in metres.
+			var best := INF
+			var out := q
+			for axis in range(3):
+				var unit := xf.basis[axis].length()
+				for lo: bool in [true,false]:
+					var edge: float = box.position[axis] if lo else box.end[axis]
+					var d := absf(q[axis]-edge)*unit
+					if d < best:
+						best = d
+						out = q
+						out[axis] = edge+(-0.01 if lo else 0.01)
+			eye = xf*out
+			moved = true
+	if moved:
+		cam_pushed += 1
+		camera.global_position = eye
+		camera.look_at(eye+look)
 
 ## Through the snap (from his break till the fling's first second), the
 ## camera's boom isn't drawn in by the field swinging through it or by him
