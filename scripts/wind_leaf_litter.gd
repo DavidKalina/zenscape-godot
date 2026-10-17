@@ -28,6 +28,9 @@ const REGROW_WAIT := Vector2(3.0,9.0)
 const FADE_IN := 1.5
 ## Physics steps at most this long, so contact stays stable at any frame rate.
 const MAX_STEP := 1.0/50.0
+## Slower than this (m/s) on the ground, a leaf lies still (its ground
+## isn't read again).
+const REST_SPEED := 0.002
 ## How hard a sweeping breeze ribbon's updraft (BreezeRibbons.air_at) lifts a
 ## leaf against its weight, and the metres over the ground it tops out at
 ## (`rise_cap`; the grass chaff, being lighter, goes higher). The updraft
@@ -112,6 +115,9 @@ func _step(dt: float, air: Node) -> void:
 	_clock += dt
 	var direction := Vector2(cos(air._air_angle),sin(air._air_angle))
 	var ambient: float = air._air_strength * air.gust_at(air._wind_time)
+	# A ribbon sweeping the ground drags the air along its track and kicks it up.
+	var trails: Variant = air.get("wind_trails")
+	if trails != null and not (is_instance_valid(trails) and trails.has_method("air_at")): trails = null
 	for leaf in leaves:
 		if leaf.lost:
 			_regrow(leaf,dt)
@@ -125,10 +131,8 @@ func _step(dt: float, air: Node) -> void:
 		# neighbours do not all move as one.
 		var patch := 0.75+0.35*sin(_clock*0.9+p.x*0.45+p.z*0.3)+0.2*sin(_clock*2.3+leaf.phase)
 		var wind := Vector3(direction.x,0,direction.y)*ambient*1.3*patch*float(leaf.exposure)+Vector3(gust.x,0,gust.y)*7.0+local
-		# A ribbon sweeping the ground drags the air along its track and kicks it up.
 		var sweep := Vector3.ZERO
-		var trails: Variant = air.get("wind_trails")
-		if trails != null and is_instance_valid(trails) and trails.has_method("air_at"): sweep = trails.air_at(p)
+		if trails != null: sweep = trails.air_at(p)
 		wind += Vector3(sweep.x,0,sweep.z)
 		var speed := Vector2(wind.x,wind.z).length()
 		var weight: float = leaf.weight
@@ -171,6 +175,10 @@ func _step(dt: float, air: Node) -> void:
 				velocity.y += sweep.y*RISE_LIFT/weight*(1.0-smoothstep(rise_cap*0.5,rise_cap,above))*dt
 				velocity.y = minf(velocity.y,3.0*(1.0-smoothstep(rise_cap*0.4,rise_cap,above)))
 			leaf.yaw += float(leaf.turn)*dt*(0.6+speed*0.3)
+		# Lying still on the ground: where it lies and how it lies stand.
+		if not leaf.airborne and velocity.length_squared() < REST_SPEED*REST_SPEED:
+			leaf.velocity = Vector3.ZERO
+			continue
 		var next := p+velocity*dt
 		var height: Variant = ground_height.call(Vector2(next.x,next.z))
 		if height == null or not is_finite(float(height)):

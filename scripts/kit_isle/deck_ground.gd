@@ -38,6 +38,7 @@ func deck_at(p: Vector2, from: float) -> float:
 	for bridge: MeshInstance3D in RopeBridge._live:
 		if not is_instance_valid(bridge) or not bridge.is_inside_tree() or _resting(bridge): continue
 		var local: Vector3 = bridge.global_transform.affine_inverse()*Vector3(p.x,from,p.y)
+		if not bridge._near_deck(local,float(bridge.sim.width)*0.5+RopeBridge.STAND_SLACK+RopeBridge.SWAY_ROOM): continue
 		var on: Vector3 = bridge._on_deck(local)
 		if on.x <= 0.0 or on.x >= 1.0: continue
 		if absf(on.y-float(bridge.sim.sway(on.x))) > float(bridge.sim.width)*0.5+RopeBridge.STAND_SLACK: continue
@@ -56,6 +57,7 @@ func _sagged(p: Vector2, h: float) -> float:
 	for bridge: MeshInstance3D in RopeBridge._live:
 		if not is_instance_valid(bridge) or not bridge.is_inside_tree() or not _resting(bridge): continue
 		var local: Vector3 = bridge.global_transform.affine_inverse()*Vector3(p.x,h,p.y)
+		if not bridge._near_deck(local,float(bridge.sim.width)*0.5+0.12+RopeBridge.SWAY_ROOM): continue
 		var on: Vector3 = bridge._on_deck(local)
 		if on.x <= 0.0 or on.x >= 1.0: continue
 		if absf(on.y) > float(bridge.sim.width)*0.5+0.12: continue

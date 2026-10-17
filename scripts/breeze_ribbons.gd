@@ -120,14 +120,14 @@ var _kicks: Array[Dictionary] = []
 var _kicks_stale := true
 ## Share of the sweep rates (`--sweeps=`): 1 as designed, 0 for none.
 var sweep_gain := 1.0
-var _mesh: ImmediateMesh
+var _mesh: ArrayMesh
 var _view: MeshInstance3D
 var _material: ShaderMaterial
 
 func setup(probe: Callable) -> void:
 	ground_height = probe
 	_rng.randomize()
-	_mesh = ImmediateMesh.new()
+	_mesh = ArrayMesh.new()
 	_material = ShaderMaterial.new()
 	_material.shader = SHADER
 	_view = MeshInstance3D.new()
@@ -490,7 +490,9 @@ func publish() -> void:
 	RenderingServer.global_shader_parameter_set("zs_ribbon_lift_b", lift_b)
 
 ## Rebuild the strokes: each ribbon's path as a strip of centre points; the
-## shader turns it to face the camera and paints it.
+## shader turns it to face the camera and paints it. Laid into arrays and
+## uploaded as one surface (vertex by vertex through an ImmediateMesh it
+## was ~1 ms a frame).
 func _draw() -> void:
 	_mesh.clear_surfaces()
 	_view.visible = enabled
@@ -501,7 +503,11 @@ func _draw() -> void:
 			any = true
 			break
 	if not any: return
-	_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var uv2s := PackedVector2Array()
+	var colors := PackedColorArray()
 	for r in ribbons:
 		var path: PackedVector3Array = r.path
 		var n := path.size()
@@ -523,20 +529,30 @@ func _draw() -> void:
 			var u := along[i] / total
 			var size := Vector2(float(r.width) * width_scale, alpha)
 			if i > 0:
-				var a := [path[i - 1], path[i]]
-				var ua := [along[i - 1] / total, u]
-				var ta: Array = [prev_l, tangent]
-				for corner in [[0, 0.0], [1, 0.0], [1, 1.0], [0, 0.0], [1, 1.0], [0, 1.0]]:
-					var j: int = corner[0]
-					_mesh.surface_set_normal(ta[j])
-					_mesh.surface_set_uv(Vector2(total - along[i - 1 + j], corner[1]))
-					# Width and opacity ride UV2: vertex colour is taken as
-					# sRGB and would be darkened on its way to the shader.
-					_mesh.surface_set_uv2(size)
-					_mesh.surface_set_color(Color(0.0, 0.0, float(r.seed) * 0.01, ua[j]))
-					_mesh.surface_add_vertex(a[j])
+				var tint := float(r.seed) * 0.01
+				var c0 := Color(0.0, 0.0, tint, along[i - 1] / total)
+				var c1 := Color(0.0, 0.0, tint, u)
+				var back := total - along[i - 1]
+				var front := total - along[i]
+				# Two triangles: (0, 0) (1, 0) (1, 1), (0, 0) (1, 1) (0, 1), as
+				# [end of the segment, across].
+				verts.append_array([path[i - 1], path[i], path[i], path[i - 1], path[i], path[i - 1]])
+				normals.append_array([prev_l, tangent, tangent, prev_l, tangent, prev_l])
+				uvs.append_array([Vector2(back, 0.0), Vector2(front, 0.0), Vector2(front, 1.0), Vector2(back, 0.0), Vector2(front, 1.0), Vector2(back, 1.0)])
+				# Width and opacity ride UV2: vertex colour is taken as
+				# sRGB and would be darkened on its way to the shader.
+				for k in range(6): uv2s.append(size)
+				colors.append_array([c0, c1, c1, c0, c1, c0])
 			prev_l = tangent
-	_mesh.surface_end()
+	if verts.is_empty(): return
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = uv2s
+	arrays[Mesh.ARRAY_COLOR] = colors
+	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 
 ## The shaders' value noise (zs_noise).
 func _noise(p: Vector2) -> float:
