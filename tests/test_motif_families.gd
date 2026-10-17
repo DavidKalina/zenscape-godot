@@ -17,10 +17,10 @@ const KitMotif = preload("res://scripts/kit_isle/kit_motif.gd")
 const Ring = preload("res://studies/broken_ring_isle_art.gd")
 
 ## Today's isles (default flags), hashed before the families were cut and
-## re-recorded as the motifs changed since (at 03040a6f).
+## re-recorded as the motifs changed since (at c6ae3a7c: the closed keel and seated bridge anchors, the arch fit).
 const TODAY := {
-	"colonnade_spine":"26064:94f49c4c834c4999862a4aa2eb4c1d18",
-	"broken_ring":"3318:79c7ae1e4e16c664a4f52a5b0aee3731",
+	"colonnade_spine":"26064:426562cd48e9759e3245aa53b892481e",
+	"broken_ring":"3318:e332088777ed2f871151d74984c68130",
 }
 const FAMILIES := {
 	"colonnade_spine":preload("res://scripts/kit_isle/motif_colonnade_spine.gd"),
