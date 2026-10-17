@@ -181,6 +181,23 @@ You launch `./run-olmec-field.command` and play this fight:
         the slam on, Tab re-locks at any range), and gust shots fired
         from anywhere on the slope must reach and hit him. Prove it from
         the far high side with real Tab and X.
+   - *Task 12, the slices keep him moving (user, after (11)'s slices):*
+     "It's looking better now, but I want them to be more like sweeping
+     arcs that come from different angles, accelerate, so it really
+     feels like you have to stay on your toes. Right now it still feels
+     like a hole in the wall: there's a shape and you just get right and
+     then hold." So the slices move, not just advance: they curve and
+     sweep across the slope on arcing paths, come in from different
+     angles (from either side, diagonally, crossing each other, not only
+     straight up from him), speed up as they come (a slow read at launch,
+     fast at the end), and are timed and aimed at where the wanderer is
+     and is heading, so one sidestep and hold never clears a volley:
+     he has to keep weaving. Still fair: each one reads at launch (a
+     tell from his arm/mouth and its line visible ahead of it), never
+     an unreadable hit, never knocked off. Keep the edge-on slice look
+     from (11). Prove with a driver that a "step once and hold" strategy
+     gets hit and steady weaving clears most volleys, and with play
+     camera filmstrips of the sweeps.
    - *For tuning (user, after playing (10): "much better"):* the debris
      that goes over the edge falls wrong: "some of the pillars stay
      perfectly upright while falling off. Kinda looks odd." (10) made
