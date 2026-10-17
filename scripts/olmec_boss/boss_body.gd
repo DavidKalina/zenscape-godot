@@ -36,7 +36,12 @@ extends "res://scripts/lock_on/olmec_target.gd"
 ##     arcs up the slope at him (the field's `tilt_arcs`: ARC_FIRST s in,
 ##     then every ARC_EVERY s, ARC_N at a time). TILT_BREAK gust shots
 ##     into him braced break his brace (the field's `tilt_broken`). The
-##     field lets him go (`tilt_let_go`): he stands up off it
+##     brace broken (or his TILT_HOLD up), the field drops him
+##     (`tilt_drop`): he staggers back off the rim ("tilt_off", the
+##     charge's stagger), falls out of sight ("tilt_gone", hidden under the
+##     rim) and, the field level again, climbs back up a crag as in his
+##     arrival (the field's `climb_back`: "climb", "mantle", then the hunt).
+##     Let go any other way (`tilt_let_go`) he stands up off it
 ##     ("tilt_let") and hunts again;
 ## His fists, landings and slams hit the arena (scripts/olmec_boss/arena.gd
 ## `hit_at`), and his shockwaves break what they pass as they always have
@@ -170,6 +175,19 @@ var brace_hits := 0
 var volleys := 0
 var brace_broken := false
 var _arc_next := 0.0
+## Dropped off the rim (`tilt_drop`): his stagger back (s, m/s out), his
+## fall (m/s² down, m/s out), how far under his brace he is out of sight
+## (m) and the least time (s) he is gone before the climb back.
+const OFF_STAGGER := 0.85
+const OFF_BACK := 3.4
+const OFF_GRAVITY := 24.0
+const OFF_OUT := 3.0
+const OFF_DEEP := 16.0
+const OFF_GONE := 2.2
+var _off_rest := Vector3.INF
+var _off_v := Vector3.ZERO
+var drops := 0
+var climbs_back := 0
 
 func phase_two() -> void:
 	if phase2: return
@@ -274,6 +292,8 @@ func think(delta: float) -> void:
 
 ## A gust shot in his head's absorb or tell breaks the puff.
 func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
+	# Off the rim and out of sight: nothing to hit.
+	if state in ["tilt_off","tilt_gone"]: return
 	if phase2 and not crumbled and state == "tilt_brace":
 		brace_hits += 1
 		super.hit(at,way,strength)
@@ -408,6 +428,76 @@ func tilt_let_go() -> void:
 	_tilt_step = "let"
 	_go("tilt_let")
 
+## The field drops him (his brace broken, or held too long): he staggers
+## back off the rim and falls out of sight; the field climbs him back.
+func tilt_drop() -> void:
+	if state != "tilt_brace" or crumbled: return
+	drops += 1
+	_tilt_step = "off"
+	_tilt_ready = _clock+TILT_REST
+	_off_rest = tilt_rest
+	_off_v = Vector3.ZERO
+	_go("tilt_off")
+	field.sound(&"body_rumble",position)
+	quake = maxf(quake,0.5)
+
+## Rocked back two steps on the tipped rim, then over it and down.
+func _tilt_off(delta: float) -> void:
+	vel = Vector3.ZERO
+	_push = Vector3.ZERO
+	var st: Node = field.study
+	var out := Vector3(_off_rest.x,0.0,_off_rest.z).normalized()
+	if _tilt_step == "off":
+		var k := clampf(1.0-state_t/OFF_STAGGER,0.0,1.0)
+		_off_rest += out*OFF_BACK*(0.4+0.6*k)*delta
+		var p: Vector3 = st.tipped(_off_rest) if st != null and st.has_method("tipped") else _off_rest
+		position = p
+		if state_t >= OFF_STAGGER:
+			# Over the rim: falling, still going back.
+			_tilt_step = "drop"
+			_off_v = out*OFF_OUT
+			_off_rest = position
+			field.sound(&"body_windup",position)
+		return
+	_off_v.y -= OFF_GRAVITY*delta
+	position += _off_v*delta
+	if _off_rest.y-position.y >= OFF_DEEP:
+		_tilt_step = "gone"
+		_shown(false)
+		_go("tilt_gone")
+
+## Under the rim, out of sight, till the field is still enough to climb.
+func _tilt_gone(_delta: float) -> void:
+	vel = Vector3.ZERO
+	var st: Node = field.study
+	if state_t < OFF_GONE or st == null or not st.has_method("climb_back"): return
+	if st.climb_back(self):
+		climbs_back += 1
+		_shown(true)
+		_tilt_step = ""
+		move = "back"
+	elif state_t > 12.0:
+		# No crag would take him: back on the rim where he went off.
+		_shown(true)
+		_tilt_step = ""
+		var out := Vector3(tilt_rest.x,0.0,tilt_rest.z).normalized()
+		position = tilt_rest-out*4.0
+		grounded = true
+		move = ""
+		_go(_resume())
+
+## Him (and his head on him) shown or hidden.
+func _shown(on: bool) -> void:
+	visible = on
+	var h := _boss_head()
+	if h != null: h.visible = on
+
+func _move(delta: float) -> void:
+	if state in ["tilt_off","tilt_gone"]:
+		rotation.y = facing
+		return
+	super._move(delta)
+
 func _tilt_let(delta: float) -> void:
 	_brake(delta)
 	if state_t >= TILT_LET:
@@ -430,6 +520,8 @@ func _think_more(delta: float) -> void:
 		"tilt_slam": _tilt_slam(delta)
 		"tilt_brace": _tilt_brace(delta)
 		"tilt_let": _tilt_let(delta)
+		"tilt_off": _tilt_off(delta)
+		"tilt_gone": _tilt_gone(delta)
 
 func _pose_more(_idle: float) -> bool:
 	match state:
@@ -438,6 +530,11 @@ func _pose_more(_idle: float) -> bool:
 		"charge_skid": look.want("charge_skid",minf(state_t,float(look.lengths.charge_skid)))
 		"charge_stagger": look.want("charge_stagger",minf(state_t,float(look.lengths.charge_stagger)))
 		"tilt_run": look.want("shoulder_run",look.loop_time("shoulder_run",_phase,2.0))
+		"tilt_off","tilt_gone":
+			# Rocked back off the rim (the charge's stopped-short stagger),
+			# then falling (the drop's air).
+			if _tilt_step == "off": look.want("charge_stagger",minf(state_t*1.2,float(look.lengths.charge_stagger)*0.5))
+			else: look.want("drop_air",minf(state_t+0.3,float(look.lengths.drop_air)*0.9))
 		"tilt_slam","tilt_brace","tilt_let":
 			# The triumph's fists up, down on the rim (the slam's), held
 			# there braced; let go, the rest of it as he stands up.

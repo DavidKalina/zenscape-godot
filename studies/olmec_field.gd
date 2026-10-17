@@ -161,11 +161,40 @@ const SCREE_HOLD_DEG := 9.0
 const TILT_CAM_UP := 0.42
 const TILT_CAM_TURN := 1.4
 const TILT_CAM_SIDE := 0.5
+## The release (spec "The tilt", the release): his brace broken (or his
+## TILT_HOLD up), he staggers back off the rim (BossBody `tilt_drop`) and
+## the field, held SNAP_HOLD s more, is let go on a stiff, lively spring
+## (SNAP_W, SNAP_ZETA): it springs back up and overshoots. As it comes
+## through FLING_DEG of level the snap flings the wanderer (anywhere on the
+## field, on the turf or just over it) FLING_UP m up, aimed back over the
+## field: with no sail he would come down FLING_KEEP of the way from where
+## he is to the middle and FLING_BACK m on past it (away from the Olmec's
+## rim), at most FLING_IN of the field's radius out, at most FLING_FLAT
+## m/s along. From that height the pocket sail glides round and back on.
+const SNAP_HOLD := 0.7
+const SNAP_W := 2.5
+const SNAP_ZETA := 0.22
+const FLING_DEG := 3.0
+const FLING_UP := 24.0
+const FLING_KEEP := 0.25
+const FLING_BACK := 10.0
+const FLING_IN := 0.55
+const FLING_FLAT := 16.0
+var _fling_due := false
+var _fling_air := false
+var _fling_air_t := 0.0
+const FLING_CAM_UP := 0.5
+var _snap_spring := []
+## Counted, for checks: flings, the last one's start and velocity.
+var flings := 0
+var fling_from := Vector3.INF
+var fling_v := Vector3.ZERO
 var _tilt_cam_side := 0.0
 var tilt: Node = null
 var tilt_now := false
 var _tilt_now_done := false
-## "" none, "tipping" (braced, held), "easing" (let go, coming back level).
+## "" none, "tipping" (braced, held), "breaking" (his brace gone, he goes
+## off the rim, still held), "easing" (let go, coming back level).
 var tilt_phase := ""
 var tilt_t := 0.0
 var tilt_way := Vector2.ZERO
@@ -479,6 +508,34 @@ const TALL_EASE := 0.12
 func _frame(delta: float) -> void:
 	_tilt_frame(delta)
 	super._frame(delta)
+	_frame_tall(delta)
+	_cam_over_turf()
+
+## The camera kept over the tipped (or snapping) turf: the field swings up
+## faster than the camera's own ground check follows (CAM_OVER m over it).
+const CAM_OVER := 1.6
+func _cam_over_turf() -> void:
+	if tilt == null or camera == null or (tilt_phase == "" and tilt.steep_tip == null): return
+	var turn: Transform3D = tilt.steep_turn()
+	var eye: Vector3 = camera.global_position
+	var p: Vector3 = turn.affine_inverse()*eye
+	if Vector2(p.x,p.z).length() > FIELD_R*1.05: return
+	var floor_y := _ground_y(p.x,p.z)+CAM_OVER
+	if p.y >= floor_y: return
+	var look := -camera.global_transform.basis.z
+	p.y = floor_y
+	camera.global_position = turn*p
+	camera.look_at(camera.global_position+look)
+
+## Through the snap (from his break till the fling's first second), the
+## camera's boom isn't drawn in by the field swinging through it or by him
+## going off the rim: `_cam_over_turf` keeps it over the turf instead.
+func _cam_reach(pivot: Vector3, out: Vector3) -> float:
+	if tilt_phase == "breaking" or (tilt_phase == "easing" and (_fling_due or (_fling_air and _fling_air_t < 1.0))):
+		return CAM_DISTANCE*wanderer_scale
+	return super._cam_reach(pivot,out)
+
+func _frame_tall(delta: float) -> void:
 	if foot_lock == null or foot_lock.weight <= 0.0: return
 	var b := olmec()
 	if b == null or foot_lock._last != b: return
@@ -574,7 +631,8 @@ func attack_line() -> String:
 		if mv == "tilt":
 			return {"tilt_run":"makes for the rim","windup":"bounds for the rim","leap":"bounds for the rim",
 				"land":"on the rim","tilt_slam":"slams the rim","tilt_brace":"tilts the field!  ·  brace %s" % _pips(int(b.get("brace_hits")),int(BossBody.TILT_BREAK)),
-					"tilt_let":"lets go"}.get(st,"tilt")
+					"tilt_let":"lets go","tilt_off":"staggers off the rim","tilt_gone":"over the rim"}.get(st,"tilt")
+		if mv == "back": return "climbs back up the rim"
 		if mv == "charge":
 			return {"charge_tell":"charge coming","charge":"charge!","charge_skid":"overran  ·  shoot him now",
 				"charge_stagger":"stopped short"}.get(st,"charge")
@@ -848,7 +906,7 @@ func tilt_broken(b: Node3D) -> void:
 	tilts_broken += 1
 	_say("His brace breaks!",2.5)
 	print("olmec field: brace broken after %.1f s" % tilt_t)
-	_tilt_release()
+	_tilt_break()
 
 ## His fists down on the rim at `at`: the field tips toward him.
 func tilt_begin(b: Node3D, at: Vector3) -> void:
@@ -888,12 +946,22 @@ func _tilt_tick(delta: float) -> void:
 		tilt_t += delta
 		# Let go: his time braced up, or he is down or gone off his brace.
 		var off := b == null or b != _tilt_body or bool(b.crumbled) or not (str(b.state) == "tilt_brace")
-		if tilt_t >= TILT_HOLD or (off and tilt_t > 0.2):
+		if tilt_t >= TILT_HOLD and not off:
+			# Held too long: his grip goes, the same snap as a break.
+			print("olmec field: his grip gives after %.1f s" % tilt_t)
+			_tilt_break()
+		elif off and tilt_t > 0.2:
 			_tilt_release()
 		elif _tilt_locked and foot_lock != null and not foot_lock.locked() and foot_lock.let_go_why != "pressed" and foot_lock_allowed():
 			# Out of reach or behind a column: back on him while tipped.
 			_tilt_lock(b)
+	elif tilt_phase == "breaking":
+		tilt_t += delta
+		if tilt_t >= SNAP_HOLD: _tilt_snap()
 	tilt.step(delta,[])
+	if _fling_due and tilt_phase == "easing" and (tilt.steep_tip == null or (tilt.steep_tip.tip as Vector2).dot(tilt_way) < deg_to_rad(FLING_DEG)):
+		_fling_due = false
+		_fling()
 	if arcs != null: arcs.step(delta)
 	var deg: float = tilt.steep_deg()
 	tilt_most_deg = maxf(tilt_most_deg,deg)
@@ -912,6 +980,7 @@ func _tilt_tick(delta: float) -> void:
 	_slide_shoved(delta,deg)
 	if tilt_phase == "easing" and tilt.steep_tip == null:
 		tilt_phase = ""
+		_spring_back()
 		_put_plane_back()
 		_motor_back()
 		print("olmec field: the field is level again (most %.1f deg)" % tilt_most_deg)
@@ -939,6 +1008,87 @@ func _tilt_lock(b: Node3D) -> void:
 	foot_lock._lost = 0.0
 	foot_lock.let_go_why = ""
 
+## His brace broken: he staggers off the rim (the field still held a beat,
+## SNAP_HOLD), then `_tilt_snap`.
+func _tilt_break() -> void:
+	tilt_phase = "breaking"
+	tilt_t = 0.0
+	if arcs != null: arcs.fade_all()
+	if _tilt_locked and foot_lock != null and foot_lock.locked(): foot_lock.release("tilt over")
+	_tilt_locked = false
+	if _tilt_body != null and is_instance_valid(_tilt_body) and _tilt_body.has_method("tilt_drop"): _tilt_body.tilt_drop()
+
+## Let go on the snap's spring; the wanderer flung as it comes level.
+func _tilt_snap() -> void:
+	_snap_spring = [tilt.steep_w,tilt.steep_zeta]
+	tilt.steep_w = SNAP_W
+	tilt.steep_zeta = SNAP_ZETA
+	tilt_phase = "easing"
+	tilt.steep_release()
+	_fling_due = true
+	if arena != null and arena.hub != null: arena.hub.quake = maxf(float(arena.hub.quake),0.8)
+	_say("The field snaps back!",2.5)
+	print("olmec field: the field snaps back")
+
+func _spring_back() -> void:
+	if _snap_spring.size() == 2:
+		tilt.steep_w = _snap_spring[0]
+		tilt.steep_zeta = _snap_spring[1]
+	_snap_spring = []
+	_fling_due = false
+
+## The snap throws him: FLING_UP m up, aimed back over the field (see
+## FLING_UP). Not if he is off the field, flying, or well up off the turf.
+func _fling() -> void:
+	if flying or off_edge or motor == null or motor.seized(): return
+	var turn: Transform3D = tilt.steep_turn()
+	var me: Vector3 = turn.affine_inverse()*motor.feet
+	var me2 := Vector2(me.x,me.z)
+	var over: float = me.y-_ground_y(me.x,me.z)
+	if me2.length() > FIELD_R*1.02 or over > 4.0 or over < -1.5: return
+	var g: float = motor.gravity
+	var vy := sqrt(2.0*g*FLING_UP)
+	var air := vy/g+sqrt(2.0*FLING_UP/(g*float(motor.fall)))
+	var goal := me2*FLING_KEEP-tilt_way*FLING_BACK
+	goal = goal.limit_length(FIELD_R*FLING_IN)
+	var flat := ((goal-me2)/air).limit_length(FLING_FLAT)
+	fling_v = Vector3(flat.x,vy,flat.y)
+	fling_from = motor.feet
+	flings += 1
+	motor.toss(fling_v)
+	_fling_air = true
+	_fling_air_t = 0.0
+	Dust.puff(enemies,motor.feet,2.0,Vector3.UP)
+	_say("Flung high!  ·  Jump to open the sail",3.0)
+	print("olmec field: flung from (%.1f, %.1f) at %s" % [me.x,me.z,fling_v])
+
+## Him back up the rim after his drop, as in his arrival: the crag nearest
+## where he went off (the field level enough to climb); false: not yet, or
+## none fits.
+func climb_back(b: Node3D) -> bool:
+	if tilt != null and float(tilt.steep_deg()) > 0.8: return false
+	if _spawner == null:
+		_spawner = BodySpawner.new()
+		add_child(_spawner)
+		_spawner.setup(self,enemies)
+	var rest: Vector3 = b.get("tilt_rest")
+	var off := Vector2(rest.x,rest.z).normalized() if rest != Vector3.INF else tilt_way
+	var ways: Array = []
+	for lip: Vector3 in _crag_lips:
+		ways.append([Vector2(lip.x,lip.z).normalized().dot(off),lip])
+	ways.sort_custom(func(x: Array, y: Array) -> bool: return float(x[0]) > float(y[0]))
+	for w: Array in ways:
+		var lip: Vector3 = w[1]
+		var fitted: Array = _spawner.fit(lip,Vector2(lip.x,lip.z).normalized())
+		if fitted.is_empty(): continue
+		b.cling(fitted[0],fitted[1],_spawner.face_below(fitted[0],fitted[1],BODY_BELOW))
+		b.body.force_update_transform()
+		enemies.sound(&"body_rumble",b.position)
+		_say("He climbs back up the rim...",3.0)
+		print("olmec field: he climbs back up at (%.1f, %.1f)" % [b.position.x,b.position.z])
+		return true
+	return false
+
 func _tilt_release() -> void:
 	tilt_phase = "easing"
 	tilt.steep_release()
@@ -964,6 +1114,7 @@ func tilt_reset() -> void:
 	if arcs != null: arcs.clear()
 	_shoved.clear()
 	_tilt_locked = false
+	_spring_back()
 	tilt_phase = ""
 	_tilt_body = null
 	_tilt_now_done = false
@@ -1047,6 +1198,14 @@ func _slide_scree(delta: float, deg: float, turn: Transform3D) -> void:
 ## braced at the low edge, so the tip reads (not while locked: the lock frames him).
 func _tilt_frame(delta: float) -> void:
 	if tilt == null or delta <= 0.0: return
+	# The snap and the fling: the camera up high over him (FLING_CAM_UP off
+	# its polar), so the field coming up and him thrown off it both read.
+	if tilt_phase == "breaking" or (tilt_phase == "easing" and (_fling_due or _fling_air)):
+		_polar = lerpf(_polar,CAM_POLAR-FLING_CAM_UP,1.0-exp(-delta*5.0))
+	if _fling_air:
+		_fling_air_t += delta
+		if motor.grounded and _fling_air_t > 0.3: _fling_air = false
+		elif str(motor.move) == "sail" or _fling_air_t > 6.0: _fling_air = false
 	var k := clampf(float(tilt.steep_deg())/TILT_DEG,0.0,1.0)
 	if k <= 0.01: return
 	if foot_lock != null and foot_lock.locked(): return
