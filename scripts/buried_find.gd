@@ -202,12 +202,18 @@ func advance(delta: float) -> void:
 				if id != "": Telescope.spottable(find,id)
 	_fly_clods(delta)
 
+## The clods' material, made once and shared (a new one a dig was a few ms
+## of the frame it came up in).
+static var _clod_material: StandardMaterial3D
+
 func _throw_clods() -> void:
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(0.16,0.09,0.13)*size
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.3,0.24,0.15)
-	mat.roughness = 1.0
+	if _clod_material == null:
+		_clod_material = StandardMaterial3D.new()
+		_clod_material.albedo_color = Color(0.3,0.24,0.15)
+		_clod_material.roughness = 1.0
+	var mat := _clod_material
 	for i in range(CLODS):
 		var clod := MeshInstance3D.new()
 		clod.mesh = mesh

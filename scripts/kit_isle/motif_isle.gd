@@ -222,6 +222,10 @@ func start_build(high := false) -> void:
 		built.build(into)
 		RuinLod.add(into)
 		LateShapes.defer(into)
+		# Its life's script loaded here too: a motif that loads it when asked
+		# (the cloister tarn's, the drowned nave's) compiled it on the main
+		# thread as its life came up, 50-100 ms in one frame.
+		built.life_script()
 		# Its worker's wall time and its wait for a thread (ms; `timings`).
 		spent[0] = (Time.get_ticks_usec()-began)/1000
 		spent[1] = (began-asked)/1000,high,"Motif isle "+str(motif.id()))
