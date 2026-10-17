@@ -75,6 +75,7 @@ WRIST_GAIN = 0.45
 TABARD_GAIN = 0.75   # of the thigh's swing
 TABARD_DROP = 260.0  # deg per m the hips' bob outruns the tabard
 SKIRT_GAIN = 0.55
+DROP_CAP = 30.0     # deg: the most the bob swings the tabard (a launch)
 
 SIDES = ("l", "r")
 ARM_CH = {"swing": 0.0, "out": 0.0, "arc": 0.0, "bend": 0.0, "wrist": 0.0, "shrug": 0.0}
@@ -221,7 +222,7 @@ class Rig:
         steady = HEAD_GAIN * (v["bob"] - vl["bob"])
         D["head"] = D["chest"] @ about(J["head"], rz(v["look"]) @ ry(v["tilt"]) @ rx(v["nod"] + steady))
         # The tabard and skirt: with the thighs, trailing the hips' bob.
-        drop = TABARD_DROP * (v["bob"] - vl["bob"])
+        drop = max(-DROP_CAP, min(DROP_CAP, TABARD_DROP * (v["bob"] - vl["bob"])))
         swing = {}
         for s in SIDES:
             sg = 1.0 if s == "r" else -1.0
@@ -668,6 +669,169 @@ def reel():
     ], loop=False, beats={"open": [0.08], "end": [1.25]})
 
 
+# ------------------------------------------------------------------ the end and travel
+# Broken, on one knee (the kneel's held pose; crumble shudders from here):
+# the right knee on the deck (the right foot back on its toes), the left
+# foot forward, slumped over the front knee, the left forearm across it,
+# the right arm hanging, head bowed.
+KNELT = {"bob": -0.4, "surge": 0.0, "hpitch": 8.0, "lean": 16.0, "chest": 6.0, "nod": -12.0, "tilt": 4.0,
+         "twist": 6.0, "look": 4.0,
+         "swing.l": 40.0, "out.l": -6.0, "bend.l": 72.0, "wrist.l": 10.0, "shrug.l": 0.0,
+         "swing.r": 8.0, "out.r": 6.0, "bend.r": 12.0, "wrist.r": -4.0, "shrug.r": -0.02,
+         "fx.l": -0.02, "fy.l": 0.5, "fz.l": 0.0, "pitch.l": 0.0,
+         "fx.r": 0.0, "fy.r": -0.45, "fz.r": 0.0, "pitch.r": -30.0, "yaw.r": 0.0}
+# The leap's drop (where leap-up and leap-down end, held till the body
+# sees him land, and where leap-land starts): arms out wide and a touch
+# up, looking down at his landing, the legs reaching down for the ground in
+# his fighting stance.
+DROP = {"bob": -0.03, "hpitch": 4.0, "lean": 12.0, "chest": 2.0, "nod": -22.0,
+        **both(swing=100.0, out=78.0, bend=22.0, wrist=-6.0, shrug=0.03),
+        **STANCE, "fz.l": 0.03, "fz.r": 0.03, "pitch.l": 0.0, "pitch.r": 0.0}
+
+
+def kneel():
+    """Broken: a sag (the knees going, arms slack, head dropping), the left
+    foot sliding forward as the right goes back, down onto the right knee at
+    0.45 with a jolt forward (the dust beat), the arms swinging on after the
+    stop, settled slumped over the front knee, the left forearm across it,
+    the right arm hanging, head bowed; a last breath out."""
+    return Clip("kneel", 1.1, [
+        (0.0, {}),
+        (0.2, {"bob": -0.12, "hpitch": 4.0, "lean": 8.0, "nod": -12.0, "chest": 3.0,
+               **both(swing=4.0, out=6.0, bend=8.0, wrist=-4.0, shrug=-0.015)}),
+        (0.33, {"bob": -0.27, "hpitch": 6.0, "lean": 12.0, "nod": -14.0,
+                "fy.l": 0.34, "fz.l": 0.07, "pitch.l": 12.0,
+                "fy.r": -0.3, "fz.r": 0.03, "pitch.r": -22.0,
+                **both(swing=-8.0, out=10.0, bend=10.0)}),
+        (0.45, {**KNELT, "bob": -0.425, "lean": 22.0, "chest": 9.0, "nod": -6.0,
+                "swing.l": 18.0, "bend.l": 30.0, "swing.r": -6.0, "bend.r": 8.0}),
+        (0.65, {**KNELT, "bob": -0.405, "lean": 18.0, "nod": -15.0, "swing.l": 46.0, "bend.l": 78.0,
+                "swing.r": 14.0, "bend.r": 16.0}),
+        (0.85, {**KNELT, "bob": -0.395, "chest": 4.0, "nod": -10.0}),
+        (1.1, {**KNELT, "bob": -0.41, "chest": 8.0, "nod": -14.0, "shrug.l": -0.01, "shrug.r": -0.03}, True),
+    ], loop=False, beats={"knee": [0.45], "end": [1.1]})
+
+
+def _crumble_extra(t, v):
+    # the shudder: a tremor through him, dying off as he gives
+    a = 1.0 - smooth((t - 0.16) / 0.14)
+    w = 2 * math.pi * 13.0 * t
+    v["lean"] += a * 2.5 * math.sin(w)
+    v["twist"] += a * 2.0 * math.sin(w * 1.3 + 1.0)
+    v["nod"] += a * 3.0 * math.sin(w * 0.9 + 2.0)
+    for s, ph in (("l", 0.0), ("r", 1.7)):
+        v[f"swing.{s}"] += a * 3.0 * math.sin(w + ph)
+
+
+def crumble():
+    """Crumble's shudder before he comes apart: from the kneel, the chest
+    heaves up once (the last wind leaving), a tremor runs through him and he
+    sags; the body throws his pieces loose at 0.22 (the stand-in's
+    CRUMBLE_HOLD) and lets them fall into a heap."""
+    return Clip("crumble", 0.3, [
+        (0.0, {**KNELT, "bob": -0.41, "chest": 8.0, "nod": -14.0, "shrug.l": -0.01, "shrug.r": -0.03}),
+        (0.07, {"bob": -0.39, "chest": -1.0, "lean": 12.0, "nod": 4.0,
+                "swing.l": 50.0, "out.l": 4.0, "out.r": 14.0, "shrug.l": 0.02, "shrug.r": 0.01}),
+        (0.18, {"bob": -0.435, "chest": 12.0, "lean": 22.0, "nod": -22.0,
+                "swing.l": 36.0, "out.l": -4.0, "out.r": 4.0, "shrug.l": -0.03, "shrug.r": -0.04}),
+        (0.3, {"bob": -0.44, "chest": 13.0, "lean": 23.0, "nod": -23.0}, True),
+    ], loop=False, extra=_crumble_extra, beats={"end": [0.3]})
+
+
+def _fall_extra(t, v):
+    a = 2 * math.pi * t / 0.8
+    for s, ph in (("l", 0.0), ("r", math.pi)):
+        v[f"swing.{s}"] += 22.0 * math.sin(a + ph)
+        v[f"out.{s}"] += 12.0 * math.cos(a + ph)
+        v[f"bend.{s}"] += 10.0 * math.sin(a + ph + 1.0)
+        # the legs paddle, hanging
+        v[f"fy.{s}"] += 0.09 * math.sin(a + ph + 0.6)
+        v[f"fz.{s}"] += 0.05 * (0.5 + 0.5 * math.sin(a + ph + 2.2))
+    v["lean"] += 3.0 * math.sin(2 * a)
+    v["nod"] += 3.0 * math.sin(2 * a + 1.0)
+
+
+def fall():
+    """Off the edge: arms flung up and wide and wheeling, head thrown back,
+    the body arched back, legs hanging and paddling at nothing, toes down.
+    Loops till the mind plays another (`land` comes from the root)."""
+    return Clip("fall", 0.8, [
+        (0.0, {"bob": -0.02, "hpitch": -8.0, "lean": -14.0, "chest": -7.0, "nod": 18.0,
+               **both(swing=128.0, out=72.0, bend=18.0, wrist=-12.0, shrug=0.05),
+               **both(pitch=-22.0, fz=0.04), "fy.l": 0.04, "fy.r": -0.04}),
+    ], extra=_fall_extra)
+
+
+def leap_up():
+    """The leap up onto the deck: sinking into a deep crouch, arms swung back,
+    looking up at the deck (`crouch`, the tell, held), thrown up at
+    `launch` (arms flung over his head, legs driving straight, up on his
+    toes), the feet tucking under him as he rises, the arms opening wide at
+    the top (the hang), then coming down with them wide, looking down, the
+    legs reaching (DROP, held till the body sees him land and crosses to
+    leap-land)."""
+    return Clip("leap-up", 2.4, [
+        (0.0, {}),
+        (0.3, {"bob": -0.18, "hpitch": 10.0, "lean": 14.0, "nod": 4.0,
+               **both(swing=10.0, out=14.0, bend=34.0, wrist=4.0)}),
+        (0.6, {"bob": -0.4, "hpitch": 18.0, "lean": 16.0, "chest": 2.0, "nod": 42.0,
+               **both(swing=-48.0, out=18.0, bend=14.0, wrist=-16.0, shrug=0.03)}, True),
+        (0.75, {"bob": 0.1, "hpitch": -4.0, "lean": -6.0, "chest": -6.0, "nod": 22.0,
+                **both(swing=168.0, out=14.0, bend=10.0, wrist=-6.0, shrug=0.05),
+                **both(pitch=-28.0)}),
+        (0.95, {"bob": 0.05, "hpitch": 0.0, "lean": 0.0, "nod": 16.0,
+                **both(swing=150.0, out=28.0, bend=16.0, shrug=0.04),
+                **both(fz=0.24, pitch=-18.0), "fy.l": 0.02, "fy.r": -0.06}),
+        (1.4, {"bob": 0.03, "lean": 6.0, "chest": 2.0, "nod": 8.0,
+               **both(swing=108.0, out=70.0, bend=20.0, wrist=-4.0, shrug=0.03),
+               **both(fz=0.28, pitch=-14.0), "fy.l": 0.06, "fy.r": -0.04}),
+        (2.0, {"bob": 0.02, "lean": 8.0, "nod": -6.0,
+               **both(swing=88.0, out=86.0, bend=24.0, wrist=-6.0, shrug=0.02),
+               **both(fz=0.2, pitch=-10.0)}, True),
+        (2.4, dict(DROP), True),
+    ], loop=False, beats={"crouch": [0.6], "launch": [0.75]})
+
+
+def leap_down():
+    """The leap down to the meadow: a quicker crouch, looking down at you
+    (`crouch`, held), the spring off the lip at `launch` (arms swung up
+    and out), arms out wide as he drops, the feet drawn up then reaching
+    down for the turf (DROP, held till the body sees him land)."""
+    return Clip("leap-down", 1.8, [
+        (0.0, {}),
+        (0.32, {"bob": -0.3, "hpitch": 16.0, "lean": 22.0, "chest": 4.0, "nod": -16.0,
+                **both(swing=-30.0, out=20.0, bend=20.0, wrist=-12.0, shrug=0.02)}, True),
+        (0.42, {"bob": 0.08, "hpitch": 0.0, "lean": 4.0, "chest": 0.0, "nod": -10.0,
+                **both(swing=120.0, out=40.0, bend=12.0, wrist=-6.0, shrug=0.04),
+                **both(pitch=-24.0)}),
+        (0.8, {"bob": 0.03, "lean": 10.0, "nod": -18.0,
+               **both(swing=82.0, out=80.0, bend=20.0, shrug=0.03),
+               **both(fz=0.18, pitch=-14.0), "fy.l": 0.05, "fy.r": -0.05}),
+        (1.4, {"bob": 0.0, "lean": 11.0, "nod": -20.0,
+               **both(swing=90.0, out=84.0, bend=22.0),
+               **both(fz=0.1, pitch=-6.0)}, True),
+        (1.8, dict(DROP), True),
+    ], loop=False, beats={"crouch": [0.32], "launch": [0.42]})
+
+
+def leap_land():
+    """The landing (time from `land`): from DROP, the blow taken deep (sunk
+    nearly to a squat, leaning over, the fists driven down and out, head
+    down), held as the ground shakes, then pushed up into his guard. The
+    stand-in's land_len is 0.9 up and 0.8 down: the body plays this one
+    faster for a leap down."""
+    return Clip("leap-land", 0.9, [
+        (0.0, {**DROP, "fz.l": 0.0, "fz.r": 0.0}),
+        (0.08, {"bob": -0.43, "hpitch": 16.0, "lean": 15.0, "chest": 4.0, "nod": 2.0,
+                **both(swing=-6.0, out=44.0, bend=10.0, wrist=-22.0, shrug=-0.02)}, True),
+        (0.4, {"bob": -0.39, "hpitch": 15.0, "lean": 13.0, "chest": 3.0, "nod": 4.0,
+               **both(swing=4.0, out=36.0, bend=18.0, wrist=-12.0, shrug=0.0)}, True),
+        (0.8, {**GUARD, **STANCE}, True),
+        (0.9, {**GUARD, **STANCE}, True),
+    ], loop=False, beats={"end": [0.9]})
+
+
 def clips():
     return [idle(), walk(), turn(), notice(), gather(), gather_blade(), slash("level"), slash("high"),
-            throw(), catch(), ret(), skid(), teeter(), reel()]
+            throw(), catch(), ret(), skid(), teeter(), reel(),
+            kneel(), crumble(), fall(), leap_up(), leap_down(), leap_land()]

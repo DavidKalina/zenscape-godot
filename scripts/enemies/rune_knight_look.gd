@@ -32,7 +32,7 @@ extends Node3D
 ## piece is skinned rigidly to one bone of the glb's Skeleton3D, so its
 ## vertices are in the model's space at rest; the clips are the glb's
 ## animations (`play`).
-##   play(clip, blend)        idle, walk, turn, notice
+##   play(clip, blend)        a glb clip by name (rune_knight_clips.py clips())
 ##   rune_energy(key, share)  a rune's light, 0 dark, 1 at rest
 ##   eye_glow(share)          the eye, 0 dark, EYE_REST at rest, 1 full
 
@@ -71,7 +71,7 @@ const EYE_REST := 0.15
 const SLIT := Color(0.02,0.018,0.016)
 
 ## The clips that loop.
-const LOOPS := ["idle","walk","turn"]
+const LOOPS := ["idle","walk","turn","fall"]
 
 var height := MODEL_HEIGHT
 var model: Node3D
@@ -149,7 +149,7 @@ func rune_energy(key: String, share: float) -> void:
 func socket(name_: String) -> Node3D:
 	return model.find_child("socket-"+name_,true,false) as Node3D
 
-## Play a clip of the glb (rune_knight_clips.py): idle, walk, turn, notice.
+## Play a clip of the glb by name (rune_knight_clips.py clips(); a form is "clip-form").
 func play(clip: String, blend := 0.15) -> void:
 	if player != null and player.has_animation(clip): player.play(clip,blend)
 
