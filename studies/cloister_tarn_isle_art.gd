@@ -131,9 +131,9 @@ const CREST := [
 
 ## The satellites: [name, middle (local x, z), radius, top over K, seed].
 const SATELLITES := [
-	["west",Vector2(-44.0,0.5),5.2,2.2,61],
+	["west",Vector2(-46.4,0.5),7.4,2.2,61],
 	["southwest",Vector2(-31.6,32.7),5.4,-1.6,62],
-	["northeast",Vector2(31.0,-33.3),5.8,6.6,63],
+	["northeast",Vector2(33.2,-35.6),10.0,6.6,63],
 	["north",Vector2(-3.6,-43.0),4.8,8.6,64],
 ]
 ## The rope bridges: [name, the mother's end (angle t), the satellite].

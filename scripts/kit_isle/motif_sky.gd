@@ -48,7 +48,7 @@ const PLACES := [
 ]
 ## Each motif's reach round its middle before it is registered (m, the
 ## circle of its own outlines): its keep in the clouds' layout.
-const REACH := {"bell_spires":41.0,"cloister_tarn":54.0,"sundered_gorge":56.0,"colonnade_spine":85.0,"broken_ring":38.0,"drowned_nave":64.0,"stair_clouds":33.0,"hollow_keel":62.0}
+const REACH := {"bell_spires":41.0,"cloister_tarn":62.0,"sundered_gorge":56.0,"colonnade_spine":85.0,"broken_ring":50.0,"drowned_nave":64.0,"stair_clouds":33.0,"hollow_keel":62.0}
 ## Its middle in its own frame (x, z), the same circle's.
 const MIDDLES := {"bell_spires":Vector2(82.3,-21.8),"cloister_tarn":Vector2(73.7,-5.0),"sundered_gorge":Vector2(86.0,-22.2),"colonnade_spine":Vector2(86.0,-10.5),"broken_ring":Vector2(80.0,-10.0),"drowned_nave":Vector2(80.0,0.0),"stair_clouds":Vector2(80.0,-5.4),"hollow_keel":Vector2(80.0,-15.0)}
 ## A slice is at least this long (usec) once the frame's budget is open.
