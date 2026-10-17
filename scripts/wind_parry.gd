@@ -2,8 +2,8 @@ extends Node3D
 ## The parry (docs/design/rune-knight/spec-rune-knight.md, "The parry"): the
 ## updraft's press (Q, pad RB) made at the right moment takes wind thrown at
 ## the wanderer into him. The updraft (scripts/updraft.gd) asks `try(motor)`
-## first on each press; true spends the press here, false leaves it the
-## updraft's, as before (so an early press is the plain updraft).
+## first on each press; true spends the press here (a parry or a whiff),
+## false leaves it the updraft's, as before (nothing coming at him).
 ##
 ## - **The seam:** any node in the "wind_shot" group answering
 ##   `parry_eta(motor, horizon, slack) -> float` (seconds till it reaches
@@ -11,8 +11,18 @@ extends Node3D
 ##   (scripts/enemies/wind_shot.gd): the rune knight's crescents, his
 ##   rally returns and the lob. Optional `crescent_points(at, way, n)` and
 ##   `form` shape the unwind.
-## - **The window:** a press counts when a shot will reach him within
-##   KNOBS.window s (`slack` m wider than his body). It needs no charge.
+## - **The window** (the brutal parry, the spec's later section): while a
+##   shot is coming at him (it will reach him within KNOBS.threat s), the
+##   press is a parry attempt only, never the updraft. Within KNOBS.window
+##   s of contact (`slack` m wider than his body) it parries; earlier it is
+##   a **whiff**: the guard held KNOBS.whiff s with nothing else he can do
+##   (`holds()`: the host zeroes his stick, jump, twirl and shots) and a
+##   shot that hits him in it knocks him KNOBS.whiff_knock times as far (the
+##   motor's meta `knock_mult`, read by the wind shot). With nothing coming
+##   the press is the updraft's, as ever. It needs no charge. No cue (the
+##   ring is KNOBS.cue, off: kept for checks).
+## - **The riposte:** a parried shot's `shooter` answering `parried(shot)`
+##   is told (the rune knight reels, open to a cracking hit).
 ## - **Absorb:** the shot is gone quietly, its wind unwinds into streaks
 ##   drawn spiralling to his chest, a hit-stop and a flash sell the timing,
 ##   and the updraft's charge gains one segment (capped at full); the wind
@@ -32,10 +42,13 @@ const DragonCyclone = preload("res://scripts/dragon_cyclone.gd")
 
 const GROUP := "wind_shot"
 const KNOBS := {
-	"window": 0.15,         # s to contact a press still parries in
+	"window": 0.1,          # s to contact a press still parries in (six frames)
+	"threat": 0.6,          # s to contact from which a press is a parry attempt only
+	"whiff": 0.5,           # s a whiff holds him in his guard, nothing else
+	"whiff_knock": 1.6,     # a hit taken in a whiff knocks him this many times as far
 	"slack": 0.25,          # m wider than his body the parry reads contact
-	"cue": 0.4,             # s to contact the cue ring shows from (closing on him)
-	"lockout": 0.4,         # s an empty press (no charge, no shot in the window) locks it out
+	"cue": false,           # the cue ring (off: he reads the windup and the shot)
+	"cue_time": 0.4,        # s to contact the cue ring shows from (closing on him)
 	"hitstop": 0.1,         # s (real) of the hit-stop
 	"hitstop_scale": 0.04,  # time's pace in it
 	"punch_fov": 6.0,       # deg the camera punches in, easing back...
@@ -68,9 +81,12 @@ var since := INF
 var _wisps: Array[Dictionary] = []
 var _hitstop := 0.0
 var _hitstop_end := 0
-## s the parry stays locked out after an empty press (no mashing).
+## s left of a whiff's hold (0: none), whiffs made, s since the last one.
+var whiff := 0.0
+var whiffs := 0
+var since_whiff := INF
+## Kept for drivers of the old lockout (always 0 now: the whiff replaced it).
 var locked := 0.0
-var lockouts := 0
 ## The cue: s to contact of the nearest shot in cue range (-1 none), and
 ## how many times one crossed into the window with the cue showing.
 var cue_eta := -1.0
@@ -79,6 +95,10 @@ var _cue_was := -1.0
 var _cue_pop := 0.0
 var _cue_at := Vector3.ZERO
 var _punch := 0.0
+## A quake on the camera (`quake`), 0..1, easing out over QUAKE_TIME s.
+var _quake := 0.0
+const QUAKE_TIME := 0.55
+const QUAKE_SHAKE := 0.22    # m of shake at a full quake
 var _fov_applied := 0.0
 var _cam: Camera3D
 var _sound: AudioStreamPlayer
@@ -156,23 +176,34 @@ func _ready() -> void:
 ## The press, asked before the updraft: true if it parried a shot.
 func try(m: PilotMotor) -> bool:
 	if m == null or m.recovering() or m.swimming or m.seized(): return false
+	# Held in a whiff: the press does nothing at all.
+	if whiff > 0.0: return true
 	var best: Node3D = null
 	var best_eta := INF
 	for node: Node in get_tree().get_nodes_in_group(GROUP):
 		if not node is Node3D or not node.has_method("parry_eta") or not node.has_method("absorb"): continue
-		var eta: float = node.call("parry_eta",m,float(KNOBS.window),float(KNOBS.slack))
+		var eta: float = node.call("parry_eta",m,float(KNOBS.threat),float(KNOBS.slack))
 		if eta >= 0.0 and eta < best_eta:
 			best_eta = eta
 			best = node
-	if best != null and locked <= 0.0:
-		_take(best,m,best_eta)
-		return true
-	# No shot to take (or locked out): an empty press, one the updraft
-	# can't spend either, locks the parry out a moment, so mashing fails.
-	if updraft != null and not updraft.call("can_spend"):
-		locked = float(KNOBS.lockout)
-		lockouts += 1
-	return false
+	# Nothing coming at him: the updraft's press, as ever.
+	if best == null: return false
+	if best_eta <= float(KNOBS.window): _take(best,m,best_eta)
+	else: _whiff(m,best_eta)
+	return true
+
+## Pressed too early with a shot coming: held in his guard, open to it.
+func _whiff(m: PilotMotor, eta: float) -> void:
+	whiff = float(KNOBS.whiff)
+	whiffs += 1
+	since_whiff = 0.0
+	last_eta = eta
+	m.set_meta("knock_mult",float(KNOBS.whiff_knock))
+	print("wind parry: whiff, %.3f s from contact (window %.2f s), held %.2f s" % [eta,float(KNOBS.window),whiff])
+
+## Whether a whiff holds him now (no stick, jump, twirl or shot).
+func holds() -> bool:
+	return whiff > 0.0
 
 func _take(shot: Node3D, m: PilotMotor, eta: float) -> void:
 	parries += 1
@@ -189,7 +220,11 @@ func _take(shot: Node3D, m: PilotMotor, eta: float) -> void:
 		for i in range(WISPS):
 			var a := float(i)/float(WISPS)*TAU
 			points.append(at+Vector3(cos(a),sin(a)*0.6,sin(a))*r)
+	var from = shot.get("shooter")
 	shot.call("absorb")
+	# The riposte: whoever threw it reels, his wind ripped from him.
+	if from != null and is_instance_valid(from) and from != m and (from as Object).has_method("parried"):
+		from.call("parried",shot)
 	# Its own burst puffs would read as it breaking out there: it is drawn in.
 	shot.visible = false
 	_wisps.clear()
@@ -228,12 +263,16 @@ func _process(delta: float) -> void:
 		if Time.get_ticks_usec() >= _hitstop_end:
 			_hitstop = 0.0
 			Engine.time_scale = 1.0
-	locked = maxf(locked-real,0.0)
+	if whiff > 0.0:
+		whiff = maxf(whiff-delta,0.0)
+		if whiff <= 0.0 and motor != null: motor.remove_meta("knock_mult")
+	if since_whiff != INF: since_whiff += delta
 	if _flash > 0.0:
 		_flash = maxf(_flash-real,0.0)
 	_veil.visible = _flash > 0.0
 	if _veil.visible: _veil.color.a = float(KNOBS.flash_alpha)*pow(_flash/float(KNOBS.flash),1.5)
 	_punch = maxf(_punch-real,0.0)
+	_quake = maxf(_quake-real/QUAKE_TIME,0.0)
 	_cue_pop = maxf(_cue_pop-real,0.0)
 	_clock += delta
 	if since != INF: since += delta
@@ -241,18 +280,18 @@ func _process(delta: float) -> void:
 	_pose()
 	_draw()
 
-## The cue: the nearest shot that will reach him within KNOBS.cue s. As
+## The cue (KNOBS.cue on only): the nearest shot that will reach him within KNOBS.cue_time s. As
 ## it crosses into the window the cue pops (a flash where it is).
 func _cue() -> void:
 	cue_eta = -1.0
-	if motor == null or _hitstop > 0.0 or motor.recovering(): 
+	if not bool(KNOBS.cue) or motor == null or _hitstop > 0.0 or motor.recovering():
 		_cue_was = -1.0
 		return
 	var best := INF
 	var at := Vector3.ZERO
 	for node: Node in get_tree().get_nodes_in_group(GROUP):
 		if not node is Node3D or not node.has_method("parry_eta"): continue
-		var eta: float = node.call("parry_eta",motor,float(KNOBS.cue),float(KNOBS.slack))
+		var eta: float = node.call("parry_eta",motor,float(KNOBS.cue_time),float(KNOBS.slack))
 		if eta >= 0.0 and eta < best:
 			best = eta
 			at = (node as Node3D).global_position
@@ -275,6 +314,10 @@ func apply_feel(camera: Camera3D) -> void:
 	if _cam == camera and _fov_applied != 0.0: camera.fov -= _fov_applied
 	_cam = camera
 	_fov_applied = 0.0
+	if _quake > 0.0:
+		# A heavy landing: a low, rolling shake, mostly up and down.
+		var q := QUAKE_SHAKE*_quake*_quake
+		camera.global_position += Vector3(sin(_clock*41.0)*0.6,sin(_clock*29.0+0.7),sin(_clock*37.0+2.3)*0.6)*q
 	if _punch <= 0.0: return
 	var u := _punch/float(KNOBS.punch_time)
 	var k := u*u
@@ -283,13 +326,24 @@ func apply_feel(camera: Camera3D) -> void:
 	var shake := float(KNOBS.punch_shake)*k
 	camera.global_position += Vector3(sin(_clock*97.0),sin(_clock*83.0+1.3),sin(_clock*71.0+2.1))*shake
 
+## Shakes the camera, `power` 0..1 (a heavy landing near the wanderer: the
+## rune knight's leap and shatter). The stronger of this and any shake
+## under way.
+func quake(power: float) -> void:
+	_quake = maxf(_quake,clampf(power,0.0,1.0))
+
 ## The figure's guard layer from the time since the parry.
 func _pose() -> void:
 	var body = isle.get("body") if isle != null else null
 	if body == null or body.get("guard") == null: return
 	var g := 0.0
 	var d := 0.0
-	if since != INF:
+	if whiff > 0.0:
+		# The whiff: the guard snapped up and held, fists not drawn in.
+		g = clampf(since_whiff/float(KNOBS.guard_in),0.0,1.0)
+	elif since_whiff != INF and since_whiff < float(KNOBS.whiff)+float(KNOBS.guard_out) and (since == INF or since > since_whiff):
+		g = clampf(1.0-(since_whiff-float(KNOBS.whiff))/float(KNOBS.guard_out),0.0,1.0)
+	elif since != INF:
 		var end := float(KNOBS.absorb)
 		if since < end: g = clampf(since/float(KNOBS.guard_in),0.0,1.0)
 		else: g = clampf(1.0-(since-end)/float(KNOBS.guard_out),0.0,1.0)
@@ -335,7 +389,7 @@ func _draw() -> void:
 	# nears: wide and faint at KNOBS.cue s out, tight and rune-bright in the
 	# window. Grey and faint while locked out.
 	if cue_eta >= 0.0 and not absorbing:
-		var k := clampf(cue_eta/float(KNOBS.cue),0.0,1.0)
+		var k := clampf(cue_eta/float(KNOBS.cue_time),0.0,1.0)
 		var inside := cue_eta <= float(KNOBS.window)
 		var r := t*lerpf(0.42,1.1,k)
 		var to_eye := (eye-chest).normalized()

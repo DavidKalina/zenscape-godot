@@ -191,8 +191,26 @@ This section overrides the parry's window, cue and lockout above.
 - **The brace.** A hit from the side no longer throws him straight off
   the 2.5 m deck: he braces and his skid turns along the deck, so the
   side shove ends at the lip as a teeter at most. A knock-off from the
-  side takes a teeter and a second hit. A rally miss or a riposte from
-  the side still carries him straight over.
+  side takes a teeter and a second hit. A rally miss from the side still
+  carries him straight over; a riposte never does (see below).
+
+## The riposte spills his runes; no kill on a parry (spec change after the user played task 10)
+
+The user: "we need the runes to spill out of him on riposte. But you
+shouldn't be able to kill on parry. But you should be able to get him
+down to a one-shot."
+
+- **The spill.** A riposte that lands bursts the cracked rune out of
+  him: glowing rune shards and its light pour out of the groove and
+  scatter round him on the deck, flaring then guttering out over a few
+  seconds. The best-looking hit in the fight; bigger than a rally miss's
+  crack.
+- **No kill on a parry.** A riposte never ends him. It cracks runes down
+  to the last state (all three dark, kneeling: one hit from death), and
+  its skid never carries him off the deck: a riposte from the side stops
+  at the lip as a teeter at most (the brace, for this hit too). The kill
+  is always a separate hit after: X on the kneeling knight, or a hit
+  while he teeters.
 
 ## The leap: down to the meadow and back up (spec change: the user's ask)
 
@@ -284,6 +302,9 @@ changing. Names here are final once built on; change one only by a
 - **Effects**: `rune_glow` (lines lit while he holds wind),
   `wind_gather` (streaks drawn into `hands_mid`, or into `blade` before
   a slash), `wind_blade` (the blade of air along his forearm).
+- **Contract additions (task 12):** effect `rune_spill` (form: the rune's
+  name; one-shot: the riposte's spill), clip `gone` (over the island's
+  rim, out of sight below: the body hides; `death` "gone").
 
 ## Tasks (the first iteration orders these; keep each one a checkpoint)
 
@@ -330,20 +351,40 @@ changing. Names here are final once built on; change one only by a
    cracks a rune, X after the reel is caught as before; a side X on
    the deck teeters him at the lip rather than throwing him over, and a
    second hit then puts him over. Stills of the reel and the riposte.
-11. The leap (above): down to the meadow, back up to the deck, home again,
+11. The leap (below): down to the meadow, back up to the deck, home again,
    the landing's knock. Play-loop checks: the wanderer on the meadow
    with no clean line draws him down; climbing the deck brings him up;
    the landing knocks a wanderer near it and a timed parry takes it;
    he fights on the meadow (slash, catch, skid into the wall). Stills of
    the crouch, the apex and the landing.
-12. The core rune and the ledger: the drop where he dies, taking it marks
+12. The riposte's spill and no kill on a parry (above). Also the
+   island's own rim (found in task 11): a skid on the meadow that would
+   carry him off the island is an edge like the deck's (brace, teeter,
+   a hit puts him over; a riposte never does), and a knight gone over the
+   rim falls a little way, then is dead (gone below, his rune with him). Play-loop checks:
+   a riposte from the side at the edge leaves him teetering, not over;
+   three ripostes leave him kneeling, alive; X then crumbles him. Stills
+   of the spill.
+13. The core rune and the ledger: the drop where he dies, taking it marks
    `aqueduct_isle/rune_knight`, he stays gone once it's taken and reforms
    if it wasn't. Play-loop checks across two runs (`--ledger` /
    `--fresh-ledger`, as tests/test_ledger.gd runs them); still of the
    rune hanging and of the isle card's new row.
-13. A feel pass on timings from the stills and checks, and a short rendered
-   clip (a few frames strung) of one full fight: slash, parry, blast,
-   rally, a parry and riposte, a crack, the knockoff.
+14. A feel pass on the mechanics, on the stand-in (the real body is coming
+   from the body lane, so leave poses alone): timings from the stills and
+   checks; the known bugs (a fall that "lands" without dropping leaves him
+   down for good; the leftovers in the trail's notes); the camera shake on
+   a leap's landing; the shatter and the spill read from the game camera
+   (bigger shards, a shatter clear of the arch bays where it can be);
+   bring the scratch drivers up to today's rules (the brace, the brutal
+   parry) so every one passes again, and list them in the commit so the
+   body lane and the trunk can rerun them.
+15. After the body lane merges (skill `enemy-build`, Trunk): the real body
+   in behind the API, procedural layers (feet on the real ground, hands
+   to the real target, the eye glow on notice), timings re-tuned to the
+   real clips, every driver passing on the real body, and a short
+   rendered clip (a few frames strung) of one full fight: slash, parry,
+   blast, rally, a parry and riposte, a crack, the knockoff.
 
 ## Checks
 
