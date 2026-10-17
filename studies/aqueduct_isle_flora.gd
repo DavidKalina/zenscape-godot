@@ -16,6 +16,11 @@ const STEEP_SHARE := KitFlora.STEEP_SHARE
 ## the kit's drifts as before.
 const CARPET_TUFTS := 7.0
 const CARPET_RANGE := 220.0
+## The carpet grows to the rim (m in), a little taller everywhere and wild
+## (this much taller again) toward the rim and at what stands' feet.
+const CARPET_RIM := 0.05
+const CARPET_BUMP := 1.12
+const CARPET_SHAG := 0.6
 
 ## Under the carpet the dry patches calm (shaders/ground_look.gdshaderinc
 ## `ground_dry`, 0.45, and its light patches `ground_patch`, 1.3; the
@@ -44,6 +49,9 @@ static func site() -> KitFlora.Site:
 		s.carpet = true
 		s.tufts = CARPET_TUFTS
 		s.grass_range = CARPET_RANGE
+		s.rim = CARPET_RIM
+		s.tuft_bump = CARPET_BUMP
+		s.shag = CARPET_SHAG
 	return s
 
 ## The plants (KitFlora `grow`: meta records, counts, instances, triangles).

@@ -54,6 +54,14 @@ const PATH_BARE := 0.5
 const PATH_THIN := 0.1
 const REACH := 0.25
 const STEEP_SHARE := 0.85
+## Wild grass (Site `shag`): full wild within SHAG_RIM.x of the rim, none
+## past .y; at a foot if what stands is within SHAG_FOOT.x (full) or .y
+## (half), read on a SHAG_CELL m grid; the broad noise's share and scale.
+const SHAG_RIM := Vector2(0.3,3.0)
+const SHAG_FOOT := Vector2(1.0,2.2)
+const SHAG_CELL := 1.0
+const SHAG_VARY := 0.18
+const SHAG_NOISE := 2.3
 ## Tiles (m: the grass and flowers', the undergrowth's, sparser, larger)
 ## and how far each kind draws (m), with the fade's margin.
 const TILE := 24.0
@@ -126,6 +134,14 @@ class Site extends RefCounted:
 	## zero: GRASS_RANGE) so it covers the turf seen from the plane too.
 	var carpet := false
 	var grass_range := 0.0
+	## Opt-in: how far in from the rim the grass keeps (m, below zero:
+	## RIM); in that close, a tuft's probe reaches only as far as the rim.
+	var rim := -1.0
+	## Opt-in: the grass grows wild (taller by up to `shag` more of its
+	## size) toward the rim and at what stands' feet, every tuft `tuft_bump`
+	## times its size, and a broad noise of SHAG_VARY either way.
+	var shag := 0.0
+	var tuft_bump := 1.0
 
 	func _init(top := 30.0, wear_fn := Callable(), wet_fn := Callable()) -> void:
 		ray = Vector2(top+60.0,top-8.0)
@@ -300,6 +316,7 @@ class Grow extends RefCounted:
 	var _draw: Draw
 	var _edges: EdgeIndex
 	var _seed := 0
+	var _feet := {}
 
 	func _init(seed_value: int, space: PhysicsDirectSpaceState3D, turf: Array, outlines: Array, site: Site) -> void:
 		_site = site
@@ -319,8 +336,30 @@ class Grow extends RefCounted:
 		_grass = int(_box.get_area()*site.tufts)
 		_flowers = int(_box.get_area()*FLOWER_TRIES)
 
-	func _add(asset: String, p: Vector2, size: float, extra := {}) -> bool:
-		var h: float = _probe.call(p,REACH)
+	## 1 where something not turf stands within SHAG_FOOT.x of p's cell, 0.5
+	## within .y, else 0 (the rim's drop counts too).
+	func _foot(p: Vector2) -> float:
+		var key := Vector2i(floori(p.x/SHAG_CELL),floori(p.y/SHAG_CELL))
+		if _feet.has(key): return _feet[key]
+		var c := (Vector2(key)+Vector2(0.5,0.5))*SHAG_CELL
+		var f := 0.0
+		for ring: float in [SHAG_FOOT.x,SHAG_FOOT.y]:
+			for k in range(8):
+				if is_nan(_probe.call(c+Vector2.from_angle(k*TAU/8.0+0.2)*ring,0.0)):
+					f = 1.0 if ring == SHAG_FOOT.x else 0.5
+					break
+			if f > 0.0: break
+		_feet[key] = f
+		return f
+
+	## A tuft's size factor for the site's wild grass, `e` from the rim.
+	func _shag(p: Vector2, e: float) -> float:
+		var wild := maxf(1.0-smoothstep(SHAG_RIM.x,SHAG_RIM.y,e),_foot(p))
+		var n := _drift.get_noise_2d(p.x*SHAG_NOISE+31.0,p.y*SHAG_NOISE-17.0)
+		return _site.tuft_bump*lerpf(1.0,1.0+_site.shag,wild)*(1.0+n*SHAG_VARY)
+
+	func _add(asset: String, p: Vector2, size: float, extra := {}, reach := REACH) -> bool:
+		var h: float = _probe.call(p,reach)
 		if is_nan(h) or _site.is_wet(p): return false
 		var item := {"id":_records.size()+1,"asset":asset,"x":p.x,"z":p.y,"angle":_rng.randf()*TAU,"scale":size}
 		item.merge(extra,true)
@@ -345,9 +384,13 @@ class Grow extends RefCounted:
 			var thick := 1.0 if _site.carpet else clampf(0.6+_drift.get_noise_2d(p.x,p.y)*1.3,THIN,1.0)
 			var worn := _site.worn(p)
 			if worn > PATH_BARE or _rng.randf() > thick*(1.0-smoothstep(PATH_THIN,PATH_BARE,worn)): continue
-			if _edges.upto(p) < RIM: continue
+			var e := _edges.upto(p)
+			if e < (_site.rim if _site.rim >= 0.0 else RIM): continue
+			var reach := REACH if _site.rim < 0.0 else clampf(e-0.02,0.0,REACH)
 			var tuft := _site.tuft_size if _site.tuft_size != Vector2.ZERO else TUFT_SIZE
-			_add("grass_tuft",p,_rng.randf_range(tuft.x,tuft.y)*lerpf(1.0,0.75,worn))
+			var size := _rng.randf_range(tuft.x,tuft.y)*lerpf(1.0,0.75,worn)
+			if _site.shag > 0.0 or _site.tuft_bump != 1.0: size *= _shag(p,e)
+			_add("grass_tuft",p,size,{},reach)
 		# Flowers: the meadow type's drifts, sown sparse.
 		var sizes: Dictionary = _meadow.type.sizes
 		while _phase == 1:
