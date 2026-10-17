@@ -66,7 +66,7 @@ const SHAG_NOISE := 2.3
 ## wild), its form (x, y, z of a tuft's size) and its two satellites' reach
 ## (m); thatch's share at a full foot, its form and straw (sRGB); seed heads'
 ## share (times 0.3 + wild) and size range.
-const TUSSOCK_SHARE := 0.05
+const TUSSOCK_SHARE := 0.08
 const TUSSOCK_FORM := Vector3(1.3,1.6,1.3)
 const TUSSOCK_REACH := Vector2(0.14,0.3)
 const THATCH_SHARE := 0.35
@@ -74,6 +74,10 @@ const THATCH_FORM := Vector3(1.45,0.5,1.45)
 const THATCH_STRAW := Color("b59c62")
 const SEED_SHARE := 0.025
 const SEED_SIZE := Vector2(0.7,1.0)
+## The rolling height (Site `height_field`): its noise's scale (1/m) and
+## how much denser (or sparser) the tall (or short) patches grow.
+const HEIGHT_SCALE := 0.12
+const HEIGHT_THICK := 0.3
 ## Tiles (m: the grass and flowers', the undergrowth's, sparser, larger)
 ## and how far each kind draws (m), with the fade's margin.
 const TILE := 24.0
@@ -160,6 +164,11 @@ class Site extends RefCounted:
 	## a foot darkened by `contact` (0..1).
 	var variety := false
 	var contact := 0.0
+	## Opt-in: the meadow's height rolls (each tuft up to `height_field`
+	## of its size taller or shorter on a HEIGHT_SCALE noise, the tall
+	## patches denser), and each tuft leans up to `tilt` radians.
+	var height_field := 0.0
+	var tilt := 0.0
 
 	func _init(top := 30.0, wear_fn := Callable(), wet_fn := Callable()) -> void:
 		ray = Vector2(top+60.0,top-8.0)
@@ -370,6 +379,18 @@ class Grow extends RefCounted:
 		_feet[key] = f
 		return f
 
+	## The rolling height's noise at p (-1..1, about).
+	func _rolling(p: Vector2) -> float:
+		return clampf(_drift.get_noise_2d(p.x/DRIFT_FREQUENCY*HEIGHT_SCALE-57.0,p.y/DRIFT_FREQUENCY*HEIGHT_SCALE+89.0)*1.6,-1.0,1.0)
+
+	## A tuft's basis turned `angle` round up, leaning up to the site's
+	## tilt, `form` its size on each axis.
+	func _lean(angle: float, form: Vector3) -> Basis:
+		var b := Basis(Vector3.UP,angle).scaled(form)
+		if _site.tilt <= 0.0: return b
+		var axis := Vector3.RIGHT.rotated(Vector3.UP,_rng.randf()*TAU)
+		return Basis(axis,_rng.randf()*_site.tilt)*b
+
 	## How wild the grass grows at p (0..1), `e` from the rim.
 	func _wild(p: Vector2, e: float) -> float:
 		return maxf(1.0-smoothstep(SHAG_RIM.x,SHAG_RIM.y,e),_foot(p))
@@ -388,19 +409,21 @@ class Grow extends RefCounted:
 		var roll := _rng.randf()
 		if foot > 0.0 and roll < THATCH_SHARE*foot:
 			var straw := THATCH_STRAW.srgb_to_linear()*shade
-			_add("grass_tuft",p,size,{"tint":NativeObjectPose.encode_tint(straw),"pose":NativeObjectPose.make(Basis(Vector3.UP,angle).scaled(THATCH_FORM*size),0.0)},reach)
+			_add("grass_tuft",p,size,{"tint":NativeObjectPose.encode_tint(straw),"pose":NativeObjectPose.make(_lean(angle,THATCH_FORM*size),0.0)},reach)
 			return
 		var tint := {} if shade >= 1.0 else {"tint":NativeObjectPose.encode_tint(Color(shade,shade,shade))}
 		roll = _rng.randf()
 		if roll < TUSSOCK_SHARE*(0.4+wild):
 			var tall := tint.duplicate()
-			tall.pose = NativeObjectPose.make(Basis(Vector3.UP,angle).scaled(TUSSOCK_FORM*size),0.0)
+			tall.pose = NativeObjectPose.make(_lean(angle,TUSSOCK_FORM*size),0.0)
 			_add("grass_tuft",p,size,tall,reach)
 			for k in range(2):
 				var q := p+Vector2.from_angle(angle+PI*(0.3+k*1.1))*_rng.randf_range(TUSSOCK_REACH.x,TUSSOCK_REACH.y)
 				_add("grass_tuft",q,size*_rng.randf_range(1.0,1.25),tint,minf(reach,REACH))
 		else:
-			_add("grass_tuft",p,size,tint,reach)
+			var plain := tint.duplicate()
+			if _site.tilt > 0.0: plain.pose = NativeObjectPose.make(_lean(angle,Vector3.ONE*size),0.0)
+			_add("grass_tuft",p,size,plain,reach)
 		if _rng.randf() < SEED_SHARE*(0.3+wild):
 			var formed: Array = MeadowTypes.form("wheat",_rng.randf_range(SEED_SIZE.x,SEED_SIZE.y),_rng.randf()*TAU)
 			var extra := {}
@@ -433,6 +456,8 @@ class Grow extends RefCounted:
 			if _site.stable: _rng.seed = hash([_seed,0,_n])
 			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
 			var thick := 1.0 if _site.carpet else clampf(0.6+_drift.get_noise_2d(p.x,p.y)*1.3,THIN,1.0)
+			var rolling := _rolling(p) if _site.height_field > 0.0 else 0.0
+			if _site.height_field > 0.0: thick *= 1.0-HEIGHT_THICK*0.5*(1.0-rolling)
 			var worn := _site.worn(p)
 			if worn > PATH_BARE or _rng.randf() > thick*(1.0-smoothstep(PATH_THIN,PATH_BARE,worn)): continue
 			var e := _edges.upto(p)
@@ -442,6 +467,7 @@ class Grow extends RefCounted:
 			var size := _rng.randf_range(tuft.x,tuft.y)*lerpf(1.0,0.75,worn)
 			var wild := _wild(p,e) if _site.shag > 0.0 or _site.variety else 0.0
 			if _site.shag > 0.0 or _site.tuft_bump != 1.0: size *= _shag(p,wild)
+			if _site.height_field > 0.0: size *= 1.0+_site.height_field*rolling
 			if _site.variety: _tuft(p,size,e,wild,reach)
 			else: _add("grass_tuft",p,size,{},reach)
 		# Flowers: the meadow type's drifts, sown sparse.

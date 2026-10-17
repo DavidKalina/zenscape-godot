@@ -14,7 +14,7 @@ const STEEP_SHARE := KitFlora.STEEP_SHARE
 ## The grass as a carpet over all the turf (KitFlora Site `carpet`): this
 ## many tufts a square metre, drawn out this far (m). --grass-drifts grows
 ## the kit's drifts as before.
-const CARPET_TUFTS := 7.0
+const CARPET_TUFTS := 7.8
 const CARPET_RANGE := 220.0
 ## The carpet grows to the rim (m in), a little taller everywhere and wild
 ## (this much taller again) toward the rim and at what stands' feet.
@@ -26,6 +26,10 @@ const CARPET_SHAG := 0.6
 ## gust paling the blades more (shaders/reference_surface.gdshader
 ## `grass_mute`, `ground_mute`, `grass_wave_sheen`, 0.34).
 const CARPET_CONTACT := 0.3
+## The meadow's height rolls this much either way, the tufts lean up to
+## this (radians; KitFlora Site `height_field`, `tilt`).
+const CARPET_ROLL := 0.35
+const CARPET_TILT := 0.25
 const CARPET_MUTE := 0.7
 const CARPET_GROUND_MUTE := 0.6
 const CARPET_SHEEN := 0.55
@@ -68,6 +72,8 @@ static func site() -> KitFlora.Site:
 		s.shag = CARPET_SHAG
 		s.variety = not "--grass-one-kind" in preload("res://scripts/launch_args.gd").user_args()
 		s.contact = CARPET_CONTACT
+		s.height_field = CARPET_ROLL
+		s.tilt = CARPET_TILT
 	return s
 
 ## The plants (KitFlora `grow`: meta records, counts, instances, triangles).
