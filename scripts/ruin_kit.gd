@@ -895,6 +895,7 @@ static func _flight(b: Build, pose: Transform3D, steps: int, width: float, landi
 		# between treads or slabs, no settled slab or worn nosing, is a gap
 		# for the feet's ray to drop through).
 		_walk_box(b,pose,half_width+0.02,-foot,top,z0,front-run-WALK_OVERLAP)
+		_tread_core(b,pose,half_width,-foot,top,z0,z1,i == steps-1)
 	# The cheeks: ramped with the flight, level by the landing, in courses
 	# cut by the slope, a sloped coping, a newel post at the foot.
 	var foot_z := front
@@ -956,6 +957,25 @@ static func _flight(b: Build, pose: Transform3D, steps: int, width: float, landi
 		b.solid(_box(b,Vector3(NEWEL.x*0.5,post*0.5,NEWEL.x*0.5)),pose*_settle(b,Vector3(nx,post*0.5,foot_z+NEWEL.x*0.3),0.6),_stone(b,1.0))
 		if not (weathered > 0.4 and side == torn):
 			_gablet(b,pose*Transform3D(Basis.IDENTITY,Vector3(nx,post,foot_z+NEWEL.x*0.3)),NEWEL.x*0.5+0.05,0.42)
+
+## A step's bed, drawn only: a dark block the step's full width under its
+## slabs, its top TREAD_BED under the tread and its front TREAD_BED_IN back
+## from the nose, so a joint between slabs (or a slab and a cheek) shows
+## stone a few cm down, not the ground or the sky through it. Built on an
+## RNG of its own, so the flight's seeded stream (its look) is unchanged.
+const TREAD_BED := 0.05
+const TREAD_BED_IN := 0.08
+static func _tread_core(b: Build, pose: Transform3D, half_width: float, bottom: float, top: float, z0: float, z1: float, last: bool) -> void:
+	var keep := b.rng
+	b.rng = RandomNumberGenerator.new()
+	b.rng.seed = 1
+	var y1 := top-TREAD_BED
+	var front := z0-TREAD_BED_IN
+	var back := z1+0.01 if last else z1-0.03
+	var x := half_width-0.002
+	var planes: Array[Plane] = [Plane(Vector3.RIGHT,x),Plane(Vector3.LEFT,x),Plane(Vector3.UP,y1),Plane(Vector3.DOWN,-bottom),Plane(Vector3.BACK,front),Plane(Vector3.FORWARD,-back)]
+	b.solid(planes,pose,b.stone*0.55,false,false,[],-1,1.0,false)
+	b.rng = keep
 
 ## A stair's walked collision, invisible (Build `hulls` only): a box
 ## `half` either side of x 0, from `bottom` to `top`, from `z_front` back to
