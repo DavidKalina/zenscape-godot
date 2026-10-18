@@ -80,6 +80,16 @@ headless body's rig (`art/blender/headless_body/`, exported into
 Judge by eye in rendered filmstrips. Ends with **Notes for merge**: the clip
 and node names the trunk calls.
 
+**Lane `homing`** (one agent, its own worktree `lane/olmec-knockoff-homing`
+branched from `iter/olmec-knockoff`, model Opus; the user's ask: "making the
+Olmec's air blasts homing"): the Olmec's air balls (the head's volley,
+`scripts/olmec_boss/puffs.gd`, and any the whole body throws) curve after
+the wanderer: a limited turn rate, so a late sidestep, a jump or stone
+between still beats them, and they never orbit him. Opt-in on
+`scripts/dragon_air_blast.gd` (off by default, so the dragon, the gust shot
+and every other user fly straight as before). Its edits stay in those files
+plus a knob or two; it ends with **Notes for merge**.
+
 **The trunk** (this loop), in order; until the lane lands, trunk steps use
 placeholder poses (procedural leans, the existing stumble/stagger clips):
 1. Phase 1 stomp: weak spot on the crown, ground pound counts, three
