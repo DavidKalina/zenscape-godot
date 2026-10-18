@@ -69,6 +69,21 @@ const DEPTH := 16.0
 ## A cut wall's facets: at most this far out of the rock, into the cut
 ## (under half a cheek: the wall stays in the stair's cheek).
 const CUT_FACET := 0.15
+## A wall's inner row points wander up or down by up to this share of the
+## gap to the next row (rows stay in order; lips never move).
+const ROW_WANDER := 0.38
+## How much of a wall point's in/out is the broad swell (SWELL_WAVE, 1/m)
+## rather than its own jitter: big tilted planes, not a fine sawtooth.
+const SWELL := 0.6
+const SWELL_WAVE := 0.18
+## A rim's facets reach this many times `facet` (only the sky outside).
+const RIM_FACET := 1.8
+## A top no point of which is more than CAP_WIDTH/2 from its own lips (a
+## parapet, a thin ledge) is drawn as a stone cap, not a strip of turf.
+const CAP_WIDTH := 1.8
+## A cap and the risers under it are toned this deep into the rock (past
+## KitLook's soil bands), so they read as stone to the lip.
+const CAP_BEDS := 2.4
 ## The grand stair's run (its back to its foot) and the cut's half width
 ## (the steps' half width and half a cheek: its walls down the cheeks' middles).
 const STAIR_FRONT := ((RuinKit.GRAND_STEPS-1)*RuinKit.GRAND_TREAD*2.0+RuinKit.GRAND_LANDING+RuinKit.LANDING)*0.5
@@ -150,6 +165,10 @@ class _Build extends RefCounted:
 	# Per vertex: the heights of the tops round it, plain (exactly two boundary edges of one kind), its facet direction.
 	var tops_at: Array = []
 	var plain: Array = []
+	# Per face: a narrow top drawn as a stone cap (CAP_WIDTH), not turf.
+	var capped: Array = []
+	# Per vertex: plain on the rim (nothing outside but the sky: RIM_FACET).
+	var rim_v: Array = []
 	var dir: Array = []
 	var stats := {}
 
@@ -178,19 +197,28 @@ class _Build extends RefCounted:
 		var rock := KitLook.RockMesh.new()
 		var solid := PackedVector3Array()
 		var tops: Array = []
+		capped.resize(faces.size())
+		capped.fill(false)
 		for f in range(faces.size()):
 			if face_y[f] == null: continue
 			var poly: PackedVector2Array = faces[f]
 			var y: float = face_y[f]
-			tops.append({"poly":poly,"y":y})
+			capped[f] = _narrow(f)
+			tops.append({"poly":poly,"y":y,"rock":capped[f]})
 			for tri: Array in _top_tris(poly,f):
 				var a := Vector3(tri[0].x,y,tri[0].y)
 				var b := Vector3(tri[1].x,y,tri[1].y)
 				var c := Vector3(tri[2].x,y,tri[2].y)
 				var mid: Vector2 = (tri[0]+tri[1]+tri[2])/3.0
-				var shimmer := _rand(mid,4)*0.07-0.035
-				ground.add(a,b,c,tone.call(mid,Vector3.UP,shimmer,y))
-				solid.append_array([a,b,c])
+				if capped[f]:
+					# A stone cap: rock as deep in as the beds (not the soil
+					# bands), lying flat (KitLook's ledge lift).
+					rock.add([a,b,c],y+CAP_BEDS,Vector3.UP,0.9+0.2*_rand(mid,5))
+				else:
+					var shimmer := _rand(mid,4)*0.07-0.035
+					ground.add(a,b,c,tone.call(mid,Vector3.UP,shimmer,y))
+					solid.append_array([a,b,c])
+		stats["capped"] = capped.count(true)
 		_walls(rock)
 		_keel(rock)
 		solid.append_array(rock.faces())
@@ -478,6 +506,8 @@ class _Build extends RefCounted:
 		cut_wall.resize(pts.size())
 		cut_wall.fill(false)
 		plain.resize(pts.size())
+		rim_v.resize(pts.size())
+		rim_v.fill(false)
 		dir.resize(pts.size())
 		var kinds: Array = []
 		var into: Array = []
@@ -505,12 +535,14 @@ class _Build extends RefCounted:
 				cut_wall[e[1]] = true
 			var n := left if hi_left else -left
 			var kind := "%s/%s" % [str(l),str(r)] if hi_left else "%s/%s" % [str(r),str(l)]
+			if l == null or r == null: kind += "/rim"
 			for v in e:
 				(kinds[v] as Array).append(kind)
 				into[v] += n
 		for i in range(pts.size()):
 			var ks: Array = kinds[i]
 			plain[i] = ks.size() == 2 and ks[0] == ks[1]
+			rim_v[i] = plain[i] and (ks[0] as String).ends_with("/rim")
 			var n: Vector2 = into[i]
 			dir[i] = n.normalized() if n.length() > 1e-6 else Vector2.ZERO
 
@@ -548,12 +580,32 @@ class _Build extends RefCounted:
 	## the lowest top, the skirt alone), set into or out of the rock.
 	func _at(v: int, g: float) -> Vector3:
 		var p := pts[v]
+		var y := g
 		var lip := (tops_at[v] as Dictionary).has(snappedf(g,0.001))
 		if not lip and (plain[v] or g < min_y-0.001):
 			var u := _rand(p+Vector2(g*7.31,g*3.17),11)
+			# The row's height wanders (up to ROW_WANDER of the gap to the
+			# rows either side), so the rows don't read as level bands.
+			var i := rows.find(g)
+			if i > 0 and i < rows.size()-1:
+				var gap := minf(g-rows[i-1],rows[i+1]-g)
+				y += (_rand(p+Vector2(g*3.71,g*5.13),14)-0.5)*2.0*ROW_WANDER*gap
 			if cut_wall[v]: p -= (dir[v] as Vector2)*u*minf(facet,CUT_FACET)
-			else: p += (dir[v] as Vector2)*lerpf(-0.35,1.0,u)*facet
-		return Vector3(p.x,g,p.y)
+			else:
+				# In or out of the rock: a broad swell (neighbours lean
+				# together into big planes) plus the point's own jitter.
+				var swell := clampf(_swell().get_noise_3d(p.x,g*0.7,p.y)*1.6,-1.0,1.0)*0.5+0.5
+				var reach := facet*(RIM_FACET if rim_v[v] or g < min_y-0.001 else 1.0)
+				p += (dir[v] as Vector2)*lerpf(-0.35,1.0,lerpf(u,swell,SWELL))*reach
+		return Vector3(p.x,y,p.y)
+
+	var _swell_noise: FastNoiseLite
+	func _swell() -> FastNoiseLite:
+		if _swell_noise == null:
+			_swell_noise = FastNoiseLite.new()
+			_swell_noise.seed = seed_value+77
+			_swell_noise.frequency = SWELL_WAVE
+		return _swell_noise
 
 	## Every riser and rim face, in rows.
 	func _walls(rock: KitLook.RockMesh) -> void:
@@ -580,6 +632,9 @@ class _Build extends RefCounted:
 				risers += 1
 			var gs := _rows_between(lo,hi)
 			var toward := Vector3(out.x,0.0,out.y)
+			# Under a stone cap the rock runs to the lip (no soil bands).
+			var hi_face: int = face_of.get("%d,%d" % [e[0],e[1]] if hi_left else "%d,%d" % [e[1],e[0]],-1)
+			var rim_tone := hi+CAP_BEDS if hi_face >= 0 and capped[hi_face] else hi
 			for j in range(gs.size()-1):
 				var q0 := _at(e[0],gs[j])
 				var q1 := _at(e[1],gs[j])
@@ -588,11 +643,11 @@ class _Build extends RefCounted:
 				var mid := (pts[e[0]]+pts[e[1]])*0.5
 				var shade := 0.88+0.22*_rand(mid+Vector2(gs[j],0.0),12)
 				if _rand(mid+Vector2(0.0,gs[j]),13) < 0.5:
-					rock.add([q0,q1,q2],hi,toward,shade)
-					rock.add([q0,q2,q3],hi,toward,shade*0.97)
+					rock.add([q0,q1,q2],rim_tone,toward,shade)
+					rock.add([q0,q2,q3],rim_tone,toward,shade*0.97)
 				else:
-					rock.add([q0,q1,q3],hi,toward,shade)
-					rock.add([q1,q2,q3],hi,toward,shade*0.97)
+					rock.add([q0,q1,q3],rim_tone,toward,shade)
+					rock.add([q1,q2,q3],rim_tone,toward,shade*0.97)
 		stats["riser_edges"] = risers
 		stats["rim_edges"] = rims
 
@@ -642,6 +697,38 @@ class _Build extends RefCounted:
 					rock.add([a,c,d],top_y,toward,shade*0.97)
 
 	# --- The tops ---------------------------------------------------------------------
+
+	## Whether top `f` is narrow: every point of a CAP_WIDTH/4 grid inside
+	## it (and its middle) within CAP_WIDTH/2 of one of its lips (an edge
+	## with a lower top or the sky across). Seams with a top of its own
+	## height don't count, so a sliver of a broad top stays turf.
+	func _narrow(f: int) -> bool:
+		var poly: PackedVector2Array = faces[f]
+		var y := float(face_y[f])
+		var lips: Array = []
+		for i in range(poly.size()):
+			var a := _vid(poly[i])
+			var b := _vid(poly[(i+1)%poly.size()])
+			var across: Variant = _y_of(face_of.get("%d,%d" % [b,a],-1))
+			if across == null or float(across) < y-0.001: lips.append([poly[i],poly[(i+1)%poly.size()]])
+		if lips.is_empty(): return false
+		var half := CAP_WIDTH*0.5
+		var probe: Array[Vector2] = [_inside_point(poly)]
+		var box := Rect2(poly[0],Vector2.ZERO)
+		for p in poly: box = box.expand(p)
+		var cell := CAP_WIDTH*0.25
+		var x := box.position.x+cell*0.5
+		while x < box.end.x:
+			var z := box.position.y+cell*0.5
+			while z < box.end.y:
+				if Geometry2D.is_point_in_polygon(Vector2(x,z),poly): probe.append(Vector2(x,z))
+				z += cell
+			x += cell
+		for q in probe:
+			var near := INF
+			for l: Array in lips: near = minf(near,(Geometry2D.get_closest_point_to_segment(q,l[0],l[1]) as Vector2).distance_to(q))
+			if near > half: return false
+		return true
 
 	## A top face's triangles ([Vector2 x3]): its edge points and a jittered
 	## grid inside, Delaunay, kept if every edge of the face is a triangle's
