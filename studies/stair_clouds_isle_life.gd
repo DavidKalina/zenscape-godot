@@ -63,12 +63,10 @@ class StairBirds extends "res://scripts/kit_isle/kit_birds.gd":
 					(found.summit as Array).append(Vector2(q.x,q.z))
 		return found
 
-	## The summit's turret and lancet walls (Stair.summit's frames): the
-	## robins sit on their broken tops.
+	## The summit's turret and lancet walls: the robins sit on their
+	## broken tops.
 	static func summit_frames() -> Array[Transform3D]:
-		var out: Array[Transform3D] = [Stair.pad_frame(7,12.0,0.35,Stair.SUMMIT)]
-		for k in range(2): out.append(Stair.pad_frame(7,8.5+3.0*float(k),-0.5+0.5*float(k),Stair.SUMMIT,PI))
-		return out
+		return Stair.summit_frames()
 
 # --- On-foot tokens ---------------------------------------------------------------------
 
@@ -83,7 +81,7 @@ class StairTokens extends "res://scripts/kit_isle/kit_tokens.gd":
 		for spec: Array in TOKENS:
 			var p := Stair.vertex_at(int(spec[1]),float(spec[2]))
 			out.append({"name":spec[0],"at":Vector3(p.x,Stair.TOP+float(spec[3])+0.85,p.y),"move":spec[4]})
-		var gate := Stair.side_at(Stair.SIDES-1,0.0,-7.0)
+		var gate := Stair.side_at(Stair.SIDES-1,Stair.GATE_AT.x,Stair.GATE_AT.y)
 		out.append({"name":"gate","at":Vector3(gate.x,Stair.TOP+Stair.SUMMIT+0.85,gate.y),"move":"Climb the whole stair to the gate on the summit"})
 		var pin := Stair.pinnacle_at()
 		out.append({"name":"pinnacle","at":Vector3(pin.x,Stair.TOP+Stair.PIN_TOP+0.85,pin.y),"move":"Cross the rope bridge from the summit's rim to the hanging pinnacle"})

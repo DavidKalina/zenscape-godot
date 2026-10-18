@@ -2353,7 +2353,10 @@ static func _drift(b: Build, at: Vector3, reach: float, count: int) -> void:
 	# stones still read).
 	if b.lean: count = int(ceil(count*(0.4+0.3*b.level)))
 	if count <= 0: return
-	at.y += b.floor_at(at.x,at.z)
+	# Seated (Build `seat`): each stone on the ground under it, none over
+	# the drop; else the drift on the ground under its middle.
+	var seated := b.drop_ground < INF
+	if not seated: at.y += b.floor_at(at.x,at.z)
 	var keep := b.frame
 	for i in range(count):
 		var s := Vector3(b.rng.randf_range(0.28,0.6),b.rng.randf_range(0.16,0.3),b.rng.randf_range(0.22,0.42))*(1.0-0.4*float(i)/count)
@@ -2361,6 +2364,10 @@ static func _drift(b: Build, at: Vector3, reach: float, count: int) -> void:
 		var a := b.rng.randf()*TAU
 		var y := s.y*0.7+0.18*float(i)/count*b.rng.randf()
 		var pose := Transform3D(Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3(1,0,0),b.rng.randf_range(-0.35,0.35))*Basis(Vector3(0,0,1),b.rng.randf_range(-0.3,0.3)),at+Vector3(cos(a)*r,y,sin(a)*r*0.6))
+		if seated:
+			var under := b.floor_at(pose.origin.x,pose.origin.z)
+			if under < at.y-b.drop_ground: continue
+			pose.origin.y += under
 		b.solid(_box(b,s),pose,_stone(b,0.96),true,true,[],-1,2.0)
 	b.frame = keep
 
@@ -2377,7 +2384,7 @@ static func _rubble(b: Build, reach: float, count: int, drop := INF) -> void:
 		var s := Vector3(b.rng.randf_range(0.1,0.26),b.rng.randf_range(0.07,0.16),b.rng.randf_range(0.1,0.24))
 		var floor_y := b.floor_at(cos(a)*dist,sin(a)*dist)
 		var pose := Transform3D(Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.RIGHT,b.rng.randf_range(-0.3,0.3)),Vector3(cos(a)*dist,s.y*0.8+floor_y,sin(a)*dist))
-		if floor_y < -drop:
+		if floor_y < -minf(drop,b.drop_ground):
 			continue
 		b.solid(_box(b,s),pose,_stone(b),false,true,[],-1,2.0)
 
@@ -2606,6 +2613,13 @@ class Build extends RefCounted:
 	## fewer resting on nothing) are taken out, for a build whose walls
 	## stand on ground it doesn't know (coursed down a hill, over the sky).
 	var drop_loose := false
+	## How far under the piece's foot the ground may lie for its rubble and
+	## drifts to be laid (`seat`): past it (over a drop) they are left out.
+	var drop_ground := INF
+	## The seat for pieces built on each thread (`seat`): thread id ->
+	## [ground Callable, drop].
+	static var _seats := {}
+	static var _seats_lock := Mutex.new()
 	## Only the blocks this keeps are drawn, solid and grown on: a
 	## Callable(centre: Vector3, the block's corners' middle in the piece's
 	## frame) -> bool, or none. Set round one piece's build (the Olmec's
@@ -2627,6 +2641,20 @@ class Build extends RefCounted:
 
 	## Settings for builds begun on this thread from now on ({keep_only,
 	## detail, hand}), or {} to go back to the statics.
+	## The ground under the pieces built on this thread from now on: a
+	## Callable(x, z) -> y in the piece's frame (-INF where there is none),
+	## as `terrain`, and how far under the foot rubble may still lie
+	## (`drop_ground`); an empty Callable to go back to none (flat, y 0).
+	## An isle that knows where a piece will stand sets it round the build
+	## (studies/stair_clouds_isle_art.gd `seated`): its rubble then lies on
+	## the real ground, none over the drop. A piece that sets its own
+	## terrain keeps it.
+	static func seat(ground: Callable, drop := 0.35) -> void:
+		_seats_lock.lock()
+		if ground.is_valid(): _seats[OS.get_thread_caller_id()] = [ground,drop]
+		else: _seats.erase(OS.get_thread_caller_id())
+		_seats_lock.unlock()
+
 	static func per_thread(settings: Dictionary) -> void:
 		_threads_lock.lock()
 		if settings.is_empty(): _threads.erase(OS.get_thread_caller_id())
@@ -2670,6 +2698,13 @@ class Build extends RefCounted:
 				keeps = mine.get("keep_only",Callable())
 				level = float(mine.get("detail",1.0))
 				hand = mine.get("hand",Callable())
+		if not _seats.is_empty():
+			_seats_lock.lock()
+			var held: Array = _seats.get(OS.get_thread_caller_id(),[])
+			_seats_lock.unlock()
+			if not held.is_empty():
+				terrain = held[0]
+				drop_ground = float(held[1])
 		rng.seed = hash([seed_value,label,"gothic"])
 		weathered = clampf(amount,0.0,1.0)
 		age = AGE+(1.0-AGE)*weathered

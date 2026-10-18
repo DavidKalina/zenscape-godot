@@ -95,13 +95,13 @@ func build(into: Node3D) -> void:
 	art.add_child(mesa)
 	stair = Stair.stairs(STAIR_SEED+10)
 	art.add_child(stair)
-	shrine_group = Stair.shrines(STAIR_SEED+30)
+	shrine_group = Stair.shrines(STAIR_SEED+30,mesa.get_meta("terrace_tops",[]))
 	art.add_child(shrine_group)
-	summit_group = Stair.summit(STAIR_SEED+60)
+	summit_group = Stair.summit(STAIR_SEED+60,mesa.get_meta("terrace_tops",[]))
 	art.add_child(summit_group)
 	pinnacle = Stair.pinnacle(STAIR_SEED+70)
 	art.add_child(pinnacle)
-	art.add_child(Stair.anchors(STAIR_SEED+80))
+	art.add_child(Stair.anchors(STAIR_SEED+80,(mesa.get_meta("terrace_tops",[]) as Array)+[Stair.pinnacle_top(pinnacle)]))
 	var ends := Stair.bridge_ends()
 	var a: Vector3 = ends[0]
 	var b: Vector3 = ends[1]

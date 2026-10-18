@@ -286,42 +286,87 @@ static func lit_under_wall(node: Node3D) -> void:
 ## terrace piece: ["ter", side s (its middle), radius from O, turn (deg),
 ## piece, weathered, yaw (deg), height over TOP].
 const SHRINES := [
-	["pad",1,26.0,-3.4,"pier",0.55,0.0],
+	["pad",1,25.0,-3.4,"pier",0.55,0.0],
 	["pad",1,26.0,3.4,"pier",0.25,0.0],
-	["pad",3,26.2,-3.0,"fallen_pier",0.5,35.0],
-	["pad",5,26.0,-3.4,"pier",0.7,0.0],
+	["pad",3,26.2,-1.0,"fallen_pier",0.5,35.0],
+	["pad",5,25.0,-3.4,"pier",0.7,0.0],
 	["pad",5,26.0,2.6,"pier",0.3,0.0],
 	["ter",1,10.0,0.0,"floor",0.55,0.0,2.0*STEP],
 	["ter",3,12.5,0.0,"arch",0.6,90.0,4.0*STEP],
-	["ter",4,9.0,-14.0,"pier",0.55,0.0,6.0*STEP],
+	["ter",4,9.0,-5.0,"pier",0.55,0.0,6.0*STEP],
 	["ter",5,9.5,0.0,"pier",0.35,0.0,6.0*STEP],
 ]
 
+## The summit's gate: on the entry side's rim, `GATE_AT` (u along the
+## side, v out of it). Its 14.6 m spread is wider than the summit's wedge
+## of side 9 that far in, so it stands toward side 8, both its feet on the
+## summit (not over side 1's terrace, 27 m down).
+const GATE_AT := Vector2(-3.5,-7.0)
+
+static func gate_frame() -> Transform3D:
+	return frame_at(SIDES-1,GATE_AT.x,GATE_AT.y,SUMMIT)
+
+## The turret's and the two lancet walls' frames, in that order.
+static func summit_frames() -> Array[Transform3D]:
+	var out: Array[Transform3D] = [pad_frame(7,12.0,0.35,SUMMIT)]
+	for k in range(2): out.append(pad_frame(7,LANCET_R[k],LANCET_TURN[k],SUMMIT,PI))
+	return out
+
+## The lancet walls' radius and turn (rad) round vertex 8.
+const LANCET_R := [8.5,11.5]
+const LANCET_TURN := [-0.12,0.0]
+
 ## The summit: the lone gate on the south rim, a broken turret and lancet
-## walls behind it, floor slabs.
-static func summit(seed_value: int) -> Node3D:
+## walls behind it, floor slabs. `tops`: the mesa's flat tops (`seated`).
+static func summit(seed_value: int, tops: Array = []) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Summit"
-	var y := SUMMIT
-	var gate: Node3D = RuinKit.piece("arch",seed_value,0.4)
+	var gate: Node3D = seated("arch",seed_value,0.4,gate_frame(),tops)
 	gate.name = "Gate"
-	gate.transform = frame_at(SIDES-1,0.0,-7.0,y)
 	root.add_child(gate)
-	var turret: Node3D = RuinKit.piece("turret",seed_value+1,0.65)
+	var frames := summit_frames()
+	var turret: Node3D = seated("turret",seed_value+1,0.65,frames[0],tops)
 	turret.name = "Turret"
-	var f := pad_frame(7,12.0,0.35,y)
-	turret.transform = f
 	root.add_child(turret)
 	for k in range(2):
-		var wall: Node3D = RuinKit.piece("lancet_wall",seed_value+2+k,0.5+0.2*float(k))
+		var wall: Node3D = seated("lancet_wall",seed_value+2+k,0.5+0.2*float(k),frames[1+k],tops)
 		wall.name = "Lancet%d" % k
-		wall.transform = pad_frame(7,8.5+3.0*float(k),-0.5+0.5*float(k),y,PI)
 		root.add_child(wall)
-	var slabs: Node3D = RuinKit.piece("floor",seed_value+5,0.5)
+	var slabs: Node3D = seated("floor",seed_value+5,0.5,frame_at(SIDES-1,0.0,-12.5,SUMMIT),tops)
 	slabs.name = "Slabs"
-	slabs.transform = frame_at(SIDES-1,0.0,-12.5,y)
 	root.add_child(slabs)
 	return root
+
+## A piece built standing at `xf` (world) on the mesa whose flat tops are
+## `tops` (its meta terrace_tops): its rubble and drifts lie on the rock or
+## turf under them, none over the drop (RuinKit.Build `seat`).
+static func seated(id: String, seed_value: int, weathered: float, xf: Transform3D, tops: Array) -> Node3D:
+	if tops.is_empty():
+		var bare: Node3D = RuinKit.piece(id,seed_value,weathered)
+		bare.transform = xf
+		return bare
+	RuinKit.Build.seat(ground_of(tops,xf))
+	var piece: Node3D = RuinKit.piece(id,seed_value,weathered)
+	RuinKit.Build.seat(Callable())
+	piece.transform = xf
+	return piece
+
+## The ground under a piece standing at `xf` (a Callable(x, z) -> y in its
+## frame, -INF over the sky): the highest of the mesa's `tops` there.
+static func ground_of(tops: Array, xf: Transform3D) -> Callable:
+	var near: Array = []
+	for t: Dictionary in tops:
+		var poly: PackedVector2Array = t.poly
+		var box := Rect2(poly[0],Vector2.ZERO)
+		for q in poly: box = box.expand(q)
+		if box.grow(8.0).has_point(Vector2(xf.origin.x,xf.origin.z)): near.append([box,poly,float(t.y)])
+	return func(x: float, z: float) -> float:
+		var g := xf*Vector3(x,0.0,z)
+		var q := Vector2(g.x,g.z)
+		var best := -INF
+		for t: Array in near:
+			if (t[0] as Rect2).has_point(q) and Geometry2D.is_point_in_polygon(q,t[1]): best = maxf(best,t[2])
+		return best-xf.origin.y if best > -INF else -INF
 
 ## A shrine piece's frame (`SHRINES`' row).
 static func shrine_frame(spec: Array) -> Transform3D:
@@ -333,12 +378,13 @@ static func shrine_frame(spec: Array) -> Transform3D:
 	return Transform3D(Basis(Vector3(dir.y,0.0,-dir.x),Vector3.UP,Vector3(dir.x,0.0,dir.y))*Basis(Vector3.UP,deg_to_rad(float(spec[6]))),Vector3(p.x,TOP+float(spec[7]),p.y))
 
 ## The shrines on the pads and terraces.
-static func shrines(seed_value: int) -> Node3D:
+## `tops`: the mesa's flat tops, so their rubble lies on it (`seated`).
+static func shrines(seed_value: int, tops: Array = []) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Shrines"
 	var k := 0
 	for spec: Array in SHRINES:
-		var piece: Node3D = RuinKit.piece(str(spec[4]),seed_value+k,float(spec[5]))
+		var piece: Node3D = seated(str(spec[4]),seed_value+k,float(spec[5]),shrine_frame(spec),tops)
 		piece.name = "%s%d" % [str(spec[4]).capitalize(),k]
 		piece.transform = shrine_frame(spec)
 		if spec[0] == "pad": lit_under_wall(piece)
@@ -370,6 +416,10 @@ static func pinnacle(seed_value: int) -> Node3D:
 	node.get_node("Body").add_child(held)
 	return node
 
+## The pinnacle's flat top (as the mesa's terrace_tops), from its built node.
+static func pinnacle_top(node: Node3D) -> Dictionary:
+	return {"poly":node.get_meta("outline") as PackedVector2Array,"y":TOP+PIN_TOP}
+
 ## The rope bridge's ends (world): the summit's south rim to the pinnacle's
 ## near edge.
 static func bridge_ends() -> Array:
@@ -377,7 +427,9 @@ static func bridge_ends() -> Array:
 	var b := side_at(SIDES-1,0.0,PIN_V-PIN_R+0.9)
 	return [Vector3(a.x,TOP+SUMMIT,a.y),Vector3(b.x,TOP+PIN_TOP,b.y)]
 
-static func anchors(seed_value: int) -> Node3D:
+## `tops`: the mesa's and the pinnacle's flat tops, so their rubble lies on
+## them (`seated`).
+static func anchors(seed_value: int, tops: Array = []) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Anchors"
 	var ends := bridge_ends()
@@ -385,8 +437,11 @@ static func anchors(seed_value: int) -> Node3D:
 		var here: Vector3 = ends[e]
 		var there: Vector3 = ends[1-e]
 		var way := Vector3(there.x-here.x,0.0,there.z-here.z).normalized()
+		var xf := Transform3D(Basis(way.cross(Vector3.UP).normalized()*-1.0,Vector3.UP,way),here)
+		if not tops.is_empty(): RuinKit.Build.seat(ground_of(tops,xf))
 		var piece: Node3D = RuinKit.bridge_anchor(seed_value+e,0.3,Footbridge.WIDTH)
-		piece.transform = Transform3D(Basis(way.cross(Vector3.UP).normalized()*-1.0,Vector3.UP,way),here)
+		RuinKit.Build.seat(Callable())
+		piece.transform = xf
 		root.add_child(piece)
 	return root
 
