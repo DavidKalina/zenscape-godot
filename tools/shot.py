@@ -7,7 +7,7 @@ to one window at a time across agents.
   python tools/shot.py studies/trap_yard.tscn --frame Trap --view three,top,close --sheet
   python tools/shot.py studies/kit_isle.tscn --at 0,30,60 --look 0,0,0 --out captures/shots/isle
   python tools/shot.py studies/trap_yard.tscn --place 0,1,4,180 --frame walker --view front,left
-  python tools/shot.py studies/run_layer.tscn --settle 300 -- --shape=ring --seed=2
+  python tools/shot.py studies/motif_yard.tscn --settle 300 -- --motif=plumb_well --sky
   python tools/shot.py --sheet-of a.png b.png c.png --out captures/shots/sheet.png   # headless
 
 Args after `--` are the scene's launch flags. Prints the files saved.

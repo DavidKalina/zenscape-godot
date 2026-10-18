@@ -35,7 +35,6 @@ extends Node3D
 ##   exposure     tonemap exposure
 ##   torch        the torch light's energy
 ##   torch_range  its range (m)
-const NEXT_SHADER = preload("res://shaders/underground_next.gdshader")
 const SKY_SHADER = preload("res://shaders/abyss_sky.gdshader")
 const OCULUS_SKY = preload("res://shaders/oculus_sky.gdshader")
 const OCULUS_SHAFT = preload("res://shaders/oculus_shaft.gdshader")
@@ -103,24 +102,15 @@ var flame: Node3D
 var _env: Environment
 var _sky_material: ShaderMaterial
 var _clock := 0.0
-var _next_t := 0
 var _noise := FastNoiseLite.new()
 ## The ground cover worn (scripts/underground/ground_cover.gd: grass, dust,
 ## moss, "" the day's own), --ground= and G; the air's motes for it.
 var ground := ""
 var _motes: GPUParticles3D
 
-## The run's world sets the look (scripts/roguelike/layer_worlds.gd,
-## studies/run_layer.gd `_apply_world`): 1 on, 0 off, -1 the flags decide;
-## and its preset ("" the flags'). The flag `--underground` still wins: on
-## every layer.
-static var world_on := -1
-static var world_preset := ""
-
-## True when the look is asked: the launch flags, else the run's world.
+## True when the launch flags ask for the look.
 static func on() -> bool:
-	if flagged(): return true
-	return world_on == 1
+	return flagged()
 
 ## True when the launch flags ask for the underground look.
 static func flagged() -> bool:
@@ -128,11 +118,9 @@ static func flagged() -> bool:
 		if a == FLAG or a.begins_with(FLAG+"="): return true
 	return false
 
-## The preset the flags ask: --underground=haze, else the torch's (the
-## run's world's when the flags don't ask the look). The last flag wins, so
-## a launcher's extra flags override its own.
+## The preset the flags ask: --underground=haze, else the torch's. The
+## last flag wins, so a launcher's extra flags override its own.
 static func asked() -> String:
-	if not flagged() and world_preset != "" and PRESETS.has(world_preset): return world_preset
 	var args: Array = preload("res://scripts/launch_args.gd").user_args()
 	for i in range(args.size()-1,-1,-1):
 		var a: String = args[i]
@@ -212,7 +200,6 @@ func set_preset(name: String) -> void:
 	p = PRESETS[name]
 	knobs = KNOBS.duplicate()
 	knobs.merge(p.get("knobs",{}),true)
-	_lift_preset()
 	knobs.merge(_asked,true)
 	_sky_material.set_shader_parameter("low_color",p.sky_low)
 	_sky_material.set_shader_parameter("horizon_color",p.sky_horizon)
@@ -223,33 +210,6 @@ func set_preset(name: String) -> void:
 	torch_light.omni_range = float(knobs.torch_range)
 	_hold()
 	_oculus_apply()
-
-## The run's climb out of the dark (scripts/roguelike/run_loop.gd
-## CLIMB_LIGHTEN): 0 the torch preset as authored, toward 1 its colours and
-## knobs eased toward the haze's. Static, so a look stood again keeps it.
-## Only light, air and the far silhouettes' tint: no growth is touched.
-static var climb_lift := 0.0
-
-func set_climb_lift(lift: float) -> void:
-	if is_equal_approx(lift,climb_lift): return
-	climb_lift = clampf(lift,0.0,1.0)
-	set_preset(preset)
-
-## The torch preset eased `climb_lift` toward the haze's (`set_preset`).
-func _lift_preset() -> void:
-	if preset != "torch" or climb_lift <= 0.0: return
-	var to: Dictionary = PRESETS.haze
-	var mixed := p.duplicate()
-	for k: String in p:
-		if p[k] is Color and to.get(k) is Color: mixed[k] = (p[k] as Color).lerp(to[k],climb_lift)
-		elif p[k] is float and to.get(k) is float: mixed[k] = lerpf(p[k],to[k],climb_lift)
-	p = mixed
-	var haze := KNOBS.duplicate()
-	haze.merge(to.get("knobs",{}),true)
-	# The torch kept as it is: the climb lightens the air, not his light.
-	for k: String in knobs:
-		if k in ["torch","torch_range"]: continue
-		knobs[k] = lerpf(float(knobs[k]),float(haze[k]),climb_lift)
 
 ## The look key: the other preset, its title shown.
 func cycle() -> void:
@@ -383,77 +343,10 @@ func _publish_stone() -> void:
 	var amb: Color = (p.ambient as Color).lerp(Color(0.34,0.34,0.34),0.35)
 	var low: Color = p.warm
 	var e := float(STONE_FILL.get(preset,0.2))
-	if preset == "torch": e = lerpf(e,float(STONE_FILL.haze),climb_lift)
 	RenderingServer.global_shader_parameter_set("zs_under",1.0)
 	RenderingServer.global_shader_parameter_set("zs_under_crisp",1.0 if bool(p.get("oculus",false)) else 0.0)
 	RenderingServer.global_shader_parameter_set("zs_under_sky",Vector3(amb.r,amb.g,amb.b)*e)
 	RenderingServer.global_shader_parameter_set("zs_under_ground",Vector3(low.r,low.g,low.b)*e)
-
-## The next region's far silhouettes (a real part of the layer, drawn by
-## shaders/next_region_lod.gdshader) take the preset's own stone and haze, so
-## they sit in the murk like the isles near them.
-func _tint_next_region() -> void:
-	# By its group (scripts/roguelike/next_region_lod.gd): a find_children
-	# down the whole layer here was an 11-12 ms hitch every 20th frame.
-	for n: Node in get_tree().get_nodes_in_group(&"next_region"):
-		if not n is MeshInstance3D or not study.is_ancestor_of(n): continue
-		var mi := n as MeshInstance3D
-		var m: ShaderMaterial = mi.material_override as ShaderMaterial
-		if m == null: continue
-		if m.shader != NEXT_SHADER:
-			m = ShaderMaterial.new()
-			m.shader = NEXT_SHADER
-			mi.material_override = m
-		m.set_shader_parameter("air_color",p.sky_horizon)
-		m.set_shader_parameter("haze_reach",float(knobs.next_reach))
-		m.set_shader_parameter("haze_most",float(knobs.next_most))
-		m.set_shader_parameter("turf",p.next_turf)
-		m.set_shader_parameter("stone",p.next_stone)
-		m.set_shader_parameter("earth",p.next_earth)
-		_far_fire(mi)
-
-## The next region's beacon (the climb up): a far fire on its landmark's top, a
-## soft warm glow
-## that reads up there in the dark where the silhouette alone would sink
-## into the murk. One billboard, no light, no shadow. FAR_FIRE 0 drops it.
-const FAR_FIRE := 14.0
-const FAR_FIRE_COLOUR := Color(1.0,0.62,0.3)
-const FAR_FIRE_STRENGTH := 1.5
-func _far_fire(mi: MeshInstance3D) -> void:
-	if FAR_FIRE <= 0.0 or mi.has_node("FarFire"): return
-	var layer: Variant = study.get("layer")
-	if not (layer is Dictionary) or not (layer as Dictionary).has("next"): return
-	var nxt: Dictionary = (layer as Dictionary).next
-	if not nxt.has("landmark"): return
-	var glow := MeshInstance3D.new()
-	glow.name = "FarFire"
-	var quad := QuadMesh.new()
-	quad.size = Vector2(FAR_FIRE,FAR_FIRE)
-	glow.mesh = quad
-	var tex := GradientTexture2D.new()
-	tex.fill = GradientTexture2D.FILL_RADIAL
-	tex.fill_from = Vector2(0.5,0.5)
-	tex.fill_to = Vector2(0.5,0.0)
-	var g := Gradient.new()
-	g.set_color(0,Color(1,1,1,1))
-	g.set_color(1,Color(1,1,1,0))
-	g.add_point(0.07,Color(1,1,1,0.6))
-	g.add_point(0.3,Color(1,1,1,0.12))
-	tex.gradient = g
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	mat.albedo_texture = tex
-	mat.albedo_color = FAR_FIRE_COLOUR*FAR_FIRE_STRENGTH
-	mat.disable_fog = true
-	mat.no_depth_test = false
-	glow.material_override = mat
-	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.add_child(glow)
-	# (The landmark mark sits MARK_UNDER, 3 m, under its highest cell.)
-	glow.global_position = (nxt.landmark as Vector3)+Vector3.UP*(3.0+FAR_FIRE*0.25)
 
 # --- The oculus preset ----------------------------------------------------------------------
 # A vast opening high in the cavern roof above the way up (the layer's exit gate),
@@ -840,10 +733,6 @@ func _hold() -> void:
 	if GroundCover.grade(ground,preset):
 		var celestial: Object = study.get("_celestial")
 		if celestial != null and celestial.get("look") != null: (celestial.get("look") as Object).call("publish")
-	_next_t -= 1
-	if _next_t <= 0:
-		_next_t = 20
-		_tint_next_region()
 	var air: Node = study.get("_atmosphere")
 	if air != null:
 		for c: Node in air.get_children():

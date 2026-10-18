@@ -1,10 +1,8 @@
 extends "res://scripts/kit_isle/kit_motif.gd"
-## A greybox motif in the generator: one of the greybox studies
-## (studies/greybox/<slug>.gd, its card) as an isle the layer
-## generator places, in the studies' own grey / orange / green / blue look,
-## its traps and heads live in the layer. Opt-in: `--knob=greybox=<slug,...>`
-## or `--knob=greybox=all` on studies/run_layer.tscn (scripts/kit_isle/
-## greybox/registry.gd).
+## A greybox motif: one of the greybox studies (studies/greybox/<slug>.gd,
+## its card) as an isle, in the studies' own grey / orange / green / blue
+## look, its traps and heads live on it (scripts/kit_isle/greybox/
+## registry.gd).
 ##
 ## A subclass supplies data only; this answers the motif contract
 ## (kit_motif.gd) from it: `footprint`, `height_span` and `occupancy` are
@@ -72,9 +70,7 @@ extends "res://scripts/kit_isle/kit_motif.gd"
 ##    there through the real input, 10 jittered trials each, grey and turf
 ##    (a driver on tools/harness/chain.gd; tools/harness/examples/
 ##    plumb_well_chain.gd is the one to copy; tools/README.md "The motif
-##    yard"); run_layer with `--knob=greybox=<slug>` for a few sprawl and
-##    ring seeds; and, last, each chain once in a full layer (the same
-##    driver with `--in=layer`) as the final confirmation.
+##    yard").
 const COLOURS := {
 	"grey":Color(0.62,0.62,0.6),"floor":Color(0.64,0.64,0.62),"wall":Color(0.52,0.54,0.57),
 	"lip":Color(0.96,0.55,0.16),"pad":Color(0.44,0.74,0.4),"dark":Color(0.34,0.35,0.38),

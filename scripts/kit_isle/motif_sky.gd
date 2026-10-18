@@ -121,8 +121,8 @@ func setup(study: Node3D, owner_sky: Node3D, args: PackedStringArray) -> void:
 	_next_build()
 	print("motif isles: set up in %d ms, built %s" % [Time.get_ticks_msec()-began,"on a worker" if threaded else "on the main thread, one a frame"])
 
-## A generated layer's isles instead of PLACES (studies/run_layer.gd,
-## scripts/roguelike/layer_plan.gd): `entries` [motif (configured), offset
+## A layer's isles instead of PLACES (the motif yard's, studies/
+## motif_yard.gd `yard_plan`): `entries` [motif (configured), offset
 ## from its own frame, its place ([id, middle (world), reach])], built
 ## and stood as the others, nearest the eye first. No roost.
 func setup_layer(study: Node3D, owner_sky: Node3D, args: PackedStringArray, entries: Array) -> void:

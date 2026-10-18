@@ -595,8 +595,7 @@ func breathing_out() -> bool:
 func breath() -> String:
 	return "out" if sin(TAU*_t/BREATH) < 0.0 else "in"
 
-## Moved whole with its mountain, by a translation (a new layer's roost:
-## studies/run_layer.gd): the ground it reads (`offset`), its line and its
+## Moved whole with its mountain, by a translation: the ground it reads (`offset`), its line and its
 ## frame; the pose and the settling hold (they read the mountain's own
 ## frame), so nothing is laid again.
 func move_to(at: Vector3) -> void:

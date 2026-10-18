@@ -21,7 +21,6 @@ extends Node3D
 ## Knobs: `--flyer-<knob>=<value>` overrides one of Guacharo KNOBS (e.g.
 ## `--flyer-fold=0.8`, `--flyer-snatch=0`).
 const Guacharo = preload("res://scripts/enemies/guacharo.gd")
-const RunFeatures = preload("res://scripts/roguelike/run_features.gd")
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
@@ -47,18 +46,25 @@ var zones: Array = []
 var _clock := 0.0
 var _cam_fwd := Vector3.FORWARD
 
-## The flyers laid for `plan`: [{home, grace}].
+## The value of `--<knob>=`, "" when not given.
+static func _value(knob: String) -> String:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--%s=" % knob): return a.get_slice("=",1)
+	return ""
+
+## The flyers laid for `plan`: [{home, grace}] (none unless `--flyer` or
+## `--flyers=N`).
 static func lay(plan: Dictionary) -> Array:
 	if "--loot=off" in OS.get_cmdline_user_args(): return []
 	if plan.has("flyers"): return plan.flyers
-	if not RunFeatures.opted(&"flyer") and RunFeatures.value("flyers","") == "": return []
+	if not "--flyer" in OS.get_cmdline_user_args() and _value("flyers") == "": return []
 	var edges: Array = plan.get("edges",[])
 	if edges.is_empty(): return []
 	var gulfs: Array = plan.get("gulfs",[])
 	var n := 0
 	if not gulfs.is_empty() or edges.size() >= MANY_EDGES: n = 1
 	if n > 0 and LayerPlan.LayerWorlds.danger(plan.get("knobs",{})) >= DANGER_TWO: n = 2
-	var pinned := RunFeatures.value("flyers","")
+	var pinned := _value("flyers")
 	if pinned != "": n = int(pinned)
 	if n <= 0: return []
 	# The widest gulf first, then the longest crossings.

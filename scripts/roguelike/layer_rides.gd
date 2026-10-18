@@ -42,9 +42,8 @@ func setup(scene: Node3D, layer: Dictionary, owner_stage: Node3D) -> void:
 	for gi: int in layer.gulfs:
 		var e: Dictionary = layer.edges[gi]
 		var g := {"edge":e,"ride":str(e.ride),"a":int(e.from[0]),"b":int(e.to[0]),"ready":false,"cannon":null,"opened_ms":-1}
-		# A ring's serpent opens once every isle it passes stands
-		# (scripts/roguelike/layer_ring.gd `stops`); a "cannon" gulf has no
-		# ride, only its cannon.
+		# A serpent opens once every isle it passes (`stops`) stands; a
+		# "cannon" gulf has no ride, only its cannon.
 		g.isles = e.get("stops",[g.a,g.b])
 		if g.ride == "serpent": g.route = _serpent(e,gulfs.size())
 		elif g.ride == "ferry": _ferry(e,g,gulfs.size())

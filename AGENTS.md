@@ -7,8 +7,7 @@ aqueduct isle (`studies/aqueduct_isle.gd`, `scripts/kit_isle/`), and
 `run-aqueduct-isle.command` opens the isle directly. When the user says
 "the game" or "the main scene", they mean this one. They do not mean the old
 plate builder that starts you on a claimable chunk
-(`studies/cozy_worlds.tscn` and its `fidelity.gd` chain), and they do not
-mean `run-game.command` (`studies/game_title.tscn`).
+(`studies/cozy_worlds.tscn` and its `fidelity.gd` chain).
 
 # Test execution
 

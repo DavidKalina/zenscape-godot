@@ -6,8 +6,7 @@ extends Node3D
 ## anchors (scripts/footbridge.gd `live`, RuinKit `bridge_anchor`, as the
 ## broken ring hangs its own), the Loose Voussoirs (scripts/traps/
 ## trap_voussoirs.gd) in a TrapField, the EnemyField, the cannon and its
-## kegs (scripts/cannon/cannon_field.gd), the rune set on the greed isle's perch
-## (scripts/glyph_pickup.gd runes) and the exit gate; the gulfs' rides
+## kegs (scripts/cannon/cannon_field.gd); the gulfs' rides
 ## (scripts/roguelike/layer_rides.gd: serpents, ferries, their piers and
 ## the gulf cannons).
 ##
@@ -22,30 +21,13 @@ const TrapField = preload("res://scripts/traps/trap_field.gd")
 const Voussoirs = preload("res://scripts/traps/trap_voussoirs.gd")
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
 const CannonField = preload("res://scripts/cannon/cannon_field.gd")
-const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
-const Lines = preload("res://scripts/collectible_lines.gd")
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
 const LayerRides = preload("res://scripts/roguelike/layer_rides.gd")
 const LayerEnemies = preload("res://scripts/roguelike/layer_enemies.gd")
 const LayerGreybox = preload("res://scripts/roguelike/layer_greybox.gd")
 const CityCrossings = preload("res://scripts/roguelike/city_crossings.gd")
-const CityFires = preload("res://scripts/city_kit_fires.gd")
-# [collectibles] the layer's runes, rares and chests (game-v1-collectibles.md).
-const Collectibles = preload("res://scripts/roguelike/collectibles.gd")
-const Merchant = preload("res://scripts/roguelike/merchant.gd")  # [merchant]
-const Altars = preload("res://scripts/roguelike/altars.gd")  # [altars]
 # [flyer] the guacharos over the gulfs (flyer-round1.md).
 const LayerFlyers = preload("res://scripts/roguelike/layer_flyers.gd")
-
-const GATE := Color(1.0,0.82,0.45)
-const RUNE_SIZE := 0.7
-## The gate: its posts' height and the gap between them (m, a share of
-## the pilot's height and of his run's half second), the beam's height.
-const GATE_TALL := 3.2
-const GATE_WIDE := 2.6
-const BEAM := 60.0
-
-signal rune_taken(left: int)
 
 var study: Node3D
 var plan: Dictionary
@@ -56,26 +38,15 @@ var enemies: Node
 var cannons: Node3D
 var stones: Node3D
 var bridges: Array[MeshInstance3D] = []
-var runes: Array = []
-var taken := 0
-var gate: Node3D
 var rides: Node3D
-## The sprawl's hazards (scripts/roguelike/layer_hazards.gd), or null.
-var hazards: Node3D = null
 ## The generator's inhaler heads (scripts/roguelike/layer_enemies.gd), or
 ## null.
 var heads: Node = null
 ## The greybox isles' live bits and card (scripts/roguelike/
 ## layer_greybox.gd), or null.
 var greybox: Node = null
-## [collectibles] The layer's runes, rares and chests (scripts/roguelike/
-## collectibles.gd), or null.
-var collectibles: Node3D = null
-## [merchant] The stall and the Collector (scripts/roguelike/merchant.gd), or null.
-var merchant: Node3D = null
 ## [flyer] The layer's guacharos (scripts/roguelike/layer_flyers.gd), or null.
 var flyers: Node3D = null
-var _last := Vector3.INF
 
 func _init() -> void:
 	name = "Layer"
@@ -134,12 +105,7 @@ func setup(scene: Node3D, layer: Dictionary, was: Node) -> void:
 	# add its own to them).
 	greybox = LayerGreybox.dress(self,layer)
 	scene.foot_pieces = self
-	_runes()
-	collectibles = Collectibles.dress(self,layer)  # [collectibles]
-	merchant = Merchant.dress(self,layer)  # [merchant]
-	Altars.dress(self,layer)  # [altars] pedestals, the cursed altar, the key and vault
 	flyers = LayerFlyers.dress(self,layer)  # [flyer]
-	_gate()
 	rides = LayerRides.new()
 	add_child(rides)
 	rides.setup(scene,layer,self)
@@ -169,122 +135,6 @@ func _bridges(seed_value: int) -> void:
 				holder.add_child(anchor)
 			k += 1
 
-## The rune set: a ring of runes over the greed isle's perch.
-func _runes() -> void:
-	var prize: Dictionary = plan.prize
-	if prize.is_empty(): return
-	var i := 0
-	for at: Vector3 in prize.runes:
-		var holder := GlyphPickup.make("rune",RUNE_SIZE,float(i)*1.3,true)
-		holder.name = "Rune%d" % i
-		holder.position = at
-		add_child(holder)
-		holder.motes_on(true)
-		runes.append(holder)
-		i += 1
-
-## The exit: two glowing posts and a lintel at the top isle's rim, the way
-## through facing out over the drop, a beam of light up from it to see it
-## by from below. Drawn only (nothing to bump).
-func _gate() -> void:
-	var exit: Dictionary = plan.exit
-	if exit.is_empty(): return
-	gate = Node3D.new()
-	gate.name = "ExitGate"
-	var face: Vector3 = exit.face
-	gate.transform = Transform3D(Basis.looking_at(face,Vector3.UP),exit.at)
-	add_child(gate)
-	var glow := StandardMaterial3D.new()
-	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	glow.albedo_color = GATE
-	glow.emission_enabled = true
-	glow.emission = GATE
-	for side: float in [-1.0,1.0]:
-		var post := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3(0.22,GATE_TALL,0.22)
-		post.mesh = box
-		post.material_override = glow
-		post.position = Vector3(side*GATE_WIDE*0.5,GATE_TALL*0.5,0.0)
-		gate.add_child(post)
-	var lintel := MeshInstance3D.new()
-	var bar := BoxMesh.new()
-	bar.size = Vector3(GATE_WIDE+0.5,0.25,0.3)
-	lintel.mesh = bar
-	lintel.material_override = glow
-	lintel.position = Vector3(0.0,GATE_TALL,0.0)
-	gate.add_child(lintel)
-	var beam := MeshInstance3D.new()
-	var column := CylinderMesh.new()
-	column.top_radius = 0.6
-	column.bottom_radius = 0.6
-	column.height = BEAM
-	beam.mesh = column
-	var faint := StandardMaterial3D.new()
-	faint.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	faint.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	faint.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	faint.albedo_color = Color(GATE,0.18)
-	faint.cull_mode = BaseMaterial3D.CULL_DISABLED
-	beam.material_override = faint
-	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	beam.position = Vector3(0.0,BEAM*0.5,0.0)
-	gate.add_child(beam)
-	if LayerPlan.LayerWorlds.city(plan.knobs): _city_gate(column,faint)
-
-## The way up, underground (layer-round14-city-layers.md): it has to read
-## from across the layer in the dark. Its beam CITY_BEAM tall and brighter,
-## a warm light on the threshold, and a crown cresset lit either side (the
-## city's own fires: the player knows a lit fire means a way on).
-const CITY_BEAM := 320.0
-const CITY_BEAM_ALPHA := 0.32
-func _city_gate(column: CylinderMesh, faint: StandardMaterial3D) -> void:
-	column.height = CITY_BEAM
-	column.top_radius = 3.2
-	column.bottom_radius = 1.0
-	faint.albedo_color = Color(GATE,CITY_BEAM_ALPHA)
-	faint.disable_fog = true
-	(gate.get_child(gate.get_child_count()-1) as Node3D).position = Vector3(0.0,CITY_BEAM*0.5,0.0)
-	var light := OmniLight3D.new()
-	light.name = "GateLight"
-	light.light_color = GATE
-	light.light_energy = 3.0
-	light.omni_range = 22.0
-	light.position = Vector3(0.0,2.4,0.0)
-	gate.add_child(light)
-	for side: float in [-1.0,1.0]:
-		CityFires.cresset(gate,Transform3D(Basis.IDENTITY,Vector3(side*(GATE_WIDE*0.5+1.6),0.0,0.6)),{"size":"crown","seed":int(plan.seed)+int(side),"name":"GateFire%d" % int(side+1.0),"lit":true,"barge":false})
-
-## Whether feet at `feet` (world) are through the gate: within its width
-## of it, on its level.
-func at_exit(feet: Vector3) -> bool:
-	var exit: Dictionary = plan.exit
-	if exit.is_empty(): return false
-	var at: Vector3 = exit.at
-	return Vector2(feet.x-at.x,feet.z-at.z).length() < GATE_WIDE*0.5 and absf(feet.y-at.y) < 1.5
-
-## How far a rune taken is heard (m) on the NoiseBus.
-const RUNE_HEARD := 4.0
-
-## The runes the pilot's middle swept past since the last frame (the kit
-## tokens' reach).
-func touch(point: Vector3) -> void:
-	var from := _last if _last != Vector3.INF and _last.distance_to(point) <= 6.0 else point
-	_last = point
-	for holder: Node3D in runes.duplicate():
-		if not is_instance_valid(holder) or holder.taking: continue
-		var near := Geometry3D.get_closest_point_to_segment(holder.global_position,from,point)
-		if near.distance_to(holder.global_position) < Lines.WALKER_REACH+RUNE_SIZE*0.5:
-			runes.erase(holder)
-			# A rune's chime, heard close (noise-stealth-round1.md).
-			NoiseBus.make(holder,holder.global_position,RUNE_HEARD,&"rune")
-			holder.take(hash(holder.name) & 0xffff)
-			taken += 1
-			rune_taken.emit(runes.size())
-
-func runes_left() -> int:
-	return runes.size()
-
 # --- The slot: what stood there, then the layer's ------------------------------
 
 func before(delta: float) -> void:
@@ -294,9 +144,6 @@ func before(delta: float) -> void:
 	if heads != null: heads.before(delta)
 	enemies.before(delta)
 	cannons.before(delta)
-	if hazards != null: hazards.before(delta)
-	if collectibles != null: collectibles.before(delta)  # [collectibles]
-	if merchant != null: merchant.before(delta)  # [merchant]
 	if flyers != null: flyers.before(delta)  # [flyer]
 
 func after(delta: float, events: Dictionary) -> void:
@@ -305,17 +152,13 @@ func after(delta: float, events: Dictionary) -> void:
 	if greybox != null: greybox.after(delta,events)
 	enemies.after(delta,events)
 	cannons.after(delta,events)
-	if hazards != null: hazards.after(delta,events)
-	if collectibles != null: collectibles.after(delta,events)  # [collectibles]
 	if flyers != null: flyers.after(delta,events)  # [flyer]
-	if study.get("figure") != null: touch(study.figure.global_position+Vector3.UP*Lines.WALKER_MIDDLE)
 
 func pose(figure: Node3D) -> void:
 	if inner != null: inner.pose(figure)
 	enemies.pose(figure)
 	cannons.pose(figure)
 	if greybox != null: greybox.pose(figure)
-	if collectibles != null: collectibles.pose(figure)  # [collectibles]
 	# Hidden while a head holds him.
 	if heads != null: figure.visible = not heads.holding()
 
@@ -324,7 +167,6 @@ func frame(camera: Camera3D, delta: float) -> void:
 	cannons.frame(camera,delta)
 	if heads != null: heads.frame(camera,delta)
 	if greybox != null: greybox.frame(camera,delta)
-	if collectibles != null: collectibles.frame(camera,delta)  # [collectibles]
 	if flyers != null: flyers.frame(camera,delta)  # [flyer]
 
 func reset() -> void:
@@ -332,5 +174,4 @@ func reset() -> void:
 	enemies.reset()
 	cannons.reset()
 	if greybox != null: greybox.reset()
-	if collectibles != null: collectibles.reset()  # [collectibles]
 	if flyers != null: flyers.reset()  # [flyer]

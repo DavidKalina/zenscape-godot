@@ -4,7 +4,7 @@ then wait on it in slices that each end before the limit, with the log's
 tail. No sleep/until polling loops.
 
   python tools/bg.py start suite -- python tools/run_tests.py --quick
-  python tools/bg.py start sweep1 -- python tools/sweep.py tools/layer_dump.gd --seed 1..40
+  python tools/bg.py start sweep1 -- python tools/sweep.py scratch/gap_check.gd --seed 1..40
   python tools/bg.py wait suite            # up to 540 s; prints the tail and the state
   python tools/bg.py wait suite --for 120 --lines 60
   python tools/bg.py tail suite --lines 200

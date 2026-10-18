@@ -97,10 +97,6 @@ func start() -> Vector3:
 func rims() -> Array:
 	return [{"name":"west","at":Vector3(-30.5,0.0,0.0),"face":Vector3(-1.0,0.0,0.0),"run_up":6.0,"lip":1.5}]
 
-## No merchant's stall on a disc (it would stand in the coins' lap).
-func without() -> Array:
-	return ["merchant"]
-
 func summit() -> Vector3:
 	return Vector3(0.0,1.0,0.0)
 

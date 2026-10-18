@@ -276,7 +276,7 @@ func _socket(on: Control, at: Vector2, id: String, found: bool, a: float) -> voi
 		var shape := _icon(id,"locked")
 		if shape != null: on.draw_texture_rect(shape,box,false,Color(EMPTY,EMPTY.a*a))
 
-# --- The card's pieces, shared (scripts/roguelike/run_overlay.gd) ----------------
+# --- The card's pieces, shared ---------------------------------------------------
 
 ## The inscription's face: Newsreader at weight 500, its tracking set per
 ## use (`style`).

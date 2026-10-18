@@ -20,7 +20,6 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Walk points through real input (lips, walls, falls, stuns) | in a driver: `await route([start, p1, {"to": p2, "jump": "long"}])`; a motif's paths: `walk_paths(owner, offset)` / chain.gd `walk_motif_paths()` (drive.gd, Routes) |
 | Log an enemy over time while he stands, flees, dodges or walks | in a driver: `await watch(enemy, {"pilot": "flee", "frames": 600})`; `--pilot-at=`, `--enemy-at=`; `"row": true` or `--watch-row` for a sweep table (drive.gd, Watching an enemy) |
 | Who's at a point, what a ray hits | in a driver: `say(hit_text(ray(a, b)))`, `pierce(a, b)`, `what_is_at(p, r)`, `what_is_in(box)`, `colliders(node)` (drive.gd, Collider probes) |
-| What a run layer lays (isles, crossings, problems), without building it | `python tools/godot.py -s tools/layer_dump.gd -- --shape=ring --seed=2 [--isles] [--out=scratch/plan.json]`; over seeds: `python tools/sweep.py tools/layer_dump.gd --seed 1..20 --shape sprawl,ring` |
 | Parse-check a script without running it | `python tools/godot.py --check-only -s res://scratch/x.gd` (one script; exit 1 with the parse error) |
 | Check a land outline (bowtie, wrong winding) | `KitLand.outline_problems(outline, winding)`; `KitLand.island` warns on its own |
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |

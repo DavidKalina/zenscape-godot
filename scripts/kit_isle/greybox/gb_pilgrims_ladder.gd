@@ -280,11 +280,6 @@ func life_script() -> Script:
 func flyers() -> Array:
 	return LAYOUT.flyers
 
-## The run's features this place goes without (RunFeatures.motif_lets): no
-## merchant's stall on the Halo's perch.
-func without() -> Array:
-	return ["merchant"]
-
 func summit() -> Vector3:
 	return Vector3(91.0,20.0,0.0)
 

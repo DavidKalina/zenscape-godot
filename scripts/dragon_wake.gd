@@ -143,8 +143,7 @@ func setup(owner: Node3D, roost_air: Node3D, args: PackedStringArray, clock_hour
 		elif arg == "--no-dragon-wake": _scheduled = false
 	if _wake_at >= 0.0: print("dragon wake: he wakes %.1f s after load" % _wake_at)
 
-## Wakes him now (a host's own call: the generator's dragon, scripts/
-## roguelike/layer_dragon.gd), if he is asleep.
+## Wakes him now (a host's own call), if he is asleep.
 func wake_now() -> void:
 	if phase == "asleep": _wake_at = _since
 

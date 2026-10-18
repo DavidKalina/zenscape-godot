@@ -3,9 +3,8 @@
 values, a few at a time, and prints one table: a row per combination, a
 column per axis and per value it reported.
 
-  python tools/sweep.py tools/layer_dump.gd --seed 1..20 --shape sprawl,ring
   python tools/sweep.py scratch/gap_check.gd --seed 1..6 --knob gulf=40,60,80 -j 3
-  python tools/sweep.py studies/run_layer.tscn --seed 1..4 --shape ring     # smoke each
+  python tools/sweep.py studies/motif_yard.tscn --set motif=plumb_well,lidstack   # smoke each
   python tools/sweep.py scratch/jump.gd --set wanderer-scale=0.8,1.0 -- --tries=5
   python tools/sweep.py scratch/watch_bird.gd --arg pilot=stand,flee,dodge --seed 1..3
 

@@ -233,7 +233,7 @@ static func _build() -> void:
 	_add("crystal","Crystal","Quartz","#9b7fc9",["M7.5 21 L5.5 11 L8.5 6 L11.5 11 L9.5 21Z","M13 21 L12 8 L15 3 L18 8 L16.5 21Z"],[],8)
 	# The isles' on-foot token (scripts/rune_token.gd): a diamond in its ring.
 	_add("rune","Rune","Ruins","#8fd3e6",["M12 2.5 L17 11 L12 21.5 L7 11Z"],["M2.5 12.5 Q12 6.5 21.5 11.5 Q12 17.5 2.5 12.5"],90)
-	# A heart (the run's, scripts/roguelike/run_overlay.gd): a madder stone
+	# A heart: a madder stone
 	# heart, a chevron and a stroke carved in it. Seed 92.
 	_add("heart","Heart","Life","#9c4436",["M12 21.4 C6 17 2.2 13.2 2.2 8.6 C2.2 5.3 4.7 2.9 7.7 2.9 C9.6 2.9 11.1 3.9 12 5.5 C12.9 3.9 14.4 2.9 16.3 2.9 C19.3 2.9 21.8 5.3 21.8 8.6 C21.8 13.2 18 17 12 21.4Z"],
 		["M7 8.6 L12 12.6 L17 8.6","M12 14.8 V17.6"],92,1.0,1.3)

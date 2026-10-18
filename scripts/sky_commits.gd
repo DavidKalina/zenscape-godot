@@ -10,9 +10,6 @@ extends RefCounted
 ## Microseconds a frame may spend standing the sky's parts up.
 const BUDGET_USEC := 4000
 
-## While a loading screen holds play (scripts/roguelike/layer_loading.gd),
-## the frame's budget is this many usec (> 0) rather than BUDGET_USEC.
-static var lifted := 0
 
 static var _frame := -1
 static var _used := 0
@@ -30,7 +27,7 @@ static func open() -> bool:
 
 ## The frame's budget now (usec).
 static func budget() -> int:
-	return lifted if lifted > 0 else BUDGET_USEC
+	return BUDGET_USEC
 
 ## A part stood up this frame, `usec` long.
 static func spend(what: String, usec: int) -> void:

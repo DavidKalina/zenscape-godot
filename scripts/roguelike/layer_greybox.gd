@@ -87,7 +87,6 @@ static func card(plan: Dictionary) -> String:
 		for e: Dictionary in plan.edges:
 			if int(e.from[0]) == i: rims.append("out %s (%s)" % [str(e.from[1]),str(e.kind)])
 			if int(e.to[0]) == i: rims.append("in %s (%s)" % [str(e.to[1]),str(e.kind)])
-		if not (plan.exit as Dictionary).is_empty() and int(plan.exit.isle) == i: rims.append("gate %s" % str(plan.exit.rim))
 		words.append("%d %s (%s, hood %d) at %s: %s" % [i,str(isle.id),str(isle.role),int(isle.get("hood",0)),str((isle.offset as Vector3).round()),", ".join(rims)])
 	return "Greybox: "+("; ".join(words) if not words.is_empty() else "none")
 

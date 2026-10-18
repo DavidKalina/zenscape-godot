@@ -3,7 +3,7 @@
 game opens it, 400 frames of its own loop, no script or engine errors.
 
   python tools/smoke.py studies/trap_yard.tscn
-  python tools/smoke.py studies/run_layer.tscn -- --shape=ring --seed=2
+  python tools/smoke.py studies/motif_yard.tscn -- --motif=plumb_well
   python tools/smoke.py studies/greybox/*.tscn -j 4 --frames 600
   python tools/smoke.py --greybox                 # every greybox study
 

@@ -64,12 +64,10 @@ var ledge := Vector3.ZERO
 var wreck: Node3D
 ## Where the mountain stands from its own frame (world = own + offset; the
 ## dragon's pose's own, scripts/dragon_roost.gd): Roost AT in the aqueduct
-## isle's sky, a generated layer's roost elsewhere (scripts/roguelike/
-## layer_sprawl.gd). Set before `setup`; `move_to` after.
+## isle's sky. Set before `setup`; `move_to` after.
 var offset := Roost.AT
 
-## Moved whole with its mountain (a new layer's roost: studies/run_layer.gd):
-## every part a child laid in this node's frame, so the node is shifted.
+## Moved whole with its mountain: every part a child laid in this node's frame, so the node is shifted.
 func move_to(at: Vector3) -> void:
 	var by := at-offset
 	offset = at

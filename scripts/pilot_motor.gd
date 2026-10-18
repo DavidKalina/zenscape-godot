@@ -2,7 +2,6 @@ extends RefCounted
 ## Harm: `harm` is the one call
 ## everything that hurts him makes (a fall, the Olmec, a trap, a hazard),
 ## beside its knock; the motor only tells it on. Whoever keeps his hearts
-## (scripts/roguelike/run_loop.gd, in its RunState, keyed by this motor)
 ## listens. `cause` names it for the death card ("fall", "olmec", "trap",
 ## "hazard", "stone", "ram").
 signal harmed(amount: int, cause: String, source: Object)

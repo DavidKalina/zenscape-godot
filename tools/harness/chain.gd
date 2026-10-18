@@ -1,12 +1,11 @@
 extends "res://tools/harness/drive.gd"
-## Chain trials on a motif, in the motif yard (studies/motif_yard.tscn,
-## the fast place to prove a chain) or in a full layer (studies/run_layer.tscn,
-## the one confirmation): the plumbing every motif's chain driver repeated.
+## Chain trials on a motif, in the motif yard (studies/motif_yard.tscn):
+## the plumbing every motif's chain driver repeated.
 ## Extend it, write `drive()` and a trial function:
 ##
 ##   extends "res://tools/harness/chain.gd"
 ##   func drive() -> void:
-##   	await open_motif("plumb_well")              # the yard, or --in=layer
+##   	await open_motif("plumb_well")              # the yard
 ##   	await trials(arg_int("trials",10),column)   # ROW per trial, RESULT {passed, trials}
 ##   func column(t: Dictionary) -> Dictionary:
 ##   	await place(motif_point(Vector3(0,35,5.5))+t.jitter,Vector2(0,1))
@@ -14,13 +13,11 @@ extends "res://tools/harness/drive.gd"
 ##   	return {"ok":landed,"why":"..."}
 ##
 ##   python tools/drive.py scratch/x_chain.gd -- --trials=10 --scene-args --motif=plumb_well [--grey] [--bodies=0] [--rims]
-##   python tools/drive.py scratch/x_chain.gd --timeout 1200 -- --in=layer --trials=10 --scene-args --seed=4 --shape=sprawl --knob=pool=classic [--grey] [--knob=bodies=0]
 ##
-## Driver args: `--in=yard|layer` (yard), `--trials=N`, `--trial-seed=N` (the
-## jitter's dice, 1). Scene args go to the scene; in the layer the helper
-## adds `--knob=greybox=<slug>` if no greybox knob is given and turns
-## `--grey` into the motif's own grey flag (the yard does that itself), so
-## the turf-vs-grey A/B is the same command with and without --grey.
+## Driver args: `--trials=N`, `--trial-seed=N` (the jitter's dice, 1).
+## Scene args go to the scene; the yard turns `--grey` into the motif's own
+## grey flag, so the turf-vs-grey A/B is the same command with and without
+## --grey.
 ##
 ##   motif_index(slug)    its isle in the plan (study.layer.isles), -1 none
 ##   motif_offset(slug)   its offset (world = its own frame + this)
@@ -34,8 +31,6 @@ extends "res://tools/harness/drive.gd"
 ##   motif_floor(slug)    its lowest solid (world y)
 ##   motif_box(rect, bottom, top, slug)
 ##                        a rect of its frame (x, z) as a world AABB
-##   hold_layer()         run_layer only: no run loop, the void far down,
-##                        the motif's isle stood now (the yard needs none)
 ##   reset_all()          the stage as built (traps, heads and their
 ##                        bodies, cannons, the greybox's bits), him at the
 ##                        motif's start
@@ -54,7 +49,6 @@ extends "res://tools/harness/drive.gd"
 ##                        (world) he must rest in, or AABB() for anywhere.
 const Registry = preload("res://scripts/kit_isle/greybox/registry.gd")
 const YARD := "studies/motif_yard.tscn"
-const LAYER := "studies/run_layer.tscn"
 ## Each greybox motif's own grey flag (studies/motif_yard.gd GREY_FLAGS).
 const GREY_FLAGS := {
 	"sunken_giant":"--giant-grey","wardens_well":"--wardens-well-grey","lidstack":"--lidstack-grey",
@@ -65,7 +59,7 @@ const LOST_UNDER := 30.0
 
 ## The motif the trials are on.
 var slug := ""
-## Where: "yard" or "layer".
+## Where the trials run (always the yard).
 var where := "yard"
 ## True if the scene args asked for the motif's grey look.
 var grey := false
@@ -75,37 +69,23 @@ var opened_ms := 0
 var stood_ms := 0
 var _rng := RandomNumberGenerator.new()
 
-## Opens the yard (or, with --in=layer, run_layer) on motif `motif_slug`
-## (default the scene args' --motif=), stands it and holds the layer.
+## Opens the yard on motif `motif_slug` (default the scene args'
+## --motif=) and stands it.
 ## Returns false (and a FAIL line) if the motif isn't there.
 func open_motif(motif_slug := "") -> bool:
-	where = str(arg("in","yard"))
 	slug = motif_slug if motif_slug != "" else str(arg("motif","")).trim_prefix("gb_")
 	var given := PackedStringArray(scene_args())
 	grey = given.has("--grey") or (GREY_FLAGS.has(slug) and given.has(GREY_FLAGS[slug]))
 	var scene := YARD
-	if where == "layer":
-		scene = LAYER
-		var out := PackedStringArray()
-		var knobbed := false
-		for a: String in given:
-			if a == "--grey": continue
-			if a.begins_with("--motif="): continue
-			if a.begins_with("--knob=greybox="): knobbed = true
-			out.append(a)
-		if not knobbed: out.append("--knob=greybox="+slug)
-		if grey and GREY_FLAGS.has(slug) and not out.has(GREY_FLAGS[slug]): out.append(GREY_FLAGS[slug])
-		given = out
-	elif not given.has("--motif="+slug):
+	if not given.has("--motif="+slug):
 		given.append("--motif="+slug)
 	var began := Time.get_ticks_msec()
 	opened_ms = began-_began
 	var ready := await open(scene,given)
 	if ready < 0: return false
 	if motif_index() < 0:
-		check(false,"%s in the %s" % [slug,where],"no isle gb_%s in the plan (in the layer: try another seed or --knob=pool=classic)" % slug)
+		check(false,"%s in the %s" % [slug,where],"no isle gb_%s in the plan" % slug)
 		return false
-	hold_layer()
 	stood_ms = Time.get_ticks_msec()-_began
 	result("motif",slug)
 	result("in",where)
@@ -195,26 +175,7 @@ func motif_floor(s := "") -> float:
 	for v: float in _plan().isles[i].occ.lo: if v < INF: lo = minf(lo,v)
 	return lo+(_plan().isles[i].offset as Vector3).y
 
-# --- Holding the layer, resetting it ------------------------------------------------------
-
-## In run_layer: the run loop dropped (its void card would lay a new layer
-## on a fall), the void far down (so a fall is only a fall), and the
-## motif's isle stood now (its neighbours come up as he nears them, as in
-## play). In the yard there is nothing to hold.
-func hold_layer() -> void:
-	if where != "layer": return
-	var loop: Variant = study.get("run_loop")
-	if loop != null:
-		(loop as Node).get_parent().remove_child(loop)
-		(loop as Node).free()
-		study.set("run_loop",null)
-	var plan := _plan()
-	plan.void_y = -100000.0
-	study.set("lost",-100000.0)
-	var isle := motif_isle()
-	if isle != null and not isle.stands():
-		isle.build_now()
-		while str(isle.stage) in ["built","standing"]: isle.work(1 << 30)
+# --- Resetting it -----------------------------------------------------------------------
 
 ## Everything as built, him parked at the motif's start, nothing held.
 func reset_all() -> void:

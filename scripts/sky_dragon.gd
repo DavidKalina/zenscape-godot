@@ -1267,8 +1267,8 @@ func setup_roost(cam: Camera3D, pose: RefCounted) -> void:
 ## pilot in his sight): a world point, INF for none.
 var gaze := Vector3.INF
 
-## Off his wake's takeoff and into the whole flight (the generator's
-## dragon, scripts/roguelike/layer_dragon.gd): the roost left behind, the gale
+## Off his wake's takeoff and into the whole flight (a host's own call):
+## the roost left behind, the gale
 ## (his grip)
 ## and the air blast (with `blast_on`) built, no treasure; `_step` flies
 ## him from here on, his `route` the host's. `wake` is kept (still out),

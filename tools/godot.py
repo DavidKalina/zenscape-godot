@@ -7,7 +7,7 @@ run it yourself for any Godot command they don't cover.
   python tools/godot.py --where                       # the exe it would run
   python tools/godot.py --import                      # import now (waits on another's)
   python tools/godot.py res://studies/trap_yard.tscn --quit-after 400 -- --no-title
-  python tools/godot.py -s tools/layer_dump.gd -- --seed=3
+  python tools/godot.py -s tools/bake_layer_pieces.gd -- --no-sky --no-life
   python tools/godot.py --rendered --timeout 90 -s my_capture.gd -- --out=captures/x
 
 Headless unless --rendered. `--path <repo>` is added. Before the run, the

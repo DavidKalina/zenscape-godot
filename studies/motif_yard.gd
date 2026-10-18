@@ -169,7 +169,7 @@ static func yard_plan(slug: String, at: Vector3, knobs := {}, script: Script = n
 	var plan := {
 		"seed":SEED,"knobs":all_knobs,"shape":"yard",
 		"isles":[isle],"edges":[],"hoods":[[0]],"gulfs":[],"route":[0],"tubes":[],"arrows":[],
-		"exit":{},"prize":{},"cannon":{},"ram":{},"heads":[],
+		"cannon":{},"ram":{},"heads":[],
 		"spawn":{"at":spawn_at,"face":face},
 		"void_y":span.x-NET,"problems":[],
 	}

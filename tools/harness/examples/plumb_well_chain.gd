@@ -16,7 +16,6 @@ extends "res://tools/harness/chain.gd"
 ##     cannon, fired onto the landing.
 ##
 ##   python tools/drive.py tools/harness/examples/plumb_well_chain.gd -- --trials=10 --scene-args --motif=plumb_well --bodies=0 [--grey]
-##   python tools/drive.py tools/harness/examples/plumb_well_chain.gd --timeout 1500 -- --in=layer --trials=10 --scene-args --seed=N --shape=sprawl --knob=pool=classic --knob=bodies=0 [--grey]
 const PW = preload("res://scripts/kit_isle/greybox/gb_plumb_well.gd")
 
 ## The column's start (the study's station 6), his run's stick and how

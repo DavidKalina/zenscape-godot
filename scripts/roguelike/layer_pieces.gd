@@ -5,8 +5,8 @@ extends RefCounted
 ## families yet and the aqueduct isle, its rims and clear spots. Loaded
 ## once. A sockets-only motif answers the family contract's `sockets`,
 ## `footprint` and `height_span` from here (scripts/kit_isle/kit_motif.gd
-## `baked_*`); the layer generator (scripts/roguelike/layer_plan.gd) reads
-## the occupancy of every isle it places and the aqueduct isle's rims.
+## `baked_*`); scripts/roguelike/layer_plan.gd reads the occupancy of an
+## isle it makes and the aqueduct isle's rims.
 const PATH := "res://data/layer/pieces.json"
 ## A spot this roomy is an arena (an on-isle trap or enemy); every spot is
 ## a perch.

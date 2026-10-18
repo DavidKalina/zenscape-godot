@@ -18,8 +18,8 @@ extends Node
 ## open cells (`_round`). Its body over every leg clear of the edges' paths, the
 ## rides' tubes, the piers and the cannons (LayerHazards `_lumps_clear`)
 ## and ARROW_CLEAR of a gust arrow's perch and where it fires; the spot
-## SPAWN_CLEAR from the spawn, GATE_CLEAR from the gate, RAM_CLEAR from the
-## ram, PRIZE_CLEAR from the rune perch; heads APART and one an isle. The
+## SPAWN_CLEAR from the spawn, RAM_CLEAR from the ram; heads APART and one
+## an isle. The
 ## longest rounds first; the base (where he starts) last.
 ##
 ## Knob (LayerPlan KNOBS): `heads` (-1 rolled HEADS, 0 none, n as many as
@@ -85,13 +85,11 @@ const CROWN_MARGIN := 0.5
 const VOID_SHARE := 0.35
 ## Samples along each leg (m).
 const SAMPLE := 1.5
-## Keeps (m, flat): the spawn (past its sight), the gate, the ram, a gust
+## Keeps (m, flat): the spawn (past its sight), the ram, a gust
 ## arrow's perch and its stretch, another head.
 const SPAWN_CLEAR := 30.0
-const GATE_CLEAR := 16.0
 const RAM_CLEAR := 22.0
 const ARROW_CLEAR := 12.0
-const PRIZE_CLEAR := 10.0
 const APART := 60.0
 
 # --- Planning -----------------------------------------------------------------------
@@ -203,7 +201,6 @@ static func _candidates(plan: Dictionary, rng: RandomNumberGenerator) -> Array:
 	var bare := plan.duplicate()
 	bare.isles = []
 	var spawn: Vector3 = (plan.spawn as Dictionary).get("at",Vector3.INF)
-	var gate: Vector3 = (plan.exit as Dictionary).get("at",Vector3.INF)
 	for i in range((plan.isles as Array).size()):
 		var isle: Dictionary = plan.isles[i]
 		var spots: Array = (isle.sockets as Array).filter(func(s: Dictionary) -> bool: return (s.kind == "arena" or s.kind == "perch") and float(s.room) >= SPOT_ROOM)
@@ -216,9 +213,7 @@ static func _candidates(plan: Dictionary, rng: RandomNumberGenerator) -> Array:
 		for s: Dictionary in spots:
 			var at: Vector3 = s.at
 			if spawn != Vector3.INF and _flat(at,spawn) < SPAWN_CLEAR: continue
-			if gate != Vector3.INF and _flat(at,gate) < GATE_CLEAR: continue
 			if not (plan.ram as Dictionary).is_empty() and _flat(at,plan.ram.at) < RAM_CLEAR: continue
-			if not (plan.prize as Dictionary).is_empty() and _flat(at,plan.prize.at) < PRIZE_CLEAR: continue
 			# A spot on open ground already flooded is the same ground.
 			var inside := false
 			for t: Array in taken:
