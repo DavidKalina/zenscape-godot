@@ -3,7 +3,7 @@ extends Node3D
 ## stone blocks hanging in the air, lying flat, a band of light round its
 ## inside. Passed through (his chest crossing its plane inside HOLE), it is
 ## taken: the host (scripts/interactables/foot_pieces.gd `air_ring`) fills
-## the updraft's charge, starts its air chain afresh and pops him up POP m.
+## the updraft's charge, starts its air chain afresh and boosts him up POP m.
 ## Its light goes out in a burst (a bright hoop thrown out, motes off the
 ## rim) and comes back over COOL s, when it may be taken again.
 ##
@@ -21,9 +21,11 @@ const JOINT := 0.035             # rad left open between blocks
 ## m from its middle his chest must pass within; his chest over his feet.
 const HOLE := 1.5
 const CHEST := 0.9
-## m the pop throws him (the spring launch's hang counted), s before it is
-## taken again.
-const POP := 2.0
+## m the pop throws him (the spring launch's hang counted): a real boost,
+## so from a ring one updraft (pop + Q: 9.7 m) reaches a ring 7.5 m on and
+## a close one needs none (the user, after the first pass's 2 m pop made
+## every step two updrafts); s before it is taken again.
+const POP := 6.0
 const COOL := 2.5
 ## The look: the band's light, its hoop thrown out on a take (s, the most
 ## it grows by), the drift (m, s) and turn (rad/s).

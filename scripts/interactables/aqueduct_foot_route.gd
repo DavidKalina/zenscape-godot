@@ -18,13 +18,15 @@ extends RefCounted
 ##      the east islet (the lodestone's floating stone just north of them);
 ##   5. over the first slab, the air rings (scripts/interactables/
 ##      air_ring.gd): slam the slab, its spring throws him up through the
-##      first, and each ring's refilled updraft takes him up to the next,
+##      first, and each ring's boost and one refilled updraft take him up to the next,
 ##      stepping back west over the rim to a turfed perch high over the
-##      meadow.
+##      meadow;
+##   6. from the east islet, the ring route out to the bell spires
+##      (scripts/interactables/ring_route.gd).
 ## The stair to the clouds' own pieces (scripts/interactables/
 ## stair_clouds_foot_route.gd) stand on it in the sky.
 ##
-## `--foot-at=rail|ropes|ferry|slabs` (on the aqueduct isle and the game,
+## `--foot-at=rail|ropes|ferry|slabs|ring_route|ring_slide|ring_far` (on the aqueduct isle and the game,
 ## studies/zenscape.tscn) starts on foot at that piece; `--foot-at=stair`
 ## on the stair to the clouds (in the sky: scripts/interactables/
 ## stair_clouds_foot_route.gd SPOTS). `--no-foot-pieces` leaves them all out.
@@ -34,6 +36,7 @@ const Art = preload("res://studies/aqueduct_isle_art.gd")
 const StairClouds = preload("res://scripts/interactables/stair_clouds_foot_route.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
+const RingRoute = preload("res://scripts/interactables/ring_route.gd")
 
 const TOP := Art.TOP
 ## The ropes, laid out from the isle as drawn (Art: the aqueduct's deck,
@@ -75,10 +78,12 @@ const BOBS := [Vector3(129.6,TOP+0.3,3.4),Vector3(132.6,TOP+0.8,2.0),Vector3(135
 ## 7.1 m; the slab's launch alone 8.0 m (with one updraft 11.8, two 14.1).
 ## The first ring's middle RING_FIRST over the slab: his chest (feet + 0.9)
 ## crosses it at the launch's top and never off a jump. From a ring (popped
-## AirRing.POP up, the charge refilled and its chain fresh) one updraft
-## doesn't reach the next, two do: each ring RING_STEP over the last and
-## RING_OUT out along RING_WAY. The perch PERCH_UP over the last ring's
-## middle, PERCH_OUT on, its top turfed.
+## AirRing.POP up, the charge refilled and its chain fresh) the pop alone
+## puts his chest 6.0 m over it, short of the next, and the pop and one
+## updraft 9.7 m, 2.2 past it (measured, scratch/ring_route/measure.gd):
+## each ring RING_STEP over the last and RING_OUT out along RING_WAY, one
+## Q a step. The perch PERCH_UP over the last ring's middle, PERCH_OUT on,
+## its top turfed: the last ring's pop alone lands him on it.
 const RING_FIRST := 9.1
 ## The first slab, under the rings, throws a pump higher than the others
 ## (BobSlab.SPRING_PUMPS 6): at 6 its launch tops out 7.5 to 8.1 m, too
@@ -167,9 +172,12 @@ static func build(study: Node3D) -> Node3D:
 		{"name":"marker","at":PERCH_AT+Vector3(1.1,1.5,-0.9),"size":Vector3(0.55,1.9,0.45),"yaw":0.6,"kind":"sarsen","grounded":true}])
 	perch.name = "RingPerch"
 	host.add_child(perch)
+	# 6: the ring route out east to the bell spires (scripts/interactables/
+	# ring_route.gd); --no-ring-route leaves it out.
+	if not args.has("--no-ring-route"): RingRoute.build(study,host)
 	# The stair to the clouds, where the sky stands it.
 	StairClouds.build(study,StairClouds.SKY_OFFSET)
-	start_at(study,SPOTS.merged(StairClouds.spots(StairClouds.SKY_OFFSET)))
+	start_at(study,SPOTS.merged(StairClouds.spots(StairClouds.SKY_OFFSET)).merged(RingRoute.spots()))
 	return host
 
 ## The scene's pieces host (scripts/interactables/foot_pieces.gd), made and
