@@ -465,7 +465,7 @@ var slam: Node3D
 ## The dust thrown round on a slam's touch: puffs, out from his feet, the
 ## weakest hit's and the full one's.
 const SLAM_DUST := Vector2i(5,12)
-## The side slam (scripts/side_slam.gd): at full charge on the ground, the
+## The side slam (scripts/side_slam.gd): with a segment of charge on the ground, the
 ## updraft's key held is a horizontal slam, rebounding off what it
 ## meets. On unless `--no-side-slam` (or `--no-updraft`).
 const SideSlam = preload("res://scripts/side_slam.gd")
