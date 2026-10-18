@@ -500,6 +500,7 @@ func _ready() -> void:
 		wind_gauge.setup(updraft,wind_gauge_shown)
 		add_child(wind_gauge)
 		updraft.empty_press.connect(wind_gauge.empty_cue)
+		updraft.gifted.connect(wind_gauge.gift)
 	if _place != Vector4.INF:
 		var turn := deg_to_rad(_place.w)
 		start = Vector3(_place.x,_place.y,_place.z)

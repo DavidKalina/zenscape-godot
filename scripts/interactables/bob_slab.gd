@@ -7,6 +7,9 @@ extends "res://scripts/interactables/foot_slab.gd"
 ## (scripts/interactables/foot_pieces.gd: a timed jump off a rebounding
 ## slab goes higher). The numbers are live (the yard's F4,
 ## studies/interactables_yard.gd): every slab reads them each frame.
+## Slammed down onto, it springs (foot_slab.gd's spring: it sinks, holds
+## and kicks back, and the host launches him SPRING_PUMPS of his pump
+## high); `spring_on` false on a slab leaves it out.
 
 const SINK := 0.24
 const TILT := 0.09
@@ -23,6 +26,15 @@ static var t_hz := HZ
 static var t_damp := DAMP
 static var t_bob := BOB
 static var t_bob_time := BOB_TIME
+
+## The launch off its spring: this many of his pump (PilotMotor `jumps`,
+## by his size), well past anything a jump reaches (the side flip's 1.9,
+## a twirl on top).
+const SPRING_PUMPS := 6.0
+
+func _init() -> void:
+	spring_on = true
+	spring_pumps = SPRING_PUMPS
 
 func advance(delta: float) -> void:
 	sink = t_sink
