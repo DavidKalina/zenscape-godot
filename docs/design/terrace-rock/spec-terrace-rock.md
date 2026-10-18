@@ -105,3 +105,19 @@ isle (the shrine table in `studies/stair_clouds_isle_art.gd`: pads 2, 6, 7
 and the terrace one). The sparrows in `studies/stair_clouds_isle_life.gd`
 perch on chest lids; give them another home (the floors already count).
 This replaces the earlier "the chests stay" line.
+
+## Spec change: placement cleanup (after the user played the finished isle)
+
+The user played it and liked it. Two small faults are left:
+- **Floating debris:** rubble, fallen stones and other kit debris that hangs
+  in the air or sits on nothing. It was probably placed for the old mesa's
+  ground heights. Find every floating piece on the isle (ray down from each
+  piece's lowest points; the placement audit the trail mentions is a start)
+  and seat it on the rock or turf under it, or remove it.
+- **Arches too big for their tops:** some arches overhang the edge of the
+  terrace or pad they stand on and hang over the drop. Fit each arch to its
+  top: smaller, turned or moved, so both feet and the span stay over solid
+  ground. The audit already flags one arch.
+Prove it with before/after stills of each fixed spot (looked at), a count of
+floating pieces and overhanging arches before → after (both to 0), the
+terrace check and the smoke checks. Then the loop is COMPLETE again.
