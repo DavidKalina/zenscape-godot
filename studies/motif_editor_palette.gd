@@ -63,7 +63,6 @@ func tab_icons() -> Array:
 func setup_editor(owner_editor: Node) -> void:
 	editor = owner_editor
 	scene = owner_editor
-	materials = null
 	_build_items()
 
 func set_thumb(id: String, texture: Texture2D) -> void:

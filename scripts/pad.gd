@@ -78,46 +78,14 @@ const ACTIONS := {
 	"fly_eject":[["key",KEY_X],["button",JOY_BUTTON_X]],
 	# Falling out of the plane: the right trigger tucks and dives.
 	"dive_tuck":[["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],
-	# Building: the left stick moves the hand's cursor (pad only: the keys
-	# keep their own verbs), the triggers zoom.
-	"cursor_left":[["axis",JOY_AXIS_LEFT_X,-1.0]],
-	"cursor_right":[["axis",JOY_AXIS_LEFT_X,1.0]],
-	"cursor_up":[["axis",JOY_AXIS_LEFT_Y,-1.0]],
-	"cursor_down":[["axis",JOY_AXIS_LEFT_Y,1.0]],
-	"build_press":[["button",JOY_BUTTON_A]],
-	"build_put_down":[["button",JOY_BUTTON_B]],
-	"build_shift":[["button",JOY_BUTTON_X]],
-	"build_mode":[["button",JOY_BUTTON_Y]],
-	"build_tool_prev":[["button",JOY_BUTTON_LEFT_SHOULDER]],
-	"build_tool_next":[["button",JOY_BUTTON_RIGHT_SHOULDER]],
-	"build_material_prev":[["button",JOY_BUTTON_DPAD_LEFT]],
-	"build_material_next":[["button",JOY_BUTTON_DPAD_RIGHT]],
-	"build_size_up":[["button",JOY_BUTTON_DPAD_UP]],
-	"build_size_down":[["button",JOY_BUTTON_DPAD_DOWN]],
+	# The telescope's zoom (scripts/telescope.gd).
 	"zoom_in":[["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],
 	"zoom_out":[["axis",JOY_AXIS_TRIGGER_LEFT,1.0]],
 	"step_in":[["button",JOY_BUTTON_BACK]],
 	"photo":[["button",JOY_BUTTON_LEFT_STICK]],
-	"overview":[["button",JOY_BUTTON_RIGHT_STICK]],
 	"menu":[["button",JOY_BUTTON_START]],
-	# Photo mode.
-	"photo_capture":[["button",JOY_BUTTON_A]],
-	"photo_leave":[["button",JOY_BUTTON_B]],
-	"photo_ground":[["button",JOY_BUTTON_X]],
-	"photo_focus":[["button",JOY_BUTTON_Y]],
-	"photo_lens_prev":[["button",JOY_BUTTON_LEFT_SHOULDER]],
-	"photo_lens_next":[["button",JOY_BUTTON_RIGHT_SHOULDER]],
-	"photo_exposure_up":[["button",JOY_BUTTON_DPAD_UP]],
-	"photo_exposure_down":[["button",JOY_BUTTON_DPAD_DOWN]],
-	"photo_clean":[["button",JOY_BUTTON_BACK]],
-	"photo_reset":[["button",JOY_BUTTON_RIGHT_STICK]],
 	# The studies' cameras back to their default (the aqueduct isle's).
 	"camera_reset":[["button",JOY_BUTTON_RIGHT_STICK]],
-	# The library's and the New world panel's own verbs, beside ui_accept,
-	# ui_cancel and the ui moves.
-	"library_new":[["button",JOY_BUTTON_X]],
-	"new_world_roll":[["button",JOY_BUTTON_X]],
-	"new_world_name":[["button",JOY_BUTTON_Y]],
 }
 ## Glyph ids, by joypad button and by axis direction, for the prompts
 ## (scripts/pad_prompt.gd draws them).

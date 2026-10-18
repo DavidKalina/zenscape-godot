@@ -5,25 +5,14 @@ extends Control
 ## Type to search, Up and Down to move, Tab to change pocket, Enter to take it
 ## in hand, Esc to put the palette away. Cmd/Ctrl K or / opens it.
 ##
-## Pockets: Seeds (the case's seeds, trees and flowers, in its order), Tools (the roll), Elements (water, stone, and the
-## undiscovered quartz and frost), Life (calls a creature now, whatever its
-## chance or hour: scripts/land_life.gd `summon`), Moods (every mood_look mood
-## and This world) and World (undo, redo, turning the view, the overview, the
-## day held, saving and photographing).
-##
-## Nothing is decided here: taking a thing is hand_materials' (`take`,
-## `select_tool`, `take_feather`), a mood is mood_look's `choose`, and the
-## world's verbs are the owners' own. While open the palette is modal: it
-## takes every key and press in `_input`, ahead of the hand (it sits under it
-## in the tree), and a press outside it puts it away.
+## The pockets and their items are a subclass's (`tabs`, `tab_icons`,
+## `_build_items`, `_take`, `_can_open`: studies/motif_editor_palette.gd).
+## While open the palette is modal: it takes every key and press in `_input`,
+## and a press outside it puts it away.
 
 signal closed
 
 const Linen = preload("res://scripts/hud_linen.gd")
-const Icons = preload("res://scripts/hud_icons.gd")
-const Mood = preload("res://scripts/mood_look.gd")
-const Tray = preload("res://scripts/materials_tray.gd")
-const Roll = preload("res://scripts/tool_roll.gd")
 const ClaySound = preload("res://scripts/clay_sound.gd")
 const SPECTRAL = preload("res://assets/fonts/spectral-latin-400.woff2")
 
@@ -74,78 +63,11 @@ const QUERY_TYPE := 20.0
 const KEY_TYPE := 12.0
 const OPEN_TIME := 0.18
 const WHEEL_STEP := 40.0
-## Seconds a refusal's line stays on the hint line.
-const NOTICE_SECONDS := 3.0
 
-const TABS := ["All","Seeds","Tools","Elements","Life","Moods","World"]
-const TAB_ICONS := ["all","oak","hand","water","track","sun","globe"]
-
-## Seeds in the order the palette lists them, the case's order
-## (scripts/materials_tray.gd SPECIMENS). [id, name, sub, description].
-const SEEDS := [
-	["oak","Acorn","Oak","Plants an oak. Slow to rise, long to stay."],
-	["pine","Cone","Pine","Plants a pine. They climb toward high ground."],
-	["willow","Sprig","Willow","A willow, happiest near water."],
-	["birch","Samara","Birch","A birch, pale and quick to come up."],
-	["redwood","Redwood","Giant","A redwood. The tallest thing on the land."],
-	["juniper","Juniper","Berry","A juniper, low and blue, for dry slopes."],
-	["joshua","Joshua","Desert","A Joshua tree, wherever you set it."],
-	["wildflower","Wildflower","Meadow","Daisy, buttercup and poppy seed. The wind sows it in drifts."],
-	["dandelion","Clock","Dandelion","Dandelions and their clocks. The wind carries it on."],
-	["poppy","Poppy","Field","Red poppies in drifts, where the wind sets them down."],
-	["cosmos","Cosmos","Drift","Tall pink and white cosmos, a drift of one colour."],
-	["sunflower","Sunflower","Stand","Sunflowers in a stand, their faces to the sun."],
-	["wheat","Wheat","Field","Wheat in tidy rows: green in spring, gold by late summer, stubble in winter."],
-	["reed","Reed","Cattail","Cattails for the shallows."],
-]
-const TOOLS := [
-	["hand","Modeller","Mould","Push and pull soft ground into shape."],
-	["hills","Hills","Roll","Drag across the land to raise rolling hills."],
-	["mountain","Mountain","Peak","Press and drag up to pull a mountain; drag sideways too for a range."],
-	["paddle","Paddle","Smooth","Plane levels ground and lays grass, earth, rock or sand; Pat flattens bumps."],
-	["chisel","Chisel","Cut","Crisp rock: faces, cliffs, terraces."],
-	["wire","Ravine","Carve","Draw a line and a ravine is carved along it; draw a loop for a lake basin."],
-	["crater","Crater","Hollow","Press and drag down: a crater opens, its floor following the pointer, a rim thrown up round it."],
-	["island","Island","Isle","Draw round an island in a lake and it rises to the water; Spread pushes land out from it."],
-	["feather","Feather","Gust","Wind in hand."],
-	["can","Watering can","Pour","Pours or sprinkles water. Hold still up high for a spring."],
-	["brush","Brush","Paint","Paints grass, rock, bare earth or any colour onto the ground. Shift wipes."],
-	["trash","Trash can","Clear","Sucks up trees, rocks, shrubs, logs and leaves under it. Shift spares trees, rocks and anything built."],
-]
-const ELEMENTS := [
-	["water","Water","Scoop","Scoops a ball of water out of a pond, fish and all."],
-	["stone","River stone","Place","Sets a stone, or scatters pebbles."],
-	["lamp","Stone lamp","Glow","Sets a stone lamp, or lines a path with them. They glow at night."],
-	["campfire","Campfire","Hearth","Sets a little campfire in a ring of stones. It burns day and night, and keeps to itself."],
-	["cabin","Cabin","Shelter","Sets a small log cabin where the land is flat, dry and clear of trees. Its windows glow warm at dusk."],
-	["fence","Fence","Split rail","Draw a line and a rustic fence follows it; end where you began for a pen."],
-	["bridge","Footbridge","Span","Drag across a stream or a gap: a footbridge spans it, timber or, past six metres, rope."],
-	["crystal","Crystal","Quartz","Quartz breaks through the rock."],
-	["snow","Frost","Winter","Brings winter to the whole chunk."],
-]
-## Life: [summon kind (land_life SUMMONS), name, sub, icon (hud_icons.gd), description].
-const LIFE := [
-	["deer","Deer","At the wood's edge","deer","Deer step out of the trees to graze."],
-	["heron","Heron","Wading","heron","A heron comes down to fish the shallows."],
-	["snake","Snake","By the pond","snake","A snake comes to the pond's bank."],
-	["woodpecker","Woodpecker","On a snag","woodpecker","A woodpecker drums on dead wood."],
-	["geese","Geese","Passing over","geese","A skein of geese crosses the sky."],
-	["rainbow","Rainbow","After rain","rainbow","A bow over the land."],
-]
-## World: [id, name, sub, glyph, keys].
-const WORLD := [
-	["undo","Undo","Take back the last change","U",["⌘","Z"]],
-	["redo","Redo","Put it back","R",["⇧","⌘","Z"]],
-	["turn_left","Turn the chunk","A quarter to the left","T",[]],
-	["turn_right","Turn the chunk","A quarter to the right","T",[]],
-	["overview","Settle the view","See the whole chunk","V",["R"]],
-	["still","Still time","Hold the day, or let it run","S",[]],
-	["save","Keep this island","Save","K",["⌘","S"]],
-	["photo","Photograph","Frame and capture","F",["P"]],
-]
+const TABS := ["All"]
+const TAB_ICONS := ["all"]
 
 var scene: Node
-var materials: Node
 var query := ""
 var tab := 0
 var sel := 0
@@ -175,7 +97,6 @@ var _scrim: ColorRect
 var _body: Control
 var _caps_font: FontVariation
 var _text_font: FontVariation
-var _notice_left := 0.0
 
 func _ready() -> void:
 	name = "CommandPalette"
@@ -209,11 +130,8 @@ func tabs() -> Array:
 func tab_icons() -> Array:
 	return TAB_ICONS
 
-## `hand_materials` (scripts/hand_materials.gd) holds the tray, the roll, the
-## foot and the pages; its scene holds mood_look, land_life and camera_rig.
-func setup(owner_scene: Node, hand_materials: Node) -> void:
+func setup(owner_scene: Node) -> void:
 	scene = owner_scene
-	materials = hand_materials
 	_build_items()
 
 # --- API --------------------------------------------------------------------------
@@ -265,33 +183,13 @@ func type_text(text: String) -> void:
 
 # --- Items ------------------------------------------------------------------------
 
+## The items listed: [{kind, cat (its pocket), id, name, sub, desc, and icon
+## or glyph, keys}]; a subclass's.
 func _build_items() -> void:
 	_items.clear()
-	var tray_ids: Array = Tray.SPECIMENS.map(func(slot: Dictionary) -> String: return slot.id)
-	for entry: Array in SEEDS:
-		# Not on the bar, not in the palette: the desert's Joshua while held back.
-		if not entry[0] in tray_ids: continue
-		_items.append({"kind":"seed","cat":1,"id":entry[0],"name":entry[1],"sub":entry[2],"desc":entry[3],"icon":entry[0]})
-	for entry: Array in TOOLS:
-		_items.append({"kind":"tool","cat":2,"id":entry[0],"name":entry[1],"sub":entry[2],"desc":entry[3],"icon":entry[0]})
-	for entry: Array in ELEMENTS:
-		_items.append({"kind":"element","cat":3,"id":entry[0],"name":entry[1],"sub":entry[2],"desc":entry[3],"icon":entry[0]})
-	for entry: Array in LIFE:
-		_items.append({"kind":"life","cat":4,"id":entry[0],"name":entry[1],"sub":entry[2],"icon":entry[3],"desc":entry[4]})
-	_items.append({"kind":"mood","cat":5,"id":"","name":"This world","sub":Mood.mood_description(""),"desc":""})
-	for id: String in Mood.mood_ids():
-		_items.append({"kind":"mood","cat":5,"id":id,"name":Mood.mood_title(id),"sub":Mood.mood_description(id),"desc":""})
-	for entry: Array in WORLD:
-		_items.append({"kind":"world","cat":6,"id":entry[0],"name":entry[1],"sub":entry[2],"glyph":entry[3],"keys":entry[4],"desc":""})
 
-## True when `item` cannot be taken yet: an undiscovered tool, or a case slot
-## not found yet.
-func _locked(item: Dictionary) -> bool:
-	match str(item.kind):
-		"tool": return materials != null and materials.roll != null and not materials.roll.discovered(item.id)
-		"element", "seed":
-			for entry: Dictionary in Tray.SPECIMENS:
-				if entry.id == item.id: return bool(entry.get("hidden",false))
+## True when `item` cannot be taken yet.
+func _locked(_item: Dictionary) -> bool:
 	return false
 
 func _key_of(item: Dictionary) -> String:
@@ -341,10 +239,6 @@ func _refresh() -> void:
 
 func _process(delta: float) -> void:
 	delta = minf(delta,0.05)
-	if _notice_left > 0.0:
-		_notice_left -= delta
-		if _notice_left <= 0.0 and materials != null and materials.reach != null and materials.reach._hint == last_refusal:
-			materials.reach._show_hint("")
 	var scale_now := Linen.scale_for(get_viewport_rect().size)
 	if not is_equal_approx(scale_now,ui_scale):
 		ui_scale = scale_now
@@ -502,9 +396,7 @@ func _draw_row(entry: Dictionary, rect: Rect2, line: float) -> void:
 	var locked := _locked(item)
 	if on: _patch(rect,9.0,WELL,WELL_SHADE)
 	var box := Rect2(Vector2(rect.position.x+8.0*px,rect.get_center().y-ICON_BOX*0.5*px),Vector2.ONE*ICON_BOX*px)
-	if item.kind == "mood":
-		_draw_vignette(str(item.id),box,line)
-	elif item.has("icon"):
+	if item.has("icon"):
 		Linen.icon(_body,_icons,str(item.icon),box.get_center(),ICON*px,px,"locked" if locked else ("lit" if on else "icon"),0.0 if locked else (1.0 if on else 2.0))
 	else:
 		var glyph := Rect2(box.get_center()-Vector2.ONE*16.0*px,Vector2.ONE*32.0*px)
@@ -525,30 +417,9 @@ func _draw_row(entry: Dictionary, rect: Rect2, line: float) -> void:
 		right -= tw+12.0*px
 	elif not keys.is_empty():
 		right = _key_chip(keys,Vector2(right,rect.get_center().y),line)-12.0*px
-	elif item.kind == "mood" and _mood_now() == str(item.id):
-		var tag := "now"
-		var tw := _text_font.get_string_size(tag,HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(13.0*px)).x
-		_body.draw_string(_text_font,Vector2(right-tw,rect.get_center().y+4.5*px),tag,HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(13.0*px),T2)
-		right -= tw+12.0*px
-	elif item.kind == "world" and item.id == "still":
-		var running := _clock_running()
-		var tag := "running" if running else "held"
-		var tw := _text_font.get_string_size(tag,HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(13.0*px)).x
-		_body.draw_string(_text_font,Vector2(right-tw,rect.get_center().y+4.5*px),tag,HORIZONTAL_ALIGNMENT_LEFT,-1,roundi(13.0*px),T2)
-		right -= tw+12.0*px
 	_caps(str(item.name),Vector2(x,rect.get_center().y-3.0*px),NAME_TYPE,NAME_TRACK,T2 if locked else T1)
 	_body.draw_string(_text_font,Vector2(x,rect.get_center().y+15.0*px),str(item.sub),HORIZONTAL_ALIGNMENT_LEFT,maxf(10.0,right-x),roundi(SUB_TYPE*px),T2,TextServer.JUSTIFICATION_NONE)
 	if on: Linen.dashed_round(_body,rect.grow(-2.0*px),8.0*px,ON_STITCH,line,px)
-
-func _draw_vignette(id: String, box: Rect2, line: float) -> void:
-	var pages: Node = materials.pages if materials != null else null
-	if pages == null or not pages.has_method("_vignette"): return
-	var size: Vector2 = Icons.VIGNETTE_SIZES.world*ui_scale*0.68
-	var rect := Rect2((box.get_center()-size*0.5).round(),size.round())
-	_body.draw_rect(Rect2(rect.position+Vector2(0.0,2.0*ui_scale),rect.size),Color(0.047,0.035,0.020,0.22))
-	_body.draw_rect(rect.grow(line),Color(0.078,0.055,0.031,0.3))
-	var texture: Texture2D = pages._vignette(id,"world")
-	if texture != null: _body.draw_texture_rect(texture,rect,false)
 
 ## Key caps in a row ending (or starting, `from_right` false) at `at`; returns
 ## the far edge's x.
@@ -608,14 +479,6 @@ func _caps_width(text: String, type: float, track: float) -> float:
 	_caps_font.spacing_glyph = roundi(track*type*ui_scale)
 	return (_caps_font.get_string_size(text,HORIZONTAL_ALIGNMENT_LEFT,-1,size).x-_caps_font.spacing_glyph)/ui_scale
 
-func _mood_now() -> String:
-	var mood: Node = scene.get("mood_look") if scene != null else null
-	return str(mood.mood) if mood != null else ""
-
-func _clock_running() -> bool:
-	var clock: Variant = scene.get("world_clock") if scene != null else null
-	return clock == null or bool(clock.running)
-
 # --- Input ------------------------------------------------------------------------
 
 func _input(event: InputEvent) -> void:
@@ -661,9 +524,7 @@ func handle_event(event: InputEvent) -> bool:
 	return true
 
 func _can_open() -> bool:
-	if materials == null or materials.hud_hidden: return false
-	var reach: Node = materials.reach
-	return reach != null and reach.available() and reach.holding.is_empty()
+	return true
 
 func _key(event: InputEventKey) -> void:
 	var command: bool = event.ctrl_pressed or event.meta_pressed
@@ -712,69 +573,13 @@ func _row_at(point: Vector2) -> int:
 
 # --- Taking -----------------------------------------------------------------------
 
-## Takes `item` in hand, or does it; the palette goes away unless it refused.
+## Takes `item`; a subclass does the taking. The palette goes away.
 func _take(item: Dictionary) -> void:
 	if _locked(item):
 		ClaySound.cue(&"ui_refuse")
 		return
-	var refusal := ""
-	match str(item.kind):
-		"seed", "element":
-			if not materials.take(item.id): refusal = "Not something the hand can hold"
-		"tool":
-			if item.id == "feather": materials.take_feather()
-			else:
-				materials.put_back()
-				materials.select_tool(item.id)
-		"life":
-			var life: Node = scene.get("land_life")
-			if life == null or not life.has_method("summon"): refusal = "No wild things on this land"
-			else: refusal = life.summon(item.id)
-			if refusal.is_empty(): ClaySound.cue(&"ui_take")
-		"mood":
-			var mood: Node = scene.get("mood_look")
-			if mood == null: refusal = "No moods here"
-			else: mood.choose(item.id)
-		"world":
-			refusal = _world(item.id)
-	if not refusal.is_empty():
-		last_refusal = refusal
-		_notice_left = NOTICE_SECONDS
-		materials.reach.notice(refusal)
-		ClaySound.cue(&"ui_refuse")
-		return
 	last_taken = _key_of(item)
-	var key := _key_of(item)
-	recent.erase(key)
-	recent.push_front(key)
+	recent.erase(last_taken)
+	recent.push_front(last_taken)
 	if recent.size() > 3: recent.resize(3)
 	close()
-
-## A World verb; "" when done, else why not.
-func _world(id: String) -> String:
-	var rig: Node = scene.get("camera_rig")
-	match id:
-		"undo":
-			materials.foot.undo()
-			ClaySound.cue(&"ui_undo")
-		"redo":
-			var editor: Node = materials.reach._editor()
-			if editor == null: return "Nothing to put back"
-			editor.redo()
-			ClaySound.cue(&"ui_undo")
-		"turn_left", "turn_right":
-			if rig == null or not rig.has_method("quarter_turn"): return "The view cannot turn here"
-			rig.quarter_turn(-1 if id == "turn_left" else 1)
-		"overview":
-			if rig == null: return "The view cannot settle here"
-			rig.overview()
-		"still":
-			var clock: Variant = scene.get("world_clock")
-			if clock == null: return "No clock on this land"
-			clock.running = not clock.running
-		"save":
-			if not scene.has_method("save_current") or not scene.save_current(): return "Could not keep it just now"
-		"photo":
-			close()
-			materials.foot.photo()
-	return ""
