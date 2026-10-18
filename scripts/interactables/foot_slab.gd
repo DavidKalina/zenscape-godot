@@ -22,6 +22,16 @@ extends Node3D
 ## on a spring of its own (SLAM_SHOVE, the same spring), all coming back
 ## as a landing's does.
 ##
+## The spring (`spring_on`, the bobbing slab's): slammed down onto (the
+## slam's touch landing on it, scripts/interactables/foot_pieces.gd
+## `coil`), it is driven down SPRING_SINK over SPRING_COIL s, its stone
+## squashed (SQUASH: shorter, wider, about its top so his feet stay on
+## it), held at the bottom SPRING_HOLD s with a tremble, then let go: it
+## kicks back up at SPRING_KICK m/s on a spring of its own (SPRING_HZ,
+## SPRING_DAMP, stretched as it goes), overshooting and wobbling, easing
+## back to its own spring over SPRING_SETTLE s. The release (`sprung`, once)
+## is when the host launches him.
+##
 ## Its feel is the subclass's: `sink`, `tilt`, `give`, `hz` (the spring,
 ## Hz), `damp` (its damping ratio), `bob`, `bob_time`.
 const Art = preload("res://studies/aqueduct_isle_art.gd")
@@ -30,6 +40,22 @@ const Slam = preload("res://scripts/slam.gd")
 const SLAM_SINK := 2.6
 const SLAM_TIP := 0.9
 const SLAM_SHOVE := 1.6
+## The spring (see the header): m down, s down, s held, m tremble, m/s up
+## at the release, its spring (Hz, damping), s back to its own; the squash
+## at the bottom (share shorter), the squash's spring (Hz, damping) and the
+## kick into its stretch (share a second).
+const SPRING_SINK := 1.5
+const SPRING_COIL := 0.17
+const SPRING_HOLD := 0.14
+const SPRING_TREMBLE := 0.025
+const SPRING_KICK := 11.0
+const SPRING_HZ := 2.4
+const SPRING_DAMP := 0.2
+const SPRING_SETTLE := 1.6
+const SQUASH := 0.32
+const SQUASH_HZ := 3.2
+const SQUASH_DAMP := 0.22
+const SQUASH_KICK := 7.0
 
 var size := Vector3(2.4,0.7,2.2)
 var seed_value := 0
@@ -56,6 +82,21 @@ var shove := Vector3.ZERO
 var shove_v := Vector3.ZERO
 ## Slams that reached it.
 var slammed := 0
+## Whether a slam onto it springs (see the header), its phase ("" at rest,
+## "coil", "hold", "release") and seconds in it, and how often it sprang.
+var spring_on := false
+## The launch off it, in his pumps (PilotMotor `jumps`, by his size).
+var spring_pumps := 4.0
+var spring_phase := ""
+var spring_t := 0.0
+var springs := 0
+## The squash (share: under 0 shorter and wider, over 0 stretched) and its
+## pace, on its own spring; the drawn stone it shapes.
+var squash := 0.0
+var squash_v := 0.0
+var look: Node3D
+var _coil_from := 0.0
+var _sprung := false
 ## Where he stands on it this frame (its own frame), INF none.
 var _load := Vector3.INF
 var _time := 0.0
@@ -76,6 +117,13 @@ func _ready() -> void:
 	stone = Art.floating_stones(seed_value,[{"name":"slab","at":Vector3.ZERO,"size":size,"yaw":0.0,"kind":"block"}])
 	add_child(stone)
 	body = stone.get_node("Body")
+	# The drawn stone apart from its body, so the squash shapes the look and
+	# leaves the walking box alone.
+	look = Node3D.new()
+	look.name = "Look"
+	stone.add_child(look)
+	for c: Node in stone.get_children():
+		if c != body and c != look: c.reparent(look,false)
 	transform = _posed(pose_at(0.0))
 
 ## The pose at `t` seconds, before the sag (still, here).
@@ -114,6 +162,29 @@ func slam(at: Vector3, radius: float, strength: float) -> void:
 		var flat := Vector3(q.x,0.0,q.z)
 		if flat.length() > 0.05: lean_v += Vector3.UP.cross(flat).normalized()*SLAM_TIP*s*0.5
 
+## Slammed down onto at `p` (world): the spring coiled, if it springs and
+## isn't coiled already. Whether it began.
+func coil(p: Vector3) -> bool:
+	if not spring_on or spring_phase == "coil" or spring_phase == "hold": return false
+	spring_phase = "coil"
+	spring_t = 0.0
+	_coil_from = minf(sag,0.0)
+	shove_v *= 0.3
+	var q := transform.affine_inverse()*p
+	var flat := Vector3(q.x,0.0,q.z)
+	lean_v = Vector3.UP.cross(flat).normalized()*0.4 if flat.length() > 0.05 else Vector3.ZERO
+	return true
+
+## Coiled or held at the bottom: about to let go.
+func coiling() -> bool:
+	return spring_phase == "coil" or spring_phase == "hold"
+
+## True once, the frame it let go (see the header).
+func sprung() -> bool:
+	var was := _sprung
+	_sprung = false
+	return was
+
 ## One frame: to its pose, sagged and tilted on the spring.
 func advance(delta: float) -> void:
 	if delta <= 0.0: return
@@ -130,17 +201,32 @@ func advance(delta: float) -> void:
 		lean_goal = Vector3(sin(_time*0.9+_phase),0.0,cos(_time*0.7+_phase*1.3))*tilt*0.25
 	_load = Vector3.INF
 	var w := TAU*hz
+	var d := damp
+	var held := _spring_step(delta)
+	if spring_phase == "release":
+		# Its own quick spring, eased back to the slab's.
+		var k := clampf(spring_t/SPRING_SETTLE,0.0,1.0)
+		k = k*k
+		w = lerpf(TAU*SPRING_HZ,TAU*hz,k)
+		d = lerpf(SPRING_DAMP,damp,k)
+	var sw := TAU*SQUASH_HZ
 	# Semi-implicit, in small steps so a long frame stays stable.
 	var left := delta
 	while left > 0.0:
 		var dt := minf(left,1.0/120.0)
-		sag_v += (w*w*(goal-sag)-2.0*damp*w*sag_v)*dt
-		sag += sag_v*dt
+		if not held:
+			sag_v += (w*w*(goal-sag)-2.0*d*w*sag_v)*dt
+			sag += sag_v*dt
+			squash_v += (-sw*sw*squash-2.0*SQUASH_DAMP*sw*squash_v)*dt
+			squash += squash_v*dt
 		lean_v += (w*w*(lean_goal-lean)-2.0*damp*w*lean_v)*dt
 		lean += lean_v*dt
 		shove_v += (-w*w*shove-2.0*damp*w*shove_v)*dt
 		shove += shove_v*dt
 		left -= dt
+	if look != null:
+		var sq := clampf(squash,-0.5,0.5)
+		look.scale = Vector3(1.0-sq*0.5,1.0+sq,1.0-sq*0.5)
 	var was := transform
 	var now := _posed(pose_at(_time))
 	transform = now
@@ -148,6 +234,39 @@ func advance(delta: float) -> void:
 	# tree's flush: the motor's rays this frame see it where it is drawn.
 	if body != null: body.force_update_transform()
 	_moved = now*was.affine_inverse()
+
+## The spring's coil and hold (see the header): the sag and the squash
+## driven, not sprung. Whether they are held this frame.
+func _spring_step(delta: float) -> bool:
+	if spring_phase == "": return false
+	spring_t += delta
+	if spring_phase == "coil":
+		var k := clampf(spring_t/SPRING_COIL,0.0,1.0)
+		# Hit hard, then slowing into the bottom.
+		var e := 1.0-(1.0-k)*(1.0-k)
+		sag = lerpf(_coil_from,-SPRING_SINK,e)
+		squash = -SQUASH*e
+		sag_v = 0.0
+		squash_v = 0.0
+		if spring_t >= SPRING_COIL:
+			spring_phase = "hold"
+			spring_t = 0.0
+		return true
+	if spring_phase == "hold":
+		sag = -SPRING_SINK+SPRING_TREMBLE*sin(spring_t*TAU*28.0)
+		squash = -SQUASH*(1.0+0.08*sin(spring_t*TAU*28.0+1.0))
+		if spring_t >= SPRING_HOLD:
+			spring_phase = "release"
+			spring_t = 0.0
+			sag = -SPRING_SINK
+			sag_v = SPRING_KICK
+			squash_v = SQUASH_KICK
+			springs += 1
+			_sprung = true
+			return false
+		return true
+	if spring_t >= SPRING_SETTLE: spring_phase = ""
+	return false
 
 func _posed(base: Transform3D) -> Transform3D:
 	var tip := Basis(lean.normalized(),lean.length()) if lean.length() > 1e-6 else Basis.IDENTITY

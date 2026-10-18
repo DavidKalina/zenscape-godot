@@ -72,9 +72,10 @@ signal harmed(amount: int, cause: String, source: Object)
 ## down (move "slam"), from the pace given on toward `pace` on SLAM_PULL
 ## times his falling gravity, past TERMINAL; his flat pace kept, not
 ## steered, no wall, wall run or ledge taking him. On the touch the step
-## says "slammed" (how hard, m/s) with "landed", and the landing is as any:
-## crouch held, it is the slide (or the surf on a slope) at his pace; Jump
-## buffered for the touch jumps out of it (it opens no sail). A twirl ends
+## says "slammed" (how hard, m/s) with "landed", and the landing plants him
+## (SLAM_PLANT): his flat pace stopped, and the crouch held through the slam
+## holds him crouched where he hit, no slide or surf down a slope, until it
+## is let go and pressed afresh (`planted`); Jump buffered for the touch jumps out of it (it opens no sail). A twirl ends
 ## it. Jump pressed in the drive with room for the sail (its `can_open`,
 ## so a press within the buffer of the touch is still the jump out)
 ## cancels it: the pace past TERMINAL given up, the sail opens (the step
@@ -558,6 +559,10 @@ const STUN_CHAIN_CAP := 3.0
 const STUN_CALM := 1.0
 ## The slam: its pull toward the pace asked, times his falling gravity.
 const SLAM_PULL := 2.0
+## A slam's touch plants him: his flat pace stopped, and the crouch held
+## through it no slide (or surf) until pressed afresh. Off: the landing is
+## as any, crouch held the slide at his pace.
+const SLAM_PLANT := true
 ## The side slam's lunge (move "lunge", set by scripts/side_slam.gd, which
 ## sets its pace each step): flat through the air, not steered, no wall,
 ## wall run, ledge, twirl or sail taking him; this share of his gravity.
@@ -713,6 +718,9 @@ var chain := 0
 var move := ""
 ## Held by the caller: the crouch button, and the twirl's.
 var crouch := false
+## Planted by a slam's touch (SLAM_PLANT): the crouch held keeps him
+## crouched, no surf, until let go.
+var planted := false
 var twirl := false
 ## Sliding, the stick carves (see above); off, it pushes him across as it
 ## used to (studies/character_study.gd's `--no-carve`, F3).
@@ -799,6 +807,15 @@ var _seized := false
 var stunned := ""
 var knocks := 0
 var _fall_top := 0.0
+## The drop a spring launch forgives (`launch`, m), this airtime; 0 none.
+var _launch_free := 0.0
+## A spring launch's hang at its top (`launch`), this airtime.
+var _launch_hang := false
+## The hang: within LAUNCH_HANG_V m/s of the top of a spring launch (rising
+## or falling, plain air: no twirl, sail or slam), his gravity is
+## LAUNCH_HANG_G of itself, so he floats a moment at the top.
+const LAUNCH_HANG_V := 3.2
+const LAUNCH_HANG_G := 0.28
 var _stun_t := 0.0
 var _poise := 0.0
 var _stunned_for := 0.0
@@ -1327,7 +1344,10 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 	else:
 		_calm += delta
 		if _calm >= STUN_CALM: _stunned_for = 0.0
-	if grounded or hold != "" or swimming or rider != null: _fall_top = feet.y
+	if grounded or hold != "" or swimming or rider != null:
+		_fall_top = feet.y
+		_launch_free = 0.0
+		_launch_hang = false
 	if rider != null:
 		# Snagged stunned (a rope's catch of a tumbling body, still move
 		# "tumble"): the twirl arms the tech as in the air, and past the
@@ -1389,6 +1409,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 	if grounded: _since_ground = 0.0
 	else: _since_ground += delta
 	if _since_land > chain_window: _last_chain = 0
+	if planted and (not crouch or not grounded): planted = false
 	var crouched := grounded and crouch and wade < swim_in*0.5
 	var surfing := false
 	var surfed := move == "slide"
@@ -1404,7 +1425,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 			way = way/way.length() if way.length() > 0.5 else forward(facing)
 			var along := _gradient(ground,Vector2(feet.x,feet.z),way)
 			if along.length_squared() > slope.length_squared(): slope = along
-		surfing = _surfing(crouched,ground)
+		surfing = _surfing(crouched and not planted,ground)
 		move = "slide" if surfing else ("crouch" if crouched else "")
 		# Rolling out of a landing (the roll, a tech): his pace his own.
 		_roll_left = maxf(0.0,_roll_left-delta)
@@ -1504,7 +1525,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 	# earlier with the twirl spent, the button is locked out a while.
 	if twirl_pressed and not grounded and fall_stun and velocity.y < 0.0 and move != "sail" and move != "wall" and (move != "slam" or slam_stuns):
 		var under: float = ground.call(Vector2(feet.x,feet.z))
-		if is_finite(under) and _fall_top-under >= fall_stun_height() and _tech_lock <= 0.0:
+		if is_finite(under) and _fall_top-under-_launch_free >= fall_stun_height() and _tech_lock <= 0.0:
 			if _time_to_ground(ground) <= tech_window:
 				_roll = tech_window+delta
 				twirl_pressed = false
@@ -1612,9 +1633,15 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 			return out
 		if y <= under and velocity.y <= 0.0:
 			var came := move
-			var drop := _fall_top-under
+			var drop := maxf(_fall_top-under-_launch_free,0.0)
+			_launch_free = 0.0
 			out["landed"] = -velocity.y
-			if move == "slam": out["slammed"] = -velocity.y
+			if move == "slam":
+				out["slammed"] = -velocity.y
+				if SLAM_PLANT:
+					h = Vector2.ZERO
+					planted = crouch
+					skidding = false
 			if move == "wall": out["wall"] = false
 			if move == "wallrun": out["wallrun"] = false
 			if move == "sail": out["sail"] = false
@@ -1928,6 +1955,32 @@ func toss(push: Vector3, hop := false) -> void:
 	if Vector2(push.x,push.z).length() > 0.3: facing = facing_of(Vector2(push.x,push.z))
 	feet.y += 0.02
 
+## Launched by a spring (a bob slab slammed, scripts/interactables/
+## foot_slab.gd): thrown up as `toss` throws him (a fresh airtime, the
+## stick steering as in any jump, the twirl and the sail ready, the hold of
+## Jump not cutting it), off the ground at once, and the first `free` m of
+## the drop that follows forgiven by the fall stun and its hurt (the height
+## the spring threw him, so coming back down onto it, or onto ground within
+## a stun's height under it, doesn't lay him down).
+func launch(push: Vector3, free: float) -> void:
+	toss(push)
+	if move == "tumble" or swimming: return
+	move = ""
+	grounded = false
+	_launch_free = maxf(free,0.0)
+	_launch_hang = true
+
+## The upward pace (m/s) that rises `height` m on his own rising gravity,
+## the hold of Jump not cutting it (as `toss` throws him); with `hang`, as
+## `launch` throws him, its hang at the top counted.
+func rise_for(height: float, hang := false) -> float:
+	height = maxf(height,0.0)
+	if not hang: return sqrt(2.0*gravity*height)
+	var b := LAUNCH_HANG_V
+	var top := b*b/(2.0*gravity*LAUNCH_HANG_G)
+	if height <= top: return sqrt(2.0*gravity*LAUNCH_HANG_G*height)
+	return sqrt(2.0*gravity*(height-top)+b*b)
+
 ## Taken by a rider (see the header): `by` steps him from the next step
 ## (its `ride`), his own pace stopped, his feet set at `at`, on the ground
 ## (`on_ground`) or held off it, facing `towards` (NAN: as he faces): a
@@ -2014,7 +2067,7 @@ func slam(pace: float, kick: float) -> void:
 func _arc(delta: float, jump: bool) -> float:
 	var dy := 0.0
 	var left := delta
-	for i in range(4):
+	for i in range(6):
 		if left <= 0.0: break
 		var v := velocity.y
 		var low := -wall_slide if move == "wall" else (-TWIRL_FALL if move == "twirl" else (-WALLRUN_FALL if move == "wallrun" else (-maxf(terminal,_slam) if move == "slam" else -terminal)))
@@ -2034,6 +2087,14 @@ func _arc(delta: float, jump: bool) -> float:
 		elif v <= 0.0: g *= fall
 		elif not jump and not _no_cut: g *= cut
 		var t := left
+		if _launch_hang and move == "":
+			# The hang at a spring launch's top: its band's edges split the
+			# step, so the height is the same at any frame rate.
+			var b := LAUNCH_HANG_V
+			if v > b+1e-5: t = minf(t,(v-b)/g)
+			elif v > -b+1e-5:
+				g *= LAUNCH_HANG_G
+				if v <= 0.0: t = minf(t,(v+b)/g)
 		if v > 0.0: t = minf(t,v/g)
 		if v-g*t < low: t = minf(t,(v-low)/g)
 		dy += v*t-0.5*g*t*t
