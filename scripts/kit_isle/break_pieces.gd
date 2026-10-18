@@ -59,6 +59,17 @@ const VOICES := {
 	"ruin_boom":[1.2,42.0,26.0,0.7,0.06,0.003,0.0],
 }
 const REACH := {"ruin_crack":36.0,"ruin_fall":50.0,"ruin_thud":20.0,"ruin_boom":70.0}
+## His shove (`shove`): rubble this near his bulk (m) is let loose again,
+## a live piece till he has gone on (NEAR_HOLD s) and it rests; a piece in
+## his bulk goes at least his way and speed and out to his side (PUSH_OUT
+## m/s, all of it at his middle), rolling over the ground; a piece born
+## of a break feels him only past PUSH_AFTER s (not shoved out of the
+## blow that broke it).
+const LOOSE_REACH := 1.2
+const NEAR_HOLD := 0.6
+const PUSH_OUT := 2.4
+const PUSH_ROLL := 0.8
+const PUSH_AFTER := 0.3
 
 ## The hub (scripts/kit_isle/breakables.gd) this answers to, or null (then
 ## its own pause, `field` and `sound_hook`).
@@ -78,6 +89,11 @@ var quake := 0.0
 var flat_rest := 0.3
 var _rids: Array[RID] = []
 var _rubble: Array[RID] = []
+## Each piece's break and kind: {rb: [group, kind]} (`shove` lets rubble
+## loose again).
+var _group_of := {}
+var _near_box := BoxShape3D.new()
+var _near_q := PhysicsShapeQueryParameters3D.new()
 ## The slabs come to rest (a wall's, the gable's): ankle-deep to him, he
 ## wades them as if they were not there (never a heap to climb or plan
 ## round); the walker climbs them.
@@ -90,6 +106,8 @@ var _material := PhysicsMaterial.new()
 var peak_live := 0
 var landed_direct := 0
 var settled_groups := 0
+var loosened := 0
+var shoved := 0
 var bursts := 0
 ## The longest a break took to build at hit time (ms), and the pre-cuts (ms).
 var build_ms := 0.0
@@ -186,6 +204,7 @@ func _body_of(subs: Array, xf: Transform3D) -> RigidBody3D:
 func _go_piece(rb: RigidBody3D, group: Dictionary, kind: String, lin: Vector3, ang: Vector3, wait: float, dir: Vector3, up: float) -> void:
 	group.pieces.append(rb)
 	group.box = (group.box as AABB).expand(rb.global_position)
+	_group_of[rb] = [group,kind]
 	if _count() >= MAX_BODIES:
 		_lay(rb,dir,up,kind)
 		landed_direct += 1
@@ -258,8 +277,10 @@ func _burst(p: Dictionary) -> Array:
 		piece.linear_velocity = lin
 		piece.angular_velocity = ang
 		group.pieces.append(piece)
+		_group_of[piece] = [group,String(s.get("kind","drum"))]
 		out.append({"rb":piece,"t":0.0,"still":0.0,"group":group,"v":lin,"kind":String(s.get("kind","drum")),"wait":0.0,"lin":lin,"ang":ang,"burst":[],"soft":String(s.get("kind","drum")) in ["slab","column","chunk"]})
 	group.pieces.erase(rb)
+	_group_of.erase(rb)
 	rb.queue_free()
 	return out
 
@@ -329,12 +350,18 @@ func _physics_process(delta: float) -> void:
 		p.v = v
 		if v.length() < STILL_V and rb.angular_velocity.length() < STILL_W: p.still += delta
 		else: p.still = 0.0
-		if float(p.still) >= STILL_FOR or (float(p.t) > SETTLE_MOST and v.length() < 2.0):
+		var near := float(p.get("near",0.0))
+		if near > 0.0:
+			# By him still: loose, not rubble yet.
+			p.near = near-delta
+			p.t = minf(float(p.t),SETTLE_MOST)
+		elif float(p.still) >= STILL_FOR or (float(p.t) > SETTLE_MOST and v.length() < 2.0):
 			_freeze(rb)
 			if p.kind in ["slab","chunk"]: _wade.append(rb.get_rid())
 			done.append(p)
 		elif rb.global_position.y < lost_y or float(p.t) > LIVE_MOST:
 			(p.group.pieces as Array).erase(rb)
+			_group_of.erase(rb)
 			rb.queue_free()
 			done.append(p)
 	for p: Dictionary in done:
@@ -363,12 +390,18 @@ func _settled(group: Dictionary) -> void:
 	var root := Node3D.new()
 	root.name = "Rubble"
 	add_child(root)
+	group.root = root
+	# Each mesh's way back to its piece (`_unmerge`, his shove).
+	var back: Array = []
+	group.back = back
 	var box: AABB = group.box
 	var holders: Array = []
 	var take := func(owner_node: Node3D) -> void:
 		for m: Node in owner_node.get_children():
 			if not m is MeshInstance3D: continue
 			var mesh := m as MeshInstance3D
+			back.append({"owner":owner_node,"mesh":mesh.mesh,"node":mesh if not _stone(mesh.mesh) else null,
+				"xf":mesh.transform,"name":mesh.name,"material":mesh.material_override,"shadow":mesh.cast_shadow})
 			var holder := Node3D.new()
 			holder.transform = root.global_transform.affine_inverse()*owner_node.global_transform*mesh.transform
 			owner_node.remove_child(mesh)
@@ -395,6 +428,111 @@ func _settled(group: Dictionary) -> void:
 	for h: Node3D in holders: h.free()
 	box = box.grow(2.5)
 	_changed(box)
+
+## A settled break's merged mesh undone: each piece and its stump given
+## its own meshes back, so a piece of it can move again (his shove);
+## settling again merges it anew.
+func _unmerge(group: Dictionary) -> void:
+	group.merged = false
+	settled_groups -= 1
+	for b: Dictionary in group.get("back",[]):
+		var owner_node: Node3D = b.owner
+		if not is_instance_valid(owner_node): continue
+		var mesh: MeshInstance3D = b.node
+		if mesh != null and is_instance_valid(mesh): mesh.get_parent().remove_child(mesh)
+		else:
+			mesh = MeshInstance3D.new()
+			mesh.mesh = b.mesh
+			mesh.material_override = b.material
+			mesh.cast_shadow = b.shadow
+		mesh.name = b.name
+		mesh.transform = b.xf
+		owner_node.add_child(mesh)
+	group.back = []
+	var root: Node3D = group.get("root")
+	if root != null and is_instance_valid(root): root.queue_free()
+	group.root = null
+
+# --- His shove ------------------------------------------------------------------------------
+
+## The Olmec's bulk this frame (`xf`, a box `size` big, turned with him;
+## his velocity `vel`): the rubble by it let loose again, and every loose
+## piece in it shoved along his way and out to his side, so he plows
+## through what he broke rather than wading through it.
+func shove(xf: Transform3D, size: Vector3, vel: Vector3) -> void:
+	if _group_of.is_empty(): return
+	var any := false
+	if not _rubble.is_empty():
+		_near_box.size = size+Vector3(LOOSE_REACH,0.0,LOOSE_REACH)*2.0
+		_near_q.shape = _near_box
+		_near_q.transform = xf
+		_near_q.collision_mask = 1
+		for h: Dictionary in get_world_3d().direct_space_state.intersect_shape(_near_q,32):
+			var rb := h.collider as RigidBody3D
+			if rb == null or not _group_of.has(rb) or not rb.get_rid() in _rubble: continue
+			if _count() >= MAX_BODIES: break
+			_loosen(rb)
+			any = true
+	if any: _refresh_rids()
+	if live.is_empty(): return
+	var inv := xf.affine_inverse()
+	var half := size*0.5
+	var his := Vector3(vel.x,0.0,vel.z)
+	for p: Dictionary in live:
+		var rb: RigidBody3D = p.rb
+		if float(p.wait) > 0.0 or float(p.t) < PUSH_AFTER or not is_instance_valid(rb): continue
+		var c := rb.global_position
+		var rel := inv*c
+		var r: float = p.get("r",-1.0)
+		if r < 0.0:
+			r = _reach_of(rb)
+			p.r = r
+		var lx := half.x+LOOSE_REACH
+		var lz := half.z+LOOSE_REACH
+		if absf(rel.x) < lx and absf(rel.z) < lz and rel.y > -half.y-r and rel.y < half.y+r: p.near = NEAR_HOLD
+		if absf(rel.x) > half.x+r or absf(rel.z) > half.z+r or absf(rel.y) > half.y+r: continue
+		# Out to his nearer side (ahead of him, the side it is on), the
+		# deeper in the harder; along his way at his speed.
+		var side := Vector3(signf(rel.x) if absf(rel.x) > 0.05 else 1.0,0.0,0.0)
+		var depth := 1.0-clampf(absf(rel.x)/(half.x+r),0.0,1.0)
+		var out := xf.basis*side
+		out.y = 0.0
+		out = out.normalized()
+		var want := his+out*PUSH_OUT*(0.35+0.65*depth)
+		var v := rb.linear_velocity
+		var along := want.normalized()
+		var s := v.dot(along)
+		if s < want.length(): v += along*(want.length()-s)
+		rb.linear_velocity = v
+		# Over the ground it rolls the way it goes.
+		var roll := Vector3.UP.cross(along)*want.length()*PUSH_ROLL/maxf(r,0.3)
+		rb.angular_velocity = rb.angular_velocity.lerp(roll,0.25)
+		rb.sleeping = false
+		shoved += 1
+
+## Rubble `rb` let loose: a live piece again (its break unmerged first).
+func _loosen(rb: RigidBody3D) -> void:
+	var of: Array = _group_of[rb]
+	var group: Dictionary = of[0]
+	if group.get("merged",false): _unmerge(group)
+	_rubble.erase(rb.get_rid())
+	_wade.erase(rb.get_rid())
+	rb.freeze = false
+	rb.sleeping = false
+	group.left += 1
+	loosened += 1
+	live.append({"rb":rb,"t":PUSH_AFTER,"still":0.0,"group":group,"v":Vector3.ZERO,"kind":str(of[1]),"wait":0.0,
+		"lin":Vector3.ZERO,"ang":Vector3.ZERO,"burst":[],"soft":true,"landed":true,"near":NEAR_HOLD})
+
+## Half `rb`'s breadth (m): its shapes' bounds, the longest way.
+static func _reach_of(rb: RigidBody3D) -> float:
+	var r := 0.3
+	for c: Node in rb.get_children():
+		var holder := c as CollisionShape3D
+		if holder == null or holder.shape == null: continue
+		var b := holder.transform*holder.shape.get_debug_mesh().get_aabb()
+		r = maxf(r,b.size.length()*0.5)
+	return r
 
 ## Whether `mesh` merges as RuinKit stone (RuinKit.merge): one surface of
 ## unindexed triangles with vertex colours.

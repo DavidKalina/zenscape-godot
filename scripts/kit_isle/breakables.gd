@@ -45,6 +45,9 @@ const BREAKABLE := &"breakable"
 const HUBS := &"breakables_hub"
 const QUAKE_FADE := 1.4
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
+## His shove's foot over his feet (m): a slab flat on the ground is shoved too.
+const SHOVE_FOOT := 0.15
 ## The breakers as they start: on, and their hits' strength (1 the Olmec's;
 ## a piece's toughness is measured against it).
 const BREAKERS := {
@@ -157,9 +160,21 @@ func rubble_rids() -> Array[RID]:
 	return out
 
 func met(body: Node3D) -> void:
+	_shove(body)
 	if not allows(&"olmec"): return
 	for p: Node in pieces(): p.met(self,body)
 	for o: Object in others: o.met(body)
+
+## His bulk on the loose stone (the breaks' `shove`): what he broke is
+## plowed aside as he goes, whoever broke it (so even with `olmec` off).
+func _shove(body: Node3D) -> void:
+	var hh: float = body.hh
+	var low := SHOVE_FOOT
+	var high := float(body._bulk_top())
+	var size := Vector3(hh*HeadlessBody.BULK_W*2.0,high-low,hh*HeadlessBody.BULK_L*2.0)
+	var xf := Transform3D(Basis(Vector3.UP,float(body.facing)),body.position+Vector3.UP*(low+high)*0.5)
+	for o: Object in others:
+		if o.has_method("shove"): o.shove(xf,size,body.vel)
 
 func wave(body: Node3D, w: Dictionary) -> void:
 	if not allows(&"olmec"): return
