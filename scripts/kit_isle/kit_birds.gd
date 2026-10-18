@@ -25,21 +25,21 @@ extends Node3D
 const Body = preload("res://scripts/songbird_body.gd")
 ## A flock of species "crow" gets crows (their own body and moves) instead.
 const Crow = preload("res://scripts/crow_body.gd")
-const Songbirds = preload("res://scripts/songbirds.gd")
 const Disturbance = preload("res://scripts/disturbance.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 
-## Flight, from the game's songbirds.
-const SPEED := Songbirds.SPEED
-const STEER := Songbirds.STEER
-const APPROACH := Songbirds.APPROACH
-const BOUND := Songbirds.BOUND
-const BEAT := Songbirds.BEAT
+## Flight: cruise speed (m/s), steering (m/s²), the final approach's speed;
+## bounding flight (seconds of wingbeats, then of wings tucked).
+const SPEED := 4.0
+const STEER := 10.0
+const APPROACH := 1.1
+const BOUND := Vector2(0.34,0.22)
+const BEAT := 15.0
 const SIT := Vector2(9.0,22.0)
 const WHEEL := Vector2(3.6,4.2)
-const WHEEL_TIME := Songbirds.WHEEL_TIME
-const CALM := Songbirds.CALM
-const DUSK := Songbirds.DUSK
+const WHEEL_TIME := Vector2(3.0,5.0)
+const CALM := 12.0
+const DUSK := 0.18
 ## What a perched bird does when its sit is up: hop along to a free perch
 ## within HOP_REACH m, drop to the turf to forage, or flit within the group.
 const HOP_SHARE := 0.45

@@ -31,7 +31,8 @@ extends RefCounted
 ## meander: how far the course swings off its heading (radians)}; each but
 ## `from` and `toward` optional.
 
-const Genesis = preload("res://scripts/genesis_canvas.gd")
+## The plain's rim height (m), the islet's shore level.
+const RIM_HEIGHT := 0.2
 const IslandShore = preload("res://scripts/island_shore.gd")
 
 ## The course: a point every STRIDE m, swinging off its heading by up to
@@ -113,13 +114,13 @@ static func cut(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 	# The water's level along the course: falling all the way, under the
 	# ground by SPRING at the spring and never more than `incise` under it,
 	# down to the mouth's.
-	var mouth: float = Genesis.RIM_HEIGHT-MOUTH
+	var mouth: float = RIM_HEIGHT-MOUTH
 	var count := course.size()
 	var level := PackedFloat32Array()
 	level.resize(count)
 	var ground := PackedFloat32Array()
 	ground.resize(count)
-	for k in range(count): ground[k] = islet.ground_at(course[k]) if islet.on_land(course[k]) else Genesis.RIM_HEIGHT
+	for k in range(count): ground[k] = islet.ground_at(course[k]) if islet.on_land(course[k]) else RIM_HEIGHT
 	var top := ground[0]-SPRING
 	for k in range(count):
 		var t := float(k)/float(count-1)

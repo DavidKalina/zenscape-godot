@@ -25,7 +25,7 @@ extends RefCounted
 ## water" fast for the spot finder and the planting.
 ##
 ## The recipe's lake: {bank: Vector2 (m), shelf: Vector2 (m), depth:
-## Vector2 (m), level: Vector2 (m over Genesis RIM_HEIGHT), isle: odds,
+## Vector2 (m), level: Vector2 (m over RIM_HEIGHT), isle: odds,
 ## toward: Vector2 (spill now, that way)}; each optional. A big lake (the
 ## lower world's, scripts/landform_lake.gd) may also give: copses:
 ## Vector2i, stands of trees round it (COPSE) from copse_pool (else the
@@ -36,7 +36,8 @@ extends RefCounted
 ## bank grass; tea: true to steep the water by what grows round it
 ## (`steep`), or the most it may steep (0 to 1).
 
-const Genesis = preload("res://scripts/genesis_canvas.gd")
+## The plain's rim height (m), the islet's shore level.
+const RIM_HEIGHT := 0.2
 const IslandShore = preload("res://scripts/island_shore.gd")
 const LakeTea = preload("res://scripts/lake_tea.gd")
 const Emergence = preload("res://scripts/emergence.gd")
@@ -59,7 +60,7 @@ const DROP := 2.4
 ## The deep bowl's depth under the water (m), and its bed's swell (m).
 const DEPTH := Vector2(2.6,3.6)
 const BED_SWELL := 0.14
-## The water's level over Genesis RIM_HEIGHT (m).
+## The water's level over RIM_HEIGHT (m).
 const LEVEL := Vector2(-0.1,0.08)
 ## The isle: the odds of one, its radius (m), its top over the water (m),
 ## and how far in from the waterline its middle must be (m, past its radius).
@@ -101,7 +102,7 @@ static func cut(islet: RefCounted, rng: RandomNumberGenerator, inland: float) ->
 	var shelf_range: Vector2 = spec.get("shelf",SHELF)
 	var depth_range: Vector2 = spec.get("depth",DEPTH)
 	var level_range: Vector2 = spec.get("level",LEVEL)
-	var level: float = Genesis.RIM_HEIGHT+rng.randf_range(level_range.x,level_range.y)
+	var level: float = RIM_HEIGHT+rng.randf_range(level_range.x,level_range.y)
 	var shelf := rng.randf_range(shelf_range.x,shelf_range.y)
 	var depth := rng.randf_range(depth_range.x,depth_range.y)
 	var beach := float(spec.get("beach",BEACH))
@@ -270,7 +271,7 @@ static func build_field(islet: RefCounted) -> void:
 
 ## The ground's own height at `p` (no decks), the rim's off the land.
 static func _raw(islet: RefCounted, p: Vector2) -> float:
-	return islet._sample(islet.heights,p,Genesis.RIM_HEIGHT)
+	return islet._sample(islet.heights,p,RIM_HEIGHT)
 
 ## The ground's own height at `p` on the land, INF off it: one lookup for
 ## both (`_raw`, `on_land`).

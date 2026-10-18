@@ -9,17 +9,6 @@ extends RefCounted
 ## scene loads.
 
 const ENTRIES: Array[Dictionary] = [
-	# The old game: the plate builder behind its own title (Continue, Your
-	# worlds, Build this world, a quiet plain), with every save. The default
-	# front door is the aqueduct isle now (studies/zenscape.tscn).
-	{"id":"builder","group":"The game","title":"Builder (old game)","scene":"res://studies/cozy_worlds.tscn","args":[],"own_title":true,
-		"detail":"The old game on its own title: your worlds and saves, the hand out to build the plate."},
-	{"id":"game_world","group":"The game","title":"Your world","scene":"res://studies/cozy_worlds.tscn","args":["--resume"],
-		"detail":"The game straight in: your last world (or a new plain), the hand out to build."},
-	{"id":"moments_world","group":"The game","title":"Moments in the sky","scene":"res://studies/cozy_worlds.tscn","args":["--moments","--skydive"],
-		"detail":"The game with the moments set pieces, in the plane high over home. N: next set piece."},
-	{"id":"manual_landing_world","group":"The game","title":"Landing by hand","scene":"res://studies/cozy_worlds.tscn","args":["--manual-landing","--skydive"],
-		"detail":"The game with every landing flown by hand, in the plane over home. Put it down anywhere, brake or drift to a stop, F out; board to fly."},
 	# Ruins.
 	{"id":"aqueduct_isle","group":"Ruins","title":"Aqueduct isle","scene":"res://studies/aqueduct_isle.tscn","args":[],
 		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F. Find the lodestone, fly where the nose points; the halls follow."},
@@ -45,8 +34,6 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"The tallest isle: a stepped mesa with a grand stair winding up it to a gate, a rope bridge to a hanging pinnacle."},
 	{"id":"hollow_keel","group":"Ruins","title":"The Hollow Keel","scene":"res://studies/hollow_keel_isle.tscn","args":[],
 		"detail":"A modest isle with a broken chapel and a hall hung under it: fly in under its edge and weave the columns, or walk the grand stairs down the shaft."},
-	{"id":"sundered_hall","group":"Ruins","title":"The Sundered hall","scene":"res://studies/cozy_worlds.tscn","args":["--motif=sundered","--no-clusters","--skydive"],
-		"detail":"The game with the long gothic hall 240-900 m out; in the plane, fly to it."},
 	{"id":"hall_rise","group":"Ruins","title":"Hall rise","scene":"res://studies/hall_rise.tscn","args":[],
 		"detail":"The Sundered hall rising out of the clouds in four whole chunks. R again, C camera, F plane."},
 	{"id":"hall_chain","group":"Ruins","title":"Hall chain","scene":"res://studies/hall_chain.tscn","args":[],
@@ -90,10 +77,6 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"Island pack: a little sky town on floating islands, easy way and expert line."},
 	{"id":"pack_starter","group":"On-foot greyboxes","title":"Starter islands","scene":"res://studies/character_study.tscn","args":["--pack=starter"],
 		"detail":"Island pack: two islands and a hop, the template for others."},
-	{"id":"test_island","group":"On-foot greyboxes","title":"Test island","scene":"res://studies/test_island.tscn","args":[],
-		"detail":"One small island of wheat, trees and a pond, for the pilot on foot."},
-	{"id":"walk_island","group":"On-foot greyboxes","title":"Walk island","scene":"res://studies/walk_island.tscn","args":[],
-		"detail":"One fixed sky island with a mountain chain, to walk round."},
 	{"id":"collectibles","group":"On-foot greyboxes","title":"Collectible gallery","scene":"res://studies/collectible_gallery.tscn","args":[],
 		"detail":"The glyph tokens hanging in open sky, to judge their look."},
 	{"id":"plane_parts","group":"On-foot greyboxes","title":"Plane parts gallery","scene":"res://studies/plane_parts_gallery.tscn","args":[],

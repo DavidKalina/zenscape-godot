@@ -24,7 +24,8 @@ extends RefCounted
 ## islands take a coarser grid (STEPS, the hills landform's), so a big
 ## island builds in time (tools/bench_landform_lake.gd).
 
-const Genesis = preload("res://scripts/genesis_canvas.gd")
+## The plain's rim height (m).
+const RIM_HEIGHT := 0.2
 
 const NAME := "lake"
 const ACROSS := Vector2(30.0,90.0)
@@ -33,7 +34,7 @@ const ACROSS := Vector2(30.0,90.0)
 ## height, IsletLake LEVEL) stands that much over the sea and its fall
 ## pours down the bank into it, rather than meeting the sea level with it.
 const RISE := 0.7
-const SEA := Genesis.RIM_HEIGHT-RISE
+const SEA := RIM_HEIGHT-RISE
 ## The flavours and how often each turns up.
 const FLAVOURS := [["mere",0.45],["tarn",0.35],["isle",0.2]]
 ## The grid's step (m) by width: [widest it serves, step].

@@ -1,5 +1,3 @@
 # Tests that fail for a recorded reason. They still run but don't fail the
 # suite; tools/run_tests.py says when one passes again so its line can go.
 # One per line: test_x.gd  # reason
-test_world_reference_play.gd  # game bug: diorama_world_play.gd _instances_published clears _world_dirty without migrating Reference scenery
-test_inherited_scene_lifecycle.gd  # game bug: fidelity.gd's LookPass builds nodes as members, orphaned (9) when freed before _ready

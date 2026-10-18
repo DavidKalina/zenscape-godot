@@ -52,11 +52,12 @@ const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
-const WandererEye = preload("res://scripts/wanderer_eye.gd")
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://studies/celestial.gd")
 const LookPass = preload("res://scripts/look_pass.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
+## Seconds between two lean presses that make a barrel roll.
+const DOUBLE_TAP := 0.3
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const Pad = preload("res://scripts/pad.gd")
 const RuinGrowth = preload("res://scripts/ruin_growth.gd")
@@ -1220,7 +1221,7 @@ func _fly_step(delta: float) -> void:
 ## DOUBLE_TAP asks for a barrel roll that way.
 func _lean_tapped(dir: float) -> void:
 	var now := Time.get_ticks_msec()
-	if dir == _tap_dir and now-_tap_at <= int(WandererEye.DOUBLE_TAP*1000.0):
+	if dir == _tap_dir and now-_tap_at <= int(DOUBLE_TAP*1000.0):
 		_roll_asked = dir
 		_tap_dir = 0.0
 	else:

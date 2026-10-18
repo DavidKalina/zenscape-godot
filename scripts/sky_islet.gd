@@ -11,7 +11,7 @@ extends RefCounted
 ##     for the islet's land in m^2 on its small grid), so it is lobed, bayed
 ##     and warped as an island is; then its shore distance and edges;
 ##   the top: heights on the grid's points, a seeded field by kind (KINDS)
-##     eased to Genesis RIM_HEIGHT over the last metres before the shore as
+##     eased to RIM_HEIGHT over the last metres before the shore as
 ##     the plain is (scripts/genesis_canvas.gd `shape`), to a rim that
 ##     wanders and slumps, then weathered by the plate's own erosion
 ##     (scripts/terrain_erosion.gd, `_erode`): gullies and runnels cut down
@@ -43,7 +43,6 @@ const Plate = preload("res://scripts/plate.gd")
 const PlateMesh = preload("res://scripts/plate_mesh.gd")
 const IslandOutline = preload("res://scripts/island_outline.gd")
 const IslandShore = preload("res://scripts/island_shore.gd")
-const Genesis = preload("res://scripts/genesis_canvas.gd")
 const Emergence = preload("res://scripts/emergence.gd")
 const Stands = preload("res://scripts/tree_stands.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
@@ -75,7 +74,7 @@ const STEP := Plate.POINT_STEP
 const LEVEL_EASE := 1.6
 ## The shore's ease: the ground meets RIM_HEIGHT this far in (m), at most
 ## a share of the islet's radius.
-const RIM_HEIGHT := Genesis.RIM_HEIGHT
+const RIM_HEIGHT := 0.2
 const RIM_EASE := 2.5
 const RIM_EASE_SHARE := 0.4
 ## The rolling ground (as the plain's swell and ripple, finer for the small
@@ -1330,7 +1329,7 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 	var sand: Color = palette.sand
 	var gravel: Color = palette.gravel
 	var rock_slope: float = palette.rock_slope
-	var earth: Color = palette.get("earth",Color(Genesis.FIDELITY.earth).srgb_to_linear())
+	var earth: Color = palette.get("earth",Color("6a503e").srgb_to_linear())
 	var patch := FastNoiseLite.new()
 	patch.seed = seed+5
 	patch.frequency = 0.4
