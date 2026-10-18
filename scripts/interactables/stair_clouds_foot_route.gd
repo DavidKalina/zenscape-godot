@@ -4,8 +4,9 @@ extends RefCounted
 ## foot-interactables.md), in its own frame moved by `offset` (its own
 ## scene: none; in the aqueduct isle's sky: SKY_OFFSET, scripts/kit_isle/
 ## motif_sky.gd's place for it):
-##   - a balustrade down the outer cheek of each of the top four flights
-##     (legs 5 to 8, counted from 1), over the drop: slide one, flung off
+##   - a balustrade down the outer side of each of the top four flights
+##     (legs 5 to 8, counted from 1), on the treads just inside the cheek
+##     (the cut's wall stands on the cheek's middle): slide one, flung off
 ##     its foot onto the landing, turn and jump onto the next down (a chain
 ##     of four);
 ##   - four bobbing slabs off the first flight's outer side, climbing from
@@ -15,20 +16,28 @@ extends RefCounted
 ## the slabs.
 const Stair = preload("res://studies/stair_clouds_isle_art.gd")
 const Balustrade = preload("res://scripts/interactables/balustrade.gd")
+const RuinKit = preload("res://scripts/ruin_kit.gd")
 
 ## Where the aqueduct isle's sky stands it (motif_sky.gd PLACES).
 const SKY_OFFSET := Vector3(440.0,14.0,-254.6)
-## The legs with a balustrade down their outer cheek.
+## The legs with a balustrade down their outer side.
 const RAIL_LEGS := [4,5,6,7]
+## The rail in from the cheek's middle (the cut's wall, which stands up to
+## TerraceRock CUT_FACET into the cut): its coping clear of the wall by
+## RAIL_CLEAR, overhanging the treads.
+const RAIL_CLEAR := 0.05
+const RAIL_IN := RuinKit.CHEEK.x*0.5+Balustrade.COPING.x*0.5+RAIL_CLEAR
 
 static func build(study: Node3D, offset: Vector3) -> void:
 	var host: Node3D = preload("res://scripts/interactables/aqueduct_foot_route.gd").host_of(study)
 	var by := Transform3D(Basis.IDENTITY,offset)
 	for s: int in RAIL_LEGS:
-		host.balustrade(Balustrade.grand_stair_rail(by*Stair.leg_frame(s),-1.0),400+s,0.35,Balustrade.grand_stair_floor(by*Stair.leg_frame(s),-1.0))
+		host.balustrade(Balustrade.grand_stair_rail(by*Stair.leg_frame(s),-1.0,RAIL_IN),400+s,0.35,Balustrade.grand_stair_floor(by*Stair.leg_frame(s),-1.0,RAIL_IN))
 	for i in range(4):
 		var p := Stair.side_at(0,-4.5+3.6*i,Stair.W+2.2)
-		host.bob_slab(by*Vector3(p.x,Stair.TOP+1.0+0.9*i,p.y),Vector3(2.4,0.7,2.2),0.2*i,420+i)
+		# The last one's top 0.23 m under the strip's rim (the leg's head
+		# height), so a plain hop lands on the pad.
+		host.bob_slab(by*Vector3(p.x,Stair.TOP+1.05+0.95*i,p.y),Vector3(2.4,0.7,2.2),0.2*i,420+i)
 	# On its own scene its spots are the only ones (the aqueduct isle's
 	# route adds them to its own).
 	if offset == Vector3.ZERO: preload("res://scripts/interactables/aqueduct_foot_route.gd").start_at(study,spots(offset))

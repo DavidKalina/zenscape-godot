@@ -291,14 +291,14 @@ const SHRINES := [
 	["pad",2,25.6,0.0,"tomb_chest",0.4,0.0],
 	["pad",3,26.2,-3.0,"fallen_pier",0.5,35.0],
 	["pad",5,26.0,-3.4,"pier",0.7,0.0],
-	["pad",5,26.0,3.4,"pier",0.3,0.0],
+	["pad",5,26.0,2.6,"pier",0.3,0.0],
 	["pad",6,25.6,0.0,"tomb_chest",0.5,0.0],
 	["pad",7,26.0,0.0,"tomb_chest",0.5,0.0],
 	["ter",0,13.0,0.0,"tomb_chest",0.45,90.0,2.0*STEP],
 	["ter",1,10.0,0.0,"floor",0.55,0.0,2.0*STEP],
 	["ter",3,12.5,0.0,"arch",0.6,90.0,4.0*STEP],
 	["ter",4,9.0,-14.0,"pier",0.55,0.0,6.0*STEP],
-	["ter",5,9.0,14.0,"pier",0.35,0.0,6.0*STEP],
+	["ter",5,9.5,0.0,"pier",0.35,0.0,6.0*STEP],
 ]
 
 ## The summit: the lone gate on the south rim, a broken turret and lancet
@@ -416,6 +416,6 @@ static func plane_tokens() -> Array:
 ## The slot's points: [u along the entry wall, v out of it, y over TOP].
 ## (The last out 1 m and 3 m off the wall: a token line keeps a THREAD's
 ## room from the rock, CollectibleLines WING.)
-const SLOT := [[16.0,22.0,11.0],[8.0,9.0,17.0],[0.0,6.5,22.0],[-8.0,11.0,25.5]]
-const CORK_R := 31.0
+const SLOT := [[16.0,22.0,11.0],[8.0,9.0,17.0],[0.0,6.5,22.0],[-8.0,13.0,25.5]]
+const CORK_R := 33.0
 const CORK_UP := 3.0
