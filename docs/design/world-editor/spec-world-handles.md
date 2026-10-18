@@ -35,6 +35,20 @@ The user plays the aqueduct isle, presses F4 and:
    layout file like a move, and rebuilds only that piece on release. Rings
    and slabs added in the world view and from the island view's Mechanics
    pocket take it too.
+1c. **Rings throw along their angle.** (Spec change 2026-10-17, right
+   after 1b.) Today a ring taken in flight launches him straight up in
+   world space whatever its tilt (`_take_ring` in
+   `scripts/interactables/foot_pieces.gd`: only velocity.y is set). Make
+   the boost go along the ring's axis, on its side away from the ground
+   (the axis's upward half; for a ring standing upright with its axis
+   level, the side he leaves through), at the same POP strength. A flat ring
+   throws straight up as now; a ring tipped 45° throws him 45° out; the
+   user aims a ring by turning and tipping it in the world view.
+   Keep enough rise that an upright ring still carries him (judge it in
+   play, say how). Check the ring route and foot route still play their
+   lines; a ring placed tipped on purpose (`ring_a`) may now throw
+   differently: retune its tip so its line still lands, and say so. A ring
+   shows its throw direction as a short arrow in the world view.
 2. **Groups.** Shift-click, or drag a box, to select several pieces. They
    move, turn and delete as one. A selection can be **saved as a chunk**
    (a named file of pieces relative to an anchor), and a chunk can be
