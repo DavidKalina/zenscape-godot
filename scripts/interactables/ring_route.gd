@@ -31,6 +31,7 @@ extends RefCounted
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const TurfLips = preload("res://scripts/kit_isle/turf_lips.gd")
+const Layout = preload("res://scripts/layout_overrides.gd")
 
 const TOP := Art.TOP
 static var S: float = WorldScale.wanderer
@@ -158,43 +159,37 @@ static func spots() -> Dictionary:
 	}
 
 ## The route on `study` (the aqueduct isle), its pieces on `host`
-## (foot_pieces.gd).
+## (foot_pieces.gd). Each piece is placed by its name (`ring_route/...`)
+## through the scene's layout file (scripts/layout_overrides.gd): moved,
+## deleted, or where the code puts it.
 static func build(study: Node3D, host: Node3D) -> void:
-	var lands: Array = []
 	# The crags.
-	lands.append(_crag("RouteCrag1",CRAG1,CRAG1_R,501))
-	lands.append(_crag("RouteOutcrop",OUTCROP,OUTCROP_R,502))
-	lands.append(_slide_rock(503))
-	lands.append(_crag("RouteFarCrag",far_crag(),FAR_R,504))
-	lands.append(_crag("RouteCatch",catch_crag(),CATCH_R,505))
-	for land: Node3D in lands:
-		host.add_child(land)
-		if study.has_method("add_turf"): study.add_turf(land)
-		TurfLips.dress(land,hash(land.name))
+	_land(study,host,"crag_1",_crag("RouteCrag1",CRAG1,CRAG1_R,501),CRAG1)
+	_land(study,host,"outcrop",_crag("RouteOutcrop",OUTCROP,OUTCROP_R,502),OUTCROP)
+	_land(study,host,"slide_rock",_slide_rock(503),PERCH)
+	_land(study,host,"far_crag",_crag("RouteFarCrag",far_crag(),FAR_R,504),far_crag())
+	_land(study,host,"catch_crag",_crag("RouteCatch",catch_crag(),CATCH_R,505),catch_crag())
 	# 1: the slam chain.
 	var c := chain()
-	for i in range(c.size()): host.bob_slab(c[i],Vector3(2.3,0.7,2.2),0.3*i,510+i)
+	for i in range(c.size()): _slab(host,"chain_slab_%d" % (i+1),c[i],Vector3(2.3,0.7,2.2),0.3*i,510+i)
 	# 2: the kicker.
-	host.bob_slab(kicker(),Vector3(2.4,0.7,2.4),0.2,515)
+	_slab(host,"kicker_slab",kicker(),Vector3(2.4,0.7,2.4),0.2,515)
 	# 3: the ring stair.
-	var rs: Node3D = host.bob_slab(ring_slab(),Vector3(2.3,0.7,2.2),0.0,516)
-	rs.spring_pumps = RING_SLAB_PUMPS
+	_slab(host,"stair_slab",ring_slab(),Vector3(2.3,0.7,2.2),0.0,516,RING_SLAB_PUMPS)
 	var st := stair()
-	for i in range(st.size()): host.air_ring(st[i],520+i,0.3*i)
+	for i in range(st.size()): _ring(host,"stair_ring_%d" % (i+1),st[i],520+i,0.3*i)
 	# 4: the fork's rings: A standing across the north lane's way (its face
 	# east, tipped back), B flat over the south lane.
-	host.air_ring(ring_a(),530,PI*0.5,PI*0.5-RING_A_TIP)
-	host.air_ring(ring_b(),531,0.0)
+	_ring(host,"ring_a",ring_a(),530,PI*0.5,PI*0.5-RING_A_TIP)
+	_ring(host,"ring_b",ring_b(),531,0.0)
 	# 5: the last slab and ring.
-	var ls: Node3D = host.bob_slab(last_slab(),Vector3(2.3,0.7,2.2),0.1,540)
-	ls.spring_pumps = RING_SLAB_PUMPS
-	host.air_ring(last_ring(),541,0.4)
+	_slab(host,"last_slab",last_slab(),Vector3(2.3,0.7,2.2),0.1,540,RING_SLAB_PUMPS)
+	_ring(host,"last_ring",last_ring(),541,0.4)
 	# The catch crag's way back up: its slab and ring.
-	var cs: Node3D = host.bob_slab(catch_slab(),Vector3(2.3,0.7,2.2),0.5,545)
-	cs.spring_pumps = RING_SLAB_PUMPS
+	_slab(host,"catch_slab",catch_slab(),Vector3(2.3,0.7,2.2),0.5,545,RING_SLAB_PUMPS)
 	var cst := stair(catch_slab(),CATCH_RINGS)
-	for i in range(cst.size()): host.air_ring(cst[i],546+i,0.2+0.3*i)
-	# Standing stones on the rest stops.
+	for i in range(cst.size()): _ring(host,"catch_ring_%d" % (i+1),cst[i],546+i,0.2+0.3*i)
+	# Standing stones on the rest stops (they stay where the code puts them).
 	var marks: Array = []
 	for spec: Array in [[CRAG1,0.4],[OUTCROP,1.1],[PERCH,2.2],[far_crag(),0.8]]:
 		var at: Vector3 = spec[0]
@@ -202,6 +197,43 @@ static func build(study: Node3D, host: Node3D) -> void:
 	var stones := Art.floating_stones(550,marks)
 	stones.name = "RouteMarkers"
 	host.add_child(stones)
+
+## A crag (`land`, built round `mid` in world space) stood as the layout
+## file has `ring_route/<called>`, its turf registered where it stands.
+static func _land(study: Node3D, host: Node3D, called: String, land: Node3D, mid: Vector3) -> void:
+	var key := "ring_route/"+called
+	if Layout.deleted(key):
+		land.free()
+		return
+	var coded := Transform3D(Basis.IDENTITY,mid)
+	var t := Layout.xform(key,coded)
+	land.transform = t*coded.affine_inverse()
+	host.add_child(land)
+	var outline: Variant = land.get_meta("outline",null)
+	if study.has_method("add_turf"): study.add_turf(land,Layout.moved_outline(outline,coded,t) if outline is PackedVector2Array else null)
+	TurfLips.dress(land,hash(land.name))
+	Layout.track(key,land,"land",coded)
+
+## A slam-spring slab at `at` (its top), turned `yaw`, by its name.
+static func _slab(host: Node3D, called: String, at: Vector3, size: Vector3, yaw: float, seed_value: int, pumps := 0.0) -> void:
+	var key := "ring_route/"+called
+	if Layout.deleted(key): return
+	var coded := Transform3D(Basis(Vector3.UP,yaw),at)
+	var s: Node3D = host.bob_slab(at,size,yaw,seed_value)
+	if pumps > 0.0: s.spring_pumps = pumps
+	var t := Layout.xform(key,coded)
+	if t != coded: s.layout_place(t)
+	Layout.track(key,s,"bob_slab",coded,{"host":host,"pumps":float(s.spring_pumps)})
+
+## An air ring at `at`, turned `yaw`, tipped `tip`, by its name.
+static func _ring(host: Node3D, called: String, at: Vector3, seed_value: int, yaw := 0.0, tip := 0.0) -> void:
+	var key := "ring_route/"+called
+	if Layout.deleted(key): return
+	var coded := Transform3D(Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,tip),at)
+	var r: Node3D = host.air_ring(at,seed_value,yaw,tip)
+	var t := Layout.xform(key,coded)
+	if t != coded: r.layout_place(t)
+	Layout.track(key,r,"air_ring",coded,{"host":host})
 
 ## A crag: a wandering ring of turf `r` round `at` (x, z) at its height, its
 ## hanging rock under it (the islets' builder).

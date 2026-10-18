@@ -157,6 +157,15 @@ func _torus(called: String, inner: float, outer: float, mat: Material) -> MeshIn
 	add_child(view)
 	return view
 
+## Its rest pose (the layout editor's, scripts/layout_overrides.gd).
+func layout_pose() -> Transform3D:
+	return _home
+
+## Set to rest at `t` (the layout editor): drawn there now.
+func layout_place(t: Transform3D) -> void:
+	_home = t
+	transform = t
+
 ## Whether it may be taken now.
 func ready_to_take() -> bool:
 	return cool <= 0.0

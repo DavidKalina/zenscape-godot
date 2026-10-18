@@ -130,6 +130,17 @@ func _ready() -> void:
 func pose_at(_t: float) -> Transform3D:
 	return rest
 
+## Its rest pose (the layout editor's, scripts/layout_overrides.gd).
+func layout_pose() -> Transform3D:
+	return rest
+
+## Set to rest at `t` (the layout editor): drawn there now, its body moved
+## with it.
+func layout_place(t: Transform3D) -> void:
+	rest = t
+	transform = _posed(pose_at(_time))
+	if body != null: body.force_update_transform()
+
 func rid() -> RID:
 	return body.get_rid() if body != null else RID()
 

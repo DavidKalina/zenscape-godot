@@ -135,6 +135,7 @@ const Art = preload("res://studies/aqueduct_isle_art.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const BaseArt = preload("res://studies/aqueduct_isle_base.gd")
 const TurfLips = preload("res://scripts/kit_isle/turf_lips.gd")
+const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const FixedCache = preload("res://scripts/roguelike/fixed_cache.gd")
 const Life = preload("res://studies/aqueduct_isle_life.gd")
 const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
@@ -325,8 +326,20 @@ func _build_art() -> void:
 	# path_dirt.gd; --vertex-paths: baked into the turf as before).
 	print("aqueduct isle: %d path segments drawn" % preload("res://scripts/kit_isle/path_dirt.gd").paint(KitLook.ground_material(),Art.paths()))
 	print("aqueduct isle: %d triangles" % triangles(art))
+	# The layout file's moves, deletions and additions (scripts/
+	# layout_overrides.gd; layouts/aqueduct_isle.json, or --layout=), read
+	# before the placers that ask it (the ring route).
+	LayoutOverrides.begin("aqueduct_isle")
 	# The on-foot pieces' route (balustrades, ropes, a ferry, bobbing slabs).
-	preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)
+	var foot_host: Node3D = preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)
+	if foot_host != null: LayoutOverrides.build_added(foot_host)
+	# The in-game layout editor (F4, scripts/layout_edit.gd), where the
+	# developer keys are on.
+	if preload("res://scripts/kit_isle/dev_keys.gd").enabled():
+		var editor: Node = preload("res://scripts/layout_edit.gd").new()
+		editor.name = "LayoutEdit"
+		add_child(editor)
+		editor.setup(self,foot_host)
 	# --sluice: the Sluice Flush on the channel (scripts/traps/sluice_aqueduct.gd).
 	preload("res://scripts/traps/sluice_aqueduct.gd").build(self)
 
