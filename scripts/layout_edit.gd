@@ -21,6 +21,7 @@ const AirRing = preload("res://scripts/interactables/air_ring.gd")
 const BobSlab = preload("res://scripts/interactables/bob_slab.gd")
 const Islands = preload("res://scripts/world_islands.gd")
 const Chunks = preload("res://scripts/layout_chunks.gd")
+const Knobs = preload("res://scripts/layout_knobs.gd")
 
 const TOGGLE := KEY_F4
 const LOOK_RATE := 0.004
@@ -126,6 +127,17 @@ var _chunk_list: ItemList
 ## A stamp's reach: the view's middle hits something this near, or the
 ## chunk goes ADD_OUT m out past its own reach.
 const STAMP_REACH := 250.0
+## The knob panel (scripts/layout_knobs.gd; spec goal 4): the selected
+## piece's build's knobs, bottom right. A slider let go (or a step on its
+## track) rebuilds that build; `_knob_held` while one is dragged.
+var _knob_panel: PanelContainer
+var _knob_build := ""
+var _knob_sliders := {}
+var _knob_texts := {}
+var _knob_held := false
+var _knob_quiet := false
+## How far over the bottom edge the panel stands (the play hints under it).
+const KNOB_LIFT := 70.0
 
 func setup(scene: Node3D, pieces: Node3D) -> void:
 	study = scene
@@ -178,6 +190,8 @@ func _input(event: InputEvent) -> void:
 				_end_naming(kc != KEY_ESCAPE)
 				get_viewport().set_input_as_handled()
 		return
+	# The knob panel takes the mouse over itself, and while a slider is held.
+	if _knobs_take(event): return
 	# The chunk list takes clicks on itself.
 	if _listing() and event is InputEventMouseButton and _chunk_panel.get_global_rect().has_point((event as InputEventMouseButton).position): return
 	if _listing() and event is InputEventKey and event.pressed and _list_key(event as InputEventKey):
@@ -238,6 +252,7 @@ func leave() -> void:
 	_show_throws(false)
 	if not _naming.is_empty(): _end_naming(false)
 	show_chunks(false)
+	_knob_held = false
 	if _ui != null: _ui.visible = false
 	var cam: Camera3D = study.camera
 	var at := _stood
@@ -710,6 +725,7 @@ func select_group(names: Array) -> void:
 	selected = str(g.back())
 	_show_box()
 	_show_status()
+	_show_knobs()
 
 ## The group's middle: the mean of its pieces' spots.
 func group_mid() -> Vector3:
@@ -1139,6 +1155,9 @@ func _undo_one(rec: Dictionary) -> bool:
 			Layout.apply(name,rec.t)
 			select(name)
 			_reanchor(name)
+		"knobs":
+			if not Knobs.builds.has(name): return false
+			_set_knobs(name,rec.values,false)
 		"size":
 			if not Layout.entries.has(name) or not is_instance_valid(Layout.entries[name].node): return false
 			(Layout.entries[name].node as Node).layout_resize(rec.size)
@@ -1309,6 +1328,135 @@ func _show_warn() -> void:
 	_warn.text = "\n".join(lines)
 	_warn.visible = not lines.is_empty()
 
+# --- Knobs (spec goal 4) ------------------------------------------------------------------
+
+## True if `event` is the knob panel's: the mouse over it, or anything of
+## the mouse while a slider is held (the GUI gets it, not the world).
+func _knobs_take(event: InputEvent) -> bool:
+	if _knob_panel == null or not _knob_panel.visible or not event is InputEventMouse: return false
+	if _knob_held: return true
+	return _knob_panel.get_global_rect().has_point((event as InputEventMouse).position)
+
+## The panel for the selected piece's build (one piece selected, of a
+## build with knobs), else hidden.
+func _show_knobs() -> void:
+	var b := ""
+	if group.is_empty() and selected != "" and not is_island(selected): b = Knobs.build_of(selected)
+	if b == "":
+		if _knob_panel != null: _knob_panel.visible = false
+		_knob_build = ""
+		_knob_held = false
+		return
+	if b != _knob_build or _knob_panel == null: _make_knob_panel(b)
+	_knob_quiet = true
+	var vals := Knobs.values(b)
+	for s: Array in Knobs.builds[b].specs:
+		var k := str(s[0])
+		(_knob_sliders[k] as HSlider).value = float(vals[k])
+		(_knob_texts[k] as Label).text = Knobs.text_of(s,vals[k])
+	_knob_quiet = false
+	_knob_panel.visible = true
+
+func _make_knob_panel(b: String) -> void:
+	if _knob_panel != null: _knob_panel.free()
+	_knob_build = b
+	_knob_sliders = {}
+	_knob_texts = {}
+	_knob_held = false
+	_knob_panel = PanelContainer.new()
+	_knob_panel.name = "KnobPanel"
+	var col := VBoxContainer.new()
+	var title := Label.new()
+	title.text = "KNOBS  %s\n(let go of a slider: it rebuilds)" % str(Knobs.builds[b].label)
+	col.add_child(title)
+	var rows := GridContainer.new()
+	rows.columns = 3
+	for s: Array in Knobs.builds[b].specs:
+		var k := str(s[0])
+		var l := Label.new()
+		l.text = str(s[1])
+		rows.add_child(l)
+		var sl := HSlider.new()
+		sl.name = "Knob_"+k
+		sl.min_value = float(s[3])
+		sl.max_value = float(s[4])
+		sl.step = float(s[5])
+		sl.scrollable = false
+		sl.custom_minimum_size = Vector2(220.0,22.0)
+		sl.value = float(s[2])
+		sl.drag_started.connect(func() -> void: _knob_held = true)
+		sl.drag_ended.connect(func(changed: bool) -> void:
+			_knob_held = false
+			if changed: _knob_changed(k,sl.value))
+		sl.value_changed.connect(func(v: float) -> void:
+			(_knob_texts[k] as Label).text = Knobs.text_of(s,v)
+			if not _knob_held and not _knob_quiet: _knob_changed(k,v))
+		rows.add_child(sl)
+		var t := Label.new()
+		t.custom_minimum_size = Vector2(48.0,0.0)
+		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		rows.add_child(t)
+		_knob_sliders[k] = sl
+		_knob_texts[k] = t
+	col.add_child(rows)
+	_knob_panel.add_child(col)
+	_ui.add_child(_knob_panel)
+	# Bottom right, clear of the keys, the status line and the chunk list
+	# on the left and the warnings at the top right.
+	_knob_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT,Control.PRESET_MODE_MINSIZE,16)
+	_knob_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_knob_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	# Up over the play hints along the bottom, on its own dark ground.
+	_knob_panel.offset_top -= KNOB_LIFT
+	_knob_panel.offset_bottom -= KNOB_LIFT
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.05,0.05,0.07,0.92)
+	bg.set_content_margin_all(10.0)
+	bg.set_corner_radius_all(4)
+	_knob_panel.add_theme_stylebox_override("panel",bg)
+
+## Knob `key` of the shown build set to `v`: the build rebuilt (if it changed).
+func _knob_changed(key: String, v: float) -> void:
+	if _knob_build == "" or not Knobs.builds.has(_knob_build): return
+	var vals := Knobs.values(_knob_build)
+	var was: Variant = vals[key]
+	vals[key] = int(round(v)) if was is int else v
+	if is_equal_approx(float(vals[key]),float(was)): return
+	set_knob(_knob_build,key,vals[key])
+
+## Build `b`'s knob `key` set to `v` and the build rebuilt (an undo record).
+func set_knob(b: String, key: String, v: Variant) -> void:
+	var vals := Knobs.values(b)
+	vals[key] = v
+	_set_knobs(b,vals,true)
+	say("rebuilt %s: %s %s" % [b,key,Knobs.text_of(_spec_of(b,key),v)])
+
+func _spec_of(b: String, key: String) -> Array:
+	for s: Array in Knobs.builds[b].specs:
+		if str(s[0]) == key: return s
+	return [key,key,0.0,0.0,1.0,0.1]
+
+## Build `b` made again at `vals`; the selection kept on the piece of the
+## same name (else the build's first). `record`: an undo record of it.
+func _set_knobs(b: String, vals: Dictionary, record: bool) -> void:
+	let_go()
+	var keep := selected
+	var was := Knobs.values(b)
+	select("")
+	var began := Time.get_ticks_usec()
+	var names := Knobs.rebuild(b,vals,gone)
+	print("world view: rebuilt %s (%d pieces) in %.1f ms" % [b,names.size(),(Time.get_ticks_usec()-began)/1000.0])
+	if record: _push({"do":"knobs","name":b,"values":was})
+	dirty = true
+	_strips_stale = true
+	if not Layout.entries.has(keep):
+		keep = ""
+		for n: String in names:
+			if Layout.entries.has(n):
+				keep = n
+				break
+	select(keep)
+
 # --- Selection and text ----------------------------------------------------------------
 
 func select(name: String) -> void:
@@ -1316,6 +1464,7 @@ func select(name: String) -> void:
 	selected = name if Layout.entries.has(name) or is_island(name) else ""
 	_show_box()
 	_show_status()
+	_show_knobs()
 
 ## A box round the selected object's drawn bounds, a child of it (it
 ## follows with no work a frame), drawn over everything.

@@ -13,7 +13,10 @@ extends RefCounted
 ##                {"name": "chunk/ring_run_1/air_ring_1", ..., "on": "island/near"}],
 ##    "deleted": ["ring_route/chain_slab_2"],
 ##    "islands": {"island/near": {"pos": [x, y, z], "rot": [x, y, z]}},
-##    "sizes":   {"ring_route/ring_a": 2.5, "foot_route/bob_slab_1": [3.0, 0.7, 2.8]}}
+##    "sizes":   {"ring_route/ring_a": 2.5, "foot_route/bob_slab_1": [3.0, 0.7, 2.8]},
+##    "knobs":   {"stair_clouds/slab_cut": {"count": 6, "rise": 1.2}}}
+## A build's knobs (scripts/layout_knobs.gd) are kept only off their
+## defaults; the build reads them when it places its pieces.
 ## An added piece's name is `added/<kind>_<n>`, or `chunk/<chunk>_<n>/...`
 ## for a stamped chunk (scripts/layout_chunks.gd). One with "on" belongs to
 ## that island (moves with it; others are free); it is saved where it stands
@@ -46,6 +49,8 @@ const POSED := ["piece","token"]
 static var path := ""
 static var data := {}
 static var entries := {}
+## The builds' knobs off their defaults: build -> {key: value}.
+static var knobs := {}
 
 ## A fresh start for scene `scene_id`: its file read (if there is one), the
 ## names placed before forgotten.
@@ -54,6 +59,7 @@ static func begin(scene_id: String) -> void:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--layout="): path = a.substr(9)
 	entries = {}
+	knobs = {}
 	data = {"version":VERSION,"moved":{},"added":[],"deleted":[]}
 	if not FileAccess.file_exists(path): return
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
@@ -63,6 +69,7 @@ static func begin(scene_id: String) -> void:
 	var d: Dictionary = parsed
 	for k: String in ["moved","added","deleted","islands","sizes"]:
 		if d.has(k): data[k] = d[k]
+	if d.get("knobs") is Dictionary: knobs = (d.knobs as Dictionary).duplicate(true)
 
 ## The file's island moves: name -> Transform3D (from coded).
 static func islands() -> Dictionary:
@@ -237,6 +244,7 @@ static func save(gone: Array, moved_islands := {}) -> Error:
 		if not _same(moved_islands[name],Transform3D.IDENTITY): isl[name] = to_json(moved_islands[name])
 	if not isl.is_empty(): data["islands"] = isl
 	if not sizes.is_empty(): data["sizes"] = sizes
+	if not knobs.is_empty(): data["knobs"] = knobs.duplicate(true)
 	if path.begins_with("res://"): DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	else: DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	var f := FileAccess.open(path,FileAccess.WRITE)
@@ -259,7 +267,7 @@ static func _text(d: Dictionary) -> String:
 	out += "\t\"moved\": {\n%s\n\t},\n" % ",\n".join(lines) if not lines.is_empty() else "\t\"moved\": {},\n"
 	out += "\t\"added\": [\n%s\n\t],\n" % ",\n".join(added) if not added.is_empty() else "\t\"added\": [],\n"
 	out += "\t\"deleted\": [\n%s\n\t]" % ",\n".join(gone) if not gone.is_empty() else "\t\"deleted\": []"
-	for block: String in ["islands","sizes"]:
+	for block: String in ["islands","sizes","knobs"]:
 		var rows_of: Dictionary = d.get(block,{})
 		if rows_of.is_empty(): continue
 		var rows := PackedStringArray()
