@@ -48,7 +48,8 @@ const STRIP_SLACK := 2.0
 const HINT := """LAYOUT EDIT  (F4: back to play, he drops where you look)
 RMB hold + move  look      W A S D / Q E  fly / down, up    Shift  fast
 LMB  select, drag to move (at its height; an island too)     wheel / PgUp PgDn  height (Shift: 1 m)
-Z / X  turn 15 deg (Shift 5)    T / G  tip 15 deg (a ring throws along its arrow)    [ / ]  size (rings, slabs; Shift finer)    C  duplicate    Del / Backspace  delete
+Shift+LMB  add to / drop from the group    drag on empty sky or Shift+drag  box-select    (a group moves, turns, tips, sizes, copies, deletes as one)
+Z / X  turn 15 deg (Shift 5)    T / G  tip 15 deg (a ring throws along its arrow; a group about the view's level right)    [ / ]  size (rings, slabs; Shift finer)    C  duplicate    Del / Backspace  delete
 1  add air ring    2  add bob slab    3  add ring-stair slab (7 pumps)
 click an island's ground: the island    U  from a piece to the island it stands on    O  open the island alone (motif editor)
 Ctrl/Cmd+Z  undo    Ctrl/Cmd+S  save"""
@@ -96,6 +97,22 @@ var undos: Array = []
 ## A drag's start (the piece's pose, or the island's move from coded), set
 ## on the click and made a record on let go if it moved.
 var _drag_from: Variant = null
+## The group (spec goal 2): two or more pieces selected as one, `selected`
+## its last; empty when one thing (or nothing) is selected. Islands don't
+## group.
+var group: Array = []
+## A group drag's start: each piece's pose, and the grabbed point.
+var _group_from := {}
+var _group_at := Vector3.ZERO
+var _group_d := Vector3.ZERO
+## A box being dragged out on screen (from `_box_from`); Shift adds to the
+## selection.
+var _boxing := false
+var _box_from := Vector2.ZERO
+var _box_add := false
+var _rubber: ReferenceRect
+## The group's other pieces' boxes (the last's is `_box`).
+var _boxes: Array = []
 
 func setup(scene: Node3D, pieces: Node3D) -> void:
 	study = scene
@@ -247,6 +264,7 @@ func _edit_input(event: InputEvent) -> void:
 			_cam_yaw -= mm.relative.x*LOOK_RATE
 			_cam_pitch = clampf(_cam_pitch-mm.relative.y*LOOK_RATE,-1.5,1.5)
 			_apply_cam()
+		elif _boxing: _box_to(mm.position)
 		elif _dragging: drag_to(mm.position)
 		return
 	if event is InputEventMouseButton:
@@ -258,7 +276,7 @@ func _edit_input(event: InputEvent) -> void:
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if _looking else Input.MOUSE_MODE_VISIBLE
 				if not _looking and get_tree().current_scene == study: get_viewport().warp_mouse(_look_from)
 			MOUSE_BUTTON_LEFT:
-				if mb.pressed: click(mb.position)
+				if mb.pressed: click(mb.position,mb.shift_pressed)
 				else: let_go()
 			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
 				if not mb.pressed: return
@@ -343,10 +361,23 @@ func _reach_of(name: String) -> float:
 	var e: Dictionary = Layout.entries[name]
 	return float(e.node.layout_reach()) if e.node.has_method("layout_reach") else float(REACH[e.kind])
 
-func click(at: Vector2) -> void:
+## A left click: with Shift, the piece under it into or out of the group
+## (or a box begun, over no piece); on a piece of the group, the group
+## taken to drag; on nothing, the selection cleared and a box begun; else
+## that object selected and taken to drag.
+func click(at: Vector2, shift := false) -> void:
 	var name := pick(at)
+	if shift:
+		if name != "" and not is_island(name): toggle(name)
+		else: _begin_box(at,true)
+		return
+	if name != "" and name in group:
+		_take_group(at,name)
+		return
 	select(name)
-	if name == "": return
+	if name == "":
+		_begin_box(at,false)
+		return
 	if is_island(name):
 		# Dragged by its middle, in the level plane at its rim.
 		# Held where it was taken: in the level plane through that point.
@@ -385,8 +416,16 @@ func _on_level(at: Vector2, y: float) -> Vector3:
 ## The mouse up: an island let go (what reads its place redone); a piece
 ## given to the island it stands over now.
 func let_go() -> void:
+	if _boxing:
+		_end_box()
+		return
 	var was := _dragging
 	_dragging = false
+	if not _group_from.is_empty():
+		_record_group_drag()
+		if was:
+			for n: String in group: _reanchor(n)
+		return
 	_record_drag()
 	if not _grab.is_empty(): _settle()
 	elif was and selected != "" and not is_island(selected): _reanchor(selected)
@@ -407,6 +446,19 @@ func drag_to(at: Vector2) -> void:
 		dirty = true
 		_show_status()
 		return
+	if not _group_from.is_empty():
+		var d := p-_group_at
+		d = Vector3(snappedf(d.x,SNAP),0.0,snappedf(d.z,SNAP))
+		for n: String in _group_from:
+			if not Layout.entries.has(n): continue
+			var g: Transform3D = _group_from[n]
+			g.origin += d
+			Layout.apply(n,g)
+		_group_d = d
+		dirty = true
+		_strips_stale = true
+		_show_status()
+		return
 	var t := Layout.current(selected)
 	var to := p+_drag_off
 	t.origin = Vector3(snappedf(to.x,SNAP),t.origin.y,snappedf(to.z,SNAP))
@@ -414,6 +466,10 @@ func drag_to(at: Vector2) -> void:
 
 func lift(dy: float) -> void:
 	if selected == "": return
+	if not group.is_empty():
+		_group_step(Transform3D(Basis.IDENTITY,Vector3.UP*dy),"lift")
+		_drag_y += dy
+		return
 	if is_island(selected):
 		_island_step(Transform3D(Basis.IDENTITY,Vector3.UP*dy))
 		return
@@ -427,6 +483,9 @@ func lift(dy: float) -> void:
 ## Turned `deg` about the world's up, round its own middle.
 func turn(deg: float) -> void:
 	if selected == "": return
+	if not group.is_empty():
+		_group_swing(Basis(Vector3.UP,deg_to_rad(deg)),"turn")
+		return
 	if is_island(selected):
 		var c := Islands.pivot(selected)
 		_island_step(Transform3D(Basis.IDENTITY,c)*Transform3D(Basis(Vector3.UP,deg_to_rad(deg)),Vector3.ZERO)*Transform3D(Basis.IDENTITY,-c))
@@ -439,6 +498,13 @@ func turn(deg: float) -> void:
 ## Tipped `deg` about its own x.
 func tip(deg: float) -> void:
 	if selected == "" or _island_held(): return
+	if not group.is_empty():
+		# About the view's level right, through the group's middle.
+		var right: Vector3 = (study.camera as Camera3D).global_basis.x
+		right = Vector3(right.x,0.0,right.z)
+		if right.length() < 0.01: right = Vector3.RIGHT
+		_group_swing(Basis(right.normalized(),deg_to_rad(deg)),"tip")
+		return
 	var t := Layout.current(selected)
 	if not _dragging: _nudged({"do":"pose","name":selected,"t":t},"tip")
 	t.basis = t.basis*Basis(Vector3.RIGHT,deg_to_rad(deg))
@@ -449,21 +515,15 @@ func tip(deg: float) -> void:
 ## that piece alone built again at once.
 func resize(step: float) -> void:
 	if selected == "" or _island_held(): return
+	if not group.is_empty():
+		_group_resize(step)
+		return
 	var was: Variant = Layout.size_of(selected)
 	if was == null:
 		say("only rings and slabs size (not %s)" % Layout.entries[selected].kind)
 		return
-	var node: Node3D = Layout.entries[selected].node
 	var began := Time.get_ticks_usec()
-	if was is Vector3:
-		var v: Vector3 = was
-		var long := maxf(v.x,v.z)
-		var k := maxf(long+step,0.01)/long
-		# Its shape kept at the ends too (FootSlab SIDE_MIN, SIDE_MAX).
-		k = clampf(k,float(node.SIDE_MIN)/minf(v.x,v.z),float(node.SIDE_MAX)/long)
-		node.layout_resize(Vector3(v.x*k,v.y,v.z*k))
-	else: node.layout_resize(float(was)+step)
-	if Layout._same_size(Layout.size_of(selected),was):
+	if not _grow(selected,step):
 		say("%s is as %s as it goes" % [selected,"big" if step > 0.0 else "small"])
 		return
 	_nudged({"do":"size","name":selected,"size":was},"size")
@@ -472,6 +532,22 @@ func resize(step: float) -> void:
 	_strips_stale = true
 	_show_box()
 	_show_status()
+
+## Ring or slab `name` grown by `step` (that piece alone rebuilt); false
+## if it didn't change (at its end, or not a sizing kind).
+func _grow(name: String, step: float) -> bool:
+	var was: Variant = Layout.size_of(name)
+	if was == null: return false
+	var node: Node3D = Layout.entries[name].node
+	if was is Vector3:
+		var v: Vector3 = was
+		var long := maxf(v.x,v.z)
+		var k := maxf(long+step,0.01)/long
+		# Its shape kept at the ends too (FootSlab SIDE_MIN, SIDE_MAX).
+		k = clampf(k,float(node.SIDE_MIN)/minf(v.x,v.z),float(node.SIDE_MAX)/long)
+		node.layout_resize(Vector3(v.x*k,v.y,v.z*k))
+	else: node.layout_resize(float(was)+step)
+	return not Layout._same_size(Layout.size_of(name),was)
 
 ## `name`'s size for the status line ("" none).
 func size_text(name: String) -> String:
@@ -509,6 +585,9 @@ func add(kind: String, pumps := 0.0) -> void:
 ## A copy of the selected ring or slab, 3 m to the camera's right.
 func duplicate_selected() -> void:
 	if selected == "" or _island_held(): return
+	if not group.is_empty():
+		_group_copy()
+		return
 	var e: Dictionary = Layout.entries[selected]
 	if not str(e.kind) in Layout.ADDABLE:
 		say("only rings and slabs copy (not %s)" % e.kind)
@@ -524,6 +603,9 @@ func duplicate_selected() -> void:
 
 func delete_selected() -> void:
 	if selected == "" or _island_held(): return
+	if not group.is_empty():
+		_group_delete()
+		return
 	var name := selected
 	select("")
 	_push(_remove(name))
@@ -571,6 +653,218 @@ func _remove(name: String) -> Dictionary:
 		rec.gone = true
 	return rec
 
+# --- Groups (spec goal 2) --------------------------------------------------------------
+
+## Piece `name` into the group, or out of it if it is in (Shift+click).
+## The one piece selected before becomes the group's first.
+func toggle(name: String) -> void:
+	var g: Array = group.duplicate()
+	if g.is_empty() and selected != "" and not is_island(selected): g = [selected]
+	if name in g: g.erase(name)
+	else: g.append(name)
+	select_group(g)
+
+## `names` selected: none, one (as `select`), or a group (the last is
+## `selected`).
+func select_group(names: Array) -> void:
+	var g: Array = []
+	for n: Variant in names:
+		if Layout.entries.has(str(n)) and not str(n) in g: g.append(str(n))
+	if g.size() < 2:
+		select(str(g[0]) if g.size() == 1 else "")
+		return
+	group = g
+	selected = str(g.back())
+	_show_box()
+	_show_status()
+
+## The group's middle: the mean of its pieces' spots.
+func group_mid() -> Vector3:
+	var c := Vector3.ZERO
+	for n: String in group: c += Layout.current(n).origin
+	return c/maxf(group.size(),1.0)
+
+## The group's key in the undo stack (a burst on the same group is one).
+func _group_key() -> String:
+	return "group:"+",".join(PackedStringArray(group))
+
+## Each piece's pose now, as undo records.
+func _group_poses() -> Array:
+	var out: Array = []
+	for n: String in group: out.append({"do":"pose","name":n,"t":Layout.current(n)})
+	return out
+
+## The group taken to drag, by its piece `name` under screen point `at`:
+## dragged in the level plane through that piece's middle.
+func _take_group(at: Vector2, name: String) -> void:
+	var node: Node3D = Layout.entries[name].node
+	_drag_y = node.layout_mid().y if node.has_method("layout_mid") else Layout.current(name).origin.y
+	var p := _on_level(at,_drag_y)
+	if p == Vector3.INF: return
+	_group_at = p
+	_group_d = Vector3.ZERO
+	_group_from = {}
+	for n: String in group: _group_from[n] = Layout.current(n)
+	_dragging = true
+
+## The group let go: one record of where it all stood, if it moved.
+func _record_group_drag() -> void:
+	var from := _group_from
+	_group_from = {}
+	var recs: Array = []
+	for n: String in from:
+		if Layout.entries.has(n) and not Layout._same(from[n],Layout.current(n)): recs.append({"do":"pose","name":n,"t":from[n]})
+	if not recs.is_empty(): _push({"do":"group","name":_group_key(),"recs":_from_all(from),"names":group.duplicate()})
+
+static func _from_all(from: Dictionary) -> Array:
+	var out: Array = []
+	for n: String in from: out.append({"do":"pose","name":n,"t":from[n]})
+	return out
+
+## Every piece of the group moved by world transform `d` (a burst of the
+## same nudge is one record).
+func _group_step(d: Transform3D, by: String) -> void:
+	if not _dragging: _nudged({"do":"group","name":_group_key(),"recs":_group_poses(),"names":group.duplicate()},by)
+	for n: String in group:
+		var t := d*Layout.current(n)
+		t.basis = t.basis.orthonormalized()
+		if d.basis == Basis.IDENTITY: t.origin.y = snappedf(t.origin.y,SNAP)
+		Layout.apply(n,t)
+		if not _dragging: _reanchor(n)
+	# Mid-drag: the drag's start swung too, so the drag keeps it.
+	if _dragging:
+		for n: String in _group_from: _group_from[n] = Transform3D(Basis.IDENTITY,-_group_d)*Layout.current(n)
+	dirty = true
+	_strips_stale = true
+	_show_box()
+	_show_status()
+
+## The group swung by `b` about its middle, each piece keeping its place
+## in it.
+func _group_swing(b: Basis, by: String) -> void:
+	var c := group_mid()
+	_group_step(Transform3D(Basis.IDENTITY,c)*Transform3D(b,Vector3.ZERO)*Transform3D(Basis.IDENTITY,-c),by)
+
+## Every ring and slab in the group grown by `step` (each rebuilt alone).
+func _group_resize(step: float) -> void:
+	var began := Time.get_ticks_usec()
+	var recs: Array = []
+	for n: String in group:
+		var was: Variant = Layout.size_of(n)
+		if was == null: continue
+		if _grow(n,step): recs.append({"do":"size","name":n,"size":was})
+	if recs.is_empty():
+		say("nothing in the group sizes further (only rings and slabs size)")
+		return
+	# A burst on the group is one record: its first sizes kept.
+	var last: Variant = undos.back() if not undos.is_empty() else null
+	if last is Dictionary and str(last.get("by","")) == "size" and str(last.name) == _group_key() and Time.get_ticks_msec()-int(last.at) < NUDGE_MS:
+		last.at = Time.get_ticks_msec()
+		var had := {}
+		for r: Dictionary in last.recs: had[str(r.name)] = true
+		for r: Dictionary in recs:
+			if not had.has(str(r.name)): (last.recs as Array).append(r)
+	else: _push({"do":"group","name":_group_key(),"recs":recs,"names":group.duplicate(),"by":"size"})
+	print("world view: %d of the group sized in %.1f ms" % [recs.size(),(Time.get_ticks_usec()-began)/1000.0])
+	dirty = true
+	_strips_stale = true
+	_show_box()
+	say("sized %d of %d (rings and slabs)" % [recs.size(),group.size()])
+
+## A copy of the group's rings and slabs, beside it to the camera's right
+## (clear of it), selected as the new group.
+func _group_copy() -> void:
+	var right: Vector3 = (study.camera as Camera3D).global_basis.x
+	right = Vector3(right.x,0.0,right.z)
+	right = right.normalized() if right.length() > 0.01 else Vector3.RIGHT
+	var lo := INF
+	var hi := -INF
+	for n: String in group:
+		var x := Layout.current(n).origin.dot(right)
+		lo = minf(lo,x)
+		hi = maxf(hi,x)
+	var off := right*(hi-lo+3.0)
+	var made: Array = []
+	var recs: Array = []
+	var skipped := 0
+	for n: String in group:
+		var e: Dictionary = Layout.entries[n]
+		if not str(e.kind) in Layout.ADDABLE:
+			skipped += 1
+			continue
+		var t := Layout.current(n)
+		t.origin += off
+		var name := Layout.fresh_name(str(e.kind))
+		Layout.spawn(host,name,str(e.kind),t,float(e.get("pumps",0.0)),Layout.size_of(n))
+		made.append(name)
+		recs.append({"do":"add","name":name})
+	if made.is_empty():
+		say("only rings and slabs copy (none in the group)")
+		return
+	_push({"do":"group","name":"copy:"+",".join(PackedStringArray(made)),"recs":recs,"names":group.duplicate()})
+	dirty = true
+	select_group(made)
+	say("copied %d%s" % [made.size(),"  (%d not rings or slabs left)" % skipped if skipped > 0 else ""])
+
+func _group_delete() -> void:
+	var names: Array = group.duplicate()
+	select("")
+	var recs: Array = []
+	for n: String in names:
+		if Layout.entries.has(n): recs.append(_remove(n))
+	_push({"do":"group","name":"delete:"+",".join(PackedStringArray(names)),"recs":recs,"names":names})
+	dirty = true
+	_strips_stale = true
+	say("deleted %d" % recs.size())
+
+## A box dragged out on screen: begun at `at` (`add`: onto the selection).
+func _begin_box(at: Vector2, add: bool) -> void:
+	_boxing = true
+	_box_from = at
+	_box_add = add
+	if _rubber == null:
+		_rubber = ReferenceRect.new()
+		_rubber.name = "BoxSelect"
+		_rubber.editor_only = false
+		_rubber.border_color = Color(1.0,0.85,0.2)
+		_rubber.border_width = 1.5
+		_rubber.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var fill := ColorRect.new()
+		fill.color = Color(1.0,0.85,0.2,0.12)
+		fill.set_anchors_preset(Control.PRESET_FULL_RECT)
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_rubber.add_child(fill)
+		_ui.add_child(_rubber)
+	_box_to(at)
+
+func _box_to(at: Vector2) -> void:
+	var r := Rect2(_box_from,Vector2.ZERO).expand(at)
+	_rubber.position = r.position
+	_rubber.size = r.size
+	_rubber.visible = r.size.length() > 4.0
+
+## The box let go: every named piece whose middle is in it selected (with
+## Shift, added to what was). A click with no drag selects nothing new.
+func _end_box() -> void:
+	_boxing = false
+	var r := Rect2(_rubber.position,_rubber.size)
+	_rubber.visible = false
+	if r.size.length() <= 4.0: return
+	select_group(box_pick(r,_box_add))
+
+## The pieces in screen rect `r` (`add`: the selection's first).
+func box_pick(r: Rect2, add := false) -> Array:
+	var cam: Camera3D = study.camera
+	var out: Array = []
+	if add: out = group.duplicate() if not group.is_empty() else ([selected] if selected != "" and not is_island(selected) else [])
+	for name: String in Layout.entries:
+		var e: Dictionary = Layout.entries[name]
+		if not is_instance_valid(e.node) or not (e.node as Node).is_inside_tree() or name in out: continue
+		var mid: Vector3 = e.node.layout_mid() if e.node.has_method("layout_mid") else (e.node as Node3D).global_position
+		if cam.is_position_behind(mid): continue
+		if r.has_point(cam.unproject_position(mid)): out.append(name)
+	return out
+
 # --- Undo ----------------------------------------------------------------------------
 
 ## A record on the stack (the oldest dropped past UNDO_MAX).
@@ -603,6 +897,9 @@ func _record_drag() -> void:
 
 ## A record no longer undoable: a deleted piece it held freed.
 func _drop(rec: Dictionary) -> void:
+	if str(rec.do) == "group":
+		for r: Dictionary in rec.recs: _drop(r)
+		return
 	if str(rec.do) != "delete" or not rec.has("parent"): return
 	var node: Variant = rec.node
 	if is_instance_valid(node) and not (node as Node).is_inside_tree(): (node as Node).free()
@@ -617,50 +914,54 @@ func _exit_tree() -> void:
 ## carried back with it).
 func undo() -> void:
 	if _dragging or not _grab.is_empty(): return
-	if undos.is_empty():
-		say("nothing to undo")
+	while not undos.is_empty():
+		var rec: Dictionary = undos.pop_back()
+		if not _undo_one(rec): continue
+		dirty = true
+		_strips_stale = true
+		say("undid %s %s (%d more)" % [rec.do,rec.name,undos.size()])
 		return
-	var rec: Dictionary = undos.pop_back()
+	say("nothing to undo")
+
+## Record `rec` undone; false if what it names is gone (then the next
+## record is undone instead). A group's records undo last first, and the
+## group is selected again.
+func _undo_one(rec: Dictionary) -> bool:
 	var name := str(rec.name)
 	match str(rec.do):
+		"group":
+			var any := false
+			var recs: Array = rec.recs
+			for k in range(recs.size()-1,-1,-1):
+				if _undo_one(recs[k]): any = true
+			select_group(rec.get("names",[]))
+			return any
 		"pose":
-			if not Layout.entries.has(name) or not is_instance_valid(Layout.entries[name].node):
-				undo()
-				return
+			if not Layout.entries.has(name) or not is_instance_valid(Layout.entries[name].node): return false
 			Layout.apply(name,rec.t)
 			select(name)
 			_reanchor(name)
 		"size":
-			if not Layout.entries.has(name) or not is_instance_valid(Layout.entries[name].node):
-				undo()
-				return
+			if not Layout.entries.has(name) or not is_instance_valid(Layout.entries[name].node): return false
 			(Layout.entries[name].node as Node).layout_resize(rec.size)
 			select(name)
 		"island":
-			if not is_island(name):
-				undo()
-				return
+			if not is_island(name): return false
 			select(name)
 			_grab = _take(name)
 			Islands.move(_grab,rec.xf)
 			_settle()
 		"add":
-			if not Layout.entries.has(name):
-				undo()
-				return
-			if selected == name: select("")
+			if not Layout.entries.has(name): return false
+			if selected == name or name in group: select("")
 			var gone_rec := _remove(name)
 			_drop(gone_rec)
 		"delete":
 			var node: Node3D = rec.node
-			if not is_instance_valid(node):
-				undo()
-				return
+			if not is_instance_valid(node): return false
 			if rec.has("parent"):
 				var parent: Node = rec.parent
-				if not is_instance_valid(parent):
-					undo()
-					return
+				if not is_instance_valid(parent): return false
 				parent.add_child(node)
 				parent.move_child(node,mini(int(rec.index),parent.get_child_count()-1))
 			else:
@@ -676,9 +977,7 @@ func undo() -> void:
 			if on != "" and Islands.islands.has(on): (Islands.islands[on].members as Array).append(node)
 			if bool(rec.get("gone",false)): gone.erase(name)
 			select(name)
-	dirty = true
-	_strips_stale = true
-	say("undid %s %s (%d more)" % [rec.do,name,undos.size()])
+	return true
 
 func save() -> void:
 	var err := Layout.save(gone,Islands.moves())
@@ -815,6 +1114,7 @@ func _show_warn() -> void:
 # --- Selection and text ----------------------------------------------------------------
 
 func select(name: String) -> void:
+	group = []
 	selected = name if Layout.entries.has(name) or is_island(name) else ""
 	_show_box()
 	_show_status()
@@ -834,7 +1134,21 @@ func _show_box() -> void:
 		_box.material_override = mat
 		_box.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if _box.get_parent() != null: _box.get_parent().remove_child(_box)
+	for b: Variant in _boxes:
+		if is_instance_valid(b): (b as Node).free()
+	_boxes = []
 	if selected == "": return
+	# The group's others: a box each, the same look.
+	for n: String in group:
+		if n == selected or not Layout.entries.has(n): continue
+		var on: Node3D = Layout.entries[n].node
+		var extra := MeshInstance3D.new()
+		extra.name = "LayoutSelectionGroup"
+		extra.material_override = _box.material_override
+		extra.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		extra.mesh = _wire_box(_drawn_box(on).grow(0.15))
+		on.add_child(extra)
+		_boxes.append(extra)
 	if is_island(selected):
 		var i: Dictionary = Islands.islands[selected]
 		var land: Node3D = i.node
@@ -855,7 +1169,7 @@ static func _drawn_box(node: Node3D) -> AABB:
 	var first := true
 	for c: Node in node.find_children("*","VisualInstance3D",true,false):
 		var v := c as VisualInstance3D
-		if v.name == "LayoutSelection" or v.name.begins_with("ThrowArrow") or not v.is_visible_in_tree(): continue
+		if v.name == "LayoutSelection" or v.name.begins_with("LayoutSelectionGroup") or v.name.begins_with("ThrowArrow") or not v.is_visible_in_tree(): continue
 		var b := (inv*v.global_transform)*v.get_aabb()
 		if b.size == Vector3.ZERO: continue
 		box = b if first else box.merge(b)
@@ -918,7 +1232,7 @@ func _build_ui() -> void:
 	hint.add_theme_font_size_override("font_size",15)
 	_ui.add_child(hint)
 	_status = Label.new()
-	_status.position = Vector2(16.0,196.0)
+	_status.position = Vector2(16.0,218.0)
 	_status.add_theme_color_override("font_color",Color(1.0,0.85,0.3))
 	_status.add_theme_color_override("font_outline_color",Color(0.0,0.0,0.0,0.85))
 	_status.add_theme_constant_override("outline_size",5)
@@ -949,6 +1263,11 @@ func _show_status() -> void:
 		var xf: Transform3D = i.xf
 		line = "%s  (island)  %d things stand on it  middle %.1f, %.1f" % [selected,(i.members as Array).size(),c.x,c.y]
 		if xf != Transform3D.IDENTITY: line += "  moved %.1f, %.1f, %.1f  turned %.0f" % [xf.origin.x,xf.origin.y,xf.origin.z,rad_to_deg(xf.basis.get_euler().y)]
+	elif not group.is_empty():
+		var c := group_mid()
+		var names := PackedStringArray()
+		for n: String in group.slice(0,4): names.append(n)
+		line = "group of %d  (%s%s)  middle %.1f, %.1f, %.1f" % [group.size(),", ".join(names)," ..." if group.size() > 4 else "",c.x,c.y,c.z]
 	elif selected != "":
 		var t := Layout.current(selected)
 		var e := t.basis.get_euler()

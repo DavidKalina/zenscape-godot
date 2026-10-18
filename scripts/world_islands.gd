@@ -224,7 +224,7 @@ static func drawn_box(node: Node3D) -> AABB:
 	if node is VisualInstance3D: vis.append(node)
 	for c: Node in vis:
 		var v := c as VisualInstance3D
-		if v.name == "LayoutSelection" or not v.visible: continue
+		if v.name == "LayoutSelection" or v.name.begins_with("LayoutSelectionGroup") or not v.visible: continue
 		var b := v.global_transform*v.get_aabb()
 		if b.size == Vector3.ZERO: continue
 		box = b if first else box.merge(b)
