@@ -21,6 +21,8 @@ extends "res://studies/kit_isle.gd"
 ##     [--phase=2] (start whole, the head on: phase 2; R starts it so again)
 ##     [--tilt-now] (in phase 2, he makes for the rim and tilts the field
 ##       at once: the set piece, `tilt_begin`)
+##     [--tilt] (the tilt back in phase 2's mix; out of it by default, for
+##       a later phase 3)
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
 const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
 const OlmecTarget = preload("res://scripts/lock_on/olmec_target.gd")
@@ -61,7 +63,7 @@ const STONES := [[-14.0,4.6,2.0,1.0],[30.0,3.2,1.7,0.9],[72.0,5.6,2.3,1.1],
 	[-62.0,3.8,1.8,0.9],[-104.0,5.0,2.2,1.0],[-165.0,3.4,1.6,0.8],[128.0,4.2,2.0,1.0]]
 const STONE_R := 35.5
 ## Shown on the field card.
-const CARD := "Olmec field  ·  Tab / R3 lock on  ·  X gust shot  ·  Shift / C (LT) in the air: slam  ·  R start again"
+const CARD := "Olmec field  ·  Tab / R3 lock on  ·  X gust shot  ·  Shift / C (LT) in the air: slam  ·  Q (RB) held: side slam  ·  R start again"
 
 var enemies: Node
 ## The breakable arena (scripts/olmec_boss/arena.gd): its `hit_at` is the
@@ -192,6 +194,8 @@ var fling_v := Vector3.ZERO
 var _tilt_cam_side := 0.0
 var tilt: Node = null
 var tilt_now := false
+## The tilt in phase 2's mix (`--tilt`; BossBody `_tilt_due` asks).
+var tilt_mix := false
 var _tilt_now_done := false
 ## "" none, "tipping" (braced, held), "breaking" (his brace gone, he goes
 ## off the rim, still held), "easing" (let go, coming back level).
@@ -235,6 +239,7 @@ func _ready() -> void:
 			_olmec_at = Vector2(float(p[0]),float(p[1]) if p.size() > 1 else 0.0)
 		elif arg == "--whole-olmec": whole_olmec = true
 		elif arg == "--tilt-now": tilt_now = true
+		elif arg == "--tilt": tilt_mix = true
 		elif arg.begins_with("--phase="): start_phase = clampi(int(arg.get_slice("=",1)),1,2)
 		elif arg.begins_with("--head-knob="):
 			var hk: String = arg.trim_prefix("--head-knob=")
@@ -683,7 +688,7 @@ func fight_line() -> String:
 	if b != null and arrival in ["climbing","crossing"]:
 		return "Phase 1 done  ·  his body %s" % ("climbs the rim" if arrival == "climbing" else "comes for his head")
 	if b != null:
-		return "Phase 2  ·  Olmec  %s  %s%s" % [_pips(int(b.hits),int(b.most_hits)),attack_line(),lock]
+		return "Phase 2  ·  Olmec  back hits %s  %s%s" % [_pips(int(b.hits),int(b.most_hits)),attack_line(),lock]
 	if h != null:
 		return "Phase 1  ·  Head  stomps %s  %s%s" % [_pips(int(h.hits),int(h.knobs.phase_hits)),attack_line(),lock]
 	return ""
@@ -699,7 +704,7 @@ func attack_line() -> String:
 		var mv := str(b.get("move"))
 		if mv in ["","<null>"]:
 			return {"chase":"hunting you","seek":"looking for you","alert":"looking for you","listen":"listening",
-				"triumph":"triumphant","stagger":"rocked back","spent":"winded","home":"striding in"}.get(str(b.state),str(b.state))
+				"triumph":"triumphant","stagger":"rocked back","back_hit":"hit in the back!","spent":"winded","home":"striding in"}.get(str(b.state),str(b.state))
 		if mv.begins_with("puff "):
 			# "puff volley tell": his head, up high.
 			var p := mv.split(" ")
@@ -713,7 +718,7 @@ func attack_line() -> String:
 					"tilt_let":"lets go","tilt_off":"staggers off the rim","tilt_gone":"over the rim"}.get(st,"tilt")
 		if mv == "back": return "climbs back up the rim"
 		if mv == "charge":
-			return {"charge_tell":"charge coming","charge":"charge!","charge_skid":"overran  ·  shoot him now",
+			return {"charge_tell":"charge coming","charge":"charge!","charge_skid":"overran  ·  get behind him",
 				"charge_stagger":"stopped short"}.get(st,"charge")
 		# The windup is the tell (a gust shot in it stops a slam or a swat).
 		if st == "windup" or (mv == "slam" and not bool(b.get("_slam_hit"))) or (mv == "swat" and float(b.state_t) < float(b.knobs.swat_windup)):

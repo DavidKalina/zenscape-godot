@@ -45,17 +45,39 @@ extends "res://scripts/lock_on/olmec_target.gd"
 ##     ("tilt_let") and hunts again;
 ## His fists, landings and slams hit the arena (scripts/olmec_boss/arena.gd
 ## `hit_at`), and his shockwaves break what they pass as they always have
-## (the hub is his breaker). PHASE2_HITS gust shots bring him down
-## (`crumble`). `move` names the attack he is on ("" none), for the card.
+## (the hub is his breaker). `move` names the attack he is on ("" none),
+## for the card.
+##
+## Phase 2's weak spot is his back (spec-olmec-knockoff.md, phase 2): only
+## the side slam (scripts/side_slam.gd, its `slam` to the slam's group, the
+## wanderer in its "lunge") from behind him (within BACK_ARC of dead
+## behind) counts (`back_hit`): a hit-stop, chips off his back, a lurch
+## forward ("back_hit", BACK_STAGGER s) and a shove BACK_SHOVE m the way he
+## faces (stopped at the field's edge). From the front or side, and every
+## gust shot, it only glances (`glance`): the glint on his back flares,
+## dust puffs, a small rock. BACK_HITS bring him down (a stand-in till the
+## edge's knock-offs). The ground pound plays no part. The tilt is out of
+## his mix unless the field asks for it (its `tilt_mix`, `--tilt`).
 
+const Slam = preload("res://scripts/slam.gd")
+const Glint = preload("res://scripts/kit_isle/kit_cache_glint.gd")
+## The back hit: how far behind him the wanderer must be (cos off dead
+## behind: 0.45 ~ 63 deg either side), the shove (m, the way he faces),
+## the lurch (s), the hit-stop (s, real), hits to bring him down (a
+## stand-in till the edge's knock-offs), how near his middle a side slam
+## must land to be his (m past his half width).
+const BACK_ARC := 0.45
+const BACK_SHOVE := 3.5
+const BACK_STAGGER := 1.5
+const BACK_HIT_STOP := 0.13
+const BACK_HITS := 3
+const BACK_NEAR := 1.6
 ## Phase 2's knobs over the body's own (scaled by the field's numbers in
 ## `phase_two`: speeds by the walker's run).
 const PHASE2 := {"chase_turn":2.8,"accel":5.5,"swat_windup":0.42,"swat_after":0.5,
 	"pounce_windup":0.6,"pounce_rest":2.0,"land":0.7,"suck_rest":10.0}
 ## His hunt's pace: this times the walker's run.
 const CHASE_RUN := 1.12
-## Gust shots to bring him down whole.
-const PHASE2_HITS := 8
 ## The bound: its reach (m off him), its crouch (s), its rest (s), the
 ## shock it lands with (1 a leap's landing).
 const BOUND_NEAR := 13.0
@@ -117,6 +139,14 @@ const PUFF_FIRST := 3.5
 const PUFF_PACE := 0.55
 
 var phase2 := false
+## Back hits (they bring him down), glances (count nothing), the last back
+## hit ({at, behind, shove}), the glint on his back.
+var back_hits := 0
+var glances := 0
+var last_back := {}
+var back_glint: Sprite3D = null
+var _slam_frame := -1
+var _back_from := Vector3.ZERO
 ## The attack he is on now ("bound", "slam", "swat", "pounce", "suck"; ""
 ## none), and counts for checks.
 var move := ""
@@ -193,7 +223,11 @@ func phase_two() -> void:
 	if phase2: return
 	phase2 = true
 	hits = 0
-	most_hits = PHASE2_HITS
+	back_hits = 0
+	glances = 0
+	most_hits = BACK_HITS
+	add_to_group(Slam.GROUP)
+	_make_back_glint()
 	knobs.merge(PHASE2,true)
 	var run: float = field.motor.run
 	knobs.chase_speed = run*CHASE_RUN
@@ -295,13 +329,15 @@ func think(delta: float) -> void:
 func lock_anywhere() -> bool:
 	return phase2 and not crumbled and state == "tilt_brace" and not brace_broken
 
-## A gust shot in his head's absorb or tell breaks the puff.
+## A gust shot in his head's absorb or tell breaks the puff. Whole, a hit
+## only glances (the side slam's own `hit`, after its `slam`, is passed over).
 func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
 	# Off the rim and out of sight: nothing to hit.
 	if state in ["tilt_off","tilt_gone"]: return
+	if phase2 and _slam_frame == Engine.get_physics_frames(): return
 	if phase2 and not crumbled and state == "tilt_brace":
 		brace_hits += 1
-		super.hit(at,way,strength)
+		glance(at,strength)
 		print("olmec boss: shot braced, %d/%d" % [brace_hits,TILT_BREAK])
 		if brace_hits >= TILT_BREAK and not brace_broken and not crumbled:
 			brace_broken = true
@@ -311,7 +347,116 @@ func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
 	if phase2 and not crumbled:
 		var h := _boss_head()
 		if h != null and h.break_worn(): _puff_ready = maxf(_puff_ready,_clock+PUFF_REST*0.5)
+		glance(at,strength,way)
+		return
 	super.hit(at,way,strength)
+
+# --- His back -------------------------------------------------------------------
+
+## The weak spot's tell: one faint point between his shoulder blades.
+func _make_back_glint() -> void:
+	if back_glint != null and is_instance_valid(back_glint): return
+	var g: Sprite3D = (load("res://scripts/kit_isle/kit_cache_glint.gd") as GDScript).new()
+	g.name = "BackGlint"
+	g.set_instance_shader_parameter("tint",Color(1.0,0.93,0.7))
+	g.rng.seed = 5113
+	g.wait = 1.5
+	add_child(g)
+	back_glint = g
+	_place_back_glint()
+
+## On his back, at his chest's height (the chest bone, as it moves).
+func _back_spot() -> Vector3:
+	var up := global_position+Vector3.UP*(legs_h+torso_h*0.6)
+	if look != null and look.skeleton != null:
+		var b := look.skeleton.find_bone("chest")
+		if b >= 0: up = look.skeleton.global_transform*look.skeleton.get_bone_global_pose(b).origin
+	return up-_forward3()*(length*0.5+0.12)
+
+func _place_back_glint() -> void:
+	if back_glint == null or not is_instance_valid(back_glint) or not is_inside_tree(): return
+	back_glint.global_position = _back_spot()
+
+func step(delta: float) -> void:
+	super.step(delta)
+	if phase2 and not crumbled: _place_back_glint()
+
+## The slam's group (scripts/slam.gd, side_slam.gd): the side slam (him in
+## its lunge) from behind is a back hit, else it glances; the ground pound
+## plays no part in phase 2.
+func slam(at: Vector3, radius: float, strength: float) -> void:
+	if not phase2 or crumbled or gone or state.begins_with("tilt"): return
+	var m: PilotMotor = field.motor
+	if m == null or str(m.move) != "lunge": return
+	var flat := Vector2(at.x-position.x,at.z-position.z).length()
+	if flat > maxf(width,length)*0.5+radius+BACK_NEAR: return
+	_slam_frame = Engine.get_physics_frames()
+	var d := Vector2(m.feet.x-position.x,m.feet.z-position.z)
+	var behind := -d.normalized().dot(PilotMotor.forward(facing)) if d.length() > 0.05 else 0.0
+	if behind >= BACK_ARC: back_hit(at,behind,strength)
+	else:
+		print("olmec boss: side slam glanced (behind %.2f)" % behind)
+		glance(at,strength,Vector3(-d.x,0.0,-d.y))
+
+## Not with that: the glint on his back flares, dust puffs where it struck,
+## a small rock away from it. Counts nothing.
+func glance(at: Vector3, strength := 1.0, way := Vector3.ZERO) -> void:
+	glances += 1
+	if back_glint != null and is_instance_valid(back_glint): back_glint.call("flare")
+	Dust.puff(field,at,0.8,Vector3.UP)
+	var flat := Vector3(way.x,0.0,way.z)
+	if flat.length() > 0.01:
+		var axis_local := (global_transform.basis.inverse()*Vector3.UP.cross(flat.normalized())).normalized()
+		if absf(_tip) < 0.001: _tip_axis = axis_local
+		_tip_v += KICK*0.25*clampf(strength,0.0,1.0)*signf(_tip_axis.dot(axis_local)+0.001)
+	quake = maxf(quake,0.15)
+	field.sound(&"body_step",at)
+	print("olmec boss: glanced (%.2f) in %s, %d glances" % [strength,state,glances])
+
+## The side slam in his back: the big read, a lurch forward and a shove
+## the way he faces. BACK_HITS of these bring him down.
+func back_hit(at: Vector3, behind := 1.0, strength := 1.0) -> void:
+	back_hits += 1
+	var fwd := _forward3()
+	last_back = {"at":at,"behind":behind,"n":back_hits,"from":position}
+	_back_from = position
+	var st: Node = field.study if field != null else null
+	if st != null and st.has_method("hit_stop"): st.call("hit_stop",BACK_HIT_STOP)
+	if back_glint != null and is_instance_valid(back_glint): back_glint.call("flare")
+	# Chips off his back, dust round his feet.
+	for i in range(3):
+		var out := (-fwd+_right3()*float(i-1)*0.7+Vector3.UP*0.9).normalized()
+		Dust.rocks(field,at+out*0.3,out,4,0.16*hh)
+	_puff(position+fwd*length*0.4,hh*1.4)
+	field.sound(&"body_rumble",at)
+	# The rock, the push (the target's hit: counts it, may bring him down),
+	# then the rest of the shove.
+	super.hit(at,fwd,strength)
+	print("olmec boss: BACK HIT %d/%d (behind %.2f) at (%.1f, %.1f)" % [back_hits,most_hits,behind,position.x,position.z])
+	if crumbled: return
+	_push += fwd*maxf(BACK_SHOVE-PUSH*strength,0.0)/PUSH_EASE
+	quake = maxf(quake,0.9)
+	move = ""
+	_end_slam()
+	_go("back_hit")
+	chase_beat.emit("back hit")
+
+## Lurched forward off the blow, stumbling, a hand down; then he turns on
+## him. The shove stops at the field's edge.
+func _back_lurch(delta: float) -> void:
+	vel.x = 0.0
+	vel.z = 0.0
+	if _push.length() > 0.01:
+		var ahead := position+_push.normalized()*(length*0.5+0.4)
+		if _floor(ahead+Vector3.UP*1.0,float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF:
+			_push = Vector3.ZERO
+			print("olmec boss: shove stopped at the edge")
+	if state_t < 0.5 and fmod(state_t,0.1) < delta: _puff(position+_forward3()*(length*0.3),hh*0.6)
+	if state_t >= BACK_STAGGER:
+		last_back["shove"] = Vector2(position.x-_back_from.x,position.z-_back_from.z).length()
+		print("olmec boss: shoved %.1f m" % float(last_back.shove))
+		move = ""
+		_go(_resume())
 
 # --- The charge ---------------------------------------------------------------
 
@@ -332,6 +477,8 @@ func _start_charge() -> void:
 
 func _tilt_due() -> bool:
 	if not phase2 or crumbled: return false
+	var st: Node = field.study if field != null else null
+	if st == null or not bool(st.get("tilt_mix")): return false
 	if tilts == 0: return hits >= TILT_AT_HITS or _clock >= _tilt_ready
 	return _clock >= _tilt_ready and hits >= TILT_AT_HITS
 
@@ -521,6 +668,7 @@ func _think_more(delta: float) -> void:
 		"charge": _charge(delta)
 		"charge_skid": _charge_skid(delta)
 		"charge_stagger": _charge_stagger(delta)
+		"back_hit": _back_lurch(delta)
 		"tilt_run": _tilt_run(delta)
 		"tilt_slam": _tilt_slam(delta)
 		"tilt_brace": _tilt_brace(delta)
@@ -534,6 +682,9 @@ func _pose_more(_idle: float) -> bool:
 		"charge": look.want("charge_run",look.loop_time("charge_run",_phase,2.0))
 		"charge_skid": look.want("charge_skid",minf(state_t,float(look.lengths.charge_skid)))
 		"charge_stagger": look.want("charge_stagger",minf(state_t,float(look.lengths.charge_stagger)))
+		# Hit from behind: the overrun's stumble, a hand down (a stand-in
+		# for the art lane's back-hit stagger).
+		"back_hit": look.want("charge_skid",minf(0.25+state_t*float(look.lengths.charge_skid)/BACK_STAGGER,float(look.lengths.charge_skid)))
 		"tilt_run": look.want("shoulder_run",look.loop_time("shoulder_run",_phase,2.0))
 		"tilt_off","tilt_gone":
 			# Rocked back off the rim (the charge's stopped-short stagger),
