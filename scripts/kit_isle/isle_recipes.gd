@@ -15,6 +15,16 @@ extends Node3D
 ## The pieces are built once; the traps and ropes are rebuilt where the
 ## island was let go (`moved`), as they keep their rest places when built.
 ##
+## Each piece and run is then named for the world view (scripts/
+## layout_overrides.gd, kind "piece"): `isle_<island>/<piece id>_<n>`
+## (`isle_near/pier_2`: the recipe's second pier, in its file order; a run
+## is `run_<n>`). Named, it leaves the holder for the study's
+## "IsleRecipePieces" (in its `world_roots`), so the world view anchors it to
+## the island under it like any other piece: picked, dragged, deleted,
+## saved in the layout file, carried by its island, and given to another
+## island when let go over one. The layout file's move wins over the
+## recipe's spot (the island view still shows the recipe's own).
+##
 ## Stands in the study's `foot_pieces` slot round what stood there (the
 ## foot route, the sluice), as scripts/traps/sluice_aqueduct.gd does.
 const MotifAuthored = preload("res://scripts/kit_isle/motif_authored.gd")
@@ -23,6 +33,7 @@ const IsleIsland = preload("res://scripts/kit_isle/isle_island_motif.gd")
 const Islands = preload("res://scripts/world_islands.gd")
 const TrapField = preload("res://scripts/traps/trap_field.gd")
 const FootPieces = preload("res://scripts/interactables/foot_pieces.gd")
+const Layout = preload("res://scripts/layout_overrides.gd")
 
 ## How far (m, x z) the spawn marker must stand from the island view's own
 ## start before it is taken as moved (the editor reseats it on the land).
@@ -78,14 +89,49 @@ func attach(scene: Node3D, names: Array) -> void:
 		pieces.name = "Pieces"
 		holder.add_child(pieces)
 		motif.build_pieces(pieces)
+		var built := _name_pieces(name,data,pieces)
 		recipes[name] = {"motif":motif,"holder":holder,"live":null,"traps":null,"ropes":null}
 		_live(name)
 		var r: Dictionary = recipes[name]
-		lines.append("%s %d pieces, %d traps" % [name,pieces.get_child_count(),(r.traps.traps as Array).size() if r.traps != null else 0])
+		lines.append("%s %d pieces, %d traps" % [name,built,(r.traps.traps as Array).size() if r.traps != null else 0])
 		_spawn(name,motif)
 	if not lines.is_empty():
 		motor.push_air(self,_air)
 		print("isle recipes: %s in %d ms" % ["; ".join(lines),Time.get_ticks_msec()-began])
+
+## Island `island`'s built pieces and runs (in `pieces`, the holder's)
+## named, the layout file's deletions and moves applied, each moved to the
+## study's "IsleRecipePieces" where it stands. Returns how many stand.
+func _name_pieces(island: String, data: Dictionary, pieces: Node3D) -> int:
+	var root := study.get_node_or_null("IsleRecipePieces") as Node3D
+	if root == null:
+		root = Node3D.new()
+		root.name = "IsleRecipePieces"
+		study.add_child(root)
+	var short := island.get_slice("/",1)
+	var counts := {}
+	var listed: Array = data.get("pieces",[])
+	var kept := 0
+	for child: Node in pieces.get_children():
+		var node := child as Node3D
+		if node == null: continue
+		var own := str(node.name)
+		var id := "run"
+		if own.begins_with("P") and own.substr(1).is_valid_int() and int(own.substr(1)) < listed.size():
+			id = str(listed[int(own.substr(1))].get("id","piece"))
+		counts[id] = int(counts.get(id,0))+1
+		var key := "isle_%s/%s_%d" % [short,id,int(counts[id])]
+		var coded := node.global_transform
+		pieces.remove_child(node)
+		if Layout.deleted(key):
+			node.free()
+			continue
+		node.name = "%s_%s" % [short,own]
+		root.add_child(node)
+		node.global_transform = Layout.xform(key,coded)
+		Layout.track(key,node,"piece",coded)
+		kept += 1
+	return kept
 
 ## Island `name`'s traps and ropes laid again in its holder (the coded
 ## frame), what stood there before freed.

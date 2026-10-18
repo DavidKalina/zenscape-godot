@@ -409,10 +409,10 @@ func _stumps_fit() -> Dictionary:
 ## Where the world view (scripts/layout_edit.gd) looks for what stands on
 ## the islands (scripts/world_islands.gd `anchor`): the art, the foot
 ## route's pieces, the life on the ground, the lodestone and target stone,
-## and the collision parts. Not the sky, the planes, the dragons or him.
+## the island view's recipe pieces and the collision parts. Not the sky, the planes, the dragons or him.
 func world_roots() -> Array:
 	var out: Array = [art]
-	for n: String in ["FootPieces","Life","Lodestone","TargetStone","KitCachePieces"]:
+	for n: String in ["FootPieces","Life","Lodestone","TargetStone","KitCachePieces","IsleRecipePieces"]:
 		var node := get_node_or_null(n)
 		if node != null: out.append(node)
 	for c: Node in get_children():
