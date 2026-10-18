@@ -81,6 +81,27 @@ func _along(d: float) -> Vector3:
 			return a.lerp(b,clampf((d-_lengths[i-1])/maxf(span,1e-4),0.0,1.0))
 	return path[0]
 
+## Its knobs for the world view's panel (scripts/layout_overrides.gd
+## `tunes`): its pace (m/s on average along its way, there and back or
+## round), for a slab that drifts at all.
+func layout_tunes() -> Array:
+	if path.size() < 2: return []
+	return [["pace","pace (m/s)",snappedf(layout_tune("pace"),0.05),0.3,12.0,0.05]]
+
+func _way() -> float:
+	var total: float = _lengths[_lengths.size()-1] if not _lengths.is_empty() else 0.0
+	return total if closed else 2.0*total
+
+func layout_tune(_key: String) -> float:
+	return _way()/period
+
+## Set to `v` m/s: its period changed, where it is along its way kept.
+func layout_retune(_key: String, v: float) -> void:
+	var to := maxf(_way()/clampf(v,0.3,12.0),0.5)
+	var t := _clock+offset
+	_clock = t*to/period-offset
+	period = to
+
 ## Its rest pose for the layout editor (scripts/layout_overrides.gd): its
 ## path's start, turned its first yaw.
 func layout_pose() -> Transform3D:

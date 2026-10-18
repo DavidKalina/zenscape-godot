@@ -36,6 +36,17 @@ func _init() -> void:
 	spring_on = true
 	spring_pumps = SPRING_PUMPS
 
+## Its knobs for the world view's panel (scripts/layout_overrides.gd
+## `tunes`): the spring's launch in his pumps.
+func layout_tunes() -> Array:
+	return [["pumps","spring (pumps)",SPRING_PUMPS,1.0,14.0,0.25]]
+
+func layout_tune(_key: String) -> float:
+	return spring_pumps
+
+func layout_retune(_key: String, v: float) -> void:
+	spring_pumps = clampf(v,1.0,14.0)
+
 func advance(delta: float) -> void:
 	sink = t_sink
 	tilt = t_tilt

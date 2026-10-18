@@ -187,6 +187,8 @@ static func reanchor(node: Node3D) -> String:
 
 static func _free_kind(layout_name: String) -> bool:
 	var e: Dictionary = preload("res://scripts/layout_overrides.gd").entries.get(layout_name,{})
+	# An added piece put on an island (a chunk stamped on it) is that island's.
+	if str(e.get("on","")) != "": return false
 	return str(e.get("kind","")) in FREE_KINDS
 
 ## The islands `box`'s footprint stands over: its middle and corners, each
@@ -271,8 +273,10 @@ static func grab(name: String, study: Node = null) -> Dictionary:
 	var nodes: Array = [i.node]
 	for m: Node3D in i.members:
 		if is_instance_valid(m) and m.is_inside_tree(): nodes.append(m)
+	# A piece that poses itself from its rest pose (a ring, a slab: a chunk
+	# stamped on the island) is carried by that pose.
 	var starts: Array = []
-	for n: Node3D in nodes: starts.append(n.global_transform)
+	for n: Node3D in nodes: starts.append(n.layout_pose() if n.has_method("layout_place") else n.global_transform)
 	var pools: Array = []
 	var ground: Variant = study.get("ground") if study != null else null
 	if ground != null:
@@ -290,7 +294,9 @@ static func move(g: Dictionary, xf: Transform3D) -> void:
 	var starts: Array = g.starts
 	for k in range(nodes.size()):
 		var n: Node3D = nodes[k]
-		if is_instance_valid(n): n.global_transform = d*(starts[k] as Transform3D)
+		if not is_instance_valid(n): continue
+		if n.has_method("layout_place"): n.layout_place(d*(starts[k] as Transform3D))
+		else: n.global_transform = d*(starts[k] as Transform3D)
 	var step: Transform3D = d*(g.get("last",Transform3D.IDENTITY) as Transform3D).affine_inverse()
 	for c: Callable in g.get("carry",[]):
 		if c.is_valid(): c.call(step)

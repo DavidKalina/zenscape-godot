@@ -81,6 +81,8 @@ const SPIN := 0.12
 var cool := 0.0
 var takes := 0
 var radius := RADIUS
+## m this ring's take throws him (the world view's boost knob; POP coded).
+var pop := POP
 var _seed := 0
 var _home := Transform3D.IDENTITY
 var _clock := 0.0
@@ -127,6 +129,17 @@ func layout_resize(r: Variant) -> void:
 			remove_child(n)
 			n.queue_free()
 	_build()
+
+## Its knobs for the world view's panel (scripts/layout_overrides.gd
+## `tunes`): [key, label, default, min, max, step].
+func layout_tunes() -> Array:
+	return [["boost","boost (m)",POP,1.0,16.0,0.25]]
+
+func layout_tune(_key: String) -> float:
+	return pop
+
+func layout_retune(_key: String, v: float) -> void:
+	pop = clampf(v,1.0,16.0)
 
 ## The world view's pick reach round its middle (m).
 func layout_reach() -> float:

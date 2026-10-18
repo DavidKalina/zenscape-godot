@@ -20,12 +20,14 @@ const Layout = preload("res://scripts/layout_overrides.gd")
 const AirRing = preload("res://scripts/interactables/air_ring.gd")
 const BobSlab = preload("res://scripts/interactables/bob_slab.gd")
 const Islands = preload("res://scripts/world_islands.gd")
+const Chunks = preload("res://scripts/layout_chunks.gd")
+const Knobs = preload("res://scripts/layout_knobs.gd")
 
 const TOGGLE := KEY_F4
 const LOOK_RATE := 0.004
 const PICK_PX := 28.0
 ## A pick's screen reach round a ring's or a slab's middle (m).
-const REACH := {"air_ring":AirRing.RADIUS+0.3,"bob_slab":1.5,"sink_slab":1.5,"drift_slab":1.5,"rope":4.0,"token":1.0}
+const REACH := {"air_ring":AirRing.RADIUS+0.3,"bob_slab":1.5,"sink_slab":1.5,"drift_slab":1.5,"rope":4.0,"token":1.0,"islet":4.0}
 const LIFT := 0.25
 ## A size step (m: a ring's radius, a slab's longer side), and Shift's.
 const GROW := 0.25
@@ -50,7 +52,7 @@ RMB hold + move  look      W A S D / Q E  fly / down, up    Shift  fast
 LMB  select, drag to move (at its height; an island too)     wheel / PgUp PgDn  height (Shift: 1 m)
 Shift+LMB  add to / drop from the group    drag on empty sky or Shift+drag  box-select    (a group moves, turns, tips, sizes, copies, deletes as one)
 Z / X  turn 15 deg (Shift 5)    T / G  tip 15 deg (a ring throws along its arrow; a group about the view's level right)    [ / ]  size (rings, slabs; Shift finer)    C  duplicate    Del / Backspace  delete
-1  add air ring    2  add bob slab    3  add ring-stair slab (7 pumps)
+1  add air ring    2  add bob slab    3  add ring-stair slab (7 pumps)    4  add islet    K  save the selection as a chunk    J  chunks: stamp one where you look
 click an island's ground: the island    U  from a piece to the island it stands on    O  open the island alone (motif editor)
 Ctrl/Cmd+Z  undo    Ctrl/Cmd+S  save"""
 
@@ -113,6 +115,32 @@ var _box_add := false
 var _rubber: ReferenceRect
 ## The group's other pieces' boxes (the last's is `_box`).
 var _boxes: Array = []
+## Chunks (scripts/layout_chunks.gd): the name field while a selection is
+## being saved as one (`_naming`: the names it saves, and the view's yaw
+## then), and the list to stamp from.
+var _naming: Array = []
+var _naming_yaw := 0.0
+var _name_box: PanelContainer
+var _name_field: LineEdit
+var _chunk_panel: PanelContainer
+var _chunk_list: ItemList
+## A stamp's reach: the view's middle hits something this near, or the
+## chunk goes ADD_OUT m out past its own reach.
+const STAMP_REACH := 250.0
+## The knob panel (scripts/layout_knobs.gd; spec goal 4): the selected
+## piece's build's knobs, bottom right. A slider let go (or a step on its
+## track) rebuilds that build; `_knob_held` while one is dragged.
+var _knob_panel: PanelContainer
+var _knob_build := ""
+## The piece whose own tunes the panel shows ("" none) and their specs.
+var _tune_name := ""
+var _tune_specs: Array = []
+var _knob_sliders := {}
+var _knob_texts := {}
+var _knob_held := false
+var _knob_quiet := false
+## How far over the bottom edge the panel stands (the play hints under it).
+const KNOB_LIFT := 70.0
 
 func setup(scene: Node3D, pieces: Node3D) -> void:
 	study = scene
@@ -157,6 +185,21 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	if not editing: return
+	# The chunk name field has the keys (Enter saves, Esc doesn't).
+	if not _naming.is_empty():
+		if event is InputEventKey and event.pressed and not event.echo:
+			var kc := (event as InputEventKey).keycode
+			if kc == KEY_ESCAPE or kc == KEY_ENTER or kc == KEY_KP_ENTER:
+				_end_naming(kc != KEY_ESCAPE)
+				get_viewport().set_input_as_handled()
+		return
+	# The knob panel takes the mouse over itself, and while a slider is held.
+	if _knobs_take(event): return
+	# The chunk list takes clicks on itself.
+	if _listing() and event is InputEventMouseButton and _chunk_panel.get_global_rect().has_point((event as InputEventMouseButton).position): return
+	if _listing() and event is InputEventKey and event.pressed and _list_key(event as InputEventKey):
+		get_viewport().set_input_as_handled()
+		return
 	# Esc still pauses (scripts/kit_isle/pause_host.gd).
 	if event is InputEventKey and (event as InputEventKey).keycode == KEY_ESCAPE: return
 	_edit_input(event)
@@ -210,6 +253,9 @@ func leave() -> void:
 	editing = false
 	set_process(false)
 	_show_throws(false)
+	if not _naming.is_empty(): _end_naming(false)
+	show_chunks(false)
+	_knob_held = false
 	if _ui != null: _ui.visible = false
 	var cam: Camera3D = study.camera
 	var at := _stood
@@ -229,7 +275,7 @@ func leave() -> void:
 func _process(delta: float) -> void:
 	if not editing: return
 	var way := Vector3.ZERO
-	if not Input.is_key_pressed(KEY_CTRL) and not Input.is_key_pressed(KEY_META):
+	if _naming.is_empty() and not Input.is_key_pressed(KEY_CTRL) and not Input.is_key_pressed(KEY_META):
 		if Input.is_key_pressed(KEY_W): way.z -= 1.0
 		if Input.is_key_pressed(KEY_S): way.z += 1.0
 		if Input.is_key_pressed(KEY_A): way.x -= 1.0
@@ -306,8 +352,11 @@ func _edit_input(event: InputEvent) -> void:
 		KEY_1: if not k.echo: add("air_ring")
 		KEY_2: if not k.echo: add("bob_slab")
 		KEY_3: if not k.echo: add("bob_slab",RING_SLAB_PUMPS)
+		KEY_4: if not k.echo: add("islet")
 		KEY_U: if not k.echo: step_out()
 		KEY_O: if not k.echo and not cmd: open_island()
+		KEY_K: if not k.echo and not cmd: begin_chunk()
+		KEY_J: if not k.echo and not cmd: show_chunks(not _listing())
 
 # --- Picking and moving --------------------------------------------------------------
 
@@ -432,7 +481,10 @@ func let_go() -> void:
 
 ## Piece `name` given to the island under it now (or none), its box redrawn.
 func _reanchor(name: String) -> void:
-	var on := Islands.reanchor(Layout.entries[name].node)
+	var e: Dictionary = Layout.entries[name]
+	var on := Islands.reanchor(e.node)
+	# A piece stamped on an island goes to the island it is let go over.
+	if e.has("on") and on != "": e.on = on
 	if on != "" or Islands.anchored: _show_status()
 
 func drag_to(at: Vector2) -> void:
@@ -590,13 +642,13 @@ func duplicate_selected() -> void:
 		return
 	var e: Dictionary = Layout.entries[selected]
 	if not str(e.kind) in Layout.ADDABLE:
-		say("only rings and slabs copy (not %s)" % e.kind)
+		say("only rings, slabs and islets copy (not %s)" % e.kind)
 		return
 	var t := Layout.current(selected)
 	var right: Vector3 = (study.camera as Camera3D).global_basis.x
 	t.origin += Vector3(right.x,0.0,right.z).normalized()*3.0
 	var name := Layout.fresh_name(str(e.kind))
-	Layout.spawn(host,name,str(e.kind),t,float(e.get("pumps",0.0)),Layout.size_of(selected))
+	Layout.spawn(host,name,str(e.kind),t,float(e.get("pumps",0.0)),Layout.size_of(selected),"",Layout.tunes_off(selected,["pumps"]))
 	_push({"do":"add","name":name})
 	dirty = true
 	select(name)
@@ -648,7 +700,7 @@ func _remove(name: String) -> Dictionary:
 		rec.index = node.get_index()
 		parent.remove_child(node)
 	Layout.entries.erase(name)
-	if not name.begins_with("added/") and not name in gone:
+	if not Layout.is_added(name) and not name in gone:
 		gone.append(name)
 		rec.gone = true
 	return rec
@@ -677,6 +729,7 @@ func select_group(names: Array) -> void:
 	selected = str(g.back())
 	_show_box()
 	_show_status()
+	_show_knobs()
 
 ## The group's middle: the mean of its pieces' spots.
 func group_mid() -> Vector3:
@@ -795,11 +848,11 @@ func _group_copy() -> void:
 		var t := Layout.current(n)
 		t.origin += off
 		var name := Layout.fresh_name(str(e.kind))
-		Layout.spawn(host,name,str(e.kind),t,float(e.get("pumps",0.0)),Layout.size_of(n))
+		Layout.spawn(host,name,str(e.kind),t,float(e.get("pumps",0.0)),Layout.size_of(n),"",Layout.tunes_off(n,["pumps"]))
 		made.append(name)
 		recs.append({"do":"add","name":name})
 	if made.is_empty():
-		say("only rings and slabs copy (none in the group)")
+		say("only rings, slabs and islets copy (none in the group)")
 		return
 	_push({"do":"group","name":"copy:"+",".join(PackedStringArray(made)),"recs":recs,"names":group.duplicate()})
 	dirty = true
@@ -864,6 +917,171 @@ func box_pick(r: Rect2, add := false) -> Array:
 		if cam.is_position_behind(mid): continue
 		if r.has_point(cam.unproject_position(mid)): out.append(name)
 	return out
+
+# --- Chunks (spec goal 2) ---------------------------------------------------------------
+
+func _listing() -> bool:
+	return _chunk_panel != null and _chunk_panel.visible
+
+## The view's yaw (a new piece faces it; a chunk is kept and stamped by it).
+func _view_yaw() -> float:
+	var way := -(study.camera as Camera3D).global_basis.z
+	return atan2(-way.x,-way.z)
+
+## The pieces a chunk would take now: the group, else the one piece.
+func _chunk_names() -> Array:
+	if not group.is_empty(): return group.duplicate()
+	if selected != "" and not is_island(selected): return [selected]
+	return []
+
+## The name field opened for the selection (K); Enter saves it.
+func begin_chunk() -> void:
+	var names := _chunk_names()
+	if names.is_empty():
+		say("select pieces first (a group, or one ring or slab), then K to keep them as a chunk")
+		return
+	_naming = names
+	_naming_yaw = _view_yaw()
+	if _name_box == null:
+		_name_box = PanelContainer.new()
+		_name_box.name = "ChunkName"
+		_name_box.position = Vector2(16.0,268.0)
+		var row := HBoxContainer.new()
+		var l := Label.new()
+		l.text = "chunk name (Enter saves, Esc cancels):"
+		row.add_child(l)
+		_name_field = LineEdit.new()
+		_name_field.custom_minimum_size = Vector2(260.0,0.0)
+		row.add_child(_name_field)
+		_name_box.add_child(row)
+		_ui.add_child(_name_box)
+	_name_field.text = Chunks.fresh()
+	_name_box.visible = true
+	_name_field.grab_focus()
+	_name_field.select_all()
+
+func _end_naming(keep: bool) -> void:
+	var names := _naming
+	_naming = []
+	if _name_box != null:
+		_name_box.visible = false
+		_name_field.release_focus()
+	if keep: save_chunk(Chunks.clean(_name_field.text),names,_naming_yaw)
+	else: say("chunk not saved")
+
+## `names` kept as chunk `name`, about their middle, facing `yaw`.
+func save_chunk(name: String, names: Array, yaw: float) -> void:
+	if name == "":
+		say("a chunk needs a name (letters, digits, _ -)")
+		return
+	var c := Vector3.ZERO
+	for n: String in names: c += Layout.current(n).origin
+	c /= maxf(names.size(),1.0)
+	var had := name in Chunks.names()
+	var res: Array = Chunks.save(name,names,Transform3D(Basis(Vector3.UP,yaw),c.snappedf(SNAP)))
+	if int(res[0]) != OK:
+		say("chunk %s not saved: %s" % [name,"only rings, slabs and islets go in a chunk" if int(res[0]) == ERR_INVALID_DATA else error_string(int(res[0]))])
+		return
+	say("%s chunk %s: %d pieces%s  (%s)" % ["replaced" if had else "saved",name,int(res[1]),"  (%d not rings, slabs or islets left out)" % int(res[2]) if int(res[2]) > 0 else "",Chunks.file_of(name)])
+	if _listing(): show_chunks(true)
+
+## The chunk list on (J) or off: Up / Down pick, Enter or a click stamps
+## (on the island under the view's middle; Shift: free), J / Esc closes.
+func show_chunks(on: bool) -> void:
+	if not on:
+		if _chunk_panel != null: _chunk_panel.visible = false
+		return
+	if _chunk_panel == null:
+		_chunk_panel = PanelContainer.new()
+		_chunk_panel.name = "ChunkList"
+		_chunk_panel.position = Vector2(16.0,268.0)
+		var col := VBoxContainer.new()
+		var l := Label.new()
+		l.text = "CHUNKS  Up/Down pick   Enter or click: stamp where you look,\non the island under it (Shift: free)   J / Esc close"
+		col.add_child(l)
+		_chunk_list = ItemList.new()
+		_chunk_list.custom_minimum_size = Vector2(420.0,180.0)
+		_chunk_list.item_clicked.connect(func(i: int, _at: Vector2, button: int) -> void:
+			if button == MOUSE_BUTTON_LEFT: stamp(_chunk_list.get_item_text(i),Input.is_key_pressed(KEY_SHIFT)))
+		col.add_child(_chunk_list)
+		_chunk_panel.add_child(col)
+		_ui.add_child(_chunk_panel)
+	var was := _chunk_list.get_selected_items()
+	_chunk_list.clear()
+	for n: String in Chunks.names(): _chunk_list.add_item(n)
+	if _chunk_list.item_count > 0: _chunk_list.select(clampi(was[0] if not was.is_empty() else 0,0,_chunk_list.item_count-1))
+	_chunk_panel.visible = true
+	if _chunk_list.item_count == 0: say("no chunks yet in %s (select pieces, K to keep them)" % Chunks.dir())
+	else: say("%d chunks" % _chunk_list.item_count)
+
+## A key while the list is open: true if the list took it.
+func _list_key(k: InputEventKey) -> bool:
+	var n := _chunk_list.item_count
+	var at := _chunk_list.get_selected_items()
+	var i: int = at[0] if not at.is_empty() else 0
+	match k.keycode:
+		KEY_UP, KEY_DOWN:
+			if n > 0:
+				_chunk_list.select(clampi(i+(1 if k.keycode == KEY_DOWN else -1),0,n-1))
+				_chunk_list.ensure_current_is_visible()
+			return true
+		KEY_ENTER, KEY_KP_ENTER:
+			if not k.echo and n > 0: stamp(_chunk_list.get_item_text(i),k.shift_pressed)
+			return true
+		KEY_ESCAPE:
+			show_chunks(false)
+			return true
+	return false
+
+## Chunk `chunk` stamped where the view's middle looks (its lowest piece
+## 1.5 m over what it hits), turned by the view as it was turned by the
+## view it was kept from; its pieces on the island under that spot unless
+## `free`. One record; selected as a group.
+func stamp(chunk: String, free := false) -> void:
+	if host == null:
+		say("no pieces host here")
+		return
+	var pieces := Chunks.read(chunk)
+	if pieces.is_empty():
+		say("chunk %s has no rings or slabs to stamp" % chunk)
+		return
+	var cam: Camera3D = study.camera
+	var from := cam.global_position
+	var way := -cam.global_basis.z
+	var lo := INF
+	var reach := 0.0
+	for p: Dictionary in pieces:
+		var o: Vector3 = (p.t as Transform3D).origin
+		lo = minf(lo,o.y)
+		reach = maxf(reach,Vector2(o.x,o.z).length())
+	var at := from+way*(ADD_OUT+reach)
+	var on := ""
+	var hit := _ray(from,way)
+	if not hit.is_empty() and from.distance_to(hit.position) < STAMP_REACH:
+		at = (hit.position as Vector3)+Vector3.UP*(1.5-lo)
+		if not free: on = Islands.island_under(hit.position)
+	var anchor := Transform3D(Basis(Vector3.UP,_view_yaw()),at.snappedf(SNAP))
+	var prefix := Chunks.stamp_prefix(chunk)
+	var made: Array = []
+	var recs: Array = []
+	var count := {}
+	for p: Dictionary in pieces:
+		var kind := str(p.kind)
+		count[kind] = int(count.get(kind,0))+1
+		var name := prefix+"%s_%d" % [kind,count[kind]]
+		var t: Transform3D = anchor*(p.t as Transform3D)
+		t.basis = t.basis.orthonormalized()
+		var node := Layout.spawn(host,name,kind,t,float(p.pumps),p.size,on,p.get("tunes",{}))
+		if node == null: continue
+		if on != "": _reanchor(name)
+		made.append(name)
+		recs.append({"do":"add","name":name})
+	if made.is_empty(): return
+	_push({"do":"group","name":"stamp:"+prefix,"recs":recs,"names":_chunk_names()})
+	dirty = true
+	_strips_stale = true
+	select_group(made)
+	say("stamped %s (%d pieces) %s" % [chunk,made.size(),"on "+on if on != "" else "free"])
 
 # --- Undo ----------------------------------------------------------------------------
 
@@ -941,6 +1159,13 @@ func _undo_one(rec: Dictionary) -> bool:
 			Layout.apply(name,rec.t)
 			select(name)
 			_reanchor(name)
+		"knobs":
+			if not Knobs.builds.has(name): return false
+			_set_knobs(name,rec.values,false)
+		"tune":
+			if not Layout.entries.has(name) or not is_instance_valid(Layout.entries[name].node): return false
+			Layout.retune(name,str(rec.key),float(rec.v))
+			select(name)
 		"size":
 			if not Layout.entries.has(name) or not is_instance_valid(Layout.entries[name].node): return false
 			(Layout.entries[name].node as Node).layout_resize(rec.size)
@@ -1111,6 +1336,174 @@ func _show_warn() -> void:
 	_warn.text = "\n".join(lines)
 	_warn.visible = not lines.is_empty()
 
+# --- Knobs (spec goal 4) ------------------------------------------------------------------
+
+## True if `event` is the knob panel's: the mouse over it, or anything of
+## the mouse while a slider is held (the GUI gets it, not the world).
+func _knobs_take(event: InputEvent) -> bool:
+	if _knob_panel == null or not _knob_panel.visible or not event is InputEventMouse: return false
+	if _knob_held: return true
+	return _knob_panel.get_global_rect().has_point((event as InputEventMouse).position)
+
+## The panel for the selected piece (one piece selected): its build's
+## knobs if it is one's, then its own tunes (a ring's boost, a bob slab's
+## pumps, a drifting slab's pace; Layout `tunes`), else hidden.
+func _show_knobs() -> void:
+	var b := ""
+	var piece := ""
+	if group.is_empty() and selected != "" and not is_island(selected):
+		b = Knobs.build_of(selected)
+		if not (Layout.entries[selected] as Dictionary).get("tune0",{}).is_empty(): piece = selected
+	if b == "" and piece == "":
+		if _knob_panel != null: _knob_panel.visible = false
+		_knob_build = ""
+		_tune_name = ""
+		_knob_held = false
+		return
+	if b != _knob_build or piece != _tune_name or _knob_panel == null: _make_knob_panel(b,piece)
+	_knob_quiet = true
+	if b != "":
+		var vals := Knobs.values(b)
+		for s: Array in Knobs.builds[b].specs:
+			var k := str(s[0])
+			(_knob_sliders[k] as HSlider).value = float(vals[k])
+			(_knob_texts[k] as Label).text = Knobs.text_of(s,vals[k])
+	if piece != "":
+		var now := Layout.tunes_now(piece)
+		for s: Array in _tune_specs:
+			var k := "tune:"+str(s[0])
+			(_knob_sliders[k] as HSlider).value = float(now[str(s[0])])
+			(_knob_texts[k] as Label).text = Knobs.text_of(s,now[str(s[0])])
+	_knob_quiet = false
+	_knob_panel.visible = true
+
+func _make_knob_panel(b: String, piece := "") -> void:
+	if _knob_panel != null: _knob_panel.free()
+	_knob_build = b
+	_tune_name = piece
+	_tune_specs = (Layout.entries[piece].node as Node).layout_tunes() if piece != "" else []
+	_knob_sliders = {}
+	_knob_texts = {}
+	_knob_held = false
+	_knob_panel = PanelContainer.new()
+	_knob_panel.name = "KnobPanel"
+	var col := VBoxContainer.new()
+	if b != "":
+		var title := Label.new()
+		title.text = "KNOBS  %s\n(let go of a slider: it rebuilds)" % str(Knobs.builds[b].label)
+		col.add_child(title)
+		col.add_child(_knob_rows(Knobs.builds[b].specs,""))
+	if piece != "":
+		var title := Label.new()
+		title.text = "TUNE  %s\n(let go of a slider: it takes)" % piece
+		col.add_child(title)
+		col.add_child(_knob_rows(_tune_specs,"tune:"))
+	_knob_panel.add_child(col)
+	_ui.add_child(_knob_panel)
+	# Bottom right, clear of the keys, the status line and the chunk list
+	# on the left and the warnings at the top right.
+	_knob_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT,Control.PRESET_MODE_MINSIZE,16)
+	_knob_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_knob_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	# Up over the play hints along the bottom, on its own dark ground.
+	_knob_panel.offset_top -= KNOB_LIFT
+	_knob_panel.offset_bottom -= KNOB_LIFT
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.05,0.05,0.07,0.92)
+	bg.set_content_margin_all(10.0)
+	bg.set_corner_radius_all(4)
+	_knob_panel.add_theme_stylebox_override("panel",bg)
+
+## A grid of `specs`' sliders, keyed `prefix`+key ("tune:" a piece's own).
+func _knob_rows(specs: Array, prefix: String) -> GridContainer:
+	var rows := GridContainer.new()
+	rows.columns = 3
+	for s: Array in specs:
+		var k := prefix+str(s[0])
+		var l := Label.new()
+		l.text = str(s[1])
+		rows.add_child(l)
+		var sl := HSlider.new()
+		sl.name = "Knob_"+k.replace(":","_")
+		sl.min_value = float(s[3])
+		sl.max_value = float(s[4])
+		sl.step = float(s[5])
+		sl.scrollable = false
+		sl.custom_minimum_size = Vector2(220.0,22.0)
+		sl.value = float(s[2])
+		sl.drag_started.connect(func() -> void: _knob_held = true)
+		sl.drag_ended.connect(func(changed: bool) -> void:
+			_knob_held = false
+			if changed: _knob_changed(k,sl.value))
+		sl.value_changed.connect(func(v: float) -> void:
+			(_knob_texts[k] as Label).text = Knobs.text_of(s,v)
+			if not _knob_held and not _knob_quiet: _knob_changed(k,v))
+		rows.add_child(sl)
+		var t := Label.new()
+		t.custom_minimum_size = Vector2(48.0,0.0)
+		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		rows.add_child(t)
+		_knob_sliders[k] = sl
+		_knob_texts[k] = t
+	return rows
+
+## Knob `key` of the shown build set to `v`: the build rebuilt (if it changed).
+func _knob_changed(key: String, v: float) -> void:
+	if key.begins_with("tune:"):
+		if _tune_name == "" or not Layout.entries.has(_tune_name): return
+		var k := key.substr(5)
+		var was := float(Layout.tunes_now(_tune_name)[k])
+		if is_equal_approx(was,v): return
+		set_tune(_tune_name,k,v)
+		return
+	if _knob_build == "" or not Knobs.builds.has(_knob_build): return
+	var vals := Knobs.values(_knob_build)
+	var was: Variant = vals[key]
+	vals[key] = int(round(v)) if was is int else v
+	if is_equal_approx(float(vals[key]),float(was)): return
+	set_knob(_knob_build,key,vals[key])
+
+## Piece `name`'s tune `key` set to `v` (an undo record); nothing rebuilt.
+func set_tune(name: String, key: String, v: float) -> void:
+	var was := float(Layout.tunes_now(name)[key])
+	Layout.retune(name,key,v)
+	_push({"do":"tune","name":name,"key":key,"v":was})
+	dirty = true
+	say("tuned %s: %s %.2f (was %.2f)" % [name,key,float(Layout.tunes_now(name)[key]),was])
+
+## Build `b`'s knob `key` set to `v` and the build rebuilt (an undo record).
+func set_knob(b: String, key: String, v: Variant) -> void:
+	var vals := Knobs.values(b)
+	vals[key] = v
+	_set_knobs(b,vals,true)
+	say("rebuilt %s: %s %s" % [b,key,Knobs.text_of(_spec_of(b,key),v)])
+
+func _spec_of(b: String, key: String) -> Array:
+	for s: Array in Knobs.builds[b].specs:
+		if str(s[0]) == key: return s
+	return [key,key,0.0,0.0,1.0,0.1]
+
+## Build `b` made again at `vals`; the selection kept on the piece of the
+## same name (else the build's first). `record`: an undo record of it.
+func _set_knobs(b: String, vals: Dictionary, record: bool) -> void:
+	let_go()
+	var keep := selected
+	var was := Knobs.values(b)
+	select("")
+	var began := Time.get_ticks_usec()
+	var names := Knobs.rebuild(b,vals,gone)
+	print("world view: rebuilt %s (%d pieces) in %.1f ms" % [b,names.size(),(Time.get_ticks_usec()-began)/1000.0])
+	if record: _push({"do":"knobs","name":b,"values":was})
+	dirty = true
+	_strips_stale = true
+	if not Layout.entries.has(keep):
+		keep = ""
+		for n: String in names:
+			if Layout.entries.has(n):
+				keep = n
+				break
+	select(keep)
+
 # --- Selection and text ----------------------------------------------------------------
 
 func select(name: String) -> void:
@@ -1118,6 +1511,7 @@ func select(name: String) -> void:
 	selected = name if Layout.entries.has(name) or is_island(name) else ""
 	_show_box()
 	_show_status()
+	_show_knobs()
 
 ## A box round the selected object's drawn bounds, a child of it (it
 ## follows with no work a frame), drawn over everything.
