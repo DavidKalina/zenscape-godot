@@ -346,6 +346,8 @@ func _build_art() -> void:
 	# layout_overrides.gd; layouts/aqueduct_isle.json, or --layout=), read
 	# before the placers that ask it (the ring route).
 	LayoutOverrides.begin("aqueduct_isle")
+	# Its island moves, once the whole isle stands (`_place_saved_islands`).
+	if not LayoutOverrides.islands().is_empty(): isle_ready.connect(_place_saved_islands,CONNECT_ONE_SHOT)
 	# The on-foot pieces' route (balustrades, ropes, a ferry, bobbing slabs).
 	var foot_host: Node3D = preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)
 	if foot_host != null: LayoutOverrides.build_added(foot_host)
@@ -372,9 +374,39 @@ func world_roots() -> Array:
 		if c is StaticBody3D: out.append(c)
 	return out
 
-## An island moved in the world view (scripts/world_islands.gd `settle`):
-## the worn paths over it drawn where it went.
-func island_moved(_name: String) -> void:
+## The layout file's island moves (scripts/layout_overrides.gd `islands`)
+## put back once the whole isle stands (its flora, life and plane): the
+## islands carried as the world view's drag carries them, then him, his
+## start and the plane put back on the island they stood on.
+func _place_saved_islands() -> void:
+	var began := Time.get_ticks_msec()
+	var saved := LayoutOverrides.islands()
+	var feet: Vector3 = motor.feet
+	var done := WorldIslands.place_saved(saved,world_roots(),self)
+	if done.is_empty(): return
+	for name: String in done:
+		var i: Dictionary = WorldIslands.islands[name]
+		var xf: Transform3D = i.xf
+		if Geometry2D.is_point_in_polygon(Vector2(start.x,start.z),i.coded):
+			start = xf*start
+			start_face = Vector2((xf.basis*Vector3(start_face.x,0.0,start_face.y)).x,(xf.basis*Vector3(start_face.x,0.0,start_face.y)).z)
+			_last_stood = start
+		if not flying and Geometry2D.is_point_in_polygon(Vector2(feet.x,feet.z),i.coded):
+			var face := Vector2(-sin(float(motor.facing)),-cos(float(motor.facing)))
+			var f3 := xf.basis*Vector3(face.x,0.0,face.y)
+			place(xf*feet+Vector3.UP*0.05,Vector2(f3.x,f3.z))
+	print("aqueduct isle: islands moved from the layout file in %d ms: %s" % [Time.get_ticks_msec()-began,", ".join(done)])
+
+## An island moved in the world view (scripts/world_islands.gd `settle`,
+## by `d` from where it stood, `was` its outline there): the worn paths
+## over it drawn where it went, and the parked plane carried if it stood
+## on it.
+func island_moved(_name: String, d := Transform3D.IDENTITY, was := PackedVector2Array()) -> void:
+	if parked and not was.is_empty() and Geometry2D.is_point_in_polygon(Vector2(parked_at.x,parked_at.z),was):
+		var at := d*parked_at
+		var heading := wrapf(parked_heading+d.basis.get_euler().y,-PI,PI)
+		_park(at,heading)
+		_home = Vector4(at.x,at.y,at.z,heading)
 	var paths: Array = []
 	for path: Array in Art.paths():
 		var moved: Array = []

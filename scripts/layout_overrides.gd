@@ -10,7 +10,11 @@ extends RefCounted
 ##   {"version": 1,
 ##    "moved":   {"ring_route/ring_a": {"pos": [x, y, z], "rot": [x, y, z]}},
 ##    "added":   [{"name": "added/air_ring_1", "kind": "air_ring", "pos": [...], "rot": [...]}],
-##    "deleted": ["ring_route/chain_slab_2"]}
+##    "deleted": ["ring_route/chain_slab_2"],
+##    "islands": {"island/near": {"pos": [x, y, z], "rot": [x, y, z]}}}
+## An island's entry (scripts/world_islands.gd) is its move from where it
+## is coded (the whole island and what stands on it carried by it), only
+## for islands off their coded place; a file without them has none.
 ## `rot` is the basis's Euler angles in degrees (Godot's YXZ order). Each
 ## moved object is kept at its absolute transform; nothing follows it.
 ##
@@ -42,8 +46,15 @@ static func begin(scene_id: String) -> void:
 		push_warning("layout %s: not a JSON object, ignored" % path)
 		return
 	var d: Dictionary = parsed
-	for k: String in ["moved","added","deleted"]:
+	for k: String in ["moved","added","deleted","islands"]:
 		if d.has(k): data[k] = d[k]
+
+## The file's island moves: name -> Transform3D (from coded).
+static func islands() -> Dictionary:
+	var out := {}
+	var saved: Dictionary = data.get("islands",{})
+	for name: String in saved: out[name] = from_json(saved[name])
+	return out
 
 ## The transform `name` stands at: the file's, else `coded`.
 static func xform(name: String, coded: Transform3D) -> Transform3D:
@@ -122,9 +133,10 @@ static func fresh_name(kind: String) -> String:
 	return "added/%s_%d" % [kind,i]
 
 ## The file written from what is tracked now: every coded object off its
-## coded transform as moved, the added ones as added, `gone` as deleted.
-## Returns the error.
-static func save(gone: Array) -> Error:
+## coded transform as moved, the added ones as added, `gone` as deleted,
+## `moved_islands` (name -> Transform3D from coded) as islands, those off
+## their coded place. Returns the error.
+static func save(gone: Array, moved_islands := {}) -> Error:
 	var moved := {}
 	var added: Array = []
 	var names: Array = entries.keys()
@@ -145,6 +157,12 @@ static func save(gone: Array) -> Error:
 		if not g.begins_with("added/") and not g in kept: kept.append(g)
 	kept.sort()
 	data = {"version":VERSION,"moved":moved,"added":added,"deleted":kept}
+	var isl := {}
+	var isl_names: Array = moved_islands.keys()
+	isl_names.sort()
+	for name: String in isl_names:
+		if not _same(moved_islands[name],Transform3D.IDENTITY): isl[name] = to_json(moved_islands[name])
+	if not isl.is_empty(): data["islands"] = isl
 	if path.begins_with("res://"): DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	else: DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	var f := FileAccess.open(path,FileAccess.WRITE)
@@ -166,8 +184,12 @@ static func _text(d: Dictionary) -> String:
 	var out := "{\n\t\"version\": %d,\n" % VERSION
 	out += "\t\"moved\": {\n%s\n\t},\n" % ",\n".join(lines) if not lines.is_empty() else "\t\"moved\": {},\n"
 	out += "\t\"added\": [\n%s\n\t],\n" % ",\n".join(added) if not added.is_empty() else "\t\"added\": [],\n"
-	out += "\t\"deleted\": [\n%s\n\t]\n" % ",\n".join(gone) if not gone.is_empty() else "\t\"deleted\": []\n"
-	return out+"}\n"
+	out += "\t\"deleted\": [\n%s\n\t]" % ",\n".join(gone) if not gone.is_empty() else "\t\"deleted\": []"
+	var isl: Dictionary = d.get("islands",{})
+	if isl.is_empty(): return out+"\n}\n"
+	var rows := PackedStringArray()
+	for k: String in isl: rows.append("\t\t%s: %s" % [JSON.stringify(k),JSON.stringify(isl[k])])
+	return out+",\n\t\"islands\": {\n%s\n\t}\n}\n" % ",\n".join(rows)
 
 static func _same(a: Transform3D, b: Transform3D) -> bool:
 	return a.origin.distance_to(b.origin) < 0.005 and a.basis.get_euler().distance_to(b.basis.get_euler()) < 0.001

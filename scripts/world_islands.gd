@@ -278,7 +278,31 @@ static func settle(g: Dictionary, study: Node = null) -> void:
 		var k := (outlines as Array).find(was)
 		if k >= 0: (outlines as Array)[k] = now
 		study.set("_gap_outlines",-1)
-	if study.has_method("island_moved"): study.island_moved(g.name)
+	if study.has_method("island_moved"): study.island_moved(g.name,d,was)
+
+## The layout file's island moves (name -> Transform3D from coded,
+## scripts/layout_overrides.gd `islands`) put back at load: what stands on
+## the islands found (`anchor`), then each island taken, moved and let go
+## as a drag would. Returns the names moved.
+static func place_saved(saved: Dictionary, roots: Array, study: Node = null) -> Array:
+	var done: Array = []
+	if saved.is_empty(): return done
+	anchor(roots)
+	for name: String in saved:
+		if not islands.has(name):
+			push_warning("layout: no island %s to move (kept in the file)" % name)
+			continue
+		var g := grab(name,study)
+		move(g,saved[name])
+		settle(g,study)
+		done.append(name)
+	return done
+
+## Each island's move from coded (name -> Transform3D), for the save.
+static func moves() -> Dictionary:
+	var out := {}
+	for name: String in islands: out[name] = islands[name].xf
+	return out
 
 ## `outline` (x, z) carried by `d` (turned about up, moved).
 static func flat(outline: PackedVector2Array, d: Transform3D) -> PackedVector2Array:

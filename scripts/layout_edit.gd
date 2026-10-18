@@ -35,6 +35,13 @@ const ADD_OUT := 14.0
 const RING_SLAB_PUMPS := 7.0
 ## What stands on a selected island: boxed faintly under its bright rim.
 const MEMBER_TINT := Color(1.0,0.75,0.4,0.28)
+## The landing-strip warning (AGENTS.md: every isle the plane reaches
+## keeps turf long enough to land on): each island's longest clear run
+## (the study's `longest_run`, looked for up to STRIP_CAP m) when the view
+## first opens, and again after each change; one that falls more than
+## STRIP_SLACK m under its first is warned of on screen. It doesn't block.
+const STRIP_CAP := 40.0
+const STRIP_SLACK := 2.0
 const HINT := """LAYOUT EDIT  (F4: back to play, he drops where you look)
 RMB hold + move  look      W A S D / Q E  fly / down, up    Shift  fast
 LMB  select, drag to move (at its height; an island too)     wheel / PgUp PgDn  height (Shift: 1 m)
@@ -71,6 +78,12 @@ var _box: MeshInstance3D
 ## its pivot when taken.
 var _grab := {}
 var _grab_pivot := Vector3.ZERO
+## Each island's longest clear run (m) when the view first opened, and now;
+## set when a change may have taken one away (checked once it is let go).
+var strip_first := {}
+var strip_now := {}
+var _strips_stale := false
+var _warn: Label
 
 func setup(scene: Node3D, pieces: Node3D) -> void:
 	study = scene
@@ -122,6 +135,12 @@ func enter() -> void:
 		var began := Time.get_ticks_msec()
 		Islands.anchor(study.world_roots() if study.has_method("world_roots") else study.get_children())
 		print("world view: anchored in %d ms: %s" % [Time.get_ticks_msec()-began,Islands.summary()])
+	if strip_first.is_empty() and study.has_method("longest_run"):
+		var began := Time.get_ticks_msec()
+		for name: String in Islands.islands: strip_first[name] = _strip_of(name)
+		strip_now = strip_first.duplicate()
+		print("world view: landing runs in %d ms: %s" % [Time.get_ticks_msec()-began,_strip_line(strip_first)])
+	_show_warn()
 	say("%d named objects, %d islands" % [Layout.entries.size(),Islands.islands.size()])
 
 ## Back to play: he is dropped where the camera's middle looks (on what it
@@ -164,6 +183,7 @@ func _process(delta: float) -> void:
 		_cam_pos += move.normalized()*cam_speed*(3.0 if Input.is_key_pressed(KEY_SHIFT) else 1.0)*delta
 	# Every frame: the study's foot lock or look may have set the camera.
 	_apply_cam()
+	if _strips_stale and not _dragging: check_strips()
 
 func _apply_cam() -> void:
 	(study.camera as Camera3D).global_transform = Transform3D(Basis.from_euler(Vector3(_cam_pitch,_cam_yaw,0.0)),_cam_pos)
@@ -351,6 +371,7 @@ func tip(deg: float) -> void:
 func _put(name: String, t: Transform3D) -> void:
 	Layout.apply(name,t)
 	dirty = true
+	_strips_stale = true
 	_show_status()
 
 # --- Adding, copying, deleting, saving -------------------------------------------------
@@ -408,10 +429,11 @@ func delete_selected() -> void:
 	Layout.entries.erase(name)
 	if not name.begins_with("added/") and not name in gone: gone.append(name)
 	dirty = true
+	_strips_stale = true
 	say("deleted %s" % name)
 
 func save() -> void:
-	var err := Layout.save(gone)
+	var err := Layout.save(gone,Islands.moves())
 	if err == OK:
 		saves += 1
 		dirty = false
@@ -451,6 +473,7 @@ func _settle() -> void:
 	var began := Time.get_ticks_usec()
 	Islands.settle(_grab,study)
 	_grab = {}
+	_strips_stale = true
 	print("world view: %s let go, refreshed in %.1f ms" % [selected,(Time.get_ticks_usec()-began)/1000.0])
 	_show_status()
 
@@ -464,6 +487,43 @@ func step_out() -> void:
 		say("%s stands on no island (a free piece)" % selected)
 		return
 	select(on)
+
+# --- The landing strips --------------------------------------------------------------
+
+## Island `name`'s longest clear run (m) where it stands now.
+func _strip_of(name: String) -> float:
+	var i: Dictionary = Islands.islands[name]
+	return float(study.longest_run(i.outline,Islands.rim_y(i),STRIP_CAP))
+
+## Every island's run looked at again (after a change is let go), and the
+## warning shown for those that lost theirs.
+func check_strips() -> void:
+	_strips_stale = false
+	if strip_first.is_empty(): return
+	var began := Time.get_ticks_msec()
+	for name: String in strip_first: strip_now[name] = _strip_of(name)
+	print("world view: landing runs again in %d ms: %s" % [Time.get_ticks_msec()-began,_strip_line(strip_now)])
+	_show_warn()
+
+## The islands whose run fell short of their first.
+func strips_lost() -> Array:
+	var out: Array = []
+	for name: String in strip_first:
+		if float(strip_now.get(name,0.0)) < float(strip_first[name])-STRIP_SLACK: out.append(name)
+	return out
+
+static func _strip_line(runs: Dictionary) -> String:
+	var parts := PackedStringArray()
+	for name: String in runs: parts.append("%s %.0f m" % [name,float(runs[name])])
+	return ", ".join(parts)
+
+func _show_warn() -> void:
+	if _warn == null: return
+	var lines := PackedStringArray()
+	for name: String in strips_lost():
+		lines.append("LANDING STRIP: %s's longest clear run is %.0f m (was %.0f m)" % [name,float(strip_now[name]),float(strip_first[name])])
+	_warn.text = "\n".join(lines)
+	_warn.visible = not lines.is_empty()
 
 # --- Selection and text ----------------------------------------------------------------
 
@@ -577,6 +637,19 @@ func _build_ui() -> void:
 	_status.add_theme_constant_override("outline_size",5)
 	_status.add_theme_font_size_override("font_size",16)
 	_ui.add_child(_status)
+	_warn = Label.new()
+	_warn.name = "StripWarning"
+	_warn.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_warn.offset_left = -520.0
+	_warn.offset_right = 520.0
+	_warn.offset_top = 16.0
+	_warn.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_warn.add_theme_color_override("font_color",Color(1.0,0.45,0.3))
+	_warn.add_theme_color_override("font_outline_color",Color(0.0,0.0,0.0,0.9))
+	_warn.add_theme_constant_override("outline_size",6)
+	_warn.add_theme_font_size_override("font_size",20)
+	_warn.visible = false
+	_ui.add_child(_warn)
 
 func _show_status() -> void:
 	if _status == null: return
