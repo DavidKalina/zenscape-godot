@@ -179,7 +179,7 @@ static func build(study: Node3D) -> Node3D:
 	if not args.has("--no-ring-route"): RingRoute.build(study,host)
 	# The stair to the clouds, where the sky stands it.
 	StairClouds.build(study,StairClouds.SKY_OFFSET)
-	start_at(study,SPOTS.merged(StairClouds.spots(StairClouds.SKY_OFFSET)).merged(RingRoute.spots()))
+	start_at(study,SPOTS.merged(StairClouds.spots(StairClouds.SKY_OFFSET)).merged(RingRoute.spots()).merged(preload("res://studies/aqueduct_isle_bridge.gd").spots()))
 	return host
 
 ## The scene's pieces host (scripts/interactables/foot_pieces.gd), made and
