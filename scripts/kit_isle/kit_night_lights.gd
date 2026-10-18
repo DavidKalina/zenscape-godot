@@ -29,6 +29,7 @@ const StoneLampLights = preload("res://scripts/stone_lamp_lights.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Flame = preload("res://scripts/flame.gd")
+const WorldIslands = preload("res://scripts/world_islands.gd")
 ## How far a lantern's real flame draws (m); past it the halo is what is seen.
 const FLAME_FAR := 60.0
 const HALO_SHADER := preload("res://shaders/stone_lamp_halo.gdshader")
@@ -83,6 +84,7 @@ var lamps: Array[Dictionary] = []
 ## The washes' lights, as laid.
 var washes: Array[OmniLight3D] = []
 var _flames: Array[Node3D] = []
+var _bodies: Array[StaticBody3D] = []
 var lamp_mesh: MultiMeshInstance3D
 var cores: MultiMeshInstance3D
 var halos: MultiMeshInstance3D
@@ -160,8 +162,10 @@ func _lay_washes(space: PhysicsDirectSpaceState3D) -> void:
 	var ray := PhysicsRayQueryParameters3D.new()
 	for wash: Array in WASHES:
 		var spot: Vector3 = wash[0]
-		ray.from = Vector3(spot.x,200.0,spot.z)
-		ray.to = Vector3(spot.x,-60.0,spot.z)
+		# Laid after an island moved (the layout file's): where it went.
+		var xz := WorldIslands.carried(Vector2(spot.x,spot.z))
+		ray.from = Vector3(xz.x,200.0,xz.y)
+		ray.to = Vector3(xz.x,-60.0,xz.y)
 		var hit := space.intersect_ray(ray)
 		if hit.is_empty(): continue
 		var light := OmniLight3D.new()
@@ -195,7 +199,12 @@ func _lay_lamps(space: PhysicsDirectSpaceState3D) -> void:
 	for spot in spots:
 		# A Vector3 spot gives the ray's top too (under an overhang).
 		var xz: Vector2 = spot if spot is Vector2 else Vector2((spot as Vector3).x,(spot as Vector3).z)
-		ray.from = Vector3(xz.x,200.0 if spot is Vector2 else (spot as Vector3).y,xz.y)
+		var top := 200.0 if spot is Vector2 else (spot as Vector3).y
+		# Laid after an island moved (the layout file's): where it went.
+		var went := WorldIslands.carried3(Vector3(xz.x,top,xz.y))
+		if spot is Vector2: went.y = top
+		xz = Vector2(went.x,went.z)
+		ray.from = Vector3(xz.x,went.y,xz.y)
 		ray.to = Vector3(xz.x,-60.0,xz.y)
 		var hit := space.intersect_ray(ray)
 		if hit.is_empty(): continue
@@ -247,6 +256,38 @@ func _lay_lamps(space: PhysicsDirectSpaceState3D) -> void:
 		body.top_level = true
 		add_child(body)
 		body.global_position = lamp.foot
+		_bodies.append(body)
+
+## What stands over `outline` (x, z; an island's, scripts/world_islands.gd
+## `grab`) carried with it: a Callable(step: Transform3D, a world move)
+## that moves its lanterns (their stone, flame, halo, post and light) and
+## its washes, and tells the stone where its lanterns went.
+func carrier(outline: PackedVector2Array) -> Callable:
+	var over := func(p: Vector3) -> bool: return Geometry2D.is_point_in_polygon(Vector2(p.x,p.z),outline)
+	var ids: Array[int] = []
+	for k in range(lamps.size()):
+		if over.call(lamps[k].foot): ids.append(k)
+	var lights: Array[OmniLight3D] = []
+	for light in washes:
+		if over.call(light.global_position): lights.append(light)
+	return func(step: Transform3D) -> void:
+		for k: int in ids:
+			var lamp: Dictionary = lamps[k]
+			lamp.foot = step*(lamp.foot as Vector3)
+			lamp.at = step*(lamp.at as Vector3)
+			var yaw := step.basis.get_euler().y
+			lamp.turn = float(lamp.turn)+yaw
+			if lamp_mesh != null: lamp_mesh.multimesh.set_instance_transform(k,step*lamp_mesh.multimesh.get_instance_transform(k))
+			if cores != null: cores.multimesh.set_instance_transform(k,step*cores.multimesh.get_instance_transform(k))
+			if halos != null:
+				var h := halos.multimesh.get_instance_transform(k)
+				halos.multimesh.set_instance_transform(k,Transform3D(h.basis,lamp.at))
+			if k < _flames.size() and is_instance_valid(_flames[k]): _flames[k].global_transform = step*_flames[k].global_transform
+			if k < _bodies.size(): _bodies[k].global_transform = step*_bodies[k].global_transform
+			for slot in _slots:
+				if int(slot.lamp) == k: (slot.light as OmniLight3D).global_position = lamp.at
+		for light in lights: light.global_transform = step*light.global_transform
+		if _stone != null and not ids.is_empty(): _tell_stone()
 
 func _batch(label: String, mesh: Mesh, material: Material, count: int) -> MultiMeshInstance3D:
 	var node := MultiMeshInstance3D.new()

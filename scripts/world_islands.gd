@@ -15,7 +15,8 @@ extends RefCounted
 ## Floating pieces the layout names as rings and slabs are always free.
 
 const FREE_KINDS := ["air_ring","bob_slab","sink_slab","drift_slab","land"]
-## Not anchored: the grass and flowers (scripts/kit_isle/kit_flora.gd's
+## Not anchored: what carries itself (meta "world_carried": the loose
+## leaves, carried by the study's `island_carriers`); the grass and flowers (scripts/kit_isle/kit_flora.gd's
 ## chunks, cut on a grid, not by island; regrown over the turf when an
 ## island is let go, not moved) and the editor's own selection box.
 const SKIP := ["Flora","LayoutSelection"]
@@ -84,6 +85,12 @@ static func island_of(node: Node) -> String:
 		n = n.get_parent()
 	return ""
 
+## The island whose outline is `outline` as it stands ("" none).
+static func island_of_outline(outline: PackedVector2Array) -> String:
+	for name: String in islands:
+		if islands[name].outline == outline: return name
+	return ""
+
 ## The island whose outline is under world point `p` ("" none).
 static func island_under(p: Vector3) -> String:
 	for name: String in islands:
@@ -144,7 +151,7 @@ static func anchor(roots: Array, force := false) -> void:
 	anchored = true
 
 static func _anchor(n: Node3D, depth: int) -> void:
-	if n.has_meta("world_island_root") or n.has_meta("world_link") or n.name in SKIP: return
+	if n.has_meta("world_island_root") or n.has_meta("world_link") or n.has_meta("world_carried") or n.name in SKIP: return
 	if n.has_meta("layout_name") and _free_kind(str(n.get_meta("layout_name"))): return
 	var box := drawn_box(n)
 	if box.size != Vector3.ZERO or n.get_child_count() == 0:
@@ -253,7 +260,11 @@ static func pivot(name: String) -> Vector3:
 	return Vector3(c.x,rim_y(i),c.y)
 
 ## Island `name` taken: {name, xf (its transform from coded when taken),
-## nodes, starts (their world transforms), pools}.
+## nodes, starts (their world transforms), pools, carry, last}. What
+## stands on it but isn't a node of its own (a lantern in a batch of all
+## the isle's lanterns, a bird's perch) the study carries: its
+## `island_carriers(name, outline)` gives Callables(step: Transform3D, a
+## world move since the last), each called as the island moves.
 static func grab(name: String, study: Node = null) -> Dictionary:
 	var i: Dictionary = islands[name]
 	if study != null and not bool(i.flora): carry_flora(name,study)
@@ -268,7 +279,9 @@ static func grab(name: String, study: Node = null) -> Dictionary:
 		for pool: Dictionary in ground.pools:
 			var c: Vector2 = (pool.rect as Rect2).get_center()
 			if (i.rect as Rect2).has_point(c) and Geometry2D.is_point_in_polygon(c,i.outline): pools.append([pool,pool.rect,float(pool.top)])
-	return {"name":name,"xf":i.xf,"nodes":nodes,"starts":starts,"pools":pools,"outline":i.outline}
+	var carry: Array = study.island_carriers(name,i.outline) if study != null and study.has_method("island_carriers") else []
+	return {"name":name,"xf":i.xf,"nodes":nodes,"starts":starts,"pools":pools,"outline":i.outline,
+		"carry":carry,"last":Transform3D.IDENTITY}
 
 ## The taken island put at `xf` (from coded): transforms only.
 static func move(g: Dictionary, xf: Transform3D) -> void:
@@ -278,6 +291,10 @@ static func move(g: Dictionary, xf: Transform3D) -> void:
 	for k in range(nodes.size()):
 		var n: Node3D = nodes[k]
 		if is_instance_valid(n): n.global_transform = d*(starts[k] as Transform3D)
+	var step: Transform3D = d*(g.get("last",Transform3D.IDENTITY) as Transform3D).affine_inverse()
+	for c: Callable in g.get("carry",[]):
+		if c.is_valid(): c.call(step)
+	g.last = d
 	islands[g.name].xf = xf
 
 ## The taken island let go where it is: what reads its place redone.
@@ -306,6 +323,9 @@ static func settle(g: Dictionary, study: Node = null) -> void:
 		study.set("_gap_outlines",-1)
 	if study.has_method("island_moved"): study.island_moved(g.name,d,was)
 	refit_links(g.name)
+	# What the study carries, once more now the links stand where they went.
+	for c: Callable in g.get("carry",[]):
+		if c.is_valid(): c.call(Transform3D.IDENTITY)
 
 ## The layout file's island moves (name -> Transform3D from coded,
 ## scripts/layout_overrides.gd `islands`) put back at load: what stands on
@@ -349,6 +369,51 @@ static func carried(p: Vector2) -> Vector2:
 		if Geometry2D.is_point_in_polygon(p,i.coded):
 			var q: Vector3 = (i.xf as Transform3D)*Vector3(p.x,0.0,p.y)
 			return Vector2(q.x,q.z)
+	return p
+
+## Where world point (x, z) `p` stood as built, for a ground read made
+## when the isle was built (scripts/kit_isle/kit_life.gd `ground_at`):
+## Vector3(x, the height its island moved, z) as built, or null if an
+## island under `p` as built has moved away from it. Only `within`'s
+## islands (the isle that asks) count.
+static func as_built(p: Vector2, within: Node) -> Variant:
+	var gone := false
+	for name: String in islands:
+		var i: Dictionary = islands[name]
+		var xf: Transform3D = i.xf
+		if xf == Transform3D.IDENTITY or not is_instance_valid(i.node) or not within.is_ancestor_of(i.node): continue
+		if (i.rect as Rect2).has_point(p) and Geometry2D.is_point_in_polygon(p,i.outline):
+			var q := xf.affine_inverse()*Vector3(p.x,0.0,p.y)
+			return Vector3(q.x,xf.origin.y,q.z)
+		if not gone and Geometry2D.is_point_in_polygon(p,i.coded): gone = island_under(Vector3(p.x,0.0,p.y)) == ""
+	return null if gone else Vector3(p.x,0.0,p.y)
+
+## A batch's plants (`batch`'s instances) over `outline` carried, for a
+## batch no island claims (it spans islands): a Callable(step: Transform3D,
+## a world move) for `grab`'s carriers, or an empty one if the batch is an
+## island's own (it goes as a node) or has none over it.
+static func instances_carrier(batch: MultiMeshInstance3D, outline: PackedVector2Array) -> Callable:
+	if batch == null or batch.multimesh == null or island_of(batch) != "": return Callable()
+	var mm := batch.multimesh
+	var gx := batch.global_transform
+	var ids := PackedInt32Array()
+	for k in range(mm.instance_count):
+		var o := gx*mm.get_instance_transform(k).origin
+		if Geometry2D.is_point_in_polygon(Vector2(o.x,o.z),outline): ids.append(k)
+	if ids.is_empty(): return Callable()
+	return func(step: Transform3D) -> void:
+		if not is_instance_valid(batch): return
+		var g := batch.global_transform
+		var local := g.affine_inverse()*step*g
+		for k: int in ids: mm.set_instance_transform(k,local*mm.get_instance_transform(k))
+
+## World point `p` where it is now, if it stood on an island as coded
+## (that island's whole move applied, its height too), else as it is.
+static func carried3(p: Vector3) -> Vector3:
+	for name: String in islands:
+		var i: Dictionary = islands[name]
+		if (i.xf as Transform3D) == Transform3D.IDENTITY: continue
+		if Geometry2D.is_point_in_polygon(Vector2(p.x,p.z),i.coded): return (i.xf as Transform3D)*p
 	return p
 
 ## The flora's batches over island `name` put under its land (a holder

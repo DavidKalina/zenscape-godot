@@ -409,14 +409,28 @@ func _stumps_fit() -> Dictionary:
 ## Where the world view (scripts/layout_edit.gd) looks for what stands on
 ## the islands (scripts/world_islands.gd `anchor`): the art, the foot
 ## route's pieces, the life on the ground, the lodestone and target stone,
-## the island view's recipe pieces and the collision parts. Not the sky, the planes, the dragons or him.
+## the island view's recipe pieces, the plane's parts laid on the ground
+## and the collision parts. Not the sky, the planes, the dragons or him.
+## What stands on an island inside a batch of the whole isle's (the
+## lanterns, the birds' perches) goes by `island_carriers`.
 func world_roots() -> Array:
 	var out: Array = [art]
-	for n: String in ["FootPieces","Life","Lodestone","TargetStone","KitCachePieces","IsleRecipePieces"]:
+	for n: String in ["FootPieces","Life","Lodestone","TargetStone","KitCachePieces","IsleRecipePieces","PlaneArc"]:
 		var node := get_node_or_null(n)
 		if node != null: out.append(node)
 	for c: Node in get_children():
 		if c is StaticBody3D: out.append(c)
+	return out
+
+## What island `name` (over `outline`) carries that isn't a node of its
+## own (scripts/world_islands.gd `grab`): its lanterns and washes, and the
+## life on it (scripts/kit_isle/kit_life.gd `island_carriers`: the birds'
+## perches, fireflies, undergrowth, loose leaves).
+func island_carriers(_name: String, outline: PackedVector2Array) -> Array:
+	var out: Array = []
+	if night_lights != null: out.append(night_lights.carrier(outline))
+	var life_node := get_node_or_null("Life")
+	if life_node != null and life_node.has_method("island_carriers"): out.append_array(life_node.island_carriers(outline))
 	return out
 
 ## The layout file's island moves (scripts/layout_overrides.gd `islands`)

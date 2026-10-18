@@ -49,6 +49,9 @@ func _ready() -> void:
 
 func _init() -> void:
 	name = "WindLeafLitter"
+	# Its leaves lie in the world, not on it: an island moving carries
+	# them by `carrier`, never this node (scripts/world_islands.gd `anchor`).
+	set_meta("world_carried",true)
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	multimesh = MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
@@ -223,6 +226,30 @@ func sweep(point: Vector3, radius: float) -> void:
 		if not leaf.lost and (leaf.position as Vector3).distance_to(here) <= radius: _lose(leaf)
 
 ## A leaf blown away: it fades as it goes.
+## The leaves lying over `outline` (x, z; an island's, scripts/
+## world_islands.gd `grab`) carried with it: a Callable(step: Transform3D,
+## a world move) moving each leaf, its home and its tree's spot. Empty if no island's leaves are here, or this litter goes with
+## an island as a node (scripts/world_islands.gd `island_of`).
+func carrier(outline: PackedVector2Array) -> Callable:
+	if preload("res://scripts/world_islands.gd").island_of(self) != "": return Callable()
+	var gx := global_transform
+	var mine: Array[Dictionary] = []
+	for leaf in leaves:
+		var w := gx*(leaf.position as Vector3)
+		if Geometry2D.is_point_in_polygon(Vector2(w.x,w.z),outline): mine.append(leaf)
+	if mine.is_empty(): return Callable()
+	return func(step: Transform3D) -> void:
+		var g := global_transform
+		var local := g.affine_inverse()*step*g
+		for leaf in mine:
+			leaf.position = local*(leaf.position as Vector3)
+			if leaf.has("home"): leaf.home = local*(leaf.home as Vector3)
+			var a: Vector2 = leaf.anchor
+			var to := local*Vector3(a.x,0.0,a.y)
+			leaf.anchor = Vector2(to.x,to.z)
+			leaf.normal = (local.basis*(leaf.normal as Vector3)).normalized()
+		_draw()
+
 func _lose(leaf: Dictionary) -> void:
 	leaf.lost = true
 	leaf.wait = _rng.randf_range(REGROW_WAIT.x,REGROW_WAIT.y)

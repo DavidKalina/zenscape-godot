@@ -212,6 +212,22 @@ func chaff_meadow() -> Rect2:
 func placed(rect: Rect2) -> Rect2:
 	return Rect2(rect.position+Vector2(offset.x,offset.z),rect.size)
 
+## What stands over an island's `outline` that no island claims as a node
+## (scripts/world_islands.gd `grab`, through the isle's `island_carriers`):
+## Callables(step: Transform3D, a world move) carrying its songbirds'
+## perches, its fireflies, its undergrowth's plants in batches that span
+## islands, and its loose leaves and chaff.
+func island_carriers(outline: PackedVector2Array) -> Array:
+	var out: Array = []
+	if birds != null and birds.has_method("carrier"): out.append(birds.carrier(outline))
+	if fireflies != null: out.append(WorldIslandsRef.instances_carrier(fireflies,outline))
+	if undergrowth != null:
+		for b: Node in undergrowth.find_children("*","MultiMeshInstance3D",true,false):
+			out.append(WorldIslandsRef.instances_carrier(b as MultiMeshInstance3D,outline))
+	for litter: MultiMeshInstance3D in [leaf_litter,grass_chaff]:
+		if litter != null and litter.has_method("carrier"): out.append(litter.carrier(outline))
+	return out.filter(func(c: Callable) -> bool: return c.is_valid())
+
 ## The chaff's anchors: over `chaff_meadow`'s open grass.
 func chaff_anchors() -> Array:
 	var meadow := chaff_meadow()
@@ -283,6 +299,16 @@ func _read_rows(space: PhysicsDirectSpaceState3D, end: int) -> bool:
 
 ## The turf's height at `p` (world x, z), or null off it.
 func ground_at(p: Vector2) -> Variant:
+	# An island the world view (or the layout file) moved: its turf where it went.
+	var built: Variant = WorldIslandsRef.as_built(p,scene) if scene != null and not WorldIslandsRef.islands.is_empty() else Vector3(p.x,0.0,p.y)
+	if built == null: return null
+	var b3: Vector3 = built
+	var h: Variant = _grid_at(Vector2(b3.x,b3.z))
+	return null if h == null else float(h)+b3.y
+
+const WorldIslandsRef = preload("res://scripts/world_islands.gd")
+
+func _grid_at(p: Vector2) -> Variant:
 	var f := (p-_origin)/CELL
 	var i := int(floor(f.x))
 	var j := int(floor(f.y))

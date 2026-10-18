@@ -118,6 +118,77 @@ func setup(owner_scene: Node3D, ground_at: Callable) -> void:
 			bird.timer = _rng.randf_range(0.5,SIT.y)
 	Disturbance.hub().raised.connect(_raised)
 
+## What stands over `outline` (x, z; an island's, scripts/world_islands.gd
+## `grab`) carried with it: a Callable(step: Transform3D, a world move
+## since the last call; IDENTITY once more after the links refit) that
+## keeps each perch on the stone it was found on, when that stone is the
+## island's or a link's it holds (so a perch on a beam over no island
+## stays, and one on the aqueduct follows its refit), moves the turf to forage over it and the middle of
+## a group wholly over it, and the birds: one bound for a moved perch goes
+## as its perch does, one over the island (flying, foraging) with it.
+func carrier(outline: PackedVector2Array) -> Callable:
+	var over := func(p: Vector3) -> bool: return Geometry2D.is_point_in_polygon(Vector2(p.x,p.z),outline)
+	const WorldIslands = preload("res://scripts/world_islands.gd")
+	var mine := WorldIslands.island_of_outline(outline)
+	var held := {}
+	var whole := {}
+	for name: String in groups:
+		var perches: Array = groups[name].perches
+		var n := 0
+		for k in range(perches.size()):
+			var at: Vector3 = perches[k].at
+			# The stone it sits on (found when the perch was), its island's or a link's.
+			var body := perches[k].get("on") as Node3D
+			if body == null or not is_instance_valid(body): continue
+			var link := str(body.get_meta("world_link","")) if body.has_meta("world_link") else ""
+			if WorldIslands.island_of(body) != mine and (link == "" or not mine in (WorldIslands.links[link].islands as Array)): continue
+			held["%s:%d" % [name,k]] = [perches[k],body,body.global_transform.affine_inverse()*at,body.global_transform.basis.inverse()*(perches[k].face as Vector3)]
+			n += 1
+		if n > 0 and n == perches.size(): whole[name] = true
+	var forage: Array = []
+	for name: String in groups:
+		var f: Array = groups[name].forage
+		for k in range(f.size()):
+			if over.call(f[k]): forage.append([f,k])
+	# The island's whole move so far (the outline is where it stood when taken).
+	var total := [Transform3D.IDENTITY]
+	return func(step: Transform3D) -> void:
+		total[0] = step*(total[0] as Transform3D)
+		var before := ((total[0] as Transform3D).affine_inverse()*step)
+		var moved := {}
+		for key: String in held:
+			var h: Array = held[key]
+			var q: Dictionary = h[0]
+			var body: Node3D = h[1]
+			if not is_instance_valid(body): continue
+			var was: Vector3 = q.at
+			q.at = body.global_transform*(h[2] as Vector3)
+			q.face = (body.global_transform.basis*(h[3] as Vector3)).normalized()
+			moved[key] = (q.at as Vector3)-was
+		for fk: Array in forage: fk[0][fk[1]] = step*(fk[0][fk[1]] as Vector3)
+		for name: String in whole: groups[name].middle = step*(groups[name].middle as Vector3)
+		for flock: Dictionary in flocks:
+			if whole.has(flock.group) and flock.has("focus"): flock.focus = step*(flock.focus as Vector3)
+		for bird: Dictionary in birds:
+			var target: Dictionary = bird.target
+			var key := str(target.get("key",""))
+			var by := Transform3D.IDENTITY
+			if moved.has(key):
+				by = Transform3D(Basis.IDENTITY,moved[key])
+				target.at = (held[key][0] as Dictionary).at
+				target.face = (held[key][0] as Dictionary).face
+			elif over.call(before*(bird.p as Vector3)):
+				by = step
+				if target.has("at") and not target.has("key"): target.at = step*(target.at as Vector3)
+			else: continue
+			if by == Transform3D.IDENTITY: continue
+			bird.p = by*(bird.p as Vector3)
+			bird.heading = (by.basis*(bird.heading as Vector3)).normalized()
+			var hop: Dictionary = bird.hop
+			if hop.has("from"): hop.from = by*(hop.from as Vector3)
+			var body: Node3D = bird.body
+			if is_instance_valid(body): body.global_transform = by*body.global_transform
+
 func _exit_tree() -> void:
 	if Disturbance.hub().raised.is_connected(_raised): Disturbance.hub().raised.disconnect(_raised)
 
@@ -160,7 +231,7 @@ static func perches_from(space: PhysicsDirectSpaceState3D, candidates: Dictionar
 			for q: Dictionary in perches:
 				if (q.at as Vector3).distance_to(at) < 0.35: taken = true
 			if taken: continue
-			perches.append({"at":at})
+			perches.append({"at":at,"on":hit.collider})
 			middle += at
 		if perches.is_empty(): continue
 		middle /= perches.size()
