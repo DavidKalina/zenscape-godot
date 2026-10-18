@@ -97,6 +97,17 @@ The user plays the aqueduct isle, presses F4 and:
   `foot_route/rope_2`, `chunk/<name>`); saved files key on them.
 - Pieces that already have names keep them.
 
+## The user's saves
+
+The user plays this worktree and saves into it: `layouts/aqueduct_isle.json`,
+`layouts/chunks/`, and `motifs/authored/isle_*.json`. These are the user's
+work. Leave them as they are: read them if useful, and send every driver's
+saves to /tmp (`--layout=/tmp/...`). Make the island view's return path and
+its recipe file follow the `--layout=` directory too, so a driver never
+writes into the repo. If a run writes into the repo anyway, restore the
+file from `git stash`-free means (a copy you took first) and say so. (Spec
+change 2026-10-17: a cleanup deleted the user's saved layout once.)
+
 ## Checks
 
 Every iteration:
