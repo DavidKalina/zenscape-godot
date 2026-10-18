@@ -106,6 +106,9 @@ for a in _args:
     elif a == "--no-bake": BAKE = False
     elif a.startswith("--render="): RENDER = a.split("=", 1)[1]
     elif a.startswith("--clips="): ONLY = a.split("=", 1)[1].split(",")
+## --damage: only the knock-off's damage pieces (headless_body_damage.glb),
+## the body's glb left alone.
+DAMAGE = "--damage" in _args
 GLB = OUT / "headless_body.glb"
 FPS = 30
 
@@ -502,6 +505,166 @@ ORDER = [b[0] for b in BONES]
 PARENT = {b[0]: b[1] for b in BONES}
 REST = {b.name: b.matrix_local.copy() for b in arm_data.bones}
 LEN = {b.name: b.length for b in arm_data.bones}
+
+# ------------------------------------------------------------------ the damage (--damage)
+# The Olmec boss's second knock-off (loop olmec-knockoff): his right arm
+# snapped off at the shoulder. headless_body_damage.glb holds, in the body
+# model's rest space (the body glb's own frame, before its scale):
+#   ShoulderBreak_R     what is left at the shoulder: the boulder's broken
+#                       root, its end a raw jagged cut (the "cut" stone),
+#                       a chip hanging; it rides the chest
+#   ArmRubble_R_upper   the arm's own blocks as rubble, each at its bone's
+#   ArmRubble_R_fore    rest (upper_arm.R; forearm.R; hand.R with the
+#   ArmRubble_R_hand    fingers and thumb, closed as they rest)
+# The body hides its own arm (the game scales upper_arm.R to nothing).
+DAMAGE_PARTS = {}
+
+
+def damage_part(name):
+    if name not in DAMAGE_PARTS: DAMAGE_PARTS[name] = Part(name)
+    return DAMAGE_PARTS[name]
+
+
+if DAMAGE:
+    # The rubble: copies of the arm's blocks.
+    for piece, bones in (("ArmRubble_R_upper", ("upper_arm.R",)), ("ArmRubble_R_fore", ("forearm.R",)),
+                         ("ArmRubble_R_hand", ("hand.R", "fingers.R", "thumb.R"))):
+        dp = damage_part(piece)
+        for b in bones:
+            src = PARTS[b]
+            dp.add([V(q) for q in src.verts], src.faces, "stone")
+            dp.mats[-len(src.faces):] = src.mats
+    # The shoulder's break: the boulder's root, broken off jagged at its outer end.
+    BX = SHOULDER_X - 0.3
+
+    def broken_root(q, u):
+        if u.x > 0.2:
+            w = q
+            jag = noise.noise(V((w.y * 2.2, w.z * 2.2, 5.1))) * 0.16 + noise.noise(V((w.y * 6.0, w.z * 6.0, 9.7))) * 0.06
+            q = q + V((jag * (u.x - 0.2) / 0.8, 0, 0))
+        return q + V((0, 0.06 * max(0.0, u.y), 0))
+
+    def raw_x(q, u):
+        w = q
+        jag = noise.noise(V((w.y * 2.2, w.z * 2.2, 5.1))) * 0.16 + noise.noise(V((w.y * 6.0, w.z * 6.0, 9.7))) * 0.06
+        dip = -0.08 * (1 - u.y * u.y) * (1 - u.z * u.z)
+        return q + V(((jag + dip) * max(0.0, u.x + 0.2), 0, 0))
+
+    rbox("_break", (BX, SHOULDER_Y + 0.02, 0.0), (0.42, 0.66, 0.74), 0.3, shape=broken_root, chunks=2, seed=81)
+    rbox("_break", (BX + 0.4, SHOULDER_Y + 0.0, 0.0), (0.06, 0.56, 0.62), 0.04, mat="cut", shape=raw_x,
+         wear=0.6, seed=82, spacing=0.1)
+    # A chip hanging off its foot, and one off its top.
+    rbox("_break", (BX + 0.28, SHOULDER_Y - 0.62, 0.18), (0.18, 0.14, 0.2), 0.06, chunks=1, seed=83)
+    rbox("_break", (BX + 0.18, SHOULDER_Y + 0.66, -0.22), (0.2, 0.1, 0.18), 0.06, chunks=1, seed=84)
+    br = PARTS.pop("_break")
+    dp = damage_part("ShoulderBreak_R")
+    dp.add(br.verts, br.faces, "stone")
+    dp.mats[-len(br.faces):] = br.mats
+    dobs = []
+    for name, dpart in DAMAGE_PARTS.items():
+        me = bpy.data.meshes.new(name)
+        bm = bmesh.new()
+        vs = [bm.verts.new(G(q)) for q in dpart.verts]
+        bm.verts.ensure_lookup_table()
+        names = ["stone", "cut"]
+        for f, m in zip(dpart.faces, dpart.mats):
+            try:
+                face = bm.faces.new([vs[i] for i in f])
+            except ValueError:
+                continue
+            face.material_index = names.index(m)
+            face.smooth = True
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(me)
+        bm.free()
+        for nm in names: me.materials.append(materials[nm])
+        ob = bpy.data.objects.new(name, me)
+        scene.collection.objects.link(ob)
+        bpy.context.view_layer.objects.active = ob
+        ob.select_set(True)
+        bpy.ops.object.material_slot_remove_unused()
+        ob.select_set(False)
+        attr = me.color_attributes.new("AO", "BYTE_COLOR", "POINT")
+        me.color_attributes.active_color = attr
+        dobs.append(ob)
+    # Occlusion, each piece alone.
+    scene.render.engine = "CYCLES"
+    scene.cycles.samples = 48
+    scene.cycles.device = "CPU"
+    scene.world = bpy.data.worlds.new("World")
+    try:
+        scene.world.light_settings.distance = 1.4
+    except Exception:
+        pass
+    tris = 0
+    for ob in dobs:
+        for o in dobs: o.hide_render = o is not ob
+        bpy.ops.object.select_all(action="DESELECT")
+        ob.select_set(True)
+        bpy.context.view_layer.objects.active = ob
+        bpy.ops.object.bake(type="AO", target="VERTEX_COLORS")
+        n = sum(len(pl.vertices) - 2 for pl in ob.data.polygons)
+        tris += n
+        print("DAMAGE_TRIS", ob.name, n)
+    for o in dobs: o.hide_render = False
+    print("DAMAGE_TRIS total", tris)
+    bpy.ops.object.select_all(action="DESELECT")
+    for ob in dobs: ob.select_set(True)
+    bpy.context.view_layer.objects.active = dobs[0]
+    out = OUT / "headless_body_damage.glb"
+    OUT.mkdir(parents=True, exist_ok=True)
+    kw = dict(filepath=str(out), export_format="GLB", use_selection=True, export_yup=True, export_apply=False,
+              export_animations=False, export_materials="EXPORT", export_normals=True, export_extras=False)
+    try:
+        bpy.ops.export_scene.gltf(**kw, export_vertex_color="ACTIVE")
+    except TypeError:
+        bpy.ops.export_scene.gltf(**kw, export_colors=True)
+    print("DAMAGE_EXPORTED", out)
+    if RENDER:
+        # A still: the break on the body with its right arm hidden, and the rubble laid beside.
+        for b in ("upper_arm.R", "forearm.R", "hand.R", "fingers.R", "thumb.R"):
+            PARTS.pop(b)
+        rest = []
+        for bone, pp in PARTS.items():
+            for q in pp.verts: rest.append(q)
+        me = bpy.data.meshes.new("BodyNoArm")
+        verts, faces = [], []
+        for bone, pp in PARTS.items():
+            base = len(verts)
+            verts += [G(q) for q in pp.verts]
+            faces += [tuple(base + i for i in f) for f in pp.faces]
+        me.from_pydata(verts, [], faces)
+        me.materials.append(materials["stone"])
+        for pl in me.polygons: pl.use_smooth = True
+        bo = bpy.data.objects.new("BodyNoArm", me)
+        scene.collection.objects.link(bo)
+        for ob in dobs:
+            if ob.name.startswith("ArmRubble"):
+                ob.location = (4.5, 0.0, 0.0)
+                ob.rotation_euler = (0.0, math.radians(-80.0), 0.0)
+        bpy.data.objects["ArmRubble_R_upper"].location = (6.4, 1.0, -5.8)
+        bpy.data.objects["ArmRubble_R_fore"].location = (6.2, -1.5, -2.3)
+        bpy.data.objects["ArmRubble_R_hand"].location = (5.8, -4.0, 0.6)
+        scene.render.engine = "BLENDER_WORKBENCH"
+        scene.display.shading.light = "STUDIO"
+        scene.display.shading.color_type = "MATERIAL"
+        scene.display.shading.show_cavity = True
+        scene.render.resolution_x = 900
+        scene.render.resolution_y = 900
+        cam_data = bpy.data.cameras.new("Cam")
+        cam_data.lens = 38
+        cam = bpy.data.objects.new("Cam", cam_data)
+        scene.collection.objects.link(cam)
+        scene.camera = cam
+        Path(RENDER).mkdir(parents=True, exist_ok=True)
+        for nm, frm in (("front", F(14, 9.0, 16)), ("side", F(20, 7.5, 1.0))):
+            cam.location = frm
+            cam.rotation_euler = (F(3.0, 4.5, 0) - frm).to_track_quat("-Z", "Y").to_euler()
+            scene.render.filepath = str(Path(RENDER) / f"damage_{nm}.png")
+            bpy.ops.render.render(write_still=True)
+        print("DAMAGE_RENDERED", RENDER)
+    raise SystemExit(0)
 
 # ------------------------------------------------------------------ the skin
 objects = []
