@@ -81,6 +81,8 @@ const HEIGHT_THICK := 0.3
 ## Tiles (m: the grass and flowers', the undergrowth's, sparser, larger)
 ## and how far each kind draws (m), with the fade's margin.
 const TILE := 24.0
+## `Grow.step` looks at the clock every this many candidates.
+const CHECK_EVERY := 4
 const UNDER_TILE := 40.0
 const GRASS_RANGE := 95.0
 const FLOWER_RANGE := 65.0
@@ -450,7 +452,9 @@ class Grow extends RefCounted:
 				_n = 0
 				break
 			_n += 1
-			if usec >= 0 and _n % 32 == 0 and Time.get_ticks_usec() > end:
+			# Checked often: a candidate can cost a dozen rays (its reach,
+			# its foot), and a 32-candidate check overran a 4 ms slice by 12.
+			if usec >= 0 and _n % CHECK_EVERY == 0 and Time.get_ticks_usec() > end:
 				_n -= 1
 				return false
 			if _site.stable: _rng.seed = hash([_seed,0,_n])
@@ -480,7 +484,7 @@ class Grow extends RefCounted:
 				if _site.grass_range > 0.0: _draw.grass_range = _site.grass_range
 				break
 			_n += 1
-			if usec >= 0 and _n % 32 == 0 and Time.get_ticks_usec() > end:
+			if usec >= 0 and _n % CHECK_EVERY == 0 and Time.get_ticks_usec() > end:
 				_n -= 1
 				return false
 			if _site.stable: _rng.seed = hash([_seed,1,_n])

@@ -74,6 +74,8 @@ static func under_lip(p: Dictionary, along: float) -> Vector3:
 
 func setup(isle: Node3D) -> void:
 	name = "Tokens"
+	# The pickup's puff's shaders built now, not at the first pickup.
+	GlyphPickup.GlyphPuff.warm(Color(GlyphPickup.HudIcons.item(GLYPH).tint),isle)
 	tokens = spots_for(isle)
 	if naming != "":
 		tokens = tokens.filter(func(t: Dictionary) -> bool: return not Layout.deleted(naming+"/"+str(t.name)))

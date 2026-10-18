@@ -480,6 +480,8 @@ func _ready() -> void:
 		push_warning("kit isle: no look preset '%s' (%s); %s instead" % [look_id,", ".join(_look_ids),START_LOOK])
 		look_id = START_LOOK
 	super._ready()
+	# The frame counter (scripts/perf_overlay.gd): F4, or --perf.
+	preload("res://scripts/perf_overlay.gd").attach(self)
 	await ready_to_walk
 	_hud.visible = false
 	if not preload("res://scripts/launch_args.gd").user_args().has("--no-flora"): _grow()

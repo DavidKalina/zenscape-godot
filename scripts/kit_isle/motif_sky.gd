@@ -236,11 +236,15 @@ func _process(delta: float) -> void:
 	var eye := _eye()
 	# The main thread's share: one isle's work a slice, nearest first, while
 	# the frame's budget is open.
+	# An isle waiting on the physics (its turf's last shapes) does nothing
+	# till the next step: passed over for the rest of the frame, not picked
+	# again and again for the budget's length.
+	var waiting := {}
 	while SkyCommits.open():
 		var best: Node3D = null
 		var near := INF
 		for isle: Node3D in isles:
-			if not isle.wants_work(): continue
+			if not isle.wants_work() or waiting.has(isle): continue
 			var c: Vector3 = isle.circle()
 			var d := Vector2(eye.x-c.x,eye.z-c.y).length()
 			# Headless, an isle's art is built here, a whole isle in one
@@ -252,6 +256,6 @@ func _process(delta: float) -> void:
 		if best == null: break
 		var began := Time.get_ticks_usec()
 		var was: String = best.stage
-		best.work(maxi(SkyCommits.budget()-SkyCommits.used(),SLICE_LEAST))
+		if best.work(maxi(SkyCommits.budget()-SkyCommits.used(),SLICE_LEAST)) == "turf" and was == "turf": waiting[best] = true
 		SkyCommits.spend("motif isle %s %s" % [best.name,was] if SkyCommits.recording else "motif isle",Time.get_ticks_usec()-began)
 	for isle: Node3D in isles: isle.advance(delta,eye)
