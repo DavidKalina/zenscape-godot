@@ -9,10 +9,15 @@ extends RefCounted
 ## The file (res://layouts/<scene>.json, or `--layout=<path>`):
 ##   {"version": 1,
 ##    "moved":   {"ring_route/ring_a": {"pos": [x, y, z], "rot": [x, y, z]}},
-##    "added":   [{"name": "added/air_ring_1", "kind": "air_ring", "pos": [...], "rot": [...]}],
+##    "added":   [{"name": "added/air_ring_1", "kind": "air_ring", "pos": [...], "rot": [...]},
+##                {"name": "chunk/ring_run_1/air_ring_1", ..., "on": "island/near"}],
 ##    "deleted": ["ring_route/chain_slab_2"],
 ##    "islands": {"island/near": {"pos": [x, y, z], "rot": [x, y, z]}},
 ##    "sizes":   {"ring_route/ring_a": 2.5, "foot_route/bob_slab_1": [3.0, 0.7, 2.8]}}
+## An added piece's name is `added/<kind>_<n>`, or `chunk/<chunk>_<n>/...`
+## for a stamped chunk (scripts/layout_chunks.gd). One with "on" belongs to
+## that island (moves with it; others are free); it is saved where it stands
+## in the world and put back there after the islands' moves (`reapply`).
 ## A size (the world view's [ / ]) is a ring's radius or a slab's block
 ## (m), only for those off their coded size; an added piece keeps its own
 ## as "size". A node takes it by `layout_size` / `layout_resize`.
@@ -71,6 +76,10 @@ static func xform(name: String, coded: Transform3D) -> Transform3D:
 	var moved: Dictionary = data.get("moved",{})
 	if not moved.has(name): return coded
 	return from_json(moved[name])
+
+## True for a name the file keeps under "added" (not a coded piece's).
+static func is_added(name: String) -> bool:
+	return name.begins_with("added/") or name.begins_with("chunk/")
 
 static func deleted(name: String) -> bool:
 	var gone: Array = data.get("deleted",[])
@@ -139,6 +148,12 @@ static func reapply() -> Array:
 		if not entries.has(name) or not is_instance_valid(entries[name].node): continue
 		apply(name,from_json(moved[name]))
 		out.append(entries[name].node)
+	# The added pieces an island carried (their "on").
+	for a: Dictionary in data.get("added",[]):
+		var name := str(a.get("name",""))
+		if str(a.get("on","")) == "" or not entries.has(name) or not is_instance_valid(entries[name].node): continue
+		apply(name,from_json(a))
+		out.append(entries[name].node)
 	return out
 
 ## A land's outline (x, z) as moved by `t` from `coded` (for the turf's
@@ -158,11 +173,12 @@ static func build_added(host: Node3D) -> void:
 	for a: Dictionary in added:
 		var kind := str(a.get("kind",""))
 		if not kind in ADDABLE: continue
-		spawn(host,str(a.name),kind,from_json(a),float(a.get("pumps",0.0)),a.get("size",null))
+		spawn(host,str(a.name),kind,from_json(a),float(a.get("pumps",0.0)),a.get("size",null),str(a.get("on","")))
 
 ## A new `kind` piece on `host` at `t`, tracked as `name`; `size` (as the
-## file keeps it, or a node's own) if given.
-static func spawn(host: Node3D, name: String, kind: String, t: Transform3D, pumps := 0.0, size: Variant = null) -> Node3D:
+## file keeps it, or a node's own) if given; `on`: the island it belongs to
+## ("" free).
+static func spawn(host: Node3D, name: String, kind: String, t: Transform3D, pumps := 0.0, size: Variant = null, on := "") -> Node3D:
 	var seed_value := absi(hash(name))%100000
 	var node: Node3D = null
 	if kind == "air_ring": node = host.air_ring(t.origin,seed_value,0.0)
@@ -173,6 +189,7 @@ static func spawn(host: Node3D, name: String, kind: String, t: Transform3D, pump
 	node.layout_place(t)
 	var extra := {"host":host}
 	if kind == "bob_slab": extra["pumps"] = float(node.spring_pumps)
+	if on != "": extra["on"] = on
 	track(name,node,kind,t,extra)
 	if size != null and node.has_method("layout_resize"): node.layout_resize(size_from_json(size,node.layout_size()) if not size is Vector3 else size)
 	return node
@@ -197,19 +214,20 @@ static func save(gone: Array, moved_islands := {}) -> Error:
 		var e: Dictionary = entries[name]
 		if not is_instance_valid(e.node): continue
 		var t := current(name)
-		if name.begins_with("added/"):
+		if is_added(name):
 			var a := to_json(t)
 			a["name"] = name
 			a["kind"] = e.kind
 			if e.has("pumps") and float(e.pumps) != float(preload("res://scripts/interactables/bob_slab.gd").SPRING_PUMPS): a["pumps"] = e.pumps
 			if e.has("size0") and not _same_size(size_of(name),e.size0): a["size"] = size_to_json(size_of(name))
+			if str(e.get("on","")) != "": a["on"] = str(e.on)
 			added.append(a)
 		else:
 			if not _same(t,e.coded): moved[name] = to_json(t)
 			if e.has("size0") and not _same_size(size_of(name),e.size0): sizes[name] = size_to_json(size_of(name))
 	var kept: Array = []
 	for g: String in gone:
-		if not g.begins_with("added/") and not g in kept: kept.append(g)
+		if not is_added(g) and not g in kept: kept.append(g)
 	kept.sort()
 	data = {"version":VERSION,"moved":moved,"added":added,"deleted":kept}
 	var isl := {}
