@@ -46,6 +46,8 @@ const OlmecTilt = preload("res://scripts/enemies/olmec_tilt.gd")
 const Dust = preload("res://scripts/enemies/body_dust.gd")
 ## His lines of wind up the tipped field (scripts/olmec_boss/air_arcs.gd).
 const AirArcs = preload("res://scripts/olmec_boss/air_arcs.gd")
+## The third knock-off's finish: the rune out of his heap (a bigger break-to-find).
+const OlmecRune = preload("res://scripts/olmec_boss/olmec_rune.gd")
 
 ## Phase 1 is done: the head has taken its hits and cried out (the body's
 ## cue, for the trunk to hook).
@@ -80,6 +82,10 @@ var _voices := {}
 var _card: Label
 var _gone_t := 0.0
 var _down_t := -1.0
+## The rune out of his heap once he is down for good (scripts/olmec_boss/
+## olmec_rune.gd), and whether it was taken this fight.
+var rune: Node3D = null
+var rune_taken := false
 ## The fight: phase 1 opens with the head alone (`--whole-olmec`: the old
 ## greybox, the Olmec whole); `--head-knob=<knob>=<value>` over its knobs.
 var whole_olmec := false
@@ -442,8 +448,26 @@ func _boss_knobs() -> Dictionary:
 	knobs.merge(_body_knobs,true)
 	return knobs
 
+## The rune out of the break in his heap, settling in from the rim.
+func _rune_out(b: Node3D) -> void:
+	if rune != null and is_instance_valid(rune): rune.queue_free()
+	var at := b.global_position
+	var inward := -(b.get("_rim_out") as Vector3) if b.get("_rim_out") != null else Vector3.ZERO
+	if Vector3(inward.x,0.0,inward.z).length() < 0.1: inward = -Vector3(at.x,0.0,at.z)
+	rune = OlmecRune.new()
+	rune.setup(at,inward,motor,b.get("field"))
+	add_child(rune)
+	rune.connect("taken",_rune_taken)
+
+func _rune_taken() -> void:
+	rune_taken = true
+	_say("The Olmec's rune!  ·  R to fight him again",5.0)
+
 ## The Olmec back as he began, whole.
 func reset_olmec() -> void:
+	if rune != null and is_instance_valid(rune): rune.queue_free()
+	rune = null
+	rune_taken = false
 	if enemies == null: return
 	if foot_lock != null and foot_lock.locked(): foot_lock.release()
 	enemies.reset()
@@ -501,7 +525,11 @@ func tick(delta: float) -> void:
 			if foot_lock != null and foot_lock.target == b: foot_lock.release("down")
 			if _down_t < 0.0:
 				_down_t = 0.0
-				_say("The Olmec crumbles!  ·  R to bring him back",4.0)
+				if not whole_olmec and int(b.get("knock_offs")) >= int(BossBody.KNOCK_OFFS):
+					_say("The Olmec crumbles!  ·  something glows in the break",4.0)
+					_rune_out(b)
+				else:
+					_say("The Olmec crumbles!  ·  R to bring him back",4.0)
 			_down_t += delta
 		if camera != null:
 			var q := maxf(float(b.quake),float(arena.hub.quake) if arena != null else 0.0)*clampf(1.0-camera.global_position.distance_to(b.global_position)/60.0,0.0,1.0)
@@ -719,7 +747,11 @@ func attack_line() -> String:
 	var b := olmec()
 	var h := olmec_head()
 	if b != null and arrival in ["whole",""]:
-		if bool(b.crumbled): return "down"
+		if bool(b.crumbled):
+			if rune_taken: return "down  ·  rune taken"
+			if rune != null and is_instance_valid(rune):
+				return {"wait":"down","seam":"down  ·  something glows in the break","rise":"down  ·  a rune!"}.get(str(rune.state),"down  ·  take the rune")
+			return "down"
 		var mv := str(b.get("move"))
 		if mv in ["","<null>"]:
 			return {"chase":"hunting you","seek":"looking for you","alert":"looking for you","listen":"listening",
