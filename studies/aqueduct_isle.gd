@@ -323,8 +323,8 @@ func _build_art() -> void:
 	var spanning: Array = []
 	for n: String in ["Aqueduct","Channel"]:
 		if art.has_node(n): spanning.append(art.get_node(n))
-	WorldIslands.add_link("link/aqueduct_main",spanning,["island/near","island/far"])
-	if art.has_node("Stumps"): WorldIslands.add_link("link/stumps",[art.get_node("Stumps")],["island/near","island/far"])
+	WorldIslands.add_link("link/aqueduct_main",spanning,["island/near","island/far"],_aqueduct_fit())
+	if art.has_node("Stumps"): WorldIslands.add_link("link/stumps",[art.get_node("Stumps")],["island/near","island/far"],_stumps_fit())
 	# Its ruins' levels of detail (scripts/ruin_lod.gd): less drawn far off.
 	preload("res://scripts/ruin_lod.gd").add_async(art)
 	# The turf the grass and flowers grow on (`_grow`, once it all stands
@@ -360,6 +360,44 @@ func _build_art() -> void:
 		editor.setup(self,foot_host)
 	# --sluice: the Sluice Flush on the channel (scripts/traps/sluice_aqueduct.gd).
 	preload("res://scripts/traps/sluice_aqueduct.gd").build(self)
+
+## How the aqueduct follows its islands in the world view (scripts/
+## world_islands.gd `refit`): cut at its fallen span (aqueduct x runs along
+## world -z), the near half (head, blind wall, the arches over the near
+## island and the sky, the channel's water and its wade) riding the near
+## island, the far half (the last arches, the drops) the far one; the
+## fallen gap the jump between them.
+func _aqueduct_fit() -> Dictionary:
+	var at := Art.arch(Art.FALLEN)
+	var deck := Art.TOP+Art.DECK
+	var pools: Array = []
+	var wade: Rect2 = Art.pools()[0].rect
+	for pool: Dictionary in ground.pools:
+		if (pool.rect as Rect2).is_equal_approx(wade): pools.append(pool)
+	return {"cut":func(p: Vector3) -> int: return 0 if -p.z < at else 1,
+		"weights":[0.0,1.0],"pools":pools,
+		"joints":[["fallen span",0,Vector3(Art.MID_X,deck,-Art.SNAP),1,Vector3(Art.MID_X,deck,-Art.RESUME)]]}
+
+## The stepping stumps: each its own piece, riding as far between the near
+## island (the first) and the far one (the last) as it stands; the jumps
+## between them what gives.
+func _stumps_fit() -> Dictionary:
+	var rows: Array = Art.stumps()
+	var mids: Array = []
+	for r: Array in rows: mids.append((float(r[1])+float(r[2]))*0.5)
+	var weights: Array = []
+	for m: float in mids: weights.append(clampf((m-float(mids[0]))/(float(mids[-1])-float(mids[0])),0.0,1.0))
+	var joints: Array = []
+	for k in range(rows.size()-1):
+		var a: Array = rows[k]
+		var b: Array = rows[k+1]
+		joints.append(["stump %d to %d" % [k+1,k+2],k,Vector3(float(a[0]),float(a[3]),float(a[2])),k+1,Vector3(float(b[0]),float(b[3]),float(b[1]))])
+	return {"cut":func(p: Vector3) -> int:
+			var best := 0
+			for k in range(mids.size()):
+				if absf(p.z-float(mids[k])) < absf(p.z-float(mids[best])): best = k
+			return best,
+		"weights":weights,"joints":joints}
 
 ## Where the world view (scripts/layout_edit.gd) looks for what stands on
 ## the islands (scripts/world_islands.gd `anchor`): the art, the foot
@@ -416,8 +454,11 @@ func island_moved(_name: String, d := Transform3D.IDENTITY, was := PackedVector2
 
 ## A quit while the base's copy is still being kept: the save finished
 ## first (scripts/roguelike/fixed_cache.gd `finish_save`).
+## The world view's registry let go too: its links' fits hold this isle's
+## lambdas, which must not outlive it (a crash on quit).
 func _exit_tree() -> void:
 	FixedCache.finish_save()
+	WorldIslands.begin()
 	super._exit_tree()
 
 # --- The isle's hooks --------------------------------------------------------------

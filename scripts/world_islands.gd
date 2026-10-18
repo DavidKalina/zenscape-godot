@@ -62,8 +62,16 @@ static func rim_y(i: Dictionary) -> float:
 	return box.end.y if box.size != Vector3.ZERO else 0.0
 
 ## `nodes` (built in world space) as link `name` between `between`.
-static func add_link(name: String, nodes: Array, between: Array) -> void:
-	links[name] = {"nodes":nodes,"islands":between,"box":AABB(),"parts":[]}
+## `fit` (`refit`): how it follows its islands, {cut: Callable (world
+## point -> piece), weights: [per piece, 0 carried by the first island, 1
+## by the second, between: as far between], joints: [[label, piece a, world
+## point a, piece b, world point b]] (the gaps a walker jumps, measured
+## after each refit), pools: [ground pools the first piece carries]}.
+## No fit: it stays where it was built.
+static func add_link(name: String, nodes: Array, between: Array, fit := {}) -> void:
+	var pools: Array = []
+	for pool: Dictionary in fit.get("pools",[]): pools.append([pool,pool.rect,float(pool.top)])
+	links[name] = {"nodes":nodes,"islands":between,"box":AABB(),"parts":[],"fit":fit,"pieces":[],"pools":pools,"xfs":[]}
 	for n: Node3D in nodes: n.set_meta("world_link",name)
 
 ## The island name `node` is part of ("" none): the land itself, or a member
@@ -279,6 +287,7 @@ static func settle(g: Dictionary, study: Node = null) -> void:
 		if k >= 0: (outlines as Array)[k] = now
 		study.set("_gap_outlines",-1)
 	if study.has_method("island_moved"): study.island_moved(g.name,d,was)
+	refit_links(g.name)
 
 ## The layout file's island moves (name -> Transform3D from coded,
 ## scripts/layout_overrides.gd `islands`) put back at load: what stands on
@@ -392,6 +401,167 @@ static func _near_outline(p: Vector2, outline: PackedVector2Array, reach: float)
 	for k in range(outline.size()):
 		if p.distance_to(Geometry2D.get_closest_point_to_segment(p,outline[k],outline[(k+1)%outline.size()])) <= reach: return true
 	return false
+
+# --- Links ------------------------------------------------------------------------------
+#
+# A link refits on release: it is cut once (the first time one of its
+# islands moves) into pieces by its fit's `cut`, each a copy of its nodes
+# holding only its own triangles and collision parts, and each piece then
+# stands where its weight between its two islands' moves puts it. The
+# aqueduct is cut at its fallen span: the near half rides the near island,
+# the far half the far one, the fallen gap between them what gives. The
+# stumps each ride as far between the islands as they stand.
+
+## The links between island `moved` and another refit where their islands
+## stand now. Returns their names.
+static func refit_links(moved: String) -> Array:
+	var done: Array = []
+	for name: String in links:
+		if moved in (links[name].islands as Array) and refit(name): done.append(name)
+	return done
+
+## Link `name` put where its islands' moves put its pieces (cut first if
+## not yet): transforms only once cut. False: it has no fit.
+static func refit(name: String) -> bool:
+	var l: Dictionary = links[name]
+	var fit: Dictionary = l.fit
+	if fit.is_empty() or (l.islands as Array).size() < 2: return false
+	if (l.pieces as Array).is_empty():
+		var began := Time.get_ticks_msec()
+		_cut(l)
+		print("world view: %s cut into %d pieces in %d ms" % [name,(l.pieces as Array).size(),Time.get_ticks_msec()-began])
+	var a: Transform3D = islands[l.islands[0]].xf if islands.has(l.islands[0]) else Transform3D.IDENTITY
+	var b: Transform3D = islands[l.islands[1]].xf if islands.has(l.islands[1]) else Transform3D.IDENTITY
+	var xfs: Array = []
+	for piece: Dictionary in l.pieces:
+		var x: Transform3D = a.interpolate_with(b,float(piece.t))
+		xfs.append(x)
+		var nodes: Array = piece.nodes
+		for k in range(nodes.size()):
+			if is_instance_valid(nodes[k]): (nodes[k] as Node3D).global_transform = x*(piece.starts[k] as Transform3D)
+	l.xfs = xfs
+	for pool: Array in l.pools:
+		var r: Rect2 = pool[1]
+		var c: Vector3 = (xfs[0] as Transform3D)*Vector3(r.get_center().x,0.0,r.get_center().y)
+		(pool[0] as Dictionary).rect = Rect2(Vector2(c.x,c.z)-r.size*0.5,r.size)
+		(pool[0] as Dictionary).top = float(pool[2])+(xfs[0] as Transform3D).origin.y
+	return true
+
+## Link `name`'s jumps: [[label, as built (m), now (m)]].
+static func link_gaps(name: String) -> Array:
+	var l: Dictionary = links[name]
+	var out: Array = []
+	var xfs: Array = l.xfs
+	for j: Array in l.fit.get("joints",[]):
+		var pa: Vector3 = j[2]
+		var pb: Vector3 = j[4]
+		var built := pa.distance_to(pb)
+		var now := built
+		if not xfs.is_empty(): now = ((xfs[int(j[1])] as Transform3D)*pa).distance_to((xfs[int(j[3])] as Transform3D)*pb)
+		out.append([str(j[0]),built,now])
+	return out
+
+## Link `l` cut into its fit's pieces: each node copied once a piece (the
+## first piece keeps the node itself), each copy's meshes holding the
+## triangles whose middle the cut gives that piece; the collision parts
+## shared out by their middles. Done where the link was built (it hasn't
+## moved before its first refit).
+static func _cut(l: Dictionary) -> void:
+	var fit: Dictionary = l.fit
+	var cut: Callable = fit.cut
+	var weights: Array = fit.weights
+	var count := weights.size()
+	var pieces: Array = []
+	for k in range(count): pieces.append({"t":float(weights[k]),"nodes":[],"starts":[]})
+	var added: Array = []
+	for n: Node3D in l.nodes:
+		if not is_instance_valid(n): continue
+		var copies: Array = [n]
+		for k in range(1,count):
+			var c := n.duplicate() as Node3D
+			c.name = "%s_%d" % [n.name,k]
+			n.get_parent().add_child(c)
+			c.global_transform = n.global_transform
+			copies.append(c)
+		var lists: Array = []
+		for c: Node3D in copies:
+			var list: Array = c.find_children("*","MeshInstance3D",true,false)
+			if c is MeshInstance3D: list.push_front(c)
+			lists.append(list)
+		var used := PackedByteArray()
+		used.resize(count)
+		for m in range((lists[0] as Array).size()):
+			var mi := lists[0][m] as MeshInstance3D
+			var split := _split_mesh(mi.mesh,mi.global_transform,cut,count)
+			for k in range(count):
+				var into := lists[k][m] as MeshInstance3D
+				into.mesh = split[k]
+				if split[k] != null: used[k] = 1
+		for k in range(count):
+			if used[k] == 0 and k > 0:
+				copies[k].queue_free()
+				continue
+			pieces[k].nodes.append(copies[k])
+			pieces[k].starts.append((copies[k] as Node3D).global_transform)
+			if k > 0: added.append(copies[k])
+	for p: Node3D in l.parts:
+		if not is_instance_valid(p): continue
+		var k := clampi(int(cut.call(drawn_box(p).get_center())),0,count-1)
+		pieces[k].nodes.append(p)
+		pieces[k].starts.append(p.global_transform)
+	(l.nodes as Array).append_array(added)
+	l.pieces = pieces
+
+## `mesh` (drawn at `xf`) cut in `count`: piece k's mesh holds the
+## triangles `cut` gives k by their middle in the world (null: none).
+static func _split_mesh(mesh: Mesh, xf: Transform3D, cut: Callable, count: int) -> Array:
+	var out: Array = []
+	out.resize(count)
+	if mesh == null: return out
+	var meshes: Array = []
+	for k in range(count): meshes.append(ArrayMesh.new())
+	var custom_bits := 0
+	for shift: int in [Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT,Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT,Mesh.ARRAY_FORMAT_CUSTOM2_SHIFT,Mesh.ARRAY_FORMAT_CUSTOM3_SHIFT]:
+		custom_bits |= Mesh.ARRAY_FORMAT_CUSTOM_MASK << shift
+	for s in range(mesh.get_surface_count()):
+		var arrays := mesh.surface_get_arrays(s)
+		var mat := mesh.surface_get_material(s)
+		var flags := 0
+		if mesh is ArrayMesh: flags = (mesh as ArrayMesh).surface_get_format(s) & custom_bits
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var index: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		var tri := index.size()/3 if not index.is_empty() else verts.size()/3
+		var prim: int = (mesh as ArrayMesh).surface_get_primitive_type(s) if mesh is ArrayMesh else Mesh.PRIMITIVE_TRIANGLES
+		if prim != Mesh.PRIMITIVE_TRIANGLES:
+			# Not triangles: the surface whole to the piece its middle falls in.
+			var mid := Vector3.ZERO
+			for v: Vector3 in verts: mid += v
+			var k := clampi(int(cut.call(xf*(mid/maxf(1.0,verts.size())))),0,count-1)
+			(meshes[k] as ArrayMesh).add_surface_from_arrays(prim,arrays,[],{},flags)
+			(meshes[k] as ArrayMesh).surface_set_material((meshes[k] as ArrayMesh).get_surface_count()-1,mat)
+			continue
+		if index.is_empty():
+			index.resize(verts.size())
+			for i in range(verts.size()): index[i] = i
+		var of := PackedByteArray()
+		of.resize(tri)
+		for t in range(tri):
+			of[t] = clampi(int(cut.call(xf*((verts[index[t*3]]+verts[index[t*3+1]]+verts[index[t*3+2]])/3.0))),0,count-1)
+		for k in range(count):
+			var pk := PackedInt32Array()
+			for t in range(tri):
+				if of[t] == k:
+					pk.append(index[t*3])
+					pk.append(index[t*3+1])
+					pk.append(index[t*3+2])
+			if pk.is_empty(): continue
+			var a := arrays.duplicate()
+			a[Mesh.ARRAY_INDEX] = pk
+			(meshes[k] as ArrayMesh).add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,a,[],{},flags)
+			(meshes[k] as ArrayMesh).surface_set_material((meshes[k] as ArrayMesh).get_surface_count()-1,mat)
+	for k in range(count):
+		if (meshes[k] as ArrayMesh).get_surface_count() > 0: out[k] = meshes[k]
+	return out
 
 ## A short count of what anchoring found.
 static func summary() -> String:

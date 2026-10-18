@@ -512,6 +512,17 @@ func strips_lost() -> Array:
 		if float(strip_now.get(name,0.0)) < float(strip_first[name])-STRIP_SLACK: out.append(name)
 	return out
 
+## The links' jumps (scripts/world_islands.gd `link_gaps`) the islands'
+## moves made longer or shorter than built by more than GAP_SLACK:
+## [[link, label, now, built]].
+const GAP_SLACK := 0.5
+func gaps_changed() -> Array:
+	var out: Array = []
+	for name: String in Islands.links:
+		for g: Array in Islands.link_gaps(name):
+			if absf(float(g[2])-float(g[1])) > GAP_SLACK: out.append([name,g[0],g[2],g[1]])
+	return out
+
 static func _strip_line(runs: Dictionary) -> String:
 	var parts := PackedStringArray()
 	for name: String in runs: parts.append("%s %.0f m" % [name,float(runs[name])])
@@ -522,6 +533,12 @@ func _show_warn() -> void:
 	var lines := PackedStringArray()
 	for name: String in strips_lost():
 		lines.append("LANDING STRIP: %s's longest clear run is %.0f m (was %.0f m)" % [name,float(strip_now[name]),float(strip_first[name])])
+	var by_link := {}
+	for gap: Array in gaps_changed():
+		if not by_link.has(gap[0]): by_link[gap[0]] = []
+		(by_link[gap[0]] as Array).append("%s %.1f m (was %.1f)" % [gap[1],gap[2],gap[3]])
+	for name: String in by_link:
+		lines.append("LINK: %s: %s" % [name,", ".join(PackedStringArray(by_link[name]))])
 	_warn.text = "\n".join(lines)
 	_warn.visible = not lines.is_empty()
 
@@ -639,11 +656,13 @@ func _build_ui() -> void:
 	_ui.add_child(_status)
 	_warn = Label.new()
 	_warn.name = "StripWarning"
-	_warn.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_warn.offset_left = -520.0
-	_warn.offset_right = 520.0
+	# Top right, clear of the keys' hint on the left.
+	_warn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_warn.offset_left = -700.0
+	_warn.offset_right = -16.0
+	_warn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_warn.offset_top = 16.0
-	_warn.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_warn.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_warn.add_theme_color_override("font_color",Color(1.0,0.45,0.3))
 	_warn.add_theme_color_override("font_outline_color",Color(0.0,0.0,0.0,0.9))
 	_warn.add_theme_constant_override("outline_size",6)
