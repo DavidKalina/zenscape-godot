@@ -51,7 +51,7 @@ LMB  select, drag to move (at its height; an island too)     wheel / PgUp PgDn  
 Z / X  turn 15 deg (Shift 5)    T / G  tip 15 deg (a ring throws along its arrow)    [ / ]  size (rings, slabs; Shift finer)    C  duplicate    Del / Backspace  delete
 1  add air ring    2  add bob slab    3  add ring-stair slab (7 pumps)
 click an island's ground: the island    U  from a piece to the island it stands on    O  open the island alone (motif editor)
-Ctrl/Cmd+S  save"""
+Ctrl/Cmd+Z  undo    Ctrl/Cmd+S  save"""
 
 var study: Node3D
 var host: Node3D
@@ -87,6 +87,15 @@ var strip_first := {}
 var strip_now := {}
 var _strips_stale := false
 var _warn: Label
+## The undo stack (Ctrl/Cmd+Z), newest last: each record what one action
+## changed, as it was before (see `undo`). A burst of the same nudge (wheel
+## ticks, a held Z) on one object within NUDGE_MS is one record.
+const UNDO_MAX := 200
+const NUDGE_MS := 800
+var undos: Array = []
+## A drag's start (the piece's pose, or the island's move from coded), set
+## on the click and made a record on let go if it moved.
+var _drag_from: Variant = null
 
 func setup(scene: Node3D, pieces: Node3D) -> void:
 	study = scene
@@ -266,7 +275,9 @@ func _edit_input(event: InputEvent) -> void:
 			if cmd and not k.echo: save()
 		KEY_PAGEUP: lift(4.0*LIFT if fine else LIFT)
 		KEY_PAGEDOWN: lift(-4.0*LIFT if fine else -LIFT)
-		KEY_Z: turn(5.0 if fine else TURN)
+		KEY_Z:
+			if cmd: undo()
+			else: turn(5.0 if fine else TURN)
 		KEY_X: turn(-5.0 if fine else -TURN)
 		KEY_BRACKETLEFT: resize(-(GROW_FINE if fine else GROW))
 		KEY_BRACKETRIGHT: resize(GROW_FINE if fine else GROW)
@@ -346,6 +357,7 @@ func click(at: Vector2) -> void:
 		var q := _on_level(at,_drag_y)
 		if q == Vector3.INF: return
 		_grab = _take(name)
+		_drag_from = Islands.islands[name].xf
 		_drag_off = Vector3(_grab_pivot.x-q.x,0.0,_grab_pivot.z-q.z)
 		_dragging = true
 		return
@@ -357,6 +369,7 @@ func click(at: Vector2) -> void:
 	var p := _on_level(at,_drag_y)
 	_drag_off = t.origin-p if p != Vector3.INF else Vector3.ZERO
 	_dragging = p != Vector3.INF
+	_drag_from = t
 
 ## Screen point `at` on the level plane at height `y` (INF if the view
 ## doesn't meet it ahead).
@@ -374,6 +387,7 @@ func _on_level(at: Vector2, y: float) -> Vector3:
 func let_go() -> void:
 	var was := _dragging
 	_dragging = false
+	_record_drag()
 	if not _grab.is_empty(): _settle()
 	elif was and selected != "" and not is_island(selected): _reanchor(selected)
 
@@ -404,6 +418,7 @@ func lift(dy: float) -> void:
 		_island_step(Transform3D(Basis.IDENTITY,Vector3.UP*dy))
 		return
 	var t := Layout.current(selected)
+	if not _dragging: _nudged({"do":"pose","name":selected,"t":t},"lift")
 	t.origin.y = snappedf(t.origin.y+dy,SNAP)
 	_drag_y += dy
 	_put(selected,t)
@@ -417,6 +432,7 @@ func turn(deg: float) -> void:
 		_island_step(Transform3D(Basis.IDENTITY,c)*Transform3D(Basis(Vector3.UP,deg_to_rad(deg)),Vector3.ZERO)*Transform3D(Basis.IDENTITY,-c))
 		return
 	var t := Layout.current(selected)
+	if not _dragging: _nudged({"do":"pose","name":selected,"t":t},"turn")
 	t.basis = Basis(Vector3.UP,deg_to_rad(deg))*t.basis
 	_put(selected,t)
 
@@ -424,6 +440,7 @@ func turn(deg: float) -> void:
 func tip(deg: float) -> void:
 	if selected == "" or _island_held(): return
 	var t := Layout.current(selected)
+	if not _dragging: _nudged({"do":"pose","name":selected,"t":t},"tip")
 	t.basis = t.basis*Basis(Vector3.RIGHT,deg_to_rad(deg))
 	_put(selected,t)
 
@@ -449,6 +466,7 @@ func resize(step: float) -> void:
 	if Layout._same_size(Layout.size_of(selected),was):
 		say("%s is as %s as it goes" % [selected,"big" if step > 0.0 else "small"])
 		return
+	_nudged({"do":"size","name":selected,"size":was},"size")
 	print("world view: %s sized %s in %.1f ms" % [selected,size_text(selected),(Time.get_ticks_usec()-began)/1000.0])
 	dirty = true
 	_strips_stale = true
@@ -484,6 +502,7 @@ func add(kind: String, pumps := 0.0) -> void:
 	var name := Layout.fresh_name(kind)
 	var yaw := atan2(-way.x,-way.z)
 	Layout.spawn(host,name,kind,Transform3D(Basis(Vector3.UP,yaw),at.snappedf(SNAP)),pumps)
+	_push({"do":"add","name":name})
 	dirty = true
 	select(name)
 
@@ -499,6 +518,7 @@ func duplicate_selected() -> void:
 	t.origin += Vector3(right.x,0.0,right.z).normalized()*3.0
 	var name := Layout.fresh_name(str(e.kind))
 	Layout.spawn(host,name,str(e.kind),t,float(e.get("pumps",0.0)),Layout.size_of(selected))
+	_push({"do":"add","name":name})
 	dirty = true
 	select(name)
 
@@ -506,27 +526,159 @@ func delete_selected() -> void:
 	if selected == "" or _island_held(): return
 	var name := selected
 	select("")
-	var e: Dictionary = Layout.entries[name]
-	var node: Node3D = e.node
-	if host != null:
-		for list: String in ["rings","slabs","ropes","rails"]: (host.get(list) as Array).erase(node)
-		if host.get("on") == node: host.set("on",null)
-		if host.get("on_rail") == node: host.set("on_rail",null)
-	var isl := str(node.get_meta("world_island","")) if node.has_meta("world_island") else ""
-	if isl != "" and Islands.islands.has(isl): (Islands.islands[isl].members as Array).erase(node)
-	if str(e.kind) == "land":
-		# Its turf stays registered (flora, outlines) until the reload: put
-		# out of sight and out of the physics space, not freed.
-		node.visible = false
-		for c: Node in node.find_children("*","CollisionObject3D",true,false):
-			(c as CollisionObject3D).collision_layer = 0
-			(c as CollisionObject3D).collision_mask = 0
-	else: node.queue_free()
-	Layout.entries.erase(name)
-	if not name.begins_with("added/") and not name in gone: gone.append(name)
+	_push(_remove(name))
 	dirty = true
 	_strips_stale = true
 	say("deleted %s" % name)
+
+## `name` taken out of the world: what undoes it back. A piece is taken
+## out of the tree (not freed: the undo stack holds it, `_drop` frees it);
+## a land is hidden and out of the physics space (its turf stays registered
+## for flora and outlines until the reload).
+func _remove(name: String) -> Dictionary:
+	var e: Dictionary = Layout.entries[name]
+	var node: Node3D = e.node
+	var rec := {"do":"delete","name":name,"entry":e,"node":node,"lists":[],"on":""}
+	if host != null:
+		for list: String in ["rings","slabs","ropes","rails"]:
+			var a: Array = host.get(list)
+			if node in a:
+				a.erase(node)
+				(rec.lists as Array).append(list)
+		if host.get("on") == node: host.set("on",null)
+		if host.get("on_rail") == node: host.set("on_rail",null)
+	var isl := str(node.get_meta("world_island","")) if node.has_meta("world_island") else ""
+	if isl != "" and Islands.islands.has(isl) and node in Islands.islands[isl].members:
+		(Islands.islands[isl].members as Array).erase(node)
+		rec.on = isl
+	if str(e.kind) == "land":
+		node.visible = false
+		var layers: Array = []
+		for c: Node in node.find_children("*","CollisionObject3D",true,false):
+			var co := c as CollisionObject3D
+			layers.append([co,co.collision_layer,co.collision_mask])
+			co.collision_layer = 0
+			co.collision_mask = 0
+		rec.layers = layers
+	else:
+		var parent := node.get_parent()
+		rec.parent = parent
+		rec.index = node.get_index()
+		parent.remove_child(node)
+	Layout.entries.erase(name)
+	if not name.begins_with("added/") and not name in gone:
+		gone.append(name)
+		rec.gone = true
+	return rec
+
+# --- Undo ----------------------------------------------------------------------------
+
+## A record on the stack (the oldest dropped past UNDO_MAX).
+func _push(rec: Dictionary) -> void:
+	rec["at"] = Time.get_ticks_msec()
+	undos.append(rec)
+	while undos.size() > UNDO_MAX: _drop(undos.pop_front())
+
+## A nudge's record, unless the last record is the same nudge on the same
+## object within NUDGE_MS (a burst of wheel ticks undoes as one).
+func _nudged(rec: Dictionary, by: String) -> void:
+	if not undos.is_empty():
+		var last: Dictionary = undos.back()
+		if str(last.get("by","")) == by and str(last.name) == str(rec.name) and Time.get_ticks_msec()-int(last.at) < NUDGE_MS:
+			last.at = Time.get_ticks_msec()
+			return
+	rec["by"] = by
+	_push(rec)
+
+## The drag let go: its start made a record if it moved.
+func _record_drag() -> void:
+	if _drag_from == null: return
+	var from: Variant = _drag_from
+	_drag_from = null
+	if selected == "": return
+	if is_island(selected):
+		if not Layout._same(from,Islands.islands[selected].xf): _push({"do":"island","name":selected,"xf":from})
+	elif Layout.entries.has(selected) and not Layout._same(from,Layout.current(selected)):
+		_push({"do":"pose","name":selected,"t":from})
+
+## A record no longer undoable: a deleted piece it held freed.
+func _drop(rec: Dictionary) -> void:
+	if str(rec.do) != "delete" or not rec.has("parent"): return
+	var node: Variant = rec.node
+	if is_instance_valid(node) and not (node as Node).is_inside_tree(): (node as Node).free()
+
+func _exit_tree() -> void:
+	for rec: Dictionary in undos: _drop(rec)
+	undos = []
+
+## The last action taken back (Ctrl/Cmd+Z): a move, lift, turn or tip put
+## back where it stood, a size back, an added or copied piece taken out, a
+## deleted one put back, an island put back where it was (what stands on it
+## carried back with it).
+func undo() -> void:
+	if _dragging or not _grab.is_empty(): return
+	if undos.is_empty():
+		say("nothing to undo")
+		return
+	var rec: Dictionary = undos.pop_back()
+	var name := str(rec.name)
+	match str(rec.do):
+		"pose":
+			if not Layout.entries.has(name) or not is_instance_valid(Layout.entries[name].node):
+				undo()
+				return
+			Layout.apply(name,rec.t)
+			select(name)
+			_reanchor(name)
+		"size":
+			if not Layout.entries.has(name) or not is_instance_valid(Layout.entries[name].node):
+				undo()
+				return
+			(Layout.entries[name].node as Node).layout_resize(rec.size)
+			select(name)
+		"island":
+			if not is_island(name):
+				undo()
+				return
+			select(name)
+			_grab = _take(name)
+			Islands.move(_grab,rec.xf)
+			_settle()
+		"add":
+			if not Layout.entries.has(name):
+				undo()
+				return
+			if selected == name: select("")
+			var gone_rec := _remove(name)
+			_drop(gone_rec)
+		"delete":
+			var node: Node3D = rec.node
+			if not is_instance_valid(node):
+				undo()
+				return
+			if rec.has("parent"):
+				var parent: Node = rec.parent
+				if not is_instance_valid(parent):
+					undo()
+					return
+				parent.add_child(node)
+				parent.move_child(node,mini(int(rec.index),parent.get_child_count()-1))
+			else:
+				node.visible = true
+				for l: Array in rec.get("layers",[]):
+					if is_instance_valid(l[0]):
+						(l[0] as CollisionObject3D).collision_layer = int(l[1])
+						(l[0] as CollisionObject3D).collision_mask = int(l[2])
+			Layout.entries[name] = rec.entry
+			if host != null:
+				for list: String in rec.lists: (host.get(list) as Array).append(node)
+			var on := str(rec.on)
+			if on != "" and Islands.islands.has(on): (Islands.islands[on].members as Array).append(node)
+			if bool(rec.get("gone",false)): gone.erase(name)
+			select(name)
+	dirty = true
+	_strips_stale = true
+	say("undid %s %s (%d more)" % [rec.do,name,undos.size()])
 
 func save() -> void:
 	var err := Layout.save(gone,Islands.moves())
@@ -558,6 +710,7 @@ func _take(name: String) -> Dictionary:
 
 ## The selected island moved by `d` (world) at once, and let go.
 func _island_step(d: Transform3D) -> void:
+	if not _dragging: _nudged({"do":"island","name":selected,"xf":Islands.islands[selected].xf},"island")
 	if _grab.is_empty(): _grab = _take(selected)
 	Islands.move(_grab,d*(Islands.islands[selected].xf as Transform3D))
 	dirty = true
