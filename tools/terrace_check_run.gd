@@ -5,7 +5,8 @@ extends "res://tools/harness/drive.gd"
 ## collision off the drawn faces, each a check that wants zero.
 ##   python tools/drive.py tools/terrace_check_run.gd -- --scene=studies/terrace_rock_test.tscn [--grid=1.5] [--eye-every=3] [--scene-args ...]
 ## --drawn=Name,Name: more nodes (by name) whose meshes count as drawn and
-## whose bodies as the game's (pieces seated on the terrace).
+## whose bodies as the game's (pieces seated on the terrace; every node with
+## the meta terrace_seated is counted so without it).
 
 const TerraceCheck = preload("res://tools/terrace_check.gd")
 
@@ -16,7 +17,10 @@ func drive() -> void:
 	for n: Node in study.find_children("*","Node3D",true,false):
 		if n.has_meta("terrace_tops"): terraces.append(n)
 	check(not terraces.is_empty(),"the scene has a terrace","none with meta terrace_tops")
+	# Pieces seated on a terrace (meta terrace_seated: a stair in its cut).
 	var extra: Array = []
+	for n: Node in study.find_children("*","Node3D",true,false):
+		if n.has_meta("terrace_seated"): extra.append(n)
 	for name in String(arg("drawn","")).split(",",false):
 		var n := first(name)
 		if n != null: extra.append(n)

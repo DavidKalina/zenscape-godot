@@ -36,8 +36,21 @@ extends RefCounted
 ## tools/terrace_check.gd sweeps a built terrace for see-in gaps, floor
 ## holes and collision off the drawn rock.
 ##
+## Cuts: a tier with `cut: true` is a channel let down into the rock: over
+## its outline the top is the cut's height wherever that is lower than the
+## tiers' (a cut only lowers, and only where a tier is: never over the sky
+## or a lower tier). Its walls are plain risers down to its floor, so a cut
+## is closed as every riser is. The flights: `grand_stair_cut` gives the
+## cut a RuinKit grand stair stands in, its cheeks' middles on the cut's
+## walls (the walls let into the cheeks, never off them into the gap by the
+## steps), its back on the cut's head; `seat_grand_stair` stands the stair
+## (meta terrace_seated: the check counts it). A rise of more than
+## STAIR_RISE is stairs chained: a cut at each landing's height.
+## A cut wall's columns are jittered only out of the rock into the cut, at
+## most CUT_FACET (inside the cheek), never back into the rock.
+##
 ## The spec:
-##   tiers   [{outline: Array of Vector2, y: float}]
+##   tiers   [{outline: Array of Vector2, y: float, cut: bool}]
 ##   seed    the facets' jitter (0)
 ##   step    the longest plan edge (STEP): risers' columns, tops' cells
 ##   row     the tallest riser row (ROW)
@@ -46,11 +59,24 @@ extends RefCounted
 ##   depth   the keel under the skirt ring (DEPTH)
 ##   tone    (mid (x, z), normal, shimmer, y) -> Color: the turf (KitLook.turf)
 
+const RuinKit = preload("res://scripts/ruin_kit.gd")
+
 const STEP := 1.6
 const ROW := 2.4
 const FACET := 0.32
 const SKIRT := 2.6
 const DEPTH := 16.0
+## A cut wall's facets: at most this far out of the rock, into the cut
+## (under half a cheek: the wall stays in the stair's cheek).
+const CUT_FACET := 0.15
+## The grand stair's run (its back to its foot) and the cut's half width
+## (the steps' half width and half a cheek: its walls down the cheeks' middles).
+const STAIR_FRONT := ((RuinKit.GRAND_STEPS-1)*RuinKit.GRAND_TREAD*2.0+RuinKit.GRAND_LANDING+RuinKit.LANDING)*0.5
+const STAIR_RISE := 2.0*RuinKit.GRAND_STEPS*RuinKit.GRAND_RISER
+const STAIR_HALF := RuinKit.GRAND_WIDTH*0.5+RuinKit.CHEEK.x*0.5
+## How far the cut's head sits inside the stair's back (m): the head's riser
+## hidden in the stair's top landing.
+const STAIR_HEAD_IN := 0.02
 ## Points closer than this (m) are one point.
 const SNAP := 0.002
 ## The keel's rings under the skirt: [share of depth down, share inset toward the middle].
@@ -59,6 +85,40 @@ const KEEL_RINGS := [[0.18,0.1],[0.42,0.32],[0.68,0.58],[0.88,0.82]]
 static func build(spec: Dictionary) -> Node3D:
 	var b := _Build.new(spec)
 	return b.run()
+
+## A grand stair's frame: its foot's middle `foot` (x, y of the low top, z),
+## climbing along `facing` (x, z) to a head STAIR_RISE up, STAIR_FRONT*2 on.
+static func grand_stair_frame(foot: Vector3, facing: Vector2) -> Transform3D:
+	var f := facing.normalized()
+	var fwd := Vector3(f.x,0.0,f.y)
+	# The stair climbs toward its local -Z.
+	var basis := Basis(fwd.cross(Vector3.UP),Vector3.UP,-fwd)
+	return Transform3D(basis,foot+fwd*STAIR_FRONT)
+
+## The cut a grand stair at `foot` climbing along `facing` stands in: its
+## head at the stair's back, its walls down the cheeks' middles, open
+## `mouth` m on past the stair's foot (carry it out past the high tier's
+## riser, or the foot stands against rock).
+static func grand_stair_cut(foot: Vector3, facing: Vector2, mouth := 2.0) -> Dictionary:
+	var f := facing.normalized()
+	var side := Vector2(-f.y,f.x)
+	var p := Vector2(foot.x,foot.z)
+	var head := p+f*(STAIR_FRONT*2.0-STAIR_HEAD_IN)
+	var out := p-f*mouth
+	return {"outline":[out-side*STAIR_HALF,out+side*STAIR_HALF,head+side*STAIR_HALF,head-side*STAIR_HALF],"y":foot.y,"cut":true}
+
+## A RuinKit grand stair stood at `foot` climbing along `facing` (in the
+## cut `grand_stair_cut` gives); meta foot/head in world (its parent's frame).
+static func seat_grand_stair(foot: Vector3, facing: Vector2, seed_value := 0, weathered := 0.2) -> Node3D:
+	# Weathered past 0.25 a cheek is torn down: the cut wall would stand bare
+	# a cheek's half off the steps.
+	var stair: Node3D = RuinKit.grand_stair(seed_value,minf(weathered,0.24))
+	stair.transform = grand_stair_frame(foot,facing)
+	stair.set_meta("foot",stair.transform*(stair.get_meta("foot") as Vector3))
+	stair.set_meta("head",stair.transform*(stair.get_meta("head") as Vector3))
+	# The terrace check counts it as drawn and as the game's (tools/terrace_check_run.gd).
+	stair.set_meta("terrace_seated",true)
+	return stair
 
 class _Build extends RefCounted:
 	var spec: Dictionary
@@ -79,6 +139,10 @@ class _Build extends RefCounted:
 	var face_of := {}
 	var faces: Array = []
 	var face_y: Array = []
+	# A face whose top a cut let down.
+	var face_cut: Array = []
+	# Per vertex: on a cut's wall (its facets only into the cut).
+	var cut_wall: Array = []
 	var rim_loops: Array = []
 	var rows: Array[float] = []
 	var base_y := 0.0
@@ -341,6 +405,7 @@ class _Build extends RefCounted:
 				for c in cycle: poly.append(pts[c])
 				faces.append(poly)
 				face_y.append(_area(poly))
+				face_cut.append(false)
 		# Faces: area > 0 a top (its height that of the highest tier over it); else the outside.
 		for f in range(faces.size()):
 			var poly: PackedVector2Array = faces[f]
@@ -348,8 +413,13 @@ class _Build extends RefCounted:
 				face_y[f] = null
 				rim_loops.append(poly)
 				continue
-			var y: Variant = _tier_at(_inside_point(poly))
+			var at := _inside_point(poly)
+			var y: Variant = _tier_at(at)
 			if y == null: push_warning("TerraceRock: a face no tier covers (a courtyard) near %s: left open" % poly[0])
+			var c: Variant = _cut_at(at)
+			if y != null and c != null and float(c) < float(y):
+				y = c
+				face_cut[f] = true
 			face_y[f] = y
 		for f in range(faces.size()):
 			if face_y[f] == null:
@@ -382,6 +452,16 @@ class _Build extends RefCounted:
 	func _tier_at(p: Vector2) -> Variant:
 		var best: Variant = null
 		for tier: Dictionary in tiers:
+			if bool(tier.get("cut",false)): continue
+			var y := float(tier.y)
+			if (best == null or y > float(best)) and Geometry2D.is_point_in_polygon(p,PackedVector2Array(tier.outline)): best = y
+		return best
+
+	## The highest cut over `p`, null if none.
+	func _cut_at(p: Vector2) -> Variant:
+		var best: Variant = null
+		for tier: Dictionary in tiers:
+			if not bool(tier.get("cut",false)): continue
 			var y := float(tier.y)
 			if (best == null or y > float(best)) and Geometry2D.is_point_in_polygon(p,PackedVector2Array(tier.outline)): best = y
 		return best
@@ -395,6 +475,8 @@ class _Build extends RefCounted:
 	## edges of one kind: its points may be jittered), its facet direction.
 	func _classify() -> void:
 		tops_at.resize(pts.size())
+		cut_wall.resize(pts.size())
+		cut_wall.fill(false)
 		plain.resize(pts.size())
 		dir.resize(pts.size())
 		var kinds: Array = []
@@ -417,6 +499,10 @@ class _Build extends RefCounted:
 			var d := (pts[e[1]]-pts[e[0]]).normalized()
 			var left := Vector2(-d.y,d.x)
 			var hi_left := r == null or (l != null and float(l) > float(r))
+			var low_face: int = face_of.get("%d,%d" % [e[1],e[0]] if hi_left else "%d,%d" % [e[0],e[1]],-1)
+			if low_face >= 0 and face_cut[low_face]:
+				cut_wall[e[0]] = true
+				cut_wall[e[1]] = true
 			var n := left if hi_left else -left
 			var kind := "%s/%s" % [str(l),str(r)] if hi_left else "%s/%s" % [str(r),str(l)]
 			for v in e:
@@ -465,7 +551,8 @@ class _Build extends RefCounted:
 		var lip := (tops_at[v] as Dictionary).has(snappedf(g,0.001))
 		if not lip and (plain[v] or g < min_y-0.001):
 			var u := _rand(p+Vector2(g*7.31,g*3.17),11)
-			p += (dir[v] as Vector2)*lerpf(-0.35,1.0,u)*facet
+			if cut_wall[v]: p -= (dir[v] as Vector2)*u*minf(facet,CUT_FACET)
+			else: p += (dir[v] as Vector2)*lerpf(-0.35,1.0,u)*facet
 		return Vector3(p.x,g,p.y)
 
 	## Every riser and rim face, in rows.

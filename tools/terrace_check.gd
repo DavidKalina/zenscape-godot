@@ -23,11 +23,23 @@ extends RefCounted
 ## Or a whole scene: python tools/drive.py tools/terrace_check_run.gd -- --scene=studies/x.tscn
 ## Opts: grid (the floor samples' spacing, 1.5), eye_every (3.0), eyes
 ## ([1.1, 2.6] over the turf), reach (45), cameras (8), drawn, bodies, quiet.
+## A sample under a seated piece (`drawn`: a stair in its cut) is lifted
+## onto the piece's drawn top, so its eyes stand on the stair, and its floor
+## is the piece's (within PIECE_OFF: a worn nosing).
 ## Returns {samples, rays, see_in, through, holes, standoff, *_at: the first
 ## positions of each}.
 
 const LAYER_BOTH := 1 << 22
 const LAYER_FRONT := 1 << 23
+## The seated pieces' drawn faces alone: a floor sample under one is lifted
+## onto it (he stands on the stair, not in it).
+const LAYER_PIECE := 1 << 21
+## How high over a top a seated piece may stand (m): a grand stair's head.
+const PIECE_REACH := 6.0
+## A lifted sample's floor: the collision within this of the drawn piece
+## (a worn nosing's chamfer lies a few cm under the step's walked top; a
+## hole is a step's riser or more).
+const PIECE_OFF := 0.15
 ## The most a collision hit may stand off the drawn one (m).
 const STAND := 0.3
 ## The floor: collision this far under or over the turf's own height is a hole.
@@ -42,11 +54,14 @@ static func sweep(terrace: Node3D, opts := {}) -> Dictionary:
 	var body_roots: Array = [terrace]
 	body_roots.append_array(opts.get("bodies",[]))
 	var faces := PackedVector3Array()
+	var piece_faces := PackedVector3Array()
 	for root: Node in drawn_roots:
 		for mi: MeshInstance3D in _meshes(root):
 			if mi.mesh == null or not mi.is_visible_in_tree(): continue
 			var xf := mi.global_transform
-			for p in mi.mesh.get_faces(): faces.append(xf*p)
+			for p in mi.mesh.get_faces():
+				faces.append(xf*p)
+				if root != terrace: piece_faces.append(xf*p)
 	var game := {}
 	var mask := 0
 	for root: Node in body_roots:
@@ -57,6 +72,10 @@ static func sweep(terrace: Node3D, opts := {}) -> Dictionary:
 	var front := _check_body(faces,false,LAYER_FRONT)
 	tree.root.add_child(both)
 	tree.root.add_child(front)
+	var pieces: StaticBody3D = null
+	if not piece_faces.is_empty():
+		pieces = _check_body(piece_faces,true,LAYER_PIECE)
+		tree.root.add_child(pieces)
 	await tree.physics_frame
 	await tree.physics_frame
 	var space := terrace.get_world_3d().direct_space_state
@@ -88,13 +107,31 @@ static func sweep(terrace: Node3D, opts := {}) -> Dictionary:
 					if fmod(x-b.position.x,eye_every) < grid and fmod(z-b.position.y,eye_every) < grid: eye_at.append(Vector3(q.x,y,q.y))
 				z += grid
 			x += grid
+	# Samples under a seated piece lifted onto it.
+	if pieces != null:
+		await tree.physics_frame
+		var lifted := 0
+		var on_piece := {}
+		for list: Array in [samples,eye_at]:
+			for i in range(list.size()):
+				var s: Vector3 = list[i]
+				var hit := _ray(space,s+Vector3.UP*PIECE_REACH,s+Vector3.UP*0.05,LAYER_PIECE)
+				if not hit.is_empty():
+					list[i] = hit.position
+					lifted += 1
+					if list == samples: on_piece[i] = true
+		got["lifted"] = lifted
+		got["on_piece"] = on_piece
 	got.samples = samples.size()
 	# The floor: down rays.
-	for s: Vector3 in samples:
+	var on: Dictionary = got.get("on_piece",{})
+	got.erase("on_piece")
+	for i in range(samples.size()):
+		var s: Vector3 = samples[i]
 		var col := _game_ray(space,s+Vector3.UP*1.0,s+Vector3.DOWN*1.5,mask,game)
 		var drawn := _ray(space,s+Vector3.UP*1.0,s+Vector3.DOWN*1.5,LAYER_BOTH)
 		got.rays += 2
-		if col.is_empty() or absf((col.position as Vector3).y-s.y) > FLOOR_OFF:
+		if col.is_empty() or absf((col.position as Vector3).y-s.y) > (PIECE_OFF if on.has(i) else FLOOR_OFF):
 			_flag(got,"holes",s)
 		elif not drawn.is_empty() and absf((col.position as Vector3).y-(drawn.position as Vector3).y) > STAND:
 			_flag(got,"standoff",s)
@@ -135,8 +172,9 @@ static func sweep(terrace: Node3D, opts := {}) -> Dictionary:
 			_sight(space,got,raster,cam,to)
 	both.queue_free()
 	front.queue_free()
+	if pieces != null: pieces.queue_free()
 	if not bool(opts.get("quiet",false)):
-		print("terrace check %s: %d samples, %d rays, %d faces: see_in %d, through %d, holes %d, standoff %d" % [terrace.name,got.samples,got.rays,got.faces,got.see_in,got.through,got.holes,got.standoff])
+		print("terrace check %s: %d samples (%d on seated pieces), %d rays, %d faces: see_in %d, through %d, holes %d, standoff %d" % [terrace.name,got.samples,int(got.get("lifted",0)),got.rays,got.faces,got.see_in,got.through,got.holes,got.standoff])
 		for key in ["see_in","through","holes","standoff"]:
 			if int(got[key]) > 0:
 				print("  %s at %s" % [key,str((got[key+"_at"] as Array).slice(0,8))])
