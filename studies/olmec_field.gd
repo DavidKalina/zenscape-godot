@@ -30,6 +30,7 @@ const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
 const FieldSky = preload("res://studies/olmec_field_sky.gd")
+const IsleFlora = preload("res://studies/aqueduct_isle_flora.gd")
 const Arena = preload("res://scripts/olmec_boss/arena.gd")
 ## The boss fight's phase 1 (docs/design/olmec-boss/spec-olmec-boss.md):
 ## the head alone, absorbing and puffing (scripts/olmec_boss/boss_head.gd).
@@ -262,6 +263,15 @@ func isle_name() -> String:
 
 func isle_top() -> float:
 	return FIELD_TOP
+
+## The grass as the aqueduct isle's carpet (studies/aqueduct_isle_flora.gd;
+## --grass-drifts: the kit's drifts as before), its ground calmed under it.
+func flora_site() -> KitFlora.Site:
+	return IsleFlora.carpeted(KitFlora.Site.new(isle_top()))
+
+func _grow() -> void:
+	super._grow()
+	IsleFlora.calm(flora)
 
 func capture_look() -> Vector3:
 	return Vector3(_olmec_at.x,FIELD_TOP+5.0,_olmec_at.y)
