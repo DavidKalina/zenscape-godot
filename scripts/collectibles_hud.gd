@@ -9,8 +9,11 @@ extends CanvasLayer
 ## leaping a fourth into a shimmering ring, pitched up the line's pentatonic
 ## steps as its tokens are taken. When a whole line is taken the pips swell
 ## and settle together, it holds a little longer (HOLD_LINE) and a sparkling
-## run (`_flourish`) climbs over the blip. Both are made here and played on
-## the world's sound bus. Nothing to press, nothing to navigate: the pad and
+## run (`_flourish`) climbs over the blip. A rune sounds its own, darker
+## voice instead (`_rune_chime`, `_rune_flourish`): a breath drawn in, a
+## soft low knock and a glass bowl struck, ringing a fifth and answered by
+## a faint echo, its line climbing the minor pentatonic. All made here and
+## played on the world's sound bus. Nothing to press, nothing to navigate: the pad and
 ## the keys never reach it.
 ##
 ## Drawn in the HUD's lantern look (scripts/lantern_style.gd): warm-white
@@ -44,6 +47,16 @@ const RUN_NOTES := [1396.9,1568.0,1760.0,2093.0,2793.8]
 const BLIP_GAIN := 0.16
 const FLOURISH_GAIN := 0.12
 const STEPS := [0,2,4,7,9,12]
+## The rune's voice: its bowl's note and the fifth over it, the knock under
+## them (Hz, falling from x to y), the line's run, the drone under the run
+## (Hz), its gains and the minor steps its line climbs.
+const RUNE_NOTES := [659.3,987.8]
+const RUNE_KNOCK := Vector2(150.0,82.0)
+const RUNE_RUN := [659.3,784.0,880.0,987.8,1174.7,1318.5]
+const RUNE_DRONE := 164.8
+const RUNE_GAIN := 0.22
+const RUNE_FLOURISH_GAIN := 0.15
+const RUNE_STEPS := [0,3,5,7,10,12]
 
 var _box: PanelContainer
 var _icon: TextureRect
@@ -61,6 +74,8 @@ var _hold := HOLD
 var _from := 0.0
 var _blip_player: AudioStreamPlayer
 var _flourish_player: AudioStreamPlayer
+var _rune_player: AudioStreamPlayer
+var _rune_flourish_player: AudioStreamPlayer
 var _icons := {}
 var _scale := 1.0
 
@@ -96,6 +111,8 @@ func _ready() -> void:
 	Audio.ensure_buses()
 	_blip_player = _sound_player(_blip(),BLIP_GAIN)
 	_flourish_player = _sound_player(_flourish(),FLOURISH_GAIN)
+	_rune_player = _sound_player(_rune_chime(),RUNE_GAIN)
+	_rune_flourish_player = _sound_player(_rune_flourish(),RUNE_FLOURISH_GAIN)
 	_layout()
 	get_viewport().size_changed.connect(_layout)
 	set_process(false)
@@ -113,11 +130,15 @@ func show_pickup(glyph: String, total: int, got: int, count: int) -> void:
 	_from = _box.modulate.a
 	_t = 0.0
 	_hold = HOLD_LINE if whole else HOLD
-	_blip_player.pitch_scale = pow(2.0,STEPS[clampi(got-1,0,STEPS.size()-1)]/12.0)
-	if _blip_player.is_inside_tree(): _blip_player.play()
+	var rune := glyph == "rune"
+	var blip := _rune_player if rune else _blip_player
+	var flourish := _rune_flourish_player if rune else _flourish_player
+	var steps: Array = RUNE_STEPS if rune else STEPS
+	blip.pitch_scale = pow(2.0,steps[clampi(got-1,0,steps.size()-1)]/12.0)
+	if blip.is_inside_tree(): blip.play()
 	if whole:
 		_swell = 1.0
-		if _flourish_player.is_inside_tree(): _flourish_player.play()
+		if flourish.is_inside_tree(): flourish.play()
 	_layout()
 	_pips.queue_redraw()
 	set_process(true)
@@ -212,6 +233,63 @@ static func _flourish() -> AudioStreamWAV:
 		for k in range(RUN_NOTES.size()):
 			var last := k == RUN_NOTES.size()-1
 			v += _note(RUN_NOTES[k],t-0.07-0.055*k,3.5 if last else 11.0)*(0.8 if last else 0.6)
+		data[i] = v
+	return _wav(data)
+
+## The rune's glass bowl struck at `f` Hz from `s` s into it: a body that
+## beats slowly against itself, a bowl's inharmonic partials dying faster
+## up the series, and a glassy tick at the strike; a 4 ms rise and a fall
+## of `decay`.
+static func _bowl(f: float, s: float, decay: float) -> float:
+	if s < 0.0: return 0.0
+	var env := minf(s/0.004,1.0)*exp(-s*decay)
+	var v := 0.5*(sin(TAU*f*s)+sin(TAU*(f+1.7)*s))
+	v += 0.4*sin(TAU*f*2.71*s)*exp(-s*decay*0.9)
+	v += 0.16*sin(TAU*f*5.15*s)*exp(-s*decay*2.5)
+	v += 0.2*sin(TAU*f*8.9*s)*exp(-s*90.0)
+	return env*v
+
+## The rune taken: a breath drawn in (soft noise swelling and lowpassed),
+## a low knock falling in pitch, the bowl struck with its fifth coming in
+## after, a high shimmer trembling over them, and the bowl's echo, quieter,
+## a quarter second on. A second and a half, most of it ringing out.
+static func _rune_chime() -> AudioStreamWAV:
+	var n := int(1.5*RATE)
+	var data := PackedFloat32Array()
+	data.resize(n)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 90
+	var hush := 0.0
+	var phase := 0.0
+	for i in range(n):
+		var t := float(i)/RATE
+		hush = lerpf(hush,rng.randf_range(-1.0,1.0),0.12)
+		var breath := hush*0.9*sin(PI*clampf(t/0.16,0.0,1.0))
+		var f := lerpf(RUNE_KNOCK.y,RUNE_KNOCK.x,exp(-t*30.0))
+		phase += TAU*f/RATE
+		var knock := 0.7*sin(phase)*minf(t/0.002,1.0)*exp(-t*16.0)
+		var v := breath+knock
+		v += _bowl(RUNE_NOTES[0],t-0.012,3.0)
+		v += 0.45*_bowl(RUNE_NOTES[1],t-0.07,4.0)
+		v += 0.1*sin(TAU*RUNE_NOTES[0]*3.0*t)*(0.6+0.4*sin(TAU*6.5*t))*minf(t/0.08,1.0)*exp(-t*2.6)
+		v += 0.22*_bowl(RUNE_NOTES[0],t-0.27,5.0)
+		data[i] = v
+	return _wav(data)
+
+## A whole line of runes: the bowl run up the minor pentatonic, its top
+## note left to ring, over a low drone that swells in and dies away.
+static func _rune_flourish() -> AudioStreamWAV:
+	var n := int(2.4*RATE)
+	var data := PackedFloat32Array()
+	data.resize(n)
+	for i in range(n):
+		var t := float(i)/RATE
+		var v := 0.0
+		for k in range(RUNE_RUN.size()):
+			var last := k == RUNE_RUN.size()-1
+			v += _bowl(RUNE_RUN[k],t-0.1-0.07*k,1.6 if last else 7.0)*(0.75 if last else 0.5)
+		var drone := sin(TAU*RUNE_DRONE*t)+0.4*sin(TAU*RUNE_DRONE*1.5*t)
+		v += 0.35*drone*minf(t/0.35,1.0)*exp(-t*1.4)
 		data[i] = v
 	return _wav(data)
 

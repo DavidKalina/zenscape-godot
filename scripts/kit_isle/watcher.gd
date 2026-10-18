@@ -234,9 +234,7 @@ func _build_find() -> void:
 	_spin = Node3D.new()
 	find.add_child(_spin)
 	var tint := Color(HudIcons.item("rune").tint)
-	_spin.add_child(RuneToken.diamond(FIND_SIZE,tint))
-	var ring := RuneToken.ring(FIND_SIZE,tint)
-	_spin.add_child(ring)
+	_spin.add_child(RuneToken.plummet(FIND_SIZE,tint))
 	isle.add_child(find)
 	Telescope.spottable(find)
 	var arcs: PackedFloat32Array = serpent.stations()
@@ -289,6 +287,7 @@ func _process(delta: float) -> void:
 	if find != null:
 		_place_find()
 		if _spin != null: _spin.rotation.y += FIND_SPIN*delta
+		if _spin != null and _spin.get_child_count() > 0: RuneToken.swing(_spin.get_child(0),Time.get_ticks_msec()/1000.0)
 		_check_take()
 	_see(delta)
 	var pilot := _pilot()
