@@ -61,7 +61,7 @@ const STONES := [[-14.0,4.6,2.0,1.0],[30.0,3.2,1.7,0.9],[72.0,5.6,2.3,1.1],
 	[-62.0,3.8,1.8,0.9],[-104.0,5.0,2.2,1.0],[-165.0,3.4,1.6,0.8],[128.0,4.2,2.0,1.0]]
 const STONE_R := 35.5
 ## Shown on the field card.
-const CARD := "Olmec field  ·  Tab / R3 lock on  ·  X gust shot  ·  R start again"
+const CARD := "Olmec field  ·  Tab / R3 lock on  ·  X gust shot  ·  Shift / C (LT) in the air: slam  ·  R start again"
 
 var enemies: Node
 ## The breakable arena (scripts/olmec_boss/arena.gd): its `hit_at` is the
@@ -427,12 +427,31 @@ func reset_olmec() -> void:
 	_wire()
 
 func respawn() -> void:
+	_end_hit_stop()
 	tilt_reset()
 	super.respawn()
 	reset_olmec()
 	if arena != null: arena.rebuild()
 
+## A hit-stop: time's pace down to `pace` for `secs` s of wall clock (the
+## head's stomp asks it; wind_parry.gd's pattern).
+var _stop_end := 0
+
+func hit_stop(secs: float, pace := 0.05) -> void:
+	_stop_end = Time.get_ticks_usec()+int(secs*1e6)
+	Engine.time_scale = pace
+
+func _end_hit_stop() -> void:
+	if _stop_end == 0: return
+	_stop_end = 0
+	Engine.time_scale = 1.0
+
+func _exit_tree() -> void:
+	_end_hit_stop()
+	super._exit_tree()
+
 func tick(delta: float) -> void:
+	if _stop_end != 0 and Time.get_ticks_usec() >= _stop_end: _end_hit_stop()
 	# Charge for the demo: full whenever he's on foot.
 	if free_charge and updraft != null and not flying: updraft.charge = 1.0
 	_see_through()
@@ -666,7 +685,7 @@ func fight_line() -> String:
 	if b != null:
 		return "Phase 2  ·  Olmec  %s  %s%s" % [_pips(int(b.hits),int(b.most_hits)),attack_line(),lock]
 	if h != null:
-		return "Phase 1  ·  Head  %s  %s%s" % [_pips(int(h.hits),int(h.knobs.phase_hits)),attack_line(),lock]
+		return "Phase 1  ·  Head  stomps %s  %s%s" % [_pips(int(h.hits),int(h.knobs.phase_hits)),attack_line(),lock]
 	return ""
 
 ## What he is on, in words: phase 1 the head's round and its puff, phase 2
@@ -703,7 +722,7 @@ func attack_line() -> String:
 	if h == null: return ""
 	var puff := str(h.puff)
 	return {"ready":"turning to you","absorb_tell":"about to absorb","absorb":"absorbing the air",
-		"puff_tell":"%s coming" % puff,"puff":"%s!" % puff,"spent":"spent (shoot it now)","stagger":"staggered",
+		"puff_tell":"%s coming" % puff,"puff":"%s!" % puff,"spent":"spent: stomp its crown","stagger":"reeling" if int(h.hits) > 0 else "staggered",
 		"cry":"cries out","done":"silent, lit"}.get(str(h.state),str(h.state))
 
 func _phase_one_done(h: Node3D) -> void:

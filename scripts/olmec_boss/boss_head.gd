@@ -30,14 +30,29 @@ extends "res://scripts/enemies/inhaler_head.gd"
 ##   "puff"         the puff let go (puffs.gd), the swell going out of it.
 ##   "spent"        `spent` s slumped, jaw shut, eyes low: the window.
 ##   "stagger"      `stagger` s reeling from a hit that broke an absorb.
-##   "cry"          after `phase_hits` hits: it rears and cries out
+##   "cry"          after `phase_hits` stomps: it rears and cries out
 ##                  (`phase_done` emitted once, `phase1_done` true), then
 ##                  "done": it sits lit and silent, waiting for its body.
 
 const Puffs = preload("res://scripts/olmec_boss/puffs.gd")
+const Slam = preload("res://scripts/slam.gd")
+const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Glint = preload("res://scripts/kit_isle/kit_cache_glint.gd")
+
+## The stomp (docs/design/olmec-boss/spec-olmec-knockoff.md item 1): its
+## crown is the weak spot. Only the slam (scripts/slam.gd, it joins its
+## GROUP) touching down on top of it counts (`stomp`): hit-stop (the
+## study's `hit_stop`), chips off the crown, the stone squashed down and
+## springing back, a long reel, and him bounced off clear. `phase_hits`
+## stomps end phase 1. Anything else (the gust shot's `hit`, a slam beside
+## it) only glances (`glance`): the crown's glint flares and puffs dust, the
+## kit caches' "not with that" (scripts/kit_isle/kit_caches.gd); a gust shot
+## in an absorb still breaks it. The glint (kit_cache_glint.gd) sits on the
+## crown all fight, faint, catching now and then: the spot.
 
 signal phase_done(head)
 signal puffed(kind: String)
+signal stomped(head, n: int)
 
 const GROUP := &"lock_targets"
 const REACH := Vector2(48.0,58.0)
@@ -45,7 +60,16 @@ const REACH := Vector2(48.0,58.0)
 const PUFF_KINDS := ["volley","ring","whirl","breath"]
 const MINE := ["ready","absorb_tell","absorb","puff_tell","puff","spent","stagger","cry","done"]
 
+## Stomps that counted (the card's pips; `phase_hits` ends phase 1).
 var hits := 0
+## Blows that only glanced off (gust shots, slams beside it).
+var glances := 0
+## The last stomp: {at, strength, n, bounce}.
+var last_stomp := {}
+var crown_glint: Node3D
+var _squash := 0.0
+var _squash_v := 0.0
+var _reel_for := 0.9
 var phase1_done := false
 var puffs: Puffs
 ## The puff it is on ("" none) and the one it picks next ("" by its own
@@ -68,7 +92,14 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# A light pull: never off his feet; the gulp only at its lips.
 		"pull":n.run*0.6,"trip_pull":n.run*5.0,"reach":n.unit*16.0,"pull_d0":n.unit*6.0,
 		"tell":1.3,"absorb":2.6,"ready":2.2,"ready_min":1.1,"spent":1.7,"stagger":0.9,
-		"phase_hits":6,"swell":0.14,
+		"phase_hits":3,"swell":0.14,
+		# The stomp: the reel after it (s), how far off the crown's edge (m)
+		# and how high (m over the crown) he is bounced, how much the stone
+		# squashes, the hit-stop (s, real).
+		"stomp_reel":1.9,"bounce_out":n.unit*1.6,"bounce_up":n.unit*0.7,
+		"stomp_squash":0.3,"hit_stop":0.11,
+		# The crown: his feet at least this share of its height up.
+		"crown_up":0.72,
 		# Pick weights by his distance (m): near the ring, far the volley.
 		"near":n.unit*7.0,"far":n.unit*13.0,
 	},true)
@@ -77,6 +108,7 @@ func default_knobs(n: Dictionary) -> Dictionary:
 func setup(host: Node, at: Vector3, face: Vector2, overrides := {}) -> void:
 	super.setup(host,at,face,overrides)
 	add_to_group(GROUP)
+	add_to_group(Slam.GROUP)
 	_hit_rng.seed = 911
 	state = "ready"
 	_ready_for = float(knobs.ready)
@@ -87,6 +119,15 @@ func _art(root: Node3D) -> void:
 	puffs.name = "Puffs"
 	add_child(puffs)
 	puffs.setup(self,DisplayServer.get_name() != "headless")
+	# The weak spot's tell: one faint point on the crown, pale gold.
+	var g: Sprite3D = (load("res://scripts/kit_isle/kit_cache_glint.gd") as GDScript).new()
+	g.name = Glint.NODE_NAME
+	g.position = Vector3(0.0,height+Glint.PROUD*4.0,length*0.05)
+	g.set_instance_shader_parameter("tint",Color(1.0,0.93,0.7))
+	g.rng.seed = 4711
+	g.wait = 1.0
+	root.add_child(g)
+	crown_glint = g
 
 # --- The lock's asks ---------------------------------------------------------------------
 
@@ -99,35 +140,100 @@ func lock_reach() -> Vector2:
 func tall() -> float:
 	return height*1.05
 
-## Hit by the gust shot: a rock back, a shudder, dust; an absorb broken.
+## Hit by the gust shot: it glances off (`glance`); in the absorb's tell
+## or the absorb it still breaks it: the air it held bursts out harmless
+## and it reels.
 func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
 	if gone or phase1_done: return
-	hits += 1
-	_lean_kick = maxf(_lean_kick,0.09*strength)
-	_shake = maxf(_shake,0.035)
-	_glow = 1.0
-	_flap = 0.5
-	var out := (at-global_position)
-	out.y = 0.0
-	out = out.normalized() if out.length() > 0.01 else face_flat()
-	for i in range(3): air.grind(at+Vector3(_hit_rng.randf_range(-0.6,0.6),_hit_rng.randf_range(-0.6,0.4),_hit_rng.randf_range(-0.6,0.6)))
-	air.thud(rest_point()+out*width*0.45,out,0.7,width*0.6)
-	field.sound(&"head_thud",at)
-	var broke := state in ["absorb_tell","absorb"]
-	print("boss head: hit %d/%d (%.2f) in %s%s" % [hits,int(knobs.phase_hits),strength,state," - absorb broken" if broke else ""])
-	if hits >= int(knobs.phase_hits):
-		_cry()
-		return
-	if broke:
+	glance(at,strength)
+	if state in ["absorb_tell","absorb"]:
 		interrupts += 1
-		# What it held bursts out of it, harmless.
+		print("boss head: gust shot broke the absorb in %s" % state)
 		air.blast(mouth(),face_flat())
 		_swell_want = 0.0
 		draw_share = 0.0
+		_reel_for = float(knobs.stagger)
 		_go("stagger")
 		field.sound(&"head_blast",mouth())
-	elif state in ["ready","spent"]:
-		_go("stagger")
+
+## Not with that: the crown's glint flares, dust puffs off it, a small
+## shudder. Counts nothing.
+func glance(at: Vector3, strength := 1.0) -> void:
+	if gone or phase1_done: return
+	glances += 1
+	_lean_kick = maxf(_lean_kick,0.03*strength)
+	_shake = maxf(_shake,0.012)
+	if crown_glint != null and is_instance_valid(crown_glint):
+		crown_glint.call("flare")
+		Dust.puff(self,crown_glint.global_position,0.7,Vector3.UP)
+	air.grind(at)
+	field.sound(&"head_thud",at)
+	print("boss head: glanced (%.2f) in %s, %d glances" % [strength,state,glances])
+
+## The slam's push (scripts/slam.gd `blast`): on the crown a stomp; near
+## it a glance.
+func slam(at: Vector3, radius: float, strength: float) -> void:
+	if gone or phase1_done or perch != null or swallowed: return
+	if on_crown(at):
+		stomp(at,strength)
+		return
+	var s := Slam.share(at,radius,global_position+Vector3.UP*height*0.5)
+	if s > 0.0: glance(at,s*strength)
+
+## Whether feet at `at` are on top of it (over its footprint, high up).
+func on_crown(at: Vector3) -> bool:
+	var flat := Vector2(at.x-global_position.x,at.z-global_position.z).length()
+	if flat > maxf(width,length)*0.55: return false
+	return at.y >= global_position.y+height*float(knobs.crown_up)
+
+## A slam on its crown: the big hit. Phase 1 counts these.
+func stomp(at: Vector3, strength: float) -> void:
+	hits += 1
+	var n := int(knobs.phase_hits)
+	_squash = float(knobs.stomp_squash)*clampf(0.6+strength*0.6,0.6,1.2)
+	_squash_v = 0.0
+	_lean_kick = maxf(_lean_kick,0.16)
+	_shake = maxf(_shake,0.06)
+	_glow = 1.0
+	_flap = 0.5
+	# Chips off the crown, dust off its brow and down its sides.
+	for i in range(4):
+		var a := TAU*i/4.0+_hit_rng.randf_range(-0.4,0.4)
+		var out := Vector3(cos(a),0.0,sin(a))
+		Dust.rocks(self,at+out*width*0.25,out+Vector3.UP*0.8,4,0.14*height/2.6)
+		Dust.puff(self,global_position+out*width*0.5+Vector3.UP*height*0.7,1.2,out)
+	air.thud(rest_point()+face_flat()*width*0.45,face_flat(),1.0,width*0.9)
+	field.sound(&"head_thud",at)
+	field.sound(&"head_blast",mouth())
+	if crown_glint != null and is_instance_valid(crown_glint): crown_glint.call("flare")
+	var study: Object = field.study if field != null else null
+	if study != null and study.has_method("hit_stop"): study.call("hit_stop",float(knobs.hit_stop))
+	# Whatever it was on, broken off.
+	puffs.stop()
+	puff = ""
+	_swell_want = 0.0
+	draw_share = 0.0
+	var v := _bounce(at)
+	last_stomp = {"at":at,"strength":strength,"n":hits,"bounce":v}
+	print("boss head: STOMP %d/%d (%.2f) in %s, bounced %s" % [hits,n,strength,state,v])
+	stomped.emit(self,hits)
+	if hits >= n:
+		_cry()
+		return
+	_reel_for = float(knobs.stomp_reel)
+	_go("stagger")
+
+## Him thrown off the crown, clear of its edge, the way he stands from its
+## middle (behind it if dead on).
+func _bounce(at: Vector3) -> Vector3:
+	var m: PilotMotor = field.motor
+	if m == null: return Vector3.ZERO
+	var out := Vector3(at.x-global_position.x,0.0,at.z-global_position.z)
+	out = out.normalized() if out.length() > 0.25 else -face_flat()
+	var reach := maxf(width,length)*0.5+float(knobs.bounce_out)
+	var v := m.knock_velocity(Vector2(out.x,out.z),reach,float(knobs.bounce_up),height)
+	m.launch(v,height+float(knobs.bounce_up))
+	return v
 
 func _cry() -> void:
 	phase1_done = true
@@ -136,7 +242,7 @@ func _cry() -> void:
 	_swell_want = 0.0
 	_go("cry")
 	field.sound(&"head_call",mouth())
-	print("boss head: phase 1 done after %d hits" % hits)
+	print("boss head: phase 1 done after %d stomps (%d glances)" % [hits,glances])
 	phase_done.emit(self)
 
 # --- Arena -------------------------------------------------------------------------------
@@ -153,6 +259,13 @@ func hit_arena(point: Vector3, radius: float, strength: float) -> void:
 # --- A frame -----------------------------------------------------------------------------
 
 func think(delta: float) -> void:
+	# The stomp's squash springs back, overshooting a little.
+	if _squash != 0.0 or _squash_v != 0.0:
+		_squash_v += (-240.0*_squash-9.0*_squash_v)*delta
+		_squash += _squash_v*delta
+		if absf(_squash) < 0.002 and absf(_squash_v) < 0.02:
+			_squash = 0.0
+			_squash_v = 0.0
 	if _worn_puff:
 		if perch != null and is_instance_valid(perch) and not swallowed:
 			_worn_frame(delta)
@@ -248,7 +361,7 @@ func think(delta: float) -> void:
 			if _act == "pivot": _acting(delta)
 			if state_t >= float(knobs.spent): _next_round()
 		"stagger":
-			var k := clampf(state_t/float(knobs.stagger),0.0,1.0)
+			var k := clampf(state_t/_reel_for,0.0,1.0)
 			# Reeling: rocked back, a wobble dying away, the jaw slack.
 			want_lean = 0.1*sin(k*TAU*1.25)*(1.0-k)
 			want_open = 0.45*(1.0-k)
@@ -256,7 +369,7 @@ func think(delta: float) -> void:
 			_shake = 0.02*(1.0-k)
 			_swell_want = 0.0
 			if _act == "pivot": _acting(delta)
-			if state_t >= float(knobs.stagger): _next_round()
+			if state_t >= _reel_for: _next_round()
 		"cry":
 			var k := clampf(state_t/2.6,0.0,1.0)
 			# Reared right back, jaw at its widest, howling; then down.
@@ -319,6 +432,9 @@ func pick_puff(chest: Vector3) -> String:
 ## Swollen with what it drew in: its stone blown out a little round.
 func _pose_skin() -> void:
 	super._pose_skin()
+	if _squash != 0.0:
+		var q := _squash
+		skin.transform.basis = skin.transform.basis*Basis.from_scale(Vector3(1.0+q*0.45,1.0-q,1.0+q*0.45))
 	if swell <= 0.001: return
 	var s := swell*float(knobs.swell)
 	skin.transform.basis = skin.transform.basis*Basis.from_scale(Vector3(1.0+s,1.0+s*0.55,1.0+s*0.8))
