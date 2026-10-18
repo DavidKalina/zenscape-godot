@@ -92,7 +92,10 @@ const SLOPE_LONG := 20.0
 const SLOPE_WIDE := 13.0
 ## The fork's rings: the standing ring A's middle RING_A_OUT past the lip
 ## and RING_A_UP over it (his chest a frame off the lip), its face tipped
-## RING_A_TIP back; the flat ring B over the south lane RING_B_OUT on and
+## RING_A_TIP back (it throws along its axis, AirRing `throw_way`: east
+## and a little up, the LIFT floor's 3 m rise; off the 12.8 m/s slide that
+## is 17.8 m/s on and 11.4 up, two Qs and the sail land him on the far
+## crag, one Q too); the flat ring B over the south lane RING_B_OUT on and
 ## RING_B_UP up (where a slide jump and an updraft off the lip at speed
 ## carry his chest up through it).
 const LANE := 3.2

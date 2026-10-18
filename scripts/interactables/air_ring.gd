@@ -46,6 +46,17 @@ const CHEST := 0.9
 ## every step two updrafts); s before it is taken again.
 const POP := 6.0
 const COOL := 2.5
+## The throw (`throw_way`, the host's `_take_ring`): the pop goes along its
+## axis, the half away from the ground, so a flat ring throws him straight
+## up and one tipped 45° throws him 45° out. An axis within LEVEL (its y,
+## about 5°) of level counts as level: it throws him on the way he leaves
+## through it. However upright, a take lifts him at least LIFT of POP (so
+## an upright ring still carries him: thrown on at the pop's pace, 3 m up).
+const LEVEL := 0.09
+const LIFT := 0.5
+## The world view's throw arrow (`show_throw`): m past the stones, its tint.
+const ARROW_PAST := 1.4
+const ARROW_TINT := Color(0.35,0.95,1.0,0.9)
 ## The trampoline: m a bounce throws him (the launch's hang counted); m
 ## his soles reach past the stones' edge; the flex: m it dips along its
 ## axis, s it rings out over, its ringing (Hz), the stones' squash.
@@ -205,6 +216,71 @@ func layout_pose() -> Transform3D:
 func layout_place(t: Transform3D) -> void:
 	_home = t
 	transform = t
+
+## The way a take throws him (a unit vector, world): its axis, the half
+## away from the ground, or (level, see LEVEL) the half `vel` goes along.
+func throw_way(vel := Vector3.ZERO) -> Vector3:
+	var n := global_transform.basis.y.normalized()
+	if is_level(): return n if vel.dot(n) >= 0.0 else -n
+	return n if n.y > 0.0 else -n
+
+## Whether its axis lies level (LEVEL): it throws either way.
+func is_level() -> bool:
+	return absf(global_transform.basis.y.normalized().y) < LEVEL
+
+var _arrows: Array[MeshInstance3D] = []
+
+## The world view's throw arrow on (`on`) or off: along its axis from its
+## middle to ARROW_PAST past the stones, on the side it throws him (both
+## sides when level). Called each world view frame, so it follows a tip.
+func show_throw(on: bool) -> void:
+	if not on:
+		for a: MeshInstance3D in _arrows: a.visible = false
+		return
+	if _arrows.is_empty():
+		for i in range(2): _arrows.append(_arrow_mesh(i))
+	var up := global_transform.basis.y.y >= 0.0
+	var level := is_level()
+	var length := radius+ARROW_PAST
+	for i in range(2):
+		var a := _arrows[i]
+		a.visible = level or (i == 0) == up
+		a.transform = Transform3D(Basis.IDENTITY if i == 0 else Basis(Vector3.RIGHT,PI),Vector3.ZERO)
+		a.scale = Vector3(1.0,length,1.0)
+
+## One arrow along +y, 1 m long (scaled to its length): a shaft and a head.
+func _arrow_mesh(i: int) -> MeshInstance3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = ARROW_TINT
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.no_depth_test = true
+	mat.render_priority = 1
+	var m := ImmediateMesh.new()
+	m.surface_begin(Mesh.PRIMITIVE_TRIANGLES,mat)
+	var sides := 8
+	var shaft := 0.06
+	var head := 0.22
+	var neck := 0.8
+	for k in range(sides):
+		var a0 := TAU*float(k)/float(sides)
+		var a1 := TAU*float(k+1)/float(sides)
+		var c0 := Vector3(cos(a0),0.0,sin(a0))
+		var c1 := Vector3(cos(a1),0.0,sin(a1))
+		# The shaft (its length runs 0..neck; the mesh is scaled in y, so
+		# its girth is kept by drawing it thin in x/z only).
+		for v: Vector3 in [c0*shaft,c1*shaft,c1*shaft+Vector3.UP*neck,c0*shaft,c1*shaft+Vector3.UP*neck,c0*shaft+Vector3.UP*neck]:
+			m.surface_add_vertex(v)
+		# The head: a cone from neck to the tip.
+		for v: Vector3 in [c0*head+Vector3.UP*neck,c1*head+Vector3.UP*neck,Vector3.UP]:
+			m.surface_add_vertex(v)
+	m.surface_end()
+	var view := MeshInstance3D.new()
+	view.name = "ThrowArrow%d" % i
+	view.mesh = m
+	view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(view)
+	return view
 
 ## Whether it may be taken now.
 func ready_to_take() -> bool:

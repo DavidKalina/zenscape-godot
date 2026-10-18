@@ -48,7 +48,7 @@ const STRIP_SLACK := 2.0
 const HINT := """LAYOUT EDIT  (F4: back to play, he drops where you look)
 RMB hold + move  look      W A S D / Q E  fly / down, up    Shift  fast
 LMB  select, drag to move (at its height; an island too)     wheel / PgUp PgDn  height (Shift: 1 m)
-Z / X  turn 15 deg (Shift 5)    T / G  tip 15 deg    [ / ]  size (rings, slabs; Shift finer)    C  duplicate    Del / Backspace  delete
+Z / X  turn 15 deg (Shift 5)    T / G  tip 15 deg (a ring throws along its arrow)    [ / ]  size (rings, slabs; Shift finer)    C  duplicate    Del / Backspace  delete
 1  add air ring    2  add bob slab    3  add ring-stair slab (7 pumps)
 click an island's ground: the island    U  from a piece to the island it stands on    O  open the island alone (motif editor)
 Ctrl/Cmd+S  save"""
@@ -183,6 +183,7 @@ func leave() -> void:
 	select("")
 	editing = false
 	set_process(false)
+	_show_throws(false)
 	if _ui != null: _ui.visible = false
 	var cam: Camera3D = study.camera
 	var at := _stood
@@ -216,6 +217,14 @@ func _process(delta: float) -> void:
 	# Every frame: the study's foot lock or look may have set the camera.
 	_apply_cam()
 	if _strips_stale and not _dragging: check_strips()
+	_show_throws(true)
+
+## Each ring's throw arrow (AirRing `show_throw`) on in the world view.
+func _show_throws(on: bool) -> void:
+	var rings: Variant = host.get("rings") if host != null else null
+	if not rings is Array: return
+	for r: Variant in rings:
+		if is_instance_valid(r) and (r as Object).has_method("show_throw"): r.show_throw(on)
 
 func _apply_cam() -> void:
 	(study.camera as Camera3D).global_transform = Transform3D(Basis.from_euler(Vector3(_cam_pitch,_cam_yaw,0.0)),_cam_pos)
@@ -693,7 +702,7 @@ static func _drawn_box(node: Node3D) -> AABB:
 	var first := true
 	for c: Node in node.find_children("*","VisualInstance3D",true,false):
 		var v := c as VisualInstance3D
-		if v.name == "LayoutSelection" or not v.is_visible_in_tree(): continue
+		if v.name == "LayoutSelection" or v.name.begins_with("ThrowArrow") or not v.is_visible_in_tree(): continue
 		var b := (inv*v.global_transform)*v.get_aabb()
 		if b.size == Vector3.ZERO: continue
 		box = b if first else box.merge(b)
