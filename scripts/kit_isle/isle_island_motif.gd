@@ -34,6 +34,23 @@ func _init(name_: String = "island/near") -> void:
 static func is_island(id_name: String) -> bool:
 	return id_name in NAMES
 
+## Where the island view's recipes (`isle_<name>.json`) are read and saved:
+## the folder of the `--layout=` file when one is given (a driver's /tmp
+## layout, so the island view never writes the repo), else motifs/authored
+## (docs/design/world-editor/spec-world-handles.md, "The user's saves").
+static func recipe_dir() -> String:
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with("--layout="): return a.substr(9).get_base_dir()
+	return preload("res://scripts/kit_isle/motif_authored.gd").DIR
+
+## The recipe file of slug `slug_name` ("isle_near").
+static func recipe_path(slug_name: String) -> String:
+	return recipe_dir().path_join(slug_name+".json")
+
+## True when `slug_name` is an island view's recipe ("isle_<island>").
+static func is_recipe(slug_name: String) -> bool:
+	return slug_name.begins_with("isle_") and is_island("island/"+slug_name.substr(5))
+
 ## The scene's script (its seeds), loaded as the base build loads it.
 static func _isle() -> GDScript:
 	return load("res://studies/aqueduct_isle.gd")

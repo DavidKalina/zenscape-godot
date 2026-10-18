@@ -49,9 +49,10 @@ var recipes := {}
 func _init() -> void:
 	name = "IsleRecipes"
 
-## The recipe file of island `island` ("island/near").
+## The recipe file of island `island` ("island/near"): in motifs/authored,
+## or beside a `--layout=` file (IsleIsland.recipe_dir).
 static func path_of(island: String) -> String:
-	return MotifAuthored.path_of("isle_"+island.get_slice("/",1))
+	return IsleIsland.recipe_path("isle_"+island.get_slice("/",1))
 
 ## Laid on `scene` (the isle, its islands registered) and hooked into its
 ## frame. Null when no island has a recipe (nothing changes).

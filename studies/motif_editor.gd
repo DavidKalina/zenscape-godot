@@ -267,13 +267,13 @@ func _ready() -> void:
 			slug = "isle_"+base_id.get_slice("/",1)
 		elif a.begins_with("--load-base="): base_id = a.get_slice("=",1)
 		elif a.begins_with("--look=") and SceneLookPresets.PRESETS.has(a.get_slice("=",1)): edit_look = a.get_slice("=",1)
-	if slug != "" and FileAccess.file_exists(MotifAuthored.path_of(slug)): data = MotifAuthored.read(MotifAuthored.path_of(slug))
+	if slug != "" and FileAccess.file_exists(file_of(slug)): data = MotifAuthored.read(file_of(slug))
 	elif base_id != "":
 		data = EditorBase.fresh(base_id)
 		if data.is_empty(): push_warning("motif editor: no pool motif %s to stand as a base" % base_id)
 	based = EditorBase.new(self)
 	if data.is_empty():
-		if slug != "": push_warning("motif editor: no %s; a fresh hill" % MotifAuthored.path_of(slug))
+		if slug != "": push_warning("motif editor: no %s; a fresh hill" % file_of(slug))
 		data = MotifAuthored.blank(slug if slug != "" else "untitled")
 	motif = MotifAuthored.from_data(data)
 	_no_lode = true
@@ -1571,6 +1571,13 @@ func _set_markers_visible(on: bool) -> void:
 
 # --- Save and load --------------------------------------------------------------------------
 
+## Slug `slug`'s file. An island view's recipe (isle_<island>) follows the
+## `--layout=` file's folder when one is given, so a driver's round trip
+## never writes motifs/authored (IsleIsland.recipe_dir); the rest are
+## motifs/authored's.
+func file_of(slug: String) -> String:
+	return IsleIsland.recipe_path(slug) if IsleIsland.is_recipe(slug) else MotifAuthored.path_of(slug)
+
 ## The scene the island view was opened from (`--world-scene=`), "" if none.
 func world_scene() -> String:
 	for a: String in _args:
@@ -1605,7 +1612,7 @@ func save() -> String:
 	if panel != null: panel.slug_edit.text = slug
 	data.slug = slug
 	if str(data.get("name","")) == "" or str(data.name) == "Untitled": data.name = slug.capitalize()
-	var path := MotifAuthored.path_of(slug)
+	var path := file_of(slug)
 	var err := MotifAuthored.write(path,data)
 	if err == OK: ClaySound.cue(&"ui_page")
 	_status_line = ("Saved %s" % path) if err == OK else ("Save failed (%s)" % error_string(err))
@@ -1614,7 +1621,7 @@ func save() -> String:
 	return path
 
 func load_motif(slug: String) -> bool:
-	var path := MotifAuthored.path_of(slug)
+	var path := file_of(slug)
 	if not FileAccess.file_exists(path): return false
 	var d := MotifAuthored.read(path)
 	if d.is_empty(): return false
