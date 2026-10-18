@@ -55,23 +55,62 @@ extends "res://scripts/lock_on/olmec_target.gd"
 ## forward ("back_hit", BACK_STAGGER s) and a shove BACK_SHOVE m the way he
 ## faces (stopped at the field's edge). From the front or side, and every
 ## gust shot, it only glances (`glance`): the glint on his back flares,
-## dust puffs, a small rock. BACK_HITS bring him down (a stand-in till the
-## edge's knock-offs). The ground pound plays no part. The tilt is out of
+## dust puffs, a small rock. With the rim near ahead a back hit sends him
+## to it, teetering; another takes him over (the edge, below: EDGE_NEAR);
+## away from it a back hit only cracks him. KNOCK_OFFS knock-offs end him.
+## The ground pound plays no part. The tilt is out of
 ## his mix unless the field asks for it (its `tilt_mix`, `--tilt`).
 
 const Slam = preload("res://scripts/slam.gd")
 const Glint = preload("res://scripts/kit_isle/kit_cache_glint.gd")
 ## The back hit: how far behind him the wanderer must be (cos off dead
 ## behind: 0.45 ~ 63 deg either side), the shove (m, the way he faces),
-## the lurch (s), the hit-stop (s, real), hits to bring him down (a
-## stand-in till the edge's knock-offs), how near his middle a side slam
+## the lurch (s), the hit-stop (s, real), how near his middle a side slam
 ## must land to be his (m past his half width).
 const BACK_ARC := 0.45
 const BACK_SHOVE := 3.5
 const BACK_STAGGER := 1.5
 const BACK_HIT_STOP := 0.13
-const BACK_HITS := 3
 const BACK_NEAR := 1.6
+## The edge (spec "The edge"): a back hit with the rim within EDGE_NEAR m
+## past the shove (m from his front) sends him to it, teetering
+## ("teeter", TEETER_HOLD s, windmilling over it). Another back slam in it
+## takes him over; so does a back hit with his front already within
+## TEETER_TIP m of the drop (hit right at the rim). Else he steps back off it
+## (TEETER_BACK m) and turns on you. Over ("knock_off"): tipping forward
+## and down (KNOCK_OUT m/s out, KNOCK_UP up), out of sight
+## ("knocked_gone", KNOCK_GONE s), then a leap back up over the rim
+## ("leap_back": from KNOCK_BELOW m under it, LEAP_OVER m over it at the
+## top, landing LEAP_IN m in) and a heavy landing (KNOCK_SHOCK): jump it.
+## Each knock-off he comes back angrier (ANGER per knock-off on his chase,
+## swat and charge rests). KNOCK_OFFS of them end him (a crumble on the
+## landing, a stand-in for the finish's rune).
+const EDGE_NEAR := 2.5
+const TEETER_HOLD := 2.4
+const TEETER_TIP := 1.0
+const TEETER_BACK := 1.4
+const TEETER_LEAN := 0.16
+const KNOCK_OUT := 2.6
+const KNOCK_UP := 1.5
+const KNOCK_GONE := 1.8
+const KNOCK_BELOW := 9.0
+const LEAP_OVER := 5.0
+const LEAP_IN := 6.5
+const KNOCK_SHOCK := 1.7
+const KNOCK_OFFS := 3
+const ANGER := 0.1
+## States he is off the field in (nothing hits him there; he moves himself).
+const OVER := ["knock_off","knocked_gone","leap_back"]
+var knock_offs := 0
+var cracks := 0
+var teeters := 0
+var last_edge := {}
+var _to_edge := false
+var _teeter_over := false
+var _rim_at := Vector3.ZERO
+var _rim_out := Vector3.ZERO
+var _leap_v := Vector3.ZERO
+var _up_to := Vector3.ZERO
 ## Phase 2's knobs over the body's own (scaled by the field's numbers in
 ## `phase_two`: speeds by the walker's run).
 const PHASE2 := {"chase_turn":2.8,"accel":5.5,"swat_windup":0.42,"swat_after":0.5,
@@ -225,7 +264,11 @@ func phase_two() -> void:
 	hits = 0
 	back_hits = 0
 	glances = 0
-	most_hits = BACK_HITS
+	knock_offs = 0
+	cracks = 0
+	teeters = 0
+	# Knock-offs end him, not hits.
+	most_hits = 1000000
 	add_to_group(Slam.GROUP)
 	_make_back_glint()
 	knobs.merge(PHASE2,true)
@@ -283,7 +326,7 @@ func _attack(m: PilotMotor, flat: float, dy: float) -> bool:
 			bounds += 1
 			move = "bound"
 			_bound_ready = _clock+BOUND_REST
-			_leap_to = at
+			_up_to = at
 			leap_kind = "pounce"
 			_go("windup")
 			field.sound(&"body_windup",position)
@@ -333,7 +376,7 @@ func lock_anywhere() -> bool:
 ## only glances (the side slam's own `hit`, after its `slam`, is passed over).
 func hit(at: Vector3, way: Vector3, strength := 1.0) -> void:
 	# Off the rim and out of sight: nothing to hit.
-	if state in ["tilt_off","tilt_gone"]: return
+	if state in ["tilt_off","tilt_gone"] or state in OVER: return
 	if phase2 and _slam_frame == Engine.get_physics_frames(): return
 	if phase2 and not crumbled and state == "tilt_brace":
 		brace_hits += 1
@@ -380,12 +423,15 @@ func _place_back_glint() -> void:
 func step(delta: float) -> void:
 	super.step(delta)
 	if phase2 and not crumbled: _place_back_glint()
+	if state == "teeter" and not crumbled:
+		var axis := (global_transform.basis.inverse()*Vector3.UP.cross(_forward3())).normalized()
+		skin.transform = Transform3D(Basis(axis,_teeter_lean()),Vector3.ZERO)
 
 ## The slam's group (scripts/slam.gd, side_slam.gd): the side slam (him in
 ## its lunge) from behind is a back hit, else it glances; the ground pound
 ## plays no part in phase 2.
 func slam(at: Vector3, radius: float, strength: float) -> void:
-	if not phase2 or crumbled or gone or state.begins_with("tilt"): return
+	if not phase2 or crumbled or gone or state.begins_with("tilt") or state in OVER: return
 	var m: PilotMotor = field.motor
 	if m == null or str(m.move) != "lunge": return
 	var flat := Vector2(at.x-position.x,at.z-position.z).length()
@@ -414,10 +460,27 @@ func glance(at: Vector3, strength := 1.0, way := Vector3.ZERO) -> void:
 	print("olmec boss: glanced (%.2f) in %s, %d glances" % [strength,state,glances])
 
 ## The side slam in his back: the big read, a lurch forward and a shove
-## the way he faces. BACK_HITS of these bring him down.
+## the way he faces. Teetering at the rim, it takes him over; with the rim
+## near ahead, it sends him to it (the teeter); else it only cracks him.
 func back_hit(at: Vector3, behind := 1.0, strength := 1.0) -> void:
 	back_hits += 1
 	var fwd := _forward3()
+	if state == "teeter":
+		print("olmec boss: BACK HIT %d in the teeter: over he goes" % back_hits)
+		var st0: Node = field.study if field != null else null
+		if st0 != null and st0.has_method("hit_stop"): st0.call("hit_stop",BACK_HIT_STOP)
+		if back_glint != null and is_instance_valid(back_glint): back_glint.call("flare")
+		for i in range(3):
+			var o := (-fwd+_right3()*float(i-1)*0.7+Vector3.UP*0.9).normalized()
+			Dust.rocks(field,at+o*0.3,o,4,0.16*hh)
+		field.sound(&"body_rumble",at)
+		last_edge["how"] = "slammed"
+		knock_off()
+		return
+	var rim := _rim_ahead(fwd,BACK_SHOVE+length*0.5+EDGE_NEAR+1.0)
+	_to_edge = rim-length*0.5 <= BACK_SHOVE+EDGE_NEAR
+	_teeter_over = rim-length*0.5 <= TEETER_TIP
+	if not _to_edge: cracks += 1
 	last_back = {"at":at,"behind":behind,"n":back_hits,"from":position}
 	_back_from = position
 	var st: Node = field.study if field != null else null
@@ -432,7 +495,7 @@ func back_hit(at: Vector3, behind := 1.0, strength := 1.0) -> void:
 	# The rock, the push (the target's hit: counts it, may bring him down),
 	# then the rest of the shove.
 	super.hit(at,fwd,strength)
-	print("olmec boss: BACK HIT %d/%d (behind %.2f) at (%.1f, %.1f)" % [back_hits,most_hits,behind,position.x,position.z])
+	print("olmec boss: BACK HIT %d (behind %.2f) at (%.1f, %.1f), his front %.1f m from the drop: %s" % [back_hits,behind,position.x,position.z,rim-length*0.5,"to the edge" if _to_edge else "cracked"])
 	if crumbled: return
 	_push += fwd*maxf(BACK_SHOVE-PUSH*strength,0.0)/PUSH_EASE
 	quake = maxf(quake,0.9)
@@ -449,14 +512,156 @@ func _back_lurch(delta: float) -> void:
 	if _push.length() > 0.01:
 		var ahead := position+_push.normalized()*(length*0.5+0.4)
 		if _floor(ahead+Vector3.UP*1.0,float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF:
+			var left := _push.length()*PUSH_EASE
 			_push = Vector3.ZERO
-			print("olmec boss: shove stopped at the edge")
+			print("olmec boss: shove stopped at the edge, %.1f m of it left" % left)
+			if _to_edge:
+				_teeter(_teeter_over)
+				return
 	if state_t < 0.5 and fmod(state_t,0.1) < delta: _puff(position+_forward3()*(length*0.3),hh*0.6)
 	if state_t >= BACK_STAGGER:
 		last_back["shove"] = Vector2(position.x-_back_from.x,position.z-_back_from.z).length()
 		print("olmec boss: shoved %.1f m" % float(last_back.shove))
 		move = ""
+		# Sent for the edge but stopped short of it: still at the rim, he teeters.
+		if _to_edge and _rim_ahead(_forward3(),length*0.5+EDGE_NEAR) <= length*0.5+EDGE_NEAR*0.6:
+			_teeter(_teeter_over)
+			return
 		_go(_resume())
+
+# --- The edge -------------------------------------------------------------------
+
+## How far (m, from his middle) the field runs on the way `way` (flat)
+## before the floor gives out; `most` if it doesn't within it.
+func _rim_ahead(way: Vector3, most: float) -> float:
+	var w := Vector3(way.x,0.0,way.z).normalized()
+	var d := 0.5
+	while d <= most:
+		if _floor(position+w*d+Vector3.UP*1.0,float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF: return d
+		d += 0.4
+	return most
+
+## At the rim, over it from the knees up, windmilling: a held window.
+## `over`: he won't get it back (he goes over at its end).
+func _teeter(over: bool) -> void:
+	teeters += 1
+	_teeter_over = over
+	last_edge = {"n":teeters,"over":over,"at":position,"how":""}
+	move = ""
+	_go("teeter")
+	field.sound(&"body_windup",position)
+	quake = maxf(quake,0.4)
+	chase_beat.emit("teeter")
+	print("olmec boss: teetering at the rim (%.1f, %.1f)%s" % [position.x,position.z,", he won't get it back" if over else ""])
+
+func _teeter_think(delta: float) -> void:
+	vel.x = 0.0
+	vel.z = 0.0
+	if fmod(state_t,0.35) < delta: Dust.rocks(field,position+_forward3()*(length*0.5+0.2),_forward3()+Vector3.DOWN,2,0.08*hh)
+	if state_t < TEETER_HOLD: return
+	if _teeter_over:
+		last_edge["how"] = "lost it"
+		knock_off()
+		return
+	# Got it back: a step back off the rim, then on you.
+	last_edge["how"] = "recovered"
+	skin.transform = Transform3D.IDENTITY
+	_push += -_forward3()*TEETER_BACK/PUSH_EASE
+	print("olmec boss: got his balance back")
+	_go(_resume())
+
+## The lean the teeter's windmill rides (rad, toward the drop), on his skin.
+func _teeter_lean() -> float:
+	var k := clampf(state_t/0.3,0.0,1.0)
+	return k*(TEETER_LEAN+0.07*sin(state_t*7.5)+0.04*sin(state_t*13.0+1.0))
+
+## Over the rim: tipping forward and down, out of sight.
+func knock_off() -> void:
+	knock_offs += 1
+	_rim_at = position
+	_rim_out = _forward3()
+	_off_v = _rim_out*KNOCK_OUT+Vector3.UP*KNOCK_UP
+	_push = Vector3.ZERO
+	grounded = false
+	move = ""
+	_end_slam()
+	_go("knock_off")
+	field.sound(&"body_windup",position)
+	quake = maxf(quake,0.7)
+	chase_beat.emit("knocked off")
+	print("olmec boss: KNOCKED OFF %d/%d at (%.1f, %.1f)" % [knock_offs,KNOCK_OFFS,position.x,position.z])
+
+func _knock_fall(delta: float) -> void:
+	vel = Vector3.ZERO
+	_off_v.y -= OFF_GRAVITY*delta
+	position += _off_v*delta
+	# Tipping on over, face first.
+	var tip := minf(state_t*1.6,1.3)
+	skin.transform = Transform3D(Basis((global_transform.basis.inverse()*Vector3.UP.cross(_rim_out)).normalized(),tip),Vector3.ZERO)
+	if _rim_at.y-position.y >= OFF_DEEP:
+		skin.transform = Transform3D.IDENTITY
+		_shown(false)
+		_go("knocked_gone")
+
+## Under the rim a beat, then up: from below it, out from where he went
+## off, a leap over it onto the field.
+func _knocked_gone(_delta: float) -> void:
+	vel = Vector3.ZERO
+	if state_t < KNOCK_GONE: return
+	var from := _rim_at+_rim_out*2.0+Vector3.DOWN*KNOCK_BELOW
+	var to := _rim_at-_rim_out*LEAP_IN
+	var g := _floor(to+Vector3.UP*3.0,6.0,8.0)
+	to.y = g if g != -INF else _rim_at.y
+	var top := maxf(_rim_at.y,to.y)+LEAP_OVER
+	var vy := sqrt(2.0*OFF_GRAVITY*(top-from.y))
+	var t := vy/OFF_GRAVITY+sqrt(2.0*(top-to.y)/OFF_GRAVITY)
+	_leap_v = Vector3((to.x-from.x)/t,vy,(to.z-from.z)/t)
+	_up_to = to
+	position = from
+	facing = PilotMotor.facing_of(Vector2(-_rim_out.x,-_rim_out.z))
+	rotation.y = facing
+	_shown(true)
+	_go("leap_back")
+	field.sound(&"body_windup",_rim_at)
+	print("olmec boss: leaps back up for (%.1f, %.1f)" % [to.x,to.z])
+
+func _leap_back(delta: float) -> void:
+	vel = Vector3.ZERO
+	_leap_v.y -= OFF_GRAVITY*delta
+	position += _leap_v*delta
+	if _leap_v.y < 0.0 and position.y <= _up_to.y:
+		position = _up_to
+		_heavy_land()
+
+## Down heavy, back on the field: a big shockwave to jump, angrier.
+func _heavy_land() -> void:
+	grounded = true
+	vel = Vector3.ZERO
+	_land_clip = "drop_land"
+	_go("land")
+	_puff(position,hh*2.6)
+	Dust.plume(field,position,hh*4.0)
+	field.sound(&"body_land",position)
+	field.sound(&"body_rumble",position)
+	_shock(position,KNOCK_SHOCK)
+	_hit_arena(position,LAND_HIT)
+	weighed.emit(position,KNOCK_SHOCK,"land")
+	quake = 1.0
+	last_edge["back"] = position
+	print("olmec boss: back up, landed heavy at (%.1f, %.1f), knock-offs %d" % [position.x,position.z,knock_offs])
+	if knock_offs >= KNOCK_OFFS:
+		# The finish's stand-in: he crumbles at the top of the rim.
+		crumble()
+		return
+	_angrier()
+
+## Each knock-off: hunts harder, swats sooner, charges again sooner.
+func _angrier() -> void:
+	var k := 1.0+ANGER
+	_hunt_pace *= k
+	knobs.chase_speed = _hunt_pace
+	knobs.swat_windup = float(knobs.swat_windup)/k
+	_charge_ready = minf(_charge_ready,_clock+CHARGE_FIRST)
 
 # --- The charge ---------------------------------------------------------------
 
@@ -522,7 +727,7 @@ func _tilt_run(delta: float) -> void:
 	vel.z = f.y*pace
 	if d <= TILT_LEAP and state_t > 0.3 and _arc_clear(_tilt_at,"jump"):
 		_tilt_step = "leap"
-		_leap_to = _tilt_at
+		_up_to = _tilt_at
 		leap_kind = "jump"
 		_go("windup")
 		field.sound(&"body_windup",position)
@@ -645,7 +850,7 @@ func _shown(on: bool) -> void:
 	if h != null: h.visible = on
 
 func _move(delta: float) -> void:
-	if state in ["tilt_off","tilt_gone"]:
+	if state in ["tilt_off","tilt_gone"] or state in OVER:
 		rotation.y = facing
 		return
 	super._move(delta)
@@ -669,6 +874,10 @@ func _think_more(delta: float) -> void:
 		"charge_skid": _charge_skid(delta)
 		"charge_stagger": _charge_stagger(delta)
 		"back_hit": _back_lurch(delta)
+		"teeter": _teeter_think(delta)
+		"knock_off": _knock_fall(delta)
+		"knocked_gone": _knocked_gone(delta)
+		"leap_back": _leap_back(delta)
 		"tilt_run": _tilt_run(delta)
 		"tilt_slam": _tilt_slam(delta)
 		"tilt_brace": _tilt_brace(delta)
@@ -685,6 +894,12 @@ func _pose_more(_idle: float) -> bool:
 		# Hit from behind: the overrun's stumble, a hand down (a stand-in
 		# for the art lane's back-hit stagger).
 		"back_hit": look.want("charge_skid",minf(0.25+state_t*float(look.lengths.charge_skid)/BACK_STAGGER,float(look.lengths.charge_skid)))
+		# Stand-ins till the art lane's clips: the teeter on the charge's
+		# stopped-short stagger (its jammed, arms-up middle) under the
+		# windmill lean; over and back up in the drop's and jump's air.
+		"teeter": look.want("charge_stagger",float(look.lengths.charge_stagger)*(0.3+0.08*sin(state_t*7.5)))
+		"knock_off","knocked_gone": look.want("drop_air",minf(state_t+0.3,float(look.lengths.drop_air)*0.9))
+		"leap_back": look.want("jump_air",minf(state_t*0.8,float(look.lengths.jump_air)*0.9))
 		"tilt_run": look.want("shoulder_run",look.loop_time("shoulder_run",_phase,2.0))
 		"tilt_off","tilt_gone":
 			# Rocked back off the rim (the charge's stopped-short stagger),

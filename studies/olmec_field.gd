@@ -688,7 +688,7 @@ func fight_line() -> String:
 	if b != null and arrival in ["climbing","crossing"]:
 		return "Phase 1 done  ·  his body %s" % ("climbs the rim" if arrival == "climbing" else "comes for his head")
 	if b != null:
-		return "Phase 2  ·  Olmec  back hits %s  %s%s" % [_pips(int(b.hits),int(b.most_hits)),attack_line(),lock]
+		return "Phase 2  ·  Olmec  knock-offs %s  %s%s" % [_pips(int(b.get("knock_offs")),int(BossBody.KNOCK_OFFS)),attack_line(),lock]
 	if h != null:
 		return "Phase 1  ·  Head  stomps %s  %s%s" % [_pips(int(h.hits),int(h.knobs.phase_hits)),attack_line(),lock]
 	return ""
@@ -704,7 +704,9 @@ func attack_line() -> String:
 		var mv := str(b.get("move"))
 		if mv in ["","<null>"]:
 			return {"chase":"hunting you","seek":"looking for you","alert":"looking for you","listen":"listening",
-				"triumph":"triumphant","stagger":"rocked back","back_hit":"hit in the back!","spent":"winded","home":"striding in"}.get(str(b.state),str(b.state))
+				"triumph":"triumphant","stagger":"rocked back","back_hit":"hit in the back!" if bool(b.get("_to_edge")) else "cracked, turning on you",
+				"teeter":"teetering!  ·  slam his back again" if not bool(b.get("_teeter_over")) else "teetering, losing it!",
+				"knock_off":"over the edge!","knocked_gone":"gone over...","leap_back":"leaps back up!","spent":"winded","home":"striding in"}.get(str(b.state),str(b.state))
 		if mv.begins_with("puff "):
 			# "puff volley tell": his head, up high.
 			var p := mv.split(" ")
@@ -719,7 +721,7 @@ func attack_line() -> String:
 		if mv == "back": return "climbs back up the rim"
 		if mv == "charge":
 			return {"charge_tell":"charge coming","charge":"charge!","charge_skid":"overran  ·  get behind him",
-				"charge_stagger":"stopped short"}.get(st,"charge")
+				"charge_stagger":"stopped short  ·  get behind him" if str(b.get("charge_stop_why")) == "edge" else "stopped short"}.get(st,"charge")
 		# The windup is the tell (a gust shot in it stops a slam or a swat).
 		if st == "windup" or (mv == "slam" and not bool(b.get("_slam_hit"))) or (mv == "swat" and float(b.state_t) < float(b.knobs.swat_windup)):
 			return mv+" coming"
