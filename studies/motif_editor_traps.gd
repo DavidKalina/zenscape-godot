@@ -167,7 +167,9 @@ func begin_ghost(key: String, at: Vector2) -> void:
 ## ground under `node`'s footprint turned `turn` ("on": "ledge"). Alt held
 ## skips the lip. {position, on, turn (lip only)} or {}.
 func spot(at: Vector2, node: Node3D = null, turn := 0.0) -> Dictionary:
-	if not Input.is_key_pressed(KEY_ALT):
+	# A mechanic (motif_mechanics.gd) is never snapped to a lip.
+	var mechanic := node != null and node.has_method("lift_point")
+	if not Input.is_key_pressed(KEY_ALT) and not mechanic:
 		var lip := lip_spot(at)
 		if not lip.is_empty(): return lip
 	var top: Dictionary = editor._top_hit(at)
@@ -574,6 +576,7 @@ func after(delta: float, events: Dictionary) -> void:
 
 func pose(figure: Node3D) -> void:
 	if _under != null: _under.pose(figure)
+	if field != null: field.pose(figure)
 
 func frame(cam: Camera3D, delta: float) -> void:
 	if _under != null and _under.has_method("frame"): _under.frame(cam,delta)

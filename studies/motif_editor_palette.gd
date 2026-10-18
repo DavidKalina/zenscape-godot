@@ -15,8 +15,8 @@ const MotifAuthored = preload("res://scripts/kit_isle/motif_authored.gd")
 const TrapRegistry = preload("res://scripts/traps/trap_registry.gd")
 const RuinKitScript = preload("res://scripts/ruin_kit.gd")
 const DRAG_SLOP := 8.0
-const POCKETS := ["All","Land","Kit","Trees","Landforms","World","Traps"]
-const POCKET_ICONS := ["all","mountain","stone","oak","island","globe","hammer"]
+const POCKETS := ["All","Land","Kit","Trees","Landforms","World","Traps","Mechanics"]
+const POCKET_ICONS := ["all","mountain","stone","oak","island","globe","hammer","feather"]
 ## The land tools: [editor tool, name, sub, roll icon, description, keys].
 const LAND := [
 	["select","Select","Move","","Pick a piece or marker; drag it along the ground. Z X turn it.",["1"]],
@@ -91,6 +91,10 @@ func _build_items() -> void:
 	# the sub so typing "trap" finds them all.
 	for key: String in TrapRegistry.keys():
 		_items.append({"kind":"trap","cat":6,"id":key,"name":TrapRegistry.display_name(key),"sub":"Trap · drag it in","desc":"Drag onto the ground or a piece's top. Z X turn it.","glyph":""})
+	# The mechanics (scripts/kit_isle/motif_mechanics.gd): carried and set
+	# down as traps are, their heights and paths in the knobs panel.
+	for key: String in TrapRegistry.Mechanics.keys():
+		_items.append({"kind":"trap","cat":7,"mech":true,"id":key,"name":TrapRegistry.display_name(key),"sub":"Mechanic · drag it in","desc":"Drag onto the ground. Z X turn it; its height and path in the knobs panel.","glyph":""})
 	for slug: String in MotifAuthored.saved():
 		_items.append({"kind":"open","cat":5,"id":slug,"name":"Open "+slug,"sub":MotifAuthored.path_of(slug),"glyph":"O","desc":""})
 	# A coded pool motif stood read-only to build on (motif_editor_base.gd).
@@ -112,7 +116,7 @@ func open() -> void:
 ## tiles (TILE px, the thumbnail large over its name), picked by eye.
 const TILE := Vector2(142.0,156.0)
 const TILE_GAP := 6.0
-const TILE_TABS := [2,3,6]
+const TILE_TABS := [2,3,6,7]
 
 func _tiled() -> bool:
 	return tab in TILE_TABS
@@ -157,6 +161,7 @@ func _draw_tile(entry: Dictionary, rect: Rect2, line: float) -> void:
 	var pic := Rect2(Vector2(tile.position.x+7.0*px,tile.position.y+7.0*px),Vector2(side,side))
 	var texture: Texture2D = thumbs.get(str(item.id)) if str(item.kind) != "trap" else null
 	if texture != null: _body.draw_texture_rect(texture,pic,false)
+	elif bool(item.get("mech",false)): _draw_mechanic(pic,line,str(item.id))
 	elif str(item.kind) == "trap": _draw_trap_stand_in(pic,line)
 	else: Linen.dashed_round(_body,pic.grow(-6.0*px),8.0*px,GLYPH_STITCH,line,px)
 	var name_ := str(item.name)
@@ -179,6 +184,39 @@ func _draw_trap_stand_in(pic: Rect2, line: float) -> void:
 	_body.draw_arc(Vector2(cx,lane.position.y-6.0*px),7.0*px,0.0,TAU,20,Color(0.9,0.5,0.2),2.5*px)
 	var size := roundi(10.0*px)
 	_body.draw_string(_text_font,Vector2(inner.position.x+6.0*px,inner.position.y+14.0*px),"stand-in",HORIZONTAL_ALIGNMENT_LEFT,-1,size,Color(T1,0.6))
+
+## A mechanic's tile picture: a drawn sign of it (a ring, a slab, a rope,
+## a ferry's way, a cache's glint).
+func _draw_mechanic(pic: Rect2, line: float, id: String) -> void:
+	var px := ui_scale
+	var inner := pic.grow(-10.0*px)
+	Linen.dashed_round(_body,inner,8.0*px,GLYPH_STITCH,line,px)
+	var c := inner.get_center()
+	var stone := Color(0.78,0.74,0.66)
+	var glow := Color(0.82,0.93,0.94)
+	var slab := Rect2(c+Vector2(-26.0,14.0)*px,Vector2(52.0,14.0)*px)
+	match id:
+		"air_ring":
+			_body.draw_arc(c,24.0*px,0.0,TAU,32,stone,7.0*px)
+			_body.draw_arc(c,24.0*px,0.0,TAU,32,glow,2.0*px)
+		"bob_slab":
+			_body.draw_rect(slab,stone)
+			_body.draw_line(c+Vector2(0.0,4.0)*px,c+Vector2(0.0,-22.0)*px,Color(T1,0.6),2.0*px)
+		"ring_stair_slab":
+			_body.draw_rect(slab,stone)
+			_body.draw_arc(c+Vector2(0.0,-18.0)*px,13.0*px,0.0,TAU,24,glow,4.0*px)
+		"swing_rope":
+			_body.draw_rect(Rect2(c+Vector2(-30.0,-30.0)*px,Vector2(60.0,8.0)*px),stone)
+			_body.draw_line(c+Vector2(0.0,-22.0)*px,c+Vector2(14.0,22.0)*px,Color(0.85,0.7,0.45),3.0*px)
+		"drift_slab":
+			_body.draw_rect(Rect2(c+Vector2(-34.0,6.0)*px,Vector2(30.0,12.0)*px),stone)
+			_body.draw_dashed_line(c+Vector2(-4.0,12.0)*px,c+Vector2(30.0,12.0)*px,Color(0.98,0.85,0.35),2.0*px,5.0*px)
+			_body.draw_colored_polygon(PackedVector2Array([c+Vector2(34.0,12.0)*px,c+Vector2(26.0,6.0)*px,c+Vector2(26.0,18.0)*px]),Color(0.98,0.85,0.35))
+		"kit_cache":
+			_body.draw_rect(Rect2(c+Vector2(-12.0,-26.0)*px,Vector2(24.0,52.0)*px),stone)
+			_body.draw_circle(c+Vector2(4.0,-6.0)*px,3.5*px,glow)
+			_body.draw_line(c+Vector2(-4.0,-6.0)*px,c+Vector2(12.0,-6.0)*px,glow,1.5*px)
+			_body.draw_line(c+Vector2(4.0,-14.0)*px,c+Vector2(4.0,2.0)*px,glow,1.5*px)
 
 ## A piece's row: the parent's row with the thumbnail in its glyph box.
 func _draw_row(entry: Dictionary, rect: Rect2, line: float) -> void:
