@@ -735,10 +735,20 @@ func fight_line() -> String:
 	if b != null and arrival in ["climbing","crossing"]:
 		return "Phase 1 done  ·  his body %s" % ("climbs the rim" if arrival == "climbing" else "comes for his head")
 	if b != null:
-		return "Phase 2  ·  Olmec  knock-offs %s  %s%s" % [_pips(int(b.get("knock_offs")),int(BossBody.KNOCK_OFFS)),attack_line(),lock]
+		var hurt := damage_line(b)
+		return "Phase 2  ·  Olmec  knock-offs %s  %s%s%s" % [_pips(int(b.get("knock_offs")),int(BossBody.KNOCK_OFFS)),hurt+"  ·  " if hurt != "" else "",attack_line(),lock]
 	if h != null:
 		return "Phase 1  ·  Head  stomps %s  %s%s" % [_pips(int(h.hits),int(h.knobs.phase_hits)),attack_line(),lock]
 	return ""
+
+## How he looks after his knock-offs (BossBody `damage`, `arm_off`):
+## "whole", "face cracked", "cracked, one-armed"; crumbled, nothing (the
+## attack line says "down").
+func damage_line(b: Node3D) -> String:
+	if bool(b.crumbled): return ""
+	if bool(b.get("arm_off")): return "cracked, one-armed"
+	if int(b.get("damage")) >= 1: return "face cracked"
+	return "whole"
 
 ## What he is on, in words: phase 1 the head's round and its puff, phase 2
 ## his move (slam, bound, swat, pounce, suck, a puff from up high) or how he

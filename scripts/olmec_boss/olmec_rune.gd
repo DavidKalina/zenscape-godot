@@ -8,7 +8,7 @@ extends Node3D
 ##   middle (flickering, a column of it up out of the stones) and chips
 ##   spurt out of it, faster and faster, for SEAM s.
 ## - **The burst.** A flash, a spray of chips and dust, and the rune comes
-##   up out of the seam (SIZE across, twice a cache's find): RISE s up to
+##   up out of the seam (SIZE across, 2.5 times a cache's find): RISE s up to
 ##   TOP m over the seam, overshooting a little.
 ## - **The settle.** Then it drifts DRIFT s in from the rim (STEP_IN m
 ##   toward the field's middle, out of the rubble) and down to hover HOVER
@@ -27,8 +27,9 @@ const KitCaches = preload("res://scripts/kit_isle/kit_caches.gd")
 signal taken
 
 const GLYPH := "rune"
-## Across (m): twice a cache's find (kit_caches SIZE 0.7).
-const SIZE := KitCaches.SIZE*2.0
+## Across (m): two and a half times a cache's find (kit_caches SIZE 0.7),
+## so it reads beside his 1-2 m blocks.
+const SIZE := KitCaches.SIZE*2.5
 ## The seam: s after the crumble it starts, s it glows and spurts before
 ## the burst, its height over his feet (m), and s between spurts (first,
 ## last).
