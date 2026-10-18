@@ -706,7 +706,7 @@ func attack_line() -> String:
 			return {"chase":"hunting you","seek":"looking for you","alert":"looking for you","listen":"listening",
 				"triumph":"triumphant","stagger":"rocked back","back_hit":"hit in the back!" if bool(b.get("_to_edge")) else "cracked, turning on you",
 				"teeter":"teetering!  ·  slam his back again" if not bool(b.get("_teeter_over")) else "teetering, losing it!",
-				"knock_off":"over the edge!","knocked_gone":"gone over...","leap_back":"leaps back up!","spent":"winded","home":"striding in"}.get(str(b.state),str(b.state))
+				"knock_off":"over the edge!","knocked_gone":"gone over...","leap_back":"leaps back up!","rim_land":"landed heavy  ·  jump the shockwave","teeter_back":"got his balance back","spent":"winded","home":"striding in"}.get(str(b.state),str(b.state))
 		if mv.begins_with("puff "):
 			# "puff volley tell": his head, up high.
 			var p := mv.split(" ")

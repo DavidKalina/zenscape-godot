@@ -43,7 +43,8 @@ const CLIMB_RISE := 0.99
 const CLIPS := ["idle","listen","walk","stride","climb","haul","spawn_haul","mantle","windup",
 	"jump_air","drop_air","land","drop_land","reach","triumph","feel","mantle_pull",
 	"turn_open_l","turn_close_l","turn_open_r","turn_close_r","scope_lift","scope_look","scope_lower","shoulder_run",
-	"charge_tell","charge_run","charge_skid","charge_stagger"]
+	"charge_tell","charge_run","charge_skid","charge_stagger",
+	"teeter_catch","teeter","teeter_back","topple","rim_leap","rim_land","back_hit"]
 ## Round 4: the turn steps (headless_body_steps.gd), blended over the trunk
 ## and legs only (the arms keep the clip under them), faded in and out fast.
 const TURNS := ["turn_open_l","turn_close_l","turn_open_r","turn_close_r"]

@@ -89,7 +89,6 @@ const EDGE_NEAR := 2.5
 const TEETER_HOLD := 2.4
 const TEETER_TIP := 1.0
 const TEETER_BACK := 1.4
-const TEETER_LEAN := 0.16
 const KNOCK_OUT := 2.6
 const KNOCK_UP := 1.5
 const KNOCK_GONE := 1.8
@@ -99,8 +98,27 @@ const LEAP_IN := 6.5
 const KNOCK_SHOCK := 1.7
 const KNOCK_OFFS := 3
 const ANGER := 0.1
+## The art lane's knock-off clips (headless_body_build.py, its knock-off
+## section): the edge clips pivot at his toes TOES m (model, times the
+## look's k) ahead of his root, so the teeter stands him that far back from
+## the rim; the topple's node drop from TOPPLE_GO s (past 45 deg); the
+## back-hit clip's lurch from BACK_LURCH s (the rest of the shove then);
+## the heavy landing's fists in the ground at RIM_SLAM s (the shockwave).
+const TOES := 0.85
+const TOPPLE_GO := 0.75
+const BACK_LURCH := 0.27
+const RIM_SLAM := 0.07
+## Slammed over in the teeter, the topple from here (s): the held "uh-oh"
+## is for losing it on his own.
+const TOPPLE_SLAMMED := 0.3
 ## States he is off the field in (nothing hits him there; he moves himself).
 const OVER := ["knock_off","knocked_gone","leap_back"]
+var _shove_due := Vector3.ZERO
+var _teeter_to := Vector3.ZERO
+var _topple_from := 0.0
+var _fell := false
+var _leap_t := 1.0
+var _rim_shocked := false
 var knock_offs := 0
 var cracks := 0
 var teeters := 0
@@ -423,9 +441,6 @@ func _place_back_glint() -> void:
 func step(delta: float) -> void:
 	super.step(delta)
 	if phase2 and not crumbled: _place_back_glint()
-	if state == "teeter" and not crumbled:
-		var axis := (global_transform.basis.inverse()*Vector3.UP.cross(_forward3())).normalized()
-		skin.transform = Transform3D(Basis(axis,_teeter_lean()),Vector3.ZERO)
 
 ## The slam's group (scripts/slam.gd, side_slam.gd): the side slam (him in
 ## its lunge) from behind is a back hit, else it glances; the ground pound
@@ -475,7 +490,7 @@ func back_hit(at: Vector3, behind := 1.0, strength := 1.0) -> void:
 			Dust.rocks(field,at+o*0.3,o,4,0.16*hh)
 		field.sound(&"body_rumble",at)
 		last_edge["how"] = "slammed"
-		knock_off()
+		knock_off(TOPPLE_SLAMMED)
 		return
 	var rim := _rim_ahead(fwd,BACK_SHOVE+length*0.5+EDGE_NEAR+1.0)
 	_to_edge = rim-length*0.5 <= BACK_SHOVE+EDGE_NEAR
@@ -497,7 +512,8 @@ func back_hit(at: Vector3, behind := 1.0, strength := 1.0) -> void:
 	super.hit(at,fwd,strength)
 	print("olmec boss: BACK HIT %d (behind %.2f) at (%.1f, %.1f), his front %.1f m from the drop: %s" % [back_hits,behind,position.x,position.z,rim-length*0.5,"to the edge" if _to_edge else "cracked"])
 	if crumbled: return
-	_push += fwd*maxf(BACK_SHOVE-PUSH*strength,0.0)/PUSH_EASE
+	# The rest of the shove comes with the clip's lurch (BACK_LURCH s in).
+	_shove_due = fwd*maxf(BACK_SHOVE-PUSH*strength,0.0)/PUSH_EASE
 	quake = maxf(quake,0.9)
 	move = ""
 	_end_slam()
@@ -509,11 +525,15 @@ func back_hit(at: Vector3, behind := 1.0, strength := 1.0) -> void:
 func _back_lurch(delta: float) -> void:
 	vel.x = 0.0
 	vel.z = 0.0
+	if state_t >= BACK_LURCH and _shove_due != Vector3.ZERO:
+		_push += _shove_due
+		_shove_due = Vector3.ZERO
 	if _push.length() > 0.01:
 		var ahead := position+_push.normalized()*(length*0.5+0.4)
 		if _floor(ahead+Vector3.UP*1.0,float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF:
-			var left := _push.length()*PUSH_EASE
+			var left := (_push.length()+_shove_due.length())*PUSH_EASE
 			_push = Vector3.ZERO
+			_shove_due = Vector3.ZERO
 			print("olmec boss: shove stopped at the edge, %.1f m of it left" % left)
 			if _to_edge:
 				_teeter(_teeter_over)
@@ -541,48 +561,85 @@ func _rim_ahead(way: Vector3, most: float) -> float:
 		d += 0.4
 	return most
 
-## At the rim, over it from the knees up, windmilling: a held window.
-## `over`: he won't get it back (he goes over at its end).
+## At the rim, onto his toes, windmilling: a held window ("teeter_catch"
+## into the "teeter" loop). Stood with his toes on the rim (TOES ahead of
+## his root, the clips' pivot). `over`: he won't get it back (he goes over
+## at its end).
 func _teeter(over: bool) -> void:
 	teeters += 1
 	_teeter_over = over
 	last_edge = {"n":teeters,"over":over,"at":position,"how":""}
 	move = ""
+	_push = Vector3.ZERO
+	_shove_due = Vector3.ZERO
+	skin.transform = Transform3D.IDENTITY
+	var fwd := _forward3()
+	_teeter_to = position+fwd*(_rim_exact(fwd)-TOES*look.k)
+	_teeter_to.y = position.y
 	_go("teeter")
 	field.sound(&"body_windup",position)
 	quake = maxf(quake,0.4)
 	chase_beat.emit("teeter")
-	print("olmec boss: teetering at the rim (%.1f, %.1f)%s" % [position.x,position.z,", he won't get it back" if over else ""])
+	print("olmec boss: teetering at the rim (%.1f, %.1f), toes %.2f m to it%s" % [position.x,position.z,(_teeter_to-position).length(),", he won't get it back" if over else ""])
+
+## The rim the way `way` (m from his middle), to a few cm.
+func _rim_exact(way: Vector3) -> float:
+	var far := _rim_ahead(way,length*0.5+EDGE_NEAR+BACK_SHOVE+1.0)
+	var near := maxf(far-0.4,0.0)
+	var w := Vector3(way.x,0.0,way.z).normalized()
+	for i in range(6):
+		var mid := (near+far)*0.5
+		if _floor(position+w*mid+Vector3.UP*1.0,float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF: far = mid
+		else: near = mid
+	return (near+far)*0.5
+
+## The window's end: TEETER_HOLD at least, cut over at the loop's start
+## (the topple and the step back both start from the teeter's time 0).
+func _teeter_end() -> float:
+	var catch := float(look.lengths.teeter_catch)
+	var loop := float(look.lengths.teeter)
+	return catch+ceilf(maxf(TEETER_HOLD-catch,0.0)/loop)*loop
 
 func _teeter_think(delta: float) -> void:
 	vel.x = 0.0
 	vel.z = 0.0
-	if fmod(state_t,0.35) < delta: Dust.rocks(field,position+_forward3()*(length*0.5+0.2),_forward3()+Vector3.DOWN,2,0.08*hh)
-	if state_t < TEETER_HOLD: return
+	# Thrown onto his toes at the lip: the last of the way there.
+	position = position.lerp(Vector3(_teeter_to.x,position.y,_teeter_to.z),1.0-exp(-12.0*delta))
+	if fmod(state_t,0.35) < delta: Dust.rocks(field,_teeter_to+_forward3()*(TOES*look.k)+Vector3.UP*0.1,_forward3()+Vector3.DOWN,2,0.08*hh)
+	if state_t < _teeter_end(): return
 	if _teeter_over:
 		last_edge["how"] = "lost it"
 		knock_off()
 		return
-	# Got it back: a step back off the rim, then on you.
+	# Got it back: rocked back onto his heels, a step back, then on you.
 	last_edge["how"] = "recovered"
-	skin.transform = Transform3D.IDENTITY
-	_push += -_forward3()*TEETER_BACK/PUSH_EASE
 	print("olmec boss: got his balance back")
-	_go(_resume())
+	_go("teeter_back")
 
-## The lean the teeter's windmill rides (rad, toward the drop), on his skin.
-func _teeter_lean() -> float:
-	var k := clampf(state_t/0.3,0.0,1.0)
-	return k*(TEETER_LEAN+0.07*sin(state_t*7.5)+0.04*sin(state_t*13.0+1.0))
+## Rocked back off the rim: the step back with the clip, then he turns on you.
+func _teeter_back(delta: float) -> void:
+	vel.x = 0.0
+	vel.z = 0.0
+	var clip := float(look.lengths.teeter_back)
+	var was := clampf((state_t-delta)/clip,0.0,1.0)
+	var now := clampf(state_t/clip,0.0,1.0)
+	# The step back mid-clip (0.35..0.7 of it), smooth.
+	var k0 := smoothstep(0.35,0.7,was)
+	var k1 := smoothstep(0.35,0.7,now)
+	position -= _forward3()*TEETER_BACK*(k1-k0)
+	if state_t >= clip: _go(_resume())
 
-## Over the rim: tipping forward and down, out of sight.
-func knock_off() -> void:
+## Over the rim: the topple, pivoting at his toes on the lip, then down
+## past TOPPLE_GO, out of sight. `from`: where in the topple he starts.
+func knock_off(from := 0.0) -> void:
 	knock_offs += 1
 	_rim_at = position
 	_rim_out = _forward3()
-	_off_v = _rim_out*KNOCK_OUT+Vector3.UP*KNOCK_UP
+	_topple_from = from
+	_fell = false
 	_push = Vector3.ZERO
-	grounded = false
+	_shove_due = Vector3.ZERO
+	skin.transform = Transform3D.IDENTITY
 	move = ""
 	_end_slam()
 	_go("knock_off")
@@ -593,13 +650,16 @@ func knock_off() -> void:
 
 func _knock_fall(delta: float) -> void:
 	vel = Vector3.ZERO
+	if not _fell:
+		# Tipping on his toes at the lip: the clip does it, he stays put.
+		if state_t+_topple_from < TOPPLE_GO: return
+		_fell = true
+		grounded = false
+		_off_v = _rim_out*KNOCK_OUT+Vector3.UP*KNOCK_UP
+		Dust.rocks(field,_rim_at+_rim_out*(TOES*look.k)+Vector3.UP*0.1,_rim_out+Vector3.DOWN,6,0.14*hh)
 	_off_v.y -= OFF_GRAVITY*delta
 	position += _off_v*delta
-	# Tipping on over, face first.
-	var tip := minf(state_t*1.6,1.3)
-	skin.transform = Transform3D(Basis((global_transform.basis.inverse()*Vector3.UP.cross(_rim_out)).normalized(),tip),Vector3.ZERO)
 	if _rim_at.y-position.y >= OFF_DEEP:
-		skin.transform = Transform3D.IDENTITY
 		_shown(false)
 		_go("knocked_gone")
 
@@ -616,6 +676,7 @@ func _knocked_gone(_delta: float) -> void:
 	var vy := sqrt(2.0*OFF_GRAVITY*(top-from.y))
 	var t := vy/OFF_GRAVITY+sqrt(2.0*(top-to.y)/OFF_GRAVITY)
 	_leap_v = Vector3((to.x-from.x)/t,vy,(to.z-from.z)/t)
+	_leap_t = t
 	_up_to = to
 	position = from
 	facing = PilotMotor.facing_of(Vector2(-_rim_out.x,-_rim_out.z))
@@ -633,27 +694,36 @@ func _leap_back(delta: float) -> void:
 		position = _up_to
 		_heavy_land()
 
-## Down heavy, back on the field: a big shockwave to jump, angrier.
+## Down heavy, back on the field ("rim_land"): squashed, fists in the
+## ground (the big shockwave to jump, RIM_SLAM s in), the roar, angrier.
 func _heavy_land() -> void:
 	grounded = true
 	vel = Vector3.ZERO
-	_land_clip = "drop_land"
-	_go("land")
+	_rim_shocked = false
+	_go("rim_land")
 	_puff(position,hh*2.6)
 	Dust.plume(field,position,hh*4.0)
 	field.sound(&"body_land",position)
-	field.sound(&"body_rumble",position)
-	_shock(position,KNOCK_SHOCK)
-	_hit_arena(position,LAND_HIT)
-	weighed.emit(position,KNOCK_SHOCK,"land")
 	quake = 1.0
 	last_edge["back"] = position
 	print("olmec boss: back up, landed heavy at (%.1f, %.1f), knock-offs %d" % [position.x,position.z,knock_offs])
-	if knock_offs >= KNOCK_OFFS:
-		# The finish's stand-in: he crumbles at the top of the rim.
-		crumble()
-		return
-	_angrier()
+
+func _rim_land(_delta: float) -> void:
+	vel.x = 0.0
+	vel.z = 0.0
+	if not _rim_shocked and state_t >= RIM_SLAM:
+		_rim_shocked = true
+		field.sound(&"body_rumble",position)
+		_shock(position,KNOCK_SHOCK)
+		_hit_arena(position,LAND_HIT)
+		weighed.emit(position,KNOCK_SHOCK,"land")
+		quake = 1.0
+		if knock_offs >= KNOCK_OFFS:
+			# The finish's stand-in: he crumbles at the top of the rim.
+			crumble()
+			return
+		_angrier()
+	if state_t >= float(look.lengths.rim_land): _go(_resume())
 
 ## Each knock-off: hunts harder, swats sooner, charges again sooner.
 func _angrier() -> void:
@@ -875,6 +945,8 @@ func _think_more(delta: float) -> void:
 		"charge_stagger": _charge_stagger(delta)
 		"back_hit": _back_lurch(delta)
 		"teeter": _teeter_think(delta)
+		"teeter_back": _teeter_back(delta)
+		"rim_land": _rim_land(delta)
 		"knock_off": _knock_fall(delta)
 		"knocked_gone": _knocked_gone(delta)
 		"leap_back": _leap_back(delta)
@@ -891,15 +963,16 @@ func _pose_more(_idle: float) -> bool:
 		"charge": look.want("charge_run",look.loop_time("charge_run",_phase,2.0))
 		"charge_skid": look.want("charge_skid",minf(state_t,float(look.lengths.charge_skid)))
 		"charge_stagger": look.want("charge_stagger",minf(state_t,float(look.lengths.charge_stagger)))
-		# Hit from behind: the overrun's stumble, a hand down (a stand-in
-		# for the art lane's back-hit stagger).
-		"back_hit": look.want("charge_skid",minf(0.25+state_t*float(look.lengths.charge_skid)/BACK_STAGGER,float(look.lengths.charge_skid)))
-		# Stand-ins till the art lane's clips: the teeter on the charge's
-		# stopped-short stagger (its jammed, arms-up middle) under the
-		# windmill lean; over and back up in the drop's and jump's air.
-		"teeter": look.want("charge_stagger",float(look.lengths.charge_stagger)*(0.3+0.08*sin(state_t*7.5)))
-		"knock_off","knocked_gone": look.want("drop_air",minf(state_t+0.3,float(look.lengths.drop_air)*0.9))
-		"leap_back": look.want("jump_air",minf(state_t*0.8,float(look.lengths.jump_air)*0.9))
+		# The art lane's knock-off clips.
+		"back_hit": look.want("back_hit",minf(state_t,float(look.lengths.back_hit)))
+		"teeter":
+			var catch := float(look.lengths.teeter_catch)
+			if state_t < catch: look.want("teeter_catch",state_t)
+			else: look.want("teeter",fposmod(state_t-catch,float(look.lengths.teeter)))
+		"teeter_back": look.want("teeter_back",minf(state_t,float(look.lengths.teeter_back)))
+		"knock_off","knocked_gone": look.want("topple",minf(state_t+_topple_from,float(look.lengths.topple)))
+		"leap_back": look.want("rim_leap",clampf(state_t/maxf(_leap_t,0.01),0.0,1.0)*float(look.lengths.rim_leap))
+		"rim_land": look.want("rim_land",minf(state_t,float(look.lengths.rim_land)))
 		"tilt_run": look.want("shoulder_run",look.loop_time("shoulder_run",_phase,2.0))
 		"tilt_off","tilt_gone":
 			# Rocked back off the rim (the charge's stopped-short stagger),
