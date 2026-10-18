@@ -372,6 +372,16 @@ func world_roots() -> Array:
 		if c is StaticBody3D: out.append(c)
 	return out
 
+## An island moved in the world view (scripts/world_islands.gd `settle`):
+## the worn paths over it drawn where it went.
+func island_moved(_name: String) -> void:
+	var paths: Array = []
+	for path: Array in Art.paths():
+		var moved: Array = []
+		for p: Vector2 in path: moved.append(WorldIslands.carried(p))
+		paths.append(moved)
+	preload("res://scripts/kit_isle/path_dirt.gd").paint(KitLook.ground_material(),paths)
+
 ## A quit while the base's copy is still being kept: the save finished
 ## first (scripts/roguelike/fixed_cache.gd `finish_save`).
 func _exit_tree() -> void:

@@ -51,7 +51,8 @@ static func add(name: String, land: Node3D, top := NAN) -> void:
 	if not outline.is_empty():
 		rect = Rect2(outline[0],Vector2.ZERO)
 		for p: Vector2 in outline: rect = rect.expand(p)
-	islands[name] = {"node":land,"outline":outline,"rect":rect,"box":AABB(),"top":top,"members":[]}
+	islands[name] = {"node":land,"outline":outline,"rect":rect,"box":AABB(),"top":top,"members":[],
+		"coded":outline,"xf":Transform3D.IDENTITY,"flora":false}
 	land.set_meta("world_island_root",name)
 
 ## The height an island's rim is drawn at: its turf's, else its drawn top.
@@ -207,6 +208,166 @@ static func drawn_box(node: Node3D) -> AABB:
 		box = b if first else box.merge(b)
 		first = false
 	return box
+
+# --- Moving an island -----------------------------------------------------------------
+#
+# An island is moved as one: its land and its members carried by one
+# transform from where they stood when taken (`grab`), live (`move`, only
+# transforms), then `settle` on release redoes what reads its place: its
+# outline (the registry's, the land's meta, the study's turf outlines), the
+# water pools over it, and the study's own (its `island_moved`: the path
+# dirt). Its grass and flowers are carried with it: the first time it is
+# taken, the flora's batches over it go under its land (`carry_flora`).
+
+## The point an island turns about and is dragged by: its outline's
+## middle at its rim.
+static func pivot(name: String) -> Vector3:
+	var i: Dictionary = islands[name]
+	var c: Vector2 = (i.rect as Rect2).get_center()
+	return Vector3(c.x,rim_y(i),c.y)
+
+## Island `name` taken: {name, xf (its transform from coded when taken),
+## nodes, starts (their world transforms), pools}.
+static func grab(name: String, study: Node = null) -> Dictionary:
+	var i: Dictionary = islands[name]
+	if study != null and not bool(i.flora): carry_flora(name,study)
+	var nodes: Array = [i.node]
+	for m: Node3D in i.members:
+		if is_instance_valid(m) and m.is_inside_tree(): nodes.append(m)
+	var starts: Array = []
+	for n: Node3D in nodes: starts.append(n.global_transform)
+	var pools: Array = []
+	var ground: Variant = study.get("ground") if study != null else null
+	if ground != null:
+		for pool: Dictionary in ground.pools:
+			var c: Vector2 = (pool.rect as Rect2).get_center()
+			if (i.rect as Rect2).has_point(c) and Geometry2D.is_point_in_polygon(c,i.outline): pools.append([pool,pool.rect,float(pool.top)])
+	return {"name":name,"xf":i.xf,"nodes":nodes,"starts":starts,"pools":pools,"outline":i.outline}
+
+## The taken island put at `xf` (from coded): transforms only.
+static func move(g: Dictionary, xf: Transform3D) -> void:
+	var d: Transform3D = xf*(g.xf as Transform3D).affine_inverse()
+	var nodes: Array = g.nodes
+	var starts: Array = g.starts
+	for k in range(nodes.size()):
+		var n: Node3D = nodes[k]
+		if is_instance_valid(n): n.global_transform = d*(starts[k] as Transform3D)
+	islands[g.name].xf = xf
+
+## The taken island let go where it is: what reads its place redone.
+static func settle(g: Dictionary, study: Node = null) -> void:
+	var i: Dictionary = islands[g.name]
+	var d: Transform3D = (i.xf as Transform3D)*(g.xf as Transform3D).affine_inverse()
+	var was: PackedVector2Array = g.outline
+	var now := flat(was,d)
+	i.outline = now
+	var rect := Rect2(now[0],Vector2.ZERO) if not now.is_empty() else Rect2()
+	for p: Vector2 in now: rect = rect.expand(p)
+	i.rect = rect
+	if not is_nan(float(i.top)): i.top = float(i.top)+d.origin.y
+	i.box = drawn_box(i.node)
+	(i.node as Node3D).set_meta("outline",now)
+	for pool: Array in g.pools:
+		var r: Rect2 = pool[1]
+		var c := d*Vector3(r.get_center().x,0.0,r.get_center().y)
+		(pool[0] as Dictionary).rect = Rect2(Vector2(c.x,c.z)-r.size*0.5,r.size)
+		(pool[0] as Dictionary).top = float(pool[2])+d.origin.y
+	if study == null: return
+	var outlines: Variant = study.get("_outlines")
+	if outlines is Array:
+		var k := (outlines as Array).find(was)
+		if k >= 0: (outlines as Array)[k] = now
+		study.set("_gap_outlines",-1)
+	if study.has_method("island_moved"): study.island_moved(g.name)
+
+## `outline` (x, z) carried by `d` (turned about up, moved).
+static func flat(outline: PackedVector2Array, d: Transform3D) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	out.resize(outline.size())
+	for k in range(outline.size()):
+		var p := d*Vector3(outline[k].x,0.0,outline[k].y)
+		out[k] = Vector2(p.x,p.z)
+	return out
+
+## World point (x, z) `p` where it is now, if it stood on an island as
+## coded (that island's move applied), else as it is.
+static func carried(p: Vector2) -> Vector2:
+	for name: String in islands:
+		var i: Dictionary = islands[name]
+		if (i.xf as Transform3D) == Transform3D.IDENTITY: continue
+		if Geometry2D.is_point_in_polygon(p,i.coded):
+			var q: Vector3 = (i.xf as Transform3D)*Vector3(p.x,0.0,p.y)
+			return Vector2(q.x,q.z)
+	return p
+
+## The flora's batches over island `name` put under its land (a holder
+## that stands where the world does), so they go with it: a batch wholly
+## over it goes whole, one on its rim is split, its plants over it (or
+## near its rim and over no other island) carried. Read from the plants'
+## own places (a batch's drawn bounds are empty headless).
+static func carry_flora(name: String, study: Node) -> int:
+	var i: Dictionary = islands[name]
+	var flora: Variant = study.get("flora")
+	if not bool(study.get("flora_ready")) or not flora is Node3D: return 0
+	i.flora = true
+	var land: Node3D = i.node
+	var holder := Node3D.new()
+	holder.name = "CarriedFlora"
+	land.add_child(holder)
+	holder.global_transform = Transform3D.IDENTITY
+	var near: Rect2 = (i.rect as Rect2).grow(2.0)
+	var outline: PackedVector2Array = i.outline
+	var carried_n := 0
+	for b: Node in (flora as Node3D).find_children("*","MultiMeshInstance3D",true,false):
+		var batch := b as MultiMeshInstance3D
+		var mm := batch.multimesh
+		if mm == null or mm.instance_count == 0: continue
+		# A plant's 12 floats of transform (rows), then its colour and
+		# custom data (scripts/kit_isle/kit_flora.gd batch_buffer).
+		var w := 12+(4 if mm.use_colors else 0)+(4 if mm.use_custom_data else 0)
+		var buf := mm.buffer
+		var bt := batch.global_transform
+		var mine := PackedByteArray()
+		mine.resize(mm.instance_count)
+		var count := 0
+		for k in range(mm.instance_count):
+			var o := bt*Vector3(buf[k*w+3],buf[k*w+7],buf[k*w+11])
+			var p := Vector2(o.x,o.z)
+			if not near.has_point(p): continue
+			var on := Geometry2D.is_point_in_polygon(p,outline)
+			if not on: on = island_under(o) == "" and _near_outline(p,outline,2.0)
+			if on:
+				mine[k] = 1
+				count += 1
+		if count == 0: continue
+		carried_n += count
+		if count == mm.instance_count:
+			batch.reparent(holder,true)
+			continue
+		var stay := PackedFloat32Array()
+		var go := PackedFloat32Array()
+		for k in range(mm.instance_count):
+			if mine[k] == 1: go.append_array(buf.slice(k*w,k*w+w))
+			else: stay.append_array(buf.slice(k*w,k*w+w))
+		var copy := batch.duplicate() as MultiMeshInstance3D
+		var cm := MultiMesh.new()
+		cm.transform_format = mm.transform_format
+		cm.use_colors = mm.use_colors
+		cm.use_custom_data = mm.use_custom_data
+		cm.mesh = mm.mesh
+		cm.instance_count = count
+		cm.buffer = go
+		copy.multimesh = cm
+		holder.add_child(copy)
+		copy.global_transform = bt
+		mm.instance_count = stay.size()/w
+		mm.buffer = stay
+	return carried_n
+
+static func _near_outline(p: Vector2, outline: PackedVector2Array, reach: float) -> bool:
+	for k in range(outline.size()):
+		if p.distance_to(Geometry2D.get_closest_point_to_segment(p,outline[k],outline[(k+1)%outline.size()])) <= reach: return true
+	return false
 
 ## A short count of what anchoring found.
 static func summary() -> String:

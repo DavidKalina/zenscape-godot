@@ -37,7 +37,7 @@ const RING_SLAB_PUMPS := 7.0
 const MEMBER_TINT := Color(1.0,0.75,0.4,0.28)
 const HINT := """LAYOUT EDIT  (F4: back to play, he drops where you look)
 RMB hold + move  look      W A S D / Q E  fly / down, up    Shift  fast
-LMB  select, drag to move (at its height)     wheel / PgUp PgDn  height (Shift: 1 m)
+LMB  select, drag to move (at its height; an island too)     wheel / PgUp PgDn  height (Shift: 1 m)
 Z / X  turn 15 deg (Shift 5)    T / G  tip 15 deg    C  duplicate    Del / Backspace  delete
 1  add air ring    2  add bob slab    3  add ring-stair slab (7 pumps)
 click an island's ground: the island    U  from a piece to the island it stands on
@@ -67,6 +67,10 @@ var _ui: CanvasLayer
 var _status: Label
 var _said := ""
 var _box: MeshInstance3D
+## The island taken (scripts/world_islands.gd `grab`), while it is dragged;
+## its pivot when taken.
+var _grab := {}
+var _grab_pivot := Vector3.ZERO
 
 func setup(scene: Node3D, pieces: Node3D) -> void:
 	study = scene
@@ -123,7 +127,7 @@ func enter() -> void:
 ## Back to play: he is dropped where the camera's middle looks (on what it
 ## hits), facing the view, else back where he stood.
 func leave() -> void:
-	_dragging = false
+	let_go()
 	_looking = false
 	select("")
 	editing = false
@@ -185,7 +189,7 @@ func _edit_input(event: InputEvent) -> void:
 				if not _looking and get_tree().current_scene == study: get_viewport().warp_mouse(_look_from)
 			MOUSE_BUTTON_LEFT:
 				if mb.pressed: click(mb.position)
-				else: _dragging = false
+				else: let_go()
 			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
 				if not mb.pressed: return
 				var up := 1.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else -1.0
@@ -263,7 +267,20 @@ func pick(at: Vector2) -> String:
 func click(at: Vector2) -> void:
 	var name := pick(at)
 	select(name)
-	if name == "" or is_island(name): return
+	if name == "": return
+	if is_island(name):
+		# Dragged by its middle, in the level plane at its rim.
+		# Held where it was taken: in the level plane through that point.
+		_grab_pivot = Islands.pivot(name)
+		var cam: Camera3D = study.camera
+		var hit := _ray(cam.project_ray_origin(at),cam.project_ray_normal(at))
+		_drag_y = (hit.position as Vector3).y if not hit.is_empty() else _grab_pivot.y
+		var q := _on_level(at,_drag_y)
+		if q == Vector3.INF: return
+		_grab = _take(name)
+		_drag_off = Vector3(_grab_pivot.x-q.x,0.0,_grab_pivot.z-q.z)
+		_dragging = true
+		return
 	# Dragged in the level plane through its middle, held where it was taken.
 	var t := Layout.current(name)
 	_drag_y = t.origin.y
@@ -282,17 +299,32 @@ func _on_level(at: Vector2, y: float) -> Vector3:
 	if k <= 0.0 or k > 3000.0: return Vector3.INF
 	return from+way*k
 
+## The mouse up: an island let go (what reads its place redone).
+func let_go() -> void:
+	_dragging = false
+	if not _grab.is_empty(): _settle()
+
 func drag_to(at: Vector2) -> void:
-	if selected == "" or _island_held(): return
+	if selected == "": return
 	var p := _on_level(at,_drag_y)
 	if p == Vector3.INF: return
+	if not _grab.is_empty():
+		var to := p+_drag_off
+		to = Vector3(snappedf(to.x,SNAP),_grab_pivot.y,snappedf(to.z,SNAP))
+		Islands.move(_grab,Transform3D(Basis.IDENTITY,to-_grab_pivot)*(_grab.xf as Transform3D))
+		dirty = true
+		_show_status()
+		return
 	var t := Layout.current(selected)
 	var to := p+_drag_off
 	t.origin = Vector3(snappedf(to.x,SNAP),t.origin.y,snappedf(to.z,SNAP))
 	_put(selected,t)
 
 func lift(dy: float) -> void:
-	if selected == "" or _island_held(): return
+	if selected == "": return
+	if is_island(selected):
+		_island_step(Transform3D(Basis.IDENTITY,Vector3.UP*dy))
+		return
 	var t := Layout.current(selected)
 	t.origin.y = snappedf(t.origin.y+dy,SNAP)
 	_drag_y += dy
@@ -300,7 +332,11 @@ func lift(dy: float) -> void:
 
 ## Turned `deg` about the world's up, round its own middle.
 func turn(deg: float) -> void:
-	if selected == "" or _island_held(): return
+	if selected == "": return
+	if is_island(selected):
+		var c := Islands.pivot(selected)
+		_island_step(Transform3D(Basis.IDENTITY,c)*Transform3D(Basis(Vector3.UP,deg_to_rad(deg)),Vector3.ZERO)*Transform3D(Basis.IDENTITY,-c))
+		return
 	var t := Layout.current(selected)
 	t.basis = Basis(Vector3.UP,deg_to_rad(deg))*t.basis
 	_put(selected,t)
@@ -387,11 +423,36 @@ func save() -> void:
 func is_island(name: String) -> bool:
 	return Islands.islands.has(name)
 
-## True (and said) when the selection is an island: it doesn't move yet.
+## True (and said) when the selection is an island: it moves and turns,
+## but doesn't tip, copy or go.
 func _island_held() -> bool:
 	if not is_island(selected): return false
-	say("islands don't move yet (the next step)")
+	say("an island moves and turns (drag, wheel, Z X); it doesn't tip, copy or delete")
 	return true
+
+## The selected island taken (its flora carried with it the first time).
+func _take(name: String) -> Dictionary:
+	var began := Time.get_ticks_msec()
+	var first := not bool(Islands.islands[name].flora)
+	var g := Islands.grab(name,study)
+	if first: print("world view: %s taken, its flora carried, in %d ms" % [name,Time.get_ticks_msec()-began])
+	return g
+
+## The selected island moved by `d` (world) at once, and let go.
+func _island_step(d: Transform3D) -> void:
+	if _grab.is_empty(): _grab = _take(selected)
+	Islands.move(_grab,d*(Islands.islands[selected].xf as Transform3D))
+	dirty = true
+	_settle()
+
+## The taken island let go: its outline, pools, paths and turf outlines
+## redone where it went (scripts/world_islands.gd `settle`).
+func _settle() -> void:
+	var began := Time.get_ticks_usec()
+	Islands.settle(_grab,study)
+	_grab = {}
+	print("world view: %s let go, refreshed in %.1f ms" % [selected,(Time.get_ticks_usec()-began)/1000.0])
+	_show_status()
 
 ## From the selected piece to the island it stands on (or over).
 func step_out() -> void:
@@ -523,7 +584,9 @@ func _show_status() -> void:
 	if is_island(selected):
 		var i: Dictionary = Islands.islands[selected]
 		var c: Vector2 = (i.rect as Rect2).get_center()
+		var xf: Transform3D = i.xf
 		line = "%s  (island)  %d things stand on it  middle %.1f, %.1f" % [selected,(i.members as Array).size(),c.x,c.y]
+		if xf != Transform3D.IDENTITY: line += "  moved %.1f, %.1f, %.1f  turned %.0f" % [xf.origin.x,xf.origin.y,xf.origin.z,rad_to_deg(xf.basis.get_euler().y)]
 	elif selected != "":
 		var t := Layout.current(selected)
 		var e := t.basis.get_euler()
