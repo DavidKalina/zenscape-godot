@@ -43,10 +43,11 @@ extends RefCounted
 ## POSED kinds ("piece", a RuinKit piece such as a kit cache; "token", a
 ## token's holder) stand at their own transform: their coded one is where
 ## the node itself stood, and a move sets the node's world transform. `spawn` makes the
-## kinds the file can add (air_ring, bob_slab).
+## kinds the file can add (air_ring, bob_slab, islet: a small free islet,
+## scripts/interactables/islet.gd, its size and seed its tunes).
 
 const VERSION := 1
-const ADDABLE := ["air_ring","bob_slab"]
+const ADDABLE := ["air_ring","bob_slab","islet"]
 const POSED := ["piece","token"]
 
 ## The scene's file, its parsed data, and what was placed under each name:
@@ -236,6 +237,11 @@ static func spawn(host: Node3D, name: String, kind: String, t: Transform3D, pump
 	elif kind == "bob_slab":
 		node = host.bob_slab(t.origin,Vector3(2.3,0.7,2.2),0.0,seed_value)
 		if pumps > 0.0: node.spring_pumps = pumps
+	elif kind == "islet":
+		node = preload("res://scripts/interactables/islet.gd").new()
+		node.name = name.replace("/","_")
+		host.add_child(node)
+		node.setup(t)
 	if node == null: return null
 	node.layout_place(t)
 	var extra := {"host":host}

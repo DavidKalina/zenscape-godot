@@ -27,7 +27,7 @@ const TOGGLE := KEY_F4
 const LOOK_RATE := 0.004
 const PICK_PX := 28.0
 ## A pick's screen reach round a ring's or a slab's middle (m).
-const REACH := {"air_ring":AirRing.RADIUS+0.3,"bob_slab":1.5,"sink_slab":1.5,"drift_slab":1.5,"rope":4.0,"token":1.0}
+const REACH := {"air_ring":AirRing.RADIUS+0.3,"bob_slab":1.5,"sink_slab":1.5,"drift_slab":1.5,"rope":4.0,"token":1.0,"islet":4.0}
 const LIFT := 0.25
 ## A size step (m: a ring's radius, a slab's longer side), and Shift's.
 const GROW := 0.25
@@ -52,7 +52,7 @@ RMB hold + move  look      W A S D / Q E  fly / down, up    Shift  fast
 LMB  select, drag to move (at its height; an island too)     wheel / PgUp PgDn  height (Shift: 1 m)
 Shift+LMB  add to / drop from the group    drag on empty sky or Shift+drag  box-select    (a group moves, turns, tips, sizes, copies, deletes as one)
 Z / X  turn 15 deg (Shift 5)    T / G  tip 15 deg (a ring throws along its arrow; a group about the view's level right)    [ / ]  size (rings, slabs; Shift finer)    C  duplicate    Del / Backspace  delete
-1  add air ring    2  add bob slab    3  add ring-stair slab (7 pumps)    K  save the selection as a chunk    J  chunks: stamp one where you look
+1  add air ring    2  add bob slab    3  add ring-stair slab (7 pumps)    4  add islet    K  save the selection as a chunk    J  chunks: stamp one where you look
 click an island's ground: the island    U  from a piece to the island it stands on    O  open the island alone (motif editor)
 Ctrl/Cmd+Z  undo    Ctrl/Cmd+S  save"""
 
@@ -352,6 +352,7 @@ func _edit_input(event: InputEvent) -> void:
 		KEY_1: if not k.echo: add("air_ring")
 		KEY_2: if not k.echo: add("bob_slab")
 		KEY_3: if not k.echo: add("bob_slab",RING_SLAB_PUMPS)
+		KEY_4: if not k.echo: add("islet")
 		KEY_U: if not k.echo: step_out()
 		KEY_O: if not k.echo and not cmd: open_island()
 		KEY_K: if not k.echo and not cmd: begin_chunk()
@@ -641,7 +642,7 @@ func duplicate_selected() -> void:
 		return
 	var e: Dictionary = Layout.entries[selected]
 	if not str(e.kind) in Layout.ADDABLE:
-		say("only rings and slabs copy (not %s)" % e.kind)
+		say("only rings, slabs and islets copy (not %s)" % e.kind)
 		return
 	var t := Layout.current(selected)
 	var right: Vector3 = (study.camera as Camera3D).global_basis.x
@@ -851,7 +852,7 @@ func _group_copy() -> void:
 		made.append(name)
 		recs.append({"do":"add","name":name})
 	if made.is_empty():
-		say("only rings and slabs copy (none in the group)")
+		say("only rings, slabs and islets copy (none in the group)")
 		return
 	_push({"do":"group","name":"copy:"+",".join(PackedStringArray(made)),"recs":recs,"names":group.duplicate()})
 	dirty = true
@@ -979,9 +980,9 @@ func save_chunk(name: String, names: Array, yaw: float) -> void:
 	var had := name in Chunks.names()
 	var res: Array = Chunks.save(name,names,Transform3D(Basis(Vector3.UP,yaw),c.snappedf(SNAP)))
 	if int(res[0]) != OK:
-		say("chunk %s not saved: %s" % [name,"only rings and slabs go in a chunk" if int(res[0]) == ERR_INVALID_DATA else error_string(int(res[0]))])
+		say("chunk %s not saved: %s" % [name,"only rings, slabs and islets go in a chunk" if int(res[0]) == ERR_INVALID_DATA else error_string(int(res[0]))])
 		return
-	say("%s chunk %s: %d pieces%s  (%s)" % ["replaced" if had else "saved",name,int(res[1]),"  (%d not rings or slabs left out)" % int(res[2]) if int(res[2]) > 0 else "",Chunks.file_of(name)])
+	say("%s chunk %s: %d pieces%s  (%s)" % ["replaced" if had else "saved",name,int(res[1]),"  (%d not rings, slabs or islets left out)" % int(res[2]) if int(res[2]) > 0 else "",Chunks.file_of(name)])
 	if _listing(): show_chunks(true)
 
 ## The chunk list on (J) or off: Up / Down pick, Enter or a click stamps

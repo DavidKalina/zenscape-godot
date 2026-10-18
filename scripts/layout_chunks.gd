@@ -5,7 +5,7 @@ extends RefCounted
 ## to the chunk's anchor: its middle, turned as the view faced when it was
 ## saved), a slab's pumps and a size off the coded one; a stamp rebuilds
 ## each piece from the current code (scripts/layout_overrides.gd `spawn`).
-## Only the kinds the layout file can add (Layout.ADDABLE: rings, slabs) go
+## Only the kinds the layout file can add (Layout.ADDABLE: rings, slabs, islets) go
 ## in a chunk.
 ##
 ## The files: <the layout file's folder>/chunks/<name>.json (so
