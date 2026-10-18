@@ -19,6 +19,7 @@ extends Node
 const Layout = preload("res://scripts/layout_overrides.gd")
 const AirRing = preload("res://scripts/interactables/air_ring.gd")
 const BobSlab = preload("res://scripts/interactables/bob_slab.gd")
+const Islands = preload("res://scripts/world_islands.gd")
 
 const TOGGLE := KEY_F4
 const LOOK_RATE := 0.004
@@ -32,11 +33,14 @@ const SNAP := 0.05
 const ADD_OUT := 14.0
 ## The ring-stair slabs' launch (ring_route.gd RING_SLAB_PUMPS).
 const RING_SLAB_PUMPS := 7.0
+## What stands on a selected island: boxed faintly under its bright rim.
+const MEMBER_TINT := Color(1.0,0.75,0.4,0.28)
 const HINT := """LAYOUT EDIT  (F4: back to play, he drops where you look)
 RMB hold + move  look      W A S D / Q E  fly / down, up    Shift  fast
 LMB  select, drag to move (at its height)     wheel / PgUp PgDn  height (Shift: 1 m)
 Z / X  turn 15 deg (Shift 5)    T / G  tip 15 deg    C  duplicate    Del / Backspace  delete
 1  add air ring    2  add bob slab    3  add ring-stair slab (7 pumps)
+click an island's ground: the island    U  from a piece to the island it stands on
 Ctrl/Cmd+S  save"""
 
 var study: Node3D
@@ -109,7 +113,12 @@ func enter() -> void:
 	_build_ui()
 	_ui.visible = true
 	set_process(true)
-	say("%d named objects" % Layout.entries.size())
+	# What stands on each island, found once (scripts/world_islands.gd).
+	if not Islands.anchored and not Islands.islands.is_empty():
+		var began := Time.get_ticks_msec()
+		Islands.anchor(study.world_roots() if study.has_method("world_roots") else study.get_children())
+		print("world view: anchored in %d ms: %s" % [Time.get_ticks_msec()-began,Islands.summary()])
+	say("%d named objects, %d islands" % [Layout.entries.size(),Islands.islands.size()])
 
 ## Back to play: he is dropped where the camera's middle looks (on what it
 ## hits), facing the view, else back where he stood.
@@ -201,6 +210,7 @@ func _edit_input(event: InputEvent) -> void:
 		KEY_1: if not k.echo: add("air_ring")
 		KEY_2: if not k.echo: add("bob_slab")
 		KEY_3: if not k.echo: add("bob_slab",RING_SLAB_PUMPS)
+		KEY_U: if not k.echo: step_out()
 
 # --- Picking and moving --------------------------------------------------------------
 
@@ -226,6 +236,8 @@ func pick(at: Vector2) -> String:
 				hit_name = str(n.get_meta("layout_name"))
 				break
 			n = n.get_parent()
+		# Else the island it is (its ground) or stands on (a member).
+		if hit_name == "": hit_name = Islands.island_of(hit.collider)
 	var best := ""
 	var best_d := INF
 	var best_k := INF
@@ -251,7 +263,7 @@ func pick(at: Vector2) -> String:
 func click(at: Vector2) -> void:
 	var name := pick(at)
 	select(name)
-	if name == "": return
+	if name == "" or is_island(name): return
 	# Dragged in the level plane through its middle, held where it was taken.
 	var t := Layout.current(name)
 	_drag_y = t.origin.y
@@ -271,7 +283,7 @@ func _on_level(at: Vector2, y: float) -> Vector3:
 	return from+way*k
 
 func drag_to(at: Vector2) -> void:
-	if selected == "": return
+	if selected == "" or _island_held(): return
 	var p := _on_level(at,_drag_y)
 	if p == Vector3.INF: return
 	var t := Layout.current(selected)
@@ -280,7 +292,7 @@ func drag_to(at: Vector2) -> void:
 	_put(selected,t)
 
 func lift(dy: float) -> void:
-	if selected == "": return
+	if selected == "" or _island_held(): return
 	var t := Layout.current(selected)
 	t.origin.y = snappedf(t.origin.y+dy,SNAP)
 	_drag_y += dy
@@ -288,14 +300,14 @@ func lift(dy: float) -> void:
 
 ## Turned `deg` about the world's up, round its own middle.
 func turn(deg: float) -> void:
-	if selected == "": return
+	if selected == "" or _island_held(): return
 	var t := Layout.current(selected)
 	t.basis = Basis(Vector3.UP,deg_to_rad(deg))*t.basis
 	_put(selected,t)
 
 ## Tipped `deg` about its own x.
 func tip(deg: float) -> void:
-	if selected == "": return
+	if selected == "" or _island_held(): return
 	var t := Layout.current(selected)
 	t.basis = t.basis*Basis(Vector3.RIGHT,deg_to_rad(deg))
 	_put(selected,t)
@@ -326,7 +338,7 @@ func add(kind: String, pumps := 0.0) -> void:
 
 ## A copy of the selected ring or slab, 3 m to the camera's right.
 func duplicate_selected() -> void:
-	if selected == "": return
+	if selected == "" or _island_held(): return
 	var e: Dictionary = Layout.entries[selected]
 	if not str(e.kind) in Layout.ADDABLE:
 		say("only rings and slabs copy (not %s)" % e.kind)
@@ -340,7 +352,7 @@ func duplicate_selected() -> void:
 	select(name)
 
 func delete_selected() -> void:
-	if selected == "": return
+	if selected == "" or _island_held(): return
 	var name := selected
 	select("")
 	var e: Dictionary = Layout.entries[name]
@@ -370,10 +382,32 @@ func save() -> void:
 		say("saved %s" % Layout.path)
 	else: say("save failed (%s): %s" % [error_string(err),Layout.path])
 
+# --- Islands -------------------------------------------------------------------------
+
+func is_island(name: String) -> bool:
+	return Islands.islands.has(name)
+
+## True (and said) when the selection is an island: it doesn't move yet.
+func _island_held() -> bool:
+	if not is_island(selected): return false
+	say("islands don't move yet (the next step)")
+	return true
+
+## From the selected piece to the island it stands on (or over).
+func step_out() -> void:
+	if selected == "" or is_island(selected): return
+	var e: Dictionary = Layout.entries[selected]
+	var on := Islands.island_of(e.node)
+	if on == "": on = Islands.island_under(Layout.current(selected).origin)
+	if on == "":
+		say("%s stands on no island (a free piece)" % selected)
+		return
+	select(on)
+
 # --- Selection and text ----------------------------------------------------------------
 
 func select(name: String) -> void:
-	selected = name if Layout.entries.has(name) else ""
+	selected = name if Layout.entries.has(name) or is_island(name) else ""
 	_show_box()
 	_show_status()
 
@@ -385,12 +419,21 @@ func _show_box() -> void:
 		_box.name = "LayoutSelection"
 		var mat := StandardMaterial3D.new()
 		mat.albedo_color = Color(1.0,0.85,0.2)
+		mat.vertex_color_use_as_albedo = true
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.no_depth_test = true
 		_box.material_override = mat
 		_box.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if _box.get_parent() != null: _box.get_parent().remove_child(_box)
 	if selected == "": return
+	if is_island(selected):
+		var i: Dictionary = Islands.islands[selected]
+		var land: Node3D = i.node
+		_box.mesh = _island_wire(i,land.global_transform.affine_inverse())
+		land.add_child(_box)
+		_box.transform = Transform3D.IDENTITY
+		return
 	var node: Node3D = Layout.entries[selected].node
 	var box := _drawn_box(node)
 	_box.mesh = _wire_box(box.grow(0.15))
@@ -414,11 +457,37 @@ static func _drawn_box(node: Node3D) -> AABB:
 static func _wire_box(b: AABB) -> ImmediateMesh:
 	var m := ImmediateMesh.new()
 	m.surface_begin(Mesh.PRIMITIVE_LINES)
+	_box_lines(m,b,Transform3D.IDENTITY)
+	m.surface_end()
+	return m
+
+static func _box_lines(m: ImmediateMesh, b: AABB, to: Transform3D, tint := Color.WHITE) -> void:
+	m.surface_set_color(tint)
 	for i in range(12):
 		var a: int = [0,1,3,2,4,5,7,6,0,1,3,2][i]
 		var c: int = [1,3,2,0,5,7,6,4,4,5,7,6][i]
-		m.surface_add_vertex(b.get_endpoint(a))
-		m.surface_add_vertex(b.get_endpoint(c))
+		m.surface_add_vertex(to*b.get_endpoint(a))
+		m.surface_add_vertex(to*b.get_endpoint(c))
+
+## An island's outline drawn twice round its rim (at its drawn top, and
+## 0.6 m under), and a box round each thing that stands on it (world
+## bounds, into the land's space by `to`).
+static func _island_wire(i: Dictionary, to: Transform3D) -> ImmediateMesh:
+	var m := ImmediateMesh.new()
+	m.surface_begin(Mesh.PRIMITIVE_LINES)
+	var outline: PackedVector2Array = i.outline
+	var y := Islands.rim_y(i)
+	for k in range(outline.size()):
+		var a := outline[k]
+		var b := outline[(k+1)%outline.size()]
+		for h: float in [y,y-0.6]:
+			m.surface_set_color(Color.WHITE)
+			m.surface_add_vertex(to*Vector3(a.x,h,a.y))
+			m.surface_add_vertex(to*Vector3(b.x,h,b.y))
+	for n: Node3D in i.members:
+		if not is_instance_valid(n): continue
+		var b := Islands.drawn_box(n)
+		if b.size != Vector3.ZERO: _box_lines(m,b.grow(0.1),to,MEMBER_TINT)
 	m.surface_end()
 	return m
 
@@ -441,7 +510,7 @@ func _build_ui() -> void:
 	hint.add_theme_font_size_override("font_size",15)
 	_ui.add_child(hint)
 	_status = Label.new()
-	_status.position = Vector2(16.0,150.0)
+	_status.position = Vector2(16.0,196.0)
 	_status.add_theme_color_override("font_color",Color(1.0,0.85,0.3))
 	_status.add_theme_color_override("font_outline_color",Color(0.0,0.0,0.0,0.85))
 	_status.add_theme_constant_override("outline_size",5)
@@ -451,7 +520,11 @@ func _build_ui() -> void:
 func _show_status() -> void:
 	if _status == null: return
 	var line := "nothing selected"
-	if selected != "":
+	if is_island(selected):
+		var i: Dictionary = Islands.islands[selected]
+		var c: Vector2 = (i.rect as Rect2).get_center()
+		line = "%s  (island)  %d things stand on it  middle %.1f, %.1f" % [selected,(i.members as Array).size(),c.x,c.y]
+	elif selected != "":
 		var t := Layout.current(selected)
 		var e := t.basis.get_euler()
 		line = "%s  (%s)  at %.2f, %.2f, %.2f  yaw %.0f  tip %.0f" % [selected,Layout.entries[selected].kind,t.origin.x,t.origin.y,t.origin.z,rad_to_deg(e.y),rad_to_deg(e.x)]

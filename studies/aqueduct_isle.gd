@@ -136,6 +136,7 @@ const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const BaseArt = preload("res://studies/aqueduct_isle_base.gd")
 const TurfLips = preload("res://scripts/kit_isle/turf_lips.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
+const WorldIslands = preload("res://scripts/world_islands.gd")
 const FixedCache = preload("res://scripts/roguelike/fixed_cache.gd")
 const Life = preload("res://studies/aqueduct_isle_life.gd")
 const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
@@ -309,6 +310,21 @@ func _build_art() -> void:
 	var near: Node3D = base.near
 	var far: Node3D = base.far
 	var islets: Array = base.islets
+	# The islands as the world view's units (scripts/world_islands.gd), by
+	# stable names; what stands on each is found when the view first opens.
+	WorldIslands.begin()
+	WorldIslands.add("island/near",near,Art.TOP)
+	WorldIslands.add("island/far",far,Art.TOP)
+	for k in range(islets.size()):
+		var islet: Node3D = islets[k]
+		WorldIslands.add("island/"+str(islet.name).to_snake_case(),islet,[Art.WEST_TOP,Art.EAST_TOP][k])
+	# What spans the islands: the aqueduct (and its channel's water), and the
+	# stepping stumps back from the far island.
+	var spanning: Array = []
+	for n: String in ["Aqueduct","Channel"]:
+		if art.has_node(n): spanning.append(art.get_node(n))
+	WorldIslands.add_link("link/aqueduct_main",spanning,["island/near","island/far"])
+	if art.has_node("Stumps"): WorldIslands.add_link("link/stumps",[art.get_node("Stumps")],["island/near","island/far"])
 	# Its ruins' levels of detail (scripts/ruin_lod.gd): less drawn far off.
 	preload("res://scripts/ruin_lod.gd").add_async(art)
 	# The turf the grass and flowers grow on (`_grow`, once it all stands
@@ -342,6 +358,19 @@ func _build_art() -> void:
 		editor.setup(self,foot_host)
 	# --sluice: the Sluice Flush on the channel (scripts/traps/sluice_aqueduct.gd).
 	preload("res://scripts/traps/sluice_aqueduct.gd").build(self)
+
+## Where the world view (scripts/layout_edit.gd) looks for what stands on
+## the islands (scripts/world_islands.gd `anchor`): the art, the foot
+## route's pieces, the life on the ground, the lodestone and target stone,
+## and the collision parts. Not the sky, the planes, the dragons or him.
+func world_roots() -> Array:
+	var out: Array = [art]
+	for n: String in ["FootPieces","Life","Lodestone","TargetStone"]:
+		var node := get_node_or_null(n)
+		if node != null: out.append(node)
+	for c: Node in get_children():
+		if c is StaticBody3D: out.append(c)
+	return out
 
 ## A quit while the base's copy is still being kept: the save finished
 ## first (scripts/roguelike/fixed_cache.gd `finish_save`).
