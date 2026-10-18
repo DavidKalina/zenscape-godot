@@ -9,18 +9,18 @@ extends RefCounted
 ##   2. off its far edge onto a kicker slab, its launch sailed to the
 ##      outcrop;
 ##   3. the outcrop's ring stair: slam its slab, up through four rings
-##      stepping back over it, two updrafts from each, the last sailed
+##      stepping back over it, a ring's boost and one updraft each, the last sailed
 ##      down to the slide rock's perch, the bell spires in view;
 ##   4. the slide: off the perch onto the slope, slammed into it, slid down
 ##      to its lip at speed, and the fork: on through the standing ring at
-##      the north lip (the speed kept, the bar refilled, two updrafts and
+##      the north lip (the speed kept, the bar refilled, boosted, two updrafts and
 ##      the sail), or a slide jump and an updraft up through the flat ring
 ##      over the south lip (refilled, its updrafts higher), both onto the
 ##      far crag;
 ##   5. the far crag's last slab and ring, sailed south onto the bell
 ##      spires' north turf.
-## Under the fork's flight, a catch crag; its slab and ring climb back out to
-## the far crag.
+## Under the fork's flight, a catch crag; its slab and ring stair climb back
+## out to the far crag.
 ##
 ## Every gap comes from the motor as measured (scratch drivers, size 1, the
 ## handoff's table); offsets the motor sets go by the wanderer's size
@@ -46,11 +46,16 @@ const SAIL_GLIDE := 4.3
 ## The slam needs 1.8 m of air (slam.gd LOW); each slab sits STEP_DOWN
 ## under the edge he steps off, so a hop off it slams.
 const STEP_DOWN := 2.6
-## From a ring: popped and two updrafts, RING_RISE over it.
-const RING_RISE := 8.2
+## From a ring (AirRing.POP 6 m boost, the bar refilled): his feet rise
+## 6.0 m on the boost alone, 9.7 with one updraft, 12.2 with two, 13.3 with
+## three, carrying his flat pace all the way (15 m/s: 37.5 m on by the top
+## of two; 5 m/s: 12.5). Sailed off that, his pace bleeds slowly (15 m/s to
+## 9.5 in 4 s), so a fast take carries twice as far as a slow one.
+const RING_RISE := 9.7
 ## A ring stair as the aqueduct's (aqueduct_foot_route.gd): its slab's
 ## launch (7 pumps) puts his chest RING_FIRST over the slab; each ring
-## RING_STEP over the last and RING_OUT back.
+## RING_STEP over the last and RING_OUT back: the boost alone falls 1.5 m
+## short of the next, the boost and one updraft clear it by 2.2.
 const RING_FIRST := 9.1
 const RING_STEP := 7.5
 const RING_OUT := 3.0
@@ -78,7 +83,7 @@ const OUTCROP_R := 5.0
 const RINGS := 4
 ## 4: the slide rock: a perch, a step down onto the slope, the slope down
 ## east at SLOPE_DEG for SLOPE_LONG m along it to the lip, LANES wide.
-static var PERCH := Vector3(302.0,TOP+24.5,-12.0)
+static var PERCH := Vector3(292.0,TOP+24.5,-12.0)
 const PERCH_R := 4.5
 const PERCH_STEP := 2.0
 const SLOPE_DEG := 35.0
@@ -93,18 +98,21 @@ const LANE := 3.2
 const RING_A_OUT := 1.6
 const RING_A_UP := 0.7
 const RING_A_TIP := 0.15
-const RING_B_OUT := 6.0
+const RING_B_OUT := 3.7
 const RING_B_UP := 3.6
 ## The far crag: at the lip's height, where only the slide's pace carries.
-static var FAR_CRAG := Vector3(406.0,0.0,-2.0)
+static var FAR_CRAG := Vector3(410.0,0.0,-2.0)
 const FAR_R := 7.5
 ## 5: its last slab off the south edge, one ring over it, toward the bell
 ## spires' north turf (motif_sky.gd: bell spires at y TOP+12).
 const BELL_TURF := TOP+12.0
 ## Under the fork's flight: the catch crag CATCH_UNDER under the lip.
 const CATCH_UNDER := 11.0
-static var CATCH := Vector3(360.0,0.0,-10.0)
-const CATCH_R := 5.5
+static var CATCH := Vector3(333.0,0.0,-12.0)
+const CATCH_R := 6.0
+## Its way back out: a ring stair of CATCH_RINGS, the last's boost and two
+## updrafts (12.2 m) sailed on to the far crag.
+const CATCH_RINGS := 3
 
 static func slope_top() -> float: return PERCH.y-PERCH_STEP
 static func slope_run() -> float: return SLOPE_LONG*cos(deg_to_rad(SLOPE_DEG))*S
@@ -124,10 +132,9 @@ static func kicker() -> Vector3:
 static func ring_slab() -> Vector3:
 	return Vector3(OUTCROP.x+OUTCROP_R+1.8,OUTCROP.y-STEP_DOWN,OUTCROP.z)
 
-static func stair() -> Array:
+static func stair(base := ring_slab(), count := RINGS) -> Array:
 	var out: Array = []
-	var base := ring_slab()
-	for i in range(RINGS): out.append(base+Vector3(-RING_OUT*S*i,(RING_FIRST+RING_STEP*i)*S,0.0))
+	for i in range(count): out.append(base+Vector3(-RING_OUT*S*i,(RING_FIRST+RING_STEP*i)*S,0.0))
 	return out
 
 static func ring_a() -> Vector3: return Vector3(lip_x()+RING_A_OUT*S,lip_y()+RING_A_UP*S,PERCH.z-LANE)
@@ -185,7 +192,8 @@ static func build(study: Node3D, host: Node3D) -> void:
 	# The catch crag's way back up: its slab and ring.
 	var cs: Node3D = host.bob_slab(catch_slab(),Vector3(2.3,0.7,2.2),0.5,545)
 	cs.spring_pumps = RING_SLAB_PUMPS
-	host.air_ring(catch_slab()+Vector3(0.0,RING_FIRST*S,0.0),546,0.2)
+	var cst := stair(catch_slab(),CATCH_RINGS)
+	for i in range(cst.size()): host.air_ring(cst[i],546+i,0.2+0.3*i)
 	# Standing stones on the rest stops.
 	var marks: Array = []
 	for spec: Array in [[CRAG1,0.4],[OUTCROP,1.1],[PERCH,2.2],[far_crag(),0.8]]:
