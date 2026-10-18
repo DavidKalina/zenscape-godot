@@ -229,10 +229,10 @@ func balustrade(points: PackedVector3Array, seed_value := 0, weathered := 0.3, f
 	return r
 
 ## An air ring lying flat at `at` (its middle), turned `yaw`, tipped `tip`
-## (rad about its own x) if given.
-func air_ring(at: Vector3, seed_value := 0, yaw := 0.0, tip := 0.0) -> Node3D:
+## (rad about its own x) if given; `radius` its size (m, AirRing.RADIUS).
+func air_ring(at: Vector3, seed_value := 0, yaw := 0.0, tip := 0.0, radius := AirRing.RADIUS) -> Node3D:
 	var r: Node3D = AirRing.new()
-	r.setup(Transform3D(Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,tip),at),seed_value)
+	r.setup(Transform3D(Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,tip),at),seed_value,radius)
 	add_child(r)
 	rings.append(r)
 	_handle(r,"air_ring",Transform3D(Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,tip),at))

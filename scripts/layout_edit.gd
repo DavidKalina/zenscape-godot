@@ -27,6 +27,9 @@ const PICK_PX := 28.0
 ## A pick's screen reach round a ring's or a slab's middle (m).
 const REACH := {"air_ring":AirRing.RADIUS+0.3,"bob_slab":1.5,"sink_slab":1.5,"drift_slab":1.5,"rope":4.0,"token":1.0}
 const LIFT := 0.25
+## A size step (m: a ring's radius, a slab's longer side), and Shift's.
+const GROW := 0.25
+const GROW_FINE := 0.05
 const TURN := 15.0
 const SNAP := 0.05
 ## A new piece: this far along the view (nearer if something is in the way).
@@ -45,7 +48,7 @@ const STRIP_SLACK := 2.0
 const HINT := """LAYOUT EDIT  (F4: back to play, he drops where you look)
 RMB hold + move  look      W A S D / Q E  fly / down, up    Shift  fast
 LMB  select, drag to move (at its height; an island too)     wheel / PgUp PgDn  height (Shift: 1 m)
-Z / X  turn 15 deg (Shift 5)    T / G  tip 15 deg    C  duplicate    Del / Backspace  delete
+Z / X  turn 15 deg (Shift 5)    T / G  tip 15 deg    [ / ]  size (rings, slabs; Shift finer)    C  duplicate    Del / Backspace  delete
 1  add air ring    2  add bob slab    3  add ring-stair slab (7 pumps)
 click an island's ground: the island    U  from a piece to the island it stands on    O  open the island alone (motif editor)
 Ctrl/Cmd+S  save"""
@@ -256,6 +259,8 @@ func _edit_input(event: InputEvent) -> void:
 		KEY_PAGEDOWN: lift(-4.0*LIFT if fine else -LIFT)
 		KEY_Z: turn(5.0 if fine else TURN)
 		KEY_X: turn(-5.0 if fine else -TURN)
+		KEY_BRACKETLEFT: resize(-(GROW_FINE if fine else GROW))
+		KEY_BRACKETRIGHT: resize(GROW_FINE if fine else GROW)
 		KEY_T: tip(5.0 if fine else TURN)
 		KEY_G: tip(-5.0 if fine else -TURN)
 		KEY_C: if not k.echo and not cmd: duplicate_selected()
@@ -300,7 +305,7 @@ func pick(at: Vector2) -> String:
 		if not REACH.has(e.kind) or not is_instance_valid(e.node): continue
 		var mid: Vector3 = e.node.layout_mid() if e.node.has_method("layout_mid") else (e.node as Node3D).global_position
 		if cam.is_position_behind(mid): continue
-		var r: float = REACH[e.kind]
+		var r: float = e.node.layout_reach() if e.node.has_method("layout_reach") else REACH[e.kind]
 		var c := cam.unproject_position(mid)
 		var edge := cam.unproject_position(mid+cam.global_basis.x*r)
 		var reach := maxf(c.distance_to(edge),PICK_PX)
@@ -311,8 +316,12 @@ func pick(at: Vector2) -> String:
 			best_k = off/reach
 			best_d = from.distance_to(mid)
 			best = name
-	if best != "" and best_d-float(REACH[Layout.entries[best].kind]) <= hit_d: return best
+	if best != "" and best_d-_reach_of(best) <= hit_d: return best
 	return hit_name
+
+func _reach_of(name: String) -> float:
+	var e: Dictionary = Layout.entries[name]
+	return float(e.node.layout_reach()) if e.node.has_method("layout_reach") else float(REACH[e.kind])
 
 func click(at: Vector2) -> void:
 	var name := pick(at)
@@ -409,6 +418,41 @@ func tip(deg: float) -> void:
 	t.basis = t.basis*Basis(Vector3.RIGHT,deg_to_rad(deg))
 	_put(selected,t)
 
+## The selected ring or slab grown by `step` m (a ring's radius; a slab's
+## longer side, its footprint scaled to keep its shape, its thickness kept),
+## that piece alone built again at once.
+func resize(step: float) -> void:
+	if selected == "" or _island_held(): return
+	var was: Variant = Layout.size_of(selected)
+	if was == null:
+		say("only rings and slabs size (not %s)" % Layout.entries[selected].kind)
+		return
+	var node: Node3D = Layout.entries[selected].node
+	var began := Time.get_ticks_usec()
+	if was is Vector3:
+		var v: Vector3 = was
+		var long := maxf(v.x,v.z)
+		var k := maxf(long+step,0.01)/long
+		# Its shape kept at the ends too (FootSlab SIDE_MIN, SIDE_MAX).
+		k = clampf(k,float(node.SIDE_MIN)/minf(v.x,v.z),float(node.SIDE_MAX)/long)
+		node.layout_resize(Vector3(v.x*k,v.y,v.z*k))
+	else: node.layout_resize(float(was)+step)
+	if Layout._same_size(Layout.size_of(selected),was):
+		say("%s is as %s as it goes" % [selected,"big" if step > 0.0 else "small"])
+		return
+	print("world view: %s sized %s in %.1f ms" % [selected,size_text(selected),(Time.get_ticks_usec()-began)/1000.0])
+	dirty = true
+	_strips_stale = true
+	_show_box()
+	_show_status()
+
+## `name`'s size for the status line ("" none).
+func size_text(name: String) -> String:
+	var v: Variant = Layout.size_of(name)
+	if v == null: return ""
+	if v is Vector3: return "%.2f x %.2f m" % [v.x,v.z]
+	return "%.2f m across (radius %.2f)" % [float(v)*2.0,float(v)]
+
 func _put(name: String, t: Transform3D) -> void:
 	Layout.apply(name,t)
 	dirty = true
@@ -445,7 +489,7 @@ func duplicate_selected() -> void:
 	var right: Vector3 = (study.camera as Camera3D).global_basis.x
 	t.origin += Vector3(right.x,0.0,right.z).normalized()*3.0
 	var name := Layout.fresh_name(str(e.kind))
-	Layout.spawn(host,name,str(e.kind),t,float(e.get("pumps",0.0)))
+	Layout.spawn(host,name,str(e.kind),t,float(e.get("pumps",0.0)),Layout.size_of(selected))
 	dirty = true
 	select(name)
 
@@ -747,4 +791,6 @@ func _show_status() -> void:
 		var t := Layout.current(selected)
 		var e := t.basis.get_euler()
 		line = "%s  (%s)  at %.2f, %.2f, %.2f  yaw %.0f  tip %.0f" % [selected,Layout.entries[selected].kind,t.origin.x,t.origin.y,t.origin.z,rad_to_deg(e.y),rad_to_deg(e.x)]
+		var sz := size_text(selected)
+		if sz != "": line += "  size "+sz
 	_status.text = line+("   [unsaved]" if dirty else "")+("\n"+_said if _said != "" else "")

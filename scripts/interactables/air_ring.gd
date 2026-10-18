@@ -19,11 +19,20 @@ extends Node3D
 ##
 ## Lengths go by the walker's size where they meet him (`try_take`); the
 ## ring itself is built at size 1. It has no collision: he flies through.
+##
+## Its size (`radius`, RADIUS unless set; the world view's [ / ],
+## scripts/layout_edit.gd, or a mechanic's `radius` knob): the stones' ring,
+## the band, the hole (`hole`, as far inside the stones as at RADIUS) and
+## the top's disc go with it; the stones keep their depth and height.
+## `layout_resize` builds its stones again at a new one.
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 
 ## m from its middle to the stones' middle; the stones' radial depth and
 ## height; how many.
 const RADIUS := 1.75
+## The sizes the world view lets it take (m, its radius).
+const RADIUS_MIN := 0.8
+const RADIUS_MAX := 6.0
 const DEPTH := 0.42
 const HIGH := 0.38
 const BLOCKS := 10
@@ -60,6 +69,8 @@ const SPIN := 0.12
 
 var cool := 0.0
 var takes := 0
+var radius := RADIUS
+var _seed := 0
 var _home := Transform3D.IDENTITY
 var _clock := 0.0
 var _prev := NAN               # his chest's height over the plane last frame
@@ -77,17 +88,46 @@ var _hoop: MeshInstance3D
 var _hoop_mat: StandardMaterial3D
 var _motes: CPUParticles3D
 
-func setup(pose: Transform3D, seed_value := 0) -> void:
+func setup(pose: Transform3D, seed_value := 0, size := RADIUS) -> void:
 	name = "AirRing"
 	_home = pose
 	transform = pose
 	_clock = float(seed_value%17)*0.37
-	var b := RuinKit.Build.new(seed_value,0.45,"AirRing")
+	_seed = seed_value
+	radius = clampf(size,RADIUS_MIN,RADIUS_MAX)
+	_build()
+
+## m from its middle his chest must pass within (at his size 1): HOLE at
+## RADIUS, as far inside the stones at any other.
+func hole() -> float:
+	return maxf(HOLE+radius-RADIUS,0.3)
+
+## Its size for the layout editor (scripts/layout_overrides.gd): its radius.
+func layout_size() -> Variant:
+	return radius
+
+## Built again at radius `r` (m, clamped): its stones, band, hoop and motes.
+func layout_resize(r: Variant) -> void:
+	var to := clampf(float(r),RADIUS_MIN,RADIUS_MAX)
+	if is_equal_approx(to,radius) and _stones != null: return
+	radius = to
+	for n: Node in [_stones,_band,_hoop,_motes]:
+		if n != null:
+			remove_child(n)
+			n.queue_free()
+	_build()
+
+## The world view's pick reach round its middle (m).
+func layout_reach() -> float:
+	return radius+0.3
+
+func _build() -> void:
+	var b := RuinKit.Build.new(_seed,0.45,"AirRing")
 	var a := PI/float(BLOCKS)-JOINT*0.5
 	var hr := DEPTH*0.5
 	for i in range(BLOCKS):
 		var turn := TAU*float(i)/float(BLOCKS)
-		var r := RADIUS+b.rng.randf_range(-0.03,0.03)
+		var r := radius+b.rng.randf_range(-0.03,0.03)
 		var at := Vector3(cos(turn),0.0,-sin(turn))*r+Vector3.UP*b.rng.randf_range(-0.03,0.03)
 		var pose_i := Transform3D(Basis(Vector3.UP,turn),at)
 		var hh := HIGH*0.5*b.rng.randf_range(0.92,1.08)
@@ -98,9 +138,9 @@ func setup(pose: Transform3D, seed_value := 0) -> void:
 	_stones.name = "Stones"
 	add_child(_stones)
 	_band_mat = _glow_mat(0.85)
-	_band = _torus("Band",RADIUS-hr-0.13,RADIUS-hr+0.03,_band_mat)
+	_band = _torus("Band",radius-hr-0.13,radius-hr+0.03,_band_mat)
 	_hoop_mat = _glow_mat(0.0)
-	_hoop = _torus("Hoop",RADIUS-0.04,RADIUS+0.04,_hoop_mat)
+	_hoop = _torus("Hoop",radius-0.04,radius+0.04,_hoop_mat)
 	_hoop.visible = false
 	_motes = CPUParticles3D.new()
 	_motes.name = "Motes"
@@ -111,8 +151,8 @@ func setup(pose: Transform3D, seed_value := 0) -> void:
 	_motes.explosiveness = 0.95
 	_motes.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
 	_motes.emission_ring_axis = Vector3.UP
-	_motes.emission_ring_radius = RADIUS
-	_motes.emission_ring_inner_radius = RADIUS-0.2
+	_motes.emission_ring_radius = radius
+	_motes.emission_ring_inner_radius = radius-0.2
 	_motes.emission_ring_height = 0.1
 	_motes.direction = Vector3.UP
 	_motes.spread = 70.0
@@ -198,7 +238,7 @@ func advance(delta: float) -> void:
 		var k := clampf(_burst_t/BURST,0.0,1.0)
 		var e := 1.0-pow(1.0-k,3.0)
 		_hoop.visible = k < 1.0
-		var grow := 1.0+BURST_GROW*e/RADIUS
+		var grow := 1.0+BURST_GROW*e/radius
 		_hoop.scale = Vector3(grow,1.0,grow)
 		_hoop_mat.albedo_color.a = (1.0-k)*0.8
 		_hoop_mat.emission_energy_multiplier = GLOW*2.0*(1.0-k)
@@ -227,7 +267,7 @@ func _top(feet: Vector3) -> Dictionary:
 	var flat := rel-n*rel.dot(n)
 	if flat.length() < 0.01: return {}
 	var radial := flat.normalized()
-	var q := middle()+radial*RADIUS
+	var q := middle()+radial*radius
 	# Their height along the axis and depth along the radius, as each faces up.
 	return {"q":q,"y":q.y+HIGH*0.5*absf(n.y)+DEPTH*0.5*absf(radial.y)}
 
@@ -281,7 +321,7 @@ func _bounce_disc(feet: Vector3, vel: Vector3, size: float) -> bool:
 	var at := was.lerp(feet,u)
 	var across := at-c
 	across -= n*across.dot(n)
-	if across.length() > RADIUS+DEPTH*0.5+SOLE*maxf(size,0.5): return false
+	if across.length() > radius+DEPTH*0.5+SOLE*maxf(size,0.5): return false
 	flex_hit(vel)
 	return true
 
@@ -324,9 +364,9 @@ func try_take(chest: Vector3, size := 1.0) -> bool:
 	var across := at-c
 	across -= n*across.dot(n)
 	var down := n.y*(d-prev) < 0.0
-	var inside := across.length() <= HOLE*maxf(size,0.5)
+	var inside := across.length() <= hole()*maxf(size,0.5)
 	if not ready_to_take() or not inside:
-		if is_flat() and down and across.length() <= RADIUS+DEPTH*0.5+SOLE*maxf(size,0.5): fell_in = true
+		if is_flat() and down and across.length() <= radius+DEPTH*0.5+SOLE*maxf(size,0.5): fell_in = true
 		return false
 	take()
 	return true

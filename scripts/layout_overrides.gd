@@ -11,7 +11,11 @@ extends RefCounted
 ##    "moved":   {"ring_route/ring_a": {"pos": [x, y, z], "rot": [x, y, z]}},
 ##    "added":   [{"name": "added/air_ring_1", "kind": "air_ring", "pos": [...], "rot": [...]}],
 ##    "deleted": ["ring_route/chain_slab_2"],
-##    "islands": {"island/near": {"pos": [x, y, z], "rot": [x, y, z]}}}
+##    "islands": {"island/near": {"pos": [x, y, z], "rot": [x, y, z]}},
+##    "sizes":   {"ring_route/ring_a": 2.5, "foot_route/bob_slab_1": [3.0, 0.7, 2.8]}}
+## A size (the world view's [ / ]) is a ring's radius or a slab's block
+## (m), only for those off their coded size; an added piece keeps its own
+## as "size". A node takes it by `layout_size` / `layout_resize`.
 ## An island's entry (scripts/world_islands.gd) is its move from where it
 ## is coded (the whole island and what stands on it carried by it), only
 ## for islands off their coded place; a file without them has none.
@@ -52,7 +56,7 @@ static func begin(scene_id: String) -> void:
 		push_warning("layout %s: not a JSON object, ignored" % path)
 		return
 	var d: Dictionary = parsed
-	for k: String in ["moved","added","deleted","islands"]:
+	for k: String in ["moved","added","deleted","islands","sizes"]:
 		if d.has(k): data[k] = d[k]
 
 ## The file's island moves: name -> Transform3D (from coded).
@@ -80,6 +84,31 @@ static func track(name: String, node: Node3D, kind: String, coded: Transform3D, 
 	e.merge(extra)
 	entries[name] = e
 	node.set_meta("layout_name",name)
+	if not node.has_method("layout_size"): return
+	e["size0"] = node.layout_size()
+	var sizes: Dictionary = data.get("sizes",{})
+	if sizes.has(name): node.layout_resize(size_from_json(sizes[name],e.size0))
+
+## `name`'s size now (a ring's radius, a slab's block), null if it has none.
+static func size_of(name: String) -> Variant:
+	var node: Node = entries[name].node
+	return node.layout_size() if node.has_method("layout_size") else null
+
+## A size as the file keeps it (a number, or [x, y, z]).
+static func size_to_json(v: Variant) -> Variant:
+	if v is Vector3: return [snappedf(v.x,0.001),snappedf(v.y,0.001),snappedf(v.z,0.001)]
+	return snappedf(float(v),0.001)
+
+## A size read from the file, shaped as `like` (a Vector3 or a float).
+static func size_from_json(d: Variant, like: Variant) -> Variant:
+	if like is Vector3:
+		if d is Array and (d as Array).size() == 3: return Vector3(float(d[0]),float(d[1]),float(d[2]))
+		return like
+	return float(d) if d is float or d is int else like
+
+static func _same_size(a: Variant, b: Variant) -> bool:
+	if a is Vector3 and b is Vector3: return (a as Vector3).distance_to(b) < 0.005
+	return absf(float(a)-float(b)) < 0.005
 
 ## Where `name`'s object stands now (by its own measure: a ring's or a
 ## slab's rest pose, a land's coded transform carried by its offset).
@@ -129,10 +158,11 @@ static func build_added(host: Node3D) -> void:
 	for a: Dictionary in added:
 		var kind := str(a.get("kind",""))
 		if not kind in ADDABLE: continue
-		spawn(host,str(a.name),kind,from_json(a),float(a.get("pumps",0.0)))
+		spawn(host,str(a.name),kind,from_json(a),float(a.get("pumps",0.0)),a.get("size",null))
 
-## A new `kind` piece on `host` at `t`, tracked as `name`.
-static func spawn(host: Node3D, name: String, kind: String, t: Transform3D, pumps := 0.0) -> Node3D:
+## A new `kind` piece on `host` at `t`, tracked as `name`; `size` (as the
+## file keeps it, or a node's own) if given.
+static func spawn(host: Node3D, name: String, kind: String, t: Transform3D, pumps := 0.0, size: Variant = null) -> Node3D:
 	var seed_value := absi(hash(name))%100000
 	var node: Node3D = null
 	if kind == "air_ring": node = host.air_ring(t.origin,seed_value,0.0)
@@ -144,6 +174,7 @@ static func spawn(host: Node3D, name: String, kind: String, t: Transform3D, pump
 	var extra := {"host":host}
 	if kind == "bob_slab": extra["pumps"] = float(node.spring_pumps)
 	track(name,node,kind,t,extra)
+	if size != null and node.has_method("layout_resize"): node.layout_resize(size_from_json(size,node.layout_size()) if not size is Vector3 else size)
 	return node
 
 ## A name for a new `kind` not yet in use.
@@ -158,6 +189,7 @@ static func fresh_name(kind: String) -> String:
 ## their coded place. Returns the error.
 static func save(gone: Array, moved_islands := {}) -> Error:
 	var moved := {}
+	var sizes := {}
 	var added: Array = []
 	var names: Array = entries.keys()
 	names.sort()
@@ -170,8 +202,11 @@ static func save(gone: Array, moved_islands := {}) -> Error:
 			a["name"] = name
 			a["kind"] = e.kind
 			if e.has("pumps") and float(e.pumps) != float(preload("res://scripts/interactables/bob_slab.gd").SPRING_PUMPS): a["pumps"] = e.pumps
+			if e.has("size0") and not _same_size(size_of(name),e.size0): a["size"] = size_to_json(size_of(name))
 			added.append(a)
-		elif not _same(t,e.coded): moved[name] = to_json(t)
+		else:
+			if not _same(t,e.coded): moved[name] = to_json(t)
+			if e.has("size0") and not _same_size(size_of(name),e.size0): sizes[name] = size_to_json(size_of(name))
 	var kept: Array = []
 	for g: String in gone:
 		if not g.begins_with("added/") and not g in kept: kept.append(g)
@@ -183,6 +218,7 @@ static func save(gone: Array, moved_islands := {}) -> Error:
 	for name: String in isl_names:
 		if not _same(moved_islands[name],Transform3D.IDENTITY): isl[name] = to_json(moved_islands[name])
 	if not isl.is_empty(): data["islands"] = isl
+	if not sizes.is_empty(): data["sizes"] = sizes
 	if path.begins_with("res://"): DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	else: DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	var f := FileAccess.open(path,FileAccess.WRITE)
@@ -205,11 +241,13 @@ static func _text(d: Dictionary) -> String:
 	out += "\t\"moved\": {\n%s\n\t},\n" % ",\n".join(lines) if not lines.is_empty() else "\t\"moved\": {},\n"
 	out += "\t\"added\": [\n%s\n\t],\n" % ",\n".join(added) if not added.is_empty() else "\t\"added\": [],\n"
 	out += "\t\"deleted\": [\n%s\n\t]" % ",\n".join(gone) if not gone.is_empty() else "\t\"deleted\": []"
-	var isl: Dictionary = d.get("islands",{})
-	if isl.is_empty(): return out+"\n}\n"
-	var rows := PackedStringArray()
-	for k: String in isl: rows.append("\t\t%s: %s" % [JSON.stringify(k),JSON.stringify(isl[k])])
-	return out+",\n\t\"islands\": {\n%s\n\t}\n}\n" % ",\n".join(rows)
+	for block: String in ["islands","sizes"]:
+		var rows_of: Dictionary = d.get(block,{})
+		if rows_of.is_empty(): continue
+		var rows := PackedStringArray()
+		for k: String in rows_of: rows.append("\t\t%s: %s" % [JSON.stringify(k),JSON.stringify(rows_of[k])])
+		out += ",\n\t\"%s\": {\n%s\n\t}" % [block,",\n".join(rows)]
+	return out+"\n}\n"
 
 static func _same(a: Transform3D, b: Transform3D) -> bool:
 	return a.origin.distance_to(b.origin) < 0.005 and a.basis.get_euler().distance_to(b.basis.get_euler()) < 0.001
