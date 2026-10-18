@@ -129,6 +129,9 @@ var _held_t := 0.0
 var _whip := 0.0
 
 var anchor := Vector3.ZERO
+## The anchor in its own frame: moved (the world view, an island carrying
+## it), `anchor` follows its node and the free end swings after it.
+var _anchor_at := Vector3.ZERO
 var length := 5.0
 ## The rope's held point or its end (world), and its velocity.
 var hands := Vector3.ZERO
@@ -153,6 +156,7 @@ var _tags: Array = []
 ## Hung from `at`, `rope_length` m long.
 func setup(at: Vector3, rope_length: float) -> void:
 	anchor = at
+	_anchor_at = at
 	length = rope_length
 	grip = length
 	hands = anchor+Vector3.DOWN*length
@@ -188,9 +192,27 @@ func _ready() -> void:
 	add_child(_knot)
 	var ring := MeshInstance3D.new()
 	ring.mesh = _knot_mesh(0.11,0.14,Color("2c2a28"))
-	ring.position = anchor+Vector3.DOWN*0.04
+	ring.position = _anchor_at+Vector3.DOWN*0.04
 	add_child(ring)
+	set_notify_transform(true)
+	_follow()
 	_draw()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSFORM_CHANGED: _follow()
+
+## The anchor (world) where its node stands now, his hands carried with it.
+func _follow() -> void:
+	if not is_inside_tree(): return
+	var a := global_transform*_anchor_at
+	if a.is_equal_approx(anchor): return
+	hands += a-anchor
+	anchor = a
+	_draw()
+
+## Its middle (the world view picks it there).
+func layout_mid() -> Vector3:
+	return (anchor+hands)*0.5
 
 func held() -> bool:
 	return motor != null and motor.rider == self
@@ -466,10 +488,14 @@ func _draw() -> void:
 	_segment(_upper,anchor,hands)
 	_lower.visible = grip < length-0.05
 	if _lower.visible: _segment(_lower,hands,end)
-	_knot.transform = Transform3D(_segment_basis(end-u,end).orthonormalized(),end)
+	_knot.transform = _inv()*Transform3D(_segment_basis(end-u,end).orthonormalized(),end)
 
 func _segment(mesh: MeshInstance3D, from: Vector3, to: Vector3) -> void:
-	mesh.transform = Transform3D(_segment_basis(from,to),from)
+	mesh.transform = _inv()*Transform3D(_segment_basis(from,to),from)
+
+## World to its own frame (the drawn parts are its children).
+func _inv() -> Transform3D:
+	return global_transform.affine_inverse() if is_inside_tree() else Transform3D.IDENTITY
 
 ## The rope mesh runs from 0 to -1 along y: its y axis the way back up,
 ## from `to` to `from`, as long as the span.

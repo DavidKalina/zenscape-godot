@@ -22,6 +22,13 @@ const LIST := [
 	["ray", preload("res://scripts/traps/trap_ray.gd"), "Ray"],
 	["tumble_run", preload("res://scripts/traps/trap_tumble_run.gd"), "Tumble run"],
 ]
+## The motif mechanics (air rings, slabs, ropes, caches: scripts/kit_isle/
+## motif_mechanics.gd), placed, saved and built as traps; not trap yard
+## lanes (`keys()` leaves them out; `all_keys()` has them).
+const Mechanics = preload("res://scripts/kit_isle/motif_mechanics.gd")
+
+static func _rows() -> Array:
+	return LIST+Mechanics.LIST
 
 ## The keys, in order.
 static func keys() -> PackedStringArray:
@@ -29,18 +36,24 @@ static func keys() -> PackedStringArray:
 	for row: Array in LIST: out.append(row[0])
 	return out
 
+## The trap keys, then the mechanics'.
+static func all_keys() -> PackedStringArray:
+	var out := keys()
+	out.append_array(Mechanics.keys())
+	return out
+
 static func has(key: String) -> bool:
-	return keys().has(key)
+	return keys().has(key) or Mechanics.has(key)
 
 ## The trap's script, or null for an unknown key.
 static func script_of(key: String) -> GDScript:
-	for row: Array in LIST:
+	for row: Array in _rows():
 		if row[0] == key: return row[1]
 	return null
 
 ## Its display name (the key itself for an unknown one).
 static func display_name(key: String) -> String:
-	for row: Array in LIST:
+	for row: Array in _rows():
 		if row[0] == key: return row[2]
 	return key
 

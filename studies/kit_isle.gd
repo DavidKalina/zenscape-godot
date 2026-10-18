@@ -1853,6 +1853,55 @@ func _stone_at(point: Vector3, turn: Basis, with_turf := false) -> bool:
 	_stone_query.transform = Transform3D(turn,point+turn*ground_scale.middle_shift())
 	return not get_world_3d().direct_space_state.intersect_shape(_stone_query,1).is_empty()
 
+## The longest straight run of clear turf over `outline` (world x, z;
+## its turf about height `y`), for the world view's landing-strip warning
+## (scripts/layout_edit.gd): from points on a RUN_GRID m grid inside it,
+## 8 ways, each followed both sides in 1 m steps until the turf ends,
+## steps more than RUN_STEP m, stone stands in the wings' way, or turf or
+## stone hangs within RUN_ROOM m over it (an island moved over). Stops
+## looking once a run reaches `cap` m.
+const RUN_GRID := 6.0
+const RUN_STEP := 0.4
+const RUN_ROOM := 4.0
+
+func longest_run(outline: PackedVector2Array, y: float, cap := 40.0) -> float:
+	if outline.size() < 3: return 0.0
+	var rect := Rect2(outline[0],Vector2.ZERO)
+	for p: Vector2 in outline: rect = rect.expand(p)
+	var best := 0.0
+	var gx := rect.position.x+fmod(rect.size.x,RUN_GRID)*0.5
+	while gx <= rect.end.x:
+		var gz := rect.position.y+fmod(rect.size.y,RUN_GRID)*0.5
+		while gz <= rect.end.y:
+			var p := Vector2(gx,gz)
+			gz += RUN_GRID
+			if not Geometry2D.is_point_in_polygon(p,outline): continue
+			var h := _turf_near(p,y)
+			if is_nan(h): continue
+			for k in range(8):
+				var dir := Vector2.from_angle(PI*k/8.0)
+				var turn := Basis(Vector3.UP,atan2(-dir.x,-dir.y))
+				var run := _run_way(p,dir,h,turn,cap)+_run_way(p,-dir,h,turn,cap)
+				if run > best: best = run
+				if best >= cap: return cap
+		gx += RUN_GRID
+	return best
+
+func _run_way(p: Vector2, dir: Vector2, h: float, turn: Basis, cap: float) -> float:
+	var space := get_world_3d().direct_space_state
+	var t := 1.0
+	while t <= cap:
+		var q := p+dir*t
+		var n := _turf_near(q,h)
+		if is_nan(n) or absf(n-h) > RUN_STEP: break
+		if _stone_at(Vector3(q.x,n+PlaneStrip.contact(PlaneStrip.REST_PITCH),q.y),turn): break
+		# Room over it: no turf or stone (another island's keel) overhead.
+		var up := PhysicsRayQueryParameters3D.create(Vector3(q.x,n+0.3,q.y),Vector3(q.x,n+RUN_ROOM,q.y),TURF_LAYER|plane_mask())
+		if not space.intersect_ray(up).is_empty(): break
+		h = n
+		t += 1.0
+	return t-1.0
+
 ## The best run to take off along from `at` (global XZ, the turf there at
 ## height `y`) facing `heading`, as PlaneStrip `takeoff` reads the plate
 ## (and the landing study its fields): each of 24 ways followed in 0.5 m

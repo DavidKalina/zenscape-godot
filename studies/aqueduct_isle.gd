@@ -135,6 +135,8 @@ const Art = preload("res://studies/aqueduct_isle_art.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const BaseArt = preload("res://studies/aqueduct_isle_base.gd")
 const TurfLips = preload("res://scripts/kit_isle/turf_lips.gd")
+const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
+const WorldIslands = preload("res://scripts/world_islands.gd")
 const FixedCache = preload("res://scripts/roguelike/fixed_cache.gd")
 const Life = preload("res://studies/aqueduct_isle_life.gd")
 const IsleChain = preload("res://studies/aqueduct_isle_chain.gd")
@@ -308,6 +310,21 @@ func _build_art() -> void:
 	var near: Node3D = base.near
 	var far: Node3D = base.far
 	var islets: Array = base.islets
+	# The islands as the world view's units (scripts/world_islands.gd), by
+	# stable names; what stands on each is found when the view first opens.
+	WorldIslands.begin()
+	WorldIslands.add("island/near",near,Art.TOP)
+	WorldIslands.add("island/far",far,Art.TOP)
+	for k in range(islets.size()):
+		var islet: Node3D = islets[k]
+		WorldIslands.add("island/"+str(islet.name).to_snake_case(),islet,[Art.WEST_TOP,Art.EAST_TOP][k])
+	# What spans the islands: the aqueduct (and its channel's water), and the
+	# stepping stumps back from the far island.
+	var spanning: Array = []
+	for n: String in ["Aqueduct","Channel"]:
+		if art.has_node(n): spanning.append(art.get_node(n))
+	WorldIslands.add_link("link/aqueduct_main",spanning,["island/near","island/far"],_aqueduct_fit())
+	if art.has_node("Stumps"): WorldIslands.add_link("link/stumps",[art.get_node("Stumps")],["island/near","island/far"],_stumps_fit())
 	# Its ruins' levels of detail (scripts/ruin_lod.gd): less drawn far off.
 	preload("res://scripts/ruin_lod.gd").add_async(art)
 	# The turf the grass and flowers grow on (`_grow`, once it all stands
@@ -325,15 +342,148 @@ func _build_art() -> void:
 	# path_dirt.gd; --vertex-paths: baked into the turf as before).
 	print("aqueduct isle: %d path segments drawn" % preload("res://scripts/kit_isle/path_dirt.gd").paint(KitLook.ground_material(),Art.paths()))
 	print("aqueduct isle: %d triangles" % triangles(art))
+	# The layout file's moves, deletions and additions (scripts/
+	# layout_overrides.gd; layouts/aqueduct_isle.json, or --layout=), read
+	# before the placers that ask it (the ring route).
+	LayoutOverrides.begin("aqueduct_isle")
+	# Its island moves, once the whole isle stands (`_place_saved_islands`).
+	if not LayoutOverrides.islands().is_empty(): isle_ready.connect(_place_saved_islands,CONNECT_ONE_SHOT)
 	# The on-foot pieces' route (balustrades, ropes, a ferry, bobbing slabs).
-	preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)
+	var foot_host: Node3D = preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)
+	if foot_host != null: LayoutOverrides.build_added(foot_host)
+	# The in-game layout editor (F4, scripts/layout_edit.gd), where the
+	# developer keys are on.
+	if preload("res://scripts/kit_isle/dev_keys.gd").enabled():
+		var editor: Node = preload("res://scripts/layout_edit.gd").new()
+		editor.name = "LayoutEdit"
+		add_child(editor)
+		editor.setup(self,foot_host)
 	# --sluice: the Sluice Flush on the channel (scripts/traps/sluice_aqueduct.gd).
 	preload("res://scripts/traps/sluice_aqueduct.gd").build(self)
+	# The island view's edits (scripts/kit_isle/isle_recipes.gd): each
+	# island's recipe, motifs/authored/isle_<name>.json, its pieces and traps
+	# over it, riding it when the world view moves it.
+	isle_recipes = preload("res://scripts/kit_isle/isle_recipes.gd").build(self)
+
+## The island view's recipes laid over their islands (null: none).
+var isle_recipes: Node3D = null
+
+## How the aqueduct follows its islands in the world view (scripts/
+## world_islands.gd `refit`): cut at its fallen span (aqueduct x runs along
+## world -z), the near half (head, blind wall, the arches over the near
+## island and the sky, the channel's water and its wade) riding the near
+## island, the far half (the last arches, the drops) the far one; the
+## fallen gap the jump between them.
+func _aqueduct_fit() -> Dictionary:
+	var at := Art.arch(Art.FALLEN)
+	var deck := Art.TOP+Art.DECK
+	var pools: Array = []
+	var wade: Rect2 = Art.pools()[0].rect
+	for pool: Dictionary in ground.pools:
+		if (pool.rect as Rect2).is_equal_approx(wade): pools.append(pool)
+	return {"cut":func(p: Vector3) -> int: return 0 if -p.z < at else 1,
+		"weights":[0.0,1.0],"pools":pools,
+		"joints":[["fallen span",0,Vector3(Art.MID_X,deck,-Art.SNAP),1,Vector3(Art.MID_X,deck,-Art.RESUME)]]}
+
+## The stepping stumps: each its own piece, riding as far between the near
+## island (the first) and the far one (the last) as it stands; the jumps
+## between them what gives.
+func _stumps_fit() -> Dictionary:
+	var rows: Array = Art.stumps()
+	var mids: Array = []
+	for r: Array in rows: mids.append((float(r[1])+float(r[2]))*0.5)
+	var weights: Array = []
+	for m: float in mids: weights.append(clampf((m-float(mids[0]))/(float(mids[-1])-float(mids[0])),0.0,1.0))
+	var joints: Array = []
+	for k in range(rows.size()-1):
+		var a: Array = rows[k]
+		var b: Array = rows[k+1]
+		joints.append(["stump %d to %d" % [k+1,k+2],k,Vector3(float(a[0]),float(a[3]),float(a[2])),k+1,Vector3(float(b[0]),float(b[3]),float(b[1]))])
+	return {"cut":func(p: Vector3) -> int:
+			var best := 0
+			for k in range(mids.size()):
+				if absf(p.z-float(mids[k])) < absf(p.z-float(mids[best])): best = k
+			return best,
+		"weights":weights,"joints":joints}
+
+## Where the world view (scripts/layout_edit.gd) looks for what stands on
+## the islands (scripts/world_islands.gd `anchor`): the art, the foot
+## route's pieces, the life on the ground, the lodestone and target stone,
+## the island view's recipe pieces, the plane's parts laid on the ground
+## and the collision parts. Not the sky, the planes, the dragons or him.
+## What stands on an island inside a batch of the whole isle's (the
+## lanterns, the birds' perches) goes by `island_carriers`.
+func world_roots() -> Array:
+	var out: Array = [art]
+	for n: String in ["FootPieces","Life","Lodestone","TargetStone","KitCachePieces","IsleRecipePieces","PlaneArc"]:
+		var node := get_node_or_null(n)
+		if node != null: out.append(node)
+	for c: Node in get_children():
+		if c is StaticBody3D: out.append(c)
+	return out
+
+## What island `name` (over `outline`) carries that isn't a node of its
+## own (scripts/world_islands.gd `grab`): its lanterns and washes, and the
+## life on it (scripts/kit_isle/kit_life.gd `island_carriers`: the birds'
+## perches, fireflies, undergrowth, loose leaves).
+func island_carriers(_name: String, outline: PackedVector2Array) -> Array:
+	var out: Array = []
+	if night_lights != null: out.append(night_lights.carrier(outline))
+	var life_node := get_node_or_null("Life")
+	if life_node != null and life_node.has_method("island_carriers"): out.append_array(life_node.island_carriers(outline))
+	return out
+
+## The layout file's island moves (scripts/layout_overrides.gd `islands`)
+## put back once the whole isle stands (its flora, life and plane): the
+## islands carried as the world view's drag carries them, then him, his
+## start and the plane put back on the island they stood on.
+func _place_saved_islands() -> void:
+	var began := Time.get_ticks_msec()
+	var saved := LayoutOverrides.islands()
+	var feet: Vector3 = motor.feet
+	var done := WorldIslands.place_saved(saved,world_roots(),self)
+	if done.is_empty(): return
+	# The named pieces the file moved stand where it has them (in the
+	# world), whatever island carried them, each on the island under it.
+	for n: Node3D in LayoutOverrides.reapply(): WorldIslands.reanchor(n)
+	for name: String in done:
+		var i: Dictionary = WorldIslands.islands[name]
+		var xf: Transform3D = i.xf
+		if Geometry2D.is_point_in_polygon(Vector2(start.x,start.z),i.coded):
+			start = xf*start
+			start_face = Vector2((xf.basis*Vector3(start_face.x,0.0,start_face.y)).x,(xf.basis*Vector3(start_face.x,0.0,start_face.y)).z)
+			_last_stood = start
+		if not flying and Geometry2D.is_point_in_polygon(Vector2(feet.x,feet.z),i.coded):
+			var face := Vector2(-sin(float(motor.facing)),-cos(float(motor.facing)))
+			var f3 := xf.basis*Vector3(face.x,0.0,face.y)
+			place(xf*feet+Vector3.UP*0.05,Vector2(f3.x,f3.z))
+	print("aqueduct isle: islands moved from the layout file in %d ms: %s" % [Time.get_ticks_msec()-began,", ".join(done)])
+
+## An island moved in the world view (scripts/world_islands.gd `settle`,
+## by `d` from where it stood, `was` its outline there): the worn paths
+## over it drawn where it went, and the parked plane carried if it stood
+## on it.
+func island_moved(_name: String, d := Transform3D.IDENTITY, was := PackedVector2Array()) -> void:
+	if isle_recipes != null: isle_recipes.moved(_name)
+	if parked and not was.is_empty() and Geometry2D.is_point_in_polygon(Vector2(parked_at.x,parked_at.z),was):
+		var at := d*parked_at
+		var heading := wrapf(parked_heading+d.basis.get_euler().y,-PI,PI)
+		_park(at,heading)
+		_home = Vector4(at.x,at.y,at.z,heading)
+	var paths: Array = []
+	for path: Array in Art.paths():
+		var moved: Array = []
+		for p: Vector2 in path: moved.append(WorldIslands.carried(p))
+		paths.append(moved)
+	preload("res://scripts/kit_isle/path_dirt.gd").paint(KitLook.ground_material(),paths)
 
 ## A quit while the base's copy is still being kept: the save finished
 ## first (scripts/roguelike/fixed_cache.gd `finish_save`).
+## The world view's registry let go too: its links' fits hold this isle's
+## lambdas, which must not outlive it (a crash on quit).
 func _exit_tree() -> void:
 	FixedCache.finish_save()
+	WorldIslands.begin()
 	super._exit_tree()
 
 # --- The isle's hooks --------------------------------------------------------------

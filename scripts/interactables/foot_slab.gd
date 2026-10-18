@@ -114,6 +114,39 @@ func setup(at: Transform3D, stone_size: Vector3, seed_in: int) -> void:
 
 func _ready() -> void:
 	add_to_group(Slam.GROUP)
+	_build_stone()
+	transform = _posed(pose_at(0.0))
+
+## The sizes the world view lets a slab's footprint take (m a side).
+const SIDE_MIN := 0.8
+const SIDE_MAX := 14.0
+
+## Its size for the layout editor (scripts/layout_overrides.gd): the block
+## (m: width, thickness, depth).
+func layout_size() -> Variant:
+	return size
+
+## Built again at `v` (a Vector3, m; its footprint clamped to SIDE_MIN to
+## SIDE_MAX): the stone and its walking box, nothing else. Before it is in
+## the tree only the size is set (`_ready` builds it).
+func layout_resize(v: Variant) -> void:
+	var to: Vector3 = v
+	to = Vector3(clampf(to.x,SIDE_MIN,SIDE_MAX),maxf(to.y,0.1),clampf(to.z,SIDE_MIN,SIDE_MAX))
+	if to.is_equal_approx(size) and stone != null: return
+	size = to
+	if stone == null: return
+	remove_child(stone)
+	stone.queue_free()
+	_build_stone()
+	if body != null: body.force_update_transform()
+
+## The world view's pick reach round its middle (m).
+func layout_reach() -> float:
+	return maxf(1.5,maxf(size.x,size.z)*0.6)
+
+## The stone (the isle's floating-stone look) at `size`, its drawn parts
+## under `look` apart from its walking box.
+func _build_stone() -> void:
 	stone = Art.floating_stones(seed_value,[{"name":"slab","at":Vector3.ZERO,"size":size,"yaw":0.0,"kind":"block"}])
 	add_child(stone)
 	body = stone.get_node("Body")
@@ -124,11 +157,21 @@ func _ready() -> void:
 	stone.add_child(look)
 	for c: Node in stone.get_children():
 		if c != body and c != look: c.reparent(look,false)
-	transform = _posed(pose_at(0.0))
 
 ## The pose at `t` seconds, before the sag (still, here).
 func pose_at(_t: float) -> Transform3D:
 	return rest
+
+## Its rest pose (the layout editor's, scripts/layout_overrides.gd).
+func layout_pose() -> Transform3D:
+	return rest
+
+## Set to rest at `t` (the layout editor): drawn there now, its body moved
+## with it.
+func layout_place(t: Transform3D) -> void:
+	rest = t
+	transform = _posed(pose_at(_time))
+	if body != null: body.force_update_transform()
 
 func rid() -> RID:
 	return body.get_rid() if body != null else RID()

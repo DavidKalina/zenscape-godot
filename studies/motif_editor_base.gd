@@ -25,6 +25,8 @@ func on() -> bool:
 
 ## A fresh file on pool motif `id_name` (slug "on_<id>"); {} if no such.
 static func fresh(id_name: String) -> Dictionary:
+	# An aqueduct isle island (isle_island_motif.gd): its recipe is "isle_<name>".
+	if MotifBased.IsleIsland.is_island(id_name): return MotifBased.blank_on("isle_"+id_name.get_slice("/",1),id_name)
 	if MotifBased.base_script(id_name) == null: return {}
 	return MotifBased.blank_on("on_"+id_name,id_name)
 

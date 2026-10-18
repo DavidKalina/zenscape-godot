@@ -5,7 +5,8 @@ extends Node3D
 ## motor's step; studies/trap_yard.gd attaches one). Each trap
 ## (scripts/traps/trap.gd) gets the frame, and the motor's `air` answers
 ## with the traps' winds summed (vectors and numbers added by key).
-## `pose` is part of the slot's contract and does nothing here.
+## `pose` is part of the slot's contract: handed to a trap that has one
+## (a motif mechanic's rope, scripts/kit_isle/motif_mechanics.gd).
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 
 var study: Node3D
@@ -40,8 +41,10 @@ func before(delta: float) -> void:
 func after(delta: float, events: Dictionary) -> void:
 	for trap: Node3D in traps: trap.after(delta,events)
 
-func pose(_figure: Node3D) -> void:
-	pass
+func pose(figure: Node3D) -> void:
+	# A mechanic holding a rope tilts him along it (motif_mechanics.gd).
+	for trap: Node3D in traps:
+		if trap.has_method("rope_pose"): trap.rope_pose(figure)
 
 ## Every trap back as built.
 func reset() -> void:

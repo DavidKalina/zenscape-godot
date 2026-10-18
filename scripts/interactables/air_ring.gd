@@ -19,11 +19,20 @@ extends Node3D
 ##
 ## Lengths go by the walker's size where they meet him (`try_take`); the
 ## ring itself is built at size 1. It has no collision: he flies through.
+##
+## Its size (`radius`, RADIUS unless set; the world view's [ / ],
+## scripts/layout_edit.gd, or a mechanic's `radius` knob): the stones' ring,
+## the band, the hole (`hole`, as far inside the stones as at RADIUS) and
+## the top's disc go with it; the stones keep their depth and height.
+## `layout_resize` builds its stones again at a new one.
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 
 ## m from its middle to the stones' middle; the stones' radial depth and
 ## height; how many.
 const RADIUS := 1.75
+## The sizes the world view lets it take (m, its radius).
+const RADIUS_MIN := 0.8
+const RADIUS_MAX := 6.0
 const DEPTH := 0.42
 const HIGH := 0.38
 const BLOCKS := 10
@@ -37,6 +46,17 @@ const CHEST := 0.9
 ## every step two updrafts); s before it is taken again.
 const POP := 6.0
 const COOL := 2.5
+## The throw (`throw_way`, the host's `_take_ring`): the pop goes along its
+## axis, the half away from the ground, so a flat ring throws him straight
+## up and one tipped 45° throws him 45° out. An axis within LEVEL (its y,
+## about 5°) of level counts as level: it throws him on the way he leaves
+## through it. However upright, a take lifts him at least LIFT of POP (so
+## an upright ring still carries him: thrown on at the pop's pace, 3 m up).
+const LEVEL := 0.09
+const LIFT := 0.5
+## The world view's throw arrow (`show_throw`): m past the stones, its tint.
+const ARROW_PAST := 1.4
+const ARROW_TINT := Color(0.35,0.95,1.0,0.9)
 ## The trampoline: m a bounce throws him (the launch's hang counted); m
 ## his soles reach past the stones' edge; the flex: m it dips along its
 ## axis, s it rings out over, its ringing (Hz), the stones' squash.
@@ -60,6 +80,10 @@ const SPIN := 0.12
 
 var cool := 0.0
 var takes := 0
+var radius := RADIUS
+## m this ring's take throws him (the world view's boost knob; POP coded).
+var pop := POP
+var _seed := 0
 var _home := Transform3D.IDENTITY
 var _clock := 0.0
 var _prev := NAN               # his chest's height over the plane last frame
@@ -77,17 +101,57 @@ var _hoop: MeshInstance3D
 var _hoop_mat: StandardMaterial3D
 var _motes: CPUParticles3D
 
-func setup(pose: Transform3D, seed_value := 0) -> void:
+func setup(pose: Transform3D, seed_value := 0, size := RADIUS) -> void:
 	name = "AirRing"
 	_home = pose
 	transform = pose
 	_clock = float(seed_value%17)*0.37
-	var b := RuinKit.Build.new(seed_value,0.45,"AirRing")
+	_seed = seed_value
+	radius = clampf(size,RADIUS_MIN,RADIUS_MAX)
+	_build()
+
+## m from its middle his chest must pass within (at his size 1): HOLE at
+## RADIUS, as far inside the stones at any other.
+func hole() -> float:
+	return maxf(HOLE+radius-RADIUS,0.3)
+
+## Its size for the layout editor (scripts/layout_overrides.gd): its radius.
+func layout_size() -> Variant:
+	return radius
+
+## Built again at radius `r` (m, clamped): its stones, band, hoop and motes.
+func layout_resize(r: Variant) -> void:
+	var to := clampf(float(r),RADIUS_MIN,RADIUS_MAX)
+	if is_equal_approx(to,radius) and _stones != null: return
+	radius = to
+	for n: Node in [_stones,_band,_hoop,_motes]:
+		if n != null:
+			remove_child(n)
+			n.queue_free()
+	_build()
+
+## Its knobs for the world view's panel (scripts/layout_overrides.gd
+## `tunes`): [key, label, default, min, max, step].
+func layout_tunes() -> Array:
+	return [["boost","boost (m)",POP,1.0,16.0,0.25]]
+
+func layout_tune(_key: String) -> float:
+	return pop
+
+func layout_retune(_key: String, v: float) -> void:
+	pop = clampf(v,1.0,16.0)
+
+## The world view's pick reach round its middle (m).
+func layout_reach() -> float:
+	return radius+0.3
+
+func _build() -> void:
+	var b := RuinKit.Build.new(_seed,0.45,"AirRing")
 	var a := PI/float(BLOCKS)-JOINT*0.5
 	var hr := DEPTH*0.5
 	for i in range(BLOCKS):
 		var turn := TAU*float(i)/float(BLOCKS)
-		var r := RADIUS+b.rng.randf_range(-0.03,0.03)
+		var r := radius+b.rng.randf_range(-0.03,0.03)
 		var at := Vector3(cos(turn),0.0,-sin(turn))*r+Vector3.UP*b.rng.randf_range(-0.03,0.03)
 		var pose_i := Transform3D(Basis(Vector3.UP,turn),at)
 		var hh := HIGH*0.5*b.rng.randf_range(0.92,1.08)
@@ -98,9 +162,9 @@ func setup(pose: Transform3D, seed_value := 0) -> void:
 	_stones.name = "Stones"
 	add_child(_stones)
 	_band_mat = _glow_mat(0.85)
-	_band = _torus("Band",RADIUS-hr-0.13,RADIUS-hr+0.03,_band_mat)
+	_band = _torus("Band",radius-hr-0.13,radius-hr+0.03,_band_mat)
 	_hoop_mat = _glow_mat(0.0)
-	_hoop = _torus("Hoop",RADIUS-0.04,RADIUS+0.04,_hoop_mat)
+	_hoop = _torus("Hoop",radius-0.04,radius+0.04,_hoop_mat)
 	_hoop.visible = false
 	_motes = CPUParticles3D.new()
 	_motes.name = "Motes"
@@ -111,8 +175,8 @@ func setup(pose: Transform3D, seed_value := 0) -> void:
 	_motes.explosiveness = 0.95
 	_motes.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
 	_motes.emission_ring_axis = Vector3.UP
-	_motes.emission_ring_radius = RADIUS
-	_motes.emission_ring_inner_radius = RADIUS-0.2
+	_motes.emission_ring_radius = radius
+	_motes.emission_ring_inner_radius = radius-0.2
 	_motes.emission_ring_height = 0.1
 	_motes.direction = Vector3.UP
 	_motes.spread = 70.0
@@ -157,6 +221,80 @@ func _torus(called: String, inner: float, outer: float, mat: Material) -> MeshIn
 	add_child(view)
 	return view
 
+## Its rest pose (the layout editor's, scripts/layout_overrides.gd).
+func layout_pose() -> Transform3D:
+	return _home
+
+## Set to rest at `t` (the layout editor): drawn there now.
+func layout_place(t: Transform3D) -> void:
+	_home = t
+	transform = t
+
+## The way a take throws him (a unit vector, world): its axis, the half
+## away from the ground, or (level, see LEVEL) the half `vel` goes along.
+func throw_way(vel := Vector3.ZERO) -> Vector3:
+	var n := global_transform.basis.y.normalized()
+	if is_level(): return n if vel.dot(n) >= 0.0 else -n
+	return n if n.y > 0.0 else -n
+
+## Whether its axis lies level (LEVEL): it throws either way.
+func is_level() -> bool:
+	return absf(global_transform.basis.y.normalized().y) < LEVEL
+
+var _arrows: Array[MeshInstance3D] = []
+
+## The world view's throw arrow on (`on`) or off: along its axis from its
+## middle to ARROW_PAST past the stones, on the side it throws him (both
+## sides when level). Called each world view frame, so it follows a tip.
+func show_throw(on: bool) -> void:
+	if not on:
+		for a: MeshInstance3D in _arrows: a.visible = false
+		return
+	if _arrows.is_empty():
+		for i in range(2): _arrows.append(_arrow_mesh(i))
+	var up := global_transform.basis.y.y >= 0.0
+	var level := is_level()
+	var length := radius+ARROW_PAST
+	for i in range(2):
+		var a := _arrows[i]
+		a.visible = level or (i == 0) == up
+		a.transform = Transform3D(Basis.IDENTITY if i == 0 else Basis(Vector3.RIGHT,PI),Vector3.ZERO)
+		a.scale = Vector3(1.0,length,1.0)
+
+## One arrow along +y, 1 m long (scaled to its length): a shaft and a head.
+func _arrow_mesh(i: int) -> MeshInstance3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = ARROW_TINT
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.no_depth_test = true
+	mat.render_priority = 1
+	var m := ImmediateMesh.new()
+	m.surface_begin(Mesh.PRIMITIVE_TRIANGLES,mat)
+	var sides := 8
+	var shaft := 0.06
+	var head := 0.22
+	var neck := 0.8
+	for k in range(sides):
+		var a0 := TAU*float(k)/float(sides)
+		var a1 := TAU*float(k+1)/float(sides)
+		var c0 := Vector3(cos(a0),0.0,sin(a0))
+		var c1 := Vector3(cos(a1),0.0,sin(a1))
+		# The shaft (its length runs 0..neck; the mesh is scaled in y, so
+		# its girth is kept by drawing it thin in x/z only).
+		for v: Vector3 in [c0*shaft,c1*shaft,c1*shaft+Vector3.UP*neck,c0*shaft,c1*shaft+Vector3.UP*neck,c0*shaft+Vector3.UP*neck]:
+			m.surface_add_vertex(v)
+		# The head: a cone from neck to the tip.
+		for v: Vector3 in [c0*head+Vector3.UP*neck,c1*head+Vector3.UP*neck,Vector3.UP]:
+			m.surface_add_vertex(v)
+	m.surface_end()
+	var view := MeshInstance3D.new()
+	view.name = "ThrowArrow%d" % i
+	view.mesh = m
+	view.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(view)
+	return view
+
 ## Whether it may be taken now.
 func ready_to_take() -> bool:
 	return cool <= 0.0
@@ -189,7 +327,7 @@ func advance(delta: float) -> void:
 		var k := clampf(_burst_t/BURST,0.0,1.0)
 		var e := 1.0-pow(1.0-k,3.0)
 		_hoop.visible = k < 1.0
-		var grow := 1.0+BURST_GROW*e/RADIUS
+		var grow := 1.0+BURST_GROW*e/radius
 		_hoop.scale = Vector3(grow,1.0,grow)
 		_hoop_mat.albedo_color.a = (1.0-k)*0.8
 		_hoop_mat.emission_energy_multiplier = GLOW*2.0*(1.0-k)
@@ -218,7 +356,7 @@ func _top(feet: Vector3) -> Dictionary:
 	var flat := rel-n*rel.dot(n)
 	if flat.length() < 0.01: return {}
 	var radial := flat.normalized()
-	var q := middle()+radial*RADIUS
+	var q := middle()+radial*radius
 	# Their height along the axis and depth along the radius, as each faces up.
 	return {"q":q,"y":q.y+HIGH*0.5*absf(n.y)+DEPTH*0.5*absf(radial.y)}
 
@@ -272,7 +410,7 @@ func _bounce_disc(feet: Vector3, vel: Vector3, size: float) -> bool:
 	var at := was.lerp(feet,u)
 	var across := at-c
 	across -= n*across.dot(n)
-	if across.length() > RADIUS+DEPTH*0.5+SOLE*maxf(size,0.5): return false
+	if across.length() > radius+DEPTH*0.5+SOLE*maxf(size,0.5): return false
 	flex_hit(vel)
 	return true
 
@@ -315,9 +453,9 @@ func try_take(chest: Vector3, size := 1.0) -> bool:
 	var across := at-c
 	across -= n*across.dot(n)
 	var down := n.y*(d-prev) < 0.0
-	var inside := across.length() <= HOLE*maxf(size,0.5)
+	var inside := across.length() <= hole()*maxf(size,0.5)
 	if not ready_to_take() or not inside:
-		if is_flat() and down and across.length() <= RADIUS+DEPTH*0.5+SOLE*maxf(size,0.5): fell_in = true
+		if is_flat() and down and across.length() <= radius+DEPTH*0.5+SOLE*maxf(size,0.5): fell_in = true
 		return false
 	take()
 	return true

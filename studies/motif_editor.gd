@@ -7,8 +7,9 @@ extends "res://studies/kit_isle.gd"
 ## theirs), saved as a recipe the generator places
 ## (scripts/kit_isle/motif_authored.gd).
 ##
-##   godot --path . res://studies/motif_editor.tscn -- --no-title [--load=<slug>] [--load-base=<pool id>]
-##   (a base: a coded pool motif stood read-only to build on, motif_editor_base.gd)
+##   godot --path . res://studies/motif_editor.tscn -- --no-title [--load=<slug>] [--load-base=<pool id>] [--island=island/near]
+##   (a base: a coded pool motif stood read-only to build on, motif_editor_base.gd;
+##   --island=: one of the aqueduct isle's islands alone, scripts/kit_isle/isle_island_motif.gd)
 ##
 ## Editing (the pilot put away):
 ##   hold right mouse + move      look round      W A S D / Q E  fly / down, up
@@ -46,6 +47,7 @@ const KitCaches = preload("res://scripts/kit_isle/kit_caches.gd")
 const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
 const YardSky = preload("res://studies/motif_yard_sky.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const IsleIsland = preload("res://scripts/kit_isle/isle_island_motif.gd")
 const LandformPanel = preload("res://studies/motif_editor_panel.gd")
 const EditorPalette = preload("res://studies/motif_editor_palette.gd")
 const Feel = preload("res://studies/motif_editor_feel.gd")
@@ -258,15 +260,20 @@ func _ready() -> void:
 	var base_id := ""
 	for a: String in _args:
 		if a.begins_with("--load="): slug = a.get_slice("=",1)
+		# The world editor's island view (scripts/layout_edit.gd O): one of
+		# the aqueduct isle's islands alone, its recipe if it has one.
+		elif a.begins_with("--island="):
+			base_id = a.get_slice("=",1)
+			slug = "isle_"+base_id.get_slice("/",1)
 		elif a.begins_with("--load-base="): base_id = a.get_slice("=",1)
 		elif a.begins_with("--look=") and SceneLookPresets.PRESETS.has(a.get_slice("=",1)): edit_look = a.get_slice("=",1)
-	if slug != "" and FileAccess.file_exists(MotifAuthored.path_of(slug)): data = MotifAuthored.read(MotifAuthored.path_of(slug))
+	if slug != "" and FileAccess.file_exists(file_of(slug)): data = MotifAuthored.read(file_of(slug))
 	elif base_id != "":
 		data = EditorBase.fresh(base_id)
 		if data.is_empty(): push_warning("motif editor: no pool motif %s to stand as a base" % base_id)
 	based = EditorBase.new(self)
 	if data.is_empty():
-		if slug != "": push_warning("motif editor: no %s; a fresh hill" % MotifAuthored.path_of(slug))
+		if slug != "": push_warning("motif editor: no %s; a fresh hill" % file_of(slug))
 		data = MotifAuthored.blank(slug if slug != "" else "untitled")
 	motif = MotifAuthored.from_data(data)
 	_no_lode = true
@@ -327,6 +334,9 @@ func _first_stand() -> void:
 	# stays free: `_hold_mouse` frees it every frame while editing.
 	_free_mouse_if_editing.call_deferred()
 	print("motif editor: %s stood %s in %d ms" % [str(data.slug),"dressed" if dressed else "grey",dress_ms if dressed else bare_ms])
+	if world_scene() != "":
+		_status_line = "Island view of %s: F4 saves it and goes back to the world" % str(data.get("base",""))
+		_show_status()
 
 func _free_mouse_if_editing() -> void:
 	if editing and not _looking: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -731,6 +741,11 @@ func _edit_step(delta: float) -> void:
 # --- Input ---------------------------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
+	# The island view's way back (--world-scene=, scripts/layout_edit.gd O).
+	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_F4 and world_scene() != "":
+		back_to_world()
+		if is_inside_tree(): get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_P and walk_ready and _ui != null:
 		toggle_play((event as InputEventKey).shift_pressed)
 		get_viewport().set_input_as_handled()
@@ -1556,13 +1571,48 @@ func _set_markers_visible(on: bool) -> void:
 
 # --- Save and load --------------------------------------------------------------------------
 
+## Slug `slug`'s file. An island view's recipe (isle_<island>) follows the
+## `--layout=` file's folder when one is given, so a driver's round trip
+## never writes motifs/authored (IsleIsland.recipe_dir); the rest are
+## motifs/authored's.
+func file_of(slug: String) -> String:
+	return IsleIsland.recipe_path(slug) if IsleIsland.is_recipe(slug) else MotifAuthored.path_of(slug)
+
+## The scene the island view was opened from (`--world-scene=`), "" if none.
+func world_scene() -> String:
+	for a: String in _args:
+		if a.begins_with("--world-scene="): return a.get_slice("=",1)
+	return ""
+
+## The island view's return (F4): the recipe saved under the island's own
+## name (motifs/authored/isle_<name>.json), then the world scene opened
+## again with the run's flags, the world view open on that island
+## (`--world-view=`): the isle lays the recipe over it
+## (scripts/kit_isle/isle_recipes.gd).
+func back_to_world() -> void:
+	var island := str(data.get("base",""))
+	if not IsleIsland.is_island(island):
+		_status_line = "Not an island of the aqueduct isle: no world to go back to"
+		_show_status()
+		return
+	data.slug = "isle_"+island.get_slice("/",1)
+	if panel != null: panel.slug_edit.text = str(data.slug)
+	save()
+	var args := PackedStringArray(["--world-view="+island])
+	for a: String in _args:
+		if a.begins_with("--island=") or a.begins_with("--world-scene=") or a.begins_with("--world-view=") or a in args: continue
+		args.append(a)
+	print("motif editor: back to %s (%s)" % [world_scene()," ".join(args)])
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	LaunchArgs.open_scene(get_tree(),world_scene(),args)
+
 func save() -> String:
 	var slug := panel.slug_edit.text.strip_edges().to_lower().replace(" ","_") if panel != null else str(data.slug)
 	if slug == "": slug = "untitled"
 	if panel != null: panel.slug_edit.text = slug
 	data.slug = slug
 	if str(data.get("name","")) == "" or str(data.name) == "Untitled": data.name = slug.capitalize()
-	var path := MotifAuthored.path_of(slug)
+	var path := file_of(slug)
 	var err := MotifAuthored.write(path,data)
 	if err == OK: ClaySound.cue(&"ui_page")
 	_status_line = ("Saved %s" % path) if err == OK else ("Save failed (%s)" % error_string(err))
@@ -1571,7 +1621,7 @@ func save() -> String:
 	return path
 
 func load_motif(slug: String) -> bool:
-	var path := MotifAuthored.path_of(slug)
+	var path := file_of(slug)
 	if not FileAccess.file_exists(path): return false
 	var d := MotifAuthored.read(path)
 	if d.is_empty(): return false

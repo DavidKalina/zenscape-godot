@@ -52,8 +52,8 @@ var ropes: Array = []
 var rails: Array = []
 ## The air rings (scripts/interactables/air_ring.gd): passed through, the
 ## updraft's charge filled and its air chain started afresh (its `refill`),
-## and he is popped up the ring's POP m as a spring launch throws him (the
-## drop under him forgiven by the fall stun). The step gets "air_ring"
+## and he is thrown the ring's POP m along its axis as a spring launch
+## throws him (`_take_ring`; the drop under him forgiven by the fall stun). The step gets "air_ring"
 ## (the ring's middle); `rings_taken` counts them.
 var rings: Array = []
 var rings_taken := 0
@@ -61,6 +61,8 @@ var rings_taken := 0
 ## refills the charge and throws him AirRing.BOUNCE up; the step gets
 ## "ring_bounce" ({at, hard}).
 var ring_bounces := 0
+## The last ring's throw: {at, way, from (his velocity), to}.
+var last_throw := {}
 ## The slab he stands on (or hangs from) now, or null; the body by RID.
 var on: Node3D = null
 var _ray := PhysicsRayQueryParameters3D.new()
@@ -87,6 +89,72 @@ var _pending := {}
 func _init() -> void:
 	name = "FootPieces"
 
+## Handles (AGENTS.md: placement code names its pieces). While `naming`
+## holds a route's name, every piece a placer below makes is named
+## `<route>/<kind>_<n>` (n counted per kind from 1, in placing order) or
+## the one name `call_next` gave, through scripts/layout_overrides.gd: the
+## layout file's move wins over the coded spot, a deleted name is taken
+## away, and the world view (scripts/layout_edit.gd) can pick and move it.
+## "" (the default) names nothing, for placers that name their own.
+const Layout = preload("res://scripts/layout_overrides.gd")
+var naming := ""
+var _counts := {}
+var _next := ""
+
+## The routes's name the next pieces are placed under ("" none).
+func name_under(route: String) -> void:
+	naming = route
+
+## The next piece placed is called `called` (under the route) instead of
+## by its count.
+func call_next(called: String) -> void:
+	_next = called
+
+## `node` (just placed, coded at `coded`) named and stood as the layout
+## file has it; true if the file deleted it (it is freed: the caller may
+## still dress it this frame).
+func _handle(node: Node3D, kind: String, coded: Transform3D, extra := {}) -> bool:
+	if naming == "":
+		_next = ""
+		return false
+	var called := _next
+	_next = ""
+	if called == "":
+		var counted := naming+"/"+kind
+		_counts[counted] = int(_counts.get(counted,0))+1
+		called = "%s_%d" % [kind,int(_counts[counted])]
+	var key := naming+"/"+called
+	if Layout.deleted(key):
+		_drop(node)
+		return true
+	var t := Layout.xform(key,coded)
+	var e := {"host":self}
+	e.merge(extra)
+	Layout.track(key,node,kind,coded,e)
+	if not t.is_equal_approx(coded): Layout.apply(key,t)
+	return false
+
+## A piece taken out of the step lists and freed.
+func _drop(node: Node3D) -> void:
+	slabs.erase(node)
+	ropes.erase(node)
+	rails.erase(node)
+	rings.erase(node)
+	if on == node: on = null
+	if motor != null and motor.rider == node: motor.toss(motor.velocity)
+	node.queue_free()
+
+## Floating stones (the aqueduct isle's look, Art.floating_stones) as one
+## named piece (kind "stones"): a perch, a marker, a beam. Coded at the
+## first stone's foot.
+func stones(seed_value: int, list: Array, node_name := "Stones") -> Node3D:
+	var s := FootSlab.Art.floating_stones(seed_value,list)
+	s.name = node_name
+	add_child(s)
+	var at: Vector3 = (list[0] as Dictionary).at if not list.is_empty() else Vector3.ZERO
+	_handle(s,"stones",Transform3D(Basis.IDENTITY,at))
+	return s
+
 ## Hooked into `scene` (a character study): stepped by its frame.
 func attach(scene: Node3D) -> void:
 	study = scene
@@ -97,6 +165,7 @@ func bob_slab(at: Vector3, size := Vector3(2.4,0.7,2.2), yaw := 0.0, seed_value 
 	var slab: Node3D = BobSlab.new()
 	slab.setup(Transform3D(Basis(Vector3.UP,yaw),at),size,seed_value)
 	_add_slab(slab)
+	_handle(slab,"bob_slab",Transform3D(Basis(Vector3.UP,yaw),at),{"pumps":float(slab.spring_pumps)})
 	return slab
 
 ## A slab that sinks while he stands on it (scripts/interactables/
@@ -105,6 +174,7 @@ func sink_slab(at: Vector3, size := Vector3(2.4,0.7,2.2), yaw := 0.0, seed_value
 	var slab: Node3D = SinkSlab.new()
 	slab.setup(Transform3D(Basis(Vector3.UP,yaw),at),size,seed_value)
 	_add_slab(slab)
+	_handle(slab,"sink_slab",Transform3D(Basis(Vector3.UP,yaw),at))
 	return slab
 
 ## A drifting slab along `points` (see scripts/interactables/drift_slab.gd).
@@ -113,6 +183,7 @@ func drift_slab(points: PackedVector3Array, period: float, loop := false, spin :
 	slab.setup(Transform3D(Basis(Vector3.UP,yaw),points[0]),size,seed_value)
 	slab.drift(points,period,loop,spin,yaw,start)
 	_add_slab(slab)
+	_handle(slab,"drift_slab",slab.layout_pose())
 	return slab
 
 func rope(anchor: Vector3, length: float) -> Node3D:
@@ -120,6 +191,7 @@ func rope(anchor: Vector3, length: float) -> Node3D:
 	r.setup(anchor,length)
 	add_child(r)
 	ropes.append(r)
+	_handle(r,"rope",Transform3D(Basis.IDENTITY,anchor))
 	return r
 
 ## A trilithon to swing from (two standing stones and a lintel, the
@@ -155,15 +227,17 @@ func balustrade(points: PackedVector3Array, seed_value := 0, weathered := 0.3, f
 	r.setup(points,seed_value,weathered,floor)
 	add_child(r)
 	rails.append(r)
+	_handle(r,"balustrade",Transform3D(Basis.IDENTITY,(points[0]+points[points.size()-1])*0.5))
 	return r
 
 ## An air ring lying flat at `at` (its middle), turned `yaw`, tipped `tip`
-## (rad about its own x) if given.
-func air_ring(at: Vector3, seed_value := 0, yaw := 0.0, tip := 0.0) -> Node3D:
+## (rad about its own x) if given; `radius` its size (m, AirRing.RADIUS).
+func air_ring(at: Vector3, seed_value := 0, yaw := 0.0, tip := 0.0, radius := AirRing.RADIUS) -> Node3D:
 	var r: Node3D = AirRing.new()
-	r.setup(Transform3D(Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,tip),at),seed_value)
+	r.setup(Transform3D(Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,tip),at),seed_value,radius)
 	add_child(r)
 	rings.append(r)
+	_handle(r,"air_ring",Transform3D(Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,tip),at))
 	return r
 
 func _add_slab(slab: Node3D) -> void:
@@ -200,15 +274,25 @@ func _launch(slab: Node3D) -> void:
 	_pending["spring_launch"] = last_launch
 	on = null
 
-## Through an air ring: the charge filled, popped up (see `rings`).
+## Through an air ring: the charge filled, thrown along its axis (AirRing
+## `throw_way`: the half away from the ground) at the pop's pace (the pace
+## that would rise POP m straight up), his pace across the axis kept and
+## his pace along it kept if faster; his rise at least LIFT of POP's. A flat
+## ring is the old straight pop up, his flat pace kept (see `rings`).
 func _take_ring(r: Node3D) -> void:
 	rings_taken += 1
 	var drafts: Node = study.get("updraft")
 	if drafts != null and drafts.has_method("refill"): drafts.refill(r.middle())
-	var pop: float = AirRing.POP*motor.size
-	var up := motor.rise_for(pop,true)
+	var pop: float = float(r.pop)*motor.size
+	var pace := motor.rise_for(pop,true)
+	var way: Vector3 = r.throw_way(motor.velocity)
+	var v: Vector3 = motor.velocity
+	var along := v.dot(way)
+	v += way*maxf(pace-along,0.0)
+	v.y = maxf(v.y,motor.rise_for(pop*AirRing.LIFT,true))
+	last_throw = {"at":r.middle(),"way":way,"from":motor.velocity,"to":v}
 	var free := pop+_drop_under(motor.feet)+0.5
-	motor.launch(Vector3(motor.velocity.x,maxf(motor.velocity.y,up),motor.velocity.z),free)
+	motor.launch(v,free)
 	on = null
 
 ## Down onto an air ring's stones: the charge filled, thrown BOUNCE m back

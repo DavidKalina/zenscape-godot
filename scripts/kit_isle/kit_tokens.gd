@@ -47,6 +47,13 @@ var _last := Vector3.INF
 ## A placed isle's (scripts/kit_isle/motif_isle.gd): where it stands from
 ## its own frame, which `spots_for` answers in.
 var offset := Vector3.ZERO
+## Handles (AGENTS.md): with `naming` set (an isle's own, e.g. "tokens"),
+## each token standing from the start is named `<naming>/<token name>`
+## through scripts/layout_overrides.gd (kind "token"): the layout file's
+## move wins, a deleted one is left out, and the world view moves it. The
+## buried ones stay unnamed (their dig keeps its ground). "" names none.
+const Layout = preload("res://scripts/layout_overrides.gd")
+var naming := ""
 
 ## Where each token stands and the move it asks for ({name, at, move}),
 ## worked out from the isle's own geometry (`isle` the study).
@@ -68,6 +75,8 @@ static func under_lip(p: Dictionary, along: float) -> Vector3:
 func setup(isle: Node3D) -> void:
 	name = "Tokens"
 	tokens = spots_for(isle)
+	if naming != "":
+		tokens = tokens.filter(func(t: Dictionary) -> bool: return not Layout.deleted(naming+"/"+str(t.name)))
 	isle_id = Ledger.isle_id_of(isle)
 	for t: Dictionary in tokens:
 		if t.at != Vector3.INF: t.at = (t.at as Vector3)+offset
@@ -79,6 +88,14 @@ func setup(isle: Node3D) -> void:
 		holder.name = "Token_%s" % t.name
 		holder.position = t.at
 		add_child(holder)
+		if naming != "" and not t.get("buried",false):
+			var key := naming+"/"+str(t.name)
+			var coded := holder.global_transform
+			Layout.track(key,holder,"token",coded)
+			var moved := Layout.xform(key,coded)
+			if not moved.is_equal_approx(coded):
+				Layout.apply(key,moved)
+				t.at = holder.global_position
 		holder.motes_on(true)
 		Telescope.spottable(holder,objective(t.name))
 		_holders[t.name] = holder
@@ -123,6 +140,11 @@ func touch(point: Vector3) -> void:
 		if buried.has(t.name) and not buried[t.name].takeable(): continue
 		var at: Vector3 = t.at
 		if at == Vector3.INF: continue
+		# A named one stands where its holder is (the world view moves it).
+		if naming != "" and _holders.has(t.name):
+			var h: Node3D = _holders[t.name]
+			if not is_instance_valid(h): continue
+			at = h.global_position
 		var near := Geometry3D.get_closest_point_to_segment(at,from,point)
 		if near.distance_to(at) < Lines.WALKER_REACH+SIZE*0.5: take(t.name)
 

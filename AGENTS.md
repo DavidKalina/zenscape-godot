@@ -123,6 +123,16 @@ pass (skills `motif-brainstorm`, `motif-plan`, `motif-greybox`,
 Every isle the plane can reach keeps a clear stretch of turf long enough
 to land the plane by hand. Terrain added to an isle must not take it away.
 
+# Handles
+
+The user tunes what agents build by hand in the world view (F4 in the
+aqueduct isle; `docs/design/world-editor/world-editor-handoff.md`). So
+placement code names its pieces: it asks `scripts/layout_overrides.gd` for
+each piece, islet or platform section by a stable name (`<route>/<piece>`),
+the user's moves in the layout file win over the coded spot, and a
+procedural build (a stair, a run) also shows its knobs. Keep those names
+stable; saved layouts key on them.
+
 # The motif editor
 
 The user hand-authors motifs in `studies/motif_editor.tscn` (design and

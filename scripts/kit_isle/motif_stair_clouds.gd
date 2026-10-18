@@ -113,6 +113,30 @@ func build(into: Node3D) -> void:
 	turf(pinnacle)
 	built_ms = Time.get_ticks_msec()-began
 
+## Its pieces by name (AGENTS.md Handles; scripts/kit_isle/motif_isle.gd
+## `_name_pieces` moves and tracks them): each flight of the grand stair
+## (one kit stair a leg, `stair_clouds/flight_1` at the lawn to
+## `flight_8` under the summit), the shrines on its pads and terraces in
+## SHRINES' order (`shrine_1` to `shrine_13`), and the summit's gate,
+## turret, two lancet walls and floor slabs. Not the mesa, the pinnacle or
+## the rope bridge and its anchors (the bridge hangs between them).
+func handles() -> Array:
+	var out: Array = []
+	if stair != null:
+		for s in range(Stair.LEGS):
+			var leg := stair.get_node_or_null("Leg%d" % (s+1))
+			if leg != null: out.append(["stair_clouds/flight_%d" % (s+1),leg])
+	if shrine_group != null:
+		var k := 1
+		for piece: Node in shrine_group.get_children():
+			out.append(["stair_clouds/shrine_%d" % k,piece])
+			k += 1
+	if summit_group != null:
+		for pair: Array in [["Gate","gate"],["Turret","turret"],["Lancet0","lancet_1"],["Lancet1","lancet_2"],["Slabs","summit_slabs"]]:
+			var n := summit_group.get_node_or_null(str(pair[0]))
+			if n != null: out.append(["stair_clouds/"+str(pair[1]),n])
+	return out
+
 ## Roughly how long `build` takes (ms, headless, this Mac): its sockets,
 ## footprint and height span are the bake's (scripts/kit_isle/kit_motif.gd).
 func build_cost() -> int:

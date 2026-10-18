@@ -147,31 +147,33 @@ static func build(study: Node3D) -> Node3D:
 	var args := LaunchArgs.user_args()
 	if args.has("--no-foot-pieces"): return null
 	var host := host_of(study)
+	# Each piece by its name (`foot_route/balustrade_1`, `rope_2`,
+	# `drift_slab_1`, `perch`) through the layout file (foot_pieces.gd
+	# `name_under`), so the world view (F4) can move it.
+	host.name_under("foot_route")
 	# 1: the grand stair's balustrades.
 	var stair: Transform3D = study.stair.transform
 	for side: float in [-1.0,1.0]: host.balustrade(Balustrade.grand_stair_rail(stair,side),310+int(side),0.4,Balustrade.grand_stair_floor(stair,side))
-	# 2: the ropes off beams over the parapet.
-	var beams: Array = []
+	# 2: the ropes off beams over the parapet, each beam the rope's (it
+	# moves with it).
 	for i in range(ROPE_ZS.size()):
 		var z: float = ROPE_ZS[i]
-		beams.append({"name":"beam","at":Vector3(ROPE_X-2.75,BEAM_Y,z),"size":BEAM,"yaw":0.0,"kind":"lintel"})
 		var r: Node3D = host.rope(Vector3(ROPE_X,ROPE_TOP,z),ROPE_LENGTH)
 		r.add_tag(Vector3(ROPE_X+0.25,ROPE_TOP,z),0.0,321+i)
-	var beam_stones := Art.floating_stones(320,beams)
-	beam_stones.name = "RopeBeams"
-	host.add_child(beam_stones)
+		var beam := Art.floating_stones(320+i*7,[{"name":"beam","at":Vector3(ROPE_X-2.75,BEAM_Y,z),"size":BEAM,"yaw":0.0,"kind":"lintel"}])
+		beam.name = "RopeBeam"
+		r.add_child(beam)
 	# 3: the ferry back across.
 	host.drift_slab(PackedVector3Array(FERRY),FERRY_PERIOD,false,0.0,Vector3(2.4,0.6,2.4),0.0,330)
-	# 4: the bobbing slabs out to the east islet.
-	for i in range(BOBS.size()):
-		var slab: Node3D = host.bob_slab(BOBS[i],Vector3(2.3,0.7,2.2),0.4+0.5*i,340+i)
-		if i == 0: slab.spring_pumps = RING_SLAB_PUMPS
-	# 5: the air rings over the first slab, up to the perch.
-	for i in range(RINGS.size()): host.air_ring(RINGS[i],350+i,0.3*i)
-	var perch := Art.floating_stones(360,[{"name":"perch","at":PERCH_AT,"size":PERCH,"yaw":0.35,"kind":"block"},
-		{"name":"marker","at":PERCH_AT+Vector3(1.1,1.5,-0.9),"size":Vector3(0.55,1.9,0.45),"yaw":0.6,"kind":"sarsen","grounded":true}])
-	perch.name = "RingPerch"
-	host.add_child(perch)
+	host.call_next("perch")
+	host.stones(360,[{"name":"perch","at":PERCH_AT,"size":PERCH,"yaw":0.35,"kind":"block"},
+		{"name":"marker","at":PERCH_AT+Vector3(1.1,1.5,-0.9),"size":Vector3(0.55,1.9,0.45),"yaw":0.6,"kind":"sarsen","grounded":true}],"RingPerch")
+	host.name_under("")
+	# 4: the bobbing slabs out to the east islet, each by its name
+	# (`foot_route/bob_slab_<n>`) through the layout file.
+	for i in range(BOBS.size()): RingRoute._slab(host,"bob_slab_%d" % (i+1),BOBS[i],Vector3(2.3,0.7,2.2),0.4+0.5*i,340+i,RING_SLAB_PUMPS if i == 0 else 0.0,"foot_route")
+	# 5: the air rings over the first slab, up to the perch (`foot_route/ring_<n>`).
+	for i in range(RINGS.size()): RingRoute._ring(host,"ring_%d" % (i+1),RINGS[i],350+i,0.3*i,0.0,"foot_route")
 	# 6: the ring route out east to the bell spires (scripts/interactables/
 	# ring_route.gd); --no-ring-route leaves it out.
 	if not args.has("--no-ring-route"): RingRoute.build(study,host)

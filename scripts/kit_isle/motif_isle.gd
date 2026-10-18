@@ -26,6 +26,7 @@ const TURF_LAYER := 1 << 11
 ## Its ruins' levels of detail, added on its worker once built.
 const RuinLod = preload("res://scripts/ruin_lod.gd")
 const LateShapes = preload("res://scripts/late_shapes.gd")
+const Layout = preload("res://scripts/layout_overrides.gd")
 
 ## The scene, the motif, where it stands from its own frame.
 var study: Node3D
@@ -280,6 +281,7 @@ func work(usec: int) -> String:
 				if _staging != null and _staging.get_child_count() == 0 and _held.is_empty():
 					_staging.free()
 					_staging = null
+					_name_pieces()
 					stage = "turf"
 					_stood_at = Engine.get_physics_frames()
 				var spent := (Time.get_ticks_usec()-began)/1000
@@ -333,6 +335,24 @@ func work(usec: int) -> String:
 ## Its turf on the turf layer (skimmed, set down on, walked) and kept off
 ## the plane's stone query (the study's `_turf_rids`); its water for the
 ## pilot to wade; its rope bridges' resting decks.
+## Its motif's named pieces (AGENTS.md Handles; `handles()`: [name, node]),
+## once stood and before its turf and plants read them: each deleted one
+## gone, each moved one set where the layout file has it, each tracked
+## (a "piece", where it stands) for the world view (scripts/layout_edit.gd).
+func _name_pieces() -> void:
+	if not motif.has_method("handles"): return
+	for h: Array in motif.handles():
+		var key: String = h[0]
+		var node := h[1] as Node3D
+		if node == null or not is_instance_valid(node) or not node.is_inside_tree(): continue
+		if Layout.deleted(key):
+			node.get_parent().remove_child(node)
+			node.queue_free()
+			continue
+		var coded := node.global_transform
+		node.global_transform = Layout.xform(key,coded)
+		Layout.track(key,node,"piece",coded)
+
 func _register() -> void:
 	var flat := Vector2(offset.x,offset.z)
 	for land: Array in motif.lands:
