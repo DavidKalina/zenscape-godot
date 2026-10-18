@@ -1420,14 +1420,15 @@ const PAINT_COLOURS := {"wood":WOOD,"dark":DARK,"trim":TRIM,"cream":WING,"leathe
 ## "wingtip" (the upper wing's right tip with its roundel and aileron; the
 ## figure draws that as part of the whole wing). The figure is built from
 ## these, and the found parts are too (scripts/plane_parts.gd), so a found
-## part matches the plane it goes back on.
-static func piece(id: String, side := 1.0) -> Array:
+## part matches the plane it goes back on. `fine` multiplies the sides
+## round every hull and frustum (the found parts, seen close, are finer).
+static func piece(id: String, side := 1.0, fine := 1) -> Array:
 	var out := []
 	match id:
 		"cowl":
-			out.append([_hull([Vector3(-0.62,0.1,0.1),Vector3(-0.6,0.125,0.125),Vector3(-0.55,0.14,0.145),Vector3(-0.47,0.143,0.149),Vector3(-0.44,0.139,0.146)],12),"trim",Transform3D.IDENTITY])
-			out.append([FacetMesh.frustum(0.102,0.102,0.006,12),"brass",_placed(Vector3(0.0,0.0,-0.619),Vector3(PI*0.5,0.0,0.0))])
-			out.append([FacetMesh.frustum(0.082,0.082,0.006,12),"steel",_placed(Vector3(0.0,0.0,-0.623),Vector3(PI*0.5,0.0,0.0))])
+			out.append([_hull([Vector3(-0.62,0.1,0.1),Vector3(-0.6,0.125,0.125),Vector3(-0.55,0.14,0.145),Vector3(-0.47,0.143,0.149),Vector3(-0.44,0.139,0.146)],12*fine),"trim",Transform3D.IDENTITY])
+			out.append([FacetMesh.frustum(0.102,0.102,0.006,12*fine),"brass",_placed(Vector3(0.0,0.0,-0.619),Vector3(PI*0.5,0.0,0.0))])
+			out.append([FacetMesh.frustum(0.082,0.082,0.006,12*fine),"steel",_placed(Vector3(0.0,0.0,-0.623),Vector3(PI*0.5,0.0,0.0))])
 			# A seam of rivets where the cowl meets the body, louvres let
 			# into its sides, and the exhaust stacks bent back into a pipe
 			# along each side.
@@ -1436,28 +1437,28 @@ static func piece(id: String, side := 1.0) -> Array:
 				out.append([FacetMesh.gem(0.0055),"brass",_placed(Vector3(cos(a)*0.141,sin(a)*0.148,-0.452),Vector3.ZERO)])
 			for hand: float in [-1.0,1.0]:
 				for i in range(4):
-					out.append([_hull([Vector3(-0.035,0.0045,0.0045),Vector3(0.035,0.0045,0.0045)],4),"steel",_placed(Vector3(0.139*hand,0.042-0.026*i,-0.505),Vector3.ZERO)])
+					out.append([_hull([Vector3(-0.035,0.0045,0.0045),Vector3(0.035,0.0045,0.0045)],4*fine),"steel",_placed(Vector3(0.139*hand,0.042-0.026*i,-0.505),Vector3.ZERO)])
 				for i in range(3):
 					var z := -0.56+0.045*i
-					out.append([FacetMesh.frustum(0.009,0.009,1.0,4),"steel",_strut_at(Vector3(0.12*hand,-0.05,z),Vector3(0.168*hand,-0.075,z+0.03))])
-				out.append([FacetMesh.frustum(0.011,0.011,1.0,4),"steel",_strut_at(Vector3(0.168*hand,-0.075,-0.53),Vector3(0.152*hand,-0.098,-0.22))])
+					out.append([FacetMesh.frustum(0.009,0.009,1.0,4*fine),"steel",_strut_at(Vector3(0.12*hand,-0.05,z),Vector3(0.168*hand,-0.075,z+0.03))])
+				out.append([FacetMesh.frustum(0.011,0.011,1.0,4*fine),"steel",_strut_at(Vector3(0.168*hand,-0.075,-0.53),Vector3(0.152*hand,-0.098,-0.22))])
 		"spinner":
-			out.append([_hull([Vector3(-0.76,0.0,0.0),Vector3(-0.73,0.03,0.03),Vector3(-0.67,0.052,0.052),Vector3(-0.63,0.056,0.056)],8),"brass",Transform3D.IDENTITY])
+			out.append([_hull([Vector3(-0.76,0.0,0.0),Vector3(-0.73,0.03,0.03),Vector3(-0.67,0.052,0.052),Vector3(-0.63,0.056,0.056)],8*fine),"brass",Transform3D.IDENTITY])
 		"propeller":
 			# Two varnished wooden blades, brass-sheathed at the tips.
 			for turn: float in [0.0,PI]:
 				var lay := Transform3D(Basis(Vector3.BACK,turn)*Basis(Vector3.UP,0.32)*Basis(Vector3.RIGHT,-PI*0.5),Vector3.ZERO)
-				out.append([_hull([Vector3(0.0,0.012,0.009),Vector3(0.04,0.026,0.008),Vector3(0.16,0.024,0.006),Vector3(0.235,0.017,0.005)],6),"varnish",lay])
-				out.append([_hull([Vector3(0.232,0.0175,0.0055),Vector3(0.262,0.012,0.0045),Vector3(0.27,0.004,0.003)],6),"brass",lay])
+				out.append([_hull([Vector3(0.0,0.012,0.009),Vector3(0.04,0.026,0.008),Vector3(0.16,0.024,0.006),Vector3(0.235,0.017,0.005)],6*fine),"varnish",lay])
+				out.append([_hull([Vector3(0.232,0.0175,0.0055),Vector3(0.262,0.012,0.0045),Vector3(0.27,0.004,0.003)],6*fine),"brass",lay])
 		"windscreen":
 			out.append([_prism([Vector2(0.0,0.0),Vector2(0.005,0.0),Vector2(0.027,0.068),Vector2(0.022,0.068)],0.11),"glass",_placed(Vector3(0.0,0.2,0.1),Vector3.ZERO)])
-			for hand: float in [-1.0,1.0]: out.append([FacetMesh.frustum(0.004,0.004,1.0,4),"brass",_strut_at(Vector3(0.056*hand,0.2,0.1),Vector3(0.056*hand,0.268,0.124))])
-			out.append([FacetMesh.frustum(0.003,0.003,1.0,4),"brass",_strut_at(Vector3(-0.056,0.268,0.124),Vector3(0.056,0.268,0.124))])
+			for hand: float in [-1.0,1.0]: out.append([FacetMesh.frustum(0.004,0.004,1.0,4*fine),"brass",_strut_at(Vector3(0.056*hand,0.2,0.1),Vector3(0.056*hand,0.268,0.124))])
+			out.append([FacetMesh.frustum(0.003,0.003,1.0,4*fine),"brass",_strut_at(Vector3(-0.056,0.268,0.124),Vector3(0.056,0.268,0.124))])
 		"wheel":
 			# The spokes covered in cream, a brass hub.
-			out.append([FacetMesh.frustum(0.08,0.08,0.038,14),"steel",_placed(Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))])
-			out.append([FacetMesh.frustum(0.058,0.058,0.044,14),"cream",_placed(Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))])
-			out.append([FacetMesh.frustum(0.02,0.014,0.06,8),"brass",_placed(Vector3(0.21*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))])
+			out.append([FacetMesh.frustum(0.08,0.08,0.038,14*fine),"steel",_placed(Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))])
+			out.append([FacetMesh.frustum(0.058,0.058,0.044,14*fine),"cream",_placed(Vector3(0.2*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))])
+			out.append([FacetMesh.frustum(0.02,0.014,0.06,8*fine),"brass",_placed(Vector3(0.21*side,-0.33,-0.28),Vector3(0.0,0.0,PI*0.5))])
 		"fin":
 			out.append([_prism([Vector2(-0.1,0.0),Vector2(0.1,0.0),Vector2(0.1,0.2),Vector2(0.065,0.24),Vector2(0.02,0.25),Vector2(-0.03,0.2)],0.012),"trim",_placed(Vector3(0.0,0.03,0.58),Vector3.ZERO)])
 			out.append([_prism([Vector2(0.1,-0.04),Vector2(0.15,-0.04),Vector2(0.165,0.1),Vector2(0.145,0.19),Vector2(0.1,0.2)],0.01),"cream",_placed(Vector3(0.0,0.03,0.58),Vector3.ZERO)])

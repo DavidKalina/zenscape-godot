@@ -135,6 +135,11 @@ void fragment() {
 #endif
 #ifdef ZS_CRAFT_GRIME
 	rough_add += craft_grime(base, local, normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz));
+#ifdef ZS_CRAFT_DETAIL
+	vec3 detailed = NORMAL;
+	rough_add += craft_detail(base, detailed, local, VERTEX);
+	NORMAL = detailed;
+#endif
 #endif
 	ALBEDO = base;
 	ROUGHNESS = clamp(mix(roughness_value, 1.0, dull * 0.6) + rough_add, 0.0, 1.0);

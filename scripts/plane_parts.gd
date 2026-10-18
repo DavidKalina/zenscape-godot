@@ -18,7 +18,11 @@ extends Node3D
 ## Both stand in the same holder: a slow turn and bob, a warm halo behind
 ## (shaders/glyph_halo.gdshader), a few motes, and a soft brass ring of
 ## light under it, the plane's own landing mark (scripts/facet_mesh.gd
-## `soft_ring`), which the rune tokens' cool tilted ring is not.
+## `soft_ring`), a second ring rippling out from it now and then, and a
+## soft warm beacon rising over it (shaders/part_beacon.gdshader), so a
+## part reads from across the isle. The ripple and beacon ride the ring, so
+## hiding the ring (a carried part) hides them too; `beacon_on` turns the
+## beacon alone off (the propeller on the salvager's rope).
 ##   var holder := PlaneParts.part("propeller",0.9,"piece")
 ##   parent.add_child(holder)
 ##   holder.glow_for(night)
@@ -27,6 +31,19 @@ const FacetMesh = preload("res://scripts/facet_mesh.gd")
 const TOKEN_SHADER = preload("res://shaders/glyph_token.gdshader")
 const HALO_SHADER = preload("res://shaders/glyph_halo.gdshader")
 const GLOW_SHADER = preload("res://shaders/plane_part_glow.gdshader")
+const PART_SURFACE = preload("res://shaders/plane_part_surface.gdshader")
+
+## The hovering piece up close: its meshes' normals smoothed across edges
+## gentler than SMOOTH_ANGLE (deg), so the wheel and cowl shade round and
+## the sharp edges stay sharp; its paint the plane's with the close-up
+## detail (shaders/plane_part_surface.gdshader) at this many cells a mesh
+## unit.
+const SMOOTH_ANGLE := 40.0
+## The sides round its hulls and frustums, times the plane's own.
+const FINE := 3
+const DETAIL_SCALE := 150.0
+## The dents' depth (m).
+const DETAIL_BUMP := 0.0025
 
 ## The parts, in the gallery's order.
 const IDS := ["propeller","wheel","cowl","fin","wingtip","windscreen"]
@@ -80,11 +97,27 @@ const BOB_PACE := 1.1
 ## The glow by day and at full night: the coin's rim glow, the piece's rim
 ## glow, the halo, the ring under it; and the faint inner light at night.
 const COIN_GLOW := Vector2(0.4,0.6)
-const PIECE_GLOW := Vector2(0.55,0.6)
-const HALO := Vector2(0.24,0.4)
+const PIECE_GLOW := Vector2(0.7,0.9)
+const HALO := Vector2(0.34,0.5)
 const RING_GLOW := Vector2(0.32,0.7)
 const INNER_NIGHT := 0.04
 const WARM := Color("ffd59a")
+## The piece's shine: seconds between sweeps and its strength.
+const SHINE_EVERY := 3.0
+const SHINE := 0.5
+## The ripple: seconds between them, how far it spreads (times the ring)
+## and its strength. The beacon: its height and foot's radius (shares of
+## the size) and its strength by day and at night.
+const RIPPLE_EVERY := 2.4
+const RIPPLE_SPREAD := 2.6
+const RIPPLE := 0.55
+const BEACON_HEIGHT := 6.0
+## How far over the ring the beacon's foot stands (share of the size): clear
+## of the part, so it never washes over it.
+const BEACON_FOOT := 1.3
+const BEACON_RADIUS := 0.28
+const BEACON := Vector2(0.5,0.6)
+const BEACON_SHADER = preload("res://shaders/part_beacon.gdshader")
 
 var id := "propeller"
 var style := "coin"
@@ -96,10 +129,13 @@ var turning := true
 var _spin: Node3D
 var _halo: MeshInstance3D
 var _ring: MeshInstance3D
+var _ripple: MeshInstance3D
+var _beacon: MeshInstance3D
 var _glow_materials: Array[ShaderMaterial] = []
 var _night := 0.0
 
 static var _paints := {}
+static var _smooth := {}
 static var _coins := {}
 
 ## A holder for part `part_id`, `part_size` m across, as a "coin" or a
@@ -147,8 +183,37 @@ func _build(part_id: String, part_size: float, part_style: String, bob_phase: fl
 	ring_material.no_depth_test = false
 	_ring.material_override = ring_material
 	add_child(_ring)
+	_ripple = MeshInstance3D.new()
+	_ripple.name = "Ripple"
+	_ripple.mesh = mark
+	_ripple.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_ripple.material_override = ring_material.duplicate()
+	_ring.add_child(_ripple)
+	_beacon = MeshInstance3D.new()
+	_beacon.name = "Beacon"
+	var column := CylinderMesh.new()
+	column.top_radius = BEACON_RADIUS*size*1.6
+	column.bottom_radius = BEACON_RADIUS*size
+	column.height = BEACON_HEIGHT*size
+	column.radial_segments = 16
+	column.rings = 1
+	column.cap_top = false
+	column.cap_bottom = false
+	_beacon.mesh = column
+	_beacon.position.y = BEACON_HEIGHT*size*0.5+BEACON_FOOT*size
+	_beacon.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var beacon_material := ShaderMaterial.new()
+	beacon_material.shader = BEACON_SHADER
+	beacon_material.set_shader_parameter("tint",Color("ffc463"))
+	beacon_material.set_shader_parameter("height",BEACON_HEIGHT*size)
+	_beacon.material_override = beacon_material
+	_ring.add_child(_beacon)
 	add_child(_motes())
 	glow_for(0.0)
+
+## Turns the beacon on or off.
+func beacon_on(on: bool) -> void:
+	_beacon.visible = on
 
 ## The turning part.
 func spin() -> Node3D:
@@ -163,6 +228,7 @@ func glow_for(night: float) -> void:
 		m.set_shader_parameter("glow",glow)
 		m.set_shader_parameter("inner",INNER_NIGHT*night)
 	(_halo.material_override as ShaderMaterial).set_shader_parameter("strength",lerpf(HALO.x,HALO.y,night))
+	(_beacon.material_override as ShaderMaterial).set_shader_parameter("strength",lerpf(BEACON.x,BEACON.y,night))
 
 func _process(delta: float) -> void:
 	var t := Time.get_ticks_msec()/1000.0
@@ -170,19 +236,71 @@ func _process(delta: float) -> void:
 	_spin.position.y = sin(t*BOB_PACE+phase)*BOB*size
 	var ring := lerpf(RING_GLOW.x,RING_GLOW.y,_night)*(0.8+0.2*sin(t*1.7+phase))
 	(_ring.material_override as StandardMaterial3D).albedo_color = Color(WARM.r,WARM.g,WARM.b,ring)
+	var k := fmod(t/RIPPLE_EVERY+phase*0.13,1.0)
+	_ripple.scale = Vector3.ONE*lerpf(1.0,RIPPLE_SPREAD,1.0-pow(1.0-k,2.0))
+	(_ripple.material_override as StandardMaterial3D).albedo_color = Color(WARM.r,WARM.g,WARM.b,RIPPLE*pow(1.0-k,2.0))
 
 # --- The piece -----------------------------------------------------------------------
 
-## The plane's paints, made once for every part.
+## The plane's paints, made once for every part, the plane's own shader
+## swapped for the close-up one (the glass kept as it is).
 static func _paint(paint: String) -> Material:
-	if _paints.is_empty(): _paints = PlaneFigure.paints()
+	if _paints.is_empty():
+		var plane := PlaneFigure.paints()
+		for key: String in plane.keys():
+			var from: Material = plane[key]
+			_paints[key] = _detailed(from) if from is ShaderMaterial else from
 	return _paints[paint]
+
+static func _detailed(from: ShaderMaterial) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = PART_SURFACE
+	for u: Dictionary in from.shader.get_shader_uniform_list():
+		var value: Variant = from.get_shader_parameter(u.name)
+		if value != null: m.set_shader_parameter(u.name,value)
+	m.set_shader_parameter("detail_scale",DETAIL_SCALE)
+	m.set_shader_parameter("detail_bump",DETAIL_BUMP)
+	return m
+
+## `mesh` with its normals smoothed across edges gentler than SMOOTH_ANGLE:
+## each corner takes the mean of the corners at its point whose own normals
+## lie within the angle of it. Made once a mesh.
+static func _smoothed(mesh: Mesh) -> Mesh:
+	var key := mesh.get_instance_id()
+	if _smooth.has(key): return _smooth[key]
+	var out := ArrayMesh.new()
+	var limit := cos(deg_to_rad(SMOOTH_ANGLE))
+	for surface in range(mesh.get_surface_count()):
+		var arrays := mesh.surface_get_arrays(surface)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		if normals.size() != verts.size():
+			out.add_surface_from_arrays(mesh.surface_get_primitive_type(surface),arrays)
+			continue
+		var at := {}
+		for i in range(verts.size()):
+			var cell := Vector3i((verts[i]*10000.0).round())
+			if not at.has(cell): at[cell] = []
+			(at[cell] as Array).append(i)
+		var smooth := PackedVector3Array()
+		smooth.resize(verts.size())
+		for corners: Array in at.values():
+			for i: int in corners:
+				var sum := Vector3.ZERO
+				for j: int in corners:
+					if normals[i].dot(normals[j]) >= limit: sum += normals[j]
+				smooth[i] = sum.normalized() if sum.length() > 0.0 else normals[i]
+		arrays[Mesh.ARRAY_NORMAL] = smooth
+		arrays[Mesh.ARRAY_TANGENT] = null
+		out.add_surface_from_arrays(mesh.surface_get_primitive_type(surface),arrays)
+	_smooth[key] = out
+	return out
 
 ## The part's pieces as [mesh, paint, transform], moved by their offsets.
 static func _parts_of(part_id: String) -> Array:
 	var out := []
 	for p: Array in PARTS[part_id].pieces:
-		for q: Array in PlaneFigure.piece(p[0]):
+		for q: Array in PlaneFigure.piece(p[0],1.0,FINE):
 			out.append([q[0],q[1],Transform3D(Basis.IDENTITY,p[1])*(q[2] as Transform3D)])
 	return out
 
@@ -202,10 +320,12 @@ func _piece() -> Node3D:
 	glow.shader = GLOW_SHADER
 	glow.set_shader_parameter("tint",WARM)
 	glow.set_shader_parameter("reach",size)
+	glow.set_shader_parameter("shine_every",SHINE_EVERY)
+	glow.set_shader_parameter("shine",SHINE)
 	_glow_materials.append(glow)
 	for p: Array in parts:
 		var mesh := MeshInstance3D.new()
-		mesh.mesh = p[0]
+		mesh.mesh = _smoothed(p[0])
 		mesh.material_override = _paint(p[1])
 		mesh.material_overlay = glow
 		mesh.transform = Transform3D(Basis.IDENTITY,-bounds.get_center())*(p[2] as Transform3D)

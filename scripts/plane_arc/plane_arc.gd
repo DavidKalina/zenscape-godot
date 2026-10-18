@@ -69,6 +69,7 @@ extends Node3D
 const PlaneParts = preload("res://scripts/plane_parts.gd")
 const PartSpots = preload("res://scripts/plane_arc/part_spots.gd")
 const PlaneCough = preload("res://scripts/plane_arc/plane_cough.gd")
+const PartSounds = preload("res://scripts/plane_arc/part_sounds.gd")
 const SnagPlane = preload("res://scripts/snag_plane.gd")
 const Ledger = preload("res://scripts/ledger/ledger.gd")
 const Telescope = preload("res://scripts/telescope.gd")
@@ -150,6 +151,9 @@ var ferry: Node3D
 var serpent: Node3D
 var fin_ring := -1
 var cough: Node3D
+## The parts' own sounds: found, seated, all home (scripts/plane_arc/
+## part_sounds.gd).
+var sounds: Node
 ## The glints over parts under water (id -> node), and the scene's pops.
 var _glints := {}
 var _moments: CanvasLayer
@@ -185,6 +189,8 @@ func setup(scene: Node3D) -> void:
 		add_child(_moments)
 	cough = PlaneCough.new()
 	add_child(cough)
+	sounds = PartSounds.new()
+	add_child(sounds)
 	var sky: Node3D = host.get("sky")
 	ferry = sky.get("ferry") if sky != null else null
 	serpent = sky.get("serpent") if sky != null else null
@@ -280,7 +286,10 @@ func _build_snag() -> void:
 	snag = SnagPlane.new()
 	snag.setup(SNAG_LAP,SnagPlane.ROPE,float(snag_spot.dip),snag_spot.over,SNAG_START)
 	snag.yaw = float(snag_spot.yaw)
-	snag.load_maker = func() -> Node3D: return PlaneParts.part("propeller",SIZE,"piece",4.4)
+	snag.load_maker = func() -> Node3D:
+		var holder: Node3D = PlaneParts.part("propeller",SIZE,"piece",4.4)
+		holder.beacon_on(false)
+		return holder
 	snag.respawns = false
 	add_child(snag)
 	if state.propeller == "laid":
@@ -375,7 +384,7 @@ func take(id: String) -> void:
 		_glints.erase(id)
 	if _moments != null:
 		_moments.pop("%s: it rides with you to the plane" % TAKEN[id],2.6)
-		_moments.blip(2)
+	sounds.found(IDS.size()-_count("laid"))
 
 ## A slam at `at` (scripts/slam.gd): reaching the bell over the
 ## jammed cowl, hard enough, it knocks the cowl loose (after COWL_DELAY).
@@ -510,12 +519,19 @@ func _seat_point(id: String) -> Vector3:
 func _seat(id: String) -> void:
 	var figure: Node3D = host.get("plane_figure")
 	if figure != null and figure.has_method("set_found"): figure.set_found(id,true)
+	var all_home := flies() and fitting.is_empty() and _flying.is_empty()
+	sounds.seated(IDS.size()-_count("laid")-_count("carried")-fitting.size()-_flying.size())
+	if all_home: sounds.home()
 	if _moments == null: return
-	_moments.blip(2)
-	if flies() and fitting.is_empty() and _flying.is_empty():
-		_moments.pop("All six home: the plane will fly",2.8)
-		_moments.flourish()
+	if all_home: _moments.pop("All six home: the plane will fly",2.8)
 	else: _moments.pop("%s seats home" % NAMES[id],1.6)
+
+## How many parts are in `which` state (laid, carried, fitted).
+func _count(which: String) -> int:
+	var n := 0
+	for id: String in IDS:
+		if state[id] == which: n += 1
+	return n
 
 ## The foot hint's line for the plane, or "".
 func hint() -> String:
