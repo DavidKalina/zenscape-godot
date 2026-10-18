@@ -49,6 +49,18 @@ The user plays the aqueduct isle, presses F4 and:
    lines; a ring placed tipped on purpose (`ring_a`) may now throw
    differently: retune its tip so its line still lands, and say so. A ring
    shows its throw direction as a short arrow in the world view.
+1d. **Nothing left behind.** (Spec change 2026-10-17, right after the
+   current task.) The user dragged an island and the lamps (the stone
+   lanterns by the paths) stayed put, and "some of the other stuff". The
+   isle's anchoring only walks `world_roots()` in `studies/aqueduct_isle.gd`,
+   so anything built under another root is missed. Sweep for it: in a
+   rendered run, record every visible node (and every collider) whose
+   world bounds lie over an island, drag the island, and list each one
+   that didn't move. Anchor all of them, unless they're meant to stay (sky,
+   clouds, weather). Lamps, their lights, props, decals, particles,
+   wildlife homes (the songbirds' trees) and audio emitters should all go
+   with their island. Commit the driver's before/after list in the commit
+   Notes. Then drag each of the four islands and show a before/after still.
 2. **Groups.** Shift-click, or drag a box, to select several pieces. They
    move, turn and delete as one. A selection can be **saved as a chunk**
    (a named file of pieces relative to an anchor), and a chunk can be
