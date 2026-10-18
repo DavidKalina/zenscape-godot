@@ -374,6 +374,17 @@ var state := "patrol"
 ## His yaw (he faces -Z of Basis(UP, yaw)) and the one it eases to.
 var yaw := 0.0
 var yaw_goal := 0.0
+## The deck line he patrols (`setup`'s `line`): its frame (x along the
+## deck from its head, z across, y up), the head's and the snap's x in it
+## (his patrol's ends, KNOBS.end_margin short of each), the deck's top (y
+## in it) and its half width (KNOBS.deck_half unless the line gives one).
+## The aqueduct's deck (studies/aqueduct_isle_art.gd) unless the host
+## gives another (the aqueduct bridge's span, studies/aqueduct_isle_bridge.gd).
+var line_xf: Transform3D = Art.AQ
+var line_head: float = Art.HEAD
+var line_snap: float = Art.SNAP
+var line_deck: float = Art.DECK
+var line_half := -1.0
 ## The patrol's two ends (world, deck height) and which he walks to.
 var ends: Array[Vector3] = []
 var heading_to := 1
@@ -498,7 +509,12 @@ func _init() -> void:
 	process_priority = -10
 
 func knob(key: String) -> float:
+	if key == "deck_half" and line_half > 0.0: return line_half
 	return float(KNOBS[key])
+
+## The deck's top (world y) on his line.
+func _deck_top() -> float:
+	return (line_xf*Vector3(0.0,line_deck,0.0)).y
 
 ## His height (m), for the lock marker over his helm.
 func tall() -> float:
@@ -509,16 +525,23 @@ func aim_point() -> Vector3:
 	return body.socket("chest_rune").global_position if body != null else global_position+Vector3.UP*height*0.7
 
 ## Him on `host`'s aqueduct deck (the aqueduct isle), at the head end,
-## facing along it.
-func setup(host: Node3D) -> void:
+## facing along it; or on `line`'s deck ({xf, head, snap, deck, half}:
+## the frame and numbers the vars above keep), the same way.
+func setup(host: Node3D, line := {}) -> void:
 	isle = host
+	if not line.is_empty():
+		line_xf = line.get("xf",line_xf)
+		line_head = float(line.get("head",line_head))
+		line_snap = float(line.get("snap",line_snap))
+		line_deck = float(line.get("deck",line_deck))
+		line_half = float(line.get("half",line_half))
 	height = WorldScale.wanderer_tall*knob("tall_ratio")
 	_rng.randomize()
 	attack = String(KNOBS.attack)
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--rune-attack="): attack = a.get_slice("=",1)
 	var margin := knob("end_margin")
-	ends = [Art.AQ*Vector3(Art.HEAD+margin,Art.DECK,0.0),Art.AQ*Vector3(Art.SNAP-margin,Art.DECK,0.0)]
+	ends = [line_xf*Vector3(line_head+margin,line_deck,0.0),line_xf*Vector3(line_snap-margin,line_deck,0.0)]
 	yaw = _yaw_to(ends[1]-ends[0])
 	yaw_goal = yaw
 	transform = Transform3D(Basis(Vector3.UP,yaw),ends[0])
@@ -1141,7 +1164,7 @@ func _skid(v: Vector3, meters: float, crack: bool, riposte := false) -> void:
 			position += side*(d+0.05)
 		else:
 			var out := _deck_local(position)
-			side = (Art.AQ.basis*Vector3(0.0,0.0,signf(out.z) if out.z != 0.0 else 1.0)).normalized()
+			side = (line_xf.basis*Vector3(0.0,0.0,signf(out.z) if out.z != 0.0 else 1.0)).normalized()
 		fall_v = (side+flat*0.5).normalized()*knob("over_push")
 		body.play("fall")
 		print("rune knight: hit teetering, goes over")
@@ -1234,7 +1257,7 @@ func _spill_rest(rune: String, v: Vector3) -> Vector3:
 			var p := position+way*d
 			if not on_meadow:
 				var l := _deck_local(p)
-				if absf(l.z) > knob("deck_half")-knob("spill_margin") or l.x < Art.HEAD+knob("spill_margin") or l.x > Art.SNAP-knob("spill_margin"): continue
+				if absf(l.z) > knob("deck_half")-knob("spill_margin") or l.x < line_head+knob("spill_margin") or l.x > line_snap-knob("spill_margin"): continue
 			elif _on_strip(p): continue
 			var ray := PhysicsRayQueryParameters3D.new()
 			ray.collision_mask = SIGHT_MASK
@@ -1244,7 +1267,7 @@ func _spill_rest(rune: String, v: Vector3) -> Vector3:
 			if hit.is_empty() or (hit.normal as Vector3).y < 0.8: continue
 			# On the deck its own top (not a step up off it); on the meadow
 			# turf near his level.
-			var level := Art.TOP+Art.DECK if not on_meadow else position.y
+			var level := _deck_top() if not on_meadow else position.y
 			if absf((hit.position as Vector3).y-level) > (0.08 if not on_meadow else 0.5): continue
 			var at: Vector3 = (hit.position as Vector3)+Vector3.UP*knob("spill_rest_y")
 			var crowded := false
@@ -1263,7 +1286,7 @@ func _spill_rest(rune: String, v: Vector3) -> Vector3:
 ## across, toward the deck's middle). Braced, a skid that still reaches
 ## the lip ends there teetering, never over.
 func _brace(flat: Vector3) -> Vector3:
-	var w := Art.AQ.basis.inverse()*flat
+	var w := line_xf.basis.inverse()*flat
 	w.y = 0.0
 	if w.length() < 0.001: return flat
 	w = w.normalized()
@@ -1271,10 +1294,10 @@ func _brace(flat: Vector3) -> Vector3:
 	if absf(w.z) > most:
 		var along := signf(w.x)
 		if absf(w.x) < 0.05:
-			along = 1.0 if _deck_local(position).x < (Art.HEAD+Art.SNAP)*0.5 else -1.0
+			along = 1.0 if _deck_local(position).x < (line_head+line_snap)*0.5 else -1.0
 		w = Vector3(along*sqrt(1.0-most*most),0.0,signf(w.z)*most)
 	braced = true
-	var out := Art.AQ.basis*w
+	var out := line_xf.basis*w
 	out.y = 0.0
 	return out.normalized()
 
@@ -1282,7 +1305,7 @@ func _brace(flat: Vector3) -> Vector3:
 ## (KNOBS.teeter_lip of deck_half off the deck's middle), or INF.
 func _lip_along(at: Vector3, way: Vector3) -> float:
 	var l := _deck_local(at)
-	var w := Art.AQ.basis.inverse()*way
+	var w := line_xf.basis.inverse()*way
 	var edge := knob("deck_half")*knob("teeter_lip")
 	if absf(w.z) < 0.001: return INF
 	var to := (signf(w.z)*edge-l.z)/w.z
@@ -1372,19 +1395,19 @@ func _quake(at: Vector3, power: float) -> void:
 
 ## The deck's frame: x along it, z across.
 func _deck_local(at: Vector3) -> Vector3:
-	return Art.AQ.affine_inverse()*at
+	return line_xf.affine_inverse()*at
 
 ## Whether `at` is past the deck's side or ends.
 func _off_deck(at: Vector3) -> bool:
 	var l := _deck_local(at)
-	return absf(l.z) > knob("deck_half") or l.x < Art.HEAD or l.x > Art.SNAP
+	return absf(l.z) > knob("deck_half") or l.x < line_head or l.x > line_snap
 
 ## `at` kept on the patrol's line's span (he may stand off its middle).
 func _keep_on_deck(at: Vector3) -> Vector3:
 	var l := _deck_local(at)
 	var margin := knob("end_margin")
-	l.x = clampf(l.x,Art.HEAD+margin*0.5,Art.SNAP-margin*0.5)
-	return Art.AQ*l
+	l.x = clampf(l.x,line_head+margin*0.5,line_snap-margin*0.5)
+	return line_xf*l
 
 ## Where a fall's step from `at` along `step` meets stone or turf (the
 ## ray's hit: position, normal), or empty.
@@ -1425,7 +1448,7 @@ func _clear_stand(ground: Vector3, tall_: float) -> bool:
 	var q := PhysicsShapeQueryParameters3D.new()
 	q.shape = box
 	q.collision_mask = 1
-	q.transform = Transform3D(Art.AQ.basis,ground+Vector3.UP*(0.4+box.size.y*0.5))
+	q.transform = Transform3D(line_xf.basis,ground+Vector3.UP*(0.4+box.size.y*0.5))
 	return get_world_3d().direct_space_state.intersect_shape(q,1).is_empty()
 
 ## His leap spots, found once from the aqueduct's real shape: every
@@ -1438,12 +1461,12 @@ func _find_spots() -> void:
 	_spots_found = true
 	leap_spots.clear()
 	var off := knob("deck_half")+float(_shape.radius)+knob("leap_out")
-	var deck_y := Art.TOP+Art.DECK
-	var x := Art.HEAD+1.0
-	while x <= Art.SNAP-1.0:
+	var deck_y := _deck_top()
+	var x := line_head+1.0
+	while x <= line_snap-1.0:
 		for side: float in [-1.0,1.0]:
-			var top := Art.AQ*Vector3(x,Art.DECK,side*off)
-			var hit := _turf_at(top,1.0,Art.DECK+6.0)
+			var top := line_xf*Vector3(x,line_deck,side*off)
+			var hit := _turf_at(top,1.0,line_deck+6.0)
 			if hit.is_empty(): continue
 			var g: Vector3 = hit.position
 			if g.y > deck_y-4.0 or _on_strip(g): continue
@@ -1480,7 +1503,7 @@ func _spot_near(x: float, side: float) -> Dictionary:
 
 ## Whether the wanderer stands on the deck (over it, by the deck's top).
 func _on_deck(feet: Vector3) -> bool:
-	return not _off_deck(feet) and feet.y > Art.TOP+Art.DECK-0.6
+	return not _off_deck(feet) and feet.y > _deck_top()-0.6
 
 ## Each frame: whether to leap. On the deck tracking you, with you on the
 ## meadow near the aqueduct and no clean line on you KNOBS.leap_wait s (or
@@ -1521,7 +1544,7 @@ func _below_me() -> bool:
 	if motor == null or _target() == Vector3.INF: return false
 	var feet: Vector3 = motor.feet
 	var l := _deck_local(feet)
-	return feet.y < position.y-3.0 and absf(l.z) < knob("leap_reach") and l.x > Art.HEAD-4.0 and l.x < Art.SNAP+4.0
+	return feet.y < position.y-3.0 and absf(l.z) < knob("leap_reach") and l.x > line_head-4.0 and l.x < line_snap+4.0
 
 ## Down to `feet` from spot `s`: he walks along the deck to over it, then
 ## leaps, landing KNOBS.leap_short m short of you (at most KNOBS.leap_far
@@ -1535,12 +1558,12 @@ func _go_down(s: Dictionary, feet: Vector3) -> void:
 		var hit := _turf_at(base+way.normalized()*d,6.0,10.0)
 		if not hit.is_empty() and not _on_strip(hit.position) and _clear_stand(hit.position,float(_shape.height)):
 			land = hit.position
-	_start_leap("down",Art.AQ*Vector3(float(s.x),Art.DECK,float(s.side)*knob("deck_half")*0.55),land,false)
+	_start_leap("down",line_xf*Vector3(float(s.x),line_deck,float(s.side)*knob("deck_half")*0.55),land,false)
 	print("rune knight: goes down to you, over (%.1f, %.1f, %.1f) to (%.1f, %.1f, %.1f)" % [_leap_goal.x,_leap_goal.y,_leap_goal.z,land.x,land.y,land.z])
 
 ## Up from spot `s` to the deck over it (`home`: then to his patrol).
 func _go_up(s: Dictionary, home: bool) -> void:
-	_start_leap("up",s.at,Art.AQ*Vector3(float(s.x),Art.DECK,float(s.side)*0.3),home)
+	_start_leap("up",s.at,line_xf*Vector3(float(s.x),line_deck,float(s.side)*0.3),home)
 	print("rune knight: goes %s, to the spot at (%.1f, %.1f, %.1f)" % ["home" if home else "up to you",_leap_goal.x,_leap_goal.y,_leap_goal.z])
 
 func _start_leap(form: String, from: Vector3, to: Vector3, home: bool) -> void:
@@ -1888,18 +1911,18 @@ func _foot_step(at: Vector3, way: String, delta: float) -> Dictionary:
 	var step := dir*pace*delta
 	var to := at+step
 	if not on_meadow:
-		var axis := (Art.AQ.basis*Vector3.RIGHT).normalized()
+		var axis := (line_xf.basis*Vector3.RIGHT).normalized()
 		if way in ["left","right"] and absf(dir.dot(axis)) < knob("foot_along"): return {}
 		var l := _deck_local(to)
 		var margin := knob("end_margin")*0.5
 		var side := knob("deck_half")-float(_shape.radius)-knob("foot_side")
-		if l.x < Art.HEAD+margin or l.x > Art.SNAP-margin: return {}
+		if l.x < line_head+margin or l.x > line_snap-margin: return {}
 		if absf(l.z) > side:
 			# At the side a strafe runs on along it (the across share,
 			# small past foot_along, held at the side); in or out stops.
 			if not way in ["left","right"]: return {}
 			l.z = signf(l.z)*side
-			step = Art.AQ*l-at
+			step = line_xf*l-at
 			step.y = 0.0
 		if way == "walk" and _blocked(dir): return {}
 		return {"step":step,"y":at.y}

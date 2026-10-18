@@ -351,6 +351,9 @@ func _build_art() -> void:
 	# The on-foot pieces' route (balustrades, ropes, a ferry, bobbing slabs).
 	var foot_host: Node3D = preload("res://scripts/interactables/aqueduct_foot_route.gd").build(self)
 	if foot_host != null: LayoutOverrides.build_added(foot_host)
+	# The aqueduct bridge east off the near rim toward crag 1, carrying the
+	# ring course (studies/aqueduct_isle_bridge.gd); --no-bridge leaves it out.
+	bridge = Bridge.build(self)
 	# The in-game layout editor (F4, scripts/layout_edit.gd), where the
 	# developer keys are on.
 	if preload("res://scripts/kit_isle/dev_keys.gd").enabled():
@@ -364,6 +367,10 @@ func _build_art() -> void:
 	# island's recipe, motifs/authored/isle_<name>.json, its pieces and traps
 	# over it, riding it when the world view moves it.
 	isle_recipes = preload("res://scripts/kit_isle/isle_recipes.gd").build(self)
+
+## The aqueduct bridge's pieces (studies/aqueduct_isle_bridge.gd; null: none).
+const Bridge = preload("res://studies/aqueduct_isle_bridge.gd")
+var bridge: Node3D = null
 
 ## The island view's recipes laid over their islands (null: none).
 var isle_recipes: Node3D = null
@@ -415,7 +422,7 @@ func _stumps_fit() -> Dictionary:
 ## lanterns, the birds' perches) goes by `island_carriers`.
 func world_roots() -> Array:
 	var out: Array = [art]
-	for n: String in ["FootPieces","Life","Lodestone","TargetStone","KitCachePieces","IsleRecipePieces","PlaneArc"]:
+	for n: String in ["FootPieces","AqueductBridge","Life","Lodestone","TargetStone","KitCachePieces","IsleRecipePieces","PlaneArc"]:
 		var node := get_node_or_null(n)
 		if node != null: out.append(node)
 	for c: Node in get_children():
@@ -755,7 +762,10 @@ func _add_life() -> void:
 		if RuneKnight.placed_on(self):
 			rune_knight = RuneKnight.new()
 			add_child(rune_knight)
-			rune_knight.setup(self)
+			# On the bridge's walkable span where it stands, else (or with
+			# --rune-knight-at=aqueduct) the aqueduct's deck.
+			var line: Dictionary = {} if "--rune-knight-at=aqueduct" in preload("res://scripts/launch_args.gd").user_args() else Bridge.knight_line()
+			rune_knight.setup(self,line)
 			# His crescents buffet the plane (task 18): through the isle's air.
 			if not plane_air.is_valid(): plane_air = _dragon_air
 		else: print("aqueduct isle: the rune knight's core rune is taken; he is gone")
