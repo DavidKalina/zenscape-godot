@@ -47,6 +47,7 @@ const KitCaches = preload("res://scripts/kit_isle/kit_caches.gd")
 const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
 const YardSky = preload("res://studies/motif_yard_sky.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const IsleIsland = preload("res://scripts/kit_isle/isle_island_motif.gd")
 const LandformPanel = preload("res://studies/motif_editor_panel.gd")
 const EditorPalette = preload("res://studies/motif_editor_palette.gd")
 const Feel = preload("res://studies/motif_editor_feel.gd")
@@ -333,6 +334,9 @@ func _first_stand() -> void:
 	# stays free: `_hold_mouse` frees it every frame while editing.
 	_free_mouse_if_editing.call_deferred()
 	print("motif editor: %s stood %s in %d ms" % [str(data.slug),"dressed" if dressed else "grey",dress_ms if dressed else bare_ms])
+	if world_scene() != "":
+		_status_line = "Island view of %s: F4 saves it and goes back to the world" % str(data.get("base",""))
+		_show_status()
 
 func _free_mouse_if_editing() -> void:
 	if editing and not _looking: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -737,6 +741,11 @@ func _edit_step(delta: float) -> void:
 # --- Input ---------------------------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
+	# The island view's way back (--world-scene=, scripts/layout_edit.gd O).
+	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_F4 and world_scene() != "":
+		back_to_world()
+		if is_inside_tree(): get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_P and walk_ready and _ui != null:
 		toggle_play((event as InputEventKey).shift_pressed)
 		get_viewport().set_input_as_handled()
@@ -1561,6 +1570,34 @@ func _set_markers_visible(on: bool) -> void:
 	EditorSlope.show_marks(self,on)
 
 # --- Save and load --------------------------------------------------------------------------
+
+## The scene the island view was opened from (`--world-scene=`), "" if none.
+func world_scene() -> String:
+	for a: String in _args:
+		if a.begins_with("--world-scene="): return a.get_slice("=",1)
+	return ""
+
+## The island view's return (F4): the recipe saved under the island's own
+## name (motifs/authored/isle_<name>.json), then the world scene opened
+## again with the run's flags, the world view open on that island
+## (`--world-view=`): the isle lays the recipe over it
+## (scripts/kit_isle/isle_recipes.gd).
+func back_to_world() -> void:
+	var island := str(data.get("base",""))
+	if not IsleIsland.is_island(island):
+		_status_line = "Not an island of the aqueduct isle: no world to go back to"
+		_show_status()
+		return
+	data.slug = "isle_"+island.get_slice("/",1)
+	if panel != null: panel.slug_edit.text = str(data.slug)
+	save()
+	var args := PackedStringArray(["--world-view="+island])
+	for a: String in _args:
+		if a.begins_with("--island=") or a.begins_with("--world-scene=") or a.begins_with("--world-view=") or a in args: continue
+		args.append(a)
+	print("motif editor: back to %s (%s)" % [world_scene()," ".join(args)])
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	LaunchArgs.open_scene(get_tree(),world_scene(),args)
 
 func save() -> String:
 	var slug := panel.slug_edit.text.strip_edges().to_lower().replace(" ","_") if panel != null else str(data.slug)

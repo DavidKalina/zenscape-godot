@@ -91,6 +91,34 @@ func setup(scene: Node3D, pieces: Node3D) -> void:
 	var was: Array = Layout.data.get("deleted",[])
 	gone = was.duplicate()
 	set_process(false)
+	# Back from the island view (studies/motif_editor.gd F4): the world view
+	# opened again on that island once he can walk.
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with("--world-view="): _reopen = a.get_slice("=",1)
+	if _reopen != "" and scene.has_signal("isle_ready"): scene.isle_ready.connect(_reopen_view,CONNECT_ONE_SHOT|CONNECT_DEFERRED)
+
+## The island the world view opens on at load (`--world-view=`), "" none.
+var _reopen := ""
+func _reopen_view() -> void:
+	if not is_inside_tree(): return
+	if not can_enter():
+		get_tree().create_timer(0.2).timeout.connect(_reopen_view)
+		return
+	enter()
+	if not is_island(_reopen):
+		say("no island %s to open on" % _reopen)
+		return
+	select(_reopen)
+	# Looked at from its south-east, high, as from the plane.
+	var i: Dictionary = Islands.islands[_reopen]
+	var r: Rect2 = i.rect
+	var mid := Islands.pivot(_reopen)
+	var back := maxf(r.size.x,r.size.y)*0.8+20.0
+	_cam_yaw = deg_to_rad(30.0)
+	_cam_pitch = -0.6
+	_cam_pos = mid+Basis.from_euler(Vector3(_cam_pitch,_cam_yaw,0.0))*Vector3(0.0,0.0,back)
+	_apply_cam()
+	say("back from the island view: %s rebuilt from its recipe" % _reopen)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == TOGGLE:

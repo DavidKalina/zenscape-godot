@@ -360,6 +360,13 @@ func _build_art() -> void:
 		editor.setup(self,foot_host)
 	# --sluice: the Sluice Flush on the channel (scripts/traps/sluice_aqueduct.gd).
 	preload("res://scripts/traps/sluice_aqueduct.gd").build(self)
+	# The island view's edits (scripts/kit_isle/isle_recipes.gd): each
+	# island's recipe, motifs/authored/isle_<name>.json, its pieces and traps
+	# over it, riding it when the world view moves it.
+	isle_recipes = preload("res://scripts/kit_isle/isle_recipes.gd").build(self)
+
+## The island view's recipes laid over their islands (null: none).
+var isle_recipes: Node3D = null
 
 ## How the aqueduct follows its islands in the world view (scripts/
 ## world_islands.gd `refit`): cut at its fallen span (aqueduct x runs along
@@ -440,6 +447,7 @@ func _place_saved_islands() -> void:
 ## over it drawn where it went, and the parked plane carried if it stood
 ## on it.
 func island_moved(_name: String, d := Transform3D.IDENTITY, was := PackedVector2Array()) -> void:
+	if isle_recipes != null: isle_recipes.moved(_name)
 	if parked and not was.is_empty() and Geometry2D.is_point_in_polygon(Vector2(parked_at.x,parked_at.z),was):
 		var at := d*parked_at
 		var heading := wrapf(parked_heading+d.basis.get_euler().y,-PI,PI)
