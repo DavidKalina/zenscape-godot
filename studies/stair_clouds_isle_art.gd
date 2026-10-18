@@ -288,13 +288,9 @@ static func lit_under_wall(node: Node3D) -> void:
 const SHRINES := [
 	["pad",1,26.0,-3.4,"pier",0.55,0.0],
 	["pad",1,26.0,3.4,"pier",0.25,0.0],
-	["pad",2,25.6,0.0,"tomb_chest",0.4,0.0],
 	["pad",3,26.2,-3.0,"fallen_pier",0.5,35.0],
 	["pad",5,26.0,-3.4,"pier",0.7,0.0],
 	["pad",5,26.0,2.6,"pier",0.3,0.0],
-	["pad",6,25.6,0.0,"tomb_chest",0.5,0.0],
-	["pad",7,26.0,0.0,"tomb_chest",0.5,0.0],
-	["ter",0,13.0,0.0,"tomb_chest",0.45,90.0,2.0*STEP],
 	["ter",1,10.0,0.0,"floor",0.55,0.0,2.0*STEP],
 	["ter",3,12.5,0.0,"arch",0.6,90.0,4.0*STEP],
 	["ter",4,9.0,-14.0,"pier",0.55,0.0,6.0*STEP],

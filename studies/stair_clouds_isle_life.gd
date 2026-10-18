@@ -34,22 +34,28 @@ func leaf_spots() -> Array:
 # --- Songbirds on the shrines ------------------------------------------------------
 
 ## The kit isles' songbirds (scripts/kit_isle/kit_birds.gd), their perches
-## the shrines': the chests' lids, the piers' stubs and the summit's stones.
+## the shrines': the fallen pier and the terrace arch (a grid of points
+## over each, so the ray finds their tops), the piers' stubs and the
+## summit's stones.
 class StairBirds extends "res://scripts/kit_isle/kit_birds.gd":
-	const HOMES := [["sparrow",4,"chests"],["goldfinch",3,"stubs"],["robin",2,"summit"]]
+	const HOMES := [["sparrow",4,"fallen"],["goldfinch",3,"stubs"],["robin",2,"summit"]]
 
 	func flock_specs() -> Array:
 		return HOMES
 
 	func spots(_space: PhysicsDirectSpaceState3D) -> Dictionary:
-		var found := {"chests":[],"stubs":[],"summit":[]}
+		var found := {"fallen":[],"stubs":[],"summit":[]}
 		for spec: Array in Stair.SHRINES:
 			var at := Stair.shrine_frame(spec).origin
 			var p := Vector2(at.x,at.z)
 			match str(spec[4]):
-				"tomb_chest": (found.chests as Array).append(p)
-				"pier","fallen_pier": (found.stubs as Array).append(p)
-				"floor": (found.chests as Array).append(p)
+				"pier": (found.stubs as Array).append(p)
+				"fallen_pier","arch":
+					var f := Stair.shrine_frame(spec)
+					for i in range(-3,4):
+						for j in range(-3,4):
+							var q := f*Vector3(0.6*i,0.0,0.6*j)
+							(found.fallen as Array).append(Vector2(q.x,q.z))
 		for off: Vector2 in [Vector2(-5.0,-4.0),Vector2(-3.0,-4.5),Vector2(3.0,-4.5),Vector2(5.0,-4.0),Vector2(0.0,-9.0)]:
 			var p := Stair.side_at(Stair.SIDES-1,off.x,off.y-3.0)
 			(found.summit as Array).append(p)
