@@ -76,7 +76,12 @@ const GROUP := &"slam"
 const HUBS := &"breakables_hub"
 
 # --- When and how hard (m at size 1)
-const LOW := 1.8                 # m of air under him for a fresh press to slam
+## m of air under him for a fresh press to slam (the sail's too): under a
+## plain jump's top (on flat ground 0.8 m held, 0.69 at 8 frames, 0.52 at
+## a 4-frame tap; off a bobbing slab 0.63 held, 0.55 at 12 frames), so a
+## jump can pound and a low glide can always slam; a 2-frame tap (0.41)
+## can't. The sail's brake lives only in the last LOW over the ground.
+const LOW := 0.45
 const SAIL_KEEP := 0.1           # share of the sail's flat pace kept into a slam from it
 const DROP := Vector2(1.8,11.0)  # m of drop: the weakest hit, and full
 const DECENT := 4.0              # m of drop that opens a buried find, drops the cowl

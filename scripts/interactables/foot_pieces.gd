@@ -212,14 +212,16 @@ func _take_ring(r: Node3D) -> void:
 	on = null
 
 ## Down onto an air ring's stones: the charge filled, thrown BOUNCE m back
-## up off its top, his flat pace kept (see `rings`).
-func _bounce_ring(r: Node3D) -> void:
+## up off its top (SLAM_BOUNCE m from a slam), his flat pace kept (see
+## `rings`).
+## `snap`: his feet set on its top (not when he fell back down inside it).
+func _bounce_ring(r: Node3D, slammed := false, snap := true) -> void:
 	ring_bounces += 1
 	var drafts: Node = study.get("updraft")
 	if drafts != null and drafts.has_method("refill"): drafts.refill(motor.feet)
 	var top: float = r.top_at(motor.feet)
-	if motor.feet.y < top: motor.feet.y = top
-	var h: float = AirRing.BOUNCE*motor.size
+	if snap and motor.feet.y < top: motor.feet.y = top
+	var h: float = (AirRing.SLAM_BOUNCE if slammed else AirRing.BOUNCE)*motor.size
 	var up := motor.rise_for(h,true)
 	motor.launch(Vector3(motor.velocity.x,up,motor.velocity.z),h+_drop_under(motor.feet)+0.5)
 	on = null
@@ -279,9 +281,16 @@ func after(_delta: float, events: Dictionary) -> void:
 		# Down onto a ring's stones: the trampoline (every time).
 		for r: Node3D in rings:
 			if r.middle().distance_to(motor.feet) >= NEAR: continue
-			if r.try_bounce(motor.feet,motor.velocity,motor.size) and not took and not motor.grounded:
-				events["ring_bounce"] = {"at":r.middle(),"hard":-motor.velocity.y}
-				_bounce_ring(r)
+			var fell: bool = r.fell_in
+			r.fell_in = false
+			if r.try_bounce(motor.feet,motor.velocity,motor.size):
+				fell = false
+			elif fell: r.flex_hit(motor.velocity)
+			else: continue
+			if not took and not motor.grounded:
+				var slammed := motor.move == "slam"
+				events["ring_bounce"] = {"at":r.middle(),"hard":-motor.velocity.y,"slam":slammed}
+				_bounce_ring(r,slammed,not fell)
 				took = true
 	# On a balustrade's coping: only noted.
 	var rail: Node3D = null

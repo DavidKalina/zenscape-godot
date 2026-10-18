@@ -10,8 +10,10 @@ extends Node3D
 ## Its top is a trampoline (`try_bounce`): his feet coming down onto its
 ## stones bounce him BOUNCE m back up, every time with no cool-down (the
 ## host refills the updraft's charge each bounce too); the ring dips and
-## rings out under him (FLEX_*). On a flat ring the top is the whole band of
-## stones; on one tipped up on edge (as the slide rock's ring A) it is the
+## rings out under him (FLEX_*); a slam onto it throws him SLAM_BOUNCE m.
+## On a flat ring the top is the whole disc, the hole included (from above
+## it bounces, from below it is passed through and taken); on one tipped up
+## on edge (as the slide rock's ring A) it is the
 ## stones' upper face wherever he comes down on them, in practice its upper
 ## rim.
 ##
@@ -39,6 +41,7 @@ const COOL := 2.5
 ## his soles reach past the stones' edge; the flex: m it dips along its
 ## axis, s it rings out over, its ringing (Hz), the stones' squash.
 const BOUNCE := 5.0
+const SLAM_BOUNCE := 8.0
 const SOLE := 0.3
 const FLEX_DIP := 0.32
 const FLEX_TIME := 0.7
@@ -219,10 +222,22 @@ func _top(feet: Vector3) -> Dictionary:
 	# Their height along the axis and depth along the radius, as each faces up.
 	return {"q":q,"y":q.y+HIGH*0.5*absf(n.y)+DEPTH*0.5*absf(radial.y)}
 
-## Whether his feet, coming down (`vel` his velocity), crossed the top of
-## its stones since the last frame where they are under him; if so it
-## flexes and he is to bounce (the host's). Any time, no cool-down.
+## Whether it lies flat enough that its top is a disc (FLAT): a ring
+## tipped further than this (on edge, as the slide rock's ring A) keeps the
+## stones' upper face as its top.
+const FLAT := 0.5
+
+func is_flat() -> bool:
+	return absf(global_transform.basis.y.normalized().y) >= FLAT
+
+## Whether his feet, coming down (`vel` his velocity), crossed its top since
+## the last frame; if so it flexes and he is to bounce (the host's). Any
+## time, no cool-down. On a flat ring the top is the whole disc, hole and
+## all, out to the stones' outer edge (and a sole past it): the feet's path
+## between the frames is swept against the plane of the stones' top, so no
+## fall is too fast to pass. On edge, the stones' upper face (`_top`).
 func try_bounce(feet: Vector3, vel: Vector3, size := 1.0) -> bool:
+	if is_flat(): return _bounce_disc(feet,vel,size)
 	var t := _top(feet)
 	if t.is_empty():
 		_feet_prev = NAN
@@ -235,31 +250,75 @@ func try_bounce(feet: Vector3, vel: Vector3, size := 1.0) -> bool:
 	if prev-d > 4.0: return false
 	var reach := maxf(DEPTH,HIGH)*0.5+SOLE*maxf(size,0.5)
 	if Vector2(feet.x-q.x,feet.z-q.z).length() > reach: return false
+	flex_hit(vel)
+	return true
+
+var _feet_was := Vector3(NAN,NAN,NAN)   # his feet last frame (the disc)
+
+func _bounce_disc(feet: Vector3, vel: Vector3, size: float) -> bool:
+	var n := global_transform.basis.y.normalized()
+	if n.y < 0.0: n = -n
+	var c := middle()
+	var top := c+n*HIGH*0.5
+	var d := (feet-top).dot(n)
+	var was := _feet_was
+	var prev := _feet_prev
+	_feet_was = feet
+	_feet_prev = d
+	if is_nan(prev) or vel.dot(n) >= 0.0 or prev < 0.0 or d > 0.0: return false
+	if prev-d > 8.0 or was.distance_to(feet) > 8.0: return false
+	# Where his feet's path met the top's plane, and whether that is on it.
+	var u := prev/(prev-d) if prev != d else 1.0
+	var at := was.lerp(feet,u)
+	var across := at-c
+	across -= n*across.dot(n)
+	if across.length() > RADIUS+DEPTH*0.5+SOLE*maxf(size,0.5): return false
+	flex_hit(vel)
+	return true
+
+## Hit from above: it dips and rings out (the harder, the deeper).
+func flex_hit(vel: Vector3) -> void:
 	bounces += 1
 	_flex_t = 0.0
 	_flex_k = clampf(-vel.y/12.0,0.45,1.0)
-	return true
 
 ## The top of its stones under `feet`, world y (for setting him on it).
 func top_at(feet: Vector3) -> float:
+	if is_flat():
+		var n := global_transform.basis.y.normalized()
+		if n.y < 0.0: n = -n
+		var top := middle()+n*HIGH*0.5
+		return feet.y-(feet-top).dot(n)/n.y
 	var t := _top(feet)
 	return feet.y if t.is_empty() else float(t.y)
 
 ## Whether his chest crossed its plane inside the hole since the last frame
 ## (either way); if so, and it is lit, it is taken. `chest` his chest point.
+## Coming down from above, his feet meet a flat ring's top first and bounce
+## him (`try_bounce`), so on a flat ring a chest coming down through it is
+## one that rose into it and fell back, its feet never over the top: lit,
+## that takes it as before; dark (or through the stones), `fell_in` is set
+## and the host bounces him anyway, so nothing falls down through.
+var fell_in := false
+
 func try_take(chest: Vector3, size := 1.0) -> bool:
+	fell_in = false
 	var n := global_transform.basis.y.normalized()
 	var c := middle()
 	var d := (chest-c).dot(n)
 	var prev := _prev
 	_prev = d
-	if not ready_to_take() or is_nan(prev) or absf(d-prev) > 4.0: return false
+	if is_nan(prev) or absf(d-prev) > 4.0: return false
 	if not ((prev < 0.0 and d >= 0.0) or (prev > 0.0 and d <= 0.0)): return false
 	var u := prev/(prev-d) if prev != d else 1.0
 	var at := chest-n*d*(1.0-u)
 	var across := at-c
 	across -= n*across.dot(n)
-	if across.length() > HOLE*maxf(size,0.5): return false
+	var down := n.y*(d-prev) < 0.0
+	var inside := across.length() <= HOLE*maxf(size,0.5)
+	if not ready_to_take() or not inside:
+		if is_flat() and down and across.length() <= RADIUS+DEPTH*0.5+SOLE*maxf(size,0.5): fell_in = true
+		return false
 	take()
 	return true
 
