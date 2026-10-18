@@ -87,3 +87,13 @@ Split a step further if it won't fit one iteration.
 
 Other isles. If the builder suits them, say so in Notes; moving them onto it is
 a later round.
+
+## Spec change: after playing step 3b
+
+The user played the rebuilt isle and is fine with the layout, the closed-in
+flights and the blocky shape; the dressing (step 4) goes ahead on this layout.
+One nitpick to fix in step 4: on the grand stairs there is a micro gap
+between each half of every step you walk up (a seam or joint you can see
+through, likely the slab joints or the seam where the stair's two halves
+or its stacked flights meet). Close it so the steps read as solid stone.
+The chests on the landings below legs 7 and 8 stay where they are.
