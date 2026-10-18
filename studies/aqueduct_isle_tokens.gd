@@ -5,6 +5,9 @@ extends "res://scripts/kit_isle/kit_tokens.gd"
 const Art = preload("res://studies/aqueduct_isle_art.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
+func _init() -> void:
+	naming = "tokens"
+
 func spots_for(isle: Node3D) -> Array[Dictionary]:
 	return spots(isle)
 

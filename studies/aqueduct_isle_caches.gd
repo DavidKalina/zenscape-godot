@@ -19,6 +19,7 @@ const Breakables = preload("res://scripts/kit_isle/breakables.gd")
 const KitBreaks = preload("res://scripts/kit_isle/kit_breaks.gd")
 const KitCaches = preload("res://scripts/kit_isle/kit_caches.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const Layout = preload("res://scripts/layout_overrides.gd")
 
 const FLAG := "--kit-caches"
 const PIECES := [
@@ -34,10 +35,19 @@ const SINK := 0.08
 static func wanted(args: PackedStringArray = LaunchArgs.user_args()) -> bool:
 	return args.has(FLAG)
 
-## The caches' token names (studies/aqueduct_isle_tokens.gd lays them).
+## Each piece's handle (AGENTS.md Handles): `kit_caches/<cache name>`,
+## moved, turned or deleted in the world view (scripts/layout_edit.gd).
+const ROUTE := "kit_caches"
+
+static func handle(cache_name: String) -> String:
+	return ROUTE+"/"+cache_name
+
+## The caches' token names (studies/aqueduct_isle_tokens.gd lays them):
+## the layout file's deleted ones left out.
 static func names() -> Array[String]:
 	var out: Array[String] = []
-	for p: Array in PIECES: out.append(str(p[0]))
+	for p: Array in PIECES:
+		if not Layout.deleted(handle(str(p[0]))): out.append(str(p[0]))
 	return out
 
 ## The pieces stood, the hub, the breaks and the caches (null without the flag).
@@ -50,16 +60,20 @@ static func build(isle: Node3D) -> Node3D:
 	root.name = "KitCachePieces"
 	isle.add_child(root)
 	for p: Array in PIECES:
+		var key := handle(str(p[0]))
+		if Layout.deleted(key): continue
 		var piece: Node3D = RuinKit.piece(str(p[1]),int(p[2]),0.35)
 		if piece == null: continue
 		var top: Vector3 = isle.call("_turf_top",space,float(p[3]),float(p[4]))
 		var y: float = top.y if top != Vector3.INF else float(isle.call("isle_top"))
 		piece.name = "Cache_"+str(p[0])
-		piece.transform = Transform3D(Basis(Vector3.UP,deg_to_rad(float(p[5]))),Vector3(float(p[3]),y-SINK,float(p[4])))
+		var coded := Transform3D(Basis(Vector3.UP,deg_to_rad(float(p[5]))),Vector3(float(p[3]),y-SINK,float(p[4])))
+		piece.transform = Layout.xform(key,coded)
 		piece.set_meta(KitCaches.META,GLYPH)
 		piece.set_meta(KitCaches.NAME_META,str(p[0]))
 		if float(p[6]) >= 0.0: piece.set_meta("toughness",float(p[6]))
 		root.add_child(piece)
+		Layout.track(key,piece,"piece",coded)
 	var hub := Breakables.new()
 	isle.add_child(hub)
 	var breaks := KitBreaks.new()

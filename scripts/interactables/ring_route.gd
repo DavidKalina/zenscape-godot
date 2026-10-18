@@ -189,14 +189,21 @@ static func build(study: Node3D, host: Node3D) -> void:
 	_slab(host,"catch_slab",catch_slab(),Vector3(2.3,0.7,2.2),0.5,545,RING_SLAB_PUMPS)
 	var cst := stair(catch_slab(),CATCH_RINGS)
 	for i in range(cst.size()): _ring(host,"catch_ring_%d" % (i+1),cst[i],546+i,0.2+0.3*i)
-	# Standing stones on the rest stops (they stay where the code puts them).
-	var marks: Array = []
-	for spec: Array in [[CRAG1,0.4],[OUTCROP,1.1],[PERCH,2.2],[far_crag(),0.8]]:
-		var at: Vector3 = spec[0]
-		marks.append({"name":"marker","at":at+Vector3(-1.6,1.7,-1.9),"size":Vector3(0.6,2.1,0.5),"yaw":float(spec[1]),"kind":"sarsen","grounded":true})
-	var stones := Art.floating_stones(550,marks)
-	stones.name = "RouteMarkers"
-	host.add_child(stones)
+	# Standing stones on the rest stops, one named piece each
+	# (`ring_route/marker_<n>`, foot_pieces.gd `stones`), under RouteMarkers.
+	var markers := Node3D.new()
+	markers.name = "RouteMarkers"
+	host.add_child(markers)
+	var was: String = host.naming
+	host.name_under("ring_route")
+	var specs := [[CRAG1,0.4],[OUTCROP,1.1],[PERCH,2.2],[far_crag(),0.8]]
+	for i in range(specs.size()):
+		var at: Vector3 = specs[i][0]
+		var mark := {"name":"marker","at":at+Vector3(-1.6,1.7,-1.9),"size":Vector3(0.6,2.1,0.5),"yaw":float(specs[i][1]),"kind":"sarsen","grounded":true}
+		host.call_next("marker_%d" % (i+1))
+		var s: Node3D = host.stones(550+i,[mark],"Marker%d" % (i+1))
+		if is_instance_valid(s) and not s.is_queued_for_deletion(): s.reparent(markers,false)
+	host.name_under(was)
 
 ## A crag (`land`, built round `mid` in world space) stood as the layout
 ## file has `ring_route/<called>`, its turf registered where it stands.

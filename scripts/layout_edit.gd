@@ -25,7 +25,7 @@ const TOGGLE := KEY_F4
 const LOOK_RATE := 0.004
 const PICK_PX := 28.0
 ## A pick's screen reach round a ring's or a slab's middle (m).
-const REACH := {"air_ring":AirRing.RADIUS+0.3,"bob_slab":1.5,"sink_slab":1.5,"drift_slab":1.5,"rope":4.0}
+const REACH := {"air_ring":AirRing.RADIUS+0.3,"bob_slab":1.5,"sink_slab":1.5,"drift_slab":1.5,"rope":4.0,"token":1.0}
 const LIFT := 0.25
 const TURN := 15.0
 const SNAP := 0.05

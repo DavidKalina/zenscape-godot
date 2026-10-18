@@ -22,11 +22,15 @@ extends RefCounted
 ## pieces, their rest pose set by `layout_place`); every other kind ("land",
 ## a KitLand crag; "balustrade", "rope", "stones": foot_pieces.gd's named
 ## pieces) is built in world space and moved by its node's offset from its
-## coded transform (a rope's anchor follows its node, swing_rope.gd). `spawn` makes the
+## coded transform (a rope's anchor follows its node, swing_rope.gd). The
+## POSED kinds ("piece", a RuinKit piece such as a kit cache; "token", a
+## token's holder) stand at their own transform: their coded one is where
+## the node itself stood, and a move sets the node's world transform. `spawn` makes the
 ## kinds the file can add (air_ring, bob_slab).
 
 const VERSION := 1
 const ADDABLE := ["air_ring","bob_slab"]
+const POSED := ["piece","token"]
 
 ## The scene's file, its parsed data, and what was placed under each name:
 ## {node, kind, coded: Transform3D, host, pumps}.
@@ -83,6 +87,7 @@ static func current(name: String) -> Transform3D:
 	var e: Dictionary = entries[name]
 	var node: Node3D = e.node
 	if node.has_method("layout_pose"): return node.layout_pose()
+	if str(e.kind) in POSED: return node.global_transform if node.is_inside_tree() else node.transform
 	return node.transform*(e.coded as Transform3D)
 
 ## `name`'s object set at `t` (only its own transform: nothing rebuilt).
@@ -90,6 +95,9 @@ static func apply(name: String, t: Transform3D) -> void:
 	var e: Dictionary = entries[name]
 	var node: Node3D = e.node
 	if node.has_method("layout_place"): node.layout_place(t)
+	elif str(e.kind) in POSED:
+		if node.is_inside_tree(): node.global_transform = t
+		else: node.transform = t
 	else: node.transform = t*(e.coded as Transform3D).affine_inverse()
 
 ## The file's moved names put back where it has them (after the islands'

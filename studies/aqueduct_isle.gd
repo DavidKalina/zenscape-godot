@@ -412,7 +412,7 @@ func _stumps_fit() -> Dictionary:
 ## and the collision parts. Not the sky, the planes, the dragons or him.
 func world_roots() -> Array:
 	var out: Array = [art]
-	for n: String in ["FootPieces","Life","Lodestone","TargetStone"]:
+	for n: String in ["FootPieces","Life","Lodestone","TargetStone","KitCachePieces"]:
 		var node := get_node_or_null(n)
 		if node != null: out.append(node)
 	for c: Node in get_children():
