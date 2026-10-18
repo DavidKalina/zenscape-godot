@@ -14,7 +14,7 @@ from pathlib import Path
 
 base, new = Path(sys.argv[1]), Path(sys.argv[2])
 ok = True
-for isle in ["aqueduct", "bell", "cloister", "gorge", "colonnade"]:
+for isle in ["aqueduct", "bell", "cloister", "gorge", "colonnade", "stair"]:
     a = [l for l in (base / f"{isle}.txt").read_text().splitlines() if l.startswith(("FP start", "FP shapes"))]
     b_path = new / f"{isle}.txt"
     if not b_path.exists():

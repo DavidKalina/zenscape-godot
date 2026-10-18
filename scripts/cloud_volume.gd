@@ -135,6 +135,13 @@ func _exit_tree() -> void:
 ## SkyIslands, or a laid sky's host), whose towers and wakes it reads.
 func update(view: Camera3D, near_sea: Node, host: Node, sky, time: float, flight := Vector4.ZERO) -> void:
 	sea_flight = flight
+	# The march goes with the camera that draws: a camera made current over
+	# the scene's own in the same viewport (a harness still's, tools/harness/
+	# shot.gd) gets it, else its sheet laid the scene camera's stale march
+	# over the still as a hard-edged card of cloud.
+	if view != null and view.is_inside_tree():
+		var drawing := view.get_viewport().get_camera_3d()
+		if drawing != null: view = drawing
 	if view != camera:
 		_detach()
 		camera = view

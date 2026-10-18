@@ -37,9 +37,39 @@ func top() -> float:
 func summit() -> Vector3:
 	return Vector3(Stair.O.x,Stair.TOP+Stair.SUMMIT,Stair.O.y)
 
-## The plants keep off the stair's way and the lawn's path to it.
+## The plants keep off the stair's way, the lawn's path to it and the
+## mesa's stone caps (its narrow tops, drawn as rock: terrace_tops `rock`).
 func flora_site() -> KitFlora.Site:
-	return KitFlora.Site.new(Stair.TOP,KitLand.wear_of(Stair.paths()))
+	var paths := KitLand.wear_of(Stair.paths())
+	var wear := func(p: Vector2) -> float:
+		for cap: Array in _caps():
+			if (cap[0] as Rect2).has_point(p) and _near_poly(p,cap[1],CAP_KEEP): return 1.0
+		return float(paths.call(p))
+	return KitFlora.Site.new(Stair.TOP,wear)
+
+## How far off a stone cap the plants keep (m).
+const CAP_KEEP := 0.3
+var _cap_list: Array = []
+
+## The mesa's stone caps: [box grown by CAP_KEEP, poly] (once it is built).
+func _caps() -> Array:
+	if _cap_list.is_empty() and mesa != null:
+		for t: Dictionary in mesa.get_meta("terrace_tops",[]):
+			if t.get("rock",false):
+				var poly: PackedVector2Array = t.poly
+				var box := Rect2(poly[0],Vector2.ZERO)
+				for q in poly: box = box.expand(q)
+				_cap_list.append([box.grow(CAP_KEEP),poly])
+	return _cap_list
+
+## Whether `p` is in `poly` or within `margin` of its edge (a tuft's root
+## on the turf beside a cap would lean its blades over the stone).
+static func _near_poly(p: Vector2, poly: PackedVector2Array, margin: float) -> bool:
+	if Geometry2D.is_point_in_polygon(p,poly): return true
+	for i in range(poly.size()):
+		var q := Geometry2D.get_closest_point_to_segment(p,poly[i],poly[(i+1)%poly.size()])
+		if p.distance_to(q) < margin: return true
+	return false
 
 func flora_seed() -> int:
 	return 19
@@ -65,20 +95,20 @@ func build(into: Node3D) -> void:
 	art.add_child(mesa)
 	stair = Stair.stairs(STAIR_SEED+10)
 	art.add_child(stair)
-	shrine_group = Stair.shrines(STAIR_SEED+30)
+	shrine_group = Stair.shrines(STAIR_SEED+30,mesa.get_meta("terrace_tops",[]))
 	art.add_child(shrine_group)
-	summit_group = Stair.summit(STAIR_SEED+60)
+	summit_group = Stair.summit(STAIR_SEED+60,mesa.get_meta("terrace_tops",[]))
 	art.add_child(summit_group)
 	pinnacle = Stair.pinnacle(STAIR_SEED+70)
 	art.add_child(pinnacle)
-	art.add_child(Stair.anchors(STAIR_SEED+80))
+	art.add_child(Stair.anchors(STAIR_SEED+80,(mesa.get_meta("terrace_tops",[]) as Array)+[Stair.pinnacle_top(pinnacle)]))
 	var ends := Stair.bridge_ends()
 	var a: Vector3 = ends[0]
 	var b: Vector3 = ends[1]
 	bridge = Footbridge.live(Footbridge.build_mesh(a,b,STAIR_SEED+90),a,b,STAIR_SEED+90)
 	bridge.name = "RopeBridge"
 	art.add_child(bridge)
-	# The mesa's ground and the pinnacle's are turf; the sides stone.
+	# The mesa's tops and the pinnacle's are turf (the mesa's one body).
 	turf(mesa,null,false)
 	turf(pinnacle)
 	built_ms = Time.get_ticks_msec()-began

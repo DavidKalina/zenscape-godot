@@ -112,9 +112,10 @@ func nearest(p: Vector3) -> Array:
 ## it, RAMP back) up to HEIGHT over the top step's nosing, then straight
 ## down to HEIGHT over the foot step's, over the half landing too (ramped,
 ## as a handrail is, not level there: one unbroken slope to slide, about
-## 21°, 0.67 to 1.24 m over the steps).
-static func grand_stair_rail(stair: Transform3D, side: float) -> PackedVector3Array:
-	var f := _grand(side)
+## 21°, 0.67 to 1.24 m over the steps). `inset` m in from the cheek's
+## middle toward the steps (a stair seated in a cut has its wall there).
+static func grand_stair_rail(stair: Transform3D, side: float, inset := 0.0) -> PackedVector3Array:
+	var f := _grand(side,inset)
 	var local := [
 		Vector3(f.x,f.top+MOUNT,f.head-RAMP),
 		Vector3(f.x,f.top+HEIGHT,f.head),
@@ -126,8 +127,8 @@ static func grand_stair_rail(stair: Transform3D, side: float) -> PackedVector3Ar
 
 ## The steps' nosing line under that cheek's coping (its `floor_line`):
 ## the head's landing, the upper flight, the half landing, the lower flight.
-static func grand_stair_floor(stair: Transform3D, side: float) -> PackedVector3Array:
-	var f := _grand(side)
+static func grand_stair_floor(stair: Transform3D, side: float, inset := 0.0) -> PackedVector3Array:
+	var f := _grand(side,inset)
 	var local := [
 		Vector3(f.x,f.top,f.head-RAMP-0.5),
 		Vector3(f.x,f.top,f.head),
@@ -144,7 +145,7 @@ static func grand_stair_floor(stair: Transform3D, side: float) -> PackedVector3A
 ## The grand stair's numbers along that cheek (its frame): x, the riser, the
 ## half's height, the head's height, the top step's nosing z, the upper
 ## flight's foot, the lower's top, the foot step's nosing.
-static func _grand(side: float) -> Dictionary:
+static func _grand(side: float, inset := 0.0) -> Dictionary:
 	var r := RuinKit.GRAND_RISER
 	var t := RuinKit.GRAND_TREAD
 	var n := RuinKit.GRAND_STEPS
@@ -152,7 +153,7 @@ static func _grand(side: float) -> Dictionary:
 	var run2 := (n-1)*t+RuinKit.LANDING
 	var front := (run1+run2)*0.5
 	var mid := front-run1
-	return {"x":side*(RuinKit.GRAND_WIDTH*0.5+RuinKit.CHEEK.x*0.5),"r":r,"half":n*r,"top":2.0*n*r,
+	return {"x":side*(RuinKit.GRAND_WIDTH*0.5+RuinKit.CHEEK.x*0.5-inset),"r":r,"half":n*r,"top":2.0*n*r,
 		"head":mid-(n-1)*t,"mid":mid,"lower":front-(n-1)*t,"front":front}
 
 # --- The stone ----------------------------------------------------------------------

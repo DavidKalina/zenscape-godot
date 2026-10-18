@@ -34,26 +34,39 @@ func leaf_spots() -> Array:
 # --- Songbirds on the shrines ------------------------------------------------------
 
 ## The kit isles' songbirds (scripts/kit_isle/kit_birds.gd), their perches
-## the shrines': the chests' lids, the piers' stubs and the summit's stones.
+## the shrines': the fallen pier and the terrace arch (a grid of points
+## over each, so the ray finds their tops), the piers' stubs and the
+## summit's turret and lancet walls (a finer grid: their tops are thin).
 class StairBirds extends "res://scripts/kit_isle/kit_birds.gd":
-	const HOMES := [["sparrow",4,"chests"],["goldfinch",3,"stubs"],["robin",2,"summit"]]
+	const HOMES := [["sparrow",4,"fallen"],["goldfinch",3,"stubs"],["robin",2,"summit"]]
 
 	func flock_specs() -> Array:
 		return HOMES
 
 	func spots(_space: PhysicsDirectSpaceState3D) -> Dictionary:
-		var found := {"chests":[],"stubs":[],"summit":[]}
+		var found := {"fallen":[],"stubs":[],"summit":[]}
 		for spec: Array in Stair.SHRINES:
 			var at := Stair.shrine_frame(spec).origin
 			var p := Vector2(at.x,at.z)
 			match str(spec[4]):
-				"tomb_chest": (found.chests as Array).append(p)
-				"pier","fallen_pier": (found.stubs as Array).append(p)
-				"floor": (found.chests as Array).append(p)
-		for off: Vector2 in [Vector2(-5.0,-4.0),Vector2(-3.0,-4.5),Vector2(3.0,-4.5),Vector2(5.0,-4.0),Vector2(0.0,-9.0)]:
-			var p := Stair.side_at(Stair.SIDES-1,off.x,off.y-3.0)
-			(found.summit as Array).append(p)
+				"pier": (found.stubs as Array).append(p)
+				"fallen_pier","arch":
+					var f := Stair.shrine_frame(spec)
+					for i in range(-3,4):
+						for j in range(-3,4):
+							var q := f*Vector3(0.6*i,0.0,0.6*j)
+							(found.fallen as Array).append(Vector2(q.x,q.z))
+		for f: Transform3D in summit_frames():
+			for i in range(-6,7):
+				for j in range(-6,7):
+					var q := f*Vector3(0.3*i,0.0,0.3*j)
+					(found.summit as Array).append(Vector2(q.x,q.z))
 		return found
+
+	## The summit's turret and lancet walls: the robins sit on their
+	## broken tops.
+	static func summit_frames() -> Array[Transform3D]:
+		return Stair.summit_frames()
 
 # --- On-foot tokens ---------------------------------------------------------------------
 
@@ -68,16 +81,18 @@ class StairTokens extends "res://scripts/kit_isle/kit_tokens.gd":
 		for spec: Array in TOKENS:
 			var p := Stair.vertex_at(int(spec[1]),float(spec[2]))
 			out.append({"name":spec[0],"at":Vector3(p.x,Stair.TOP+float(spec[3])+0.85,p.y),"move":spec[4]})
-		var gate := Stair.side_at(Stair.SIDES-1,0.0,-7.0)
+		var gate := Stair.side_at(Stair.SIDES-1,Stair.GATE_AT.x,Stair.GATE_AT.y)
 		out.append({"name":"gate","at":Vector3(gate.x,Stair.TOP+Stair.SUMMIT+0.85,gate.y),"move":"Climb the whole stair to the gate on the summit"})
 		var pin := Stair.pinnacle_at()
 		out.append({"name":"pinnacle","at":Vector3(pin.x,Stair.TOP+Stair.PIN_TOP+0.85,pin.y),"move":"Cross the rope bridge from the summit's rim to the hanging pinnacle"})
 		return out
 
-	## [name, vertex, radius, height over TOP, move].
+	## [name, vertex, radius, height over TOP, move]. At radius 22 on the
+	## landing's inner side: pads 1 and 5 have their piers at about 25 on the
+	## vertex line, and their stone stands from 23 out.
 	const TOKENS := [
-		["landing_1",1,24.3,1.0*Stair.STEP,"Up the first flights to the first landing, and its piers"],
-		["landing_3",3,24.3,3.0*Stair.STEP,"Round the mesa to the third landing"],
-		["landing_5",5,24.3,5.0*Stair.STEP,"Up and round to the fifth landing, high over the lawn"],
-		["landing_7",7,24.3,7.0*Stair.STEP,"The seventh landing, one flight under the summit"],
+		["landing_1",1,22.0,1.0*Stair.STEP,"Up the first flights to the first landing, and its piers"],
+		["landing_3",3,22.0,3.0*Stair.STEP,"Round the mesa to the third landing"],
+		["landing_5",5,22.0,5.0*Stair.STEP,"Up and round to the fifth landing, high over the lawn"],
+		["landing_7",7,22.0,7.0*Stair.STEP,"The seventh landing, one flight under the summit"],
 	]

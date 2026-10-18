@@ -895,6 +895,7 @@ static func _flight(b: Build, pose: Transform3D, steps: int, width: float, landi
 		# between treads or slabs, no settled slab or worn nosing, is a gap
 		# for the feet's ray to drop through).
 		_walk_box(b,pose,half_width+0.02,-foot,top,z0,front-run-WALK_OVERLAP)
+		_tread_core(b,pose,half_width,-foot,top,z0,z1,i == steps-1)
 	# The cheeks: ramped with the flight, level by the landing, in courses
 	# cut by the slope, a sloped coping, a newel post at the foot.
 	var foot_z := front
@@ -956,6 +957,25 @@ static func _flight(b: Build, pose: Transform3D, steps: int, width: float, landi
 		b.solid(_box(b,Vector3(NEWEL.x*0.5,post*0.5,NEWEL.x*0.5)),pose*_settle(b,Vector3(nx,post*0.5,foot_z+NEWEL.x*0.3),0.6),_stone(b,1.0))
 		if not (weathered > 0.4 and side == torn):
 			_gablet(b,pose*Transform3D(Basis.IDENTITY,Vector3(nx,post,foot_z+NEWEL.x*0.3)),NEWEL.x*0.5+0.05,0.42)
+
+## A step's bed, drawn only: a dark block the step's full width under its
+## slabs, its top TREAD_BED under the tread and its front TREAD_BED_IN back
+## from the nose, so a joint between slabs (or a slab and a cheek) shows
+## stone a few cm down, not the ground or the sky through it. Built on an
+## RNG of its own, so the flight's seeded stream (its look) is unchanged.
+const TREAD_BED := 0.05
+const TREAD_BED_IN := 0.08
+static func _tread_core(b: Build, pose: Transform3D, half_width: float, bottom: float, top: float, z0: float, z1: float, last: bool) -> void:
+	var keep := b.rng
+	b.rng = RandomNumberGenerator.new()
+	b.rng.seed = 1
+	var y1 := top-TREAD_BED
+	var front := z0-TREAD_BED_IN
+	var back := z1+0.01 if last else z1-0.03
+	var x := half_width-0.002
+	var planes: Array[Plane] = [Plane(Vector3.RIGHT,x),Plane(Vector3.LEFT,x),Plane(Vector3.UP,y1),Plane(Vector3.DOWN,-bottom),Plane(Vector3.BACK,front),Plane(Vector3.FORWARD,-back)]
+	b.solid(planes,pose,b.stone*0.55,false,false,[],-1,1.0,false)
+	b.rng = keep
 
 ## A stair's walked collision, invisible (Build `hulls` only): a box
 ## `half` either side of x 0, from `bottom` to `top`, from `z_front` back to
@@ -2333,7 +2353,10 @@ static func _drift(b: Build, at: Vector3, reach: float, count: int) -> void:
 	# stones still read).
 	if b.lean: count = int(ceil(count*(0.4+0.3*b.level)))
 	if count <= 0: return
-	at.y += b.floor_at(at.x,at.z)
+	# Seated (Build `seat`): each stone on the ground under it, none over
+	# the drop; else the drift on the ground under its middle.
+	var seated := b.drop_ground < INF
+	if not seated: at.y += b.floor_at(at.x,at.z)
 	var keep := b.frame
 	for i in range(count):
 		var s := Vector3(b.rng.randf_range(0.28,0.6),b.rng.randf_range(0.16,0.3),b.rng.randf_range(0.22,0.42))*(1.0-0.4*float(i)/count)
@@ -2341,6 +2364,10 @@ static func _drift(b: Build, at: Vector3, reach: float, count: int) -> void:
 		var a := b.rng.randf()*TAU
 		var y := s.y*0.7+0.18*float(i)/count*b.rng.randf()
 		var pose := Transform3D(Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3(1,0,0),b.rng.randf_range(-0.35,0.35))*Basis(Vector3(0,0,1),b.rng.randf_range(-0.3,0.3)),at+Vector3(cos(a)*r,y,sin(a)*r*0.6))
+		if seated:
+			var under := b.floor_at(pose.origin.x,pose.origin.z)
+			if under < at.y-b.drop_ground: continue
+			pose.origin.y += under
 		b.solid(_box(b,s),pose,_stone(b,0.96),true,true,[],-1,2.0)
 	b.frame = keep
 
@@ -2357,7 +2384,7 @@ static func _rubble(b: Build, reach: float, count: int, drop := INF) -> void:
 		var s := Vector3(b.rng.randf_range(0.1,0.26),b.rng.randf_range(0.07,0.16),b.rng.randf_range(0.1,0.24))
 		var floor_y := b.floor_at(cos(a)*dist,sin(a)*dist)
 		var pose := Transform3D(Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.RIGHT,b.rng.randf_range(-0.3,0.3)),Vector3(cos(a)*dist,s.y*0.8+floor_y,sin(a)*dist))
-		if floor_y < -drop:
+		if floor_y < -minf(drop,b.drop_ground):
 			continue
 		b.solid(_box(b,s),pose,_stone(b),false,true,[],-1,2.0)
 
@@ -2586,6 +2613,13 @@ class Build extends RefCounted:
 	## fewer resting on nothing) are taken out, for a build whose walls
 	## stand on ground it doesn't know (coursed down a hill, over the sky).
 	var drop_loose := false
+	## How far under the piece's foot the ground may lie for its rubble and
+	## drifts to be laid (`seat`): past it (over a drop) they are left out.
+	var drop_ground := INF
+	## The seat for pieces built on each thread (`seat`): thread id ->
+	## [ground Callable, drop].
+	static var _seats := {}
+	static var _seats_lock := Mutex.new()
 	## Only the blocks this keeps are drawn, solid and grown on: a
 	## Callable(centre: Vector3, the block's corners' middle in the piece's
 	## frame) -> bool, or none. Set round one piece's build (the Olmec's
@@ -2604,6 +2638,20 @@ class Build extends RefCounted:
 	var hand := Callable()
 	static var _threads := {}
 	static var _threads_lock := Mutex.new()
+
+	## The ground under the pieces built on this thread from now on: a
+	## Callable(x, z) -> y in the piece's frame (-INF where there is none),
+	## as `terrain`, and how far under the foot rubble may still lie
+	## (`drop_ground`); an empty Callable to go back to none (flat, y 0).
+	## An isle that knows where a piece will stand sets it round the build
+	## (studies/stair_clouds_isle_art.gd `seated`): its rubble then lies on
+	## the real ground, none over the drop. A piece that sets its own
+	## terrain keeps it.
+	static func seat(ground: Callable, drop := 0.35) -> void:
+		_seats_lock.lock()
+		if ground.is_valid(): _seats[OS.get_thread_caller_id()] = [ground,drop]
+		else: _seats.erase(OS.get_thread_caller_id())
+		_seats_lock.unlock()
 
 	## Settings for builds begun on this thread from now on ({keep_only,
 	## detail, hand}), or {} to go back to the statics.
@@ -2650,6 +2698,13 @@ class Build extends RefCounted:
 				keeps = mine.get("keep_only",Callable())
 				level = float(mine.get("detail",1.0))
 				hand = mine.get("hand",Callable())
+		if not _seats.is_empty():
+			_seats_lock.lock()
+			var held: Array = _seats.get(OS.get_thread_caller_id(),[])
+			_seats_lock.unlock()
+			if not held.is_empty():
+				terrain = held[0]
+				drop_ground = float(held[1])
 		rng.seed = hash([seed_value,label,"gothic"])
 		weathered = clampf(amount,0.0,1.0)
 		age = AGE+(1.0-AGE)*weathered

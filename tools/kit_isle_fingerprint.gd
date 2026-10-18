@@ -97,7 +97,11 @@ func _collect(node: Node, shapes: Dictionary, count: Dictionary) -> void:
 				shapes["Tri"].append("%d|%s" % [layer,tri])
 			count[kind] = count.get(kind,0)+1
 			return
-		else: text += "%s|%s" % [str(shape),_t(t)]
+		elif shape is CylinderShape3D: text += "%.3f,%.3f|%s" % [(shape as CylinderShape3D).radius,(shape as CylinderShape3D).height,_t(t)]
+		elif shape is CapsuleShape3D: text += "%.3f,%.3f|%s" % [(shape as CapsuleShape3D).radius,(shape as CapsuleShape3D).height,_t(t)]
+		elif shape is SphereShape3D: text += "%.3f|%s" % [(shape as SphereShape3D).radius,_t(t)]
+		# Not str(shape): that carries the instance id, which moves with any change.
+		else: text += "%s|%s" % [shape.get_class(),_t(t)]
 		if not shapes.has(kind): shapes[kind] = PackedStringArray()
 		shapes[kind].append(text)
 		count[kind] = count.get(kind,0)+1
