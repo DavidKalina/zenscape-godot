@@ -62,7 +62,12 @@ The user plays the aqueduct isle, presses F4 and:
    with their island. Commit the driver's before/after list in the commit
    Notes. Then drag each of the four islands and show a before/after still.
 2. **Groups.** Shift-click, or drag a box, to select several pieces. They
-   move, turn and delete as one. A selection can be **saved as a chunk**
+   move, turn and delete as one. (Spec change 2026-10-17: the user's
+   example is a run of rings.) Turning (Z/X) and tipping (T/G) a group
+   swing it about the group's middle, each piece keeping its place in the
+   group; `[ / ]` sizes every ring and slab in it; C duplicates the whole
+   group. Shift-click again drops a piece from the selection. The selection
+   boxes and throw arrows show on every selected piece. A selection can be **saved as a chunk**
    (a named file of pieces relative to an anchor), and a chunk can be
    **stamped** from a list where the user looks, as free pieces or on the
    island under it. Chunks are recipes: they rebuild from current code.
@@ -76,6 +81,9 @@ The user plays the aqueduct isle, presses F4 and:
    that build on release. Per-piece moves on top are kept where the build
    still has that piece. The same panel shows a slab's pumps, a ring's
    boost and the ferry's pace.
+   Also: the red LINK and LANDING STRIP warnings run into the key list at
+   the top left when they're long; give them their own space (wrap at a
+   width, or stack under the status line).
 5. **Undo** (Cmd/Ctrl+Z) for every world-view action this loop adds and
    the ones before it.
 
