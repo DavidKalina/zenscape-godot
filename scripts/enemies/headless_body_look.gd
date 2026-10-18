@@ -43,7 +43,8 @@ const CLIMB_RISE := 0.99
 const CLIPS := ["idle","listen","walk","stride","climb","haul","spawn_haul","mantle","windup",
 	"jump_air","drop_air","land","drop_land","reach","triumph","feel","mantle_pull",
 	"turn_open_l","turn_close_l","turn_open_r","turn_close_r","scope_lift","scope_look","scope_lower","shoulder_run",
-	"charge_tell","charge_run","charge_skid","charge_stagger"]
+	"charge_tell","charge_run","charge_skid","charge_stagger",
+	"teeter_catch","teeter","teeter_back","topple","rim_leap","rim_land","back_hit"]
 ## Round 4: the turn steps (headless_body_steps.gd), blended over the trunk
 ## and legs only (the arms keep the clip under them), faded in and out fast.
 const TURNS := ["turn_open_l","turn_close_l","turn_open_r","turn_close_r"]
@@ -70,6 +71,9 @@ var _arm := {}
 var _neck := -1
 var _seat_off := Transform3D.IDENTITY
 var _leg := {}
+## An arm lost ("L" or "R"; "" none): reaches on that side do nothing (its
+## bones are collapsed by the owner, scripts/olmec_boss/boss_body.gd).
+var lost := ""
 ## Its turns and feet (round 4).
 var steps: Steps
 static var _dressed_mesh: ArrayMesh = null
@@ -224,7 +228,7 @@ func arm_reach() -> float:
 ## by two-bone IK, the elbow kept in the clip's plane; `fingers` (global, unit)
 ## and `palm` (the way the palm faces), if given, turn the hand `w` to them.
 func reach(side: String, target: Vector3, w: float, fingers := Vector3.ZERO, palm := Vector3.ZERO) -> void:
-	if w <= 0.0: return
+	if w <= 0.0 or side == lost: return
 	var to_sk := skeleton.global_transform.affine_inverse()
 	var hand := Basis()
 	if fingers != Vector3.ZERO and palm != Vector3.ZERO: hand = _hand_basis(side,to_sk.basis*fingers,to_sk.basis*palm)

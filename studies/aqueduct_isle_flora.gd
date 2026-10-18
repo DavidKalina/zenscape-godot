@@ -62,7 +62,11 @@ static func calm(flora: Node3D) -> void:
 
 ## The isle's ground as the growers read it.
 static func site() -> KitFlora.Site:
-	var s := KitFlora.Site.new(Art.TOP,func(p: Vector2) -> float: return Art.path_wear(p))
+	return carpeted(KitFlora.Site.new(Art.TOP,func(p: Vector2) -> float: return Art.path_wear(p)))
+
+## `s` with the grass as the carpet (unless --grass-drifts): any isle's
+## site may take it, and `calm` once its flora has grown.
+static func carpeted(s: KitFlora.Site) -> KitFlora.Site:
 	if carpet():
 		s.carpet = true
 		s.tufts = CARPET_TUFTS

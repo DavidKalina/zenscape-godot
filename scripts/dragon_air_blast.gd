@@ -12,6 +12,14 @@ extends Node3D
 ##            led LEAD of the way to the meeting (not homing), and on along
 ##            that line. Run straight and it meets you; turn or break his
 ##            line and it misses.
+##   homing   opt-in, a host's (`homing` 0, the dragon's: none): in flight
+##            the ball turns toward the pilot at most `homing` rad a second,
+##            that turn fading to none over `homing_fade` s of flight; it
+##            gives him up for good once he is more than `homing_cone` off
+##            its heading or within `homing_blind` m of it (the last stretch
+##            flies straight): it curves after a step, but a late sidestep,
+##            a jump or stone between still beats it, and it never hooks
+##            round or circles back.
 ##   impact   it bursts on the turf or floor it hits, or on the pilot or the
 ##            plane it passes within reach of: a shock SHOCK_R walker heights
 ##            round knocks the pilot out and up from the burst (PilotMotor
@@ -133,6 +141,28 @@ var fire_range := FIRE_RANGE
 var knock_out := KNOCK_OUT
 var knock_up := KNOCK_UP
 var homing := 0.0
+## Homing's fade and cone (both opt-in; the defaults keep every host's
+## homing as it was): `homing_fade`, the seconds of flight (from the
+## mouth's carry) over which its turn eases out to none (0: never, its
+## full turn all the way); `homing_cone`, the most the pilot may be off
+## its heading (rad) before it gives him up for good (PI/2: once he is
+## behind it); `homing_blind`, how near its goal (m) it gives him up for
+## good and flies its last stretch straight (0: never); `homing_lead`,
+## the share of his velocity (flat only with `lead_flat`) led over its time
+## to go, so a steady walk is met (0: none), that velocity eased at
+## `homing_ease` a second (0: as the shot's lead reads it, LEAD_EASE), so a
+## fresh change of step is led only slowly and beats it;
+## `homing_follow`,
+## home on its own aim moved as the pilot has
+## moved since the shot (a fan keeps its spread and follows his step)
+## rather than on his middle (false).
+var homing_fade := 0.0
+var homing_cone := PI*0.5
+var homing_blind := 0.0
+var homing_lead := 0.0
+var homing_ease := 0.0
+var _home_vel := Vector3.ZERO
+var homing_follow := false
 ## The fuse (walker heights): a ball passing this near the pilot bursts on
 ## him (FUSE, the dragon's).
 var fuse := FUSE
@@ -284,7 +314,10 @@ func _read_velocity(delta: float, aim: Vector3) -> void:
 	if _last_aim != Vector3.INF and aim.distance_to(_last_aim) < 20.0:
 		var now := (aim-_last_aim)/delta
 		aim_vel = aim_vel.lerp(now,clampf(LEAD_EASE*delta,0.0,1.0))
-	else: aim_vel = Vector3.ZERO
+		_home_vel = _home_vel.lerp(now,clampf(homing_ease*delta,0.0,1.0))
+	else:
+		aim_vel = Vector3.ZERO
+		_home_vel = Vector3.ZERO
 	_last_aim = aim
 
 ## Where to shoot from `from` at a pilot at `aim` moving `vel` (m/s): where
@@ -299,7 +332,7 @@ static func lead(from: Vector3, aim: Vector3, vel: Vector3, pace := SPEED, share
 ## A ball from `from` toward `aim`, on along that line.
 func fire(from: Vector3, aim: Vector3) -> void:
 	var way := (aim-from).normalized() if aim.distance_to(from) > 0.01 else Vector3.DOWN
-	balls.append({"pos":from,"was":from,"vel":way*speed,"aim":aim,"age":0.0,"travelled":0.0,"trail":[],"fresh":true})
+	balls.append({"pos":from,"was":from,"vel":way*speed,"aim":aim,"age":0.0,"travelled":0.0,"trail":[],"fresh":true,"seen":_target})
 	while balls.size() > MOST: balls.pop_front()
 	cooldown_left = cooldown
 	since_shot = 0.0
@@ -348,19 +381,34 @@ func _step_balls(delta: float, space: PhysicsDirectSpaceState3D) -> void:
 			balls.erase(b)
 			_puff_out(to,AIR_TINT,8,0.4)
 
-## Turned toward the pilot's middle (`homing` radians a second at most);
-## once he is behind it, it flies on straight.
+## Turned toward the pilot's middle (or, `homing_follow`, its aim moved
+## as he has moved since the shot), `homing` radians a second at most,
+## eased out over `homing_fade` s; once he is more than `homing_cone` off
+## its heading (behind it, by default) or within `homing_blind` m, it flies
+## on straight.
 func _home(b: Dictionary, from: Vector3, delta: float) -> void:
 	if _target == Vector3.INF or not b.get("homing",true): return
+	var rate := homing
+	if homing_fade > 0.0:
+		rate *= 1.0-smoothstep(0.0,homing_fade,float(b.age)-CARRY)
+		if rate <= 0.0: return
+	var goal := _target
+	if homing_follow:
+		if b.get("seen",Vector3.INF) == Vector3.INF: b.seen = _target
+		goal = (b.aim as Vector3)+(_target-(b.seen as Vector3))
 	var v: Vector3 = b.vel
-	var want := _target-from
-	if want.length() < 0.3 or v.dot(want) <= 0.0:
+	if homing_lead > 0.0:
+		var pace := _home_vel if homing_ease > 0.0 else aim_vel
+		if lead_flat: pace.y = 0.0
+		goal += pace.limit_length(LEAD_MOST)*homing_lead*from.distance_to(goal)/maxf(v.length(),1.0)
+	var want := goal-from
+	if want.length() < maxf(0.3,homing_blind) or v.angle_to(want) >= homing_cone:
 		b.homing = false
 		return
 	var turn := v.angle_to(want)
 	var axis := v.cross(want)
 	if turn < 0.0001 or axis.length() < 0.000001: return
-	b.vel = v.rotated(axis.normalized(),minf(turn,homing*delta))
+	b.vel = v.rotated(axis.normalized(),minf(turn,rate*delta))
 
 ## The ball bursts at `at`: a shock that knocks the pilot and the plane in
 ## reach (on their next ask), the grass flattened in a ring.

@@ -65,7 +65,10 @@ for a in _args:
     elif a.startswith("--render="): RENDER = a.split("=", 1)[1]
     elif a.startswith("--open="): OPEN = float(a.split("=", 1)[1])
 WHEEL = "--wheel" in _args
-GLB = OUT / ("wheel_head.glb" if WHEEL else "inhaler_head.glb")
+## The Olmec boss's first knock-off (loop olmec-knockoff): the same head
+## with its face cracked and off-kilter, to inhaler_head_cracked.glb.
+CRACKED = "--cracked" in _args and not WHEEL
+GLB = OUT / ("wheel_head.glb" if WHEEL else "inhaler_head_cracked.glb" if CRACKED else "inhaler_head.glb")
 rng = random.Random(23)
 
 HEIGHT = 3.2
@@ -489,6 +492,78 @@ if WHEEL:
     rbox(jaw, V((0, 0.56, -HALF_T - 0.05)), V((0.5, 0.2, 0.08)), 0.06, shape=chin_plate, chunks=1, seed=121)
 
 
+# ------------------------------------------------------------------ the crack (--cracked)
+# A fault down the face just right of the middle, from the crown to over
+# the nose wing, then out across the right cheekbone: the piece it cuts off
+# (the right brow, lid, eye and temple, the front of the crown) slipped
+# down and out, turned so its outer side drops. The faces across the fault
+# stretch into its wall; those faces, sunk a little, are their own object
+# (Crack, the maw's dark), so the seam reads dark at any light. A hairline
+# crack runs down the left cheek the same way.
+CRACK_PIVOT = V((0.2, 1.5, 0.0))
+CRACK_TURN = math.radians(-9.0)
+CRACK_SLIP = V((0.05, -0.12, -0.07))
+CRACK_DEEP = 0.05
+
+
+def crack_x(y):
+    """The fault's line down the face (x at height y)."""
+    return 0.18 + 0.07 * math.sin(y * 7.0 + 0.4) + 0.035 * math.sin(y * 19.0)
+
+
+def crack_y(x):
+    """The fault's line out across the cheekbone (y at x)."""
+    return 1.52 + 0.05 * math.sin(x * 9.0 + 1.0) + 0.025 * math.sin(x * 23.0) + 0.06 * max(0.0, x - 0.9)
+
+
+def slipped(p):
+    return p.z < 0.25 + 0.1 * math.sin(p.y * 5.0) and p.x > crack_x(p.y) and p.y > crack_y(p.x)
+
+
+def slip(p):
+    q = p - CRACK_PIVOT
+    c, sn = math.cos(CRACK_TURN), math.sin(CRACK_TURN)
+    q = V((q.x * c - q.y * sn, q.x * sn + q.y * c, q.z))
+    return CRACK_PIVOT + q + CRACK_SLIP
+
+
+def hairline(p):
+    """Near the left cheek's hairline crack."""
+    if p.z > -0.6 or p.x > -0.35: return False
+    along = -0.6 - 0.35 * (p.y - 0.9) + 0.04 * math.sin(p.y * 17.0)
+    return abs(p.x - along) < 0.05 and 0.75 < p.y < 1.75
+
+
+crack = Part("Crack")
+
+
+def crack_part(part, sink_to=V((0.0, 1.6, 0.0))):
+    """Slips `part`'s cut-off piece and moves the faces across the fault
+    (and along the hairline) into `crack`."""
+    side = [slipped(p) for p in part.verts]
+    seam = []
+    for k, f in enumerate(part.faces):
+        if len({side[i] for i in f}) > 1 or all(hairline(part.verts[i]) for i in f): seam.append(k)
+    sunk = {i for k in seam for i in part.faces[k]}
+    out = []
+    for i, p in enumerate(part.verts):
+        q = slip(p) if side[i] else V(p)
+        if i in sunk and part is head:
+            q = q + (sink_to - q).normalized() * CRACK_DEEP
+        out.append(q)
+    part.verts = out
+    seam_set = set(seam)
+    for k in seam:
+        crack.add([part.verts[i] for i in part.faces[k]], [tuple(range(len(part.faces[k])))], "maw")
+    part.faces = [f for k, f in enumerate(part.faces) if k not in seam_set]
+    part.mats = [m for k, m in enumerate(part.mats) if k not in seam_set]
+
+
+if CRACKED:
+    crack_part(head)
+    crack_part(eyes)
+
+
 # ------------------------------------------------------------------ to Blender
 def make_object(part, origin=V((0, 0, 0))):
     me = bpy.data.meshes.new(part.name)
@@ -518,10 +593,11 @@ head_ob = make_object(head)
 jaw_ob = make_object(jaw, HINGE)
 eyes_ob = make_object(eyes)
 maw_ob = make_object(maw)
+crack_ob = make_object(crack) if CRACKED else None
 mouth = bpy.data.objects.new("Mouth", None)
 mouth.location = G(MOUTH)
 scene.collection.objects.link(mouth)
-meshes = [head_ob, jaw_ob, eyes_ob, maw_ob]
+meshes = [head_ob, jaw_ob, eyes_ob, maw_ob] + ([crack_ob] if crack_ob else [])
 
 # ------------------------------------------------------------------ occlusion
 # Baked into COLOR_0 (Cycles, the parts occluding each other), the jaw shut.
@@ -547,6 +623,7 @@ except Exception:
     pass
 bpy.ops.object.bake(type="AO", target="VERTEX_COLORS")
 print("INHALER_BAKED")
+
 for ob in meshes:
     vals = [d.color[0] for d in ob.data.color_attributes["AO"].data]
     print("INHALER_AO", ob.name, round(min(vals), 3), round(sum(vals) / len(vals), 3), round(max(vals), 3))
@@ -594,6 +671,9 @@ if RENDER:
     target = G(V((0, 1.6, 0)))
     if WHEEL: cam_data.lens = 40
     cam.location = G(V((-4.6, 2.6, -8.2)))
+    if CRACKED:
+        cam.location = G(V((3.4, 2.5, -8.4)))
+        scene.display.shading.color_type = "MATERIAL"
     d = target - cam.location
     cam.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
     scene.render.filepath = RENDER

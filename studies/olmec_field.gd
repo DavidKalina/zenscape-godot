@@ -19,8 +19,12 @@ extends "res://studies/kit_isle.gd"
 ##     [--calm] (the Olmec doesn't hunt you: he stands and listens)
 ##     [--olmec-at=x,z] [--body-knob=<knob>=<value>]
 ##     [--phase=2] (start whole, the head on: phase 2; R starts it so again)
+##     [--knocked=N] (phase 2, already knocked off N times: 1 his face
+##       cracked, 2 his right arm off too; R starts it so again)
 ##     [--tilt-now] (in phase 2, he makes for the rim and tilts the field
 ##       at once: the set piece, `tilt_begin`)
+##     [--tilt] (the tilt back in phase 2's mix; out of it by default, for
+##       a later phase 3)
 const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
 const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
 const OlmecTarget = preload("res://scripts/lock_on/olmec_target.gd")
@@ -28,6 +32,7 @@ const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
 const FieldSky = preload("res://studies/olmec_field_sky.gd")
+const IsleFlora = preload("res://studies/aqueduct_isle_flora.gd")
 const Arena = preload("res://scripts/olmec_boss/arena.gd")
 ## The boss fight's phase 1 (docs/design/olmec-boss/spec-olmec-boss.md):
 ## the head alone, absorbing and puffing (scripts/olmec_boss/boss_head.gd).
@@ -41,6 +46,8 @@ const OlmecTilt = preload("res://scripts/enemies/olmec_tilt.gd")
 const Dust = preload("res://scripts/enemies/body_dust.gd")
 ## His lines of wind up the tipped field (scripts/olmec_boss/air_arcs.gd).
 const AirArcs = preload("res://scripts/olmec_boss/air_arcs.gd")
+## The third knock-off's finish: the rune out of his heap (a bigger break-to-find).
+const OlmecRune = preload("res://scripts/olmec_boss/olmec_rune.gd")
 
 ## Phase 1 is done: the head has taken its hits and cried out (the body's
 ## cue, for the trunk to hook).
@@ -61,7 +68,7 @@ const STONES := [[-14.0,4.6,2.0,1.0],[30.0,3.2,1.7,0.9],[72.0,5.6,2.3,1.1],
 	[-62.0,3.8,1.8,0.9],[-104.0,5.0,2.2,1.0],[-165.0,3.4,1.6,0.8],[128.0,4.2,2.0,1.0]]
 const STONE_R := 35.5
 ## Shown on the field card.
-const CARD := "Olmec field  ·  Tab / R3 lock on  ·  X gust shot  ·  R start again"
+const CARD := "Olmec field  ·  Tab / R3 lock on  ·  X gust shot  ·  Shift / C (LT) in the air: slam  ·  Q (RB) held: side slam  ·  R start again"
 
 var enemies: Node
 ## The breakable arena (scripts/olmec_boss/arena.gd): its `hit_at` is the
@@ -75,6 +82,10 @@ var _voices := {}
 var _card: Label
 var _gone_t := 0.0
 var _down_t := -1.0
+## The rune out of his heap once he is down for good (scripts/olmec_boss/
+## olmec_rune.gd), and whether it was taken this fight.
+var rune: Node3D = null
+var rune_taken := false
 ## The fight: phase 1 opens with the head alone (`--whole-olmec`: the old
 ## greybox, the Olmec whole); `--head-knob=<knob>=<value>` over its knobs.
 var whole_olmec := false
@@ -82,6 +93,9 @@ var phase := 1
 ## The phase the fight starts in (and R starts it in again): 1, or 2 with
 ## `--phase=2` (for testing: the body set down whole, the head on).
 var start_phase := 1
+## `--knocked=N`: phase 2 starts with him knocked off N times (BossBody
+## `set_knocked`: his damage states and anger).
+var start_knocked := 0
 var phase_one_over := false
 var _head_knobs := {}
 ## Phase 2's beat: the body comes up over the rim BODY_AFTER s after the
@@ -192,6 +206,8 @@ var fling_v := Vector3.ZERO
 var _tilt_cam_side := 0.0
 var tilt: Node = null
 var tilt_now := false
+## The tilt in phase 2's mix (`--tilt`; BossBody `_tilt_due` asks).
+var tilt_mix := false
 var _tilt_now_done := false
 ## "" none, "tipping" (braced, held), "breaking" (his brace gone, he goes
 ## off the rim, still held), "easing" (let go, coming back level).
@@ -235,7 +251,11 @@ func _ready() -> void:
 			_olmec_at = Vector2(float(p[0]),float(p[1]) if p.size() > 1 else 0.0)
 		elif arg == "--whole-olmec": whole_olmec = true
 		elif arg == "--tilt-now": tilt_now = true
+		elif arg == "--tilt": tilt_mix = true
 		elif arg.begins_with("--phase="): start_phase = clampi(int(arg.get_slice("=",1)),1,2)
+		elif arg.begins_with("--knocked="):
+			start_knocked = clampi(int(arg.get_slice("=",1)),0,int(BossBody.KNOCK_OFFS)-1)
+			if start_knocked > 0: start_phase = 2
 		elif arg.begins_with("--head-knob="):
 			var hk: String = arg.trim_prefix("--head-knob=")
 			_head_knobs[hk.get_slice("=",0)] = float(hk.get_slice("=",1))
@@ -257,6 +277,15 @@ func isle_name() -> String:
 
 func isle_top() -> float:
 	return FIELD_TOP
+
+## The grass as the aqueduct isle's carpet (studies/aqueduct_isle_flora.gd;
+## --grass-drifts: the kit's drifts as before), its ground calmed under it.
+func flora_site() -> KitFlora.Site:
+	return IsleFlora.carpeted(KitFlora.Site.new(isle_top()))
+
+func _grow() -> void:
+	super._grow()
+	IsleFlora.calm(flora)
 
 func capture_look() -> Vector3:
 	return Vector3(_olmec_at.x,FIELD_TOP+5.0,_olmec_at.y)
@@ -411,6 +440,7 @@ func _wire() -> void:
 		h.state = "done"
 		phase_one_over = true
 		_body_whole(b)
+		if start_knocked > 0 and b.has_method("set_knocked"): b.set_knocked(start_knocked)
 
 ## The boss body's knobs: it knows the whole field (sense, lose), hunts.
 func _boss_knobs() -> Dictionary:
@@ -418,8 +448,26 @@ func _boss_knobs() -> Dictionary:
 	knobs.merge(_body_knobs,true)
 	return knobs
 
+## The rune out of the break in his heap, settling in from the rim.
+func _rune_out(b: Node3D) -> void:
+	if rune != null and is_instance_valid(rune): rune.queue_free()
+	var at := b.global_position
+	var inward := -(b.get("_rim_out") as Vector3) if b.get("_rim_out") != null else Vector3.ZERO
+	if Vector3(inward.x,0.0,inward.z).length() < 0.1: inward = -Vector3(at.x,0.0,at.z)
+	rune = OlmecRune.new()
+	rune.setup(at,inward,motor,b.get("field"))
+	add_child(rune)
+	rune.connect("taken",_rune_taken)
+
+func _rune_taken() -> void:
+	rune_taken = true
+	_say("The Olmec's rune!  ·  R to fight him again",5.0)
+
 ## The Olmec back as he began, whole.
 func reset_olmec() -> void:
+	if rune != null and is_instance_valid(rune): rune.queue_free()
+	rune = null
+	rune_taken = false
 	if enemies == null: return
 	if foot_lock != null and foot_lock.locked(): foot_lock.release()
 	enemies.reset()
@@ -427,12 +475,31 @@ func reset_olmec() -> void:
 	_wire()
 
 func respawn() -> void:
+	_end_hit_stop()
 	tilt_reset()
 	super.respawn()
 	reset_olmec()
 	if arena != null: arena.rebuild()
 
+## A hit-stop: time's pace down to `pace` for `secs` s of wall clock (the
+## head's stomp asks it; wind_parry.gd's pattern).
+var _stop_end := 0
+
+func hit_stop(secs: float, pace := 0.05) -> void:
+	_stop_end = Time.get_ticks_usec()+int(secs*1e6)
+	Engine.time_scale = pace
+
+func _end_hit_stop() -> void:
+	if _stop_end == 0: return
+	_stop_end = 0
+	Engine.time_scale = 1.0
+
+func _exit_tree() -> void:
+	_end_hit_stop()
+	super._exit_tree()
+
 func tick(delta: float) -> void:
+	if _stop_end != 0 and Time.get_ticks_usec() >= _stop_end: _end_hit_stop()
 	# Charge for the demo: full whenever he's on foot.
 	if free_charge and updraft != null and not flying: updraft.charge = 1.0
 	_see_through()
@@ -458,7 +525,11 @@ func tick(delta: float) -> void:
 			if foot_lock != null and foot_lock.target == b: foot_lock.release("down")
 			if _down_t < 0.0:
 				_down_t = 0.0
-				_say("The Olmec crumbles!  ·  R to bring him back",4.0)
+				if not whole_olmec and int(b.get("knock_offs")) >= int(BossBody.KNOCK_OFFS):
+					_say("The Olmec crumbles!  ·  something glows in the break",4.0)
+					_rune_out(b)
+				else:
+					_say("The Olmec crumbles!  ·  R to bring him back",4.0)
 			_down_t += delta
 		if camera != null:
 			var q := maxf(float(b.quake),float(arena.hub.quake) if arena != null else 0.0)*clampf(1.0-camera.global_position.distance_to(b.global_position)/60.0,0.0,1.0)
@@ -664,10 +735,20 @@ func fight_line() -> String:
 	if b != null and arrival in ["climbing","crossing"]:
 		return "Phase 1 done  ·  his body %s" % ("climbs the rim" if arrival == "climbing" else "comes for his head")
 	if b != null:
-		return "Phase 2  ·  Olmec  %s  %s%s" % [_pips(int(b.hits),int(b.most_hits)),attack_line(),lock]
+		var hurt := damage_line(b)
+		return "Phase 2  ·  Olmec  knock-offs %s  %s%s%s" % [_pips(int(b.get("knock_offs")),int(BossBody.KNOCK_OFFS)),hurt+"  ·  " if hurt != "" else "",attack_line(),lock]
 	if h != null:
-		return "Phase 1  ·  Head  %s  %s%s" % [_pips(int(h.hits),int(h.knobs.phase_hits)),attack_line(),lock]
+		return "Phase 1  ·  Head  stomps %s  %s%s" % [_pips(int(h.hits),int(h.knobs.phase_hits)),attack_line(),lock]
 	return ""
+
+## How he looks after his knock-offs (BossBody `damage`, `arm_off`):
+## "whole", "face cracked", "cracked, one-armed"; crumbled, nothing (the
+## attack line says "down").
+func damage_line(b: Node3D) -> String:
+	if bool(b.crumbled): return ""
+	if bool(b.get("arm_off")): return "cracked, one-armed"
+	if int(b.get("damage")) >= 1: return "face cracked"
+	return "whole"
 
 ## What he is on, in words: phase 1 the head's round and its puff, phase 2
 ## his move (slam, bound, swat, pounce, suck, a puff from up high) or how he
@@ -676,11 +757,17 @@ func attack_line() -> String:
 	var b := olmec()
 	var h := olmec_head()
 	if b != null and arrival in ["whole",""]:
-		if bool(b.crumbled): return "down"
+		if bool(b.crumbled):
+			if rune_taken: return "down  ·  rune taken"
+			if rune != null and is_instance_valid(rune):
+				return {"wait":"down","seam":"down  ·  something glows in the break","rise":"down  ·  a rune!"}.get(str(rune.state),"down  ·  take the rune")
+			return "down"
 		var mv := str(b.get("move"))
 		if mv in ["","<null>"]:
 			return {"chase":"hunting you","seek":"looking for you","alert":"looking for you","listen":"listening",
-				"triumph":"triumphant","stagger":"rocked back","spent":"winded","home":"striding in"}.get(str(b.state),str(b.state))
+				"triumph":"triumphant","stagger":"rocked back","back_hit":"hit in the back!" if bool(b.get("_to_edge")) else "cracked, turning on you",
+				"teeter":"teetering!  ·  slam his back again" if not bool(b.get("_teeter_over")) else "teetering, losing it!",
+				"knock_off":"over the edge!","knocked_gone":"gone over...","leap_back":"leaps back up!","rim_land":"landed heavy  ·  jump the shockwave","teeter_back":"got his balance back","spent":"winded","home":"striding in"}.get(str(b.state),str(b.state))
 		if mv.begins_with("puff "):
 			# "puff volley tell": his head, up high.
 			var p := mv.split(" ")
@@ -694,8 +781,8 @@ func attack_line() -> String:
 					"tilt_let":"lets go","tilt_off":"staggers off the rim","tilt_gone":"over the rim"}.get(st,"tilt")
 		if mv == "back": return "climbs back up the rim"
 		if mv == "charge":
-			return {"charge_tell":"charge coming","charge":"charge!","charge_skid":"overran  ·  shoot him now",
-				"charge_stagger":"stopped short"}.get(st,"charge")
+			return {"charge_tell":"charge coming","charge":"charge!","charge_skid":"overran  ·  get behind him",
+				"charge_stagger":"stopped short  ·  get behind him" if str(b.get("charge_stop_why")) == "edge" else "stopped short"}.get(st,"charge")
 		# The windup is the tell (a gust shot in it stops a slam or a swat).
 		if st == "windup" or (mv == "slam" and not bool(b.get("_slam_hit"))) or (mv == "swat" and float(b.state_t) < float(b.knobs.swat_windup)):
 			return mv+" coming"
@@ -703,7 +790,7 @@ func attack_line() -> String:
 	if h == null: return ""
 	var puff := str(h.puff)
 	return {"ready":"turning to you","absorb_tell":"about to absorb","absorb":"absorbing the air",
-		"puff_tell":"%s coming" % puff,"puff":"%s!" % puff,"spent":"spent (shoot it now)","stagger":"staggered",
+		"puff_tell":"%s coming" % puff,"puff":"%s!" % puff,"spent":"spent: stomp its crown","stagger":"reeling" if int(h.hits) > 0 else "staggered",
 		"cry":"cries out","done":"silent, lit"}.get(str(h.state),str(h.state))
 
 func _phase_one_done(h: Node3D) -> void:
