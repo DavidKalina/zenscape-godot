@@ -16,6 +16,9 @@ extends "res://scripts/kit_isle/motif_authored.gd"
 ## land and ruins. Unbaked (the yard's build, maybe on a worker) every
 ## piece, trap and marker keeps the y the editor saved.
 const LayerPlan = preload("res://scripts/roguelike/layer_plan.gd")
+## The aqueduct isle's islands as bases too (the world editor's island
+## view): "base": "island/near" and so on stands that island alone.
+const IsleIsland = preload("res://scripts/kit_isle/isle_island_motif.gd")
 
 ## The height field's cell (m) and how far past the footprint it reaches.
 const FIELD_CELL := 0.5
@@ -59,6 +62,8 @@ static func blank_on(slug_name: String, id_name: String) -> Dictionary:
 	# from its way in. The editor seats every marker on the stood base's
 	# ground once baked (`stand_near`).
 	var own: Vector3 = m.own_start()
+	# An isle island has no rims: its way in and out where he starts.
+	if rims.is_empty() and IsleIsland.is_island(id_name): first = own
 	var spawn: Vector3 = own if own.is_finite() else first-face*SPAWN_IN
 	d.markers = {"spawn":at.call(spawn),"rim_in":at.call(first),
 		"rim_out":at.call((rims[1].at if rims.size() > 1 else first) as Vector3)}
@@ -74,6 +79,9 @@ func own_start() -> Vector3:
 
 ## The base motif, configured with the file's seed.
 func base() -> RefCounted:
+	if inner == null and IsleIsland.is_island(str(data.get("base",""))):
+		inner = IsleIsland.new(str(data.base))
+		knobs = inner.knobs
 	if inner == null:
 		var s := base_script(str(data.get("base","")))
 		if s == null:

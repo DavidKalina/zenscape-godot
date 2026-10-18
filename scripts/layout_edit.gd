@@ -47,7 +47,7 @@ RMB hold + move  look      W A S D / Q E  fly / down, up    Shift  fast
 LMB  select, drag to move (at its height; an island too)     wheel / PgUp PgDn  height (Shift: 1 m)
 Z / X  turn 15 deg (Shift 5)    T / G  tip 15 deg    C  duplicate    Del / Backspace  delete
 1  add air ring    2  add bob slab    3  add ring-stair slab (7 pumps)
-click an island's ground: the island    U  from a piece to the island it stands on
+click an island's ground: the island    U  from a piece to the island it stands on    O  open the island alone (motif editor)
 Ctrl/Cmd+S  save"""
 
 var study: Node3D
@@ -103,7 +103,8 @@ func _input(event: InputEvent) -> void:
 	# Esc still pauses (scripts/kit_isle/pause_host.gd).
 	if event is InputEventKey and (event as InputEventKey).keycode == KEY_ESCAPE: return
 	_edit_input(event)
-	get_viewport().set_input_as_handled()
+	# (O leaves the scene: the tree is gone by then.)
+	if is_inside_tree(): get_viewport().set_input_as_handled()
 
 ## On foot and walking, the title gone.
 func can_enter() -> bool:
@@ -235,6 +236,7 @@ func _edit_input(event: InputEvent) -> void:
 		KEY_2: if not k.echo: add("bob_slab")
 		KEY_3: if not k.echo: add("bob_slab",RING_SLAB_PUMPS)
 		KEY_U: if not k.echo: step_out()
+		KEY_O: if not k.echo and not cmd: open_island()
 
 # --- Picking and moving --------------------------------------------------------------
 
@@ -487,6 +489,27 @@ func step_out() -> void:
 		say("%s stands on no island (a free piece)" % selected)
 		return
 	select(on)
+
+## The island view (spec goal 4): the selected island opened alone in the
+## motif editor (studies/motif_editor.tscn `--island=`), its recipe
+## `motifs/authored/isle_<name>.json` if it has one. Unsaved world-view
+## changes are saved first (the layout file), so coming back rebuilds them.
+## The editor is told where it came from (`--world-scene=`) and gets the
+## same launch flags (the ledger, the layout file) for the way back.
+const ISLAND_VIEW := "res://studies/motif_editor.tscn"
+var opened_island := ""
+func open_island() -> void:
+	if not is_island(selected):
+		say("select an island first (click its ground, or U from a piece on it)")
+		return
+	if dirty: save()
+	opened_island = selected
+	var args := PackedStringArray(["--island="+selected,"--world-scene="+get_tree().current_scene.scene_file_path])
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if not a.begins_with("--island=") and not a.begins_with("--world-scene=") and not a in args: args.append(a)
+	print("world view: opening %s alone in the motif editor (%s)" % [selected," ".join(args)])
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	preload("res://scripts/launch_args.gd").open_scene(get_tree(),ISLAND_VIEW,args)
 
 # --- The landing strips --------------------------------------------------------------
 

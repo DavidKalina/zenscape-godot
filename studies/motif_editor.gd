@@ -7,8 +7,9 @@ extends "res://studies/kit_isle.gd"
 ## theirs), saved as a recipe the generator places
 ## (scripts/kit_isle/motif_authored.gd).
 ##
-##   godot --path . res://studies/motif_editor.tscn -- --no-title [--load=<slug>] [--load-base=<pool id>]
-##   (a base: a coded pool motif stood read-only to build on, motif_editor_base.gd)
+##   godot --path . res://studies/motif_editor.tscn -- --no-title [--load=<slug>] [--load-base=<pool id>] [--island=island/near]
+##   (a base: a coded pool motif stood read-only to build on, motif_editor_base.gd;
+##   --island=: one of the aqueduct isle's islands alone, scripts/kit_isle/isle_island_motif.gd)
 ##
 ## Editing (the pilot put away):
 ##   hold right mouse + move      look round      W A S D / Q E  fly / down, up
@@ -258,6 +259,11 @@ func _ready() -> void:
 	var base_id := ""
 	for a: String in _args:
 		if a.begins_with("--load="): slug = a.get_slice("=",1)
+		# The world editor's island view (scripts/layout_edit.gd O): one of
+		# the aqueduct isle's islands alone, its recipe if it has one.
+		elif a.begins_with("--island="):
+			base_id = a.get_slice("=",1)
+			slug = "isle_"+base_id.get_slice("/",1)
 		elif a.begins_with("--load-base="): base_id = a.get_slice("=",1)
 		elif a.begins_with("--look=") and SceneLookPresets.PRESETS.has(a.get_slice("=",1)): edit_look = a.get_slice("=",1)
 	if slug != "" and FileAccess.file_exists(MotifAuthored.path_of(slug)): data = MotifAuthored.read(MotifAuthored.path_of(slug))
