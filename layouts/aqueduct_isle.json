@@ -6,6 +6,8 @@
 		"foot_route/rope_1": {"pos":[106.3,40.17,-29.426],"rot":[0.0,0.0,0.0]},
 		"ring_route/crag_1": {"pos":[186.0,32.0,-10.95],"rot":[0.0,0.0,0.0]},
 		"ring_route/kicker_slab": {"pos":[186.25,37.65,-9.15],"rot":[0.0,-90.0,0.0]},
+		"ring_route/ring_a": {"pos":[315.9,41.728,-11.75],"rot":[81.41,90.0,0.0]},
+		"ring_route/stair_ring_4": {"pos":[223.25,50.176,-9.8],"rot":[-5.82,162.38,-90.0]},
 		"tokens/drift": {"pos":[81.735,40.515,-7.413],"rot":[0.0,0.0,0.0]},
 		"tokens/sarsen": {"pos":[65.039,48.847,8.787],"rot":[0.0,0.0,0.0]},
 		"tokens/slot": {"pos":[97.9,36.5,-2.64],"rot":[0.0,0.0,0.0]},
@@ -14,10 +16,13 @@
 	},
 	"added": [
 		{"kind":"air_ring","name":"added/air_ring_1","pos":[135.2,35.7,-7.2],"rot":[-45.0,-90.0,0.0],"size":2.25},
-		{"kind":"air_ring","name":"added/air_ring_2","pos":[139.35,39.45,-7.2],"rot":[-75.0,-90.0,0.0],"size":2.25},
-		{"kind":"air_ring","name":"added/air_ring_3","pos":[188.4,44.6,-9.15],"rot":[0.0,0.0,0.0],"size":2.25},
+		{"kind":"air_ring","name":"added/air_ring_2","pos":[139.35,39.45,-7.2],"rot":[-75.0,-90.0,0.0],"size":2.25,"tunes":{"boost":9.75}},
+		{"kind":"air_ring","name":"added/air_ring_4","pos":[186.0,32.45,-14.7],"rot":[0.0,0.0,0.0],"size":1.4},
+		{"kind":"air_ring","name":"added/air_ring_5","pos":[186.736,44.45,-9.061],"rot":[-45.0,-90.0,0.0],"size":2.25},
+		{"kind":"air_ring","name":"added/air_ring_6","pos":[190.85,48.2,-9.1],"rot":[-75.0,-90.0,0.0],"size":2.25,"tunes":{"boost":9.75}},
 		{"kind":"bob_slab","name":"added/bob_slab_1","pos":[134.1,29.2,-7.2],"rot":[0.0,0.0,0.0],"size":[4.55,0.7,4.352]},
-		{"kind":"air_ring","name":"added/air_ring_4","pos":[186.0,32.45,-14.7],"rot":[0.0,0.0,0.0],"size":1.4}
+		{"kind":"bob_slab","name":"added/bob_slab_2","pos":[365.85,45.65,-4.1],"rot":[0.0,-90.0,0.0],"size":[6.15,0.7,6.15]},
+		{"kind":"bob_slab","name":"added/bob_slab_3","pos":[270.879,45.65,-20.112],"rot":[0.0,-90.0,0.0],"size":[6.15,0.7,6.15]}
 	],
 	"deleted": [
 		"foot_route/bob_slab_1",
@@ -27,15 +32,28 @@
 		"foot_route/ring_1",
 		"foot_route/ring_2",
 		"foot_route/ring_3",
+		"ring_route/catch_ring_1",
+		"ring_route/catch_ring_2",
+		"ring_route/catch_ring_3",
+		"ring_route/catch_slab",
 		"ring_route/chain_slab_1",
 		"ring_route/chain_slab_2",
-		"ring_route/chain_slab_3"
+		"ring_route/chain_slab_3",
+		"ring_route/ring_b",
+		"ring_route/stair_ring_1",
+		"ring_route/stair_ring_2",
+		"ring_route/stair_ring_3"
 	],
 	"islands": {
 		"island/east_islet": {"pos":[-6.653,-2.75,16.231],"rot":[0.0,0.0,0.0]},
 		"island/near": {"pos":[0.0,0.0,-0.04],"rot":[0.0,0.0,0.0]}
 	},
 	"sizes": {
-		"ring_route/kicker_slab": [6.15,0.7,6.15]
+		"ring_route/kicker_slab": [6.15,0.7,6.15],
+		"ring_route/ring_a": 4.25
+	},
+	"tunes": {
+		"ring_route/ring_a": {"boost":16.0},
+		"ring_route/stair_ring_4": {"boost":8.0}
 	}
 }
