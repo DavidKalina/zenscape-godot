@@ -17,9 +17,6 @@ Settings, Scenes, Back to the title and Quit. The study's developer keys
 (F1-F12, the station keys, L, B) and capture flags work only in editor and
 debug runs. Pad controls are in [gamepad](docs/gamepad.md).
 
-The old plate builder (`studies/cozy_worlds.tscn`) is still under Scenes as
-**Builder (old game)**, or `run-cozy-flow.command`.
-
 For a standalone Windows or Mac app, see
 [desktop builds](docs/desktop-builds.md).
 
@@ -34,9 +31,6 @@ Sundered hall, the rune serpent, wind and clouds.
   the game.
 - `studies/aqueduct_isle.gd` with `scripts/kit_isle/`: the isle, its land,
   life, sky, sound and settings.
-- The old builder's scene inherits a chain of older scripts:
-  `cozy_worlds.gd` → `diorama.gd` → `fidelity_life.gd` → `fidelity.gd`. Many
-  tests and tools still load them.
 - `native/terrain_kernels/`: the optional native terrain kernels
   (`tools/build_native_kernels.py`); without a built kernel the GDScript
   versions run.

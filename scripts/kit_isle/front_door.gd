@@ -6,8 +6,7 @@ extends Node
 ## wordmark, its tagline and the small linen card) over the isle, the camera
 ## orbiting it slowly as the old title orbited its showcase world. The card:
 ## Begin (on foot by the parked plane), and along its foot the quiet Scenes
-## (the scene picker, scripts/scene_picker.gd, where the old game waits as
-## "Builder (old game)"), Settings (scripts/kit_isle/settings_menu.gd, the
+## (the scene picker, scripts/scene_picker.gd), Settings (scripts/kit_isle/settings_menu.gd, the
 ## same sheet the pause opens) and Quit. Begin fades the card, gives the
 ## pilot back and eases the camera from the orbit down behind him.
 ##

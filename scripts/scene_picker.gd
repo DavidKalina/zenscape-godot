@@ -1,6 +1,6 @@
 extends Control
-## The scene picker, behind the title's quiet "Scenes" (studies/cozy_worlds.gd
-## `open_scene_picker`; docs/design/scene-picker.md): every scene the
+## The scene picker, behind the title's quiet "Scenes"
+## (scripts/kit_isle/front_door.gd; docs/design/scene-picker.md): every scene the
 ## run-*.command launchers open, from the game, on the title's linen card.
 ## One column a group of scripts/scene_catalog.gd, a row an entry; the row in
 ## reach says what it is under the columns. Mouse, arrows and the pad's D-pad

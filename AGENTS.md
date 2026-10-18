@@ -5,9 +5,7 @@ The game is the aqueduct isle. The project's main scene,
 aqueduct isle (`studies/aqueduct_isle.gd`, `scripts/kit_isle/`), and
 **Begin** or `-- --no-title` puts you on foot beside the parked plane.
 `run-aqueduct-isle.command` opens the isle directly. When the user says
-"the game" or "the main scene", they mean this one. They do not mean the old
-plate builder that starts you on a claimable chunk
-(`studies/cozy_worlds.tscn` and its `fidelity.gd` chain).
+"the game" or "the main scene", they mean this one.
 
 # Test execution
 
@@ -179,7 +177,7 @@ only on purpose with `knife()`. Derive walker reach, steps, ledges and jump
 gaps from the wanderer size (`PilotMotor.set_size`,
 `RuinKit.GRAB_TOP`/`CHAIN_TOP`). Other files ask WorldScale rather than
 copy 2.0, 2.4, the ratio, 1.2 (`pilot_size`) or the toy span 1.4. Guarded by
-`tests/test_world_scale_guard.gd` and `tests/test_world_scale_fit.gd`.
+`tests/test_world_scale_guard.gd`.
 
 # Animation
 

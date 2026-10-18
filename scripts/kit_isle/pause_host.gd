@@ -13,7 +13,7 @@ extends Node
 ## afresh under the veil) and Quit.
 ##
 ## It also tells scripts/pad.gd which device is in hand (`note`, from the
-## root window's every event, as the old game's scripts/pad_input.gd does),
+## root window's every event),
 ## so the sheets' keys and the isle's prompts follow the device.
 ##
 ## It processes while paused, as does all it holds. Not while the title is

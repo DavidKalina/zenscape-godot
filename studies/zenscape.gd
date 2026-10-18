@@ -4,8 +4,7 @@ extends "res://studies/aqueduct_isle.gd"
 ## reads) behind the game's front door (scripts/kit_isle/front_door.gd): the
 ## loading veil while the isle comes up, then the original minimal centred
 ## title over it, the camera orbiting the isle. Begin starts on foot beside
-## the parked plane; Scenes opens the scene picker, where the old game (the
-## plate builder, its worlds and saves) waits as "Builder (old game)"
+## the parked plane; Scenes opens the scene picker
 ## (scripts/scene_catalog.gd); Quit quits. docs/design/consolidation-audit.md,
 ## round 1.
 ##
