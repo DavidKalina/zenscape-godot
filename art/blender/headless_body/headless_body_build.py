@@ -67,6 +67,11 @@ itself (headless_body_look.gd), so a clip's length is only its span:
                lifted off the stump and heaved up overhead in both hands
   scope_look   loop, SCOPE_LOOK s: held up there, straining a little
   scope_lower  once, SCOPE_LOWER s: lowered carefully, seated, let go
+  teeter_catch, teeter (loop), teeter_back, topple, rim_leap, rim_land,
+  back_hit     the knock-off (Olmec boss): thrown to the rim, windmilling on
+               his toes, back from it or over it head first, the leap back
+               up and the heavy landing, the hit in the back (their section;
+               the edge clips tip the whole figure about the toes, `tp`)
 The phase-driven loops start on their first contact (walk and stride: the
 left foot down; climb: the left hand on the wall).
 
@@ -617,12 +622,27 @@ class Pose:
         self.knee = {}            # side -> pole
         self.hands = {}           # side -> (wrist goal, elbow pole, weight)
         self.palm = {}            # side -> (finger way, palm way) hand's frame in armature axes
+        # The whole figure tipped about a point on the ground (knock-off
+        # round): (pitch + forward, roll + to its right, the pivot this far
+        # ahead of the feet's middle). None for the clips before it, which
+        # keep their exact old path.
+        self.tip = None
+        self.root_m = None        # the root's matrix, for a tip
+
+
+def tip_matrix(tip):
+    """The tip's turn about its pivot, armature space."""
+    pitch, roll, fwd = tip
+    piv = F(0.0, 0.0, fwd)
+    q = Quaternion((0, 1, 0), deg(roll)) @ Quaternion((1, 0, 0), deg(-pitch))
+    return Matrix.Translation(piv) @ q.to_matrix().to_4x4() @ Matrix.Translation(piv * -1.0)
 
 
 SIDES = (("L", -1), ("R", 1))
 
 
 def solve(pose):
+    if pose.tip is not None: return _solve_tipped(pose)
     P = {}
     reach = 0.0
     for name in ORDER:
@@ -632,6 +652,7 @@ def solve(pose):
         carried = REST[name] if parent is None else P[parent] @ (REST[parent].inverted() @ REST[name])
         q = pose.turns.get(name, Quaternion())
         m = carried @ q.to_matrix().to_4x4()
+        if name == "root" and pose.root_m is not None: m = pose.root_m.copy()
         if name == "hips":
             m.translation = carried.translation + pose.hips
         P[name] = m
@@ -695,13 +716,42 @@ def solve(pose):
     return P, reach
 
 
+def _solve_tipped(pose):
+    """`solve` with the whole figure turned by its tip: the root carries the
+    trunk and arms, and every goal given in the root's frame (the feet, their
+    turns, the knees' poles, the hands and their palms) is turned with it."""
+    M = tip_matrix(pose.tip)
+    R3 = M.to_3x3()
+    Rq = R3.to_quaternion()
+    q = Pose()
+    q.turns = pose.turns
+    q.squash = pose.squash
+    q.hips = R3 @ pose.hips
+    for n, s in SIDES:
+        goal, fq = pose.feet.get(n, (REST[f"foot.{n}"].translation.copy(), Quaternion()))
+        q.feet[n] = (M @ goal, Rq @ fq)
+        q.knee[n] = R3 @ pose.knee.get(n, V((s * 0.25, 1.0, 0.0)))
+        if n in pose.hands:
+            g, pole, w = pose.hands[n]
+            q.hands[n] = (M @ g, R3 @ pole, w)
+        if n in pose.palm:
+            fw, pw, w = pose.palm[n]
+            q.palm[n] = (R3 @ fw, R3 @ pw, w)
+    # The root turned about the pivot, not its own head.
+    q.root_m = M @ REST["root"]
+    P, reach = solve(q)
+    P["_tip"] = True
+    return P, reach
+
+
 def basis(P):
     """Each bone's pose relative to its rest under its parent."""
     out = {}
     for name in ORDER:
         parent = PARENT[name]
         if parent is None:
-            out[name] = Matrix.Identity(4)
+            # The root's own turn (only a tip gives it one).
+            out[name] = REST[name].inverted() @ P[name] if "_tip" in P else Matrix.Identity(4)
             continue
         rel = REST[parent].inverted() @ REST[name]
         out[name] = rel.inverted() @ P[parent].inverted() @ P[name]
@@ -768,6 +818,10 @@ class Track:
 BASE = {
     "sq": 1.0, "hx": 0.0, "hy": -0.1, "hz": 0.0, "hp": 0.0, "hr": 0.0, "ht": 0.0,
     "sp": 5.0, "sr": 0.0, "st": 0.0, "cp": 5.0, "cr": 0.0, "ct": 0.0, "np": 0.0, "nr": 0.0, "nt": 0.0,
+    # The whole figure's tip (knock-off round): pitch + forward, roll + to
+    # its right (degrees), about a pivot on the ground `tf` m ahead of the
+    # feet's middle (the toes ~0.85, the heels ~-0.4).
+    "tp": 0.0, "tr": 0.0, "tf": 0.0,
 }
 for n, s in SIDES:
     BASE.update({
@@ -827,6 +881,8 @@ def pose_of(v):
     p.turns["spine"] = local_turn("spine", v["sp"], v["sr"], v["st"])
     p.turns["chest"] = local_turn("chest", v["cp"], v["cr"], v["ct"])
     p.turns["neck"] = local_turn("neck", v["np"], v["nr"], v["nt"])
+    if abs(v["tp"]) > 1e-6 or abs(v["tr"]) > 1e-6:
+        p.tip = (v["tp"], v["tr"], v["tf"])
     for n, s in SIDES:
         p.turns[f"upper_arm.{n}"] = local_turn("arm", v[f"a{n}p"], v[f"a{n}o"], v[f"a{n}t"], s)
         p.turns[f"forearm.{n}"] = local_turn("arm", v[f"e{n}"], 0.0, 0.0, s)
@@ -919,7 +975,7 @@ def _mirror(v):
         if len(c) >= 2 and c[1] in "LR":
             m = c[0] + ("R" if c[1] == "L" else "L") + c[2:]
             out[m] = -x if c[0] + c[2:] in ("hx", "pfx", "pnx") else x
-        elif c in ("hx", "hr", "ht", "sr", "st", "cr", "ct", "nr", "nt"):
+        elif c in ("hx", "hr", "ht", "sr", "st", "cr", "ct", "nr", "nt", "tr"):
             out[c] = -x
         else:
             out[c] = x
@@ -1870,6 +1926,297 @@ clip(Clip("scope_lower", SL_, [
 ]))
 
 
+# ------------------------------------------------------------------ the knock-off (Olmec boss, loop olmec-knockoff)
+## Shoved to the rim he teeters, goes over or comes back from it; from below
+## he leaps up over the rim and lands heavy; hit in the back he lurches on.
+## The edge clips tip the whole figure about a point on the ground (the
+## `tp`/`tr`/`tf` channels): TOES m ahead of his feet's middle, so the game
+## stands him with his toes on the rim (the edge EDGE_AT m ahead of the
+## origin) and his pose does the tipping; the game only drops him once he is
+## over (TOPPLE_GO s into `topple`).
+##   teeter_catch  once, TEETER_CATCH s: thrown onto his toes at the brink,
+##                 the arms flung, a leg kicked back; ends on `teeter`'s start
+##   teeter        loop, TEETER s: windmilling (both arms circling forward,
+##                 a quarter apart), rocking on his toes over the drop, the
+##                 back leg cocked out for balance, the stump looking down
+##   teeter_back   once, TEETER_BACK s: from `teeter`'s start, a last heave
+##                 rocks him back onto his heels, a step back, sunk in
+##                 relief, up and squared
+##   topple        once, TOPPLE s: from `teeter`'s start, the arms stall high
+##                 (the "uh-oh" hold), then he tips past the toes, slow then
+##                 fast, head first over the rim, flailing; the last frame
+##                 holds (pitched TOPPLE_PITCH, still flailing in the hold)
+##   rim_leap      once over the leap's flight (RIM_LEAP s at the defaults):
+##                 from below the rim, reaching up long, knees tucked over the
+##                 lip, fists raised, legs down for the top
+##   rim_land      once, RIM_LAND s: the heavy landing, both fists driven into
+##                 the ground at RIM_SLAM s (the shockwave), held, then up
+##                 and roaring (chest out, arms spread, the stump up), into a
+##                 hunched angry ready
+##   back_hit      once, BACK_HIT s: hit from behind, the back caved in, the
+##                 stump whipped back, then lurched forward two stumbling
+##                 steps, hands out, caught, a shake of the stump
+TOES = 0.85
+EDGE_AT = TOES
+TEETER = 1.8
+TEETER_CATCH = 0.9
+TEETER_BACK = 1.6
+TOPPLE = 1.6
+TOPPLE_GO = 0.75
+TOPPLE_PITCH = 112.0
+RIM_LEAP = 1.2
+RIM_LAND = 1.8
+RIM_SLAM = 0.07
+BACK_HIT = 1.4
+## The windmill: one circle of the arms in WINDMILL s.
+WINDMILL = TEETER / 2.0
+
+_TEETER = {"tp": 13.0, "tf": TOES, "tr": 0.0, "hy": -0.5, "hz": -0.55, "hp": 6.0, "sp": 20.0, "cp": 8.0,
+           "np": 22.0, "nt": 0.0, "sq": 1.0,
+           "aLo": 34.0, "aRo": 34.0, "eL": 30.0, "eR": 30.0, "fL": 6.0, "fR": 6.0, "tL": 4.0, "tR": 4.0,
+           "wLp": -10.0, "wRp": -10.0,
+           # The left leg cocked out behind for balance, the right on its toes.
+           "kLz": -1.35, "kLy": 1.45, "kLx": 0.6, "kLp": -45.0, "kRz": 0.0, "kRx": 0.14, "kRp": 0.0}
+
+
+def _windmill(t, v, w=1.0, speed=1.0):
+    """Both arms circling forward (up behind, over the top, down in front),
+    a quarter circle apart, quicker on the down stroke; blended in by `w`."""
+    for n, s, off in (("L", -1, 0.0), ("R", 1, 0.25)):
+        u = t * speed / WINDMILL + off
+        th = 150.0 - 360.0 * (u + 0.07 * math.sin(2 * math.pi * u))
+        up = math.cos(math.radians(th - 180.0))           # 1 overhead, -1 down
+        v[f"a{n}p"] = v[f"a{n}p"] * (1 - w) + th * w
+        v[f"a{n}o"] += w * (14.0 + 10.0 * up)
+        v[f"e{n}"] += w * 18.0 * max(0.0, -math.sin(math.radians(th)))
+        v[f"f{n}"] += w * tremble(t, 4.0, 7.0, 1.0 + s)
+
+
+def _teeter_extra(t, v):
+    u = t / TEETER
+    rock = math.sin(2 * math.pi * u)
+    v["tp"] += 3.5 * rock
+    v["tr"] += 2.5 * math.sin(2 * math.pi * u * 2 + 0.7)
+    # Over too far: the chest throws back, the hips further out behind.
+    v["cp"] += -5.0 * rock
+    v["hz"] += -0.12 * rock
+    v["np"] += 6.0 * math.sin(2 * math.pi * (u - 0.06)) + tremble(t, 1.5, 4.0)
+    v["nr"] += 7.0 * math.sin(2 * math.pi * u * 2 + 0.2)
+    v["kLy"] += 0.22 * math.sin(2 * math.pi * u * 2 + 1.4)
+    v["kLz"] += -0.15 * math.sin(2 * math.pi * u * 2 + 1.4)
+    _windmill(t, v)
+
+
+TEETER_CLIP = clip(Clip("teeter", TEETER, [
+    (0.0, _TEETER, ""),
+    (TEETER * 0.5, {**_TEETER, "hy": -0.56, "sq": 0.98}, ""),
+], loop=True, extra=_teeter_extra))
+
+
+def _into_teeter(start, end):
+    """An extra blending into `teeter` (its time 0 at `end`) from `start`."""
+    def extra(t, v):
+        w = smooth01(start, end, t)
+        if w <= 0.0: return
+        tv = TEETER_CLIP.values(t - end)
+        for c in v:
+            if c in tv: v[c] = v[c] * (1 - w) + tv[c] * w
+    return extra
+
+
+def _from_teeter(end, more=None):
+    """An extra starting in `teeter` (its time 0 at t 0), handing over to
+    the clip's own keys by `end`; `more(t, v)` after."""
+    def extra(t, v):
+        w = 1.0 - smooth01(0.0, end, t)
+        if w > 0.0:
+            tv = TEETER_CLIP.values(t)
+            for c in v:
+                if c in tv: v[c] = v[c] * (1 - w) + tv[c] * w
+        if more: more(t, v)
+    return extra
+
+
+clip(Clip("teeter_catch", TEETER_CATCH, [
+    (0.0, {"hy": -0.6, "sp": 22.0, "cp": 10.0, "np": 6.0, "aLp": 20.0, "aRp": 20.0, "eL": 30.0, "eR": 30.0}, ""),
+    # Thrown on: up onto his toes, pitched over, the arms flung back.
+    (0.14, {"tp": 15.0, "tf": TOES, "hy": -0.3, "sq": 1.06, "hz": -0.2, "sp": 26.0, "cp": 12.0, "np": 30.0,
+            "aLp": -48.0, "aRp": -40.0, "aLo": 40.0, "aRo": 40.0, "eL": 20.0, "eR": 20.0, "fL": 4.0, "fR": 4.0,
+            "kLz": -0.5, "kLy": 0.5, "kLp": -20.0}, "o"),
+    # The catch: the hips thrown out behind, the leg kicked up, arms up.
+    (0.34, {"tp": 13.0, "hy": -0.55, "sq": 0.96, "hz": -0.5, "hp": 8.0, "sp": 22.0, "cp": 6.0, "np": 26.0,
+            "aLp": 120.0, "aRp": 100.0, "aLo": 52.0, "aRo": 52.0, "eL": 26.0, "eR": 26.0,
+            "kLz": -1.35, "kLy": 1.3, "kLp": -40.0}, ""),
+], extra=_into_teeter(0.42, TEETER_CATCH)))
+
+
+def _back_more(t, v):
+    k = smooth01(1.0, 1.08, t) * (1 - smooth01(1.3, 1.45, t))
+    v["nt"] += 14.0 * k * math.sin((t - 1.0) * 6.283 * 2.4)
+
+
+clip(Clip("teeter_back", TEETER_BACK, [
+    (0.0, _TEETER, ""),
+    # A last heave: both arms swung down and back hard, rocking him back.
+    (0.24, {**_TEETER, "tp": 4.0, "hy": -0.62, "sq": 0.95, "hz": -0.3, "sp": 12.0, "cp": -4.0, "np": 12.0,
+            "aLp": -60.0, "aRp": -54.0, "aLo": 30.0, "aRo": 30.0, "eL": 20.0, "eR": 20.0,
+            "kLz": -1.0, "kLy": 0.4, "kLp": -10.0}, "o"),
+    # Back over the heels: the left foot slammed down behind, onto the heels.
+    (0.42, {"tp": -4.0, "tf": -0.4, "hy": -0.3, "sq": 1.04, "hz": 0.1, "hp": -4.0, "sp": -6.0, "cp": -8.0,
+            "np": -10.0, "aLp": 40.0, "aRp": 46.0, "aLo": 44.0, "aRo": 44.0, "eL": 30.0, "eR": 30.0,
+            "kLz": -0.9, "kLy": 0.0, "kLp": 0.0, "kRp": 14.0}, ""),
+    # The step back with the right, sunk in relief.
+    (0.6, {"tp": -2.0, "hy": -0.5, "sq": 1.0, "kRz": -0.5, "kRy": 0.45, "kRp": 0.0}, ""),
+    (0.76, {"tp": 0.0, "tf": 0.0, "hy": -0.85, "sq": 0.92, "hz": -0.2, "hp": 4.0, "sp": 22.0, "cp": 10.0,
+            "np": 14.0, "kRz": -0.75, "kRy": 0.0, "kLz": -0.55, "aLp": 10.0, "aRp": 10.0, "aLo": 22.0,
+            "aRo": 22.0, "eL": 40.0, "eR": 40.0, "fL": 50.0, "fR": 50.0}, "o"),
+    (1.0, {"hy": -0.8, "sq": 0.95, "sp": 20.0, "np": 12.0}, ""),
+    # Up and squared, the fists closed: angry now.
+    (1.3, {"hy": -0.35, "sq": 1.02, "hz": 0.0, "hp": 0.0, "sp": 12.0, "cp": 4.0, "np": -6.0, "kRz": -0.35,
+           "kLz": -0.25, "aLp": 8.0, "aRp": 8.0, "aLo": 18.0, "aRo": 18.0, "eL": 34.0, "eR": 34.0, "fL": 88.0,
+           "fR": 88.0}, ""),
+    (TEETER_BACK, {"_base": 1, "kRz": -0.3, "kLz": -0.2, "sp": 9.0, "fL": 70.0, "fR": 70.0}, ""),
+], extra=_from_teeter(0.2, _back_more)))
+
+
+def _topple_more(t, v):
+    # Flailing once over: the arms clawing, the legs pedalling (it holds).
+    k = smooth01(0.6, 0.9, t)
+    if k <= 0.0: return
+    for n, s, off in (("L", -1, 0.0), ("R", 1, 0.5)):
+        ph = 2 * math.pi * (t / 0.5 + off)
+        v[f"a{n}p"] += k * 26.0 * math.sin(ph)
+        v[f"a{n}o"] += k * 12.0 * math.cos(ph)
+        v[f"e{n}"] += k * 16.0 * max(0.0, math.sin(ph + 1.0))
+        v[f"k{n}y"] += k * 0.35 * (0.5 + 0.5 * math.sin(ph + 0.6))
+        v[f"k{n}z"] += k * 0.4 * math.cos(ph + 0.6)
+    v["np"] += k * 6.0 * math.sin(2 * math.pi * t / 0.7)
+
+
+clip(Clip("topple", TOPPLE, [
+    (0.0, _TEETER, ""),
+    # Uh-oh: the arms stall high mid-circle, stiff, the stump looking down.
+    (0.22, {**_TEETER, "tp": 19.0, "hy": -0.4, "sq": 1.04, "hz": -0.35, "sp": 16.0, "cp": 2.0, "np": 34.0,
+            "aLp": 168.0, "aRp": 150.0, "aLo": 40.0, "aRo": 46.0, "eL": 12.0, "eR": 14.0, "fL": 0.0, "fR": 0.0,
+            "tL": 0.0, "tR": 0.0, "kLz": -1.1, "kLy": 1.0}, "o"),
+    (0.4, {"tp": 22.0, "np": 36.0, "aLp": 170.0, "aRp": 154.0}, "h"),
+    # Over: past the toes, slow then fast, the back leg flung up behind.
+    (0.78, {"tp": 52.0, "hy": -0.25, "sq": 1.06, "hz": -0.1, "sp": 10.0, "cp": -6.0, "np": 10.0,
+            "aLp": 200.0, "aRp": 190.0, "aLo": 60.0, "aRo": 62.0, "eL": 30.0, "eR": 30.0, "fL": 10.0, "fR": 10.0,
+            "kLz": -1.0, "kLy": 1.5, "kLp": -30.0, "kRz": -0.2, "kRy": 0.4, "kRp": -30.0}, "i"),
+    (1.05, {"tp": 92.0, "sp": 6.0, "cp": -10.0, "np": -8.0, "aLp": 205.0, "aRp": 200.0, "aLo": 76.0,
+            "aRo": 78.0, "kLz": -0.5, "kLy": 1.2, "kRz": -0.6, "kRy": 1.0, "kLp": -20.0, "kRp": -20.0}, ""),
+    (TOPPLE, {"tp": TOPPLE_PITCH, "np": -14.0}, "h"),
+], extra=_from_teeter(0.18, _topple_more)))
+
+
+## The leap back up (RIM_LEAP s over the game's flight): bursting up from
+## below the rim at full stretch, both arms reaching up; the arms thrown
+## down and the knees tucked up as he clears the lip, pitched over it, both
+## fists raised overhead for the slam; the legs down to land.
+clip(Clip("rim_leap", RIM_LEAP, [
+    (0.0, {"hy": -0.1, "sq": 1.1, "sp": -6.0, "cp": -8.0, "np": -22.0,
+           "aLp": 172.0, "aRp": 168.0, "aLo": 14.0, "aRo": 14.0, "eL": 10.0, "eR": 10.0, "fL": 20.0, "fR": 20.0,
+           "kLy": -0.05, "kRy": -0.05, "kLz": -0.45, "kRz": -0.3, "kLp": -50.0, "kRp": -45.0}, ""),
+    (0.12 * RIM_LEAP, {"sq": 1.14, "aLp": 178.0, "aRp": 176.0, "np": -26.0}, ""),
+    # Clearing the lip: the knees tucked high, pitched over it, the arms swung down and back.
+    (0.42 * RIM_LEAP, {"tp": 16.0, "tf": 0.0, "hy": 0.3, "sq": 0.96, "sp": 26.0, "cp": 10.0, "np": 14.0,
+                       "aLp": -38.0, "aRp": -34.0, "aLo": 40.0, "aRo": 40.0, "eL": 30.0, "eR": 30.0,
+                       "fL": 80.0, "fR": 80.0, "kLy": 1.75, "kRy": 1.7, "kLz": 0.55, "kRz": 0.45,
+                       "kLp": 10.0, "kRp": 10.0}, ""),
+    # The top: fists raised overhead, chest up, held a beat.
+    (0.62 * RIM_LEAP, {"tp": 6.0, "hy": 0.25, "sq": 1.0, "sp": -4.0, "cp": -10.0, "np": -14.0,
+                       "aLp": 160.0, "aRp": 160.0, "aLo": 22.0, "aRo": 22.0, "eL": 50.0, "eR": 50.0,
+                       "fL": 95.0, "fR": 95.0, "tL": 45.0, "tR": 45.0, "kLy": 1.3, "kRy": 1.25, "kLz": 0.3,
+                       "kRz": 0.2}, "o"),
+    (0.78 * RIM_LEAP, {"tp": 4.0, "aLp": 168.0, "aRp": 168.0, "np": -16.0}, "h"),
+    # The legs driven down for the top, the fists coming over.
+    (RIM_LEAP, {"tp": 0.0, "hy": 0.0, "sq": 1.06, "sp": 16.0, "cp": 6.0, "np": 6.0, "aLp": 120.0, "aRp": 120.0,
+                "aLo": 26.0, "aRo": 26.0, "eL": 40.0, "eR": 40.0, "kLy": 0.05, "kRy": 0.05, "kLz": 0.2,
+                "kRz": -0.1, "kLx": 0.32, "kRx": 0.32, "kLp": 0.0, "kRp": 0.0}, ""),
+]))
+
+
+def _land_extra(t, v):
+    # Held in the ground, trembling with it; then the roar's shake.
+    k = smooth01(0.1, 0.16, t) * (1 - smooth01(0.5, 0.6, t))
+    v["hy"] += tremble(t, 0.03 * k, 12.0)
+    v["cr"] += tremble(t, 1.4 * k, 9.0, 1.0)
+    r = smooth01(0.82, 0.9, t) * (1 - smooth01(1.2, 1.3, t))
+    v["np"] += tremble(t, 2.5 * r, 7.0, 2.0)
+    v["cp"] += tremble(t, 1.5 * r, 6.0, 3.0)
+    for n, s in SIDES:
+        v[f"a{n}p"] += tremble(t, 2.5 * r, 9.0, 1.0 + s)
+
+
+## The heavy landing on the top, RIM_LAND s: down squashed, both fists
+## hammered into the ground ahead at RIM_SLAM s (the game's shockwave),
+## held there trembling, then heaved up into a roar (the chest thrown out,
+## arms flung wide, fists closed, the stump up), held, and down into a
+## hunched angry ready.
+clip(Clip("rim_land", RIM_LAND, [
+    (0.0, {"hy": -0.7, "sq": 0.9, "sp": 26.0, "cp": 8.0, "np": 10.0, "aLp": 110.0, "aRp": 110.0,
+           "aLo": 26.0, "aRo": 26.0, "eL": 40.0, "eR": 40.0, "fL": 95.0, "fR": 95.0, "tL": 45.0, "tR": 45.0,
+           "kLx": 0.34, "kRx": 0.34, "kLz": 0.2, "kRz": -0.1}, ""),
+    # The slam: sunk, squashed, both fists in the ground ahead.
+    (RIM_SLAM, {"hy": -1.45, "sq": 0.74, "hz": 0.1, "sp": 38.0, "cp": 12.0, "np": 18.0,
+                "hLx": -1.2, "hLy": 0.5, "hLz": 2.1, "hLw": 1.0, "hRx": 1.2, "hRy": 0.5, "hRz": 2.1, "hRw": 1.0,
+                "kLz": 0.15, "kRz": -0.25}, "i"),
+    (RIM_SLAM + 0.08, {"hy": -1.52, "sq": 0.76, "sp": 40.0, "np": 22.0, "hLy": 0.42, "hRy": 0.42}, "h"),
+    (0.5, {"hy": -1.4, "sq": 0.95, "sp": 37.0, "np": 18.0, "hLy": 0.46, "hRy": 0.46}, "h"),
+    # Heaved up: the fists torn out, rising.
+    (0.68, {"hy": -0.6, "sq": 1.04, "hz": 0.0, "sp": 10.0, "cp": 0.0, "np": 0.0, "hLw": 0.0, "hRw": 0.0,
+            "aLp": 30.0, "aRp": 30.0, "aLo": 40.0, "aRo": 40.0, "eL": 70.0, "eR": 70.0}, ""),
+    # The roar: up tall, the chest thrown out, the arms wide, the stump back.
+    (0.84, {"hy": -0.15, "sq": 1.07, "sp": -10.0, "cp": -14.0, "np": -26.0, "aLp": 40.0, "aRp": 40.0,
+            "aLo": 78.0, "aRo": 78.0, "eL": 50.0, "eR": 50.0, "wLp": -20.0, "wRp": -20.0}, "o"),
+    (1.22, {"hy": -0.2, "sq": 1.06, "sp": -12.0, "cp": -16.0, "np": -28.0, "aLo": 82.0, "aRo": 82.0}, "h"),
+    # Down into the hunch: angry, fists forward, ready to come on.
+    (1.46, {"hy": -0.62, "sq": 0.97, "sp": 20.0, "cp": 10.0, "np": 8.0, "aLp": 22.0, "aRp": 22.0,
+            "aLo": 26.0, "aRo": 26.0, "eL": 60.0, "eR": 60.0, "wLp": 0.0, "wRp": 0.0}, ""),
+    (RIM_LAND, {"_base": 1, "hy": -0.45, "sp": 16.0, "cp": 8.0, "np": 6.0, "aLp": 16.0, "aRp": 16.0,
+                "aLo": 22.0, "aRo": 22.0, "eL": 50.0, "eR": 50.0, "fL": 90.0, "fR": 90.0, "tL": 40.0,
+                "tR": 40.0}, ""),
+], extra=_land_extra))
+
+
+def _back_hit_extra(t, v):
+    k = smooth01(0.85, 0.95, t) * (1 - smooth01(1.15, 1.3, t))
+    v["nt"] += 14.0 * k * math.sin((t - 0.85) * 6.283 * 2.6)
+    v["nr"] += 5.0 * k * math.sin((t - 0.85) * 6.283 * 1.3 + 0.6)
+
+
+## Hit in the back, BACK_HIT s: the blow caves his back in (the hips
+## punched forward, the chest and stump whipped back, the arms flung out
+## behind), then the whiplash pitches him on: two lurching steps (left,
+## right) as the game shoves him on, the hands thrown out ahead, caught low,
+## a shake of the stump, squared.
+clip(Clip("back_hit", BACK_HIT, [
+    (0.0, {}, ""),
+    (0.06, {"hy": -0.3, "sq": 0.9, "hz": 0.55, "hp": -10.0, "sp": -22.0, "cp": -16.0, "np": -30.0,
+            "aLp": -46.0, "aRp": -46.0, "aLo": 34.0, "aRo": 34.0, "eL": 16.0, "eR": 16.0, "fL": 8.0, "fR": 8.0,
+            "tL": 4.0, "tR": 4.0}, "o"),
+    (0.13, {"hy": -0.36, "sq": 0.92, "hz": 0.6, "sp": -24.0, "np": -34.0, "aLp": -52.0, "aRp": -52.0}, "h"),
+    # The whiplash: pitched on, the left foot thrown ahead.
+    (0.27, {"tp": 8.0, "tf": TOES, "hy": -0.4, "sq": 1.04, "hz": 0.6, "hp": 10.0, "sp": 30.0, "cp": 16.0,
+            "np": 6.0, "aLp": 70.0, "aRp": 50.0, "aLo": 40.0, "aRo": 44.0, "eL": 30.0, "eR": 34.0,
+            "kLz": 0.9, "kLy": 0.55, "kLp": 10.0}, ""),
+    (0.4, {"tp": 0.0, "tf": 0.0, "hy": -0.95, "sq": 0.9, "hz": 0.45, "sp": 32.0, "cp": 14.0, "np": 16.0,
+            "kLz": 1.15, "kLy": 0.0, "kLp": 0.0, "kRz": -0.4, "aLp": 50.0, "aRp": 64.0}, "o"),
+    # The second step: the right comes through.
+    (0.52, {"hy": -0.65, "sq": 1.0, "kRz": 0.6, "kRy": 0.5, "kLz": 0.4, "sp": 28.0, "aLp": 60.0, "aRp": 40.0}, ""),
+    (0.66, {"hy": -1.0, "sq": 0.92, "hz": 0.2, "sp": 34.0, "cp": 14.0, "np": 18.0, "kRz": 0.9, "kRy": 0.0,
+            "kLz": -0.3, "aLp": 44.0, "aRp": 48.0, "aLo": 34.0, "aRo": 34.0, "eL": 40.0, "eR": 40.0,
+            "fL": 30.0, "fR": 30.0}, "o"),
+    (0.85, {"hy": -0.95, "sq": 0.95, "sp": 30.0, "np": 16.0}, ""),
+    # Squared: the stump shaken, the fists closed.
+    (1.15, {"hy": -0.4, "sq": 1.02, "hz": 0.0, "hp": 0.0, "sp": 12.0, "cp": 4.0, "np": -2.0, "kRz": 0.4,
+            "kLz": -0.25, "aLp": 10.0, "aRp": 10.0, "aLo": 18.0, "aRo": 18.0, "eL": 34.0, "eR": 34.0,
+            "fL": 85.0, "fR": 85.0}, ""),
+    (BACK_HIT, {"_base": 1, "kRz": 0.25, "kLz": -0.15, "sp": 9.0, "fL": 70.0, "fR": 70.0}, ""),
+], extra=_back_hit_extra))
+
+
 # ================================================================== keying
 rig.animation_data_create()
 for pb in rig.pose.bones:
@@ -1974,6 +2321,27 @@ if RENDER:
     ## The head he wears whole (inhaler_head.gd at size 3: x, up, depth).
     WORN_HEAD = (3.36 * 1.04, 3.36, 3.36 * 0.84)
     WORN_CLIPS = ("shoulder_run", "charge_tell", "charge_run", "charge_skid", "charge_stagger")
+    ## The knock-off's clips: worn too, the edge ones on a ledge (its rim
+    ## EDGE_AT ahead; the leap's rim behind where he comes up), the root's
+    ## way as the game would move it (`knock_root`).
+    KNOCK_CLIPS = ("teeter_catch", "teeter", "teeter_back", "topple", "rim_leap", "rim_land", "back_hit")
+    WORN_CLIPS = WORN_CLIPS + KNOCK_CLIPS
+    LEDGE_AT = {"teeter_catch": EDGE_AT, "teeter": EDGE_AT, "teeter_back": EDGE_AT, "topple": EDGE_AT,
+                "rim_leap": -1.2}
+    bpy.ops.mesh.primitive_cube_add(size=1)
+    ledge = bpy.context.active_object
+    ledge.scale = (40, 40, 30)
+    ledge.hide_render = True
+
+    def knock_root(name, t):
+        """(up, forward) of the root, for the stills."""
+        if name == "topple" and t > TOPPLE_GO:
+            d = t - TOPPLE_GO
+            return -0.5 * 14.0 * d * d, 1.2 * d
+        if name == "rim_leap":
+            k = t / RIM_LEAP
+            return -7.5 + 7.5 * k + 18.0 * k * (1 - k), -4.6 + 4.6 * smooth01(0.0, 1.0, k)
+        return 0.0, 0.0
     rig.animation_data.action = None
     rig.animation_data.use_nla = False
     for tr in rig.animation_data.nla_tracks: tr.mute = True
@@ -2014,19 +2382,30 @@ if RENDER:
             bpy.context.active_object.name = "WornHead"
         if "WornHead" in bpy.data.objects: bpy.data.objects["WornHead"].hide_render = not worn
         views = (("", None),) if not worn else (("side_", F(-24, 6.5, 0.5)), ("front_", F(-10, 6.0, 12)), ("toward_", F(1.5, 8.5, 24)), ("chase_", F(5, 13, -21)))
+        knock = c.name in KNOCK_CLIPS
+        if knock:
+            views = (("side_", F(-21, 5.0, 1.5)), ("front_", F(-12, 7.0, 15)))
+            if c.name == "back_hit": views = (("side_", F(-21, 5.0, 1.5)), ("chase_", F(10, 10, -17)))
+        ledge.hide_render = c.name not in LEDGE_AT
+        if c.name in LEDGE_AT:
+            ledge.location = (0, LEDGE_AT[c.name] - 20.0, -15.0)
+        floor.hide_render = floor.hide_render or c.name in LEDGE_AT
         n = 8
         for i in range(n):
             f = round(frames * i / (n - 1)) if not c.loop else round(frames * i / n)
             scene.frame_set(f)
             # The root's way as the game moves it, so the stills show it.
             rig.location = (0, 0, 0)
+            if knock:
+                up, fwd = knock_root(c.name, c.length * f / max(frames, 1))
+                rig.location = (0, fwd, up)
             if worn:
                 bpy.context.view_layer.update()
                 hm = rig.matrix_world @ rig.pose.bones["neck"].matrix @ Matrix.Translation(V((0, SEAT - NECK + WORN_HEAD[1] * 0.5, 0)))
                 hd = bpy.data.objects["WornHead"]
                 hd.matrix_world = hm @ Matrix.Diagonal(V((WORN_HEAD[0], WORN_HEAD[1], WORN_HEAD[2], 1.0)))
                 for pre, frm in views:
-                    look(frm, F(0, 4.6, 0))
+                    look(frm, F(0, 4.6, 0) if not knock else F(0, 3.8 + rig.location.z * 0.6, 1.0 + rig.location.y * 0.6))
                     shot(out / f"{c.name}_{pre}{i:02d}.png")
                 continue
             if c.name in ("mantle", "mantle_pull"):
