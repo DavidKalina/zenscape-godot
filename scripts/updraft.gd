@@ -381,9 +381,20 @@ func spend(m: PilotMotor, drift := Vector3.ZERO) -> float:
 	_let_go(drift)
 	return p
 
-## The whole charge spent at once (the side slam, scripts/side_slam.gd):
-## the wake comes away drifting `drift` m/s, and charging locks as after a
-## burst. What was spent.
+## The side slam's spend (scripts/side_slam.gd): one segment (unsegmented:
+## all of it), the wake comes away drifting `drift` m/s, and charging locks as
+## after a burst. What was spent.
+func spend_lunge(m: PilotMotor, drift := Vector3.ZERO) -> float:
+	if not segmented: return spend_all(m,drift)
+	var p := _take(SEG_BURST_P)
+	spent = true
+	_spent_t = 0.0
+	_spent_pace = m.speed()
+	_let_go(drift)
+	return p
+
+## The whole charge spent at once: the wake comes away drifting `drift` m/s,
+## and charging locks as after a burst. What was spent.
 func spend_all(m: PilotMotor, drift := Vector3.ZERO) -> float:
 	var p := charge
 	charge = 0.0

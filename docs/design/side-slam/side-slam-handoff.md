@@ -3,6 +3,23 @@
 Branch `iter/side-slam` (round 1), then `iter/caches-slam` (round 2, with
 the kit caches merged in). Prototype only. No committed tests.
 
+## Round 3: costs one segment
+
+- The side slam spends **one segment** (`Updraft.spend_lunge`, the same
+  `_take` the burst and updraft use) and arms whenever a segment is there
+  (`SideSlam.wanted` asks `can_spend()`), not only at full charge. Three in a
+  row from a full gauge work. The HUD gauge reads `charge`, so it drops one
+  segment per slam. Unsegmented (off the kit isles) it still needs and spends
+  the whole charge.
+- Trade-off: with any segment on the ground, Q / RB now waits for its release
+  (~0.1 s) before a tap gives the updraft (or the burst in a slide), where
+  before only a full gauge waited. With no segment the press is as before.
+- Proof: `scratch/dash_slam_cost.gd` (git-ignored), real input on the isle,
+  20/20 OK (1 segment leaves 0, 3 leave 2, three in a row 2/1/0 with the
+  gauge matching, a tap at 1 segment is the updraft, empty does nothing).
+  Smoke `zenscape.tscn --no-title` PASS. `test_slam.gd`: the same two
+  updraft checks fail as on main, nothing added or fixed.
+
 ## Round 2: from the ground, and no drain
 
 - **The charge doesn't drain.** `scripts/updraft.gd` `DRAIN` (false) turns

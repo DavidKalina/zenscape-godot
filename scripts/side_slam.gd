@@ -1,18 +1,19 @@
 extends Node3D
 ## The side slam (docs/design/side-slam/side-slam-handoff.md): the slide's
-## forward burst held into a horizontal slam. At full charge, on the ground
+## forward burst held into a horizontal slam. With a segment of charge, on the ground
 ## (a slide, or standing, walking, running), Q / pad RB HELD past HOLD s
 ## coils him (COIL s: a slide brakes, he winds back low; off a slide he
 ## plants and crouches back, GROUND_COIL s) and launches him body-first,
 ## shoulder leading, much faster than the burst, low and flat (the motor's
 ## move "lunge"): along the slide, or off a slide along the stick (held) or
-## the way he faces. It spends the whole charge.
+## the way he faces. It spends one segment (the gauge's SEG; unsegmented,
+## it still needs and spends the whole charge).
 ##
-## - **The tap is as before.** At full charge on the ground the press is
+## - **The tap is as before.** With a segment on the ground the press is
 ##   kept till it is let go or held past HOLD: let go first, it is the burst
 ##   in a slide, the updraft out of one, exactly as a press would have been,
 ##   a tap's length later. The coil's first share (WAIT_COIL) shows from the
-##   press, so the wait reads as the wind-up. Below full charge, or in the
+##   press, so the wait reads as the wind-up. With no segment, or in the
 ##   air, nothing here touches the press.
 ## - **The lunge.** LUNGE_PACE m/s along the slide's way, HOVER m over the
 ##   ground (it rides slopes up at CLIMB, sinks off an edge no faster than
@@ -194,10 +195,11 @@ func _coil_time() -> float:
 func holds() -> bool:
 	return phase == "coil" and from == "ground"
 
-## Whether a press now may be the side slam's: full charge, on the ground
-## (a slide, or standing, walking, running).
+## Whether a press now may be the side slam's: a segment of charge (unsegmented:
+## full), on the ground (a slide, or standing, walking, running).
 static func wanted(m: PilotMotor, up: Object) -> bool:
-	return ON and m.grounded and m.move in GROUND_MOVES and float(up.get("charge")) >= 1.0-Updraft.SEG_HAIR \
+	var enough: bool = up.call("can_spend") if up.get("segmented") else float(up.get("charge")) >= 1.0-Updraft.SEG_HAIR
+	return ON and m.grounded and m.move in GROUND_MOVES and enough \
 		and not m.recovering() and not m.swimming and not m.seized() and m.rider == null and m.hold == ""
 
 ## The updraft's press: true if it is kept here (the updraft does nothing
@@ -261,7 +263,7 @@ func before(delta: float, m: PilotMotor, held: bool, want: Vector2) -> void:
 	_before = m.feet
 	_step_bursts(delta)
 
-## The launch: all the charge spent, tossed flat along the slide.
+## The launch: one segment spent, tossed flat along the slide.
 func _launch(m: PilotMotor) -> void:
 	var h := Vector2(m.velocity.x,m.velocity.z)
 	if from == "ground": _dir = _aim if _aim.length() > 0.5 else PilotMotor.forward(m.facing)
@@ -270,7 +272,7 @@ func _launch(m: PilotMotor) -> void:
 	_gone = 0.0
 	_t = 0.0
 	launches += 1
-	_up.spend_all(m,-Vector3(_dir.x,0.0,_dir.y)*Updraft.LOOSE_DRIFT)
+	_up.spend_lunge(m,-Vector3(_dir.x,0.0,_dir.y)*Updraft.LOOSE_DRIFT)
 	m.toss(Vector3(_dir.x*_pace,LIFT*pow(_size,PilotMotor.PACE_POWER),_dir.y*_pace))
 	m.move = "lunge"
 	m.facing = PilotMotor.facing_of(_dir)

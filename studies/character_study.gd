@@ -468,7 +468,7 @@ const SLAM_DUST := Vector2i(5,12)
 ## The grit thrown off a bobbing slab's spring as it launches him
 ## (scripts/interactables/foot_pieces.gd "spring_launch").
 const SPRING_DUST := 7
-## The side slam (scripts/side_slam.gd): at full charge on the ground, the
+## The side slam (scripts/side_slam.gd): with a segment of charge on the ground, the
 ## updraft's key held is a horizontal slam, rebounding off what it
 ## meets. On unless `--no-side-slam` (or `--no-updraft`).
 const SideSlam = preload("res://scripts/side_slam.gd")
