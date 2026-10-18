@@ -238,7 +238,9 @@ static func _slide_rock(seed_value: int) -> Node3D:
 	outline.append(Vector2(x1,pz-half*0.4))
 	outline.append(Vector2(x1-0.05,pz-half))
 	outline.reverse()
-	var spec := {"outline":outline,"depth":12.0,"seed":seed_value,"ground":ground,"top":top,
+	# Its sides hang from the rim's own height (`hang`), down the slope too,
+	# to a keel well under the lip.
+	var spec := {"outline":outline,"depth":top-lip_y()+14.0,"seed":seed_value,"ground":ground,"top":top,"hang":true,
 		"tone":KitLook.turf(seed_value,func(_p: Vector2) -> float: return 0.0),
 		"cliffs":Rect2(px-PERCH_R*1.3,pz-half-1.0,(x0-px)+PERCH_R*1.3+1.0,SLOPE_WIDE+2.0),
 		"name":"RouteSlideRock"}
