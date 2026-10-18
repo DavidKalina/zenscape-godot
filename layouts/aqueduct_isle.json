@@ -1,0 +1,40 @@
+{
+	"version": 1,
+	"moved": {
+		"foot_route/balustrade_1": {"pos":[83.47,33.018,2.37],"rot":[0.0,0.0,0.0]},
+		"foot_route/balustrade_2": {"pos":[83.47,33.018,-2.45],"rot":[0.0,0.0,0.0]},
+		"foot_route/rope_1": {"pos":[106.3,40.17,-29.426],"rot":[0.0,0.0,0.0]},
+		"ring_route/crag_1": {"pos":[186.0,32.0,-10.95],"rot":[0.0,0.0,0.0]},
+		"ring_route/kicker_slab": {"pos":[186.25,37.65,-9.15],"rot":[0.0,-78.54,0.0]},
+		"tokens/drift": {"pos":[81.735,40.515,-7.413],"rot":[0.0,0.0,0.0]},
+		"tokens/sarsen": {"pos":[65.039,48.847,8.787],"rot":[0.0,0.0,0.0]},
+		"tokens/slot": {"pos":[97.9,36.5,-2.64],"rot":[0.0,0.0,0.0]},
+		"tokens/trilithon": {"pos":[54.971,51.502,-0.04],"rot":[0.0,0.0,0.0]},
+		"tokens/wallrun": {"pos":[101.66,33.45,-4.94],"rot":[0.0,0.0,0.0]}
+	},
+	"added": [
+		{"kind":"air_ring","name":"added/air_ring_1","pos":[136.7,35.7,-7.2],"rot":[-45.0,-95.94,0.0],"size":2.25},
+		{"kind":"air_ring","name":"added/air_ring_2","pos":[140.85,39.45,-7.05],"rot":[-75.0,-95.94,0.0],"size":2.25},
+		{"kind":"air_ring","name":"added/air_ring_3","pos":[186.2,45.2,-5.4],"rot":[0.0,-95.94,0.0],"size":2.25},
+		{"kind":"bob_slab","name":"added/bob_slab_1","pos":[135.6,29.2,-7.2],"rot":[0.0,-2.35,0.0],"size":[4.55,0.7,4.352]}
+	],
+	"deleted": [
+		"foot_route/bob_slab_1",
+		"foot_route/bob_slab_2",
+		"foot_route/bob_slab_3",
+		"foot_route/perch",
+		"foot_route/ring_1",
+		"foot_route/ring_2",
+		"foot_route/ring_3",
+		"ring_route/chain_slab_1",
+		"ring_route/chain_slab_2",
+		"ring_route/chain_slab_3"
+	],
+	"islands": {
+		"island/east_islet": {"pos":[-6.653,-2.75,16.231],"rot":[0.0,0.0,0.0]},
+		"island/near": {"pos":[0.0,0.0,-0.04],"rot":[0.0,0.0,0.0]}
+	},
+	"sizes": {
+		"ring_route/kicker_slab": [6.15,0.7,6.15]
+	}
+}
