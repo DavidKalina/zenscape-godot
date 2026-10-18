@@ -24,6 +24,17 @@ The user plays the aqueduct isle, presses F4 and:
    (`scripts/interactables/foot_pieces.gd` host methods,
    `Art.floating_stones`, and the placers the stair and caches use) so
    new code that goes through them is named automatically.
+1b. **Size.** (Spec change 2026-10-17, to do right after goal 1's
+   current task.) A selected air ring or slab (bob, ring-stair, drift,
+   foot slab) grows or shrinks with `[` / `]` (Shift: finer), so the
+   user can say "this slab is hard to land on, bigger" or "this ring
+   smaller, for precise platforming". It's a gameplay size, not only a
+   look: a ring's hole, its trigger and its top's bounce disc scale with it;
+   a slab's footprint and collision scale with it, and its thickness stays.
+   It shows the size in metres in the status line, is saved per name in the
+   layout file like a move, and rebuilds only that piece on release. Rings
+   and slabs added in the world view and from the island view's Mechanics
+   pocket take it too.
 2. **Groups.** Shift-click, or drag a box, to select several pieces. They
    move, turn and delete as one. A selection can be **saved as a chunk**
    (a named file of pieces relative to an anchor), and a chunk can be
