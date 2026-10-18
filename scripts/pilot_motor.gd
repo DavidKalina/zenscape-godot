@@ -72,9 +72,10 @@ signal harmed(amount: int, cause: String, source: Object)
 ## down (move "slam"), from the pace given on toward `pace` on SLAM_PULL
 ## times his falling gravity, past TERMINAL; his flat pace kept, not
 ## steered, no wall, wall run or ledge taking him. On the touch the step
-## says "slammed" (how hard, m/s) with "landed", and the landing is as any:
-## crouch held, it is the slide (or the surf on a slope) at his pace; Jump
-## buffered for the touch jumps out of it (it opens no sail). A twirl ends
+## says "slammed" (how hard, m/s) with "landed", and the landing plants him
+## (SLAM_PLANT): his flat pace stopped, and the crouch held through the slam
+## doesn't slide him or surf a slope until it is let go and pressed afresh
+## (`planted`); Jump buffered for the touch jumps out of it (it opens no sail). A twirl ends
 ## it. Jump pressed in the drive with room for the sail (its `can_open`,
 ## so a press within the buffer of the touch is still the jump out)
 ## cancels it: the pace past TERMINAL given up, the sail opens (the step
@@ -558,6 +559,10 @@ const STUN_CHAIN_CAP := 3.0
 const STUN_CALM := 1.0
 ## The slam: its pull toward the pace asked, times his falling gravity.
 const SLAM_PULL := 2.0
+## A slam's touch plants him: his flat pace stopped, and the crouch held
+## through it no slide (or surf) until pressed afresh. Off: the landing is
+## as any, crouch held the slide at his pace.
+const SLAM_PLANT := true
 ## The side slam's lunge (move "lunge", set by scripts/side_slam.gd, which
 ## sets its pace each step): flat through the air, not steered, no wall,
 ## wall run, ledge, twirl or sail taking him; this share of his gravity.
@@ -713,6 +718,9 @@ var chain := 0
 var move := ""
 ## Held by the caller: the crouch button, and the twirl's.
 var crouch := false
+## Planted by a slam's touch (SLAM_PLANT): the crouch held reads as standing
+## until let go.
+var planted := false
 var twirl := false
 ## Sliding, the stick carves (see above); off, it pushes him across as it
 ## used to (studies/character_study.gd's `--no-carve`, F3).
@@ -1401,7 +1409,8 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 	if grounded: _since_ground = 0.0
 	else: _since_ground += delta
 	if _since_land > chain_window: _last_chain = 0
-	var crouched := grounded and crouch and wade < swim_in*0.5
+	if planted and (not crouch or not grounded): planted = false
+	var crouched := grounded and crouch and not planted and wade < swim_in*0.5
 	var surfing := false
 	var surfed := move == "slide"
 	if grounded:
@@ -1627,7 +1636,12 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 			var drop := maxf(_fall_top-under-_launch_free,0.0)
 			_launch_free = 0.0
 			out["landed"] = -velocity.y
-			if move == "slam": out["slammed"] = -velocity.y
+			if move == "slam":
+				out["slammed"] = -velocity.y
+				if SLAM_PLANT:
+					h = Vector2.ZERO
+					planted = crouch
+					skidding = false
 			if move == "wall": out["wall"] = false
 			if move == "wallrun": out["wallrun"] = false
 			if move == "sail": out["sail"] = false
