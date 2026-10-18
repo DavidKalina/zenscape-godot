@@ -71,6 +71,9 @@ var _arm := {}
 var _neck := -1
 var _seat_off := Transform3D.IDENTITY
 var _leg := {}
+## An arm lost ("L" or "R"; "" none): reaches on that side do nothing (its
+## bones are collapsed by the owner, scripts/olmec_boss/boss_body.gd).
+var lost := ""
 ## Its turns and feet (round 4).
 var steps: Steps
 static var _dressed_mesh: ArrayMesh = null
@@ -225,7 +228,7 @@ func arm_reach() -> float:
 ## by two-bone IK, the elbow kept in the clip's plane; `fingers` (global, unit)
 ## and `palm` (the way the palm faces), if given, turn the hand `w` to them.
 func reach(side: String, target: Vector3, w: float, fingers := Vector3.ZERO, palm := Vector3.ZERO) -> void:
-	if w <= 0.0: return
+	if w <= 0.0 or side == lost: return
 	var to_sk := skeleton.global_transform.affine_inverse()
 	var hand := Basis()
 	if fingers != Vector3.ZERO and palm != Vector3.ZERO: hand = _hand_basis(side,to_sk.basis*fingers,to_sk.basis*palm)

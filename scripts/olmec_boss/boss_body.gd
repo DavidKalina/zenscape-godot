@@ -441,6 +441,11 @@ func _place_back_glint() -> void:
 func step(delta: float) -> void:
 	super.step(delta)
 	if phase2 and not crumbled: _place_back_glint()
+	if not _arm_rubble.is_empty() and _arm_rubble_t < ARM_SETTLE:
+		_arm_rubble_t += delta
+		if _arm_rubble_t >= ARM_SETTLE:
+			for rb: RigidBody3D in _arm_rubble:
+				if is_instance_valid(rb): rb.freeze = true
 
 ## The slam's group (scripts/slam.gd, side_slam.gd): the side slam (him in
 ## its lunge) from behind is a back hit, else it glances; the ground pound
@@ -667,6 +672,8 @@ func _knock_fall(delta: float) -> void:
 ## off, a leap over it onto the field.
 func _knocked_gone(_delta: float) -> void:
 	vel = Vector3.ZERO
+	# Out of sight, the first knock-off's crack (he comes back up with it).
+	if knock_offs >= 1 and damage < 1: take_damage(1)
 	if state_t < KNOCK_GONE: return
 	var from := _rim_at+_rim_out*2.0+Vector3.DOWN*KNOCK_BELOW
 	var to := _rim_at-_rim_out*LEAP_IN
@@ -722,6 +729,8 @@ func _rim_land(_delta: float) -> void:
 			# The finish's stand-in: he crumbles at the top of the rim.
 			crumble()
 			return
+		# The second knock-off's landing snaps his arm off.
+		if knock_offs >= 2 and not arm_off: take_damage(2)
 		_angrier()
 	if state_t >= float(look.lengths.rim_land): _go(_resume())
 
@@ -732,6 +741,186 @@ func _angrier() -> void:
 	knobs.chase_speed = _hunt_pace
 	knobs.swat_windup = float(knobs.swat_windup)/k
 	_charge_ready = minf(_charge_ready,_clock+CHARGE_FIRST)
+
+# --- Coming back cracked ---------------------------------------------------------
+# Each knock-off leaves him worse (spec-olmec-knockoff.md "Coming back
+# cracked"): after the first his face is cracked and off-kilter (his head
+# rebuilt from the cracked glb while he is out of sight); after the second
+# his right arm snaps off at the shoulder as he lands back (the arm's
+# blocks left on the field as rubble, the raw break on his shoulder): his
+# swat is his left fist only (on his right he can't reach you) and his
+# charge pulls to his right, the side he lost.
+
+const DAMAGE_GLB := "res://assets/models/headless_body_damage.glb"
+const LOST_ARM := "R"
+const ARM_PIECES := {"ArmRubble_R_upper":"upper_arm.R","ArmRubble_R_fore":"forearm.R","ArmRubble_R_hand":"hand.R"}
+## The one-armed swat: how far to his right (m past his middle) is out of
+## his left fist's reach; how far left of his middle its fist lands (share
+## of his width). The charge's pull to the lost side (rad/s, even locked).
+const ONE_ARM_SAFE := 0.1
+const ONE_ARM_FIST := 0.3
+const CHARGE_PULL := 0.32
+## The rubble's fling off the shoulder (m/s out, up) and its settle (s).
+const ARM_FLING := Vector2(3.0,2.5)
+const ARM_SETTLE := 5.0
+var damage := 0
+var arm_off := false
+var _arm_rubble: Array[RigidBody3D] = []
+var _arm_rubble_t := 0.0
+var _arm_bone := -1
+
+## His damage brought to `n` knock-offs' worth (1 cracked, 2 the arm off).
+## `fling`: the arm snaps off now and is thrown off him (else it lies at
+## his side already, `--knocked=2`).
+func take_damage(n: int, fling := true) -> void:
+	if n >= 1 and damage < 1:
+		var h: Node = head if head != null and is_instance_valid(head) else null
+		if h != null and h.has_method("crack"): h.call("crack")
+	if n >= 2 and not arm_off: _lose_arm(fling)
+	damage = maxi(damage,n)
+
+## Start phase 2 already knocked off `n` times (the field's `--knocked=N`):
+## his damage and his anger as if they had happened.
+func set_knocked(n: int) -> void:
+	n = clampi(n,0,KNOCK_OFFS-1)
+	knock_offs = n
+	for i in range(n): _angrier()
+	take_damage(n,false)
+	print("olmec boss: starts knocked off %d times" % n)
+
+func _lose_arm(fling: bool) -> void:
+	arm_off = true
+	look.lost = LOST_ARM
+	_arm_bone = look.skeleton.find_bone("upper_arm."+LOST_ARM)
+	var scene := load(DAMAGE_GLB) as PackedScene
+	if scene == null:
+		push_warning("olmec boss: no damage glb")
+		return
+	var src := scene.instantiate()
+	var stone := Look.Style.stone_of(7) if Look.Style.ruled() else Color("5a5d63")
+	var sk := look.skeleton
+	# The raw break on his shoulder, on the chest bone.
+	var brk := src.find_child("ShoulderBreak_"+LOST_ARM,true,false) as MeshInstance3D
+	if brk != null:
+		var chest := sk.find_bone("chest")
+		var att := BoneAttachment3D.new()
+		att.name = "ShoulderBreak"
+		att.bone_name = "chest"
+		sk.add_child(att)
+		var mi := MeshInstance3D.new()
+		mi.name = "ShoulderBreak_"+LOST_ARM
+		mi.mesh = Look.HeadLook._dressed(brk.mesh,stone,Vector3.ZERO)
+		mi.set_surface_override_material(0,Look.HeadLook.stone_material())
+		if mi.mesh.get_surface_count() > 1: mi.set_surface_override_material(1,look._cut_mat)
+		att.add_child(mi)
+		mi.transform = sk.get_bone_global_rest(chest).affine_inverse()
+	# The arm's blocks, where the arm is now, as rubble.
+	var out := _right3()
+	for piece: String in ARM_PIECES:
+		var m := src.find_child(piece,true,false) as MeshInstance3D
+		var b := sk.find_bone(String(ARM_PIECES[piece]))
+		if m == null or b < 0: continue
+		var tr := sk.global_transform*sk.get_bone_global_pose(b)*sk.get_bone_global_rest(b).affine_inverse()
+		if not fling:
+			# Lying at his right side already.
+			var side := global_position+out*(width*0.5+1.2+0.6*float(_arm_rubble.size()))
+			side.y = global_position.y+0.6
+			var flat := Basis(Vector3.FORWARD,PI*0.5)*Basis(Vector3.UP,facing)
+			var sb := flat*Basis.from_scale(tr.basis.get_scale())
+			tr = Transform3D(sb,side-sb*m.mesh.get_aabb().get_center())
+		var rb := _arm_block(m.mesh,stone,tr)
+		var v := out*ARM_FLING.x+Vector3.UP*ARM_FLING.y if fling else Vector3.ZERO
+		rb.linear_velocity = v
+		if fling: rb.angular_velocity = _forward3()*-2.5
+	src.queue_free()
+	_arm_rubble_t = 0.0
+	_collapse_arm()
+	print("olmec boss: right arm snapped off (%d pieces)" % _arm_rubble.size())
+
+## A piece of his arm: its rest-space mesh at `tr` (world), as kit rubble.
+func _arm_block(mesh: Mesh, stone: Color, tr: Transform3D) -> RigidBody3D:
+	var aabb := mesh.get_aabb()
+	var sc := tr.basis.get_scale()
+	var c := aabb.get_center()
+	var rb := RigidBody3D.new()
+	rb.name = "ArmRubble"
+	var s := aabb.size*sc
+	rb.mass = maxf(s.x*s.y*s.z*2.4,1.0)
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = s*0.85
+	shape.shape = box
+	rb.add_child(shape)
+	var mi := MeshInstance3D.new()
+	mi.mesh = Look.HeadLook._dressed(mesh,stone,Vector3.ZERO)
+	mi.set_surface_override_material(0,Look.HeadLook.stone_material())
+	if mi.mesh.get_surface_count() > 1: mi.set_surface_override_material(1,look._cut_mat)
+	mi.transform = Transform3D(Basis.from_scale(sc),-(c*sc))
+	rb.add_child(mi)
+	field.add_child(rb)
+	rb.global_transform = Transform3D(tr.basis.orthonormalized(),tr*c)
+	_arm_rubble.append(rb)
+	return rb
+
+## The lost arm's bones collapsed to nothing (the tree may set them back).
+func _collapse_arm() -> void:
+	if _arm_bone >= 0: look.skeleton.set_bone_pose_scale(_arm_bone,Vector3.ONE*0.001)
+
+func _animate(delta: float) -> void:
+	super._animate(delta)
+	if arm_off:
+		_collapse_arm()
+
+## One-armed, his swat only reaches you on his left (and ahead).
+func _catch(m: PilotMotor, how: String) -> void:
+	if arm_off and how == "swat":
+		var d := m.feet-position
+		if d.dot(_right3()) > ONE_ARM_SAFE*width:
+			misses += 1
+			chase_beat.emit("missed")
+			print("olmec boss: one-armed swat missed (on his right)")
+			return
+	super._catch(m,how)
+
+## One-armed, the swat (the body's own, headless_body.gd `_swat`) aimed so
+## you are on his left, ONE_ARM_AIM rad off: his left fist down there. On
+## his right (past ONE_ARM_SAFE) at the hit, it misses you (`_catch`).
+const ONE_ARM_AIM := 0.35
+## His turn after you in its windup (rate, 1/s; two-armed 6) and its last
+## stretch he no longer turns (s): a dash to his right beats it.
+const ONE_ARM_TURN := 4.0
+const ONE_ARM_LOCK := 0.2
+func _one_arm_swat(delta: float) -> void:
+	_brake(delta)
+	var m: PilotMotor = field.motor
+	var to := Vector2(m.feet.x-position.x,m.feet.z-position.z)
+	if not _swat_hit and to.length() > 0.1 and state_t < float(knobs.swat_windup)-ONE_ARM_LOCK:
+		var t := to.normalized()
+		var f := t*cos(ONE_ARM_AIM)+Vector2(-t.y,t.x)*sin(ONE_ARM_AIM)
+		facing = lerp_angle(facing,PilotMotor.facing_of(f),1.0-exp(-ONE_ARM_TURN*delta))
+	if not _swat_hit and state_t >= float(knobs.swat_windup):
+		_swat_hit = true
+		quake = maxf(quake,0.3)
+		var fist := position+_forward3()*(length*0.5+arm_l*0.6)+_fist_side()
+		field.sound(&"body_land",fist)
+		_puff(fist,hh*1.2)
+		if phase2: _hit_arena(fist,FIST_HIT)
+		if to.length() <= float(knobs.catch_reach)*hh+0.5 and absf(m.feet.y-position.y) < neck_h*0.6 and not m.seized():
+			_catch(m,"swat")
+		else:
+			misses += 1
+			chase_beat.emit("missed")
+	if state_t >= float(knobs.swat_windup)+float(knobs.swat_after): _go(_resume())
+
+## Where his fists come down: ahead, or ahead and to his left one-armed.
+func _fist_side() -> Vector3:
+	return -_right3()*width*ONE_ARM_FIST if arm_off else Vector3.ZERO
+
+func _exit_tree() -> void:
+	super._exit_tree()
+	for rb: RigidBody3D in _arm_rubble:
+		if is_instance_valid(rb): rb.queue_free()
+	_arm_rubble.clear()
 
 # --- The charge ---------------------------------------------------------------
 
@@ -1029,6 +1218,11 @@ func _charge(delta: float) -> void:
 	if along > CHARGE_LOCK and to.length() > 0.1:
 		var off := angle_difference(facing,PilotMotor.facing_of(to.normalized()))
 		facing = wrapf(facing+clampf(off,-CHARGE_TURN*delta,CHARGE_TURN*delta),-PI,PI)
+	# One-armed, the charge pulls toward the side he lost.
+	if arm_off:
+		var r := _right3()
+		var pull := angle_difference(facing,PilotMotor.facing_of(Vector2(r.x,r.z)))
+		facing = wrapf(facing+signf(pull)*CHARGE_PULL*delta,-PI,PI)
 	_charge_v = minf(top,_charge_v+CHARGE_ACCEL*delta)
 	var f := PilotMotor.forward(facing)
 	vel.x = f.x*_charge_v
@@ -1180,10 +1374,13 @@ func _windup_s() -> float:
 	return BOUND_WINDUP if _bound else super._windup_s()
 
 func _swat(delta: float) -> void:
+	if not _slam and arm_off:
+		_one_arm_swat(delta)
+		return
 	if not _slam:
 		var was := _swat_hit
 		super._swat(delta)
-		if phase2 and _swat_hit and not was: _hit_arena(position+_forward3()*(length*0.5+arm_l*0.6),FIST_HIT)
+		if phase2 and _swat_hit and not was: _hit_arena(position+_forward3()*(length*0.5+arm_l*0.6)+_fist_side(),FIST_HIT)
 		return
 	_brake(delta)
 	var m: PilotMotor = field.motor
@@ -1194,7 +1391,7 @@ func _swat(delta: float) -> void:
 	if not _slam_hit and state_t >= SLAM_WINDUP:
 		_slam_hit = true
 		var ahead := minf(length*0.5+arm_l*0.6+SLAM_AHEAD,maxf(to.length()*0.5,length*0.5+arm_l*0.6))
-		var at := position+_forward3()*ahead
+		var at := position+_forward3()*ahead+_fist_side()
 		var g := _floor(at+Vector3.UP*1.0,2.0,4.0)
 		if g != -INF: at.y = g
 		_puff(at,hh*1.8)

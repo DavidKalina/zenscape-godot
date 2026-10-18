@@ -19,6 +19,8 @@ extends "res://studies/kit_isle.gd"
 ##     [--calm] (the Olmec doesn't hunt you: he stands and listens)
 ##     [--olmec-at=x,z] [--body-knob=<knob>=<value>]
 ##     [--phase=2] (start whole, the head on: phase 2; R starts it so again)
+##     [--knocked=N] (phase 2, already knocked off N times: 1 his face
+##       cracked, 2 his right arm off too; R starts it so again)
 ##     [--tilt-now] (in phase 2, he makes for the rim and tilts the field
 ##       at once: the set piece, `tilt_begin`)
 ##     [--tilt] (the tilt back in phase 2's mix; out of it by default, for
@@ -85,6 +87,9 @@ var phase := 1
 ## The phase the fight starts in (and R starts it in again): 1, or 2 with
 ## `--phase=2` (for testing: the body set down whole, the head on).
 var start_phase := 1
+## `--knocked=N`: phase 2 starts with him knocked off N times (BossBody
+## `set_knocked`: his damage states and anger).
+var start_knocked := 0
 var phase_one_over := false
 var _head_knobs := {}
 ## Phase 2's beat: the body comes up over the rim BODY_AFTER s after the
@@ -242,6 +247,9 @@ func _ready() -> void:
 		elif arg == "--tilt-now": tilt_now = true
 		elif arg == "--tilt": tilt_mix = true
 		elif arg.begins_with("--phase="): start_phase = clampi(int(arg.get_slice("=",1)),1,2)
+		elif arg.begins_with("--knocked="):
+			start_knocked = clampi(int(arg.get_slice("=",1)),0,int(BossBody.KNOCK_OFFS)-1)
+			if start_knocked > 0: start_phase = 2
 		elif arg.begins_with("--head-knob="):
 			var hk: String = arg.trim_prefix("--head-knob=")
 			_head_knobs[hk.get_slice("=",0)] = float(hk.get_slice("=",1))
@@ -426,6 +434,7 @@ func _wire() -> void:
 		h.state = "done"
 		phase_one_over = true
 		_body_whole(b)
+		if start_knocked > 0 and b.has_method("set_knocked"): b.set_knocked(start_knocked)
 
 ## The boss body's knobs: it knows the whole field (sense, lose), hunts.
 func _boss_knobs() -> Dictionary:

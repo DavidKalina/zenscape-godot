@@ -129,6 +129,32 @@ func _art(root: Node3D) -> void:
 	root.add_child(g)
 	crown_glint = g
 
+## Knocked off once (spec-olmec-knockoff.md "Coming back cracked"): the
+## face cracked and off-kilter, the art lane's cracked head
+## (inhaler_head_build.py --cracked) built in place of the whole one.
+const CRACKED := "res://assets/models/inhaler_head_cracked.glb"
+var cracked := false
+
+func crack() -> void:
+	if cracked or look == null: return
+	cracked = true
+	var old: Node3D = look
+	var parent := old.get_parent()
+	var opened: float = old.opened()
+	var t := old.transform
+	parent.remove_child(old)
+	old.queue_free()
+	look = Look.new()
+	look.name = "Look"
+	look.model_path = CRACKED
+	parent.add_child(look)
+	look.transform = t
+	look.build(height)
+	look.open(opened)
+	var crack_mesh := look.model.get_node_or_null("Crack") as MeshInstance3D
+	if crack_mesh != null: crack_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	print("boss head: cracked")
+
 # --- The lock's asks ---------------------------------------------------------------------
 
 func aim_point() -> Vector3:
