@@ -57,6 +57,10 @@ var rails: Array = []
 ## (the ring's middle); `rings_taken` counts them.
 var rings: Array = []
 var rings_taken := 0
+## Bounces off the rings' tops (the trampoline, AirRing `try_bounce`): each
+## refills the charge and throws him AirRing.BOUNCE up; the step gets
+## "ring_bounce" ({at, hard}).
+var ring_bounces := 0
 ## The slab he stands on (or hangs from) now, or null; the body by RID.
 var on: Node3D = null
 var _ray := PhysicsRayQueryParameters3D.new()
@@ -207,6 +211,19 @@ func _take_ring(r: Node3D) -> void:
 	motor.launch(Vector3(motor.velocity.x,maxf(motor.velocity.y,up),motor.velocity.z),free)
 	on = null
 
+## Down onto an air ring's stones: the charge filled, thrown BOUNCE m back
+## up off its top, his flat pace kept (see `rings`).
+func _bounce_ring(r: Node3D) -> void:
+	ring_bounces += 1
+	var drafts: Node = study.get("updraft")
+	if drafts != null and drafts.has_method("refill"): drafts.refill(motor.feet)
+	var top: float = r.top_at(motor.feet)
+	if motor.feet.y < top: motor.feet.y = top
+	var h: float = AirRing.BOUNCE*motor.size
+	var up := motor.rise_for(h,true)
+	motor.launch(Vector3(motor.velocity.x,up,motor.velocity.z),h+_drop_under(motor.feet)+0.5)
+	on = null
+
 ## The drop from `p` to what is under it (m), or a long way if nothing is.
 func _drop_under(p: Vector3) -> float:
 	var space: PhysicsDirectSpaceState3D = study.get_world_3d().direct_space_state
@@ -252,11 +269,20 @@ func after(_delta: float, events: Dictionary) -> void:
 				break
 	if motor.rider == null and not motor.swimming and motor.move != "tumble":
 		var chest: Vector3 = motor.feet+Vector3.UP*AirRing.CHEST*motor.size
+		var took := false
 		for r: Node3D in rings:
 			if r.middle().distance_to(chest) < NEAR and r.try_take(chest,motor.size):
 				_take_ring(r)
 				events["air_ring"] = r.middle()
+				took = true
 				break
+		# Down onto a ring's stones: the trampoline (every time).
+		for r: Node3D in rings:
+			if r.middle().distance_to(motor.feet) >= NEAR: continue
+			if r.try_bounce(motor.feet,motor.velocity,motor.size) and not took and not motor.grounded:
+				events["ring_bounce"] = {"at":r.middle(),"hard":-motor.velocity.y}
+				_bounce_ring(r)
+				took = true
 	# On a balustrade's coping: only noted.
 	var rail: Node3D = null
 	if under.is_valid():

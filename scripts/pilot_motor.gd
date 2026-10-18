@@ -74,8 +74,8 @@ signal harmed(amount: int, cause: String, source: Object)
 ## steered, no wall, wall run or ledge taking him. On the touch the step
 ## says "slammed" (how hard, m/s) with "landed", and the landing plants him
 ## (SLAM_PLANT): his flat pace stopped, and the crouch held through the slam
-## doesn't slide him or surf a slope until it is let go and pressed afresh
-## (`planted`); Jump buffered for the touch jumps out of it (it opens no sail). A twirl ends
+## holds him crouched where he hit, no slide or surf down a slope, until it
+## is let go and pressed afresh (`planted`); Jump buffered for the touch jumps out of it (it opens no sail). A twirl ends
 ## it. Jump pressed in the drive with room for the sail (its `can_open`,
 ## so a press within the buffer of the touch is still the jump out)
 ## cancels it: the pace past TERMINAL given up, the sail opens (the step
@@ -718,8 +718,8 @@ var chain := 0
 var move := ""
 ## Held by the caller: the crouch button, and the twirl's.
 var crouch := false
-## Planted by a slam's touch (SLAM_PLANT): the crouch held reads as standing
-## until let go.
+## Planted by a slam's touch (SLAM_PLANT): the crouch held keeps him
+## crouched, no surf, until let go.
 var planted := false
 var twirl := false
 ## Sliding, the stick carves (see above); off, it pushes him across as it
@@ -1410,7 +1410,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 	else: _since_ground += delta
 	if _since_land > chain_window: _last_chain = 0
 	if planted and (not crouch or not grounded): planted = false
-	var crouched := grounded and crouch and not planted and wade < swim_in*0.5
+	var crouched := grounded and crouch and wade < swim_in*0.5
 	var surfing := false
 	var surfed := move == "slide"
 	if grounded:
@@ -1425,7 +1425,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 			way = way/way.length() if way.length() > 0.5 else forward(facing)
 			var along := _gradient(ground,Vector2(feet.x,feet.z),way)
 			if along.length_squared() > slope.length_squared(): slope = along
-		surfing = _surfing(crouched,ground)
+		surfing = _surfing(crouched and not planted,ground)
 		move = "slide" if surfing else ("crouch" if crouched else "")
 		# Rolling out of a landing (the roll, a tech): his pace his own.
 		_roll_left = maxf(0.0,_roll_left-delta)

@@ -50,7 +50,7 @@ He keeps his flat pace the whole way, and the bar is still refilled.
 | 1 | Three springing slabs, 2.6 m below the islet edge, 6 m apart, each 0.3 m higher | A hop off the edge gives the 1.8 m of air a slam needs. Each launch tops out about 7.7 m up. Slamming over the next slab chains them. Slab 3's launch, sailed, lands on crag 1 about 27 m on. |
 | 2 | Crag 1 (x 186, r 6.5, top 32), then the kicker slab off its east edge | The kicker's launch, sailed, covers 38 m to the outcrop (x 233, r 5, top 30), with about 5 m to spare. |
 | 3 | The ring stair: a 7-pump slab off the outcrop, with four rings stepping 7.5 m up and 3 m back west over the outcrop | The launch carries him through ring 1. After that it's one Q per ring. Off ring 4 with one Q his feet reach about 68 m, and he sails 60 m east onto the slide rock's perch (top 54.5). A miss from the stair lands back on the outcrop. |
-| 4 | The slide rock: the perch, a 2 m step down, then a 35° slope 20 m long falling east, 13 m wide, to a lip at about 41 m | Hop off the step and slam into the slope (2.4 m of air), with crouch held. He boot-surfs and leaves the lip at **13.2 m/s**. |
+| 4 | The slide rock: the perch, a 2 m step down, then a 35° slope 20 m long falling east, 13 m wide, to a lip at about 41 m | Hop off the step and slam into the slope (2.4 m of air). The slam plants him crouched where he hits (see "Later changes"). Let go of crouch and press it again: he boot-surfs from a standstill and leaves the lip at about **13.0 m/s**. Landing on the slope crouched without a slam surfs at once, as before. |
 | 4A | North lane: a standing ring 1.6 m past the lip, its face tipped back 0.15 rad | Slide straight through it: the boost and refill, two Qs (apex about 53 at x 347), then the sail. He lands on the far crag (x 410, r 7.5, top at lip height) about 97 m from the lip. |
 | 4B | South lane: a flat ring 3.7 m past the lip and 3.6 m above it | Slide jump at the lip, then Q: his chest rises through it. Then the boost, three Qs (apex about 57.6 at x 357) and the sail, onto the far crag. Branch B needs one segment saved for the Q at the lip. |
 | Catch | The catch crag 11 m below the lip (x 333, r 6), with a slab and a 3-ring stair | A fork miss sails down onto it. The stair (one Q per ring, then two more Qs) and the sail take him back out to the far crag. |
@@ -101,7 +101,7 @@ to its height 8.0 m on without the sail or 44.7 m on with it.
 
 ## What doesn't work yet / notes
 
-- **The route's first slam.** On the slide rock, a press too soon after
+- **The route's first slam (old note, before the plant).** On the slide rock, a press too soon after
   hopping off the perch (under 1.8 m of air) is not a slam. He still lands
   crouched and slides, but without the slam's hit.
 - **Branch B's ring sits where a 12 to 15 m/s slide jump plus a Q
@@ -117,3 +117,17 @@ to its height 8.0 m on without the sail or 44.7 m on with it.
   strip, the ferry's loop and the parked plane's strip (x 107) are untouched.
   The hall chain's line runs north-north-east from the isle, well clear.
 - **No sound for the new boost** (the kit has no hook that fits, as before).
+
+## Later changes (round: movement tuning)
+
+- **A slam plants him.** A slam's touch stops his flat pace, and the crouch
+  held through it keeps him crouched in place, with no slide and no surf,
+  until it's let go and pressed again (`PilotMotor.SLAM_PLANT`, `planted`).
+  So on the slide rock: slam, let go of crouch, press it again, surf. A slab
+  launch after a slam goes straight up, with his flat pace from the stick.
+- **The rings' tops are trampolines.** Coming down onto a ring's stones
+  bounces him 5 m back up, every time, and refills the gauge (`AirRing.BOUNCE`,
+  `try_bounce`; foot_pieces `ring_bounces`, the step's "ring_bounce"). On
+  ring A, which stands on edge, the top is its upper rim.
+- **A side flip fills one whole segment** (`Updraft.FLIP_GIFT`).
+- See docs/design/movement-tuning/movement-tuning-handoff.md.

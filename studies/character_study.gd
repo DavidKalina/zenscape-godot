@@ -1145,6 +1145,13 @@ func _motor_events(events: Dictionary) -> void:
 			var way := Vector3.FORWARD.rotated(Vector3.UP,turn+TAU*float(i)/float(SPRING_DUST))
 			puffs.burst(at+way*0.5,"stone",0.9,way*4.0*wanderer_scale)
 		puffs.swirl(figure.global_position+Vector3.UP*0.5,1.0,1.0)
+	if events.has("ring_bounce"):
+		# Down onto an air ring's top (scripts/interactables/air_ring.gd): he
+		# squashes onto it as a landing, a stone thump, air torn round him
+		# as it throws him back up (the ring's own dip is its).
+		body.land(float(events.ring_bounce.hard))
+		steps.step("stone",0.8)
+		puffs.swirl(figure.global_position+Vector3.UP*0.3,0.8,0.8)
 	if events.has("air_ring"):
 		# Through an air ring (scripts/interactables/foot_pieces.gd): air
 		# torn round him as it pops him up (the ring's own burst and the

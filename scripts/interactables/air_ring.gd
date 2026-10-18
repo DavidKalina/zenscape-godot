@@ -7,6 +7,14 @@ extends Node3D
 ## Its light goes out in a burst (a bright hoop thrown out, motes off the
 ## rim) and comes back over COOL s, when it may be taken again.
 ##
+## Its top is a trampoline (`try_bounce`): his feet coming down onto its
+## stones bounce him BOUNCE m back up, every time with no cool-down (the
+## host refills the updraft's charge each bounce too); the ring dips and
+## rings out under him (FLEX_*). On a flat ring the top is the whole band of
+## stones; on one tipped up on edge (as the slide rock's ring A) it is the
+## stones' upper face wherever he comes down on them, in practice its upper
+## rim.
+##
 ## Lengths go by the walker's size where they meet him (`try_take`); the
 ## ring itself is built at size 1. It has no collision: he flies through.
 const RuinKit = preload("res://scripts/ruin_kit.gd")
@@ -27,6 +35,15 @@ const CHEST := 0.9
 ## every step two updrafts); s before it is taken again.
 const POP := 6.0
 const COOL := 2.5
+## The trampoline: m a bounce throws him (the launch's hang counted); m
+## his soles reach past the stones' edge; the flex: m it dips along its
+## axis, s it rings out over, its ringing (Hz), the stones' squash.
+const BOUNCE := 5.0
+const SOLE := 0.3
+const FLEX_DIP := 0.32
+const FLEX_TIME := 0.7
+const FLEX_HZ := 3.2
+const FLEX_SQUASH := 0.35
 ## The look: the band's light, its hoop thrown out on a take (s, the most
 ## it grows by), the drift (m, s) and turn (rad/s).
 const LIGHT := Color("fbf6ea")
@@ -43,6 +60,10 @@ var takes := 0
 var _home := Transform3D.IDENTITY
 var _clock := 0.0
 var _prev := NAN               # his chest's height over the plane last frame
+var _feet_prev := NAN          # his feet's height over the stones' top last frame
+var bounces := 0
+var _flex_t := -1.0
+var _flex_k := 1.0             # how hard the last bounce hit (0..1)
 var _burst_t := -1.0
 var _ready_at := -10.0
 var _was_cool := false
@@ -145,8 +166,12 @@ func middle() -> Vector3:
 func advance(delta: float) -> void:
 	_clock += delta
 	cool = maxf(cool-delta,0.0)
-	transform = Transform3D(_home.basis,_home.origin+_home.basis.y*BOB*sin(_clock*TAU/BOB_TIME))
+	var flex := _flex(delta)
+	transform = Transform3D(_home.basis,_home.origin+_home.basis.y*(BOB*sin(_clock*TAU/BOB_TIME)-FLEX_DIP*_flex_k*flex))
 	_stones.rotation.y = _clock*SPIN
+	var sq := FLEX_SQUASH*_flex_k*maxf(flex,-0.5)
+	_stones.scale = Vector3(1.0+sq*0.25,1.0-sq,1.0+sq*0.25)
+	_band.scale = Vector3(1.0+sq*0.2,1.0,1.0+sq*0.2)
 	# The band: dark just after a take, lit back up over COOL, a swell as it
 	# comes back, and a slow breath while lit.
 	var back := 1.0-cool/COOL
@@ -169,6 +194,56 @@ func advance(delta: float) -> void:
 	if cool <= 0.0 and _was_cool:
 		_ready_at = _clock
 		_was_cool = false
+
+## The flex now: 1 at the bottom of the dip, ringing out to 0 (signed).
+func _flex(delta: float) -> float:
+	if _flex_t < 0.0: return 0.0
+	_flex_t += delta
+	if _flex_t >= FLEX_TIME:
+		_flex_t = -1.0
+		return 0.0
+	var u := _flex_t/FLEX_TIME
+	# Down hard in the first few frames, then rung out, dying away.
+	var into := clampf(_flex_t/0.05,0.0,1.0)
+	return into*cos(TAU*FLEX_HZ*maxf(_flex_t-0.05,0.0))*(1.0-u)*(1.0-u)
+
+## The top of its stones over the ring's circle nearest `feet`: {q (the
+## circle point), y (the stones' top there, world)}; {} on its axis.
+func _top(feet: Vector3) -> Dictionary:
+	var n := global_transform.basis.y.normalized()
+	var rel := feet-middle()
+	var flat := rel-n*rel.dot(n)
+	if flat.length() < 0.01: return {}
+	var radial := flat.normalized()
+	var q := middle()+radial*RADIUS
+	# Their height along the axis and depth along the radius, as each faces up.
+	return {"q":q,"y":q.y+HIGH*0.5*absf(n.y)+DEPTH*0.5*absf(radial.y)}
+
+## Whether his feet, coming down (`vel` his velocity), crossed the top of
+## its stones since the last frame where they are under him; if so it
+## flexes and he is to bounce (the host's). Any time, no cool-down.
+func try_bounce(feet: Vector3, vel: Vector3, size := 1.0) -> bool:
+	var t := _top(feet)
+	if t.is_empty():
+		_feet_prev = NAN
+		return false
+	var q: Vector3 = t.q
+	var d: float = feet.y-float(t.y)
+	var prev := _feet_prev
+	_feet_prev = d
+	if is_nan(prev) or vel.y >= 0.0 or prev < 0.0 or d > 0.0: return false
+	if prev-d > 4.0: return false
+	var reach := maxf(DEPTH,HIGH)*0.5+SOLE*maxf(size,0.5)
+	if Vector2(feet.x-q.x,feet.z-q.z).length() > reach: return false
+	bounces += 1
+	_flex_t = 0.0
+	_flex_k = clampf(-vel.y/12.0,0.45,1.0)
+	return true
+
+## The top of its stones under `feet`, world y (for setting him on it).
+func top_at(feet: Vector3) -> float:
+	var t := _top(feet)
+	return feet.y if t.is_empty() else float(t.y)
 
 ## Whether his chest crossed its plane inside the hole since the last frame
 ## (either way); if so, and it is lit, it is taken. `chest` his chest point.
