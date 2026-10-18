@@ -60,6 +60,9 @@ is a playground the player works through, built as one set piece.
 
 | Element | Its job (what it gates) | Tool needed / tech margin | Deliberate shortcut? |
 |---|---|---|---|
+| Colonnade spine (motif, authored seed 61, at its own study's coordinates: ridge x 14..150) | The core: holds 10 of the part spots (cella, pulpit, two portals, balcony, south slab, bench end, three tail fragments); its own stairs, slabs and rope bridges are its routes | Its own (the colonnade study's routes) | The spine's own |
+| Strip islet (x 20..122, z ~10..23, turf y 31) | Take-off and landing: 99 m `longest_run`, the plane parked at its east end facing west | None (walk) | No |
+| Strip footbridge (lobe x 110 z 4.6, y 31 to the bench lip z -2.6, y 32.7) | The only way from the strip onto the spine (the bench) | Walk over it: the gap is about 7 m with the flank falling under it, past a long jump's 4.24 m carry | No |
 
 ## Constraints
 

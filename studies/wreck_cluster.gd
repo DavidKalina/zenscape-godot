@@ -1,12 +1,14 @@
 extends "res://studies/kit_isle.gd"
-## The wreck cluster (docs/design/wreck-cluster/round1.md): a run's start.
-## The plane lies broken on a small cluster of four land masses in open sky
-## (studies/wreck_cluster_art.gd): its six parts (scripts/plane_arc/
+## The wreck cluster (docs/design/wreck-cluster/round1.md, rebuilt by
+## spec-wreck-colonnade.md): a run's start. The plane lies broken on a
+## cluster built round the colonnade spine in open sky (studies/
+## wreck_cluster_art.gd): its six parts (scripts/plane_arc/
 ## wreck_arc.gd on scripts/plane_arc/plane_arc.gd) are dealt at random to a
 ## pool of candidate spots across the cluster, found on foot, carried back
 ## and fitted; with all six fitted it flies. A kit isle (studies/
 ## kit_isle.gd: the pilot, the look, the plane and its hand landing, the
-## grass and life), with the rune knight on the causeway by default.
+## grass and life), with the rune knight on his deck by default (once the
+## cluster has one: Art.knight_line()).
 ##
 ##   N            re-deal: the plane back on its spot, broken, every part
 ##                off it and dealt to fresh spots (a new seed; the pause
@@ -28,6 +30,11 @@ extends "res://studies/kit_isle.gd"
 ## memory while this scene runs (unless --ledger=<path> names a file), and
 ## the parts never touch it.
 const Art = preload("res://studies/wreck_cluster_art.gd")
+const Spine = preload("res://studies/colonnade_spine_isle_art.gd")
+## The colonnade spine, built by its own motif at its authored seed, where
+## its own study stands it (studies/colonnade_spine_isle.gd).
+const SpineMotif = preload("res://scripts/kit_isle/motif_colonnade_spine.gd")
+const Footbridge = preload("res://scripts/footbridge.gd")
 const WreckSky = preload("res://studies/wreck_cluster_sky.gd")
 const WreckArc = preload("res://scripts/plane_arc/wreck_arc.gd")
 const PartSpots = preload("res://scripts/plane_arc/part_spots.gd")
@@ -59,6 +66,7 @@ const RAISE_MOST := 2.0
 const SOLID_MASK := 1|(1 << 11)
 
 var lands := {}
+var motif := SpineMotif.new()
 var foot_host: Node3D = null
 var spot_root: Node3D = null
 ## The spot nodes, in the order of Art.spots() (null where deleted).
@@ -126,9 +134,9 @@ func _add_deal_row() -> void:
 
 func _load_pack() -> void:
 	var at := Art.PLANE_AT
-	start = Vector3(at.x+1.0,Art.TOP,at.y-2.6)
-	start_face = Vector2(0.0,1.0)
-	lost = Art.TOP-45.0
+	start = Vector3(at.x-2.0,Art.STRIP_TOP,at.y-6.5)
+	start_face = Vector2(0.0,-1.0)
+	lost = Art.TOP-35.0
 	_last_stood = start
 	stations = []
 
@@ -142,10 +150,11 @@ func isle_top() -> float:
 	return Art.TOP
 
 func isle_summit() -> Vector3:
-	return Vector3(Art.TOWER_AT.x,Art.plateau_top()+Art.TOWER_HEIGHT,Art.TOWER_AT.y)
+	return Vector3(Spine.GATE_X,Art.TOP+Spine.PODIUM,Spine.zc(Spine.GATE_X))
 
+## The plants keep off the spine's way, shelf and bench.
 func flora_site() -> KitFlora.Site:
-	return KitFlora.Site.new(Art.TOP)
+	return motif.flora_site()
 
 func flora_seed() -> int:
 	return 421
@@ -154,11 +163,11 @@ func sky_script() -> Script:
 	return WreckSky
 
 func capture_look() -> Vector3:
-	return Vector3(0.0,Art.TOP+2.0,0.0)
+	return Vector3(80.0,Art.TOP+6.0,0.0)
 
 ## The plane parked on the strip's west end, facing east down it.
 func plane_home() -> Vector4:
-	var y := Art.TOP
+	var y := Art.STRIP_TOP
 	var top := _turf_top(get_world_3d().direct_space_state,Art.PLANE_AT.x,Art.PLANE_AT.y)
 	if top != Vector3.INF: y = top.y
 	return Vector4(Art.PLANE_AT.x,y,Art.PLANE_AT.y,Art.PLANE_HEADING)
@@ -173,6 +182,8 @@ func _build_art() -> void:
 	var began := Time.get_ticks_msec()
 	LayoutOverrides.begin("wreck_cluster")
 	WorldIslands.begin()
+	motif.build(art)
+	for land: Array in motif.lands: add_turf(land[0],land[1],land[2])
 	for spec: Array in Art.lands():
 		var land := Art.build_land(spec)
 		art.add_child(land)
@@ -182,7 +193,7 @@ func _build_art() -> void:
 		if not "--no-turf-lips" in LaunchArgs.user_args(): TurfLips.dress(land,hash(land.name))
 	if not LayoutOverrides.islands().is_empty(): isle_ready.connect(_place_saved_islands,CONNECT_ONE_SHOT)
 	for p: Array in Art.pieces(): _place_piece(str(p[0]),RuinKit.piece(str(p[1]),int(p[2]),float(p[3])),p[4],float(p[5]))
-	_place_piece("tower",Art.tower(),Art.tower_foot(),0.0)
+	_build_bridge()
 	_build_foot_pieces()
 	_build_spots()
 	if DevKeys.enabled():
@@ -204,22 +215,23 @@ func _place_piece(called: String, piece: Node3D, foot: Vector3, yaw: float) -> v
 	art.add_child(piece)
 	LayoutOverrides.track(name,piece,"piece",coded)
 
-## The swing ropes' frames, the air ring and its perch (scripts/
-## interactables/foot_pieces.gd, named under wreck_cluster/).
+## The footbridge from the strip's lobe up onto the spine's south bench
+## (a live rope bridge, as the spine's own).
+func _build_bridge() -> void:
+	var ends: Array = Art.bridge_ends()
+	var a: Vector3 = ends[0]
+	var b: Vector3 = ends[1]
+	var bridge: MeshInstance3D = Footbridge.live(Footbridge.build_mesh(a,b,441),a,b,441)
+	bridge.name = "StripBridge"
+	art.add_child(bridge)
+
+## The foot pieces' host (scripts/interactables/foot_pieces.gd, named under
+## wreck_cluster/): the ropes and rings the later steps stand.
 func _build_foot_pieces() -> void:
 	foot_host = FootPieces.new()
 	add_child(foot_host)
 	foot_host.attach(self)
 	foot_host.name_under("wreck_cluster")
-	var k := 0
-	for f: Array in Art.rope_frames():
-		foot_host.call_next(str(f[0]))
-		foot_host.rope_frame(f[1],f[2],3.0,Art.frame_height(),Art.SwingRope.LENGTH,431+k)
-		k += 1
-	foot_host.call_next("air_ring")
-	foot_host.air_ring(Art.RING_AT,433)
-	foot_host.call_next("perch")
-	foot_host.stones(434,[Art.PERCH],"Perch")
 	LayoutOverrides.build_added(foot_host)
 
 # --- The part spots -----------------------------------------------------------------
@@ -242,6 +254,7 @@ func _build_spots() -> void:
 		node.name = "PartSpot_%02d" % (i+1)
 		node.set_meta("mass",str(row[0]))
 		node.set_meta("asks",str(row[1]))
+		node.set_meta("holds",row[3])
 		var coded := Transform3D(Basis.IDENTITY,row[2])
 		node.transform = LayoutOverrides.xform(name,coded)
 		spot_root.add_child(node)
@@ -261,7 +274,7 @@ func _build_spots() -> void:
 		node.add_child(marker)
 		var label := Label3D.new()
 		label.name = "Label"
-		label.text = "part_spot_%02d\n%s" % [i+1,row[1]]
+		label.text = "part_spot_%02d\n%s\n%s" % [i+1,row[1]," ".join(PackedStringArray(row[3]))]
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		label.no_depth_test = true
 		label.font_size = 40
@@ -370,7 +383,7 @@ func _add_life() -> void:
 	dealt = deal(deal_seed)
 	_lay_deal(LaunchArgs.user_args().has("--parts-carried"))
 	plane_arc.start_by_flag()
-	if not LaunchArgs.user_args().has("--no-rune-knight"):
+	if not LaunchArgs.user_args().has("--no-rune-knight") and not Art.knight_line().is_empty():
 		_make_knight()
 		wind_blast = WindBlastStandin.new()
 		add_child(wind_blast)
@@ -383,7 +396,7 @@ func _add_life() -> void:
 ## The rune knight on his causeway (scripts/enemies/rune_knight.gd), made
 ## afresh (a re-deal reforms him).
 func _make_knight() -> void:
-	if LaunchArgs.user_args().has("--no-rune-knight"): return
+	if LaunchArgs.user_args().has("--no-rune-knight") or Art.knight_line().is_empty(): return
 	if rune_knight != null and is_instance_valid(rune_knight):
 		if rune_knight.core_rune != null and is_instance_valid(rune_knight.core_rune): rune_knight.core_rune.queue_free()
 		rune_knight.queue_free()
