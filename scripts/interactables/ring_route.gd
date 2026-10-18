@@ -215,8 +215,8 @@ static func _land(study: Node3D, host: Node3D, called: String, land: Node3D, mid
 	Layout.track(key,land,"land",coded)
 
 ## A slam-spring slab at `at` (its top), turned `yaw`, by its name.
-static func _slab(host: Node3D, called: String, at: Vector3, size: Vector3, yaw: float, seed_value: int, pumps := 0.0) -> void:
-	var key := "ring_route/"+called
+static func _slab(host: Node3D, called: String, at: Vector3, size: Vector3, yaw: float, seed_value: int, pumps := 0.0, group := "ring_route") -> void:
+	var key := group+"/"+called
 	if Layout.deleted(key): return
 	var coded := Transform3D(Basis(Vector3.UP,yaw),at)
 	var s: Node3D = host.bob_slab(at,size,yaw,seed_value)
@@ -226,8 +226,8 @@ static func _slab(host: Node3D, called: String, at: Vector3, size: Vector3, yaw:
 	Layout.track(key,s,"bob_slab",coded,{"host":host,"pumps":float(s.spring_pumps)})
 
 ## An air ring at `at`, turned `yaw`, tipped `tip`, by its name.
-static func _ring(host: Node3D, called: String, at: Vector3, seed_value: int, yaw := 0.0, tip := 0.0) -> void:
-	var key := "ring_route/"+called
+static func _ring(host: Node3D, called: String, at: Vector3, seed_value: int, yaw := 0.0, tip := 0.0, group := "ring_route") -> void:
+	var key := group+"/"+called
 	if Layout.deleted(key): return
 	var coded := Transform3D(Basis(Vector3.UP,yaw)*Basis(Vector3.RIGHT,tip),at)
 	var r: Node3D = host.air_ring(at,seed_value,yaw,tip)

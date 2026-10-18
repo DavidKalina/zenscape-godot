@@ -162,12 +162,11 @@ static func build(study: Node3D) -> Node3D:
 	host.add_child(beam_stones)
 	# 3: the ferry back across.
 	host.drift_slab(PackedVector3Array(FERRY),FERRY_PERIOD,false,0.0,Vector3(2.4,0.6,2.4),0.0,330)
-	# 4: the bobbing slabs out to the east islet.
-	for i in range(BOBS.size()):
-		var slab: Node3D = host.bob_slab(BOBS[i],Vector3(2.3,0.7,2.2),0.4+0.5*i,340+i)
-		if i == 0: slab.spring_pumps = RING_SLAB_PUMPS
-	# 5: the air rings over the first slab, up to the perch.
-	for i in range(RINGS.size()): host.air_ring(RINGS[i],350+i,0.3*i)
+	# 4: the bobbing slabs out to the east islet, each by its name
+	# (`foot_route/bob_slab_<n>`) through the layout file.
+	for i in range(BOBS.size()): RingRoute._slab(host,"bob_slab_%d" % (i+1),BOBS[i],Vector3(2.3,0.7,2.2),0.4+0.5*i,340+i,RING_SLAB_PUMPS if i == 0 else 0.0,"foot_route")
+	# 5: the air rings over the first slab, up to the perch (`foot_route/ring_<n>`).
+	for i in range(RINGS.size()): RingRoute._ring(host,"ring_%d" % (i+1),RINGS[i],350+i,0.3*i,0.0,"foot_route")
 	var perch := Art.floating_stones(360,[{"name":"perch","at":PERCH_AT,"size":PERCH,"yaw":0.35,"kind":"block"},
 		{"name":"marker","at":PERCH_AT+Vector3(1.1,1.5,-0.9),"size":Vector3(0.55,1.9,0.45),"yaw":0.6,"kind":"sarsen","grounded":true}])
 	perch.name = "RingPerch"
