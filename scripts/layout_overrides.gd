@@ -18,9 +18,11 @@ extends RefCounted
 ## `rot` is the basis's Euler angles in degrees (Godot's YXZ order). Each
 ## moved object is kept at its absolute transform; nothing follows it.
 ##
-## Kinds: "air_ring" and "bob_slab" (foot_pieces.gd pieces, their rest pose
-## set by `layout_place`), "land" (a KitLand crag built in world space: its
-## node is offset by the move from its coded transform). `spawn` makes the
+## Kinds: "air_ring", "bob_slab", "sink_slab" and "drift_slab" (foot_pieces.gd
+## pieces, their rest pose set by `layout_place`); every other kind ("land",
+## a KitLand crag; "balustrade", "rope", "stones": foot_pieces.gd's named
+## pieces) is built in world space and moved by its node's offset from its
+## coded transform (a rope's anchor follows its node, swing_rope.gd). `spawn` makes the
 ## kinds the file can add (air_ring, bob_slab).
 
 const VERSION := 1
@@ -81,16 +83,26 @@ static func current(name: String) -> Transform3D:
 	var e: Dictionary = entries[name]
 	var node: Node3D = e.node
 	if node.has_method("layout_pose"): return node.layout_pose()
-	if str(e.kind) == "land": return node.transform*(e.coded as Transform3D)
-	return node.global_transform
+	return node.transform*(e.coded as Transform3D)
 
 ## `name`'s object set at `t` (only its own transform: nothing rebuilt).
 static func apply(name: String, t: Transform3D) -> void:
 	var e: Dictionary = entries[name]
 	var node: Node3D = e.node
 	if node.has_method("layout_place"): node.layout_place(t)
-	elif str(e.kind) == "land": node.transform = t*(e.coded as Transform3D).affine_inverse()
-	else: node.global_transform = t
+	else: node.transform = t*(e.coded as Transform3D).affine_inverse()
+
+## The file's moved names put back where it has them (after the islands'
+## saved moves carried what stands on them: the file keeps where each
+## stands in the world). Returns the nodes set.
+static func reapply() -> Array:
+	var out: Array = []
+	var moved: Dictionary = data.get("moved",{})
+	for name: String in moved:
+		if not entries.has(name) or not is_instance_valid(entries[name].node): continue
+		apply(name,from_json(moved[name]))
+		out.append(entries[name].node)
+	return out
 
 ## A land's outline (x, z) as moved by `t` from `coded` (for the turf's
 ## registration: flora and the gap test read world outlines).

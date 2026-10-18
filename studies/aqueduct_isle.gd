@@ -429,6 +429,9 @@ func _place_saved_islands() -> void:
 	var feet: Vector3 = motor.feet
 	var done := WorldIslands.place_saved(saved,world_roots(),self)
 	if done.is_empty(): return
+	# The named pieces the file moved stand where it has them (in the
+	# world), whatever island carried them, each on the island under it.
+	for n: Node3D in LayoutOverrides.reapply(): WorldIslands.reanchor(n)
 	for name: String in done:
 		var i: Dictionary = WorldIslands.islands[name]
 		var xf: Transform3D = i.xf

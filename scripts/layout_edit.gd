@@ -25,7 +25,7 @@ const TOGGLE := KEY_F4
 const LOOK_RATE := 0.004
 const PICK_PX := 28.0
 ## A pick's screen reach round a ring's or a slab's middle (m).
-const REACH := {"air_ring":AirRing.RADIUS+0.3,"bob_slab":1.5}
+const REACH := {"air_ring":AirRing.RADIUS+0.3,"bob_slab":1.5,"sink_slab":1.5,"drift_slab":1.5,"rope":4.0}
 const LIFT := 0.25
 const TURN := 15.0
 const SNAP := 0.05
@@ -298,7 +298,7 @@ func pick(at: Vector2) -> String:
 	for name: String in Layout.entries:
 		var e: Dictionary = Layout.entries[name]
 		if not REACH.has(e.kind) or not is_instance_valid(e.node): continue
-		var mid: Vector3 = (e.node as Node3D).global_position
+		var mid: Vector3 = e.node.layout_mid() if e.node.has_method("layout_mid") else (e.node as Node3D).global_position
 		if cam.is_position_behind(mid): continue
 		var r: float = REACH[e.kind]
 		var c := cam.unproject_position(mid)
@@ -332,8 +332,10 @@ func click(at: Vector2) -> void:
 		_dragging = true
 		return
 	# Dragged in the level plane through its middle, held where it was taken.
+	# (A rope by the level through its middle, where it was picked.)
 	var t := Layout.current(name)
-	_drag_y = t.origin.y
+	var node: Node3D = Layout.entries[name].node
+	_drag_y = node.layout_mid().y if node.has_method("layout_mid") else t.origin.y
 	var p := _on_level(at,_drag_y)
 	_drag_off = t.origin-p if p != Vector3.INF else Vector3.ZERO
 	_dragging = p != Vector3.INF
@@ -349,10 +351,18 @@ func _on_level(at: Vector2, y: float) -> Vector3:
 	if k <= 0.0 or k > 3000.0: return Vector3.INF
 	return from+way*k
 
-## The mouse up: an island let go (what reads its place redone).
+## The mouse up: an island let go (what reads its place redone); a piece
+## given to the island it stands over now.
 func let_go() -> void:
+	var was := _dragging
 	_dragging = false
 	if not _grab.is_empty(): _settle()
+	elif was and selected != "" and not is_island(selected): _reanchor(selected)
+
+## Piece `name` given to the island under it now (or none), its box redrawn.
+func _reanchor(name: String) -> void:
+	var on := Islands.reanchor(Layout.entries[name].node)
+	if on != "" or Islands.anchored: _show_status()
 
 func drag_to(at: Vector2) -> void:
 	if selected == "": return
@@ -379,6 +389,7 @@ func lift(dy: float) -> void:
 	t.origin.y = snappedf(t.origin.y+dy,SNAP)
 	_drag_y += dy
 	_put(selected,t)
+	if not _dragging: _reanchor(selected)
 
 ## Turned `deg` about the world's up, round its own middle.
 func turn(deg: float) -> void:
@@ -445,9 +456,11 @@ func delete_selected() -> void:
 	var e: Dictionary = Layout.entries[name]
 	var node: Node3D = e.node
 	if host != null:
-		(host.get("rings") as Array).erase(node)
-		(host.get("slabs") as Array).erase(node)
+		for list: String in ["rings","slabs","ropes","rails"]: (host.get(list) as Array).erase(node)
 		if host.get("on") == node: host.set("on",null)
+		if host.get("on_rail") == node: host.set("on_rail",null)
+	var isl := str(node.get_meta("world_island","")) if node.has_meta("world_island") else ""
+	if isl != "" and Islands.islands.has(isl): (Islands.islands[isl].members as Array).erase(node)
 	if str(e.kind) == "land":
 		# Its turf stays registered (flora, outlines) until the reload: put
 		# out of sight and out of the physics space, not freed.

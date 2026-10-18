@@ -24,11 +24,14 @@ const RAIL_LEGS := [4,5,6,7]
 static func build(study: Node3D, offset: Vector3) -> void:
 	var host: Node3D = preload("res://scripts/interactables/aqueduct_foot_route.gd").host_of(study)
 	var by := Transform3D(Basis.IDENTITY,offset)
+	# Each by its name (`stair_clouds/balustrade_<n>`, `bob_slab_<n>`).
+	host.name_under("stair_clouds")
 	for s: int in RAIL_LEGS:
 		host.balustrade(Balustrade.grand_stair_rail(by*Stair.leg_frame(s),-1.0),400+s,0.35,Balustrade.grand_stair_floor(by*Stair.leg_frame(s),-1.0))
 	for i in range(4):
 		var p := Stair.side_at(0,-4.5+3.6*i,Stair.W+2.2)
 		host.bob_slab(by*Vector3(p.x,Stair.TOP+1.0+0.9*i,p.y),Vector3(2.4,0.7,2.2),0.2*i,420+i)
+	host.name_under("")
 	# On its own scene its spots are the only ones (the aqueduct isle's
 	# route adds them to its own).
 	if offset == Vector3.ZERO: preload("res://scripts/interactables/aqueduct_foot_route.gd").start_at(study,spots(offset))

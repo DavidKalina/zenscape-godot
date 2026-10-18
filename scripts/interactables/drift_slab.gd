@@ -80,3 +80,17 @@ func _along(d: float) -> Vector3:
 			var span: float = _lengths[i]-_lengths[i-1]
 			return a.lerp(b,clampf((d-_lengths[i-1])/maxf(span,1e-4),0.0,1.0))
 	return path[0]
+
+## Its rest pose for the layout editor (scripts/layout_overrides.gd): its
+## path's start, turned its first yaw.
+func layout_pose() -> Transform3D:
+	return Transform3D(Basis(Vector3.UP,yaw),path[0] if not path.is_empty() else rest.origin)
+
+## Moved to `t` (the layout editor): its whole path carried by the move
+## (turned about its start), drawn there now.
+func layout_place(t: Transform3D) -> void:
+	var d := t*layout_pose().affine_inverse()
+	for i in range(path.size()): path[i] = d*path[i]
+	var f := d.basis*Vector3.FORWARD
+	yaw += atan2(-f.x,-f.z)
+	super.layout_place(Transform3D(Basis(Vector3.UP,yaw),t.origin))

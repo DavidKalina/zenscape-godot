@@ -14,7 +14,7 @@ extends RefCounted
 ## a leaf over two is a span (a link's part, for the links step).
 ## Floating pieces the layout names as rings and slabs are always free.
 
-const FREE_KINDS := ["air_ring","bob_slab","land"]
+const FREE_KINDS := ["air_ring","bob_slab","sink_slab","drift_slab","land"]
 ## Not anchored: the grass and flowers (scripts/kit_isle/kit_flora.gd's
 ## chunks, cut on a grid, not by island; regrown over the turf when an
 ## island is let go, not moved) and the editor's own selection box.
@@ -157,8 +157,26 @@ static func _anchor(n: Node3D, depth: int) -> void:
 		if n.get_child_count() == 0 or depth >= DEPTH:
 			if over.size() > 1: spans.append({"node":n,"islands":over})
 			return
+	# A named piece (scripts/layout_overrides.gd) moves whole: over one
+	# island it is that island's, else free; never split into its parts.
+	if n.has_meta("layout_name"): return
 	for c: Node in n.get_children():
 		if c is Node3D: _anchor(c as Node3D,depth+1)
+
+## `node` (a named piece the world view moved, or the file put back) given
+## to the island it stands over now, or to none.
+static func reanchor(node: Node3D) -> String:
+	if not anchored: return ""
+	var was := str(node.get_meta("world_island","")) if node.has_meta("world_island") else ""
+	if was != "" and islands.has(was): (islands[was].members as Array).erase(node)
+	if node.has_meta("world_island"): node.remove_meta("world_island")
+	if node.has_meta("layout_name") and _free_kind(str(node.get_meta("layout_name"))): return ""
+	var over := _over(drawn_box(node))
+	if over.size() != 1: return ""
+	var name: String = over[0]
+	(islands[name].members as Array).append(node)
+	node.set_meta("world_island",name)
+	return name
 
 static func _free_kind(layout_name: String) -> bool:
 	var e: Dictionary = preload("res://scripts/layout_overrides.gd").entries.get(layout_name,{})
