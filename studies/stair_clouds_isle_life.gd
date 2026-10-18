@@ -36,7 +36,7 @@ func leaf_spots() -> Array:
 ## The kit isles' songbirds (scripts/kit_isle/kit_birds.gd), their perches
 ## the shrines': the fallen pier and the terrace arch (a grid of points
 ## over each, so the ray finds their tops), the piers' stubs and the
-## summit's stones.
+## summit's turret and lancet walls (a finer grid: their tops are thin).
 class StairBirds extends "res://scripts/kit_isle/kit_birds.gd":
 	const HOMES := [["sparrow",4,"fallen"],["goldfinch",3,"stubs"],["robin",2,"summit"]]
 
@@ -56,10 +56,19 @@ class StairBirds extends "res://scripts/kit_isle/kit_birds.gd":
 						for j in range(-3,4):
 							var q := f*Vector3(0.6*i,0.0,0.6*j)
 							(found.fallen as Array).append(Vector2(q.x,q.z))
-		for off: Vector2 in [Vector2(-5.0,-4.0),Vector2(-3.0,-4.5),Vector2(3.0,-4.5),Vector2(5.0,-4.0),Vector2(0.0,-9.0)]:
-			var p := Stair.side_at(Stair.SIDES-1,off.x,off.y-3.0)
-			(found.summit as Array).append(p)
+		for f: Transform3D in summit_frames():
+			for i in range(-6,7):
+				for j in range(-6,7):
+					var q := f*Vector3(0.3*i,0.0,0.3*j)
+					(found.summit as Array).append(Vector2(q.x,q.z))
 		return found
+
+	## The summit's turret and lancet walls (Stair.summit's frames): the
+	## robins sit on their broken tops.
+	static func summit_frames() -> Array[Transform3D]:
+		var out: Array[Transform3D] = [Stair.pad_frame(7,12.0,0.35,Stair.SUMMIT)]
+		for k in range(2): out.append(Stair.pad_frame(7,8.5+3.0*float(k),-0.5+0.5*float(k),Stair.SUMMIT,PI))
+		return out
 
 # --- On-foot tokens ---------------------------------------------------------------------
 
