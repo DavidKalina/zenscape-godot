@@ -8,7 +8,9 @@ extends Node3D
 ##   volley  3..5 dense air balls in a fan, one after another across it
 ##           (the dragon's air blast, scripts/dragon_air_blast.gd): each
 ##           bursts on the turf, on him if it passes near, or pops on stone
-##           (a pillar takes it). Sidestep through the fan, or hide.
+##           (a pillar takes it). Each curves after him a little
+##           (BALL_HOMING), so a lazy drift is met; a late sidestep, a jump
+##           or a pillar still beats it.
 ##   ring    a jaw slam, then a ring of wind rolling out along the turf
 ##           (RING_R m, the dragon burst's front law, so the grass it
 ##           flattens keeps pace): it bowls him over unless he is in the air
@@ -38,6 +40,25 @@ const BALL_FLIGHT := 48.0
 const BALL_FUSE := 0.25
 const BALL_KNOCK := Vector2(6.5,1.4)
 const BALL_DOWN := 0.9
+## The volley's homing (DragonAirBlast `homing`, `homing_fade`,
+## `homing_cone`, `homing_follow`): each ball turns after him at most
+## BALL_HOMING rad a second, that turn fading to none over BALL_HOMING_FADE
+## s of its flight, and gives him up for good once he is BALL_HOMING_CONE
+## rad off its heading (it never hooks round) or within BALL_HOMING_BLIND m
+## (its last stretch flies straight: a late step beats it). It leads his
+## flat pace BALL_HOMING_LEAD of the way, read slowly (BALL_HOMING_EASE a
+## second): a steady walk is met; a jump or a fresh change of step isn't.
+## It homes on its own aim
+## moved as he has moved since the shot, so the fan keeps its spread and
+## follows his step. `--volley-homing=<rad/s>` sets the turn (0: straight,
+## as before), `--volley-fade=<s>`, `--volley-blind=<m>` and
+## `--volley-lead=<share>`, `--volley-ease=<1/s>` the others.
+const BALL_HOMING := 1.4
+const BALL_HOMING_FADE := 1.6
+const BALL_HOMING_CONE := 1.1
+const BALL_HOMING_BLIND := 8.0
+const BALL_HOMING_LEAD := 1.0
+const BALL_HOMING_EASE := 3.0
 ## The ring: its reach (m), its run (s: the dragon burst's front law), the
 ## band it catches in (m either side), how high off the turf he must be to
 ## clear it (walker heights), its look's height (walker heights), the knock.
@@ -112,6 +133,14 @@ func _ready() -> void:
 		b.knock_out = BALL_KNOCK.x
 		b.knock_up = BALL_KNOCK.y
 		b.glow = 1.0
+		b.homing = _volley_knob("--volley-homing=",BALL_HOMING)
+		b.homing_fade = _volley_knob("--volley-fade=",BALL_HOMING_FADE)
+		b.homing_cone = BALL_HOMING_CONE
+		b.homing_blind = _volley_knob("--volley-blind=",BALL_HOMING_BLIND)
+		b.homing_lead = _volley_knob("--volley-lead=",BALL_HOMING_LEAD)
+		b.homing_ease = _volley_knob("--volley-ease=",BALL_HOMING_EASE)
+		b.lead_flat = true
+		b.homing_follow = true
 		b.see_through = see
 		add_child(b)
 		b.landed.connect(func(at: Vector3) -> void: head.hit_arena(at,DragonAirBlast.shock_radius()*0.6,0.6))
@@ -135,6 +164,13 @@ func _ready() -> void:
 	_draw_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_draw_node.extra_cull_margin = 2000.0
 	add_child(_draw_node)
+
+## A volley homing knob: `flag` (`--volley-homing=` the turn, rad/s;
+## `--volley-fade=` s; `--volley-blind=` m; `--volley-lead=` share; `--volley-ease=` 1/s) if given, else `fallback`.
+static func _volley_knob(flag: String, fallback: float) -> float:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with(flag): return maxf(0.0,a.trim_prefix(flag).to_float())
+	return fallback
 
 func _exit_tree() -> void:
 	if _ring_published: _publish_ring(Vector4.ZERO,Vector4.ZERO)
@@ -285,8 +321,10 @@ func step(delta: float) -> void:
 	var chest: Vector3 = head._chest(m)
 	var can_knock: bool = not bool(head.field.study.get("flying")) and not m.seized() and not bool(head.get("swallowed"))
 	_step_volley(delta,mouth)
+	# (Knocked, he isn't homed on: the rest of the volley flies on straight.)
+	var home := Vector3.INF if m.recovering() else chest
 	for b: DragonAirBlast in _blasts:
-		b.advance(delta,space,false,mouth,chest)
+		b.advance(delta,space,false,mouth,home)
 		if can_knock:
 			var v := b.pilot_knock(m.feet,m)
 			if v != Vector3.ZERO: _knock(m,v,BALL_DOWN,"volley")
