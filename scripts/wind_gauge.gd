@@ -37,6 +37,7 @@ const FADE_DOWN := 0.8                 # s to fade down
 const FADE_UP := 0.15                  # s to fade up
 const IDLE_ALPHA := 0.0                # alpha when faded down
 const CUE := 0.35                      # s the empty cue shakes
+const GIFT := 0.5                      # s a side flip's gifted segment flashes
 ## A stroke's bristles: offset across, width and alpha, as shares of the band.
 const BRISTLE_OFF: Array[float] = [0.0,-0.28,0.3,0.05]
 const BRISTLE_W: Array[float] = [1.0,0.42,0.38,0.6]
@@ -50,6 +51,7 @@ var fills: Array[float] = []
 var _pulse: Array[float] = []
 var _flick: Array[float] = []
 var _flick_from: Array[float] = []
+var _gift: Array[float] = []
 var _idle := IDLE
 var _cue := 0.0
 var _clock := 0.0
@@ -67,6 +69,7 @@ func _ready() -> void:
 		_pulse.append(0.0)
 		_flick.append(0.0)
 		_flick_from.append(0.0)
+		_gift.append(0.0)
 	_view = Control.new()
 	_view.name = "WindGaugeArc"
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -82,6 +85,16 @@ func segments_full() -> int:
 ## A press with nothing to spend: a soft shake and a dim flash.
 func empty_cue() -> void:
 	_cue = CUE
+
+## A side flip filled segment `i` at once (the updraft's `gifted`): it snaps
+## full, with a bright flash swelling out past the arc.
+func gift(i: int) -> void:
+	if i < 0 or i >= SEGMENTS: return
+	fills[i] = 1.0
+	for j in range(i): fills[j] = 1.0
+	_pulse[i] = PULSE
+	_gift[i] = GIFT
+	_idle = 0.0
 
 func _process(delta: float) -> void:
 	_clock += delta
@@ -100,11 +113,12 @@ func _process(delta: float) -> void:
 		if was < 0.999 and fills[i] >= 0.999: _pulse[i] = PULSE
 		_pulse[i] = maxf(_pulse[i]-delta,0.0)
 		_flick[i] = maxf(_flick[i]-delta,0.0)
+		_gift[i] = maxf(_gift[i]-delta,0.0)
 		if fills[i] < 0.999: all_full = false
 	_full = move_toward(_full,1.0 if all_full else 0.0,delta/0.3)
 	_cue = maxf(_cue-delta,0.0)
 	var busy := c > 0.005 or _cue > 0.0
-	for i in range(SEGMENTS): busy = busy or _flick[i] > 0.0 or fills[i] > 0.005
+	for i in range(SEGMENTS): busy = busy or _flick[i] > 0.0 or fills[i] > 0.005 or _gift[i] > 0.0
 	_idle = 0.0 if busy else _idle+delta
 	var want := 1.0 if (busy or _idle < IDLE) else IDLE_ALPHA
 	var may: bool = shown.call() if shown.is_valid() else true
@@ -168,6 +182,14 @@ func _paint() -> void:
 			var u := 1.0-_pulse[i]/PULSE
 			var swell := sin(u*PI)
 			_brush(at,r+w*0.9*u,a0,a1,w*(1.0+2.0*swell),Color(FILL,0.5*swell*alpha),seed+2.0)
+		# A gifted segment's flash: a bright band thrown wide past the arc,
+		# overrunning the segment's ends, then shrinking back in.
+		if _gift[i] > 0.0:
+			var u := 1.0-_gift[i]/GIFT
+			var flash := (1.0-u)*(1.0-u)
+			var over := 6.0*(1.0-u)
+			_brush(at,r+w*(1.2+2.2*u),a0-over,a1+over,w*(2.6-1.4*u),Color(TINT,0.55*flash*alpha),seed+11.0)
+			_brush(at,r+w*(1.2+2.2*u),a0-over,a1+over,w*(1.2-0.6*u),Color(FILL,0.9*flash*alpha),seed+12.0)
 		# A spent segment flicks out: thrown outward along the arc, thinning.
 		if _flick[i] > 0.0:
 			var u := 1.0-_flick[i]/FLICK

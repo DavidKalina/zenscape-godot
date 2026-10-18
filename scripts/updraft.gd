@@ -112,6 +112,12 @@ const AIR_CHARGE := true
 const SEG_BUMPS := {"flip":0.14,"kick":0.14,"long":0.12,"wallrun":0.12,"rope":0.12,"twirl":0.09,"pump":0.06}
 const SEG_HOLDS := {"wallrun":0.10,"rope":0.08}
 const SEG_AIR := 0.06           # a second airborne above FLOW_PACE
+## Segmented only: the side flip fills one whole segment the instant it fires
+## (a partial one is topped up to the next whole, capped at full), with a
+## small gust round his feet and `gifted` for the gauge's flash. Off: it
+## bumps SEG_BUMPS["flip"] like the other air moves.
+const FLIP_GIFT := true
+const GIFT_R := 1.6             # m the flip's gust ring spreads to (a look only)
 ## The gentler drain (segmented): the lull before it starts, then per second
 ## for the partial part over the full segments; full segments are held till
 ## SEG_HELD_GRACE s of lull, then drain at SEG_DECAY_HELD (~22 s a segment).
@@ -143,6 +149,8 @@ var segmented := false
 ## A press of the key with no segment to spend (segmented only): the wind
 ## gauge's empty cue.
 signal empty_press
+## The side flip filled a segment (FLIP_GIFT): `segment` is its index (0..).
+signal gifted(segment: int)
 ## Asked first on each press (scripts/wind_parry.gd): `try(motor) -> bool`,
 ## true when the press parried wind thrown at him and is spent. Null (the
 ## default): every press is the updraft's, as before.
@@ -274,7 +282,9 @@ func _air_charge(delta: float, m: PilotMotor) -> void:
 		return
 	var key: String = m.move if m.rider == null else "rope"
 	var gain := 0.0
-	if key in SEG_BUMPS and key != _prev_move:
+	if FLIP_GIFT and key == "flip" and key != _prev_move:
+		_flip_gift(m)
+	elif key in SEG_BUMPS and key != _prev_move:
 		charge = minf(charge+float(SEG_BUMPS[key]),1.0)
 		_quiet = 0.0
 	if key in SEG_HOLDS: gain += float(SEG_HOLDS[key])
@@ -286,6 +296,16 @@ func _air_charge(delta: float, m: PilotMotor) -> void:
 		_quiet = 0.0
 	elif key in SEG_BUMPS: _quiet = 0.0   # mid flip, mid kick: no drain
 	else: _decay(delta)
+
+## The side flip's segment: up to the next whole one, capped at full.
+func _flip_gift(m: PilotMotor) -> void:
+	_quiet = 0.0
+	var whole := floorf((charge+SEG_HAIR)/SEG)
+	var to := minf((whole+1.0)*SEG,1.0)
+	if to <= charge+SEG_HAIR: return
+	charge = 1.0 if whole+1.0 >= float(SEGMENTS) else to
+	_blast_ring(m.feet+Vector3(0.0,0.1*UNIT,0.0),0.0,GIFT_R*UNIT)
+	gifted.emit(int(whole))
 
 func _decay(delta: float) -> void:
 	_quiet += delta
@@ -445,8 +465,9 @@ func apply_feel(camera: Camera3D) -> void:
 		var y := -sin(u*TAU)*(1.0-u)   # down first, then up past level, settled
 		camera.global_position.y += _dip_amp*y
 
-func _blast_ring(origin: Vector3, p: float) -> void:
-	var r := {"origin":origin,"p":p,"t":0.0,"R":lerpf(RING_R_MIN,RING_R_MAX,p)*UNIT,"hit":{},"ribs":[]}
+## `look_r` > 0: a ring of that radius that only shows (shoves no rope).
+func _blast_ring(origin: Vector3, p: float, look_r := 0.0) -> void:
+	var r := {"origin":origin,"p":p,"t":0.0,"R":look_r if look_r > 0.0 else lerpf(RING_R_MIN,RING_R_MAX,p)*UNIT,"hit":{},"ribs":[],"look":look_r > 0.0}
 	for i in range(RING_RIBBONS):
 		var a := (float(i)+randf()*0.5)*TAU/float(RING_RIBBONS)
 		r.ribs.append({"a":a,"k":randf_range(0.7,1.0),"curl":randf_range(0.5,0.9),"h":randf_range(0.1,0.6)*UNIT,
@@ -472,7 +493,7 @@ func _step_rings(delta: float) -> void:
 				rib.times.remove_at(0)
 		# Anything in the group "wind_pushable" (swing ropes) is shoved once
 		# as the rim passes: wind_push(origin, dir, power).
-		for n: Node in get_tree().get_nodes_in_group(GROUP):
+		for n: Node in ([] if r.get("look",false) else get_tree().get_nodes_in_group(GROUP)):
 			if not n.has_method("wind_push") or r.hit.has(n.get_instance_id()): continue
 			var at: Vector3 = n.wind_point() if n.has_method("wind_point") else (n as Node3D).global_position
 			var v: Vector3 = at-r.origin
