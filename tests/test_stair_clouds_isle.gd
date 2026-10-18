@@ -71,14 +71,15 @@ func walk(from: Vector3, points: Array, frames := 12000) -> Dictionary:
 	return {"ok":false,"top":highest,"at":i,"feet":m.feet}
 
 func _the_climb() -> void:
+	# Up each flight's middle, round each landing's inner side (where its
+	# token stands, inside the pads' piers), to the summit and its gate.
 	var points: Array = []
 	for s in range(Stair.LEGS):
-		points.append(Stair.side_at(s,-Stair.RUN*0.5+0.4,Stair.MID))
-		points.append(Stair.side_at(s,Stair.RUN*0.5-0.4,Stair.MID))
-		points.append(Stair.vertex_at(s+1,24.3))
-	points.append(Stair.vertex_at(Stair.LEGS,15.0,0.1))
-	points.append(Stair.side_at(Stair.SIDES-1,0.0,-3.0))
-	points.append(Stair.side_at(Stair.SIDES-1,0.0,-8.5))
+		points.append(Stair.side_at(s,-Stair.RUN*0.5-0.6,Stair.MID))
+		points.append(Stair.side_at(s,Stair.RUN*0.5+0.9,Stair.MID))
+		points.append(Stair.vertex_at(s+1,22.0))
+	points.append(Stair.side_at(Stair.SIDES-1,-2.0,-6.0))
+	points.append(Stair.side_at(Stair.SIDES-1,Stair.GATE_AT.x,Stair.GATE_AT.y))
 	var from: Vector3 = study.start
 	var r := walk(from,points)
 	var feet: Vector3 = m.feet

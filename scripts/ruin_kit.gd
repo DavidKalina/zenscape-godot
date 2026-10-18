@@ -2639,8 +2639,6 @@ class Build extends RefCounted:
 	static var _threads := {}
 	static var _threads_lock := Mutex.new()
 
-	## Settings for builds begun on this thread from now on ({keep_only,
-	## detail, hand}), or {} to go back to the statics.
 	## The ground under the pieces built on this thread from now on: a
 	## Callable(x, z) -> y in the piece's frame (-INF where there is none),
 	## as `terrain`, and how far under the foot rubble may still lie
@@ -2655,6 +2653,8 @@ class Build extends RefCounted:
 		else: _seats.erase(OS.get_thread_caller_id())
 		_seats_lock.unlock()
 
+	## Settings for builds begun on this thread from now on ({keep_only,
+	## detail, hand}), or {} to go back to the statics.
 	static func per_thread(settings: Dictionary) -> void:
 		_threads_lock.lock()
 		if settings.is_empty(): _threads.erase(OS.get_thread_caller_id())

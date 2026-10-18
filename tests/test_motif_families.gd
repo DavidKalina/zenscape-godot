@@ -17,9 +17,10 @@ const KitMotif = preload("res://scripts/kit_isle/kit_motif.gd")
 const Ring = preload("res://studies/broken_ring_isle_art.gd")
 
 ## Today's isles (default flags), hashed before the families were cut and
-## re-recorded as the motifs changed since (at c6ae3a7c: the closed keel and seated bridge anchors, the arch fit).
+## re-recorded as the motifs changed since (at c6ae3a7c: the closed keel and seated bridge anchors, the arch fit;
+## at iter/terrace-rock: the colonnade's grand stair gets a dark bed under each step, RuinKit `_tread_core`).
 const TODAY := {
-	"colonnade_spine":"26064:426562cd48e9759e3245aa53b892481e",
+	"colonnade_spine":"26064:ebd3abea6c48a4d7244602bd83ee6964",
 	"broken_ring":"3318:e332088777ed2f871151d74984c68130",
 }
 const FAMILIES := {

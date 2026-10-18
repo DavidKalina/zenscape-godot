@@ -87,10 +87,12 @@ class StairTokens extends "res://scripts/kit_isle/kit_tokens.gd":
 		out.append({"name":"pinnacle","at":Vector3(pin.x,Stair.TOP+Stair.PIN_TOP+0.85,pin.y),"move":"Cross the rope bridge from the summit's rim to the hanging pinnacle"})
 		return out
 
-	## [name, vertex, radius, height over TOP, move].
+	## [name, vertex, radius, height over TOP, move]. At radius 22 on the
+	## landing's inner side: pads 1 and 5 have their piers at about 25 on the
+	## vertex line, and their stone stands from 23 out.
 	const TOKENS := [
-		["landing_1",1,24.3,1.0*Stair.STEP,"Up the first flights to the first landing, and its piers"],
-		["landing_3",3,24.3,3.0*Stair.STEP,"Round the mesa to the third landing"],
-		["landing_5",5,24.3,5.0*Stair.STEP,"Up and round to the fifth landing, high over the lawn"],
-		["landing_7",7,24.3,7.0*Stair.STEP,"The seventh landing, one flight under the summit"],
+		["landing_1",1,22.0,1.0*Stair.STEP,"Up the first flights to the first landing, and its piers"],
+		["landing_3",3,22.0,3.0*Stair.STEP,"Round the mesa to the third landing"],
+		["landing_5",5,22.0,5.0*Stair.STEP,"Up and round to the fifth landing, high over the lawn"],
+		["landing_7",7,22.0,7.0*Stair.STEP,"The seventh landing, one flight under the summit"],
 	]
