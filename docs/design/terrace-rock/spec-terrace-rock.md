@@ -97,3 +97,11 @@ between each half of every step you walk up (a seam or joint you can see
 through, likely the slab joints or the seam where the stair's two halves
 or its stacked flights meet). Close it so the steps read as solid stone.
 The chests on the landings below legs 7 and 8 stay where they are.
+
+## Spec change: no chests
+
+The user: remove the chests for now. Take every `tomb_chest` shrine off the
+isle (the shrine table in `studies/stair_clouds_isle_art.gd`: pads 2, 6, 7
+and the terrace one). The sparrows in `studies/stair_clouds_isle_life.gd`
+perch on chest lids; give them another home (the floors already count).
+This replaces the earlier "the chests stay" line.
