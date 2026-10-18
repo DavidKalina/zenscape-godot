@@ -14,7 +14,12 @@ extends RefCounted
 ##    "deleted": ["ring_route/chain_slab_2"],
 ##    "islands": {"island/near": {"pos": [x, y, z], "rot": [x, y, z]}},
 ##    "sizes":   {"ring_route/ring_a": 2.5, "foot_route/bob_slab_1": [3.0, 0.7, 2.8]},
-##    "knobs":   {"stair_clouds/slab_cut": {"count": 6, "rise": 1.2}}}
+##    "knobs":   {"stair_clouds/slab_cut": {"count": 6, "rise": 1.2}},
+##    "tunes":   {"ring_route/ring_a": {"boost": 8.0}, "foot_route/drift_slab_1": {"pace": 3.2}}}
+## A piece's tunes (its own knobs: a ring's boost, a bob slab's spring
+## pumps, a drifting slab's pace; the node's `layout_tunes`) are kept only
+## off their coded values; an added piece keeps its own as "tunes" (a bob
+## slab's pumps as "pumps").
 ## A build's knobs (scripts/layout_knobs.gd) are kept only off their
 ## defaults; the build reads them when it places its pieces.
 ## An added piece's name is `added/<kind>_<n>`, or `chunk/<chunk>_<n>/...`
@@ -67,7 +72,7 @@ static func begin(scene_id: String) -> void:
 		push_warning("layout %s: not a JSON object, ignored" % path)
 		return
 	var d: Dictionary = parsed
-	for k: String in ["moved","added","deleted","islands","sizes"]:
+	for k: String in ["moved","added","deleted","islands","sizes","tunes"]:
 		if d.has(k): data[k] = d[k]
 	if d.get("knobs") is Dictionary: knobs = (d.knobs as Dictionary).duplicate(true)
 
@@ -100,11 +105,50 @@ static func track(name: String, node: Node3D, kind: String, coded: Transform3D, 
 	e.merge(extra)
 	entries[name] = e
 	node.set_meta("layout_name",name)
+	_track_tunes(name,node,e)
 	if not node.has_method("layout_size"): return
 	e["size0"] = node.layout_size()
 	var sizes: Dictionary = data.get("sizes",{})
 	if sizes.has(name): node.layout_resize(size_from_json(sizes[name],e.size0))
 
+## `name`'s tunes kept at track: their coded values, the file's applied.
+static func _track_tunes(name: String, node: Node, e: Dictionary) -> void:
+	if not node.has_method("layout_tunes"): return
+	var t0 := {}
+	for s: Array in node.layout_tunes(): t0[str(s[0])] = float(node.layout_tune(str(s[0])))
+	if t0.is_empty(): return
+	e["tune0"] = t0
+	var saved: Dictionary = data.get("tunes",{})
+	if saved.get(name) is Dictionary: retune_all(name,saved[name])
+
+## `name`'s tune `key` set to `v` (a bob slab's pumps kept for its copies too).
+static func retune(name: String, key: String, v: float) -> void:
+	var e: Dictionary = entries[name]
+	(e.node as Node).layout_retune(key,v)
+	if key == "pumps": e["pumps"] = float((e.node as Node).layout_tune(key))
+
+static func retune_all(name: String, vals: Dictionary) -> void:
+	var t0: Dictionary = entries[name].get("tune0",{})
+	for k: String in vals:
+		if t0.has(k): retune(name,k,float(vals[k]))
+
+## `name`'s tunes now: key -> value ({} none).
+static func tunes_now(name: String) -> Dictionary:
+	var e: Dictionary = entries[name]
+	var out := {}
+	for k: String in e.get("tune0",{}): out[k] = float((e.node as Node).layout_tune(k))
+	return out
+
+## `name`'s tunes off their coded values (`skip`: keys kept elsewhere).
+static func tunes_off(name: String, skip := []) -> Dictionary:
+	var e: Dictionary = entries[name]
+	var t0: Dictionary = e.get("tune0",{})
+	var out := {}
+	var now := tunes_now(name)
+	for k: String in now:
+		if k in skip: continue
+		if absf(float(now[k])-float(t0[k])) > 0.004: out[k] = snappedf(float(now[k]),0.001)
+	return out
 ## `name`'s size now (a ring's radius, a slab's block), null if it has none.
 static func size_of(name: String) -> Variant:
 	var node: Node = entries[name].node
@@ -180,12 +224,12 @@ static func build_added(host: Node3D) -> void:
 	for a: Dictionary in added:
 		var kind := str(a.get("kind",""))
 		if not kind in ADDABLE: continue
-		spawn(host,str(a.name),kind,from_json(a),float(a.get("pumps",0.0)),a.get("size",null),str(a.get("on","")))
+		spawn(host,str(a.name),kind,from_json(a),float(a.get("pumps",0.0)),a.get("size",null),str(a.get("on","")),a.get("tunes",{}) if a.get("tunes") is Dictionary else {})
 
 ## A new `kind` piece on `host` at `t`, tracked as `name`; `size` (as the
 ## file keeps it, or a node's own) if given; `on`: the island it belongs to
 ## ("" free).
-static func spawn(host: Node3D, name: String, kind: String, t: Transform3D, pumps := 0.0, size: Variant = null, on := "") -> Node3D:
+static func spawn(host: Node3D, name: String, kind: String, t: Transform3D, pumps := 0.0, size: Variant = null, on := "", tunes := {}) -> Node3D:
 	var seed_value := absi(hash(name))%100000
 	var node: Node3D = null
 	if kind == "air_ring": node = host.air_ring(t.origin,seed_value,0.0)
@@ -199,6 +243,7 @@ static func spawn(host: Node3D, name: String, kind: String, t: Transform3D, pump
 	if on != "": extra["on"] = on
 	track(name,node,kind,t,extra)
 	if size != null and node.has_method("layout_resize"): node.layout_resize(size_from_json(size,node.layout_size()) if not size is Vector3 else size)
+	if not tunes.is_empty(): retune_all(name,tunes)
 	return node
 
 ## A name for a new `kind` not yet in use.
@@ -214,6 +259,7 @@ static func fresh_name(kind: String) -> String:
 static func save(gone: Array, moved_islands := {}) -> Error:
 	var moved := {}
 	var sizes := {}
+	var tunes := {}
 	var added: Array = []
 	var names: Array = entries.keys()
 	names.sort()
@@ -228,10 +274,14 @@ static func save(gone: Array, moved_islands := {}) -> Error:
 			if e.has("pumps") and float(e.pumps) != float(preload("res://scripts/interactables/bob_slab.gd").SPRING_PUMPS): a["pumps"] = e.pumps
 			if e.has("size0") and not _same_size(size_of(name),e.size0): a["size"] = size_to_json(size_of(name))
 			if str(e.get("on","")) != "": a["on"] = str(e.on)
+			var off := tunes_off(name,["pumps"])
+			if not off.is_empty(): a["tunes"] = off
 			added.append(a)
 		else:
 			if not _same(t,e.coded): moved[name] = to_json(t)
 			if e.has("size0") and not _same_size(size_of(name),e.size0): sizes[name] = size_to_json(size_of(name))
+			var off := tunes_off(name)
+			if not off.is_empty(): tunes[name] = off
 	var kept: Array = []
 	for g: String in gone:
 		if not is_added(g) and not g in kept: kept.append(g)
@@ -244,6 +294,7 @@ static func save(gone: Array, moved_islands := {}) -> Error:
 		if not _same(moved_islands[name],Transform3D.IDENTITY): isl[name] = to_json(moved_islands[name])
 	if not isl.is_empty(): data["islands"] = isl
 	if not sizes.is_empty(): data["sizes"] = sizes
+	if not tunes.is_empty(): data["tunes"] = tunes
 	if not knobs.is_empty(): data["knobs"] = knobs.duplicate(true)
 	if path.begins_with("res://"): DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	else: DirAccess.make_dir_recursive_absolute(path.get_base_dir())
@@ -267,7 +318,7 @@ static func _text(d: Dictionary) -> String:
 	out += "\t\"moved\": {\n%s\n\t},\n" % ",\n".join(lines) if not lines.is_empty() else "\t\"moved\": {},\n"
 	out += "\t\"added\": [\n%s\n\t],\n" % ",\n".join(added) if not added.is_empty() else "\t\"added\": [],\n"
 	out += "\t\"deleted\": [\n%s\n\t]" % ",\n".join(gone) if not gone.is_empty() else "\t\"deleted\": []"
-	for block: String in ["islands","sizes","knobs"]:
+	for block: String in ["islands","sizes","tunes","knobs"]:
 		var rows_of: Dictionary = d.get(block,{})
 		if rows_of.is_empty(): continue
 		var rows := PackedStringArray()

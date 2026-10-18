@@ -53,6 +53,7 @@ static func rebuild(build: String, vals: Dictionary, gone: Array) -> Array:
 	var b: Dictionary = builds[build]
 	var moved: Dictionary = Layout.data.get("moved",{})
 	var sizes: Dictionary = Layout.data.get("sizes",{})
+	var tunes: Dictionary = Layout.data.get("tunes",{})
 	for n: String in b.members:
 		if not Layout.entries.has(n): continue
 		var e: Dictionary = Layout.entries[n]
@@ -66,12 +67,16 @@ static func rebuild(build: String, vals: Dictionary, gone: Array) -> Array:
 			var now: Variant = Layout.size_of(n)
 			if Layout._same_size(now,e.size0): sizes.erase(n)
 			else: sizes[n] = Layout.size_to_json(now)
+		var off := Layout.tunes_off(n)
+		if off.is_empty(): tunes.erase(n)
+		else: tunes[n] = off
 		var host: Variant = e.get("host",null)
 		if host != null and is_instance_valid(host) and (host as Object).has_method("_drop"): host._drop(e.node)
 		else: (e.node as Node).queue_free()
 		Layout.entries.erase(n)
 	Layout.data["moved"] = moved
 	Layout.data["sizes"] = sizes
+	Layout.data["tunes"] = tunes
 	Layout.data["deleted"] = gone.duplicate()
 	b.values = vals.duplicate()
 	_keep(build)

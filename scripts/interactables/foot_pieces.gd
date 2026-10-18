@@ -283,7 +283,7 @@ func _take_ring(r: Node3D) -> void:
 	rings_taken += 1
 	var drafts: Node = study.get("updraft")
 	if drafts != null and drafts.has_method("refill"): drafts.refill(r.middle())
-	var pop: float = AirRing.POP*motor.size
+	var pop: float = float(r.pop)*motor.size
 	var pace := motor.rise_for(pop,true)
 	var way: Vector3 = r.throw_way(motor.velocity)
 	var v: Vector3 = motor.velocity

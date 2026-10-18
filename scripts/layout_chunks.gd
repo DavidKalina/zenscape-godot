@@ -63,6 +63,8 @@ static func save(name: String, names_in: Array, anchor: Transform3D) -> Array:
 		if e.has("pumps") and float(e.pumps) != float(preload("res://scripts/interactables/bob_slab.gd").SPRING_PUMPS): p["pumps"] = e.pumps
 		var sz: Variant = Layout.size_of(n)
 		if sz != null and e.has("size0") and not Layout._same_size(sz,e.size0): p["size"] = Layout.size_to_json(sz)
+		var off := Layout.tunes_off(n,["pumps"])
+		if not off.is_empty(): p["tunes"] = off
 		pieces.append(p)
 	if pieces.is_empty(): return [ERR_INVALID_DATA,0,skipped]
 	var at := dir()
@@ -88,7 +90,7 @@ static func read(name: String) -> Array:
 		return out
 	for p: Variant in (parsed as Dictionary).get("pieces",[]):
 		if not p is Dictionary or not str(p.get("kind","")) in Layout.ADDABLE: continue
-		out.append({"kind":str(p.kind),"t":Layout.from_json(p),"pumps":float(p.get("pumps",0.0)),"size":p.get("size",null)})
+		out.append({"kind":str(p.kind),"t":Layout.from_json(p),"pumps":float(p.get("pumps",0.0)),"size":p.get("size",null),"tunes":p.get("tunes",{}) if p.get("tunes") is Dictionary else {}})
 	return out
 
 ## A name for stamp piece `i` of chunk `chunk` (`chunk/<chunk>_<n>/<kind>_<i>`),

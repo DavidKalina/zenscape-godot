@@ -132,6 +132,9 @@ const STAMP_REACH := 250.0
 ## track) rebuilds that build; `_knob_held` while one is dragged.
 var _knob_panel: PanelContainer
 var _knob_build := ""
+## The piece whose own tunes the panel shows ("" none) and their specs.
+var _tune_name := ""
+var _tune_specs: Array = []
 var _knob_sliders := {}
 var _knob_texts := {}
 var _knob_held := false
@@ -644,7 +647,7 @@ func duplicate_selected() -> void:
 	var right: Vector3 = (study.camera as Camera3D).global_basis.x
 	t.origin += Vector3(right.x,0.0,right.z).normalized()*3.0
 	var name := Layout.fresh_name(str(e.kind))
-	Layout.spawn(host,name,str(e.kind),t,float(e.get("pumps",0.0)),Layout.size_of(selected))
+	Layout.spawn(host,name,str(e.kind),t,float(e.get("pumps",0.0)),Layout.size_of(selected),"",Layout.tunes_off(selected,["pumps"]))
 	_push({"do":"add","name":name})
 	dirty = true
 	select(name)
@@ -844,7 +847,7 @@ func _group_copy() -> void:
 		var t := Layout.current(n)
 		t.origin += off
 		var name := Layout.fresh_name(str(e.kind))
-		Layout.spawn(host,name,str(e.kind),t,float(e.get("pumps",0.0)),Layout.size_of(n))
+		Layout.spawn(host,name,str(e.kind),t,float(e.get("pumps",0.0)),Layout.size_of(n),"",Layout.tunes_off(n,["pumps"]))
 		made.append(name)
 		recs.append({"do":"add","name":name})
 	if made.is_empty():
@@ -1067,7 +1070,7 @@ func stamp(chunk: String, free := false) -> void:
 		var name := prefix+"%s_%d" % [kind,count[kind]]
 		var t: Transform3D = anchor*(p.t as Transform3D)
 		t.basis = t.basis.orthonormalized()
-		var node := Layout.spawn(host,name,kind,t,float(p.pumps),p.size,on)
+		var node := Layout.spawn(host,name,kind,t,float(p.pumps),p.size,on,p.get("tunes",{}))
 		if node == null: continue
 		if on != "": _reanchor(name)
 		made.append(name)
@@ -1158,6 +1161,10 @@ func _undo_one(rec: Dictionary) -> bool:
 		"knobs":
 			if not Knobs.builds.has(name): return false
 			_set_knobs(name,rec.values,false)
+		"tune":
+			if not Layout.entries.has(name) or not is_instance_valid(Layout.entries[name].node): return false
+			Layout.retune(name,str(rec.key),float(rec.v))
+			select(name)
 		"size":
 			if not Layout.entries.has(name) or not is_instance_valid(Layout.entries[name].node): return false
 			(Layout.entries[name].node as Node).layout_resize(rec.size)
@@ -1337,47 +1344,86 @@ func _knobs_take(event: InputEvent) -> bool:
 	if _knob_held: return true
 	return _knob_panel.get_global_rect().has_point((event as InputEventMouse).position)
 
-## The panel for the selected piece's build (one piece selected, of a
-## build with knobs), else hidden.
+## The panel for the selected piece (one piece selected): its build's
+## knobs if it is one's, then its own tunes (a ring's boost, a bob slab's
+## pumps, a drifting slab's pace; Layout `tunes`), else hidden.
 func _show_knobs() -> void:
 	var b := ""
-	if group.is_empty() and selected != "" and not is_island(selected): b = Knobs.build_of(selected)
-	if b == "":
+	var piece := ""
+	if group.is_empty() and selected != "" and not is_island(selected):
+		b = Knobs.build_of(selected)
+		if not (Layout.entries[selected] as Dictionary).get("tune0",{}).is_empty(): piece = selected
+	if b == "" and piece == "":
 		if _knob_panel != null: _knob_panel.visible = false
 		_knob_build = ""
+		_tune_name = ""
 		_knob_held = false
 		return
-	if b != _knob_build or _knob_panel == null: _make_knob_panel(b)
+	if b != _knob_build or piece != _tune_name or _knob_panel == null: _make_knob_panel(b,piece)
 	_knob_quiet = true
-	var vals := Knobs.values(b)
-	for s: Array in Knobs.builds[b].specs:
-		var k := str(s[0])
-		(_knob_sliders[k] as HSlider).value = float(vals[k])
-		(_knob_texts[k] as Label).text = Knobs.text_of(s,vals[k])
+	if b != "":
+		var vals := Knobs.values(b)
+		for s: Array in Knobs.builds[b].specs:
+			var k := str(s[0])
+			(_knob_sliders[k] as HSlider).value = float(vals[k])
+			(_knob_texts[k] as Label).text = Knobs.text_of(s,vals[k])
+	if piece != "":
+		var now := Layout.tunes_now(piece)
+		for s: Array in _tune_specs:
+			var k := "tune:"+str(s[0])
+			(_knob_sliders[k] as HSlider).value = float(now[str(s[0])])
+			(_knob_texts[k] as Label).text = Knobs.text_of(s,now[str(s[0])])
 	_knob_quiet = false
 	_knob_panel.visible = true
 
-func _make_knob_panel(b: String) -> void:
+func _make_knob_panel(b: String, piece := "") -> void:
 	if _knob_panel != null: _knob_panel.free()
 	_knob_build = b
+	_tune_name = piece
+	_tune_specs = (Layout.entries[piece].node as Node).layout_tunes() if piece != "" else []
 	_knob_sliders = {}
 	_knob_texts = {}
 	_knob_held = false
 	_knob_panel = PanelContainer.new()
 	_knob_panel.name = "KnobPanel"
 	var col := VBoxContainer.new()
-	var title := Label.new()
-	title.text = "KNOBS  %s\n(let go of a slider: it rebuilds)" % str(Knobs.builds[b].label)
-	col.add_child(title)
+	if b != "":
+		var title := Label.new()
+		title.text = "KNOBS  %s\n(let go of a slider: it rebuilds)" % str(Knobs.builds[b].label)
+		col.add_child(title)
+		col.add_child(_knob_rows(Knobs.builds[b].specs,""))
+	if piece != "":
+		var title := Label.new()
+		title.text = "TUNE  %s\n(let go of a slider: it takes)" % piece
+		col.add_child(title)
+		col.add_child(_knob_rows(_tune_specs,"tune:"))
+	_knob_panel.add_child(col)
+	_ui.add_child(_knob_panel)
+	# Bottom right, clear of the keys, the status line and the chunk list
+	# on the left and the warnings at the top right.
+	_knob_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT,Control.PRESET_MODE_MINSIZE,16)
+	_knob_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_knob_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	# Up over the play hints along the bottom, on its own dark ground.
+	_knob_panel.offset_top -= KNOB_LIFT
+	_knob_panel.offset_bottom -= KNOB_LIFT
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.05,0.05,0.07,0.92)
+	bg.set_content_margin_all(10.0)
+	bg.set_corner_radius_all(4)
+	_knob_panel.add_theme_stylebox_override("panel",bg)
+
+## A grid of `specs`' sliders, keyed `prefix`+key ("tune:" a piece's own).
+func _knob_rows(specs: Array, prefix: String) -> GridContainer:
 	var rows := GridContainer.new()
 	rows.columns = 3
-	for s: Array in Knobs.builds[b].specs:
-		var k := str(s[0])
+	for s: Array in specs:
+		var k := prefix+str(s[0])
 		var l := Label.new()
 		l.text = str(s[1])
 		rows.add_child(l)
 		var sl := HSlider.new()
-		sl.name = "Knob_"+k
+		sl.name = "Knob_"+k.replace(":","_")
 		sl.min_value = float(s[3])
 		sl.max_value = float(s[4])
 		sl.step = float(s[5])
@@ -1398,31 +1444,31 @@ func _make_knob_panel(b: String) -> void:
 		rows.add_child(t)
 		_knob_sliders[k] = sl
 		_knob_texts[k] = t
-	col.add_child(rows)
-	_knob_panel.add_child(col)
-	_ui.add_child(_knob_panel)
-	# Bottom right, clear of the keys, the status line and the chunk list
-	# on the left and the warnings at the top right.
-	_knob_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT,Control.PRESET_MODE_MINSIZE,16)
-	_knob_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_knob_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	# Up over the play hints along the bottom, on its own dark ground.
-	_knob_panel.offset_top -= KNOB_LIFT
-	_knob_panel.offset_bottom -= KNOB_LIFT
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.05,0.05,0.07,0.92)
-	bg.set_content_margin_all(10.0)
-	bg.set_corner_radius_all(4)
-	_knob_panel.add_theme_stylebox_override("panel",bg)
+	return rows
 
 ## Knob `key` of the shown build set to `v`: the build rebuilt (if it changed).
 func _knob_changed(key: String, v: float) -> void:
+	if key.begins_with("tune:"):
+		if _tune_name == "" or not Layout.entries.has(_tune_name): return
+		var k := key.substr(5)
+		var was := float(Layout.tunes_now(_tune_name)[k])
+		if is_equal_approx(was,v): return
+		set_tune(_tune_name,k,v)
+		return
 	if _knob_build == "" or not Knobs.builds.has(_knob_build): return
 	var vals := Knobs.values(_knob_build)
 	var was: Variant = vals[key]
 	vals[key] = int(round(v)) if was is int else v
 	if is_equal_approx(float(vals[key]),float(was)): return
 	set_knob(_knob_build,key,vals[key])
+
+## Piece `name`'s tune `key` set to `v` (an undo record); nothing rebuilt.
+func set_tune(name: String, key: String, v: float) -> void:
+	var was := float(Layout.tunes_now(name)[key])
+	Layout.retune(name,key,v)
+	_push({"do":"tune","name":name,"key":key,"v":was})
+	dirty = true
+	say("tuned %s: %s %.2f (was %.2f)" % [name,key,float(Layout.tunes_now(name)[key]),was])
 
 ## Build `b`'s knob `key` set to `v` and the build rebuilt (an undo record).
 func set_knob(b: String, key: String, v: Variant) -> void:
