@@ -25,7 +25,11 @@ extends RefCounted
 ## ([1.1, 2.6] over the turf), reach (45), cameras (8), drawn, bodies, quiet.
 ## A sample under a seated piece (`drawn`: a stair in its cut) is lifted
 ## onto the piece's drawn top, so its eyes stand on the stair, and its floor
-## is the piece's (within PIECE_OFF: a worn nosing).
+## is the piece's (within PIECE_OFF: a worn nosing). Five rays a few cm
+## apart lift it; where they disagree (a step's nose, a cheek's foot, a
+## joint) its floor is not judged (piece_edge); where the piece's walk
+## collision stands over its drawn top by up to PIECE_PROUD (the kit's walk
+## box over a sunken slab) it is counted as piece_proud, not a hole.
 ## Returns {samples, rays, see_in, through, holes, standoff, *_at: the first
 ## positions of each}.
 
@@ -36,10 +40,16 @@ const LAYER_FRONT := 1 << 23
 const LAYER_PIECE := 1 << 21
 ## How high over a top a seated piece may stand (m): a grand stair's head.
 const PIECE_REACH := 6.0
+## The lift's rays round a sample (a joint between slabs is narrower).
+const JOINT_PROBE := [Vector3.ZERO,Vector3(0.04,0.0,0.0),Vector3(-0.04,0.0,0.0),Vector3(0.0,0.0,0.04),Vector3(0.0,0.0,-0.04)]
 ## A lifted sample's floor: the collision within this of the drawn piece
 ## (a worn nosing's chamfer lies a few cm under the step's walked top; a
 ## hole is a step's riser or more).
 const PIECE_OFF := 0.15
+## A seated piece's walk collision may stand this far OVER its drawn top
+## (a stair's walk box over a worn nosing, a joint or a sunken slab): counted apart as
+## piece_proud, not a hole (nothing to fall through).
+const PIECE_PROUD := 1.0
 ## The most a collision hit may stand off the drawn one (m).
 const STAND := 0.3
 ## The floor: collision this far under or over the turf's own height is a hole.
@@ -115,11 +125,20 @@ static func sweep(terrace: Node3D, opts := {}) -> Dictionary:
 		for list: Array in [samples,eye_at]:
 			for i in range(list.size()):
 				var s: Vector3 = list[i]
-				var hit := _ray(space,s+Vector3.UP*PIECE_REACH,s+Vector3.UP*0.05,LAYER_PIECE)
-				if not hit.is_empty():
-					list[i] = hit.position
+				# Five rays a few cm apart. Where they agree the sample is
+				# clear on the piece; where they don't it sits on an edge
+				# (a step's nose, a cheek's foot, a joint between slabs
+				# down which one ray drops): lifted to the second lowest
+				# for its eyes, its floor not judged (counted piece_edge).
+				var ys: Array[float] = []
+				for off: Vector3 in JOINT_PROBE:
+					var hit := _ray(space,s+off+Vector3.UP*PIECE_REACH,s+off+Vector3.UP*0.05,LAYER_PIECE)
+					if not hit.is_empty(): ys.append((hit.position as Vector3).y)
+				if not ys.is_empty():
+					ys.sort()
+					list[i] = Vector3(s.x,ys[mini(1,ys.size()-1)],s.z)
 					lifted += 1
-					if list == samples: on_piece[i] = true
+					if list == samples: on_piece[i] = ys.size() == JOINT_PROBE.size() and ys[ys.size()-1]-ys[0] <= PIECE_OFF
 		got["lifted"] = lifted
 		got["on_piece"] = on_piece
 	got.samples = samples.size()
@@ -131,9 +150,21 @@ static func sweep(terrace: Node3D, opts := {}) -> Dictionary:
 		var col := _game_ray(space,s+Vector3.UP*1.0,s+Vector3.DOWN*1.5,mask,game)
 		var drawn := _ray(space,s+Vector3.UP*1.0,s+Vector3.DOWN*1.5,LAYER_BOTH)
 		got.rays += 2
-		if col.is_empty() or absf((col.position as Vector3).y-s.y) > (PIECE_OFF if on.has(i) else FLOOR_OFF):
+		if on.has(i) and not bool(on[i]):
+			got["piece_edge"] = int(got.get("piece_edge",0))+1
+			continue
+		var proud := 0.0 if col.is_empty() else (col.position as Vector3).y-s.y
+		if on.has(i) and proud > PIECE_OFF and proud <= PIECE_PROUD:
+			# The kit's walk box over a worn nosing or down a joint: he
+			# stands a little over the stone there, never falls: counted
+			# (piece_proud), not a hole.
+			got["piece_proud"] = int(got.get("piece_proud",0))+1
+			if (got.get("piece_proud_at",[]) as Array).size() < 20: got["piece_proud_at"] = (got.get("piece_proud_at",[]) as Array)+[s]
+		elif col.is_empty() or absf(proud) > (PIECE_OFF if on.has(i) else FLOOR_OFF):
 			_flag(got,"holes",s)
-		elif not drawn.is_empty() and absf((col.position as Vector3).y-(drawn.position as Vector3).y) > STAND:
+		# (On a piece the lifted sample is its drawn top already: a ray
+		# down its middle may drop down a joint between slabs.)
+		elif not on.has(i) and not drawn.is_empty() and absf((col.position as Vector3).y-(drawn.position as Vector3).y) > STAND:
 			_flag(got,"standoff",s)
 	# Eyes over the tops.
 	var dirs: Array[Vector3] = []
@@ -174,7 +205,7 @@ static func sweep(terrace: Node3D, opts := {}) -> Dictionary:
 	front.queue_free()
 	if pieces != null: pieces.queue_free()
 	if not bool(opts.get("quiet",false)):
-		print("terrace check %s: %d samples (%d on seated pieces), %d rays, %d faces: see_in %d, through %d, holes %d, standoff %d" % [terrace.name,got.samples,int(got.get("lifted",0)),got.rays,got.faces,got.see_in,got.through,got.holes,got.standoff])
+		print("terrace check %s: %d samples (%d on seated pieces), %d rays, %d faces: see_in %d, through %d, holes %d, standoff %d (piece_edge %d, piece_proud %d: %s)" % [terrace.name,got.samples,int(got.get("lifted",0)),got.rays,got.faces,got.see_in,got.through,got.holes,got.standoff,int(got.get("piece_edge",0)),int(got.get("piece_proud",0)),str(got.get("piece_proud_at",[]))])
 		for key in ["see_in","through","holes","standoff"]:
 			if int(got[key]) > 0:
 				print("  %s at %s" % [key,str((got[key+"_at"] as Array).slice(0,8))])

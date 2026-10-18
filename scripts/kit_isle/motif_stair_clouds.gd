@@ -78,7 +78,7 @@ func build(into: Node3D) -> void:
 	bridge = Footbridge.live(Footbridge.build_mesh(a,b,STAIR_SEED+90),a,b,STAIR_SEED+90)
 	bridge.name = "RopeBridge"
 	art.add_child(bridge)
-	# The mesa's ground and the pinnacle's are turf; the sides stone.
+	# The mesa's tops and the pinnacle's are turf (the mesa's one body).
 	turf(mesa,null,false)
 	turf(pinnacle)
 	built_ms = Time.get_ticks_msec()-began
