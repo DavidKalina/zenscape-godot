@@ -91,9 +91,9 @@ const RAIN_LIFE := 0.9
 const RAIN_FALL := 9.0
 const RAIN_BOX := 26.0
 const RAIN_WIDTH := 0.022
-const RAIN_STREAK := 0.028
-const RAIN_LONGEST := 1.1
-const RAIN_COLOUR := Color(0.8,0.84,0.9,0.15)
+const RAIN_STREAK := 0.045
+const RAIN_LONGEST := 2.0
+const RAIN_COLOUR := Color(0.8,0.84,0.9,0.17)
 ## Each drop's strength, from the faintest to the full (its colour's alpha),
 ## and its size's spread.
 const RAIN_FAINT := 0.25
@@ -113,7 +113,22 @@ const MURK_DIM := 0.7
 ## How much a flash (lightning `flash`, 1 a full one) gives back.
 const FLASH_UNGRADE := 0.8
 ## In a whiteout the rain's streaks this much stronger (of their own).
-const MURK_RAIN := 1.4
+const MURK_RAIN := 0.9
+## In a whiteout the air drives at the plane: a gust (m/s) against its
+## flight, so the rain and spray race at the camera, not fall past it.
+const MURK_GUST := 12.0
+## The spray: short bright flecks close round the eye, thick in a whiteout
+## (its murk), thin in storm air (SPRAY_STORM of the rain's own): how many,
+## how long each lives (s), its box (m), width, streak (s of its speed, m
+## at most) and colour.
+const SPRAY_DROPS := 4000
+const SPRAY_LIFE := 0.45
+const SPRAY_BOX := 9.0
+const SPRAY_WIDTH := 0.045
+const SPRAY_STREAK := 0.03
+const SPRAY_LONGEST := 1.4
+const SPRAY_COLOUR := Color(0.86,0.9,0.96,0.32)
+const SPRAY_STORM := 0.25
 
 ## The storm now (0 to 1), and an override (`--storm=<x>`; NAN: the sky's).
 var storm := 0.0
@@ -147,8 +162,7 @@ var _scene: Node3D
 var _sun_own := 0.0
 var _sun_dimmed := -1.0
 var _rain: GPUParticles3D
-var _rain_process: ParticleProcessMaterial
-var _rain_quad: QuadMesh
+var _spray: GPUParticles3D
 var _veils: Array[MeshInstance3D] = []
 
 func setup(scene: Node3D) -> void:
@@ -219,40 +233,8 @@ func setup(scene: Node3D) -> void:
 		if node != null: node.visible = false
 
 func _build_rain() -> void:
-	_rain = GPUParticles3D.new()
-	_rain.name = "Rain"
-	_rain.top_level = true
-	_rain.local_coords = true
-	_rain.amount = RAIN_DROPS
-	_rain.lifetime = RAIN_LIFE
-	_rain.emitting = false
-	_rain.transform_align = GPUParticles3D.TRANSFORM_ALIGN_Z_BILLBOARD_Y_TO_VELOCITY
-	_rain.visibility_aabb = AABB(-Vector3.ONE*RAIN_BOX*3.0,Vector3.ONE*RAIN_BOX*6.0)
-	_rain.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_rain_process = ParticleProcessMaterial.new()
-	_rain_process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	_rain_process.emission_box_extents = Vector3.ONE*RAIN_BOX
-	_rain_process.gravity = Vector3.ZERO
-	_rain_process.spread = 1.5
-	_rain.process_material = _rain_process
-	_rain_quad = QuadMesh.new()
-	_rain_quad.size = Vector2(RAIN_WIDTH,1.0)
-	var look := ShaderMaterial.new()
-	look.shader = preload("res://shaders/plane_rain.gdshader")
-	look.set_shader_parameter("tint",RAIN_COLOUR)
-	# Over a whiteout's murk (it hides all past a few tens of m, not these).
-	look.render_priority = StormWhiteout.RENDER_PRIORITY+1
-	_rain_process.scale_min = RAIN_SIZES.x
-	_rain_process.scale_max = RAIN_SIZES.y
-	var strengths := Gradient.new()
-	strengths.set_color(0,Color(1,1,1,RAIN_FAINT))
-	strengths.set_color(1,Color(1,1,1,1))
-	var ramp := GradientTexture1D.new()
-	ramp.gradient = strengths
-	_rain_process.color_initial_ramp = ramp
-	_rain_quad.material = look
-	_rain.draw_pass_1 = _rain_quad
-	add_child(_rain)
+	_rain = _streaks("Rain",RAIN_DROPS,RAIN_LIFE,RAIN_BOX,RAIN_WIDTH,RAIN_COLOUR,4.0,30.0)
+	_spray = _streaks("Spray",SPRAY_DROPS,SPRAY_LIFE,SPRAY_BOX,SPRAY_WIDTH,SPRAY_COLOUR,0.7,12.0)
 	for radius: float in VEILS:
 		var tube := CylinderMesh.new()
 		tube.top_radius = radius
@@ -275,28 +257,83 @@ func _build_rain() -> void:
 		add_child(veil)
 		_veils.append(veil)
 
+## Streaks in a box round the eye (shaders/plane_rain.gdshader), each
+## laid along its way past and turned to face the eye: `amount` of them living `life` s, in a
+## box `box` m out, `width` m wide, `tint`, fading in from `near` m and out
+## by `far` m. Drawn over a whiteout's murk.
+func _streaks(called: String, amount: int, life: float, box: float, width: float, tint: Color, near: float, far: float) -> GPUParticles3D:
+	var drops := GPUParticles3D.new()
+	drops.name = called
+	drops.top_level = true
+	drops.local_coords = true
+	drops.amount = amount
+	drops.lifetime = life
+	drops.emitting = false
+	drops.visibility_aabb = AABB(-Vector3.ONE*box*3.0,Vector3.ONE*box*6.0)
+	drops.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var process := ParticleProcessMaterial.new()
+	process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	process.emission_box_extents = Vector3.ONE*box
+	process.gravity = Vector3.ZERO
+	process.spread = 1.5
+	process.scale_min = RAIN_SIZES.x
+	process.scale_max = RAIN_SIZES.y
+	var strengths := Gradient.new()
+	strengths.set_color(0,Color(1,1,1,RAIN_FAINT))
+	strengths.set_color(1,Color(1,1,1,1))
+	var ramp := GradientTexture1D.new()
+	ramp.gradient = strengths
+	process.color_initial_ramp = ramp
+	drops.process_material = process
+	var quad := QuadMesh.new()
+	quad.size = Vector2(width,1.0)
+	var look := ShaderMaterial.new()
+	look.shader = preload("res://shaders/plane_rain.gdshader")
+	look.set_shader_parameter("tint",tint)
+	look.set_shader_parameter("near_fade",near)
+	look.set_shader_parameter("far_fade",far)
+	# Over a whiteout's murk (it hides all past a few tens of m, not these).
+	look.render_priority = StormWhiteout.RENDER_PRIORITY+1
+	quad.material = look
+	drops.draw_pass_1 = quad
+	add_child(drops)
+	return drops
+
+## `drops` (from `_streaks`) round `eye` at `strength` (0 off), `tint`,
+## each going `past` (m/s) by the eye, laid upstream of it so they stream
+## through the view; each streak `streak` s of its speed long (at most
+## `longest` m).
+func _drive(drops: GPUParticles3D, eye: Vector3, strength: float, tint: Color, past: Vector3, streak: float, longest: float) -> void:
+	drops.emitting = strength > 0.0
+	if strength <= 0.0: return
+	drops.amount_ratio = minf(strength,1.0)
+	var process := drops.process_material as ParticleProcessMaterial
+	var quad := drops.draw_pass_1 as QuadMesh
+	var pace := maxf(past.length(),0.01)
+	(quad.material as ShaderMaterial).set_shader_parameter("tint",tint)
+	(quad.material as ShaderMaterial).set_shader_parameter("along",past/pace*minf(pace*streak,longest))
+	drops.global_position = eye
+	process.direction = past/pace
+	process.initial_velocity_min = pace*0.9
+	process.initial_velocity_max = pace*1.1
+	process.emission_shape_offset = -past*drops.lifetime*0.5
+
 ## The rain round `eye` for a plane going `moving` (m/s): each drop moves
-## past the eye at the fall plus the wind less the plane's own speed, laid
-## upstream of the eye so it streams through the view.
+## past the eye at the fall plus the wind less the plane's own speed (and,
+## in a whiteout, a gust against the flight: driven at the camera); the
+## spray's flecks the same way, close round the eye, thick in the murk.
 func rain(eye: Vector3, moving: Vector3) -> void:
 	var on := maxf(smoothstep(RAIN_FROM,1.0,storm),murk)
-	(_rain_quad.material as ShaderMaterial).set_shader_parameter("tint",Color(RAIN_COLOUR,RAIN_COLOUR.a*(1.0+MURK_RAIN*murk)))
-	_rain.emitting = on > 0.0
 	for veil in _veils:
 		veil.visible = on > 0.0
 		veil.global_position = eye
 		(veil.material_override as ShaderMaterial).set_shader_parameter("strength",on)
-	if on <= 0.0: return
-	_rain.amount_ratio = on
 	var a := _air_angle()
-	var past := Vector3.DOWN*RAIN_FALL+Vector3(cos(a),0.0,sin(a))*STORM_WIND*storm-moving
-	var pace := past.length()
-	_rain.global_position = eye
-	_rain_process.direction = past/pace
-	_rain_process.initial_velocity_min = pace*0.95
-	_rain_process.initial_velocity_max = pace*1.05
-	_rain_process.emission_shape_offset = -past*RAIN_LIFE*0.5
-	_rain_quad.size = Vector2(RAIN_WIDTH,minf(pace*RAIN_STREAK,RAIN_LONGEST))
+	var ahead := moving.normalized() if moving.length() > 1.0 else Vector3.ZERO
+	var past := Vector3.DOWN*RAIN_FALL+Vector3(cos(a),0.0,sin(a))*STORM_WIND*storm-moving-ahead*MURK_GUST*murk
+	_drive(_rain,eye,on,Color(RAIN_COLOUR,RAIN_COLOUR.a*(1.0+MURK_RAIN*murk)),past,RAIN_STREAK,RAIN_LONGEST)
+	var spray := clampf(murk+SPRAY_STORM*on,0.0,1.0) if on > 0.0 else 0.0
+	_drive(_spray,eye,spray,SPRAY_COLOUR,past*1.15,SPRAY_STREAK,SPRAY_LONGEST)
 
 ## The sky's wind's way (radians round, x then z), 0 with no sky.
 func _air_angle() -> float:
