@@ -44,6 +44,11 @@ small and additive. Leave digging to that loop.
    the input there: it gets strapped on or stowed and stays visibly on the
    plane, flying with it when you take off. How a load changes the plane's
    flight (the `--heavy` work) is out of scope; note it in the trail as open.
+   **Spec change:** the treasure doesn't go on the plane itself. The plane
+   trails a cargo sling (a net or basket) on a rope. Parked, the sling lies
+   on the ground by the plane; carry a treasure to it and press the input to
+   load it in. In flight the sling hangs under the plane on its rope and
+   swings with the plane's moves, the loaded treasure visible in it.
 6. **Re-deal.** N (or Esc, New deal) puts every treasure back at its spot,
    the hitched ones too.
 
