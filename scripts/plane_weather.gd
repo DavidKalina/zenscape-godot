@@ -23,6 +23,9 @@ extends Node3D
 ##              it its storm joins the sky's, as the front's does. They
 ##              come on their own every few minutes (`cells.due`), aimed at
 ##              the field or a far isle, and strike their own lightning.
+##   whiteouts  in a cell's or the front's thick core, now and then a few
+##              seconds of murk round the plane (scripts/storm_whiteout.gd,
+##              `whiteout`; `murk` 0 to 1, each frame); the rain thicker.
 ##   jets       rivers of fast air (scripts/sky_currents.gd, its ribbons):
 ##              a loop round the field and a high straight crossing it. In
 ##              one the air carries the plane along at JET m/s and pulls it
@@ -40,6 +43,7 @@ const SkyCurrents = preload("res://scripts/sky_currents.gd")
 const PlaneLightning = preload("res://scripts/plane_lightning.gd")
 const StormFront = preload("res://scripts/storm_front.gd")
 const StormCells = preload("res://scripts/storm_cells.gd")
+const StormWhiteout = preload("res://scripts/storm_whiteout.gd")
 
 const STORM_WIND := 6.0
 const TURB_PITCH := 0.35
@@ -97,6 +101,8 @@ const VEIL_TALL := 300.0
 ## Of the slate left at night.
 const SLATE_NIGHT := 0.08
 const SUN_DIM := 0.4
+## In a whiteout the rain's streaks this much stronger (of their own).
+const MURK_RAIN := 1.4
 
 ## The storm now (0 to 1), and an override (`--storm=<x>`; NAN: the sky's).
 var storm := 0.0
@@ -111,6 +117,9 @@ var front: Node3D
 var _front_eased := false
 ## The storm cell (scripts/storm_cells.gd, `send_cell`).
 var cells: Node3D
+## Whiteouts (scripts/storm_whiteout.gd), and the murk now (0 to 1).
+var whiteout: Node3D
+var murk := 0.0
 ## The gust under way ({} none): its side (a unit vector, flat), its
 ## strength's share, its time and length, and its signs.
 var _gust := {}
@@ -170,6 +179,10 @@ func setup(scene: Node3D) -> void:
 	add_child(cells)
 	cells.setup(scene)
 	cells.lightning = lightning
+	whiteout = StormWhiteout.new()
+	add_child(whiteout)
+	whiteout.setup(scene)
+	whiteout.lightning = lightning
 	# `--front=<m>`: one already in, its leading edge that far off, coming
 	# from ahead of the start (north, -z) unless `--front-toward=<rad>`.
 	for arg in preload("res://scripts/launch_args.gd").user_args():
@@ -211,6 +224,8 @@ func _build_rain() -> void:
 	var look := ShaderMaterial.new()
 	look.shader = preload("res://shaders/plane_rain.gdshader")
 	look.set_shader_parameter("tint",RAIN_COLOUR)
+	# Over a whiteout's murk (it hides all past a few tens of m, not these).
+	look.render_priority = StormWhiteout.RENDER_PRIORITY+1
 	_rain_process.scale_min = RAIN_SIZES.x
 	_rain_process.scale_max = RAIN_SIZES.y
 	var strengths := Gradient.new()
@@ -248,7 +263,8 @@ func _build_rain() -> void:
 ## past the eye at the fall plus the wind less the plane's own speed, laid
 ## upstream of the eye so it streams through the view.
 func rain(eye: Vector3, moving: Vector3) -> void:
-	var on := smoothstep(RAIN_FROM,1.0,storm)
+	var on := maxf(smoothstep(RAIN_FROM,1.0,storm),murk)
+	(_rain_quad.material as ShaderMaterial).set_shader_parameter("tint",Color(RAIN_COLOUR,RAIN_COLOUR.a*(1.0+MURK_RAIN*murk)))
 	_rain.emitting = on > 0.0
 	for veil in _veils:
 		veil.visible = on > 0.0
@@ -314,7 +330,11 @@ func step(delta: float) -> void:
 		cells.send(toward,cells.aim(toward))
 	cells.step(delta)
 	var near: float = front.storm_at(probe())
-	if is_nan(storm_pinned): storm = maxf(storm,maxf(near,cells.storm_at(probe())))
+	var in_cell: float = cells.storm_at(probe())
+	if is_nan(storm_pinned): storm = maxf(storm,maxf(near,in_cell))
+	var a := _air_angle()
+	whiteout.step(delta,maxf(near,in_cell),Vector3(cos(a),0.0,sin(a))*STORM_WIND*maxf(storm,0.5))
+	murk = whiteout.murk
 	if not _front_eased and near > FRONT_IN:
 		_front_eased = true
 		roll_in()

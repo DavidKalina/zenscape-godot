@@ -13,6 +13,9 @@ extends "res://studies/plane_field_isle.gd"
 ##                (scripts/storm_cells.gd); they also come on their own
 ##                every few minutes, over the field or a far isle, with
 ##                their own lightning
+##   M            a whiteout now: the murk closes round the plane for a few
+##                seconds (scripts/storm_whiteout.gd); they also come on their
+##                own in a cell's or the front's thick core
 ##   Shift+T      the whole sky's storm rolls in, or clears
 ##   G            a gust now
 ##   F12          lightning now (scripts/plane_lightning.gd)
@@ -22,6 +25,7 @@ extends "res://studies/plane_field_isle.gd"
 ##   ./run-sky-weather.command --cell-at=-430,-240   a cell over the near isle
 ##   ./run-sky-weather.command --cell-every=60 --cell-first=5   cells often
 ##   ./run-sky-weather.command --cell-every=0   no cells on their own
+##   ./run-sky-weather.command --whiteout-at=200 --whiteout-hold=1   one held, for stills
 ##   ./run-sky-weather.command --cloud-drift=30   the cloud faster (m/s; 0 still)
 ## The plane field's flags hold here.
 const PlaneWeather = preload("res://scripts/plane_weather.gd")
@@ -80,12 +84,13 @@ func _add_elements() -> void:
 	layer.add_child(_readout)
 
 func _read() -> String:
-	var line := "Storm %d%%   (T front, C cell, Shift+T sky storm, G gust, F12 lightning)" % roundi(elements.storm*100.0)
+	var line := "Storm %d%%   (T front, C cell, M whiteout, Shift+T sky storm, G gust, F12 lightning)" % roundi(elements.storm*100.0)
 	line += "\n"+drift.describe(elements._air_angle(),elements.storm)
 	if elements.front.active:
 		var d: float = elements.front.ahead_of(elements.probe())
 		line += "\nFront %s" % ("%.1f km off" % (d/1000.0) if d > 0.0 else "overhead")
 	if elements.cells.active: line += "\n"+_cell_line()
+	if elements.whiteout.active(): line += "\nWhiteout"
 	if flying and plane != null:
 		var here: Dictionary = plane_air.call(plane.position)
 		if float(here.gust) > 0.1: line += "\nGust!"
@@ -115,6 +120,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			KEY_C:
 				_show_toast("A storm cell is coming" if elements.send_cell() else "Not while the front is out")
+				return
+			KEY_M:
+				elements.whiteout.drop()
+				_show_toast("Whiteout")
 				return
 			KEY_G:
 				elements.gust()
