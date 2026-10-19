@@ -134,6 +134,11 @@ var hitches := 0
 ## Spilled from the bag so far (drivers); time since the last spill.
 var spills := 0
 var _spill_t := 99.0
+## The load's effects now (carry_weights.gd `load_of`, from the bag's kg),
+## told to the plane and its hand landing every frame (the plane can be
+## made anew); the `--heavy` flag's weight, which a light bag never lowers.
+var load_now := Weights.load_of(0.0)
+var _heavy_flag := -1.0
 static var _thud_take: AudioStreamWAV = null
 
 ## Stands the treasures in `spec` ([id, kind, weight, foot (world), yaw deg])
@@ -816,6 +821,15 @@ func _restore_feel() -> void:
 
 func _show_prompt() -> void:
 	_prompt.visible = false
+	if bool(load_now.over) and sling != null and sling.grounded:
+		# Too heavy to fly: said over the bag, in the plane or by it.
+		var by := _by_sling() and held.is_empty() and in_reach().is_empty()
+		if not _on_foot() or by:
+			_prompt.text = "Too heavy to fly: %.0f of %.0f kg" % [float(load_now.kg),float(Weights.LOAD.max_kg)]
+			if by: _prompt.text += "\n"+Pad.pick("E  take it out","B  take it out")
+			_prompt.global_position = sling.middle()+Vector3.UP*(float(sling.radius)+0.6)
+			_prompt.visible = true
+			return
 	if not _on_foot(): return
 	if not held.is_empty():
 		if phase != "carry" or not _by_sling(): return
@@ -859,6 +873,26 @@ func _sling_step(delta: float) -> void:
 		_refill()
 		sling.rest_behind(pf)
 	sling.step(delta,pf)
+	_apply_load()
+
+## The bag's kg weighs the plane (carry_weights.gd LOAD): its flight's
+## weight model and climb, and its takeoff (roll, lift, unstick, the dip
+## off an edge); past max_kg it won't leave the ground.
+func _apply_load() -> void:
+	load_now = Weights.load_of(float(sling.load_kg))
+	var plane: Variant = study.get("plane")
+	if plane != null:
+		if _heavy_flag < 0.0: _heavy_flag = float(plane.heavy)
+		plane.heavy = maxf(_heavy_flag,float(load_now.heavy))
+		plane.climb_share = 1.0-float(load_now.climb)
+	var hl: Variant = study.get("hand_landing")
+	if hl != null:
+		hl.load_roll = float(load_now.roll)
+		hl.load_lift = float(load_now.lift)
+		hl.load_unstick = float(load_now.unstick)
+		hl.load_dip = float(load_now.dip)
+		hl.too_heavy = bool(load_now.over)
+		hl.load_top = float(load_now.top)
 
 ## By the sling where it lies on the ground, on foot.
 func _by_sling() -> bool:

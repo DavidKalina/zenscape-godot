@@ -103,6 +103,35 @@ const SPILL_GRACE := 0.35
 const SPILL_KEEP := 0.7
 const SPILL_OUT := 2.5
 const SPILL_UP := 1.5
+## The load: what the bag's kg does to the plane (one table). `w` is the kg
+## over LOAD["max_kg"], the most it takes off with; each row is its effect
+## at w = 1, eased in linearly from an empty bag.
+##   max_kg   the takeoff limit (kg): past it the plane won't leave the
+##            ground (it won't lift off the wheels, and it stops at the
+##            land's edge rather than roll off it)
+##   heavy    the plane's weight model (scripts/sky_plane.gd `heavy`, the
+##            `--heavy` flag's: the path swings after the nose, a pull-up
+##            mushes, a turn skids, the climb costs speed, a bank sinks)
+##   climb    the share of the climb it loses (a slower climb)
+##   roll     the share of the throttle's push it loses rolling (a longer
+##            takeoff roll)
+##   lift     m/s more it needs to lift off the wheels
+##   unstick  times longer it hangs heavy off the wheels (and slower its
+##            speed builds then)
+##   dip      m/s more the wings need off an edge before they catch it
+##   over_top past max_kg, the most the throttle rolls it (m/s): the load
+##            drags, it can't get going (and bumps to a stop at the edge)
+const LOAD := {"max_kg":20.0,"over_top":4.0,"heavy":1.0,"climb":0.3,"roll":0.45,"lift":1.2,"unstick":0.8,"dip":1.5}
+
+## The load's effects for `kg` in the bag: w (kg over max_kg), over (past
+## the takeoff limit) and each row of LOAD at that w.
+static func load_of(kg: float) -> Dictionary:
+	var w := maxf(kg,0.0)/float(LOAD.max_kg)
+	var at := clampf(w,0.0,1.0)
+	return {"kg":kg,"w":w,"over":kg > float(LOAD.max_kg)+0.001,"heavy":float(LOAD.heavy)*at,
+		"climb":float(LOAD.climb)*at,"roll":float(LOAD.roll)*at,"lift":float(LOAD.lift)*at,
+		"unstick":1.0+float(LOAD.unstick)*at,"dip":float(LOAD.dip)*at,
+		"top":float(LOAD.over_top) if kg > float(LOAD.max_kg)+0.001 else INF}
 
 ## Class `weight`'s row (light's when unknown).
 static func of(weight: String) -> Dictionary:

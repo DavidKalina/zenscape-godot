@@ -399,6 +399,20 @@ var _unstick_nose := 0.0
 ## Its height through the unstick, kept here: the plane's skim would pop it
 ## up to SKIM over the grass the moment it flies.
 var _unstick_y := 0.0
+## A load hung under it (set from outside each frame, e.g. by scripts/
+## carry/carry_host.gd from carry_weights.gd LOAD; none by default): the
+## share of the rolling push it loses, m/s more it needs to lift off the
+## wheels, times longer the unstick hangs, m/s more the wings need off an
+## edge, the most the throttle rolls it (m/s), and too heavy to fly (it
+## won't lift off, and stops at the land's edge rather than roll off it:
+## `held_by_load` while it is held there).
+var load_roll := 0.0
+var load_top := INF
+var load_lift := 0.0
+var load_unstick := 1.0
+var load_dip := 0.0
+var too_heavy := false
+var held_by_load := false
 
 ## Takes charge of `on_plane`: in the air (`on_ground` false, flying as it
 ## is), or stood stopped where it is (`on_ground`, as a parked plane boarded
@@ -632,9 +646,9 @@ func _dip(delta: float, input: Dictionary, out: Dictionary) -> void:
 	var boost := clampf(float(input.get("boost",0.0)),0.0,1.0)
 	_dip_speed = clampf(_dip_speed+(-DIP_GAIN*sin(float(plane.pitch))+boost*PUSH)*delta,0.0,SkyPlane.FAST)
 	plane.speed = maxf(_dip_speed,SkyPlane.SLOW)
-	if _dip_speed >= FLY_SPEED or _dip_time >= DIP_MAX:
+	if _dip_speed >= FLY_SPEED+load_dip or _dip_time >= DIP_MAX:
 		_dip_time = -1.0
-		plane.speed = maxf(_dip_speed,FLY_SPEED)
+		plane.speed = maxf(_dip_speed,FLY_SPEED+load_dip)
 		out["wings"] = {"speed":_dip_speed}
 
 ## The dive now: Vector2(radians nose down, m/s down the nose's line).
@@ -830,7 +844,7 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		# The scrub: the more sideways, the more; the brakes along the wheels.
 		var side := sin(beta)
 		var loss := ROLL_DRAG*(1.0-boost)+maxf(WHEEL_BRAKE*brake*absf(cos(beta)),SCRUB*side*side)
-		var push := boost*ROLL_PUSH*(1.0-brake)*cos(beta) if speed < ROLL_TOP else 0.0
+		var push := boost*ROLL_PUSH*(1.0-load_roll)*(1.0-brake)*cos(beta) if speed < minf(ROLL_TOP,load_top) else 0.0
 		speed = maxf(0.0,speed+(push-loss)*delta)
 		# The path bends towards the nose, and the stick bends the line:
 		# into the slide tighter, against it wider.
@@ -856,7 +870,7 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		var fwd := Vector2(-sin(heading),-cos(heading))
 		var along := _v.dot(fwd)
 		along = move_toward(along,0.0,(ROLL_DRAG*(1.0-boost)+WHEEL_BRAKE*brake)*delta)
-		if along < ROLL_TOP: along = minf(along+boost*ROLL_PUSH*(1.0+SURGE*_surge)*(1.0-brake)*delta,maxf(along,ROLL_TOP))
+		if along < minf(ROLL_TOP,load_top): along = minf(along+boost*ROLL_PUSH*(1.0-load_roll)*(1.0+SURGE*_surge)*(1.0-brake)*delta,maxf(along,minf(ROLL_TOP,load_top)))
 		_v = fwd*along
 		beta = 0.0
 		# Fast enough, Boost held and the stick back: the nose comes up.
@@ -887,6 +901,16 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 			speed = 0.0
 			next_at = at
 		else: _at_edge = false
+	held_by_load = false
+	if too_heavy and not reversing and speed > 0.0 and is_nan(float(floor_at.call(next_at+_v.normalized()*REVERSE_LOOK))):
+		# Too heavy to fly: the load holds it back at the edge (it won't
+		# roll off into a fall it can't climb out of).
+		if not _at_edge: out["too_heavy"] = true
+		_at_edge = true
+		held_by_load = true
+		_v = Vector2.ZERO
+		speed = 0.0
+		next_at = at
 	var land := float(floor_at.call(next_at))
 	if is_nan(land):
 		# Off the land's edge: flying again with the speed it had, a dip
@@ -913,7 +937,7 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		var nose := lerpf(level,maxf(ROTATE_NOSE,level),_rot)
 		plane.pitch = nose
 		plane.position.y += PlaneStrip.contact(nose)-PlaneStrip.contact(was)
-	if rotate and _rot >= 1.0 and speed >= LIFT_SPEED:
+	if rotate and _rot >= 1.0 and speed >= LIFT_SPEED+load_lift and not too_heavy:
 		stats.lift_offs += 1
 		out["lifted"] = {"speed":speed}
 		_surge = 0.0
@@ -1029,10 +1053,10 @@ func _hold(floor_at: Callable) -> void:
 ## slow to build, the nose slow to answer (the unstick's constants).
 func _heavy(delta: float, nose_was: float) -> void:
 	_unstick += delta
-	var u := clampf(_unstick/UNSTICK_TIME,0.0,1.0)
+	var u := clampf(_unstick/(UNSTICK_TIME*load_unstick),0.0,1.0)
 	var most := _unstick_nose+UNSTICK_NOSE*_unstick
 	if float(plane.pitch) > maxf(most,nose_was): plane.pitch = maxf(most,nose_was)
-	plane.speed = minf(float(plane.speed),_unstick_speed+UNSTICK_PUSH*_unstick)
+	plane.speed = minf(float(plane.speed),_unstick_speed+UNSTICK_PUSH/load_unstick*_unstick)
 	var share := lerpf(UNSTICK_FLOAT,1.0,smoothstep(0.0,1.0,u))
 	var climb := float(plane.speed)*sin(float(plane.pitch))
 	plane.velocity.y = climb*share if climb > 0.0 else climb

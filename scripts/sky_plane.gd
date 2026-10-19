@@ -149,6 +149,10 @@ var drift_strength := drift_flag(preload("res://scripts/launch_args.gd").user_ar
 ## velocity the last step left (set from outside since: the path starts
 ## again along it).
 var heavy := heavy_flag(preload("res://scripts/launch_args.gd").user_args())
+## The share of its climb it keeps (1, all of it; a load hung under it
+## lowers it from outside, scripts/carry/carry_weights.gd LOAD): only the
+## climb, so level flight and the dive are as they were.
+var climb_share := 1.0
 var _path := Vector3.ZERO
 var _pitch_rate := 0.0
 var _left := Vector3.INF
@@ -387,7 +391,9 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var drop := approach_drop(ground) if approach else 0.0
 	var side := Vector3(cos(heading),0.0,-sin(heading))
 	var sag := HEAVY_SAG*heavy*(1.0-cos(_free_bank))
-	velocity = path*speed+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag)+wind
+	var along := path*speed
+	if climb_share < 1.0 and along.y > 0.0: along.y *= climb_share
+	velocity = along+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag)+wind
 	var was := position
 	position += velocity*delta
 	_skim(delta,ground,was)
