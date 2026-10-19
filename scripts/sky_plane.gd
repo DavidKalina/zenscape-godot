@@ -92,6 +92,22 @@ const MOUSE_BANK := 0.35
 const PITCH_SPEED := 1.4
 const PITCH_LIMIT := Vector2(-1.3,1.2)
 const EASE_LEVEL := 1.4
+## Weight (`--heavy[=<x>]`, `heavy` 0 off to 1, the prototype's; 0 by
+## default): the toy flown with mass. Its path swings after the nose rather
+## than with it (HEAVY_LAG s at cruise, longer slow), so a pull-up mushes
+## and a turn skids before it carries; the dive gains and the climb costs
+## HEAVY_SWING more, the engine pulling it back to the throttle's speed
+## HEAVY_THROTTLE less hard, so it carries speed out of a dive; the stick
+## builds the pitch's rate over HEAVY_PITCH s and the bank comes in
+## HEAVY_ROLL slower; a bank sinks it HEAVY_SAG m/s at a right angle (by
+## 1 - cos of the bank, the knife edge's tip not counted) unless pulled.
+## Never a stall, never a crash: still the toy.
+const HEAVY_LAG := 0.32
+const HEAVY_SWING := 0.8
+const HEAVY_THROTTLE := 0.5
+const HEAVY_PITCH := 0.18
+const HEAVY_ROLL := 1.0
+const HEAVY_SAG := 3.0
 ## The knife edge: how far over a held lean tips it (radians) and how fast
 ## it tips in and out (seconds).
 const KNIFE_BANK := PI*0.5
@@ -128,6 +144,14 @@ var knife := 0.0
 ## (0 to 1), the nose's lead over its path (radians, the travel is at
 ## heading+slip), and how long this one has been held (seconds).
 var drift_strength := drift_flag(preload("res://scripts/launch_args.gd").user_args())
+## The weight (`--heavy`), the path it flies (a unit vector swinging after
+## the nose), the pitch's rate built by the stick (rad/s), and the
+## velocity the last step left (set from outside since: the path starts
+## again along it).
+var heavy := heavy_flag(preload("res://scripts/launch_args.gd").user_args())
+var _path := Vector3.ZERO
+var _pitch_rate := 0.0
+var _left := Vector3.INF
 ## `--plane-speed=<x>` (1 by default, GAME_SPEED in the game): times the
 ## cruise, boost and brake speeds only; landing, flap and stall speeds stay
 ## as they are. `--plane-turn=<x>` times the turn rate (by default the same
@@ -221,6 +245,14 @@ func carry(at: Vector3, moving: Vector3, pace: float) -> void:
 	velocity = moving
 	speed = pace
 
+## The weight asked for on the command line: `--heavy` 1, `--heavy=<x>`
+## that (0 to 1), else 0.
+static func heavy_flag(args: PackedStringArray) -> float:
+	for arg in args:
+		if arg == "--heavy": return 1.0
+		if arg.begins_with("--heavy="): return clampf(float(arg.substr(8)),0.0,1.0)
+	return 0.0
+
 ## The drift strength asked for on the command line (`--drift=<x>`), else 1.
 static func drift_flag(args: PackedStringArray) -> float:
 	for arg in args:
@@ -265,6 +297,9 @@ func travel() -> Vector3:
 ## `ground` and `air` are as for the glide.
 func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) -> void:
 	airborne += delta
+	# Set from outside since the last step (launched, resumed, carried,
+	# turned aside): the heavy path starts again along it.
+	if _left == Vector3.INF or not velocity.is_equal_approx(_left): _path = Vector3.ZERO
 	var here: Dictionary = air.call(position) if air.is_valid() else {}
 	wind = here.get("wind",Vector3.ZERO)
 	in_jet = float(here.get("jet",0.0))
@@ -301,7 +336,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	# the mouse turns it directly and leans it a little; coming in to land
 	# it turns itself to the target.
 	var aim := _aim(delta) if approach and is_zero_approx(turn) and is_zero_approx(look.x) else 0.0
-	_lean = lerpf(_lean,turn*BANK_HELD,_ease(EASE_ROLL_IN,delta))
+	_lean = lerpf(_lean,turn*BANK_HELD,_ease(EASE_ROLL_IN*(1.0+HEAVY_ROLL*heavy),delta))
 	# On the knife edge a real turn of the stick drifts: tighter, nose in.
 	var lean_in := clampf(float(input.get("lean",0.0)),-1.0,1.0)
 	var want := 0.0
@@ -325,7 +360,9 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	bank = lerpf(_free_bank,signf(knife)*KNIFE_BANK,absf(knife))
 	# Pitch: the stick and mouse steer it; let go, it eases level, or down
 	# the approach's slope; under the floor the cushion lifts the nose.
-	pitch += look.y+steer*PITCH_SPEED*delta
+	# Heavy, the stick builds the pitch's rate rather than setting it.
+	_pitch_rate = lerpf(_pitch_rate,steer*PITCH_SPEED,_ease(HEAVY_PITCH*heavy,delta)) if heavy > 0.0 else steer*PITCH_SPEED
+	pitch += look.y+_pitch_rate*delta
 	if is_zero_approx(steer) and is_zero_approx(look.y):
 		pitch = lerpf(pitch,approach_pitch(ground) if approach else 0.0,_ease(EASE_LEVEL,delta))
 	pitch += shove.x*delta
@@ -340,15 +377,29 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var flap := clampf(float(input.get("flaps",0.0)),0.0,1.0)*(1.0-boost)
 	target = lerpf(target,minf(target,FLAP_SPEED),flap)
 	var slow := lerpf(SLOW,FLAP_SLOW,flap)
-	speed += (-SWING*sin(pitch)-THROTTLE*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
+	# Heavy, the climb and dive are the path's, not the nose's.
+	var path := _heavy_path(delta) if heavy > 0.0 else travel()
+	var climb := path.y if heavy > 0.0 else sin(pitch)
+	speed += (-SWING*(1.0+HEAVY_SWING*heavy)*climb-THROTTLE*(1.0-HEAVY_THROTTLE*heavy)*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
 	speed = clampf(speed,slow,FAST)
 	lift = clampf((floor_y-position.y)*CUSHION,0.0,CUSHION_MAX)
 	var fall := FALL*minf(airborne,FALL_TIME)*(1.0-smoothstep(FALL_TIME,FALL_TIME+CATCH,airborne))
 	var drop := approach_drop(ground) if approach else 0.0
 	var side := Vector3(cos(heading),0.0,-sin(heading))
-	velocity = travel()*speed+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap)+wind
+	var sag := HEAVY_SAG*heavy*(1.0-cos(_free_bank))
+	velocity = path*speed+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag)+wind
 	var was := position
 	position += velocity*delta
 	_skim(delta,ground,was)
 	_water(delta)
 	speed = maxf(speed,slow)
+	_left = velocity
+
+## The heavy path: swung after the nose (`travel`) over HEAVY_LAG s at
+## cruise, longer the slower it goes; started again along the nose.
+func _heavy_path(delta: float) -> Vector3:
+	var nose := travel()
+	if _path == Vector3.ZERO: _path = nose
+	var lag := HEAVY_LAG*heavy*clampf(CRUISE_SPEED*speed_scale/maxf(speed,SLOW),0.6,2.0)
+	_path = _path.slerp(nose,_ease(lag,delta)).normalized()
+	return _path

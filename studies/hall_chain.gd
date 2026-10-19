@@ -18,6 +18,8 @@ extends Node3D
 ##   [ ]            slower, quicker (0.25x to 2x; \ back to 1x)
 ##   O              orbit: turn by itself or hold
 ##   M              the route (white dots) and the trigger spots (gold) on or off
+##   H (pad View)   the plane's weight on or off (scripts/sky_plane.gd `heavy`;
+##                  `--heavy[=<x>]` starts with it on)
 ##   Esc            frees the mouse
 ##
 ##   ./run-hall-chain.command [--chain-at=0.4] [--chain-gap=70] ...
@@ -84,6 +86,10 @@ var figure: Node3D
 var chase := GlideCamera.new()
 var bumps := 0
 var autopilot := false
+## The plane's weight (SkyPlane `heavy`), kept across boarding; the last on
+## value, for H to give back.
+var heavy := SkyPlane.heavy_flag(preload("res://scripts/launch_args.gd").user_args())
+var _heavy_on := heavy if heavy > 0.0 else 1.0
 var route_at := 0
 var clock := 0.0
 var _fly_look := Vector2.ZERO
@@ -216,7 +222,7 @@ func _build_ui() -> void:
 		l.add_theme_color_override("font_outline_color",Color(1,1,1,0.85))
 		l.add_theme_constant_override("outline_size",6)
 		layer.add_child(l)
-	_keys.text = "R again (Shift+R new seed)  ·  N next hall now  ·  P autopilot  ·  Enter all in place  ·  C camera  ·  F plane  ·  [ ] slower quicker  ·  O orbit  ·  M route  ·  Esc mouse"
+	_keys.text = "R again (Shift+R new seed)  ·  N next hall now  ·  P autopilot  ·  Enter all in place  ·  C camera  ·  F plane  ·  [ ] slower quicker  ·  O orbit  ·  M route  ·  H weight  ·  Esc mouse"
 
 func _physics_process(delta: float) -> void:
 	tick(delta)
@@ -262,6 +268,7 @@ func _show_hud() -> void:
 		if bool(g.waiting): line += "  ·  WAITING ON THE BUILD"
 	line += "\nCamera: %s  ·  speed %.2fx  ·  gap %.0f m  ·  turn +-%.0f°  ·  climb +-%.0f m  ·  keep %d  ·  seed %d" % [mode,time_scale,chain.cfg.gap,chain.cfg.turn,chain.cfg.climb,chain.cfg.keep,chain.cfg.seed]
 	if mode == "plane": line += "\n"+PLANE_HINT % [float(plane.speed),bumps," ON" if autopilot else ""]
+	line += "\nWeight: %s  (H / pad View)" % ("HEAVY %.1f" % heavy if heavy > 0.0 else "toy (off)")
 	_hud.text = line
 
 ## The route (white) and each hall's trigger spot (gold), redrawn as the
@@ -376,6 +383,7 @@ func board(at_start := false) -> void:
 		from = ChainPlan.approach_of(pose)-ChainPlan.ahead(head)*BOARD_OUT
 		route_at = _route_index_of(ChainPlan.approach_of(pose))
 	plane.launch(from+Vector3.UP*PLANE_UP,head,SkyPlane.CRUISE_SPEED,false)
+	plane.heavy = heavy
 	if figure == null:
 		figure = PlaneFigure.new()
 		figure.name = "Plane"
@@ -458,6 +466,11 @@ func _fly_input(delta: float) -> Dictionary:
 	_roll_asked = 0.0
 	return input
 
+## The plane's weight on or off, at once, the plane flown as it is.
+func _toggle_heavy() -> void:
+	heavy = 0.0 if heavy > 0.0 else _heavy_on
+	if plane != null: plane.heavy = heavy
+
 func _lean_tapped(dir: float) -> void:
 	var now := Time.get_ticks_msec()
 	if dir == _tap_dir and now-_tap_at <= int(DOUBLE_TAP*1000.0):
@@ -470,6 +483,9 @@ func _lean_tapped(dir: float) -> void:
 # --- Input ---------------------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventJoypadButton and event.pressed and (event as InputEventJoypadButton).button_index == JOY_BUTTON_BACK:
+		_toggle_heavy()
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key := (event as InputEventKey).keycode
 		match key:
@@ -504,6 +520,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			KEY_O:
 				auto_turn = not auto_turn
+				return
+			KEY_H:
+				_toggle_heavy()
 				return
 			KEY_M:
 				_marks_on = not _marks_on
