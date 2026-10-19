@@ -142,3 +142,10 @@ The iterate skill's defaults.
 - The far silhouette is still a long low hull with a slim block at the east
   end. The tower alone won't fix it at the spine's 136 m length; the islets
   and the look pass must add height and mass so the cluster reads upright.
+- (Review of iteration 6.) The rope's column and beam read as a plain dark
+  gallows; make the rope hang from the ruin itself (a broken flying
+  buttress, an arch's overhang, a jutting lintel of the colonnade).
+- The coast rock and the rope rock are both bare inverted cones with one
+  arch. Later islets must not repeat that shape: vary the outline (a
+  ledge-stepped rock, a slab tilted, ruin built down its side), and give
+  each its own architecture.
