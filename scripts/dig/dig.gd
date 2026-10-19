@@ -16,6 +16,7 @@ const Lines = preload("res://scripts/collectible_lines.gd")
 const DigMotion = preload("res://scripts/dig/dig_motion.gd")
 const DigFx = preload("res://scripts/dig/dig_fx.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
+const DigSpots = preload("res://scripts/dig/dig_spots.gd")
 
 const ACTION := &"walk_dig"
 const SPADE_NAME := "wreck_cluster/spade"
@@ -49,6 +50,10 @@ var dig_t := 0.0
 var dig_at := Vector3.ZERO
 var dig_normal := Vector3.UP
 var _scoop: Node3D = null
+## The strange spots and their finds (scripts/dig/dig_spots.gd), and the
+## one this dig is opening ({} for plain ground).
+var spots: Node3D = null
+var dig_spot := {}
 ## Digs made this deal, by kind ("soil", "stone"), for drivers.
 var dug := {"soil":0,"stone":0}
 ## How far ahead of his feet the blade bites (m, times his size).
@@ -74,6 +79,9 @@ func setup(scene: Node3D) -> void:
 	fx = DigFx.new()
 	fx.size = _scale()
 	add_child(fx)
+	spots = DigSpots.new()
+	add_child(spots)
+	spots.setup(host,fx,_scale())
 	lay_spade()
 
 func _scale() -> float:
@@ -114,6 +122,8 @@ func re_deal() -> void:
 	end_dig()
 	fx.clear_scoops()
 	dug = {"soil":0,"stone":0}
+	var seed_value: Variant = host.get("deal_seed")
+	spots.re_deal(int(seed_value) if seed_value != null else 0)
 	lay_spade()
 
 func take_spade() -> void:
@@ -194,9 +204,22 @@ func ground_ahead() -> Dictionary:
 		var surface: String = audio._read_surface(at)
 		if surface == "grass" or surface == "earth": kind = "soil"
 		elif surface == "water": kind = ""
+		elif _turf_under_piece(hit,at): kind = "soil"
 	elif hit.collider is CollisionObject3D and ((hit.collider as CollisionObject3D).collision_layer & (1 << 11)) != 0:
 		kind = "soil"
 	return {"at":at,"normal":hit.normal,"kind":kind}
+
+## The turf itself where the isle's sound reads stone only because a piece
+## stands over it (an arch's span): the hit is the land's turf collision,
+## at the turf's height there, facing up.
+func _turf_under_piece(hit: Dictionary, at: Vector3) -> bool:
+	var body: Variant = hit.get("collider")
+	if not (body is CollisionObject3D) or ((body as CollisionObject3D).collision_layer & (1 << 11)) == 0: return false
+	if (hit.normal as Vector3).y < 0.75: return false
+	var life: Variant = host.get("life")
+	if life == null or not (life as Object).has_method("ground_at"): return false
+	var turf: Variant = life.ground_at(Vector2(at.x,at.z))
+	return turf != null and absf(float(turf)-at.y) < 0.3
 
 func start_dig() -> void:
 	var g := ground_ahead()
@@ -212,6 +235,11 @@ func start_dig() -> void:
 	dig_at = g.at
 	dig_normal = g.normal
 	_scoop = null
+	# A strange spot under the bite: the dig opens it, centred on it.
+	dig_spot = spots.near(dig_at) if String(g.kind) == "soil" else {}
+	if not dig_spot.is_empty():
+		var p: Vector3 = (dig_spot.tell_node as Node3D).global_position
+		dig_at = Vector3(p.x,p.y,p.z)
 	# The isle's sound comes up after the cluster's life.
 	if fx.audio == null: fx.hook_audio(host.get("audio"))
 	motor.velocity = Vector3(0.0,motor.velocity.y,0.0)
@@ -260,7 +288,12 @@ func _moment(e: String) -> void:
 			if _scoop == null:
 				_scoop = fx.scoop(Vector3(dig_at.x,dig_at.y,dig_at.z),dig_normal,motion.frame.basis.x,0.4)
 				dug.soil += 1
-			else: fx.deepen(_scoop,1.0)
+			else:
+				fx.deepen(_scoop,1.0)
+				# The second bite opens a strange spot: its find comes up.
+				if not dig_spot.is_empty():
+					spots.reveal(dig_spot,dig_at)
+					dig_spot = {}
 		"throw":
 			var blade: Vector3 = spade_hand.global_transform*Vector3(0.0,SpadeFigure.BLADE_H*0.5,0.0)
 			var way: Vector3 = (motion.frame.basis.x*1.0-motion.frame.basis.z*0.35).normalized()
@@ -278,6 +311,7 @@ func _moment(e: String) -> void:
 func end_dig() -> void:
 	if motion == null: return
 	motion = null
+	dig_spot = {}
 	if host != null: host.set("scripted",false)
 	if spade_hand != null: spade_hand.visible = false
 	if spade_back != null and spade_state == "carried": spade_back.visible = true

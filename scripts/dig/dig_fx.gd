@@ -134,6 +134,10 @@ func _clod(at: Vector3, v: Vector3, r: float, mat: Material, floor_y: float) -> 
 	_bits.append({"node":m,"kind":"clod","v":v,"spin":Vector3(_rng.randf_range(-12,12),_rng.randf_range(-12,12),0.0),
 		"age":0.0,"life":_rng.randf_range(0.9,1.3),"floor":floor_y+s*0.4,"s":s})
 
+## A beat of dust at `at` (a find coming up).
+func dust(at: Vector3, n: int, r: float, life: float) -> void:
+	_puff(at,n,r,life)
+
 func _puff(at: Vector3, n: int, r: float, life: float) -> void:
 	for i in range(n):
 		var m := MeshInstance3D.new()
