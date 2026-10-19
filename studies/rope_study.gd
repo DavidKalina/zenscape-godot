@@ -293,6 +293,8 @@ func _want(delta: float) -> Vector2:
 	return Vector2.ZERO
 
 func tick(delta: float) -> void:
+	# Jump by a hooked rope takes hold of it (before the motor would jump).
+	if rope != null: rope.pre_step((script_jump if scripted else Input.is_action_pressed(&"walk_jump")) and not _tuning())
 	super.tick(delta)
 	_take_loot()
 
@@ -332,4 +334,4 @@ func _show_status() -> void:
 	_status.text = "%s · %s %s\nloot %d / %d · %s" % [moves,Pad.pick("M","LEFT"),"to switch",taken,loot.size(),BagStudy._kg_text(taken_kg)]
 
 func _hint_text() -> String:
-	return "Rope study: WASD run · Space jump · Shift/C crouch, at a run: slide · hold LMB or T (pad RT): aim the hook (gold catches, red won't), let go to throw · E (pad B) tug a caught hook: it seats, or slips off a crumbly lip · F (pad down) reel it in · M (pad left) full moveset on / off · walk into loot to take it · 1 start, 2 wall 5 m, 3 face 8 m, 4 crumbly / solid edge, 5 drop top, 6 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Rope study: WASD run · Space jump · Shift/C crouch, at a run: slide · hold LMB or T (pad RT): aim the hook (gold catches, red won't), let go to throw · E (pad B) tug a caught hook: it seats, or slips off a crumbly lip · Space (pad A) by a hooked rope: take hold; W / stick toward the wall climbs, back down, Shift / crouch slides, Space lets go; at the top he hauls over · F (pad down) reel it in · M (pad left) full moveset on / off · walk into loot to take it · 1 start, 2 wall 5 m, 3 face 8 m, 4 crumbly / solid edge, 5 drop top, 6 lower floor · R start · F1 numbers · F4 world view · Esc mouse"

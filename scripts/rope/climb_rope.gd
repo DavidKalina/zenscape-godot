@@ -20,6 +20,16 @@ extends Node3D
 ## the lip in a spill of grit and it falls. Left untested, a bad hook seems
 ## caught; it gives under his weight partway up (the climb, task 4).
 ##
+## Climb: Jump by the hanging rope of a caught or seated hook takes hold
+## (the motor's rider, scripts/pilot_motor.gd `mount`, held as the swing
+## rope's "swing" hang). Stick toward the wall: hand over hand, a pull at a
+## time (the body hauled up on the top hand, then the low hand reaching past
+## it), slow; let go of the stick and he hangs. Stick away: down hand under
+## hand; crouch (Shift / C): slides down fast; Jump: lets go. At the top he
+## is handed to the motor's own ledge hang and climb (the haul over the lip,
+## slowed to HAUL_TIME). An untested bad hook gives partway up: it tears out
+## in grit and he falls.
+##
 ## Reel: `walk_reel` (F / pad down) draws the rope in. A caught hook is
 ## flicked free off its lip first, falls, then is dragged in along the
 ## ground till it's coiled at his side.
@@ -85,6 +95,27 @@ const HOOK := Color("3a3d42")
 const AIM_OK := Color(1.0,0.92,0.55)
 const AIM_BAD := Color(1.0,0.3,0.25)
 const LINE_TIME := 2.5
+## The climb: within this of the hanging rope (m, flat) Jump takes hold; the
+## rope hangs this far out from the edge; a pull's rise (m, the gap between
+## the hands too) and time (s: the haul up, then the low hand's reach, at
+## REACH_AT of it); down hand under hand and the slide (m/s); the haul over
+## the lip (s, the motor's climb slowed); an untested bad hook gives this
+## share of the way up (from, to); the hands' spread on the rope (m).
+const GRAB_REACH := 1.2
+const ROPE_OFF := 0.04
+const PULL := 0.4
+const PULL_T := 0.62
+const REACH_AT := 0.55
+const DOWN_SPEED := 0.7
+const SLIDE_SPEED := 3.5
+const HAUL_TIME := 0.85
+const GIVE := Vector2(0.4,0.7)
+const HAND_SPREAD := 0.035
+## On the rope he hangs this much further off the wall than a ledge hang
+## (arms out to the rope, so they read), drawn in to the ledge's over the
+## last BODY_IN under the top for the haul.
+const BODY_OFF := 0.3
+const BODY_IN := 0.6
 
 var study: Node3D
 ## "coiled" (at his side), "aim", "fly", "drag" (pulled back to the lip),
@@ -128,6 +159,33 @@ var seats := 0
 var slips := 0
 ## Drivers: aim as though the button were held (`release` lets go).
 var hold_aim := false
+## The edge the rope runs over (a lip's own; for a post, the top's edge on
+## the side it hangs) and its outward way (flat): where it hangs to climb.
+var edge := Vector3.INF
+var edge_out := Vector3.ZERO
+## On the rope (the motor's rider), and hauling over the lip after.
+var climber := false
+var hauling := false
+## The climb's pace (1 bare; a load would slow it: the spec's later bag).
+var climb_pace := 1.0
+## Tallies: holds taken, hauls over, hooks that gave.
+var climbs := 0
+var hauls := 0
+var gave := 0
+
+var _jump_was := false
+var _on_t := 0.0
+## The hands' heights on the rope (world y): [top, low], and which bone side
+## each is (1 right, -1 left).
+var _hand_y := [0.0,0.0]
+var _hand_side := [1.0,-1.0]
+## A pull under way (0 to 1; -1 none), from feet at this height.
+var _pull_t := -1.0
+var _pull_from := 0.0
+var _reach_from := 0.0
+## The hands' height an untested bad hook gives at (INF never).
+var _give_y := INF
+var _climb_time_was := 0.0
 
 var _aim := Vector2.ZERO
 var _throw_was := false
@@ -249,6 +307,9 @@ func reset() -> void:
 	bad = false
 	paid = 0.0
 	hold_aim = false
+	edge = Vector3.INF
+	edge_out = Vector3.ZERO
+	_off_rope()
 	_reel_after = false
 	_show_aim(false)
 	_rope.visible = false
@@ -454,6 +515,7 @@ func _post_top(post: Node3D) -> Vector3:
 ## A caught (or seated) hook: he reaches up the rope and yanks it.
 func tug() -> void:
 	if state != "caught" and state != "seated": return
+	if climber or hauling or on_top(): return
 	if not _on_foot():
 		_say("Feet on the ground to tug")
 		return
@@ -540,6 +602,13 @@ func _grit_step(delta: float) -> void:
 
 ## Draws the rope in: a caught hook flicked off its lip first.
 func reel() -> void:
+	if climber or hauling: return
+	if (state == "caught" or state == "seated") and on_top():
+		# From the top: pulled up hand over hand (task 5 shows it).
+		reels += 1
+		_coil()
+		_say("Pulled it up")
+		return
 	match state:
 		"caught", "drag", "tug", "seated":
 			reels += 1
@@ -559,12 +628,217 @@ func _flick() -> void:
 	hook_at = (lip if lip != Vector3.INF else hook_at)+lip_out*0.15*s+Vector3.UP*0.1*s
 	state = "fall"
 
+# --- The climb -------------------------------------------------------------------------
+
+## The edge the caught rope runs over (`edge`, `edge_out`): a lip's own; a
+## post's, walked out from it toward where the rope hangs till the top
+## ends, then found exactly by a ray back at its face.
+func _find_edge() -> void:
+	edge = lip
+	edge_out = lip_out
+	if hold != "anchor": return
+	var s := _size()
+	var space := get_world_3d().direct_space_state
+	var top_y := INF
+	var last := Vector3.INF
+	for i in 120:
+		var p := lip+lip_out*(0.22+0.05*i)*s
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(p+Vector3.UP*0.6*s,p+Vector3.DOWN*3.0*s,CarryHost.SOLID_MASK))
+		if hit.is_empty(): break
+		var y := (hit.position as Vector3).y
+		if top_y == INF: top_y = y
+		if absf(y-top_y) > 0.25*s: break
+		last = Vector3(p.x,y,p.z)
+	if last == Vector3.INF: return
+	var a := last+lip_out*0.4*s+Vector3.DOWN*0.08*s
+	var side := space.intersect_ray(PhysicsRayQueryParameters3D.create(a,a-lip_out*0.8*s,CarryHost.SOLID_MASK))
+	edge = last
+	if not side.is_empty():
+		var n: Vector3 = side.normal
+		n.y = 0.0
+		if n.length() > 0.5:
+			edge_out = n.normalized()
+			edge = Vector3((side.position as Vector3).x,last.y,(side.position as Vector3).z)
+
+## He's up on the top the rope's hooked over (or level with it).
+func on_top() -> bool:
+	if edge == Vector3.INF: return false
+	var motor: Variant = study.get("motor")
+	return (motor.feet as Vector3).y > edge.y-0.4*_size()
+
+## Where the hanging rope is at height `y` (world).
+func line_at(y: float) -> Vector3:
+	var s := _size()
+	return Vector3(edge.x+edge_out.x*ROPE_OFF*s,y,edge.z+edge_out.z*ROPE_OFF*s)
+
+## Called by the study before the motor's step: Jump by the hanging rope of
+## a caught or seated hook takes hold of it (instead of the jump).
+func pre_step(jump_down: bool) -> void:
+	var hit := jump_down and not _jump_was
+	_jump_was = jump_down
+	if not hit or climber or hauling or _busy(): return
+	if state != "caught" and state != "seated": return
+	if edge == Vector3.INF or not _on_foot() or on_top(): return
+	var motor: Variant = study.get("motor")
+	var s := _size()
+	var feet: Vector3 = motor.feet
+	var at := line_at(feet.y)
+	if Vector2(at.x-feet.x,at.z-feet.z).length() > GRAB_REACH*s: return
+	_mount(motor)
+
+func _mount(motor: Variant) -> void:
+	var s := _size()
+	var feet: Vector3 = motor.feet
+	var y := minf(feet.y+0.12*s,edge.y-float(motor.hang_drop))
+	motor.mount(self,_body_at(motor,y),false,PilotMotor.facing_of(Vector2(-edge_out.x,-edge_out.z)),true)
+	motor.hold = "swing"
+	motor.move = ""
+	climber = true
+	climbs += 1
+	_on_t = 0.0
+	_pull_t = -1.0
+	var top := y+float(motor.hang_drop)
+	_hand_y = [top,top-PULL*s]
+	_hand_side = [1.0,-1.0]
+	# An untested bad hook gives this far up the climb (the hands' height).
+	_give_y = INF
+	if bad and not tested: _give_y = top+randf_range(GIVE.x,GIVE.y)*maxf(edge.y-top,0.5*s)
+	_say("On the rope: %s climbs · %s lets go · %s slides" % [Pad.pick("W","stick up"),Pad.pick("Space","A"),Pad.pick("Shift","crouch")])
+
+## His feet hanging on the rope with them at height `y`: off the wall as
+## the motor's ledge hang holds him.
+func _body_at(motor: Variant, y: float) -> Vector3:
+	var s := _size()
+	var near := clampf((edge.y-float(motor.hang_drop)-y)/(BODY_IN*s),0.0,1.0)
+	var o := float(motor.hang_out)+BODY_OFF*s*near
+	return Vector3(edge.x+edge_out.x*o,y,edge.z+edge_out.z*o)
+
+## One step on the rope (the motor's rider, scripts/pilot_motor.gd `ride`).
+func ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dictionary:
+	var out := {}
+	_on_t += delta
+	var s := _size()
+	if pressed and _on_t > 0.2:
+		walker.toss(edge_out*0.3*s+Vector3.UP*0.6*s)
+		_off_rope()
+		out["let_go"] = true
+		return out
+	var toward := Vector2(-edge_out.x,-edge_out.z).normalized()
+	var push := want.dot(toward)
+	var y := walker.feet.y
+	var drop := float(walker.hang_drop)
+	var top_y := edge.y-drop
+	if walker.crouch:
+		# Sliding down, both hands loose on the rope over his head.
+		_pull_t = -1.0
+		y -= SLIDE_SPEED*s*delta
+		_hand_y = [y+drop,y+drop-0.12*s]
+	elif _pull_t >= 0.0 or push > 0.35:
+		if _pull_t < 0.0:
+			if y >= top_y-0.01*s:
+				_haul(walker,out)
+				return out
+			_pull_t = 0.0
+			_pull_from = y
+			_reach_from = float(_hand_y[1])
+		_pull_t = minf(_pull_t+delta/(PULL_T*climb_pace),1.0)
+		var rise := minf(PULL*s,top_y-_pull_from)
+		# Hauled up on the top hand (eased in and out), then the low hand
+		# reaches past it, arcing off the rope.
+		var k := clampf(_pull_t/REACH_AT,0.0,1.0)
+		y = _pull_from+rise*k*k*(3.0-2.0*k)
+		if _pull_t > REACH_AT:
+			var r := (_pull_t-REACH_AT)/(1.0-REACH_AT)
+			r = 1.0-(1.0-r)*(1.0-r)
+			_hand_y[1] = lerpf(_reach_from,_pull_from+rise+drop,r)
+		if _pull_t >= 1.0:
+			# The reached hand is the top one now.
+			_hand_y = [_hand_y[1],_hand_y[0]]
+			_hand_side = [_hand_side[1],_hand_side[0]]
+			_pull_t = -1.0
+			out["pulled"] = true
+		if float(_hand_y[0]) >= _give_y or float(_hand_y[1]) >= _give_y:
+			_give(walker,out)
+			return out
+	elif push < -0.35:
+		# Down hand under hand: the hands slide along, swapping as they go.
+		y -= DOWN_SPEED*s*climb_pace*delta
+		var bob := sin((y/(PULL*s))*PI)*0.5*PULL*s
+		_hand_y = [y+drop-maxf(bob,0.0),y+drop-PULL*s+minf(bob,0.0)]
+	# Down to the ground under him: off the rope, on his feet.
+	var ground := _floor_under(walker.feet)
+	if y <= ground+0.01*s:
+		walker.feet.y = ground
+		walker.toss(Vector3.ZERO)
+		_off_rope()
+		out["off_rope"] = true
+		return out
+	walker.feet = _body_at(walker,y)
+	walker.velocity = Vector3.ZERO
+	walker.facing = PilotMotor.facing_of(toward)
+	walker.ground_y = ground
+	return out
+
+## The floor under the rope at `at` (world y; far under, the room's lost).
+func _floor_under(at: Vector3) -> float:
+	var space := get_world_3d().direct_space_state
+	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(at+Vector3.UP*0.3*_size(),at+Vector3.DOWN*40.0,CarryHost.SOLID_MASK))
+	return float(study.get("lost")) if hit.is_empty() else (hit.position as Vector3).y
+
+## At the top: handed to the motor's own ledge hang, and its climb over the
+## lip (slowed to HAUL_TIME).
+func _haul(walker: PilotMotor, out: Dictionary) -> void:
+	walker.release(self)
+	_off_rope()
+	walker.lip = Vector3(edge.x,edge.y,edge.z)
+	walker.lip_out = Vector2(edge_out.x,edge_out.z)
+	walker.hold = "hang"
+	walker.hold_t = 0.0
+	walker.feet = walker._hang_at()
+	walker.velocity = Vector3.ZERO
+	var ground: Variant = study.get("ground")
+	_climb_time_was = walker.climb_time
+	walker.climb_time = HAUL_TIME*climb_pace
+	if walker._climb(ground.ground_callable(),ground.slide_callable()):
+		hauling = true
+		hauls += 1
+		out["hauled"] = true
+	else:
+		walker.climb_time = _climb_time_was
+		_say("No room to stand up there")
+
+## An untested bad hook tears out under him: grit, the hook falls, so does he.
+func _give(walker: PilotMotor, out: Dictionary) -> void:
+	var s := _size()
+	walker.toss(edge_out*0.2*s+Vector3.DOWN*0.5*s)
+	_off_rope()
+	tested = true
+	gave += 1
+	slips += 1
+	state = "slip"
+	_slide_from = hook_at
+	_fly_t = 0.0
+	_spill_grit()
+	_clank()
+	_say("It gave way: the lip crumbled")
+	out["gave"] = true
+
+func _off_rope() -> void:
+	climber = false
+	_pull_t = -1.0
+	_give_y = INF
+
 # --- Each frame -------------------------------------------------------------------------
 
 func _process(delta: float) -> void:
 	if study == null or study.get("motor") == null: return
 	_read_input()
 	_t += delta
+	if climber and study.get("motor").rider != self: _off_rope()
+	if hauling and study.get("motor").hold != "climb":
+		hauling = false
+		study.get("motor").climb_time = _climb_time_was
+		if study.get("motor").grounded: _say("Up and over")
 	match state:
 		"aim": _aim_step(delta)
 		"fly": _fly_step(delta)
@@ -650,6 +924,7 @@ func _drag_step(delta: float) -> void:
 	tested = false
 	bad = hold == "poor" and (force_bad == 1 or (force_bad < 0 and randf() < POOR_BAD))
 	paid = _hand().distance_to(lip)+0.3*_size()
+	_find_edge()
 	_clank()
 	_say("Caught (%s). %s tugs it" % [{"solid":"a solid lip","poor":"a crumbly lip","anchor":"a post"}.get(hold,hold),Pad.pick("E","B")])
 
@@ -792,6 +1067,9 @@ func _draw_rope() -> void:
 	_rope.visible = state != "coiled"
 	if not _rope.visible: return
 	var s := _size()
+	if edge != Vector3.INF and (state == "caught" or state == "seated") and (climber or hauling or on_top()):
+		_draw_hanging()
+		return
 	var a := _hand()
 	var b := hook_at
 	var d := a.distance_to(b)
@@ -822,6 +1100,42 @@ func _draw_rope() -> void:
 		var x := y.cross(Vector3.UP).normalized() if absf(y.y) < 0.95 else Vector3.RIGHT
 		mm.set_instance_transform(i,Transform3D(Basis(x,y,x.cross(y))*Basis.from_scale(Vector3(s,l+0.01,s)),(p+q)*0.5))
 
+## Hooked and hanging free of his hand (he's on it, or up top): from the
+## hook over the edge, straight down the face to the floor, a little lying
+## there. Segments shared out by each leg's length, so the edge is a corner.
+func _draw_hanging() -> void:
+	var s := _size()
+	var over := line_at(edge.y+ROPE_R*s)
+	var foot := line_at(_floor_under(line_at(edge.y-0.3*s))+ROPE_R*s)
+	var tail := foot+edge_out*0.5*s
+	var pts := PackedVector3Array([hook_at,over,foot,tail])
+	_draw_line(pts)
+
+## The rope along the polyline `pts`, its SEGS segments shared by length.
+func _draw_line(pts: PackedVector3Array) -> void:
+	var s := _size()
+	var total := 0.0
+	for i in pts.size()-1: total += pts[i].distance_to(pts[i+1])
+	var line := PackedVector3Array([pts[0]])
+	var left := SEGS
+	for i in pts.size()-1:
+		var legs := pts.size()-1-i
+		var n := left-(legs-1) if legs == 1 else clampi(roundi(SEGS*pts[i].distance_to(pts[i+1])/maxf(total,0.001)),1,left-(legs-1))
+		left -= n
+		for j in n: line.append(pts[i].lerp(pts[i+1],float(j+1)/n))
+	var mm := _rope.multimesh
+	for i in SEGS:
+		var p := line[i]
+		var q := line[i+1]
+		var dir := q-p
+		var l := dir.length()
+		if l < 0.0001:
+			mm.set_instance_transform(i,Transform3D(Basis.from_scale(Vector3.ZERO),p))
+			continue
+		var y := dir/l
+		var x := y.cross(Vector3.UP).normalized() if absf(y.y) < 0.95 else Vector3.RIGHT
+		mm.set_instance_transform(i,Transform3D(Basis(x,y,x.cross(y))*Basis.from_scale(Vector3(s,l+0.01,s)),(p+q)*0.5))
+
 ## His throwing arm: up over his shoulder while whirling, flung forward as
 ## it flies.
 func _arm_pose() -> void:
@@ -830,6 +1144,10 @@ func _arm_pose() -> void:
 	var arm := sk.find_bone("upper_arm.R")
 	if arm < 0: return
 	var r := _forward().cross(Vector3.UP).normalized()
+	if climber:
+		_climb_hands(sk)
+		return
+	if hauling or on_top(): return
 	match state:
 		"aim":
 			CarryHost._turn_bone(sk,arm,r,deg_to_rad(120.0))
@@ -865,6 +1183,29 @@ func _tug_pose(sk: Skeleton3D, arm: int, r: Vector3) -> void:
 	if left >= 0: CarryHost._turn_bone(sk,left,r,deg_to_rad(up_a-8.0))
 	var chest := sk.find_bone("chest")
 	if chest >= 0: CarryHost._turn_bone(sk,chest,r,deg_to_rad(lean))
+
+## On the rope: each hand on it at its height (two-bone IK over the hang's
+## clip), elbows out and back off the wall, the mitt closed round it.
+func _climb_hands(sk: Skeleton3D) -> void:
+	var s := _size()
+	var fwd := -edge_out
+	var right := fwd.cross(Vector3.UP).normalized()
+	var to_sk := sk.global_transform.affine_inverse()
+	for i in 2:
+		var sd: float = _hand_side[i]
+		var names := ["upper_arm.R","forearm.R","hand.R"] if sd > 0.0 else ["upper_arm.L","forearm.L","hand.L"]
+		var upper := sk.find_bone(names[0])
+		var fore := sk.find_bone(names[1])
+		var hand := sk.find_bone(names[2])
+		if upper < 0 or fore < 0 or hand < 0: return
+		var at := line_at(float(_hand_y[i]))+right*sd*HAND_SPREAD*s
+		# The reaching hand comes off the rope a little as it passes.
+		if i == 1 and _pull_t > REACH_AT:
+			var r := (_pull_t-REACH_AT)/(1.0-REACH_AT)
+			at += edge_out*sin(PI*r)*0.14*s+right*sd*sin(PI*r)*0.06*s
+		var pole_w := right*sd*0.8+Vector3.DOWN*0.6+edge_out*0.5
+		var pole := (sk.global_basis.inverse()*pole_w).normalized()
+		CarryHost._two_bone(sk,upper,fore,hand,to_sk*at,pole,1.0)
 
 ## The reticle (a ring at the target) and the arc's dots, gold or red.
 func _show_aim(on: bool) -> void:
