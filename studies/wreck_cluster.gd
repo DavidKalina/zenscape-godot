@@ -54,6 +54,7 @@ const DevKeys = preload("res://scripts/kit_isle/dev_keys.gd")
 const IsleFlora = preload("res://studies/aqueduct_isle_flora.gd")
 const CarryHost = preload("res://scripts/carry/carry_host.gd")
 const Treasures = preload("res://studies/wreck_cluster_treasures.gd")
+const BroodHost = preload("res://scripts/brood/brood_host.gd")
 
 ## The re-deal's key (free on foot and in the plane: scripts/pad.gd,
 ## scripts/kit_isle/dev_keys.gd).
@@ -91,6 +92,8 @@ var wind_parry: Node3D = null
 var pause: Node = null
 ## The treasures and their carrying (scripts/carry/carry_host.gd).
 var carry: Node3D = null
+## The stone brood (scripts/brood/brood_host.gd).
+var brood: Node3D = null
 var _rng := RandomNumberGenerator.new()
 var _ledger_was := []
 
@@ -454,6 +457,7 @@ func new_deal(seed_value := -1) -> void:
 	dealt = deal(deal_seed,avoid)
 	_lay_deal()
 	if carry != null: carry.deal()
+	if brood != null: brood.clear()
 	_make_knight()
 	_show_toast("New deal  ·  seed %d" % deal_seed)
 	if _switch_hint != null: _switch_hint.text = _foot_text()
@@ -475,6 +479,9 @@ func _add_life() -> void:
 	add_child(carry)
 	carry.setup(self,"wreck_cluster",Treasures.spots())
 	carry.deal()
+	brood = BroodHost.new()
+	add_child(brood)
+	brood.setup(self)
 	if not LaunchArgs.user_args().has("--no-rune-knight") and not Art.knight_line().is_empty():
 		_make_knight()
 		wind_blast = WindBlastStandin.new()
