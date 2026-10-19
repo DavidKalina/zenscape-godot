@@ -5,14 +5,20 @@ extends Node3D
 ## view moves, `<scene>/treasure_NN`, the treasure resting on it), and takes
 ## the `walk_carry` action (E, pad B; scripts/pad.gd) on foot:
 ##
-## - by a treasure he lifts it: a heave as long as its weight's `lift`
-##   (scripts/carry/carry_weights.gd), the treasure rising from the ground
-##   into his hands, his paces held to a shuffle meanwhile;
-## - carrying, he holds it before his chest in both hands (two-bone IK on
-##   the figure's arms after its clips: procedural, stood in for authored
-##   carry clips), his walk, run, jump and turn scaled by its weight;
-## - pressed again, he sets it down on the ground before him (or at his
-##   feet where there is no ground before him);
+## - by a treasure he lifts it, over its weight's `lift` (scripts/carry/
+##   carry_weights.gd): he crouches and bends over to it, reaching down, holds
+##   there under it (`strain`, a shiver for the heavy), heaves it up as he
+##   straightens, and it settles (a squash, his knees giving, a lean back
+##   past the carry); his paces held to a shuffle meanwhile;
+## - carrying, he holds it in both hands (two-bone IK on the figure's arms
+##   after its clips): before his chest, or hugged low against his belly for
+##   the heavy (`hold`), his knees a little bent (`sag`), leaning back
+##   against it (`lean`), rolling side to side at each step (`waddle`); his
+##   walk, run, jump and turn scaled by its weight. All procedural (legs by
+##   IK on a lowered pivot), stood in for authored clips (lock-in);
+## - pressed again, he crouches and sets it down on the ground before him
+##   (or at his feet where there is no ground before him), lets go and
+##   stands;
 ## - the moves its weight bars (`bars`: the motor's `wall_on`, `ledge_on`,
 ##   `sail_on`, `rope_on`) are off while he holds it; tried, the motor's
 ##   `refused` comes and he balks: a stagger to the side and a shake of the
@@ -47,6 +53,22 @@ const SET_UNDER := 2.5
 const ELBOW := Vector3(0.8,-0.6,0.35)
 ## His paces while he heaves or sets down, times the empty-handed ones.
 const BUSY_PACE := 0.05
+## A "hug" (heavy): its middle this far out before the chest bone (past its
+## radius) and up from it (m, times size), the hands this far down its
+## height from its middle.
+const HUG_OUT := 0.04
+const HUG_UP := -0.02
+const HUG_UNDER := 0.22
+## The lift's beats, of its length: the reach down ends, the heave ends (its
+## settle after). Setting down takes SET_TIME of the lift: lowered by
+## SET_DOWN, let go and standing from SET_LET.
+const REACH_END := 0.3
+const HEAVE_END := 0.78
+const SET_TIME := 0.8
+const SET_DOWN := 0.55
+const SET_LET := 0.65
+## The legs: thigh, shin, boot, side (+1 right).
+const LEGS := [["thigh.L","shin.L","foot.L",-1.0],["thigh.R","shin.R","foot.R",1.0]]
 
 var study: Node3D = null
 var scene_id := ""
@@ -316,35 +338,153 @@ static func _thud_stream() -> AudioStreamWAV:
 	_thud_take = wav
 	return wav
 
-## One frame of the heave, the carry or the setting down: the treasure moved
-## between the ground and his hands, his arms reached to it.
+## One frame of the heave, the carry or the setting down: his body posed
+## (`_pose_at`), the treasure moved between the ground and his hands, his
+## arms reached to it.
 func _carry_step(delta: float) -> void:
 	var w := Weights.of(str(held.weight))
 	var lift_time: float = w.lift
 	var node: Node3D = held.node
-	var hands := _hold_xform()
 	var k := 1.0
 	match phase:
 		"lift":
 			phase_t += delta
 			k = clampf(phase_t/lift_time,0.0,1.0)
+			if phase_t-delta < lift_time*HEAVE_END and phase_t >= lift_time*HEAVE_END:
+				var body: Node = study.get("body")
+				if body != null and body.has_method("land"): body.land(float(w.settle))
 			if k >= 1.0:
 				phase = "carry"
 				_apply_feel(1.0)
 		"set":
 			phase_t += delta
-			k = 1.0-clampf(phase_t/(lift_time*0.7),0.0,1.0)
-			if k <= 0.0:
-				_let_go()
-				return
+			k = clampf(phase_t/(lift_time*SET_TIME),0.0,1.0)
+	var pose := _pose_at(phase,k,w)
+	_pose_body(pose,w,delta)
 	_balk_pose(delta)
-	hands = _hold_xform()
-	var e := smoothstep(0.0,1.0,k)
-	node.global_transform = _ground_at.interpolate_with(hands,e)
-	_reach_arms(node.global_transform,minf(1.0,k*3.0+0.0001) if phase != "carry" else 1.0)
+	var hands := _hold_xform()
+	node.global_transform = _ground_at.interpolate_with(hands,pose[4])
+	_reach_arms(node.global_transform,maxf(pose[3],0.0001))
 	_load_feel(delta)
+	if phase == "set" and k >= 1.0: _let_go()
 
-## Where its foot rides in his hands now (world).
+## The body's pose at `k` through `ph` ("lift", "carry", "set") for the
+## weight row `w`: [hips' drop (m), bend over (deg), lean back (deg), the
+## arms' reach (0..1), the load's way from the ground to his hands (0..1)].
+## Lifting: he crouches and bends to it, reaching down (REACH_END), holds
+## there under it (its `strain`), heaves it up as he straightens into the
+## carry (to HEAVE_END), and the load settles: his knees give and he leans
+## back past the carry and comes back. Setting down runs the other way and
+## lets go at the bottom before he stands.
+static func _pose_at(ph: String, k: float, w: Dictionary) -> Array:
+	var stand := [0.0,0.0,0.0,0.0,0.0]
+	var low := [float(w.squat),float(w.bend),0.0,1.0,0.0]
+	var carry := [float(w.sag),0.0,float(w.lean),1.0,1.0]
+	match ph:
+		"lift":
+			var grip_end := REACH_END+float(w.strain)
+			if k < REACH_END: return _mix(stand,low,_ease(k/REACH_END))
+			if k < grip_end:
+				var held_low := low.duplicate()
+				# The strain: a shiver through him under the weight.
+				held_low[1] += float(w.strain)*12.0*sin(k*float(w.lift)*70.0)
+				return held_low
+			if k < HEAVE_END:
+				var p := (k-grip_end)/(HEAVE_END-grip_end)
+				# The heave: slow off the ground under a load, then up.
+				var e := _ease(pow(p,1.0+float(w.strain)*3.0))
+				var up := _mix(low,carry,e)
+				up[3] = 1.0
+				return up
+			var s := sin(PI*(k-HEAVE_END)/(1.0-HEAVE_END))
+			var settle := carry.duplicate()
+			settle[0] += float(w.squat)*0.35*s
+			settle[2] += float(w.lean)*0.6*s
+			return settle
+		"set":
+			if k < SET_DOWN: return _mix(carry,low,_ease(k/SET_DOWN))
+			if k < SET_LET: return low
+			var r := _mix(low,stand,_ease((k-SET_LET)/(1.0-SET_LET)))
+			r[3] = 1.0-_ease(minf((k-SET_LET)/(1.0-SET_LET)*2.0,1.0))
+			r[4] = 0.0
+			return r
+	return carry
+
+static func _mix(a: Array, b: Array, t: float) -> Array:
+	var out: Array = []
+	for i in range(a.size()): out.append(lerpf(float(a[i]),float(b[i]),t))
+	return out
+
+static func _ease(t: float) -> float:
+	return smoothstep(0.0,1.0,clampf(t,0.0,1.0))
+
+## His body put in `pose` on the figure after its clips: the hips dropped
+## (the figure's pivot lowered, his feet kept where the clips stood them by
+## two-bone IK on each leg, knees forward), the chest bent over and leaned
+## back, the head looking down at what he reaches for; carrying, the chest
+## rolls with each footfall (`waddle`).
+func _pose_body(pose: Array, w: Dictionary, _delta: float) -> void:
+	var sk := _skeleton()
+	var body: Node3D = study.get("body")
+	if sk == null or body == null: return
+	var motor: Variant = study.get("motor")
+	var s: float = motor.size
+	var fwd := _forward()
+	var right := fwd.cross(Vector3.UP).normalized()
+	var drop: float = float(pose[0])*s
+	var pivot := body.get("_pivot") as Node3D
+	if pivot != null and drop > 0.0005 and motor.grounded:
+		var feet: Array = []
+		for leg: Array in LEGS:
+			var foot := sk.find_bone(str(leg[2]))
+			if foot < 0: return
+			feet.append([sk.global_transform*sk.get_bone_global_pose(foot).origin,sk.get_bone_global_pose(foot).basis])
+		pivot.global_position += Vector3.DOWN*drop
+		var to_sk := sk.global_transform.affine_inverse()
+		var knee := (sk.global_basis.inverse()*(fwd+right*0.0+Vector3.UP*0.2)).normalized()
+		for i in range(LEGS.size()):
+			var leg: Array = LEGS[i]
+			var thigh := sk.find_bone(str(leg[0]))
+			var shin := sk.find_bone(str(leg[1]))
+			var foot := sk.find_bone(str(leg[2]))
+			var out_side := (sk.global_basis.inverse()*(right*float(leg[3]))).normalized()
+			_two_bone(sk,thigh,shin,foot,to_sk*(feet[i][0] as Vector3),(knee+out_side*0.25).normalized(),1.0)
+			# The boot kept as the clip set it.
+			var parent := sk.get_bone_global_pose(shin).basis
+			sk.set_bone_pose_rotation(foot,(parent.inverse()*(feet[i][1] as Basis)).get_rotation_quaternion())
+	var chest := sk.find_bone("chest")
+	if chest >= 0:
+		var lean := float(pose[2])-float(pose[1])
+		if absf(lean) > 0.01: _turn_bone(sk,chest,right,deg_to_rad(lean))
+		if phase == "carry" and float(w.waddle) > 0.0:
+			var env := sin(PI*clampf(_fall_t/0.45,0.0,1.0))
+			_turn_bone(sk,chest,fwd,deg_to_rad(float(w.waddle))*env*_fall_side)
+	var head := sk.find_bone("head")
+	if head >= 0 and float(pose[1]) > 0.01:
+		# Eyes on it as he bends: the head a little further down.
+		_turn_bone(sk,head,right,-deg_to_rad(float(pose[1]))*0.35)
+
+## Two-bone IK: `upper` and `fore` turned so `end`'s root reaches `goal`
+## (skeleton space), bending toward `pole`, `weight` of the way.
+static func _two_bone(sk: Skeleton3D, upper: int, fore: int, end: int, goal: Vector3, pole: Vector3, weight: float) -> void:
+	var root := sk.get_bone_global_pose(upper).origin
+	var mid := sk.get_bone_global_pose(fore).origin
+	var tip := sk.get_bone_global_pose(end).origin
+	var a := root.distance_to(mid)
+	var b := mid.distance_to(tip)
+	var to := goal-root
+	var d := clampf(to.length(),0.01,(a+b)*0.999)
+	var n := to.normalized()
+	var along := (a*a-b*b+d*d)/(2.0*d)
+	var out := sqrt(maxf(a*a-along*along,0.0))
+	var bend := (pole-n*pole.dot(n)).normalized()
+	_aim(sk,upper,mid-root,n*along+bend*out,weight)
+	mid = sk.get_bone_global_pose(fore).origin
+	tip = sk.get_bone_global_pose(end).origin
+	_aim(sk,fore,tip-mid,root+n*d-mid,weight)
+
+## Where its foot rides in his hands now (world): before his chest, or
+## for a "hug" low against his belly.
 func _hold_xform() -> Transform3D:
 	var motor: Variant = study.get("motor")
 	var s: float = motor.size
@@ -352,8 +492,11 @@ func _hold_xform() -> Transform3D:
 	var chest := _bone_world("chest")
 	if chest == Vector3.INF: chest = motor.feet+Vector3.UP*0.6*s
 	var r: float = held.measures.radius
+	var h: float = held.measures.height
 	var mid := chest+fwd*(HOLD_OUT*s+r)+Vector3.UP*HOLD_UP*s
-	var foot := mid+Vector3.DOWN*float(held.measures.height)*0.5
+	if str(Weights.of(str(held.weight)).hold) == "hug":
+		mid = chest+fwd*(HUG_OUT*s+r)+Vector3.UP*(HUG_UP*s)
+	var foot := mid+Vector3.DOWN*h*0.5
 	return Transform3D(Basis(Vector3.UP,atan2(-fwd.x,-fwd.z)),foot)
 
 ## His facing (world, flat).
@@ -376,14 +519,18 @@ func _bone_world(bone_name: String) -> Vector3:
 	return Vector3.INF if b < 0 else sk.global_transform*sk.get_bone_global_pose(b).origin
 
 ## Both hands reached to the treasure's sides at `at` (its foot, world),
-## `weight` of the way, by two-bone IK on each arm (the clips' pose under it).
+## `weight` of the way, by two-bone IK on each arm (the clips' pose under it);
+## a "hug" puts them low on its sides, under its belly.
 func _reach_arms(at: Transform3D, weight: float) -> void:
 	var sk := _skeleton()
 	if sk == null: return
 	var fwd := _forward()
 	var right := fwd.cross(Vector3.UP).normalized()
-	var mid := at.origin+Vector3.UP*float(held.measures.height)*0.5
+	var h: float = held.measures.height
+	var mid := at.origin+Vector3.UP*h*0.5
 	var grip: float = held.measures.grip
+	if str(Weights.of(str(held.weight)).hold) == "hug" and phase != "":
+		mid += Vector3.DOWN*h*HUG_UNDER
 	var to_sk := sk.global_transform.affine_inverse()
 	var sides := [["upper_arm.L","forearm.L","hand.L",-1.0],["upper_arm.R","forearm.R","hand.R",1.0]]
 	for side: Array in sides:
@@ -391,29 +538,15 @@ func _reach_arms(at: Transform3D, weight: float) -> void:
 		var fore := sk.find_bone(str(side[1]))
 		var hand := sk.find_bone(str(side[2]))
 		if upper < 0 or fore < 0 or hand < 0: return
-		var s: float = side[3]
-		var goal := to_sk*(mid+right*s*grip)
-		var pole_w := right*s*ELBOW.x+Vector3.UP*ELBOW.y-fwd*ELBOW.z
+		var sd: float = side[3]
+		var goal := to_sk*(mid+right*sd*grip)
+		var pole_w := right*sd*ELBOW.x+Vector3.UP*ELBOW.y-fwd*ELBOW.z
 		var pole := (sk.global_basis.inverse()*pole_w).normalized()
-		var shoulder := sk.get_bone_global_pose(upper).origin
-		var elbow := sk.get_bone_global_pose(fore).origin
-		var wrist := sk.get_bone_global_pose(hand).origin
-		var a := shoulder.distance_to(elbow)
-		var b := elbow.distance_to(wrist)
-		var to := goal-shoulder
-		var d := clampf(to.length(),0.01,(a+b)*0.999)
-		var n := to.normalized()
-		var along := (a*a-b*b+d*d)/(2.0*d)
-		var out := sqrt(maxf(a*a-along*along,0.0))
-		var bend := (pole-n*pole.dot(n)).normalized()
-		_aim(sk,upper,elbow-shoulder,n*along+bend*out,weight)
-		elbow = sk.get_bone_global_pose(fore).origin
-		wrist = sk.get_bone_global_pose(hand).origin
-		_aim(sk,fore,wrist-elbow,shoulder+n*d-elbow,weight)
+		_two_bone(sk,upper,fore,hand,goal,pole,weight)
 		# The mitt turned in, palm to the treasure's side.
-		wrist = sk.get_bone_global_pose(hand).origin
+		var wrist := sk.get_bone_global_pose(hand).origin
 		var tip := sk.get_bone_global_pose(hand)*Vector3(0.0,0.03,0.0)
-		_aim(sk,hand,tip-wrist,goal-wrist+(to_sk.basis*(-right*s))*0.02,weight)
+		_aim(sk,hand,tip-wrist,goal-wrist+(to_sk.basis*(-right*sd))*0.02,weight)
 
 ## Turns `bone` so its `from` (skeleton space) points along `to`, `weight`
 ## of the way (scripts/pilot_figure.gd's `_aim_bone`).
