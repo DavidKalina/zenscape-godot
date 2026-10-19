@@ -51,6 +51,8 @@ var _m_drop := Vector3.INF
 ## Crawling sideways along a face (s left), after a top he couldn't get
 ## over and no floor under him to climb back down to.
 var _traverse_t := 0.0
+## Climbing down a face on purpose (from the walk, not a top he gave up on).
+var _descending := false
 ## The floor a drop off a ledge aims at (INF: none; a fall's own ray finds
 ## where it lands): reached, he lands on it even where the ray, starting
 ## inside rubble, missed it.
@@ -140,6 +142,7 @@ func _wake(dt: float) -> void:
 	if _w_t >= K.WAKE_RISE+_w_hold:
 		state = "climb"
 		climb_dir = 1.0
+		_descending = false
 		climbed = 0.0
 
 # --- Rays ----------------------------------------------------------------------------
@@ -282,6 +285,7 @@ func _walk(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 			mid = (wall.position as Vector3)+n*radius
 			state = "climb"
 			climb_dir = 1.0
+			_descending = false
 			climbed = 0.0
 			detour_t = 0.0
 			return
@@ -289,17 +293,14 @@ func _walk(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 	var q := feet+heading*go
 	var top := q.y+K.STEP_UP*s
 	var hit := _cast(space,Vector3(q.x,top,q.z),Vector3(q.x,q.y-K.DROP_MOST*s,q.z))
-	if hit.is_empty():
+	if hit.is_empty() or (hit.normal as Vector3).y < K.FLOOR:
+		# Too deep to drop, or only a steep face down there: a face he can
+		# climb down to a floor, else an edge (a broken end, a keel, the rim).
+		if _start_descent(space,q,top,hit): return
 		_edge(want)
 		_swing(0.0,dt)
 		return
 	var g: Vector3 = hit.position
-	if (hit.normal as Vector3).y < K.FLOOR:
-		# Only a steep face down there (a broken end, a keel): no floor to
-		# drop to, so an edge.
-		_edge(want)
-		_swing(0.0,dt)
-		return
 	if g.y >= feet.y-K.STEP_DOWN*s:
 		feet = g
 		_swing(go,dt)
@@ -310,6 +311,53 @@ func _walk(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 	velocity = heading*0.6*s
 	feet = q
 	_drop_to = g
+
+## Over the lip and down: the face the ray past the edge found (or, a
+## sheer drop, the face found looking back under the lip), and a floor
+## under it within DESCEND_MOST. Else false.
+func _start_descent(space: PhysicsDirectSpaceState3D, q: Vector3, top: float, hit: Dictionary) -> bool:
+	var s := K.s()
+	if hit.is_empty():
+		hit = _cast(space,Vector3(q.x,top,q.z),Vector3(q.x,q.y-K.DESCEND_MOST*s,q.z))
+	if hit.is_empty(): return false
+	var n: Vector3 = hit.normal
+	var at: Vector3 = hit.position
+	if n.y >= K.FLOOR:
+		# A sheer drop to a floor: the wall is under the lip, behind him.
+		var probe := q+heading*0.5*s+Vector3.DOWN*tall
+		var back := _cast(space,probe,probe-heading*(1.2*s+radius))
+		if back.is_empty(): return false
+		n = back.normal
+		at = back.position
+	if n.y >= K.FLOOR or n.y <= -0.7: return false
+	at += n*radius
+	# A short step down (a chamfer, a kerb) is no face to climb: an edge.
+	var f := _floor_below(space,at,K.DESCEND_MOST*s,n)
+	if f == Vector3.INF or f.y > feet.y-tall*2.0: return false
+	face_n = n
+	mid = at
+	state = "climb"
+	climb_dir = -1.0
+	climbed = 0.0
+	detour_t = 0.0
+	_descending = true
+	return true
+
+## The first floor under `from` within `depth`, looking down columns
+## stepped out along `out` (a slope or a face leaning out under him runs
+## out to its foot); INF if a column finds the void first, or none.
+func _floor_below(space: PhysicsDirectSpaceState3D, from: Vector3, depth: float, out: Vector3) -> Vector3:
+	var s := K.s()
+	var o := _flat(out)
+	o = o.normalized() if o.length() > 0.05 else Vector3.ZERO
+	var bottom := from.y-depth
+	for j: int in 14:
+		var a := from+o*(0.8*s*j)
+		var hit := _cast(space,a+Vector3.UP*0.3*s,Vector3(a.x,bottom,a.z))
+		if hit.is_empty(): return Vector3.INF
+		if (hit.normal as Vector3).y >= K.FLOOR: return hit.position
+		if o == Vector3.ZERO: return Vector3.INF
+	return Vector3.INF
 
 ## At an edge he won't go over: turn along it (the same side each time
 ## until he's clear), and hold the turned way a while.
@@ -339,8 +387,8 @@ func _climb(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 		lat = 0.0
 		# No floor under him he'd drop to (the isle's side over the void):
 		# up again, crawling sideways to find another way over.
-		var floor_under := _cast(space,mid,mid+Vector3.DOWN*K.DROP_MOST*s)
-		if floor_under.is_empty() or (floor_under.normal as Vector3).y < K.FLOOR:
+		# (Climbing down on purpose, the floor was found when he set off.)
+		if not _descending and _floor_below(space,mid,K.DROP_MOST*s,face_n) == Vector3.INF:
 			climb_dir = 1.0
 			_traverse_t = K.TRAVERSE_TIME
 			return
@@ -349,6 +397,11 @@ func _climb(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 		if not under.is_empty() and (under.normal as Vector3).y >= K.FLOOR:
 			feet = under.position
 			heading = _flat(face_n).normalized() if _flat(face_n).length() > 0.1 else -heading
+			state = "walk"
+			if _descending:
+				# Down a face on purpose: on toward the goal from its foot.
+				_descending = false
+				return
 			side = -side
 			detour = heading.rotated(Vector3.UP,deg_to_rad(K.DETOUR_TURN)*side)
 			detour_t = K.DETOUR_TIME*1.5
@@ -370,7 +423,7 @@ func _climb(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 	var c := mid+move
 	var hit := _cast(space,c+face_n*0.35*s,c-face_n*(radius+0.45*s))
 	if hit.is_empty() and climb_dir < 0.0:
-		_let_go()
+		_let_go_down(space)
 		return
 	if hit.is_empty():
 		if not _start_mantle(space,c): climb_dir = -1.0
@@ -381,14 +434,15 @@ func _climb(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 		# (A small ledge on a broken slope with no top to stand on past it:
 		# on up over it as a face.)
 		if climb_dir < 0.0:
-			_let_go()
+			_let_go_down(space)
 			return
 		if _start_mantle(space,c): return
 	if n.y < -0.7 and climb_dir > 0.0 and _start_mantle(space,c):
 		# An overhanging lip right at the top (a parapet's sill): over it.
 		return
 	if n.y < -0.7 or climbed > K.CLIMB_MOST*s:
-		_let_go()
+		if climb_dir < 0.0: _let_go_down(space)
+		else: _let_go()
 		return
 	# (A lerp, not a slerp: a face turned near opposite, round a thin
 	# wall's end, breaks the slerp's axis.)
@@ -441,7 +495,22 @@ func _mantle(dt: float) -> void:
 			_drop_to = _m_drop
 			_m_drop = Vector3.INF
 
+## Off the foot of a face he was climbing down: only onto a floor; with
+## the void under him (the face ran out over it), back up instead.
+func _let_go_down(space: PhysicsDirectSpaceState3D) -> void:
+	var f := _floor_below(space,mid,K.DESCEND_MOST*K.s(),face_n)
+	if f != Vector3.INF:
+		# Straight down onto it, no push out (past a deck's end).
+		_let_go()
+		velocity = Vector3.ZERO
+		_drop_to = f
+		return
+	_descending = false
+	climb_dir = 1.0
+	_traverse_t = K.TRAVERSE_TIME
+
 func _let_go() -> void:
+	_descending = false
 	_drop_to = Vector3.INF
 	feet = mid-Vector3.UP*tall*0.5+face_n*0.05
 	velocity = face_n*1.2

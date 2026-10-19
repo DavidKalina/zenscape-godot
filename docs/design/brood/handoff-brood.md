@@ -17,7 +17,9 @@ you), `--no-brood` (off; carry's own drivers need it on this branch).
 
 - **Stone guy** (`scripts/brood/stone_guy.gd`): a box figure about 0.55 m,
   no physics body, 2–3 rays a step. Walks, climbs faces and overhangs,
-  mantles, drops ledges up to 7 m, never jumps: a gap or the rim stops him.
+  mantles, drops ledges up to 7 m, climbs down faces and steep slopes to a
+  floor up to 18 m below (`DESCEND_MOST`), never jumps: a gap or the rim
+  stops him.
 - **The wake** (`scripts/brood/brood_host.gd`): the first lift in a deal
   brings 40 up over the isle's rim near the treasure (spots found by rays),
   hands then head then the heave over. N puts them away.
@@ -52,7 +54,9 @@ to it. The stuck-haul give-up (8 s) never fired in a run.
 - The second wake at the strip: an agent's call so the riders exist. If the
   strip should be safe once you've crossed, drop it (one knob) and let
   riders come only from guys who reached the plane.
-- The first 40 stand at the strip's gap edge for the rest of the deal.
+- The first 40 can't reach the strip (none closer than 14.8 m in 50 s),
+  but they no longer stand still at the gap: most keep climbing the faces
+  on their side, looking for a way down.
 - Riders grab the bag only, not the plane.
 - Tall grass hides a knee-high guy; the stone has a small glow so it reads
   in the isle's deep shade.

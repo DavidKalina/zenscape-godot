@@ -26,6 +26,10 @@ const TURN := 9.0
 const STEP_UP := 0.3
 const STEP_DOWN := 0.45
 const DROP_MOST := 7.0
+## A deeper drop with a face he can climb down and a floor at its foot no
+## deeper than DESCEND_MOST (m): over the lip he goes and climbs down it.
+## Under the wake's RIM_VOID, so the isle's rim stays a rim.
+const DESCEND_MOST := 18.0
 const FLOOR := 0.6
 
 ## Turning along an edge he won't go over: each try turns him this much
