@@ -78,7 +78,7 @@ static func tower_rock_outline() -> Array:
 ## The way on: the sail off its west edge down to the tail's first fragment
 ## (spot 08, 24 m away and 12 m down: the slam onto its cache from the sail).
 const COAST_TOP := 46.0
-const COAST_DEEP := 26.0
+const COAST_DEEP := 50.0
 const COAST_AT := Vector2(188.0,-20.0)
 static func coast_rock_outline() -> Array:
 	var c := COAST_AT
@@ -220,7 +220,7 @@ const TILT_AT := Vector2(56.0,-53.5)
 const TILT_EAST := 68.0
 const TILT_LOW := 34.4
 const TILT_DEG := 5.0
-const TILT_DEEP := 13.0
+const TILT_DEEP := 11.0
 static func tilt_ground(x: float, _z: float) -> float:
 	return TILT_LOW+(TILT_EAST-x)*tan(deg_to_rad(TILT_DEG))
 ## Long and slab-like (x 43.5..68.5), its corners broken.
@@ -316,18 +316,47 @@ static func _block(b: RuinKit.Build, c: Vector3, half: Vector3) -> void:
 ## The lands besides the spine: [name, outline, ground, depth (its keel
 ## under its rim), seed, cliffs box (none: Rect2()), its rim's height,
 ## optional: sheer (its hanging sides not collided as drawn, whose jagged
-## faces he catches and climbs, but one smooth hull that overhangs all
-## round: nothing to catch on the way up its flank)].
+## faces he catches and climbs, but smooth hulls that overhang all round:
+## nothing to catch on the way up its flank)]. Each hangs its own rock
+## under it (`hangs`), not KitLand's one cone.
 static func lands() -> Array:
 	return [
-		["strip",strip_outline(),func(_x: float, _z: float) -> float: return STRIP_TOP,16.0,405,Rect2(),STRIP_TOP],
-		["tower_rock",tower_rock_outline(),func(_x: float, _z: float) -> float: return TOWER_ROCK,18.0,407,Rect2(),TOWER_ROCK],
+		["strip",strip_outline(),func(_x: float, _z: float) -> float: return STRIP_TOP,40.0,405,Rect2(),STRIP_TOP],
+		["tower_rock",tower_rock_outline(),func(_x: float, _z: float) -> float: return TOWER_ROCK,74.0,407,Rect2(),TOWER_ROCK],
 		["coast_rock",coast_rock_outline(),func(_x: float, _z: float) -> float: return COAST_TOP,COAST_DEEP,409,Rect2(),COAST_TOP,true],
-		["rope_rock",rope_rock_outline(),func(_x: float, _z: float) -> float: return ROPE_TOP,22.0,411,Rect2(),ROPE_TOP,true],
+		["rope_rock",rope_rock_outline(),func(_x: float, _z: float) -> float: return ROPE_TOP,44.0,411,Rect2(),ROPE_TOP,true],
 		["tilt_rock",tilt_rock_outline(),tilt_ground,TILT_DEEP,413,Rect2(),TILT_LOW],
 	]
 
-## Land `spec` (a row of `lands`) built: a KitLand island, its sides collided.
+## The rock each land hangs under its rim, so the cluster reads upright
+## from afar (deep keels, each its own shape): rings of [drop under the
+## rim, share of the ring kept toward its middle], top down, after the
+## rim's two lip rings (KitLand's); `fangs`: the last ring's arcs each hang
+## to their own point, [drop] each (one: a single keel), `spread` how far
+## out from the middle toward their arcs they hang; `lean`: how far
+## (x, z) the keel stands off the middle (the rings between lean with it);
+## `follow`: drops from each rim point's own height (a slab's underside
+## that tilts with its turf), else from the land's top.
+##   strip       a deep blade under the runway, four fangs
+##   tower_rock  the tower's root: a broad column hanging 60 m and more
+##               under the podium, so the tower and its rock stand as one
+##               upright stack at the east end
+##   coast_rock  a tall stack, near-vertical then stepping in, leaning east
+##   rope_rock   tiered: three overhanging steps down to two fangs (its top
+##               6 m kept as before: the slide's block lodges under it)
+##   tilt_rock   a thick dropped slab, its flat underside tilted with it
+static func hangs() -> Dictionary:
+	return {
+		"strip":{"rings":[[5.0,0.95],[12.0,0.84],[20.0,0.66],[25.0,0.52]],"fangs":[34.0,40.0,30.0,37.0],"spread":0.55},
+		"tower_rock":{"rings":[[6.0,0.95],[14.0,0.9],[26.0,0.84],[40.0,0.74],[52.0,0.6]],"fangs":[66.0,74.0,60.0],"spread":0.55,"lean":Vector2(-3.0,2.0)},
+		"coast_rock":{"rings":[[5.0,0.9],[12.0,0.86],[13.0,0.64],[24.0,0.6],[25.0,0.4],[36.0,0.34]],"fangs":[COAST_DEEP],"lean":Vector2(4.0,-2.0)},
+		"rope_rock":{"rings":[[3.7,0.79],[6.0,0.69],[7.0,0.56],[15.0,0.52],[16.0,0.38],[25.0,0.34],[26.0,0.22]],"fangs":[36.0,44.0],"spread":0.5,"lean":Vector2(-2.0,-3.0)},
+		"tilt_rock":{"rings":[[4.5,0.97],[8.0,0.9],[9.5,0.62]],"fangs":[TILT_DEEP],"follow":true},
+	}
+
+## Land `spec` (a row of `lands`) built: a KitLand island (its turf), and
+## under it its own hanging rock (`hangs`), its sides collided as drawn, or
+## for a sheer land by overhanging hulls.
 static func build_land(spec: Array) -> Node3D:
 	var cliffs: Rect2 = spec[5]
 	var d := {"outline":spec[1],"seed":int(spec[4]),"ground":spec[2],"top":float(spec[6]),
@@ -335,11 +364,166 @@ static func build_land(spec: Array) -> Node3D:
 		"collide_sides":true,"name":"wreck_cluster/"+str(spec[0])}
 	if cliffs.size != Vector2.ZERO: d["cliffs"] = cliffs
 	var sheer: bool = spec.size() > 7 and bool(spec[7])
+	var hang: Dictionary = hangs().get(str(spec[0]),{})
+	if not hang.is_empty(): d["sides"] = false
 	if sheer: d["collide_sides"] = false
 	var node := KitLand.island(d)
 	node.name = "Land_"+str(spec[0]).capitalize()
-	if sheer: node.add_child(sheer_hull(spec[1],float(spec[6]),float(spec[3])))
+	if hang.is_empty():
+		if sheer: node.add_child(sheer_hull(spec[1],float(spec[6]),float(spec[3])))
+		return node
+	var rings := hang_rings(d,hang)
+	var drawn := hang_rock(rings,hang,int(spec[4])).node("Mesh")
+	node.add_child(drawn)
+	if sheer: node.add_child(hang_hulls(rings))
+	else: KitLand.collide_sides(node,drawn,true)
 	return node
+
+## A land's hanging rings (world points), top down: the rim (the turf's own
+## edge: KitLand's ring, resampled from the same seed), its two lip rings,
+## then the profile's. Each ring a whole Array[Vector3], every point kept
+## (the strides come in drawing). Returned with the rest the drawing
+## needs: [rings, centre (x, z), the height the fangs hang from, lean,
+## the deepest fang].
+static func hang_rings(d: Dictionary, hang: Dictionary) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(d.seed)
+	var resampling: Array = d.resample
+	var outline: Array = d.outline
+	var ring := KitLand.resample(outline,int(resampling[1]) if KitLand.perimeter(outline) > float(resampling[0]) else int(resampling[2]),rng)
+	var centre := KitLand.centre_of(ring)
+	var out := KitLand.outward(ring)
+	var ground: Callable = d.ground
+	var top: float = d.top
+	var follow := bool(hang.get("follow",false))
+	var lean: Vector2 = hang.get("lean",Vector2.ZERO)
+	var deepest: float = (hang.fangs as Array).max()
+	var rims: Array = []
+	for p: Vector2 in ring: rims.append(float(ground.call(p.x,p.y)))
+	var rows: Array = [[0.0,1.0,0.0],[0.45,1.0,0.28],[2.1,1.0,0.35]]
+	for r: Array in hang.rings: rows.append([float(r[0]),float(r[1]),0.0])
+	var rings: Array = []
+	for row: Array in rows:
+		var drop: float = row[0]
+		var mid := centre+lean*(drop/deepest)
+		var r: Array[Vector3] = []
+		for i in ring.size():
+			var p: Vector2 = ring[i]
+			var q := mid+(p-centre)*float(row[1])+out[i]*float(row[2])
+			var base: float = rims[i] if (follow or drop < 3.0) else minf(top,rims[i])
+			r.append(Vector3(q.x,base-drop-(0.02 if drop == 0.0 else 0.0),q.y))
+		rings.append(r)
+	return [rings,centre,top if not follow else _mean(rims),lean,deepest]
+
+static func _mean(v: Array) -> float:
+	var t := 0.0
+	for x: float in v: t += x
+	return t/maxf(v.size(),1)
+
+## The hanging rock drawn: the rings stitched (coarser down the keel), the
+## last ring's arcs hung each to its own fang.
+static func hang_rock(built: Array, hang: Dictionary, seed_value: int) -> KitLook.RockMesh:
+	var rings: Array = built[0]
+	var centre: Vector2 = built[1]
+	var top: float = built[2]
+	var lean: Vector2 = built[3]
+	var deepest: float = built[4]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value*31+7
+	var count: int = (rings[0] as Array).size()
+	var rock := KitLook.RockMesh.new()
+	var rim_y: float = (rings[0] as Array)[0].y
+	# Every ring jittered a little (not the rim, which meets the turf).
+	var drawn: Array = [rings[0]]
+	var strides: Array[int] = [1]
+	for k in range(1,rings.size()):
+		var stride := 1 if k < 3 else mini(1 << ((k-1)/2),8)
+		while stride > 1 and count/stride < 8: stride >>= 1
+		var r: Array[Vector3] = []
+		for i in range(0,count,stride):
+			var p: Vector3 = rings[k][i]
+			var c := Vector3(centre.x,p.y,centre.y)
+			r.append(c+(p-c)*rng.randf_range(0.96,1.03)+Vector3.DOWN*rng.randf_range(-0.4,0.4)*float(k > 2))
+		drawn.append(r)
+		strides.append(stride)
+	for k in range(drawn.size()-1):
+		var upper: Array = drawn[k]
+		var lower: Array = drawn[k+1]
+		var su: int = strides[k]
+		var sl: int = strides[k+1]
+		for j in range(lower.size()):
+			var l0: Vector3 = lower[j]
+			var l1: Vector3 = lower[(j+1)%lower.size()]
+			var u := j*sl
+			var next := mini((j+1)*sl,count)
+			while u < next:
+				var u0: Vector3 = upper[u/su]
+				var u1: Vector3 = upper[((u+su)%count)/su]
+				_face(rock,[u0,l0,u1],rim_y,centre,rng)
+				u += su
+			_face(rock,[l0,l1,upper[(next%count)/su]],rim_y,centre,rng)
+	# The fangs: the last ring cut in arcs, each fanned to its own point; a
+	# crotch point under the ring's middle closes them.
+	var last: Array = drawn[drawn.size()-1]
+	var fangs: Array = hang.fangs
+	var n := fangs.size()
+	var low_y: float = 0.0
+	for p: Vector3 in last: low_y += p.y
+	low_y /= float(last.size())
+	var crotch := Vector3(centre.x+lean.x,low_y-3.0,centre.y+lean.y)
+	var m := last.size()
+	for f in n:
+		var a0 := f*m/n
+		var a1 := (f+1)*m/n
+		var mid := Vector3.ZERO
+		for i in range(a0,a1+1): mid += last[i%m]
+		mid /= float(a1-a0+1)
+		var c := Vector3(centre.x,mid.y,centre.y)
+		var tip := (c+(mid-c)*(float(hang.get("spread",0.35)) if n > 1 else 0.0))
+		tip.x += lean.x*(1.0-float(n > 1)*0.5)+rng.randf_range(-1.0,1.0)
+		tip.z += lean.y*(1.0-float(n > 1)*0.5)+rng.randf_range(-1.0,1.0)
+		tip.y = top-float(fangs[f])
+		for i in range(a0,a1):
+			_face(rock,[last[i%m],tip,last[(i+1)%m]],rim_y,centre,rng)
+		if n > 1:
+			_face(rock,[last[a0%m],crotch,tip],rim_y,centre,rng)
+			_face(rock,[last[a1%m],tip,crotch],rim_y,centre,rng)
+	return rock
+
+static func _face(rock: KitLook.RockMesh, tri: Array, rim_y: float, centre: Vector2, rng: RandomNumberGenerator) -> void:
+	var m: Vector3 = (tri[0]+tri[1]+tri[2])/3.0
+	var flat := Vector2(m.x-centre.x,m.z-centre.y).length()
+	rock.add(tri,rim_y,m-Vector3(centre.x,m.y+flat*0.6,centre.y),rng.randf_range(0.88,1.1))
+
+## A sheer land's flank as hulls: one convex hull between each two of its
+## rings down to the fangs (the rim's pulled SHEER_IN in and SHEER_UNDER
+## down, under the turf), each ring no wider than the one over it, so the
+## stack overhangs everywhere and holds no lip to catch.
+static func hang_hulls(built: Array) -> StaticBody3D:
+	var rings: Array = built[0]
+	var centre: Vector2 = built[1]
+	var body := StaticBody3D.new()
+	body.name = "SheerFlank"
+	var prev := PackedVector3Array()
+	for k in range(rings.size()):
+		if k == 1 or k == 2: continue
+		var ring := PackedVector3Array()
+		var r: Array = rings[k]
+		for i in range(0,r.size(),2):
+			var p: Vector3 = r[i]
+			if k == 0:
+				var flat := Vector2(p.x-centre.x,p.z-centre.y)
+				var q := Vector2(p.x,p.z)-flat.normalized()*SHEER_IN
+				p = Vector3(q.x,p.y-SHEER_UNDER+0.02,q.y)
+			ring.append(p)
+		if not prev.is_empty():
+			var shape := ConvexPolygonShape3D.new()
+			shape.points = prev+ring
+			var col := CollisionShape3D.new()
+			col.shape = shape
+			body.add_child(col)
+		prev = ring
+	return body
 
 ## How far under the rim a sheer land's hull starts (the turf collides
 ## over it), its depth's share it reaches down, how much of the outline its
