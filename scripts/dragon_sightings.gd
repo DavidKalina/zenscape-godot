@@ -31,7 +31,8 @@ extends Node3D
 ## (CLOSE_SHARE). `call_now("far" / "close")` starts one now (K, Shift+K in
 ## studies/sky_weather_field.gd).
 ##
-## Not drawn yet: `place` and `lit` are where it is and how lit it is.
+## Drawn (scripts/dragon_glimpse.gd, `glimpse`): the rim dragon posed in
+## a glide at `place`, facing its `velocity`, only while `lit` > 0.
 ##
 ## Flags:
 ##   --sighting-at=<frames>    one sighting that many frames in, and none on
@@ -40,6 +41,8 @@ extends Node3D
 ##                             their own)
 ##   --murk=<x>                the murk pinned (0 to 1) until whiteouts set it
 ##   --sighting-log            a line per heard, flash, sighted, end
+##   --sighting-hold           a sighting never ends (with --strike-hold,
+##                             for stills)
 signal heard(event: Dictionary)
 signal sighted(event: Dictionary)
 
@@ -101,6 +104,9 @@ var count := 0
 var clock := 0.0
 var every := EVERY
 var log_on := false
+var hold := false
+## The dragon as it is seen.
+var glimpse: Node3D
 var _weather: Node3D
 var _scene: Node3D
 var _rng := RandomNumberGenerator.new()
@@ -123,6 +129,7 @@ func setup(scene: Node3D, weather: Node3D) -> void:
 		elif arg.begins_with("--sighting-every="): every = float(arg.get_slice("=",1))
 		elif arg.begins_with("--murk="): murk_pinned = clampf(float(arg.get_slice("=",1)),0.0,1.0)
 		elif arg == "--sighting-log": log_on = true
+		elif arg == "--sighting-hold": hold = true
 	_clips = {"call":_takes("dragon-call-%d.wav",3),"beat":_takes("dragon-beat-%d.wav",4),"rustle":_takes("wings-%d.wav",4)}
 	_bus()
 	for i in range(6):
@@ -136,6 +143,8 @@ func setup(scene: Node3D, weather: Node3D) -> void:
 		voice.bus = BUS
 		add_child(voice)
 		_voices.append(voice)
+	glimpse = preload("res://scripts/dragon_glimpse.gd").new()
+	add_child(glimpse)
 
 static func _takes(pattern: String, n: int) -> Array:
 	var out := []
@@ -166,8 +175,11 @@ func _exit_tree() -> void:
 	var index := AudioServer.get_bus_index(BUS)
 	if index >= 0: AudioServer.remove_bus(index)
 
+## The eye: the camera drawing the view (a driver's own, for stills), else
+## the study's.
 func _eye() -> Camera3D:
-	return _scene.get("camera")
+	var seen := get_viewport().get_camera_3d() if is_inside_tree() else null
+	return seen if seen != null else _scene.get("camera")
 
 func _log(text: String) -> void:
 	if log_on: print("sighting: %s" % text)
@@ -193,10 +205,9 @@ func step(delta: float) -> void:
 			var rate := smoothstep(FROM,1.0,storm)/every*(1.0+MORE*deep)
 			if _rng.randf() < rate*delta:
 				_begin("close" if _rng.randf() < lerpf(CLOSE_SHARE.x,CLOSE_SHARE.y,deep) else "far")
-	if now.is_empty():
-		lit = 0.0
-		return
-	_advance(delta)
+	if now.is_empty(): lit = 0.0
+	else: _advance(delta)
+	glimpse.show_at(place,velocity,lit,delta)
 
 ## The storm of the cell's or the front's core where the plane is.
 func _core() -> float:
@@ -300,7 +311,7 @@ func _advance(delta: float) -> void:
 		last = {"id":now.id,"near":now.near,"place":place,"distance":eye.distance_to(place),"time":clock}
 		_log("sighted %s %.0f m off at %s, t %.1f" % [now.near,float(last.distance),place.round(),clock])
 		sighted.emit(last)
-	if t > float(flashes[-1])+AFTER and sounds.is_empty():
+	if t > float(flashes[-1])+AFTER and sounds.is_empty() and not hold:
 		_log("end %d" % int(now.id))
 		now = {}
 		lit = 0.0
