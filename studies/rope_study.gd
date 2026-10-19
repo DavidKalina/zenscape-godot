@@ -27,6 +27,8 @@ const BagStudy = preload("res://studies/bag_study.gd")
 const ClimbRope = preload("res://scripts/rope/climb_rope.gd")
 
 const SCENE_ID := "rope_study"
+## The layout scene its pieces are named under (a study built on this one sets its own).
+var scene_id := SCENE_ID
 ## The two floors (x, z) and their tops.
 const UPPER := Rect2(-20.0,-20.0,34.0,40.0)
 const LOWER := Rect2(14.0,-20.0,22.0,40.0)
@@ -102,8 +104,8 @@ var rope: Node3D
 var _status: Label
 
 func _ready() -> void:
-	pack = SCENE_ID
-	LayoutOverrides.begin(SCENE_ID)
+	pack = scene_id
+	LayoutOverrides.begin(scene_id)
 	super._ready()
 	set_full_moves(false)
 
@@ -156,7 +158,7 @@ func _material(colour: String) -> Material:
 ## its middle, so the world view's move carries the mesh, collider and its
 ## lip's band.
 func _named_part(id: String, part: Array) -> void:
-	var called := "%s/%s" % [SCENE_ID,id]
+	var called := "%s/%s" % [scene_id,id]
 	if LayoutOverrides.deleted(called): return
 	var mesh: Mesh
 	var shape: Shape3D
@@ -249,7 +251,7 @@ func _build_loot() -> void:
 	holder.name = "Loot"
 	add_child(holder)
 	for row: Array in LOOT:
-		var called := "%s/%s" % [SCENE_ID,str(row[0])]
+		var called := "%s/%s" % [scene_id,str(row[0])]
 		if LayoutOverrides.deleted(called): continue
 		var coded := Transform3D(Basis(Vector3.UP,deg_to_rad(float(row[4]))),row[3])
 		var spot := Node3D.new()
