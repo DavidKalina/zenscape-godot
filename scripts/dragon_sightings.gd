@@ -85,11 +85,12 @@ const MURK_BEHIND := Vector2(60.0,140.0)
 ## ~68 m each side, its neck and head ~70 m ahead, its tail ~110 m behind),
 ## per stage: how far off (m), where in the view (share of its half height
 ## up, of its half width either side), how fast it pulls ahead of the plane
-## (m/s). The shares of away and over (the rest under).
+## (m/s); under, at least `aside` of the half width off the middle. The
+## shares of away and over (the rest under).
 const CLOSE_STAGES := {
 	"away": {"range":Vector2(115.0,150.0),"view":Vector2(0.0,0.4),"across":0.25,"slide":Vector2(3.0,7.0)},
 	"over": {"range":Vector2(55.0,110.0),"view":Vector2(0.5,0.75),"across":0.15,"slide":Vector2(6.0,12.0)},
-	"under": {"range":Vector2(100.0,150.0),"view":Vector2(-0.8,-0.45),"across":0.2,"slide":Vector2(3.0,7.0)},
+	"under": {"range":Vector2(100.0,150.0),"view":Vector2(-0.8,-0.45),"across":0.55,"aside":0.3,"slide":Vector2(3.0,7.0)},
 }
 const CLOSE_SHARES := Vector2(0.45,0.3)
 ## Away: at most this far over or under the eye (m); over: this far over
@@ -251,6 +252,9 @@ func step(delta: float) -> void:
 	if now.is_empty(): lit = 0.0
 	else: _advance(delta)
 	glimpse.murk = murk
+	# The look's clock: s since the first flash (the head is round by it).
+	glimpse.stage = "" if now.is_empty() else str(now.stage)
+	glimpse.beat = -INF if now.is_empty() else float(now.t)-float(now.flashes[0])
 	var close := not now.is_empty() and str(now.near) == "close"
 	var eye := _eye()
 	if close and eye != null: place += glimpse.show_at(place,velocity,lit,delta,eye.global_position,1.0)
@@ -287,7 +291,9 @@ func _begin(near: String, stage := "") -> void:
 	var slide := Vector3.ZERO
 	if near == "close":
 		var st: Dictionary = CLOSE_STAGES[stage]
-		var across := _rng.randf_range(-1.0,1.0)*float(st.across)*half_h
+		# Under sits off to one side (`aside`, a share of the half width), so
+		# the plane is not drawn over its neck.
+		var across := (1.0 if _rng.randf() < 0.5 else -1.0)*_rng.randf_range(float(st.get("aside",0.0)),float(st.across))*half_h
 		var up := _rng.randf_range(float(st.view.x),float(st.view.y))*half_v
 		place = _in_view(camera,across,up,_rng.randf_range(float(st.range.x),float(st.range.y)))
 		if stage == "over":

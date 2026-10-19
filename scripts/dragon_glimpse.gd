@@ -46,6 +46,25 @@ const SAMPLES := 600
 ## The loom pass: after the murk's sheet (storm_whiteout.gd RENDER_PRIORITY
 ## 20), with the near rain's drops.
 const LOOM_PRIORITY := 21
+## The look (close "away" and "over"; `beat`, s from the first flash): the
+## beats' ends (s): anticipation (the head drawn in and a little the other
+## way), the snap round, its settle, the hold, the turn back (slower than
+## the snap); how far round it may cock (rad, off dead ahead), how far it
+## overshoots and counters. "over" looks down instead: at most LOOK_DOWN
+## (rad) and LOOK_ASIDE round. The jaw's gape (rad), the claws' reach.
+const BEATS := [-0.42,-0.12,0.08,0.26,0.78,1.25]
+const LOOK_MAX := 2.3
+const OVERSHOOT := 0.1
+const COUNTER := 0.12
+const LOOK_DOWN := 1.15
+## Flying away, the neck rears this far (rad) into the look, so the head
+## stands clear over the shoulder's line.
+const REAR := 0.35
+const LOOK_ASIDE := 0.55
+const GAPE := 0.55
+## The look's share in each neck bone (root first) and the head.
+const NECK_SHARE := [0.26,0.24,0.2,0.14]
+const HEAD_SHARE := 0.16
 
 var model: Node3D
 var skeleton: Skeleton3D
@@ -65,6 +84,12 @@ var murk := 0.0
 var _samples: Array = []
 ## The least gap to the eye this sighting (m; INF none yet).
 var nearest := INF
+## The sighting's stage and how far into it (s since its first flash; -INF
+## none), set by the sighting each frame before `show_at`: the look's clock.
+var stage := ""
+var beat := -INF
+## The side the look goes round (+1 its left, -1 its right; 0 not chosen).
+var _side := 0.0
 
 func _ready() -> void:
 	name = "DragonGlimpse"
@@ -173,7 +198,7 @@ func show_at(at: Vector3, velocity: Vector3, lit: float, delta: float, eye := Ve
 	_skin.backlight = Color(0.22,0.17,0.24).lerp(GLOW,close)*lit
 	_loom.set_shader_parameter("murk",murk)
 	_loom.set_shader_parameter("lit",lit)
-	_pose(at,velocity)
+	_pose(at,velocity,eye if keep else Vector3.INF)
 	if not keep: return Vector3.ZERO
 	var push := Vector3.ZERO
 	for i in range(3):
@@ -207,16 +232,23 @@ func _nearest(eye: Vector3) -> Vector3:
 	return best
 
 ## A glide after sky_dragon.gd `_pose` with flap_w 0.
-func _pose(at: Vector3, velocity: Vector3) -> void:
+func _pose(at: Vector3, velocity: Vector3, eye := Vector3.INF) -> void:
 	var t := _clock
 	# Riding the air: a slow swell and a roll and pitch off it.
 	var air_roll := 0.07*sin(t*0.53)+0.03*sin(t*1.37+0.4)
 	var air_pitch := 0.03*sin(t*0.41+1.1)
 	var swell_y := 1.2*sin(t*0.47)
 	var gamma := atan2(velocity.y,Vector2(velocity.x,velocity.z).length()) if velocity.length() > 0.5 else 0.0
+	# The look's beats now (close away/over only): x round, y coiled, z the
+	# jaw, w the claws' reach; the shoulder dropping into the turn.
+	var looking := eye != Vector3.INF and stage in ["away","over"]
+	if not looking or beat < BEATS[0]: _side = 0.0
+	var b := _beats(beat) if looking else Vector4.ZERO
+	if stage == "away": air_roll += _side*0.1*b.x
 	var pitch := gamma*0.75+0.05+air_pitch
 	var basis := Basis(Vector3.UP,_yaw)*Basis(Vector3.RIGHT,pitch)*Basis(Vector3.BACK,air_roll)
 	global_transform = Transform3D(basis,at+Vector3.UP*swell_y)
+	var aim := _aim(eye) if looking else Vector2.ZERO
 	# The wings trim each on its own, the hands twist with the swell.
 	var trim := Vector2(0.05*sin(t*0.71)+0.03*sin(t*1.9),0.05*sin(t*0.63+1.7)+0.03*sin(t*2.3))
 	var twist := 0.02*sin(t*0.47)+0.06*sin(t*0.9)
@@ -234,10 +266,13 @@ func _pose(at: Vector3, velocity: Vector3) -> void:
 		_turn("wing_f3."+n,[[Vector3.UP,side*FOLD*0.3]])
 		_turn("wing_f4."+n,[[Vector3.UP,side*FOLD*0.45]])
 		# The hind legs tucked back under the tail's root, swinging a little.
+		# In the look the claws come down out of the tuck and reach (all the
+		# way over the plane, a flex flying away), one a beat behind the other.
 		var hang := 0.06*sin(t*0.8+side)
-		_turn("hind_upper."+n,[[Vector3.RIGHT,-1.5+hang]])
-		_turn("hind_lower."+n,[[Vector3.RIGHT,0.9+hang*0.5]])
-		_turn("hind_foot."+n,[[Vector3.RIGHT,-0.7-hang*0.25]])
+		var reach: float = b.w*(1.0 if stage == "over" else 0.45)*(1.0-0.15*(side+1.0))
+		_turn("hind_upper."+n,[[Vector3.RIGHT,-1.5+hang+1.0*reach]])
+		_turn("hind_lower."+n,[[Vector3.RIGHT,0.9+hang*0.5-0.65*reach]])
+		_turn("hind_foot."+n,[[Vector3.RIGHT,-0.7-hang*0.25+1.0*reach]])
 	# Breathing in the chest.
 	_turn("chest",[[Vector3.RIGHT,0.02*sin(t*0.9)]])
 	_turn("hips",[[Vector3.RIGHT,-0.02*sin(t*0.9)]])
@@ -245,18 +280,60 @@ func _pose(at: Vector3, velocity: Vector3) -> void:
 	# the head held level against the pitch and roll.
 	var neck_sway := 0.04*sin(t*0.37)
 	var slither := 0.05*sin(t*0.29+0.8)
+	# The look: round (and up or down) shared up the neck, most at its root,
+	# the rest in the head; coiled, the neck rears and the head tucks.
+	var round_ := aim.x*b.x
+	var lift := aim.y*clampf(b.x,0.0,1.0)
 	_turn("spine.2",[[Vector3.RIGHT,-0.06]])
 	for i in range(_neck_n):
 		var u := float(i)/maxf(_neck_n-1,1)
-		var bend := lerpf(0.04,-0.08,u)
+		var bend := lerpf(0.04,-0.08,u)+0.12*b.y*(1.0-u)
 		var wave := neck_sway*sin(PI*u+0.3)+slither*cos(PI*u)
-		_turn("neck.%d" % i,[[Vector3.RIGHT,bend+wave],[Vector3.UP,slither*0.6*(u-0.5)]])
-	_turn("head",[[Vector3.RIGHT,0.08-(gamma*0.75+0.05)*0.7-air_pitch-neck_sway*0.6],[Vector3.BACK,-air_roll*0.5]])
+		var share: float = NECK_SHARE[mini(i,NECK_SHARE.size()-1)]
+		_turn("neck.%d" % i,[[Vector3.UP,round_*share+slither*0.6*(u-0.5)],[Vector3.RIGHT,bend+wave+lift*share]])
+	_turn("head",[[Vector3.UP,round_*HEAD_SHARE],[Vector3.RIGHT,0.08-(gamma*0.75+0.05)*0.7-air_pitch-neck_sway*0.6+lift*HEAD_SHARE-0.25*b.y],
+		[Vector3.BACK,-air_roll*0.5+_side*0.3*clampf(b.x,0.0,1.0)*(1.0 if stage == "away" else 0.0)]])
+	_turn("jaw",[[Vector3.RIGHT,-GAPE*b.z]])
 	# The tail: a whip, a slow wave travelling down it, growing to the tip,
 	# drooping a little.
 	for i in range(_tail_n):
 		var u := float(i+1)/float(_tail_n)
 		_turn("tail.%d" % i,[[Vector3.UP,0.07*u*sin(t*0.8-float(i)*0.7)],[Vector3.RIGHT,0.015]])
+
+## The look's beats at `u` s from the first flash: x how far round (0 to
+## 1, past it in the snap, under it in the counter), y how coiled (the
+## anticipation), z the jaw (0 shut to 1 agape), w the claws' reach.
+static func _beats(u: float) -> Vector4:
+	var look := 0.0
+	var coil := 0.0
+	if u >= BEATS[0] and u < BEATS[1]:
+		coil = smoothstep(BEATS[0],BEATS[1],u)
+		look = -COUNTER*coil
+	elif u >= BEATS[1] and u < BEATS[2]:
+		var k := 1.0-pow(1.0-(u-BEATS[1])/(BEATS[2]-BEATS[1]),3.0)
+		look = lerpf(-COUNTER,1.0+OVERSHOOT,k)
+		coil = 1.0-k
+	elif u >= BEATS[2] and u < BEATS[3]:
+		look = lerpf(1.0+OVERSHOOT,1.0,smoothstep(BEATS[2],BEATS[3],u))
+	elif u >= BEATS[3] and u < BEATS[4]:
+		look = 1.0
+	elif u >= BEATS[4] and u < BEATS[5]:
+		look = 1.0-smoothstep(BEATS[4],BEATS[5],u)
+	var jaw := smoothstep(BEATS[2]-0.06,BEATS[3]+0.04,u)*(1.0-smoothstep(BEATS[4]+0.05,BEATS[5],u))
+	var reach := smoothstep(BEATS[1]+0.05,BEATS[3]+0.15,u)*(1.0-smoothstep(BEATS[4]+0.15,BEATS[5]+0.25,u))
+	return Vector4(look,coil,jaw,reach)
+
+## Where the look goes, off dead ahead (model frame): x round (+ its left),
+## y up. "away": round over the shoulder at the eye (as far as LOOK_MAX),
+## its side kept for the sighting; "over": down, a little round.
+func _aim(eye: Vector3) -> Vector2:
+	var root := skeleton.get_bone_global_rest(_bone["neck.0"]).origin if _bone.has("neck.0") else Vector3.ZERO
+	var d := skeleton.global_transform.affine_inverse()*eye-root
+	if _side == 0.0: _side = 1.0 if d.x < 0.0 else -1.0
+	var round_ := atan2(-d.x,-d.z)
+	if signf(round_) != _side: round_ += TAU*_side
+	if stage == "over": return Vector2(_side*minf(absf(round_),LOOK_ASIDE),-LOOK_DOWN)
+	return Vector2(_side*clampf(absf(round_),0.0,LOOK_MAX),REAR+clampf(atan2(d.y,Vector2(d.x,d.z).length()),-0.5,0.5))
 
 func _turn(b: String, turns: Array) -> void:
 	if not _bone.has(b): return
