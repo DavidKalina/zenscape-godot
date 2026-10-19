@@ -22,6 +22,9 @@ extends RefCounted
 ##            the tilt rock (a low islet tilted like a dropped slab): a
 ##            lancet wall, a carved chest, part spot 15, and a footbridge
 ##            on to the north balcony
+##   knight   a snapped stone causeway west off the strip's west end over
+##            open sky: the rune knight's deck, part spot 16 on its tip in
+##            the lee of a snapped pier
 ##
 ## Every gap and rise is sized from the walker (RuinKit GRAB_TOP 1.875,
 ## CHAIN_TOP 2.575; `tools/kit_piece.py numbers`).
@@ -271,6 +274,36 @@ static func slide_built() -> Array:
 		out.append(["slide/"+("upper" if i == 0 else "lower"),b.finish(),head,0.0])
 	return out
 
+## The knight's causeway (spec item 7): the rune knight's deck. A snapped
+## stone causeway jutting west off the strip's west end over open sky, one
+## deck CAUSEWAY_HALF either side of z STRIP_Z, its top level with the
+## strip's turf, broken off at CAUSEWAY_TIP; a snapped pier stands on the
+## broken tip and part spot 16 lies in its lee. The knight patrols the deck
+## between the strip and the pier, so the spot is past him; nothing but sky
+## either side and past the tip, so a knock-off (his or yours) is a fall.
+## Its root runs CAUSEWAY_ROOT into the strip's turf so no seam opens.
+const CAUSEWAY_HALF := 1.6
+const CAUSEWAY_ROOT := 23.5
+const CAUSEWAY_EDGE := 20.5
+const CAUSEWAY_TIP := -4.0
+const CAUSEWAY_THICK := 1.1
+## The course under the deck: narrower, deeper, stopping short of the tip.
+const CAUSEWAY_UNDER := Vector3(2.5,1.6,-1.5)
+static func causeway_top() -> float:
+	return STRIP_TOP+0.03
+static func causeway_pier_foot() -> Vector3:
+	return Vector3(CAUSEWAY_TIP+1.0,causeway_top(),STRIP_Z-0.6)
+static func causeway_spot() -> Vector3:
+	return Vector3(CAUSEWAY_TIP+2.6,causeway_top(),STRIP_Z+0.7)
+## The causeway's stone: [layout name, node, world foot, yaw (deg)].
+static func causeway_built() -> Array:
+	var b := RuinKit.Build.new(651,0.35,"Causeway")
+	var top := causeway_top()
+	Spine._beam(b,Vector3(CAUSEWAY_ROOT,0.0,0.0),Vector3(CAUSEWAY_TIP,0.0,0.0),Vector2(CAUSEWAY_HALF*2.0,CAUSEWAY_THICK))
+	var u := CAUSEWAY_UNDER
+	Spine._beam(b,Vector3(CAUSEWAY_EDGE+1.0,-CAUSEWAY_THICK,0.0),Vector3(CAUSEWAY_TIP-u.z,-CAUSEWAY_THICK,0.0),Vector2(u.x,u.y),false)
+	return [["knight/causeway",b.finish(),Vector3(0.0,top,STRIP_Z),0.0]]
+
 ## A worn upright block (walk hull on all sides) centred `c`, `half` its
 ## half extents, in `b`'s frame.
 static func _block(b: RuinKit.Build, c: Vector3, half: Vector3) -> void:
@@ -351,6 +384,7 @@ static func pieces() -> Array:
 		["ropes/arch","arch",624,0.25,rope_arch_foot(),0.0],
 		["slide/wall","lancet_wall",643,0.35,tilt_wall_foot(),90.0],
 		["slide/chest","tomb_chest",644,0.4,tilt_chest_foot(),0.0],
+		["knight/pier","pier",652,0.12,causeway_pier_foot(),0.0],
 	]
 
 # --- The tower --------------------------------------------------------------------
@@ -562,6 +596,7 @@ static func spots() -> Array:
 		["coast","under the coast rock's arch (the coast down's end)",coast_arch_foot(),["lying","islet","salvager"]],
 		["ropes","under the rope rock's chapel arch (the rope chain's end)",rope_arch_foot(),["lying","islet","salvager"]],
 		["slide","by the carved chest under the tilt rock's lancet wall (the slide's end)",tilt_spot(),["lying","islet","cache"]],
+		["knight","on the snapped causeway's tip, in the lee of its last pier (past the knight)",causeway_spot(),["lying","knight","cache"]],
 	]
 
 ## The caches (spec item 10's change; studies/wreck_cluster_caches.gd): a
@@ -598,7 +633,10 @@ static func spot_name(i: int) -> String:
 
 # --- The knight -------------------------------------------------------------------
 
-## The knight's line (scripts/enemies/rune_knight.gd `setup`): none until
-## his deck is built (empty: no knight).
+## The knight's line (scripts/enemies/rune_knight.gd `setup`): the
+## causeway, its local x running west from the strip's west rim
+## (CAUSEWAY_EDGE) to the tip. His head end reaches back over the strip's
+## turf, so a push back toward the strip leaves him standing.
 static func knight_line() -> Dictionary:
-	return {}
+	var xf := Transform3D(Basis(Vector3(-1.0,0.0,0.0),Vector3.UP,Vector3(0.0,0.0,-1.0)),Vector3(CAUSEWAY_EDGE,0.0,STRIP_Z))
+	return {"xf":xf,"head":CAUSEWAY_EDGE-CAUSEWAY_ROOT,"snap":CAUSEWAY_EDGE-CAUSEWAY_TIP-0.8,"deck":causeway_top(),"half":CAUSEWAY_HALF}
