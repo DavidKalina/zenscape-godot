@@ -133,6 +133,18 @@ const SPECK_AT := Vector2(230.0,900.0)
 const SPECK_LIFT := Vector2(-120.0,170.0)
 const SPECK_SIZE := Vector2(3.0,8.0)
 const GRASS_NEAR := 260.0
+## Debris (spec item 4): the masses keep theirs (MASS_BASE / PART_BASE),
+## gathered under them; the strays between them are cut: the islets', the
+## aqueduct's stepping rocks' and the near specks' amounts are low. Then
+## every fragment within SPAN_CLEAR m (sideways) of a route's line, from
+## SPAN_BELOW m under it to SPAN_ABOVE over, is left out (`_clear_spans`),
+## so nothing hangs in a bridge's, pillar's or channel's way.
+const ISLET_DEBRIS := 0.12
+const ROCK_DEBRIS := 0.08
+const SPECK_DEBRIS := 0.1
+const SPAN_CLEAR := 5.0
+const SPAN_BELOW := 14.0
+const SPAN_ABOVE := 6.0
 
 var units: Array = []
 var specks := true
@@ -194,13 +206,43 @@ func _build_art() -> void:
 	_ruins()
 	_islets()
 	if specks: _specks()
+	var cleared := _clear_spans()
 	var tris := 0
 	var frags := 0
+	var by := {"mass":0,"rock":0,"islet":0,"speck":0}
 	for u: Node3D in units:
 		var st: Dictionary = u.unit.get_meta("stats")
 		tris += int(st.get("triangles",0))
-		frags += int(st.get("debris",0))
-	print("crag reach: %d units, %d triangles, %d debris fragments, built in %d ms" % [units.size(),tris,frags,Time.get_ticks_msec()-began])
+		var f := int(st.get("debris",0))
+		frags += f
+		var nm := String(u.name).to_snake_case()
+		var group := "islet" if nm.begins_with("islet_") else "speck" if nm.begins_with("speck_") else "rock" if nm.contains("_rock_") else "mass"
+		by[group] += f
+	print("crag reach: %d units, %d triangles, %d debris fragments (masses %d, aqueduct rocks %d, islets %d, specks %d; %d of them cleared off the routes), built in %d ms" % [units.size(),tris,frags-cleared,by.mass,by.rock,by.islet,by.speck,cleared,Time.get_ticks_msec()-began])
+
+## Leaves out every debris fragment in a route's way (SPAN_CLEAR): its
+## instance shrunk to nothing. Returns how many. Fixed loops: units x
+## multimeshes x instances x spans.
+func _clear_spans() -> int:
+	var cleared := 0
+	for u: Node3D in units:
+		for mmi: Node in u.find_children("Shape*","MultiMeshInstance3D",true,false):
+			if mmi.get_parent().name != "Debris": continue
+			var mm: MultiMesh = (mmi as MultiMeshInstance3D).multimesh
+			var xf: Transform3D = (mmi as MultiMeshInstance3D).global_transform
+			for i in mm.instance_count:
+				var p: Vector3 = xf*mm.get_instance_transform(i).origin
+				for span: Array in spans:
+					var a: Vector3 = span[0]
+					var b: Vector3 = span[1]
+					var ab := Vector2(b.x-a.x,b.z-a.z)
+					var t := clampf(Vector2(p.x-a.x,p.z-a.z).dot(ab)/maxf(ab.length_squared(),0.001),0.0,1.0)
+					var on := a.lerp(b,t)
+					if Vector2(p.x-on.x,p.z-on.z).length() < SPAN_CLEAR and p.y > on.y-SPAN_BELOW and p.y < on.y+SPAN_ABOVE:
+						mm.set_instance_transform(i,Transform3D(Basis.from_scale(Vector3.ZERO),mm.get_instance_transform(i).origin))
+						cleared += 1
+						break
+	return cleared
 
 ## The rope bridges (BRIDGES), each named `crag_reach/<name>`: its node
 ## moved in the world view moves the whole span with its anchors.
@@ -308,7 +350,7 @@ func _aqueducts() -> void:
 			var size := rng.randf_range(AQ_ROCK_SIZE.x,AQ_ROCK_SIZE.y)
 			var spec := {"seed":seed_value*10+i,"size":size,"shape":rng.randf_range(0.2,0.8),"flat":0.6,"lean":rng.randf()*0.4,
 				"drip":rng.randf_range(0.4,0.9),"lopsided":rng.randf()*0.5,"growth":rng.randf_range(0.55,0.8),"weather":0.6,
-				"landmark":-1,"debris":0.2}
+				"landmark":-1,"debris":ROCK_DEBRIS}
 			var at := Vector3(p.x,base-AQ_ROCK_DROP-rng.randf_range(0.0,AQ_ROCK_JITTER),p.z)
 			_stand("%s_rock_%d" % [name_,i],Transform3D(Basis(Vector3.UP,rng.randf()*TAU),at),spec)
 		# The spans, each on the ground under it (the crowns, the rocks).
@@ -528,7 +570,7 @@ func _islets() -> void:
 		placed += 1
 		var spec := {"seed":300+placed,"size":size,"shape":rng.randf(),"lean":rng.randf(),"drip":rng.randf(),
 			"lopsided":rng.randf(),"growth":rng.randf_range(0.5,0.85),"weather":rng.randf_range(0.4,0.8),
-			"landmark":-1,"debris":0.25}
+			"landmark":-1,"debris":ISLET_DEBRIS}
 		var n := _stand("crag_reach/islet_%d" % placed,Transform3D(Basis(Vector3.UP,rng.randf()*TAU),at),spec)
 		if n != null and size < 4.0: n.set_drift(rng.randf_range(0.15,0.4),int(spec.seed))
 
@@ -543,7 +585,7 @@ func _specks() -> void:
 		var size := lerpf(SPECK_SIZE.x,SPECK_SIZE.y,rng.randf())*lerpf(1.0,2.0,clampf(d/SPECK_AT.y,0.0,1.0))
 		var spec := {"seed":600+i,"size":size,"shape":rng.randf(),"lean":rng.randf(),"drip":rng.randf(),
 			"lopsided":rng.randf(),"growth":rng.randf_range(0.45,0.85),"weather":rng.randf_range(0.3,0.9),
-			"landmark":(-1 if d < 400.0 else 0),"grass":(1.0 if d < GRASS_NEAR else 0.0),"debris":(0.25 if d < 400.0 else 0.0)}
+			"landmark":(-1 if d < 400.0 else 0),"grass":(1.0 if d < GRASS_NEAR else 0.0),"debris":(SPECK_DEBRIS if d < 400.0 else 0.0)}
 		_stand("crag_reach/speck_%d" % (i+1),Transform3D(Basis(Vector3.UP,rng.randf()*TAU),at),spec)
 
 func _stand(name_: String, coded: Transform3D, spec: Dictionary) -> Node3D:
