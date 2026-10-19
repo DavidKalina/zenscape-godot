@@ -18,7 +18,9 @@ extends Node3D
 ##            those show it gone (the sky lit, the dragon not there).
 ## It glides on all along (`place`, `velocity`): far, across the view
 ## FAR_SPEED m/s, FAR_RANGE m off, mostly where the camera looks; close,
-## tens of m off the wing or over the canopy, sliding past the plane.
+## its root ~70-100 m off the wing or ~30-50 m over the canopy, so a wing
+## or its neck and head reaches in tens of m off, sliding past the plane
+## (never round the eye: the glimpse keeps it clear and pushes `place`).
 ##
 ## The event (`sighted`, also kept in `last`): {id, near ("far"/"close"),
 ## place (Vector3), distance (m), time (s since the weather began)}. No
@@ -59,11 +61,17 @@ const FAR_UP := Vector2(-30.0,90.0)
 const FAR_SPEED := Vector2(20.0,30.0)
 const FAR_IN_VIEW := 0.7
 const FAR_BEHIND := Vector2(120.0,360.0)
-## Close: off the wing (m to the side, ahead or behind), over the canopy
-## (m up), how fast it slides past the plane (m/s), how far behind it the
-## flash is (m).
-const WING_OFF := Vector2(24.0,48.0)
-const CANOPY_UP := Vector2(14.0,26.0)
+## Close (its root as the first flash shows it; its wings reach ~68 m each
+## side, its neck and head ~70 m ahead, its tail ~110 m behind): off the
+## wing (m to the side, ahead, up), over the canopy (m up, ahead, to the
+## side it crosses toward), how fast it slides past the plane (m/s), how far
+## behind it the flash is (m).
+const WING_OFF := Vector2(70.0,95.0)
+const WING_AHEAD := Vector2(45.0,95.0)
+const WING_UP := Vector2(-6.0,26.0)
+const CANOPY_UP := Vector2(30.0,48.0)
+const CANOPY_AHEAD := Vector2(40.0,90.0)
+const CANOPY_ACROSS := Vector2(-25.0,10.0)
 const CANOPY_SHARE := 0.4
 const SLIDE := Vector2(9.0,16.0)
 const CLOSE_BEHIND := Vector2(50.0,130.0)
@@ -207,7 +215,10 @@ func step(delta: float) -> void:
 				_begin("close" if _rng.randf() < lerpf(CLOSE_SHARE.x,CLOSE_SHARE.y,deep) else "far")
 	if now.is_empty(): lit = 0.0
 	else: _advance(delta)
-	glimpse.show_at(place,velocity,lit,delta)
+	var close := not now.is_empty() and str(now.near) == "close"
+	var eye := _eye()
+	if close and eye != null: place += glimpse.show_at(place,velocity,lit,delta,eye.global_position,1.0)
+	else: glimpse.show_at(place,velocity,lit,delta)
 
 ## The storm of the cell's or the front's core where the plane is.
 func _core() -> float:
@@ -226,19 +237,32 @@ func _begin(near: String) -> void:
 	flat = flat.normalized() if flat.length() > 0.01 else Vector3.FORWARD
 	var right := flat.cross(Vector3.UP)
 	var moving := _plane_velocity()
+	var flashes: Array = [_rng.randf_range(HERALD.x,HERALD.y)]
+	if _rng.randf() < AGAIN: flashes.append(float(flashes[0])+_rng.randf_range(AGAIN_GAP.x,AGAIN_GAP.y))
+	# Close: where it is (from the eye) when the first flash shows it, then
+	# back along its slide past the plane to where it is heard.
+	var herald: float = flashes[0]
 	if near == "close":
+		# Its root is far enough off that its body passes clear; a wing or
+		# the neck and head reaches in toward the eye (the glimpse keeps
+		# them CLEAR m off it).
 		if _rng.randf() < CANOPY_SHARE:
-			# Over the canopy, crossing it.
-			place = eye+Vector3.UP*_rng.randf_range(CANOPY_UP.x,CANOPY_UP.y)+flat*_rng.randf_range(-6.0,22.0)
+			# Over the canopy, crossing ahead: its body and a wing spread over
+			# the top of the view.
 			var across := right*(1.0 if _rng.randf() < 0.5 else -1.0)
-			place -= across*_rng.randf_range(20.0,32.0)
-			velocity = moving+(across*1.6+flat*_rng.randf_range(-0.4,0.4)).normalized()*_rng.randf_range(SLIDE.x,SLIDE.y)*1.6
+			var slide := (across*1.6+flat*_rng.randf_range(-0.4,0.4)).normalized()*_rng.randf_range(SLIDE.x,SLIDE.y)*1.6
+			place = eye+Vector3.UP*_rng.randf_range(CANOPY_UP.x,CANOPY_UP.y)+flat*_rng.randf_range(CANOPY_AHEAD.x,CANOPY_AHEAD.y)
+			place += across*_rng.randf_range(CANOPY_ACROSS.x,CANOPY_ACROSS.y)-slide*herald
+			velocity = moving+slide
 		else:
-			# Off the wing, sliding past along it.
+			# Off the wing, sliding back past it (the plane overtaking) or
+			# forward (it overtaking), its near wing reaching in over the eye.
 			var side := right*(1.0 if _rng.randf() < 0.5 else -1.0)
-			var ahead := 1.0 if _rng.randf() < 0.5 else -1.0
-			place = eye+side*_rng.randf_range(WING_OFF.x,WING_OFF.y)+flat*ahead*_rng.randf_range(18.0,34.0)+Vector3.UP*_rng.randf_range(-8.0,10.0)
-			velocity = moving-flat*ahead*_rng.randf_range(SLIDE.x,SLIDE.y)
+			var back := 1.0 if _rng.randf() < 0.5 else -1.0
+			var slide := -flat*back*_rng.randf_range(SLIDE.x,SLIDE.y)
+			place = eye+side*_rng.randf_range(WING_OFF.x,WING_OFF.y)+flat*_rng.randf_range(WING_AHEAD.x,WING_AHEAD.y)+Vector3.UP*_rng.randf_range(WING_UP.x,WING_UP.y)
+			place -= slide*herald
+			velocity = moving+slide
 	else:
 		var half := atan(tan(deg_to_rad(camera.fov)*0.5)*_aspect())
 		var yaw := atan2(flat.z,flat.x)+_rng.randf_range(-half,half)*FAR_IN_VIEW
@@ -249,8 +273,6 @@ func _begin(near: String) -> void:
 		var across := way.cross(Vector3.UP)*(1.0 if _rng.randf() < 0.5 else -1.0)
 		velocity = (across+way*_rng.randf_range(-0.35,0.35)).normalized()*_rng.randf_range(FAR_SPEED.x,FAR_SPEED.y)
 	var distance := eye.distance_to(place)
-	var flashes: Array = [_rng.randf_range(HERALD.x,HERALD.y)]
-	if _rng.randf() < AGAIN: flashes.append(float(flashes[0])+_rng.randf_range(AGAIN_GAP.x,AGAIN_GAP.y))
 	now = {"id":count+1,"near":near,"t":0.0,"flashes":flashes,"struck":0,"gone":false,
 		"sounds":[],"distance":distance,"sighted":false}
 	_cut.cutoff_hz = lerpf(CUT.x,CUT.y,smoothstep(CUT_RANGE.x,CUT_RANGE.y,distance))
