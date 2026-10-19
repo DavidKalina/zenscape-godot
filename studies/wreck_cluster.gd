@@ -24,7 +24,8 @@ extends "res://studies/kit_isle.gd"
 ##   ./run-wreck-cluster.command [--seed=N]
 ##   godot --path . res://studies/wreck_cluster.tscn -- --no-title [--seed=N]
 ## --seed=N repeats a deal (the first; N re-deals from a fresh seed, printed
-## and shown). --no-rune-knight leaves the knight out. --plane-fixed starts
+## and shown). --no-rune-knight leaves the knight out, --no-brood the
+## stone brood. --plane-fixed starts
 ## it repaired, --parts-carried carrying all six, --part-at=<id> by one.
 ## The kit isles' flags hold (--no-flora, --no-life, --no-sky, --fly, ...).
 ## Nothing here is saved to the player's progress: the ledger is kept in
@@ -534,9 +535,10 @@ func _add_life() -> void:
 	add_child(carry)
 	carry.setup(self,"wreck_cluster",Treasures.spots())
 	carry.deal()
-	brood = BroodHost.new()
-	add_child(brood)
-	brood.setup(self)
+	if not LaunchArgs.user_args().has("--no-brood"):
+		brood = BroodHost.new()
+		add_child(brood)
+		brood.setup(self)
 	if not LaunchArgs.user_args().has("--no-rune-knight") and not Art.knight_line().is_empty():
 		_make_knight()
 		wind_blast = WindBlastStandin.new()
