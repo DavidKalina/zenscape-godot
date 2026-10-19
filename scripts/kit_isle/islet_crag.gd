@@ -177,7 +177,7 @@ func _rock_out() -> void:
 	rock_out.resize(col_count)
 	for c in col_count:
 		var v := IsletUnit._ring(n,col_a[c],1.0)+rng.randf_range(-0.25,0.25)
-		var thresh := lerpf(0.35,-0.05,w)
+		var thresh := lerpf(0.35,-0.05,w)+float(k.get("flat",0.0))*0.5
 		if v > thresh: rock_out[c] = tall*clampf((v-thresh)*3.0,0.25,1.0)*rng.randf_range(0.7,1.3)
 		else: rock_out[c] = -1.0
 	# The cap: its rows in from the rim, each column's height there.
@@ -646,8 +646,11 @@ func _quad(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, ca: 
 ## Low slabs breaking through the turf: broad, tilted, cracked plates.
 func _slabs_on_top(st: SurfaceTool) -> void:
 	var n := int(rng.randf_range(0.0,1.6)+float(k.weather)*1.8+R/10.0)
+	var flat := float(k.get("flat",0.0))
 	for i in n:
 		var p := Vector2.from_angle(rng.randf()*TAU)*R*rng.randf_range(0.25,0.75)
+		# A flat crown (landing turf) keeps its slabs out at the rim.
+		if flat > 0.0 and p.length() < R*lerpf(0.25,0.8,flat): continue
 		var w := clampf(R*rng.randf_range(0.08,0.18),0.5,2.4)
 		var h := w*rng.randf_range(0.3,0.6)
 		var prof := [[0.0,1.0],[0.55,0.96],[0.75,0.8],[1.0,0.55]]

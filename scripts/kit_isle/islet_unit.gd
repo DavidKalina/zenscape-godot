@@ -103,7 +103,18 @@ static func knobs_of(spec: Dictionary) -> Dictionary:
 	out.landmark = clampi(int(spec.get("landmark",-1)),-1,2)
 	out.grass = clampf(float(spec.get("grass",1.0)),0.0,1.0)
 	out.debris = clampf(float(spec.get("debris",1.0)),0.0,2.0)
+	# The crag reach's keys (docs/design/isle-look/spec-crag-reach.md),
+	# opt-in: `mass` 1 lets the size run to MASS_SIZE (a land mass, not an
+	# islet); `flat` 0..1 levels the crown (no hummocks, dome, shoulder or
+	# rises, no tilt, fewer rock-outs and slabs through the turf: landing
+	# turf). Both 0 build as before.
+	out.mass = clampi(int(spec.get("mass",0)),0,1)
+	out.flat = clampf(float(spec.get("flat",0.0)),0.0,1.0)
+	if int(out.mass) == 1: out.size = clampf(float(spec.get("size",KNOBS.size[0])),float(KNOBS.size[1]),MASS_SIZE)
 	return out
+
+## A land mass's most size (spec `mass` 1).
+const MASS_SIZE := 70.0
 
 ## The styles: round 2's plates of rock under a sod lip, round 3's crag.
 const STYLES := ["r2","crag"]
@@ -236,6 +247,7 @@ class Unit:
 			SLAB: tilt = rng.randf_range(0.2,0.34)
 			SPIRE: tilt = rng.randf_range(0.15,0.3)
 			_: tilt = rng.randf_range(0.0,0.06)
+		tilt *= 1.0-float(k.get("flat",0.0))
 		var ta := rng.randf()*TAU
 		tilt_axis = Vector3(cos(ta),0.0,sin(ta))
 		wedge = rng.randf_range(0.6,0.9) if body == SLAB else 0.0
@@ -309,6 +321,8 @@ class Unit:
 		for r: Array in rises:
 			var d2 := p.distance_squared_to(r[0])
 			y += float(r[1])*exp(-d2/(float(r[2])*float(r[2])))
+		var flat := float(k.get("flat",0.0))
+		if flat > 0.0: y *= 1.0-flat
 		return y
 
 	## The ground's height under (x, z) for the grass, out over the lip's
@@ -754,6 +768,8 @@ class Unit:
 			var h := clampf(R*rng.randf_range(0.05,0.14),0.3,1.8)
 			var w := h*rng.randf_range(0.7,1.5)
 			var prof := [[0.0,1.0],[0.4,0.92],[0.45,0.72],[0.8,0.55],[0.85,0.38],[1.0,0.05]]
+			# A flat crown (spec `flat`, landing turf) keeps its knobs off.
+			if float(k.get("flat",0.0)) > 0.0: continue
 			_stone(st,p,h,w,rng.randf_range(0.6,0.9),rng.randf()*TAU,Vector2.from_angle(rng.randf()*TAU)*rng.randf_range(0.0,0.3),prof,7)
 		return float(n)
 
@@ -762,7 +778,7 @@ class Unit:
 	## cone's or boulder's lower stack).
 	func _shard(st: SurfaceTool) -> bool:
 		var want := body == SPIRE or (body in [CONE,BOULDER] and R > 3.0 and rng.randf() < 0.25)
-		if not want: return false
+		if not want or float(k.get("flat",0.0)) > 0.0: return false
 		var tall := R*(rng.randf_range(1.2,2.0) if body == SPIRE else rng.randf_range(0.35,0.6))
 		var w := R*(rng.randf_range(0.5,0.65) if body == SPIRE else rng.randf_range(0.2,0.3))
 		var at := -lean_dir*R*(rng.randf_range(0.1,0.25) if body == SPIRE else rng.randf_range(0.25,0.45))
