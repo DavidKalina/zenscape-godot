@@ -171,7 +171,7 @@ func setup(host: Node3D, id_scene: String, spec: Array) -> void:
 		node.name = "Treasure_"+str(row[0])
 		node.add_child(made.node as Node3D)
 		spot.add_child(node)
-		treasures.append({"id":str(row[0]),"kind":str(row[1]),"weight":str(row[2]),"spot":spot,"node":node,"measures":made,"body":null,"still":0.0,"lost":false,"slot":-1,"strapped":0.0})
+		treasures.append({"id":str(row[0]),"kind":str(row[1]),"weight":str(row[2]),"spot":spot,"node":node,"measures":made,"body":null,"still":0.0,"lost":false,"slot":-1,"strapped":0.0,"banked":false})
 	_prompt = Label3D.new()
 	_prompt.name = "Prompt"
 	_prompt.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -196,10 +196,21 @@ func deal() -> void:
 	for t: Dictionary in treasures: _home(t)
 	if strain != null: strain.reset()
 
+## A banked one's node stays in the home vault (scripts/home/vault_host.gd)
+## as its display; the deal stands a fresh one of its kind on its spot.
 func _home(t: Dictionary) -> void:
 	_unloose(t)
 	_unstrap(t)
 	t.lost = false
+	if bool(t.banked):
+		t.banked = false
+		var made := Models.build(str(t.kind))
+		var fresh := Node3D.new()
+		fresh.name = "Treasure_"+str(t.id)
+		fresh.add_child(made.node as Node3D)
+		(t.spot as Node3D).add_child(fresh)
+		t.node = fresh
+		t.measures = made
 	var node: Node3D = t.node
 	node.visible = true
 	var spot: Node3D = t.spot
@@ -251,7 +262,7 @@ func in_reach() -> Dictionary:
 	var best := {}
 	var near := REACH*s
 	for t: Dictionary in treasures:
-		if t == held or bool(t.lost) or int(t.slot) >= 0: continue
+		if t == held or bool(t.lost) or bool(t.banked) or int(t.slot) >= 0: continue
 		if t.body != null and not (t.body as RigidBody3D).freeze: continue
 		var at: Vector3 = (t.node as Node3D).global_position
 		var across := Vector2(at.x-feet.x,at.z-feet.z).length()-float(t.measures.radius)
@@ -295,6 +306,26 @@ func set_down() -> void:
 	phase = "set"
 	phase_t = 0.0
 	_apply_feel(BUSY_PACE)
+
+## The carried one given up as it is in his hands (banked at the home
+## vault, scripts/home/vault_host.gd): out of his hands, his feel back;
+## its node left where it is, under this host. {} when he holds nothing
+## settled.
+func give_up() -> Dictionary:
+	if held.is_empty() or phase != "carry": return {}
+	var t := held
+	held = {}
+	phase = ""
+	_balk_t = -1.0
+	_restore_feel()
+	return t
+
+## The last one loaded taken out of the bag (unloaded at the home vault's
+## pad), or {} with the bag empty. Its node is left where it rode.
+func take_from_bag() -> Dictionary:
+	var t := _last_hitched()
+	if not t.is_empty(): _unstrap(t)
+	return t
 
 ## Let go where it is now: left resting on the ground at `_ground_at`.
 func _let_go() -> void:

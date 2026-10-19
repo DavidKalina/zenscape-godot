@@ -272,7 +272,10 @@ func step(delta: float, pf: Node3D) -> void:
 	# The bag hangs along the rope when it pulls; stands up on the ground.
 	var want := Vector3.UP
 	if not grounded and taut: want = (tie-hook).normalized()
-	up = up.slerp(want,1.0-exp(-8.0*delta)).normalized()
+	# Eased toward it (a lerp, not slerp: slerp's axis trips Basis's
+	# normalized check when up has drifted a hair off unit length).
+	var eased := up.lerp(want,1.0-exp(-8.0*delta))
+	up = eased.normalized() if eased.length_squared() > 1e-6 else want
 	_draw(pf)
 
 ## The belly as a ball, swept from last frame's spot to this one's (the

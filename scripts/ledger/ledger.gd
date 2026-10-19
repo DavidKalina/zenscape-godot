@@ -22,6 +22,10 @@ extends Node
 ## fitted) and which are fitted (`plane`, `carry_part`, `fit_part`). Taking a
 ## part also marks its objective done, so the card counts it at once.
 ##
+## The home vault (docs/design/home/spec-home.md) keeps its tally here too:
+## the banked total, the count of each kind and the kinds in the order
+## banked (`vault`, `bank`), so the haul lasts across runs.
+##
 ## Flags: --ledger=<path> keeps the progress in another file (tests, a second
 ## save); --fresh-ledger starts with nothing done, and the first thing done
 ## writes over the file. A script run (--script: the tests, the tools) keeps
@@ -56,6 +60,9 @@ var records := {}
 ## The plane's parts: {carried: [part ids, in the order taken], fitted: [part
 ## ids, in the order fitted]} (scripts/plane_figure.gd FOUND ids).
 var plane := _no_plane()
+## The home vault's tally: {total: int, counts: {kind: int}, banked: [kinds,
+## in the order banked]} (scripts/home/vault_host.gd).
+var vault := _no_vault()
 
 ## The stand-in `shared()` answers with no autoload up.
 static var _stand_in: Node
@@ -87,6 +94,7 @@ func _ready() -> void:
 	if args.has("--fresh-ledger"):
 		records = {}
 		plane = _no_plane()
+		vault = _no_vault()
 	else: load_saved()
 
 static func _args() -> PackedStringArray:
@@ -104,6 +112,7 @@ static func _script_run() -> bool:
 func load_saved() -> void:
 	records = {}
 	plane = _no_plane()
+	vault = _no_vault()
 	if path.is_empty() or not FileAccess.file_exists(path): return
 	var json := JSON.new()
 	var parsed: Variant = json.data if json.parse(FileAccess.get_file_as_string(path)) == OK else null
@@ -115,6 +124,7 @@ func load_saved() -> void:
 	for id: Variant in saved:
 		var r: Variant = saved[id]
 		if r is Dictionary and bool(r.get("done",false)): records[str(id)] = {"done":true,"at":str(r.get("at",""))}
+	_load_vault((parsed as Dictionary).get("vault",{}))
 	var kept: Variant = (parsed as Dictionary).get("plane",{})
 	if not kept is Dictionary: return
 	for key: String in ["carried","fitted"]:
@@ -135,7 +145,7 @@ func save() -> void:
 	if f == null:
 		push_warning("Ledger: can't write %s (%s)" % [temp,error_string(FileAccess.get_open_error())])
 		return
-	f.store_string(JSON.stringify({"format":FORMAT,"saved":Time.get_datetime_string_from_system(true),"objectives":records,"plane":plane},"\t"))
+	f.store_string(JSON.stringify({"format":FORMAT,"saved":Time.get_datetime_string_from_system(true),"objectives":records,"plane":plane,"vault":vault},"\t"))
 	f.close()
 	var err := DirAccess.rename_absolute(temp,path)
 	if err != OK: push_warning("Ledger: can't move %s over %s (%s)" % [temp,path,error_string(err)])
@@ -144,10 +154,25 @@ func save() -> void:
 func reset() -> void:
 	records = {}
 	plane = _no_plane()
+	vault = _no_vault()
 	save()
 
 static func _no_plane() -> Dictionary:
 	return {"carried":[],"fitted":[]}
+
+static func _no_vault() -> Dictionary:
+	return {"total":0,"counts":{},"banked":[]}
+
+func _load_vault(kept: Variant) -> void:
+	if not kept is Dictionary: return
+	var d: Dictionary = kept
+	vault.total = int(d.get("total",0))
+	var counts: Variant = d.get("counts",{})
+	if counts is Dictionary:
+		for kind: Variant in counts: vault.counts[str(kind)] = int(counts[kind])
+	var banked: Variant = d.get("banked",[])
+	if banked is Array:
+		for kind: Variant in banked: (vault.banked as Array).append(str(kind))
 
 # --- Doing ------------------------------------------------------------------------
 
@@ -190,6 +215,16 @@ func is_carried(part: String) -> bool:
 
 func is_fitted(part: String) -> bool:
 	return (plane.fitted as Array).has(part)
+
+# --- The home vault ------------------------------------------------------------------
+
+## A treasure of `kind` banked at the home vault, worth `worth`: added to
+## the total and its kind's count, saved.
+func bank(kind: String, worth: int) -> void:
+	vault.total = int(vault.total)+worth
+	vault.counts[kind] = int((vault.counts as Dictionary).get(kind,0))+1
+	(vault.banked as Array).append(kind)
+	save()
 
 # --- Asking -----------------------------------------------------------------------
 
