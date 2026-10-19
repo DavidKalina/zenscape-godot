@@ -27,6 +27,10 @@ extends RefCounted
 ##                                layer); its origin the turf's middle at
 ##                                the top
 ##   IsletUnit.sibling(seed, base) a spec with knobs drawn round `base`
+## Round 3 (spec `style`, STYLES): the crag (scripts/kit_isle/islet_crag.gd,
+## the default) builds the same knobs and bodies as broken, banded cliffs
+## with a rock lip, fangs, a landmark and debris; `style` 0 is round 2's
+## Unit below, unchanged.
 ##
 ## Knobs (spec keys; KNOBS gives each one's default and range):
 ##   seed      every draw
@@ -91,7 +95,33 @@ static func knobs_of(spec: Dictionary) -> Dictionary:
 	for k: String in KNOBS:
 		var r: Array = KNOBS[k]
 		out[k] = clampf(float(spec.get(k,r[0])),float(r[1]),float(r[2]))
+	# Round 3's keys (the crag style, scripts/kit_isle/islet_crag.gd): the
+	# style (STYLES), the landmark (-1 drawn, 0 none, 1 tree, 2 ruin),
+	# whether the grass grows (0 bare turf, for far units), the debris's
+	# amount.
+	out.style = clampi(int(spec.get("style",CRAG)),0,STYLES.size()-1)
+	out.landmark = clampi(int(spec.get("landmark",-1)),-1,2)
+	out.grass = clampf(float(spec.get("grass",1.0)),0.0,1.0)
+	out.debris = clampf(float(spec.get("debris",1.0)),0.0,2.0)
 	return out
+
+## The styles: round 2's plates of rock under a sod lip, round 3's crag.
+const STYLES := ["r2","crag"]
+const R2 := 0
+const CRAG := 1
+const CRAG_SHADER := preload("res://shaders/islet_crag.gdshader")
+
+## The crag's rock material (shaders/islet_crag.gdshader).
+static func crag_material(rng: RandomNumberGenerator, weather: float, radius: float, bottom: float) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = CRAG_SHADER
+	mat.set_shader_parameter("top_y",0.0)
+	mat.set_shader_parameter("bottom_y",bottom)
+	mat.set_shader_parameter("weather",weather)
+	mat.set_shader_parameter("seed_off",Vector3(rng.randf_range(-50,50),rng.randf_range(-50,50),rng.randf_range(-50,50)))
+	mat.set_shader_parameter("bed_scale",1.0/clampf(radius*0.09,0.35,1.4))
+	mat.set_shader_parameter("band_m",clampf(radius*0.13,0.5,2.2))
+	return mat
 
 ## The body a shape knob gives (SLAB .. SPIRE) and how deep within it (0..1).
 static func body_of(shape: float) -> Vector2:
@@ -131,6 +161,9 @@ static func _ring(n: FastNoiseLite, a: float, r: float, salt := 0.0) -> float:
 ## The unit, its origin the middle of its turf's top.
 static func build(spec: Dictionary) -> Node3D:
 	var k := knobs_of(spec)
+	if int(k.style) == CRAG:
+		var crag: Object = load("res://scripts/kit_isle/islet_crag.gd").new(k)
+		return crag.make()
 	var u := Unit.new(k)
 	return u.make()
 

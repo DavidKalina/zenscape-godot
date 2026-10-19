@@ -375,3 +375,225 @@ python3 tools/shot.py studies/islet_yard.tscn --at 0,32,52 --look 0,18,0 -- --no
 - **A depth fade on the units' own shaders,** if far layering needs to read
   more strongly than the game's haze gives: `islet_rock` and the earth,
   toward the horizon colour. This is a look change, so ask the user first.
+
+---
+
+# Round 3: crag
+
+Round 2's arrangement stays: the five bodies on the shape knob, the layered
+yard, the far units. The unit is now built in a new style, the crag. Round 2's
+unit is still there as `style` 0 (`--style=r2`) and builds as it did.
+
+## What changed
+
+- **Body** (`scripts/kit_isle/islet_crag.gd`, a subclass of `IsletUnit.Unit`):
+  - **Outline.** From above, a ragged polygon: 8-17 corners, some notched
+    in, some jutting, each edge broken at a point or two. Its vertices are
+    the rock's columns, so the turf's rim lies on the rock's edge. A slab is
+    still stretched and cut straight across; a spire is still a blade.
+  - **Cliff.** Tiers down the face, 2-7 by depth. Columns are grouped into
+    buttresses of 1-3, and each buttress has a fin that juts in or out. At
+    each tier line a buttress either runs on straight (36%), steps in (32%:
+    the tier above overhangs, in shade) or steps out (32%: an up-facing
+    ledge). Each buttress's tier lines sit higher or lower than its
+    neighbours', and each face leans in or out. A middle row bulges or dishes
+    each face. Each block is smooth inside and has hard edges (SurfaceTool
+    smooth groups); the lip, ledges, underside and fangs are flat-faced.
+  - **Under.** The mass narrows in 3-4 ragged rings to a keel. Angular,
+    stepped fangs hang from it, each with five or six sides of uneven width.
+    By body: a cluster has 4-10, a cone a lead fang and 4-10 more, a boulder
+    3-6, a slab 3-5 along its deep edge, a spire a tip and 1-3 more. A big
+    fang often has a small one beside it, and short fangs hang off the
+    overhangs.
+  - **Lip.** The lip is rock: rim, a rock lip, then a notch of shadow under
+    it. The notch is deep under some buttresses and barely there under
+    others. There is no sod hem and no drape.
+- **Shader** (`shaders/islet_crag.gdshader`): round 2's rock shader, plus:
+  - strata by height in four stones (sand, clay, grey, shale) with thin beds.
+    Each block's bands are offset by its own share (vertex colour b), so they
+    break at the buttresses;
+  - vertical streaks;
+  - rounder joints, stretched up the face;
+  - a dark topsoil skin under the rim where the turf runs to the edge
+    (vertex colour a);
+  - moss on what faces up, and green carried down from the rim in streaks
+    (vertex colour g).
+
+  The value gradient, cavity shade (vertex colour r), sky fill and bump are
+  round 2's.
+- **Grass:**
+  - The crown grows the same KitFlora carpet as round 2, out to the rock's
+    rim.
+  - The rock's cap runs in under the turf from the rim. Along stretches of
+    the edge (more with weather) it stands 0.2-0.75 m up through the turf
+    and slopes back under it. The grass's probe stops wherever the cap is
+    above the turf, so the grass ends raggedly at the rock.
+  - Low tilted slabs and round 2's knobs break through inside.
+  - A second, shorter KitFlora run grows on the ledges, probed on the
+    ledges' own faces (`LedgeFlora`).
+  - Roots hang only from the notch under the lip and from overhang feet.
+- **Landmarks** (spec `landmark`: -1 drawn, 0 none, 1 tree, 2 ruin):
+  - When drawn, units of 2.5 m and up get a lone tree (42%). Units of 4 m
+    and up otherwise get a ruin (38%).
+  - The trees are the game's hero oak and birch (motif_authored.gd
+    `TREES`), scaled to the unit. They are drawn in a sky-filled material so
+    their shade isn't black, and they stand plumb on tilted bodies.
+  - Ruins are RuinKit pieces (arch, wall, pier, buttress, lancet wall,
+    stone circle, aqueduct stump, rose gable, turret), weathered 0.55-0.95.
+    They are seated on the turf with `motif_authored.gd` `seat`, and only
+    pieces that fit the top are used. The grass keeps off a ruin's footprint
+    and a tree's trunk.
+  - The yard's hero has a tree (`HERO` `landmark` 1).
+- **Debris** (`scripts/kit_isle/islet_debris.gd`):
+  - Each unit's debris: 40-360 fragments, scaled by size and the spec's
+    `debris` amount.
+    - 60% hang under it, the biggest closest. They thin out and spread as
+      they fall.
+    - 28% form a loose ring beside the cliff.
+    - 12% are pebbles high round the rim.
+  - Sizes run from 4 cm to R x 0.17 m, drawn on a log scale.
+  - The fragments come in three shapes (chunky, shard, flake), each a
+    pushed-about icosahedron with its own squash.
+  - 40% of them turn and bob on the GPU (`INSTANCE_CUSTOM`), using the crag
+    shader with a turning vertex. Nothing collides.
+- **Yard** (`studies/islet_yard.gd`), crag only:
+  - **Loose chunks.** Each near unit gets 1-3 small crag units
+    (`islet_yard/<unit>_chunk_<n>`, size 1.5-3.2), with grass, roots and a
+    little debris. They sit 1.15-1.7 radii out and below, and bob and turn
+    slowly (`set_drift` on the unit node; its layout pose stays put).
+  - **Small islets.** There are 40 at 45-900 m (`islet_yard/speck_<n>`),
+    from 170 m over the hero's top to 110 m under it. They get bigger
+    farther out.
+    - Only those within 200 m grow grass; the turf's tones carry the rest.
+    - Those within 300 m may get a landmark, those within 400 m debris, and
+      those within 250 m drift.
+  - **Debris field.** 600 loose fragments fill the yard (`DebrisField`).
+- **Unit node.** The world view shows `style`, `landmark` and `debris` as
+  tunes.
+
+## Flags and knobs
+
+```
+./run-islet-yard.command                       # crag (default)
+./run-islet-yard.command --style=r2            # round 2's units, no extras
+./run-islet-yard.command --no-debris           # crag without debris, chunks, specks, field
+./run-islet-yard.command --specks=80           # more small islets
+./run-islet-yard.command --solo --hero=seed=31,shape=0.3,landmark=2   # one unit with a ruin
+```
+
+Spec keys added to `IsletUnit.knobs_of`: `style` (0 r2, 1 crag, default
+1), `landmark`, `grass` (0: no KitFlora, for far units) and `debris`
+(0..2). The constants are `RUINS`, `TREES` and `CAP_U` in islet_crag.gd,
+`TURNING`, `SPIN` and `BOB` in islet_debris.gd, and `SPECKS`, `SPECK_*`,
+`GRASS_NEAR`, `LOOSE` and `FIELD_*` in the yard. The shader's palette and
+`strata`, `band_m` and `greenery` are uniforms.
+
+## Stills
+
+These are in this worktree under `captures/shots/islet_unit_r3/`, which git
+ignores:
+
+- `sheet.png`: round 2 (mid) | round 3 (mid), the old chunk
+  (`garden_chunk.png`) | round 3 close on a cliff, round 2 (depth) |
+  round 3 (depth)
+- `far.png`, `mid.png`, `depth.png`, `under.png` (from below, looking up),
+  `cliff.png` (close on the hero's face and ledges), `top.png` (the crown,
+  its tree and rock rim), `ruin.png` (a butte with a ruin)
+- `bodies.png`: the five bodies, seed 29 size 8, plus depth; the singles are
+  `body_slab.png` .. `body_spire.png`
+- `r2_mid.png`, `r2_depth.png`: round 2 from the same spots
+
+```
+python3 tools/shot.py studies/islet_yard.tscn --at=0,38,46 --look=0,22,0 --settle 60 -- --no-title            # mid
+python3 tools/shot.py studies/islet_yard.tscn --at=11,31,13 --look=0,23,0 --settle 60 -- --no-title --solo     # cliff
+python3 tools/shot.py studies/islet_yard.tscn --at=14,-8,26 --look=0,14,0 --settle 60 -- --no-title            # under
+```
+
+Write negative coordinates as `--at=-60,...`. Written as `--at -60,...`,
+argparse takes the value for a flag.
+
+## Checks
+
+- `python3 tools/smoke.py studies/islet_yard.tscn studies/aqueduct_isle.tscn`
+  passes for both with 0 errors, and so does the yard with `--style=r2`.
+- KitFlora, KitLook, RuinKit, HangingRoots and motif_authored.gd have no
+  diff; they are only called. The motif editor and the isles don't change.
+- The yard builds 69 units (14 placed, 15 chunks, 40 specks) in about
+  1.8 s. Most of that is the grass.
+- No committed tests, and no existing test is known to break: IsletUnit is
+  used only by the yard.
+
+## Model budget (docs/art/model-budget.md)
+
+- **Rock.** The hero is about 5.8k triangles (the rock, slabs, fangs, ground
+  and tree); round 2's hero was 7.5k. A unit carrying a ruin adds the piece's
+  12-16k. The yard's 69 units come to about 248k drawn triangles. Of
+  those, the 40 specks are about 158k (some of them carry a tree or a ruin)
+  and the chunks about 26k.
+- **Debris.**
+  - The units carry about 4,700 fragments and the field 600, at 20
+    triangles each, so about 106k instanced triangles.
+  - Each unit's debris is three multimeshes, so the yard's debris is about
+    210 draw calls. This is the main cost to watch.
+  - Their visibility ranges end at 260 m to R x 45 m (the field's at
+    440 m), and they fade out.
+- **Grass.** About 1.2M instanced triangles across the yard (round 2's was
+  1.4M), drawn within the carpet's 220 m. Far specks grow none. The ledge
+  runs add a few hundred tufts in all.
+- **Frame time: not measured.** Headless runs can't measure it, and the
+  shots don't report it. Estimates:
+  - debris: 0.1-0.2 ms GPU, plus the draw calls' CPU, about 0.2-0.4 ms;
+  - rock pixel cost: as round 2's, 0.2-0.5 ms when the rock fills the
+    screen;
+  - grass: as round 2's.
+- **The geometry tricks:**
+  - **Silhouette geometry: applied.** It is the round: the broken outline,
+    buttresses, steps, the keel and the fangs.
+  - **Vertex-colour grime: applied, and widened.** r is the cavity shade, g
+    the green, b the band offset, a the topsoil.
+  - **Import LODs and visibility ranges: partly applied, apply next.**
+    - Debris ranges are on.
+    - Merging every unit's debris into one multimesh per shape per yard or
+      isle would cut about 200 draw calls to 3, for perhaps 0.2-0.3 ms of
+      CPU.
+    - A far LOD for the specks (fewer columns, no fangs, no landmark past
+      about 300 m) would cut most of their 158k triangles at no visible
+      loss: an estimated 100k.
+  - **Sculpt-and-bake, parallax and rigid parts:** not used.
+
+## What's weak
+
+- **Close up**, the faces still read a little like painted card:
+  - the bands are flat paint over smooth blocks;
+  - in places the thin beds alias into dotted lines;
+  - the joints sometimes read as brickwork.
+
+  From mid range and farther it reads well.
+- **The strata's colour** leans warm tan and ochre. Next to the grass's gold
+  the whole isle is warm; a cooler grey or bluish shale band would separate
+  them.
+- **The rock lip** on rock-out stretches is a flat mossy slab rim. From
+  below the crown, the rim and lip together can still read as one stacked
+  plate.
+- **The ground** still shows the carpet's orange earth where the grass
+  thins (as in round 2).
+- **The ruins** are the kit's charcoal stone. On a small unit at mid range
+  they read as dark silhouettes, and the smaller pieces are hard to see.
+- **The oak** is the game's low-poly hero oak. Its faceted canopy is plainer
+  than the rock round it.
+- **The debris draws** are many small multimeshes (see the budget).
+- **The specks** are full crag units. 40 is fine; several hundred would want
+  a cheaper far model.
+
+## Next
+
+- **Merge the debris** into one multimesh per shape per scene. Give the
+  specks a far LOD: rock with no grass, fewer columns, no fangs under a size.
+- **A close-up pass on the shader:**
+  - break the band edges with real relief, by moving the vertices along the
+    bands on the middle row;
+  - add a cool band to the palette;
+  - antialias the thin beds.
+- **Compose a crag isle** from a landing-slab unit and satellites, as in
+  round 2's next step, with debris shared between them and the landing turf
+  kept clear of slabs (rock-out off on the runway unit).
