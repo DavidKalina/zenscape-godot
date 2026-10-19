@@ -86,3 +86,27 @@ One trunk, no lanes:
   `brood_knobs.gd`, `dig/*`, `loot_bag.gd`, `pad.gd`) stay small, additive
   and opt-in. Tunable numbers go in `brood_knobs.gd` or the bag's
   constants, named.
+
+## Task 5: tuning and the handoff (spec change)
+
+The user played rounds 1 to 4: it feels natural, there's real tension
+getting away from them as they come, and the speed is good. Keep the feel;
+change only these:
+
+- **Show where to dig.** The user didn't find the dig. A burrow holding
+  loot must read from a distance: a fresh mound of turned earth that grows
+  with what's in it, the loot's glint or a marker and a kg tag over it.
+  Close up, a "G dig" prompt (or "find the spade" without it). Make the
+  spade easy to find too (a marker or a hint line at the start).
+- **They go home.** Today they linger round him. After a while with
+  nothing to take (no loot in a worn bag to rip, no idle bag to haul, him
+  out of reach for some seconds), they wander back to the nearest burrow
+  and go down into it (the rise played in reverse). Guards stay on a
+  burrow with loot in it, but go down too after a longer while, leaving
+  the mound to dig. Bagging loot again wakes them again.
+- **Crew by weight for ripped pieces.** A ripped piece's crew scales with
+  its kg like the whole bag's (a 12 kg piece takes more than two, and they
+  carry it slower), so heavy pieces are easier to catch.
+- **The handoff** (`docs/design/bag-brood/handoff.md`, from the trail):
+  what's built, the controls, where to play it, what's stood in (no dig
+  sound in this room, R doesn't unbury), what's open.
