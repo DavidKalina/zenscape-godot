@@ -357,11 +357,76 @@ static func slide_built() -> Array:
 		# runs 0.6 m past the break under the upper's end so no seam opens.
 		if i == 0:
 			var back := Vector3(SLIDE_WAY.x,0.0,SLIDE_WAY.y)*SLIDE_LODGE
-			Spine._beam(b,-back,Vector3(0.0,0.0,0.0),SLIDE_SIZE+Vector2(0.2,0.3))
+			_entablature(b,-back,Vector3(0.0,0.0,0.0),SLIDE_SIZE+Vector2(0.2,0.3))
 		else: a -= (e-a).normalized()*0.6
-		Spine._beam(b,a-head,e-head,SLIDE_SIZE)
+		_entablature(b,a-head,e-head,SLIDE_SIZE)
 		out.append(["slide/"+("upper" if i == 0 else "lower"),b.finish(),head,0.0])
 	return out
+
+## A fallen entablature laid from `a` to `e` (its top's middle line, in
+## `b`'s frame), `size` (across, deep): a cornice whose top is the walked
+## face, dentils under it, a frieze of triglyphs and plain metopes, two
+## fasciae of architrave at the bottom, each band in stones of random
+## length broken short at the ends. It collides as the clean walk box
+## Spine._beam's was (only the cornice's lip stands 0.1 m past its sides,
+## drawn), so the surf and the stance are as before.
+static func _entablature(b: RuinKit.Build, a: Vector3, e: Vector3, size: Vector2) -> void:
+	var way := e-a
+	var length := way.length()
+	var x := way/length
+	var z := x.cross(Vector3.UP).normalized()
+	var y := z.cross(x).normalized()
+	var pose := Transform3D(Basis(x,y,z),(a+e)*0.5-y*size.y*0.5)
+	var hl := length*0.5
+	var hh := size.y*0.5
+	var hw := size.x*0.5
+	var cornice := 0.28
+	var arch := 0.34
+	var over := 0.1
+	b.lean = true
+	# The core: the metopes' plane, set back behind the bands.
+	b.solid(RuinKit._box(b,Vector3(hl-0.02,hh-cornice*0.5-0.01,hw-0.26)),pose*Transform3D(Basis.IDENTITY,Vector3(0.0,-cornice*0.5,0.0)),RuinKit._stone(b,0.78),false)
+	# The cornice: whole stones across, their tops the walk box's top,
+	# standing `over` out past its sides (drawn only).
+	_ent_run(b,pose,-hl,hl,hh-cornice,hh,0.0,hw+over,1.1,0.12,true)
+	for side: float in [-1.0,1.0]:
+		# Fasciae, stepping out going up.
+		_ent_run(b,pose,-hl,hl,-hh,-hh+arch*0.45,side,hw-0.16,0.95,0.35)
+		_ent_run(b,pose,-hl,hl,-hh+arch*0.45,-hh+arch,side,hw-0.08,1.05,0.3)
+		# Triglyphs: three bars each, standing out of the metopes.
+		var t := -hl+0.5+b.rng.randf_range(0.0,0.3)
+		while t < hl-0.6:
+			for k in 3:
+				var c := Vector3(t+(k-1)*0.15,(-hh+arch+hh-cornice)*0.5,side*(hw-0.04-0.11))
+				b.solid(RuinKit._box(b,Vector3(0.055,(hh-cornice-(-hh+arch))*0.5-0.02,0.11)),pose*Transform3D(Basis.IDENTITY,c),RuinKit._stone(b,1.15),false,false)
+			t += 1.15
+		# Dentils under the cornice's lip.
+		var d := -hl+0.15
+		while d < hl-0.15:
+			if b.rng.randf() > 0.12:
+				var c := Vector3(d,hh-cornice-0.07,side*(hw+0.02-0.08))
+				b.solid(RuinKit._box(b,Vector3(0.06,0.07,0.08)),pose*Transform3D(Basis.IDENTITY,c),RuinKit._stone(b,1.12),false,false)
+			d += 0.22
+	b.lean = false
+	RuinKit._walk_hull(b,pose,[Plane(Vector3.RIGHT,hl),Plane(Vector3.LEFT,hl),Plane(Vector3.UP,hh),Plane(Vector3.DOWN,hh),Plane(Vector3.BACK,hw),Plane(Vector3.FORWARD,hw)])
+
+## One band of an entablature in `pose`'s frame: stones of random length
+## from `x0` to `x1` (each end broken short by up to `jag`), from `y0` up
+## to `y1`, their faces `out` from the middle on `side` (0: one stone
+## across, `out` its half width), drawn only.
+static func _ent_run(b: RuinKit.Build, pose: Transform3D, x0: float, x1: float, y0: float, y1: float, side: float, out: float, tone: float, jag: float, level := false) -> void:
+	var x := x0+b.rng.randf_range(0.0,jag)
+	var end := x1-b.rng.randf_range(0.0,jag)
+	var deep := 0.3
+	while x < end-0.05:
+		var xe := minf(end,x+b.rng.randf_range(0.9,1.7))
+		if end-xe < 0.4: xe = end
+		var half := Vector3((xe-x)*0.5-0.006,(y1-y0)*0.5,out if side == 0.0 else deep*0.5)
+		var c := Vector3((x+xe)*0.5,(y0+y1)*0.5,0.0 if side == 0.0 else side*(out-deep*0.5))
+		var at := Transform3D(Basis.IDENTITY,c)
+		if not level: at = RuinKit._jiggle(b,at,0.25)
+		b.solid(RuinKit._box(b,half),pose*at,RuinKit._stone(b,tone),false)
+		x = xe
 
 ## The knight's causeway (spec item 7): the rune knight's deck. A snapped
 ## stone causeway jutting west off the strip's west end over open sky, one
@@ -385,13 +450,125 @@ static func causeway_pier_foot() -> Vector3:
 static func causeway_spot() -> Vector3:
 	return Vector3(CAUSEWAY_TIP+2.6,causeway_top(),STRIP_Z+0.7)
 ## The causeway's stone: [layout name, node, world foot, yaw (deg)].
+## Dressed as ruin (drawn only; it walks on the one clean deck box from
+## CAUSEWAY_ROOT to CAUSEWAY_TIP, as before): coursed sides under a coping,
+## the drawn deck stopping just inside the strip's rim (the 3 cm root that
+## lay on the turf is gone; a coping stone lies fallen there instead), the
+## under-course coursed too, the stumps of two lost piers hanging under it
+## with their arches' springers, two short broken parapet runs by the tip's
+## pier, and a jagged broken tip.
 static func causeway_built() -> Array:
 	var b := RuinKit.Build.new(651,0.35,"Causeway")
 	var top := causeway_top()
-	Spine._beam(b,Vector3(CAUSEWAY_ROOT,0.0,0.0),Vector3(CAUSEWAY_TIP,0.0,0.0),Vector2(CAUSEWAY_HALF*2.0,CAUSEWAY_THICK))
+	var h := CAUSEWAY_HALF
+	var t := CAUSEWAY_THICK
 	var u := CAUSEWAY_UNDER
-	Spine._beam(b,Vector3(CAUSEWAY_EDGE+1.0,-CAUSEWAY_THICK,0.0),Vector3(CAUSEWAY_TIP-u.z,-CAUSEWAY_THICK,0.0),Vector2(u.x,u.y),false)
-	return [["knight/causeway",b.finish(),Vector3(0.0,top,STRIP_Z),0.0]]
+	var root := CAUSEWAY_EDGE+0.7
+	var tip := CAUSEWAY_TIP+0.5
+	# The deck: its rubble core, then coursed faces both sides under a
+	# coping, each course broken off ragged past the tip.
+	b.solid(RuinKit._box(b,Vector3((root-tip)*0.5,t*0.5-0.01,h-FACE*2.0),0.02),Transform3D(Basis.IDENTITY,Vector3((root+tip)*0.5,-t*0.5,0.0)),RuinKit._stone(b,0.85),false)
+	for side: float in [-1.0,1.0]:
+		var basis := Basis(Vector3.UP,0.0 if side > 0.0 else PI)
+		var pose := Transform3D(basis,Vector3(0.0,0.0,side*(h-FACE)))
+		var x0 := -root if side < 0.0 else CAUSEWAY_TIP-0.3
+		var x1 := -(CAUSEWAY_TIP-0.3) if side < 0.0 else root
+		# Past the tip's last 1.6 m the courses step down raggedly.
+		var jag := func(x: float) -> float:
+			var d := x*side-(CAUSEWAY_TIP-0.3)
+			if d > 1.6: return 0.0
+			var cell := fposmod(sin(floorf(d/0.45)*12.9898+side*4.1)*43758.5,1.0)
+			return -0.45*(1.0-d/1.6)-0.3*cell
+		RuinKit._courses(b,pose,x0,x1,-t,jag,FACE,func(_y: float) -> Vector2: return Vector2(0.0,-1.0),COURSE,true)
+		# The under-course's faces.
+		var up := Transform3D(basis,Vector3(0.0,0.0,side*(u.x*0.5-FACE)))
+		var ua := CAUSEWAY_TIP-u.z
+		RuinKit._courses(b,up,-(CAUSEWAY_EDGE+1.0) if side < 0.0 else ua,-ua if side < 0.0 else CAUSEWAY_EDGE+1.0,-t-u.y,func(_x: float) -> float: return -t,FACE,func(_y: float) -> Vector2: return Vector2(0.0,-1.0),COURSE)
+	b.solid(RuinKit._box(b,Vector3((CAUSEWAY_EDGE+1.0-CAUSEWAY_TIP+u.z)*0.5,u.y*0.5,u.x*0.5-FACE*2.0),0.02),Transform3D(Basis.IDENTITY,Vector3((CAUSEWAY_EDGE+1.0+CAUSEWAY_TIP-u.z)*0.5,-t-u.y*0.5,0.0)),RuinKit._stone(b,0.8),false)
+	# The under-course's broken west end.
+	_ashlar_face(b,Vector3.LEFT,u.x*0.5,-(CAUSEWAY_TIP-u.z),0.0,-t-u.y,-t-0.25,0.0,-0.4)
+	# The lost piers' stumps and their arches' springers.
+	for px: float in CAUSEWAY_PIERS:
+		_causeway_pier(b,px,-t-u.y,u.x*0.5)
+	# The coursed stones collide nothing (a coping's lip would catch the
+	# knight's fall and give the wanderer a ledge); only the one deck box
+	# below does (the parapets and fallen stone are a piece of their own).
+	b.hulls.clear()
+	b.hull_anchors.clear()
+	# One clean deck box, root to tip, posed exactly as Spine._beam posed
+	# it (its frame turned to run west): the knight's fall off a teeter
+	# starts on the deck's top inside its footprint, and his fall ray
+	# passing or meeting that top hangs on the last bit of float in it
+	# (an identity pose here made him land and shatter at the lip).
+	var a := Vector3(CAUSEWAY_ROOT,0.0,0.0)
+	var e := Vector3(CAUSEWAY_TIP,0.0,0.0)
+	var way := (e-a).normalized()
+	var zx := way.cross(Vector3.UP).normalized()
+	var yx := zx.cross(way).normalized()
+	var half := Vector3((a-e).length()*0.5,t*0.5,h)
+	RuinKit._walk_hull(b,Transform3D(Basis(way,yx,zx),(a+e)*0.5-yx*t*0.5),[Plane(Vector3.RIGHT,half.x),Plane(Vector3.LEFT,half.x),Plane(Vector3.UP,half.y),Plane(Vector3.DOWN,half.y),Plane(Vector3.BACK,half.z),Plane(Vector3.FORWARD,half.z)])
+	var deck := b.finish()
+	# The parapets and the fallen stone collide, in a piece of their own:
+	# the deck's body stays its one box, as the knight's teeter fall needs
+	# (a ray from his feet on the deck's top misses a lone box but met the
+	# same box among other shapes in one body, and he shattered there).
+	var pb := RuinKit.Build.new(653,0.35,"CausewayParapet")
+	# Two short broken parapet runs on the deck's edges at the tip, either
+	# side of the pier (none along the knight's patrol, where he's knocked
+	# off: his fall would land on them).
+	for run: Vector3 in CAUSEWAY_PARAPETS:
+		var side := signf(run.z)
+		var pp := Transform3D(Basis(Vector3.UP,0.0 if side > 0.0 else PI),Vector3(0.0,0.0,side*(h-PARAPET_D)))
+		var ra := run.x if side > 0.0 else -run.y
+		var re := run.y if side > 0.0 else -run.x
+		RuinKit._courses(pb,pp,ra,re,0.0,RuinKit._ruin_line(pb,ra,re,0.25,absf(run.z),0.7,true),PARAPET_D,func(_y: float) -> Vector2: return Vector2(0.0,-1.0),0.36,true)
+	# A coping stone fallen on the turf at the root, off the knight's line.
+	_fallen(pb,Vector3(CAUSEWAY_EDGE+1.8,-0.03,-h-0.2))
+	return [["knight/causeway",deck,Vector3(0.0,top,STRIP_Z),0.0],["knight/parapet",pb.finish(),Vector3(0.0,top,STRIP_Z),0.0]]
+
+## The lost piers under the causeway (local x), and the arches they bore:
+## their span (centre to centre) and the voussoirs' radial depth.
+const CAUSEWAY_PIERS := [14.5,4.5]
+const CAUSEWAY_SPAN := 10.0
+const CAUSEWAY_RING := 0.55
+## The parapet runs: (from x, to x, highest with its side's sign).
+const CAUSEWAY_PARAPETS := [Vector3(-3.6,0.2,-0.75),Vector3(-3.8,-0.6,0.55)]
+
+## One lost pier's stump hanging under the causeway's under-course (its
+## bottom `y0`), snapped off ragged below, and the springers of the arches
+## either side of it: a few voussoirs on the ring, then broken. Drawn only.
+static func _causeway_pier(b: RuinKit.Build, px: float, y0: float, half_w: float) -> void:
+	var pw := 0.85
+	var r := CAUSEWAY_SPAN*0.5-pw
+	var spring := y0-CAUSEWAY_RING-r*0.55
+	var stump := spring-1.4-b.rng.randf_range(0.0,1.2)
+	for side: float in [-1.0,1.0]:
+		var p := Transform3D(Basis(Vector3.UP,0.0 if side > 0.0 else PI),Vector3(px,0.0,side*(half_w-FACE)))
+		RuinKit._courses(b,p,-pw,pw,stump,func(_x: float) -> float: return y0,FACE,func(_y: float) -> Vector2: return Vector2(0.0,-1.0),COURSE)
+	b.solid(RuinKit._box(b,Vector3(pw-0.02,(y0-stump)*0.5,half_w-FACE*2.0),0.02),Transform3D(Basis.IDENTITY,Vector3(px,(y0+stump)*0.5,0.0)),RuinKit._stone(b,0.8),false)
+	# Its snapped bottom: a few stones hanging lower.
+	for i in 3:
+		var s := Vector3(b.rng.randf_range(0.25,0.45),b.rng.randf_range(0.2,0.35),b.rng.randf_range(0.3,0.6))
+		var c := Vector3(px+b.rng.randf_range(-pw*0.6,pw*0.6),stump-s.y*0.8,b.rng.randf_range(-half_w*0.6,half_w*0.6))
+		b.solid(RuinKit._box(b,s),RuinKit._settle(b,c,0.6),RuinKit._stone(b,0.95),false)
+	# The springers: voussoirs round each arch from the pier's face.
+	for dir: float in [-1.0,1.0]:
+		var centre := Vector3(px+dir*(pw+r),spring,0.0)
+		var n := 2+b.rng.randi_range(0,2)
+		var step := deg_to_rad(12.0)
+		for k in n:
+			var ang := step*(k+0.5)
+			var radial := Vector3(-dir*cos(ang),sin(ang),0.0)
+			var c := centre+radial*(r+CAUSEWAY_RING*0.5)
+			var xa := radial
+			var ya := Vector3(0.0,0.0,1.0).cross(xa)*dir
+			var basis := Basis(xa,ya.normalized(),xa.cross(ya.normalized()))
+			var len := (r+CAUSEWAY_RING)*step*0.5-0.01
+			b.solid(RuinKit._box(b,Vector3(CAUSEWAY_RING*0.5,len,half_w-0.05)),RuinKit._jiggle(b,Transform3D(basis,c),0.3),RuinKit._stone(b,1.04),false)
+		# The spandrel over the springers, up to the under-course.
+		var sw := r*(1.0-cos(step*n))*0.9+0.3
+		var sy0 := spring+(r+CAUSEWAY_RING)*sin(step*n*0.6)
+		b.solid(RuinKit._box(b,Vector3(sw*0.5,(y0-sy0)*0.5,half_w-FACE*2.0),0.02),Transform3D(Basis.IDENTITY,Vector3(px+dir*(pw+sw*0.5-0.05),(y0+sy0)*0.5,0.0)),RuinKit._stone(b,0.82),false)
 
 ## A worn upright block (walk hull on all sides) centred `c`, `half` its
 ## half extents, in `b`'s frame.
