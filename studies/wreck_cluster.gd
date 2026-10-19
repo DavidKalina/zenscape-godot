@@ -52,7 +52,6 @@ const PauseHost = preload("res://scripts/kit_isle/pause_host.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const DevKeys = preload("res://scripts/kit_isle/dev_keys.gd")
 const IsleFlora = preload("res://studies/aqueduct_isle_flora.gd")
-const Overgrowth = preload("res://studies/wreck_cluster_overgrowth.gd")
 
 ## The re-deal's key (free on foot and in the plane: scripts/pad.gd,
 ## scripts/kit_isle/dev_keys.gd).
@@ -70,11 +69,6 @@ const RAISE_MOST := 2.0
 const SOLID_MASK := 1|(1 << 11)
 
 var lands := {}
-## The ruin pieces placed (Art), and the flank walks' among them, for the
-## overgrowth; the overgrowth's node (--no-overgrowth: none).
-var placed_pieces: Array = []
-var flank_pieces: Array = []
-var overgrowth: Node3D = null
 var motif := SpineMotif.new()
 var foot_host: Node3D = null
 ## The rope chain's pieces (Art: ropes).
@@ -223,27 +217,12 @@ func _build_art() -> void:
 	_build_bridge()
 	_build_foot_pieces()
 	_build_spots()
-	_grow_overgrowth()
 	if DevKeys.enabled():
 		var editor: Node = preload("res://scripts/layout_edit.gd").new()
 		editor.name = "LayoutEdit"
 		add_child(editor)
 		editor.setup(self,foot_host)
 	print("wreck cluster: %d triangles, built in %d ms" % [triangles(art),Time.get_ticks_msec()-began])
-
-## The overgrowth on every land's sides and keels and the ruin's foot
-## (studies/wreck_cluster_overgrowth.gd); --no-overgrowth leaves it out.
-func _grow_overgrowth() -> void:
-	if "--no-overgrowth" in LaunchArgs.user_args(): return
-	var began := Time.get_ticks_msec()
-	var on: Array = []
-	for land: Array in motif.lands: on.append([land[0],Art.TOP])
-	for spec: Array in Art.lands(): on.append([lands[str(spec[0])],float(spec[6])])
-	var keep: Array = []
-	for row: Array in Art.spots(): keep.append(row[2])
-	overgrowth = Overgrowth.grow(on,placed_pieces,flank_pieces,keep,flora_seed()+7)
-	add_child(overgrowth)
-	print("wreck cluster: overgrowth %s, %d triangles, in %d ms" % [str(overgrowth.get_meta("counts")),int(overgrowth.get_meta("triangles")),Time.get_ticks_msec()-began])
 
 ## The spine's tail cut (spec: clean up the floating rocks and debris):
 ## its five fragments, the stepping stones between them, the rope bridges
@@ -271,8 +250,6 @@ func _place_piece(called: String, piece: Node3D, foot: Vector3, yaw: float) -> v
 	piece.transform = LayoutOverrides.xform(name,coded)
 	art.add_child(piece)
 	LayoutOverrides.track(name,piece,"piece",coded)
-	placed_pieces.append(piece)
-	if called.begins_with("flank_"): flank_pieces.append(piece)
 
 ## The footbridge from the strip's lobe up onto the spine's south bench
 ## (a live rope bridge, as the spine's own).

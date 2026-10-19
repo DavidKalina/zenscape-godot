@@ -205,11 +205,6 @@ Do these two next, in this order, before L5 and L6:
 
 ## Spec change: overgrowth on the isles' sides (user, after iteration 15)
 
-(Done: `studies/wreck_cluster_overgrowth.gd`, grown by `_grow_overgrowth()`;
-`--no-overgrowth` leaves it out. A moss shell over the keels and crags,
-moss/ivy cushions under the rims and low on the ruin, thin moss toward the
-flank decks' edges, ferns, roots and green vines; ~0.27M triangles.)
-
 The cluster should read as an ancient piece of the earth itself, torn up
 and suspended in the air, not clean rock. Add overgrowth to the sides and
 undersides of every land mass (the spine's flanks, the strip, the tower
