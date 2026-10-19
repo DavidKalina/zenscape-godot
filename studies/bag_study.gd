@@ -281,5 +281,10 @@ func loot_kg() -> float:
 	for l: Dictionary in loot: kg += float(l.kg)
 	return kg
 
+## Dragging, the bag holds him to its rope (scripts/carry/loot_bag.gd).
+func _sync_figure() -> void:
+	if bag != null: bag.leash(get_process_delta_time())
+	super._sync_figure()
+
 func _hint_text() -> String:
-	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"

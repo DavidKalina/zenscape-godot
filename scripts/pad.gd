@@ -61,6 +61,9 @@ const ACTIONS := {
 	# On foot, pressed: lift the treasure in reach, or set down the one
 	# carried (scripts/carry/carry_host.gd).
 	"walk_carry":[["key",KEY_E],["button",JOY_BUTTON_B]],
+	# On foot, pressed: the loot bag off, on, dragged or let go
+	# (scripts/carry/loot_bag.gd).
+	"walk_bag":[["key",KEY_F],["button",JOY_BUTTON_DPAD_DOWN]],
 	# On foot with the spade (scripts/dig/dig.gd), pressed: dig.
 	"walk_dig":[["key",KEY_G],["button",JOY_BUTTON_Y]],
 	# At a cannon (scripts/cannon/cannon_field.gd): Jump (A) starts operating

@@ -15,14 +15,23 @@ extends Node3D
 ##   `refused`: a lurch and a shake of the head, as carry_host's);
 ## - past CAP it takes no more: the piece stays where it lies, and he
 ##   balks, a low "uh-uh" sounds and a line says so;
-## - a readout on screen: the kg, the cap, a bar, the barred moves.
+## - a readout on screen: the kg, the cap, a bar, the barred moves;
+## - `walk_bag` (F, pad down) sets it down (it slides off his back and
+##   drops behind him) and, by it, shoulders it again; worn it fills only to
+##   WEAR_KG, set down to CAP (E by it with a piece in reach). Past WEAR_KG
+##   it won't go on his back: F by it takes it by the neck and he drags it,
+##   slow, on a short rope (no jump, no climbing); it scuffs along and
+##   catches on rocks and lips, holding him back till he pulls another way.
+##   Set down or dragged it is a rigid body (`loose`) on carry_host's
+##   TREASURE_LAYER, which his walk never sees.
 ##
 ## All procedural (the sack's mesh, its sway, the dip, the balk), greybox.
 const Weights = preload("res://scripts/carry/carry_weights.gd")
 const CarryHost = preload("res://scripts/carry/carry_host.gd")
 
-## The most the bag holds (kg).
+## The most the bag holds (kg), and the most he wears (more and he drags it).
 const CAP := 24.0
+const WEAR_KG := 18.0
 ## Up to this many kg he doesn't feel it.
 const FREE_KG := 2.0
 ## At CAP, each pace times the empty one (eased in from FREE_KG, EASE the
@@ -65,6 +74,25 @@ const GULP := 0.18
 const GULP_TIME := 0.35
 ## The refusal line's time (s).
 const LINE_TIME := 1.6
+## Setting it down and shouldering it: the dip's length (s) and the reach
+## to a bag on the ground (m from his feet, times size, past its radius).
+const SET_TIME := 0.4
+const LIFT_TIME := 0.5
+const BAG_REACH := 0.7
+## Dragging: the rope from his hand to its middle and its give (m, times
+## size), the most it pulls (times its weight, so a curb or a rock as high
+## as about half its radius holds it), his paces (times the empty ones,
+## light at WEAR_KG to heavy at CAP) and turn, the scuff's spacing (m).
+const ROPE_LEN := 0.9
+const SLACK := 0.3
+const PULL := 1.6
+const DRAG_WALK := Vector2(0.5,0.35)
+const DRAG_RUN := Vector2(0.3,0.2)
+const DRAG_TURN := 0.6
+const SCUFF_EVERY := 0.45
+## Loose: the sliding friction, its own weight (kg) past its load's.
+const FRICTION := 0.7
+const CLOTH_KG := 1.0
 
 const CLOTH := Color("a88b5e")
 const PATCH := Color("7a6040")
@@ -83,6 +111,26 @@ var balked := ""
 var stowing := {}
 var _stow_t := 0.0
 var _stow_from := Transform3D.IDENTITY
+
+## "worn", "ground" (set down, a body at rest) or "drag" (by its neck).
+var state := "worn"
+## The bag set down: a rigid body (its middle; rotation locked).
+var loose: RigidBody3D
+## Caught (dragged, held fast on something) and how often; metres dragged.
+var caught := false
+var catches := 0
+var dragged := 0.0
+## Its putting on or off now ("set", "lift", "" none) and seconds into it.
+var act := ""
+var _act_t := 0.0
+var _act_from := Transform3D.IDENTITY
+var _ball: SphereShape3D
+var _ball_shape: CollisionShape3D
+var _rest_yaw := 0.0
+var _still_t := 0.0
+var _scuff := 0.0
+var _fall_v := 0.0
+var _rope: MeshInstance3D
 
 var _base := {}
 var _sack: Node3D
@@ -152,6 +200,40 @@ func setup(host: Node3D) -> void:
 		strap.material_override = _rope_mat
 		add_child(strap)
 		_straps.append(strap)
+	_rope = MeshInstance3D.new()
+	_rope.name = "DragRope"
+	_rope.top_level = true
+	var rc := CylinderMesh.new()
+	rc.top_radius = 0.02
+	rc.bottom_radius = 0.02
+	rc.height = 1.0
+	rc.radial_segments = 5
+	rc.rings = 1
+	_rope.mesh = rc
+	_rope.material_override = _rope_mat
+	_rope.visible = false
+	add_child(_rope)
+	loose = RigidBody3D.new()
+	loose.name = "LooseBag"
+	loose.top_level = true
+	loose.collision_layer = CarryHost.TREASURE_LAYER
+	loose.collision_mask = CarryHost.SOLID_MASK
+	loose.lock_rotation = true
+	loose.continuous_cd = true
+	loose.can_sleep = true
+	loose.linear_damp = 0.3
+	var mat := PhysicsMaterial.new()
+	mat.friction = FRICTION
+	mat.bounce = 0.05
+	loose.physics_material_override = mat
+	loose.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	loose.freeze = true
+	_ball = SphereShape3D.new()
+	_ball_shape = CollisionShape3D.new()
+	_ball_shape.shape = _ball
+	_ball_shape.disabled = true
+	loose.add_child(_ball_shape)
+	add_child(loose)
 	_prompt = _label(32,Color(1,1,1))
 	_line = _label(40,Color(1.0,0.75,0.6))
 	var layer := CanvasLayer.new()
@@ -214,14 +296,31 @@ static func bars_of(kg_in: float) -> Array:
 static func radius_of(kg_in: float) -> float:
 	return SACK_R+SACK_R_KG*sqrt(maxf(kg_in,0.0))
 
+## The most it takes now: WEAR_KG on his back, CAP set down.
+func limit() -> float:
+	return WEAR_KG if state == "worn" else CAP
+
 func fits(piece: Dictionary) -> bool:
-	return kg+float(piece.kg) <= CAP+0.001
+	return kg+float(piece.kg) <= limit()+0.001
+
+## Can he wear it (at or under WEAR_KG)?
+func wearable() -> bool:
+	return kg <= WEAR_KG+0.001
 
 func _set_kg(k: float) -> void:
 	kg = k
-	barred = bars_of(kg)
 	_r_to = radius_of(kg)
-	_apply_feel(STOW_PACE if not stowing.is_empty() else 1.0)
+	loose.mass = kg+CLOTH_KG
+	_apply_feel(STOW_PACE if not stowing.is_empty() or act != "" else 1.0)
+
+## The kg on his back (none set down).
+func worn_kg() -> float:
+	return kg if state == "worn" else 0.0
+
+## His paces dragging it (times the empty ones): {walk, run, jump, turn}.
+func drag_feel() -> Dictionary:
+	var f := clampf((kg-WEAR_KG)/(CAP-WEAR_KG),0.0,1.0)
+	return {"walk":lerpf(DRAG_WALK.x,DRAG_WALK.y,f),"run":lerpf(DRAG_RUN.x,DRAG_RUN.y,f),"jump":0.0,"turn":DRAG_TURN}
 
 ## The bag's kg on the motor's kept feel; `pace` times the paces more.
 func _apply_feel(pace: float) -> void:
@@ -230,7 +329,11 @@ func _apply_feel(pace: float) -> void:
 	if _base.is_empty():
 		_base = {"walk":m.walk,"run":m.run,"jumps":(m.jumps as Array).duplicate(),"turn":m.turn,"turn_run":m.turn_run,
 			"wall_on":m.wall_on,"wallrun_on":m.wallrun_on,"ledge_on":m.ledge_on,"sail_on":m.sail_on,"rope_on":m.rope_on}
-	var w := feel_of(kg)
+	var w := feel_of(worn_kg())
+	barred = bars_of(worn_kg())
+	if state == "drag":
+		w = drag_feel()
+		barred = ["jump","wall","ledge","sail","rope"]
 	m.walk = float(_base.walk)*float(w.walk)*pace
 	m.run = float(_base.run)*float(w.run)*pace
 	var j: Array = []
@@ -258,12 +361,29 @@ func empty() -> void:
 # --- Input ------------------------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not event.is_action_pressed(&"walk_carry",false,true) or event.is_echo(): return
-	if not _on_foot() or not stowing.is_empty(): return
+	if event.is_echo(): return
+	if event.is_action_pressed(&"walk_bag",false,true):
+		if not _on_foot() or not stowing.is_empty() or act != "": return
+		get_viewport().set_input_as_handled()
+		bag_key()
+		return
+	if not event.is_action_pressed(&"walk_carry",false,true): return
+	if not _on_foot() or not stowing.is_empty() or act != "": return
 	var p := in_reach()
 	if p.is_empty(): return
 	get_viewport().set_input_as_handled()
 	take(p)
+
+## F: off his back; by it on the ground, on again (or by the neck, too
+## heavy to wear); dragging, let go.
+func bag_key() -> void:
+	match state:
+		"worn": set_down()
+		"drag": let_go()
+		"ground":
+			if not bag_near(): return
+			if wearable(): lift()
+			else: grab()
 
 func _on_foot() -> bool:
 	if study == null or not bool(study.get("walk_ready")): return false
@@ -272,9 +392,21 @@ func _on_foot() -> bool:
 	var motor: Variant = study.get("motor")
 	return motor != null and motor.grounded
 
-## The nearest loose piece in reach of his feet, or {}.
+## Is the bag on the ground (or in his hand) within his reach?
+func bag_near() -> bool:
+	if state == "worn": return false
+	if state == "drag": return true
+	var motor: Variant = study.get("motor")
+	var feet: Vector3 = motor.feet
+	var s: float = motor.size
+	var at := loose.global_position
+	return Vector2(at.x-feet.x,at.z-feet.z).length() <= BAG_REACH*s+_r*s and absf(at.y-feet.y) <= 1.2*s
+
+## The nearest loose piece in reach of his feet, or {} (none, or the bag
+## set down out of his reach).
 func in_reach() -> Dictionary:
 	var motor: Variant = study.get("motor")
+	if state != "worn" and not bag_near(): return {}
 	var feet: Vector3 = motor.feet
 	var s: float = motor.size
 	var best := {}
@@ -295,12 +427,85 @@ func take(p: Dictionary) -> void:
 		refusals += 1
 		_balk("full")
 		_no_sound.play()
-		_say("Too full: %s kg won't go in (%s / %d kg)" % [_kg(float(p.kg)),_kg(kg),int(CAP)])
+		if state == "worn" and kg+float(p.kg) <= CAP+0.001:
+			_say("Too heavy to wear: set it down (F) to fill it (%s / %d kg)" % [_kg(kg),int(WEAR_KG)])
+		else: _say("Too full: %s kg won't go in (%s / %d kg)" % [_kg(float(p.kg)),_kg(kg),int(CAP)])
 		return
 	stowing = p
 	_stow_t = 0.0
 	_stow_from = (p.node as Node3D).global_transform
 	_apply_feel(STOW_PACE)
+
+## Off his back: it slides off and drops behind him, a body on the ground.
+func set_down() -> void:
+	if state != "worn": return
+	var motor: Variant = study.get("motor")
+	var s: float = motor.size
+	var r := _r*s
+	_ball.radius = r*0.95
+	# Its middle from his chest back to where it rides, short of any wall.
+	var chest := _bone_world("chest")
+	if chest == Vector3.INF: chest = motor.feet+Vector3.UP*0.6*s
+	var to := _sack.global_position
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = _ball
+	q.collision_mask = CarryHost.SOLID_MASK
+	q.transform = Transform3D(Basis.IDENTITY,chest)
+	q.motion = to-chest
+	var cast := get_world_3d().direct_space_state.cast_motion(q)
+	var safe: float = cast[0] if cast.size() > 0 else 1.0
+	state = "ground"
+	_rest_yaw = atan2(-_forward().x,-_forward().z)
+	_ball_shape.disabled = false
+	var xf := Transform3D(Basis.IDENTITY,chest+(to-chest)*maxf(safe-0.02,0.0))
+	loose.freeze = false
+	loose.global_transform = xf
+	PhysicsServer3D.body_set_state(loose.get_rid(),PhysicsServer3D.BODY_STATE_TRANSFORM,xf)
+	loose.sleeping = false
+	loose.linear_velocity = motor.ground_velocity()*0.5-_forward()*1.2*s+Vector3.UP*0.8*s
+	_fall_v = 0.0
+	_begin("set")
+	_apply_feel(STOW_PACE)
+
+## On his back again: he dips to it and swings it up (WEAR_KG or under).
+func lift() -> void:
+	if state != "ground" or not wearable(): return
+	_act_from = _sack.global_transform
+	_hold_loose()
+	state = "worn"
+	_lag = Vector3.ZERO
+	_lag_v = Vector3.ZERO
+	_last_mid = Vector3.INF
+	_begin("lift")
+	_apply_feel(STOW_PACE)
+
+## By the neck: he drags it, slow.
+func grab() -> void:
+	if state != "ground": return
+	state = "drag"
+	caught = false
+	_still_t = 0.0
+	loose.sleeping = false
+	_say("Too heavy to wear (%s kg): dragging it" % _kg(kg))
+	_apply_feel(1.0)
+
+## Let go of a dragged one: it lies where it is.
+func let_go() -> void:
+	if state != "drag": return
+	state = "ground"
+	caught = false
+	_rest_yaw = atan2(-(loose.global_position-_hand()).x,-(loose.global_position-_hand()).z)
+	_apply_feel(1.0)
+
+func _hold_loose() -> void:
+	loose.freeze = true
+	loose.linear_velocity = Vector3.ZERO
+	_ball_shape.disabled = true
+	loose.global_position = Vector3(0.0,-1000.0,0.0)
+
+func _begin(what: String) -> void:
+	act = what
+	_act_t = 0.0
 
 func _say(text: String) -> void:
 	_line.text = text
@@ -317,7 +522,10 @@ func _process(delta: float) -> void:
 	var motor: Variant = study.get("motor")
 	if motor == null: return
 	_r = move_toward(_r,_r_to,delta*0.6)
+	if state != "worn": _ball.radius = _r*float(motor.size)*0.95
 	_place_sack(delta)
+	_act_step(delta)
+	_drag_look(delta)
 	_stow_step(delta)
 	_balk_pose(delta)
 	_show_prompt()
@@ -372,13 +580,25 @@ func _place_sack(delta: float) -> void:
 	# Swung by its lag: the bottom trails.
 	var tilt := Vector3(_lag.dot(back),0.0,-_lag.dot(side))*deg_to_rad(SWAY_TILT)/maxf(s,0.01)
 	basis = basis*Basis(Vector3.RIGHT,clampf(tilt.x,-0.5,0.5))*Basis(Vector3.BACK,clampf(tilt.z,-0.5,0.5))
-	_sack.global_transform = Transform3D(basis*Basis.from_scale(Vector3(gulp,1.0/sqrt(gulp),gulp)),mid+_lag*0.5)
+	var squash := Basis.from_scale(Vector3(gulp,1.0/sqrt(gulp),gulp))
+	var xf := Transform3D(basis*squash,mid+_lag*0.5)
+	if state != "worn":
+		_sack.global_transform = _loose_xform(r,squash)
+		for strap in _straps: strap.visible = false
+		return
+	if act == "lift":
+		# Swung up from the ground onto his back, over a little hop.
+		var k := clampf(_act_t/LIFT_TIME,0.0,1.0)
+		var e := k*k*(3.0-2.0*k)
+		var at := _act_from.origin.lerp(xf.origin,e)+Vector3.UP*0.35*s*sin(PI*k)
+		xf = Transform3D(_act_from.basis.orthonormalized().slerp(xf.basis.orthonormalized(),e).scaled_local(xf.basis.get_scale()),at)
+	_sack.global_transform = xf
 	# The straps: from the neck over each shoulder.
 	var mouth := _sack.global_transform*Vector3(0.0,r*1.1,-r*depth*0.4)
 	var sides := ["upper_arm.L","upper_arm.R"]
 	for i in 2:
 		var to := _bone_world(sides[i])
-		if to == Vector3.INF:
+		if to == Vector3.INF or (act == "lift" and _act_t < LIFT_TIME*0.7):
 			_straps[i].visible = false
 			continue
 		to += up*0.04*s
@@ -389,6 +609,30 @@ func _place_sack(delta: float) -> void:
 		var y := d/l
 		var x := y.cross(fwd).normalized() if absf(y.dot(fwd)) < 0.95 else y.cross(Vector3.RIGHT).normalized()
 		_straps[i].global_transform = Transform3D(Basis(x,y,x.cross(y))*Basis.from_scale(Vector3(s,l,s)),(mouth+to)*0.5)
+
+## The sack set down (upright, settled a little) or dragged (lying over,
+## its neck to his hand, rocking as it scuffs), about the body's middle.
+func _loose_xform(r: float, squash: Basis) -> Transform3D:
+	var at := loose.global_position
+	if state == "drag":
+		var to := _hand()-at
+		var flat := Vector3(to.x,0.0,to.z)
+		var way := flat.normalized() if flat.length() > 0.01 else -_forward()
+		var up := (Vector3.UP*0.5+way).normalized()
+		var side := up.cross(Vector3.UP).normalized()
+		var rock := 0.12*sin(dragged*7.0)
+		var b := Basis(side,up,side.cross(up)).rotated(up,rock)
+		return Transform3D(b*squash,at+Vector3.UP*r*0.05)
+	var sit := Basis(Vector3.UP,_rest_yaw)*Basis.from_scale(Vector3(1.06,0.9,1.06))
+	return Transform3D(sit*squash,at+Vector3.DOWN*r*0.05)
+
+## His hand that holds the neck (or near his hip).
+func _hand() -> Vector3:
+	for b: String in ["hand.R","forearm.R"]:
+		var at := _bone_world(b)
+		if at != Vector3.INF: return at
+	var motor: Variant = study.get("motor")
+	return motor.feet+Vector3.UP*0.8*float(motor.size)
 
 ## The sack's cloth at belly radius `r` (times size; drawn at size 1, the
 ## sack node scaled) and `depth`: a bulging pouch, flat and creased when
@@ -455,6 +699,109 @@ static func _sack_at(R: float, depth: float, a: float, v: float, crease: float) 
 	# A little sag to the bottom: the load settles low and the cloth hangs.
 	y -= R*0.12*sin(PI*v)*(1.0-v)
 	return Vector3(cos(a)*rho,y-R,sin(a)*rho*depth)
+
+## Putting it on or off: his chest dips (the bag itself moves in
+## _place_sack, or falls as a body); his paces held till it's done.
+func _act_step(delta: float) -> void:
+	if act == "": return
+	_act_t += delta
+	var length := SET_TIME if act == "set" else LIFT_TIME
+	var k := clampf(_act_t/length,0.0,1.0)
+	var sk := _skeleton()
+	if sk != null:
+		var chest := sk.find_bone("chest")
+		if chest >= 0: CarryHost._turn_bone(sk,chest,_forward().cross(Vector3.UP),-deg_to_rad(STOW_BEND)*sin(PI*k))
+	if k >= 1.0:
+		if act == "lift":
+			_gulp_t = 0.0
+			_gulp_sound.pitch_scale = 0.8
+			_gulp_sound.play()
+		act = ""
+		_apply_feel(1.0)
+
+## Set down or dragged: the thud as it lands, the scuffs as it slides, the
+## rope from his hand, his arm reaching back to it.
+func _drag_look(delta: float) -> void:
+	if state == "worn":
+		_rope.visible = false
+		return
+	var v := loose.linear_velocity
+	if _fall_v < -1.2 and v.y > -0.3:
+		_gulp_sound.pitch_scale = 0.7
+		_gulp_sound.play()
+	_fall_v = v.y
+	if state != "drag":
+		_rope.visible = false
+		return
+	var motor: Variant = study.get("motor")
+	var s: float = motor.size
+	var sk := _skeleton()
+	if sk != null:
+		var arm := sk.find_bone("upper_arm.R")
+		if arm >= 0: CarryHost._turn_bone(sk,arm,_forward().cross(Vector3.UP),deg_to_rad(40.0))
+	var mouth := _sack.global_transform*Vector3(0.0,_r*s*1.1,0.0)
+	var hand := _hand()
+	var d := hand-mouth
+	var l := d.length()
+	_rope.visible = l > 0.01
+	if l > 0.01:
+		var y := d/l
+		var x := y.cross(Vector3.UP).normalized() if absf(y.y) < 0.95 else Vector3.RIGHT
+		_rope.global_transform = Transform3D(Basis(x,y,x.cross(y))*Basis.from_scale(Vector3(s,l,s)),(mouth+hand)*0.5)
+	var flat := Vector2(v.x,v.z).length()
+	if flat > 0.2:
+		dragged += flat*delta
+		_scuff += flat*delta
+		if _scuff >= SCUFF_EVERY*s:
+			_scuff = 0.0
+			_gulp_sound.pitch_scale = randf_range(0.5,0.65)
+			_gulp_sound.play()
+			var puffs: Variant = study.get("puffs")
+			if puffs != null:
+				puffs.burst(loose.global_position+Vector3.DOWN*_r*s*0.8,"stone",0.15,-Vector3(v.x,0.0,v.z).normalized())
+
+## The rope's pull on a dragged bag: past ROPE_LEN it pulls toward his hand,
+## harder as it stretches, up to PULL times its weight.
+func _physics_process(_delta: float) -> void:
+	if state != "drag" or study == null: return
+	var motor: Variant = study.get("motor")
+	var s: float = motor.size
+	var to: Vector3 = motor.feet-loose.global_position
+	var flat := Vector3(to.x,0.0,to.z)
+	var stretch := flat.length()-ROPE_LEN*s
+	if stretch <= 0.0: return
+	loose.sleeping = false
+	var pull := clampf(stretch/(SLACK*s),0.0,1.0)*PULL*loose.mass*9.8
+	loose.apply_central_force(flat.normalized()*pull)
+
+## Dragging: held to the rope's length and give from the bag (a caught bag
+## holds him back). The study calls it after his motor's step, before his
+## figure is drawn.
+func leash(delta: float) -> void:
+	if state != "drag": return
+	var motor: Variant = study.get("motor")
+	var s: float = motor.size
+	var at := loose.global_position
+	var off := Vector2(motor.feet.x-at.x,motor.feet.z-at.z)
+	var most := (ROPE_LEN+SLACK)*s
+	if off.length() > 4.0*s or absf(motor.feet.y-at.y) > 3.0*s:
+		let_go()
+		return
+	var held := off.length() > most
+	if held:
+		off = off.normalized()*most
+		motor.feet = Vector3(at.x+off.x,motor.feet.y,at.z+off.y)
+	# Caught: held back while it doesn't move.
+	if held and Vector2(loose.linear_velocity.x,loose.linear_velocity.z).length() < 0.15:
+		_still_t += delta
+		if _still_t > 0.3 and not caught:
+			caught = true
+			catches += 1
+			_balk("caught")
+			_say("Caught: pull it another way")
+	else:
+		_still_t = 0.0
+		if Vector2(loose.linear_velocity.x,loose.linear_velocity.z).length() > 0.3: caught = false
 
 ## The putting in: he dips to it, it hops over his shoulder into the mouth.
 func _stow_step(delta: float) -> void:
@@ -545,13 +892,20 @@ static func _no_stream() -> AudioStreamWAV:
 
 func _show_prompt() -> void:
 	var motor: Variant = study.get("motor")
-	var p := {} if not stowing.is_empty() or not motor.grounded else in_reach()
+	var busy: bool = not stowing.is_empty() or act != "" or not motor.grounded
+	var p := {} if busy else in_reach()
 	if p.is_empty():
 		_prompt.visible = false
+		if busy or state != "ground" or not bag_near(): return
+		_prompt.text = "F  shoulder it" if wearable() else "F  drag it  (too heavy to wear)"
+		_prompt.modulate = Color(1,1,1)
+		_prompt.global_position = loose.global_position+Vector3.UP*(_r*float(motor.size)+0.6)
+		_prompt.visible = true
 		return
 	var ok := fits(p)
 	var m: Dictionary = p.measures
-	_prompt.text = ("E  bag it  (%s kg)" % _kg(float(p.kg))) if ok else ("full  (%s kg won't fit)" % _kg(float(p.kg)))
+	var full := "too heavy to wear more" if state == "worn" and kg+float(p.kg) <= CAP+0.001 else "full"
+	_prompt.text = ("E  bag it  (%s kg)" % _kg(float(p.kg))) if ok else ("%s  (%s kg won't fit)" % [full,_kg(float(p.kg))])
 	_prompt.modulate = Color(1,1,1) if ok else Color(1.0,0.6,0.5)
 	_prompt.global_position = (p.node as Node3D).global_position+Vector3.UP*(float(m.height)+0.55)
 	_prompt.visible = true
@@ -559,8 +913,10 @@ func _show_prompt() -> void:
 func _show_readout() -> void:
 	var cells := 20
 	var on := int(round(clampf(kg/CAP,0.0,1.0)*cells))
-	var lines := PackedStringArray(["Bag  %s / %d kg" % [_kg(kg),int(CAP)],"[%s%s]" % ["#".repeat(on),"-".repeat(cells-on)]])
-	var w := feel_of(kg)
+	var lines := PackedStringArray(["Bag  %s / %d kg  (wear to %d)" % [_kg(kg),int(CAP),int(WEAR_KG)],"[%s%s]" % ["#".repeat(on),"-".repeat(cells-on)]])
+	lines.append({"worn":"on his back","ground":"set down" if wearable() else "set down: too heavy to wear",
+		"drag":"dragging%s" % ("  (caught)" if caught else "")}.get(state,state))
+	var w := drag_feel() if state == "drag" else feel_of(worn_kg())
 	lines.append("pace %d%%  jump %d%%" % [int(round(float(w.run)*100.0)),int(round(float(w.jump)*100.0))])
 	lines.append("no %s" % ", ".join(barred) if not barred.is_empty() else "every move")
 	_readout.text = "\n".join(lines)
