@@ -31,6 +31,9 @@ extends RefCounted
 ##   flank    a broken terrace walk along the spine's south flank, from
 ##            the bench's west end up to the pulpit, a fallen pier up onto
 ##            it from the strip, part spot 17
+##            and its north run: from the north balcony east under the
+##            shelf and the rope chain's slab, up a broken stair onto the
+##            shelf by the cleft, part spot 18
 ##
 ## Every gap and rise is sized from the walker (RuinKit GRAB_TOP 1.875,
 ## CHAIN_TOP 2.575; `tools/kit_piece.py numbers`).
@@ -1217,13 +1220,14 @@ static func flank_s_out(i: int) -> float:
 	var s: Array = FLANK_S[i]
 	return _flank_out(float(s[1]),float(s[2]),float(s[3]))
 
-static func _flank_out(x0: float, x1: float, top: float) -> float:
+## `side` 1 the south flank, -1 the north (the result is |d| either way).
+static func _flank_out(x0: float, x1: float, top: float, side := 1.0) -> float:
 	var inner := 8.0
 	var x := minf(x0,x1)
 	while x <= maxf(x0,x1)+0.01:
 		var d := 30.0
 		while d > 6.0:
-			var q := Spine.at(x,d)
+			var q := Spine.at(x,side*d)
 			if Spine.ground(q.x,q.y) > top-0.05: break
 			d -= 0.1
 		inner = maxf(inner,d+0.1)
@@ -1275,19 +1279,94 @@ static func flank_s_built() -> Array:
 	out.append(["flank_s/fallen_pier",b.finish(),foot,0.0])
 	return out
 
+# --- The north flank walk ----------------------------------------------------------
+
+## The second layer along the spine's north flank (spec change 2's north
+## half), built as the south walk is: the terrace walk's north run,
+## stretches of stone deck against the flank's rock, falling east from the
+## north balcony (part spot 04; a step down off its east rim) under the
+## shelf, low under the rope chain's spur and slab (the slab's underside
+## 3.3 m over it: a missed slam lands on the walk), then a broken stair
+## climbing back onto the north shelf by the cleft. A loop: shelf, balcony
+## (the 1.6 m jump-grab), walk, stair, shelf. Part spot 18 on its third
+## stretch past the slab. [layout name, axis x west end, x east end, deck
+## top (world y)]; each FLANK_S_W clear out from where the flank's rock
+## last stands over its top (`flank_n_out`), FLANK_S_BURY into the rock.
+const FLANK_N := [
+	["flank_n/walk_1",65.8,73.0,37.0],
+	["flank_n/walk_2",75.2,81.0,34.6],
+	["flank_n/walk_3",82.6,97.2,32.6],
+]
+## The breaks' fallen blocks: [gap, top over the lower stretch]: each
+## halfway (a hop down east, a hop up west).
+const FLANK_N_RUBBLE := [[0,1.2],[1,1.0]]
+## The broken stair from walk_3's east end up onto the shelf by the cleft:
+## [x west end, x east end, top], each block a hop over the last; the last
+## a hop under the shelf's lip.
+const FLANK_N_STAIR := [
+	[97.5,99.4,33.7],
+	[99.7,101.6,34.9],
+]
+
+static func flank_n_out(i: int) -> float:
+	var s: Array = FLANK_N[i]
+	return _flank_out(float(s[1]),float(s[2]),float(s[3]),-1.0)
+
+static func flank_n_stair_out(i: int) -> float:
+	var s: Array = FLANK_N_STAIR[i]
+	return _flank_out(float(s[0]),float(s[1]),float(s[2]),-1.0)
+
+## A point on stretch `i` of the north walk: `along` (0 west end .. 1 east
+## end), `inset` m in from its outer edge (world, on its top).
+static func flank_n_point(i: int, along := 0.5, inset := 1.3) -> Vector3:
+	var s: Array = FLANK_N[i]
+	var x := lerpf(float(s[1]),float(s[2]),along)
+	var q := Spine.at(x,-(flank_n_out(i)-inset))
+	return Vector3(q.x,float(s[3]),q.y)
+
+## A point on stair block `i`'s top, `inset` m in from its outer edge.
+static func flank_n_stair_point(i: int, inset := 1.2) -> Vector3:
+	var s: Array = FLANK_N_STAIR[i]
+	var x := (float(s[0])+float(s[1]))*0.5
+	var q := Spine.at(x,-(flank_n_stair_out(i)-inset))
+	return Vector3(q.x,float(s[2]),q.y)
+
+## The north walk's stone: [layout name, node, world foot, yaw (deg)].
+static func flank_n_built() -> Array:
+	var out: Array = []
+	var k := 0
+	for s: Array in FLANK_N:
+		out.append(_flank_piece(str(s[0]),float(s[1]),float(s[2]),float(s[3]),flank_n_out(k),FLANK_S_W,691+k,-1.0))
+		k += 1
+	for rub: Array in FLANK_N_RUBBLE:
+		var g := int(rub[0])
+		var a: Array = FLANK_N[g]
+		var e: Array = FLANK_N[g+1]
+		var top := minf(float(a[3]),float(e[3]))+float(rub[1])
+		var ra := float(a[2])+0.05
+		var re := float(e[1])-0.05
+		out.append(_flank_piece("flank_n/rubble_%d" % (g+1),ra,re,top,maxf(_flank_out(ra,re,top,-1.0),minf(flank_n_out(g),flank_n_out(g+1))),FLANK_S_W,696+g,-1.0))
+	k = 0
+	for s: Array in FLANK_N_STAIR:
+		out.append(_flank_piece("flank_n/stair_%d" % (k+1),float(s[0]),float(s[1]),float(s[2]),flank_n_stair_out(k),2.4,701+k,-1.0))
+		k += 1
+	return out
+
 ## One stretch or stair block placed: its axis x from `x0` to `x1`, top
 ## `top`, its outer edge `d_out` across, `wide` walkable inside it and
 ## FLANK_S_BURY more into the rock; as deep as reaches the flank's rock
 ## under its outer edge (1.5 to 7 m).
-static func _flank_piece(called: String, x0: float, x1: float, top: float, d_out: float, wide: float, seed_value: int) -> Array:
+## `side` 1 on the south flank, -1 on the north (`d_out` is |d|; the
+## block turned half round so its +z still faces out).
+static func _flank_piece(called: String, x0: float, x1: float, top: float, d_out: float, wide: float, seed_value: int, side := 1.0) -> Array:
 	var xm := (x0+x1)*0.5
 	var out := wide+FLANK_S_BURY
-	var edge := Spine.at(xm,d_out)
+	var edge := Spine.at(xm,side*d_out)
 	var deep := clampf(top-Spine.ground(edge.x,edge.y)+1.0,1.5,7.0)
 	var b := RuinKit.Build.new(seed_value,0.4,called.get_file().capitalize())
 	_flank_block(b,absf(x0-x1),out,deep)
-	var q := Spine.at(xm,d_out-out*0.5)
-	return [called,b.finish(),Vector3(q.x,top,q.y),axis_yaw(xm)]
+	var q := Spine.at(xm,side*(d_out-out*0.5))
+	return [called,b.finish(),Vector3(q.x,top,q.y),axis_yaw(xm)+(0.0 if side > 0.0 else 180.0)]
 
 ## One deck block in its own frame (+x east along the axis, +z out from
 ## the flank, its top's middle at the origin): `len` long, `out` from its
@@ -1347,6 +1426,7 @@ static func spots() -> Array:
 		["slide","by the carved chest under the tilt rock's lancet wall (the slide's end)",tilt_spot(),["lying","islet","cache"]],
 		["knight","on the snapped causeway's tip, in the lee of its last pier (past the knight)",causeway_spot(),["lying","knight","cache"]],
 		["flank","on the south flank walk's fourth stretch, against the crest's rock",flank_s_point(3,0.45,1.0),["lying","jammed"]],
+		["flank","on the north flank walk's third stretch, past the rope chain's slab, against the shelf's rock",flank_n_point(2,0.62,1.0),["lying","jammed"]],
 	]
 
 ## The caches (spec item 10's change; studies/wreck_cluster_caches.gd): a

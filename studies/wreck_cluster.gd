@@ -205,6 +205,7 @@ func _build_art() -> void:
 	for t: Array in Art.ropes_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	for t: Array in Art.causeway_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	for t: Array in Art.flank_s_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
+	for t: Array in Art.flank_n_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	_build_bridge()
 	_build_foot_pieces()
 	_build_spots()
