@@ -100,6 +100,28 @@ const RIP_POP := 0.4
 const RIP_CREW := 2
 const RIP_PACE := 0.55
 const RIP_REST := 1.5
+## The idle bag (the bag study): set down with something in it, and him no
+## nearer than BAG_LEFT (m, across, past its radius), for BAG_IDLE s, it
+## calls a crew: one per BAG_KG_EACH kg (rounded up; BAG_CREW_LEAST to
+## BAG_CREW_MOST). Once BAG_KEEP of that crew (rounded up) are within
+## HAUL_REACH they lift it over their heads and haul it to the nearest
+## burrow; free guys within reach join on the way, up to the full crew. The
+## full crew's pace runs from BAG_PACE.x (empty) to BAG_PACE.y (at the
+## bag's cap); short-handed it's that times crew over full crew, no less
+## than BAG_PACE_LEAST: a few strain and inch along, more speed it up. He
+## knocks haulers off past RIP_HIT_SPEED; under BAG_KEEP of the full crew
+## left they let it down, and none lifts it for BAG_REST s. F by it takes
+## it from them. At the burrow (HOME_NEAR) they set it on the mouth (the
+## burial is the next step).
+const BAG_IDLE := 3.0
+const BAG_LEFT := 2.5
+const BAG_KG_EACH := 3.0
+const BAG_CREW_LEAST := 2
+const BAG_CREW_MOST := 8
+const BAG_PACE := Vector2(0.32,0.14)
+const BAG_PACE_LEAST := 0.08
+const BAG_KEEP := 0.6
+const BAG_REST := 2.0
 
 ## Grab and shove: a guy within GRAB_REACH (m, across; and no more than
 ## GRAB_RISE of his own height above or below the feet) of whoever holds a

@@ -208,6 +208,9 @@ var _still_t := 0.0
 var _scuff := 0.0
 var _fall_v := 0.0
 var _rope: MeshInstance3D
+## Carried off by the stone brood (scripts/brood/bag_brood.gd): still "ground"
+## but held where they put it (frozen, no collider); F or V by it frees it first.
+var hauled := false
 
 var _base := {}
 var _sack: Node3D
@@ -501,6 +504,30 @@ func mouth() -> Vector3:
 	var s: float = motor.size if motor != null else 1.0
 	return _sack.global_transform*Vector3(0.0,_r*s*1.1,0.0)
 
+## Lifted by the brood: held still, no collider, till `haul_free`.
+func haul_hold() -> void:
+	if state != "ground" or hauled: return
+	hauled = true
+	_settle_t = -1.0
+	loose.freeze = true
+	loose.linear_velocity = Vector3.ZERO
+	_ball_shape.disabled = true
+
+## Where they hold it (its middle) and its heading.
+func haul_place(at: Vector3, yaw: float) -> void:
+	if not hauled: return
+	loose.global_position = at
+	_rest_yaw = yaw
+
+## Let down (or taken from them): a body again, falling from where it is.
+func haul_free(v := Vector3.ZERO) -> void:
+	if not hauled: return
+	hauled = false
+	_ball_shape.disabled = false
+	loose.freeze = false
+	loose.sleeping = false
+	loose.linear_velocity = v
+
 ## Empties it: every piece back on its spot.
 func empty() -> void:
 	stowing = {}
@@ -546,6 +573,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## F: off his back; by it on the ground, on again (or by the neck, too
 ## heavy to wear); dragging, let go.
 func bag_key() -> void:
+	if hauled and bag_near(): haul_free()
 	match state:
 		"worn": set_down()
 		"drag": let_go()
@@ -670,6 +698,7 @@ func let_go() -> void:
 ## on a slope it keeps going down to the bottom.
 func shove() -> void:
 	if state != "ground": return
+	haul_free()
 	var motor: Variant = study.get("motor")
 	var s: float = motor.size
 	var off: Vector3 = loose.global_position-motor.feet
