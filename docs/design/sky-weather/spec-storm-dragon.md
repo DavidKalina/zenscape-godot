@@ -93,6 +93,27 @@ beats on the board are the moment's sequence:
 The darkening and the storm grade apply in storms and whiteouts only; the
 fair-weather sky looks as before.
 
+**How it is staged (the user, after look step 3):** no side profile. A
+dragon crossing the view left to right, seen broadside, looks goofy. The
+dragon flies roughly with the plane, along the camera's line, and is seen
+from behind, above or below:
+
+- **Flying away:** ahead of the plane, a little above or below, heading
+  the same way and pulling away, so the camera sees its back, wings and
+  tail from behind (at most a three-quarter rear view). Close up, it
+  cocks its head back over its shoulder toward the plane (the eye
+  catching the flash), then faces away again.
+- **Right above:** over the plane, heading the same way (or overtaking it
+  from behind), so the camera sees its belly, the spread wings across the
+  view, the legs and claws hanging; it may look down.
+- **A little below:** under and ahead of the plane, its back and spread
+  wings seen from above, sliding ahead or sinking into the murk.
+- **Far:** also seen going away or coming at the plane, never broadside.
+
+So placement picks one of these relative to the plane's heading and the
+camera, and the head turn is an authored, readable move (anticipation,
+the turn, a hold on the look, the turn back), per the animation bar.
+
 ## Order: the trunk and one lane
 
 **Lane `dragon-sightings`** (part 4, the dragon in the lightning), on its
