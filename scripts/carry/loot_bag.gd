@@ -92,6 +92,18 @@ const DRAG_TURN := 0.6
 const SCUFF_EVERY := 0.45
 ## Loose: the sliding friction, its own weight (kg) past its load's.
 const FRICTION := 0.7
+## Shoved (V / pad right): sent off at this speed (m/s, empty to the cap),
+## spinning to roll; the push takes SHOVE_TIME.
+const SHOVE_V := Vector2(3.2,1.8)
+const SHOVE_TIME := 0.35
+## Rolling: a soft sack's drag (times its weight; under an 18 deg slope's
+## pull, so it keeps rolling down one and stops on the flat), a thump every
+## half turn, and at rest (under REST_SPEED for REST_TIME) it flops upright
+## over SETTLE_TIME.
+const ROLL_DRAG := 0.2
+const REST_SPEED := 0.15
+const REST_TIME := 0.4
+const SETTLE_TIME := 0.35
 const CLOTH_KG := 1.0
 
 const CLOTH := Color("a88b5e")
@@ -112,7 +124,8 @@ var stowing := {}
 var _stow_t := 0.0
 var _stow_from := Transform3D.IDENTITY
 
-## "worn", "ground" (set down, a body at rest) or "drag" (by its neck).
+## "worn", "ground" (set down, a body at rest), "drag" (by its neck) or
+## "roll" (shoved: a free ball tumbling till it rests).
 var state := "worn"
 ## The bag set down: a rigid body (its middle; rotation locked).
 var loose: RigidBody3D
@@ -120,6 +133,11 @@ var loose: RigidBody3D
 var caught := false
 var catches := 0
 var dragged := 0.0
+var shoves := 0
+var rolled := 0.0
+var _settle_t := -1.0
+var _settle_from := Quaternion.IDENTITY
+var _thump := 0.0
 ## Its putting on or off now ("set", "lift", "" none) and seconds into it.
 var act := ""
 var _act_t := 0.0
@@ -222,6 +240,8 @@ func setup(host: Node3D) -> void:
 	loose.continuous_cd = true
 	loose.can_sleep = true
 	loose.linear_damp = 0.3
+	loose.contact_monitor = true
+	loose.max_contacts_reported = 4
 	var mat := PhysicsMaterial.new()
 	mat.friction = FRICTION
 	mat.bounce = 0.05
@@ -362,6 +382,12 @@ func empty() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_echo(): return
+	if event.is_action_pressed(&"walk_shove",false,true):
+		if not _on_foot() or not stowing.is_empty() or act != "": return
+		if state != "ground" or not bag_near(): return
+		get_viewport().set_input_as_handled()
+		shove()
+		return
 	if event.is_action_pressed(&"walk_bag",false,true):
 		if not _on_foot() or not stowing.is_empty() or act != "": return
 		get_viewport().set_input_as_handled()
@@ -394,7 +420,7 @@ func _on_foot() -> bool:
 
 ## Is the bag on the ground (or in his hand) within his reach?
 func bag_near() -> bool:
-	if state == "worn": return false
+	if state == "worn" or state == "roll": return false
 	if state == "drag": return true
 	var motor: Variant = study.get("motor")
 	var feet: Vector3 = motor.feet
@@ -497,6 +523,44 @@ func let_go() -> void:
 	_rest_yaw = atan2(-(loose.global_position-_hand()).x,-(loose.global_position-_hand()).z)
 	_apply_feel(1.0)
 
+## Shoved: he lunges at it and it's off, away from him, spinning to roll;
+## on a slope it keeps going down to the bottom.
+func shove() -> void:
+	if state != "ground": return
+	var motor: Variant = study.get("motor")
+	var s: float = motor.size
+	var off: Vector3 = loose.global_position-motor.feet
+	var d := Vector3(off.x,0.0,off.z)
+	d = d.normalized() if d.length() > 0.05 else _forward()
+	var v := lerpf(SHOVE_V.x,SHOVE_V.y,clampf(kg/CAP,0.0,1.0))*s
+	state = "roll"
+	shoves += 1
+	_settle_t = -1.0
+	_still_t = 0.0
+	_thump = 0.0
+	loose.lock_rotation = false
+	loose.sleeping = false
+	loose.linear_velocity = d*v+Vector3.UP*0.5*s
+	loose.angular_velocity = Vector3.UP.cross(d)*v/maxf(_ball.radius,0.05)
+	_gulp_sound.pitch_scale = 0.9
+	_gulp_sound.play()
+	_begin("shove")
+	_apply_feel(STOW_PACE)
+
+## At rest after a roll: on the ground again, flopping upright.
+func _settle() -> void:
+	state = "ground"
+	loose.lock_rotation = true
+	loose.angular_velocity = Vector3.ZERO
+	_settle_from = _sack.global_basis.orthonormalized().get_rotation_quaternion()
+	_settle_t = 0.0
+	var v := loose.linear_velocity
+	var f := -_sack.global_basis.z
+	if Vector2(f.x,f.z).length() < 0.1: f = Vector3(v.x,0.0,v.z) if Vector2(v.x,v.z).length() > 0.01 else Vector3.FORWARD
+	_rest_yaw = atan2(-f.x,-f.z)
+	_gulp_sound.pitch_scale = 0.65
+	_gulp_sound.play()
+
 func _hold_loose() -> void:
 	loose.freeze = true
 	loose.linear_velocity = Vector3.ZERO
@@ -522,7 +586,7 @@ func _process(delta: float) -> void:
 	var motor: Variant = study.get("motor")
 	if motor == null: return
 	_r = move_toward(_r,_r_to,delta*0.6)
-	if state != "worn": _ball.radius = _r*float(motor.size)*0.95
+	if state != "worn" and absf(_ball.radius-_r*float(motor.size)*0.95) > 0.002: _ball.radius = _r*float(motor.size)*0.95
 	_place_sack(delta)
 	_act_step(delta)
 	_drag_look(delta)
@@ -623,7 +687,22 @@ func _loose_xform(r: float, squash: Basis) -> Transform3D:
 		var rock := 0.12*sin(dragged*7.0)
 		var b := Basis(side,up,side.cross(up)).rotated(up,rock)
 		return Transform3D(b*squash,at+Vector3.UP*r*0.05)
-	var sit := Basis(Vector3.UP,_rest_yaw)*Basis.from_scale(Vector3(1.06,0.9,1.06))
+	if state == "roll":
+		# Tumbling with the ball, its belly bulging and easing as it thumps.
+		var bulge := 1.0+0.06*absf(sin(rolled/maxf(r,0.05)))
+		return Transform3D(loose.global_basis.orthonormalized()*squash*Basis.from_scale(Vector3(bulge,1.0/bulge,bulge)),at)
+	var turn := Basis(Vector3.UP,_rest_yaw)
+	if _settle_t >= 0.0:
+		# Flopping upright from how it stopped, a little overshoot.
+		_settle_t += get_process_delta_time()
+		var k := clampf(_settle_t/SETTLE_TIME,0.0,1.0)
+		var e := 1.0-pow(1.0-k,3.0)
+		turn = Basis(_settle_from.slerp(turn.get_rotation_quaternion(),e))
+		if k >= 1.0: _settle_t = -1.0
+		var flop := 1.0+0.12*sin(PI*k)
+		var sit := turn*Basis.from_scale(Vector3(1.06*flop,0.9/flop,1.06*flop))
+		return Transform3D(sit*squash,at+Vector3.DOWN*r*0.05*e)
+	var sit := turn*Basis.from_scale(Vector3(1.06,0.9,1.06))
 	return Transform3D(sit*squash,at+Vector3.DOWN*r*0.05)
 
 ## His hand that holds the neck (or near his hip).
@@ -705,12 +784,20 @@ static func _sack_at(R: float, depth: float, a: float, v: float, crease: float) 
 func _act_step(delta: float) -> void:
 	if act == "": return
 	_act_t += delta
-	var length := SET_TIME if act == "set" else LIFT_TIME
+	var length: float = {"set":SET_TIME,"shove":SHOVE_TIME}.get(act,LIFT_TIME)
 	var k := clampf(_act_t/length,0.0,1.0)
 	var sk := _skeleton()
 	if sk != null:
+		var axis := _forward().cross(Vector3.UP)
 		var chest := sk.find_bone("chest")
-		if chest >= 0: CarryHost._turn_bone(sk,chest,_forward().cross(Vector3.UP),-deg_to_rad(STOW_BEND)*sin(PI*k))
+		if act == "shove":
+			# A lunge: chest pitched in, both arms thrust out, quick in, held, back.
+			var push := sin(PI*minf(k*1.8,1.0)) if k < 0.56 else 1.0-smoothstep(0.56,1.0,k)
+			if chest >= 0: CarryHost._turn_bone(sk,chest,axis,-deg_to_rad(24.0)*push)
+			for arm: String in ["upper_arm.L","upper_arm.R"]:
+				var b := sk.find_bone(arm)
+				if b >= 0: CarryHost._turn_bone(sk,b,axis,-deg_to_rad(70.0)*push)
+		elif chest >= 0: CarryHost._turn_bone(sk,chest,axis,-deg_to_rad(STOW_BEND)*sin(PI*k))
 	if k >= 1.0:
 		if act == "lift":
 			_gulp_t = 0.0
@@ -730,6 +817,19 @@ func _drag_look(delta: float) -> void:
 		_gulp_sound.pitch_scale = 0.7
 		_gulp_sound.play()
 	_fall_v = v.y
+	if state == "roll":
+		# Thumps as the lumpy sack comes round, a puff with each.
+		_rope.visible = false
+		var sp := v.length()
+		rolled += sp*delta
+		_thump += sp*delta
+		if _thump >= PI*_r*float(study.get("motor").size) and sp > 0.6 and loose.get_contact_count() > 0:
+			_thump = 0.0
+			_gulp_sound.pitch_scale = randf_range(0.55,0.75)
+			_gulp_sound.play()
+			var puffs: Variant = study.get("puffs")
+			if puffs != null: puffs.burst(loose.global_position+Vector3.DOWN*_r*float(study.get("motor").size)*0.8,"stone",0.12,-Vector3(v.x,0.0,v.z).normalized())
+		return
 	if state != "drag":
 		_rope.visible = false
 		return
@@ -762,7 +862,10 @@ func _drag_look(delta: float) -> void:
 
 ## The rope's pull on a dragged bag: past ROPE_LEN it pulls toward his hand,
 ## harder as it stretches, up to PULL times its weight.
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
+	if state == "roll" and study != null:
+		_roll_step(delta)
+		return
 	if state != "drag" or study == null: return
 	var motor: Variant = study.get("motor")
 	var s: float = motor.size
@@ -773,6 +876,22 @@ func _physics_process(_delta: float) -> void:
 	loose.sleeping = false
 	var pull := clampf(stretch/(SLACK*s),0.0,1.0)*PULL*loose.mass*9.8
 	loose.apply_central_force(flat.normalized()*pull)
+
+## Rolling: the sack's drag while it touches ground, and its rest.
+func _roll_step(delta: float) -> void:
+	var v := loose.linear_velocity
+	var sp := v.length()
+	if loose.get_contact_count() > 0 and sp > 0.01:
+		loose.apply_central_force(-v/sp*minf(ROLL_DRAG*loose.mass*9.8,loose.mass*sp/maxf(delta,0.001)))
+	var motor: Variant = study.get("motor")
+	if loose.global_position.y < motor.feet.y-40.0:
+		# Lost off the world: back beside him.
+		loose.global_position = motor.feet+Vector3.UP*1.0
+		loose.linear_velocity = Vector3.ZERO
+	if sp < REST_SPEED and loose.angular_velocity.length() < 1.0:
+		_still_t += delta
+		if _still_t >= REST_TIME: _settle()
+	else: _still_t = 0.0
 
 ## Dragging: held to the rope's length and give from the bag (a caught bag
 ## holds him back). The study calls it after his motor's step, before his
@@ -897,7 +1016,7 @@ func _show_prompt() -> void:
 	if p.is_empty():
 		_prompt.visible = false
 		if busy or state != "ground" or not bag_near(): return
-		_prompt.text = "F  shoulder it" if wearable() else "F  drag it  (too heavy to wear)"
+		_prompt.text = ("F  shoulder it" if wearable() else "F  drag it  (too heavy to wear)")+"   ·   V  shove it"
 		_prompt.modulate = Color(1,1,1)
 		_prompt.global_position = loose.global_position+Vector3.UP*(_r*float(motor.size)+0.6)
 		_prompt.visible = true
@@ -915,7 +1034,7 @@ func _show_readout() -> void:
 	var on := int(round(clampf(kg/CAP,0.0,1.0)*cells))
 	var lines := PackedStringArray(["Bag  %s / %d kg  (wear to %d)" % [_kg(kg),int(CAP),int(WEAR_KG)],"[%s%s]" % ["#".repeat(on),"-".repeat(cells-on)]])
 	lines.append({"worn":"on his back","ground":"set down" if wearable() else "set down: too heavy to wear",
-		"drag":"dragging%s" % ("  (caught)" if caught else "")}.get(state,state))
+		"drag":"dragging%s" % ("  (caught)" if caught else ""),"roll":"rolling"}.get(state,state))
 	var w := drag_feel() if state == "drag" else feel_of(worn_kg())
 	lines.append("pace %d%%  jump %d%%" % [int(round(float(w.run)*100.0)),int(round(float(w.jump)*100.0))])
 	lines.append("no %s" % ", ".join(barred) if not barred.is_empty() else "every move")
