@@ -30,6 +30,8 @@ uniform float heart_gain = 1.6;
 // The wisps' drift (the wind, m/s) and their size (m).
 uniform vec3 drift = vec3(0.0);
 uniform float wisp = 9.0;
+// The dither's strength in output steps (0 off).
+uniform float dither = 1.5;
 
 void vertex() {
 	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
@@ -100,6 +102,14 @@ void fragment() {
 	float glow = clamp(flash, 0.0, 3.0) * (0.12 + 1.1 * bloom + heart_gain * heart) * (0.45 + 0.8 * lift);
 	base = mix(base, lit, clamp(glow * 0.75, 0.0, 0.97));
 	base += lit * clamp(flash, 0.0, 3.0) * heart * heart_gain * 0.35;
+	// Dither: the bloom is a smooth gradient over a wide flat area, and the
+	// 8-bit output steps it into hard concentric rings. Triangular noise of
+	// about one output step (scaled by the brightness, since the output is
+	// in linear light and a step there grows with it) breaks the rings up.
+	vec2 px = FRAGCOORD.xy;
+	float d1 = fract(52.9829189 * fract(dot(px, vec2(0.06711056, 0.00583715))));
+	float d2 = fract(52.9829189 * fract(dot(px + vec2(37.0, 17.0), vec2(0.06711056, 0.00583715))));
+	base += (d1 + d2 - 1.0) * dither * (0.02 + 2.2 * base) / 255.0;
 	ALBEDO = base;
 	ALPHA = clamp(max(thick, cover * k) * k, 0.0, 1.0);
 }

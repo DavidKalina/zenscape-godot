@@ -46,8 +46,9 @@ extends Node3D
 ## On their own (`step`): in a storm past FROM, at a mean of one every EVERY
 ## s in a full storm; a cell's or the front's core (their `storm_at` past
 ## CORE) and the murk (`murk`, 0 to 1: the hook whiteouts set each frame)
-## make them MORE times as likely at full, and close ones likelier
-## (CLOSE_SHARE). After one ends none comes on its own for REST s, so they
+## make them MORE times as likely at full (the murk MURK_MORE on top), and
+## close ones likelier (CLOSE_SHARE); past EVERY s of storm without one they
+## grow likelier still (DUE). After one ends none comes on its own for REST s, so they
 ## stay rare even deep in a cell. `call_now("far" / "close")` starts one now (K, Shift+K in
 ## studies/sky_weather_field.gd).
 ##
@@ -74,6 +75,13 @@ const FROM := 0.5
 const EVERY := 60.0
 const CORE := 0.85
 const MORE := 1.5
+## The murk (a whiteout) makes them MURK_MORE times more likely again at
+## full: a whiteout is where a close one is likeliest.
+const MURK_MORE := 4.0
+## The longer a storm goes without one (storm-weighted s since the last
+## ended, past EVERY), the likelier: DUE more per EVERY s overdue, so the
+## sky is never long empty in a storm.
+const DUE := 2.0
 const REST := 35.0
 const CLOSE_SHARE := Vector2(0.12,0.75)
 ## Far: range (m), its height over the eye (m), its glide along the line
@@ -191,6 +199,8 @@ var _at_kind := "far"
 var staged := ""
 var _frames := 0
 var _rest := 0.0
+## Storm-weighted s since the last sighting ended (for DUE).
+var _dry := 0.0
 var _clips := {}
 var _voices: Array[AudioStreamPlayer3D] = []
 var _next_voice := 0
@@ -279,11 +289,15 @@ func step(delta: float) -> void:
 		if _frames == _at_frame: call_now(_at_kind)
 	elif now.is_empty() and every > 0.0 and _rest > 0.0: _rest -= delta
 	elif now.is_empty() and every > 0.0:
-		var storm: float = _weather.storm
+		# A whiteout is storm air even once the plane is out of the core
+		# that dropped it (it outlives the core by seconds).
+		var storm: float = maxf(_weather.storm,murk)
 		if storm >= FROM:
 			var core := smoothstep(CORE,1.0,_core())
 			var deep := maxf(core,murk)
-			var rate := smoothstep(FROM,1.0,storm)/every*(1.0+MORE*deep)
+			var stormy := smoothstep(FROM,1.0,storm)
+			_dry += stormy*delta
+			var rate := stormy/every*(1.0+MORE*deep+MURK_MORE*murk)*(1.0+DUE*maxf(_dry-every,0.0)/every)
 			if _rng.randf() < rate*delta:
 				_begin("close" if _rng.randf() < lerpf(CLOSE_SHARE.x,CLOSE_SHARE.y,deep) else "far")
 	if now.is_empty(): lit = 0.0
@@ -506,6 +520,7 @@ func _advance(delta: float) -> void:
 		now = {}
 		lit = 0.0
 		_rest = REST
+		_dry = 0.0
 
 ## Lightning behind it from the eye, to light it; the second flash may show
 ## it gone.

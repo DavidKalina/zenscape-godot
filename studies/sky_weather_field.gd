@@ -27,8 +27,9 @@ extends "res://studies/plane_field_isle.gd"
 ##   Space        by the parked plane: climb in (the plane field's)
 ## On their own, a few minutes into weather (tuned together): a cell every
 ## few minutes passing over the field or an isle, a whiteout or two flying
-## through its core, and the dragon now and then (about one sighting every
-## two minutes in a full storm, rested 35 s after each).
+## through its core, and the dragon now and then: a strobe of 3 to 5 pulses,
+## about one a minute or so in a full storm (never within 35 s of the last,
+## likelier the longer it has been), likeliest in a whiteout.
 ##   ./run-sky-weather.command        (heavy on: --heavy)
 ##   ./run-sky-weather.command --storm=1   a full storm from the start
 ##   ./run-sky-weather.command --cell-at=-430,-240   a cell over the near isle
@@ -37,6 +38,17 @@ extends "res://studies/plane_field_isle.gd"
 ##   ./run-sky-weather.command --whiteout-at=200 --whiteout-hold=1   one held, for stills
 ##   ./run-sky-weather.command --cloud-drift=30   the cloud faster (m/s; 0 still)
 ##   ./run-sky-weather.command --storm=1 --sighting-every=20 --sighting-log   sightings often
+##   ./run-sky-weather.command --storm=1 --sighting-stage=over   every sighting
+##       staged so: close away|over|under, far away|toward (else picked)
+##   ./run-sky-weather.command --strobe=off   a sighting lit by one or two
+##       flashes, not the strobe's 3 to 5 pulses (to compare)
+##   ./run-sky-weather.command --hide=old   the dragon's old flat hide (H)
+##   --sighting-at=<frames> --sighting-kind=far|close   one sighting then, none on their own
+##   --murk=<0..1>   the murk pinned (the sightings' close odds)
+##   --sighting-hold, --strike-hold=, --strike-at= (and --strike-kind/-range/
+##       -bearing/-seed=)   flashes and sightings held or placed, for stills
+##   --front=<m> (--front-toward=<rad>)   a front already in, that far off
+##   --cell-speed=<m/s>, --whiteout-every=<s> (0: none on their own)
 ## The plane field's flags hold here.
 const PlaneWeather = preload("res://scripts/plane_weather.gd")
 const SkyIsles = preload("res://scripts/sky_isles.gd")
