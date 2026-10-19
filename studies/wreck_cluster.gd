@@ -23,6 +23,9 @@ extends "res://studies/kit_isle.gd"
 ##   Esc          pause (Resume, Back to the plane, New deal, ...)
 ##   ./run-wreck-cluster.command [--seed=N]
 ##   godot --path . res://studies/wreck_cluster.tscn -- --no-title [--seed=N]
+## --home starts on the home isle west of the stretch (studies/
+## wreck_cluster_home.gd), on foot beside the plane, which works (as with
+## --plane-fixed); it needs the stretch, so --no-stretch is ignored with it.
 ## --seed=N repeats a deal (the first; N re-deals from a fresh seed, printed
 ## and shown). --no-rune-knight leaves the knight out, --no-brood the
 ## stone brood. --plane-fixed starts
@@ -58,6 +61,7 @@ const Treasures = preload("res://studies/wreck_cluster_treasures.gd")
 const BroodHost = preload("res://scripts/brood/brood_host.gd")
 const Stretch = preload("res://studies/wreck_cluster_stretch.gd")
 const Dig = preload("res://scripts/dig/dig.gd")
+const Home = preload("res://studies/wreck_cluster_home.gd")
 
 ## The re-deal's key (free on foot and in the plane: scripts/pad.gd,
 ## scripts/kit_isle/dev_keys.gd).
@@ -101,8 +105,11 @@ var dig: Node3D = null
 var brood: Node3D = null
 var _rng := RandomNumberGenerator.new()
 var _ledger_was := []
+## --home: the start on the home isle (studies/wreck_cluster_home.gd).
+var home_on := false
 
 func _ready() -> void:
+	home_on = "--home" in LaunchArgs.user_args()
 	_keep_ledger_in_memory()
 	_no_lode = true
 	_rng.randomize()
@@ -156,6 +163,12 @@ func _load_pack() -> void:
 	var at := Art.PLANE_AT
 	start = Vector3(at.x-2.0,Art.STRIP_TOP,at.y-6.5)
 	start_face = Vector2(0.0,-1.0)
+	if home_on:
+		# Behind the plane's tail on the home strip, a little to its north,
+		# looking east past it down the strip toward the stretch.
+		at = Home.PLANE_AT
+		start = Vector3(at.x-5.0,Home.TOP,at.y+3.0)
+		start_face = Vector2(1.0,0.0)
 	lost = Art.TOP-35.0
 	_last_stood = start
 	stations = []
@@ -199,7 +212,7 @@ func _grow() -> void:
 		var land: Node3D = _stretch_lands[j]
 		# Its rays down from over its own top (the site's are the spine's).
 		var site := flora_site()
-		var top: float = Stretch.lands()[j][6]
+		var top: float = _stretch_tops[j]
 		site.ray = Vector2(top+60.0,top-8.0)
 		var more := KitFlora.grow(flora_seed()+1+j,space,KitLand.turf_bodies(land),[land.get_meta("outline")],site)
 		more.name = "Flora"+land.name
@@ -214,12 +227,14 @@ func sky_script() -> Script:
 func capture_look() -> Vector3:
 	return Vector3(80.0,Art.TOP+6.0,0.0)
 
-## The plane parked on the strip's west end, facing east down it.
+## The plane parked on the strip's east end, facing west down it; with
+## --home on the home strip's west end, facing east.
 func plane_home() -> Vector4:
-	var y := Art.STRIP_TOP
-	var top := _turf_top(get_world_3d().direct_space_state,Art.PLANE_AT.x,Art.PLANE_AT.y)
+	var at := Home.PLANE_AT if home_on else Art.PLANE_AT
+	var y := Home.TOP if home_on else Art.STRIP_TOP
+	var top := _turf_top(get_world_3d().direct_space_state,at.x,at.y)
 	if top != Vector3.INF: y = top.y
-	return Vector4(Art.PLANE_AT.x,y,Art.PLANE_AT.y,Art.PLANE_HEADING)
+	return Vector4(at.x,y,at.y,Home.PLANE_HEADING if home_on else Art.PLANE_HEADING)
 
 func _build_room() -> void:
 	_build_art()
@@ -251,6 +266,8 @@ func _build_art() -> void:
 	for t: Array in Art.flank_n_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	if _stretch_from >= 0:
 		for t: Array in Stretch.built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
+	if home_on:
+		for t: Array in Home.built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]),"home/")
 	_build_bridge()
 	_build_foot_pieces()
 	_build_spots()
@@ -269,11 +286,18 @@ func _build_art() -> void:
 var _stretch_from := -1
 var _stretch_lands: Array = []
 var _stretch_turf: Array = []
+var _stretch_tops: Array = []
 func _build_stretch_lands() -> void:
-	if "--no-stretch" in LaunchArgs.user_args(): return
+	if "--no-stretch" in LaunchArgs.user_args():
+		if not home_on: return
+		push_warning("wreck cluster: --home needs the stretch; --no-stretch ignored")
 	_stretch_from = _outlines.size()
-	for spec: Array in Stretch.lands():
-		var land := Stretch.build_land(spec)
+	var specs: Array = Stretch.lands()
+	# The home isle (--home) after the stretch's islets, grown as they are.
+	if home_on: specs.append(Home.land())
+	for spec: Array in specs:
+		var land := Home.build_land(spec) if str(spec[0]) == "home" else Stretch.build_land(spec)
+		_stretch_tops.append(float(spec[6]))
 		art.add_child(land)
 		lands[str(spec[0])] = land
 		add_turf(land)
@@ -306,9 +330,10 @@ func _clear_tail() -> void:
 		node.free()
 
 ## A kit piece stood at `foot` turned `yaw` degrees, named for the world
-## view (`wreck_cluster/<name>`; the layout file's move wins).
-func _place_piece(called: String, piece: Node3D, foot: Vector3, yaw: float) -> void:
-	var name := "wreck_cluster/"+called
+## view (`wreck_cluster/<name>`, or under `root`; the layout file's move
+## wins).
+func _place_piece(called: String, piece: Node3D, foot: Vector3, yaw: float, root := "wreck_cluster/") -> void:
+	var name := root+called
 	if LayoutOverrides.deleted(name):
 		piece.free()
 		return
