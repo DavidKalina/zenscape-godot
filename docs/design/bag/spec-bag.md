@@ -121,3 +121,24 @@ The user wants the throw aimed, not a fixed toss:
   so it can't launch him.
 - Name placed pieces through `scripts/layout_overrides.gd`
   (`bag_study/<piece>`) so the user can move them in the world view.
+
+## Task 7: tuning and the handoff (spec change)
+
+The user played rounds 2 to 6 and says it feels pretty good. Task 7 is
+a light pass: fix what reads wrong, don't rebalance.
+
+- **Aim camera:** while aiming, pull the play camera back and lower so the
+  arc reads as an arc and the reticle behind the throw wall shows.
+- **Lob:** a higher arc so the spot just behind the throw wall isn't red.
+- **The bag overhead:** show it in the wind-up and aim pose instead of
+  hiding it under his hat. Push the wind-up's arms too.
+- **Roll:** less drag, so a roll carries out toward the lower floor's rocks
+  and curbs.
+- **The handoff** (`docs/design/bag/handoff.md`, from the trail): what's
+  built, the controls, where to play it, what's stood in. Then list these
+  **open questions** from the user's play, for later. Record them as
+  questions; don't answer them or change the build for them:
+  - Rolling has no point yet: worn, he slides down the slope faster than
+    the bag rolls.
+  - Throwing has no point yet: the throw is short, and walking there is
+    faster.
