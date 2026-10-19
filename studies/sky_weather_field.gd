@@ -3,6 +3,8 @@ extends "res://studies/plane_field_isle.gd"
 ## plane_field_isle.gd) with the air made weather (scripts/plane_weather.gd):
 ## a storm that rolls in off the live sky, gusts that throw the nose off,
 ## and jet streams to ride: a loop round the field and a high one across.
+## Far isles round it (scripts/sky_isles.gd), 0.3 to 2 km off at their own
+## heights, for the weather to pass over and to fly to; the big ones land.
 ##   T            a storm front comes in on the wind (or is called off;
 ##                scripts/storm_front.gd)
 ##   Shift+T      the whole sky's storm rolls in, or clears
@@ -13,10 +15,30 @@ extends "res://studies/plane_field_isle.gd"
 ##   ./run-sky-weather.command --storm=1   a full storm from the start
 ## The plane field's flags hold here.
 const PlaneWeather = preload("res://scripts/plane_weather.gd")
+const SkyIsles = preload("res://scripts/sky_isles.gd")
 
 var elements: Node3D
 var _storming := false
 var _readout: Label
+## The far isles (scripts/sky_isles.gd `build`'s entries).
+var isles: Array = []
+
+func _build_art() -> void:
+	super._build_art()
+	isles = SkyIsles.build(art)
+	# Their turf is the plane's to skim and land on, as the field's is; but
+	# kept out of the field's own outlines (`add_turf`), which would grow the
+	# game's grass over every isle and stretch the field's circle round them.
+	for isle: Dictionary in isles:
+		for turf: StaticBody3D in FieldLand.turf_bodies(isle.land):
+			turf.collision_layer |= TURF_LAYER
+			_turf_rids.append(turf.get_rid())
+
+func sight_isles() -> Array:
+	var out := super.sight_isles()
+	for isle: Dictionary in isles:
+		out.append({"middle":isle.middle,"radius":isle.radius,"top":isle.top,"isle":self})
+	return out
 
 func _process(delta: float) -> void:
 	if elements == null and walk_ready and _precipitation != null: _add_elements()
