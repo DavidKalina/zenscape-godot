@@ -70,13 +70,28 @@ Flying the study, the user sees and hears:
    gives a cell passing an isle, a whiteout and a sighting or two. The
    study's readout and header comment list every key.
 
-## Order (the trunk)
+## Order: the trunk and one lane
 
-One loop, no lanes: the parts share `plane_weather.gd` and the study.
-Isles, then moving cloud and cells, then whiteouts, then the dragon
-(sound, far flash, close flash), then the tuning pass. The first iteration
-breaks these into tasks; each task ends in something the user can launch
-or a still they can look at.
+**Lane `dragon-sightings`** (part 4, the dragon in the lightning), on its
+own branch `lane/dragon-sightings` in the worktree
+`/Users/davidkalina/Documents/Projects/zenscape-dragon-lane`, run as its
+own short loop (sound and the sighting signal, then the far flash, then
+the close flash). Its commits are `ITER(storm-dragon): lane
+dragon-sightings: <task>`. It keeps its code in its own new file(s)
+(e.g. `scripts/dragon_sightings.gd`) and its edits to shared files
+(`plane_weather.gd`, `plane_lightning.gd`, the study) small and additive,
+and ends each commit with **Notes for merge**: the shared lines it
+touched. It reads how stormy it is from what is already there (the
+plane's storm, the cells' and front's `storm_at`) and gives the trunk one
+small hook for whiteouts to raise the chance of a close sighting (e.g. a
+`murk` value 0 to 1 the weather sets each frame); until whiteouts land, a
+key or flag stands in. The trunk iterations do not build the dragon.
+
+**The trunk** (this branch, `sky-game-loop-and-world`): isles, moving
+cloud, cells (done), then whiteouts. Then the lane is merged (by the loop
+runner, not an iteration) and whiteouts are wired to the lane's `murk`
+hook. Then the tuning pass over everything. Each task ends in something
+the user can launch or a still they can look at.
 
 ## Checks each iteration
 
