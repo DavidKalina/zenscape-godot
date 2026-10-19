@@ -65,6 +65,74 @@ const SETTLE_SPEED := 0.12
 const SETTLE_SPIN := 0.4
 const SETTLE_TIME := 0.6
 
+## Loading it into the plane's cargo sling (scripts/carry/cargo_sling.gd;
+## E by the sling where it lies on the ground, carrying): he reaches it
+## within SLING_REACH m (x size) of the basket's rim; the hand-over takes
+## HITCH_TIME of the class's lift, arcing HITCH_ARC m (x size) over the
+## rim; in, it bounces HITCH_BOUNCE m and settles over HITCH_SETTLE s.
+const SLING_REACH := 1.0
+const HITCH_TIME := 0.9
+const HITCH_ARC := 0.25
+const HITCH_BOUNCE := 0.05
+const HITCH_SETTLE := 0.35
+
+## The cargo bag (scripts/carry/cargo_sling.gd): empty, its belly's radius
+## BAG_R (m) and its rope BAG_ROPE (m); with kg in it, the belly swells by
+## BAG_R_KG times the root of the kg and the rope pays out BAG_ROPE_KG m a
+## kg (a full bag hangs low and swings wide; no count cap, weight caps it
+## in the plane). Empty, it rests BAG_REST m (past its radius) behind the
+## plane. Its belly hits the world as a ball BAG_BALL of its radius,
+## bouncing back BAG_BOUNCE of its speed into the hit; held back past its
+## rope by BAG_PIN m it pulls free.
+const BAG_R := 0.4
+const BAG_R_KG := 0.11
+const BAG_ROPE := 2.6
+const BAG_ROPE_KG := 0.11
+const BAG_REST := 2.2
+const BAG_BALL := 0.8
+const BAG_BOUNCE := 0.2
+const BAG_PIN := 1.5
+## Spilling: a hit this hard (m/s into what it hit) spills one, the last
+## loaded; each SPILL_STEP harder spills one more. No second spill for
+## SPILL_GRACE s (one blow, one spill). Spilled, a treasure leaves with the
+## bag's velocity times SPILL_KEEP, thrown out of the hit SPILL_OUT m/s and
+## up SPILL_UP m/s, tumbling (task 5's loose body).
+const SPILL_SPEED := 3.0
+const SPILL_STEP := 3.5
+const SPILL_GRACE := 0.35
+const SPILL_KEEP := 0.7
+const SPILL_OUT := 2.5
+const SPILL_UP := 1.5
+## The load: what the bag's kg does to the plane (one table). `w` is the kg
+## over LOAD["max_kg"], the most it takes off with; each row is its effect
+## at w = 1, eased in linearly from an empty bag.
+##   max_kg   the takeoff limit (kg): past it the plane won't leave the
+##            ground (it won't lift off the wheels, and it stops at the
+##            land's edge rather than roll off it)
+##   heavy    the plane's weight model (scripts/sky_plane.gd `heavy`, the
+##            `--heavy` flag's: the path swings after the nose, a pull-up
+##            mushes, a turn skids, the climb costs speed, a bank sinks)
+##   climb    the share of the climb it loses (a slower climb)
+##   roll     the share of the throttle's push it loses rolling (a longer
+##            takeoff roll)
+##   lift     m/s more it needs to lift off the wheels
+##   unstick  times longer it hangs heavy off the wheels (and slower its
+##            speed builds then)
+##   dip      m/s more the wings need off an edge before they catch it
+##   over_top past max_kg, the most the throttle rolls it (m/s): the load
+##            drags, it can't get going (and bumps to a stop at the edge)
+const LOAD := {"max_kg":20.0,"over_top":4.0,"heavy":1.0,"climb":0.3,"roll":0.45,"lift":1.2,"unstick":0.8,"dip":1.5}
+
+## The load's effects for `kg` in the bag: w (kg over max_kg), over (past
+## the takeoff limit) and each row of LOAD at that w.
+static func load_of(kg: float) -> Dictionary:
+	var w := maxf(kg,0.0)/float(LOAD.max_kg)
+	var at := clampf(w,0.0,1.0)
+	return {"kg":kg,"w":w,"over":kg > float(LOAD.max_kg)+0.001,"heavy":float(LOAD.heavy)*at,
+		"climb":float(LOAD.climb)*at,"roll":float(LOAD.roll)*at,"lift":float(LOAD.lift)*at,
+		"unstick":1.0+float(LOAD.unstick)*at,"dip":float(LOAD.dip)*at,
+		"top":float(LOAD.over_top) if kg > float(LOAD.max_kg)+0.001 else INF}
+
 ## Class `weight`'s row (light's when unknown).
 static func of(weight: String) -> Dictionary:
 	return CLASSES.get(weight,CLASSES["light"])

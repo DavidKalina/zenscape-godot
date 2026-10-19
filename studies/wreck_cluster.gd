@@ -55,6 +55,7 @@ const IsleFlora = preload("res://studies/aqueduct_isle_flora.gd")
 const CarryHost = preload("res://scripts/carry/carry_host.gd")
 const Treasures = preload("res://studies/wreck_cluster_treasures.gd")
 const BroodHost = preload("res://scripts/brood/brood_host.gd")
+const Stretch = preload("res://studies/wreck_cluster_stretch.gd")
 
 ## The re-deal's key (free on foot and in the plane: scripts/pad.gd,
 ## scripts/kit_isle/dev_keys.gd).
@@ -175,8 +176,30 @@ func flora_site() -> KitFlora.Site:
 	return IsleFlora.carpeted(motif.flora_site())
 
 func _grow() -> void:
+	if _stretch_from < 0:
+		super._grow()
+		IsleFlora.calm(flora)
+		return
+	# The stretch's islets grow apart: the flora's tries scale with the box
+	# round all its outlines, and theirs stretch it 700 m west.
+	var outlines := _outlines
+	var turf := _turf
+	_outlines = outlines.slice(0,_stretch_from)
+	_turf = turf.filter(func(t: Node) -> bool: return not _stretch_turf.has(t))
 	super._grow()
+	_outlines = outlines
+	_turf = turf
 	IsleFlora.calm(flora)
+	var space := get_world_3d().direct_space_state
+	for j in range(_stretch_lands.size()):
+		var land: Node3D = _stretch_lands[j]
+		# Its rays down from over its own top (the site's are the spine's).
+		var site := flora_site()
+		var top: float = Stretch.lands()[j][6]
+		site.ray = Vector2(top+60.0,top-8.0)
+		var more := KitFlora.grow(flora_seed()+1+j,space,KitLand.turf_bodies(land),[land.get_meta("outline")],site)
+		more.name = "Flora"+land.name
+		art.add_child(more)
 
 func flora_seed() -> int:
 	return 421
@@ -214,6 +237,7 @@ func _build_art() -> void:
 		add_turf(land)
 		WorldIslands.add("island/"+str(spec[0]),land,float(spec[6]))
 		if not "--no-turf-lips" in LaunchArgs.user_args(): TurfLips.dress(land,hash(land.name))
+	_build_stretch_lands()
 	if not LayoutOverrides.islands().is_empty(): isle_ready.connect(_place_saved_islands,CONNECT_ONE_SHOT)
 	for p: Array in Art.pieces(): _place_piece(str(p[0]),RuinKit.piece(str(p[1]),int(p[2]),float(p[3])),p[4],float(p[5]))
 	for t: Array in Art.tower(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
@@ -221,6 +245,8 @@ func _build_art() -> void:
 	for t: Array in Art.causeway_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	for t: Array in Art.flank_s_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	for t: Array in Art.flank_n_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
+	if _stretch_from >= 0:
+		for t: Array in Stretch.built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	_build_bridge()
 	_build_foot_pieces()
 	_build_spots()
@@ -230,6 +256,35 @@ func _build_art() -> void:
 		add_child(editor)
 		editor.setup(self,foot_host)
 	print("wreck cluster: %d triangles, built in %d ms" % [triangles(art),Time.get_ticks_msec()-began])
+
+## The haul home's stretch west of the strip (studies/wreck_cluster_stretch.
+## gd; --no-stretch leaves it out): its two islets as the cluster's lands
+## (world-view islands `island/stretch_islet_a`, `_b`); its pieces are laid
+## with the cluster's. The isle's circle (the lock, the life's reach) stays
+## the cluster's own: `_stretch_from` is where the stretch's outlines start.
+var _stretch_from := -1
+var _stretch_lands: Array = []
+var _stretch_turf: Array = []
+func _build_stretch_lands() -> void:
+	if "--no-stretch" in LaunchArgs.user_args(): return
+	_stretch_from = _outlines.size()
+	for spec: Array in Stretch.lands():
+		var land := Stretch.build_land(spec)
+		art.add_child(land)
+		lands[str(spec[0])] = land
+		add_turf(land)
+		_stretch_lands.append(land)
+		_stretch_turf.append_array(KitLand.turf_bodies(land))
+		WorldIslands.add("island/"+str(spec[0]),land,float(spec[6]))
+		if not "--no-turf-lips" in LaunchArgs.user_args(): TurfLips.dress(land,hash(land.name))
+
+func isle_circle() -> Vector3:
+	if _stretch_from < 0 or _stretch_from >= _outlines.size(): return super.isle_circle()
+	var all := _outlines
+	_outlines = all.slice(0,_stretch_from)
+	var circle := super.isle_circle()
+	_outlines = all
+	return circle
 
 ## The spine's tail cut (spec: clean up the floating rocks and debris):
 ## its five fragments, the stepping stones between them, the rope bridges

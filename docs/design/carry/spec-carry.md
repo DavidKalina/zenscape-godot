@@ -54,8 +54,8 @@ small and additive. Leave digging to that loop.
 
 ## Out of scope
 
-Throwing, digging (loop `dig`), the load's effect on flight, treasures
-outside the wreck cluster, committed tests.
+Throwing, digging (loop `dig`), treasures outside the wreck cluster and
+its stretch, committed tests.
 
 ## Proof, per task
 
@@ -74,6 +74,44 @@ outside the wreck cluster, committed tests.
   `docs/art/model-budget.md` tricks that apply.
 - Runs use `--ledger=/tmp/...`; drivers write only to `/tmp` or `scratch/`.
   Don't touch the user's saved layouts.
+
+## Spec change (after task 6): the haul home
+
+The user wants the flight out with a load to be its own adventure. The
+cargo sling becomes a bag that grows, can spill, weighs the plane down and
+can break it. Built as four more tasks, in this order, each playable:
+
+7. **The stretch.** A mid-length flight out from the cluster (roughly 30–60 s
+   at cruise) through open sky with things to hit: floating rocks, broken
+   spans, drifting debris, a few gaps and arches to thread. Some of it runs
+   over land (low islets or ledges under the line) and some over open sky.
+   Any land the plane can reach keeps a clear turf strip long enough to land
+   by hand (AGENTS.md). Size gaps from a toy width with
+   `WorldScale.opening()`, and name every piece through
+   `scripts/layout_overrides.gd` (`wreck_cluster/stretch/<piece>`) so the
+   user can move it in F4. In the wreck cluster study, not a new scene.
+8. **The bag.** The net becomes a sack that swells with what's in it (size
+   from the total weight), and its rope lengthens as it fills, so a full bag
+   hangs low and swings wide. No count cap: weight caps it (task 9). The bag
+   gets real collision. A hit spills treasure, more the harder the hit;
+   spilled treasures fall as loose bodies (task 5's): onto land they come to
+   rest where you can land or walk to them and carry them back; over open
+   sky they are lost for the deal.
+9. **Load.** The bag's weight feeds the plane's weight model (the `--heavy`
+   work, `4f30770c` and `59c8bef6`): a longer takeoff roll, a slower climb,
+   pull-ups that mush, turns that swing on after the nose. Past a weight the
+   plane can't get off the ground. Keep the numbers in one table.
+10. **Strain.** Strain builds from the load and from hard moves (tight turns,
+    pull-ups, hits) and eases off in calm flight. It shows on the plane, not
+    in a meter: creaks, wing flex, a labouring engine, rattling struts. At the
+    breaking point a plane part snaps off and the plane must put down (it
+    loses power or control enough that flying on isn't possible). The part
+    falls like a spill: onto land it can be found there; over open sky it
+    goes back to a part spot in the cluster, so a deal is never unwinnable.
+
+Proof as above: the smoke check, a real-input driver per task (fly the
+stretch with the stick, not scripted positions, where the task is about
+flying), and rendered stills or captures looked at.
 
 ## Loop
 
