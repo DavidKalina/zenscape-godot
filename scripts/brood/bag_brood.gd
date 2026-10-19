@@ -75,6 +75,14 @@ var _pops: Array = []
 var burials := 0
 var digs_out := 0
 var dig_cuts := 0
+## Going home: guy -> the burrow he's walking to (or going down into); the
+## time with nothing to take; how many went down; the bag's last kg (a rise
+## is a piece bagged).
+var homing := {}
+var calm_t := 0.0
+var gone_home := 0
+var rewakes := 0
+var _last_kg := 0.0
 
 func setup_bag(host: Node3D, holes: Array) -> void:
 	setup(host)
@@ -95,6 +103,8 @@ func clear() -> void:
 	_idle_t = 0.0
 	guard_of.clear()
 	_guard_hole = null
+	homing.clear()
+	calm_t = 0.0
 	super.clear()
 	if bag != null: bag.set_slow(1.0)
 
@@ -113,6 +123,12 @@ func _on_him() -> bool:
 func _tick(delta: float) -> void:
 	if study == null or bag == null or not bool(study.get("walk_ready")): return
 	if not woken and (float(bag.kg) > 0.0 or not (bag.stowing as Dictionary).is_empty()): wake_burrows()
+	# A piece bagged again wakes as many as went home.
+	if woken and float(bag.kg) > _last_kg+0.01 and guys.size() < count:
+		rewakes += 1
+		print("brood: a piece bagged; %d come up again" % (count-guys.size()))
+		wake_burrows(count-guys.size())
+	_last_kg = float(bag.kg)
 	if guys.is_empty(): return
 	var dt := minf(delta,1.0/30.0)
 	var space := get_world_3d().direct_space_state
@@ -133,6 +149,7 @@ func _tick(delta: float) -> void:
 	_grace_t = maxf(_grace_t-dt,0.0)
 	_prune_strays()
 	_lift_watch(m,dt)
+	_home_watch(m,dt)
 	var busy := _busy()
 	var sent := _send_to_strays(busy)
 	_send_to_bag(busy,sent)
@@ -140,6 +157,9 @@ func _tick(delta: float) -> void:
 	for i: int in guys.size():
 		var g: RefCounted = guys[i]
 		if g.state == "lost": continue
+		if homing.has(g):
+			_home_step(g,space,dt)
+			continue
 		if guard_of.has(g):
 			_guard_step(g,i,m,guarded,used,space,dt)
 			continue
@@ -165,6 +185,7 @@ func _tick(delta: float) -> void:
 	_strays_step(m,space,dt)
 	_lift_step(m,space,dt)
 	_pops_step(dt)
+	_put_away()
 	var dig: Variant = study.get("dig")
 	if clinging > 0 and dig != null and dig.motion != null:
 		dig.end_dig()
@@ -177,6 +198,7 @@ func _busy() -> Dictionary:
 	for st: Dictionary in strays: for g: RefCounted in st.crew: busy[g] = st
 	if not lift.is_empty(): for g: RefCounted in lift.crew: busy[g] = lift
 	for g: RefCounted in guard_of: busy[g] = {"guard":guard_of[g]}
+	for g: RefCounted in homing: busy[g] = {"home":homing[g]}
 	return busy
 
 ## The clingers moved with him, his paces held back, the shove.
@@ -563,7 +585,8 @@ func _lift_down() -> void:
 
 ## Wakes `count` guys out of the burrows, dealt round them nearest the bag
 ## first; each burrow's guys come up one after another.
-func wake_burrows() -> void:
+func wake_burrows(n := -1) -> void:
+	if n < 0: n = count
 	woken = true
 	var holes: Array = []
 	for b: Node3D in burrows:
@@ -574,13 +597,13 @@ func wake_burrows() -> void:
 	var from := bag_at()
 	if from == Vector3.INF: from = (holes[0] as Node3D).global_position
 	holes.sort_custom(func(a: Node3D, b: Node3D) -> bool: return a.global_position.distance_to(from) < b.global_position.distance_to(from))
-	for i: int in count:
+	for i: int in n:
 		var hole: Node3D = holes[i % holes.size()]
 		var turn := i/holes.size()
 		var g: RefCounted = spawn(hole.global_position)
 		var wait := float(turn)*K.BURROW_STAGGER+_rng.randf()*K.WAKE_JITTER+float(i % holes.size())*K.WAKE_STAGGER
 		g.rise_at(hole.global_position,wait,K.WAKE_HOLD*_rng.randf_range(0.5,1.5))
-	print("brood: woke %d out of %d burrows (nearest %.1f m)" % [count,holes.size(),(holes[0] as Node3D).global_position.distance_to(from)])
+	print("brood: woke %d out of %d burrows (nearest %.1f m)" % [n,holes.size(),(holes[0] as Node3D).global_position.distance_to(from)])
 
 # --- The burial: guards, and the dig ----------------------------------------------------
 
@@ -681,3 +704,55 @@ func _pops_step(dt: float) -> void:
 		var at: Vector3 = (pp.from as Vector3).lerp(pp.to,k)+Vector3.UP*0.7*K.s()*sin(PI*k)
 		(pp.node as Node3D).global_transform = Transform3D(Basis(Vector3.UP,float(pp.yaw)+k*5.0),at)
 		if k >= 1.0: _pops.erase(pp)
+
+# --- Going home ----------------------------------------------------------------------
+
+## Anything for them to take: loot on him, the bag lying loose with loot in
+## it (or being hauled), a ripped piece about.
+func _something_to_take() -> bool:
+	if not strays.is_empty() or not lift.is_empty(): return true
+	if float(bag.kg) <= 0.0 or bool(bag.buried): return false
+	return true
+
+## The calm clock (nothing to take, none on him); past HOME_AFTER the free
+## ones head home, past GUARD_HOME_AFTER the guards too (not while he's at
+## their burrow). Something to take again: the ones still walking home turn
+## back.
+func _home_watch(m: Variant, dt: float) -> void:
+	var calm := not _something_to_take() and clinging == 0 and m != null
+	calm_t = calm_t+dt if calm else 0.0
+	if not calm:
+		for g: RefCounted in homing.keys():
+			if g.state != "sink" and g.state != "home": homing.erase(g)
+		return
+	if calm_t < K.HOME_AFTER: return
+	var guards := calm_t >= K.GUARD_HOME_AFTER
+	for g: RefCounted in guys:
+		if homing.has(g) or g.state == "lost" or g.state == "wake": continue
+		if g.state != "walk" and g.state != "climb" and g.state != "mantle" and g.state != "fall": continue
+		var hole: Node3D = null
+		if guard_of.has(g):
+			if not guards or guard_of[g] == _guard_hole: continue
+			hole = guard_of[g]
+			guard_of.erase(g)
+		else: hole = _nearest_hole(g.feet)
+		if hole == null: continue
+		homing[g] = hole
+		if homing.size() == 1: print("brood: nothing to take for %.0f s; they head home" % calm_t)
+
+## A guy going home: walk to the mouth, then down into it.
+func _home_step(g: RefCounted, space: PhysicsDirectSpaceState3D, dt: float) -> void:
+	var h: Vector3 = (homing[g] as Node3D).global_position
+	if g.state == "walk" and Vector2(g.feet.x-h.x,g.feet.z-h.z).length() < K.HOME_DOWN*K.s() and absf(float(g.feet.y)-h.y) < float(g.tall)*1.5:
+		g.sink_at(h)
+	g.step(space,h,dt)
+
+## The ones gone down: off the board.
+func _put_away() -> void:
+	for g: RefCounted in homing.keys():
+		if g.state != "home": continue
+		homing.erase(g)
+		guys.erase(g)
+		(g.node as Node3D).queue_free()
+		gone_home += 1
+		if guys.is_empty(): print("brood: all home (%d went down)" % gone_home)

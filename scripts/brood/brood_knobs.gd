@@ -148,6 +148,17 @@ const GUARD_LEAVE := 5.0
 const GUARD_DAZE := 2.6
 ## The bag buried, the rest trail him TRAIL_RING m off (no clinging).
 const TRAIL_RING := 2.6
+## Going home (the bag study): with nothing to take (no loot on him, no
+## loose bag with loot in it, no ripped piece about) and none on him for
+## HOME_AFTER s, the free ones walk to the nearest burrow and go down into
+## it (SINK_TIME s, the rise played back); the guards follow after
+## GUARD_HOME_AFTER s of it, unless he's at their burrow. Within HOME_DOWN
+## (m, across) of the mouth they go down. A piece bagged again wakes as
+## many as went home.
+const HOME_AFTER := 6.0
+const GUARD_HOME_AFTER := 20.0
+const SINK_TIME := 1.1
+const HOME_DOWN := 1.3
 const DIG_REACH := 1.5
 const PILE_OUT := 1.1
 const PILE_HOP := 2.5

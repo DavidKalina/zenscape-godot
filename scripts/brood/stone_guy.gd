@@ -66,6 +66,8 @@ var _w_lip := 0.0
 var _w_hold := 0.0
 ## Waking out of a burrow (rise_at): up out of the floor, not over a lip.
 var _w_burrow := false
+## Going home (sink_at): where he stood when he started down.
+var _s_from := Vector3.ZERO
 ## Clinging: his slot on the wanderer (-1 none) and, shaken off, the time
 ## left before he grabs again.
 var slot := -1
@@ -178,6 +180,38 @@ func _rise(u: float, dt: float) -> void:
 		start_y = feet.y
 		state = "walk"
 
+## Going home (the rise played back): he steps onto the burrow's mouth at
+## `floor_at`, looks round, hops and drops down into it, arms up (SINK_TIME
+## s), then "home": hidden, for the host to put away.
+func sink_at(floor_at: Vector3) -> void:
+	state = "sink"
+	_w_at = floor_at
+	_w_lip = floor_at.y
+	_w_t = 0.0
+	_s_from = feet
+	face_n = Vector3.UP
+	hauling = false
+	pace = 1.0
+	slot = -1
+	var to := _flat(floor_at-feet)
+	if to.length() > 0.05: heading = to.normalized()
+
+func _sink(dt: float) -> void:
+	_w_t += dt
+	var u := clampf(_w_t/K.SINK_TIME,0.0,1.0)
+	var over := Vector3(_w_at.x,_s_from.y,_w_at.z)
+	var flat := _s_from.lerp(over,smoothstep(0.0,0.3,u))
+	# Stand (0.5 under the lip: on it), a little hop at 0.55, then down.
+	var under := 0.5
+	if u >= 0.5 and u < 0.62: under = 0.5+0.25*sin(PI*(u-0.5)/0.12)
+	elif u >= 0.62: under = lerpf(0.5,-0.85,smoothstep(0.62,1.0,u))
+	mid = Vector3(flat.x,lerpf(_s_from.y,_w_lip,smoothstep(0.0,0.3,u))+(under-0.5)*tall+tall*0.5,flat.z)
+	feet = mid-Vector3.UP*tall*0.5
+	_swing(dt*4.0 if u < 0.3 else 0.0,dt)
+	if u >= 1.0:
+		state = "home"
+		node.visible = false
+
 # --- Rays ----------------------------------------------------------------------------
 
 func _cast(space: PhysicsDirectSpaceState3D, a: Vector3, b: Vector3) -> Dictionary:
@@ -193,6 +227,8 @@ func step(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 	daze = maxf(daze-dt,0.0)
 	match state:
 		"wake": _wake(dt)
+		"sink": _sink(dt)
+		"home": return
 		"walk": _walk(space,goal,dt)
 		"climb": _climb(space,goal,dt)
 		"mantle": _mantle(dt)
@@ -706,6 +742,12 @@ func _swing(moved: float, dt: float) -> void:
 		"mantle":
 			var u := clampf(_m_t,0.0,1.0)
 			want = {"al":2.6-1.6*u,"ar":2.6-1.6*u,"ll":1.2*sin(u*PI),"lr":1.0*sin(u*PI),"pitch":0.7*sin(u*PI),"head":-0.3,"bob":0.0}
+		"sink":
+			# Looking round on the mouth, then arms up as he drops in.
+			var u := clampf(_w_t/K.SINK_TIME,0.0,1.0)
+			if u > 0.3 and u < 0.55: look = 0.6*sin((u-0.3)*25.0+side)
+			if u >= 0.55: want = {"al":3.0,"ar":2.9,"ll":0.5,"lr":0.3,"pitch":0.0,"head":-0.4,"bob":0.0}
+			else: want = {"al":0.0,"ar":0.0,"ll":0.0,"lr":0.0,"pitch":0.0,"head":0.0,"bob":0.0}
 		"fall":
 			want = {"al":2.2,"ar":2.0,"ll":0.6,"lr":-0.4,"pitch":-0.2,"head":0.2,"bob":0.0}
 		_:
