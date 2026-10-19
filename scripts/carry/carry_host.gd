@@ -33,12 +33,22 @@ extends Node3D
 ##   lifted from there. Fallen under the isle (`lost` on the study) it is
 ##   lost for the deal.
 ##
-## `deal()` puts every treasure back on its spot (the scene's re-deal).
+## - the plane trails a cargo sling on a rope (scripts/carry/cargo_sling.gd,
+##   made with the plane): parked, it lies on the turf behind it. Pressed
+##   carrying by the sling, he turns to it and lowers the load in over its
+##   rim; it rides in the sling from then: dragged as the plane taxis,
+##   swinging under it in flight. Pressed there empty-handed he takes the
+##   last one loaded back out.
+##
+## `deal()` puts every treasure back on its spot (the scene's re-deal),
+## the loaded ones too.
 const Weights = preload("res://scripts/carry/carry_weights.gd")
 const Models = preload("res://scripts/carry/treasure_models.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const Pad = preload("res://scripts/pad.gd")
 const GenesisAudio = preload("res://scripts/genesis_audio.gd")
+const PilotMotor = preload("res://scripts/pilot_motor.gd")
+const CargoSling = preload("res://scripts/carry/cargo_sling.gd")
 
 ## What he stands on and sets things down on.
 const SOLID_MASK := 1|(1 << 11)
@@ -83,7 +93,8 @@ var study: Node3D = null
 var scene_id := ""
 ## The treasures: [{id, kind, weight, spot (Node3D), node (Node3D), measures,
 ## body (RigidBody3D while loose, else null), still (s it has lain still),
-## lost (fell off the isle this deal)}].
+## lost (fell off the isle this deal), slot (its spot in the sling, -1
+## none), strapped (s since it was loaded)}].
 var treasures: Array = []
 ## The one in his hands ({} none), and its phase: "lift", "carry", "set".
 var held: Dictionary = {}
@@ -113,6 +124,11 @@ var _knocks := 0
 var _air_top := -INF
 var drops := 0
 var losses := 0
+## The hitch: the plane's sling (null until the plane is drawn), the spot
+## the one in his hands goes to, how many have been loaded (drivers).
+var sling: Node3D = null
+var _slot_to := -1
+var hitches := 0
 static var _thud_take: AudioStreamWAV = null
 
 ## Stands the treasures in `spec` ([id, kind, weight, foot (world), yaw deg])
@@ -136,7 +152,7 @@ func setup(host: Node3D, id_scene: String, spec: Array) -> void:
 		node.name = "Treasure_"+str(row[0])
 		node.add_child(made.node as Node3D)
 		spot.add_child(node)
-		treasures.append({"id":str(row[0]),"kind":str(row[1]),"weight":str(row[2]),"spot":spot,"node":node,"measures":made,"body":null,"still":0.0,"lost":false})
+		treasures.append({"id":str(row[0]),"kind":str(row[1]),"weight":str(row[2]),"spot":spot,"node":node,"measures":made,"body":null,"still":0.0,"lost":false,"slot":-1,"strapped":0.0})
 	_prompt = Label3D.new()
 	_prompt.name = "Prompt"
 	_prompt.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -162,6 +178,7 @@ func deal() -> void:
 
 func _home(t: Dictionary) -> void:
 	_unloose(t)
+	_unstrap(t)
 	t.lost = false
 	var node: Node3D = t.node
 	node.visible = true
@@ -188,9 +205,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not _on_foot(): return
 	if held.is_empty():
 		var t := in_reach()
+		if t.is_empty(): t = _last_hitched() if _by_sling() else {}
 		if t.is_empty(): return
 		lift(t)
-	elif phase == "carry": set_down()
+	elif phase == "carry":
+		if _by_sling(): hitch()
+		else: set_down()
 	else: return
 	get_viewport().set_input_as_handled()
 
@@ -209,7 +229,7 @@ func in_reach() -> Dictionary:
 	var best := {}
 	var near := REACH*s
 	for t: Dictionary in treasures:
-		if t == held or bool(t.lost): continue
+		if t == held or bool(t.lost) or int(t.slot) >= 0: continue
 		if t.body != null and not (t.body as RigidBody3D).freeze: continue
 		var at: Vector3 = (t.node as Node3D).global_position
 		var across := Vector2(at.x-feet.x,at.z-feet.z).length()-float(t.measures.radius)
@@ -223,6 +243,7 @@ func in_reach() -> Dictionary:
 ## Starts the heave of `t`: off its spot, into his hands over its lift.
 func lift(t: Dictionary) -> void:
 	var node: Node3D = t.node
+	_unstrap(t)
 	_ground_at = node.global_transform
 	_unloose(t)
 	node.get_parent().remove_child(node)
@@ -264,6 +285,7 @@ func _let_go() -> void:
 
 func _process(delta: float) -> void:
 	if study == null or not bool(study.get("walk_ready")): return
+	_sling_step(delta)
 	if not held.is_empty():
 		if bool(study.get("flying")):
 			var t := held
@@ -274,6 +296,7 @@ func _process(delta: float) -> void:
 			if not held.is_empty(): _carry_step(delta)
 	for t: Dictionary in treasures:
 		if t.body != null: _loose_step(t,delta)
+		if int(t.slot) >= 0: _ride(t,delta)
 	_show_prompt()
 
 # --- Dropping ----------------------------------------------------------------------
@@ -511,14 +534,30 @@ func _carry_step(delta: float) -> void:
 		"set":
 			phase_t += delta
 			k = clampf(phase_t/(lift_time*SET_TIME),0.0,1.0)
+		"hitch":
+			phase_t += delta
+			k = clampf(phase_t/(lift_time*Weights.HITCH_TIME),0.0,1.0)
+			var slot: Variant = _slot_xform(_slot_to)
+			if slot == null:
+				# The sling went (boarded): he keeps it.
+				phase = "carry"
+				_apply_feel(1.0)
+				return
+			_ground_at = slot
+			_face(_ground_at.origin,delta)
 	var pose := _pose_at(phase,k,w)
 	_pose_body(pose,w,delta)
 	_balk_pose(delta)
 	var hands := _hold_xform()
 	node.global_transform = _ground_at.interpolate_with(hands,pose[4])
+	if phase == "hitch":
+		# Lifted in over the rim, not through the net.
+		var s: float = study.get("motor").size
+		node.global_position += Vector3.UP*Weights.HITCH_ARC*s*sin(PI*clampf(float(pose[4]),0.0,1.0))
 	_reach_arms(node.global_transform,maxf(pose[3],0.0001))
 	_load_feel(delta)
 	if phase == "set" and k >= 1.0: _let_go()
+	elif phase == "hitch" and k >= 1.0: _strap()
 
 ## The body's pose at `k` through `ph` ("lift", "carry", "set") for the
 ## weight row `w`: [hips' drop (m), bend over (deg), lean back (deg), the
@@ -553,6 +592,16 @@ static func _pose_at(ph: String, k: float, w: Dictionary) -> Array:
 			settle[0] += float(w.squat)*0.35*s
 			settle[2] += float(w.lean)*0.6*s
 			return settle
+		"hitch":
+			# Lowered in over the sling's rim: half the set-down's crouch,
+			# bent over it.
+			var push := [float(w.squat)*0.55,float(w.bend)*0.8,0.0,1.0,0.0]
+			if k < SET_DOWN: return _mix(carry,push,_ease(k/SET_DOWN))
+			if k < SET_LET: return push
+			var u := _mix(push,stand,_ease((k-SET_LET)/(1.0-SET_LET)))
+			u[3] = 1.0-_ease(minf((k-SET_LET)/(1.0-SET_LET)*2.0,1.0))
+			u[4] = 0.0
+			return u
 		"set":
 			if k < SET_DOWN: return _mix(carry,low,_ease(k/SET_DOWN))
 			if k < SET_LET: return low
@@ -750,11 +799,25 @@ func _restore_feel() -> void:
 # --- The prompt ----------------------------------------------------------------------
 
 func _show_prompt() -> void:
-	var t := {} if not _on_foot() or not held.is_empty() else in_reach()
-	if t.is_empty():
-		_prompt.visible = false
+	_prompt.visible = false
+	if not _on_foot(): return
+	if not held.is_empty():
+		if phase != "carry" or not _by_sling(): return
+		var free := _free_slot()
+		if free < 0: return
+		var at: Variant = _slot_xform(free)
+		if at == null: return
+		_prompt.text = Pad.pick("E  load it in the sling","B  load it in the sling")
+		_prompt.global_position = (at as Transform3D).origin+Vector3.UP*(float(held.measures.height)+0.3)
+		_prompt.visible = true
 		return
-	_prompt.text = Pad.pick("E  lift","B  lift")
+	var t := in_reach()
+	var line := Pad.pick("E  lift","B  lift")
+	if t.is_empty() and _by_sling():
+		t = _last_hitched()
+		line = Pad.pick("E  take it out","B  take it out")
+	if t.is_empty(): return
+	_prompt.text = line
 	_prompt.global_position = (t.node as Node3D).global_position+Vector3.UP*(float(t.measures.height)+0.3)
 	_prompt.visible = true
 
@@ -766,3 +829,96 @@ func _ground_under(p: Vector3, over: float, under: float) -> Vector3:
 	var hit := space.intersect_ray(ray)
 	if hit.is_empty() or (hit.normal as Vector3).y < 0.6: return Vector3.INF
 	return hit.position
+
+# --- The hitch: the plane's cargo sling --------------------------------------------
+
+## The sling made with the plane's figure, and swung under it.
+func _sling_step(delta: float) -> void:
+	var pf: Node3D = study.get("plane_figure")
+	if pf == null: return
+	if sling == null:
+		sling = CargoSling.new()
+		add_child(sling)
+		sling.rest_behind(pf)
+	sling.step(delta,pf)
+
+## By the sling where it lies on the ground, on foot.
+func _by_sling() -> bool:
+	if sling == null or not sling.grounded or bool(study.get("flying")): return false
+	var motor: Variant = study.get("motor")
+	var mid: Vector3 = sling.middle()
+	var across := Vector2(mid.x-motor.feet.x,mid.z-motor.feet.z).length()-CargoSling.RIM
+	return across < Weights.SLING_REACH*float(motor.size) and absf(mid.y-float(motor.feet.y)) < 1.0
+
+## The first spot in the sling nothing is loaded in, or -1.
+func _free_slot() -> int:
+	for i in range(CargoSling.SLOTS.size()):
+		var taken := false
+		for t: Dictionary in treasures:
+			if int(t.slot) == i: taken = true
+		if not taken: return i
+	return -1
+
+## The last one loaded (the highest spot taken), or {}.
+func _last_hitched() -> Dictionary:
+	var best := {}
+	for t: Dictionary in treasures:
+		if int(t.slot) >= 0 and (best.is_empty() or int(t.slot) > int(best.slot)): best = t
+	return best
+
+## Spot `i` in the sling (world), or null with no sling.
+func _slot_xform(i: int) -> Variant:
+	var pf: Node3D = study.get("plane_figure")
+	if sling == null or pf == null or i < 0: return null
+	return sling.slot(i,pf)
+
+## Starts lowering the carried one into the sling's next free spot; with
+## none free he balks.
+func hitch() -> void:
+	if held.is_empty() or phase != "carry": return
+	var free := _free_slot()
+	if free < 0:
+		_on_refused("cargo")
+		return
+	_slot_to = free
+	phase = "hitch"
+	phase_t = 0.0
+	_apply_feel(BUSY_PACE)
+
+## He turns to face `p` (his motor's facing, so the walk and figure agree).
+func _face(p: Vector3, delta: float) -> void:
+	var motor: Variant = study.get("motor")
+	var to := Vector2(p.x-motor.feet.x,p.z-motor.feet.z)
+	if to.length() < 0.05: return
+	motor.facing = lerp_angle(float(motor.facing),PilotMotor.facing_of(to),1.0-exp(-10.0*delta))
+
+## Let go into the sling: it rides there from now.
+func _strap() -> void:
+	var t := held
+	held = {}
+	phase = ""
+	_balk_t = -1.0
+	_restore_feel()
+	t.slot = _slot_to
+	t.strapped = 0.0
+	_slot_to = -1
+	hitches += 1
+	var cls := Weights.of(str(t.weight))
+	_thud.volume_db = linear_to_db(maxf(float(cls.thud),0.05)*1.5)
+	_thud.play()
+	_ride(t,0.0)
+	if OS.is_debug_build(): print("carry: %s loaded in the sling (spot %d)" % [t.id,int(t.slot)])
+
+## Out of the sling: its spot free.
+func _unstrap(t: Dictionary) -> void:
+	t.slot = -1
+
+## A loaded one rides its spot in the sling (a bounce as it lands there).
+func _ride(t: Dictionary, delta: float) -> void:
+	var at: Variant = _slot_xform(int(t.slot))
+	if at == null: return
+	t.strapped = float(t.strapped)+delta
+	var k := clampf(float(t.strapped)/Weights.HITCH_SETTLE,0.0,1.0)
+	var bounce := Weights.HITCH_BOUNCE*sin(k*PI*2.0)*(1.0-k)
+	var xf: Transform3D = at
+	(t.node as Node3D).global_transform = Transform3D(xf.basis,xf.origin+xf.basis.y*bounce)

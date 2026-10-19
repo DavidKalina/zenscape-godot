@@ -65,6 +65,17 @@ const SETTLE_SPEED := 0.12
 const SETTLE_SPIN := 0.4
 const SETTLE_TIME := 0.6
 
+## Loading it into the plane's cargo sling (scripts/carry/cargo_sling.gd;
+## E by the sling where it lies on the ground, carrying): he reaches it
+## within SLING_REACH m (x size) of the basket's rim; the hand-over takes
+## HITCH_TIME of the class's lift, arcing HITCH_ARC m (x size) over the
+## rim; in, it bounces HITCH_BOUNCE m and settles over HITCH_SETTLE s.
+const SLING_REACH := 1.0
+const HITCH_TIME := 0.9
+const HITCH_ARC := 0.25
+const HITCH_BOUNCE := 0.05
+const HITCH_SETTLE := 0.35
+
 ## Class `weight`'s row (light's when unknown).
 static func of(weight: String) -> Dictionary:
 	return CLASSES.get(weight,CLASSES["light"])
