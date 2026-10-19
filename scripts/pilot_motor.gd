@@ -5,6 +5,9 @@ extends RefCounted
 ## listens. `cause` names it for the death card ("fall", "olmec", "trap",
 ## "hazard", "stone", "ram").
 signal harmed(amount: int, cause: String, source: Object)
+## A move the load forbids was tried (`wall_on`, `ledge_on`, `sail_on`,
+## `rope_on`): "wall_kick", "ledge", "sail" or "rope".
+signal refused(what: String)
 
 ## The pilot on foot, moved like a platformer's hero: the stick asks for a
 ## way and a pace (in the world, the camera's way already taken out), and
@@ -611,6 +614,17 @@ var twirl_steer := TWIRL_STEER
 var hop_turn := HOP_TURN
 ## The wall run unlocked (see the header): off, it never starts.
 var wallrun_on := false
+## Moves a carried load forbids (scripts/carry/carry_host.gd; all on but
+## while he carries): the wall slide and kick, ledges (and so the climb),
+## the sail, the swing ropes (scripts/interactables/foot_pieces.gd reads
+## `rope_on`). Off, a try at one is refused: nothing happens but `refused`,
+## at most once every REFUSE_GAP s.
+var wall_on := true
+var ledge_on := true
+var sail_on := true
+var rope_on := true
+const REFUSE_GAP := 0.7
+var _refuse_cool := 0.0
 var wallrun_pace := WALLRUN_PACE
 var wallrun_time := WALLRUN_TIME
 var wallrun_gravity := WALLRUN_GRAVITY
@@ -1331,6 +1345,11 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 	var twirl_pressed := twirl and not _twirl_was
 	_twirl_was = twirl
 	_regrab = maxf(0.0,_regrab-delta)
+	_refuse_cool = maxf(0.0,_refuse_cool-delta)
+	var barred := Callable()
+	if not ledge_on:
+		barred = ledge
+		ledge = Callable()
 	carving = 0.0
 	_immune = maxf(0.0,_immune-delta)
 	_clock += delta
@@ -1363,7 +1382,7 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 		_regrab = 0.0
 		_hit_down = 0.0
 		out["poised"] = true
-	if move == "tumble" and knock_sail >= 0.0 and pressed and not grounded and _stun_t >= knock_sail and sail.can_open(feet.y-ground_y,velocity.y):
+	if move == "tumble" and sail_on and knock_sail >= 0.0 and pressed and not grounded and _stun_t >= knock_sail and sail.can_open(feet.y-ground_y,velocity.y):
 		# The sail out of a knock (`knock_sail`): his own again, the sail
 		# opened below as from any fall.
 		move = ""
@@ -1508,7 +1527,13 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 	elif _buffer > 0.0 and not grounded and move == "wallrun":
 		h = _wallrun_kick(h,out)
 	elif _buffer > 0.0 and not grounded and move != "slam" and move != "lunge" and (move == "wall" or _wall_since <= WALL_TOUCH):
-		h = _kick_off(out)
+		if wall_on: h = _kick_off(out)
+		else:
+			_buffer = 0.0
+			refuse("wall_kick")
+	elif pressed and not grounded and not sail_on and move != "lunge" and not _from_water and sail.can_open(feet.y-ground_y,velocity.y):
+		_buffer = 0.0
+		refuse("sail")
 	elif pressed and not grounded and move == "slam" and not _from_water and sail.can_open(feet.y-ground_y,velocity.y):
 		# The slam cancelled: its drive past his fall given up, the sail out.
 		move = ""
@@ -1697,6 +1722,8 @@ func _step(delta: float, want: Vector2, top: float, jump: bool, ground: Callable
 			if move == "wall": out["wall"] = false
 			out["grabbed"] = "air"
 			return out
+		if not grounded and move != "slam" and move != "lunge" and barred.is_valid() and _refuse_cool <= 0.0 and _would_grab(barred,ground,slide):
+			refuse("ledge")
 	velocity.x = h.x
 	velocity.z = h.y
 	return out
@@ -2254,7 +2281,7 @@ func _on_wall(delta: float, want: Vector2, h: Vector2, going: Vector2, ground: C
 	_wall_since = 0.0
 	_wall_seen = n
 	var kicked := _lock > 0.0 and going.dot(-n) > 1.0
-	if (want.dot(-n) > WALL_HOLD or kicked) and velocity.y < WALL_RISE and feet.y-under > WALL_CLEAR:
+	if wall_on and (want.dot(-n) > WALL_HOLD or kicked) and velocity.y < WALL_RISE and feet.y-under > WALL_CLEAR:
 		# Arriving from a kick, a beat longer to turn the stick round.
 		move = "wall"
 		wall_out = n
@@ -2323,6 +2350,22 @@ func _grab(ledge: Callable, ground: Callable, slide: Callable) -> bool:
 
 ## Whether the lip `found` is in reach of the hands of feet at `at` facing
 ## `f`, faced, with room to hang under it and to climb onto it.
+## Whether `_grab` would catch a lip now (nothing changed).
+func _would_grab(ledge: Callable, ground: Callable, slide: Callable) -> bool:
+	if velocity.y > GRAB_RISE: return false
+	var f := forward(facing)
+	var at := Vector2(feet.x,feet.z)
+	for reach: float in [GRAB_REACH,hang_out]:
+		var found: Dictionary = ledge.call(at+f*reach,feet.y+hang_drop)
+		if not found.is_empty() and _grabbable(found,at,f,ground,slide): return true
+	return false
+
+## A forbidden move tried (see `wall_on`): `refused` sent, if not just sent.
+func refuse(what: String) -> void:
+	if _refuse_cool > 0.0: return
+	_refuse_cool = REFUSE_GAP
+	refused.emit(what)
+
 func _grabbable(found: Dictionary, at: Vector2, f: Vector2, ground: Callable, slide: Callable) -> bool:
 	var hands: float = found.at.y-feet.y-hang_drop
 	if hands < -GRAB_LOW or hands > GRAB_HIGH: return false

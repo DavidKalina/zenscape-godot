@@ -12,13 +12,20 @@ extends Node3D
 ##   the figure's arms after its clips: procedural, stood in for authored
 ##   carry clips), his walk, run, jump and turn scaled by its weight;
 ## - pressed again, he sets it down on the ground before him (or at his
-##   feet where there is no ground before him).
+##   feet where there is no ground before him);
+## - the moves its weight bars (`bars`: the motor's `wall_on`, `ledge_on`,
+##   `sail_on`, `rope_on`) are off while he holds it; tried, the motor's
+##   `refused` comes and he balks: a stagger to the side and a shake of the
+##   head, his pace held back (procedural, stood in for authored clips);
+## - a heavy load sways the camera at each footfall and puts a thud under
+##   his steps (`sway`, `dip`, `thud`).
 ##
 ## `deal()` puts every treasure back on its spot (the scene's re-deal).
 const Weights = preload("res://scripts/carry/carry_weights.gd")
 const Models = preload("res://scripts/carry/treasure_models.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const Pad = preload("res://scripts/pad.gd")
+const GenesisAudio = preload("res://scripts/genesis_audio.gd")
 
 ## What he stands on and sets things down on.
 const SOLID_MASK := 1|(1 << 11)
@@ -54,6 +61,20 @@ var _ground_at := Transform3D.IDENTITY
 ## The motor's own feel, kept while he carries.
 var _base := {}
 var _prompt: Label3D = null
+## The balk (a refused move): seconds into it (<0 none), the move refused,
+## the side he staggers to. `balks` counts them (drivers read it).
+var _balk_t := -1.0
+var balked := ""
+var balks := 0
+var _balk_side := 1.0
+## The footfalls under a load: the figure's stride phase last frame, the
+## side and seconds since the last footfall, the thud's player.
+var _stride := 0.0
+var _fall_side := 1.0
+var _fall_t := 99.0
+var heavy_steps := 0
+var _thud: AudioStreamPlayer = null
+static var _thud_take: AudioStreamWAV = null
 
 ## Stands the treasures in `spec` ([id, kind, weight, foot (world), yaw deg])
 ## for the kit isle `host`, named `<id_scene>/<id>`.
@@ -86,6 +107,13 @@ func setup(host: Node3D, id_scene: String, spec: Array) -> void:
 	_prompt.outline_size = 8
 	_prompt.visible = false
 	add_child(_prompt)
+	var motor: Variant = study.get("motor")
+	if motor != null: motor.refused.connect(_on_refused)
+	_thud = AudioStreamPlayer.new()
+	_thud.name = "Thud"
+	_thud.bus = GenesisAudio.BUS
+	_thud.stream = _thud_stream()
+	add_child(_thud)
 
 ## Every treasure back on its spot, settled on what's under it; nothing
 ## carried.
@@ -182,6 +210,7 @@ func _let_go() -> void:
 	node.global_transform = _ground_at
 	held = {}
 	phase = ""
+	_balk_t = -1.0
 	_restore_feel()
 
 func _process(delta: float) -> void:
@@ -193,6 +222,99 @@ func _process(delta: float) -> void:
 			_home(t)
 		else: _carry_step(delta)
 	_show_prompt()
+
+# --- Refusals ------------------------------------------------------------------------
+
+func _on_refused(what: String) -> void:
+	if held.is_empty(): return
+	balked = what
+	balks += 1
+	_balk_t = 0.0
+	_balk_side = -_balk_side
+	if phase == "carry": _apply_feel(Weights.BALK_PACE)
+
+## The balk's pose on the figure after its clips: the chest lurched to one
+## side and back, the head shaken no; over BALK_TIME.
+func _balk_pose(delta: float) -> void:
+	if _balk_t < 0.0: return
+	_balk_t += delta
+	var k := _balk_t/Weights.BALK_TIME
+	if k >= 1.0:
+		_balk_t = -1.0
+		if phase == "carry": _apply_feel(1.0)
+		return
+	var sk := _skeleton()
+	if sk == null: return
+	var fwd := _forward()
+	var lurch := sin(PI*minf(k*1.6,1.0))
+	var chest := sk.find_bone("chest")
+	if chest >= 0:
+		var roll := deg_to_rad(Weights.BALK_LEAN)*lurch*_balk_side
+		_turn_bone(sk,chest,fwd,roll)
+		# Rocked back on his heels under it, too.
+		_turn_bone(sk,chest,fwd.cross(Vector3.UP),deg_to_rad(Weights.BALK_LEAN)*0.5*lurch)
+	var head := sk.find_bone("head")
+	if head >= 0:
+		var shake := sin(TAU*Weights.BALK_SHAKES*k)*(1.0-k)*deg_to_rad(Weights.BALK_HEAD)
+		_turn_bone(sk,head,Vector3.UP,shake)
+
+## Turns `bone` by `angle` about the world axis `axis`.
+static func _turn_bone(sk: Skeleton3D, bone: int, axis: Vector3, angle: float) -> void:
+	var in_sk := (sk.global_basis.inverse()*axis).normalized()
+	var local := (sk.get_bone_global_pose(bone).basis.inverse()*in_sk).normalized()
+	sk.set_bone_pose_rotation(bone,sk.get_bone_pose_rotation(bone)*Quaternion(local,angle))
+
+# --- The load underfoot ----------------------------------------------------------------
+
+## At each footfall of a carry (the figure's stride crossing 0 or 0.5),
+## the thud; the camera's lurch and dip after it.
+func _load_feel(delta: float) -> void:
+	var w := Weights.of(str(held.weight))
+	var body: Node = study.get("body")
+	var motor: Variant = study.get("motor")
+	var stride: float = body.get("_phase") if body != null and body.get("_phase") != null else 0.0
+	var moving: bool = motor.grounded and Vector2(motor.velocity.x,motor.velocity.z).length() > 0.3
+	if moving and phase == "carry" and (stride < _stride or (_stride < 0.5 and stride >= 0.5)):
+		_fall_side = 1.0 if stride < 0.5 else -1.0
+		_fall_t = 0.0
+		if float(w.thud) > 0.0:
+			heavy_steps += 1
+			_thud.volume_db = linear_to_db(float(w.thud))
+			_thud.pitch_scale = randf_range(0.9,1.05)
+			_thud.play()
+	_stride = stride
+	_fall_t += delta
+	var camera: Camera3D = study.get("camera")
+	if camera == null or float(w.sway) <= 0.0: return
+	var env := sin(PI*clampf(_fall_t/0.4,0.0,1.0))
+	if env <= 0.0: return
+	camera.global_position += Vector3.DOWN*float(w.dip)*float(motor.size)*env
+	camera.rotate_object_local(Vector3.BACK,deg_to_rad(float(w.sway))*env*_fall_side)
+
+## A low thump: a falling sine under a puff of noise (made once).
+static func _thud_stream() -> AudioStreamWAV:
+	if _thud_take != null: return _thud_take
+	var rate := 22050
+	var n := int(rate*0.22)
+	var data := PackedByteArray()
+	data.resize(n*2)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4471
+	var ph := 0.0
+	var lp := 0.0
+	for i in range(n):
+		var t := float(i)/rate
+		ph += TAU*lerpf(95.0,48.0,minf(t/0.15,1.0))/rate
+		lp += (rng.randf_range(-1.0,1.0)-lp)*0.08
+		var env := minf(t/0.004,1.0)*exp(-t*18.0)
+		var v := clampf((sin(ph)*0.9+lp*0.6*exp(-t*40.0))*env,-1.0,1.0)
+		data.encode_s16(i*2,int(v*32000.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = rate
+	wav.data = data
+	_thud_take = wav
+	return wav
 
 ## One frame of the heave, the carry or the setting down: the treasure moved
 ## between the ground and his hands, his arms reached to it.
@@ -215,9 +337,12 @@ func _carry_step(delta: float) -> void:
 			if k <= 0.0:
 				_let_go()
 				return
+	_balk_pose(delta)
+	hands = _hold_xform()
 	var e := smoothstep(0.0,1.0,k)
 	node.global_transform = _ground_at.interpolate_with(hands,e)
 	_reach_arms(node.global_transform,minf(1.0,k*3.0+0.0001) if phase != "carry" else 1.0)
+	_load_feel(delta)
 
 ## Where its foot rides in his hands now (world).
 func _hold_xform() -> Transform3D:
@@ -303,7 +428,8 @@ static func _aim(sk: Skeleton3D, bone: int, from: Vector3, to: Vector3, weight: 
 
 func _keep_feel() -> void:
 	var m: Variant = study.get("motor")
-	_base = {"walk":m.walk,"run":m.run,"jumps":(m.jumps as Array).duplicate(),"turn":m.turn,"turn_run":m.turn_run}
+	_base = {"walk":m.walk,"run":m.run,"jumps":(m.jumps as Array).duplicate(),"turn":m.turn,"turn_run":m.turn_run,
+		"wall_on":m.wall_on,"wallrun_on":m.wallrun_on,"ledge_on":m.ledge_on,"sail_on":m.sail_on,"rope_on":m.rope_on}
 
 ## The carried weight's scales on the kept feel; `pace` times the paces
 ## more (BUSY_PACE while heaving).
@@ -318,6 +444,12 @@ func _apply_feel(pace: float) -> void:
 	m.jumps = j
 	m.turn = float(_base.turn)*float(w.turn)
 	m.turn_run = float(_base.turn_run)*float(w.turn)
+	var bars: Array = w.bars
+	m.wall_on = bool(_base.wall_on) and not bars.has("wall")
+	m.wallrun_on = bool(_base.wallrun_on) and not bars.has("wall")
+	m.ledge_on = bool(_base.ledge_on) and not bars.has("ledge")
+	m.sail_on = bool(_base.sail_on) and not bars.has("sail")
+	m.rope_on = bool(_base.rope_on) and not bars.has("rope")
 
 func _restore_feel() -> void:
 	if _base.is_empty(): return
@@ -327,6 +459,7 @@ func _restore_feel() -> void:
 	m.jumps = (_base.jumps as Array).duplicate()
 	m.turn = _base.turn
 	m.turn_run = _base.turn_run
+	for gate: String in ["wall_on","wallrun_on","ledge_on","sail_on","rope_on"]: m.set(gate,_base[gate])
 	_base = {}
 
 # --- The prompt ----------------------------------------------------------------------

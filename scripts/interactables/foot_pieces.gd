@@ -343,7 +343,11 @@ func after(_delta: float, events: Dictionary) -> void:
 		motor.velocity.y += clampf(v.y,0.0,RISE_KEEP)
 	on = now
 	if on != null and motor.grounded: on.weigh(motor.feet)
-	if motor.rider == null and not motor.swimming:
+	if motor.rider == null and not motor.swimming and not motor.rope_on:
+		# A load in his hands (motor.rope_on off): a rope met is refused.
+		for r: Node3D in ropes:
+			if r.anchor.distance_to(motor.feet) < NEAR and r.would_catch(motor): motor.refuse("rope")
+	elif motor.rider == null and not motor.swimming:
 		for r: Node3D in ropes:
 			if r.anchor.distance_to(motor.feet) < NEAR and r.try_catch(motor,_delta):
 				events["swing"] = true
