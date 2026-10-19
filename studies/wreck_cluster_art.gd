@@ -11,6 +11,8 @@ extends RefCounted
 ##            parked at its east end facing west down a clear run; a lobe
 ##            off its north edge carries the footbridge up onto the spine's
 ##            south bench
+##   coast    a tall islet east of the tower, reached only by the sail off
+##            the lookout: an arch, part spot 13, the way on down to the tail
 ##
 ## Every gap and rise is sized from the walker (RuinKit GRAB_TOP 1.875,
 ## CHAIN_TOP 2.575; `tools/kit_piece.py numbers`).
@@ -54,12 +56,42 @@ static func tower_rock_outline() -> Array:
 	return [Vector2(135.0,-28.5),Vector2(134.5,-33.5),Vector2(138.0,-38.0),Vector2(146.0,-39.0),Vector2(152.5,-37.0),
 		Vector2(155.5,-31.0),Vector2(155.5,-22.0),Vector2(153.5,-15.5),Vector2(150.0,-15.0),Vector2(149.5,-28.0)]
 
+## The coast rock: a tall islet standing alone in the sky east of the
+## tower, its turf COAST_TOP (15 m over the spine's TOP, near the belfry's
+## wall head), its keel COAST_DEEP down. Reached only by the coast down: the
+## sail off the lookout (y 55.75) carries him over its near edge at about
+## y 49 (measured: 4.35 m on per m down after the jump; at y 46 he is
+## 46.7 m out), while from the next highest ground, the belfry's wall head
+## (y 46.1, 35 m west of its near edge), the sail is 4.9 m out at y 46.
+## The way on: the sail off its west edge down to the tail's first fragment
+## (spot 08, 24 m away and 12 m down: the slam onto its cache from the sail).
+const COAST_TOP := 46.0
+const COAST_DEEP := 26.0
+const COAST_AT := Vector2(188.0,-20.0)
+static func coast_rock_outline() -> Array:
+	var c := COAST_AT
+	var out := []
+	for w: Vector2 in [Vector2(-8.5,-1.0),Vector2(-7.0,-5.5),Vector2(-2.5,-7.5),Vector2(3.0,-7.0),Vector2(7.5,-4.0),
+			Vector2(8.5,1.5),Vector2(6.0,6.0),Vector2(1.0,7.5),Vector2(-4.5,6.5),Vector2(-8.0,3.5)]:
+		out.append(c+w)
+	return out
+## The coast rock's arch: on its west side, its span along z, so it frames
+## the tower as he lands and the way back off the west edge; part spot 13
+## stands under it.
+const COAST_ARCH := Vector2(-3.0,0.0)
+static func coast_arch_foot() -> Vector3:
+	return Vector3(COAST_AT.x+COAST_ARCH.x,COAST_TOP,COAST_AT.y+COAST_ARCH.y)
+
 ## The lands besides the spine: [name, outline, ground, depth (its keel
-## under its rim), seed, cliffs box (none: Rect2()), its rim's height].
+## under its rim), seed, cliffs box (none: Rect2()), its rim's height,
+## optional: sheer (its hanging sides not collided as drawn, whose jagged
+## faces he catches and climbs, but one smooth hull that overhangs all
+## round: nothing to catch on the way up its flank)].
 static func lands() -> Array:
 	return [
 		["strip",strip_outline(),func(_x: float, _z: float) -> float: return STRIP_TOP,16.0,405,Rect2(),STRIP_TOP],
 		["tower_rock",tower_rock_outline(),func(_x: float, _z: float) -> float: return TOWER_ROCK,18.0,407,Rect2(),TOWER_ROCK],
+		["coast_rock",coast_rock_outline(),func(_x: float, _z: float) -> float: return COAST_TOP,COAST_DEEP,409,Rect2(),COAST_TOP,true],
 	]
 
 ## Land `spec` (a row of `lands`) built: a KitLand island, its sides collided.
@@ -69,17 +101,54 @@ static func build_land(spec: Array) -> Node3D:
 		"depth":float(spec[3]),"hang":true,"resample":[60.0,128,48],"tone":KitLook.turf(int(spec[4])),"cell":2.0,
 		"collide_sides":true,"name":"wreck_cluster/"+str(spec[0])}
 	if cliffs.size != Vector2.ZERO: d["cliffs"] = cliffs
+	var sheer: bool = spec.size() > 7 and bool(spec[7])
+	if sheer: d["collide_sides"] = false
 	var node := KitLand.island(d)
 	node.name = "Land_"+str(spec[0]).capitalize()
+	if sheer: node.add_child(sheer_hull(spec[1],float(spec[6]),float(spec[3])))
 	return node
+
+## How far under the rim a sheer land's hull starts (the turf collides
+## over it), its depth's share it reaches down, how much of the outline its
+## keel end keeps, and how far in from the drawn rim its top stands.
+const SHEER_UNDER := 0.25
+const SHEER_DEEP := 0.7
+const SHEER_KEEL := 0.28
+const SHEER_IN := 0.4
+
+## A sheer land's flank: one convex hull from just under its rim (the
+## outline pulled SHEER_IN in) narrowing down to a small keel, so its sides
+## overhang everywhere and hold no lip to catch.
+static func sheer_hull(outline: Array, top: float, depth: float) -> StaticBody3D:
+	var mid := Vector2.ZERO
+	for p: Vector2 in outline: mid += p
+	mid /= float(outline.size())
+	var pts := PackedVector3Array()
+	var y0 := top-SHEER_UNDER
+	var y1 := top-depth*SHEER_DEEP
+	for p: Vector2 in outline:
+		var q := p-(p-mid).normalized()*SHEER_IN
+		pts.append(Vector3(q.x,y0,q.y))
+		var k := mid+(p-mid)*SHEER_KEEL
+		pts.append(Vector3(k.x,y1,k.y))
+	var shape := ConvexPolygonShape3D.new()
+	shape.points = pts
+	var col := CollisionShape3D.new()
+	col.shape = shape
+	var body := StaticBody3D.new()
+	body.name = "SheerFlank"
+	body.add_child(col)
+	return body
 
 # --- What stands --------------------------------------------------------------------
 
 ## The kit pieces: [layout name, kit piece, seed, weathered, world foot,
 ## yaw (deg)], each colliding as the kit built it. (None yet: the tower is
-## `tower` below; the slide and the islets come in later steps.)
+## `tower` below; the slide and the other islets come in later steps.)
 static func pieces() -> Array:
-	return []
+	return [
+		["coast/arch","arch",619,0.3,coast_arch_foot(),90.0],
+	]
 
 # --- The tower --------------------------------------------------------------------
 
@@ -287,6 +356,7 @@ static func spots() -> Array:
 		["tail","the last fragment, under the bench",on_slab("frag_5"),["lying","water","cache"]],
 		["tower","the tower top, on the east wall's head by the lookout",east_head(1.4),["lying","salvager"]],
 		["tower","the belfry's wall head, over the bell (partway up)",belfry_south_head(-1.4),["lying","jammed"]],
+		["coast","under the coast rock's arch (the coast down's end)",coast_arch_foot(),["lying","islet","salvager"]],
 	]
 
 ## The caches (spec item 10's change; studies/wreck_cluster_caches.gd): a
