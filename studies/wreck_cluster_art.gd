@@ -28,6 +28,9 @@ extends RefCounted
 ##   knight   a snapped stone causeway west off the strip's west end over
 ##            open sky: the rune knight's deck, part spot 16 on its tip in
 ##            the lee of a snapped pier
+##   flank    a broken terrace walk along the spine's south flank, from
+##            the bench's west end up to the pulpit, a fallen pier up onto
+##            it from the strip, part spot 17
 ##
 ## Every gap and rise is sized from the walker (RuinKit GRAB_TOP 1.875,
 ## CHAIN_TOP 2.575; `tools/kit_piece.py numbers`).
@@ -1157,6 +1160,152 @@ static func _core(b: RuinKit.Build, half: Vector3, mid: Vector3) -> void:
 	b.solid(RuinKit._box(b,inner,0.02),pose,RuinKit._stone(b,0.8),false,false)
 	RuinKit._walk_hull(b,pose,[Plane(Vector3.RIGHT,half.x),Plane(Vector3.LEFT,half.x),Plane(Vector3.UP,half.y),Plane(Vector3.DOWN,half.y),Plane(Vector3.BACK,half.z),Plane(Vector3.FORWARD,half.z)])
 
+# --- The south flank walk ----------------------------------------------------------
+
+## A second layer along the spine's south flank (spec change 2): the
+## builders' lower terrace walk, broken into stretches of stone deck set
+## against the flank's rock, each a little higher going west, from the
+## south bench's west end up under the crest to the pulpit. Between the
+## stretches the walk is lost: a gap to jump and a step up (a hop or a
+## jump and a grab, each under GRAB_TOP); at its west end a broken stair
+## of fallen blocks climbs the flank onto the pulpit (part spot 02, no
+## longer only dropped onto). A pier fallen from the colonnade lies from
+## the strip's north edge up onto the second stretch, so the walk is
+## reached from the strip too (a loop: strip, fallen pier, walk, bench,
+## footbridge). Part spot 17 on the fourth stretch.
+## The stretches: [layout name, axis x east end, x west end, deck top
+## (world y)]. Each is FLANK_S_W wide out from where the flank's rock
+## (its facets too) last stands over its top (`flank_s_out`), so its whole
+## width is clear and the rock rises behind it as a wall, and runs
+## FLANK_S_BURY further into the rock. The breaks between them are filled
+## by fallen blocks (FLANK_S_RUBBLE: [gap, its top over the lower
+## stretch's]), so nothing opens onto the flank's rock under the walk,
+## whose facets hold a fallen walker in pockets far from anything: the
+## first two halfway up (a hop up and a hop up again), the last two sunk
+## (a step down, then a jump and a grab, 1.6 m, up the next stretch's worn
+## end).
+const FLANK_S := [
+	["flank_s/walk_1",98.5,86.0,33.2],
+	["flank_s/walk_2",84.3,72.0,34.4],
+	["flank_s/walk_3",70.4,60.5,35.8],
+	["flank_s/walk_4",58.4,52.6,36.9],
+	["flank_s/walk_5",50.4,43.0,38.0],
+]
+const FLANK_S_RUBBLE := [[0,0.6],[1,0.7],[2,-0.5],[3,-0.5]]
+const FLANK_S_W := 2.6
+const FLANK_S_BURY := 1.6
+## The broken stair up to the pulpit, west from walk_5's end: [x east end,
+## x west end, top, outer edge d], each block a hop or a jump over the last.
+const FLANK_S_STAIR := [
+	[42.6,41.0,39.4,14.0],
+	[40.8,39.4,40.8,13.6],
+	[39.2,37.9,42.0,13.2],
+	[37.7,36.4,43.2,12.8],
+	[36.3,35.2,44.3,12.6],
+]
+## The fallen pier: its foot on the strip's turf (world x, z; just in from
+## its north rim, outside the runway's clear band, STRIP_HALF), its head on
+## walk_2's outer edge at axis x FLANK_S_PIER_HEAD; its section (wide, deep).
+const FLANK_S_PIER_FOOT := Vector2(75.5,10.4)
+const FLANK_S_PIER_HEAD := 79.0
+const FLANK_S_PIER := Vector2(1.4,1.0)
+
+## Stretch `i`'s outer edge (d, m south of the axis): FLANK_S_W out from
+## the last place along it where the spine's ground stands over its top
+## (sampled every 0.5 m along and 0.1 m across, past the bench's edge).
+static func flank_s_out(i: int) -> float:
+	var s: Array = FLANK_S[i]
+	return _flank_out(float(s[1]),float(s[2]),float(s[3]))
+
+static func _flank_out(x0: float, x1: float, top: float) -> float:
+	var inner := 8.0
+	var x := minf(x0,x1)
+	while x <= maxf(x0,x1)+0.01:
+		var d := 30.0
+		while d > 6.0:
+			var q := Spine.at(x,d)
+			if Spine.ground(q.x,q.y) > top-0.05: break
+			d -= 0.1
+		inner = maxf(inner,d+0.1)
+		x += 0.5
+	return inner+FLANK_S_W
+
+## The yaw (deg) that turns a piece's +x east along the axis at `x`.
+static func axis_yaw(x: float) -> float:
+	var t := Spine.along(x)
+	return rad_to_deg(atan2(-t.z,t.x))
+
+## A point on stretch `i` of the south walk: `along` (0 east end .. 1 west
+## end), `inset` m in from its outer edge (world, on its top).
+static func flank_s_point(i: int, along := 0.5, inset := 1.3) -> Vector3:
+	var s: Array = FLANK_S[i]
+	var x := lerpf(float(s[1]),float(s[2]),along)
+	var q := Spine.at(x,flank_s_out(i)-inset)
+	return Vector3(q.x,float(s[3]),q.y)
+
+## The walk's stone: [layout name, node, world foot, yaw (deg)]: each
+## stretch and each stair block its own deck block (`_flank_block`), the
+## fallen pier a beam from the strip's turf onto walk_2.
+static func flank_s_built() -> Array:
+	var out: Array = []
+	var k := 0
+	for s: Array in FLANK_S:
+		out.append(_flank_piece(str(s[0]),float(s[1]),float(s[2]),float(s[3]),flank_s_out(k),FLANK_S_W,661+k))
+		k += 1
+	# The fallen blocks filling the breaks, end to end with the stretches
+	# either side (their worn ends show over and under them).
+	for rub: Array in FLANK_S_RUBBLE:
+		var g := int(rub[0])
+		var a: Array = FLANK_S[g]
+		var e: Array = FLANK_S[g+1]
+		var top := minf(float(a[3]),float(e[3]))+float(rub[1])
+		var ra := float(a[2])+0.05
+		var re := float(e[1])-0.05
+		out.append(_flank_piece("flank_s/rubble_%d" % (g+1),ra,re,top,maxf(_flank_out(ra,re,top),minf(flank_s_out(g),flank_s_out(g+1))),FLANK_S_W,676+g))
+	k = 0
+	for s: Array in FLANK_S_STAIR:
+		k += 1
+		out.append(_flank_piece("flank_s/stair_%d" % k,float(s[0]),float(s[1]),float(s[2]),float(s[3]),2.4,671+k))
+	var b := RuinKit.Build.new(681,0.35,"FallenPier")
+	var w2: Array = FLANK_S[1]
+	var head2 := Spine.at(FLANK_S_PIER_HEAD,flank_s_out(1)-0.5)
+	var foot := Vector3(FLANK_S_PIER_FOOT.x,STRIP_TOP-0.05,FLANK_S_PIER_FOOT.y)
+	var head := Vector3(head2.x,float(w2[3]),head2.y)
+	Spine._beam(b,foot-foot,head-foot,FLANK_S_PIER)
+	out.append(["flank_s/fallen_pier",b.finish(),foot,0.0])
+	return out
+
+## One stretch or stair block placed: its axis x from `x0` to `x1`, top
+## `top`, its outer edge `d_out` across, `wide` walkable inside it and
+## FLANK_S_BURY more into the rock; as deep as reaches the flank's rock
+## under its outer edge (1.5 to 7 m).
+static func _flank_piece(called: String, x0: float, x1: float, top: float, d_out: float, wide: float, seed_value: int) -> Array:
+	var xm := (x0+x1)*0.5
+	var out := wide+FLANK_S_BURY
+	var edge := Spine.at(xm,d_out)
+	var deep := clampf(top-Spine.ground(edge.x,edge.y)+1.0,1.5,7.0)
+	var b := RuinKit.Build.new(seed_value,0.4,called.get_file().capitalize())
+	_flank_block(b,absf(x0-x1),out,deep)
+	var q := Spine.at(xm,d_out-out*0.5)
+	return [called,b.finish(),Vector3(q.x,top,q.y),axis_yaw(xm)]
+
+## One deck block in its own frame (+x east along the axis, +z out from
+## the flank, its top's middle at the origin): `len` long, `out` from its
+## inner (buried) face to its outer edge, `deep` tall; coursed faces out
+## and at both ends (the ends worn lower), quoins at its outer corners,
+## walked on one clean box (no lip).
+static func _flank_block(b: RuinKit.Build, len: float, out: float, deep: float) -> void:
+	var hx := len*0.5
+	var hz := out*0.5
+	_ashlar_face(b,Vector3.BACK,hx,hz,0.0,-deep,0.0)
+	for n: Vector3 in [Vector3.RIGHT,Vector3.LEFT]:
+		_ashlar_face(b,n,hz,hx,FACE*2.0,-deep,0.0,0.0,-0.3)
+	for sx: float in [-1.0,1.0]:
+		_quoin_stack(b,Vector3(sx*hx,0.0,hz),-deep,-0.3)
+	b.hulls.clear()
+	b.hull_anchors.clear()
+	_core(b,Vector3(hx,deep*0.5,hz),Vector3(0.0,-deep*0.5,0.0))
+
 # --- The part spots -----------------------------------------------------------------
 
 ## The holder types a spot could host (spec item 10): `lying` and `cache`
@@ -1182,7 +1331,7 @@ static func spots() -> Array:
 	var podium := TOP+Spine.PODIUM
 	return [
 		["head","in the cella, by the altar",Vector3(Spine.ALTAR_X+2.4,podium,Spine.zc(Spine.ALTAR_X+2.4)+1.6),["lying","cache"]],
-		["head","the pulpit off the podium (dropped onto)",on_slab("pulpit",Vector2(0.4,0.6)),["lying","salvager"]],
+		["head","the pulpit off the podium (dropped onto, or up the south flank walk's stair)",on_slab("pulpit",Vector2(0.4,0.6)),["lying","salvager"]],
 		["way","under the first portal's arch",on_spine(float(Spine.LINES[2][0]),0.0),["lying","jammed"]],
 		["way","on the north balcony",on_slab("balcony",Vector2(-0.3,-0.4)),["lying","salvager"]],
 		["way","under the second portal's arch",on_spine(float(Spine.LINES[5][0]),1.2),["lying","jammed"]],
@@ -1197,6 +1346,7 @@ static func spots() -> Array:
 		["ropes","under the rope rock's chapel arch (the rope chain's end)",rope_arch_foot(),["lying","islet","salvager"]],
 		["slide","by the carved chest under the tilt rock's lancet wall (the slide's end)",tilt_spot(),["lying","islet","cache"]],
 		["knight","on the snapped causeway's tip, in the lee of its last pier (past the knight)",causeway_spot(),["lying","knight","cache"]],
+		["flank","on the south flank walk's fourth stretch, against the crest's rock",flank_s_point(3,0.45,1.0),["lying","jammed"]],
 	]
 
 ## The caches (spec item 10's change; studies/wreck_cluster_caches.gd): a
