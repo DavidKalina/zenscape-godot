@@ -58,6 +58,8 @@ const ACTIONS := {
 	"walk_twirl":[["key",KEY_X],["button",JOY_BUTTON_X]],
 	# On foot, pressed: spend the flow charge as an updraft (scripts/updraft.gd).
 	"walk_wind":[["key",KEY_Q],["button",JOY_BUTTON_RIGHT_SHOULDER]],
+	# On foot with the spade (scripts/dig/dig.gd), pressed: dig.
+	"walk_dig":[["key",KEY_G],["button",JOY_BUTTON_Y]],
 	# At a cannon (scripts/cannon/cannon_field.gd): Jump (A) starts operating
 	# it from outside and fires a keg; these climb into the barrel (to launch
 	# yourself), step away or climb back out, and set the power.

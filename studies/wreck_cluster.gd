@@ -52,6 +52,7 @@ const PauseHost = preload("res://scripts/kit_isle/pause_host.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const DevKeys = preload("res://scripts/kit_isle/dev_keys.gd")
 const IsleFlora = preload("res://studies/aqueduct_isle_flora.gd")
+const Dig = preload("res://scripts/dig/dig.gd")
 
 ## The re-deal's key (free on foot and in the plane: scripts/pad.gd,
 ## scripts/kit_isle/dev_keys.gd).
@@ -87,6 +88,8 @@ var rune_knight: Node3D = null
 var wind_blast: Node = null
 var wind_parry: Node3D = null
 var pause: Node = null
+## Digging (scripts/dig/dig.gd): the spade and the buried spots.
+var dig: Node3D = null
 var _rng := RandomNumberGenerator.new()
 var _ledger_was := []
 
@@ -449,6 +452,7 @@ func new_deal(seed_value := -1) -> void:
 	deals += 1
 	dealt = deal(deal_seed,avoid)
 	_lay_deal()
+	if dig != null: dig.re_deal()
 	_make_knight()
 	_show_toast("New deal  ·  seed %d" % deal_seed)
 	if _switch_hint != null: _switch_hint.text = _foot_text()
@@ -466,6 +470,9 @@ func _add_life() -> void:
 	dealt = deal(deal_seed)
 	_lay_deal(LaunchArgs.user_args().has("--parts-carried"))
 	plane_arc.start_by_flag()
+	dig = Dig.new()
+	add_child(dig)
+	dig.setup(self)
 	if not LaunchArgs.user_args().has("--no-rune-knight") and not Art.knight_line().is_empty():
 		_make_knight()
 		wind_blast = WindBlastStandin.new()
