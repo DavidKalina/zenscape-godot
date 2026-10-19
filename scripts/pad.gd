@@ -67,6 +67,9 @@ const ACTIONS := {
 	# On foot by the loot bag on the ground, pressed: shove it (on a slope
 	# it rolls away downhill).
 	"walk_shove":[["key",KEY_V],["button",JOY_BUTTON_DPAD_RIGHT]],
+	# In the rope study (studies/rope_study.gd), pressed: his full moveset on
+	# or off (the reduced one: walk, run, jump, slide).
+	"walk_moveset":[["key",KEY_M],["button",JOY_BUTTON_DPAD_LEFT]],
 	# On foot with the loot bag on his back, held: aim a throw (a reticle
 	# where it lands); released, it's thrown there. RT is free on the ground
 	# (it's the dive in a fall, the zoom in the telescope).
