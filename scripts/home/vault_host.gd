@@ -32,6 +32,9 @@ const BEAT := 0.9
 const LIFT := 0.3
 const SWING := 0.95
 const ARC := 2.2
+## Past 6 m, each metre further adds this much time (s) and arc (m).
+const FAR_TIME := 0.035
+const FAR_ARC := 0.25
 ## The floor's spots for banked ones (vault-local x, z; on the slabs).
 const SPOTS := [Vector2(-1.5,1.6),Vector2(-0.5,1.6),Vector2(0.5,1.6),Vector2(1.5,1.6),
 	Vector2(-1.5,0.4),Vector2(-0.5,0.4),Vector2(0.5,0.4),Vector2(1.5,0.4)]
@@ -149,14 +152,22 @@ func _hand_in(carry: Variant) -> void:
 	by_hand += 1
 	_start(t)
 
-## `t` on its way from where it is now to the next free spot.
+## `t` banked from wherever it lies (a soft landing on the drop field,
+## scripts/home/drop_pass.gd): the same swing, longer and higher for the
+## way it has to go.
+func bank_from(t: Dictionary) -> void:
+	_start(t)
+
+## `t` on its way from where it is now to the next free spot; the swing
+## takes longer and arcs higher the further it has to go.
 func _start(t: Dictionary) -> void:
 	t.banked = true
 	var node: Node3D = t.node
 	var from := node.global_transform
 	var spot := _next%SHOW_MAX
 	_next += 1
-	_moving.append({"t":t,"node":node,"from":from,"k":0.0,"spot":spot})
+	var far := maxf(from.origin.distance_to(_spot_xform(spot).origin)-6.0,0.0)
+	_moving.append({"t":t,"node":node,"from":from,"k":0.0,"spot":spot,"dur":SWING+far*FAR_TIME,"arc":ARC+far*FAR_ARC})
 	if OS.is_debug_build(): print("vault: %s on its way in (spot %d)" % [t.id,spot])
 
 ## `node` stood on display spot `i` (under Show), the one there before it
@@ -186,19 +197,20 @@ func _swing(m: Dictionary, delta: float) -> void:
 	if not is_instance_valid(node):
 		_moving.erase(m)
 		return
-	m.k = float(m.k)+delta/SWING
+	var dur := float(m.get("dur",SWING))
+	m.k = float(m.k)+delta/dur
 	var k := clampf(float(m.k),0.0,1.0)
 	var from: Transform3D = m.from
 	var to := _spot_xform(int(m.spot))
 	var lifted := from.origin+Vector3.UP*1.2
 	var p: Vector3
-	var lift_k := LIFT/SWING
+	var lift_k := LIFT/dur
 	if k < lift_k:
 		var e := _ease(k/lift_k)
 		p = from.origin.lerp(lifted,e)
 	else:
 		var e := _ease((k-lift_k)/(1.0-lift_k))
-		p = lifted.lerp(to.origin,e)+Vector3.UP*ARC*sin(e*PI)
+		p = lifted.lerp(to.origin,e)+Vector3.UP*float(m.get("arc",ARC))*sin(e*PI)
 	var b := from.basis.orthonormalized().slerp(to.basis.orthonormalized(),_ease(k))
 	# A squash as it lands.
 	var land := clampf((float(m.k)-0.92)/0.08,0.0,1.0)

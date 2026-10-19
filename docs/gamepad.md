@@ -153,6 +153,7 @@ Keys sit in the same action where the code polls them:
 - `walk_jump`, `walk_crouch`, `walk_twirl` and `walk_sneak` (Ctrl or Alt held; the pad has no button for it: the stick eased is a sneak)
 - `fly_boost` and `fly_brake`
 - `fly_eject` (the pad's X: eject, then open the canopy; the X key is the same verb, read as an event)
+- `fly_drop` (E or the pad's B in flight: open the cargo bag and let its load fall; the home isle's drop pass)
 - `telescope` (the pad's LB and the right mouse button, held; `Pad.ACTIONS` takes a `["mouse", button]` spec for it)
 
 Keys read as events keep their own handlers.

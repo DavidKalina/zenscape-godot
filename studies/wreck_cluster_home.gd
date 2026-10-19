@@ -90,11 +90,13 @@ static func _flat(d: float, inner: float, ease: float) -> float:
 	return 1.0-smoothstep(inner,inner+ease,d)
 
 ## The worn ground (KitFlora Site `wear`, 0..1 at world (x, z)): the
-## deposit pad and the vault's floor kept bare of grass, easing out a metre.
+## deposit pad, the vault's floor and the drop field kept bare of grass,
+## easing out a metre.
 static func wear(p: Vector2) -> float:
 	var on_pad := _box(p.x,p.y,PAD_AT,PAD_HALF+Vector2(0.4,0.4))
 	var in_vault := _box(p.x,p.y,VAULT_AT,INSIDE+Vector2(0.6,0.6))
-	return 1.0-smoothstep(0.0,1.2,minf(on_pad,in_vault))
+	var on_field := _box(p.x,p.y,FIELD_AT,FIELD_HALF+Vector2(0.6,0.6))
+	return 1.0-smoothstep(0.0,1.2,minf(minf(on_pad,in_vault),on_field))
 
 ## The isle as a row of the cluster's lands (studies/wreck_cluster_art.gd
 ## `lands`: name, outline, ground, depth, seed, cliffs, rim).
@@ -122,11 +124,13 @@ static func build_land(spec: Array) -> Node3D:
 
 ## The pieces: [layout name (under home/), node, world foot, yaw (deg)]:
 ## a few ruins on the rims, off the strip's band, so the isle reads as an
-## old place from the approach; the vault on its shelf; the deposit pad.
+## old place from the approach; the vault on its shelf; the deposit pad;
+## the drop field on the south flat.
 static func built() -> Array:
 	return [
 		["vault",vault(),Vector3(VAULT_AT.x,TOP,VAULT_AT.y),rad_to_deg(VAULT_YAW)],
 		["deposit_pad",pad(),Vector3(PAD_AT.x,TOP,PAD_AT.y),0.0],
+		["drop_field",field(),Vector3(FIELD_AT.x,TOP,FIELD_AT.y),0.0],
 		["rim_pier",RuinKit.piece("pier",561,0.45),Vector3(-780.0,TOP,25.0),15.0],
 		["rim_fallen",RuinKit.piece("fallen_pier",562,0.45),Vector3(-822.0,TOP,-9.0),70.0],
 		["bluff_arch",RuinKit.piece("arch",563,0.4),Vector3(-922.0,ground(-922.0,41.0),41.0),100.0],
@@ -253,4 +257,79 @@ static func pad() -> Node3D:
 	for sgn: float in [-1.0,1.0]:
 		for k: float in [-1.0,1.0]:
 			box.call(Vector3(0.35,0.065,2.2),Vector3(sgn*(h.x-1.6),0.035,k*0.75),dark,-k*sgn*0.6)
+	return root
+
+## The drop field (`home/drop_field`, drawn only: treasures land on the
+## turf under it; scripts/home/drop_pass.gd judges them by its box,
+## FIELD_HALF about its middle): a bed of pale sand, mats of straw strewn
+## over it, two rope nets pegged out on the straw, a kerb of dark stones,
+## and a tall post with a pennant at each corner so it reads from the air.
+static func field() -> Node3D:
+	var root := Node3D.new()
+	root.name = "DropField"
+	var mat := func(c: String) -> StandardMaterial3D:
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(c)
+		m.roughness = 1.0
+		return m
+	var sand: StandardMaterial3D = mat.call("cdb88c")
+	var straw: StandardMaterial3D = mat.call("d9b55a")
+	var straw_dark: StandardMaterial3D = mat.call("b58f3e")
+	var rope: StandardMaterial3D = mat.call("6e5233")
+	var kerb: StandardMaterial3D = mat.call("5d5a52")
+	var post: StandardMaterial3D = mat.call("5a4630")
+	var cloth: StandardMaterial3D = mat.call("b0472f")
+	cloth.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var box := func(size: Vector3, at: Vector3, m: Material, yaw := 0.0, shadow := false) -> void:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = size
+		mi.mesh = bm
+		mi.material_override = m
+		mi.position = at
+		mi.rotation.y = yaw
+		if not shadow: mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(mi)
+	var h := FIELD_HALF
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 591
+	box.call(Vector3(h.x*2.0,0.06,h.y*2.0),Vector3(0.0,0.03,0.0),sand)
+	# Straw: overlapping mats, a little turned, light and dark.
+	for i in 70:
+		var at := Vector3(rng.randf_range(-h.x+1.5,h.x-1.5),0.07+0.004*float(i%5),rng.randf_range(-h.y+1.2,h.y-1.2))
+		var size := Vector3(rng.randf_range(2.0,4.2),0.05,rng.randf_range(1.2,2.6))
+		box.call(size,at,straw if rng.randf() < 0.7 else straw_dark,rng.randf_range(-0.6,0.6))
+	# Two nets pegged out over the straw: a rope grid on short pegs.
+	for mid: Vector3 in [Vector3(-h.x*0.45,0.0,0.0),Vector3(h.x*0.45,0.0,0.0)]:
+		var nx := 6.0
+		var nz := 4.5
+		var step := 0.75
+		var x := -nx
+		while x <= nx+0.01:
+			box.call(Vector3(0.06,0.06,nz*2.0),mid+Vector3(x,0.14,0.0),rope)
+			x += step
+		var z := -nz
+		while z <= nz+0.01:
+			box.call(Vector3(nx*2.0,0.06,0.06),mid+Vector3(0.0,0.15,z),rope)
+			z += step
+		for c: Vector2 in [Vector2(-1,-1),Vector2(1,-1),Vector2(1,1),Vector2(-1,1)]:
+			box.call(Vector3(0.16,0.4,0.16),mid+Vector3(c.x*nx,0.2,c.y*nz),post,0.0,true)
+	# The kerb: dark stones along each side, a little uneven.
+	for side: int in 4:
+		var along := h.x if side < 2 else h.y
+		var across := h.y if side < 2 else h.x
+		var sgn := 1.0 if side%2 == 0 else -1.0
+		var x := -along
+		while x < along:
+			var run := minf(rng.randf_range(0.8,1.4),along-x)
+			var m := x+run*0.5
+			var at := Vector3(m,0.08,sgn*across) if side < 2 else Vector3(sgn*across,0.08,m)
+			var size := Vector3(run-0.1,rng.randf_range(0.12,0.2),0.55) if side < 2 else Vector3(0.55,rng.randf_range(0.12,0.2),run-0.1)
+			box.call(size,at,kerb,0.0,true)
+			x += run
+	# Corner posts with pennants (seen from the air on the approach).
+	for c: Vector2 in [Vector2(-1,-1),Vector2(1,-1),Vector2(1,1),Vector2(-1,1)]:
+		var foot := Vector3(c.x*(h.x+0.6),0.0,c.y*(h.y+0.6))
+		box.call(Vector3(0.22,4.2,0.22),foot+Vector3(0.0,2.1,0.0),post,0.0,true)
+		box.call(Vector3(1.6,0.9,0.03),foot+Vector3(-c.x*0.8,3.65,0.0),cloth,0.0,true)
 	return root

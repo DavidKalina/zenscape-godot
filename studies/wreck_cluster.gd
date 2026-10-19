@@ -63,6 +63,7 @@ const Stretch = preload("res://studies/wreck_cluster_stretch.gd")
 const Dig = preload("res://scripts/dig/dig.gd")
 const Home = preload("res://studies/wreck_cluster_home.gd")
 const VaultHost = preload("res://scripts/home/vault_host.gd")
+const DropPass = preload("res://scripts/home/drop_pass.gd")
 
 ## The re-deal's key (free on foot and in the plane: scripts/pad.gd,
 ## scripts/kit_isle/dev_keys.gd).
@@ -110,6 +111,8 @@ var _ledger_was := []
 var home_on := false
 ## --home: the vault's banking (scripts/home/vault_host.gd).
 var vault: Node3D = null
+## --home: the drop pass over the home isle's field (scripts/home/drop_pass.gd).
+var drop_pass: Node3D = null
 
 func _ready() -> void:
 	home_on = "--home" in LaunchArgs.user_args()
@@ -612,6 +615,9 @@ func _add_life() -> void:
 		vault = VaultHost.new()
 		add_child(vault)
 		vault.setup(self)
+		drop_pass = DropPass.new()
+		add_child(drop_pass)
+		drop_pass.setup(self)
 	if not LaunchArgs.user_args().has("--no-brood"):
 		brood = BroodHost.new()
 		add_child(brood)

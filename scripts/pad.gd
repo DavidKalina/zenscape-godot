@@ -79,6 +79,9 @@ const ACTIONS := {
 	"fly_lean_right":[["button",JOY_BUTTON_RIGHT_SHOULDER]],
 	"fly_land":[["button",JOY_BUTTON_Y]],
 	"fly_camera":[["button",JOY_BUTTON_RIGHT_STICK]],
+	# In flight, pressed: open the cargo bag and let its load fall (the
+	# home isle's drop pass, scripts/home/drop_pass.gd).
+	"fly_drop":[["key",KEY_E],["button",JOY_BUTTON_B]],
 	# Out of the plane: X on both (falling, Jump opens the sail).
 	"fly_eject":[["key",KEY_X],["button",JOY_BUTTON_X]],
 	# Falling out of the plane: the right trigger tucks and dives.
