@@ -22,6 +22,11 @@ extends "res://studies/plane_field_isle.gd"
 ##   K            the dragon far off in the lightning now; Shift+K close
 ##                (scripts/dragon_sightings.gd); in a storm it comes on its own
 ##   R            back to the start
+##   Space        by the parked plane: climb in (the plane field's)
+## On their own, a few minutes into weather (tuned together): a cell every
+## few minutes passing over the field or an isle, a whiteout or two flying
+## through its core, and the dragon now and then (about one sighting every
+## two minutes in a full storm, rested 35 s after each).
 ##   ./run-sky-weather.command        (heavy on: --heavy)
 ##   ./run-sky-weather.command --storm=1   a full storm from the start
 ##   ./run-sky-weather.command --cell-at=-430,-240   a cell over the near isle
@@ -87,7 +92,7 @@ func _add_elements() -> void:
 	layer.add_child(_readout)
 
 func _read() -> String:
-	var line := "Storm %d%%   (T front, C cell, M whiteout, Shift+T sky storm, G gust, F12 lightning, K/Shift+K dragon)" % roundi(elements.storm*100.0)
+	var line := "Storm %d%%   (T front, C cell, M whiteout, Shift+T sky storm, G gust, F12 lightning, K/Shift+K dragon far/close, R start, Space board)" % roundi(elements.storm*100.0)
 	line += "\n"+drift.describe(elements._air_angle(),elements.storm)
 	if elements.front.active:
 		var d: float = elements.front.ahead_of(elements.probe())

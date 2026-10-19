@@ -44,8 +44,8 @@ const TOP := 650.0
 const COME := 6.0
 const GO := 300.0
 ## On their own: the first (s, a range), then the wait after one ends.
-const FIRST := Vector2(35.0,70.0)
-const EVERY := Vector2(140.0,260.0)
+const FIRST := Vector2(20.0,45.0)
+const EVERY := Vector2(60.0,150.0)
 ## How far off its aim it may pass (m, sideways).
 const AIM_SPREAD := 160.0
 ## Its lightning: the mean wait (s), from how far in (strength), the share

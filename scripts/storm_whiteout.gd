@@ -27,7 +27,7 @@ const CLOSE := 1.4
 const OPEN := 1.8
 const CORE := 0.9
 const EVERY := 18.0
-const REST := 25.0
+const REST := 35.0
 ## The flashes in it: the mean wait (s), how far off (m), and the first's
 ## delay after it closes (s).
 const FLASH_EVERY := 3.5

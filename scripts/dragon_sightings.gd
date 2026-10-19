@@ -30,7 +30,8 @@ extends Node3D
 ## s in a full storm; a cell's or the front's core (their `storm_at` past
 ## CORE) and the murk (`murk`, 0 to 1: the hook whiteouts set each frame)
 ## make them MORE times as likely at full, and close ones likelier
-## (CLOSE_SHARE). `call_now("far" / "close")` starts one now (K, Shift+K in
+## (CLOSE_SHARE). After one ends none comes on its own for REST s, so they
+## stay rare even deep in a cell. `call_now("far" / "close")` starts one now (K, Shift+K in
 ## studies/sky_weather_field.gd).
 ##
 ## Drawn (scripts/dragon_glimpse.gd, `glimpse`): the rim dragon posed in
@@ -49,9 +50,10 @@ signal heard(event: Dictionary)
 signal sighted(event: Dictionary)
 
 const FROM := 0.5
-const EVERY := 90.0
+const EVERY := 60.0
 const CORE := 0.85
-const MORE := 2.5
+const MORE := 1.5
+const REST := 35.0
 const CLOSE_SHARE := Vector2(0.12,0.75)
 ## Far: range (m), its height over the eye (m), its glide (m/s), how far
 ## across the view's half it may be (share), and how far behind it the
@@ -121,6 +123,7 @@ var _rng := RandomNumberGenerator.new()
 var _at_frame := -1
 var _at_kind := "far"
 var _frames := 0
+var _rest := 0.0
 var _clips := {}
 var _voices: Array[AudioStreamPlayer3D] = []
 var _next_voice := 0
@@ -205,6 +208,7 @@ func step(delta: float) -> void:
 	if not is_nan(murk_pinned): murk = murk_pinned
 	if _at_frame >= 0:
 		if _frames == _at_frame: call_now(_at_kind)
+	elif now.is_empty() and every > 0.0 and _rest > 0.0: _rest -= delta
 	elif now.is_empty() and every > 0.0:
 		var storm: float = _weather.storm
 		if storm >= FROM:
@@ -338,6 +342,7 @@ func _advance(delta: float) -> void:
 		_log("end %d" % int(now.id))
 		now = {}
 		lit = 0.0
+		_rest = REST
 
 ## Lightning behind it from the eye, to light it; the second flash may show
 ## it gone.
