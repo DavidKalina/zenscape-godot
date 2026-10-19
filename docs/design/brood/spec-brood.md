@@ -49,7 +49,13 @@ a scurry.
    onto the sling (or the plane) and hang on, visibly. Hard banking, a
    skim near the ground or a cliff, or threading a narrow gap shakes them
    off; they tumble away. While they hang on they drag a little, so you
-   want them off. This needs carry's cargo sling: if `iter/carry` has
+   want them off. **Spec change:** carry's hitch is now the bag (a sack
+   on a rope under the plane whose kg weighs the plane: `iter/carry`
+   60eaac4e, 6a0db8b6), not the sling. Clingers grab the bag (or the
+   plane), each adding kg to the bag's load through carry's load path, so
+   a few of them make the plane sluggish; shedding them gives it back.
+   Merge `iter/carry` (6a0db8b6 or later committed) into `iter/brood`
+   first. This needs carry's cargo sling: if `iter/carry` has
    committed it by then, merge `iter/carry` into `iter/brood` first; if it
    hasn't, do this task last and abort with that as the blocker.
 
