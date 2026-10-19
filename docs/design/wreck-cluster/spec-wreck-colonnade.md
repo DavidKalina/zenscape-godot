@@ -60,9 +60,12 @@ is a playground the player works through, built as one set piece.
 
 | Element | Its job (what it gates) | Tool needed / tech margin | Deliberate shortcut? |
 |---|---|---|---|
-| Colonnade spine (motif, authored seed 61, at its own study's coordinates: ridge x 14..150) | The core: holds 10 of the part spots (cella, pulpit, two portals, balcony, south slab, bench end, three tail fragments); its own stairs, slabs and rope bridges are its routes | Its own (the colonnade study's routes) | The spine's own |
+| Colonnade spine (motif, authored seed 61, at its own study's coordinates: ridge x 14..150) | The core: holds 10 of the part spots (spot 11 is the tower top) (cella, pulpit, two portals, balcony, south slab, bench end, three tail fragments); its own stairs, slabs and rope bridges are its routes | Its own (the colonnade study's routes) | The spine's own |
 | Strip islet (x 20..122, z ~10..23, turf y 31) | Take-off and landing: 99 m `longest_run`, the plane parked at its east end facing west | None (walk) | No |
 | Strip footbridge (lobe x 110 z 4.6, y 31 to the bench lip z -2.6, y 32.7) | The only way from the strip onto the spine (the bench) | Walk over it: the gap is about 7 m with the flank falling under it, past a long jump's 4.24 m carry | No |
+| Tower plinth + stairs (`wreck_cluster/tower/plinth`, `tower/stairs`; pad at the spine's east end, x 144.5 z -25, turf 31.7) | The way into the tower: a kit flight north from the pad (2.24 m) to a landing under the plinth's lip | Stairs, then a 1.56 m lip (under GRAB_TOP 1.875: jump, grab) | The crest's east lip (x ~138, y 34.6, about 3 m west of the plinth) may jump straight onto the plinth: unchecked, a reward if it holds |
+| Tower shell (`tower/shell`, kick walls 28 m over the plinth, rim y 63.5) | The tower climb and the upright in the far silhouette: in at the door, 20 wall kicks up the chimney to the kick walls' heads | Wall kicks (KICK_GAP 1.98); its breaches are rests or ways out | No |
+| Lookout beam (`tower/lookout`, off the east wall's head, 3.4 m out over the sky, top y 63.75) | The tower top: the view over the whole cluster, the coast down's start (step 3 gives it a goal), part spot 11 beside it | Reached only from the rim | No |
 
 ## Constraints
 
