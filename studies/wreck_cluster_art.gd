@@ -791,18 +791,61 @@ static func lookout_tip() -> Vector3:
 static func tower() -> Array:
 	var r := plinth_rect()
 	var c := r.get_center()
-	var b := RuinKit.Build.new(611,0.4,"Podium")
 	var hx := r.size.x*0.5
-	Spine._beam(b,Vector3(-hx,0.0,0.0),Vector3(hx,0.0,0.0),Vector2(r.size.y,PODIUM_H+PODIUM_DEEP))
+	var hz := r.size.y*0.5
+	# The podium: an ashlar block, its faces laid in courses under a
+	# chamfered coping, quoined corners, a string course, a plinth course
+	# either side of the stairs; walked on one clean box (no lip).
+	var b := RuinKit.Build.new(611,0.4,"Podium")
+	var deep := PODIUM_H+PODIUM_DEEP
+	for f: Array in [[Vector3.BACK,hx,hz,0.0],[Vector3.FORWARD,hx,hz,0.0],[Vector3.RIGHT,hz,hx,FACE*2.0],[Vector3.LEFT,hz,hx,FACE*2.0]]:
+		_ashlar_face(b,f[0],f[1],f[2],f[3],-PODIUM_H-1.5,0.0)
+	_quoins(b,hx,hz,-PODIUM_H-1.5,0.0)
+	for f: Array in [[Vector3.BACK,hx,hz],[Vector3.FORWARD,hx,hz],[Vector3.RIGHT,hz,hx],[Vector3.LEFT,hz,hx]]:
+		_band(b,f[0],f[1],f[2],STRING_AT-PODIUM_H)
+	var stair_half := RuinKit.STAIR_WIDTH*0.5+0.6
+	for side: float in [-1.0,1.0]:
+		var half_len := (hx-stair_half)*0.5
+		RuinKit._plinth_course(b,Transform3D(Basis.IDENTITY,Vector3(side*(stair_half+half_len),-PODIUM_H-0.12,hz-FACE)),half_len-RuinKit.PLINTH_COURSE.y,FACE)
+	b.hulls.clear()
+	b.hull_anchors.clear()
+	_core(b,Vector3(hx,deep*0.5,hz),Vector3(0.0,-deep*0.5,0.0))
+	# A broken parapet along the east apron's edge, beside the shell (none
+	# west, where the crest's lip jumps on; none by the belfry's stair).
+	var shell_back := TOWER_AT.y-Tower.half_extents().y-c.y
+	var par := Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(hx-PARAPET_D,0.0,0.0))
+	RuinKit._courses(b,par,-hz+0.3,-shell_back,0.0,RuinKit._ruin_line(b,-hz+0.3,-shell_back,0.3,PARAPET_H,0.6,true),PARAPET_D,func(_y: float) -> Vector2: return Vector2(0.0,-1.0),0.38,true)
+	_fallen(b,Vector3(hx-1.6,0.0,hz*0.25))
 	var podium := b.finish()
-	# The skirt: three worn tiers (west, north, east) round the podium.
+	# The skirt: three tiers (west, north, east) round the podium, a
+	# retaining wall in courses down the cliff under a coping, walked on
+	# clean boxes as before.
 	var sk := RuinKit.Build.new(615,0.5,"Skirt")
 	var sx := hx+SKIRT
-	var sz := r.size.y*0.5
-	var tier := Vector2(SKIRT,SKIRT_H+SKIRT_DEEP)
-	Spine._beam(sk,Vector3(-sx,0.0,-sz-SKIRT*0.5),Vector3(sx,0.0,-sz-SKIRT*0.5),tier)
-	Spine._beam(sk,Vector3(-sx+SKIRT*0.5,0.0,-sz),Vector3(-sx+SKIRT*0.5,0.0,sz-1.0),tier)
-	Spine._beam(sk,Vector3(sx-SKIRT*0.5,0.0,-sz),Vector3(sx-SKIRT*0.5,0.0,sz-1.0),tier)
+	var sz := hz
+	var tall := SKIRT_H+SKIRT_DEEP
+	var south := sz-1.0
+	# The facing goes 1.5 m under the turf; the core on down the cliff.
+	var sunk := -SKIRT_H-1.5
+	_ashlar_face(sk,Vector3.FORWARD,sx,sz+SKIRT,0.0,sunk,0.0)
+	for side: float in [-1.0,1.0]:
+		var n := Vector3(side,0.0,0.0)
+		# The tier's outer face, along z from the north tier to its end.
+		var mid := (south-sz-SKIRT)*0.5
+		_ashlar_face(sk,n,(south+sz+SKIRT)*0.5,sx,FACE*2.0,sunk,0.0,mid*-side)
+		# Its broken south end.
+		_ashlar_face(sk,Vector3.BACK,SKIRT*0.5,south,0.0,sunk,0.0,side*(sx-SKIRT*0.5),-0.3)
+	for corner: Vector3 in [Vector3(-sx,0.0,-sz-SKIRT),Vector3(sx,0.0,-sz-SKIRT)]:
+		_quoin_stack(sk,corner,sunk,0.0)
+	sk.hulls.clear()
+	sk.hull_anchors.clear()
+	# Coping stones fallen onto the tiers' tops.
+	for at: Vector3 in [Vector3(-sx*0.45,0.0,-sz-SKIRT*0.5),Vector3(sx-SKIRT*0.5,0.0,south-2.6),Vector3(-sx+SKIRT*0.5,0.0,-sz*0.2)]:
+		_fallen(sk,at)
+	_core(sk,Vector3(sx,tall*0.5,SKIRT*0.5),Vector3(0.0,-tall*0.5,-sz-SKIRT*0.5))
+	for side: float in [-1.0,1.0]:
+		var len_z := south+sz
+		_core(sk,Vector3(SKIRT*0.5,tall*0.5,len_z*0.5),Vector3(side*(sx-SKIRT*0.5),-tall*0.5,(south-sz)*0.5))
 	var skirt := sk.finish()
 	var shell := Tower.tower_shell(612,SHELL_WEAR,SHELL_H,true)
 	var belfry := Belfry.belfry(616,BELFRY_WEAR)
@@ -829,6 +872,87 @@ static func tower() -> Array:
 		["tower/lintel",lintel,Vector3(lp.x,lp.y,TOWER_AT.y-Tower.half_extents().y),0.0],
 		["tower/lookout",lookout,Vector3(ox,tower_rim()+LOOKOUT_STEP,TOWER_AT.y),0.0],
 	]
+
+## The podium's and skirt's dressing: the facing's half depth (courses
+## FACE*2 thick on a rubble core), its course height, the string course's
+## height over the turf.
+const FACE := 0.3
+const COURSE := 0.5
+const STRING_AT := 2.3
+## The broken parapet on the podium's east edge: its highest and half depth.
+const PARAPET_H := 1.0
+const PARAPET_D := 0.25
+
+## Coursed facing on the face of a block about the frame's origin whose
+## outward normal is `n`, `off` out from the middle, along the face
+## `half_len` either side of `shift` less `trim` at each end (where a
+## crossing face takes the corner), from `y0` up to `y1` under a coping
+## (`y1` lowered by `drop` for a worn end).
+static func _ashlar_face(b: RuinKit.Build, n: Vector3, half_len: float, off: float, trim: float, y0: float, y1: float, shift := 0.0, drop := 0.0) -> void:
+	var pose := Transform3D(Basis(Vector3.UP,atan2(n.x,n.z)),n*(off-FACE))
+	pose.origin += Basis(Vector3.UP,atan2(n.x,n.z))*Vector3(shift,0.0,0.0)
+	var x0 := -half_len+trim
+	var x1 := half_len-trim
+	var top := (func(_x: float) -> float: return y1+drop) if drop == 0.0 else RuinKit._ruin_line(b,x0,x1,y1+drop,y1,0.2)
+	RuinKit._courses(b,pose,x0,x1,y0,top,FACE,func(_y: float) -> Vector2: return Vector2(0.0,-1.0),COURSE,true)
+
+## Quoins up the four corners of a block `hx` by `hz` about the origin:
+## long and short stones in turn, standing a hair proud of both faces.
+static func _quoins(b: RuinKit.Build, hx: float, hz: float, y0: float, y1: float) -> void:
+	for sx: float in [-1.0,1.0]:
+		for sz: float in [-1.0,1.0]:
+			_quoin_stack(b,Vector3(sx*hx,0.0,sz*hz),y0,y1)
+
+## One corner's quoins at `c` (x, z: the corner; its signs say which way
+## is out).
+static func _quoin_stack(b: RuinKit.Build, c: Vector3, y0: float, y1: float) -> void:
+	var sx := signf(c.x)
+	var sz := signf(c.z)
+	var y := y0
+	var k := 0
+	while y < y1-0.25:
+		var h := minf(COURSE*1.1,y1-0.2-y)
+		var along := Vector2(0.95,0.55) if k%2 == 0 else Vector2(0.55,0.95)
+		var mid := Vector3(c.x-sx*(along.x*0.5-0.05),y+h*0.5,c.z-sz*(along.y*0.5-0.05))
+		b.solid(RuinKit._box(b,Vector3(along.x*0.5,h*0.5-0.005,along.y*0.5)),RuinKit._settle(b,mid,0.4),RuinKit._stone(b,1.12))
+		y += h
+		k += 1
+
+## A string course round the face whose outward normal is `n` at height
+## `y`: a chamfered band standing out a little, in stones of random length.
+static func _band(b: RuinKit.Build, n: Vector3, half_len: float, off: float, y: float) -> void:
+	var basis := Basis(Vector3.UP,atan2(n.x,n.z))
+	var x := -half_len
+	while x < half_len-0.05:
+		var x1 := minf(half_len,x+b.rng.randf_range(1.0,1.8))
+		if half_len-x1 < 0.4: x1 = half_len
+		var half := Vector3((x1-x)*0.5-0.005,0.13,0.2)
+		var planes := RuinKit._box(b,half)
+		var cn := Vector3(0.0,-1.0,1.3).normalized()
+		planes.append(Plane(cn,cn.dot(Vector3(0.0,-half.y+0.08,half.z))))
+		var at := basis*Vector3((x+x1)*0.5,0.0,off-0.08)+Vector3(0.0,y,0.0)
+		b.solid(planes,RuinKit._jiggle(b,Transform3D(basis,at),0.3),RuinKit._stone(b,1.08))
+		x = x1
+
+## A coping stone fallen onto a block's top at `at`: lying askew, a
+## corner sunk, walked over (a low step).
+static func _fallen(b: RuinKit.Build, at: Vector3) -> void:
+	var half := Vector3(b.rng.randf_range(0.45,0.7),0.14,0.32)
+	var basis := Basis(Vector3.UP,b.rng.randf()*TAU)*Basis(Vector3.RIGHT,b.rng.randf_range(-0.12,0.12))
+	b.solid(RuinKit._box(b,half),Transform3D(basis,at+Vector3(0.0,half.y-0.04,0.0)),RuinKit._stone(b,1.06))
+	for i in range(2):
+		var s := Vector3(b.rng.randf_range(0.12,0.22),b.rng.randf_range(0.07,0.12),b.rng.randf_range(0.1,0.2))
+		var a := b.rng.randf()*TAU
+		var off := Vector3(cos(a),0.0,sin(a))*b.rng.randf_range(0.8,1.3)
+		b.solid(RuinKit._box(b,s),Transform3D(Basis(Vector3.UP,a),at+off+Vector3(0.0,s.y*0.8,0.0)),RuinKit._stone(b),false)
+
+## A block's rubble core (drawn, not collided, set in behind its facing)
+## and its clean walk box (the block's full size: no lip, no gaps).
+static func _core(b: RuinKit.Build, half: Vector3, mid: Vector3) -> void:
+	var pose := Transform3D(Basis.IDENTITY,mid)
+	var inner := half-Vector3(FACE,0.02,FACE)
+	b.solid(RuinKit._box(b,inner,0.02),pose,RuinKit._stone(b,0.8),false,false)
+	RuinKit._walk_hull(b,pose,[Plane(Vector3.RIGHT,half.x),Plane(Vector3.LEFT,half.x),Plane(Vector3.UP,half.y),Plane(Vector3.DOWN,half.y),Plane(Vector3.BACK,half.z),Plane(Vector3.FORWARD,half.z)])
 
 # --- The part spots -----------------------------------------------------------------
 

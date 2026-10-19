@@ -142,6 +142,10 @@ The iterate skill's defaults.
 
 - The tower's podium and stepped skirt read as plain grey boxes in front of
   the belfry; dress or reshape them so the base is part of the ruin.
+  (Done in the look pass's third task: coursed ashlar on a rubble core,
+  quoins, a string course, coping, a plinth course either side of the
+  stairs, a broken parapet on the podium's east edge, fallen coping stones;
+  collided on the same clean boxes as before.)
 - The far silhouette is still a long low hull with a slim block at the east
   end. The tower alone won't fix it at the spine's 136 m length; the islets
   and the look pass must add height and mass so the cluster reads upright.
