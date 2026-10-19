@@ -190,6 +190,7 @@ func _build_art() -> void:
 	LayoutOverrides.begin("wreck_cluster")
 	WorldIslands.begin()
 	motif.build(art)
+	_clear_tail()
 	for land: Array in motif.lands: add_turf(land[0],land[1],land[2])
 	for spec: Array in Art.lands():
 		var land := Art.build_land(spec)
@@ -213,6 +214,21 @@ func _build_art() -> void:
 		add_child(editor)
 		editor.setup(self,foot_host)
 	print("wreck cluster: %d triangles, built in %d ms" % [triangles(art),Time.get_ticks_msec()-began])
+
+## The spine's tail cut (spec: clean up the floating rocks and debris):
+## its five fragments, the stepping stones between them, the rope bridges
+## and their anchors drifted round the tower's foot as clutter. Their spots
+## stand on solid ground now (Art.spots: the tower rock's lobe takes the
+## first fragment's place). The motif itself still builds its tail.
+const TAIL_CUT := ["frag_1","frag_2","frag_3","frag_4","frag_5","FloatingStones","Anchors","RopeBridge0","RopeBridge1"]
+func _clear_tail() -> void:
+	for called: String in TAIL_CUT:
+		var node := art.get_node_or_null(called)
+		if node == null: continue
+		motif.lands = motif.lands.filter(func(l: Array) -> bool: return l[0] != node)
+		if node is MeshInstance3D: motif.bridges.erase(node)
+		art.remove_child(node)
+		node.free()
 
 ## A kit piece stood at `foot` turned `yaw` degrees, named for the world
 ## view (`wreck_cluster/<name>`; the layout file's move wins).

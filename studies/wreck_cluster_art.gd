@@ -6,13 +6,15 @@ extends RefCounted
 ##            (scripts/kit_isle/motif_colonnade_spine.gd at its authored
 ##            seed, studies/colonnade_spine_isle_art.gd's numbers), standing
 ##            where its own study stands it: the ridge along x 14..150, the
-##            temple's podium at its west head, the tail curling south-east
+##            temple's podium at its west head (its tail of fragments and
+##            stepping stones cut: studies/wreck_cluster.gd TAIL_CUT)
 ##   strip    a long narrow islet under the spine's south flank, the plane
 ##            parked at its east end facing west down a clear run; a lobe
 ##            off its north edge carries the footbridge up onto the spine's
 ##            south bench
 ##   coast    a tall islet east of the tower, reached only by the sail off
-##            the lookout: an arch, part spot 13, the way on down to the tail
+##            the lookout: an arch, part spot 13, the way on down to the tower
+##            rock's south-east lobe
 ##   ropes    the chain off the north shelf: a slam-spring slab under a jib,
 ##            its launch into the swing rope hung from the jib, the release
 ##            across onto the rope rock's landing (an islet north of the
@@ -64,9 +66,23 @@ static func strip_outline() -> Array:
 ## east corner where the pad falls away, its turf TOWER_ROCK, under the
 ## skirt's top, so the podium's tiers stand on it rather than in the air.
 const TOWER_ROCK := 30.4
+## Its south-east lobe takes in the ground where the spine's own tail
+## curled off in fragments and stepping stones (cut here as clutter): the
+## coast down's way on lands on it (spot 08 and its cache, TAIL_LOBE).
+const TAIL_LOBE := Vector2(157.0,-10.0)
 static func tower_rock_outline() -> Array:
 	return [Vector2(135.0,-28.5),Vector2(134.5,-33.5),Vector2(138.0,-38.0),Vector2(146.0,-39.0),Vector2(152.5,-37.0),
-		Vector2(155.5,-31.0),Vector2(155.5,-22.0),Vector2(153.5,-15.5),Vector2(150.0,-15.0),Vector2(149.5,-28.0)]
+		Vector2(155.5,-31.0),Vector2(155.5,-22.0),Vector2(158.5,-16.5),Vector2(161.5,-11.5),Vector2(160.5,-6.5),
+		Vector2(156.5,-4.8),Vector2(151.5,-5.5),Vector2(147.0,-7.5),Vector2(145.8,-11.0),Vector2(147.5,-15.5),Vector2(149.5,-28.0)]
+## A point on the tower rock's turf (world), `off` (x, z) from the lobe's
+## middle.
+static func on_lobe(off := Vector2.ZERO) -> Vector3:
+	return Vector3(TAIL_LOBE.x+off.x,TOWER_ROCK,TAIL_LOBE.y+off.y)
+## Spot 09: on the tower rock's turf under the belfry's north face, below
+## its outer stair (the slam onto its cache: off the stair's flights).
+const UNDER_BELFRY := Vector2(146.0,-36.6)
+## Spot 10: on the strip's lobe by the footbridge's foot, under the bench.
+const STRIP_LOBE_SPOT := Vector2(116.5,6.5)
 
 ## The coast rock: a tall islet standing alone in the sky east of the
 ## tower, its turf COAST_TOP (15 m over the spine's TOP, near the belfry's
@@ -75,7 +91,7 @@ static func tower_rock_outline() -> Array:
 ## y 49 (measured: 4.35 m on per m down after the jump; at y 46 he is
 ## 46.7 m out), while from the next highest ground, the belfry's wall head
 ## (y 46.1, 35 m west of its near edge), the sail is 4.9 m out at y 46.
-## The way on: the sail off its west edge down to the tail's first fragment
+## The way on: the sail off its west edge down to the tower rock's lobe
 ## (spot 08, 24 m away and 12 m down: the slam onto its cache from the sail).
 const COAST_TOP := 46.0
 const COAST_DEEP := 50.0
@@ -772,9 +788,9 @@ static func spots() -> Array:
 		["way","under the second portal's arch",on_spine(float(Spine.LINES[5][0]),1.2),["lying","jammed"]],
 		["bench","the top slab of the south three",on_slab("south_3"),["lying","jammed"]],
 		["bench","the bench's east end by the tail",Spine.bench_point(140.0),["lying","cache"]],
-		["tail","the tail's first fragment",on_slab("frag_1",Vector2(0.5,-0.5)),["lying","islet","cache"]],
-		["tail","the tail's far fragment (over the bridge)",on_slab("frag_3"),["lying","salvager"]],
-		["tail","the last fragment, under the bench",on_slab("frag_5"),["lying","water","cache"]],
+		["tail","the tower rock's south-east lobe, where the tail fell (the coast down's way on)",on_lobe(Vector2(0.5,-0.5)),["lying","islet","cache"]],
+		["tower","the tower rock under the belfry's north face",Vector3(UNDER_BELFRY.x,TOWER_ROCK,UNDER_BELFRY.y),["lying","cache"]],
+		["bench","the strip's lobe by the footbridge's foot, under the bench",Vector3(STRIP_LOBE_SPOT.x,STRIP_TOP,STRIP_LOBE_SPOT.y),["lying","water"]],
 		["tower","the tower top, on the east wall's head by the lookout",east_head(1.4),["lying","salvager"]],
 		["tower","the belfry's wall head, over the bell (partway up)",belfry_south_head(-1.4),["lying","jammed"]],
 		["coast","under the coast rock's arch (the coast down's end)",coast_arch_foot(),["lying","islet","salvager"]],
@@ -791,14 +807,14 @@ static func spots() -> Array:
 ## (NN the spot's). Every one is CACHE_TOUGH: a slam off CACHE_DROP m or
 ## more (scripts/slam.gd: 0.25 + 0.75 (drop - 1.8) / 9.2) or a side slam
 ## (0.65) opens it; a hop's slam only flares its glint. Each has a height
-## over it to slam from (only 10 checked): the cella's walls (01), the
-## crest over the bench's end (07), the tower's skirt (08), the crest north
-## of 10 (a jump and the sail down).
+## over it to slam from: the cella's walls (01, unchecked), the crest over
+## the bench's end (07, unchecked), the coast down's sail off the coast
+## rock (08, checked), a jump off the belfry's outer stair (09, checked).
 const CACHES := [
 	[0,"pier",731,15.0,0.3],
 	[6,"buttress",732,90.0,0.3],
 	[7,"wall",733,-20.0,0.15],
-	[9,"pier",734,0.0,0.0],
+	[8,"pier",734,0.0,0.0],
 ]
 const CACHE_TOUGH := 0.32
 const CACHE_DROP := 2.6
