@@ -99,6 +99,9 @@ const BOUNCE := 0.3
 ## Reeling in: its pace along the ground (m/s) and the flick off a lip.
 const REEL_SPEED := 6.0
 const FLICK := Vector2(1.6,1.4)
+## Reeled off a beam: flicked over it toward him, then yanked through the
+## air to his hand (m/s², times size), in from anywhere he stands.
+const YANK := 45.0
 ## The tug: reaching up the rope, the yank back, the hold before it settles
 ## (s); a crumbly lip's chance of being a bad placement; the slip back over
 ## the lip (s).
@@ -198,6 +201,13 @@ const SWING_OVER := 1.0
 const SWING_BOUNCE := 0.25
 const SWING_COOL := 0.3
 const UPRIGHT := 0.3
+## Swinging, up or down the rope (m/s, times size): E/pad B climbs (the
+## swing shorter, faster and tighter), F/D-pad down slides (longer, further).
+## The pace scales by old/new length (his momentum round the beam kept).
+## The hands go over each other SWING_HAND m apart as he climbs.
+const SWING_UP := 3.5
+const SWING_DOWN := 5.0
+const SWING_HAND := 0.14
 const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
 
 var study: Node3D
@@ -213,6 +223,9 @@ var swing_releases := 0
 var scrapes := 0
 var _pend: SwingRope
 var _swing_cool := 0.0
+var _climb_phase := 0.0
+var _climb_k := 0.0
+var swing_climbed := 0.0
 var _tilt_left := 0.0
 var _tilt := Basis.IDENTITY
 ## "coiled" (at his side), "aim", "fly", "drag" (pulled back to the lip),
@@ -331,6 +344,7 @@ var _t := 0.0
 var _whirl := 0.0
 var _slide_from := Vector3.ZERO
 var _reel_after := false
+var _yank := false
 var _hook: Node3D
 var _rope: MultiMeshInstance3D
 var _reticle: MeshInstance3D
@@ -441,6 +455,7 @@ func reset() -> void:
 	_drop_swing()
 	_off_rope()
 	_reel_after = false
+	_yank = false
 	_show_aim(false)
 	_rope.visible = false
 	_hook.visible = false
@@ -702,6 +717,7 @@ func _post_top(post: Node3D) -> Vector3:
 
 ## A caught (or seated) hook: he reaches up the rope and yanks it.
 func tug() -> void:
+	if swinging or swing_hold: return
 	if climber and rappel:
 		# Rappelling, E pushes off the wall in a hop.
 		if _hop_t < 0.0 and _stance_k >= 1.0 and not study.get("motor").crouch:
@@ -829,6 +845,10 @@ func reel() -> void:
 	match state:
 		"caught", "drag", "tug", "seated":
 			reels += 1
+			if hold == "beam" and beam_mid != Vector3.INF:
+				# Off a beam: over it toward him, then pulled to his hand.
+				if (_hand()-beam_mid).dot(lip_out) < 0.0: lip_out = -lip_out
+				_yank = true
 			_flick()
 			_reel_after = true
 			_say("Flicked free")
@@ -994,16 +1014,17 @@ func _swing_mount(motor: Variant) -> void:
 	motor.rider = self
 	swinging = true
 	swings += 1
-	_say("Swinging: %s pumps · %s lets go" % [Pad.pick("W/S","stick"),Pad.pick("Space","A")])
+	_say("Swinging: %s pumps · %s climbs · %s slides down · %s lets go" % [Pad.pick("W/S","stick"),Pad.pick("E","B"),Pad.pick("F","D-pad down"),Pad.pick("Space","A")])
 
 ## One step on the pendulum: the swing rope's ride (pump, steer, release),
 ## then a face hit (the pace into it taken off, a little bounce) and the
 ## floor (put down on his feet, still holding the rope).
 func _swing_ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dictionary:
 	var s := _size()
+	var was_feet := walker.feet
+	_swing_climb(delta)
 	var was_hands := _pend.hands
 	var was_v := _pend.velocity
-	var was_feet := walker.feet
 	var out := _pend.ride(walker,delta,want,pressed)
 	if out.get("swing",true) == false:
 		# Let go (Jump, with the swing's pace; crouch, without): the rope
@@ -1046,6 +1067,27 @@ func _swing_ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool)
 		out["scraped"] = true
 	return out
 
+## Up (E) or down (F) the rope on the pendulum: the grip moved along it
+## between SWING_MIN and the rope's reach, the pace scaled by old/new.
+func _swing_climb(delta: float) -> void:
+	var s := _size()
+	var rate := 0.0
+	if Input.is_action_pressed(&"walk_tug"): rate -= SWING_UP*s
+	if Input.is_action_pressed(&"walk_reel"): rate += SWING_DOWN*s
+	_climb_k = move_toward(_climb_k,1.0 if rate < 0.0 else 0.0,delta*8.0)
+	if rate == 0.0: return
+	var old := _pend.grip
+	var g := clampf(old+rate*delta,SWING_MIN*s,ROPE_LEN*s-SWING_OVER*s)
+	if absf(g-old) < 0.0001: return
+	var u := (_pend.hands-_pend.anchor).normalized()
+	_pend.grip = g
+	_pend.length = g
+	_pend.hands = _pend.anchor+u*g
+	_pend.velocity = (_pend.velocity*old/g).limit_length(SwingRope.t_top)
+	swing_len = g
+	swing_climbed += g-old
+	_climb_phase += absf(g-old)/(SWING_HAND*2.0*s)*PI
+
 ## The rope off the beam: not held, not swung, not left hanging.
 func _drop_swing() -> void:
 	if swinging and study != null and study.get("motor") != null and study.get("motor").rider == self:
@@ -1073,7 +1115,9 @@ func _swing_pose(sk: Skeleton3D) -> void:
 		var fore := sk.find_bone(names[1])
 		var hand := sk.find_bone(names[2])
 		if upper < 0 or fore < 0 or hand < 0: return
-		var at := _pend.hands+up*(0.07 if sd > 0.0 else -0.07)*s+right*sd*HAND_SPREAD*s
+		# Climbing, hand over hand: each hand reaches up as the other holds.
+		var over := sin(_climb_phase+(0.0 if sd > 0.0 else PI))*SWING_HAND*_climb_k
+		var at := _pend.hands+up*((0.07 if sd > 0.0 else -0.07)+over)*s+right*sd*HAND_SPREAD*s
 		var pole := (sk.global_basis.inverse()*(right*sd*0.8+Vector3.DOWN*0.3+back*0.5)).normalized()
 		CarryHost._two_bone(sk,upper,fore,hand,to_sk*at,pole,1.0)
 
@@ -1551,6 +1595,14 @@ func _slide_step(delta: float) -> void:
 
 func _fall_step(delta: float) -> void:
 	_vel += Vector3.DOWN*_gravity()*delta
+	if _yank:
+		var s := _size()
+		var to := _hand()-hook_at
+		if to.length() < COILED*s*1.5:
+			_coil()
+			_say("Reeled in")
+			return
+		_vel += to.normalized()*YANK*s*delta
 	var next := hook_at+_vel*delta
 	var space := get_world_3d().direct_space_state
 	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(hook_at+Vector3.UP*0.03,next,CarryHost.SOLID_MASK))
