@@ -260,8 +260,68 @@ vec4 zs_front_wall(vec3 eye, vec3 rd, float t_max, float time, out float t_hit) 
   t_hit = t;
   return vec4(col, cover);
 }
+// A storm cell (scripts/storm_cells.gd; w 0 off): its middle (x, z), its
+// rain shaft's radius (z, m) and how far it has come in (w, 0 to 1). The
+// cloud over and round it goes storm dark; the land under it is shaded
+// (`zs_cell_shade`); its rain shaft hangs from its tower's foot
+// (ZS_CELL_TOP) to the heaps (`zs_cell_shaft`).
+global uniform vec4 zs_cell;
+const float ZS_CELL_TOP = 160.0;
+float zs_cell_dark(vec3 p) {
+  if (zs_cell.w <= 0.0) return 0.0;
+  float d = length(p.xz - zs_cell.xy);
+  return zs_cell.w * (1.0 - smoothstep(zs_cell.z * 2.0, zs_cell.z * 3.8, d));
+}
+float zs_cell_shade(vec3 p) {
+  if (zs_cell.w <= 0.0) return 0.0;
+  float d = length(p.xz - zs_cell.xy);
+  return zs_cell.w * (1.0 - smoothstep(zs_cell.z * 1.0, zs_cell.z * 2.2, d));
+}
+// The cell's rain shaft met by a ray from `eye` along `rd` no farther than
+// `t_max`: a round column, thickest through its middle, in falling streaks,
+// fading as the eye comes up to it (the plane's own rain takes over there).
+vec4 zs_cell_shaft(vec3 eye, vec3 rd, float t_max, float time, out float t_hit) {
+  t_hit = 1e9;
+  if (zs_cell.w <= 0.0) return vec4(0.0);
+  vec2 o = eye.xz - zs_cell.xy;
+  vec2 d = rd.xz;
+  float a = dot(d, d);
+  if (a < 1e-6) return vec4(0.0);
+  float b = dot(o, d);
+  float r = zs_cell.z;
+  float c = dot(o, o) - r * r;
+  float disc = b * b - a * c;
+  if (disc <= 0.0) return vec4(0.0);
+  float root = sqrt(disc);
+  float t0 = (-b - root) / a;
+  float t1 = (-b + root) / a;
+  if (t1 <= 0.0) return vec4(0.0);
+  float t = max(t0, 0.0);
+  if (t > t_max) return vec4(0.0);
+  // The chord's depth through the column (0 at its rim, 1 through the middle).
+  float chord = (min(t1, t_max) - t) * sqrt(a) / (2.0 * r);
+  vec3 p = eye + rd * max(t, 0.5 * (t + min(t1, t_max)));
+  if (p.y > ZS_CELL_TOP + 40.0 || p.y < ZS_WALL_FOOT) return vec4(0.0);
+  vec2 side = normalize(vec2(-rd.z, rd.x) + vec2(1e-5));
+  float along = dot(p.xz - zs_cell.xy, side);
+  float ragged = ZS_CELL_TOP - 50.0 * zs_front_wave(along / 30.0 + 11.0);
+  float hang = smoothstep(ragged + 25.0, ragged - 60.0, p.y) * smoothstep(ZS_WALL_FOOT, ZS_WALL_FOOT + 110.0, p.y);
+  float shafts = smoothstep(0.15, 0.8, zs_front_wave(along / 45.0 + 7.0) * 0.6 + zs_front_wave(along / 14.0 + 2.0) * 0.4);
+  float cc = (along + 3.0 * sin(p.y * 0.02 + time * 0.3)) / 1.6;
+  float id = floor(cc);
+  float line = 1.0 - smoothstep(0.0, 0.5, abs(fract(cc) - 0.5));
+  float seg = fract((p.y + time * 11.0) / (34.0 * (0.6 + 0.8 * zs_front_hash(id))) + zs_front_hash(id + 5.0));
+  float lit = smoothstep(0.0, 0.3, seg) * smoothstep(1.0, 0.6, seg) * zs_front_hash(id + 2.0);
+  float near = smoothstep(30.0, 160.0, t);
+  float body = smoothstep(0.0, 0.8, chord) * (1.0 - smoothstep(0.45 * r, r, abs(along)));
+  float cover = zs_cell.w * 0.92 * body * (0.6 + 0.4 * shafts) * hang * near * (0.85 + 0.15 * line * lit);
+  vec3 col = vec3(0.34, 0.36, 0.41) * mix(0.08, 1.0, clamp(zs_daylight, 0.0, 1.0)) * (0.85 + 0.3 * line * lit);
+  col = mix(col, zs_sky_up * 1.6, (1.0 - exp(-t / 6000.0)));
+  t_hit = t;
+  return vec4(col, cover);
+}
 vec3 zs_storm_graded_at(vec3 col, vec3 p) {
-  return zs_storm_graded_by(col, max(zs_storm_grade, zs_front_dark(p)));
+  return zs_storm_graded_by(col, max(max(zs_storm_grade, zs_front_dark(p)), zs_cell_dark(p)));
 }
 global uniform vec3 zs_cloud_drift;
 global uniform vec4 zs_summit;

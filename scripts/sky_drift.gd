@@ -42,7 +42,10 @@ func step(delta: float, host: Node, eye: Vector3, angle: float, storm: float) ->
 	var towers: Node3D = host.towers
 	var by := Vector3(blow.x,0.0,blow.y)*delta
 	var way := Vector3(blow.x,0.0,blow.y).normalized() if blow.length() > 0.01 else Vector3.ZERO
+	var held: Dictionary = towers.get("held") if towers.get("held") is Dictionary else {}
 	for i in range(towers.fixed.size()):
+		# A storm cell's tower goes its own way (scripts/storm_cells.gd).
+		if held.has(Vector2i(i,0)): continue
 		var key := "%d,0" % i
 		var spot: Vector3 = towers.fixed[i]+by
 		var b: Variant = towers.built.get(key)

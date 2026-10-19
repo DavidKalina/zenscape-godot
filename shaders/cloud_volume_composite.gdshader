@@ -107,7 +107,9 @@ void fragment() {
 	bool ground = cloud_sea > 0.0 && rd.y < 0.0 && t_floor > 0.0 && t_floor < t_reach && t_floor < t_solid && T >= 0.03;
 	float t_wall;
 	vec4 wall = zs_front_wall(eye, rd, t_solid, TIME, t_wall);
-	if (!ground && cloud_a < 0.003 && wall.a < 0.003) discard;
+	float t_shaft;
+	vec4 shaft = zs_cell_shaft(eye, rd, t_solid, TIME, t_shaft);
+	if (!ground && cloud_a < 0.003 && wall.a < 0.003 && shaft.a < 0.003) discard;
 
 	float pixel = max(length(fwidth(rd)), 1e-5);
 	vec3 sun = normalize(zs_sun_direction + vec3(0.0, 1e-4, 0.0));
@@ -334,6 +336,18 @@ void fragment() {
 		} else {
 			float over = alpha + wall.a * (1.0 - alpha);
 			col = (col * alpha + wall.rgb * wall.a * (1.0 - alpha)) / max(over, 1e-4);
+			alpha = over;
+		}
+	}
+	// A storm cell's rain shaft, the same.
+	if (shaft.a > 0.0) {
+		if (alpha < 0.003 || t_shaft < t_seen) {
+			float over = shaft.a + alpha * (1.0 - shaft.a);
+			col = (shaft.rgb * shaft.a + col * alpha * (1.0 - shaft.a)) / max(over, 1e-4);
+			alpha = over;
+		} else {
+			float over = alpha + shaft.a * (1.0 - alpha);
+			col = (col * alpha + shaft.rgb * shaft.a * (1.0 - alpha)) / max(over, 1e-4);
 			alpha = over;
 		}
 	}

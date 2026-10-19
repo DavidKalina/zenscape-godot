@@ -18,6 +18,9 @@ extends Node3D
 ##              round towards it (GUST_REEL per second of the angle, at most
 ##              REEL_MOST of it), leaning a little into it (GUST_LEAN). No
 ##              jolt. `gust` sends one now.
+##   cells      a storm cell (scripts/storm_cells.gd, `send_cell`): a dark
+##              tower and rain shaft wandering in on the wind; in or under
+##              it its storm joins the sky's, as the front's does.
 ##   jets       rivers of fast air (scripts/sky_currents.gd, its ribbons):
 ##              a loop round the field and a high straight crossing it. In
 ##              one the air carries the plane along at JET m/s and pulls it
@@ -34,6 +37,7 @@ extends Node3D
 const SkyCurrents = preload("res://scripts/sky_currents.gd")
 const PlaneLightning = preload("res://scripts/plane_lightning.gd")
 const StormFront = preload("res://scripts/storm_front.gd")
+const StormCells = preload("res://scripts/storm_cells.gd")
 
 const STORM_WIND := 6.0
 const TURB_PITCH := 0.35
@@ -103,6 +107,8 @@ var lightning: Node3D
 ## eases the sky to storm (FRONT_IN), clearing it again once out (FRONT_OUT).
 var front: Node3D
 var _front_eased := false
+## The storm cell (scripts/storm_cells.gd, `send_cell`).
+var cells: Node3D
 ## The gust under way ({} none): its side (a unit vector, flat), its
 ## strength's share, its time and length, and its signs.
 var _gust := {}
@@ -158,6 +164,9 @@ func setup(scene: Node3D) -> void:
 	front = StormFront.new()
 	add_child(front)
 	front.setup(scene)
+	cells = StormCells.new()
+	add_child(cells)
+	cells.setup(scene)
 	# `--front=<m>`: one already in, its leading edge that far off, coming
 	# from ahead of the start (north, -z) unless `--front-toward=<rad>`.
 	for arg in preload("res://scripts/launch_args.gd").user_args():
@@ -167,6 +176,10 @@ func setup(scene: Node3D) -> void:
 				if other.begins_with("--front-toward="): toward = float(other.substr(15))
 			front.send(toward,Vector3.ZERO)
 			front.centre = front.home-front.way*(float(arg.substr(8))+front.LEAD)
+	for arg in preload("res://scripts/launch_args.gd").user_args():
+		if arg.begins_with("--cell-at="):
+			var xz := arg.substr(10).split(",")
+			if xz.size() == 2: cells.stand(_air_angle(),Vector3(float(xz[0]),0.0,float(xz[1])))
 	# The sky's own rain (studies/precipitation.gd), made for the walker's
 	# view, drawn under this one: put away.
 	for old in ["Rain","RainCrowns"]:
@@ -267,7 +280,16 @@ func send_front() -> bool:
 	if front.active:
 		front.end()
 		return false
+	# The front takes the sky's towers; a cell's goes with them.
+	cells.end()
 	front.send(_air_angle(),Vector3.ZERO)
+	return true
+
+## A storm cell in on the sky's wind toward where the plane is now (false
+## while the front is out: it holds the sky's towers).
+func send_cell() -> bool:
+	if front.active: return false
+	cells.send(_air_angle(),probe())
 	return true
 
 ## Where the weather is felt: the plane, else the eye.
@@ -284,8 +306,9 @@ func step(delta: float) -> void:
 	var sky: Node3D = _scene._precipitation
 	storm = storm_pinned if not is_nan(storm_pinned) else (float(sky.state.w) if sky != null else 0.0)
 	front.step(delta)
+	cells.step(delta)
 	var near: float = front.storm_at(probe())
-	if is_nan(storm_pinned): storm = maxf(storm,near)
+	if is_nan(storm_pinned): storm = maxf(storm,maxf(near,cells.storm_at(probe())))
 	if not _front_eased and near > FRONT_IN:
 		_front_eased = true
 		roll_in()

@@ -9,12 +9,15 @@ extends "res://studies/plane_field_isle.gd"
 ## (scripts/sky_drift.gd), faster in a storm.
 ##   T            a storm front comes in on the wind (or is called off;
 ##                scripts/storm_front.gd)
+##   C            a storm cell comes in on the wind toward the plane
+##                (scripts/storm_cells.gd)
 ##   Shift+T      the whole sky's storm rolls in, or clears
 ##   G            a gust now
 ##   F12          lightning now (scripts/plane_lightning.gd)
 ##   R            back to the start
 ##   ./run-sky-weather.command        (heavy on: --heavy)
 ##   ./run-sky-weather.command --storm=1   a full storm from the start
+##   ./run-sky-weather.command --cell-at=-430,-240   a cell over the near isle
 ##   ./run-sky-weather.command --cloud-drift=30   the cloud faster (m/s; 0 still)
 ## The plane field's flags hold here.
 const PlaneWeather = preload("res://scripts/plane_weather.gd")
@@ -73,15 +76,25 @@ func _add_elements() -> void:
 	layer.add_child(_readout)
 
 func _read() -> String:
-	var line := "Storm %d%%   (T front, Shift+T sky storm, G gust, F12 lightning)" % roundi(elements.storm*100.0)
+	var line := "Storm %d%%   (T front, C cell, Shift+T sky storm, G gust, F12 lightning)" % roundi(elements.storm*100.0)
 	line += "\n"+drift.describe(elements._air_angle(),elements.storm)
 	if elements.front.active:
 		var d: float = elements.front.ahead_of(elements.probe())
 		line += "\nFront %s" % ("%.1f km off" % (d/1000.0) if d > 0.0 else "overhead")
+	if elements.cells.active: line += "\n"+_cell_line()
 	if flying and plane != null:
 		var here: Dictionary = plane_air.call(plane.position)
 		if float(here.gust) > 0.1: line += "\nGust!"
 		if float(here.jet) > 0.2: line += "\nIn the jet  %d m/s" % roundi(plane.velocity.length())
+	return line
+
+func _cell_line() -> String:
+	var cells: Node3D = elements.cells
+	var d: float = cells.off(elements.probe())
+	var line := "Storm cell %s" % ("%.1f km off" % (d/1000.0) if d > float(cells.SHAFT) else "overhead")
+	for isle: Dictionary in isles:
+		var gap := Vector2(cells.centre.x-isle.middle.x,cells.centre.z-isle.middle.z).length()
+		if gap < float(isle.radius)+float(cells.SHAFT): line += ", over the %s isle" % isle.name
 	return line
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -95,6 +108,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				if _storming: elements.roll_in()
 				else: elements.clear()
 				_show_toast("A storm rolls in" if _storming else "The storm clears")
+				return
+			KEY_C:
+				_show_toast("A storm cell is coming" if elements.send_cell() else "Not while the front is out")
 				return
 			KEY_G:
 				elements.gust()

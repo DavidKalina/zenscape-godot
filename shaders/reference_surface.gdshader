@@ -920,6 +920,9 @@ void fragment() {
 	// The cloud volume's shade (the cloud volume, default): a tower's shadow over an
 	// island, the heaps' over a range's foot.
 	tint *= 1.0 - 0.5 * zs_cloud_volume_shade(world_position);
+	// A storm cell over it (scripts/storm_cells.gd; the sky weather study).
+	float cell_shade = zs_cell_shade(world_position);
+	tint = mix(tint, vec3(dot(tint, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.8, 0.86, 0.95), 0.6 * cell_shade) * (1.0 - 0.72 * cell_shade);
 	if (brush_visible) {
 		float distance_to_brush = length(world_position.xz - brush_center);
 		float aa = max(fwidth(distance_to_brush), 0.025);
