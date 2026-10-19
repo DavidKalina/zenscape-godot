@@ -102,6 +102,24 @@ var stage := ""
 var beat := -INF
 ## The side the look goes round (+1 its left, -1 its right; 0 not chosen).
 var _side := 0.0
+## Only its wings (a wing pass, scripts/dragon_sightings.gd "wing"): the
+## hind legs and the tail (TRIMMED, with all past them) shrunk away into the
+## hips, so nothing of it but wing pokes into the view.
+var only_wings := false
+const TRIMMED := ["hind_upper.L","hind_upper.R","tail.0"]
+## A wingbeat (a wing pass's; the rest glide): how much it beats (0 the
+## glide, 1 a full beat) and where in the beat it is (`phase`, 0 the top,
+## DOWN the bottom), after sky_dragon.gd's beat. The stroke stops at
+## LOWEST (rad), so the near wing never sweeps down through the plane.
+var flap := 0.0
+var phase := 0.0
+const RAISE_UP := 1.1
+const RAISE_DOWN := -0.78
+const DOWN := 0.5
+const LOWEST := -0.1
+## The stroke's floor now (LOWEST over the plane; -INF the full stroke).
+var lowest := LOWEST
+const BOB := 2.2
 
 func _ready() -> void:
 	name = "DragonGlimpse"
@@ -256,6 +274,8 @@ func show_at(at: Vector3, velocity: Vector3, lit: float, delta: float, eye := Ve
 	_loom.set_shader_parameter("murk",murk)
 	_loom.set_shader_parameter("lit",lit)
 	_pose(at,velocity,eye if keep else Vector3.INF)
+	for b: String in TRIMMED:
+		if _bone.has(b): skeleton.set_bone_pose_scale(_bone[b],Vector3.ONE*(0.001 if only_wings else 1.0))
 	if not keep: return Vector3.ZERO
 	var push := Vector3.ZERO
 	for i in range(3):
@@ -306,25 +326,32 @@ func _pose(at: Vector3, velocity: Vector3, eye := Vector3.INF) -> void:
 	var press := _press(beat) if looking and stage == "over" else 0.0
 	if stage == "away": air_roll += _side*0.1*b.x
 	var pitch := gamma*0.75+0.05+air_pitch
+	pitch += 0.04*sin(TAU*phase)*flap
 	var basis := Basis(Vector3.UP,_yaw)*Basis(Vector3.RIGHT,pitch)*Basis(Vector3.BACK,air_roll)
-	global_transform = Transform3D(basis,at+Vector3.UP*swell_y)
+	# The body heaves against each beat.
+	var bob := -BOB*cos(TAU*phase)*flap*model.scale.x/SIZE
+	global_transform = Transform3D(basis,at+Vector3.UP*swell_y+basis.y*bob)
+	var beat_raise := lerpf(RAISE_GLIDE,maxf(_beat_raise(phase),lowest),flap)
+	var fold := lerpf(FOLD,_beat_fold(phase)*0.95,flap)
 	var aim := _aim(eye) if looking else Vector2.ZERO
 	# The wings trim each on its own, the hands twist with the swell.
 	var trim := Vector2(0.05*sin(t*0.71)+0.03*sin(t*1.9),0.05*sin(t*0.63+1.7)+0.03*sin(t*2.3))
 	var twist := 0.02*sin(t*0.47)+0.06*sin(t*0.9)
 	for side in [-1.0,1.0]:
 		var n := "L" if side < 0.0 else "R"
-		var r: float = RAISE_GLIDE+(trim.x if side < 0.0 else trim.y)+side*air_roll*0.9
+		var r: float = beat_raise+((trim.x if side < 0.0 else trim.y)+side*air_roll*0.9)*(1.0-flap)
 		var flex: float = 0.04*sin(t*1.6+side)*side
-		_turn("wing_arm."+n,[[Vector3.BACK,side*r],[Vector3.UP,-side*0.15*FOLD],[Vector3.RIGHT,twist*0.4*side]])
+		# In a beat the tips lag: bent down on the way up, up on the way down.
+		var lag := -0.25*cos(TAU*phase)*flap
+		_turn("wing_arm."+n,[[Vector3.BACK,side*r],[Vector3.UP,-side*0.15*fold],[Vector3.RIGHT,(twist*0.4+0.06*flap*sin(TAU*phase))*side]])
 		# The gull's bend at the wrist: the hand a little down.
-		_turn("wing_fore."+n,[[Vector3.UP,side*FOLD*0.85],[Vector3.BACK,side*(0.2*r-0.22)]])
-		_turn("wing_hand."+n,[[Vector3.UP,-side*FOLD*1.75],[Vector3.BACK,side*flex],[Vector3.RIGHT,twist*side]])
-		_turn("wing_f1."+n,[[Vector3.BACK,side*0.06]])
-		_turn("wing_f1b."+n,[[Vector3.BACK,side*(0.08+flex*1.5)]])
-		_turn("wing_f2."+n,[[Vector3.UP,side*FOLD*0.15],[Vector3.BACK,side*flex]])
-		_turn("wing_f3."+n,[[Vector3.UP,side*FOLD*0.3]])
-		_turn("wing_f4."+n,[[Vector3.UP,side*FOLD*0.45]])
+		_turn("wing_fore."+n,[[Vector3.UP,side*fold*0.85],[Vector3.BACK,side*(0.2*r-0.22*(1.0-flap)+lag*0.3)]])
+		_turn("wing_hand."+n,[[Vector3.UP,-side*fold*1.75],[Vector3.BACK,side*(flex+lag*0.6)],[Vector3.RIGHT,twist*side]])
+		_turn("wing_f1."+n,[[Vector3.BACK,side*(0.06+lag*0.5)]])
+		_turn("wing_f1b."+n,[[Vector3.BACK,side*(0.08+flex*1.5+lag*0.7)]])
+		_turn("wing_f2."+n,[[Vector3.UP,side*fold*0.15],[Vector3.BACK,side*(flex+lag*0.5)]])
+		_turn("wing_f3."+n,[[Vector3.UP,side*fold*0.3],[Vector3.BACK,side*lag*0.4]])
+		_turn("wing_f4."+n,[[Vector3.UP,side*fold*0.45],[Vector3.BACK,side*lag*0.3]])
 		# The hind legs tucked back under the tail's root, swinging a little.
 		# In the look the claws come down out of the tuck and reach (all the
 		# way over the plane, a flex flying away), one a beat behind the other.
@@ -359,6 +386,19 @@ func _pose(at: Vector3, velocity: Vector3, eye := Vector3.INF) -> void:
 	for i in range(_tail_n):
 		var u := float(i+1)/float(_tail_n)
 		_turn("tail.%d" % i,[[Vector3.UP,0.07*u*sin(t*0.8-float(i)*0.7)],[Vector3.RIGHT,0.015]])
+
+## sky_dragon.gd's beat: the wing's raise at `p` (0 the top, DOWN the
+## bottom; the power stroke quick through its middle) and its fold.
+static func _beat_raise(p: float) -> float:
+	if p < DOWN:
+		var u := p/DOWN
+		return lerpf(RAISE_UP,RAISE_DOWN,u*u*(3.0-2.0*u))
+	var u := (p-DOWN)/(1.0-DOWN)
+	return lerpf(RAISE_DOWN,RAISE_UP,u*u*(3.0-2.0*u))
+
+static func _beat_fold(p: float) -> float:
+	if p < DOWN: return 0.25*pow(1.0-p/DOWN,3.0)
+	return sin(PI*(p-DOWN)/(1.0-DOWN))
 
 ## Over's hold (0 to 1): in after the settle, out before the turn back.
 static func _press(u: float) -> float:

@@ -32,6 +32,10 @@ uniform vec3 drift = vec3(0.0);
 uniform float wisp = 9.0;
 // The dither's strength in output steps (0 off).
 uniform float dither = 1.5;
+// The murk at which the far (the isles, the horizon, the sky's cloud) is
+// wholly gone: it closes on them early and gives them back last; only the
+// seen distance eases with the whole of `murk`.
+uniform float sealed = 0.35;
 
 void vertex() {
 	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
@@ -89,8 +93,10 @@ void fragment() {
 	// Wisps lighter where thick, the gaps between them darker.
 	float lift = clamp(0.5 + shade * 4.0, 0.0, 1.0);
 	vec3 base = mix(dark, colour * 1.25, lift);
-	// Brighter up, darker down: still a little sense of up.
-	base *= 0.75 + 0.4 * clamp(rd.y * 0.5 + 0.5, 0.0, 1.0);
+	// Brighter up, darker down, a little sense of up; gone in the thick
+	// of it, where up and down look the same.
+	float up = 0.75 + 0.4 * clamp(rd.y * 0.5 + 0.5, 0.0, 1.0);
+	base *= mix(up, 0.95, smoothstep(0.6, 1.0, k));
 	// Lit from inside by a flash: a dim glow all round, a bloom toward
 	// where it struck, the wisps there catching it brighter than the gaps.
 	vec3 to_flash = flash_at - eye;
@@ -111,5 +117,5 @@ void fragment() {
 	float d2 = fract(52.9829189 * fract(dot(px + vec2(37.0, 17.0), vec2(0.06711056, 0.00583715))));
 	base += (d1 + d2 - 1.0) * dither * (0.02 + 2.2 * base) / 255.0;
 	ALBEDO = base;
-	ALPHA = clamp(max(thick, cover * k) * k, 0.0, 1.0);
+	ALPHA = clamp(max(thick, cover * k), 0.0, 1.0) * smoothstep(0.0, sealed, k);
 }

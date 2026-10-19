@@ -206,6 +206,13 @@ vec3 zs_storm_graded_by(vec3 col, float s) {
 vec3 zs_storm_graded(vec3 col) {
   return zs_storm_graded_by(col, zs_storm_grade);
 }
+// The storm's thinning of the sky's small cloud (0 off; set beside
+// zs_storm_grade but never lifted by a flash): the puffs and tufts fade
+// out as a storm builds, gone in a full one.
+global uniform float zs_storm_thin;
+float zs_storm_thinned() {
+  return 1.0 - smoothstep(0.2, 0.7, zs_storm_thin);
+}
 // A storm front's cloud (scripts/storm_front.gd; w 0 off): its leading
 // edge's middle (x, z), the way it travels (y, radians round x then z) and
 // its half length (w, m). Cloud at and behind the edge goes storm dark, so

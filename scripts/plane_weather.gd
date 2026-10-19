@@ -40,7 +40,9 @@ extends Node3D
 ## (the environment's adjustments, on only while storm or murk is above 0,
 ## so fair weather is untouched): colour drained to GRADE_SAT and the
 ## light to GRADE_DIM by the storm, further (MURK_SAT, MURK_DIM) in a
-## whiteout's murk, eased back toward full while a flash lights it.
+## whiteout's murk, eased back toward full while a flash lights it (not in
+## the murk: there only the murk itself glows, so the land behind it stays
+## dark).
 ##
 ## Each frame `step` it, then the plane reads `air_at` in its own step.
 const SkyCurrents = preload("res://scripts/sky_currents.gd")
@@ -410,6 +412,7 @@ func step(delta: float) -> void:
 func grade() -> void:
 	var sky = _scene._celestial
 	RenderingServer.global_shader_parameter_set("zs_storm_grade",storm)
+	RenderingServer.global_shader_parameter_set("zs_storm_thin",storm)
 	_grade_sky(sky)
 	_grade_frame()
 	lightning.publish(storm)
@@ -421,7 +424,7 @@ func _grade_frame() -> void:
 	var m := clampf(murk,0.0,1.0)
 	env.adjustment_enabled = k > 0.0 or m > 0.0
 	if not env.adjustment_enabled: return
-	var back := clampf(lightning.flash*FLASH_UNGRADE,0.0,1.0)
+	var back := clampf(lightning.flash*FLASH_UNGRADE,0.0,1.0)*(1.0-m)
 	var dim := lerpf(lerpf(1.0,GRADE_DIM,k),MURK_DIM,m)
 	var sat := lerpf(lerpf(1.0,GRADE_SAT,k),MURK_SAT,m)
 	env.adjustment_brightness = lerpf(dim,1.0,back)
@@ -482,4 +485,11 @@ func air_at(p: Vector3, nose := Vector3.FORWARD) -> Dictionary:
 		across = (1.0 if across >= 0.0 else -1.0)*maxf(absf(across),ACROSS_MIN)
 		var angle := clampf(atan2(flat.cross(way).y,flat.dot(way)),-REEL_MOST,REEL_MOST)
 		shove += Vector3(0.0,GUST_REEL*angle,GUST_LEAN*across)*blowing
+	# A wing pass's downwash (the dragon's sightings), pressing the plane
+	# down under its wings.
+	var wash: Dictionary = sightings.plane_air(p,nose) if sightings != null else {}
+	if not wash.is_empty():
+		wind += wash.wind
+		shove += wash.shove
+		blowing = maxf(blowing,float(wash.gust))
 	return {"wind":wind,"shove":shove,"jet":here.jet,"thermal":here.thermal,"gust":blowing,"storm":storm}

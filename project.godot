@@ -638,6 +638,10 @@ zs_storm_grade={
 "type": "float",
 "value": 0.0
 }
+zs_storm_thin={
+"type": "float",
+"value": 0.0
+}
 zs_front={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)

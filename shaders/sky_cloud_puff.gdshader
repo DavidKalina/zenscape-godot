@@ -183,7 +183,7 @@ void fragment() {
 	// Thicker in the middle, so heaped puffs read as round.
 	float body = edge * (0.55 + 0.45 * (1.0 - r * r));
 	ALBEDO = zs_storm_graded(shade * (0.92 + 0.12 * (1.0 - r))) + zs_storm_flash_cloud(card) * (0.5 + 0.5 * (1.0 - r * r));
-	ALPHA = clamp(body, 0.0, 1.0) * 0.85 * opacity * batch_fade;
+	ALPHA = clamp(body, 0.0, 1.0) * 0.85 * opacity * batch_fade * zs_storm_thinned();
 	if (carved > 0.0) {
 		// The tunnel cut out, its edge torn.
 		float tear = puff_noise(card.xy * 0.45 + card.z * 0.3) * 0.6 + puff_noise(card.zy * 1.1 + seed * 5.0) * 0.4;

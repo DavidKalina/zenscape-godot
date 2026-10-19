@@ -19,7 +19,29 @@ extends Node3D
 ##   again    AGAIN of them get a second flash AGAIN_GAP s later; GONE of
 ##            those show it gone (the sky lit, the dragon not there).
 ## It glides on all along (`place`, `velocity`), staged along the plane's
-## line, never across the view (`_pick`, `_begin`): close, "away" (ahead,
+## line, never across the view (`_pick`, `_begin`): close, "wing" (only a
+## wing seen: the dragon WING.scale times its size crossing right over the
+## plane side on, head and tail off past the view's sides, so its wing
+## sweeps across the top of the view as a dark ceiling; likeliest in the
+## murk, WING_SHARE of close ones there), "wing_low" (the same wing, the
+## dragon crossing under the plane and off to one side (CROSS_LOW), sliding
+## out away from its line: the wing beats in a sheet beside the plane, a
+## wall rising up past it and dropping away under it, then it dives off),
+## "chase" (the plane tailing it: it flies on ahead the same way, CHASE,
+## seen from behind, wings beating, then pulls away ahead and climbs off),
+## "stalk" (it comes in from an edge of the view, `edge`: left, right,
+## below or above, over STALK_EMERGE s, settles there STALK_RANGE m off and
+## stays with the plane, always there as a dark shape in the murk
+## (STALK_SEEN), beating slowly, for STALK_STAY s; lightning flickers
+## through it now and then (STALK_FLASH, some doubled), each flash showing it
+## black, never taking it away; then it sinks back out the way it came over
+## STALK_LEAVE s; `--stalk-edge=` picks the edge),
+## "head" (as big, its body far off
+## to one side and over the plane, overtaking it: its neck and head loom
+## over the plane), both seen as a dark shape all the pass (WING_SEEN),
+## harder in the flashes. The wing beats (`_wing_beat`), its downwash
+## pressing the plane down on each downstroke (`downwash`); the head's gust
+## shoves the plane WING_GUST s after the first flash; "away" (ahead,
 ## flying on with the plane and pulling away, seen from behind), "over"
 ## (right above, overtaking it: belly, spread wings, claws) or "under" (a
 ## little below and ahead, back and wings from above, sinking); far, going
@@ -102,6 +124,75 @@ const CLOSE_STAGES := {
 	"under": {"range":Vector2(100.0,150.0),"view":Vector2(-0.8,-0.45),"across":0.55,"aside":0.3,"slide":Vector2(3.0,7.0)},
 }
 const CLOSE_SHARES := Vector2(0.45,0.3)
+## Wing: its scale (of the glimpse's own), how far its body is off to the
+## side (m), how far over the eye (m), how far behind the plane it is at the
+## first flash (m), how fast it overtakes (m/s); how lit it is all the pass
+## (0 to 1), the gap to its second flash (s), how long past the last it
+## stays (s), its gust's delay after the first flash (s), strength and
+## length (s); its share of close ones in the murk (at full).
+const WING := {"scale":3.0,"aside":Vector2(150.0,175.0),"up":Vector2(18.0,30.0),
+	"behind":Vector2(-10.0,15.0),"overtake":Vector2(10.0,16.0)}
+## Wing (crossing): its body at the first flash this far off the plane's
+## line to the side it comes from (m), this far over the eye (m), this far
+## ahead of the plane (m: behind it, so the body and legs pass over and
+## behind the eye and only the forward wing reaches over the view),
+## crossing at this speed (m/s), the plane's own way added so it keeps over
+## it.
+const CROSS := {"off":Vector2(0.0,15.0),"up":Vector2(16.0,22.0),"ahead":Vector2(-55.0,-45.0),"speed":Vector2(22.0,30.0)}
+## Wing low: the same, under the plane (`up` negative), off to the side and
+## ahead of it, farther than a wing's length (~200 m at this size), so its
+## wings are seen whole and far off, not a wall; faint in the murk till lit,
+## sliding out away from its line (`speed` m/s), so its wing beats beside
+## the plane and never through it; it dives off (LEAVE_CLIMB down).
+## Its wing's trailing edge (its chord ~60 m at this size) points in toward
+## the plane, so `off` keeps that clear of it.
+## Chase: off the plane's line to the side (m), over the eye (m), ahead of
+## the plane at the first flash (m: past its tail's length, ~110 m at
+## scale 1), how fast it gains on the plane (m/s), its scale.
+const CHASE := {"off":Vector2(-15.0,15.0),"up":Vector2(5.0,20.0),"ahead":Vector2(240.0,280.0),"speed":Vector2(2.0,5.0),"scale":1.5}
+## Stalk: how long it takes to come in, how long it stays, how long to go
+## (s); how far off it settles (m) and its scale; where it settles per edge
+## (across, up: shares of the view's half width and half height) and how
+## far past the edge it starts (share); how lit it is all along (0 to 1);
+## the gap between its flashes (s) and the chance one is doubled (and its
+## gap, s); its beat (s).
+const STALK_EMERGE := 3.5
+const STALK_STAY := Vector2(10.0,20.0)
+const STALK_LEAVE := 3.0
+const STALK_RANGE := Vector2(200.0,240.0)
+const STALK_SCALE := 1.5
+const STALK_AT := {"left":Vector2(-0.55,0.1),"right":Vector2(0.55,0.1),"below":Vector2(0.15,-0.55),"above":Vector2(-0.1,0.55)}
+const STALK_OUT := 1.5
+const STALK_SEEN := 0.3
+const STALK_FLASH := Vector2(2.0,4.5)
+const STALK_DOUBLE := 0.35
+const STALK_DOUBLE_GAP := 0.18
+const STALK_BEAT := 1.9
+const CROSS_LOW := {"off":Vector2(110.0,130.0),"up":Vector2(-45.0,-35.0),"ahead":Vector2(160.0,200.0),"speed":Vector2(6.0,10.0),"scale":1.5}
+const WING_SEEN := 0.18
+const WING_GAP := Vector2(1.3,1.9)
+const WING_AFTER := 1.2
+const WING_GUST := 0.6
+const WING_GUST_K := 1.0
+const WING_GUST_LENGTH := 2.5
+const WING_SHARE := 0.5
+## The wing pass's beat (s from the first flash): the wing lifts to the top
+## over the RAISE s before LIFT, then beats every WING_BEAT s from LIFT, so
+## the first flash lands at the bottom of its first stroke (LIFT is half a
+## beat before it). After LEAVE s it
+## leaves: over LEAVE_EASE s it turns ahead of the plane and climbs off
+## (low: dives off out to its side)
+## (LEAVE_AHEAD m/s on the plane's own, LEAVE_CLIMB m/s up, its crossing
+## kept), whole again (legs and tail back), and its dark shape fades out
+## over FADE s from LEAVE.
+const WING_LIFT := -0.7
+const WING_RAISE := 0.6
+const WING_BEAT := 1.4
+const WING_LEAVE := 0.5
+const LEAVE_EASE := 1.2
+const LEAVE_AHEAD := 22.0
+const LEAVE_CLIMB := 12.0
+const WING_FADE := Vector2(0.6,2.2)
 ## Away: at most this far over or under the eye (m); over: this far over
 ## the view's line (m), and at least OVER_LEAST m over the eye; under: this far down (m), sinking (m/s); and every one at
 ## least GROUND_CLEAR m over the ground.
@@ -145,6 +236,16 @@ var now := {}
 ## Where it is, its glide, and how lit it is now (0: not seen).
 var place := Vector3.ZERO
 var velocity := Vector3.ZERO
+## The way it faces when not its glide's (a crossing wing; zero: its glide).
+var facing := Vector3.ZERO
+## A wing pass's own numbers (CROSS's, drawn; {} none).
+var _cross := {}
+## A stalk's edge forced (`--stalk-edge=left|right|below|above`; "" picked).
+var stalk_edge := ""
+## A wing pass's downwash (scripts/dragon_downwash.gd, the aqueduct
+## dragon's): its wings' air pressing the plane down under it, hard on each
+## downstroke; read by plane_weather.gd `air_at` through `plane_air`.
+var downwash := preload("res://scripts/dragon_downwash.gd").new()
 var lit := 0.0
 ## The last sighted event ({} none), and how many there have been.
 var last := {}
@@ -184,6 +285,7 @@ func setup(scene: Node3D, weather: Node3D) -> void:
 		elif arg.begins_with("--murk="): murk_pinned = clampf(float(arg.get_slice("=",1)),0.0,1.0)
 		elif arg == "--sighting-log": log_on = true
 		elif arg == "--sighting-hold": hold = true
+		elif arg.begins_with("--stalk-edge="): stalk_edge = arg.get_slice("=",1)
 	_clips = {"call":_takes("dragon-call-%d.wav",3),"beat":_takes("dragon-beat-%d.wav",4),"rustle":_takes("wings-%d.wav",4)}
 	_bus()
 	for i in range(6):
@@ -272,7 +374,8 @@ func step(delta: float) -> void:
 	glimpse.beat = -INF if now.is_empty() else float(now.t)-float(now.flashes[0])
 	var close := not now.is_empty() and str(now.near) == "close"
 	var eye := _eye()
-	if close and eye != null: place += glimpse.show_at(place,velocity,lit,delta,eye.global_position,1.0)
+	var face := facing if facing != Vector3.ZERO else velocity
+	if close and eye != null: place += glimpse.show_at(place,face,lit,delta,eye.global_position,1.0)
 	else: glimpse.show_at(place,velocity,lit,delta)
 
 ## The storm of the cell's or the front's core where the plane is.
@@ -298,13 +401,70 @@ func _begin(near: String, stage := "") -> void:
 	if _rng.randf() < AGAIN: flashes.append(float(flashes[0])+_rng.randf_range(AGAIN_GAP.x,AGAIN_GAP.y))
 	var herald: float = flashes[0]
 	if stage == "": stage = staged
-	if not (CLOSE_STAGES.has(stage) if near == "close" else stage in ["away","toward"]): stage = _pick(near)
+	var big := stage in ["wing","wing_low","chase","stalk","head"]
+	if big: near = "close"
+	if not ((CLOSE_STAGES.has(stage) or big) if near == "close" else stage in ["away","toward"]): stage = _pick(near)
+	big = stage in ["wing","wing_low","chase","stalk","head"]
+	if big:
+		flashes = [flashes[0],float(flashes[0])+_rng.randf_range(WING_GAP.x,WING_GAP.y)]
 	var half_v := deg_to_rad(camera.fov)*0.5
 	var half_h := atan(tan(half_v)*_aspect())
 	var ground := _ground_below(eye)
 	if stage == "under" and eye.y-ground < UNDER_DOWN.x+GROUND_CLEAR: stage = "away"
 	var slide := Vector3.ZERO
-	if near == "close":
+	var side := 0.0
+	var right := flat.cross(Vector3.UP)
+	var plane: Vector3 = _scene.plane.position if _scene.get("plane") != null else eye
+	facing = Vector3.ZERO
+	if stage == "stalk":
+		var edges := STALK_AT.keys()
+		var edge: String = stalk_edge if STALK_AT.has(stalk_edge) else str(edges[_rng.randi_range(0,edges.size()-1)])
+		var stay := _rng.randf_range(STALK_STAY.x,STALK_STAY.y)
+		# Flashes through its stay: the first as it comes in, then every
+		# STALK_FLASH, some doubled.
+		var fl: Array = []
+		var ft := STALK_EMERGE*0.7
+		while ft < STALK_EMERGE+stay:
+			fl.append(ft)
+			if _rng.randf() < STALK_DOUBLE: fl.append(ft+STALK_DOUBLE_GAP)
+			ft += _rng.randf_range(STALK_FLASH.x,STALK_FLASH.y)
+		flashes = fl
+		_cross = {"edge":edge,"stay":stay,"range":_rng.randf_range(STALK_RANGE.x,STALK_RANGE.y),
+			"jitter":Vector2(_rng.randf_range(-0.08,0.08),_rng.randf_range(-0.06,0.06))}
+		facing = flat
+	elif stage == "chase":
+		side = 1.0
+		var c: Dictionary = CHASE
+		var cross := {"off":_rng.randf_range(c.off.x,c.off.y),"ahead":_rng.randf_range(c.ahead.x,c.ahead.y),
+			"up":_rng.randf_range(c.up.x,c.up.y),"vel":_rng.randf_range(c.speed.x,c.speed.y)}
+		_cross = cross
+		place = plane+right*float(cross.off)+flat*float(cross.ahead)
+		place.y = eye.y+float(cross.up)
+		slide = flat*float(cross.vel)
+		facing = flat
+	elif stage in ["wing","wing_low"]:
+		side = 1.0 if _rng.randf() < 0.5 else -1.0
+		# Kept in the plane's frame until the first flash (`_keep_over`), so
+		# a turn meanwhile doesn't carry the plane out from under it. `vel`:
+		# its crossing along `side` (under 0: in toward the plane's line).
+		var c: Dictionary = CROSS if stage == "wing" else CROSS_LOW
+		var speed := _rng.randf_range(c.speed.x,c.speed.y)
+		var cross := {"off":_rng.randf_range(c.off.x,c.off.y),"ahead":_rng.randf_range(c.ahead.x,c.ahead.y),
+			"up":_rng.randf_range(c.up.x,c.up.y),"vel":-speed if stage == "wing" else speed}
+		_cross = cross
+		place = plane+right*side*float(cross.off)+flat*float(cross.ahead)
+		place.y = eye.y+float(cross.up)
+		slide = right*side*float(cross.vel)
+		facing = slide
+	elif stage == "head":
+		# Its body off to one side of the plane and over it, a little behind
+		# at the first flash, overtaking: the near wing reaches over the
+		# plane's way and slides past overhead and beside.
+		side = 1.0 if _rng.randf() < 0.5 else -1.0
+		place = plane+right*side*_rng.randf_range(WING.aside.x,WING.aside.y)-flat*_rng.randf_range(WING.behind.x,WING.behind.y)
+		place.y = eye.y+_rng.randf_range(WING.up.x,WING.up.y)
+		slide = flat*_rng.randf_range(WING.overtake.x,WING.overtake.y)
+	elif near == "close":
 		var st: Dictionary = CLOSE_STAGES[stage]
 		# Under sits off to one side (`aside`, a share of the half width), so
 		# the plane is not drawn over its neck.
@@ -340,7 +500,11 @@ func _begin(near: String, stage := "") -> void:
 	place -= slide*herald
 	var distance := eye.distance_to(place)
 	now = {"id":count+1,"near":near,"t":0.0,"flashes":flashes,"struck":0,"gone":false,
-		"sounds":[],"distance":distance,"sighted":false,"stage":stage}
+		"sounds":[],"distance":distance,"sighted":false,"stage":stage,"side":side,"gusted":false}
+	var scale := STALK_SCALE if stage == "stalk" else float(CROSS_LOW.scale) if stage == "wing_low" else (float(CHASE.scale) if stage == "chase" else (float(WING.scale) if big else 1.0))
+	glimpse.model.scale = Vector3.ONE*glimpse.SIZE*scale
+	glimpse.only_wings = stage in ["wing","wing_low"]
+	glimpse.lowest = glimpse.LOWEST if stage == "wing" else -INF
 	_cut.cutoff_hz = lerpf(CUT.x,CUT.y,smoothstep(CUT_RANGE.x,CUT_RANGE.y,distance))
 	_sounds(near,distance,flashes)
 	var event := {"id":now.id,"near":near,"stage":stage,"place":place,"distance":distance,"time":clock}
@@ -354,6 +518,7 @@ func _begin(near: String, stage := "") -> void:
 func _pick(near: String) -> String:
 	var r := _rng.randf()
 	if near == "far": return "toward" if r < FAR_TOWARD else "away"
+	if _rng.randf() < WING_SHARE*clampf(murk,0.0,1.0): return "wing"
 	return "away" if r < CLOSE_SHARES.x else ("over" if r < CLOSE_SHARES.x+CLOSE_SHARES.y else "under")
 
 ## The point `range_` m out from the camera, `across` rad right and `up`
@@ -400,6 +565,10 @@ func _advance(delta: float) -> void:
 	now.t += delta
 	var t: float = now.t
 	place += velocity*delta
+	if str(now.stage) in ["wing","wing_low","chase"] and int(now.struck) == 0: _keep_over(float(now.flashes[0])-t)
+	var stalk := str(now.stage) == "stalk"
+	var stalk_in := 1.0
+	if stalk: stalk_in = _stalk(t)
 	var sounds: Array = now.sounds
 	while not sounds.is_empty() and float(sounds[0][0]) <= t:
 		var s: Array = sounds.pop_front()
@@ -413,6 +582,24 @@ func _advance(delta: float) -> void:
 	var shown := int(now.struck) > 0 and not bool(now.gone)
 	var light: float = _weather.lightning.flash
 	lit = smoothstep(SEEN.x,SEEN.y,light) if shown else 0.0
+	if stalk:
+		# Always there: a dark shape in the murk from the first, the flashes
+		# showing it harder; going, it fades as it sinks out.
+		shown = true
+		lit = maxf(lit*stalk_in,STALK_SEEN*stalk_in)
+	var wing := str(now.stage) in ["wing","wing_low","chase","head"]
+	var pass_ := str(now.stage) in ["wing","wing_low","chase"]
+	var rel := t-float(flashes[0])
+	if pass_: _wing_beat(rel,delta)
+	_wash(delta)
+	if wing:
+		# A dark shape all the pass, harder in the flashes; a wing pass's
+		# fading as it leaves.
+		var fade := 1.0-smoothstep(WING_FADE.x,WING_FADE.y,rel) if pass_ else 1.0
+		lit = maxf(lit,WING_SEEN*fade)
+		if str(now.stage) == "head" and not bool(now.gusted) and t >= float(flashes[0])+WING_GUST:
+			now.gusted = true
+			_wing_gust()
 	if shown and lit > 0.0 and not bool(now.sighted):
 		now.sighted = true
 		count += 1
@@ -420,9 +607,14 @@ func _advance(delta: float) -> void:
 		last = {"id":now.id,"near":now.near,"stage":now.stage,"place":place,"distance":eye.distance_to(place),"time":clock}
 		_log("sighted %s %.0f m off at %s, t %.1f" % [now.near,float(last.distance),place.round(),clock])
 		sighted.emit(last)
-	if t > float(flashes[-1])+AFTER and sounds.is_empty() and not hold:
+	var over := t > STALK_EMERGE+float(_cross.stay)+STALK_LEAVE if stalk else t > float(flashes[-1])+(WING_AFTER if wing else AFTER) and sounds.is_empty()
+	if over and not hold:
 		_log("end %d" % int(now.id))
 		now = {}
+		glimpse.model.scale = Vector3.ONE*glimpse.SIZE
+		glimpse.flap = 0.0
+		glimpse.only_wings = false
+		_wash(0.0)
 		lit = 0.0
 		_rest = REST
 		_dry = 0.0
@@ -431,7 +623,7 @@ func _advance(delta: float) -> void:
 ## it gone.
 func _flash(k: int) -> void:
 	var camera := _eye()
-	if k > 0 and _rng.randf() < GONE: now.gone = true
+	if k > 0 and _rng.randf() < GONE and not str(now.stage) in ["wing","wing_low","chase","stalk","head"]: now.gone = true
 	if camera == null: return
 	var eye := camera.global_position
 	_flash_at(camera,eye)
@@ -445,7 +637,23 @@ func _flash_at(camera: Camera3D, eye: Vector3) -> void:
 	# Right behind it from the eye: the murk (or the cloud and the sky) blooms
 	# round it and it stands black against the bloom.
 	var line := (place-eye).normalized()
-	if str(now.near) == "close":
+	if str(now.stage) == "wing_low":
+		# Behind the forward wing's middle from the eye (it lies along the
+		# plane's way, beside it, under): the wing stands against the bloom.
+		var f := -camera.global_basis.z
+		var mid := place+Vector3(f.x,0.0,f.z).normalized()*110.0
+		lightning.flash_inside(eye+(mid-eye).normalized()*(eye.distance_to(mid)+_rng.randf_range(CLOSE_BEHIND.x,CLOSE_BEHIND.y)))
+	elif str(now.stage) == "wing":
+		# Over the plane, a little ahead: the wing across the top of the
+		# view stands against the bloom.
+		lightning.flash_inside(eye+(place+Vector3.UP*40.0-eye).normalized()*(eye.distance_to(place)+_rng.randf_range(CLOSE_BEHIND.x,CLOSE_BEHIND.y)))
+	elif str(now.stage) == "head":
+		# Behind the near wing's middle from the eye (the body is far off to
+		# the side): the wing stands against the bloom.
+		var to_plane := Vector3(eye.x-place.x,0.0,eye.z-place.z).normalized()
+		var mid := place+to_plane*float(WING.aside.x)*0.55
+		lightning.flash_inside(eye+(mid-eye).normalized()*(eye.distance_to(mid)+_rng.randf_range(CLOSE_BEHIND.x,CLOSE_BEHIND.y)))
+	elif str(now.near) == "close":
 		lightning.flash_inside(place+line*_rng.randf_range(CLOSE_BEHIND.x,CLOSE_BEHIND.y)+Vector3.UP*_rng.randf_range(CLOSE_LIFT.x,CLOSE_LIFT.y))
 	elif murk > 0.5:
 		lightning.flash_inside(place+line*_rng.randf_range(MURK_BEHIND.x,MURK_BEHIND.y))
@@ -453,6 +661,119 @@ func _flash_at(camera: Camera3D, eye: Vector3) -> void:
 		var ground := place+away*_rng.randf_range(FAR_BEHIND.x,FAR_BEHIND.y)+away.cross(Vector3.UP)*_rng.randf_range(-80.0,80.0)
 		if _rng.randf() < 0.55: lightning.strike_over(ground,"bolt",place.y+_rng.randf_range(90.0,180.0),lightning.SEA_TOP)
 		else: lightning.strike_over(ground,"inside",place.y-170.0,lightning.SEA_TOP)
+
+## The wing pass's downwash, laid round the dragon as posed this frame (off
+## but in a wing pass).
+func _wash(delta: float) -> void:
+	var on := not now.is_empty() and str(now.stage) in ["wing","wing_low","chase"]
+	var size: float = glimpse.model.scale.x
+	downwash.update(delta,on,glimpse.global_position,glimpse.get("_yaw"),size,glimpse.phase,glimpse.flap,1.0/WING_BEAT,-INF,false)
+
+## The downwash as the plane's air at `p` ({} none).
+func plane_air(p: Vector3, nose: Vector3) -> Dictionary:
+	return downwash.plane_air(p,nose)
+
+## A stalk at `t` s in: where it is (coming in from its edge, settled, or
+## sinking back out), held in the view, its
+## beat (its heading the plane's, level); returns how far in it is (0 to 1:
+## 0 gone past the edge).
+func _stalk(t: float) -> float:
+	var camera := _eye()
+	if camera == null: return 0.0
+	var f := -camera.global_basis.z
+	var flat := Vector3(f.x,0.0,f.z)
+	if flat.length() < 0.01: return 0.0
+	flat = flat.normalized()
+	var right := flat.cross(Vector3.UP)
+	var stay: float = _cross.stay
+	var k := smoothstep(0.0,STALK_EMERGE,t)*(1.0-smoothstep(STALK_EMERGE+stay,STALK_EMERGE+stay+STALK_LEAVE,t))
+	var settle: Vector2 = STALK_AT[_cross.edge]+(_cross.jitter as Vector2)
+	# Past the edge it comes from: the same line, STALK_OUT of the half view
+	# out, so it slides in across the edge.
+	var out := settle.normalized()*STALK_OUT if settle.length() > 0.01 else Vector2(STALK_OUT,0.0)
+	if str(_cross.edge) in ["left","right"]: out = Vector2(signf(settle.x)*STALK_OUT,settle.y)
+	else: out = Vector2(settle.x,signf(settle.y)*STALK_OUT)
+	var at := out.lerp(settle,k)
+	var half_v := deg_to_rad(camera.fov)*0.5
+	var half_h := atan(tan(half_v)*_aspect())
+	var a := at.x*half_h
+	var e := at.y*half_v
+	var range_: float = _cross.range
+	var eye := camera.global_position
+	# Where it sits in the view (the camera's own frame, so it holds its
+	# place on the screen as the camera pitches and turns).
+	place = eye+(camera.global_basis*Vector3(tan(a),tan(e),-1.0)).normalized()*range_
+	var moving := _plane_velocity()
+	velocity = flat*maxf(moving.dot(flat),0.0)+Vector3.UP*moving.y
+	facing = flat*maxf(moving.dot(flat),8.0)
+	glimpse.flap = 1.0
+	glimpse.phase = fposmod(t/STALK_BEAT,1.0)
+	return k
+
+## A wing pass's beat and its leaving, `rel` s from its first flash.
+func _wing_beat(rel: float, delta: float) -> void:
+	if rel < WING_LIFT:
+		# Gliding in, then the wing lifting to the top of its stroke.
+		glimpse.phase = 0.0
+		glimpse.flap = smoothstep(WING_LIFT-WING_RAISE,WING_LIFT,rel)
+	else:
+		glimpse.flap = 1.0
+		glimpse.phase = fposmod((rel-WING_LIFT)/WING_BEAT,1.0)
+	if rel < WING_LEAVE: return
+	# Leaving: turning ahead of the plane and climbing off (diving, low),
+	# whole again.
+	glimpse.only_wings = false
+	var camera := _eye()
+	if camera == null: return
+	var f := -camera.global_basis.z
+	var flat := Vector3(f.x,0.0,f.z)
+	if flat.length() < 0.01: return
+	flat = flat.normalized()
+	var right := flat.cross(Vector3.UP)
+	var k := smoothstep(WING_LEAVE,WING_LEAVE+LEAVE_EASE,rel)
+	var moving := _plane_velocity()
+	var chase := str(now.stage) == "chase"
+	var cross := flat*float(_cross.vel) if chase else right*float(now.side)*float(_cross.vel)
+	# Chased, it pulls away ahead and climbs; low, it dives off out to its side, still side on (turned ahead, its
+	# wing would swing in over the plane); over, it turns ahead and climbs.
+	var away := right*float(now.side)*LEAVE_AHEAD+Vector3.DOWN*LEAVE_CLIMB if str(now.stage) == "wing_low" else flat*LEAVE_AHEAD+Vector3.UP*LEAVE_CLIMB*(0.6 if chase else 1.0)
+	var own := cross.lerp(cross+away,k)
+	var target := flat*maxf(moving.dot(flat),0.0)+own
+	velocity = velocity.lerp(target,1.0-exp(-delta*3.0))
+	facing = own
+
+## A wing pass before its first flash, `left` s off: where it would be in
+## the plane's frame now, crossing toward its line, so it is over the plane
+## at the flash however the plane has turned meanwhile.
+func _keep_over(left: float) -> void:
+	var camera := _eye()
+	if camera == null or _scene.get("plane") == null: return
+	var f := -camera.global_basis.z
+	var flat := Vector3(f.x,0.0,f.z)
+	if flat.length() < 0.01: return
+	flat = flat.normalized()
+	var right := flat.cross(Vector3.UP)
+	var side: float = now.side
+	var plane: Vector3 = _scene.plane.position
+	var moving := _plane_velocity()
+	if str(now.stage) == "chase":
+		place = plane+right*float(_cross.off)+flat*(float(_cross.ahead)-float(_cross.vel)*left)
+		place.y = camera.global_position.y+float(_cross.up)
+		velocity = flat*(maxf(moving.dot(flat),0.0)+float(_cross.vel))+Vector3.UP*moving.y
+		facing = flat
+		return
+	place = plane+right*side*(float(_cross.off)-float(_cross.vel)*left)+flat*float(_cross.ahead)
+	place.y = camera.global_position.y+float(_cross.up)
+	velocity = flat*maxf(moving.dot(flat),0.0)+Vector3.UP*moving.y+right*side*float(_cross.vel)
+	facing = right*side*float(_cross.vel)
+
+## The wing's downstroke reaching the plane: a shove away from its side.
+func _wing_gust() -> void:
+	var eye := _eye()
+	if eye == null: return
+	var from := Vector3(eye.global_position.x-place.x,0.0,eye.global_position.z-place.z).normalized()
+	_weather.set("_gust",{"way":from,"k":WING_GUST_K,"t":0.0,"length":WING_GUST_LENGTH})
+	_log("wing gust")
 
 func _play(kind: String, gain: float, pitch: float) -> void:
 	var takes: Array = _clips.get(kind,[])
