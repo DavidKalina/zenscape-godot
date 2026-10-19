@@ -52,6 +52,8 @@ const PauseHost = preload("res://scripts/kit_isle/pause_host.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const DevKeys = preload("res://scripts/kit_isle/dev_keys.gd")
 const IsleFlora = preload("res://studies/aqueduct_isle_flora.gd")
+const CarryHost = preload("res://scripts/carry/carry_host.gd")
+const Treasures = preload("res://studies/wreck_cluster_treasures.gd")
 
 ## The re-deal's key (free on foot and in the plane: scripts/pad.gd,
 ## scripts/kit_isle/dev_keys.gd).
@@ -87,6 +89,8 @@ var rune_knight: Node3D = null
 var wind_blast: Node = null
 var wind_parry: Node3D = null
 var pause: Node = null
+## The treasures and their carrying (scripts/carry/carry_host.gd).
+var carry: Node3D = null
 var _rng := RandomNumberGenerator.new()
 var _ledger_was := []
 
@@ -449,6 +453,7 @@ func new_deal(seed_value := -1) -> void:
 	deals += 1
 	dealt = deal(deal_seed,avoid)
 	_lay_deal()
+	if carry != null: carry.deal()
 	_make_knight()
 	_show_toast("New deal  ·  seed %d" % deal_seed)
 	if _switch_hint != null: _switch_hint.text = _foot_text()
@@ -466,6 +471,10 @@ func _add_life() -> void:
 	dealt = deal(deal_seed)
 	_lay_deal(LaunchArgs.user_args().has("--parts-carried"))
 	plane_arc.start_by_flag()
+	carry = CarryHost.new()
+	add_child(carry)
+	carry.setup(self,"wreck_cluster",Treasures.spots())
+	carry.deal()
 	if not LaunchArgs.user_args().has("--no-rune-knight") and not Art.knight_line().is_empty():
 		_make_knight()
 		wind_blast = WindBlastStandin.new()
@@ -532,7 +541,7 @@ func back_to_plane() -> void:
 ## Where the world view looks for what stands on the islands.
 func world_roots() -> Array:
 	var out: Array = [art]
-	for n: String in ["FootPieces","PlaneArc","PartSpots","Life"]:
+	for n: String in ["FootPieces","PlaneArc","PartSpots","Life","Treasures"]:
 		var node := get_node_or_null(n)
 		if node != null: out.append(node)
 	return out
