@@ -93,6 +93,33 @@ const KNOCK_HOLD := 1.0
 const SHAKE_UP := 2.0
 const DAZE := 1.4
 
+## The mob and the haul: a loose treasure (or one he set down off its
+## spot) that HAUL_CREW of them (by its weight) reach within HAUL_REACH
+## (m, past its edge) is lifted over their heads and hauled toward its home
+## spot at HAUL_PACE of their pace (by its weight; heavy, slower than he
+## carries it). He runs into a hauler (within
+## HAUL_HIT m, faster than HAUL_HIT_SPEED m/s, or coming down on him) and
+## knocks him off it, dazed; fewer than HAUL_KEEP left and they let it
+## down where it is, and none lifts it again for HAUL_REST s. Or he lifts
+## it from them (E, as any resting one).
+## Within HOME_NEAR (m, across) of its spot it is set home and the brood
+## settles: they stand where they are till it is lifted again.
+const HAUL_CREW := {"light":2,"medium":3,"heavy":4}
+const HAUL_REACH := 0.9
+const HAUL_PACE := {"light":0.5,"medium":0.4,"heavy":0.3}
+const HAUL_HIT := 0.6
+const HAUL_HIT_SPEED := 1.2
+const HAUL_KEEP := 2
+const HAUL_REST := 1.5
+## The rest walk with a haul this far round it (m).
+const ESCORT_RING := 1.8
+## A haul that gets no nearer home by HAUL_GAIN (m) in HAUL_STUCK (s) (a
+## shelf they can't get down off; they never jump) is set down where it is
+## and they settle round it till it's lifted again.
+const HAUL_STUCK := 8.0
+const HAUL_GAIN := 0.5
+const HOME_NEAR := 1.0
+
 ## Their stone: grey, rough.
 const STONE := Color(0.62,0.6,0.57)
 const STONE_DARK := Color(0.2,0.19,0.18)

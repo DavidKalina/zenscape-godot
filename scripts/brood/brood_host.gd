@@ -19,6 +19,16 @@ extends Node3D
 ## `drop("knock")`) and they're thrown off. A jump shakes them all off;
 ## shaken, a guy is dazed a moment. No damage.
 ##
+## The mob and the haul: a loose treasure (or one set down off its spot)
+## draws them; HAUL_CREW of them at it lift it over their heads and haul
+## it home: the crew's lead walks and climbs for its spot at HAUL_PACE, the
+## treasure on his head, the rest round him under it (StoneGuy.haul_at).
+## He takes it back by lifting it from them (carry's E) or by running into
+## the haulers (each knocked off is dazed; under HAUL_KEEP left they let it
+## down, and leave it HAUL_REST). Home (HOME_NEAR of its spot) it's set on
+## its spot (carry's `_home`) and they settle: they stand where they are
+## till it's lifted again.
+##
 ## `--brood-one` stands one stone guy a little way off the wanderer when he
 ## can walk, and he comes for the wanderer wherever he goes (over walls, up
 ## faces, around edges he won't go over).
@@ -49,6 +59,19 @@ var _knock_t := 0.0
 var _shove_t := 0.0
 var knocked := 0
 var shaken := 0
+## The haul ({} none): {t, crew (the lead first), moved}; the time left
+## before they lift a let-down one again; hauls begun, knocked off, let
+## down and brought home so far (for drivers).
+var haul: Dictionary = {}
+## A treasure they gave up hauling (stuck short of home): they settle round
+## it till he lifts it again ({} none).
+var given_up: Dictionary = {}
+var give_ups := 0
+var _rest_t := 0.0
+var hauls := 0
+var haul_hits := 0
+var let_downs := 0
+var homes := 0
 
 func setup(host: Node3D) -> void:
 	study = host
@@ -70,6 +93,9 @@ func clear() -> void:
 	guys.clear()
 	woken = false
 	wanted = {}
+	haul = {}
+	given_up = {}
+	_rest_t = 0.0
 	clinging = 0
 	_knock_t = 0.0
 	var carry: Variant = study.get("carry") if study != null else null
@@ -84,7 +110,9 @@ func _process(delta: float) -> void:
 	var carry: Variant = study.get("carry")
 	var holding: bool = carry != null and not (carry.held as Dictionary).is_empty()
 	if not woken and holding: wake(carry.held)
-	if holding: wanted = carry.held
+	if holding:
+		wanted = carry.held
+		given_up = {}
 	if guys.is_empty(): return
 	var dt := minf(delta,1.0/30.0)
 	var space := get_world_3d().direct_space_state
@@ -96,9 +124,14 @@ func _process(delta: float) -> void:
 	elif not bool(m.grounded) and float(m.velocity.y) > K.SHAKE_UP*K.s(): _shake_all(Vector3(m.velocity.x,0.0,m.velocity.z)*0.3)
 	var used := {}
 	for g: RefCounted in guys: if g.state == "cling": used[g.slot] = true
+	_rest_t = maxf(_rest_t-dt,0.0)
+	var crew: Array = haul.get("crew",[])
 	for i: int in guys.size():
 		var g: RefCounted = guys[i]
 		if g.state == "lost": continue
+		if crew.has(g):
+			if g == crew[0]: g.step(space,_home_of(haul.t),dt)
+			continue
 		var to := goal
 		if on_him and to != Vector3.INF:
 			if g.state == "walk" and g.daze <= 0.0 and bool(m.grounded) and used.size() < K.GRAB_SLOTS and _in_grab(g,m.feet):
@@ -108,9 +141,145 @@ func _process(delta: float) -> void:
 			elif used.size() >= K.GRAB_SLOTS or g.daze > 0.0:
 				to = goal+_ring(i)*K.CROWD_RING*K.s()
 		elif to != Vector3.INF and not _one and goal_override == Vector3.INF:
-			to = goal+_ring(i)*0.5*K.s()
+			# Round a loose one close (to take it up); round a haul wider,
+			# an escort, so the crew under it shows.
+			to = goal+_ring(i)*(K.ESCORT_RING if not haul.is_empty() else 0.5)*K.s()
 		g.step(space,to,dt)
 	_hold_on(carry,m,dt)
+	if not haul.is_empty(): _haul_step(carry,m,space,dt)
+	elif goal_override == Vector3.INF and not _one and _rest_t <= 0.0: _mob(carry)
+
+# --- The mob and the haul ---------------------------------------------------------------
+
+## Where `t` rests at home: its spot.
+func _home_of(t: Dictionary) -> Vector3:
+	return (t.spot as Node3D).global_position
+
+func _at_home(t: Dictionary) -> bool:
+	var at: Vector3 = (t.node as Node3D).global_position
+	var home := _home_of(t)
+	return t.body == null and Vector2(at.x-home.x,at.z-home.z).length() < K.HOME_NEAR*K.s()
+
+## Whether they can take `t` up: resting where he left it (off its spot,
+## not in his hands, not lost, not rolling).
+func _takeable(carry: Variant, t: Dictionary) -> bool:
+	if t.is_empty() or bool(t.lost) or carry == null or t == given_up: return false
+	if not (carry.held as Dictionary).is_empty() and carry.held == t: return false
+	if t.body != null and not (t.body as RigidBody3D).freeze: return false
+	return not _at_home(t)
+
+## The wanted treasure resting off its spot: HAUL_CREW (by its weight) at
+## it, walking and not dazed, take it up; the nearest leads.
+func _mob(carry: Variant) -> void:
+	var t := wanted
+	if not _takeable(carry,t): return
+	var at: Vector3 = (t.node as Node3D).global_position
+	var reach := float(t.measures.radius)+K.HAUL_REACH*K.s()
+	var near: Array = []
+	for g: RefCounted in guys:
+		if g.state != "walk" or g.daze > 0.0: continue
+		var d := Vector2(g.feet.x-at.x,g.feet.z-at.z).length()
+		if d < reach and absf(float(g.feet.y)-at.y) < float(g.tall)*1.5: near.append([d,g])
+	var need := int(K.HAUL_CREW.get(str(t.weight),3))
+	if near.size() < need: return
+	near.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	var crew: Array = []
+	for k: int in need: crew.append(near[k][1])
+	carry._unloose(t)
+	var lead: RefCounted = crew[0]
+	lead.hauling = true
+	lead.pace = float(K.HAUL_PACE.get(str(t.weight),0.4))
+	haul = {"t":t,"crew":crew,"last":lead.feet,"best":(_home_of(t)-at).length(),"since":0.0}
+	hauls += 1
+	print("brood: %d took up %s, hauling it home (%.1f m)" % [need,t.id,(_home_of(t)-at).length()])
+
+## The haul's frame: the treasure on the lead's head, the crew round him
+## under it; his runs into them knock them off; under HAUL_KEEP it's let
+## down; lifted by him, the haul's over; home, it's set and they settle.
+func _haul_step(carry: Variant, m: Variant, space: PhysicsDirectSpaceState3D, dt: float) -> void:
+	var t: Dictionary = haul.t
+	var crew: Array = haul.crew
+	if carry == null or bool(t.lost) or (not (carry.held as Dictionary).is_empty() and carry.held == t):
+		# Lifted from them (or gone): the haul's over.
+		_end_haul()
+		return
+	# His runs into the haulers.
+	if m != null and not bool(study.get("flying")):
+		var v: Vector3 = m.velocity
+		var fast := Vector2(v.x,v.z).length() > K.HAUL_HIT_SPEED*K.s() or v.y < -2.0*K.s()
+		if fast:
+			for g: RefCounted in crew.duplicate():
+				var at: Vector3 = (g.node as Node3D).global_position
+				var d := Vector2(at.x-m.feet.x,at.z-m.feet.z).length()
+				if d > K.HAUL_HIT*K.s()+float(g.radius) or absf(at.y-float(m.feet.y)) > WorldScale.wanderer_tall: continue
+				var out := Vector3(at.x-m.feet.x,0.0,at.z-m.feet.z).normalized()
+				# Into him, not walking off past him.
+				if v.y > -2.0*K.s() and Vector3(v.x,0.0,v.z).normalized().dot(out) < 0.3: continue
+				crew.erase(g)
+				g.hauling = false
+				g.pace = 1.0
+				g.mid = at
+				g.shake(out*2.4*K.s()+Vector3(v.x,0.0,v.z)*0.4+Vector3.UP*1.6*K.s())
+				haul_hits += 1
+				print("brood: knocked a hauler off %s (%d left)" % [t.id,crew.size()])
+	if crew.size() < K.HAUL_KEEP or (crew[0] as RefCounted).state == "lost":
+		_let_down(t)
+		return
+	var lead: RefCounted = crew[0]
+	if not lead.hauling:
+		# A new lead (the last one knocked off): onto his feet under it.
+		lead.release()
+		lead.hauling = true
+		lead.pace = float(K.HAUL_PACE.get(str(t.weight),0.4))
+	var lx: Transform3D = (lead.node as Node3D).global_transform
+	var b := lx.basis.orthonormalized()
+	var tall: float = lead.tall
+	var moved := ((lead.feet as Vector3)-(haul.last as Vector3)).length()
+	haul.last = lead.feet
+	# The treasure on his head (its foot), held level.
+	(t.node as Node3D).global_position = lx.origin+b.y*tall*0.62
+	# The rest round him, under its rim.
+	var r := float(t.measures.radius)*0.8+float(lead.radius)*0.6
+	for k: int in range(1,crew.size()):
+		var a := TAU*float(k)/float(crew.size())
+		var at := lx.origin+b.x*cos(a)*r+b.z*sin(a)*r
+		if lead.state == "walk":
+			var hit := _ray(space,at+Vector3.UP*tall,at+Vector3.DOWN*tall*1.5)
+			if not hit.is_empty() and (hit.normal as Vector3).y >= K.FLOOR: at.y = float(hit.position.y)+tall*0.5
+		(crew[k] as RefCounted).haul_at(at,b,moved,dt)
+	# Getting nearer home? Else, stuck a while, they give it up.
+	var left := (_home_of(t)-(t.node as Node3D).global_position).length()
+	haul.since = float(haul.since)+dt
+	if left < float(haul.best)-K.HAUL_GAIN*K.s():
+		haul.best = left
+		haul.since = 0.0
+	elif float(haul.since) > K.HAUL_STUCK:
+		print("brood: stuck %.1f m short of %s's home; they give it up" % [left,t.id])
+		give_ups += 1
+		given_up = t
+		_let_down(t)
+		return
+	if _at_home(t):
+		carry._home(t)
+		homes += 1
+		print("brood: %s hauled home; they settle" % t.id)
+		_end_haul()
+
+## The treasure set down on the ground under it, the crew off it, left
+## HAUL_REST.
+func _let_down(t: Dictionary) -> void:
+	var node: Node3D = t.node
+	var at := node.global_position
+	var hit := _ray(get_world_3d().direct_space_state,at+Vector3.UP*0.3,at+Vector3.DOWN*(K.DROP_MOST*K.s()))
+	if not hit.is_empty(): node.global_position = hit.position
+	let_downs += 1
+	_rest_t = K.HAUL_REST
+	print("brood: they let %s down" % t.id)
+	_end_haul()
+
+func _end_haul() -> void:
+	for g: RefCounted in haul.get("crew",[]): g.release()
+	haul = {}
 
 ## Within his grab of the holder's feet `at`.
 func _in_grab(g: RefCounted, at: Vector3) -> bool:
@@ -184,6 +353,7 @@ func _goal(carry: Variant) -> Vector3:
 		if m != null and not bool(study.get("flying")): return m.feet
 		return Vector3.INF
 	if not wanted.is_empty() and not bool(wanted.lost):
+		if _at_home(wanted) or wanted == given_up: return Vector3.INF
 		return (wanted.node as Node3D).global_position
 	return Vector3.INF
 

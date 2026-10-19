@@ -11,8 +11,10 @@ extends RefCounted
 ## States: "wake" (hidden under the isle's lip, then fingers and head up
 ## over it, a look round: `wake_at`), "walk", "climb" (on a face), "mantle"
 ## (over a face's top), "cling" (hanging on the wanderer: `cling_at`, placed
-## each frame by the host; `shake` throws him off), "fall", "lost" (fell
-## off the world).
+## each frame by the host; `shake` throws him off), "haul" (one of a crew
+## carrying a treasure over their heads round the crew's lead, placed by
+## the host: `haul_at`; the lead walks and climbs as ever, `hauling`, at
+## `pace`), "fall", "lost" (fell off the world).
 ##
 ## The body is greybox: a squat block, a head, stub arms and legs on pivots,
 ## swung procedurally (the scurry, the reach up a face, the heave over).
@@ -64,6 +66,10 @@ var _w_hold := 0.0
 ## left before he grabs again.
 var slot := -1
 var daze := 0.0
+## Hauling a treasure (the crew's lead, arms up under it), and his pace
+## (of his scurry and climb).
+var hauling := false
+var pace := 1.0
 ## The swing's phase and the body's look.
 var _phase := 0.0
 var _basis := Basis.IDENTITY
@@ -147,6 +153,7 @@ func step(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 		"mantle": _mantle(dt)
 		"fall": _fall(space,dt)
 		"cling": _swing(dt*9.0,dt)
+		"haul": return
 	_place_node(dt)
 
 ## Hanging on at `at` (his middle), belly to the wanderer, `out` the way
@@ -157,6 +164,28 @@ func cling_at(at: Vector3, out: Vector3) -> void:
 	face_n = out
 	feet = at-Vector3.UP*tall*0.5
 	detour_t = 0.0
+
+## One of a hauling crew: his middle at `at`, turned `b` (the lead's),
+## his legs going by `moved` (m).
+func haul_at(at: Vector3, b: Basis, moved: float, dt: float) -> void:
+	state = "haul"
+	mid = at
+	feet = at-b.y*tall*0.5
+	heading = -b.z
+	_basis = b
+	node.transform = Transform3D(b,at)
+	_swing(moved,dt)
+
+## Off the haul (it's home, or let down, or lifted from them): down onto
+## the ground under him, not dazed.
+func release() -> void:
+	hauling = false
+	pace = 1.0
+	if state == "haul":
+		feet = mid-Vector3.UP*tall*0.5
+		velocity = Vector3.ZERO
+		_drop_to = Vector3.INF
+		state = "fall"
 
 ## Thrown off (a jump, the treasure knocked loose): falling away along
 ## `push` (m/s), dazed DAZE.
@@ -187,8 +216,7 @@ func _walk(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 	# Turn toward the way.
 	var a := heading.signed_angle_to(want,Vector3.UP)
 	heading = heading.rotated(Vector3.UP,clampf(a,-K.TURN*dt,K.TURN*dt)).normalized()
-	var pace := K.SCURRY*s*clampf(1.0-absf(a)/PI,0.3,1.0)
-	var go := pace*dt
+	var go := K.SCURRY*s*pace*clampf(1.0-absf(a)/PI,0.3,1.0)*dt
 	# A face ahead at his middle: climb it.
 	var mid_at := feet+Vector3.UP*tall*0.5
 	var wall := _cast(space,mid_at,mid_at+heading*(radius+go+0.05))
@@ -271,7 +299,7 @@ func _climb(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 			detour_t = K.DETOUR_TIME*1.5
 			state = "walk"
 			return
-	var move := up_along*K.CLIMB*s*dt*climb_dir+across*lat*K.CLIMB*K.CLIMB_SIDE*s*dt
+	var move := (up_along*K.CLIMB*s*dt*climb_dir+across*lat*K.CLIMB*K.CLIMB_SIDE*s*dt)*pace
 	if climb_dir > 0.0:
 		# A steeper face above him (a slope run into a wall): onto it; a
 		# ceiling over him: along under it sideways.
@@ -503,6 +531,12 @@ func _swing(moved: float, dt: float) -> void:
 			var moving := moved > 0.0001
 			var a := 0.8 if moving else 0.0
 			want = {"al":a*sw,"ar":-a*sw,"ll":-a*sw,"lr":a*sw,"pitch":0.25 if moving else 0.0,"head":-0.2 if moving else 0.0,"bob":absf(cos(_phase))*tall*0.08 if moving else 0.0}
+			if hauling or state == "haul":
+				# Arms straight up under the load, short quick steps, head down.
+				want.al = 3.0+0.08*sw
+				want.ar = 3.0-0.08*sw
+				want.pitch = 0.05
+				want.head = 0.25
 	al.scale.y = lerpf(al.scale.y,stretch,k)
 	ar.scale.y = lerpf(ar.scale.y,stretch,k)
 	head.rotation.y = lerpf(head.rotation.y,look,k)
