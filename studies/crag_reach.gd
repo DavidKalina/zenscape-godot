@@ -21,6 +21,7 @@ const UnitNode = preload("res://scripts/kit_isle/islet_unit_node.gd")
 const SkyScript = preload("res://studies/islet_yard_sky.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
+const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 
 ## The masses: name, the top unit's middle (x, height off TOP, z), its
 ## spec; then its parts, each [part, offset from the top's middle (x, dy,
@@ -41,8 +42,8 @@ const MASSES := [
 		["terrace_1",Vector3(-24.0,-8.0,-14.0),{"seed":62,"size":13.0,"shape":0.3}],
 		["terrace_2",Vector3(22.0,-20.0,-18.0),{"seed":63,"size":11.0,"shape":0.6}],
 	]],
-	["west",Vector3(-100.0,22.0,-34.0),{"seed":71,"size":20.0,"shape":0.55,"flat":0.5,"landmark":0},[
-		["terrace_1",Vector3(14.0,-11.0,14.0),{"seed":72,"size":10.0,"shape":0.7}],
+	["west",Vector3(-100.0,11.0,-34.0),{"seed":71,"size":20.0,"shape":0.55,"flat":0.5,"landmark":0},[
+		["terrace_1",Vector3(14.0,-11.0,14.0),{"seed":72,"size":10.0,"shape":0.7,"flat":0.7}],
 		["spire",Vector3(-12.0,4.0,-10.0),{"seed":73,"size":8.0,"shape":0.92,"landmark":0}],
 	]],
 ]
@@ -74,6 +75,21 @@ const PILLAR_IN := 3.0
 const PILLAR_DECK := 0.55
 ## How far the top end's crest stands over the high crown's turf (a step).
 const PILLAR_PROUD := 0.2
+## The aqueducts: name, from (a unit), to (a unit), seed. A level run of
+## RuinKit aqueduct spans (scripts/ruin_kit_aqueduct.gd), its channel
+## floor AQ_LIFT m over the higher rim's turf, from the `from` crown's rim
+## (`_rim_end`) on across the gap onto the `to` crown, a pier every SPAN.
+## A pier over the void stands on a small crag rock of its own
+## (`crag_reach/<name>_rock_<n>`), its top AQ_ROCK_DROP m (give or take
+## AQ_ROCK_JITTER) under the deck's foot, so the piers stride across on
+## stepping stones. Dry: the water's long gone. He walks the channel.
+const AQUEDUCTS := [
+	["aqueduct_west","main","west_terrace_1",201],
+]
+const AQ_LIFT := 0.08
+const AQ_ROCK_DROP := 2.0
+const AQ_ROCK_JITTER := 3.0
+const AQ_ROCK_SIZE := Vector2(3.6,5.0)
 ## A rim end's turf: within RIM_RISE m of the crown middle's height.
 const RIM_RISE := 3.0
 ## The islets between and round the masses: how many, their distance (m)
@@ -95,6 +111,8 @@ var specks := true
 var debris := true
 ## Each mass's top unit and its world middle and radius (x, z, r).
 var mass_tops := {}
+## Every mass's unit by its short name (`main`, `west_terrace_1`).
+var named := {}
 
 func _ready() -> void:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
@@ -134,14 +152,17 @@ func _build_art() -> void:
 		var top_at := Vector3(mid.x,TOP+mid.y,mid.z)
 		var spec: Dictionary = MASS_BASE.merged(m[2],true)
 		var n := _stand("crag_reach/%s" % mname,Transform3D(Basis(),top_at),spec)
-		if n != null: mass_tops[mname] = n
+		if n != null:
+			mass_tops[mname] = n
+			named[mname] = n
 		for part: Array in m[3]:
 			var off: Vector3 = part[1]
 			var ps: Dictionary = PART_BASE.merged(part[2],true)
 			var turn := Basis(Vector3.UP,float(int(ps.seed)%7)*0.9)
-			_stand("crag_reach/%s_%s" % [mname,part[0]],Transform3D(turn,top_at+off),ps)
+			named["%s_%s" % [mname,part[0]]] = _stand("crag_reach/%s_%s" % [mname,part[0]],Transform3D(turn,top_at+off),ps)
 	_bridges()
 	_pillars()
+	_aqueducts()
 	_islets()
 	if specks: _specks()
 	var tris := 0
@@ -221,6 +242,74 @@ func _pillars() -> void:
 		pillars.append([name_,a,b])
 		spans.append([a,b])
 		print("crag reach: %s %s -> %s, length %.1f m, slope %.1f deg" % [name_,a,b,a.distance_to(b),rad_to_deg(asin((a.y-b.y)/a.distance_to(b)))])
+
+## The aqueducts (AQUEDUCTS), each named `crag_reach/<name>`: a holder at
+## the run's frame (moved in F4, the whole run moves; its rocks are their
+## own units). `aqueducts` holds [name, a, b] (the channel's walk line,
+## world) for the drive.
+var aqueducts: Array = []
+
+func _aqueducts() -> void:
+	var space := get_world_3d().direct_space_state
+	for aq: Array in AQUEDUCTS:
+		var name_: String = "crag_reach/"+str(aq[0])
+		if Layout.deleted(name_) or named.get(aq[1]) == null or named.get(aq[2]) == null: continue
+		var from: Vector3 = (named[aq[1]] as Node3D).position
+		var to: Vector3 = (named[aq[2]] as Node3D).position
+		var a := _rim_end(space,from,to)
+		var b := _rim_end(space,to,from)
+		if a == Vector3.INF or b == Vector3.INF:
+			push_warning("crag reach: no rim for %s" % name_)
+			continue
+		var seed_value: int = aq[3]
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash([seed_value,"aqueduct"])
+		# Level: the channel floor just over the higher end's turf; the run
+		# starts at `a` and runs on past `b` to a whole number of spans.
+		var deck := maxf(a.y,b.y)+AQ_LIFT
+		var way := Vector3(b.x-a.x,0.0,b.z-a.z)
+		var count := int(ceil(way.length()/Aqueduct.SPAN))
+		way = way.normalized()
+		var frame := Transform3D(Basis(way,Vector3.UP,way.cross(Vector3.UP)),Vector3(a.x,deck-Aqueduct.DECK,a.z))
+		# A rock under each pier over the void.
+		var base := deck-Aqueduct.DECK
+		for i in range(count+1):
+			var p := frame*Vector3(Aqueduct.SPAN*i,0.0,0.0)
+			if _ground_under(space,p.x,p.z,deck) > base-AQ_ROCK_DROP-AQ_ROCK_JITTER: continue
+			var size := rng.randf_range(AQ_ROCK_SIZE.x,AQ_ROCK_SIZE.y)
+			var spec := {"seed":seed_value*10+i,"size":size,"shape":rng.randf_range(0.2,0.8),"flat":0.6,"lean":rng.randf()*0.4,
+				"drip":rng.randf_range(0.4,0.9),"lopsided":rng.randf()*0.5,"growth":rng.randf_range(0.55,0.8),"weather":0.6,
+				"landmark":-1,"debris":0.2}
+			var at := Vector3(p.x,base-AQ_ROCK_DROP-rng.randf_range(0.0,AQ_ROCK_JITTER),p.z)
+			_stand("%s_rock_%d" % [name_,i],Transform3D(Basis(Vector3.UP,rng.randf()*TAU),at),spec)
+		# The spans, each on the ground under it (the crowns, the rocks).
+		var root := Node3D.new()
+		root.name = str(aq[0]).to_pascal_case()
+		for i in range(count):
+			var at := Transform3D(Basis.IDENTITY,Vector3(Aqueduct.SPAN*(i+0.5),0.0,0.0))
+			var world := frame*at
+			var ground := func(x: float, z: float) -> float:
+				var w := world*Vector3(x,0.0,z)
+				return _ground_under(space,w.x,w.z,deck)-base
+			var span := Aqueduct.span(seed_value+i,clampf(0.5+rng.randf_range(-0.15,0.2),0.0,1.0),3 if i == 0 else 2,false,ground)
+			span.transform = at
+			root.add_child(span)
+		RuinKit.merge(root)
+		art.add_child(root)
+		root.transform = Layout.xform(name_,frame)
+		Layout.track(name_,root,"piece",frame)
+		var end := frame*Vector3(Aqueduct.SPAN*count,Aqueduct.DECK,0.0)
+		aqueducts.append([name_,Vector3(a.x,deck,a.z),end])
+		spans.append([Vector3(a.x,deck,a.z),end])
+		print("crag reach: %s %s -> %s, %d spans, deck %.1f (rims %.1f, %.1f)" % [name_,a,end,count,deck,a.y,b.y])
+
+## The ground (any body) under (x, z) from over `over`: its height, or far
+## under the deck (a pier left hanging) where there is none.
+func _ground_under(space: PhysicsDirectSpaceState3D, x: float, z: float, over: float) -> float:
+	var ray := PhysicsRayQueryParameters3D.create(Vector3(x,over+20.0,z),Vector3(x,over-60.0,z))
+	var hit := space.intersect_ray(ray)
+	if hit.is_empty(): return over-Aqueduct.DECK-AQ_ROCK_DROP-AQ_ROCK_JITTER-6.0
+	return (hit.position as Vector3).y
 
 ## A colossus column fallen with its crest along `a` -> `b` (world): hall
 ## drums (plain, a niche band, a roundel band) laid end to end along its
