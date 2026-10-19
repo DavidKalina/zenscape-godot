@@ -17,8 +17,12 @@ extends Node3D
 ## view (F4) moves it; the tell settles onto whatever ground is under it.
 ##
 ## Finds are collectibles the game has (GlyphPickup glyphs: the rune token
-## and a few others), not a currency of their own; a later task deals some
-## plane parts into the spots that sit by a soil part spot (`part`).
+## and a few others), not a currency of their own, or a plane part: the
+## cluster's deal buries a part under the dig spots by its `buried` part
+## spots (studies/wreck_cluster_art.gd BURIED; host `buried_parts()`).
+## That part is the plane arc's hidden holder (scripts/plane_arc/
+## wreck_arc.gd); it comes up as the rest do, then is handed back to the
+## arc (`unhide`) and lies there glinting, taken as any laid part.
 const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
 const BuriedFind = preload("res://scripts/buried_find.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
@@ -52,6 +56,9 @@ const LEVEL := 1.2
 const SIZE := 0.7
 const HOVER := 0.95
 const HANG := 0.45
+## A part hovers where a laid part does (scripts/plane_arc/part_spots.gd
+## HOVER, plane-sized: not the walker's size), so it is taken as one.
+const PART_HOVER := 0.85
 const TELL_SEED := 801
 
 var host: Node3D = null
@@ -65,6 +72,12 @@ var _own_hud := false
 ## Finds taken this deal.
 var taken := 0
 var _seed := 0
+
+## The dig spot (SPOTS index) by part spot `part`, bar deleted ones, or -1.
+static func by_part(part: int) -> int:
+	for i in range(SPOTS.size()):
+		if int(SPOTS[i][3]) == part and not LayoutOverrides.deleted(spot_name(i)): return i
+	return -1
 
 static func spot_name(i: int) -> String:
 	return "wreck_cluster/dig_spot_%02d" % (i+1)
@@ -91,7 +104,7 @@ func setup(scene: Node3D, dig_fx: Node3D, s: float) -> void:
 		tell.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if str(row[2]) in ["bare","mound"] else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		node.add_child(tell)
 		spots.append({"name":key,"where":row[0],"tell":row[2],"part":row[3],"node":node,"tell_node":tell,
-			"state":"buried","glyph":"","find":null,"dig":null,"up_t":0.0})
+			"state":"buried","glyph":"","part_id":"","find":null,"dig":null,"up_t":0.0})
 	settle()
 	re_deal(int(host.get("deal_seed")) if host.get("deal_seed") != null else 0)
 
@@ -120,6 +133,7 @@ func _ground(p: Vector3) -> Dictionary:
 func re_deal(seed_value: int) -> void:
 	_seed = seed_value
 	taken = 0
+	var parts: Dictionary = host.buried_parts() if host != null and host.has_method("buried_parts") else {}
 	for i in range(spots.size()):
 		var sp: Dictionary = spots[i]
 		_drop_find(sp)
@@ -128,11 +142,16 @@ func re_deal(seed_value: int) -> void:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = hash("%d:%s" % [seed_value,sp.name])
 		sp.glyph = FINDS[rng.randi()%FINDS.size()]
+		sp.part_id = str(parts.get(int(sp.part),"")) if int(sp.part) >= 0 else ""
 	settle()
 
 func _drop_find(sp: Dictionary) -> void:
 	for k: String in ["find","dig"]:
 		var n: Variant = sp.get(k)
+		# A part's holder is the arc's: it frees its own on a re-deal.
+		if k == "find" and str(sp.get("part_id","")) != "":
+			sp[k] = null
+			continue
 		if n != null and is_instance_valid(n): (n as Node).queue_free()
 		sp[k] = null
 
@@ -157,22 +176,28 @@ func reveal(sp: Dictionary, at: Vector3) -> void:
 	sp.state = "rising"
 	sp.up_t = 0.0
 	(sp.tell_node as Node3D).visible = false
-	var holder := GlyphPickup.make(str(sp.glyph),SIZE*size,randf()*TAU,true)
-	holder.name = "Find_%s" % str(sp.name).get_file()
-	add_child(holder)
+	var arc: Variant = host.get("plane_arc") if host != null else null
+	var holder: Node3D = null
+	if str(sp.part_id) != "" and arc != null: holder = arc.hidden_holder(str(sp.part_id))
+	if holder == null:
+		sp.part_id = ""
+		holder = GlyphPickup.make(str(sp.glyph),SIZE*size,randf()*TAU,true)
+		holder.name = "Find_%s" % str(sp.name).get_file()
+		add_child(holder)
 	holder.visible = false
 	if holder.has_method("motes_on"): holder.motes_on(true)
+	# The find's own parent's frame (the arc's, for a part).
+	var frame: Node3D = holder.get_parent() as Node3D
 	var dig := BuriedFind.new()
 	dig.bare = true
 	dig.size = size
-	dig.setup(holder,at,"",HOVER*size)
-	dig.from = at+Vector3.DOWN*0.35*size
-	add_child(dig)
+	dig.setup(holder,frame.to_local(at),"",PART_HOVER if str(sp.part_id) != "" else HOVER*size)
+	dig.from = frame.to_local(at+Vector3.DOWN*0.35*size)
+	frame.add_child(dig)
 	dig.reveal()
 	sp.find = holder
 	sp.dig = dig
 	if fx != null and fx.has_method("dust"): fx.dust(at,7,0.32,0.9)
-	var arc: Variant = host.get("plane_arc") if host != null else null
 	if arc != null and arc.get("sounds") != null: arc.sounds.found(1)
 
 ## The grass and meadow flowers round each spot cut down (the flora's
@@ -260,11 +285,18 @@ func _process(delta: float) -> void:
 func take(sp: Dictionary) -> void:
 	if sp.state != "rising": return
 	sp.state = "taken"
+	if str(sp.part_id) != "":
+		# Handed back to the arc: laid where it hovers, glinting, taken as
+		# any laid part (his touch, the part's own sounds and readout).
+		var arc: Variant = host.get("plane_arc") if host != null else null
+		if arc != null: arc.unhide(str(sp.part_id))
+		sp.find = null
+		return
 	taken += 1
 	var holder: Node3D = sp.find
 	if holder != null and is_instance_valid(holder): holder.take(hash(str(sp.name)) & 0xffff,self)
 	sp.find = null
-	_readout().show_pickup(str(sp.glyph),taken,taken,spots.size())
+	_readout().show_pickup(str(sp.glyph),taken,taken,spots.filter(func(o: Dictionary) -> bool: return str(o.part_id) == "").size())
 
 ## The collectibles readout: the sky's (or the isle life's) if there is
 ## one, else one of its own.

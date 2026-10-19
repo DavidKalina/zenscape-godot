@@ -362,7 +362,9 @@ func settle_spot(i: int) -> Vector3:
 ## A deal from `seed_value`: id -> spot index, at most PER_MASS a mass,
 ## avoiding the spots in `avoid` while enough others settle. First
 ## Art.HIDDEN (1 or 2) parts go into caches (Art.CACHES' spots, which hold
-## nothing lying), then the rest onto the spots that settle.
+## nothing lying), then Art.BURY under the dig spots by Art.BURIED's soil
+## spots (which hold nothing lying either), then the rest onto the spots
+## that settle.
 func deal(seed_value: int, avoid: Array = []) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
@@ -379,9 +381,20 @@ func deal(seed_value: int, avoid: Array = []) -> Dictionary:
 		if int(per.get(mass,0)) >= PER_MASS: continue
 		per[mass] = int(per.get(mass,0))+1
 		picks.append(i)
+	var holes := buried_spots()
+	var fresh_holes := holes.filter(func(i: int) -> bool: return not i in avoid)
+	var hole_pool: Array = fresh_holes if fresh_holes.size() >= Art.BURY.y else holes.duplicate()
+	_shuffle(hole_pool,rng)
+	var bury_n := picks.size()+rng.randi_range(Art.BURY.x,Art.BURY.y)
+	for i: int in hole_pool:
+		if picks.size() >= bury_n: break
+		var mass := str((spot_nodes[i] as Node3D).get_meta("mass"))
+		if int(per.get(mass,0)) >= PER_MASS: continue
+		per[mass] = int(per.get(mass,0))+1
+		picks.append(i)
 	var good: Array = []
 	for i in range(spot_nodes.size()):
-		if not i in boxes and settle_spot(i) != Vector3.INF: good.append(i)
+		if not i in boxes and not i in holes and settle_spot(i) != Vector3.INF: good.append(i)
 	var fresh := good.filter(func(i: int) -> bool: return not i in avoid)
 	var pool: Array = fresh if fresh.size() >= PART_IDS.size()-picks.size() else good
 	_shuffle(pool,rng)
@@ -394,8 +407,12 @@ func deal(seed_value: int, avoid: Array = []) -> Dictionary:
 	for i: int in pool:
 		if picks.size() >= PART_IDS.size(): break
 		if not i in picks: picks.append(i)
+	# The parts dealt to the picks in a shuffled order, so the hidden and
+	# buried ones (picked first) aren't always the same parts.
+	var ids: Array = PART_IDS.duplicate()
+	_shuffle(ids,rng)
 	var out := {}
-	for k in range(mini(picks.size(),PART_IDS.size())): out[PART_IDS[k]] = picks[k]
+	for k in range(mini(picks.size(),ids.size())): out[ids[k]] = picks[k]
 	return out
 
 static func _shuffle(a: Array, rng: RandomNumberGenerator) -> void:
@@ -412,9 +429,25 @@ func cache_spots() -> Array:
 		if i < spot_nodes.size() and spot_nodes[i] != null and not LayoutOverrides.deleted(Art.cache_name(i)): out.append(i)
 	return out
 
-## The dealt parts hidden in caches: spot index -> id.
+## The spots a part can be buried at (Art.BURIED with a dig spot by them,
+## bar deleted ones).
+func buried_spots() -> Array:
+	var out: Array = []
+	for i: int in Art.BURIED:
+		if i < spot_nodes.size() and spot_nodes[i] != null and Dig.DigSpots.by_part(i) >= 0: out.append(i)
+	return out
+
+## The dealt parts buried under a dig spot: spot index -> id.
+func buried_parts() -> Dictionary:
+	var holes := buried_spots()
+	var out := {}
+	for id: String in dealt:
+		if int(dealt[id]) in holes: out[int(dealt[id])] = id
+	return out
+
+## The dealt parts hidden in caches or buried: spot index -> id.
 func hidden_parts() -> Dictionary:
-	var boxes := cache_spots()
+	var boxes := cache_spots()+buried_spots()
 	var out := {}
 	for id: String in dealt:
 		if int(dealt[id]) in boxes: out[int(dealt[id])] = id
@@ -435,7 +468,7 @@ func _lay_deal(all_carried := false) -> void:
 	caches = WreckCaches.stand(self,hidden)
 	var names := PackedStringArray()
 	for id: String in PART_IDS:
-		if dealt.has(id): names.append("%s %s%s" % [id,Art.spot_name(int(dealt[id])).get_file()," (cache)" if int(dealt[id]) in hidden else ""])
+		if dealt.has(id): names.append("%s %s%s" % [id,Art.spot_name(int(dealt[id])).get_file(),(" (buried)" if int(dealt[id]) in Art.BURIED else " (cache)") if int(dealt[id]) in hidden else ""])
 	print("wreck cluster: deal %d (seed %d): %s" % [deals,deal_seed,", ".join(names)])
 
 ## N: a fresh deal. The plane back on its spot, broken, every part taken off
