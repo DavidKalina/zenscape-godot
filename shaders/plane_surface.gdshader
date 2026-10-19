@@ -8,4 +8,5 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 // swept by the mended gleam (`gleam`). The cockpit pilot keeps the painted
 // shader (shaders/plane_paint.gdshader).
 #define ZS_CRAFT_GRIME
+#define ZS_PLANE_FLEX
 #include "res://shaders/folk_surface.gdshaderinc"

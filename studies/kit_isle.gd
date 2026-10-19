@@ -1534,7 +1534,7 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	asked["exit"] = bool(input.get("exit",false)) or _exit_asked
 	_exit_asked = false
 	var out := hand_landing.step(delta,asked,ground,floor,plane_air,Callable(self,"roll_blocked"))
-	plane.engine = hand_landing.engine
+	plane.engine = hand_landing.engine*float(plane.sputter)
 	if hand_landing.flying(): _bump(was)
 	elif isle_lock != null and isle_lock.locked: release_lock()
 	_fly_tick(delta)
@@ -1551,7 +1551,7 @@ func fly_step(delta: float, input: Dictionary) -> void:
 	# The wind muffled in a cloud's body round the eye, as in the game.
 	var host := cloud_host()
 	air.advance(delta,plane.velocity,float(plane.hang),0.0,0.0,host.cloud_body(camera.global_position) if host != null else 0.0)
-	air.engine(float(plane.speed),hand_landing.throttle,hand_landing.engine)
+	air.engine(float(plane.speed),hand_landing.throttle,float(plane.engine))
 	if int(plane.flaps) != _flaps_heard:
 		_flaps_heard = int(plane.flaps)
 		air.flap()

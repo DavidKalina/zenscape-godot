@@ -149,6 +149,19 @@ var drift_strength := drift_flag(preload("res://scripts/launch_args.gd").user_ar
 ## velocity the last step left (set from outside since: the path starts
 ## again along it).
 var heavy := heavy_flag(preload("res://scripts/launch_args.gd").user_args())
+## The share of its climb it keeps (1, all of it; a load hung under it
+## lowers it from outside, scripts/carry/carry_weights.gd LOAD): only the
+## climb, so level flight and the dive are as they were.
+var climb_share := 1.0
+## The engine's pull, 1 to 0 (scripts/carry/plane_strain.gd: a part torn
+## off in flight kills it): at 0 Boost does nothing, it settles to
+## DEAD_GLIDE of cruise, can't climb and sinks DEAD_SINK m/s, so it must
+## put down. `sputter` (1 running) shows the engine labouring: the
+## propeller and hum (studies/kit_isle.gd multiplies `engine` by it).
+var power := 1.0
+var sputter := 1.0
+const DEAD_GLIDE := 0.75
+const DEAD_SINK := 1.6
 var _path := Vector3.ZERO
 var _pitch_rate := 0.0
 var _left := Vector3.INF
@@ -310,7 +323,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var shove: Vector3 = here.get("shove",Vector3.ZERO)
 	var look: Vector2 = input.get("look",Vector2.ZERO)
 	var deep := clampf((floor_y-position.y)/CATCH_DEPTH,0.0,1.0)
-	var boost := clampf(float(input.get("boost",0.0)),0.0,1.0)
+	var boost := clampf(float(input.get("boost",0.0)),0.0,1.0)*power
 	var brake := clampf(float(input.get("brake",0.0)),0.0,1.0)
 	throttle = boost-brake
 	var turn := clampf(float(input.get("turn",0.0)),-1.0,1.0)
@@ -372,6 +385,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	# Speed: the engine pulls it to the throttle's speed; the climb and the
 	# dive swing it either side.
 	var target := (CRUISE_SPEED+boost*(BOOST_SPEED-CRUISE_SPEED)-brake*(CRUISE_SPEED-BRAKE_SPEED))*speed_scale
+	if power < 1.0: target = lerpf(CRUISE_SPEED*DEAD_GLIDE*speed_scale,target,power)
 	if approach: target = minf(target,LANDING_SPEED)
 	# Flaps down slow it and lower its floor; Boost takes them over.
 	var flap := clampf(float(input.get("flaps",0.0)),0.0,1.0)*(1.0-boost)
@@ -387,7 +401,9 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var drop := approach_drop(ground) if approach else 0.0
 	var side := Vector3(cos(heading),0.0,-sin(heading))
 	var sag := HEAVY_SAG*heavy*(1.0-cos(_free_bank))
-	velocity = path*speed+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag)+wind
+	var along := path*speed
+	if climb_share*power < 1.0 and along.y > 0.0: along.y *= climb_share*power
+	velocity = along+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag-DEAD_SINK*(1.0-power))+wind
 	var was := position
 	position += velocity*delta
 	_skim(delta,ground,was)

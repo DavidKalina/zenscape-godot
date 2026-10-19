@@ -265,6 +265,13 @@ func add_tag(at: Vector3, yaw := 0.0, seed_value := 0) -> void:
 func try_catch(walker: PilotMotor, delta := 0.0) -> bool:
 	if snapped: return false
 	if walker.move == "tumble": return _try_snag(walker,delta)
+	if not would_catch(walker): return false
+	_take(walker,hand_of(walker))
+	return true
+
+## Whether `try_catch` would take him now (not tumbling; nothing changed).
+func would_catch(walker: PilotMotor) -> bool:
+	if snapped or walker.move == "tumble": return false
 	if _cool > 0.0 or walker.rider != null or walker.on_ledge() or walker.swimming: return false
 	var hand := hand_of(walker)
 	if walker.grounded:
@@ -278,9 +285,7 @@ func try_catch(walker: PilotMotor, delta := 0.0) -> bool:
 	if not met:
 		var chest := walker.feet+Vector3.UP*CHEST
 		met = chest.distance_to(Geometry3D.get_closest_point_to_segment(chest,low,hands)) <= t_catch_body
-	if not met: return false
-	_take(walker,hand)
-	return true
+	return met
 
 ## The snag (see SNAG): a tumbling body in the air whose chest swept within
 ## t_snag_reach of its lower part this frame, caught limp, still stunned.

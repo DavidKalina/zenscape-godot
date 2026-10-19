@@ -1387,9 +1387,9 @@ static func _flank_block(b: RuinKit.Build, len: float, out: float, deep: float) 
 
 # --- The part spots -----------------------------------------------------------------
 
-## The holder types a spot could host (spec item 10): `lying` and `cache`
-## are built; the rest are data for a later round.
-const HOLDERS := ["lying","cache","water","islet","salvager","knight","jammed"]
+## The holder types a spot could host (spec item 10): `lying`, `cache` and
+## `buried` are built; the rest are data for a later round.
+const HOLDERS := ["lying","cache","buried","water","islet","salvager","knight","jammed"]
 
 ## A point on the spine's ground at axis `x`, `d` across.
 static func on_spine(x: float, d: float) -> Vector3:
@@ -1418,12 +1418,12 @@ static func spots() -> Array:
 		["bench","the bench's east end by the tail",Spine.bench_point(140.0),["lying","cache"]],
 		["tail","the tower rock's south-east lobe, where the tail fell (the coast down's way on)",on_lobe(Vector2(0.5,-0.5)),["lying","islet","cache"]],
 		["tower","the tower rock under the belfry's north face",Vector3(UNDER_BELFRY.x,TOWER_ROCK,UNDER_BELFRY.y),["lying","cache"]],
-		["bench","the strip's lobe by the footbridge's foot, under the bench",Vector3(STRIP_LOBE_SPOT.x,STRIP_TOP,STRIP_LOBE_SPOT.y),["lying","water"]],
+		["bench","the strip's lobe by the footbridge's foot, under the bench",Vector3(STRIP_LOBE_SPOT.x,STRIP_TOP,STRIP_LOBE_SPOT.y),["buried","water"]],
 		["tower","the tower top, on the east wall's head by the lookout",east_head(1.4),["lying","salvager"]],
 		["tower","the belfry's wall head, over the bell (partway up)",belfry_south_head(-1.4),["lying","jammed"]],
-		["coast","under the coast rock's arch (the coast down's end)",coast_arch_foot(),["lying","islet","salvager"]],
-		["ropes","under the rope rock's chapel arch (the rope chain's end)",rope_arch_foot(),["lying","islet","salvager"]],
-		["slide","by the carved chest under the tilt rock's lancet wall (the slide's end)",tilt_spot(),["lying","islet","cache"]],
+		["coast","under the coast rock's arch (the coast down's end)",coast_arch_foot(),["buried","islet","salvager"]],
+		["ropes","under the rope rock's chapel arch (the rope chain's end)",rope_arch_foot(),["buried","islet","salvager"]],
+		["slide","by the carved chest under the tilt rock's lancet wall (the slide's end)",tilt_spot(),["buried","islet","cache"]],
 		["knight","on the snapped causeway's tip, in the lee of its last pier (past the knight)",causeway_spot(),["lying","knight","cache"]],
 		["flank","on the south flank walk's fourth stretch, against the crest's rock",flank_s_point(3,0.45,1.0),["lying","jammed"]],
 		["flank","on the north flank walk's third stretch, past the rope chain's slab, against the shelf's rock",flank_n_point(2,0.62,1.0),["lying","jammed"]],
@@ -1450,6 +1450,15 @@ const CACHE_TOUGH := 0.32
 const CACHE_DROP := 2.6
 ## How many of the six each deal hides in caches, least and most.
 const HIDDEN := Vector2i(1,2)
+
+## The buried holders (docs/design/dig/spec-dig.md item 5): the soil spots
+## a dig spot (scripts/dig/dig_spots.gd, its `part`) sits by. On the deals
+## that pick one, a part lies under the dig spot's tell and comes up when
+## it is dug; on the rest the dig spot holds its own find and nothing lies
+## there. [spot index (Art.spots order)].
+const BURIED := [9,12,13,14]
+## How many of the six each deal buries, least and most.
+const BURY := Vector2i(1,1)
 
 static func cache_name(spot: int) -> String:
 	return "wreck_cluster/cache_%02d" % (spot+1)

@@ -52,6 +52,10 @@ const PauseHost = preload("res://scripts/kit_isle/pause_host.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const DevKeys = preload("res://scripts/kit_isle/dev_keys.gd")
 const IsleFlora = preload("res://studies/aqueduct_isle_flora.gd")
+const CarryHost = preload("res://scripts/carry/carry_host.gd")
+const Treasures = preload("res://studies/wreck_cluster_treasures.gd")
+const Stretch = preload("res://studies/wreck_cluster_stretch.gd")
+const Dig = preload("res://scripts/dig/dig.gd")
 
 ## The re-deal's key (free on foot and in the plane: scripts/pad.gd,
 ## scripts/kit_isle/dev_keys.gd).
@@ -87,6 +91,10 @@ var rune_knight: Node3D = null
 var wind_blast: Node = null
 var wind_parry: Node3D = null
 var pause: Node = null
+## The treasures and their carrying (scripts/carry/carry_host.gd).
+var carry: Node3D = null
+## Digging (scripts/dig/dig.gd): the spade and the buried spots.
+var dig: Node3D = null
 var _rng := RandomNumberGenerator.new()
 var _ledger_was := []
 
@@ -168,8 +176,30 @@ func flora_site() -> KitFlora.Site:
 	return IsleFlora.carpeted(motif.flora_site())
 
 func _grow() -> void:
+	if _stretch_from < 0:
+		super._grow()
+		IsleFlora.calm(flora)
+		return
+	# The stretch's islets grow apart: the flora's tries scale with the box
+	# round all its outlines, and theirs stretch it 700 m west.
+	var outlines := _outlines
+	var turf := _turf
+	_outlines = outlines.slice(0,_stretch_from)
+	_turf = turf.filter(func(t: Node) -> bool: return not _stretch_turf.has(t))
 	super._grow()
+	_outlines = outlines
+	_turf = turf
 	IsleFlora.calm(flora)
+	var space := get_world_3d().direct_space_state
+	for j in range(_stretch_lands.size()):
+		var land: Node3D = _stretch_lands[j]
+		# Its rays down from over its own top (the site's are the spine's).
+		var site := flora_site()
+		var top: float = Stretch.lands()[j][6]
+		site.ray = Vector2(top+60.0,top-8.0)
+		var more := KitFlora.grow(flora_seed()+1+j,space,KitLand.turf_bodies(land),[land.get_meta("outline")],site)
+		more.name = "Flora"+land.name
+		art.add_child(more)
 
 func flora_seed() -> int:
 	return 421
@@ -207,6 +237,7 @@ func _build_art() -> void:
 		add_turf(land)
 		WorldIslands.add("island/"+str(spec[0]),land,float(spec[6]))
 		if not "--no-turf-lips" in LaunchArgs.user_args(): TurfLips.dress(land,hash(land.name))
+	_build_stretch_lands()
 	if not LayoutOverrides.islands().is_empty(): isle_ready.connect(_place_saved_islands,CONNECT_ONE_SHOT)
 	for p: Array in Art.pieces(): _place_piece(str(p[0]),RuinKit.piece(str(p[1]),int(p[2]),float(p[3])),p[4],float(p[5]))
 	for t: Array in Art.tower(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
@@ -214,6 +245,8 @@ func _build_art() -> void:
 	for t: Array in Art.causeway_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	for t: Array in Art.flank_s_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	for t: Array in Art.flank_n_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
+	if _stretch_from >= 0:
+		for t: Array in Stretch.built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	_build_bridge()
 	_build_foot_pieces()
 	_build_spots()
@@ -223,6 +256,35 @@ func _build_art() -> void:
 		add_child(editor)
 		editor.setup(self,foot_host)
 	print("wreck cluster: %d triangles, built in %d ms" % [triangles(art),Time.get_ticks_msec()-began])
+
+## The haul home's stretch west of the strip (studies/wreck_cluster_stretch.
+## gd; --no-stretch leaves it out): its two islets as the cluster's lands
+## (world-view islands `island/stretch_islet_a`, `_b`); its pieces are laid
+## with the cluster's. The isle's circle (the lock, the life's reach) stays
+## the cluster's own: `_stretch_from` is where the stretch's outlines start.
+var _stretch_from := -1
+var _stretch_lands: Array = []
+var _stretch_turf: Array = []
+func _build_stretch_lands() -> void:
+	if "--no-stretch" in LaunchArgs.user_args(): return
+	_stretch_from = _outlines.size()
+	for spec: Array in Stretch.lands():
+		var land := Stretch.build_land(spec)
+		art.add_child(land)
+		lands[str(spec[0])] = land
+		add_turf(land)
+		_stretch_lands.append(land)
+		_stretch_turf.append_array(KitLand.turf_bodies(land))
+		WorldIslands.add("island/"+str(spec[0]),land,float(spec[6]))
+		if not "--no-turf-lips" in LaunchArgs.user_args(): TurfLips.dress(land,hash(land.name))
+
+func isle_circle() -> Vector3:
+	if _stretch_from < 0 or _stretch_from >= _outlines.size(): return super.isle_circle()
+	var all := _outlines
+	_outlines = all.slice(0,_stretch_from)
+	var circle := super.isle_circle()
+	_outlines = all
+	return circle
 
 ## The spine's tail cut (spec: clean up the floating rocks and debris):
 ## its five fragments, the stepping stones between them, the rope bridges
@@ -359,7 +421,9 @@ func settle_spot(i: int) -> Vector3:
 ## A deal from `seed_value`: id -> spot index, at most PER_MASS a mass,
 ## avoiding the spots in `avoid` while enough others settle. First
 ## Art.HIDDEN (1 or 2) parts go into caches (Art.CACHES' spots, which hold
-## nothing lying), then the rest onto the spots that settle.
+## nothing lying), then Art.BURY under the dig spots by Art.BURIED's soil
+## spots (which hold nothing lying either), then the rest onto the spots
+## that settle.
 func deal(seed_value: int, avoid: Array = []) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
@@ -376,9 +440,20 @@ func deal(seed_value: int, avoid: Array = []) -> Dictionary:
 		if int(per.get(mass,0)) >= PER_MASS: continue
 		per[mass] = int(per.get(mass,0))+1
 		picks.append(i)
+	var holes := buried_spots()
+	var fresh_holes := holes.filter(func(i: int) -> bool: return not i in avoid)
+	var hole_pool: Array = fresh_holes if fresh_holes.size() >= Art.BURY.y else holes.duplicate()
+	_shuffle(hole_pool,rng)
+	var bury_n := picks.size()+rng.randi_range(Art.BURY.x,Art.BURY.y)
+	for i: int in hole_pool:
+		if picks.size() >= bury_n: break
+		var mass := str((spot_nodes[i] as Node3D).get_meta("mass"))
+		if int(per.get(mass,0)) >= PER_MASS: continue
+		per[mass] = int(per.get(mass,0))+1
+		picks.append(i)
 	var good: Array = []
 	for i in range(spot_nodes.size()):
-		if not i in boxes and settle_spot(i) != Vector3.INF: good.append(i)
+		if not i in boxes and not i in holes and settle_spot(i) != Vector3.INF: good.append(i)
 	var fresh := good.filter(func(i: int) -> bool: return not i in avoid)
 	var pool: Array = fresh if fresh.size() >= PART_IDS.size()-picks.size() else good
 	_shuffle(pool,rng)
@@ -391,8 +466,12 @@ func deal(seed_value: int, avoid: Array = []) -> Dictionary:
 	for i: int in pool:
 		if picks.size() >= PART_IDS.size(): break
 		if not i in picks: picks.append(i)
+	# The parts dealt to the picks in a shuffled order, so the hidden and
+	# buried ones (picked first) aren't always the same parts.
+	var ids: Array = PART_IDS.duplicate()
+	_shuffle(ids,rng)
 	var out := {}
-	for k in range(mini(picks.size(),PART_IDS.size())): out[PART_IDS[k]] = picks[k]
+	for k in range(mini(picks.size(),ids.size())): out[ids[k]] = picks[k]
 	return out
 
 static func _shuffle(a: Array, rng: RandomNumberGenerator) -> void:
@@ -409,9 +488,25 @@ func cache_spots() -> Array:
 		if i < spot_nodes.size() and spot_nodes[i] != null and not LayoutOverrides.deleted(Art.cache_name(i)): out.append(i)
 	return out
 
-## The dealt parts hidden in caches: spot index -> id.
+## The spots a part can be buried at (Art.BURIED with a dig spot by them,
+## bar deleted ones).
+func buried_spots() -> Array:
+	var out: Array = []
+	for i: int in Art.BURIED:
+		if i < spot_nodes.size() and spot_nodes[i] != null and Dig.DigSpots.by_part(i) >= 0: out.append(i)
+	return out
+
+## The dealt parts buried under a dig spot: spot index -> id.
+func buried_parts() -> Dictionary:
+	var holes := buried_spots()
+	var out := {}
+	for id: String in dealt:
+		if int(dealt[id]) in holes: out[int(dealt[id])] = id
+	return out
+
+## The dealt parts hidden in caches or buried: spot index -> id.
 func hidden_parts() -> Dictionary:
-	var boxes := cache_spots()
+	var boxes := cache_spots()+buried_spots()
 	var out := {}
 	for id: String in dealt:
 		if int(dealt[id]) in boxes: out[int(dealt[id])] = id
@@ -432,7 +527,7 @@ func _lay_deal(all_carried := false) -> void:
 	caches = WreckCaches.stand(self,hidden)
 	var names := PackedStringArray()
 	for id: String in PART_IDS:
-		if dealt.has(id): names.append("%s %s%s" % [id,Art.spot_name(int(dealt[id])).get_file()," (cache)" if int(dealt[id]) in hidden else ""])
+		if dealt.has(id): names.append("%s %s%s" % [id,Art.spot_name(int(dealt[id])).get_file(),(" (buried)" if int(dealt[id]) in Art.BURIED else " (cache)") if int(dealt[id]) in hidden else ""])
 	print("wreck cluster: deal %d (seed %d): %s" % [deals,deal_seed,", ".join(names)])
 
 ## N: a fresh deal. The plane back on its spot, broken, every part taken off
@@ -449,6 +544,8 @@ func new_deal(seed_value := -1) -> void:
 	deals += 1
 	dealt = deal(deal_seed,avoid)
 	_lay_deal()
+	if carry != null: carry.deal()
+	if dig != null: dig.re_deal()
 	_make_knight()
 	_show_toast("New deal  ·  seed %d" % deal_seed)
 	if _switch_hint != null: _switch_hint.text = _foot_text()
@@ -466,6 +563,13 @@ func _add_life() -> void:
 	dealt = deal(deal_seed)
 	_lay_deal(LaunchArgs.user_args().has("--parts-carried"))
 	plane_arc.start_by_flag()
+	carry = CarryHost.new()
+	add_child(carry)
+	carry.setup(self,"wreck_cluster",Treasures.spots())
+	carry.deal()
+	dig = Dig.new()
+	add_child(dig)
+	dig.setup(self)
 	if not LaunchArgs.user_args().has("--no-rune-knight") and not Art.knight_line().is_empty():
 		_make_knight()
 		wind_blast = WindBlastStandin.new()
@@ -532,7 +636,7 @@ func back_to_plane() -> void:
 ## Where the world view looks for what stands on the islands.
 func world_roots() -> Array:
 	var out: Array = [art]
-	for n: String in ["FootPieces","PlaneArc","PartSpots","Life"]:
+	for n: String in ["FootPieces","PlaneArc","PartSpots","Life","Treasures"]:
 		var node := get_node_or_null(n)
 		if node != null: out.append(node)
 	return out
