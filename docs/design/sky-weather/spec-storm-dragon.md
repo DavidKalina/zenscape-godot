@@ -170,3 +170,16 @@ and the sighting look. Edits to shared files stay one or two lines
 (`dragon_glimpse.gd`'s material hookup), listed under **Notes for
 merge**. The trunk does not touch the hide's material; the lane does not
 touch staging or posing.
+
+## The strobe (the user, after the head turn)
+
+A close sighting's light comes as a strobe, not one flash: 3 to 5 short
+pulses (about 0.06 to 0.12 s lit, 0.15 to 0.4 s dark between), the dragon
+moving and posing in the dark so each pulse catches a new pose and the
+motion between is never seen. For the close head turn the pulses land on
+its beats (the wind-up, the snap into the look, the hold with the jaw
+open, the turn back) and the last pulse shows the empty murk where he was
+(or, now and then, him nearer). Far sightings strobe too, pulses at
+random. Thunder or a growl lands in a dark gap. The murk's bloom and the
+silhouette work per pulse. A flag forces it on or off so it can be judged
+against the single flash.
