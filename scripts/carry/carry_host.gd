@@ -126,6 +126,9 @@ var _thud: AudioStreamPlayer = null
 var _knocks := 0
 var _air_top := -INF
 var drops := 0
+## Others holding him back (the stone brood's clingers, scripts/brood/):
+## his carry's walk and run times this (1: free). `set_slow`.
+var slow := 1.0
 var losses := 0
 ## The hitch: the plane's sling (null until the plane is drawn), the spot
 ## the one in his hands goes to, how many have been loaded (drivers).
@@ -141,6 +144,9 @@ var _spill_t := 99.0
 var load_now := Weights.load_of(0.0)
 ## The plane's strain (scripts/carry/plane_strain.gd), made with the bag.
 var strain: Node = null
+## Others riding the bag (the stone brood's clingers): their kg, added to
+## the bag's load but never past its takeoff limit. `set_riders_kg`.
+var riders_kg := 0.0
 var _heavy_flag := -1.0
 static var _thud_take: AudioStreamWAV = null
 
@@ -798,8 +804,8 @@ func _apply_feel(pace: float) -> void:
 	if _base.is_empty(): return
 	var m: Variant = study.get("motor")
 	var w := Weights.of(str(held.weight))
-	m.walk = float(_base.walk)*float(w.walk)*pace
-	m.run = float(_base.run)*float(w.run)*pace
+	m.walk = float(_base.walk)*float(w.walk)*pace*slow
+	m.run = float(_base.run)*float(w.run)*pace*slow
 	var j: Array = []
 	for h: float in _base.jumps: j.append(h*float(w.jump)*(1.0 if pace >= 1.0 else 0.0))
 	m.jumps = j
@@ -811,6 +817,16 @@ func _apply_feel(pace: float) -> void:
 	m.ledge_on = bool(_base.ledge_on) and not bars.has("ledge")
 	m.sail_on = bool(_base.sail_on) and not bars.has("sail")
 	m.rope_on = bool(_base.rope_on) and not bars.has("rope")
+
+## Held back to `k` of his carry's paces (1 free); applied at once while
+## he walks with it (not while lifting, setting down or balking).
+func set_riders_kg(kg: float) -> void:
+	riders_kg = maxf(kg,0.0)
+
+func set_slow(k: float) -> void:
+	if is_equal_approx(k,slow): return
+	slow = k
+	if not held.is_empty() and phase == "carry" and _balk_t < 0.0: _apply_feel(1.0)
 
 func _restore_feel() -> void:
 	if _base.is_empty(): return
@@ -890,7 +906,8 @@ func _sling_step(delta: float) -> void:
 ## weight model and climb, and its takeoff (roll, lift, unstick, the dip
 ## off an edge); past max_kg it won't leave the ground.
 func _apply_load() -> void:
-	load_now = Weights.load_of(float(sling.load_kg))
+	var kg := float(sling.load_kg)
+	load_now = Weights.load_of(kg+minf(riders_kg,maxf(float(Weights.LOAD.max_kg)-kg,0.0)))
 	var plane: Variant = study.get("plane")
 	if plane != null:
 		if _heavy_flag < 0.0: _heavy_flag = float(plane.heavy)

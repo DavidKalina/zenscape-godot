@@ -24,7 +24,8 @@ extends "res://studies/kit_isle.gd"
 ##   ./run-wreck-cluster.command [--seed=N]
 ##   godot --path . res://studies/wreck_cluster.tscn -- --no-title [--seed=N]
 ## --seed=N repeats a deal (the first; N re-deals from a fresh seed, printed
-## and shown). --no-rune-knight leaves the knight out. --plane-fixed starts
+## and shown). --no-rune-knight leaves the knight out, --no-brood the
+## stone brood. --plane-fixed starts
 ## it repaired, --parts-carried carrying all six, --part-at=<id> by one.
 ## The kit isles' flags hold (--no-flora, --no-life, --no-sky, --fly, ...).
 ## Nothing here is saved to the player's progress: the ledger is kept in
@@ -54,6 +55,7 @@ const DevKeys = preload("res://scripts/kit_isle/dev_keys.gd")
 const IsleFlora = preload("res://studies/aqueduct_isle_flora.gd")
 const CarryHost = preload("res://scripts/carry/carry_host.gd")
 const Treasures = preload("res://studies/wreck_cluster_treasures.gd")
+const BroodHost = preload("res://scripts/brood/brood_host.gd")
 const Stretch = preload("res://studies/wreck_cluster_stretch.gd")
 const Dig = preload("res://scripts/dig/dig.gd")
 
@@ -95,6 +97,8 @@ var pause: Node = null
 var carry: Node3D = null
 ## Digging (scripts/dig/dig.gd): the spade and the buried spots.
 var dig: Node3D = null
+## The stone brood (scripts/brood/brood_host.gd).
+var brood: Node3D = null
 var _rng := RandomNumberGenerator.new()
 var _ledger_was := []
 
@@ -546,6 +550,7 @@ func new_deal(seed_value := -1) -> void:
 	_lay_deal()
 	if carry != null: carry.deal()
 	if dig != null: dig.re_deal()
+	if brood != null: brood.clear()
 	_make_knight()
 	_show_toast("New deal  ·  seed %d" % deal_seed)
 	if _switch_hint != null: _switch_hint.text = _foot_text()
@@ -570,6 +575,10 @@ func _add_life() -> void:
 	dig = Dig.new()
 	add_child(dig)
 	dig.setup(self)
+	if not LaunchArgs.user_args().has("--no-brood"):
+		brood = BroodHost.new()
+		add_child(brood)
+		brood.setup(self)
 	if not LaunchArgs.user_args().has("--no-rune-knight") and not Art.knight_line().is_empty():
 		_make_knight()
 		wind_blast = WindBlastStandin.new()
