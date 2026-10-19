@@ -21,7 +21,7 @@ key; the study's header (`studies/sky_weather_field.gd`) every flag.
 | G, F12, R | a gust; lightning; back to the start |
 
 Flags to stage things: `--sighting-stage=away|over|under|toward`,
-`--strobe=on`, `--hide=old`, `--cell-first=`, `--cell-speed=`,
+`--hide=old`, `--cell-first=`, `--cell-speed=`,
 `--cloud-drift=`, `--whiteout-at=`, `--sighting-at=`.
 
 ## What's built
@@ -54,10 +54,11 @@ Flags to stage things: `--sighting-stage=away|over|under|toward`,
 
 ## Tried and set aside
 
-- **The strobe** (`--strobe=on`): the light as 3 to 5 short pulses on the
-  head turn's beats. The user found it read as the dragon glitching in and
-  out. Their idea for another try: the dragon always faintly there in the
-  murk, each pulse lighting it harder, never vanishing.
+- **The strobe:** the light as 3 to 5 short pulses on the head turn's
+  beats (5697f536, removed in the commit after the handoff). The user found
+  it read as the dragon glitching in and out, and dropped it. Their idea if
+  it's ever retried: the dragon always faintly there in the murk, each
+  pulse lighting it harder, never vanishing.
 
 ## Open
 

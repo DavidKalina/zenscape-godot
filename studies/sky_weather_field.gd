@@ -40,8 +40,6 @@ extends "res://studies/plane_field_isle.gd"
 ##   ./run-sky-weather.command --storm=1 --sighting-every=20 --sighting-log   sightings often
 ##   ./run-sky-weather.command --storm=1 --sighting-stage=over   every sighting
 ##       staged so: close away|over|under, far away|toward (else picked)
-##   ./run-sky-weather.command --strobe=on   a sighting lit by the strobe's
-##       3 to 5 pulses, not one or two flashes (to compare)
 ##   ./run-sky-weather.command --hide=old   the dragon's old flat hide (H)
 ##   --sighting-at=<frames> --sighting-kind=far|close   one sighting then, none on their own
 ##   --murk=<0..1>   the murk pinned (the sightings' close odds)
