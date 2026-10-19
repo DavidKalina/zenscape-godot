@@ -70,6 +70,29 @@ Flying the study, the user sees and hears:
    gives a cell passing an isle, a whiteout and a sighting or two. The
    study's readout and header comment list every key.
 
+## The look to aim for (added after iteration 6)
+
+The user's mood board: `docs/design/sky-weather/ref-storm-dragon-mood.png`
+(open it; on disk only, docs images are git-ignored). It is the target for the storm-and-dragon moment; what is built
+reads right but is too light and too calm next to it. Played in the
+study's own chase camera (no cockpit view unless the user asks). The four
+beats on the board are the moment's sequence:
+
+1. **In the whiteout:** dark slate-blue murk, not pale grey; driven rain
+   and spray streaking past toward the camera with the plane's speed, not
+   falling straight down; the murk churning.
+2. **A flash reveals it:** the lightning is behind or inside the cloud
+   behind the dragon, so the murk around it blooms bright and the dragon
+   is a near-black silhouette against it, edges softened by the murk.
+3. **Close, brief, terrifying:** the close glimpse is the head and neck
+   (or a clawed limb and wing) near and turned toward the plane, jaw
+   open, claws reaching, maybe an eye catching the light; lit cold blue
+   from the flash. A beat, then dark.
+4. **Back to the murk:** it is gone, or is it; a sound after it.
+
+The darkening and the storm grade apply in storms and whiteouts only; the
+fair-weather sky looks as before.
+
 ## Order: the trunk and one lane
 
 **Lane `dragon-sightings`** (part 4, the dragon in the lightning), on its
@@ -90,7 +113,9 @@ key or flag stands in. The trunk iterations do not build the dragon.
 **The trunk** (this branch, `sky-game-loop-and-world`): isles, moving
 cloud, cells (done), then whiteouts. Then the lane is merged (by the loop
 runner, not an iteration) and whiteouts are wired to the lane's `murk`
-hook. Then the tuning pass over everything. Each task ends in something
+hook. Then the look pass toward the mood board (above), as small
+tasks in that beat order, each with before/after stills beside the
+board. Then the tuning pass over everything (again, if one already ran). Each task ends in something
 the user can launch or a still they can look at.
 
 ## Checks each iteration
