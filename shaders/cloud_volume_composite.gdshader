@@ -105,7 +105,9 @@ void fragment() {
 	// under them (the lower world, scripts/sky_below.gd) the floor is behind
 	// the eye and what lies below is real.
 	bool ground = cloud_sea > 0.0 && rd.y < 0.0 && t_floor > 0.0 && t_floor < t_reach && t_floor < t_solid && T >= 0.03;
-	if (!ground && cloud_a < 0.003) discard;
+	float t_wall;
+	vec4 wall = zs_front_wall(eye, rd, t_solid, TIME, t_wall);
+	if (!ground && cloud_a < 0.003 && wall.a < 0.003) discard;
 
 	float pixel = max(length(fwidth(rd)), 1e-5);
 	vec3 sun = normalize(zs_sun_direction + vec3(0.0, 1e-4, 0.0));
@@ -323,7 +325,20 @@ void fragment() {
 	col = zs_sky_season_grade(col, mood * (1.0 - SEA_SEASON_NIGHT * zs_night));
 
 	alpha = clamp(alpha, 0.0, 1.0);
+	// The front's rain wall, before or behind the cloud as it stands.
+	if (wall.a > 0.0) {
+		if (alpha < 0.003 || t_wall < t_seen) {
+			float over = wall.a + alpha * (1.0 - wall.a);
+			col = (wall.rgb * wall.a + col * alpha * (1.0 - wall.a)) / max(over, 1e-4);
+			alpha = over;
+		} else {
+			float over = alpha + wall.a * (1.0 - alpha);
+			col = (col * alpha + wall.rgb * wall.a * (1.0 - alpha)) / max(over, 1e-4);
+			alpha = over;
+		}
+	}
 	if (alpha < 0.003) discard;
+	col = zs_storm_graded_at(col, eye + rd * min(t_seen, 6000.0));
 	ALBEDO = col;
 	ALPHA = alpha;
 }

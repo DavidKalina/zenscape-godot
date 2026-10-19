@@ -255,6 +255,6 @@ void fragment() {
 	float sun_away = sqrt(max(2.0 * (1.0 - dot(toward, sun)), 0.0));
 	float high = smoothstep(0.02, 0.4, sun.y);
 	vec3 air = zsSkyBase(toward) + mix(vec3(1.0, 0.42, 0.12), vec3(1.0, 0.8, 0.52), high) * exp(-sun_away / 0.16) * mix(0.16, 0.07, high) * zs_celestial_clear;
-	ALBEDO = mix(lit / (1.0 - T), air, haze);
+	ALBEDO = zs_storm_graded(mix(lit / (1.0 - T), air, haze));
 	ALPHA = alpha * (1.0 - smoothstep(0.8, 1.0, haze)) * strength;
 }

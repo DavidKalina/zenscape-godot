@@ -73,6 +73,6 @@ void fragment() {
 	float edge = 1.0 - smoothstep(0.35, 1.0, r + (n - 0.5) * 0.7);
 	float fray = smoothstep(0.25, 0.95, life);
 	float wisp = smoothstep(fray * 0.75, fray * 0.75 + 0.3, n);
-	ALBEDO = shade * (0.95 + 0.1 * (1.0 - r));
+	ALBEDO = zs_storm_graded(shade * (0.95 + 0.1 * (1.0 - r)));
 	ALPHA = clamp(edge * wisp * (0.6 + 0.4 * (1.0 - r * r)), 0.0, 1.0) * 0.8 * opacity;
 }

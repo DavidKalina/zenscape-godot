@@ -180,7 +180,7 @@ void fragment() {
 	float edge = 1.0 - smoothstep(0.45, 1.0, r + (rag - 0.5) * 0.45);
 	// Thicker in the middle, so heaped puffs read as round.
 	float body = edge * (0.55 + 0.45 * (1.0 - r * r));
-	ALBEDO = shade * (0.92 + 0.12 * (1.0 - r));
+	ALBEDO = zs_storm_graded(shade * (0.92 + 0.12 * (1.0 - r))) + zs_storm_flash_cloud(card) * (0.5 + 0.5 * (1.0 - r * r));
 	ALPHA = clamp(body, 0.0, 1.0) * 0.85 * opacity * batch_fade;
 	if (carved > 0.0) {
 		// The tunnel cut out, its edge torn.
