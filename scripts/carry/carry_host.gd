@@ -24,7 +24,14 @@ extends Node3D
 ##   `refused` comes and he balks: a stagger to the side and a shake of the
 ##   head, his pace held back (procedural, stood in for authored clips);
 ## - a heavy load sways the camera at each footfall and puts a thud under
-##   his steps (`sway`, `dip`, `thud`).
+##   his steps (`sway`, `dip`, `thud`);
+## - a knock (the rune knight's shot, a stun) or a long fall knocks it out
+##   of his hands, and set down in the air it is let fall: it tumbles loose
+##   (a rigid body on TREASURE_LAYER, which his walk never sees, so it
+##   can't push or launch him; continuous collision, spawned only where it
+##   is clear of walls), is frozen where it comes to rest, and can be
+##   lifted from there. Fallen under the isle (`lost` on the study) it is
+##   lost for the deal.
 ##
 ## `deal()` puts every treasure back on its spot (the scene's re-deal).
 const Weights = preload("res://scripts/carry/carry_weights.gd")
@@ -68,11 +75,15 @@ const SET_TIME := 0.8
 const SET_DOWN := 0.55
 const SET_LET := 0.65
 ## The legs: thigh, shin, boot, side (+1 right).
+## The loose treasures' own layer (his walk's queries don't see it).
+const TREASURE_LAYER := 1 << 24
 const LEGS := [["thigh.L","shin.L","foot.L",-1.0],["thigh.R","shin.R","foot.R",1.0]]
 
 var study: Node3D = null
 var scene_id := ""
-## The treasures: [{id, kind, weight, spot (Node3D), node (Node3D), measures}].
+## The treasures: [{id, kind, weight, spot (Node3D), node (Node3D), measures,
+## body (RigidBody3D while loose, else null), still (s it has lain still),
+## lost (fell off the isle this deal)}].
 var treasures: Array = []
 ## The one in his hands ({} none), and its phase: "lift", "carry", "set".
 var held: Dictionary = {}
@@ -96,6 +107,12 @@ var _fall_side := 1.0
 var _fall_t := 99.0
 var heavy_steps := 0
 var _thud: AudioStreamPlayer = null
+## Drops: the motor's knock count last seen, the top of his air since he
+## left the ground, how many were knocked out, how many lost (drivers).
+var _knocks := 0
+var _air_top := -INF
+var drops := 0
+var losses := 0
 static var _thud_take: AudioStreamWAV = null
 
 ## Stands the treasures in `spec` ([id, kind, weight, foot (world), yaw deg])
@@ -119,7 +136,7 @@ func setup(host: Node3D, id_scene: String, spec: Array) -> void:
 		node.name = "Treasure_"+str(row[0])
 		node.add_child(made.node as Node3D)
 		spot.add_child(node)
-		treasures.append({"id":str(row[0]),"kind":str(row[1]),"weight":str(row[2]),"spot":spot,"node":node,"measures":made})
+		treasures.append({"id":str(row[0]),"kind":str(row[1]),"weight":str(row[2]),"spot":spot,"node":node,"measures":made,"body":null,"still":0.0,"lost":false})
 	_prompt = Label3D.new()
 	_prompt.name = "Prompt"
 	_prompt.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -144,7 +161,10 @@ func deal() -> void:
 	for t: Dictionary in treasures: _home(t)
 
 func _home(t: Dictionary) -> void:
+	_unloose(t)
+	t.lost = false
 	var node: Node3D = t.node
+	node.visible = true
 	var spot: Node3D = t.spot
 	if node.get_parent() != spot:
 		node.get_parent().remove_child(node)
@@ -189,7 +209,8 @@ func in_reach() -> Dictionary:
 	var best := {}
 	var near := REACH*s
 	for t: Dictionary in treasures:
-		if t == held: continue
+		if t == held or bool(t.lost): continue
+		if t.body != null and not (t.body as RigidBody3D).freeze: continue
 		var at: Vector3 = (t.node as Node3D).global_position
 		var across := Vector2(at.x-feet.x,at.z-feet.z).length()-float(t.measures.radius)
 		if across < near and absf(at.y-feet.y) < REACH_UP:
@@ -203,11 +224,14 @@ func in_reach() -> Dictionary:
 func lift(t: Dictionary) -> void:
 	var node: Node3D = t.node
 	_ground_at = node.global_transform
+	_unloose(t)
 	node.get_parent().remove_child(node)
 	add_child(node)
 	node.global_transform = _ground_at
 	held = t
 	phase = "lift"
+	_knocks = int(study.get("motor").knocks)
+	_air_top = -INF
 	phase_t = 0.0
 	_keep_feel()
 	_apply_feel(BUSY_PACE)
@@ -216,6 +240,9 @@ func lift(t: Dictionary) -> void:
 func set_down() -> void:
 	if held.is_empty(): return
 	var motor: Variant = study.get("motor")
+	if not motor.grounded:
+		drop("let fall")
+		return
 	var fwd := _forward()
 	var s: float = motor.size
 	var out := SET_OUT*s+float(held.measures.radius)
@@ -242,8 +269,133 @@ func _process(delta: float) -> void:
 			var t := held
 			_let_go()
 			_home(t)
-		else: _carry_step(delta)
+		else:
+			_drop_check()
+			if not held.is_empty(): _carry_step(delta)
+	for t: Dictionary in treasures:
+		if t.body != null: _loose_step(t,delta)
 	_show_prompt()
+
+# --- Dropping ----------------------------------------------------------------------
+
+## Knocked (his knock count up, or laid down stunned) or fallen DROP_FALL
+## below the top of his air: it is knocked out of his hands.
+func _drop_check() -> void:
+	var motor: Variant = study.get("motor")
+	var s: float = motor.size
+	var knocked: bool = int(motor.knocks) > _knocks or str(motor.move) == "tumble"
+	_knocks = int(motor.knocks)
+	if bool(motor.grounded): _air_top = -INF
+	else: _air_top = maxf(_air_top,float(motor.feet.y))
+	if knocked: drop("knock")
+	elif _air_top > -INF and _air_top-float(motor.feet.y) > Weights.DROP_FALL*s: drop("fall")
+
+## Out of his hands now, as it is (`why`: "knock", "fall", "let fall"):
+## it tumbles loose with his velocity times its `spill`, a toss up and a
+## spin, from where it is clear of walls between his chest and his hands.
+func drop(why: String) -> void:
+	if held.is_empty(): return
+	var t := held
+	var w := Weights.of(str(t.weight))
+	var motor: Variant = study.get("motor")
+	var node: Node3D = t.node
+	var at := node.global_transform
+	held = {}
+	phase = ""
+	_balk_t = -1.0
+	_restore_feel()
+	_knocks = int(motor.knocks)
+	_air_top = -INF
+	drops += 1
+	var h: float = t.measures.height
+	var r: float = t.measures.radius
+	var body := RigidBody3D.new()
+	body.name = "Loose_"+str(t.id)
+	body.collision_layer = TREASURE_LAYER
+	body.collision_mask = SOLID_MASK
+	body.mass = float(w.mass)
+	body.continuous_cd = true
+	body.can_sleep = true
+	body.linear_damp = 0.2
+	body.angular_damp = 1.5
+	var mat := PhysicsMaterial.new()
+	mat.friction = 0.9
+	mat.bounce = 0.1
+	body.physics_material_override = mat
+	var shape := CollisionShape3D.new()
+	shape.shape = _loose_shape(r,h)
+	body.add_child(shape)
+	add_child(body)
+	# Its middle, moved back toward his chest till it is clear of walls.
+	var mid := at*Vector3(0.0,h*0.5,0.0)
+	var chest := _bone_world("chest")
+	if chest == Vector3.INF: chest = motor.feet+Vector3.UP*0.6*float(motor.size)
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = shape.shape
+	q.collision_mask = SOLID_MASK
+	q.transform = Transform3D(at.basis,chest)
+	q.motion = mid-chest
+	var cast := get_world_3d().direct_space_state.cast_motion(q)
+	var safe: float = cast[0] if cast.size() > 0 else 1.0
+	body.global_transform = Transform3D(at.basis,chest+(mid-chest)*maxf(safe-0.02,0.0))
+	node.get_parent().remove_child(node)
+	body.add_child(node)
+	node.transform = Transform3D(Basis.IDENTITY,Vector3(0.0,-h*0.5,0.0))
+	var v: Vector3 = motor.velocity if why == "knock" else motor.ground_velocity()
+	body.linear_velocity = v*float(w.spill)+Vector3.UP*Weights.DROP_UP*(1.0 if why == "knock" else 0.3)
+	var spin := Vector3(randf_range(-1,1),randf_range(-1,1),randf_range(-1,1))
+	body.angular_velocity = spin.limit_length(1.0)*Weights.DROP_SPIN*(1.0 if why == "knock" else 0.4)
+	t.body = body
+	t.still = 0.0
+	if OS.is_debug_build(): print("carry: %s dropped (%s) at %s" % [t.id,why,body.global_position])
+
+## An eight-sided prism its size, about its middle (rolls on its side,
+## stands on its foot).
+static func _loose_shape(r: float, h: float) -> ConvexPolygonShape3D:
+	var pts := PackedVector3Array()
+	for i in 8:
+		var a := TAU*i/8.0
+		var p := Vector2(cos(a),sin(a))*r*0.9
+		pts.append(Vector3(p.x,-h*0.5,p.y))
+		pts.append(Vector3(p.x*0.8,h*0.5,p.y*0.8))
+	var shape := ConvexPolygonShape3D.new()
+	shape.points = pts
+	return shape
+
+## A loose one's frame: frozen once it has lain still SETTLE_TIME; lost
+## once under the isle.
+func _loose_step(t: Dictionary, delta: float) -> void:
+	var body: RigidBody3D = t.body
+	var lost_y: Variant = study.get("lost")
+	var floor_y := float(lost_y) if lost_y != null and is_finite(float(lost_y)) else -200.0
+	if body.global_position.y < floor_y:
+		_unloose(t)
+		(t.node as Node3D).visible = false
+		t.lost = true
+		losses += 1
+		if OS.is_debug_build(): print("carry: %s lost off the isle" % t.id)
+		return
+	if body.freeze: return
+	if body.linear_velocity.length() < Weights.SETTLE_SPEED and body.angular_velocity.length() < Weights.SETTLE_SPIN:
+		t.still = float(t.still)+delta
+	else: t.still = 0.0
+	if float(t.still) >= Weights.SETTLE_TIME or body.sleeping:
+		body.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
+		body.freeze = true
+		if OS.is_debug_build(): print("carry: %s came to rest at %s" % [t.id,body.global_position])
+
+## Its body gone: the treasure back under the host where it lies.
+func _unloose(t: Dictionary) -> void:
+	var body: RigidBody3D = t.body
+	if body == null: return
+	var node: Node3D = t.node
+	var at := node.global_transform
+	body.remove_child(node)
+	add_child(node)
+	node.global_transform = at
+	body.queue_free()
+	t.body = null
+	t.still = 0.0
 
 # --- Refusals ------------------------------------------------------------------------
 
