@@ -64,13 +64,16 @@ static func outline() -> Array:
 		Vector2(-924.0,43.5),Vector2(-938.0,35.0),Vector2(-944.0,25.0)]
 
 ## The turf's height at (x, z): TOP on the strip, the field and the vault's
-## shelf; a bluff rising some 9 m at the north-west, a hummock some 4.5 m at
-## the south-west rim, a low swell on the north rim, each eased in so the slopes stay walkable.
+## shelf; a bluff rising some 11 m at the north-west, a hummock some 6.5 m
+## at the south-west rim, a swell on the north rim and a low knoll on the
+## tongue's south rim (so the top line is not flat from a low angle), each
+## eased in so the slopes stay walkable.
 static func ground(x: float, z: float) -> float:
 	var h := TOP
-	h += 9.0*_mound(x,z,Vector2(-924.0,42.0),Vector2(28.0,17.0))
-	h += 4.5*_mound(x,z,Vector2(-930.0,-8.0),Vector2(18.0,13.0))
-	h += 2.5*_mound(x,z,Vector2(-848.0,44.0),Vector2(20.0,9.0))
+	h += 11.0*_mound(x,z,Vector2(-926.0,43.0),Vector2(30.0,18.0))
+	h += 6.5*_mound(x,z,Vector2(-932.0,-9.0),Vector2(20.0,14.0))
+	h += 4.0*_mound(x,z,Vector2(-846.0,46.0),Vector2(22.0,9.0))
+	h += 3.0*_mound(x,z,Vector2(-800.0,-2.0),Vector2(14.0,7.0))
 	# The strip's band, the field and the vault's shelf held flat.
 	var keep := maxf(_flat(absf(z-STRIP_Z),STRIP_HALF,4.0),_flat(_box(x,z,FIELD_AT,FIELD_HALF),0.0,4.0))
 	keep = maxf(keep,_flat(_box(x,z,VAULT_AT,Vector2(12.0,6.0)),0.0,4.0))
@@ -101,23 +104,60 @@ static func wear(p: Vector2) -> float:
 ## The isle as a row of the cluster's lands (studies/wreck_cluster_art.gd
 ## `lands`: name, outline, ground, depth, seed, cliffs, rim).
 static func land() -> Array:
-	return ["home",outline(),ground,34.0,467,Rect2(),TOP]
+	return ["home",outline(),ground,80.0,467,Rect2(),TOP]
 
-## The rock it hangs (studies/wreck_cluster_art.gd `hangs`): a long keel
-## under the strip, three fangs, leaning a little east.
-const HANG := {"rings":[[4.0,0.94],[10.0,0.82],[18.0,0.64],[24.0,0.5]],"fangs":[32.0,38.0,28.0],"spread":0.5,"lean":Vector2(4.0,1.0)}
+## The home isle and its two stacks (studies/wreck_cluster.gd builds them
+## with the stretch's lands): the isle, a tall stack off its south-east rim
+## south of the approach, a lower one off the bluff's north side. Each
+## stack is a small round islet hung on a deep column, as the cluster's
+## tower rock and its outliers stand, so the isle reads as a cluster from
+## afar and from the approach, not one slab.
+const SPIRE_S := Vector3(-806.0,33.0,-30.0)
+const SPIRE_N := Vector3(-902.0,41.0,66.0)
+static func lands() -> Array:
+	return [land(),
+		["home_spire_s",_round(Vector2(SPIRE_S.x,SPIRE_S.z),6.5,471),_level(SPIRE_S.y),64.0,471,Rect2(),SPIRE_S.y],
+		["home_spire_n",_round(Vector2(SPIRE_N.x,SPIRE_N.z),5.5,473),_level(SPIRE_N.y),48.0,473,Rect2(),SPIRE_N.y]]
 
-## The isle built as the stretch's islets are (KitLand turf, its own
-## hanging rock, sides collided as drawn).
+static func _level(y: float) -> Callable:
+	return func(_x: float, _z: float) -> float: return y
+
+## A rough round outline (wound as the lands are) of radius `r` at `at`.
+static func _round(at: Vector2, r: float, seed_value: int) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var out: Array = []
+	for i in 10:
+		var a := -TAU*float(i)/10.0
+		out.append(at+Vector2(cos(a),sin(a))*r*rng.randf_range(0.85,1.12))
+	return out
+
+## The rock each hangs (studies/wreck_cluster_art.gd `hangs`). The isle: a
+## sheer band under its rim, then stepping in twice in overhangs (as the
+## rope rock's tiers) down to seven fangs, the deepest some 80 m under the
+## turf, leaning a little east toward the approach. The stacks: columns
+## near-vertical most of their drop, a single fang.
+const HANGS := {
+	"home":{"rings":[[5.0,0.97],[12.0,0.95],[14.0,0.84],[24.0,0.8],[27.0,0.64],[37.0,0.56],[44.0,0.4]],
+		"fangs":[58.0,76.0,50.0,68.0,56.0,80.0,52.0],"spread":0.72,"lean":Vector2(6.0,1.0)},
+	"home_spire_s":{"rings":[[6.0,0.95],[20.0,0.88],[34.0,0.8],[46.0,0.66]],"fangs":[64.0],"lean":Vector2(-2.0,1.0)},
+	"home_spire_n":{"rings":[[5.0,0.94],[16.0,0.86],[28.0,0.74],[36.0,0.6]],"fangs":[48.0],"lean":Vector2(2.0,-2.0)},
+}
+
+## A land of `lands` built as the stretch's islets are (KitLand turf, its
+## own hanging rock, sides collided as drawn). World-view islands
+## `island/home`, `island/home_spire_s`, `island/home_spire_n`.
 static func build_land(spec: Array) -> Node3D:
 	var Art: GDScript = load("res://studies/wreck_cluster_art.gd")
+	var called := str(spec[0])
 	var d := {"outline":spec[1],"seed":int(spec[4]),"ground":spec[2],"top":float(spec[6]),
-		"depth":float(spec[3]),"hang":true,"resample":[60.0,128,48],"tone":KitLook.turf(int(spec[4])),"cell":2.0,
-		"collide_sides":true,"sides":false,"name":"home"}
+		"depth":float(spec[3]),"hang":true,"resample":[60.0,128,48],"tone":KitLook.turf(467),"cell":2.0,
+		"collide_sides":true,"sides":false,"name":called}
 	var node := KitLand.island(d)
-	node.name = "Land_Home"
-	var rings: Array = Art.hang_rings(d,HANG)
-	var drawn: MeshInstance3D = Art.hang_rock(rings,HANG,int(spec[4])).node("Mesh")
+	node.name = "Land_"+called.to_pascal_case()
+	var hang: Dictionary = HANGS[called]
+	var rings: Array = Art.hang_rings(d,hang)
+	var drawn: MeshInstance3D = Art.hang_rock(rings,hang,int(spec[4])).node("Mesh")
 	node.add_child(drawn)
 	KitLand.collide_sides(node,drawn,true)
 	return node
@@ -134,6 +174,8 @@ static func built() -> Array:
 		["rim_pier",RuinKit.piece("pier",561,0.45),Vector3(-780.0,TOP,25.0),15.0],
 		["rim_fallen",RuinKit.piece("fallen_pier",562,0.45),Vector3(-822.0,TOP,-9.0),70.0],
 		["bluff_arch",RuinKit.piece("arch",563,0.4),Vector3(-922.0,ground(-922.0,41.0),41.0),100.0],
+		["spire_s_arch",RuinKit.piece("arch",564,0.35),Vector3(SPIRE_S.x,SPIRE_S.y,SPIRE_S.z),20.0],
+		["spire_n_pier",RuinKit.piece("pier",565,0.5),Vector3(SPIRE_N.x+1.0,SPIRE_N.y,SPIRE_N.z),35.0],
 	]
 
 ## The vault (one piece for the world view, `home/vault`): RuinKit walls on

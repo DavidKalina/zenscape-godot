@@ -186,6 +186,16 @@ func isle_name() -> String:
 func isle_card() -> Dictionary:
 	return {"name":"The Wreck","epithet":"Where the plane came down"}
 
+## --home: the camera at the start sits low behind him (HOME_POLAR from
+## straight up, some 11 degrees over level), looking east past the plane
+## out along the stretch rather than down at the grass.
+const HOME_POLAR := PI*0.5-0.2
+func respawn() -> void:
+	super.respawn()
+	if not home_on: return
+	_polar = HOME_POLAR
+	_frame(0.0)
+
 func isle_top() -> float:
 	return Art.TOP
 
@@ -305,9 +315,9 @@ func _build_stretch_lands() -> void:
 	_stretch_from = _outlines.size()
 	var specs: Array = Stretch.lands()
 	# The home isle (--home) after the stretch's islets, grown as they are.
-	if home_on: specs.append(Home.land())
+	if home_on: specs.append_array(Home.lands())
 	for spec: Array in specs:
-		var land := Home.build_land(spec) if str(spec[0]) == "home" else Stretch.build_land(spec)
+		var land := Home.build_land(spec) if str(spec[0]).begins_with("home") else Stretch.build_land(spec)
 		_stretch_tops.append(float(spec[6]))
 		art.add_child(land)
 		lands[str(spec[0])] = land
