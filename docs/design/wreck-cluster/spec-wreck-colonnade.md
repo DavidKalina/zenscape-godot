@@ -26,6 +26,17 @@ is a playground the player works through, built as one set piece.
    outside a climb (ledges, wall kicks, stairs, a chain), with something at
    the top worth the climb: at least a part spot and the view over the whole
    cluster, and the start of the coast down.
+   **Spec change (after iteration 2):** the user rejected iteration 2's
+   tower: a plain black box like a smokestack, a climb of 20 identical wall
+   kicks up an empty chimney, and no change to the far silhouette. Redo it
+   as a set piece in the colonnade's own gothic architecture (a ruined bell
+   tower or campanile, broken open in places), built from RuinKit pieces,
+   with bulk at its base that changes the far silhouette. The climb winds
+   up outside and inside and varies: ledges, a broken stair, windows and
+   breaches to kick between, at least one landing partway up that holds
+   something (a part spot or the way on to another sequence), and choices
+   of line, never one repeated move. Replace iteration 2's shell, plinth
+   and lookout (keep their F4 names where a piece keeps its role).
 4. **The coast down.** From the tower top the sail carries the player to a
    place that is hard or impossible to reach any other way (a part spot or
    a route on).
@@ -55,6 +66,21 @@ is a playground the player works through, built as one set piece.
   tech: a long-jump chain plus the sail, numbers from
   `scripts/pilot_motor.gd`, with the margin written down. Where a skilled
   shortcut exists it is deliberate, and named as a reward in the table.
+- **Sequences attach; nothing floats.** (Spec change after iteration 2.)
+  A sequence starts on the architecture or the land and ends on it: a
+  platform, a ledge, a landing, a doorway that leads somewhere else. No
+  slab, rope or platform hangs alone in open sky going nowhere. Because the
+  deal is random, a sequence's end may or may not hold a part on a given
+  run, so every sequence must add to the level on its own: it reaches a
+  place that leads on to another route, a view, or another sequence. Part
+  spots sit along and at the ends of these sequences.
+- **Chained moves.** At least one sequence chains the player's moves
+  through pieces that exist, for example: ground slam onto a slam-spring
+  slab (the bob slab's slam spring, see `git show 0d6705b5` and the ring
+  route merge `ef7ca136`), launched into a swing rope
+  (scripts/interactables/swing_rope.gd), released to grab onto a platform
+  or ledge on the architecture, which opens onto a further sequence. Prove
+  the chain through the real input path.
 - Keep the table below current: each iteration adds or updates the rows for
   what it built and checks its elements against it.
 
