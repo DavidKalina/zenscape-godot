@@ -21,6 +21,8 @@ extends "res://studies/plane_field_isle.gd"
 ##   F12          lightning now (scripts/plane_lightning.gd)
 ##   K            the dragon far off in the lightning now; Shift+K close
 ##                (scripts/dragon_sightings.gd); in a storm it comes on its own
+##   H            the dragon's old flat hide, or the scaled wet one with veined
+##                wings (shaders/dragon_hide.gdshader; --hide=old starts on the old)
 ##   R            back to the start
 ##   Space        by the parked plane: climb in (the plane field's)
 ## On their own, a few minutes into weather (tuned together): a cell every
@@ -92,7 +94,7 @@ func _add_elements() -> void:
 	layer.add_child(_readout)
 
 func _read() -> String:
-	var line := "Storm %d%%   (T front, C cell, M whiteout, Shift+T sky storm, G gust, F12 lightning, K/Shift+K dragon far/close, R start, Space board)" % roundi(elements.storm*100.0)
+	var line := "Storm %d%%   (T front, C cell, M whiteout, Shift+T sky storm, G gust, F12 lightning, K/Shift+K dragon far/close, H old/new dragon hide, R start, Space board)" % roundi(elements.storm*100.0)
 	line += "\n"+drift.describe(elements._air_angle(),elements.storm)
 	if elements.front.active:
 		var d: float = elements.front.ahead_of(elements.probe())
@@ -140,6 +142,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			KEY_F12:
 				elements.lightning.strike()
+				return
+			KEY_H:
+				var g: Node3D = elements.sightings.glimpse
+				g.set_old_hide(not g.old_hide)
+				_show_toast("The dragon's old hide" if g.old_hide else "The dragon's scaled hide")
 				return
 			KEY_K:
 				elements.sightings.call_now("close" if (event as InputEventKey).shift_pressed else "far")
