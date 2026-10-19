@@ -19,6 +19,7 @@ extends "res://studies/kit_isle.gd"
 const Layout = preload("res://scripts/layout_overrides.gd")
 const UnitNode = preload("res://scripts/kit_isle/islet_unit_node.gd")
 const SkyScript = preload("res://studies/islet_yard_sky.gd")
+const Footbridge = preload("res://scripts/footbridge.gd")
 
 ## The masses: name, the top unit's middle (x, height off TOP, z), its
 ## spec; then its parts, each [part, offset from the top's middle (x, dy,
@@ -30,7 +31,7 @@ const MASSES := [
 		["terrace_3",Vector3(8.0,-24.0,38.0),{"seed":44,"size":11.0,"shape":0.75}],
 		["knoll",Vector3(-22.0,3.5,24.0),{"seed":45,"size":9.0,"shape":0.25,"landmark":1}],
 	]],
-	["east",Vector3(96.0,7.0,-14.0),{"seed":51,"size":25.0,"shape":0.5,"flat":0.5,"landmark":0},[
+	["east",Vector3(80.0,4.0,-12.0),{"seed":51,"size":25.0,"shape":0.5,"flat":0.5,"landmark":0},[
 		["terrace_1",Vector3(20.0,-10.0,18.0),{"seed":52,"size":12.0,"shape":0.65}],
 		["terrace_2",Vector3(-6.0,-17.0,-24.0),{"seed":53,"size":10.0,"shape":0.4}],
 		["knoll",Vector3(14.0,5.0,-8.0),{"seed":54,"size":8.0,"shape":0.9,"landmark":0}],
@@ -46,6 +47,18 @@ const MASSES := [
 ]
 const MASS_BASE := {"mass":1,"lean":0.2,"drip":0.5,"lopsided":0.5,"growth":0.7,"weather":0.55,"debris":0.35}
 const PART_BASE := {"lean":0.25,"drip":0.5,"lopsided":0.5,"growth":0.7,"weather":0.55,"landmark":-1,"debris":0.3}
+## The rope bridges between masses: name, from, to, seed. Each end sits on
+## its mass's crown rim on the line between the two crowns' middles
+## (`_rim_end`), RIM_BACK m in from where the level turf stops, on a stone
+## anchor (RuinKit `bridge_anchor`, the broken ring's). The live rope bridge
+## (scripts/rope_bridge.gd via Footbridge `live`) sags, bounces and sways
+## under him; studies/kit_isle.gd's DeckGround stands him on its planks.
+const BRIDGES := [
+	["bridge_east","main","east",181],
+]
+const RIM_BACK := 1.2
+## A rim end's turf: within RIM_RISE m of the crown middle's height.
+const RIM_RISE := 3.0
 ## The islets between and round the masses: how many, their distance (m)
 ## from the main's middle, height off TOP, size; they keep clear of the
 ## masses.
@@ -110,6 +123,7 @@ func _build_art() -> void:
 			var ps: Dictionary = PART_BASE.merged(part[2],true)
 			var turn := Basis(Vector3.UP,float(int(ps.seed)%7)*0.9)
 			_stand("crag_reach/%s_%s" % [mname,part[0]],Transform3D(turn,top_at+off),ps)
+	_bridges()
 	_islets()
 	if specks: _specks()
 	var tris := 0
@@ -120,12 +134,76 @@ func _build_art() -> void:
 		frags += int(st.get("debris",0))
 	print("crag reach: %d units, %d triangles, %d debris fragments, built in %d ms" % [units.size(),tris,frags,Time.get_ticks_msec()-began])
 
+## The rope bridges (BRIDGES), each named `crag_reach/<name>`: its node
+## moved in the world view moves the whole span with its anchors.
+var bridges: Array = []
+
+func _bridges() -> void:
+	var space := get_world_3d().direct_space_state
+	for br: Array in BRIDGES:
+		var name_: String = "crag_reach/"+str(br[0])
+		if Layout.deleted(name_) or not mass_tops.has(br[1]) or not mass_tops.has(br[2]): continue
+		var from: Node3D = mass_tops[br[1]]
+		var to: Node3D = mass_tops[br[2]]
+		var a := _rim_end(space,from.position,to.position)
+		var b := _rim_end(space,to.position,from.position)
+		if a == Vector3.INF or b == Vector3.INF:
+			push_warning("crag reach: no rim for %s" % name_)
+			continue
+		var seed_value: int = br[3]
+		var holder := Node3D.new()
+		holder.name = str(br[0]).to_pascal_case()
+		art.add_child(holder)
+		var live: MeshInstance3D = Footbridge.live(Footbridge.build_mesh(a,b,seed_value),a,b,seed_value)
+		live.name = "Rope"
+		holder.add_child(live)
+		for end: Array in [[a,b],[b,a]]:
+			var anchor := RuinKit.bridge_anchor(seed_value*3+int(end[0] == b),0.45,Footbridge.WIDTH,
+				{"post_x":Footbridge.WIDTH*0.5+0.33,"post_z":0.0,"sill":Vector3(0.75,0.11,0.55),"sill_at":Vector3(0.0,-0.11,0.15),
+				"plinth":Vector3(1.15,1.4,0.375),"plinth_z":0.2})
+			var way: Vector3 = (end[1] as Vector3)-(end[0] as Vector3)
+			way.y = 0.0
+			anchor.transform = Transform3D(Basis.looking_at(way.normalized(),Vector3.UP),end[0])
+			holder.add_child(anchor)
+		holder.transform = Layout.xform(name_,Transform3D.IDENTITY)
+		Layout.track(name_,holder,"piece",Transform3D.IDENTITY)
+		bridges.append(live)
+		print("crag reach: %s %s -> %s, span %.1f m, rise %.1f m" % [name_,a,b,Vector2(b.x-a.x,b.z-a.z).length(),b.y-a.y])
+
+## Where a bridge from the crown at `mid` toward `other` ends: walking out
+## from the middle, the last level turf near the crown's height before it
+## stops (the rim), RIM_BACK m back in. INF when none.
+func _rim_end(space: PhysicsDirectSpaceState3D, mid: Vector3, other: Vector3) -> Vector3:
+	var way := Vector2(other.x-mid.x,other.z-mid.z)
+	var far := way.length()
+	way /= far
+	var last := Vector3.INF
+	var d := 2.0
+	while d < far:
+		var p := Vector2(mid.x,mid.z)+way*d
+		var top := _turf_top(space,p.x,p.y)
+		if top == Vector3.INF or absf(top.y-mid.y) > RIM_RISE:
+			if last != Vector3.INF: break
+		else:
+			last = top
+		d += 0.25
+	if last == Vector3.INF: return last
+	var back := Vector2(last.x,last.z)-way*RIM_BACK
+	var top := _turf_top(space,back.x,back.y)
+	return top if top != Vector3.INF else last
+
 ## The masses' footprints (x, z, reach) to keep islets clear of.
 func _clear_of(p: Vector3, r: float) -> bool:
 	for u: Node3D in units:
 		var q: Vector3 = u.position
 		var reach := float(u.spec.size)*1.25+r+6.0
 		if Vector2(p.x-q.x,p.z-q.z).length() < reach and absf(p.y-q.y) < float(u.spec.size)*2.5+r: return false
+	# Clear of the spans too: nothing in a bridge's way or hung under it.
+	for live: MeshInstance3D in bridges:
+		var a: Vector3 = live.global_transform*live.a
+		var b: Vector3 = live.global_transform*live.b
+		var near := Geometry2D.get_closest_point_to_segment(Vector2(p.x,p.z),Vector2(a.x,a.z),Vector2(b.x,b.z))
+		if near.distance_to(Vector2(p.x,p.z)) < r*1.25+8.0 and p.y > minf(a.y,b.y)-30.0 and p.y < maxf(a.y,b.y)+10.0: return false
 	return true
 
 ## Smaller crag islets between and round the masses, at many heights.
