@@ -136,3 +136,27 @@ static func load_of(kg: float) -> Dictionary:
 ## Class `weight`'s row (light's when unknown).
 static func of(weight: String) -> Dictionary:
 	return CLASSES.get(weight,CLASSES["light"])
+
+## Strain (scripts/carry/plane_strain.gd): 0 sound to 1, where a part tears
+## off and the engine dies. One table. `m` below is 1+load_mul*w (the
+## load's share w, LOAD above): the load makes every hard move cost more.
+##   hold      the floor the load keeps it at (at w = 1); calm flight eases
+##             down to it, never under
+##   ease      per second it eases off, always: a move must cost more to
+##             build it (an empty plane can turn hard all day)
+##   turn_from the share of a full-stick turn's rate that is free; past it
+##             each share of the rate costs `turn` per second (x m)
+##   pull_from the same for the nose's rate up (a pull-up), `pull`/s (x m)
+##   bump      a knock of the plane on stone or turf (x m)
+##   bag       per m/s the bag hits something past bag_from (x m)
+##   load_mul  how much harder a full load makes each of those
+## The cues: the creaks come at `creak`/s x strain^1.5 (none under 0.2,
+## creak_gap s apart at least); the wings flex up `flex` at full strain;
+## the plane rattles `rattle` rad and m; the engine labours (its hum and
+## propeller dip by `labour` at full strain, beating).
+const STRAIN := {"hold":0.35,"ease":0.08,"turn_from":0.45,"turn":0.08,"pull_from":0.3,"pull":0.15,
+	"bump":0.22,"bag_from":2.0,"bag":0.04,"load_mul":1.5,
+	"creak":2.2,"creak_gap":0.3,"flex":1.0,"rattle":0.012,"labour":0.35}
+## Which part tears off (weights): a wingtip most, then the fin and
+## propeller.
+const TEAR := {"wingtip":3.0,"fin":2.0,"propeller":2.0,"cowl":1.0,"windscreen":1.0,"wheel":1.0}

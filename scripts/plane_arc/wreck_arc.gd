@@ -28,6 +28,9 @@ func setup(scene: Node3D) -> void:
 		add_child(_moments)
 	cough = PlaneCough.new()
 	add_child(cough)
+	# The parts' sounds (the base's `_seat` and `take` play them).
+	sounds = PartSounds.new()
+	add_child(sounds)
 
 ## Every part off the plane and laid at `points` (id -> world middle), or
 ## all carried with `all_carried`; the plane dressed broken again. The ids
@@ -93,6 +96,7 @@ func _clear() -> void:
 	_fit_left = 0.0
 	_last = Vector3.INF
 	cowl = ""
+	torn = {}
 
 ## Every part here lies still where it was dealt.
 func kind(_id: String) -> String:
@@ -149,3 +153,42 @@ func _start_by(id: String) -> void:
 ## --part-at once the deal is laid (the host calls it).
 func start_by_flag() -> void:
 	if _part_at != "": _start_by(_part_at)
+
+# --- Torn off in flight (scripts/carry/plane_strain.gd) ------------------------------
+
+## The parts strain tore off the plane in flight (id -> true) till fitted
+## again; with --plane-fixed too, so a fixed plane can still break.
+var torn := {}
+
+## Whether the plane flies: none torn off, and (unless fixed) all six fitted.
+func flies() -> bool:
+	return missing().is_empty()
+
+## The parts not fitted (with the plane fixed, only those torn off).
+func missing() -> Array:
+	return IDS.filter(func(id: String) -> bool: return state.get(id,"") != "fitted" and (not fixed or torn.has(id)))
+
+func dress(figure: Node3D) -> void:
+	if figure == null or not figure.has_method("set_missing"): return
+	figure.set_missing(missing())
+
+## Part `id` torn off the plane: off the figure, falling (not yet laid).
+func tear(id: String) -> void:
+	torn[id] = true
+	state[id] = "falling"
+	var figure: Node3D = host.get("plane_figure")
+	if figure != null: figure.set_missing(missing())
+
+## Part `id` laid at `at` (world middle), glinting, taken as any laid part.
+func lay_at(id: String, at: Vector3) -> void:
+	if is_instance_valid(holders.get(id)): (holders[id] as Node).queue_free()
+	state[id] = "laid"
+	spots[id] = {"at":at,"glint":at,"stand":at+Vector3(0.0,-PartSpots.HOVER,1.6),"face":Vector2(0.0,-1.0)}
+	var holder := _make(id,false)
+	holder.position = at
+	holders[id] = holder
+	spot(holder,"")
+
+func fit_all() -> void:
+	for id: String in carried: torn.erase(id)
+	super.fit_all()

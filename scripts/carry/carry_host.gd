@@ -51,6 +51,7 @@ const Pad = preload("res://scripts/pad.gd")
 const GenesisAudio = preload("res://scripts/genesis_audio.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const CargoSling = preload("res://scripts/carry/cargo_sling.gd")
+const PlaneStrain = preload("res://scripts/carry/plane_strain.gd")
 
 ## What he stands on and sets things down on.
 const SOLID_MASK := 1|(1 << 11)
@@ -138,6 +139,8 @@ var _spill_t := 99.0
 ## told to the plane and its hand landing every frame (the plane can be
 ## made anew); the `--heavy` flag's weight, which a light bag never lowers.
 var load_now := Weights.load_of(0.0)
+## The plane's strain (scripts/carry/plane_strain.gd), made with the bag.
+var strain: Node = null
 var _heavy_flag := -1.0
 static var _thud_take: AudioStreamWAV = null
 
@@ -185,6 +188,7 @@ func setup(host: Node3D, id_scene: String, spec: Array) -> void:
 func deal() -> void:
 	if not held.is_empty(): _let_go()
 	for t: Dictionary in treasures: _home(t)
+	if strain != null: strain.reset()
 
 func _home(t: Dictionary) -> void:
 	_unloose(t)
@@ -874,6 +878,11 @@ func _sling_step(delta: float) -> void:
 		sling.rest_behind(pf)
 	sling.step(delta,pf)
 	_apply_load()
+	if strain == null:
+		strain = PlaneStrain.new()
+		strain.setup(study)
+		add_child(strain)
+	strain.step(delta,float(load_now.w))
 
 ## The bag's kg weighs the plane (carry_weights.gd LOAD): its flight's
 ## weight model and climb, and its takeoff (roll, lift, unstick, the dip
@@ -891,8 +900,10 @@ func _apply_load() -> void:
 		hl.load_lift = float(load_now.lift)
 		hl.load_unstick = float(load_now.unstick)
 		hl.load_dip = float(load_now.dip)
-		hl.too_heavy = bool(load_now.over)
-		hl.load_top = float(load_now.top)
+		# Broken (a part torn off by strain), it won't lift off either.
+		var broken: bool = strain != null and strain.broken()
+		hl.too_heavy = bool(load_now.over) or broken
+		hl.load_top = float(Weights.LOAD.over_top) if broken else float(load_now.top)
 
 ## By the sling where it lies on the ground, on foot.
 func _by_sling() -> bool:
@@ -928,6 +939,7 @@ func _refill() -> void:
 ## the sky it is lost).
 func _on_bag_hit(speed: float, _at: Vector3, normal: Vector3, vel: Vector3) -> void:
 	if OS.is_debug_build() and speed > 1.0: print("carry: the bag hit something at %.1f m/s" % speed)
+	if strain != null: strain.bag_hit(speed,float(load_now.w))
 	if speed < Weights.SPILL_SPEED or _spill_t < Weights.SPILL_GRACE: return
 	var n := 1+int(floor((speed-Weights.SPILL_SPEED)/Weights.SPILL_STEP))
 	var gone := 0

@@ -75,9 +75,18 @@ uniform vec4 night_lamps[16];
 varying vec3 world_at;
 #endif
 
+#ifdef ZS_PLANE_FLEX
+uniform float flex = 0.0;
+#endif
 void vertex() {
 	local = VERTEX;
 	gleam_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+#ifdef ZS_PLANE_FLEX
+	// The wings flexing under strain (scripts/carry/plane_strain.gd): the
+	// span bent up past the body, more toward the tips.
+	float span_out = max(abs(VERTEX.x) - 0.16, 0.0);
+	VERTEX.y += flex * span_out * span_out * 0.35;
+#endif
 #ifdef ZS_NIGHT_STONE
 	world_at = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 #endif
