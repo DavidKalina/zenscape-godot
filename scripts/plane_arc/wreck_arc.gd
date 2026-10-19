@@ -30,14 +30,21 @@ func setup(scene: Node3D) -> void:
 	add_child(cough)
 
 ## Every part off the plane and laid at `points` (id -> world middle), or
-## all carried with `all_carried`; the plane dressed broken again.
-func lay_out(points: Dictionary, all_carried := false) -> void:
+## all carried with `all_carried`; the plane dressed broken again. The ids
+## in `hidden` are inside a cache (studies/wreck_cluster_caches.gd): their
+## holders made but unseen and untakeable ("hidden") until `unhide`.
+func lay_out(points: Dictionary, all_carried := false, hidden: Array = []) -> void:
 	_clear()
 	for id: String in IDS:
 		if all_carried:
 			state[id] = "carried"
 			carried.append(id)
 			holders[id] = _make(id,true)
+		elif id in hidden:
+			state[id] = "hidden"
+			var held := _make(id,false)
+			held.visible = false
+			holders[id] = held
 		elif points.has(id):
 			state[id] = "laid"
 			var at: Vector3 = points[id]
@@ -52,6 +59,22 @@ func lay_out(points: Dictionary, all_carried := false) -> void:
 	_follow(0.0,true)
 	var figure: Node3D = host.get("plane_figure")
 	if figure != null: dress(figure)
+
+## Part `id`'s holder while it is hidden (the cache's find), or null.
+func hidden_holder(id: String) -> Node3D:
+	return holders.get(id) if state.get(id,"") == "hidden" else null
+
+## Hidden part `id` out of its cache and settled where its holder hovers:
+## laid there, glinting, taken as any laid part.
+func unhide(id: String) -> void:
+	if state.get(id,"") != "hidden": return
+	var holder: Node3D = holders.get(id)
+	if holder == null or not is_instance_valid(holder): return
+	var at := holder.global_position
+	state[id] = "laid"
+	holder.visible = true
+	spots[id] = {"at":at,"glint":at,"stand":at+Vector3(0.0,-PartSpots.HOVER,1.6),"face":Vector2(0.0,-1.0)}
+	spot(holder,"")
 
 func _clear() -> void:
 	for h: Variant in holders.values():

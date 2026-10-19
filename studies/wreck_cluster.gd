@@ -8,7 +8,8 @@ extends "res://studies/kit_isle.gd"
 ## and fitted; with all six fitted it flies. A kit isle (studies/
 ## kit_isle.gd: the pilot, the look, the plane and its hand landing, the
 ## grass and life), with the rune knight on his deck by default (once the
-## cluster has one: Art.knight_line()).
+## cluster has one: Art.knight_line()). Each deal hides one or two parts in
+## breakable kit pieces (studies/wreck_cluster_caches.gd): slam them open.
 ##
 ##   N            re-deal: the plane back on its spot, broken, every part
 ##                off it and dealt to fresh spots (a new seed; the pause
@@ -37,6 +38,7 @@ const SpineMotif = preload("res://scripts/kit_isle/motif_colonnade_spine.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const WreckSky = preload("res://studies/wreck_cluster_sky.gd")
 const WreckArc = preload("res://scripts/plane_arc/wreck_arc.gd")
+const WreckCaches = preload("res://studies/wreck_cluster_caches.gd")
 const PartSpots = preload("res://scripts/plane_arc/part_spots.gd")
 const PART_IDS := PartSpots.IDS
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
@@ -75,6 +77,8 @@ var spot_nodes: Array = []
 var deal_seed := 0
 var dealt := {}
 var deals := 0
+## The caches now (studies/wreck_cluster_caches.gd), stood afresh each deal.
+var caches: Node3D = null
 var rune_knight: Node3D = null
 var wind_blast: Node = null
 var wind_parry: Node3D = null
@@ -310,28 +314,37 @@ func settle_spot(i: int) -> Vector3:
 	return Vector3.INF
 
 ## A deal from `seed_value`: id -> spot index, at most PER_MASS a mass,
-## avoiding the spots in `avoid` while enough others settle.
+## avoiding the spots in `avoid` while enough others settle. First
+## Art.HIDDEN (1 or 2) parts go into caches (Art.CACHES' spots, which hold
+## nothing lying), then the rest onto the spots that settle.
 func deal(seed_value: int, avoid: Array = []) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
-	var good: Array = []
-	for i in range(spot_nodes.size()):
-		if settle_spot(i) != Vector3.INF: good.append(i)
-	var fresh := good.filter(func(i: int) -> bool: return not i in avoid)
-	var pool: Array = fresh if fresh.size() >= PART_IDS.size() else good
-	for k in range(pool.size()-1,0,-1):
-		var j := rng.randi_range(0,k)
-		var t: int = pool[k]
-		pool[k] = pool[j]
-		pool[j] = t
 	var picks: Array = []
 	var per := {}
-	for i: int in pool:
+	var boxes := cache_spots()
+	var fresh_boxes := boxes.filter(func(i: int) -> bool: return not i in avoid)
+	var box_pool: Array = fresh_boxes if fresh_boxes.size() >= Art.HIDDEN.y else boxes
+	_shuffle(box_pool,rng)
+	var hide_n := rng.randi_range(Art.HIDDEN.x,Art.HIDDEN.y)
+	for i: int in box_pool:
+		if picks.size() >= hide_n: break
 		var mass := str((spot_nodes[i] as Node3D).get_meta("mass"))
 		if int(per.get(mass,0)) >= PER_MASS: continue
 		per[mass] = int(per.get(mass,0))+1
 		picks.append(i)
+	var good: Array = []
+	for i in range(spot_nodes.size()):
+		if not i in boxes and settle_spot(i) != Vector3.INF: good.append(i)
+	var fresh := good.filter(func(i: int) -> bool: return not i in avoid)
+	var pool: Array = fresh if fresh.size() >= PART_IDS.size()-picks.size() else good
+	_shuffle(pool,rng)
+	for i: int in pool:
 		if picks.size() == PART_IDS.size(): break
+		var mass := str((spot_nodes[i] as Node3D).get_meta("mass"))
+		if int(per.get(mass,0)) >= PER_MASS: continue
+		per[mass] = int(per.get(mass,0))+1
+		picks.append(i)
 	for i: int in pool:
 		if picks.size() >= PART_IDS.size(): break
 		if not i in picks: picks.append(i)
@@ -339,18 +352,44 @@ func deal(seed_value: int, avoid: Array = []) -> Dictionary:
 	for k in range(mini(picks.size(),PART_IDS.size())): out[PART_IDS[k]] = picks[k]
 	return out
 
+static func _shuffle(a: Array, rng: RandomNumberGenerator) -> void:
+	for k in range(a.size()-1,0,-1):
+		var j := rng.randi_range(0,k)
+		var t: Variant = a[k]
+		a[k] = a[j]
+		a[j] = t
+
+## The spots that stand a cache piece (Art.CACHES, bar deleted ones).
+func cache_spots() -> Array:
+	var out: Array = []
+	for i: int in Art.cache_spots():
+		if i < spot_nodes.size() and spot_nodes[i] != null and not LayoutOverrides.deleted(Art.cache_name(i)): out.append(i)
+	return out
+
+## The dealt parts hidden in caches: spot index -> id.
+func hidden_parts() -> Dictionary:
+	var boxes := cache_spots()
+	var out := {}
+	for id: String in dealt:
+		if int(dealt[id]) in boxes: out[int(dealt[id])] = id
+	return out
+
 ## The dealt parts' points (id -> world middle).
 func dealt_points() -> Dictionary:
 	var out := {}
-	for id: String in dealt: out[id] = settle_spot(int(dealt[id]))
+	var hidden := hidden_parts()
+	for id: String in dealt:
+		if not int(dealt[id]) in hidden: out[id] = settle_spot(int(dealt[id]))
 	return out
 
 ## The deal laid on the plane's arc, and said.
 func _lay_deal(all_carried := false) -> void:
-	plane_arc.lay_out(dealt_points(),all_carried)
+	var hidden := {} if all_carried else hidden_parts()
+	plane_arc.lay_out(dealt_points(),all_carried,hidden.values())
+	caches = WreckCaches.stand(self,hidden)
 	var names := PackedStringArray()
 	for id: String in PART_IDS:
-		if dealt.has(id): names.append("%s %s" % [id,Art.spot_name(int(dealt[id])).get_file()])
+		if dealt.has(id): names.append("%s %s%s" % [id,Art.spot_name(int(dealt[id])).get_file()," (cache)" if int(dealt[id]) in hidden else ""])
 	print("wreck cluster: deal %d (seed %d): %s" % [deals,deal_seed,", ".join(names)])
 
 ## N: a fresh deal. The plane back on its spot, broken, every part taken off

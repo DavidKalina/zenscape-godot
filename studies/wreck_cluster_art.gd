@@ -253,8 +253,8 @@ static func tower() -> Array:
 
 # --- The part spots -----------------------------------------------------------------
 
-## The holder types a spot could host later (spec item 10): only `lying` is
-## built now; the rest are data for a later round.
+## The holder types a spot could host (spec item 10): `lying` and `cache`
+## are built; the rest are data for a later round.
 const HOLDERS := ["lying","cache","water","islet","salvager","knight","jammed"]
 
 ## A point on the spine's ground at axis `x`, `d` across.
@@ -282,12 +282,41 @@ static func spots() -> Array:
 		["way","under the second portal's arch",on_spine(float(Spine.LINES[5][0]),1.2),["lying","jammed"]],
 		["bench","the top slab of the south three",on_slab("south_3"),["lying","knight"]],
 		["bench","the bench's east end by the tail",Spine.bench_point(140.0),["lying","cache"]],
-		["tail","the tail's first fragment",on_slab("frag_1",Vector2(0.5,-0.5)),["lying","islet"]],
+		["tail","the tail's first fragment",on_slab("frag_1",Vector2(0.5,-0.5)),["lying","islet","cache"]],
 		["tail","the tail's far fragment (over the bridge)",on_slab("frag_3"),["lying","salvager"]],
-		["tail","the last fragment, under the bench",on_slab("frag_5"),["lying","water"]],
+		["tail","the last fragment, under the bench",on_slab("frag_5"),["lying","water","cache"]],
 		["tower","the tower top, on the east wall's head by the lookout",east_head(1.4),["lying","salvager"]],
 		["tower","the belfry's wall head, over the bell (partway up)",belfry_south_head(-1.4),["lying","jammed"]],
 	]
+
+## The caches (spec item 10's change; studies/wreck_cluster_caches.gd): a
+## breakable kit piece standing on a spot, which hides a part on the deals
+## that pick it and breaks to nothing on the rest. [spot index (Art.spots
+## order), RuinKit id, seed, yaw (deg), wear (its rubble skirt widens it:
+## a pier 1.5 m across at 0, 5 m at 0.3)]. Named `wreck_cluster/cache_NN`
+## (NN the spot's). Every one is CACHE_TOUGH: a slam off CACHE_DROP m or
+## more (scripts/slam.gd: 0.25 + 0.75 (drop - 1.8) / 9.2) or a side slam
+## (0.65) opens it; a hop's slam only flares its glint. Each has a height
+## over it to slam from (only 10 checked): the cella's walls (01), the
+## crest over the bench's end (07), the tower's skirt (08), the crest north
+## of 10 (a jump and the sail down).
+const CACHES := [
+	[0,"pier",731,15.0,0.3],
+	[6,"buttress",732,90.0,0.3],
+	[7,"wall",733,-20.0,0.15],
+	[9,"pier",734,0.0,0.0],
+]
+const CACHE_TOUGH := 0.32
+const CACHE_DROP := 2.6
+## How many of the six each deal hides in caches, least and most.
+const HIDDEN := Vector2i(1,2)
+
+static func cache_name(spot: int) -> String:
+	return "wreck_cluster/cache_%02d" % (spot+1)
+
+## The spot indices that stand a cache.
+static func cache_spots() -> Array:
+	return CACHES.map(func(c: Array) -> int: return int(c[0]))
 
 static func spot_name(i: int) -> String:
 	return "wreck_cluster/part_spot_%02d" % (i+1)
