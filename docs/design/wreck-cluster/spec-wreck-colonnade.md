@@ -234,3 +234,36 @@ turf included. Reuse it, don't copy its numbers. Keep part spots, cache
 glints and the strip's runway readable. Do this as its own small task next,
 before the overgrowth: the turf colour task (L6) may then need less, or
 nothing.
+
+## Spec change: the overgrowth look target (user, during iteration 19)
+
+The user judged the first overgrowth bad and gave a reference image:
+`docs/design/wreck-cluster/look-reference.png`. Open it and match its
+qualities (not its literal layout). In order of how much they matter:
+
+1. **The rock itself.** Warm, light tan-and-grey limestone with visible
+   horizontal strata and blocky fractured faces, not the dark blue-black
+   faceted rock the cluster has now. The undersides keep their hanging
+   points but in the same lighter rock. KitLand's rock look is shared:
+   change it only through the study's own material/override or an opt-in
+   flag, so the aqueduct isle and motif yard look as before.
+2. **A moss and grass mantle draped over every rim.** The top turf spills
+   over the edges as a thick green blanket that runs a few metres down the
+   cliff faces, unevenly, heavier on ledges and in cracks.
+3. **Vine curtains.** Dense clusters of leafy vines and ivy hanging off the
+   rims and from the undersides, long and grouped, not single thin strands
+   evenly spaced.
+4. **Trees and bushes on the tops and ledges,** so every land mass has a
+   leafy silhouette from afar (small trees, shrubs, ferns at the feet of
+   ruins), kept clear of routes, part spots and the runway.
+5. **Ruins grown in:** moss and ivy on the ruin's stone where it meets the
+   ground and along cornices; the ruin stone reads light and mossy too.
+6. Nice to have: one waterfall spilling off a rim into the clouds
+   (scripts/kit_isle/kit_water.gd), and paving stones with grass between
+   them on the main paths.
+
+Rules from the overgrowth change still hold: no collision on routes, no
+growth over spots or glints, runway clear, cost reported. Split this into
+several look tasks (rock first, then mantle and vines, then trees, then
+ruins); each one re-runs the route drivers and shows a still next to the
+reference.
