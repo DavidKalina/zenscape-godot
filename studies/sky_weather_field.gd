@@ -5,6 +5,8 @@ extends "res://studies/plane_field_isle.gd"
 ## and jet streams to ride: a loop round the field and a high one across.
 ## Far isles round it (scripts/sky_isles.gd), 0.3 to 2 km off at their own
 ## heights, for the weather to pass over and to fly to; the big ones land.
+## The sky's cloud, towers and puffs, drifts on its wind across them
+## (scripts/sky_drift.gd), faster in a storm.
 ##   T            a storm front comes in on the wind (or is called off;
 ##                scripts/storm_front.gd)
 ##   Shift+T      the whole sky's storm rolls in, or clears
@@ -13,15 +15,19 @@ extends "res://studies/plane_field_isle.gd"
 ##   R            back to the start
 ##   ./run-sky-weather.command        (heavy on: --heavy)
 ##   ./run-sky-weather.command --storm=1   a full storm from the start
+##   ./run-sky-weather.command --cloud-drift=30   the cloud faster (m/s; 0 still)
 ## The plane field's flags hold here.
 const PlaneWeather = preload("res://scripts/plane_weather.gd")
 const SkyIsles = preload("res://scripts/sky_isles.gd")
+const SkyDrift = preload("res://scripts/sky_drift.gd")
 
 var elements: Node3D
 var _storming := false
 var _readout: Label
 ## The far isles (scripts/sky_isles.gd `build`'s entries).
 var isles: Array = []
+## The cloud carried on the wind.
+var drift := SkyDrift.new()
 
 func _build_art() -> void:
 	super._build_art()
@@ -42,7 +48,9 @@ func sight_isles() -> Array:
 
 func _process(delta: float) -> void:
 	if elements == null and walk_ready and _precipitation != null: _add_elements()
-	if elements != null and delta > 0.0: elements.step(delta)
+	if elements != null and delta > 0.0:
+		elements.step(delta)
+		drift.step(delta,cloud_host(),camera.global_position,elements._air_angle(),elements.storm)
 	super._process(delta)
 	if elements != null:
 		elements.grade()
@@ -66,6 +74,7 @@ func _add_elements() -> void:
 
 func _read() -> String:
 	var line := "Storm %d%%   (T front, Shift+T sky storm, G gust, F12 lightning)" % roundi(elements.storm*100.0)
+	line += "\n"+drift.describe(elements._air_angle(),elements.storm)
 	if elements.front.active:
 		var d: float = elements.front.ahead_of(elements.probe())
 		line += "\nFront %s" % ("%.1f km off" % (d/1000.0) if d > 0.0 else "overhead")

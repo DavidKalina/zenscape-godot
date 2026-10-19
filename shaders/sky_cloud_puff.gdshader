@@ -26,6 +26,8 @@ const float NIGHT_SKY = 0.55;
 const float NIGHT_WRAP = 0.06;
 // Metres a second the clouds drift on the breeze.
 uniform vec2 drift = vec2(0.6, 0.3);
+// Metres the breeze's changes have put them off drift * time's track.
+uniform vec2 lead = vec2(0.0);
 // The field's corner and size in the plate plane, in metres before `shift`.
 uniform vec4 field = vec4(-1000.0, -1000.0, 2000.0, 2000.0);
 // How far the islands' swaps have moved the world (SkyIslands `arrive`).
@@ -93,7 +95,7 @@ void vertex() {
 	float size = length(MODEL_MATRIX[1].xyz);
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	vec3 home = origin - data.xyz * size;
-	vec2 moved = home.xz + drift * zs_motion_time;
+	vec2 moved = home.xz + drift * zs_motion_time + lead;
 	vec2 wrapped = field.xy + mod(moved - field.xy, field.zw);
 	vec3 centre = vec3(wrapped.x, home.y, wrapped.y) + data.xyz * size + shift;
 	// A slow swell, each puff on its own beat.
