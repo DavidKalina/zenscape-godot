@@ -18,6 +18,8 @@ const ENTRIES: Array[Dictionary] = [
 		"detail":"Grey isles with cover; the dragon loops overhead looking for you: unaware, suspicious, spotted. J: sight overlay, V: watch him."},
 	{"id":"olmec_boss","group":"Ruins","title":"Olmec boss fight","scene":"res://studies/olmec_field.tscn","args":[],
 		"detail":"A round field in open sky and the Olmec on it: the head alone, then the body whole and the field tilted. Tab: lock on, X: gust shot, R: start again."},
+	{"id":"wreck_cluster","group":"Ruins","title":"Wreck cluster","scene":"res://studies/wreck_cluster.tscn","args":[],
+		"detail":"The plane wrecked on the colonnade spine, its six parts scattered (some in breakable ruins). Find and fit them to fly. N: a new deal, F4: the part spots."},
 	{"id":"bell_spires","group":"Ruins","title":"Bell spires","scene":"res://studies/bell_spires_isle.tscn","args":[],
 		"detail":"Rock spires joined by rope bridges, a belfry on the tallest. Look presets (L), the plane on F."},
 	{"id":"cloister_tarn","group":"Ruins","title":"Cloister tarn","scene":"res://studies/cloister_tarn_isle.tscn","args":[],

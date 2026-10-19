@@ -62,6 +62,10 @@ var finds: Array[Dictionary] = []
 var tokens: Node = null
 ## Who takes a find when there are no tokens (a PilotMotor: its `feet`).
 var motor: Object = null
+## Opt-in: makes the find instead of a GlyphPickup, (holds, cache name) ->
+## Node3D (one already in the tree stays where it is: it must sit in a
+## frame at the world's origin, as this node does). Unset: as before.
+var make_find := Callable()
 ## For checks: weak hits flared, caches broken open, finds taken.
 var flares := 0
 var opened := 0
@@ -181,10 +185,11 @@ func _on_broke(node: Node3D, at: Vector3) -> void:
 	var reach := absf(local_way.x)*box.size.x*0.5+absf(local_way.z)*box.size.z*0.5
 	var ground := foot+way*(minf(reach,maxf(box.size.x,box.size.z)*0.5)+STEP_OUT)
 	ground.y = _ground_y(ground,foot.y,node)
-	var holder := GlyphPickup.make(str(c.holds),SIZE,randf()*TAU,true)
-	holder.name = "Cache_%s" % c.name
-	add_child(holder)
-	holder.motes_on(true)
+	var holder: Node3D = make_find.call(str(c.holds),str(c.name)) if make_find.is_valid() else GlyphPickup.make(str(c.holds),SIZE,randf()*TAU,true)
+	if holder.get_parent() == null:
+		holder.name = "Cache_%s" % c.name
+		add_child(holder)
+	if holder.has_method("motes_on"): holder.motes_on(true)
 	var dig := BuriedFind.new()
 	dig.bare = true
 	dig.setup(holder,ground,"",HOVER)
