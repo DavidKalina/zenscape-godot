@@ -18,14 +18,17 @@ extends Node3D
 ##            `flash`), it is seen; `sighted` is signalled at the first.
 ##   again    AGAIN of them get a second flash AGAIN_GAP s later; GONE of
 ##            those show it gone (the sky lit, the dragon not there).
-## It glides on all along (`place`, `velocity`): far, across the view
-## FAR_SPEED m/s, FAR_RANGE m off, mostly where the camera looks; close,
-## its root ~70-100 m off the wing or ~30-50 m over the canopy, so a wing
-## or its neck and head reaches in tens of m off, sliding past the plane
-## (never round the eye: the glimpse keeps it clear and pushes `place`).
+## It glides on all along (`place`, `velocity`), staged along the plane's
+## line, never across the view (`_pick`, `_begin`): close, "away" (ahead,
+## flying on with the plane and pulling away, seen from behind), "over"
+## (right above, overtaking it: belly, spread wings, claws) or "under" (a
+## little below and ahead, back and wings from above, sinking); far, going
+## away with the plane or coming at it, FAR_RANGE m off where the camera
+## looks. Close ones never come round the eye (the glimpse keeps them clear
+## and pushes `place`).
 ##
 ## The event (`sighted`, also kept in `last`): {id, near ("far"/"close"),
-## place (Vector3), distance (m), time (s since the weather began)}. No
+## stage (see `_pick`), place (Vector3), distance (m), time (s since the weather began)}. No
 ## contact, no damage: a later round hangs off the signal.
 ##
 ## On their own (`step`): in a storm past FROM, at a mean of one every EVERY
@@ -42,6 +45,8 @@ extends Node3D
 ## Flags:
 ##   --sighting-at=<frames>    one sighting that many frames in, and none on
 ##                             their own (with --sighting-kind=far|close)
+##   --sighting-stage=<s>      every sighting staged so: close away|over|
+##                             under, far away|toward
 ##   --sighting-every=<s>      the mean wait in a full storm (0: none on
 ##                             their own)
 ##   --murk=<x>                the murk pinned (0 to 1) until whiteouts set it
@@ -57,13 +62,17 @@ const CORE := 0.85
 const MORE := 1.5
 const REST := 35.0
 const CLOSE_SHARE := Vector2(0.12,0.75)
-## Far: range (m), its height over the eye (m), its glide (m/s), how far
-## across the view's half it may be (share), and how far behind it the
-## flash is (m).
+## Far: range (m), its height over the eye (m), its glide along the line
+## of sight (m/s, off the plane's), how far across the view's half it may
+## be (share), and how far behind it the flash is (m).
 const FAR_RANGE := Vector2(320.0,820.0)
 const FAR_UP := Vector2(-30.0,90.0)
 const FAR_SPEED := Vector2(20.0,30.0)
-const FAR_IN_VIEW := 0.7
+const FAR_IN_VIEW := 0.6
+## Far: where in the view (share of its half height), and the chance it
+## comes at the plane (else it flies on away, with it).
+const FAR_VIEW := Vector2(-0.2,0.5)
+const FAR_TOWARD := 0.3
 const FAR_BEHIND := Vector2(120.0,360.0)
 ## In a whiteout's murk a far one is nearer (at full murk; m), or the murk
 ## would hide it wholly, and its height over the eye less (m); its flash is
@@ -71,19 +80,27 @@ const FAR_BEHIND := Vector2(120.0,360.0)
 const MURK_RANGE := Vector2(110.0,200.0)
 const MURK_UP := Vector2(-15.0,35.0)
 const MURK_BEHIND := Vector2(60.0,140.0)
-## Close (its root as the first flash shows it; its wings reach ~68 m each
-## side, its neck and head ~70 m ahead, its tail ~110 m behind): off the
-## wing (m to the side, ahead, up), over the canopy (m up, ahead, to the
-## side it crosses toward), how fast it slides past the plane (m/s), how far
-## behind it the flash is (m).
-const WING_OFF := Vector2(70.0,95.0)
-const WING_AHEAD := Vector2(45.0,95.0)
-const WING_UP := Vector2(-6.0,26.0)
-const CANOPY_UP := Vector2(30.0,48.0)
-const CANOPY_AHEAD := Vector2(40.0,90.0)
-const CANOPY_ACROSS := Vector2(-25.0,10.0)
-const CANOPY_SHARE := 0.4
-const SLIDE := Vector2(9.0,16.0)
+## Staged along the plane's line, never across it (the spec's "How it is
+## staged"). Close (its root as the first flash shows it; its wings reach
+## ~68 m each side, its neck and head ~70 m ahead, its tail ~110 m behind),
+## per stage: how far off (m), where in the view (share of its half height
+## up, of its half width either side), how fast it pulls ahead of the plane
+## (m/s). The shares of away and over (the rest under).
+const CLOSE_STAGES := {
+	"away": {"range":Vector2(115.0,150.0),"view":Vector2(0.0,0.4),"across":0.25,"slide":Vector2(3.0,7.0)},
+	"over": {"range":Vector2(55.0,110.0),"view":Vector2(0.5,0.75),"across":0.15,"slide":Vector2(6.0,12.0)},
+	"under": {"range":Vector2(100.0,150.0),"view":Vector2(-0.8,-0.45),"across":0.2,"slide":Vector2(3.0,7.0)},
+}
+const CLOSE_SHARES := Vector2(0.45,0.3)
+## Away: at most this far over or under the eye (m); over: this far over
+## the view's line (m), and at least OVER_LEAST m over the eye; under: this far down (m), sinking (m/s); and every one at
+## least GROUND_CLEAR m over the ground.
+const AWAY_UP := 40.0
+const OVER_UP := Vector2(28.0,42.0)
+const OVER_LEAST := 18.0
+const UNDER_DOWN := Vector2(25.0,45.0)
+const SINK := Vector2(1.0,3.0)
+const GROUND_CLEAR := 30.0
 const CLOSE_BEHIND := Vector2(50.0,130.0)
 ## A close one's flash a little over its line from the eye (m), so its back
 ## and wings stand against the bloom's core.
@@ -133,6 +150,8 @@ var _scene: Node3D
 var _rng := RandomNumberGenerator.new()
 var _at_frame := -1
 var _at_kind := "far"
+## A stage forced for every sighting (`--sighting-stage=`; "" picked).
+var staged := ""
 var _frames := 0
 var _rest := 0.0
 var _clips := {}
@@ -148,6 +167,7 @@ func setup(scene: Node3D, weather: Node3D) -> void:
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--sighting-at="): _at_frame = int(arg.get_slice("=",1))
 		elif arg.begins_with("--sighting-kind="): _at_kind = arg.get_slice("=",1)
+		elif arg.begins_with("--sighting-stage="): staged = arg.get_slice("=",1)
 		elif arg.begins_with("--sighting-every="): every = float(arg.get_slice("=",1))
 		elif arg.begins_with("--murk="): murk_pinned = clampf(float(arg.get_slice("=",1)),0.0,1.0)
 		elif arg == "--sighting-log": log_on = true
@@ -208,9 +228,9 @@ func _log(text: String) -> void:
 
 ## A sighting now, "far" or "close" (false if one is under way or there is
 ## no eye).
-func call_now(near := "far") -> bool:
+func call_now(near := "far", stage := "") -> bool:
 	if not now.is_empty() or _eye() == null: return false
-	_begin(near)
+	_begin(near,stage)
 	return true
 
 func step(delta: float) -> void:
@@ -245,60 +265,87 @@ func _plane_velocity() -> Vector3:
 	if _scene.get("flying") and _scene.get("plane") != null: return _scene.plane.velocity
 	return Vector3.ZERO
 
-func _begin(near: String) -> void:
+func _begin(near: String, stage := "") -> void:
 	var camera := _eye()
 	var eye := camera.global_position
 	var forward := -camera.global_basis.z
 	var flat := Vector3(forward.x,0.0,forward.z)
 	flat = flat.normalized() if flat.length() > 0.01 else Vector3.FORWARD
-	var right := flat.cross(Vector3.UP)
 	var moving := _plane_velocity()
+	# With the plane: its speed along the view, so the dragon's heading is
+	# the camera's (never across it).
+	var base := flat*maxf(moving.dot(flat),0.0)+Vector3.UP*moving.y
 	var flashes: Array = [_rng.randf_range(HERALD.x,HERALD.y)]
 	if _rng.randf() < AGAIN: flashes.append(float(flashes[0])+_rng.randf_range(AGAIN_GAP.x,AGAIN_GAP.y))
-	# Close: where it is (from the eye) when the first flash shows it, then
-	# back along its slide past the plane to where it is heard.
 	var herald: float = flashes[0]
+	if stage == "": stage = staged
+	if not (CLOSE_STAGES.has(stage) if near == "close" else stage in ["away","toward"]): stage = _pick(near)
+	var half_v := deg_to_rad(camera.fov)*0.5
+	var half_h := atan(tan(half_v)*_aspect())
+	var ground := _ground_below(eye)
+	if stage == "under" and eye.y-ground < UNDER_DOWN.x+GROUND_CLEAR: stage = "away"
+	var slide := Vector3.ZERO
 	if near == "close":
-		# Its root is far enough off that its body passes clear; a wing or
-		# the neck and head reaches in toward the eye (the glimpse keeps
-		# them CLEAR m off it).
-		if _rng.randf() < CANOPY_SHARE:
-			# Over the canopy, crossing ahead: its body and a wing spread over
-			# the top of the view.
-			var across := right*(1.0 if _rng.randf() < 0.5 else -1.0)
-			var slide := (across*1.6+flat*_rng.randf_range(-0.4,0.4)).normalized()*_rng.randf_range(SLIDE.x,SLIDE.y)*1.6
-			place = eye+Vector3.UP*_rng.randf_range(CANOPY_UP.x,CANOPY_UP.y)+flat*_rng.randf_range(CANOPY_AHEAD.x,CANOPY_AHEAD.y)
-			place += across*_rng.randf_range(CANOPY_ACROSS.x,CANOPY_ACROSS.y)-slide*herald
-			velocity = moving+slide
-		else:
-			# Off the wing, sliding back past it (the plane overtaking) or
-			# forward (it overtaking), its near wing reaching in over the eye.
-			var side := right*(1.0 if _rng.randf() < 0.5 else -1.0)
-			var back := 1.0 if _rng.randf() < 0.5 else -1.0
-			var slide := -flat*back*_rng.randf_range(SLIDE.x,SLIDE.y)
-			place = eye+side*_rng.randf_range(WING_OFF.x,WING_OFF.y)+flat*_rng.randf_range(WING_AHEAD.x,WING_AHEAD.y)+Vector3.UP*_rng.randf_range(WING_UP.x,WING_UP.y)
-			place -= slide*herald
-			velocity = moving+slide
+		var st: Dictionary = CLOSE_STAGES[stage]
+		var across := _rng.randf_range(-1.0,1.0)*float(st.across)*half_h
+		var up := _rng.randf_range(float(st.view.x),float(st.view.y))*half_v
+		place = _in_view(camera,across,up,_rng.randf_range(float(st.range.x),float(st.range.y)))
+		if stage == "over":
+			# OVER_UP m over the view's line, as far out as puts it that high
+			# in the view's top: belly and spread wings across the top.
+			var depth := clampf(_rng.randf_range(OVER_UP.x,OVER_UP.y)/tan(up),float(st.range.x),float(st.range.y))
+			place = camera.global_position+camera.global_basis*Vector3(tan(across)*depth,tan(up)*depth,-depth)
+			place.y = maxf(place.y,eye.y+OVER_LEAST)
+		elif stage == "under": place.y = eye.y-_rng.randf_range(UNDER_DOWN.x,UNDER_DOWN.y)
+		else: place.y = clampf(place.y,eye.y-AWAY_UP,eye.y+AWAY_UP)
+		slide = flat*_rng.randf_range(float(st.slide.x),float(st.slide.y))
+		if stage == "under": slide += Vector3.DOWN*_rng.randf_range(SINK.x,SINK.y)
 	else:
-		var half := atan(tan(deg_to_rad(camera.fov)*0.5)*_aspect())
-		var yaw := atan2(flat.z,flat.x)+_rng.randf_range(-half,half)*FAR_IN_VIEW
-		var way := Vector3(cos(yaw),0.0,sin(yaw))
 		var k := clampf(murk,0.0,1.0)
 		var span := FAR_RANGE.lerp(MURK_RANGE,k)
+		var range_ := _rng.randf_range(span.x,span.y)
+		if stage == "toward": range_ = maxf(range_,lerpf(span.x,span.y,0.6))
+		place = _in_view(camera,_rng.randf_range(-1.0,1.0)*FAR_IN_VIEW*half_h,_rng.randf_range(FAR_VIEW.x,FAR_VIEW.y)*half_v,range_)
 		var up := FAR_UP.lerp(MURK_UP,k)
-		place = eye+way*_rng.randf_range(span.x,span.y)
-		place.y = eye.y+_rng.randf_range(up.x,up.y)
-		# Across the line of sight, a little toward or away.
-		var across := way.cross(Vector3.UP)*(1.0 if _rng.randf() < 0.5 else -1.0)
-		velocity = (across+way*_rng.randf_range(-0.35,0.35)).normalized()*_rng.randf_range(FAR_SPEED.x,FAR_SPEED.y)
+		place.y = clampf(place.y,eye.y+up.x,eye.y+up.y)
+		# Along the line of sight: going away with the plane, or coming at it.
+		var way := Vector3(place.x-eye.x,0.0,place.z-eye.z).normalized()
+		var speed := _rng.randf_range(FAR_SPEED.x,FAR_SPEED.y)
+		slide = way*speed if stage == "away" else -way*speed-base
+	place.y = maxf(place.y,_ground_below(place)+GROUND_CLEAR)
+	velocity = base+slide
+	# Back along its own way from the plane to where it is heard, so the
+	# first flash finds it where it was staged.
+	place -= slide*herald
 	var distance := eye.distance_to(place)
 	now = {"id":count+1,"near":near,"t":0.0,"flashes":flashes,"struck":0,"gone":false,
-		"sounds":[],"distance":distance,"sighted":false}
+		"sounds":[],"distance":distance,"sighted":false,"stage":stage}
 	_cut.cutoff_hz = lerpf(CUT.x,CUT.y,smoothstep(CUT_RANGE.x,CUT_RANGE.y,distance))
 	_sounds(near,distance,flashes)
-	var event := {"id":now.id,"near":near,"place":place,"distance":distance,"time":clock}
-	_log("heard %s %.0f m off at %s" % [near,distance,place.round()])
+	var event := {"id":now.id,"near":near,"stage":stage,"place":place,"distance":distance,"time":clock}
+	_log("heard %s %s %.0f m off at %s" % [near,stage,distance,place.round()])
 	heard.emit(event)
+
+## A stage for a sighting: close "away" (ahead, flying on away from the
+## plane, seen from behind), "over" (right above, overtaking it: belly,
+## wings and claws) or "under" (a little below and ahead: back and wings
+## from above); far "away" or "toward" (coming at the plane).
+func _pick(near: String) -> String:
+	var r := _rng.randf()
+	if near == "far": return "toward" if r < FAR_TOWARD else "away"
+	return "away" if r < CLOSE_SHARES.x else ("over" if r < CLOSE_SHARES.x+CLOSE_SHARES.y else "under")
+
+## The point `range_` m out from the camera, `across` rad right and `up`
+## rad up of the view's middle.
+static func _in_view(camera: Camera3D, across: float, up: float, range_: float) -> Vector3:
+	var dir := (camera.global_basis*Vector3(tan(across),tan(up),-1.0)).normalized()
+	return camera.global_position+dir*range_
+
+## The ground's (or the sea's, an isle's) height under a point; -INF none.
+func _ground_below(at: Vector3) -> float:
+	if not is_inside_tree(): return -INF
+	var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(at+Vector3.UP*600.0,at+Vector3.DOWN*2000.0))
+	return (hit.position as Vector3).y if not hit.is_empty() else -INF
 
 func _aspect() -> float:
 	var size := get_viewport().get_visible_rect().size
@@ -349,7 +396,7 @@ func _advance(delta: float) -> void:
 		now.sighted = true
 		count += 1
 		var eye := _eye().global_position if _eye() != null else place
-		last = {"id":now.id,"near":now.near,"place":place,"distance":eye.distance_to(place),"time":clock}
+		last = {"id":now.id,"near":now.near,"stage":now.stage,"place":place,"distance":eye.distance_to(place),"time":clock}
 		_log("sighted %s %.0f m off at %s, t %.1f" % [now.near,float(last.distance),place.round(),clock])
 		sighted.emit(last)
 	if t > float(flashes[-1])+AFTER and sounds.is_empty() and not hold:
