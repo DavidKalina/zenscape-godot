@@ -171,3 +171,29 @@ The iterate skill's defaults.
   and route move to solid ground; re-run the drivers of anything moved and
   update the spot table. This is its own look task, done early in the look
   pass, with the silhouette work.
+
+## Spec change after the user played iteration 14
+
+Do these two next, in this order, before L5 and L6:
+
+1. **The slide is natural terrain.** The user found the entablature slide
+   weird. Replace the slab (both halves, the head block and their dressing)
+   with a natural slope of turf and rock, part of the land itself (a KitLand
+   ramp or a sloped shelf of the rope rock / tilt rock, not a placed
+   architectural piece). Keep what the slide does: it starts from the rope
+   rock, the player slides or surfs down it to the tilt rock, it stays
+   one-way (the iteration 7 notes say why: slide jumps climb steep slabs, and
+   the ground pop within 3 m), and spot 15 and the bridge back stay
+   reachable. Re-run wc_slide.
+2. **The colonnade's flanks are walkable.** The spine's sides are steep rock
+   the player can only fall down. Give its flanks routes along them: ledges,
+   narrow shelves, broken walkways or terraces, grabbable lips and short
+   climbs that let the player walk and platform along the sides of the
+   colonnade, not only along its crest and bench. They join places that
+   already exist (bench, shelves, balcony, pulpit, the strip, the tower pad,
+   the rope chain's shelf) so the flanks become a second layer of the
+   playground, and can host part spots (renumber nothing; add new spots
+   after 16 if any). The colonnade motif is shared code: build the flank
+   routes in the study's own files, on top of the spine, and keep its own
+   study and the aqueduct isle unchanged. Every flank route attaches at both
+   ends (the spec's rule) and is walked through the real input path.
