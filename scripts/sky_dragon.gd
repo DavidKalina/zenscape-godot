@@ -269,6 +269,10 @@ var sky_scene: Node = null
 ## 0 by day .. 1 at night, eased; its materials by key, to light at night.
 var night := 0.0
 var _night_materials := {}
+## The storm study's scaled, wet hide and veined membrane (shaders/
+## dragon_hide.gdshader, dragon_membrane.gdshader, its mesh smoothed as in
+## scripts/dragon_glimpse.gd) in place of the game's: --dragon-hide=new.
+var new_hide := false
 var sea_y := -120.0
 var home := Vector3.ZERO
 var home_top := 30.0
@@ -542,6 +546,7 @@ func setup(cam: Camera3D, args: PackedStringArray, sea: float, middle: Vector3, 
 		elif arg.begins_with("--dragon-seed="): _rng.seed = int(arg.get_slice("=",1))
 		elif arg.begins_with("--dragon-size="): size = float(arg.get_slice("=",1))
 		elif arg == "--dragon-log": _log = true
+		elif arg == "--dragon-hide=new": new_hide = true
 		elif arg == "--dragon-walk-check": _walk_check = true
 		elif arg == "--dragon-pass": _pass_now = true
 		elif arg == "--dragon-attack": _attack_now = true
@@ -617,6 +622,10 @@ func _build() -> void:
 	while _bone.has("tail.%d" % _tail_n): _tail_n += 1
 	while _bone.has("neck.%d" % _neck_n): _neck_n += 1
 	_build_probes()
+	if new_hide:
+		var glimpse: Node3D = preload("res://scripts/dragon_glimpse.gd").new()
+		glimpse._smooth(model)
+		glimpse.free()
 	_dress(model)
 	model.visible = false
 	if _bone.has("head") and _bone.has("jaw.tip"):
@@ -774,6 +783,10 @@ func _tag_membrane(mi: MeshInstance3D, surface: int) -> void:
 ## deep maroon going near black, ivory teeth, pale horn and claws, violet
 ## membranes (c: soft and glowing toward the trailing edge).
 func _material(key: String) -> Material:
+	if new_hide and key in ["dragon_hide","dragon_belly","dragon_membrane","dragon_membrane_glow"]:
+		var scaled := ShaderMaterial.new()
+		scaled.shader = preload("res://shaders/dragon_membrane.gdshader") if key.begins_with("dragon_membrane") else preload("res://shaders/dragon_hide.gdshader")
+		return scaled
 	var made := _made_material(key)
 	if key in ["dragon_membrane_glow","dragon_eye","dragon_glow","dragon_mouth","dragon_tongue","dragon_hide","dragon_belly"]:
 		if not _night_materials.has(key): _night_materials[key] = []
