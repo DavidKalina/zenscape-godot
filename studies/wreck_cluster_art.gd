@@ -15,8 +15,8 @@ extends RefCounted
 ##   coast    a tall islet east of the tower, reached only by the sail off
 ##            the lookout: an arch, part spot 13, the way on down to the tower
 ##            rock's south-east lobe
-##   ropes    the chain off the north shelf: a slam-spring slab under a jib,
-##            its launch into the swing rope hung from the jib, the release
+##   ropes    the chain off the north shelf: a slam-spring slab under a flyer,
+##            its launch into the swing rope hung from the flyer, the release
 ##            across onto the rope rock's landing (an islet north of the
 ##            spine, higher than anything near it): a chapel arch, part spot
 ##            14, and the start of the way on (the slide)
@@ -118,10 +118,10 @@ static func coast_arch_foot() -> Vector3:
 ##            under it, clear of the flank by more than its spring's sink:
 ##            a running hop off the spur and the slam onto it (a hop gives
 ##            the 0.45 m of air a slam needs)
-##   jib      a worn column standing on the shelf beside the spur's root, a
-##            broken beam jutting north off its head over the slab: the
-##            rope's anchor
-##   rope     the swing rope hung from the jib's end, its knot over the
+##   flyer    a gothic buttress pier on the shelf beside the spur's root,
+##            its flying arm leaping north off its head over the slab and
+##            broken off in mid-air: the rope's anchor
+##   rope     the swing rope hung from the flyer's broken end, its knot over the
 ##            slab, where the slab's launch (6 pumps, 9 m) meets it
 ##   landing  a stone landing jutting off the rope rock's south rim, 14 m on
 ##            from the rope (measured: let go rising, he is 13.4+ m on with
@@ -143,10 +143,22 @@ const ROPE_SPUR_END := -35.0
 const ROPE_SPUR := Vector2(1.6,1.2)
 const ROPE_SLAB_DOWN := 1.0
 const ROPE_SLAB_Z := -37.4
-## The jib's column: on the shelf beside the spur's root (east of it).
+## The flyer's pier: on the shelf beside the spur's root (east of it).
 const JIB_AT := Vector2(85.7,-31.4)
-const JIB_SIDE := 1.3
+## The arm's depth at its broken end (the old jib's, under the anchor).
 const JIB_BEAM := Vector2(0.9,0.8)
+## The pier's stages [top over the shelf, depth], FLYER_WIDTH across, sunk
+## FLYER_SINK into the rock; the arm springs FLYER_RISE under its coping at
+## the pier, whose top meets the pier at FLYER_FOOT, rising to the old jib's
+## head at its end; FLYER_ARM wide, a FLYER_COPE coping, FLYER_STONES long.
+const FLYER_STAGES := [Vector2(4.2,1.45),Vector2(7.6,1.15),Vector2(10.9,0.85)]
+const FLYER_WIDTH := 1.4
+const FLYER_SINK := 2.5
+const FLYER_FOOT := 48.0
+const FLYER_RISE := 3.2
+const FLYER_ARM := 0.9
+const FLYER_COPE := 0.2
+const FLYER_STONES := 7
 const ROPE_ANCHOR := Vector3(84.0,49.5,-38.0)
 const ROPE_LENGTH := 5.6
 const ROPE_TOP := 46.5
@@ -171,20 +183,81 @@ static func landing_edge() -> Vector3:
 ## The chapel arch on the rope rock (span along x), part spot 14 under it.
 static func rope_arch_foot() -> Vector3:
 	return Vector3(ROPE_AT.x,ROPE_TOP,ROPE_AT.y-1.0)
-## The jib, the column under it and the landing: [layout name, node, world
-## foot, yaw (deg)].
+## The flyer, its pier and the landing: [layout name, node, world foot,
+## yaw (deg)]. The rope hangs from a broken flying buttress: a gothic
+## buttress pier propping the spine's north flank from the shelf (layout
+## `ropes/column`), its arm (`ropes/jib`) leaping north off its head toward
+## a nave that is gone, broken off in mid-air; the rope's anchor is under
+## its broken end. The pier's first set-off stands FLYER_STAGES[0] over the
+## shelf (past CHAIN_TOP), the next 3.4 m over that: no way up it, so the
+## arm is no more reachable than the old jib was.
 static func ropes_built() -> Array:
 	var head := ROPE_ANCHOR.y+JIB_BEAM.y
-	var col_h := head-ROPE_SHELF.y
-	var cb := RuinKit.Build.new(621,0.35,"JibColumn")
-	_block(cb,Vector3(0.0,(col_h-4.0)*0.5,0.0),Vector3(JIB_SIDE*0.5,(col_h+4.0)*0.5,JIB_SIDE*0.5))
-	var column := cb.finish()
-	# The jib: from over the column's middle out past the anchor (0.3 m).
-	var jb := RuinKit.Build.new(622,0.3,"Jib")
 	var to := Vector2(ROPE_ANCHOR.x,ROPE_ANCHOR.z)-JIB_AT
-	var tip := to+to.normalized()*0.3
-	var back := -to.normalized()*JIB_SIDE*0.5
-	Spine._beam(jb,Vector3(back.x,0.0,back.y),Vector3(tip.x,0.0,tip.y),JIB_BEAM)
+	var dir := to.normalized()
+	var d3 := Vector3(dir.x,0.0,dir.y)
+	# The pier: a buttress standing out along the arm's heading, its back
+	# against the flank, sunk FLYER_SINK into the shelf's rock.
+	var cb := RuinKit.Build.new(621,0.35,"FlyerPier")
+	var stages := []
+	for st: Vector2 in FLYER_STAGES: stages.append([st.x+FLYER_SINK,st.y])
+	var face := Basis(Vector3(dir.y,0.0,-dir.x),Vector3.UP,d3)
+	var depth0: float = FLYER_STAGES[0].y
+	var foot := Transform3D(face,-d3*depth0*0.5+Vector3.DOWN*FLYER_SINK)
+	RuinKit._buttress(cb,foot,stages,FLYER_WIDTH,true,true)
+	# Collided as one clean battered block, its front leaning back from the
+	# first stage's depth to the last's: the courses' slips and the set-offs'
+	# lips give nothing to catch (checked: drawn as built, he jumped from
+	# the shelf onto a course's lip and up the treads to the top).
+	cb.hulls.clear()
+	var tall: float = stages[-1][0]
+	var depth1: float = FLYER_STAGES[-1].y
+	var batter := Vector3(0.0,(depth0-depth1)/tall,1.0).normalized()
+	var half := FLYER_WIDTH*0.5
+	RuinKit._walk_hull(cb,foot,[Plane(Vector3.RIGHT,half),Plane(Vector3.LEFT,half),Plane(Vector3.DOWN,0.0),
+		Plane(Vector3.UP,tall),Plane(Vector3.FORWARD,0.1),Plane(batter,batter.dot(Vector3(0.0,0.0,depth0)))])
+	var column := cb.finish()
+	# The arm, in the frame of its springing face (x along the heading, from
+	# the pier's top stage's front, y from the jib's old head).
+	var jb := RuinKit.Build.new(622,0.3,"Flyer")
+	var s0: float = -depth0*0.5+FLYER_STAGES[-1].y
+	var length := to.length()+0.3-s0
+	var top0 := FLYER_FOOT-head
+	var k := (0.0-top0)/length
+	var spring := top0-FLYER_RISE
+	var low := -JIB_BEAM.y
+	var arm := Transform3D(Basis(d3,Vector3.UP,d3.cross(Vector3.UP)),d3*s0)
+	var under := func(x: float) -> float:
+		var u := clampf(1.0-x/length,0.0,1.0)
+		return spring+(low-spring)*sqrt(1.0-u*u)
+	var n := FLYER_STONES
+	for i in range(n):
+		var a := length*i/n-(0.35 if i == 0 else 0.0)
+		var e := length*(i+1)/n
+		var ya: float = under.call(maxf(a,0.0))
+		var ye: float = under.call(e)
+		var m := (ye-ya)/(e-a)
+		var crest := Vector3(-k,1.0,0.0).normalized()
+		var body: Array[Plane] = [Plane(Vector3.LEFT,-a),Plane(Vector3.RIGHT,e-0.012),
+			Plane(Vector3.BACK,FLYER_ARM*0.5),Plane(Vector3.FORWARD,FLYER_ARM*0.5)]
+		body.append(Plane(crest,crest.dot(Vector3(0.0,top0-FLYER_COPE,0.0))))
+		var sole := Vector3(m,-1.0,0.0).normalized()
+		body.append(Plane(sole,sole.dot(Vector3(a,ya,0.0))))
+		var cope: Array[Plane] = [Plane(Vector3.LEFT,-a),Plane(Vector3.RIGHT,e-0.012),
+			Plane(Vector3.BACK,FLYER_ARM*0.5+0.08),Plane(Vector3.FORWARD,FLYER_ARM*0.5+0.08)]
+		cope.append(Plane(crest,crest.dot(Vector3(0.0,top0,0.0))))
+		cope.append(Plane(-crest,-crest.dot(Vector3(0.0,top0-FLYER_COPE,0.0))))
+		var cut: Array[Plane] = []
+		if i == n-1:
+			# The break: the last stone's end torn off on a slant, clear of
+			# the anchor (0.3 m back from the end).
+			var t := Vector3(1.0,jb.rng.randf_range(0.9,1.4),jb.rng.randf_range(-0.5,0.5)).normalized()
+			cut.append(Plane(t,t.dot(Vector3(e-0.15,-0.3,0.0))))
+			var t2 := Vector3(1.0,-jb.rng.randf_range(0.6,1.1),jb.rng.randf_range(-0.7,0.7)).normalized()
+			cut.append(Plane(t2,t2.dot(Vector3(e+0.05,low+0.2,0.0))))
+		jb.solid(body,arm,RuinKit._stone(jb,1.0),true,true,cut,-1,1.0)
+		# The coping's last stone is gone with the break.
+		if i < n-1: jb.solid(cope,arm,RuinKit._stone(jb,1.06),true,true,[],-1,1.2)
 	var jib := jb.finish()
 	var sb := RuinKit.Build.new(625,0.3,"Spur")
 	Spine._beam(sb,Vector3(0.0,0.0,0.0),Vector3(0.0,0.0,ROPE_SPUR_END-ROPE_SHELF.z),ROPE_SPUR)

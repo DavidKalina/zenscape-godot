@@ -264,8 +264,8 @@ func _build_foot_pieces() -> void:
 	add_child(foot_host)
 	foot_host.attach(self)
 	foot_host.name_under("wreck_cluster")
-	# The rope chain (Art: ropes): the slab under the jib, the rope off the
-	# jib's end.
+	# The rope chain (Art: ropes): the slab under the flyer, the rope off the
+	# flyer's broken end.
 	foot_host.call_next("ropes/slab")
 	rope_slab = foot_host.bob_slab(Art.rope_slab_top(),Vector3(2.4,0.7,2.2),0.0,631)
 	foot_host.call_next("ropes/rope")
