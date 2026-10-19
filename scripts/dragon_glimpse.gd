@@ -19,6 +19,12 @@ extends Node3D
 ## eye by what the nearest one lacks (`show_at` returns the push, so the
 ## sighting's `place` follows it). It skims past, never round the camera.
 ##
+## In a whiteout's murk (`murk`, set by the sighting each frame): the murk's
+## sheet greys it out with all else past a few tens of m, so a second pass
+## (shaders/dragon_loom.gdshader, `_loom`, drawn after the sheet) gives its
+## shape back as a darker shade in the murk, deep and soft-edged near,
+## fainter and greyer with distance: it looms out of the murk, never crisp.
+##
 ## Self-contained: no rope, no springs, no sight; what sky_dragon does with
 ## them it does here with slow sines, enough for a shape seen for a fraction
 ## of a second.
@@ -37,6 +43,9 @@ const SHEEN := Color(0.05,0.05,0.07)
 const GLOW := Color(0.55,0.42,0.6)
 const CLEAR := 14.0
 const SAMPLES := 600
+## The loom pass: after the murk's sheet (storm_whiteout.gd RENDER_PRIORITY
+## 20), with the near rain's drops.
+const LOOM_PRIORITY := 21
 
 var model: Node3D
 var skeleton: Skeleton3D
@@ -49,6 +58,9 @@ var _clock := 0.0
 var _yaw := 0.0
 var _hide: StandardMaterial3D
 var _skin: StandardMaterial3D
+var _loom := ShaderMaterial.new()
+## The whiteout's murk round the eye now (0 to 1).
+var murk := 0.0
 ## [bone index, point in that bone's bind frame] off the mesh (`_sample`).
 var _samples: Array = []
 ## The least gap to the eye this sighting (m; INF none yet).
@@ -70,6 +82,10 @@ func _ready() -> void:
 	while _bone.has("neck.%d" % _neck_n): _neck_n += 1
 	_hide = _dark(HIDE,false)
 	_skin = _dark(MEMBRANE,true)
+	_loom.shader = preload("res://shaders/dragon_loom.gdshader")
+	_loom.render_priority = LOOM_PRIORITY
+	_hide.next_pass = _loom
+	_skin.next_pass = _loom
 	_dress(model)
 	_sample(model)
 	visible = false
@@ -155,6 +171,8 @@ func show_at(at: Vector3, velocity: Vector3, lit: float, delta: float, eye := Ve
 	_hide.emission_enabled = close > 0.0
 	_hide.emission = SHEEN*lit*close
 	_skin.backlight = Color(0.22,0.17,0.24).lerp(GLOW,close)*lit
+	_loom.set_shader_parameter("murk",murk)
+	_loom.set_shader_parameter("lit",lit)
 	_pose(at,velocity)
 	if not keep: return Vector3.ZERO
 	var push := Vector3.ZERO

@@ -215,6 +215,7 @@ func step(delta: float) -> void:
 				_begin("close" if _rng.randf() < lerpf(CLOSE_SHARE.x,CLOSE_SHARE.y,deep) else "far")
 	if now.is_empty(): lit = 0.0
 	else: _advance(delta)
+	glimpse.murk = murk
 	var close := not now.is_empty() and str(now.near) == "close"
 	var eye := _eye()
 	if close and eye != null: place += glimpse.show_at(place,velocity,lit,delta,eye.global_position,1.0)
