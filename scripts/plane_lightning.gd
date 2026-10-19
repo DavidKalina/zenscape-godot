@@ -115,6 +115,11 @@ var _frames := 0
 ## A flash inside the cloud at just this point (`flash_inside`), for the
 ## next strike only.
 var _exact := Vector3.INF
+## The dragon's strobe (scripts/dragon_sightings.gd): the next strike one
+## stroke only, falling off at this rate (per s; 0 off), and no thunder of
+## its own (the strobe puts it in a dark gap: `thunder_now`).
+var pulse_decay := 0.0
+var quiet := false
 
 func setup(scene: Node3D) -> void:
 	name = "PlaneLightning"
@@ -237,8 +242,9 @@ func strike(kind := "", range_m := -1.0, bearing := NAN, ground_at := Vector3.IN
 			lines = _tree(root,foot,false)
 			at = foot-Vector3.UP*FOOT_DEEP
 			sky_at = root.lerp(foot,0.3)
-	var strokes: Array = [[0.0,1.0,STROKE_DECAY]]
+	var strokes: Array = [[0.0,1.0,STROKE_DECAY if pulse_decay <= 0.0 else pulse_decay]]
 	var count := 1 if kind == "inside" and _rng.randf() < 0.5 else _rng.randi_range(STROKES.x,STROKES.y)
+	if pulse_decay > 0.0: count = 1
 	var t := 0.0
 	for s in range(count-1):
 		t += _rng.randf_range(STROKE_GAP.x,STROKE_GAP.y)
@@ -268,9 +274,13 @@ func strike(kind := "", range_m := -1.0, bearing := NAN, ground_at := Vector3.IN
 		strike.mesh = instance
 		strike.material = material
 	_strikes.append(strike)
-	_thunders.append(Vector3(_clock+distance/SOUND_SPEED,distance,clampf(700.0/distance,0.35,1.0)))
+	if not quiet: _thunders.append(Vector3(_clock+distance/SOUND_SPEED,distance,clampf(700.0/distance,0.35,1.0)))
 	strike_count += 1
 	if _strike_at >= 0: print("lightning: %s %.0f m off at %s" % [kind,distance,at.round()])
+
+## Thunder heard now, from `distance` m off.
+func thunder_now(distance: float) -> void:
+	_thunders.append(Vector3(_clock,distance,clampf(700.0/maxf(distance,1.0),0.35,1.0)))
 
 ## Where a flash inside a cloud goes: a drifting cloud near the eye, else
 ## the cloud sea at `ground`.

@@ -18,6 +18,18 @@ extends Node3D
 ##            `flash`), it is seen; `sighted` is signalled at the first.
 ##   again    AGAIN of them get a second flash AGAIN_GAP s later; GONE of
 ##            those show it gone (the sky lit, the dragon not there).
+##   strobe   (on unless --strobe=off; the spec's "The strobe") the light
+##            comes instead as 3 to 5 short pulses (`_strobe`), each lit
+##            PULSE_LIT s, dark PULSE_DARK s between, a flash right behind
+##            it each (one stroke, falling off so it is dark by the pulse's
+##            end); it is seen only in a pulse, and moves and poses in the
+##            dark. A close "away" or "over" takes its pulses on the head
+##            turn's beats (TURN_PULSES: the wind-up, the snap into the look,
+##            the hold with the jaw open, the turn back); the others' come at
+##            random. The last shows the murk empty where it was, or now and
+##            then (NEARER) it nearer; a far one's last may show it still
+##            there. The pulses make no thunder of their own: one thunder,
+##            and now and then a growl, lands in a dark gap.
 ## It glides on all along (`place`, `velocity`), staged along the plane's
 ## line, never across the view (`_pick`, `_begin`): close, "away" (ahead,
 ## flying on with the plane and pulling away, seen from behind), "over"
@@ -53,6 +65,8 @@ extends Node3D
 ##   --sighting-log            a line per heard, flash, sighted, end
 ##   --sighting-hold           a sighting never ends (with --strike-hold,
 ##                             for stills)
+##   --strobe=on|off           the strobe forced on (the default) or off
+##                             (the one or two flashes, to judge against)
 signal heard(event: Dictionary)
 signal sighted(event: Dictionary)
 
@@ -113,6 +127,26 @@ const AGAIN := 0.55
 const AGAIN_GAP := Vector2(0.45,1.3)
 const GONE := 0.35
 const SEEN := Vector2(0.06,0.3)
+## The strobe: how many pulses (a far or under one's), each one lit (s)
+## and dark between (s); a close away/over's at the head turn's beats (s
+## from the snap, scripts/dragon_glimpse.gd BEATS: wind-up, snap, hold,
+## turn back), give or take TURN_JITTER, the wind-up skipped SKIP_WINDUP
+## of the time, and its last (empty) pulse EMPTY_AT s from the snap. The
+## last shows it nearer (close; NEARER_BY of the way to the eye, at least
+## NEARER_LEAST m off) NEARER of the time, else empty; a far one's last
+## empty FAR_EMPTY of the time. A growl in a dark gap GROWL of the time.
+const PULSES := Vector2i(3,5)
+const PULSE_LIT := Vector2(0.07,0.12)
+const PULSE_DARK := Vector2(0.15,0.4)
+const TURN_PULSES := [-0.27,0.02,0.5,0.98]
+const TURN_JITTER := 0.015
+const SKIP_WINDUP := 0.25
+const EMPTY_AT := Vector2(1.32,1.42)
+const NEARER := 0.25
+const NEARER_BY := Vector2(0.3,0.45)
+const NEARER_LEAST := 40.0
+const FAR_EMPTY := 0.5
+const GROWL := 0.5
 ## How long past its last flash a sighting lasts (s).
 const AFTER := 1.5
 ## The sound: the pace (m/s, plane_lightning's), the call's gain far and
@@ -144,6 +178,8 @@ var clock := 0.0
 var every := EVERY
 var log_on := false
 var hold := false
+## The strobe (`--strobe=off`: the one or two flashes).
+var strobe := true
 ## The dragon as it is seen.
 var glimpse: Node3D
 var _weather: Node3D
@@ -173,6 +209,7 @@ func setup(scene: Node3D, weather: Node3D) -> void:
 		elif arg.begins_with("--murk="): murk_pinned = clampf(float(arg.get_slice("=",1)),0.0,1.0)
 		elif arg == "--sighting-log": log_on = true
 		elif arg == "--sighting-hold": hold = true
+		elif arg.begins_with("--strobe="): strobe = arg.get_slice("=",1) != "off"
 	_clips = {"call":_takes("dragon-call-%d.wav",3),"beat":_takes("dragon-beat-%d.wav",4),"rustle":_takes("wings-%d.wav",4)}
 	_bus()
 	for i in range(6):
@@ -254,7 +291,7 @@ func step(delta: float) -> void:
 	glimpse.murk = murk
 	# The look's clock: s since the first flash (the head is round by it).
 	glimpse.stage = "" if now.is_empty() else str(now.stage)
-	glimpse.beat = -INF if now.is_empty() else float(now.t)-float(now.flashes[0])
+	glimpse.beat = -INF if now.is_empty() else float(now.t)-float(now.flashes[0])-float(now.zero)
 	var close := not now.is_empty() and str(now.near) == "close"
 	var eye := _eye()
 	if close and eye != null: place += glimpse.show_at(place,velocity,lit,delta,eye.global_position,1.0)
@@ -284,6 +321,11 @@ func _begin(near: String, stage := "") -> void:
 	var herald: float = flashes[0]
 	if stage == "": stage = staged
 	if not (CLOSE_STAGES.has(stage) if near == "close" else stage in ["away","toward"]): stage = _pick(near)
+	# The look's clock starts at the first flash; a strobe's at its snap.
+	var light := {"flashes":flashes,"lens":[],"zero":herald,"last":""}
+	if strobe:
+		light = _strobe(near,stage,herald)
+		flashes = light.flashes
 	var half_v := deg_to_rad(camera.fov)*0.5
 	var half_h := atan(tan(half_v)*_aspect())
 	var ground := _ground_below(eye)
@@ -325,12 +367,62 @@ func _begin(near: String, stage := "") -> void:
 	place -= slide*herald
 	var distance := eye.distance_to(place)
 	now = {"id":count+1,"near":near,"t":0.0,"flashes":flashes,"struck":0,"gone":false,
-		"sounds":[],"distance":distance,"sighted":false,"stage":stage}
+		"sounds":[],"distance":distance,"sighted":false,"stage":stage,
+		"lens":light.lens,"zero":float(light.zero)-float(flashes[0]),"last":light.last}
 	_cut.cutoff_hz = lerpf(CUT.x,CUT.y,smoothstep(CUT_RANGE.x,CUT_RANGE.y,distance))
 	_sounds(near,distance,flashes)
+	if strobe: _gap_sounds(near)
 	var event := {"id":now.id,"near":near,"stage":stage,"place":place,"distance":distance,"time":clock}
 	_log("heard %s %s %.0f m off at %s" % [near,stage,distance,place.round()])
 	heard.emit(event)
+
+## The strobe's pulses from `herald` s in: {flashes (s into the sighting),
+## lens (s lit each), zero (the look's clock's start, s), last ("empty",
+## "nearer" or "": what the last pulse shows)}.
+func _strobe(near: String, stage: String, herald: float) -> Dictionary:
+	var flashes: Array = []
+	var zero := herald
+	if near == "close" and stage in ["away","over"]:
+		var beats: Array = TURN_PULSES.duplicate()
+		if _rng.randf() < SKIP_WINDUP: beats.pop_front()
+		zero = herald-float(beats[0])
+		for b in beats:
+			# The snap's exact (the look's turned by it); the rest a little loose.
+			var jitter := 0.0 if absf(float(b)-TURN_PULSES[1]) < 0.001 else _rng.randf_range(-TURN_JITTER,TURN_JITTER)
+			flashes.append(zero+float(b)+jitter)
+		flashes.append(zero+_rng.randf_range(EMPTY_AT.x,EMPTY_AT.y))
+	else:
+		var t := herald
+		for i in range(_rng.randi_range(PULSES.x,PULSES.y)):
+			flashes.append(t)
+			t += _rng.randf_range(PULSE_LIT.x,PULSE_LIT.y)+_rng.randf_range(PULSE_DARK.x,PULSE_DARK.y)
+	var lens: Array = []
+	for i in range(flashes.size()): lens.append(_rng.randf_range(PULSE_LIT.x,PULSE_LIT.y))
+	# Never less dark between than PULSE_DARK.x: the pulse before cut short.
+	for i in range(1,flashes.size()):
+		lens[i-1] = clampf(float(flashes[i])-float(flashes[i-1])-PULSE_DARK.x,0.04,float(lens[i-1]))
+	var last := ""
+	if near == "close": last = "nearer" if _rng.randf() < NEARER else "empty"
+	elif _rng.randf() < FAR_EMPTY: last = "empty"
+	return {"flashes":flashes,"lens":lens,"zero":zero,"last":last}
+
+## The strobe's thunder (and now and then a growl), heard in its dark gaps:
+## the thunder in the gap after the snap (close away/over) or the first
+## pulse, the growl in a later one.
+func _gap_sounds(near: String) -> void:
+	var flashes: Array = now.flashes
+	var lens: Array = now.lens
+	if flashes.size() < 2: return
+	var gaps: Array = []
+	for i in range(flashes.size()-1):
+		var from := float(flashes[i])+float(lens[i])
+		gaps.append(from+(float(flashes[i+1])-from)*_rng.randf_range(0.3,0.6))
+	var first := 1 if near == "close" and str(now.stage) in ["away","over"] and flashes.size() >= 5 else 0
+	var sounds: Array = now.sounds
+	sounds.append([gaps[mini(first,gaps.size()-1)],"thunder",1.0,1.0])
+	if gaps.size() > first+1 and _rng.randf() < GROWL:
+		sounds.append([gaps[_rng.randi_range(first+1,gaps.size()-1)],"call",CALL.x*(0.7 if near == "close" else 0.45),_rng.randf_range(0.7,0.82)])
+	sounds.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 
 ## A stage for a sighting: close "away" (ahead, flying on away from the
 ## plane, seen from behind), "over" (right above, overtaking it: belly,
@@ -396,6 +488,10 @@ func _advance(delta: float) -> void:
 		_flash(int(now.struck))
 		now.struck += 1
 	var shown := int(now.struck) > 0 and not bool(now.gone)
+	# A strobe's only in a pulse: never by another strike in its dark.
+	if shown and strobe and not (now.lens as Array).is_empty():
+		var k := int(now.struck)-1
+		shown = t < float(flashes[k])+float(now.lens[k])
 	var light: float = _weather.lightning.flash
 	lit = smoothstep(SEEN.x,SEEN.y,light) if shown else 0.0
 	if shown and lit > 0.0 and not bool(now.sighted):
@@ -414,10 +510,45 @@ func _advance(delta: float) -> void:
 ## Lightning behind it from the eye, to light it; the second flash may show
 ## it gone.
 func _flash(k: int) -> void:
-	if k > 0 and _rng.randf() < GONE: now.gone = true
+	var pulsed := strobe and not (now.lens as Array).is_empty()
 	var camera := _eye()
+	if pulsed and k == (now.flashes as Array).size()-1:
+		if str(now.last) == "empty": now.gone = true
+		elif str(now.last) == "nearer" and camera != null:
+			# Nearer: drawn in toward the eye along the line, in the dark.
+			var eye_at := camera.global_position
+			var off := place-eye_at
+			var keep := maxf(off.length()*(1.0-_rng.randf_range(NEARER_BY.x,NEARER_BY.y)),NEARER_LEAST)
+			place = eye_at+off.normalized()*minf(keep,off.length())
+	elif not pulsed and k > 0 and _rng.randf() < GONE: now.gone = true
 	if camera == null: return
 	var eye := camera.global_position
+	var lightning: Node3D = _weather.lightning
+	if pulsed and str(now.near) == "close": _keep_in_view(camera,k)
+	if pulsed:
+		# One stroke, falling off to the dragon's SEEN.x by the pulse's end.
+		lightning.pulse_decay = log(1.25/SEEN.x)/(float(now.lens[k])+0.02)
+		lightning.quiet = true
+	_flash_at(camera,eye)
+	lightning.pulse_decay = 0.0
+	lightning.quiet = false
+	_log("flash %d%s, %.0f m off" % [k+1," (gone)" if bool(now.gone) else "",eye.distance_to(place)])
+
+## A close strobe's dragon kept where the view is: if the camera has swung
+## round (the plane turning) since the last pulse, it is swung round the eye
+## with it, in the dark, so each pulse still finds it ahead.
+func _keep_in_view(camera: Camera3D, k: int) -> void:
+	var f := -camera.global_basis.z
+	var yaw := atan2(f.x,f.z)
+	if k > 0 and now.has("yaw"):
+		var turn := wrapf(yaw-float(now.yaw),-PI,PI)
+		var eye := camera.global_position
+		place = eye+(place-eye).rotated(Vector3.UP,turn)
+		velocity = velocity.rotated(Vector3.UP,turn)
+	now.yaw = yaw
+
+## The flash behind it from the eye.
+func _flash_at(camera: Camera3D, eye: Vector3) -> void:
 	var away := Vector3(place.x-eye.x,0.0,place.z-eye.z)
 	away = away.normalized() if away.length() > 0.5 else -camera.global_basis.z
 	var lightning: Node3D = _weather.lightning
@@ -432,9 +563,13 @@ func _flash(k: int) -> void:
 		var ground := place+away*_rng.randf_range(FAR_BEHIND.x,FAR_BEHIND.y)+away.cross(Vector3.UP)*_rng.randf_range(-80.0,80.0)
 		if _rng.randf() < 0.55: lightning.strike_over(ground,"bolt",place.y+_rng.randf_range(90.0,180.0),lightning.SEA_TOP)
 		else: lightning.strike_over(ground,"inside",place.y-170.0,lightning.SEA_TOP)
-	_log("flash %d%s, %.0f m off" % [k+1," (gone)" if bool(now.gone) else "",eye.distance_to(place)])
 
 func _play(kind: String, gain: float, pitch: float) -> void:
+	if kind == "thunder":
+		var eye := _eye()
+		_weather.lightning.thunder_now(eye.global_position.distance_to(place)+100.0 if eye != null else 200.0)
+		_log("thunder at t %.2f" % float(now.t))
+		return
 	var takes: Array = _clips.get(kind,[])
 	if takes.is_empty(): return
 	var voice := _voices[_next_voice]
