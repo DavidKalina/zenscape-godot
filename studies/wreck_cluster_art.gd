@@ -20,8 +20,9 @@ extends RefCounted
 ##            across onto the rope rock's landing (an islet north of the
 ##            spine, higher than anything near it): a chapel arch, part spot
 ##            14, and the start of the way on (the slide)
-##   slide    a fallen entablature off the rope rock's west rim down onto
-##            the tilt rock (a low islet tilted like a dropped slab): a
+##   slide    a tongue of the tilt rock's own turf and rock sloping up
+##            under the rope rock's west rim (the tilt rock a low islet
+##            tilted like a dropped slab): a
 ##            lancet wall, a carved chest, part spot 15, and a footbridge
 ##            on to the north balcony
 ##   knight   a snapped stone causeway west off the strip's west end over
@@ -272,19 +273,23 @@ static func ropes_built() -> Array:
 		["ropes/landing",landing,landing_edge(),0.0],
 	]
 
-## The slide (spec item 6): the rope rock's way on. A fallen entablature
-## broken in two leans off the rope rock's west rim down onto the tilt rock
-## (an islet tilted like a dropped slab, low under the north shelf):
-##   head     broken off SLIDE_DROP_IN under the rope rock's west rim, on
-##            a flat block lodged under its overhang: he drops in off the
-##            rim onto the block (under the stun's 6 m) and on down.
-##            From below the rim is past CHAIN_TOP (2.575) over the head,
-##            so the slide is one way: the rope rock stays the rope's
-##   upper    SLIDE_STEEP down: past the motor's SLIDE_AUTO (44), so he
-##            can't stand on it and boot-surfs (hopping up it is possible:
-##            a slide jump gains on it, but the head's drop stops him)
-##   lower    SLIDE_EASE down from the break to the tilt rock's east end:
-##            a crouched surf (over SLIDE_FROM 10), walkable back up
+## The slide (spec item 6): the rope rock's way on, the land itself: the
+## tilt rock (an islet tilted like a dropped slab, low under the north
+## shelf) runs a tongue of turf and rock up north-east under the rope
+## rock's west rim, a scree slope spilled off it (`slide_ground`, along
+## SLIDE_WAY from SLIDE_HEAD, crowned across):
+##   lodge    a flat shelf SLIDE_DROP_IN under the rope rock's west rim,
+##            tucked under its overhang and reaching SLIDE_LIP past the
+##            head: he drops in off the rim onto it (under the stun's 6 m)
+##            and on down. From below the rim is past CHAIN_TOP (2.575)
+##            over it, so the slide is one way: the rope rock stays the
+##            rope's
+##   steep    SLIDE_STEEP down: past the motor's SLIDE_AUTO (44), so he
+##            can't stand on it and boot-surfs (drawn rock past the turf's
+##            slope; hopping up it is possible, but the lodge's drop stops
+##            him)
+##   ease     SLIDE_EASE down to where it meets the tilt rock's own turf: a
+##            crouched surf (over SLIDE_FROM 10), walkable back up
 ##   runout   the tilt rock's turf rises TILT_DEG westward, so the surf's
 ##            pace runs out up it before the far rim
 ## On the tilt rock: a lancet wall at its high west end with a carved
@@ -294,15 +299,18 @@ static func ropes_built() -> Array:
 const SLIDE_WAY := Vector2(-0.944,0.330)
 const SLIDE_HEAD := Vector3(73.4,ROPE_TOP-SLIDE_DROP_IN,-59.7)
 const SLIDE_DROP_IN := 5.7
-## The flat block the slide's head rests on, lodged under the rope rock's
-## overhang: how far it runs back east from the head (under the rim). It
-## reaches about 3 m out past the rim, so a run off the rim lands on it
-## (a full run's walk-off carries him 2.7 m out).
-const SLIDE_LODGE := 5.3
+## How far the lodge runs back east from the head (under the rim, into the
+## rope rock's flank), and on west past it before the steep starts (a full
+## run's walk-off carries him 2.7 m out past the rim, about SLIDE_HEAD).
+const SLIDE_LODGE := 6.3
+const SLIDE_LIP := 0.8
 const SLIDE_STEEP := 52.0
 const SLIDE_BREAK := 3.6
 const SLIDE_EASE := 24.0
-const SLIDE_SIZE := Vector2(2.6,0.9)
+## The tongue's crown: how much its turf falls across from its middle line
+## (per m² off it), and its half widths along it [s, half].
+const SLIDE_CROWN := 0.035
+const SLIDE_HALF := [Vector2(-5.0,2.5),Vector2(-2.0,3.5),Vector2(1.0,4.0),Vector2(4.0,4.6)]
 ## The tilt rock: its middle, the turf at its east rim (x TILT_EAST), rising
 ## TILT_DEG westward; its keel.
 const TILT_AT := Vector2(56.0,-53.5)
@@ -310,27 +318,60 @@ const TILT_EAST := 68.0
 const TILT_LOW := 34.4
 const TILT_DEG := 5.0
 const TILT_DEEP := 11.0
-static func tilt_ground(x: float, _z: float) -> float:
+## The tilt rock's own turf (no tongue).
+static func tilt_plain(x: float) -> float:
 	return TILT_LOW+(TILT_EAST-x)*tan(deg_to_rad(TILT_DEG))
-## Long and slab-like (x 43.5..68.5), its corners broken.
+## The tongue's top line: its height `s` m along SLIDE_WAY from the head.
+static func slide_line(s: float) -> float:
+	var steep_run := SLIDE_BREAK/tan(deg_to_rad(SLIDE_STEEP))
+	var d := s-SLIDE_LIP
+	if d <= 0.0: return SLIDE_HEAD.y
+	if d <= steep_run: return SLIDE_HEAD.y-d*tan(deg_to_rad(SLIDE_STEEP))
+	return SLIDE_HEAD.y-SLIDE_BREAK-(d-steep_run)*tan(deg_to_rad(SLIDE_EASE))
+## The tongue at (x, z): along its line, less its crown across.
+static func slide_ground(x: float, z: float) -> float:
+	var q := Vector2(x-SLIDE_HEAD.x,z-SLIDE_HEAD.z)
+	var s := q.dot(SLIDE_WAY)
+	var t := q.dot(Vector2(-SLIDE_WAY.y,SLIDE_WAY.x))
+	return slide_line(s)-SLIDE_CROWN*t*t
+## The tilt rock's ground: its tilted turf, and up its tongue, the slide.
+static func tilt_ground(x: float, z: float) -> float:
+	return maxf(tilt_plain(x),slide_ground(x,z))
+## Long and slab-like (x 43.5..68.5), its corners broken, and its tongue
+## up north-east under the rope rock's west rim.
 static func tilt_rock_outline() -> Array:
 	var out := []
-	for w: Vector2 in [Vector2(-12.5,-3.5),Vector2(-10.5,-7.0),Vector2(-3.0,-7.8),Vector2(5.0,-7.2),Vector2(10.5,-6.2),
-			Vector2(12.5,-3.0),Vector2(12.0,2.5),Vector2(9.0,5.5),Vector2(7.5,7.4),Vector2(4.5,7.6),Vector2(-2.0,6.4),
+	for w: Vector2 in [Vector2(-12.5,-3.5),Vector2(-10.5,-7.0),Vector2(-3.0,-7.8),Vector2(5.0,-7.2),Vector2(10.5,-6.2)]:
+		out.append(TILT_AT+w)
+	var head := Vector2(SLIDE_HEAD.x,SLIDE_HEAD.z)
+	var side := Vector2(-SLIDE_WAY.y,SLIDE_WAY.x)
+	var halves := SLIDE_HALF.duplicate()
+	halves.reverse()
+	for h: Vector2 in halves: out.append(head+SLIDE_WAY*h.x-side*h.y)
+	out.append(head-SLIDE_WAY*SLIDE_LODGE)
+	for h: Vector2 in SLIDE_HALF: out.append(head+SLIDE_WAY*h.x+side*h.y)
+	for w: Vector2 in [Vector2(12.0,2.5),Vector2(9.0,5.5),Vector2(7.5,7.4),Vector2(4.5,7.6),Vector2(-2.0,6.4),
 			Vector2(-9.0,5.8),Vector2(-12.8,2.0)]:
 		out.append(TILT_AT+w)
 	return out
-## The slide's three points (the top line): head, the break, the foot on
-## the tilt rock's turf.
+## The finer grid over the tongue, so its steep reads and rides as drawn.
+static func slide_fine_box() -> Rect2:
+	return Rect2(Vector2(62.0,-66.0),Vector2(19.0,14.0))
+## The slide's three points (the top line): the head (the lodge's west
+## edge), the break, the foot where it meets the tilt rock's own turf.
 static func slide_points() -> Array:
 	var way := Vector3(SLIDE_WAY.x,0.0,SLIDE_WAY.y)
-	var brk := SLIDE_HEAD+way*(SLIDE_BREAK/tan(deg_to_rad(SLIDE_STEEP)))-Vector3(0.0,SLIDE_BREAK,0.0)
+	var steep_run := SLIDE_BREAK/tan(deg_to_rad(SLIDE_STEEP))
+	var head := SLIDE_HEAD+way*SLIDE_LIP
+	var brk := head+way*steep_run-Vector3(0.0,SLIDE_BREAK,0.0)
+	var s := SLIDE_LIP+steep_run
 	var foot := brk
-	for i in 4:
-		var drop := brk.y-tilt_ground(foot.x,foot.z)
-		foot = brk+way*(drop/tan(deg_to_rad(SLIDE_EASE)))
-	foot.y = tilt_ground(foot.x,foot.z)
-	return [SLIDE_HEAD,brk,foot]
+	while s < 30.0:
+		foot = SLIDE_HEAD+way*s
+		if slide_line(s) <= tilt_plain(foot.x): break
+		s += 0.1
+	foot.y = tilt_plain(foot.x)
+	return [head,brk,foot]
 ## The footbridge off the tilt rock's south edge to the north balcony.
 static func tilt_bridge_ends() -> Array:
 	var bal := on_slab("balcony")
@@ -339,29 +380,11 @@ static func tilt_bridge_ends() -> Array:
 ## The lancet wall at the tilt rock's west end (facing east, along z), the
 ## chest before it, part spot 15 beside the chest.
 static func tilt_wall_foot() -> Vector3:
-	return Vector3(47.0,tilt_ground(47.0,0.0),TILT_AT.y)
+	return Vector3(47.0,tilt_plain(47.0),TILT_AT.y)
 static func tilt_chest_foot() -> Vector3:
-	return Vector3(50.2,tilt_ground(50.2,0.0),TILT_AT.y-1.6)
+	return Vector3(50.2,tilt_plain(50.2),TILT_AT.y-1.6)
 static func tilt_spot() -> Vector3:
-	return Vector3(50.0,tilt_ground(50.0,0.0),TILT_AT.y+1.4)
-## The slide's halves: [layout name, node, world foot, yaw (deg)].
-static func slide_built() -> Array:
-	var pts := slide_points()
-	var head: Vector3 = pts[0]
-	var out := []
-	for i in 2:
-		var b := RuinKit.Build.new(641+i,0.35,"Slide")
-		var a: Vector3 = pts[i]
-		var e: Vector3 = pts[i+1]
-		# The upper half starts at the lodged block's west end; the lower
-		# runs 0.6 m past the break under the upper's end so no seam opens.
-		if i == 0:
-			var back := Vector3(SLIDE_WAY.x,0.0,SLIDE_WAY.y)*SLIDE_LODGE
-			_entablature(b,-back,Vector3(0.0,0.0,0.0),SLIDE_SIZE+Vector2(0.2,0.3))
-		else: a -= (e-a).normalized()*0.6
-		_entablature(b,a-head,e-head,SLIDE_SIZE)
-		out.append(["slide/"+("upper" if i == 0 else "lower"),b.finish(),head,0.0])
-	return out
+	return Vector3(50.0,tilt_plain(50.0),TILT_AT.y+1.4)
 
 ## A fallen entablature laid from `a` to `e` (its top's middle line, in
 ## `b`'s frame), `size` (across, deep): a cornice whose top is the walked
@@ -609,7 +632,7 @@ static func lands() -> Array:
 ##               upright stack at the east end
 ##   coast_rock  a tall stack, near-vertical then stepping in, leaning east
 ##   rope_rock   tiered: three overhanging steps down to two fangs (its top
-##               6 m kept as before: the slide's block lodges under it)
+##               6 m kept as before: the slide's lodge tucks under it)
 ##   tilt_rock   a thick dropped slab, its flat underside tilted with it
 static func hangs() -> Dictionary:
 	return {
@@ -631,6 +654,9 @@ static func build_land(spec: Array) -> Node3D:
 	if cliffs.size != Vector2.ZERO: d["cliffs"] = cliffs
 	var sheer: bool = spec.size() > 7 and bool(spec[7])
 	var hang: Dictionary = hangs().get(str(spec[0]),{})
+	if str(spec[0]) == "tilt_rock":
+		d["fine_box"] = slide_fine_box()
+		d["fine"] = 1.0
 	if not hang.is_empty(): d["sides"] = false
 	if sheer: d["collide_sides"] = false
 	var node := KitLand.island(d)

@@ -203,7 +203,6 @@ func _build_art() -> void:
 	for p: Array in Art.pieces(): _place_piece(str(p[0]),RuinKit.piece(str(p[1]),int(p[2]),float(p[3])),p[4],float(p[5]))
 	for t: Array in Art.tower(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	for t: Array in Art.ropes_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
-	for t: Array in Art.slide_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	for t: Array in Art.causeway_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	_build_bridge()
 	_build_foot_pieces()
