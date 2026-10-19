@@ -20,6 +20,12 @@ with it:
   pick it up again.
 - **Drag:** a bag too heavy to wear can be dragged by its neck. He walks
   slowly, it scuffs along the ground and catches on rocks.
+- **Wear limit (decided):** a wear limit below the cap (about 18 kg; cap
+  24). Worn, the bag fills only up to the wear limit. Set down, he can keep
+  putting loot into it on the ground (E by the bag with a piece in reach,
+  or carrying a piece to it), up to the cap. A grounded bag over the wear
+  limit can't be shouldered again, only dragged (or rolled, thrown when
+  light). Under it, he picks it back up.
 - **Roll:** on a slope, a shove sends it tumbling downhill as a rolling
   body. It comes to rest at the bottom, where he can pick it up or drag it.
 - **Throw:** a light enough bag can be thrown in an arc: over a wall, up
