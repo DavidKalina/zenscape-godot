@@ -216,3 +216,15 @@ flank routes (re-run the drivers), must not grow over part spots or cache
 glints, and keeps the strip's runway clear. Watch the frame cost (use the
 existing multimesh/shader flora paths) and note the triangle count. This is
 a look task: do it after the flank routes, alongside L5, before L6.
+
+## Spec change: the shared grass carpet (user, after iteration 15)
+
+Grow the grass the way the aqueduct isle and the Olmec field do: the shared
+carpet over all the turf. `studies/aqueduct_isle_flora.gd`
+`IsleFlora.carpeted(site)` on the study's `KitFlora.Site` (see
+`studies/olmec_field.gd` `flora_site()` and its `_grow()` calling
+`IsleFlora.calm(flora)`), on every land mass in the cluster, the spine's
+turf included. Reuse it, don't copy its numbers. Keep part spots, cache
+glints and the strip's runway readable. Do this as its own small task next,
+before the overgrowth: the turf colour task (L6) may then need less, or
+nothing.
