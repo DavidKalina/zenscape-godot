@@ -57,7 +57,7 @@ const NEAR := 0.7
 ## (WAKE_STAGGER s apart, nearest first, plus up to WAKE_JITTER), his
 ## fingers then head come up over the lip (WAKE_RISE s), he holds there
 ## looking (WAKE_HOLD s, give or take half), then he climbs over and comes.
-const WAKE_COUNT := 12
+const WAKE_COUNT := 40
 ## Rim spots nearer the treasure than this (m) are used last, so he has a
 ## breath to run.
 const WAKE_NEAR := 6.0
@@ -92,6 +92,9 @@ const KNOCK_COUNT := 5
 const KNOCK_HOLD := 1.0
 const SHAKE_UP := 2.0
 const DAZE := 1.4
+## After he shakes them off, none grabs him for this long (s), so a jump
+## clears him even with the whole brood round him.
+const GRAB_GRACE := 0.6
 
 ## The mob and the haul: a loose treasure (or one he set down off its
 ## spot) that HAUL_CREW of them (by its weight) reach within HAUL_REACH
@@ -119,6 +122,14 @@ const ESCORT_RING := 1.8
 const HAUL_STUCK := 8.0
 const HAUL_GAIN := 0.5
 const HOME_NEAR := 1.0
+
+## The crowd: walking guys nearer each other than SEP (m, across) lean
+## apart, SEP_PUSH strong at touching (of their wish for the goal); a
+## crowd standing round a goal spreads out at up to SEP_DRIFT of their
+## scurry.
+const SEP := 0.5
+const SEP_PUSH := 1.4
+const SEP_DRIFT := 0.35
 
 ## Their stone: grey, rough.
 const STONE := Color(0.62,0.6,0.57)

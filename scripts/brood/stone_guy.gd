@@ -70,6 +70,8 @@ var daze := 0.0
 ## (of his scurry and climb).
 var hauling := false
 var pace := 1.0
+## The crowd's lean apart this step (flat; set by the host).
+var sep := Vector3.ZERO
 ## The swing's phase and the body's look.
 var _phase := 0.0
 var _basis := Basis.IDENTITY
@@ -210,13 +212,20 @@ func _walk(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 	if detour_t > 0.0:
 		detour_t -= dt
 		want = detour
+	# The crowd round him: lean apart; standing at the goal, drift apart.
+	var drift := 1.0
+	if sep != Vector3.ZERO and detour_t <= 0.0:
+		if want == Vector3.ZERO:
+			drift = clampf(sep.length(),0.0,1.0)*K.SEP_DRIFT
+			want = sep.normalized()
+		else: want = (want+sep).normalized() if (want+sep).length() > 0.2 else want
 	if want == Vector3.ZERO:
 		_swing(0.0,dt)
 		return
 	# Turn toward the way.
 	var a := heading.signed_angle_to(want,Vector3.UP)
 	heading = heading.rotated(Vector3.UP,clampf(a,-K.TURN*dt,K.TURN*dt)).normalized()
-	var go := K.SCURRY*s*pace*clampf(1.0-absf(a)/PI,0.3,1.0)*dt
+	var go := K.SCURRY*s*pace*drift*clampf(1.0-absf(a)/PI,0.3,1.0)*dt
 	# A face ahead at his middle: climb it.
 	var mid_at := feet+Vector3.UP*tall*0.5
 	var wall := _cast(space,mid_at,mid_at+heading*(radius+go+0.05))
@@ -329,10 +338,16 @@ func _climb(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 			_let_go()
 			return
 		if _start_mantle(space,c): return
+	if n.y < -0.7 and climb_dir > 0.0 and _start_mantle(space,c):
+		# An overhanging lip right at the top (a parapet's sill): over it.
+		return
 	if n.y < -0.7 or climbed > K.CLIMB_MOST*s:
 		_let_go()
 		return
-	face_n = face_n.slerp(n,clampf(dt*12.0,0.0,1.0)).normalized()
+	# (A lerp, not a slerp: a face turned near opposite, round a thin
+	# wall's end, breaks the slerp's axis.)
+	var fl := face_n.lerp(n,clampf(dt*12.0,0.0,1.0))
+	face_n = fl.normalized() if fl.length() > 0.2 else n
 	mid = (hit.position as Vector3)+n*radius
 	_swing(move.length()*2.2,dt)
 

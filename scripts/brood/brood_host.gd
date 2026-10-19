@@ -57,6 +57,7 @@ var wanted: Dictionary = {}
 var clinging := 0
 var _knock_t := 0.0
 var _shove_t := 0.0
+var _grace_t := 0.0
 var knocked := 0
 var shaken := 0
 ## The haul ({} none): {t, crew (the lead first), moved}; the time left
@@ -72,6 +73,11 @@ var hauls := 0
 var haul_hits := 0
 var let_downs := 0
 var homes := 0
+## How many wake (WAKE_COUNT, or `--brood-count=N`).
+var count := K.WAKE_COUNT
+## The host's own frame (ms, smoothed; the guys' steps, the haul, the
+## clingers) and the rays cast in the last frame (for drivers).
+var step_ms := 0.0
 
 func setup(host: Node3D) -> void:
 	study = host
@@ -79,6 +85,8 @@ func setup(host: Node3D) -> void:
 	process_priority = 90
 	_rng.randomize()
 	_one = LaunchArgs.user_args().has("--brood-one")
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--brood-count="): count = maxi(int(a.get_slice("=",1)),1)
 
 ## One guy standing at `feet`.
 func spawn(feet: Vector3) -> RefCounted:
@@ -96,6 +104,7 @@ func clear() -> void:
 	haul = {}
 	given_up = {}
 	_rest_t = 0.0
+	_grace_t = 0.0
 	clinging = 0
 	_knock_t = 0.0
 	var carry: Variant = study.get("carry") if study != null else null
@@ -105,6 +114,11 @@ func _motor() -> Variant:
 	return study.get("motor") if study != null else null
 
 func _process(delta: float) -> void:
+	var t0 := Time.get_ticks_usec()
+	_tick(delta)
+	step_ms = lerpf(step_ms,float(Time.get_ticks_usec()-t0)/1000.0,0.1)
+
+func _tick(delta: float) -> void:
 	if study == null or not bool(study.get("walk_ready")): return
 	if _one and guys.is_empty(): _spawn_one()
 	var carry: Variant = study.get("carry")
@@ -125,7 +139,9 @@ func _process(delta: float) -> void:
 	var used := {}
 	for g: RefCounted in guys: if g.state == "cling": used[g.slot] = true
 	_rest_t = maxf(_rest_t-dt,0.0)
+	_grace_t = maxf(_grace_t-dt,0.0)
 	var crew: Array = haul.get("crew",[])
+	_separate()
 	for i: int in guys.size():
 		var g: RefCounted = guys[i]
 		if g.state == "lost": continue
@@ -134,7 +150,7 @@ func _process(delta: float) -> void:
 			continue
 		var to := goal
 		if on_him and to != Vector3.INF:
-			if g.state == "walk" and g.daze <= 0.0 and bool(m.grounded) and used.size() < K.GRAB_SLOTS and _in_grab(g,m.feet):
+			if g.state == "walk" and g.daze <= 0.0 and _grace_t <= 0.0 and bool(m.grounded) and used.size() < K.GRAB_SLOTS and _in_grab(g,m.feet):
 				g.slot = _free_slot(used)
 				used[g.slot] = true
 				g.cling_at(m.feet,Vector3.BACK)
@@ -148,6 +164,35 @@ func _process(delta: float) -> void:
 	_hold_on(carry,m,dt)
 	if not haul.is_empty(): _haul_step(carry,m,space,dt)
 	elif goal_override == Vector3.INF and not _one and _rest_t <= 0.0: _mob(carry)
+
+## The crowd step: each walking guy's lean away from walking neighbours
+## nearer than SEP (a grid of SEP cells, so it's near-linear in their
+## count); `sep` is read by his next walk step.
+func _separate() -> void:
+	var cell := K.SEP*K.s()
+	var grid := {}
+	for g: RefCounted in guys:
+		g.sep = Vector3.ZERO
+		if g.state != "walk" or g.hauling: continue
+		var c := Vector2i(floori(g.feet.x/cell),floori(g.feet.z/cell))
+		if grid.has(c): (grid[c] as Array).append(g)
+		else: grid[c] = [g]
+	for c: Vector2i in grid:
+		var here: Array = grid[c]
+		for g: RefCounted in here:
+			var push := Vector3.ZERO
+			for dx: int in [-1,0,1]:
+				for dz: int in [-1,0,1]:
+					var other: Array = grid.get(c+Vector2i(dx,dz),[])
+					for o: RefCounted in other:
+						if o == g: continue
+						var d := Vector3(g.feet.x-o.feet.x,0.0,g.feet.z-o.feet.z)
+						var l := d.length()
+						if l >= cell or absf(float(g.feet.y)-float(o.feet.y)) > float(g.tall): continue
+						if l < 0.001: d = Vector3(cos(float(g.get_instance_id() % 628)*0.01),0.0,sin(float(g.get_instance_id() % 628)*0.01))
+						else: d /= l
+						push += d*(1.0-l/cell)
+			g.sep = push*K.SEP_PUSH
 
 # --- The mob and the haul ---------------------------------------------------------------
 
@@ -338,6 +383,7 @@ func _shake_all(push: Vector3) -> void:
 		g.shake(push+(g.face_n as Vector3)*1.6*K.s()+Vector3.UP*1.2*K.s())
 	if any:
 		shaken += 1
+		_grace_t = K.GRAB_GRACE
 		clinging = 0
 		var carry: Variant = study.get("carry")
 		if carry != null: carry.set_slow(1.0)
@@ -367,20 +413,43 @@ func wake(t: Dictionary) -> void:
 	if spots.is_empty():
 		print("brood: no rim round %s" % [from])
 		return
-	var n := K.WAKE_COUNT
+	var n := count
 	for i: int in n:
 		var sp: Dictionary = spots[i % spots.size()]
 		var at: Vector3 = sp.face
 		var fn: Vector3 = sp.n
+		var later := 0.0
 		if i >= spots.size():
-			# More guys than spots: along the face beside the spot.
-			var across := Vector3.UP.cross(fn).normalized()
-			at += across*(0.6*K.s()*float(1+i/spots.size())*(1.0 if i % 2 == 0 else -1.0))
+			# More guys than spots: along the face beside the spot, where
+			# there's face under a lip there; else the spot itself, later.
+			var beside := _beside(sp,0.6*K.s()*float(1+i/spots.size())*(1.0 if i % 2 == 0 else -1.0))
+			if beside.is_empty(): later = K.WAKE_RISE*float(i/spots.size())
+			else:
+				at = beside.face
+				fn = beside.n
 		var g: RefCounted = spawn(at)
-		var wait := float(i)*K.WAKE_STAGGER+_rng.randf()*K.WAKE_JITTER
+		var wait := float(i)*K.WAKE_STAGGER+_rng.randf()*K.WAKE_JITTER+later
 		var hold := K.WAKE_HOLD*_rng.randf_range(0.5,1.5)
 		g.wake_at(at,fn,float(sp.lip.y),wait,hold)
 	print("brood: woke %d for %s from %d rim spots (first %.1f m, last used %.1f m)" % [n,t.id,spots.size(),float(spots[0].dist),float(spots[mini(n,spots.size())-1].dist)])
+
+## A wake spot `by` m along the face beside rim spot `sp` ({face, n}, or
+## {}): a face there under the lip's height, and ground on top over it.
+func _beside(sp: Dictionary, by: float) -> Dictionary:
+	var space := get_world_3d().direct_space_state
+	var fn: Vector3 = sp.n
+	var flat := Vector3(fn.x,0.0,fn.z).normalized()
+	var at: Vector3 = (sp.face as Vector3)+Vector3.UP.cross(fn).normalized()*by
+	var hit := _ray(space,at+flat*1.0*K.s(),at-flat*1.0*K.s())
+	if hit.is_empty(): return {}
+	var n: Vector3 = hit.normal
+	if n.y >= K.FLOOR or n.y <= -0.7: return {}
+	var lip_y := float(sp.lip.y)
+	var over := (hit.position as Vector3)-flat*0.4*K.s()
+	var top := _ray(space,Vector3(over.x,lip_y+K.tall(),over.z),Vector3(over.x,lip_y-K.tall()*0.6,over.z))
+	if top.is_empty() or (top.normal as Vector3).y < K.FLOOR: return {}
+	if not _can_top(space,hit.position,n,lip_y): return {}
+	return {"face":hit.position,"n":n}
 
 ## The isle's rim round `from`: in RIM_RAYS ways, rays down marched out
 ## from it to where the ground ends over a void (nothing within RIM_VOID
@@ -428,6 +497,7 @@ func rim_spots(from: Vector3) -> Array:
 			if hit.is_empty(): continue
 			var n: Vector3 = hit.normal
 			if n.y >= K.FLOOR or n.y <= -0.7: break
+			if not _can_top(space,hit.position,n,lip.y): break
 			out.append({"lip":lip,"face":hit.position,"n":n,"dist":Vector2(lip.x-from.x,lip.z-from.z).length()})
 			break
 	# Nearest first, but those closer than WAKE_NEAR (he gets a breath to
@@ -439,6 +509,17 @@ func rim_spots(from: Vector3) -> Array:
 		if xn != yn: return yn
 		return float(x.dist) < float(y.dist))
 	return out
+
+## Whether a guy on the face at `at` (`n` out of it) under a lip at
+## `lip_y` finds a floor to mantle onto over it (his mantle's probes).
+func _can_top(space: PhysicsDirectSpaceState3D, at: Vector3, n: Vector3, lip_y: float) -> bool:
+	var into := Vector3(-n.x,0.0,-n.z).normalized()
+	var tall := K.tall()
+	for reach: float in [K.RADIUS+0.3,K.RADIUS+0.7,K.RADIUS+1.2]:
+		var over := Vector3(at.x,lip_y,at.z)+into*reach*K.s()+Vector3.UP*tall*1.4
+		var hit := _ray(space,over,over+Vector3.DOWN*tall*3.3)
+		if not hit.is_empty() and (hit.normal as Vector3).y >= K.FLOOR: return true
+	return false
 
 ## The top ground under `at` (from well over it down past a void's depth),
 ## or {}: nothing within RIM_VOID under `at`'s height.
