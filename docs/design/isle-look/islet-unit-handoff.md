@@ -192,3 +192,186 @@ The whole yard has 32k drawn triangles plus about 100k instanced in tufts.
 - **Lichen and moss.** Widen some ledges (a weather-driven ledge width) so the
   up-facing lichen reads, and add moss on the shaded undercuts.
 - **LOD** as in the model budget above, before isles get many units.
+
+---
+
+# Round 2: shape and grass
+
+The rock shader, palette and lip shadow line are as round 1 left them. This
+round changed the unit's shape, its grass and the yard's layout. Every
+change is inside `IsletUnit`, its node and the yard. KitFlora, KitLook and
+the aqueduct isle's flora are used as they are, with no edits.
+
+## What changed
+
+- **Grass.** The unit's own dry tufts (`islet_tuft`) are gone, and the
+  shader file is deleted. The crown now grows the isles' own grass:
+  - `KitFlora.Grow` runs with the aqueduct isle's carpet settings
+    (`studies/aqueduct_isle_flora.gd` `carpeted`), so it has the carpet, the
+    shag, the variety (tussocks, thatch, seed heads), the contact darkening,
+    the rolling height and the tilt. Its flowers come too. `calm` runs after
+    it, as on the aqueduct isle.
+  - Its `probe` is the unit's own height function (`Unit.probe`), so it
+    needs no physics. It returns NAN off the lip's roll and inside a rock
+    knob's or the shard's foot. In from the rim it also returns NAN on
+    slopes past the palette's rock slope.
+  - The grass's outline is the lip's roll, so wild tall grass grows out over
+    the crest onto the roll: the spill.
+  - Growth scales the tufts a square metre (x0.3..1) and the shag's height
+    (x0.8..1.9). Below growth 0.06 the crown is bare.
+- **Turf ground.** The top and the lip's crest and roll are drawn as a
+  `KitLook.GroundMesh` with `KitLook.turf` tones, in the isles' ground
+  material, so the blades root into the same ground as on the aqueduct
+  isle. The lip's earth face, hem and under-face stay in `islet_turf`, as
+  the dark shadow line. The drape's strands are golden and olive
+  (`DRAPE_*`), to match the carpet as it renders.
+- **Bodies.** The shape knob now picks one of five bodies, each taking a
+  fifth of its range. Within its fifth, the knob goes from shallow to deep
+  (`IsletUnit.body_of`, `BODIES`, meta `body`):
+  - **slab** (0..0.2): the outline is stretched and cut straight across
+    once or twice, like a broken edge. The underside is a wedge, much deeper
+    on one side. The whole unit is tilted 11-19 deg, with a few short drips
+    along the deep edge.
+  - **boulder** (0.2..0.4): the belly swells out past the lip (up to 1.18
+    of the rim), then rounds under to a blunt foot. It has a domed top and
+    0-2 stubs.
+  - **cone** (0.4..0.6): round 1's stepped cone with a lead drip.
+  - **cluster** (0.6..0.8): a shallow mass with a broad flat underside,
+    from which hang 3-7 deep lobes of varied length. The lobes are spread on
+    a golden-angle spiral, the lead lobe longest, with small drips between.
+    This reads as separate teeth at 100 m+.
+  - **spire** (0.8..1): a stretched, blade-like outline over a tall,
+    narrowing, strongly leaning column, tilted 9-17 deg. A stepped stone
+    shard stands 1.2-2x the radius out of its crown, along the same line.
+- **Lip.** The reach is now `R*0.05` (0.25..0.9 m) and the droop `R*0.075`
+  (0.35..1.3 m), both times growth. The face bulges out, sod tongues are
+  more frequent and longer, and the rock under the lip is set further back
+  (0.84).
+- **Crown.**
+  - A shoulder rises on one side, by 9-20% of the radius (half that on a
+    slab).
+  - There are 1-3 rises, of 4-10% of the radius.
+  - A boulder's dome is higher.
+  - There are more and bigger rock knobs (up to 3, 0.3-1.8 m), faceted.
+  - A cone or boulder sometimes gets a low shard (a 25% chance).
+- **The world view.** The shape tune is labelled with its bodies.
+- **Yard.**
+  - The siblings now stand in fixed layers (`SLOTS`): each has a bearing, a
+    distance of 30-100 m, a height from -36 to +40 m off the hero's top, a
+    body and a size factor. Seed jitter is added on top. Their names stay
+    `islet_yard/sib_1..8`.
+  - Five new far units, `islet_yard/far_1..5`, stand 250-450 m out at
+    heights from -4 to +95 m. `--no-far` leaves them out.
+  - The hero is now a cluster (shape 0.7).
+  - He starts 2 m over the crown and drops onto it, since the crown is no
+    longer flat.
+
+## Knobs
+
+These are the same keys and ranges as round 1. Only the meanings below
+changed:
+
+| knob | round 2 meaning |
+|---|---|
+| shape | the body: 0 slab, 0.2 boulder, 0.4 cone, 0.6 cluster, 0.8..1 spire; within its fifth, shallow to deep |
+| lean | a spire leans 0.35..0.85 m a metre; the others 0..0.4 |
+| drip | on a cluster: many lobes .. fewer, longer |
+| growth | also the grass's thickness and its wild rim's height |
+| weather | also how many rock knobs |
+
+Constants: `GRASS_THICK`, `GRASS_SHAG`, `GRASS_FROM`, `DRAPE_*` in
+`islet_unit.gd`, and `SLOTS` and `FAR` in `studies/islet_yard.gd`.
+
+## Stills
+
+These are in this worktree under `captures/shots/islet_unit_r2/`, which git
+ignores. The camera spots are round 1's.
+
+- `before_after.png`: round 1 on the left, round 2 on the right, for far,
+  mid, lip and under.
+- `far.png`, `mid.png`, `lip.png`, `under.png` and `top.png`: the hero's
+  crown.
+- `depth.png`: from behind and above the yard, looking back over it, which
+  shows the layers best.
+- `bodies.png`: the five bodies alone, all seed 29 and size 8, plus the
+  depth view. The singles are `body_slab.png` .. `body_spire.png`.
+
+```
+python3 tools/shot.py studies/islet_yard.tscn --at 30,48,150 --look 0,20,0 --settle 60 -- --no-title           # far
+python3 tools/shot.py studies/islet_yard.tscn --at -60,40,-120 --look 0,25,0 --settle 60 -- --no-title         # depth
+python3 tools/shot.py studies/islet_yard.tscn --at 0,32,52 --look 0,18,0 -- --no-title --solo --hero=seed=29,size=8,shape=0.9   # one body
+```
+
+## Checks
+
+- `python3 tools/smoke.py studies/islet_yard.tscn studies/aqueduct_isle.tscn`:
+  both pass with 0 errors. The aqueduct isle is KitFlora's main caller, and
+  KitFlora, KitLook and `aqueduct_isle_flora.gd` have no diff.
+- A throwaway drive (`scratch/r2_walk.gd`) used real input: he lands on the
+  hero's crown and walks to three points across it, staying grounded.
+- The yard builds 14 units in about 650 ms, most of it the grass.
+- No committed tests. No existing test is known to break: no shared file
+  changed, and `islet_tuft` had no other users.
+
+## Model budget (docs/art/model-budget.md)
+
+- **Rock, ground, lip and drape.** These come to about 77k drawn triangles
+  for the yard's 14 units. The hero has about 7.5k; round 1's hero had
+  6.3k.
+- **The grass.**
+  - It uses the carpet's tuft at about 91 triangles an instance. The hero
+    grows about 1.6k tufts plus tussocks, seed heads and flowers: about 145k
+    instanced triangles. The yard comes to about 16k tufts and 1.4M
+    instanced triangles.
+  - Each tile only draws within the carpet's `grass_range` (220 m) and fades
+    out over 15 m. The far units (250 m+) draw none, and from the hero
+    about 0.6M are in range.
+  - At the aqueduct isle's density, the estimate is 0.3-0.6 ms of GPU time
+    for the grass in view. A tile crossing its fade range draws
+    alpha-blended, which KitFlora notes as the real cost; `--flora-fade=pop`
+    avoids it.
+- **The geometry tricks.**
+  - **Import LODs and visibility ranges: apply next.** A composed isle
+    should draw its units' grass to a nearer range, such as 120 m for units
+    under size 5. That would cut most of the instanced triangles at no
+    visible loss, since the ground's tones carry the colour from afar. The
+    round 1 note on a half-segment rock mesh past 150 m still stands.
+  - **Vertex-colour grime and silhouette geometry:** applied, as in round 1.
+  - **Sculpt-and-bake, parallax and rigid parts:** unchanged.
+
+## What's still weak
+
+- **Far depth.** The far shot shows different bodies at clearly different
+  heights. Distance reads only through size and overlap, though: the game's
+  screen-space haze barely fades rock at 300-450 m. A big far unit can
+  read as a near small one. `depth.png` reads better than `far.png`.
+- **The cone** is still round 1's spinning top. It is now one body of five
+  rather than all of them.
+- **The slab's wedge** is a smooth, dark plane on its deep side. It needs
+  beds or blocks broken across it.
+- **The crown's shoulder** reads in `top.png` and on the bigger units, but
+  only gently on the hero from the mid shot.
+- **The lip's earth face** reads at mid range but is a fairly even dark band
+  close up.
+- **The grass's ground** shows the carpet's orange earth where the carpet
+  thins (drifts, the rolling height), as on the aqueduct isle. Under a
+  small unit that reads as bare patches.
+- **The grass is the carpet's tuft at its normal size.** On a 3.5 m unit it
+  is fine; on a hop boulder (1.5 m) it will look coarse.
+
+## Next: composing units into an isle
+
+- **A composer.** Write `IsletUnit.isle(spec)` or a study that places 3-7
+  units of one family, named `<isle>/<unit>`:
+  - a big slab or cone as the landing turf, which keeps the landing-turf
+    rule;
+  - satellites tucked under its lip at stepped heights;
+  - a spire or cluster as the landmark.
+- **Fused undersides.** Let a satellite's top sit inside the main unit's
+  bed band, so they read as one mass, and drop the hidden faces.
+- **One grass run for the whole isle.** Grow one `KitFlora.Grow` over all
+  the units' outlines, with a probe that asks each unit in turn. That gives
+  one set of tiles rather than one a unit, and one `calm`.
+- **A depth fade on the units' own shaders,** if far layering needs to read
+  more strongly than the game's haze gives: `islet_rock` and the earth,
+  toward the horizon colour. This is a look change, so ask the user first.

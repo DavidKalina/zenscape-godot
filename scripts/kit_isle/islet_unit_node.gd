@@ -50,7 +50,8 @@ func layout_tunes() -> Array:
 	var out: Array = [["seed","seed (shape)",1,1,999,1]]
 	for k: String in IsletUnit.KNOBS:
 		var r: Array = IsletUnit.KNOBS[k]
-		out.append([k,k,r[0],r[1],r[2],0.25 if k == "size" else 0.05])
+		var label := "shape (slab, boulder, cone, cluster, spire)" if k == "shape" else k
+		out.append([k,label,r[0],r[1],r[2],0.25 if k == "size" else 0.05])
 	return out
 
 func layout_tune(key: String) -> float:
