@@ -24,6 +24,7 @@ extends "res://studies/character_study.gd"
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const DevKeys = preload("res://scripts/kit_isle/dev_keys.gd")
 const BagStudy = preload("res://studies/bag_study.gd")
+const ClimbRope = preload("res://scripts/rope/climb_rope.gd")
 
 const SCENE_ID := "rope_study"
 ## The two floors (x, z) and their tops.
@@ -95,6 +96,8 @@ var taken := 0
 var full_moves := false
 ## Never in a plane here (the world view asks).
 var flying := false
+## His rope and hook (scripts/rope/climb_rope.gd).
+var rope: Node3D
 ## The corner line: the moveset and the loot taken.
 var _status: Label
 
@@ -132,6 +135,9 @@ func _build_room() -> void:
 		if str(p[2]) != "": holds[str(p[0])] = str(p[2])
 	super._build_room()
 	_build_loot()
+	rope = ClimbRope.new()
+	add_child(rope)
+	rope.setup(self)
 	if DevKeys.enabled():
 		var editor: Node = preload("res://scripts/layout_edit.gd").new()
 		editor.name = "LayoutEdit"
@@ -278,12 +284,20 @@ func _take_loot() -> void:
 		_say("Took the %s (%s)" % [l.kind,BagStudy._kg_text(float(l.kg))])
 		_show_status()
 
+## Aiming the hook, the stick moves the reticle, not him.
+func _want(delta: float) -> Vector2:
+	var want := super._want(delta)
+	if rope == null or rope.state != "aim": return want
+	rope.aim_steer(want,delta)
+	return Vector2.ZERO
+
 func tick(delta: float) -> void:
 	super.tick(delta)
 	_take_loot()
 
 func respawn() -> void:
 	super.respawn()
+	if rope != null: rope.reset()
 	for l: Dictionary in loot:
 		l.taken = false
 		(l.spot as Node3D).visible = true
@@ -317,4 +331,4 @@ func _show_status() -> void:
 	_status.text = "%s · %s %s\nloot %d / %d · %s" % [moves,Pad.pick("M","LEFT"),"to switch",taken,loot.size(),BagStudy._kg_text(taken_kg)]
 
 func _hint_text() -> String:
-	return "Rope study: WASD run · Space jump · Shift/C crouch, at a run: slide · M (pad left) full moveset on / off · walk into loot to take it · 1 start, 2 wall 5 m, 3 face 8 m, 4 crumbly / solid edge, 5 drop top, 6 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Rope study: WASD run · Space jump · Shift/C crouch, at a run: slide · hold LMB or T (pad RT): aim the hook (gold catches, red won't), let go to throw · F (pad down) reel it in · M (pad left) full moveset on / off · walk into loot to take it · 1 start, 2 wall 5 m, 3 face 8 m, 4 crumbly / solid edge, 5 drop top, 6 lower floor · R start · F1 numbers · F4 world view · Esc mouse"

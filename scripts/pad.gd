@@ -70,6 +70,9 @@ const ACTIONS := {
 	# In the rope study (studies/rope_study.gd), pressed: his full moveset on
 	# or off (the reduced one: walk, run, jump, slide).
 	"walk_moveset":[["key",KEY_M],["button",JOY_BUTTON_DPAD_LEFT]],
+	# In the rope study, pressed: reel the rope in (a caught hook flicked
+	# free first; scripts/rope/climb_rope.gd).
+	"walk_reel":[["key",KEY_F],["button",JOY_BUTTON_DPAD_DOWN]],
 	# On foot with the loot bag on his back, held: aim a throw (a reticle
 	# where it lands); released, it's thrown there. RT is free on the ground
 	# (it's the dive in a fall, the zoom in the telescope).
