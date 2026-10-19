@@ -20,7 +20,8 @@ extends Node3D
 ## thunder_audio.gd) follows by its distance over SOUND_SPEED.
 ## `strike()` strikes now (F12 in the sandbox). Flags, for stills:
 ##   --strike-at=<frames>   one strike that many frames in, and none on its own
-##   --strike-kind=bolt|across|inside   --strike-range=<m>
+##   --strike-kind=bolt|across|inside|cell   --strike-range=<m>
+##                          (cell: a storm cell's bolt, scripts/storm_cells.gd)
 ##   --strike-bearing=<deg> off the view's middle (+ right)
 ##   --strike-hold=<s>      the strike frozen that far into its flash
 
@@ -148,7 +149,8 @@ func step(delta: float, storm_now: float) -> void:
 	_clock += delta
 	_frames += 1
 	if _strike_at >= 0:
-		if _frames == _strike_at: strike(_kind,_range,_bearing)
+		# `--strike-kind=cell`: the storm cell strikes then (storm_cells.gd).
+		if _frames == _strike_at and _kind != "cell": strike(_kind,_range,_bearing)
 	elif storm >= FROM:
 		_wait -= delta
 		if _wait <= 0.0:
@@ -163,13 +165,19 @@ func step(delta: float, storm_now: float) -> void:
 			_thunders.remove_at(i)
 	_update(delta)
 
+## A strike from a storm cell (scripts/storm_cells.gd): a bolt from `root_y`
+## down to `foot_y` at `ground` (y 0), or a flash `inside` its tower over it.
+func strike_over(ground: Vector3, kind: String, root_y: float, foot_y: float) -> void:
+	strike(kind,-1.0,NAN,ground,root_y,foot_y)
+
 ## A strike now: of `kind` (bolt, across, inside; "" draws one), `range` m
 ## off (<0 draws one) at `bearing` radians off the view's middle (NAN draws
-## one).
-func strike(kind := "", range_m := -1.0, bearing := NAN) -> void:
+## one); or, given `ground_at`, there, from `root_y` down to `foot_y`.
+func strike(kind := "", range_m := -1.0, bearing := NAN, ground_at := Vector3.INF, root_y := NAN, foot_y := SEA_TOP) -> void:
 	var camera := _eye()
 	if camera == null: return
 	var eye := camera.global_position
+	var placed := ground_at != Vector3.INF
 	if kind == "":
 		var roll := _rng.randf()
 		kind = "bolt" if roll < BOLT_SHARE else ("across" if roll < BOLT_SHARE+ACROSS_SHARE else "inside")
@@ -186,6 +194,11 @@ func strike(kind := "", range_m := -1.0, bearing := NAN) -> void:
 	var way := Vector3(cos(yaw),0.0,sin(yaw))
 	var ground := Vector3(eye.x,0.0,eye.z)+way*range_m
 	var top: float = float(_scene.isle_top())+_rng.randf_range(BASE.x,BASE.y)
+	if placed:
+		ground = Vector3(ground_at.x,0.0,ground_at.z)
+		var flat := ground-Vector3(eye.x,0.0,eye.z)
+		if flat.length() > 1.0: way = flat.normalized()
+		if not is_nan(root_y): top = root_y
 	var lines: Array = []
 	var at := Vector3.ZERO
 	# Where the sky lights from: the channel's upper part, or the flash.
@@ -204,11 +217,11 @@ func strike(kind := "", range_m := -1.0, bearing := NAN) -> void:
 			at = (a+b)*0.5
 			sky_at = at
 		"inside":
-			at = _inside(eye,ground)
+			at = ground+Vector3.UP*(top+_rng.randf_range(60.0,280.0)) if placed else _inside(eye,ground)
 		_:
 			var root := ground+Vector3.UP*top
-			var foot := ground+Vector3(_rng.randf_range(-0.25,0.25),0.0,_rng.randf_range(-0.25,0.25))*(top-SEA_TOP)
-			foot.y = SEA_TOP
+			var foot := ground+Vector3(_rng.randf_range(-0.25,0.25),0.0,_rng.randf_range(-0.25,0.25))*(top-foot_y)
+			foot.y = foot_y
 			lines = _tree(root,foot,false)
 			at = foot-Vector3.UP*FOOT_DEEP
 			sky_at = root.lerp(foot,0.3)

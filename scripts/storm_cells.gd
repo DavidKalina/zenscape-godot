@@ -18,10 +18,18 @@ extends Node3D
 ##   the storm  `storm_at`: 1 in the shaft, easing out to nothing ROUGH
 ##              shafts' widths from its middle, under the tower's top; the
 ##              plane's rough air and rain follow it (plane_weather `step`).
+##   lightning  while it is in, it strikes every BOLT_EVERY s or so (a
+##              mean): bolts from its tower's foot down through the shaft
+##              (onto an isle's turf when over one), and flashes inside its
+##              tower (scripts/plane_lightning.gd `strike_over`).
 ## `send` starts one START m upwind of a point, coming at it at SPEED m/s;
-## it ends PAST m downwind of it. One at a time.
-##   --cell-at=x,z   one already standing there (for stills), moving on
-##   --cell-speed=N  how fast cells go (m/s; 0 holds one still)
+## it ends PAST m downwind of it. One at a time. They come on their own
+## (`due`, asked by plane_weather): the first FIRST s in, then EVERY s after
+## the last one ends, aimed (`aim`) at the field or one of the far isles.
+##   --cell-at=x,z    one already standing there (for stills), moving on
+##   --cell-speed=N   how fast cells go (m/s; 0 holds one still)
+##   --cell-every=N   one on its own every N s or so (0: none on their own)
+##   --cell-first=N   the first on its own N s in
 const SkyTowers = preload("res://scripts/sky_towers.gd")
 
 const START := 1600.0
@@ -35,6 +43,18 @@ const TOP := 650.0
 ## How long it takes to come in (s), and over how many m at the end it goes.
 const COME := 6.0
 const GO := 300.0
+## On their own: the first (s, a range), then the wait after one ends.
+const FIRST := Vector2(35.0,70.0)
+const EVERY := Vector2(140.0,260.0)
+## How far off its aim it may pass (m, sideways).
+const AIM_SPREAD := 160.0
+## Its lightning: the mean wait (s), from how far in (strength), the share
+## that are bolts (the rest flash inside its tower), and the tower's foot
+## (SkyTower SEA -105 + LIFT) the bolts drop from.
+const BOLT_EVERY := 6.0
+const BOLT_FROM := 0.5
+const BOLT_SHARE := 0.65
+const FOOT := LIFT-105.0
 
 var active := false
 ## Its middle (y 0), the way it goes (flat, unit), the point it was sent at,
@@ -48,12 +68,29 @@ var _towers: Node3D
 var _slot := -1
 var _age := 0.0
 var speed := SPEED
+## Its lightning's (scripts/plane_lightning.gd; set by plane_weather).
+var lightning: Node3D
+## Whether they come on their own, the wait for the next (s), its range.
+var auto := true
+var every := EVERY
+var _wait := 0.0
+var _bolt_wait := 2.0
+var bolts := 0
+var _rng := RandomNumberGenerator.new()
 
 func setup(scene: Node3D) -> void:
 	name = "StormCells"
 	_scene = scene
+	_rng.randomize()
+	_wait = _rng.randf_range(FIRST.x,FIRST.y)
 	for arg in preload("res://scripts/launch_args.gd").user_args():
-		if str(arg).begins_with("--cell-speed="): speed = maxf(0.0,float(str(arg).get_slice("=",1)))
+		var a := str(arg)
+		if a.begins_with("--cell-speed="): speed = maxf(0.0,float(a.get_slice("=",1)))
+		elif a.begins_with("--cell-every="):
+			var n := float(a.get_slice("=",1))
+			auto = n > 0.0
+			every = Vector2(n*0.8,n*1.2)
+		elif a.begins_with("--cell-first="): _wait = float(a.get_slice("=",1))
 	RenderingServer.global_shader_parameter_set("zs_cell",Vector4.ZERO)
 
 ## Sends one in on the wind (`toward`: the way the sky's wind blows, radians
@@ -107,7 +144,25 @@ func end() -> void:
 			b.home = _towers.fixed[_slot]
 			(b.node as Node3D).position = b.home
 	_slot = -1
+	_wait = _rng.randf_range(every.x,every.y)
 	_publish()
+
+## Whether one is due on its own now (counts down while none is out; the
+## caller sends it, or not, and the wait starts again when it ends).
+func due(delta: float) -> bool:
+	if active or not auto: return false
+	_wait -= delta
+	return _wait <= 0.0
+
+## Where one on its own is aimed: the field or a far isle (the scene's
+## `isles`), a little to the side.
+func aim(toward: float) -> Vector3:
+	var spots: Array[Vector3] = [Vector3.ZERO]
+	var isles: Variant = _scene.get("isles")
+	if isles is Array:
+		for isle: Dictionary in isles: spots.append(Vector3(isle.middle.x,0.0,isle.middle.z))
+	var side := Vector3(-sin(toward),0.0,cos(toward))
+	return spots[_rng.randi_range(0,spots.size()-1)]+side*_rng.randf_range(-AIM_SPREAD,AIM_SPREAD)
 
 func step(delta: float) -> void:
 	if not active: return
@@ -117,7 +172,32 @@ func step(delta: float) -> void:
 	strength = smoothstep(0.0,COME,_age)*(1.0-smoothstep(PAST-GO,PAST,beyond))
 	_place(false)
 	_publish()
+	_lightning(delta)
 	if beyond > PAST: end()
+
+func _lightning(delta: float) -> void:
+	if lightning == null or strength < BOLT_FROM: return
+	if lightning._strike_at >= 0:
+		# Flagged (stills): one bolt at that frame with `--strike-kind=cell`.
+		if lightning._kind == "cell" and lightning._frames == lightning._strike_at:
+			lightning.strike_over(centre+way*SHAFT*0.3,"bolt",FOOT+20.0,_foot_at(centre))
+		return
+	_bolt_wait -= delta
+	if _bolt_wait > 0.0: return
+	_bolt_wait = maxf(-log(1.0-_rng.randf()*0.98)*BOLT_EVERY,0.8)
+	if _rng.randf() < 0.25: _bolt_wait = _rng.randf_range(0.6,1.8)
+	var spot := centre+Vector3(_rng.randf_range(-1.0,1.0),0.0,_rng.randf_range(-1.0,1.0))*SHAFT*0.7
+	lightning.strike_over(spot,"bolt" if _rng.randf() < BOLT_SHARE else "inside",FOOT+_rng.randf_range(0.0,40.0),_foot_at(spot))
+	bolts += 1
+
+## Where a bolt at `p` ends: an isle's turf under it, else the cloud sea.
+func _foot_at(p: Vector3) -> float:
+	var isles: Variant = _scene.get("isles")
+	if isles is Array:
+		for isle: Dictionary in isles:
+			if Vector2(p.x-isle.middle.x,p.z-isle.middle.z).length() < float(isle.radius)*0.6:
+				return float(isle.top)
+	return -105.0
 
 ## Its tower over its middle (the sky's towers stand in its home frame).
 func _place(fresh: bool) -> void:

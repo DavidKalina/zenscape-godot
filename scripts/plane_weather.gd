@@ -20,7 +20,9 @@ extends Node3D
 ##              jolt. `gust` sends one now.
 ##   cells      a storm cell (scripts/storm_cells.gd, `send_cell`): a dark
 ##              tower and rain shaft wandering in on the wind; in or under
-##              it its storm joins the sky's, as the front's does.
+##              it its storm joins the sky's, as the front's does. They
+##              come on their own every few minutes (`cells.due`), aimed at
+##              the field or a far isle, and strike their own lightning.
 ##   jets       rivers of fast air (scripts/sky_currents.gd, its ribbons):
 ##              a loop round the field and a high straight crossing it. In
 ##              one the air carries the plane along at JET m/s and pulls it
@@ -167,6 +169,7 @@ func setup(scene: Node3D) -> void:
 	cells = StormCells.new()
 	add_child(cells)
 	cells.setup(scene)
+	cells.lightning = lightning
 	# `--front=<m>`: one already in, its leading edge that far off, coming
 	# from ahead of the start (north, -z) unless `--front-toward=<rad>`.
 	for arg in preload("res://scripts/launch_args.gd").user_args():
@@ -306,6 +309,9 @@ func step(delta: float) -> void:
 	var sky: Node3D = _scene._precipitation
 	storm = storm_pinned if not is_nan(storm_pinned) else (float(sky.state.w) if sky != null else 0.0)
 	front.step(delta)
+	if cells.due(delta) and not front.active and is_nan(storm_pinned):
+		var toward := _air_angle()
+		cells.send(toward,cells.aim(toward))
 	cells.step(delta)
 	var near: float = front.storm_at(probe())
 	if is_nan(storm_pinned): storm = maxf(storm,maxf(near,cells.storm_at(probe())))

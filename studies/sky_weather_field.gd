@@ -10,7 +10,9 @@ extends "res://studies/plane_field_isle.gd"
 ##   T            a storm front comes in on the wind (or is called off;
 ##                scripts/storm_front.gd)
 ##   C            a storm cell comes in on the wind toward the plane
-##                (scripts/storm_cells.gd)
+##                (scripts/storm_cells.gd); they also come on their own
+##                every few minutes, over the field or a far isle, with
+##                their own lightning
 ##   Shift+T      the whole sky's storm rolls in, or clears
 ##   G            a gust now
 ##   F12          lightning now (scripts/plane_lightning.gd)
@@ -18,6 +20,8 @@ extends "res://studies/plane_field_isle.gd"
 ##   ./run-sky-weather.command        (heavy on: --heavy)
 ##   ./run-sky-weather.command --storm=1   a full storm from the start
 ##   ./run-sky-weather.command --cell-at=-430,-240   a cell over the near isle
+##   ./run-sky-weather.command --cell-every=60 --cell-first=5   cells often
+##   ./run-sky-weather.command --cell-every=0   no cells on their own
 ##   ./run-sky-weather.command --cloud-drift=30   the cloud faster (m/s; 0 still)
 ## The plane field's flags hold here.
 const PlaneWeather = preload("res://scripts/plane_weather.gd")

@@ -304,8 +304,10 @@ vec4 zs_cell_shaft(vec3 eye, vec3 rd, float t_max, float time, out float t_hit) 
   if (p.y > ZS_CELL_TOP + 40.0 || p.y < ZS_WALL_FOOT) return vec4(0.0);
   vec2 side = normalize(vec2(-rd.z, rd.x) + vec2(1e-5));
   float along = dot(p.xz - zs_cell.xy, side);
-  float ragged = ZS_CELL_TOP - 50.0 * zs_front_wave(along / 30.0 + 11.0);
-  float hang = smoothstep(ragged + 25.0, ragged - 60.0, p.y) * smoothstep(ZS_WALL_FOOT, ZS_WALL_FOOT + 110.0, p.y);
+  // Hung right from the tower's foot (a ragged edge just under it) down
+  // into the heaps, so the column reads whole from far off.
+  float ragged = ZS_CELL_TOP - 10.0 - 22.0 * zs_front_wave(along / 30.0 + 11.0);
+  float hang = smoothstep(ragged + 12.0, ragged - 30.0, p.y) * smoothstep(ZS_WALL_FOOT, ZS_WALL_FOOT + 70.0, p.y);
   float shafts = smoothstep(0.15, 0.8, zs_front_wave(along / 45.0 + 7.0) * 0.6 + zs_front_wave(along / 14.0 + 2.0) * 0.4);
   float cc = (along + 3.0 * sin(p.y * 0.02 + time * 0.3)) / 1.6;
   float id = floor(cc);
@@ -313,15 +315,17 @@ vec4 zs_cell_shaft(vec3 eye, vec3 rd, float t_max, float time, out float t_hit) 
   float seg = fract((p.y + time * 11.0) / (34.0 * (0.6 + 0.8 * zs_front_hash(id))) + zs_front_hash(id + 5.0));
   float lit = smoothstep(0.0, 0.3, seg) * smoothstep(1.0, 0.6, seg) * zs_front_hash(id + 2.0);
   float near = smoothstep(30.0, 160.0, t);
-  float body = smoothstep(0.0, 0.8, chord) * (1.0 - smoothstep(0.45 * r, r, abs(along)));
-  float cover = zs_cell.w * 0.92 * body * (0.6 + 0.4 * shafts) * hang * near * (0.85 + 0.15 * line * lit);
-  vec3 col = vec3(0.34, 0.36, 0.41) * mix(0.08, 1.0, clamp(zs_daylight, 0.0, 1.0)) * (0.85 + 0.3 * line * lit);
-  col = mix(col, zs_sky_up * 1.6, (1.0 - exp(-t / 6000.0)));
+  float body = smoothstep(0.0, 0.5, chord) * (1.0 - smoothstep(0.62 * r, r, abs(along)));
+  float cover = zs_cell.w * 0.95 * body * (0.72 + 0.28 * shafts) * hang * near * (0.85 + 0.15 * line * lit);
+  vec3 col = vec3(0.27, 0.29, 0.34) * mix(0.08, 1.0, clamp(zs_daylight, 0.0, 1.0)) * (0.85 + 0.3 * line * lit);
+  col = mix(col, zs_sky_up * 1.6, (1.0 - exp(-t / 9000.0)));
   t_hit = t;
   return vec4(col, cover);
 }
 vec3 zs_storm_graded_at(vec3 col, vec3 p) {
-  return zs_storm_graded_by(col, max(max(zs_storm_grade, zs_front_dark(p)), zs_cell_dark(p)));
+  float cell = zs_cell_dark(p);
+  // A cell's tower a shade darker still than a storm sky's cloud.
+  return zs_storm_graded_by(col, max(max(zs_storm_grade, zs_front_dark(p)), cell)) * (1.0 - 0.3 * cell);
 }
 global uniform vec3 zs_cloud_drift;
 global uniform vec4 zs_summit;
