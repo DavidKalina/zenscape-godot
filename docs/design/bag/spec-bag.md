@@ -82,7 +82,28 @@ user can launch:
 3. Set down, pick up, drag.
 4. Roll down the slope.
 5. Throw.
-6. A tuning pass from play, then the handoff.
+6. The aimed throw (spec change, below): rework task 5's throw around
+   hold-to-aim.
+7. A tuning pass from play, then the handoff.
+
+## The aimed throw (spec change)
+
+The user wants the throw aimed, not a fixed toss:
+
+- **Hold to aim:** with a throwable bag on his back, holding **RT** (pad)
+  or a key / mouse button (keyboard) raises the bag into the wind-up and
+  shows a **reticle** on the ground where it would land, and a faint arc
+  from his hands to it.
+- **Aim:** the stick and the camera move the reticle, held within the
+  reach the bag's weight allows (lighter goes further). The reticle sits
+  on whatever surface the arc meets (the ledge top, the pocket past the
+  wall). Where the arc is blocked, or there is nowhere to land, it turns
+  red.
+- **Release to throw:** the bag flies the arc that was shown and lands at
+  the reticle. Releasing on a red reticle cancels.
+- V keeps the shove for a grounded bag. Check RT against the on-foot
+  bindings in `scripts/pad.gd` (LT is crouch; RT appears unused on foot,
+  but confirm) and keep any change to it small and additive.
 
 ## Rules
 
