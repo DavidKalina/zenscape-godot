@@ -57,6 +57,17 @@ is a playground the player works through, built as one set piece.
     `salvager` (dangled by a flying plane on a route past it), `knight`
     (carried by the knight), `jammed` (slam loose). Only `lying` is built
     now; the tags are data for a later round.
+    **Spec change: `cache` is built now too.** A dealt part can sit hidden
+    inside a breakable kit piece on its spot and come out when the player
+    breaks it (slam, side slam). Reuse the kit caches
+    (scripts/kit_isle/kit_caches.gd, kit_cache_glint.gd, kit_breaks.gd;
+    docs/design/kit-breaks/kit-caches-handoff.md): the faint one-spot glint,
+    the dust puff on a too-weak hit, the find stepping out of the rubble. The
+    cache holds a plane part instead of a glyph. Several spots get a
+    breakable piece that can host a cache, and each deal hides one or two of
+    the six parts in caches, chosen at random among those spots, the rest
+    lying. N's re-deal rebuilds the broken pieces and re-hides. Do this as
+    its own task after the tower redo.
 
 ## The rule over all of it: everything earns its place
 
