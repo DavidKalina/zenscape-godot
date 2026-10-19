@@ -23,6 +23,7 @@ const BagBrood = preload("res://scripts/brood/bag_brood.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Dig = preload("res://scripts/dig/dig.gd")
 const BurrowDigs = preload("res://scripts/brood/burrow_digs.gd")
+const BurrowMarks = preload("res://scripts/brood/burrow_marks.gd")
 
 const SCENE_ID := "bag_study"
 ## The two floors (x, z) and their tops.
@@ -155,6 +156,9 @@ func _build_room() -> void:
 	dig = Dig.new()
 	add_child(dig)
 	dig.setup(self,{"spade":"%s/spade" % SCENE_ID,"from_start":SPADE_FROM_START,"spots":BurrowDigs.new()})
+	var marks := BurrowMarks.new()
+	add_child(marks)
+	marks.setup(self)
 	if DevKeys.enabled():
 		var editor: Node = preload("res://scripts/layout_edit.gd").new()
 		editor.name = "LayoutEdit"
@@ -257,6 +261,7 @@ func _build_burrows() -> void:
 		c.height = BURROW_HIGH*s
 		c.radial_segments = 18
 		c.rings = 1
+		mound.name = "Mound"
 		mound.mesh = c
 		mound.position.y = BURROW_HIGH*s*0.5
 		mound.material_override = earth
@@ -267,6 +272,7 @@ func _build_burrows() -> void:
 		d.top_radius = BURROW_HOLE*s
 		d.height = 0.01
 		d.radial_segments = 18
+		mouth.name = "Mouth"
 		mouth.mesh = d
 		mouth.position.y = BURROW_HIGH*s+0.006
 		mouth.material_override = dark
@@ -411,4 +417,4 @@ func _sync_figure() -> void:
 	super._sync_figure()
 
 func _hint_text() -> String:
-	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · hold LMB or T (pad RT) worn: aim a throw, let go to throw (8 kg or under) · V (pad right) by it: shove it · the stone brood wakes out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off; clingers rip pieces out and carry them to a burrow: bowl into the crew or E by the piece to take it back · leave the bag lying a few s and a crew sized to its kg hauls it off to a burrow: bowl into them or F by it · a bag or piece reaching a burrow is buried there, a guard or two on it: take the spade (lying by the start), shake the guards off and G (pad Y) by the burrow digs it all out · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · hold LMB or T (pad RT) worn: aim a throw, let go to throw (8 kg or under) · V (pad right) by it: shove it · the stone brood wakes out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off; clingers rip pieces out and carry them to a burrow: bowl into the crew or E by the piece to take it back · leave the bag lying a few s and a crew sized to its kg hauls it off to a burrow: bowl into them or F by it · a bag or piece reaching a burrow is buried there under a fresh mound (a glint, a beam and its kg over it), a guard or two on it: take the spade (lying by the start, its glint over it), shake the guards off and G (pad Y) facing the mound digs it all out · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"

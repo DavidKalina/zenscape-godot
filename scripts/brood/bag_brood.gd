@@ -17,10 +17,11 @@ extends "res://scripts/brood/brood_host.gd"
 ## The rip: worn with any clinging, every RIP_EVERY s or so a clinger pulls a
 ## piece out (the bag's `rip_out`) and drops off; it hops out of the mouth
 ## onto the ground beside him, a stray. RIP_CREW of the nearest free guys go
-## for a stray, take it up and haul it to the nearest burrow, where it's
-## taken down (`buried`, by the burrow's name; the dig is the next step).
-## He bowls into the crew (under RIP_CREW left they let it down) or takes
-## it back with E, as any piece on the ground.
+## for a stray (more for a heavy one: one per BAG_KG_EACH kg), take it up
+## and haul it to the nearest burrow (slower the heavier), where it's taken
+## down (`buried`, by the burrow's name). He bowls into the crew (under
+## BAG_KEEP of it left they let it down) or takes it back with E, as any
+## piece on the ground.
 ##
 ## The idle bag: set down with something in it and left (him BAG_LEFT off)
 ## BAG_IDLE s, it calls a crew of one per BAG_KG_EACH kg; once enough are by
@@ -241,7 +242,7 @@ func _prune_strays() -> void:
 			strays.erase(st)
 			print("brood: he took %s back" % p.id)
 
-## The RIP_CREW nearest free guys (walking or on the way, not dazed, not
+## The crew's worth (by kg) of the nearest free guys (walking or on the way, not dazed, not
 ## clinging, not hauling) to each stray lying free: guy -> where it lies.
 func _send_to_strays(busy: Dictionary) -> Dictionary:
 	var sent := {}
@@ -254,7 +255,7 @@ func _send_to_strays(busy: Dictionary) -> Dictionary:
 			if not (g.state == "walk" or g.state == "climb" or g.state == "mantle" or g.state == "fall"): continue
 			near.append([(g.feet as Vector3).distance_to(at),g])
 		near.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
-		for k: int in mini(K.RIP_CREW,near.size()): sent[near[k][1]] = at
+		for k: int in mini(_stray_need(st.p),near.size()): sent[near[k][1]] = at
 	return sent
 
 func _strays_step(m: Variant, space: PhysicsDirectSpaceState3D, dt: float) -> void:
@@ -272,7 +273,7 @@ func _strays_step(m: Variant, space: PhysicsDirectSpaceState3D, dt: float) -> vo
 			if float(st.rest) <= 0.0: _take_up(st)
 		else: _rip_haul(st,m,space,dt)
 
-## RIP_CREW free guys at a stray take it up, toward the nearest burrow.
+## Its crew (by kg) of free guys at a stray take it up, toward the nearest burrow.
 func _take_up(st: Dictionary) -> void:
 	var p: Dictionary = st.p
 	var at: Vector3 = (p.node as Node3D).global_position
@@ -283,10 +284,11 @@ func _take_up(st: Dictionary) -> void:
 		if busy.has(g) or g.state != "walk" or g.daze > 0.0: continue
 		var d := Vector2(g.feet.x-at.x,g.feet.z-at.z).length()
 		if d < reach and absf(float(g.feet.y)-at.y) < float(g.tall)*1.5: near.append([d,g])
-	if near.size() < K.RIP_CREW: return
+	var need := _stray_need(p)
+	if near.size() < need: return
 	near.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 	var crew: Array = []
-	for k: int in K.RIP_CREW: crew.append(near[k][1])
+	for k: int in need: crew.append(near[k][1])
 	var hole: Node3D = null
 	for b: Node3D in burrows:
 		if not is_instance_valid(b): continue
@@ -294,30 +296,41 @@ func _take_up(st: Dictionary) -> void:
 	if hole == null: return
 	var lead: RefCounted = crew[0]
 	lead.hauling = true
-	lead.pace = K.RIP_PACE
+	lead.pace = _stray_pace(p)
 	st.crew = crew
 	st.hole = hole
 	st.last = lead.feet
 	st.best = hole.global_position.distance_to(at)
 	st.since = 0.0
 	rip_hauls += 1
-	print("brood: %d took up %s, off to %s (%.1f m)" % [crew.size(),p.id,hole.name,float(st.best)])
+	print("brood: %d took up %s (%.1f kg, pace %.2f), off to %s (%.1f m)" % [crew.size(),p.id,float(p.kg),float(lead.pace),hole.name,float(st.best)])
+
+## A ripped piece's crew by its kg (as the bag's), the fewest that keep it
+## up, and its pace.
+func _stray_need(p: Dictionary) -> int:
+	return clampi(ceili(float(p.kg)/K.BAG_KG_EACH),K.RIP_CREW,K.BAG_CREW_MOST)
+
+func _stray_keep(p: Dictionary) -> int:
+	return maxi(ceili(float(_stray_need(p))*K.BAG_KEEP),K.RIP_CREW)
+
+func _stray_pace(p: Dictionary) -> float:
+	return lerpf(K.RIP_PACE,K.RIP_PACE_HEAVY,clampf(float(p.kg)/K.RIP_HEAVY,0.0,1.0))
 
 ## A stray's haul: on the lead's head, the crew round him; his runs into
-## them knock them off (under RIP_CREW left, let down); at the burrow,
+## them knock them off (under its keep left, let down); at the burrow,
 ## taken down.
 func _rip_haul(st: Dictionary, m: Variant, space: PhysicsDirectSpaceState3D, dt: float) -> void:
 	var p: Dictionary = st.p
 	var crew: Array = st.crew
 	rip_hits += _bowl(crew,m,p.id)
-	if crew.size() < K.RIP_CREW or (crew[0] as RefCounted).state == "lost":
+	if crew.size() < _stray_keep(p) or (crew[0] as RefCounted).state == "lost":
 		_rip_down(st)
 		return
 	var lead: RefCounted = crew[0]
 	if not lead.hauling:
 		lead.release()
 		lead.hauling = true
-		lead.pace = K.RIP_PACE
+		lead.pace = _stray_pace(p)
 	var lx: Transform3D = (lead.node as Node3D).global_transform
 	var b := lx.basis.orthonormalized()
 	var tall: float = lead.tall

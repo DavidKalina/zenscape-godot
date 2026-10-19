@@ -100,6 +100,13 @@ const RIP_POP := 0.4
 const RIP_CREW := 2
 const RIP_PACE := 0.55
 const RIP_REST := 1.5
+## A ripped piece's crew and pace go by its kg as the whole bag's: one per
+## BAG_KG_EACH kg (RIP_CREW at least, BAG_CREW_MOST at most), and the pace
+## runs from RIP_PACE (none) to RIP_PACE_HEAVY at RIP_HEAVY kg; they let it
+## down under BAG_KEEP of the crew (RIP_CREW at least). So a 12 kg piece
+## takes four, inches along, and one knock lets it down.
+const RIP_PACE_HEAVY := 0.22
+const RIP_HEAVY := 12.0
 ## The idle bag (the bag study): set down with something in it, and him no
 ## nearer than BAG_LEFT (m, across, past its radius), for BAG_IDLE s, it
 ## calls a crew: one per BAG_KG_EACH kg (rounded up; BAG_CREW_LEAST to
