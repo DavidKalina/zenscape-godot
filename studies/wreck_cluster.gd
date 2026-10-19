@@ -62,6 +62,7 @@ const BroodHost = preload("res://scripts/brood/brood_host.gd")
 const Stretch = preload("res://studies/wreck_cluster_stretch.gd")
 const Dig = preload("res://scripts/dig/dig.gd")
 const Home = preload("res://studies/wreck_cluster_home.gd")
+const VaultHost = preload("res://scripts/home/vault_host.gd")
 
 ## The re-deal's key (free on foot and in the plane: scripts/pad.gd,
 ## scripts/kit_isle/dev_keys.gd).
@@ -107,6 +108,8 @@ var _rng := RandomNumberGenerator.new()
 var _ledger_was := []
 ## --home: the start on the home isle (studies/wreck_cluster_home.gd).
 var home_on := false
+## --home: the vault's banking (scripts/home/vault_host.gd).
+var vault: Node3D = null
 
 func _ready() -> void:
 	home_on = "--home" in LaunchArgs.user_args()
@@ -212,6 +215,10 @@ func _grow() -> void:
 		var land: Node3D = _stretch_lands[j]
 		# Its rays down from over its own top (the site's are the spine's).
 		var site := flora_site()
+		if land.name == "Land_Home":
+			# The deposit pad and the vault's floor bare (the home isle's wear).
+			var was := site.wear
+			site.wear = func(p: Vector2) -> float: return maxf(float(was.call(p)) if was.is_valid() else 0.0,Home.wear(p))
 		var top: float = _stretch_tops[j]
 		site.ray = Vector2(top+60.0,top-8.0)
 		var more := KitFlora.grow(flora_seed()+1+j,space,KitLand.turf_bodies(land),[land.get_meta("outline")],site)
@@ -600,6 +607,10 @@ func _add_life() -> void:
 	dig = Dig.new()
 	add_child(dig)
 	dig.setup(self)
+	if home_on:
+		vault = VaultHost.new()
+		add_child(vault)
+		vault.setup(self)
 	if not LaunchArgs.user_args().has("--no-brood"):
 		brood = BroodHost.new()
 		add_child(brood)

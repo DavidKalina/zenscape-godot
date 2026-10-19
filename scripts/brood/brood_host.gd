@@ -226,7 +226,7 @@ func _at_home(t: Dictionary) -> bool:
 ## Whether they can take `t` up: resting where he left it (off its spot,
 ## not in his hands, not lost, not rolling).
 func _takeable(carry: Variant, t: Dictionary) -> bool:
-	if t.is_empty() or bool(t.lost) or carry == null or t == given_up: return false
+	if t.is_empty() or bool(t.lost) or bool(t.get("banked",false)) or carry == null or t == given_up: return false
 	if _in_bag(t): return false
 	if not (carry.held as Dictionary).is_empty() and carry.held == t: return false
 	if t.body != null and not (t.body as RigidBody3D).freeze: return false

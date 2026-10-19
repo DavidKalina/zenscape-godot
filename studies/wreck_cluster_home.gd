@@ -36,6 +36,19 @@ const PLANE_HEADING := -PI*0.5
 ## of it (task 4): their middles, kept flat.
 const VAULT_AT := Vector2(-880.0,31.0)
 const FIELD_AT := Vector2(-850.0,-2.0)
+## The deposit pad on the strip's north edge before the vault: its middle
+## and half extents (x along the strip, z across). A plane stopped with its
+## middle over it (PAD_SLACK past its rim) unloads.
+const PAD_AT := Vector2(-880.0,20.5)
+const PAD_HALF := Vector2(8.0,4.0)
+const PAD_SLACK := 1.0
+## The vault: three walls round a slab floor, its open side south toward
+## the pad; inside (vault-local, its floor's middle at the origin) the
+## INSIDE half extents bank a treasure carried in; banked ones stand on
+## SHOW, in rows on the floor. The board stands outside by its door.
+const VAULT_YAW := 0.0
+const INSIDE := Vector2(2.5,2.6)
+const BOARD_AT := Vector3(4.6,0.0,-3.4)
 const FIELD_HALF := Vector2(26.0,8.0)
 
 ## The outline (x, z), wound as the cluster's lands (east along the south
@@ -76,6 +89,13 @@ static func _box(x: float, z: float, at: Vector2, half: Vector2) -> float:
 static func _flat(d: float, inner: float, ease: float) -> float:
 	return 1.0-smoothstep(inner,inner+ease,d)
 
+## The worn ground (KitFlora Site `wear`, 0..1 at world (x, z)): the
+## deposit pad and the vault's floor kept bare of grass, easing out a metre.
+static func wear(p: Vector2) -> float:
+	var on_pad := _box(p.x,p.y,PAD_AT,PAD_HALF+Vector2(0.4,0.4))
+	var in_vault := _box(p.x,p.y,VAULT_AT,INSIDE+Vector2(0.6,0.6))
+	return 1.0-smoothstep(0.0,1.2,minf(on_pad,in_vault))
+
 ## The isle as a row of the cluster's lands (studies/wreck_cluster_art.gd
 ## `lands`: name, outline, ground, depth, seed, cliffs, rim).
 static func land() -> Array:
@@ -102,10 +122,135 @@ static func build_land(spec: Array) -> Node3D:
 
 ## The pieces: [layout name (under home/), node, world foot, yaw (deg)]:
 ## a few ruins on the rims, off the strip's band, so the isle reads as an
-## old place from the approach. The vault comes in the next step.
+## old place from the approach; the vault on its shelf; the deposit pad.
 static func built() -> Array:
 	return [
+		["vault",vault(),Vector3(VAULT_AT.x,TOP,VAULT_AT.y),rad_to_deg(VAULT_YAW)],
+		["deposit_pad",pad(),Vector3(PAD_AT.x,TOP,PAD_AT.y),0.0],
 		["rim_pier",RuinKit.piece("pier",561,0.45),Vector3(-780.0,TOP,25.0),15.0],
 		["rim_fallen",RuinKit.piece("fallen_pier",562,0.45),Vector3(-822.0,TOP,-9.0),70.0],
 		["bluff_arch",RuinKit.piece("arch",563,0.4),Vector3(-922.0,ground(-922.0,41.0),41.0),100.0],
 	]
+
+## The vault (one piece for the world view, `home/vault`): RuinKit walls on
+## three sides (back to the north), piers framing the open south side, a
+## slab floor, and the tally board outside by its door (a stone slab on two
+## legs, its face south; `Board/Text` is its Label3D). Banked treasures
+## stand on `Show` (scripts/home/vault_host.gd).
+static func vault() -> Node3D:
+	var root := Node3D.new()
+	root.name = "Vault"
+	var t := RuinKit.WALL_THICK*0.5
+	var side := INSIDE.x+0.1+t
+	var parts := [
+		[RuinKit.piece("floor",571,0.1),Vector3(0.0,0.0,0.3),0.0],
+		[RuinKit.piece("wall",572,0.0),Vector3(0.0,0.0,INSIDE.y+t),0.0],
+		[RuinKit.piece("wall",573,0.05),Vector3(-side,0.0,0.0),90.0],
+		[RuinKit.piece("wall",574,0.05),Vector3(side,0.0,0.0),-90.0],
+		[RuinKit.piece("pier",575,0.0),Vector3(-side,0.0,INSIDE.y+t),0.0],
+		[RuinKit.piece("pier",576,0.0),Vector3(side,0.0,INSIDE.y+t),0.0],
+		[RuinKit.piece("pier",577,0.0),Vector3(-side,0.0,-INSIDE.y-0.3),0.0],
+		[RuinKit.piece("pier",578,0.0),Vector3(side,0.0,-INSIDE.y-0.3),0.0],
+	]
+	for p: Array in parts:
+		var n: Node3D = p[0]
+		n.position = p[1]
+		n.rotation.y = deg_to_rad(float(p[2]))
+		root.add_child(n)
+	var shelf := Node3D.new()
+	shelf.name = "Show"
+	root.add_child(shelf)
+	root.add_child(board())
+	return root
+
+## The tally board: a dark slab on two stone legs, its text on its face.
+static func board() -> Node3D:
+	var b := Node3D.new()
+	b.name = "Board"
+	b.position = BOARD_AT
+	var stone := StandardMaterial3D.new()
+	stone.albedo_color = Color("6f6a5e")
+	stone.roughness = 0.95
+	var face := StandardMaterial3D.new()
+	face.albedo_color = Color("3b3832")
+	face.roughness = 0.9
+	for x: float in [-1.1,1.1]:
+		var leg := MeshInstance3D.new()
+		var lm := BoxMesh.new()
+		lm.size = Vector3(0.35,1.5,0.35)
+		leg.mesh = lm
+		leg.material_override = stone
+		leg.position = Vector3(x,0.75,0.0)
+		b.add_child(leg)
+	var slab := MeshInstance3D.new()
+	var sm := BoxMesh.new()
+	sm.size = Vector3(3.0,1.9,0.28)
+	slab.mesh = sm
+	slab.material_override = face
+	slab.position = Vector3(0.0,2.35,0.0)
+	slab.name = "Slab"
+	b.add_child(slab)
+	var text := Label3D.new()
+	text.name = "Text"
+	text.font_size = 64
+	text.pixel_size = 0.0042
+	text.outline_size = 10
+	text.modulate = Color("f2e6c4")
+	text.outline_modulate = Color(0.1,0.08,0.05,1.0)
+	text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	text.width = 640.0
+	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.position = Vector3(0.0,2.35,-0.16)
+	text.rotation.y = PI
+	text.double_sided = false
+	b.add_child(text)
+	return b
+
+## The deposit pad marked on the turf (drawn only; the plane rolls on the
+## turf under it): a pale sand bed in a kerb of dark stones, a band of
+## darker sand across it and a chevron at each end pointing in.
+static func pad() -> Node3D:
+	var root := Node3D.new()
+	root.name = "DepositPad"
+	var sand := StandardMaterial3D.new()
+	sand.albedo_color = Color("c9b48a")
+	sand.roughness = 1.0
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color("8d7a58")
+	dark.roughness = 1.0
+	var kerb := StandardMaterial3D.new()
+	kerb.albedo_color = Color("5d5a52")
+	kerb.roughness = 0.95
+	var box := func(size: Vector3, at: Vector3, mat: Material, yaw := 0.0) -> void:
+		var m := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = size
+		m.mesh = bm
+		m.material_override = mat
+		m.position = at
+		m.rotation.y = yaw
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(m)
+	var h := PAD_HALF
+	box.call(Vector3(h.x*2.0,0.06,h.y*2.0),Vector3(0.0,0.03,0.0),sand)
+	box.call(Vector3(1.2,0.065,h.y*2.0-0.6),Vector3(0.0,0.035,0.0),dark)
+	# The kerb: stones along each side, a little uneven.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 581
+	for side: int in 4:
+		var along := h.x if side < 2 else h.y
+		var across := h.y if side < 2 else h.x
+		var sgn := 1.0 if side%2 == 0 else -1.0
+		var x := -along
+		while x < along:
+			var run := minf(rng.randf_range(0.7,1.2),along-x)
+			var mid := x+run*0.5
+			var at := Vector3(mid,0.06,sgn*across) if side < 2 else Vector3(sgn*across,0.06,mid)
+			var size := Vector3(run-0.08,rng.randf_range(0.08,0.14),0.45) if side < 2 else Vector3(0.45,rng.randf_range(0.08,0.14),run-0.08)
+			box.call(size,at,kerb)
+			x += run
+	# Chevrons at each end, pointing in along the strip.
+	for sgn: float in [-1.0,1.0]:
+		for k: float in [-1.0,1.0]:
+			box.call(Vector3(0.35,0.065,2.2),Vector3(sgn*(h.x-1.6),0.035,k*0.75),dark,-k*sgn*0.6)
+	return root
