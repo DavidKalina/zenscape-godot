@@ -5,8 +5,9 @@ render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, depth_test_dis
 // greys out all past a few tens of metres: the land by its depth, the sky
 // and the cloud (which keep no depth) wholly. Wisps of cloud race past in
 // it (noise sampled along the view at a few depths, in the world, so they
-// stream by as the plane flies), and a flash lights it from inside, the
-// side it struck on a little more.
+// stream by as the plane flies) and churn (warped by a slower noise that
+// rolls over time), and a flash lights it from inside: a cold glow over
+// all of it, blooming bright toward where it struck. Dark slate-blue.
 
 uniform sampler2D depth_texture : hint_depth_texture, filter_nearest, repeat_disable;
 // How thick (0 to 1): the seen distance closes from `open` to `seen` m.
@@ -15,9 +16,12 @@ uniform float seen = 16.0;
 uniform float open = 500.0;
 // Clear round the eye (m): the plane in front of the chase camera.
 uniform float clear = 9.0;
-uniform vec3 colour : source_color = vec3(0.36, 0.37, 0.39);
-uniform vec3 dark : source_color = vec3(0.22, 0.225, 0.235);
-uniform vec3 lit : source_color = vec3(0.8, 0.84, 0.95);
+uniform vec3 colour : source_color = vec3(0.29, 0.335, 0.4);
+uniform vec3 dark : source_color = vec3(0.12, 0.14, 0.185);
+uniform vec3 lit : source_color = vec3(0.66, 0.77, 1.0);
+// How fast the wisps roll and boil (1/s), and how far they are warped.
+uniform float churn = 0.45;
+uniform float warp = 1.6;
 // The flash now (0 up) and where it is.
 uniform float flash = 0.0;
 uniform vec3 flash_at = vec3(0.0);
@@ -71,20 +75,25 @@ void fragment() {
 		float at = clear + float(s + 1) * reach * 0.35;
 		if (at > t_solid) break;
 		vec3 p = (eye + rd * at - moved) / (wisp * (1.0 + float(s) * 0.8));
+		vec3 q = p * 0.5 + vec3(TIME * churn, -TIME * churn * 0.7, TIME * churn * 0.4);
+		p += (vec3(noise(q), noise(q + 11.3), noise(q + 23.7)) - 0.5) * warp;
 		float n = fbm(p + vec3(0.0, TIME * 0.15, 0.0));
 		float c = smoothstep(0.38, 0.75, n) * (0.8 - float(s) * 0.2);
 		shade += c * (n - 0.5);
 		cover = max(cover, c);
 	}
 	// Wisps lighter where thick, the gaps between them darker.
-	vec3 base = mix(dark, colour * 1.3, clamp(0.55 + shade * 3.5, 0.0, 1.0));
+	float lift = clamp(0.5 + shade * 4.0, 0.0, 1.0);
+	vec3 base = mix(dark, colour * 1.25, lift);
 	// Brighter up, darker down: still a little sense of up.
-	base *= 0.85 + 0.25 * clamp(rd.y * 0.5 + 0.5, 0.0, 1.0);
-	// Lit from inside by a flash, more toward where it struck.
+	base *= 0.75 + 0.4 * clamp(rd.y * 0.5 + 0.5, 0.0, 1.0);
+	// Lit from inside by a flash: a dim glow all round, a bloom toward
+	// where it struck, the wisps there catching it brighter than the gaps.
 	vec3 to_flash = flash_at - eye;
 	float facing = length(to_flash) > 1.0 ? dot(rd, normalize(to_flash)) * 0.5 + 0.5 : 0.5;
-	float glow = clamp(flash, 0.0, 3.0) * (0.35 + 0.65 * facing * facing);
-	base = mix(base, lit, clamp(glow * 0.7, 0.0, 0.95));
+	float bloom = pow(facing, 6.0);
+	float glow = clamp(flash, 0.0, 3.0) * (0.12 + 1.1 * bloom) * (0.45 + 0.8 * lift);
+	base = mix(base, lit, clamp(glow * 0.75, 0.0, 0.97));
 	ALBEDO = base;
 	ALPHA = clamp(max(thick, cover * k) * k, 0.0, 1.0);
 }

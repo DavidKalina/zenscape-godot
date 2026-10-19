@@ -36,7 +36,11 @@ extends Node3D
 ## cloud deck this sky does not draw) toward slate (SLATE_*, by daylight),
 ## the cloud and the cloud sea dimmed and greyed (the zs_storm_grade global,
 ## shaders/reference_globals.gdshaderinc `zs_storm_graded`), the sun on the
-## land and on the cloud dimmed to SUN_DIM.
+## land and on the cloud dimmed to SUN_DIM; and the whole frame graded
+## (the environment's adjustments, on only while storm or murk is above 0,
+## so fair weather is untouched): colour drained to GRADE_SAT and the
+## light to GRADE_DIM by the storm, further (MURK_SAT, MURK_DIM) in a
+## whiteout's murk, eased back toward full while a flash lights it.
 ##
 ## Each frame `step` it, then the plane reads `air_at` in its own step.
 const SkyCurrents = preload("res://scripts/sky_currents.gd")
@@ -102,6 +106,12 @@ const VEIL_TALL := 300.0
 ## Of the slate left at night.
 const SLATE_NIGHT := 0.08
 const SUN_DIM := 0.4
+const GRADE_SAT := 0.6
+const GRADE_DIM := 0.82
+const MURK_SAT := 0.45
+const MURK_DIM := 0.7
+## How much a flash (lightning `flash`, 1 a full one) gives back.
+const FLASH_UNGRADE := 0.8
 ## In a whiteout the rain's streaks this much stronger (of their own).
 const MURK_RAIN := 1.4
 
@@ -364,7 +374,22 @@ func grade() -> void:
 	var sky = _scene._celestial
 	RenderingServer.global_shader_parameter_set("zs_storm_grade",storm)
 	_grade_sky(sky)
+	_grade_frame()
 	lightning.publish(storm)
+
+func _grade_frame() -> void:
+	var env: Environment = _scene.get("_environment")
+	if env == null: return
+	var k := clampf(storm,0.0,1.0)
+	var m := clampf(murk,0.0,1.0)
+	env.adjustment_enabled = k > 0.0 or m > 0.0
+	if not env.adjustment_enabled: return
+	var back := clampf(lightning.flash*FLASH_UNGRADE,0.0,1.0)
+	var dim := lerpf(lerpf(1.0,GRADE_DIM,k),MURK_DIM,m)
+	var sat := lerpf(lerpf(1.0,GRADE_SAT,k),MURK_SAT,m)
+	env.adjustment_brightness = lerpf(dim,1.0,back)
+	env.adjustment_saturation = lerpf(sat,1.0,back*0.5)
+	env.adjustment_contrast = lerpf(1.0,1.08,m)
 
 func _grade_sky(sky) -> void:
 	if sky == null or storm <= 0.0: return
