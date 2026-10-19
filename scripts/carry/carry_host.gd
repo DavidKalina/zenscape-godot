@@ -38,7 +38,9 @@ extends Node3D
 ##   carrying by the sling, he turns to it and lowers the load in over its
 ##   rim; it rides in the sling from then: dragged as the plane taxis,
 ##   swinging under it in flight. Pressed there empty-handed he takes the
-##   last one loaded back out.
+##   last one loaded back out. The bag swells and its rope pays out with
+##   the kg in it; a hit on it spills the last loaded, more the harder
+##   (SPILL_* in carry_weights.gd): they tumble loose as a drop does.
 ##
 ## `deal()` puts every treasure back on its spot (the scene's re-deal),
 ## the loaded ones too.
@@ -129,6 +131,9 @@ var losses := 0
 var sling: Node3D = null
 var _slot_to := -1
 var hitches := 0
+## Spilled from the bag so far (drivers); time since the last spill.
+var spills := 0
+var _spill_t := 99.0
 static var _thud_take: AudioStreamWAV = null
 
 ## Stands the treasures in `spec` ([id, kind, weight, foot (world), yaw deg])
@@ -285,6 +290,7 @@ func _let_go() -> void:
 
 func _process(delta: float) -> void:
 	if study == null or not bool(study.get("walk_ready")): return
+	_spill_t += delta
 	_sling_step(delta)
 	if not held.is_empty():
 		if bool(study.get("flying")):
@@ -331,6 +337,30 @@ func drop(why: String) -> void:
 	_air_top = -INF
 	drops += 1
 	var h: float = t.measures.height
+	# Its middle, moved back toward his chest till it is clear of walls.
+	var mid := at*Vector3(0.0,h*0.5,0.0)
+	var chest := _bone_world("chest")
+	if chest == Vector3.INF: chest = motor.feet+Vector3.UP*0.6*float(motor.size)
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = _loose_shape(float(t.measures.radius),h)
+	q.collision_mask = SOLID_MASK
+	q.transform = Transform3D(at.basis,chest)
+	q.motion = mid-chest
+	var cast := get_world_3d().direct_space_state.cast_motion(q)
+	var safe: float = cast[0] if cast.size() > 0 else 1.0
+	var v: Vector3 = motor.velocity if why == "knock" else motor.ground_velocity()
+	var spin := Vector3(randf_range(-1,1),randf_range(-1,1),randf_range(-1,1))
+	_loosen(t,Transform3D(at.basis,chest+(mid-chest)*maxf(safe-0.02,0.0)),
+		v*float(w.spill)+Vector3.UP*Weights.DROP_UP*(1.0 if why == "knock" else 0.3),
+		spin.limit_length(1.0)*Weights.DROP_SPIN*(1.0 if why == "knock" else 0.4))
+	if OS.is_debug_build(): print("carry: %s dropped (%s) at %s" % [t.id,why,(t.body as Node3D).global_position])
+
+## `t` loose: a tumbling body with its middle at `mid`, moving `v`,
+## spinning `spin`.
+func _loosen(t: Dictionary, mid: Transform3D, v: Vector3, spin: Vector3) -> void:
+	var w := Weights.of(str(t.weight))
+	var node: Node3D = t.node
+	var h: float = t.measures.height
 	var r: float = t.measures.radius
 	var body := RigidBody3D.new()
 	body.name = "Loose_"+str(t.id)
@@ -349,28 +379,14 @@ func drop(why: String) -> void:
 	shape.shape = _loose_shape(r,h)
 	body.add_child(shape)
 	add_child(body)
-	# Its middle, moved back toward his chest till it is clear of walls.
-	var mid := at*Vector3(0.0,h*0.5,0.0)
-	var chest := _bone_world("chest")
-	if chest == Vector3.INF: chest = motor.feet+Vector3.UP*0.6*float(motor.size)
-	var q := PhysicsShapeQueryParameters3D.new()
-	q.shape = shape.shape
-	q.collision_mask = SOLID_MASK
-	q.transform = Transform3D(at.basis,chest)
-	q.motion = mid-chest
-	var cast := get_world_3d().direct_space_state.cast_motion(q)
-	var safe: float = cast[0] if cast.size() > 0 else 1.0
-	body.global_transform = Transform3D(at.basis,chest+(mid-chest)*maxf(safe-0.02,0.0))
+	body.global_transform = mid
 	node.get_parent().remove_child(node)
 	body.add_child(node)
 	node.transform = Transform3D(Basis.IDENTITY,Vector3(0.0,-h*0.5,0.0))
-	var v: Vector3 = motor.velocity if why == "knock" else motor.ground_velocity()
-	body.linear_velocity = v*float(w.spill)+Vector3.UP*Weights.DROP_UP*(1.0 if why == "knock" else 0.3)
-	var spin := Vector3(randf_range(-1,1),randf_range(-1,1),randf_range(-1,1))
-	body.angular_velocity = spin.limit_length(1.0)*Weights.DROP_SPIN*(1.0 if why == "knock" else 0.4)
+	body.linear_velocity = v
+	body.angular_velocity = spin
 	t.body = body
 	t.still = 0.0
-	if OS.is_debug_build(): print("carry: %s dropped (%s) at %s" % [t.id,why,body.global_position])
 
 ## An eight-sided prism its size, about its middle (rolls on its side,
 ## stands on its foot).
@@ -839,6 +855,8 @@ func _sling_step(delta: float) -> void:
 	if sling == null:
 		sling = CargoSling.new()
 		add_child(sling)
+		sling.hit.connect(_on_bag_hit)
+		_refill()
 		sling.rest_behind(pf)
 	sling.step(delta,pf)
 
@@ -847,17 +865,55 @@ func _by_sling() -> bool:
 	if sling == null or not sling.grounded or bool(study.get("flying")): return false
 	var motor: Variant = study.get("motor")
 	var mid: Vector3 = sling.middle()
-	var across := Vector2(mid.x-motor.feet.x,mid.z-motor.feet.z).length()-CargoSling.RIM
+	var across := Vector2(mid.x-motor.feet.x,mid.z-motor.feet.z).length()-float(sling.radius)
 	return across < Weights.SLING_REACH*float(motor.size) and absf(mid.y-float(motor.feet.y)) < 1.0
 
-## The first spot in the sling nothing is loaded in, or -1.
+## The first spot in the bag nothing is loaded in (no cap: its weight
+## caps it, in the plane).
 func _free_slot() -> int:
-	for i in range(CargoSling.SLOTS.size()):
+	var i := 0
+	while true:
 		var taken := false
 		for t: Dictionary in treasures:
 			if int(t.slot) == i: taken = true
 		if not taken: return i
+		i += 1
 	return -1
+
+## The kg in the bag, told to the bag (it swells and pays out rope).
+func _refill() -> void:
+	if sling == null: return
+	var kg := 0.0
+	for t: Dictionary in treasures:
+		if int(t.slot) >= 0: kg += float(Weights.of(str(t.weight)).mass)
+	sling.set_load(kg)
+
+## The bag hit something `speed` m/s hard: it spills, the last loaded
+## first, one at SPILL_SPEED and one more each SPILL_STEP harder. Each goes
+## loose (it tumbles; onto land it comes to rest where he can find it, into
+## the sky it is lost).
+func _on_bag_hit(speed: float, _at: Vector3, normal: Vector3, vel: Vector3) -> void:
+	if OS.is_debug_build() and speed > 1.0: print("carry: the bag hit something at %.1f m/s" % speed)
+	if speed < Weights.SPILL_SPEED or _spill_t < Weights.SPILL_GRACE: return
+	var n := 1+int(floor((speed-Weights.SPILL_SPEED)/Weights.SPILL_STEP))
+	var gone := 0
+	while gone < n:
+		var t := _last_hitched()
+		if t.is_empty(): break
+		_unstrap(t)
+		var node: Node3D = t.node
+		var h: float = t.measures.height
+		var mid := node.global_transform*Vector3(0.0,h*0.5,0.0)
+		var side := Vector3(randf_range(-1,1),0.0,randf_range(-1,1)).limit_length(1.0)
+		var v := vel*Weights.SPILL_KEEP+(normal+side*0.4)*Weights.SPILL_OUT+Vector3.UP*Weights.SPILL_UP
+		var spin := Vector3(randf_range(-1,1),randf_range(-1,1),randf_range(-1,1)).limit_length(1.0)*Weights.DROP_SPIN
+		_loosen(t,Transform3D(node.global_basis,mid),v,spin)
+		gone += 1
+		spills += 1
+		if OS.is_debug_build(): print("carry: %s spilled from the bag at %s (hit %.1f m/s)" % [t.id,mid,speed])
+	if gone > 0:
+		_spill_t = 0.0
+		_refill()
 
 ## The last one loaded (the highest spot taken), or {}.
 func _last_hitched() -> Dictionary:
@@ -876,11 +932,7 @@ func _slot_xform(i: int) -> Variant:
 ## none free he balks.
 func hitch() -> void:
 	if held.is_empty() or phase != "carry": return
-	var free := _free_slot()
-	if free < 0:
-		_on_refused("cargo")
-		return
-	_slot_to = free
+	_slot_to = _free_slot()
 	phase = "hitch"
 	phase_t = 0.0
 	_apply_feel(BUSY_PACE)
@@ -903,6 +955,7 @@ func _strap() -> void:
 	t.strapped = 0.0
 	_slot_to = -1
 	hitches += 1
+	_refill()
 	var cls := Weights.of(str(t.weight))
 	_thud.volume_db = linear_to_db(maxf(float(cls.thud),0.05)*1.5)
 	_thud.play()
@@ -911,7 +964,9 @@ func _strap() -> void:
 
 ## Out of the sling: its spot free.
 func _unstrap(t: Dictionary) -> void:
+	if int(t.slot) < 0: return
 	t.slot = -1
+	_refill()
 
 ## A loaded one rides its spot in the sling (a bounce as it lands there).
 func _ride(t: Dictionary, delta: float) -> void:

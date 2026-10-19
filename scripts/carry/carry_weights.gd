@@ -76,6 +76,34 @@ const HITCH_ARC := 0.25
 const HITCH_BOUNCE := 0.05
 const HITCH_SETTLE := 0.35
 
+## The cargo bag (scripts/carry/cargo_sling.gd): empty, its belly's radius
+## BAG_R (m) and its rope BAG_ROPE (m); with kg in it, the belly swells by
+## BAG_R_KG times the root of the kg and the rope pays out BAG_ROPE_KG m a
+## kg (a full bag hangs low and swings wide; no count cap, weight caps it
+## in the plane). Empty, it rests BAG_REST m (past its radius) behind the
+## plane. Its belly hits the world as a ball BAG_BALL of its radius,
+## bouncing back BAG_BOUNCE of its speed into the hit; held back past its
+## rope by BAG_PIN m it pulls free.
+const BAG_R := 0.4
+const BAG_R_KG := 0.11
+const BAG_ROPE := 2.6
+const BAG_ROPE_KG := 0.11
+const BAG_REST := 2.2
+const BAG_BALL := 0.8
+const BAG_BOUNCE := 0.2
+const BAG_PIN := 1.5
+## Spilling: a hit this hard (m/s into what it hit) spills one, the last
+## loaded; each SPILL_STEP harder spills one more. No second spill for
+## SPILL_GRACE s (one blow, one spill). Spilled, a treasure leaves with the
+## bag's velocity times SPILL_KEEP, thrown out of the hit SPILL_OUT m/s and
+## up SPILL_UP m/s, tumbling (task 5's loose body).
+const SPILL_SPEED := 3.0
+const SPILL_STEP := 3.5
+const SPILL_GRACE := 0.35
+const SPILL_KEEP := 0.7
+const SPILL_OUT := 2.5
+const SPILL_UP := 1.5
+
 ## Class `weight`'s row (light's when unknown).
 static func of(weight: String) -> Dictionary:
 	return CLASSES.get(weight,CLASSES["light"])
