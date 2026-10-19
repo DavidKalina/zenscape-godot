@@ -18,6 +18,7 @@ extends "res://studies/character_study.gd"
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const Models = preload("res://scripts/carry/treasure_models.gd")
 const DevKeys = preload("res://scripts/kit_isle/dev_keys.gd")
+const LootBag = preload("res://scripts/carry/loot_bag.gd")
 
 const SCENE_ID := "bag_study"
 ## The two floors (x, z) and their tops.
@@ -79,6 +80,8 @@ const LOOT := [
 
 ## Each loot piece: {id, kind, kg, spot (the named node), node (its figure)}.
 var loot: Array = []
+## The bag on his back (scripts/carry/loot_bag.gd).
+var bag: Node3D
 ## Never in a plane here (the world view and the carry ask).
 var flying := false
 
@@ -113,6 +116,9 @@ func _build_room() -> void:
 	for p: Array in PIECES: _named_part(str(p[0]),p[1])
 	super._build_room()
 	_build_loot()
+	bag = LootBag.new()
+	add_child(bag)
+	bag.setup(self)
 	if DevKeys.enabled():
 		var editor: Node = preload("res://scripts/layout_edit.gd").new()
 		editor.name = "LayoutEdit"
@@ -276,4 +282,4 @@ func loot_kg() -> float:
 	return kg
 
 func _hint_text() -> String:
-	return "Bag study: WASD run · Space jump · Shift/C crouch · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
