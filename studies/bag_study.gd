@@ -113,10 +113,13 @@ var dig: Node3D = null
 const SPADE_FROM_START := Vector3(-1.6,0.0,-1.2)
 ## Never in a plane here (the world view and the carry ask).
 var flying := false
+## The layout's scene id (`<scene_id>/<piece>`): a room built on this one
+## (studies/bridge_study.gd) names its own.
+var scene_id := SCENE_ID
 
 func _ready() -> void:
-	pack = SCENE_ID
-	LayoutOverrides.begin(SCENE_ID)
+	pack = scene_id
+	LayoutOverrides.begin(scene_id)
 	super._ready()
 
 func _load_pack() -> void:
@@ -133,16 +136,7 @@ func _load_pack() -> void:
 	]
 
 func _build_room() -> void:
-	# The floors, and the walls round both.
-	_box(UPPER,-FLOOR_DEPTH_HERE,0.0,"floor")
-	_box(LOWER,LOW_Y-FLOOR_DEPTH_HERE,LOW_Y,"floor")
-	var all := UPPER.merge(LOWER)
-	for r: Rect2 in [Rect2(all.position.x-1.0,all.position.y-1.0,all.size.x+2.0,1.0),
-			Rect2(all.position.x-1.0,all.end.y,all.size.x+2.0,1.0),
-			Rect2(all.position.x-1.0,all.position.y,1.0,all.size.y),
-			Rect2(all.end.x,all.position.y,1.0,all.size.y)]:
-		_box(r,LOW_Y-FLOOR_DEPTH_HERE,WALL_TOP,"wall")
-	for p: Array in PIECES: _named_part(str(p[0]),p[1])
+	_build_floors()
 	super._build_room()
 	_build_loot()
 	bag = LootBag.new()
@@ -155,7 +149,7 @@ func _build_room() -> void:
 		brood.setup_bag(self,burrows)
 	dig = Dig.new()
 	add_child(dig)
-	dig.setup(self,{"spade":"%s/spade" % SCENE_ID,"from_start":SPADE_FROM_START,"spots":BurrowDigs.new()})
+	dig.setup(self,{"spade":"%s/spade" % scene_id,"from_start":SPADE_FROM_START,"spots":BurrowDigs.new()})
 	var marks := BurrowMarks.new()
 	add_child(marks)
 	marks.setup(self)
@@ -165,10 +159,32 @@ func _build_room() -> void:
 		add_child(editor)
 		editor.setup(self,null)
 
+## The room's floors, walls and named structures (a room built on this one
+## builds its own).
+func _build_floors() -> void:
+	# The floors, and the walls round both.
+	_box(UPPER,-FLOOR_DEPTH_HERE,0.0,"floor")
+	_box(LOWER,LOW_Y-FLOOR_DEPTH_HERE,LOW_Y,"floor")
+	var all := UPPER.merge(LOWER)
+	for r: Rect2 in [Rect2(all.position.x-1.0,all.position.y-1.0,all.size.x+2.0,1.0),
+			Rect2(all.position.x-1.0,all.end.y,all.size.x+2.0,1.0),
+			Rect2(all.position.x-1.0,all.position.y,1.0,all.size.y),
+			Rect2(all.end.x,all.position.y,1.0,all.size.y)]:
+		_box(r,LOW_Y-FLOOR_DEPTH_HERE,WALL_TOP,"wall")
+	for p: Array in PIECES: _named_part(str(p[0]),p[1])
+
+## The loot rows and the burrow rows (LOOT, BURROWS); a room built on this
+## one lays its own.
+func _loot_rows() -> Array:
+	return LOOT
+
+func _burrow_rows() -> Array:
+	return BURROWS
+
 ## A structure as a named, movable solid (`bag_study/<id>`): built about its
 ## middle, so the world view's move carries the mesh, collider and cap.
 func _named_part(id: String, part: Array) -> void:
-	var called := "%s/%s" % [SCENE_ID,id]
+	var called := "%s/%s" % [scene_id,id]
 	if LayoutOverrides.deleted(called): return
 	var mesh: Mesh
 	var shape: Shape3D
@@ -245,8 +261,8 @@ func _build_burrows() -> void:
 	dark.albedo_color = Color(0.03,0.025,0.02)
 	dark.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var s := wanderer_scale
-	for row: Array in BURROWS:
-		var called := "%s/%s" % [SCENE_ID,str(row[0])]
+	for row: Array in _burrow_rows():
+		var called := "%s/%s" % [scene_id,str(row[0])]
 		if LayoutOverrides.deleted(called): continue
 		var coded := Transform3D(Basis.IDENTITY,row[1])
 		var hole := Node3D.new()
@@ -287,8 +303,8 @@ func _build_loot() -> void:
 	var holder := Node3D.new()
 	holder.name = "Loot"
 	add_child(holder)
-	for row: Array in LOOT:
-		var called := "%s/%s" % [SCENE_ID,str(row[0])]
+	for row: Array in _loot_rows():
+		var called := "%s/%s" % [scene_id,str(row[0])]
 		if LayoutOverrides.deleted(called): continue
 		var coded := Transform3D(Basis(Vector3.UP,deg_to_rad(float(row[4]))),row[3])
 		var spot := Node3D.new()
