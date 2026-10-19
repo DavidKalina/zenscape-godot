@@ -48,7 +48,7 @@ const PAD_SLACK := 1.0
 ## SHOW, in rows on the floor. The board stands outside by its door.
 const VAULT_YAW := 0.0
 const INSIDE := Vector2(2.5,2.6)
-const BOARD_AT := Vector3(4.6,0.0,-3.4)
+const BOARD_AT := Vector3(5.4,0.0,-3.6)
 const FIELD_HALF := Vector2(26.0,8.0)
 
 ## The outline (x, z), wound as the cluster's lands (east along the south
@@ -190,13 +190,18 @@ static func vault() -> Node3D:
 	var side := INSIDE.x+0.1+t
 	var parts := [
 		[RuinKit.piece("floor",571,0.1),Vector3(0.0,0.0,0.3),0.0],
-		[RuinKit.piece("wall",572,0.0),Vector3(0.0,0.0,INSIDE.y+t),0.0],
-		[RuinKit.piece("wall",573,0.05),Vector3(-side,0.0,0.0),90.0],
-		[RuinKit.piece("wall",574,0.05),Vector3(side,0.0,0.0),-90.0],
-		[RuinKit.piece("pier",575,0.0),Vector3(-side,0.0,INSIDE.y+t),0.0],
-		[RuinKit.piece("pier",576,0.0),Vector3(side,0.0,INSIDE.y+t),0.0],
-		[RuinKit.piece("pier",577,0.0),Vector3(-side,0.0,-INSIDE.y-0.3),0.0],
-		[RuinKit.piece("pier",578,0.0),Vector3(side,0.0,-INSIDE.y-0.3),0.0],
+		[RuinKit.piece("wall",572,0.35),Vector3(0.0,0.0,INSIDE.y+t),0.0],
+		[RuinKit.piece("wall",573,0.3),Vector3(-side,0.0,0.0),90.0],
+		[RuinKit.piece("wall",574,0.3),Vector3(side,0.0,0.0),-90.0],
+		[RuinKit.piece("pier",575,0.2),Vector3(-side,0.0,INSIDE.y+t),0.0],
+		[RuinKit.piece("pier",576,0.2),Vector3(side,0.0,INSIDE.y+t),0.0],
+		[RuinKit.piece("pier",577,0.15),Vector3(-side,0.0,-INSIDE.y-0.3),0.0],
+		[RuinKit.piece("pier",578,0.15),Vector3(side,0.0,-INSIDE.y-0.3),0.0],
+		# Buttresses shoulder the side walls and the back from outside, so
+		# the store reads as built to hold, not three plain slabs.
+		[RuinKit.piece("buttress",579,0.25),Vector3(-side-t,0.0,0.0),90.0],
+		[RuinKit.piece("buttress",580,0.25),Vector3(side+t,0.0,0.0),-90.0],
+		[RuinKit.piece("buttress",581,0.25),Vector3(0.0,0.0,INSIDE.y+t*2.0),0.0],
 	]
 	for p: Array in parts:
 		var n: Node3D = p[0]
@@ -209,44 +214,46 @@ static func vault() -> Node3D:
 	root.add_child(board())
 	return root
 
-## The tally board: a dark slab on two stone legs, its text on its face.
+## The tally board: a slate face in a stone frame on two legs, a cap
+## stone over it, its text (sized to sit inside the frame) on the face.
 static func board() -> Node3D:
 	var b := Node3D.new()
 	b.name = "Board"
 	b.position = BOARD_AT
 	var stone := StandardMaterial3D.new()
-	stone.albedo_color = Color("6f6a5e")
+	stone.albedo_color = Color("8a8372")
 	stone.roughness = 0.95
 	var face := StandardMaterial3D.new()
-	face.albedo_color = Color("3b3832")
-	face.roughness = 0.9
-	for x: float in [-1.1,1.1]:
-		var leg := MeshInstance3D.new()
-		var lm := BoxMesh.new()
-		lm.size = Vector3(0.35,1.5,0.35)
-		leg.mesh = lm
-		leg.material_override = stone
-		leg.position = Vector3(x,0.75,0.0)
-		b.add_child(leg)
-	var slab := MeshInstance3D.new()
-	var sm := BoxMesh.new()
-	sm.size = Vector3(3.0,1.9,0.28)
-	slab.mesh = sm
-	slab.material_override = face
-	slab.position = Vector3(0.0,2.35,0.0)
-	slab.name = "Slab"
-	b.add_child(slab)
+	face.albedo_color = Color("4d4a43")
+	face.roughness = 0.85
+	var box := func(size: Vector3, at: Vector3, m: Material, nm := "") -> MeshInstance3D:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = size
+		mi.mesh = bm
+		mi.material_override = m
+		mi.position = at
+		if nm != "": mi.name = nm
+		b.add_child(mi)
+		return mi
+	for x: float in [-1.65,1.65]:
+		box.call(Vector3(0.4,3.3,0.4),Vector3(x,1.65,0.0),stone)
+		box.call(Vector3(0.6,0.25,0.6),Vector3(x,0.12,0.0),stone)
+	box.call(Vector3(2.9,1.6,0.22),Vector3(0.0,2.35,0.0),face,"Slab")
+	# The frame's rails and the cap stone, a little proud of the face.
+	box.call(Vector3(3.3,0.22,0.36),Vector3(0.0,1.48,0.0),stone)
+	box.call(Vector3(3.9,0.3,0.55),Vector3(0.0,3.36,0.0),stone)
+	box.call(Vector3(3.4,0.12,0.42),Vector3(0.0,3.17,0.0),stone)
 	var text := Label3D.new()
 	text.name = "Text"
 	text.font_size = 64
-	text.pixel_size = 0.0042
-	text.outline_size = 10
-	text.modulate = Color("f2e6c4")
+	text.pixel_size = 0.003
+	text.outline_size = 8
+	text.modulate = Color("efe2bd")
 	text.outline_modulate = Color(0.1,0.08,0.05,1.0)
 	text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	text.width = 640.0
-	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	text.position = Vector3(0.0,2.35,-0.16)
+	text.line_spacing = 6.0
+	text.position = Vector3(0.0,2.35,-0.12)
 	text.rotation.y = PI
 	text.double_sided = false
 	b.add_child(text)
@@ -295,10 +302,15 @@ static func pad() -> Node3D:
 			var size := Vector3(run-0.08,rng.randf_range(0.08,0.14),0.45) if side < 2 else Vector3(0.45,rng.randf_range(0.08,0.14),run-0.08)
 			box.call(size,at,kerb)
 			x += run
-	# Chevrons at each end, pointing in along the strip.
+	# Chevrons at each end, pointing in along the strip: the field's
+	# pennant red, wide and raised a little, so they read from the air.
+	var mark := StandardMaterial3D.new()
+	mark.albedo_color = Color("a8432c")
+	mark.roughness = 1.0
 	for sgn: float in [-1.0,1.0]:
-		for k: float in [-1.0,1.0]:
-			box.call(Vector3(0.35,0.065,2.2),Vector3(sgn*(h.x-1.6),0.035,k*0.75),dark,-k*sgn*0.6)
+		for row: float in [0.0,1.6]:
+			for k: float in [-1.0,1.0]:
+				box.call(Vector3(0.7,0.09,2.6),Vector3(sgn*(h.x-1.5-row),0.05,k*0.95),mark,k*sgn*0.65)
 	return root
 
 ## The drop field (`home/drop_field`, drawn only: treasures land on the
@@ -315,8 +327,26 @@ static func field() -> Node3D:
 		m.roughness = 1.0
 		return m
 	var sand: StandardMaterial3D = mat.call("cdb88c")
-	var straw: StandardMaterial3D = mat.call("d9b55a")
-	var straw_dark: StandardMaterial3D = mat.call("b58f3e")
+	var straw: StandardMaterial3D = mat.call("c9a75a")
+	var straw_dark: StandardMaterial3D = mat.call("9f7d3c")
+	# Straw's grain: a streaked noise, stretched one way, laid on
+	# triplanar so heaps, mats and bales all read as stalks, not paint.
+	var grain := FastNoiseLite.new()
+	grain.frequency = 0.09
+	grain.seed = 593
+	var streak := NoiseTexture2D.new()
+	streak.width = 128
+	streak.height = 128
+	streak.seamless = true
+	streak.noise = grain
+	var ramp := Gradient.new()
+	ramp.set_color(0,Color(0.62,0.58,0.5))
+	ramp.set_color(1,Color(1.12,1.08,0.98))
+	streak.color_ramp = ramp
+	for m: StandardMaterial3D in [straw,straw_dark]:
+		m.albedo_texture = streak
+		m.uv1_triplanar = true
+		m.uv1_scale = Vector3(5.0,0.6,0.6)
 	var rope: StandardMaterial3D = mat.call("6e5233")
 	var kerb: StandardMaterial3D = mat.call("5d5a52")
 	var post: StandardMaterial3D = mat.call("5a4630")
@@ -336,11 +366,70 @@ static func field() -> Node3D:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 591
 	box.call(Vector3(h.x*2.0,0.06,h.y*2.0),Vector3(0.0,0.03,0.0),sand)
-	# Straw: overlapping mats, a little turned, light and dark.
-	for i in 70:
+	# Straw: a thin strewn bed (a few flat mats for colour), low heaps
+	# that give it body, tufts sticking up all over so it reads as straw
+	# up close, and bales stacked along the long sides.
+	for i in 30:
 		var at := Vector3(rng.randf_range(-h.x+1.5,h.x-1.5),0.07+0.004*float(i%5),rng.randf_range(-h.y+1.2,h.y-1.2))
-		var size := Vector3(rng.randf_range(2.0,4.2),0.05,rng.randf_range(1.2,2.6))
-		box.call(size,at,straw if rng.randf() < 0.7 else straw_dark,rng.randf_range(-0.6,0.6))
+		var size := Vector3(rng.randf_range(2.0,4.2),0.04,rng.randf_range(1.2,2.6))
+		box.call(size,at,straw if rng.randf() < 0.6 else straw_dark,rng.randf_range(-0.6,0.6))
+	var heap := SphereMesh.new()
+	heap.radius = 1.0
+	heap.height = 2.0
+	heap.radial_segments = 10
+	heap.rings = 5
+	var heaps: Array[Vector3] = []
+	for i in 60:
+		var mi := MeshInstance3D.new()
+		mi.mesh = heap
+		mi.material_override = straw if rng.randf() < 0.65 else straw_dark
+		var r := rng.randf_range(0.7,1.5)
+		mi.scale = Vector3(r*rng.randf_range(1.0,1.5),rng.randf_range(0.35,0.6),r)
+		mi.position = Vector3(rng.randf_range(-h.x+2.0,h.x-2.0),0.0,rng.randf_range(-h.y+1.6,h.y-1.6))
+		mi.rotation.y = rng.randf_range(0.0,TAU)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(mi)
+		heaps.append(Vector3(mi.position.x,mi.scale.y,mi.position.z))
+	var tuft := BoxMesh.new()
+	tuft.size = Vector3(0.05,0.45,0.012)
+	var tuft_mat := StandardMaterial3D.new()
+	tuft_mat.vertex_color_use_as_albedo = true
+	tuft_mat.roughness = 1.0
+	tuft_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = tuft
+	mm.instance_count = 2200
+	var light := Color("e2c26a")
+	var deep := Color("a8823a")
+	for i in mm.instance_count:
+		var basis := Basis(Vector3.UP,rng.randf_range(0.0,TAU))*Basis(Vector3.RIGHT,rng.randf_range(-1.1,1.1))
+		basis = basis.scaled(Vector3.ONE*rng.randf_range(0.6,1.3))
+		var at := Vector3(rng.randf_range(-h.x+0.8,h.x-0.8),0.18,rng.randf_range(-h.y+0.8,h.y-0.8))
+		if i%4 != 0:
+			# Most stick out of the heaps' skirts and tops, in clumps.
+			var hp: Vector3 = heaps[rng.randi()%heaps.size()]
+			var off := Vector2.from_angle(rng.randf_range(0.0,TAU))*rng.randf_range(0.0,1.6)
+			at = Vector3(hp.x+off.x,0.12+hp.y*maxf(1.0-off.length()/1.6,0.0)*0.8,hp.z+off.y)
+		mm.set_instance_transform(i,Transform3D(basis,at))
+		mm.set_instance_color(i,light.lerp(deep,rng.randf()))
+	var tufts := MultiMeshInstance3D.new()
+	tufts.name = "Tufts"
+	tufts.multimesh = mm
+	tufts.material_override = tuft_mat
+	tufts.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(tufts)
+	for sgn: float in [-1.0,1.0]:
+		var x := -h.x+3.0
+		while x < h.x-3.0:
+			var n := rng.randi_range(1,3)
+			for k in n:
+				var at := Vector3(x+rng.randf_range(-0.2,0.2),0.3+(0.6 if k == 2 else 0.0),sgn*(h.y-1.0)+rng.randf_range(-0.15,0.15))
+				if k == 1: at += Vector3(1.25,0.0,0.0)
+				elif k == 2: at += Vector3(0.62,0.0,0.0)
+				box.call(Vector3(1.2,0.6,0.7),at,straw_dark if (k+int(x))%3 == 0 else straw,rng.randf_range(-0.12,0.12),true)
+			x += rng.randf_range(5.0,9.0)
 	# Two nets pegged out over the straw: a rope grid on short pegs.
 	for mid: Vector3 in [Vector3(-h.x*0.45,0.0,0.0),Vector3(h.x*0.45,0.0,0.0)]:
 		var nx := 6.0
