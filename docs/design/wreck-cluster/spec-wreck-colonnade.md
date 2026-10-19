@@ -199,3 +199,20 @@ Do these two next, in this order, before L5 and L6:
    routes in the study's own files, on top of the spine, and keep its own
    study and the aqueduct isle unchanged. Every flank route attaches at both
    ends (the spec's rule) and is walked through the real input path.
+
+## Spec change: overgrowth on the isles' sides (user, after iteration 15)
+
+The cluster should read as an ancient piece of the earth itself, torn up
+and suspended in the air, not clean rock. Add overgrowth to the sides and
+undersides of every land mass (the spine's flanks, the strip, the tower
+rock, the coast, rope and tilt rocks): hanging roots and vines trailing
+down the keels and off the rims (scripts/kit_isle/hanging_roots.gd exists;
+see kit_flora.gd and kit_life.gd for what else is there), moss and turf
+lips spilling over the edges, ferns, shrubs and the odd small tree clinging
+to ledges and cracks, ivy on the ruin where it meets the rock. Heavier where
+the rock is old and shaded, lighter on fresh breaks. Overgrowth is dressing:
+it must not block or add collision to any route, ledge, grab lip or the
+flank routes (re-run the drivers), must not grow over part spots or cache
+glints, and keeps the strip's runway clear. Watch the frame cost (use the
+existing multimesh/shader flora paths) and note the triangle count. This is
+a look task: do it after the flank routes, alongside L5, before L6.
