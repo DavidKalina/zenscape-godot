@@ -13,6 +13,9 @@ extends Node3D
 const SpadeFigure = preload("res://scripts/dig/spade_figure.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
+const DigMotion = preload("res://scripts/dig/dig_motion.gd")
+const DigFx = preload("res://scripts/dig/dig_fx.gd")
+const PilotMotor = preload("res://scripts/pilot_motor.gd")
 
 const ACTION := &"walk_dig"
 const SPADE_NAME := "wreck_cluster/spade"
@@ -36,6 +39,20 @@ var spade_lying: Node3D = null
 var spade_holder: Node3D = null
 var spade_back: Node3D = null
 var _back_mount: BoneAttachment3D = null
+## The spade in his mitts while he digs (world).
+var spade_hand: Node3D = null
+var fx: Node3D = null
+## The dig under way (scripts/dig/dig_motion.gd), or null; its time, and
+## where it bites (the ground's point and normal).
+var motion: RefCounted = null
+var dig_t := 0.0
+var dig_at := Vector3.ZERO
+var dig_normal := Vector3.UP
+var _scoop: Node3D = null
+## Digs made this deal, by kind ("soil", "stone"), for drivers.
+var dug := {"soil":0,"stone":0}
+## How far ahead of his feet the blade bites (m, times his size).
+const BITE_AHEAD := 0.52
 
 func setup(scene: Node3D) -> void:
 	host = scene
@@ -49,6 +66,14 @@ func setup(scene: Node3D) -> void:
 	LayoutOverrides.track(SPADE_NAME,spade_holder,"token",coded)
 	spade_lying = SpadeFigure.new()
 	spade_holder.add_child(spade_lying)
+	spade_hand = SpadeFigure.new()
+	spade_hand.name = "SpadeInHand"
+	spade_hand.top_level = true
+	spade_hand.visible = false
+	add_child(spade_hand)
+	fx = DigFx.new()
+	fx.size = _scale()
+	add_child(fx)
 	lay_spade()
 
 func _scale() -> float:
@@ -86,6 +111,9 @@ func has_spade() -> bool:
 
 ## The cluster's re-deal (N): the spade back by the plane.
 func re_deal() -> void:
+	end_dig()
+	fx.clear_scoops()
+	dug = {"soil":0,"stone":0}
 	lay_spade()
 
 func take_spade() -> void:
@@ -113,7 +141,10 @@ func _mount_back() -> void:
 		_back_mount.add_child(spade_back)
 	spade_back.visible = true
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if motion != null:
+		_dig_step(delta)
+		return
 	if host == null or not bool(host.get("walk_ready")) or bool(host.get("flying")): return
 	if spade_state == "lying":
 		var motor: Variant = host.get("motor")
@@ -129,3 +160,124 @@ func _unhandled_input(event: InputEvent) -> void:
 		if (motor.feet as Vector3).distance_to(spade_point()) < PRESS_REACH*_scale():
 			take_spade()
 			get_viewport().set_input_as_handled()
+	elif motion == null and can_dig():
+		start_dig()
+		get_viewport().set_input_as_handled()
+
+# --- Digging ------------------------------------------------------------------------
+
+## On his feet, still or walking, not climbing, hanging, swinging, sliding,
+## wading or in the air, with the spade.
+func can_dig() -> bool:
+	if not has_spade() or host == null or bool(host.get("flying")) or not bool(host.get("walk_ready")): return false
+	var motor: Variant = host.get("motor")
+	if not motor.grounded or motor.hold != "" or motor.swimming or float(motor.wade) > 0.02: return false
+	return motor.move == "" or motor.move == "crouch"
+
+## What the blade meets ahead of him: {at, normal, kind} with kind "soil"
+## (turf, worn earth), "stone" (ruin, rock, planks) or "" (nothing there:
+## an edge).
+func ground_ahead() -> Dictionary:
+	var motor: Variant = host.get("motor")
+	var s := _scale()
+	var way: Vector2 = PilotMotor.forward(motor.facing)
+	var feet: Vector3 = motor.feet
+	var p := feet+Vector3(way.x,0.0,way.y)*BITE_AHEAD*s
+	var space := get_world_3d().direct_space_state
+	var ray := PhysicsRayQueryParameters3D.create(p+Vector3.UP*0.6*s,p+Vector3.DOWN*0.8*s,1|(1 << 11))
+	var hit := space.intersect_ray(ray)
+	if hit.is_empty(): return {"kind":""}
+	var at: Vector3 = hit.position
+	var kind := "stone"
+	var audio: Variant = host.get("audio")
+	if audio != null and (audio as Object).has_method("_read_surface"):
+		var surface: String = audio._read_surface(at)
+		if surface == "grass" or surface == "earth": kind = "soil"
+		elif surface == "water": kind = ""
+	elif hit.collider is CollisionObject3D and ((hit.collider as CollisionObject3D).collision_layer & (1 << 11)) != 0:
+		kind = "soil"
+	return {"at":at,"normal":hit.normal,"kind":kind}
+
+func start_dig() -> void:
+	var g := ground_ahead()
+	if String(g.kind) == "": return
+	var motor: Variant = host.get("motor")
+	var s := _scale()
+	var way: Vector2 = PilotMotor.forward(motor.facing)
+	var fwd := Vector3(way.x,0.0,way.y).normalized()
+	var right := fwd.cross(Vector3.UP).normalized()
+	var feet: Vector3 = motor.feet
+	motion = DigMotion.new(String(g.kind),Transform3D(Basis(right,Vector3.UP,-fwd),feet),s)
+	dig_t = 0.0
+	dig_at = g.at
+	dig_normal = g.normal
+	_scoop = null
+	# The isle's sound comes up after the cluster's life.
+	if fx.audio == null: fx.hook_audio(host.get("audio"))
+	motor.velocity = Vector3(0.0,motor.velocity.y,0.0)
+	host.set("scripted",true)
+	host.set("script_want",Vector2.ZERO)
+	host.set("script_jump",false)
+	host.set("script_crouch",false)
+	host.set("script_twirl",false)
+
+## One frame of the dig: his own tick (held still, no stick), then the
+## dig's pose over the figure's, its moments, and the end.
+func _dig_step(delta: float) -> void:
+	if host == null or bool(host.get("flying")) or not bool(host.get("walk_ready")):
+		end_dig()
+		return
+	if delta > 0.0: host.tick(delta)
+	if motion == null: return
+	var was := dig_t
+	dig_t += delta
+	var back := _back_xform()
+	var p: Dictionary = motion.pose(dig_t,back)
+	spade_hand.global_transform = p.spade
+	spade_hand.visible = true
+	if spade_back != null: spade_back.visible = false
+	var body: Node3D = host.get("body")
+	if body != null: DigMotion.apply(body,p,motion.frame.basis)
+	for e: String in motion.crossed(was,dig_t): _moment(e)
+	if dig_t >= motion.length: end_dig()
+
+## The spade's xform on his back now (world), where it is drawn from and
+## put back to.
+func _back_xform() -> Transform3D:
+	if spade_back == null: _mount_back()
+	if spade_back == null: return spade_hand.global_transform
+	return spade_back.global_transform
+
+func _moment(e: String) -> void:
+	var tip: Vector3 = spade_hand.global_transform*SpadeFigure.tip()
+	var body: Node3D = host.get("body")
+	var stretch: Variant = body.get("_stretch") if body != null else null
+	match e:
+		"bite":
+			var bite_at := Vector3(tip.x,dig_at.y,tip.z)
+			fx.bite(bite_at,-motion.frame.basis.z)
+			if stretch != null: stretch.v -= 1.4
+			if _scoop == null:
+				_scoop = fx.scoop(Vector3(dig_at.x,dig_at.y,dig_at.z),dig_normal,motion.frame.basis.x,0.4)
+				dug.soil += 1
+			else: fx.deepen(_scoop,1.0)
+		"throw":
+			var blade: Vector3 = spade_hand.global_transform*Vector3(0.0,SpadeFigure.BLADE_H*0.5,0.0)
+			var way: Vector3 = (motion.frame.basis.x*1.0-motion.frame.basis.z*0.35).normalized()
+			fx.fling(blade,way,dig_at.y)
+			if stretch != null: stretch.v += 0.8
+		"clank":
+			fx.clank(Vector3(tip.x,dig_at.y,tip.z))
+			dug.stone += 1
+			if stretch != null: stretch.v += 1.6
+			var moments: Variant = host.get("_moments")
+			if moments != null and dug.stone == 1: moments.pop("Stone: the spade only bites soil",2.0)
+			if body != null and body.has_method("express"): body.express("surprise",0.6)
+
+## The dig over (or cut short): the spade back on his back, the stick his.
+func end_dig() -> void:
+	if motion == null: return
+	motion = null
+	if host != null: host.set("scripted",false)
+	if spade_hand != null: spade_hand.visible = false
+	if spade_back != null and spade_state == "carried": spade_back.visible = true
