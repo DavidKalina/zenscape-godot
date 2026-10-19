@@ -31,46 +31,70 @@ const RIM_W := 0.35
 
 ## The named structures: [name, part, hold] (the rope study's formats). A
 ## deck's top edge is a solid lip (its face to the pit climbs on the rope).
-## Beams: hold "" for now (the hook's beam wrap is the next task).
+## Beams: hold "beam" (the hook's reticle snaps to them and wraps over).
 const SWING_PIECES := [
 	# The start deck, across all three lanes.
 	["start_deck",["box",Rect2(-20.0,4.0,56.0,20.0),PIT_Y,0.0,"grey"],"solid"],
 	# Lane A: the far deck past a 9 m gap; one beam over the gap's middle.
 	["far_a",["box",Rect2(-20.0,-24.0,14.0,19.0),PIT_Y,0.0,"grey"],"solid"],
-	["beam_a",["box",Rect2(-18.0,-0.5-BEAM_T*0.5,10.0,BEAM_T),7.0-BEAM_T,7.0,"grey"],""],
+	["beam_a",["box",Rect2(-18.0,-0.5-BEAM_T*0.5,10.0,BEAM_T),7.0-BEAM_T,7.0,"grey"],"beam"],
 	["beam_a_w",["cyl",Vector2(-18.4,-0.5),PILLAR_R,PIT_Y,7.0,"dark"],""],
 	["beam_a_e",["cyl",Vector2(-7.6,-0.5),PILLAR_R,PIT_Y,7.0,"dark"],""],
 	# Lane B: 8 m to a small platform, 8.5 m on to the far deck; a beam over
 	# each gap.
 	["platform_b",["box",Rect2(1.0,-7.5,6.0,3.5),PIT_Y,0.0,"grey"],"solid"],
 	["far_b",["box",Rect2(-3.0,-24.0,14.0,8.0),PIT_Y,0.0,"grey"],"solid"],
-	["beam_b1",["box",Rect2(-2.0,0.0-BEAM_T*0.5,12.0,BEAM_T),7.0-BEAM_T,7.0,"grey"],""],
+	["beam_b1",["box",Rect2(-2.0,0.0-BEAM_T*0.5,12.0,BEAM_T),7.0-BEAM_T,7.0,"grey"],"beam"],
 	["beam_b1_w",["cyl",Vector2(-2.4,0.0),PILLAR_R,PIT_Y,7.0,"dark"],""],
 	["beam_b1_e",["cyl",Vector2(10.4,0.0),PILLAR_R,PIT_Y,7.0,"dark"],""],
-	["beam_b2",["box",Rect2(-2.0,-11.75-BEAM_T*0.5,12.0,BEAM_T),7.5-BEAM_T,7.5,"grey"],""],
+	["beam_b2",["box",Rect2(-2.0,-11.75-BEAM_T*0.5,12.0,BEAM_T),7.5-BEAM_T,7.5,"grey"],"beam"],
 	["beam_b2_w",["cyl",Vector2(-2.4,-11.75),PILLAR_R,PIT_Y,7.5,"dark"],""],
 	["beam_b2_e",["cyl",Vector2(10.4,-11.75),PILLAR_R,PIT_Y,7.5,"dark"],""],
 	# Lane C: the far deck past a 14 m gap; a beam out of reach (16 m) and a
 	# tall one (11 m) for a long swing.
 	["far_c",["box",Rect2(15.0,-24.0,21.0,14.0),PIT_Y,0.0,"grey"],"solid"],
-	["high_beam",["box",Rect2(16.0,-3.0-BEAM_T*0.5,8.0,BEAM_T),16.0-BEAM_T,16.0,"grey"],""],
+	["high_beam",["box",Rect2(16.0,-3.0-BEAM_T*0.5,8.0,BEAM_T),16.0-BEAM_T,16.0,"grey"],"beam"],
 	["high_beam_w",["cyl",Vector2(15.6,-3.0),PILLAR_R,PIT_Y,16.0,"dark"],""],
 	["high_beam_e",["cyl",Vector2(24.4,-3.0),PILLAR_R,PIT_Y,16.0,"dark"],""],
-	["tall_beam",["box",Rect2(26.0,-3.0-BEAM_T*0.5,9.0,BEAM_T),11.0-BEAM_T,11.0,"grey"],""],
+	["tall_beam",["box",Rect2(26.0,-3.0-BEAM_T*0.5,9.0,BEAM_T),11.0-BEAM_T,11.0,"grey"],"beam"],
 	["tall_beam_w",["cyl",Vector2(25.6,-3.0),PILLAR_R,PIT_Y,11.0,"dark"],""],
 	["tall_beam_e",["cyl",Vector2(35.4,-3.0),PILLAR_R,PIT_Y,11.0,"dark"],""],
 	# On the start deck behind lane C: a beam so low (3.2 m) the swing
 	# scrapes the floor.
-	["low_beam",["box",Rect2(18.0,13.0-BEAM_T*0.5,14.0,BEAM_T),3.2-BEAM_T,3.2,"grey"],""],
+	["low_beam",["box",Rect2(18.0,13.0-BEAM_T*0.5,14.0,BEAM_T),3.2-BEAM_T,3.2,"grey"],"beam"],
 	["low_beam_w",["cyl",Vector2(17.6,13.0),PILLAR_R,0.0,3.2,"dark"],""],
 	["low_beam_e",["cyl",Vector2(32.4,13.0),PILLAR_R,0.0,3.2,"dark"],""],
 ]
 
-## The beams, by piece id (the hook's targets, next task).
+## The beams, by piece id (the hook's targets).
 const BEAMS := ["beam_a","beam_b1","beam_b2","high_beam","tall_beam","low_beam"]
+## Aiming at a beam (and while the hook flies to it) the camera tips up
+## toward it: this share of the beam's rise from the camera's pivot, eased
+## at LOOK_UP_RATE (1/s), at most to LOOK_UP_MAX (polar, rad).
+const LOOK_UP := 0.6
+const LOOK_UP_RATE := 6.0
+const LOOK_UP_MAX := 1.78
 
 func _init() -> void:
 	scene_id = "swing_study"
+
+func tick(delta: float) -> void:
+	_look_up(delta)
+	super.tick(delta)
+
+## The camera tipped up to the beam the hook's aimed at or flying to; the
+## mouse and stick take it back after.
+func _look_up(delta: float) -> void:
+	if rope == null or scripted or delta <= 0.0: return
+	var at: Vector3 = rope.aim_lip if rope.state == "aim" else rope.lip
+	var on: bool = (rope.state == "aim" and rope.aim_hold == "beam") or (rope.state in ["fly","drag"] and rope.beam_mid != Vector3.INF)
+	if not on or at == Vector3.INF: return
+	var pivot := Vector3(_cam_at.x,_cam_y,_cam_at.y)
+	var flat := Vector2(at.x-pivot.x,at.z-pivot.z).length()
+	var rise := atan2(at.y-pivot.y,maxf(flat,0.5))
+	var want := clampf(PI*0.5+rise*LOOK_UP,CAM_POLAR,LOOK_UP_MAX)
+	if want <= _polar: return
+	_polar = lerpf(_polar,want,1.0-exp(-LOOK_UP_RATE*delta))
 
 func _load_pack() -> void:
 	start = Vector3(-13.0,0.0,8.0)
@@ -99,7 +123,7 @@ func _build_room() -> void:
 		_named_part(str(p[0]),p[1])
 		if str(p[2]) != "":
 			holds[str(p[0])] = str(p[2])
-			if pieces.has(str(p[0])): _rim(pieces[str(p[0])],p[1][1],float(p[1][3])-float(p[1][2]))
+			if pieces.has(str(p[0])) and str(p[2]) == "solid": _rim(pieces[str(p[0])],p[1][1],float(p[1][3])-float(p[1][2]))
 	# The character study's signs and start mark (its pack branch).
 	_build_signs()
 	rope = ClimbRope.new()

@@ -72,6 +72,16 @@ const POST_SNAP := 1.6
 const LAND_IN := 0.7
 ## The hook wraps a post this far under its top.
 const POST_WRAP := 0.25
+## Beams (hold "beam", the swing study): the reticle snaps to a beam over
+## his head within BEAM_SNAP (m, flat) of its line, kept BEAM_END in from
+## its ends; one more than BEAM_HIGH over his feet is too high to throw
+## over. Wrapped, the hook hangs BEAM_HANG under the beam's far side.
+const BEAM_SNAP := 2.5
+const BEAM_END := 0.5
+const BEAM_HIGH := 12.0
+const BEAM_HANG := 0.2
+## The wrap round a beam (s): over its top and down the far side.
+const WRAP_TIME := 0.22
 ## The throw's arc: its top over the higher end, plus this a metre across.
 const AIM_RISE := 1.0
 const AIM_RISE_M := 0.08
@@ -192,6 +202,12 @@ var tested := false
 var bad := false
 ## Drivers: -1 rolls `bad` at the catch, 0 never, 1 always (poor holds only).
 var force_bad := -1
+## Over a beam: its middle (the bar's axis under the lip) and half its
+## thickness; the far side's way is -lip_out.
+var beam_mid := Vector3.INF
+var beam_half := 0.0
+var aim_mid := Vector3.INF
+var aim_half := 0.0
 ## The aim: the reticle (the target the arc ends at), its lip, hold, piece,
 ## whether it'll catch and why not, the arc.
 var aim_at := Vector3.INF
@@ -381,6 +397,7 @@ func reset() -> void:
 	hold = ""
 	piece = ""
 	lip = Vector3.INF
+	beam_mid = Vector3.INF
 	tested = false
 	bad = false
 	paid = 0.0
@@ -470,6 +487,10 @@ func release() -> void:
 	lip_out = aim_out
 	hold = aim_hold
 	piece = aim_piece
+	beam_mid = aim_mid
+	beam_half = aim_half
+	# Red over a beam (too high): it comes down on the bar and slides off.
+	if hold == "beam" and not aim_ok: hold = ""
 	throws += 1
 	state = "fly"
 	paid = 0.0
@@ -491,6 +512,8 @@ func _aim_update(delta: float, want: Vector2) -> void:
 	aim_hold = t.hold
 	aim_piece = t.piece
 	aim_why = t.why
+	aim_mid = t.get("mid",Vector3.INF)
+	aim_half = float(t.get("half",0.0))
 	aim_ok = t.why == ""
 	# He faces it.
 	var d := Vector2(aim_at.x-feet.x,aim_at.z-feet.z)
@@ -530,6 +553,8 @@ func target(over: Vector3) -> Dictionary:
 	var feet: Vector3 = motor.feet
 	var holds: Dictionary = study.get("holds")
 	var pieces: Dictionary = study.get("pieces")
+	var bar := _beam_target(over)
+	if not bar.is_empty(): return bar
 	# An anchor post near the reticle, over his head.
 	var best := ""
 	var best_d := POST_SNAP*s
@@ -574,6 +599,56 @@ func target(over: Vector3) -> Dictionary:
 	if h == "" or h == "anchor":
 		return {"at":at,"lip":edge,"out":o,"hold":"","piece":id,"why":"a smooth top: nothing to catch on"}
 	return {"at":at,"lip":edge,"out":o,"hold":h,"piece":id,"why":""}
+
+## A beam near the reticle over his head (hold "beam"): the point on its
+## line nearest the reticle, the hook coming down on its top and wrapping
+## over it; {} when none is near. Too high, it's red.
+func _beam_target(over: Vector3) -> Dictionary:
+	var s := _size()
+	var feet: Vector3 = study.get("motor").feet
+	var holds: Dictionary = study.get("holds")
+	var pieces: Dictionary = study.get("pieces")
+	var best := {}
+	var best_d := BEAM_SNAP*s
+	for id: String in holds:
+		if holds[id] != "beam" or not pieces.has(id): continue
+		var b := beam_of(pieces[id])
+		if b.is_empty(): continue
+		var a: Vector3 = b.a
+		var e: Vector3 = b.b
+		var ab := Vector2(e.x-a.x,e.z-a.z)
+		var l := ab.length()
+		if l < 0.01: continue
+		var u := ab/l
+		var k := clampf(Vector2(over.x-a.x,over.z-a.z).dot(u),minf(BEAM_END*s,l*0.5),maxf(l-BEAM_END*s,l*0.5))
+		var on := a+Vector3(u.x,0.0,u.y)*k
+		on.y = a.y+(e.y-a.y)*k/l
+		if on.y-feet.y < ABOVE*s: continue
+		var dd := Vector2(on.x-over.x,on.z-over.z).length()
+		if dd >= best_d: continue
+		best_d = dd
+		# The near side: toward him, across the beam.
+		var across := Vector3(-u.y,0.0,u.x)
+		if across.dot(Vector3(feet.x-on.x,0.0,feet.z-on.z)) < 0.0: across = -across
+		var half: float = b.half
+		var why := ""
+		if on.y-feet.y > BEAM_HIGH*s: why = "too high"
+		best = {"at":on+Vector3.UP*0.05*s,"lip":on,"out":across,"hold":"beam","piece":id,"why":why,
+			"mid":on+Vector3.DOWN*half,"half":half}
+	return best
+
+## A beam's line along its top (ends a, b, world) and half its thickness
+## ({} if it isn't a box): the long way of its box, whatever way it's turned.
+static func beam_of(body: Node3D) -> Dictionary:
+	for c in body.get_children():
+		if c is CollisionShape3D and (c as CollisionShape3D).shape is BoxShape3D:
+			var size: Vector3 = ((c as CollisionShape3D).shape as BoxShape3D).size
+			var t := body.global_transform*(c as CollisionShape3D).transform
+			var long := Vector3(size.x*0.5,0.0,0.0) if size.x >= size.z else Vector3(0.0,0.0,size.z*0.5)
+			var top := Vector3(0.0,size.y*0.5,0.0)
+			var half := minf(size.x,size.z)*0.5*t.basis.get_scale().x
+			return {"a":t*(top-long),"b":t*(top+long),"half":maxf(half,size.y*0.5*t.basis.get_scale().y)}
+	return {}
 
 ## The study's piece id a collider belongs to ("" none).
 func _piece_of(body: Object) -> String:
@@ -623,7 +698,7 @@ func _tug_step(delta: float) -> void:
 	var feet: Vector3 = motor.feet
 	var d := Vector2(lip.x-feet.x,lip.z-feet.z)
 	if d.length() > 0.2: motor.facing = PilotMotor.facing_of(d.normalized())
-	var span := _hand().distance_to(hook_at)
+	var span := _span()
 	# The slack taken in as he reaches and yanks.
 	var k := clampf(_tug_t/(TUG_REACH+TUG_YANK),0.0,1.0)
 	paid = lerpf(maxf(_tug_paid,span),span,k*k)
@@ -643,7 +718,7 @@ func _tug_step(delta: float) -> void:
 		seats += 1
 		_click_play()
 		if fixed: _say("Fixed round the post. At the edge, facing out, %s goes over" % Pad.pick("Space","A"))
-		else: _say("Seated: %s" % ("round the post" if hold == "anchor" else "safe to climb"))
+		else: _say("Seated: %s" % {"anchor":"round the post","beam":"round the beam"}.get(hold,"safe to climb"))
 	if _tug_t >= TUG_REACH+TUG_YANK+TUG_HOLD: state = "seated"
 
 ## Pulled back over the crumbling lip, then off it.
@@ -744,6 +819,10 @@ func _flick() -> void:
 func _find_edge() -> void:
 	edge = lip
 	edge_out = lip_out
+	if hold == "beam" and beam_mid != Vector3.INF:
+		# Over a beam the rope runs down its near side.
+		edge = lip+lip_out*beam_half
+		return
 	if hold != "anchor": return
 	var s := _size()
 	var space := get_world_3d().direct_space_state
@@ -1232,9 +1311,15 @@ func _fly_step(delta: float) -> void:
 ## Pulled taut, back to the lip, where it hooks over.
 func _drag_step(delta: float) -> void:
 	_fly_t += delta
-	var k := clampf(_fly_t/DRAG_TIME,0.0,1.0)
-	hook_at = _slide_from.lerp(lip,k*k)
-	if k < 1.0: return
+	if hold == "beam" and beam_mid != Vector3.INF:
+		# Over the top and round the far side, swinging down to hang.
+		var w := clampf(_fly_t/WRAP_TIME,0.0,1.0)
+		hook_at = _wrap_at(w)
+		if w < 1.0: return
+	else:
+		var k := clampf(_fly_t/DRAG_TIME,0.0,1.0)
+		hook_at = _slide_from.lerp(lip,k*k)
+		if k < 1.0: return
 	state = "caught"
 	catches += 1
 	tested = false
@@ -1242,7 +1327,16 @@ func _drag_step(delta: float) -> void:
 	paid = _hand().distance_to(lip)+0.3*_size()
 	_find_edge()
 	_clank()
-	_say("Caught (%s). %s tugs it" % [{"solid":"a solid lip","poor":"a crumbly lip","anchor":"a post"}.get(hold,hold),Pad.pick("E","B")])
+	_say("Caught (%s). %s tugs it" % [{"solid":"a solid lip","poor":"a crumbly lip","anchor":"a post","beam":"over the beam"}.get(hold,hold),Pad.pick("E","B")])
+
+## The hook wrapping a beam, `w` 0 (on its top) to 1 (hung under its far
+## side): round the bar's axis, then dropping a little as it swings in.
+func _wrap_at(w: float) -> Vector3:
+	var s := _size()
+	var r := beam_half+0.06*s
+	var a := w*w*(3.0-2.0*w)*PI*0.62
+	var far := -lip_out
+	return beam_mid+(Vector3.UP*cos(a)+far*sin(a))*r+Vector3.DOWN*BEAM_HANG*s*w*w
 
 ## Off a smooth top: dragged to the lip and over it.
 func _slide_step(delta: float) -> void:
@@ -1358,7 +1452,11 @@ func _place_hook() -> void:
 		"aim":
 			up = (_hand()-hook_at).normalized() if _hand().distance_to(hook_at) > 0.05 else Vector3.UP
 		"caught", "drag", "tug", "seated", "slip", "pull_up":
-			if hold == "anchor":
+			if hold == "beam" and beam_mid != Vector3.INF:
+				# Hung on the far side, its eye up toward the bar's top.
+				var to := beam_mid+Vector3.UP*beam_half-hook_at
+				up = to.normalized() if to.length() > 0.05 else Vector3.UP
+			elif hold == "anchor":
 				var pull := _hand()-hook_at
 				if fixed and state != "tug" and edge != Vector3.INF: pull = line_at(edge.y)-hook_at
 				up = pull.normalized() if pull.length() > 0.05 else Vector3.UP
@@ -1399,6 +1497,9 @@ func _draw_rope() -> void:
 	if edge != Vector3.INF and (state == "caught" or state == "seated") and (climber or hauling or fixed or on_top()):
 		_draw_hanging()
 		return
+	if hold == "beam" and beam_mid != Vector3.INF and state in ["caught","tug","seated","drag"]:
+		_draw_over_beam()
+		return
 	var a := _hand()
 	var b := hook_at
 	var d := a.distance_to(b)
@@ -1428,6 +1529,36 @@ func _draw_rope() -> void:
 		var y := dir/l
 		var x := y.cross(Vector3.UP).normalized() if absf(y.y) < 0.95 else Vector3.RIGHT
 		mm.set_instance_transform(i,Transform3D(Basis(x,y,x.cross(y))*Basis.from_scale(Vector3(s,l+0.01,s)),(p+q)*0.5))
+
+## The rope's length from his hand to the hook (over a beam: over its top).
+func _span() -> float:
+	if hold == "beam" and beam_mid != Vector3.INF and state != "fly":
+		var near := beam_mid+(lip_out+Vector3.UP).normalized()*(beam_half+ROPE_R*_size())
+		return _hand().distance_to(near)+near.distance_to(hook_at)
+	return _hand().distance_to(hook_at)
+
+## Over a beam: from his hand up to the bar's near side (sagging by the
+## slack), round its top, and down the far side to the hook.
+func _draw_over_beam() -> void:
+	var s := _size()
+	var r := beam_half+ROPE_R*s
+	var near := beam_mid+(lip_out+Vector3.UP).normalized()*r
+	var top := beam_mid+Vector3.UP*r
+	var far := beam_mid+(-lip_out+Vector3.UP).normalized()*r
+	var a := _hand()
+	var d := a.distance_to(near)
+	var span := d+near.distance_to(top)+top.distance_to(far)+far.distance_to(hook_at)
+	if state == "caught": paid = maxf(paid,span)
+	elif state == "seated": paid = span+0.02*s
+	var slack := maxf(paid-span,0.0)
+	var sag := sqrt(3.0*d*slack/8.0) if d > 0.01 else 0.0
+	var pts := PackedVector3Array()
+	for i in 13:
+		var t := float(i)/12.0
+		pts.append(a.lerp(near,t)+Vector3.DOWN*4.0*sag*t*(1.0-t))
+	if state != "drag": pts.append_array([top,far])
+	pts.append(hook_at)
+	_draw_line(pts)
 
 ## Hooked and hanging free of his hand (he's on it, or up top): from the
 ## hook over the edge, straight down the face to the floor, a little lying
