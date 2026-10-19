@@ -130,3 +130,11 @@ is a playground the player works through, built as one set piece.
 ## Cap and budget
 
 The iterate skill's defaults.
+
+## Carried to the look pass (from the review of iteration 3)
+
+- The tower's podium and stepped skirt read as plain grey boxes in front of
+  the belfry; dress or reshape them so the base is part of the ruin.
+- The far silhouette is still a long low hull with a slim block at the east
+  end. The tower alone won't fix it at the spine's 136 m length; the islets
+  and the look pass must add height and mass so the cluster reads upright.
