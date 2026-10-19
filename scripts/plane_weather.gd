@@ -44,6 +44,7 @@ const PlaneLightning = preload("res://scripts/plane_lightning.gd")
 const StormFront = preload("res://scripts/storm_front.gd")
 const StormCells = preload("res://scripts/storm_cells.gd")
 const StormWhiteout = preload("res://scripts/storm_whiteout.gd")
+const DragonSightings = preload("res://scripts/dragon_sightings.gd")
 
 const STORM_WIND := 6.0
 const TURB_PITCH := 0.35
@@ -120,6 +121,8 @@ var cells: Node3D
 ## Whiteouts (scripts/storm_whiteout.gd), and the murk now (0 to 1).
 var whiteout: Node3D
 var murk := 0.0
+## The dragon seen in the lightning (scripts/dragon_sightings.gd).
+var sightings: Node3D
 ## The gust under way ({} none): its side (a unit vector, flat), its
 ## strength's share, its time and length, and its signs.
 var _gust := {}
@@ -183,6 +186,9 @@ func setup(scene: Node3D) -> void:
 	add_child(whiteout)
 	whiteout.setup(scene)
 	whiteout.lightning = lightning
+	sightings = DragonSightings.new()
+	add_child(sightings)
+	sightings.setup(scene,self)
 	# `--front=<m>`: one already in, its leading edge that far off, coming
 	# from ahead of the start (north, -z) unless `--front-toward=<rad>`.
 	for arg in preload("res://scripts/launch_args.gd").user_args():
@@ -350,6 +356,8 @@ func step(delta: float) -> void:
 		var every := lerpf(GUST_EVERY,STORM_GUST_EVERY,storm)
 		_next_gust = _rng.randf_range(0.5,1.5)*every
 	lightning.step(delta,storm)
+	sightings.murk = murk
+	sightings.step(delta)
 
 ## The storm's look over the sky the celestial rig has just set.
 func grade() -> void:

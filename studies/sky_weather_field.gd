@@ -19,6 +19,8 @@ extends "res://studies/plane_field_isle.gd"
 ##   Shift+T      the whole sky's storm rolls in, or clears
 ##   G            a gust now
 ##   F12          lightning now (scripts/plane_lightning.gd)
+##   K            the dragon far off in the lightning now; Shift+K close
+##                (scripts/dragon_sightings.gd); in a storm it comes on its own
 ##   R            back to the start
 ##   ./run-sky-weather.command        (heavy on: --heavy)
 ##   ./run-sky-weather.command --storm=1   a full storm from the start
@@ -27,6 +29,7 @@ extends "res://studies/plane_field_isle.gd"
 ##   ./run-sky-weather.command --cell-every=0   no cells on their own
 ##   ./run-sky-weather.command --whiteout-at=200 --whiteout-hold=1   one held, for stills
 ##   ./run-sky-weather.command --cloud-drift=30   the cloud faster (m/s; 0 still)
+##   ./run-sky-weather.command --storm=1 --sighting-every=20 --sighting-log   sightings often
 ## The plane field's flags hold here.
 const PlaneWeather = preload("res://scripts/plane_weather.gd")
 const SkyIsles = preload("res://scripts/sky_isles.gd")
@@ -84,13 +87,15 @@ func _add_elements() -> void:
 	layer.add_child(_readout)
 
 func _read() -> String:
-	var line := "Storm %d%%   (T front, C cell, M whiteout, Shift+T sky storm, G gust, F12 lightning)" % roundi(elements.storm*100.0)
+	var line := "Storm %d%%   (T front, C cell, M whiteout, Shift+T sky storm, G gust, F12 lightning, K/Shift+K dragon)" % roundi(elements.storm*100.0)
 	line += "\n"+drift.describe(elements._air_angle(),elements.storm)
 	if elements.front.active:
 		var d: float = elements.front.ahead_of(elements.probe())
 		line += "\nFront %s" % ("%.1f km off" % (d/1000.0) if d > 0.0 else "overhead")
 	if elements.cells.active: line += "\n"+_cell_line()
 	if elements.whiteout.active(): line += "\nWhiteout"
+	var dragon: String = elements.sightings.describe()
+	if dragon != "": line += "\n"+dragon
 	if flying and plane != null:
 		var here: Dictionary = plane_air.call(plane.position)
 		if float(here.gust) > 0.1: line += "\nGust!"
@@ -130,5 +135,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 			KEY_F12:
 				elements.lightning.strike()
+				return
+			KEY_K:
+				elements.sightings.call_now("close" if (event as InputEventKey).shift_pressed else "far")
 				return
 	super._unhandled_input(event)
