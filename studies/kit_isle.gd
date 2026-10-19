@@ -271,8 +271,8 @@ const FOOT_HINT := "Walk to your plane and Space (pad A) by it to fly  ·  Space
 const LOOK_HINT := "Telescope  ·  mouse (right stick) look  ·  wheel (LT RT) zoom  ·  hold on an isle for its card  ·  let go to lower"
 const BOARD_LINE := "Space (pad A)  climb in and take off"
 const FLY_HINT := "Flying  ·  %.0f m/s  ·  bumps %d\nA D bank and turn  ·  W S pitch (W nose down)  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  hold Q E (LB RB) knife edge, + A D to drift  ·  Q Q or E E quick, or click: barrel roll\nF (pad Y) flaps %s  ·  put it down on the turf, then brake or drift to a stop  ·  R start on foot  ·  L / Shift+L look  ·  B gust  ·  hold right mouse or the right stick to look round  ·  R3 camera back behind"
-const ROLL_HINT := "On the wheels  ·  %.0f m/s\nShift brake  ·  steer hard, or Q E and steer, to drift  ·  Shift and steer, a blip of Space, to power-slide  ·  in a slide ease or counter the stick to widen, Q E to tighten  ·  roll off the edge to fly"
-const STOPPED_HINT := "On the wheels\nSpace roll, A D steer, off the isle's edge to fly  ·  F (pad Y) get out  ·  hold Shift (LT) to back up  ·  Shift, Space and steer to turn on the spot"
+const ROLL_HINT := "On the wheels  ·  %.0f m/s\nShift brake  ·  steer hard, or Q E and steer, to drift  ·  Shift and steer, a blip of Space, to power-slide  ·  in a slide ease or counter the stick to widen, Q E to tighten  ·  over 8 m/s hold S (pull back): the nose comes up and it lifts off, or roll off the edge"
+const STOPPED_HINT := "On the wheels\nSpace roll, A D steer, past 8 m/s hold S to lift off  ·  hold Shift and Space to run up on the brakes, let Shift go to launch  ·  F (pad Y) get out  ·  hold Shift (LT) to back up  ·  Shift, Space and steer to turn on the spot"
 const REVERSE_HINT := "Backing up  ·  %.1f m/s\nsteer: the tail goes that way  ·  let go of Shift (LT) to stop  ·  Space roll forwards"
 const TAKEOFF_HINT := "Climbing in"
 const DIP_HINT := "Off the edge  ·  dropping until it has the speed to fly: nose down, Space for power"
@@ -1649,7 +1649,7 @@ func _takeoff_step(delta: float) -> void:
 ## the way out; getting out, the pilot hops down beside the plane, which
 ## stays parked where it stopped.
 func _wheel_events(out: Dictionary, delta: float) -> void:
-	if spray == null and (out.has("settled") or out.has("bounce")):
+	if spray == null and (out.has("settled") or out.has("bounce") or out.has("let_go")):
 		spray = WheelSpray.new()
 		spray.name = "WheelSpray"
 		add_child(spray)
@@ -1680,6 +1680,25 @@ func _wheel_events(out: Dictionary, delta: float) -> void:
 	if out.has("off_edge"): _word("Off the edge")
 	if out.has("not_yet"): _word("Stop first  ·  Shift to brake")
 	if out.has("wings"): _word("Lift!")
+	# The run-up on the brakes: the pad rumbles and the view trembles as it
+	# strains; let go, a jolt and grit thrown back off the wheels.
+	if out.has("spool"):
+		var k := float(out.spool.strain)
+		Pad.pulse(0.3*k,0.12*k,0.06)
+		if _shake <= SHAKE_TIME*0.5:
+			_shake = SHAKE_TIME*0.5
+			_shake_size = 0.3*k
+	if out.has("let_go"):
+		var k := float(out.let_go.strain)
+		_thump(0.5*k)
+		Pad.pulse(0.55*k,0.5*k,0.25)
+		_shake = SHAKE_TIME
+		_shake_size = 0.8*k
+		spray.burst(wheels,0.7*k,GRIT_TINT)
+		_word("Go!")
+	if out.has("lifted"):
+		Pad.pulse(0.2,0.15,0.12)
+		_word("Lift!")
 	if out.has("reverse"): _word("Backing up")
 	if out.has("edge_behind"): _word("The edge is right behind you")
 	if out.has("hit"):

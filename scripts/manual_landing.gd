@@ -17,16 +17,24 @@ extends RefCounted
 ##            is calmed (CALM_LOW to CALM_HIGH m), so a slow approach is not
 ##            held up off the ground by ridge lift or a gust.
 ##   ROLL     on its wheels, sliding or gripping (below). Boost opens the
-##            throttle (PUSH, up to ROLL_TOP), the stick steers; the wheels
-##            never lift it: only rolled or slid off the land's edge is it
-##            flying again, its slide carried on as the air drift's slip,
+##            throttle (ROLL_PUSH, up to ROLL_TOP), the stick steers. Under
+##            power the tail comes up off the grass; rolling straight past
+##            ROTATE_FROM with Boost held, the stick pulled back brings the
+##            nose up on the main wheels, and nose up at LIFT_SPEED the
+##            wheels let go (`events.lifted`). Off them it is heavy a
+##            while (the unstick, below). Rolled or slid
+##            off the land's edge it is flying again too, its slide carried on as the air drift's slip,
 ##            and first it dips (`dipping`): it falls, the nose eases down
 ##            to DIP_NOSE, and only once the dive (DIP_GAIN of the fall
 ##            along it, Boost's PUSH) has it up to FLY_SPEED do the wings
 ##            catch it (`events.wings`). Off slow it dips deep; nose held up
 ##            it dips on; after DIP_MAX s the wings catch it anyway.
 ##   STOPPED  stood still, the brakes holding, the engine ticking over. Boost
-##            rolls it off again; Exit gets out. Brake held REVERSE_DELAY s
+##            rolls it off again; Exit gets out. Brake and Boost held, the
+##            stick near centre, runs it up on the brakes (`strain` builds
+##            over SPOOL_TIME, `events.spool`); let the brake go and it
+##            lunges (`events.let_go`), the push SURGE over at full strain,
+##            easing off over SURGE_TIME: a short-field takeoff. Brake held REVERSE_DELAY s
 ##            backs it up (`reversing`, in ROLL: below); Brake, a blip of
 ##            Boost and the stick pivot it on the spot (SPOT_TURN).
 ##   EXIT     the engine spins down (SPIN) and the pilot hops out (HOP_TIME,
@@ -188,6 +196,36 @@ const SLOPE_PULL := 7.0
 const TAXI_TURN := 0.9
 const TAXI_FULL := 3.0
 const LIFT_SPEED := PlaneLanding.LIFT_SPEED
+## The throttle's push rolling (m/s²): harder than the sequence's, so a
+## small isle has room to reach LIFT_SPEED.
+const ROLL_PUSH := 6.0
+## Lifting off the land: under power the tail comes up between TAIL_FROM
+## and TAIL_FULL m/s (over TAIL_TIME s), the nose down to TAIL_NOSE
+## (radians); the stick pulled back past ROTATE_PULL (or the mouse pulling
+## up) from ROTATE_FROM m/s brings the nose up on the mains at ROTATE_RATE
+## rad/s, and at ROTATE_NOSE, at LIFT_SPEED or more, the wheels let go.
+const TAIL_FROM := 2.0
+const TAIL_FULL := 6.0
+const TAIL_TIME := 0.5
+const TAIL_NOSE := 0.04
+const ROTATE_PULL := 0.3
+const ROTATE_FROM := 8.0
+const ROTATE_RATE := 0.35
+const ROTATE_NOSE := 0.22
+## The unstick: UNSTICK_TIME s off the wheels it is heavy. It climbs only
+## UNSTICK_FLOAT of what its nose asks at first (hanging over the grass),
+## the whole of it by the end; its speed builds at no more than
+## UNSTICK_PUSH m/s²; the nose comes up no faster than UNSTICK_NOSE rad/s
+## over where it left the wheels. All of it eases out, so nothing snaps.
+const UNSTICK_TIME := 1.6
+const UNSTICK_FLOAT := 0.15
+const UNSTICK_PUSH := 2.5
+const UNSTICK_NOSE := 0.18
+## The run-up on the brakes (s to full strain), and the let-go's lunge: the
+## push SURGE over at full strain, easing off over SURGE_TIME s.
+const SPOOL_TIME := 1.0
+const SURGE := 1.0
+const SURGE_TIME := 0.6
 ## The fastest the throttle rolls it on the wheels (m/s), under FLY_SPEED,
 ## so every takeoff off an edge dips. The dip: the speed the wings catch
 ## it at (m/s), the nose it eases to with the stick let go (radians, down
@@ -346,6 +384,21 @@ var _in_power := false
 ## at the land's edge behind (said once).
 var _brake_held := 0.0
 var _at_edge := false
+## The run-up on the brakes: how hard it strains (0 to 1, for the caller's
+## rumble and shake), and the let-go's lunge left (0 to 1, easing off).
+var strain := 0.0
+var _surge := 0.0
+## Taking off: the tail up (0 to 1), the nose brought up on the mains (0 to
+## 1 of the way to ROTATE_NOSE), and seconds into the unstick (-1: none),
+## its speed and nose at the let-go.
+var _tail := 0.0
+var _rot := 0.0
+var _unstick := -1.0
+var _unstick_speed := 0.0
+var _unstick_nose := 0.0
+## Its height through the unstick, kept here: the plane's skim would pop it
+## up to SKIM over the grass the moment it flies.
+var _unstick_y := 0.0
 
 ## Takes charge of `on_plane`: in the air (`on_ground` false, flying as it
 ## is), or stood stopped where it is (`on_ground`, as a parked plane boarded
@@ -353,6 +406,11 @@ var _at_edge := false
 func begin(on_plane: RefCounted, on_ground := false) -> void:
 	plane = on_plane
 	phase = STOPPED if on_ground else AIR
+	strain = 0.0
+	_surge = 0.0
+	_tail = 0.0
+	_rot = 0.0
+	_unstick = -1.0
 	time = 0.0
 	elapsed = 0.0
 	engine = 1.0
@@ -382,7 +440,7 @@ func begin(on_plane: RefCounted, on_ground := false) -> void:
 	_low = false
 	stats = {"touches":[],"bounces":0,"go_arounds":0,"touch_and_gos":0,"off_edge":0,"early_exits":0,
 		"rollout":NAN,"time_to_stop":NAN,"stopped":false,"bounce_reasons":{},"greasers":0,
-		"slide_distance":0.0,"peak_slip":0.0,"power_slides":0,"stop_margin":NAN,"stop_grade":"","reverses":0}
+		"slide_distance":0.0,"peak_slip":0.0,"power_slides":0,"stop_margin":NAN,"stop_grade":"","reverses":0,"lift_offs":0}
 
 ## Off an edge and falling, the wings not yet carrying it.
 func dipping() -> bool:
@@ -495,14 +553,24 @@ func _stopped(delta: float, input: Dictionary, floor_at: Callable, out: Dictiona
 	var boost := clampf(float(input.get("boost",0.0)),0.0,1.0)
 	var brake := clampf(float(input.get("brake",0.0)),0.0,1.0)
 	var turn := clampf(float(input.get("turn",0.0)),-1.0,1.0)
+	if boost <= 0.0 or absf(turn) > DRIFT_ONSET: strain = maxf(0.0,strain-delta*2.0)
 	_brake_held = _brake_held+delta if brake > 0.3 and boost <= 0.0 else 0.0
 	_at_edge = false
 	if boost > 0.0 and brake <= 0.3:
+		if strain > 0.0:
+			out["let_go"] = {"strain":strain}
+			_surge = strain
+		strain = 0.0
 		_enter(ROLL)
 		_v = Vector2.ZERO
 		sliding = false
 		reversing = false
 		_since_touch = INF
+	elif boost > 0.0 and brake > 0.3 and absf(turn) <= DRIFT_ONSET:
+		# Run up on the brakes: full power, held, straining.
+		throttle = boost
+		strain = minf(1.0,strain+delta/SPOOL_TIME)
+		out["spool"] = {"strain":strain}
 	elif boost > 0.0 and absf(turn) > DRIFT_ONSET:
 		# The prop's wash on the rudder, the brakes holding: round on the spot.
 		throttle = boost-brake
@@ -526,8 +594,10 @@ func _fly(delta: float, input: Dictionary, ground: Callable, floor_at: Callable,
 	if air.is_valid(): calm = func(p: Vector3) -> Dictionary: return calmed(air.call(p),p,floor_at)
 	# Dipping, the fall holds at its full until the wings catch it.
 	if _dip_time >= 0.0: plane.airborne = minf(float(plane.airborne),SkyPlane.FALL_TIME)
+	var nose_was := float(plane.pitch)
 	plane.step(delta,input,ground,calm)
 	throttle = float(plane.throttle)
+	if _unstick >= 0.0: _heavy(delta,nose_was)
 	if _dip_time >= 0.0: _dip(delta,input,out)
 	# A hop's kick, lifting it clear and dying away.
 	if _kick > 0.0:
@@ -695,7 +765,11 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 	var brake := clampf(float(input.get("brake",0.0)),0.0,1.0)
 	var turn := clampf(float(input.get("turn",0.0)),-1.0,1.0)
 	var lean := clampf(float(input.get("lean",0.0)),-1.0,1.0)
+	var look: Vector2 = input.get("look",Vector2.ZERO)
+	var pull := float(input.get("pitch",0.0)) > ROTATE_PULL or look.y > 0.002
 	throttle = boost-brake if boost > 0.0 else -1.0
+	_surge *= exp(-delta/SURGE_TIME)
+	var rotate := false
 	var at := Vector2(plane.position.x,plane.position.z)
 	var heading := float(plane.heading)
 	# The slope pulls it, any way it leans.
@@ -756,7 +830,7 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		# The scrub: the more sideways, the more; the brakes along the wheels.
 		var side := sin(beta)
 		var loss := ROLL_DRAG*(1.0-boost)+maxf(WHEEL_BRAKE*brake*absf(cos(beta)),SCRUB*side*side)
-		var push := boost*PUSH*(1.0-brake)*cos(beta) if speed < ROLL_TOP else 0.0
+		var push := boost*ROLL_PUSH*(1.0-brake)*cos(beta) if speed < ROLL_TOP else 0.0
 		speed = maxf(0.0,speed+(push-loss)*delta)
 		# The path bends towards the nose, and the stick bends the line:
 		# into the slide tighter, against it wider.
@@ -782,9 +856,11 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		var fwd := Vector2(-sin(heading),-cos(heading))
 		var along := _v.dot(fwd)
 		along = move_toward(along,0.0,(ROLL_DRAG*(1.0-boost)+WHEEL_BRAKE*brake)*delta)
-		if along < ROLL_TOP: along = minf(along+boost*PUSH*(1.0-brake)*delta,maxf(along,ROLL_TOP))
+		if along < ROLL_TOP: along = minf(along+boost*ROLL_PUSH*(1.0+SURGE*_surge)*(1.0-brake)*delta,maxf(along,ROLL_TOP))
 		_v = fwd*along
 		beta = 0.0
+		# Fast enough, Boost held and the stick back: the nose comes up.
+		rotate = boost > 0.0 and brake <= 0.3 and along >= ROTATE_FROM and pull
 	plane.heading = heading
 	slip = beta
 	speed = _v.length()
@@ -825,6 +901,29 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		return
 	plane.carry(Vector3(next_at.x,plane.position.y,next_at.y),Vector3(_v.x,0.0,_v.y),speed)
 	_place_on(land,floor_at,smoothstep(0.0,TAIL_DOWN,_since_touch))
+	# Under power the tail comes up and it rolls on its mains; pulled back,
+	# the nose comes up on them; nose up and fast enough, the wheels let go.
+	var powering := boost > 0.0 and brake <= 0.3 and not sliding and not reversing
+	_tail = move_toward(_tail,smoothstep(TAIL_FROM,TAIL_FULL,speed) if powering else 0.0,delta/TAIL_TIME)
+	if not rotate: _rot = move_toward(_rot,0.0,2.0*ROTATE_RATE/ROTATE_NOSE*delta)
+	if _tail > 0.0 or _rot > 0.0:
+		var was := float(plane.pitch)
+		var level := lerpf(was,TAIL_NOSE,_tail)
+		if rotate: _rot = minf(1.0,_rot+ROTATE_RATE/maxf(ROTATE_NOSE-level,0.05)*delta)
+		var nose := lerpf(level,maxf(ROTATE_NOSE,level),_rot)
+		plane.pitch = nose
+		plane.position.y += PlaneStrip.contact(nose)-PlaneStrip.contact(was)
+	if rotate and _rot >= 1.0 and speed >= LIFT_SPEED:
+		stats.lift_offs += 1
+		out["lifted"] = {"speed":speed}
+		_surge = 0.0
+		var nose := float(plane.pitch)
+		_lift(speed,nose,false)
+		_unstick = 0.0
+		_unstick_speed = speed
+		_unstick_nose = nose
+		_unstick_y = float(plane.position.y)
+		return
 	# Stopped: slow with the throttle shut or the brakes on; backing up, once
 	# the brake is let go.
 	var held := (brake <= 0.3 and boost <= 0.0) if reversing else (boost <= 0.0 or brake > 0.3)
@@ -926,12 +1025,32 @@ func _hold(floor_at: Callable) -> void:
 	_since_touch = INF
 	_place_on(land,floor_at,1.0)
 
+## Just off the wheels, heavy: the climb held back and let out, the speed
+## slow to build, the nose slow to answer (the unstick's constants).
+func _heavy(delta: float, nose_was: float) -> void:
+	_unstick += delta
+	var u := clampf(_unstick/UNSTICK_TIME,0.0,1.0)
+	var most := _unstick_nose+UNSTICK_NOSE*_unstick
+	if float(plane.pitch) > maxf(most,nose_was): plane.pitch = maxf(most,nose_was)
+	plane.speed = minf(float(plane.speed),_unstick_speed+UNSTICK_PUSH*_unstick)
+	var share := lerpf(UNSTICK_FLOAT,1.0,smoothstep(0.0,1.0,u))
+	var climb := float(plane.speed)*sin(float(plane.pitch))
+	plane.velocity.y = climb*share if climb > 0.0 else climb
+	_unstick_y += float(plane.velocity.y)*delta
+	plane.position.y = maxf(_unstick_y,float(plane.position.y)) if u >= 1.0 else _unstick_y
+	# Hanging low over the grass, the wheels don't count as a touch.
+	_grace = maxf(_grace,0.1)
+	if u >= 1.0: _unstick = -1.0
+
 ## Off the wheels and flying: at `pace` m/s, the nose at `nose`; off an
 ## edge (`drop`) it falls a moment before the air catches it.
 func _lift(pace: float, nose: float, drop: bool) -> void:
 	plane.resume(maxf(pace,SkyPlane.SLOW),nose)
 	if drop: plane.airborne = 0.0
 	_grace = BOUNCE_GRACE
+	_tail = 0.0
+	_rot = 0.0
+	_unstick = -1.0
 	_kick = 0.0
 	sliding = false
 	reversing = false
