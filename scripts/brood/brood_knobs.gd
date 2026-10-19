@@ -80,6 +80,26 @@ const WAKE_HOLD := 0.7
 ## burrow (plus up to WAKE_JITTER).
 const BAG_STUDY_COUNT := 12
 const BURROW_STAGGER := 0.5
+## The rip (the bag study): while he wears the bag with any clinging, one
+## of them pulls a piece out every RIP_EVERY s (give or take RIP_JITTER of
+## it; each clinger past the first cuts the wait RIP_MORE), the piece
+## hopping out of the mouth RIP_POP s onto the ground RIP_OUT m (out from the ripper) beside him. A
+## ripped piece on the ground calls RIP_CREW of them (the nearest free);
+## within HAUL_REACH they take it up and haul it at RIP_PACE to the
+## nearest burrow (within HOME_NEAR of its mouth it's taken down). He
+## knocks a hauler off as any haul, but only past RIP_HIT_SPEED (m/s; over
+## the clingers' shove, so they don't drop it by his being jostled into
+## them); under RIP_CREW left they let it down,
+## and none lifts it again for RIP_REST s. E by it takes it back.
+const RIP_EVERY := 7.0
+const RIP_JITTER := 0.3
+const RIP_MORE := 0.1
+const RIP_OUT := 1.0
+const RIP_HIT_SPEED := 2.0
+const RIP_POP := 0.4
+const RIP_CREW := 2
+const RIP_PACE := 0.55
+const RIP_REST := 1.5
 
 ## Grab and shove: a guy within GRAB_REACH (m, across; and no more than
 ## GRAB_RISE of his own height above or below the feet) of whoever holds a

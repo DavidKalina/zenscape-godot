@@ -397,4 +397,4 @@ func _sync_figure() -> void:
 	super._sync_figure()
 
 func _hint_text() -> String:
-	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · hold LMB or T (pad RT) worn: aim a throw, let go to throw (8 kg or under) · V (pad right) by it: shove it · the stone brood wakes out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · hold LMB or T (pad RT) worn: aim a throw, let go to throw (8 kg or under) · V (pad right) by it: shove it · the stone brood wakes out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off; clingers rip pieces out and carry them to a burrow: bowl into the crew or E by the piece to take it back · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"

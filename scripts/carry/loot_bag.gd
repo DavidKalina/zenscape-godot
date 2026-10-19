@@ -480,6 +480,27 @@ func _apply_feel(pace: float) -> void:
 	m.sail_on = bool(_base.sail_on) and not barred.has("sail")
 	m.rope_on = bool(_base.rope_on) and not barred.has("rope")
 
+## A piece pulled out of it (the stone brood's rip: scripts/brood/
+## bag_brood.gd): `p` (or a random one) out of `items`, the kg down, the
+## sack shrinking with a gulp, its figure shown again (the caller places
+## it). Returns the piece, or {} when it's empty.
+func rip_out(p: Dictionary = {}) -> Dictionary:
+	if items.is_empty(): return {}
+	if p.is_empty() or not items.has(p): p = items[randi() % items.size()]
+	items.erase(p)
+	(p.node as Node3D).visible = true
+	_gulp_t = 0.0
+	_gulp_sound.pitch_scale = randf_range(0.7,0.85)
+	_gulp_sound.play()
+	_set_kg(maxf(kg-float(p.kg),0.0))
+	return p
+
+## The sack's mouth (world).
+func mouth() -> Vector3:
+	var motor: Variant = study.get("motor")
+	var s: float = motor.size if motor != null else 1.0
+	return _sack.global_transform*Vector3(0.0,_r*s*1.1,0.0)
+
 ## Empties it: every piece back on its spot.
 func empty() -> void:
 	stowing = {}
@@ -560,7 +581,7 @@ func in_reach() -> Dictionary:
 	var best := {}
 	var near := INF
 	for p: Dictionary in study.get("loot"):
-		if items.has(p) or p == stowing: continue
+		if items.has(p) or p == stowing or bool(p.get("buried",false)): continue
 		var at: Vector3 = (p.node as Node3D).global_position
 		var across := Vector2(at.x-feet.x,at.z-feet.z).length()
 		if across > REACH*s+float(p.measures.radius) or absf(at.y-feet.y) > REACH_UP*s: continue
