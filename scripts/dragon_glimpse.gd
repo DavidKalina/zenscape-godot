@@ -77,6 +77,13 @@ var _clock := 0.0
 var _yaw := 0.0
 var _hide: StandardMaterial3D
 var _skin: StandardMaterial3D
+## The scaled, wet hide and the veined membrane (shaders/dragon_hide.gdshader,
+## dragon_membrane.gdshader); the old flat ones above stay one switch away
+## (`old_hide`: --hide=old, H in the sky weather field).
+var _scales := ShaderMaterial.new()
+var _veined := ShaderMaterial.new()
+var old_hide := false
+var _surfaces: Array = []
 var _loom := ShaderMaterial.new()
 ## The whiteout's murk round the eye now (0 to 1).
 var murk := 0.0
@@ -111,9 +118,51 @@ func _ready() -> void:
 	_loom.render_priority = LOOM_PRIORITY
 	_hide.next_pass = _loom
 	_skin.next_pass = _loom
+	_scales.shader = preload("res://shaders/dragon_hide.gdshader")
+	_veined.shader = preload("res://shaders/dragon_membrane.gdshader")
+	_scales.next_pass = _loom
+	_veined.next_pass = _loom
+	for a in preload("res://scripts/launch_args.gd").user_args():
+		if a == "--hide=old": old_hide = true
+	_smooth(model)
 	_dress(model)
+	set_old_hide(old_hide)
 	_sample(model)
 	visible = false
+
+## The old hide (true) or the scaled one (false).
+func set_old_hide(old: bool) -> void:
+	old_hide = old
+	for e: Array in _surfaces:
+		(e[0] as MeshInstance3D).set_surface_override_material(e[1],(_skin if e[2] else _hide) if old else (_veined if e[2] else _scales))
+
+## The mesh's hard edges softened: each vertex of the hide and belly takes
+## the average normal of every vertex at its spot, so the low-poly facets
+## stop reading (the scales carry the small form).
+func _smooth(n: Node) -> void:
+	if n is MeshInstance3D:
+		var mi := n as MeshInstance3D
+		var out := ArrayMesh.new()
+		for i in mi.mesh.get_surface_count():
+			var arrays := mi.mesh.surface_get_arrays(i)
+			var m := mi.mesh.surface_get_material(i)
+			var key := m.resource_name if m != null else ""
+			if key == "dragon_hide" or key == "dragon_belly":
+				var vs: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+				var ns: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+				var sum := {}
+				for j in vs.size():
+					var k := vs[j].snapped(Vector3.ONE*0.001)
+					sum[k] = (sum[k] as Vector3 if sum.has(k) else Vector3.ZERO)+ns[j]
+				var sm := PackedVector3Array()
+				sm.resize(vs.size())
+				for j in vs.size(): sm[j] = (sum[vs[j].snapped(Vector3.ONE*0.001)] as Vector3).normalized()
+				arrays[Mesh.ARRAY_NORMAL] = sm
+				arrays[Mesh.ARRAY_TANGENT] = null
+			out.add_surface_from_arrays(mi.mesh.surface_get_primitive_type(i),arrays,[],{},mi.mesh.surface_get_format(i) & Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS)
+			out.surface_set_material(i,m)
+		mi.mesh = out
+	for c in n.get_children(): _smooth(c)
 
 static func _dark(c: Color, two_sided: bool) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -142,7 +191,7 @@ func _dress(n: Node) -> void:
 		for i in mi.mesh.get_surface_count():
 			var m := mi.mesh.surface_get_material(i)
 			var key := m.resource_name if m != null else ""
-			mi.set_surface_override_material(i,_skin if key.begins_with("dragon_membrane") else _hide)
+			_surfaces.append([mi,i,key.begins_with("dragon_membrane")])
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		# The wings reach far from the rest pose's bounds.
 		mi.extra_cull_margin = 60.0
@@ -196,6 +245,9 @@ func show_at(at: Vector3, velocity: Vector3, lit: float, delta: float, eye := Ve
 	_hide.emission_enabled = close > 0.0
 	_hide.emission = SHEEN*lit*close
 	_skin.backlight = Color(0.22,0.17,0.24).lerp(GLOW,close)*lit
+	for sm: ShaderMaterial in [_scales,_veined]:
+		sm.set_shader_parameter("lit",lit)
+		sm.set_shader_parameter("close",close)
 	_loom.set_shader_parameter("murk",murk)
 	_loom.set_shader_parameter("lit",lit)
 	_pose(at,velocity,eye if keep else Vector3.INF)
