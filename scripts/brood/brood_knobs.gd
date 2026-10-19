@@ -70,6 +70,29 @@ const WAKE_JITTER := 0.25
 const WAKE_RISE := 0.7
 const WAKE_HOLD := 0.7
 
+## Grab and shove: a guy within GRAB_REACH (m, across; and no more than
+## GRAB_RISE of his own height above or below the feet) of whoever holds a
+## treasure clings on, up to GRAB_SLOTS at once (the rest crowd round him
+## CROWD_RING out). Each clinger slows him SLOW_EACH (his walk and run
+## times 1 - that per guy, no lower than SLOW_MOST) and shoves him a
+## little (SHOVE m/s, every SHOVE_EVERY s, give or take half, sideways
+## and back). KNOCK_COUNT on him for KNOCK_HOLD s knocks the treasure
+## loose (carry's drop "knock"). No damage. A jump (his rise over SHAKE_UP
+## m/s) shakes them all off; shaken, a guy is dazed DAZE s before he grabs
+## again.
+const GRAB_REACH := 0.85
+const GRAB_RISE := 1.6
+const GRAB_SLOTS := 8
+const CROWD_RING := 1.1
+const SLOW_EACH := 0.13
+const SLOW_MOST := 0.3
+const SHOVE := 1.6
+const SHOVE_EVERY := 0.45
+const KNOCK_COUNT := 5
+const KNOCK_HOLD := 1.0
+const SHAKE_UP := 2.0
+const DAZE := 1.4
+
 ## Their stone: grey, rough.
 const STONE := Color(0.62,0.6,0.57)
 const STONE_DARK := Color(0.2,0.19,0.18)

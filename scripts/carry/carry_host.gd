@@ -112,6 +112,9 @@ var _thud: AudioStreamPlayer = null
 var _knocks := 0
 var _air_top := -INF
 var drops := 0
+## Others holding him back (the stone brood's clingers, scripts/brood/):
+## his carry's walk and run times this (1: free). `set_slow`.
+var slow := 1.0
 var losses := 0
 static var _thud_take: AudioStreamWAV = null
 
@@ -722,8 +725,8 @@ func _apply_feel(pace: float) -> void:
 	if _base.is_empty(): return
 	var m: Variant = study.get("motor")
 	var w := Weights.of(str(held.weight))
-	m.walk = float(_base.walk)*float(w.walk)*pace
-	m.run = float(_base.run)*float(w.run)*pace
+	m.walk = float(_base.walk)*float(w.walk)*pace*slow
+	m.run = float(_base.run)*float(w.run)*pace*slow
 	var j: Array = []
 	for h: float in _base.jumps: j.append(h*float(w.jump)*(1.0 if pace >= 1.0 else 0.0))
 	m.jumps = j
@@ -735,6 +738,13 @@ func _apply_feel(pace: float) -> void:
 	m.ledge_on = bool(_base.ledge_on) and not bars.has("ledge")
 	m.sail_on = bool(_base.sail_on) and not bars.has("sail")
 	m.rope_on = bool(_base.rope_on) and not bars.has("rope")
+
+## Held back to `k` of his carry's paces (1 free); applied at once while
+## he walks with it (not while lifting, setting down or balking).
+func set_slow(k: float) -> void:
+	if is_equal_approx(k,slow): return
+	slow = k
+	if not held.is_empty() and phase == "carry" and _balk_t < 0.0: _apply_feel(1.0)
 
 func _restore_feel() -> void:
 	if _base.is_empty(): return

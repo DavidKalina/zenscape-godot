@@ -12,6 +12,13 @@ extends Node3D
 ## the treasure where it rests once he lets it go. Once a deal; the re-deal
 ## (`clear`) puts them away and lets the next lift wake them again.
 ##
+## Grab and shove: reaching whoever holds it, up to GRAB_SLOTS cling on
+## (slots round his legs and back, moved with him each frame), the rest
+## crowd round him. Clingers slow him (carry's `set_slow`) and shove him
+## about; KNOCK_COUNT on him a moment knock the treasure loose (carry's
+## `drop("knock")`) and they're thrown off. A jump shakes them all off;
+## shaken, a guy is dazed a moment. No damage.
+##
 ## `--brood-one` stands one stone guy a little way off the wanderer when he
 ## can walk, and he comes for the wanderer wherever he goes (over walls, up
 ## faces, around edges he won't go over).
@@ -19,6 +26,12 @@ extends Node3D
 const K = preload("res://scripts/brood/brood_knobs.gd")
 const StoneGuy = preload("res://scripts/brood/stone_guy.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
+
+## The clinging slots round him: [the way out of him, turned from his
+## facing (rad); the height on him (of his height)]. Legs and back first;
+## the front, where the treasure is, last and low.
+const SLOTS := [[PI*0.5,0.28],[-PI*0.5,0.28],[PI,0.32],[PI*0.72,0.58],[-PI*0.72,0.58],[PI*0.3,0.14],[-PI*0.3,0.14],[PI,0.72]]
 
 var study: Node3D = null
 var guys: Array = []
@@ -29,6 +42,13 @@ var _rng := RandomNumberGenerator.new()
 ## Woken this deal, and the treasure that woke them ({} none).
 var woken := false
 var wanted: Dictionary = {}
+## The clingers now, the time KNOCK_COUNT have hung on, the next shove's
+## wait; knocks and shakes so far (for drivers).
+var clinging := 0
+var _knock_t := 0.0
+var _shove_t := 0.0
+var knocked := 0
+var shaken := 0
 
 func setup(host: Node3D) -> void:
 	study = host
@@ -50,6 +70,10 @@ func clear() -> void:
 	guys.clear()
 	woken = false
 	wanted = {}
+	clinging = 0
+	_knock_t = 0.0
+	var carry: Variant = study.get("carry") if study != null else null
+	if carry != null: carry.set_slow(1.0)
 
 func _motor() -> Variant:
 	return study.get("motor") if study != null else null
@@ -58,15 +82,96 @@ func _process(delta: float) -> void:
 	if study == null or not bool(study.get("walk_ready")): return
 	if _one and guys.is_empty(): _spawn_one()
 	var carry: Variant = study.get("carry")
-	if not woken and carry != null and not (carry.held as Dictionary).is_empty(): wake(carry.held)
+	var holding: bool = carry != null and not (carry.held as Dictionary).is_empty()
+	if not woken and holding: wake(carry.held)
+	if holding: wanted = carry.held
 	if guys.is_empty(): return
 	var dt := minf(delta,1.0/30.0)
 	var space := get_world_3d().direct_space_state
 	var goal := goal_override
 	if goal == Vector3.INF: goal = _goal(carry)
-	for g: RefCounted in guys:
+	var m: Variant = _motor()
+	var on_him: bool = holding and goal_override == Vector3.INF and m != null and not bool(study.get("flying"))
+	if not on_him: _shake_all(Vector3.ZERO)
+	elif not bool(m.grounded) and float(m.velocity.y) > K.SHAKE_UP*K.s(): _shake_all(Vector3(m.velocity.x,0.0,m.velocity.z)*0.3)
+	var used := {}
+	for g: RefCounted in guys: if g.state == "cling": used[g.slot] = true
+	for i: int in guys.size():
+		var g: RefCounted = guys[i]
 		if g.state == "lost": continue
-		g.step(space,goal,dt)
+		var to := goal
+		if on_him and to != Vector3.INF:
+			if g.state == "walk" and g.daze <= 0.0 and bool(m.grounded) and used.size() < K.GRAB_SLOTS and _in_grab(g,m.feet):
+				g.slot = _free_slot(used)
+				used[g.slot] = true
+				g.cling_at(m.feet,Vector3.BACK)
+			elif used.size() >= K.GRAB_SLOTS or g.daze > 0.0:
+				to = goal+_ring(i)*K.CROWD_RING*K.s()
+		elif to != Vector3.INF and not _one and goal_override == Vector3.INF:
+			to = goal+_ring(i)*0.5*K.s()
+		g.step(space,to,dt)
+	_hold_on(carry,m,dt)
+
+## Within his grab of the holder's feet `at`.
+func _in_grab(g: RefCounted, at: Vector3) -> bool:
+	var d := Vector2(g.feet.x-at.x,g.feet.z-at.z).length()
+	return d < K.GRAB_REACH*K.s() and absf(float(g.feet.y)-at.y) < K.GRAB_RISE*float(g.tall)
+
+func _free_slot(used: Dictionary) -> int:
+	for k: int in SLOTS.size(): if not used.has(k): return k
+	return 0
+
+## Guy `i`'s way round a goal (spread evenly by the golden angle).
+func _ring(i: int) -> Vector3:
+	var a := float(i)*2.39996
+	return Vector3(cos(a),0.0,sin(a))
+
+## The clingers moved with him, his paces held back, the shove, the knock.
+func _hold_on(carry: Variant, m: Variant, dt: float) -> void:
+	var n := 0
+	var tall := WorldScale.wanderer_tall
+	var f2: Vector2 = m.forward(float(m.facing)) if m != null else Vector2.ZERO
+	var fwd := Vector3(f2.x,0.0,f2.y)
+	for g: RefCounted in guys:
+		if g.state != "cling": continue
+		n += 1
+		var sl: Array = SLOTS[clampi(int(g.slot),0,SLOTS.size()-1)]
+		var out := fwd.rotated(Vector3.UP,float(sl[0]))
+		var at: Vector3 = m.feet+Vector3.UP*tall*float(sl[1])+out*(0.2*K.s()+float(g.tall)*0.26)
+		g.cling_at(at,out)
+	clinging = n
+	if carry == null: return
+	carry.set_slow(maxf(1.0-K.SLOW_EACH*float(n),K.SLOW_MOST))
+	if n == 0:
+		_knock_t = 0.0
+		return
+	# The shove: a lurch sideways or back, now and then.
+	_shove_t -= dt
+	if _shove_t <= 0.0 and bool(m.grounded):
+		_shove_t = K.SHOVE_EVERY*_rng.randf_range(0.5,1.5)
+		var way := fwd.rotated(Vector3.UP,_rng.randf_range(PI*0.4,PI*1.6))
+		m.velocity += way*K.SHOVE*K.s()
+	if n >= K.KNOCK_COUNT: _knock_t += dt
+	else: _knock_t = 0.0
+	if _knock_t >= K.KNOCK_HOLD:
+		_knock_t = 0.0
+		knocked += 1
+		carry.drop("knock")
+		print("brood: %d clinging knocked it loose" % n)
+		_shake_all(Vector3.UP*2.0*K.s())
+
+## Every clinger thrown off, out of him and along `push`.
+func _shake_all(push: Vector3) -> void:
+	var any := false
+	for g: RefCounted in guys:
+		if g.state != "cling": continue
+		any = true
+		g.shake(push+(g.face_n as Vector3)*1.6*K.s()+Vector3.UP*1.2*K.s())
+	if any:
+		shaken += 1
+		clinging = 0
+		var carry: Variant = study.get("carry")
+		if carry != null: carry.set_slow(1.0)
 
 ## Where they head: whoever holds a treasure (on foot), else the treasure
 ## that woke them where it rests (unless it's lost), else nowhere (INF).

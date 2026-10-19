@@ -10,7 +10,9 @@ extends RefCounted
 ##
 ## States: "wake" (hidden under the isle's lip, then fingers and head up
 ## over it, a look round: `wake_at`), "walk", "climb" (on a face), "mantle"
-## (over a face's top), "fall", "lost" (fell off the world).
+## (over a face's top), "cling" (hanging on the wanderer: `cling_at`, placed
+## each frame by the host; `shake` throws him off), "fall", "lost" (fell
+## off the world).
 ##
 ## The body is greybox: a squat block, a head, stub arms and legs on pivots,
 ## swung procedurally (the scurry, the reach up a face, the heave over).
@@ -58,6 +60,10 @@ var _w_t := 0.0
 var _w_at := Vector3.ZERO
 var _w_lip := 0.0
 var _w_hold := 0.0
+## Clinging: his slot on the wanderer (-1 none) and, shaken off, the time
+## left before he grabs again.
+var slot := -1
+var daze := 0.0
 ## The swing's phase and the body's look.
 var _phase := 0.0
 var _basis := Basis.IDENTITY
@@ -133,13 +139,35 @@ func _cast(space: PhysicsDirectSpaceState3D, a: Vector3, b: Vector3) -> Dictiona
 ## One step of `dt` toward `goal` (world; INF: stand).
 func step(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 	at_edge = false
+	daze = maxf(daze-dt,0.0)
 	match state:
 		"wake": _wake(dt)
 		"walk": _walk(space,goal,dt)
 		"climb": _climb(space,goal,dt)
 		"mantle": _mantle(dt)
 		"fall": _fall(space,dt)
+		"cling": _swing(dt*9.0,dt)
 	_place_node(dt)
+
+## Hanging on at `at` (his middle), belly to the wanderer, `out` the way
+## out of him; the host moves him with the wanderer each frame.
+func cling_at(at: Vector3, out: Vector3) -> void:
+	state = "cling"
+	mid = at
+	face_n = out
+	feet = at-Vector3.UP*tall*0.5
+	detour_t = 0.0
+
+## Thrown off (a jump, the treasure knocked loose): falling away along
+## `push` (m/s), dazed DAZE.
+func shake(push: Vector3) -> void:
+	slot = -1
+	daze = K.DAZE
+	_drop_to = Vector3.INF
+	feet = mid-Vector3.UP*tall*0.5
+	velocity = push
+	start_y = minf(start_y,feet.y)
+	state = "fall"
 
 func _flat(v: Vector3) -> Vector3:
 	return Vector3(v.x,0.0,v.z)
@@ -419,7 +447,7 @@ func _place_node(dt: float) -> void:
 	var fwd := heading
 	var at := feet+Vector3.UP*tall*0.5
 	match state:
-		"climb","wake":
+		"climb","wake","cling":
 			up = (Vector3.UP-face_n*Vector3.UP.dot(face_n))
 			up = up.normalized() if up.length() > 0.1 else Vector3.UP
 			fwd = -face_n
@@ -463,6 +491,9 @@ func _swing(moved: float, dt: float) -> void:
 		"climb":
 			# Arms up the face in turn, the legs pushing under them.
 			want = {"al":2.4+0.6*sw,"ar":2.4-0.6*sw,"ll":0.5-0.5*sw,"lr":0.5+0.5*sw,"pitch":0.15,"head":-0.5,"bob":0.0}
+		"cling":
+			# Arms round him (up and in), legs kicking, the head pressed in.
+			want = {"al":1.9+0.25*sw,"ar":1.9-0.25*sw,"ll":0.9+0.6*sw,"lr":0.9-0.6*sw,"pitch":0.1,"head":-0.4,"bob":0.0}
 		"mantle":
 			var u := clampf(_m_t,0.0,1.0)
 			want = {"al":2.6-1.6*u,"ar":2.6-1.6*u,"ll":1.2*sin(u*PI),"lr":1.0*sin(u*PI),"pitch":0.7*sin(u*PI),"head":-0.3,"bob":0.0}
@@ -482,5 +513,5 @@ func _swing(moved: float, dt: float) -> void:
 	body.rotation.x = lerpf(body.rotation.x,-float(want.pitch),k)
 	head.rotation.x = lerpf(head.rotation.x,-float(want.head),k)
 	body.position.y = lerpf(body.position.y,float(want.bob),k)
-	if state == "climb": body.rotation.z = 0.12*sw
+	if state == "climb" or state == "cling": body.rotation.z = 0.12*sw
 	else: body.rotation.z = lerpf(body.rotation.z,0.0,k)
