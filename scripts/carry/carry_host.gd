@@ -141,6 +141,9 @@ var _spill_t := 99.0
 ## told to the plane and its hand landing every frame (the plane can be
 ## made anew); the `--heavy` flag's weight, which a light bag never lowers.
 var load_now := Weights.load_of(0.0)
+## Others riding the bag (the stone brood's clingers): their kg, added to
+## the bag's load but never past its takeoff limit. `set_riders_kg`.
+var riders_kg := 0.0
 var _heavy_flag := -1.0
 static var _thud_take: AudioStreamWAV = null
 
@@ -811,6 +814,9 @@ func _apply_feel(pace: float) -> void:
 
 ## Held back to `k` of his carry's paces (1 free); applied at once while
 ## he walks with it (not while lifting, setting down or balking).
+func set_riders_kg(kg: float) -> void:
+	riders_kg = maxf(kg,0.0)
+
 func set_slow(k: float) -> void:
 	if is_equal_approx(k,slow): return
 	slow = k
@@ -889,7 +895,8 @@ func _sling_step(delta: float) -> void:
 ## weight model and climb, and its takeoff (roll, lift, unstick, the dip
 ## off an edge); past max_kg it won't leave the ground.
 func _apply_load() -> void:
-	load_now = Weights.load_of(float(sling.load_kg))
+	var kg := float(sling.load_kg)
+	load_now = Weights.load_of(kg+minf(riders_kg,maxf(float(Weights.LOAD.max_kg)-kg,0.0)))
 	var plane: Variant = study.get("plane")
 	if plane != null:
 		if _heavy_flag < 0.0: _heavy_flag = float(plane.heavy)

@@ -123,6 +123,39 @@ const HAUL_STUCK := 8.0
 const HAUL_GAIN := 0.5
 const HOME_NEAR := 1.0
 
+## Clingers: once he's in the plane with treasure in its bag, a walking
+## guy (not dazed) within LEAP_REACH (m, across; LEAP_RISE of his height
+## up or down) of the bag's belly leaps on (LEAP_TIME s, an arc LEAP_ARC m
+## high), up to RIDE_SLOTS at once, and hangs on round the belly. Each
+## adds RIDER_KG to the bag's load (carry's load path), never past its
+## takeoff limit (a full bag ridden makes the plane sluggish, not stuck).
+## In the air they come off one by one, each with a chance a second of
+## the sum of: a hard bank (past BANK_SHAKE rad: BANK_RATE at the bank's
+## top, BANK_TOP), a skim (the belly within SKIM_DOWN m of the ground:
+## SKIM_RATE; not in the first SKIM_AFTER s off the ground), a cliff beside (a face within SKIM_SIDE m either side:
+## SIDE_RATE) or a narrow gap (faces both sides: GAP_RATE), and a hit
+## (the bag hits something: HIT_SHED riders per m/s of the hit, at least
+## one). Thrown off they tumble away (TUMBLE rad/s).
+## Treasure loaded in the bag wakes BAG_WAKE more from the rim round it.
+const BAG_WAKE := 10
+const LEAP_REACH := 1.6
+const LEAP_RISE := 2.5
+const LEAP_TIME := 0.35
+const LEAP_ARC := 0.7
+const RIDE_SLOTS := 5
+const RIDER_KG := 2.5
+const BANK_SHAKE := 0.8
+const BANK_TOP := 1.2
+const BANK_RATE := 1.6
+const SKIM_DOWN := 1.2
+const SKIM_RATE := 2.0
+const SKIM_AFTER := 1.5
+const SKIM_SIDE := 4.0
+const SIDE_RATE := 2.0
+const GAP_RATE := 6.0
+const HIT_SHED := 0.5
+const TUMBLE := 9.0
+
 ## The crowd: walking guys nearer each other than SEP (m, across) lean
 ## apart, SEP_PUSH strong at touching (of their wish for the goal); a
 ## crowd standing round a goal spreads out at up to SEP_DRIFT of their

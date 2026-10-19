@@ -72,6 +72,13 @@ var hauling := false
 var pace := 1.0
 ## The crowd's lean apart this step (flat; set by the host).
 var sep := Vector3.ZERO
+## Leaping onto the plane's bag: where from, how far along (s); riding it
+## (the host places him); thrown off, his tumble (rad/s) about `_tumble_ax`.
+var _l_from := Vector3.ZERO
+var leap_t := 0.0
+var tumble := 0.0
+var _tumble_ax := Vector3.RIGHT
+var _tumble_a := 0.0
 ## The swing's phase and the body's look.
 var _phase := 0.0
 var _basis := Basis.IDENTITY
@@ -155,7 +162,42 @@ func step(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 		"mantle": _mantle(dt)
 		"fall": _fall(space,dt)
 		"cling": _swing(dt*9.0,dt)
-		"haul": return
+		"haul","leap","ride": return
+	_place_node(dt)
+
+## Starts a leap from where he stands at the bag (the host flies him there:
+## `leap_step`).
+func leap() -> void:
+	state = "leap"
+	_l_from = feet+Vector3.UP*tall*0.5
+	leap_t = 0.0
+	daze = 0.0
+	slot = -1
+
+## His leap's frame toward `at` (his middle on the bag), `out` the way out
+## of it: an arc over K.LEAP_TIME; there, he rides. True when he's on.
+func leap_step(at: Vector3, out: Vector3, dt: float) -> bool:
+	leap_t += dt
+	var u := clampf(leap_t/K.LEAP_TIME,0.0,1.0)
+	var e := u*u*(3.0-2.0*u)
+	mid = _l_from.lerp(at,e)+Vector3.UP*K.LEAP_ARC*K.s()*4.0*u*(1.0-u)
+	feet = mid-Vector3.UP*tall*0.5
+	face_n = out
+	heading = _flat(at-_l_from).normalized() if _flat(at-_l_from).length() > 0.01 else heading
+	_swing(0.0,dt)
+	_place_node(dt)
+	if u >= 1.0:
+		state = "ride"
+		return true
+	return false
+
+## Hanging on the bag at `at` (his middle), belly to it, `out` the way out.
+func ride_at(at: Vector3, out: Vector3, dt: float) -> void:
+	state = "ride"
+	mid = at
+	feet = at-Vector3.UP*tall*0.5
+	face_n = out
+	_swing(dt*9.0,dt)
 	_place_node(dt)
 
 ## Hanging on at `at` (his middle), belly to the wanderer, `out` the way
@@ -191,8 +233,12 @@ func release() -> void:
 
 ## Thrown off (a jump, the treasure knocked loose): falling away along
 ## `push` (m/s), dazed DAZE.
-func shake(push: Vector3) -> void:
+func shake(push: Vector3, spin := 0.0) -> void:
 	slot = -1
+	tumble = spin
+	_tumble_a = 0.0
+	var side_ax := push.cross(Vector3.UP)
+	_tumble_ax = side_ax.normalized() if side_ax.length() > 0.01 else Vector3.RIGHT
 	daze = K.DAZE
 	_drop_to = Vector3.INF
 	feet = mid-Vector3.UP*tall*0.5
@@ -411,6 +457,7 @@ func _fall(space: PhysicsDirectSpaceState3D, dt: float) -> void:
 		_drop_to = Vector3.INF
 		feet = hit.position
 		velocity = Vector3.ZERO
+		tumble = 0.0
 		state = "walk"
 		return
 	if not hit.is_empty():
@@ -490,7 +537,7 @@ func _place_node(dt: float) -> void:
 	var fwd := heading
 	var at := feet+Vector3.UP*tall*0.5
 	match state:
-		"climb","wake","cling":
+		"climb","wake","cling","ride","leap":
 			up = (Vector3.UP-face_n*Vector3.UP.dot(face_n))
 			up = up.normalized() if up.length() > 0.1 else Vector3.UP
 			fwd = -face_n
@@ -502,6 +549,17 @@ func _place_node(dt: float) -> void:
 	if fwd.length() < 0.05: fwd = heading
 	fwd = fwd.normalized()
 	var want := Basis(up.cross(-fwd).normalized(),up,-fwd).orthonormalized()
+	if state == "ride" or state == "leap":
+		# On the bag: no lag behind it (it swings fast under the plane).
+		_basis = want
+		node.transform = Transform3D(_basis,at)
+		return
+	if state == "fall" and tumble != 0.0:
+		# Thrown off the bag: head over heels.
+		_tumble_a += tumble*dt
+		_basis = (Basis(_tumble_ax,_tumble_a)*want).orthonormalized()
+		node.transform = Transform3D(_basis,at)
+		return
 	_basis = _basis.slerp(want,clampf(dt*14.0,0.0,1.0)).orthonormalized() if dt < 1.0 else want
 	node.transform = Transform3D(_basis,at)
 
@@ -534,6 +592,12 @@ func _swing(moved: float, dt: float) -> void:
 		"climb":
 			# Arms up the face in turn, the legs pushing under them.
 			want = {"al":2.4+0.6*sw,"ar":2.4-0.6*sw,"ll":0.5-0.5*sw,"lr":0.5+0.5*sw,"pitch":0.15,"head":-0.5,"bob":0.0}
+		"leap":
+			# Arms flung forward at the bag, legs tucked.
+			want = {"al":2.7,"ar":2.7,"ll":1.3,"lr":1.1,"pitch":0.5,"head":-0.3,"bob":0.0}
+		"ride":
+			# Arms up into the net, legs dangling and kicking in the wind.
+			want = {"al":2.9+0.15*sw,"ar":2.9-0.15*sw,"ll":0.3+0.5*sw,"lr":0.3-0.5*sw,"pitch":0.05,"head":-0.5,"bob":0.0}
 		"cling":
 			# Arms round him (up and in), legs kicking, the head pressed in.
 			want = {"al":1.9+0.25*sw,"ar":1.9-0.25*sw,"ll":0.9+0.6*sw,"lr":0.9-0.6*sw,"pitch":0.1,"head":-0.4,"bob":0.0}
@@ -562,5 +626,5 @@ func _swing(moved: float, dt: float) -> void:
 	body.rotation.x = lerpf(body.rotation.x,-float(want.pitch),k)
 	head.rotation.x = lerpf(head.rotation.x,-float(want.head),k)
 	body.position.y = lerpf(body.position.y,float(want.bob),k)
-	if state == "climb" or state == "cling": body.rotation.z = 0.12*sw
+	if state == "climb" or state == "cling" or state == "ride": body.rotation.z = 0.12*sw
 	else: body.rotation.z = lerpf(body.rotation.z,0.0,k)

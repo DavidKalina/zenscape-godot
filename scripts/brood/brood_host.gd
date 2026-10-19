@@ -75,6 +75,18 @@ var let_downs := 0
 var homes := 0
 ## How many wake (WAKE_COUNT, or `--brood-count=N`).
 var count := K.WAKE_COUNT
+## The bag's riders (clingers on the plane's bag): how many on now, leaps
+## and sheds so far (drivers), the hardest bag hit since last frame.
+var riding := 0
+var leaps := 0
+var sheds := 0
+var _bag: Node3D = null
+var _bag_hit := 0.0
+var _bag_woken := false
+var _air_t := 0.0
+## What shook them off so far (drivers): frames each cause was on with
+## riders aboard, and sheds by the hit.
+var shake_why := {"bank":0,"skim":0,"side":0,"gap":0,"hit":0}
 ## The host's own frame (ms, smoothed; the guys' steps, the haul, the
 ## clingers) and the rays cast in the last frame (for drivers).
 var step_ms := 0.0
@@ -106,9 +118,14 @@ func clear() -> void:
 	_rest_t = 0.0
 	_grace_t = 0.0
 	clinging = 0
+	riding = 0
+	_bag_hit = 0.0
+	_bag_woken = false
 	_knock_t = 0.0
 	var carry: Variant = study.get("carry") if study != null else null
-	if carry != null: carry.set_slow(1.0)
+	if carry != null:
+		carry.set_slow(1.0)
+		if carry.has_method("set_riders_kg"): carry.set_riders_kg(0.0)
 
 func _motor() -> Variant:
 	return study.get("motor") if study != null else null
@@ -162,6 +179,7 @@ func _tick(delta: float) -> void:
 			to = goal+_ring(i)*(K.ESCORT_RING if not haul.is_empty() else 0.5)*K.s()
 		g.step(space,to,dt)
 	_hold_on(carry,m,dt)
+	_ride_step(carry,space,dt)
 	if not haul.is_empty(): _haul_step(carry,m,space,dt)
 	elif goal_override == Vector3.INF and not _one and _rest_t <= 0.0: _mob(carry)
 
@@ -209,6 +227,7 @@ func _at_home(t: Dictionary) -> bool:
 ## not in his hands, not lost, not rolling).
 func _takeable(carry: Variant, t: Dictionary) -> bool:
 	if t.is_empty() or bool(t.lost) or carry == null or t == given_up: return false
+	if _in_bag(t): return false
 	if not (carry.held as Dictionary).is_empty() and carry.held == t: return false
 	if t.body != null and not (t.body as RigidBody3D).freeze: return false
 	return not _at_home(t)
@@ -374,6 +393,112 @@ func _hold_on(carry: Variant, m: Variant, dt: float) -> void:
 		print("brood: %d clinging knocked it loose" % n)
 		_shake_all(Vector3.UP*2.0*K.s())
 
+# --- Clingers on the plane's bag ---------------------------------------------------------
+
+func _in_bag(t: Dictionary) -> bool:
+	return int(t.get("slot",-1)) >= 0
+
+## Ride spot `k` on the bag for a guy `tall` high: his middle on the
+## belly's side, and the way out of it.
+func _ride_spot(bag: Node3D, pf: Node3D, k: int, tall: float) -> Array:
+	var b: Transform3D = bag.basket_xform(pf)
+	var r := float(bag.radius)
+	var a := float(k)*TAU/float(K.RIDE_SLOTS)+0.4
+	var out := Vector3(cos(a),0.0,sin(a))
+	var at := b*(out*(r*0.95+tall*0.22)+Vector3.UP*(r*0.85-tall*0.2))
+	return [at,(b.basis*out).normalized()]
+
+## In the plane with treasure in the bag: the near ones leap onto it and
+## ride; in the air a hard bank, a skim, a cliff or gap beside, or a hit
+## shakes them off one by one. Their kg rides in the bag's load.
+func _ride_step(carry: Variant, space: PhysicsDirectSpaceState3D, dt: float) -> void:
+	if carry == null: return
+	var bag: Node3D = carry.get("sling")
+	var pf: Node3D = study.get("plane_figure")
+	if bag == null or pf == null:
+		riding = 0
+		return
+	if bag != _bag:
+		_bag = bag
+		bag.hit.connect(func(speed: float, _at: Vector3, _n: Vector3, _v: Vector3) -> void: _bag_hit = maxf(_bag_hit,speed))
+	var in_plane := bool(study.get("flying"))
+	var loaded := float(bag.load_kg) > 0.0
+	var belly: Vector3 = bag.belly()
+	# Treasure in the bag wakes the rim round the plane too (the brood
+	# can't cross to its strip from the treasure's land).
+	if loaded and woken and not _bag_woken and not _one:
+		_bag_woken = true
+		_wake_from(belly,K.BAG_WAKE,"the bag")
+	var used := {}
+	var on: Array = []
+	for g: RefCounted in guys:
+		if g.state == "ride" or g.state == "leap":
+			used[g.slot] = true
+			on.append(g)
+	# Out of the plane (or the bag emptied): they let go and drop off.
+	if not in_plane or not loaded:
+		for g: RefCounted in on: g.shake(Vector3(bag.vel)*0.5+Vector3.UP*1.0*K.s())
+		on.clear()
+	# Leaps: the near ones, his slots allowing.
+	if in_plane and loaded and on.size() < K.RIDE_SLOTS:
+		for g: RefCounted in guys:
+			if on.size() >= K.RIDE_SLOTS: break
+			if g.state != "walk" or g.daze > 0.0 or g.hauling: continue
+			var d := Vector2(g.feet.x-belly.x,g.feet.z-belly.z).length()-float(bag.radius)
+			if d > K.LEAP_REACH*K.s() or absf(float(g.feet.y)-belly.y) > K.LEAP_RISE*float(g.tall): continue
+			var k := 0
+			while used.has(k): k += 1
+			used[k] = true
+			g.leap()
+			g.slot = k
+			on.append(g)
+			leaps += 1
+	# The shake: chances a second, summed; a hit sheds outright.
+	var rate := 0.0
+	var shed_now := 0
+	var hl: Variant = study.get("hand_landing")
+	var airborne: bool = in_plane and not bool(bag.grounded) and (hl == null or bool(hl.flying()))
+	_air_t = _air_t+dt if airborne else 0.0
+	if airborne and not on.is_empty():
+		var plane: Variant = study.get("plane")
+		if plane != null:
+			var bank := absf(float(plane.bank))
+			if bank > K.BANK_SHAKE:
+				rate += K.BANK_RATE*clampf((bank-K.BANK_SHAKE)/(K.BANK_TOP-K.BANK_SHAKE),0.0,1.5)
+				shake_why.bank += 1
+		var r := float(bag.radius)
+		if _air_t > K.SKIM_AFTER and not _ray(space,belly,belly-Vector3.UP*(r+K.SKIM_DOWN)).is_empty():
+			rate += K.SKIM_RATE
+			shake_why.skim += 1
+		var x: Vector3 = (bag.basket_xform(pf) as Transform3D).basis.x
+		var lh := not _ray(space,belly,belly-x*(r+K.SKIM_SIDE)).is_empty()
+		var rh := not _ray(space,belly,belly+x*(r+K.SKIM_SIDE)).is_empty()
+		if lh and rh:
+			rate += K.GAP_RATE
+			shake_why.gap += 1
+		elif lh or rh:
+			rate += K.SIDE_RATE
+			shake_why.side += 1
+		if _bag_hit > 0.0:
+			shed_now = maxi(1,ceili(_bag_hit*K.HIT_SHED))
+			shake_why.hit += shed_now
+	_bag_hit = 0.0
+	var n := 0
+	for g: RefCounted in on:
+		var spot := _ride_spot(bag,pf,int(g.slot),float(g.tall))
+		var off: bool = g.state == "ride" and (shed_now > 0 or _rng.randf() < rate*dt)
+		if off:
+			shed_now -= 1
+			sheds += 1
+			var out: Vector3 = spot[1]
+			g.shake(Vector3(bag.vel)*0.8+out*2.5*K.s()+Vector3.UP*1.5*K.s(),K.TUMBLE*(1.0 if _rng.randf() < 0.5 else -1.0))
+			continue
+		if g.state == "leap": g.leap_step(spot[0],spot[1],dt)
+		else: g.ride_at(spot[0],spot[1],dt)
+		n += 1
+	riding = n
+	if carry.has_method("set_riders_kg"): carry.set_riders_kg(float(n)*K.RIDER_KG)
+
 ## Every clinger thrown off, out of him and along `push`.
 func _shake_all(push: Vector3) -> void:
 	var any := false
@@ -399,6 +524,9 @@ func _goal(carry: Variant) -> Vector3:
 		if m != null and not bool(study.get("flying")): return m.feet
 		return Vector3.INF
 	if not wanted.is_empty() and not bool(wanted.lost):
+		if _in_bag(wanted):
+			var bag: Node3D = carry.get("sling")
+			return bag.belly() if bag != null else Vector3.INF
 		if _at_home(wanted) or wanted == given_up: return Vector3.INF
 		return (wanted.node as Node3D).global_position
 	return Vector3.INF
@@ -408,12 +536,15 @@ func _goal(carry: Variant) -> Vector3:
 func wake(t: Dictionary) -> void:
 	woken = true
 	wanted = t
-	var from: Vector3 = (t.node as Node3D).global_position
+	_wake_from((t.node as Node3D).global_position,count,str(t.id))
+
+## Wakes `n` guys on the rim spots nearest `from`, nearest first, each his
+## turn (`what` for the log).
+func _wake_from(from: Vector3, n: int, what: String) -> void:
 	var spots := rim_spots(from)
 	if spots.is_empty():
 		print("brood: no rim round %s" % [from])
 		return
-	var n := count
 	for i: int in n:
 		var sp: Dictionary = spots[i % spots.size()]
 		var at: Vector3 = sp.face
@@ -431,7 +562,7 @@ func wake(t: Dictionary) -> void:
 		var wait := float(i)*K.WAKE_STAGGER+_rng.randf()*K.WAKE_JITTER+later
 		var hold := K.WAKE_HOLD*_rng.randf_range(0.5,1.5)
 		g.wake_at(at,fn,float(sp.lip.y),wait,hold)
-	print("brood: woke %d for %s from %d rim spots (first %.1f m, last used %.1f m)" % [n,t.id,spots.size(),float(spots[0].dist),float(spots[mini(n,spots.size())-1].dist)])
+	print("brood: woke %d for %s from %d rim spots (first %.1f m, last used %.1f m)" % [n,what,spots.size(),float(spots[0].dist),float(spots[mini(n,spots.size())-1].dist)])
 
 ## A wake spot `by` m along the face beside rim spot `sp` ({face, n}, or
 ## {}): a face there under the lip's height, and ground on top over it.
