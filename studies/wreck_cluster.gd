@@ -51,6 +51,7 @@ const WindParry = preload("res://scripts/wind_parry.gd")
 const PauseHost = preload("res://scripts/kit_isle/pause_host.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const DevKeys = preload("res://scripts/kit_isle/dev_keys.gd")
+const IsleFlora = preload("res://studies/aqueduct_isle_flora.gd")
 
 ## The re-deal's key (free on foot and in the plane: scripts/pad.gd,
 ## scripts/kit_isle/dev_keys.gd).
@@ -159,9 +160,16 @@ func isle_top() -> float:
 func isle_summit() -> Vector3:
 	return Vector3(Spine.GATE_X,Art.TOP+Spine.PODIUM,Spine.zc(Spine.GATE_X))
 
-## The plants keep off the spine's way, shelf and bench.
+## The plants keep off the spine's way, shelf and bench; the grass is the
+## aqueduct isle's shared carpet over every land's turf (studies/
+## aqueduct_isle_flora.gd; --grass-drifts: the kit's drifts as before), its
+## ground calmed under it once grown.
 func flora_site() -> KitFlora.Site:
-	return motif.flora_site()
+	return IsleFlora.carpeted(motif.flora_site())
+
+func _grow() -> void:
+	super._grow()
+	IsleFlora.calm(flora)
 
 func flora_seed() -> int:
 	return 421

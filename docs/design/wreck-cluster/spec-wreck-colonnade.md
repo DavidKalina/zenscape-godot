@@ -222,6 +222,9 @@ a look task: do it after the flank routes, alongside L5, before L6.
 
 ## Spec change: the shared grass carpet (user, after iteration 15)
 
+(Done: `flora_site()` is `IsleFlora.carpeted(motif.flora_site())`, `_grow()`
+calls `IsleFlora.calm(flora)`; `--grass-drifts` gives the old drifts.)
+
 Grow the grass the way the aqueduct isle and the Olmec field do: the shared
 carpet over all the turf. `studies/aqueduct_isle_flora.gd`
 `IsleFlora.carpeted(site)` on the study's `KitFlora.Site` (see
