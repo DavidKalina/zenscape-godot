@@ -38,6 +38,9 @@ const DETOUR_TIME := 0.7
 ## he lets go (m).
 const MANTLE_TIME := 0.5
 const CLIMB_MOST := 40.0
+## After a top he can't get over with only the void under him: how long he
+## crawls sideways along the face (s) before trying the top again.
+const TRAVERSE_TIME := 1.2
 
 ## Falling: gravity (m/s^2) and the fall under his start that loses him.
 const GRAVITY := 22.0
@@ -45,6 +48,27 @@ const LOST_UNDER := 80.0
 
 ## How near his goal he stops (m, across).
 const NEAR := 0.7
+
+## The wake (lifting a treasure wakes the brood): how many come, from the
+## isle's rim round it (spots found by marching rays out from the treasure
+## in RIM_RAYS ways to where the ground ends over a void at least RIM_VOID
+## deep, no farther than RIM_MOST (m); nearest first past WAKE_NEAR), and
+## their beat: each waits his turn
+## (WAKE_STAGGER s apart, nearest first, plus up to WAKE_JITTER), his
+## fingers then head come up over the lip (WAKE_RISE s), he holds there
+## looking (WAKE_HOLD s, give or take half), then he climbs over and comes.
+const WAKE_COUNT := 12
+## Rim spots nearer the treasure than this (m) are used last, so he has a
+## breath to run.
+const WAKE_NEAR := 6.0
+const RIM_RAYS := 48
+const RIM_MOST := 60.0
+const RIM_STEP := 1.0
+const RIM_VOID := 25.0
+const WAKE_STAGGER := 0.14
+const WAKE_JITTER := 0.25
+const WAKE_RISE := 0.7
+const WAKE_HOLD := 0.7
 
 ## Their stone: grey, rough.
 const STONE := Color(0.62,0.6,0.57)

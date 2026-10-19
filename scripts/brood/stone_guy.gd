@@ -8,8 +8,9 @@ extends RefCounted
 ## never jumps. Two or three rays a step; `step` is called by the host
 ## (scripts/brood/brood_host.gd) with the goal it picks.
 ##
-## States: "walk", "climb" (on a face), "mantle" (over a face's top),
-## "fall", "lost" (fell off the world).
+## States: "wake" (hidden under the isle's lip, then fingers and head up
+## over it, a look round: `wake_at`), "walk", "climb" (on a face), "mantle"
+## (over a face's top), "fall", "lost" (fell off the world).
 ##
 ## The body is greybox: a squat block, a head, stub arms and legs on pivots,
 ## swung procedurally (the scurry, the reach up a face, the heave over).
@@ -40,10 +41,23 @@ var _m_from := Vector3.ZERO
 var _m_lip := Vector3.ZERO
 var _m_to := Vector3.ZERO
 var _m_t := 0.0
+## A mantle over a crest with its floor further down past it: where he
+## drops to after (INF: none, he stands on top).
+var _m_drop := Vector3.INF
+## Crawling sideways along a face (s left), after a top he couldn't get
+## over and no floor under him to climb back down to.
+var _traverse_t := 0.0
 ## The floor a drop off a ledge aims at (INF: none; a fall's own ray finds
 ## where it lands): reached, he lands on it even where the ray, starting
 ## inside rubble, missed it.
 var _drop_to := Vector3.INF
+## The wake: the wait before he shows, the time since, the face spot under
+## the lip (the face's point, out of it), the lip's height, the hold.
+var _w_wait := 0.0
+var _w_t := 0.0
+var _w_at := Vector3.ZERO
+var _w_lip := 0.0
+var _w_hold := 0.0
 ## The swing's phase and the body's look.
 var _phase := 0.0
 var _basis := Basis.IDENTITY
@@ -63,6 +77,50 @@ func _init(at: Vector3, rng_side := 1.0) -> void:
 	node = _build()
 	_place_node(1.0)
 
+## Wakes him on the face at `face_at` (a point on it, `n` out of it) under
+## a lip at height `lip_y`: hidden `wait` s, then his stretched fingers come
+## over the lip, then his head, he looks round `hold` s and climbs over.
+func wake_at(face_at: Vector3, n: Vector3, lip_y: float, wait: float, hold: float) -> void:
+	state = "wake"
+	face_n = n
+	_w_at = face_at+n*radius
+	_w_lip = lip_y
+	_w_wait = wait
+	_w_hold = hold
+	_w_t = 0.0
+	mid = _w_mid(-1.0)
+	feet = mid-Vector3.UP*tall*0.5
+	start_y = lip_y
+	if _flat(n).length() > 0.1: heading = -_flat(n).normalized()
+	node.visible = false
+	_place_node(1.0)
+
+## His middle on the face, `under` of his height below the lip.
+func _w_mid(under: float) -> Vector3:
+	var at := _w_at
+	at.y = _w_lip+under*tall
+	return at
+
+func _wake(dt: float) -> void:
+	if _w_wait > 0.0:
+		_w_wait -= dt
+		return
+	node.visible = true
+	_w_t += dt
+	var u := clampf(_w_t/K.WAKE_RISE,0.0,1.0)
+	# Fingers first (to just under the lip, the arms stretched up over it),
+	# a breath, then the head up over it.
+	var under := -1.0
+	if u < 0.45: under = lerpf(-1.05,-0.68,smoothstep(0.0,0.45,u))
+	elif u < 0.6: under = -0.68
+	else: under = lerpf(-0.68,-0.32,smoothstep(0.6,1.0,u))
+	mid = _w_mid(under)
+	_swing(0.0,dt)
+	if _w_t >= K.WAKE_RISE+_w_hold:
+		state = "climb"
+		climb_dir = 1.0
+		climbed = 0.0
+
 # --- Rays ----------------------------------------------------------------------------
 
 func _cast(space: PhysicsDirectSpaceState3D, a: Vector3, b: Vector3) -> Dictionary:
@@ -76,6 +134,7 @@ func _cast(space: PhysicsDirectSpaceState3D, a: Vector3, b: Vector3) -> Dictiona
 func step(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 	at_edge = false
 	match state:
+		"wake": _wake(dt)
 		"walk": _walk(space,goal,dt)
 		"climb": _climb(space,goal,dt)
 		"mantle": _mantle(dt)
@@ -162,8 +221,18 @@ func _climb(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 	var across := up_along.cross(face_n).normalized()
 	var lat := 0.0
 	if goal != Vector3.INF: lat = clampf((goal-mid).dot(across),-1.0,1.0)
+	if _traverse_t > 0.0:
+		_traverse_t -= dt
+		lat = side*2.0
 	if climb_dir < 0.0:
 		lat = 0.0
+		# No floor under him he'd drop to (the isle's side over the void):
+		# up again, crawling sideways to find another way over.
+		var floor_under := _cast(space,mid,mid+Vector3.DOWN*K.DROP_MOST*s)
+		if floor_under.is_empty() or (floor_under.normal as Vector3).y < K.FLOOR:
+			climb_dir = 1.0
+			_traverse_t = K.TRAVERSE_TIME
+			return
 		# Back down: off the face onto the floor under him, turned away.
 		var under := _cast(space,mid,mid+Vector3.DOWN*(tall*0.5+0.15*s))
 		if not under.is_empty() and (under.normal as Vector3).y >= K.FLOOR:
@@ -175,6 +244,17 @@ func _climb(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 			state = "walk"
 			return
 	var move := up_along*K.CLIMB*s*dt*climb_dir+across*lat*K.CLIMB*K.CLIMB_SIDE*s*dt
+	if climb_dir > 0.0:
+		# A steeper face above him (a slope run into a wall): onto it; a
+		# ceiling over him: along under it sideways.
+		var above := _cast(space,mid,mid+up_along*(radius+move.length()+0.05))
+		if not above.is_empty():
+			var an: Vector3 = above.normal
+			if an.y > -0.7 and an.y < K.FLOOR and an.dot(face_n) < 0.95:
+				face_n = an
+				mid = (above.position as Vector3)+an*radius
+				return
+			if an.y <= -0.7 and _traverse_t <= 0.0: _traverse_t = K.TRAVERSE_TIME
 	climbed += move.length()
 	var c := mid+move
 	var hit := _cast(space,c+face_n*0.35*s,c-face_n*(radius+0.45*s))
@@ -187,9 +267,12 @@ func _climb(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 	var n: Vector3 = hit.normal
 	if n.y >= K.FLOOR:
 		# The face leans back into a floor: up onto it.
-		if climb_dir < 0.0: _let_go()
-		elif not _start_mantle(space,c): climb_dir = -1.0
-		return
+		# (A small ledge on a broken slope with no top to stand on past it:
+		# on up over it as a face.)
+		if climb_dir < 0.0:
+			_let_go()
+			return
+		if _start_mantle(space,c): return
 	if n.y < -0.7 or climbed > K.CLIMB_MOST*s:
 		_let_go()
 		return
@@ -204,11 +287,16 @@ func _start_mantle(space: PhysicsDirectSpaceState3D, c: Vector3) -> bool:
 	if into.length() < 0.1: into = _flat(heading)
 	into = into.normalized()
 	for reach: float in [radius+0.3*s,radius+0.7*s,radius+1.2*s]:
-		var over := c+into*reach+Vector3.UP*tall*0.9
-		var hit := _cast(space,over,over+Vector3.DOWN*(tall*2.8))
+		var over := c+into*reach+Vector3.UP*tall*1.4
+		var hit := _cast(space,over,over+Vector3.DOWN*(tall*3.3+K.DROP_MOST*s))
 		if hit.is_empty() or (hit.normal as Vector3).y < K.FLOOR: continue
 		_m_from = mid
 		_m_to = hit.position
+		_m_drop = Vector3.INF
+		if _m_to.y < c.y-tall*1.2:
+			# A crest: over it onto its top, then down to the floor past it.
+			_m_drop = _m_to
+			_m_to = Vector3(over.x,c.y-tall*0.3,over.z)
 		_m_lip = Vector3(mid.x,maxf(_m_to.y,mid.y-tall*0.2)+tall*0.55,mid.z)
 		_m_t = 0.0
 		heading = into
@@ -230,6 +318,11 @@ func _mantle(dt: float) -> void:
 	if _m_t >= 1.0:
 		feet = _m_to
 		state = "walk"
+		if _m_drop != Vector3.INF:
+			state = "fall"
+			velocity = heading*0.6*K.s()
+			_drop_to = _m_drop
+			_m_drop = Vector3.INF
 
 func _let_go() -> void:
 	_drop_to = Vector3.INF
@@ -326,7 +419,7 @@ func _place_node(dt: float) -> void:
 	var fwd := heading
 	var at := feet+Vector3.UP*tall*0.5
 	match state:
-		"climb":
+		"climb","wake":
 			up = (Vector3.UP-face_n*Vector3.UP.dot(face_n))
 			up = up.normalized() if up.length() > 0.1 else Vector3.UP
 			fwd = -face_n
@@ -354,7 +447,19 @@ func _swing(moved: float, dt: float) -> void:
 	var head: Node3D = _limbs.head
 	var k := clampf(dt*16.0,0.0,1.0)
 	var want := {}
+	var stretch := 1.0
+	var look := 0.0
 	match state:
+		"wake":
+			# Arms reaching up over the lip and stretched (the fingers come
+			# first), then holding it; the head turning to look round.
+			var u := clampf(_w_t/K.WAKE_RISE,0.0,1.0)
+			stretch = lerpf(1.0,1.7,smoothstep(0.0,0.4,u))
+			var hold := _w_t-K.WAKE_RISE
+			if hold > 0.0:
+				look = 0.6*sin(hold*5.0+side)
+				stretch = lerpf(1.7,1.0,clampf(hold/maxf(_w_hold,0.05),0.0,1.0))
+			want = {"al":2.95,"ar":3.05,"ll":0.4,"lr":0.6,"pitch":0.0,"head":-0.3*u,"bob":0.0}
 		"climb":
 			# Arms up the face in turn, the legs pushing under them.
 			want = {"al":2.4+0.6*sw,"ar":2.4-0.6*sw,"ll":0.5-0.5*sw,"lr":0.5+0.5*sw,"pitch":0.15,"head":-0.5,"bob":0.0}
@@ -367,6 +472,9 @@ func _swing(moved: float, dt: float) -> void:
 			var moving := moved > 0.0001
 			var a := 0.8 if moving else 0.0
 			want = {"al":a*sw,"ar":-a*sw,"ll":-a*sw,"lr":a*sw,"pitch":0.25 if moving else 0.0,"head":-0.2 if moving else 0.0,"bob":absf(cos(_phase))*tall*0.08 if moving else 0.0}
+	al.scale.y = lerpf(al.scale.y,stretch,k)
+	ar.scale.y = lerpf(ar.scale.y,stretch,k)
+	head.rotation.y = lerpf(head.rotation.y,look,k)
 	al.rotation.x = lerpf(al.rotation.x,want.al,k)
 	ar.rotation.x = lerpf(ar.rotation.x,want.ar,k)
 	ll.rotation.x = lerpf(ll.rotation.x,want.ll,k)
