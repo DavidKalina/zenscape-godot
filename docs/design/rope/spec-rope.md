@@ -95,3 +95,24 @@ One trunk, no lanes:
   `sail_on`, `rope_on`). Existing scenes play as before.
 - The motor's existing swing ropes (`rope_on`) are a different thing.
   Read them for anything reusable, but this rope is the wanderer's own.
+
+## Task 6: tuning and the handoff (spec change)
+
+The user played rounds 1 to 5: "pretty decent", solid. From their play:
+
+- **Faster overall.** The throw (wind-up, whirl, flight), the aim (time to
+  raise it, reticle response) and the climb all feel a little slow. Speed
+  each up noticeably (rough target: about 1.5x the climb rate, a quicker
+  wind-up and hook flight), keeping the reads.
+- **The rappel is one continuous motion,** not hop by hop: holding the
+  stick away from the wall lowers him smoothly down the rope, feet walking
+  or skimming the wall, faster the longer it's held; let go and he stops
+  and hangs. A hop push-off can stay on a button if it's cheap, but the
+  default descent is continuous.
+- From the earlier rounds, as the budget allows: hands reaching up the rope
+  on the climb (not at chest height) and feet on the wall; a stronger lean
+  back on the rappel; no snap from rappel to climb; check that "away from
+  the wall" doesn't depend on where the camera points right after going
+  over.
+- **The handoff** (`docs/design/rope/handoff.md`, from the trail): what's
+  built, the controls, where to play it, what's stood in, what's open.
