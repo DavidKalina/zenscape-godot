@@ -102,7 +102,7 @@ const SHOVE_TIME := 0.35
 ## pull, so it keeps rolling down one and stops on the flat), a thump every
 ## half turn, and at rest (under REST_SPEED for REST_TIME) it flops upright
 ## over SETTLE_TIME.
-const ROLL_DRAG := 0.2
+const ROLL_DRAG := 0.08
 const REST_SPEED := 0.15
 const REST_TIME := 0.4
 const SETTLE_TIME := 0.35
@@ -131,7 +131,10 @@ const AIM_MIN := 1.2
 const AIM_START := 0.6
 const AIM_SPEED := 5.0
 ## The arc's top over its higher end: this plus AIM_RISE_M per metre across.
-const AIM_RISE := 1.3
+const AIM_RISE := 1.5
+## Blocked, the aim tries these lobs higher (m) before it turns red, so a
+## spot just behind a wall takes a steep lob over it.
+const AIM_LOBS := [0.0,1.0,2.0,3.0,4.5]
 const AIM_RISE_M := 0.2
 const ARC_DOTS := 22
 const AIM_OK := Color(1.0,0.92,0.55)
@@ -180,7 +183,11 @@ var throw_to := Vector3.INF
 var _aim := Vector2.ZERO
 ## Drivers: aim as though the button were held (release() lets go).
 var hold_aim := false
+## The lob the aim settled on (m over the plain arc; AIM_LOBS).
+var aim_lob := 0.0
 var _reticle: MeshInstance3D
+var _ghost_mat: StandardMaterial3D
+var _dots_ghost_mat: StandardMaterial3D
 var _reticle_mat: StandardMaterial3D
 var _dots: MultiMeshInstance3D
 var _dots_mat: StandardMaterial3D
@@ -325,6 +332,13 @@ func setup(host: Node3D) -> void:
 	_reticle.visible = false
 	add_child(_reticle)
 	_dots_mat = _reticle_mat.duplicate()
+	# Behind a wall, the reticle and the arc still show, faint, through it.
+	_ghost_mat = _reticle_mat.duplicate()
+	_ghost_mat.no_depth_test = true
+	_ghost_mat.render_priority = 1
+	_reticle_mat.next_pass = _ghost_mat
+	_dots_ghost_mat = _ghost_mat.duplicate()
+	_dots_mat.next_pass = _dots_ghost_mat
 	var dot := SphereMesh.new()
 	dot.radius = 0.06
 	dot.height = 0.12
@@ -725,32 +739,50 @@ func _aim_update(delta: float, want: Vector2) -> void:
 	else:
 		aim_at = (hit.position as Vector3)+Vector3.UP*rb
 		aim_ok = true
-	# The arc there, and what it meets on the way.
-	var v := arc_to(from,aim_at)
+	# The arc there, and what it meets on the way: the plain lob, else a
+	# higher one (over a wall just in front of the spot), else blocked.
+	var blocked := false
+	for lob: float in (AIM_LOBS if aim_ok else [0.0]):
+		var swept := _sweep_arc(from,aim_at,lob,rb)
+		aim_arc = swept.arc
+		blocked = swept.blocked
+		aim_lob = lob
+		if not blocked: break
+	if blocked and aim_lob > 0.0:
+		aim_lob = 0.0
+		aim_arc = _sweep_arc(from,aim_at,0.0,rb).arc
+	if blocked and aim_ok:
+		aim_ok = false
+		aim_why = "the way's blocked"
+	_show_aim(true)
+
+## The arc from `from` to `to` lobbed `lob` m higher than the plain one,
+## as dots, swept with a ball a hair bigger than the sack: {arc, blocked}
+## (the dots stop where it meets something short of the spot).
+func _sweep_arc(from: Vector3, to: Vector3, lob: float, rb: float) -> Dictionary:
+	var space := get_world_3d().direct_space_state
+	var v := arc_to(from,to,lob)
 	var g := _gravity()
-	var t_all := _flight_time(from,aim_at,v)
+	var t_all := _flight_time(from,to,v)
 	var q := PhysicsShapeQueryParameters3D.new()
 	var probe := SphereShape3D.new()
-	probe.radius = rb*0.6
+	probe.radius = rb*1.05
 	q.shape = probe
 	q.collision_mask = CarryHost.SOLID_MASK
+	var arc := PackedVector3Array([from])
 	var was := from
-	aim_arc.append(from)
 	for i in range(1,ARC_DOTS+1):
 		var t := t_all*float(i)/ARC_DOTS
 		var at := from+v*t+Vector3.DOWN*0.5*g*t*t
 		q.transform = Transform3D(Basis.IDENTITY,was)
 		q.motion = at-was
 		var cast := space.cast_motion(q)
-		if cast.size() > 0 and float(cast[1]) < 1.0 and at.distance_to(aim_at) > rb*1.2:
-			aim_arc.append(was+(at-was)*float(cast[0]))
-			if aim_ok:
-				aim_ok = false
-				aim_why = "the way's blocked"
-			break
-		aim_arc.append(at)
+		if cast.size() > 0 and float(cast[1]) < 1.0 and (was+(at-was)*float(cast[1])).distance_to(to) > rb*1.2:
+			arc.append(was+(at-was)*float(cast[0]))
+			return {"arc":arc,"blocked":true}
+		arc.append(at)
 		was = at
-	_show_aim(true)
+	return {"arc":arc,"blocked":false}
 
 ## Where the sack leaves his hands, a little over and ahead of his head.
 func release_point() -> Vector3:
@@ -762,11 +794,11 @@ func release_point() -> Vector3:
 
 ## The velocity that carries it from `from` to `to` over a top AIM_RISE
 ## (plus AIM_RISE_M a metre across) above the higher end.
-func arc_to(from: Vector3, to: Vector3) -> Vector3:
+func arc_to(from: Vector3, to: Vector3, lob := 0.0) -> Vector3:
 	var g := _gravity()
 	var s: float = study.get("motor").size
 	var flat := Vector3(to.x-from.x,0.0,to.z-from.z)
-	var top := maxf(from.y,to.y)+AIM_RISE*s+AIM_RISE_M*flat.length()
+	var top := maxf(from.y,to.y)+(AIM_RISE+lob)*s+AIM_RISE_M*flat.length()
 	var up := sqrt(2.0*g*(top-from.y))
 	var t := up/g+sqrt(2.0*g*(top-to.y))/g
 	return flat/t+Vector3.UP*up
@@ -787,6 +819,8 @@ func _show_aim(on: bool) -> void:
 	var colour := AIM_OK if aim_ok else AIM_BAD
 	_reticle_mat.albedo_color = Color(colour,0.85)
 	_dots_mat.albedo_color = Color(colour,0.55)
+	_ghost_mat.albedo_color = Color(colour,0.35)
+	_dots_ghost_mat.albedo_color = Color(colour,0.25)
 	var s: float = study.get("motor").size
 	var rb := _r*s*0.95
 	var pulse := 1.0+0.08*sin(Time.get_ticks_msec()*0.008)
@@ -833,7 +867,12 @@ func _let_fly() -> void:
 	# The arc shown, from where it really leaves his hands; undamped in the air.
 	loose.linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
 	loose.linear_damp = 0.0
-	loose.linear_velocity = arc_to(xf.origin,throw_to)
+	# Re-swept from there: the lowest lob (from the aim's up) that clears.
+	for lob: float in AIM_LOBS:
+		if lob < aim_lob: continue
+		aim_lob = lob
+		if not _sweep_arc(xf.origin,throw_to,lob,r).blocked: break
+	loose.linear_velocity = arc_to(xf.origin,throw_to,aim_lob)
 	loose.angular_velocity = fwd.cross(Vector3.UP)*-THROW_SPIN
 	_fall_v = 0.0
 	_gulp_sound.pitch_scale = 1.1
@@ -970,7 +1009,7 @@ func _place_sack(delta: float) -> void:
 		var k := clampf(_act_t/(THROW_TIME*THROW_LET),0.0,1.0)
 		var e := k*k*(3.0-2.0*k)
 		var head := chest+up*(0.55*s+r)
-		var top := head-fwd*(0.25*s+r*0.5)
+		var top := head+up*(0.3*s+r*0.4)-fwd*(0.08*s)
 		var at := xf.origin.lerp(top,smoothstep(0.0,0.75,k)).lerp(head+fwd*0.3*s,smoothstep(0.75,1.0,k))
 		xf = Transform3D(xf.basis.rotated(fwd.cross(Vector3.UP).normalized(),-PI*0.6*e),at)
 	_sack.global_transform = xf
@@ -1143,7 +1182,7 @@ func _act_step(delta: float) -> void:
 ## the arms over and behind his head (held a beat), a snap forward past
 ## upright to the let-go, a follow-through held, then back.
 static func throw_pose(k: float) -> Vector2:
-	var keys := [[0.0,Vector2(0,0)],[0.1,Vector2(-12,-40)],[0.26,Vector2(16,-200)],[0.31,Vector2(18,-205)],
+	var keys := [[0.0,Vector2(0,0)],[0.1,Vector2(-12,-40)],[0.26,Vector2(22,-215)],[0.31,Vector2(24,-222)],
 		[THROW_LET,Vector2(-6,-150)],[0.46,Vector2(-30,-60)],[0.7,Vector2(-26,-50)],[1.0,Vector2(0,0)]]
 	for i in range(1,keys.size()):
 		if k <= float(keys[i][0]):

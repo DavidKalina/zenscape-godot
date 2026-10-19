@@ -289,6 +289,35 @@ func _want(delta: float) -> Vector2:
 	bag.aim_steer(want,delta)
 	return Vector2.ZERO
 
+## Aiming, the camera eases back, lower and a little round to his right,
+## looking between him and the reticle, so the arc reads as an arc (the
+## reticle behind a wall shows through it, faint: loot_bag's ghost pass).
+const AIM_CAM_OUT := 0.45
+const AIM_CAM_POLAR := 0.22
+const AIM_CAM_SWING := 0.42
+const AIM_CAM_LOOK := 0.4
+const AIM_CAM_EASE := 0.35
+var _aim_cam := 0.0
+var _aim_look := Vector3.INF
+
+func _frame(delta: float) -> void:
+	super._frame(delta)
+	var aiming: bool = bag != null and bag.act == "aim" and bag.aim_at != Vector3.INF
+	if aiming: _aim_look = bag.aim_at
+	if delta > 0.0: _aim_cam = move_toward(_aim_cam,1.0 if aiming else 0.0,delta/AIM_CAM_EASE)
+	if _aim_cam <= 0.0 or _aim_look == Vector3.INF: return
+	var e := smoothstep(0.0,1.0,_aim_cam)
+	var pivot := Vector3(_cam_at.x,_cam_y,_cam_at.y)
+	var look := pivot.lerp(Vector3(_aim_look.x,pivot.y,_aim_look.z),AIM_CAM_LOOK*e)
+	var polar := clampf(_polar+AIM_CAM_POLAR*e,POLAR.x,POLAR.y)
+	var yaw := _yaw+AIM_CAM_SWING*e
+	var out := Vector3(sin(polar)*sin(yaw),cos(polar),sin(polar)*cos(yaw))
+	var dist := CAM_DISTANCE*wanderer_scale*(1.0+AIM_CAM_OUT*e)
+	var hit := ground.space.intersect_ray(PhysicsRayQueryParameters3D.create(look,look+out*(dist+0.3)))
+	if not hit.is_empty(): dist = maxf(look.distance_to(hit.position)-0.3,0.5)
+	var at := pivot+out*_cam_distance
+	camera.look_at_from_position(at.lerp(look+out*dist,e),pivot.lerp(look,e))
+
 func _sync_figure() -> void:
 	if bag != null: bag.leash(get_process_delta_time())
 	super._sync_figure()
