@@ -18,7 +18,7 @@ extends Node3D
 ##            `flash`), it is seen; `sighted` is signalled at the first.
 ##   again    AGAIN of them get a second flash AGAIN_GAP s later; GONE of
 ##            those show it gone (the sky lit, the dragon not there).
-##   strobe   (on unless --strobe=off; the spec's "The strobe") the light
+##   strobe   (off unless --strobe=on; the spec's "The strobe") the light
 ##            comes instead as 3 to 5 short pulses (`_strobe`), each lit
 ##            PULSE_LIT s, dark PULSE_DARK s between, a flash right behind
 ##            it each (one stroke, falling off so it is dark by the pulse's
@@ -66,7 +66,8 @@ extends Node3D
 ##   --sighting-log            a line per heard, flash, sighted, end
 ##   --sighting-hold           a sighting never ends (with --strike-hold,
 ##                             for stills)
-##   --strobe=on|off           the strobe forced on (the default) or off
+##   --strobe=on|off           the strobe on, or off (the default: the user
+##                             found its pulses read as glitching)
 ##                             (the one or two flashes, to judge against)
 signal heard(event: Dictionary)
 signal sighted(event: Dictionary)
@@ -186,8 +187,8 @@ var clock := 0.0
 var every := EVERY
 var log_on := false
 var hold := false
-## The strobe (`--strobe=off`: the one or two flashes).
-var strobe := true
+## The strobe (`--strobe=on`; off: the one or two flashes).
+var strobe := false
 ## The dragon as it is seen.
 var glimpse: Node3D
 var _weather: Node3D
@@ -219,7 +220,7 @@ func setup(scene: Node3D, weather: Node3D) -> void:
 		elif arg.begins_with("--murk="): murk_pinned = clampf(float(arg.get_slice("=",1)),0.0,1.0)
 		elif arg == "--sighting-log": log_on = true
 		elif arg == "--sighting-hold": hold = true
-		elif arg.begins_with("--strobe="): strobe = arg.get_slice("=",1) != "off"
+		elif arg.begins_with("--strobe="): strobe = arg.get_slice("=",1) == "on"
 	_clips = {"call":_takes("dragon-call-%d.wav",3),"beat":_takes("dragon-beat-%d.wav",4),"rustle":_takes("wings-%d.wav",4)}
 	_bus()
 	for i in range(6):

@@ -4,7 +4,7 @@
 # storm) and jet streams round and across the field. Extra args pass through:
 #   ./run-sky-weather.command --storm=1   # a full storm's air from the start
 #   --sighting-stage=away|over|under (close) / away|toward (far)   every sighting staged so
-#   --strobe=off   a sighting's one or two flashes, not the strobe
+#   --strobe=on    a sighting lit by the strobe's 3-5 pulses, not one or two flashes
 #   --hide=old     the dragon's old flat hide (H toggles)
 # Every key and flag: the header of studies/sky_weather_field.gd.
 set -u
@@ -19,7 +19,7 @@ if [[ ! -x "$GODOT_BIN" ]]; then
   exit 1
 fi
 
-print -r -- "Opening the sky weather field (T front, C cell, M whiteout, Shift+T sky storm, G gust, F12 lightning, K/Shift+K dragon far/close, H dragon hide, R start, Space board; flags --storm=1 --sighting-stage= --strobe=off --hide=old). Launch log: $LAUNCH_LOG"
+print -r -- "Opening the sky weather field (T front, C cell, M whiteout, Shift+T sky storm, G gust, F12 lightning, K/Shift+K dragon far/close, H dragon hide, R start, Space board; flags --storm=1 --sighting-stage= --strobe=on --hide=old). Launch log: $LAUNCH_LOG"
 "$GODOT_BIN" --path "$PROJECT_DIR" --rendering-method forward_plus --windowed --resolution 1440x900 res://studies/sky_weather_field.tscn -- --no-title --no-serpent --heavy "$@" 2>&1 | tee "$LAUNCH_LOG"
 launch_status=${pipestatus[1]}
 # Godot can report script-load failures while returning a zero exit status.
