@@ -25,6 +25,8 @@ uniform float warp = 1.6;
 // The flash now (0 up) and where it is.
 uniform float flash = 0.0;
 uniform vec3 flash_at = vec3(0.0);
+// How much brighter the bloom's heart is than its spread.
+uniform float heart_gain = 1.6;
 // The wisps' drift (the wind, m/s) and their size (m).
 uniform vec3 drift = vec3(0.0);
 uniform float wisp = 9.0;
@@ -92,8 +94,12 @@ void fragment() {
 	vec3 to_flash = flash_at - eye;
 	float facing = length(to_flash) > 1.0 ? dot(rd, normalize(to_flash)) * 0.5 + 0.5 : 0.5;
 	float bloom = pow(facing, 6.0);
-	float glow = clamp(flash, 0.0, 3.0) * (0.12 + 1.1 * bloom) * (0.45 + 0.8 * lift);
+	// Its heart: a tight hot core where it struck (a dragon's flash is put
+	// right behind it, so it stands black against this).
+	float heart = pow(facing, 60.0);
+	float glow = clamp(flash, 0.0, 3.0) * (0.12 + 1.1 * bloom + heart_gain * heart) * (0.45 + 0.8 * lift);
 	base = mix(base, lit, clamp(glow * 0.75, 0.0, 0.97));
+	base += lit * clamp(flash, 0.0, 3.0) * heart * heart_gain * 0.35;
 	ALBEDO = base;
 	ALPHA = clamp(max(thick, cover * k) * k, 0.0, 1.0);
 }

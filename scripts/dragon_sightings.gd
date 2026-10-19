@@ -10,9 +10,11 @@ extends Node3D
 ##            distance over SOUND_SPEED later, so a far one's call after the
 ##            flash lags the sight. `heard` is signalled.
 ##   flash    HERALD s after it is heard, lightning (scripts/plane_lightning.gd
-##            `strike_over`) behind it from the eye: far, a bolt or a cloud
-##            flash a few hundred m past it; close, a flash in the murk past
-##            it. While a flash lights it (`lit`, off the lightning's
+##            `strike_over`, `flash_inside`) behind it from the eye: far, a
+##            bolt or a cloud flash a few hundred m past it; close (and far
+##            in a whiteout, where it comes nearer), a flash inside the murk
+##            or cloud right behind it on the line from the eye, so the murk
+##            blooms round it and it stands as a silhouette. While a flash lights it (`lit`, off the lightning's
 ##            `flash`), it is seen; `sighted` is signalled at the first.
 ##   again    AGAIN of them get a second flash AGAIN_GAP s later; GONE of
 ##            those show it gone (the sky lit, the dragon not there).
@@ -63,6 +65,12 @@ const FAR_UP := Vector2(-30.0,90.0)
 const FAR_SPEED := Vector2(20.0,30.0)
 const FAR_IN_VIEW := 0.7
 const FAR_BEHIND := Vector2(120.0,360.0)
+## In a whiteout's murk a far one is nearer (at full murk; m), or the murk
+## would hide it wholly, and its height over the eye less (m); its flash is
+## inside the murk right behind it from the eye, MURK_BEHIND m past it.
+const MURK_RANGE := Vector2(110.0,200.0)
+const MURK_UP := Vector2(-15.0,35.0)
+const MURK_BEHIND := Vector2(60.0,140.0)
 ## Close (its root as the first flash shows it; its wings reach ~68 m each
 ## side, its neck and head ~70 m ahead, its tail ~110 m behind): off the
 ## wing (m to the side, ahead, up), over the canopy (m up, ahead, to the
@@ -77,6 +85,9 @@ const CANOPY_ACROSS := Vector2(-25.0,10.0)
 const CANOPY_SHARE := 0.4
 const SLIDE := Vector2(9.0,16.0)
 const CLOSE_BEHIND := Vector2(50.0,130.0)
+## A close one's flash a little over its line from the eye (m), so its back
+## and wings stand against the bloom's core.
+const CLOSE_LIFT := Vector2(0.0,20.0)
 ## Heard to the first flash (s); a second flash's chance and gap (s); the
 ## chance it is gone in it; the lightning's flash that shows it.
 const HERALD := Vector2(1.2,3.0)
@@ -272,8 +283,11 @@ func _begin(near: String) -> void:
 		var half := atan(tan(deg_to_rad(camera.fov)*0.5)*_aspect())
 		var yaw := atan2(flat.z,flat.x)+_rng.randf_range(-half,half)*FAR_IN_VIEW
 		var way := Vector3(cos(yaw),0.0,sin(yaw))
-		place = eye+way*_rng.randf_range(FAR_RANGE.x,FAR_RANGE.y)
-		place.y = eye.y+_rng.randf_range(FAR_UP.x,FAR_UP.y)
+		var k := clampf(murk,0.0,1.0)
+		var span := FAR_RANGE.lerp(MURK_RANGE,k)
+		var up := FAR_UP.lerp(MURK_UP,k)
+		place = eye+way*_rng.randf_range(span.x,span.y)
+		place.y = eye.y+_rng.randf_range(up.x,up.y)
 		# Across the line of sight, a little toward or away.
 		var across := way.cross(Vector3.UP)*(1.0 if _rng.randf() < 0.5 else -1.0)
 		velocity = (across+way*_rng.randf_range(-0.35,0.35)).normalized()*_rng.randf_range(FAR_SPEED.x,FAR_SPEED.y)
@@ -354,13 +368,17 @@ func _flash(k: int) -> void:
 	var away := Vector3(place.x-eye.x,0.0,place.z-eye.z)
 	away = away.normalized() if away.length() > 0.5 else -camera.global_basis.z
 	var lightning: Node3D = _weather.lightning
-	if str(now.near) == "far":
+	# Right behind it from the eye: the murk (or the cloud and the sky) blooms
+	# round it and it stands black against the bloom.
+	var line := (place-eye).normalized()
+	if str(now.near) == "close":
+		lightning.flash_inside(place+line*_rng.randf_range(CLOSE_BEHIND.x,CLOSE_BEHIND.y)+Vector3.UP*_rng.randf_range(CLOSE_LIFT.x,CLOSE_LIFT.y))
+	elif murk > 0.5:
+		lightning.flash_inside(place+line*_rng.randf_range(MURK_BEHIND.x,MURK_BEHIND.y))
+	else:
 		var ground := place+away*_rng.randf_range(FAR_BEHIND.x,FAR_BEHIND.y)+away.cross(Vector3.UP)*_rng.randf_range(-80.0,80.0)
 		if _rng.randf() < 0.55: lightning.strike_over(ground,"bolt",place.y+_rng.randf_range(90.0,180.0),lightning.SEA_TOP)
 		else: lightning.strike_over(ground,"inside",place.y-170.0,lightning.SEA_TOP)
-	else:
-		var ground := place+away*_rng.randf_range(CLOSE_BEHIND.x,CLOSE_BEHIND.y)
-		lightning.strike_over(ground,"inside",place.y-120.0,lightning.SEA_TOP)
 	_log("flash %d%s, %.0f m off" % [k+1," (gone)" if bool(now.gone) else "",eye.distance_to(place)])
 
 func _play(kind: String, gain: float, pitch: float) -> void:

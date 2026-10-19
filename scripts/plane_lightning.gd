@@ -112,6 +112,9 @@ var _range := -1.0
 var _bearing := NAN
 var _hold := -1.0
 var _frames := 0
+## A flash inside the cloud at just this point (`flash_inside`), for the
+## next strike only.
+var _exact := Vector3.INF
 
 func setup(scene: Node3D) -> void:
 	name = "PlaneLightning"
@@ -170,6 +173,14 @@ func step(delta: float, storm_now: float) -> void:
 func strike_over(ground: Vector3, kind: String, root_y: float, foot_y: float) -> void:
 	strike(kind,-1.0,NAN,ground,root_y,foot_y)
 
+## A flash inside the cloud at just `point` (no channel seen): the dragon's
+## sightings put it right behind the dragon from the eye, so the murk or
+## the cloud blooms round its shape (scripts/dragon_sightings.gd).
+func flash_inside(point: Vector3) -> void:
+	_exact = point
+	strike("inside",-1.0,NAN,Vector3(point.x,0.0,point.z),point.y,SEA_TOP)
+	_exact = Vector3.INF
+
 ## A strike now: of `kind` (bolt, across, inside; "" draws one), `range` m
 ## off (<0 draws one) at `bearing` radians off the view's middle (NAN draws
 ## one); or, given `ground_at`, there, from `root_y` down to `foot_y`.
@@ -218,6 +229,7 @@ func strike(kind := "", range_m := -1.0, bearing := NAN, ground_at := Vector3.IN
 			sky_at = at
 		"inside":
 			at = ground+Vector3.UP*(top+_rng.randf_range(60.0,280.0)) if placed else _inside(eye,ground)
+			if _exact != Vector3.INF: at = _exact
 		_:
 			var root := ground+Vector3.UP*top
 			var foot := ground+Vector3(_rng.randf_range(-0.25,0.25),0.0,_rng.randf_range(-0.25,0.25))*(top-foot_y)
