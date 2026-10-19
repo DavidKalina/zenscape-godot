@@ -231,6 +231,8 @@ func _unhandled_input(event: InputEvent) -> void:
 ## On foot, walking, the world view shut.
 func _on_foot() -> bool:
 	if study == null or not bool(study.get("walk_ready")) or bool(study.get("flying")): return false
+	var dig: Variant = study.get("dig")
+	if dig != null and dig.motion != null: return false
 	var editor := study.get_node_or_null("LayoutEdit")
 	return editor == null or not bool(editor.get("editing"))
 
