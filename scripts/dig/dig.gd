@@ -286,7 +286,14 @@ func _moment(e: String) -> void:
 			fx.bite(bite_at,-motion.frame.basis.z)
 			if stretch != null: stretch.v -= 1.4
 			if _scoop == null:
-				_scoop = fx.scoop(Vector3(dig_at.x,dig_at.y,dig_at.z),dig_normal,motion.frame.basis.x,0.4)
+				# A strange spot opens a hole kept for the deal; plain soil a
+				# scoop (none over a hole already dug: the hole takes it).
+				if not dig_spot.is_empty():
+					_scoop = fx.hole(Vector3(dig_at.x,dig_at.y,dig_at.z),dig_normal,motion.frame.basis.x,0.4)
+				else:
+					_scoop = fx.hole_near(dig_at,0.45)
+					if _scoop == null:
+						_scoop = fx.scoop(Vector3(dig_at.x,dig_at.y,dig_at.z),dig_normal,motion.frame.basis.x,0.4)
 				dug.soil += 1
 			else:
 				fx.deepen(_scoop,1.0)
