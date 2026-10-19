@@ -13,6 +13,11 @@ extends RefCounted
 ##            south bench
 ##   coast    a tall islet east of the tower, reached only by the sail off
 ##            the lookout: an arch, part spot 13, the way on down to the tail
+##   ropes    the chain off the north shelf: a slam-spring slab under a jib,
+##            its launch into the swing rope hung from the jib, the release
+##            across onto the rope rock's landing (an islet north of the
+##            spine, higher than anything near it): a chapel arch, part spot
+##            14, and the start of the way on (the slide, a later step)
 ##
 ## Every gap and rise is sized from the walker (RuinKit GRAB_TOP 1.875,
 ## CHAIN_TOP 2.575; `tools/kit_piece.py numbers`).
@@ -82,6 +87,104 @@ const COAST_ARCH := Vector2(-3.0,0.0)
 static func coast_arch_foot() -> Vector3:
 	return Vector3(COAST_AT.x+COAST_ARCH.x,COAST_TOP,COAST_AT.y+COAST_ARCH.y)
 
+## The rope chain (spec: Chained moves), north off the spine's north shelf
+## along x ROPE_X, every step on the architecture or the land:
+##   shelf    the north shelf (y 37.6 at x 84, its edge at z -32.5)
+##   spur     a stone jutting north off the shelf's edge, level with it
+##   slab     a slam-spring bob slab past the spur's end, ROPE_SLAB_DOWN
+##            under it, clear of the flank by more than its spring's sink:
+##            a running hop off the spur and the slam onto it (a hop gives
+##            the 0.45 m of air a slam needs)
+##   jib      a worn column standing on the shelf beside the spur's root, a
+##            broken beam jutting north off its head over the slab: the
+##            rope's anchor
+##   rope     the swing rope hung from the jib's end, its knot over the
+##            slab, where the slab's launch (6 pumps, 9 m) meets it
+##   landing  a stone landing jutting off the rope rock's south rim, 14 m on
+##            from the rope (measured: let go rising, he is 13.4+ m on with
+##            his feet still over its grab height and lands on it)
+## The rope rock's turf (ROPE_TOP) stands over the slab's launch (apex
+## 44.25: with the sail, his feet are over the landing's grab height only
+## 0-5 m on, 14.6 needed) and over everything near it but the tower (the
+## colonnade's lintels 45.2-47.4, the crest 41.2); the tower's rim is 71 m
+## off, past its sail's 47 m to that height. Its sides are `sheer`
+## (nothing to climb). The deliberate shortcut: an updraft charge saved
+## and spent at the launch's top (3.7 m more) sails him 14.3 m on, to a
+## grab on the landing's edge. The way back is the sail down to the
+## shelf; the way on is the slide (a later step).
+const ROPE_X := 84.0
+const ROPE_SHELF := Vector3(84.0,37.6,-31.4)
+## The spur: a stone jutting north off the shelf's edge, its top level
+## with the shelf, its end ROPE_SPUR_END (the jump off).
+const ROPE_SPUR_END := -35.0
+const ROPE_SPUR := Vector2(1.6,1.2)
+const ROPE_SLAB_DOWN := 1.0
+const ROPE_SLAB_Z := -37.4
+## The jib's column: on the shelf beside the spur's root (east of it).
+const JIB_AT := Vector2(85.7,-31.4)
+const JIB_SIDE := 1.3
+const JIB_BEAM := Vector2(0.9,0.8)
+const ROPE_ANCHOR := Vector3(84.0,49.5,-38.0)
+const ROPE_LENGTH := 5.6
+const ROPE_TOP := 46.5
+const ROPE_AT := Vector2(84.0,-62.7)
+const LANDING := Vector3(4.0,0.7,3.0)
+static func rope_slab_top() -> Vector3:
+	return Vector3(ROPE_X,ROPE_SHELF.y-ROPE_SLAB_DOWN,ROPE_SLAB_Z)
+static func rope_anchor() -> Vector3:
+	return ROPE_ANCHOR
+static func rope_spur_end() -> Vector3:
+	return Vector3(ROPE_X,ROPE_SHELF.y,ROPE_SPUR_END)
+static func rope_rock_outline() -> Array:
+	var c := ROPE_AT
+	var out := []
+	for w: Vector2 in [Vector2(-7.5,-2.0),Vector2(-5.5,-6.5),Vector2(-1.0,-8.0),Vector2(4.5,-6.5),Vector2(7.5,-2.5),
+			Vector2(7.0,3.5),Vector2(4.0,7.5),Vector2(0.0,8.5),Vector2(-4.5,7.5),Vector2(-7.5,3.0)]:
+		out.append(c+w)
+	return out
+## The landing's outer edge's middle (its top) and where it starts in the turf.
+static func landing_edge() -> Vector3:
+	return Vector3(ROPE_AT.x,ROPE_TOP,ROPE_AT.y+8.5+LANDING.z-0.8)
+## The chapel arch on the rope rock (span along x), part spot 14 under it.
+static func rope_arch_foot() -> Vector3:
+	return Vector3(ROPE_AT.x,ROPE_TOP,ROPE_AT.y-1.0)
+## The jib, the column under it and the landing: [layout name, node, world
+## foot, yaw (deg)].
+static func ropes_built() -> Array:
+	var head := ROPE_ANCHOR.y+JIB_BEAM.y
+	var col_h := head-ROPE_SHELF.y
+	var cb := RuinKit.Build.new(621,0.35,"JibColumn")
+	_block(cb,Vector3(0.0,(col_h-4.0)*0.5,0.0),Vector3(JIB_SIDE*0.5,(col_h+4.0)*0.5,JIB_SIDE*0.5))
+	var column := cb.finish()
+	# The jib: from over the column's middle out past the anchor (0.3 m).
+	var jb := RuinKit.Build.new(622,0.3,"Jib")
+	var to := Vector2(ROPE_ANCHOR.x,ROPE_ANCHOR.z)-JIB_AT
+	var tip := to+to.normalized()*0.3
+	var back := -to.normalized()*JIB_SIDE*0.5
+	Spine._beam(jb,Vector3(back.x,0.0,back.y),Vector3(tip.x,0.0,tip.y),JIB_BEAM)
+	var jib := jb.finish()
+	var sb := RuinKit.Build.new(625,0.3,"Spur")
+	Spine._beam(sb,Vector3(0.0,0.0,0.0),Vector3(0.0,0.0,ROPE_SPUR_END-ROPE_SHELF.z),ROPE_SPUR)
+	var spur := sb.finish()
+	var lb := RuinKit.Build.new(623,0.3,"Landing")
+	Spine._beam(lb,Vector3(0.0,0.0,-LANDING.z),Vector3(0.0,0.0,0.0),Vector2(LANDING.x,LANDING.y))
+	var landing := lb.finish()
+	return [
+		["ropes/spur",spur,ROPE_SHELF,0.0],
+		["ropes/column",column,Vector3(JIB_AT.x,ROPE_SHELF.y,JIB_AT.y),0.0],
+		["ropes/jib",jib,Vector3(JIB_AT.x,head,JIB_AT.y),0.0],
+		["ropes/landing",landing,landing_edge(),0.0],
+	]
+
+## A worn upright block (walk hull on all sides) centred `c`, `half` its
+## half extents, in `b`'s frame.
+static func _block(b: RuinKit.Build, c: Vector3, half: Vector3) -> void:
+	var pose := Transform3D(Basis.IDENTITY,c)
+	b.lean = true
+	b.solid(RuinKit._box(b,half),pose,RuinKit._stone(b,1.03),false,true,[],-1,1.0)
+	b.lean = false
+	RuinKit._walk_hull(b,pose,[Plane(Vector3.RIGHT,half.x),Plane(Vector3.LEFT,half.x),Plane(Vector3.UP,half.y),Plane(Vector3.DOWN,half.y),Plane(Vector3.BACK,half.z),Plane(Vector3.FORWARD,half.z)])
+
 ## The lands besides the spine: [name, outline, ground, depth (its keel
 ## under its rim), seed, cliffs box (none: Rect2()), its rim's height,
 ## optional: sheer (its hanging sides not collided as drawn, whose jagged
@@ -92,6 +195,7 @@ static func lands() -> Array:
 		["strip",strip_outline(),func(_x: float, _z: float) -> float: return STRIP_TOP,16.0,405,Rect2(),STRIP_TOP],
 		["tower_rock",tower_rock_outline(),func(_x: float, _z: float) -> float: return TOWER_ROCK,18.0,407,Rect2(),TOWER_ROCK],
 		["coast_rock",coast_rock_outline(),func(_x: float, _z: float) -> float: return COAST_TOP,COAST_DEEP,409,Rect2(),COAST_TOP,true],
+		["rope_rock",rope_rock_outline(),func(_x: float, _z: float) -> float: return ROPE_TOP,22.0,411,Rect2(),ROPE_TOP,true],
 	]
 
 ## Land `spec` (a row of `lands`) built: a KitLand island, its sides collided.
@@ -148,6 +252,7 @@ static func sheer_hull(outline: Array, top: float, depth: float) -> StaticBody3D
 static func pieces() -> Array:
 	return [
 		["coast/arch","arch",619,0.3,coast_arch_foot(),90.0],
+		["ropes/arch","arch",624,0.25,rope_arch_foot(),0.0],
 	]
 
 # --- The tower --------------------------------------------------------------------
@@ -357,6 +462,7 @@ static func spots() -> Array:
 		["tower","the tower top, on the east wall's head by the lookout",east_head(1.4),["lying","salvager"]],
 		["tower","the belfry's wall head, over the bell (partway up)",belfry_south_head(-1.4),["lying","jammed"]],
 		["coast","under the coast rock's arch (the coast down's end)",coast_arch_foot(),["lying","islet","salvager"]],
+		["ropes","under the rope rock's chapel arch (the rope chain's end)",rope_arch_foot(),["lying","islet","salvager"]],
 	]
 
 ## The caches (spec item 10's change; studies/wreck_cluster_caches.gd): a

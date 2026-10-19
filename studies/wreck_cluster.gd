@@ -70,6 +70,9 @@ const SOLID_MASK := 1|(1 << 11)
 var lands := {}
 var motif := SpineMotif.new()
 var foot_host: Node3D = null
+## The rope chain's pieces (Art: ropes).
+var rope_slab: Node3D = null
+var rope: Node3D = null
 var spot_root: Node3D = null
 ## The spot nodes, in the order of Art.spots() (null where deleted).
 var spot_nodes: Array = []
@@ -198,6 +201,7 @@ func _build_art() -> void:
 	if not LayoutOverrides.islands().is_empty(): isle_ready.connect(_place_saved_islands,CONNECT_ONE_SHOT)
 	for p: Array in Art.pieces(): _place_piece(str(p[0]),RuinKit.piece(str(p[1]),int(p[2]),float(p[3])),p[4],float(p[5]))
 	for t: Array in Art.tower(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
+	for t: Array in Art.ropes_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	_build_bridge()
 	_build_foot_pieces()
 	_build_spots()
@@ -237,6 +241,13 @@ func _build_foot_pieces() -> void:
 	add_child(foot_host)
 	foot_host.attach(self)
 	foot_host.name_under("wreck_cluster")
+	# The rope chain (Art: ropes): the slab under the jib, the rope off the
+	# jib's end.
+	foot_host.call_next("ropes/slab")
+	rope_slab = foot_host.bob_slab(Art.rope_slab_top(),Vector3(2.4,0.7,2.2),0.0,631)
+	foot_host.call_next("ropes/rope")
+	rope = foot_host.rope(Art.rope_anchor(),Art.ROPE_LENGTH)
+	if is_instance_valid(rope): rope.add_tag(Art.rope_anchor()+Vector3(0.0,-0.2,0.6),0.0,632)
 	LayoutOverrides.build_added(foot_host)
 
 # --- The part spots -----------------------------------------------------------------
