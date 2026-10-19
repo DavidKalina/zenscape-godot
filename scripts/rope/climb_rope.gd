@@ -181,8 +181,40 @@ const RAP_STRIDE := 0.9
 const RAP_LIFT := 0.4
 const RAP_SKIM := 2.8
 const UNRAP := 0.3
+## The swing (a rope over a beam, the swing study): Space by it takes hold
+## (the rope in his hand, or within GRAB_REACH of a hanging one). Walking
+## with it he takes in the slack (his grip as far from the beam's top as
+## his hands, at least SWING_MIN, at most the rope); the moment he leaves
+## the ground (off an edge, or Space: his jump) he's a pendulum under the
+## beam (scripts/interactables/
+## swing_rope.gd's: its pump, release boost and pop). Crouch on the ground
+## lets go of it. A body hitting a face keeps SWING_BOUNCE of its pace
+## along it; feet meeting the floor put him down still holding it, not
+## swung again for SWING_COOL s. Let go, the body eases upright over UPRIGHT s.
+const SWING_MIN := 1.4
+## The rope over the beam and down to the hook (m, times size): what's
+## left of ROPE_LEN to swing on.
+const SWING_OVER := 1.0
+const SWING_BOUNCE := 0.25
+const SWING_COOL := 0.3
+const UPRIGHT := 0.3
+const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
 
 var study: Node3D
+## The swing: holding a beam's rope on the ground (`swing_hold`, `swing_len`
+## from the beam's top to his hands), on the pendulum (`swinging`), the rope
+## left hanging off the beam after (`swing_left`); counts.
+var swing_hold := false
+var swinging := false
+var swing_left := false
+var swing_len := 0.0
+var swings := 0
+var swing_releases := 0
+var scrapes := 0
+var _pend: SwingRope
+var _swing_cool := 0.0
+var _tilt_left := 0.0
+var _tilt := Basis.IDENTITY
 ## "coiled" (at his side), "aim", "fly", "drag" (pulled back to the lip),
 ## "caught", "tug", "seated", "slip" (pulled off by the tug), "slide" (off
 ## a smooth top), "fall", "down", "reel", "pull_up" (hauled up from a top).
@@ -406,6 +438,7 @@ func reset() -> void:
 	edge_out = Vector3.ZERO
 	fixed = false
 	lowering = false
+	_drop_swing()
 	_off_rope()
 	_reel_after = false
 	_show_aim(false)
@@ -770,7 +803,8 @@ func _grit_step(delta: float) -> void:
 
 ## Draws the rope in: a caught hook flicked off its lip first.
 func reel() -> void:
-	if climber or hauling or lowering: return
+	if climber or hauling or lowering or swinging: return
+	_drop_swing()
 	if (state == "caught" or state == "seated") and on_top():
 		# From the top: pulled up hand over hand, the hanging end rising.
 		reels += 1
@@ -863,8 +897,12 @@ func line_at(y: float) -> Vector3:
 func pre_step(jump_down: bool) -> void:
 	var hit := jump_down and not _jump_was
 	_jump_was = jump_down
+	if swing_hold and not swinging and not _busy(): _swing_frame()
 	if not hit or climber or hauling or lowering or _busy(): return
 	if state != "caught" and state != "seated": return
+	if hold == "beam" and beam_mid != Vector3.INF:
+		_swing_pre(hit)
+		return
 	if edge == Vector3.INF or not _on_foot(): return
 	var motor: Variant = study.get("motor")
 	var s := _size()
@@ -882,6 +920,162 @@ func pre_step(jump_down: bool) -> void:
 	var at := line_at(feet.y)
 	if Vector2(at.x-feet.x,at.z-feet.z).length() > GRAB_REACH*s: return
 	_mount(motor)
+
+# --- The swing (a rope over a beam) -----------------------------------------------------
+
+## The beam's top the rope runs over (the pendulum's anchor).
+func _swing_top() -> Vector3:
+	return lip+Vector3.UP*ROPE_R*_size()
+
+## Jump by a beam's rope: taken hold of (the rope in his hand, or a hanging
+## one within GRAB_REACH), this press not a jump. Held, Jump is his own jump
+## (off the edge, into the swing).
+func _swing_pre(_hit: bool) -> void:
+	if swing_hold or swinging or not _on_foot(): return
+	var motor: Variant = study.get("motor")
+	var s := _size()
+	var hand := SwingRope.hand_of(motor)
+	var top := _swing_top()
+	if swing_left and _pend != null:
+		var q := Geometry3D.get_closest_point_to_segment(hand,top,_pend.hands)
+		if hand.distance_to(q) > GRAB_REACH*s: return
+	var d := hand.distance_to(top)
+	if d > ROPE_LEN*s:
+		_say("Too far from the beam")
+		return
+	swing_hold = true
+	swing_left = false
+	swing_len = maxf(d,SWING_MIN*s)
+	motor._held = true
+	_say("Holding the rope: run off the edge or %s to swing · %s lets go" % [Pad.pick("Space","A"),Pad.pick("Shift","crouch")])
+
+## Each frame holding a beam's rope (before the motor's step): on the
+## ground, the slack taken in, kept within the rope's reach of the beam
+## (crouch lets go); off the ground, on the pendulum.
+func _swing_frame() -> void:
+	var motor: Variant = study.get("motor")
+	if motor.rider != null or motor.swimming or motor.on_ledge():
+		swing_hold = false
+		return
+	var s := _size()
+	var top := _swing_top()
+	var hand := SwingRope.hand_of(motor)
+	var d := hand.distance_to(top)
+	if motor.grounded:
+		if motor.crouch and motor.speed() < 1.0:
+			swing_hold = false
+			_say("Let go of the rope")
+			return
+		# He takes in the slack as he goes: the rope's as long as his hands
+		# are from the beam, up to all of it (then he's held at that).
+		var most := ROPE_LEN*s-SWING_OVER*s
+		if d > most:
+			var off := hand-top
+			var dy := off.y
+			var flat := Vector2(off.x,off.z)
+			var r := sqrt(maxf(most*most-dy*dy,0.0))
+			if flat.length() > 0.001:
+				var fix := flat.normalized()*(r-flat.length())
+				motor.feet += Vector3(fix.x,0.0,fix.y)
+				var v: Vector3 = motor.velocity
+				var out := Vector3(flat.x,0.0,flat.y).normalized()
+				if v.dot(out) > 0.0: motor.velocity = v-out*v.dot(out)
+		swing_len = clampf(d,SWING_MIN*s,most)
+		return
+	if _swing_cool > 0.0: return
+	_swing_mount(motor)
+
+## Off the ground: on the pendulum under the beam (its pace taken into the
+## swing), this rope his rider.
+func _swing_mount(motor: Variant) -> void:
+	if _pend == null: _pend = SwingRope.new()
+	_pend.setup(_swing_top(),swing_len)
+	_pend._take(motor,SwingRope.hand_of(motor))
+	motor.rider = self
+	swinging = true
+	swings += 1
+	_say("Swinging: %s pumps · %s lets go" % [Pad.pick("W/S","stick"),Pad.pick("Space","A")])
+
+## One step on the pendulum: the swing rope's ride (pump, steer, release),
+## then a face hit (the pace into it taken off, a little bounce) and the
+## floor (put down on his feet, still holding the rope).
+func _swing_ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dictionary:
+	var s := _size()
+	var was_hands := _pend.hands
+	var was_v := _pend.velocity
+	var was_feet := walker.feet
+	var out := _pend.ride(walker,delta,want,pressed)
+	if out.get("swing",true) == false:
+		# Let go (Jump, with the swing's pace; crouch, without): the rope
+		# left hanging off the beam, its end swinging on.
+		swinging = false
+		swing_hold = false
+		swing_left = true
+		swing_releases += 1
+		_tilt_left = UPRIGHT
+		out["let_go"] = true
+		return out
+	var chest := Vector3.UP*0.6*s
+	var a := was_feet+chest
+	var b := walker.feet+chest
+	if a.distance_to(b) > 0.0001:
+		var b2 := b+(b-a).normalized()*0.3*s
+		var space := get_world_3d().direct_space_state
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(a,b2,CarryHost.SOLID_MASK))
+		if not hit.is_empty():
+			var n: Vector3 = hit.normal
+			var v := was_v
+			var vn := v.dot(n)
+			if vn < 0.0: v -= n*vn*(1.0+SWING_BOUNCE)
+			_pend.hands = was_hands
+			var u := (_pend.hands-_pend.anchor).normalized()
+			_pend.velocity = v-u*v.dot(u)
+			_pend._place(walker)
+			out["swing_hit"] = true
+	var fl := _floor_under(walker.feet+Vector3.UP*0.6*s)
+	if walker.feet.y < fl:
+		# The swing scrapes the floor: down on his feet, the rope in hand.
+		walker.feet.y = fl
+		var v := _pend.velocity
+		walker.toss(Vector3(v.x,0.0,v.z)*0.6)
+		swinging = false
+		_swing_cool = SWING_COOL
+		_tilt_left = UPRIGHT
+		scrapes += 1
+		_say("Scraped the floor")
+		out["scraped"] = true
+	return out
+
+## The rope off the beam: not held, not swung, not left hanging.
+func _drop_swing() -> void:
+	if swinging and study != null and study.get("motor") != null and study.get("motor").rider == self:
+		study.get("motor").release(self)
+	swinging = false
+	swing_hold = false
+	swing_left = false
+	_tilt_left = 0.0
+
+## On the pendulum: the body along the rope (the swing rope's frame), both
+## hands on it at the grip.
+func _swing_pose(sk: Skeleton3D) -> void:
+	var fig: Node3D = study.get("figure")
+	if fig == null: return
+	var s := _size()
+	_tilt = _pend.tilt
+	fig.global_basis = _tilt*Basis.from_scale(fig.global_basis.get_scale())
+	var up := (_pend.anchor-_pend.hands).normalized()
+	var right := _tilt.x.normalized()
+	var back := _tilt.z.normalized()
+	var to_sk := sk.global_transform.affine_inverse()
+	for sd: float in [1.0,-1.0]:
+		var names := ["upper_arm.R","forearm.R","hand.R"] if sd > 0.0 else ["upper_arm.L","forearm.L","hand.L"]
+		var upper := sk.find_bone(names[0])
+		var fore := sk.find_bone(names[1])
+		var hand := sk.find_bone(names[2])
+		if upper < 0 or fore < 0 or hand < 0: return
+		var at := _pend.hands+up*(0.07 if sd > 0.0 else -0.07)*s+right*sd*HAND_SPREAD*s
+		var pole := (sk.global_basis.inverse()*(right*sd*0.8+Vector3.DOWN*0.3+back*0.5)).normalized()
+		CarryHost._two_bone(sk,upper,fore,hand,to_sk*at,pole,1.0)
 
 func _mount(motor: Variant) -> void:
 	var s := _size()
@@ -981,6 +1175,7 @@ func _body_at(motor: Variant, y: float) -> Vector3:
 
 ## One step on the rope (the motor's rider, scripts/pilot_motor.gd `ride`).
 func ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dictionary:
+	if swinging: return _swing_ride(walker,delta,want,pressed)
 	var out := {}
 	_on_t += delta
 	var s := _size()
@@ -1208,6 +1403,12 @@ func _process(delta: float) -> void:
 	_read_input()
 	_t += delta
 	if climber and study.get("motor").rider != self: _off_rope()
+	_swing_cool = maxf(_swing_cool-delta,0.0)
+	_tilt_left = maxf(_tilt_left-delta,0.0)
+	if swinging and study.get("motor").rider != self:
+		swinging = false
+		swing_hold = false
+	if swing_left and not swinging and _pend != null: _pend.advance(delta)
 	if lowering:
 		var motor: Variant = study.get("motor")
 		if motor.hold == "hang":
@@ -1545,12 +1746,18 @@ func _draw_over_beam() -> void:
 	var near := beam_mid+(lip_out+Vector3.UP).normalized()*r
 	var top := beam_mid+Vector3.UP*r
 	var far := beam_mid+(-lip_out+Vector3.UP).normalized()*r
+	if (swinging or swing_left) and _pend != null:
+		# Swung on, or left hanging: from his hands (its free end) straight
+		# up to the top, over, and down to the hook.
+		_draw_line(PackedVector3Array([_pend.hands,top,far,hook_at]))
+		return
 	var a := _hand()
 	var d := a.distance_to(near)
 	var span := d+near.distance_to(top)+top.distance_to(far)+far.distance_to(hook_at)
 	if state == "caught": paid = maxf(paid,span)
 	elif state == "seated": paid = span+0.02*s
 	var slack := maxf(paid-span,0.0)
+	if swing_hold: slack = maxf(swing_len-a.distance_to(_swing_top()),0.0)
 	var sag := sqrt(3.0*d*slack/8.0) if d > 0.01 else 0.0
 	var pts := PackedVector3Array()
 	for i in 13:
@@ -1603,6 +1810,16 @@ func _arm_pose() -> void:
 	if sk == null: return
 	var arm := sk.find_bone("upper_arm.R")
 	if arm < 0: return
+	if swinging:
+		_swing_pose(sk)
+		return
+	if _tilt_left > 0.0:
+		# Just off the swing: eased back upright.
+		var fig: Node3D = study.get("figure")
+		if fig != null:
+			var sc := fig.global_basis.get_scale()
+			var upright := fig.global_basis.orthonormalized()
+			fig.global_basis = upright.slerp(_tilt.orthonormalized(),_tilt_left/UPRIGHT)*Basis.from_scale(sc)
 	var r := _forward().cross(Vector3.UP).normalized()
 	if climber:
 		if rappel: _rappel_pose(sk)

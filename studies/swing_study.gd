@@ -164,4 +164,4 @@ func _show_status() -> void:
 	_status.text = "%s · %s %s" % [moves,Pad.pick("M","LEFT"),"to switch"]
 
 func _hint_text() -> String:
-	return "Swing study: WASD run · Space jump · Shift/C crouch, at a run: slide · hold LMB or T (pad RT): aim the hook, let go to throw · E (pad B) tug a caught hook · Space (pad A) by a hooked rope: take hold; W / S climb, Space lets go · F (pad down) reel it in · M (pad left) full moveset on / off · 1 one beam (A), 2 two beams (B), 3 platform, 4 high / tall beams (C), 5 low beam, 6 the pit, 7 far deck A · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Swing study: WASD run · Space jump · Shift/C crouch, at a run: slide · hold LMB or T (pad RT): aim the hook, let go to throw · E (pad B) tug a caught hook · Space (pad A) with the rope over a beam: take hold, then run off an edge or Space to swing; W/S pumps, Space lets go · F (pad down) reel it in · M (pad left) full moveset on / off · 1 one beam (A), 2 two beams (B), 3 platform, 4 high / tall beams (C), 5 low beam, 6 the pit, 7 far deck A · R start · F1 numbers · F4 world view · Esc mouse"
