@@ -145,6 +145,7 @@ func _keep_ledger_in_memory() -> void:
 	book.path = ""
 	book.records = {}
 	book.plane = Ledger._no_plane()
+	book.vault = Ledger._no_vault()
 
 ## The pause's New deal row, under Back to the plane.
 func _add_deal_row() -> void:

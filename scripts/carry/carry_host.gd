@@ -196,11 +196,21 @@ func deal() -> void:
 	for t: Dictionary in treasures: _home(t)
 	if strain != null: strain.reset()
 
+## A banked one's node stays in the home vault (scripts/home/vault_host.gd)
+## as its display; the deal stands a fresh one of its kind on its spot.
 func _home(t: Dictionary) -> void:
 	_unloose(t)
 	_unstrap(t)
 	t.lost = false
-	t.banked = false
+	if bool(t.banked):
+		t.banked = false
+		var made := Models.build(str(t.kind))
+		var fresh := Node3D.new()
+		fresh.name = "Treasure_"+str(t.id)
+		fresh.add_child(made.node as Node3D)
+		(t.spot as Node3D).add_child(fresh)
+		t.node = fresh
+		t.measures = made
 	var node: Node3D = t.node
 	node.visible = true
 	var spot: Node3D = t.spot

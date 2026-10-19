@@ -15,9 +15,13 @@ extends Node3D
 ## - the brood's riders on the bag are worth nothing (their kg is not a
 ##   treasure); they ride on till something sheds them.
 ##
-## The tally (in memory this step): the total and the count of each kind,
+## The tally: the total and the count of each kind, kept in the ledger
+## (scripts/ledger/ledger.gd `vault`, `bank`) so it lasts across runs, and
 ## shown on the board; a deposit flashes what it added (a rising label at
-## the vault, a pulse of the board, a pop on the screen).
+## the vault, a pulse of the board, a pop on the screen). Banked ones stand
+## on the vault's floor (the last SHOW_MAX of them; a load rebuilds them
+## from the ledger's list). A banked one is out of the cluster's deal till
+## N, which stands a fresh one on its spot; the vault keeps its own.
 
 ## What each kind is worth: the one table.
 const VALUES := {"idol":40,"urn":60,"egg":150,"chalice":30}
@@ -32,6 +36,10 @@ const ARC := 2.2
 const SPOTS := [Vector2(-1.5,1.6),Vector2(-0.5,1.6),Vector2(0.5,1.6),Vector2(1.5,1.6),
 	Vector2(-1.5,0.4),Vector2(-0.5,0.4),Vector2(0.5,0.4),Vector2(1.5,0.4)]
 const FLOOR_UP := 0.22
+## How many banked ones stand on display (two layers); the oldest give way.
+const SHOW_MAX := 16
+const Ledger = preload("res://scripts/ledger/ledger.gd")
+const Models = preload("res://scripts/carry/treasure_models.gd")
 const Home = preload("res://studies/wreck_cluster_home.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const GenesisAudio = preload("res://scripts/genesis_audio.gd")
@@ -49,8 +57,12 @@ var by_hand := 0
 ## Whether the plane stands on the pad now (drivers).
 var on_pad := false
 var _beat_t := 0.0
-## Treasures on their way into the vault: {t, from, k, spot}.
+## Treasures on their way into the vault: {t, node, from, k, spot}.
 var _moving: Array = []
+## Display spot index -> the node standing there; the next one's number
+## (counted over every banked one, the ledger's list's length).
+var _at_spot := {}
+var _next := 0
 var _chime: AudioStreamPlayer = null
 var _flash_t := 99.0
 static var _chime_take: AudioStreamWAV = null
@@ -69,7 +81,22 @@ func setup(host: Node3D) -> void:
 	_chime.bus = GenesisAudio.BUS
 	_chime.stream = _chime_stream()
 	add_child(_chime)
+	_from_ledger()
 	_show_board()
+
+## The tally and the display as the ledger keeps them.
+func _from_ledger() -> void:
+	var kept: Dictionary = Ledger.shared().vault
+	total = int(kept.total)
+	for kind: String in counts.keys(): counts[kind] = int((kept.counts as Dictionary).get(kind,0))
+	var banked: Array = kept.banked
+	_next = banked.size()
+	if vault == null: return
+	for n in range(maxi(0,_next-SHOW_MAX),_next):
+		var node := Node3D.new()
+		node.name = "Banked_%d" % n
+		node.add_child(Models.build(str(banked[n])).node as Node3D)
+		_stand(node,n%SHOW_MAX)
 
 static func _placed(called: String) -> Node3D:
 	var e: Dictionary = LayoutOverrides.entries.get(called,{})
@@ -127,19 +154,22 @@ func _start(t: Dictionary) -> void:
 	t.banked = true
 	var node: Node3D = t.node
 	var from := node.global_transform
-	var spot := _free_spot()
-	t.vault_spot = spot
-	_moving.append({"t":t,"from":from,"k":0.0,"spot":spot})
+	var spot := _next%SHOW_MAX
+	_next += 1
+	_moving.append({"t":t,"node":node,"from":from,"k":0.0,"spot":spot})
 	if OS.is_debug_build(): print("vault: %s on its way in (spot %d)" % [t.id,spot])
 
-func _free_spot() -> int:
-	var carry: Variant = _carry()
-	for i in range(64):
-		var taken := false
-		for t: Dictionary in carry.treasures:
-			if bool(t.banked) and int(t.get("vault_spot",-1)) == i: taken = true
-		if not taken: return i
-	return 0
+## `node` stood on display spot `i` (under Show), the one there before it
+## gone.
+func _stand(node: Node3D, i: int) -> void:
+	var old: Variant = _at_spot.get(i)
+	if old != null and is_instance_valid(old) and old != node: (old as Node).queue_free()
+	_at_spot[i] = node
+	var show := vault.get_node("Show")
+	if node.get_parent() != show:
+		if node.get_parent() != null: node.get_parent().remove_child(node)
+		show.add_child(node)
+	node.global_transform = _spot_xform(i)
 
 ## Spot `i` in the world: on the floor rows, a second layer past them.
 func _spot_xform(i: int) -> Transform3D:
@@ -152,11 +182,10 @@ func _spot_xform(i: int) -> Transform3D:
 ## arc, set down on its spot with a chime and the tally.
 func _swing(m: Dictionary, delta: float) -> void:
 	var t: Dictionary = m.t
-	if not bool(t.banked):
-		# Taken back (a re-deal put it on its spot) on the way.
+	var node: Node3D = m.node
+	if not is_instance_valid(node):
 		_moving.erase(m)
 		return
-	var node: Node3D = t.node
 	m.k = float(m.k)+delta/SWING
 	var k := clampf(float(m.k),0.0,1.0)
 	var from: Transform3D = m.from
@@ -176,17 +205,14 @@ func _swing(m: Dictionary, delta: float) -> void:
 	b = b.scaled(Vector3(1.0+0.12*sin(land*PI),1.0-0.18*sin(land*PI),1.0+0.12*sin(land*PI)))
 	node.global_transform = Transform3D(b,p)
 	if float(m.k) >= 1.0:
-		node.global_transform = to
-		var keep := node.global_transform
-		node.get_parent().remove_child(node)
-		vault.get_node("Show").add_child(node)
-		node.global_transform = keep
+		_stand(node,int(m.spot))
 		_moving.erase(m)
 		_bank(t)
 
 func _bank(t: Dictionary) -> void:
 	var kind := str(t.kind)
 	var worth := int(VALUES.get(kind,0))
+	Ledger.shared().bank(kind,worth)
 	total += worth
 	counts[kind] = int(counts.get(kind,0))+1
 	deposits += 1

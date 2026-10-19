@@ -11,8 +11,14 @@ if [[ ! -x "$GODOT_BIN" ]]; then
   exit 1
 fi
 
+# The vault's tally lasts across runs in its own ledger file, never the
+# player's save; pass --ledger=<path> to use another, --fresh-ledger to
+# start the tally over.
+LEDGER_ARG=("--ledger=${TMPDIR:-/tmp}/zenscape-home-base-ledger.json")
+for a in "$@"; do [[ "$a" == --ledger=* ]] && LEDGER_ARG=(); done
+
 print -r -- "Opening the home base. Launch log: $LAUNCH_LOG"
-"$GODOT_BIN" --path "$PROJECT_DIR" --rendering-method forward_plus --windowed --resolution 1440x900 res://studies/wreck_cluster.tscn -- --no-title --home "$@" 2>&1 | tee "$LAUNCH_LOG"
+"$GODOT_BIN" --path "$PROJECT_DIR" --rendering-method forward_plus --windowed --resolution 1440x900 res://studies/wreck_cluster.tscn -- --no-title --home "${LEDGER_ARG[@]}" "$@" 2>&1 | tee "$LAUNCH_LOG"
 launch_status=${pipestatus[1]}
 # Godot can report script-load failures while returning a zero exit status.
 if (( launch_status == 0 )) && /usr/bin/grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load' "$LAUNCH_LOG"; then
