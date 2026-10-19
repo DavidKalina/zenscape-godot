@@ -152,3 +152,13 @@ The iterate skill's defaults.
   arch. Later islets must not repeat that shape: vary the outline (a
   ledge-stepped rock, a slab tilted, ruin built down its side), and give
   each its own architecture.
+- (User, after iteration 9.) Clean up the floating rocks and debris: the
+  loose stones, hanging fragments and small rocks drifting round the spine
+  and islets (including the colonnade's tail fragments and stepping stones
+  where they read as clutter). Cut any that carry no route, spot or view.
+  Ones that do (the tail fragments hold spots 08 and 10 and their caches,
+  and the coast down's way on lands on the first) are either joined to the
+  land or architecture so they no longer float alone, or their spot, cache
+  and route move to solid ground; re-run the drivers of anything moved and
+  update the spot table. This is its own look task, done early in the look
+  pass, with the silhouette work.
