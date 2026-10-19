@@ -90,6 +90,34 @@ const AQ_LIFT := 0.08
 const AQ_ROCK_DROP := 2.0
 const AQ_ROCK_JITTER := 3.0
 const AQ_ROCK_SIZE := Vector2(3.6,5.0)
+## The ruins seated on the masses' crowns and terraces: name, the unit
+## (its short name in `named`), the offset (world x, z) from its middle,
+## the piece, its turn (deg), seed, weathered, and for the built-up ones
+## their size. A piece is a RuinKit id (scripts/ruin_kit.gd ALL_PIECES), or
+## "hall" (a colossus hall of `bays` bays, scripts/ruin_kit_hall.gd `hall`,
+## its nave along the turn, centred on the spot) or "colonnade" (`count`
+## hall columns in a row `step` m apart along the turn, the odd one snapped
+## or fallen). Each stands on the ground under it (its rubble on the turf,
+## none over the drop), sunk RUIN_SINK m. Nothing within RUIN_CLEAR m of
+## the parked plane's takeoff line (landing turf, AGENTS.md), nor RUIN_SPAN
+## m of a span's end at its height.
+const RUINS := [
+	["ruin_east_hall","east",Vector2(-2.0,0.0),"hall",0.0,211,0.75,{"bays":2}],
+	["ruin_east_turret","east_terrace_1",Vector2(1.0,1.0),"turret",200.0,212,0.5,{}],
+	["ruin_north_colonnade","north",Vector2(-4.0,-9.0),"colonnade",8.0,221,0.55,{"count":5,"step":7.0}],
+	["ruin_north_chest","north_terrace_1",Vector2(0.0,0.0),"tomb_chest",35.0,222,0.6,{}],
+	["ruin_west_tower","west",Vector2(-2.0,2.0),"tower_shell",40.0,231,0.6,{}],
+	["ruin_west_wall","west_terrace_1",Vector2(-5.0,5.0),"lancet_wall",120.0,232,0.55,{}],
+	["ruin_main_gable","main_terrace_1",Vector2(0.0,0.0),"rose_gable",210.0,241,0.5,{}],
+	["ruin_main_arch","main_terrace_2",Vector2(0.0,0.0),"arch",80.0,242,0.6,{}],
+	["ruin_main_circle","main_knoll",Vector2(0.0,0.0),"stone_circle",0.0,243,0.5,{}],
+	["ruin_main_pier","main",Vector2(16.0,-17.0),"pier",15.0,244,0.55,{}],
+	["ruin_main_fallen","main",Vector2(18.0,22.0),"fallen_pier",60.0,245,0.5,{}],
+]
+const RUIN_SINK := 0.15
+const RUIN_CLEAR := 12.0
+const RUIN_SPAN := 7.0
+const RUIN_VOID := 4.0
 ## A rim end's turf: within RIM_RISE m of the crown middle's height.
 const RIM_RISE := 3.0
 ## The islets between and round the masses: how many, their distance (m)
@@ -163,6 +191,7 @@ func _build_art() -> void:
 	_bridges()
 	_pillars()
 	_aqueducts()
+	_ruins()
 	_islets()
 	if specks: _specks()
 	var tris := 0
@@ -302,6 +331,95 @@ func _aqueducts() -> void:
 		aqueducts.append([name_,Vector3(a.x,deck,a.z),end])
 		spans.append([Vector3(a.x,deck,a.z),end])
 		print("crag reach: %s %s -> %s, %d spans, deck %.1f (rims %.1f, %.1f)" % [name_,a,end,count,deck,a.y,b.y])
+
+## The ruins (RUINS), each named `crag_reach/<name>`, kind "piece".
+var ruins: Array = []
+
+func _ruins() -> void:
+	var space := get_world_3d().direct_space_state
+	# The plane's spot and run, found now on bare turf, kept clear.
+	var home := plane_home()
+	var run_dir := Vector2(-sin(home.w),-cos(home.w))
+	var home2 := Vector2(home.x,home.z)
+	for r: Array in RUINS:
+		var name_: String = "crag_reach/"+str(r[0])
+		var unit: Node3D = named.get(r[1])
+		if Layout.deleted(name_) or unit == null: continue
+		var off: Vector2 = r[2]
+		var at2 := Vector2(unit.position.x,unit.position.z)+off
+		var rel := at2-home2
+		if absf(rel.dot(Vector2(-run_dir.y,run_dir.x))) < RUIN_CLEAR and absf(unit.position.y-home.y) < 6.0:
+			push_warning("crag reach: %s on the plane's line, left out" % name_)
+			continue
+		var near_span := false
+		for sp: Array in spans:
+			for e: Vector3 in sp:
+				if Vector2(e.x,e.z).distance_to(at2) < RUIN_SPAN and absf(e.y-unit.position.y) < 4.0: near_span = true
+		if near_span:
+			push_warning("crag reach: %s at a span's end, left out" % name_)
+			continue
+		var top := _turf_top(space,at2.x,at2.y)
+		var y := top.y if top != Vector3.INF else _ground_under(space,at2.x,at2.y,unit.position.y)
+		var turn := Basis(Vector3.UP,deg_to_rad(float(r[4])))
+		var id: String = r[3]
+		var seed_value: int = r[5]
+		var worn: float = r[6]
+		var opts: Dictionary = r[7]
+		var coded := Transform3D(turn,Vector3(at2.x,y,at2.y))
+		var node: Node3D = null
+		match id:
+			"hall":
+				var bays := int(opts.get("bays",2))
+				var length := Hall.BAY*bays
+				var frame := Transform3D(turn,coded.origin-turn.x*length*0.5)
+				node = Hall.hall(seed_value,worn,bays,_ground_of(space,frame,-RUIN_VOID))
+				node.transform = coded.affine_inverse()*frame
+				var holder := Node3D.new()
+				holder.add_child(node)
+				node = holder
+			"colonnade":
+				node = Node3D.new()
+				var count := int(opts.get("count",5))
+				var step := float(opts.get("step",7.0))
+				for i in count:
+					var x := (float(i)-(count-1)*0.5)*step
+					var w := coded*Vector3(x,0.0,0.0)
+					var t := _turf_top(space,w.x,w.z)
+					if t == Vector3.INF: continue
+					var frame := Transform3D(turn,Vector3(w.x,t.y,w.z))
+					# Every other column standing whole, the rest snapped.
+					var col := Hall.column(seed_value+i,worn*(0.3 if i%2 == 0 else 1.3),_ground_of(space,frame,-RUIN_VOID))
+					col.transform = coded.affine_inverse()*frame
+					node.add_child(col)
+				RuinKit.merge(node)
+			_:
+				# Down to the lowest turf under its middle and round it.
+				var low := y
+				for d: Vector2 in [Vector2(2.5,0.0),Vector2(-2.5,0.0),Vector2(0.0,2.5),Vector2(0.0,-2.5)]:
+					var t := _turf_top(space,at2.x+d.x,at2.y+d.y)
+					if t != Vector3.INF and absf(t.y-y) < 2.0: low = minf(low,t.y)
+				coded.origin.y = low-RUIN_SINK
+				RuinKit.Build.seat(_ground_of(space,coded))
+				node = RuinKit.piece(id,seed_value,worn)
+				RuinKit.Build.seat(Callable())
+		if node == null: continue
+		node.name = str(r[0]).to_pascal_case()
+		art.add_child(node)
+		node.transform = Layout.xform(name_,coded)
+		Layout.track(name_,node,"piece",coded)
+		ruins.append([name_,node])
+	print("crag reach: %d ruins" % ruins.size())
+
+## The ground under a piece standing at `xf` (world): a Callable(x, z) ->
+## y in its frame, `none` over the drop (-INF: none there; the halls'
+## columns want a floor everywhere, RUIN_VOID m down).
+func _ground_of(space: PhysicsDirectSpaceState3D, xf: Transform3D, none := -INF) -> Callable:
+	return func(x: float, z: float) -> float:
+		var w := xf*Vector3(x,0.0,z)
+		var ray := PhysicsRayQueryParameters3D.create(Vector3(w.x,xf.origin.y+25.0,w.z),Vector3(w.x,xf.origin.y-25.0,w.z))
+		var hit := space.intersect_ray(ray)
+		if hit.is_empty(): return none
+		return (hit.position as Vector3).y-xf.origin.y
 
 ## The ground (any body) under (x, z) from over `over`: its height, or far
 ## under the deck (a pier left hanging) where there is none.
