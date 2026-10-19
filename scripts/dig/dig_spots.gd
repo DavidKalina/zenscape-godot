@@ -207,34 +207,80 @@ func reveal(sp: Dictionary, at: Vector3) -> void:
 ## buffer back waits on the GPU, so it stops after).
 const CUT := 0.75
 const CUT_BARE := 0.95
+## Tells that span wider than CUT reaches (a row of stones, a crate's corner).
+const CUT_WIDE := {"bare":CUT_BARE,"line":0.95,"corner":0.9}
+## Low tells the clumps round them lean over: no blade reaches nearer than
+## this (m) to the spot.
+const CLEAR := {"line":0.6,"corner":0.4}
 const STUBBLE := 0.3
+## How far a grass tuft's blades reach from its root at scale 1 (m; the
+## tuft mesh's half width), where the mesh can't say.
+const TUFT_REACH := 0.36
 const CUT_TRIES := 12
 var _cut_wait := 0.0
 var _cut_tries := 0
 
 func cut_grass() -> int:
-	var flora: Node = host.get_node_or_null("Art/Flora") if host != null else null
-	if flora == null: return 0
+	var circles: Array = []
+	for sp: Dictionary in spots:
+		var p: Vector3 = (sp.tell_node as Node3D).global_position
+		var c: Array = [p,float(CUT_WIDE.get(sp.tell,CUT))*size,0.0 if sp.tell == "bare" else STUBBLE]
+		if CLEAR.has(sp.tell): c.append(float(CLEAR[sp.tell])*size)
+		circles.append(c)
+	return _cut(circles,false)
+
+## The grass cut round a dig at `at` (a hole or a plain scoop), out to `r`
+## (m, already sized), down to `keep` of its height at the heart, no blade
+## reaching in past `clear` of it (m, sized): the hole
+## and its spoil heap span wider than a spot's tell cut, and a plain scoop
+## sank out of sight in the carpet. Reads back only the batches it lies in.
+func cut_at(at: Vector3, r: float, keep: float, clear := 0.0) -> int:
+	return _cut([[at,r,keep,clear]],true)
+
+## Every grass/meadow batch a circle [centre, r, keep] lies in, its tufts
+## inside shrunk (to `keep` at the heart, rising back to whole at the rim).
+## `force` cuts even a buffer marked cut (a dig cuts on top of the spots').
+func _cut(circles: Array, force: bool) -> int:
+	if host == null: return 0
+	var cut := 0
+	# The grass carpet and its flowers; a dig's clearing takes the ferns and
+	# shrubs too (Life/Undergrowth, whose tiles are bigger), which leaned
+	# over a hole as the tufts did; so does a low tell's.
+	# Only a circle with a clearing (a dig's, a low tell's) takes them.
+	var clearings := circles.filter(func(c: Array) -> bool: return c.size() > 3)
+	var sets: Array = [[host.get_node_or_null("Art/Flora"),KitFlora.TILE,["grass_tuft","meadow"],circles]]
+	if not clearings.is_empty(): sets.append([host.get_node_or_null("Life/Undergrowth"),KitFlora.UNDER_TILE,["fern","shrub"],clearings])
+	for group: Array in sets:
+		if group[0] != null: cut += _cut_in(group[0],float(group[1]),group[2],group[3],force)
+	return cut
+
+func _cut_in(flora: Node, tile_m: float, kinds: Array, circles: Array, force: bool) -> int:
 	var cut := 0
 	for m: Node in flora.get_children():
 		var mmi := m as MultiMeshInstance3D
 		if mmi == null or mmi.multimesh == null: continue
 		var called := str(mmi.name)
-		if not (called.begins_with("grass_tuft") or called.contains("meadow")): continue
-		# KitFlora names each batch for its tile (`<part>_<x>_<z>`, TILE m):
-		# only the batches a spot stands in are read back (a readback waits
-		# on the GPU, so not all of them).
+		if not kinds.any(func(k: String) -> bool: return called.contains(k)): continue
+		# KitFlora names each batch for its tile (`<part>_<x>_<z>`, tile_m
+		# m): only the batches a circle stands in are read back (a readback
+		# waits on the GPU, so not all of them).
 		var bits := called.rsplit("_",true,2)
 		if bits.size() < 3: continue
 		var tile := Vector2i(int(bits[1]),int(bits[2]))
 		var near: Array = []
-		for sp: Dictionary in spots:
-			var p: Vector3 = (sp.tell_node as Node3D).global_position
-			var r := (CUT_BARE if sp.tell == "bare" else CUT)*size
-			var lo := Vector2i(floori((p.x-r)/KitFlora.TILE),floori((p.z-r)/KitFlora.TILE))
-			var hi := Vector2i(floori((p.x+r)/KitFlora.TILE),floori((p.z+r)/KitFlora.TILE))
-			if tile.x >= lo.x and tile.x <= hi.x and tile.y >= lo.y and tile.y <= hi.y: near.append([p,r,0.0 if sp.tell == "bare" else STUBBLE])
+		for c: Array in circles:
+			var p: Vector3 = c[0]
+			var r := float(c[1])
+			var lo := Vector2i(floori((p.x-r)/tile_m),floori((p.z-r)/tile_m))
+			var hi := Vector2i(floori((p.x+r)/tile_m),floori((p.z+r)/tile_m))
+			if tile.x >= lo.x and tile.x <= hi.x and tile.y >= lo.y and tile.y <= hi.y: near.append(c)
 		if near.is_empty(): continue
+		# How far a plant's leaves reach from its root at scale 1: the
+		# mesh's widest half.
+		var reach1 := TUFT_REACH
+		if mmi.multimesh.mesh != null:
+			var box := mmi.multimesh.mesh.get_aabb()
+			reach1 = maxf(maxf(absf(box.position.x),absf(box.end.x)),maxf(absf(box.position.z),absf(box.end.z)))
 		var mm := mmi.multimesh
 		if mm.instance_count == 0: continue
 		var stride := 12+(4 if mm.use_colors else 0)+(4 if mm.use_custom_data else 0)
@@ -244,7 +290,7 @@ func cut_grass() -> int:
 		if buf.size() < mm.instance_count*stride: continue
 		var mark := Vector3(buf[3],buf[7],buf[11])
 		if mark == Vector3.ZERO: continue
-		if mmi.has_meta("dig_cut") and (mmi.get_meta("dig_cut") as Vector3) == mark and buf[0] == float(mmi.get_meta("dig_cut0",buf[0])): continue
+		if not force and mmi.has_meta("dig_cut") and (mmi.get_meta("dig_cut") as Vector3) == mark and buf[0] == float(mmi.get_meta("dig_cut0",buf[0])): continue
 		var xf := mmi.global_transform
 		var changed := false
 		for k in range(mm.instance_count):
@@ -256,12 +302,21 @@ func cut_grass() -> int:
 				var d := Vector2(w.x-p.x,w.z-p.z).length()
 				if d > float(n[1]) or absf(w.y-p.y) > 1.0: continue
 				# Stubble at the heart, rising back toward the edge.
-				var keep := maxf(lerpf(float(n[2]),1.0,smoothstep(0.55,1.0,d/float(n[1]))),0.001)
+				var keep := lerpf(float(n[2]),1.0,smoothstep(0.55,1.0,d/float(n[1])))
+				# A clearing: a tuft is a wide flat clump (TUFT_REACH m at
+				# scale 1), so one rooted out past the cut still lays its
+				# blades over the hole; shrunk till it stops short of `clear`.
+				if n.size() > 3:
+					var reach := reach1*Vector3(buf[o],buf[o+4],buf[o+8]).length()
+					keep = minf(keep,maxf(d-float(n[3]),0.0)/maxf(reach,0.01))
+				keep = maxf(keep,0.001)
+				if keep >= 0.999: break
 				for j: int in [0,1,2,4,5,6,8,9,10]: buf[o+j] *= keep
 				changed = true
 				cut += 1
 				break
 		if changed: mm.buffer = buf
+		if force and not mmi.has_meta("dig_cut"): continue
 		mmi.set_meta("dig_cut",mark)
 		mmi.set_meta("dig_cut0",buf[0])
 	return cut
@@ -357,9 +412,13 @@ static func tell_mesh(kind: String, seed_value: int) -> ArrayMesh:
 				_stone(st,Vector3(cos(a),0.0,sin(a))*0.5,Vector3(0.09,0.08,0.07)*rng.randf_range(0.8,1.25),a,rng)
 		"line":
 			# A short row of stones set end to end, leading nowhere.
+			# Set on edge like a kerb (taller than wide, so they stand out of
+			# the stubble), on a thin strip of bare earth.
+			DigFx._lump(st,Vector3(-0.25,0.0,0.0),0.3,0.025,rng,DRY)
+			DigFx._lump(st,Vector3(0.25,0.0,0.0),0.3,0.025,rng,DRY)
 			for i in range(5):
-				var x := -0.6+0.3*i+rng.randf_range(-0.04,0.04)
-				_stone(st,Vector3(x,0.0,rng.randf_range(-0.05,0.05)),Vector3(0.11,0.09,0.08)*rng.randf_range(0.85,1.2),rng.randf_range(-0.3,0.3),rng)
+				var x := -0.5+0.25*i+rng.randf_range(-0.03,0.03)
+				_stone(st,Vector3(x,0.04,rng.randf_range(-0.04,0.04)),Vector3(0.10,0.14,0.06)*rng.randf_range(0.85,1.2),rng.randf_range(-0.25,0.25),rng)
 		"marker":
 			# A lone standing stone, leaning, mossy at its foot, a few pebbles.
 			var b := Basis(Vector3.FORWARD,deg_to_rad(rng.randf_range(14.0,22.0)))*Basis(Vector3.UP,rng.randf()*TAU)
@@ -399,8 +458,10 @@ static func tell_mesh(kind: String, seed_value: int) -> ArrayMesh:
 			# A box's corner poking up out of the ground, tipped, one board
 			# split, turned earth round it.
 			var b := Basis(Vector3(1,0,1).normalized(),deg_to_rad(38.0))*Basis(Vector3.UP,deg_to_rad(20.0))
-			_block(st,Transform3D(b,Vector3(0.0,-0.12,0.0)),Vector3(0.24,0.2,0.2),WOOD,WOOD_DARK,rng,0.0)
-			_block(st,Transform3D(b,Vector3(0.0,-0.12,0.0))*Transform3D(Basis.IDENTITY,Vector3(0.0,0.2,0.0)),Vector3(0.25,0.018,0.21),BRASS.darkened(0.35),BRASS.darkened(0.55),rng,0.0)
+			# Sits higher and paler than the turf round it, so the corner and
+			# its iron band stand out of the stubble.
+			_block(st,Transform3D(b,Vector3(0.0,-0.04,0.0)),Vector3(0.26,0.22,0.22),WOOD.lightened(0.18),WOOD_DARK,rng,0.0)
+			_block(st,Transform3D(b,Vector3(0.0,-0.04,0.0))*Transform3D(Basis.IDENTITY,Vector3(0.0,0.2,0.0)),Vector3(0.27,0.02,0.23),BRASS.darkened(0.2),BRASS.darkened(0.5),rng,0.0)
 			for i in range(5):
 				var a := TAU*i/5.0+rng.randf()*0.5
 				DigFx._lump(st,Vector3(cos(a),0.0,sin(a))*0.26,0.09,0.05,rng,EARTH_TURNED.lerp(EARTH,rng.randf()))

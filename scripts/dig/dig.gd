@@ -276,6 +276,15 @@ func _back_xform() -> Transform3D:
 	if spade_back == null: return spade_hand.global_transform
 	return spade_back.global_transform
 
+## How far the grass is cut round a dig (m at size 1): a strange spot's
+## hole with its berm and spoil heap, a plain scoop.
+const CUT_HOLE := 1.8
+const CUT_SCOOP := 0.9
+## ... and how near the dig's heart a blade may still reach (the hole's
+## berm and heap, a scoop's rim).
+const CLEAR_HOLE := 0.65
+const CLEAR_SCOOP := 0.35
+
 func _moment(e: String) -> void:
 	var tip: Vector3 = spade_hand.global_transform*SpadeFigure.tip()
 	var body: Node3D = host.get("body")
@@ -288,12 +297,17 @@ func _moment(e: String) -> void:
 			if _scoop == null:
 				# A strange spot opens a hole kept for the deal; plain soil a
 				# scoop (none over a hole already dug: the hole takes it).
+				# The grass round it cut too, or the carpet swallows it: a
+				# hole and its heap to stubble-free earth, a scoop to stubble.
+				var heap: Vector3 = motion.frame.basis.x*0.18*_scale()
 				if not dig_spot.is_empty():
 					_scoop = fx.hole(Vector3(dig_at.x,dig_at.y,dig_at.z),dig_normal,motion.frame.basis.x,0.4)
+					spots.cut_at(dig_at+heap,CUT_HOLE*_scale(),0.0,CLEAR_HOLE*_scale())
 				else:
 					_scoop = fx.hole_near(dig_at,0.45)
 					if _scoop == null:
 						_scoop = fx.scoop(Vector3(dig_at.x,dig_at.y,dig_at.z),dig_normal,motion.frame.basis.x,0.4)
+						spots.cut_at(dig_at+heap,CUT_SCOOP*_scale(),0.12,CLEAR_SCOOP*_scale())
 				dug.soil += 1
 			else:
 				fx.deepen(_scoop,1.0)

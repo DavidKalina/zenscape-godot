@@ -14,7 +14,7 @@ const EARTH := Color(0.27,0.17,0.09)
 const EARTH_DARK := Color(0.11,0.07,0.04)
 const EARTH_TURNED := Color(0.33,0.21,0.11)
 const STONE := Color(0.70,0.68,0.64)
-const DUST := Color(0.62,0.52,0.40,0.55)
+const DUST := Color(0.62,0.52,0.40,0.8)
 const GRAVITY := 9.8
 ## Scoops kept at once (plain soil dug anywhere); the oldest goes.
 const SCOOPS_MOST := 16
@@ -30,6 +30,7 @@ var _clod_mesh: Mesh
 var _earth: StandardMaterial3D
 var _stone: StandardMaterial3D
 var _dust_mesh: Mesh
+var _dust_tex: Texture2D
 var _spark_mesh: Mesh
 var _rng := RandomNumberGenerator.new()
 
@@ -42,12 +43,23 @@ func _init() -> void:
 	_clod_mesh = box
 	_earth = _flat(EARTH)
 	_stone = _flat(STONE)
-	var ball := SphereMesh.new()
-	ball.radius = 0.5
-	ball.height = 1.0
-	ball.radial_segments = 8
-	ball.rings = 4
-	_dust_mesh = ball
+	# Dust is soft billboards (a radial fade), not balls: a puff reads as
+	# a cloud from any side and has no hard edge against the turf.
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE*1.4
+	_dust_mesh = quad
+	var grad := Gradient.new()
+	grad.set_color(0,Color(1,1,1,1))
+	grad.set_color(1,Color(1,1,1,0))
+	grad.add_point(0.45,Color(1,1,1,0.7))
+	var tex := GradientTexture2D.new()
+	tex.gradient = grad
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5,0.5)
+	tex.fill_to = Vector2(0.5,0.0)
+	tex.width = 64
+	tex.height = 64
+	_dust_tex = tex
 	var spark := SphereMesh.new()
 	spark.radius = 0.5
 	spark.height = 1.0
@@ -149,6 +161,9 @@ func _puff(at: Vector3, n: int, r: float, life: float) -> void:
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.albedo_color = DUST
+		mat.albedo_texture = _dust_tex
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		mat.billboard_keep_scale = true
 		mat.disable_receive_shadows = true
 		m.material_override = mat
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
