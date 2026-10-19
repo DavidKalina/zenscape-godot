@@ -282,9 +282,16 @@ func loot_kg() -> float:
 	return kg
 
 ## Dragging, the bag holds him to its rope (scripts/carry/loot_bag.gd).
+## Aiming a throw, the stick moves the reticle, not him.
+func _want(delta: float) -> Vector2:
+	var want := super._want(delta)
+	if bag == null or bag.act != "aim": return want
+	bag.aim_steer(want,delta)
+	return Vector2.ZERO
+
 func _sync_figure() -> void:
 	if bag != null: bag.leash(get_process_delta_time())
 	super._sync_figure()
 
 func _hint_text() -> String:
-	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · V (pad right) worn: throw it (8 kg or under), by it: shove it · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · hold LMB or T (pad RT) worn: aim a throw, let go to throw (8 kg or under) · V (pad right) by it: shove it · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"

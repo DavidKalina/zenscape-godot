@@ -28,6 +28,8 @@ extends Node3D
 ## All procedural (the sack's mesh, its sway, the dip, the balk), greybox.
 const Weights = preload("res://scripts/carry/carry_weights.gd")
 const CarryHost = preload("res://scripts/carry/carry_host.gd")
+const Pad = preload("res://scripts/pad.gd")
+const PilotMotor = preload("res://scripts/pilot_motor.gd")
 
 ## The most the bag holds (kg), and the most he wears (more and he drags it).
 const CAP := 24.0
@@ -105,17 +107,35 @@ const REST_SPEED := 0.15
 const REST_TIME := 0.4
 const SETTLE_TIME := 0.35
 const CLOTH_KG := 1.0
-## Thrown (V worn, THROW_KG or under): a wind-up over his head, let go at
-## THROW_LET of THROW_TIME, an arc along his facing (THROW_V: across, up;
-## empty -> at THROW_KG) plus some of his run; on landing it keeps
-## LAND_KEEP of its run across and a little spin, then rests as a roll does.
+## Thrown (THROW_KG or under), aimed: `walk_throw` held (RT, the left mouse
+## button or T) swings it up over his head and holds the wind-up; a reticle
+## on the ground shows where it lands and a dotted arc the way there. The
+## move stick and the camera move it (out to AIM_REACH, empty -> at
+## THROW_KG); it sits on whatever is under it (a ledge top, the pocket past a
+## wall), red where the arc is blocked or there's nothing to land on.
+## Released, he snaps forward, lets go at THROW_LET of THROW_TIME, and it
+## flies the arc shown to the reticle (on red he lowers it: no throw). On
+## landing it keeps LAND_KEEP of its run across and a little spin, then
+## rests as a roll does.
 const THROW_KG := 8.0
 const THROW_TIME := 0.62
 const THROW_LET := 0.36
-const THROW_V := [Vector2(5.0,6.4),Vector2(3.6,5.3)]
-const THROW_RUN := 0.5
 const THROW_SPIN := 5.0
-const LAND_KEEP := 0.25
+const LAND_KEEP := 0.12
+## The wind-up held while aiming: this much of THROW_TIME in.
+const AIM_HOLD := 0.27
+## The reticle's reach across from his feet (m, times size): empty, at THROW_KG.
+const AIM_REACH := Vector2(7.0,4.0)
+const AIM_MIN := 1.2
+## Where it starts (of the reach, along his facing) and how fast the stick moves it.
+const AIM_START := 0.6
+const AIM_SPEED := 5.0
+## The arc's top over its higher end: this plus AIM_RISE_M per metre across.
+const AIM_RISE := 1.3
+const AIM_RISE_M := 0.2
+const ARC_DOTS := 22
+const AIM_OK := Color(1.0,0.92,0.55)
+const AIM_BAD := Color(1.0,0.3,0.25)
 
 const CLOTH := Color("a88b5e")
 const PATCH := Color("7a6040")
@@ -148,6 +168,22 @@ var shoves := 0
 var throws := 0
 ## Where the last throw left his hands and where it landed (drivers, notes).
 var thrown_from := Vector3.INF
+## Aiming: the reticle (ball's middle where it lands), whether it can go
+## there, why not, and the arc's points; the throw's goal once let go.
+var aim_at := Vector3.INF
+var aim_ok := false
+var aim_why := ""
+var aim_arc: PackedVector3Array = []
+var aims := 0
+var cancels := 0
+var throw_to := Vector3.INF
+var _aim := Vector2.ZERO
+## Drivers: aim as though the button were held (release() lets go).
+var hold_aim := false
+var _reticle: MeshInstance3D
+var _reticle_mat: StandardMaterial3D
+var _dots: MultiMeshInstance3D
+var _dots_mat: StandardMaterial3D
 var landed_at := Vector3.INF
 var _fly_t := 0.0
 var rolled := 0.0
@@ -270,6 +306,42 @@ func setup(host: Node3D) -> void:
 	_ball_shape.disabled = true
 	loose.add_child(_ball_shape)
 	add_child(loose)
+	_reticle_mat = StandardMaterial3D.new()
+	_reticle_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_reticle_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_reticle_mat.no_depth_test = false
+	_reticle_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_reticle = MeshInstance3D.new()
+	_reticle.name = "AimReticle"
+	_reticle.top_level = true
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.78
+	ring.outer_radius = 1.0
+	ring.rings = 32
+	ring.ring_segments = 6
+	_reticle.mesh = ring
+	_reticle.material_override = _reticle_mat
+	_reticle.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_reticle.visible = false
+	add_child(_reticle)
+	_dots_mat = _reticle_mat.duplicate()
+	var dot := SphereMesh.new()
+	dot.radius = 0.06
+	dot.height = 0.12
+	dot.radial_segments = 8
+	dot.rings = 4
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = dot
+	mm.instance_count = ARC_DOTS+1
+	_dots = MultiMeshInstance3D.new()
+	_dots.name = "AimArc"
+	_dots.top_level = true
+	_dots.multimesh = mm
+	_dots.material_override = _dots_mat
+	_dots.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_dots.visible = false
+	add_child(_dots)
 	_prompt = _label(32,Color(1,1,1))
 	_line = _label(40,Color(1.0,0.75,0.6))
 	var layer := CanvasLayer.new()
@@ -398,11 +470,16 @@ func empty() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_echo(): return
+	if event.is_action_pressed(&"walk_throw",false,true):
+		if state != "worn" or not _on_foot() or not stowing.is_empty() or act != "": return
+		get_viewport().set_input_as_handled()
+		throw()
+		return
 	if event.is_action_pressed(&"walk_shove",false,true):
 		if not _on_foot() or not stowing.is_empty() or act != "": return
 		if state == "worn":
 			get_viewport().set_input_as_handled()
-			throw()
+			_say("Hold %s to aim a throw" % ("RT" if Pad.using_pad() else "the left mouse button (or T)"))
 			return
 		if state != "ground" or not bag_near(): return
 		get_viewport().set_input_as_handled()
@@ -567,8 +644,9 @@ func shove() -> void:
 	_begin("shove")
 	_apply_feel(STOW_PACE)
 
-## Thrown: he swings it up over his head (still worn, see _place_sack) and
-## lets go at THROW_LET (_let_fly). Too heavy: a balk and a line.
+## Aiming: he swings it up over his head (still worn, see _place_sack) and
+## holds it there, the reticle out ahead; `release` throws it. Too heavy: a
+## balk and a line.
 func throw() -> void:
 	if state != "worn": return
 	if kg > THROW_KG+0.001:
@@ -576,8 +654,148 @@ func throw() -> void:
 		_no_sound.play()
 		_say("Too heavy to throw (%s kg, throws to %d)" % [_kg(kg),int(THROW_KG)])
 		return
-	_begin("throw")
-	_apply_feel(STOW_PACE)
+	var motor: Variant = study.get("motor")
+	var f := _forward()*reach()*AIM_START
+	_aim = _to_cam(Vector2(f.x,f.z))
+	aims += 1
+	_begin("aim")
+	_apply_feel(0.0)
+	_aim_update(0.0,Vector2.ZERO)
+
+## Let go of the aim: thrown at the reticle, or on red lowered, no throw.
+func release() -> void:
+	if act != "aim": return
+	if aim_ok:
+		throw_to = aim_at
+		act = "throw"
+		_apply_feel(STOW_PACE)
+	else:
+		cancels += 1
+		act = "lower"
+		_say("No throw: %s" % aim_why)
+	_show_aim(false)
+
+## How far across he can throw it at its kg (m).
+func reach() -> float:
+	var s: float = study.get("motor").size
+	return lerpf(AIM_REACH.x,AIM_REACH.y,clampf(kg/THROW_KG,0.0,1.0))*s
+
+## The stick's way (the motor's frame, x z) in the camera's: (right, ahead).
+func _to_cam(v: Vector2) -> Vector2:
+	var f := PilotMotor.forward(float(study.get("_yaw")))
+	var r := Vector2(-f.y,f.x)
+	return Vector2(v.dot(r),v.dot(f))
+
+func _from_cam(v: Vector2) -> Vector2:
+	var f := PilotMotor.forward(float(study.get("_yaw")))
+	var r := Vector2(-f.y,f.x)
+	return r*v.x+f*v.y
+
+## Aiming, each frame: the stick (`want`, the motor's frame) moves the
+## reticle, kept in reach; it finds the ground under it and the arc there,
+## he turns to face it. The study calls it from _want.
+func aim_steer(want: Vector2, delta: float) -> void:
+	if act != "aim": return
+	_aim_update(delta,want)
+
+func _aim_update(delta: float, want: Vector2) -> void:
+	var motor: Variant = study.get("motor")
+	var s: float = motor.size
+	var w := _from_cam(_aim)+want*AIM_SPEED*s*delta
+	var l := w.length()
+	if l < AIM_MIN*s: w = (w/l if l > 0.01 else Vector2(_forward().x,_forward().z))*AIM_MIN*s
+	w = w.limit_length(reach())
+	_aim = _to_cam(w)
+	var feet: Vector3 = motor.feet
+	var rb := _r*s*0.95
+	var space := get_world_3d().direct_space_state
+	aim_ok = false
+	aim_why = ""
+	aim_arc = PackedVector3Array()
+	var over := Vector3(feet.x+w.x,feet.y,feet.z+w.y)
+	var ray := PhysicsRayQueryParameters3D.create(over+Vector3.UP*8.0*s,over+Vector3.DOWN*30.0*s,CarryHost.SOLID_MASK)
+	var hit := space.intersect_ray(ray)
+	var from := release_point()
+	if hit.is_empty():
+		aim_at = over+Vector3.DOWN*2.0*s
+		aim_why = "nowhere to land"
+	elif (hit.normal as Vector3).y < 0.6:
+		aim_at = (hit.position as Vector3)+(hit.normal as Vector3)*rb
+		aim_why = "too steep to land on"
+	else:
+		aim_at = (hit.position as Vector3)+Vector3.UP*rb
+		aim_ok = true
+	# The arc there, and what it meets on the way.
+	var v := arc_to(from,aim_at)
+	var g := _gravity()
+	var t_all := _flight_time(from,aim_at,v)
+	var q := PhysicsShapeQueryParameters3D.new()
+	var probe := SphereShape3D.new()
+	probe.radius = rb*0.6
+	q.shape = probe
+	q.collision_mask = CarryHost.SOLID_MASK
+	var was := from
+	aim_arc.append(from)
+	for i in range(1,ARC_DOTS+1):
+		var t := t_all*float(i)/ARC_DOTS
+		var at := from+v*t+Vector3.DOWN*0.5*g*t*t
+		q.transform = Transform3D(Basis.IDENTITY,was)
+		q.motion = at-was
+		var cast := space.cast_motion(q)
+		if cast.size() > 0 and float(cast[1]) < 1.0 and at.distance_to(aim_at) > rb*1.2:
+			aim_arc.append(was+(at-was)*float(cast[0]))
+			if aim_ok:
+				aim_ok = false
+				aim_why = "the way's blocked"
+			break
+		aim_arc.append(at)
+		was = at
+	_show_aim(true)
+
+## Where the sack leaves his hands, a little over and ahead of his head.
+func release_point() -> Vector3:
+	var motor: Variant = study.get("motor")
+	var s: float = motor.size
+	var chest := _bone_world("chest")
+	if chest == Vector3.INF: chest = motor.feet+Vector3.UP*0.6*s
+	return Vector3(motor.feet.x,chest.y,motor.feet.z)+Vector3.UP*(0.55*s+_r*s)+_forward()*0.3*s
+
+## The velocity that carries it from `from` to `to` over a top AIM_RISE
+## (plus AIM_RISE_M a metre across) above the higher end.
+func arc_to(from: Vector3, to: Vector3) -> Vector3:
+	var g := _gravity()
+	var s: float = study.get("motor").size
+	var flat := Vector3(to.x-from.x,0.0,to.z-from.z)
+	var top := maxf(from.y,to.y)+AIM_RISE*s+AIM_RISE_M*flat.length()
+	var up := sqrt(2.0*g*(top-from.y))
+	var t := up/g+sqrt(2.0*g*(top-to.y))/g
+	return flat/t+Vector3.UP*up
+
+func _flight_time(from: Vector3, to: Vector3, v: Vector3) -> float:
+	var g := _gravity()
+	var top := from.y+v.y*v.y/(2.0*g)
+	return v.y/g+sqrt(2.0*maxf(top-to.y,0.0)/g)
+
+func _gravity() -> float:
+	return float(ProjectSettings.get_setting("physics/3d/default_gravity",9.8))*loose.gravity_scale
+
+## The reticle (a ring on the ground) and the arc's dots, gold or red.
+func _show_aim(on: bool) -> void:
+	_reticle.visible = on
+	_dots.visible = on
+	if not on: return
+	var colour := AIM_OK if aim_ok else AIM_BAD
+	_reticle_mat.albedo_color = Color(colour,0.85)
+	_dots_mat.albedo_color = Color(colour,0.55)
+	var s: float = study.get("motor").size
+	var rb := _r*s*0.95
+	var pulse := 1.0+0.08*sin(Time.get_ticks_msec()*0.008)
+	var ring := maxf(rb*1.6,0.45*s)*pulse
+	_reticle.global_transform = Transform3D(Basis.from_scale(Vector3(ring,1.0,ring)),aim_at+Vector3.DOWN*(rb-0.03*s))
+	var mm := _dots.multimesh
+	mm.visible_instance_count = mini(aim_arc.size(),mm.instance_count)
+	for i in mm.visible_instance_count:
+		mm.set_instance_transform(i,Transform3D(Basis.from_scale(Vector3.ONE*s),aim_arc[i]))
 
 ## Out of his hands: a body in an arc along his facing, tumbling end over end.
 func _let_fly() -> void:
@@ -612,11 +830,10 @@ func _let_fly() -> void:
 	loose.global_transform = xf
 	PhysicsServer3D.body_set_state(loose.get_rid(),PhysicsServer3D.BODY_STATE_TRANSFORM,xf)
 	loose.sleeping = false
-	var k := clampf(kg/THROW_KG,0.0,1.0)
-	var v: Vector2 = (THROW_V[0] as Vector2).lerp(THROW_V[1],k)*s
-	var run: Vector3 = motor.ground_velocity()
-	run.y = 0.0
-	loose.linear_velocity = fwd*v.x+Vector3.UP*v.y+run*THROW_RUN
+	# The arc shown, from where it really leaves his hands; undamped in the air.
+	loose.linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
+	loose.linear_damp = 0.0
+	loose.linear_velocity = arc_to(xf.origin,throw_to)
 	loose.angular_velocity = fwd.cross(Vector3.UP)*-THROW_SPIN
 	_fall_v = 0.0
 	_gulp_sound.pitch_scale = 1.1
@@ -624,6 +841,8 @@ func _let_fly() -> void:
 
 ## Down: it keeps a little of its run and spin, then rests as a roll does.
 func _land() -> void:
+	loose.linear_damp_mode = RigidBody3D.DAMP_MODE_COMBINE
+	loose.linear_damp = 0.3
 	var v := loose.linear_velocity
 	loose.linear_velocity = Vector3(v.x*LAND_KEEP,minf(v.y,0.0),v.z*LAND_KEEP)
 	loose.angular_velocity *= LAND_KEEP
@@ -681,6 +900,7 @@ func _process(delta: float) -> void:
 	_drag_look(delta)
 	_stow_step(delta)
 	_balk_pose(delta)
+	if act == "aim": _show_aim(true)
 	_show_prompt()
 	_show_readout()
 	if _line_t >= 0.0:
@@ -745,7 +965,7 @@ func _place_sack(delta: float) -> void:
 		var e := k*k*(3.0-2.0*k)
 		var at := _act_from.origin.lerp(xf.origin,e)+Vector3.UP*0.35*s*sin(PI*k)
 		xf = Transform3D(_act_from.basis.orthonormalized().slerp(xf.basis.orthonormalized(),e).scaled_local(xf.basis.get_scale()),at)
-	if act == "throw":
+	if act == "throw" or act == "aim" or act == "lower":
 		# Swung from his back up over his head, behind it at the top of the wind-up.
 		var k := clampf(_act_t/(THROW_TIME*THROW_LET),0.0,1.0)
 		var e := k*k*(3.0-2.0*k)
@@ -759,7 +979,7 @@ func _place_sack(delta: float) -> void:
 	var sides := ["upper_arm.L","upper_arm.R"]
 	for i in 2:
 		var to := _bone_world(sides[i])
-		if to == Vector3.INF or (act == "lift" and _act_t < LIFT_TIME*0.7) or act == "throw":
+		if to == Vector3.INF or (act == "lift" and _act_t < LIFT_TIME*0.7) or act == "throw" or act == "aim" or (act == "lower" and _act_t > 0.05):
 			_straps[i].visible = false
 			continue
 		to += up*0.04*s
@@ -881,7 +1101,14 @@ static func _sack_at(R: float, depth: float, a: float, v: float, crease: float) 
 func _act_step(delta: float) -> void:
 	if act == "": return
 	_act_t += delta
-	var length: float = {"set":SET_TIME,"shove":SHOVE_TIME,"throw":THROW_TIME}.get(act,LIFT_TIME)
+	if act == "aim":
+		# Swung up and held at the top of the wind-up till let go.
+		_act_t = minf(_act_t,AIM_HOLD*THROW_TIME)
+		if not Input.is_action_pressed(&"walk_throw") and not hold_aim: release()
+	elif act == "lower":
+		# Let down from the wind-up: the swing up backwards.
+		_act_t = maxf(_act_t-2.0*delta,0.0)
+	var length: float = {"set":SET_TIME,"shove":SHOVE_TIME,"throw":THROW_TIME,"aim":THROW_TIME,"lower":THROW_TIME}.get(act,LIFT_TIME)
 	var k := clampf(_act_t/length,0.0,1.0)
 	var sk := _skeleton()
 	if sk != null:
@@ -894,7 +1121,7 @@ func _act_step(delta: float) -> void:
 			for arm: String in ["upper_arm.L","upper_arm.R"]:
 				var b := sk.find_bone(arm)
 				if b >= 0: CarryHost._turn_bone(sk,b,axis,-deg_to_rad(70.0)*push)
-		elif act == "throw":
+		elif act == "throw" or act == "aim" or act == "lower":
 			var p := throw_pose(k)
 			if chest >= 0: CarryHost._turn_bone(sk,chest,axis,deg_to_rad(p.x))
 			for arm: String in ["upper_arm.L","upper_arm.R"]:
@@ -902,7 +1129,8 @@ func _act_step(delta: float) -> void:
 				if b >= 0: CarryHost._turn_bone(sk,b,axis,deg_to_rad(p.y))
 		elif chest >= 0: CarryHost._turn_bone(sk,chest,axis,-deg_to_rad(STOW_BEND)*sin(PI*k))
 	if act == "throw" and state == "worn" and k >= THROW_LET: _let_fly()
-	if k >= 1.0:
+	if act == "lower" and _act_t <= 0.0: k = 1.0
+	if k >= 1.0 and act != "aim":
 		if act == "lift":
 			_gulp_t = 0.0
 			_gulp_sound.pitch_scale = 0.8
@@ -1025,6 +1253,13 @@ func _roll_step(delta: float) -> void:
 ## holds him back). The study calls it after his motor's step, before his
 ## figure is drawn.
 func leash(delta: float) -> void:
+	if act == "aim":
+		# Aiming: he turns to face the reticle.
+		var motor_a: Variant = study.get("motor")
+		var to: Vector3 = aim_at-motor_a.feet
+		if Vector2(to.x,to.z).length() > 0.1:
+			motor_a.facing = lerp_angle(float(motor_a.facing),PilotMotor.facing_of(Vector2(to.x,to.z)),clampf(14.0*delta,0.0,1.0))
+		return
 	if state != "drag": return
 	var motor: Variant = study.get("motor")
 	var s: float = motor.size
@@ -1166,7 +1401,8 @@ func _show_readout() -> void:
 	var w := drag_feel() if state == "drag" else feel_of(worn_kg())
 	lines.append("pace %d%%  jump %d%%" % [int(round(float(w.run)*100.0)),int(round(float(w.jump)*100.0))])
 	lines.append("no %s" % ", ".join(barred) if not barred.is_empty() else "every move")
-	if state == "worn": lines.append("V  throw it" if kg <= THROW_KG+0.001 else "too heavy to throw (%d kg)" % int(THROW_KG))
+	if act == "aim": lines.append("aim: %s" % ("let go to throw" if aim_ok else aim_why+": let go to cancel"))
+	elif state == "worn": lines.append("%s hold: aim a throw" % Pad.pick("LMB / T","RT") if kg <= THROW_KG+0.001 else "too heavy to throw (%d kg)" % int(THROW_KG))
 	_readout.text = "\n".join(lines)
 
 # --- The figure ---------------------------------------------------------------------------
