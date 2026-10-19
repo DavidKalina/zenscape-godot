@@ -444,10 +444,21 @@ func drag_feel() -> Dictionary:
 	var f := clampf((kg-WEAR_KG)/(CAP-WEAR_KG),0.0,1.0)
 	return {"walk":lerpf(DRAG_WALK.x,DRAG_WALK.y,f),"run":lerpf(DRAG_RUN.x,DRAG_RUN.y,f),"jump":0.0,"turn":DRAG_TURN}
 
+## Held back by something on him (the stone brood clinging: scripts/brood/
+## bag_brood.gd): his walk and run times this (1: free). `set_slow`.
+var slow := 1.0
+var _pace := 1.0
+
+func set_slow(k: float) -> void:
+	if is_equal_approx(k,slow): return
+	slow = k
+	_apply_feel(_pace)
+
 ## The bag's kg on the motor's kept feel; `pace` times the paces more.
 func _apply_feel(pace: float) -> void:
 	var m: Variant = study.get("motor")
 	if m == null: return
+	_pace = pace
 	if _base.is_empty():
 		_base = {"walk":m.walk,"run":m.run,"jumps":(m.jumps as Array).duplicate(),"turn":m.turn,"turn_run":m.turn_run,
 			"wall_on":m.wall_on,"wallrun_on":m.wallrun_on,"ledge_on":m.ledge_on,"sail_on":m.sail_on,"rope_on":m.rope_on}
@@ -456,8 +467,8 @@ func _apply_feel(pace: float) -> void:
 	if state == "drag":
 		w = drag_feel()
 		barred = ["jump","wall","ledge","sail","rope"]
-	m.walk = float(_base.walk)*float(w.walk)*pace
-	m.run = float(_base.run)*float(w.run)*pace
+	m.walk = float(_base.walk)*float(w.walk)*pace*slow
+	m.run = float(_base.run)*float(w.run)*pace*slow
 	var j: Array = []
 	for h: float in _base.jumps: j.append(h*float(w.jump)*(1.0 if pace >= 1.0 else 0.0))
 	m.jumps = j

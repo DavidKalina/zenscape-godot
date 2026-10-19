@@ -74,6 +74,13 @@ const WAKE_JITTER := 0.25
 const WAKE_RISE := 0.7
 const WAKE_HOLD := 0.7
 
+## The bag study's brood (scripts/brood/bag_brood.gd): the first piece in
+## the loot bag wakes BAG_STUDY_COUNT guys out of the room's burrows, dealt
+## round them nearest the bag first, BURROW_STAGGER s apart in each
+## burrow (plus up to WAKE_JITTER).
+const BAG_STUDY_COUNT := 12
+const BURROW_STAGGER := 0.5
+
 ## Grab and shove: a guy within GRAB_REACH (m, across; and no more than
 ## GRAB_RISE of his own height above or below the feet) of whoever holds a
 ## treasure clings on, up to GRAB_SLOTS at once (the rest crowd round him

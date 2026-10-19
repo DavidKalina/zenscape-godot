@@ -19,6 +19,8 @@ const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const Models = preload("res://scripts/carry/treasure_models.gd")
 const DevKeys = preload("res://scripts/kit_isle/dev_keys.gd")
 const LootBag = preload("res://scripts/carry/loot_bag.gd")
+const BagBrood = preload("res://scripts/brood/bag_brood.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const SCENE_ID := "bag_study"
 ## The two floors (x, z) and their tops.
@@ -78,10 +80,29 @@ const LOOT := [
 	["loot_11","bar",4.0,Vector3(12.0,0.0,3.0),10.0],
 ]
 
+## The stone brood's burrows (docs/design/bag-brood/spec-bag-brood.md):
+## [id, the mouth's floor (world)]. One on each floor and one up on the
+## platform; a greybox mound of turned earth with a dark hole in it.
+const BURROWS := [
+	["burrow_1",Vector3(-12.5,0.0,1.5)],
+	["burrow_2",Vector3(44.0,LOW_Y,9.0)],
+	["burrow_3",Vector3(6.8,1.2,-11.8)],
+]
+## A burrow's mound: its foot's and top's radius and its height (m, times
+## size); the hole's radius.
+const BURROW_FOOT := 0.95
+const BURROW_TOP := 0.55
+const BURROW_HIGH := 0.16
+const BURROW_HOLE := 0.42
+
 ## Each loot piece: {id, kind, kg, spot (the named node), node (its figure)}.
 var loot: Array = []
 ## The bag on his back (scripts/carry/loot_bag.gd).
 var bag: Node3D
+## The burrows (each at its mouth's floor) and the stone brood out of them
+## (scripts/brood/bag_brood.gd; null with --no-brood).
+var burrows: Array = []
+var brood: Node3D = null
 ## Never in a plane here (the world view and the carry ask).
 var flying := false
 
@@ -119,6 +140,11 @@ func _build_room() -> void:
 	bag = LootBag.new()
 	add_child(bag)
 	bag.setup(self)
+	_build_burrows()
+	if not LaunchArgs.user_args().has("--no-brood"):
+		brood = BagBrood.new()
+		add_child(brood)
+		brood.setup_bag(self,burrows)
 	if DevKeys.enabled():
 		var editor: Node = preload("res://scripts/layout_edit.gd").new()
 		editor.name = "LayoutEdit"
@@ -188,6 +214,54 @@ func _named_part(id: String, part: Array) -> void:
 		band.material_override = _material("lip")
 		solid.add_child(band)
 	LayoutOverrides.track(called,solid,"piece",coded)
+
+# --- The burrows ---------------------------------------------------------------------
+
+## Each burrow as a named token (`bag_study/burrow_N`): a low mound of
+## turned earth (no collider: he and the bag walk over it) with a dark
+## hole in its top, the node at the mouth's floor.
+func _build_burrows() -> void:
+	var holder := Node3D.new()
+	holder.name = "Burrows"
+	add_child(holder)
+	var earth := StandardMaterial3D.new()
+	earth.albedo_color = Color(0.36,0.3,0.24)
+	earth.roughness = 1.0
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.03,0.025,0.02)
+	dark.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var s := wanderer_scale
+	for row: Array in BURROWS:
+		var called := "%s/%s" % [SCENE_ID,str(row[0])]
+		if LayoutOverrides.deleted(called): continue
+		var coded := Transform3D(Basis.IDENTITY,row[1])
+		var hole := Node3D.new()
+		hole.name = str(row[0])
+		hole.transform = LayoutOverrides.xform(called,coded)
+		holder.add_child(hole)
+		LayoutOverrides.track(called,hole,"token",coded)
+		var mound := MeshInstance3D.new()
+		var c := CylinderMesh.new()
+		c.bottom_radius = BURROW_FOOT*s
+		c.top_radius = BURROW_TOP*s
+		c.height = BURROW_HIGH*s
+		c.radial_segments = 18
+		c.rings = 1
+		mound.mesh = c
+		mound.position.y = BURROW_HIGH*s*0.5
+		mound.material_override = earth
+		hole.add_child(mound)
+		var mouth := MeshInstance3D.new()
+		var d := CylinderMesh.new()
+		d.bottom_radius = BURROW_HOLE*s
+		d.top_radius = BURROW_HOLE*s
+		d.height = 0.01
+		d.radial_segments = 18
+		mouth.mesh = d
+		mouth.position.y = BURROW_HIGH*s+0.006
+		mouth.material_override = dark
+		hole.add_child(mouth)
+		burrows.append(hole)
 
 # --- The loot --------------------------------------------------------------------------
 
@@ -323,4 +397,4 @@ func _sync_figure() -> void:
 	super._sync_figure()
 
 func _hint_text() -> String:
-	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · hold LMB or T (pad RT) worn: aim a throw, let go to throw (8 kg or under) · V (pad right) by it: shove it · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · hold LMB or T (pad RT) worn: aim a throw, let go to throw (8 kg or under) · V (pad right) by it: shove it · the stone brood wakes out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"

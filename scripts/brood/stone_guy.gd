@@ -64,6 +64,8 @@ var _w_t := 0.0
 var _w_at := Vector3.ZERO
 var _w_lip := 0.0
 var _w_hold := 0.0
+## Waking out of a burrow (rise_at): up out of the floor, not over a lip.
+var _w_burrow := false
 ## Clinging: his slot on the wanderer (-1 none) and, shaken off, the time
 ## left before he grabs again.
 var slot := -1
@@ -118,6 +120,18 @@ func wake_at(face_at: Vector3, n: Vector3, lip_y: float, wait: float, hold: floa
 	node.visible = false
 	_place_node(1.0)
 
+## Wakes him in a burrow whose floor (its mouth's middle) is at `floor_at`:
+## hidden `wait` s, then he comes up out of it (head, shoulders, a heave,
+## WAKE_RISE s), looks round `hold` s and walks off it. `face_n` is up, so
+## he stands upright the whole way.
+func rise_at(floor_at: Vector3, wait: float, hold: float) -> void:
+	wake_at(floor_at,Vector3.UP,floor_at.y,wait,hold)
+	_w_at = floor_at
+	_w_burrow = true
+	mid = _w_mid(-0.7)
+	feet = mid-Vector3.UP*tall*0.5
+	_place_node(1.0)
+
 ## His middle on the face, `under` of his height below the lip.
 func _w_mid(under: float) -> Vector3:
 	var at := _w_at
@@ -131,6 +145,9 @@ func _wake(dt: float) -> void:
 	node.visible = true
 	_w_t += dt
 	var u := clampf(_w_t/K.WAKE_RISE,0.0,1.0)
+	if _w_burrow:
+		_rise(u,dt)
+		return
 	# Fingers first (to just under the lip, the arms stretched up over it),
 	# a breath, then the head up over it.
 	var under := -1.0
@@ -144,6 +161,22 @@ func _wake(dt: float) -> void:
 		climb_dir = 1.0
 		_descending = false
 		climbed = 0.0
+
+## The burrow's rise at `u` (0..1): his head pokes up, a breath, then he
+## heaves up and stands on the floor; after the hold he walks.
+func _rise(u: float, dt: float) -> void:
+	var under := 0.5
+	if u < 0.4: under = lerpf(-0.7,-0.1,smoothstep(0.0,0.4,u))
+	elif u < 0.55: under = -0.1
+	else: under = lerpf(-0.1,0.5,smoothstep(0.55,1.0,u))
+	mid = _w_mid(under)
+	feet = mid-Vector3.UP*tall*0.5
+	_swing(0.0 if u < 0.55 else dt*4.0,dt)
+	if _w_t >= K.WAKE_RISE+_w_hold:
+		_w_burrow = false
+		feet = Vector3(_w_at.x,_w_lip,_w_at.z)
+		start_y = feet.y
+		state = "walk"
 
 # --- Rays ----------------------------------------------------------------------------
 
