@@ -202,6 +202,7 @@ func _build_art() -> void:
 	for p: Array in Art.pieces(): _place_piece(str(p[0]),RuinKit.piece(str(p[1]),int(p[2]),float(p[3])),p[4],float(p[5]))
 	for t: Array in Art.tower(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	for t: Array in Art.ropes_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
+	for t: Array in Art.slide_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	_build_bridge()
 	_build_foot_pieces()
 	_build_spots()
@@ -233,6 +234,11 @@ func _build_bridge() -> void:
 	var bridge: MeshInstance3D = Footbridge.live(Footbridge.build_mesh(a,b,441),a,b,441)
 	bridge.name = "StripBridge"
 	art.add_child(bridge)
+	# The tilt rock's footbridge to the north balcony (Art: the slide).
+	ends = Art.tilt_bridge_ends()
+	var tilt: MeshInstance3D = Footbridge.live(Footbridge.build_mesh(ends[0],ends[1],443),ends[0],ends[1],443)
+	tilt.name = "TiltBridge"
+	art.add_child(tilt)
 
 ## The foot pieces' host (scripts/interactables/foot_pieces.gd, named under
 ## wreck_cluster/): the ropes and rings the later steps stand.

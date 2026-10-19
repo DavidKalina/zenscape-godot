@@ -17,7 +17,11 @@ extends RefCounted
 ##            its launch into the swing rope hung from the jib, the release
 ##            across onto the rope rock's landing (an islet north of the
 ##            spine, higher than anything near it): a chapel arch, part spot
-##            14, and the start of the way on (the slide, a later step)
+##            14, and the start of the way on (the slide)
+##   slide    a fallen entablature off the rope rock's west rim down onto
+##            the tilt rock (a low islet tilted like a dropped slab): a
+##            lancet wall, a carved chest, part spot 15, and a footbridge
+##            on to the north balcony
 ##
 ## Every gap and rise is sized from the walker (RuinKit GRAB_TOP 1.875,
 ## CHAIN_TOP 2.575; `tools/kit_piece.py numbers`).
@@ -111,7 +115,7 @@ static func coast_arch_foot() -> Vector3:
 ## (nothing to climb). The deliberate shortcut: an updraft charge saved
 ## and spent at the launch's top (3.7 m more) sails him 14.3 m on, to a
 ## grab on the landing's edge. The way back is the sail down to the
-## shelf; the way on is the slide (a later step).
+## shelf; the way on is the slide (below).
 const ROPE_X := 84.0
 const ROPE_SHELF := Vector3(84.0,37.6,-31.4)
 ## The spur: a stone jutting north off the shelf's edge, its top level
@@ -176,6 +180,97 @@ static func ropes_built() -> Array:
 		["ropes/landing",landing,landing_edge(),0.0],
 	]
 
+## The slide (spec item 6): the rope rock's way on. A fallen entablature
+## broken in two leans off the rope rock's west rim down onto the tilt rock
+## (an islet tilted like a dropped slab, low under the north shelf):
+##   head     broken off SLIDE_DROP_IN under the rope rock's west rim, on
+##            a flat block lodged under its overhang: he drops in off the
+##            rim onto the block (under the stun's 6 m) and on down.
+##            From below the rim is past CHAIN_TOP (2.575) over the head,
+##            so the slide is one way: the rope rock stays the rope's
+##   upper    SLIDE_STEEP down: past the motor's SLIDE_AUTO (44), so he
+##            can't stand on it and boot-surfs (hopping up it is possible:
+##            a slide jump gains on it, but the head's drop stops him)
+##   lower    SLIDE_EASE down from the break to the tilt rock's east end:
+##            a crouched surf (over SLIDE_FROM 10), walkable back up
+##   runout   the tilt rock's turf rises TILT_DEG westward, so the surf's
+##            pace runs out up it before the far rim
+## On the tilt rock: a lancet wall at its high west end with a carved
+## chest before it, part spot 15 beside the chest; the way on is the
+## footbridge off its south edge to the north balcony (spot 04) under the
+## shelf, a jump-grab (1.6 m) up onto the shelf.
+const SLIDE_WAY := Vector2(-0.944,0.330)
+const SLIDE_HEAD := Vector3(73.4,ROPE_TOP-SLIDE_DROP_IN,-59.7)
+const SLIDE_DROP_IN := 5.7
+## The flat block the slide's head rests on, lodged under the rope rock's
+## overhang: how far it runs back east from the head (under the rim). It
+## reaches about 3 m out past the rim, so a run off the rim lands on it
+## (a full run's walk-off carries him 2.7 m out).
+const SLIDE_LODGE := 5.3
+const SLIDE_STEEP := 52.0
+const SLIDE_BREAK := 3.6
+const SLIDE_EASE := 24.0
+const SLIDE_SIZE := Vector2(2.6,0.9)
+## The tilt rock: its middle, the turf at its east rim (x TILT_EAST), rising
+## TILT_DEG westward; its keel.
+const TILT_AT := Vector2(56.0,-53.5)
+const TILT_EAST := 68.0
+const TILT_LOW := 34.4
+const TILT_DEG := 5.0
+const TILT_DEEP := 13.0
+static func tilt_ground(x: float, _z: float) -> float:
+	return TILT_LOW+(TILT_EAST-x)*tan(deg_to_rad(TILT_DEG))
+## Long and slab-like (x 43.5..68.5), its corners broken.
+static func tilt_rock_outline() -> Array:
+	var out := []
+	for w: Vector2 in [Vector2(-12.5,-3.5),Vector2(-10.5,-7.0),Vector2(-3.0,-7.8),Vector2(5.0,-7.2),Vector2(10.5,-6.2),
+			Vector2(12.5,-3.0),Vector2(12.0,2.5),Vector2(9.0,5.5),Vector2(7.5,7.4),Vector2(4.5,7.6),Vector2(-2.0,6.4),
+			Vector2(-9.0,5.8),Vector2(-12.8,2.0)]:
+		out.append(TILT_AT+w)
+	return out
+## The slide's three points (the top line): head, the break, the foot on
+## the tilt rock's turf.
+static func slide_points() -> Array:
+	var way := Vector3(SLIDE_WAY.x,0.0,SLIDE_WAY.y)
+	var brk := SLIDE_HEAD+way*(SLIDE_BREAK/tan(deg_to_rad(SLIDE_STEEP)))-Vector3(0.0,SLIDE_BREAK,0.0)
+	var foot := brk
+	for i in 4:
+		var drop := brk.y-tilt_ground(foot.x,foot.z)
+		foot = brk+way*(drop/tan(deg_to_rad(SLIDE_EASE)))
+	foot.y = tilt_ground(foot.x,foot.z)
+	return [SLIDE_HEAD,brk,foot]
+## The footbridge off the tilt rock's south edge to the north balcony.
+static func tilt_bridge_ends() -> Array:
+	var bal := on_slab("balcony")
+	var a := Vector2(62.5,-47.0)
+	return [Vector3(a.x,tilt_ground(a.x,a.y),a.y),Vector3(bal.x,bal.y,bal.z-1.9)]
+## The lancet wall at the tilt rock's west end (facing east, along z), the
+## chest before it, part spot 15 beside the chest.
+static func tilt_wall_foot() -> Vector3:
+	return Vector3(47.0,tilt_ground(47.0,0.0),TILT_AT.y)
+static func tilt_chest_foot() -> Vector3:
+	return Vector3(50.2,tilt_ground(50.2,0.0),TILT_AT.y-1.6)
+static func tilt_spot() -> Vector3:
+	return Vector3(50.0,tilt_ground(50.0,0.0),TILT_AT.y+1.4)
+## The slide's halves: [layout name, node, world foot, yaw (deg)].
+static func slide_built() -> Array:
+	var pts := slide_points()
+	var head: Vector3 = pts[0]
+	var out := []
+	for i in 2:
+		var b := RuinKit.Build.new(641+i,0.35,"Slide")
+		var a: Vector3 = pts[i]
+		var e: Vector3 = pts[i+1]
+		# The upper half starts at the lodged block's west end; the lower
+		# runs 0.6 m past the break under the upper's end so no seam opens.
+		if i == 0:
+			var back := Vector3(SLIDE_WAY.x,0.0,SLIDE_WAY.y)*SLIDE_LODGE
+			Spine._beam(b,-back,Vector3(0.0,0.0,0.0),SLIDE_SIZE+Vector2(0.2,0.3))
+		else: a -= (e-a).normalized()*0.6
+		Spine._beam(b,a-head,e-head,SLIDE_SIZE)
+		out.append(["slide/"+("upper" if i == 0 else "lower"),b.finish(),head,0.0])
+	return out
+
 ## A worn upright block (walk hull on all sides) centred `c`, `half` its
 ## half extents, in `b`'s frame.
 static func _block(b: RuinKit.Build, c: Vector3, half: Vector3) -> void:
@@ -196,6 +291,7 @@ static func lands() -> Array:
 		["tower_rock",tower_rock_outline(),func(_x: float, _z: float) -> float: return TOWER_ROCK,18.0,407,Rect2(),TOWER_ROCK],
 		["coast_rock",coast_rock_outline(),func(_x: float, _z: float) -> float: return COAST_TOP,COAST_DEEP,409,Rect2(),COAST_TOP,true],
 		["rope_rock",rope_rock_outline(),func(_x: float, _z: float) -> float: return ROPE_TOP,22.0,411,Rect2(),ROPE_TOP,true],
+		["tilt_rock",tilt_rock_outline(),tilt_ground,TILT_DEEP,413,Rect2(),TILT_LOW],
 	]
 
 ## Land `spec` (a row of `lands`) built: a KitLand island, its sides collided.
@@ -253,6 +349,8 @@ static func pieces() -> Array:
 	return [
 		["coast/arch","arch",619,0.3,coast_arch_foot(),90.0],
 		["ropes/arch","arch",624,0.25,rope_arch_foot(),0.0],
+		["slide/wall","lancet_wall",643,0.35,tilt_wall_foot(),90.0],
+		["slide/chest","tomb_chest",644,0.4,tilt_chest_foot(),0.0],
 	]
 
 # --- The tower --------------------------------------------------------------------
@@ -463,6 +561,7 @@ static func spots() -> Array:
 		["tower","the belfry's wall head, over the bell (partway up)",belfry_south_head(-1.4),["lying","jammed"]],
 		["coast","under the coast rock's arch (the coast down's end)",coast_arch_foot(),["lying","islet","salvager"]],
 		["ropes","under the rope rock's chapel arch (the rope chain's end)",rope_arch_foot(),["lying","islet","salvager"]],
+		["slide","by the carved chest under the tilt rock's lancet wall (the slide's end)",tilt_spot(),["lying","islet","cache"]],
 	]
 
 ## The caches (spec item 10's change; studies/wreck_cluster_caches.gd): a
