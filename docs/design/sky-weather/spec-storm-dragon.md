@@ -151,3 +151,22 @@ the user can launch or a still they can look at.
 ## Model and caps
 
 Opus for every iteration. The skill's default cap and budget.
+
+## Lane `dragon-hide` (added during the look pass)
+
+The dragon's surface, on its own branch `lane/dragon-hide` in the worktree
+`/Users/davidkalina/Documents/Projects/zenscape-dragon-hide`, run by the
+loop runner beside the trunk. Commits: `ITER(storm-dragon): lane
+dragon-hide: <task>`. The user finds the hide flat, matte and faceted.
+Done looks like: a new hide material (its own shader file) of overlapping
+scales (procedural, not UV-dependent; larger belly plates, small neck
+scales, ridged spine plates), near-black purple with a faint violet sheen
+at grazing angles, wet so scale edges glint in the lightning, shading
+smoothed so the low-poly facets stop reading; the wing membrane thin and
+veined, glowing dull red-violet when a flash is behind it. The old hide
+stays one switch away (a flag and a key) so the user can compare them in
+play. It keeps working with the murk loom pass (`dragon_loom.gdshader`)
+and the sighting look. Edits to shared files stay one or two lines
+(`dragon_glimpse.gd`'s material hookup), listed under **Notes for
+merge**. The trunk does not touch the hide's material; the lane does not
+touch staging or posing.
