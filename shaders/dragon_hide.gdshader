@@ -93,31 +93,36 @@ void fragment() {
 	float spine_zone = smoothstep(0.55, 0.85, n0.y) * smoothstep(2.2, 0.6, abs(mpos.x));
 	float ridge_p = fract(mpos.z / 1.6);
 	float ridge = pow(1.0 - abs(ridge_p * 2.0 - 1.0), 1.5);
-	n = normalize(mix(n, n0 - at * (ridge_p - 0.5) * 2.2 * bump, spine_zone));
+	n = normalize(mix(n, n0 - at * (ridge_p - 0.5) * 0.9 * bump, spine_zone));
 	n = normalize(n);
 	// To view space.
 	vec3 nv = normalize((VIEW_MATRIX * vec4(mat3(MODEL_MATRIX) * n, 0.0)).xyz);
 	NORMAL = nv;
 	float vary = 0.7 + 0.6 * hash(id1);
+	// The few wet ones: one scale in twenty or so, and one spine plate in
+	// five, may catch the flash; the rest stay matt black (a sparse glint,
+	// never bands down the neck and tail).
+	float spark = smoothstep(0.9, 0.97, hash(id1 + 7.0));
+	float plate_wet = step(0.8, hash(vec3(floor(mpos.z / 1.6), 3.1, 5.7)));
 	float seam = smoothstep(0.0, 0.14, edge);
 	float ndv = clamp(dot(nv, normalize(VIEW)), 0.0, 1.0);
 	// Near-black purple, each scale its own shade, seams darker, a faint
 	// violet at the scale's lip.
 	vec3 col = hide * vary * mix(0.35, 1.0, seam);
 	col *= mix(1.0, 0.55, belly * (1.0 - plate));
-	col *= 1.0 + 0.6 * spine_zone * ridge;
+	col *= 1.0 + 0.25 * spine_zone * ridge;
 	ALBEDO = col;
 	// Wet: glossy, the lips and seams glossier still.
-	ROUGHNESS = mix(0.22, 0.5, face * (1.0 - lip)) * mix(1.0, 0.7, belly);
-	SPECULAR = 0.35;
+	float wet = max(spark * max(lip, 1.0 - seam), plate_wet * spine_zone * ridge);
+	ROUGHNESS = mix(mix(0.5, 0.7, face), 0.24, wet);
+	SPECULAR = mix(0.05, 0.35, wet);
 	// Violet sheen at grazing angles, bright with the flash and near.
 	float graze = pow(1.0 - ndv, 3.0);
-	vec3 em = sheen * graze * (0.02 + 0.16 * lit) * seam;
+	vec3 em = sheen * graze * (0.02 + 0.05 * lit) * seam;
 	// The glint: where a lip or a seam turns edge-on to the eye, wet,
 	// lit by the flash behind it; sparks, not a wash.
-	float spark = smoothstep(0.55, 0.9, hash(id1 + 7.0));
-	float catch_ = pow(1.0 - ndv, 4.0) * (lip * 1.0 + (1.0 - seam) * 0.3 + spine_zone * ridge * 0.9);
-	em += vec3(0.55, 0.5, 0.85) * catch_ * (0.15 + 0.7 * spark) * lit * (0.5 + 0.5 * close);
+	float catch_ = pow(1.0 - ndv, 4.0) * (spark * (lip + (1.0 - seam) * 0.3) + plate_wet * spine_zone * ridge * 0.6);
+	em += vec3(0.55, 0.5, 0.85) * catch_ * 0.6 * lit * (0.5 + 0.5 * close);
 	EMISSION = em;
 	RIM = 0.0;
 }

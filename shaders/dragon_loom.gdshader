@@ -26,6 +26,8 @@ uniform float strength = 0.85;
 uniform float lit_near = 45.0;
 uniform float lit_reach = 600.0;
 uniform float lit_strength = 1.0;
+// The bloom's grey its lit edges go soft toward.
+uniform vec3 bloom : source_color = vec3(0.5, 0.53, 0.6);
 // The murk's wisps passing between it and the eye (m, their size).
 uniform float wisp = 7.0;
 
@@ -70,6 +72,16 @@ void fragment() {
 	float through = mix(1.0, mix(0.35, 0.84, l), smoothstep(0.35, 0.8, n));
 	// Lit from behind, it is all shade: the distance thins it (alpha), and
 	// what shows through is the bloom.
-	ALBEDO = mix(murk_colour * 0.6, shade, max(fade, l));
-	ALPHA = clamp(mix(strength, lit_strength, l) * k * fade * soft * through, 0.0, 1.0);
+	vec3 dim_col = mix(murk_colour * 0.6, shade, fade);
+	float dim = clamp(strength * k * fade * soft * through, 0.0, 1.0);
+	// In a flash the murk drawn over the hide is the bloom, far brighter
+	// than white: any of it let through greys the shape out (or flares).
+	// So the lit shape is drawn whole, and its soft edges are painted: its
+	// side-on edges, the thick wisps and the distance lighten it toward the
+	// bloom's grey, a near-black core going soft into the murk.
+	float haze = clamp((1.0 - smoothstep(0.0, 0.2, face)) * 0.5
+		+ smoothstep(0.45, 0.85, n) * 0.6 + (1.0 - fade) * 0.5, 0.0, 1.0);
+	vec3 lit_col = mix(shade, bloom, haze * haze);
+	ALBEDO = mix(dim_col, lit_col, l);
+	ALPHA = clamp(mix(dim, lit_strength * k, l), 0.0, 1.0);
 }

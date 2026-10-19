@@ -62,6 +62,11 @@ const LOOK_DOWN := 1.15
 const REAR := 0.35
 const LOOK_ASIDE := 0.55
 const GAPE := 0.55
+## Over's hold on top of the snap's pose: the look down this much more, the
+## jaw's gape and the claws' reach this much more (shares).
+const PRESS_DOWN := 0.3
+const PRESS_GAPE := 0.6
+const PRESS_CLAWS := 0.45
 ## The look's share in each neck bone (root first) and the head.
 const NECK_SHARE := [0.26,0.24,0.2,0.14]
 const HEAD_SHARE := 0.16
@@ -296,6 +301,9 @@ func _pose(at: Vector3, velocity: Vector3, eye := Vector3.INF) -> void:
 	var looking := eye != Vector3.INF and stage in ["away","over"]
 	if not looking or beat < BEATS[0]: _side = 0.0
 	var b := _beats(beat) if looking else Vector4.ZERO
+	# Over, the hold is its own pose (not the snap's again): the neck
+	# reaches further down at the plane, the jaw wider, the claws further.
+	var press := _press(beat) if looking and stage == "over" else 0.0
 	if stage == "away": air_roll += _side*0.1*b.x
 	var pitch := gamma*0.75+0.05+air_pitch
 	var basis := Basis(Vector3.UP,_yaw)*Basis(Vector3.RIGHT,pitch)*Basis(Vector3.BACK,air_roll)
@@ -321,7 +329,7 @@ func _pose(at: Vector3, velocity: Vector3, eye := Vector3.INF) -> void:
 		# In the look the claws come down out of the tuck and reach (all the
 		# way over the plane, a flex flying away), one a beat behind the other.
 		var hang := 0.06*sin(t*0.8+side)
-		var reach: float = b.w*(1.0 if stage == "over" else 0.45)*(1.0-0.15*(side+1.0))
+		var reach: float = b.w*(1.0+PRESS_CLAWS*press if stage == "over" else 0.45)*(1.0-0.15*(side+1.0))
 		_turn("hind_upper."+n,[[Vector3.RIGHT,-1.5+hang+1.0*reach]])
 		_turn("hind_lower."+n,[[Vector3.RIGHT,0.9+hang*0.5-0.65*reach]])
 		_turn("hind_foot."+n,[[Vector3.RIGHT,-0.7-hang*0.25+1.0*reach]])
@@ -335,22 +343,26 @@ func _pose(at: Vector3, velocity: Vector3, eye := Vector3.INF) -> void:
 	# The look: round (and up or down) shared up the neck, most at its root,
 	# the rest in the head; coiled, the neck rears and the head tucks.
 	var round_ := aim.x*b.x
-	var lift := aim.y*clampf(b.x,0.0,1.0)
+	var lift := aim.y*clampf(b.x,0.0,1.0)*(1.0+PRESS_DOWN*press)
 	_turn("spine.2",[[Vector3.RIGHT,-0.06]])
 	for i in range(_neck_n):
 		var u := float(i)/maxf(_neck_n-1,1)
-		var bend := lerpf(0.04,-0.08,u)+0.12*b.y*(1.0-u)
+		var bend := (lerpf(0.04,-0.08,u)+0.12*b.y*(1.0-u))*(1.0-press)
 		var wave := neck_sway*sin(PI*u+0.3)+slither*cos(PI*u)
 		var share: float = NECK_SHARE[mini(i,NECK_SHARE.size()-1)]
 		_turn("neck.%d" % i,[[Vector3.UP,round_*share+slither*0.6*(u-0.5)],[Vector3.RIGHT,bend+wave+lift*share]])
 	_turn("head",[[Vector3.UP,round_*HEAD_SHARE],[Vector3.RIGHT,0.08-(gamma*0.75+0.05)*0.7-air_pitch-neck_sway*0.6+lift*HEAD_SHARE-0.25*b.y],
 		[Vector3.BACK,-air_roll*0.5+_side*0.3*clampf(b.x,0.0,1.0)*(1.0 if stage == "away" else 0.0)]])
-	_turn("jaw",[[Vector3.RIGHT,-GAPE*b.z]])
+	_turn("jaw",[[Vector3.RIGHT,-GAPE*b.z*(1.0+PRESS_GAPE*press)]])
 	# The tail: a whip, a slow wave travelling down it, growing to the tip,
 	# drooping a little.
 	for i in range(_tail_n):
 		var u := float(i+1)/float(_tail_n)
 		_turn("tail.%d" % i,[[Vector3.UP,0.07*u*sin(t*0.8-float(i)*0.7)],[Vector3.RIGHT,0.015]])
+
+## Over's hold (0 to 1): in after the settle, out before the turn back.
+static func _press(u: float) -> float:
+	return smoothstep(BEATS[3]-0.04,BEATS[3]+0.18,u)*(1.0-smoothstep(BEATS[4]-0.04,BEATS[4]+0.12,u))
 
 ## The look's beats at `u` s from the first flash: x how far round (0 to
 ## 1, past it in the snap, under it in the counter), y how coiled (the
