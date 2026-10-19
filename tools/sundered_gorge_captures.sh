@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Rendered captures of the Sundered gorge isle (docs/scenic/sundered-gorge.md):
+# Rendered captures of the Sundered gorge isle:
 #   zsh tools/sundered_gorge_captures.sh DIR [view ...] [-- extra args]
 # Each view opens a window (--no-title), settles, saves DIR/<view>.png and
 # quits. Views: establishing gorge_north bridge_south west_from_chapel

@@ -32,7 +32,7 @@ Genesis sounds (genesis-rumble, genesis-thump, genesis-pour, genesis-fill,
 genesis-meadow, genesis-path, leaf-rustle-bed, plain-air-bed, fish-plop-1/2,
 frog-croak, heron-call, bow-swell) are synthesised from noise,
 filters and sines by tools/generate_nature_audio.py --genesis. They use no
-recordings and carry no licence beyond the project's own (docs/scenic/sound.md).
+recordings and carry no licence beyond the project's own.
 
 The finger snaps (finger-snap-1..3.wav) are synthesised for ZenScape by
 tools/generate_nature_audio.py --snap; no recording is used.
@@ -58,4 +58,4 @@ howl, engine and its start, wheel rumble, skid, flutter, wire sing, thin wind,
 cloud hush, thumps, creaks, ticks, swishes, whooshes, sail pops and folds,
 grabs) are synthesised from noise, filters and sines by
 `tools/generate_kit_audio.py`. They use no recordings and carry no licence
-beyond the project's own (docs/design/sound-round1.md).
+beyond the project's own.

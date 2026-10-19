@@ -30,7 +30,7 @@ sees. It names:
   and its **counter** (what the player does about it).
 - **His end**: how he's worn down (read off his body, not a bar), each
   way he dies, and what he drops: a ledger objective
-  (`docs/design/ledger/round1.md`) that keeps him dead once taken.
+  (`data/ledger/`) that keeps him dead once taken.
 - **Code**: his script in `scripts/enemies/<slug>.gd`, his knobs in one
   dictionary at its top so the motif editor can adopt him later.
 - **The contract** (below).

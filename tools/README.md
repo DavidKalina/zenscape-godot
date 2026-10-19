@@ -28,7 +28,6 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Run a Blender script (Mac, Windows, the Store build) | `python tools/blender.py run art/blender/x/x_build.py [--blend F] [--timeout S] -- args`; `--where`; `--expr "..."` |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
 | The test suite | `python tools/run_tests.py [--tests 'test_x*.gd'] [--quick]` |
-| A brainstorm round's cards as one page of maps | `python tools/motif_cards_html.py docs/design/motifs/brainstorm/<round> [--open]` |
 | A new RuinKit piece: scaffold, sizes, recipe, yard, check | `python tools/kit_piece.py new\|numbers\|recipe\|yard\|check` |
 | A terraced solid (scripts/kit_isle/terrace_rock.gd) swept for see-in gaps, sight through rock, floor holes, collision off the drawn | `python tools/drive.py tools/terrace_check_run.gd -- --scene=studies/terrace_rock_test.tscn`; in a driver `await preload("res://tools/terrace_check.gd").sweep(node)` |
 | Find an existing tool | `python tools/index.py <word>` |

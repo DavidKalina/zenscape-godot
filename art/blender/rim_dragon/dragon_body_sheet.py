@@ -5,7 +5,7 @@ dragon_body_build.py): a sheet with a row per dress and a column per view
     python tools/blender.py run art/blender/rim_dragon/dragon_body_sheet.py -- [OUT.png] [--styles=c] [--jaw=0.5] [--tiles]
 
 Reads assets/models/rim_dragon_<style>.glb; writes OUT.png (default
-docs/design/rim-dragon/dragon_sheet.png). --jaw=<rad> opens the jaw to
+scratch/dragon_sheet.png). --jaw=<rad> opens the jaw to
 check the mouth; --tiles also keeps each view as OUT_<style>_<view>.png.
 """
 import math
@@ -19,7 +19,7 @@ from mathutils import Vector
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-OUT = ROOT / "docs/design/rim-dragon/dragon_sheet.png"
+OUT = ROOT / "scratch/dragon_sheet.png"
 STYLES = "c"
 JAW = 0.0
 TILES = False

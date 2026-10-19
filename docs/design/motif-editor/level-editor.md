@@ -8,7 +8,7 @@
 
 ## Why
 
-The place-first pipeline (motif-brief.md, "a place first") puts beauty
+Places put beauty
 first, and beauty is the user's taste. Agents are good at what has an
 answer (distances, routes, plans, flora, budgets) and slow at what doesn't.
 So the user authors the place; agents do the grunt work after (route walks,

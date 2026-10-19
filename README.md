@@ -20,11 +20,6 @@ debug runs. Pad controls are in [gamepad](docs/gamepad.md).
 For a standalone Windows or Mac app, see
 [desktop builds](docs/desktop-builds.md).
 
-## Notes
-
-`docs/scenic/` describes the aqueduct isle, the ruin kit, the motif isles, the
-Sundered hall, the rune serpent, wind and clouds.
-
 ## Structure
 
 - `studies/zenscape.tscn` and `scripts/kit_isle/front_door.gd`: the title and

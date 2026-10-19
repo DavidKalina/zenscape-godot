@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Rendered captures of the Hollow Keel isle (docs/scenic/hollow-keel.md):
+# Rendered captures of the Hollow Keel isle:
 #   zsh tools/hollow_keel_captures.sh DIR [view ...] [-- extra args]
 # Each view opens a window (--no-title), settles, saves DIR/<view>.png and
 # quits. Views: above below west_mouth inside shaft stairs porch east_mouth.

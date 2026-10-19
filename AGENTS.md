@@ -110,12 +110,7 @@ existing test its change breaks. Run the full suite only when the user asks.
   mechanics (steps, contracts, proof) and stay general. Code, assets and
   tools built for earlier directions stay; they are tools.
 
-# Motifs
-
-New motifs and kit pieces go through the pipeline in
-`docs/design/motifs/motif-brief.md`: card, then plan, then place, then dressing
-pass (skills `motif-brainstorm`, `motif-plan`, `motif-greybox`,
-`motif-turf`).
+# Landing turf
 
 Every isle the plane can reach keeps a clear stretch of turf long enough
 to land the plane by hand. Terrain added to an isle must not take it away.

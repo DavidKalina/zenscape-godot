@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Rendered captures of the cloister tarn (docs/scenic/cloister-tarn.md):
+# Rendered captures of the cloister tarn:
 #   zsh tools/cloister_tarn_captures.sh DIR [name ...]
 # Each view: name, the eye, the point looked at. Extra args after `--`
 # go to the scene (e.g. -- --look=rosewater_dusk).

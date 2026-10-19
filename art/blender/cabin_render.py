@@ -19,7 +19,7 @@ from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[2]
 MODELS = ROOT / "assets/models"
-OUT = ROOT / "docs/scenic"
+OUT = ROOT / "scratch/cabin_render"
 OUT.mkdir(parents=True, exist_ok=True)
 TMP = Path(tempfile.mkdtemp(prefix="cabin_render_"))
 UNIT = 0.8

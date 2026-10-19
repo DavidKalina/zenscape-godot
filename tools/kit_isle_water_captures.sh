@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Rendered captures of the kit isles' water (docs/scenic/kit-isle-water.md):
+# Rendered captures of the kit isles' water:
 # the views a walker has at the shore and the plane has skimming over, and
 # where the water meets a fall's lip.
 #   zsh tools/kit_isle_water_captures.sh DIR [view ...] [-- extra args, e.g. --old-water]
