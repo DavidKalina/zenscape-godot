@@ -20,6 +20,7 @@ const Layout = preload("res://scripts/layout_overrides.gd")
 const UnitNode = preload("res://scripts/kit_isle/islet_unit_node.gd")
 const SkyScript = preload("res://studies/islet_yard_sky.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
+const Hall = preload("res://scripts/ruin_kit_hall.gd")
 
 ## The masses: name, the top unit's middle (x, height off TOP, z), its
 ## spec; then its parts, each [part, offset from the top's middle (x, dy,
@@ -57,6 +58,22 @@ const BRIDGES := [
 	["bridge_east","main","east",181],
 ]
 const RIM_BACK := 1.2
+## The fallen pillars: name, from (the high mass), to (the low), seed. A
+## colossus column (RuinKit's hall drums, scripts/ruin_kit_hall.gd) lies
+## from the high crown's rim, its broken top end at the turf there, down
+## across the gap, its foot end sunk PILLAR_IN m into the low crown, so its
+## top is one long slope from turf to turf. Crouched on it at a run he
+## boot-surfs it down (pilot_motor.gd move "slide", steeper than
+## SLIDE_FROM); an invisible walk box (PILLAR_DECK m either side of its
+## crest) lies along its top so the crest stands as a flat beam, not a
+## round ridge he rolls off.
+const PILLARS := [
+	["pillar_north","main","north",191],
+]
+const PILLAR_IN := 3.0
+const PILLAR_DECK := 0.55
+## How far the top end's crest stands over the high crown's turf (a step).
+const PILLAR_PROUD := 0.2
 ## A rim end's turf: within RIM_RISE m of the crown middle's height.
 const RIM_RISE := 3.0
 ## The islets between and round the masses: how many, their distance (m)
@@ -124,6 +141,7 @@ func _build_art() -> void:
 			var turn := Basis(Vector3.UP,float(int(ps.seed)%7)*0.9)
 			_stand("crag_reach/%s_%s" % [mname,part[0]],Transform3D(turn,top_at+off),ps)
 	_bridges()
+	_pillars()
 	_islets()
 	if specks: _specks()
 	var tris := 0
@@ -137,6 +155,8 @@ func _build_art() -> void:
 ## The rope bridges (BRIDGES), each named `crag_reach/<name>`: its node
 ## moved in the world view moves the whole span with its anchors.
 var bridges: Array = []
+## Every span's ends [a, b] (bridges and pillars), kept clear of islets.
+var spans: Array = []
 
 func _bridges() -> void:
 	var space := get_world_3d().direct_space_state
@@ -168,7 +188,86 @@ func _bridges() -> void:
 		holder.transform = Layout.xform(name_,Transform3D.IDENTITY)
 		Layout.track(name_,holder,"piece",Transform3D.IDENTITY)
 		bridges.append(live)
+		spans.append([a,b])
 		print("crag reach: %s %s -> %s, span %.1f m, rise %.1f m" % [name_,a,b,Vector2(b.x-a.x,b.z-a.z).length(),b.y-a.y])
+
+## The fallen pillars (PILLARS), each named `crag_reach/<name>`; the crest
+## line's ends (top, foot) in `pillars` [name, a, b] for the drive.
+var pillars: Array = []
+
+func _pillars() -> void:
+	var space := get_world_3d().direct_space_state
+	for pl: Array in PILLARS:
+		var name_: String = "crag_reach/"+str(pl[0])
+		if Layout.deleted(name_) or not mass_tops.has(pl[1]) or not mass_tops.has(pl[2]): continue
+		var hi: Vector3 = (mass_tops[pl[1]] as Node3D).position
+		var lo: Vector3 = (mass_tops[pl[2]] as Node3D).position
+		var a := _rim_end(space,hi,lo)
+		var b := _rim_end(space,lo,hi)
+		if a == Vector3.INF or b == Vector3.INF:
+			push_warning("crag reach: no rim for %s" % name_)
+			continue
+		# The foot sunk PILLAR_IN m further into the low crown.
+		var inward := Vector2(lo.x-b.x,lo.z-b.z).normalized()*PILLAR_IN
+		var sunk := _turf_top(space,b.x+inward.x,b.z+inward.y)
+		if sunk != Vector3.INF: b = sunk
+		a.y += PILLAR_PROUD
+		var seed_value: int = pl[3]
+		var column := fallen_column(seed_value,a,b)
+		column.name = str(pl[0]).to_pascal_case()
+		art.add_child(column)
+		column.transform = Layout.xform(name_,column.transform)
+		Layout.track(name_,column,"piece",column.transform)
+		pillars.append([name_,a,b])
+		spans.append([a,b])
+		print("crag reach: %s %s -> %s, length %.1f m, slope %.1f deg" % [name_,a,b,a.distance_to(b),rad_to_deg(asin((a.y-b.y)/a.distance_to(b)))])
+
+## A colossus column fallen with its crest along `a` -> `b` (world): hall
+## drums (plain, a niche band, a roundel band) laid end to end along its
+## axis, a little out of line as they came to rest, its top end at `a`
+## snapped off, its foot running on past `b` into the ground; a walk box
+## along its crest. The node's frame: X along it, Y square up off it, the
+## origin on its axis under `a`.
+static func fallen_column(seed_value: int, a: Vector3, b: Vector3) -> Node3D:
+	var along := (b-a).normalized()
+	var up := (Vector3.UP-along*along.y).normalized()
+	var r := Hall.COLUMN_R
+	var length := a.distance_to(b)+r*2.5
+	var b_ := RuinKit.Build.new(seed_value,0.55,"FallenColumn")
+	b_.settle = Hall.SETTLE
+	b_.lean = true
+	b_.cull = true
+	# Drums along +X: the shaft's own drum stretch (a man's height and a
+	# half), the niche and roundel bands once each a third and two thirds in.
+	var lie := Basis(Vector3.BACK,-PI*0.5)
+	var x := 0.0
+	var k := 0
+	while x < length-0.3:
+		var kind := "plain"
+		var h := 1.5
+		if k == 4: kind = "niche"
+		elif k == 9: kind = "roundel"
+		if kind == "niche": h = Hall.NICHE_BAND
+		elif kind == "roundel": h = Hall.ROUNDEL_BAND
+		h = minf(h,length-x)
+		var extra: Array = []
+		# The top end snapped off: the first drum broken at its near face.
+		if k == 0: extra = RuinKit._break(b_,h,r,0.35,0.0)
+		var spin := Basis(Vector3.UP,b_.rng.randf()*TAU)
+		var off := Vector3(0.0,b_.rng.randf_range(-0.03,0.03),b_.rng.randf_range(-0.05,0.05))
+		if k == 0:
+			# Turned end for end so its break faces up the slope (-X).
+			Hall._drum(b_,Transform3D(Basis(Vector3.BACK,PI*0.5)*spin,Vector3(x+h,0.0,0.0)+off),kind,h,extra)
+		else:
+			Hall._drum(b_,Transform3D(lie*spin,Vector3(x,0.0,0.0)+off),kind,h,extra)
+		x += h+0.02
+		k += 1
+	var deck := a.distance_to(b)+r
+	RuinKit._walk_hull(b_,Transform3D.IDENTITY,[Plane(Vector3.LEFT,0.0),Plane(Vector3.RIGHT,deck),Plane(Vector3.UP,r+0.02),
+		Plane(Vector3.DOWN,-(r-0.6)),Plane(Vector3.BACK,PILLAR_DECK),Plane(Vector3.FORWARD,PILLAR_DECK)])
+	var node := b_.finish()
+	node.transform = Transform3D(Basis(along,up,along.cross(up)),a-up*(r+0.02))
+	return node
 
 ## Where a bridge from the crown at `mid` toward `other` ends: walking out
 ## from the middle, the last level turf near the crown's height before it
@@ -199,9 +298,9 @@ func _clear_of(p: Vector3, r: float) -> bool:
 		var reach := float(u.spec.size)*1.25+r+6.0
 		if Vector2(p.x-q.x,p.z-q.z).length() < reach and absf(p.y-q.y) < float(u.spec.size)*2.5+r: return false
 	# Clear of the spans too: nothing in a bridge's way or hung under it.
-	for live: MeshInstance3D in bridges:
-		var a: Vector3 = live.global_transform*live.a
-		var b: Vector3 = live.global_transform*live.b
+	for span: Array in spans:
+		var a: Vector3 = span[0]
+		var b: Vector3 = span[1]
 		var near := Geometry2D.get_closest_point_to_segment(Vector2(p.x,p.z),Vector2(a.x,a.z),Vector2(b.x,b.z))
 		if near.distance_to(Vector2(p.x,p.z)) < r*1.25+8.0 and p.y > minf(a.y,b.y)-30.0 and p.y < maxf(a.y,b.y)+10.0: return false
 	return true
