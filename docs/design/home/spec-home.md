@@ -80,5 +80,9 @@ stay as they are, not banked.
 3. Ledger save for the total; banked treasures on display; banked ones
    leave the deal.
 4. Drop field and the drop pass.
-5. A look pass on the vault, board and field; stills; the handoff's open
-   items for tuning.
+5. A look pass on the vault, board and field (straw mats read as paper,
+   faint pad chevrons, board text too large, plain vault walls); the isle
+   itself, which reads as a long flat slab from low angles with a plain
+   wedge underneath (give it the landform shape the cluster's isles have);
+   the start camera, which looks steeply down instead of out along the
+   stretch; stills; the handoff's open items for tuning.
