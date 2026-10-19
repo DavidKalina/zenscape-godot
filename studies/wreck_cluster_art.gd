@@ -586,7 +586,7 @@ static func spots() -> Array:
 		["way","under the first portal's arch",on_spine(float(Spine.LINES[2][0]),0.0),["lying","jammed"]],
 		["way","on the north balcony",on_slab("balcony",Vector2(-0.3,-0.4)),["lying","salvager"]],
 		["way","under the second portal's arch",on_spine(float(Spine.LINES[5][0]),1.2),["lying","jammed"]],
-		["bench","the top slab of the south three",on_slab("south_3"),["lying","knight"]],
+		["bench","the top slab of the south three",on_slab("south_3"),["lying","jammed"]],
 		["bench","the bench's east end by the tail",Spine.bench_point(140.0),["lying","cache"]],
 		["tail","the tail's first fragment",on_slab("frag_1",Vector2(0.5,-0.5)),["lying","islet","cache"]],
 		["tail","the tail's far fragment (over the bridge)",on_slab("frag_3"),["lying","salvager"]],
