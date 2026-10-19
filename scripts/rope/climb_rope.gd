@@ -62,8 +62,8 @@ const ROPE_LEN := 14.0
 ## it starts (of the reach) and how fast the stick moves it.
 const AIM_REACH := 10.0
 const AIM_MIN := 1.2
-const AIM_START := 0.35
-const AIM_SPEED := 5.0
+const AIM_START := 0.45
+const AIM_SPEED := 8.0
 ## A top counts as above him (a lip to hook) this high over his feet (m).
 const ABOVE := 1.2
 ## The reticle snaps to an anchor post within this (m, flat).
@@ -73,15 +73,17 @@ const LAND_IN := 0.7
 ## The hook wraps a post this far under its top.
 const POST_WRAP := 0.25
 ## The throw's arc: its top over the higher end, plus this a metre across.
-const AIM_RISE := 1.4
-const AIM_RISE_M := 0.12
+const AIM_RISE := 1.0
+const AIM_RISE_M := 0.08
+## The hook flies under this many times gravity (a quick, flat-ish throw).
+const HOOK_G := 1.8
 const ARC_DOTS := 22
 ## The whirl while aiming: its radius (m) and turns a second.
 const WHIRL_R := 0.45
-const WHIRL_RATE := 2.2
+const WHIRL_RATE := 3.0
 ## Dragged back from where it landed to the lip (s); sliding off a smooth
 ## top as long.
-const DRAG_TIME := 0.25
+const DRAG_TIME := 0.18
 ## Falling: a bounce off a wall keeps this much.
 const BOUNCE := 0.3
 ## Reeling in: its pace along the ground (m/s) and the flick off a lip.
@@ -118,13 +120,19 @@ const LINE_TIME := 2.5
 const GRAB_REACH := 1.2
 const ROPE_OFF := 0.04
 const PULL := 0.4
-const PULL_T := 0.62
+const PULL_T := 0.42
 const REACH_AT := 0.55
-const DOWN_SPEED := 0.7
+const DOWN_SPEED := 1.1
 const SLIDE_SPEED := 3.5
-const HAUL_TIME := 0.85
+const HAUL_TIME := 0.6
 const GIVE := Vector2(0.4,0.7)
 const HAND_SPREAD := 0.035
+## Climbing, the hands sit this far (m) over the hang's grip, reaching up
+## the rope; the feet press the wall this share of his leg over his feet
+## (IK weight CLIMB_FEET).
+const REACH_UP := 0.3
+const FOOT_UP := 0.42
+const CLIMB_FEET := 0.85
 ## On the rope he hangs this much further off the wall than a ledge hang
 ## (arms out to the rope, so they read), drawn in to the ledge's over the
 ## last BODY_IN under the top for the haul.
@@ -141,7 +149,7 @@ const BODY_IN := 0.6
 const FIX_REACH := 1.6
 const TIE_UP := 0.3
 const LOWER_REACH := 1.6
-const LEAN := 32.0
+const LEAN := 44.0
 const HIP_OUT := 0.78
 const FOOT_DOWN := 0.42
 const STANCE_IN := 0.45
@@ -151,6 +159,18 @@ const HOP_OUT := 0.75
 const HOP_CROUCH := 0.22
 const HOP_LAND := 0.82
 const PULL_UP := 3.0
+## The rappel's descent, held stick back: from RAP_SPEED.x to .y (m/s) over
+## RAP_RAMP (s) held; stops over RAP_STOP (s) once let go. The feet walk
+## the wall a step each RAP_STRIDE of his leg, lifting RAP_LIFT of it; over
+## RAP_SKIM (m/s) they skim, the steps fading out. Leaving it to climb, the
+## stance eases out over UNRAP (s).
+const RAP_SPEED := Vector2(1.1,3.4)
+const RAP_RAMP := 1.4
+const RAP_STOP := 0.22
+const RAP_STRIDE := 0.9
+const RAP_LIFT := 0.4
+const RAP_SKIM := 2.8
+const UNRAP := 0.3
 
 var study: Node3D
 ## "coiled" (at his side), "aim", "fly", "drag" (pulled back to the lip),
@@ -222,6 +242,9 @@ var pulled_down := 0
 var guide_at := Vector3.INF
 var brake_at := Vector3.INF
 
+var _rap_v := 0.0
+var _rap_held := 0.0
+var _step := 0.0
 var _hop_t := -1.0
 var _hop_from := 0.0
 var _hop_drop := 0.0
@@ -571,6 +594,15 @@ func _post_top(post: Node3D) -> Vector3:
 
 ## A caught (or seated) hook: he reaches up the rope and yanks it.
 func tug() -> void:
+	if climber and rappel:
+		# Rappelling, E pushes off the wall in a hop.
+		if _hop_t < 0.0 and _stance_k >= 1.0 and not study.get("motor").crouch:
+			_hop_t = 0.0
+			_hop_from = study.get("motor").feet.y
+			_hop_drop = minf(HOP_DROP*_size(),_hop_from-_floor_under(study.get("motor").feet))
+			_rap_v = 0.0
+			hops += 1
+		return
 	if state == "coiled":
 		_fix()
 		return
@@ -782,6 +814,9 @@ func _mount(motor: Variant) -> void:
 	climber = true
 	climbs += 1
 	_on_t = 0.0
+	_stance_k = 0.0
+	_rap_v = 0.0
+	_rap_held = 0.0
 	_pull_t = -1.0
 	var top := y+float(motor.hang_drop)
 	_hand_y = [top,top-PULL*s]
@@ -790,9 +825,8 @@ func _mount(motor: Variant) -> void:
 	_give_y = INF
 	if bad and not tested: _give_y = top+randf_range(GIVE.x,GIVE.y)*maxf(edge.y-top,0.5*s)
 	if rappel:
-		_stance_k = 0.0
 		_hop_t = -1.0
-		_say("Rappelling: %s hops down · %s climbs · %s slides · %s lets go" % [Pad.pick("S","stick back"),Pad.pick("W","stick up"),Pad.pick("Shift","crouch"),Pad.pick("Space","A")])
+		_say("Rappelling: %s lowers · %s climbs · %s pushes off · %s slides · %s lets go" % [Pad.pick("S","stick back"),Pad.pick("W","stick up"),Pad.pick("E","B"),Pad.pick("Shift","crouch"),Pad.pick("Space","A")])
 		return
 	_say("On the rope: %s climbs · %s lets go · %s slides" % [Pad.pick("W","stick up"),Pad.pick("Space","A"),Pad.pick("Shift","crouch")])
 
@@ -877,14 +911,18 @@ func ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dic
 		out["let_go"] = true
 		return out
 	var toward := Vector2(-edge_out.x,-edge_out.z).normalized()
-	var push := want.dot(toward)
+	# The stick's own up/down (forward climbs, back lowers), whatever way
+	# the camera looks.
+	var push := _to_cam(want).y
 	var y := walker.feet.y
 	var drop := float(walker.hang_drop)
 	var top_y := edge.y-drop
 	if rappel:
 		if push > 0.35 and _hop_t < 0.0 and not walker.crouch:
-			# Toward the wall: hands up the rope, climbing as from below.
+			# Stick up: hands up the rope, climbing as from below (the
+			# stance eases out, no snap).
 			rappel = false
+			_rap_v = 0.0
 			_hand_y = [y+drop,y+drop-PULL*s]
 			_hand_side = [1.0,-1.0]
 		else:
@@ -934,7 +972,8 @@ func ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dic
 		_off_rope()
 		out["off_rope"] = true
 		return out
-	walker.feet = _body_at(walker,y)
+	_stance_k = maxf(_stance_k-delta/UNRAP,0.0)
+	walker.feet = _stance_at(walker,y)
 	walker.velocity = Vector3.ZERO
 	walker.facing = PilotMotor.facing_of(toward)
 	walker.ground_y = ground
@@ -984,8 +1023,10 @@ func _give(walker: PilotMotor, out: Dictionary) -> void:
 	_say("It gave way: the lip crumbled")
 	out["gave"] = true
 
-## One step rappelling: feet on the wall; stick away from it hops down (a
-## hop at a time, finished when let go of), crouch slides; at the floor, off.
+## One step rappelling: feet on the wall; stick back lowers him smoothly,
+## faster the longer it's held, the feet walking (then skimming) the wall;
+## let go, he stops and hangs. E's hop (`tug`) runs to its end; crouch
+## slides; at the floor, off.
 func _rappel_step(walker: PilotMotor, delta: float, push: float, out: Dictionary) -> Dictionary:
 	var s := _size()
 	var y := walker.feet.y
@@ -993,19 +1034,27 @@ func _rappel_step(walker: PilotMotor, delta: float, push: float, out: Dictionary
 	var ground := _floor_under(_stance_at(walker,y))
 	if walker.crouch:
 		_hop_t = -1.0
+		_rap_v = 0.0
 		y -= SLIDE_SPEED*s*delta
-	elif _hop_t >= 0.0 or (push < -0.35 and _stance_k >= 1.0):
-		if _hop_t < 0.0:
-			_hop_t = 0.0
-			_hop_from = y
-			_hop_drop = minf(HOP_DROP*s,y-ground)
-			hops += 1
+	elif _hop_t >= 0.0:
 		_hop_t = minf(_hop_t+delta/(HOP_T*climb_pace),1.0)
 		var u := clampf((_hop_t-HOP_CROUCH)/(HOP_LAND-HOP_CROUCH),0.0,1.0)
 		y = _hop_from-_hop_drop*u*u*(3.0-2.0*u)
 		if _hop_t >= 1.0:
 			_hop_t = -1.0
 			out["hopped"] = true
+	else:
+		if push < -0.35 and _stance_k > 0.6:
+			_rap_held += delta
+			var k := clampf(_rap_held/RAP_RAMP,0.0,1.0)
+			var v := lerpf(RAP_SPEED.x,RAP_SPEED.y,k*k)*s/climb_pace
+			# Quick to start, quicker as held.
+			_rap_v = move_toward(_rap_v,v,8.0*s*delta)
+		else:
+			_rap_held = 0.0
+			_rap_v = move_toward(_rap_v,0.0,RAP_SPEED.y*s/RAP_STOP*delta)
+		y -= _rap_v*delta
+		_step += _rap_v*delta/(RAP_STRIDE*_leg())
 	if y <= ground+0.01*s:
 		walker.feet = Vector3(walker.feet.x,ground,walker.feet.z)
 		walker.toss(Vector3.ZERO)
@@ -1018,6 +1067,11 @@ func _rappel_step(walker: PilotMotor, delta: float, push: float, out: Dictionary
 	walker.facing = PilotMotor.facing_of(Vector2(-edge_out.x,-edge_out.z))
 	walker.ground_y = ground
 	return out
+
+## Walking down the wall: how far each foot is lifted off it (0..1) and
+## the share of a step (fading to a skim at speed).
+func _walk_k() -> float:
+	return clampf(1.0-(_rap_v/_size()-RAP_SKIM*0.6)/(RAP_SKIM*0.4),0.0,1.0)*clampf(_rap_v/(0.4*_size()),0.0,1.0)
 
 ## Where his feet (the motor's) stand rappelling at height `y`: out from the
 ## wall, the hips HIP_OUT of his leg off it, swung out mid-hop and drawn in
@@ -1060,6 +1114,8 @@ func _leg() -> float:
 func _off_rope() -> void:
 	climber = false
 	rappel = false
+	_rap_v = 0.0
+	_rap_held = 0.0
 	_hop_t = -1.0
 	guide_at = Vector3.INF
 	brake_at = Vector3.INF
@@ -1419,7 +1475,11 @@ func _arm_pose() -> void:
 	var r := _forward().cross(Vector3.UP).normalized()
 	if climber:
 		if rappel: _rappel_pose(sk)
-		else: _climb_hands(sk)
+		else:
+			# Just off a rappel: its lean eases out under the climb.
+			if _stance_k > 0.0: _lean_figure(sk,_stance_k*_stance_k*(3.0-2.0*_stance_k),deg_to_rad(LEAN))
+			_climb_feet(sk)
+			_climb_hands(sk)
 		return
 	if state == "tug":
 		_tug_pose(sk,arm,r)
@@ -1438,7 +1498,7 @@ func _arm_pose() -> void:
 		"aim":
 			CarryHost._turn_bone(sk,arm,r,deg_to_rad(120.0))
 		"fly":
-			var k := clampf(_fly_t/0.25,0.0,1.0)
+			var k := clampf(_fly_t/0.15,0.0,1.0)
 			CarryHost._turn_bone(sk,arm,r,deg_to_rad(lerpf(120.0,60.0,k)))
 		"caught", "drag", "reel", "seated":
 			CarryHost._turn_bone(sk,arm,r,deg_to_rad(45.0))
@@ -1482,7 +1542,7 @@ func _climb_hands(sk: Skeleton3D) -> void:
 		var fore := sk.find_bone(names[1])
 		var hand := sk.find_bone(names[2])
 		if upper < 0 or fore < 0 or hand < 0: return
-		var at := line_at(float(_hand_y[i]))+right*sd*HAND_SPREAD*s
+		var at := line_at(minf(float(_hand_y[i])+REACH_UP*s,edge.y-0.04*s))+right*sd*HAND_SPREAD*s
 		# The reaching hand comes off the rope a little as it passes.
 		if i == 1 and _pull_t > REACH_AT:
 			var r := (_pull_t-REACH_AT)/(1.0-REACH_AT)
@@ -1491,49 +1551,83 @@ func _climb_hands(sk: Skeleton3D) -> void:
 		var pole := (sk.global_basis.inverse()*pole_w).normalized()
 		CarryHost._two_bone(sk,upper,fore,hand,to_sk*at,pole,1.0)
 
-## Rappelling: the figure (in the hang's clip) leaned back off the wall
-## about its hips, set where the stance puts them; legs (two-bone IK) to
-## the wall, knees up and bent by how near the hips are; the lead hand up
-## the rope before his chest, the brake hand at his hip. Eased in by
-## `_stance_k` from the hang.
-func _rappel_pose(sk: Skeleton3D) -> void:
-	var fig: Node3D = study.get("figure")
+## Climbing: the feet pressed to the wall a little over his feet, one
+## higher than the other by which hand is on top, knees out.
+func _climb_feet(sk: Skeleton3D) -> void:
 	var motor: Variant = study.get("motor")
-	var hips := sk.find_bone("hips")
-	if fig == null or hips < 0: return
 	var s := _size()
-	var k := _stance_k*_stance_k*(3.0-2.0*_stance_k)
 	var leg := _leg()
 	var right := (-edge_out).cross(Vector3.UP).normalized()
-	# Leaned back about the hips, hips put over the motor's feet.
-	var hip_w := sk.global_transform*sk.get_bone_global_pose(hips).origin
-	var hip_up := hip_w.y-fig.global_position.y
-	var lean := deg_to_rad(LEAN)*k
-	if _hop_t >= HOP_CROUCH and _hop_t < HOP_LAND:
-		lean += deg_to_rad(8.0)*sin(PI*(_hop_t-HOP_CROUCH)/(HOP_LAND-HOP_CROUCH))*k
-	var tilt := Basis(Vector3.UP.cross(edge_out).normalized(),lean)
-	var feet: Vector3 = motor.feet
-	var want_hip := feet+Vector3.UP*lerpf(hip_up,leg*0.95,k)
-	fig.global_basis = tilt*fig.global_basis
-	hip_w = sk.global_transform*sk.get_bone_global_pose(hips).origin
-	fig.global_position += want_hip-hip_w
 	var to_sk := sk.global_transform.affine_inverse()
 	var to_sk_b := sk.global_basis.inverse()
-	# Feet on the wall under the hips.
-	var wall_y := want_hip.y-FOOT_DOWN*leg
+	var y0 := (motor.feet as Vector3).y+FOOT_UP*leg
+	if hauling or (motor.feet as Vector3).y > edge.y-float(motor.hang_drop)-0.2*s: return
 	for sd: float in [1.0,-1.0]:
 		var side := "R" if sd > 0.0 else "L"
 		var a := sk.find_bone("thigh."+side)
 		var b := sk.find_bone("shin."+side)
 		var c := sk.find_bone("foot."+side)
 		if a < 0 or b < 0 or c < 0: continue
-		var goal := Vector3(edge.x,wall_y,edge.z)+edge_out*0.06*s+right*sd*0.13*s
+		var up := 0.18*leg if sd == float(_hand_side[0]) else 0.0
+		var goal := Vector3(edge.x,y0+up,edge.z)+edge_out*0.06*s+right*sd*0.14*s
+		var pole := (to_sk_b*(Vector3.UP*0.8-edge_out*0.5+right*sd*0.4)).normalized()
+		CarryHost._two_bone(sk,a,b,c,to_sk*goal,pole,CLIMB_FEET)
+
+## The figure leaned back `lean` (rad) times `k` about its hips, the hips set
+## over the motor's feet (up his leg as `k` grows); the hips' world spot.
+func _lean_figure(sk: Skeleton3D, k: float, lean: float) -> Vector3:
+	var fig: Node3D = study.get("figure")
+	var motor: Variant = study.get("motor")
+	var hips := sk.find_bone("hips")
+	if fig == null or hips < 0: return Vector3.INF
+	var hip_w := sk.global_transform*sk.get_bone_global_pose(hips).origin
+	var hip_up := hip_w.y-fig.global_position.y
+	var tilt := Basis(Vector3.UP.cross(edge_out).normalized(),lean*k)
+	var want_hip := (motor.feet as Vector3)+Vector3.UP*lerpf(hip_up,_leg()*0.95,k)
+	fig.global_basis = tilt*fig.global_basis
+	hip_w = sk.global_transform*sk.get_bone_global_pose(hips).origin
+	fig.global_position += want_hip-hip_w
+	return want_hip
+
+## Rappelling: the figure (in the hang's clip) leaned back off the wall
+## about its hips, set where the stance puts them; legs (two-bone IK) to
+## the wall, knees up, walking down it as he lowers (each foot lifting in
+## turn, skimming at speed); the lead hand up the rope before his chest,
+## the brake hand at his hip. Eased in by `_stance_k` from the hang.
+func _rappel_pose(sk: Skeleton3D) -> void:
+	var hips := sk.find_bone("hips")
+	if hips < 0: return
+	var s := _size()
+	var k := _stance_k*_stance_k*(3.0-2.0*_stance_k)
+	var leg := _leg()
+	var right := (-edge_out).cross(Vector3.UP).normalized()
+	var lean := deg_to_rad(LEAN)
+	if _hop_t >= HOP_CROUCH and _hop_t < HOP_LAND:
+		lean += deg_to_rad(8.0)*sin(PI*(_hop_t-HOP_CROUCH)/(HOP_LAND-HOP_CROUCH))
+	# Faster, he sits back further into it.
+	lean += deg_to_rad(6.0)*clampf(_rap_v/(RAP_SPEED.y*s),0.0,1.0)
+	var want_hip := _lean_figure(sk,k,lean)
+	if want_hip == Vector3.INF: return
+	var to_sk := sk.global_transform.affine_inverse()
+	var to_sk_b := sk.global_basis.inverse()
+	# Feet on the wall under the hips, walking down it.
+	var wall_y := want_hip.y-FOOT_DOWN*leg
+	var walk := _walk_k()
+	for sd: float in [1.0,-1.0]:
+		var side := "R" if sd > 0.0 else "L"
+		var a := sk.find_bone("thigh."+side)
+		var b := sk.find_bone("shin."+side)
+		var c := sk.find_bone("foot."+side)
+		if a < 0 or b < 0 or c < 0: continue
+		var ph := _step*PI+(0.0 if sd > 0.0 else PI)
+		var lift := maxf(sin(ph),0.0)*walk
+		var goal := Vector3(edge.x,wall_y-cos(ph)*0.2*leg*walk,edge.z)+edge_out*(0.06*s+lift*RAP_LIFT*leg)+right*sd*0.13*s
 		var pole := (to_sk_b*(Vector3.UP*0.8-edge_out*0.6+right*sd*0.2)).normalized()
 		CarryHost._two_bone(sk,a,b,c,to_sk*goal,pole,k)
 	# The hands: the lead up the rope before his chest, the brake at the hip.
 	var chest := sk.find_bone("chest")
 	var chest_w := sk.global_transform*sk.get_bone_global_pose(chest if chest >= 0 else hips).origin
-	hip_w = sk.global_transform*sk.get_bone_global_pose(hips).origin
+	var hip_w := sk.global_transform*sk.get_bone_global_pose(hips).origin
 	guide_at = chest_w-edge_out*0.3*s+Vector3.UP*0.12*s
 	brake_at = hip_w+right*0.22*s+edge_out*0.12*s-Vector3.UP*0.04*s
 	var arms := [["upper_arm.L","forearm.L","hand.L",guide_at,-right*0.7+Vector3.DOWN*0.7],
@@ -1619,7 +1713,7 @@ func _size() -> float:
 	return float(study.get("motor").size)
 
 func _gravity() -> float:
-	return float(ProjectSettings.get_setting("physics/3d/default_gravity",9.8))
+	return float(ProjectSettings.get_setting("physics/3d/default_gravity",9.8))*HOOK_G
 
 ## The arc from `from` to `to` over a top AIM_RISE (plus AIM_RISE_M a metre
 ## across) above the higher end.
