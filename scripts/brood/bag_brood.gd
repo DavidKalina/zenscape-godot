@@ -28,7 +28,16 @@ extends "res://scripts/brood/brood_host.gd"
 ## burrow, the lead walking for it with the bag on his head, the rest round
 ## him under it, more joining on the way; pace by crew over kg. Bowled under
 ## BAG_KEEP of the crew they let it down; F by it takes it from them (the
-## bag frees itself). At the burrow they set it on the mouth.
+## bag frees itself). At the burrow it's buried.
+##
+## The burial: a bag or piece taken down into a burrow is buried there (the
+## bag's `bury`: hidden, out of reach), and GUARDS of its crew (GUARDS_BAG
+## for the bag) settle on the mouth. He comes near and they cling to him (a
+## jump shakes them); while any cling the spade won't dig (the study's
+## `dig_blocked`) and a dig under way stops. The burrow is a dig spot
+## (scripts/brood/burrow_digs.gd); dug, `dig_out` brings its whole pile up:
+## the bag hops out, the ripped pieces land round the mouth, and the guards
+## stand down.
 
 ## The burrows: Node3D, each at its mouth's floor.
 var burrows: Array = []
@@ -55,6 +64,16 @@ var bag_takes := 0
 var bag_homes := 0
 var _idle_t := 0.0
 var _lift_rest := 0.0
+## The burrow the bag is buried in ("" none); the guards (guy -> its
+## burrow); the burrow whose guards are after him now; pieces hopping out
+## of a dug burrow: {node, from, to, t, yaw}.
+var bag_in := ""
+var guard_of := {}
+var _guard_hole: Node3D = null
+var _pops: Array = []
+var burials := 0
+var digs_out := 0
+var dig_cuts := 0
 
 func setup_bag(host: Node3D, holes: Array) -> void:
 	setup(host)
@@ -73,12 +92,14 @@ func clear() -> void:
 		lift = {}
 		bag.haul_free()
 	_idle_t = 0.0
+	guard_of.clear()
+	_guard_hole = null
 	super.clear()
 	if bag != null: bag.set_slow(1.0)
 
 ## Where the bag is now: on him (worn, dragged) or where it lies.
 func bag_at() -> Vector3:
-	if bag == null: return Vector3.INF
+	if bag == null or bool(bag.buried): return Vector3.INF
 	if _on_him():
 		var m: Variant = _motor()
 		return m.feet if m != null else Vector3.INF
@@ -98,8 +119,14 @@ func _tick(delta: float) -> void:
 	var on_him: bool = _on_him() and float(bag.kg) > 0.0 and goal_override == Vector3.INF and m != null
 	var goal := goal_override
 	if goal == Vector3.INF: goal = bag_at()
-	if not on_him: _shake_all(Vector3.ZERO)
-	elif not bool(m.grounded) and float(m.velocity.y) > K.SHAKE_UP*K.s(): _shake_all(Vector3(m.velocity.x,0.0,m.velocity.z)*0.3)
+	# The bag buried: the rest trail him, off a way, while the guards keep it.
+	var trail: bool = goal == Vector3.INF and goal_override == Vector3.INF and bool(bag.buried) and m != null
+	if trail: goal = m.feet
+	var guarded := _guard_watch(m)
+	if not on_him and guarded == null: _shake_all(Vector3.ZERO)
+	elif m != null and not bool(m.grounded) and float(m.velocity.y) > K.SHAKE_UP*K.s(): _shake_all(Vector3(m.velocity.x,0.0,m.velocity.z)*0.3)
+	# A shaken guard stays down longer: long enough to dig.
+	for g: RefCounted in guard_of: if g.daze >= K.DAZE-0.001 and g.daze < K.GUARD_DAZE: g.daze = K.GUARD_DAZE
 	var used := {}
 	for g: RefCounted in guys: if g.state == "cling": used[g.slot] = true
 	_grace_t = maxf(_grace_t-dt,0.0)
@@ -112,6 +139,9 @@ func _tick(delta: float) -> void:
 	for i: int in guys.size():
 		var g: RefCounted = guys[i]
 		if g.state == "lost": continue
+		if guard_of.has(g):
+			_guard_step(g,i,m,guarded,used,space,dt)
+			continue
 		if busy.has(g):
 			var job: Dictionary = busy[g]
 			if g == job.crew[0]: g.step(space,(job.hole as Node3D).global_position,dt)
@@ -128,17 +158,24 @@ func _tick(delta: float) -> void:
 			elif used.size() >= K.GRAB_SLOTS or g.daze > 0.0:
 				to = goal+_ring(i)*K.CROWD_RING*K.s()
 		elif to != Vector3.INF and goal_override == Vector3.INF:
-			to = goal+_ring(i)*K.CROWD_RING*K.s()
+			to = goal+_ring(i)*(K.TRAIL_RING if trail else K.CROWD_RING)*K.s()
 		g.step(space,to,dt)
 	_cling_step(m,dt)
 	_strays_step(m,space,dt)
 	_lift_step(m,space,dt)
+	_pops_step(dt)
+	var dig: Variant = study.get("dig")
+	if clinging > 0 and dig != null and dig.motion != null:
+		dig.end_dig()
+		dig_cuts += 1
+		print("brood: grabbed mid-dig, the dig stops")
 
 ## The guys on a job (a stray's crew, the bag's): guy -> its job (crew, hole).
 func _busy() -> Dictionary:
 	var busy := {}
 	for st: Dictionary in strays: for g: RefCounted in st.crew: busy[g] = st
 	if not lift.is_empty(): for g: RefCounted in lift.crew: busy[g] = lift
+	for g: RefCounted in guard_of: busy[g] = {"guard":guard_of[g]}
 	return busy
 
 ## The clingers moved with him, his paces held back, the shove.
@@ -313,6 +350,8 @@ func _rip_haul(st: Dictionary, m: Variant, space: PhysicsDirectSpaceState3D, dt:
 		(buried[hole.name] as Array).append(p)
 		for g: RefCounted in crew: g.release()
 		strays.erase(st)
+		_settle_guards(hole,crew,K.GUARDS)
+		burials += 1
 		print("brood: %s taken down into %s (%d there)" % [p.id,hole.name,(buried[hole.name] as Array).size()])
 
 ## His runs into a crew (faster than RIP_HIT_SPEED, or coming down on them)
@@ -393,7 +432,7 @@ func _lift_watch(m: Variant, dt: float) -> void:
 			bag_takes += 1
 			print("brood: he took the bag back from them")
 		return
-	var left: bool = m != null and bag.state == "ground" and str(bag.act) == "" and float(bag.kg) > 0.0 and _lift_rest <= 0.0
+	var left: bool = m != null and not bool(bag.buried) and bag.state == "ground" and str(bag.act) == "" and float(bag.kg) > 0.0 and _lift_rest <= 0.0
 	if left:
 		var at: Vector3 = (bag.loose as Node3D).global_position
 		var off := Vector2(at.x-m.feet.x,at.z-m.feet.z).length()-_bag_r()
@@ -489,12 +528,15 @@ func _lift_step(m: Variant, space: PhysicsDirectSpaceState3D, dt: float) -> void
 		return
 	if Vector2(lead.feet.x-h.x,lead.feet.z-h.z).length() < K.HOME_NEAR*K.s() and absf(float(lead.feet.y)-h.y) < float(tall)*1.5:
 		bag.haul_place(h+Vector3.UP*r,float(bag._rest_yaw))
+		bag.bury()
+		bag_in = str(hole.name)
 		for g: RefCounted in crew: g.release()
 		lift = {}
-		bag.haul_free()
+		_settle_guards(hole,crew,K.GUARDS_BAG)
 		_idle_t = 0.0
 		bag_homes += 1
-		print("brood: set the bag on %s's mouth" % hole.name)
+		burials += 1
+		print("brood: buried the bag (%.1f kg) in %s" % [float(bag.kg),hole.name])
 
 ## Let down where it is; none lifts it for BAG_REST s.
 func _lift_down() -> void:
@@ -526,3 +568,103 @@ func wake_burrows() -> void:
 		var wait := float(turn)*K.BURROW_STAGGER+_rng.randf()*K.WAKE_JITTER+float(i % holes.size())*K.WAKE_STAGGER
 		g.rise_at(hole.global_position,wait,K.WAKE_HOLD*_rng.randf_range(0.5,1.5))
 	print("brood: woke %d out of %d burrows (nearest %.1f m)" % [count,holes.size(),(holes[0] as Node3D).global_position.distance_to(from)])
+
+# --- The burial: guards, and the dig ----------------------------------------------------
+
+## Up to `n` guards on `hole`, from `crew` (who brought it).
+func _settle_guards(hole: Node3D, crew: Array, n: int) -> void:
+	var have := 0
+	for g: RefCounted in guard_of: if guard_of[g] == hole: have += 1
+	for g: RefCounted in crew:
+		if have >= n: break
+		if guard_of.has(g) or g.state == "lost": continue
+		guard_of[g] = hole
+		have += 1
+	print("brood: %d guarding %s" % [have,hole.name])
+
+## The guarded burrow he's at (within GUARD_NEAR of its mouth, held till
+## he's GUARD_LEAVE off), or null.
+func _guard_watch(m: Variant) -> Node3D:
+	if m == null or guard_of.is_empty():
+		_guard_hole = null
+		return null
+	var feet: Vector3 = m.feet
+	if _guard_hole != null:
+		var h := _guard_hole.global_position
+		if not guard_of.values().has(_guard_hole) or Vector2(h.x-feet.x,h.z-feet.z).length() > K.GUARD_LEAVE*K.s():
+			_guard_hole = null
+	if _guard_hole == null:
+		for hole: Variant in guard_of.values():
+			var h: Vector3 = (hole as Node3D).global_position
+			if Vector2(h.x-feet.x,h.z-feet.z).length() < K.GUARD_NEAR*K.s() and absf(h.y-feet.y) < 2.0*K.s():
+				_guard_hole = hole
+				print("brood: he's at %s; its guards come for him" % _guard_hole.name)
+				break
+	return _guard_hole
+
+## A guard: round its burrow's mouth, or at him while he's at it.
+func _guard_step(g: RefCounted, i: int, m: Variant, guarded: Node3D, used: Dictionary, space: PhysicsDirectSpaceState3D, dt: float) -> void:
+	var hole: Node3D = guard_of[g]
+	var to := hole.global_position+_ring(i)*K.GUARD_RING*K.s()
+	if hole == guarded:
+		to = m.feet
+		if g.state == "walk" and g.daze <= 0.0 and _grace_t <= 0.0 and bool(m.grounded) and used.size() < K.GRAB_SLOTS and _in_grab(g,m.feet):
+			g.slot = _free_slot(used)
+			used[g.slot] = true
+			g.cling_at(m.feet,Vector3.BACK)
+	g.step(space,to,dt)
+
+func _hole_named(called: String) -> Node3D:
+	for b: Variant in burrows:
+		if is_instance_valid(b) and str((b as Node3D).name) == called: return b
+	return null
+
+## Something buried in burrow `called` (the bag, or pieces)?
+func has_pile(called: String) -> bool:
+	return bag_in == called or not (buried.get(called,[]) as Array).is_empty()
+
+## Burrow `called` dug open (the dig's second bite at `at`): the bag hops
+## out toward him, the pieces land round the mouth, the guards stand down.
+func dig_out(called: String, at: Vector3) -> void:
+	var hole := _hole_named(called)
+	if hole == null: return
+	var h := hole.global_position
+	var m: Variant = _motor()
+	var toward := Vector3.BACK
+	if m != null:
+		var off: Vector3 = (m.feet as Vector3)-h
+		off.y = 0.0
+		if off.length() > 0.05: toward = off.normalized()
+	var what: Array = []
+	if bag_in == called:
+		bag.unbury(h+Vector3.UP*(_bag_r()+0.3*K.s()),(toward*0.5+Vector3.UP)*K.PILE_HOP*K.s())
+		bag_in = ""
+		what.append("the bag")
+	var pieces: Array = buried.get(called,[])
+	var space := get_world_3d().direct_space_state
+	for k: int in pieces.size():
+		var p: Dictionary = pieces[k]
+		p["buried"] = false
+		var node: Node3D = p.node
+		node.visible = true
+		var a := atan2(toward.x,toward.z)+PI*0.5+PI*float(k+1)/float(pieces.size()+1)
+		var to := h+Vector3(sin(a),0.0,cos(a))*K.PILE_OUT*K.s()
+		var hit := _ray(space,to+Vector3.UP*0.8*K.s(),to+Vector3.DOWN*2.0*K.s())
+		if not hit.is_empty(): to = hit.position
+		_pops.append({"node":node,"from":h,"to":to,"t":0.0,"yaw":_rng.randf()*TAU})
+		what.append(str(p.id))
+	buried.erase(called)
+	for g: RefCounted in guard_of.keys():
+		if guard_of[g] == hole: guard_of.erase(g)
+	if _guard_hole == hole: _guard_hole = null
+	digs_out += 1
+	print("brood: dug out %s: %s" % [called,", ".join(what)])
+
+## The dug pieces hopping out of the mouth onto the floor round it.
+func _pops_step(dt: float) -> void:
+	for pp: Dictionary in _pops.duplicate():
+		pp.t = float(pp.t)+dt
+		var k := clampf(float(pp.t)/K.PILE_POP,0.0,1.0)
+		var at: Vector3 = (pp.from as Vector3).lerp(pp.to,k)+Vector3.UP*0.7*K.s()*sin(PI*k)
+		(pp.node as Node3D).global_transform = Transform3D(Basis(Vector3.UP,float(pp.yaw)+k*5.0),at)
+		if k >= 1.0: _pops.erase(pp)

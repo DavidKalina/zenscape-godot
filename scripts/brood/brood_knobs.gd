@@ -111,8 +111,7 @@ const RIP_REST := 1.5
 ## than BAG_PACE_LEAST: a few strain and inch along, more speed it up. He
 ## knocks haulers off past RIP_HIT_SPEED; under BAG_KEEP of the full crew
 ## left they let it down, and none lifts it for BAG_REST s. F by it takes
-## it from them. At the burrow (HOME_NEAR) they set it on the mouth (the
-## burial is the next step).
+## it from them. At the burrow (HOME_NEAR) it's buried there.
 const BAG_IDLE := 3.0
 const BAG_LEFT := 2.5
 const BAG_KG_EACH := 3.0
@@ -122,6 +121,30 @@ const BAG_PACE := Vector2(0.32,0.14)
 const BAG_PACE_LEAST := 0.08
 const BAG_KEEP := 0.6
 const BAG_REST := 2.0
+
+## The burial: a bag or a piece taken down into a burrow is buried there,
+## and the burrow is a dig spot (scripts/brood/burrow_digs.gd: a bite within
+## DIG_REACH m of its mouth). GUARDS of the crew that brought a piece
+## (GUARDS_BAG for the bag) settle on it, GUARD_RING out round the mouth.
+## He comes within GUARD_NEAR (m, across) of the mouth and they go for him
+## and cling (a jump shakes them off, dazed GUARD_DAZE s: long enough to
+## dig, landing and all); while any cling the spade
+## won't dig, and a dig under way is cut short. Past GUARD_LEAVE they go
+## back to it. Dug out (the dig's second bite), the pile comes up: the bag
+## hops out PILE_HOP m/s, the pieces land PILE_OUT m round the mouth, and
+## the guards are guards no more.
+const GUARDS := 1
+const GUARDS_BAG := 2
+const GUARD_RING := 0.9
+const GUARD_NEAR := 3.0
+const GUARD_LEAVE := 5.0
+const GUARD_DAZE := 2.6
+## The bag buried, the rest trail him TRAIL_RING m off (no clinging).
+const TRAIL_RING := 2.6
+const DIG_REACH := 1.5
+const PILE_OUT := 1.1
+const PILE_HOP := 2.5
+const PILE_POP := 0.45
 
 ## Grab and shove: a guy within GRAB_REACH (m, across; and no more than
 ## GRAB_RISE of his own height above or below the feet) of whoever holds a

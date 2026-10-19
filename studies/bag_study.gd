@@ -21,6 +21,8 @@ const DevKeys = preload("res://scripts/kit_isle/dev_keys.gd")
 const LootBag = preload("res://scripts/carry/loot_bag.gd")
 const BagBrood = preload("res://scripts/brood/bag_brood.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const Dig = preload("res://scripts/dig/dig.gd")
+const BurrowDigs = preload("res://scripts/brood/burrow_digs.gd")
 
 const SCENE_ID := "bag_study"
 ## The two floors (x, z) and their tops.
@@ -103,6 +105,11 @@ var bag: Node3D
 ## (scripts/brood/bag_brood.gd; null with --no-brood).
 var burrows: Array = []
 var brood: Node3D = null
+## The spade and the dig (scripts/dig/dig.gd): the spade lies near the
+## start (`bag_study/spade`); the dig spots are the burrows with something
+## buried in them (scripts/brood/burrow_digs.gd).
+var dig: Node3D = null
+const SPADE_FROM_START := Vector3(-1.6,0.0,-1.2)
 ## Never in a plane here (the world view and the carry ask).
 var flying := false
 
@@ -145,6 +152,9 @@ func _build_room() -> void:
 		brood = BagBrood.new()
 		add_child(brood)
 		brood.setup_bag(self,burrows)
+	dig = Dig.new()
+	add_child(dig)
+	dig.setup(self,{"spade":"%s/spade" % SCENE_ID,"from_start":SPADE_FROM_START,"spots":BurrowDigs.new()})
 	if DevKeys.enabled():
 		var editor: Node = preload("res://scripts/layout_edit.gd").new()
 		editor.name = "LayoutEdit"
@@ -355,6 +365,10 @@ func loot_kg() -> float:
 	for l: Dictionary in loot: kg += float(l.kg)
 	return kg
 
+## The spade won't dig with the brood hanging on him.
+func dig_blocked() -> bool:
+	return brood != null and int(brood.clinging) > 0
+
 ## Dragging, the bag holds him to its rope (scripts/carry/loot_bag.gd).
 ## Aiming a throw, the stick moves the reticle, not him.
 func _want(delta: float) -> Vector2:
@@ -397,4 +411,4 @@ func _sync_figure() -> void:
 	super._sync_figure()
 
 func _hint_text() -> String:
-	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · hold LMB or T (pad RT) worn: aim a throw, let go to throw (8 kg or under) · V (pad right) by it: shove it · the stone brood wakes out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off; clingers rip pieces out and carry them to a burrow: bowl into the crew or E by the piece to take it back · leave the bag lying a few s and a crew sized to its kg hauls it off to a burrow: bowl into them or F by it · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · hold LMB or T (pad RT) worn: aim a throw, let go to throw (8 kg or under) · V (pad right) by it: shove it · the stone brood wakes out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off; clingers rip pieces out and carry them to a burrow: bowl into the crew or E by the piece to take it back · leave the bag lying a few s and a crew sized to its kg hauls it off to a burrow: bowl into them or F by it · a bag or piece reaching a burrow is buried there, a guard or two on it: take the spade (lying by the start), shake the guards off and G (pad Y) by the burrow digs it all out · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"

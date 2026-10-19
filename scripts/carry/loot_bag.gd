@@ -211,6 +211,9 @@ var _rope: MeshInstance3D
 ## Carried off by the stone brood (scripts/brood/bag_brood.gd): still "ground"
 ## but held where they put it (frozen, no collider); F or V by it frees it first.
 var hauled := false
+## Buried in a burrow by the brood: hauled, hidden, out of his reach till
+## dug out (`unbury`).
+var buried := false
 
 var _base := {}
 var _sack: Node3D
@@ -528,6 +531,21 @@ func haul_free(v := Vector3.ZERO) -> void:
 	loose.sleeping = false
 	loose.linear_velocity = v
 
+## Taken down into a burrow: held, hidden, out of reach.
+func bury() -> void:
+	if not hauled: haul_hold()
+	buried = true
+	_sack.visible = false
+
+## Dug out: shown again at `at` (its middle), a body falling from there
+## with `v`.
+func unbury(at: Vector3, v := Vector3.ZERO) -> void:
+	if not buried: return
+	buried = false
+	_sack.visible = true
+	loose.global_position = at
+	haul_free(v)
+
 ## Empties it: every piece back on its spot.
 func empty() -> void:
 	stowing = {}
@@ -591,6 +609,7 @@ func _on_foot() -> bool:
 
 ## Is the bag on the ground (or in his hand) within his reach?
 func bag_near() -> bool:
+	if buried: return false
 	if state == "worn" or state == "roll" or state == "fly": return false
 	if state == "drag": return true
 	var motor: Variant = study.get("motor")

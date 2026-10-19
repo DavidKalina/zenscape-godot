@@ -59,16 +59,23 @@ var dug := {"soil":0,"stone":0}
 ## How far ahead of his feet the blade bites (m, times his size).
 const BITE_AHEAD := 0.52
 
-func setup(scene: Node3D) -> void:
+## `opts` (all optional, for a scene other than the cluster): "spade", the
+## spade's placement name; "from_start", where it lies from the start;
+## "spots", a node standing in for DigSpots (setup(host, fx, size),
+## near(at), reveal(spot, at), cut_at(...), re_deal(seed), and optionally
+## soil_at(at): ground it makes diggable). The host may also have
+## `dig_blocked()`: true, the spade won't dig.
+func setup(scene: Node3D, opts := {}) -> void:
 	host = scene
 	name = "Dig"
 	var start: Vector3 = host.get("start")
-	var coded := Transform3D(Basis(Vector3.UP,SPADE_YAW),start+SPADE_FROM_START)
+	var spade_name := str(opts.get("spade",SPADE_NAME))
+	var coded := Transform3D(Basis(Vector3.UP,SPADE_YAW),start+(opts.get("from_start",SPADE_FROM_START) as Vector3))
 	spade_holder = Node3D.new()
 	spade_holder.name = "SpadeSpot"
 	add_child(spade_holder)
-	spade_holder.global_transform = LayoutOverrides.xform(SPADE_NAME,coded)
-	LayoutOverrides.track(SPADE_NAME,spade_holder,"token",coded)
+	spade_holder.global_transform = LayoutOverrides.xform(spade_name,coded)
+	LayoutOverrides.track(spade_name,spade_holder,"token",coded)
 	spade_lying = SpadeFigure.new()
 	spade_holder.add_child(spade_lying)
 	spade_hand = SpadeFigure.new()
@@ -79,7 +86,7 @@ func setup(scene: Node3D) -> void:
 	fx = DigFx.new()
 	fx.size = _scale()
 	add_child(fx)
-	spots = DigSpots.new()
+	spots = opts.get("spots") if opts.get("spots") != null else DigSpots.new()
 	add_child(spots)
 	spots.setup(host,fx,_scale())
 	lay_spade()
@@ -180,6 +187,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## wading or in the air, with the spade.
 func can_dig() -> bool:
 	if not has_spade() or host == null or bool(host.get("flying")) or not bool(host.get("walk_ready")): return false
+	if host.has_method("dig_blocked") and bool(host.dig_blocked()): return false
 	var motor: Variant = host.get("motor")
 	if not motor.grounded or motor.hold != "" or motor.swimming or float(motor.wade) > 0.02: return false
 	var carry: Variant = host.get("carry")
@@ -209,6 +217,7 @@ func ground_ahead() -> Dictionary:
 		elif _turf_under_piece(hit,at): kind = "soil"
 	elif hit.collider is CollisionObject3D and ((hit.collider as CollisionObject3D).collision_layer & (1 << 11)) != 0:
 		kind = "soil"
+	if kind != "" and spots != null and spots.has_method("soil_at") and bool(spots.soil_at(at)): kind = "soil"
 	return {"at":at,"normal":hit.normal,"kind":kind}
 
 ## The turf itself where the isle's sound reads stone only because a piece
