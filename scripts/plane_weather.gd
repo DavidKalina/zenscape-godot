@@ -40,6 +40,7 @@ const SkyCurrents = preload("res://scripts/sky_currents.gd")
 const PlaneLightning = preload("res://scripts/plane_lightning.gd")
 const StormFront = preload("res://scripts/storm_front.gd")
 const StormCells = preload("res://scripts/storm_cells.gd")
+const DragonSightings = preload("res://scripts/dragon_sightings.gd")
 
 const STORM_WIND := 6.0
 const TURB_PITCH := 0.35
@@ -111,6 +112,8 @@ var front: Node3D
 var _front_eased := false
 ## The storm cell (scripts/storm_cells.gd, `send_cell`).
 var cells: Node3D
+## The dragon seen in the lightning (scripts/dragon_sightings.gd).
+var sightings: Node3D
 ## The gust under way ({} none): its side (a unit vector, flat), its
 ## strength's share, its time and length, and its signs.
 var _gust := {}
@@ -170,6 +173,9 @@ func setup(scene: Node3D) -> void:
 	add_child(cells)
 	cells.setup(scene)
 	cells.lightning = lightning
+	sightings = DragonSightings.new()
+	add_child(sightings)
+	sightings.setup(scene,self)
 	# `--front=<m>`: one already in, its leading edge that far off, coming
 	# from ahead of the start (north, -z) unless `--front-toward=<rad>`.
 	for arg in preload("res://scripts/launch_args.gd").user_args():
@@ -330,6 +336,7 @@ func step(delta: float) -> void:
 		var every := lerpf(GUST_EVERY,STORM_GUST_EVERY,storm)
 		_next_gust = _rng.randf_range(0.5,1.5)*every
 	lightning.step(delta,storm)
+	sightings.step(delta)
 
 ## The storm's look over the sky the celestial rig has just set.
 func grade() -> void:
