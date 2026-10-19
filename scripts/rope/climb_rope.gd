@@ -13,6 +13,13 @@ extends Node3D
 ## and hooked over it (state "caught"; the tug, task 3, seats it). With no
 ## hold it slides off the lip and falls; a blocked arc knocks it down.
 ##
+## Tug: `walk_tug` (E / pad B) on a caught hook: he reaches up the rope
+## and yanks it back. A good hold (a post, a solid lip) seats: the rope goes
+## taut and it clicks (state "seated", `tested`). A crumbly lip can be a bad
+## placement (`bad`, rolled at the catch): the tug pulls the hook back over
+## the lip in a spill of grit and it falls. Left untested, a bad hook seems
+## caught; it gives under his weight partway up (the climb, task 4).
+##
 ## Reel: `walk_reel` (F / pad down) draws the rope in. A caught hook is
 ## flicked free off its lip first, falls, then is dragged in along the
 ## ground till it's coiled at his side.
@@ -56,6 +63,18 @@ const BOUNCE := 0.3
 ## Reeling in: its pace along the ground (m/s) and the flick off a lip.
 const REEL_SPEED := 6.0
 const FLICK := Vector2(1.6,1.4)
+## The tug: reaching up the rope, the yank back, the hold before it settles
+## (s); a crumbly lip's chance of being a bad placement; the slip back over
+## the lip (s).
+const TUG_REACH := 0.2
+const TUG_YANK := 0.12
+const TUG_HOLD := 0.35
+const POOR_BAD := 0.5
+const SLIP_TIME := 0.3
+## Grit off a crumbly lip: bits, their life (s).
+const GRIT := 7
+const GRIT_LIFE := 1.4
+const GRIT_COLOUR := Color(0.78,0.66,0.46)
 ## Coiled again within this of his feet (m).
 const COILED := 0.7
 ## The rope's look.
@@ -69,7 +88,8 @@ const LINE_TIME := 2.5
 
 var study: Node3D
 ## "coiled" (at his side), "aim", "fly", "drag" (pulled back to the lip),
-## "caught", "slide" (off a smooth top), "fall", "down", "reel".
+## "caught", "tug", "seated", "slip" (pulled off by the tug), "slide" (off
+## a smooth top), "fall", "down", "reel".
 var state := "coiled"
 ## Where the hook is, and where it sits once caught.
 var hook_at := Vector3.ZERO
@@ -79,6 +99,13 @@ var lip_out := Vector3.ZERO
 ## The hold it caught on ("solid", "poor", "anchor"; "" none) and its piece.
 var hold := ""
 var piece := ""
+## Tugged and seated (a seated hook holds his weight).
+var tested := false
+## A bad placement on a crumbly lip: the tug pulls it off; untested, it gives
+## under his weight.
+var bad := false
+## Drivers: -1 rolls `bad` at the catch, 0 never, 1 always (poor holds only).
+var force_bad := -1
 ## The aim: the reticle (the target the arc ends at), its lip, hold, piece,
 ## whether it'll catch and why not, the arc.
 var aim_at := Vector3.INF
@@ -96,12 +123,22 @@ var throws := 0
 var catches := 0
 var misses := 0
 var reels := 0
+var tugs := 0
+var seats := 0
+var slips := 0
 ## Drivers: aim as though the button were held (`release` lets go).
 var hold_aim := false
 
 var _aim := Vector2.ZERO
 var _throw_was := false
 var _reel_was := false
+var _tug_was := false
+var _tug_t := 0.0
+var _tug_paid := 0.0
+var _tug_said := false
+var _grit: Array[Dictionary] = []
+var _grit_mat: StandardMaterial3D
+var _click: AudioStreamPlayer3D
 var _vel := Vector3.ZERO
 var _from := Vector3.ZERO
 var _fly_t := 0.0
@@ -193,6 +230,13 @@ func setup(host: Node3D) -> void:
 	_clink.stream = _clink_sound()
 	_clink.top_level = true
 	add_child(_clink)
+	_click = AudioStreamPlayer3D.new()
+	_click.stream = _click_sound()
+	_click.top_level = true
+	add_child(_click)
+	_grit_mat = StandardMaterial3D.new()
+	_grit_mat.albedo_color = GRIT_COLOUR
+	_grit_mat.roughness = 1.0
 	reset()
 
 ## Coiled at his side, nothing out.
@@ -201,6 +245,8 @@ func reset() -> void:
 	hold = ""
 	piece = ""
 	lip = Vector3.INF
+	tested = false
+	bad = false
 	paid = 0.0
 	hold_aim = false
 	_reel_after = false
@@ -218,16 +264,20 @@ func out() -> bool:
 func _read_input() -> void:
 	var throw_down := Input.is_action_pressed(&"walk_throw")
 	var reel_down := Input.is_action_pressed(&"walk_reel")
+	var tug_down := Input.is_action_pressed(&"walk_tug")
 	var throw_hit := throw_down and not _throw_was
 	var reel_hit := reel_down and not _reel_was
+	var tug_hit := tug_down and not _tug_was
 	_throw_was = throw_down
 	_reel_was = reel_down
+	_tug_was = tug_down
 	if _busy(): return
 	if throw_hit:
 		if state == "coiled":
 			if _on_foot(): aim()
 		elif out(): _say("Reel it in first (%s)" % Pad.pick("F","D-pad down"))
 	if reel_hit: reel()
+	if tug_hit: tug()
 
 func _busy() -> bool:
 	if study == null or not bool(study.get("walk_ready")): return true
@@ -399,17 +449,104 @@ func _post_top(post: Node3D) -> Vector3:
 			h = ((c as CollisionShape3D).shape as CylinderShape3D).height
 	return post.global_transform*Vector3(0.0,h*0.5,0.0)
 
+# --- The tug ---------------------------------------------------------------------------
+
+## A caught (or seated) hook: he reaches up the rope and yanks it.
+func tug() -> void:
+	if state != "caught" and state != "seated": return
+	if not _on_foot():
+		_say("Feet on the ground to tug")
+		return
+	tugs += 1
+	state = "tug"
+	_tug_t = 0.0
+	_tug_paid = paid
+	_tug_said = false
+
+func _tug_step(delta: float) -> void:
+	_tug_t += delta
+	var motor: Variant = study.get("motor")
+	var feet: Vector3 = motor.feet
+	var d := Vector2(lip.x-feet.x,lip.z-feet.z)
+	if d.length() > 0.2: motor.facing = PilotMotor.facing_of(d.normalized())
+	var span := _hand().distance_to(hook_at)
+	# The slack taken in as he reaches and yanks.
+	var k := clampf(_tug_t/(TUG_REACH+TUG_YANK),0.0,1.0)
+	paid = lerpf(maxf(_tug_paid,span),span,k*k)
+	if _tug_t < TUG_REACH+TUG_YANK: return
+	if not _tug_said:
+		_tug_said = true
+		tested = true
+		if bad:
+			slips += 1
+			state = "slip"
+			_slide_from = hook_at
+			_fly_t = 0.0
+			_spill_grit()
+			_clank()
+			_say("It slipped: the lip crumbled")
+			return
+		seats += 1
+		_click_play()
+		_say("Seated: %s" % ("round the post" if hold == "anchor" else "safe to climb"))
+	if _tug_t >= TUG_REACH+TUG_YANK+TUG_HOLD: state = "seated"
+
+## Pulled back over the crumbling lip, then off it.
+func _slip_step(delta: float) -> void:
+	_fly_t += delta
+	var s := _size()
+	var k := clampf(_fly_t/SLIP_TIME,0.0,1.0)
+	hook_at = _slide_from+lip_out*0.25*s*k*k+Vector3.DOWN*0.06*s*k
+	paid = _hand().distance_to(hook_at)
+	if k < 1.0: return
+	_vel = lip_out*1.4*s+Vector3.UP*0.4*s
+	state = "fall"
+
+## Grit off the lip where the hook tore out.
+func _spill_grit() -> void:
+	var s := _size()
+	for i in GRIT:
+		var m := MeshInstance3D.new()
+		var b := BoxMesh.new()
+		var e := randf_range(0.05,0.11)*s
+		b.size = Vector3(e,e*0.8,e)
+		m.mesh = b
+		m.material_override = _grit_mat
+		m.top_level = true
+		add_child(m)
+		var side := lip_out.cross(Vector3.UP).normalized()
+		m.global_position = lip+side*randf_range(-0.25,0.25)*s+Vector3.DOWN*0.05*s
+		m.rotation = Vector3(randf()*TAU,randf()*TAU,0.0)
+		var v := lip_out*randf_range(0.5,1.6)*s+side*randf_range(-0.6,0.6)*s+Vector3.UP*randf_range(0.0,1.2)*s
+		_grit.append({"node":m,"vel":v,"t":0.0,"spin":Vector3(randf_range(-8,8),randf_range(-8,8),0.0)})
+
+func _grit_step(delta: float) -> void:
+	var g := _gravity()
+	for i in range(_grit.size()-1,-1,-1):
+		var b: Dictionary = _grit[i]
+		var m: MeshInstance3D = b.node
+		b.t = float(b.t)+delta
+		if float(b.t) > GRIT_LIFE:
+			m.queue_free()
+			_grit.remove_at(i)
+			continue
+		b.vel = (b.vel as Vector3)+Vector3.DOWN*g*delta
+		var floor_y := float(study.get("lost"))
+		m.global_position += (b.vel as Vector3)*delta
+		m.rotation += (b.spin as Vector3)*delta
+		if m.global_position.y < floor_y: b.t = GRIT_LIFE
+
 # --- Reeling in -------------------------------------------------------------------------
 
 ## Draws the rope in: a caught hook flicked off its lip first.
 func reel() -> void:
 	match state:
-		"caught", "drag":
+		"caught", "drag", "tug", "seated":
 			reels += 1
 			_flick()
 			_reel_after = true
 			_say("Flicked free")
-		"fall", "slide", "fly":
+		"fall", "slide", "fly", "slip":
 			reels += 1
 			_reel_after = true
 		"down":
@@ -435,6 +572,9 @@ func _process(delta: float) -> void:
 		"slide": _slide_step(delta)
 		"fall": _fall_step(delta)
 		"reel": _reel_step(delta)
+		"tug": _tug_step(delta)
+		"slip": _slip_step(delta)
+	if not _grit.is_empty(): _grit_step(delta)
 	_arm_pose()
 	_draw_rope()
 	_place_hook()
@@ -507,9 +647,11 @@ func _drag_step(delta: float) -> void:
 	if k < 1.0: return
 	state = "caught"
 	catches += 1
+	tested = false
+	bad = hold == "poor" and (force_bad == 1 or (force_bad < 0 and randf() < POOR_BAD))
 	paid = _hand().distance_to(lip)+0.3*_size()
 	_clank()
-	_say("Caught (%s)" % {"solid":"a solid lip","poor":"a crumbly lip","anchor":"a post"}.get(hold,hold))
+	_say("Caught (%s). %s tugs it" % [{"solid":"a solid lip","poor":"a crumbly lip","anchor":"a post"}.get(hold,hold),Pad.pick("E","B")])
 
 ## Off a smooth top: dragged to the lip and over it.
 func _slide_step(delta: float) -> void:
@@ -624,7 +766,7 @@ func _place_hook() -> void:
 			if v.length() > 0.1: up = -v.normalized()
 		"aim":
 			up = (_hand()-hook_at).normalized() if _hand().distance_to(hook_at) > 0.05 else Vector3.UP
-		"caught", "drag":
+		"caught", "drag", "tug", "seated", "slip":
 			if hold == "anchor":
 				var pull := _hand()-hook_at
 				up = pull.normalized() if pull.length() > 0.05 else Vector3.UP
@@ -655,6 +797,7 @@ func _draw_rope() -> void:
 	var d := a.distance_to(b)
 	if state == "aim": paid = d
 	elif state == "caught": paid = maxf(paid,d)
+	elif state == "seated": paid = d+0.02*s
 	var slack := maxf(paid-d,0.0)
 	var sag := sqrt(3.0*d*slack/8.0) if d > 0.01 else 0.0
 	var space := get_world_3d().direct_space_state
@@ -693,8 +836,35 @@ func _arm_pose() -> void:
 		"fly":
 			var k := clampf(_fly_t/0.25,0.0,1.0)
 			CarryHost._turn_bone(sk,arm,r,deg_to_rad(lerpf(120.0,60.0,k)))
-		"caught", "drag", "reel":
+		"caught", "drag", "reel", "seated":
 			CarryHost._turn_bone(sk,arm,r,deg_to_rad(45.0))
+		"tug":
+			_tug_pose(sk,arm,r)
+
+## The tug: both hands reach up the rope (leaning in), then yank it down to
+## his chest (leaning back), held there; the slip throws him back a touch more.
+func _tug_pose(sk: Skeleton3D, arm: int, r: Vector3) -> void:
+	var up_a := 45.0
+	var lean := 0.0
+	if _tug_t < TUG_REACH:
+		var k := _tug_t/TUG_REACH
+		k = k*k*(3.0-2.0*k)
+		up_a = lerpf(45.0,150.0,k)
+		lean = lerpf(0.0,-14.0,k)
+	elif _tug_t < TUG_REACH+TUG_YANK:
+		var k := (_tug_t-TUG_REACH)/TUG_YANK
+		k = 1.0-(1.0-k)*(1.0-k)
+		up_a = lerpf(150.0,10.0,k)
+		lean = lerpf(-14.0,26.0,k)
+	else:
+		var k := clampf((_tug_t-TUG_REACH-TUG_YANK)/TUG_HOLD,0.0,1.0)
+		up_a = lerpf(10.0,40.0,k*k)
+		lean = lerpf(26.0,4.0,k*k)
+	CarryHost._turn_bone(sk,arm,r,deg_to_rad(up_a))
+	var left := sk.find_bone("upper_arm.L")
+	if left >= 0: CarryHost._turn_bone(sk,left,r,deg_to_rad(up_a-8.0))
+	var chest := sk.find_bone("chest")
+	if chest >= 0: CarryHost._turn_bone(sk,chest,r,deg_to_rad(lean))
 
 ## The reticle (a ring at the target) and the arc's dots, gold or red.
 func _show_aim(on: bool) -> void:
@@ -729,6 +899,30 @@ static func _clink_sound() -> AudioStreamWAV:
 		var t := float(i)/rate
 		var v := (sin(TAU*2400.0*t)*0.5+sin(TAU*3700.0*t)*0.3+sin(TAU*1300.0*t)*0.2)*exp(-t*28.0)
 		data.encode_s16(i*2,int(clampf(v,-1.0,1.0)*20000.0))
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = rate
+	w.data = data
+	return w
+
+func _click_play() -> void:
+	_click.global_position = hook_at
+	_click.play()
+
+## The seat: a sharp, dry double click, made up.
+static func _click_sound() -> AudioStreamWAV:
+	var rate := 22050
+	var n := int(rate*0.14)
+	var data := PackedByteArray()
+	data.resize(n*2)
+	for i in n:
+		var t := float(i)/rate
+		var v := 0.0
+		for at: float in [0.0,0.055]:
+			if t >= at:
+				var u := t-at
+				v += (sin(TAU*4200.0*u)*0.6+sin(TAU*1900.0*u)*0.4)*exp(-u*90.0)
+		data.encode_s16(i*2,int(clampf(v,-1.0,1.0)*22000.0))
 	var w := AudioStreamWAV.new()
 	w.format = AudioStreamWAV.FORMAT_16_BITS
 	w.mix_rate = rate

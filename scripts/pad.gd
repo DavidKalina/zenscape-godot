@@ -73,6 +73,9 @@ const ACTIONS := {
 	# In the rope study, pressed: reel the rope in (a caught hook flicked
 	# free first; scripts/rope/climb_rope.gd).
 	"walk_reel":[["key",KEY_F],["button",JOY_BUTTON_DPAD_DOWN]],
+	# In the rope study, pressed with the hook caught: tug it to seat it (or
+	# see it slip). Shares E / B with walk_carry; the room has no carry.
+	"walk_tug":[["key",KEY_E],["button",JOY_BUTTON_B]],
 	# On foot with the loot bag on his back, held: aim a throw (a reticle
 	# where it lands); released, it's thrown there. RT is free on the ground
 	# (it's the dive in a fall, the zoom in the telescope).

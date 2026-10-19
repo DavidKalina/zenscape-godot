@@ -284,10 +284,11 @@ func _take_loot() -> void:
 		_say("Took the %s (%s)" % [l.kind,BagStudy._kg_text(float(l.kg))])
 		_show_status()
 
-## Aiming the hook, the stick moves the reticle, not him.
+## Aiming the hook, the stick moves the reticle, not him; tugging it, he
+## stands.
 func _want(delta: float) -> Vector2:
 	var want := super._want(delta)
-	if rope == null or rope.state != "aim": return want
+	if rope == null or (rope.state != "aim" and rope.state != "tug"): return want
 	rope.aim_steer(want,delta)
 	return Vector2.ZERO
 
@@ -331,4 +332,4 @@ func _show_status() -> void:
 	_status.text = "%s · %s %s\nloot %d / %d · %s" % [moves,Pad.pick("M","LEFT"),"to switch",taken,loot.size(),BagStudy._kg_text(taken_kg)]
 
 func _hint_text() -> String:
-	return "Rope study: WASD run · Space jump · Shift/C crouch, at a run: slide · hold LMB or T (pad RT): aim the hook (gold catches, red won't), let go to throw · F (pad down) reel it in · M (pad left) full moveset on / off · walk into loot to take it · 1 start, 2 wall 5 m, 3 face 8 m, 4 crumbly / solid edge, 5 drop top, 6 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Rope study: WASD run · Space jump · Shift/C crouch, at a run: slide · hold LMB or T (pad RT): aim the hook (gold catches, red won't), let go to throw · E (pad B) tug a caught hook: it seats, or slips off a crumbly lip · F (pad down) reel it in · M (pad left) full moveset on / off · walk into loot to take it · 1 start, 2 wall 5 m, 3 face 8 m, 4 crumbly / solid edge, 5 drop top, 6 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
