@@ -44,7 +44,8 @@ const CLIPS := ["idle","listen","walk","stride","climb","haul","spawn_haul","man
 	"jump_air","drop_air","land","drop_land","reach","triumph","feel","mantle_pull",
 	"turn_open_l","turn_close_l","turn_open_r","turn_close_r","scope_lift","scope_look","scope_lower","shoulder_run",
 	"charge_tell","charge_run","charge_skid","charge_stagger",
-	"teeter_catch","teeter","teeter_back","topple","rim_leap","rim_land","back_hit","hunt_stride"]
+	"teeter_catch","teeter","teeter_back","topple","rim_leap","rim_land","back_hit","hunt_stride",
+	"turn_45_l","turn_45_r","turn_90_l","turn_90_r","turn_180_l","turn_180_r"]
 ## Round 4: the turn steps (headless_body_steps.gd), blended over the trunk
 ## and legs only (the arms keep the clip under them), faded in and out fast.
 const TURNS := ["turn_open_l","turn_close_l","turn_open_r","turn_close_r"]
@@ -53,6 +54,17 @@ const TURNS := ["turn_open_l","turn_close_l","turn_open_r","turn_close_r"]
 const TURN_BONES := ["root","hips","spine","chest","neck","thigh.L","shin.L","foot.L","thigh.R","shin.R","foot.R",
 	"upper_arm.L","forearm.L","upper_arm.R","forearm.R"]
 const TURN_FADE := 0.06
+## Olmec turn: the whole turns on the spot (the build's turn_45/90/180_l/r),
+## the whole body blended, its root's yaw read off the clip
+## (`turn_yaw`) and kept out of the pose (the figure turns by it instead),
+## faded in and out over WHOLE_FADE s.
+const WHOLE_TURNS := ["turn_45_l","turn_45_r","turn_90_l","turn_90_r","turn_180_l","turn_180_r"]
+const WHOLE_FADE := 0.14
+## Their roots' yaw (rad, + left) sampled every YAW_DT s.
+const YAW_DT := 1.0/60.0
+var _yaws := {}
+var _root := -1
+var _root_rest := Quaternion.IDENTITY
 const Steps = preload("res://scripts/enemies/headless_body_steps.gd")
 ## The cut's stone and its glow.
 const CUT := Color(0.66,0.5,0.4)
@@ -105,6 +117,8 @@ func build(scale_k: float) -> void:
 		_leg[side] = [skeleton.find_bone("thigh."+side),skeleton.find_bone("shin."+side),skeleton.find_bone("foot."+side)]
 	_neck = skeleton.find_bone("neck")
 	_seat_off = skeleton.get_bone_global_rest(_neck).affine_inverse()*Transform3D(Basis.IDENTITY,Vector3(0.0,SEAT_Y,0.0))
+	_root = skeleton.find_bone("root")
+	_root_rest = skeleton.get_bone_rest(_root).basis.get_rotation_quaternion()
 	_build_tree(model.find_child("AnimationPlayer",true,false) as AnimationPlayer)
 	steps = Steps.new(self)
 
@@ -140,6 +154,7 @@ func _build_tree(player: AnimationPlayer) -> void:
 			last = mix
 		_weights[clip] = 1.0 if clip == "idle" else 0.0
 		_times[clip] = 0.0
+		if clip in WHOLE_TURNS: _yaws[clip] = _yaw_samples(animation)
 	blend.connect_node(&"output",0,last)
 	_tree = AnimationTree.new()
 	_tree.name = "Moves"
@@ -170,7 +185,10 @@ func advance(delta: float, fade: float) -> void:
 	var step := 1.0 if fade <= 0.0 else delta/fade
 	for c: String in CLIPS:
 		var goal: float = float(_want.get(c,0.0))/total if total > 0.0 else _weights[c]
-		_weights[c] = move_toward(_weights[c],goal,maxf(step,delta/TURN_FADE) if c in TURNS else step)
+		var fade_step := step
+		if c in TURNS: fade_step = maxf(step,delta/TURN_FADE)
+		elif c in WHOLE_TURNS: fade_step = delta/WHOLE_FADE
+		_weights[c] = move_toward(_weights[c],goal,fade_step)
 	var sum := 0.0
 	for i in CLIPS.size():
 		var c: String = CLIPS[i]
@@ -182,6 +200,47 @@ func advance(delta: float, fade: float) -> void:
 		_tree.set(StringName("parameters/%s_at/seek_request" % c),clampf(t,0.0,length-0.001))
 	_want.clear()
 	_tree.advance(delta)
+	# The whole turns' root yaw is the figure's (headless_body_steps.gd), not the pose's.
+	if whole_turn_weight() > 0.0: skeleton.set_bone_pose_rotation(_root,_root_rest)
+
+## How much of the pose the whole turns hold now (0 none).
+func whole_turn_weight() -> float:
+	var w := 0.0
+	for c: String in WHOLE_TURNS: w += float(_weights[c])
+	return w
+
+## A whole turn's root yaw at `t` s into it (rad, + left; 0 at its start).
+func turn_yaw(clip: String, t: float) -> float:
+	var a: PackedFloat32Array = _yaws[clip]
+	var x := clampf(t/YAW_DT,0.0,float(a.size()-1))
+	var i := mini(int(x),a.size()-2)
+	return lerpf(a[i],a[i+1],x-float(i))
+
+## The root's yaw through `animation`, unwrapped, every YAW_DT s.
+func _yaw_samples(animation: Animation) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var track := -1
+	for tr in animation.get_track_count():
+		if animation.track_get_type(tr) == Animation.TYPE_ROTATION_3D and animation.track_get_path(tr).get_concatenated_subnames() == "root": track = tr
+	var n := int(ceil(animation.length/YAW_DT))+1
+	var last := 0.0
+	for i in n:
+		var y := 0.0
+		if track >= 0:
+			var q: Quaternion = animation.rotation_track_interpolate(track,minf(i*YAW_DT,animation.length))*_root_rest.inverse()
+			var fwd := Basis(q)*Vector3.FORWARD
+			y = atan2(-fwd.x,-fwd.z)
+		if i > 0: y = last+angle_difference(last,y)
+		out.append(y)
+		last = y
+	return out
+
+## The yaw (rad, + left) the clips have turned foot `side` off its rest.
+func foot_yaw(side: String) -> float:
+	var b: int = _leg[side][2]
+	var q := skeleton.get_bone_global_pose(b).basis.get_rotation_quaternion()*skeleton.get_bone_global_rest(b).basis.get_rotation_quaternion().inverse()
+	var fwd := Basis(q)*Vector3.FORWARD
+	return atan2(-fwd.x,-fwd.z)
 
 ## How much of the pose the turn steps hold now (0 none).
 func turn_weight() -> float:

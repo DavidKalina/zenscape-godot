@@ -890,7 +890,7 @@ const OLMEC_AGAIN := 6.0
 ## whole Olmec), relentless, and the wall catch (headless_body.gd
 ## `leap_catch`). `run_up`: in the chase he sets off at a walk and builds
 ## into his run over that many s of fairly straight going.
-const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"ledge_stare":1.0,"cliff_leap":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0,"run_up":4.0,"climb_to":1.0,"suck_up":8.0,"plan_chase":1.0,"plan_smooth":1.0,"run_soft":0.6,"plan_keep":0.2,"plan_settle":1.0,"plan_flips":3.0,"gaze_yaw":65.0}
+const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"ledge_stare":1.0,"cliff_leap":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0,"run_up":4.0,"climb_to":1.0,"suck_up":8.0,"plan_chase":1.0,"plan_smooth":1.0,"run_soft":0.6,"plan_keep":0.2,"plan_settle":1.0,"plan_flips":3.0,"gaze_yaw":65.0,"turn_clips":1.0}
 
 ## A study's own tune of a new Olmec, body `b` and head `h` (none here).
 func tune_olmec(_b: Node3D, _h: Node3D) -> void:
