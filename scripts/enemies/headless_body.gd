@@ -425,6 +425,11 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# way to you) has him wind up and throw himself off the nearest
 		# edge, out of the camera's look first; a dive catches no wall.
 		"dive":0,
+		# Olmec reach: `suck_in` 1, seen near (past his swat, inside the
+		# suck's own reach) with no pounce to you (its arc or his room
+		# blocked: under an overhang he can't fit) and no gain on you for
+		# SUCK_IN_AFTER s, he plants and inhales you out from where you hide.
+		"suck_in":0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -2306,6 +2311,11 @@ var _post := Vector3.ZERO
 ## When it may pounce again, suck again (its clock, s).
 var _pounce_ready := 0.0
 var _suck_ready := 0.0
+## `suck_in`: how long (s) he's been near you with no pounce and no gain.
+var _suck_in_t := 0.0
+var _suck_in_d := INF
+const SUCK_IN_AFTER := 1.5
+var sucks_in := 0
 var _suck_unseen := 0.0
 var _seek_from := 0.0
 var _swat_hit := false
@@ -2461,7 +2471,7 @@ func _chase(delta: float) -> void:
 		elif seen_t > float(knobs.scope_wait) and flat <= float(knobs.scope_near)*hh and _scope_try("chase"): return
 		# Lost him up out of its walk: after him, by a route.
 		elif seen_t > float(knobs.after_wait) and _after_try(): return
-	elif _attack(m,flat,to.y): return
+	elif _attack_with(m,flat,to.y,delta): return
 	elif after and to.y <= _after_rise():
 		# Seen again about its own level: straight at him.
 		_chase_drop()
@@ -2723,6 +2733,12 @@ func _after_goal(p: Vector3, seen: Vector3) -> Vector3:
 
 ## The attack his distance calls for (`flat` m off, `dy` up), if any: the
 ## swat within reach, the pounce a little way off, the suck further.
+## `_attack` with the frame's delta kept for `suck_in`'s clock.
+var _attack_dt := 0.0
+func _attack_with(m: PilotMotor, flat: float, dy: float, delta: float) -> bool:
+	_attack_dt = delta
+	return _attack(m,flat,dy)
+
 func _attack(m: PilotMotor, flat: float, dy: float) -> bool:
 	if m.seized(): return false
 	if flat <= float(knobs.catch_reach)*hh and absf(dy) < neck_h*0.6:
@@ -2744,8 +2760,23 @@ func _attack(m: PilotMotor, flat: float, dy: float) -> bool:
 			field.sound(&"body_windup",position)
 			chase_beat.emit("pounce")
 			return true
-	if flat >= float(knobs.suck_min)*hh and flat <= float(knobs.suck_max)*hh*(1.3 if _relentless() else 1.0) and _clock >= _suck_ready and head != null and head.perch == self \
+	var near_in := float(knobs.get("suck_in",0)) > 0.0 and flat > float(knobs.catch_reach)*hh and flat < float(knobs.suck_min)*hh
+	if near_in:
+		# No gain of 1 m on you, the clock runs (reset when he gains).
+		if flat < _suck_in_d-1.0:
+			_suck_in_d = flat
+			_suck_in_t = 0.0
+		else: _suck_in_t += _attack_dt
+	else:
+		_suck_in_t = 0.0
+		_suck_in_d = INF
+	var sucks_close := near_in and _suck_in_t >= SUCK_IN_AFTER
+	if (sucks_close or (flat >= float(knobs.suck_min)*hh and flat <= float(knobs.suck_max)*hh*(1.3 if _relentless() else 1.0))) and _clock >= _suck_ready and head != null and head.perch == self \
 			and head.has_method("worn_reaches") and head.worn_reaches(m):
+		if sucks_close:
+			sucks_in += 1
+			_suck_in_t = 0.0
+			_suck_in_d = INF
 		sucks += 1
 		_suck_unseen = 0.0
 		_go("plant")
