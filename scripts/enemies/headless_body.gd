@@ -421,6 +421,10 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# down its crest, facing along it (no edge drops, no skirts, no
 		# bulk push off it), as over a bridge.
 		"beam":0,
+		# Olmec reach: `dive` 1, `dive_off` (a study's call when he makes no
+		# way to you) has him wind up and throw himself off the nearest
+		# edge, out of the camera's look first; a dive catches no wall.
+		"dive":0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -1471,6 +1475,61 @@ func _windup(delta: float) -> void:
 	_go("leap")
 	field.sound(&"body_leap",position)
 
+## Olmec reach (`dive`): no way to you, he throws himself off the
+## nearest edge: of DIVE_WAYS ways out, the first point within DIVE_LOOK
+## m with no floor DIVE_DROP m under his feet, a way away from `away`
+## (the camera) first; the throw lands DIVE_PAST m past that edge, far
+## below. Whether he winds up for one.
+const DIVE_WAYS := 16
+const DIVE_LOOK := 30.0
+const DIVE_DROP := 14.0
+const DIVE_PAST := 8.0
+var dives := 0
+func dive_off(away := Vector3.INF) -> bool:
+	if float(knobs.dive) < 0.5 or not grounded: return false
+	if state in ["climb","mantle","windup","leap","fall","hang","grab_leap","grab_windup","land"]: return false
+	var picks: Array = []
+	for k in DIVE_WAYS:
+		var a := TAU*float(k)/DIVE_WAYS
+		var way := Vector3(cos(a),0.0,sin(a))
+		var d := length*0.5
+		while d <= DIVE_LOOK:
+			var p := position+way*d
+			if _floor(p,float(knobs.step)*STAIR,DIVE_DROP) == -INF:
+				var score := d
+				if away != Vector3.INF:
+					var to := Vector3(away.x-position.x,0.0,away.z-position.z).normalized()
+					score += maxf(0.0,way.dot(to))*DIVE_LOOK
+				picks.append([score,p+way*DIVE_PAST-Vector3.UP*DIVE_DROP*2.0])
+				break
+			d += 1.5
+	picks.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	for pk: Array in picks:
+		if not _dive_clear(pk[1]): continue
+		_leap_to = pk[1]
+		leap_kind = "dive"
+		dives += 1
+		_go("windup")
+		field.sound(&"body_windup",position)
+		return true
+	return false
+
+## Whether a dive at `to` falls DIVE_DROP x 1.5 m clear: its arc flown in
+## ARC_DT steps, his feet and his bulk meeting nothing past take-off.
+func _dive_clear(to: Vector3) -> bool:
+	var throw := _throw(position,to,"dive")
+	var v: Vector3 = throw[0]
+	var p := position
+	var g := float(knobs.leap_gravity)
+	var t := 0.0
+	while p.y > position.y-DIVE_DROP*1.5 and t < 5.0:
+		var q := p+v*ARC_DT
+		v.y -= g*ARC_DT
+		t += ARC_DT
+		if t > 0.15 and (not _cast(p+Vector3.UP*0.05,q).is_empty() or _bulk_sweep(p,q) < 1.0): return false
+		p = q
+	return true
+
 ## The throw from `from` to `to` ("jump" across, else a drop): [its
 ## velocity, its time in the air]. A jump's is longer and flatter, peaking
 ## a share of its length (and over the far ledge if that stands higher).
@@ -1525,6 +1584,7 @@ func _arc_clear(to: Vector3, kind: String, bulk := false) -> bool:
 ## off, no face, or the lip out of reach (it drops, as before).
 func _catch_wall(way: Vector3) -> bool:
 	if float(knobs.leap_catch) < 0.5: return false
+	if leap_kind == "dive": return false
 	var dir := way.normalized() if way.length() > 0.1 else _forward3()
 	var hit := {}
 	# Its chest first, then up and down its height (the face its bulk met).
