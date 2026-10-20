@@ -78,7 +78,7 @@ static func build(host: Node3D) -> void:
 		tag.outline_size = 6
 		tag.position = Vector3(0.0,float(made.height)+0.25,0.0)
 		spot.add_child(tag)
-		loot.append({"id":str(row[0]),"kind":str(row[1]),"kg":float(row[2]),"spot":spot,"node":node,"measures":made})
+		loot.append({"id":str(row[0]),"kind":str(row[1]),"kg":float(row[2]),"spot":spot,"node":node,"measures":made,"body":null,"still":0.0,"lost":false,"banked":false})
 	var bag := LootBag.new()
 	host.add_child(bag)
 	bag.setup(host)

@@ -150,6 +150,9 @@ var riders_kg := 0.0
 ## A loot bag hitched on the rope (scripts/carry/loot_bag.gd): its kg ride
 ## with the loaded ones (0: none).
 var bag_kg := 0.0
+## Loot pieces out of a hitched loot bag (spilled, dropped, banked): their
+## loose bodies stepped here.
+var loose_loot: Array = []
 var _heavy_flag := -1.0
 static var _thud_take: AudioStreamWAV = null
 
@@ -327,8 +330,40 @@ func give_up() -> Dictionary:
 ## pad), or {} with the bag empty. Its node is left where it rode.
 func take_from_bag() -> Dictionary:
 	var t := _last_hitched()
-	if not t.is_empty(): _unstrap(t)
-	return t
+	if not t.is_empty():
+		_unstrap(t)
+		return t
+	return _out_of_hitched()
+
+## A hitched loot bag (scripts/carry/loot_bag.gd, state "hitched"), or null.
+func _hitched_bag() -> Node3D:
+	var bag: Variant = study.get("bag") if study != null else null
+	if bag == null or not is_instance_valid(bag) or str(bag.state) != "hitched": return null
+	return bag
+
+## The last piece put in a hitched loot bag taken out at its mouth (its
+## kg off the rope; the bag's `rip_out`), as a loose one can be, or {}.
+## Tracked in `loose_loot` so its body is stepped as the treasures' are.
+func _out_of_hitched() -> Dictionary:
+	var bag := _hitched_bag()
+	if bag == null or (bag.items as Array).is_empty(): return {}
+	var p: Dictionary = bag.rip_out((bag.items as Array).back())
+	if p.is_empty(): return {}
+	(p.node as Node3D).global_transform = Transform3D(Basis(Vector3.UP,randf()*TAU),bag.mouth())
+	if not loose_loot.has(p): loose_loot.append(p)
+	return p
+
+## A loose loot piece's body gone, the piece back under its spot's node
+## where it lies (so the bag takes it as any other).
+func unloose_loot(p: Dictionary) -> void:
+	if p.get("body") == null: return
+	_unloose(p)
+	var node: Node3D = p.node
+	var at := node.global_transform
+	node.get_parent().remove_child(node)
+	(p.spot as Node3D).add_child(node)
+	node.global_transform = at
+	loose_loot.erase(p)
 
 ## Let go where it is now: left resting on the ground at `_ground_at`.
 func _let_go() -> void:
@@ -354,6 +389,8 @@ func _process(delta: float) -> void:
 	for t: Dictionary in treasures:
 		if t.body != null: _loose_step(t,delta)
 		if int(t.slot) >= 0: _ride(t,delta)
+	for p: Dictionary in loose_loot.duplicate():
+		if p.get("body") != null: _loose_step(p,delta)
 	_show_prompt()
 
 # --- Dropping ----------------------------------------------------------------------
@@ -409,7 +446,6 @@ func drop(why: String) -> void:
 ## `t` loose: a tumbling body with its middle at `mid`, moving `v`,
 ## spinning `spin`.
 func _loosen(t: Dictionary, mid: Transform3D, v: Vector3, spin: Vector3) -> void:
-	var w := Weights.of(str(t.weight))
 	var node: Node3D = t.node
 	var h: float = t.measures.height
 	var r: float = t.measures.radius
@@ -417,7 +453,8 @@ func _loosen(t: Dictionary, mid: Transform3D, v: Vector3, spin: Vector3) -> void
 	body.name = "Loose_"+str(t.id)
 	body.collision_layer = TREASURE_LAYER
 	body.collision_mask = SOLID_MASK
-	body.mass = float(w.mass)
+	# A loot piece (the loot bag's) weighs its kg; a treasure its class's.
+	body.mass = float(t.kg) if t.has("kg") else float(Weights.of(str(t.weight)).mass)
 	body.continuous_cd = true
 	body.can_sleep = true
 	body.linear_damp = 0.2
@@ -998,8 +1035,9 @@ func _on_bag_hit(speed: float, _at: Vector3, normal: Vector3, vel: Vector3) -> v
 	var gone := 0
 	while gone < n:
 		var t := _last_hitched()
+		if t.is_empty(): t = _out_of_hitched()
+		else: _unstrap(t)
 		if t.is_empty(): break
-		_unstrap(t)
 		var node: Node3D = t.node
 		var h: float = t.measures.height
 		var mid := node.global_transform*Vector3(0.0,h*0.5,0.0)

@@ -24,8 +24,9 @@ extends Node3D
 ## N, which stands a fresh one on its spot; the vault keeps its own.
 
 ## What each kind is worth: the one table.
-const VALUES := {"idol":40,"urn":60,"egg":150,"chalice":30}
-const NAMES := {"idol":"idol","urn":"urn","egg":"dragon egg","chalice":"chalice"}
+## The loot bag's own kinds (studies/bag_study.gd `loot_model`) too.
+const VALUES := {"idol":40,"urn":60,"egg":150,"chalice":30,"coins":25,"bar":50,"gem":80}
+const NAMES := {"idol":"idol","urn":"urn","egg":"dragon egg","chalice":"chalice","coins":"coins","bar":"gold bar","gem":"gem"}
 ## Seconds between treasures out of the bag; the swing's lift (its first
 ## part), its whole length, and the top of its arc over the straight line.
 const BEAT := 0.9
@@ -43,6 +44,7 @@ const FLOOR_UP := 0.22
 const SHOW_MAX := 16
 const Ledger = preload("res://scripts/ledger/ledger.gd")
 const Models = preload("res://scripts/carry/treasure_models.gd")
+const BagStudy = preload("res://studies/bag_study.gd")
 const Home = preload("res://studies/wreck_cluster_home.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const GenesisAudio = preload("res://scripts/genesis_audio.gd")
@@ -92,13 +94,15 @@ func _from_ledger() -> void:
 	var kept: Dictionary = Ledger.shared().vault
 	total = int(kept.total)
 	for kind: String in counts.keys(): counts[kind] = int((kept.counts as Dictionary).get(kind,0))
+	for kind: String in (kept.counts as Dictionary).keys(): counts[kind] = int(kept.counts[kind])
 	var banked: Array = kept.banked
 	_next = banked.size()
 	if vault == null: return
 	for n in range(maxi(0,_next-SHOW_MAX),_next):
 		var node := Node3D.new()
 		node.name = "Banked_%d" % n
-		node.add_child(Models.build(str(banked[n])).node as Node3D)
+		var kind := str(banked[n])
+		node.add_child((Models.build(kind) if kind in Models.KINDS else BagStudy.loot_model(kind)).node as Node3D)
 		_stand(node,n%SHOW_MAX)
 
 static func _placed(called: String) -> Node3D:
@@ -243,6 +247,11 @@ func _show_board() -> void:
 	var c := counts
 	_board.text = "THE VAULT\n%d\n%s x%d    %s x%d\n%s x%d    %s x%d" % [total,
 		NAMES.idol,int(c.idol),NAMES.urn,int(c.urn),NAMES.egg,int(c.egg),NAMES.chalice,int(c.chalice)]
+	# The loot bag's kinds, once any are banked.
+	var more: Array = []
+	for kind: String in ["coins","bar","gem"]:
+		if int(c.get(kind,0)) > 0: more.append("%s x%d" % [NAMES[kind],int(c[kind])])
+	if not more.is_empty(): _board.text += "\n"+"    ".join(more)
 
 ## The board glows a moment after a deposit.
 func _pulse() -> void:

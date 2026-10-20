@@ -746,6 +746,9 @@ func in_reach() -> Dictionary:
 	var near := INF
 	for p: Dictionary in study.get("loot"):
 		if items.has(p) or p == stowing or bool(p.get("buried",false)): continue
+		# Banked, lost, or still tumbling loose (out of the hitched bag).
+		if bool(p.get("banked",false)) or bool(p.get("lost",false)): continue
+		if p.get("body") != null and not (p.body as RigidBody3D).freeze: continue
 		var at: Vector3 = (p.node as Node3D).global_position
 		var across := Vector2(at.x-feet.x,at.z-feet.z).length()
 		if across > REACH*s+float(p.measures.radius) or absf(at.y-feet.y) > REACH_UP*s: continue
@@ -764,6 +767,9 @@ func take(p: Dictionary) -> void:
 			_say("Too heavy to wear: set it down (F) to fill it (%s / %d kg)" % [_kg(kg),int(WEAR_KG)])
 		else: _say("Too full: %s kg won't go in (%s / %d kg)" % [_kg(float(p.kg)),_kg(kg),int(CAP)])
 		return
+	# Lying loose where it spilled: its body gone first (scripts/carry/
+	# carry_host.gd `unloose_loot`).
+	if p.get("body") != null and _carry() != null: _carry().unloose_loot(p)
 	stowing = p
 	_stow_t = 0.0
 	_stow_from = (p.node as Node3D).global_transform
