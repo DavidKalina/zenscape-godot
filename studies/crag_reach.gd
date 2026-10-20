@@ -29,8 +29,12 @@ extends "res://studies/kit_isle.gd"
 ##   refills on foot), R you back at the start and him gone, up a cliff
 ##   again (at once with --olmec, N s on with --olmec-after); fallen off the
 ##   world, he comes up another cliff OLMEC_AGAIN s later.
-##   Making no way to you for OLMEC_STUCK s, he throws himself off the
-##   nearest edge and comes back up a clean cliff near you (`_never_stuck`).
+##   At a rim with no leap straight on he stares at you, works out his way
+##   and takes it (headless_body.gd `ledge_stare`); a cliff face on land
+##   nearer you he leaps at, catches and climbs (`cliff_leap`). Making no
+##   way to you for OLMEC_STUCK s, he walks to the rim most your way and
+##   plans from there (`_never_stuck`). He is never taken away and brought
+##   back while he hunts; only a fall off the world brings him up again.
 
 const Layout = preload("res://scripts/layout_overrides.gd")
 const UnitNode = preload("res://scripts/kit_isle/islet_unit_node.gd")
@@ -757,7 +761,7 @@ const OLMEC_AGAIN := 6.0
 ## whole Olmec), relentless, and the wall catch (headless_body.gd
 ## `leap_catch`). `run_up`: in the chase he sets off at a walk and builds
 ## into his run over that many s of fairly straight going.
-const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"dive":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0,"run_up":4.0}
+const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"ledge_stare":1.0,"cliff_leap":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0,"run_up":4.0}
 ## Never stuck: no OLMEC_GAIN m nearer you and no OLMEC_ROAM m from where he
 ## was for OLMEC_STUCK s (you standing
 ## within OLMEC_MOVED m of where that began) and more than OLMEC_CLOSE m
@@ -1156,6 +1160,7 @@ func spawn_olmec() -> Node3D:
 	_dive_from = Vector3.INF
 	_stuck_feet = Vector3.INF
 	_spawn_t = 0.0
+	_bad_noted = false
 	_say("Stone grinds on stone below the rim...",4.0)
 	print("crag reach: the Olmec up %s's face at %s (out %s), %.1f m down, %.1f m off you, %s" % [c.crown,lip,out,lip.y-b.position.y,float(c.far),"in view" if c.seen else "out of view"])
 	return b
@@ -1183,7 +1188,11 @@ func tick(delta: float) -> void:
 		return
 	var b := olmec()
 	if b == null:
-		if _gone_t < 0.0: _gone_t = 0.0
+		if _gone_t < 0.0:
+			_gone_t = 0.0
+			# Olmec ledge: fallen off the world, he comes back up a clean
+			# cliff with room (as the old returns did), not one he let go of.
+			if float(OLMEC_KNOBS.get("cliff_leap",0.0)) >= 0.5 and float(_body_knobs.get("cliff_leap",1.0)) >= 0.5: _returning = true
 		_gone_t += delta
 		if _gone_t > OLMEC_AGAIN: spawn_olmec()
 		return
@@ -1198,8 +1207,54 @@ func tick(delta: float) -> void:
 			var t := Time.get_ticks_msec()/1000.0
 			camera.position += Vector3(sin(t*61.0),sin(t*53.0+1.0),sin(t*47.0+2.0))*q*0.5
 
+## Olmec ledge (`cliff_leap`): the never-stuck watch with no dive and no
+## take. No way made to you for OLMEC_STUCK s (as below), he walks to the
+## rim most your way (headless_body.gd `ledge_walk`) to stare and plan
+## there; staring with no way, another rim (not one he stared from with
+## none, and at most OLMEC_LEDGE_WORSE m farther from you), at most
+## OLMEC_LEDGE_WALKS times till you move.
+const OLMEC_LEDGE_WALKS := 3
+const OLMEC_LEDGE_WORSE := 4.0
+var olmec_ledge_walks := 0
+var _ledge_walks_now := 0
+var _bad_noted := false
+func _never_stuck_ledge(b: Node3D, delta: float) -> void:
+	if bool(b.crumbled): return
+	# He let go of the face he came up at once: that face is passed over
+	# next time he comes up (he isn't taken; he falls).
+	_spawn_t += delta
+	if _spawn_t < OLMEC_HOLD and str(b.state) == "fall" and olmec_cliff.has("lip") and not _bad_noted:
+		_bad_noted = true
+		olmec_bad_spawns += 1
+		_bad_lips.append(olmec_cliff.lip)
+		print("crag reach: the Olmec lost his hold at %s (%s)" % [(olmec_cliff.lip as Vector3).round(),b.let_go_why])
+	var d := b.position.distance_to(motor.feet)
+	var busy: bool = str(b.state) in ["climb","mantle","windup","leap","fall","hang","land"] or b._rim_goal != Vector3.INF
+	var none: bool = str(b.state) == "stare" and str(b.stare_why) == "none"
+	var moved := _stuck_feet == Vector3.INF or motor.feet.distance_to(_stuck_feet) > OLMEC_MOVED
+	if moved:
+		_bad_rims.clear()
+		_ledge_walks_now = 0
+	if moved or busy or d < _stuck_best-OLMEC_GAIN or b.position.distance_to(_stuck_at) > OLMEC_ROAM:
+		_stuck_reset(b)
+		return
+	_stuck_t += delta
+	if _stuck_t < OLMEC_STUCK or d < OLMEC_CLOSE: return
+	_stuck_t = 0.0
+	# Still working out his way from a rim: let him.
+	if str(b.state) == "stare" and not none: return
+	if _ledge_walks_now >= OLMEC_LEDGE_WALKS: return
+	if none: _bad_rims.append(b.position)
+	if b.ledge_walk(motor.feet,_bad_rims,OLMEC_LEDGE_WORSE if none else INF):
+		_ledge_walks_now += 1
+		olmec_ledge_walks += 1
+		print("crag reach: the Olmec makes no way to you (%.0f m off): off to the rim at %s to look from there" % [d,b._rim_goal.round()])
+
 ## The never-stuck watch (OLMEC_STUCK): true when he's been taken.
 func _never_stuck(b: Node3D, delta: float) -> bool:
+	if float(b.knobs.get("cliff_leap",0.0)) >= 0.5:
+		_never_stuck_ledge(b,delta)
+		return false
 	if float(b.knobs.get("dive",0.0)) < 0.5 or bool(b.crumbled): return false
 	_spawn_t += delta
 	if _spawn_t < OLMEC_HOLD and str(b.state) == "fall" and olmec_cliff.has("lip"):

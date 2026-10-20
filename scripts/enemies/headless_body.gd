@@ -455,6 +455,19 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# his real speed (walk, hunt stride, run clip; `_gait_mix`). 0 off:
 		# `chase_speed` and the stride, as before.
 		"run_up":0.0,"run_top":n.run*1.15,"run_turn_cost":1.0,"run_turn":0.45,
+		# Olmec ledge: `ledge_stare` 1, at a rim in the chase with no leap
+		# straight on he plants and stares at you (`stare_hold` s at least),
+		# works out his way from that stand (a leap or drop either side,
+		# `down_to`'s floor, a face across, a rim stand he walks to first),
+		# turns once onto it and goes; no way, he stares on and looks again
+		# every `stare_replan` s or when you move (no skirts along the rim).
+		"ledge_stare":0,"stare_hold":1.0,"stare_replan":3.0,
+		# Olmec ledge: `cliff_leap` 1, the stare's plan looks too for a
+		# cliff face on land nearer you, across up to `cliff_gap` Hh off
+		# flat and down to `cliff_deep` Hh under his feet, leapt at, caught
+		# (`leap_catch`) and climbed; a study's never-stuck walks him to the
+		# rim most your way to stare and plan there (`ledge_walk`).
+		"cliff_leap":0,"cliff_gap":10.0,"cliff_deep":6.0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -585,6 +598,7 @@ func think(delta: float) -> void:
 		"reach": _reach_head(delta)
 		"triumph": _triumph(delta)
 		"chase": _chase(delta)
+		"stare": _stare(delta)
 		"alert": _alert(delta)
 		"seek": _seek(delta)
 		"return": _return(delta)
@@ -622,6 +636,13 @@ func _go(to: String) -> void:
 	# `run_up`: out of the chase (a climb, a leap, an attack, a look
 	# about), his build is gone.
 	if to != "chase": run_k = 0.0
+	# Olmec ledge (`ledge_stare`): into the chase (over a lip, off a
+	# landing) his way on is where he goes now, not the one he had before
+	# the climb (his first stood step went that stale way, then back).
+	if to == "chase" and _stares():
+		var at := _rim_goal if _rim_goal != Vector3.INF else _stare_target()
+		var d := Vector2(at.x-position.x,at.z-position.z)
+		if d.length() > 0.1: _heading = PilotMotor.facing_of(d.normalized())
 	state = to
 	state_t = 0.0
 	if to not in ["windup","leap"]: _drop_up = -1.0
@@ -1671,37 +1692,11 @@ func _catch_wall(way: Vector3) -> bool:
 	if float(knobs.leap_catch) < 0.5: return false
 	if leap_kind == "dive": return false
 	var dir := way.normalized() if way.length() > 0.1 else _forward3()
-	var hit := {}
-	# Its chest first, then up and down its height (the face its bulk met).
-	var ups: Array[float] = [neck_h*0.55]
-	var u := 0.2
-	while u <= _bulk_top():
-		ups.append(u)
-		u += hh*0.25
-	for up: float in ups:
-		var from := position+Vector3.UP*up-dir*(length*0.5)
-		var h := _cast(from,from+dir*(length+hh*1.5))
-		if h.is_empty(): continue
-		var hn := h.normal as Vector3
-		if absf(hn.y) > 0.5 or Vector3(hn.x,0.0,hn.z).normalized().dot(dir) > -0.3: continue
-		hit = h
-		break
-	if hit.is_empty():
-		catch_why = "no face along its way at %s" % position.round()
-		return false
-	var n := hit.normal as Vector3
-	n = Vector3(n.x,0.0,n.z).normalized()
-	var face := hit.position as Vector3
-	var past := face-n*float(knobs.lip_in)
-	var top := _cast(Vector3(past.x,position.y+float(knobs.climb_max),past.z),Vector3(past.x,position.y-neck_h*0.5,past.z))
-	if top.is_empty() or (top.normal as Vector3).y < 0.6:
-		catch_why = "no lip within climb_max over %s" % position.round()
-		return false
-	var lip := top.position as Vector3
-	if not _cast(lip+Vector3.UP*0.1,lip+Vector3.UP*neck_h*0.5).is_empty():
-		catch_why = "no room over the lip at %s" % lip.round()
-		return false
-	catch_why = ""
+	var c := _catch_at(position,dir)
+	if c.is_empty(): return false
+	var n: Vector3 = c.n
+	var face: Vector3 = c.face
+	var lip: Vector3 = c.lip
 	var feet_y := minf(position.y,lip.y-float(knobs.step)*1.2)
 	position = Vector3(face.x,feet_y,face.z)+n*(length*0.5+float(knobs.standoff))
 	facing = PilotMotor.facing_of(-Vector2(n.x,n.z).normalized())
@@ -1720,10 +1715,46 @@ func _catch_wall(way: Vector3) -> bool:
 	field.sound(&"body_grip",face)
 	field.sound(&"body_land",face)
 	quake = maxf(quake,0.35)
-	var at := Vector3(face.x,position.y+neck_h*0.7,face.z)
-	Dust.puff(field,at,hh*1.6*_tell_k(),n)
-	Dust.rocks(field,at,n,5,hh*0.12*_tell_k())
+	var dust_at := Vector3(face.x,position.y+neck_h*0.7,face.z)
+	Dust.puff(field,dust_at,hh*1.6*_tell_k(),n)
+	Dust.rocks(field,dust_at,n,5,hh*0.12*_tell_k())
 	return true
+
+## What `_catch_wall` would catch flying along `dir` with his feet at `at`:
+## {n, face, lip} or {} (`catch_why` says why not).
+func _catch_at(at: Vector3, dir: Vector3) -> Dictionary:
+	var hit := {}
+	# Its chest first, then up and down its height (the face its bulk met).
+	var ups: Array[float] = [neck_h*0.55]
+	var u := 0.2
+	while u <= _bulk_top():
+		ups.append(u)
+		u += hh*0.25
+	for up: float in ups:
+		var from := at+Vector3.UP*up-dir*(length*0.5)
+		var h := _cast(from,from+dir*(length+hh*1.5))
+		if h.is_empty(): continue
+		var hn := h.normal as Vector3
+		if absf(hn.y) > 0.5 or Vector3(hn.x,0.0,hn.z).normalized().dot(dir) > -0.3: continue
+		hit = h
+		break
+	if hit.is_empty():
+		catch_why = "no face along its way at %s" % at.round()
+		return {}
+	var n := hit.normal as Vector3
+	n = Vector3(n.x,0.0,n.z).normalized()
+	var face := hit.position as Vector3
+	var past := face-n*float(knobs.lip_in)
+	var top := _cast(Vector3(past.x,at.y+float(knobs.climb_max),past.z),Vector3(past.x,at.y-neck_h*0.5,past.z))
+	if top.is_empty() or (top.normal as Vector3).y < 0.6:
+		catch_why = "no lip within climb_max over %s" % at.round()
+		return {}
+	var lip := top.position as Vector3
+	if not _cast(lip+Vector3.UP*0.1,lip+Vector3.UP*neck_h*0.5).is_empty():
+		catch_why = "no room over the lip at %s" % lip.round()
+		return {}
+	catch_why = ""
+	return {"n":n,"face":face,"lip":lip}
 
 ## `leap_catch`, hunting at an edge with no landing across (`_hunt_edge`),
 ## him beyond and up off its feet: a face across the gap along `fwd`, at
@@ -1733,9 +1764,21 @@ func _catch_wall(way: Vector3) -> bool:
 ## it; the arc there clear (nothing met but that face). It winds up and
 ## throws itself at the face (a jump's arc), to catch it (`_catch_wall`).
 func _wall_leap(fwd: Vector3, goal: Vector3) -> bool:
-	if float(knobs.leap_catch) < 0.5 or state != "chase": return false
+	if state != "chase": return false
+	var w := _wall_leap_find(fwd,goal)
+	if w.is_empty(): return false
+	_leap_to = w.to
+	leap_kind = "jump"
+	wall_leaps += 1
+	_go("windup")
+	field.sound(&"body_windup",position)
+	return true
+
+## `_wall_leap`'s look, without the leap: {to (thrown at), face, lip} or {}.
+func _wall_leap_find(fwd: Vector3, goal: Vector3) -> Dictionary:
+	if float(knobs.leap_catch) < 0.5: return {}
 	var step := float(knobs.step)
-	if goal.y <= position.y-hh*3.0: return false
+	if goal.y <= position.y-hh*3.0: return {}
 	var far := Vector2(goal.x-position.x,goal.z-position.z).length()
 	# The rim along its way (where its floor stops).
 	var rim := -1.0
@@ -1747,7 +1790,7 @@ func _wall_leap(fwd: Vector3, goal: Vector3) -> bool:
 		d += 0.25
 	if rim < 0.0:
 		wall_leap_why = "no rim"
-		return false
+		return {}
 	var most := minf(float(knobs.catch_gap)*hh,far)
 	wall_leap_why = "no face within %.1f m" % most
 	for down: float in [0.0,hh,hh*2.0,hh*3.0]:
@@ -1774,14 +1817,13 @@ func _wall_leap(fwd: Vector3, goal: Vector3) -> bool:
 		if not _wall_arc(to,face):
 			wall_leap_why = "a face %.1f m off, the arc there blocked" % Vector2(face.x-position.x,face.z-position.z).length()
 			continue
+		# Olmec ledge: only a catch his arc can make.
+		if float(knobs.get("cliff_leap",0)) >= 0.5 and not _catch_ok(to,face):
+			wall_leap_why = "a face %.1f m off, no catch where the arc meets it" % Vector2(face.x-position.x,face.z-position.z).length()
+			continue
 		wall_leap_why = ""
-		_leap_to = to
-		leap_kind = "jump"
-		wall_leaps += 1
-		_go("windup")
-		field.sound(&"body_windup",position)
-		return true
-	return false
+		return {"to":to,"face":face,"lip":top.position}
+	return {}
 
 ## The arc's rise (m) for the drop being thrown (`down_to`), -1 the knob's.
 var _drop_up := -1.0
@@ -1804,12 +1846,25 @@ var down_why := ""
 ## lip or a ruin on the rim no longer in its way). The nearest him wins; it
 ## winds up and throws itself off.
 func _down_to(goal: Vector3) -> bool:
-	if float(knobs.down_to) < 0.5 or state != "chase": return false
+	if state != "chase": return false
+	var best := _down_find(goal)
+	if best.is_empty(): return false
+	down_tos += 1
+	_leap_to = best.at
+	leap_kind = "drop"
+	_drop_up = best.up
+	_go("windup")
+	field.sound(&"body_windup",position)
+	return true
+
+## `_down_to`'s look, without the leap: {at, up (the arc's rise)} or {}.
+func _down_find(goal: Vector3) -> Dictionary:
+	if float(knobs.down_to) < 0.5: return {}
 	var step := float(knobs.step)
-	if goal.y >= position.y-step: return false
+	if goal.y >= position.y-step: return {}
 	var to := Vector2(goal.x-position.x,goal.z-position.z)
 	var reach := float(knobs.down_reach)*hh
-	if to.length() < 0.1 or to.length() > reach*2.0: return false
+	if to.length() < 0.1 or to.length() > reach*2.0: return {}
 	var base := PilotMotor.facing_of(to.normalized())
 	var now := position.distance_to(goal)
 	var best := {}
@@ -1846,6 +1901,11 @@ func _down_to(goal: Vector3) -> bool:
 	for f: Array in found:
 		if tries <= 0 or float(f[0]) >= best_d: break
 		var at: Vector3 = f[1]
+		# Olmec ledge: his bulk flown turned to the landing, as the windup
+		# turns him (not as he stands staring at you).
+		var was_f := facing
+		var to_at := Vector2(at.x-position.x,at.z-position.z)
+		if _stares() and to_at.length() > 0.1: facing = PilotMotor.facing_of(to_at.normalized())
 		for up: float in [float(knobs.leap_up),hh*0.8,hh*1.4,float(knobs.down_arc)*hh]:
 			tries -= 1
 			_drop_up = up
@@ -1855,16 +1915,10 @@ func _down_to(goal: Vector3) -> bool:
 				best = {"at":at,"up":up}
 				best_d = float(f[0])
 				break
+		facing = was_f
 		if not best.is_empty(): break
-	if best.is_empty(): return false
-	down_why = ""
-	down_tos += 1
-	_leap_to = best.at
-	leap_kind = "drop"
-	_drop_up = best.up
-	_go("windup")
-	field.sound(&"body_windup",position)
-	return true
+	if not best.is_empty(): down_why = ""
+	return best
 
 ## Whether the camera sees him land at `at`: his feet and shins (most of
 ## him is over the picture of a camera close over you) in front of it and
@@ -1914,6 +1968,44 @@ func _wall_arc(to: Vector3, face: Vector3) -> bool:
 		p = next
 		t += ARC_DT
 	return false
+
+## Olmec ledge (`cliff_leap`): whether the jump at `to` (just into a face at
+## `face`) is caught there: its arc flown as `_wall_arc` flies it to where
+## its feet or bulk meet that face, and `_catch_at` from there finding the
+## face and a lip within `climb_max` with room over it (only throws whose
+## catch his arc can make). `cliff_misses` counts those turned down.
+var cliff_misses := 0
+func _catch_ok(to: Vector3, face: Vector3) -> bool:
+	var throw := _throw(position,to,"jump")
+	var v: Vector3 = throw[0]
+	var dir := Vector3(v.x,0.0,v.z).normalized()
+	var p := position
+	var g := float(knobs.leap_gravity)
+	var t := 0.0
+	var stop := Vector3.INF
+	while t < float(throw[1])+0.5:
+		v.y -= g*ARC_DT
+		var next := p+v*ARC_DT
+		var hit := _cast(p+Vector3.UP*0.05,next)
+		var f := _bulk_sweep(p,next)
+		if f < 1.0 and (hit.is_empty() or f < p.distance_to(hit.position)/maxf(p.distance_to(next),0.0001)):
+			stop = p.lerp(next,f)
+			break
+		if not hit.is_empty():
+			var n := hit.normal as Vector3
+			if absf(n.y) >= 0.5: return false
+			stop = (hit.position as Vector3)+Vector3(n.x,0.0,n.z)*0.1-Vector3.UP*0.05
+			break
+		p = next
+		t += ARC_DT
+	if stop == Vector3.INF or Vector2(stop.x-face.x,stop.z-face.z).length() > ARC_LAND+length: return false
+	var why := catch_why
+	var c := _catch_at(stop,dir)
+	catch_why = why
+	if c.is_empty():
+		cliff_misses += 1
+		return false
+	return true
 
 func _fall() -> void:
 	grounded = false
@@ -2514,6 +2606,8 @@ func _chase(delta: float) -> void:
 	if dive_goal != Vector3.INF:
 		_pursue(delta,dive_goal,_chase_pace())
 		return
+	# Olmec ledge: on his walk to a rim stand.
+	if _rim_walk(delta): return
 	var seeing: bool = sight.seeing()
 	# Unseen, it goes where it last saw him, or where it went after him.
 	var target := m.feet if seeing else (_after_at if _after_at != Vector3.INF else seen_at)
@@ -3046,6 +3140,11 @@ func _hunt_edge(fwd: Vector3, goal: Vector3) -> void:
 	vel.x = 0.0
 	vel.z = 0.0
 	var land := _landing(fwd)
+	# Olmec ledge (`ledge_stare`): no leap straight on, he stares and plans.
+	if _stares() and state == "chase" and (land.is_empty() or not (land.kind == "jump" or goal.y < position.y-float(knobs.step))):
+		if _rim_goal != Vector3.INF and Vector2(_rim_goal.x-position.x,_rim_goal.z-position.z).length() < RIM_AT*2.0: _rim_arrive()
+		else: _stare_start()
+		return
 	# Olmec reach (`edge_fan`): none straight on, a leap a little either
 	# side (and the leap at a wall below, after).
 	if float(knobs.edge_fan) > 0.5 and land.is_empty():
@@ -3073,6 +3172,459 @@ func _hunt_edge(fwd: Vector3, goal: Vector3) -> void:
 		_skirt_t = SKIRT_FOR
 		return
 	_stuck()
+
+# --- Olmec ledge (`ledge_stare`, `cliff_leap`) ------------------------------------------------
+# At a rim with no leap straight on, he plants and stares at you
+# ("stare"): his body turned to you once, his head's gaze on you, and from
+# that stand he works out his way (`_stare_plan`, spread over frames): a
+# leap or drop a little either side, `down_to`'s floor below, a face
+# across the gap (`leap_catch`), a stand along the rim he walks to and
+# goes from, and (`cliff_leap`) a cliff face on land nearer you, leapt at,
+# caught and climbed. Then he turns once to it and goes. You moving while
+# he stares, he plans again, still facing you. No way at all: he holds the
+# stare and looks again every `stare_replan` s, or when you move.
+
+## You moved this far (m) since his plan: he plans again.
+const STARE_MOVED := 3.0
+## The commit turn: done within this (rad), or after this long (s).
+const STARE_AIM := 0.2
+const STARE_TURN_MOST := 2.5
+## The plan's budget a frame (us).
+const STARE_US := 2500
+## The ways tried round yours (rad), from his stand and from a rim stand.
+const STARE_FAN := [0.0,0.35,-0.35,0.7,-0.7,1.1,-1.1]
+const STAND_FAN := [0.0,0.35,-0.35]
+## Rim stands looked at: ways round him, how far (m), the most tried.
+const STAND_WAYS := 16
+const STAND_RADII := [3.0,6.0,9.0,13.0,18.0]
+const STAND_MOST := 8
+## A plan's way scored by how far it leaves him from you (m), plus these
+## (m) by its kind, plus half the walk to its stand.
+const WAY_COST := {"jump":0.0,"drop":0.0,"wall":3.0,"cliff":8.0,"walk":2.0}
+## A way must leave him this much (m) nearer you than he stands.
+const WAY_GAIN := 1.5
+## `cliff_leap`: the ways tried (rad off yours), his feet's heights at the
+## face (Hh under his feet; under 0 over them), the least gain on you (m).
+const CLIFF_FAN := [0.0,0.25,-0.25,0.5,-0.5,0.8,-0.8,1.15,-1.15,1.5,-1.5]
+const CLIFF_DOWN := [-0.5,0.0,1.0,2.0,3.0,4.5,6.0]
+const CLIFF_GAIN := 5.0
+## The walk to a rim stand: given up after this long (s); there within (m).
+const RIM_WALK_MOST := 15.0
+const RIM_AT := 1.2
+
+## Counted, for checks: stares begun, those that found no way, cliff leaps
+## (and a line each: from, the face, the lip, how far it left him from you).
+var stares := 0
+var stare_nones := 0
+var cliff_leaps := 0
+var cliff_log: Array = []
+var ledge_walks := 0
+## The stare now: "plan" (working it out), "turn" (onto the way found),
+## "none" (no way: staring, looking again soon).
+var stare_why := ""
+var _stare_jobs: Array = []
+var _stare_best := {}
+var _stare_for := Vector3.INF
+var _stare_from := Vector3.ZERO
+var _stare_way := 0.0
+var _stare_t := 0.0
+## The stare held facing you (s), and how near your way counts as facing.
+var _stare_held := 0.0
+const STARE_FACED := 0.3
+## A rim stand he walks to (INF none), and the way he goes from it ({}:
+## on to you on foot; {"kind":"stare"}: he stares there).
+var _rim_goal := Vector3.INF
+var _rim_then := {}
+var _rim_t := 0.0
+
+## The stares' outcomes, newest last (at most STARE_LOG), for checks.
+const STARE_LOG := 40
+var stare_log: Array = []
+func _stare_note(line: String) -> void:
+	stare_log.append("%.1f %s" % [_clock,line])
+	if stare_log.size() > STARE_LOG: stare_log.pop_front()
+
+func _stares() -> bool:
+	return float(knobs.get("ledge_stare",0)) >= 0.5 and _chases()
+
+## Where he means to go at you: you (seen), else where he last saw you.
+func _stare_target() -> Vector3:
+	var m: PilotMotor = field.motor
+	if sight != null and sight.seeing(): return m.feet
+	return seen_at if seen_at != Vector3.INF else m.feet
+
+func _stare_start() -> void:
+	vel.x = 0.0
+	vel.z = 0.0
+	_stare_held = 0.0
+	_rim_goal = Vector3.INF
+	_rim_then = {}
+	_skirt_t = 0.0
+	stares += 1
+	_go("stare")
+	_stare_plan(_stare_target())
+
+## The plan's jobs from where he stands, toward `goal`.
+var stare_plans := 0
+func _stare_plan(goal: Vector3) -> void:
+	stare_plans += 1
+	stare_why = "plan"
+	_stare_t = 0.0
+	_stare_for = goal
+	_stare_from = position
+	_stare_best = {}
+	_stare_jobs = []
+	var to := Vector2(goal.x-position.x,goal.z-position.z)
+	var base := PilotMotor.facing_of(to.normalized()) if to.length() > 0.05 else facing
+	for off: float in STARE_FAN: _stare_jobs.append(["land",wrapf(base+off,-PI,PI),Vector3.INF])
+	_stare_jobs.append(["down",base,Vector3.INF])
+	for off: float in STARE_FAN: _stare_jobs.append(["wall",wrapf(base+off,-PI,PI),Vector3.INF])
+	_stare_jobs.append(["stands",base,Vector3.INF])
+	if float(knobs.get("cliff_leap",0)) >= 0.5:
+		for off: float in CLIFF_FAN: _stare_jobs.append(["cliff",wrapf(base+off,-PI,PI),Vector3.INF])
+
+## The way of kind `kind` along `way` from `from` (INF where he stands)
+## toward `goal`: {kind, at, up, way, left, from, ...} or {}.
+func _way_from(kind: String, way: float, from: Vector3, goal: Vector3) -> Dictionary:
+	var was := position
+	var was_f := facing
+	if from != Vector3.INF: position = from
+	facing = way
+	var o := {}
+	match kind:
+		"land":
+			var land := _landing(_way3(way))
+			if not land.is_empty() and (land.kind == "jump" or goal.y < position.y-float(knobs.step)):
+				o = {"kind":land.kind,"at":land.at,"up":-1.0}
+		"down":
+			var dn := _down_find(goal)
+			if not dn.is_empty(): o = {"kind":"drop","at":dn.at,"up":dn.up}
+		"wall":
+			var w := _wall_leap_find(_way3(way),goal)
+			if not w.is_empty(): o = {"kind":"wall","at":w.to,"up":-1.0,"face":w.face,"lip":w.lip}
+		"cliff":
+			var c := _cliff_find(way,goal)
+			if not c.is_empty(): o = {"kind":"cliff","at":c.to,"up":-1.0,"face":c.face,"lip":c.lip}
+		"walk":
+			if _walk_on(goal): o = {"kind":"walk","at":position,"up":-1.0}
+	if not o.is_empty():
+		var at: Vector3 = o.get("lip",o.at)
+		var dir := Vector2(o.at.x-position.x,o.at.z-position.z)
+		o.way = PilotMotor.facing_of(dir.normalized()) if dir.length() > 0.05 else way
+		o.left = at.distance_to(goal)
+		o.from = from
+	position = was
+	facing = was_f
+	return o
+
+## From where he stands, on foot straight at `goal` for a good way
+## (8 m, or all the way): floor every metre at about his level.
+func _walk_on(goal: Vector3) -> bool:
+	var to := Vector3(goal.x-position.x,0.0,goal.z-position.z)
+	var far := minf(to.length(),8.0)
+	if far < 2.0: return false
+	return _walk_line(position,position+to.normalized()*far)
+
+## Floor all along `a` to `b` (flat) at about his level, no step past his
+## stair, his bulk clear.
+func _walk_line(a: Vector3, b: Vector3) -> bool:
+	var step := float(knobs.step)*STAIR
+	var flat := Vector3(b.x-a.x,0.0,b.z-a.z)
+	var n := maxi(1,ceili(flat.length()))
+	var y := a.y
+	for i in range(1,n+1):
+		var p := a+flat*(float(i)/n)
+		var g := _floor(Vector3(p.x,y,p.z),step,step*2.0)
+		if g == -INF: return false
+		y = g
+	return _bulk_sweep(a+Vector3.UP*0.1,Vector3(b.x,y,b.z)+Vector3.UP*0.1) >= 1.0
+
+## Rim stands round him nearer `goal`, walkable straight from here, the
+## nearest it first: their jobs.
+func _stand_jobs(goal: Vector3) -> Array:
+	var now := position.distance_to(goal)
+	var found: Array = []
+	var step := float(knobs.step)*STAIR
+	var r_rim := length*0.5+float(knobs.look)+0.5
+	for k in STAND_WAYS:
+		var a := TAU*float(k)/STAND_WAYS
+		var dir := Vector3(cos(a),0.0,sin(a))
+		for r: float in STAND_RADII:
+			var p := position+dir*r
+			var g := _floor(p,step*2.0,step*2.0)
+			if g == -INF: break
+			p.y = g
+			var d := p.distance_to(goal)
+			if d >= now-WAY_GAIN: continue
+			# A rim stand: no floor his reach off it some way round.
+			var rim := false
+			for j in 8:
+				var b := TAU*float(j)/8.0
+				if _floor(p+Vector3(cos(b),0.0,sin(b))*r_rim,step,step*2.0) == -INF:
+					rim = true
+					break
+			if not rim: continue
+			found.append([d,p,r])
+	found.sort_custom(func(x: Array, y: Array) -> bool: return float(x[0]) < float(y[0]))
+	var jobs: Array = []
+	var n := 0
+	for f: Array in found:
+		if n >= STAND_MOST: break
+		var p: Vector3 = f[1]
+		if not _walk_line(position,p): continue
+		n += 1
+		var to := Vector2(goal.x-p.x,goal.z-p.z)
+		var base := PilotMotor.facing_of(to.normalized()) if to.length() > 0.05 else facing
+		jobs.append(["walk",base,p])
+		for off: float in STAND_FAN: jobs.append(["land",wrapf(base+off,-PI,PI),p])
+		jobs.append(["down",base,p])
+		for off: float in STAND_FAN: jobs.append(["wall",wrapf(base+off,-PI,PI),p])
+	return jobs
+
+## The plan's jobs worked through, STARE_US a frame; the best way kept.
+func _stare_work() -> void:
+	var t0 := Time.get_ticks_usec()
+	var now := position.distance_to(_stare_for)
+	while not _stare_jobs.is_empty() and Time.get_ticks_usec()-t0 < STARE_US:
+		var job: Array = _stare_jobs.pop_front()
+		if job[0] == "stands":
+			_stare_jobs.append_array(_stand_jobs(_stare_for))
+			continue
+		var o := _way_from(job[0],job[1],job[2],_stare_for)
+		if o.is_empty(): continue
+		var walk := 0.0 if job[2] == Vector3.INF else position.distance_to(job[2])
+		o.score = float(o.left)+float(WAY_COST.get(o.kind,0.0))+walk*0.5
+		if float(o.left) >= now-WAY_GAIN: continue
+		if _stare_best.is_empty() or float(o.score) < float(_stare_best.score): _stare_best = o
+
+## Staring at you from the rim, working out his way, then turning once
+## onto it and going.
+func _stare(delta: float) -> void:
+	_brake(delta)
+	_stare_t += delta
+	var m: PilotMotor = field.motor
+	# Relentless, you out of his sight a while: he takes your scent (as his
+	# seek does) and stares and plans at where you are now.
+	if _relentless() and not sight.seeing() and seen_t > float(knobs.hunt_search):
+		seen_at = m.feet
+		seen_t = 0.0
+		scents += 1
+	var target := _stare_target()
+	var to := target-position
+	if sight.seeing() and _attack_with(m,Vector2(to.x,to.z).length(),to.y,delta): return
+	match stare_why:
+		"plan":
+			if target.distance_to(_stare_for) > STARE_MOVED:
+				_stare_plan(target)
+				return
+			_stare_work()
+			# The stare's beat runs once he has come round to you (his stood
+			# steps done), so the turn onto his way never cuts across it.
+			var to_you := Vector2(to.x,to.z)
+			if to_you.length() < 0.1 or (absf(angle_difference(facing,PilotMotor.facing_of(to_you.normalized()))) < STARE_FACED and not look.steps.busy()): _stare_held += delta
+			if not _stare_jobs.is_empty() or (_stare_held < float(knobs.stare_hold) and state_t < float(knobs.stare_hold)+STARE_TURN_MOST): return
+			if _stare_best.is_empty():
+				stare_why = "none"
+				stare_nones += 1
+				_stare_t = 0.0
+				_stare_note("none at %s, you %s" % [position.round(),_stare_for.round()])
+				return
+			_stare_note("%s%s at %s, left %.0f m" % [_stare_best.kind," from stand %s" % (_stare_best.from as Vector3).round() if _stare_best.from != Vector3.INF else "",(_stare_best.at as Vector3).round(),float(_stare_best.left)])
+			var to_go: Vector3 = _stare_best.from if _stare_best.from != Vector3.INF else _stare_best.at
+			var dir := Vector2(to_go.x-position.x,to_go.z-position.z)
+			_stare_way = PilotMotor.facing_of(dir.normalized()) if dir.length() > 0.3 else float(_stare_best.way)
+			stare_why = "turn"
+			_stare_t = 0.0
+		"none":
+			if target.distance_to(_stare_for) > STARE_MOVED or _stare_t >= float(knobs.stare_replan): _stare_plan(target)
+		"turn":
+			if absf(angle_difference(facing,_stare_way)) > STARE_AIM and _stare_t < STARE_TURN_MOST: return
+			_stare_go(_stare_best)
+
+## The way found taken: a walk to its stand, or the leap from here.
+func _stare_go(o: Dictionary) -> void:
+	if o.from != Vector3.INF:
+		_rim_goal = o.from
+		_rim_then = {} if o.kind == "walk" else o
+		_rim_t = 0.0
+		_go("chase")
+		return
+	if o.kind == "walk":
+		_go("chase")
+		return
+	_leap_at(o)
+
+func _leap_at(o: Dictionary) -> void:
+	_leap_to = o.at
+	leap_kind = "drop" if o.kind == "drop" else "jump"
+	match str(o.kind):
+		"drop": down_tos += 1
+		"wall": wall_leaps += 1
+		"cliff":
+			cliff_leaps += 1
+			cliff_log.append("%s -> face %s lip %s, %.0f m from you" % [position.round(),(o.face as Vector3).round(),(o.lip as Vector3).round(),float(o.left)])
+	_go("windup")
+	_drop_up = float(o.up)
+	field.sound(&"body_windup",position)
+
+## On his walk to a rim stand (`_chase` calls it first): there, its way
+## taken from where he really stands (looked at again); walked too long,
+## a stare. True while it has him.
+func _rim_walk(delta: float) -> bool:
+	if _rim_goal == Vector3.INF: return false
+	_rim_t += delta
+	var m: PilotMotor = field.motor
+	if sight.seeing():
+		var to := m.feet-position
+		if _attack_with(m,Vector2(to.x,to.z).length(),to.y,delta):
+			_rim_goal = Vector3.INF
+			return true
+	var left := Vector2(_rim_goal.x-position.x,_rim_goal.z-position.z).length()
+	if left <= RIM_AT:
+		_rim_arrive()
+		return true
+	if _rim_t > RIM_WALK_MOST:
+		_stare_start()
+		return true
+	_pursue(delta,_rim_goal,_chase_pace())
+	return true
+
+func _rim_arrive() -> void:
+	_rim_goal = Vector3.INF
+	var then := _rim_then
+	_rim_then = {}
+	vel.x = 0.0
+	vel.z = 0.0
+	if then.is_empty(): return
+	if str(then.kind) == "stare":
+		_stare_start()
+		return
+	var goal := _stare_target()
+	var o := _way_from("land" if then.kind in ["jump"] else ("down" if then.kind == "drop" else str(then.kind)),float(then.way),Vector3.INF,goal)
+	if o.is_empty() and then.kind == "drop": o = _way_from("land",float(then.way),Vector3.INF,goal)
+	if o.is_empty():
+		_stare_start()
+		return
+	# Turned onto it (he walked there facing the stand), then off.
+	_go("stare")
+	stares += 1
+	_stare_best = o
+	_stare_for = goal
+	_stare_way = float(o.way)
+	stare_why = "turn"
+	_stare_t = 0.0
+
+## `cliff_leap`: a cliff face across the gap along `way`, within
+## `cliff_gap` Hh off flat, met with his feet from half a head height over
+## his own down to `cliff_deep` Hh under (CLIFF_DOWN), its lip within
+## `climb_max` over where he meets it, clean (no shelf he'd haul out onto
+## short of the lip), with room over the lip and past it, and that lip at
+## least CLIFF_GAIN m nearer `goal` than he stands; the arc there meeting
+## that face first. The nearest you of those: {to, face, lip} or {}.
+func _cliff_find(way: float, goal: Vector3) -> Dictionary:
+	var dir := _way3(way)
+	var step := float(knobs.step)
+	var rim := -1.0
+	var d := 0.0
+	while d <= length*0.5+float(knobs.look)+3.0:
+		if _floor(position+dir*d,step,step*2.0) == -INF:
+			rim = d
+			break
+		d += 0.25
+	if rim < 0.0: return {}
+	var most := float(knobs.cliff_gap)*hh
+	var now := position.distance_to(goal)
+	var best := {}
+	var best_d := INF
+	for down: float in CLIFF_DOWN:
+		if down > float(knobs.cliff_deep): break
+		var feet_y := position.y-down*hh
+		var hit := {}
+		for up: float in [neck_h*0.55,step+0.1]:
+			var from := Vector3(position.x,feet_y+up,position.z)+dir*(rim+0.3)
+			var h := _cast(from,from+dir*maxf(most-rim,0.5))
+			var hn := (h.normal as Vector3) if not h.is_empty() else Vector3.UP
+			if h.is_empty() or absf(hn.y) > 0.5 or Vector3(hn.x,0.0,hn.z).normalized().dot(dir) > -0.4:
+				hit = {}
+				break
+			if hit.is_empty(): hit = h
+		if hit.is_empty(): continue
+		var n := hit.normal as Vector3
+		n = Vector3(n.x,0.0,n.z).normalized()
+		var face := hit.position as Vector3
+		var past := face-n*float(knobs.lip_in)
+		var top := _cast(Vector3(past.x,feet_y+float(knobs.climb_max),past.z),Vector3(past.x,feet_y+step,past.z))
+		if top.is_empty() or (top.normal as Vector3).y < 0.6: continue
+		var lip := top.position as Vector3
+		var left := lip.distance_to(goal)
+		if left > now-CLIFF_GAIN or left >= best_d: continue
+		if not _cast(lip+Vector3.UP*0.1,lip+Vector3.UP*neck_h*0.5).is_empty(): continue
+		var on := lip-n*(length*0.5+1.0)
+		var g := _floor(on,1.0,1.5)
+		if g == -INF or not _room_at(Vector3(on.x,g,on.z)): continue
+		if not _face_clean_at(face,n,feet_y,lip.y): continue
+		var to := Vector3(face.x,feet_y,face.z)+dir*0.6
+		if not _wall_arc(to,face) or not _catch_ok(to,face): continue
+		best = {"to":to,"face":face,"lip":lip}
+		best_d = left
+	return best
+
+## Whether his climb up the face at `face` (`n` out of it) from his feet at
+## `from_y` finds no top short of `lip_y`, as his climb looks for one:
+## every half metre up, the face at his chest, a ray down past it from his
+## reach (crag_reach.gd `_face_clean`, from his own build).
+func _face_clean_at(face: Vector3, n: Vector3, from_y: float, lip_y: float) -> bool:
+	var reach := neck_h+arm_l*0.75
+	var chest := neck_h*0.55
+	var step := float(knobs.step)
+	var f := face
+	var y := from_y
+	while y < lip_y-step:
+		var c := Vector3(face.x,y+chest,face.z)
+		var hit := _cast(c+n*4.0,c-n*4.0)
+		if not hit.is_empty() and absf((hit.normal as Vector3).y) < 0.7: f = hit.position
+		var past := Vector3(f.x,0.0,f.z)-n*0.8
+		var top := _cast(Vector3(past.x,y+reach,past.z),Vector3(past.x,y+step,past.z))
+		if not top.is_empty() and (top.normal as Vector3).y > 0.6 and (top.position as Vector3).y < lip_y-0.5: return false
+		y += 0.5
+	return true
+
+## `cliff_leap`, a study's call when he makes no way to you: off to the rim
+## that lies most your way within DIVE_FAR m (none within DIVE_SHUN of one
+## in `shun`, none more than `worse` m farther from you than he stands), to
+## stare and plan from there. Whether he goes.
+func ledge_walk(toward: Vector3, shun: Array = [], worse := INF) -> bool:
+	if not grounded or state not in ["chase","stare","seek"]: return false
+	var picks: Array = []
+	for k in DIVE_WAYS:
+		var a := TAU*float(k)/DIVE_WAYS
+		var way := Vector3(cos(a),0.0,sin(a))
+		var last := Vector3.INF
+		var d := length*0.5
+		while d <= DIVE_FAR:
+			var p := position+way*d
+			var f := _floor(p,float(knobs.step)*STAIR,float(knobs.step)*2.0)
+			if f == -INF:
+				if last != Vector3.INF and last.distance_to(toward) <= position.distance_to(toward)+worse and not shun.any(func(q: Vector3) -> bool: return q.distance_to(last) < DIVE_SHUN):
+					picks.append([last.distance_to(toward)+d*0.5,last])
+				break
+			if last != Vector3.INF and absf(f-last.y) > float(knobs.step)*STAIR*2.0: break
+			last = Vector3(p.x,f,p.z)
+			d += DIVE_FAR_STEP
+	picks.sort_custom(func(x: Array, y: Array) -> bool: return float(x[0]) < float(y[0]))
+	for pk: Array in picks:
+		var p: Vector3 = pk[1]
+		if p.distance_to(position) < 3.0: continue
+		if not _walk_line(position,p): continue
+		_rim_goal = p
+		_rim_then = {"kind":"stare"}
+		_rim_t = 0.0
+		ledge_walks += 1
+		_chase_drop()
+		_skirt_t = 0.0
+		if state != "chase": _go("chase")
+		return true
+	return false
 
 ## `beam`: off a beam's crest line (m, flat) and over or under it (m) he is
 ## still on it; how far on along it he aims (m); how near its end (m) he
@@ -3241,7 +3793,9 @@ func _seek(delta: float) -> void:
 	_brake(delta)
 	var k := state_t/float(knobs.search_for)
 	var was := facing
-	facing = wrapf(_seek_from+sin(k*TAU*1.5)*0.9,-PI,PI)
+	# Olmec ledge (`ledge_stare`): no swing this way and that; he stands
+	# turned to where he lost you (`_turn_goal`), his head's gaze searching.
+	if not _stares(): facing = wrapf(_seek_from+sin(k*TAU*1.5)*0.9,-PI,PI)
 	# Turning to scan, it steps round on the spot (its feet's phase).
 	_seek_turn = absf(angle_difference(was,facing))/maxf(delta,0.0001)
 	_phase += _seek_turn*delta*SEEK_STEP
@@ -4421,13 +4975,22 @@ func _turn_goal() -> float:
 			if seen_at != Vector3.INF:
 				var to := Vector2(seen_at.x-position.x,seen_at.z-position.z)
 				if to.length() > 0.1: return PilotMotor.facing_of(to.normalized())
+		"seek" when _stares() and seen_at != Vector3.INF:
+			var to := Vector2(seen_at.x-position.x,seen_at.z-position.z)
+			if to.length() > 0.1: return PilotMotor.facing_of(to.normalized())
+		"stare":
+			# At you while he plans; onto his way once found.
+			if stare_why == "turn": return _stare_way
+			var at := _stare_target()
+			var to := Vector2(at.x-position.x,at.z-position.z)
+			if to.length() > 0.1: return PilotMotor.facing_of(to.normalized())
 	return facing
 
 ## How its turns and feet go: stepping round where it stands, walking, or
 ## the clips' own (climbing, leaping, landing).
 func _steps_mode() -> int:
 	match state:
-		"listen","reach","triumph","feel","alert": return Look.Steps.STAND
+		"listen","reach","triumph","feel","alert","stare": return Look.Steps.STAND
 		"scope": return Look.Steps.WALK if scope_phase == "step" and Vector2(vel.x,vel.z).length() > 0.15 else Look.Steps.STAND
 		"roam","home","chase","return","seek": return Look.Steps.WALK if Vector2(vel.x,vel.z).length() > 0.15 else Look.Steps.STAND
 	return Look.Steps.OFF
