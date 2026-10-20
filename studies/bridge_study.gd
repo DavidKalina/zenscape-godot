@@ -28,6 +28,8 @@ const RuinKit = preload("res://scripts/ruin_kit.gd")
 const BridgeLoad = preload("res://scripts/bridge_load.gd")
 const BroodKnobs = preload("res://scripts/brood/brood_knobs.gd")
 const BridgeClimb = preload("res://scripts/bridge_climb.gd")
+const BridgeRoutes = preload("res://scripts/brood/bridge_routes.gd")
+const StoneGuy = preload("res://scripts/brood/stone_guy.gd")
 
 const BRIDGE_SCENE := "bridge_study"
 ## The cliffs: tops at y 0, faces down CLIFF_DEEP m. The near cliff's lip is
@@ -93,6 +95,13 @@ var bridges := {}
 ## one per loaded bridge.
 var climbs: Array = []
 
+## The brood's routes over the cliffs and both bridges
+## (scripts/brood/bridge_routes.gd; StoneGuy.route while this room is up).
+var routes: RefCounted = null
+## The test aid (B, or --brood-now at the start): the bag filled to what he
+## can wear and the brood woken, coming for him at once.
+var _brood_now_due := false
+
 func _init() -> void:
 	scene_id = BRIDGE_SCENE
 
@@ -114,6 +123,26 @@ func _build_floors() -> void:
 	_build_bridge("long_bridge",Vector3(NEAR_LIP-SET_BACK,0.0,LONG_Z),Vector3(FAR_LIP+SET_BACK,0.0,LONG_Z),71)
 	_build_bridge("short_bridge",Vector3(SPUR_NEAR-SET_BACK,0.0,SHORT_Z),Vector3(SPUR_FAR+SET_BACK,0.0,SHORT_Z),72)
 	_build_pad()
+
+func _build_room() -> void:
+	super._build_room()
+	_brood_now_due = LaunchArgs.user_args().has("--brood-now")
+	if brood == null: return
+	routes = BridgeRoutes.new()
+	routes.frame = brood
+	# The floors the brood walk: each cliff's top and its spur (the low
+	# back walls aren't floors).
+	for p: Array in CLIFFS:
+		var part: Array = p[1]
+		if str(part[4]) == "wall" and not str(p[0]).ends_with("_spur"): continue
+		routes.add_floor(str(p[0]),part[1],float(part[3]))
+	for id: String in bridges:
+		var br: Dictionary = bridges[id]
+		routes.add_deck(id,br.holder,br.live,br.a,br.b,float(br.span),br.get("load"))
+	StoneGuy.route = routes
+
+func _exit_tree() -> void:
+	if StoneGuy.route == routes: StoneGuy.route = null
 
 func _loot_rows() -> Array:
 	return BRIDGE_LOOT
@@ -191,6 +220,9 @@ func _on_snap(_t: float, id: String) -> void:
 			continue
 		if not g.state in ["walk","climb","mantle","haul","fall"]: continue
 		if held.deck_spot(brood.global_transform*g.feet) == Vector3.INF: continue
+		# `shake` falls from his middle, which a walking guy doesn't keep
+		# (it was where he rose): from his feet.
+		g.mid = g.feet+Vector3.UP*float(g.tall)*0.5
 		g.shake(Vector3.DOWN+held.global_basis*held.bridge.across*randf_range(-1.0,1.0),randf_range(4.0,9.0))
 
 func _on_mend(id: String) -> void:
@@ -300,6 +332,41 @@ func tick(delta: float) -> void:
 		if motor.rider == null: c.catch(motor,delta)
 	_bear()
 	_bag_in_void()
+	if _brood_now_due and walk_ready:
+		_brood_now_due = false
+		brood_now()
+
+## The test aid (B; --brood-now): fills the bag to what he can wear from the
+## loot not in it (heaviest that fits first, put in at once) and wakes the
+## brood (all of them, or as many as went home), so they come for him
+## straight away from the burrows, over the bridges, wherever he is.
+func brood_now() -> void:
+	if brood == null:
+		_say("No brood in this run (--no-brood)")
+		return
+	if bag != null and not bool(bag.buried) and bag.state == "worn":
+		var pieces: Array = []
+		for p: Dictionary in loot:
+			if bag.items.has(p) or p == bag.stowing or bool(p.get("buried",false)): continue
+			if not (p.node as Node3D).visible: continue
+			pieces.append(p)
+		pieces.sort_custom(func(x: Dictionary, y: Dictionary) -> bool: return float(x.kg) > float(y.kg))
+		var kg := float(bag.kg)
+		for p: Dictionary in pieces:
+			if kg+float(p.kg) > float(bag.limit())+0.001: continue
+			(p.node as Node3D).visible = false
+			bag.items.append(p)
+			kg += float(p.kg)
+		bag._set_kg(kg)
+	if not brood.woken: brood.wake_burrows()
+	elif brood.guys.size() < brood.count: brood.wake_burrows(brood.count-brood.guys.size())
+	_say("Brood now: the bag holds %d kg; they're coming for you" % int(round(float(bag.kg))) if bag != null else "Brood now")
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_B and not _name_panel.visible:
+		brood_now()
+		return
+	super._unhandled_input(event)
 
 ## A bag fallen into the void (dragged or lying on the deck at the snap,
 ## thrown short) is lost with its loot: the pieces go back on their spots
@@ -380,4 +447,4 @@ func station_near(at: Vector3) -> int:
 	return 4 if at.x >= FAR_LIP else 2
 
 func _hint_text() -> String:
-	return "Bridge study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag · hold LMB or T (pad RT) aim a throw (8 kg or under) · V shove · the brood wake out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off · the long bridge to the far cliff, the short one beside it · held past its limit the long bridge snaps: falling, he catches a hanging half; stick toward the cliff climbs, away down, Space jumps off, C lets go · fall into the void: back at the near end (the bridge mended) · 1 start, 2 near end, 3 short bridge, 4 far end, 5 drop pad · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Bridge study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag · hold LMB or T (pad RT) aim a throw (8 kg or under) · V shove · the brood wake out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off · B (or --brood-now): brood now, the bag filled to 18 kg and the brood woken, coming for you (over either bridge) · the long bridge to the far cliff, the short one beside it · held past its limit the long bridge snaps: falling, he catches a hanging half; stick toward the cliff climbs, away down, Space jumps off, C lets go · fall into the void: back at the near end (the bridge mended) · 1 start, 2 near end, 3 short bridge, 4 far end, 5 drop pad · R start · F1 numbers · F4 world view · Esc mouse"

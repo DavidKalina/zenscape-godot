@@ -21,6 +21,12 @@ extends RefCounted
 
 const K = preload("res://scripts/brood/brood_knobs.gd")
 
+## Routes over floors and rope bridges (scripts/brood/bridge_routes.gd),
+## set by a study that has them: `way(guy, goal)` the next spot toward the
+## goal, `keep(guy)` holds him on a deck. null (the default): straight at
+## the goal, as before.
+static var route: Object = null
+
 var node: Node3D = null
 var state := "walk"
 ## Feet on the ground ("walk", "fall"); the body's middle on a face.
@@ -229,7 +235,10 @@ func step(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 		"wake": _wake(dt)
 		"sink": _sink(dt)
 		"home": return
-		"walk": _walk(space,goal,dt)
+		"walk":
+			if route != null: goal = route.way(self,goal)
+			_walk(space,goal,dt)
+			if route != null and state == "walk": route.keep(self)
 		"climb": _climb(space,goal,dt)
 		"mantle": _mantle(dt)
 		"fall": _fall(space,dt)
