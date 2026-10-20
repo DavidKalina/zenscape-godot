@@ -16,10 +16,18 @@ extends RefCounted
 ## the host: `haul_at`; the lead walks and climbs as ever, `hauling`, at
 ## `pace`), "fall", "lost" (fell off the world).
 ##
-## The body is greybox: a squat block, a head, stub arms and legs on pivots,
-## swung procedurally (the scurry, the reach up a face, the heave over).
+## The body is the Blender model (scripts/brood/stone_guy_body.gd, the
+## contract docs/design/brood/body-contract.md): each state plays its clip
+## (`_animate`). `--brood-greybox` (or no glb) keeps the old greybox: a
+## squat block, a head, stub arms and legs on pivots, swung procedurally
+## (the scurry, the reach up a face, the heave over).
 
 const K = preload("res://scripts/brood/brood_knobs.gd")
+const Body = preload("res://scripts/brood/stone_guy_body.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+
+## The greybox body instead of the model (`--brood-greybox`, or no glb).
+static var greybox: bool = LaunchArgs.user_args().has("--brood-greybox") or not Body.available()
 
 ## Routes over floors and rope bridges (scripts/brood/bridge_routes.gd),
 ## set by a study that has them: `way(guy, goal)` the next spot toward the
@@ -95,6 +103,15 @@ var _tumble_a := 0.0
 var _phase := 0.0
 var _basis := Basis.IDENTITY
 var _limbs := {}
+## The real body (null in the greybox), the distance moved since it last
+## played, the time since he last moved, the landing's time left, and
+## whether this fall began as a throw.
+var body: Body = null
+var _moved := 0.0
+var _still := 0.0
+var _land_t := 0.0
+var _shook := false
+var _was := ""
 var _ray := PhysicsRayQueryParameters3D.new()
 
 var tall := 0.5
@@ -245,6 +262,7 @@ func step(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 		"cling": _swing(dt*9.0,dt)
 		"haul","leap","ride": return
 	_place_node(dt)
+	if body != null: _animate(dt)
 
 ## Starts a leap from where he stands at the bag (the host flies him there:
 ## `leap_step`).
@@ -267,6 +285,7 @@ func leap_step(at: Vector3, out: Vector3, dt: float) -> bool:
 	heading = _flat(at-_l_from).normalized() if _flat(at-_l_from).length() > 0.01 else heading
 	_swing(0.0,dt)
 	_place_node(dt)
+	if body != null: _animate(dt)
 	if u >= 1.0:
 		state = "ride"
 		return true
@@ -280,6 +299,7 @@ func ride_at(at: Vector3, out: Vector3, dt: float) -> void:
 	face_n = out
 	_swing(dt*9.0,dt)
 	_place_node(dt)
+	if body != null: _animate(dt)
 
 ## Hanging on at `at` (his middle), belly to the wanderer, `out` the way
 ## out of him; the host moves him with the wanderer each frame.
@@ -300,6 +320,7 @@ func haul_at(at: Vector3, b: Basis, moved: float, dt: float) -> void:
 	_basis = b
 	node.transform = Transform3D(b,at)
 	_swing(moved,dt)
+	if body != null: _animate(dt)
 
 ## Off the haul (it's home, or let down, or lifted from them): down onto
 ## the ground under him, not dazed.
@@ -321,6 +342,7 @@ func shake(push: Vector3, spin := 0.0) -> void:
 	var side_ax := push.cross(Vector3.UP)
 	_tumble_ax = side_ax.normalized() if side_ax.length() > 0.01 else Vector3.RIGHT
 	daze = K.DAZE
+	_shook = true
 	_drop_to = Vector3.INF
 	feet = mid-Vector3.UP*tall*0.5
 	velocity = push
@@ -659,10 +681,15 @@ func _pivot(parent: Node3D, called: String, at: Vector3) -> Node3D:
 ## A squat block body on stub legs, a head a little forward, stub arms; the
 ## node's origin is the body's middle.
 func _build() -> Node3D:
-	_materials()
 	var h := tall
 	var root := Node3D.new()
 	root.name = "StoneGuy"
+	if not greybox:
+		body = Body.new()
+		root.add_child(body)
+		body.setup(h)
+		return root
+	_materials()
 	var body := _pivot(root,"body",Vector3.ZERO)
 	var bw := h*0.72
 	_box(body,"Trunk",Vector3(bw,h*0.46,h*0.52),Vector3(0.0,0.0,0.0),_mat).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
@@ -713,6 +740,9 @@ func _place_node(dt: float) -> void:
 ## The limbs: a scurry on the ground (legs and arms swung against each
 ## other, a bob), the reach and pull on a face, the heave over a top.
 func _swing(moved: float, dt: float) -> void:
+	if body != null:
+		_moved += moved
+		return
 	_phase += moved/(tall*0.55)
 	var sw := sin(_phase)
 	var body: Node3D = _limbs.body
@@ -781,3 +811,65 @@ func _swing(moved: float, dt: float) -> void:
 	body.position.y = lerpf(body.position.y,float(want.bob),k)
 	if state == "climb" or state == "cling" or state == "ride": body.rotation.z = 0.12*sw
 	else: body.rotation.z = lerpf(body.rotation.z,0.0,k)
+
+# --- The real body's clips ------------------------------------------------------------
+
+## The clip for what he's doing this frame, and how far it moves on: the
+## mind's own clock for the timed one-shots (wake, rise, sink, mantle, leap),
+## the distance he moved for the strides (walk, haul, climb), the frame's
+## time for the rest.
+func _animate(dt: float) -> void:
+	var moved := _moved
+	_moved = 0.0
+	if not node.visible: return
+	var now := state
+	if _was == "fall" and now == "walk":
+		_land_t = float(body.clip_info("land").get("length",0.26))
+		_shook = false
+		body.play("land",0.03)
+	if now != "fall": _shook = false
+	_was = now
+	body.set_effect("daze",daze > 0.0 and now != "fall")
+	match now:
+		"wake":
+			if _w_burrow:
+				if _w_t < K.WAKE_RISE: body.seek("rise",_w_t,dt)
+				else: _clock("look",dt)
+			elif _w_t < K.WAKE_RISE: body.seek("wake",_w_t,dt)
+			else: _clock("peek",dt)
+		"sink": body.seek("sink",_w_t,dt)
+		"mantle": body.seek("mantle",clampf(_m_t,0.0,1.0)*K.MANTLE_TIME,dt)
+		"leap": body.seek("leap",leap_t,dt)
+		"climb":
+			# (The climb's _swing gets 2.2 times the move.)
+			_stride("climb",moved/2.2*signf(climb_dir),dt)
+		"haul": _stride("haul",moved,dt)
+		"cling": _clock("cling",dt)
+		"ride": _clock("ride",dt)
+		"fall":
+			if _shook or tumble != 0.0:
+				if body.clip != "shake" and body.clip != "fall": body.play("shake",0.03)
+				body.advance(dt,dt)
+			elif _drop_to != Vector3.INF: _clock("drop",dt)
+			else: _clock("fall",dt)
+		_:
+			if _land_t > 0.0:
+				_land_t -= dt
+				body.advance(dt,dt)
+				return
+			if moved > 0.0001: _still = 0.0
+			else: _still += dt
+			if hauling: _stride("haul",moved,dt)
+			elif _still < 0.12: _stride("walk",moved,dt)
+			else: _clock("idle",dt)
+
+func _clock(c: String, dt: float) -> void:
+	body.play(c)
+	body.advance(dt,dt)
+
+## A stride clip moved on by `moved` (m): a loop per its stride (of his height).
+func _stride(c: String, moved: float, dt: float) -> void:
+	body.play(c)
+	var info: Dictionary = body.clip_info(c)
+	var per := float(info.get("stride",1.0))*tall
+	body.advance(moved/maxf(per,0.001)*float(info.get("length",1.0)),dt)
