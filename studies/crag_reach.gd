@@ -746,12 +746,24 @@ func _add_life() -> void:
 	greed = GreedMeter.new()
 	add_child(greed)
 	greed.setup(self)
+	run = GreedRun.new()
+	add_child(run)
+	run.setup(self)
 	_build_hands_hint()
 
 # --- The greed run (--greed-run, studies/crag_reach_greed.gd) -------------------------
 
 const Greed = preload("res://studies/crag_reach_greed.gd")
 const GreedMeter = preload("res://scripts/greed/greed_meter.gd")
+const GreedRun = preload("res://scripts/greed/greed_run.gd")
+## The run's keep, clock, escape, death and end screen
+## (scripts/greed/greed_run.gd).
+var run: Node = null
+
+## The bag off the plane's hook (scripts/carry/loot_bag.gd `unhitch`): its
+## load into the plane's keep.
+func bag_unhitching(b: Node3D) -> void:
+	if run != null: run.bank(b)
 var greed_on := false
 ## The isle's anger (scripts/greed/greed_meter.gd): value bagged, its
 ## thresholds (--greed-brood=N, --greed-olmec=N) and its cue.
@@ -1164,7 +1176,7 @@ func tick(delta: float) -> void:
 	super.tick(delta)
 	if greed != null:
 		greed.step(delta)
-		if _hands_label != null: _hands_label.text = Greed.hands_text(hands)+"\n"+greed.text()
+		if _hands_label != null: _hands_label.text = Greed.hands_text(hands)+"\n"+greed.text()+("\n"+run.text() if run != null else "")
 	if enemies == null or flying or not olmec_armed: return
 	if _olmec_due >= 0.0:
 		_olmec_due -= delta
@@ -1190,6 +1202,7 @@ func tick(delta: float) -> void:
 ## Flying, the hunt goes on (he makes for where you left the ground).
 func _process(delta: float) -> void:
 	super._process(delta)
+	if run != null: run.step(delta)
 	if flying and enemies != null and delta > 0.0:
 		for e in enemies.enemies:
 			if is_instance_valid(e) and not e.gone: e.step(delta)

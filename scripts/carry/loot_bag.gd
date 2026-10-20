@@ -522,6 +522,14 @@ func rip_out(p: Dictionary = {}) -> Dictionary:
 	_set_kg(maxf(kg-float(p.kg),0.0))
 	return p
 
+## Every piece out at once, no gulp (the greed run's bank: scripts/greed/
+## greed_run.gd), the kg to nothing. Returns them; their figures stay hidden.
+func empty_out() -> Array:
+	var out := items.duplicate()
+	items.clear()
+	_set_kg(0.0)
+	return out
+
 ## The sack's mouth (world).
 func mouth() -> Vector3:
 	var motor: Variant = study.get("motor")
@@ -701,6 +709,8 @@ func unhitch() -> void:
 	var s: float = study.get("motor").size
 	_act_from = _sack.global_transform
 	unhitches += 1
+	# The host may bank its load first (the greed run: into the plane's keep).
+	if study.has_method("bag_unhitching"): study.call("bag_unhitching",self)
 	# The hugged treasures in it set out on the turf by the rope first.
 	var c := _carry()
 	if c != null and c.has_method("bag_unhitched"): c.bag_unhitched()

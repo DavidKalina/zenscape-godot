@@ -236,7 +236,7 @@ static func hands_text(hands: String) -> String:
 
 ## The bag's keys, for the foot hint.
 static func hint() -> String:
-	return "Greed run: H (pad up) switches the bag / the rope in hand · bag: E by loot bags it · F off / on / drag · F by the plane's rope hook: hitch the bag on / off · Space at the plane boards"
+	return "Greed run: H (pad up) switches the bag / the rope in hand · bag: E by loot bags it · F off / on / drag · F by the plane's rope hook: hitch the bag (its load is the plane's), F again: its load into the plane's keep and the bag back on · Space at the plane boards; fly clear of the crag to end the run"
 
 # --- The stone brood (scripts/brood/bag_brood.gd) ---------------------------------------
 
