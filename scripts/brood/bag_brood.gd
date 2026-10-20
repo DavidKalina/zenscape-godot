@@ -142,7 +142,9 @@ func _tick(delta: float) -> void:
 	var dt := minf(delta,1.0/30.0)
 	var space := get_world_3d().direct_space_state
 	var m: Variant = _motor()
-	var on_him: bool = _on_him() and float(bag.kg) > 0.0 and goal_override == Vector3.INF and m != null
+	# Aboard the plane (a host with `flying`) he and the bag are out of reach: they let go.
+	var aboard: bool = bool(study.get("flying"))
+	var on_him: bool = _on_him() and float(bag.kg) > 0.0 and goal_override == Vector3.INF and m != null and not aboard
 	var goal := goal_override
 	if goal == Vector3.INF: goal = bag_at()
 	# The bag buried: the rest trail him, off a way, while the guards keep it.
@@ -231,7 +233,7 @@ func _cling_step(m: Variant, dt: float) -> void:
 	clinging = n
 	bag.set_slow(maxf(1.0-K.SLOW_EACH*float(n),K.SLOW_MOST))
 	# The rip: a slow leak while they hang on; shaken off, the wait starts over.
-	if n > 0 and m != null and bag.state == "worn" and (bag.stowing as Dictionary).is_empty() and str(bag.act) == "" and not (bag.items as Array).is_empty():
+	if n > 0 and m != null and not bool(study.get("flying")) and bag.state == "worn" and (bag.stowing as Dictionary).is_empty() and str(bag.act) == "" and not (bag.items as Array).is_empty():
 		if _rip_t < 0.0: _rip_t = _rip_wait()
 		_rip_t -= dt*rip_pace*(1.0+K.RIP_MORE*float(n-1))
 		if _rip_t <= 0.0:

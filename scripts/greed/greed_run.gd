@@ -108,8 +108,18 @@ func step(delta: float) -> void:
 			end("lost","The Olmec swallowed you.")
 			return
 	else: _swallow_t = 0.0
+	# The Olmec close by a moment ago: his leap threw him off, not a misstep.
+	var olmec: Node3D = host.call("olmec") if host.has_method("olmec") else null
+	var motor: Variant = host.get("motor")
+	_near_t += delta
+	if olmec != null and motor != null and olmec.global_position.distance_to(motor.feet) < OLMEC_NEAR: _near_t = 0.0
 	if float(host.get("_stranded_left")) >= 0.0:
-		end("lost","You fell off the crag.")
+		end("lost","The Olmec threw you off the crag." if _near_t < OLMEC_FRESH else "You fell off the crag.")
+
+## Seconds since the Olmec was within OLMEC_NEAR m of him.
+var _near_t := 999.0
+const OLMEC_NEAR := 6.0
+const OLMEC_FRESH := 5.0
 
 ## The bag buried: its load lost; SPARE_WAIT s on, the spare by the hook.
 func _spare_step(delta: float) -> void:
