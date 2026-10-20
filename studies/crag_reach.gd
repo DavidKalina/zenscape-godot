@@ -25,6 +25,9 @@ extends "res://studies/kit_isle.gd"
 ##                          face across a gap too wide to land over)
 ##     [--olmec-after=N]    the same, N s after you start (a late threat)
 ##     [--body-knob=<knob>=<value>] over his knobs (repeatable)
+##     [--greed-run]        the greed run (studies/crag_reach_greed.gd):
+##                          the loot bag on his back, loot over the crag,
+##                          the plane's rope hook to hitch it to
 ##   With the Olmec out: Tab / R3 lock on, X the gust shot (its charge
 ##   refills on foot), R you back at the start and him gone, up a cliff
 ##   again (at once with --olmec, N s on with --olmec-after); fallen off the
@@ -175,9 +178,11 @@ func _ready() -> void:
 		elif a == "--no-debris": debris = false
 		elif a == "--olmec": olmec_after = 0.0
 		elif a.begins_with("--olmec-after="): olmec_after = maxf(float(a.get_slice("=",1)),0.0)
+		elif a == "--greed-run": greed_on = true
 		elif a.begins_with("--body-knob="):
 			var kv: String = a.trim_prefix("--body-knob=")
 			_body_knobs[kv.get_slice("=",0)] = float(kv.get_slice("=",1))
+	bag_on = greed_on
 	_no_lode = true
 	_olmec_due = olmec_after
 	kit_breaks_on = olmec_after >= 0.0
@@ -729,9 +734,37 @@ func _stand(name_: String, coded: Transform3D, spec: Dictionary) -> Node3D:
 func _grow() -> void:
 	flora_ready = true
 
-## No kit life (its undergrowth and flowers are another palette).
+## No kit life (its undergrowth and flowers are another palette). With
+## --greed-run, the bag, its loot and the plane's rope hook.
 func _add_life() -> void:
-	pass
+	if greed_on: Greed.build(self)
+
+# --- The greed run (--greed-run, studies/crag_reach_greed.gd) -------------------------
+
+const Greed = preload("res://studies/crag_reach_greed.gd")
+var greed_on := false
+## Read by the carry (scripts/carry/carry_host.gd) and the bag
+## (scripts/carry/loot_bag.gd), as studies/wreck_cluster.gd's: the plane's
+## rope ends in a bare hook (`bag_on`), the bag, the loose loot.
+var bag_on := false
+var carry: Node3D = null
+var bag: Node3D = null
+var loot: Array = []
+
+func _foot_text() -> String:
+	return super._foot_text()+("\n"+Greed.hint() if greed_on else "")
+
+## Dragging, the bag holds him to its rope; aiming a throw, the stick moves
+## the reticle, not him (as studies/wreck_cluster.gd).
+func _want(delta: float) -> Vector2:
+	var want := super._want(delta)
+	if bag == null or bag.act != "aim": return want
+	bag.aim_steer(want,delta)
+	return Vector2.ZERO
+
+func _sync_figure() -> void:
+	if bag != null: bag.leash(get_process_delta_time())
+	super._sync_figure()
 
 # --- The Olmec hunt (--olmec, --olmec-after=N) ------------------------------------------
 
