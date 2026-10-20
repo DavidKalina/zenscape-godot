@@ -27,9 +27,17 @@ const HEIST_MASSES := [
 	["vault_e",Vector3(222.0,6.0,4.0),{"seed":93,"size":15.0,"shape":0.7,"flat":0.6,"landmark":0},[]],
 	["vault_s",Vector3(186.0,4.0,34.0),{"seed":94,"size":14.0,"shape":0.5,"flat":0.6,"landmark":0},[]],
 	["south",Vector3(125.0,-10.0,64.0),{"seed":95,"size":20.0,"shape":0.45,"flat":0.7,"landmark":0},[]],
-	["ford",Vector3(82.0,-5.0,52.0),{"seed":96,"size":16.0,"shape":0.5,"flat":0.7,"landmark":0},[]],
+	["ford",Vector3(82.0,-8.8,52.0),{"seed":96,"size":16.0,"shape":0.5,"flat":0.7,"landmark":0},[]],
 ]
 const HEIST_BASE := {"grass":0.0}
+
+## The way out's fallen pillar (crag_reach.gd PILLARS rows: name, from the
+## high mass, to the low, seed): a colossus column lying from vault_s's
+## crown rim down onto south's crown, one long slope to boot-surf with the
+## bag on (crouch at a run).
+const HEIST_PILLARS := [
+	["pillar_out","vault_s","south",211],
+]
 
 ## The vault's marks (crag_reach.gd RUINS rows): a ring of stones round the
 ## court's middle with the treasure's chest in it, a colonnade along the
@@ -110,7 +118,7 @@ const HEIST_SWINGS := [
 	["swing_01","arch",Vector3(38.5,27.5,-37.2),Vector2(0.467,0.884),10.0,24.0,"a rock arch over the gap terrace_n -> ledge (the way in)"],
 	["swing_02","arm",Vector3(177.0,34.0,48.0),Vector2(0.0,1.0),7.0,4.0,"an arm out of vault_s's south face at its west corner: swing round the corner"],
 	["swing_03","lintel",Vector3(113.5,26.5,56.0),Vector2(0.0,1.0),8.0,6.0,"a broken lintel on south's west rim: the swing out from under the Olmec"],
-	["swing_04","branch",Vector3(98.2,32.7,47.0),Vector2(0.6,0.8),7.0,7.0,"a dead tree on ford's east rim, its branch over the gap: the chain's last"],
+	["swing_04","branch",Vector3(98.2,28.9,47.0),Vector2(0.6,0.8),7.0,7.0,"a dead tree on ford's east rim, its branch over the gap: the chain's last"],
 ]
 ## The way out of the court, built for the bag: a ramp of stone up from the
 ## court floor along vault_s's north foot to a landing, then three ledges
@@ -132,6 +140,23 @@ const HEIST_STEPS := [
 	["vault_step_03",Vector2(190.5,24.75),2.5,3],
 ]
 const HEIST_CROWN_S := 34.5
+## The way out's gap (heist/gap_near, heist/gap_far), south -> ford: two
+## stone blocks, the near one lying on south's west rim out over the void,
+## its lip (the top middle of its far face) HEIST_GAP_AT; then a gap of
+## HEIST_GAP_JUMP (times the wanderer) along HEIST_GAP_WAY; the far one
+## against ford's east rim, its top a SET_OFF over the near one's (ford's
+## crown). Light (under the ledge bar, 9 kg) he runs, jumps and catches
+## its lip; heavier the ledge is barred and the heavy bag cuts his jump:
+## he throws the bag across, jumps, climbs and shoulders it. Rows: [id,
+## length along the way, width, which (0 near, 1 far)].
+const HEIST_GAP_AT := Vector3(106.0,20.3,58.0)
+const HEIST_GAP_WAY := Vector2(-1.0,0.0)
+const HEIST_GAP_JUMP := 3.0
+const HEIST_GAP_BLOCKS := [
+	["gap_near",9.0,4.0,0],
+	["gap_far",6.0,5.0,1],
+]
+const GAP_DEPTH := 12.0
 const STEP_WIDTH := 5.0
 const STEP_FOOT := 20.0
 ## The climbing walls: [id, middle of its top (world), out (x, z: the way
@@ -220,7 +245,7 @@ func bridge_list() -> Array:
 	return []
 
 func pillar_list() -> Array:
-	return []
+	return HEIST_PILLARS
 
 func ruin_list() -> Array:
 	return HEIST_RUINS
@@ -279,6 +304,7 @@ func _add_life() -> void:
 	_build_swings()
 	_build_walls()
 	_build_vault_way()
+	_build_gap()
 	_build_olmec_up()
 	_build_hands_hint()
 
@@ -403,6 +429,37 @@ func _build_vault_way() -> void:
 		var size := Vector3(STEP_WIDTH,top-STEP_FOOT,float(row[2]))
 		var coded := Transform3D(Basis(),Vector3(mid.x,(top+STEP_FOOT)*0.5,mid.y))
 		var body := _stone_box(id,size,stone)
+		body.transform = Layout.xform(called,coded)
+		holder.add_child(body)
+		Layout.track(called,body,"piece",coded)
+
+## The far side's lip (the top middle of gap_far's near face), as coded.
+static func gap_far_lip() -> Vector3:
+	var way := Vector3(HEIST_GAP_WAY.x,0.0,HEIST_GAP_WAY.y).normalized()
+	return HEIST_GAP_AT+way*HEIST_GAP_JUMP*WorldScale.wanderer+Vector3.UP*RuinKit.SET_OFF*WorldScale.wanderer
+
+## The way out's gap (HEIST_GAP_BLOCKS), each named heist/<id>: a stone
+## block GAP_DEPTH deep, its x along the way.
+func _build_gap() -> void:
+	var holder := Node3D.new()
+	holder.name = "Gap"
+	add_child(holder)
+	var stone := StandardMaterial3D.new()
+	stone.albedo_color = Color(0.6,0.57,0.52)
+	stone.roughness = 1.0
+	var way := Vector3(HEIST_GAP_WAY.x,0.0,HEIST_GAP_WAY.y).normalized()
+	var basis := Basis(way,Vector3.UP,way.cross(Vector3.UP))
+	for row: Array in HEIST_GAP_BLOCKS:
+		var id := str(row[0])
+		var called := "heist/%s" % id
+		if Layout.deleted(called): continue
+		var long := float(row[1])
+		var far := int(row[3]) == 1
+		# The near block lies behind its lip; the far one starts past the gap.
+		var lip: Vector3 = gap_far_lip() if far else HEIST_GAP_AT
+		var mid := lip+way*(long*0.5 if far else -long*0.5)+Vector3.DOWN*GAP_DEPTH*0.5
+		var coded := Transform3D(basis,mid)
+		var body := _stone_box(id,Vector3(long,GAP_DEPTH,float(row[2])),stone)
 		body.transform = Layout.xform(called,coded)
 		holder.add_child(body)
 		Layout.track(called,body,"piece",coded)
