@@ -380,6 +380,12 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# stops dead and drops, as before); hunting, a face across a gap
 		# with no landing, at most `catch_gap` Hh off flat, is leapt at.
 		"leap_catch":0,"catch_gap":9.0,
+		# Olmec reach: `down_to` 1, hunting at a rim with you below him and
+		# no plain drop, he looks along the rim (a fan of ways round yours)
+		# for a floor down there nearer you, out to `down_reach` Hh flat,
+		# and throws himself off on a higher arc (up to `down_arc` Hh) when
+		# a lip or a ruin on the rim is in the plain arc's way.
+		"down_to":0,"down_reach":5.5,"down_arc":2.4,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -540,6 +546,7 @@ func _step_len() -> float:
 func _go(to: String) -> void:
 	state = to
 	state_t = 0.0
+	if to not in ["windup","leap"]: _drop_up = -1.0
 	if _chase_routed and to in ["listen","roam","seek","return","alert","reach"]: _chase_drop()
 	if to == "listen":
 		_listen_from = facing
@@ -1356,6 +1363,7 @@ func _windup(delta: float) -> void:
 		pounces += 1
 	if leap_kind == "jump": jumps += 1
 	var throw := _throw(position,_leap_to,leap_kind)
+	_drop_up = -1.0
 	_flight = throw[1]
 	vel = throw[0]
 	grounded = false
@@ -1371,6 +1379,7 @@ func _throw(from: Vector3, to: Vector3, kind: String) -> Array:
 	var flat := Vector2(to.x-from.x,to.z-from.z)
 	var drop := from.y-to.y
 	var up := float(knobs.leap_up)
+	if kind == "drop" and _drop_up > 0.0: up = _drop_up
 	if kind == "jump": up = maxf(up,float(knobs.jump_arc)*flat.length())+maxf(0.0,-drop)
 	elif kind == "pounce": up = maxf(up,float(knobs.pounce_arc)*flat.length())+maxf(0.0,-drop)
 	var vy := sqrt(2.0*g*up)
@@ -1384,7 +1393,7 @@ func _throw(from: Vector3, to: Vector3, kind: String) -> Array:
 ## into the void.
 const ARC_LAND := 2.0
 const ARC_DT := 1.0/30.0
-func _arc_clear(to: Vector3, kind: String) -> bool:
+func _arc_clear(to: Vector3, kind: String, bulk := false) -> bool:
 	# Olmec round 1: room for its bulk where it comes down (a shaft, a slot
 	# its shoulders don't fit, is no landing).
 	if not _room_at(to): return false
@@ -1401,7 +1410,7 @@ func _arc_clear(to: Vector3, kind: String) -> bool:
 			if (hit.normal as Vector3).y > 0.5 and v.y <= 0.0: return (hit.position as Vector3).distance_to(to) <= ARC_LAND
 			return false
 		# Olmec round 1: its bulk would fly into a wall on the way.
-		if kind != "drop" and _bulk_sweep(p,next) < 1.0: return false
+		if (kind != "drop" or bulk) and _bulk_sweep(p,next) < 1.0: return false
 		p = next
 		t += ARC_DT
 	return false
@@ -1526,6 +1535,85 @@ func _wall_leap(fwd: Vector3, goal: Vector3) -> bool:
 		field.sound(&"body_windup",position)
 		return true
 	return false
+
+## The arc's rise (m) for the drop being thrown (`down_to`), -1 the knob's.
+var _drop_up := -1.0
+var _down_next := 0.0
+const DOWN_EVERY := 0.5
+const DOWN_TRIES := 24
+var down_tos := 0
+var down_why := ""
+
+## `down_to`: hunting at a rim, him a step or more under its feet and
+## within twice `down_reach` flat: a floor down there nearer him than it
+## stands, not a head height under his, along a fan of ways round his
+## (his own first), found as `_drop` finds one but out to `down_reach` Hh;
+## its arc tried plain, then higher to `down_arc` Hh, till one clears (a
+## lip or a ruin on the rim no longer in its way). The nearest him wins; it
+## winds up and throws itself off.
+func _down_to(goal: Vector3) -> bool:
+	if float(knobs.down_to) < 0.5 or state != "chase": return false
+	var step := float(knobs.step)
+	if goal.y >= position.y-step: return false
+	var to := Vector2(goal.x-position.x,goal.z-position.z)
+	var reach := float(knobs.down_reach)*hh
+	if to.length() < 0.1 or to.length() > reach*2.0: return false
+	var base := PilotMotor.facing_of(to.normalized())
+	var now := position.distance_to(goal)
+	var best := {}
+	var best_d := now-hh
+	down_why = "no floor under the rim nearer him"
+	# Arcs flown at most (each a few dozen casts and bulk sweeps).
+	var tries := DOWN_TRIES
+	for a: float in [0.0,0.35,-0.35,0.7,-0.7,1.1,-1.1]:
+		if tries <= 0: break
+		var dir := _way3(wrapf(base+a,-PI,PI))
+		var d := length*0.5+float(knobs.look)
+		while d <= reach:
+			var p := position+dir*d
+			var hit := _cast(p+Vector3.UP*step,p-Vector3.UP*float(knobs.drop_max))
+			d += 1.5
+			if hit.is_empty() or (hit.normal as Vector3).y <= 0.7: continue
+			var y := (hit.position as Vector3).y
+			if y >= position.y-step or y < goal.y-hh: continue
+			var onto := p+dir*(length*0.5+1.0)
+			var g := _floor(Vector3(onto.x,y,onto.z),1.0,1.0)
+			if g == -INF: continue
+			var at := _down_room(Vector3(onto.x,g,onto.z))
+			if at == Vector3.INF: continue
+			var dd := at.distance_to(goal)
+			if dd >= best_d or tries <= 0: continue
+			for up: float in [float(knobs.leap_up),hh*0.8,hh*1.4,float(knobs.down_arc)*hh]:
+				tries -= 1
+				_drop_up = up
+				var ok := _arc_clear(at,"drop",true)
+				_drop_up = -1.0
+				if ok:
+					best = {"at":at,"up":up}
+					best_d = dd
+					break
+	if best.is_empty(): return false
+	down_why = ""
+	down_tos += 1
+	_leap_to = best.at
+	leap_kind = "drop"
+	_drop_up = best.up
+	_go("windup")
+	field.sound(&"body_windup",position)
+	return true
+
+## A spot with room for its bulk at `at` or round it (a narrow terrace:
+## the widest of it near there), on about the same floor; INF none.
+func _down_room(at: Vector3) -> Vector3:
+	if _room_at(at): return at
+	for r: float in [hh*0.6,hh*1.2]:
+		for i in 8:
+			var q := at+Vector3(cos(i*TAU/8.0),0.0,sin(i*TAU/8.0))*r
+			var g := _floor(q,1.0,1.5)
+			if g == -INF: continue
+			q.y = g
+			if _room_at(q): return q
+	return Vector3.INF
 
 ## Whether the jump's arc to `to` (just into a face at `face`) meets that
 ## face first: its feet rays along it hitting nothing till a steep face
@@ -2171,6 +2259,12 @@ func _chase(delta: float) -> void:
 			_seek_start()
 			return
 	else: _under_t = 0.0
+	# Olmec reach: you down under the rim near him: he looks for a way off
+	# it to you as he comes (not only at the edge his walk meets, which a
+	# ruin or the aqueduct's end can keep him from).
+	if not _chase_routed and _clock >= _down_next:
+		_down_next = _clock+DOWN_EVERY
+		if _down_to(target): return
 	if _chase_routing(delta,target): return
 	_pursue(delta,target,float(knobs.chase_speed))
 
@@ -2500,6 +2594,9 @@ func _hunt_wall(hit: Dictionary, goal: Vector3) -> void:
 	# Olmec threat round 1: masonry in his way, you past it about his
 	# level: he smashes through it (`breach`).
 	if state == "chase" and _breach_try(hit,goal): return
+	# Olmec reach: a ruin on the rim between him and you below: off the
+	# rim beside it (`down_to`), not round it and back for good.
+	if _down_to(goal): return
 	# City breaks round 2: a wall past his climb, him beyond it (through a
 	# gate he broke open): a route to him, as at an edge (`chase_routes`).
 	if top == INF and _chase_plan(goal): return
@@ -2525,6 +2622,7 @@ func _hunt_edge(fwd: Vector3, goal: Vector3) -> void:
 		_go("windup")
 		field.sound(&"body_windup",position)
 		return
+	if _down_to(goal): return
 	if _wall_leap(fwd,goal): return
 	if _chase_plan(goal): return
 	var way := _skirt(goal)
