@@ -147,6 +147,9 @@ var strain: Node = null
 ## Others riding the bag (the stone brood's clingers): their kg, added to
 ## the bag's load but never past its takeoff limit. `set_riders_kg`.
 var riders_kg := 0.0
+## A loot bag hitched on the rope (scripts/carry/loot_bag.gd): its kg ride
+## with the loaded ones (0: none).
+var bag_kg := 0.0
 var _heavy_flag := -1.0
 static var _thud_take: AudioStreamWAV = null
 
@@ -981,7 +984,7 @@ func _refill() -> void:
 	var kg := 0.0
 	for t: Dictionary in treasures:
 		if int(t.slot) >= 0: kg += float(Weights.of(str(t.weight)).mass)
-	sling.set_load(kg)
+	sling.set_load(kg+bag_kg)
 
 ## The bag hit something `speed` m/s hard: it spills, the last loaded
 ## first, one at SPILL_SPEED and one more each SPILL_STEP harder. Each goes

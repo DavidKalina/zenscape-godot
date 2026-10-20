@@ -86,4 +86,4 @@ static func build(host: Node3D) -> void:
 
 ## The bag's keys, for the foot hint.
 static func hint() -> String:
-	return "Bag: E by loot bags it · F off / on / drag · hold LMB or T aim a throw · V shove it"
+	return "Bag: E by loot bags it · F off / on / drag · F by the plane's rope: hitch it on / off · hold LMB or T aim a throw · V shove it"

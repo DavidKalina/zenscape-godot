@@ -68,6 +68,9 @@ var _radius_to := Weights.BAG_R
 var _drawn_r := -1.0
 var vel := Vector3.ZERO
 var hits := 0
+## A loot bag hitched on in its place (scripts/carry/loot_bag.gd): its
+## belly's radius (m) the sling's while it rides, -1 none (`hitch_bag`).
+var bag_r := -1.0
 
 func _init() -> void:
 	name = "CargoSling"
@@ -125,8 +128,16 @@ static func belly_of(r: float) -> float:
 ## to suit (eased there).
 func set_load(kg: float) -> void:
 	load_kg = maxf(kg,0.0)
-	_radius_to = Weights.BAG_R+Weights.BAG_R_KG*sqrt(load_kg)
+	_radius_to = bag_r if bag_r > 0.0 else Weights.BAG_R+Weights.BAG_R_KG*sqrt(load_kg)
 	_length_to = Weights.BAG_ROPE+Weights.BAG_ROPE_KG*load_kg
+
+## A loot bag on the rope in its own sack's place (radius `r`, m; -1 off):
+## the sling's sack hidden, its belly sized to the bag (the caller draws
+## the bag at `basket_xform` and refills the kg).
+func hitch_bag(r: float) -> void:
+	bag_r = r
+	_basket.visible = r <= 0.0
+	set_load(load_kg)
 
 ## The bag's mesh at radius `r` (its frame: floor at the origin, up y): a
 ## cloth bowl up to CLOTH of the belly, rope net over the rest, gathered
