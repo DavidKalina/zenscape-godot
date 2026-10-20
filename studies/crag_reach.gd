@@ -740,6 +740,7 @@ func _add_life() -> void:
 	if not greed_on: return
 	Greed.build(self)
 	Greed.build_rope(self)
+	Greed.build_brood(self)
 	greed = GreedMeter.new()
 	add_child(greed)
 	greed.setup(self)
@@ -753,6 +754,16 @@ var greed_on := false
 ## The isle's anger (scripts/greed/greed_meter.gd): value bagged, its
 ## thresholds (--greed-brood=N, --greed-olmec=N) and its cue.
 var greed: Node = null
+## The burrows on the crag's turf and the stone brood out of them
+## (scripts/brood/bag_brood.gd), woken by greed (`greed_woke`).
+var burrows: Array = []
+var brood: Node3D = null
+## No spade on the crag (the brood's `dig` ask): what they bury stays down.
+var dig = null
+
+## The greed meter's marks: "brood", "olmec".
+func greed_woke(what: String) -> void:
+	if what == "brood": Greed.wake(self)
 ## Read by the carry (scripts/carry/carry_host.gd) and the bag
 ## (scripts/carry/loot_bag.gd), as studies/wreck_cluster.gd's: the plane's
 ## rope ends in a bare hook (`bag_on`), the bag, the loose loot.

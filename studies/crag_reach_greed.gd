@@ -16,6 +16,9 @@ const BagStudy = preload("res://studies/bag_study.gd")
 const Glint = preload("res://scripts/kit_isle/kit_cache_glint.gd")
 const ClimbRope = preload("res://scripts/rope/climb_rope.gd")
 const Pad = preload("res://scripts/pad.gd")
+const BagBrood = preload("res://scripts/brood/bag_brood.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 
 const GLINT_TINT := Color(1.0,0.9,0.62)
 const ROOT := "greed_run"
@@ -234,3 +237,97 @@ static func hands_text(hands: String) -> String:
 ## The bag's keys, for the foot hint.
 static func hint() -> String:
 	return "Greed run: H (pad up) switches the bag / the rope in hand · bag: E by loot bags it · F off / on / drag · F by the plane's rope hook: hitch the bag on / off · Space at the plane boards"
+
+# --- The stone brood (scripts/brood/bag_brood.gd) ---------------------------------------
+
+## The burrows on the crag's turf: [id, mouth (world; its height only aims
+## the settle's ray), where]. Off the plane's takeoff line (LINE_CLEAR), a
+## few on each crown the loot lies on, so a wake comes up near the bag
+## wherever he is. Named `greed_run/<id>` for the world view.
+const BURROWS := [
+	["burrow_01",Vector3(22.0,30.4,2.0),"main crown, east of the plane"],
+	["burrow_02",Vector3(-30.0,30.4,-4.0),"main crown, west"],
+	["burrow_03",Vector3(9.0,30.4,-24.0),"main crown, north"],
+	["burrow_04",Vector3(78.0,35.0,-12.0),"east crown"],
+	["burrow_05",Vector3(30.0,22.7,18.0),"main terrace 1"],
+	["burrow_06",Vector3(0.0,17.2,-78.0),"north crown"],
+	["burrow_07",Vector3(-94.0,42.4,-26.0),"west crown"],
+]
+## Only the burrows this near the bag (by count) deal a wake.
+const WAKE_HOLES := 3
+
+## The burrows (the bag study's mound and mouth) and the brood out of them,
+## held down till the greed meter wakes them (`wake`). The host's `brood`,
+## `burrows`.
+static func build_brood(host: Node3D) -> void:
+	var holder := Node3D.new()
+	holder.name = "Burrows"
+	host.add_child(holder)
+	var earth := StandardMaterial3D.new()
+	earth.albedo_color = Color(0.36,0.3,0.24)
+	earth.roughness = 1.0
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.03,0.025,0.02)
+	dark.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var s := WorldScale.wanderer
+	var space := host.get_world_3d().direct_space_state
+	var home: Vector4 = host.call("plane_home")
+	var run_dir := Vector2(-sin(home.w),-cos(home.w))
+	var holes: Array = host.get("burrows")
+	for row: Array in BURROWS:
+		var called := "%s/%s" % [ROOT,str(row[0])]
+		if LayoutOverrides.deleted(called): continue
+		var at: Vector3 = row[1]
+		var rel := Vector2(at.x-home.x,at.z-home.z)
+		if absf(rel.dot(Vector2(-run_dir.y,run_dir.x))) < LINE_CLEAR and absf(at.y-home.y) < 6.0 and rel.dot(run_dir) > -10.0:
+			push_warning("greed run: %s on the plane's line" % called)
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(at+Vector3.UP*RAY.x,at-Vector3.UP*RAY.y,1|(1 << 11)))
+		if not hit.is_empty(): at = hit.position
+		else: push_warning("greed run: %s found no ground under %s" % [called,at])
+		var coded := Transform3D(Basis.IDENTITY,at)
+		var hole := Node3D.new()
+		hole.name = str(row[0])
+		hole.transform = LayoutOverrides.xform(called,coded)
+		holder.add_child(hole)
+		LayoutOverrides.track(called,hole,"token",coded)
+		var mound := MeshInstance3D.new()
+		var c := CylinderMesh.new()
+		c.bottom_radius = BagStudy.BURROW_FOOT*s
+		c.top_radius = BagStudy.BURROW_TOP*s
+		c.height = BagStudy.BURROW_HIGH*s
+		c.radial_segments = 18
+		c.rings = 1
+		mound.name = "Mound"
+		mound.mesh = c
+		# Sunk a little, so a tilted turf doesn't show its foot's underside.
+		mound.position.y = BagStudy.BURROW_HIGH*s*0.5-0.05*s
+		mound.material_override = earth
+		hole.add_child(mound)
+		var mouth := MeshInstance3D.new()
+		var d := CylinderMesh.new()
+		d.bottom_radius = BagStudy.BURROW_HOLE*s
+		d.top_radius = BagStudy.BURROW_HOLE*s
+		d.height = 0.01
+		d.radial_segments = 18
+		mouth.name = "Mouth"
+		mouth.mesh = d
+		mouth.position.y = BagStudy.BURROW_HIGH*s-0.05*s+0.006
+		mouth.material_override = dark
+		hole.add_child(mouth)
+		holes.append(hole)
+	_bare(host,holder)
+	if LaunchArgs.user_args().has("--no-brood"): return
+	var brood: Node3D = BagBrood.new()
+	host.add_child(brood)
+	brood.setup_bag(host,holes)
+	brood.wake_held = true
+	brood.wake_holes = WAKE_HOLES
+	host.set("brood",brood)
+
+## The greed meter's brood mark: they come up out of the burrows nearest
+## the bag.
+static func wake(host: Node3D) -> void:
+	var brood: Node3D = host.get("brood")
+	if brood == null or bool(brood.woken): return
+	brood.wake_held = false
+	brood.wake_burrows()

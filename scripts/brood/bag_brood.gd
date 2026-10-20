@@ -86,6 +86,12 @@ var calm_t := 0.0
 var gone_home := 0
 var rewakes := 0
 var _last_kg := 0.0
+## A host that wakes them itself (the greed run, studies/crag_reach_greed.gd)
+## holds the bag's wake: they stay down till it calls `wake_burrows`. And
+## on a wide isle only the `wake_holes` burrows nearest the bag deal the
+## wake (0: all of them).
+var wake_held := false
+var wake_holes := 0
 
 func setup_bag(host: Node3D, holes: Array) -> void:
 	setup(host)
@@ -125,7 +131,7 @@ func _on_him() -> bool:
 
 func _tick(delta: float) -> void:
 	if study == null or bag == null or not bool(study.get("walk_ready")): return
-	if not woken and (float(bag.kg) > 0.0 or not (bag.stowing as Dictionary).is_empty()): wake_burrows()
+	if not woken and not wake_held and (float(bag.kg) > 0.0 or not (bag.stowing as Dictionary).is_empty()): wake_burrows()
 	# A piece bagged again wakes as many as went home.
 	if woken and float(bag.kg) > _last_kg+0.01 and guys.size() < count:
 		rewakes += 1
@@ -600,6 +606,7 @@ func wake_burrows(n := -1) -> void:
 	var from := bag_at()
 	if from == Vector3.INF: from = (holes[0] as Node3D).global_position
 	holes.sort_custom(func(a: Node3D, b: Node3D) -> bool: return a.global_position.distance_to(from) < b.global_position.distance_to(from))
+	if wake_holes > 0 and holes.size() > wake_holes: holes.resize(wake_holes)
 	for i: int in n:
 		var hole: Node3D = holes[i % holes.size()]
 		var turn := i/holes.size()
