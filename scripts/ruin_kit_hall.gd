@@ -661,8 +661,16 @@ static func hall(seed_value: int, weathered := 0.6, bays := 12, ground := Callab
 		var x0 := BAY*i
 		var shifted := Callable()
 		if pground.is_valid(): shifted = func(x: float, z: float) -> float: return float(pground.call(x+x0,z))
-		var node := bay(seed_value*31+i,clampf(weathered+rng.randf_range(-0.12,0.12),0.0,1.0),plans[i],shifted,path.shifted(x0) if curved else null)
+		var bay_seed := seed_value*31+i
+		var bay_worn := clampf(weathered+rng.randf_range(-0.12,0.12),0.0,1.0)
+		var bay_path: HallPath = path.shifted(x0) if curved else null
+		var node := bay(bay_seed,bay_worn,plans[i],shifted,bay_path)
 		node.name = "Bay%d" % i
+		# Unmerged, each bay keeps how to build it again (a break by its
+		# joints, scripts/kit_isle/kit_breaks.gd `add`).
+		if not merged:
+			var bay_plan: Dictionary = plans[i]
+			node.set_meta("rebuild",func() -> Node3D: return bay(bay_seed,bay_worn,bay_plan,shifted,bay_path))
 		if not curved: node.position.x = x0
 		root.add_child(node)
 		var offset := Vector3(x0,0.0,0.0)

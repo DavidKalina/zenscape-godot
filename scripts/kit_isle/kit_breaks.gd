@@ -39,6 +39,85 @@ var pre_used := 0
 var pre_missed := 0
 var pre_step_ms := 0.0
 
+## Ready mode (`prepare_all`, opt-in): every piece's cut made ahead on a
+## worker, from the start, at its middle (READY_UP of its height), so a
+## hit only swaps it in: no cut is made on the main thread, nor guessed
+## as he nears. A hit on a piece whose cut isn't made yet waits for it
+## (his bulk leans on it; a landing's hit lands when it's made).
+var ready_all := false
+## At most this many cuts building on workers at once (the rest queued,
+## the nearest the breaker first; a hit waiting on one begins it at once).
+## One: two GDScript builds side by side each ran 6-10x slower (a span's
+## whole build 2.4-2.8 s on each of three workers, 0.4 s alone).
+const READY_AT_ONCE := 1
+const READY_UP := 0.5
+## Where the breaker was last and where he is going (his bulk's `met`:
+## his place and the last he saw you): the queue's nearest to either first.
+var _near: Array[Vector3] = []
+## Hits waiting on their cut: target index -> [at, dir].
+var _deferred := {}
+
+## Ready mode on (see `ready_all`): every target's cut queued for its
+## worker now, and every target added later (what stands of a broken one).
+func prepare_all() -> void:
+	ready_all = true
+	for i in range(targets.size()): _ready_job(i,Vector3.INF)
+
+## Target `i`'s cut queued (threaded), hit at `at` (world; at its middle's
+## height with `mid`), or at its middle for INF; none if it has one.
+func _ready_job(i: int, at: Vector3, mid := false) -> void:
+	var t: Dictionary = targets[i]
+	if not t.alive or not (t.pre as Dictionary).is_empty() or not is_instance_valid(t.node): return
+	t.threaded = true
+	var box: AABB = t.box
+	var local := Vector3(box.get_center().x,box.position.y+box.size.y*READY_UP,box.get_center().z)
+	if at != Vector3.INF:
+		local = (t.node as Node3D).global_transform.affine_inverse()*at
+		if mid: local.y = box.position.y+box.size.y*READY_UP
+	t.pre = Kinds.job(str(t.kind),{"node":t.node,"box":t.box,"at":local,"dir":Vector3.FORWARD,"seed":t.seed,"rebuild":t.rebuild,"keep":t.keep,"threaded":true})
+	if not (t.pre as Dictionary).is_empty(): pre_made += 1
+
+func _process(delta: float) -> void:
+	super._process(delta)
+	if ready_all: _ready_step()
+
+## Ready mode, each frame: workers' asks served, finished cuts noted, the
+## queue's nearest begun while under READY_AT_ONCE, and the hits that
+## waited on a cut now made, landed.
+func _ready_step() -> void:
+	Kinds.serve()
+	var running := 0
+	var queued: Array = []
+	for i in range(targets.size()):
+		var t: Dictionary = targets[i]
+		var j: Dictionary = t.pre
+		if not t.alive or j.is_empty() or Kinds.done(j): continue
+		if int(j.ctl.task) >= 0:
+			if not Kinds.step(j): running += 1
+		else: queued.append(i)
+	if running < READY_AT_ONCE and not queued.is_empty():
+		if not _near.is_empty():
+			queued.sort_custom(func(a: int, b: int) -> bool: return _ready_d(a) < _ready_d(b))
+		for k in range(mini(READY_AT_ONCE-running,queued.size())): Kinds.step(targets[queued[k]].pre)
+	if _deferred.is_empty(): return
+	var any := false
+	for i: int in _deferred.keys():
+		var t: Dictionary = targets[i]
+		if not t.alive:
+			_deferred.erase(i)
+			continue
+		if not Kinds.done(t.pre): continue
+		var w: Array = _deferred[i]
+		_deferred.erase(i)
+		if _break(i,w[0],w[1],Vector3.ZERO,null): any = true
+	if any: _pause()
+
+## Target `i`'s distance from the nearest of `_near` (m).
+func _ready_d(i: int) -> float:
+	var best := INF
+	for p: Vector3 in _near: best = minf(best,_nearest(targets[i],p).distance_to(p))
+	return best
+
 ## Every piece at or under `root` with a kind (Kinds `kind_of`) noted as a
 ## target. Returns how many were added. A piece with meta "breakable" false
 ## (the motif editor's toggle, per piece or per motif) is left out, and so
@@ -155,7 +234,10 @@ func met(body: Node3D) -> void:
 	var high: float = body.position.y+float(body._bulk_top())
 	var inv := Basis(Vector3.UP,float(body.facing)).inverse()
 	var fwd: Vector3 = body._forward3()
-	_wake(body,olmec,(low+high)*0.5,fwd,hw,hl)
+	_near = [body.position]
+	var aim: Variant = body.get("seen_at")
+	if aim is Vector3 and (aim as Vector3).is_finite(): _near.append(aim)
+	if not ready_all: _wake(body,olmec,(low+high)*0.5,fwd,hw,hl)
 	var any := false
 	var mid := Vector3(body.position.x,(low+high)*0.5,body.position.z)
 	var touched := {}
@@ -314,6 +396,10 @@ func _wake(body: Node3D, olmec: float, mid_y: float, fwd: Vector3, hw: float, hl
 ## already made or under way. Any breaker may call it ahead of a hit.
 func prepare(i: int, at: Vector3) -> void:
 	var t: Dictionary = targets[i]
+	# Ready mode: a cut once queued serves every hit (none remade).
+	if ready_all:
+		_ready_job(i,at)
+		return
 	var local := (t.node as Node3D).global_transform.affine_inverse()*at
 	if not (t.pre as Dictionary).is_empty():
 		if Kinds.serves(t.pre,local,PRE_TOL): return
@@ -344,6 +430,14 @@ func _exit_tree() -> void:
 ## parts pass through, or null.
 func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> bool:
 	var t: Dictionary = targets[i]
+	# Ready mode: never a cut here; a hit before its cut is made waits.
+	if ready_all:
+		if (t.pre as Dictionary).is_empty(): _ready_job(i,at)
+		if not Kinds.done(t.pre):
+			if not (t.pre as Dictionary).is_empty():
+				Kinds.step(t.pre)
+				_deferred[i] = [at,dir]
+			return false
 	t.alive = false
 	var node: Node3D = t.node
 	var xf := node.global_transform
@@ -352,7 +446,7 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> b
 	var began := Time.get_ticks_usec()
 	var pre: Dictionary = t.pre
 	var cut := {}
-	if Kinds.serves(pre,cut_t.at as Vector3,PRE_TOL):
+	if Kinds.serves(pre,cut_t.at as Vector3,PRE_TOL) or (ready_all and not pre.is_empty()):
 		Kinds.finish(pre)
 		cut = Kinds.result(pre)
 		pre_used += 1
@@ -396,6 +490,9 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> b
 			targets[again].threaded = t.threaded
 			targets[again].tough = t.tough
 			group.stump = null
+			if ready_all:
+				_ready_job(again,at,true)
+				Kinds.step(targets[again].pre)
 	var foot := xf*Vector3((t.box as AABB).get_center().x,(t.box as AABB).position.y,(t.box as AABB).get_center().z)
 	var fall: Array = cut.get("parts",[])
 	if bool(cut.get("topple",false)):

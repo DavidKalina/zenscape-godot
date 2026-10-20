@@ -15,6 +15,20 @@ extends "res://studies/kit_isle.gd"
 ##   godot --path . res://studies/crag_reach.tscn -- --no-title
 ##     [--no-specks]        without the far small islets
 ##     [--no-debris]        without any unit's debris
+##     [--olmec]            the whole Olmec (the headless body, its inhaler
+##                          head on) hunting you from the start: he comes up
+##                          a cliff face of the crown you stand on, out of
+##                          your view, hauls over the lip and hunts you
+##                          (relentless; he leaps gaps, and with the body's
+##                          `leap_catch` on, a leap that meets a face is
+##                          caught and climbed, and he throws himself at a
+##                          face across a gap too wide to land over)
+##     [--olmec-after=N]    the same, N s after you start (a late threat)
+##     [--body-knob=<knob>=<value>] over his knobs (repeatable)
+##   With the Olmec out: Tab / R3 lock on, X the gust shot (its charge
+##   refills on foot), R you back at the start and him gone, up a cliff
+##   again (at once with --olmec, N s on with --olmec-after); fallen off the
+##   world, he comes up another cliff OLMEC_AGAIN s later.
 
 const Layout = preload("res://scripts/layout_overrides.gd")
 const UnitNode = preload("res://scripts/kit_isle/islet_unit_node.gd")
@@ -22,6 +36,7 @@ const SkyScript = preload("res://studies/islet_yard_sky.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
+const BreakKinds = preload("res://scripts/kit_isle/break_kinds.gd")
 
 ## The masses: name, the top unit's middle (x, height off TOP, z), its
 ## spec; then its parts, each [part, offset from the top's middle (x, dy,
@@ -158,7 +173,14 @@ func _ready() -> void:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a == "--no-specks": specks = false
 		elif a == "--no-debris": debris = false
+		elif a == "--olmec": olmec_after = 0.0
+		elif a.begins_with("--olmec-after="): olmec_after = maxf(float(a.get_slice("=",1)),0.0)
+		elif a.begins_with("--body-knob="):
+			var kv: String = a.trim_prefix("--body-knob=")
+			_body_knobs[kv.get_slice("=",0)] = float(kv.get_slice("=",1))
 	_no_lode = true
+	_olmec_due = olmec_after
+	kit_breaks_on = olmec_after >= 0.0
 	super._ready()
 
 func _load_pack() -> void:
@@ -362,10 +384,18 @@ func _aqueducts() -> void:
 			var ground := func(x: float, z: float) -> float:
 				var w := world*Vector3(x,0.0,z)
 				return _ground_under(space,w.x,w.z,deck)-base
-			var span := Aqueduct.span(seed_value+i,clampf(0.5+rng.randf_range(-0.15,0.2),0.0,1.0),3 if i == 0 else 2,false,ground)
+			var span_seed: int = seed_value+i
+			var span_worn := clampf(0.5+rng.randf_range(-0.15,0.2),0.0,1.0)
+			var piers := 3 if i == 0 else 2
+			if kit_breaks_on: ground = _held(ground)
+			var span := Aqueduct.span(span_seed,span_worn,piers,false,ground)
 			span.transform = at
+			if kit_breaks_on:
+				span.name = "Span%d" % i
+				var g: Callable = ground
+				span.set_meta("crag_break",["arch",func() -> Node3D: return Aqueduct.span(span_seed,span_worn,piers,false,g)])
 			root.add_child(span)
-		RuinKit.merge(root)
+		if not kit_breaks_on: RuinKit.merge(root)
 		art.add_child(root)
 		root.transform = Layout.xform(name_,frame)
 		Layout.track(name_,root,"piece",frame)
@@ -414,8 +444,11 @@ func _ruins() -> void:
 				var bays := int(opts.get("bays",2))
 				var length := Hall.BAY*bays
 				var frame := Transform3D(turn,coded.origin-turn.x*length*0.5)
-				node = Hall.hall(seed_value,worn,bays,_ground_of(space,frame,-RUIN_VOID))
+				node = Hall.hall(seed_value,worn,bays,_held(_ground_of(space,frame,-RUIN_VOID)),not kit_breaks_on)
 				node.transform = coded.affine_inverse()*frame
+				if kit_breaks_on:
+					for bay: Node in node.get_children():
+						if bay.has_meta("rebuild"): bay.set_meta("crag_break",["wall",bay.get_meta("rebuild")])
 				var holder := Node3D.new()
 				holder.add_child(node)
 				node = holder
@@ -430,10 +463,16 @@ func _ruins() -> void:
 					if t == Vector3.INF: continue
 					var frame := Transform3D(turn,Vector3(w.x,t.y,w.z))
 					# Every other column standing whole, the rest snapped.
-					var col := Hall.column(seed_value+i,worn*(0.3 if i%2 == 0 else 1.3),_ground_of(space,frame,-RUIN_VOID))
+					var col_seed: int = seed_value+i
+					var col_worn := worn*(0.3 if i%2 == 0 else 1.3)
+					var col_ground := _held(_ground_of(space,frame,-RUIN_VOID))
+					var col := Hall.column(col_seed,col_worn,col_ground)
 					col.transform = coded.affine_inverse()*frame
+					if kit_breaks_on:
+						col.name = "Column%d" % i
+						col.set_meta("crag_break",["pier",func() -> Node3D: return Hall.column(col_seed,col_worn,col_ground)])
 					node.add_child(col)
-				RuinKit.merge(node)
+				if not kit_breaks_on: RuinKit.merge(node)
 			_:
 				# Down to the lowest turf under its middle and round it.
 				var low := y
@@ -441,9 +480,17 @@ func _ruins() -> void:
 					var t := _turf_top(space,at2.x+d.x,at2.y+d.y)
 					if t != Vector3.INF and absf(t.y-y) < 2.0: low = minf(low,t.y)
 				coded.origin.y = low-RUIN_SINK
-				RuinKit.Build.seat(_ground_of(space,coded))
+				var seat := _held(_ground_of(space,coded))
+				RuinKit.Build.seat(seat)
 				node = RuinKit.piece(id,seed_value,worn)
 				RuinKit.Build.seat(Callable())
+				var kind: String = BreakKinds.KIND_OF.get(id,"")
+				if kit_breaks_on and node != null and kind != "":
+					node.set_meta("crag_break",[kind,func() -> Node3D:
+						RuinKit.Build.seat(seat)
+						var again := RuinKit.piece(id,seed_value,worn)
+						RuinKit.Build.seat(Callable())
+						return again])
 		if node == null: continue
 		node.name = str(r[0]).to_pascal_case()
 		art.add_child(node)
@@ -451,6 +498,80 @@ func _ruins() -> void:
 		Layout.track(name_,node,"piece",coded)
 		ruins.append([name_,node])
 	print("crag reach: %d ruins" % ruins.size())
+
+## `ground` (a Callable(x, z) -> y) with what it answered kept: a piece
+## built again for a break (kit_breaks.gd, on a worker) asks the ground
+## too, and live rays would meet the piece itself, or its rubble, by then
+## (and can't be cast off the main thread). Once the piece is built
+## (`_built`) it answers from what it kept, the nearest point asked.
+var _built := false
+var held_misses := 0
+const HELD_CELL := 0.5
+## How far (cells) past what was asked a miss still finds the nearest kept.
+const HELD_RING := 3
+## Each `_held`'s grid maker, run once the pieces are built (`_freeze_held`).
+var _held_freezers: Array[Callable] = []
+func _held(ground: Callable) -> Callable:
+	if not kit_breaks_on or not ground.is_valid(): return ground
+	var seen := {}
+	# What it answered by HELD_CELL m cell too, for the nearest point asked;
+	# once built, laid out as a grid (each cell the nearest asked one's
+	# answer, HELD_RING cells round them) so a miss is one look, cheap on
+	# the cuts' workers (an ivy strand asks thousands of new points).
+	var cells := {}
+	var grid := {"lo":Vector2i.ZERO,"w":0,"h":0,"y":PackedFloat32Array()}
+	_held_freezers.append(func() -> void: _held_grid(cells,grid))
+	return func(x: float, z: float) -> float:
+		var key := Vector2(x,z)
+		if seen.has(key): return float(seen[key])
+		var cell := Vector2i(roundi(x/HELD_CELL),roundi(z/HELD_CELL))
+		if not _built:
+			var y := float(ground.call(x,z))
+			seen[key] = y
+			cells[cell] = y
+			return y
+		held_misses += 1
+		var g := cell-(grid.lo as Vector2i)
+		if g.x < 0 or g.y < 0 or g.x >= int(grid.w) or g.y >= int(grid.h): return 0.0
+		var y: float = (grid.y as PackedFloat32Array)[g.y*int(grid.w)+g.x]
+		return 0.0 if is_nan(y) else y
+
+## `cells` (cell -> y) laid out in `grid`: each cell within HELD_RING of an
+## asked one holds the nearest asked one's y (the ring search it replaces),
+## the rest NAN.
+func _held_grid(cells: Dictionary, grid: Dictionary) -> void:
+	if cells.is_empty(): return
+	var lo := Vector2i(1 << 30,1 << 30)
+	var hi := -lo
+	for c: Vector2i in cells.keys():
+		lo = Vector2i(mini(lo.x,c.x),mini(lo.y,c.y))
+		hi = Vector2i(maxi(hi.x,c.x),maxi(hi.y,c.y))
+	lo -= Vector2i.ONE*HELD_RING
+	hi += Vector2i.ONE*HELD_RING
+	var w := hi.x-lo.x+1
+	var h := hi.y-lo.y+1
+	var ys := PackedFloat32Array()
+	ys.resize(w*h)
+	ys.fill(NAN)
+	var best := PackedFloat32Array()
+	best.resize(w*h)
+	best.fill(INF)
+	for c: Vector2i in cells.keys():
+		var y := float(cells[c])
+		for dx in range(-HELD_RING,HELD_RING+1):
+			for dz in range(-HELD_RING,HELD_RING+1):
+				var k := (c.y+dz-lo.y)*w+(c.x+dx-lo.x)
+				var d := float(dx*dx+dz*dz)
+				if d < best[k]:
+					best[k] = d
+					ys[k] = y
+	grid.lo = lo
+	grid.w = w
+	grid.h = h
+	grid.y = ys
+
+func _freeze_held() -> void:
+	for f: Callable in _held_freezers: f.call()
 
 ## The ground under a piece standing at `xf` (world): a Callable(x, z) ->
 ## y in its frame, `none` over the drop (-INF: none there; the halls'
@@ -611,3 +732,322 @@ func _grow() -> void:
 ## No kit life (its undergrowth and flowers are another palette).
 func _add_life() -> void:
 	pass
+
+# --- The Olmec hunt (--olmec, --olmec-after=N) ------------------------------------------
+
+const EnemyField = preload("res://scripts/enemies/enemy_field.gd")
+const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
+const OlmecTarget = preload("res://scripts/lock_on/olmec_target.gd")
+const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
+const EnemyYard = preload("res://studies/enemy_yard.gd")
+## How far down the face (m, at most) he starts under the lip, so his
+## climb is heard and its dust seen before he hauls over.
+const OLMEC_BELOW := 4.0
+## The cliffs looked at round the crown he stands on (ways out from its
+## middle), and how near him (m, flat) a cliff may be.
+const OLMEC_WAYS := 32
+const OLMEC_NEAR := 14.0
+const OLMEC_FAR := 45.0
+## Fallen off the world (a gap too wide), he comes up another cliff this
+## many s on.
+const OLMEC_AGAIN := 6.0
+## His knobs here: the whole body's hunt (as studies/olmec_field.gd's
+## whole Olmec), relentless, and the wall catch (headless_body.gd
+## `leap_catch`).
+const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"skirt_hold":1.0,"climb_clear":1.0}
+
+## Seconds after the start (and after R) the Olmec comes; -1 never (no flag).
+var olmec_after := -1.0
+## The ruins, the aqueduct's spans and the colonnade's columns break under
+## him (on with --olmec / --olmec-after): each piece built as its own node
+## with how to build it again (meta "crag_break" [kind, Callable]), handed
+## to the breakables hub (scripts/kit_isle/breakables.gd) through
+## CragBreaks (kit_breaks.gd, with his landings' waves).
+var kit_breaks_on := false
+var breakables: Node3D = null
+var kit_breaks: Node3D = null
+var enemies: Node = null
+var _body_knobs := {}
+var _olmec_due := -1.0
+var _gone_t := -1.0
+var _voices := {}
+var _spawner: Node = null
+## Counted, for drivers: spawns, the last cliff (lip, out, below).
+var olmec_spawns := 0
+var olmec_cliff := {}
+
+## Hides the figure while the head holds him, and steps the enemies
+## (studies/whole_body_chase.gd's).
+class Slot extends Node:
+	var field: Node
+	func before(delta: float) -> void: field.before(delta)
+	func after(delta: float, events: Dictionary) -> void: field.after(delta,events)
+	func pose(figure: Node3D) -> void:
+		var held := false
+		for e in field.enemies:
+			if is_instance_valid(e) and e.get("swallowed"): held = true
+		figure.visible = not held
+
+func _build_room() -> void:
+	super._build_room()
+	if olmec_after < 0.0: return
+	enemies = EnemyField.new()
+	enemies.study = self
+	enemies.motor = motor
+	enemies.lost = lost
+	enemies.sound_hook = _voice
+	add_child(enemies)
+	var slot := Slot.new()
+	slot.field = enemies
+	add_child(slot)
+	foot_pieces = slot
+	_spawner = BodySpawner.new()
+	add_child(_spawner)
+	_spawner.setup(self,enemies)
+	_wire_breaks()
+
+const Breakables = preload("res://scripts/kit_isle/breakables.gd")
+const BreakPieces = preload("res://scripts/kit_isle/break_pieces.gd")
+## His landing's shockwave (the hunt's leaps, drops and pounces): the
+## pieces within LAND_REACH head heights of where he came down (times the
+## wave's power's root) take a hit of his strength.
+const LAND_REACH := 1.1
+
+## The kit breaks, his landings' too: a wave's first front hits what is
+## round where he landed.
+class CragBreaks extends "res://scripts/kit_isle/kit_breaks.gd":
+	var landings := 0
+	func wave(body: Node3D, w: Dictionary) -> void:
+		if w.has("kit"): return
+		w["kit"] = true
+		landings += 1
+		var power := float(w.get("power",1.0))
+		var reach: float = float(body.hh)*LAND_REACH*sqrt(maxf(power,0.0))
+		var at: Vector3 = w.at
+		hit(at+Vector3.UP*float(body.hh)*0.5,reach,float(hub.strength_of(&"olmec"))*minf(power,1.0),&"olmec")
+
+func _wire_breaks() -> void:
+	if not kit_breaks_on: return
+	_built = true
+	_freeze_held()
+	breakables = Breakables.new()
+	breakables.field = enemies
+	breakables.sound_hook = _voice
+	add_child(breakables)
+	kit_breaks = CragBreaks.new()
+	kit_breaks.name = "KitBreaks"
+	kit_breaks.hub = breakables
+	kit_breaks.field = enemies
+	kit_breaks.lost_y = lost
+	add_child(kit_breaks)
+	var n := 0
+	var by := {}
+	# The ruins the islets and terraces stand on their turf (islet_crag.gd
+	# `_landmark`, built by id and seed): broken as the reach's own are.
+	for node: Node in art.find_children("Landmark","Node3D",true,false):
+		if not node.has_meta("landmark_spec") or node.has_meta("crag_break"): continue
+		var lm: Array = node.get_meta("landmark_spec")
+		var lm_kind: String = BreakKinds.KIND_OF.get(str(lm[0]),"")
+		if lm_kind == "": continue
+		node.set_meta("crag_break",[lm_kind,func() -> Node3D: return RuinKit.piece(str(lm[0]),int(lm[1]),float(lm[2]))])
+	for node: Node in art.find_children("*","Node3D",true,false):
+		if not node.has_meta("crag_break"): continue
+		var spec: Array = node.get_meta("crag_break")
+		var idx: int = kit_breaks.add(node as Node3D,str(spec[0]),spec[1] as Callable,hash(String(node.get_path())))
+		if idx >= 0:
+			n += 1
+			by[spec[0]] = int(by.get(spec[0],0))+1
+	breakables.others.append(kit_breaks)
+	# The breaks' voices made now, not at the first break (a frame's ~25 ms).
+	for key: String in BreakPieces.VOICES.keys():
+		if not _voices.has(key): _voices[key] = EnemyYard._synth(BreakPieces.VOICES[key])
+	# Every cut made ahead on workers from now (kit_breaks.gd `prepare_all`):
+	# a break only swaps it in, so neither his approach nor a hit (his
+	# landings' too) makes a cut on the main thread.
+	kit_breaks.prepare_all()
+	print("crag reach: %d breakable piece(s) %s" % [n,by])
+
+func olmec() -> Node3D:
+	if enemies == null: return null
+	for e in enemies.enemies:
+		if is_instance_valid(e) and e.has_method("crumble"): return e
+	return null
+
+func olmec_head() -> Node3D:
+	if enemies == null: return null
+	for e in enemies.enemies:
+		if is_instance_valid(e) and e.has_method("mouth"): return e
+	return null
+
+## The unit whose turf is under `p` (or the nearest mass top).
+func _crown_under(p: Vector3) -> Node3D:
+	var space := get_world_3d().direct_space_state
+	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(p+Vector3.UP*1.0,p-Vector3.UP*30.0,TURF_LAYER))
+	if not hit.is_empty():
+		var n: Node = hit.collider
+		while n != null:
+			if n in units: return n
+			n = n.get_parent()
+	var best: Node3D = null
+	var best_d := INF
+	for u: Node3D in mass_tops.values():
+		var d := Vector2(u.position.x-p.x,u.position.z-p.z).length()
+		if d < best_d:
+			best_d = d
+			best = u
+	return best
+
+## A cliff of the crown he stands on for the Olmec to come up, out of his
+## view: each way out from its middle, the rim (`_rim_end`) fitted to the
+## real face (BodySpawner `fit`); out of the camera's look first, the
+## camera's line to where he hangs blocked next, then OLMEC_NEAR..OLMEC_FAR
+## m off him. {lip, out, below, crown, seen, far} or {}.
+func olmec_cliff_pick() -> Dictionary:
+	var crown := _crown_under(motor.feet)
+	if crown == null: return {}
+	var space := get_world_3d().direct_space_state
+	var mid := crown.position
+	var top := _turf_top(space,mid.x,mid.z)
+	mid.y = top.y if top != Vector3.INF else motor.feet.y
+	var reach := float(crown.spec.size)*3.0
+	var feet: Vector3 = motor.feet
+	var best := {}
+	var best_score := INF
+	for k in OLMEC_WAYS:
+		var a := TAU*float(k)/OLMEC_WAYS
+		var way := Vector2(cos(a),sin(a))
+		var rim := _rim_end(space,mid,mid+Vector3(way.x,0.0,way.y)*reach)
+		if rim == Vector3.INF: continue
+		var fitted: Array = _spawner.fit(rim,way)
+		if fitted.is_empty(): continue
+		var lip: Vector3 = fitted[0]
+		var out: Vector2 = fitted[1]
+		var d := Vector2(lip.x-feet.x,lip.z-feet.z).length()
+		var seen: bool = _spawner.in_view(lip)
+		var score := 0.0
+		if seen: score += 1000.0
+		if not _spawner.hidden(lip,out): score += 300.0
+		if d < OLMEC_NEAR: score += 2000.0
+		# The crown's own rim, not a knoll's or a terrace's over it.
+		score += absf(lip.y-mid.y)*40.0
+		# A face with a shelf or a bulge on it, he'd haul out onto that.
+		var below: float = _spawner.face_below(lip,out,OLMEC_BELOW)
+		var clean := _face_clean(space,lip,out,below)
+		if not clean: score += 600.0
+		score += absf(d-clampf(d,OLMEC_NEAR,OLMEC_FAR))*5.0+d*0.1
+		if score < best_score:
+			best_score = score
+			best = {"lip":lip,"out":out,"crown":String(crown.name),"seen":seen,"far":d,"below":below,"clean":clean,"score":score}
+	return best
+
+## Whether his climb up the face under `lip` (`out` its way) from `below`
+## m under his hang finds no top short of the lip, as his climb looks for
+## one (headless_body.gd `_climb`): every OLMEC_FACE_STEP m of the way up,
+## the face at his chest, a ray down past it from his reach to a step over
+## his feet. (A crag's stacked collision inside its face reads as a
+## shelf there: he'd haul out onto it, under the rim.)
+const OLMEC_FACE_STEP := 0.5
+func _face_clean(space: PhysicsDirectSpaceState3D, lip: Vector3, out: Vector2, below: float) -> bool:
+	var f3 := Vector3(out.x,0.0,out.y).normalized()
+	var k: Dictionary = BodySpawner.HeadlessBody.build_of(_spawner._body_k(),float(enemies.numbers().unit))
+	var reach := float(k.neck)+float(k.arm)*0.75
+	var chest := float(k.chest)
+	var step := float(_spawner._body_k().step)
+	var mask := WalkerOnly.strip(ground.mask)
+	var face := lip
+	var y := lip.y-float(k.hang)-below
+	while y < lip.y-step:
+		var c := Vector3(lip.x,y+chest,lip.z)
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(c+f3*6.0,c-f3*4.0,mask))
+		if not hit.is_empty() and absf((hit.normal as Vector3).y) < 0.7: face = hit.position
+		var past := Vector3(face.x,0.0,face.z)-f3*0.8
+		var top := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(past.x,y+reach,past.z),Vector3(past.x,y+step,past.z),mask))
+		if not top.is_empty() and (top.normal as Vector3).y > 0.6 and (top.position as Vector3).y < lip.y-0.5: return false
+		y += OLMEC_FACE_STEP
+	return true
+
+## The whole Olmec up a cliff of his crown (`olmec_cliff_pick`), clinging
+## under the lip, climbing; whole and on the hunt once over it.
+func spawn_olmec() -> Node3D:
+	if enemies == null: return null
+	_olmec_clear()
+	var c := olmec_cliff_pick()
+	if c.is_empty():
+		push_warning("crag reach: no cliff fits the Olmec (%s)" % _spawner.fit_why)
+		return null
+	var lip: Vector3 = c.lip
+	var out: Vector2 = c.out
+	var knobs: Dictionary = OLMEC_KNOBS.duplicate()
+	knobs.merge(_body_knobs,true)
+	# The body first, so the head reads its neck where it is this frame.
+	var b: Node3D = enemies.add(OlmecTarget,lip,-out,knobs)
+	var h: Node3D = enemies.add(InhalerHead,lip,-out,{})
+	b.make_whole(h)
+	if breakables != null: b.breaker = breakables
+	b.cling(lip,out,float(c.below))
+	b.body.force_update_transform()
+	# He knows you're here: over the lip, straight on the hunt.
+	b.hunting = true
+	b.seen_at = motor.feet
+	enemies.sound(&"body_rumble",b.position)
+	olmec_spawns += 1
+	olmec_cliff = c
+	_gone_t = -1.0
+	_say("Stone grinds on stone below the rim...",4.0)
+	print("crag reach: the Olmec up %s's face at %s (out %s), %.1f m down, %.1f m off you, %s" % [c.crown,lip,out,lip.y-b.position.y,float(c.far),"in view" if c.seen else "out of view"])
+	return b
+
+func _olmec_clear() -> void:
+	if enemies == null: return
+	if foot_lock != null and foot_lock.locked(): foot_lock.release()
+	enemies.clear()
+	if figure != null: figure.visible = true
+
+func respawn() -> void:
+	super.respawn()
+	if enemies == null: return
+	_olmec_clear()
+	_olmec_due = olmec_after
+
+func tick(delta: float) -> void:
+	super.tick(delta)
+	if enemies == null or flying: return
+	if _olmec_due >= 0.0:
+		_olmec_due -= delta
+		if _olmec_due < 0.0: spawn_olmec()
+		return
+	var b := olmec()
+	if b == null:
+		if _gone_t < 0.0: _gone_t = 0.0
+		_gone_t += delta
+		if _gone_t > OLMEC_AGAIN: spawn_olmec()
+		return
+	# The gust shot's charge refills on foot while he hunts (olmec_field's).
+	if updraft != null: updraft.charge = 1.0
+	if bool(b.crumbled):
+		if foot_lock != null and foot_lock.target == b: foot_lock.release("down")
+	elif camera != null:
+		var q := maxf(float(b.quake),float(breakables.quake) if breakables != null else 0.0)*clampf(1.0-camera.global_position.distance_to(b.global_position)/60.0,0.0,1.0)
+		if q > 0.001:
+			var t := Time.get_ticks_msec()/1000.0
+			camera.position += Vector3(sin(t*61.0),sin(t*53.0+1.0),sin(t*47.0+2.0))*q*0.5
+
+## Flying, the hunt goes on (he makes for where you left the ground).
+func _process(delta: float) -> void:
+	super._process(delta)
+	if flying and enemies != null and delta > 0.0:
+		for e in enemies.enemies:
+			if is_instance_valid(e) and not e.gone: e.step(delta)
+
+func _voice(sound_name: StringName, at: Vector3) -> void:
+	var key := String(sound_name)
+	var spec: Variant = InhalerHead.VOICES.get(key,BodySpawner.VOICES.get(key,BreakPieces.VOICES.get(key)))
+	if spec == null: return
+	if not _voices.has(key): _voices[key] = EnemyYard._synth(spec)
+	var player := AudioStreamPlayer3D.new()
+	player.stream = _voices[key]
+	player.position = at
+	player.unit_size = float(BodySpawner.REACH.get(key,BreakPieces.REACH.get(key,14.0)))
+	add_child(player)
+	player.finished.connect(player.queue_free)
+	player.play()

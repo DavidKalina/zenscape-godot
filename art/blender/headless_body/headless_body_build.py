@@ -41,6 +41,8 @@ itself (headless_body_look.gd), so a clip's length is only its span:
                a climb, slid up, a nod
   walk         loop over two steps of WALK_STEP m (the phase from distance)
   stride       loop over two steps of STRIDE_STEP m: homing, arms out for it
+  hunt_stride  loop over two steps of STRIDE_STEP m: whole, hunting: upright,
+               chest up, arms hung heavy at his sides, a held drop each step
   shoulder_run loop over two steps of RUN_STEP m (Olmec boss): whole, hunting,
                the right shoulder leading, that arm tucked, the far one pumping
   charge_tell  once, CHARGE_TELL s (the boss's charge): planted, the shoulder
@@ -1313,6 +1315,74 @@ def _run_keys():
 
 clip(Clip("shoulder_run", RUN_LEN, _run_keys(), loop=True, extra=_rx))
 
+# ------------------------------------------------------------------ the hunt stride (whole, chasing)
+## Whole and hunting (olmec-look lane): a tall, deliberate stride at the
+## stride's step (STRIDE_STEP, so the feet match the game's phase). He
+## stays upright, chest up and shoulders square, the stump level so his
+## head rides high and looks straight ahead; the menace is his height and
+## weight. The arms hang heavy at his sides, a little out from the bulk,
+## fists closed, swinging short and late against the legs, the forearms
+## trailing. Each footfall lands like a block set down: the hips drop and
+## hold, the shoulders roll over the planted foot, the stump nods with the
+## impact and comes back after. No arms out in front, no crouch.
+HUNT_LEN = 1.8
+## Held on every key: the fists closed (degrees).
+_HUNT_HOLD = {"hp": 1.0, "fL": 78.0, "fR": 78.0, "tL": 36.0, "tR": 36.0}
+
+
+def hunt_extra(step, stance, lift):
+    feet = gait(step, stance, lift, 0.8)
+
+    def extra(t, v):
+        u = t / HUNT_LEN
+        feet(u % 1.0, v)
+        sn = math.sin(2 * math.pi * u + 0.35)
+        # The weight thrown over each planted foot: a heavy sway, the hips
+        # and the shoulders rolling over it.
+        v["hx"] += -0.3 * sn
+        v["hr"] += -7.0 * sn
+        v["sr"] += 3.0 * sn
+        v["cr"] += 4.5 * math.sin(2 * math.pi * (u - 0.07) + 0.35)
+        # The shoulders wind against the hips, late.
+        c = math.cos(2 * math.pi * u)
+        v["ht"] += -8.0 * c
+        v["ct"] += 11.0 * math.cos(2 * math.pi * (u - 0.08))
+        # The stump counters the chest's roll and twist, so the head stays
+        # on its mark while the body rolls under it.
+        v["nr"] += -3.5 * math.sin(2 * math.pi * (u - 0.07) + 0.35)
+        v["nt"] += -8.0 * math.cos(2 * math.pi * (u - 0.08))
+        # The arms: heavy at his sides, out from the bulk, swinging short
+        # against the legs and late (dragged), the forearm trailing further
+        # on the back swing.
+        for n, sgn in (("L", -1), ("R", 1)):
+            sw = sgn * math.cos(2 * math.pi * (u - 0.1))
+            v[f"a{n}p"] = -2.0 + 17.0 * sw
+            v[f"a{n}o"] = 17.0 + 3.0 * max(0.0, -sw)
+            v[f"a{n}t"] = -8.0
+            v[f"e{n}"] = 18.0 + 18.0 * max(0.0, sgn * math.cos(2 * math.pi * (u - 0.2)))
+    return extra
+
+
+_hx = hunt_extra(STRIDE_STEP, 0.56, 0.48)
+
+
+def _hunt_keys():
+    """Each step: contact, the drop (held: the weight landing), the body
+    coming back up over the foot, the tall passing pose."""
+    keys = []
+    for o in (0.0, 0.5):
+        keys += [
+            (o + 0.0, {**_HUNT_HOLD, "hy": -0.3, "sq": 1.0, "sp": 3.0, "cp": -2.0, "np": 1.0}, ""),
+            (o + 0.07, {"hy": -0.62, "sq": 0.955, "sp": 5.0, "cp": -1.0, "np": 5.0}, "h"),
+            (o + 0.15, {"hy": -0.58, "sq": 0.975, "sp": 5.0, "np": 4.0}, ""),
+            (o + 0.30, {"hy": -0.22, "sq": 1.0, "sp": 3.0, "cp": -2.0, "np": 0.0}, ""),
+            (o + 0.42, {"hy": -0.14, "sq": 1.012, "sp": 2.5, "cp": -2.5, "np": 0.0}, ""),
+        ]
+    return [(t * HUNT_LEN, p, e) for t, p, e in keys]
+
+
+clip(Clip("hunt_stride", HUNT_LEN, _hunt_keys(), loop=True, extra=_hx))
+
 # ------------------------------------------------------------------ the charge (Olmec boss, phase 2)
 ## The tell, CHARGE_TELL s: he plants wide, the right foot ahead, drops the
 ## right shoulder low and forward (the run's quarter turn, deeper), the
@@ -2483,7 +2553,7 @@ if RENDER:
 
     ## The head he wears whole (inhaler_head.gd at size 3: x, up, depth).
     WORN_HEAD = (3.36 * 1.04, 3.36, 3.36 * 0.84)
-    WORN_CLIPS = ("shoulder_run", "charge_tell", "charge_run", "charge_skid", "charge_stagger")
+    WORN_CLIPS = ("hunt_stride", "shoulder_run", "charge_tell", "charge_run", "charge_skid", "charge_stagger")
     ## The knock-off's clips: worn too, the edge ones on a ledge (its rim
     ## EDGE_AT ahead; the leap's rim behind where he comes up), the root's
     ## way as the game would move it (`knock_root`).
