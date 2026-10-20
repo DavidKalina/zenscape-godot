@@ -1514,15 +1514,64 @@ func dive_off(away := Vector3.INF) -> bool:
 		return true
 	return false
 
+## Olmec reach (`dive`): no edge within DIVE_LOOK m (the middle of a
+## crown), he strides off to the nearest rim within DIVE_FAR m that he
+## can throw himself off, a way toward `toward` (you) first, none within
+## DIVE_SHUN m of one in `shun`, for the study's watch to dive him off it.
+## Set: `dive_goal` (his chase walks there, no route, no sight); INF none.
+const DIVE_FAR := 90.0
+const DIVE_FAR_STEP := 3.0
+const DIVE_SHUN := 8.0
+var dive_goal := Vector3.INF
+var dive_walks := 0
+func dive_walk(toward := Vector3.INF, shun: Array = []) -> bool:
+	if float(knobs.dive) < 0.5 or not grounded: return false
+	if state in ["climb","mantle","windup","leap","fall","hang","grab_leap","grab_windup","land"]: return false
+	var picks: Array = []
+	var to := Vector3.ZERO
+	if toward != Vector3.INF: to = Vector3(toward.x-position.x,0.0,toward.z-position.z).normalized()
+	for k in DIVE_WAYS:
+		var a := TAU*float(k)/DIVE_WAYS
+		var way := Vector3(cos(a),0.0,sin(a))
+		var last := Vector3.INF
+		var d := length*0.5
+		while d <= DIVE_FAR:
+			var p := position+way*d
+			var f := _floor(p,float(knobs.step)*STAIR,DIVE_DROP)
+			if f == -INF:
+				if last != Vector3.INF and not shun.any(func(q: Vector3) -> bool: return q.distance_to(last) < DIVE_SHUN):
+					picks.append([d-maxf(0.0,way.dot(to))*DIVE_LOOK,last,p+way*DIVE_PAST-Vector3.UP*DIVE_DROP*2.0])
+				break
+			# A step up or down past his stair: not this way's floor.
+			if last != Vector3.INF and absf(f-last.y) > float(knobs.step)*STAIR*2.0: break
+			last = Vector3(p.x,f,p.z)
+			d += DIVE_FAR_STEP
+	picks.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	var goal := Vector3.INF
+	# A rim he can throw himself off (its fall clear from where he'd stand).
+	for pk: Array in picks:
+		if _dive_clear(pk[2],pk[1]):
+			goal = pk[1]
+			break
+	if goal == Vector3.INF: return false
+	dive_goal = goal
+	dive_walks += 1
+	_chase_drop()
+	_skirt_t = 0.0
+	if state != "chase": _go("chase")
+	return true
+
 ## Whether a dive at `to` falls DIVE_DROP x 1.5 m clear: its arc flown in
-## ARC_DT steps, his feet and his bulk meeting nothing past take-off.
-func _dive_clear(to: Vector3) -> bool:
-	var throw := _throw(position,to,"dive")
+## ARC_DT steps, his feet and his bulk meeting nothing past take-off (from
+## `from`, else where he stands).
+func _dive_clear(to: Vector3, from := Vector3.INF) -> bool:
+	if from == Vector3.INF: from = position
+	var throw := _throw(from,to,"dive")
 	var v: Vector3 = throw[0]
-	var p := position
+	var p := from
 	var g := float(knobs.leap_gravity)
 	var t := 0.0
-	while p.y > position.y-DIVE_DROP*1.5 and t < 5.0:
+	while p.y > from.y-DIVE_DROP*1.5 and t < 5.0:
 		var q := p+v*ARC_DT
 		v.y -= g*ARC_DT
 		t += ARC_DT
@@ -2381,6 +2430,10 @@ func _ready_text(at: float) -> String:
 ## distance says.
 func _chase(delta: float) -> void:
 	var m: PilotMotor = field.motor
+	# Olmec reach (`dive_walk`): off to a rim to throw himself off it.
+	if dive_goal != Vector3.INF:
+		_pursue(delta,dive_goal,float(knobs.chase_speed))
+		return
 	var seeing: bool = sight.seeing()
 	# Unseen, it goes where it last saw him, or where it went after him.
 	var target := m.feet if seeing else (_after_at if _after_at != Vector3.INF else seen_at)

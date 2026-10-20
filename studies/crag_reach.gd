@@ -786,6 +786,23 @@ var _spawn_t := 0.0
 var olmec_bad_spawns := 0
 const OLMEC_BAD_RUN := 3
 var _bad_run := 0
+## No edge near, in view: his walk to a rim (headless_body.gd
+## `dive_walk`) for at most OLMEC_WALK s, a dive tried every OLMEC_WALK_TRY s.
+const OLMEC_WALK := 25.0
+## The walk only once the watch has held OLMEC_WALK_AFTER s (short of
+## that he often finds his own way on).
+const OLMEC_WALK_AFTER := 16.0
+## Room past the lip for a return (`_face_room`): his box OLMEC_ROOM_ON m in.
+const OLMEC_ROOM_ON := 4.0
+const OLMEC_ROOM_LEGS := 2.0
+const OLMEC_WALK_TRY := 0.5
+var _walk_t := 0.0
+## The watch's whole time held (its retries don't set it back).
+var _stuck_all := 0.0
+var _walk_none := 0
+var _walk_try := 0.0
+## Rims he walked to and found no dive off (passed over next time).
+var _bad_rims: Array = []
 ## He stays within OLMEC_ROAM m of where the watch began: not on his way.
 const OLMEC_ROAM := 8.0
 var _stuck_at := Vector3.INF
@@ -1051,6 +1068,19 @@ func _face_room(space: PhysicsDirectSpaceState3D, lip: Vector3, out: Vector2, be
 	for at: Vector3 in [Vector3(lip.x,feet,lip.z)+o3*off,Vector3(lip.x,(feet+lip.y)*0.5-tall*0.5,lip.z)+o3*off,Vector3(lip.x,lip.y+0.3,lip.z)-o3*(float(k.length)*0.5+OLMEC_ROOM_IN)]:
 		_room_q.transform = Transform3D(basis,at+Vector3.UP*(tall*0.5))
 		if not space.intersect_shape(_room_q,1).is_empty(): return false
+	# Stood OLMEC_ROOM_ON m further on toward you, on the floor there: his
+	# first strides off the lip (up West's face beside the spire, he
+	# walked with his shins 1.35 m in its flared foot).
+	var to_you := Vector3(motor.feet.x-lip.x,0.0,motor.feet.z-lip.z)
+	var in3 := to_you.normalized() if to_you.length() > 1.0 else -o3
+	var on := lip+in3*minf(float(k.length)*0.5+OLMEC_ROOM_IN+OLMEC_ROOM_ON,to_you.length())
+	var down := PhysicsRayQueryParameters3D.create(on+Vector3.UP*tall,on-Vector3.UP*3.0,_room_q.collision_mask)
+	var hit := space.intersect_ray(down)
+	# His legs only (a deck over the terrace, the aqueduct's, is no matter).
+	if not hit.is_empty() and (hit.normal as Vector3).y > 0.7:
+		(_room_q.shape as BoxShape3D).size = Vector3(float(k.width)*0.85,OLMEC_ROOM_LEGS,float(k.length)*0.8)
+		_room_q.transform = Transform3D(basis,(hit.position as Vector3)+Vector3.UP*(0.4+OLMEC_ROOM_LEGS*0.5))
+		if not space.intersect_shape(_room_q,1).is_empty(): return false
 	return true
 
 ## Whether his climb up the face under `lip` (`out` its way) from `below`
@@ -1131,6 +1161,7 @@ func respawn() -> void:
 	if enemies == null: return
 	_olmec_clear()
 	_returning = false
+	_bad_rims.clear()
 	_olmec_due = olmec_after
 
 func tick(delta: float) -> void:
@@ -1191,10 +1222,34 @@ func _never_stuck(b: Node3D, delta: float) -> bool:
 			return true
 		return false
 	var d := b.position.distance_to(motor.feet)
+	if b.dive_goal != Vector3.INF:
+		# Striding off to a rim (`dive_walk`): off it as soon as there's a
+		# dive; there, or too long at it, the watch again.
+		_walk_t += delta
+		_walk_try -= delta
+		if _walk_try <= 0.0:
+			_walk_try = OLMEC_WALK_TRY
+			if b.dive_off(camera.global_position if camera != null else Vector3.INF):
+				b.dive_goal = Vector3.INF
+				olmec_dives += 1
+				_dive_from = b.position
+				_dive_t = 0.0
+				print("crag reach: the Olmec at the rim (%.0f s): he throws himself off toward %s" % [_walk_t,b._leap_to.round()])
+				return false
+		var left := Vector2(b.dive_goal.x-b.position.x,b.dive_goal.z-b.position.z).length()
+		var moved := _stuck_feet != Vector3.INF and motor.feet.distance_to(_stuck_feet) > OLMEC_MOVED
+		if _walk_t > OLMEC_WALK or left < 1.5 or moved or d < OLMEC_CLOSE:
+			print("crag reach: the Olmec's walk to the rim ends %.0f m short (%.0f s%s)" % [left,_walk_t,", you moved" if moved or d < OLMEC_CLOSE else ""])
+			if not moved and d >= OLMEC_CLOSE: _bad_rims.append(b.dive_goal)
+			b.dive_goal = Vector3.INF
+			_stuck_reset(b)
+			if not moved and d >= OLMEC_CLOSE: _stuck_t = OLMEC_STUCK-1.0
+		return false
 	if _stuck_feet == Vector3.INF or motor.feet.distance_to(_stuck_feet) > OLMEC_MOVED or d < _stuck_best-OLMEC_GAIN or b.position.distance_to(_stuck_at) > OLMEC_ROAM:
 		_stuck_reset(b)
 		return false
 	_stuck_t += delta
+	_stuck_all += delta
 	if _stuck_t < OLMEC_STUCK or d < OLMEC_CLOSE: return false
 	if b.dive_off(camera.global_position if camera != null else Vector3.INF):
 		olmec_dives += 1
@@ -1206,12 +1261,25 @@ func _never_stuck(b: Node3D, delta: float) -> bool:
 		print("crag reach: the Olmec makes no way to you (%.0f m off), no edge: taken out of view" % d)
 		_olmec_take()
 		return true
+	# In view, no edge near (a crown's middle): he strides off to a rim.
+	if _stuck_all >= OLMEC_WALK_AFTER:
+		var us := Time.get_ticks_usec()
+		var walks: bool = b.dive_walk(motor.feet,_bad_rims)
+		var ms := (Time.get_ticks_usec()-us)/1000.0
+		if walks:
+			_walk_t = 0.0
+			_walk_try = OLMEC_WALK_TRY
+			print("crag reach: the Olmec makes no way to you (%.0f m off, %.0f s), no edge near: off to the rim at %s (%.1f ms)" % [d,_stuck_t,b.dive_goal.round(),ms])
+			return false
+		if _walk_none <= 0: print("crag reach: no rim to walk to (%.1f ms)" % ms)
+		_walk_none = 4 if _walk_none <= 0 else _walk_none-1
 	# Busy (a climb, a leap) or in view with no edge: look again soon.
 	_stuck_t = OLMEC_STUCK-1.0
 	return false
 
 func _stuck_reset(b: Node3D) -> void:
 	_stuck_t = 0.0
+	_stuck_all = 0.0
 	_stuck_best = b.position.distance_to(motor.feet)
 	_stuck_feet = motor.feet
 	_stuck_at = b.position
