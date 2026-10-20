@@ -179,7 +179,13 @@ const HEIST_POSTS := [
 const HEIST_SWINGS := [
 	["swing_01","arch",Vector3(38.5,27.5,-37.2),Vector2(0.467,0.884),10.0,24.0,"a rock arch over the gap terrace_n -> ledge (the way in)"],
 	["swing_02","arm",Vector3(171.0,41.3,49.0),Vector2(-0.707,-0.707),5.5,6.0,"an arm out of vault_spire over the gap off vault_s's south-west corner: swing round the corner onto vault_sw"],
-	["swing_03","lintel",Vector3(113.5,26.5,56.0),Vector2(0.0,1.0),8.0,6.0,"a broken lintel on south's west rim: the swing out from under the Olmec"],
+	# The swing out from under him: a broken lintel standing on gap_far's
+	# south corner by its lip, sticking out north over the gap's side, its
+	# line over gap_far's lip, 10.7 m over its top: run off gap_near's lip
+	# and the swing dips over the far lip (gap_far lies HEIST_GAP_DROP
+	# under the near, so his feet clear it) and sets him down on gap_far,
+	# bag and all.
+	["swing_03","lintel",Vector3(102.4,30.0,57.2),Vector2(0.0,-1.0),6.0,10.7,"a broken lintel on gap_far by its lip, out over the gap south -> ford: the swing out from under the Olmec"],
 	["swing_04","branch",Vector3(98.2,28.9,47.0),Vector2(0.6,0.8),7.0,7.0,"a dead tree on ford's east rim, its branch over the gap south -> ford (spare: not on the route now)"],
 	# The chain (the way home): two rock rings out of the clouds, one over
 	# each gap ford -> stack_1 -> stack_2, each line 7 m over the far crown
@@ -203,6 +209,8 @@ const HEIST_RAMPS := [
 	# The way home's last climb: from landing_s's north rim up the landing's
 	# south face onto its crown, 6 m up (any bag walks it).
 	["home_ramp",Vector3(8.2,23.5,52.5),Vector3(5.0,30.4,37.0),4.5,1.0],
+	# Off gap_far's back half up onto ford's crown, 2.6 m up.
+	["gap_ramp",Vector3(100.5,19.3,58.0),Vector3(95.0,21.9,58.0),5.0,1.0],
 ]
 const HEIST_STEPS := [
 	["vault_landing",Vector2(190.5,17.25),4.5,0],
@@ -237,16 +245,21 @@ var _snap_due := -1.0
 ## stone blocks, the near one lying on south's west rim out over the void,
 ## its lip (the top middle of its far face) HEIST_GAP_AT; then a gap of
 ## HEIST_GAP_JUMP (times the wanderer) along HEIST_GAP_WAY; the far one
-## against ford's east rim, its top a SET_OFF over the near one's (ford's
-## crown). Light (under the ledge bar, 9 kg) he runs, jumps and catches
-## its lip; heavier the ledge is barred and the heavy bag cuts his jump:
-## he throws the bag across, jumps, climbs and shoulders it. Rows: [id,
-## length along the way, width, which (0 near, 1 far)].
+## against ford's east rim, its top HEIST_GAP_DROP under the near one's
+## (it was a SET_OFF over: no swing on swing_03 climbs that, a run-up and
+## the release's pop gain under a metre, less with a heavy bag, and the
+## swing dips under the lip at the plumb), a stone ramp (gap_ramp) up from
+## it onto ford's crown. Light he runs and jumps it; heavier the heavy bag
+## cuts his jump and pace: he throws the bag across and jumps after it,
+## or swings over on swing_03 with it on. Rows: [id, length along the
+## way, width, which (0 near, 1 far)].
 const HEIST_GAP_AT := Vector3(106.0,20.3,58.0)
 const HEIST_GAP_WAY := Vector2(-1.0,0.0)
 const HEIST_GAP_JUMP := 3.0
+## The far block's top under the near one's (m).
+const HEIST_GAP_DROP := 1.0
 const HEIST_GAP_BLOCKS := [
-	["gap_near",9.0,4.0,0],
+	["gap_near",9.0,5.0,0],
 	["gap_far",6.0,5.0,1],
 ]
 const GAP_DEPTH := 12.0
@@ -677,7 +690,7 @@ func _build_vault_way() -> void:
 ## The far side's lip (the top middle of gap_far's near face), as coded.
 static func gap_far_lip() -> Vector3:
 	var way := Vector3(HEIST_GAP_WAY.x,0.0,HEIST_GAP_WAY.y).normalized()
-	return HEIST_GAP_AT+way*HEIST_GAP_JUMP*WorldScale.wanderer+Vector3.UP*RuinKit.SET_OFF*WorldScale.wanderer
+	return HEIST_GAP_AT+way*HEIST_GAP_JUMP*WorldScale.wanderer+Vector3.DOWN*HEIST_GAP_DROP
 
 ## The way out's gap (HEIST_GAP_BLOCKS), each named heist/<id>: a stone
 ## block GAP_DEPTH deep, its x along the way.
