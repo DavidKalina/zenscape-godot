@@ -488,6 +488,28 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# itself; the ledge stare is its planning beat. The per-terrain rules
 		# it replaces are off while it is on (headless_body.gd `_plans`).
 		"plan_chase":0,
+		# Olmec tune (all 0 off):
+		# `plan_smooth` 1, on a route's walk legs he aims at the farthest
+		# point along the route within his look-ahead (PLAN_AIM, longer at
+		# speed) that he walks straight to (the graph's `walk_line`), so a
+		# grid route reads as straight lines and gentle curves, not 45°
+		# steps; the legs pass by where he is along them.
+		# `run_soft` R rad, a turn costs his build only once his facing has
+		# swung more than about R over the last RUN_WINDOW s (in proportion
+		# past it); a small heading change keeps his speed (also his speed
+		# and build through a few degrees off his way, RUN_FREE_OFF).
+		# `plan_keep` M (share), a fresh plan replaces the route he's on only
+		# if its first way is near his, or it is M cheaper, or his route is
+		# broken or planned to where you no longer are.
+		# `plan_settle` S s, rubble come to rest plans again only once no
+		# more has settled for S s (at most PLAN_SETTLE_MOST s on), and only
+		# if it lies by his route.
+		# `plan_flips` N, N turns back (reversals of his way past FLIP_MIN)
+		# within FLIP_WINDOW s: he holds the route he's on (no fresh plan
+		# but a failed leg) for FLIP_HOLD s.
+		# `gaze_yaw` D degrees, his head turns no more than about D off his
+		# body (eased into it); held past it, a stood body turns to follow.
+		"plan_smooth":0,"run_soft":0.0,"plan_keep":0.0,"plan_settle":0.0,"plan_flips":0,"gaze_yaw":0.0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -599,6 +621,7 @@ func think(delta: float) -> void:
 	_progress(delta)
 	_beacons(delta)
 	_searching()
+	if _plans(): _pc_flip_watch()
 	if _chases(): _see(delta)
 	if breaker != null and state in ["roam","home","chase","return","seek"] and breaker.ahead(self):
 		_smash_from = state
@@ -634,6 +657,7 @@ func think(delta: float) -> void:
 		"feel": _feel(delta)
 		"scope": _scope(delta)
 		_: _think_more(delta)
+	if whole and float(knobs.get("gaze_yaw",0.0)) > 0.0: _gaze_follow(delta)
 	_animate(delta)
 
 ## A subclass's own states (the Olmec boss's charge), thought each frame.
@@ -3104,6 +3128,24 @@ const RUN_EASE := 0.8
 const GAIT_STRIDE := Vector2(0.62,0.85)
 const GAIT_RUN := Vector2(1.05,1.3)
 
+## Olmec tune (`run_soft`): the window (s) his facing's swing is read over,
+## and the share off his way (rad) that costs no speed.
+const RUN_WINDOW := 1.0
+const RUN_FREE_OFF := 0.25
+## His facing over the last RUN_WINDOW s: [clock, facing] pairs.
+var _fac_hist: Array[Vector2] = []
+
+## `run_soft`: his facing noted now; 0 (a small change, free) to 1 (a real
+## turn) by how far it swung over the last RUN_WINDOW s, the most of any
+## time in it from now, eased over 0.8 to 1.3 of `soft` rad.
+func _turn_real(soft: float) -> float:
+	if not _fac_hist.is_empty() and _clock-_fac_hist[-1].x > 0.25: _fac_hist.clear()
+	_fac_hist.append(Vector2(_clock,facing))
+	while _fac_hist.size() > 1 and _clock-_fac_hist[0].x > RUN_WINDOW: _fac_hist.pop_front()
+	var net := 0.0
+	for h: Vector2 in _fac_hist: net = maxf(net,absf(angle_difference(h.y,facing)))
+	return smoothstep(soft*0.8,soft*1.3,net)
+
 ## Chasing with `run_up` on.
 func _runs() -> bool:
 	return float(knobs.get("run_up",0.0)) > 0.0 and state == "chase"
@@ -3191,7 +3233,12 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 	var was := facing
 	if not big or Vector2(vel.x,vel.z).length() < 0.3: facing = wrapf(facing+clampf(off,-turn*delta,turn*delta),-PI,PI)
 	var turned := absf(angle_difference(was,facing))
-	if runs: run_k = maxf(run_k-maxf(turned-RUN_EASY*delta,0.0)*float(knobs.run_turn_cost),0.0)
+	# Olmec tune (`run_soft`): only a real turn (his facing swung past
+	# about `run_soft` rad over RUN_WINDOW s) costs, in proportion.
+	var soft := float(knobs.get("run_soft",0.0)) if runs else 0.0
+	var real_turn := _turn_real(soft) if soft > 0.0 else 0.0
+	if runs and soft > 0.0: run_k = maxf(run_k-turned*real_turn*float(knobs.run_turn_cost),0.0)
+	elif runs: run_k = maxf(run_k-maxf(turned-RUN_EASY*delta,0.0)*float(knobs.run_turn_cost),0.0)
 	if big:
 		# His weight carries him on: a planted run skids (RUN_SKID).
 		_brake(delta,lerpf(1.0,RUN_SKID,run_k) if runs else 1.0)
@@ -3229,11 +3276,13 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 		_hunt_edge(fwd,goal)
 		return
 	var aligned := clampf(cos(angle_difference(facing,_heading)),0.0,1.0)
+	# (`run_soft`: a few degrees off his way keep his speed.)
+	if soft > 0.0: aligned = clampf(cos(maxf(absf(angle_difference(facing,_heading))-RUN_FREE_OFF,0.0)),0.0,1.0)
 	var want := PilotMotor.forward(facing)*speed*aligned*aligned
 	var flat := Vector2(vel.x,vel.z).move_toward(want,float(knobs.accel)*delta)
 	vel.x = flat.x
 	vel.z = flat.y
-	if runs: _run_build(delta,off if turned <= RUN_EASY*delta else PI,fwd)
+	if runs: _run_build(delta,off if (turned <= RUN_EASY*delta if soft <= 0.0 else real_turn < 0.01) else PI,fwd)
 	if _pinned(delta,flat.length()):
 		# His bulk walks into what his rays don't see (a ruin's arch, its
 		# overhang): a wall all the same.
@@ -5186,7 +5235,11 @@ func world_changed(box: AABB) -> void:
 	if _plans():
 		var g = Places.of(field)
 		if g != null: g.forget(box)
-		_pc_at = -INF
+		world_changes += 1
+		# Olmec tune (`plan_settle`): planned again once the rubble has
+		# settled (none more for `plan_settle` s), and only by his route.
+		if float(knobs.get("plan_settle",0.0)) > 0.0: _pc_settle(box)
+		else: _pc_at = -INF
 	if _goal != Vector3.INF and (_routed() or _search != null): _start_search(_goal,_goal_reach)
 
 # --- Olmec round 1: its bulk against the world -------------------
@@ -5878,6 +5931,13 @@ func _pc_step() -> bool:
 	var s = _pc_search
 	_pc_search = null
 	plan_ms = maxf(plan_ms,float(s.usec)/1000.0)
+	# Olmec tune (`plan_keep`, `plan_flips`): the route he's on kept over
+	# one not clearly better that turns him another way.
+	if _pc_keep_old(s):
+		plan_kept += 1
+		return true
+	if not _pc_route.is_empty() and _pc_leg < _pc_route.size() and not s.path.is_empty():
+		if absf(_pc_way_of(_pc_route,_pc_leg).angle_to(_pc_way_of(s.path,0))) > PLAN_KEEP_WAY: plan_switches += 1
 	_pc_route = s.path
 	_pc_route_goal = s.goal
 	_pc_rid += 1
@@ -5920,8 +5980,15 @@ func _pc_chase(delta: float) -> void:
 	if _pc_step() and not _pc_found and _climbs_up(target):
 		_pc_beat()
 		return
+	# Olmec tune (`plan_settle`): the rubble by his route settled.
+	if _pc_settle_due != INF and _clock >= _pc_settle_due:
+		_pc_settle_due = INF
+		_pc_settle_first = INF
+		_pc_at = -INF
 	# (No route, or one done: planned again no oftener than PLAN_AGAIN s.)
 	var due := (_pc_route.is_empty() and _clock-_pc_at >= PLAN_AGAIN) or _clock-_pc_at >= float(knobs.chase_replan) or target.distance_to(_pc_goal) > GOAL_MOVED
+	# (`plan_flips`: turned back and forth, he holds his route a while.)
+	if due and _pc_holding() and not _pc_route.is_empty() and _pc_leg < _pc_route.size(): due = false
 	if due and _pc_search == null: _pc_plan(target)
 	_pc_advance()
 	# His route goes to where you were, well off where you are now: he
@@ -5930,6 +5997,13 @@ func _pc_chase(delta: float) -> void:
 		_pursue_face(delta,target)
 		return
 	if _pc_leg >= _pc_route.size():
+		# Olmec tune (`plan_smooth`): at a route's end with you on past it
+		# over ground he walks straight on, he runs on at you (planning
+		# again) rather than pulling up for the fresh route.
+		if _smooths() and _pc_run_on(target):
+			if _pc_search == null and _clock-_pc_at >= PLAN_AGAIN: _pc_plan(target)
+			_pursue(delta,target,_chase_pace())
+			return
 		if _pc_search != null:
 			_brake(delta)
 			return
@@ -5951,8 +6025,9 @@ func _pc_chase(delta: float) -> void:
 			return
 		# Off the route (thrown, slid): planned again from here, now.
 		var near_leg := _flat_d(leg.from) < CELL_OFF or _flat_d(leg.to) < CELL_OFF
+		if _smooths() and not near_leg: near_leg = _seg_d(leg.from,leg.to) < CELL_OFF
 		if not near_leg and _pc_search == null: _pc_plan(target)
-		_pursue(delta,_pc_aim(),_chase_pace())
+		_pursue(delta,_pc_smooth_aim() if _smooths() else _pc_aim(),_chase_pace())
 		return
 	# A special leg: to its start, then (a beat) the move.
 	if _flat_d(leg.from) > PLAN_AT:
@@ -6000,6 +6075,279 @@ func _pc_advance() -> void:
 		if _flat_d(to) <= Routes.CELL*0.9 and absf(to.y-position.y) <= float(knobs.step)*2.0:
 			_pc_leg = i+1
 			_pc_leg_t = 0.0
+	if _smooths(): _pc_pass_legs()
+
+# --- Olmec tune (`plan_keep`, `plan_settle`, `plan_flips`): no flip-flops -------------------------
+
+## A fresh route turning him no more than this (rad) off the way he goes
+## is taken as it comes (no switch to see).
+const PLAN_KEEP_WAY := 0.6
+## A fresh route turning him more must be cheaper by `plan_keep` of his
+## route's cost left, and at least this (m of walk).
+const PLAN_KEEP_MIN := 3.0
+## Longer than this (s) on the leg he's on, his route isn't kept.
+const PLAN_KEEP_STUCK := 3.0
+## His route's next legs looked over for a break (`_pc_broken`).
+const PLAN_KEEP_LEGS := 16
+## Rubble settling (`plan_settle`): his plan waits at most this long (s)
+## from the first settle for the last.
+const PLAN_SETTLE_MOST := 4.0
+## Turns back (`plan_flips`): one counts once he swung back this far (rad);
+## `plan_flips` of them within FLIP_WINDOW s, and he holds his route for
+## FLIP_HOLD s.
+const FLIP_MIN := 0.3
+const FLIP_WINDOW := 8.0
+const FLIP_HOLD := 6.0
+## Counted, for checks: world changes read, fresh routes turned down,
+## fresh routes that turned him (past PLAN_KEEP_WAY), his turns back, and
+## the holds they set.
+var world_changes := 0
+var plan_kept := 0
+var plan_switches := 0
+var plan_flipped := 0
+var plan_holds := 0
+## Why the last fresh route was turned down (for checks).
+var keep_why := ""
+var _pc_settle_due := INF
+var _pc_settle_first := INF
+var _pc_hold_until := -INF
+var _fl_f := INF
+var _fl_dir := 0.0
+var _fl_opp := 0.0
+var _flips: Array[float] = []
+
+func _pc_holding() -> bool:
+	return int(knobs.get("plan_flips",0)) > 0 and _clock < _pc_hold_until
+
+## The way (flat, unit) `route` takes him from where he stands from leg
+## `i0`: to its first point 5 m off, or its first special leg's start.
+func _pc_way_of(route: Array, i0: int) -> Vector2:
+	var me := Vector2(position.x,position.z)
+	var last := me
+	for i in range(i0,route.size()):
+		var l: Dictionary = route[i]
+		var p: Vector3 = l.to if l.kind == "walk" else l.from
+		last = Vector2(p.x,p.z)
+		if l.kind != "walk" or last.distance_to(me) >= 5.0: break
+	var d := last-me
+	return d.normalized() if d.length() > 0.1 else PilotMotor.forward(facing)
+
+## His route's cost left from where he stands (the graph's costs), with the
+## search's estimate from its end to `goal`.
+func _pc_cost_left(goal: Vector3) -> float:
+	var c := 0.0
+	var at := position
+	for i in range(_pc_leg,_pc_route.size()):
+		var l: Dictionary = _pc_route[i]
+		var to: Vector3 = l.to
+		if l.kind == "walk" or i == _pc_leg: c += Vector2(to.x-at.x,to.z-at.z).length()+absf(to.y-at.y)*0.5
+		if l.kind != "walk": c += float((l.edge as Dictionary).get("cost",0.0))
+		at = to
+	var r := length*0.5+2.0
+	return c+maxf(0.0,Vector2(goal.x-at.x,goal.z-at.z).length()-r)+maxf(absf(goal.y-at.y)-Places.GOAL_DY,0.0)*0.5
+
+## Whether his route's next legs are broken: a walk place he no longer fits,
+## a special move rebuilt without it, or a banned move.
+func _pc_broken() -> bool:
+	var g = Places.of(field)
+	if g == null: return true
+	for i in range(_pc_leg,mini(_pc_leg+PLAN_KEEP_LEGS,_pc_route.size())):
+		var l: Dictionary = _pc_route[i]
+		if _pc_banned.has(Places.Search.key(l.from_node,l.node)): return true
+		if l.kind == "walk":
+			if not g.standable(l.node): return true
+			continue
+		if not g.special.has(l.from_node): continue
+		var ok := false
+		for e: Dictionary in g.special[l.from_node]:
+			if str(e.kind) == str(l.kind) and e.to == l.node:
+				ok = true
+				break
+		if not ok: return true
+	return false
+
+## Whether a fresh search's route is turned down for the one he's on: it
+## turns him another way (past PLAN_KEEP_WAY) and isn't clearly cheaper
+## (`plan_keep`), or he's holding his route (`plan_flips`); never for a
+## broken route, one done, one to where you were (GOAL_MOVED off), or one
+## to the nearest place when this gets to you.
+func _pc_keep_old(s) -> bool:
+	var keep := float(knobs.get("plan_keep",0.0))
+	var hold := _pc_holding()
+	if keep <= 0.0 and not hold: return false
+	if _pc_route.is_empty() or _pc_leg >= _pc_route.size() or s.path.is_empty(): return false
+	if s.found and not _pc_found: return false
+	# Planned to where you were, well off where you are now: the fresh one.
+	if _pc_route_goal == Vector3.INF or (s.goal as Vector3).distance_to(_pc_route_goal) > GOAL_MOVED: return false
+	if absf(_pc_way_of(_pc_route,_pc_leg).angle_to(_pc_way_of(s.path,0))) <= PLAN_KEEP_WAY: return false
+	if _pc_broken(): return false
+	# Stuck on the leg he's on (wading, pinned): the fresh one.
+	if _pc_leg_t > PLAN_KEEP_STUCK: return false
+	if hold: return true
+	var old := _pc_cost_left(s.goal)
+	var fresh: float = float(s.cost)+float(s.left)
+	keep_why = "old %.1f fresh %.1f (%s, found %s/%s)" % [old,fresh,_pc_kinds(),_pc_found,s.found]
+	return fresh+maxf(old*keep,PLAN_KEEP_MIN) > old
+
+## Rubble settled in `box`: by his route (or with none), a plan once no
+## more has settled for `plan_settle` s (PLAN_SETTLE_MOST s at most).
+func _pc_settle(box: AABB) -> void:
+	var grown := box.grow(Routes.CELL*3.0)
+	var near := _pc_route.is_empty() or Places._flat_in(grown,position)
+	if not near:
+		for i in range(_pc_leg,mini(_pc_leg+PLAN_KEEP_LEGS,_pc_route.size())):
+			var l: Dictionary = _pc_route[i]
+			if Places._flat_in(grown,l.from as Vector3) or Places._flat_in(grown,l.to as Vector3):
+				near = true
+				break
+	if not near: return
+	if _pc_settle_first == INF: _pc_settle_first = _clock
+	_pc_settle_due = minf(_clock+float(knobs.plan_settle),_pc_settle_first+PLAN_SETTLE_MOST)
+
+## His turns back counted (`plan_flips`): `plan_flips` within FLIP_WINDOW s
+## and he holds the route he's on FLIP_HOLD s.
+func _pc_flip_watch() -> void:
+	if _fl_f == INF:
+		_fl_f = facing
+		return
+	var df := angle_difference(_fl_f,facing)
+	_fl_f = facing
+	if absf(df) < 0.0005 or absf(df) > 1.0: return
+	var sg := signf(df)
+	if _fl_dir == 0.0: _fl_dir = sg
+	elif sg == _fl_dir: _fl_opp = 0.0
+	else:
+		_fl_opp += absf(df)
+		if _fl_opp > FLIP_MIN:
+			_fl_dir = sg
+			_fl_opp = 0.0
+			plan_flipped += 1
+			_flips.append(_clock)
+	while not _flips.is_empty() and _clock-_flips[0] > FLIP_WINDOW: _flips.pop_front()
+	var most := int(knobs.get("plan_flips",0))
+	if most > 0 and _flips.size() >= most and not _pc_holding():
+		_pc_hold_until = _clock+FLIP_HOLD
+		plan_holds += 1
+		_flips.clear()
+
+## `gaze_yaw`: stood in these states (nothing else turning him), his body
+## turns after a look held past the head's ease.
+const GAZE_FOLLOW := ["seek","land","spent","listen","alert"]
+## The look past the ease this long (s) before the body turns.
+const GAZE_FOLLOW_AFTER := 0.25
+var _gaze_past_t := 0.0
+
+## `gaze_yaw`: his head held past its ease (`gaze.past`) while he stands in
+## a GAZE_FOLLOW state: his body turns after it (at his stood turn, his
+## steps stepping it round), till the head is back inside its ease.
+func _gaze_follow(delta: float) -> void:
+	var past := float(gaze.past)
+	if absf(past) < 0.02 or not (state in GAZE_FOLLOW) or Vector2(vel.x,vel.z).length() > 0.3:
+		_gaze_past_t = 0.0
+		return
+	_gaze_past_t += delta
+	if _gaze_past_t < GAZE_FOLLOW_AFTER: return
+	var rate := float(knobs.turn)*float(knobs.chase_turn)*clampf(absf(past)/0.3,0.25,1.0)
+	facing = wrapf(facing+signf(past)*minf(absf(past),rate*delta),-PI,PI)
+	_heading = facing
+
+# --- Olmec tune (`plan_smooth`): his walk legs shortcut and curved ---------------------------------
+
+## A walk's look-ahead at his top run (m); PLAN_AIM at his walk.
+const SMOOTH_AIM_TOP := 14.0
+## The route sampled this often along it (m) for the aim.
+const SMOOTH_STEP := 0.75
+## The aim found again this often (s).
+const SMOOTH_EVERY := 0.1
+var _ps_aim := Vector3.INF
+var _ps_at := -INF
+var _ps_key := Vector3i(-1,-1,-1)
+
+func _smooths() -> bool:
+	return float(knobs.get("plan_smooth",0)) >= 0.5
+
+## Flat distance from him to the segment `a`..`b`.
+func _seg_d(a: Vector3, b: Vector3) -> float:
+	var me := Vector2(position.x,position.z)
+	return Geometry2D.get_closest_point_to_segment(me,Vector2(a.x,a.z),Vector2(b.x,b.z)).distance_to(me)
+
+## The walk legs he is along passed: the leg nearest him among the next
+## walk legs (the later on a tie), looked for till they lead away.
+func _pc_pass_legs() -> void:
+	var best := -1
+	var best_d := INF
+	for i in range(_pc_leg,mini(_pc_leg+16,_pc_route.size())):
+		var l: Dictionary = _pc_route[i]
+		if l.kind != "walk": break
+		if absf((l.to as Vector3).y-position.y) > float(knobs.step)*2.0: break
+		var d := _seg_d(l.from,l.to)
+		if d <= best_d+0.01:
+			best_d = d
+			best = i
+		elif d > best_d+Routes.CELL*2.0: break
+	if best > _pc_leg and best_d < Routes.CELL:
+		_pc_leg = best
+		_pc_leg_t = 0.0
+
+## `plan_smooth`: at his route's end, whether he runs on straight at
+## `target` (seen, on his level, over places he fits all the way, or the
+## first PLAN_AIM m of it).
+func _pc_run_on(target: Vector3) -> bool:
+	if not _pc_found or sight == null or not sight.seeing(): return false
+	if absf(target.y-position.y) > float(knobs.step)*STAIR*2.0: return false
+	var g = Places.of(field)
+	if g == null or not g.has_method("walk_line"): return false
+	var to := Vector3(target.x-position.x,0.0,target.z-position.z)
+	var p := target if to.length() <= PLAN_AIM else position+to.normalized()*PLAN_AIM
+	return g.walk_line(position,p)
+
+## Where his walk aims (`plan_smooth`): along his route's walk legs from
+## where he is along the leg he's on, the farthest point within his
+## look-ahead (PLAN_AIM at a walk to SMOOTH_AIM_TOP at his top) he walks
+## straight to over places he fits; none, `_pc_aim`.
+func _pc_smooth_aim() -> Vector3:
+	var key := Vector3i(_pc_rid,_pc_leg,0)
+	if _ps_aim != Vector3.INF and _clock-_ps_at < SMOOTH_EVERY and key == _ps_key: return _ps_aim
+	var g = Places.of(field)
+	if g == null or not g.has_method("walk_line"): return _pc_aim()
+	var reach := lerpf(PLAN_AIM,SMOOTH_AIM_TOP,run_k)
+	var leg: Dictionary = _pc_route[_pc_leg]
+	var a: Vector3 = leg.from
+	var b: Vector3 = leg.to
+	var me := Vector2(position.x,position.z)
+	var near := Geometry2D.get_closest_point_to_segment(me,Vector2(a.x,a.z),Vector2(b.x,b.z))
+	var t := 0.0 if Vector2(b.x-a.x,b.z-a.z).length() < 0.01 else Vector2(a.x,a.z).distance_to(near)/Vector2(a.x,a.z).distance_to(Vector2(b.x,b.z))
+	var pts: Array[Vector3] = [a.lerp(b,t),b]
+	var run := Vector2(pts[0].x,pts[0].z).distance_to(Vector2(b.x,b.z))
+	for i in range(_pc_leg+1,_pc_route.size()):
+		if run > reach: break
+		var l: Dictionary = _pc_route[i]
+		if l.kind != "walk": break
+		var p: Vector3 = l.to
+		run += Vector2(pts[-1].x,pts[-1].z).distance_to(Vector2(p.x,p.z))
+		pts.append(p)
+	# Points along it every SMOOTH_STEP m, out to `reach` (its end too).
+	var samples: Array[Vector3] = []
+	var gone := 0.0
+	var next := SMOOTH_STEP
+	for j in range(pts.size()-1):
+		var seg := Vector2(pts[j+1].x-pts[j].x,pts[j+1].z-pts[j].z).length()
+		while next <= gone+seg and next <= reach:
+			samples.append(pts[j].lerp(pts[j+1],(next-gone)/maxf(seg,0.001)))
+			next += SMOOTH_STEP
+		gone += seg
+		if next > reach: break
+	if gone <= reach: samples.append(pts[-1])
+	var best := Vector3.INF
+	var dy := float(knobs.step)*STAIR*2.0
+	for p: Vector3 in samples:
+		if absf(p.y-position.y) > dy or not g.walk_line(position,p): break
+		best = p
+	if best == Vector3.INF: best = _pc_aim()
+	_ps_aim = best
+	_ps_at = _clock
+	_ps_key = key
+	return best
 
 ## On a walk leg of his route, the next leg a walk too (not at a climb's foot).
 func _pc_on_walk() -> bool:
@@ -6362,7 +6710,11 @@ func _pc_none(target: Vector3) -> void:
 func _pc_pulls_from(at: Vector3, target: Vector3) -> bool:
 	if _climbs_up(target) and float(knobs.get("suck_up",0)) > 0.0 and _sees_from(at,target): return true
 	var flat := Vector2(target.x-at.x,target.z-at.z).length()
-	return sight != null and sight.seeing() and at == position and flat <= float(knobs.suck_max)*hh*(1.3 if _relentless() else 1.0)
+	var pulls: bool = sight != null and sight.seeing() and at == position and flat <= float(knobs.suck_max)*hh*(1.3 if _relentless() else 1.0)
+	# Olmec tune (`plan_keep`): only if his worn head's pull reaches you
+	# from here (else he stood staring, the suck never firing).
+	if pulls and float(knobs.get("plan_keep",0.0)) > 0.0 and head != null and head.has_method("worn_reaches"): pulls = head.worn_reaches(field.motor)
+	return pulls
 
 func _pc_kinds() -> String:
 	var k: Array = []

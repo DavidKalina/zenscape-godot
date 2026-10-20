@@ -288,6 +288,37 @@ func forget(b: AABB) -> void:
 	for u: Vector3i in _clear.keys():
 		if _flat_in(grown,Vector3((u.x+0.5)*CELL,0.0,(u.y+0.5)*CELL)): _clear.erase(u)
 
+## Olmec tune (`plan_smooth`): whether he walks straight from `a` to `b`
+## over places he fits (each column the line crosses a place within a
+## step of the last, his bulk clear there): the line-of-sight test his
+## route's walk legs are shortcut by. Only read columns (no rays past
+## those the search already cast, but for new ones).
+func walk_line(a: Vector3, b: Vector3) -> bool:
+	var flat := Vector2(b.x-a.x,b.z-a.z)
+	var n := maxi(1,ceili(flat.length()/(CELL*0.5)))
+	var y := a.y
+	var last := Routes.cell_of(a)
+	var u0 := routes.node_at(a,routes.step*2.0,routes.step*2.0)
+	if u0 != NONE: y = routes.y_of(u0)
+	for i in range(1,n+1):
+		var p := Vector2(a.x,a.z)+flat*(float(i)/n)
+		var c := Routes.cell_of(Vector3(p.x,0.0,p.y))
+		if c == last: continue
+		last = c
+		var k := routes.floor_near(c,y,routes.step,routes.step)
+		if k < 0: return false
+		var v := Vector3i(c.x,c.y,k)
+		if not routes.fits(v) or not clear(v): return false
+		y = routes.y_of(v)
+		# A place's row of neighbours he fits too: the line keeps a column
+		# off a rim (his look ahead at speed meets no edge on it).
+		for d: Vector2i in WALK_SIDE:
+			var kn := routes.floor_near(c+d,y,routes.step,routes.step)
+			if kn < 0 or not routes.fits(Vector3i(c.x+d.x,c.y+d.y,kn)): return false
+	return true
+
+const WALK_SIDE := [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1)]
+
 static func _flat_in(b: AABB, p: Vector3) -> bool:
 	return p.x >= b.position.x and p.x <= b.end.x and p.z >= b.position.z and p.z <= b.end.z
 
@@ -628,8 +659,15 @@ class Search:
 	static func key(u: Vector3i, v: Vector3i) -> String:
 		return "%s>%s" % [u,v]
 
+	## The route's cost (its end's) and what's left from its end to the
+	## goal (the search's estimate): for the hysteresis (`plan_keep`).
+	var cost := 0.0
+	var left := 0.0
+
 	func _finish(u: Vector3i) -> void:
 		done = true
+		cost = float(_g.get(u,0.0))
+		left = _h(u)
 		var legs: Array = []
 		while _came.has(u):
 			var c: Array = _came[u]
