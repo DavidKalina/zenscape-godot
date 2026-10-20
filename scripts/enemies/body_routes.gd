@@ -119,7 +119,8 @@ func _init(body: Node3D) -> void:
 	jump_gap = body.jump_gap()
 	jump_rise = float(k.jump_rise)*float(body.hh)
 	jump_sink = float(k.jump_sink)*float(body.hh)
-	_ray.collision_mask = WalkerOnly.strip(field.study.ground.mask)
+	# What his own rays meet (`parked_off`: not the parked plane's column).
+	_ray.collision_mask = body._land_mask() if body.has_method("_land_mask") else WalkerOnly.strip(field.study.ground.mask)
 	_skip = body._skip
 
 ## The bodies left out of the rays as they are now (call before a batch
