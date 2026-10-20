@@ -13,10 +13,10 @@ extends "res://studies/bag_study.gd"
 ## - the void under it all; a fall past `lost` puts him back at the near end
 ##   (at the far end if he last stood on the far cliff).
 ##
-## Each bridge's deck is walked on clean boxes along its resting curve (the
-## bell spires' way, scripts/kit_isle/motif_bell_spires.gd): the walker's
-## ground (scripts/kit_isle/deck_ground.gd) lowers them by the sim's drop,
-## and the brood, the bag and loot (physics rays and bodies) stand on them.
+## Each bridge's deck is walk boxes laid each frame along its middle line
+## where it hangs (the resting curve, dropped and swayed by the sim), so the
+## brood, the bag and loot (physics rays and bodies) ride it as it sags; the
+## walker reads the live deck itself (scripts/kit_isle/deck_ground.gd).
 ## Every cliff, spur, bridge, loot piece and burrow is named
 ## `bridge_study/<piece>` (scripts/layout_overrides.gd; F4 world view).
 ##   ./run-bridge-study.command
@@ -25,6 +25,8 @@ const Footbridge = preload("res://scripts/footbridge.gd")
 const RopeBridge = preload("res://scripts/rope_bridge.gd")
 const DeckGround = preload("res://scripts/kit_isle/deck_ground.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const BridgeLoad = preload("res://scripts/bridge_load.gd")
+const BroodKnobs = preload("res://scripts/brood/brood_knobs.gd")
 
 const BRIDGE_SCENE := "bridge_study"
 ## The cliffs: tops at y 0, faces down CLIFF_DEEP m. The near cliff's lip is
@@ -44,6 +46,9 @@ const SPUR_FAR := 19.0
 const SHORT_SPAN := SPUR_FAR-SPUR_NEAR+SET_BACK*2.0
 ## The kill plane: a fall past here (m) is lost to the void.
 const VOID_Y := -30.0
+## The bridges that bear a load and strain (scripts/bridge_load.gd); the
+## rest hold anything.
+const LOADED := ["long_bridge"]
 ## The drop pad on the far cliff: its middle and radius (m).
 const PAD_AT := Vector3(34.0,0.0,-4.0)
 const PAD_R := 1.6
@@ -116,8 +121,8 @@ func _burrow_rows() -> Array:
 
 ## A live rope bridge from `a` to `b` (world, at rest), as the game draws it
 ## (Footbridge `build_mesh`, `live`), with the kit's stone anchor at each end
-## and its deck as walk boxes along the resting curve (the meta "rest_deck":
-## the walker's ground lowers them by the sim's drop). All under one named
+## and its deck as walk boxes laid where it hangs (`_lay_deck`); the long
+## one bears a load and strains (LOADED, scripts/bridge_load.gd). All under one named
 ## node (`bridge_study/<id>`), its frame at `a`, so the world view moves the
 ## whole bridge.
 func _build_bridge(id: String, a_world: Vector3, b_world: Vector3, seed_value: int) -> void:
@@ -134,23 +139,17 @@ func _build_bridge(id: String, a_world: Vector3, b_world: Vector3, seed_value: i
 	var mesh := Footbridge.build_mesh(a,b,seed_value)
 	var live: MeshInstance3D = Footbridge.live(mesh,a,b,seed_value)
 	live.name = "Bridge"
-	live.set_meta("rest_deck",true)
 	holder.add_child(live)
 	var span := Vector2(b.x-a.x,b.z-a.z).length()
 	var deck := StaticBody3D.new()
 	deck.name = "Deck"
 	var pieces := maxi(8,int(ceil(span/0.5)))
+	var shapes: Array = []
 	for i in range(pieces):
-		var p0 := _deck_point(a,b,span,float(i)/pieces)
-		var p1 := _deck_point(a,b,span,float(i+1)/pieces)
-		var along := p1-p0
-		var box := BoxShape3D.new()
-		box.size = Vector3(Footbridge.WIDTH+0.06,0.16,along.length()+0.04)
 		var shape := CollisionShape3D.new()
-		shape.shape = box
-		var basis := Basis.looking_at(along.normalized(),Vector3.UP)
-		shape.transform = Transform3D(basis,(p0+p1)*0.5-basis.y*0.08)
+		shape.shape = BoxShape3D.new()
 		deck.add_child(shape)
+		shapes.append(shape)
 	holder.add_child(deck)
 	for end: Array in [[a,b],[b,a]]:
 		var anchor := RuinKit.bridge_anchor(seed_value*3+int(end[0] == b),0.45,Footbridge.WIDTH,
@@ -159,11 +158,40 @@ func _build_bridge(id: String, a_world: Vector3, b_world: Vector3, seed_value: i
 		way.y = 0.0
 		anchor.transform = Transform3D(Basis.looking_at(way.normalized(),Vector3.UP),end[0])
 		holder.add_child(anchor)
-	bridges[id] = {"live":live,"deck":deck,"holder":holder,"a":a,"b":b,"span":span}
+	bridges[id] = {"live":live,"deck":deck,"holder":holder,"a":a,"b":b,"span":span,"shapes":shapes}
+	_lay_deck(bridges[id])
+	if id in LOADED: bridges[id]["load"] = BridgeLoad.on(live,id.replace("_"," "),seed_value)
 
 ## The deck's resting top at `t` along the bridge from `a` to `b`.
 static func _deck_point(a: Vector3, b: Vector3, span: float, t: float) -> Vector3:
 	return a.lerp(b,t)+Vector3.UP*Footbridge.lift(span,t)
+
+## Lays the deck's walk boxes along its middle line where it hangs now (the
+## resting curve, dropped and swayed by the sim), so the brood, the bag and
+## loot ride it down as it sags. Each frame (`tick`); the walker reads the
+## live deck itself (DeckGround `deck_at`).
+func _lay_deck(br: Dictionary) -> void:
+	var live: MeshInstance3D = br.live
+	var shapes: Array = br.shapes
+	var a: Vector3 = br.a
+	var b: Vector3 = br.b
+	var span: float = br.span
+	var sim: RefCounted = live.sim
+	if not sim.awake and br.get("laid_still",false): return
+	var n := shapes.size()
+	var prev := Vector3.ZERO
+	for i in range(n+1):
+		var t := float(i)/n
+		var off: Vector2 = sim.offset(t,0.0)
+		var p: Vector3 = _deck_point(a,b,span,t)+Vector3.UP*off.x+live.across*off.y
+		if i > 0:
+			var along: Vector3 = p-prev
+			var shape: CollisionShape3D = shapes[i-1]
+			(shape.shape as BoxShape3D).size = Vector3(Footbridge.WIDTH+0.06,0.16,along.length()+0.04)
+			var basis := Basis.looking_at(along.normalized(),Vector3.UP)
+			shape.transform = Transform3D(basis,(prev+p)*0.5-basis.y*0.08)
+		prev = p
+	br["laid_still"] = not sim.awake
 
 ## The drop pad on the far cliff (`bridge_study/drop_pad`): a flat ring to
 ## throw the bag to, no collider.
@@ -225,6 +253,46 @@ func tick(delta: float) -> void:
 	var falling := motor.velocity.y
 	super.tick(delta)
 	_tread(delta,was_grounded,falling)
+	for id: String in bridges: _lay_deck(bridges[id])
+	_bear()
+
+## Each frame every body tells the loaded bridges what it weighs where
+## (BridgeLoad `bear_at`): he (his weight already sinks the deck by `tread`),
+## his bag (on his back at his feet, else wherever it lies or is dragged),
+## each brood guy (on him when clinging, else at its feet).
+func _bear() -> void:
+	var feet := global_transform*motor.feet
+	BridgeLoad.bear_at(feet,BridgeLoad.WANDERER_KG,motor,false)
+	if bag != null and float(bag.kg) > 0.0:
+		var loose: Node3D = bag.loose
+		var at := feet if bag.state == "worn" or loose == null or not is_instance_valid(loose) else loose.global_position
+		BridgeLoad.bear_at(at,float(bag.kg),bag)
+	if brood != null:
+		for g: RefCounted in brood.guys:
+			var at: Vector3 = feet if g.state == "cling" else brood.global_transform*g.feet
+			BridgeLoad.bear_at(at,BroodKnobs.RIDER_KG,g)
+
+## The loaded bridges' readouts (a debug aid), top middle.
+func _build_ui() -> void:
+	super._build_ui()
+	var layer := CanvasLayer.new()
+	layer.layer = 5
+	add_child(layer)
+	var y := 12.0
+	for id: String in LOADED:
+		if not bridges.has(id) or not bridges[id].has("load"): continue
+		var label := Label.new()
+		label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+		label.offset_left = -400.0
+		label.offset_right = 400.0
+		label.offset_top = y
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.add_theme_font_size_override("font_size",17)
+		label.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
+		label.add_theme_constant_override("shadow_offset_y",1)
+		layer.add_child(label)
+		bridges[id]["load"].readout = label
+		y += 22.0
 
 func _tread(delta: float, was_grounded: bool, falling: float) -> void:
 	if RopeBridge._live.is_empty(): return
