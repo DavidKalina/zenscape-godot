@@ -120,6 +120,27 @@ const HEIST_BURROWS := [
 const HEIST_OLMEC_UP := [Vector3(171.3,24.3,2.07),Vector2(-0.863,-0.505)]
 const HEIST_OLMEC_DELAY := 3.0
 var _olmec_up: Node3D = null
+## The staged drop where you just were (heist/olmec_perch, heist/olmec_drop,
+## tokens F4 moves): once the isle is awake, as he boot-surfs the pillar
+## and comes within HEIST_DROP_CUE m (flat) of its foot, the Olmec, unless
+## he's already down there near him, stands up on the perch (vault_sw's
+## crown behind the pillar's top, out of view behind him; set there if he
+## isn't) and throws himself off it (headless_body `stage_drop`) onto the
+## pillar's foot, where he just came down. The cue: his time to the foot
+## at his speed toward it under HEIST_DROP_LEAD s (his windup and flight,
+## ~2.7 s, less the beat he lands after him), within HEIST_DROP_CUE m
+## (flat), off the perch's crown. Boot-surfing that's ~13 m out, walking
+## ~6. The perch's z the way it faces.
+const HEIST_OLMEC_PERCH := [Vector3(161.5,31.7,58.0),Vector2(-0.987,0.162)]
+const HEIST_OLMEC_DROP := Vector3(137.5,20.9,61.5)
+const HEIST_DROP_CUE := 24.0
+const HEIST_DROP_LEAD := 3.4
+## Already on south this near him (m): no staging; he got there himself.
+const HEIST_DROP_THERE := 15.0
+var _olmec_perch: Node3D = null
+var _olmec_drop: Node3D = null
+var _drop_armed := false
+var _drop_done := false
 
 const HEIST_POSTS := [
 	["post_01",Vector3(21.6,30.4,-26.9),"landing crown over terrace_n (rappel)"],
@@ -255,6 +276,7 @@ func greed_marks() -> Vector2i:
 func greed_woke(what: String) -> void:
 	super.greed_woke(what)
 	_snap_armed = true
+	if what == "olmec": _drop_armed = true
 	if what == "olmec" and olmec_spawns == 0: _olmec_due = HEIST_OLMEC_DELAY
 
 ## His first entrance up the staged cliff (heist/olmec_up, fitted to the
@@ -356,6 +378,7 @@ func _add_life() -> void:
 	_build_vault_way()
 	_build_gap()
 	_build_olmec_up()
+	_build_olmec_drop()
 	_build_hands_hint()
 
 ## The swing points, each named heist/<id>: a move or turn in the world
@@ -422,6 +445,77 @@ func _build_olmec_up() -> void:
 	_olmec_up.transform = Layout.xform(called,coded)
 	add_child(_olmec_up)
 	Layout.track(called,_olmec_up,"token",coded)
+
+## The staged drop's two tokens: heist/olmec_perch (where he throws
+## himself from; z the way he faces) and heist/olmec_drop (where he lands).
+func _build_olmec_drop() -> void:
+	var out: Vector2 = (HEIST_OLMEC_PERCH[1] as Vector2).normalized()
+	var zb := Vector3(out.x,0.0,out.y)
+	for row: Array in [["olmec_perch",Transform3D(Basis(Vector3.UP.cross(zb),Vector3.UP,zb),HEIST_OLMEC_PERCH[0])],
+			["olmec_drop",Transform3D(Basis(),HEIST_OLMEC_DROP)]]:
+		var called := "heist/%s" % row[0]
+		if Layout.deleted(called): continue
+		var n := Node3D.new()
+		n.name = str(row[0]).to_pascal_case()
+		n.transform = Layout.xform(called,row[1])
+		add_child(n)
+		Layout.track(called,n,"token",row[1])
+		if row[0] == "olmec_perch": _olmec_perch = n
+		else: _olmec_drop = n
+
+## The staged drop (HEIST_OLMEC_PERCH): cued by him coming down the pillar
+## toward its foot, once a wake.
+func _stage_drop() -> void:
+	if not _drop_armed or _drop_done or enemies == null or _olmec_perch == null or _olmec_drop == null: return
+	var to := _olmec_drop.global_position
+	var perch := _olmec_perch.global_position
+	if not motor.grounded or motor.feet.y > perch.y-1.5: return
+	var off := Vector2(to.x-motor.feet.x,to.z-motor.feet.z)
+	if off.length() > HEIST_DROP_CUE: return
+	var toward := maxf(Vector2(motor.velocity.x,motor.velocity.z).dot(off.normalized()),1.0)
+	if off.length() > 1.5 and off.length()/toward > HEIST_DROP_LEAD: return
+	_drop_done = true
+	_olmec_due = -1.0
+	var b := olmec()
+	if b != null and b.global_position.y < perch.y-4.0 and b.global_position.distance_to(motor.feet) < HEIST_DROP_THERE:
+		print("heist: the Olmec's already down on south, %.1f m off him: no staged drop" % b.global_position.distance_to(motor.feet))
+		return
+	var stand := _olmec_stand(perch,Vector2(_olmec_perch.global_transform.basis.z.x,_olmec_perch.global_transform.basis.z.z))
+	if stand == null: return
+	var ok: bool = stand.stage_drop(to)
+	print("heist: the Olmec's staged drop from %s onto %s, him %.1f m off it at %.1f m/s: %s" % [stand.position,to,off.length(),Vector2(motor.velocity.x,motor.velocity.z).length(),"winding up" if ok else "no go (%s)" % stand.down_why])
+
+## Till the staged drop, an Olmec stuck under him (in the court, as he
+## gets out over vault_s) isn't sent up another cliff by the crag's pick (it
+## found vault_sw's own face, beside him): the drop brings him.
+func _olmec_stuck(b: Node3D, delta: float) -> bool:
+	if _drop_armed and not _drop_done: return false
+	return super._olmec_stuck(b,delta)
+
+## The Olmec standing on the floor under `at` facing `face` (x, z), on the
+## hunt; the one there was cleared (unless he already stands there).
+func _olmec_stand(at: Vector3, face: Vector2) -> Node3D:
+	var b := olmec()
+	if b != null and bool(b.grounded) and b.global_position.distance_to(at) < 4.0: return b
+	var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(at+Vector3.UP*4.0,at+Vector3.DOWN*8.0))
+	if hit.is_empty():
+		push_warning("heist: no floor under heist/olmec_perch at %s" % at)
+		return null
+	_olmec_clear()
+	var knobs: Dictionary = OLMEC_KNOBS.duplicate()
+	knobs.merge(_body_knobs,true)
+	var p: Vector3 = hit.position
+	b = enemies.add(OlmecTarget,p,face.normalized(),knobs)
+	var h: Node3D = enemies.add(InhalerHead,p,face.normalized(),{})
+	b.make_whole(h)
+	if breakables != null: b.breaker = breakables
+	b.body.force_update_transform()
+	b.hunting = true
+	b.seen_at = motor.feet
+	olmec_spawns += 1
+	olmec_cliff = {}
+	_gone_t = -1.0
+	return b
 
 ## The landing's top: the crown less three ledges' rises.
 static func step_top(rises_left: int) -> float:
@@ -554,6 +648,7 @@ func _bear_bridge() -> void:
 
 func tick(delta: float) -> void:
 	super.tick(delta)
+	if not flying: _stage_drop()
 	if bridge_load == null or flying: return
 	_bear_bridge()
 	_stage_snap(delta)

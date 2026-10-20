@@ -1679,6 +1679,31 @@ func _down_to(goal: Vector3) -> bool:
 	field.sound(&"body_windup",position)
 	return true
 
+## Staged (a study's set piece, e.g. the heist's drop where you just
+## were): it throws itself off where it stands onto the floor at `to` (or
+## the room nearest it there), the arc tried as `_down_to` tries its own
+## (plain, then higher to `down_arc` Hh); it winds up and goes. False (it
+## stays) if it's off its feet or no arc clears.
+func stage_drop(to: Vector3) -> bool:
+	if not grounded or state in ["leap","fall","climb","mantle","hang","windup"]: return false
+	var at := _down_room(to)
+	if at == Vector3.INF:
+		down_why = "staged: no room at %s" % to
+		return false
+	for up: float in [float(knobs.leap_up),hh*0.8,hh*1.4,float(knobs.down_arc)*hh]:
+		_drop_up = up
+		if _arc_clear(at,"drop",true):
+			down_why = ""
+			down_tos += 1
+			_leap_to = at
+			leap_kind = "drop"
+			_go("windup")
+			field.sound(&"body_windup",position)
+			return true
+	_drop_up = -1.0
+	down_why = "staged: no arc clears to %s" % at
+	return false
+
 ## A spot with room for its bulk at `at` or round it (a narrow terrace:
 ## the widest of it near there), on about the same floor; INF none.
 func _down_room(at: Vector3) -> Vector3:
