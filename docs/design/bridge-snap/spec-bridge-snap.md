@@ -93,3 +93,10 @@ One trunk, no lanes:
 - Changes to shared files (`rope_bridge.gd`, `rope_bridge_sim.gd`,
   `footbridge.gd`, `brood_*`, `loot_bag.gd`) stay small, additive and
   opt-in.
+
+## The bag on a fall (spec change, decided)
+
+The user: he always comes back with a bag, but it's empty. On any fall
+into the void, worn or not, he respawns wearing an empty bag; its loot is
+lost with the fall (pieces back on their spots, as now). Replaces task 4's
+"worn keeps its loot". Spare bags from the plane are a later idea.
