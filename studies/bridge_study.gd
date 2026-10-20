@@ -27,6 +27,7 @@ const DeckGround = preload("res://scripts/kit_isle/deck_ground.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const BridgeLoad = preload("res://scripts/bridge_load.gd")
 const BroodKnobs = preload("res://scripts/brood/brood_knobs.gd")
+const BridgeClimb = preload("res://scripts/bridge_climb.gd")
 
 const BRIDGE_SCENE := "bridge_study"
 ## The cliffs: tops at y 0, faces down CLIFF_DEEP m. The near cliff's lip is
@@ -88,6 +89,9 @@ const BRIDGE_BURROWS := [
 ## The bridges: name -> {live (the rope bridge), deck (its walk boxes),
 ## holder (the named node), a, b (its ends in the holder's frame), span}.
 var bridges := {}
+## His hold on a snapped bridge's hanging halves (scripts/bridge_climb.gd),
+## one per loaded bridge.
+var climbs: Array = []
 
 func _init() -> void:
 	scene_id = BRIDGE_SCENE
@@ -166,6 +170,7 @@ func _build_bridge(id: String, a_world: Vector3, b_world: Vector3, seed_value: i
 		held.snapped.connect(_on_snap.bind(id))
 		held.mended.connect(_on_mend.bind(id))
 		bridges[id]["load"] = held
+		climbs.append(BridgeClimb.new(held,BridgeLoad.WANDERER_KG))
 
 ## Snapped: its walk boxes go, so all on the deck falls (the brood into the
 ## void, gone; the bag and loose loot after them).
@@ -291,7 +296,29 @@ func tick(delta: float) -> void:
 	super.tick(delta)
 	_tread(delta,was_grounded,falling)
 	for id: String in bridges: _lay_deck(bridges[id])
+	for c: RefCounted in climbs:
+		if motor.rider == null: c.catch(motor,delta)
 	_bear()
+	_bag_in_void()
+
+## A bag fallen into the void (dragged or lying on the deck at the snap,
+## thrown short) is lost with its loot: the pieces go back on their spots
+## and a fresh empty bag lies at the near end. On his back it stays with him
+## (a fall puts him back at the near end wearing it, its loot kept).
+func _bag_in_void() -> void:
+	if bag == null or bag.state == "worn" or bag.state == "fly": return
+	var loose: RigidBody3D = bag.loose
+	if loose == null or not is_instance_valid(loose) or loose.global_position.y > VOID_Y: return
+	if bag.state == "drag": bag.let_go()
+	bag.empty()
+	bag.state = "ground"
+	loose.lock_rotation = true
+	var xf := Transform3D(Basis.IDENTITY,Vector3(NEAR_LIP-3.0,0.6,LONG_Z+1.5))
+	loose.global_transform = xf
+	PhysicsServer3D.body_set_state(loose.get_rid(),PhysicsServer3D.BODY_STATE_TRANSFORM,xf)
+	loose.linear_velocity = Vector3.ZERO
+	loose.angular_velocity = Vector3.ZERO
+	_say("The bag fell into the void, its loot with it (back on their spots)")
 
 ## Each frame every body tells the loaded bridges what it weighs where
 ## (BridgeLoad `bear_at`): he (his weight already sinks the deck by `tread`),
@@ -353,4 +380,4 @@ func station_near(at: Vector3) -> int:
 	return 4 if at.x >= FAR_LIP else 2
 
 func _hint_text() -> String:
-	return "Bridge study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag · hold LMB or T (pad RT) aim a throw (8 kg or under) · V shove · the brood wake out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off · the long bridge to the far cliff, the short one beside it · held past its limit the long bridge snaps · fall into the void: back at the near end (the bridge mended) · 1 start, 2 near end, 3 short bridge, 4 far end, 5 drop pad · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Bridge study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag · hold LMB or T (pad RT) aim a throw (8 kg or under) · V shove · the brood wake out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off · the long bridge to the far cliff, the short one beside it · held past its limit the long bridge snaps: falling, he catches a hanging half; stick toward the cliff climbs, away down, Space jumps off, C lets go · fall into the void: back at the near end (the bridge mended) · 1 start, 2 near end, 3 short bridge, 4 far end, 5 drop pad · R start · F1 numbers · F4 world view · Esc mouse"

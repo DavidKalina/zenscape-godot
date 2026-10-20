@@ -82,6 +82,8 @@ const SNAP_SWAY := 1.2
 ## What flies at the break: planks and strands.
 const SNAP_PLANKS := 7
 const SNAP_FRAYS := 3
+## A climber's weight on a half's link: that much more gravity per 60 kg.
+const HANG_PULL := 3.0
 
 const CREAKS := ["res://assets/audio/kit/creak-1.wav","res://assets/audio/kit/creak-2.wav","res://assets/audio/kit/creak-3.wav",
 	"res://assets/audio/kit/creak-4.wav","res://assets/audio/kit/creak-5.wav","res://assets/audio/kit/creak-6.wav",
@@ -122,6 +124,9 @@ var broken := false
 var break_t := 0.5
 var halves: Array = []
 var lip := 0.0
+## A climber's hold on a half (`hang_on`): {half: [link, kg]}, pulled down
+## by his weight as if that link weighed HANG_PULL times a link per 60 kg.
+var hung := {}
 var _left := 0.0
 var _layers := 1
 
@@ -372,6 +377,7 @@ func mend() -> void:
 	broken = false
 	for h: Dictionary in halves: (h.node as Node).queue_free()
 	halves.clear()
+	hung.clear()
 	bridge.layers = _layers
 	bridge.set_process(true)
 	if bridge.is_inside_tree() and not RopeBridge._live.has(bridge): RopeBridge._live.append(bridge)
@@ -435,10 +441,10 @@ func _swing(delta: float) -> void:
 	_left = minf(_left+delta,STEP*8.0)
 	while _left >= STEP:
 		_left -= STEP
-		for h: Dictionary in halves: _step_half(h)
+		for i in range(halves.size()): _step_half(halves[i],i)
 	for h: Dictionary in halves: _draw_half(h)
 
-func _step_half(h: Dictionary) -> void:
+func _step_half(h: Dictionary, index: int) -> void:
 	var pts: PackedVector3Array = h.pts
 	var was: PackedVector3Array = h.was
 	var keep := 1.0-DAMP*STEP
@@ -447,6 +453,9 @@ func _step_half(h: Dictionary) -> void:
 		var p := pts[i]
 		pts[i] = p+(p-was[i])*keep+g
 		was[i] = p
+	var on: Array = hung.get(index,[])
+	if not on.is_empty() and int(on[0]) > 0 and int(on[0]) < pts.size():
+		pts[int(on[0])] += g*HANG_PULL*float(on[1])/60.0
 	var link: float = h.link
 	var end_at: Vector3 = bridge.a if int(h.end) == 0 else bridge.b
 	var out: Vector3 = (bridge.b-bridge.a)
@@ -490,6 +499,24 @@ func _draw_half(h: Dictionary) -> void:
 		var stretched := Basis(x,y,z*l)
 		ropes.set_instance_transform(i*2,Transform3D(stretched,mid+x*half_w+y*0.05))
 		ropes.set_instance_transform(i*2+1,Transform3D(stretched,mid-x*half_w+y*0.05))
+
+## A climber holds half `i` at link `link` (0 none: let go), weighing `kg`;
+## caught moving `v` (m/s, the world), the link takes his pace (a jolt).
+func hang_on(i: int, link: int, kg_in: float, v := Vector3.ZERO) -> void:
+	if i < 0 or i >= halves.size(): return
+	if link <= 0:
+		hung.erase(i)
+		return
+	var fresh := not hung.has(i)
+	hung[i] = [link,kg_in]
+	if not fresh or v == Vector3.ZERO: return
+	var h: Dictionary = halves[i]
+	var pts: PackedVector3Array = h.pts
+	var prev: PackedVector3Array = h.was
+	if link >= pts.size(): return
+	var local := bridge.global_basis.inverse()*v
+	prev[link] = pts[link]-local*STEP
+	h.was = prev
 
 ## Half `i`'s points in the world (pts[0] at its end), for climbers.
 func half_points(i: int) -> PackedVector3Array:
