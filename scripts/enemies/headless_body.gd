@@ -430,6 +430,14 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# blocked: under an overhang he can't fit) and no gain on you for
 		# SUCK_IN_AFTER s, he plants and inhales you out from where you hide.
 		"suck_in":0,
+		# Olmec reach: `watch_throw` N s, when his landing's wave or his
+		# swat throws you, he follows where you go for N s (you out of his
+		# sight off a terrace's edge he threw you off): no hunt for the spot
+		# you were knocked from.
+		"watch_throw":0,
+		# Olmec reach: `parked_off` 1, the parked plane's column (the
+		# walker's keep-off, kit_isle.gd PARKED_LAYER) is no wall to him.
+		"parked_off":0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -789,7 +797,7 @@ func _senses() -> bool:
 	if neck.distance_to(at) > float(knobs.sense): return false
 	_ray.from = neck
 	_ray.to = at
-	_ray.collision_mask = WalkerOnly.strip(field.study.ground.mask)
+	_ray.collision_mask = _land_mask()
 	_ray.exclude = _skip()
 	return field.study.get_world_3d().direct_space_state.intersect_ray(_ray).is_empty()
 
@@ -2006,6 +2014,7 @@ func _shock_meets(w: Dictionary) -> void:
 	# Olmec threat round 1: thrown toward the void near a rim.
 	if float(knobs.void_push) > 0.0 and _relentless(): way = OlmecVoid.toward(field,m.feet,way,float(knobs.void_push))
 	shock_hits += 1
+	_threw_t = float(knobs.get("watch_throw",0))
 	shove_pilot(m,way,float(knobs.shock_out)*f,float(knobs.shock_up)*f)
 
 # --- Routes (round 11) ---------------------------------------------------------------------------
@@ -2313,6 +2322,8 @@ var _pounce_ready := 0.0
 var _suck_ready := 0.0
 ## `suck_in`: how long (s) he's been near you with no pounce and no gain.
 var _suck_in_t := 0.0
+## `watch_throw`: s left of following you after a throw.
+var _threw_t := 0.0
 var _suck_in_d := INF
 const SUCK_IN_AFTER := 1.5
 var sucks_in := 0
@@ -2367,7 +2378,7 @@ func _see(delta: float) -> void:
 		sight = Sight.new()
 		sight.tune(knobs)
 	var m: PilotMotor = field.motor
-	sight.mask = WalkerOnly.strip(field.study.ground.mask)
+	sight.mask = _land_mask()
 	# `sight_walker_only` 1: walker-only stone (a niche, a hush gallery)
 	# hides him from its eyes, though it can't walk or climb it.
 	if float(knobs.get("sight_walker_only",0)) >= 0.5: sight.mask |= WalkerOnly.LAYER
@@ -2386,6 +2397,9 @@ func _see(delta: float) -> void:
 		seen_at = m.feet
 		seen_t = 0.0
 		return
+	# `watch_throw`: he threw you; he knows where you went.
+	var threw := _threw_t > 0.0
+	if threw: _threw_t -= delta
 	var pts := Sight.pilot_points(m.feet,false)
 	sight.update(delta,field.study.get_world_3d().direct_space_state,_eye(),_look_way(),pts,not m.grounded)
 	if sight.seeing():
@@ -2393,6 +2407,9 @@ func _see(delta: float) -> void:
 		seen_t = 0.0
 		if state != "scope": _scoped = false
 		_trail_seen(m.feet)
+	elif threw:
+		seen_at = m.feet
+		seen_t = 0.0
 	else: seen_t += delta
 	if sight.state == "spotted" and sight.seeing() and (state in ["listen","roam","alert","seek","return"] or (not hunting and state == "triumph")):
 		_spot()
@@ -3221,6 +3238,7 @@ func _catch(m: PilotMotor, how: String) -> void:
 	way = way.normalized() if way.length() > 0.1 else PilotMotor.forward(facing)
 	if float(knobs.void_push) > 0.0: way = OlmecVoid.toward(field,m.feet,way,float(knobs.void_push))
 	m.knock(m.knock_velocity(way,float(knobs.swat_out),float(knobs.swat_up)),self,float(knobs.swat_down))
+	_threw_t = float(knobs.get("watch_throw",0))
 	m.harm(harm_cause(),1,self)
 	_cool = 0.3
 	hit_pilot.emit(self)
@@ -3513,7 +3531,7 @@ func _scope_pose(delta: float) -> void:
 		_head_box.size = Vector3(float(head.width),float(head.height),float(head.length))*0.92
 		_head_q.shape = _head_box
 		_head_q.transform = Transform3D(Basis(Vector3.UP,_held_yaw),_held_at+Vector3.UP*float(head.height)*0.5)
-		_head_q.collision_mask = WalkerOnly.strip(field.study.ground.mask)
+		_head_q.collision_mask = _land_mask()
 		_head_q.exclude = _skip()
 		var space: PhysicsDirectSpaceState3D = field.study.get_world_3d().direct_space_state
 		if not space.intersect_shape(_head_q,1).is_empty():
@@ -3937,7 +3955,7 @@ func _bulk_at(p: Vector3, motion := Vector3.ZERO) -> PhysicsShapeQueryParameters
 	_bulk.size = Vector3(hh*BULK_W*2.0,top-low,hh*BULK_L*2.0)
 	_bulk_q.shape = _bulk
 	_bulk_q.transform = Transform3D(Basis(Vector3.UP,facing),p+Vector3.UP*(low+top)*0.5)
-	_bulk_q.collision_mask = WalkerOnly.strip(field.study.ground.mask)
+	_bulk_q.collision_mask = _land_mask()
 	var skip := _skip()
 	# The Olmec's destruction: rubble is waded through, not shoved off.
 	if breaker != null: skip.append_array(breaker.rubble_rids())
@@ -4368,10 +4386,19 @@ func _skip() -> Array[RID]:
 	if breaker != null: out.append_array(breaker.standing_rids())
 	return out
 
+## What his rays, sight and bulk meet: the study's ground, less walker-only
+## stone; with `parked_off`, less the parked plane's column too (the
+## walker's keep-off, not stone: on main's crown he skirted it on and on).
+const PARKED_LAYER := 1 << 13
+func _land_mask() -> int:
+	var m := WalkerOnly.strip(field.study.ground.mask)
+	if float(knobs.get("parked_off",0)) >= 0.5: m &= ~PARKED_LAYER
+	return m
+
 func _cast(from: Vector3, to: Vector3) -> Dictionary:
 	_ray.from = from
 	_ray.to = to
-	_ray.collision_mask = WalkerOnly.strip(field.study.ground.mask)
+	_ray.collision_mask = _land_mask()
 	_ray.exclude = _skip()
 	return field.study.get_world_3d().direct_space_state.intersect_ray(_ray)
 

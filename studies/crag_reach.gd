@@ -756,7 +756,7 @@ const OLMEC_AGAIN := 6.0
 ## His knobs here: the whole body's hunt (as studies/olmec_field.gd's
 ## whole Olmec), relentless, and the wall catch (headless_body.gd
 ## `leap_catch`).
-const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"dive":1.0,"suck_in":1.0}
+const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"dive":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0}
 ## Never stuck: no OLMEC_GAIN m nearer you and no OLMEC_ROAM m from where he
 ## was for OLMEC_STUCK s (you standing
 ## within OLMEC_MOVED m of where that began) and more than OLMEC_CLOSE m
@@ -1053,6 +1053,8 @@ func _cliff_pick_on(space: PhysicsDirectSpaceState3D, crown: Node3D, feet: Vecto
 ## and halfway up) and stood over it (OLMEC_ROOM_IN m in).
 const OLMEC_ROOM_IN := 1.0
 var _room_q: PhysicsShapeQueryParameters3D = null
+## Which of `_face_room`'s boxes met the land last ("" all clear).
+var room_why := ""
 func _face_room(space: PhysicsDirectSpaceState3D, lip: Vector3, out: Vector2, below: float) -> bool:
 	var k: Dictionary = BodySpawner.HeadlessBody.build_of(_spawner._body_k(),float(enemies.numbers().unit))
 	var o3 := Vector3(out.x,0.0,out.y).normalized()
@@ -1065,9 +1067,13 @@ func _face_room(space: PhysicsDirectSpaceState3D, lip: Vector3, out: Vector2, be
 	var basis := Basis.looking_at(-o3,Vector3.UP)
 	var feet := lip.y-float(k.hang)-below
 	var off := float(k.length)*0.5+0.6
+	var i := 0
 	for at: Vector3 in [Vector3(lip.x,feet,lip.z)+o3*off,Vector3(lip.x,(feet+lip.y)*0.5-tall*0.5,lip.z)+o3*off,Vector3(lip.x,lip.y+0.3,lip.z)-o3*(float(k.length)*0.5+OLMEC_ROOM_IN)]:
 		_room_q.transform = Transform3D(basis,at+Vector3.UP*(tall*0.5))
-		if not space.intersect_shape(_room_q,1).is_empty(): return false
+		if not space.intersect_shape(_room_q,1).is_empty():
+			room_why = ["hung","halfway","over the lip"][i]
+			return false
+		i += 1
 	# Stood OLMEC_ROOM_ON m further on toward you, on the floor there: his
 	# first strides off the lip (up West's face beside the spire, he
 	# walked with his shins 1.35 m in its flared foot).
@@ -1080,7 +1086,10 @@ func _face_room(space: PhysicsDirectSpaceState3D, lip: Vector3, out: Vector2, be
 	if not hit.is_empty() and (hit.normal as Vector3).y > 0.7:
 		(_room_q.shape as BoxShape3D).size = Vector3(float(k.width)*0.85,OLMEC_ROOM_LEGS,float(k.length)*0.8)
 		_room_q.transform = Transform3D(basis,(hit.position as Vector3)+Vector3.UP*(0.4+OLMEC_ROOM_LEGS*0.5))
-		if not space.intersect_shape(_room_q,1).is_empty(): return false
+		if not space.intersect_shape(_room_q,1).is_empty():
+			room_why = "legs on"
+			return false
+	room_why = ""
 	return true
 
 ## Whether his climb up the face under `lip` (`out` its way) from `below`
