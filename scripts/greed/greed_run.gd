@@ -16,16 +16,27 @@ extends Node
 ## Lost on the end screen: every piece that went into a bag (the greed
 ## meter's `counted`) and isn't banked: ripped out, spilled, buried, or in
 ## his bag when he died.
+## A bag the brood bury (scripts/brood/bag_brood.gd) is lost with its load
+## (they count lost on the end screen); SPARE_WAIT s later the one spare
+## (SPARES a run) lies empty by the plane's rope hook: the same bag, its
+## load gone, set down there. A second buried bag stays down: no bag left.
 ## The end screen pauses the tree; Enter / R (pad A) starts a new run
 ## (the scene reloaded, the same launch flags).
 const VaultHost = preload("res://scripts/home/vault_host.gd")
 const Pad = preload("res://scripts/pad.gd")
+const Greed = preload("res://studies/crag_reach_greed.gd")
 
 ## This far (m, across) from the isle's middle, flying: away. The crag
 ## reach's masses lie within ~130 m, its islets to 190 m.
 const AWAY := 250.0
 ## Swallowed this long (s) before the run ends: the jaw's slam reads.
 const SWALLOW_HOLD := 0.8
+## Spare bags a run, and how long (s) after a burial the spare lies by the
+## hook (the burial reads first).
+const SPARES := 1
+const SPARE_WAIT := 2.5
+## The spare lies this far (m, x size) off the hook's middle, to the side.
+const SPARE_OFF := Vector3(2.6,0.5,1.2)
 
 var host: Node3D
 ## The plane's keep: the loot dicts banked off the bag.
@@ -38,6 +49,11 @@ var banked: Array = []
 var lost: Array = []
 var _circle := Vector3.INF
 var _swallow_t := 0.0
+var spares := SPARES
+## Bags the brood buried, and their loads (loot dicts).
+var lost_bags := 0
+var bag_loads: Array = []
+var _buried_t := -1.0
 var _layer: CanvasLayer
 var _title: Label
 var _body: Label
@@ -77,6 +93,7 @@ func text() -> String:
 func step(delta: float) -> void:
 	if ended != "" or delta <= 0.0: return
 	t += delta
+	_spare_step(delta)
 	if bool(host.get("flying")):
 		_swallow_t = 0.0
 		if _circle == Vector3.INF: _circle = host.call("isle_circle")
@@ -93,6 +110,51 @@ func step(delta: float) -> void:
 	else: _swallow_t = 0.0
 	if float(host.get("_stranded_left")) >= 0.0:
 		end("lost","You fell off the crag.")
+
+## The bag buried: its load lost; SPARE_WAIT s on, the spare by the hook.
+func _spare_step(delta: float) -> void:
+	var bag: Node3D = host.get("bag")
+	if bag == null or not bool(bag.buried):
+		_buried_t = -1.0
+		return
+	if _buried_t < 0.0:
+		_buried_t = 0.0
+		lost_bags += 1
+		var load: Array = (bag.items as Array).duplicate()
+		for p: Dictionary in load: p.lost = true
+		bag_loads.append_array(load)
+		var line := "The brood buried your bag" + (" with %s in it" % _names(load) if not load.is_empty() else "")
+		if spares > 0: line += ". A spare waits by the plane's hook."
+		else: line += ". No bag left."
+		if host.has_method("_say"): host.call("_say",line,4.0)
+		print("greed run: bag buried (%d piece(s), worth %d), %d spare(s) left" % [load.size(),worth(load),spares])
+	if spares <= 0 or _buried_t > SPARE_WAIT:
+		return
+	_buried_t += delta
+	if _buried_t <= SPARE_WAIT: return
+	spares -= 1
+	_spare(bag)
+
+## The buried bag, emptied, set down by the plane's hook; the brood let go
+## of it (its guards stand down in their own time).
+func _spare(bag: Node3D) -> void:
+	bag.empty_out()
+	var brood: Node = host.get("brood")
+	if brood != null: brood.set("bag_in","")
+	var sling: Node3D = (host.get("carry") as Node).get("sling") if host.get("carry") != null else null
+	var s: float = host.get("motor").size if host.get("motor") != null else 1.0
+	var at: Vector3 = sling.middle() if sling != null else (host.get("plane") as Node3D).global_position
+	bag.unbury(at+SPARE_OFF*s)
+	# The grass round it bared (as round the loot): an empty sack hides in it.
+	var mark := Node3D.new()
+	var spot := Node3D.new()
+	mark.add_child(spot)
+	host.add_child(mark)
+	spot.global_position = at+Vector3(SPARE_OFF.x,0.0,SPARE_OFF.z)*s
+	Greed._bare(host,mark)
+	mark.queue_free()
+	if host.has_method("_say"): host.call("_say","A spare bag lies by the plane's hook: F by it puts it on",4.0)
+	print("greed run: the spare bag by the hook at %s" % str(bag.loose.global_position))
 
 ## Ends the run: what reached the plane is banked; with `how` "banked" a
 ## bag worn aboard too; the rest bagged is lost.
