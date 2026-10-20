@@ -166,6 +166,25 @@ var _olmec_drop: Node3D = null
 var _drop_armed := false
 var _drop_done := false
 
+## The swing out from under him (swing_03): once the drop's done, him on
+## gap_near (within HEIST_SWING_NEAR m of its lip, on its side, on his
+## feet) with the rope in hand or out at swing_03, the Olmec holds his
+## pounce and suck (a pounce winding up checks) (he stalks on; a swat still
+## catches) for up to HEIST_SWING_GRACE s all told: the throw, the
+## hook's flight, the tug and the seat take 4-6 s, and a pounce in them
+## lands on you. Past that, he's on you (stall = caught). The frame you
+## swing off, he leaps for where you left (headless_body `stage_drop`,
+## within HEIST_SWING_REACH m), its wave HEIST_SWING_SHOCK: his windup
+## and flight (~2.5 s) bring him down on the lip as you come down on
+## gap_far. Once a wake.
+const HEIST_SWING_NEAR := 9.0
+const HEIST_SWING_GRACE := 8.0
+const HEIST_SWING_REACH := 30.0
+const HEIST_SWING_SHOCK := 0.3
+var _swing_hold_t := 0.0
+var _swing_from := Vector3.INF
+var _swing_done := false
+
 const HEIST_POSTS := [
 	["post_01",Vector3(21.6,30.4,-26.9),"landing crown over terrace_n (rappel)"],
 	["post_02",Vector3(187.0,34.6,-15.6),"vault_n rim over the court (rappel in)"],
@@ -180,12 +199,14 @@ const HEIST_SWINGS := [
 	["swing_01","arch",Vector3(38.5,27.5,-37.2),Vector2(0.467,0.884),10.0,24.0,"a rock arch over the gap terrace_n -> ledge (the way in)"],
 	["swing_02","arm",Vector3(171.0,41.3,49.0),Vector2(-0.707,-0.707),5.5,6.0,"an arm out of vault_spire over the gap off vault_s's south-west corner: swing round the corner onto vault_sw"],
 	# The swing out from under him: a broken lintel standing on gap_far's
-	# south corner by its lip, sticking out north over the gap's side, its
+	# north corner by its lip, sticking out south over the gap's side, its
 	# line over gap_far's lip, 10.7 m over its top: run off gap_near's lip
-	# and the swing dips over the far lip (gap_far lies HEIST_GAP_DROP
-	# under the near, so his feet clear it) and sets him down on gap_far,
-	# bag and all.
-	["swing_03","lintel",Vector3(102.4,30.0,57.2),Vector2(0.0,-1.0),6.0,10.7,"a broken lintel on gap_far by its lip, out over the gap south -> ford: the swing out from under the Olmec"],
+	# on its south half and the swing dips over the far lip (gap_far lies
+	# HEIST_GAP_DROP under the near, so his feet clear it) and sets him
+	# down on gap_far by gap_ramp's foot, bag and all. (Ford's rim rock
+	# covers gap_far's north half west of x 99.5 at 21.9: a heavy bag's
+	# ledge, so the swing and the ramp keep south of it.)
+	["swing_03","lintel",Vector3(102.4,30.0,59.6),Vector2(0.0,1.0),6.0,10.7,"a broken lintel on gap_far by its lip, out over the gap south -> ford (its south side): the swing out from under the Olmec"],
 	["swing_04","branch",Vector3(98.2,28.9,47.0),Vector2(0.6,0.8),7.0,7.0,"a dead tree on ford's east rim, its branch over the gap south -> ford (spare: not on the route now)"],
 	# The chain (the way home): two rock rings out of the clouds, one over
 	# each gap ford -> stack_1 -> stack_2, each line 7 m over the far crown
@@ -209,8 +230,9 @@ const HEIST_RAMPS := [
 	# The way home's last climb: from landing_s's north rim up the landing's
 	# south face onto its crown, 6 m up (any bag walks it).
 	["home_ramp",Vector3(8.2,23.5,52.5),Vector3(5.0,30.4,37.0),4.5,1.0],
-	# Off gap_far's back half up onto ford's crown, 2.6 m up.
-	["gap_ramp",Vector3(100.5,19.3,58.0),Vector3(95.0,21.9,58.0),5.0,1.0],
+	# Off gap_far's back half up onto ford's crown, 2.6 m up, on its south
+	# strip (ford's rim rock covers the north half).
+	["gap_ramp",Vector3(100.5,19.3,60.2),Vector3(95.0,21.6,60.2),4.6,1.0],
 ]
 const HEIST_STEPS := [
 	["vault_landing",Vector2(190.5,17.25),4.5,0],
@@ -260,7 +282,7 @@ const HEIST_GAP_JUMP := 3.0
 const HEIST_GAP_DROP := 1.0
 const HEIST_GAP_BLOCKS := [
 	["gap_near",9.0,5.0,0],
-	["gap_far",6.0,5.0,1],
+	["gap_far",6.0,9.0,1],
 ]
 const GAP_DEPTH := 12.0
 const STEP_WIDTH := 5.0
@@ -602,6 +624,48 @@ func _never_stuck(b: Node3D, delta: float) -> bool:
 	if _drop_armed and not _drop_done: return false
 	return super._never_stuck(b,delta)
 
+## Him on gap_near's top, within HEIST_SWING_NEAR m of its lip (the
+## coded lip; the block may be moved in F4, the lip goes with the code).
+func _on_gap_near(at: Vector3) -> bool:
+	var way := HEIST_GAP_WAY.normalized()
+	var off := Vector2(at.x-HEIST_GAP_AT.x,at.z-HEIST_GAP_AT.z)
+	return off.dot(way) <= 0.5 and off.length() < HEIST_SWING_NEAR and absf(at.y-HEIST_GAP_AT.y) < 1.5
+
+## The rope out at swing_03: aimed at it, or thrown and on it.
+func _rope_at_swing() -> bool:
+	if rope == null: return false
+	var st := str(rope.state)
+	if st == "coiled": return false
+	if st == "aim": return str(rope.aim_piece) == "swing_03"
+	return str(rope.piece) == "swing_03"
+
+## The staged swing out from under him (HEIST_SWING_*).
+func _stage_swing(delta: float) -> void:
+	if not _drop_done or _swing_done or rope == null: return
+	var b := olmec()
+	if b == null or not bool(b.hunting): return
+	if motor.grounded and _on_gap_near(motor.feet):
+		_swing_from = motor.feet
+		if (_rope_at_swing() or str(hands) == "rope") and _swing_hold_t < HEIST_SWING_GRACE:
+			if _swing_hold_t == 0.0:
+				print("heist: on gap_near, rope in hand: the Olmec holds his pounce, %.1f m off (%s)" % [b.global_position.distance_to(motor.feet),str(b.state)])
+				# A pounce winding up checks.
+				if str(b.state) == "windup" and str(b.leap_kind) == "pounce": b._go(b._resume())
+			_swing_hold_t += delta
+			b._pounce_ready = maxf(float(b._pounce_ready),float(b._clock)+0.3)
+			b._suck_ready = maxf(float(b._suck_ready),float(b._clock)+0.3)
+			if _swing_hold_t >= HEIST_SWING_GRACE: print("heist: the hold's up: he comes for you")
+		return
+	if not bool(rope.swinging) or _swing_from == Vector3.INF: return
+	_swing_done = true
+	var d: float = b.global_position.distance_to(_swing_from)
+	if d > HEIST_SWING_REACH:
+		print("heist: you swing off swing_03; the Olmec's %.1f m back: no leap" % d)
+		return
+	var ok: bool = b.stage_drop(_swing_from)
+	if ok: b.staged_shock = HEIST_SWING_SHOCK
+	print("heist: you swing off swing_03 from %s; the Olmec, %.1f m off (%s), leaps for it: %s" % [_swing_from.round(),d,str(b.state),"winding up" if ok else "no go (%s)" % b.down_why])
+
 ## The Olmec standing on the floor under `at` facing `face` (x, z), on the
 ## hunt; the one there was cleared (unless he already stands there).
 func _olmec_stand(at: Vector3, face: Vector2) -> Node3D:
@@ -761,6 +825,7 @@ func tick(delta: float) -> void:
 	if not flying:
 		_stage_drop()
 		_aim_drop()
+		_stage_swing(delta)
 	if bridge_load == null or flying: return
 	_bear_bridge()
 	_stage_snap(delta)
@@ -776,6 +841,8 @@ func place(at: Vector3, face: Vector2) -> void:
 	if bridge_load != null and bool(bridge_load.broken): bridge_load.mend()
 	_deck_t = -1.0
 	_snap_due = -1.0
+	_swing_hold_t = 0.0
+	_swing_from = Vector3.INF
 
 const BridgeLoad = preload("res://scripts/bridge_load.gd")
 const BridgeClimb = preload("res://scripts/bridge_climb.gd")
