@@ -417,6 +417,11 @@ var _cam_at := Vector2.ZERO
 var _cam_pace := Vector2.ZERO
 var _cam_distance := CAM_DISTANCE*wanderer_scale
 var _cam_out := 0.0
+## A study's pull on the camera: its reach times `cam_far` and its view
+## widened `cam_wide` degrees (1 and 0 here; the rope studies ease them out
+## while aiming, swinging and climbing).
+var cam_far := 1.0
+var cam_wide := 0.0
 var _look_rest := 0.0
 var _cam_ball: PhysicsShapeQueryParameters3D
 var _asked := 0.0
@@ -1254,7 +1259,7 @@ func _frame(delta: float) -> void:
 			out_left -= out_dt
 	camera.look_at_from_position(pivot+out*_cam_distance,pivot)
 	var riding: bool = motor.move == "sail" and motor.sail.riding
-	if delta > 0.0: camera.fov = lerpf(camera.fov,FOV+(RIDE_FOV if riding else 0.0),_ease(RIDE_EASE,delta))
+	if delta > 0.0: camera.fov = lerpf(camera.fov,FOV+(RIDE_FOV if riding else 0.0)+cam_wide,_ease(RIDE_EASE,delta))
 
 ## How far out along `out` from `pivot` the camera may stand, drawn in
 ## before what stands between: a ball CAM_BALL round cast out (its reach
@@ -1262,7 +1267,8 @@ func _frame(delta: float) -> void:
 ## stair nosing to the next and shook the camera), the ray's answer where
 ## the ball starts in something.
 func _cam_reach(pivot: Vector3, out: Vector3) -> float:
-	var length := CAM_DISTANCE*wanderer_scale+0.3
+	var far := CAM_DISTANCE*wanderer_scale*cam_far
+	var length := far+0.3
 	if _cam_ball == null:
 		var ball := SphereShape3D.new()
 		ball.radius = CAM_BALL
@@ -1277,13 +1283,13 @@ func _cam_reach(pivot: Vector3, out: Vector3) -> float:
 	if ground.space.intersect_shape(_cam_ball,1).is_empty():
 		_cam_ball.motion = out*length
 		var cast := ground.space.cast_motion(_cam_ball)
-		if float(cast[0]) >= 1.0: return CAM_DISTANCE*wanderer_scale
-		return clampf(float(cast[0])*length+CAM_BALL-0.3,CAM_NEAREST,CAM_DISTANCE*wanderer_scale)
+		if float(cast[0]) >= 1.0: return far
+		return clampf(float(cast[0])*length+CAM_BALL-0.3,CAM_NEAREST,far)
 	var ray := PhysicsRayQueryParameters3D.create(pivot,pivot+out*length)
 	if ridden.is_valid(): ray.exclude = [ridden]
 	var hit := ground.space.intersect_ray(ray)
-	if hit.is_empty(): return CAM_DISTANCE*wanderer_scale
-	return clampf(pivot.distance_to(hit.position)-0.3,CAM_NEAREST,CAM_DISTANCE*wanderer_scale)
+	if hit.is_empty(): return far
+	return clampf(pivot.distance_to(hit.position)-0.3,CAM_NEAREST,far)
 
 ## The body he rides (PilotMotor `platform`'s), or none.
 func _ridden_rid() -> RID:

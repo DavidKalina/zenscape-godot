@@ -67,10 +67,23 @@ Space at the far top: far deck B.
   A lands 1.5-5.6 m onto the far deck (was up to 10 m); lane B's platform
   takes releases 2.0-3.5 m past the plumb (was 2.0-2.5, about 0.1 s); 1.5
   falls short, 4.5 overshoots.
-- **The camera** (`studies/swing_study.gd` `_swing_view`): holding the rope,
-  swinging and in the air after, its polar eases to just over level behind
-  him, under the beam: the swing and the landing in view, not up at his hat
-  and not drawn in by the beam.
+- **The camera pulls out** (task 6; `studies/rope_study.gd` `_cam_pull`,
+  `_pull_out`, overridden in `studies/swing_study.gd`; the character
+  study's `cam_far`/`cam_wide` scale its reach and widen its view, 1 and 0
+  elsewhere). Eased at PULL_RATE 2.5/s both ways; the mouse and stick still
+  turn it (eased back while a pull holds).
+  - Aiming and while the hook flies or is dragged back: reach x1.45, view
+    +8 deg, polar raised to at least PI/2-0.32 (the lip and past it in
+    frame). At a beam the look-up still tips it, now at most just under
+    level (`LOOK_UP_MAX` PI/2+0.03; was 1.78, which put the camera under
+    the floor and drew it in close).
+  - Holding a beam's rope, swinging and in the air after: reach x1.6, view
+    +10 deg, polar just over level behind him (`SWING_POLAR`).
+  - On the rope (climbing, hauling over, rappelling, both studies): reach
+    x1.5, view +8 deg, polar near level (`CLIMB_POLAR` PI/2-0.08), so the
+    lip above and the way up read.
+  - Back on the ground the polar settles to the walk's over SETTLE 1.2 s,
+    unless the mouse or stick moves it first.
 - **The hint** ("Holding the rope", "Swinging: ...") clears when he's back
   on his feet.
 - **The rope after**: let go, it hangs off the beam, its end swinging on.
@@ -107,8 +120,10 @@ arch swingable, add a hook line to it; nothing in the rope changes.
 
 - **Mid-air chaining** (throw while swinging to the next beam): out of
   scope here, a possible later round.
-- The swing camera stays low after he lands until the mouse or stick moves
-  it; the mouse fights its ease while swinging.
+- The mouse fights the pull's polar ease while swinging and climbing (it
+  turns, then eases back).
+- The beam over his head can draw the swing camera in a little (its ball
+  cast): 10 m out of the 11.2 wanted on lane B.
 - Throw-to-caught on a 7 m beam is ~95 frames (the flight under HOOK_G);
   the beam reel 32-57.
 - A rope left on a beam settles under it out of reach of either deck;

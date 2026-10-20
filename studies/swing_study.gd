@@ -71,17 +71,22 @@ const SWING_PIECES := [
 const BEAMS := ["beam_a","beam_b1","beam_b2","high_beam","tall_beam","low_beam"]
 ## Aiming at a beam (and while the hook flies to it) the camera tips up
 ## toward it: this share of the beam's rise from the camera's pivot, eased
-## at LOOK_UP_RATE (1/s), at most to LOOK_UP_MAX (polar, rad).
+## at LOOK_UP_RATE (1/s), at most to LOOK_UP_MAX (polar, rad: just under
+## level, so the pulled-out camera stays over the floor and isn't drawn in
+## by it; the widened view takes in the beam above).
 const LOOK_UP := 0.6
 const LOOK_UP_RATE := 6.0
-const LOOK_UP_MAX := 1.78
+const LOOK_UP_MAX := PI*0.5+0.03
 ## Holding a beam's rope, swinging and in the air after, the camera's polar
 ## eases to SWING_POLAR (just over level, behind him: under the beam the
 ## rope hangs from, the swing and where he'll land ahead in view; the play
 ## camera's own, higher, looks over the beam and is drawn in by it, and the
-## aim's look-up stares up at his hat) at SWING_VIEW_RATE.
+## aim's look-up stares up at his hat), its reach out SWING_FAR times and
+## its view widened SWING_WIDE degrees, so the deck or platform he's
+## launching toward is in frame (the rope study's pull, `_cam_pull`).
 const SWING_POLAR := PI*0.5-0.15
-const SWING_VIEW_RATE := 3.0
+const SWING_FAR := 1.6
+const SWING_WIDE := 10.0
 const HookLine = preload("res://scripts/rope/hook_line.gd")
 
 func _init() -> void:
@@ -89,7 +94,6 @@ func _init() -> void:
 
 func tick(delta: float) -> void:
 	_look_up(delta)
-	_swing_view(delta)
 	super.tick(delta)
 
 ## The camera tipped up to the beam the hook's aimed at or flying to; the
@@ -106,12 +110,12 @@ func _look_up(delta: float) -> void:
 	if want <= _polar: return
 	_polar = lerpf(_polar,want,1.0-exp(-LOOK_UP_RATE*delta))
 
-## Holding the rope over a beam, swinging, or in the air off it: the camera
-## eased to SWING_POLAR (the mouse and stick still turn it; it eases back).
-func _swing_view(delta: float) -> void:
-	if rope == null or scripted or delta <= 0.0: return
-	if not (rope.swing_hold or rope.swinging or (rope.swing_left and not motor.grounded)): return
-	_polar = lerpf(_polar,SWING_POLAR,1.0-exp(-SWING_VIEW_RATE*delta))
+## Holding the rope over a beam, swinging, or in the air off it: pulled
+## out to the swing's view; else the rope study's (aiming, climbing).
+func _cam_pull() -> Array:
+	if rope != null and (rope.swing_hold or rope.swinging or (rope.swing_left and not motor.grounded)):
+		return [SWING_FAR,SWING_WIDE,SWING_POLAR,false]
+	return super._cam_pull()
 
 func _load_pack() -> void:
 	start = Vector3(-13.0,0.0,8.0)

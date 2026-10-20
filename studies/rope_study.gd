@@ -287,6 +287,59 @@ func _take_loot() -> void:
 		_show_status()
 
 ## Aiming the hook, the stick moves the reticle, not him; tugging it or
+# --- The camera pulled out ------------------------------------------------------------
+
+## Aiming and throwing the hook, the camera stands AIM_FAR times its reach
+## out and widens AIM_WIDE degrees, so the lip, the arc and what's past it
+## are in view, its polar raised to at least AIM_POLAR (lower and more
+## level: what's over the lip in frame too). On the rope (climbing, hauling over, rappelling) CLIMB_FAR
+## and CLIMB_WIDE, its polar eased to CLIMB_POLAR (near level: the lip
+## above and the way up in frame, where the walk's own tilt looks down past
+## them). Eased at PULL_RATE (1/s) both ways; the mouse and stick still
+## turn it (eased back while the pull holds). Back on the ground the polar
+## settles to the walk's for SETTLE s, unless moved.
+const AIM_FAR := 1.45
+const AIM_WIDE := 8.0
+const AIM_POLAR := PI*0.5-0.32
+const CLIMB_FAR := 1.5
+const CLIMB_WIDE := 8.0
+const CLIMB_POLAR := PI*0.5-0.08
+const PULL_RATE := 2.5
+const SETTLE := 1.2
+var _settle := 0.0
+var _settle_from := 0.0
+
+## What the rope wants of the camera now: [reach times, widened degrees,
+## polar or NAN to leave it, whether that polar is only a floor];
+## [1, 0, NAN, false] none.
+func _cam_pull() -> Array:
+	if rope == null: return [1.0,0.0,NAN,false]
+	if rope.climber or rope.hauling or rope.rappel: return [CLIMB_FAR,CLIMB_WIDE,CLIMB_POLAR,false]
+	if rope.state in ["aim","fly","drag"]: return [AIM_FAR,AIM_WIDE,AIM_POLAR,true]
+	return [1.0,0.0,NAN,false]
+
+func _pull_out(delta: float) -> void:
+	if scripted or delta <= 0.0: return
+	var want := _cam_pull()
+	var k := 1.0-exp(-PULL_RATE*delta)
+	cam_far = lerpf(cam_far,float(want[0]),k)
+	cam_wide = lerpf(cam_wide,float(want[1]),k)
+	var polar: float = want[2]
+	if not is_nan(polar):
+		if not (want[3] and _polar >= polar): _polar = lerpf(_polar,polar,k)
+		_settle = SETTLE
+		_settle_from = _polar
+		return
+	if _settle <= 0.0: return
+	if not motor.grounded: return
+	# Moved by the mouse or stick since: it's theirs.
+	if absf(_polar-_settle_from) > 0.03:
+		_settle = 0.0
+		return
+	_settle -= delta
+	_polar = lerpf(_polar,CAM_POLAR,k)
+	_settle_from = _polar
+
 ## pulling it up, he stands.
 func _want(delta: float) -> Vector2:
 	var want := super._want(delta)
@@ -297,6 +350,7 @@ func _want(delta: float) -> Vector2:
 func tick(delta: float) -> void:
 	# Jump by a hooked rope takes hold of it (before the motor would jump).
 	if rope != null: rope.pre_step((script_jump if scripted else Input.is_action_pressed(&"walk_jump")) and not _tuning())
+	_pull_out(delta)
 	super.tick(delta)
 	_take_loot()
 
