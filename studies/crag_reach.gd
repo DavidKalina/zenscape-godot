@@ -905,6 +905,24 @@ func _wire_breaks() -> void:
 	# landings' too) makes a cut on the main thread.
 	kit_breaks.prepare_all()
 	print("crag reach: %d breakable piece(s) %s" % [n,by])
+	_warm_olmec()
+
+## The Olmec's looks and voices made at load, not at his first spawn
+## (--olmec-after: ~170 ms on the main thread mid-play): the dressed meshes
+## are cached (inhaler_head_look.gd, headless_body_look.gd), so a throwaway
+## build of each leaves them ready for every spawn and return.
+func _warm_olmec() -> void:
+	var t0 := Time.get_ticks_usec()
+	var hl := InhalerHead.Look.new()
+	hl.build(1.0)
+	hl.free()
+	var bl := BodySpawner.HeadlessBody.Look.new()
+	bl.build(1.0)
+	bl.free()
+	for voices: Dictionary in [InhalerHead.VOICES,BodySpawner.VOICES]:
+		for key: String in voices.keys():
+			if not _voices.has(key): _voices[key] = EnemyYard._synth(voices[key])
+	print("crag reach: the Olmec's looks and voices made ahead (%.0f ms)" % ((Time.get_ticks_usec()-t0)/1000.0))
 
 func olmec() -> Node3D:
 	if enemies == null: return null
