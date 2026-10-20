@@ -114,6 +114,24 @@ var _d_tie_was := Vector3.INF
 var _d_rot := Basis.IDENTITY
 var _d_shift := Vector3.ZERO
 var _d_rng := RandomNumberGenerator.new()
+## The drawn neck's way (world, unit): along the rope's last stretch, from
+## the bag toward the plane, never below level. Lying on the turf the sack
+## tips onto its side, neck to the plane, so the rope runs straight out of
+## it; hanging it stands upright under the rope (docs/design/bag-hitch/,
+## task 5). Drawn only: `up` and the physics point are unchanged.
+var lean := Vector3.UP
+var _tip := Basis.IDENTITY
+## 0 on the turf (tipped round its belly), 1 in the air (round its neck).
+var _aloft := 0.0
+const LEAN_EASE := 30.0
+## Lying, the neck may droop this far toward the turf (rise over run), so
+## the rope comes down off it to the ground without a kink.
+const LEAN_DROOP := 0.4
+## The drawn rope on the turf is at most this much longer than the gap
+## from the tie to the bag (its slack lies in a gentle curve, not piled
+## up past the bag); off the turf it is the rope's full length.
+const ROPE_SLACK := 1.12
+var _rope_len := -1.0
 ## Hops, catches so far (drivers).
 var hops := 0
 var catches := 0
@@ -465,13 +483,24 @@ func basket_xform(pf: Node3D) -> Transform3D:
 	x = x.normalized()
 	var z := x.cross(up).normalized()
 	var b := Transform3D(Basis(x,up,z),hook-up*hook_of(radius))
-	var piv := belly()
-	return Transform3D(_d_rot*b.basis,piv+_d_rot*(b.origin-piv)+_d_shift)
+	return Transform3D(_d_rot*_tip*b.basis,_drawn(b.origin))
 
 ## The hook where it is drawn (the dragged look round `hook`).
 func drawn_hook() -> Vector3:
-	var piv := belly()
-	return piv+_d_rot*(hook-piv)+_d_shift
+	return _drawn(hook)
+
+## Where a point of the sack is drawn: tipped along the rope (`lean`)
+## round its pivot (the belly on the turf, the neck in the air, so the
+## sack swings under its neck there), then the dragged look round the
+## tipped belly.
+func _drawn(p: Vector3) -> Vector3:
+	var tp := _tip_piv()
+	var piv := tp+_tip*(belly()-tp)
+	var q := tp+_tip*(p-tp)
+	return piv+_d_rot*(q-piv)+_d_shift
+
+func _tip_piv() -> Vector3:
+	return belly().lerp(hook,_aloft)
 
 ## Loaded spot `i` (world): the treasure's foot in the bag. The first sits
 ## in the middle of its floor, the rest round it up the bowl (a golden
@@ -502,11 +531,10 @@ func _draw(pf: Node3D, delta: float) -> void:
 	_basket.global_transform = b
 	var end := drawn_hook()
 	if _hook != null and _hook.visible:
-		# The bare hook hangs off the rope's end; lying, it falls over on
-		# the turf and the rope runs down to it.
-		if grounded: end = b.origin+b.basis.y*0.03
-		var lie := Basis(Vector3.FORWARD,PI*0.5) if grounded else Basis.IDENTITY
-		_hook.global_transform = Transform3D((b.basis*lie).scaled_local(Vector3.ONE*HOOK_LOOK),end)
+		# The bare hook hangs off the rope's end.
+		# Lying, the sack's frame is tipped along the rope (`lean`), so the
+		# hook lies flat on the turf with its eye to the rope's end.
+		_hook.global_transform = Transform3D(b.basis.scaled_local(Vector3.ONE*HOOK_LOOK),end)
 		# The glint on its curl, facing up (seen from anywhere above).
 		_hook_glint.global_transform = Transform3D(Basis(Vector3.RIGHT,-PI*0.5),_hook.global_transform*Vector3(0.07,-0.22,0.0)+Vector3.UP*0.03)
 	if _hook_glint != null: _hook_glint.visible = _hook != null and _hook.visible
@@ -520,15 +548,21 @@ func _draw(pf: Node3D, delta: float) -> void:
 func _rope_step(delta: float, tie: Vector3, end: Vector3) -> void:
 	var n := ROPE_BITS+1
 	var gap := tie.distance_to(end)
-	var rest := maxf(length,gap)/ROPE_BITS
+	var full := minf(length,gap*ROPE_SLACK) if grounded else length
+	if _rope_len < 0.0 or _pts.size() != n or delta <= 0.0: _rope_len = full
+	else: _rope_len = move_toward(_rope_len,full,2.0*delta)
+	var rest := maxf(_rope_len,gap)/ROPE_BITS
 	if _pts.size() != n:
 		_pts.resize(n)
 		_pts_was.resize(n)
-		# Laid along the line, sagging to the turf.
-		var sag := sqrt(maxf(length*length-gap*gap,0.0))*0.45
+		# Laid along the line, sagging (on the turf, bowed to one side).
+		var sag := sqrt(maxf(_rope_len*_rope_len-gap*gap,0.0))*0.45
+		var along := end-tie
+		var bow := Vector3.DOWN
+		if grounded and Vector2(along.x,along.z).length() > 0.05: bow = along.cross(Vector3.UP).normalized()
 		for i in range(n):
 			var k := float(i)/ROPE_BITS
-			var p := tie.lerp(end,k)+Vector3.DOWN*sag*4.0*k*(1.0-k)
+			var p := tie.lerp(end,k)+bow*sag*4.0*k*(1.0-k)
 			var g := _floor(p,0.6,1.5)
 			if g != Vector3.INF and p.y < g.y+ROPE_THICK: p.y = g.y+ROPE_THICK
 			_pts[i] = p
@@ -558,6 +592,11 @@ func _rope_step(delta: float, tie: Vector3, end: Vector3) -> void:
 				else:
 					_pts[i] = a+fix*0.5
 					_pts[i+1] = c-fix*0.5
+			# Its last bit leaves the neck along the neck (no kink there).
+			_pts[n-2] = _pts[n-2].lerp(end+lean*rest,0.5)
+			# Aloft (the neck hangs on `up`, not on the rope) the next bit
+			# eases off it too, so the rope curves away smoothly.
+			_pts[n-3] = _pts[n-3].lerp(end+lean*rest*2.0,0.15*_aloft)
 		# The turf: it lies on it, and drags along it.
 		var scuff := exp(-ROPE_SCUFF*delta)
 		for i in range(1,n-1):
@@ -585,6 +624,9 @@ func _dress_reset() -> void:
 	_d_tie_v = Vector3.ZERO
 	_d_rot = Basis.IDENTITY
 	_d_shift = Vector3.ZERO
+	lean = up
+	_tip = Basis.IDENTITY
+	_aloft = 0.0 if grounded else 1.0
 
 ## One frame of the dragged look: on the turf and pulled along, it
 ## wanders, swings out, hops, tumbles and catches; off it, it eases back
@@ -665,8 +707,40 @@ func _dress(delta: float, tie: Vector3) -> void:
 		_d_catch = 0.0
 	# A rumble on the turf while it slides.
 	var rumble := absf(sin(_d_dist*6.0))*0.025*s*go
-	_d_shift = _d_off+Vector3.UP*(_d_hop+rumble)
-	_d_rot = Basis(dir,_d_roll)*Basis(side,-_d_pitch)
+	# The neck turns to the rope from where the sack is drawn (its wander
+	# and hop), not the physics point.
+	_aloft = move_toward(_aloft,0.0 if grounded or _d_hop > 0.0 else 1.0,3.0*delta)
+	_lean_step(delta,_tip_piv()+_d_off+Vector3.UP*_d_hop)
+	_tip = Basis(Quaternion(up.normalized(),lean)) if up.normalized().dot(lean) < 0.9999 else Basis.IDENTITY
+	# On its side its belly is wider than tall: lifted so it rests on it.
+	var side_lift := (1.0-SQUAT)*radius*clampf(1.0-lean.dot(up),0.0,1.0)
+	_d_shift = _d_off+Vector3.UP*(_d_hop+rumble+side_lift)
+	# Lying on its side it rolls round its neck and doesn't pitch, so the
+	# neck stays on the rope; standing it tumbles as before.
+	var lying := clampf(1.0-lean.dot(up),0.0,1.0)
+	var roll_axis := dir.lerp(lean,lying)
+	roll_axis = roll_axis.normalized() if roll_axis.length() > 0.01 else dir
+	_d_rot = Basis(roll_axis,_d_roll)*Basis(side,-_d_pitch*(1.0-lying))
+
+## The neck's way eased toward the rope's last stretch (from its pivot to a
+## point two bits up the rope), held at or above level.
+func _lean_step(delta: float, from: Vector3) -> void:
+	var want := up
+	var n := ROPE_BITS+1
+	if _pts.size() == n:
+		var d := _pts[n-3]-from
+		var flat := Vector2(d.x,d.z).length()
+		d.y = maxf(d.y,-LEAN_DROOP*flat)
+		if d.length() > 0.05: want = d.normalized()
+		# Aloft it hangs under the rope's pull (the rope's last bit is
+		# laid along it), so the sack doesn't chase the rope's lag.
+		want = want.lerp(up,_aloft)
+		want = want.normalized() if want.length_squared() > 1e-6 else up
+	if delta <= 0.0:
+		lean = want
+		return
+	var eased := lean.lerp(want,1.0-exp(-LEAN_EASE*delta))
+	lean = eased.normalized() if eased.length_squared() > 1e-6 else want
 
 ## A hop off the turf at `v` m/s, with a twist of `twist` rad/s.
 func _kick(v: float, twist: float) -> void:

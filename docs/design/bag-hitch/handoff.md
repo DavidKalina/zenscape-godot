@@ -56,13 +56,25 @@ far isles.
   wanders, hops, rolls, swings out in turns and catches and jerks free,
   drawn around the unchanged physics point (spills, drop, vault untouched).
   The old basket gets the same rope.
+- **No right angle at the bag** (task 5, `cargo_sling.gd`): the drawn sack
+  leans its neck along the rope's last stretch (`lean`). On the turf it
+  tips onto its side round its belly, neck to the plane (drooping at most
+  `LEAN_DROOP` toward the turf), lifted so it rests on its side, and rolls
+  round its neck instead of pitching; in the air it hangs under the rope's
+  pull, tipped round its neck. The rope's last bit is laid along the neck,
+  and on the turf the drawn rope is at most `ROPE_SLACK` longer than the
+  gap (its slack lay piled past the bag before). Drawn only: the physics
+  point and what reads it are unchanged; the hitched loot bag, its riders
+  (via `basket_xform`), the bare hook (now lying along the rope, eye to
+  it) and the old basket all follow.
 - **Tuning:** the hitched sack drawn 1.6x; the hook 1.7x, pale, with the
   kit-cache glint; level-turf hits spill only past 5.5 m/s (walls and
   slopes still at 3.0), so a normal touchdown keeps the load.
 
 ## Knobs
 
-`loot_bag.gd`: `HITCH_LOOK`. `cargo_sling.gd`: `ROPE_*` (the chain),
+`loot_bag.gd`: `HITCH_LOOK`. `cargo_sling.gd`: `ROPE_*` (the chain,
+`ROPE_SLACK`), `LEAN_EASE`, `LEAN_DROOP`,
 `D_*` (the dragged look), `HOOK_LOOK`, `HOOK_R`. `carry_weights.gd`:
 `SPILL_GROUND`, the `SPILL_*` set. `brood_knobs.gd`: the wake counts.
 
@@ -76,7 +88,11 @@ far isles.
   wakes the rim round the plane): the brood's existing count.
 - Rope catches are rare at taxi speed; the takeoff peel-up hops seldom
   fire on the home isle (it rolls off its edge level).
-- The bag's look in flight was checked by numbers, not by eye.
+- In flight the sack hangs on the rope's pull while the simulated rope
+  lags a little behind it, so the rope curves gently a bit above the neck.
+- Riders on a sack lying on its side keep their spots round its tipped
+  belly; checked by numbers (14/14), not closely by eye (the crowd hides
+  the sack in the still).
 - The main checkout had uncommitted work in `carry_host.gd`,
   `wreck_arc.gd` and `wreck_cluster.gd` from another session; this branch
   touches `carry_host.gd` and `wreck_cluster.gd`, so merging after that
@@ -88,4 +104,9 @@ Smoke on every round: `wreck_cluster.tscn` with `--home --loot-bag`,
 `--home`, no flags, and `bag_study.tscn`, all PASS. Drivers
 `scratch/hitch_t1..t7.gd` through real input (walking, E, F, boarding,
 flying, landing): t2 31/31, t3 vault 17/17 and drop 11/11, t4 27/27,
-t5 14/14, t6 10/10, t7 land 16/16 and brood 14/14.
+t5 14/14, t6 10/10, t7 land 16/16 and brood 14/14. Task 5: t8 13/13
+(the bend where the rope meets the neck: parked 11 deg, taxiing at most
+22, in flight 1; the old basket parked 17), headless and rendered; t3 vault
+and drop and t7 brood and land rerun green. Stills:
+`captures/shots/bag_hitch_t8_parked.png`, `_offturf.png`, `_air.png`,
+`_basket.png`, `_taxi_sheet.png`.
