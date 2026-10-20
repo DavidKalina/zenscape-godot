@@ -125,8 +125,9 @@ var _olmec_up: Node3D = null
 ## and comes within HEIST_DROP_CUE m (flat) of its foot, the Olmec, unless
 ## he's already down there near him, stands up on the perch (vault_sw's
 ## crown behind the pillar's top, out of view behind him; set there if he
-## isn't) and throws himself off it (headless_body `stage_drop`) onto the
-## pillar's foot, where he just came down. The cue: his time to the foot
+## isn't) and throws himself off it (headless_body `stage_drop`), aimed at
+## the pillar's foot, then, as his windup ends, beside him where the camera
+## sees it (below). The cue: his time to the foot
 ## at his speed toward it under HEIST_DROP_LEAD s (his windup and flight,
 ## ~2.7 s, less the beat he lands after him), within HEIST_DROP_CUE m
 ## (flat), off the perch's crown. Boot-surfing that's ~13 m out, walking
@@ -137,6 +138,29 @@ const HEIST_DROP_CUE := 24.0
 const HEIST_DROP_LEAD := 3.4
 ## Already on south this near him (m): no staging; he got there himself.
 const HEIST_DROP_THERE := 15.0
+## In view (main's `down_show`): the drop lands where the play camera will
+## see his feet and shins as he comes down, aimed as his windup ends
+## (`_aim_drop`): HEIST_DROP_FLIGHT s on (his flight), beside where he'll
+## be (`_drop_spots`, HEIST_DROP_BAND), on the foot's floor (within
+## HEIST_DROP_RISE m of its height); none there: the foot itself.
+const HEIST_DROP_FLIGHT := 1.6
+const HEIST_DROP_RISE := 2.5
+## [back from, to, out from, to] (m) round where he'll be (back < 0:
+## ahead). The play camera, some 7 m behind and 5 up him at a slide's speed
+## and pitched well down, frames his feet and shins (`_lands_seen`,
+## 1440x900) only from ~3 m behind him to ~2 ahead, out ~4 m at 2 m behind
+## and ~6 at 2 ahead; a landing on top of him is no near miss (main's
+## `down_show` keeps 5.5 m off). So the drop comes down beside him, about
+## level, 4.5-6 m out. (He ends up ~1 m further on than foreseen.)
+const HEIST_DROP_BAND := [-2.0,-1.0,4.5,6.0]
+var drop_seen := false
+## His landing wave there scaled by this (headless_body `staged_shock`):
+## at full strength, 4.5 m off, it throws him 6-12 m off the way, bent
+## toward the rim (void_push); a near miss rocks him and he runs on.
+const HEIST_DROP_SHOCK := 0.3
+## Aimed this long (s) before his windup ends (the pounce's lock).
+const HEIST_DROP_AIM := 0.15
+var _drop_body: Node3D = null
 var _olmec_perch: Node3D = null
 var _olmec_drop: Node3D = null
 var _drop_armed := false
@@ -482,8 +506,75 @@ func _stage_drop() -> void:
 		return
 	var stand := _olmec_stand(perch,Vector2(_olmec_perch.global_transform.basis.z.x,_olmec_perch.global_transform.basis.z.z))
 	if stand == null: return
+	drop_seen = false
 	var ok: bool = stand.stage_drop(to)
-	print("heist: the Olmec's staged drop from %s onto %s, him %.1f m off it at %.1f m/s: %s" % [stand.position,to,off.length(),Vector2(motor.velocity.x,motor.velocity.z).length(),"winding up" if ok else "no go (%s)" % stand.down_why])
+	if ok:
+		_drop_body = stand
+		stand.staged_shock = HEIST_DROP_SHOCK
+	print("heist: the Olmec's staged drop from %s onto the foot %s, him %.1f m off it at %.1f m/s: %s" % [stand.position,to.round(),off.length(),Vector2(motor.velocity.x,motor.velocity.z).length(),"winding up" if ok else "no go (%s)" % stand.down_why])
+
+## As he winds up (till HEIST_DROP_AIM s before he goes), the drop's
+## landing aimed where the camera will see it (`_drop_spots`), else the
+## foot.
+func _aim_drop() -> void:
+	if _drop_body == null: return
+	var b := _drop_body
+	if not is_instance_valid(b) or str(b.state) != "windup" or str(b.leap_kind) != "drop":
+		if is_instance_valid(b) and str(b.state) == "leap": print("heist: the staged drop goes for %s (%s)" % [(b._leap_to as Vector3).round(),"in view" if drop_seen else "the foot"])
+		_drop_body = null
+		return
+	if float(b.state_t) < b._windup_s()-HEIST_DROP_AIM: return
+	var to := _olmec_drop.global_position
+	var spots := _drop_spots(b,to)
+	for at: Vector3 in spots:
+		if b.aim_drop(at):
+			drop_seen = true
+			_drop_body = null
+			print("heist: the staged drop aimed in view at %s, %.1f m off the foot; him at %s going %s" % [at.round(),at.distance_to(to),motor.feet.round(),motor.velocity])
+			return
+	_drop_body = null
+
+## The drop's landings the camera will see, best first: round where he'll
+## be in HEIST_DROP_FLIGHT s (at his speed now, along the way: the pillar,
+## then toward the gap), in HEIST_DROP_BAND, on the foot's floor with room
+## for the bulk; the furthest back along his run (where he just was) first,
+## then the nearest him, the side away from the gap first. (A band, not
+## `_lands_seen` on the camera moved along: the play camera trails him
+## further as the slide speeds up, 5 m back at the windup and 7 by the
+## landing, so the camera then isn't the camera now.)
+func _drop_spots(b: Node3D, to: Vector3) -> Array:
+	# Where he'll be: on down the pillar to its foot at his speed, then on
+	# toward the gap (the way on; off the pillar he bends to it).
+	var go := maxf(Vector2(motor.velocity.x,motor.velocity.z).length(),2.0)*HEIST_DROP_FLIGHT
+	var feet := Vector2(motor.feet.x,motor.feet.z)
+	var foot := Vector2(to.x,to.z)
+	var on := Vector2(HEIST_GAP_AT.x-foot.x,HEIST_GAP_AT.z-foot.y).normalized()
+	var way := on
+	var w2 := foot+on*(go-feet.distance_to(foot))
+	if go < feet.distance_to(foot):
+		way = (foot-feet).normalized()
+		w2 = feet+way*go
+	var will := Vector3(w2.x,to.y,w2.y)
+	var side := Vector2(-way.y,way.x)
+	# The side away from the way on (the gap): he bends toward it off the
+	# pillar, and not into the drop.
+	if side.dot(Vector2(HEIST_GAP_AT.x-will.x,HEIST_GAP_AT.z-will.z)) > 0.0: side = -side
+	var found := []
+	var space := get_world_3d().direct_space_state
+	var back := float(HEIST_DROP_BAND[1])
+	while back >= float(HEIST_DROP_BAND[0])-0.01:
+		var out := float(HEIST_DROP_BAND[2])
+		while out <= float(HEIST_DROP_BAND[3])+0.01:
+			for sgn: float in [1.0,-1.0]:
+				var q := Vector2(will.x,will.z)-way*back+side*out*sgn
+				var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(q.x,to.y+HEIST_DROP_RISE+2.0,q.y),Vector3(q.x,to.y-HEIST_DROP_RISE,q.y)))
+				if hit.is_empty() or (hit.normal as Vector3).y < 0.7: continue
+				var at: Vector3 = hit.position
+				if absf(at.y-to.y) > HEIST_DROP_RISE or not b._room_at(at): continue
+				found.append(at)
+			out += 0.5
+		back -= 1.0
+	return found
 
 ## Till the staged drop, an Olmec stuck under him (in the court, as he
 ## gets out over vault_s) isn't sent up another cliff by the crag's pick (it
@@ -491,6 +582,12 @@ func _stage_drop() -> void:
 func _olmec_stuck(b: Node3D, delta: float) -> bool:
 	if _drop_armed and not _drop_done: return false
 	return super._olmec_stuck(b,delta)
+
+## Main's never-stuck watch (dive off, back up a cliff near you) also
+## waits for the drop, for the same reason.
+func _never_stuck(b: Node3D, delta: float) -> bool:
+	if _drop_armed and not _drop_done: return false
+	return super._never_stuck(b,delta)
 
 ## The Olmec standing on the floor under `at` facing `face` (x, z), on the
 ## hunt; the one there was cleared (unless he already stands there).
@@ -648,7 +745,9 @@ func _bear_bridge() -> void:
 
 func tick(delta: float) -> void:
 	super.tick(delta)
-	if not flying: _stage_drop()
+	if not flying:
+		_stage_drop()
+		_aim_drop()
 	if bridge_load == null or flying: return
 	_bear_bridge()
 	_stage_snap(delta)
