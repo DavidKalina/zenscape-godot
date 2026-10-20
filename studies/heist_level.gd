@@ -7,7 +7,8 @@ extends "res://studies/crag_reach.gd"
 ## to climb, a spur); the vault, a sunken court ringed by three higher rims; the
 ## way out along the south side (a rim to throw the bag up, a fallen pillar
 ## to slide down to the south mass, the ford mass, a chain of two swings
-## over stack_1 to stack_2, a rope bridge home).
+## over stack_1 to stack_2, a rope bridge home to landing_s that snaps
+## behind him once the isle is awake, a ramp up onto the landing).
 ## Every piece is named `heist/<name>` (scripts/layout_overrides.gd,
 ## layouts/heist.json), moved in the world view (F4) by that name.
 ##   godot --path . res://studies/heist_level.tscn -- --no-title
@@ -34,6 +35,9 @@ const HEIST_MASSES := [
 	# swing_06) lands level or down.
 	["stack_1",Vector3(55.0,-9.0,42.0),{"seed":97,"size":7.0,"shape":0.4,"flat":0.8,"landmark":0},[]],
 	["stack_2",Vector3(39.5,-9.2,30.0),{"seed":98,"size":9.0,"shape":0.4,"flat":0.8,"landmark":0},[]],
+	# The bridge home's far end: a terrace off the landing's south face,
+	# its crown 6 m under the landing's, a stone ramp (home_ramp) up from it.
+	["landing_s",Vector3(14.0,-6.2,56.0),{"seed":99,"size":8.0,"shape":0.4,"flat":0.8,"landmark":0},[]],
 ]
 const HEIST_BASE := {"grass":0.0}
 
@@ -141,8 +145,12 @@ const HEIST_SWINGS := [
 ## Step rows: [id, middle (x, z), depth (z), rises over the landing (0 the
 ## landing itself)]; each a stone block down to STEP_FOOT, its face looking
 ## north, the top the crown (HEIST_CROWN_S) less its rises to go.
+## A high end's height 0.0 is the vault's landing (`step_top`).
 const HEIST_RAMPS := [
 	["vault_ramp",Vector3(176.0,24.3,17.25),Vector3(188.0,0.0,17.25),4.5,1.0],
+	# The way home's last climb: from landing_s's north rim up the landing's
+	# south face onto its crown, 6 m up (any bag walks it).
+	["home_ramp",Vector3(8.2,23.5,52.5),Vector3(5.0,30.4,37.0),4.5,1.0],
 ]
 const HEIST_STEPS := [
 	["vault_landing",Vector2(190.5,17.25),4.5,0],
@@ -151,6 +159,28 @@ const HEIST_STEPS := [
 	["vault_step_03",Vector2(190.5,24.75),2.5,3],
 ]
 const HEIST_CROWN_S := 34.5
+## The rope bridge home (crag_reach.gd BRIDGES rows: name, from, to, seed):
+## stack_2 -> landing_s, about 19 m, rising 3 m. It bears a load
+## (scripts/bridge_load.gd): strained from HEIST_BRIDGE_STRAIN kg, so he
+## (60) with a bag creaks it and a heavy one pops planks and frays it; it
+## snaps past SNAP_KG (96) held. Once the isle is awake it is staged to go
+## behind him: off its far end (past HEIST_SNAP_PAST of the way) onto
+## landing_s, it parts at HEIST_SNAP_AT HEIST_SNAP_DELAY s later. Falling
+## as it goes, he catches the hanging half (scripts/bridge_climb.gd).
+const HEIST_BRIDGES := [
+	["bridge_home","stack_2","landing_s",221],
+]
+const HEIST_BRIDGE_STRAIN := 62.0
+const HEIST_SNAP_PAST := 0.8
+const HEIST_SNAP_AT := 0.45
+const HEIST_SNAP_DELAY := 0.35
+var bridge_load: Node = null
+var bridge_climb: RefCounted = null
+## The staged snap: armed at the wake; his furthest way along the deck
+## (0 at stack_2, 1 at landing_s) while on it; the countdown once off it.
+var _snap_armed := false
+var _deck_t := -1.0
+var _snap_due := -1.0
 ## The way out's gap (heist/gap_near, heist/gap_far), south -> ford: two
 ## stone blocks, the near one lying on south's west rim out over the void,
 ## its lip (the top middle of its far face) HEIST_GAP_AT; then a gap of
@@ -217,6 +247,7 @@ func greed_marks() -> Vector2i:
 ## (`olmec_cliff_pick`).
 func greed_woke(what: String) -> void:
 	super.greed_woke(what)
+	_snap_armed = true
 	if what == "olmec" and olmec_spawns == 0: _olmec_due = HEIST_OLMEC_DELAY
 
 ## His first entrance up the staged cliff (heist/olmec_up, fitted to the
@@ -253,7 +284,7 @@ func place_root() -> String:
 	return "heist"
 
 func bridge_list() -> Array:
-	return []
+	return HEIST_BRIDGES
 
 func pillar_list() -> Array:
 	return HEIST_PILLARS
@@ -297,6 +328,7 @@ func _build_art() -> void:
 			var turn := Basis(Vector3.UP,float(int(ps.seed)%7)*0.9)
 			named["%s_%s" % [mname,part[0]]] = _stand("heist/%s_%s" % [mname,part[0]],Transform3D(turn,top_at+off),ps)
 	_bridges()
+	_load_bridge()
 	_pillars()
 	_ruins()
 	var tris := 0
@@ -420,7 +452,7 @@ func _build_vault_way() -> void:
 		if Layout.deleted(called): continue
 		var lo: Vector3 = row[1]
 		var hi: Vector3 = row[2]
-		hi.y = step_top(steps)
+		if hi.y == 0.0: hi.y = step_top(steps)
 		var along := hi-lo
 		var xb := along.normalized()
 		var zb := xb.cross(Vector3.UP).normalized()
@@ -475,5 +507,63 @@ func _build_gap() -> void:
 		holder.add_child(body)
 		Layout.track(called,body,"piece",coded)
 
+## The bridge home bears a load and snaps (BridgeLoad), and he can catch
+## and climb its hanging halves (BridgeClimb).
+func _load_bridge() -> void:
+	if bridges.is_empty(): return
+	var live: MeshInstance3D = bridges[0]
+	bridge_load = BridgeLoad.on(live,"bridge home",int(HEIST_BRIDGES[0][3]))
+	bridge_load.strain_kg = HEIST_BRIDGE_STRAIN
+	bridge_load.lip = RIM_BACK
+	bridge_climb = BridgeClimb.new(bridge_load,BridgeLoad.WANDERER_KG)
+
+## The staged snap behind him: where he is on the deck, and once he steps
+## off its far end with the isle awake, the countdown to the break.
+func _stage_snap(delta: float) -> void:
+	if bridge_load == null or bool(bridge_load.broken) or not _snap_armed: return
+	if _snap_due >= 0.0:
+		_snap_due -= delta
+		if _snap_due < 0.0:
+			print("heist: bridge_home snaps behind him at %s" % motor.feet)
+			bridge_load.snap(HEIST_SNAP_AT)
+		return
+	var on: Vector3 = bridge_load.deck_spot(motor.feet)
+	if on != Vector3.INF:
+		_deck_t = maxf(_deck_t,on.x)
+	elif _deck_t >= HEIST_SNAP_PAST and motor.grounded:
+		_snap_due = HEIST_SNAP_DELAY
+	elif motor.grounded:
+		_deck_t = -1.0
+
+## Each frame he and his bag tell the bridge their weight (BridgeLoad
+## `bear_at`; his own already sinks the deck by its tread).
+func _bear_bridge() -> void:
+	if bridge_load == null: return
+	BridgeLoad.bear_at(motor.feet,BridgeLoad.WANDERER_KG,motor,false)
+	if bag != null and float(bag.kg) > 0.0:
+		var loose: Node3D = bag.loose
+		var at: Vector3 = motor.feet if bag.state == "worn" or loose == null or not is_instance_valid(loose) else loose.global_position
+		BridgeLoad.bear_at(at,float(bag.kg),bag)
+
+func tick(delta: float) -> void:
+	super.tick(delta)
+	if bridge_load == null or flying: return
+	_bear_bridge()
+	_stage_snap(delta)
+	if motor.rider == null: bridge_climb.catch(motor,delta)
+
+## Placed anywhere (a fall, a restart), off any hanging half and the
+## bridge whole again, its staged snap reset (armed again by the next wake).
+func place(at: Vector3, face: Vector2) -> void:
+	if bridge_climb != null and bridge_climb.holding():
+		if motor.rider == bridge_climb: motor.release(bridge_climb)
+		bridge_climb._free(motor)
+	super.place(at,face)
+	if bridge_load != null and bool(bridge_load.broken): bridge_load.mend()
+	_deck_t = -1.0
+	_snap_due = -1.0
+
+const BridgeLoad = preload("res://scripts/bridge_load.gd")
+const BridgeClimb = preload("res://scripts/bridge_climb.gd")
 const SwingPoint = preload("res://scripts/rope/swing_point.gd")
 const VaultHost = preload("res://scripts/home/vault_host.gd")
