@@ -68,6 +68,39 @@ const LAG := 0.16
 const LEAN := 0.1
 const MOST_TWIST := 0.22
 
+## Olmec turn (`turn_clips`): a stood turn is one authored clip picked by
+## its angle (the build's turn_45/90/180_l/r, TURN_CLIPS below), not chained
+## steps. The figure's yaw is the clip's root yaw (`turn_yaw`) scaled to the
+## turn wanted, so its feet, planted in the clip, stay on the ground; each
+## foot is held where it stands but in its swing windows (the build's
+## TURN_PLANS), and carried there to where the clip has it. Under
+## WHOLE_EASE (rad) the hips ease round as before.
+var whole := false
+## clip stem -> its length (s), its yaw (deg) and its feet's swings
+## [foot, lift s, plant s] (the left turn's; the right's are mirrored).
+const TURN_CLIPS := {
+	"turn_45": {"len":1.1,"deg":45.0,"steps":[["L",0.2,0.46],["R",0.56,0.84]]},
+	"turn_90": {"len":1.9,"deg":90.0,"steps":[["L",0.36,0.82],["R",1.06,1.5]]},
+	"turn_180": {"len":2.7,"deg":180.0,"steps":[["L",0.42,0.88],["R",1.12,1.74],["L",1.98,2.34]]},
+}
+## Turns from here (rad) take the 90, from here the 180; under the first the
+## shuffle (45); under WHOLE_EASE the hips ease round.
+const WHOLE_90 := 1.1
+const WHOLE_180 := 2.25
+const WHOLE_EASE := 0.2
+## The whole turns' say over the clip under them (its weight against 1).
+const WHOLE_WEIGHT := 40.0
+## The whole turn now: its clip ("" none), time (s), start yaw, its yaw
+## scaled by (the turn wanted over the clip's), its swings.
+var whole_clip := ""
+var whole_t := 0.0
+var _w_from := 0.0
+var _w_scale := 1.0
+var _w_len := 0.0
+var _w_steps: Array = []
+## Whole turns taken (for checks).
+var whole_turns := 0
+
 ## The figure's own yaw (world) and its turn steps taken (for checks).
 var yaw := 0.0
 var steps := 0
@@ -132,6 +165,20 @@ func turn(facing: float, mode: int, delta: float, gait_u := 0.0, striding := fal
 	_stance = STRIDE_STANCE if striding else WALK_STANCE
 	_since += delta
 	_walk_k = move_toward(_walk_k,1.0 if mode == WALK else 0.0,delta/0.3)
+	if whole_clip != "":
+		if mode != STAND or not whole:
+			whole_clip = ""
+			turning = 0.0
+		else:
+			whole_t += delta*pace
+			var t := minf(whole_t,_w_len)
+			yaw = wrapf(_w_from+_look.turn_yaw(whole_clip,t)*_w_scale,-PI,PI)
+			if whole_t >= _w_len:
+				whole_clip = ""
+				turning = 0.0
+				_since = 0.0
+			else:
+				_look.want(whole_clip,t,WHOLE_WEIGHT)
 	if step_t >= 0.0:
 		if mode != STAND:
 			step_t = -1.0
@@ -149,11 +196,13 @@ func turn(facing: float, mode: int, delta: float, gait_u := 0.0, striding := fal
 	if hurry and mode == STAND:
 		step_t = -1.0
 		yaw = lerp_angle(yaw,facing,1.0-exp(-12.0*delta))
-	elif step_t < 0.0:
+	elif step_t < 0.0 and whole_clip == "":
 		match mode:
 			OFF: yaw = lerp_angle(yaw,facing,1.0-exp(-14.0*delta))
 			WALK: yaw = lerp_angle(yaw,facing+clampf(_rate*LEAD,-0.3,0.3),1.0-exp(-8.0*delta))
-			STAND: _maybe_step(_want,delta)
+			STAND:
+				if whole: _whole_step(_want,delta)
+				else: _maybe_step(_want,delta)
 	hurry = false
 	yaw = wrapf(yaw,-PI,PI)
 	_look.model.rotation.y = angle_difference(facing,yaw)
@@ -227,6 +276,38 @@ func _maybe_step(want: float, delta: float) -> void:
 	steps += 1
 	_look.want(step_clip,0.0,STEP_WEIGHT)
 
+## Olmec turn: stood behind `want`, the whole turn picked by its angle; a
+## hair off, the hips eased round; a foot left far from under the hips, the
+## shuffle on the spot to set it.
+func _whole_step(want: float, delta: float) -> void:
+	var lag := angle_difference(yaw,want)
+	var worst := "L" if float(feet.L.slip) >= float(feet.R.slip) else "R"
+	var slip: float = feet[worst].slip
+	if absf(lag) < WHOLE_EASE and slip < SLIP:
+		yaw += clampf(lag,-SMALL_RATE*delta,SMALL_RATE*delta)
+		if absf(lag) < 0.01: turning = 0.0
+		return
+	var stem := "turn_45"
+	if absf(lag) >= WHOLE_180: stem = "turn_180"
+	elif absf(lag) >= WHOLE_90: stem = "turn_90"
+	var c: Dictionary = TURN_CLIPS[stem]
+	# Settling a foot with no turn to speak of: the shuffle led by that foot.
+	var left := lag > 0.0 if absf(lag) >= WHOLE_EASE else worst == "L"
+	whole_clip = stem+("_l" if left else "_r")
+	whole_t = 0.0
+	_w_from = yaw
+	_w_len = float(c.len)
+	_w_scale = lag/_look.turn_yaw(whole_clip,_w_len) if absf(lag) >= WHOLE_EASE else 0.0
+	_w_steps = []
+	for st: Array in c.steps:
+		var foot: String = st[0]
+		if not left: foot = "R" if foot == "L" else "L"
+		_w_steps.append([foot,float(st[1]),float(st[2])])
+	turning = lag if absf(lag) > 0.01 else 0.01
+	whole_turns += 1
+	steps += 1
+	_look.want(whole_clip,0.0,WHOLE_WEIGHT)
+
 ## The planted feet moved with the body by `by` (global), a shuffle.
 func carry(by: Vector3) -> void:
 	for side: String in feet:
@@ -251,6 +332,11 @@ func _swing(side: String) -> float:
 		var w := fposmod(_gait_u-(0.0 if side == "L" else 0.5),1.0)
 		if w < _stance: return -1.0
 		return (w-_stance)/(1.0-_stance)
+	if whole_clip != "":
+		for st: Array in _w_steps:
+			if st[0] == side and whole_t > float(st[1]) and whole_t < float(st[2]):
+				return (whole_t-float(st[1]))/(float(st[2])-float(st[1]))
+		return -1.0
 	if step_t >= 0.0 and side == step_foot:
 		var u := _u()
 		if u > LIFT.x and u < LIFT.y: return (u-LIFT.x)/(LIFT.y-LIFT.x)
@@ -274,13 +360,27 @@ func plant(delta: float) -> void:
 		_look.twist("chest",clampf(-r*LAG,-MOST_TWIST,MOST_TWIST))
 		_look.lean("spine",clampf(r*LEAN,-MOST_TWIST,MOST_TWIST))
 	var k: float = _look.k
+	var whole_k: float = _look.whole_turn_weight() if whole else 0.0
 	for side: String in feet:
 		var f: Dictionary = feet[side]
 		var a: Vector3 = _look.ankle(side)
+		# Olmec turn: the clip's foot turned off the figure (a planted foot in
+		# a whole turn keeps its way on the ground while the hips come round),
+		# its way and its place round his middle scaled as the turn is (a
+		# turn of 60 on the 90's clip sets each foot down at 60/90 of the
+		# clip's angle), so it comes down where the stance will be.
+		var rel: float = float(_look.foot_yaw(side)) if whole_k > 0.01 else 0.0
+		var clip_yaw := yaw+rel
+		var fbase := clip_yaw
+		if whole_k > 0.01:
+			var sc := _w_scale if whole_clip != "" else 1.0
+			fbase = yaw+sc*rel
+			var mid: Vector3 = _look.global_position
+			a = mid+(a-mid).rotated(Vector3.UP,(sc-1.0)*rel)
 		f.lock = move_toward(f.lock,0.0 if _mode == OFF else 1.0,delta/0.2)
 		if f.lock <= 0.0 or f.plant == Vector3.INF or Vector2(a.x-f.plant.x,a.z-f.plant.z).length() > 4.0*k:
 			f.plant = a
-			f.yaw = yaw
+			f.yaw = fbase
 			f.swing = false
 			f.slip = 0.0
 			if f.lock <= 0.0: continue
@@ -294,21 +394,21 @@ func plant(delta: float) -> void:
 				f.yaw = f.at_yaw
 			at = Vector3(f.plant.x,a.y,f.plant.z)
 			# Planted, it turns on its ball no further than PIVOT off the hips.
-			var off := angle_difference(yaw,float(f.yaw))
-			if absf(off) > PIVOT: f.yaw = wrapf(yaw+signf(off)*PIVOT,-PI,PI)
+			var off := angle_difference(fbase,float(f.yaw))
+			if absf(off) > PIVOT: f.yaw = wrapf(fbase+signf(off)*PIVOT,-PI,PI)
 			at_yaw = f.yaw
 		else:
 			if not f.swing:
 				f.swing = true
 				f.err = Vector3(f.plant.x-a.x,0.0,f.plant.z-a.z)
-				f.yerr = angle_difference(yaw,float(f.yaw))
+				f.yerr = angle_difference(fbase,float(f.yaw))
 			var e := 1.0-smoothstep(0.0,0.85,u)
 			at = a+f.err*e
-			at_yaw = yaw+float(f.yerr)*e
+			at_yaw = fbase+float(f.yerr)*e
 		f.at = at
 		f.at_yaw = at_yaw
 		f.slip = Vector2(at.x-a.x,at.z-a.z).length()/k
-		_look.leg(side,a.lerp(at,f.lock),angle_difference(yaw,at_yaw)*f.lock)
+		_look.leg(side,a.lerp(at,f.lock),angle_difference(clip_yaw,at_yaw)*f.lock)
 		# Olmec round 1: a toe or heel pitched into the ground lifts the
 		# ankle till the sole rests on it.
 		var ground: float = _look.global_position.y

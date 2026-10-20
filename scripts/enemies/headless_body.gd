@@ -5524,6 +5524,8 @@ func _animate(delta: float) -> void:
 	var mode := _steps_mode()
 	if not look.steps.floor_at.is_valid(): look.steps.floor_at = func(p: Vector3) -> float: return _floor(p,float(knobs.step)*STAIR,float(knobs.step))
 	look.steps.pace = TURN_PACE_HUNT if hunting else 1.0
+	# Olmec turn (`turn_clips`): stood turns are whole authored clips (headless_body_steps.gd).
+	look.steps.whole = float(knobs.get("turn_clips",0.0)) >= 0.5
 	look.turn(facing,mode,delta,fposmod(_phase/2.0,1.0),state == "home",_turn_goal() if mode == Look.Steps.STAND else NAN)
 	# Olmec round 1: stood, it faces where its feet have turned it (its
 	# sight, its box, its way on), not ahead of them; the feel squares up

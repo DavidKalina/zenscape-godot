@@ -37,6 +37,10 @@ itself (headless_body_look.gd), so a clip's length is only its span:
   turn_*       once, STEP s (round 4): one step of a turn on the spot
                (open: the foot on the turn's side steps out; close: the
                other comes round), the game turning the root
+  turn_45/90/180_l/r  once (olmec-turn): a whole turn on the spot, the
+               root yawed through it (the game reads the yaw and keeps it
+               out of the pose), the feet stepping round on the ground
+               (their section; TURN_PLANS)
   feel         once, FEEL s (round 4): a hand laid flat on the wall before
                a climb, slid up, a nod
   walk         loop over two steps of WALK_STEP m (the phase from distance)
@@ -793,6 +797,7 @@ class Pose:
         # keep their exact old path.
         self.tip = None
         self.root_m = None        # the root's matrix, for a tip
+        self.leg_x = {}           # side -> the leg's right, for its frame (a turned leg: olmec-turn)
 
 
 def tip_matrix(tip):
@@ -821,6 +826,7 @@ def solve(pose):
         if name == "hips":
             m.translation = carried.translation + pose.hips
         P[name] = m
+        if name == "root" and pose.root_m is not None: P["_tip"] = True
         if name.startswith("forearm."):
             n = name.split(".")[1]
             s = -1 if n == "L" else 1
@@ -853,7 +859,7 @@ def solve(pose):
         xh = (goal - hip).cross(pole)
         if xh.length < 1e-6: xh = V((1, 0, 0))
         xh = xh.normalized()
-        if xh.x < 0: xh = -xh
+        if xh.dot(pose.leg_x.get(n, V((1, 0, 0)))) < 0: xh = -xh
         P[th] = frame(hip, knee - hip, xh)
         P[f"shin.{n}"] = frame(knee, ankle - knee, xh)
         fm = (fq.to_matrix() @ REST[f"foot.{n}"].to_3x3()).to_4x4()
@@ -1042,6 +1048,14 @@ def pose_of(v):
     p = Pose()
     p.squash = v["sq"]
     p.hips = F(v["hx"], v["hy"], v["hz"])
+    # Olmec turn: the whole figure yawed on the spot (`ry`, + left), its
+    # hips' offsets in the turned frame; the feet then given on the ground
+    # in the clip's start frame (`g*`), so a planted foot stays put.
+    yaw = v.get("ry", 0.0)
+    yq = Quaternion((0, 0, 1), deg(yaw))
+    if "ry" in v:
+        p.root_m = yq.to_matrix().to_4x4() @ REST["root"]
+        p.hips = yq.to_matrix() @ p.hips
     p.turns["hips"] = local_turn("hips", v["hp"], v["hr"], v["ht"])
     p.turns["spine"] = local_turn("spine", v["sp"], v["sr"], v["st"])
     p.turns["chest"] = local_turn("chest", v["cp"], v["cr"], v["ct"])
@@ -1060,6 +1074,13 @@ def pose_of(v):
         fq = Quaternion((1, 0, 0), deg(v[f"k{n}p"])) @ Quaternion((0, 1, 0), deg(s * v[f"k{n}r"]))
         p.feet[n] = (goal, fq)
         p.knee[n] = V((s * 0.3, 1.0, 0.0))
+        if f"g{n}x" in v:
+            fy = Quaternion((0, 0, 1), deg(v[f"g{n}a"]))
+            p.feet[n] = (F(v[f"g{n}x"], ANKLE + v[f"g{n}y"], v[f"g{n}z"]), fy @ Quaternion((1, 0, 0), deg(v[f"g{n}p"])))
+            # The knee over the foot's way, a little out with the hips'.
+            kq = Quaternion((0, 0, 1), deg((v[f"g{n}a"] + yaw) * 0.5))
+            p.knee[n] = kq.to_matrix() @ V((s * 0.3, 1.0, 0.0))
+            p.leg_x[n] = kq.to_matrix() @ V((1.0, 0.0, 0.0))
         if v[f"h{n}w"] > 0.0:
             p.hands[n] = (F(v[f"h{n}x"], v[f"h{n}y"], v[f"h{n}z"]), V((s * 1.0, -0.5, -0.6)), min(1.0, v[f"h{n}w"]))
         if v[f"p{n}w"] > 0.0:
@@ -1139,8 +1160,8 @@ def _mirror(v):
     for c, x in v.items():
         if len(c) >= 2 and c[1] in "LR":
             m = c[0] + ("R" if c[1] == "L" else "L") + c[2:]
-            out[m] = -x if c[0] + c[2:] in ("hx", "pfx", "pnx") else x
-        elif c in ("hx", "hr", "ht", "sr", "st", "cr", "ct", "nr", "nt", "tr"):
+            out[m] = -x if c[0] + c[2:] in ("hx", "pfx", "pnx", "gx", "ga") else x
+        elif c in ("hx", "hr", "ht", "sr", "st", "cr", "ct", "nr", "nt", "tr", "ry"):
             out[c] = -x
         else:
             out[c] = x
@@ -2018,6 +2039,175 @@ clip(Clip("turn_close_l", STEP, [
 ]))
 clip(Mirror("turn_open_r", CLIPS[-2]))
 clip(Mirror("turn_close_r", CLIPS[-2]))
+
+# ------------------------------------------------------------------ whole turns on the spot (olmec-turn)
+## A whole turn authored as one clip, the root yawed through it (`ry`): the
+## game reads the yaw off the root's track, turns the figure by it and keeps
+## the root's own turn out of the pose (headless_body_steps.gd), so the
+## feet, planted in the clip's start frame, stay where they are on the
+## ground while the trunk comes round over them. Each step's foot swings on
+## an arc round the middle, from its stance at one yaw to its stance at the
+## next; the root's yaw is the feet's mean, eased from lift to plant. The
+## trunk's beats are keyed per clip: the weight loaded onto the pivot foot
+## and a sink, the shoulders wound against the turn, then leading it, each
+## plant dropped flat and hard into a held squash, the shoulders and arms
+## swinging on past and settling.
+##   turn_90_l    a quarter turn left: the left foot opens back, the right comes round
+##   turn_180_l   a half turn left in three steps: left open, right round in front, left home
+##   turn_45_l    a small shuffle left: two short steps
+##   *_r          their mirrors
+## TURN_PLANS: clip -> (length s, yaw deg, [(foot, lift s, plant s, to deg,
+## lift m)]); headless_body_steps.gd TURN_CLIPS mirrors the feet's windows.
+STANCE_X = HIP_X + 0.12
+
+
+def _turn_feet(steps):
+    """The feet and the root's yaw through `steps` [(foot, t0, t1, to, lift)]."""
+    def feet(t, v):
+        at = {"L": 0.0, "R": 0.0}
+        swing = {}
+        for n, t0, t1, to, lift in steps:
+            if t >= t1: at[n] = to
+            elif t > t0: swing[n] = (at[n], to, (t - t0) / (t1 - t0), lift)
+        for n, s in SIDES:
+            a = at[n]
+            y = 0.0
+            pitch = 0.0
+            out = 0.0
+            if n in swing:
+                a0, a1, u, lift = swing[n]
+                # Off the ground quick, carried round, set down flat and late.
+                k = smooth01(0.08, 0.92, u)
+                a = a0 + (a1 - a0) * k
+                h = math.sin(math.pi * min(1.0, u ** 0.8))
+                y = lift * h
+                out = 0.18 * h
+                pitch = -18.0 * (1 - smooth01(0.0, 0.4, u)) + 12.0 * math.sin(math.pi * smooth01(0.35, 0.95, u))
+            else:
+                # The heel peels just before its lift.
+                for m, t0, t1, to, lift in steps:
+                    if m == n and t0 - 0.16 < t <= t0:
+                        pitch = -14.0 * smooth01(t0 - 0.16, t0, t)
+            # Toes down, the ankle up on them (the toes stay on the ground).
+            if pitch < 0.0: y = max(y, 1.44 * math.sin(deg(-pitch)))
+            r = STANCE_X + out
+            ca, sa = math.cos(deg(a)), math.sin(deg(a))
+            x0 = s * r
+            v[f"g{n}x"] = x0 * ca
+            v[f"g{n}z"] = x0 * sa
+            v[f"g{n}y"] = y
+            v[f"g{n}a"] = a
+            v[f"g{n}p"] = pitch
+        # The root's yaw: the feet's mean, eased from each lift to just past
+        # its plant (the hips come round over the new foot).
+        yaw = 0.0
+        prev = {"L": 0.0, "R": 0.0}
+        for n, t0, t1, to, lift in steps:
+            mean0 = (prev["L"] + prev["R"]) * 0.5
+            prev[n] = to
+            mean1 = (prev["L"] + prev["R"]) * 0.5
+            yaw = mean0 + (mean1 - mean0) * smooth01(t0 + 0.04, t1 + 0.1, t)
+            if t < t1 + 0.1: break
+        v["ry"] = yaw
+    return feet
+
+
+TURN_PLANS = {}
+
+
+def turn_clip(name, length, steps, keys):
+    TURN_PLANS[name] = (length, steps[-1][3], steps)
+    return clip(Clip(name, length, keys, extra=_turn_feet(steps)))
+
+
+# turn_90_l: the left (pivot side) foot opens back and out to the quarter,
+# the weight rolls onto it, the right comes round in front. ~1.9 s.
+T90 = 1.9
+turn_clip("turn_90_l", T90, [("L", 0.36, 0.82, 90.0, 0.7), ("R", 1.06, 1.5, 90.0, 0.62)], [
+    (0.0, {}, ""),
+    # Loaded: the weight onto the right, sunk, the shoulders wound right
+    # against the turn, the stump down, the left heel coming up.
+    (0.3, {"hx": 0.5, "hy": -0.46, "sq": 0.95, "hr": 2.5, "sr": 1.5, "ht": -5.0, "ct": -9.0, "nt": -4.0,
+           "sp": 6.5, "np": 2.5, "aLo": 16.0, "aRo": 13.0, "aLp": -4.0, "aRp": 8.0}, "h"),
+    (0.36, {"hy": -0.48, "sq": 0.945}, ""),
+    # The lift: up off the right, the hips swung round, the shoulders leading
+    # them, the left arm thrown out and back, the right across.
+    (0.58, {"hx": 0.35, "hy": -0.04, "sq": 1.04, "hr": 1.5, "sr": 1.0, "ht": 8.0, "ct": 16.0, "nt": 10.0,
+            "sp": 1.5, "np": 0.0, "aLo": 30.0, "aLp": -18.0, "eL": 22.0, "aRp": 24.0, "eR": 30.0, "aRo": 6.0}, ""),
+    # The plant: flat and hard, dropped into a held squash, the shoulders
+    # and arms swinging on.
+    (0.82, {"hx": 0.0, "hy": -0.62, "sq": 0.91, "hr": 0.0, "sr": 0.0, "ht": 4.0, "ct": 20.0, "nt": 12.0,
+            "sp": 8.0, "np": 3.0, "aLo": 20.0, "aLp": 6.0, "aRp": 14.0}, "i"),
+    (0.96, {"hy": -0.6, "sq": 0.915}, "h"),
+    # The weight rolled over onto the left (the new pivot), the right heel up.
+    (1.06, {"hx": -0.45, "hy": -0.4, "sq": 0.96, "hr": -2.0, "sr": -1.0, "ht": 0.0, "ct": 6.0, "nt": 6.0,
+            "sp": 6.0, "aLp": 0.0, "aRp": 4.0}, ""),
+    # The right comes round: the hips after it, the shoulders ahead again.
+    (1.28, {"hx": -0.3, "hy": -0.08, "sq": 1.03, "hr": -1.0, "ht": 6.0, "ct": 14.0, "nt": 8.0, "sp": 1.5,
+            "aRp": 22.0, "eR": 26.0, "aLp": -14.0, "aLo": 24.0}, ""),
+    (1.5, {"hx": 0.0, "hy": -0.58, "sq": 0.92, "hr": 0.0, "ht": 2.0, "ct": 9.0, "nt": 8.0, "sp": 7.5, "np": 2.5,
+           "aRp": 8.0, "aLp": 10.0, "aLo": 14.0}, "i"),
+    (1.62, {"hy": -0.56, "sq": 0.925, "ct": 5.0}, "h"),
+    # Up, the shoulders settling back past square and home.
+    (1.78, {"hy": -0.12, "sq": 1.01, "ct": -2.5, "nt": -2.0, "ht": 0.0, "sp": 2.5, "np": 0.0}, ""),
+    (T90, {"_base": 1}, ""),
+])
+
+# turn_180_l: three steps: the left opens back to the quarter, the right
+# comes all the way round in front to the half (the big one, the trunk
+# thrown round after it), the left comes home beside it. ~2.7 s.
+T180 = 2.7
+turn_clip("turn_180_l", T180, [("L", 0.42, 0.88, 90.0, 0.7), ("R", 1.12, 1.74, 180.0, 0.82),
+                               ("L", 1.98, 2.34, 180.0, 0.55)], [
+    (0.0, {}, ""),
+    (0.36, {"hx": 0.55, "hy": -0.52, "sq": 0.94, "hr": 3.0, "sr": 1.5, "ht": -7.0, "ct": -13.0, "nt": -6.0,
+            "sp": 7.0, "np": 3.0, "aLo": 17.0, "aRo": 14.0, "aLp": -6.0, "aRp": 10.0}, "h"),
+    (0.42, {"hy": -0.54, "sq": 0.935}, ""),
+    (0.64, {"hx": 0.35, "hy": -0.04, "sq": 1.04, "hr": 1.5, "ht": 10.0, "ct": 20.0, "nt": 12.0, "sp": 1.5,
+            "np": 0.0, "aLo": 32.0, "aLp": -20.0, "eL": 22.0, "aRp": 26.0, "eR": 30.0, "aRo": 6.0}, ""),
+    (0.88, {"hx": 0.0, "hy": -0.6, "sq": 0.915, "hr": 0.0, "sr": 0.0, "ht": 6.0, "ct": 24.0, "nt": 14.0,
+            "sp": 8.0, "np": 3.0, "aLo": 20.0, "aLp": 6.0, "aRp": 16.0}, "i"),
+    (1.0, {"hy": -0.58, "sq": 0.92}, "h"),
+    (1.12, {"hx": -0.5, "hy": -0.44, "sq": 0.955, "hr": -2.5, "sr": -1.0, "ht": 4.0, "ct": 16.0, "nt": 10.0,
+            "sp": 6.5, "aRp": 6.0}, ""),
+    # The big one: the right swung right round in front, high; the trunk
+    # thrown round with it, the shoulders well ahead, the arms flung.
+    (1.42, {"hx": -0.35, "hy": 0.02, "sq": 1.05, "hr": -1.5, "ht": 12.0, "ct": 26.0, "nt": 16.0, "sp": 1.0,
+            "aRp": 30.0, "eR": 32.0, "aRo": 4.0, "aLp": -22.0, "aLo": 30.0, "eL": 24.0}, ""),
+    (1.74, {"hx": 0.0, "hy": -0.66, "sq": 0.9, "hr": 0.0, "ht": 6.0, "ct": 22.0, "nt": 14.0, "sp": 8.5,
+            "np": 3.5, "aRp": 14.0, "aLp": 10.0, "aLo": 18.0}, "i"),
+    (1.88, {"hy": -0.64, "sq": 0.905}, "h"),
+    (1.98, {"hx": 0.4, "hy": -0.42, "sq": 0.96, "hr": 2.0, "ht": 3.0, "ct": 10.0, "nt": 8.0, "sp": 6.5}, ""),
+    (2.16, {"hx": 0.25, "hy": -0.12, "sq": 1.02, "ht": 4.0, "ct": 10.0, "nt": 6.0, "aLp": -10.0, "aLo": 22.0,
+            "aRp": 12.0}, ""),
+    (2.34, {"hx": 0.0, "hy": -0.5, "sq": 0.93, "ht": 1.0, "ct": 6.0, "nt": 6.0, "sp": 7.0, "np": 2.0,
+            "aLp": 8.0, "aRp": 4.0}, "i"),
+    (2.44, {"hy": -0.48, "sq": 0.935, "ct": 3.0}, "h"),
+    (2.58, {"hy": -0.12, "sq": 1.01, "ct": -3.0, "nt": -2.5, "ht": 0.0, "sp": 2.5, "np": 0.0}, ""),
+    (T180, {"_base": 1}, ""),
+])
+
+# turn_45_l: a shuffle, the left out a little and the right after it, low
+# and quick, the shoulders leading. ~1.1 s.
+T45 = 1.1
+turn_clip("turn_45_l", T45, [("L", 0.2, 0.46, 45.0, 0.38), ("R", 0.56, 0.84, 45.0, 0.34)], [
+    (0.0, {}, ""),
+    (0.18, {"hx": 0.35, "hy": -0.34, "sq": 0.965, "hr": 1.5, "ht": -3.0, "ct": -5.0, "nt": -2.0, "sp": 6.0}, ""),
+    (0.32, {"hx": 0.2, "hy": -0.14, "sq": 1.02, "ht": 5.0, "ct": 11.0, "nt": 7.0, "aLo": 20.0, "aLp": -8.0,
+            "aRp": 14.0}, ""),
+    (0.46, {"hx": -0.1, "hy": -0.44, "sq": 0.945, "hr": -1.0, "ht": 3.0, "ct": 10.0, "nt": 6.0, "sp": 7.0}, "i"),
+    (0.56, {"hx": -0.3, "hy": -0.32, "sq": 0.965, "hr": -1.5}, ""),
+    (0.7, {"hx": -0.15, "hy": -0.12, "sq": 1.02, "ct": 8.0, "aRp": 12.0, "aLp": -6.0}, ""),
+    (0.84, {"hx": 0.0, "hy": -0.4, "sq": 0.95, "hr": 0.0, "ht": 0.0, "ct": 4.0, "nt": 4.0, "sp": 6.5}, "i"),
+    (0.92, {"hy": -0.38, "sq": 0.955}, "h"),
+    (1.02, {"hy": -0.12, "ct": -1.5, "sq": 1.0}, ""),
+    (T45, {"_base": 1}, ""),
+])
+for _n in ("turn_90", "turn_180", "turn_45"):
+    _of = next(c for c in CLIPS if c.name == _n + "_l")
+    clip(Mirror(_n + "_r", _of))
+    TURN_PLANS[_n + "_r"] = (_of.length, -TURN_PLANS[_n + "_l"][1],
+                             [("R" if f == "L" else "L", a, b, -to, li) for f, a, b, to, li in TURN_PLANS[_n + "_l"][2]])
 
 # ------------------------------------------------------------------ feeling the wall (round 4)
 ## Before a climb, FEEL s: he lays his right hand flat on the face, presses,
