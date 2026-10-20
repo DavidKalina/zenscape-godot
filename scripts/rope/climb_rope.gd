@@ -3,36 +3,38 @@ extends Node3D
 ## rope study's room (studies/rope_study.gd: its `holds` and `pieces`).
 ##
 ## Throw: `walk_throw` held (LMB / T / pad RT) on the ground, coiled: he
-## whirls the hook at his side, and a reticle shows where it goes, moved by
-## the stick and the camera (the bag's aim, scripts/carry/loot_bag.gd). The
-## reticle snaps to the lip of a top above him (the edge facing him) or to
-## an anchor post near it. Gold: a hold there (a solid or crumbly lip, a
-## post). Red: it won't catch (a smooth top, the floor, the way blocked, out
-## of reach); thrown anyway, it misses. Released, the hook flies the arc
-## shown, trailing the rope. On a hold it catches: dragged back to the lip
-## and hooked over it (state "caught"; the tug, task 3, seats it). With no
-## hold it slides off the lip and falls; a blocked arc knocks it down.
+## whirls the hook at his side and keeps moving under the stick (walk, run,
+## off an edge). A reticle shows where it goes, picked from where the camera
+## looks (mouse / right stick, turned faster while whirling: AIM_MOUSE,
+## AIM_STICK): a swing point or anchor post near the look line (AIM_CONE),
+## else the first lip of a top above him along it. Gold: a hold there (a
+## solid lip, a post, a swing point). Amber: a crumbly lip (it may skitter
+## off). Red: it won't catch (a smooth top, the floor, the way blocked, out
+## of reach); thrown anyway, it misses. The camera eases out while he
+## whirls (WHIRL_FAR). Released, the hook flies the arc shown (flatter at a
+## run, RUN_FLAT), trailing the rope as he goes on. On a hold it catches and
+## is set at once (state "seated", it holds his weight): there is no tug. A
+## crumbly lip may skitter at the catch (POOR_BAD: grit, it slides off and
+## falls); with no hold it slides off the lip and falls; a blocked arc
+## knocks it down. A miss: F reels it in, or hold the throw again.
 ##
-## Tug: `walk_tug` (E / pad B) on a caught hook: he reaches up the rope
-## and yanks it back. A good hold (a post, a solid lip) seats: the rope goes
-## taut and it clicks (state "seated", `tested`). A crumbly lip can be a bad
-## placement (`bad`, rolled at the catch): the tug pulls the hook back over
-## the lip in a spill of grit and it falls. Left untested, a bad hook seems
-## caught; it gives under his weight partway up (the climb, task 4).
+## Over a swing point (a hook line) the set rope is in his hand at once
+## (`swing_hold`): run off the edge (or Space) into the swing; caught with
+## him already in the air, he swings straight away.
 ##
-## Climb: Jump by the hanging rope of a caught or seated hook takes hold
-## (the motor's rider, scripts/pilot_motor.gd `mount`, held as the swing
-## rope's "swing" hang). Stick toward the wall: hand over hand, a pull at a
-## time (the body hauled up on the top hand, then the low hand reaching past
-## it), slow; let go of the stick and he hangs. Stick away: down hand under
-## hand; crouch (Shift / C): slides down fast; Jump: lets go. At the top he
-## is handed to the motor's own ledge hang and climb (the haul over the lip,
-## slowed to HAUL_TIME). An untested bad hook gives partway up: it tears out
-## in grit and he falls.
+## Climb: Jump by the hanging rope of a set hook takes hold (the motor's
+## rider, scripts/pilot_motor.gd `mount`, held as the swing rope's "swing"
+## hang). Stick toward the wall: hand over hand, a pull at a time (the body
+## hauled up on the top hand, then the low hand reaching past it), slow;
+## let go of the stick and he hangs. Stick away: down hand under hand;
+## crouch (Shift / C): slides down fast; Jump: lets go. At the top he is
+## handed to the motor's own ledge hang and climb (the haul over the lip,
+## slowed to HAUL_TIME). A set hook never gives.
 ##
-## Rappel: E (the tug) by an anchor post on a top, the rope coiled, ties it
+## Rappel: E (pad B) by an anchor post on a top, the rope coiled, ties it
 ## round the post's foot and throws it over the drop beyond the post (the
-## way he looks past it), tugged to seat (`fixed`). Jump at an edge a
+## way he looks past it), pulled tight (`fixed`; the "tug" state is this
+## tie's yank). Jump at an edge a
 ## seated rope runs over, facing out: the motor's own catch and lower take
 ## him over to a hang, then he's on the rope rappelling: leaned back, feet
 ## on the wall (leg IK), the lead hand up the rope, the brake hand at his
@@ -58,12 +60,38 @@ const PilotMotor = preload("res://scripts/pilot_motor.gd")
 
 ## The rope's full length (m, times size); a throw reaches this far.
 const ROPE_LEN := 14.0
-## The reticle's reach across from his feet (m, times size), its least, where
-## it starts (of the reach) and how fast the stick moves it.
+## The reticle's reach across from his feet (m, times size), its least, and
+## where a throw with nothing on the look line comes down (of the reach).
 const AIM_REACH := 10.0
 const AIM_MIN := 1.2
 const AIM_START := 0.45
-const AIM_SPEED := 8.0
+## Picking the target from the camera's look (docs/design/heist-level/
+## rope-throw-handoff.md): a swing point or post within AIM_CONE (deg) of
+## the look line (or AIM_NEAR m across it, near him) wins over a lip on it
+## when within AIM_PREFER of the cone; the line is walked for a lip in
+## AIM_STEP (m) steps. While whirling the camera turns faster: the mouse
+## AIM_MOUSE times its own, the right stick AIM_STICK rad/s more.
+const AIM_CONE := 16.0
+const AIM_NEAR := 1.2
+const AIM_PREFER := 0.6
+const AIM_STEP := 0.4
+const AIM_MOUSE := 1.6
+const AIM_STICK := 2.4
+## The mouse's own turn (rad a pixel: character_study.gd LOOK).
+const MOUSE_LOOK := 0.0025
+## A throw at a run flies flatter: its rise times RUN_FLAT at full run
+## (PilotMotor.RUN), eased from a stand.
+const RUN_FLAT := 0.45
+## While whirling and the hook's flight, the camera eases out to WHIRL_FAR
+## times its reach and widens WHIRL_WIDE degrees, at WHIRL_EASE (1/s), back
+## in after (a host with its own pull, the rope study's `_cam_pull`, keeps
+## its own).
+const WHIRL_FAR := 1.4
+const WHIRL_WIDE := 7.0
+const WHIRL_EASE := 3.0
+## ...and its tilt eased up to at least WHIRL_POLAR (rad from straight
+## down: lower and more level, the face ahead and the gap in view).
+const WHIRL_POLAR := PI*0.5-0.3
 ## A top counts as above him (a lip to hook) this high over his feet (m).
 const ABOVE := 1.2
 ## The reticle snaps to an anchor post within this (m, flat).
@@ -86,11 +114,13 @@ const WRAP_TIME := 0.22
 ## The throw's arc: its top over the higher end, plus this a metre across.
 const AIM_RISE := 1.0
 const AIM_RISE_M := 0.08
-## The hook flies under this many times gravity (a quick, flat-ish throw).
+## The hook falls under this many times gravity; thrown, it flies its arc
+## FLY_PACE times as fast (the same arc, a quick throw on the move).
 const HOOK_G := 1.8
+const FLY_PACE := 1.9
 const ARC_DOTS := 22
 ## The whirl while aiming: its radius (m) and turns a second.
-const WHIRL_R := 0.45
+const WHIRL_R := 0.55
 const WHIRL_RATE := 3.0
 ## Dragged back from where it landed to the lip (s); sliding off a smooth
 ## top as long.
@@ -103,9 +133,11 @@ const FLICK := Vector2(1.6,1.4)
 ## Reeled off a beam: flicked over it toward him, then yanked through the
 ## air to his hand (m/s², times size), in from anywhere he stands.
 const YANK := 45.0
-## The tug: reaching up the rope, the yank back, the hold before it settles
-## (s); a crumbly lip's chance of being a bad placement; the slip back over
-## the lip (s).
+## How fast (1/s) its way turns toward his hand.
+const YANK_TURN := 8.0
+## The tie at a post (E): reaching up the rope, the yank back, the hold
+## before it settles (s). A crumbly lip's chance the hook skitters off it at
+## the catch; the slip back over the lip (s).
 const TUG_REACH := 0.2
 const TUG_YANK := 0.12
 const TUG_HOLD := 0.35
@@ -124,13 +156,13 @@ const ROPE := Color("b59a6a")
 const HOOK := Color("3a3d42")
 const AIM_OK := Color(1.0,0.92,0.55)
 const AIM_BAD := Color(1.0,0.3,0.25)
+const AIM_POOR := Color(1.0,0.62,0.22)
 const LINE_TIME := 2.5
 ## The climb: within this of the hanging rope (m, flat) Jump takes hold; the
 ## rope hangs this far out from the edge; a pull's rise (m, the gap between
 ## the hands too) and time (s: the haul up, then the low hand's reach, at
 ## REACH_AT of it); down hand under hand and the slide (m/s); the haul over
-## the lip (s, the motor's climb slowed); an untested bad hook gives this
-## share of the way up (from, to); the hands' spread on the rope (m).
+## the lip (s, the motor's climb slowed); the hands' spread on the rope (m).
 const GRAB_REACH := 1.2
 const ROPE_OFF := 0.04
 const PULL := 0.4
@@ -139,7 +171,6 @@ const REACH_AT := 0.55
 const DOWN_SPEED := 1.1
 const SLIDE_SPEED := 3.5
 const HAUL_TIME := 0.6
-const GIVE := Vector2(0.4,0.7)
 const HAND_SPREAD := 0.035
 ## Climbing, the hands sit this far (m) over the hang's grip, reaching up
 ## the rope; the feet press the wall this share of his leg over his feet
@@ -278,24 +309,25 @@ var _climb_k := 0.0
 var swing_climbed := 0.0
 var _tilt_left := 0.0
 var _tilt := Basis.IDENTITY
-## "coiled" (at his side), "aim", "fly", "drag" (pulled back to the lip),
-## "caught", "tug", "seated", "slip" (pulled off by the tug), "slide" (off
-## a smooth top), "fall", "down", "reel", "pull_up" (hauled up from a top).
+## "coiled" (at his side), "aim" (whirling), "fly", "drag" (pulled back to
+## the lip), "seated" (set: it holds him), "tug" (tying at a post), "slip"
+## (skittering off a crumbly lip), "slide" (off a smooth top), "fall",
+## "down", "reel", "pull_up" (hauled up from a top). "caught" is no longer
+## entered (every catch is set).
 var state := "coiled"
 ## Where the hook is, and where it sits once caught.
 var hook_at := Vector3.ZERO
 var lip := Vector3.INF
 ## The lip's outward way (flat, toward where the rope hangs).
 var lip_out := Vector3.ZERO
-## The hold it caught on ("solid", "poor", "anchor"; "" none) and its piece.
+## The hold it caught on ("solid", "poor", "anchor", "beam"; "" none) and its piece.
 var hold := ""
 var piece := ""
-## Tugged and seated (a seated hook holds his weight).
+## Set (a seated hook holds his weight): every catch is.
 var tested := false
-## A bad placement on a crumbly lip: the tug pulls it off; untested, it gives
-## under his weight.
+## The last catch on a crumbly lip skittered off.
 var bad := false
-## Drivers: -1 rolls `bad` at the catch, 0 never, 1 always (poor holds only).
+## Drivers: -1 rolls a crumbly lip's skitter at the catch, 0 never, 1 always.
 var force_bad := -1
 ## Over a beam: its middle (the bar's axis under the lip) and half its
 ## thickness; the far side's way is -lip_out.
@@ -323,8 +355,15 @@ var reels := 0
 var tugs := 0
 var seats := 0
 var slips := 0
-## Drivers: aim as though the button were held (`release` lets go).
+## Drivers: aim as though the button were held (`release` lets go), and a
+## world point the camera is kept turned toward while aiming (INF none).
 var hold_aim := false
+var aim_point := Vector3.INF
+## The camera's pull while whirling (0 to 1), and the arc's rise this throw.
+var _cam_k := 0.0
+var _polar_lift := 0.0
+var _polar_room := 0.0
+var _rise_k := 1.0
 ## The edge the rope runs over (a lip's own; for a post, the top's edge on
 ## the side it hangs) and its outward way (flat): where it hangs to climb.
 var edge := Vector3.INF
@@ -334,7 +373,7 @@ var climber := false
 var hauling := false
 ## The climb's pace (1 bare; a load would slow it: the spec's later bag).
 var climb_pace := 1.0
-## Tallies: holds taken, hauls over, hooks that gave.
+## Tallies: holds taken, hauls over (`gave` stays 0: a set hook never gives).
 var climbs := 0
 var hauls := 0
 var gave := 0
@@ -393,8 +432,6 @@ var _hand_side := [1.0,-1.0]
 var _pull_t := -1.0
 var _pull_from := 0.0
 var _reach_from := 0.0
-## The hands' height an untested bad hook gives at (INF never).
-var _give_y := INF
 var _climb_time_was := 0.0
 
 var _aim := Vector2.ZERO
@@ -524,6 +561,7 @@ func reset() -> void:
 	bad = false
 	paid = 0.0
 	hold_aim = false
+	aim_point = Vector3.INF
 	edge = Vector3.INF
 	edge_out = Vector3.ZERO
 	fixed = false
@@ -560,14 +598,43 @@ func _read_input() -> void:
 	if throw_hit:
 		if state == "coiled":
 			if _on_foot(): aim()
-		elif out() and hold == "beam" and beam_mid != Vector3.INF and not swinging and _on_foot():
-			# Left on a hook line: yanked back to his hand, then aimed (if
-			# the throw's still held when it's in).
-			reel()
-			_aim_after = state == "fall" or state == "reel"
+		elif _can_snatch():
+			# Out (a miss on the ground, a hook on a lip or a swing point):
+			# snatched back to his hand, then whirled again if the throw's
+			# still held when it's in.
+			_snatch()
+			_aim_after = true
 		elif out(): _say("Reel it in first (%s)" % Pad.pick("F","D-pad down"))
 	if reel_hit: reel()
 	if tug_hit: tug()
+
+## A throw press can snatch the hook back: it's out, he's not on it, not
+## tied at a post, not up top over it.
+func _can_snatch() -> bool:
+	if not out() or swinging or climber or hauling or lowering or fixed or _yank: return false
+	if state in ["fly","tug","pull_up"]: return false
+	if (state == "seated" or state == "caught") and on_top(): return false
+	return true
+
+## Back to his hand through the air (flicked off a lip or a beam first).
+func _snatch() -> void:
+	_drop_swing()
+	if state in ["seated","caught","drag"]:
+		if hold == "beam" and beam_mid != Vector3.INF and (_hand()-beam_mid).dot(lip_out) < 0.0: lip_out = -lip_out
+		_flick()
+	elif state != "fall":
+		_vel = Vector3.UP*3.0*_size()
+		hook_at += Vector3.UP*0.1*_size()
+		state = "fall"
+	_yank = true
+	_reel_after = true
+	reels += 1
+
+## The mouse turns the camera faster while he whirls (AIM_MOUSE).
+func _input(event: InputEvent) -> void:
+	if state != "aim" or study == null or not event is InputEventMouseMotion: return
+	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or _busy(): return
+	study.set("_yaw",float(study.get("_yaw"))-(event as InputEventMouseMotion).relative.x*MOUSE_LOOK*(AIM_MOUSE-1.0))
 
 func _busy() -> bool:
 	if study == null or not bool(study.get("walk_ready")): return true
@@ -581,38 +648,43 @@ func _on_foot() -> bool:
 
 # --- The throw --------------------------------------------------------------------------
 
-## Held: the hook whirls at his side, the reticle out ahead.
+## Held: the hook whirls at his side, the reticle on what the camera looks
+## at; he keeps moving.
 func aim() -> void:
 	if state != "coiled": return
-	var f := _forward()*AIM_REACH*_size()*AIM_START
-	_aim = _to_cam(Vector2(f.x,f.z))
 	state = "aim"
 	_whirl = 0.0
 	_hook.visible = true
 	_rope.visible = true
-	_aim_update(0.0,Vector2.ZERO)
+	_aim_update(0.0)
 
-## Drivers: the reticle put on a world point (then snapped as the stick's).
+## Drivers: the camera turned toward a world point (and kept on it while
+## aiming), so the reticle picks what's there as the mouse would.
 func aim_toward(point: Vector3) -> void:
-	if state != "aim": return
+	aim_point = point
+	_turn_to_aim()
+	if state == "aim": _aim_update(0.0)
+
+func _turn_to_aim() -> void:
+	if aim_point == Vector3.INF: return
 	var feet: Vector3 = study.get("motor").feet
-	_aim = _to_cam(Vector2(point.x-feet.x,point.z-feet.z))
-	_aim_update(0.0,Vector2.ZERO)
+	var d := Vector2(aim_point.x-feet.x,aim_point.z-feet.z)
+	if d.length() > 0.2: study.set("_yaw",PilotMotor.facing_of(d.normalized()))
 
-## Aiming, the stick (`want`, the motor's frame) moves the reticle. The
-## study calls it from _want.
-func aim_steer(want: Vector2, delta: float) -> void:
-	if state != "aim": return
-	_aim_update(delta,want)
+## Kept for the hosts that still call it: the stick no longer moves the
+## reticle (he walks with it), so nothing to do.
+func aim_steer(_want: Vector2, _delta: float) -> void:
+	pass
 
-## Let go: the hook flies the arc shown.
+## Let go: the hook flies the arc shown, from his hand as he goes.
 func release() -> void:
 	if state != "aim": return
 	hold_aim = false
+	aim_point = Vector3.INF
 	_show_aim(false)
 	_from = _hand()+Vector3.UP*0.25*_size()
 	hook_at = _from
-	_vel = _arc_to(_from,aim_at)
+	_vel = _arc_to(_from,aim_at,_rise_k)
 	_fly_all = _flight_time(_from,aim_at,_vel)
 	_fly_t = 0.0
 	lip = aim_lip
@@ -627,17 +699,15 @@ func release() -> void:
 	state = "fly"
 	paid = 0.0
 
-func _aim_update(delta: float, want: Vector2) -> void:
+## The camera's look, flat (its yaw's forward).
+func _look() -> Vector3:
+	var f := PilotMotor.forward(float(study.get("_yaw")))
+	return Vector3(f.x,0.0,f.y)
+
+func _aim_update(_delta: float) -> void:
 	var motor: Variant = study.get("motor")
 	var s := _size()
-	var w := _from_cam(_aim)+want*AIM_SPEED*s*delta
-	var l := w.length()
-	if l < AIM_MIN*s: w = (w/l if l > 0.01 else Vector2(_forward().x,_forward().z))*AIM_MIN*s
-	w = w.limit_length(AIM_REACH*s)
-	_aim = _to_cam(w)
-	var feet: Vector3 = motor.feet
-	var over := Vector3(feet.x+w.x,feet.y,feet.z+w.y)
-	var t := target(over)
+	var t := _pick(_look())
 	aim_at = t.at
 	aim_lip = t.lip
 	aim_out = t.out
@@ -647,15 +717,19 @@ func _aim_update(delta: float, want: Vector2) -> void:
 	aim_mid = t.get("mid",Vector3.INF)
 	aim_half = float(t.get("half",0.0))
 	aim_ok = t.why == ""
-	# He faces it.
+	var feet: Vector3 = motor.feet
+	# Standing, he turns to it; on the move he keeps his own way.
 	var d := Vector2(aim_at.x-feet.x,aim_at.z-feet.z)
-	if d.length() > 0.2: motor.facing = PilotMotor.facing_of(d.normalized())
+	if d.length() > 0.2 and motor.grounded and motor.speed() < 0.6: motor.facing = PilotMotor.facing_of(d.normalized())
+	# At a run the throw flies flatter.
+	var v: Vector3 = motor.velocity
+	_rise_k = lerpf(1.0,RUN_FLAT,clampf(Vector2(v.x,v.z).length()/PilotMotor.RUN,0.0,1.0))
 	# The arc there, and what it meets on the way.
 	var from := _hand()+Vector3.UP*0.25*s
 	aim_arc = PackedVector3Array()
-	var v := _arc_to(from,aim_at)
-	var g := _gravity()
-	var t_all := _flight_time(from,aim_at,v)
+	var av := _arc_to(from,aim_at,_rise_k)
+	var g := _fly_g()
+	var t_all := _flight_time(from,aim_at,av)
 	var space := get_world_3d().direct_space_state
 	var was := from
 	aim_arc.append(from)
@@ -664,7 +738,7 @@ func _aim_update(delta: float, want: Vector2) -> void:
 		aim_why = "out of reach"
 	for i in range(1,ARC_DOTS+1):
 		var tt := t_all*float(i)/ARC_DOTS
-		var at := from+v*tt+Vector3.DOWN*0.5*g*tt*tt
+		var at := from+av*tt+Vector3.DOWN*0.5*g*tt*tt
 		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(was,at,CarryHost.SOLID_MASK))
 		if not hit.is_empty() and (hit.position as Vector3).distance_to(aim_at) > LAND_IN*s+0.3:
 			aim_arc.append(hit.position)
@@ -676,34 +750,91 @@ func _aim_update(delta: float, want: Vector2) -> void:
 		was = at
 	_show_aim(true)
 
+## What a throw along `look` (flat, the camera's) goes at: a swing point or
+## an anchor post near the look line (within AIM_CONE of it, or AIM_NEAR
+## across it), else the first lip above him along it, else the ground out
+## ahead (a miss). The swing point or post wins while it's within
+## AIM_PREFER of the cone, or when there's no lip on the line.
+func _pick(look: Vector3) -> Dictionary:
+	var s := _size()
+	var feet: Vector3 = study.get("motor").feet
+	var reach := AIM_REACH*s
+	var u := Vector2(look.x,look.z).normalized()
+	var snap := {}
+	var snap_k := INF
+	# Swing points: their lines sampled for the spot nearest the look line.
+	for b: Dictionary in HookLine.all_in(get_tree()):
+		var a: Vector3 = b.a
+		var e: Vector3 = b.b
+		for i in 13:
+			var p := a.lerp(e,float(i)/12.0)
+			var k := _cone_k(feet,u,p,reach)
+			if k < snap_k:
+				var bar := _beam_target(p)
+				if bar.is_empty() or str(bar.piece) != str(b.piece): continue
+				snap_k = k
+				snap = bar
+	# Anchor posts over his head.
+	var holds: Dictionary = study.get("holds")
+	var pieces: Dictionary = study.get("pieces")
+	for id: String in holds:
+		if holds[id] != "anchor" or not pieces.has(id): continue
+		var top := _post_top(pieces[id])
+		if top.y-feet.y < ABOVE*s: continue
+		var k := _cone_k(feet,u,top,reach)
+		if k < snap_k:
+			snap_k = k
+			snap = _post_target(id)
+	if snap_k < AIM_PREFER: return snap
+	# The first top above him along the look line: its near lip.
+	var space := get_world_3d().direct_space_state
+	var d := AIM_MIN*s
+	while d <= reach:
+		var p := feet+look*d
+		var down := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(p.x,feet.y+16.0*s,p.z),Vector3(p.x,feet.y-30.0*s,p.z),CarryHost.SOLID_MASK))
+		if not down.is_empty() and (down.position as Vector3).y-feet.y >= ABOVE*s:
+			return target(p+look*0.5*s,true)
+		d += AIM_STEP*s
+	if snap_k <= 1.0: return snap
+	return target(feet+look*reach*AIM_START,true)
+
+## How far off the look line `p` is, as a share of the cone (0 on it, 1 at
+## its edge; INF behind him, out of reach or under ABOVE).
+func _cone_k(feet: Vector3, u: Vector2, p: Vector3, reach: float) -> float:
+	var s := _size()
+	var w := Vector2(p.x-feet.x,p.z-feet.z)
+	var along := w.dot(u)
+	if along < AIM_MIN*s*0.5 or w.length() > reach*1.15 or p.y-feet.y < ABOVE*s: return INF
+	var across := absf(w.dot(Vector2(-u.y,u.x)))
+	var ang := rad_to_deg(atan2(across,along))
+	return minf(ang/AIM_CONE,across/(AIM_NEAR*s) if along < 4.0*s else INF)
+
 ## Where a throw at `over` (a point under the reticle) goes: {at (where it
 ## comes down), lip (where it'd hook, else INF), out, hold, piece, why (""
 ## when it catches)}.
-func target(over: Vector3) -> Dictionary:
+## `lip_only`: the lip under `over` alone (the swing points and posts were
+## weighed already, `_pick`).
+func target(over: Vector3, lip_only := false) -> Dictionary:
 	var motor: Variant = study.get("motor")
 	var s := _size()
 	var feet: Vector3 = motor.feet
 	var holds: Dictionary = study.get("holds")
 	var pieces: Dictionary = study.get("pieces")
-	var bar := _beam_target(over)
-	if not bar.is_empty(): return bar
-	# An anchor post near the reticle, over his head.
-	var best := ""
-	var best_d := POST_SNAP*s
-	for id: String in holds:
-		if holds[id] != "anchor" or not pieces.has(id): continue
-		var top := _post_top(pieces[id])
-		if top.y-feet.y < ABOVE*s: continue
-		var dd := Vector2(top.x-over.x,top.z-over.z).length()
-		if dd < best_d:
-			best_d = dd
-			best = id
-	if best != "":
-		var top := _post_top(pieces[best])
-		var wrap := top+Vector3.DOWN*POST_WRAP*s
-		var o := Vector3(feet.x-top.x,0.0,feet.z-top.z)
-		o = o.normalized() if o.length() > 0.01 else -_forward()
-		return {"at":wrap+Vector3.UP*0.05,"lip":wrap,"out":o,"hold":"anchor","piece":best,"why":""}
+	if not lip_only:
+		var bar := _beam_target(over)
+		if not bar.is_empty(): return bar
+		# An anchor post near the reticle, over his head.
+		var best := ""
+		var best_d := POST_SNAP*s
+		for id: String in holds:
+			if holds[id] != "anchor" or not pieces.has(id): continue
+			var top := _post_top(pieces[id])
+			if top.y-feet.y < ABOVE*s: continue
+			var dd := Vector2(top.x-over.x,top.z-over.z).length()
+			if dd < best_d:
+				best_d = dd
+				best = id
+		if best != "": return _post_target(best)
 	var space := get_world_3d().direct_space_state
 	var down := space.intersect_ray(PhysicsRayQueryParameters3D.create(over+Vector3.UP*16.0*s,over+Vector3.DOWN*30.0*s,CarryHost.SOLID_MASK))
 	if down.is_empty():
@@ -734,6 +865,16 @@ func target(over: Vector3) -> Dictionary:
 	if h == "" or h == "anchor":
 		return {"at":at,"lip":edge,"out":o,"hold":"","piece":id,"why":"a smooth top: nothing to catch on"}
 	return {"at":at,"lip":edge,"out":o,"hold":h,"piece":id,"why":""}
+
+## A throw at anchor post `id`: wrapped round it under its top.
+func _post_target(id: String) -> Dictionary:
+	var s := _size()
+	var feet: Vector3 = study.get("motor").feet
+	var top := _post_top(study.get("pieces")[id])
+	var wrap := top+Vector3.DOWN*POST_WRAP*s
+	var o := Vector3(feet.x-top.x,0.0,feet.z-top.z)
+	o = o.normalized() if o.length() > 0.01 else -_forward()
+	return {"at":wrap+Vector3.UP*0.05,"lip":wrap,"out":o,"hold":"anchor","piece":id,"why":""}
 
 ## A hook line near the reticle over his head (scripts/rope/hook_line.gd:
 ## a beam's, or anything else that carries one; hold "beam"): the point on
@@ -788,9 +929,10 @@ func _post_top(post: Node3D) -> Vector3:
 			h = ((c as CollisionShape3D).shape as CylinderShape3D).height
 	return post.global_transform*Vector3(0.0,h*0.5,0.0)
 
-# --- The tug ---------------------------------------------------------------------------
+# --- E: the kick, the hop, the tie ------------------------------------------------------
 
-## A caught (or seated) hook: he reaches up the rope and yanks it.
+## E (pad B): on the rope, a kick off the wall (rappelling, a hop); coiled
+## by an anchor post up top, the tie. A set hook needs nothing (no tug).
 func tug() -> void:
 	if swinging or swing_hold: return
 	if climber and rappel:
@@ -811,19 +953,7 @@ func tug() -> void:
 		# are on it).
 		_kick_buf = 0.25
 		return
-	if state == "coiled":
-		_fix()
-		return
-	if state != "caught" and state != "seated": return
-	if climber or hauling or on_top(): return
-	if not _on_foot():
-		_say("Feet on the ground to tug")
-		return
-	tugs += 1
-	state = "tug"
-	_tug_t = 0.0
-	_tug_paid = paid
-	_tug_said = false
+	if state == "coiled": _fix()
 
 func _tug_step(delta: float) -> void:
 	_tug_t += delta
@@ -839,22 +969,13 @@ func _tug_step(delta: float) -> void:
 	if not _tug_said:
 		_tug_said = true
 		tested = true
-		if bad:
-			slips += 1
-			state = "slip"
-			_slide_from = hook_at
-			_fly_t = 0.0
-			_spill_grit()
-			_clank()
-			_say("It slipped: the lip crumbled")
-			return
 		seats += 1
 		_click_play()
 		if fixed: _say("Fixed round the post. At the edge, facing out, %s goes over" % Pad.pick("Space","A"))
 		else: _say("Seated: %s" % {"anchor":"round the post","beam":"round the beam"}.get(hold,"safe to climb"))
 	if _tug_t >= TUG_REACH+TUG_YANK+TUG_HOLD: state = "seated"
 
-## Pulled back over the crumbling lip, then off it.
+## Skittering back over the crumbling lip, then off it.
 func _slip_step(delta: float) -> void:
 	_fly_t += delta
 	var s := _size()
@@ -997,7 +1118,7 @@ func line_at(y: float) -> Vector3:
 	return Vector3(edge.x+edge_out.x*ROPE_OFF*s,y,edge.z+edge_out.z*ROPE_OFF*s)
 
 ## Called by the study before the motor's step: Jump by the hanging rope of
-## a caught or seated hook takes hold of it (instead of the jump).
+## a set hook takes hold of it (instead of the jump).
 func pre_step(jump_down: bool) -> void:
 	var hit := jump_down and not _jump_was
 	_jump_was = jump_down
@@ -1036,23 +1157,33 @@ func _swing_top() -> Vector3:
 ## (off the edge, into the swing).
 func _swing_pre(_hit: bool) -> void:
 	if swing_hold or swinging or not _on_foot(): return
+	_take_swing(true)
+
+## The rope over the beam taken in hand (`swing_hold`): on the ground he's
+## held to its reach; in the air (thrown off an edge) the next step swings
+## him. `near`: only within GRAB_REACH of a rope left hanging. False when
+## out of reach (or on a ledge, a rope, in water).
+func _take_swing(near := false) -> bool:
+	if swing_hold or swinging: return false
 	var motor: Variant = study.get("motor")
+	if climber or motor.rider != null or motor.swimming or motor.on_ledge(): return false
 	var s := _size()
 	var hand := SwingRope.hand_of(motor)
 	var top := _swing_top()
 	if swing_left and _pend != null:
 		var q := Geometry3D.get_closest_point_to_segment(hand,top,_pend.hands)
-		if hand.distance_to(q) > GRAB_REACH*s: return
+		if near and hand.distance_to(q) > GRAB_REACH*s: return false
 	var d := hand.distance_to(top)
 	if d > ROPE_LEN*s:
 		_say("Too far from the beam")
-		return
+		return false
 	swing_hold = true
 	swing_left = false
 	swing_len = maxf(d,SWING_MIN*s)
 	motor._held = true
 	_say("Holding the rope: run off the edge or %s to swing · %s lets go" % [Pad.pick("Space","A"),Pad.pick("Shift","crouch")])
 	_swing_said = true
+	return true
 
 ## Each frame holding a beam's rope (before the motor's step): on the
 ## ground, the slack taken in, kept within the rope's reach of the beam
@@ -1237,9 +1368,6 @@ func _mount(motor: Variant) -> void:
 	_hand_y = [top,top-PULL*s]
 	_hand_side = [1.0,-1.0]
 	_live_begin(motor,y)
-	# An untested bad hook gives this far up the climb (the hands' height).
-	_give_y = INF
-	if bad and not tested: _give_y = top+randf_range(GIVE.x,GIVE.y)*maxf(edge.y-top,0.5*s)
 	if rappel:
 		_hop_t = -1.0
 		_say("Rappelling: %s lowers · %s climbs · %s pushes off · %s slides · %s lets go" % [Pad.pick("S","stick back"),Pad.pick("W","stick up"),Pad.pick("E","B"),Pad.pick("Shift","crouch"),Pad.pick("Space","A")])
@@ -1395,9 +1523,6 @@ func ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dic
 			_hand_side = [_hand_side[1],_hand_side[0]]
 			_pull_t = -1.0
 			out["pulled"] = true
-		if float(_hand_y[0]) >= _give_y or float(_hand_y[1]) >= _give_y:
-			_give(walker,out)
-			return out
 	elif push < -0.35:
 		# Down hand under hand: the hands slide along, swapping as they go.
 		y -= DOWN_SPEED*s*climb_pace*delta
@@ -1452,22 +1577,6 @@ func _haul(walker: PilotMotor, out: Dictionary) -> void:
 	else:
 		walker.climb_time = _climb_time_was
 		_say("No room to stand up there")
-
-## An untested bad hook tears out under him: grit, the hook falls, so does he.
-func _give(walker: PilotMotor, out: Dictionary) -> void:
-	var s := _size()
-	walker.toss(edge_out*0.2*s+Vector3.DOWN*0.5*s)
-	_off_rope()
-	tested = true
-	gave += 1
-	slips += 1
-	state = "slip"
-	_slide_from = hook_at
-	_fly_t = 0.0
-	_spill_grit()
-	_clank()
-	_say("It gave way: the lip crumbled")
-	out["gave"] = true
 
 ## One step rappelling: feet on the wall; stick back lowers him smoothly,
 ## faster the longer it's held, the feet walking (then skimming) the wall;
@@ -1604,7 +1713,6 @@ func _off_rope() -> void:
 	guide_at = Vector3.INF
 	brake_at = Vector3.INF
 	_pull_t = -1.0
-	_give_y = INF
 
 # --- The live rope ----------------------------------------------------------------------
 
@@ -1817,6 +1925,7 @@ func _process(delta: float) -> void:
 		hauling = false
 		study.get("motor").climb_time = _climb_time_was
 		if study.get("motor").grounded: _say("Up and over")
+	_cam_step(delta)
 	match state:
 		"aim": _aim_step(delta)
 		"fly": _fly_step(delta)
@@ -1846,6 +1955,27 @@ func _process(delta: float) -> void:
 			_line_t = -1.0
 			_line.visible = false
 
+## The camera eased out while he whirls and the hook flies (WHIRL_FAR,
+## WHIRL_WIDE), back in after; a host with its own pull keeps it.
+func _cam_step(delta: float) -> void:
+	if study.has_method("_cam_pull") or study.get("cam_far") == null: return
+	var want := 1.0 if state in ["aim","fly","drag"] else 0.0
+	if _cam_k == 0.0 and want == 0.0: return
+	_cam_k = move_toward(_cam_k,want,delta*WHIRL_EASE*(1.0 if want > 0.0 else 0.7))
+	var k := _cam_k*_cam_k*(3.0-2.0*_cam_k)
+	study.set("cam_far",lerpf(1.0,WHIRL_FAR,k))
+	study.set("cam_wide",lerpf(0.0,WHIRL_WIDE,k))
+	# Levelled toward WHIRL_POLAR (an offset on the player's own look,
+	# taken off again as it eases back).
+	var polar := float(study.get("_polar"))
+	if _cam_k > 0.0 and want > 0.0 and _polar_lift == 0.0 and k < 0.05: _polar_room = maxf(WHIRL_POLAR-polar,0.0)
+	var lift := _polar_room*k
+	study.set("_polar",polar+lift-_polar_lift)
+	_polar_lift = lift
+	if _cam_k == 0.0:
+		_polar_lift = 0.0
+		_polar_room = 0.0
+
 ## Pulled up from the top: the hanging end rises to the edge, then coiled.
 func _pull_up_step(delta: float) -> void:
 	var motor: Variant = study.get("motor")
@@ -1858,27 +1988,42 @@ func _pull_up_step(delta: float) -> void:
 	_say("Pulled it up")
 
 func _aim_step(delta: float) -> void:
-	if not _on_foot():
-		state = "coiled"
+	var motor: Variant = study.get("motor")
+	# Whirled on the move, through a jump or off an edge; a ledge, a rider
+	# (a rope, a knock) or the water put it away.
+	if motor.rider != null or motor.on_ledge() or motor.swimming:
 		reset()
 		return
+	_turn_to_aim()
+	# The right stick turns the camera faster while he whirls.
+	var look := Pad.curve(Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down"),1.6)
+	if look.x != 0.0 and not _busy(): study.set("_yaw",float(study.get("_yaw"))-look.x*AIM_STICK*delta)
+	_aim_update(delta)
 	_whirl += delta*TAU*WHIRL_RATE
 	var s := _size()
 	var f := _forward()
 	var r := f.cross(Vector3.UP).normalized()
-	var c := _hand()+Vector3.UP*0.2*s+r*0.1*s
+	var c := _hand()+Vector3.UP*0.35*s+r*0.12*s
 	hook_at = c+(f*cos(_whirl)+Vector3.UP*sin(_whirl)*0.6+r*0.2)*WHIRL_R*s
 	_show_aim(true)
 	if not Input.is_action_pressed(&"walk_throw") and not hold_aim: release()
 
 func _fly_step(delta: float) -> void:
-	var g := _gravity()
+	var g := _fly_g()
 	_fly_t += delta
 	var t := minf(_fly_t,_fly_all)
 	var next := _from+_vel*t+Vector3.DOWN*0.5*g*t*t
 	var space := get_world_3d().direct_space_state
 	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(hook_at,next,CarryHost.SOLID_MASK))
 	paid = maxf(paid,_hand().distance_to(next)*1.03)
+	if _hand().distance_to(next) > ROPE_LEN*_size():
+		# The rope runs out: jerked short, the hook drops.
+		_vel = (_vel+Vector3.DOWN*g*t)*0.15
+		misses += 1
+		_clank()
+		_say("The rope ran out: too far")
+		state = "fall"
+		return
 	if not hit.is_empty() and (hit.position as Vector3).distance_to(aim_at) > 0.35*_size():
 		# Knocked down on the way.
 		var n: Vector3 = hit.normal
@@ -1923,14 +2068,30 @@ func _drag_step(delta: float) -> void:
 		var k := clampf(_fly_t/DRAG_TIME,0.0,1.0)
 		hook_at = _slide_from.lerp(lip,k*k)
 		if k < 1.0: return
-	state = "caught"
-	catches += 1
-	tested = false
+	_clank()
 	bad = hold == "poor" and (force_bad == 1 or (force_bad < 0 and randf() < POOR_BAD))
+	if bad:
+		# A crumbly lip: the hook skitters on it in grit and comes off.
+		misses += 1
+		slips += 1
+		state = "slip"
+		_slide_from = hook_at
+		_fly_t = 0.0
+		_spill_grit()
+		_say("It skittered off the crumbly lip: throw again")
+		return
+	# Set at once: it holds his weight.
+	state = "seated"
+	catches += 1
+	seats += 1
+	tested = true
 	paid = _hand().distance_to(lip)+0.3*_size()
 	_find_edge()
-	_clank()
-	_say("Caught (%s). %s tugs it" % [{"solid":"a solid lip","poor":"a crumbly lip","anchor":"a post","beam":"over the beam"}.get(hold,hold),Pad.pick("E","B")])
+	_click_play()
+	if hold == "beam" and beam_mid != Vector3.INF:
+		# Over a swing point the rope's in his hand: run off into the swing.
+		if _take_swing(): return
+	_say("Caught (%s): %s by the rope climbs" % [{"solid":"a solid lip","poor":"a crumbly lip","anchor":"a post","beam":"over the beam"}.get(hold,hold),Pad.pick("Space","A")])
 
 ## The hook wrapping a beam, `w` 0 (on its top) to 1 (hung under its far
 ## side): round the bar's axis, then dropping a little as it swings in.
@@ -1960,7 +2121,17 @@ func _fall_step(delta: float) -> void:
 			_coil()
 			_say("Reeled in")
 			return
-		_vel += to.normalized()*YANK*s*delta
+		# Pulled in along the rope, quicker as it comes, turned toward his
+		# hand (it never circles him); nothing stops it on its way.
+		var sp := _vel.length()+YANK*s*delta
+		_vel = _vel.lerp(to.normalized()*sp,minf(YANK_TURN*delta,1.0))
+		if _vel.length()*delta >= to.length():
+			_coil()
+			_say("Reeled in")
+			return
+		hook_at += _vel*delta
+		paid = maxf(_hand().distance_to(hook_at),0.0)
+		return
 	var next := hook_at+_vel*delta
 	var space := get_world_3d().direct_space_state
 	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(hook_at+Vector3.UP*0.03,next,CarryHost.SOLID_MASK))
@@ -2058,7 +2229,7 @@ func _place_hook() -> void:
 	var up := Vector3.UP
 	match state:
 		"fly":
-			var v := _vel+Vector3.DOWN*_gravity()*_fly_t
+			var v := _vel+Vector3.DOWN*_fly_g()*_fly_t
 			if v.length() > 0.1: up = -v.normalized()
 		"aim":
 			up = (_hand()-hook_at).normalized() if _hand().distance_to(hook_at) > 0.05 else Vector3.UP
@@ -2266,7 +2437,10 @@ func _arm_pose() -> void:
 	if hauling or on_top(): return
 	match state:
 		"aim":
-			CarryHost._turn_bone(sk,arm,r,deg_to_rad(120.0))
+			# Up at his side, the arm circling with the hook.
+			CarryHost._turn_bone(sk,arm,r,deg_to_rad(118.0+18.0*sin(_whirl)))
+			var fore := sk.find_bone("forearm.R")
+			if fore >= 0: CarryHost._turn_bone(sk,fore,_forward(),deg_to_rad(22.0*cos(_whirl)))
 		"fly":
 			var k := clampf(_fly_t/0.15,0.0,1.0)
 			CarryHost._turn_bone(sk,arm,r,deg_to_rad(lerpf(120.0,60.0,k)))
@@ -2428,7 +2602,7 @@ func _show_aim(on: bool) -> void:
 	_reticle.visible = on
 	_dots.visible = on
 	if not on: return
-	var colour := AIM_OK if aim_ok else AIM_BAD
+	var colour := (AIM_POOR if aim_hold == "poor" else AIM_OK) if aim_ok else AIM_BAD
 	_reticle_mat.albedo_color = Color(colour,0.85)
 	_dots_mat.albedo_color = Color(colour,0.55)
 	var s := _size()
@@ -2500,19 +2674,24 @@ func _size() -> float:
 func _gravity() -> float:
 	return float(ProjectSettings.get_setting("physics/3d/default_gravity",9.8))*HOOK_G
 
+## The thrown hook's flight: the same arc as under `_gravity`, flown
+## FLY_PACE times as fast.
+func _fly_g() -> float:
+	return _gravity()*FLY_PACE*FLY_PACE
+
 ## The arc from `from` to `to` over a top AIM_RISE (plus AIM_RISE_M a metre
-## across) above the higher end.
-func _arc_to(from: Vector3, to: Vector3) -> Vector3:
-	var g := _gravity()
+## across) above the higher end, times `rise_k` (flatter at a run).
+func _arc_to(from: Vector3, to: Vector3, rise_k := 1.0) -> Vector3:
+	var g := _fly_g()
 	var s := _size()
 	var flat := Vector3(to.x-from.x,0.0,to.z-from.z)
-	var top := maxf(from.y,to.y)+AIM_RISE*s+AIM_RISE_M*flat.length()
+	var top := maxf(from.y,to.y)+(AIM_RISE*s+AIM_RISE_M*flat.length())*rise_k
 	var up := sqrt(2.0*g*(top-from.y))
 	var t := up/g+sqrt(2.0*g*(top-to.y))/g
 	return flat/t+Vector3.UP*up
 
 func _flight_time(from: Vector3, to: Vector3, v: Vector3) -> float:
-	var g := _gravity()
+	var g := _fly_g()
 	var top := from.y+v.y*v.y/(2.0*g)
 	return v.y/g+sqrt(2.0*maxf(top-to.y,0.0)/g)
 

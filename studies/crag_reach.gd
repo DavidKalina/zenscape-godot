@@ -855,11 +855,9 @@ func _foot_text() -> String:
 ## the reticle, not him (as studies/wreck_cluster.gd).
 func _want(delta: float) -> Vector2:
 	var want := super._want(delta)
-	# Aiming the hook, tugging it or pulling it up, he stands (the rope
-	# study's).
-	if rope != null and rope.state in ["aim","tug","pull_up"]:
-		rope.aim_steer(want,delta)
-		return Vector2.ZERO
+	# Tying the rope at a post or pulling it up, he stands (the rope
+	# study's); whirling the hook he walks on.
+	if rope != null and rope.state in ["tug","pull_up"]: return Vector2.ZERO
 	if bag == null or bag.act != "aim": return want
 	bag.aim_steer(want,delta)
 	return Vector2.ZERO
