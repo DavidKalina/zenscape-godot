@@ -43,6 +43,17 @@ broke the immersion.
   new body behaviour behind knobs that default off, so `olmec_field` and
   `whole_body_chase` play as before.
 
+## From the user's second play (build 06995f6e)
+
+"Solid!" One fault: he clips through the crag. In
+`docs/design/crag-reach/play/clip-at-rim.png` (git-ignored, on disk in this
+worktree) his body (bottom left) sinks into the rim and the cliff face near
+the rope bridge's end on the main crown: a climb, a mantle or a wall catch
+putting him inside the rock. He must stay outside the land: hands and feet on
+the face, his bulk clear of it.
+Also: since 06995f6e, quitting logs leaked resources (72 meshes, 7 Jolt
+bodies). The pre-made cuts aren't freed at exit. Free them.
+
 ## Rules
 
 - Use his moveset (climb, mantle, jump, drop, leap, wall catch, pounce,
