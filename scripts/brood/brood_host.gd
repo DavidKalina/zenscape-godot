@@ -141,6 +141,10 @@ func _tick(delta: float) -> void:
 	var carry: Variant = study.get("carry")
 	var holding: bool = carry != null and not (carry.held as Dictionary).is_empty()
 	if not woken and holding: wake(carry.held)
+	var lb := _loot_bag()
+	if not woken and not holding and _bag_has_loot(lb):
+		woken = true
+		_wake_from(_bag_at(lb),count,"the loot bag")
 	if holding:
 		wanted = carry.held
 		given_up = {}
@@ -523,6 +527,10 @@ func _goal(carry: Variant) -> Vector3:
 	if _one:
 		if m != null and not bool(study.get("flying")): return m.feet
 		return Vector3.INF
+	var lb := _loot_bag()
+	if wanted.is_empty() and _bag_has_loot(lb):
+		if bool(study.get("flying")): return Vector3.INF
+		return _bag_at(lb)
 	if not wanted.is_empty() and not bool(wanted.lost):
 		if _in_bag(wanted):
 			var bag: Node3D = carry.get("sling")
@@ -530,6 +538,28 @@ func _goal(carry: Variant) -> Vector3:
 		if _at_home(wanted) or wanted == given_up: return Vector3.INF
 		return (wanted.node as Node3D).global_position
 	return Vector3.INF
+
+## The home base's loot bag (--loot-bag: the study's `bag_on`), or null.
+## Loot in it wakes them as a hugged treasure does, and they come to the
+## bag (on his back, lying, or on the plane's rope) and ride it hitched.
+func _loot_bag() -> Node3D:
+	if study == null or study.get("bag_on") != true: return null
+	return study.get("bag") as Node3D
+
+func _bag_has_loot(lb: Node3D) -> bool:
+	return lb != null and not (lb.get("items") as Array).is_empty()
+
+## Where the loot bag is: his feet worn, the sling's belly hitched, else its
+## loose body.
+func _bag_at(lb: Node3D) -> Vector3:
+	var st := str(lb.get("state"))
+	var m: Variant = _motor()
+	if st == "worn" and m != null: return m.feet
+	if st == "hitched":
+		var carry: Variant = study.get("carry")
+		var sl: Node3D = carry.get("sling") if carry != null else null
+		if sl != null: return sl.belly()
+	return (lb.get("loose") as Node3D).global_position
 
 ## Wakes the brood for treasure `t`: WAKE_COUNT guys on the rim spots
 ## nearest it, nearest first, each his turn.

@@ -77,7 +77,12 @@ var bag_r := -1.0
 var bare := false
 const HOOK_R := 0.1
 const IRON := Color("3d3a36")
+## The bare hook: drawn this much bigger than its modelled size, in worn
+## bright iron, with a glint, so it shows in the grass behind the tail.
+const HOOK_LOOK := 1.7
+const HOOK_IRON := Color("a7a294")
 var _hook: Node3D = null
+var _hook_glint: Node3D = null
 ## The rope as a light chain (verlet): ROPE_BITS+1 points from the tie to
 ## the drawn hook, gravity, the air's drag, the turf under it (it lies on
 ## it and drags on it, so in a turn it swings wide and lags).
@@ -207,9 +212,9 @@ func _make_hook() -> void:
 	_hook.name = "Hook"
 	add_child(_hook)
 	var iron := StandardMaterial3D.new()
-	iron.albedo_color = IRON
-	iron.metallic = 0.6
-	iron.roughness = 0.5
+	iron.albedo_color = HOOK_IRON
+	iron.metallic = 0.7
+	iron.roughness = 0.35
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var shank := 0.22
@@ -237,6 +242,12 @@ func _make_hook() -> void:
 	eye.rotation = Vector3(PI*0.5,0.0,0.0)
 	eye.position = Vector3(0.0,0.02,0.0)
 	_hook.add_child(eye)
+	var g: Sprite3D = (load("res://scripts/kit_isle/kit_cache_glint.gd") as GDScript).new()
+	g.name = "HookGlint"
+	g.set_instance_shader_parameter("tint",Color(0.9,0.95,1.0))
+	g.rng.seed = 4421
+	add_child(g)
+	_hook_glint = g
 
 ## The bag's mesh at radius `r` (its frame: floor at the origin, up y): a
 ## cloth bowl up to CLOTH of the belly, rope net over the rest, gathered
@@ -495,7 +506,10 @@ func _draw(pf: Node3D, delta: float) -> void:
 		# the turf and the rope runs down to it.
 		if grounded: end = b.origin+b.basis.y*0.03
 		var lie := Basis(Vector3.FORWARD,PI*0.5) if grounded else Basis.IDENTITY
-		_hook.global_transform = Transform3D(b.basis*lie,end)
+		_hook.global_transform = Transform3D((b.basis*lie).scaled_local(Vector3.ONE*HOOK_LOOK),end)
+		# The glint on its curl, facing up (seen from anywhere above).
+		_hook_glint.global_transform = Transform3D(Basis(Vector3.RIGHT,-PI*0.5),_hook.global_transform*Vector3(0.07,-0.22,0.0)+Vector3.UP*0.03)
+	if _hook_glint != null: _hook_glint.visible = _hook != null and _hook.visible
 	_rope_step(delta,_anchor,end)
 	for i in range(ROPE_BITS):
 		_rope[i].global_transform = _between(_pts[i],_pts[i+1])

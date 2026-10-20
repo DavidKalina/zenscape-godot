@@ -1074,14 +1074,16 @@ func _refill() -> void:
 	if bag != null: bag.set_extra_kg(kg)
 
 ## The bag hit something `speed` m/s hard: it spills, the last loaded
-## first, one at SPILL_SPEED and one more each SPILL_STEP harder. Each goes
+## first, one at SPILL_SPEED (SPILL_GROUND on level turf) and one more each
+## SPILL_STEP harder. Each goes
 ## loose (it tumbles; onto land it comes to rest where he can find it, into
 ## the sky it is lost).
 func _on_bag_hit(speed: float, _at: Vector3, normal: Vector3, vel: Vector3) -> void:
 	if OS.is_debug_build() and speed > 1.0: print("carry: the bag hit something at %.1f m/s" % speed)
 	if strain != null: strain.bag_hit(speed,float(load_now.w))
-	if speed < Weights.SPILL_SPEED or _spill_t < Weights.SPILL_GRACE: return
-	var n := 1+int(floor((speed-Weights.SPILL_SPEED)/Weights.SPILL_STEP))
+	var need := Weights.SPILL_GROUND if normal.y > Weights.SPILL_LEVEL else Weights.SPILL_SPEED
+	if speed < need or _spill_t < Weights.SPILL_GRACE: return
+	var n := 1+int(floor((speed-need)/Weights.SPILL_STEP))
 	var gone := 0
 	while gone < n:
 		var t := _last_hitched()

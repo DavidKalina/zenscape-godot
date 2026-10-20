@@ -13,6 +13,12 @@ const LootBag = preload("res://scripts/carry/loot_bag.gd")
 const BagStudy = preload("res://studies/bag_study.gd")
 const Home = preload("res://studies/wreck_cluster_home.gd")
 const Stretch = preload("res://studies/wreck_cluster_stretch.gd")
+const Glint = preload("res://scripts/kit_isle/kit_cache_glint.gd")
+
+## Each piece's glint (the kit caches' tell): a faint point on its top that
+## catches now and then, so a far or spilled piece shows in the grass. It
+## rides the piece's figure (hidden in the bag, out with it when spilled).
+const GLINT_TINT := Color(1.0,0.9,0.62)
 
 const ROOT := "bag_hitch"
 ## The loot: [id, kind, kg, spot (x, z, world), yaw deg]. 29 kg on the home
@@ -69,6 +75,14 @@ static func build(host: Node3D) -> void:
 		var made := BagStudy.loot_model(str(row[1]))
 		var node: Node3D = made.node
 		spot.add_child(node)
+		var g: Sprite3D = Glint.new()
+		g.name = "Glint"
+		g.set_instance_shader_parameter("tint",GLINT_TINT)
+		g.rng.seed = hash(str(row[0]))
+		g.wait = g.rng.randf_range(0.3,Glint.EVERY.y)
+		# +Z (the face it shows from) up: seen from anywhere above.
+		g.transform = Transform3D(Basis(Vector3.RIGHT,-PI*0.5),Vector3(0.0,float(made.height)*0.9,0.0))
+		node.add_child(g)
 		var tag := Label3D.new()
 		tag.name = "Kg"
 		tag.text = BagStudy._kg_text(float(row[2]))

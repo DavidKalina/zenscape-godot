@@ -58,6 +58,11 @@ const STOW_HOP := 0.6
 ## kg (m, times size); empty it hangs flat (DEPTH_EMPTY of its round depth).
 const SACK_R := 0.12
 const SACK_R_KG := 0.045
+## Hitched on the plane's rope, the sack is drawn (and fits the turf) this
+## much bigger than on his back, so it reads as the plane's cargo past the
+## tail's shadow and any brood riding it (the plane's old net sack was
+## ~0.4 m; a 6.5 kg bag is 0.23 m worn).
+const HITCH_LOOK := 1.6
 const DEPTH_EMPTY := 0.35
 ## Where it rides: its middle this far behind the chest bone, past its
 ## depth, and this far up (m, times size; less its radius times DROOP).
@@ -727,7 +732,7 @@ func _tell_sling() -> void:
 	if c == null or sl == null: return
 	var on := state == "hitched"
 	c.set("bag_kg",kg if on else 0.0)
-	sl.hitch_bag(radius_of(kg+extra_kg)*float(study.get("motor").size) if on else -1.0)
+	sl.hitch_bag(radius_of(kg+extra_kg)*HITCH_LOOK*float(study.get("motor").size) if on else -1.0)
 	c._refill()
 
 ## Hitched: where the sack rides, its floor on the sling's, turned with it.
@@ -736,7 +741,7 @@ func _hitch_xform(r: float, squash: Basis) -> Transform3D:
 	var pf: Node3D = study.get("plane_figure")
 	if sl == null or pf == null: return _sack.global_transform
 	var b: Transform3D = sl.basket_xform(pf)
-	return Transform3D(b.basis*squash,b.origin+b.basis.y*r)
+	return Transform3D(b.basis*squash.scaled(Vector3.ONE*HITCH_LOOK),b.origin+b.basis.y*r*HITCH_LOOK)
 
 ## Is the bag on the ground (or in his hand) within his reach?
 func bag_near() -> bool:
@@ -1232,7 +1237,7 @@ func _place_sack(delta: float) -> void:
 			# Swung over from his back (or the ground) onto the rope end.
 			var k := clampf(_act_t/LIFT_TIME,0.0,1.0)
 			var e := k*k*(3.0-2.0*k)
-			at = Transform3D(_act_from.basis.orthonormalized().slerp(at.basis.orthonormalized(),e).scaled_local(at.basis.get_scale()),
+			at = Transform3D(_act_from.basis.orthonormalized().slerp(at.basis.orthonormalized(),e).scaled_local(_act_from.basis.get_scale().lerp(at.basis.get_scale(),e)),
 				_act_from.origin.lerp(at.origin,e)+Vector3.UP*0.4*s*sin(PI*k))
 		_sack.global_transform = at
 		return
@@ -1245,7 +1250,7 @@ func _place_sack(delta: float) -> void:
 		var k := clampf(_act_t/LIFT_TIME,0.0,1.0)
 		var e := k*k*(3.0-2.0*k)
 		var at := _act_from.origin.lerp(xf.origin,e)+Vector3.UP*0.35*s*sin(PI*k)
-		xf = Transform3D(_act_from.basis.orthonormalized().slerp(xf.basis.orthonormalized(),e).scaled_local(xf.basis.get_scale()),at)
+		xf = Transform3D(_act_from.basis.orthonormalized().slerp(xf.basis.orthonormalized(),e).scaled_local(_act_from.basis.get_scale().lerp(xf.basis.get_scale(),e)),at)
 	if act == "throw" or act == "aim" or act == "lower":
 		# Swung from his back up over his head, behind it at the top of the wind-up.
 		var k := clampf(_act_t/(THROW_TIME*THROW_LET),0.0,1.0)
