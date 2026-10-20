@@ -97,3 +97,28 @@ The user: the plane's own net sack goes. With `--loot-bag` on:
   (already so). The brood ride the hitched bag (task 3's second half).
 - Without `--loot-bag`, the home base plays as before (basket and all).
   Making bags the only way everywhere is a later switch, at lock-in.
+
+## Task 4: the dragged bag looks alive, tuning, the handoff (spec change)
+
+The user, looking at it: the rope is a straight line meeting the turf at a
+right angle and the bag slides behind in line. Make it organic:
+
+- **A simulated rope:** the sling's rope (`ROPE_BITS` segments, now drawn
+  as a straight line plus a sag curve in `scripts/carry/cargo_sling.gd`)
+  becomes a light chain (verlet or similar): gravity, ground contact,
+  drag. On the turf it trails in a curve; turning, it swings wide and lags,
+  then pulls back in line.
+- **A bag that's dragged:** taxiing, it wanders side to side, bounces on
+  bumps, tumbles a little, catches and jerks free; in a turn it swings out.
+  On takeoff the rope peels up off the turf from the plane's end and the
+  bag hops a few times before it swings up under the plane.
+- Keep the bag's physics point (where it is, how hard it hits, spills) as
+  it is; this changes the rope and the bag's motion around that point, so
+  the spill, drop field and vault paths don't change. The old basket
+  (without `--loot-bag`) gets the same rope.
+
+Then, from the trail: the hitched sack reads bigger (not hidden by riders
+or the tail's shadow), the bare hook visible, spilled and far loot easier
+to see (a glint), touchdown not spilling on a normal landing, and loot in
+the bag waking the brood like a hugged treasure does. Then the handoff
+(`docs/design/bag-hitch/handoff.md`).
