@@ -601,11 +601,15 @@ func bag_key() -> void:
 			else: grab()
 
 func _on_foot() -> bool:
-	if study == null or not bool(study.get("walk_ready")): return false
+	if study == null or not bool(study.get("walk_ready")) or bool(study.get("flying")): return false
 	var editor := study.get_node_or_null("LayoutEdit")
 	if editor != null and bool(editor.get("editing")): return false
 	var motor: Variant = study.get("motor")
 	return motor != null and motor.grounded
+
+## Worn in the plane (the host's `flying`; bag_study has none in the air).
+func _aboard() -> bool:
+	return state == "worn" and study != null and bool(study.get("flying"))
 
 ## Is the bag on the ground (or in his hand) within his reach?
 func bag_near() -> bool:
@@ -1015,6 +1019,14 @@ func _process(delta: float) -> void:
 	_r = move_toward(_r,_r_to,delta*0.6)
 	if state != "worn" and absf(_ball.radius-_r*float(motor.size)*0.95) > 0.002: _ball.radius = _r*float(motor.size)*0.95
 	_place_sack(delta)
+	if _aboard():
+		# Worn into the plane (a host with `flying`, the wreck cluster): out
+		# of sight till he's on foot again.
+		_sack.visible = false
+		for strap in _straps: strap.visible = false
+		_prompt.visible = false
+		return
+	if state == "worn" and not buried and not _sack.visible: _sack.visible = true
 	_act_step(delta)
 	_drag_look(delta)
 	_stow_step(delta)
