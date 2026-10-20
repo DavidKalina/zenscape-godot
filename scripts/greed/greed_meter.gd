@@ -37,6 +37,11 @@ var olmec_at := OLMEC_AT
 var value := 0
 var count := 0
 var counted := {}
+## Loot ids whose bagging wakes both at once, whatever the value (the
+## host's `greed_wake_on()`: the heist's main treasure); [] none.
+var wake_on: Array = []
+## Its name for the corner line ("dragon egg").
+var wake_name := ""
 var brood_woken := false
 var olmec_woken := false
 ## The grade's anger now (eases toward `anger()`).
@@ -54,6 +59,10 @@ func setup(h: Node3D) -> void:
 		var m: Vector2i = host.call("greed_marks")
 		brood_at = m.x
 		olmec_at = m.y
+	if host.has_method("greed_wake_on"):
+		wake_on = host.call("greed_wake_on")
+		for p: Dictionary in host.get("loot"):
+			if str(p.get("id","")) in wake_on: wake_name = str(VaultHost.NAMES.get(str(p.get("kind","")),"treasure"))
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--greed-brood="): brood_at = maxi(int(a.get_slice("=",1)),0)
 		elif a.begins_with("--greed-olmec="): olmec_at = maxi(int(a.get_slice("=",1)),0)
@@ -78,7 +87,7 @@ func step(delta: float) -> void:
 			# Its kg tag stood over the empty spot once it's gone.
 			var spot: Node3D = p.get("spot")
 			if spot != null and spot.has_node("Kg"): (spot.get_node("Kg") as Node3D).visible = false
-			_add(int(VaultHost.VALUES.get(str(p.get("kind","")),0)),str(p.get("kind","")))
+			_add(int(VaultHost.VALUES.get(str(p.get("kind","")),0)),str(p.get("kind","")),id in wake_on)
 	shown = move_toward(shown,anger(),GRADE_EASE*delta)
 	_grade()
 	if _shake_t >= 0.0:
@@ -91,15 +100,15 @@ func step(delta: float) -> void:
 				var t := Time.get_ticks_msec()/1000.0
 				cam.position += Vector3(sin(t*43.0),sin(t*37.0+1.0),sin(t*31.0+2.0))*SHAKE*_shake_k*k*k
 
-func _add(worth: int, kind: String) -> void:
+func _add(worth: int, kind: String, wakes_all := false) -> void:
 	value += worth
 	count += 1
 	var a := anger()
 	var wakes: Array[String] = []
-	if not brood_woken and value >= brood_at:
+	if not brood_woken and (value >= brood_at or wakes_all):
 		brood_woken = true
 		wakes.append("brood")
-	if not olmec_woken and value >= olmec_at:
+	if not olmec_woken and (value >= olmec_at or wakes_all):
 		olmec_woken = true
 		wakes.append("olmec")
 	_groan.volume_db = lerpf(GROAN_DB.x,GROAN_DB.y,a)+(WAKE_DB if not wakes.is_empty() else 0.0)
@@ -135,7 +144,8 @@ func _grade() -> void:
 ## The corner line: greed and the next mark.
 func text() -> String:
 	var next := ""
-	if not brood_woken: next = "  ·  the brood wake at %d" % brood_at
+	if not brood_woken and wake_name != "": next = "  ·  take the %s and the isle wakes" % wake_name
+	elif not brood_woken: next = "  ·  the brood wake at %d" % brood_at
 	elif not olmec_woken: next = "  ·  the brood are out  ·  something old wakes at %d" % olmec_at
 	else: next = "  ·  the isle is awake"
 	return "Greed %d%s" % [value,next]

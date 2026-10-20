@@ -75,6 +75,27 @@ const HEIST_VAULT_LOOT := [
 ## elsewhere): a bag too heavy to climb a ledge with (9) still goes up one
 ## thrown, so the vault's ledges are thrown up, then climbed light.
 const HEIST_THROW_KG := 16.0
+## The wake (task 5): the burrows the brood come up out of, in the court
+## round the chest (off the ring, the ramp and the steps) and on vault_s's
+## crown, where the way out runs. Rows as crag_reach_greed.gd BURROWS: [id,
+## mouth (world; its height aims the settle's ray), where]. The three
+## nearest the bag deal the wake (WAKE_HOLES).
+const HEIST_BURROWS := [
+	["burrow_01",Vector3(177.0,25.0,9.0),"the court, west by the drop"],
+	["burrow_02",Vector3(202.0,25.0,-5.0),"the court, north-east"],
+	["burrow_03",Vector3(201.0,25.0,13.0),"the court, south-east"],
+	["burrow_04",Vector3(184.0,34.5,31.0),"vault_s's crown, over the steps"],
+	["burrow_05",Vector3(179.0,34.5,40.0),"vault_s's crown, west, the way out"],
+]
+## The Olmec's staged cliff (heist/olmec_up): the court's own west face,
+## out over the drop, some 17 m from the chest, on the face of a stone
+## block set against it (HEIST_WALLS olmec_wall). Its spot is the lip (the
+## real one found by BodySpawner.fit), its z the way out of the face.
+## He comes up it HEIST_OLMEC_DELAY s after the egg is bagged, in view.
+const HEIST_OLMEC_UP := [Vector3(171.3,24.3,2.07),Vector2(-0.863,-0.505)]
+const HEIST_OLMEC_DELAY := 3.0
+var _olmec_up: Node3D = null
+
 const HEIST_POSTS := [
 	["post_01",Vector3(21.6,30.4,-26.9),"landing crown over terrace_n (rappel)"],
 	["post_02",Vector3(187.0,34.6,-15.6),"vault_n rim over the court (rappel in)"],
@@ -121,6 +142,10 @@ const STEP_FOOT := 20.0
 ## below before the lip (the gate's did). The block gives a sheer face.
 const HEIST_WALLS := [
 	["wall_01",Vector3(71.8,33.0,-45.7),Vector2(-0.984,-0.179),8.0,4.0,14.0],
+	# The Olmec's staged cliff (heist/olmec_up): the court's west face is
+	# a floating unit's, undercut down its keel; he hung on it and walked
+	# in under the court. The block gives him a sheer 18 m face to climb.
+	["olmec_wall",Vector3(172.6,24.3,2.83),Vector2(-0.863,-0.505),8.0,4.0,18.0],
 ]
 
 func greed_root() -> String:
@@ -133,15 +158,48 @@ func greed_posts() -> Array:
 	return HEIST_POSTS
 
 func greed_burrows() -> Array:
-	return []
+	return HEIST_BURROWS
 
-## The meter's marks (brood, Olmec): one past the way in's loot, so the
-## way in stays calm however much of it he bags and the vault's take
-## wakes the isle. --greed-brood= / --greed-olmec= still win.
+## The wake's trigger: bagging the main treasure wakes the brood and the
+## Olmec at once (greed_meter.gd `wake_on`).
+func greed_wake_on() -> Array:
+	return ["treasure"]
+
+## The meter's marks (brood, Olmec): one past everything but the main
+## treasure, so only the treasure wakes the isle (`greed_wake_on`): the
+## way in and the vault's other pieces add greed and darken the light,
+## but stay calm. --greed-brood= / --greed-olmec= still win.
 func greed_marks() -> Vector2i:
 	var w := 0
-	for row: Array in HEIST_LOOT: w += int(VaultHost.VALUES.get(str(row[1]),0))
+	for row: Array in greed_loot():
+		if str(row[0]) in greed_wake_on(): continue
+		w += int(VaultHost.VALUES.get(str(row[1]),0))
 	return Vector2i(w+1,w+1)
+
+## The meter's marks: the brood wake at once (the crag's); the Olmec's
+## grinding comes HEIST_OLMEC_DELAY s on, up his staged cliff
+## (`olmec_cliff_pick`).
+func greed_woke(what: String) -> void:
+	super.greed_woke(what)
+	if what == "olmec" and olmec_spawns == 0: _olmec_due = HEIST_OLMEC_DELAY
+
+## His first entrance up the staged cliff (heist/olmec_up, fitted to the
+## real face); after that (fallen, stuck, gone), the crag's pick.
+func olmec_cliff_pick() -> Dictionary:
+	if olmec_spawns > 0 or _olmec_up == null or not is_instance_valid(_olmec_up): return super.olmec_cliff_pick()
+	var xf := _olmec_up.global_transform
+	var way := Vector2(xf.basis.z.x,xf.basis.z.z).normalized()
+	var fitted: Array = _spawner.fit(xf.origin,way)
+	if fitted.is_empty():
+		push_warning("heist: heist/olmec_up fits no face (%s); the crag's pick" % _spawner.fit_why)
+		return super.olmec_cliff_pick()
+	var lip: Vector3 = fitted[0]
+	var out: Vector2 = fitted[1]
+	var below: float = _spawner.face_below(lip,out,OLMEC_BELOW)
+	var clean := _face_clean(get_world_3d().direct_space_state,lip,out,below)
+	if not clean: push_warning("heist: heist/olmec_up's face isn't clean at %s: he may haul out under the lip" % lip)
+	var d := Vector2(lip.x-motor.feet.x,lip.z-motor.feet.z).length()
+	return {"lip":lip,"out":out,"crown":"olmec_up","seen":_spawner.in_view(lip),"far":d,"below":below,"clean":clean,"score":0.0}
 
 ## The end screen's name for the place.
 func greed_place() -> String:
@@ -212,14 +270,16 @@ func _build_art() -> void:
 
 ## The greed run, as the crag's (crag_reach_greed.gd `build_all`): the
 ## bag, the loot, the rope and its posts, the greed meter, the run's keep,
-## clock, end screen and restart, the hands hint; then the swing points and
-## the climbing walls. No burrows yet (the wake, a later step).
+## clock, end screen and restart, the burrows and brood, the hands hint;
+## then the swing points, the climbing walls, the court's way out and the
+## Olmec's staged cliff.
 func _add_life() -> void:
 	Greed.build_all(self)
 	if bag != null: bag.throw_kg = HEIST_THROW_KG
 	_build_swings()
 	_build_walls()
 	_build_vault_way()
+	_build_olmec_up()
 	_build_hands_hint()
 
 ## The swing points, each named heist/<id>: a move or turn in the world
@@ -272,6 +332,20 @@ func _build_walls() -> void:
 		body.add_child(drawn)
 		holder.add_child(body)
 		Layout.track(called,body,"piece",coded)
+
+## The Olmec's staged cliff, a token named heist/olmec_up (F4 moves and
+## turns it; its z the way out of the face).
+func _build_olmec_up() -> void:
+	var called := "heist/olmec_up"
+	if Layout.deleted(called): return
+	var out: Vector2 = (HEIST_OLMEC_UP[1] as Vector2).normalized()
+	var zb := Vector3(out.x,0.0,out.y)
+	var coded := Transform3D(Basis(Vector3.UP.cross(zb),Vector3.UP,zb),HEIST_OLMEC_UP[0])
+	_olmec_up = Node3D.new()
+	_olmec_up.name = "OlmecUp"
+	_olmec_up.transform = Layout.xform(called,coded)
+	add_child(_olmec_up)
+	Layout.track(called,_olmec_up,"token",coded)
 
 ## The landing's top: the crown less three ledges' rises.
 static func step_top(rises_left: int) -> float:
