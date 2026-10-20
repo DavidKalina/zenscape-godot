@@ -43,7 +43,12 @@ extends "res://scripts/enemies/enemy.gd"
 ##   "leap"    the throw: a ballistic arc (`leap_up` m over the takeoff, a
 ##             jump's higher by `jump_arc` of its length) to that floor, its
 ##             feet ray-cast along the arc; a wall on the way stops it dead
-##             and it drops.
+##             and it drops. With `leap_catch` 1 (off by default; the crag
+##             reach's hunt sets it) a wall met mid-leap whose lip is within
+##             `climb_max` over its feet is caught: it slaps onto the face
+##             and goes to "climb" (`_catch_wall`); and hunting at an edge
+##             with no landing across, him beyond, it throws itself at a face
+##             across the gap up to `catch_gap` Hh off (`_wall_leap`).
 ##   "land"    a heavy landing, squashed for `land` s; dust, a quake and a
 ##             shockwave (`_shock`) running out along the ground: a walker
 ##             on the ground as the front passes him is thrown back and up,
@@ -119,6 +124,13 @@ var climbs := 0
 var leaps := 0
 ## Of the leaps, those ledge to ledge.
 var jumps := 0
+## `leap_catch`: walls caught mid-leap, leaps thrown at a face across a gap.
+var wall_catches := 0
+var wall_leaps := 0
+## Why the last wall leap looked for wasn't taken (for drivers and F1).
+var wall_leap_why := ""
+## Why the last wall met mid-leap wasn't caught ("" caught).
+var catch_why := ""
 var listens := 0
 ## Shockwaves sent, and those that threw the walker.
 var shocks := 0
@@ -363,6 +375,11 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# (not over him: he climbs to you) he smashes through
 		# (scripts/enemies/olmec_breach.gd, his `breacher`), not round.
 		"breach":0,
+		# Crag reach Olmec hunt: `leap_catch` 1, a wall met mid-leap is
+		# caught and climbed when its lip is within `climb_max` (0: it
+		# stops dead and drops, as before); hunting, a face across a gap
+		# with no landing, at most `catch_gap` Hh off flat, is leapt at.
+		"leap_catch":0,"catch_gap":9.0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -1389,6 +1406,149 @@ func _arc_clear(to: Vector3, kind: String) -> bool:
 		t += ARC_DT
 	return false
 
+## `leap_catch`: a wall met mid-leap (flying along `way`, flat) caught. The
+## face found by rays along its way at its chest, hips, knee and shoulders
+## (from its back, so a bulk stopped short still finds it), turned to it;
+## its lip by a ray down past the face from `climb_max` over its feet,
+## room over it. Caught: set on the face `standoff` off, faced to it,
+## climbing (a lip under its feet' step, lowered under it, so it mantles at
+## once); dust and stones off the face where it struck, a quake. False:
+## off, no face, or the lip out of reach (it drops, as before).
+func _catch_wall(way: Vector3) -> bool:
+	if float(knobs.leap_catch) < 0.5: return false
+	var dir := way.normalized() if way.length() > 0.1 else _forward3()
+	var hit := {}
+	# Its chest first, then up and down its height (the face its bulk met).
+	var ups: Array[float] = [neck_h*0.55]
+	var u := 0.2
+	while u <= _bulk_top():
+		ups.append(u)
+		u += hh*0.25
+	for up: float in ups:
+		var from := position+Vector3.UP*up-dir*(length*0.5)
+		var h := _cast(from,from+dir*(length+hh*1.5))
+		if h.is_empty(): continue
+		var hn := h.normal as Vector3
+		if absf(hn.y) > 0.5 or Vector3(hn.x,0.0,hn.z).normalized().dot(dir) > -0.3: continue
+		hit = h
+		break
+	if hit.is_empty():
+		catch_why = "no face along its way at %s" % position.round()
+		return false
+	var n := hit.normal as Vector3
+	n = Vector3(n.x,0.0,n.z).normalized()
+	var face := hit.position as Vector3
+	var past := face-n*float(knobs.lip_in)
+	var top := _cast(Vector3(past.x,position.y+float(knobs.climb_max),past.z),Vector3(past.x,position.y-neck_h*0.5,past.z))
+	if top.is_empty() or (top.normal as Vector3).y < 0.6:
+		catch_why = "no lip within climb_max over %s" % position.round()
+		return false
+	var lip := top.position as Vector3
+	if not _cast(lip+Vector3.UP*0.1,lip+Vector3.UP*neck_h*0.5).is_empty():
+		catch_why = "no room over the lip at %s" % lip.round()
+		return false
+	catch_why = ""
+	var feet_y := minf(position.y,lip.y-float(knobs.step)*1.2)
+	position = Vector3(face.x,feet_y,face.z)+n*(length*0.5+float(knobs.standoff))
+	facing = PilotMotor.facing_of(-Vector2(n.x,n.z).normalized())
+	rotation.y = facing
+	vel = Vector3.ZERO
+	grounded = false
+	_climb_from = position.y
+	_lip_y = INF
+	_hang = false
+	_haul_t = 0.0
+	climbs += 1
+	wall_catches += 1
+	_go("climb")
+	field.sound(&"body_grip",face)
+	field.sound(&"body_land",face)
+	quake = maxf(quake,0.35)
+	var at := Vector3(face.x,position.y+neck_h*0.7,face.z)
+	Dust.puff(field,at,hh*1.6*_tell_k(),n)
+	Dust.rocks(field,at,n,5,hh*0.12*_tell_k())
+	return true
+
+## `leap_catch`, hunting at an edge with no landing across (`_hunt_edge`),
+## him beyond and up off its feet: a face across the gap along `fwd`, at
+## most `catch_gap` Hh off flat (and no farther than him), looked for at
+## its own feet' height and up to three head heights under, its knee and
+## chest both on it, its lip within `climb_max` over where it would meet
+## it; the arc there clear (nothing met but that face). It winds up and
+## throws itself at the face (a jump's arc), to catch it (`_catch_wall`).
+func _wall_leap(fwd: Vector3, goal: Vector3) -> bool:
+	if float(knobs.leap_catch) < 0.5 or state != "chase": return false
+	var step := float(knobs.step)
+	if goal.y <= position.y-hh*3.0: return false
+	var far := Vector2(goal.x-position.x,goal.z-position.z).length()
+	# The rim along its way (where its floor stops).
+	var rim := -1.0
+	var d := 0.0
+	while d <= length*0.5+float(knobs.look)+1.0:
+		if _floor(position+fwd*d,step,step*2.0) == -INF:
+			rim = d
+			break
+		d += 0.25
+	if rim < 0.0:
+		wall_leap_why = "no rim"
+		return false
+	var most := minf(float(knobs.catch_gap)*hh,far)
+	wall_leap_why = "no face within %.1f m" % most
+	for down: float in [0.0,hh,hh*2.0,hh*3.0]:
+		var feet_y := position.y-down
+		var hit := {}
+		for up: float in [neck_h*0.55,step+0.1]:
+			var from := Vector3(position.x,feet_y+up,position.z)+fwd*(rim+0.3)
+			var h := _cast(from,from+fwd*maxf(most-rim,0.5))
+			var hn := (h.normal as Vector3) if not h.is_empty() else Vector3.UP
+			if h.is_empty() or absf(hn.y) > 0.5 or Vector3(hn.x,0.0,hn.z).normalized().dot(fwd) > -0.4:
+				hit = {}
+				break
+			if hit.is_empty(): hit = h
+		if hit.is_empty(): continue
+		var n := hit.normal as Vector3
+		n = Vector3(n.x,0.0,n.z).normalized()
+		var face := hit.position as Vector3
+		var past := face-n*float(knobs.lip_in)
+		var top := _cast(Vector3(past.x,feet_y+float(knobs.climb_max),past.z),Vector3(past.x,feet_y+step,past.z))
+		if top.is_empty() or (top.normal as Vector3).y < 0.6:
+			wall_leap_why = "a face %.1f m off, its lip past climb_max" % Vector2(face.x-position.x,face.z-position.z).length()
+			continue
+		var to := Vector3(face.x,feet_y,face.z)+fwd*0.6
+		if not _wall_arc(to,face):
+			wall_leap_why = "a face %.1f m off, the arc there blocked" % Vector2(face.x-position.x,face.z-position.z).length()
+			continue
+		wall_leap_why = ""
+		_leap_to = to
+		leap_kind = "jump"
+		wall_leaps += 1
+		_go("windup")
+		field.sound(&"body_windup",position)
+		return true
+	return false
+
+## Whether the jump's arc to `to` (just into a face at `face`) meets that
+## face first: its feet rays along it hitting nothing till a steep face
+## within ARC_LAND (flat) of `face`, its bulk swept into nothing short of
+## there.
+func _wall_arc(to: Vector3, face: Vector3) -> bool:
+	var throw := _throw(position,to,"jump")
+	var v: Vector3 = throw[0]
+	var p := position
+	var g := float(knobs.leap_gravity)
+	var t := 0.0
+	var near := func(q: Vector3) -> bool: return Vector2(q.x-face.x,q.z-face.z).length() <= ARC_LAND+length
+	while t < float(throw[1])+0.5:
+		v.y -= g*ARC_DT
+		var next := p+v*ARC_DT
+		var hit := _cast(p+Vector3.UP*0.05,next)
+		if not hit.is_empty():
+			return absf((hit.normal as Vector3).y) < 0.5 and near.call(hit.position)
+		if _bulk_sweep(p,next) < 1.0: return near.call(next)
+		p = next
+		t += ARC_DT
+	return false
+
 func _fall() -> void:
 	grounded = false
 	vel = Vector3(vel.x,minf(vel.y,0.0),vel.z)
@@ -2365,6 +2525,7 @@ func _hunt_edge(fwd: Vector3, goal: Vector3) -> void:
 		_go("windup")
 		field.sound(&"body_windup",position)
 		return
+	if _wall_leap(fwd,goal): return
 	if _chase_plan(goal): return
 	var way := _skirt(goal)
 	if way != INF:
@@ -3172,10 +3333,11 @@ func _move(delta: float) -> void:
 		var bulk := _bulk_sweep(position,to) if state == "leap" and leap_kind != "drop" else 1.0
 		if bulk < 1.0 and (hit.is_empty() or bulk < position.distance_to(hit.position)/maxf(position.distance_to(to),0.0001)):
 			position = position.lerp(to,bulk)
+			var way := Vector3(vel.x,0.0,vel.z)
 			vel.x = 0.0
 			vel.z = 0.0
 			bulk_stops += 1
-			if state == "leap": _go("fall")
+			if state == "leap" and not _catch_wall(way): _go("fall")
 		elif not hit.is_empty():
 			var n := hit.normal as Vector3
 			if n.y > 0.5 and vel.y <= 0.0:
@@ -3184,9 +3346,10 @@ func _move(delta: float) -> void:
 			else:
 				# A wall on the way: it stops dead against it and drops.
 				position = (hit.position as Vector3)+Vector3(n.x,0.0,n.z)*0.1-Vector3.UP*0.05
+				var way := Vector3(vel.x,0.0,vel.z)
 				vel.x = 0.0
 				vel.z = 0.0
-				if state == "leap": _go("fall")
+				if state == "leap" and not _catch_wall(way): _go("fall")
 		else: position = to
 		if position.y < field.lost:
 			gone = true
