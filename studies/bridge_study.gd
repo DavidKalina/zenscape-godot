@@ -160,7 +160,44 @@ func _build_bridge(id: String, a_world: Vector3, b_world: Vector3, seed_value: i
 		holder.add_child(anchor)
 	bridges[id] = {"live":live,"deck":deck,"holder":holder,"a":a,"b":b,"span":span,"shapes":shapes}
 	_lay_deck(bridges[id])
-	if id in LOADED: bridges[id]["load"] = BridgeLoad.on(live,id.replace("_"," "),seed_value)
+	if id in LOADED:
+		var held: Node = BridgeLoad.on(live,id.replace("_"," "),seed_value)
+		held.lip = SET_BACK
+		held.snapped.connect(_on_snap.bind(id))
+		held.mended.connect(_on_mend.bind(id))
+		bridges[id]["load"] = held
+
+## Snapped: its walk boxes go, so all on the deck falls (the brood into the
+## void, gone; the bag and loose loot after them).
+func _on_snap(_t: float, id: String) -> void:
+	for shape: CollisionShape3D in bridges[id].shapes: shape.disabled = true
+	# The brood standing on it drop (they'd stand on air till they next
+	# stepped); those clinging to him on it are flung off by the jolt.
+	if brood == null: return
+	var held: Node = bridges[id].load
+	var feet := global_transform*motor.feet
+	var his: bool = held.deck_spot(feet) != Vector3.INF
+	for g: RefCounted in brood.guys:
+		if g.state == "cling" and his:
+			var out: Vector3 = (brood.global_transform*g.mid)-feet
+			out.y = 0.0
+			out = out.normalized() if out.length() > 0.01 else Vector3.RIGHT
+			g.shake(out*1.8+Vector3.DOWN*0.5,randf_range(4.0,9.0))
+			continue
+		if not g.state in ["walk","climb","mantle","haul","fall"]: continue
+		if held.deck_spot(brood.global_transform*g.feet) == Vector3.INF: continue
+		g.shake(Vector3.DOWN+held.global_basis*held.bridge.across*randf_range(-1.0,1.0),randf_range(4.0,9.0))
+
+func _on_mend(id: String) -> void:
+	for shape: CollisionShape3D in bridges[id].shapes: shape.disabled = false
+	bridges[id]["laid_still"] = false
+
+## Placed anywhere (a respawn after a fall, R, a station key), a snapped
+## bridge is whole again.
+func place(at: Vector3, face: Vector2) -> void:
+	super.place(at,face)
+	for id: String in bridges:
+		if bridges[id].has("load"): bridges[id]["load"].mend()
 
 ## The deck's resting top at `t` along the bridge from `a` to `b`.
 static func _deck_point(a: Vector3, b: Vector3, span: float, t: float) -> Vector3:
@@ -316,4 +353,4 @@ func station_near(at: Vector3) -> int:
 	return 4 if at.x >= FAR_LIP else 2
 
 func _hint_text() -> String:
-	return "Bridge study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag · hold LMB or T (pad RT) aim a throw (8 kg or under) · V shove · the brood wake out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off · the long bridge to the far cliff, the short one beside it · fall into the void: back at the near end · 1 start, 2 near end, 3 short bridge, 4 far end, 5 drop pad · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Bridge study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag · hold LMB or T (pad RT) aim a throw (8 kg or under) · V shove · the brood wake out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off · the long bridge to the far cliff, the short one beside it · held past its limit the long bridge snaps · fall into the void: back at the near end (the bridge mended) · 1 start, 2 near end, 3 short bridge, 4 far end, 5 drop pad · R start · F1 numbers · F4 world view · Esc mouse"
