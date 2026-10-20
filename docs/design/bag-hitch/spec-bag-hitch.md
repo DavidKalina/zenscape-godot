@@ -82,3 +82,18 @@ One trunk, no lanes:
 - Play builds use a throwaway save (`--ledger=/tmp/...`); never write the
   user's real ledger or layouts.
 - Landing turf on the home isle stays clear (AGENTS.md).
+
+## No basket, only bags (spec change)
+
+The user: the plane's own net sack goes. With `--loot-bag` on:
+
+- **No basket.** With nothing hitched, the plane trails a bare rope with a
+  hook at its end (parked, it lies on the turf behind the plane). Hitch a
+  bag and that bag is the cargo.
+- **Hand-carried treasures** (the hugged ones) go into the hitched bag
+  (drawn in it, its kg added). With no bag hitched, the press at the rope
+  is refused with "hitch a bag first".
+- Spills, the drop field and the vault go by what's in the hitched bag
+  (already so). The brood ride the hitched bag (task 3's second half).
+- Without `--loot-bag`, the home base plays as before (basket and all).
+  Making bags the only way everywhere is a later switch, at lock-in.
