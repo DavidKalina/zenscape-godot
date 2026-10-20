@@ -389,6 +389,11 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# and throws himself off on a higher arc (up to `down_arc` Hh) when
 		# a lip or a ruin on the rim is in the plain arc's way.
 		"down_to":0,"down_reach":5.5,"down_arc":2.4,
+		# Olmec reach: `skirt_hold` 1, going round a wall in the hunt, the
+		# skirt's time runs only as he walks it (not while he plants and
+		# turns), and the next skirt round the same thing keeps its side,
+		# so he goes round a ruin instead of bumping it on a loop.
+		"skirt_hold":0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -2083,6 +2088,8 @@ const CHASE_TURN := 0.8
 ## it holds one (s).
 const SKIRT := [0.7,1.2,1.8,2.4]
 const SKIRT_FOR := 1.2
+## `skirt_hold`: a skirt that ended this recently (s) keeps its side.
+const SKIRT_KEEP := 4.0
 
 ## What it sees (scripts/enemies/body_sight.gd), made once it is whole.
 var sight: RefCounted = null
@@ -2101,6 +2108,11 @@ var _seek_from := 0.0
 var _swat_hit := false
 var _skirt_way := 0.0
 var _skirt_t := 0.0
+## `skirt_hold`: the side (+1/-1) the last skirt took, and when it ended.
+var _skirt_side := 0.0
+## The skirt is round a wall (from `_hunt_wall`), not along a rim.
+var _skirt_wall := false
+var _skirt_end := -INF
 ## Counted, for its study's HUD and checks.
 var spots := 0
 var pounces := 0
@@ -2550,7 +2562,11 @@ func _windup_s() -> float:
 func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 	var to := Vector2(goal.x-position.x,goal.z-position.z)
 	if _skirt_t > 0.0:
-		_skirt_t -= delta
+		# `skirt_hold`: round a wall, the skirt's clock runs as he walks it
+		# (a quarter as fast while he plants and turns onto it).
+		var walked := float(knobs.skirt_hold) < 0.5 or not _skirt_wall or Vector2(vel.x,vel.z).length() > 0.5
+		_skirt_t -= delta if walked else delta*0.25
+		if _skirt_t <= 0.0: _skirt_end = _clock
 		_heading = _skirt_way
 	elif to.length() > 0.05: _heading = PilotMotor.facing_of(to.normalized())
 	if _grab_try(delta,goal): return
@@ -2582,6 +2598,10 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 	var flat := Vector2(vel.x,vel.z).move_toward(want,float(knobs.accel)*delta)
 	vel.x = flat.x
 	vel.z = flat.y
+	if _pinned(delta,flat.length()):
+		# His bulk walks into what his rays don't see (a ruin's arch, its
+		# overhang): a wall all the same.
+		_hunt_wall({"position":position+fwd*(length*0.5),"normal":-fwd,"side":true},goal)
 
 ## A wall in the way of the hunt: climbed if its goal is up over its feet
 ## (or there is no way round), else skirted.
@@ -2604,7 +2624,7 @@ func _hunt_wall(hit: Dictionary, goal: Vector3) -> void:
 	# City breaks round 2: a wall past his climb, him beyond it (through a
 	# gate he broke open): a route to him, as at an edge (`chase_routes`).
 	if top == INF and _chase_plan(goal): return
-	var way := _skirt(goal)
+	var way := _skirt(goal,true)
 	if way != INF:
 		_skirt_way = way
 		_skirt_t = SKIRT_FOR
@@ -2643,18 +2663,59 @@ func _stuck() -> void:
 		rest()
 		_go("listen")
 
+## `skirt_hold`: walking on, pushed back by his bulk with no ground made
+## (PIN_FOR s, under PIN_GAIN m), he is pinned on something.
+const PIN_FOR := 0.5
+const PIN_GAIN := 0.4
+var _pin_t := 0.0
+var _pin_from := Vector3.INF
+## Times he found himself pinned (for checks).
+var pins := 0
+func _pinned(delta: float, speed: float) -> bool:
+	if float(knobs.skirt_hold) < 0.5 or speed < 0.5 or _clock-_pushed_at > 0.1:
+		_pin_t = 0.0
+		_pin_from = Vector3.INF
+		return false
+	if _pin_from == Vector3.INF or position.distance_to(_pin_from) > PIN_GAIN:
+		_pin_from = position
+		_pin_t = 0.0
+		return false
+	_pin_t += delta
+	if _pin_t < PIN_FOR: return false
+	_pin_t = 0.0
+	_pin_from = Vector3.INF
+	pins += 1
+	return true
+
 ## A way off the way to `goal` with no wall near and floor ahead (the one
 ## nearest the goal's way), INF none.
-func _skirt(goal: Vector3) -> float:
+func _skirt(goal: Vector3, wall := false) -> float:
 	var to := Vector2(goal.x-position.x,goal.z-position.z)
 	var base := PilotMotor.facing_of(to.normalized()) if to.length() > 0.05 else facing
-	for a: float in SKIRT:
-		for s: float in [1.0,-1.0]:
-			var way := wrapf(base+a*s,-PI,PI)
-			var dir := _way3(way)
-			if not _wall_along(dir,length*0.5+float(knobs.look)+1.5,true).is_empty(): continue
-			if _floor(position+dir*(length*0.5+float(knobs.look)),float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF: continue
-			return way
+	var sides := [1.0,-1.0]
+	# `skirt_hold`: soon after a skirt, the same side first (round it, not
+	# back and forth across its face).
+	var hold := wall and float(knobs.skirt_hold) >= 0.5 and _skirt_side != 0.0 and _clock-_skirt_end < SKIRT_KEEP
+	var tries := []
+	var hold_bulk := wall and float(knobs.skirt_hold) >= 0.5
+	if hold:
+		# Its side at every angle first; the other only once it's out of ways.
+		for s: float in [_skirt_side,-_skirt_side]:
+			for a: float in SKIRT: tries.append(a*s)
+	else:
+		for a: float in SKIRT:
+			for s: float in sides: tries.append(a*s)
+	for off: float in tries:
+		var way := wrapf(base+off,-PI,PI)
+		var dir := _way3(way)
+		if not _wall_along(dir,length*0.5+float(knobs.look)+1.5,true).is_empty(): continue
+		if _floor(position+dir*(length*0.5+float(knobs.look)),float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF: continue
+		# `skirt_hold`, round a wall: his bulk gets on that way too (not
+		# only his rays).
+		if hold_bulk and _bulk_sweep(position+Vector3.UP*0.1,position+Vector3.UP*0.1+dir*(length*0.5+float(knobs.look))) < 0.5: continue
+		_skirt_side = signf(off)
+		_skirt_wall = wall
+		return way
 	return INF
 
 ## Suspicious: it stops and turns to where it glimpsed him.

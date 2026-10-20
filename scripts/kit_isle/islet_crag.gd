@@ -713,8 +713,12 @@ func _landmark(root: Node3D) -> void:
 		return top_y(q,clampf(q.length()/maxf(rim_at(q.angle()),0.01),0.0,1.0))
 	for tries in 6:
 		var id_name: String = TREES[lr.randi()%TREES.size()] if want == 1 else RUINS[lr.randi()%RUINS.size()]
-		var piece: Node3D = authored.make(id_name,lr.randi(),lr.randf_range(0.55,0.95))
+		var piece_seed := lr.randi()
+		var piece_worn := lr.randf_range(0.55,0.95)
+		var piece: Node3D = authored.make(id_name,piece_seed,piece_worn)
 		if piece == null: continue
+		# How to build it again (a ruin broken in play: crag_reach --olmec).
+		piece.set_meta("landmark_spec",[id_name,piece_seed,piece_worn])
 		var box: AABB = authored.drawn_box(piece) if want == 2 else authored.piece_box(piece)
 		var span := maxf(box.size.x,box.size.z)
 		if want == 2 and span > R*1.25:

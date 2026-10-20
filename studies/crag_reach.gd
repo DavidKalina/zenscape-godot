@@ -754,7 +754,7 @@ const OLMEC_AGAIN := 6.0
 ## His knobs here: the whole body's hunt (as studies/olmec_field.gd's
 ## whole Olmec), relentless, and the wall catch (headless_body.gd
 ## `leap_catch`).
-const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0}
+const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"skirt_hold":1.0}
 
 ## Seconds after the start (and after R) the Olmec comes; -1 never (no flag).
 var olmec_after := -1.0
@@ -842,6 +842,14 @@ func _wire_breaks() -> void:
 	add_child(kit_breaks)
 	var n := 0
 	var by := {}
+	# The ruins the islets and terraces stand on their turf (islet_crag.gd
+	# `_landmark`, built by id and seed): broken as the reach's own are.
+	for node: Node in art.find_children("Landmark","Node3D",true,false):
+		if not node.has_meta("landmark_spec") or node.has_meta("crag_break"): continue
+		var lm: Array = node.get_meta("landmark_spec")
+		var lm_kind: String = BreakKinds.KIND_OF.get(str(lm[0]),"")
+		if lm_kind == "": continue
+		node.set_meta("crag_break",[lm_kind,func() -> Node3D: return RuinKit.piece(str(lm[0]),int(lm[1]),float(lm[2]))])
 	for node: Node in art.find_children("*","Node3D",true,false):
 		if not node.has_meta("crag_break"): continue
 		var spec: Array = node.get_meta("crag_break")
