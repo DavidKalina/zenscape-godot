@@ -887,6 +887,11 @@ const OLMEC_AGAIN := 6.0
 ## `leap_catch`). `run_up`: in the chase he sets off at a walk and builds
 ## into his run over that many s of fairly straight going.
 const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"dive":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0,"run_up":4.0}
+
+## A study's own tune of a new Olmec, body `b` and head `h` (none here).
+func tune_olmec(_b: Node3D, _h: Node3D) -> void:
+	pass
+
 ## Never stuck: no OLMEC_GAIN m nearer you and no OLMEC_ROAM m from where he
 ## was for OLMEC_STUCK s (you standing
 ## within OLMEC_MOVED m of where that began) and more than OLMEC_CLOSE m
@@ -1274,6 +1279,7 @@ func spawn_olmec() -> Node3D:
 	var b: Node3D = enemies.add(OlmecTarget,lip,-out,knobs)
 	var h: Node3D = enemies.add(InhalerHead,lip,-out,{})
 	b.make_whole(h)
+	tune_olmec(b,h)
 	if breakables != null: b.breaker = breakables
 	# `beam`: the fallen pillars' crest lines, a way he walks end to end.
 	for pl: Array in pillars: b.beams.append([pl[1],pl[2]])

@@ -184,6 +184,17 @@ const HEIST_SWING_SHOCK := 0.3
 var _swing_hold_t := 0.0
 var _swing_from := Vector3.INF
 var _swing_done := false
+## The chain's rigging holds (swing_05, swing_06), the same hold without the
+## leap: once the drop's done, him on his feet within HEIST_RIG_NEAR m
+## (flat) of the swing point, rope in hand or out at it, the Olmec holds
+## his pounce and suck for up to HEIST_SWING_GRACE s at each. A rig takes
+## 4-6 s standing (throw, the hook's flight, tug, seat); with him on ford
+## behind you a pounce or suck always lands in it, so a player who keeps
+## moving was caught at every throw. Past the grace (a stall), he comes.
+const HEIST_RIGS := ["swing_05","swing_06"]
+const HEIST_RIG_NEAR := 11.0
+const HEIST_RIG_SHOCK := 20.0
+var _rig_hold := {}
 
 const HEIST_POSTS := [
 	["post_01",Vector3(21.6,30.4,-26.9),"landing crown over terrace_n (rappel)"],
@@ -356,6 +367,22 @@ func olmec_cliff_pick() -> Dictionary:
 	var d := Vector2(lip.x-motor.feet.x,lip.z-motor.feet.z).length()
 	return {"lip":lip,"out":out,"crown":"olmec_up","seen":_spawner.in_view(lip),"far":d,"below":below,"clean":clean,"score":0.0}
 
+## The heist's chase pace, over the crag's OLMEC_KNOBS (headless_body
+## knobs), none yet: the run_up pace plays as the crag's. (suck_max 5.5
+## was tried: his suck still starts at ~23 m, and it's the head's draw that
+## trips a walker, so the tune is HEIST_HEAD_K.)
+const HEIST_OLMEC_KNOBS := {}
+## His head's worn draw, scaled (inhaler_head knobs x these). worn_pull_d0
+## (unit x20): its pull P/(1+(d/d0)^2) tripped a walker inside ~0.86 d0
+## (17 m), and planted 18-20 m behind a 15 kg walker (3.4 m/s) it drew him
+## in and tripped him: keep moving was caught. x0.7: trips inside ~12 m,
+## at 20 m a walker still gains ~1.4 m/s; a stalled one is drawn in.
+const HEIST_HEAD_K := {"worn_pull_d0":0.7}
+
+func tune_olmec(_b: Node3D, h: Node3D) -> void:
+	for k: String in HEIST_HEAD_K:
+		h.knobs[k] = float(h.knobs[k])*float(HEIST_HEAD_K[k])
+
 ## The end screen's name for the place.
 func greed_place() -> String:
 	return "the vault's isle"
@@ -367,6 +394,9 @@ func _ready() -> void:
 	# Never winter here: the year held at summer (the settings' Season row,
 	# kit_weather.gd SEASON_CHOICES); a --season= flag keeps its own.
 	if weather != null: weather.choose_season(2)
+	# The chase's pace (HEIST_OLMEC_KNOBS) over OLMEC_KNOBS; a --body-knob= keeps its own.
+	for k: String in HEIST_OLMEC_KNOBS:
+		if not _body_knobs.has(k): _body_knobs[k] = HEIST_OLMEC_KNOBS[k]
 
 func place_root() -> String:
 	return "heist"
@@ -631,13 +661,52 @@ func _on_gap_near(at: Vector3) -> bool:
 	var off := Vector2(at.x-HEIST_GAP_AT.x,at.z-HEIST_GAP_AT.z)
 	return off.dot(way) <= 0.5 and off.length() < HEIST_SWING_NEAR and absf(at.y-HEIST_GAP_AT.y) < 1.5
 
-## The rope out at swing_03: aimed at it, or thrown and on it.
-func _rope_at_swing() -> bool:
+## The rope out at `id` (swing_03 by default): aimed at it, or thrown and on it.
+func _rope_at_swing(id := "swing_03") -> bool:
 	if rope == null: return false
 	var st := str(rope.state)
 	if st == "coiled": return false
-	if st == "aim": return str(rope.aim_piece) == "swing_03"
-	return str(rope.piece) == "swing_03"
+	if st == "aim": return str(rope.aim_piece) == id
+	return str(rope.piece) == id
+
+## The chain's rigging holds (HEIST_RIGS).
+func _stage_rigs(delta: float) -> void:
+	if not _drop_done or rope == null or not motor.grounded: return
+	var b := olmec()
+	if b == null or not bool(b.hunting): return
+	for id: String in HEIST_RIGS:
+		var top := _swing_top(id)
+		if Vector2(top.x-motor.feet.x,top.z-motor.feet.z).length() > HEIST_RIG_NEAR: continue
+		if not (_rope_at_swing(id) or (str(hands) == "rope" and str(rope.state) == "coiled")): continue
+		var t := float(_rig_hold.get(id,0.0))
+		if t >= HEIST_SWING_GRACE: return
+		if t == 0.0:
+			print("heist: rigging %s, rope in hand: the Olmec holds his pounce, %.1f m off (%s)" % [id,b.global_position.distance_to(motor.feet),str(b.state)])
+		# A suck already drawing (its wind drags the thrown hook along the
+		# arch, and a hook 1.3 m off its middle swings you past the stack)
+		# gives out.
+		if str(b.state) == "plant" or str(b.state) == "suck":
+			print("heist: rigging %s: his suck at %.1f m gives out" % [id,b.global_position.distance_to(motor.feet)])
+			b._go("spent")
+		# A pounce, or any leap coming down within HEIST_RIG_SHOCK m (its
+		# landing wave throws you off the rope), checks while you rig.
+		if str(b.state) == "windup" and (str(b.leap_kind) == "pounce" or (b._leap_to as Vector3).distance_to(motor.feet) < HEIST_RIG_SHOCK):
+			if not _rig_hold.has(id+"/checked"): print("heist: rigging %s: his %s at %.1f m checks" % [id,str(b.leap_kind),(b._leap_to as Vector3).distance_to(motor.feet)])
+			_rig_hold[id+"/checked"] = true
+			b._go(b._resume())
+		t += delta
+		_rig_hold[id] = t
+		b._pounce_ready = maxf(float(b._pounce_ready),float(b._clock)+0.3)
+		b._suck_ready = maxf(float(b._suck_ready),float(b._clock)+0.3)
+		if t >= HEIST_SWING_GRACE: print("heist: the hold at %s is up: he comes for you" % id)
+		return
+
+## Swing point `id`'s line middle as built (moved in F4, it goes along).
+func _swing_top(id: String) -> Vector3:
+	var n := get_node_or_null("Swings/%s" % id) as Node3D
+	if n != null: return n.global_position
+	for row: Array in HEIST_SWINGS: if row[0] == id: return row[2]
+	return Vector3.INF
 
 ## The staged swing out from under him (HEIST_SWING_*).
 func _stage_swing(delta: float) -> void:
@@ -682,6 +751,7 @@ func _olmec_stand(at: Vector3, face: Vector2) -> Node3D:
 	b = enemies.add(OlmecTarget,p,face.normalized(),knobs)
 	var h: Node3D = enemies.add(InhalerHead,p,face.normalized(),{})
 	b.make_whole(h)
+	tune_olmec(b,h)
 	if breakables != null: b.breaker = breakables
 	b.body.force_update_transform()
 	b.hunting = true
@@ -826,6 +896,7 @@ func tick(delta: float) -> void:
 		_stage_drop()
 		_aim_drop()
 		_stage_swing(delta)
+		_stage_rigs(delta)
 	if bridge_load == null or flying: return
 	_bear_bridge()
 	_stage_snap(delta)
@@ -843,6 +914,7 @@ func place(at: Vector3, face: Vector2) -> void:
 	_snap_due = -1.0
 	_swing_hold_t = 0.0
 	_swing_from = Vector3.INF
+	_rig_hold = {}
 
 const BridgeLoad = preload("res://scripts/bridge_load.gd")
 const BridgeClimb = preload("res://scripts/bridge_climb.gd")
