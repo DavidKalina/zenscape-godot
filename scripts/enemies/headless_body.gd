@@ -238,6 +238,9 @@ var _waves: Array = []
 ## it), his bulk and his shockwaves break it (`met`, `wave`), and the
 ## rubble once settled is read afresh (`world_changed`).
 var breaker: Object = null
+## Olmec reach (`beam`): crest lines [a, b] he walks end to end (a study's,
+## the crag reach's fallen pillars), set after he's added.
+var beams: Array = []
 ## A stagger after he plows through something (s left): slowed, not stopped.
 var _stagger := 0.0
 const STAGGER := 0.5
@@ -393,6 +396,12 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# to `down_deep` Hh under the rim (a long drop onto a terrace far
 		# below), not only `drop_max` m.
 		"down_deep":0.0,
+		# Olmec reach: `down_show` > 0 (m), `down_to` lands him where your
+		# camera sees him come down (in its frame, past DOWN_SHOW_EDGE of
+		# its sides) and at least that far from you flat, nearest you of
+		# those; no such landing, the nearest as before. He comes down in
+		# front of you, not on the camera.
+		"down_show":0.0,
 		# Olmec reach: `skirt_hold` 1, going round a wall in the hunt, the
 		# skirt's time runs only as he walks it (not while he plants and
 		# turns), and the next skirt round the same thing keeps its side,
@@ -412,6 +421,29 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# Olmec reach: `drop_bulk` 1, a drop off an edge is taken only if
 		# his bulk clears its arc (as `down_to`'s throws), not his feet only.
 		"drop_bulk":0,
+		# Olmec reach: `beam` 1, his `beams` (crest lines a study hands
+		# him, the crag reach's fallen pillar) are a way: a goal past a
+		# beam's far end, he heads for its near end and walks it end to end
+		# down its crest, facing along it (no edge drops, no skirts, no
+		# bulk push off it), as over a bridge.
+		"beam":0,
+		# Olmec reach: `dive` 1, `dive_off` (a study's call when he makes no
+		# way to you) has him wind up and throw himself off the nearest
+		# edge, out of the camera's look first; a dive catches no wall.
+		"dive":0,
+		# Olmec reach: `suck_in` 1, seen near (past his swat, inside the
+		# suck's own reach) with no pounce to you (its arc or his room
+		# blocked: under an overhang he can't fit) and no gain on you for
+		# SUCK_IN_AFTER s, he plants and inhales you out from where you hide.
+		"suck_in":0,
+		# Olmec reach: `watch_throw` N s, when his landing's wave or his
+		# swat throws you, he follows where you go for N s (you out of his
+		# sight off a terrace's edge he threw you off): no hunt for the spot
+		# you were knocked from.
+		"watch_throw":0,
+		# Olmec reach: `parked_off` 1, the parked plane's column (the
+		# walker's keep-off, kit_isle.gd PARKED_LAYER) is no wall to him.
+		"parked_off":0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -771,7 +803,7 @@ func _senses() -> bool:
 	if neck.distance_to(at) > float(knobs.sense): return false
 	_ray.from = neck
 	_ray.to = at
-	_ray.collision_mask = WalkerOnly.strip(field.study.ground.mask)
+	_ray.collision_mask = _land_mask()
 	_ray.exclude = _skip()
 	return field.study.get_world_3d().direct_space_state.intersect_ray(_ray).is_empty()
 
@@ -1462,6 +1494,110 @@ func _windup(delta: float) -> void:
 	_go("leap")
 	field.sound(&"body_leap",position)
 
+## Olmec reach (`dive`): no way to you, he throws himself off the
+## nearest edge: of DIVE_WAYS ways out, the first point within DIVE_LOOK
+## m with no floor DIVE_DROP m under his feet, a way away from `away`
+## (the camera) first; the throw lands DIVE_PAST m past that edge, far
+## below. Whether he winds up for one.
+const DIVE_WAYS := 16
+const DIVE_LOOK := 30.0
+const DIVE_DROP := 14.0
+const DIVE_PAST := 8.0
+var dives := 0
+func dive_off(away := Vector3.INF) -> bool:
+	if float(knobs.dive) < 0.5 or not grounded: return false
+	if state in ["climb","mantle","windup","leap","fall","hang","grab_leap","grab_windup","land"]: return false
+	var picks: Array = []
+	for k in DIVE_WAYS:
+		var a := TAU*float(k)/DIVE_WAYS
+		var way := Vector3(cos(a),0.0,sin(a))
+		var d := length*0.5
+		while d <= DIVE_LOOK:
+			var p := position+way*d
+			if _floor(p,float(knobs.step)*STAIR,DIVE_DROP) == -INF:
+				var score := d
+				if away != Vector3.INF:
+					var to := Vector3(away.x-position.x,0.0,away.z-position.z).normalized()
+					score += maxf(0.0,way.dot(to))*DIVE_LOOK
+				picks.append([score,p+way*DIVE_PAST-Vector3.UP*DIVE_DROP*2.0])
+				break
+			d += 1.5
+	picks.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	for pk: Array in picks:
+		if not _dive_clear(pk[1]): continue
+		_leap_to = pk[1]
+		leap_kind = "dive"
+		dives += 1
+		_go("windup")
+		field.sound(&"body_windup",position)
+		return true
+	return false
+
+## Olmec reach (`dive`): no edge within DIVE_LOOK m (the middle of a
+## crown), he strides off to the nearest rim within DIVE_FAR m that he
+## can throw himself off, a way toward `toward` (you) first, none within
+## DIVE_SHUN m of one in `shun`, for the study's watch to dive him off it.
+## Set: `dive_goal` (his chase walks there, no route, no sight); INF none.
+const DIVE_FAR := 90.0
+const DIVE_FAR_STEP := 3.0
+const DIVE_SHUN := 8.0
+var dive_goal := Vector3.INF
+var dive_walks := 0
+func dive_walk(toward := Vector3.INF, shun: Array = []) -> bool:
+	if float(knobs.dive) < 0.5 or not grounded: return false
+	if state in ["climb","mantle","windup","leap","fall","hang","grab_leap","grab_windup","land"]: return false
+	var picks: Array = []
+	var to := Vector3.ZERO
+	if toward != Vector3.INF: to = Vector3(toward.x-position.x,0.0,toward.z-position.z).normalized()
+	for k in DIVE_WAYS:
+		var a := TAU*float(k)/DIVE_WAYS
+		var way := Vector3(cos(a),0.0,sin(a))
+		var last := Vector3.INF
+		var d := length*0.5
+		while d <= DIVE_FAR:
+			var p := position+way*d
+			var f := _floor(p,float(knobs.step)*STAIR,DIVE_DROP)
+			if f == -INF:
+				if last != Vector3.INF and not shun.any(func(q: Vector3) -> bool: return q.distance_to(last) < DIVE_SHUN):
+					picks.append([d-maxf(0.0,way.dot(to))*DIVE_LOOK,last,p+way*DIVE_PAST-Vector3.UP*DIVE_DROP*2.0])
+				break
+			# A step up or down past his stair: not this way's floor.
+			if last != Vector3.INF and absf(f-last.y) > float(knobs.step)*STAIR*2.0: break
+			last = Vector3(p.x,f,p.z)
+			d += DIVE_FAR_STEP
+	picks.sort_custom(func(x: Array, y: Array) -> bool: return x[0] < y[0])
+	var goal := Vector3.INF
+	# A rim he can throw himself off (its fall clear from where he'd stand).
+	for pk: Array in picks:
+		if _dive_clear(pk[2],pk[1]):
+			goal = pk[1]
+			break
+	if goal == Vector3.INF: return false
+	dive_goal = goal
+	dive_walks += 1
+	_chase_drop()
+	_skirt_t = 0.0
+	if state != "chase": _go("chase")
+	return true
+
+## Whether a dive at `to` falls DIVE_DROP x 1.5 m clear: its arc flown in
+## ARC_DT steps, his feet and his bulk meeting nothing past take-off (from
+## `from`, else where he stands).
+func _dive_clear(to: Vector3, from := Vector3.INF) -> bool:
+	if from == Vector3.INF: from = position
+	var throw := _throw(from,to,"dive")
+	var v: Vector3 = throw[0]
+	var p := from
+	var g := float(knobs.leap_gravity)
+	var t := 0.0
+	while p.y > from.y-DIVE_DROP*1.5 and t < 5.0:
+		var q := p+v*ARC_DT
+		v.y -= g*ARC_DT
+		t += ARC_DT
+		if t > 0.15 and (not _cast(p+Vector3.UP*0.05,q).is_empty() or _bulk_sweep(p,q) < 1.0): return false
+		p = q
+	return true
+
 ## The throw from `from` to `to` ("jump" across, else a drop): [its
 ## velocity, its time in the air]. A jump's is longer and flatter, peaking
 ## a share of its length (and over the far ledge if that stands higher).
@@ -1516,6 +1652,7 @@ func _arc_clear(to: Vector3, kind: String, bulk := false) -> bool:
 ## off, no face, or the lip out of reach (it drops, as before).
 func _catch_wall(way: Vector3) -> bool:
 	if float(knobs.leap_catch) < 0.5: return false
+	if leap_kind == "dive": return false
 	var dir := way.normalized() if way.length() > 0.1 else _forward3()
 	var hit := {}
 	# Its chest first, then up and down its height (the face its bulk met).
@@ -1634,6 +1771,11 @@ var _drop_up := -1.0
 var _down_next := 0.0
 const DOWN_EVERY := 0.5
 const DOWN_TRIES := 24
+## `down_show`: the picture's margin a landing's feet and shins keep in (a
+## share of its width / height), and what an unseen landing adds to its
+## distance.
+const DOWN_SHOW_EDGE := 0.1
+const DOWN_UNSEEN := 1000.0
 var down_tos := 0
 var down_why := ""
 
@@ -1654,13 +1796,15 @@ func _down_to(goal: Vector3) -> bool:
 	var base := PilotMotor.facing_of(to.normalized())
 	var now := position.distance_to(goal)
 	var best := {}
-	var best_d := now-hh
+	var best_d := INF
+	var show := float(knobs.down_show)
 	var deep := maxf(float(knobs.drop_max),float(knobs.down_deep)*hh)
 	down_why = "no floor under the rim nearer him"
-	# Arcs flown at most (each a few dozen casts and bulk sweeps).
+	# Arcs flown at most (each a few dozen casts and bulk sweeps): the
+	# landings found first, then flown best first.
 	var tries := DOWN_TRIES
+	var found := []
 	for a: float in [0.0,0.35,-0.35,0.7,-0.7,1.1,-1.1]:
-		if tries <= 0: break
 		var dir := _way3(wrapf(base+a,-PI,PI))
 		var d := length*0.5+float(knobs.look)
 		while d <= reach:
@@ -1676,16 +1820,25 @@ func _down_to(goal: Vector3) -> bool:
 			var at := _down_room(Vector3(onto.x,g,onto.z))
 			if at == Vector3.INF: continue
 			var dd := at.distance_to(goal)
-			if dd >= best_d or tries <= 0: continue
-			for up: float in [float(knobs.leap_up),hh*0.8,hh*1.4,float(knobs.down_arc)*hh]:
-				tries -= 1
-				_drop_up = up
-				var ok := _arc_clear(at,"drop",true)
-				_drop_up = -1.0
-				if ok:
-					best = {"at":at,"up":up}
-					best_d = dd
-					break
+			if dd >= now-hh: continue
+			# Scored: a landing your camera won't see, or on top of you,
+			# only when there's no other.
+			if show > 0.0 and (Vector2(at.x-goal.x,at.z-goal.z).length() < show or not _lands_seen(at)): dd += DOWN_UNSEEN
+			found.append([dd,at])
+	found.sort_custom(func(x: Array, y: Array) -> bool: return float(x[0]) < float(y[0]))
+	for f: Array in found:
+		if tries <= 0 or float(f[0]) >= best_d: break
+		var at: Vector3 = f[1]
+		for up: float in [float(knobs.leap_up),hh*0.8,hh*1.4,float(knobs.down_arc)*hh]:
+			tries -= 1
+			_drop_up = up
+			var ok := _arc_clear(at,"drop",true)
+			_drop_up = -1.0
+			if ok:
+				best = {"at":at,"up":up}
+				best_d = float(f[0])
+				break
+		if not best.is_empty(): break
 	if best.is_empty(): return false
 	down_why = ""
 	down_tos += 1
@@ -1694,6 +1847,20 @@ func _down_to(goal: Vector3) -> bool:
 	_drop_up = best.up
 	_go("windup")
 	field.sound(&"body_windup",position)
+	return true
+
+## Whether the camera sees him land at `at`: his feet and shins (most of
+## him is over the picture of a camera close over you) in front of it and
+## within its picture short of DOWN_SHOW_EDGE of each side. No camera: yes.
+func _lands_seen(at: Vector3) -> bool:
+	var camera: Camera3D = field.study.get("camera") if field != null and field.study != null else null
+	if camera == null or not camera.is_inside_tree(): return true
+	var size := camera.get_viewport().get_visible_rect().size
+	if size.x <= 0.0 or size.y <= 0.0: return true
+	for p: Vector3 in [at+Vector3.UP*0.3,at+Vector3.UP*hh]:
+		if camera.is_position_behind(p): return false
+		var px := camera.unproject_position(p)/size
+		if px.x < DOWN_SHOW_EDGE or px.x > 1.0-DOWN_SHOW_EDGE or px.y < DOWN_SHOW_EDGE or px.y > 1.0-DOWN_SHOW_EDGE: return false
 	return true
 
 ## A spot with room for its bulk at `at` or round it (a narrow terrace:
@@ -1883,6 +2050,7 @@ func _shock_meets(w: Dictionary) -> void:
 	# Olmec threat round 1: thrown toward the void near a rim.
 	if float(knobs.void_push) > 0.0 and _relentless(): way = OlmecVoid.toward(field,m.feet,way,float(knobs.void_push))
 	shock_hits += 1
+	_threw_t = float(knobs.get("watch_throw",0))
 	shove_pilot(m,way,float(knobs.shock_out)*f,float(knobs.shock_up)*f)
 
 # --- Routes (round 11) ---------------------------------------------------------------------------
@@ -2188,6 +2356,13 @@ var _post := Vector3.ZERO
 ## When it may pounce again, suck again (its clock, s).
 var _pounce_ready := 0.0
 var _suck_ready := 0.0
+## `suck_in`: how long (s) he's been near you with no pounce and no gain.
+var _suck_in_t := 0.0
+## `watch_throw`: s left of following you after a throw.
+var _threw_t := 0.0
+var _suck_in_d := INF
+const SUCK_IN_AFTER := 1.5
+var sucks_in := 0
 var _suck_unseen := 0.0
 var _seek_from := 0.0
 var _swat_hit := false
@@ -2239,7 +2414,7 @@ func _see(delta: float) -> void:
 		sight = Sight.new()
 		sight.tune(knobs)
 	var m: PilotMotor = field.motor
-	sight.mask = WalkerOnly.strip(field.study.ground.mask)
+	sight.mask = _land_mask()
 	# `sight_walker_only` 1: walker-only stone (a niche, a hush gallery)
 	# hides him from its eyes, though it can't walk or climb it.
 	if float(knobs.get("sight_walker_only",0)) >= 0.5: sight.mask |= WalkerOnly.LAYER
@@ -2258,6 +2433,9 @@ func _see(delta: float) -> void:
 		seen_at = m.feet
 		seen_t = 0.0
 		return
+	# `watch_throw`: he threw you; he knows where you went.
+	var threw := _threw_t > 0.0
+	if threw: _threw_t -= delta
 	var pts := Sight.pilot_points(m.feet,false)
 	sight.update(delta,field.study.get_world_3d().direct_space_state,_eye(),_look_way(),pts,not m.grounded)
 	if sight.seeing():
@@ -2265,6 +2443,9 @@ func _see(delta: float) -> void:
 		seen_t = 0.0
 		if state != "scope": _scoped = false
 		_trail_seen(m.feet)
+	elif threw:
+		seen_at = m.feet
+		seen_t = 0.0
 	else: seen_t += delta
 	if sight.state == "spotted" and sight.seeing() and (state in ["listen","roam","alert","seek","return"] or (not hunting and state == "triumph")):
 		_spot()
@@ -2312,6 +2493,10 @@ func _ready_text(at: float) -> String:
 ## distance says.
 func _chase(delta: float) -> void:
 	var m: PilotMotor = field.motor
+	# Olmec reach (`dive_walk`): off to a rim to throw himself off it.
+	if dive_goal != Vector3.INF:
+		_pursue(delta,dive_goal,float(knobs.chase_speed))
+		return
 	var seeing: bool = sight.seeing()
 	# Unseen, it goes where it last saw him, or where it went after him.
 	var target := m.feet if seeing else (_after_at if _after_at != Vector3.INF else seen_at)
@@ -2339,7 +2524,7 @@ func _chase(delta: float) -> void:
 		elif seen_t > float(knobs.scope_wait) and flat <= float(knobs.scope_near)*hh and _scope_try("chase"): return
 		# Lost him up out of its walk: after him, by a route.
 		elif seen_t > float(knobs.after_wait) and _after_try(): return
-	elif _attack(m,flat,to.y): return
+	elif _attack_with(m,flat,to.y,delta): return
 	elif after and to.y <= _after_rise():
 		# Seen again about its own level: straight at him.
 		_chase_drop()
@@ -2601,6 +2786,12 @@ func _after_goal(p: Vector3, seen: Vector3) -> Vector3:
 
 ## The attack his distance calls for (`flat` m off, `dy` up), if any: the
 ## swat within reach, the pounce a little way off, the suck further.
+## `_attack` with the frame's delta kept for `suck_in`'s clock.
+var _attack_dt := 0.0
+func _attack_with(m: PilotMotor, flat: float, dy: float, delta: float) -> bool:
+	_attack_dt = delta
+	return _attack(m,flat,dy)
+
 func _attack(m: PilotMotor, flat: float, dy: float) -> bool:
 	if m.seized(): return false
 	if flat <= float(knobs.catch_reach)*hh and absf(dy) < neck_h*0.6:
@@ -2622,8 +2813,23 @@ func _attack(m: PilotMotor, flat: float, dy: float) -> bool:
 			field.sound(&"body_windup",position)
 			chase_beat.emit("pounce")
 			return true
-	if flat >= float(knobs.suck_min)*hh and flat <= float(knobs.suck_max)*hh*(1.3 if _relentless() else 1.0) and _clock >= _suck_ready and head != null and head.perch == self \
+	var near_in := float(knobs.get("suck_in",0)) > 0.0 and flat > float(knobs.catch_reach)*hh and flat < float(knobs.suck_min)*hh
+	if near_in:
+		# No gain of 1 m on you, the clock runs (reset when he gains).
+		if flat < _suck_in_d-1.0:
+			_suck_in_d = flat
+			_suck_in_t = 0.0
+		else: _suck_in_t += _attack_dt
+	else:
+		_suck_in_t = 0.0
+		_suck_in_d = INF
+	var sucks_close := near_in and _suck_in_t >= SUCK_IN_AFTER
+	if (sucks_close or (flat >= float(knobs.suck_min)*hh and flat <= float(knobs.suck_max)*hh*(1.3 if _relentless() else 1.0))) and _clock >= _suck_ready and head != null and head.perch == self \
 			and head.has_method("worn_reaches") and head.worn_reaches(m):
+		if sucks_close:
+			sucks_in += 1
+			_suck_in_t = 0.0
+			_suck_in_d = INF
 		sucks += 1
 		_suck_unseen = 0.0
 		_go("plant")
@@ -2662,6 +2868,13 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 	if _grab_aim != Vector3.INF and _skirt_t <= 0.0:
 		var aim := Vector2(_grab_aim.x-position.x,_grab_aim.z-position.z)
 		if aim.length() > 0.3: _heading = PilotMotor.facing_of(aim.normalized())
+	# Olmec reach (`beam`): on a beam, along it to its end on your side;
+	# a goal past one's far end, to its near end first.
+	var beam := _beam_way(goal)
+	if not beam.is_empty():
+		_skirt_t = 0.0
+		var to_b := Vector2(beam.aim.x-position.x,beam.aim.z-position.z)
+		if to_b.length() > 0.3: _heading = PilotMotor.facing_of(to_b.normalized())
 	var turn := float(knobs.turn)*float(knobs.chase_turn)
 	var off := angle_difference(facing,_heading)
 	# Olmec round 1: a big turn plants first (braked, not swung round at
@@ -2672,12 +2885,15 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 		_brake(delta)
 		return
 	var fwd := _forward3()
-	var wall := _wall_along(fwd,length*0.5+float(knobs.look),true)
+	# On a beam its crest is his floor on to its end (its slope reads as
+	# an edge, its rise as a wall, to his rays).
+	var walking_beam: bool = not beam.is_empty() and bool(beam.on)
+	var wall: Dictionary = {} if walking_beam else _wall_along(fwd,length*0.5+float(knobs.look),true)
 	if not wall.is_empty():
 		_hunt_wall(wall,goal)
 		return
 	var ahead := clampf(to.length()+0.3,0.6,length*0.5+float(knobs.look))
-	if _floor(position+fwd*ahead,float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF:
+	if not walking_beam and _floor(position+fwd*ahead,float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF:
 		_hunt_edge(fwd,goal)
 		return
 	var aligned := clampf(cos(angle_difference(facing,_heading)),0.0,1.0)
@@ -2754,6 +2970,88 @@ func _hunt_edge(fwd: Vector3, goal: Vector3) -> void:
 		_skirt_t = SKIRT_FOR
 		return
 	_stuck()
+
+## `beam`: off a beam's crest line (m, flat) and over or under it (m) he is
+## still on it; how far on along it he aims (m); how near its end (m) he
+## leaves it; how far from its near end he takes it.
+const BEAM_SIDE := 1.6
+const BEAM_UP := 2.5
+const BEAM_DOWN := 1.0
+const BEAM_AIM := 4.0
+const BEAM_END := 2.5
+const BEAM_TAKE := 60.0
+
+## The beam he stands on: {a, b (its ends), t (0 to 1 along), len (flat)},
+## {} none.
+func _on_beam() -> Dictionary:
+	if float(knobs.beam) < 0.5: return {}
+	for be: Array in beams:
+		var a: Vector3 = be[0]
+		var b: Vector3 = be[1]
+		var ab := Vector2(b.x-a.x,b.z-a.z)
+		var l := ab.length()
+		if l < 1.0: continue
+		var t := Vector2(position.x-a.x,position.z-a.z).dot(ab)/(l*l)
+		if t < -BEAM_END/l or t > 1.0+BEAM_END/l: continue
+		var tc := clampf(t,0.0,1.0)
+		var p := a.lerp(b,tc)
+		if Vector2(position.x-p.x,position.z-p.z).length() > BEAM_SIDE: continue
+		if position.y > p.y+BEAM_UP or position.y < p.y-BEAM_DOWN: continue
+		return {"a":a,"b":b,"t":t,"len":l}
+	return {}
+
+## The way a beam gives to `goal`: {aim (where he heads), on (walking it)},
+## {} none (off one with none to take, or at its end on your side).
+func _beam_way(goal: Vector3) -> Dictionary:
+	if float(knobs.beam) < 0.5 or beams.is_empty(): return {}
+	var on := _on_beam()
+	if not on.is_empty():
+		var a: Vector3 = on.a
+		var b: Vector3 = on.b
+		var l: float = on.len
+		var ab := Vector2(b.x-a.x,b.z-a.z)
+		var tg := Vector2(goal.x-a.x,goal.z-a.z).dot(ab)/(l*l)
+		var t: float = on.t
+		# Your side of him along it: on to that end, off it near there (or
+		# off it beside you, under it).
+		var dir := 1.0 if tg > t else -1.0
+		var stop := clampf(tg,0.0,1.0)
+		if absf(stop-t)*l < BEAM_END: return {}
+		var ta := clampf(t+dir*BEAM_AIM/l,0.0,1.0)
+		if dir > 0.0: ta = minf(ta,stop)
+		else: ta = maxf(ta,stop)
+		# Past its end, the aim runs on off it (onto the turf it lies on).
+		var aim := a.lerp(b,ta)
+		if (dir > 0.0 and ta >= 1.0) or (dir < 0.0 and ta <= 0.0):
+			aim += Vector3(ab.x,0.0,ab.y).normalized()*dir*BEAM_AIM
+		return {"aim":aim,"on":true}
+	# Off one: a beam whose far end lies your way, its near end at his
+	# level and not far, the way over it not much longer than straight.
+	var best := {}
+	var best_d := INF
+	var straight := Vector2(goal.x-position.x,goal.z-position.z).length()
+	for be: Array in beams:
+		for k in 2:
+			var near: Vector3 = be[k]
+			var far: Vector3 = be[1-k]
+			if absf(near.y-position.y) > BEAM_UP*2.0: continue
+			var dn := Vector2(near.x-position.x,near.z-position.z).length()
+			if dn > BEAM_TAKE: continue
+			var nf := Vector2(far.x-near.x,far.z-near.z)
+			var l := nf.length()
+			if l < 1.0: continue
+			var tg := Vector2(goal.x-near.x,goal.z-near.z).dot(nf)/(l*l)
+			if tg < 0.85: continue
+			var via := dn+l+Vector2(goal.x-far.x,goal.z-far.z).length()
+			if via > straight*1.3+15.0 or via >= best_d: continue
+			best_d = via
+			# Onto it along its line: from behind its near end while off its line.
+			var into := Vector3(nf.x,0.0,nf.y)/l
+			var back := near-into*BEAM_END*1.5
+			var side := Vector2(position.x-near.x,position.z-near.z)
+			var off_line := absf(side.dot(Vector2(-nf.y,nf.x)/l))
+			best = {"aim":back if off_line > BEAM_SIDE and dn > BEAM_END else near+into*BEAM_AIM,"on":false}
+	return best
 
 ## `edge_fan`: ways tried off his facing at an edge (rad).
 const EDGE_FAN := [0.35,-0.35,0.7,-0.7]
@@ -2976,6 +3274,7 @@ func _catch(m: PilotMotor, how: String) -> void:
 	way = way.normalized() if way.length() > 0.1 else PilotMotor.forward(facing)
 	if float(knobs.void_push) > 0.0: way = OlmecVoid.toward(field,m.feet,way,float(knobs.void_push))
 	m.knock(m.knock_velocity(way,float(knobs.swat_out),float(knobs.swat_up)),self,float(knobs.swat_down))
+	_threw_t = float(knobs.get("watch_throw",0))
 	m.harm(harm_cause(),1,self)
 	_cool = 0.3
 	hit_pilot.emit(self)
@@ -3268,7 +3567,7 @@ func _scope_pose(delta: float) -> void:
 		_head_box.size = Vector3(float(head.width),float(head.height),float(head.length))*0.92
 		_head_q.shape = _head_box
 		_head_q.transform = Transform3D(Basis(Vector3.UP,_held_yaw),_held_at+Vector3.UP*float(head.height)*0.5)
-		_head_q.collision_mask = WalkerOnly.strip(field.study.ground.mask)
+		_head_q.collision_mask = _land_mask()
 		_head_q.exclude = _skip()
 		var space: PhysicsDirectSpaceState3D = field.study.get_world_3d().direct_space_state
 		if not space.intersect_shape(_head_q,1).is_empty():
@@ -3692,7 +3991,7 @@ func _bulk_at(p: Vector3, motion := Vector3.ZERO) -> PhysicsShapeQueryParameters
 	_bulk.size = Vector3(hh*BULK_W*2.0,top-low,hh*BULK_L*2.0)
 	_bulk_q.shape = _bulk
 	_bulk_q.transform = Transform3D(Basis(Vector3.UP,facing),p+Vector3.UP*(low+top)*0.5)
-	_bulk_q.collision_mask = WalkerOnly.strip(field.study.ground.mask)
+	_bulk_q.collision_mask = _land_mask()
 	var skip := _skip()
 	# The Olmec's destruction: rubble is waded through, not shoved off.
 	if breaker != null: skip.append_array(breaker.rubble_rids())
@@ -3752,6 +4051,11 @@ func _bulk_sweep(a: Vector3, b: Vector3) -> float:
 func _clear_bulk(delta: float, floored := true) -> void:
 	var space: PhysicsDirectSpaceState3D = field.study.get_world_3d().direct_space_state
 	var out := Vector3.ZERO
+	# `beam`: walking a beam, its round flanks don't push him off its crest
+	# (his heading holds him on the crest line): pushed along it only (off
+	# the rim it lies from, onto it).
+	var beam_on := _on_beam() if floored else {}
+	var on_beam := not beam_on.is_empty()
 	for i in 4:
 		var pts: Array[Vector3] = space.collide_shape(_bulk_at(position+out),8)
 		if pts.is_empty(): break
@@ -3762,10 +4066,13 @@ func _clear_bulk(delta: float, floored := true) -> void:
 			if d.length() > best.length(): best = d
 		if best.length() < 0.01: break
 		out += best+best.normalized()*0.02
+	if on_beam:
+		var ax := Vector3((beam_on.b as Vector3).x-(beam_on.a as Vector3).x,0.0,(beam_on.b as Vector3).z-(beam_on.a as Vector3).z).normalized()
+		out = ax*out.dot(ax)
 	# Its legs: a block it walks beside (taller than LEG_BLOCK, under its
 	# bulk's bottom) eases it off sideways only (one met head on is a
 	# stair's step it walks up, or a wall its rays meet).
-	if floored:
+	if floored and not on_beam:
 		var right := _right3()
 		var q := _bulk_at(position+out)
 		var low := 0.35
@@ -4115,10 +4422,19 @@ func _skip() -> Array[RID]:
 	if breaker != null: out.append_array(breaker.standing_rids())
 	return out
 
+## What his rays, sight and bulk meet: the study's ground, less walker-only
+## stone; with `parked_off`, less the parked plane's column too (the
+## walker's keep-off, not stone: on main's crown he skirted it on and on).
+const PARKED_LAYER := 1 << 13
+func _land_mask() -> int:
+	var m := WalkerOnly.strip(field.study.ground.mask)
+	if float(knobs.get("parked_off",0)) >= 0.5: m &= ~PARKED_LAYER
+	return m
+
 func _cast(from: Vector3, to: Vector3) -> Dictionary:
 	_ray.from = from
 	_ray.to = to
-	_ray.collision_mask = WalkerOnly.strip(field.study.ground.mask)
+	_ray.collision_mask = _land_mask()
 	_ray.exclude = _skip()
 	return field.study.get_world_3d().direct_space_state.intersect_ray(_ray)
 

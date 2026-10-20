@@ -29,6 +29,8 @@ extends "res://studies/kit_isle.gd"
 ##   refills on foot), R you back at the start and him gone, up a cliff
 ##   again (at once with --olmec, N s on with --olmec-after); fallen off the
 ##   world, he comes up another cliff OLMEC_AGAIN s later.
+##   Making no way to you for OLMEC_STUCK s, he throws himself off the
+##   nearest edge and comes back up a clean cliff near you (`_never_stuck`).
 
 const Layout = preload("res://scripts/layout_overrides.gd")
 const UnitNode = preload("res://scripts/kit_isle/islet_unit_node.gd")
@@ -754,7 +756,61 @@ const OLMEC_AGAIN := 6.0
 ## His knobs here: the whole body's hunt (as studies/olmec_field.gd's
 ## whole Olmec), relentless, and the wall catch (headless_body.gd
 ## `leap_catch`).
-const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0}
+const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"dive":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0}
+## Never stuck: no OLMEC_GAIN m nearer you and no OLMEC_ROAM m from where he
+## was for OLMEC_STUCK s (you standing
+## within OLMEC_MOVED m of where that began) and more than OLMEC_CLOSE m
+## off, he throws himself off the nearest edge (headless_body.gd
+## `dive_off`, away from the camera's look first); once he's OLMEC_SUNK m
+## under where he left or OLMEC_DIVE_S s into it, he's gone, and comes
+## up a cliff of your crown OLMEC_BACK s on. No edge to dive, out of
+## view, he's taken there and then.
+const OLMEC_STUCK := 7.0
+const OLMEC_GAIN := 1.5
+const OLMEC_MOVED := 6.0
+const OLMEC_CLOSE := 10.0
+const OLMEC_SUNK := 10.0
+const OLMEC_DIVE_S := 3.0
+const OLMEC_BACK := 3.0
+var olmec_dives := 0
+var olmec_takes := 0
+var _stuck_t := 0.0
+var _stuck_best := INF
+var _stuck_feet := Vector3.INF
+var _dive_from := Vector3.INF
+var _dive_t := 0.0
+## Lips he let go of within OLMEC_HOLD s of hanging there: picked last.
+const OLMEC_HOLD := 2.0
+var _bad_lips: Array[Vector3] = []
+var _spawn_t := 0.0
+var olmec_bad_spawns := 0
+const OLMEC_BAD_RUN := 3
+var _bad_run := 0
+## No edge near, in view: his walk to a rim (headless_body.gd
+## `dive_walk`) for at most OLMEC_WALK s, a dive tried every OLMEC_WALK_TRY s.
+const OLMEC_WALK := 25.0
+## The walk only once the watch has held OLMEC_WALK_AFTER s (short of
+## that he often finds his own way on).
+const OLMEC_WALK_AFTER := 16.0
+## Room past the lip for a return (`_face_room`): his box OLMEC_ROOM_ON m in.
+const OLMEC_ROOM_ON := 4.0
+const OLMEC_ROOM_LEGS := 2.0
+const OLMEC_WALK_TRY := 0.5
+var _walk_t := 0.0
+## The watch's whole time held (its retries don't set it back).
+var _stuck_all := 0.0
+var _walk_none := 0
+var _walk_try := 0.0
+## Rims he walked to and found no dive off (passed over next time).
+var _bad_rims: Array = []
+## He stays within OLMEC_ROAM m of where the watch began: not on his way.
+const OLMEC_ROAM := 8.0
+var _stuck_at := Vector3.INF
+## Coming back after a dive (the pick checks his bulk's room on the face).
+var _returning := false
+## The room check holds (else, with no face that has it, he comes back
+## up a clean face anyway: on a small islet his bulk never fits).
+var _room_strict := true
 
 ## Seconds after the start (and after R) the Olmec comes; -1 never (no flag).
 var olmec_after := -1.0
@@ -866,6 +922,24 @@ func _wire_breaks() -> void:
 	# landings' too) makes a cut on the main thread.
 	kit_breaks.prepare_all()
 	print("crag reach: %d breakable piece(s) %s" % [n,by])
+	_warm_olmec()
+
+## The Olmec's looks and voices made at load, not at his first spawn
+## (--olmec-after: ~170 ms on the main thread mid-play): the dressed meshes
+## are cached (inhaler_head_look.gd, headless_body_look.gd), so a throwaway
+## build of each leaves them ready for every spawn and return.
+func _warm_olmec() -> void:
+	var t0 := Time.get_ticks_usec()
+	var hl := InhalerHead.Look.new()
+	hl.build(1.0)
+	hl.free()
+	var bl := BodySpawner.HeadlessBody.Look.new()
+	bl.build(1.0)
+	bl.free()
+	for voices: Dictionary in [InhalerHead.VOICES,BodySpawner.VOICES]:
+		for key: String in voices.keys():
+			if not _voices.has(key): _voices[key] = EnemyYard._synth(voices[key])
+	print("crag reach: the Olmec's looks and voices made ahead (%.0f ms)" % ((Time.get_ticks_usec()-t0)/1000.0))
 
 func olmec() -> Node3D:
 	if enemies == null: return null
@@ -906,11 +980,38 @@ func olmec_cliff_pick() -> Dictionary:
 	var crown := _crown_under(motor.feet)
 	if crown == null: return {}
 	var space := get_world_3d().direct_space_state
+	var feet: Vector3 = motor.feet
+	var best := {}
+	var best_score := INF
+	# Coming back, the nearest mass's rim too when every face of the crown
+	# you're on let him go (a knoll too small to haul out onto).
+	var crowns: Array[Node3D] = [crown]
+	var own := _cliff_pick_on(space,crown,feet)
+	if _returning and own.is_empty():
+		var near: Node3D = null
+		var near_d := INF
+		for u: Node3D in mass_tops.values():
+			var dm := Vector2(u.position.x-feet.x,u.position.z-feet.z).length()
+			if u != crown and dm < near_d:
+				near_d = dm
+				near = u
+		if near != null: crowns.append(near)
+	for cr: Node3D in crowns:
+		var cbest := own if cr == crown else _cliff_pick_on(space,cr,feet)
+		if not cbest.is_empty() and float(cbest.score) < best_score:
+			best_score = float(cbest.score)
+			best = cbest
+	if best.is_empty() and _returning and _room_strict:
+		_room_strict = false
+		best = olmec_cliff_pick()
+		_room_strict = true
+	return best
+
+func _cliff_pick_on(space: PhysicsDirectSpaceState3D, crown: Node3D, feet: Vector3) -> Dictionary:
 	var mid := crown.position
 	var top := _turf_top(space,mid.x,mid.z)
 	mid.y = top.y if top != Vector3.INF else motor.feet.y
 	var reach := float(crown.spec.size)*3.0
-	var feet: Vector3 = motor.feet
 	var best := {}
 	var best_score := INF
 	for k in OLMEC_WAYS:
@@ -934,11 +1035,62 @@ func olmec_cliff_pick() -> Dictionary:
 		var below: float = _spawner.face_below(lip,out,OLMEC_BELOW)
 		var clean := _face_clean(space,lip,out,below)
 		if not clean: score += 600.0
+		# Coming back, only a clean face with room for him, not one he let go.
+		if _returning and (not clean or (_room_strict and not _face_room(space,lip,out,below)) or _bad_lips.any(func(bad: Vector3) -> bool: return bad.distance_to(lip) < 4.0)): continue
+		# His bulk hung on the face and over the lip clear of the land (a
+		# slot between a face and a spire is no way up).
+		# A face he let go of at once before (an undercut under a terrace).
+		for bad: Vector3 in _bad_lips:
+			if bad.distance_to(lip) < 4.0: score += 20000.0
 		score += absf(d-clampf(d,OLMEC_NEAR,OLMEC_FAR))*5.0+d*0.1
 		if score < best_score:
 			best_score = score
 			best = {"lip":lip,"out":out,"crown":String(crown.name),"seen":seen,"far":d,"below":below,"clean":clean,"score":score}
 	return best
+
+## Whether his bulk (a box his breadth x depth x neck, a little shrunk)
+## clears the land hung on the face under `lip` (at the start of his climb
+## and halfway up) and stood over it (OLMEC_ROOM_IN m in).
+const OLMEC_ROOM_IN := 1.0
+var _room_q: PhysicsShapeQueryParameters3D = null
+## Which of `_face_room`'s boxes met the land last ("" all clear).
+var room_why := ""
+func _face_room(space: PhysicsDirectSpaceState3D, lip: Vector3, out: Vector2, below: float) -> bool:
+	var k: Dictionary = BodySpawner.HeadlessBody.build_of(_spawner._body_k(),float(enemies.numbers().unit))
+	var o3 := Vector3(out.x,0.0,out.y).normalized()
+	var tall := float(k.neck)*0.9
+	if _room_q == null:
+		_room_q = PhysicsShapeQueryParameters3D.new()
+		_room_q.shape = BoxShape3D.new()
+		_room_q.collision_mask = WalkerOnly.strip(ground.mask)
+	(_room_q.shape as BoxShape3D).size = Vector3(float(k.width)*0.85,tall,float(k.length)*0.8)
+	var basis := Basis.looking_at(-o3,Vector3.UP)
+	var feet := lip.y-float(k.hang)-below
+	var off := float(k.length)*0.5+0.6
+	var i := 0
+	for at: Vector3 in [Vector3(lip.x,feet,lip.z)+o3*off,Vector3(lip.x,(feet+lip.y)*0.5-tall*0.5,lip.z)+o3*off,Vector3(lip.x,lip.y+0.3,lip.z)-o3*(float(k.length)*0.5+OLMEC_ROOM_IN)]:
+		_room_q.transform = Transform3D(basis,at+Vector3.UP*(tall*0.5))
+		if not space.intersect_shape(_room_q,1).is_empty():
+			room_why = ["hung","halfway","over the lip"][i]
+			return false
+		i += 1
+	# Stood OLMEC_ROOM_ON m further on toward you, on the floor there: his
+	# first strides off the lip (up West's face beside the spire, he
+	# walked with his shins 1.35 m in its flared foot).
+	var to_you := Vector3(motor.feet.x-lip.x,0.0,motor.feet.z-lip.z)
+	var in3 := to_you.normalized() if to_you.length() > 1.0 else -o3
+	var on := lip+in3*minf(float(k.length)*0.5+OLMEC_ROOM_IN+OLMEC_ROOM_ON,to_you.length())
+	var down := PhysicsRayQueryParameters3D.create(on+Vector3.UP*tall,on-Vector3.UP*3.0,_room_q.collision_mask)
+	var hit := space.intersect_ray(down)
+	# His legs only (a deck over the terrace, the aqueduct's, is no matter).
+	if not hit.is_empty() and (hit.normal as Vector3).y > 0.7:
+		(_room_q.shape as BoxShape3D).size = Vector3(float(k.width)*0.85,OLMEC_ROOM_LEGS,float(k.length)*0.8)
+		_room_q.transform = Transform3D(basis,(hit.position as Vector3)+Vector3.UP*(0.4+OLMEC_ROOM_LEGS*0.5))
+		if not space.intersect_shape(_room_q,1).is_empty():
+			room_why = "legs on"
+			return false
+	room_why = ""
+	return true
 
 ## Whether his climb up the face under `lip` (`out` its way) from `below`
 ## m under his hang finds no top short of the lip, as his climb looks for
@@ -973,6 +1125,11 @@ func spawn_olmec() -> Node3D:
 	_olmec_clear()
 	var c := olmec_cliff_pick()
 	if c.is_empty():
+		# Coming back with no clean face near you: he tries again later.
+		if _returning:
+			print("crag reach: no clean cliff for the Olmec to come back up near you; again in %.0f s" % OLMEC_AGAIN)
+			_gone_t = 0.0
+			return null
 		push_warning("crag reach: no cliff fits the Olmec (%s)" % _spawner.fit_why)
 		return null
 	var lip: Vector3 = c.lip
@@ -984,6 +1141,8 @@ func spawn_olmec() -> Node3D:
 	var h: Node3D = enemies.add(InhalerHead,lip,-out,{})
 	b.make_whole(h)
 	if breakables != null: b.breaker = breakables
+	# `beam`: the fallen pillars' crest lines, a way he walks end to end.
+	for pl: Array in pillars: b.beams.append([pl[1],pl[2]])
 	b.cling(lip,out,float(c.below))
 	b.body.force_update_transform()
 	# He knows you're here: over the lip, straight on the hunt.
@@ -993,6 +1152,9 @@ func spawn_olmec() -> Node3D:
 	olmec_spawns += 1
 	olmec_cliff = c
 	_gone_t = -1.0
+	_dive_from = Vector3.INF
+	_stuck_feet = Vector3.INF
+	_spawn_t = 0.0
 	_say("Stone grinds on stone below the rim...",4.0)
 	print("crag reach: the Olmec up %s's face at %s (out %s), %.1f m down, %.1f m off you, %s" % [c.crown,lip,out,lip.y-b.position.y,float(c.far),"in view" if c.seen else "out of view"])
 	return b
@@ -1007,6 +1169,8 @@ func respawn() -> void:
 	super.respawn()
 	if enemies == null: return
 	_olmec_clear()
+	_returning = false
+	_bad_rims.clear()
 	_olmec_due = olmec_after
 
 func tick(delta: float) -> void:
@@ -1024,6 +1188,7 @@ func tick(delta: float) -> void:
 		return
 	# The gust shot's charge refills on foot while he hunts (olmec_field's).
 	if updraft != null: updraft.charge = 1.0
+	if _never_stuck(b,delta): return
 	if bool(b.crumbled):
 		if foot_lock != null and foot_lock.target == b: foot_lock.release("down")
 	elif camera != null:
@@ -1031,6 +1196,112 @@ func tick(delta: float) -> void:
 		if q > 0.001:
 			var t := Time.get_ticks_msec()/1000.0
 			camera.position += Vector3(sin(t*61.0),sin(t*53.0+1.0),sin(t*47.0+2.0))*q*0.5
+
+## The never-stuck watch (OLMEC_STUCK): true when he's been taken.
+func _never_stuck(b: Node3D, delta: float) -> bool:
+	if float(b.knobs.get("dive",0.0)) < 0.5 or bool(b.crumbled): return false
+	_spawn_t += delta
+	if _spawn_t < OLMEC_HOLD and str(b.state) == "fall" and olmec_cliff.has("lip"):
+		# Let go of the face he came up at once: another cliff, now.
+		olmec_bad_spawns += 1
+		_bad_lips.append(olmec_cliff.lip)
+		print("crag reach: the Olmec lost his hold at %s (%s): another cliff" % [(olmec_cliff.lip as Vector3).round(),b.let_go_why])
+		_olmec_take()
+		_bad_run += 1
+		# A few bad faces in a row: wait the whole while (no spawn every frame).
+		_gone_t = OLMEC_AGAIN-1.0 if _bad_run < OLMEC_BAD_RUN else 0.0
+		if _bad_run >= OLMEC_BAD_RUN: _bad_run = 0
+		return true
+	if _spawn_t >= OLMEC_HOLD: _bad_run = 0
+	if _dive_from != Vector3.INF:
+		_dive_t += delta
+		var diving := str(b.state) in ["windup","leap","fall"]
+		if not diving and _dive_t > 0.5:
+			# Came down on something (a lower shelf): the hunt goes on.
+			_dive_from = Vector3.INF
+			_stuck_reset(b)
+			return false
+		# Met the land on the way down (a rock under the edge): out of
+		# view, gone there and then, not sunk in it.
+		if str(b.state) == "fall" and not _spawner.in_view(b.position):
+			_olmec_take()
+			return true
+		if str(b.state) != "windup" and (b.position.y < _dive_from.y-OLMEC_SUNK or _dive_t > OLMEC_DIVE_S+float(b.knobs.windup)):
+			_olmec_take()
+			return true
+		return false
+	var d := b.position.distance_to(motor.feet)
+	if b.dive_goal != Vector3.INF:
+		# Striding off to a rim (`dive_walk`): off it as soon as there's a
+		# dive; there, or too long at it, the watch again.
+		_walk_t += delta
+		_walk_try -= delta
+		if _walk_try <= 0.0:
+			_walk_try = OLMEC_WALK_TRY
+			if b.dive_off(camera.global_position if camera != null else Vector3.INF):
+				b.dive_goal = Vector3.INF
+				olmec_dives += 1
+				_dive_from = b.position
+				_dive_t = 0.0
+				print("crag reach: the Olmec at the rim (%.0f s): he throws himself off toward %s" % [_walk_t,b._leap_to.round()])
+				return false
+		var left := Vector2(b.dive_goal.x-b.position.x,b.dive_goal.z-b.position.z).length()
+		var moved := _stuck_feet != Vector3.INF and motor.feet.distance_to(_stuck_feet) > OLMEC_MOVED
+		if _walk_t > OLMEC_WALK or left < 1.5 or moved or d < OLMEC_CLOSE:
+			print("crag reach: the Olmec's walk to the rim ends %.0f m short (%.0f s%s)" % [left,_walk_t,", you moved" if moved or d < OLMEC_CLOSE else ""])
+			if not moved and d >= OLMEC_CLOSE: _bad_rims.append(b.dive_goal)
+			b.dive_goal = Vector3.INF
+			_stuck_reset(b)
+			if not moved and d >= OLMEC_CLOSE: _stuck_t = OLMEC_STUCK-1.0
+		return false
+	if _stuck_feet == Vector3.INF or motor.feet.distance_to(_stuck_feet) > OLMEC_MOVED or d < _stuck_best-OLMEC_GAIN or b.position.distance_to(_stuck_at) > OLMEC_ROAM:
+		_stuck_reset(b)
+		return false
+	_stuck_t += delta
+	_stuck_all += delta
+	if _stuck_t < OLMEC_STUCK or d < OLMEC_CLOSE: return false
+	if b.dive_off(camera.global_position if camera != null else Vector3.INF):
+		olmec_dives += 1
+		_dive_from = b.position
+		_dive_t = 0.0
+		print("crag reach: the Olmec makes no way to you (%.0f m off, %.0f s): he throws himself off toward %s" % [d,_stuck_t,b._leap_to.round()])
+		return false
+	if not _spawner.in_view(b.position) and str(b.state) not in ["climb","mantle","leap","fall","hang"]:
+		print("crag reach: the Olmec makes no way to you (%.0f m off), no edge: taken out of view" % d)
+		_olmec_take()
+		return true
+	# In view, no edge near (a crown's middle): he strides off to a rim.
+	if _stuck_all >= OLMEC_WALK_AFTER:
+		var us := Time.get_ticks_usec()
+		var walks: bool = b.dive_walk(motor.feet,_bad_rims)
+		var ms := (Time.get_ticks_usec()-us)/1000.0
+		if walks:
+			_walk_t = 0.0
+			_walk_try = OLMEC_WALK_TRY
+			print("crag reach: the Olmec makes no way to you (%.0f m off, %.0f s), no edge near: off to the rim at %s (%.1f ms)" % [d,_stuck_t,b.dive_goal.round(),ms])
+			return false
+		if _walk_none <= 0: print("crag reach: no rim to walk to (%.1f ms)" % ms)
+		_walk_none = 4 if _walk_none <= 0 else _walk_none-1
+	# Busy (a climb, a leap) or in view with no edge: look again soon.
+	_stuck_t = OLMEC_STUCK-1.0
+	return false
+
+func _stuck_reset(b: Node3D) -> void:
+	_stuck_t = 0.0
+	_stuck_all = 0.0
+	_stuck_best = b.position.distance_to(motor.feet)
+	_stuck_feet = motor.feet
+	_stuck_at = b.position
+
+## He's gone (a dive out of sight); up a cliff of your crown OLMEC_BACK s on.
+func _olmec_take() -> void:
+	olmec_takes += 1
+	_dive_from = Vector3.INF
+	_stuck_t = 0.0
+	_stuck_feet = Vector3.INF
+	_olmec_clear()
+	_returning = true
+	_gone_t = OLMEC_AGAIN-OLMEC_BACK
 
 ## Flying, the hunt goes on (he makes for where you left the ground).
 func _process(delta: float) -> void:

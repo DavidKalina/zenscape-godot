@@ -67,6 +67,9 @@ var _eye_mat := StandardMaterial3D.new()
 var _maw_mat := StandardMaterial3D.new()
 var _open := 0.0
 static var _stone_material: ShaderMaterial = null
+## The dressed parts made once per model, stone and part (a head coming
+## back up a cliff dressed its meshes again: ~50 ms on the main thread).
+static var _dressed_parts := {}
 
 ## The weathered stone both halves of the Olmec wear, lit as the kit's stone.
 static func stone_material() -> ShaderMaterial:
@@ -90,7 +93,9 @@ func build(h: float, seed_value := 7) -> void:
 	var stone_mat: Material = stone_material()
 	var stone := Style.stone_of(seed_value) if Style.ruled() else Color("5a5d63")
 	for part: MeshInstance3D in [model.get_node("Head"),jaw]:
-		part.mesh = _dressed(part.mesh,stone,part.position)
+		var key := "%s|%s|%s|%s" % [model_path,stone.to_html(),part.name,part.position]
+		if not _dressed_parts.has(key): _dressed_parts[key] = _dressed(part.mesh,stone,part.position)
+		part.mesh = _dressed_parts[key]
 		part.material_override = stone_mat
 	_eye_mat.albedo_color = EYE_STONE
 	_eye_mat.roughness = 0.35
