@@ -36,6 +36,7 @@ const SkyScript = preload("res://studies/islet_yard_sky.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
+const BreakKinds = preload("res://scripts/kit_isle/break_kinds.gd")
 
 ## The masses: name, the top unit's middle (x, height off TOP, z), its
 ## spec; then its parts, each [part, offset from the top's middle (x, dy,
@@ -179,6 +180,7 @@ func _ready() -> void:
 			_body_knobs[kv.get_slice("=",0)] = float(kv.get_slice("=",1))
 	_no_lode = true
 	_olmec_due = olmec_after
+	kit_breaks_on = olmec_after >= 0.0
 	super._ready()
 
 func _load_pack() -> void:
@@ -382,10 +384,18 @@ func _aqueducts() -> void:
 			var ground := func(x: float, z: float) -> float:
 				var w := world*Vector3(x,0.0,z)
 				return _ground_under(space,w.x,w.z,deck)-base
-			var span := Aqueduct.span(seed_value+i,clampf(0.5+rng.randf_range(-0.15,0.2),0.0,1.0),3 if i == 0 else 2,false,ground)
+			var span_seed: int = seed_value+i
+			var span_worn := clampf(0.5+rng.randf_range(-0.15,0.2),0.0,1.0)
+			var piers := 3 if i == 0 else 2
+			if kit_breaks_on: ground = _held(ground)
+			var span := Aqueduct.span(span_seed,span_worn,piers,false,ground)
 			span.transform = at
+			if kit_breaks_on:
+				span.name = "Span%d" % i
+				var g: Callable = ground
+				span.set_meta("crag_break",["arch",func() -> Node3D: return Aqueduct.span(span_seed,span_worn,piers,false,g)])
 			root.add_child(span)
-		RuinKit.merge(root)
+		if not kit_breaks_on: RuinKit.merge(root)
 		art.add_child(root)
 		root.transform = Layout.xform(name_,frame)
 		Layout.track(name_,root,"piece",frame)
@@ -434,8 +444,11 @@ func _ruins() -> void:
 				var bays := int(opts.get("bays",2))
 				var length := Hall.BAY*bays
 				var frame := Transform3D(turn,coded.origin-turn.x*length*0.5)
-				node = Hall.hall(seed_value,worn,bays,_ground_of(space,frame,-RUIN_VOID))
+				node = Hall.hall(seed_value,worn,bays,_held(_ground_of(space,frame,-RUIN_VOID)),not kit_breaks_on)
 				node.transform = coded.affine_inverse()*frame
+				if kit_breaks_on:
+					for bay: Node in node.get_children():
+						if bay.has_meta("rebuild"): bay.set_meta("crag_break",["wall",bay.get_meta("rebuild")])
 				var holder := Node3D.new()
 				holder.add_child(node)
 				node = holder
@@ -450,10 +463,16 @@ func _ruins() -> void:
 					if t == Vector3.INF: continue
 					var frame := Transform3D(turn,Vector3(w.x,t.y,w.z))
 					# Every other column standing whole, the rest snapped.
-					var col := Hall.column(seed_value+i,worn*(0.3 if i%2 == 0 else 1.3),_ground_of(space,frame,-RUIN_VOID))
+					var col_seed: int = seed_value+i
+					var col_worn := worn*(0.3 if i%2 == 0 else 1.3)
+					var col_ground := _held(_ground_of(space,frame,-RUIN_VOID))
+					var col := Hall.column(col_seed,col_worn,col_ground)
 					col.transform = coded.affine_inverse()*frame
+					if kit_breaks_on:
+						col.name = "Column%d" % i
+						col.set_meta("crag_break",["pier",func() -> Node3D: return Hall.column(col_seed,col_worn,col_ground)])
 					node.add_child(col)
-				RuinKit.merge(node)
+				if not kit_breaks_on: RuinKit.merge(node)
 			_:
 				# Down to the lowest turf under its middle and round it.
 				var low := y
@@ -461,9 +480,17 @@ func _ruins() -> void:
 					var t := _turf_top(space,at2.x+d.x,at2.y+d.y)
 					if t != Vector3.INF and absf(t.y-y) < 2.0: low = minf(low,t.y)
 				coded.origin.y = low-RUIN_SINK
-				RuinKit.Build.seat(_ground_of(space,coded))
+				var seat := _held(_ground_of(space,coded))
+				RuinKit.Build.seat(seat)
 				node = RuinKit.piece(id,seed_value,worn)
 				RuinKit.Build.seat(Callable())
+				var kind: String = BreakKinds.KIND_OF.get(id,"")
+				if kit_breaks_on and node != null and kind != "":
+					node.set_meta("crag_break",[kind,func() -> Node3D:
+						RuinKit.Build.seat(seat)
+						var again := RuinKit.piece(id,seed_value,worn)
+						RuinKit.Build.seat(Callable())
+						return again])
 		if node == null: continue
 		node.name = str(r[0]).to_pascal_case()
 		art.add_child(node)
@@ -471,6 +498,43 @@ func _ruins() -> void:
 		Layout.track(name_,node,"piece",coded)
 		ruins.append([name_,node])
 	print("crag reach: %d ruins" % ruins.size())
+
+## `ground` (a Callable(x, z) -> y) with what it answered kept: a piece
+## built again for a break (kit_breaks.gd, on a worker) asks the ground
+## too, and live rays would meet the piece itself, or its rubble, by then
+## (and can't be cast off the main thread). Once the piece is built
+## (`_built`) it answers from what it kept, the nearest point asked.
+var _built := false
+var held_misses := 0
+const HELD_CELL := 0.5
+func _held(ground: Callable) -> Callable:
+	if not kit_breaks_on or not ground.is_valid(): return ground
+	var seen := {}
+	# What it answered by HELD_CELL m cell too, for the nearest point asked.
+	var cells := {}
+	return func(x: float, z: float) -> float:
+		var key := Vector2(x,z)
+		if seen.has(key): return float(seen[key])
+		var cell := Vector2i(roundi(x/HELD_CELL),roundi(z/HELD_CELL))
+		if not _built:
+			var y := float(ground.call(x,z))
+			seen[key] = y
+			cells[cell] = y
+			return y
+		held_misses += 1
+		for r in range(4):
+			var best := 0.0
+			var best_d := INF
+			for dx in range(-r,r+1):
+				for dz in range(-r,r+1):
+					var c := cell+Vector2i(dx,dz)
+					if not cells.has(c): continue
+					var d := Vector2(c)*HELD_CELL-key
+					if d.length_squared() < best_d:
+						best_d = d.length_squared()
+						best = float(cells[c])
+			if best_d < INF: return best
+		return 0.0
 
 ## The ground under a piece standing at `xf` (world): a Callable(x, z) ->
 ## y in its frame, `none` over the drop (-INF: none there; the halls'
@@ -657,6 +721,14 @@ const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":
 
 ## Seconds after the start (and after R) the Olmec comes; -1 never (no flag).
 var olmec_after := -1.0
+## The ruins, the aqueduct's spans and the colonnade's columns break under
+## him (on with --olmec / --olmec-after): each piece built as its own node
+## with how to build it again (meta "crag_break" [kind, Callable]), handed
+## to the breakables hub (scripts/kit_isle/breakables.gd) through
+## CragBreaks (kit_breaks.gd, with his landings' waves).
+var kit_breaks_on := false
+var breakables: Node3D = null
+var kit_breaks: Node3D = null
 var enemies: Node = null
 var _body_knobs := {}
 var _olmec_due := -1.0
@@ -695,6 +767,56 @@ func _build_room() -> void:
 	_spawner = BodySpawner.new()
 	add_child(_spawner)
 	_spawner.setup(self,enemies)
+	_wire_breaks()
+
+const Breakables = preload("res://scripts/kit_isle/breakables.gd")
+const BreakPieces = preload("res://scripts/kit_isle/break_pieces.gd")
+## His landing's shockwave (the hunt's leaps, drops and pounces): the
+## pieces within LAND_REACH head heights of where he came down (times the
+## wave's power's root) take a hit of his strength.
+const LAND_REACH := 1.1
+
+## The kit breaks, his landings' too: a wave's first front hits what is
+## round where he landed.
+class CragBreaks extends "res://scripts/kit_isle/kit_breaks.gd":
+	var landings := 0
+	func wave(body: Node3D, w: Dictionary) -> void:
+		if w.has("kit"): return
+		w["kit"] = true
+		landings += 1
+		var power := float(w.get("power",1.0))
+		var reach: float = float(body.hh)*LAND_REACH*sqrt(maxf(power,0.0))
+		var at: Vector3 = w.at
+		hit(at+Vector3.UP*float(body.hh)*0.5,reach,float(hub.strength_of(&"olmec"))*minf(power,1.0),&"olmec")
+
+func _wire_breaks() -> void:
+	if not kit_breaks_on: return
+	_built = true
+	breakables = Breakables.new()
+	breakables.field = enemies
+	breakables.sound_hook = _voice
+	add_child(breakables)
+	kit_breaks = CragBreaks.new()
+	kit_breaks.name = "KitBreaks"
+	kit_breaks.hub = breakables
+	kit_breaks.field = enemies
+	kit_breaks.lost_y = lost
+	add_child(kit_breaks)
+	var n := 0
+	var by := {}
+	for node: Node in art.find_children("*","Node3D",true,false):
+		if not node.has_meta("crag_break"): continue
+		var spec: Array = node.get_meta("crag_break")
+		var idx: int = kit_breaks.add(node as Node3D,str(spec[0]),spec[1] as Callable,hash(String(node.get_path())))
+		if idx >= 0:
+			# Its cut made on the main thread, a build a frame as he nears
+			# (kit_breaks.gd `_wake`): a worker's cut takes longer than he
+			# takes to cross a hall bay, and he walks through what stands
+			# till it's made.
+			n += 1
+			by[spec[0]] = int(by.get(spec[0],0))+1
+	breakables.others.append(kit_breaks)
+	print("crag reach: %d breakable piece(s) %s" % [n,by])
 
 func olmec() -> Node3D:
 	if enemies == null: return null
@@ -812,6 +934,7 @@ func spawn_olmec() -> Node3D:
 	var b: Node3D = enemies.add(OlmecTarget,lip,-out,knobs)
 	var h: Node3D = enemies.add(InhalerHead,lip,-out,{})
 	b.make_whole(h)
+	if breakables != null: b.breaker = breakables
 	b.cling(lip,out,float(c.below))
 	b.body.force_update_transform()
 	# He knows you're here: over the lip, straight on the hunt.
@@ -855,7 +978,7 @@ func tick(delta: float) -> void:
 	if bool(b.crumbled):
 		if foot_lock != null and foot_lock.target == b: foot_lock.release("down")
 	elif camera != null:
-		var q := float(b.quake)*clampf(1.0-camera.global_position.distance_to(b.global_position)/60.0,0.0,1.0)
+		var q := maxf(float(b.quake),float(breakables.quake) if breakables != null else 0.0)*clampf(1.0-camera.global_position.distance_to(b.global_position)/60.0,0.0,1.0)
 		if q > 0.001:
 			var t := Time.get_ticks_msec()/1000.0
 			camera.position += Vector3(sin(t*61.0),sin(t*53.0+1.0),sin(t*47.0+2.0))*q*0.5
@@ -869,13 +992,13 @@ func _process(delta: float) -> void:
 
 func _voice(sound_name: StringName, at: Vector3) -> void:
 	var key := String(sound_name)
-	var spec: Variant = InhalerHead.VOICES.get(key,BodySpawner.VOICES.get(key))
+	var spec: Variant = InhalerHead.VOICES.get(key,BodySpawner.VOICES.get(key,BreakPieces.VOICES.get(key)))
 	if spec == null: return
 	if not _voices.has(key): _voices[key] = EnemyYard._synth(spec)
 	var player := AudioStreamPlayer3D.new()
 	player.stream = _voices[key]
 	player.position = at
-	player.unit_size = float(BodySpawner.REACH.get(key,14.0))
+	player.unit_size = float(BodySpawner.REACH.get(key,BreakPieces.REACH.get(key,14.0)))
 	add_child(player)
 	player.finished.connect(player.queue_free)
 	player.play()
