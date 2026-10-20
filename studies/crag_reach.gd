@@ -755,8 +755,9 @@ const OLMEC_FAR := 45.0
 const OLMEC_AGAIN := 6.0
 ## His knobs here: the whole body's hunt (as studies/olmec_field.gd's
 ## whole Olmec), relentless, and the wall catch (headless_body.gd
-## `leap_catch`).
-const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"dive":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0}
+## `leap_catch`). `run_up`: in the chase he sets off at a walk and builds
+## into his run over that many s of fairly straight going.
+const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"dive":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0,"run_up":4.0}
 ## Never stuck: no OLMEC_GAIN m nearer you and no OLMEC_ROAM m from where he
 ## was for OLMEC_STUCK s (you standing
 ## within OLMEC_MOVED m of where that began) and more than OLMEC_CLOSE m
