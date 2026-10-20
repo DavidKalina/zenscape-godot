@@ -740,12 +740,19 @@ func _add_life() -> void:
 	if not greed_on: return
 	Greed.build(self)
 	Greed.build_rope(self)
+	greed = GreedMeter.new()
+	add_child(greed)
+	greed.setup(self)
 	_build_hands_hint()
 
 # --- The greed run (--greed-run, studies/crag_reach_greed.gd) -------------------------
 
 const Greed = preload("res://studies/crag_reach_greed.gd")
+const GreedMeter = preload("res://scripts/greed/greed_meter.gd")
 var greed_on := false
+## The isle's anger (scripts/greed/greed_meter.gd): value bagged, its
+## thresholds (--greed-brood=N, --greed-olmec=N) and its cue.
+var greed: Node = null
 ## Read by the carry (scripts/carry/carry_host.gd) and the bag
 ## (scripts/carry/loot_bag.gd), as studies/wreck_cluster.gd's: the plane's
 ## rope ends in a bare hook (`bag_on`), the bag, the loose loot.
@@ -1099,6 +1106,9 @@ func tick(delta: float) -> void:
 	# Jump by a hooked rope takes hold of it (before the motor would jump).
 	if rope != null and not flying: rope.pre_step((script_jump if scripted else Input.is_action_pressed(&"walk_jump")) and not _tuning())
 	super.tick(delta)
+	if greed != null:
+		greed.step(delta)
+		if _hands_label != null: _hands_label.text = Greed.hands_text(hands)+"\n"+greed.text()
 	if enemies == null or flying: return
 	if _olmec_due >= 0.0:
 		_olmec_due -= delta
