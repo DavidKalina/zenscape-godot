@@ -102,6 +102,9 @@ signal chase_beat(what: String)
 signal weighed(at: Vector3, power: float, kind: String)
 
 const Look = preload("res://scripts/enemies/headless_body_look.gd")
+## Whole, his head holds your eyes over the clips (olmec-look).
+const OlmecGaze = preload("res://scripts/enemies/olmec_gaze.gd")
+var gaze := OlmecGaze.new()
 const Dust = preload("res://scripts/enemies/body_dust.gd")
 const Routes = preload("res://scripts/enemies/body_routes.gd")
 const Sight = preload("res://scripts/enemies/body_sight.gd")
@@ -478,7 +481,7 @@ func head_tilt() -> Vector3:
 	var tilt := (Basis(Vector3.UP,facing).inverse()*look.seat().basis.orthonormalized()).get_euler()
 	# Held up: upright, its face tipped down a little as he leans out.
 	if state == "scope" and _held_w > 0.0: return tilt.lerp(Vector3(-_peer*0.6,0.0,0.0),_held_w)
-	return tilt
+	return gaze.over(self,tilt)
 
 # --- A frame -------------------------------------------------------------------------------
 
@@ -491,6 +494,7 @@ func think(delta: float) -> void:
 	_dusts(delta)
 	_shocks(delta)
 	if whole: _seat_k = minf(1.0,_seat_k+delta/float(knobs.settle))
+	if whole: gaze.step(self,delta)
 	_progress(delta)
 	_beacons(delta)
 	_searching()
@@ -3735,6 +3739,8 @@ func _animate(delta: float) -> void:
 		"feel": look.want("feel",_feel_k()*float(look.lengths.feel))
 		"roam","home","chase","return":
 			var gait := run_clip if _running() else ("stride" if state in ["home","chase"] else "walk")
+			# Whole, he hunts on the upright hunt stride, not the arms-out one (olmec-look).
+			if gait == "stride" and whole: gait = "hunt_stride"
 			var pace := float(knobs.home) if state == "home" else (float(knobs.chase_speed) if state == "chase" else float(knobs.walk))
 			var m := clampf(Vector2(vel.x,vel.z).length()/maxf(pace*0.5,0.1),0.0,1.0)
 			look.want(gait,look.loop_time(gait,_phase,2.0),m)
