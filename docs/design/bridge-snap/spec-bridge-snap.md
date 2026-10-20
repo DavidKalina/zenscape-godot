@@ -100,3 +100,26 @@ The user: he always comes back with a bag, but it's empty. On any fall
 into the void, worn or not, he respawns wearing an empty bag; its loot is
 lost with the fall (pieces back on their spots, as now). Replaces task 4's
 "worn keeps its loot". Spare bags from the plane are a later idea.
+
+## Task 5: the brood find the bridges (spec change)
+
+The user couldn't test the snap: the brood's pathfinding failed. From the
+far side, by the short bridge, they couldn't find their way back onto the
+long bridge. This task comes before the tuning (now task 6):
+
+- **Bridges are routes for the brood.** A brood guy heading somewhere
+  across the void goes to the nearest bridge end that gets him there,
+  walks the deck along its centre line, and steps off the far end. Both
+  bridges, from either cliff. They never step off a deck's open sides.
+- **They follow him onto the long bridge** from wherever they are (near
+  cliff, far cliff, the short bridge), so a crossing with the brood after
+  him reliably brings them onto the deck.
+- **A test aid:** a key (and a flag) that brings the brood out straight
+  away, already coming for him, so the user can try the snap without
+  first filling the bag near the burrows. Show it in the hint line.
+- Prove it through the real play loop: from each cliff and from the short
+  bridge, the brood reach him mid-span on the long bridge; and a snap
+  happens in play with them on the deck.
+
+Task 6 is the tuning pass and the handoff (the empty bag on a fall, catch
+reach, which half he grabs, a ladder pose, as noted in the trail).
