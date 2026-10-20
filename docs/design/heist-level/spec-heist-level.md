@@ -111,3 +111,25 @@ so the user can move them in F4. Keep the names stable.
 ## Cap
 
 The skill's default.
+
+## Spec change: swing points out of the rock (from the user, after task 3)
+
+The user wants the rope's swing worked into the land itself: structures
+growing out of the rock that let you swing around. Do this as the **next
+task** (before the vault), so the way out is built round it.
+
+- **Swing points** that carry the rope swing's existing hook line
+  (`docs/design/rope-swing/handoff.md`, `climb_rope.gd` `_beam_target`):
+  stone arms jutting off cliff faces, dead trees or roots with a branch out
+  over a drop, natural rock arches between two masses, a broken ruin lintel
+  sticking out. Greybox shapes, each named `heist/swing_NN` through
+  `layout_overrides.gd`; a moved or turned one takes its hook line along.
+  Keep the shapes in their own new file so they can become kit pieces
+  later; note in the handoff what a real kit piece would need.
+- **Where:** the way in's gantry beam (`beam_01`) becomes one of them. The
+  way out gets the most: swinging round a cliff corner, a chain of two or
+  three swings across a big gap, and a swing out from under the Olmec as
+  one of the narrow escapes (build these when their steps come; place the
+  points now where the way out will run).
+- **Check:** swinging with the bag worn (rope in hand). If a heavy bag
+  should change the swing, or the switch gets in the way, note it.
