@@ -755,16 +755,7 @@ func _grow() -> void:
 ## --greed-run, the bag, its loot and the plane's rope hook.
 func _add_life() -> void:
 	if not greed_on: return
-	Greed.build(self)
-	Greed.build_rope(self)
-	Greed.build_brood(self)
-	greed = GreedMeter.new()
-	add_child(greed)
-	greed.setup(self)
-	run = GreedRun.new()
-	add_child(run)
-	run.setup(self)
-	_build_hands_hint()
+	Greed.build_all(self)
 
 # --- The greed run (--greed-run, studies/crag_reach_greed.gd) -------------------------
 
@@ -852,7 +843,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	super._unhandled_input(event)
 
 func _foot_text() -> String:
-	return super._foot_text()+("\n"+Greed.hint() if greed_on else "")
+	return super._foot_text()+("\n"+Greed.hint(call("greed_place") if has_method("greed_place") else "the crag") if greed_on else "")
 
 ## Dragging, the bag holds him to its rope; aiming a throw, the stick moves
 ## the reticle, not him (as studies/wreck_cluster.gd).

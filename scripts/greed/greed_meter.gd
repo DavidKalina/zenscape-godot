@@ -49,6 +49,11 @@ var _env: Environment
 func setup(h: Node3D) -> void:
 	host = h
 	name = "Greed"
+	# The host's own marks (the heist's), else the crag's; the flags win.
+	if host.has_method("greed_marks"):
+		var m: Vector2i = host.call("greed_marks")
+		brood_at = m.x
+		olmec_at = m.y
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--greed-brood="): brood_at = maxi(int(a.get_slice("=",1)),0)
 		elif a.begins_with("--greed-olmec="): olmec_at = maxi(int(a.get_slice("=",1)),0)

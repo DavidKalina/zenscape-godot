@@ -59,6 +59,25 @@ const BARE := 1.3
 ## Kept this far (m, across) off the plane's takeoff line on its crown.
 const LINE_CLEAR := 12.0
 
+## The whole greed run on a host (the crag reach with --greed-run, the
+## heist level): the bag and its loot, the rope and its posts, the burrows
+## and brood (if the host has any), the greed meter (the host's `greed`),
+## the run's keep, clock, escape and end (the host's `run`) and the hands
+## hint. Each piece asks the host's own tables first (`_table`).
+static func build_all(host: Node3D) -> void:
+	build(host)
+	build_rope(host)
+	if not (_table(host,"greed_burrows",BURROWS) as Array).is_empty(): build_brood(host)
+	var meter: Node = load("res://scripts/greed/greed_meter.gd").new()
+	host.add_child(meter)
+	meter.setup(host)
+	host.set("greed",meter)
+	var run: Node = load("res://scripts/greed/greed_run.gd").new()
+	host.add_child(run)
+	run.setup(host)
+	host.set("run",run)
+	host.call("_build_hands_hint")
+
 ## Stands the loot on the host (filling its `loot`, under a "Loot" node),
 ## gives it a carry host for the plane's rope (no treasures, the bare
 ## hook: the host's `bag_on`), and puts the bag on him (the host's `bag`).
@@ -243,8 +262,8 @@ static func hands_text(hands: String) -> String:
 	return "[BAG] rope  ·  %s switch\nE bag loot · F off / on / hitch at the plane · hold LMB/T throw it" % key
 
 ## The bag's keys, for the foot hint.
-static func hint() -> String:
-	return "Greed run: H (pad up) switches the bag / the rope in hand · bag: E by loot bags it · F off / on / drag · F by the plane's rope hook: hitch the bag (its load is the plane's), F again: its load into the plane's keep and the bag back on · Space at the plane boards; fly clear of the crag to end the run"
+static func hint(place := "the crag") -> String:
+	return "Greed run: H (pad up) switches the bag / the rope in hand · bag: E by loot bags it · F off / on / drag · F by the plane's rope hook: hitch the bag (its load is the plane's), F again: its load into the plane's keep and the bag back on · Space at the plane boards; fly clear of %s to end the run" % place
 
 # --- The stone brood (scripts/brood/bag_brood.gd) ---------------------------------------
 

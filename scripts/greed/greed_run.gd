@@ -99,7 +99,7 @@ func step(delta: float) -> void:
 		if _circle == Vector3.INF: _circle = host.call("isle_circle")
 		var at: Vector3 = host.get("plane").position
 		if Vector2(at.x-_circle.x,at.z-_circle.y).length() > AWAY:
-			end("banked","You got away from the crag.")
+			end("banked","You got away from %s." % _place())
 		return
 	var head: Node3D = host.call("olmec_head") if host.has_method("olmec_head") else null
 	if head != null and bool(head.get("swallowed")):
@@ -114,7 +114,11 @@ func step(delta: float) -> void:
 	_near_t += delta
 	if olmec != null and motor != null and olmec.global_position.distance_to(motor.feet) < OLMEC_NEAR: _near_t = 0.0
 	if float(host.get("_stranded_left")) >= 0.0:
-		end("lost","The Olmec threw you off the crag." if _near_t < OLMEC_FRESH else "You fell off the crag.")
+		end("lost",("The Olmec threw you off %s." if _near_t < OLMEC_FRESH else "You fell off %s.") % _place())
+
+## The place's name in the end lines: the host's `greed_place`, else the crag.
+func _place() -> String:
+	return str(host.call("greed_place")) if host.has_method("greed_place") else "the crag"
 
 ## Seconds since the Olmec was within OLMEC_NEAR m of him.
 var _near_t := 999.0

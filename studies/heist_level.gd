@@ -92,6 +92,18 @@ func greed_posts() -> Array:
 func greed_burrows() -> Array:
 	return []
 
+## The meter's marks (brood, Olmec): one past the way in's loot, so the
+## way in stays calm however much of it he bags and the vault's take
+## wakes the isle. --greed-brood= / --greed-olmec= still win.
+func greed_marks() -> Vector2i:
+	var w := 0
+	for row: Array in HEIST_LOOT: w += int(VaultHost.VALUES.get(str(row[1]),0))
+	return Vector2i(w+1,w+1)
+
+## The end screen's name for the place.
+func greed_place() -> String:
+	return "the vault's isle"
+
 func _ready() -> void:
 	# The greed run's bag, rope and loot are always on here.
 	greed_on = true
@@ -155,11 +167,12 @@ func _build_art() -> void:
 		tris += int((u.unit.get_meta("stats") as Dictionary).get("triangles",0))
 	print("heist: %d units, %d triangles, built in %d ms" % [units.size(),tris,Time.get_ticks_msec()-began])
 
-## The bag, the way in's loot, the rope, its posts and beams, and the
-## hands hint. No greed meter, brood or run yet (later steps).
+## The greed run, as the crag's (crag_reach_greed.gd `build_all`): the
+## bag, the loot, the rope and its posts, the greed meter, the run's keep,
+## clock, end screen and restart, the hands hint; then the way in's beams
+## and walls. No burrows yet (the wake, a later step).
 func _add_life() -> void:
-	Greed.build(self)
-	Greed.build_rope(self)
+	Greed.build_all(self)
 	_build_beams()
 	_build_walls()
 	_build_hands_hint()
@@ -256,3 +269,4 @@ func _build_walls() -> void:
 		Layout.track(called,body,"piece",coded)
 
 const HookLine = preload("res://scripts/rope/hook_line.gd")
+const VaultHost = preload("res://scripts/home/vault_host.gd")
