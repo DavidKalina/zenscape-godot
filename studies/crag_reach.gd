@@ -507,11 +507,20 @@ func _ruins() -> void:
 var _built := false
 var held_misses := 0
 const HELD_CELL := 0.5
+## How far (cells) past what was asked a miss still finds the nearest kept.
+const HELD_RING := 3
+## Each `_held`'s grid maker, run once the pieces are built (`_freeze_held`).
+var _held_freezers: Array[Callable] = []
 func _held(ground: Callable) -> Callable:
 	if not kit_breaks_on or not ground.is_valid(): return ground
 	var seen := {}
-	# What it answered by HELD_CELL m cell too, for the nearest point asked.
+	# What it answered by HELD_CELL m cell too, for the nearest point asked;
+	# once built, laid out as a grid (each cell the nearest asked one's
+	# answer, HELD_RING cells round them) so a miss is one look, cheap on
+	# the cuts' workers (an ivy strand asks thousands of new points).
 	var cells := {}
+	var grid := {"lo":Vector2i.ZERO,"w":0,"h":0,"y":PackedFloat32Array()}
+	_held_freezers.append(func() -> void: _held_grid(cells,grid))
 	return func(x: float, z: float) -> float:
 		var key := Vector2(x,z)
 		if seen.has(key): return float(seen[key])
@@ -522,19 +531,47 @@ func _held(ground: Callable) -> Callable:
 			cells[cell] = y
 			return y
 		held_misses += 1
-		for r in range(4):
-			var best := 0.0
-			var best_d := INF
-			for dx in range(-r,r+1):
-				for dz in range(-r,r+1):
-					var c := cell+Vector2i(dx,dz)
-					if not cells.has(c): continue
-					var d := Vector2(c)*HELD_CELL-key
-					if d.length_squared() < best_d:
-						best_d = d.length_squared()
-						best = float(cells[c])
-			if best_d < INF: return best
-		return 0.0
+		var g := cell-(grid.lo as Vector2i)
+		if g.x < 0 or g.y < 0 or g.x >= int(grid.w) or g.y >= int(grid.h): return 0.0
+		var y: float = (grid.y as PackedFloat32Array)[g.y*int(grid.w)+g.x]
+		return 0.0 if is_nan(y) else y
+
+## `cells` (cell -> y) laid out in `grid`: each cell within HELD_RING of an
+## asked one holds the nearest asked one's y (the ring search it replaces),
+## the rest NAN.
+func _held_grid(cells: Dictionary, grid: Dictionary) -> void:
+	if cells.is_empty(): return
+	var lo := Vector2i(1 << 30,1 << 30)
+	var hi := -lo
+	for c: Vector2i in cells.keys():
+		lo = Vector2i(mini(lo.x,c.x),mini(lo.y,c.y))
+		hi = Vector2i(maxi(hi.x,c.x),maxi(hi.y,c.y))
+	lo -= Vector2i.ONE*HELD_RING
+	hi += Vector2i.ONE*HELD_RING
+	var w := hi.x-lo.x+1
+	var h := hi.y-lo.y+1
+	var ys := PackedFloat32Array()
+	ys.resize(w*h)
+	ys.fill(NAN)
+	var best := PackedFloat32Array()
+	best.resize(w*h)
+	best.fill(INF)
+	for c: Vector2i in cells.keys():
+		var y := float(cells[c])
+		for dx in range(-HELD_RING,HELD_RING+1):
+			for dz in range(-HELD_RING,HELD_RING+1):
+				var k := (c.y+dz-lo.y)*w+(c.x+dx-lo.x)
+				var d := float(dx*dx+dz*dz)
+				if d < best[k]:
+					best[k] = d
+					ys[k] = y
+	grid.lo = lo
+	grid.w = w
+	grid.h = h
+	grid.y = ys
+
+func _freeze_held() -> void:
+	for f: Callable in _held_freezers: f.call()
 
 ## The ground under a piece standing at `xf` (world): a Callable(x, z) ->
 ## y in its frame, `none` over the drop (-INF: none there; the halls'
@@ -792,6 +829,7 @@ class CragBreaks extends "res://scripts/kit_isle/kit_breaks.gd":
 func _wire_breaks() -> void:
 	if not kit_breaks_on: return
 	_built = true
+	_freeze_held()
 	breakables = Breakables.new()
 	breakables.field = enemies
 	breakables.sound_hook = _voice
@@ -809,13 +847,16 @@ func _wire_breaks() -> void:
 		var spec: Array = node.get_meta("crag_break")
 		var idx: int = kit_breaks.add(node as Node3D,str(spec[0]),spec[1] as Callable,hash(String(node.get_path())))
 		if idx >= 0:
-			# Its cut made on the main thread, a build a frame as he nears
-			# (kit_breaks.gd `_wake`): a worker's cut takes longer than he
-			# takes to cross a hall bay, and he walks through what stands
-			# till it's made.
 			n += 1
 			by[spec[0]] = int(by.get(spec[0],0))+1
 	breakables.others.append(kit_breaks)
+	# The breaks' voices made now, not at the first break (a frame's ~25 ms).
+	for key: String in BreakPieces.VOICES.keys():
+		if not _voices.has(key): _voices[key] = EnemyYard._synth(BreakPieces.VOICES[key])
+	# Every cut made ahead on workers from now (kit_breaks.gd `prepare_all`):
+	# a break only swaps it in, so neither his approach nor a hit (his
+	# landings' too) makes a cut on the main thread.
+	kit_breaks.prepare_all()
 	print("crag reach: %d breakable piece(s) %s" % [n,by])
 
 func olmec() -> Node3D:
