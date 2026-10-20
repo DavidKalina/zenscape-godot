@@ -1022,6 +1022,13 @@ func _swing_mount(motor: Variant) -> void:
 	motor.rider = self
 	swinging = true
 	swings += 1
+	# The yank off the ground throws the brood off him, as a jump does
+	# (their slow on his run-off would else drop him off the rim, put down
+	# and swung again, till he slips under the lip and swings too hard).
+	var brood: Variant = study.get("brood")
+	if brood != null and brood.has_method("shake_off"):
+		var v: Vector3 = motor.velocity
+		brood.shake_off(Vector3(v.x,0.0,v.z)*0.3)
 	_say("Swinging: %s pumps · %s climbs · %s slides down · %s lets go" % [Pad.pick("W/S","stick"),Pad.pick("E","B"),Pad.pick("F","D-pad down"),Pad.pick("Space","A")])
 	_swing_said = true
 
