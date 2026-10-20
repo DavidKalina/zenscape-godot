@@ -491,6 +491,9 @@ func _read_input() -> void:
 	_reel_was = reel_down
 	_tug_was = tug_down
 	if _busy(): return
+	# A host with two slots (the greed run: the bag or the rope in hand)
+	# says when the keys are the rope's.
+	if study.get("rope_keys") == false: return
 	if throw_hit:
 		if state == "coiled":
 			if _on_foot(): aim()
@@ -662,6 +665,9 @@ func target(over: Vector3) -> Dictionary:
 			edge = Vector3((side.position as Vector3).x,hit_at.y,(side.position as Vector3).z)
 	var at := edge-o*LAND_IN*s+Vector3.UP*0.05
 	var h: String = str(holds.get(id,""))
+	# A host whose ground has no tagged pieces (the crag reach) may give
+	# every untagged top one hold (`rope_ground_hold`, e.g. "solid").
+	if id == "" and study.get("rope_ground_hold") != null: h = str(study.get("rope_ground_hold"))
 	if h == "" or h == "anchor":
 		return {"at":at,"lip":edge,"out":o,"hold":"","piece":id,"why":"a smooth top: nothing to catch on"}
 	return {"at":at,"lip":edge,"out":o,"hold":h,"piece":id,"why":""}
@@ -687,6 +693,11 @@ func _beam_target(over: Vector3) -> Dictionary:
 		on.y = a.y+(e.y-a.y)*k/l
 		if on.y-feet.y < ABOVE*s: continue
 		var dd := Vector2(on.x-over.x,on.z-over.z).length()
+		if b.get("ring",false):
+			# A ring: snapped anywhere along the line, it hooks the middle.
+			k = l*0.5
+			on = a+Vector3(u.x,0.0,u.y)*k
+			on.y = (a.y+e.y)*0.5
 		if dd >= best_d: continue
 		best_d = dd
 		# The near side: toward him, across the line.
@@ -1016,6 +1027,13 @@ func _swing_mount(motor: Variant) -> void:
 	motor.rider = self
 	swinging = true
 	swings += 1
+	# The yank off the ground throws the brood off him, as a jump does
+	# (their slow on his run-off would else drop him off the rim, put down
+	# and swung again, till he slips under the lip and swings too hard).
+	var brood: Variant = study.get("brood")
+	if brood != null and brood.has_method("shake_off"):
+		var v: Vector3 = motor.velocity
+		brood.shake_off(Vector3(v.x,0.0,v.z)*0.3)
 	_say("Swinging: %s pumps · %s climbs · %s slides down · %s lets go" % [Pad.pick("W/S","stick"),Pad.pick("E","B"),Pad.pick("F","D-pad down"),Pad.pick("Space","A")])
 	_swing_said = true
 

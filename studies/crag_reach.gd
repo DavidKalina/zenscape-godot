@@ -25,6 +25,9 @@ extends "res://studies/kit_isle.gd"
 ##                          face across a gap too wide to land over)
 ##     [--olmec-after=N]    the same, N s after you start (a late threat)
 ##     [--body-knob=<knob>=<value>] over his knobs (repeatable)
+##     [--greed-run]        the greed run (studies/crag_reach_greed.gd):
+##                          the loot bag on his back, loot over the crag,
+##                          the plane's rope hook to hitch it to
 ##   With the Olmec out: Tab / R3 lock on, X the gust shot (its charge
 ##   refills on foot), R you back at the start and him gone, up a cliff
 ##   again (at once with --olmec, N s on with --olmec-after); fallen off the
@@ -177,12 +180,16 @@ func _ready() -> void:
 		elif a == "--no-debris": debris = false
 		elif a == "--olmec": olmec_after = 0.0
 		elif a.begins_with("--olmec-after="): olmec_after = maxf(float(a.get_slice("=",1)),0.0)
+		elif a == "--greed-run": greed_on = true
 		elif a.begins_with("--body-knob="):
 			var kv: String = a.trim_prefix("--body-knob=")
 			_body_knobs[kv.get_slice("=",0)] = float(kv.get_slice("=",1))
+	bag_on = greed_on
 	_no_lode = true
 	_olmec_due = olmec_after
-	kit_breaks_on = olmec_after >= 0.0
+	# The greed run builds him (and the breaks) always; greed fires him.
+	kit_breaks_on = olmec_after >= 0.0 or greed_on
+	olmec_armed = olmec_after >= 0.0
 	super._ready()
 
 func _load_pack() -> void:
@@ -244,6 +251,21 @@ func _build_art() -> void:
 		by[group] += f
 	print("crag reach: %d units, %d triangles, %d debris fragments (masses %d, aqueduct rocks %d, islets %d, specks %d; %d of them cleared off the routes), built in %d ms" % [units.size(),tris,frags-cleared,by.mass,by.rock,by.islet,by.speck,cleared,Time.get_ticks_msec()-began])
 
+## The tables the bridges, pillars and ruins are built from, and the root
+## of their layout names: a place built on this one (studies/heist_level.gd)
+## answers its own.
+func place_root() -> String:
+	return "crag_reach"
+
+func bridge_list() -> Array:
+	return BRIDGES
+
+func pillar_list() -> Array:
+	return PILLARS
+
+func ruin_list() -> Array:
+	return RUINS
+
 ## Leaves out every debris fragment in a route's way (SPAN_CLEAR): its
 ## instance shrunk to nothing. Returns how many. Fixed loops: units x
 ## multimeshes x instances x spans.
@@ -276,8 +298,8 @@ var spans: Array = []
 
 func _bridges() -> void:
 	var space := get_world_3d().direct_space_state
-	for br: Array in BRIDGES:
-		var name_: String = "crag_reach/"+str(br[0])
+	for br: Array in bridge_list():
+		var name_: String = place_root()+"/"+str(br[0])
 		if Layout.deleted(name_) or not mass_tops.has(br[1]) or not mass_tops.has(br[2]): continue
 		var from: Node3D = mass_tops[br[1]]
 		var to: Node3D = mass_tops[br[2]]
@@ -313,8 +335,8 @@ var pillars: Array = []
 
 func _pillars() -> void:
 	var space := get_world_3d().direct_space_state
-	for pl: Array in PILLARS:
-		var name_: String = "crag_reach/"+str(pl[0])
+	for pl: Array in pillar_list():
+		var name_: String = place_root()+"/"+str(pl[0])
 		if Layout.deleted(name_) or not mass_tops.has(pl[1]) or not mass_tops.has(pl[2]): continue
 		var hi: Vector3 = (mass_tops[pl[1]] as Node3D).position
 		var lo: Vector3 = (mass_tops[pl[2]] as Node3D).position
@@ -415,8 +437,8 @@ func _ruins() -> void:
 	var home := plane_home()
 	var run_dir := Vector2(-sin(home.w),-cos(home.w))
 	var home2 := Vector2(home.x,home.z)
-	for r: Array in RUINS:
-		var name_: String = "crag_reach/"+str(r[0])
+	for r: Array in ruin_list():
+		var name_: String = place_root()+"/"+str(r[0])
 		var unit: Node3D = named.get(r[1])
 		if Layout.deleted(name_) or unit == null: continue
 		var off: Vector2 = r[2]
@@ -731,9 +753,116 @@ func _stand(name_: String, coded: Transform3D, spec: Dictionary) -> Node3D:
 func _grow() -> void:
 	flora_ready = true
 
-## No kit life (its undergrowth and flowers are another palette).
+## No kit life (its undergrowth and flowers are another palette). With
+## --greed-run, the bag, its loot and the plane's rope hook.
 func _add_life() -> void:
-	pass
+	if not greed_on: return
+	Greed.build_all(self)
+
+# --- The greed run (--greed-run, studies/crag_reach_greed.gd) -------------------------
+
+const Greed = preload("res://studies/crag_reach_greed.gd")
+const GreedMeter = preload("res://scripts/greed/greed_meter.gd")
+const GreedRun = preload("res://scripts/greed/greed_run.gd")
+## The run's keep, clock, escape, death and end screen
+## (scripts/greed/greed_run.gd).
+var run: Node = null
+
+## The bag off the plane's hook (scripts/carry/loot_bag.gd `unhitch`): its
+## load into the plane's keep.
+func bag_unhitching(b: Node3D) -> void:
+	if run != null: run.bank(b)
+var greed_on := false
+## The isle's anger (scripts/greed/greed_meter.gd): value bagged, its
+## thresholds (--greed-brood=N, --greed-olmec=N) and its cue.
+var greed: Node = null
+## The burrows on the crag's turf and the stone brood out of them
+## (scripts/brood/bag_brood.gd), woken by greed (`greed_woke`).
+var burrows: Array = []
+var brood: Node3D = null
+## No spade on the crag (the brood's `dig` ask): what they bury stays down.
+var dig = null
+
+## The greed meter's marks: "brood", "olmec".
+func greed_woke(what: String) -> void:
+	if what == "brood": Greed.wake(self)
+	elif what == "olmec" and enemies != null and not olmec_armed:
+		# The --olmec entrance, now: up a cliff out of view on the next
+		# foot tick (after a landing if he's flying), and back OLMEC_AGAIN
+		# s after he's gone, as with --olmec.
+		olmec_armed = true
+		_olmec_due = 0.0
+## Read by the carry (scripts/carry/carry_host.gd) and the bag
+## (scripts/carry/loot_bag.gd), as studies/wreck_cluster.gd's: the plane's
+## rope ends in a bare hook (`bag_on`), the bag, the loose loot.
+var bag_on := false
+var carry: Node3D = null
+var bag: Node3D = null
+var loot: Array = []
+## His climbing rope (scripts/rope/climb_rope.gd) and what it reads of
+## the host: the anchor posts (`holds` id -> "anchor", `pieces` id ->
+## node) and the hold every untagged top gives (`rope_ground_hold`).
+var rope: Node3D = null
+var holds: Dictionary = {}
+var pieces: Dictionary = {}
+var rope_ground_hold = null
+## The bag or the rope in hand ("bag", "rope"; H / pad up): only the one
+## in hand hears E, F and the throw (the bag's `bag_keys`, the rope's
+## `rope_keys`).
+var hands := "bag"
+var bag_keys: bool:
+	get: return hands == "bag"
+var rope_keys: bool:
+	get: return hands == "rope"
+var _hands_label: Label = null
+
+func _build_hands_hint() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 5
+	add_child(layer)
+	_hands_label = Label.new()
+	_hands_label.name = "HandsHint"
+	_hands_label.add_theme_font_size_override("font_size",18)
+	_hands_label.add_theme_color_override("font_color",Color("fbf6ea"))
+	_hands_label.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
+	_hands_label.add_theme_constant_override("shadow_offset_y",1)
+	# Top left: the bag's own lines hold the top right.
+	_hands_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_hands_label.offset_left = 16.0
+	_hands_label.offset_right = 640.0
+	_hands_label.offset_top = 12.0
+	layer.add_child(_hands_label)
+	_hands_label.text = Greed.hands_text(hands)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if greed_on and not flying and event.is_action_pressed(&"walk_tool",false,true) and not _tuning():
+		Greed.switch(self)
+		if _hands_label != null: _hands_label.text = Greed.hands_text(hands)
+		get_viewport().set_input_as_handled()
+		return
+	# The rope in hand, F is its reel (polled), not the walk back's word.
+	if greed_on and not flying and hands == "rope" and event.is_action_pressed(&"walk_reel",false,true): return
+	super._unhandled_input(event)
+
+func _foot_text() -> String:
+	return super._foot_text()+("\n"+Greed.hint(call("greed_place") if has_method("greed_place") else "the crag") if greed_on else "")
+
+## Dragging, the bag holds him to its rope; aiming a throw, the stick moves
+## the reticle, not him (as studies/wreck_cluster.gd).
+func _want(delta: float) -> Vector2:
+	var want := super._want(delta)
+	# Aiming the hook, tugging it or pulling it up, he stands (the rope
+	# study's).
+	if rope != null and rope.state in ["aim","tug","pull_up"]:
+		rope.aim_steer(want,delta)
+		return Vector2.ZERO
+	if bag == null or bag.act != "aim": return want
+	bag.aim_steer(want,delta)
+	return Vector2.ZERO
+
+func _sync_figure() -> void:
+	if bag != null: bag.leash(get_process_delta_time())
+	super._sync_figure()
 
 # --- The Olmec hunt (--olmec, --olmec-after=N) ------------------------------------------
 
@@ -758,6 +887,11 @@ const OLMEC_AGAIN := 6.0
 ## `leap_catch`). `run_up`: in the chase he sets off at a walk and builds
 ## into his run over that many s of fairly straight going.
 const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"dive":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0,"run_up":4.0}
+
+## A study's own tune of a new Olmec, body `b` and head `h` (none here).
+func tune_olmec(_b: Node3D, _h: Node3D) -> void:
+	pass
+
 ## Never stuck: no OLMEC_GAIN m nearer you and no OLMEC_ROAM m from where he
 ## was for OLMEC_STUCK s (you standing
 ## within OLMEC_MOVED m of where that began) and more than OLMEC_CLOSE m
@@ -826,6 +960,9 @@ var kit_breaks: Node3D = null
 var enemies: Node = null
 var _body_knobs := {}
 var _olmec_due := -1.0
+## Whether the Olmec comes at all: on with --olmec / --olmec-after; with
+## --greed-run only once greed reaches his mark (`greed_woke("olmec")`).
+var olmec_armed := false
 var _gone_t := -1.0
 var _voices := {}
 var _spawner: Node = null
@@ -847,7 +984,7 @@ class Slot extends Node:
 
 func _build_room() -> void:
 	super._build_room()
-	if olmec_after < 0.0: return
+	if olmec_after < 0.0 and not greed_on: return
 	enemies = EnemyField.new()
 	enemies.study = self
 	enemies.motor = motor
@@ -1024,6 +1161,7 @@ func _cliff_pick_on(space: PhysicsDirectSpaceState3D, crown: Node3D, feet: Vecto
 		if fitted.is_empty(): continue
 		var lip: Vector3 = fitted[0]
 		var out: Vector2 = fitted[1]
+		if _lip_failed(lip): continue
 		var d := Vector2(lip.x-feet.x,lip.z-feet.z).length()
 		var seen: bool = _spawner.in_view(lip)
 		var score := 0.0
@@ -1141,6 +1279,7 @@ func spawn_olmec() -> Node3D:
 	var b: Node3D = enemies.add(OlmecTarget,lip,-out,knobs)
 	var h: Node3D = enemies.add(InhalerHead,lip,-out,{})
 	b.make_whole(h)
+	tune_olmec(b,h)
 	if breakables != null: b.breaker = breakables
 	# `beam`: the fallen pillars' crest lines, a way he walks end to end.
 	for pl: Array in pillars: b.beams.append([pl[1],pl[2]])
@@ -1160,6 +1299,39 @@ func spawn_olmec() -> Node3D:
 	print("crag reach: the Olmec up %s's face at %s (out %s), %.1f m down, %.1f m off you, %s" % [c.crown,lip,out,lip.y-b.position.y,float(c.far),"in view" if c.seen else "out of view"])
 	return b
 
+## With --greed-run: an Olmec under him, far off and not closing (a fall
+## off an unclean face, a ledge he paces) is cleared, and comes again up
+## another cliff OLMEC_AGAIN s on (the gone path). His moves are untouched.
+const OLMEC_STUCK_BELOW := 4.0
+const OLMEC_STUCK_FAR := 20.0
+const OLMEC_STUCK_GAIN := 3.0
+const OLMEC_STUCK_T := 8.0
+var _below_t := 0.0
+var _below_best := INF
+func _olmec_stuck(b: Node3D, delta: float) -> bool:
+	var at: Vector3 = b.global_position
+	var d: float = at.distance_to(motor.feet)
+	if at.y > motor.feet.y-OLMEC_STUCK_BELOW or d < OLMEC_STUCK_FAR or bool(b.crumbled) or d < _below_best-OLMEC_STUCK_GAIN:
+		_below_t = 0.0
+		_below_best = d
+		return false
+	_below_t += delta
+	if _below_t < OLMEC_STUCK_T: return false
+	print("crag reach: the Olmec stuck %.1f m under him, %.1f m off, at %s; again up another cliff" % [motor.feet.y-at.y,d,at])
+	_below_t = 0.0
+	_below_best = INF
+	if not olmec_cliff.is_empty(): _failed_lips.append(olmec_cliff.lip)
+	_olmec_clear()
+	return true
+
+## Lips he got stuck under (`_olmec_stuck`), not picked again; only the
+## greed run fills it.
+var _failed_lips: Array = []
+func _lip_failed(lip: Vector3) -> bool:
+	for l: Vector3 in _failed_lips:
+		if l.distance_to(lip) < 6.0: return true
+	return false
+
 func _olmec_clear() -> void:
 	if enemies == null: return
 	if foot_lock != null and foot_lock.locked(): foot_lock.release()
@@ -1168,6 +1340,7 @@ func _olmec_clear() -> void:
 
 func respawn() -> void:
 	super.respawn()
+	if rope != null: rope.reset()
 	if enemies == null: return
 	_olmec_clear()
 	_returning = false
@@ -1175,8 +1348,13 @@ func respawn() -> void:
 	_olmec_due = olmec_after
 
 func tick(delta: float) -> void:
+	# Jump by a hooked rope takes hold of it (before the motor would jump).
+	if rope != null and not flying: rope.pre_step((script_jump if scripted else Input.is_action_pressed(&"walk_jump")) and not _tuning())
 	super.tick(delta)
-	if enemies == null or flying: return
+	if greed != null:
+		greed.step(delta)
+		if _hands_label != null: _hands_label.text = Greed.hands_text(hands)+"\n"+greed.text()+("\n"+run.text() if run != null else "")
+	if enemies == null or flying or not olmec_armed: return
 	if _olmec_due >= 0.0:
 		_olmec_due -= delta
 		if _olmec_due < 0.0: spawn_olmec()
@@ -1187,6 +1365,7 @@ func tick(delta: float) -> void:
 		_gone_t += delta
 		if _gone_t > OLMEC_AGAIN: spawn_olmec()
 		return
+	if greed_on and _olmec_stuck(b,delta): return
 	# The gust shot's charge refills on foot while he hunts (olmec_field's).
 	if updraft != null: updraft.charge = 1.0
 	if _never_stuck(b,delta): return
@@ -1307,6 +1486,7 @@ func _olmec_take() -> void:
 ## Flying, the hunt goes on (he makes for where you left the ground).
 func _process(delta: float) -> void:
 	super._process(delta)
+	if run != null: run.step(delta)
 	if flying and enemies != null and delta > 0.0:
 		for e in enemies.enemies:
 			if is_instance_valid(e) and not e.gone: e.step(delta)

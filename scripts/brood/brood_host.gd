@@ -503,6 +503,11 @@ func _ride_step(carry: Variant, space: PhysicsDirectSpaceState3D, dt: float) -> 
 	riding = n
 	if carry.has_method("set_riders_kg"): carry.set_riders_kg(float(n)*K.RIDER_KG)
 
+## Every clinger thrown off along `push`, from outside: the rope swing's
+## yank (scripts/rope/climb_rope.gd `_swing_mount`) sheds them as a jump does.
+func shake_off(push: Vector3) -> void:
+	_shake_all(push)
+
 ## Every clinger thrown off, out of him and along `push`.
 func _shake_all(push: Vector3) -> void:
 	var any := false

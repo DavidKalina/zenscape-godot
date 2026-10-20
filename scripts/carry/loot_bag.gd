@@ -156,6 +156,9 @@ var kg := 0.0
 ## The barred moves now, and the refusals (drivers read them).
 var barred: Array = []
 var refusals := 0
+## The most it throws (kg): THROW_KG unless the host raises it (the heist
+## level lets a full bag go up its vault's ledges).
+var throw_kg := THROW_KG
 var balks := 0
 var balked := ""
 ## The piece being put in ({} none) and seconds into it.
@@ -522,6 +525,14 @@ func rip_out(p: Dictionary = {}) -> Dictionary:
 	_set_kg(maxf(kg-float(p.kg),0.0))
 	return p
 
+## Every piece out at once, no gulp (the greed run's bank: scripts/greed/
+## greed_run.gd), the kg to nothing. Returns them; their figures stay hidden.
+func empty_out() -> Array:
+	var out := items.duplicate()
+	items.clear()
+	_set_kg(0.0)
+	return out
+
 ## The sack's mouth (world).
 func mouth() -> Vector3:
 	var motor: Variant = study.get("motor")
@@ -582,6 +593,9 @@ func empty() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_echo(): return
+	# A host with two slots (the greed run: the bag or the rope in hand)
+	# says when the keys are the bag's.
+	if study != null and study.get("bag_keys") == false: return
 	if event.is_action_pressed(&"walk_throw",false,true):
 		if state != "worn" or not _on_foot() or not stowing.is_empty() or act != "": return
 		get_viewport().set_input_as_handled()
@@ -698,6 +712,8 @@ func unhitch() -> void:
 	var s: float = study.get("motor").size
 	_act_from = _sack.global_transform
 	unhitches += 1
+	# The host may bank its load first (the greed run: into the plane's keep).
+	if study.has_method("bag_unhitching"): study.call("bag_unhitching",self)
 	# The hugged treasures in it set out on the turf by the rope first.
 	var c := _carry()
 	if c != null and c.has_method("bag_unhitched"): c.bag_unhitched()
@@ -885,10 +901,10 @@ func shove() -> void:
 ## balk and a line.
 func throw() -> void:
 	if state != "worn": return
-	if kg > THROW_KG+0.001:
+	if kg > throw_kg+0.001:
 		_balk("throw")
 		_no_sound.play()
-		_say("Too heavy to throw (%s kg, throws to %d)" % [_kg(kg),int(THROW_KG)])
+		_say("Too heavy to throw (%s kg, throws to %d)" % [_kg(kg),int(throw_kg)])
 		return
 	var motor: Variant = study.get("motor")
 	var f := _forward()*reach()*AIM_START
@@ -914,7 +930,7 @@ func release() -> void:
 ## How far across he can throw it at its kg (m).
 func reach() -> float:
 	var s: float = study.get("motor").size
-	return lerpf(AIM_REACH.x,AIM_REACH.y,clampf(kg/THROW_KG,0.0,1.0))*s
+	return lerpf(AIM_REACH.x,AIM_REACH.y,clampf(kg/throw_kg,0.0,1.0))*s
 
 ## The stick's way (the motor's frame, x z) in the camera's: (right, ahead).
 func _to_cam(v: Vector2) -> Vector2:
@@ -1709,7 +1725,7 @@ func _show_readout() -> void:
 	lines.append("pace %d%%  jump %d%%" % [int(round(float(w.run)*100.0)),int(round(float(w.jump)*100.0))])
 	lines.append("no %s" % ", ".join(barred) if not barred.is_empty() else "every move")
 	if act == "aim": lines.append("aim: %s" % ("let go to throw" if aim_ok else aim_why+": let go to cancel"))
-	elif state == "worn": lines.append("%s hold: aim a throw" % Pad.pick("LMB / T","RT") if kg <= THROW_KG+0.001 else "too heavy to throw (%d kg)" % int(THROW_KG))
+	elif state == "worn": lines.append("%s hold: aim a throw" % Pad.pick("LMB / T","RT") if kg <= throw_kg+0.001 else "too heavy to throw (%d kg)" % int(throw_kg))
 	_readout.text = "\n".join(lines)
 
 # --- The figure ---------------------------------------------------------------------------

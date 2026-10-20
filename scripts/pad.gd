@@ -76,6 +76,9 @@ const ACTIONS := {
 	# In the rope study, pressed with the hook caught: tug it to seat it (or
 	# see it slip). Shares E / B with walk_carry; the room has no carry.
 	"walk_tug":[["key",KEY_E],["button",JOY_BUTTON_B]],
+	# In the greed run (studies/crag_reach_greed.gd), pressed: the bag or
+	# the rope in hand (their keys clash: E, F, the throw).
+	"walk_tool":[["key",KEY_H],["button",JOY_BUTTON_DPAD_UP]],
 	# On foot with the loot bag on his back, held: aim a throw (a reticle
 	# where it lands); released, it's thrown there. RT is free on the ground
 	# (it's the dive in a fall, the zoom in the telescope).

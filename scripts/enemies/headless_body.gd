@@ -1866,6 +1866,50 @@ func _down_to(goal: Vector3) -> bool:
 	field.sound(&"body_windup",position)
 	return true
 
+## Staged (a study's set piece, e.g. the heist's drop where you just
+## were): it throws itself off where it stands onto the floor at `to` (or
+## the room nearest it there), the arc tried as `_down_to` tries its own
+## (plain, then higher to `down_arc` Hh); it winds up and goes. False (it
+## stays) if it's off its feet or no arc clears.
+func stage_drop(to: Vector3) -> bool:
+	if not grounded or state in ["leap","fall","climb","mantle","hang","windup"]: return false
+	var at := _down_room(to)
+	if at == Vector3.INF:
+		down_why = "staged: no room at %s" % to
+		return false
+	for up: float in [float(knobs.leap_up),hh*0.8,hh*1.4,float(knobs.down_arc)*hh]:
+		_drop_up = up
+		if _arc_clear(at,"drop",true):
+			down_why = ""
+			down_tos += 1
+			_leap_to = at
+			leap_kind = "drop"
+			_go("windup")
+			field.sound(&"body_windup",position)
+			return true
+	_drop_up = -1.0
+	down_why = "staged: no arc clears to %s" % at
+	return false
+
+## A staged drop's landing moved to `at` while it winds up (a study
+## aiming it where your camera will see it, as the pounce aims at you):
+## the arc tried as `stage_drop` tries it. False (the old landing holds)
+## past its windup or if no arc clears.
+func aim_drop(at: Vector3) -> bool:
+	if state != "windup" or leap_kind != "drop": return false
+	var was := _drop_up
+	for up: float in [float(knobs.leap_up),hh*0.8,hh*1.4,float(knobs.down_arc)*hh]:
+		_drop_up = up
+		if _arc_clear(at,"drop",true):
+			_leap_to = at
+			return true
+	_drop_up = was
+	return false
+
+## The next drop's landing wave scaled by this (a study's staged near
+## miss, set as it stages one; back to 1 as it lands).
+var staged_shock := 1.0
+
 ## Whether the camera sees him land at `at`: his feet and shins (most of
 ## him is over the picture of a camera close over you) in front of it and
 ## within its picture short of DOWN_SHOW_EDGE of each side. No camera: yes.
@@ -1936,6 +1980,9 @@ func _landed() -> void:
 	var power := float(knobs.pounce_shock) if pounced else clampf(impact/sqrt(2.0*float(knobs.leap_gravity)*hh),0.6,1.5)
 	# Olmec threat round 1: hunting, his leaps come down harder.
 	if hunting and _relentless(): power *= float(knobs.hunt_shock)
+	if leap_kind == "drop":
+		power *= staged_shock
+		staged_shock = 1.0
 	_shock(position,power)
 	weighed.emit(position,power,"pounce" if pounced else "land")
 	# The pounce come down on him: caught.
