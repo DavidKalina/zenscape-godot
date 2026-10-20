@@ -582,6 +582,9 @@ func empty() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_echo(): return
+	# A host with two slots (the greed run: the bag or the rope in hand)
+	# says when the keys are the bag's.
+	if study != null and study.get("bag_keys") == false: return
 	if event.is_action_pressed(&"walk_throw",false,true):
 		if state != "worn" or not _on_foot() or not stowing.is_empty() or act != "": return
 		get_viewport().set_input_as_handled()

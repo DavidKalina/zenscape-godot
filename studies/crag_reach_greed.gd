@@ -14,6 +14,8 @@ const LootBag = preload("res://scripts/carry/loot_bag.gd")
 const CarryHost = preload("res://scripts/carry/carry_host.gd")
 const BagStudy = preload("res://studies/bag_study.gd")
 const Glint = preload("res://scripts/kit_isle/kit_cache_glint.gd")
+const ClimbRope = preload("res://scripts/rope/climb_rope.gd")
+const Pad = preload("res://scripts/pad.gd")
 
 const GLINT_TINT := Color(1.0,0.9,0.62)
 const ROOT := "greed_run"
@@ -30,7 +32,7 @@ const LOOT := [
 	# Across the rope bridge, on the east mass.
 	["loot_05","bar",4.0,Vector3(84.0,35.0,-3.0),35.0,"east crown"],
 	["loot_06","gem",0.5,Vector3(94.0,41.7,-20.0),0.0,"east knoll"],
-	["loot_07","urn",6.0,Vector3(100.0,25.3,6.0),120.0,"east terrace (rope)"],
+	["loot_07","urn",6.0,Vector3(95.0,25.6,9.0),120.0,"east terrace (rope; post_02)"],
 	# Down the main mass's faces: the rope's way.
 	["loot_08","bar",4.0,Vector3(30.0,22.7,24.0),70.0,"main terrace 1 (rope)"],
 	["loot_09","gem",0.5,Vector3(-33.0,16.0,-8.0),0.0,"main terrace 2, under the aqueduct (rope)"],
@@ -136,6 +138,99 @@ static func _bare(host: Node3D, holder: Node3D) -> int:
 					break
 	return cleared
 
+# --- The climbing rope (scripts/rope/climb_rope.gd) -------------------------------------
+
+## The anchor posts the rope ties to over the faces down to the rope's
+## loot: [id, foot (world; its height only aims the settle's ray), what
+## it's over]. Each stands ~1.2 m in from a clean lip (flat to the edge, a
+## sheer face, the terrace's turf 9-10 m under the rope: found by the rope's
+## own fix, swept in scratch/greed_postsweep.gd); tie it standing inland of
+## it, facing out. Named `greed_run/<id>` for the world view.
+const POSTS := [
+	["post_01",Vector3(17.97,30.2,25.91),"main crown over terrace 1 (loot_08)"],
+	["post_02",Vector3(89.0,34.0,8.21),"east crown over the east terrace (loot_07)"],
+]
+## A post's radius and how high it stands (the rope study's).
+const POST_R := 0.16
+const POST_H := 1.0
+const POST_COLOUR := Color(0.32,0.25,0.18)
+
+## His rope and hook, the posts it ties to, and every untagged top a solid
+## hold to throw at (the host's `rope`, `holds`, `pieces`,
+## `rope_ground_hold`).
+static func build_rope(host: Node3D) -> void:
+	var holds: Dictionary = host.get("holds")
+	var pieces: Dictionary = host.get("pieces")
+	var space := host.get_world_3d().direct_space_state
+	var holder := Node3D.new()
+	holder.name = "RopePosts"
+	host.add_child(holder)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = POST_COLOUR
+	mat.roughness = 0.9
+	for row: Array in POSTS:
+		var id := str(row[0])
+		var called := "%s/%s" % [ROOT,id]
+		if LayoutOverrides.deleted(called): continue
+		var at: Vector3 = row[1]
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(at+Vector3.UP*RAY.x,at-Vector3.UP*RAY.y,1|(1 << 11)))
+		if not hit.is_empty(): at = hit.position
+		else: push_warning("greed run: %s found no ground under %s" % [called,at])
+		var coded := Transform3D(Basis(),at+Vector3.UP*POST_H*0.5)
+		var post := StaticBody3D.new()
+		post.name = id
+		post.transform = LayoutOverrides.xform(called,coded)
+		var shape := CylinderShape3D.new()
+		shape.radius = POST_R
+		shape.height = POST_H
+		var col := CollisionShape3D.new()
+		col.shape = shape
+		post.add_child(col)
+		var mesh := CylinderMesh.new()
+		mesh.top_radius = POST_R*0.85
+		mesh.bottom_radius = POST_R
+		mesh.height = POST_H
+		mesh.radial_segments = 10
+		var drawn := MeshInstance3D.new()
+		drawn.mesh = mesh
+		drawn.material_override = mat
+		post.add_child(drawn)
+		holder.add_child(post)
+		LayoutOverrides.track(called,post,"piece",coded)
+		pieces[id] = post
+		holds[id] = "anchor"
+	host.set("rope_ground_hold","solid")
+	var rope: Node3D = ClimbRope.new()
+	host.add_child(rope)
+	rope.setup(host)
+	host.set("rope",rope)
+
+## The bag or the rope in hand (H / pad up): their keys clash (E, F, the
+## throw), so one has them at a time. Refused while either is busy (the
+## rope thrown, climbing or aimed; the bag aimed, lifted or stowing). Left
+## fixed or hooked, the rope stays where it is, and Jump by it still takes
+## hold. Returns the slot now.
+static func switch(host: Node3D) -> String:
+	var rope: Node3D = host.get("rope")
+	var bag: Node3D = host.get("bag")
+	var now := str(host.get("hands"))
+	if rope != null and (not str(rope.state) in ["coiled","caught","seated"] or rope.climber or rope.hauling or rope.lowering or rope.swing_hold):
+		host.call("_say","Busy with the rope")
+		return now
+	if bag != null and (str(bag.act) != "" or not (bag.stowing as Dictionary).is_empty()):
+		return now
+	var to := "rope" if now == "bag" else "bag"
+	host.set("hands",to)
+	host.call("_say","The rope in hand" if to == "rope" else "The bag in hand")
+	return to
+
+## The two-slot hint: which is in hand, and the key to switch.
+static func hands_text(hands: String) -> String:
+	var key := Pad.pick("H","UP")
+	if hands == "rope":
+		return "[ROPE] bag  ·  %s switch\nhold LMB/T aim the hook · E tug / tie at a post · F reel · Space by it: hold, over the edge: rappel" % key
+	return "[BAG] rope  ·  %s switch\nE bag loot · F off / on / hitch at the plane · hold LMB/T throw it" % key
+
 ## The bag's keys, for the foot hint.
 static func hint() -> String:
-	return "Greed run: E by loot bags it · F off / on / drag · F by the plane's rope hook: hitch the bag on / off · Space at the plane boards"
+	return "Greed run: H (pad up) switches the bag / the rope in hand · bag: E by loot bags it · F off / on / drag · F by the plane's rope hook: hitch the bag on / off · Space at the plane boards"

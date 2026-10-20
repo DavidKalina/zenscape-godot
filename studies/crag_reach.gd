@@ -737,7 +737,10 @@ func _grow() -> void:
 ## No kit life (its undergrowth and flowers are another palette). With
 ## --greed-run, the bag, its loot and the plane's rope hook.
 func _add_life() -> void:
-	if greed_on: Greed.build(self)
+	if not greed_on: return
+	Greed.build(self)
+	Greed.build_rope(self)
+	_build_hands_hint()
 
 # --- The greed run (--greed-run, studies/crag_reach_greed.gd) -------------------------
 
@@ -750,6 +753,50 @@ var bag_on := false
 var carry: Node3D = null
 var bag: Node3D = null
 var loot: Array = []
+## His climbing rope (scripts/rope/climb_rope.gd) and what it reads of
+## the host: the anchor posts (`holds` id -> "anchor", `pieces` id ->
+## node) and the hold every untagged top gives (`rope_ground_hold`).
+var rope: Node3D = null
+var holds: Dictionary = {}
+var pieces: Dictionary = {}
+var rope_ground_hold = null
+## The bag or the rope in hand ("bag", "rope"; H / pad up): only the one
+## in hand hears E, F and the throw (the bag's `bag_keys`, the rope's
+## `rope_keys`).
+var hands := "bag"
+var bag_keys: bool:
+	get: return hands == "bag"
+var rope_keys: bool:
+	get: return hands == "rope"
+var _hands_label: Label = null
+
+func _build_hands_hint() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 5
+	add_child(layer)
+	_hands_label = Label.new()
+	_hands_label.name = "HandsHint"
+	_hands_label.add_theme_font_size_override("font_size",18)
+	_hands_label.add_theme_color_override("font_color",Color("fbf6ea"))
+	_hands_label.add_theme_color_override("font_shadow_color",Color(0,0,0,0.7))
+	_hands_label.add_theme_constant_override("shadow_offset_y",1)
+	# Top left: the bag's own lines hold the top right.
+	_hands_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	_hands_label.offset_left = 16.0
+	_hands_label.offset_right = 640.0
+	_hands_label.offset_top = 12.0
+	layer.add_child(_hands_label)
+	_hands_label.text = Greed.hands_text(hands)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if greed_on and not flying and event.is_action_pressed(&"walk_tool",false,true) and not _tuning():
+		Greed.switch(self)
+		if _hands_label != null: _hands_label.text = Greed.hands_text(hands)
+		get_viewport().set_input_as_handled()
+		return
+	# The rope in hand, F is its reel (polled), not the walk back's word.
+	if greed_on and not flying and hands == "rope" and event.is_action_pressed(&"walk_reel",false,true): return
+	super._unhandled_input(event)
 
 func _foot_text() -> String:
 	return super._foot_text()+("\n"+Greed.hint() if greed_on else "")
@@ -758,6 +805,11 @@ func _foot_text() -> String:
 ## the reticle, not him (as studies/wreck_cluster.gd).
 func _want(delta: float) -> Vector2:
 	var want := super._want(delta)
+	# Aiming the hook, tugging it or pulling it up, he stands (the rope
+	# study's).
+	if rope != null and rope.state in ["aim","tug","pull_up"]:
+		rope.aim_steer(want,delta)
+		return Vector2.ZERO
 	if bag == null or bag.act != "aim": return want
 	bag.aim_steer(want,delta)
 	return Vector2.ZERO
@@ -1038,11 +1090,14 @@ func _olmec_clear() -> void:
 
 func respawn() -> void:
 	super.respawn()
+	if rope != null: rope.reset()
 	if enemies == null: return
 	_olmec_clear()
 	_olmec_due = olmec_after
 
 func tick(delta: float) -> void:
+	# Jump by a hooked rope takes hold of it (before the motor would jump).
+	if rope != null and not flying: rope.pre_step((script_jump if scripted else Input.is_action_pressed(&"walk_jump")) and not _tuning())
 	super.tick(delta)
 	if enemies == null or flying: return
 	if _olmec_due >= 0.0:

@@ -491,6 +491,9 @@ func _read_input() -> void:
 	_reel_was = reel_down
 	_tug_was = tug_down
 	if _busy(): return
+	# A host with two slots (the greed run: the bag or the rope in hand)
+	# says when the keys are the rope's.
+	if study.get("rope_keys") == false: return
 	if throw_hit:
 		if state == "coiled":
 			if _on_foot(): aim()
@@ -662,6 +665,9 @@ func target(over: Vector3) -> Dictionary:
 			edge = Vector3((side.position as Vector3).x,hit_at.y,(side.position as Vector3).z)
 	var at := edge-o*LAND_IN*s+Vector3.UP*0.05
 	var h: String = str(holds.get(id,""))
+	# A host whose ground has no tagged pieces (the crag reach) may give
+	# every untagged top one hold (`rope_ground_hold`, e.g. "solid").
+	if id == "" and study.get("rope_ground_hold") != null: h = str(study.get("rope_ground_hold"))
 	if h == "" or h == "anchor":
 		return {"at":at,"lip":edge,"out":o,"hold":"","piece":id,"why":"a smooth top: nothing to catch on"}
 	return {"at":at,"lip":edge,"out":o,"hold":h,"piece":id,"why":""}
