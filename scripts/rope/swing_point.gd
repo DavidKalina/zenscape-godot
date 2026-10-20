@@ -38,10 +38,17 @@ const BAR := {"arch":Vector2(1.4,1.1),"arm":Vector2(1.1,1.0),"branch":Vector2(0.
 ## there, so the hook doesn't snap onto it).
 const ROOT_IN := {"arch":0.0,"arm":0.6,"branch":0.5,"lintel":0.6}
 
+## Greybox stone: a faint glow of its own colour (SHADE_LIFT) so a face
+## in shade reads as stone, not a near-black hole (the scene's ambient is
+## low for flat untextured boxes).
+const SHADE_LIFT := 0.3
+
 static func _mat(c: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = c
 	m.roughness = 1.0
+	m.emission_enabled = true
+	m.emission = c*SHADE_LIFT
 	return m
 
 static var _rock: StandardMaterial3D

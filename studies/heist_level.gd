@@ -420,6 +420,10 @@ func _ready() -> void:
 	# Never winter here: the year held at summer (the settings' Season row,
 	# kit_weather.gd SEASON_CHOICES); a --season= flag keeps its own.
 	if weather != null: weather.choose_season(2)
+	# The day turns at the settings' slow pace (1440 s, kit_weather.gd
+	# DAY_SECONDS[1]): a whole heist (~6 min) is a few hours of light, not
+	# dusk and night by the escape; a --day-length= flag keeps its own.
+	if weather != null: weather.choose_day(1)
 	# The chase's pace (HEIST_OLMEC_KNOBS) over OLMEC_KNOBS; a --body-knob= keeps its own.
 	for k: String in HEIST_OLMEC_KNOBS:
 		if not _body_knobs.has(k): _body_knobs[k] = HEIST_OLMEC_KNOBS[k]
@@ -517,9 +521,7 @@ func _build_walls() -> void:
 	var holder := Node3D.new()
 	holder.name = "Walls"
 	add_child(holder)
-	var stone := StandardMaterial3D.new()
-	stone.albedo_color = Color(0.55,0.52,0.47)
-	stone.roughness = 1.0
+	var stone := SwingPoint._mat(Color(0.55,0.52,0.47))
 	for row: Array in HEIST_WALLS:
 		var id := str(row[0])
 		var called := "heist/%s" % id
@@ -815,9 +817,7 @@ func _build_vault_way() -> void:
 	var holder := Node3D.new()
 	holder.name = "VaultWay"
 	add_child(holder)
-	var stone := StandardMaterial3D.new()
-	stone.albedo_color = Color(0.6,0.57,0.52)
-	stone.roughness = 1.0
+	var stone := SwingPoint._mat(Color(0.6,0.57,0.52))
 	var steps := HEIST_STEPS.size()-1
 	for row: Array in HEIST_RAMPS:
 		var id := str(row[0])
@@ -860,9 +860,7 @@ func _build_gap() -> void:
 	var holder := Node3D.new()
 	holder.name = "Gap"
 	add_child(holder)
-	var stone := StandardMaterial3D.new()
-	stone.albedo_color = Color(0.6,0.57,0.52)
-	stone.roughness = 1.0
+	var stone := SwingPoint._mat(Color(0.6,0.57,0.52))
 	var way := Vector3(HEIST_GAP_WAY.x,0.0,HEIST_GAP_WAY.y).normalized()
 	var basis := Basis(way,Vector3.UP,way.cross(Vector3.UP))
 	for row: Array in HEIST_GAP_BLOCKS:
