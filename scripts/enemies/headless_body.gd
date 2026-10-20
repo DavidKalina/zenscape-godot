@@ -394,6 +394,11 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# turns), and the next skirt round the same thing keeps its side,
 		# so he goes round a ruin instead of bumping it on a loop.
 		"skirt_hold":0,
+		# Olmec reach: `climb_clear` 1, on a face (climbing, hauling,
+		# mantling) his whole front is held off the rock, not his chest's
+		# middle only: a bulge at his shoulder, hip or knee, a face slanting
+		# across his breadth, the rim's round over his head.
+		"climb_clear":0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -447,6 +452,8 @@ func cling(lip: Vector3, out: Vector2, below := 0.0, far := false) -> void:
 	_lip_y = INF
 	climbs += 1
 	spawned_on_cliff = true
+	# Olmec reach: hung clear of the face's nearest across him.
+	if float(knobs.climb_clear) > 0.5: _climb_clear(1.0)
 	_go("climb")
 	_snap = true
 	_animate(0.0)
@@ -1069,6 +1076,8 @@ func _feel_k() -> float:
 	return 0.0 if _feel_from < 0.0 else clampf((state_t-_feel_from)/float(knobs.feel),0.0,1.0)
 
 func _climb_on(hit: Dictionary) -> void:
+	# Olmec reach: set clear of the face at once (not eased over frames).
+	if float(knobs.climb_clear) > 0.5: _climb_clear(1.0)
 	_climb_from = position.y
 	_lip_y = INF
 	climbs += 1
@@ -1082,14 +1091,18 @@ func _climb(delta: float) -> void:
 	vel = Vector3.ZERO
 	var fwd := _forward3()
 	var chest := position+Vector3.UP*neck_h*0.55
-	var hit := _cast(chest,chest+fwd*(length*0.5+float(knobs.standoff)+1.5))
+	# Olmec reach: held off a bulge (`climb_clear`), his chest may be a
+	# head height further off the face than the standoff.
+	var far := hh if float(knobs.climb_clear) > 0.5 else 0.0
+	var hit := _cast(chest,chest+fwd*(length*0.5+float(knobs.standoff)+1.5+far))
 	if not hit.is_empty() and absf((hit.normal as Vector3).y) < 0.7:
 		var n := hit.normal as Vector3
-		var want := PilotMotor.facing_of(-Vector2(n.x,n.z).normalized())
-		facing = lerp_angle(facing,want,1.0-exp(-4.0*delta))
-		var gap := chest.distance_to(hit.position as Vector3)-length*0.5
-		position += fwd*(gap-float(knobs.standoff))*minf(1.0,6.0*delta)
 		_face_pt = hit.position
+		if float(knobs.climb_clear) < 0.5 or not _climb_clear(delta):
+			var want := PilotMotor.facing_of(-Vector2(n.x,n.z).normalized())
+			facing = lerp_angle(facing,want,1.0-exp(-4.0*delta))
+			var gap := chest.distance_to(hit.position as Vector3)-length*0.5
+			position += fwd*(gap-float(knobs.standoff))*minf(1.0,6.0*delta)
 	else:
 		_face_pt = position+fwd*(length*0.5+float(knobs.standoff))+Vector3.UP*neck_h*0.55
 	# The lip: a ray down past the face from over its reach (down to a
@@ -1160,6 +1173,59 @@ func _climb(delta: float) -> void:
 		var tk := _tell_k()
 		Dust.puff(field,feet,hh*1.0*tk,-fwd)
 		Dust.rocks(field,feet,-fwd,2,hh*0.1*tk)
+
+## Olmec reach (`climb_clear`): rays square to his facing from behind his
+## back, over his breadth (each side and the middle) and his height (shin
+## to head): the least gap (m) from his front to the rock, and the face's
+## turn (rad) across his breadth (the left and right rays' hits at the
+## same height). Hits with a floor's normal (a top he'll stand on) count
+## only under his lip. {gap, turn} or {} with nothing in front of him.
+const CLEAR_BACK := 1.0
+const CLEAR_SIDE := 0.9
+func _face_least(fwd: Vector3, lip_y := INF) -> Dictionary:
+	var right := _right3()
+	var half := width*0.5*CLEAR_SIDE
+	var reach := length+float(knobs.standoff)+hh
+	var least := INF
+	var turn_sum := 0.0
+	var turn_n := 0
+	var top := _bulk_top()
+	for k in 6:
+		var up := lerpf(0.4,top,float(k)/5.0)
+		var hits: Array = [null,null,null]
+		for i in 3:
+			var from := position+Vector3.UP*up+right*half*float(i-1)-fwd*(length*0.5+CLEAR_BACK)
+			var h := _cast(from,from+fwd*(CLEAR_BACK+reach))
+			if h.is_empty(): continue
+			var hp := h.position as Vector3
+			if absf((h.normal as Vector3).y) > 0.7 and hp.y > lip_y-0.3: continue
+			if (h.normal as Vector3).dot(fwd) > 0.0: continue
+			var gap := (hp-from).dot(fwd)-CLEAR_BACK-length
+			least = minf(least,gap)
+			hits[i] = gap
+		if hits[0] != null and hits[2] != null:
+			turn_sum += atan2(float(hits[2])-float(hits[0]),half*2.0)
+			turn_n += 1
+	if least == INF: return {}
+	return {"gap":least,"turn":turn_sum/turn_n if turn_n > 0 else 0.0}
+
+## Olmec reach (`climb_clear`): climbing, his front held `standoff` off
+## the rock's nearest across him (out at once when he's in it, in or out
+## eased), and turned square to the face across his breadth. False with
+## no face found across him (the chest's ray then holds him, as before).
+func _climb_clear(delta: float) -> bool:
+	var f := _face_least(_forward3(),_lip_y)
+	if f.is_empty(): return false
+	var gap: float = f.gap
+	var rate := 1.0 if gap < 0.0 else minf(1.0,6.0*delta)
+	position += _forward3()*(gap-float(knobs.standoff))*rate
+	# The right side further off than the left: he turns his front from
+	# it, square to the face across his breadth (the face's line across
+	# him is right x 2half + forward x (right gap - left gap)).
+	var t := -float(f.turn)
+	var fw := _forward3()*cos(t)+_right3()*sin(t)
+	facing = lerp_angle(facing,PilotMotor.facing_of(Vector2(fw.x,fw.z)),1.0-exp(-4.0*delta))
+	return true
 
 ## A hand put on the face (the `k`-th): a puff off the face by it, a
 ## stone or two knocked down.
@@ -1472,6 +1538,8 @@ func _catch_wall(way: Vector3) -> bool:
 	rotation.y = facing
 	vel = Vector3.ZERO
 	grounded = false
+	# Olmec reach: caught clear of the face's nearest across him.
+	if float(knobs.climb_clear) > 0.5: _climb_clear(1.0)
 	_climb_from = position.y
 	_lip_y = INF
 	_hang = false

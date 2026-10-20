@@ -287,6 +287,10 @@ static func drop(j: Dictionary) -> void:
 		return
 	var st: Variant = (j.out as Dictionary).get("stands")
 	if st is Node3D and is_instance_valid(st) and not (st as Node3D).is_inside_tree(): (st as Node3D).free()
+	# Its parts' meshes too (nodes made for the fall, never added).
+	for part: Variant in (j.out as Dictionary).get("parts",[]):
+		var m: Variant = (part as Dictionary).get("mesh") if part is Dictionary else null
+		if m is Node and is_instance_valid(m) and not (m as Node).is_inside_tree(): (m as Node).free()
 
 # --- The built-in kinds: along the joints -----------------------------------------------------
 
