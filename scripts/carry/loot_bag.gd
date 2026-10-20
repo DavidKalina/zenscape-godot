@@ -58,6 +58,11 @@ const STOW_HOP := 0.6
 ## kg (m, times size); empty it hangs flat (DEPTH_EMPTY of its round depth).
 const SACK_R := 0.12
 const SACK_R_KG := 0.045
+## Hitched on the plane's rope, the sack is drawn (and fits the turf) this
+## much bigger than on his back, so it reads as the plane's cargo past the
+## tail's shadow and any brood riding it (the plane's old net sack was
+## ~0.4 m; a 6.5 kg bag is 0.23 m worn).
+const HITCH_LOOK := 1.6
 const DEPTH_EMPTY := 0.35
 ## Where it rides: its middle this far behind the chest bone, past its
 ## depth, and this far up (m, times size; less its radius times DROOP).
@@ -158,8 +163,9 @@ var stowing := {}
 var _stow_t := 0.0
 var _stow_from := Transform3D.IDENTITY
 
-## "worn", "ground" (set down, a body at rest), "drag" (by its neck) or
-## "roll" (shoved: a free ball tumbling till it rests).
+## "worn", "ground" (set down, a body at rest), "drag" (by its neck),
+## "roll" (shoved: a free ball tumbling till it rests), "fly" (thrown) or
+## "hitched" (on the plane's cargo rope in its sack's place: `hitch`).
 var state := "worn"
 ## The bag set down: a rigid body (its middle; rotation locked).
 var loose: RigidBody3D
@@ -214,6 +220,9 @@ var hauled := false
 ## Buried in a burrow by the brood: hauled, hidden, out of his reach till
 ## dug out (`unbury`).
 var buried := false
+## Hitched and taken off the plane's rope so far (drivers).
+var hitches := 0
+var unhitches := 0
 
 var _base := {}
 var _sack: Node3D
@@ -437,9 +446,21 @@ func wearable() -> bool:
 
 func _set_kg(k: float) -> void:
 	kg = k
-	_r_to = radius_of(kg)
+	_r_to = radius_of(kg+extra_kg)
 	loose.mass = kg+CLOTH_KG
+	if state == "hitched": _tell_sling()
 	_apply_feel(STOW_PACE if not stowing.is_empty() or act != "" else 1.0)
+
+## Hitched, the hugged treasures loaded into it (scripts/carry/
+## carry_host.gd, --loot-bag): their kg (the carry counts them on the
+## rope); it swells by them as by its own loot. `set_extra_kg`.
+var extra_kg := 0.0
+
+func set_extra_kg(k: float) -> void:
+	if is_equal_approx(k,extra_kg): return
+	extra_kg = maxf(k,0.0)
+	_r_to = radius_of(kg+extra_kg)
+	if state == "hitched": _tell_sling()
 
 ## The kg on his back (none set down).
 func worn_kg() -> float:
@@ -578,6 +599,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event.is_action_pressed(&"walk_bag",false,true):
 		if not _on_foot() or not stowing.is_empty() or act != "": return
+		# Hitched, F is his only by the plane (else kit_isle's walk back).
+		if state == "hitched" and not can_unhitch(): return
 		get_viewport().set_input_as_handled()
 		bag_key()
 		return
@@ -591,6 +614,12 @@ func _unhandled_input(event: InputEvent) -> void:
 ## F: off his back; by it on the ground, on again (or by the neck, too
 ## heavy to wear); dragging, let go.
 func bag_key() -> void:
+	if state == "hitched":
+		unhitch()
+		return
+	if can_hitch():
+		hitch()
+		return
 	if hauled and bag_near(): haul_free()
 	match state:
 		"worn": set_down()
@@ -601,16 +630,123 @@ func bag_key() -> void:
 			else: grab()
 
 func _on_foot() -> bool:
-	if study == null or not bool(study.get("walk_ready")): return false
+	if study == null or not bool(study.get("walk_ready")) or bool(study.get("flying")): return false
 	var editor := study.get_node_or_null("LayoutEdit")
 	if editor != null and bool(editor.get("editing")): return false
 	var motor: Variant = study.get("motor")
 	return motor != null and motor.grounded
 
+## Worn in the plane (the host's `flying`; bag_study has none in the air).
+func _aboard() -> bool:
+	return state == "worn" and study != null and bool(study.get("flying"))
+
+# --- The hitch: on the plane's cargo rope (docs/design/bag-hitch/) ----------------------
+
+## The host's carry (scripts/carry/carry_host.gd) and its cargo sling, or
+## null (bag_study has neither).
+func _carry() -> Node:
+	return study.get("carry") as Node if study != null else null
+
+func _sling() -> Node3D:
+	var c := _carry()
+	return c.get("sling") as Node3D if c != null else null
+
+## Can F hitch it to the plane's rope now: the sling lying on the turf, the
+## plane parked, his hands free; worn and he's by the sling, or lying or
+## dragged in his reach and by him or by the sling.
+func can_hitch() -> bool:
+	var sl := _sling()
+	if sl == null or not bool(sl.grounded) or bool(study.get("flying")) or hauled or buried: return false
+	var c := _carry()
+	if not (c.get("held") as Dictionary).is_empty(): return false
+	if state == "worn": return c._by_sling()
+	if state != "ground" and state != "drag": return false
+	if not bag_near(): return false
+	if c._by_sling(): return true
+	var s: float = study.get("motor").size
+	var m: Vector3 = sl.middle()
+	var at := loose.global_position
+	return Vector2(at.x-m.x,at.z-m.z).length() < float(sl.radius)+(BAG_REACH+_r)*s and absf(at.y-m.y) < 1.5*s
+
+## Can F take it off the rope now: hitched, the plane parked and he's by
+## the sling on the turf.
+func can_unhitch() -> bool:
+	var sl := _sling()
+	return state == "hitched" and sl != null and bool(sl.grounded) and not bool(study.get("flying")) and _carry()._by_sling()
+
+## Ties it on the plane's rope in its sack's place: from his back (or the
+## ground, or his hand) it swings over onto the rope end; from now its kg
+## are the plane's cargo and he goes without a bag.
+func hitch() -> void:
+	if not can_hitch(): return
+	_act_from = _sack.global_transform
+	if state != "worn": _hold_loose()
+	state = "hitched"
+	caught = false
+	_rope.visible = false
+	hitches += 1
+	_tell_sling()
+	_begin("hitch")
+	_apply_feel(STOW_PACE)
+	_say("Hitched to the plane (%s kg)" % _kg(kg))
+	if OS.is_debug_build(): print("bag: hitched to the plane's rope (%s kg)" % _kg(kg))
+
+## Off the rope: onto his back (it swings up as from the ground) or, too
+## heavy to wear, down by the sling with him holding its neck to drag.
+func unhitch() -> void:
+	if not can_unhitch() or act != "": return
+	var s: float = study.get("motor").size
+	_act_from = _sack.global_transform
+	unhitches += 1
+	# The hugged treasures in it set out on the turf by the rope first.
+	var c := _carry()
+	if c != null and c.has_method("bag_unhitched"): c.bag_unhitched()
+	if wearable():
+		state = "worn"
+		_lag = Vector3.ZERO
+		_lag_v = Vector3.ZERO
+		_last_mid = Vector3.INF
+		_tell_sling()
+		_begin("lift")
+		_apply_feel(STOW_PACE)
+	else:
+		state = "ground"
+		_tell_sling()
+		_ball.radius = _r*s*0.95
+		var xf := Transform3D(Basis.IDENTITY,_act_from.origin+Vector3.UP*0.05*s)
+		_ball_shape.disabled = false
+		loose.freeze = false
+		loose.global_transform = xf
+		PhysicsServer3D.body_set_state(loose.get_rid(),PhysicsServer3D.BODY_STATE_TRANSFORM,xf)
+		loose.linear_velocity = Vector3.ZERO
+		loose.sleeping = false
+		_rest_yaw = atan2(-_forward().x,-_forward().z)
+		grab()
+	if OS.is_debug_build(): print("bag: off the plane's rope, %s (%s kg)" % [state,_kg(kg)])
+
+## Tells the carry and its sling: hitched, the bag's kg ride the rope and
+## the sling takes the bag's size, its own sack hidden; else back to it.
+func _tell_sling() -> void:
+	var c := _carry()
+	var sl := _sling()
+	if c == null or sl == null: return
+	var on := state == "hitched"
+	c.set("bag_kg",kg if on else 0.0)
+	sl.hitch_bag(radius_of(kg+extra_kg)*HITCH_LOOK*float(study.get("motor").size) if on else -1.0)
+	c._refill()
+
+## Hitched: where the sack rides, its floor on the sling's, turned with it.
+func _hitch_xform(r: float, squash: Basis) -> Transform3D:
+	var sl := _sling()
+	var pf: Node3D = study.get("plane_figure")
+	if sl == null or pf == null: return _sack.global_transform
+	var b: Transform3D = sl.basket_xform(pf)
+	return Transform3D(b.basis*squash.scaled(Vector3.ONE*HITCH_LOOK),b.origin+b.basis.y*r*HITCH_LOOK)
+
 ## Is the bag on the ground (or in his hand) within his reach?
 func bag_near() -> bool:
 	if buried: return false
-	if state == "worn" or state == "roll" or state == "fly": return false
+	if state == "worn" or state == "roll" or state == "fly" or state == "hitched": return false
 	if state == "drag": return true
 	var motor: Variant = study.get("motor")
 	var feet: Vector3 = motor.feet
@@ -629,6 +765,9 @@ func in_reach() -> Dictionary:
 	var near := INF
 	for p: Dictionary in study.get("loot"):
 		if items.has(p) or p == stowing or bool(p.get("buried",false)): continue
+		# Banked, lost, or still tumbling loose (out of the hitched bag).
+		if bool(p.get("banked",false)) or bool(p.get("lost",false)): continue
+		if p.get("body") != null and not (p.body as RigidBody3D).freeze: continue
 		var at: Vector3 = (p.node as Node3D).global_position
 		var across := Vector2(at.x-feet.x,at.z-feet.z).length()
 		if across > REACH*s+float(p.measures.radius) or absf(at.y-feet.y) > REACH_UP*s: continue
@@ -647,6 +786,9 @@ func take(p: Dictionary) -> void:
 			_say("Too heavy to wear: set it down (F) to fill it (%s / %d kg)" % [_kg(kg),int(WEAR_KG)])
 		else: _say("Too full: %s kg won't go in (%s / %d kg)" % [_kg(float(p.kg)),_kg(kg),int(CAP)])
 		return
+	# Lying loose where it spilled: its body gone first (scripts/carry/
+	# carry_host.gd `unloose_loot`).
+	if p.get("body") != null and _carry() != null: _carry().unloose_loot(p)
 	stowing = p
 	_stow_t = 0.0
 	_stow_from = (p.node as Node3D).global_transform
@@ -1015,6 +1157,20 @@ func _process(delta: float) -> void:
 	_r = move_toward(_r,_r_to,delta*0.6)
 	if state != "worn" and absf(_ball.radius-_r*float(motor.size)*0.95) > 0.002: _ball.radius = _r*float(motor.size)*0.95
 	_place_sack(delta)
+	if state == "hitched" and not _on_foot():
+		# On the rope (in the air, or he's aboard): drawn, nothing to do.
+		_drag_look(delta)
+		_prompt.visible = false
+		_show_readout()
+		return
+	if _aboard():
+		# Worn into the plane (a host with `flying`, the wreck cluster): out
+		# of sight till he's on foot again.
+		_sack.visible = false
+		for strap in _straps: strap.visible = false
+		_prompt.visible = false
+		return
+	if state == "worn" and not buried and not _sack.visible: _sack.visible = true
 	_act_step(delta)
 	_drag_look(delta)
 	_stow_step(delta)
@@ -1074,6 +1230,17 @@ func _place_sack(delta: float) -> void:
 	basis = basis*Basis(Vector3.RIGHT,clampf(tilt.x,-0.5,0.5))*Basis(Vector3.BACK,clampf(tilt.z,-0.5,0.5))
 	var squash := Basis.from_scale(Vector3(gulp,1.0/sqrt(gulp),gulp))
 	var xf := Transform3D(basis*squash,mid+_lag*0.5)
+	if state == "hitched":
+		for strap in _straps: strap.visible = false
+		var at := _hitch_xform(r,squash)
+		if act == "hitch":
+			# Swung over from his back (or the ground) onto the rope end.
+			var k := clampf(_act_t/LIFT_TIME,0.0,1.0)
+			var e := k*k*(3.0-2.0*k)
+			at = Transform3D(_act_from.basis.orthonormalized().slerp(at.basis.orthonormalized(),e).scaled_local(_act_from.basis.get_scale().lerp(at.basis.get_scale(),e)),
+				_act_from.origin.lerp(at.origin,e)+Vector3.UP*0.4*s*sin(PI*k))
+		_sack.global_transform = at
+		return
 	if state != "worn":
 		_sack.global_transform = _loose_xform(r,squash)
 		for strap in _straps: strap.visible = false
@@ -1083,7 +1250,7 @@ func _place_sack(delta: float) -> void:
 		var k := clampf(_act_t/LIFT_TIME,0.0,1.0)
 		var e := k*k*(3.0-2.0*k)
 		var at := _act_from.origin.lerp(xf.origin,e)+Vector3.UP*0.35*s*sin(PI*k)
-		xf = Transform3D(_act_from.basis.orthonormalized().slerp(xf.basis.orthonormalized(),e).scaled_local(xf.basis.get_scale()),at)
+		xf = Transform3D(_act_from.basis.orthonormalized().slerp(xf.basis.orthonormalized(),e).scaled_local(_act_from.basis.get_scale().lerp(xf.basis.get_scale(),e)),at)
 	if act == "throw" or act == "aim" or act == "lower":
 		# Swung from his back up over his head, behind it at the top of the wind-up.
 		var k := clampf(_act_t/(THROW_TIME*THROW_LET),0.0,1.0)
@@ -1277,6 +1444,19 @@ static func throw_pose(k: float) -> Vector2:
 func _drag_look(delta: float) -> void:
 	if state == "worn":
 		_rope.visible = false
+		return
+	if state == "hitched":
+		# The rope's last stretch: from its neck up to the sling's hook.
+		var sl := _sling()
+		var sz: float = study.get("motor").size
+		var neck := _sack.global_transform*Vector3(0.0,_r*sz*1.1,0.0)
+		var d: Vector3 = (sl.drawn_hook() if sl != null else neck)-neck
+		var l := d.length()
+		_rope.visible = l > 0.02 and act == ""
+		if _rope.visible:
+			var y := d/l
+			var x := y.cross(Vector3.UP).normalized() if absf(y.y) < 0.95 else Vector3.RIGHT
+			_rope.global_transform = Transform3D(Basis(x,y,x.cross(y))*Basis.from_scale(Vector3(1.1,l,1.1)),neck+d*0.5)
 		return
 	var v := loose.linear_velocity
 	if _fall_v < -1.2 and v.y > -0.3:
@@ -1495,6 +1675,14 @@ func _show_prompt() -> void:
 	var motor: Variant = study.get("motor")
 	var busy: bool = not stowing.is_empty() or act != "" or not motor.grounded
 	var p := {} if busy else in_reach()
+	if p.is_empty() and not busy and (can_hitch() or can_unhitch()):
+		var sl := _sling()
+		if state == "hitched": _prompt.text = "F  unhitch it" if wearable() else "F  unhitch it  (too heavy to wear: drag it)"
+		else: _prompt.text = "F  hitch it to the plane  (%s kg)" % _kg(kg)
+		_prompt.modulate = Color(1,1,1)
+		_prompt.global_position = sl.middle()+Vector3.UP*(float(sl.radius)*2.0+0.8)
+		_prompt.visible = true
+		return
 	if p.is_empty():
 		_prompt.visible = false
 		if busy or state != "ground" or not bag_near(): return
@@ -1516,7 +1704,7 @@ func _show_readout() -> void:
 	var on := int(round(clampf(kg/CAP,0.0,1.0)*cells))
 	var lines := PackedStringArray(["Bag  %s / %d kg  (wear to %d)" % [_kg(kg),int(CAP),int(WEAR_KG)],"[%s%s]" % ["#".repeat(on),"-".repeat(cells-on)]])
 	lines.append({"worn":"on his back","ground":"set down" if wearable() else "set down: too heavy to wear",
-		"drag":"dragging%s" % ("  (caught)" if caught else ""),"roll":"rolling","fly":"thrown"}.get(state,state))
+		"drag":"dragging%s" % ("  (caught)" if caught else ""),"roll":"rolling","fly":"thrown","hitched":"hitched to the plane"}.get(state,state))
 	var w := drag_feel() if state == "drag" else feel_of(worn_kg())
 	lines.append("pace %d%%  jump %d%%" % [int(round(float(w.run)*100.0)),int(round(float(w.jump)*100.0))])
 	lines.append("no %s" % ", ".join(barred) if not barred.is_empty() else "every move")

@@ -98,6 +98,12 @@ const BAG_PIN := 1.5
 ## bag's velocity times SPILL_KEEP, thrown out of the hit SPILL_OUT m/s and
 ## up SPILL_UP m/s, tumbling (task 5's loose body).
 const SPILL_SPEED := 3.0
+## A hit on level ground (its normal's y over SPILL_LEVEL: the turf at a
+## touchdown or a hop on the taxi) needs SPILL_GROUND to spill instead, so
+## a normal landing (the bag down at 3..4 m/s) keeps its load and a crash
+## or a slam into a slope or a wall still spills.
+const SPILL_GROUND := 5.5
+const SPILL_LEVEL := 0.8
 const SPILL_STEP := 3.5
 const SPILL_GRACE := 0.35
 const SPILL_KEEP := 0.7

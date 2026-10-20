@@ -75,6 +75,7 @@ const Home = preload("res://studies/wreck_cluster_home.gd")
 const VaultHost = preload("res://scripts/home/vault_host.gd")
 const DropPass = preload("res://scripts/home/drop_pass.gd")
 const BigIsle = preload("res://studies/wreck_cluster_big_isle.gd")
+const BagLoot = preload("res://studies/wreck_cluster_loot.gd")
 
 ## The re-deal's key (free on foot and in the plane: scripts/pad.gd,
 ## scripts/kit_isle/dev_keys.gd).
@@ -128,10 +129,16 @@ var parts_on := false
 var vault: Node3D = null
 ## --home: the drop pass over the home isle's field (scripts/home/drop_pass.gd).
 var drop_pass: Node3D = null
+## --loot-bag: the wanderer's loot bag (scripts/carry/loot_bag.gd) and the
+## loose loot it fills from (studies/wreck_cluster_loot.gd); else null, [].
+var bag_on := false
+var bag: Node3D = null
+var loot: Array = []
 
 func _ready() -> void:
 	parts_on = "--wreck-start" in LaunchArgs.user_args()
 	home_on = not parts_on
+	bag_on = "--loot-bag" in LaunchArgs.user_args()
 	_keep_ledger_in_memory()
 	_no_lode = true
 	_rng.randomize()
@@ -249,6 +256,10 @@ func _grow() -> void:
 			# The deposit pad and the vault's floor bare (the home isle's wear).
 			var was := site.wear
 			site.wear = func(p: Vector2) -> float: return maxf(float(was.call(p)) if was.is_valid() else 0.0,Home.wear(p))
+		if bag_on:
+			# The loot's spots bare (--loot-bag).
+			var had := site.wear
+			site.wear = func(p: Vector2) -> float: return maxf(float(had.call(p)) if had.is_valid() else 0.0,BagLoot.wear(p))
 		var top: float = _stretch_tops[j]
 		site.ray = Vector2(top+60.0,top-8.0)
 		var more := KitFlora.grow(flora_seed()+1+j,space,KitLand.turf_bodies(land),[land.get_meta("outline")],site)
@@ -669,6 +680,7 @@ func _add_life() -> void:
 	dig = Dig.new()
 	add_child(dig)
 	dig.setup(self)
+	if bag_on: BagLoot.build(self)
 	if home_on:
 		vault = VaultHost.new()
 		add_child(vault)
@@ -734,19 +746,31 @@ func _unhandled_input(event: InputEvent) -> void:
 	super._unhandled_input(event)
 
 func _foot_text() -> String:
-	return super._foot_text()+("\nN  re-deal the parts (seed %d)" if parts_on else "\nN  new deal (seed %d)") % deal_seed
+	return super._foot_text()+("\nN  re-deal the parts (seed %d)" if parts_on else "\nN  new deal (seed %d)") % deal_seed+("\n"+BagLoot.hint() if bag_on else "")
 
 ## The pause's Back to the plane (scripts/kit_isle/pause_host.gd).
 func back_to_plane() -> void:
 	if flying or not walk_ready: return
 	_return_to_plane()
 
+## --loot-bag: dragging, the bag holds him to its rope; aiming a throw, the
+## stick moves the reticle, not him (as studies/bag_study.gd).
+func _want(delta: float) -> Vector2:
+	var want := super._want(delta)
+	if bag == null or bag.act != "aim": return want
+	bag.aim_steer(want,delta)
+	return Vector2.ZERO
+
+func _sync_figure() -> void:
+	if bag != null: bag.leash(get_process_delta_time())
+	super._sync_figure()
+
 # --- The world view ------------------------------------------------------------------
 
 ## Where the world view looks for what stands on the islands.
 func world_roots() -> Array:
 	var out: Array = [art]
-	for n: String in ["FootPieces","PlaneArc","PartSpots","Life","Treasures"]:
+	for n: String in ["FootPieces","PlaneArc","PartSpots","Life","Treasures","Loot"]:
 		var node := get_node_or_null(n)
 		if node != null: out.append(node)
 	return out

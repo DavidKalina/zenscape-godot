@@ -147,6 +147,12 @@ var strain: Node = null
 ## Others riding the bag (the stone brood's clingers): their kg, added to
 ## the bag's load but never past its takeoff limit. `set_riders_kg`.
 var riders_kg := 0.0
+## A loot bag hitched on the rope (scripts/carry/loot_bag.gd): its kg ride
+## with the loaded ones (0: none).
+var bag_kg := 0.0
+## Loot pieces out of a hitched loot bag (spilled, dropped, banked): their
+## loose bodies stepped here.
+var loose_loot: Array = []
 var _heavy_flag := -1.0
 static var _thud_take: AudioStreamWAV = null
 
@@ -241,7 +247,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if t.is_empty(): return
 		lift(t)
 	elif phase == "carry":
-		if _by_sling(): hitch()
+		if _by_sling():
+			# No basket (--loot-bag): only into a hitched bag.
+			if _bags_only() and _hitched_bag() == null: _refuse_load()
+			else: hitch()
 		else: set_down()
 	else: return
 	get_viewport().set_input_as_handled()
@@ -325,8 +334,77 @@ func give_up() -> Dictionary:
 ## pad), or {} with the bag empty. Its node is left where it rode.
 func take_from_bag() -> Dictionary:
 	var t := _last_hitched()
-	if not t.is_empty(): _unstrap(t)
-	return t
+	if not t.is_empty():
+		_unstrap(t)
+		return t
+	return _out_of_hitched()
+
+## No basket (--loot-bag, docs/design/bag-hitch/): the rope ends in a bare
+## hook, and the hugged treasures go into a hitched loot bag or not at all.
+func _bags_only() -> bool:
+	return study != null and bool(study.get("bag_on"))
+
+## Loading with no bag hitched: he shakes his head, the prompt says why.
+var refusals := 0
+var _refuse_t := 99.0
+const REFUSE_SHOW := 2.0
+func _refuse_load() -> void:
+	refusals += 1
+	_refuse_t = 0.0
+	_on_refused("no bag")
+
+## The bag he took off the rope (scripts/carry/loot_bag.gd `unhitch`): the
+## hugged treasures in it set out on the turf round the rope's end.
+func bag_unhitched() -> void:
+	if sling == null: return
+	var mid: Vector3 = sling.middle()
+	var n := 0
+	for t: Dictionary in treasures:
+		if int(t.slot) < 0: continue
+		_unstrap(t)
+		var node: Node3D = t.node
+		var a := 2.39996*n+PI*0.25
+		var out := float(sling.radius)+0.5+float(t.measures.radius)
+		var at := mid+Vector3(cos(a),0.0,sin(a))*out
+		var foot := _ground_under(at,SET_OVER,SET_UNDER)
+		if foot == Vector3.INF: foot = at
+		var spot: Node3D = t.spot
+		if node.get_parent() != spot:
+			node.get_parent().remove_child(node)
+			spot.add_child(node)
+		node.global_transform = Transform3D(Basis(Vector3.UP,randf()*TAU),foot)
+		n += 1
+		if OS.is_debug_build(): print("carry: %s set out by the rope (the bag unhitched)" % t.id)
+
+## A hitched loot bag (scripts/carry/loot_bag.gd, state "hitched"), or null.
+func _hitched_bag() -> Node3D:
+	var bag: Variant = study.get("bag") if study != null else null
+	if bag == null or not is_instance_valid(bag) or str(bag.state) != "hitched": return null
+	return bag
+
+## The last piece put in a hitched loot bag taken out at its mouth (its
+## kg off the rope; the bag's `rip_out`), as a loose one can be, or {}.
+## Tracked in `loose_loot` so its body is stepped as the treasures' are.
+func _out_of_hitched() -> Dictionary:
+	var bag := _hitched_bag()
+	if bag == null or (bag.items as Array).is_empty(): return {}
+	var p: Dictionary = bag.rip_out((bag.items as Array).back())
+	if p.is_empty(): return {}
+	(p.node as Node3D).global_transform = Transform3D(Basis(Vector3.UP,randf()*TAU),bag.mouth())
+	if not loose_loot.has(p): loose_loot.append(p)
+	return p
+
+## A loose loot piece's body gone, the piece back under its spot's node
+## where it lies (so the bag takes it as any other).
+func unloose_loot(p: Dictionary) -> void:
+	if p.get("body") == null: return
+	_unloose(p)
+	var node: Node3D = p.node
+	var at := node.global_transform
+	node.get_parent().remove_child(node)
+	(p.spot as Node3D).add_child(node)
+	node.global_transform = at
+	loose_loot.erase(p)
 
 ## Let go where it is now: left resting on the ground at `_ground_at`.
 func _let_go() -> void:
@@ -340,6 +418,7 @@ func _let_go() -> void:
 func _process(delta: float) -> void:
 	if study == null or not bool(study.get("walk_ready")): return
 	_spill_t += delta
+	_refuse_t += delta
 	_sling_step(delta)
 	if not held.is_empty():
 		if bool(study.get("flying")):
@@ -352,6 +431,8 @@ func _process(delta: float) -> void:
 	for t: Dictionary in treasures:
 		if t.body != null: _loose_step(t,delta)
 		if int(t.slot) >= 0: _ride(t,delta)
+	for p: Dictionary in loose_loot.duplicate():
+		if p.get("body") != null: _loose_step(p,delta)
 	_show_prompt()
 
 # --- Dropping ----------------------------------------------------------------------
@@ -407,7 +488,6 @@ func drop(why: String) -> void:
 ## `t` loose: a tumbling body with its middle at `mid`, moving `v`,
 ## spinning `spin`.
 func _loosen(t: Dictionary, mid: Transform3D, v: Vector3, spin: Vector3) -> void:
-	var w := Weights.of(str(t.weight))
 	var node: Node3D = t.node
 	var h: float = t.measures.height
 	var r: float = t.measures.radius
@@ -415,7 +495,8 @@ func _loosen(t: Dictionary, mid: Transform3D, v: Vector3, spin: Vector3) -> void
 	body.name = "Loose_"+str(t.id).replace("/","_")
 	body.collision_layer = TREASURE_LAYER
 	body.collision_mask = SOLID_MASK
-	body.mass = float(w.mass)
+	# A loot piece (the loot bag's) weighs its kg; a treasure its class's.
+	body.mass = float(t.kg) if t.has("kg") else float(Weights.of(str(t.weight)).mass)
 	body.continuous_cd = true
 	body.can_sleep = true
 	body.linear_damp = 0.2
@@ -602,7 +683,7 @@ func _carry_step(delta: float) -> void:
 		"hitch":
 			phase_t += delta
 			k = clampf(phase_t/(lift_time*Weights.HITCH_TIME),0.0,1.0)
-			var slot: Variant = _slot_xform(_slot_to)
+			var slot: Variant = _slot_xform(_slot_to,held)
 			if slot == null:
 				# The sling went (boarded): he keeps it.
 				phase = "carry"
@@ -887,11 +968,16 @@ func _show_prompt() -> void:
 	if not _on_foot(): return
 	if not held.is_empty():
 		if phase != "carry" or not _by_sling(): return
+		if _bags_only() and _hitched_bag() == null:
+			_prompt.text = "Hitch a bag first" if _refuse_t < REFUSE_SHOW else Pad.pick("E  load it","B  load it")+"  (hitch a bag first)"
+			_prompt.global_position = sling.middle()+Vector3.UP*0.8
+			_prompt.visible = true
+			return
 		var free := _free_slot()
 		if free < 0: return
 		var at: Variant = _slot_xform(free)
 		if at == null: return
-		_prompt.text = Pad.pick("E  load it in the sling","B  load it in the sling")
+		_prompt.text = Pad.pick("E  load it in the bag","B  load it in the bag") if _hitched_bag() != null else Pad.pick("E  load it in the sling","B  load it in the sling")
 		_prompt.global_position = (at as Transform3D).origin+Vector3.UP*(float(held.measures.height)+0.3)
 		_prompt.visible = true
 		return
@@ -924,6 +1010,7 @@ func _sling_step(delta: float) -> void:
 		sling = CargoSling.new()
 		add_child(sling)
 		sling.hit.connect(_on_bag_hit)
+		if _bags_only(): sling.set_bare(true)
 		_refill()
 		sling.rest_behind(pf)
 	sling.step(delta,pf)
@@ -982,22 +1069,28 @@ func _refill() -> void:
 	var kg := 0.0
 	for t: Dictionary in treasures:
 		if int(t.slot) >= 0: kg += float(Weights.of(str(t.weight)).mass)
-	sling.set_load(kg)
+	sling.set_load(kg+bag_kg)
+	# Into a hitched loot bag, they swell it as its own loot does.
+	var bag := _hitched_bag()
+	if bag != null: bag.set_extra_kg(kg)
 
 ## The bag hit something `speed` m/s hard: it spills, the last loaded
-## first, one at SPILL_SPEED and one more each SPILL_STEP harder. Each goes
+## first, one at SPILL_SPEED (SPILL_GROUND on level turf) and one more each
+## SPILL_STEP harder. Each goes
 ## loose (it tumbles; onto land it comes to rest where he can find it, into
 ## the sky it is lost).
 func _on_bag_hit(speed: float, _at: Vector3, normal: Vector3, vel: Vector3) -> void:
 	if OS.is_debug_build() and speed > 1.0: print("carry: the bag hit something at %.1f m/s" % speed)
 	if strain != null: strain.bag_hit(speed,float(load_now.w))
-	if speed < Weights.SPILL_SPEED or _spill_t < Weights.SPILL_GRACE: return
-	var n := 1+int(floor((speed-Weights.SPILL_SPEED)/Weights.SPILL_STEP))
+	var need := Weights.SPILL_GROUND if normal.y > Weights.SPILL_LEVEL else Weights.SPILL_SPEED
+	if speed < need or _spill_t < Weights.SPILL_GRACE: return
+	var n := 1+int(floor((speed-need)/Weights.SPILL_STEP))
 	var gone := 0
 	while gone < n:
 		var t := _last_hitched()
+		if t.is_empty(): t = _out_of_hitched()
+		else: _unstrap(t)
 		if t.is_empty(): break
-		_unstrap(t)
 		var node: Node3D = t.node
 		var h: float = t.measures.height
 		var mid := node.global_transform*Vector3(0.0,h*0.5,0.0)
@@ -1020,10 +1113,21 @@ func _last_hitched() -> Dictionary:
 	return best
 
 ## Spot `i` in the sling (world), or null with no sling.
-func _slot_xform(i: int) -> Variant:
+func _slot_xform(i: int, t: Dictionary = {}) -> Variant:
 	var pf: Node3D = study.get("plane_figure")
 	if sling == null or pf == null or i < 0: return null
+	if not t.is_empty() and _bags_only():
+		var bag := _hitched_bag()
+		if bag != null:
+			# In a hitched loot bag: sunk in its mouth, its top showing.
+			var b: Basis = (bag.get("_sack") as Node3D).global_basis.orthonormalized()
+			var h: float = t.measures.height
+			return Transform3D(b,bag.mouth()-b.y*h*IN_BAG_SINK)
 	return sling.slot(i,pf)
+
+## How deep a hugged treasure sits in a hitched loot bag's mouth (of its
+## height).
+const IN_BAG_SINK := 0.6
 
 ## Starts lowering the carried one into the sling's next free spot; with
 ## none free he balks.
@@ -1063,12 +1167,16 @@ func _strap() -> void:
 func _unstrap(t: Dictionary) -> void:
 	if int(t.slot) < 0: return
 	t.slot = -1
+	(t.node as Node3D).visible = true
 	_refill()
 
 ## A loaded one rides its spot in the sling (a bounce as it lands there).
 func _ride(t: Dictionary, delta: float) -> void:
-	var at: Variant = _slot_xform(int(t.slot))
+	var at: Variant = _slot_xform(int(t.slot),t)
 	if at == null: return
+	# In a hitched loot bag only the last one in shows, in its mouth.
+	if _bags_only() and _hitched_bag() != null:
+		(t.node as Node3D).visible = t == _last_hitched()
 	t.strapped = float(t.strapped)+delta
 	var k := clampf(float(t.strapped)/Weights.HITCH_SETTLE,0.0,1.0)
 	var bounce := Weights.HITCH_BOUNCE*sin(k*PI*2.0)*(1.0-k)
