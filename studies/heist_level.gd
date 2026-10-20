@@ -6,7 +6,8 @@ extends "res://studies/crag_reach.gd"
 ## along the north side (a terrace to rappel down to, a ledge, a gate mass
 ## to climb, a spur); the vault, a sunken court ringed by three higher rims; the
 ## way out along the south side (a rim to throw the bag up, a fallen pillar
-## to slide down to the south mass, the ford mass, a rope bridge home).
+## to slide down to the south mass, the ford mass, a chain of two swings
+## over stack_1 to stack_2, a rope bridge home).
 ## Every piece is named `heist/<name>` (scripts/layout_overrides.gd,
 ## layouts/heist.json), moved in the world view (F4) by that name.
 ##   godot --path . res://studies/heist_level.tscn -- --no-title
@@ -28,6 +29,11 @@ const HEIST_MASSES := [
 	["vault_s",Vector3(186.0,4.0,34.0),{"seed":94,"size":14.0,"shape":0.5,"flat":0.6,"landmark":0},[]],
 	["south",Vector3(125.0,-10.0,64.0),{"seed":95,"size":20.0,"shape":0.45,"flat":0.7,"landmark":0},[]],
 	["ford",Vector3(82.0,-8.8,52.0),{"seed":96,"size":16.0,"shape":0.5,"flat":0.7,"landmark":0},[]],
+	# The chain's stacks (the way home): ford -> stack_1 -> stack_2, each
+	# crown a little under the last (21.9, 21.2, 20.9), so each swing (swing_05,
+	# swing_06) lands level or down.
+	["stack_1",Vector3(55.0,-9.0,42.0),{"seed":97,"size":7.0,"shape":0.4,"flat":0.8,"landmark":0},[]],
+	["stack_2",Vector3(39.5,-9.2,30.0),{"seed":98,"size":9.0,"shape":0.4,"flat":0.8,"landmark":0},[]],
 ]
 const HEIST_BASE := {"grass":0.0}
 
@@ -118,7 +124,12 @@ const HEIST_SWINGS := [
 	["swing_01","arch",Vector3(38.5,27.5,-37.2),Vector2(0.467,0.884),10.0,24.0,"a rock arch over the gap terrace_n -> ledge (the way in)"],
 	["swing_02","arm",Vector3(177.0,34.0,48.0),Vector2(0.0,1.0),7.0,4.0,"an arm out of vault_s's south face at its west corner: swing round the corner"],
 	["swing_03","lintel",Vector3(113.5,26.5,56.0),Vector2(0.0,1.0),8.0,6.0,"a broken lintel on south's west rim: the swing out from under the Olmec"],
-	["swing_04","branch",Vector3(98.2,28.9,47.0),Vector2(0.6,0.8),7.0,7.0,"a dead tree on ford's east rim, its branch over the gap: the chain's last"],
+	["swing_04","branch",Vector3(98.2,28.9,47.0),Vector2(0.6,0.8),7.0,7.0,"a dead tree on ford's east rim, its branch over the gap south -> ford (spare: not on the route now)"],
+	# The chain (the way home): two rock rings out of the clouds, one over
+	# each gap ford -> stack_1 -> stack_2, each line 7 m over the far crown
+	# across the way. Each swing lands on a stack before the next throw.
+	["swing_05","arch",Vector3(64.5,28.6,45.0),Vector2(0.0,1.0),9.0,22.0,"a rock arch over the gap ford -> stack_1: the chain's first"],
+	["swing_06","arch",Vector3(48.0,28.2,36.6),Vector2(0.613,-0.79),8.0,18.0,"a rock arch over the gap stack_1 -> stack_2: the chain's second"],
 ]
 ## The way out of the court, built for the bag: a ramp of stone up from the
 ## court floor along vault_s's north foot to a landing, then three ledges
