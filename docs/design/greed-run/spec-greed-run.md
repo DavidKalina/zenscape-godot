@@ -48,6 +48,14 @@ and `docs/design/rope-swing/` (the climbing rope, rappel, beam swing).
 7. **End screen.** Banked value, what was lost, time taken, and a key to
    start a new run (reloading the scene is fine).
 
+## A bag the brood haul off
+
+There's no dig on the crag. A bag the brood haul off and bury is lost with
+everything in it (counted as lost on the end screen). A spare empty bag
+waits at the plane's hook, so the run goes on; he walks back for it. One
+spare per run is enough; a second lost bag leaves him with hugged
+treasures only (or none, the simplest that plays clearly).
+
 ## Glue the loop may add
 
 - The loot bag, its loot and the hitch on the crag reach (from
