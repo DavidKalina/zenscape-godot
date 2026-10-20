@@ -185,7 +185,9 @@ func _ready() -> void:
 	bag_on = greed_on
 	_no_lode = true
 	_olmec_due = olmec_after
-	kit_breaks_on = olmec_after >= 0.0
+	# The greed run builds him (and the breaks) always; greed fires him.
+	kit_breaks_on = olmec_after >= 0.0 or greed_on
+	olmec_armed = olmec_after >= 0.0
 	super._ready()
 
 func _load_pack() -> void:
@@ -764,6 +766,12 @@ var dig = null
 ## The greed meter's marks: "brood", "olmec".
 func greed_woke(what: String) -> void:
 	if what == "brood": Greed.wake(self)
+	elif what == "olmec" and enemies != null and not olmec_armed:
+		# The --olmec entrance, now: up a cliff out of view on the next
+		# foot tick (after a landing if he's flying), and back OLMEC_AGAIN
+		# s after he's gone, as with --olmec.
+		olmec_armed = true
+		_olmec_due = 0.0
 ## Read by the carry (scripts/carry/carry_host.gd) and the bag
 ## (scripts/carry/loot_bag.gd), as studies/wreck_cluster.gd's: the plane's
 ## rope ends in a bare hook (`bag_on`), the bag, the loose loot.
@@ -872,6 +880,9 @@ var kit_breaks: Node3D = null
 var enemies: Node = null
 var _body_knobs := {}
 var _olmec_due := -1.0
+## Whether the Olmec comes at all: on with --olmec / --olmec-after; with
+## --greed-run only once greed reaches his mark (`greed_woke("olmec")`).
+var olmec_armed := false
 var _gone_t := -1.0
 var _voices := {}
 var _spawner: Node = null
@@ -893,7 +904,7 @@ class Slot extends Node:
 
 func _build_room() -> void:
 	super._build_room()
-	if olmec_after < 0.0: return
+	if olmec_after < 0.0 and not greed_on: return
 	enemies = EnemyField.new()
 	enemies.study = self
 	enemies.motor = motor
@@ -1025,6 +1036,7 @@ func olmec_cliff_pick() -> Dictionary:
 		if fitted.is_empty(): continue
 		var lip: Vector3 = fitted[0]
 		var out: Vector2 = fitted[1]
+		if _lip_failed(lip): continue
 		var d := Vector2(lip.x-feet.x,lip.z-feet.z).length()
 		var seen: bool = _spawner.in_view(lip)
 		var score := 0.0
@@ -1100,6 +1112,39 @@ func spawn_olmec() -> Node3D:
 	print("crag reach: the Olmec up %s's face at %s (out %s), %.1f m down, %.1f m off you, %s" % [c.crown,lip,out,lip.y-b.position.y,float(c.far),"in view" if c.seen else "out of view"])
 	return b
 
+## With --greed-run: an Olmec under him, far off and not closing (a fall
+## off an unclean face, a ledge he paces) is cleared, and comes again up
+## another cliff OLMEC_AGAIN s on (the gone path). His moves are untouched.
+const OLMEC_STUCK_BELOW := 4.0
+const OLMEC_STUCK_FAR := 20.0
+const OLMEC_STUCK_GAIN := 3.0
+const OLMEC_STUCK_T := 8.0
+var _stuck_t := 0.0
+var _stuck_best := INF
+func _olmec_stuck(b: Node3D, delta: float) -> bool:
+	var at: Vector3 = b.global_position
+	var d: float = at.distance_to(motor.feet)
+	if at.y > motor.feet.y-OLMEC_STUCK_BELOW or d < OLMEC_STUCK_FAR or bool(b.crumbled) or d < _stuck_best-OLMEC_STUCK_GAIN:
+		_stuck_t = 0.0
+		_stuck_best = d
+		return false
+	_stuck_t += delta
+	if _stuck_t < OLMEC_STUCK_T: return false
+	print("crag reach: the Olmec stuck %.1f m under him, %.1f m off, at %s; again up another cliff" % [motor.feet.y-at.y,d,at])
+	_stuck_t = 0.0
+	_stuck_best = INF
+	if not olmec_cliff.is_empty(): _failed_lips.append(olmec_cliff.lip)
+	_olmec_clear()
+	return true
+
+## Lips he got stuck under (`_olmec_stuck`), not picked again; only the
+## greed run fills it.
+var _failed_lips: Array = []
+func _lip_failed(lip: Vector3) -> bool:
+	for l: Vector3 in _failed_lips:
+		if l.distance_to(lip) < 6.0: return true
+	return false
+
 func _olmec_clear() -> void:
 	if enemies == null: return
 	if foot_lock != null and foot_lock.locked(): foot_lock.release()
@@ -1120,7 +1165,7 @@ func tick(delta: float) -> void:
 	if greed != null:
 		greed.step(delta)
 		if _hands_label != null: _hands_label.text = Greed.hands_text(hands)+"\n"+greed.text()
-	if enemies == null or flying: return
+	if enemies == null or flying or not olmec_armed: return
 	if _olmec_due >= 0.0:
 		_olmec_due -= delta
 		if _olmec_due < 0.0: spawn_olmec()
@@ -1131,6 +1176,7 @@ func tick(delta: float) -> void:
 		_gone_t += delta
 		if _gone_t > OLMEC_AGAIN: spawn_olmec()
 		return
+	if greed_on and _olmec_stuck(b,delta): return
 	# The gust shot's charge refills on foot while he hunts (olmec_field's).
 	if updraft != null: updraft.charge = 1.0
 	if bool(b.crumbled):
