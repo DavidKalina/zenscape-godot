@@ -403,6 +403,15 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# middle only: a bulge at his shoulder, hip or knee, a face slanting
 		# across his breadth, the rim's round over his head.
 		"climb_clear":0,
+		# Olmec reach: `edge_fan` 1, at an edge in the hunt with no leap
+		# straight on, he tries a little either side (EDGE_FAN) first.
+		"edge_fan":0,
+		# Olmec reach: `leg_slope` 1, the ground rising by his legs (a
+		# sloped beam's crest behind him) doesn't push him sideways.
+		"leg_slope":0,
+		# Olmec reach: `drop_bulk` 1, a drop off an edge is taken only if
+		# his bulk clears its arc (as `down_to`'s throws), not his feet only.
+		"drop_bulk":0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -1360,7 +1369,10 @@ func _landing(dir: Vector3) -> Dictionary:
 	var ledge := _ledge(dir)
 	if not ledge.is_empty() and _arc_clear(ledge.at,"jump"): return ledge
 	var drop := _drop(dir)
-	if not drop.is_empty() and _drop_ok(drop.at) and _arc_clear(drop.at,"drop"): return drop
+	# Olmec reach (`drop_bulk`): his bulk clears the drop's arc too (off
+	# main's NW rim he took a drop to a shelf 6 m down its face, his bulk
+	# came down 1.2 m into the face, through the shelf and off the world).
+	if not drop.is_empty() and _drop_ok(drop.at) and _arc_clear(drop.at,"drop",float(knobs.drop_bulk) > 0.5): return drop
 	return {}
 
 ## Whether it drops to `at`: headless and not lost, not more than
@@ -2637,7 +2649,9 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 	if _skirt_t > 0.0:
 		# `skirt_hold`: round a wall, the skirt's clock runs as he walks it
 		# (a quarter as fast while he plants and turns onto it).
-		var walked := float(knobs.skirt_hold) < 0.5 or not _skirt_wall or Vector2(vel.x,vel.z).length() > 0.5
+		# `edge_fan`: along a rim too (on main's east rim the whole skirt
+		# went in the plant and turn, and he stood there 12 s).
+		var walked := float(knobs.skirt_hold) < 0.5 or (not _skirt_wall and float(knobs.edge_fan) < 0.5) or Vector2(vel.x,vel.z).length() > 0.5
 		_skirt_t -= delta if walked else delta*0.25
 		if _skirt_t <= 0.0: _skirt_end = _clock
 		_heading = _skirt_way
@@ -2713,6 +2727,12 @@ func _hunt_edge(fwd: Vector3, goal: Vector3) -> void:
 	vel.x = 0.0
 	vel.z = 0.0
 	var land := _landing(fwd)
+	# Olmec reach (`edge_fan`): none straight on, a leap a little either
+	# side (and the leap at a wall below, after).
+	if float(knobs.edge_fan) > 0.5 and land.is_empty():
+		for off: float in EDGE_FAN:
+			land = _landing(_way3(wrapf(facing+off,-PI,PI)))
+			if not land.is_empty(): break
 	if not land.is_empty() and (land.kind == "jump" or goal.y < position.y-float(knobs.step)):
 		_leap_to = land.at
 		leap_kind = land.kind
@@ -2721,6 +2741,12 @@ func _hunt_edge(fwd: Vector3, goal: Vector3) -> void:
 		return
 	if _down_to(goal): return
 	if _wall_leap(fwd,goal): return
+	# `edge_fan`: off main's east rim the leap at the east islet's face lay
+	# 0.4 rad off his way to you, found only by chance mid-turn, after 12 s
+	# of skirts along the rim.
+	if float(knobs.edge_fan) > 0.5:
+		for off: float in EDGE_FAN:
+			if _wall_leap(_way3(wrapf(facing+off,-PI,PI)),goal): return
 	if _chase_plan(goal): return
 	var way := _skirt(goal)
 	if way != INF:
@@ -2728,6 +2754,9 @@ func _hunt_edge(fwd: Vector3, goal: Vector3) -> void:
 		_skirt_t = SKIRT_FOR
 		return
 	_stuck()
+
+## `edge_fan`: ways tried off his facing at an edge (rad).
+const EDGE_FAN := [0.35,-0.35,0.7,-0.7]
 
 ## No way on: hunting, it looks about where it stands; going back, it roams.
 func _stuck() -> void:
@@ -3750,6 +3779,12 @@ func _clear_bulk(delta: float, floored := true) -> void:
 			var a: Vector3 = pts[j]
 			var top_y := _floor(Vector3(b.x,position.y,b.z)+(a-b).normalized()*-0.1,float(knobs.step)*STAIR+1.0,0.5)
 			if top_y != -INF and top_y < position.y+LEG_BLOCK: continue
+			# Olmec reach (`leg_slope`): ground rising by his legs (pushed
+			# out more up than across) is a slope under him, not a block
+			# beside them: on the fallen pillar the column's crest behind
+			# him, met turned across it, pushed him off its deck onto its
+			# round flank, 1.5 m into it.
+			if float(knobs.leg_slope) > 0.5 and absf((b-a).y) > Vector2((b-a).x,(b-a).z).length(): continue
 			var d := (b-a).dot(right)
 			if absf(d) > absf(side): side = d
 		if absf(side) > 0.01: out += right*side
