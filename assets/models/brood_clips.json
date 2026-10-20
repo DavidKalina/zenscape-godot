@@ -1,0 +1,282 @@
+{
+ "fps": 30,
+ "tris": 1764,
+ "clips": {
+  "idle": {
+   "length": 1.6,
+   "loop": true,
+   "driven": "time",
+   "stride": 0.0,
+   "then": "",
+   "beats": {}
+  },
+  "look": {
+   "length": 1.4,
+   "loop": true,
+   "driven": "time",
+   "stride": 0.0,
+   "then": "",
+   "beats": {
+    "left": [
+     0.1
+    ],
+    "right": [
+     0.7
+    ]
+   }
+  },
+  "wake": {
+   "length": 0.7,
+   "loop": false,
+   "driven": "seek",
+   "stride": 0.0,
+   "then": "peek",
+   "beats": {
+    "grip": [
+     0.315
+    ],
+    "peek": [
+     0.7
+    ]
+   }
+  },
+  "peek": {
+   "length": 1.2,
+   "loop": true,
+   "driven": "time",
+   "stride": 0.0,
+   "then": "",
+   "beats": {
+    "left": [
+     0.09
+    ],
+    "right": [
+     0.62
+    ]
+   }
+  },
+  "rise": {
+   "length": 0.7,
+   "loop": false,
+   "driven": "seek",
+   "stride": 0.0,
+   "then": "look",
+   "beats": {
+    "peek": [
+     0.28
+    ],
+    "heave": [
+     0.385
+    ],
+    "stand": [
+     0.7
+    ]
+   }
+  },
+  "sink": {
+   "length": 1.1,
+   "loop": false,
+   "driven": "seek",
+   "stride": 0.0,
+   "then": "",
+   "beats": {
+    "look": [
+     0.38
+    ],
+    "crouch": [
+     0.5
+    ],
+    "hop": [
+     0.56
+    ],
+    "gone": [
+     1.1
+    ]
+   }
+  },
+  "walk": {
+   "length": 0.44,
+   "loop": true,
+   "driven": "stride",
+   "stride": 1.5,
+   "then": "",
+   "beats": {
+    "plant": [
+     0.0,
+     0.22
+    ]
+   }
+  },
+  "haul": {
+   "length": 0.6,
+   "loop": true,
+   "driven": "stride",
+   "stride": 0.9,
+   "then": "",
+   "beats": {
+    "plant": [
+     0.0,
+     0.3
+    ]
+   }
+  },
+  "climb": {
+   "length": 0.62,
+   "loop": true,
+   "driven": "stride",
+   "stride": 0.55,
+   "then": "",
+   "beats": {
+    "grab": [
+     0.0,
+     0.31
+    ]
+   }
+  },
+  "mantle": {
+   "length": 0.5,
+   "loop": false,
+   "driven": "seek",
+   "stride": 0.0,
+   "then": "land",
+   "beats": {
+    "lip": [
+     0.275
+    ],
+    "over": [
+     0.5
+    ]
+   }
+  },
+  "drop": {
+   "length": 0.26,
+   "loop": false,
+   "driven": "time",
+   "stride": 0.0,
+   "then": "",
+   "beats": {
+    "hang": [
+     0.26
+    ]
+   }
+  },
+  "land": {
+   "length": 0.26,
+   "loop": false,
+   "driven": "time",
+   "stride": 0.0,
+   "then": "",
+   "beats": {
+    "contact": [
+     0.0
+    ],
+    "up": [
+     0.26
+    ]
+   }
+  },
+  "fall": {
+   "length": 0.5,
+   "loop": true,
+   "driven": "time",
+   "stride": 0.0,
+   "then": "",
+   "beats": {}
+  },
+  "shake": {
+   "length": 0.45,
+   "loop": false,
+   "driven": "time",
+   "stride": 0.0,
+   "then": "fall",
+   "beats": {
+    "flung": [
+     0.08
+    ]
+   }
+  },
+  "cling": {
+   "length": 0.5,
+   "loop": true,
+   "driven": "time",
+   "stride": 0.0,
+   "then": "",
+   "beats": {
+    "squeeze": [
+     0.0,
+     0.25
+    ]
+   }
+  },
+  "leap": {
+   "length": 0.35,
+   "loop": false,
+   "driven": "seek",
+   "stride": 0.0,
+   "then": "ride",
+   "beats": {
+    "launch": [
+     0.07
+    ],
+    "catch": [
+     0.3
+    ]
+   }
+  },
+  "ride": {
+   "length": 0.8,
+   "loop": true,
+   "driven": "time",
+   "stride": 0.0,
+   "then": "",
+   "beats": {
+    "kick": [
+     0.0,
+     0.4
+    ]
+   }
+  }
+ },
+ "sockets": {
+  "hand_l": {
+   "bone": "hand_l",
+   "at": [
+    -0.445,
+    0.04,
+    -0.23
+   ]
+  },
+  "hand_r": {
+   "bone": "hand_r",
+   "at": [
+    0.445,
+    0.04,
+    -0.23
+   ]
+  },
+  "head": {
+   "bone": "head",
+   "at": [
+    0.0,
+    0.1,
+    0.55
+   ]
+  },
+  "eyes": {
+   "bone": "head",
+   "at": [
+    0.0,
+    0.3,
+    0.41
+   ]
+  },
+  "load": {
+   "bone": "trunk",
+   "at": [
+    0.0,
+    0.0,
+    0.62
+   ]
+  }
+ }
+}
