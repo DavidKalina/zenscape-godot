@@ -12,6 +12,8 @@ const ENTRIES: Array[Dictionary] = [
 	# Ruins.
 	{"id":"aqueduct_isle","group":"Ruins","title":"Aqueduct isle","scene":"res://studies/aqueduct_isle.tscn","args":[],
 		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F. Find the lodestone, fly where the nose points; the halls follow."},
+	{"id":"crag_reach","group":"Ruins","title":"Crag reach","scene":"res://studies/crag_reach.tscn","args":[],
+		"detail":"Four crag masses tied by a rope bridge (east), a fallen column to slide with crouch (north) and an aqueduct (west), ruins on top. F4: move any piece."},
 	{"id":"sky_dragon","group":"Ruins","title":"Sky dragon","scene":"res://studies/aqueduct_isle.tscn","args":["--dragon"],
 		"detail":"An experiment: a great dragon rises from the clouds and roams the isles, now and then low over yours. V puts the camera on it."},
 	{"id":"dragon_vision","group":"Ruins","title":"Dragon vision greybox","scene":"res://studies/dragon_vision_study.tscn","args":[],
