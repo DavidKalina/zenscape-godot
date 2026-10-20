@@ -118,14 +118,44 @@ func step(body: Node3D, delta: float) -> void:
 		_wp = clampf(_wp+_pitch_v*delta,-1.4,1.4)
 	var look := Vector3(-sin(_wy)*cos(_wp),sin(_wp),-cos(_wy)*cos(_wp))
 	var local := frame.inverse()*look
-	yaw = clampf(atan2(-local.x,-local.z),-MAX_YAW,MAX_YAW)
+	var raw := atan2(-local.x,-local.z)
+	# Olmec tune (`gaze_yaw` D degrees on the body): the turn eased into D
+	# (a soft knee from KNEE of it, never a hard stop); `past` is how far
+	# the look is past FOLLOW_AT of it, for the body to turn after.
+	var limit := MAX_YAW
+	var knobs: Variant = body.get("knobs")
+	var soft := float((knobs as Dictionary).get("gaze_yaw",0.0)) if knobs is Dictionary else 0.0
+	if soft > 0.0 and on:
+		limit = deg_to_rad(soft)
+		yaw = signf(raw)*_eased(absf(raw),limit)
+		past = signf(raw)*maxf(absf(raw)-limit*FOLLOW_AT,0.0)
+	else:
+		yaw = clampf(raw,-MAX_YAW,MAX_YAW)
+		past = 0.0
 	pitch = clampf(atan2(local.y,Vector2(local.x,local.z).length()),-PITCH_DOWN,PITCH_UP)
 	# Held far round: the slow cock to one side (away from the turn).
-	if on and absf(yaw) > TILT_FROM: _far_t += delta
+	var tilt_from := minf(TILT_FROM,limit*0.75)
+	if on and absf(yaw) > tilt_from: _far_t += delta
 	else: _far_t = 0.0
 	if _far_t < 0.05: _roll_side = -signf(yaw) if yaw != 0.0 else 1.0
-	var roll_goal := TILT*_roll_side*smoothstep(TILT_FROM,MAX_YAW,absf(yaw))*2.0 if _far_t > TILT_AFTER else 0.0
+	var roll_goal := TILT*_roll_side*smoothstep(tilt_from,limit,absf(yaw))*2.0 if _far_t > TILT_AFTER else 0.0
 	roll = move_toward(roll,clampf(roll_goal,-TILT,TILT),TILT_RATE*delta*(1.0 if absf(roll_goal) > absf(roll) else 2.5))
+
+## `gaze_yaw`: the eased turn's knee (a share of the limit): under it the
+## head turns as far as the look; over it, ever less, toward the limit.
+const KNEE := 0.6
+## The share of the limit past which the body turns after the look.
+const FOLLOW_AT := 0.85
+## How far (rad, signed as `yaw`) the look is past FOLLOW_AT of the limit
+## (`gaze_yaw` on): the body's to turn after (`_gaze_follow`).
+var past := 0.0
+
+## `a` (rad, 0 up) eased into `limit`: itself to KNEE of it, then a tanh
+## knee that meets the limit only far round.
+static func _eased(a: float, limit: float) -> float:
+	var k := limit*KNEE
+	if a <= k: return a
+	return k+(limit-k)*tanh((a-k)/(limit-k))
 
 ## The stump's tilt (Euler, off the body's facing) with the gaze on top.
 func over(body: Node3D, tilt: Vector3) -> Vector3:
