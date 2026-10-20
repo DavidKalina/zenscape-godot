@@ -56,6 +56,9 @@ var rip_hits := 0
 var rip_lets := 0
 var takebacks := 0
 var _rip_t := -1.0
+## The rip's pace (1 as tuned; a host slows it, e.g. the bridge study on a
+## loaded deck).
+var rip_pace := 1.0
 ## The bag's haul: {crew (lead first), need, hole, last, best, since}; {} none.
 var lift := {}
 var bag_hauls := 0
@@ -224,7 +227,7 @@ func _cling_step(m: Variant, dt: float) -> void:
 	# The rip: a slow leak while they hang on; shaken off, the wait starts over.
 	if n > 0 and m != null and bag.state == "worn" and (bag.stowing as Dictionary).is_empty() and str(bag.act) == "" and not (bag.items as Array).is_empty():
 		if _rip_t < 0.0: _rip_t = _rip_wait()
-		_rip_t -= dt*(1.0+K.RIP_MORE*float(n-1))
+		_rip_t -= dt*rip_pace*(1.0+K.RIP_MORE*float(n-1))
 		if _rip_t <= 0.0:
 			_rip(m)
 			_rip_t = _rip_wait()

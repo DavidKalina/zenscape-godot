@@ -9,7 +9,7 @@ extends Node3D
 ## takes it, if any is loaded); the bridge sums what's on its deck. A body
 ## that stops telling it (gone, off the deck) drops out after FORGET s. The
 ## wanderer's own weight is WANDERER_KG; the study tells it his, his bag's
-## and each brood guy's (scripts/brood/brood_knobs.gd RIDER_KG), and later
+## and each brood guy's (6 kg on a deck, studies/bridge_study.gd), and later
 ## enemies only have to call `bear_at`.
 ##
 ## Between STRAIN_KG and SNAP_KG it strains, `strain` rising 0 to 1 with the
@@ -32,8 +32,8 @@ signal mended
 const WANDERER_KG := 60.0
 ## The strain's start and the limit (kg on the deck). The wanderer with a
 ## full bag (24 kg) is 84: past the start (a creak now and then, he knows
-## it's near) and under the limit; with RIDER_KG 2.5, five brood guys on
-## the deck with him take it past.
+## it's near) and under the limit; the bridge study's brood weigh 6 kg each
+## on a deck (BROOD_BRIDGE_KG), so two with him take it past.
 const STRAIN_KG := 80.0
 const SNAP_KG := 96.0
 ## A body counts on the deck within its width plus SIDE_SLACK m to a side

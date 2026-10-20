@@ -4,7 +4,8 @@ extends RefCounted
 ## are scripts/bridge_load.gd's plank chains (`half_points`).
 ##
 ## In the air (falling with the deck, off it, or jumping at it), his hands
-## or chest within REACH of a half's chain catch it, where they touch: the
+## or chest within REACH of a half's chain catch it (the half on his side of the
+## break first, the other only if his is out of reach), where they touch: the
 ## motor's rider (PilotMotor `mount`, the swing rope's way), hung under his
 ## hands as from a ledge (hold "swing"), facing the cliff, carried by the
 ## chain as it swings down to the face; his pace jolts the link he caught
@@ -64,8 +65,11 @@ func catch(walker: PilotMotor, delta: float) -> bool:
 	var s := walker.size
 	var hands := _hand_of(walker)
 	var chest := walker.feet+Vector3.UP*walker.hang_drop*0.7
-	var best := INF
-	var pick := [-1,0.0]
+	# The half on his side of the break first (the one he's falling past,
+	# its end where he walked from); the other only if his is out of reach.
+	var mine := _side_of(walker.feet)
+	var bests := [INF,INF]
+	var picks := [0.0,0.0]
 	for i in range(load.halves.size()):
 		var pts: PackedVector3Array = load.half_points(i)
 		var run := 0.0
@@ -76,13 +80,18 @@ func catch(walker: PilotMotor, delta: float) -> bool:
 			for at: Vector3 in [hands,chest]:
 				var u := clampf((at-pts[k]).dot(seg)/(l*l),0.0,1.0)
 				var d := at.distance_to(pts[k]+seg*u)
-				if d < best:
-					best = d
-					pick = [i,run+u*l]
+				if d < float(bests[i]):
+					bests[i] = d
+					picks[i] = run+u*l
 			run += l
-	if pick[0] < 0 or best > REACH*s: return false
-	half = pick[0]
-	along = pick[1]
+	var pick := -1
+	for i: int in [mine,1-mine]:
+		if i < load.halves.size() and float(bests[i]) <= REACH*s:
+			pick = i
+			break
+	if pick < 0: return false
+	half = pick
+	along = float(picks[pick])
 	facing = PilotMotor.facing_of(-_out(half))
 	_crouch_was = walker.crouch
 	_hands = Vector3.INF
@@ -140,6 +149,14 @@ func _top() -> Vector3:
 	var pts: PackedVector3Array = load.half_points(half)
 	var o := _out(half)
 	return pts[0]+Vector3(o.x,0.0,o.y)*float(load.lip)
+
+## Which half `at` (the world) is over: 0 short of the break, 1 past it.
+func _side_of(at: Vector3) -> int:
+	var br: Node3D = load.bridge
+	var a: Vector3 = br.global_transform*(br.a as Vector3)
+	var d: Vector3 = br.global_transform*(br.b as Vector3)-a
+	var t := (at-a).dot(d)/maxf(d.length_squared(),0.0001)
+	return 0 if t < float(load.break_t) else 1
 
 ## Half `i`'s way out of its cliff (flat, the world).
 func _out(i: int) -> Vector2:

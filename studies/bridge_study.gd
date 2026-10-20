@@ -52,6 +52,14 @@ const VOID_Y := -30.0
 ## The bridges that bear a load and strain (scripts/bridge_load.gd); the
 ## rest hold anything.
 const LOADED := ["long_bridge"]
+## A brood guy's weight on a bridge (kg). On the bag they add RIDER_KG
+## (2.5, scripts/brood/brood_knobs.gd); on a deck they're heavy: with the
+## 96 kg limit, him with a full bag (84) holds alone, plus 2 brood snaps it,
+## an empty bag plus 6 does.
+const BROOD_BRIDGE_KG := 6.0
+## The rip's pace while he's on a loaded deck (bag_brood `rip_pace`): half,
+## so the clingers don't empty the bag before the rest come on.
+const RIP_ON_DECK := 0.5
 ## The drop pad on the far cliff: its middle and radius (m).
 const PAD_AT := Vector3(34.0,0.0,-4.0)
 const PAD_R := 1.6
@@ -98,6 +106,9 @@ var climbs: Array = []
 ## The brood's routes over the cliffs and both bridges
 ## (scripts/brood/bridge_routes.gd; StoneGuy.route while this room is up).
 var routes: RefCounted = null
+## The brood's floors as built ([id, coded rect, coded top, offset seen]),
+## so a cliff moved in the world view (F4, or a saved layout) moves its floor.
+var _floor_of: Array = []
 ## The test aid (B, or --brood-now at the start): the bag filled to what he
 ## can wear and the brood woken, coming for him at once.
 var _brood_now_due := false
@@ -136,6 +147,8 @@ func _build_room() -> void:
 		var part: Array = p[1]
 		if str(part[4]) == "wall" and not str(p[0]).ends_with("_spur"): continue
 		routes.add_floor(str(p[0]),part[1],float(part[3]))
+		_floor_of.append([str(p[0]),part[1],float(part[3]),Vector3.INF])
+	_follow_floors()
 	for id: String in bridges:
 		var br: Dictionary = bridges[id]
 		routes.add_deck(id,br.holder,br.live,br.a,br.b,float(br.span),br.get("load"))
@@ -232,6 +245,12 @@ func _on_mend(id: String) -> void:
 ## Placed anywhere (a respawn after a fall, R, a station key), a snapped
 ## bridge is whole again.
 func place(at: Vector3, face: Vector2) -> void:
+	# Off any half he hangs on (else the hold outlives the mend and he
+	# never catches again).
+	for c: RefCounted in climbs:
+		if not c.holding(): continue
+		if motor.rider == c: motor.release(c)
+		c._free(motor)
 	super.place(at,face)
 	for id: String in bridges:
 		if bridges[id].has("load"): bridges[id]["load"].mend()
@@ -332,6 +351,8 @@ func tick(delta: float) -> void:
 		if motor.rider == null: c.catch(motor,delta)
 	_bear()
 	_bag_in_void()
+	_rip_pace()
+	_follow_floors()
 	if _brood_now_due and walk_ready:
 		_brood_now_due = false
 		brood_now()
@@ -371,7 +392,7 @@ func _unhandled_input(event: InputEvent) -> void:
 ## A bag fallen into the void (dragged or lying on the deck at the snap,
 ## thrown short) is lost with its loot: the pieces go back on their spots
 ## and a fresh empty bag lies at the near end. On his back it stays with him
-## (a fall puts him back at the near end wearing it, its loot kept).
+## (a fall empties it all the same: `_bag_lost_on_fall`).
 func _bag_in_void() -> void:
 	if bag == null or bag.state == "worn" or bag.state == "fly": return
 	var loose: RigidBody3D = bag.loose
@@ -401,7 +422,7 @@ func _bear() -> void:
 	if brood != null:
 		for g: RefCounted in brood.guys:
 			var at: Vector3 = feet if g.state == "cling" else brood.global_transform*g.feet
-			BridgeLoad.bear_at(at,BroodKnobs.RIDER_KG,g)
+			BridgeLoad.bear_at(at,BROOD_BRIDGE_KG,g)
 
 ## The loaded bridges' readouts (a debug aid), top middle.
 func _build_ui() -> void:
@@ -443,8 +464,68 @@ func _tread(delta: float, was_grounded: bool, falling: float) -> void:
 
 ## A fall into the void puts him back at the near end, or at the far end if
 ## he last stood on the far cliff.
+## (Asked only on a fall; the bag goes with it, see `_bag_lost_on_fall`.)
 func station_near(at: Vector3) -> int:
+	if motor != null and motor.feet.y < float(lost): _bag_lost_on_fall()
 	return 4 if at.x >= FAR_LIP else 2
 
+## Any fall into the void, worn or not: he comes back wearing the bag, empty
+## (its loot lost with the fall: the pieces back on their spots). Taken from
+## the brood if they had it (hauled or buried).
+func _bag_lost_on_fall() -> void:
+	if bag == null: return
+	var had := float(bag.kg)
+	if bag.state == "drag": bag.let_go()
+	if bool(bag.buried):
+		bag.buried = false
+		bag._sack.visible = true
+		if brood != null and "bag_in" in brood: brood.bag_in = ""
+	if bool(bag.hauled): bag.haul_free()
+	bag.empty()
+	if bag.state != "worn":
+		bag._hold_loose()
+		bag.state = "worn"
+		bag._lag = Vector3.ZERO
+		bag._lag_v = Vector3.ZERO
+		bag._last_mid = Vector3.INF
+	bag.act = ""
+	bag._apply_feel(1.0)
+	if had > 0.0: _say("Lost to the void: the bag's %d kg of loot (back on their spots)" % int(round(had)))
+
+## The rip slowed while he stands on a loaded deck (RIP_ON_DECK).
+func _rip_pace() -> void:
+	if brood == null or not "rip_pace" in brood: return
+	var feet := global_transform*motor.feet
+	var on := false
+	for id: String in LOADED:
+		if bridges.has(id) and bridges[id].has("load") and bridges[id].load.deck_spot(feet) != Vector3.INF: on = true
+	brood.rip_pace = RIP_ON_DECK if on else 1.0
+
+## Each floor where its cliff now is (moved in the world view or by a
+## saved layout): its rect and top shifted by the part's offset from its
+## coded spot (turns aren't followed).
+func _follow_floors() -> void:
+	if routes == null: return
+	var moved := false
+	for i in range(_floor_of.size()):
+		var f: Array = _floor_of[i]
+		var node := get_node_or_null(NodePath(str(f[0]))) as Node3D
+		if node == null: continue
+		var rect: Rect2 = f[1]
+		var top := float(f[2])
+		var part: Array = []
+		for p: Array in CLIFFS:
+			if str(p[0]) == str(f[0]): part = p[1]
+		var coded := Vector3(rect.get_center().x,(float(part[3])+float(part[2]))*0.5,rect.get_center().y)
+		var off := node.global_position-coded
+		if (f[3] as Vector3).is_equal_approx(off): continue
+		f[3] = off
+		for d: Dictionary in routes.floors:
+			if str(d.name) != str(f[0]): continue
+			d.rect = Rect2(rect.position+Vector2(off.x,off.z),rect.size)
+			d.y = top+off.y
+		moved = true
+	if moved: routes._built = false
+
 func _hint_text() -> String:
-	return "Bridge study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag · hold LMB or T (pad RT) aim a throw (8 kg or under) · V shove · the brood wake out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off · B (or --brood-now): brood now, the bag filled to 18 kg and the brood woken, coming for you (over either bridge) · the long bridge to the far cliff, the short one beside it · held past its limit the long bridge snaps: falling, he catches a hanging half; stick toward the cliff climbs, away down, Space jumps off, C lets go · fall into the void: back at the near end (the bridge mended) · 1 start, 2 near end, 3 short bridge, 4 far end, 5 drop pad · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Bridge study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag · hold LMB or T (pad RT) aim a throw (8 kg or under) · V shove · the brood wake out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off · B (or --brood-now): brood now, the bag filled to 18 kg and the brood woken, coming for you (over either bridge) · the long bridge to the far cliff, the short one beside it · held past its limit the long bridge snaps: falling, he catches the hanging half on his side of the break; stick toward the cliff climbs, away down, Space jumps off, C lets go · fall into the void: back at the near end (the bridge mended) wearing the bag, empty · 1 start, 2 near end, 3 short bridge, 4 far end, 5 drop pad · R start · F1 numbers · F4 world view · Esc mouse"
