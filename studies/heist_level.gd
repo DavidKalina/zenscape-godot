@@ -44,8 +44,8 @@ const HEIST_RUINS := [
 
 ## The way in (task 2), along the north side, calm: the rope's three
 ## moves. From the landing crown a post (post_01) over terrace_n, 9 m down:
-## rappel. terrace_n to the ledge, a 10 m gap under a beam (beam_01, 7 m
-## over the terrace): swing. The ledge to the gate, an 11 m wall (wall_01),
+## rappel. terrace_n to the ledge, a 10 m gap under a rock arch (swing_01,
+## 7 m over the terrace): swing. The ledge to the gate, an 11 m wall (wall_01),
 ## and the spur to vault_n, a 6 m face: hook the lip (any bare top is a solid hold,
 ## `rope_ground_hold`) and climb. The gate steps 4 m down onto the spur.
 ## From vault_n's rim a post (post_02) over the court, 10 m down: rappel
@@ -62,11 +62,17 @@ const HEIST_POSTS := [
 	["post_01",Vector3(21.6,30.4,-26.9),"landing crown over terrace_n (rappel)"],
 	["post_02",Vector3(187.0,34.6,-15.6),"vault_n rim over the court (rappel in)"],
 ]
-## The swing's beams: [id, middle of its top (world), along (x, z), length,
-## how far its two stone stalks hang under it]. A grey bar on dark stalks
-## (the swing study's), carrying a hook line (scripts/rope/hook_line.gd).
-const HEIST_BEAMS := [
-	["beam_01",Vector3(38.5,27.5,-37.2),Vector2(0.467,0.884),10.0,24.0],
+## The swing points (scripts/rope/swing_point.gd): shapes out of the rock
+## that carry the rope's hook line. [id, kind, the line's top middle
+## (world), along (x, z: the line runs across the swing), length, drop (how
+## far its footing reaches under the line), what it's for]. swing_01 is the
+## way in's (it was the gantry beam beam_01); the rest are first guesses
+## where the way out will run (step 6 fits them to the land it builds).
+const HEIST_SWINGS := [
+	["swing_01","arch",Vector3(38.5,27.5,-37.2),Vector2(0.467,0.884),10.0,24.0,"a rock arch over the gap terrace_n -> ledge (the way in)"],
+	["swing_02","arm",Vector3(177.0,34.0,48.0),Vector2(0.0,1.0),7.0,4.0,"an arm out of vault_s's south face at its west corner: swing round the corner"],
+	["swing_03","lintel",Vector3(113.5,26.5,56.0),Vector2(0.0,1.0),8.0,6.0,"a broken lintel on south's west rim: the swing out from under the Olmec"],
+	["swing_04","branch",Vector3(98.2,32.7,47.0),Vector2(0.6,0.8),7.0,7.0,"a dead tree on ford's east rim, its branch over the gap: the chain's last"],
 ]
 ## The climbing walls: [id, middle of its top (world), out (x, z: the way
 ## its climbed face looks), width, depth, height]. A plain stone block
@@ -77,8 +83,6 @@ const HEIST_BEAMS := [
 const HEIST_WALLS := [
 	["wall_01",Vector3(71.8,33.0,-45.7),Vector2(-0.984,-0.179),8.0,4.0,14.0],
 ]
-const BEAM_T := 0.5
-const STALK_R := 0.45
 
 func greed_root() -> String:
 	return "heist"
@@ -169,70 +173,30 @@ func _build_art() -> void:
 
 ## The greed run, as the crag's (crag_reach_greed.gd `build_all`): the
 ## bag, the loot, the rope and its posts, the greed meter, the run's keep,
-## clock, end screen and restart, the hands hint; then the way in's beams
-## and walls. No burrows yet (the wake, a later step).
+## clock, end screen and restart, the hands hint; then the swing points and
+## the climbing walls. No burrows yet (the wake, a later step).
 func _add_life() -> void:
 	Greed.build_all(self)
-	_build_beams()
+	_build_swings()
 	_build_walls()
 	_build_hands_hint()
 
-func _build_beams() -> void:
+## The swing points, each named heist/<id>: a move or turn in the world
+## view carries its hook line along.
+func _build_swings() -> void:
 	var holder := Node3D.new()
-	holder.name = "Beams"
+	holder.name = "Swings"
 	add_child(holder)
-	var grey := StandardMaterial3D.new()
-	grey.albedo_color = Color(0.62,0.6,0.56)
-	grey.roughness = 0.9
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.3,0.27,0.24)
-	dark.roughness = 1.0
-	for row: Array in HEIST_BEAMS:
+	for row: Array in HEIST_SWINGS:
 		var id := str(row[0])
 		var called := "heist/%s" % id
 		if Layout.deleted(called): continue
-		var top: Vector3 = row[1]
-		var along: Vector2 = (row[2] as Vector2).normalized()
-		var long: float = row[3]
-		var hang: float = row[4]
-		# The body's x runs along the beam; its origin the bar's middle.
-		var xb := Vector3(along.x,0.0,along.y)
-		var coded := Transform3D(Basis(xb,Vector3.UP,xb.cross(Vector3.UP)),top+Vector3.DOWN*BEAM_T*0.5)
-		var body := StaticBody3D.new()
-		body.name = id
+		var body := SwingPoint.build(str(row[1]),id,float(row[4]),float(row[5]))
+		if body == null: continue
+		var coded := SwingPoint.frame(row[2],row[3])
 		body.transform = Layout.xform(called,coded)
-		var box := BoxShape3D.new()
-		box.size = Vector3(long,BEAM_T,BEAM_T)
-		var col := CollisionShape3D.new()
-		col.shape = box
-		body.add_child(col)
-		var bar := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = box.size
-		bar.mesh = bm
-		bar.material_override = grey
-		body.add_child(bar)
-		for end: float in [-1.0,1.0]:
-			var stalk := MeshInstance3D.new()
-			var cm := CylinderMesh.new()
-			cm.top_radius = STALK_R
-			cm.bottom_radius = STALK_R*0.35
-			cm.height = hang
-			cm.radial_segments = 10
-			stalk.mesh = cm
-			stalk.material_override = dark
-			stalk.position = Vector3(end*(long*0.5+STALK_R*0.6),-hang*0.5+BEAM_T*0.5,0.0)
-			body.add_child(stalk)
-			var sc := CollisionShape3D.new()
-			var cs := CylinderShape3D.new()
-			cs.radius = STALK_R
-			cs.height = hang
-			sc.shape = cs
-			sc.position = stalk.position
-			body.add_child(sc)
 		holder.add_child(body)
 		Layout.track(called,body,"piece",coded)
-		HookLine.on_box(body,id)
 
 func _build_walls() -> void:
 	var holder := Node3D.new()
@@ -268,5 +232,5 @@ func _build_walls() -> void:
 		holder.add_child(body)
 		Layout.track(called,body,"piece",coded)
 
-const HookLine = preload("res://scripts/rope/hook_line.gd")
+const SwingPoint = preload("res://scripts/rope/swing_point.gd")
 const VaultHost = preload("res://scripts/home/vault_host.gd")
