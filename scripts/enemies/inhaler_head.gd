@@ -801,7 +801,9 @@ func _pull(m: PilotMotor, chest: Vector3, delta: float) -> void:
 	if swallowed or draw_share <= 0.0: return
 	if m.rider != null or m.swimming or m.seized(): return
 	# Stood on the head itself: out of its air.
-	if m.feet.y > position.y+height*0.8: return
+	# Worn, with its body pulling him down off a ledge over it
+	# (headless_body.gd `suck_up`), he's up there, not on it.
+	if m.feet.y > position.y+height*0.8 and not (perch != null and is_instance_valid(perch) and perch.get("_suck_up_now") == true): return
 	var mouth_at := mouth()
 	var to := mouth_at-chest
 	var d := to.length()

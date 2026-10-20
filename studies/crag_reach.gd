@@ -761,7 +761,7 @@ const OLMEC_AGAIN := 6.0
 ## whole Olmec), relentless, and the wall catch (headless_body.gd
 ## `leap_catch`). `run_up`: in the chase he sets off at a walk and builds
 ## into his run over that many s of fairly straight going.
-const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"ledge_stare":1.0,"cliff_leap":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0,"run_up":4.0}
+const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"ledge_stare":1.0,"cliff_leap":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0,"run_up":4.0,"climb_to":1.0,"suck_up":8.0}
 ## Never stuck: no OLMEC_GAIN m nearer you and no OLMEC_ROAM m from where he
 ## was for OLMEC_STUCK s (you standing
 ## within OLMEC_MOVED m of where that began) and more than OLMEC_CLOSE m
@@ -1244,6 +1244,9 @@ func _never_stuck_ledge(b: Node3D, delta: float) -> void:
 	# Still working out his way from a rim: let him.
 	if str(b.state) == "stare" and not none: return
 	if _ledge_walks_now >= OLMEC_LEDGE_WALKS: return
+	# Olmec climb (`climb_to`): you up over him with no face he can climb,
+	# he waits under you to pull you down (no walks rim to rim).
+	if bool(b.get("_up_none")) and b._climbs_up(motor.feet): return
 	if none: _bad_rims.append(b.position)
 	if b.ledge_walk(motor.feet,_bad_rims,OLMEC_LEDGE_WORSE if none else INF):
 		_ledge_walks_now += 1
