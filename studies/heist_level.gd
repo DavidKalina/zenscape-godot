@@ -17,7 +17,8 @@ extends "res://studies/crag_reach.gd"
 
 ## The masses: [name, the top unit's middle (x, height off TOP, z), its
 ## spec, its parts [part, offset (x, dy, z), spec]] (crag_reach.gd MASSES).
-## No grass: greybox turf and rock.
+## Full turf: the kit's grass and finished ground on the tops (crag_reach.gd's
+## default), rock on the cliffs.
 const HEIST_MASSES := [
 	["landing",Vector3(0.0,0.0,0.0),{"seed":41,"size":34.0,"shape":0.62,"flat":0.95,"landmark":0,"growth":0.72,"weather":0.5,"lopsided":0.6},[
 		["terrace_n",Vector3(23.0,-11.0,-29.0),{"seed":42,"size":12.0,"shape":0.3,"flat":0.6}],
@@ -46,7 +47,7 @@ const HEIST_MASSES := [
 	# its crown 6 m under the landing's, a stone ramp (home_ramp) up from it.
 	["landing_s",Vector3(14.0,-6.2,56.0),{"seed":99,"size":8.0,"shape":0.4,"flat":0.8,"landmark":0},[]],
 ]
-const HEIST_BASE := {"grass":0.0}
+const HEIST_BASE := {}
 
 ## The way out's fallen pillar (crag_reach.gd PILLARS rows: name, from the
 ## high mass, to the low, seed): a colossus column lying from vault_sw's
@@ -499,6 +500,21 @@ func _add_life() -> void:
 	_build_olmec_up()
 	_build_olmec_drop()
 	_build_hands_hint()
+	_bare_play()
+
+## Turf stays out of the way of the play: the grass round each rappel post
+## and each climbing wall's foot is shrunk to nothing (the loot's and the
+## burrows' is already, Greed.build_all), so the anchor and the hooks read.
+func _bare_play() -> void:
+	var holder := Node3D.new()
+	add_child(holder)
+	for row: Array in HEIST_POSTS+HEIST_WALLS:
+		var spot := Node3D.new()
+		holder.add_child(spot)
+		spot.position = row[1]
+	var n: int = Greed._bare(self,holder)
+	holder.queue_free()
+	print("heist: turf bared round %d posts and wall feet: %d tufts" % [holder.get_child_count(),n])
 
 ## The swing points, each named heist/<id>: a move or turn in the world
 ## view carries its hook line along.
