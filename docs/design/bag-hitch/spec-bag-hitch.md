@@ -122,3 +122,27 @@ or the tail's shadow), the bare hook visible, spilled and far loot easier
 to see (a glint), touchdown not spilling on a normal landing, and loot in
 the bag waking the brood like a hugged treasure does. Then the handoff
 (`docs/design/bag-hitch/handoff.md`).
+
+## Task 5: no right angle at the bag (spec change)
+
+The user, playing the final build: there's still a 90 degree bend where
+the rope meets the bag. Cause (read in the code): the sack is always drawn
+upright (`cargo_sling.basket_xform` takes the sling's `up`), with the hook
+`hook_of(radius)` straight above it; parked or dragged, the main rope lies
+along the turf to that hook and the bag's short neck rope drops straight
+down from it, so the line turns a right angle above the bag.
+
+Fix it so the rope runs into the bag's neck in one line:
+
+- The drawn sack leans its neck **along the rope's last segment** (from the
+  bag toward the plane): lying on the turf it tips over onto its side, neck
+  forward toward the plane, rope running straight out of the neck; hanging
+  in flight the rope comes down from above and it hangs upright as now; in
+  between, it follows the rope's angle. The rope's last point is the neck.
+- Keep the bag's physics point and what reads it (spills, the drop field,
+  the vault, the riders' spots) working; this is the drawn pose. The riders
+  sit on the drawn sack. The old basket (without `--loot-bag`) gets the
+  same.
+- Prove it in rendered stills at the same views as before (parked, taxiing
+  a turn, just after takeoff, in flight) and look at the join. Update the
+  handoff.
