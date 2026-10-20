@@ -123,3 +123,20 @@ long bridge. This task comes before the tuning (now task 6):
 
 Task 6 is the tuning pass and the handoff (the empty bag on a fall, catch
 reach, which half he grabs, a ladder pose, as noted in the trail).
+
+## Task 6: tuning and the handoff (spec change)
+
+The user played round 5: "it was good". For the last round:
+
+- **The brood are heavy on a bridge: 6 kg each** in the bridge's load
+  (their kg on the plane's bag stays as it is). With the 96 kg limit: him
+  with a full bag alone (84 kg) holds with a creak; a full bag plus 2 to 3
+  brood snaps it; an empty bag plus about 7 snaps it. Keep the limit unless
+  play shows otherwise, and say the numbers in the handoff.
+- **The empty bag on a fall** (the spec change above): any fall into the
+  void brings him back wearing an empty bag.
+- From the trail, as the budget allows: catch reach (or a button to
+  catch), which half he grabs (the near one he's falling past, not a 16 m
+  swing to the far cliff), a ladder pose on the climb, the rip pace while
+  he's on a bridge, and the walkable areas following cliffs moved in F4.
+- **The handoff** (`docs/design/bridge-snap/handoff.md`, from the trail).
