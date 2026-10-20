@@ -761,7 +761,7 @@ const OLMEC_AGAIN := 6.0
 ## whole Olmec), relentless, and the wall catch (headless_body.gd
 ## `leap_catch`). `run_up`: in the chase he sets off at a walk and builds
 ## into his run over that many s of fairly straight going.
-const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"ledge_stare":1.0,"cliff_leap":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0,"run_up":4.0,"climb_to":1.0,"suck_up":8.0}
+const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"down_show":5.5,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0,"ledge_stare":1.0,"cliff_leap":1.0,"suck_in":1.0,"watch_throw":3.0,"parked_off":1.0,"run_up":4.0,"climb_to":1.0,"suck_up":8.0,"plan_chase":1.0}
 ## Never stuck: no OLMEC_GAIN m nearer you and no OLMEC_ROAM m from where he
 ## was for OLMEC_STUCK s (you standing
 ## within OLMEC_MOVED m of where that began) and more than OLMEC_CLOSE m
@@ -928,6 +928,7 @@ func _wire_breaks() -> void:
 	kit_breaks.prepare_all()
 	print("crag reach: %d breakable piece(s) %s" % [n,by])
 	_warm_olmec()
+	_olmec_graph_build()
 
 ## The Olmec's looks and voices made at load, not at his first spawn
 ## (--olmec-after: ~170 ms on the main thread mid-play): the dressed meshes
@@ -945,6 +946,72 @@ func _warm_olmec() -> void:
 		for key: String in voices.keys():
 			if not _voices.has(key): _voices[key] = EnemyYard._synth(voices[key])
 	print("crag reach: the Olmec's looks and voices made ahead (%.0f ms)" % ((Time.get_ticks_usec()-t0)/1000.0))
+
+## Olmec routes (headless_body.gd `plan_chase`): his place graph
+## (scripts/enemies/olmec_route_graph.gd) made at load for his size, from a probe
+## body off the tree with his knobs: the places read now, his moves built
+## all at load too (`--olmec-graph=sliced`: OLMEC_GRAPH_US a frame from then),
+## the probe let go once it's done.
+const OlmecGraph = preload("res://scripts/enemies/olmec_route_graph.gd")
+const OLMEC_GRAPH_US := 4000
+## The masses, terraces and islets (not the far specks) the graph covers,
+## within this (m) of the main crown, grown by this.
+const OLMEC_GRAPH_NEAR := 260.0
+const OLMEC_GRAPH_GROW := 8.0
+var olmec_graph: RefCounted = null
+var _graph_probe: Node3D = null
+var _graph_now := true
+func _olmec_graph_build() -> void:
+	var knobs: Dictionary = OLMEC_KNOBS.duplicate()
+	knobs.merge(_body_knobs,true)
+	if float(knobs.get("plan_chase",0.0)) < 0.5: return
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a == "--olmec-graph=sliced": _graph_now = false
+	var t0 := Time.get_ticks_usec()
+	_graph_mem = OS.get_static_memory_usage()
+	var lo := Vector2(INF,INF)
+	var hi := -lo
+	for u: Node3D in units:
+		var ol: Array = u.world_outline()
+		var ulo := Vector2(INF,INF)
+		var uhi := -ulo
+		for q: Vector2 in ol:
+			ulo = ulo.min(q)
+			uhi = uhi.max(q)
+		if ulo.x == INF or ((ulo+uhi)*0.5).length() > OLMEC_GRAPH_NEAR: continue
+		lo = lo.min(ulo)
+		hi = hi.max(uhi)
+	if lo.x == INF: return
+	lo -= Vector2.ONE*OLMEC_GRAPH_GROW
+	hi += Vector2.ONE*OLMEC_GRAPH_GROW
+	var box := AABB(Vector3(lo.x,lost,lo.y),Vector3(hi.x-lo.x,TOP+80.0-lost,hi.y-lo.y))
+	var p: Node3D = OlmecTarget.new()
+	p.setup(enemies,Vector3(0.0,lost-50.0,0.0),Vector2(0.0,1.0),knobs)
+	p.whole = true
+	p.hunting = true
+	if breakables != null: p.breaker = breakables
+	_graph_probe = p
+	olmec_graph = OlmecGraph.make(p,[box])
+	print("crag reach: the Olmec's place graph: %d places in %s read (%.0f ms)" % [olmec_graph.places,box,(Time.get_ticks_usec()-t0)/1000.0])
+	if _graph_now: _olmec_graph_step(1000000000)
+
+## His graph's moves built a slice at a time (no hitch); done, the probe let go.
+func _olmec_graph_step(us: int) -> void:
+	if olmec_graph == null or olmec_graph.built: return
+	if olmec_graph.step(us):
+		if _graph_probe != null:
+			_graph_probe.free()
+			_graph_probe = null
+		if graph_ms > 0.0: return
+		var st: Dictionary = olmec_graph.stats()
+		graph_ms = float(st.ms)
+		graph_mb = (OS.get_static_memory_usage()-_graph_mem)/1048576.0
+		print("crag reach: the Olmec's place graph built: %s, %.1f MB" % [st,graph_mb])
+
+## The memory the graph took (MB, the static memory's growth over its build).
+var graph_mb := 0.0
+var graph_ms := 0.0
+var _graph_mem := 0
 
 func olmec() -> Node3D:
 	if enemies == null: return null
@@ -1247,6 +1314,9 @@ func _never_stuck_ledge(b: Node3D, delta: float) -> void:
 	# Olmec climb (`climb_to`): you up over him with no face he can climb,
 	# he waits under you to pull you down (no walks rim to rim).
 	if bool(b.get("_up_none")) and b._climbs_up(motor.feet): return
+	# Olmec routes (`plan_chase`): his route goes to the place nearest you he
+	# can reach and he stares from there; no walks rim to rim.
+	if float(b.knobs.get("plan_chase",0.0)) >= 0.5: return
 	if none: _bad_rims.append(b.position)
 	if b.ledge_walk(motor.feet,_bad_rims,OLMEC_LEDGE_WORSE if none else INF):
 		_ledge_walks_now += 1
@@ -1365,6 +1435,7 @@ func _olmec_take() -> void:
 ## Flying, the hunt goes on (he makes for where you left the ground).
 func _process(delta: float) -> void:
 	super._process(delta)
+	_olmec_graph_step(OLMEC_GRAPH_US)
 	if flying and enemies != null and delta > 0.0:
 		for e in enemies.enemies:
 			if is_instance_valid(e) and not e.gone: e.step(delta)
