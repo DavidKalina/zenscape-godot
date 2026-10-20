@@ -441,10 +441,21 @@ func wearable() -> bool:
 
 func _set_kg(k: float) -> void:
 	kg = k
-	_r_to = radius_of(kg)
+	_r_to = radius_of(kg+extra_kg)
 	loose.mass = kg+CLOTH_KG
 	if state == "hitched": _tell_sling()
 	_apply_feel(STOW_PACE if not stowing.is_empty() or act != "" else 1.0)
+
+## Hitched, the hugged treasures loaded into it (scripts/carry/
+## carry_host.gd, --loot-bag): their kg (the carry counts them on the
+## rope); it swells by them as by its own loot. `set_extra_kg`.
+var extra_kg := 0.0
+
+func set_extra_kg(k: float) -> void:
+	if is_equal_approx(k,extra_kg): return
+	extra_kg = maxf(k,0.0)
+	_r_to = radius_of(kg+extra_kg)
+	if state == "hitched": _tell_sling()
 
 ## The kg on his back (none set down).
 func worn_kg() -> float:
@@ -682,6 +693,9 @@ func unhitch() -> void:
 	var s: float = study.get("motor").size
 	_act_from = _sack.global_transform
 	unhitches += 1
+	# The hugged treasures in it set out on the turf by the rope first.
+	var c := _carry()
+	if c != null and c.has_method("bag_unhitched"): c.bag_unhitched()
 	if wearable():
 		state = "worn"
 		_lag = Vector3.ZERO
@@ -713,7 +727,7 @@ func _tell_sling() -> void:
 	if c == null or sl == null: return
 	var on := state == "hitched"
 	c.set("bag_kg",kg if on else 0.0)
-	sl.hitch_bag(radius_of(kg)*float(study.get("motor").size) if on else -1.0)
+	sl.hitch_bag(radius_of(kg+extra_kg)*float(study.get("motor").size) if on else -1.0)
 	c._refill()
 
 ## Hitched: where the sack rides, its floor on the sling's, turned with it.

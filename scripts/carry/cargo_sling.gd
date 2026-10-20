@@ -71,6 +71,13 @@ var hits := 0
 ## A loot bag hitched on in its place (scripts/carry/loot_bag.gd): its
 ## belly's radius (m) the sling's while it rides, -1 none (`hitch_bag`).
 var bag_r := -1.0
+## No basket (--loot-bag, docs/design/bag-hitch/): its own sack gone, a
+## bare rope with an iron hook at its end; a hitched bag is the cargo
+## (`set_bare`). The hook's ball radius (m) while nothing is hitched.
+var bare := false
+const HOOK_R := 0.1
+const IRON := Color("3d3a36")
+var _hook: Node3D = null
 
 func _init() -> void:
 	name = "CargoSling"
@@ -128,7 +135,7 @@ static func belly_of(r: float) -> float:
 ## to suit (eased there).
 func set_load(kg: float) -> void:
 	load_kg = maxf(kg,0.0)
-	_radius_to = bag_r if bag_r > 0.0 else Weights.BAG_R+Weights.BAG_R_KG*sqrt(load_kg)
+	_radius_to = bag_r if bag_r > 0.0 else (HOOK_R if bare else Weights.BAG_R+Weights.BAG_R_KG*sqrt(load_kg))
 	_length_to = Weights.BAG_ROPE+Weights.BAG_ROPE_KG*load_kg
 
 ## A loot bag on the rope in its own sack's place (radius `r`, m; -1 off):
@@ -136,8 +143,59 @@ func set_load(kg: float) -> void:
 ## the bag at `basket_xform` and refills the kg).
 func hitch_bag(r: float) -> void:
 	bag_r = r
-	_basket.visible = r <= 0.0
+	_show()
 	set_load(load_kg)
+
+## No basket (`on`): the rope ends in a bare hook till a bag is hitched.
+func set_bare(on: bool) -> void:
+	bare = on
+	if on and _hook == null: _make_hook()
+	_show()
+	set_load(load_kg)
+	if on and bag_r <= 0.0:
+		radius = _radius_to
+
+func _show() -> void:
+	_basket.visible = bag_r <= 0.0 and not bare
+	if _hook != null: _hook.visible = bare and bag_r <= 0.0
+
+## The iron hook: a shank from the rope's end down to a curl, its point
+## up (its frame: the rope's end at the origin, up y).
+func _make_hook() -> void:
+	_hook = Node3D.new()
+	_hook.name = "Hook"
+	add_child(_hook)
+	var iron := StandardMaterial3D.new()
+	iron.albedo_color = IRON
+	iron.metallic = 0.6
+	iron.roughness = 0.5
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var shank := 0.22
+	_tube(st,Vector3(0.0,0.0,0.0),Vector3(0.0,-shank,0.0),0.018)
+	# The curl: a half turn under the shank's foot, up to the point.
+	var rr := 0.07
+	var c := Vector3(rr,-shank,0.0)
+	var prev := Vector3(0.0,-shank,0.0)
+	for i in range(1,11):
+		var a := PI+PI*float(i)/10.0
+		var p := c+Vector3(cos(a)*rr,sin(a)*rr,0.0)
+		_tube(st,prev,p,0.018)
+		prev = p
+	_tube(st,prev,prev+Vector3(-0.015,0.06,0.0),0.012)
+	var m := MeshInstance3D.new()
+	m.mesh = st.commit()
+	m.material_override = iron
+	_hook.add_child(m)
+	var eye := MeshInstance3D.new()
+	var tor := TorusMesh.new()
+	tor.inner_radius = 0.02
+	tor.outer_radius = 0.04
+	eye.mesh = tor
+	eye.material_override = iron
+	eye.rotation = Vector3(PI*0.5,0.0,0.0)
+	eye.position = Vector3(0.0,0.02,0.0)
+	_hook.add_child(eye)
 
 ## The bag's mesh at radius `r` (its frame: floor at the origin, up y): a
 ## cloth bowl up to CLOTH of the belly, rope net over the rest, gathered
@@ -379,14 +437,22 @@ func belly() -> Vector3:
 func _draw(pf: Node3D) -> void:
 	if absf(radius-_drawn_r) > 0.005: _shape(radius)
 	_basket.global_transform = basket_xform(pf)
+	var end := hook
+	if _hook != null and _hook.visible:
+		# The bare hook hangs off the rope's end; lying, it falls over on
+		# the turf and the rope runs down to it.
+		var b := basket_xform(pf)
+		if grounded: end = b.origin+b.basis.y*0.03
+		var lie := Basis(Vector3.FORWARD,PI*0.5) if grounded else Basis.IDENTITY
+		_hook.global_transform = Transform3D(b.basis*lie,end)
 	# The rope from the tie to the hook: straight when taut, sagging slack.
 	var tie := _anchor
-	var gap := tie.distance_to(hook)
+	var gap := tie.distance_to(end)
 	var sag := sqrt(maxf(length*length-gap*gap,0.0))*0.45
 	var prev := tie
 	for i in range(ROPE_BITS):
 		var k := float(i+1)/ROPE_BITS
-		var p := tie.lerp(hook,k)+Vector3.DOWN*sag*4.0*k*(1.0-k)
+		var p := tie.lerp(end,k)+Vector3.DOWN*sag*4.0*k*(1.0-k)
 		if grounded:
 			# Lying on the turf, it can't sag under it.
 			var g := _floor(p,0.3,1.0)
