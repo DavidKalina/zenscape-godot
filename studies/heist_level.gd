@@ -5,8 +5,9 @@ extends "res://studies/crag_reach.gd"
 ## to east, about 300 m: the landing mass with the parked plane; the way in
 ## along the north side (a terrace to rappel down to, a ledge, a gate mass
 ## to climb, a spur); the vault, a sunken court ringed by three higher rims; the
-## way out along the south side (a rim to throw the bag up, a fallen pillar
-## to slide down to the south mass, the ford mass, a chain of two swings
+## way out along the south side (a rim to throw the bag up, a swing round
+## vault_s's south-west corner on an arm out of a rock spire onto vault_sw,
+## a fallen pillar from there to slide down to the south mass, the ford mass, a chain of two swings
 ## over stack_1 to stack_2, a rope bridge home to landing_s that snaps
 ## behind him once the isle is awake, a ramp up onto the landing).
 ## Every piece is named `heist/<name>` (scripts/layout_overrides.gd,
@@ -28,6 +29,12 @@ const HEIST_MASSES := [
 	["vault_n",Vector3(185.0,4.0,-28.0),{"seed":92,"size":14.0,"shape":0.6,"flat":0.6,"landmark":0},[]],
 	["vault_e",Vector3(222.0,6.0,4.0),{"seed":93,"size":15.0,"shape":0.7,"flat":0.6,"landmark":0},[]],
 	["vault_s",Vector3(186.0,4.0,34.0),{"seed":94,"size":14.0,"shape":0.5,"flat":0.6,"landmark":0},[]],
+	# Round the corner: off vault_s's south-west corner a rock spire (too
+	# tall to climb) with an arm out of it (swing_02) over the gap to
+	# vault_sw, a lower terrace tucked round the corner, where the pillar
+	# down to south starts.
+	["vault_sw",Vector3(164.5,1.5,57.5),{"seed":100,"size":9.0,"shape":0.4,"flat":0.8,"landmark":0},[]],
+	["vault_spire",Vector3(176.2,13.0,54.2),{"seed":101,"size":4.0,"shape":0.5,"flat":0.6,"landmark":0},[]],
 	["south",Vector3(125.0,-10.0,64.0),{"seed":95,"size":20.0,"shape":0.45,"flat":0.7,"landmark":0},[]],
 	["ford",Vector3(82.0,-8.8,52.0),{"seed":96,"size":16.0,"shape":0.5,"flat":0.7,"landmark":0},[]],
 	# The chain's stacks (the way home): ford -> stack_1 -> stack_2, each
@@ -42,11 +49,11 @@ const HEIST_MASSES := [
 const HEIST_BASE := {"grass":0.0}
 
 ## The way out's fallen pillar (crag_reach.gd PILLARS rows: name, from the
-## high mass, to the low, seed): a colossus column lying from vault_s's
-## crown rim down onto south's crown, one long slope to boot-surf with the
+## high mass, to the low, seed): a colossus column lying from vault_sw's
+## crown rim (round the corner from vault_s) down onto south's crown, one long slope to boot-surf with the
 ## bag on (crouch at a run).
 const HEIST_PILLARS := [
-	["pillar_out","vault_s","south",211],
+	["pillar_out","vault_sw","south",211],
 ]
 
 ## The vault's marks (crag_reach.gd RUINS rows): a ring of stones round the
@@ -126,7 +133,7 @@ const HEIST_POSTS := [
 ## where the way out will run (step 6 fits them to the land it builds).
 const HEIST_SWINGS := [
 	["swing_01","arch",Vector3(38.5,27.5,-37.2),Vector2(0.467,0.884),10.0,24.0,"a rock arch over the gap terrace_n -> ledge (the way in)"],
-	["swing_02","arm",Vector3(177.0,34.0,48.0),Vector2(0.0,1.0),7.0,4.0,"an arm out of vault_s's south face at its west corner: swing round the corner"],
+	["swing_02","arm",Vector3(171.0,41.3,49.0),Vector2(-0.707,-0.707),5.5,6.0,"an arm out of vault_spire over the gap off vault_s's south-west corner: swing round the corner onto vault_sw"],
 	["swing_03","lintel",Vector3(113.5,26.5,56.0),Vector2(0.0,1.0),8.0,6.0,"a broken lintel on south's west rim: the swing out from under the Olmec"],
 	["swing_04","branch",Vector3(98.2,28.9,47.0),Vector2(0.6,0.8),7.0,7.0,"a dead tree on ford's east rim, its branch over the gap south -> ford (spare: not on the route now)"],
 	# The chain (the way home): two rock rings out of the clouds, one over
