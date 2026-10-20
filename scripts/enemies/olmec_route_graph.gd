@@ -161,6 +161,7 @@ func step(usec: int) -> bool:
 		if Time.get_ticks_usec() > until: break
 		var u: Vector3i = _queue[_qi]
 		_qi += 1
+		if not live(u): continue
 		if not special.has(u): _build(u)
 		# The places his moves reach that he doesn't fit (a narrow way, a
 		# landing on a narrow terrace) built too.
@@ -183,6 +184,11 @@ func build_all() -> void:
 func progress() -> float:
 	return 1.0 if built else float(_qi)/maxf(_queue.size(),1.0)
 
+## Whether place `u`'s floor is still there: a column read again (a break's
+## `forget`, a far isle read late) can hold fewer floors than it did.
+func live(u: Vector3i) -> bool:
+	return u.z >= 0 and u.z*2+1 < routes.col(Vector2i(u.x,u.y)).size()
+
 ## Whether he can stand on `u`: he fits it, or his bulk has room there (a
 ## narrow terrace a leap or a drop lands him on).
 func standable(u: Vector3i) -> bool:
@@ -197,6 +203,7 @@ func standable(u: Vector3i) -> bool:
 func moves(u: Vector3i, build := true) -> Array:
 	var had: Variant = _adj.get(u)
 	if had != null: return had
+	if not live(u): return []
 	var out: Array = []
 	var y := routes.y_of(u)
 	var c := Vector2i(u.x,u.y)
