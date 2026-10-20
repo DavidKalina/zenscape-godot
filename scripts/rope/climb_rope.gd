@@ -215,8 +215,50 @@ const SWING_HAND := 0.14
 ## past a 9 m gap's far edge).
 const SWING_BOOST := 2.0
 const SWING_POP := 1.5
+## The live rope (docs/design/heist-level/live-rope-handoff.md): on a hooked
+## or fixed rope down a face (climbing or rappelling), his grip is a
+## pendulum hung from where the rope goes over the edge, kept off the wall
+## (the face stops it; a rappel's feet keep him their stance off it). Its
+## gravity LIVE_G (m/s²), its damping a second in the air LIVE_DAMP and
+## with him on the face LIVE_RUB (feet running a rappel: none), held under
+## LIVE_MOST (rad) from the plumb. The stick across the face pumps it
+## (LIVE_PUMP hanging, RUN_PUMP rappelling, his feet running the face: m/s²,
+## only the way it already goes, as the swing's); E kicks off the wall
+## (KICK m/s out, hanging; HOP_KICK the rappel's hop), half the pace he
+## came back in with added (KICK_KEEP) when it lands as he meets the wall,
+## so kicks timed to the wall build it. A face met bounces WALL_BOUNCE of
+## the pace into it. Each pull throws him PULL_OUT out and PULL_SIDE to
+## the pulling hand's side (m/s), heaved LURCH over the pull's rise (m) and
+## settling back as the other hand reaches. Let go (Jump), he keeps the
+## grip's pace, RELEASE more along it rising. A heavier bag (to the climb
+## stop, LootBag CLIMB_STOP) swings slower and wider: gravity HEAVY_G less,
+## damping HEAVY_DAMP less, the lurch smaller and a HEAVY_SAG drop after
+## each pull. Left hanging, the rope sways on and settles (LIVE_FREE_DAMP).
+const LIVE_G := 18.0
+const LIVE_DAMP := 0.18
+const LIVE_RUB := 1.6
+const LIVE_MOST := 1.05
+const LIVE_PUMP := 5.0
+const RUN_PUMP := 9.0
+const KICK := 2.6
+const HOP_KICK := 3.2
+const KICK_KEEP := 0.5
+const WALL_BOUNCE := 0.12
+const PULL_OUT := 0.3
+const PULL_SIDE := 0.3
+const LURCH := 0.09
+const RELEASE := 1.2
+const HEAVY_G := 0.4
+const HEAVY_DAMP := 0.6
+const HEAVY_SAG := 0.07
+const LIVE_FREE_DAMP := 1.6
+## The rappel's hop now flies the pendulum: the rope runs HOP_FALL m/s
+## (times size) through the brake hand while he's off the wall, HOP_DROP at
+## most a hop.
+const HOP_FALL := 2.2
 const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
 const HookLine = preload("res://scripts/rope/hook_line.gd")
+const LootBag = preload("res://scripts/carry/loot_bag.gd")
 
 var study: Node3D
 ## The swing: holding a beam's rope on the ground (`swing_hold`, `swing_len`
@@ -317,6 +359,27 @@ var _step := 0.0
 var _hop_t := -1.0
 var _hop_from := 0.0
 var _hop_drop := 0.0
+## The live rope: the grip's spot off the anchor (`_lp`, world, `_ll` long)
+## and its pace; the wall's least out at the grip; the body's sway off its
+## still spot this frame and the rope's tilt; his feet's height on the rope
+## as the climb has it (the sway's lift left out); a kick asked for
+## (seconds left of its buffer). Free (no one on it), its end swings on.
+var _lp := Vector3.ZERO
+var _lv := Vector3.ZERO
+var _ll := 0.0
+var _lo := 0.0
+var sway := Vector3.ZERO
+var _sway_tilt := Basis.IDENTITY
+var _base_y := 0.0
+var _kick_buf := 0.0
+var _live_free := false
+var _hop_fly := false
+## Tallies and peaks (drivers): kicks off the wall, the widest sway across
+## and out this hold (m), the last let-go's pace.
+var kicks := 0
+var sway_peak := Vector2.ZERO
+var let_go_v := Vector3.ZERO
+var too_heavy := 0
 var _stance_k := 0.0
 var _up_len := 0.0
 
@@ -731,13 +794,22 @@ func _post_top(post: Node3D) -> Vector3:
 func tug() -> void:
 	if swinging or swing_hold: return
 	if climber and rappel:
-		# Rappelling, E pushes off the wall in a hop.
+		# Rappelling, E pushes off the wall in a hop (crouched in, then
+		# kicked out on the pendulum); pressed just before he meets the
+		# wall again, he lands it into the next.
 		if _hop_t < 0.0 and _stance_k >= 1.0 and not study.get("motor").crouch:
 			_hop_t = 0.0
-			_hop_from = study.get("motor").feet.y
+			_hop_fly = false
+			_hop_from = _base_y
 			_hop_drop = minf(HOP_DROP*_size(),_hop_from-_floor_under(study.get("motor").feet))
 			_rap_v = 0.0
 			hops += 1
+		else: _kick_buf = 0.25
+		return
+	if climber:
+		# Hanging on the rope, E kicks off the wall (buffered till his feet
+		# are on it).
+		_kick_buf = 0.25
 		return
 	if state == "coiled":
 		_fix()
@@ -1164,6 +1236,7 @@ func _mount(motor: Variant) -> void:
 	var top := y+float(motor.hang_drop)
 	_hand_y = [top,top-PULL*s]
 	_hand_side = [1.0,-1.0]
+	_live_begin(motor,y)
 	# An untested bad hook gives this far up the climb (the hands' height).
 	_give_y = INF
 	if bad and not tested: _give_y = top+randf_range(GIVE.x,GIVE.y)*maxf(edge.y-top,0.5*s)
@@ -1249,20 +1322,27 @@ func ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dic
 	var out := {}
 	_on_t += delta
 	var s := _size()
+	_kick_buf = maxf(_kick_buf-delta,0.0)
 	if pressed and _on_t > 0.2:
-		walker.toss(edge_out*0.3*s+Vector3.UP*0.6*s)
+		# Let go: off with the grip's pace (more along it, rising), a little
+		# off the wall and up.
+		var v := _lv
+		if v.y > 0.2 and v.length() > 1.0: v += v.normalized()*RELEASE*s
+		let_go_v = v+edge_out*0.3*s+Vector3.UP*0.6*s
+		walker.toss(let_go_v)
 		_off_rope()
 		out["let_go"] = true
 		return out
 	var toward := Vector2(-edge_out.x,-edge_out.z).normalized()
 	# The stick's own up/down (forward climbs, back lowers), whatever way
-	# the camera looks.
+	# the camera looks; across the face, it pumps the sway.
 	var push := _to_cam(want).y
-	var y := walker.feet.y
+	var across := _across(want)
+	var y := _base_y
 	var drop := float(walker.hang_drop)
 	var top_y := edge.y-drop
 	if rappel:
-		if push > 0.35 and _hop_t < 0.0 and not walker.crouch:
+		if push > 0.35 and _hop_t < 0.0 and not walker.crouch and not _too_heavy():
 			# Stick up: hands up the rope, climbing as from below (the
 			# stance eases out, no snap).
 			rappel = false
@@ -1270,12 +1350,20 @@ func ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dic
 			_hand_y = [y+drop,y+drop-PULL*s]
 			_hand_side = [1.0,-1.0]
 		else:
-			return _rappel_step(walker,delta,push,out)
+			return _rappel_step(walker,delta,push,across,out)
+	var heavy := _load_k()
 	if walker.crouch:
 		# Sliding down, both hands loose on the rope over his head.
 		_pull_t = -1.0
 		y -= SLIDE_SPEED*s*delta
 		_hand_y = [y+drop,y+drop-0.12*s]
+	elif _pull_t < 0.0 and push > 0.35 and _too_heavy():
+		# Too heavy to haul up: a strained heave that gets nowhere.
+		if walker._refuse_cool <= 0.0:
+			too_heavy += 1
+			_lv += edge_out*0.2*s
+			_say("Too heavy to climb (%.0f kg): throw the bag up first" % _kg())
+		walker.refuse("ledge")
 	elif _pull_t >= 0.0 or push > 0.35:
 		if _pull_t < 0.0:
 			if y >= top_y-0.01*s:
@@ -1284,18 +1372,25 @@ func ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dic
 			_pull_t = 0.0
 			_pull_from = y
 			_reach_from = float(_hand_y[1])
+			# The heave throws him off the wall and toward the hauling hand.
+			_lv += edge_out*PULL_OUT*s*(1.0-0.4*heavy)+_side()*float(_hand_side[0])*PULL_SIDE*s
 		_pull_t = minf(_pull_t+delta/(PULL_T*climb_pace),1.0)
 		var rise := minf(PULL*s,top_y-_pull_from)
-		# Hauled up on the top hand (eased in and out), then the low hand
-		# reaches past it, arcing off the rope.
+		# Hauled up on the top hand (eased in and out) past the pull's
+		# height (the lurch), then the low hand reaches past it, arcing off
+		# the rope, as he settles back (heavy: sags under it first).
 		var k := clampf(_pull_t/REACH_AT,0.0,1.0)
-		y = _pull_from+rise*k*k*(3.0-2.0*k)
+		var r := clampf((_pull_t-REACH_AT)/(1.0-REACH_AT),0.0,1.0)
+		var settle := r*r*(3.0-2.0*r)
+		var lurch := LURCH*s*(1.0-0.6*heavy)*sin(PI*0.5*k)*sin(PI*0.5*k)*(1.0-settle)
+		lurch -= HEAVY_SAG*s*heavy*sin(PI*r)
+		y = _pull_from+rise*k*k*(3.0-2.0*k)+lurch
 		if _pull_t > REACH_AT:
-			var r := (_pull_t-REACH_AT)/(1.0-REACH_AT)
-			r = 1.0-(1.0-r)*(1.0-r)
-			_hand_y[1] = lerpf(_reach_from,_pull_from+rise+drop,r)
+			var rr := 1.0-(1.0-r)*(1.0-r)
+			_hand_y[1] = lerpf(_reach_from,_pull_from+rise+drop,rr)
 		if _pull_t >= 1.0:
 			# The reached hand is the top one now.
+			y = _pull_from+rise
 			_hand_y = [_hand_y[1],_hand_y[0]]
 			_hand_side = [_hand_side[1],_hand_side[0]]
 			_pull_t = -1.0
@@ -1308,16 +1403,23 @@ func ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool) -> Dic
 		y -= DOWN_SPEED*s*climb_pace*delta
 		var bob := sin((y/(PULL*s))*PI)*0.5*PULL*s
 		_hand_y = [y+drop-maxf(bob,0.0),y+drop-PULL*s+minf(bob,0.0)]
+	_stance_k = maxf(_stance_k-delta/UNRAP,0.0)
+	# The live rope: his kick, the stick across pumping it.
+	if _kick_buf > 0.0 and _on_wall():
+		_kick_buf = 0.0
+		_kick(KICK*s)
+	_live_step(delta,y,0.0,across*LIVE_PUMP*s,LIVE_RUB)
+	var at := _stance_at(walker,y)+sway
 	# Down to the ground under him: off the rope, on his feet.
-	var ground := _floor_under(walker.feet)
-	if y <= ground+0.01*s:
-		walker.feet.y = ground
-		walker.toss(Vector3.ZERO)
+	var ground := _floor_under(at)
+	if y <= ground+0.01*s or at.y <= ground+0.01*s:
+		walker.feet = Vector3(at.x,ground,at.z)
+		walker.toss(Vector3(_lv.x,0.0,_lv.z)*0.5)
 		_off_rope()
 		out["off_rope"] = true
 		return out
-	_stance_k = maxf(_stance_k-delta/UNRAP,0.0)
-	walker.feet = _stance_at(walker,y)
+	_base_y = y
+	walker.feet = at
 	walker.velocity = Vector3.ZERO
 	walker.facing = PilotMotor.facing_of(toward)
 	walker.ground_y = ground
@@ -1369,24 +1471,48 @@ func _give(walker: PilotMotor, out: Dictionary) -> void:
 
 ## One step rappelling: feet on the wall; stick back lowers him smoothly,
 ## faster the longer it's held, the feet walking (then skimming) the wall;
-## let go, he stops and hangs. E's hop (`tug`) runs to its end; crouch
-## slides; at the floor, off.
-func _rappel_step(walker: PilotMotor, delta: float, push: float, out: Dictionary) -> Dictionary:
+## let go, he stops and hangs. The stick across runs him along the face on
+## the pendulum (out and back in an arc). E's hop (`tug`): crouched in,
+## kicked out on the pendulum, the rope running through the brake hand till
+## he meets the wall again, landed (E pressed as he comes in: straight into
+## the next). Crouch slides; at the floor, off.
+func _rappel_step(walker: PilotMotor, delta: float, push: float, across: float, out: Dictionary) -> Dictionary:
 	var s := _size()
-	var y := walker.feet.y
+	var y := _base_y
 	_stance_k = minf(_stance_k+delta/STANCE_IN,1.0)
-	var ground := _floor_under(_stance_at(walker,y))
+	var ground := _floor_under(_stance_at(walker,y)+sway)
 	if walker.crouch:
 		_hop_t = -1.0
+		_hop_fly = false
 		_rap_v = 0.0
 		y -= SLIDE_SPEED*s*delta
 	elif _hop_t >= 0.0:
-		_hop_t = minf(_hop_t+delta/(HOP_T*climb_pace),1.0)
-		var u := clampf((_hop_t-HOP_CROUCH)/(HOP_LAND-HOP_CROUCH),0.0,1.0)
-		y = _hop_from-_hop_drop*u*u*(3.0-2.0*u)
-		if _hop_t >= 1.0:
-			_hop_t = -1.0
-			out["hopped"] = true
+		if _hop_fly:
+			# Off the wall: the rope runs; back on it, landed.
+			if _hop_from-y < _hop_drop: y = maxf(y-HOP_FALL*s*delta/climb_pace,_hop_from-_hop_drop)
+			if _on_wall() and _lv.dot(edge_out) <= 0.05*s and _hop_t >= HOP_CROUCH+0.01:
+				_hop_fly = false
+				_hop_t = HOP_LAND
+				if _kick_buf > 0.0:
+					# Into the next hop off this landing, its pace kept.
+					_kick_buf = 0.0
+					_hop_t = HOP_CROUCH
+					_hop_fly = true
+					_hop_from = y
+					_hop_drop = minf(HOP_DROP*s,_hop_from-ground)
+					hops += 1
+					_kick(HOP_KICK*s)
+				out["hopped"] = true
+			else: _hop_t = minf(_hop_t+delta,HOP_LAND-0.01)
+		else:
+			_hop_t = minf(_hop_t+delta/(HOP_T*climb_pace),1.0)
+			if _hop_t >= HOP_CROUCH and _hop_t < HOP_LAND:
+				# Crouched in: kicked out.
+				_hop_fly = true
+				_hop_t = HOP_CROUCH+0.001
+				_kick(HOP_KICK*s)
+			elif _hop_t >= 1.0:
+				_hop_t = -1.0
 	else:
 		if push < -0.35 and _stance_k > 0.6:
 			_rap_held += delta
@@ -1399,14 +1525,23 @@ func _rappel_step(walker: PilotMotor, delta: float, push: float, out: Dictionary
 			_rap_v = move_toward(_rap_v,0.0,RAP_SPEED.y*s/RAP_STOP*delta)
 		y -= _rap_v*delta
 		_step += _rap_v*delta/(RAP_STRIDE*_leg())
-	if y <= ground+0.01*s:
-		walker.feet = Vector3(walker.feet.x,ground,walker.feet.z)
-		walker.toss(Vector3.ZERO)
+	# Running the face: the feet step it as he goes along.
+	var run := absf(_lv.dot(_side()))
+	if _on_wall(): _step += run*delta/(RAP_STRIDE*_leg())
+	# The stick across runs him along it only with his feet on it.
+	var pump := across*RUN_PUMP*s if _on_wall() and _stance_k > 0.6 else across*LIVE_PUMP*s*0.3
+	var rub := LIVE_RUB if absf(across) < 0.3 else 0.0
+	_live_step(delta,y,_rest_out(walker,y),pump,rub)
+	var at := _stance_at(walker,y)+sway
+	if y <= ground+0.01*s or at.y <= _floor_under(at)+0.01*s:
+		walker.feet = Vector3(at.x,_floor_under(at),at.z)
+		walker.toss(Vector3(_lv.x,0.0,_lv.z)*0.5)
 		_off_rope()
 		out["off_rope"] = true
 		_say("Down. The rope stays: %s by it climbs, %s pulls it down" % [Pad.pick("Space","A"),Pad.pick("F","D-pad down")])
 		return out
-	walker.feet = _stance_at(walker,y)
+	_base_y = y
+	walker.feet = at
 	walker.velocity = Vector3.ZERO
 	walker.facing = PilotMotor.facing_of(Vector2(-edge_out.x,-edge_out.z))
 	walker.ground_y = ground
@@ -1415,7 +1550,8 @@ func _rappel_step(walker: PilotMotor, delta: float, push: float, out: Dictionary
 ## Walking down the wall: how far each foot is lifted off it (0..1) and
 ## the share of a step (fading to a skim at speed).
 func _walk_k() -> float:
-	return clampf(1.0-(_rap_v/_size()-RAP_SKIM*0.6)/(RAP_SKIM*0.4),0.0,1.0)*clampf(_rap_v/(0.4*_size()),0.0,1.0)
+	var v := maxf(_rap_v,absf(_lv.dot(_side()))*0.8 if climber and edge != Vector3.INF else 0.0)
+	return clampf(1.0-(v/_size()-RAP_SKIM*0.6)/(RAP_SKIM*0.4),0.0,1.0)*clampf(v/(0.4*_size()),0.0,1.0)
 
 ## Where his feet (the motor's) stand rappelling at height `y`: out from the
 ## wall, the hips HIP_OUT of his leg off it, swung out mid-hop and drawn in
@@ -1426,17 +1562,15 @@ func _stance_at(walker: Variant, y: float) -> Vector3:
 	var at := Vector3(edge.x+edge_out.x*out_d,y,edge.z+edge_out.z*out_d)
 	return _body_at(walker,y).lerp(at,_stance_k*_stance_k*(3.0-2.0*_stance_k))
 
-## The hop's swing off the wall (m): in a little crouching, out in an arc
-## flying, in again landing.
+## The hop's swing off the wall (m): in a little crouching, nothing of its
+## own flying (the pendulum carries him), in again landing.
 func _hop_swing() -> float:
-	if _hop_t < 0.0: return 0.0
+	if _hop_t < 0.0 or _hop_fly: return 0.0
 	var s := _size()
 	if _hop_t < HOP_CROUCH:
 		var c := _hop_t/HOP_CROUCH
 		return -0.2*s*c*c
-	if _hop_t < HOP_LAND:
-		var u := (_hop_t-HOP_CROUCH)/(HOP_LAND-HOP_CROUCH)
-		return lerpf(-0.2*s,0.0,u)+sin(PI*u)*HOP_OUT*s
+	if _hop_t < HOP_LAND: return 0.0
 	var w := (_hop_t-HOP_LAND)/(1.0-HOP_LAND)
 	return -0.16*s*sin(PI*w)
 
@@ -1456,6 +1590,12 @@ func _leg() -> float:
 	return 0.8*_size()
 
 func _off_rope() -> void:
+	# The rope he leaves sways on (its end from where his grip was).
+	_live_free = climber and edge != Vector3.INF
+	sway = Vector3.ZERO
+	_sway_tilt = Basis.IDENTITY
+	_hop_fly = false
+	_kick_buf = 0.0
 	climber = false
 	rappel = false
 	_rap_v = 0.0
@@ -1465,6 +1605,188 @@ func _off_rope() -> void:
 	brake_at = Vector3.INF
 	_pull_t = -1.0
 	_give_y = INF
+
+# --- The live rope ----------------------------------------------------------------------
+
+## Along the face (flat, to his right as he faces it).
+func _side() -> Vector3:
+	return (-edge_out).cross(Vector3.UP).normalized()
+
+## The pendulum's anchor: where the rope leaves the edge.
+func _anchor() -> Vector3:
+	return line_at(edge.y)
+
+## The bag on his back (kg) and its share of the way to the climb stop.
+func _kg() -> float:
+	var bag: Variant = study.get("bag")
+	if bag == null or not bag.has_method("worn_kg"): return 0.0
+	return float(bag.worn_kg())
+
+func _load_k() -> float:
+	return clampf((_kg()-LootBag.FREE_KG)/(LootBag.CLIMB_STOP-LootBag.FREE_KG),0.0,1.0)
+
+## Too heavy to haul himself up the rope (LootBag CLIMB_STOP).
+func _too_heavy() -> bool:
+	return _kg() >= LootBag.CLIMB_STOP-0.001
+
+## The grip's least out off the anchor's plumb at `y`: hanging, none (the
+## rope lies on the face); rappelling, his stance's (feet on the wall).
+func _rest_out(walker: Variant, y: float) -> float:
+	var at := _stance_at(walker,y)
+	var a := _anchor()
+	return maxf(Vector3(at.x-a.x,0.0,at.z-a.z).dot(edge_out)-(float(walker.hang_out)+BODY_OFF*_size()),0.0)
+
+## Its still spot at length `l`, `lo` out.
+func _rest(l: float, lo: float) -> Vector3:
+	lo = minf(lo,l*0.9)
+	return edge_out*lo+Vector3.DOWN*sqrt(maxf(l*l-lo*lo,0.0))
+
+## Taken hold of (or lowered on): the pendulum still under the anchor, at
+## his pace across the face.
+func _live_begin(motor: Variant, y: float) -> void:
+	var s := _size()
+	_base_y = y
+	_ll = maxf(edge.y-(y+float(motor.hang_drop)),0.3*s)
+	_lo = 0.0
+	_lp = _rest(_ll,_lo)
+	var v: Vector3 = motor.velocity
+	_lv = _side()*v.dot(_side())*0.5
+	_live_free = false
+	_kick_buf = 0.0
+	_hop_fly = false
+	sway = Vector3.ZERO
+	_sway_tilt = Basis.IDENTITY
+	sway_peak = Vector2.ZERO
+
+## The stick's own left/right (not its up/down, the climb's) as a push
+## along the face, to his right +1: as the camera sees the face.
+func _across(want: Vector2) -> float:
+	var f := PilotMotor.forward(float(study.get("_yaw")))
+	var cam_r := Vector3(-f.y,0.0,f.x)
+	return _to_cam(want).x*clampf(cam_r.dot(_side())*2.0,-1.0,1.0)
+
+## The grip's off the wall (within a few cm of its least out).
+func _on_wall() -> bool:
+	return _lp.dot(edge_out) <= _lo+0.03*_size()
+
+## A kick off the wall: `v` out, and KICK_KEEP of the pace he came in with.
+func _kick(v: float) -> void:
+	var vn := _lv.dot(edge_out)
+	_lv += edge_out*(v-minf(vn,0.0)*(1.0+KICK_KEEP))
+	kicks += 1
+
+## One step of the pendulum with his feet at `y` (the grip HANG_DROP over
+## them), `lo` out at least, `pump` (m/s², across the face: the way it
+## goes once moving, as the swing's pump) and `rub` (damping a second on the
+## face); `sway` and `_sway_tilt` set from it. A body swung into a face
+## across his way stops there.
+func _live_step(delta: float, y: float, lo: float, pump: float, rub: float) -> void:
+	var s := _size()
+	var motor: Variant = study.get("motor")
+	var heavy := _load_k()
+	var g := LIVE_G*s*(1.0-HEAVY_G*heavy)
+	var l := maxf(edge.y-(y+float(motor.hang_drop)),0.3*s)
+	if absf(l-_ll) > 0.0001:
+		# Paid out or climbed: the angle kept, the pace by old/new.
+		_lv *= clampf(_ll/l,0.5,1.5)
+		_lp = _lp.normalized()*l if _lp.length() > 0.001 else _rest(l,lo)
+		_ll = l
+	_lo = minf(lo,l*0.9)
+	var side := _side()
+	var push := side*pump
+	var along := _lv.dot(side)
+	if absf(along) > 0.4*s: push = side*pump*(1.0 if signf(pump) == signf(along) else 0.0)
+	var was := _lp
+	var left := delta
+	while left > 0.0:
+		var dt := minf(left,1.0/120.0)
+		left -= dt
+		var u := _lp.normalized()
+		_lv += (Vector3.DOWN*g+push)*dt
+		_lv -= u*_lv.dot(u)
+		var damp := LIVE_DAMP*(1.0-HEAVY_DAMP*heavy)
+		if _on_wall():
+			_lv -= side*_lv.dot(side)*minf(rub*dt,1.0)
+			damp *= 2.0
+		_lv *= maxf(1.0-damp*dt,0.0)
+		_lp = (_lp+_lv*dt).normalized()*l
+		# Held under the most from the plumb.
+		u = _lp.normalized()
+		var ang := u.angle_to(Vector3.DOWN)
+		if ang > LIVE_MOST:
+			var axis := Vector3.DOWN.cross(u).normalized()
+			u = Vector3.DOWN.rotated(axis,LIVE_MOST)
+			_lp = u*l
+			var outward := axis.cross(u).normalized()
+			if _lv.dot(outward) > 0.0: _lv -= outward*_lv.dot(outward)
+		# The face: not in past the least out; the pace into it bounced.
+		var o := _lp.dot(edge_out)
+		if o < _lo:
+			var flat := _lp-edge_out*o
+			flat.y = 0.0
+			var a2 := _lp.dot(side)
+			var dn := sqrt(maxf(l*l-_lo*_lo-a2*a2,0.0))
+			_lp = edge_out*_lo+side*a2+Vector3.DOWN*dn
+			var vn := _lv.dot(edge_out)
+			if vn < 0.0: _lv -= edge_out*vn*(1.0+WALL_BOUNCE)
+		_lv -= _lp.normalized()*_lv.dot(_lp.normalized())
+	var rest := _rest(l,_lo)
+	var d := _lp-rest
+	# Swung into a face across his way (a buttress, the block's end): held
+	# where he was, the pace into it taken off.
+	var chest := Vector3.UP*0.6*s
+	var base := _stance_at(motor,y)
+	var a := base+sway+chest
+	var b := base+d+chest
+	if a.distance_to(b) > 0.0001:
+		var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(a,b+(b-a).normalized()*0.25*s,CarryHost.SOLID_MASK))
+		if not hit.is_empty():
+			var n: Vector3 = hit.normal
+			if absf(n.dot(edge_out)) < 0.7:
+				_lp = was
+				var vn := _lv.dot(n)
+				if vn < 0.0: _lv -= n*vn*(1.0+WALL_BOUNCE)
+				d = _lp-rest
+	sway = d
+	sway_peak = Vector2(maxf(sway_peak.x,absf(d.dot(side))),maxf(sway_peak.y,d.dot(edge_out)))
+	var r0 := rest.normalized()
+	var r1 := _lp.normalized()
+	_sway_tilt = Basis(Quaternion(r0,r1)) if r0.distance_to(r1) > 0.0005 else Basis.IDENTITY
+
+## Left hanging: its end swings on from where his grip let go, settling.
+func _live_free_step(delta: float) -> void:
+	if not _live_free or edge == Vector3.INF or not (state == "caught" or state == "seated"):
+		_live_free = false
+		return
+	var s := _size()
+	var a := _anchor()
+	var l := maxf(a.y-_floor_under(line_at(edge.y-0.3*s))-0.05*s,0.3*s)
+	if absf(l-_ll) > 0.001:
+		_lp = _lp.normalized()*l if _lp.length() > 0.001 else _rest(l,0.0)
+		_ll = l
+	var left := delta
+	while left > 0.0:
+		var dt := minf(left,1.0/60.0)
+		left -= dt
+		_lv += Vector3.DOWN*LIVE_G*s*dt
+		_lv -= _lp.normalized()*_lv.dot(_lp.normalized())
+		_lv *= maxf(1.0-LIVE_FREE_DAMP*dt,0.0)
+		_lp = (_lp+_lv*dt).normalized()*l
+		var o := _lp.dot(edge_out)
+		if o < 0.0:
+			_lp -= edge_out*o
+			_lp = _lp.normalized()*l
+			var vn := _lv.dot(edge_out)
+			if vn < 0.0: _lv -= edge_out*vn*(1.0+WALL_BOUNCE)
+	if _lv.length() < 0.02*s and _lp.normalized().dot(Vector3.DOWN) > 0.9995: _live_free = false
+
+## Where the rope runs at height `y`: down from the anchor through his grip
+## (the live rope's line), else the plumb line down the face.
+func rope_at(y: float) -> Vector3:
+	if (climber or _live_free) and _lp.length() > 0.01 and _lp.y < -0.01:
+		var a := _anchor()
+		return a+_lp*((a.y-y)/-_lp.y)
+	return line_at(y)
 
 # --- Each frame -------------------------------------------------------------------------
 
@@ -1479,6 +1801,8 @@ func _process(delta: float) -> void:
 		swinging = false
 		swing_hold = false
 	if swing_left and not swinging and _pend != null: _pend.advance(delta)
+	if _live_free and not climber: _live_free_step(delta)
+	climb_pace = LootBag.climb_pace_of(_kg())
 	if lowering:
 		var motor: Variant = study.get("motor")
 		if motor.hold == "hang":
@@ -1859,6 +2183,16 @@ func _draw_over_beam() -> void:
 func _draw_hanging() -> void:
 	var s := _size()
 	var over := line_at(edge.y+ROPE_R*s)
+	if (climber or _live_free) and _lp.length() > 0.01:
+		# Live: from the edge straight to his grip (or its swinging end),
+		# then on down from there to the floor.
+		var grip := _anchor()+_lp
+		var on := grip+_lp.normalized()*0.35*s
+		var fl := _floor_under(on)+ROPE_R*s
+		if on.y < fl: on.y = fl
+		var low := Vector3(on.x,fl,on.z)
+		_draw_line(PackedVector3Array([hook_at,over,grip,on,low,low+edge_out*0.5*s]))
+		return
 	var foot := line_at(_floor_under(line_at(edge.y-0.3*s))+ROPE_R*s)
 	var tail := foot+edge_out*0.5*s
 	var pts := PackedVector3Array([hook_at,over,foot,tail])
@@ -1910,6 +2244,8 @@ func _arm_pose() -> void:
 	if climber:
 		if rappel: _rappel_pose(sk)
 		else:
+			# Hung along the live rope: turned about his grip.
+			_tilt_figure(_anchor()+_lp,1.0)
 			# Just off a rappel: its lean eases out under the climb.
 			if _stance_k > 0.0: _lean_figure(sk,_stance_k*_stance_k*(3.0-2.0*_stance_k),deg_to_rad(LEAN))
 			_climb_feet(sk)
@@ -1976,7 +2312,7 @@ func _climb_hands(sk: Skeleton3D) -> void:
 		var fore := sk.find_bone(names[1])
 		var hand := sk.find_bone(names[2])
 		if upper < 0 or fore < 0 or hand < 0: return
-		var at := line_at(minf(float(_hand_y[i])+REACH_UP*s,edge.y-0.04*s))+right*sd*HAND_SPREAD*s
+		var at := rope_at(minf(float(_hand_y[i])+REACH_UP*s+sway.y,edge.y-0.04*s))+right*sd*HAND_SPREAD*s
 		# The reaching hand comes off the rope a little as it passes.
 		if i == 1 and _pull_t > REACH_AT:
 			var r := (_pull_t-REACH_AT)/(1.0-REACH_AT)
@@ -1996,6 +2332,9 @@ func _climb_feet(sk: Skeleton3D) -> void:
 	var to_sk_b := sk.global_basis.inverse()
 	var y0 := (motor.feet as Vector3).y+FOOT_UP*leg
 	if hauling or (motor.feet as Vector3).y > edge.y-float(motor.hang_drop)-0.2*s: return
+	# Swung off the wall, the feet come off it, reaching back for it.
+	var off := sway.dot(edge_out)
+	var w := CLIMB_FEET*(1.0-smoothstep(0.08*s,0.5*s,off))
 	for sd: float in [1.0,-1.0]:
 		var side := "R" if sd > 0.0 else "L"
 		var a := sk.find_bone("thigh."+side)
@@ -2003,9 +2342,9 @@ func _climb_feet(sk: Skeleton3D) -> void:
 		var c := sk.find_bone("foot."+side)
 		if a < 0 or b < 0 or c < 0: continue
 		var up := 0.18*leg if sd == float(_hand_side[0]) else 0.0
-		var goal := Vector3(edge.x,y0+up,edge.z)+edge_out*0.06*s+right*sd*0.14*s
+		var goal := Vector3(edge.x,y0+up,edge.z)+edge_out*(0.06*s+off*0.5)+right*(sd*0.14*s+sway.dot(right))
 		var pole := (to_sk_b*(Vector3.UP*0.8-edge_out*0.5+right*sd*0.4)).normalized()
-		CarryHost._two_bone(sk,a,b,c,to_sk*goal,pole,CLIMB_FEET)
+		if w > 0.01: CarryHost._two_bone(sk,a,b,c,to_sk*goal,pole,w)
 
 ## The figure leaned back `lean` (rad) times `k` about its hips, the hips set
 ## over the motor's feet (up his leg as `k` grows); the hips' world spot.
@@ -2023,6 +2362,14 @@ func _lean_figure(sk: Skeleton3D, k: float, lean: float) -> Vector3:
 	fig.global_position += want_hip-hip_w
 	return want_hip
 
+## The figure turned by the live rope's tilt (`k` of it) about `pivot`.
+func _tilt_figure(pivot: Vector3, k: float) -> void:
+	var fig: Node3D = study.get("figure")
+	if fig == null or _sway_tilt == Basis.IDENTITY: return
+	var r := Basis.IDENTITY.slerp(_sway_tilt,k) if k < 1.0 else _sway_tilt
+	var xf := fig.global_transform
+	fig.global_transform = Transform3D(r*xf.basis,pivot+r*(xf.origin-pivot))
+
 ## Rappelling: the figure (in the hang's clip) leaned back off the wall
 ## about its hips, set where the stance puts them; legs (two-bone IK) to
 ## the wall, knees up, walking down it as he lowers (each foot lifting in
@@ -2036,12 +2383,15 @@ func _rappel_pose(sk: Skeleton3D) -> void:
 	var leg := _leg()
 	var right := (-edge_out).cross(Vector3.UP).normalized()
 	var lean := deg_to_rad(LEAN)
-	if _hop_t >= HOP_CROUCH and _hop_t < HOP_LAND:
-		lean += deg_to_rad(8.0)*sin(PI*(_hop_t-HOP_CROUCH)/(HOP_LAND-HOP_CROUCH))
+	# Out off the wall he opens up, sitting back further.
+	var off := sway.dot(edge_out)
+	lean += deg_to_rad(10.0)*clampf(off/(0.8*s),0.0,1.0)
 	# Faster, he sits back further into it.
 	lean += deg_to_rad(6.0)*clampf(_rap_v/(RAP_SPEED.y*s),0.0,1.0)
 	var want_hip := _lean_figure(sk,k,lean)
 	if want_hip == Vector3.INF: return
+	# The live rope's tilt, about his hips (his feet keep to the wall).
+	_tilt_figure(want_hip,0.7)
 	var to_sk := sk.global_transform.affine_inverse()
 	var to_sk_b := sk.global_basis.inverse()
 	# Feet on the wall under the hips, walking down it.
@@ -2055,7 +2405,7 @@ func _rappel_pose(sk: Skeleton3D) -> void:
 		if a < 0 or b < 0 or c < 0: continue
 		var ph := _step*PI+(0.0 if sd > 0.0 else PI)
 		var lift := maxf(sin(ph),0.0)*walk
-		var goal := Vector3(edge.x,wall_y-cos(ph)*0.2*leg*walk,edge.z)+edge_out*(0.06*s+lift*RAP_LIFT*leg)+right*sd*0.13*s
+		var goal := Vector3(edge.x,wall_y-cos(ph)*0.2*leg*walk,edge.z)+edge_out*(0.06*s+lift*RAP_LIFT*leg+maxf(off,0.0)*0.55)+right*(sd*0.13*s+sway.dot(right))
 		var pole := (to_sk_b*(Vector3.UP*0.8-edge_out*0.6+right*sd*0.2)).normalized()
 		CarryHost._two_bone(sk,a,b,c,to_sk*goal,pole,k)
 	# The hands: the lead up the rope before his chest, the brake at the hip.

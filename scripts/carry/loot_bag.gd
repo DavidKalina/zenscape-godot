@@ -40,8 +40,14 @@ const FREE_KG := 2.0
 ## curve's power: over 1 the first kg cost little, the last the most).
 const FEEL := {"walk":0.6,"run":0.45,"jump":0.4,"turn":0.55}
 const EASE := 1.2
+## The climb stop (kg): from here he can't climb a ledge or haul up a rope
+## with it on (throw it up first). Under it, the climbs only slow: the
+## ledge climb, the rope's pulls and hauls take up to 1 + CLIMB_SLOW times
+## as long, eased in from FREE_KG (scripts/rope/climb_rope.gd `climb_pace`).
+const CLIMB_STOP := 16.0
+const CLIMB_SLOW := 0.8
 ## The moves dropped past each weight (kg), in order.
-const BARS := [["wall",5.0],["ledge",9.0],["sail",13.0],["rope",17.0]]
+const BARS := [["wall",5.0],["sail",13.0],["ledge",CLIMB_STOP],["rope",17.0]]
 
 ## Reach (m across from his feet to a piece's foot, times his size, past
 ## its radius; and up or down).
@@ -432,6 +438,11 @@ static func bars_of(kg_in: float) -> Array:
 		if kg_in >= float(b[1])-0.001: out.append(str(b[0]))
 	return out
 
+## The climbs' pace at `kg_in` kg (times their time: 1 light, 1 +
+## CLIMB_SLOW at the climb stop).
+static func climb_pace_of(kg_in: float) -> float:
+	return 1.0+CLIMB_SLOW*clampf((kg_in-FREE_KG)/(CLIMB_STOP-FREE_KG),0.0,1.0)
+
 ## The sack's belly radius at `kg_in` kg (m, times size).
 static func radius_of(kg_in: float) -> float:
 	return SACK_R+SACK_R_KG*sqrt(maxf(kg_in,0.0))
@@ -491,7 +502,7 @@ func _apply_feel(pace: float) -> void:
 	_pace = pace
 	if _base.is_empty():
 		_base = {"walk":m.walk,"run":m.run,"jumps":(m.jumps as Array).duplicate(),"turn":m.turn,"turn_run":m.turn_run,
-			"wall_on":m.wall_on,"wallrun_on":m.wallrun_on,"ledge_on":m.ledge_on,"sail_on":m.sail_on,"rope_on":m.rope_on}
+			"wall_on":m.wall_on,"wallrun_on":m.wallrun_on,"ledge_on":m.ledge_on,"sail_on":m.sail_on,"rope_on":m.rope_on,"climb_time":m.climb_time}
 	var w := feel_of(worn_kg())
 	barred = bars_of(worn_kg())
 	if state == "drag":
@@ -509,6 +520,8 @@ func _apply_feel(pace: float) -> void:
 	m.ledge_on = bool(_base.ledge_on) and not barred.has("ledge")
 	m.sail_on = bool(_base.sail_on) and not barred.has("sail")
 	m.rope_on = bool(_base.rope_on) and not barred.has("rope")
+	# Heavier, the ledge climb is slower (the rope's haul sets its own).
+	if m.hold != "climb": m.climb_time = float(_base.climb_time)*climb_pace_of(worn_kg())
 
 ## A piece pulled out of it (the stone brood's rip: scripts/brood/
 ## bag_brood.gd): `p` (or a random one) out of `items`, the kg down, the
