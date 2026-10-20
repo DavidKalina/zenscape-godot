@@ -7,14 +7,15 @@ extends "res://studies/rope_study.gd"
 ## The room, plain grey, decks at y 0 over a pit (y -6) that runs under
 ## every crossing, three lanes north (-z) from the start deck:
 ## - lane A (west): a 9 m gap, one beam over its middle (one swing across);
-## - lane B (middle): an 8 m gap, a small platform, an 8.5 m gap, a beam over
+## - lane B (middle): an 8 m gap, a small platform, a 7.5 m gap, a beam over
 ##   each gap (swing, land, throw, swing);
 ## - lane C (east): a 14 m gap with a beam too high to reach and a tall one
 ##   for a long swing; on the start deck behind it, a beam so low the swing
 ##   scrapes the floor;
 ## - the pit: every deck's face to it is a solid (orange) lip, so a bad
 ##   release climbs back out on the rope.
-## Beams are plain grey bars on dark pillars, every one named
+## Beams are plain grey bars on dark pillars, each carrying a hook line
+## (scripts/rope/hook_line.gd, what the rope wraps and swings from), every one named
 ## `swing_study/<piece>` (scripts/layout_overrides.gd).
 ##   ./run-swing-study.command
 ##   godot --path . res://studies/swing_study.tscn -- --no-title
@@ -40,16 +41,16 @@ const SWING_PIECES := [
 	["beam_a",["box",Rect2(-18.0,-0.5-BEAM_T*0.5,10.0,BEAM_T),7.0-BEAM_T,7.0,"grey"],"beam"],
 	["beam_a_w",["cyl",Vector2(-18.4,-0.5),PILLAR_R,PIT_Y,7.0,"dark"],""],
 	["beam_a_e",["cyl",Vector2(-7.6,-0.5),PILLAR_R,PIT_Y,7.0,"dark"],""],
-	# Lane B: 8 m to a small platform, 8.5 m on to the far deck; a beam over
-	# each gap.
-	["platform_b",["box",Rect2(1.0,-7.5,6.0,3.5),PIT_Y,0.0,"grey"],"solid"],
+	# Lane B: 8 m to a small platform (4.5 m deep), 7.5 m on to the far
+	# deck; a beam over each gap.
+	["platform_b",["box",Rect2(1.0,-8.5,6.0,4.5),PIT_Y,0.0,"grey"],"solid"],
 	["far_b",["box",Rect2(-3.0,-24.0,14.0,8.0),PIT_Y,0.0,"grey"],"solid"],
 	["beam_b1",["box",Rect2(-2.0,0.0-BEAM_T*0.5,12.0,BEAM_T),7.0-BEAM_T,7.0,"grey"],"beam"],
 	["beam_b1_w",["cyl",Vector2(-2.4,0.0),PILLAR_R,PIT_Y,7.0,"dark"],""],
 	["beam_b1_e",["cyl",Vector2(10.4,0.0),PILLAR_R,PIT_Y,7.0,"dark"],""],
-	["beam_b2",["box",Rect2(-2.0,-11.75-BEAM_T*0.5,12.0,BEAM_T),7.5-BEAM_T,7.5,"grey"],"beam"],
-	["beam_b2_w",["cyl",Vector2(-2.4,-11.75),PILLAR_R,PIT_Y,7.5,"dark"],""],
-	["beam_b2_e",["cyl",Vector2(10.4,-11.75),PILLAR_R,PIT_Y,7.5,"dark"],""],
+	["beam_b2",["box",Rect2(-2.0,-12.25-BEAM_T*0.5,12.0,BEAM_T),7.5-BEAM_T,7.5,"grey"],"beam"],
+	["beam_b2_w",["cyl",Vector2(-2.4,-12.25),PILLAR_R,PIT_Y,7.5,"dark"],""],
+	["beam_b2_e",["cyl",Vector2(10.4,-12.25),PILLAR_R,PIT_Y,7.5,"dark"],""],
 	# Lane C: the far deck past a 14 m gap; a beam out of reach (16 m) and a
 	# tall one (11 m) for a long swing.
 	["far_c",["box",Rect2(15.0,-24.0,21.0,14.0),PIT_Y,0.0,"grey"],"solid"],
@@ -74,12 +75,21 @@ const BEAMS := ["beam_a","beam_b1","beam_b2","high_beam","tall_beam","low_beam"]
 const LOOK_UP := 0.6
 const LOOK_UP_RATE := 6.0
 const LOOK_UP_MAX := 1.78
+## Holding a beam's rope, swinging and in the air after, the camera's polar
+## eases to SWING_POLAR (just over level, behind him: under the beam the
+## rope hangs from, the swing and where he'll land ahead in view; the play
+## camera's own, higher, looks over the beam and is drawn in by it, and the
+## aim's look-up stares up at his hat) at SWING_VIEW_RATE.
+const SWING_POLAR := PI*0.5-0.15
+const SWING_VIEW_RATE := 3.0
+const HookLine = preload("res://scripts/rope/hook_line.gd")
 
 func _init() -> void:
 	scene_id = "swing_study"
 
 func tick(delta: float) -> void:
 	_look_up(delta)
+	_swing_view(delta)
 	super.tick(delta)
 
 ## The camera tipped up to the beam the hook's aimed at or flying to; the
@@ -96,6 +106,13 @@ func _look_up(delta: float) -> void:
 	if want <= _polar: return
 	_polar = lerpf(_polar,want,1.0-exp(-LOOK_UP_RATE*delta))
 
+## Holding the rope over a beam, swinging, or in the air off it: the camera
+## eased to SWING_POLAR (the mouse and stick still turn it; it eases back).
+func _swing_view(delta: float) -> void:
+	if rope == null or scripted or delta <= 0.0: return
+	if not (rope.swing_hold or rope.swinging or (rope.swing_left and not motor.grounded)): return
+	_polar = lerpf(_polar,SWING_POLAR,1.0-exp(-SWING_VIEW_RATE*delta))
+
 func _load_pack() -> void:
 	start = Vector3(-13.0,0.0,8.0)
 	start_face = Vector2(0.0,-1.0)
@@ -104,7 +121,7 @@ func _load_pack() -> void:
 	stations = [
 		{"key":1,"name":"One beam (A)","spawn":start,"face":start_face,"sign":Vector3(-17.5,2.6,5.0),"parts":[]},
 		{"key":2,"name":"Two beams (B)","spawn":Vector3(4.0,0.0,7.0),"face":Vector2(0.0,-1.0),"sign":Vector3(0.0,2.6,5.0),"parts":[]},
-		{"key":3,"name":"Platform","spawn":Vector3(4.0,0.0,-6.5),"face":Vector2(0.0,-1.0),"sign":Vector3(4.0,2.2,-7.3),"parts":[]},
+		{"key":3,"name":"Platform","spawn":Vector3(4.0,0.0,-6.5),"face":Vector2(0.0,-1.0),"sign":Vector3(4.0,2.2,-8.3),"parts":[]},
 		{"key":4,"name":"High · tall (C)","spawn":Vector3(25.0,0.0,6.0),"face":Vector2(0.0,-1.0),"sign":Vector3(21.0,2.6,5.0),"parts":[]},
 		{"key":5,"name":"Low beam","spawn":Vector3(25.0,0.0,18.0),"face":Vector2(0.0,-1.0),"sign":Vector3(25.0,4.4,13.0),"parts":[]},
 		{"key":6,"name":"The pit","spawn":Vector3(4.0,PIT_Y,-1.0),"face":Vector2(0.0,1.0),"sign":Vector3(4.0,PIT_Y+2.6,3.6),"parts":[]},
@@ -124,6 +141,9 @@ func _build_room() -> void:
 		if str(p[2]) != "":
 			holds[str(p[0])] = str(p[2])
 			if pieces.has(str(p[0])) and str(p[2]) == "solid": _rim(pieces[str(p[0])],p[1][1],float(p[1][3])-float(p[1][2]))
+	# Each beam carries a hook line along its top (the rope's contract).
+	for id: String in BEAMS:
+		if pieces.has(id): HookLine.on_box(pieces[id],id)
 	# The character study's signs and start mark (its pack branch).
 	_build_signs()
 	rope = ClimbRope.new()
@@ -164,4 +184,4 @@ func _show_status() -> void:
 	_status.text = "%s · %s %s" % [moves,Pad.pick("M","LEFT"),"to switch"]
 
 func _hint_text() -> String:
-	return "Swing study: WASD run · Space jump · Shift/C crouch, at a run: slide · hold LMB or T (pad RT): aim the hook, let go to throw · E (pad B) tug a caught hook · Space (pad A) with the rope over a beam: take hold, then run off an edge or Space to swing; W/S pumps, Space lets go · F (pad down) reel it in · M (pad left) full moveset on / off · 1 one beam (A), 2 two beams (B), 3 platform, 4 high / tall beams (C), 5 low beam, 6 the pit, 7 far deck A · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Swing study: WASD run · Space jump · Shift/C crouch, at a run: slide · hold LMB or T (pad RT): aim the hook, let go to throw · E (pad B) tug a caught hook · Space (pad A) with the rope over a beam: take hold, then run off an edge or Space to swing; W/S pumps, Space lets go, E/F climb or slide · F (pad down) reel it in; LMB/T with a rope on a beam reels and aims · M (pad left) full moveset on / off · 1 one beam (A), 2 two beams (B), 3 platform, 4 high / tall beams (C), 5 low beam, 6 the pit, 7 far deck A · R start · F1 numbers · F4 world view · Esc mouse"

@@ -72,7 +72,8 @@ const POST_SNAP := 1.6
 const LAND_IN := 0.7
 ## The hook wraps a post this far under its top.
 const POST_WRAP := 0.25
-## Beams (hold "beam", the swing study): the reticle snaps to a beam over
+## Hook lines (scripts/rope/hook_line.gd: the swing study's beams carry
+## them; caught, hold "beam"): the reticle snaps to one over
 ## his head within BEAM_SNAP (m, flat) of its line, kept BEAM_END in from
 ## its ends; one more than BEAM_HIGH over his feet is too high to throw
 ## over. Wrapped, the hook hangs BEAM_HANG under the beam's far side.
@@ -208,7 +209,14 @@ const UPRIGHT := 0.3
 const SWING_UP := 3.5
 const SWING_DOWN := 5.0
 const SWING_HAND := 0.14
+## Let go by Jump, the swing's own release: the boost along the swing for a
+## perfect timing (m/s) and the pop up, in place of the swing rope's
+## (SwingRope t_boost 6, t_pop 1.5: off a 7 m beam that carried him 10 m
+## past a 9 m gap's far edge).
+const SWING_BOOST := 2.0
+const SWING_POP := 1.5
 const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
+const HookLine = preload("res://scripts/rope/hook_line.gd")
 
 var study: Node3D
 ## The swing: holding a beam's rope on the ground (`swing_hold`, `swing_len`
@@ -345,6 +353,11 @@ var _whirl := 0.0
 var _slide_from := Vector3.ZERO
 var _reel_after := false
 var _yank := false
+## Thrown with a rope left on a hook line: aimed once it's back in.
+var _aim_after := false
+## The line says a swing hint ("Holding the rope", "Swinging"): cleared once
+## he's down on his feet again.
+var _swing_said := false
 var _hook: Node3D
 var _rope: MultiMeshInstance3D
 var _reticle: MeshInstance3D
@@ -481,6 +494,11 @@ func _read_input() -> void:
 	if throw_hit:
 		if state == "coiled":
 			if _on_foot(): aim()
+		elif out() and hold == "beam" and beam_mid != Vector3.INF and not swinging and _on_foot():
+			# Left on a hook line: yanked back to his hand, then aimed (if
+			# the throw's still held when it's in).
+			reel()
+			_aim_after = state == "fall" or state == "reel"
 		elif out(): _say("Reel it in first (%s)" % Pad.pick("F","D-pad down"))
 	if reel_hit: reel()
 	if tug_hit: tug()
@@ -648,20 +666,16 @@ func target(over: Vector3) -> Dictionary:
 		return {"at":at,"lip":edge,"out":o,"hold":"","piece":id,"why":"a smooth top: nothing to catch on"}
 	return {"at":at,"lip":edge,"out":o,"hold":h,"piece":id,"why":""}
 
-## A beam near the reticle over his head (hold "beam"): the point on its
-## line nearest the reticle, the hook coming down on its top and wrapping
-## over it; {} when none is near. Too high, it's red.
+## A hook line near the reticle over his head (scripts/rope/hook_line.gd:
+## a beam's, or anything else that carries one; hold "beam"): the point on
+## its line nearest the reticle, the hook coming down on its top and
+## wrapping over it; {} when none is near. Too high, it's red.
 func _beam_target(over: Vector3) -> Dictionary:
 	var s := _size()
 	var feet: Vector3 = study.get("motor").feet
-	var holds: Dictionary = study.get("holds")
-	var pieces: Dictionary = study.get("pieces")
 	var best := {}
 	var best_d := BEAM_SNAP*s
-	for id: String in holds:
-		if holds[id] != "beam" or not pieces.has(id): continue
-		var b := beam_of(pieces[id])
-		if b.is_empty(): continue
+	for b: Dictionary in HookLine.all_in(get_tree()):
 		var a: Vector3 = b.a
 		var e: Vector3 = b.b
 		var ab := Vector2(e.x-a.x,e.z-a.z)
@@ -675,28 +689,15 @@ func _beam_target(over: Vector3) -> Dictionary:
 		var dd := Vector2(on.x-over.x,on.z-over.z).length()
 		if dd >= best_d: continue
 		best_d = dd
-		# The near side: toward him, across the beam.
+		# The near side: toward him, across the line.
 		var across := Vector3(-u.y,0.0,u.x)
 		if across.dot(Vector3(feet.x-on.x,0.0,feet.z-on.z)) < 0.0: across = -across
 		var half: float = b.half
 		var why := ""
 		if on.y-feet.y > BEAM_HIGH*s: why = "too high"
-		best = {"at":on+Vector3.UP*0.05*s,"lip":on,"out":across,"hold":"beam","piece":id,"why":why,
+		best = {"at":on+Vector3.UP*0.05*s,"lip":on,"out":across,"hold":"beam","piece":str(b.piece),"why":why,
 			"mid":on+Vector3.DOWN*half,"half":half}
 	return best
-
-## A beam's line along its top (ends a, b, world) and half its thickness
-## ({} if it isn't a box): the long way of its box, whatever way it's turned.
-static func beam_of(body: Node3D) -> Dictionary:
-	for c in body.get_children():
-		if c is CollisionShape3D and (c as CollisionShape3D).shape is BoxShape3D:
-			var size: Vector3 = ((c as CollisionShape3D).shape as BoxShape3D).size
-			var t := body.global_transform*(c as CollisionShape3D).transform
-			var long := Vector3(size.x*0.5,0.0,0.0) if size.x >= size.z else Vector3(0.0,0.0,size.z*0.5)
-			var top := Vector3(0.0,size.y*0.5,0.0)
-			var half := minf(size.x,size.z)*0.5*t.basis.get_scale().x
-			return {"a":t*(top-long),"b":t*(top+long),"half":maxf(half,size.y*0.5*t.basis.get_scale().y)}
-	return {}
 
 ## The study's piece id a collider belongs to ("" none).
 func _piece_of(body: Object) -> String:
@@ -968,6 +969,7 @@ func _swing_pre(_hit: bool) -> void:
 	swing_len = maxf(d,SWING_MIN*s)
 	motor._held = true
 	_say("Holding the rope: run off the edge or %s to swing · %s lets go" % [Pad.pick("Space","A"),Pad.pick("Shift","crouch")])
+	_swing_said = true
 
 ## Each frame holding a beam's rope (before the motor's step): on the
 ## ground, the slack taken in, kept within the rope's reach of the beam
@@ -1015,6 +1017,7 @@ func _swing_mount(motor: Variant) -> void:
 	swinging = true
 	swings += 1
 	_say("Swinging: %s pumps · %s climbs · %s slides down · %s lets go" % [Pad.pick("W/S","stick"),Pad.pick("E","B"),Pad.pick("F","D-pad down"),Pad.pick("Space","A")])
+	_swing_said = true
 
 ## One step on the pendulum: the swing rope's ride (pump, steer, release),
 ## then a face hit (the pace into it taken off, a little bounce) and the
@@ -1025,7 +1028,12 @@ func _swing_ride(walker: PilotMotor, delta: float, want: Vector2, pressed: bool)
 	_swing_climb(delta)
 	var was_hands := _pend.hands
 	var was_v := _pend.velocity
+	var keep := [SwingRope.t_boost,SwingRope.t_pop]
+	SwingRope.t_boost = SWING_BOOST
+	SwingRope.t_pop = SWING_POP
 	var out := _pend.ride(walker,delta,want,pressed)
+	SwingRope.t_boost = keep[0]
+	SwingRope.t_pop = keep[1]
 	if out.get("swing",true) == false:
 		# Let go (Jump, with the swing's pace; crouch, without): the rope
 		# left hanging off the beam, its end swinging on.
@@ -1477,6 +1485,14 @@ func _process(delta: float) -> void:
 		"tug": _tug_step(delta)
 		"slip": _slip_step(delta)
 		"pull_up": _pull_up_step(delta)
+	if _aim_after and state != "fall" and state != "reel":
+		_aim_after = false
+		if state == "coiled" and Input.is_action_pressed(&"walk_throw") and _on_foot(): aim()
+	if _swing_said and not swinging and not swing_hold and _on_foot():
+		_swing_said = false
+		if _line_t >= 0.0:
+			_line_t = -1.0
+			_line.visible = false
 	if not _grit.is_empty(): _grit_step(delta)
 	_arm_pose()
 	_draw_rope()
@@ -2103,6 +2119,7 @@ static func _click_sound() -> AudioStreamWAV:
 	return w
 
 func _say(text: String) -> void:
+	_swing_said = false
 	_line.text = text
 	_line.visible = true
 	_line_t = 0.0
