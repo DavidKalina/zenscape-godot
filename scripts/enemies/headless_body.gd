@@ -444,6 +444,17 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# Olmec reach: `parked_off` 1, the parked plane's column (the
 		# walker's keep-off, kit_isle.gd PARKED_LAYER) is no wall to him.
 		"parked_off":0,
+		# Olmec run: `run_up` > 0 (s), in the chase he sets off at his walk
+		# (`walk`) and builds speed over `run_up` s of fairly straight
+		# chasing (within RUN_STRAIGHT of his way) to `run_top` m/s. Each
+		# radian he turns (past RUN_EASY rad/s) costs `run_turn_cost` of that
+		# build; a plant, a
+		# wall, an edge, a climb, a leap or an attack takes it all. At his
+		# top he turns at `run_turn` rad/s (his chase turn at a walk), so
+		# he swings wide and skids past a sharp sidestep. His gait follows
+		# his real speed (walk, hunt stride, run clip; `_gait_mix`). 0 off:
+		# `chase_speed` and the stride, as before.
+		"run_up":0.0,"run_top":n.run*1.15,"run_turn_cost":1.0,"run_turn":0.45,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -602,9 +613,15 @@ func _pose_more(_idle: float) -> bool:
 ## The length of one step of its gait now, in head heights (its phase
 ## steps by it).
 func _step_len() -> float:
+	if _gaits():
+		var g := _gait_mix()
+		return float(knobs.stride)*g.x+float(knobs.stride_home)*g.y+float(knobs.stride_run)*g.z
 	return float(knobs.stride_run if _running() else (knobs.stride_home if state in ["home","chase"] else knobs.stride))
 
 func _go(to: String) -> void:
+	# `run_up`: out of the chase (a climb, a leap, an attack, a look
+	# about), his build is gone.
+	if to != "chase": run_k = 0.0
 	state = to
 	state_t = 0.0
 	if to not in ["windup","leap"]: _drop_up = -1.0
@@ -790,8 +807,8 @@ func _home() -> void:
 	_go("home")
 	tell(mark_colour)
 
-func _brake(delta: float) -> void:
-	var flat := Vector2(vel.x,vel.z).move_toward(Vector2.ZERO,float(knobs.accel)*2.0*delta)
+func _brake(delta: float, share := 1.0) -> void:
+	var flat := Vector2(vel.x,vel.z).move_toward(Vector2.ZERO,float(knobs.accel)*2.0*share*delta)
 	vel.x = flat.x
 	vel.z = flat.y
 
@@ -2495,7 +2512,7 @@ func _chase(delta: float) -> void:
 	var m: PilotMotor = field.motor
 	# Olmec reach (`dive_walk`): off to a rim to throw himself off it.
 	if dive_goal != Vector3.INF:
-		_pursue(delta,dive_goal,float(knobs.chase_speed))
+		_pursue(delta,dive_goal,_chase_pace())
 		return
 	var seeing: bool = sight.seeing()
 	# Unseen, it goes where it last saw him, or where it went after him.
@@ -2552,7 +2569,7 @@ func _chase(delta: float) -> void:
 		_down_next = _clock+DOWN_EVERY
 		if _down_to(target): return
 	if _chase_routing(delta,target): return
-	_pursue(delta,target,float(knobs.chase_speed))
+	_pursue(delta,target,_chase_pace())
 
 # --- City breaks round 1: the hunt over its planner's routes ----------------------------------
 
@@ -2848,6 +2865,82 @@ func _pounce_spot(m: PilotMotor) -> Vector3:
 func _windup_s() -> float:
 	return float(knobs.pounce_windup) if leap_kind == "pounce" else float(knobs.windup)
 
+# --- Olmec run (`run_up`): speed built up into a run ------------------------------------
+
+## His build (0 his walk, 1 `run_top`): it climbs over `run_up` s of
+## fairly straight chasing; turns, plants and other states take it off.
+var run_k := 0.0
+## Within this of his way (rad) the chase counts as straight: the build climbs.
+const RUN_STRAIGHT := 0.3
+## Turning slower than this (rad/s) costs nothing (`run_turn_cost` is a
+## radian turned faster): he leans into a gentle curve at speed.
+const RUN_EASY := 0.2
+## At his top he swings round up to this off his way (rad) before he
+## plants (CHASE_TURN at a walk).
+const RUN_WIDE := 1.4
+## A plant at his top brakes at this share of the walk's brake: he skids on.
+const RUN_SKID := 0.5
+## The build never runs more than this ahead of his real speed's share
+## (so a wall, a skirt or a brake takes it off as they slow him).
+const RUN_SLACK := 0.06
+## No floor where he'd stop (at his speed, braking at `accel`), the
+## build goes off this fast (a s): he eases up before a rim.
+const RUN_EASE := 0.8
+## His gaits by real speed (head heights a second, so they keep to his
+## size): walk to hunt stride over GAIT_STRIDE, the stride to the run
+## clip over GAIT_RUN. Each clip's phase comes from the distance walked
+## over the blended step (`_step_len`), so the feet don't slide.
+const GAIT_STRIDE := Vector2(0.62,0.85)
+const GAIT_RUN := Vector2(1.05,1.3)
+
+## Chasing with `run_up` on.
+func _runs() -> bool:
+	return float(knobs.get("run_up",0.0)) > 0.0 and state == "chase"
+
+## The chase's speed (m/s): `run_up`, his walk to `run_top` by his build;
+## else `chase_speed`.
+func _chase_pace() -> float:
+	if not _runs(): return float(knobs.chase_speed)
+	return lerpf(float(knobs.walk),float(knobs.run_top),run_k)
+
+## The build after a frame of the chase's walk: up while he heads fairly
+## straight, eased off before a rim, held to his real speed.
+func _run_build(delta: float, off: float, fwd: Vector3) -> void:
+	if absf(off) < RUN_STRAIGHT: run_k = minf(run_k+delta/float(knobs.run_up),1.0)
+	if run_k > 0.2:
+		var v := Vector2(vel.x,vel.z).length()
+		var stop := v*v/(2.0*float(knobs.accel))
+		if _floor(position+fwd*stop,float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF:
+			run_k = maxf(run_k-RUN_EASE*delta,0.0)
+	_run_hold()
+
+func _run_hold() -> void:
+	var v := Vector2(vel.x,vel.z).length()
+	var real := (v-float(knobs.walk))/maxf(float(knobs.run_top)-float(knobs.walk),0.01)
+	run_k = clampf(minf(run_k,maxf(real,0.0)+RUN_SLACK),0.0,1.0)
+
+## His gait picked by his real speed (`run_up` on, chasing).
+func _gaits() -> bool:
+	return _runs() and whole
+
+## The gaits' shares by his real speed: (walk, hunt stride, run).
+func _gait_mix() -> Vector3:
+	var v := Vector2(vel.x,vel.z).length()/maxf(hh,0.01)
+	var run := smoothstep(GAIT_RUN.x,GAIT_RUN.y,v)
+	var walk := 1.0-smoothstep(GAIT_STRIDE.x,GAIT_STRIDE.y,v)
+	return Vector3(walk,maxf(1.0-walk-run,0.0),run)
+
+## The gait clips (walk, stride, run) `_gait_mix` blends.
+func _gait_clips() -> Array[String]:
+	return ["walk","hunt_stride",run_clip if run_clip != "" else "shoulder_run"]
+
+## The gait clip with most of his walk now ("" none: not walking on gaits).
+func gait() -> String:
+	if not _gaits(): return ""
+	var g := _gait_mix()
+	var c := _gait_clips()
+	return c[0] if g.x >= g.y and g.x >= g.z else (c[1] if g.y >= g.z else c[2])
+
 ## Walked at `goal` at `speed` m/s: turned to it (on the spot if far off),
 ## a wall met climbed (he's up there) or skirted, an edge met leapt.
 func _pursue(delta: float, goal: Vector3, speed: float) -> void:
@@ -2875,14 +2968,23 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 		_skirt_t = 0.0
 		var to_b := Vector2(beam.aim.x-position.x,beam.aim.z-position.z)
 		if to_b.length() > 0.3: _heading = PilotMotor.facing_of(to_b.normalized())
+	var runs := _runs()
 	var turn := float(knobs.turn)*float(knobs.chase_turn)
+	# `run_up`: the faster he goes, the slower he turns.
+	if runs: turn = lerpf(turn,float(knobs.run_turn),run_k)
 	var off := angle_difference(facing,_heading)
 	# Olmec round 1: a big turn plants first (braked, not swung round at
-	# speed), then steps round, and only then strides on.
-	var big := absf(off) > CHASE_TURN or look.steps.busy()
+	# speed), then steps round, and only then strides on. (`run_up`: at
+	# speed he swings round wider, up to RUN_WIDE, before he plants.)
+	var big := absf(off) > (lerpf(CHASE_TURN,RUN_WIDE,run_k) if runs else CHASE_TURN) or look.steps.busy()
+	var was := facing
 	if not big or Vector2(vel.x,vel.z).length() < 0.3: facing = wrapf(facing+clampf(off,-turn*delta,turn*delta),-PI,PI)
+	var turned := absf(angle_difference(was,facing))
+	if runs: run_k = maxf(run_k-maxf(turned-RUN_EASY*delta,0.0)*float(knobs.run_turn_cost),0.0)
 	if big:
-		_brake(delta)
+		# His weight carries him on: a planted run skids (RUN_SKID).
+		_brake(delta,lerpf(1.0,RUN_SKID,run_k) if runs else 1.0)
+		if runs: _run_hold()
 		return
 	var fwd := _forward3()
 	# On a beam its crest is his floor on to its end (its slope reads as
@@ -2901,6 +3003,7 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 	var flat := Vector2(vel.x,vel.z).move_toward(want,float(knobs.accel)*delta)
 	vel.x = flat.x
 	vel.z = flat.y
+	if runs: _run_build(delta,off if turned <= RUN_EASY*delta else PI,fwd)
 	if _pinned(delta,flat.length()):
 		# His bulk walks into what his rays don't see (a ruin's arch, its
 		# overhang): a wall all the same.
@@ -4213,6 +4316,14 @@ func _animate(delta: float) -> void:
 			elif state_t > float(knobs.listen): look.want("idle",idle)
 			else: look.want("listen",state_t/float(knobs.listen)*float(look.lengths.listen))
 		"feel": look.want("feel",_feel_k()*float(look.lengths.feel))
+		"roam","home","chase","return" when _gaits():
+			# `run_up`: walk, hunt stride and run clip by his real speed.
+			var g := _gait_mix()
+			var m := clampf(Vector2(vel.x,vel.z).length()/maxf(float(knobs.walk)*0.5,0.1),0.0,1.0)
+			var clips := _gait_clips()
+			for i in 3:
+				if g[i] > 0.001: look.want(clips[i],look.loop_time(clips[i],_phase,2.0),g[i]*m)
+			look.want("idle",idle,1.0-m)
 		"roam","home","chase","return":
 			var gait := run_clip if _running() else ("stride" if state in ["home","chase"] else "walk")
 			# Whole, he hunts on the upright hunt stride, not the arms-out one (olmec-look).
