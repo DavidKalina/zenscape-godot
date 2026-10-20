@@ -396,6 +396,12 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# to `down_deep` Hh under the rim (a long drop onto a terrace far
 		# below), not only `drop_max` m.
 		"down_deep":0.0,
+		# Olmec reach: `down_show` > 0 (m), `down_to` lands him where your
+		# camera sees him come down (in its frame, past DOWN_SHOW_EDGE of
+		# its sides) and at least that far from you flat, nearest you of
+		# those; no such landing, the nearest as before. He comes down in
+		# front of you, not on the camera.
+		"down_show":0.0,
 		# Olmec reach: `skirt_hold` 1, going round a wall in the hunt, the
 		# skirt's time runs only as he walks it (not while he plants and
 		# turns), and the next skirt round the same thing keeps its side,
@@ -1765,6 +1771,11 @@ var _drop_up := -1.0
 var _down_next := 0.0
 const DOWN_EVERY := 0.5
 const DOWN_TRIES := 24
+## `down_show`: the picture's margin a landing's feet and shins keep in (a
+## share of its width / height), and what an unseen landing adds to its
+## distance.
+const DOWN_SHOW_EDGE := 0.1
+const DOWN_UNSEEN := 1000.0
 var down_tos := 0
 var down_why := ""
 
@@ -1785,13 +1796,15 @@ func _down_to(goal: Vector3) -> bool:
 	var base := PilotMotor.facing_of(to.normalized())
 	var now := position.distance_to(goal)
 	var best := {}
-	var best_d := now-hh
+	var best_d := INF
+	var show := float(knobs.down_show)
 	var deep := maxf(float(knobs.drop_max),float(knobs.down_deep)*hh)
 	down_why = "no floor under the rim nearer him"
-	# Arcs flown at most (each a few dozen casts and bulk sweeps).
+	# Arcs flown at most (each a few dozen casts and bulk sweeps): the
+	# landings found first, then flown best first.
 	var tries := DOWN_TRIES
+	var found := []
 	for a: float in [0.0,0.35,-0.35,0.7,-0.7,1.1,-1.1]:
-		if tries <= 0: break
 		var dir := _way3(wrapf(base+a,-PI,PI))
 		var d := length*0.5+float(knobs.look)
 		while d <= reach:
@@ -1807,16 +1820,25 @@ func _down_to(goal: Vector3) -> bool:
 			var at := _down_room(Vector3(onto.x,g,onto.z))
 			if at == Vector3.INF: continue
 			var dd := at.distance_to(goal)
-			if dd >= best_d or tries <= 0: continue
-			for up: float in [float(knobs.leap_up),hh*0.8,hh*1.4,float(knobs.down_arc)*hh]:
-				tries -= 1
-				_drop_up = up
-				var ok := _arc_clear(at,"drop",true)
-				_drop_up = -1.0
-				if ok:
-					best = {"at":at,"up":up}
-					best_d = dd
-					break
+			if dd >= now-hh: continue
+			# Scored: a landing your camera won't see, or on top of you,
+			# only when there's no other.
+			if show > 0.0 and (Vector2(at.x-goal.x,at.z-goal.z).length() < show or not _lands_seen(at)): dd += DOWN_UNSEEN
+			found.append([dd,at])
+	found.sort_custom(func(x: Array, y: Array) -> bool: return float(x[0]) < float(y[0]))
+	for f: Array in found:
+		if tries <= 0 or float(f[0]) >= best_d: break
+		var at: Vector3 = f[1]
+		for up: float in [float(knobs.leap_up),hh*0.8,hh*1.4,float(knobs.down_arc)*hh]:
+			tries -= 1
+			_drop_up = up
+			var ok := _arc_clear(at,"drop",true)
+			_drop_up = -1.0
+			if ok:
+				best = {"at":at,"up":up}
+				best_d = float(f[0])
+				break
+		if not best.is_empty(): break
 	if best.is_empty(): return false
 	down_why = ""
 	down_tos += 1
@@ -1825,6 +1847,20 @@ func _down_to(goal: Vector3) -> bool:
 	_drop_up = best.up
 	_go("windup")
 	field.sound(&"body_windup",position)
+	return true
+
+## Whether the camera sees him land at `at`: his feet and shins (most of
+## him is over the picture of a camera close over you) in front of it and
+## within its picture short of DOWN_SHOW_EDGE of each side. No camera: yes.
+func _lands_seen(at: Vector3) -> bool:
+	var camera: Camera3D = field.study.get("camera") if field != null and field.study != null else null
+	if camera == null or not camera.is_inside_tree(): return true
+	var size := camera.get_viewport().get_visible_rect().size
+	if size.x <= 0.0 or size.y <= 0.0: return true
+	for p: Vector3 in [at+Vector3.UP*0.3,at+Vector3.UP*hh]:
+		if camera.is_position_behind(p): return false
+		var px := camera.unproject_position(p)/size
+		if px.x < DOWN_SHOW_EDGE or px.x > 1.0-DOWN_SHOW_EDGE or px.y < DOWN_SHOW_EDGE or px.y > 1.0-DOWN_SHOW_EDGE: return false
 	return true
 
 ## A spot with room for its bulk at `at` or round it (a narrow terrace:
