@@ -389,6 +389,10 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# and throws himself off on a higher arc (up to `down_arc` Hh) when
 		# a lip or a ruin on the rim is in the plain arc's way.
 		"down_to":0,"down_reach":5.5,"down_arc":2.4,
+		# Olmec reach: `down_deep` > 0, `down_to` looks for that floor down
+		# to `down_deep` Hh under the rim (a long drop onto a terrace far
+		# below), not only `drop_max` m.
+		"down_deep":0.0,
 		# Olmec reach: `skirt_hold` 1, going round a wall in the hunt, the
 		# skirt's time runs only as he walks it (not while he plants and
 		# turns), and the next skirt round the same thing keeps its side,
@@ -1639,6 +1643,7 @@ func _down_to(goal: Vector3) -> bool:
 	var now := position.distance_to(goal)
 	var best := {}
 	var best_d := now-hh
+	var deep := maxf(float(knobs.drop_max),float(knobs.down_deep)*hh)
 	down_why = "no floor under the rim nearer him"
 	# Arcs flown at most (each a few dozen casts and bulk sweeps).
 	var tries := DOWN_TRIES
@@ -1648,7 +1653,7 @@ func _down_to(goal: Vector3) -> bool:
 		var d := length*0.5+float(knobs.look)
 		while d <= reach:
 			var p := position+dir*d
-			var hit := _cast(p+Vector3.UP*step,p-Vector3.UP*float(knobs.drop_max))
+			var hit := _cast(p+Vector3.UP*step,p-Vector3.UP*deep)
 			d += 1.5
 			if hit.is_empty() or (hit.normal as Vector3).y <= 0.7: continue
 			var y := (hit.position as Vector3).y

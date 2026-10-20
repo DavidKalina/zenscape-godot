@@ -754,7 +754,7 @@ const OLMEC_AGAIN := 6.0
 ## His knobs here: the whole body's hunt (as studies/olmec_field.gd's
 ## whole Olmec), relentless, and the wall catch (headless_body.gd
 ## `leap_catch`).
-const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"skirt_hold":1.0,"climb_clear":1.0}
+const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"skirt_hold":1.0,"climb_clear":1.0}
 
 ## Seconds after the start (and after R) the Olmec comes; -1 never (no flag).
 var olmec_after := -1.0
