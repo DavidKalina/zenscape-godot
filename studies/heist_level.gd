@@ -196,6 +196,24 @@ const HEIST_RIG_NEAR := 11.0
 const HEIST_RIG_SHOCK := 20.0
 var _rig_hold := {}
 
+## The takeoff beat (heist/olmec_turf, a token F4 moves): the frame you
+## board the plane with the isle awake, the Olmec, if he's on his feet
+## within HEIST_TURF_REACH m of it, leaps (headless_body `stage_drop`)
+## for the turf beside it, off the takeoff run, where the chase camera
+## behind the plane sees him land as you taxi (tried for HEIST_TURF_WAIT s
+## while he closes). Further back: no leap (he makes for the plane on
+## foot, as flying always had him). Once a wake.
+## One simple staged moment (spec: no chase tuning here).
+const HEIST_OLMEC_TURF := Vector3(-6.0,30.4,-8.0)
+const HEIST_TURF_REACH := 40.0
+const HEIST_TURF_SHOCK := 0.3
+var _olmec_turf: Node3D = null
+var _turf_done := false
+## Off his feet or out of reach as you board, the leap is tried each
+## frame this long (s) while you taxi.
+const HEIST_TURF_WAIT := 3.0
+var _turf_t := 0.0
+
 const HEIST_POSTS := [
 	["post_01",Vector3(21.6,30.4,-26.9),"landing crown over terrace_n (rappel)"],
 	["post_02",Vector3(187.0,34.6,-15.6),"vault_n rim over the court (rappel in)"],
@@ -549,7 +567,8 @@ func _build_olmec_drop() -> void:
 	var out: Vector2 = (HEIST_OLMEC_PERCH[1] as Vector2).normalized()
 	var zb := Vector3(out.x,0.0,out.y)
 	for row: Array in [["olmec_perch",Transform3D(Basis(Vector3.UP.cross(zb),Vector3.UP,zb),HEIST_OLMEC_PERCH[0])],
-			["olmec_drop",Transform3D(Basis(),HEIST_OLMEC_DROP)]]:
+			["olmec_drop",Transform3D(Basis(),HEIST_OLMEC_DROP)],
+			["olmec_turf",Transform3D(Basis(),HEIST_OLMEC_TURF)]]:
 		var called := "heist/%s" % row[0]
 		if Layout.deleted(called): continue
 		var n := Node3D.new()
@@ -558,6 +577,7 @@ func _build_olmec_drop() -> void:
 		add_child(n)
 		Layout.track(called,n,"token",row[1])
 		if row[0] == "olmec_perch": _olmec_perch = n
+		elif row[0] == "olmec_turf": _olmec_turf = n
 		else: _olmec_drop = n
 
 ## The staged drop (HEIST_OLMEC_PERCH): cued by him coming down the pillar
@@ -898,6 +918,36 @@ func _bear_bridge() -> void:
 		var at: Vector3 = motor.feet if bag.state == "worn" or loose == null or not is_instance_valid(loose) else loose.global_position
 		BridgeLoad.bear_at(at,float(bag.kg),bag)
 
+## The takeoff beat (HEIST_OLMEC_TURF): on boarding, awake, once.
+func _stage_turf(delta: float) -> void:
+	_turf_t += delta
+	if _turf_done or not _drop_armed or _olmec_turf == null: return
+	_turf_done = true
+	var b := olmec()
+	if b == null or not bool(b.hunting):
+		print("heist: you board; no Olmec on the hunt: no takeoff leap")
+		return
+	var to := _olmec_turf.global_position
+	var d: float = b.global_position.distance_to(to)
+	if d > HEIST_TURF_REACH:
+		if _turf_t < HEIST_TURF_WAIT:
+			_turf_done = false
+			return
+		print("heist: you board; the Olmec's %.1f m off the turf: no takeoff leap" % d)
+		return
+	var ok: bool = b.stage_drop(to)
+	if not ok and _turf_t < HEIST_TURF_WAIT:
+		# Mid-leap or climbing: tried again next frame, for a beat.
+		_turf_done = false
+		return
+	if ok: b.staged_shock = HEIST_TURF_SHOCK
+	print("heist: you board; the Olmec, %.1f m off (%s), leaps for the turf by the plane %s: %s" % [d,str(b.state),to.round(),"winding up" if ok else "no go (%s)" % b.down_why])
+
+## Flying (no foot tick then): the takeoff beat.
+func _process(delta: float) -> void:
+	super._process(delta)
+	if flying and delta > 0.0: _stage_turf(delta)
+
 func tick(delta: float) -> void:
 	super.tick(delta)
 	if not flying:
@@ -923,6 +973,8 @@ func place(at: Vector3, face: Vector2) -> void:
 	_swing_hold_t = 0.0
 	_swing_from = Vector3.INF
 	_rig_hold = {}
+	_turf_done = false
+	_turf_t = 0.0
 
 const BridgeLoad = preload("res://scripts/bridge_load.gd")
 const BridgeClimb = preload("res://scripts/bridge_climb.gd")
