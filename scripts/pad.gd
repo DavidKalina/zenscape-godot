@@ -61,6 +61,16 @@ const ACTIONS := {
 	# On foot, pressed: lift the treasure in reach, or set down the one
 	# carried (scripts/carry/carry_host.gd).
 	"walk_carry":[["key",KEY_E],["button",JOY_BUTTON_B]],
+	# On foot, pressed: the loot bag off, on, dragged or let go
+	# (scripts/carry/loot_bag.gd).
+	"walk_bag":[["key",KEY_F],["button",JOY_BUTTON_DPAD_DOWN]],
+	# On foot by the loot bag on the ground, pressed: shove it (on a slope
+	# it rolls away downhill).
+	"walk_shove":[["key",KEY_V],["button",JOY_BUTTON_DPAD_RIGHT]],
+	# On foot with the loot bag on his back, held: aim a throw (a reticle
+	# where it lands); released, it's thrown there. RT is free on the ground
+	# (it's the dive in a fall, the zoom in the telescope).
+	"walk_throw":[["mouse",MOUSE_BUTTON_LEFT],["key",KEY_T],["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],
 	# On foot with the spade (scripts/dig/dig.gd), pressed: dig.
 	"walk_dig":[["key",KEY_G],["button",JOY_BUTTON_Y]],
 	# At a cannon (scripts/cannon/cannon_field.gd): Jump (A) starts operating

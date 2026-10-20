@@ -74,6 +74,96 @@ const WAKE_JITTER := 0.25
 const WAKE_RISE := 0.7
 const WAKE_HOLD := 0.7
 
+## The bag study's brood (scripts/brood/bag_brood.gd): the first piece in
+## the loot bag wakes BAG_STUDY_COUNT guys out of the room's burrows, dealt
+## round them nearest the bag first, BURROW_STAGGER s apart in each
+## burrow (plus up to WAKE_JITTER).
+const BAG_STUDY_COUNT := 12
+const BURROW_STAGGER := 0.5
+## The rip (the bag study): while he wears the bag with any clinging, one
+## of them pulls a piece out every RIP_EVERY s (give or take RIP_JITTER of
+## it; each clinger past the first cuts the wait RIP_MORE), the piece
+## hopping out of the mouth RIP_POP s onto the ground RIP_OUT m (out from the ripper) beside him. A
+## ripped piece on the ground calls RIP_CREW of them (the nearest free);
+## within HAUL_REACH they take it up and haul it at RIP_PACE to the
+## nearest burrow (within HOME_NEAR of its mouth it's taken down). He
+## knocks a hauler off as any haul, but only past RIP_HIT_SPEED (m/s; over
+## the clingers' shove, so they don't drop it by his being jostled into
+## them); under RIP_CREW left they let it down,
+## and none lifts it again for RIP_REST s. E by it takes it back.
+const RIP_EVERY := 7.0
+const RIP_JITTER := 0.3
+const RIP_MORE := 0.1
+const RIP_OUT := 1.0
+const RIP_HIT_SPEED := 2.0
+const RIP_POP := 0.4
+const RIP_CREW := 2
+const RIP_PACE := 0.55
+const RIP_REST := 1.5
+## A ripped piece's crew and pace go by its kg as the whole bag's: one per
+## BAG_KG_EACH kg (RIP_CREW at least, BAG_CREW_MOST at most), and the pace
+## runs from RIP_PACE (none) to RIP_PACE_HEAVY at RIP_HEAVY kg; they let it
+## down under BAG_KEEP of the crew (RIP_CREW at least). So a 12 kg piece
+## takes four, inches along, and one knock lets it down.
+const RIP_PACE_HEAVY := 0.22
+const RIP_HEAVY := 12.0
+## The idle bag (the bag study): set down with something in it, and him no
+## nearer than BAG_LEFT (m, across, past its radius), for BAG_IDLE s, it
+## calls a crew: one per BAG_KG_EACH kg (rounded up; BAG_CREW_LEAST to
+## BAG_CREW_MOST). Once BAG_KEEP of that crew (rounded up) are within
+## HAUL_REACH they lift it over their heads and haul it to the nearest
+## burrow; free guys within reach join on the way, up to the full crew. The
+## full crew's pace runs from BAG_PACE.x (empty) to BAG_PACE.y (at the
+## bag's cap); short-handed it's that times crew over full crew, no less
+## than BAG_PACE_LEAST: a few strain and inch along, more speed it up. He
+## knocks haulers off past RIP_HIT_SPEED; under BAG_KEEP of the full crew
+## left they let it down, and none lifts it for BAG_REST s. F by it takes
+## it from them. At the burrow (HOME_NEAR) it's buried there.
+const BAG_IDLE := 3.0
+const BAG_LEFT := 2.5
+const BAG_KG_EACH := 3.0
+const BAG_CREW_LEAST := 2
+const BAG_CREW_MOST := 8
+const BAG_PACE := Vector2(0.32,0.14)
+const BAG_PACE_LEAST := 0.08
+const BAG_KEEP := 0.6
+const BAG_REST := 2.0
+
+## The burial: a bag or a piece taken down into a burrow is buried there,
+## and the burrow is a dig spot (scripts/brood/burrow_digs.gd: a bite within
+## DIG_REACH m of its mouth). GUARDS of the crew that brought a piece
+## (GUARDS_BAG for the bag) settle on it, GUARD_RING out round the mouth.
+## He comes within GUARD_NEAR (m, across) of the mouth and they go for him
+## and cling (a jump shakes them off, dazed GUARD_DAZE s: long enough to
+## dig, landing and all); while any cling the spade
+## won't dig, and a dig under way is cut short. Past GUARD_LEAVE they go
+## back to it. Dug out (the dig's second bite), the pile comes up: the bag
+## hops out PILE_HOP m/s, the pieces land PILE_OUT m round the mouth, and
+## the guards are guards no more.
+const GUARDS := 1
+const GUARDS_BAG := 2
+const GUARD_RING := 0.9
+const GUARD_NEAR := 3.0
+const GUARD_LEAVE := 5.0
+const GUARD_DAZE := 2.6
+## The bag buried, the rest trail him TRAIL_RING m off (no clinging).
+const TRAIL_RING := 2.6
+## Going home (the bag study): with nothing to take (no loot on him, no
+## loose bag with loot in it, no ripped piece about) and none on him for
+## HOME_AFTER s, the free ones walk to the nearest burrow and go down into
+## it (SINK_TIME s, the rise played back); the guards follow after
+## GUARD_HOME_AFTER s of it, unless he's at their burrow. Within HOME_DOWN
+## (m, across) of the mouth they go down. A piece bagged again wakes as
+## many as went home.
+const HOME_AFTER := 6.0
+const GUARD_HOME_AFTER := 20.0
+const SINK_TIME := 1.1
+const HOME_DOWN := 1.3
+const DIG_REACH := 1.5
+const PILE_OUT := 1.1
+const PILE_HOP := 2.5
+const PILE_POP := 0.45
+
 ## Grab and shove: a guy within GRAB_REACH (m, across; and no more than
 ## GRAB_RISE of his own height above or below the feet) of whoever holds a
 ## treasure clings on, up to GRAB_SLOTS at once (the rest crowd round him

@@ -21,6 +21,12 @@ extends RefCounted
 
 const K = preload("res://scripts/brood/brood_knobs.gd")
 
+## Routes over floors and rope bridges (scripts/brood/bridge_routes.gd),
+## set by a study that has them: `way(guy, goal)` the next spot toward the
+## goal, `keep(guy)` holds him on a deck. null (the default): straight at
+## the goal, as before.
+static var route: Object = null
+
 var node: Node3D = null
 var state := "walk"
 ## Feet on the ground ("walk", "fall"); the body's middle on a face.
@@ -64,6 +70,10 @@ var _w_t := 0.0
 var _w_at := Vector3.ZERO
 var _w_lip := 0.0
 var _w_hold := 0.0
+## Waking out of a burrow (rise_at): up out of the floor, not over a lip.
+var _w_burrow := false
+## Going home (sink_at): where he stood when he started down.
+var _s_from := Vector3.ZERO
 ## Clinging: his slot on the wanderer (-1 none) and, shaken off, the time
 ## left before he grabs again.
 var slot := -1
@@ -118,6 +128,18 @@ func wake_at(face_at: Vector3, n: Vector3, lip_y: float, wait: float, hold: floa
 	node.visible = false
 	_place_node(1.0)
 
+## Wakes him in a burrow whose floor (its mouth's middle) is at `floor_at`:
+## hidden `wait` s, then he comes up out of it (head, shoulders, a heave,
+## WAKE_RISE s), looks round `hold` s and walks off it. `face_n` is up, so
+## he stands upright the whole way.
+func rise_at(floor_at: Vector3, wait: float, hold: float) -> void:
+	wake_at(floor_at,Vector3.UP,floor_at.y,wait,hold)
+	_w_at = floor_at
+	_w_burrow = true
+	mid = _w_mid(-0.7)
+	feet = mid-Vector3.UP*tall*0.5
+	_place_node(1.0)
+
 ## His middle on the face, `under` of his height below the lip.
 func _w_mid(under: float) -> Vector3:
 	var at := _w_at
@@ -131,6 +153,9 @@ func _wake(dt: float) -> void:
 	node.visible = true
 	_w_t += dt
 	var u := clampf(_w_t/K.WAKE_RISE,0.0,1.0)
+	if _w_burrow:
+		_rise(u,dt)
+		return
 	# Fingers first (to just under the lip, the arms stretched up over it),
 	# a breath, then the head up over it.
 	var under := -1.0
@@ -144,6 +169,54 @@ func _wake(dt: float) -> void:
 		climb_dir = 1.0
 		_descending = false
 		climbed = 0.0
+
+## The burrow's rise at `u` (0..1): his head pokes up, a breath, then he
+## heaves up and stands on the floor; after the hold he walks.
+func _rise(u: float, dt: float) -> void:
+	var under := 0.5
+	if u < 0.4: under = lerpf(-0.7,-0.1,smoothstep(0.0,0.4,u))
+	elif u < 0.55: under = -0.1
+	else: under = lerpf(-0.1,0.5,smoothstep(0.55,1.0,u))
+	mid = _w_mid(under)
+	feet = mid-Vector3.UP*tall*0.5
+	_swing(0.0 if u < 0.55 else dt*4.0,dt)
+	if _w_t >= K.WAKE_RISE+_w_hold:
+		_w_burrow = false
+		feet = Vector3(_w_at.x,_w_lip,_w_at.z)
+		start_y = feet.y
+		state = "walk"
+
+## Going home (the rise played back): he steps onto the burrow's mouth at
+## `floor_at`, looks round, hops and drops down into it, arms up (SINK_TIME
+## s), then "home": hidden, for the host to put away.
+func sink_at(floor_at: Vector3) -> void:
+	state = "sink"
+	_w_at = floor_at
+	_w_lip = floor_at.y
+	_w_t = 0.0
+	_s_from = feet
+	face_n = Vector3.UP
+	hauling = false
+	pace = 1.0
+	slot = -1
+	var to := _flat(floor_at-feet)
+	if to.length() > 0.05: heading = to.normalized()
+
+func _sink(dt: float) -> void:
+	_w_t += dt
+	var u := clampf(_w_t/K.SINK_TIME,0.0,1.0)
+	var over := Vector3(_w_at.x,_s_from.y,_w_at.z)
+	var flat := _s_from.lerp(over,smoothstep(0.0,0.3,u))
+	# Stand (0.5 under the lip: on it), a little hop at 0.55, then down.
+	var under := 0.5
+	if u >= 0.5 and u < 0.62: under = 0.5+0.25*sin(PI*(u-0.5)/0.12)
+	elif u >= 0.62: under = lerpf(0.5,-0.85,smoothstep(0.62,1.0,u))
+	mid = Vector3(flat.x,lerpf(_s_from.y,_w_lip,smoothstep(0.0,0.3,u))+(under-0.5)*tall+tall*0.5,flat.z)
+	feet = mid-Vector3.UP*tall*0.5
+	_swing(dt*4.0 if u < 0.3 else 0.0,dt)
+	if u >= 1.0:
+		state = "home"
+		node.visible = false
 
 # --- Rays ----------------------------------------------------------------------------
 
@@ -160,7 +233,12 @@ func step(space: PhysicsDirectSpaceState3D, goal: Vector3, dt: float) -> void:
 	daze = maxf(daze-dt,0.0)
 	match state:
 		"wake": _wake(dt)
-		"walk": _walk(space,goal,dt)
+		"sink": _sink(dt)
+		"home": return
+		"walk":
+			if route != null: goal = route.way(self,goal)
+			_walk(space,goal,dt)
+			if route != null and state == "walk": route.keep(self)
 		"climb": _climb(space,goal,dt)
 		"mantle": _mantle(dt)
 		"fall": _fall(space,dt)
@@ -673,6 +751,12 @@ func _swing(moved: float, dt: float) -> void:
 		"mantle":
 			var u := clampf(_m_t,0.0,1.0)
 			want = {"al":2.6-1.6*u,"ar":2.6-1.6*u,"ll":1.2*sin(u*PI),"lr":1.0*sin(u*PI),"pitch":0.7*sin(u*PI),"head":-0.3,"bob":0.0}
+		"sink":
+			# Looking round on the mouth, then arms up as he drops in.
+			var u := clampf(_w_t/K.SINK_TIME,0.0,1.0)
+			if u > 0.3 and u < 0.55: look = 0.6*sin((u-0.3)*25.0+side)
+			if u >= 0.55: want = {"al":3.0,"ar":2.9,"ll":0.5,"lr":0.3,"pitch":0.0,"head":-0.4,"bob":0.0}
+			else: want = {"al":0.0,"ar":0.0,"ll":0.0,"lr":0.0,"pitch":0.0,"head":0.0,"bob":0.0}
 		"fall":
 			want = {"al":2.2,"ar":2.0,"ll":0.6,"lr":-0.4,"pitch":-0.2,"head":0.2,"bob":0.0}
 		_:
