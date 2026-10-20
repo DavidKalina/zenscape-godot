@@ -83,3 +83,25 @@ One trunk, no lanes:
   `pilot_motor.gd` and `pad.gd` stay small and additive.
 - Pace: the user found the first rope rounds a little slow and liked them
   faster. Make the swing snappy from the start.
+
+## Task 5: tuning and the handoff (spec change)
+
+The user played rounds 1 to 4: "super fun". Keep the feel; fix only:
+
+- **Release:** the boost overshoots (lane A lands about 10 m past the far
+  edge). Soften it so a good release lands on the far deck, not far past.
+- **The platform:** widen the landing window on lane B's platform (about
+  0.1 s now) without making it automatic.
+- **Camera:** don't stare up at his hat when he's climbed high on a short
+  rope; keep the swing and the landing in view.
+- **Hint:** the "Swinging" hint clears once he lands.
+- **Throw with a rope still on a beam:** the throw reels it in and aims in
+  one go (no separate F first).
+- **The hook line:** make what the hook wraps over a generic **hook line**
+  (a segment with its swing clearance), which beams provide. A branch, a
+  rock spur or an arch can then be made swingable later by giving it a hook
+  line, with no change to the hook or swing code. No new pieces here; just
+  the contract, used by the beams, and described in the handoff.
+- **The handoff** (`docs/design/rope-swing/handoff.md`, from the trail):
+  what's built, the controls, where to play it, what's stood in, what's
+  open (mid-air chaining is a possible later round).
