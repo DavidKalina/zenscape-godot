@@ -249,6 +249,21 @@ func _build_art() -> void:
 		by[group] += f
 	print("crag reach: %d units, %d triangles, %d debris fragments (masses %d, aqueduct rocks %d, islets %d, specks %d; %d of them cleared off the routes), built in %d ms" % [units.size(),tris,frags-cleared,by.mass,by.rock,by.islet,by.speck,cleared,Time.get_ticks_msec()-began])
 
+## The tables the bridges, pillars and ruins are built from, and the root
+## of their layout names: a place built on this one (studies/heist_level.gd)
+## answers its own.
+func place_root() -> String:
+	return "crag_reach"
+
+func bridge_list() -> Array:
+	return BRIDGES
+
+func pillar_list() -> Array:
+	return PILLARS
+
+func ruin_list() -> Array:
+	return RUINS
+
 ## Leaves out every debris fragment in a route's way (SPAN_CLEAR): its
 ## instance shrunk to nothing. Returns how many. Fixed loops: units x
 ## multimeshes x instances x spans.
@@ -281,8 +296,8 @@ var spans: Array = []
 
 func _bridges() -> void:
 	var space := get_world_3d().direct_space_state
-	for br: Array in BRIDGES:
-		var name_: String = "crag_reach/"+str(br[0])
+	for br: Array in bridge_list():
+		var name_: String = place_root()+"/"+str(br[0])
 		if Layout.deleted(name_) or not mass_tops.has(br[1]) or not mass_tops.has(br[2]): continue
 		var from: Node3D = mass_tops[br[1]]
 		var to: Node3D = mass_tops[br[2]]
@@ -318,8 +333,8 @@ var pillars: Array = []
 
 func _pillars() -> void:
 	var space := get_world_3d().direct_space_state
-	for pl: Array in PILLARS:
-		var name_: String = "crag_reach/"+str(pl[0])
+	for pl: Array in pillar_list():
+		var name_: String = place_root()+"/"+str(pl[0])
 		if Layout.deleted(name_) or not mass_tops.has(pl[1]) or not mass_tops.has(pl[2]): continue
 		var hi: Vector3 = (mass_tops[pl[1]] as Node3D).position
 		var lo: Vector3 = (mass_tops[pl[2]] as Node3D).position
@@ -420,8 +435,8 @@ func _ruins() -> void:
 	var home := plane_home()
 	var run_dir := Vector2(-sin(home.w),-cos(home.w))
 	var home2 := Vector2(home.x,home.z)
-	for r: Array in RUINS:
-		var name_: String = "crag_reach/"+str(r[0])
+	for r: Array in ruin_list():
+		var name_: String = place_root()+"/"+str(r[0])
 		var unit: Node3D = named.get(r[1])
 		if Layout.deleted(name_) or unit == null: continue
 		var off: Vector2 = r[2]
