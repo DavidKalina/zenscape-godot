@@ -754,7 +754,7 @@ const OLMEC_AGAIN := 6.0
 ## His knobs here: the whole body's hunt (as studies/olmec_field.gd's
 ## whole Olmec), relentless, and the wall catch (headless_body.gd
 ## `leap_catch`).
-const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0}
+const OLMEC_KNOBS := {"chase":1.0,"relentless":1.0,"periscope":0.0,"leap_catch":1.0,"down_to":1.0,"down_deep":8.0,"skirt_hold":1.0,"climb_clear":1.0,"edge_fan":1.0,"leg_slope":1.0,"drop_bulk":1.0,"beam":1.0}
 
 ## Seconds after the start (and after R) the Olmec comes; -1 never (no flag).
 var olmec_after := -1.0
@@ -984,6 +984,8 @@ func spawn_olmec() -> Node3D:
 	var h: Node3D = enemies.add(InhalerHead,lip,-out,{})
 	b.make_whole(h)
 	if breakables != null: b.breaker = breakables
+	# `beam`: the fallen pillars' crest lines, a way he walks end to end.
+	for pl: Array in pillars: b.beams.append([pl[1],pl[2]])
 	b.cling(lip,out,float(c.below))
 	b.body.force_update_transform()
 	# He knows you're here: over the lip, straight on the hunt.

@@ -238,6 +238,9 @@ var _waves: Array = []
 ## it), his bulk and his shockwaves break it (`met`, `wave`), and the
 ## rubble once settled is read afresh (`world_changed`).
 var breaker: Object = null
+## Olmec reach (`beam`): crest lines [a, b] he walks end to end (a study's,
+## the crag reach's fallen pillars), set after he's added.
+var beams: Array = []
 ## A stagger after he plows through something (s left): slowed, not stopped.
 var _stagger := 0.0
 const STAGGER := 0.5
@@ -412,6 +415,12 @@ func default_knobs(n: Dictionary) -> Dictionary:
 		# Olmec reach: `drop_bulk` 1, a drop off an edge is taken only if
 		# his bulk clears its arc (as `down_to`'s throws), not his feet only.
 		"drop_bulk":0,
+		# Olmec reach: `beam` 1, his `beams` (crest lines a study hands
+		# him, the crag reach's fallen pillar) are a way: a goal past a
+		# beam's far end, he heads for its near end and walks it end to end
+		# down its crest, facing along it (no edge drops, no skirts, no
+		# bulk push off it), as over a bridge.
+		"beam":0,
 	}
 
 ## Its build (m) from its knobs `k` and the walker's `unit`, as `_size` and
@@ -2662,6 +2671,13 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 	if _grab_aim != Vector3.INF and _skirt_t <= 0.0:
 		var aim := Vector2(_grab_aim.x-position.x,_grab_aim.z-position.z)
 		if aim.length() > 0.3: _heading = PilotMotor.facing_of(aim.normalized())
+	# Olmec reach (`beam`): on a beam, along it to its end on your side;
+	# a goal past one's far end, to its near end first.
+	var beam := _beam_way(goal)
+	if not beam.is_empty():
+		_skirt_t = 0.0
+		var to_b := Vector2(beam.aim.x-position.x,beam.aim.z-position.z)
+		if to_b.length() > 0.3: _heading = PilotMotor.facing_of(to_b.normalized())
 	var turn := float(knobs.turn)*float(knobs.chase_turn)
 	var off := angle_difference(facing,_heading)
 	# Olmec round 1: a big turn plants first (braked, not swung round at
@@ -2672,12 +2688,15 @@ func _pursue(delta: float, goal: Vector3, speed: float) -> void:
 		_brake(delta)
 		return
 	var fwd := _forward3()
-	var wall := _wall_along(fwd,length*0.5+float(knobs.look),true)
+	# On a beam its crest is his floor on to its end (its slope reads as
+	# an edge, its rise as a wall, to his rays).
+	var walking_beam: bool = not beam.is_empty() and bool(beam.on)
+	var wall: Dictionary = {} if walking_beam else _wall_along(fwd,length*0.5+float(knobs.look),true)
 	if not wall.is_empty():
 		_hunt_wall(wall,goal)
 		return
 	var ahead := clampf(to.length()+0.3,0.6,length*0.5+float(knobs.look))
-	if _floor(position+fwd*ahead,float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF:
+	if not walking_beam and _floor(position+fwd*ahead,float(knobs.step)*STAIR,float(knobs.step)*2.0) == -INF:
 		_hunt_edge(fwd,goal)
 		return
 	var aligned := clampf(cos(angle_difference(facing,_heading)),0.0,1.0)
@@ -2754,6 +2773,88 @@ func _hunt_edge(fwd: Vector3, goal: Vector3) -> void:
 		_skirt_t = SKIRT_FOR
 		return
 	_stuck()
+
+## `beam`: off a beam's crest line (m, flat) and over or under it (m) he is
+## still on it; how far on along it he aims (m); how near its end (m) he
+## leaves it; how far from its near end he takes it.
+const BEAM_SIDE := 1.6
+const BEAM_UP := 2.5
+const BEAM_DOWN := 1.0
+const BEAM_AIM := 4.0
+const BEAM_END := 2.5
+const BEAM_TAKE := 60.0
+
+## The beam he stands on: {a, b (its ends), t (0 to 1 along), len (flat)},
+## {} none.
+func _on_beam() -> Dictionary:
+	if float(knobs.beam) < 0.5: return {}
+	for be: Array in beams:
+		var a: Vector3 = be[0]
+		var b: Vector3 = be[1]
+		var ab := Vector2(b.x-a.x,b.z-a.z)
+		var l := ab.length()
+		if l < 1.0: continue
+		var t := Vector2(position.x-a.x,position.z-a.z).dot(ab)/(l*l)
+		if t < -BEAM_END/l or t > 1.0+BEAM_END/l: continue
+		var tc := clampf(t,0.0,1.0)
+		var p := a.lerp(b,tc)
+		if Vector2(position.x-p.x,position.z-p.z).length() > BEAM_SIDE: continue
+		if position.y > p.y+BEAM_UP or position.y < p.y-BEAM_DOWN: continue
+		return {"a":a,"b":b,"t":t,"len":l}
+	return {}
+
+## The way a beam gives to `goal`: {aim (where he heads), on (walking it)},
+## {} none (off one with none to take, or at its end on your side).
+func _beam_way(goal: Vector3) -> Dictionary:
+	if float(knobs.beam) < 0.5 or beams.is_empty(): return {}
+	var on := _on_beam()
+	if not on.is_empty():
+		var a: Vector3 = on.a
+		var b: Vector3 = on.b
+		var l: float = on.len
+		var ab := Vector2(b.x-a.x,b.z-a.z)
+		var tg := Vector2(goal.x-a.x,goal.z-a.z).dot(ab)/(l*l)
+		var t: float = on.t
+		# Your side of him along it: on to that end, off it near there (or
+		# off it beside you, under it).
+		var dir := 1.0 if tg > t else -1.0
+		var stop := clampf(tg,0.0,1.0)
+		if absf(stop-t)*l < BEAM_END: return {}
+		var ta := clampf(t+dir*BEAM_AIM/l,0.0,1.0)
+		if dir > 0.0: ta = minf(ta,stop)
+		else: ta = maxf(ta,stop)
+		# Past its end, the aim runs on off it (onto the turf it lies on).
+		var aim := a.lerp(b,ta)
+		if (dir > 0.0 and ta >= 1.0) or (dir < 0.0 and ta <= 0.0):
+			aim += Vector3(ab.x,0.0,ab.y).normalized()*dir*BEAM_AIM
+		return {"aim":aim,"on":true}
+	# Off one: a beam whose far end lies your way, its near end at his
+	# level and not far, the way over it not much longer than straight.
+	var best := {}
+	var best_d := INF
+	var straight := Vector2(goal.x-position.x,goal.z-position.z).length()
+	for be: Array in beams:
+		for k in 2:
+			var near: Vector3 = be[k]
+			var far: Vector3 = be[1-k]
+			if absf(near.y-position.y) > BEAM_UP*2.0: continue
+			var dn := Vector2(near.x-position.x,near.z-position.z).length()
+			if dn > BEAM_TAKE: continue
+			var nf := Vector2(far.x-near.x,far.z-near.z)
+			var l := nf.length()
+			if l < 1.0: continue
+			var tg := Vector2(goal.x-near.x,goal.z-near.z).dot(nf)/(l*l)
+			if tg < 0.85: continue
+			var via := dn+l+Vector2(goal.x-far.x,goal.z-far.z).length()
+			if via > straight*1.3+15.0 or via >= best_d: continue
+			best_d = via
+			# Onto it along its line: from behind its near end while off its line.
+			var into := Vector3(nf.x,0.0,nf.y)/l
+			var back := near-into*BEAM_END*1.5
+			var side := Vector2(position.x-near.x,position.z-near.z)
+			var off_line := absf(side.dot(Vector2(-nf.y,nf.x)/l))
+			best = {"aim":back if off_line > BEAM_SIDE and dn > BEAM_END else near+into*BEAM_AIM,"on":false}
+	return best
 
 ## `edge_fan`: ways tried off his facing at an edge (rad).
 const EDGE_FAN := [0.35,-0.35,0.7,-0.7]
@@ -3752,6 +3853,11 @@ func _bulk_sweep(a: Vector3, b: Vector3) -> float:
 func _clear_bulk(delta: float, floored := true) -> void:
 	var space: PhysicsDirectSpaceState3D = field.study.get_world_3d().direct_space_state
 	var out := Vector3.ZERO
+	# `beam`: walking a beam, its round flanks don't push him off its crest
+	# (his heading holds him on the crest line): pushed along it only (off
+	# the rim it lies from, onto it).
+	var beam_on := _on_beam() if floored else {}
+	var on_beam := not beam_on.is_empty()
 	for i in 4:
 		var pts: Array[Vector3] = space.collide_shape(_bulk_at(position+out),8)
 		if pts.is_empty(): break
@@ -3762,10 +3868,13 @@ func _clear_bulk(delta: float, floored := true) -> void:
 			if d.length() > best.length(): best = d
 		if best.length() < 0.01: break
 		out += best+best.normalized()*0.02
+	if on_beam:
+		var ax := Vector3((beam_on.b as Vector3).x-(beam_on.a as Vector3).x,0.0,(beam_on.b as Vector3).z-(beam_on.a as Vector3).z).normalized()
+		out = ax*out.dot(ax)
 	# Its legs: a block it walks beside (taller than LEG_BLOCK, under its
 	# bulk's bottom) eases it off sideways only (one met head on is a
 	# stair's step it walks up, or a wall its rays meet).
-	if floored:
+	if floored and not on_beam:
 		var right := _right3()
 		var q := _bulk_at(position+out)
 		var low := 0.35
