@@ -21,6 +21,9 @@ const GROUP := &"hook_line"
 @export var a := Vector3.ZERO
 @export var b := Vector3.ZERO
 @export var clearance := 0.15
+## A ring: the hook snaps to the line anywhere along it as usual, but always
+## hooks its middle (so the swing from it runs the same whatever the aim).
+@export var ring := false
 var piece := ""
 
 func _enter_tree() -> void:
@@ -29,7 +32,7 @@ func _enter_tree() -> void:
 ## The line in world space: {a, b, half (the clearance, scaled), piece}.
 func line() -> Dictionary:
 	var t := global_transform
-	return {"a":t*a,"b":t*b,"half":clearance*t.basis.get_scale().y,"piece":piece}
+	return {"a":t*a,"b":t*b,"half":clearance*t.basis.get_scale().y,"piece":piece,"ring":ring}
 
 ## Every hook line in `tree` that's showing, in world space.
 static func all_in(tree: SceneTree) -> Array:

@@ -206,6 +206,14 @@ const HEIST_POSTS := [
 ## far its footing reaches under the line), what it's for]. swing_01 is the
 ## way in's (it was the gantry beam beam_01); the rest are first guesses
 ## where the way out will run (step 6 fits them to the land it builds).
+## The chain's arches are rings (the optional 8th field: SwingPoint.build's
+## `ring`): a throw anywhere along one hooks its middle, so a throw on the
+## move, or one his suck's wind drags along the arch, swings the same way
+## every time. Hooked 1.3 m off the middle, swing_05 carried you past
+## stack_1; hooked 1 m off toward stack_2, swing_06 struck its rim face or
+## set you on its north-east tip. From the middle each swing heads for the
+## stack's middle.
+const HEIST_RING := true
 const HEIST_SWINGS := [
 	["swing_01","arch",Vector3(38.5,27.5,-37.2),Vector2(0.467,0.884),10.0,24.0,"a rock arch over the gap terrace_n -> ledge (the way in)"],
 	["swing_02","arm",Vector3(171.0,41.3,49.0),Vector2(-0.707,-0.707),5.5,6.0,"an arm out of vault_spire over the gap off vault_s's south-west corner: swing round the corner onto vault_sw"],
@@ -222,8 +230,8 @@ const HEIST_SWINGS := [
 	# The chain (the way home): two rock rings out of the clouds, one over
 	# each gap ford -> stack_1 -> stack_2, each line 7 m over the far crown
 	# across the way. Each swing lands on a stack before the next throw.
-	["swing_05","arch",Vector3(64.5,28.6,45.0),Vector2(0.0,1.0),9.0,22.0,"a rock arch over the gap ford -> stack_1: the chain's first"],
-	["swing_06","arch",Vector3(48.0,28.2,36.6),Vector2(0.613,-0.79),8.0,18.0,"a rock arch over the gap stack_1 -> stack_2: the chain's second"],
+	["swing_05","arch",Vector3(64.5,28.6,45.0),Vector2(0.0,1.0),9.0,22.0,"a rock arch over the gap ford -> stack_1: the chain's first",HEIST_RING],
+	["swing_06","arch",Vector3(48.0,28.2,36.6),Vector2(0.613,-0.79),8.0,18.0,"a rock arch over the gap stack_1 -> stack_2: the chain's second",HEIST_RING],
 ]
 ## The way out of the court, built for the bag: a ramp of stone up from the
 ## court floor along vault_s's north foot to a landing, then three ledges
@@ -480,7 +488,7 @@ func _build_swings() -> void:
 		var id := str(row[0])
 		var called := "heist/%s" % id
 		if Layout.deleted(called): continue
-		var body := SwingPoint.build(str(row[1]),id,float(row[4]),float(row[5]))
+		var body := SwingPoint.build(str(row[1]),id,float(row[4]),float(row[5]),bool(row[7]) if row.size() > 7 else false)
 		if body == null: continue
 		var coded := SwingPoint.frame(row[2],row[3])
 		body.transform = Layout.xform(called,coded)

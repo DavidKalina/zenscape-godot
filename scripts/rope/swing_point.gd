@@ -98,8 +98,9 @@ static func _post(body: Node3D, from: Vector3, to: Vector3, r_from: float, r_to:
 	body.add_child(col)
 
 ## The hook line along the top from x0 to x1, its clearance half the bar.
-static func _line(body: Node3D, id: String, x0: float, x1: float, bar: Vector2) -> Node3D:
+static func _line(body: Node3D, id: String, x0: float, x1: float, bar: Vector2, ring := false) -> Node3D:
 	var line: Node3D = HookLine.new()
+	line.ring = ring
 	line.name = "HookLine"
 	line.a = Vector3(x0,0.0,0.0)
 	line.b = Vector3(x1,0.0,0.0)
@@ -109,8 +110,10 @@ static func _line(body: Node3D, id: String, x0: float, x1: float, bar: Vector2) 
 	return line
 
 ## A swing point of `kind` named `id`: `long` m of line, its footing `drop`
-## m under the line. Null for an unknown kind.
-static func build(kind: String, id: String, long: float, drop: float) -> StaticBody3D:
+## m under the line. `ring` (opt-in): a throw anywhere along it hooks the
+## line's middle (HookLine.ring), so the swing runs the same whatever the
+## aim. Null for an unknown kind.
+static func build(kind: String, id: String, long: float, drop: float, ring := false) -> StaticBody3D:
 	if not kind in KINDS: return null
 	_mats()
 	var body := StaticBody3D.new()
@@ -156,7 +159,7 @@ static func build(kind: String, id: String, long: float, drop: float) -> StaticB
 			_box(body,Vector3(1.3,drop-bar.y,1.3),Vector3(-h+0.4,-bar.y-(drop-bar.y)*0.5,0.0),_cut)
 			_box(body,Vector3(1.7,0.4,1.7),Vector3(-h+0.4,-bar.y-0.2,0.0),_cut)
 			_box(body,Vector3(0.8,bar.y*0.8,bar.x*0.9),Vector3(h+0.25,-bar.y*0.75,0.1),_cut,Basis(Vector3.BACK,-0.5))
-	_line(body,id,-h+float(ROOT_IN[kind]),h,bar)
+	_line(body,id,-h+float(ROOT_IN[kind]),h,bar,ring)
 	return body
 
 ## The body's transform for a point whose line's top middle is `top`,

@@ -693,6 +693,11 @@ func _beam_target(over: Vector3) -> Dictionary:
 		on.y = a.y+(e.y-a.y)*k/l
 		if on.y-feet.y < ABOVE*s: continue
 		var dd := Vector2(on.x-over.x,on.z-over.z).length()
+		if b.get("ring",false):
+			# A ring: snapped anywhere along the line, it hooks the middle.
+			k = l*0.5
+			on = a+Vector3(u.x,0.0,u.y)*k
+			on.y = (a.y+e.y)*0.5
 		if dd >= best_d: continue
 		best_d = dd
 		# The near side: toward him, across the line.
