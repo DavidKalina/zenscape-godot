@@ -133,3 +133,19 @@ task** (before the vault), so the way out is built round it.
   points now where the way out will run).
 - **Check:** swinging with the bag worn (rope in hand). If a heavy bag
   should change the swing, or the switch gets in the way, note it.
+
+## Spec change: the Olmec from main (after task 7's first half)
+
+The user merged new Olmec work to main, now merged into this branch:
+`docs/design/crag-reach/olmec-reach-handoff.md` (steps 9-15: walks the
+fallen pillar, never stuck, suck_in, `down_show`: a staged drop that lands
+where your camera sees him) and `docs/design/crag-reach/olmec-run-handoff.md`
+(`run_up`: he sets off at a walk and builds into a run, 5.52 m/s top vs
+your 4.8; turns cost him the build). The heist's Olmec inherits both via
+OLMEC_KNOBS. Use them for the narrow escape: pace through `run_up` /
+`run_top` / `run_turn_cost` (keep moving and turning = just ahead, stall =
+caught), and `down_show`'s `_lands_seen` to put the staged drop in camera
+view. Re-check task 7's first half (the pillar-foot drop) on the merged
+Olmec before building on it. The greed run's under-stuck timer in
+crag_reach.gd was renamed `_below_t`/`_below_best` to clear main's
+`_stuck_t`.
