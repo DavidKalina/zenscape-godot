@@ -151,24 +151,25 @@ var _heavy_flag := -1.0
 static var _thud_take: AudioStreamWAV = null
 
 ## Stands the treasures in `spec` ([id, kind, weight, foot (world), yaw deg])
-## for the kit isle `host`, named `<id_scene>/<id>`.
+## for the kit isle `host`, named `<id_scene>/<id>` (an id holding a "/" is
+## its own full name: `big_isle/treasure_01`).
 func setup(host: Node3D, id_scene: String, spec: Array) -> void:
 	study = host
 	scene_id = id_scene
 	name = "Treasures"
 	process_priority = 100
 	for row: Array in spec:
-		var called := "%s/%s" % [scene_id,str(row[0])]
+		var called := str(row[0]) if "/" in str(row[0]) else "%s/%s" % [scene_id,str(row[0])]
 		if LayoutOverrides.deleted(called): continue
 		var spot := Node3D.new()
-		spot.name = "Spot_"+str(row[0])
+		spot.name = "Spot_"+str(row[0]).replace("/","_")
 		var coded := Transform3D(Basis(Vector3.UP,deg_to_rad(float(row[4]))),row[3])
 		spot.transform = LayoutOverrides.xform(called,coded)
 		add_child(spot)
 		LayoutOverrides.track(called,spot,"token",coded)
 		var made := Models.build(str(row[1]))
 		var node := Node3D.new()
-		node.name = "Treasure_"+str(row[0])
+		node.name = "Treasure_"+str(row[0]).replace("/","_")
 		node.add_child(made.node as Node3D)
 		spot.add_child(node)
 		treasures.append({"id":str(row[0]),"kind":str(row[1]),"weight":str(row[2]),"spot":spot,"node":node,"measures":made,"body":null,"still":0.0,"lost":false,"slot":-1,"strapped":0.0,"banked":false})
@@ -206,7 +207,7 @@ func _home(t: Dictionary) -> void:
 		t.banked = false
 		var made := Models.build(str(t.kind))
 		var fresh := Node3D.new()
-		fresh.name = "Treasure_"+str(t.id)
+		fresh.name = "Treasure_"+str(t.id).replace("/","_")
 		fresh.add_child(made.node as Node3D)
 		(t.spot as Node3D).add_child(fresh)
 		t.node = fresh
@@ -411,7 +412,7 @@ func _loosen(t: Dictionary, mid: Transform3D, v: Vector3, spin: Vector3) -> void
 	var h: float = t.measures.height
 	var r: float = t.measures.radius
 	var body := RigidBody3D.new()
-	body.name = "Loose_"+str(t.id)
+	body.name = "Loose_"+str(t.id).replace("/","_")
 	body.collision_layer = TREASURE_LAYER
 	body.collision_mask = SOLID_MASK
 	body.mass = float(w.mass)

@@ -8,7 +8,8 @@ extends "res://scripts/plane_arc/plane_arc.gd"
 ## only, and `lay_out` again takes every part off the plane and lays them
 ## afresh (the cluster's re-deal).
 ##
-## Flags: --plane-fixed (or --fly, or the cluster's --home) starts it repaired; --parts-carried
+## Flags: --plane-fixed (or --fly) starts it repaired, as does the cluster
+## unless --wreck-start (its `parts_on`); --parts-carried
 ## starts carrying all six; --part-at=<id> starts the pilot by that part.
 
 ## The parts' pop as each is taken.
@@ -17,7 +18,7 @@ const TAKEN_HERE := {"wheel":"The wheel","cowl":"The cowl","fin":"The tail fin",
 func setup(scene: Node3D) -> void:
 	host = scene
 	var args := LaunchArgs.user_args()
-	fixed = args.has("--plane-fixed") or args.has("--fly") or args.has("--home")
+	fixed = args.has("--plane-fixed") or args.has("--fly") or host.get("parts_on") == false
 	for arg: String in args:
 		if arg.begins_with("--fly-at="): fixed = true
 		elif arg.begins_with("--part-at="): _part_at = arg.get_slice("=",1)

@@ -23,9 +23,19 @@ extends "res://studies/kit_isle.gd"
 ##   Esc          pause (Resume, Back to the plane, New deal, ...)
 ##   ./run-wreck-cluster.command [--seed=N]
 ##   godot --path . res://studies/wreck_cluster.tscn -- --no-title [--seed=N]
-## --home starts on the home isle west of the stretch (studies/
-## wreck_cluster_home.gd), on foot beside the plane, which works (as with
-## --plane-fixed); it needs the stretch, so --no-stretch is ignored with it.
+## It starts on the home isle west of the stretch (studies/
+## wreck_cluster_home.gd), on foot beside the plane, which works: no parts
+## are dealt, so the caches and dig spots hold none. --wreck-start starts
+## beside the broken plane instead, its six parts dealt to be found and
+## fitted (--home is the default and kept as a no-op). The home start
+## needs the stretch, so --no-stretch is ignored with it.
+## The big isle (studies/wreck_cluster_big_isle.gd), a greybox mother isle
+## crowned by a ruined rise, with satellites and a stepping chain of islets,
+## south-east of the home strip and south of the stretch, is a destination
+## of its own: three landing turfs (low_islet, mother, crown) and five
+## treasures (`big_isle/treasure_NN`); its islets are world-view islands
+## `big_isle/<mass>`, its pieces `big_isle/<piece>`. --no-big-isle leaves
+## it out.
 ## --seed=N repeats a deal (the first; N re-deals from a fresh seed, printed
 ## and shown). --no-rune-knight leaves the knight out, --no-brood the
 ## stone brood. --plane-fixed starts
@@ -64,6 +74,7 @@ const Dig = preload("res://scripts/dig/dig.gd")
 const Home = preload("res://studies/wreck_cluster_home.gd")
 const VaultHost = preload("res://scripts/home/vault_host.gd")
 const DropPass = preload("res://scripts/home/drop_pass.gd")
+const BigIsle = preload("res://studies/wreck_cluster_big_isle.gd")
 
 ## The re-deal's key (free on foot and in the plane: scripts/pad.gd,
 ## scripts/kit_isle/dev_keys.gd).
@@ -107,15 +118,20 @@ var dig: Node3D = null
 var brood: Node3D = null
 var _rng := RandomNumberGenerator.new()
 var _ledger_was := []
-## --home: the start on the home isle (studies/wreck_cluster_home.gd).
-var home_on := false
-## --home: the vault's banking (scripts/home/vault_host.gd).
+## The start on the home isle (studies/wreck_cluster_home.gd); off with
+## --wreck-start.
+var home_on := true
+## Whether the plane's six parts are dealt over the cluster (--wreck-start);
+## without, the plane is whole and N deals only the treasures and digs.
+var parts_on := false
+## The home start's vault banking (scripts/home/vault_host.gd).
 var vault: Node3D = null
 ## --home: the drop pass over the home isle's field (scripts/home/drop_pass.gd).
 var drop_pass: Node3D = null
 
 func _ready() -> void:
-	home_on = "--home" in LaunchArgs.user_args()
+	parts_on = "--wreck-start" in LaunchArgs.user_args()
+	home_on = not parts_on
 	_keep_ledger_in_memory()
 	_no_lode = true
 	_rng.randomize()
@@ -153,7 +169,7 @@ func _keep_ledger_in_memory() -> void:
 ## The pause's New deal row, under Back to the plane.
 func _add_deal_row() -> void:
 	var menu: Node = pause.menu
-	var row: Control = menu.add_row("New deal (parts re-dealt)",func() -> void:
+	var row: Control = menu.add_row("New deal (parts re-dealt)" if parts_on else "New deal",func() -> void:
 		pause.resume()
 		new_deal(),"N")
 	var at: int = menu._sheet.get_children().find(menu.plane_row)+1
@@ -278,6 +294,7 @@ func _build_art() -> void:
 		WorldIslands.add("island/"+str(spec[0]),land,float(spec[6]))
 		if not "--no-turf-lips" in LaunchArgs.user_args(): TurfLips.dress(land,hash(land.name))
 	_build_stretch_lands()
+	_build_big_isle()
 	if not LayoutOverrides.islands().is_empty(): isle_ready.connect(_place_saved_islands,CONNECT_ONE_SHOT)
 	for p: Array in Art.pieces(): _place_piece(str(p[0]),RuinKit.piece(str(p[1]),int(p[2]),float(p[3])),p[4],float(p[5]))
 	for t: Array in Art.tower(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
@@ -285,10 +302,12 @@ func _build_art() -> void:
 	for t: Array in Art.causeway_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	for t: Array in Art.flank_s_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	for t: Array in Art.flank_n_built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
-	if _stretch_from >= 0:
+	if not _stretch_lands.is_empty():
 		for t: Array in Stretch.built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]))
 	if home_on:
 		for t: Array in Home.built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]),"home/")
+	if big_isle_on:
+		for t: Array in BigIsle.built(): _place_piece(str(t[0]),t[1],t[2],float(t[3]),"big_isle/")
 	_build_bridge()
 	_build_foot_pieces()
 	_build_spots()
@@ -326,6 +345,31 @@ func _build_stretch_lands() -> void:
 		_stretch_turf.append_array(KitLand.turf_bodies(land))
 		WorldIslands.add("island/"+str(spec[0]),land,float(spec[6]))
 		if not "--no-turf-lips" in LaunchArgs.user_args(): TurfLips.dress(land,hash(land.name))
+
+## The big isle (studies/wreck_cluster_big_isle.gd; --no-big-isle leaves
+## it out): its masses as the cluster's lands, world-view islands
+## `big_isle/<mass>`, after the stretch's (outside the isle's circle and
+## the cluster's flora: greybox turf, nothing grown on it).
+var big_isle_on := true
+func _build_big_isle() -> void:
+	big_isle_on = not "--no-big-isle" in LaunchArgs.user_args()
+	if not big_isle_on: return
+	if _stretch_from < 0: _stretch_from = _outlines.size()
+	for spec: Array in BigIsle.lands():
+		var land := BigIsle.build_land(spec)
+		art.add_child(land)
+		lands["big_isle/"+str(spec[0])] = land
+		add_turf(land)
+		_stretch_turf.append_array(KitLand.turf_bodies(land))
+		WorldIslands.add("big_isle/"+str(spec[0]),land,float(spec[6]))
+	# The rope bridges up its stepping chain.
+	var links: Array = BigIsle.bridges()
+	for i in links.size():
+		var a: Vector3 = links[i][0]
+		var b: Vector3 = links[i][1]
+		var bridge: MeshInstance3D = Footbridge.live(Footbridge.build_mesh(a,b,761+i),a,b,761+i)
+		bridge.name = "BigIsleBridge%d" % (i+1)
+		art.add_child(bridge)
 
 func isle_circle() -> Vector3:
 	if _stretch_from < 0 or _stretch_from >= _outlines.size(): return super.isle_circle()
@@ -475,6 +519,7 @@ func settle_spot(i: int) -> Vector3:
 ## spots (which hold nothing lying either), then the rest onto the spots
 ## that settle.
 func deal(seed_value: int, avoid: Array = []) -> Dictionary:
+	if not parts_on: return {}
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
 	var picks: Array = []
@@ -580,9 +625,10 @@ func _lay_deal(all_carried := false) -> void:
 		if dealt.has(id): names.append("%s %s%s" % [id,Art.spot_name(int(dealt[id])).get_file(),(" (buried)" if int(dealt[id]) in Art.BURIED else " (cache)") if int(dealt[id]) in hidden else ""])
 	print("wreck cluster: deal %d (seed %d): %s" % [deals,deal_seed,", ".join(names)])
 
-## N: a fresh deal. The plane back on its spot, broken, every part taken off
-## it and dealt to fresh spots from a new seed; he stands at the start; the
-## knight reforms on his causeway.
+## N: a fresh deal from a new seed: the treasures and digs dealt again, the
+## plane back on its spot (with --wreck-start broken, every part taken off
+## it and dealt to fresh spots); he stands at the start; the knight reforms
+## on his causeway.
 func new_deal(seed_value := -1) -> void:
 	if not walk_ready: return
 	if flying: leave_plane(start)
@@ -616,7 +662,9 @@ func _add_life() -> void:
 	plane_arc.start_by_flag()
 	carry = CarryHost.new()
 	add_child(carry)
-	carry.setup(self,"wreck_cluster",Treasures.spots())
+	var rows: Array = Treasures.spots()
+	if big_isle_on: rows.append_array(BigIsle.spots())
+	carry.setup(self,"wreck_cluster",rows)
 	carry.deal()
 	dig = Dig.new()
 	add_child(dig)
@@ -686,7 +734,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	super._unhandled_input(event)
 
 func _foot_text() -> String:
-	return super._foot_text()+"\nN  re-deal the parts (seed %d)" % deal_seed
+	return super._foot_text()+("\nN  re-deal the parts (seed %d)" if parts_on else "\nN  new deal (seed %d)") % deal_seed
 
 ## The pause's Back to the plane (scripts/kit_isle/pause_host.gd).
 func back_to_plane() -> void:
