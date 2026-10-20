@@ -105,3 +105,18 @@ The user played rounds 1 to 4: "super fun". Keep the feel; fix only:
 - **The handoff** (`docs/design/rope-swing/handoff.md`, from the trail):
   what's built, the controls, where to play it, what's stood in, what's
   open (mid-air chaining is a possible later round).
+
+## Task 6: the camera pulls out (spec change)
+
+The user played the final build: "solid". One more change: pull the
+camera **out** so he sees where he's going:
+
+- **Aiming and throwing the hook** (at a beam or a lip): wider and further
+  back, so the target, the arc and the landing past it are in view.
+- **Swinging and in the air after letting go:** further out, so the far
+  deck or platform he's launching toward is in frame.
+- **Climbing the rope** (in both this study and `studies/rope_study.tscn`):
+  further out and back, so the lip above and the way up read.
+
+Ease in and out (no snaps), give the mouse and stick control back as now,
+and settle back to the normal camera on the ground. Update the handoff.
