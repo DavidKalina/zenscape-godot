@@ -58,6 +58,23 @@ const HEIST_LOOT := [
 	["loot_03","gem",0.5,Vector3(96.0,31.5,-40.0),0.0,"the gate, over the face"],
 	["loot_04","idol",3.0,Vector3(150.0,27.5,-36.0),200.0,"the spur, under vault_n"],
 ]
+## The vault (task 4): the main treasure, a dragon egg on the tomb chest
+## in the court's middle, and loot round it, heavier than the way in's.
+## Kept apart from HEIST_LOOT so the greed marks (greed_marks) are the way
+## in's sum: the vault's take wakes the isle. With the way in's 7 kg, the
+## egg alone makes 15 kg: past the ledge bar (9), under HEIST_THROW_KG and
+## the rope's bar (17). All of it is 25.5 kg, past the bag's 18 worn: he
+## chooses.
+const HEIST_VAULT_LOOT := [
+	["treasure","egg",8.0,Vector3(190.0,26.5,2.0),90.0,"the court, on the tomb chest: the main treasure"],
+	["loot_05","urn",6.0,Vector3(180.0,25.5,-3.0),300.0,"the court, west"],
+	["loot_06","bar",4.0,Vector3(200.0,25.5,9.0),35.0,"the court, east by the ring"],
+	["loot_07","gem",0.5,Vector3(190.5,30.5,16.5),0.0,"the stair's landing, on the way up"],
+]
+## The bag throws up to this (kg) here (loot_bag.gd `throw_kg`, THROW_KG 8
+## elsewhere): a bag too heavy to climb a ledge with (9) still goes up one
+## thrown, so the vault's ledges are thrown up, then climbed light.
+const HEIST_THROW_KG := 16.0
 const HEIST_POSTS := [
 	["post_01",Vector3(21.6,30.4,-26.9),"landing crown over terrace_n (rappel)"],
 	["post_02",Vector3(187.0,34.6,-15.6),"vault_n rim over the court (rappel in)"],
@@ -74,6 +91,28 @@ const HEIST_SWINGS := [
 	["swing_03","lintel",Vector3(113.5,26.5,56.0),Vector2(0.0,1.0),8.0,6.0,"a broken lintel on south's west rim: the swing out from under the Olmec"],
 	["swing_04","branch",Vector3(98.2,32.7,47.0),Vector2(0.6,0.8),7.0,7.0,"a dead tree on ford's east rim, its branch over the gap: the chain's last"],
 ]
+## The way out of the court, built for the bag: a ramp of stone up from the
+## court floor along vault_s's north foot to a landing, then three ledges
+## up to vault_s's crown, each a SET_OFF (RuinKit, the walker's catch with
+## a margin) above the last. With 9 kg or under he climbs them with the bag
+## on; heavier, he throws it up each ledge, climbs after it and shoulders
+## it again; past HEIST_THROW_KG, the rope up vault_s's face. Ramp rows: [id,
+## the low end's top middle, the high end's top middle, width, thickness].
+## Step rows: [id, middle (x, z), depth (z), rises over the landing (0 the
+## landing itself)]; each a stone block down to STEP_FOOT, its face looking
+## north, the top the crown (HEIST_CROWN_S) less its rises to go.
+const HEIST_RAMPS := [
+	["vault_ramp",Vector3(176.0,24.3,17.25),Vector3(188.0,0.0,17.25),4.5,1.0],
+]
+const HEIST_STEPS := [
+	["vault_landing",Vector2(190.5,17.25),4.5,0],
+	["vault_step_01",Vector2(190.5,20.5),2.0,1],
+	["vault_step_02",Vector2(190.5,22.5),2.0,2],
+	["vault_step_03",Vector2(190.5,24.75),2.5,3],
+]
+const HEIST_CROWN_S := 34.5
+const STEP_WIDTH := 5.0
+const STEP_FOOT := 20.0
 ## The climbing walls: [id, middle of its top (world), out (x, z: the way
 ## its climbed face looks), width, depth, height]. A plain stone block
 ## standing on the lower mass with its top flush with the higher crown:
@@ -88,7 +127,7 @@ func greed_root() -> String:
 	return "heist"
 
 func greed_loot() -> Array:
-	return HEIST_LOOT
+	return HEIST_LOOT+HEIST_VAULT_LOOT
 
 func greed_posts() -> Array:
 	return HEIST_POSTS
@@ -177,8 +216,10 @@ func _build_art() -> void:
 ## the climbing walls. No burrows yet (the wake, a later step).
 func _add_life() -> void:
 	Greed.build_all(self)
+	if bag != null: bag.throw_kg = HEIST_THROW_KG
 	_build_swings()
 	_build_walls()
+	_build_vault_way()
 	_build_hands_hint()
 
 ## The swing points, each named heist/<id>: a move or turn in the world
@@ -229,6 +270,66 @@ func _build_walls() -> void:
 		drawn.mesh = bm
 		drawn.material_override = stone
 		body.add_child(drawn)
+		holder.add_child(body)
+		Layout.track(called,body,"piece",coded)
+
+## The landing's top: the crown less three ledges' rises.
+static func step_top(rises_left: int) -> float:
+	return HEIST_CROWN_S-float(rises_left)*RuinKit.SET_OFF*WorldScale.wanderer
+
+## A grey stone box: a StaticBody3D named `id` with its collider and mesh.
+static func _stone_box(id: String, size: Vector3, mat: Material) -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.name = id
+	var box := BoxShape3D.new()
+	box.size = size
+	var col := CollisionShape3D.new()
+	col.shape = box
+	body.add_child(col)
+	var drawn := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	drawn.mesh = bm
+	drawn.material_override = mat
+	body.add_child(drawn)
+	return body
+
+## The court's way out (HEIST_RAMPS, HEIST_STEPS), each named heist/<id>.
+func _build_vault_way() -> void:
+	var holder := Node3D.new()
+	holder.name = "VaultWay"
+	add_child(holder)
+	var stone := StandardMaterial3D.new()
+	stone.albedo_color = Color(0.6,0.57,0.52)
+	stone.roughness = 1.0
+	var steps := HEIST_STEPS.size()-1
+	for row: Array in HEIST_RAMPS:
+		var id := str(row[0])
+		var called := "heist/%s" % id
+		if Layout.deleted(called): continue
+		var lo: Vector3 = row[1]
+		var hi: Vector3 = row[2]
+		hi.y = step_top(steps)
+		var along := hi-lo
+		var xb := along.normalized()
+		var zb := xb.cross(Vector3.UP).normalized()
+		var yb := zb.cross(xb)
+		var thick := float(row[4])
+		var coded := Transform3D(Basis(xb,yb,zb),(lo+hi)*0.5-yb*thick*0.5)
+		var body := _stone_box(id,Vector3(along.length(),thick,float(row[3])),stone)
+		body.transform = Layout.xform(called,coded)
+		holder.add_child(body)
+		Layout.track(called,body,"piece",coded)
+	for row: Array in HEIST_STEPS:
+		var id := str(row[0])
+		var called := "heist/%s" % id
+		if Layout.deleted(called): continue
+		var mid: Vector2 = row[1]
+		var top := step_top(steps-int(row[3]))
+		var size := Vector3(STEP_WIDTH,top-STEP_FOOT,float(row[2]))
+		var coded := Transform3D(Basis(),Vector3(mid.x,(top+STEP_FOOT)*0.5,mid.y))
+		var body := _stone_box(id,size,stone)
+		body.transform = Layout.xform(called,coded)
 		holder.add_child(body)
 		Layout.track(called,body,"piece",coded)
 

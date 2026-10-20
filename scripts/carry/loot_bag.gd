@@ -156,6 +156,9 @@ var kg := 0.0
 ## The barred moves now, and the refusals (drivers read them).
 var barred: Array = []
 var refusals := 0
+## The most it throws (kg): THROW_KG unless the host raises it (the heist
+## level lets a full bag go up its vault's ledges).
+var throw_kg := THROW_KG
 var balks := 0
 var balked := ""
 ## The piece being put in ({} none) and seconds into it.
@@ -898,10 +901,10 @@ func shove() -> void:
 ## balk and a line.
 func throw() -> void:
 	if state != "worn": return
-	if kg > THROW_KG+0.001:
+	if kg > throw_kg+0.001:
 		_balk("throw")
 		_no_sound.play()
-		_say("Too heavy to throw (%s kg, throws to %d)" % [_kg(kg),int(THROW_KG)])
+		_say("Too heavy to throw (%s kg, throws to %d)" % [_kg(kg),int(throw_kg)])
 		return
 	var motor: Variant = study.get("motor")
 	var f := _forward()*reach()*AIM_START
@@ -927,7 +930,7 @@ func release() -> void:
 ## How far across he can throw it at its kg (m).
 func reach() -> float:
 	var s: float = study.get("motor").size
-	return lerpf(AIM_REACH.x,AIM_REACH.y,clampf(kg/THROW_KG,0.0,1.0))*s
+	return lerpf(AIM_REACH.x,AIM_REACH.y,clampf(kg/throw_kg,0.0,1.0))*s
 
 ## The stick's way (the motor's frame, x z) in the camera's: (right, ahead).
 func _to_cam(v: Vector2) -> Vector2:
@@ -1722,7 +1725,7 @@ func _show_readout() -> void:
 	lines.append("pace %d%%  jump %d%%" % [int(round(float(w.run)*100.0)),int(round(float(w.jump)*100.0))])
 	lines.append("no %s" % ", ".join(barred) if not barred.is_empty() else "every move")
 	if act == "aim": lines.append("aim: %s" % ("let go to throw" if aim_ok else aim_why+": let go to cancel"))
-	elif state == "worn": lines.append("%s hold: aim a throw" % Pad.pick("LMB / T","RT") if kg <= THROW_KG+0.001 else "too heavy to throw (%d kg)" % int(THROW_KG))
+	elif state == "worn": lines.append("%s hold: aim a throw" % Pad.pick("LMB / T","RT") if kg <= throw_kg+0.001 else "too heavy to throw (%d kg)" % int(throw_kg))
 	_readout.text = "\n".join(lines)
 
 # --- The figure ---------------------------------------------------------------------------
