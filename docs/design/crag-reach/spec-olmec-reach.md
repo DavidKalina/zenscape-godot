@@ -35,6 +35,10 @@ broke the immersion.
   going round, his landings and pounces knock pieces down, and broken
   pieces become rubble his routes read afresh (`changed`). Breaking is part
   of how he reaches you: a route through a ruin, not just round it.
+  Breaking doesn't hitch play: no frame stalls the user can feel, when he
+  walks up to a piece or when he breaks one, landings included (prepare
+  cuts ahead of time, for instance at build or spawn, spread over frames,
+  or make them cheaper).
 - It stays an experiment: everything behind `--olmec` / `--olmec-after`;
   new body behaviour behind knobs that default off, so `olmec_field` and
   `whole_body_chase` play as before.
