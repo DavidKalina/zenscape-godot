@@ -17,13 +17,13 @@ extends "res://studies/crag_reach.gd"
 ## No grass: greybox turf and rock.
 const HEIST_MASSES := [
 	["landing",Vector3(0.0,0.0,0.0),{"seed":41,"size":34.0,"shape":0.62,"flat":0.95,"landmark":0,"growth":0.72,"weather":0.5,"lopsided":0.6},[
-		["terrace_n",Vector3(24.0,-11.0,-30.0),{"seed":42,"size":12.0,"shape":0.3,"flat":0.6}],
+		["terrace_n",Vector3(23.0,-11.0,-29.0),{"seed":42,"size":12.0,"shape":0.3,"flat":0.6}],
 	]],
-	["ledge",Vector3(58.0,-9.0,-48.0),{"seed":81,"size":16.0,"shape":0.4,"flat":0.7,"landmark":0},[]],
-	["gate",Vector3(100.0,1.0,-42.0),{"seed":82,"size":20.0,"shape":0.55,"flat":0.6,"landmark":0},[]],
-	["spur",Vector3(142.0,-3.0,-40.0),{"seed":83,"size":14.0,"shape":0.5,"flat":0.7,"landmark":0},[]],
-	["vault_court",Vector3(190.0,-10.0,2.0),{"seed":91,"size":20.0,"shape":0.2,"flat":0.95,"landmark":0},[]],
-	["vault_n",Vector3(185.0,6.0,-28.0),{"seed":92,"size":14.0,"shape":0.6,"flat":0.6,"landmark":0},[]],
+	["ledge",Vector3(59.0,-9.0,-48.0),{"seed":81,"size":20.0,"shape":0.4,"flat":0.7,"landmark":0},[]],
+	["gate",Vector3(92.0,1.0,-42.0),{"seed":82,"size":20.0,"shape":0.55,"flat":0.6,"landmark":0},[]],
+	["spur",Vector3(143.0,-3.0,-37.0),{"seed":83,"size":28.0,"shape":0.5,"flat":0.7,"landmark":0},[]],
+	["vault_court",Vector3(190.0,-6.0,2.0),{"seed":91,"size":20.0,"shape":0.2,"flat":0.95,"landmark":0},[]],
+	["vault_n",Vector3(185.0,4.0,-28.0),{"seed":92,"size":14.0,"shape":0.6,"flat":0.6,"landmark":0},[]],
 	["vault_e",Vector3(222.0,6.0,4.0),{"seed":93,"size":15.0,"shape":0.7,"flat":0.6,"landmark":0},[]],
 	["vault_s",Vector3(186.0,4.0,34.0),{"seed":94,"size":14.0,"shape":0.5,"flat":0.6,"landmark":0},[]],
 	["south",Vector3(125.0,-10.0,64.0),{"seed":95,"size":20.0,"shape":0.45,"flat":0.7,"landmark":0},[]],
@@ -42,7 +42,59 @@ const HEIST_RUINS := [
 	["vault_tower","vault_e",Vector2(2.0,0.0),"tower_shell",270.0,304,0.4,{}],
 ]
 
+## The way in (task 2), along the north side, calm: the rope's three
+## moves. From the landing crown a post (post_01) over terrace_n, 9 m down:
+## rappel. terrace_n to the ledge, a 10 m gap under a beam (beam_01, 7 m
+## over the terrace): swing. The ledge to the gate, an 11 m wall (wall_01),
+## and the spur to vault_n, a 6 m face: hook the lip (any bare top is a solid hold,
+## `rope_ground_hold`) and climb. The gate steps 4 m down onto the spur.
+## From vault_n's rim a post (post_02) over the court, 10 m down: rappel
+## in. Light loot on the way (loot_NN). Rows as crag_reach_greed.gd's: the
+## loot [id, kind, kg, spot (world; its height aims the settle's ray), yaw
+## deg, where]; the posts [id, foot, what it's over].
+const HEIST_LOOT := [
+	["loot_01","coins",2.0,Vector3(30.0,20.5,-34.0),20.0,"terrace_n, under the rappel"],
+	["loot_02","chalice",1.5,Vector3(62.0,21.5,-50.0),80.0,"the ledge, past the swing"],
+	["loot_03","gem",0.5,Vector3(96.0,31.5,-40.0),0.0,"the gate, over the face"],
+	["loot_04","idol",3.0,Vector3(150.0,27.5,-36.0),200.0,"the spur, under vault_n"],
+]
+const HEIST_POSTS := [
+	["post_01",Vector3(21.6,30.4,-26.9),"landing crown over terrace_n (rappel)"],
+	["post_02",Vector3(187.0,34.6,-15.6),"vault_n rim over the court (rappel in)"],
+]
+## The swing's beams: [id, middle of its top (world), along (x, z), length,
+## how far its two stone stalks hang under it]. A grey bar on dark stalks
+## (the swing study's), carrying a hook line (scripts/rope/hook_line.gd).
+const HEIST_BEAMS := [
+	["beam_01",Vector3(38.5,27.5,-37.2),Vector2(0.467,0.884),10.0,24.0],
+]
+## The climbing walls: [id, middle of its top (world), out (x, z: the way
+## its climbed face looks), width, depth, height]. A plain stone block
+## standing on the lower mass with its top flush with the higher crown:
+## a crag unit's face is undercut under its crown's lip, so a rope hung
+## from it swings in under the overhang and he finds his feet on the slope
+## below before the lip (the gate's did). The block gives a sheer face.
+const HEIST_WALLS := [
+	["wall_01",Vector3(71.8,33.0,-45.7),Vector2(-0.984,-0.179),8.0,4.0,14.0],
+]
+const BEAM_T := 0.5
+const STALK_R := 0.45
+
+func greed_root() -> String:
+	return "heist"
+
+func greed_loot() -> Array:
+	return HEIST_LOOT
+
+func greed_posts() -> Array:
+	return HEIST_POSTS
+
+func greed_burrows() -> Array:
+	return []
+
 func _ready() -> void:
+	# The greed run's bag, rope and loot are always on here.
+	greed_on = true
 	super._ready()
 	# Never winter here: the year held at summer (the settings' Season row,
 	# kit_weather.gd SEASON_CHOICES); a --season= flag keeps its own.
@@ -103,6 +155,104 @@ func _build_art() -> void:
 		tris += int((u.unit.get_meta("stats") as Dictionary).get("triangles",0))
 	print("heist: %d units, %d triangles, built in %d ms" % [units.size(),tris,Time.get_ticks_msec()-began])
 
-## No life yet (the loot, rope, brood and Olmec come in later steps).
+## The bag, the way in's loot, the rope, its posts and beams, and the
+## hands hint. No greed meter, brood or run yet (later steps).
 func _add_life() -> void:
-	pass
+	Greed.build(self)
+	Greed.build_rope(self)
+	_build_beams()
+	_build_walls()
+	_build_hands_hint()
+
+func _build_beams() -> void:
+	var holder := Node3D.new()
+	holder.name = "Beams"
+	add_child(holder)
+	var grey := StandardMaterial3D.new()
+	grey.albedo_color = Color(0.62,0.6,0.56)
+	grey.roughness = 0.9
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.3,0.27,0.24)
+	dark.roughness = 1.0
+	for row: Array in HEIST_BEAMS:
+		var id := str(row[0])
+		var called := "heist/%s" % id
+		if Layout.deleted(called): continue
+		var top: Vector3 = row[1]
+		var along: Vector2 = (row[2] as Vector2).normalized()
+		var long: float = row[3]
+		var hang: float = row[4]
+		# The body's x runs along the beam; its origin the bar's middle.
+		var xb := Vector3(along.x,0.0,along.y)
+		var coded := Transform3D(Basis(xb,Vector3.UP,xb.cross(Vector3.UP)),top+Vector3.DOWN*BEAM_T*0.5)
+		var body := StaticBody3D.new()
+		body.name = id
+		body.transform = Layout.xform(called,coded)
+		var box := BoxShape3D.new()
+		box.size = Vector3(long,BEAM_T,BEAM_T)
+		var col := CollisionShape3D.new()
+		col.shape = box
+		body.add_child(col)
+		var bar := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = box.size
+		bar.mesh = bm
+		bar.material_override = grey
+		body.add_child(bar)
+		for end: float in [-1.0,1.0]:
+			var stalk := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = STALK_R
+			cm.bottom_radius = STALK_R*0.35
+			cm.height = hang
+			cm.radial_segments = 10
+			stalk.mesh = cm
+			stalk.material_override = dark
+			stalk.position = Vector3(end*(long*0.5+STALK_R*0.6),-hang*0.5+BEAM_T*0.5,0.0)
+			body.add_child(stalk)
+			var sc := CollisionShape3D.new()
+			var cs := CylinderShape3D.new()
+			cs.radius = STALK_R
+			cs.height = hang
+			sc.shape = cs
+			sc.position = stalk.position
+			body.add_child(sc)
+		holder.add_child(body)
+		Layout.track(called,body,"piece",coded)
+		HookLine.on_box(body,id)
+
+func _build_walls() -> void:
+	var holder := Node3D.new()
+	holder.name = "Walls"
+	add_child(holder)
+	var stone := StandardMaterial3D.new()
+	stone.albedo_color = Color(0.55,0.52,0.47)
+	stone.roughness = 1.0
+	for row: Array in HEIST_WALLS:
+		var id := str(row[0])
+		var called := "heist/%s" % id
+		if Layout.deleted(called): continue
+		var top: Vector3 = row[1]
+		var out: Vector2 = (row[2] as Vector2).normalized()
+		var size := Vector3(float(row[3]),float(row[5]),float(row[4]))
+		# The body's z looks out of the climbed face; its origin the block's middle.
+		var zb := Vector3(out.x,0.0,out.y)
+		var coded := Transform3D(Basis(Vector3.UP.cross(zb),Vector3.UP,zb),top+Vector3.DOWN*size.y*0.5)
+		var body := StaticBody3D.new()
+		body.name = id
+		body.transform = Layout.xform(called,coded)
+		var box := BoxShape3D.new()
+		box.size = size
+		var col := CollisionShape3D.new()
+		col.shape = box
+		body.add_child(col)
+		var drawn := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = size
+		drawn.mesh = bm
+		drawn.material_override = stone
+		body.add_child(drawn)
+		holder.add_child(body)
+		Layout.track(called,body,"piece",coded)
+
+const HookLine = preload("res://scripts/rope/hook_line.gd")

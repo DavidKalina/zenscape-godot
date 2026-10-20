@@ -46,6 +46,12 @@ const LOOT := [
 	["loot_12","urn",6.0,Vector3(-100.0,42.4,-34.0),300.0,"west crown (climb)"],
 ]
 const RAY := Vector2(3.0,12.0)
+
+## The host's own tables, if it answers them (the heist level's
+## `greed_root`, `greed_loot`, `greed_posts`, `greed_burrows`), else the
+## crag's (ROOT, LOOT, POSTS, BURROWS).
+static func _table(host: Node, ask: String, crag: Variant) -> Variant:
+	return host.call(ask) if host.has_method(ask) else crag
 ## The grass round each piece's spot (the units' KitFlora carpet), this
 ## far (m), shrunk to nothing after the units stand, so the small pieces
 ## aren't lost in it.
@@ -60,7 +66,7 @@ static func build(host: Node3D) -> void:
 	var carry: Node3D = CarryHost.new()
 	host.add_child(carry)
 	host.set("carry",carry)
-	carry.setup(host,ROOT,[])
+	carry.setup(host,_table(host,"greed_root",ROOT),[])
 	carry.deal()
 	var holder := Node3D.new()
 	holder.name = "Loot"
@@ -69,8 +75,9 @@ static func build(host: Node3D) -> void:
 	var loot: Array = host.get("loot")
 	var home: Vector4 = host.call("plane_home")
 	var run_dir := Vector2(-sin(home.w),-cos(home.w))
-	for row: Array in LOOT:
-		var called := "%s/%s" % [ROOT,str(row[0])]
+	var root: String = _table(host,"greed_root",ROOT)
+	for row: Array in _table(host,"greed_loot",LOOT):
+		var called := "%s/%s" % [root,str(row[0])]
 		if LayoutOverrides.deleted(called): continue
 		var at: Vector3 = row[3]
 		var rel := Vector2(at.x-home.x,at.z-home.z)
@@ -171,9 +178,10 @@ static func build_rope(host: Node3D) -> void:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = POST_COLOUR
 	mat.roughness = 0.9
-	for row: Array in POSTS:
+	var root: String = _table(host,"greed_root",ROOT)
+	for row: Array in _table(host,"greed_posts",POSTS):
 		var id := str(row[0])
-		var called := "%s/%s" % [ROOT,id]
+		var called := "%s/%s" % [root,id]
 		if LayoutOverrides.deleted(called): continue
 		var at: Vector3 = row[1]
 		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(at+Vector3.UP*RAY.x,at-Vector3.UP*RAY.y,1|(1 << 11)))
@@ -274,8 +282,9 @@ static func build_brood(host: Node3D) -> void:
 	var home: Vector4 = host.call("plane_home")
 	var run_dir := Vector2(-sin(home.w),-cos(home.w))
 	var holes: Array = host.get("burrows")
-	for row: Array in BURROWS:
-		var called := "%s/%s" % [ROOT,str(row[0])]
+	var root: String = _table(host,"greed_root",ROOT)
+	for row: Array in _table(host,"greed_burrows",BURROWS):
+		var called := "%s/%s" % [root,str(row[0])]
 		if LayoutOverrides.deleted(called): continue
 		var at: Vector3 = row[1]
 		var rel := Vector2(at.x-home.x,at.z-home.z)
