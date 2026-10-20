@@ -78,6 +78,46 @@ var bare := false
 const HOOK_R := 0.1
 const IRON := Color("3d3a36")
 var _hook: Node3D = null
+## The rope as a light chain (verlet): ROPE_BITS+1 points from the tie to
+## the drawn hook, gravity, the air's drag, the turf under it (it lies on
+## it and drags on it, so in a turn it swings wide and lags).
+var _pts := PackedVector3Array()
+var _pts_was := PackedVector3Array()
+var taut := false
+const ROPE_AIR := 1.2
+const ROPE_SCUFF := 10.0
+const ROPE_ITERS := 14
+const ROPE_THICK := 0.025
+## The dragged look (drawn only, round the physics point `hook`): taxiing
+## on the turf it wanders side to side, swings out in a turn, hops on
+## bumps, tumbles a little, catches and jerks free; on takeoff the rope's
+## pull up makes it hop before it leaves the turf. `_d_off` (world,
+## level), `_d_hop` (up), `_d_roll` round the drag line, `_d_pitch`
+## across it; `_d_rot` / `_d_shift` what `basket_xform` draws with.
+var _d_off := Vector3.ZERO
+var _d_v := Vector3.ZERO
+var _d_hop := 0.0
+var _d_hop_v := 0.0
+var _d_roll := 0.0
+var _d_roll_v := 0.0
+var _d_pitch := 0.0
+var _d_pitch_v := 0.0
+var _d_catch := 0.0
+var _d_dist := 0.0
+var _d_tie_v := Vector3.ZERO
+var _d_tie_was := Vector3.INF
+var _d_rot := Basis.IDENTITY
+var _d_shift := Vector3.ZERO
+var _d_rng := RandomNumberGenerator.new()
+## Hops, catches so far (drivers).
+var hops := 0
+var catches := 0
+const D_SPRING := 16.0
+const D_DAMP := 3.2
+const D_SWING := 0.09
+const D_WANDER := 0.35
+const D_HOP_RATE := 0.45
+const D_CATCH_RATE := 0.08
 
 func _init() -> void:
 	name = "CargoSling"
@@ -122,6 +162,7 @@ func _init() -> void:
 		add_child(bit)
 		_rope.append(bit)
 	_shape(radius)
+	_d_rng.seed = 7177
 
 ## The hook's height over the bag's floor at radius `r`.
 static func hook_of(r: float) -> float:
@@ -300,7 +341,9 @@ func rest_behind(pf: Node3D) -> void:
 	vel = Vector3.ZERO
 	_anchor = tie
 	up = Vector3.UP
-	_draw(pf)
+	_dress_reset()
+	_pts.clear()
+	_draw(pf,0.0)
 
 ## One frame of the swing under `pf`.
 func step(delta: float, pf: Node3D) -> void:
@@ -310,7 +353,7 @@ func step(delta: float, pf: Node3D) -> void:
 		return
 	_anchor = tie
 	if delta <= 0.0:
-		_draw(pf)
+		_draw(pf,0.0)
 		return
 	# It swells and pays out rope as it fills (eased).
 	radius = move_toward(radius,_radius_to,0.8*delta)
@@ -323,7 +366,7 @@ func step(delta: float, pf: Node3D) -> void:
 	hook += v*delta
 	# The rope: never longer than its length.
 	var off := hook-tie
-	var taut := off.length() >= length-0.02
+	taut = off.length() >= length-0.02
 	if off.length() > length: hook = tie+off.normalized()*length
 	# The bag's belly swept from where it was: it stops on what it hits.
 	_sweep(delta)
@@ -345,7 +388,8 @@ func step(delta: float, pf: Node3D) -> void:
 	# normalized check when up has drifted a hair off unit length).
 	var eased := up.lerp(want,1.0-exp(-8.0*delta))
 	up = eased.normalized() if eased.length_squared() > 1e-6 else want
-	_draw(pf)
+	_dress(delta,tie)
+	_draw(pf,delta)
 
 ## The belly as a ball, swept from last frame's spot to this one's (the
 ## hook moved by the swing and the rope). On a hit it stops there, loses
@@ -409,7 +453,14 @@ func basket_xform(pf: Node3D) -> Transform3D:
 	if x.length() < 0.01: x = up.cross(Vector3.FORWARD)
 	x = x.normalized()
 	var z := x.cross(up).normalized()
-	return Transform3D(Basis(x,up,z),hook-up*hook_of(radius))
+	var b := Transform3D(Basis(x,up,z),hook-up*hook_of(radius))
+	var piv := belly()
+	return Transform3D(_d_rot*b.basis,piv+_d_rot*(b.origin-piv)+_d_shift)
+
+## The hook where it is drawn (the dragged look round `hook`).
+func drawn_hook() -> Vector3:
+	var piv := belly()
+	return piv+_d_rot*(hook-piv)+_d_shift
 
 ## Loaded spot `i` (world): the treasure's foot in the bag. The first sits
 ## in the middle of its floor, the rest round it up the bowl (a golden
@@ -434,31 +485,182 @@ func middle() -> Vector3:
 func belly() -> Vector3:
 	return hook-up*(hook_of(radius)-belly_of(radius))
 
-func _draw(pf: Node3D) -> void:
+func _draw(pf: Node3D, delta: float) -> void:
 	if absf(radius-_drawn_r) > 0.005: _shape(radius)
-	_basket.global_transform = basket_xform(pf)
-	var end := hook
+	var b := basket_xform(pf)
+	_basket.global_transform = b
+	var end := drawn_hook()
 	if _hook != null and _hook.visible:
 		# The bare hook hangs off the rope's end; lying, it falls over on
 		# the turf and the rope runs down to it.
-		var b := basket_xform(pf)
 		if grounded: end = b.origin+b.basis.y*0.03
 		var lie := Basis(Vector3.FORWARD,PI*0.5) if grounded else Basis.IDENTITY
 		_hook.global_transform = Transform3D(b.basis*lie,end)
-	# The rope from the tie to the hook: straight when taut, sagging slack.
-	var tie := _anchor
-	var gap := tie.distance_to(end)
-	var sag := sqrt(maxf(length*length-gap*gap,0.0))*0.45
-	var prev := tie
+	_rope_step(delta,_anchor,end)
 	for i in range(ROPE_BITS):
-		var k := float(i+1)/ROPE_BITS
-		var p := tie.lerp(end,k)+Vector3.DOWN*sag*4.0*k*(1.0-k)
-		if grounded:
-			# Lying on the turf, it can't sag under it.
-			var g := _floor(p,0.3,1.0)
-			if g != Vector3.INF and p.y < g.y+0.03: p.y = g.y+0.03
-		_rope[i].global_transform = _between(prev,p)
-		prev = p
+		_rope[i].global_transform = _between(_pts[i],_pts[i+1])
+
+## The rope, a chain of ROPE_BITS bits pinned at the tie and at `end`:
+## each point keeps its swing (less the air's drag), falls, is held to
+## its neighbours' spacing, and lies on and drags along the turf.
+func _rope_step(delta: float, tie: Vector3, end: Vector3) -> void:
+	var n := ROPE_BITS+1
+	var gap := tie.distance_to(end)
+	var rest := maxf(length,gap)/ROPE_BITS
+	if _pts.size() != n:
+		_pts.resize(n)
+		_pts_was.resize(n)
+		# Laid along the line, sagging to the turf.
+		var sag := sqrt(maxf(length*length-gap*gap,0.0))*0.45
+		for i in range(n):
+			var k := float(i)/ROPE_BITS
+			var p := tie.lerp(end,k)+Vector3.DOWN*sag*4.0*k*(1.0-k)
+			var g := _floor(p,0.6,1.5)
+			if g != Vector3.INF and p.y < g.y+ROPE_THICK: p.y = g.y+ROPE_THICK
+			_pts[i] = p
+			_pts_was[i] = p
+	_pts[0] = tie
+	_pts[n-1] = end
+	if delta > 0.0:
+		var keep := exp(-ROPE_AIR*delta)
+		var fall := Vector3.DOWN*GRAVITY*delta*delta
+		for i in range(1,n-1):
+			var p := _pts[i]
+			var v := (p-_pts_was[i])*keep
+			# A frame's jump past this is a teleport: settle, don't fling.
+			if v.length() > 3.0: v = Vector3.ZERO
+			_pts_was[i] = p
+			_pts[i] = p+v+fall
+		for it in range(ROPE_ITERS):
+			for i in range(n-1):
+				var a := _pts[i]
+				var c := _pts[i+1]
+				var d := c-a
+				var l := d.length()
+				if l < 1e-5: continue
+				var fix := d*((l-rest)/l)
+				if i == 0: _pts[1] = c-fix
+				elif i+1 == n-1: _pts[i] = a+fix
+				else:
+					_pts[i] = a+fix*0.5
+					_pts[i+1] = c-fix*0.5
+		# The turf: it lies on it, and drags along it.
+		var scuff := exp(-ROPE_SCUFF*delta)
+		for i in range(1,n-1):
+			var p := _pts[i]
+			var g := _floor(p,0.4,0.6)
+			if g != Vector3.INF and p.y < g.y+ROPE_THICK:
+				p.y = g.y+ROPE_THICK
+				var w := _pts_was[i]
+				var slide := Vector3(p.x-w.x,0.0,p.z-w.z)*scuff
+				_pts_was[i] = Vector3(p.x-slide.x,p.y,p.z-slide.z)
+				_pts[i] = p
+
+## The dragged look back to rest.
+func _dress_reset() -> void:
+	_d_off = Vector3.ZERO
+	_d_v = Vector3.ZERO
+	_d_hop = 0.0
+	_d_hop_v = 0.0
+	_d_roll = 0.0
+	_d_roll_v = 0.0
+	_d_pitch = 0.0
+	_d_pitch_v = 0.0
+	_d_catch = 0.0
+	_d_tie_was = Vector3.INF
+	_d_tie_v = Vector3.ZERO
+	_d_rot = Basis.IDENTITY
+	_d_shift = Vector3.ZERO
+
+## One frame of the dragged look: on the turf and pulled along, it
+## wanders, swings out, hops, tumbles and catches; off it, it eases back
+## onto the physics point.
+func _dress(delta: float, tie: Vector3) -> void:
+	var tv := Vector3.ZERO if _d_tie_was == Vector3.INF else (tie-_d_tie_was)/delta
+	if tv.length() > 60.0: tv = _d_tie_v
+	var acc := ((tv-_d_tie_v)/delta).limit_length(40.0)
+	_d_tie_was = tie
+	_d_tie_v = tv
+	var flat := Vector3(tie.x-hook.x,0.0,tie.z-hook.z)
+	var dir := flat.normalized() if flat.length() > 0.05 else Vector3.FORWARD
+	var side := dir.cross(Vector3.UP).normalized()
+	var spd := Vector2(vel.x,vel.z).length()
+	var s := clampf(radius/0.3,0.5,1.6)
+	var on := grounded or _d_hop > 0.0
+	var go := clampf((spd-0.6)/4.0,0.0,1.0) if grounded else 0.0
+	# The rope pulls up (takeoff, a climb off the turf): it hops.
+	var lift := 0.0
+	if grounded and taut: lift = clampf(((tie-hook).normalized().y-0.05)*3.0,0.0,1.0)
+	_d_dist += spd*delta
+	if on:
+		# Side to side: a slow wander by the ground covered, and out in a
+		# turn (against the tie's sideways pull).
+		var wander := (sin(_d_dist*0.9)+0.6*sin(_d_dist*2.3+1.7)+0.4*sin(_d_dist*0.37+4.0))*D_WANDER*s*go
+		var f := -_d_off*D_SPRING-_d_v*D_DAMP
+		f += side*wander*D_SPRING
+		f += -side*acc.dot(side)*D_SWING*D_SPRING*s
+		if _d_catch > 0.0:
+			# Caught on the turf: it stops while the rope runs on.
+			_d_catch -= delta
+			f = f-dir*f.dot(dir)
+			_d_v = _d_v-dir*_d_v.dot(dir)-dir*spd*0.9
+			if _d_catch <= 0.0 or _d_off.dot(dir) < -0.45*s:
+				# Jerked free: a hop and a twist.
+				_d_catch = 0.0
+				_kick(1.3*s,0.8)
+				_d_v += dir*spd*0.5
+		elif grounded and spd > 2.0 and _d_hop <= 0.0 and _d_rng.randf() < D_CATCH_RATE*go*spd*delta:
+			_d_catch = _d_rng.randf_range(0.12,0.3)
+			catches += 1
+		_d_v += f*delta
+		_d_off += _d_v*delta
+		_d_off.y = 0.0
+		_d_v.y = 0.0
+		_d_off = _d_off.limit_length(0.9*s)
+		# Hops: bumps by the speed, more as the rope pulls up.
+		if grounded and _d_hop <= 0.0 and _d_catch <= 0.0:
+			var rate := D_HOP_RATE*spd*go*(1.0+4.0*lift)
+			if _d_rng.randf() < rate*delta: _kick(_d_rng.randf_range(0.6,1.4)*clampf(spd/3.5,0.0,2.2)*(1.0+1.2*lift),0.5)
+		_d_hop_v -= GRAVITY*delta
+		_d_hop += _d_hop_v*delta
+		if _d_hop <= 0.0:
+			_d_hop = 0.0
+			if _d_hop_v < -0.8:
+				_d_roll_v += _d_rng.randf_range(-3.0,3.0)
+				_d_hop_v = -_d_hop_v*0.3
+			else: _d_hop_v = 0.0
+		# Tumbles: rolls with its slew, pitches with its hop, eased back up.
+		var roll_to := -_d_v.dot(side)*0.25/s
+		_d_roll_v += ((roll_to-_d_roll)*24.0-_d_roll_v*3.5)*delta
+		_d_roll += _d_roll_v*delta
+		_d_roll = clampf(_d_roll,-0.8,0.8)
+		var pitch_to := _d_hop_v*0.12+go*0.12
+		_d_pitch_v += ((pitch_to-_d_pitch)*24.0-_d_pitch_v*4.0)*delta
+		_d_pitch += _d_pitch_v*delta
+		_d_pitch = clampf(_d_pitch,-0.7,0.7)
+	else:
+		var k := 1.0-exp(-4.0*delta)
+		_d_off = _d_off.lerp(Vector3.ZERO,k)
+		_d_v = Vector3.ZERO
+		_d_hop = lerpf(_d_hop,0.0,k)
+		_d_hop_v = 0.0
+		_d_roll = lerpf(_d_roll,0.0,k)
+		_d_roll_v = 0.0
+		_d_pitch = lerpf(_d_pitch,0.0,k)
+		_d_pitch_v = 0.0
+		_d_catch = 0.0
+	# A rumble on the turf while it slides.
+	var rumble := absf(sin(_d_dist*6.0))*0.025*s*go
+	_d_shift = _d_off+Vector3.UP*(_d_hop+rumble)
+	_d_rot = Basis(dir,_d_roll)*Basis(side,-_d_pitch)
+
+## A hop off the turf at `v` m/s, with a twist of `twist` rad/s.
+func _kick(v: float, twist: float) -> void:
+	hops += 1
+	_d_hop_v = maxf(_d_hop_v,v)
+	_d_hop = maxf(_d_hop,0.001)
+	_d_roll_v += _d_rng.randf_range(-1.0,1.0)*twist*3.0
+	_d_pitch_v += _d_rng.randf_range(0.5,1.0)*twist*2.0
 
 func _floor(p: Vector3, over: float, under: float) -> Vector3:
 	if not is_inside_tree(): return Vector3.INF

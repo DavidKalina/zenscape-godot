@@ -1445,7 +1445,7 @@ func _drag_look(delta: float) -> void:
 		var sl := _sling()
 		var sz: float = study.get("motor").size
 		var neck := _sack.global_transform*Vector3(0.0,_r*sz*1.1,0.0)
-		var d: Vector3 = (sl.hook if sl != null else neck)-neck
+		var d: Vector3 = (sl.drawn_hook() if sl != null else neck)-neck
 		var l := d.length()
 		_rope.visible = l > 0.02 and act == ""
 		if _rope.visible:
