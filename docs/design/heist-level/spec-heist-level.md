@@ -149,3 +149,20 @@ view. Re-check task 7's first half (the pillar-foot drop) on the merged
 Olmec before building on it. The greed run's under-stuck timer in
 crag_reach.gd was renamed `_below_t`/`_below_best` to clear main's
 `_stuck_t`.
+
+## Spec change: don't polish the Olmec (from the user, after task 7's pace)
+
+The Olmec is getting route-planning work elsewhere that will change how he
+reaches you. Don't make his part here perfect:
+
+- The takeoff beat (him at the turf as you lift): one simple staged moment
+  that plays, or skip it and say so. No chase tuning.
+- The full run (task 8): one throwaway drive start to finish plus a stall
+  that's caught. Report what fails; no further Olmec-specific fixes.
+- The look pass: light; the spec's stills and the obvious reads (the
+  near-black boxes) only.
+- The handoff lists every heist-only Olmec staging (the court hold, the
+  swing holds, the weaker suck, the aimed drop, staged_shock) so it can be
+  revisited or dropped once his route planning lands. It also tells the user
+  to press F on each swing's landing (the ~7 s reel), or proposes a shorter
+  reel as an open question.
