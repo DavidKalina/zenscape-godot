@@ -491,9 +491,13 @@ func _read_input() -> void:
 	_reel_was = reel_down
 	_tug_was = tug_down
 	if _busy(): return
-	# A host with two slots (the greed run: the bag or the rope in hand)
-	# says when the keys are the rope's.
-	if study.get("rope_keys") == false: return
+	# A host with the bag too (the greed run, the heist) says when a key is
+	# the rope's (`key_for`: the slot in hand, or what he's by).
+	if study.has_method("key_for"):
+		if throw_hit and str(study.call("key_for",&"walk_throw")) != "rope": throw_hit = false
+		if reel_hit and str(study.call("key_for",&"walk_reel")) != "rope": reel_hit = false
+		if tug_hit and str(study.call("key_for",&"walk_tug")) != "rope": tug_hit = false
+	elif study.get("rope_keys") == false: return
 	if throw_hit:
 		if state == "coiled":
 			if _on_foot(): aim()

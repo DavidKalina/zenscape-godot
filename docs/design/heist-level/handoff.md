@@ -9,7 +9,7 @@ main's Olmec reach and Olmec run. Trail:
 
 `./run-heist.command` (`studies/heist_level.tscn -- --no-title`, on a
 throwaway ledger in /tmp). On foot beside the parked plane, bag on your back,
-rope in the other slot (H switches). Held at summer and on the slow day
+the rope at your side, both at once (no switch since heist-tidy, `heist-tidy-handoff.md`). Held at summer and on the slow day
 (1440 s), so a ~4-6 min run stays in daylight; `--season=` /
 `--day-length=` still win.
 

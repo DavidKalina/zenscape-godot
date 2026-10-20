@@ -818,6 +818,16 @@ var bag_keys: bool:
 	get: return hands == "bag"
 var rope_keys: bool:
 	get: return hands == "rope"
+## Context hands (the heist level): he wears the bag and carries the rope
+## at once, no slot to switch; what he's by and aiming at picks which of the
+## two hears E, F and the throw (crag_reach_greed.gd `key_for`).
+var context_hands := false
+
+## Which of the two hears `action` now ("bag", "rope"): the slot in hand,
+## or with `context_hands` what he's by (the bag's and the rope's input ask).
+func key_for(action: StringName) -> String:
+	if not context_hands: return hands
+	return Greed.key_for(self,action)
 var _hands_label: Label = null
 
 func _build_hands_hint() -> void:
@@ -836,25 +846,32 @@ func _build_hands_hint() -> void:
 	_hands_label.offset_right = 640.0
 	_hands_label.offset_top = 12.0
 	layer.add_child(_hands_label)
-	_hands_label.text = Greed.hands_text(hands)
+	_hands_label.text = _hands_text()
+
+## The hint's hands line: the slot and its switch, or the context prompts.
+func _hands_text() -> String:
+	return Greed.context_text(self) if context_hands else Greed.hands_text(hands)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if greed_on and not flying and event.is_action_pressed(&"walk_tool",false,true) and not _tuning():
+	if greed_on and not flying and not context_hands and event.is_action_pressed(&"walk_tool",false,true) and not _tuning():
 		Greed.switch(self)
-		if _hands_label != null: _hands_label.text = Greed.hands_text(hands)
+		if _hands_label != null: _hands_label.text = _hands_text()
 		get_viewport().set_input_as_handled()
 		return
 	# The rope in hand, F is its reel (polled), not the walk back's word.
-	if greed_on and not flying and hands == "rope" and event.is_action_pressed(&"walk_reel",false,true): return
+	if greed_on and not flying and key_for(&"walk_reel") == "rope" and event.is_action_pressed(&"walk_reel",false,true): return
 	super._unhandled_input(event)
 
 func _foot_text() -> String:
-	return super._foot_text()+("\n"+Greed.hint(call("greed_place") if has_method("greed_place") else "the crag") if greed_on else "")
+	return super._foot_text()+("\n"+Greed.hint(call("greed_place") if has_method("greed_place") else "the crag",context_hands) if greed_on else "")
 
 ## Dragging, the bag holds him to its rope; aiming a throw, the stick moves
 ## the reticle, not him (as studies/wreck_cluster.gd).
 func _want(delta: float) -> Vector2:
 	var want := super._want(delta)
+	# Context hands: an aim moves between the bag and the rope as the
+	# reticle goes onto a swing point, a post or a high lip, or off it.
+	if context_hands and greed_on and not flying: Greed.aim_handover(self,delta)
 	# Aiming the hook, tugging it or pulling it up, he stands (the rope
 	# study's).
 	if rope != null and rope.state in ["aim","tug","pull_up"]:
@@ -1425,7 +1442,7 @@ func tick(delta: float) -> void:
 	super.tick(delta)
 	if greed != null:
 		greed.step(delta)
-		if _hands_label != null: _hands_label.text = Greed.hands_text(hands)+"\n"+greed.text()+("\n"+run.text() if run != null else "")
+		if _hands_label != null: _hands_label.text = _hands_text()+"\n"+greed.text()+("\n"+run.text() if run != null else "")
 	if enemies == null or flying or not olmec_armed: return
 	if _olmec_due >= 0.0:
 		_olmec_due -= delta

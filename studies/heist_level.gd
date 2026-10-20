@@ -112,14 +112,42 @@ const HEIST_BURROWS := [
 	["burrow_04",Vector3(184.0,34.5,31.0),"vault_s's crown, over the steps"],
 	["burrow_05",Vector3(179.0,34.5,40.0),"vault_s's crown, west, the way out"],
 ]
-## The Olmec's staged cliff (heist/olmec_up): the court's own west face,
-## out over the drop, some 17 m from the chest, on the face of a stone
-## block set against it (HEIST_WALLS olmec_wall). Its spot is the lip (the
-## real one found by BodySpawner.fit), its z the way out of the face.
-## He comes up it HEIST_OLMEC_DELAY s after the egg is bagged, in view.
-const HEIST_OLMEC_UP := [Vector3(171.3,24.3,2.07),Vector2(-0.863,-0.505)]
-const HEIST_OLMEC_DELAY := 3.0
-var _olmec_up: Node3D = null
+## The Olmec's first cliff (heist/olmec_start, a token F4 moves and
+## turns): far off on another part of the isle, not by the chest, so the
+## egg's wake is heard there and he comes for you across the isle. Its spot
+## is the lip (the real one found by BodySpawner.fit), its z the way out of
+## the face.
+## (It was heist/olmec_up, the court's own west lip by the chest, up the
+## olmec_wall block, which stands on.)
+## Here: the far (east) face of vault_e, the tower mass behind the court,
+## out of the court's view. The wake is only heard ("Far off, stone grinds
+## on stone"); once you're up the ledges on vault_s's crown he comes up it
+## (`_hold_far`, HEIST_COME_AFTER s on, or HEIST_HOLD_MOST s after the wake
+## whatever you're doing), hauls over on the tower's crown, high across the
+## court from you, and leaps down across onto vault_s's crown
+## (heist/olmec_leap) to come for you as you rig the corner swing. (Tried
+## first: vault_sw, round the corner; held there he walks off the corner
+## and falls, and the rock spire blocks his leap across.)
+const HEIST_OLMEC_START := [Vector3(224.0,48.0,6.0),Vector2(0.707,0.707)]
+var _olmec_start: Node3D = null
+## His leap across (heist/olmec_leap, a token F4 moves): onto vault_s's
+## crown by its east lip, ~20 m off the corner swing's rim (swing_02), so
+## a rig there (4-6 s) is a near miss and a stall is caught.
+const HEIST_OLMEC_LEAP := Vector3(194.0,34.5,33.0)
+## Released when you stand on vault_s's crown (within HEIST_CROWN_R m,
+## flat, of its middle and over HEIST_CROWN_S less a metre), or this long
+## (s) after the wake whatever you're doing; up, his leap tried each frame
+## till it goes, for up to 6 s.
+const HEIST_CROWN_R := 17.0
+const HEIST_HOLD_MOST := 90.0
+## On the crown, he comes up this long (s) after: up, the leap's windup and
+## flight take ~5 s more, so a player who walks on to the corner swing is
+## rigging it as he lands, ~20 m off; one who stands is caught.
+const HEIST_COME_AFTER := 6.0
+var _olmec_leap: Node3D = null
+var _hold_on := false
+var _hold_t := 0.0
+var leap_done := false
 ## The staged drop where you just were (heist/olmec_perch, heist/olmec_drop,
 ## tokens F4 moves): once the isle is awake, as he boot-surfs the pillar
 ## and comes within HEIST_DROP_CUE m (flat) of its foot, the Olmec, unless
@@ -191,7 +219,7 @@ var _swing_done := false
 ## 4-6 s standing (throw, the hook's flight, tug, seat); with him on ford
 ## behind you a pounce or suck always lands in it, so a player who keeps
 ## moving was caught at every throw. Past the grace (a stall), he comes.
-const HEIST_RIGS := ["swing_05","swing_06"]
+const HEIST_RIGS := ["swing_02","swing_05","swing_06"]
 const HEIST_RIG_NEAR := 11.0
 const HEIST_RIG_SHOCK := 20.0
 var _rig_hold := {}
@@ -366,32 +394,37 @@ func greed_marks() -> Vector2i:
 		w += int(VaultHost.VALUES.get(str(row[1]),0))
 	return Vector2i(w+1,w+1)
 
-## The meter's marks: the brood wake at once (the crag's); the Olmec's
-## grinding comes HEIST_OLMEC_DELAY s on, up his staged cliff
-## (`olmec_cliff_pick`).
+## The meter's marks: the brood wake at once (the crag's); the Olmec is
+## heard far off, and comes up his first cliff (`olmec_cliff_pick`) once
+## you're on vault_s's crown (`_hold_far`).
 func greed_woke(what: String) -> void:
 	super.greed_woke(what)
 	_snap_armed = true
 	if what == "olmec": _drop_armed = true
-	if what == "olmec" and olmec_spawns == 0: _olmec_due = HEIST_OLMEC_DELAY
+	if what == "olmec" and olmec_spawns == 0:
+		_olmec_due = HEIST_HOLD_MOST
+		_hold_on = true
+		_hold_t = 0.0
+		_say("Far off, stone grinds on stone...",4.0)
 
-## His first entrance up the staged cliff (heist/olmec_up, fitted to the
-## real face); after that (fallen, stuck, gone), the crag's pick.
+## His first entrance up his first cliff (heist/olmec_start, fitted to the
+## real face), and again if he's gone (fallen) before his leap across;
+## after that (fallen, stuck, gone), the crag's pick.
 func olmec_cliff_pick() -> Dictionary:
-	if olmec_spawns > 0 or _olmec_up == null or not is_instance_valid(_olmec_up): return super.olmec_cliff_pick()
-	var xf := _olmec_up.global_transform
+	if (olmec_spawns > 0 and not _hold_on) or _olmec_start == null or not is_instance_valid(_olmec_start): return super.olmec_cliff_pick()
+	var xf := _olmec_start.global_transform
 	var way := Vector2(xf.basis.z.x,xf.basis.z.z).normalized()
 	var fitted: Array = _spawner.fit(xf.origin,way)
 	if fitted.is_empty():
-		push_warning("heist: heist/olmec_up fits no face (%s); the crag's pick" % _spawner.fit_why)
+		push_warning("heist: heist/olmec_start fits no face (%s); the crag's pick" % _spawner.fit_why)
 		return super.olmec_cliff_pick()
 	var lip: Vector3 = fitted[0]
 	var out: Vector2 = fitted[1]
 	var below: float = _spawner.face_below(lip,out,OLMEC_BELOW)
 	var clean := _face_clean(get_world_3d().direct_space_state,lip,out,below)
-	if not clean: push_warning("heist: heist/olmec_up's face isn't clean at %s: he may haul out under the lip" % lip)
+	if not clean: push_warning("heist: heist/olmec_start's face isn't clean at %s: he may haul out under the lip" % lip)
 	var d := Vector2(lip.x-motor.feet.x,lip.z-motor.feet.z).length()
-	return {"lip":lip,"out":out,"crown":"olmec_up","seen":_spawner.in_view(lip),"far":d,"below":below,"clean":clean,"score":0.0}
+	return {"lip":lip,"out":out,"crown":"olmec_start","seen":_spawner.in_view(lip),"far":d,"below":below,"clean":clean,"score":0.0}
 
 ## The heist's chase pace, over the crag's OLMEC_KNOBS (headless_body
 ## knobs), none yet: the run_up pace plays as the crag's. (suck_max 5.5
@@ -409,13 +442,20 @@ func tune_olmec(_b: Node3D, h: Node3D) -> void:
 	for k: String in HEIST_HEAD_K:
 		h.knobs[k] = float(h.knobs[k])*float(HEIST_HEAD_K[k])
 
+## The loot's figures here: the heist's own models (scripts/carry/heist_loot_models.gd),
+## bigger than the bag study's, each looking its weight.
+func greed_loot_model(kind: String) -> Dictionary:
+	return HeistLoot.build(kind)
+
 ## The end screen's name for the place.
 func greed_place() -> String:
 	return "the vault's isle"
 
 func _ready() -> void:
-	# The greed run's bag, rope and loot are always on here.
+	# The greed run's bag, rope and loot are always on here, both at once
+	# (no slot to switch: what he's by picks, crag_reach_greed.gd `key_for`).
 	greed_on = true
+	context_hands = true
 	super._ready()
 	# Never winter here: the year held at summer (the settings' Season row,
 	# kit_weather.gd SEASON_CHOICES); a --season= flag keeps its own.
@@ -496,7 +536,7 @@ func _add_life() -> void:
 	_build_walls()
 	_build_vault_way()
 	_build_gap()
-	_build_olmec_up()
+	_build_olmec_start()
 	_build_olmec_drop()
 	_build_hands_hint()
 
@@ -549,19 +589,62 @@ func _build_walls() -> void:
 		holder.add_child(body)
 		Layout.track(called,body,"piece",coded)
 
-## The Olmec's staged cliff, a token named heist/olmec_up (F4 moves and
+## The Olmec's first cliff, a token named heist/olmec_start (F4 moves and
 ## turns it; its z the way out of the face).
-func _build_olmec_up() -> void:
-	var called := "heist/olmec_up"
+func _build_olmec_start() -> void:
+	var called := "heist/olmec_start"
 	if Layout.deleted(called): return
-	var out: Vector2 = (HEIST_OLMEC_UP[1] as Vector2).normalized()
+	var out: Vector2 = (HEIST_OLMEC_START[1] as Vector2).normalized()
 	var zb := Vector3(out.x,0.0,out.y)
-	var coded := Transform3D(Basis(Vector3.UP.cross(zb),Vector3.UP,zb),HEIST_OLMEC_UP[0])
-	_olmec_up = Node3D.new()
-	_olmec_up.name = "OlmecUp"
-	_olmec_up.transform = Layout.xform(called,coded)
-	add_child(_olmec_up)
-	Layout.track(called,_olmec_up,"token",coded)
+	var coded := Transform3D(Basis(Vector3.UP.cross(zb),Vector3.UP,zb),HEIST_OLMEC_START[0])
+	_olmec_start = Node3D.new()
+	_olmec_start.name = "OlmecStart"
+	_olmec_start.transform = Layout.xform(called,coded)
+	add_child(_olmec_start)
+	Layout.track(called,_olmec_start,"token",coded)
+	var leap_called := "heist/olmec_leap"
+	if Layout.deleted(leap_called): return
+	var lc := Transform3D(Basis(),HEIST_OLMEC_LEAP)
+	_olmec_leap = Node3D.new()
+	_olmec_leap.name = "OlmecLeap"
+	_olmec_leap.transform = Layout.xform(leap_called,lc)
+	add_child(_olmec_leap)
+	Layout.track(leap_called,_olmec_leap,"token",lc)
+
+## His coming (HEIST_OLMEC_START): the wake's grinding heard far off, and
+## him up his face once you stand on vault_s's crown (or
+## HEIST_HOLD_MOST s on, whatever you're doing); up, he leaps across onto
+## the crown (heist/olmec_leap, else a spot round it an arc clears) and
+## the hunt's on. Once a wake.
+func _hold_far(_delta: float) -> void:
+	if not _hold_on or enemies == null: return
+	var crown: Node3D = named.get("vault_s")
+	if _olmec_due > 0.0 and crown != null:
+		var c := crown.global_position
+		if _olmec_due > HEIST_COME_AFTER and motor.grounded and Vector2(motor.feet.x-c.x,motor.feet.z-c.z).length() < HEIST_CROWN_R and motor.feet.y > HEIST_CROWN_S-1.0:
+			print("heist: you're up on vault_s's crown; the Olmec comes up his face in %.0f s" % HEIST_COME_AFTER)
+			_olmec_due = minf(_olmec_due,HEIST_COME_AFTER)
+		return
+	var b := olmec()
+	if b == null or not bool(b.grounded) or str(b.state) in ["climb","mantle","hang","windup","leap","fall"]: return
+	if _olmec_leap == null:
+		_hold_on = false
+		return
+	b.hunting = true
+	b.seen_at = motor.feet
+	var to := _olmec_leap.global_position
+	var ok := false
+	for off: Vector3 in [Vector3.ZERO,Vector3(-3,0,0),Vector3(0,0,3),Vector3(-3,0,3),Vector3(3,0,0),Vector3(0,0,-3),Vector3(-6,0,3)]:
+		if b.stage_drop(to+off):
+			ok = true
+			to = to+off
+			break
+	_hold_t += get_process_delta_time()
+	if not ok and _hold_t < 6.0: return
+	_hold_on = false
+	leap_done = ok
+	if ok: b.staged_shock = HEIST_DROP_SHOCK
+	print("heist: the Olmec, up %.1f m off you, leaps across for vault_s's crown %s: %s" % [b.global_position.distance_to(motor.feet),to.round(),"winding up" if ok else "no go (%s)" % b.down_why])
 
 ## The staged drop's two tokens: heist/olmec_perch (where he throws
 ## himself from; z the way he faces) and heist/olmec_drop (where he lands).
@@ -699,15 +782,21 @@ func _rope_at_swing(id := "swing_03") -> bool:
 	if st == "aim": return str(rope.aim_piece) == id
 	return str(rope.piece) == id
 
+## The rope ready to hand: always with context hands (the rope's at his
+## side with the bag on), else the slot.
+func _rope_in_hand() -> bool:
+	return context_hands or str(hands) == "rope"
+
 ## The chain's rigging holds (HEIST_RIGS).
 func _stage_rigs(delta: float) -> void:
-	if not _drop_done or rope == null or not motor.grounded: return
+	if not (_drop_done or leap_done) or rope == null or not motor.grounded: return
 	var b := olmec()
-	if b == null or not bool(b.hunting): return
+	if b == null or not bool(b.hunting) or _hold_on: return
 	for id: String in HEIST_RIGS:
+		if id != "swing_02" and not _drop_done: continue
 		var top := _swing_top(id)
 		if Vector2(top.x-motor.feet.x,top.z-motor.feet.z).length() > HEIST_RIG_NEAR: continue
-		if not (_rope_at_swing(id) or (str(hands) == "rope" and str(rope.state) == "coiled")): continue
+		if not (_rope_at_swing(id) or (_rope_in_hand() and str(rope.state) == "coiled")): continue
 		var t := float(_rig_hold.get(id,0.0))
 		if t >= HEIST_SWING_GRACE: return
 		if t == 0.0:
@@ -720,7 +809,8 @@ func _stage_rigs(delta: float) -> void:
 			b._go("spent")
 		# A pounce, or any leap coming down within HEIST_RIG_SHOCK m (its
 		# landing wave throws you off the rope), checks while you rig.
-		if str(b.state) == "windup" and (str(b.leap_kind) == "pounce" or (b._leap_to as Vector3).distance_to(motor.feet) < HEIST_RIG_SHOCK):
+		# (At swing_02 his staged leap across lands in it: only a pounce checks.)
+		if str(b.state) == "windup" and (str(b.leap_kind) == "pounce" or (id != "swing_02" and (b._leap_to as Vector3).distance_to(motor.feet) < HEIST_RIG_SHOCK)):
 			if not _rig_hold.has(id+"/checked"): print("heist: rigging %s: his %s at %.1f m checks" % [id,str(b.leap_kind),(b._leap_to as Vector3).distance_to(motor.feet)])
 			_rig_hold[id+"/checked"] = true
 			b._go(b._resume())
@@ -745,7 +835,7 @@ func _stage_swing(delta: float) -> void:
 	if b == null or not bool(b.hunting): return
 	if motor.grounded and _on_gap_near(motor.feet):
 		_swing_from = motor.feet
-		if (_rope_at_swing() or str(hands) == "rope") and _swing_hold_t < HEIST_SWING_GRACE:
+		if (_rope_at_swing() or _rope_in_hand()) and _swing_hold_t < HEIST_SWING_GRACE:
 			if _swing_hold_t == 0.0:
 				print("heist: on gap_near, rope in hand: the Olmec holds his pounce, %.1f m off (%s)" % [b.global_position.distance_to(motor.feet),str(b.state)])
 				# A pounce winding up checks.
@@ -949,6 +1039,7 @@ func _process(delta: float) -> void:
 func tick(delta: float) -> void:
 	super.tick(delta)
 	if not flying:
+		_hold_far(delta)
 		_stage_drop()
 		_aim_drop()
 		_stage_swing(delta)
@@ -978,3 +1069,4 @@ const BridgeLoad = preload("res://scripts/bridge_load.gd")
 const BridgeClimb = preload("res://scripts/bridge_climb.gd")
 const SwingPoint = preload("res://scripts/rope/swing_point.gd")
 const VaultHost = preload("res://scripts/home/vault_host.gd")
+const HeistLoot = preload("res://scripts/carry/heist_loot_models.gd")
