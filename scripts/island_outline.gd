@@ -102,7 +102,9 @@ static func first_size() -> float:
 ## short), heading (radians, the long axis's angle from +X), drift (a share
 ## of the radius, 0 keeps it centred), bays (how many bitten in), lobes (their
 ## depth, a share of their own), square (the norm's power: 2 an ellipse,
-## 4 a rounded oblong)}; a long
+## 4 a rounded oblong), spine (opt-in: [a, b, r, pull], a run from a to b
+## the land leans to hold, its share within r m of it cut by `pull`, easing
+## off by 2r: home's strip, studies/heist_home.gd)}; a long
 ## ridge island (scripts/sundered_hall.gd) asks for one along +X.
 static func mask(points: PackedVector2Array, ids: PackedInt32Array, seed_value: int, size := -1.0, half := HALF, area := -1.0, form := {}) -> PackedByteArray:
 	if area > 0.0: size = size_of(area)
@@ -251,6 +253,8 @@ class _Field:
 	var warp := FastNoiseLite.new()
 	## The warp's reach (m).
 	var warp_reach := 0.0
+	## A run the land leans to hold (`form` spine): [a, b, r, pull].
+	var spine: Array = []
 
 	## `radius`: the island's, as a circle of its area (m); `bold` deepens
 	## its lobes and bays.
@@ -276,6 +280,7 @@ class _Field:
 		warp.fractal_type = FastNoiseLite.FRACTAL_FBM
 		warp.fractal_octaves = 2
 		warp_reach = WARP*radius
+		spine = form.get("spine",[])
 
 	func share(p: Vector2) -> float:
 		var w := p-drift+Vector2(warp.get_noise_2d(p.x,p.y),warp.get_noise_2d(p.x+911.0,p.y-337.0))*warp_reach
@@ -286,6 +291,11 @@ class _Field:
 		for l in lobes: out += l.y*sin(l.x*t+l.z)
 		for b in bays: out -= b.y*exp(-pow(angle_difference(t,b.x)/b.z,2.0))
 		var reach := q.length() if square == 2.0 else pow(pow(absf(q.x),square)+pow(absf(q.y),square),1.0/square)
+		if not spine.is_empty():
+			var a: Vector2 = spine[0]
+			var ab: Vector2 = (spine[1] as Vector2)-a
+			var d := p.distance_to(a+ab*clampf((p-a).dot(ab)/maxf(ab.length_squared(),0.001),0.0,1.0))
+			reach *= 1.0-float(spine[3])*(1.0-smoothstep(float(spine[2]),float(spine[2])*2.0,d))
 		return reach/maxf(out,0.2)
 
 ## The band along the plate's rim that is never land (RIM), and the push

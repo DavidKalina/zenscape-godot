@@ -97,6 +97,9 @@ static func old_water() -> bool:
 ##   falls     optional [Vector4(x, z, radius, strength)]: churn where a fall
 ##             lands in the water (the shader's `fall_foam`; the plate's edge
 ##             falls put none on their lip, nor do the isles');
+##   jitter    optional: each vertex off the brink stands up to this share
+##             of a cell off its grid (a hash of its cell), so the chop's
+##             faces don't line up into a weave seen from above;
 ##   name      the node's name.
 ## Lay it in the world's frame (or one only moved, never turned): the chop
 ## and its fetch read world axes. Its meta: "cells" (wet cells), "vertices",
@@ -127,6 +130,7 @@ static func arrays(spec: Dictionary) -> Dictionary:
 	var rect: Rect2 = spec.rect
 	var inside: Callable = spec.get("inside",Callable())
 	var cell := float(spec.get("cell",CELL))
+	var jitter := float(spec.get("jitter",0.0))
 	var w := maxi(2,ceili(rect.size.x/cell))
 	var h := maxi(2,ceili(rect.size.y/cell))
 	var n := w*h
@@ -225,6 +229,10 @@ static func arrays(spec: Dictionary) -> Dictionary:
 	for c in range(n):
 		var p: Vector2 = at.call(c)
 		place[c] = p
+		if jitter > 0.0:
+			var hx := float(hash(Vector2i(c,17)) % 10007)/10007.0-0.5
+			var hz := float(hash(Vector2i(c,59)) % 10007)/10007.0-0.5
+			place[c] = p+Vector2(hx,hz)*2.0*jitter*cell
 		if state[c] != 1 or not inside.is_valid(): continue
 		var i := c%w
 		var j := c/w

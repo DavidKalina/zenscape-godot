@@ -14,6 +14,11 @@ extends "res://studies/crag_reach.gd"
 ## layouts/heist.json), moved in the world view (F4) by that name.
 ##   godot --path . res://studies/heist_level.tscn -- --no-title
 ## The season is held at summer (never winter here) unless --season= asks.
+## The run starts at home (studies/heist_home.gd): a landmass far out in
+## the same sky, the heist isle hidden from it in the haze; the loot is
+## banked by landing it home (`greed_banked`). Its flags: --home-far=,
+## --hunt-seed=, --haze=, --no-haze, --cue-far=; --no-home the heist alone
+## (the run starts on its landing, banked by flying clear).
 
 ## The masses: [name, the top unit's middle (x, height off TOP, z), its
 ## spec, its parts [part, offset (x, dy, z), spec]] (crag_reach.gd MASSES).
@@ -457,10 +462,18 @@ func _ready() -> void:
 	# (no slot to switch: what he's by picks, crag_reach_greed.gd `key_for`).
 	greed_on = true
 	context_hands = true
+	if not LaunchArgs.user_args().has("--no-home"):
+		home = HeistHome.new()
+		home.read_flags()
+		add_child(home)
 	super._ready()
+	# The haze that hides each isle from the other (HeistHome `apply_haze`).
+	if home != null: home.apply_haze(_environment)
 	# Never winter here: the year held at summer (the settings' Season row,
-	# kit_weather.gd SEASON_CHOICES); a --season= flag keeps its own.
-	if weather != null: weather.choose_season(2)
+	# kit_weather.gd SEASON_CHOICES); a --season= flag keeps its own. Snapped:
+	# gliding there from the date's season (autumn in October) walked the
+	# plants through autumn's gold and winter for the first ~90 s.
+	if weather != null: weather.choose_season(2,true)
 	# The day turns at the settings' slow pace (1440 s, kit_weather.gd
 	# DAY_SECONDS[1]): a whole heist (~6 min) is a few hours of light, not
 	# dusk and night by the escape; a --day-length= flag keeps its own.
@@ -481,11 +494,87 @@ func pillar_list() -> Array:
 func ruin_list() -> Array:
 	return HEIST_RUINS
 
+## The heist's own start, on its landing (--no-home's start; its plane's
+## spot is the strip the ruins and loot keep off, `place_strip`).
+const HEIST_START := Vector3(-6.0,TOP+1.5,4.0)
+
 func _load_pack() -> void:
 	super._load_pack()
-	start = Vector3(-6.0,TOP+1.5,4.0)
+	start = HEIST_START
 	start_face = Vector2(1.0,0.0)
 	_last_stood = start
+
+# --- Home (studies/heist_home.gd) ----------------------------------------------
+
+const HeistHome = preload("res://studies/heist_home.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+const HeistSky = preload("res://studies/heist_level_sky.gd")
+const HomeHub = preload("res://studies/home_hub.gd")
+## Home, null with --no-home.
+var home: Node3D = null
+var _heist_strip := Vector4.INF
+
+## Home's turf bodies, as the crag units' (`_stand`): the plane and the
+## walker's turf.
+func home_turf(body: StaticBody3D) -> void:
+	body.collision_layer |= TURF_LAYER
+	_turf_rids.append(body.get_rid())
+	_turf.append(body)
+
+## Home's lake is skimmed as the turf is (HeistHome WATER_LAYER, as the
+## cloister tarn's), but no turf to land on (`floor_at` reads the turf only).
+func plane_ground(p: Vector3) -> Variant:
+	if _ground_ray == null:
+		_ground_ray = PhysicsRayQueryParameters3D.new()
+		_ground_ray.collision_mask = TURF_LAYER|HeistHome.WATER_LAYER
+	return super.plane_ground(p)
+
+## At home the plane stands parked at the end of home's strip.
+func plane_home() -> Vector4:
+	if home == null or home.land == null: return super.plane_home()
+	if _home == Vector4.INF: _home = home.plane_spot()
+	return _home
+
+## The heist landing's own plane spot (found from HEIST_START as
+## `plane_home` finds one), which its ruins, loot and burrows keep off
+## wherever the run starts.
+func place_strip() -> Vector4:
+	if home == null: return plane_home()
+	if _heist_strip != Vector4.INF: return _heist_strip
+	var keep_start := start
+	var keep_home := _home
+	start = HEIST_START
+	_home = Vector4.INF
+	_heist_strip = super.plane_home()
+	start = keep_start
+	_home = keep_home
+	return _heist_strip
+
+## Home, as the sky's places (the clouds keep their towers off it and drift
+## their puffs round it): [id, middle, reach].
+func home_places() -> Array:
+	if home == null or home.land == null: return []
+	var c: Vector3 = home.circle
+	return [["home",Vector3(c.x,TOP,c.y),c.z]]+HomeHub.places_of(home)
+
+func sky_script() -> Script:
+	return HeistSky
+
+## Banked when the loot is home (scripts/greed/greed_run.gd's hook): the
+## plane stopped on home's turf, or him on his feet there, with loot in
+## the bag (hitched or worn) or in the plane's keep. "" till then.
+func greed_banked() -> String:
+	if home == null or run == null: return ""
+	var at := Vector3.INF
+	if flying:
+		if takeoff != null or hand_landing.flying() or not hand_landing.can_exit(): return ""
+		at = plane.position
+	elif motor.grounded and not off_edge:
+		at = motor.feet
+	if at == Vector3.INF or not home.over(at): return ""
+	var aboard := not (run.keep as Array).is_empty()
+	if bag != null and is_instance_valid(bag) and not bool(bag.buried) and str(bag.state) in ["hitched","worn"] and not (bag.items as Array).is_empty(): aboard = true
+	return "You brought it home from %s." % greed_place() if aboard else ""
 
 func isle_name() -> String:
 	return "heist"
@@ -502,6 +591,16 @@ func _build_art() -> void:
 	add_child(art)
 	Layout.begin("heist")
 	var began := Time.get_ticks_msec()
+	# Home first: the plane's spot (`plane_home`) is on its strip, and he
+	# starts beside it.
+	if home != null:
+		home.build(self,TOP)
+		if home.land != null:
+			var st: Array = home.start_spot()
+			start = st[0]
+			start_face = st[1]
+			_last_stood = start
+		HomeHub.add(home)
 	for m: Array in HEIST_MASSES:
 		var mname: String = m[0]
 		var mid: Vector3 = m[1]
@@ -541,6 +640,14 @@ func _add_life() -> void:
 	_build_olmec_drop()
 	_build_hands_hint()
 	_bare_play()
+	# Home's lake is water he wades and swims (HeistHome `pool`).
+	if home != null and ground != null and "pools" in ground:
+		var lake_pool: Dictionary = home.pool()
+		if not lake_pool.is_empty(): (ground.pools as Array).append(lake_pool)
+	# Past the haze, no land drawn (HeistHome `range_out`).
+	if home != null:
+		var ranged: int = home.range_out([art,home,get_node_or_null("Swings"),get_node_or_null("Walls"),get_node_or_null("VaultWay"),get_node_or_null("Gap"),get_node_or_null("Loot")])
+		print("heist: %d meshes drawn to the haze's end" % ranged)
 
 ## Turf stays out of the way of the play: the grass round each rappel post
 ## and each climbing wall's foot is shrunk to nothing (the loot's and the
@@ -1050,6 +1157,7 @@ func _stage_turf(delta: float) -> void:
 ## Flying (no foot tick then): the takeoff beat.
 func _process(delta: float) -> void:
 	super._process(delta)
+	if home != null: home.tint_haze(_environment,_celestial)
 	if flying and delta > 0.0: _stage_turf(delta)
 
 func tick(delta: float) -> void:

@@ -78,6 +78,11 @@ const SEED_SIZE := Vector2(0.7,1.0)
 ## how much denser (or sparser) the tall (or short) patches grow.
 const HEIGHT_SCALE := 0.12
 const HEIGHT_THICK := 0.3
+## The spill over the rim (Site `spill`): how far in from the rim a tuft
+## roots (m), its lean outward (radians), its size over the site's tuft.
+const SPILL_IN := Vector2(0.05,0.35)
+const SPILL_LEAN := Vector2(0.7,1.25)
+const SPILL_SIZE := Vector2(1.2,1.9)
 ## Tiles (m: the grass and flowers', the undergrowth's, sparser, larger)
 ## and how far each kind draws (m), with the fade's margin.
 const TILE := 24.0
@@ -171,6 +176,30 @@ class Site extends RefCounted:
 	## patches denser), and each tuft leans up to `tilt` radians.
 	var height_field := 0.0
 	var tilt := 0.0
+	## Opt-in: the grass drawn in distance rings (a big turf seen on foot
+	## and from the plane: studies/heist_home.gd), each tile's grass in two
+	## batches. The near ring (all but `lod_share` of the tufts, the full
+	## tuft) thins out over `lod.x`..`.y` m, each tuft shrinking into the
+	## ground at its own distance; the mid ring (`lod_share` of them, the
+	## cheaper tuft GrassTuft.build_lite) grows `lod_grow` (wide, tall) over
+	## that band, so its sparser tufts keep the cover, and thins out over
+	## `lod.z`..`.w` m. Each tuft goes over `lod_soft` m (reference_surface
+	## `grass_ring`). A tile stops drawing once all its tufts have gone
+	## (no fade, no alpha pass). Zero: off, one batch drawn to grass_range.
+	var lod := Vector4.ZERO
+	var lod_share := 0.25
+	var lod_grow := Vector2(1.5,1.25)
+	var lod_soft := 6.0
+	## Opt-in: the candidates only within this box (world x, z; the
+	## outlines' box clipped to it), so a big turf grows as several jobs at
+	## once; the rim still read off the whole outlines. Zero size: all of it.
+	var box := Rect2()
+	## Opt-in: wild tufts spilling over the rim, `spill` a metre of it
+	## (SPILL_IN m in, leaning out SPILL_LEAN radians, SPILL_SIZE times a
+	## wild tuft), so the turf's edge hangs over the cliff's lip.
+	var spill := 0.0
+	## Opt-in with `spill`: true for a rim spot to leave bare (a fall's notch).
+	var spill_off := Callable()
 
 	func _init(top := 30.0, wear_fn := Callable(), wet_fn := Callable()) -> void:
 		ray = Vector2(top+60.0,top-8.0)
@@ -362,6 +391,9 @@ class Grow extends RefCounted:
 		var ba := KitFlora.box_and_area(outlines)
 		_box = ba[0]
 		_area = ba[1]
+		if site.box.has_area():
+			_area *= _box.intersection(site.box).get_area()/maxf(_box.get_area(),0.001)
+			_box = _box.intersection(site.box)
 		_grass = int(_box.get_area()*site.tufts)
 		_flowers = int(_box.get_area()*FLOWER_TRIES)
 
@@ -443,11 +475,38 @@ class Grow extends RefCounted:
 		_records.append(item)
 		return true
 
+	## Site `spill`: wild tufts along every outline's rim (within the box),
+	## rooted just in and leaning out over it.
+	func _spill() -> void:
+		var tuft := _site.tuft_size if _site.tuft_size != Vector2.ZERO else TUFT_SIZE
+		for outline: PackedVector2Array in _outlines:
+			var n := outline.size()
+			for i in range(n):
+				var a := outline[i]
+				var b := outline[(i+1)%n]
+				var along := b-a
+				var length := along.length()
+				if length < 0.001: continue
+				var normal := along.normalized().orthogonal()
+				# Pointing out of the land.
+				if Geometry2D.is_point_in_polygon((a+b)*0.5+normal*0.05,outline) == true: normal = -normal
+				var count := int(length*_site.spill)+(1 if _rng.randf() < fmod(length*_site.spill,1.0) else 0)
+				for k in range(count):
+					var p := a+along*_rng.randf()-normal*_rng.randf_range(SPILL_IN.x,SPILL_IN.y)
+					if _box.has_area() and not _box.has_point(p): continue
+					if _site.spill_off.is_valid() and _site.spill_off.call(p): continue
+					var size := _rng.randf_range(tuft.x,tuft.y)*_rng.randf_range(SPILL_SIZE.x,SPILL_SIZE.y)*_site.tuft_bump
+					var out3 := Vector3(normal.x,0.0,normal.y)
+					var lean := Basis(Vector3.UP.cross(out3).normalized(),_rng.randf_range(SPILL_LEAN.x,SPILL_LEAN.y))
+					var basis := lean*Basis(Vector3.UP,_rng.randf()*TAU).scaled(Vector3.ONE*size)
+					_add("grass_tuft",p,size,{"pose":NativeObjectPose.make(basis,0.0)},0.0)
+
 	func step(usec: int) -> bool:
 		var end := Time.get_ticks_usec()+usec
 		# Grass: thick in drifts, thinner between, thinning onto the paths.
 		while _phase == 0:
 			if _n >= _grass:
+				if _site.spill > 0.0: _spill()
 				_phase = 1
 				_n = 0
 				break
@@ -482,6 +541,9 @@ class Grow extends RefCounted:
 				_draw = Draw.new(_records,_ground,_area)
 				_draw.plain = _site.plain
 				if _site.grass_range > 0.0: _draw.grass_range = _site.grass_range
+				if _site.lod != Vector4.ZERO:
+					_draw.ring = {"lod":_site.lod,"share":_site.lod_share,"grow":_site.lod_grow,"soft":_site.lod_soft}
+					_draw.ring_seed = _seed
 				break
 			_n += 1
 			if usec >= 0 and _n % CHECK_EVERY == 0 and Time.get_ticks_usec() > end:
@@ -661,6 +723,9 @@ class Draw extends RefCounted:
 	var plain := false
 	## How far the grass draws (m).
 	var grass_range := GRASS_RANGE
+	## The site's distance rings (Site `lod`: {lod, share, grow, soft}); empty: off.
+	var ring := {}
+	var ring_seed := 0
 	var parts: Array = []
 	var _records: Array
 	var _ground: Ground
@@ -701,6 +766,9 @@ class Draw extends RefCounted:
 				var list: Array = transforms[key]
 				if list.is_empty() or not meshes.has(key): continue
 				var colours: Array = tints[key]
+				if not ring.is_empty() and KitFlora.ringed(key):
+					_rings(key,tile,list,colours)
+					continue
 				# One upload, not two renderer calls an instance (each tile's
 				# went 20-30 ms over its slice rendered).
 				var buffer := KitFlora.batch_buffer(list,colours)
@@ -719,13 +787,39 @@ class Draw extends RefCounted:
 		node.set_meta("area",_area)
 		return true
 
+	## One tile's grass in its two rings (Site `lod`): `ring.share` of the
+	## tufts, drawn by lot, to the mid ring (the cheaper tuft), the rest to
+	## the near ring; as nodes, or as plain parts carrying their `ring`.
+	func _rings(key: String, tile: Vector2i, list: Array, colours: Array) -> void:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = hash([ring_seed,key,tile])
+		var split := [[[],[]],[[],[]]]
+		for i in range(list.size()):
+			var k := 1 if rng.randf() < float(ring.share) else 0
+			(split[k][0] as Array).append(list[i])
+			(split[k][1] as Array).append(colours[i] if i < colours.size() else Color.WHITE)
+		for k in range(2):
+			var got: Array = split[k][0]
+			if got.is_empty(): continue
+			var buffer := KitFlora.batch_buffer(got,split[k][1])
+			var r := ring.duplicate()
+			r.ring = k+1
+			if plain:
+				parts.append({"key":key,"tile":tile,"count":got.size(),"buffer":buffer,"ring":r})
+			else:
+				var batch := KitFlora.batch_node(key,tile,got.size(),buffer,grass_range,r)
+				node.add_child(batch)
+				_triangles += KitFlora._mesh_triangles(batch.multimesh.mesh)*got.size()
+			_instances[key] = int(_instances.get(key,0))+got.size()
+
 ## One tile's batch of one catalog part, as Draw makes it (the main
 ## thread: it makes a material). `buffer` as `batch_buffer`.
-static func batch_node(key: String, tile: Vector2i, count: int, buffer: PackedFloat32Array, grass_range := GRASS_RANGE) -> MultiMeshInstance3D:
+static func batch_node(key: String, tile: Vector2i, count: int, buffer: PackedFloat32Array, grass_range := GRASS_RANGE, ring := {}) -> MultiMeshInstance3D:
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
-	multimesh.mesh = SkyIslets.catalog().meshes[key]
+	var k := int(ring.get("ring",0))
+	multimesh.mesh = KitFlora.lite_tuft(key) if k == 2 else SkyIslets.catalog().meshes[key]
 	multimesh.instance_count = count
 	multimesh.buffer = buffer
 	var batch := MultiMeshInstance3D.new()
@@ -737,7 +831,54 @@ static func batch_node(key: String, tile: Vector2i, count: int, buffer: PackedFl
 	batch.visibility_range_end_margin = FADE
 	batch.visibility_range_fade_mode = KitFlora.fade_mode()
 	batch.set_meta("part",key)
+	if k > 0:
+		# A ringed batch: its tufts are all gone (the shader's ring) by the
+		# band's end, so the tile stops there, past its farthest tuft.
+		var lod: Vector4 = ring.lod
+		batch.name += "_near" if k == 1 else "_mid"
+		batch.material_override = KitFlora.ring_material(key,ring)
+		batch.visibility_range_end = (lod.y if k == 1 else lod.w)+TILE*0.75
+		batch.visibility_range_end_margin = 2.0
+		batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+		batch.set_meta("ring",k)
 	return batch
+
+## Whether `key`'s batches take the distance rings (the soft grass tuft).
+static func ringed(key: String) -> bool:
+	var mesh: Variant = (SkyIslets.catalog().meshes as Dictionary).get(key)
+	return key.begins_with("grass") and mesh is Mesh and (mesh as Mesh).has_meta("grass_root")
+
+static var _lite := {}
+static var _ring_materials := {}
+static var _ring_lock := Mutex.new()
+
+## The mid ring's cheaper tuft for `key` (GrassTuft.build_lite, its colours).
+static func lite_tuft(key: String) -> Mesh:
+	_ring_lock.lock()
+	if not _lite.has(key):
+		var full: Mesh = SkyIslets.catalog().meshes[key]
+		_lite[key] = preload("res://scripts/grass_tuft_mesh.gd").build_lite(full.get_meta("grass_root"),full.get_meta("grass_tip"))
+	var mesh: Mesh = _lite[key]
+	_ring_lock.unlock()
+	return mesh
+
+## `key`'s plant material with its ring set (reference_surface `grass_ring`,
+## `grass_ring_grow`): one copy a key, ring and band set.
+static func ring_material(key: String, ring: Dictionary) -> Material:
+	var k := int(ring.ring)
+	var lod: Vector4 = ring.lod
+	var grow: Vector2 = ring.grow
+	var soft := float(ring.soft)
+	var id := [key,k,lod,grow,soft]
+	if _ring_materials.has(id): return _ring_materials[id]
+	var m := SkyIslets._plant_material(key)
+	if m is ShaderMaterial:
+		m = m.duplicate()
+		var band := Vector4(lod.x,lod.y,soft,0.0) if k == 1 else Vector4(lod.z,lod.w,soft,0.0)
+		(m as ShaderMaterial).set_shader_parameter("grass_ring",band)
+		if k == 2: (m as ShaderMaterial).set_shader_parameter("grass_ring_grow",Vector4(lod.x,lod.y,grow.x,grow.y))
+	_ring_materials[id] = m
+	return m
 
 ## Each mesh's triangle count, by its instance id: reading a mesh's arrays
 ## back from the renderer waits for the GPU to finish every frame in flight,

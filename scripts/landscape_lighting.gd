@@ -87,12 +87,13 @@ func setup(source: Dictionary) -> void:
 ## except under fog that covers the whole sky: Godot fogs the half-resolution
 ## pass too, so the clouds would take it twice. The local fog volumes around
 ## the plate barely reach the sky (half and full differ by under 0.4/255 on
-## average, mist included), so only depth fog or a global volumetric density
-## turns it off. Follows whichever script sets them.
+## average, mist included), so only depth fog that reaches the sky (its
+## `fog_sky_affect`) or a global volumetric density turns it off. Follows
+## whichever script sets them.
 func _process(_delta: float) -> void:
 	if environment == null or environment.sky == null: return
 	var sky_material := environment.sky.sky_material as ShaderMaterial
 	if sky_material == null: return
-	var half := not (full_res_clouds or environment.fog_enabled or (environment.volumetric_fog_enabled and environment.volumetric_fog_density > 0.0))
+	var half := not (full_res_clouds or (environment.fog_enabled and environment.fog_sky_affect > 0.0) or (environment.volumetric_fog_enabled and environment.volumetric_fog_density > 0.0))
 	if sky_material.get_shader_parameter("half_res_clouds") != half:
 		sky_material.set_shader_parameter("half_res_clouds",half)

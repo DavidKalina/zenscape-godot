@@ -94,7 +94,7 @@ static func build(host: Node3D) -> void:
 	host.add_child(holder)
 	var space := host.get_world_3d().direct_space_state
 	var loot: Array = host.get("loot")
-	var home: Vector4 = host.call("plane_home")
+	var home: Vector4 = host.call("place_strip") if host.has_method("place_strip") else host.call("plane_home")
 	var run_dir := Vector2(-sin(home.w),-cos(home.w))
 	var root: String = _table(host,"greed_root",ROOT)
 	for row: Array in _table(host,"greed_loot",LOOT):
@@ -506,7 +506,7 @@ static func build_brood(host: Node3D) -> void:
 	dark.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var s := WorldScale.wanderer
 	var space := host.get_world_3d().direct_space_state
-	var home: Vector4 = host.call("plane_home")
+	var home: Vector4 = host.call("place_strip") if host.has_method("place_strip") else host.call("plane_home")
 	var run_dir := Vector2(-sin(home.w),-cos(home.w))
 	var holes: Array = host.get("burrows")
 	var root: String = _table(host,"greed_root",ROOT)

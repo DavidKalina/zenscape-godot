@@ -620,6 +620,9 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 	if recipe.has("downs"): HillDowns.shape(self,rng,inland)
 	_erode()
 	if cliffs != null: cliffs.lift(self)
+	# A recipe's own hook on the shaped ground, before its water is cut and
+	# its plants go in (studies/heist_home.gd levels its strip there).
+	if recipe.has("shaped"): (recipe.shaped as Callable).call(self)
 	if recipe.has("stream"): IsletStream.cut(self,rng)
 	if recipe.has("lake"): IsletLake.cut(self,rng,inland)
 	elif kind == "spring" or recipe.has("pond"): _cut_pond(rng,inland)
@@ -1367,6 +1370,10 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 		# Downs (scripts/hill_downs.gd) colour their own ground, rock and sand.
 		if recipe.has("downs"):
 			tone = HillDowns.tone(self,f,at,slope,palette)
+		# A lake set in sea cliffs' tableland (a basin, scripts/islet_lake.gd):
+		# its bed and its beach before the cliffs' own paint.
+		elif cliffs != null and not lake.is_empty() and minf(a.y,minf(b.y,c.y)) < water_level+IsletLake.BEACH_TOP+0.12 and IsletLake.distance(self,at) < 2.5:
+			tone = IsletLake.bed_tone(self,sand,gravel,middle.y,at)
 		# Sea cliffs paint their own beach and steep grass (scripts/sea_cliffs.gd).
 		elif cliffs != null and cliffs.paints(at,middle.y,slope,rock_slope):
 			tone = cliffs.paint(at,middle.y,slope,tone,palette)
@@ -1379,7 +1386,7 @@ func top_arrays(palette: Dictionary, shift := Vector3.ZERO) -> Array:
 			tone = earth.lerp(gravel,0.15)*lerpf(0.8,0.95,n)
 		elif not stream.is_empty() and IsletStream.bed(self,at,minf(a.y,minf(b.y,c.y))):
 			tone = gravel.lerp(sand,0.35)*lerpf(0.78,0.95,n)
-		elif not lake.is_empty() and minf(a.y,minf(b.y,c.y)) < water_level+0.06:
+		elif not lake.is_empty() and minf(a.y,minf(b.y,c.y)) < water_level+0.06 and IsletLake.in_basin(self,at):
 			tone = IsletLake.bed_tone(self,sand,gravel,middle.y,at)
 		elif pond.z > 0.0 and minf(a.y,minf(b.y,c.y)) < water_level+0.06 and (at.distance_to(Vector2(pond.x,pond.y)) < pond.z*1.5 or _channel_distance(at) < CHANNEL*1.5):
 			tone = sand*lerpf(1.0,0.72,clampf((water_level-middle.y)/BOWL,0.0,1.0))
