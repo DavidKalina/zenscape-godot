@@ -10,6 +10,8 @@ extends Node
 ## the crag's masses and its near islets; the far specks round to ~700 m
 ## don't count) ends the run
 ## banked: the keep, what hangs in the hitched bag and a bag worn aboard.
+## A host with a home (`greed_banked`, studies/heist_level.gd) banks there
+## instead, when it says so.
 ## Death: swallowed by the Olmec's head (held SWALLOW_HOLD s, the jaw shut
 ## on him), or stranded off the edge (kit_isle.gd's fall rule): the run ends
 ## lost; the keep and a hitched bag are kept, his bag is lost.
@@ -94,8 +96,18 @@ func step(delta: float) -> void:
 	if ended != "" or delta <= 0.0: return
 	t += delta
 	_spare_step(delta)
+	# A host with a home (studies/heist_level.gd) says when the loot is
+	# home (`greed_banked`: its end line, "" not yet); flying clear doesn't
+	# bank there.
+	var homed := host.has_method("greed_banked")
+	if homed:
+		var line := str(host.call("greed_banked"))
+		if line != "":
+			end("banked",line)
+			return
 	if bool(host.get("flying")):
 		_swallow_t = 0.0
+		if homed: return
 		if _circle == Vector3.INF: _circle = host.call("isle_circle")
 		var at: Vector3 = host.get("plane").position
 		if Vector2(at.x-_circle.x,at.z-_circle.y).length() > AWAY:

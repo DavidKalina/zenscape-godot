@@ -270,6 +270,12 @@ func pillar_list() -> Array:
 func ruin_list() -> Array:
 	return RUINS
 
+## The plane's spot and heading on this place (Vector4, as `plane_home`)
+## that its ruins, loot and burrows keep off: where it parks to begin with,
+## unless the place starts elsewhere (studies/heist_level.gd's home).
+func place_strip() -> Vector4:
+	return plane_home()
+
 ## Leaves out every debris fragment in a route's way (SPAN_CLEAR): its
 ## instance shrunk to nothing. Returns how many. Fixed loops: units x
 ## multimeshes x instances x spans.
@@ -438,7 +444,7 @@ var ruins: Array = []
 func _ruins() -> void:
 	var space := get_world_3d().direct_space_state
 	# The plane's spot and run, found now on bare turf, kept clear.
-	var home := plane_home()
+	var home := place_strip()
 	var run_dir := Vector2(-sin(home.w),-cos(home.w))
 	var home2 := Vector2(home.x,home.z)
 	for r: Array in ruin_list():
