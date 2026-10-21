@@ -336,7 +336,11 @@ func surface(p: Vector2) -> float:
 ## dragon tips (docs/design/rim-dragon.md, round 9) carries its tarn with
 ## it, so the rect is read in the node's rest frame and the top is the
 ## posed (tipped) surface's height over `p`.
+## A pool with an "inside" (Callable(Vector2) -> bool, world x, z) is
+## water only where that says so: a lake of any shape in its box.
 static func _pool_top(pool: Dictionary, p: Vector2) -> float:
+	var inside: Variant = pool.get("inside")
+	if inside is Callable and (pool.rect as Rect2).has_point(p) and not bool((inside as Callable).call(p)): return -INF
 	var node: Variant = pool.get("node")
 	if node == null or not is_instance_valid(node):
 		return float(pool.top) if (pool.rect as Rect2).has_point(p) else -INF

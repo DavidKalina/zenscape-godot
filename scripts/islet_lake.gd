@@ -35,6 +35,15 @@ extends RefCounted
 ## fall's (m), for a wide curtain; reeds: a multiplier on the reeds and
 ## bank grass; tea: true to steep the water by what grows round it
 ## (`steep`), or the most it may steep (0 to 1).
+## basin: a lake in part of a bigger land (home's tableland, studies/
+## heist_home.gd) rather than taking the islet: a Dictionary {middle:
+## Vector2, radius: m, slope: m, under: m, axis: Vector2, long: share,
+## keep: {point, axis, clear} to seek its middle (`seek_basin`)}.
+## The water lies within `radius` of `middle` (`long` times that along
+## `axis`; wandering, and still a bank's width in from the shore); its
+## level stands `under` m below the lowest land round that ring; the land
+## round it comes down to the beach over `slope` m and is left as it was
+## past that; the field and the sheet cover the basin's box only.
 
 ## The plain's rim height (m), the islet's shore level.
 const RIM_HEIGHT := 0.2
@@ -92,6 +101,18 @@ const WEEDY := Color(0.24,0.27,0.16)
 const WEED := 0.4
 ## The fall off the spill: its half width (m).
 const FALL_HALF := 0.72
+## A basin (the recipe's `basin`): its edge wanders by this share of its
+## radius; its level is read off the land within BASIN_RING m outside it.
+const BASIN_WANDER := 0.18
+const BASIN_RING := 2.5
+## Seeking a basin's spot (`seek_basin`): the grid's step (m), and how it
+## shrinks (each try's share of the last) when none fits.
+const SEEK_STEP := 3.0
+const SEEK_SHRINK := 0.88
+const SEEK_TRIES := 5
+## How much the sought spot leans `toward` (a share) against lying near the
+## rim, so its spill is short.
+const SEEK_TOWARD := 0.3
 
 ## Shapes the lake into `islet`'s ground (after the erosion): the bank,
 ## the shelf, the bowl, the isle, the land over the water all round, and
@@ -106,7 +127,8 @@ static func cut(islet: RefCounted, rng: RandomNumberGenerator, inland: float) ->
 	var shelf := rng.randf_range(shelf_range.x,shelf_range.y)
 	var depth := rng.randf_range(depth_range.x,depth_range.y)
 	var beach := float(spec.get("beach",BEACH))
-	islet.water_level = level
+	var basin: Dictionary = spec.get("basin",{})
+	if basin.has("keep"): basin = seek_basin(islet,basin,spec.get("toward",Vector2.ZERO),bank.x)
 	var wander := FastNoiseLite.new()
 	wander.seed = islet.seed+71
 	wander.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
@@ -131,10 +153,20 @@ static func cut(islet: RefCounted, rng: RandomNumberGenerator, inland: float) ->
 		var p := points[i]
 		var b := lerpf(narrowest,widest,wander.get_noise_2d(p.x,p.y)*0.5+0.5)
 		var t := d-b
+		if not basin.is_empty():
+			var r := float(basin.radius)*(1.0+wander.get_noise_2d(p.x+53.0,p.y-29.0)*BASIN_WANDER)
+			t = minf(t,r-basin_off(basin,p))
 		into[i] = t
 		if t > deepest:
 			deepest = t
 			deep_at = p
+	# A basin's level: under the lowest land round its ring.
+	if not basin.is_empty():
+		var lowest := INF
+		for i in range(points.size()):
+			if into[i] > -BASIN_RING and into[i] <= 0.0: lowest = minf(lowest,islet.heights[i])
+		if lowest < INF: level = lowest-float(basin.get("under",0.8))
+	islet.water_level = level
 	# The isle, out in the deep.
 	var isle := Vector3.ZERO
 	var spec_isle := float(spec.get("isle",ISLE))
@@ -152,7 +184,16 @@ static func cut(islet: RefCounted, rng: RandomNumberGenerator, inland: float) ->
 		if t == -INF: continue
 		var p := points[i]
 		var h: float = islet.heights[i]
-		if t <= 0.0:
+		if t <= 0.0 and not basin.is_empty():
+			# A basin's bank: the land round it comes down over `slope` m to
+			# a beach just over the water, and is left as it was past that.
+			var s := -t
+			var slope := float(basin.get("slope",beach*3.0))
+			if s >= slope: continue
+			var beach_h := level+EDGE+(BEACH_TOP-EDGE)*smoothstep(0.0,beach,s)
+			h = beach_h+maxf(h-beach_h,0.0)*smoothstep(beach*0.5,slope,s)
+			if s > beach*0.25: h = maxf(h,level+LAND_OVER)
+		elif t <= 0.0:
 			# The bank: over the water all round, easing down to it.
 			var land := maxf(h,level+LAND_OVER)
 			var shore_top := maxf(h,level+BEACH_TOP)
@@ -171,16 +212,20 @@ static func cut(islet: RefCounted, rng: RandomNumberGenerator, inland: float) ->
 	for f in islet.land:
 		var a: Vector2 = points[islet.ids[f*3]]
 		var mean: float = (islet.heights[islet.ids[f*3]]+islet.heights[islet.ids[f*3+1]]+islet.heights[islet.ids[f*3+2]])/3.0
+		if not basin.is_empty():
+			var m: Vector2 = (a+points[islet.ids[f*3+1]]+points[islet.ids[f*3+2]])/3.0
+			if basin_off(basin,m) > float(basin.radius)*(1.0+BASIN_WANDER): continue
 		if mean < level: area += absf((points[islet.ids[f*3+1]]-a).cross(points[islet.ids[f*3+2]]-a))*0.5
 	islet.lake = {"level":level,"shelf":shelf,"depth":depth,"isle":isle,"deep":deep_at,"area":area,"spilled":false,
-		"channel":float(spec.get("channel",_channel(islet))),"fall":float(spec.get("fall",FALL_HALF)),"swim":bool(spec.get("swim",false))}
+		"channel":float(spec.get("channel",_channel(islet))),"fall":float(spec.get("fall",FALL_HALF)),"swim":bool(spec.get("swim",false)),"basin":basin}
 	# Until it spills the pond's circle stands at the deepest water: the
 	# islet's water (`water`) and channel read it.
 	islet.pond = Vector3(deep_at.x,deep_at.y,sqrt(maxf(area,1.0)/PI))
 	islet.lip = islet.rim_point(deep_at.angle())
 	islet.lip_out = islet.lip.normalized()
 	build_field(islet)
-	if spec.has("toward"): spill(islet,spec.toward)
+	if not basin.is_empty(): spill(islet,_nearest_rim(islet,basin.middle)-(basin.middle as Vector2))
+	elif spec.has("toward"): spill(islet,spec.toward)
 
 ## The lake spills off the rim the way `toward` leans: the lip, the shore
 ## point that way nearest the water, the channel cut from the nearest
@@ -195,7 +240,8 @@ static func spill(islet: RefCounted, toward: Vector2) -> void:
 	for k in range(0,edges.size(),3):
 		var i := edges[k]
 		var p := points[i]
-		var score := 12.0*(1.0-p.normalized().dot(way))+distance(islet,p)*0.8
+		var from: Vector2 = (islet.lake.get("basin",{}) as Dictionary).get("middle",Vector2.ZERO)
+		var score := 12.0*(1.0-(p-from).normalized().dot(way))+distance(islet,p)*0.8
 		if score < best:
 			best = score
 			pick = i
@@ -209,7 +255,7 @@ static func spill(islet: RefCounted, toward: Vector2) -> void:
 	for j in range(n):
 		for i in range(n):
 			if field.dist[j*n+i] > 0.0: continue
-			var q := Vector2(field.origin+i*FIELD,field.origin+j*FIELD)
+			var q := Vector2(float(field.ox)+i*FIELD,float(field.oz)+j*FIELD)
 			if _raw(islet,q) > level-SHELF_DEPTH*0.8: continue
 			var d := q.distance_to(lip)
 			if d < near:
@@ -235,14 +281,14 @@ static func spill(islet: RefCounted, toward: Vector2) -> void:
 ## islet's reach.
 static func build_field(islet: RefCounted) -> void:
 	var level: float = islet.water_level
-	var origin: float = -(float(islet.reach)+1.0)
-	var n := ceili((float(islet.reach)+1.0)*2.0/FIELD)+1
+	var box := _box(islet)
+	var n: int = box.n
 	var dist := PackedFloat32Array()
 	dist.resize(n*n)
 	for j in range(n):
 		for i in range(n):
-			var q := Vector2(origin+i*FIELD,origin+j*FIELD)
-			dist[j*n+i] = 0.0 if _land_height(islet,q) < level-0.005 else INF
+			var q := Vector2(box.ox+i*FIELD,box.oz+j*FIELD)
+			dist[j*n+i] = 0.0 if _land_height(islet,q) < level-0.005 and in_basin(islet,q) else INF
 	# A two-pass chamfer: near enough a distance for a spot finder.
 	var diag := FIELD*sqrt(2.0)
 	for j in range(n):
@@ -265,7 +311,93 @@ static func build_field(islet: RefCounted) -> void:
 				if i < n-1: v = minf(v,dist[k+n+1]+diag)
 				if i > 0: v = minf(v,dist[k+n-1]+diag)
 			dist[k] = v
-	islet.lake.field = {"origin":origin,"n":n,"dist":dist}
+	islet.lake.field = {"origin":box.ox,"ox":box.ox,"oz":box.oz,"n":n,"dist":dist}
+
+## A basin's middle sought (its `keep`: {point, axis, clear}, a line its
+## land keeps `clear` m off, the strip's): the spot furthest `toward` whose
+## oval (and its slope) lies on the land at least `bank` m in from the shore
+## and clear of the line, on a SEEK_STEP m grid; shrunk by SEEK_SHRINK while
+## none fits. The basin back with its middle, radius and long set.
+static func seek_basin(islet: RefCounted, basin: Dictionary, toward: Vector2, bank: float) -> Dictionary:
+	var out := basin.duplicate()
+	var keep: Dictionary = basin.keep
+	var across: Vector2 = (keep.axis as Vector2).orthogonal()
+	var reach: float = islet.reach
+	var way := toward.normalized()
+	for shrink in range(SEEK_TRIES):
+		var k := pow(SEEK_SHRINK,shrink)
+		out.radius = float(basin.radius)*maxf(k,0.6)
+		out.long = maxf(float(basin.get("long",1.0))*k,1.0)
+		var best := -INF
+		var pick := Vector2.INF
+		var y := -reach
+		while y <= reach:
+			var x := -reach
+			while x <= reach:
+				var c := Vector2(x,y)
+				x += SEEK_STEP
+				var score: float = c.dot(way)*SEEK_TOWARD-float(islet._sample(islet.shore_distance,c,0.0))
+				if score <= best or islet._sample(islet.shore_distance,c,-1.0) < bank: continue
+				if _basin_fits(islet,out,c,bank,keep,across): 
+					best = score
+					pick = c
+			y += SEEK_STEP
+		if pick != Vector2.INF:
+			out.middle = pick
+			return out
+	return out
+
+static func _basin_fits(islet: RefCounted, basin: Dictionary, c: Vector2, bank: float, keep: Dictionary, across: Vector2) -> bool:
+	var axis: Vector2 = basin.get("axis",Vector2.RIGHT)
+	var r := float(basin.radius)*(1.0+BASIN_WANDER)
+	var long := float(basin.get("long",1.0))
+	var slope := float(basin.get("slope",6.0))
+	for n in range(24):
+		var a := TAU*n/24.0
+		var edge := c+axis*cos(a)*r*long+axis.orthogonal()*sin(a)*r
+		if islet._sample(islet.shore_distance,edge,-1.0) < bank: return false
+		var out_way := (edge-c).normalized()
+		if absf((edge+out_way*slope-(keep.point as Vector2)).dot(across)) < float(keep.clear): return false
+	return true
+
+## The shore point nearest `p`.
+static func _nearest_rim(islet: RefCounted, p: Vector2) -> Vector2:
+	var edges: PackedInt32Array = islet.shore_edges
+	var points: PackedVector2Array = islet.points
+	var best := p+Vector2.RIGHT
+	var near := INF
+	for k in range(0,edges.size(),3):
+		var q := points[edges[k]]
+		if q.distance_to(p) < near:
+			near = q.distance_to(p)
+			best = q
+	return best
+
+## True within a basin (its oval, wandered at most) or its spill's
+## channel; true everywhere for a lake with no basin.
+static func in_basin(islet: RefCounted, p: Vector2) -> bool:
+	var basin: Dictionary = islet.lake.get("basin",{})
+	if basin.is_empty(): return true
+	if basin_off(basin,p) < float(basin.radius)*(1.0+BASIN_WANDER)+0.5: return true
+	return islet.lake.get("spilled",false) and islet._channel_distance(p) < _channel(islet)*1.5
+
+## How far `p` lies from a basin's middle (m), its long way (`axis`, a
+## unit Vector2) counted `long` times shorter: an oval basin.
+static func basin_off(basin: Dictionary, p: Vector2) -> float:
+	var off: Vector2 = p-(basin.middle as Vector2)
+	var axis: Vector2 = basin.get("axis",Vector2.RIGHT)
+	return Vector2(off.dot(axis)/maxf(float(basin.get("long",1.0)),0.1),off.dot(axis.orthogonal())).length()
+
+## The square the field and the sheet cover: the islet's reach, or a
+## basin's box (its radius, wander and slope round its middle). {ox, oz, n}.
+static func _box(islet: RefCounted) -> Dictionary:
+	var basin: Dictionary = islet.lake.get("basin",{})
+	if basin.is_empty():
+		var origin: float = -(float(islet.reach)+1.0)
+		return {"ox":origin,"oz":origin,"n":ceili((float(islet.reach)+1.0)*2.0/FIELD)+1}
+	var half := float(basin.radius)*(1.0+BASIN_WANDER)*maxf(float(basin.get("long",1.0)),1.0)+float(basin.get("slope",6.0))+2.0
+	var mid: Vector2 = basin.middle
+	return {"ox":mid.x-half,"oz":mid.y-half,"n":ceili(half*2.0/FIELD)+1}
 
 # --- Reading it -------------------------------------------------------------------
 
@@ -289,14 +421,18 @@ static func distance(islet: RefCounted, p: Vector2) -> float:
 	var field: Dictionary = islet.lake.get("field",{})
 	if field.is_empty(): return INF
 	var n: int = field.n
-	var i := clampi(roundi((p.x-float(field.origin))/FIELD),0,n-1)
-	var j := clampi(roundi((p.y-float(field.origin))/FIELD),0,n-1)
+	var fi := roundi((p.x-float(field.ox))/FIELD)
+	var fj := roundi((p.y-float(field.oz))/FIELD)
+	# Off a basin's box: far from the water.
+	if not (islet.lake.get("basin",{}) as Dictionary).is_empty() and (fi < 0 or fj < 0 or fi >= n or fj >= n): return INF
+	var i := clampi(fi,0,n-1)
+	var j := clampi(fj,0,n-1)
 	return float(field.dist[j*n+i])
 
 ## True over the water (the ground under its level), the channel too.
 static func wet(islet: RefCounted, p: Vector2) -> bool:
 	if distance(islet,p) > 1.0: return false
-	return islet.on_land(p) and _raw(islet,p) < float(islet.water_level)-0.005
+	return islet.on_land(p) and _raw(islet,p) < float(islet.water_level)-0.005 and in_basin(islet,p)
 
 ## True within `room` m of the water.
 static func near(islet: RefCounted, p: Vector2, room: float) -> bool:
@@ -304,7 +440,7 @@ static func near(islet: RefCounted, p: Vector2, room: float) -> bool:
 
 ## The water's depth at `p` (m, 0 dry).
 static func depth_at(islet: RefCounted, p: Vector2) -> float:
-	if not islet.on_land(p): return 0.0
+	if not islet.on_land(p) or not in_basin(islet,p): return 0.0
 	return maxf(float(islet.water_level)-_raw(islet,p),0.0)
 
 ## The bed's colour under the water and on the beach: sand at the
@@ -325,9 +461,17 @@ static func plant(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 	var more := float((islet.recipe.get("lake",{}) as Dictionary).get("reeds",1.0))
 	var clumps := roundi(rng.randi_range(REED_CLUMPS.x,REED_CLUMPS.y)*more)
 	var made := 0
+	# A basin's are sought in its box, not over the whole land.
+	var box := _box(islet)
+	var lo := Vector2(-reach,-reach)
+	var span := Vector2(reach,reach)*2.0
+	var in_box := not (islet.lake.get("basin",{}) as Dictionary).is_empty()
+	if in_box:
+		lo = Vector2(box.ox,box.oz)
+		span = Vector2.ONE*float(box.n)*FIELD
 	for attempt in range(clumps*12):
 		if made >= clumps: break
-		var p := Vector2(rng.randf_range(-reach,reach),rng.randf_range(-reach,reach))
+		var p := _draw(rng,reach,lo,span,in_box)
 		var under := depth_at(islet,p)
 		if under <= 0.02 or under > SHELF_DEPTH+0.05: continue
 		if _in_spill(islet,p,2.5): continue
@@ -340,7 +484,7 @@ static func plant(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 			islet._add("reeds",q,rng.randf()*TAU,rng.randf_range(0.75,1.15))
 	for n in range(roundi(rng.randi_range(BANK_GRASS.x,BANK_GRASS.y)*more)):
 		for attempt in range(10):
-			var p := Vector2(rng.randf_range(-reach,reach),rng.randf_range(-reach,reach))
+			var p := _draw(rng,reach,lo,span,in_box)
 			if not islet.on_land(p) or depth_at(islet,p) > 0.0 or distance(islet,p) > 0.9 or _in_spill(islet,p,1.5): continue
 			if _raw(islet,p) > level+0.4: continue
 			islet._add("bank_grass",p,rng.randf()*TAU,rng.randf_range(0.6,1.0))
@@ -365,6 +509,11 @@ static func plant(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 	var tea: Variant = (islet.recipe.get("lake",{}) as Dictionary).get("tea",false)
 	if tea is float: islet.lake.tea = minf(steep(islet),tea)
 	elif tea: islet.lake.tea = steep(islet)
+
+## A spot to try planting: over the islet's reach, or in a basin's box.
+static func _draw(rng: RandomNumberGenerator, reach: float, lo: Vector2, span: Vector2, in_box: bool) -> Vector2:
+	if not in_box: return Vector2(rng.randf_range(-reach,reach),rng.randf_range(-reach,reach))
+	return lo+Vector2(rng.randf()*span.x,rng.randf()*span.y)
 
 ## A recipe's copses: each a stand of one species and tint on the bank,
 ## its middle a little way from the water, clear of what already stands.
@@ -438,15 +587,18 @@ static func fall_half(islet: RefCounted) -> float:
 ## fetch, the open water upwind in eight directions (CUSTOM0, CUSTOM1).
 static func water_arrays(islet: RefCounted, color: Color, shift: Vector3) -> Array:
 	var level: float = islet.water_level
-	var origin: float = -(float(islet.reach)+1.0)
-	var n := ceili((float(islet.reach)+1.0)*2.0/FIELD)+1
+	var box := _box(islet)
+	var n: int = box.n
+	var ox: float = box.ox
+	var oz: float = box.oz
 	var deep := PackedFloat32Array()
 	deep.resize(n*n)
 	var wet := PackedByteArray()
 	wet.resize(n*n)
 	for j in range(n):
 		for i in range(n):
-			var h := _land_height(islet,Vector2(origin+i*FIELD,origin+j*FIELD))
+			var q := Vector2(ox+i*FIELD,oz+j*FIELD)
+			var h := _land_height(islet,q) if in_basin(islet,q) else INF
 			deep[j*n+i] = level-h if h < INF else -1.0
 			wet[j*n+i] = 1 if deep[j*n+i] > 0.0 else 0
 	# The fetch, eight ways (+x, +x+z, +z, -x+z, then the opposites): each
@@ -487,7 +639,7 @@ static func water_arrays(islet: RefCounted, color: Color, shift: Vector3) -> Arr
 				var cj := j+c.y
 				var at := cj*n+ci
 				var under := maxf(deep[at],0.0)
-				vertices.append(Vector3(origin+ci*FIELD,level,origin+cj*FIELD)+shift)
+				vertices.append(Vector3(ox+ci*FIELD,level,oz+cj*FIELD)+shift)
 				normals.append(Vector3.UP)
 				colors.append(color)
 				uv.append(Vector2(under*2.5,0.0))

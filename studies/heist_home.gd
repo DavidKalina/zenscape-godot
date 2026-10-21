@@ -7,11 +7,15 @@ extends Node3D
 ##              walls, stacks and arch) hung in the sky with its rock under
 ##              it, TABLE_R m round; a strip of its top levelled STRIP m
 ##              long for the plane (`strip`), the plane parked at its end
-##   lake       a lake islet (scripts/landform_lake.gd's recipe, scripts/
-##              islet_lake.gd's bowl) set against the tableland's low side,
-##              its rim at the tableland's edge, spilling off its far rim as
-##              a fall into the open sky (SkyIslets `_fall`, its thread down
-##              to the cloud sea)
+##   lake       a lake dug in the tableland itself (scripts/islet_lake.gd
+##              `basin`, landform_lake.gd's lake recipe), sought near a rim
+##              and clear of the strip, its banks coming down to a beach and
+##              a reed shelf; its water the kit isles' still sheet (scripts/
+##              kit_isle/kit_water.gd), swum (the walker's pool, `pool`) and
+##              skimmed by the plane (WATER_LAYER), never landed on (its bed
+##              no turf); it spills through a notch in the layered cliff as
+##              a fall into the open sky (SkyIslets `_fall` in the live falls'
+##              painted look, its thread down to the cloud sea)
 ##   landmarks  LANDMARKS crag rocks (scripts/kit_isle/islet_unit_node.gd,
 ##              each with a ruin on top), some between home and the heist
 ##              isle, the rest round each
@@ -39,6 +43,8 @@ const KitLook = preload("res://scripts/kit_isle/kit_look.gd")
 const Layout = preload("res://scripts/layout_overrides.gd")
 const UnitNode = preload("res://scripts/kit_isle/islet_unit_node.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const IsletLake = preload("res://scripts/islet_lake.gd")
+const KitWater = preload("res://scripts/kit_isle/kit_water.gd")
 
 ## The heist isle's middle (x, z; world) home is placed round, and how far.
 const HEIST_MID := Vector2(110.0,10.0)
@@ -79,12 +85,33 @@ const LIFT := 0.0
 const PARK_IN := 14.0
 const START_SIDE := 5.0
 const START_BACK := 3.0
-## The lake islet: its width (m), how far its rim runs in over the
-## tableland's (m), its rim this far (m) under the tableland's edge.
-const LAKE_ACROSS := 84.0
-const LAKE_OVER := 6.0
-const LAKE_UNDER := 0.6
-const LAKE_SEED := 9102
+## The lake: a basin dug in the tableland (scripts/islet_lake.gd `basin`),
+## sought where it fits nearest a rim (leaning to the low side, first tried
+## LAKE_AT of the radius out that way), its land LAKE_KEEP m clear of the
+## strip's fade; LAKE_R m across its short way, LAKE_LONG times that along the
+## contours; the land round it coming down over LAKE_SLOPE m to its beach,
+## its level LAKE_UNDER m under the lowest land round it; a bank LAKE_BANK
+## m wide kept to the cliff's brink, but where it spills off the rim as a
+## fall LAKE_FALL m wide. Its water is the kit isles' still sheet
+## (scripts/kit_isle/kit_water.gd), LAKE_CELL m a cell.
+const LAKE_AT := 0.58
+const LAKE_KEEP := 2.0
+const LAKE_R := 17.0
+const LAKE_LONG := 1.75
+const LAKE_SLOPE := 13.0
+const LAKE_UNDER := 0.9
+const LAKE_BANK := Vector2(7.0,10.0)
+const LAKE_FALL := 3.2
+const LAKE_CELL := 0.5
+## The fall's veil (shaders/flow_fall.gdshader: 0 a whole curtain, 1 a
+## trickle torn into streaks).
+const FALL_VEIL := 0.35
+## Home's circle (the clouds keep off it, banking counts in it) runs this
+## far (m) past the tableland's reach.
+const CIRCLE_PAST := 84.0
+## The plane finds no turf on what lies under the water (nor this far over
+## it): the lake bed is rock to it.
+const LAKE_DRY := 0.05
 ## The landmarks: how many on the way (share along home -> heist, sideways
 ## off the line, m) and round each isle (distance range, m), their size
 ## range (m) and height off TOP (m); none within KEEP m of another.
@@ -103,6 +130,9 @@ const SPRAY := [Color(0.93,0.95,0.97,0.8),26.0,60.0,300.0,-1.0]
 const SMOKE_AT := Vector3(190.0,26.0,2.0)
 
 const TURF_LAYER := 1 << 11
+## The lake's surface: the plane skims it (studies/heist_level.gd
+## `plane_ground`), the walker's rays never see it.
+const WATER_LAYER := 1 << 12
 
 var host: Node3D
 var far := FAR
@@ -126,6 +156,11 @@ var landmarks: Array = []
 var cues: Array = []
 var islets: Node3D = null
 var built_ms := 0
+## The tableland's shape (its lake in it), the lake's box (the land's
+## frame) and home/lake's coded spot.
+var land_shape: RefCounted = null
+var pool_rect := Rect2()
+var _lake_coded := Transform3D.IDENTITY
 ## The strip in the tableland's frame (x, z): its ends; its top there.
 var _strip_local := [Vector2.ZERO,Vector2.ZERO]
 var _strip_y := 0.0
@@ -172,38 +207,127 @@ func build(h: Node3D, top: float) -> void:
 	rng.seed = hash(["home",hunt_seed])
 	var tilt := rng.randf()*TAU
 	var t := Vector2.from_angle(tilt)
-	# The tableland first: its strip and its edge on the low side fix the
-	# lake's place.
+	# The tableland with its lake in its low side; its strip levelled.
+	var lrng := RandomNumberGenerator.new()
+	lrng.seed = hash(["home_lake",hunt_seed])
+	var table_at := Vector3(middle.x,0.0,middle.z)
 	var table_spec := _table_spec(rng,tilt)
+	var lake_spec := _lake_spec(lrng,t,table_at)
+	if not lake_spec.is_empty(): table_spec.lake = lake_spec
 	var shape: RefCounted = SkyIslet.author(TABLE_SEED+hunt_seed,table_spec)
 	_level_strip(shape,t)
 	var made := SkyIslets.dress(shape,palette,middle.y-_strip_y)
-	# The lake islet against the low side: its rim over the tableland's edge.
-	var edge_a := atan2(-t.y,-t.x)
-	var edge: Vector2 = shape.rim_point(edge_a)
-	var edge_y: float = shape.ground_at(edge*0.97)
-	var lrng := RandomNumberGenerator.new()
-	lrng.seed = hash(["home_lake",hunt_seed])
-	var lake_spec: Dictionary = LandformLake.recipe(lrng,LAKE_ACROSS)
-	(lake_spec.lake as Dictionary).toward = -t
-	var lake_shape: RefCounted = SkyIslet.author(LAKE_SEED+hunt_seed,lake_spec)
-	var lake_edge: Vector2 = lake_shape.rim_point(atan2(t.y,t.x))
-	var lake_off := edge+(-t)*(lake_edge.length()-LAKE_OVER)
-	var lake_y := edge_y-SkyIslet.RIM_HEIGHT-LAKE_UNDER
-	var lake_made := SkyIslets.dress(lake_shape,palette,middle.y-_strip_y+lake_y)
-	# Stood, each named.
-	var table_at := Vector3(middle.x,middle.y-_strip_y,middle.z)
+	table_at.y = middle.y-_strip_y
 	land = _stand_islet("home/land","Land",table_at,made)
-	lake = _stand_islet("home/lake","Lake",table_at+Vector3(lake_off.x,lake_y,lake_off.y),lake_made)
 	if land != null:
 		var xf := land.global_transform
 		strip_a = xf*Vector3(_strip_local[0].x,_strip_y,_strip_local[0].y)
 		strip_b = xf*Vector3(_strip_local[1].x,_strip_y,_strip_local[1].y)
-		circle = Vector3(land.global_position.x,land.global_position.z,float(shape.reach)+LAKE_ACROSS)
+		circle = Vector3(land.global_position.x,land.global_position.z,float(shape.reach)+CIRCLE_PAST)
+		if not lake_spec.is_empty(): _lay_lake(shape,table_at)
+	land_shape = shape
 	_landmarks(top)
-	_cues(lake_shape)
+	_cues(shape)
 	built_ms = Time.get_ticks_msec()-began
 	print("home: built in %d ms; strip %s -> %s (%.0f m), lake at %s" % [built_ms,strip_a.round(),strip_b.round(),strip_a.distance_to(strip_b),(lake.global_position if lake != null else Vector3.INF).round()])
+
+## The lake's recipe (scripts/landform_lake.gd's lake, set in a basin of
+## the tableland toward `-t`, its low side), {} if home/lake is deleted.
+## The basin's middle is home/lake's (layout_overrides: moved in the world
+## view, it is dug there on the next load).
+func _lake_spec(lrng: RandomNumberGenerator, t: Vector2, table_at: Vector3) -> Dictionary:
+	if Layout.deleted("home/lake"): return {}
+	var spec: Dictionary = LandformLake.recipe(lrng,LAKE_R*2.0).lake
+	spec.basin = {"middle":-t*TABLE_R*LAKE_AT,"radius":LAKE_R,"slope":LAKE_SLOPE,"under":LAKE_UNDER,"axis":t.orthogonal(),"long":LAKE_LONG,
+		"keep":{"point":-t*TABLE_R*STRIP_OFF,"axis":t.orthogonal(),"clear":STRIP_HALF+STRIP_FADE+LAKE_KEEP}}
+	# Moved in the world view: dug where it was put (its middle, in the
+	# land's coded frame), not sought.
+	var moved: Dictionary = Layout.data.get("moved",{})
+	if moved.has("home/lake"):
+		var at := Layout.xform("home/lake",Transform3D.IDENTITY).origin-table_at
+		spec.basin.middle = Vector2(at.x,at.z)
+		spec.basin.erase("keep")
+	spec.bank = LAKE_BANK
+	spec.toward = -t
+	spec.fall = LAKE_FALL
+	spec.channel = LAKE_FALL*1.2
+	spec.swim = true
+	spec.beach = 3.5
+	spec.shelf = Vector2(2.2,3.2)
+	spec.depth = Vector2(3.2,4.2)
+	spec.reeds = 3.5
+	spec.isle = 0.4
+	spec.isle_radius = Vector2(2.5,3.6)
+	spec.copses = Vector2i.ZERO
+	spec.erase("tea")
+	return spec
+
+## The lake's water: the kit isles' still sheet over the basin (the islet's
+## own pond, drawn in the islets' plain pond look, taken off), held by a
+## node at the basin's middle named home/lake.
+func _lay_lake(shape: RefCounted, table_at: Vector3) -> void:
+	var pond := land.get_node_or_null("Pond")
+	if pond != null: pond.queue_free()
+	# The fall in the live falls' painted look (scripts/flow_falls.gd):
+	# streak columns sliding down it, not a plain white sheet.
+	var fall := land.get_node_or_null("Fall") as GeometryInstance3D
+	if fall != null and fall.material_override is ShaderMaterial:
+		var m := fall.material_override as ShaderMaterial
+		m.set_shader_parameter("painterly",true)
+		m.set_shader_parameter("veil",FALL_VEIL)
+	var lake_d: Dictionary = shape.lake
+	if lake_d.is_empty(): return
+	var basin: Dictionary = lake_d.basin
+	var mid: Vector2 = basin.middle
+	var level: float = shape.water_level
+	_lake_coded = Transform3D(Basis.IDENTITY,table_at+Vector3(mid.x,level,mid.y))
+	var half := float(basin.radius)*(1.0+IsletLake.BASIN_WANDER)*float(basin.long)+2.0
+	lake = Node3D.new()
+	lake.name = "Lake"
+	land.add_child(lake)
+	lake.position = Vector3(mid.x,level,mid.y)
+	var water: Dictionary = shape.water()
+	var lip_world := land.global_transform*Vector3(water.lip.x,level,water.lip.y)
+	var sheet := KitWater.still({"name":"Water","level":0.0,
+		"ground":func(x: float, z: float) -> float: return IsletLake._raw(shape,Vector2(x+mid.x,z+mid.y))-level,
+		"rect":Rect2(-half,-half,half*2.0,half*2.0),
+		"inside":func(p: Vector2) -> bool: return shape.on_land(p+mid) and IsletLake.in_basin(shape,p+mid),
+		"cell":LAKE_CELL,
+		"falls":[Vector4(lip_world.x,lip_world.z,LAKE_FALL*1.4,0.8)]})
+	lake.add_child(sheet)
+	# Its surface: a top the plane skims as it does the turf (on WATER_LAYER,
+	# as the cloister tarn's), never stood on; the walker's rays never see it.
+	if sheet.mesh != null:
+		var surface := ConcavePolygonShape3D.new()
+		surface.set_faces(sheet.mesh.get_faces())
+		surface.backface_collision = true
+		var holder := CollisionShape3D.new()
+		holder.shape = surface
+		var body := StaticBody3D.new()
+		body.name = "Surface"
+		body.collision_layer = WATER_LAYER
+		body.collision_mask = 0
+		body.add_child(holder)
+		sheet.add_child(body)
+	pool_rect = Rect2(mid.x-half,mid.y-half,half*2.0,half*2.0)
+	Layout.track("home/lake",lake,"token",_lake_coded)
+	print("home: lake %.0f m2 at level %.1f (%.1f under the strip), %d water cells" % [float(lake_d.area),level,_strip_y-level,int(sheet.get_meta("cells"))])
+
+## The lake as a pool the walker wades and swims (scripts/
+## pilot_physics_ground.gd `pools`): its box (world), its top, and where
+## in it the water is (the islet's own: under the level, near its field).
+func pool() -> Dictionary:
+	if lake == null or land_shape == null: return {}
+	var xf := land.global_transform
+	var lo := xf*Vector3(pool_rect.position.x,0.0,pool_rect.position.y)
+	var hi := xf*Vector3(pool_rect.end.x,0.0,pool_rect.end.y)
+	var rect := Rect2(Vector2(minf(lo.x,hi.x),minf(lo.z,hi.z)),Vector2(absf(hi.x-lo.x),absf(hi.z-lo.z)))
+	var shape: RefCounted = land_shape
+	var node := land
+	return {"rect":rect,"top":(xf*Vector3(0.0,float(shape.water_level),0.0)).y,
+		"inside":func(p: Vector2) -> bool:
+			var l: Vector3 = node.global_transform.affine_inverse()*Vector3(p.x,0.0,p.y)
+			return IsletLake.distance(shape,Vector2(l.x,l.z)) < 1.0}
 
 ## The tableland's recipe (scripts/landform_cliffs.gd's, grown).
 func _table_spec(rng: RandomNumberGenerator, tilt: float) -> Dictionary:
@@ -267,8 +391,13 @@ func _stand_islet(name_: String, node_name: String, at: Vector3, made: Dictionar
 	var coded := Transform3D(Basis.IDENTITY,at)
 	# Placed before its bodies go in, so none stands a frame at the origin.
 	node.transform = Layout.xform(name_,coded)
-	for part: String in ["top","sides"]:
-		var faces := LineBuild._faces(made[part],-SkyIslets.OFF_MAP if part == "top" else Vector3.ZERO)
+	# A lake's bed (under its level, LAKE_DRY) is no turf: rock to the
+	# plane, ground to the walker.
+	var islet: RefCounted = made.shape
+	var wet_under := float(islet.water_level)+LAKE_DRY if not (islet.lake as Dictionary).is_empty() else -INF
+	for part: String in ["top","bed","sides"]:
+		var faces := _split_wet(LineBuild._faces(made.top,-SkyIslets.OFF_MAP),islet,wet_under,part == "bed") if part != "sides" else LineBuild._faces(made.sides,Vector3.ZERO)
+		if faces.is_empty(): continue
 		var k := 0
 		for cut: PackedVector3Array in LineBuild._cut(faces):
 			var shape := ConcavePolygonShape3D.new()
@@ -286,6 +415,17 @@ func _stand_islet(name_: String, node_name: String, at: Vector3, made: Dictionar
 			if part == "top": host.call("home_turf",body)
 	Layout.track(name_,node,"piece",coded)
 	return node
+
+## The faces (triangles) of `faces` in `islet`'s lake (any corner under
+## `under`, by its water) with `wet`, else the rest.
+static func _split_wet(faces: PackedVector3Array, islet: RefCounted, under: float, wet: bool) -> PackedVector3Array:
+	if under == -INF: return faces if not wet else PackedVector3Array()
+	var out := PackedVector3Array()
+	for i in range(0,faces.size(),3):
+		var m := (faces[i]+faces[i+1]+faces[i+2])/3.0
+		var low := minf(faces[i].y,minf(faces[i+1].y,faces[i+2].y)) < under and IsletLake.distance(islet,Vector2(m.x,m.z)) < 2.0
+		if low == wet: out.append_array([faces[i],faces[i+1],faces[i+2]])
+	return out
 
 ## The landmarks (WAY on the line, ROUND round each isle), each a crag rock
 ## with a ruin on its top, named home/landmark_<n>; through the host's own
@@ -328,10 +468,10 @@ func _landmarks(top: float) -> void:
 	print("home: %d landmarks" % landmarks.size())
 
 ## The cues: the spray under home's fall, the smoke over the heist's vault.
-func _cues(lake_shape: RefCounted) -> void:
-	var water: Dictionary = lake_shape.water()
-	if lake != null and not water.is_empty():
-		var lip := lake.global_transform*Vector3(float((water.lip as Vector2).x),float(water.level),float((water.lip as Vector2).y))
+func _cues(shape: RefCounted) -> void:
+	var water: Dictionary = shape.water() if not (shape.lake as Dictionary).is_empty() else {}
+	if land != null and not water.is_empty():
+		var lip := land.global_transform*Vector3(float((water.lip as Vector2).x),float(water.level),float((water.lip as Vector2).y))
 		var out := Vector3(float((water.out as Vector2).x),0.0,float((water.out as Vector2).y))
 		_cue("home/cue_home","CueHome",lip+out*4.0+Vector3.DOWN*6.0,SPRAY)
 	_cue("home/cue_heist","CueHeist",SMOKE_AT,SMOKE)

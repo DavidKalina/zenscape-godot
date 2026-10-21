@@ -129,3 +129,89 @@ from an old scratch driver into `scratch/home/trip.gd`. A `fly_to` /
 
 A marking tool, a map, random isle placement or generation, more clues,
 the lake's swim, and building home on a worker to cut the load time.
+
+## Round: water
+
+Branch `iter/home-water` (on `iter/home-isle`).
+
+### What changed
+
+- **The lake is in the tableland.** The separate lake islet is gone. The
+  tableland's own recipe carries the lake, dug as a basin
+  (`scripts/islet_lake.gd`, the lake's new opt-in `basin`): an oval about
+  34 x 60 m, sought on a 3 m grid for the spot nearest a rim (leaning to
+  the low side) whose oval stays a bank's width inside the cliff's brink
+  and whose banks keep clear of the strip and its fade. The level stands
+  0.9 m under the lowest land round it. The land comes down over 13 m to a
+  beach, then the reed shelf, then the deep (3.2 to 4.2 m), with an isle
+  sometimes. It spills through a notch in the layered cliff toward the
+  nearest rim. Its shores are the tableland's own ground and walls: no
+  sandy slab face. Seeds where the low side is too narrow put the lake on
+  the high side (it then stands a few metres over the strip).
+- **The water** is the kit isles' still sheet (`KitWater.still`, the
+  aqueduct isle's water), 0.5 m a cell: turquoise shallows to slate-blue
+  deep, the bed read through it, shore lap, chop with the wind, and churn at
+  the lip. The islets' plain pond is taken off. Reeds and bank grass are
+  sought in the basin's box, so the shelf has them.
+- **The fall** is the SkyIslets curtain and its thread to the cloud sea,
+  in the live falls' painted look (`painterly`, veil 0.35): streak columns
+  sliding down it, not a plain white slab. `home/cue_home` hangs under it
+  as before.
+- **Swimming**: the lake is a pool for the walker's ground
+  (`HeistHome.pool`, appended in `heist_level._add_life`). A pool may now
+  give an `inside` callable (`pilot_physics_ground.gd`, opt-in), so only
+  the lake's own water in its box is wet.
+- **The plane**: the lake bed is not turf (rock to the plane, ground to
+  the walker), so `floor_at` finds nothing to land on there. The water
+  surface is a collider on `WATER_LAYER` (1 << 12) that only the plane's
+  `plane_ground` reads (as the cloister tarn's): it skims the water at
+  its skim height and can't dive in.
+- `sky_islet.gd`: the lake bed and beach paint go before the sea cliffs'
+  own paint when the islet has both, and only inside a basin.
+- `home/lake` now names the lake node (the basin's middle). Moved in the
+  world view, the basin is dug there on the next load. Deleted, home has
+  no lake. No saved layout uses it yet.
+
+### Proved
+
+- Smoke, headless, 0 errors: `heist_level` (seeds 3, 71, random),
+  `--no-home`, `aqueduct_isle`, `cloister_tarn_isle`, `motif_yard`
+  with `editor_tarn_peak` and `plumb_well`.
+- `scratch/home/water_trip.gd` drives real input, headless, 13/13 at seeds
+  3, 1 and 5:
+  - He walks from the plane to the bank (route).
+  - He wades in and swims the deep (`swimming`, wade 0.58), then swims
+    across and walks out on the far bank.
+  - He walks back up onto the strip.
+  - `floor_at` over the water is NAN.
+  - The plane takes off, goes round and lands by hand on the strip.
+  - A landing aimed at the lake skims at 0.9 m over the water, is never on
+    its wheels there, and comes down on the far bank.
+- The last round's `scratch/home/trip.gd` (seed 3) still banks 25 on
+  landing home.
+- Tests `test_landform_lake`, `test_landform_cliffs`, `test_sky_islets`,
+  `test_sky_fall_thread`, `test_character_study` and
+  `test_aqueduct_under` pass. No test is known broken.
+
+### Stills (`scratch/home/shots/`, git-ignored; seed 3, `scratch/home/water_look.gd`)
+
+- `w01_lake_air.png`, `w01b_lake_air_out.png`: the lake from the air.
+- `w02_shore_play.png`, `w02b_shore_eye.png`: on its shore.
+- `w03_swim_play.png`, `w03b_swim_side.png`: swimming.
+- `w04_fall_below.png`, `w04b_fall_lip.png`: the fall from below the rim
+  and at its lip.
+- `w05_approach.png`, `w05b_approach_side.png`: home on approach.
+
+### Gaps
+
+- **Not from this round:** at some hunt seeds the strip is a stub, because
+  the tableland's outline has a bay across its line. Seed 6 gives 11 m,
+  seed 7 15 m and seed 4 39 m (checked with the lake deleted). That breaks
+  the landing-turf rule. The strip should be sought (angle and offset) for
+  the longest clear run.
+- The bed's 2 m grid shows through the clear water as big flat facets at
+  the shelf's drop.
+- Up close, the fall's sheet ends in a ragged cut where the thread and
+  the spray cue take over.
+- The water sheet is laid in the land node's frame. A layout that turns
+  `home/land` would turn the chop with it.

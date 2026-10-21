@@ -477,6 +477,14 @@ func home_turf(body: StaticBody3D) -> void:
 	_turf_rids.append(body.get_rid())
 	_turf.append(body)
 
+## Home's lake is skimmed as the turf is (HeistHome WATER_LAYER, as the
+## cloister tarn's), but no turf to land on (`floor_at` reads the turf only).
+func plane_ground(p: Vector3) -> Variant:
+	if _ground_ray == null:
+		_ground_ray = PhysicsRayQueryParameters3D.new()
+		_ground_ray.collision_mask = TURF_LAYER|HeistHome.WATER_LAYER
+	return super.plane_ground(p)
+
 ## At home the plane stands parked at the end of home's strip.
 func plane_home() -> Vector4:
 	if home == null or home.land == null: return super.plane_home()
@@ -586,6 +594,10 @@ func _add_life() -> void:
 	_build_olmec_up()
 	_build_olmec_drop()
 	_build_hands_hint()
+	# Home's lake is water he wades and swims (HeistHome `pool`).
+	if home != null and ground != null and "pools" in ground:
+		var lake_pool: Dictionary = home.pool()
+		if not lake_pool.is_empty(): (ground.pools as Array).append(lake_pool)
 	# Past the haze, no land drawn (HeistHome `range_out`).
 	if home != null:
 		var ranged: int = home.range_out([art,home,get_node_or_null("Swings"),get_node_or_null("Walls"),get_node_or_null("VaultWay"),get_node_or_null("Gap"),get_node_or_null("Loot")])
