@@ -260,8 +260,9 @@ void fragment() {
 	// Ledges lying back hold a little turf.
 	rock = mix(rock, grass * 0.8, smoothstep(0.62, 0.74, n.y) * 0.35);
 	vec3 lit_n = n;
+	vec3 rock_glow = vec3(0.0);
 	if (!old_rock && rocky > 0.002) {
-		rock = er_rock(p, n, fp3, zs_sun_direction, grass * 0.85, lit_n);
+		rock = er_rock(p, n, fp3, zs_sun_direction, grass * 0.85, lit_n, rock_glow);
 		lit_n = normalize(mix(n, lit_n, rocky));
 	}
 
@@ -347,5 +348,5 @@ void fragment() {
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float hollow = 0.85 + 0.15 * n.y;
 	// A cloud overhead takes a little of the sky's fill too.
-	EMISSION = albedo * hemi * hollow * (1.0 - 0.2 * shade);
+	EMISSION = albedo * hemi * hollow * (1.0 - 0.2 * shade) + rock_glow * rocky * (1.0 - snowy);
 }

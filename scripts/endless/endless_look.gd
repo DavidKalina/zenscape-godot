@@ -160,6 +160,7 @@ func setup(land_seed: int) -> void:
 	ground = ShaderMaterial.new()
 	ground.shader = preload("res://shaders/endless_ground.gdshader")
 	ground.set_shader_parameter("old_rock","--old-rock" in LaunchArgs.user_args())
+	ground.set_shader_parameter("rock_pass1","--rock-pass1" in LaunchArgs.user_args())
 	ground.set_shader_parameter("sea_y",Field.SEA_Y)
 	ground.set_shader_parameter("beach",Field.BEACH)
 	ground.set_shader_parameter("snow_line",Field.new(land_seed).snow_line())

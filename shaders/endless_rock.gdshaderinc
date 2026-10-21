@@ -27,8 +27,16 @@ uniform float rock_bump : hint_range(0.0, 1.5) = 0.55;
 uniform float rock_paint : hint_range(0.0, 1.0) = 0.75;
 uniform float rock_moss : hint_range(0.0, 2.0) = 1.0;
 uniform float rock_size : hint_range(0.25, 4.0) = 1.0;
+// Pass 2: big forms broken into flat painted planes (0 off), how much of the
+// shade is lifted and coloured by bounce light, and the first pass's look.
+uniform float rock_facets : hint_range(0.0, 1.5) = 1.0;
+uniform float rock_bounce : hint_range(0.0, 2.0) = 1.0;
+uniform bool rock_pass1 = false;
 
-const vec3 ER_SHADOW = vec3(0.105, 0.115, 0.150);
+const vec3 ER_SHADOW1 = vec3(0.105, 0.115, 0.150);
+const vec3 ER_SHADOW = vec3(0.135, 0.130, 0.175);
+const vec3 ER_SKY_BOUNCE = vec3(0.30, 0.38, 0.72);
+const vec3 ER_GROUND_BOUNCE = vec3(0.95, 0.60, 0.34);
 const vec3 ER_MID = vec3(0.250, 0.225, 0.200);
 const vec3 ER_LIT = vec3(0.580, 0.470, 0.330);
 const vec3 ER_GLINT = vec3(0.780, 0.680, 0.520);
@@ -104,9 +112,34 @@ vec3 er_tilt(vec3 n, vec3 rnd, float amount) {
 	return normalize(n + r * amount);
 }
 
+float er_snap(float x, float w, out float id) {
+	id = floor(x);
+	return id + smoothstep(0.5 - w, 0.5 + w, x - id) ;
+}
+
+// The surface normal broken into flat planes: its direction (azimuth and
+// elevation) snapped to steps, warped by slow noise so the planes' edges
+// wander, and `id` a number per plane for its own tone.
+vec3 er_planes(vec3 n, vec3 p, float steps_az, float steps_el, float w, out vec2 id) {
+	float warp_a = (er_vnoise(p / 53.0 + vec3(2.0, 6.0, 1.0)) - 0.5) * 0.9;
+	float warp_e = (er_vnoise(p / 41.0 + vec3(7.0, 3.0, 5.0)) - 0.5) * 0.5;
+	float az = atan(n.z, n.x) + warp_a;
+	float el = asin(clamp(n.y, -1.0, 1.0)) + warp_e;
+	float ia;
+	float ie;
+	float a = er_snap(az / 6.2831853 * steps_az + 0.5, w, ia);
+	float e = er_snap(el / 1.5707963 * steps_el + 0.5, w * 1.3, ie);
+	id = vec2(ia, ie);
+	az = (a - 0.5) / steps_az * 6.2831853 - warp_a;
+	el = (e - 0.5) / steps_el * 1.5707963 - warp_e;
+	el = clamp(el, -1.45, 1.45);
+	return vec3(cos(el) * cos(az), sin(el), cos(el) * sin(az));
+}
+
 // The rock's albedo at world point `p` on a surface of world normal `n`;
 // `bumped` comes back the normal to light it with. See the file's head.
-vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped) {
+vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped, out vec3 glow) {
+	glow = vec3(0.0);
 	float sz = rock_size;
 	vec3 q = p / sz;
 	float fq = fp / sz;
@@ -122,12 +155,27 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped) 
 	vec3 rnd_b;
 	vec2 cell_b = er_cells(vec3(q.x, q.y * 1.5, q.z) / 38.0 + vec3(3.0, 1.0, 6.0), rnd_b);
 	vec3 nf = er_tilt(n, rnd_b, 0.09 * rock_bump * er_keep(38.0, fq));
+	vec2 plane_id = vec2(0.0);
+	vec2 cell_c = vec2(1.0, 1.0);
+	float facet_k = 0.0;
+	if (!rock_pass1 && rock_facets > 0.0) {
+		// Flat planes that follow the form (the normal snapped), each tilted a
+		// little more by its own random cell, then smaller planes up close.
+		float steep = smoothstep(0.97, 0.55, n.y);
+		facet_k = rock_facets * (0.7 + 0.3 * steep);
+		vec3 np = er_planes(n, p / sz, 9.0, 6.0, 0.05 + fq * 0.004, plane_id);
+		vec3 rnd_c;
+		cell_c = er_cells(vec3(q.x, q.y * 1.3, q.z) / 70.0 + vec3(1.0, 8.0, 2.0), rnd_c);
+		np = er_tilt(np, rnd_c, 0.34 * rock_bump);
+		nf = normalize(mix(nf, np, clamp(0.95 * facet_k, 0.0, 1.0)));
+		nf = er_tilt(nf, rnd_b, 0.34 * rock_bump * er_keep(38.0, fq) * facet_k);
+	}
 	vec3 rnd_f = vec3(0.5);
 	vec2 cell_f = vec2(1.0, 1.0);
 	float keep_f = er_keep(7.5, fq);
 	if (keep_f > 0.0) {
 		cell_f = er_cells(vec3(q.x, q.y * 2.6, q.z) / 7.5 + vec3(9.0, 4.0, 2.0), rnd_f);
-		nf = er_tilt(nf, rnd_f, 0.035 * rock_bump * keep_f);
+		nf = er_tilt(nf, rnd_f, (rock_pass1 ? 0.035 : 0.11 * (0.4 + 0.6 * facet_k)) * rock_bump * keep_f);
 	}
 
 	// The painted light: the facet's own sun, in steps from shadow to warm lit.
@@ -139,8 +187,15 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped) 
 	float t = floor(tier) + smoothstep(0.5 - soft, 0.5 + soft, fract(tier));
 	t = clamp(t / (steps - 1.0) - 0.0, 0.0, 1.0);
 	t = mix(lit, t, 0.7);
-	t = 0.22 + t * 0.78;
-	vec3 col = t < 0.5 ? mix(ER_SHADOW, ER_MID, t * 2.0) : mix(ER_MID, ER_LIT, t * 2.0 - 1.0);
+	vec3 shadow_tone = rock_pass1 ? ER_SHADOW1 : ER_SHADOW;
+	t = rock_pass1 ? 0.22 + t * 0.78 : 0.26 + t * 0.74;
+	vec3 col = t < 0.5 ? mix(shadow_tone, ER_MID, t * 2.0) : mix(ER_MID, ER_LIT, t * 2.0 - 1.0);
+	if (!rock_pass1 && facet_k > 0.0) {
+		// Each plane its own tone and a hue leaning warm or cool.
+		vec3 hp = er_hash3(ivec3(int(plane_id.x), int(plane_id.y), 19));
+		col *= (1.0 + (hp.x - 0.5) * 0.26 * facet_k)
+			* mix(vec3(0.94, 0.97, 1.08), vec3(1.08, 1.02, 0.90), hp.y);
+	}
 	// A rock of its own: warm sandy to cool grey over the drift.
 	col *= mix(vec3(0.86, 0.92, 1.08), vec3(1.14, 1.04, 0.84), smoothstep(0.25, 0.75, drift));
 
@@ -195,7 +250,8 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped) 
 	// Cracks down the seams between facets.
 	float seam_f = (1.0 - smoothstep(0.0, 0.035 + fq / 7.5 * 0.5, cell_f.y)) * keep_f * 0.0;
 	float seam_b = (1.0 - smoothstep(0.0, 0.035 + fq / 38.0 * 0.5, cell_b.y)) * er_keep(38.0, fq) * 0.25;
-	crack = max(crack, max(seam_f, seam_b));
+	float seam_c = (1.0 - smoothstep(0.0, 0.012 + fq / 70.0 * 0.6, cell_c.y)) * er_keep(70.0, fq) * 0.3 * facet_k;
+	crack = max(crack, max(max(seam_f, seam_b), seam_c));
 	// Dry-brush strokes along the beds: light flecks on the lit side.
 	float stroke = er_vnoise(vec3(q.x / 7.0, q.y / 0.8, q.z / 7.0) + vec3(4.0, 1.0, 8.0));
 	float sk = er_keep(0.8, fq);
@@ -205,8 +261,12 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped) 
 	float gk = er_keep(2.6, fq);
 	col *= 1.0 - smoothstep(0.55, 0.8, gully) * 0.5 * gk * (1.0 - nf.y);
 	// A pale lip along the facet's top and along the lit side of a seam.
-	col = mix(col, ER_GLINT, lip * (0.35 + 0.6 * t) * 0.9);
-	col = mix(col, ER_CRACK, clamp(crack, 0.0, 1.0) * 0.85);
+	float shade = rock_pass1 ? 0.0 : 1.0 - smoothstep(0.05, 0.6, dot(nf, sun));
+	// In shade the lips keep a cool glint and the cracks stay violet, not black.
+	vec3 glint = mix(ER_GLINT, vec3(0.40, 0.40, 0.54), shade);
+	vec3 crack_col = mix(ER_CRACK, vec3(0.085, 0.075, 0.135), shade);
+	col = mix(col, glint, lip * (0.35 + 0.6 * t + 0.15 * shade) * 0.9);
+	col = mix(col, crack_col, clamp(crack, 0.0, 1.0) * (0.85 - 0.2 * shade));
 
 	// Turf and moss settle where the face lies back, ragged by the facets.
 	float lay = nf.y + (er_vnoise(q / 7.0) - 0.5) * 0.2 + (er_vnoise(q / 2.3) - 0.5) * 0.1 * er_keep(2.3, fq);
@@ -216,6 +276,16 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped) 
 	col = mix(col, mossy * mix(vec3(0.85), vec3(1.0, 1.05, 0.7), er_vnoise(q / 13.0)), settle * 0.8);
 
 	// The sun's own light takes the facets' normal.
-	bumped = normalize(mix(n, nf, 0.7));
-	return mix(col, ER_MID * 1.2, 1.0 - rock_paint) ;
+	bumped = normalize(mix(n, nf, rock_pass1 ? 0.7 : 0.92));
+	col = mix(col, ER_MID * 1.2, 1.0 - rock_paint);
+	if (!rock_pass1 && rock_bounce > 0.0) {
+		// Bounce light the sun does not give: cool sky from above, warm from
+		// the valley floor below, strongest in the shade.
+		float up = nf.y * 0.5 + 0.5;
+		float low = smoothstep(170.0, 10.0, p.y + 40.0);
+		vec3 bounce = ER_SKY_BOUNCE * (0.35 + 0.65 * up)
+			+ ER_GROUND_BOUNCE * (1.0 - up) * (0.3 + 0.7 * low) * 0.8;
+		glow = col * bounce * (0.12 + 0.88 * shade) * 0.22 * rock_bounce;
+	}
+	return col;
 }
