@@ -114,6 +114,17 @@ var _valley := FastNoiseLite.new()
 var _valley_warp := FastNoiseLite.new()
 var _valley_wide := FastNoiseLite.new()
 var _floor_half := WorldScale.opening(TOY_VALLEY)*0.5
+## What the last `sample` found (read by `shape`, for placing things such as
+## the arches, scripts/endless/arch_plan.gd): how much of a range stands
+## there (0..1), how inland it is, the distance to the nearest valley's line
+## (INF where none reaches), that valley's floor half-width and side width,
+## and the way across the valley (XZ, unit).
+var last_mountain := 0.0
+var last_inland := 0.0
+var last_valley := INF
+var last_half := 0.0
+var last_side := 0.0
+var last_across := Vector2.RIGHT
 
 func _init(land_seed := 0) -> void:
 	seed = land_seed
@@ -155,6 +166,8 @@ func sample(x: float, z: float) -> Vector2:
 	var h := base+hills
 	# The ranges: the crest lines of a warped noise, where the mask allows.
 	var mountain := 0.0
+	last_valley = INF
+	last_inland = inland
 	if inland > 0.0 and mountains > 0.0:
 		var band := RANGE_BAND+Vector2.ONE*(1.0-mountains)*0.35
 		var where := smoothstep(band.x,band.y,_mask.get_noise_2d(x,z))*inland
@@ -186,6 +199,10 @@ func sample(x: float, z: float) -> Vector2:
 		var d := absf(v)/maxf(sqrt(gx*gx+gz*gz),0.25/VALLEYS)
 		var half := _floor_half*lerpf(VALLEY_SWING.x,VALLEY_SWING.y,clampf(_valley_wide.get_noise_2d(x,z)*0.8+0.5,0.0,1.0))
 		var side := lerpf(VALLEY_SIDE.x,VALLEY_SIDE.y,smoothstep(0.0,0.6,mountain))*maxf(valleys,1.0)
+		last_valley = d
+		last_half = half
+		last_side = side
+		if gx*gx+gz*gz > 0.0: last_across = Vector2(gx,gz).normalized()
 		if d < half+side:
 			var floor_y := maxf(base+hills*VALLEY_KEEP,MEADOW_ABOVE)
 			var t := clampf((d-half)/side,0.0,1.0)
@@ -197,6 +214,7 @@ func sample(x: float, z: float) -> Vector2:
 			meadow = maxf(meadow,floor_meadow)
 	# The coast: the land eases flat into the sea (a beach), not a step.
 	if absf(h) < BEACH*2.0: h = h*lerpf(0.45,1.0,smoothstep(0.0,BEACH*2.0,absf(h)))
+	last_mountain = mountain
 	return Vector2(SEA_Y+h,meadow)
 
 ## Round one's land (--old-land), exactly.
@@ -215,6 +233,16 @@ func _old_sample(x: float, z: float) -> Vector2:
 		h = lerpf(h,flat,meadow)
 	if absf(h) < BEACH*2.0: h = h*lerpf(0.45,1.0,smoothstep(0.0,BEACH*2.0,absf(h)))
 	return Vector2(SEA_Y+h,meadow)
+
+## The land's shape at a world XZ point: {height, meadow, mountain, inland,
+## valley (distance to a valley's line, INF where none reaches), half, side,
+## across} (see `last_mountain`). Round one's land has no ranges or valleys.
+func shape(x: float, z: float) -> Dictionary:
+	last_mountain = 0.0
+	last_valley = INF
+	last_inland = 0.0
+	var s := sample(x,z)
+	return {"height":s.x,"meadow":s.y,"mountain":last_mountain,"inland":last_inland,"valley":last_valley,"half":last_half,"side":last_side,"across":last_across}
 
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:

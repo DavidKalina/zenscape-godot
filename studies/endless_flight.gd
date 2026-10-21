@@ -39,7 +39,9 @@ extends Node3D
 ## name=value (a shader setting, for tuning by hand), --flower-drifts=X
 ## (how many flower drifts, 1; 0 or --no-drifts: round 4's), --grass-regions=X
 ## (how strongly the grass's colour regions show, 1; 0 or --no-regions:
-## one palette); G turns it off and on.
+## one palette); G turns it off and on. The arches (scripts/endless/
+## land_arches.gd): --arches=X (how many, 1; 0 or --no-arches none),
+## --rock-arches=X / --ruin-arches=X (each family's share, 1; 0 none).
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
@@ -52,6 +54,8 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
 const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
+const LandArches = preload("res://scripts/endless/land_arches.gd")
+const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -88,6 +92,8 @@ var look: Node3D
 ## The grass carpet round the eye (off at the start under --no-grass), or
 ## null under --plain-look.
 var grass: Node3D
+## The arches over the land (scripts/endless/land_arches.gd).
+var arches: Node3D
 var flown := 0.0
 var _start := Vector2.ZERO
 var _heading := 0.0
@@ -137,6 +143,11 @@ func _ready() -> void:
 	land.name = "Land"
 	add_child(land)
 	land.setup(seed,look.ground if look != null else null)
+	LayoutOverrides.begin("endless_flight")
+	arches = LandArches.new()
+	arches.name = "Arches"
+	add_child(arches)
+	arches.setup(seed,look.ground if look != null else null)
 	if look != null:
 		grass = EndlessGrass.new()
 		grass.setup(seed,look.ground)
@@ -149,6 +160,7 @@ func _ready() -> void:
 	var eye := Vector3(_start.x,_start_height(),_start.y)
 	camera.global_position = eye
 	var took: float = land.prime(eye)
+	arches.prime(eye)
 	_launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	if grass != null and grass.enabled: grass.prime(camera.global_position)
 	walk_ready = true
@@ -288,8 +300,10 @@ func _size_chase() -> void:
 	if view.y > 0.0: chase.aspect = view.x/view.y
 
 ## The land's height under a point, for the flight (SkyGlide `step`).
+## The arches stand on it (LandArches `ground`): a leg raises it, a span
+## over it is a solid the plane slides under.
 func plane_ground(p: Vector3) -> Variant:
-	return field.height(p.x,p.z)
+	return arches.ground(p,field.height(p.x,p.z))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea.
 func floor_at(p: Vector2) -> float:
@@ -298,7 +312,7 @@ func floor_at(p: Vector2) -> float:
 
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
-	return p.y < maxf(field.height(p.x,p.z),Field.SEA_Y)+EYE_CLEAR*0.5
+	return p.y < maxf(field.height(p.x,p.z),Field.SEA_Y)+EYE_CLEAR*0.5 or arches.inside(p)
 
 ## The share of the way from `from` to `to` clear of the land (GlideCamera
 ## `sight`), marched over the field.
@@ -307,7 +321,7 @@ func _sight(from: Vector3, to: Vector3) -> float:
 	for i in range(1,STEPS+1):
 		var t := float(i)/STEPS
 		var p := from.lerp(to,t)
-		if p.y < field.height(p.x,p.z): return float(i-1)/STEPS
+		if p.y < field.height(p.x,p.z) or arches.inside(p): return float(i-1)/STEPS
 	return 1.0
 
 func _process(delta: float) -> void:
@@ -320,7 +334,8 @@ func tick(delta: float) -> void:
 	flown += delta
 	var input := _fly_input(delta)
 	input["flaps"] = 1.0 if flaps else 0.0
-	hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"))
+	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
+	hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(arches,"inside"))
 	plane.engine = hand_landing.engine*float(plane.sputter)
 	var ground := Callable(self,"plane_ground")
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")))
@@ -331,6 +346,7 @@ func tick(delta: float) -> void:
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() else Vector3.ZERO
 	_frame(delta)
 	land.step(camera.global_position)
+	arches.step(camera.global_position)
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		grass.step((view if view != null else camera).global_position)
@@ -423,7 +439,12 @@ func _show_hud() -> void:
 		("  ·  gpu %.2f ms" % gpu) if gpu > 0.0 else "",
 		("  ·  %s, %05.2f h%s" % [look.mood_title(),look.hour(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
-		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()]
+		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_arch_note()]
+
+func _arch_note() -> String:
+	if arches.density <= 0.0: return "\nno arches"
+	var a: Dictionary = arches.stats
+	return "\narches: %d standing in %d cells  ·  slowest build %.0f ms on a worker, slowest commit %.2f ms" % [int(a.arches),int(a.cells),float(a.slowest_build_ms),float(a.slowest_commit_ms)]
 
 func _grass_note() -> String:
 	if grass == null: return ""
