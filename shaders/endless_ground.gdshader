@@ -22,6 +22,9 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/grass_look.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
 #include "res://shaders/endless_patch.gdshaderinc"
+// The grass's ring distance (scripts/endless/endless_grass.gd), for where
+// its tufts and flowers give way to paint.
+#include "res://shaders/endless_ring.gdshaderinc"
 
 uniform float sea_y = -40.0;
 uniform float beach = 2.2;
@@ -220,7 +223,7 @@ void fragment() {
 	grass = mix(grass, sheen_colour, clamp(sheen * 0.42, 0.0, 0.8) * (1.0 - thin * 0.6));
 	// The carpet's tone past its tufts, and wherever none grow.
 	float turf = carpet_turf;
-	float beyond = carpet_reach.y > 0.0 ? clamp((length(CAMERA_POSITION_WORLD - p) - carpet_reach.x) / max(carpet_reach.y - carpet_reach.x, 1.0), 0.0, 1.0) : 1.0;
+	float beyond = carpet_reach.y > 0.0 ? clamp((endless_ring_d(CAMERA_POSITION_WORLD, p) - carpet_reach.x) / max(carpet_reach.y - carpet_reach.x, 1.0), 0.0, 1.0) : 1.0;
 	float toned = mix(1.0, beyond, turf);
 	grass *= mix(vec3(1.0), mix(carpet_tone_low, carpet_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
 	float speck_a = smoothstep(0.3, 0.7, zs_noise(turned_speck(p.xz, 0) / carpet_grain_sizes.x)) - 0.5;
@@ -269,7 +272,7 @@ void fragment() {
 	grass *= 1.0 + grain_near * (1.0 - thin * 0.4);
 	// Under the near carpet: the tufts' own ground (endless_patch.gd `grass`).
 	if (carpet_near.y > 0.0) {
-		float under = carpet_turf * (1.0 - smoothstep(carpet_near.x, carpet_near.y, length(CAMERA_POSITION_WORLD - p)));
+		float under = carpet_turf * (1.0 - smoothstep(carpet_near.x, carpet_near.y, endless_ring_d(CAMERA_POSITION_WORLD, p)));
 		if (under > 0.0) {
 			float sunny_c = clamp((broad * 1.3 + wide * 1.5 + mid * 0.9 + clump * 0.9) * patch_strength, -1.0, 1.0);
 			vec3 coarse = mix(GREEN, sunny_c > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny_c));
@@ -296,7 +299,7 @@ void fragment() {
 		vec2 bloom = ep_bloom(p.xz, bloom_amount, region_offset);
 		float bloom_w = bloom.x * bloom_on;
 		if (bloom_w > 0.0) {
-			float d = length(CAMERA_POSITION_WORLD - p);
+			float d = endless_ring_d(CAMERA_POSITION_WORLD, p);
 			float past = smoothstep(bloom_fade.x, bloom_fade.y, d);
 			float cut = 0.78 - 0.3 * bloom_w;
 			float dot_a = smoothstep(cut, cut + 0.06, zs_noise(turned_speck(p.xz, 0) / bloom_dots.x));

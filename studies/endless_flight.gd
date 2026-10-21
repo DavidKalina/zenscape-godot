@@ -37,7 +37,10 @@ extends Node3D
 ## name=value (a shader setting, for tuning by hand), --flower-drifts=X
 ## (how many flower drifts, 1; 0 or --no-drifts: round 4's), --grass-regions=X
 ## (how strongly the grass's colour regions show, 1; 0 or --no-regions:
-## one palette); G turns it off and on.
+## one palette), --grass-lead=X (how far its rings lead out ahead along the
+## view, 0.45), --no-grass-lead, --grass-flat-up=M (the height its rings are
+## measured along the ground to, 20), --grass-ring=3d (the old 3D rings); G
+## turns it off and on.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
@@ -144,7 +147,7 @@ func _ready() -> void:
 	camera.global_position = eye
 	var took: float = land.prime(eye)
 	_launch(Vector3(_start.x,_start_height(),_start.y),_heading)
-	if grass != null and grass.enabled: grass.prime(camera.global_position)
+	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)" % [seed,took,int(land.counts().standing)])
 	if get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -324,7 +327,8 @@ func tick(delta: float) -> void:
 	land.step(camera.global_position)
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
-		grass.step((view if view != null else camera).global_position)
+		var eye: Camera3D = view if view != null else camera
+		grass.step(eye.global_position,-eye.global_basis.z)
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
 	_show_hud()

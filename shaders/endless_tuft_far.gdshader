@@ -5,22 +5,35 @@ shader_type spatial;
 // ring keeps the isles' own tuft material (shaders/reference_surface.gdshader
 // with `grass_blades`), whose sway, ground colour and light, worked out at
 // every vertex and pixel, cost ten times this over a field that reaches the
-// horizon. Here: the same ring (reference_surface `grass_ring`,
-// `grass_ring_grow`: each tuft grows over .x..y of grass_ring_grow, shrinks
-// into the ground at its own distance over grass_ring), the tuft's own
-// colours (the vertex colour, its instance tint the painted ground's
-// patches) toned to the near tuft's look (`root_tone`, `tip_tone`), the sun
-// by Godot, the sky's fill as emission (as the isles' surfaces take it), the
-// clouds' shade at its root, and the night's grade.
+// horizon. Here: the same rings (reference_surface `grass_ring`: each tuft
+// shrinks into the ground at its own distance over grass_ring), the ring
+// distance the endless grass's (shaders/endless_ring.gdshaderinc: along the
+// ground, led out ahead of the view), the tuft's own colours (the vertex
+// colour, its instance tint the painted ground's patches) toned to the near
+// tuft's look (`root_tone`, `tip_tone`), the sun by Godot, the sky's fill as
+// emission (as the isles' surfaces take it), the clouds' shade at its root,
+// and the night's grade.
+//
+// The handoff from the near ring: each far tuft comes up at its own
+// distance in `grass_ring_in`.x..y (over .z m), as the near ring's tufts go
+// at theirs over the same band, at the near tuft's size there
+// (`grow_near`), and grows only slowly past it (to `grass_ring_grow`.zw
+// wide and tall by .y m). A tuft in a flower drift's colour (its instance
+// alpha k/16: wash_colours[k-1] on its upper blades) comes up over `wash_in`
+// instead, as the drawn flowers go.
 render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/reference_globals.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
+#include "res://shaders/endless_ring.gdshaderinc"
 
 uniform vec4 grass_ring = vec4(0.0);
+uniform vec4 grass_ring_in = vec4(0.0, 1.0, 1.0, 0.0);
+uniform vec2 grow_near = vec2(1.0);
 uniform vec4 grass_ring_grow = vec4(0.0, 1.0, 1.0, 1.0);
-// The tufts' size at grass_ring_grow.x (0: none nearer, where the near
-// ring's own tufts stand; they grow in as those thin out).
-uniform float grow_from = 0.0;
+uniform vec4 wash_in = vec4(0.0, 1.0, 1.0, 0.0);
+uniform vec3 wash_colours[8];
+// How far up the blade the wash takes over (along the blade, 0 root, 1 tip).
+uniform vec2 wash_tip = vec2(0.3, 0.75);
 // The tuft mesh's own colours at its root and tip (linear; scripts/
 // grass_tuft_mesh.gd, its `grass_root`, `grass_tip` meta), divided out so
 // only each blade's jitter and the instance's tint are left, and the colours
@@ -44,16 +57,27 @@ varying float along;
 varying float shade;
 varying vec3 mass;
 varying float glance;
+varying vec3 wash;
+varying float washed;
 
 void vertex() {
-	float ring_d = distance(CAMERA_POSITION_WORLD, MODEL_MATRIX[3].xyz);
-	float ring_rank = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(19.31, 71.87))) * 43758.5453);
+	vec3 root = MODEL_MATRIX[3].xyz;
+	float ring_d = endless_ring_d(CAMERA_POSITION_WORLD, root);
+	float ring_rank = fract(sin(dot(root.xz, vec2(19.31, 71.87))) * 43758.5453);
 	float ring_at = mix(grass_ring.x, grass_ring.y, ring_rank);
 	float ring_keep = 1.0 - smoothstep(ring_at - grass_ring.z, ring_at, ring_d);
-	float ring_grow = smoothstep(grass_ring_grow.x, grass_ring_grow.y, ring_d);
-	VERTEX.xz *= ring_keep * mix(grow_from, grass_ring_grow.z, ring_grow);
-	VERTEX.y *= ring_keep * mix(grow_from, grass_ring_grow.w, ring_grow);
-	ring_keep *= step(0.001, ring_grow + grow_from);
+	// The handoff: up at its own distance in the near ring's band (a flower
+	// tuft: in the flowers'), at the near tuft's size.
+	washed = COLOR.a < 0.99 ? 1.0 : 0.0;
+	int kind = clamp(int(COLOR.a * 16.0 + 0.5) - 1, 0, 7);
+	wash = wash_colours[kind];
+	vec4 band = washed > 0.5 ? wash_in : grass_ring_in;
+	float in_rank = fract(sin(dot(root.xz, vec2(41.37, 17.93))) * 24634.6345);
+	float in_at = mix(band.x, band.y, in_rank);
+	ring_keep *= smoothstep(in_at, in_at + band.z, ring_d);
+	vec2 size = mix(grow_near, grass_ring_grow.zw, smoothstep(grass_ring_grow.x, grass_ring_grow.y, ring_d));
+	VERTEX.xz *= ring_keep * size.x;
+	VERTEX.y *= ring_keep * size.y;
 	along = clamp(UV.y, 0.0, 1.0);
 	glance = mix(graze_tone, 1.0, smoothstep(graze_angles.x, graze_angles.y, normalize(CAMERA_POSITION_WORLD - MODEL_MATRIX[3].xyz).y));
 	shade = ring_keep > 0.0 ? zs_cloud_volume_shade(MODEL_MATRIX[3].xyz) : 0.0;
@@ -67,6 +91,7 @@ void fragment() {
 	vec3 source = max(mix(grass_source_root, grass_source_tip, along), vec3(0.002));
 	vec3 own = clamp(COLOR.rgb / source, vec3(0.0), vec3(3.0));
 	vec3 c = own * mix(root_colour, tip_colour, pow(along, tip_curve)) * glance;
+	c = mix(c, wash * glance, washed * smoothstep(wash_tip.x, wash_tip.y, along));
 	c = mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))) * night_grade.yzw, night_grade.x);
 	ALBEDO = c * (1.0 - shade * cloud_shade);
 	ROUGHNESS = 0.85;

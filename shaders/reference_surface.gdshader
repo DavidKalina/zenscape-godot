@@ -14,6 +14,8 @@ shader_type spatial;
 #include "res://shaders/reference_char.gdshaderinc"
 #include "res://shaders/reference_cloud_field.gdshaderinc"
 #include "res://shaders/reference_alpenglow.gdshaderinc"
+// The endless grass's rings, along the ground and led ahead (off: 3D).
+#include "res://shaders/endless_ring.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
 #include "res://shaders/reference_inversion.gdshaderinc"
 #include "res://shaders/sky_season.gdshaderinc"
@@ -378,7 +380,7 @@ void vertex() {
 	vec3 flower_offset = CUSTOM0.xyz;
 	bool flower_gone = false;
 	if (flower_heads && (flower_far.z < 1.0 || flower_lod.x > 0.0)) {
-		float far_d = distance(zs_camera_position, MODEL_MATRIX[3].xyz);
+		float far_d = endless_ring_d(zs_camera_position, MODEL_MATRIX[3].xyz);
 		float far_t = smoothstep(flower_far.x, flower_far.y, far_d);
 		float keep = mix(1.0, flower_far.z, far_t);
 		float rank = fract(sin(dot(MODEL_MATRIX[3].xz - look_shift.xz, vec2(27.17, 63.41))) * 43758.5453);
@@ -396,7 +398,7 @@ void vertex() {
 		flower_gone = fade <= 0.0;
 	}
 	if (grass_blades && grass_ring.y > 0.0) {
-		float ring_d = distance(CAMERA_POSITION_WORLD, MODEL_MATRIX[3].xyz);
+		float ring_d = endless_ring_d(CAMERA_POSITION_WORLD, MODEL_MATRIX[3].xyz);
 		float ring_rank = fract(sin(dot(MODEL_MATRIX[3].xz - look_shift.xz, vec2(19.31, 71.87))) * 43758.5453);
 		float ring_at = mix(grass_ring.x, grass_ring.y, ring_rank);
 		float ring_keep = 1.0 - smoothstep(ring_at - grass_ring.z, ring_at, ring_d);
