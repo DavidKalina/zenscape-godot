@@ -30,7 +30,11 @@ extends Node3D
 ## endless_clouds.gd): --no-clouds, --cloud-cover=X (1); C turns them off
 ## and on. The grass carpet (scripts/endless/endless_grass.gd): --no-grass,
 ## --grass=X (its density, 1), --grass-range=M (how far the tufts reach,
-## 230), --grass-lod=x,y,z,w (its rings); G turns it off and on.
+## 230), --grass-lod=x,y,z,w (its rings, 16,30,150,230), --no-flowers,
+## --grass-fine=X (the near ring's fine tuft at X of the isle's density,
+## 1.2; 0: the isle's own tuft), --grass-patches=X (how much of the ground's
+## patches the tufts carry, 1), --grass-set= / --far-set= / --ground-set=
+## name=value (a shader setting, for tuning by hand); G turns it off and on.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")

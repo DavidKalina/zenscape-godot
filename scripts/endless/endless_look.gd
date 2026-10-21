@@ -42,9 +42,11 @@ const EndlessClouds = preload("res://scripts/endless/endless_clouds.gd")
 ## one it opens on.
 const MOODS := ["alpine_morning","golden_meadow","ocean_light","meadow_morning","after_the_rain","desert_afternoon","rosewater_dusk","rose_dusk","moonlit_stillness"]
 const MOOD := "alpine_morning"
-## The hour it opens on with no --mood or --hour: early morning, the sun
-## low enough to model the hills (the mood's own is mid-morning).
-const HOUR := 7.6
+## The hour it opens on with no --mood or --hour: the mood's own, as the
+## aqueduct isle opens on it. (Round one's 7.6, a low sun raking every
+## blade's edge, read the carpet's tufts as coarse dark-sided clumps from
+## the plane: docs/design/endless-flight/grass-tune-handoff.md.)
+const HOUR := 9.6
 
 ## The haze: from FOG_BEGIN m it thickens to all sky by FOG_END m (inside
 ## the land's reach, LandStream ROOT_REACH), along FOG_CURVE.

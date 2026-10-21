@@ -148,6 +148,9 @@ class Site extends RefCounted:
 	var probe := Callable()
 	## Opt-in: the tufts' size range (zero: TUFT_SIZE).
 	var tuft_size := Vector2.ZERO
+	## Opt-in: (p) -> how many times the flowers' share is kept at p (a
+	## drift of wildflowers where it is over 1); none: as before.
+	var flower_drift := Callable()
 	## Opt-in: Grow's draw gives its batches as plain data (`Grow.parts`:
 	## key, tile, count, buffer), no nodes or materials made, so it can run
 	## on a worker; `batch_node` stands one on the main thread.
@@ -554,6 +557,7 @@ class Grow extends RefCounted:
 			var presence := _meadow.presence(p)
 			var kind := _meadow.kind_at(p,_rng.randf())
 			var keep := pow(presence,1.2)*MeadowTypes.packing(kind)*FLOWER_SHARE
+			if _site.flower_drift.is_valid(): keep *= float(_site.flower_drift.call(p))
 			if _rng.randf() > maxf(keep,STRAY): continue
 			if _site.worn(p) > PATH_THIN or _edges.upto(p) < RIM+0.3: continue
 			var range_of: Array = sizes.get(kind,[0.85,1.1])
@@ -813,13 +817,15 @@ class Draw extends RefCounted:
 			_instances[key] = int(_instances.get(key,0))+got.size()
 
 ## One tile's batch of one catalog part, as Draw makes it (the main
-## thread: it makes a material). `buffer` as `batch_buffer`.
-static func batch_node(key: String, tile: Vector2i, count: int, buffer: PackedFloat32Array, grass_range := GRASS_RANGE, ring := {}) -> MultiMeshInstance3D:
+## thread: it makes a material). `buffer` as `batch_buffer`. Opt-in: `mesh`
+## drawn in place of the part's own (set before the buffer: set after, the
+## multimesh works its bounds out again over every instance).
+static func batch_node(key: String, tile: Vector2i, count: int, buffer: PackedFloat32Array, grass_range := GRASS_RANGE, ring := {}, mesh: Mesh = null) -> MultiMeshInstance3D:
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
 	var k := int(ring.get("ring",0))
-	multimesh.mesh = KitFlora.lite_tuft(key) if k == 2 else SkyIslets.catalog().meshes[key]
+	multimesh.mesh = mesh if mesh != null else (KitFlora.lite_tuft(key) if k == 2 else SkyIslets.catalog().meshes[key])
 	multimesh.instance_count = count
 	multimesh.buffer = buffer
 	var batch := MultiMeshInstance3D.new()

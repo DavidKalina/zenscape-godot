@@ -50,6 +50,15 @@ uniform float vertex_hue : hint_range(0.0, 1.0) = 0.2;
 // Where tufts grow: the turf over `turf_beach` m over the sea (none to
 // full), its normal's up past `turf_slope`, thinning out over `turf_high`.
 uniform vec2 carpet_reach = vec2(0.0);
+// Under the near carpet (where its full tufts stand, thinning out from
+// `carpet_near.x` to `.y` m from the eye; y 0: off) the turf is the tufts'
+// own ground: the patches from 8 m up only (scripts/endless/endless_patch.gd
+// `grass`, which the tufts' roots carry), with none of the paint's finer
+// grain, dry flecks, sheen or velvet, so tuft and turf read as one surface.
+uniform vec2 carpet_near = vec2(0.0);
+// How much of the turf's own fine grain (the tuft-sized light and dark the
+// paint draws near the eye) stays under the near carpet, between its tufts.
+uniform float carpet_near_grain : hint_range(0.0, 1.0) = 0.6;
 uniform vec3 carpet_tone_top = vec3(1.0);
 uniform vec3 carpet_tone_low = vec3(1.0);
 uniform vec2 turf_beach = vec2(2.55, 2.9);
@@ -242,6 +251,23 @@ void fragment() {
 	float grain_near = zs_fade(turned + vec2(3.3, 1.1), 0.3, fp) * 0.8 + zs_fade(turned2 + vec2(41.0, 7.0), 0.55, fp) * 0.7
 		+ zs_fade(p.xz + vec2(9.0, 2.0), 1.3, fp) * 0.5;
 	grass *= 1.0 + grain_near * (1.0 - thin * 0.4);
+	// Under the near carpet: the tufts' own ground (endless_patch.gd `grass`).
+	if (carpet_near.y > 0.0) {
+		float under = carpet_turf * (1.0 - smoothstep(carpet_near.x, carpet_near.y, length(CAMERA_POSITION_WORLD - p)));
+		if (under > 0.0) {
+			float sunny_c = clamp((broad * 1.3 + wide * 1.5 + mid * 0.9 + clump * 0.9) * patch_strength, -1.0, 1.0);
+			vec3 coarse = mix(GREEN, sunny_c > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny_c));
+			coarse = mix(coarse, MEADOW * (1.0 + mid * 0.5), meadow * 0.75);
+			coarse *= mix(vec3(1.0), warm > 0.0 ? vec3(1.32, 1.05, 0.62) : vec3(0.80, 0.97, 1.16), abs(warm) * 0.5);
+			coarse = mix(coarse, vc / max(luma(vc), 0.01) * luma(coarse), vertex_hue * 0.6);
+			float dry_c = clamp(0.18 * 0.6 + dry_far * 0.55, 0.0, 1.0) * (1.0 - meadow * 0.6);
+			coarse = mix(coarse, DRY, dry_c * 0.4);
+			coarse = mix(coarse, TUNDRA * (1.0 + mid * 0.6), alpine * 0.8);
+			coarse = mix(coarse, OLIVE, thin * 0.7);
+			coarse *= 1.0 + (grain_near + fine * 0.6 + tuft * 0.8) * carpet_near_grain;
+			grass = mix(grass, coarse, under);
+		}
+	}
 	vec3 albedo = mix(grass, rock, rocky);
 	albedo = mix(albedo, sand, sandy * (1.0 - rocky * 0.5));
 	albedo = mix(albedo, snow, snowy);

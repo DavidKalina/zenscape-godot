@@ -19,9 +19,14 @@ extends Node3D
 ##
 ## Two layers of cells, in KitFlora's distance rings (Site `lod`, LOD m from
 ## the eye, in 3D, so from high up each is a smaller disc below):
-##   near  the isle's carpet at its own density with its own tuft material
-##         (sway, light, colour), out to LOD.x, each tuft shrinking into the
-##         ground at its own distance by LOD.y; the wildflowers with it,
+##   near  the isle's carpet with its own tuft material (sway, light,
+##         colour), drawn as a finer tuft (FINE, FINE_TUFTS of the isle's
+##         density) that reads soft from a plane skimming over it, out to
+##         LOD.x, each tuft shrinking into the ground at its own distance by
+##         LOD.y; its roots take the painted ground's colour, and the paint
+##         under it the tufts' own ground (ROOT_PAINT), so tuft and turf are
+##         one surface; a cloud's shadow takes their sun as it takes the
+##         turf's (CLOUD_SUN); the wildflowers with it, in drifts (DRIFT),
 ##         thinning out over FLOWER_FADE.
 ##   far   FAR_TUFTS a square metre of the cheaper tuft (GrassTuft.build_lite)
 ##         grown FAR_GROW wide and tall, drawn plainly (shaders/
@@ -37,7 +42,11 @@ extends Node3D
 ## Flags: --no-grass (none; G turns it off and on in flight), --grass=X (the
 ## carpet's density, a share of the isle's, 1), --grass-range=M (where the
 ## far ring ends, LOD.w; the rest of the rings scaled with it),
-## --grass-lod=x,y,z,w (the four ring distances), --no-flowers.
+## --grass-lod=x,y,z,w (the four ring distances), --no-flowers,
+## --grass-fine=X (the near ring's FINE tuft at X of the isle's density;
+## 0: the isle's own tuft at its own), --grass-patches=X (how much of the
+## ground's patches the tufts carry, 1), --grass-set=, --far-set=,
+## --ground-set= (name=value: a shader setting, for tuning by hand).
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const Carpet = preload("res://studies/aqueduct_isle_flora.gd")
@@ -51,12 +60,18 @@ const CELL := 64.0
 const PAD := 4
 ## The rings (m from the eye): the near carpet out to x, thinned by y; the
 ## far ring grown in over x..y, out to z, thinned by w. A tuft goes over SOFT m.
-const LOD := Vector4(20.0,36.0,150.0,230.0)
+const LOD := Vector4(16.0,30.0,150.0,230.0)
 const SOFT := 8.0
 ## The far ring: tufts a square metre (a share of the near carpet's 7.8),
 ## grown this much (wide, tall) over the near ring's band.
 const FAR_TUFTS := 1.8
 const FAR_GROW := Vector2(2.0,1.8)
+## Wildflower drifts in the near carpet (KitFlora Site `flower_drift`): where
+## a value noise of DRIFT_SCALE m rises from DRIFT.x to .y, the flowers are
+## kept up to DRIFT.z times as often (1 elsewhere), so the meadows have
+## patches thick with flowers among the sparse strays.
+const DRIFT_SCALE := 55.0
+const DRIFT := Vector3(0.68,0.82,6.0)
 ## The far ring's colours at the root and the tip (linear; endless_tuft_far
 ## `root_colour`, `tip_colour`), matched to the near ring's tufts.
 const FAR_ROOT := Vector3(0.093,0.27,0.13)
@@ -87,6 +102,28 @@ const TONE_LOW := Vector3(0.56,0.66,0.68)
 ## their batches.
 const MAX_TASKS := 6
 const STAND_BUDGET := 1.5
+## How far the near tufts' roots take the painted ground's colour under them
+## (reference_surface `grass_root_paint`; 0: the isles' ground_look colour),
+## the paint under them taking the tufts' own ground (endless_ground
+## `carpet_near`).
+const ROOT_PAINT := 1.0
+## The share of the sun a cloud's shadow takes off the tufts and flowers, the
+## sky's light left (reference_surface `cloud_sun_shade`, endless_tuft_far
+## `cloud_shade`), as the painted ground's (endless_ground `cloud_shade`), so
+## a shadowed meadow goes soft as one surface.
+const CLOUD_SUN := 0.85
+## The near ring's tuft (FINE, --grass-fine=0 for the isles' own): finer than
+## the isles' (scripts/grass_tuft_mesh.gd, made to read from 20-26 m, whose
+## ten broad blades read as leafy clumps from a plane skimming at 3-10 m):
+## more, narrower blades of one bend each, the same height, root and lean,
+## so the same material lights it alike, in fewer triangles (54 against 80).
+## blades, rows up the blade, their taper, the width (a share of the isles'),
+## the satellites [blades, distance, size].
+const FINE := {"blades":12,"rows":[0.0,0.6],"taper":[1.0,0.55],"width":0.6,"satellites":[[3,0.27,0.62],[3,0.24,0.55]]}
+## The near ring's tufts a square metre with the FINE tuft, a share of
+## the isle's (its blades are narrower: more of them cover the turf alike).
+const FINE_TUFTS := 1.2
+const GrassTuft = preload("res://scripts/grass_tuft_mesh.gd")
 
 var seed := 0
 var enabled := true
@@ -94,6 +131,12 @@ var share := 1.0
 var lod := LOD
 ## The wildflowers in the near carpet (--no-flowers leaves them out).
 var flowers := true
+## How much of the painted ground's patches the tufts carry (--grass-patches=X).
+var patches := 1.0
+## The near ring draws the FINE tuft (--grass-fine=0: the isles' own).
+var fine := true
+var _fine_meshes := {}
+var _fine_share := FINE_TUFTS
 ## Cells grown and freed, their grow times, the slowest stand, for the HUD
 ## and drivers.
 var stats := {"grown":0,"freed":0,"grow_ms":0.0,"slowest_grow_ms":0.0,"slowest_stand_ms":0.0}
@@ -101,6 +144,12 @@ var field: RefCounted
 ## The land's ground (shaders/endless_ground.gdshader), told where the
 ## tufts grow and how far they reach, so its paint takes over past them.
 var ground: ShaderMaterial
+## Shader settings asked for on the command line, for tuning by hand:
+## --grass-set=name=value (the near tufts' material, reference_surface),
+## --far-set= (the far ring's, endless_tuft_far), --ground-set= (the
+## painted ground's, endless_ground); a value is a number or numbers
+## joined by commas (a vector), each flag repeatable.
+var _sets := {"grass":{},"far":{},"ground":{}}
 
 ## One layer of cells: how far (3D, m) it is wanted, its grower's settings
 ## and its cells.
@@ -140,6 +189,14 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 			var w := maxf(a.get_slice("=",1).to_float(),20.0)
 			lod = LOD*(w/LOD.w)
 		elif a == "--no-flowers": flowers = false
+		elif a.begins_with("--grass-fine="):
+			fine = a.get_slice("=",1) != "0"
+			if fine and a.get_slice("=",1).to_float() > 0.0: _fine_share = a.get_slice("=",1).to_float()
+		elif a.begins_with("--grass-patches="): patches = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
+		elif a.begins_with("--grass-set=") or a.begins_with("--far-set=") or a.begins_with("--ground-set="):
+			var which := a.get_slice("-",2).get_slice("-",0)
+			var kv := a.substr(a.find("=")+1)
+			if kv.contains("="): _sets[which][kv.get_slice("=",0)] = _value(kv.get_slice("=",1))
 		elif a.begins_with("--grass-lod="):
 			var p := a.get_slice("=",1).split(",")
 			if p.size() >= 4: lod = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]))
@@ -152,6 +209,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	near_layer.reach = maxf(lod.y,FLOWER_FADE.y)
 	near_layer.share = 0.0
 	near_layer.site.flowers = flowers
+	near_layer.site.patches = patches
 	far_layer.far = true
 	far_layer.site = site.duplicate()
 	far_layer.site.tufts = FAR_TUFTS*share
@@ -160,6 +218,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	far_layer.site.shag = 0.0
 	far_layer.site.variety = false
 	far_layer.reach = lod.w
+	if fine: near_layer.site.tufts = s.tufts*share*_fine_share
 	far_layer.share = 1.0
 	# The plant catalog made on the main thread before any worker reads it.
 	SkyIslets.catalog()
@@ -169,6 +228,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		ground.set_shader_parameter("turf_high",HIGH)
 		ground.set_shader_parameter("carpet_tone_top",TONE_TOP)
 		ground.set_shader_parameter("carpet_tone_low",TONE_LOW)
+		for k: String in _sets.ground: ground.set_shader_parameter(k,_sets.ground[k])
 	_reach()
 
 func _exit_tree() -> void:
@@ -179,7 +239,18 @@ func _exit_tree() -> void:
 
 ## The ground's paint told how far the tufts reach (none while off).
 func _reach() -> void:
-	if ground != null: ground.set_shader_parameter("carpet_reach",Vector2(lod.z,lod.w) if enabled else Vector2.ZERO)
+	if ground == null: return
+	ground.set_shader_parameter("carpet_reach",Vector2(lod.z,lod.w) if enabled else Vector2.ZERO)
+	ground.set_shader_parameter("carpet_near",Vector2(lod.x,lod.y) if enabled and ROOT_PAINT > 0.0 else Vector2.ZERO)
+
+## A --*-set= value: a float, or a Vector2/3/4 of comma-joined floats.
+static func _value(text: String) -> Variant:
+	var p := text.split(",")
+	match p.size():
+		2: return Vector2(float(p[0]),float(p[1]))
+		3: return Vector3(float(p[0]),float(p[1]),float(p[2]))
+		4: return Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]))
+	return float(text)
 
 ## Turned off (freed) or on again (grown round the eye).
 func set_enabled(on: bool) -> void:
@@ -319,7 +390,8 @@ func _stand(all := false) -> void:
 		var count := 0
 		for part: Dictionary in r.parts:
 			var ring: Dictionary = part.get("ring",{})
-			var batch := KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer,lod.w,ring)
+			var own: Mesh = _fine(str(part.key)) if fine and not layer.far and str(part.key).begins_with("grass") else null
+			var batch := KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer,lod.w,ring,own)
 			count += int(part.count)
 			if layer.far: batch.material_override = _far(str(part.key),ring)
 			elif ring.is_empty():
@@ -346,12 +418,39 @@ func _calm(batch: MultiMeshInstance3D) -> void:
 	var m := batch.material_override as ShaderMaterial
 	if m == null or _calmed.has(m.get_instance_id()) or _fars.values().has(m): return
 	_calmed[m.get_instance_id()] = true
+	m.set_shader_parameter("cloud_sun_shade",CLOUD_SUN)
 	if str(batch.get_meta("part","")).begins_with("grass"):
 		m.set_shader_parameter("grass_dry",Carpet.CARPET_GRASS_DRY)
 		m.set_shader_parameter("grass_mute",Carpet.CARPET_MUTE)
 		m.set_shader_parameter("grass_wave_sheen",Carpet.CARPET_SHEEN)
+		var plain := Patch.plain()
+		m.set_shader_parameter("grass_root_paint",Vector4(plain.x,plain.y,plain.z,ROOT_PAINT))
+		for k: String in _sets.grass: m.set_shader_parameter(k,_sets.grass[k])
 	else:
 		m.set_shader_parameter("flower_far",Vector4(FLOWER_FADE.x,FLOWER_FADE.y,0.0,0.0))
+
+## The FINE tuft for catalog part `key`, its root and tip colours the
+## part's own (so the material divides them out alike), made once.
+func _fine(key: String) -> Mesh:
+	if _fine_meshes.has(key): return _fine_meshes[key]
+	var source: Mesh = SkyIslets.catalog().meshes[key]
+	var root: Color = source.get_meta("grass_root",Color("38663a").srgb_to_linear())
+	var tip: Color = source.get_meta("grass_tip",Color("93c05f").srgb_to_linear())
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	GrassTuft._clump(surface,rng,root,tip,int(FINE.blades),Vector2.ZERO,1.0,FINE.rows,FINE.taper,float(FINE.width))
+	var turn := rng.randf()*TAU
+	for satellite: Array in FINE.satellites:
+		turn += rng.randf_range(2.0,3.6)
+		GrassTuft._clump(surface,rng,root,tip,int(satellite[0]),Vector2.from_angle(turn)*float(satellite[1]),float(satellite[2]),FINE.rows,FINE.taper,float(FINE.width))
+	surface.index()
+	var mesh := surface.commit()
+	mesh.set_meta("grass_root",root)
+	mesh.set_meta("grass_tip",tip)
+	_fine_meshes[key] = mesh
+	return mesh
 
 ## The far ring's material (shaders/endless_tuft_far.gdshader): KitFlora's
 ## mid ring (its `ring_material`'s grass_ring and grass_ring_grow) drawn
@@ -376,6 +475,8 @@ func _far(key: String, ring: Dictionary) -> Material:
 		var tip: Color = mesh.get_meta("grass_tip")
 		m.set_shader_parameter("grass_source_root",Vector3(root.r,root.g,root.b))
 		m.set_shader_parameter("grass_source_tip",Vector3(tip.r,tip.g,tip.b))
+	m.set_shader_parameter("cloud_shade",CLOUD_SUN)
+	for k: String in _sets.far: m.set_shader_parameter(k,_sets.far[k])
 	_fars[id] = m
 	return m
 
@@ -392,6 +493,11 @@ func counts() -> Dictionary:
 	return out
 
 # --- On a worker ----------------------------------------------------------------------
+
+## How many times the flowers' share is kept at p (DRIFT).
+static func flower_drift(p: Vector2) -> float:
+	var n := Patch.noise(p.x/DRIFT_SCALE+17.3,p.y/DRIFT_SCALE-5.1)
+	return 1.0+(DRIFT.z-1.0)*smoothstep(DRIFT.x,DRIFT.y,n)
 
 func _grow(layer: Layer, key: Vector2i, land_seed: int, site_values: Dictionary, rings: Vector4) -> void:
 	if _quit: return
@@ -456,10 +562,12 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 		return h-SINK
 	var site := KitFlora.Site.new()
 	var flowers: bool = site_values.get("flowers",true) and far_share < 1.0
+	var patches: float = site_values.get("patches",1.0)
 	for k: String in site_values:
-		if k != "flowers": site.set(k,site_values[k])
+		if not k in ["flowers","patches"]: site.set(k,site_values[k])
 	site.plain = true
 	site.probe = probe
+	site.flower_drift = flower_drift
 	site.box = Rect2(x0,z0,CELL,CELL)
 	site.rim = 0.0
 	site.lod = rings
@@ -472,6 +580,9 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	var outline := PackedVector2Array([Vector2(x0-g,z0-g),Vector2(x0+CELL+g,z0-g),Vector2(x0+CELL+g,z0+CELL+g),Vector2(x0-g,z0+CELL+g)])
 	var job := KitFlora.Grow.new(hash([land_seed,"endless_grass",far_share,key]) & 0xffffff,null,[],[outline],site)
 	while not job.step(-1): pass
+	# The draw's node: unused for plain batches, and never in a tree, so
+	# freed here (each cell left one leaked at exit).
+	if job.node != null: job.node.free()
 	# The painted ground's patches on each tuft (Patch `tint`), read off a
 	# TINT_STEP m grid of the cell.
 	var tg := int(CELL/TINT_STEP)+1
@@ -486,7 +597,7 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 			var normal := Vector3(hs[c-1]-hs[c+1],2.0,hs[c-n]-hs[c+n]).normalized()
 			var vc: Color = f.colour(x,z,y,normal.y,ms[c])
 			var hue := Vector3(pow(vc.r,2.2),pow(vc.g,2.2),pow(vc.b,2.2))
-			tints[tj*tg+ti] = Patch.tint(x,z,ms[c],y-Field.SEA_Y,normal.y,hue)*TUFT_TONE
+			tints[tj*tg+ti] = Color.WHITE.lerp(Patch.tint(x,z,ms[c],y-Field.SEA_Y,normal.y,hue),patches)*TUFT_TONE
 	# Each of KitFlora's tile batches kept (KitFlora.TILE m), so each
 	# culls on its own by the view and its ring's reach.
 	var out := []
