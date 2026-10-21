@@ -26,6 +26,8 @@ const float NIGHT_SKY = 0.55;
 const float NIGHT_WRAP = 0.06;
 // Metres a second the clouds drift on the breeze.
 uniform vec2 drift = vec2(0.6, 0.3);
+// Metres the breeze's changes have put them off drift * time's track.
+uniform vec2 lead = vec2(0.0);
 // The field's corner and size in the plate plane, in metres before `shift`.
 uniform vec4 field = vec4(-1000.0, -1000.0, 2000.0, 2000.0);
 // How far the islands' swaps have moved the world (SkyIslands `arrive`).
@@ -93,7 +95,7 @@ void vertex() {
 	float size = length(MODEL_MATRIX[1].xyz);
 	vec3 origin = (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	vec3 home = origin - data.xyz * size;
-	vec2 moved = home.xz + drift * zs_motion_time;
+	vec2 moved = home.xz + drift * zs_motion_time + lead;
 	vec2 wrapped = field.xy + mod(moved - field.xy, field.zw);
 	vec3 centre = vec3(wrapped.x, home.y, wrapped.y) + data.xyz * size + shift;
 	// A slow swell, each puff on its own beat.
@@ -180,8 +182,8 @@ void fragment() {
 	float edge = 1.0 - smoothstep(0.45, 1.0, r + (rag - 0.5) * 0.45);
 	// Thicker in the middle, so heaped puffs read as round.
 	float body = edge * (0.55 + 0.45 * (1.0 - r * r));
-	ALBEDO = shade * (0.92 + 0.12 * (1.0 - r));
-	ALPHA = clamp(body, 0.0, 1.0) * 0.85 * opacity * batch_fade;
+	ALBEDO = zs_storm_graded(shade * (0.92 + 0.12 * (1.0 - r))) + zs_storm_flash_cloud(card) * (0.5 + 0.5 * (1.0 - r * r));
+	ALPHA = clamp(body, 0.0, 1.0) * 0.85 * opacity * batch_fade * zs_storm_thinned();
 	if (carved > 0.0) {
 		// The tunnel cut out, its edge torn.
 		float tear = puff_noise(card.xy * 0.45 + card.z * 0.3) * 0.6 + puff_noise(card.zy * 1.1 + seed * 5.0) * 0.4;

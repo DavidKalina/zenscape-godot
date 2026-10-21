@@ -528,6 +528,7 @@ void fragment() {
 	veiled *= mix(1.0, smoothstep(-0.34, -0.66, rd.y), deep_night);
 	alpha *= mix(1.0, veiled, smoothstep(150.0, 700.0, t_seen));
 	if (alpha < 0.003) discard;
+	col = zs_storm_graded(col);
 	ALBEDO = col;
 	ALPHA = alpha;
 }

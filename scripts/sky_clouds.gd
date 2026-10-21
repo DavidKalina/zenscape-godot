@@ -44,6 +44,11 @@ var clouds := PackedVector4Array()
 var field := Vector4.ZERO
 var _home_field := Vector4.ZERO
 var shift := Vector3.ZERO
+## The breeze they ride (m/s, x then z; DRIFT unless a sky blows them,
+## `blow`) and how far that has put them off DRIFT's track (m), so a
+## change of breeze carries them on from where they stand.
+var drift := DRIFT
+var lead := Vector2.ZERO
 var _puffs: MultiMeshInstance3D
 var _material: ShaderMaterial
 
@@ -132,6 +137,15 @@ func keep_off(spots: Array) -> void:
 	for i in range(4): list.append(spots[i] if i < spots.size() else Vector4.ZERO)
 	_material.set_shader_parameter("keep_out",list)
 
+## The puffs ride `breeze` (m/s, x then z) from now (`time`, the scene's
+## motion time) on, carried on from where they stand.
+func blow(breeze: Vector2, time: float) -> void:
+	if _material == null: return
+	lead += (drift-breeze)*time
+	drift = breeze
+	_material.set_shader_parameter("drift",drift)
+	_material.set_shader_parameter("lead",lead)
+
 ## Moves every cloud by `by` (an island swap) or back home (`reset`).
 func move(by: Vector3) -> void:
 	shift += by
@@ -176,7 +190,7 @@ func wakes(at: PackedVector4Array, way: PackedVector4Array) -> void:
 ## places it.
 func centre(index: int, time: float) -> Vector3:
 	var cloud := clouds[index]
-	var moved := Vector2(cloud.x,cloud.z)+DRIFT*time
+	var moved := Vector2(cloud.x,cloud.z)+drift*time+lead
 	var corner := Vector2(field.x,field.y)
 	var span := Vector2(field.z,field.w)
 	var wrapped := corner+Vector2(fposmod(moved.x-corner.x,span.x),fposmod(moved.y-corner.y,span.y))
