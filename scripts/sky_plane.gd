@@ -61,13 +61,19 @@ const SLOW := 7.0
 const FAST := 30.0
 const LANDING_SPEED := 8.0
 ## The game's plane flies GAME_SPEED times those (cruise, boost and brake
-## only; landing, flap and stall speeds stay): the speed the user found had
-## "a great sense of speed" at the 2x plane (docs/design/flight-camera.md).
-## Its turn rate grows with it (`turn_scale`), so its turn radius stays the
-## toy's: the isles' lines were laid for that radius. The game (studies/
-## kit_isle.gd) sets it with `use_game_speed`; a bare SkyPlane (the flight
-## study, its pinned benches) flies at 1 unless `--plane-speed=` says.
-const GAME_SPEED := 1.15
+## only; landing, flap and stall speeds stay): 28 m/s cruising, and Boost
+## asks 44 but FAST caps every speed at 30, the speed the user flew and
+## chose (`--plane-speed=2
+## --plane-turn=1.15`, docs/design/plane-speed/handoff.md). Its turn rate is
+## GAME_TURN times the toy's (`turn_scale`), not GAME_SPEED's, so its turn
+## circles are wider than the toy's (GAME_SPEED/GAME_TURN times the radius).
+## The game (studies/kit_isle.gd) sets both with `use_game_speed`; a bare
+## SkyPlane (the flight study, its pinned benches) flies and turns at 1
+## unless `--plane-speed=` or `--plane-turn=` says.
+const GAME_SPEED := 2.0
+## The game's turn rate, times the toy's: the rate it had at the old 1.15x
+## speed, kept as the speed went up.
+const GAME_TURN := 1.15
 ## Flaps down: the speed the engine holds, the floor it never drops below
 ## (m/s), and the extra sink (m/s).
 const FLAP_SPEED := 5.5
@@ -168,8 +174,9 @@ var _left := Vector3.INF
 ## `--plane-speed=<x>` (1 by default, GAME_SPEED in the game): times the
 ## cruise, boost and brake speeds only; landing, flap and stall speeds stay
 ## as they are. `--plane-turn=<x>` times the turn rate (by default the same
-## as the speed's, so the turn radius stays the toy's; `=1` keeps the old
-## rate, a wider turn).
+## as the speed's, so the turn radius stays the toy's; `=1` keeps the toy's
+## rate, a wider turn). The game's plane (`use_game_speed`) turns at
+## GAME_TURN instead, unless either flag is given.
 var speed_scale := speed_flag(preload("res://scripts/launch_args.gd").user_args())
 var turn_scale := turn_flag(preload("res://scripts/launch_args.gd").user_args(),speed_scale)
 var drift := 0.0
@@ -286,10 +293,18 @@ static func turn_flag(args: PackedStringArray, speed: float) -> float:
 static func game_speed() -> float:
 	return speed_flag(preload("res://scripts/launch_args.gd").user_args(),GAME_SPEED)
 
-## Flies at the game's speed (and turns to match, unless `--plane-turn=`).
+## The game's turn rate: `--plane-turn=`, else the speed's when
+## `--plane-speed=` is given (so `--plane-speed=1` is the bare toy), else
+## GAME_TURN.
+static func game_turn() -> float:
+	var args: PackedStringArray = preload("res://scripts/launch_args.gd").user_args()
+	var asked := speed_flag(args,0.0)
+	return turn_flag(args,asked if asked > 0.0 else GAME_TURN)
+
+## Flies at the game's speed and turns at the game's rate (`game_turn`).
 func use_game_speed() -> void:
 	speed_scale = game_speed()
-	turn_scale = turn_flag(preload("res://scripts/launch_args.gd").user_args(),speed_scale)
+	turn_scale = game_turn()
 
 ## The speed the engine holds with the throttle let be (m/s).
 func cruise() -> float:
