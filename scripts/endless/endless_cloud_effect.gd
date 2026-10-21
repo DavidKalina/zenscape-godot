@@ -8,5 +8,9 @@ extends "res://scripts/cloud_volume_effect.gd"
 const MARCH := preload("res://shaders/cloud_volume_march.glsl")
 const ENDLESS_MARCH := preload("res://shaders/endless_cloud_march.glsl")
 
+const RESOLVE := preload("res://shaders/cloud_volume_resolve.glsl")
+const ENDLESS_RESOLVE := preload("res://shaders/endless_cloud_resolve.glsl")
+
 func _compile(file: RDShaderFile) -> RID:
+	if file == RESOLVE: return super._compile(ENDLESS_RESOLVE)
 	return super._compile(ENDLESS_MARCH if file == MARCH else file)

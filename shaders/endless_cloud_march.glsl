@@ -631,6 +631,14 @@ void march_pass() {
 	float frame_index = P.frame.x;
 	vec2 jp = vec2(pixel) + vec2(5.588238, 5.588238) * mod(frame_index, 64.0);
 	float jitter = fract(52.9829189 * fract(dot(jp, vec2(0.06711056, 0.00583715))));
+	if (P.flash.x > 0.5) {
+		// Interleaved gradient noise on the render's own pixel (the 2x2
+		// block's turn included), stepped by the golden ratio each frame:
+		// the frames' offsets spread evenly, so the resolve averages them
+		// toward the true mean sooner than white-ish jitter does.
+		float ign = fract(52.9829189 * fract(dot(vec2(full), vec2(0.06711056, 0.00583715))));
+		jitter = fract(ign + 0.61803398875 * mod(frame_index, 64.0));
+	}
 	g_jitter = jitter;
 
 	vec3 key = normalize(P.key.xyz + vec3(0.0, 1e-4, 0.0));

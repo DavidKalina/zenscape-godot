@@ -27,7 +27,7 @@ extends Node3D
 ## Flags: --no-clouds leaves them out; --cloud-cover=X scales how much sky
 ## they take (1; 0.5 sparse, 1.6 heavy); --cloud-haze=X the share of the
 ## land's haze laid on them (EndlessLook CLOUD_HAZE); --cloud-steps=N the
-## march's steps (QUALITY); --cloud-full-res marches every pixel. C turns
+## march's steps (QUALITY); --cloud-full-res marches every pixel; --cloud-grain=old the earlier grain; --cloud-blend=m,u the resolve's blends. C turns
 ## them off and on.
 
 const Effect = preload("res://scripts/endless/endless_cloud_effect.gd")
@@ -68,6 +68,11 @@ const GROUND_SIDE := 20000.0
 const GROUND_MOVE := 1800.0
 const MARCHED_BLEND := 0.5
 const UPSAMPLED_BLEND := 0.08
+## Less grain: the new jitter, the resolve's 3x3 filter and sigma clip
+## (shaders/endless_cloud_resolve.glsl) and a longer history. --cloud-grain=old
+## runs the earlier look; --cloud-blend=m,u sets the two blends by hand.
+const GRAIN_MARCHED_BLEND := 0.2
+const GRAIN_UPSAMPLED_BLEND := 0.06
 
 # The field, as the march has it (shaders/endless_cloud_march.glsl).
 const BIG := 620.0
@@ -101,6 +106,10 @@ var cover := 1.0
 ## The march's quality this run (QUALITY; --cloud-full-res marches every
 ## pixel, --cloud-steps=N sets the steps).
 var quality: Array = QUALITY.duplicate()
+## The grain treatment (--cloud-grain=old turns it off) and the blends.
+var grain := true
+var marched_blend := GRAIN_MARCHED_BLEND
+var upsampled_blend := GRAIN_UPSAMPLED_BLEND
 var enabled := true
 ## The field's drift so far (m): a cloud stands at its field point plus this.
 var drift := Vector2.ZERO
@@ -151,6 +160,16 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 		if a.begins_with("--cloud-cover="): cover = clampf(a.get_slice("=",1).to_float(),0.0,3.0)
 		elif a == "--cloud-full-res": quality[2] = 1
 		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
+		elif a == "--cloud-grain=old":
+			grain = false
+			marched_blend = MARCHED_BLEND
+			upsampled_blend = UPSAMPLED_BLEND
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--cloud-blend="):
+			var bl := a.get_slice("=",1).split(",")
+			if bl.size() >= 2:
+				marched_blend = clampf(bl[0].to_float(),0.02,1.0)
+				upsampled_blend = clampf(bl[1].to_float(),0.01,1.0)
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--cloud-haze="): haze.w = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 	material.set_shader_parameter("haze",haze)
@@ -449,6 +468,7 @@ func _fill() -> void:
 	else: _put4(p,44,Vector4(_shade_drawn.x,_shade_drawn.y,SHADE_SIDE,1.0) if _shade_drawn != Vector4.ZERO else shade_square)
 	_put4(p,164,Vector4(weather_corner.x,weather_corner.y,weather_side,Effect.WEATHER_TEXELS))
 	_put4(p,168,Vector4(quality[0],quality[1],quality[2],quality[3]))
+	_put4(p,172,Vector4(1.0 if grain else 0.0,0.0,0.0,0.0))
 	_put4(p,176,Vector4(0.0,Effect.SHADOW_TEXELS,1.0 if weather_due else 0.0,1.0 if shade_due else 0.0))
 	# The land reads the shade map the frame after it is drawn.
 	if _shade_drawn != Vector4.ZERO: _publish_shade(true,key,_shade_drawn)
@@ -458,10 +478,10 @@ func _fill() -> void:
 	var r := effect.resolve_params
 	_put_transform(r,0,xf)
 	_put_projection(r,16,_prev_view)
-	_put4(r,32,Vector4(tan_x,tan_y,UPSAMPLED_BLEND,1.0 if _has_prev else 0.0))
-	_put4(r,36,Vector4(_prev_lens.x,_prev_lens.y,0.0,0.0))
+	_put4(r,32,Vector4(tan_x,tan_y,upsampled_blend,1.0 if _has_prev else 0.0))
+	_put4(r,36,Vector4(_prev_lens.x,_prev_lens.y,1.0 if grain else 0.0,0.0))
 	_put4(r,40,Vector4(eye.x,eye.y,eye.z,p[48]))
-	_put4(r,44,Vector4(camera.near,camera.far,MARCHED_BLEND,quality[2]))
+	_put4(r,44,Vector4(camera.near,camera.far,marched_blend,quality[2]))
 	if not _has_prev: effect.history_ok = false
 	_prev_view = Projection(xf.affine_inverse())
 	_prev_lens = Vector2(tan_x,tan_y)
