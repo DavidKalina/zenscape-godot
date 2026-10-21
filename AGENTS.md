@@ -155,9 +155,16 @@ Pick a subagent's model by what it makes:
 - **Sonnet**, assembly and looks: putting pieces that already exist together
   into a scene, motifs, layouts; shaders, materials, textures, reskins and
   other surface changes that leave shape, motion and collision alone.
-- **Haiku**: names, labels and other small brainstorms.
+- **Haiku**: names, labels and other small brainstorms, and code search:
+  the `scout` agent (`.claude/agents/scout.md`).
 
 A task that mixes kinds goes to Opus.
+
+To learn the code before working, any agent sends `scout`s instead of
+reading files itself or using Explore: one narrow question per scout, and
+several in one message when the question spans areas (up to about 5). The
+scouts return short `path:line` reports; read only the lines they point
+to.
 
 # Sizes
 
