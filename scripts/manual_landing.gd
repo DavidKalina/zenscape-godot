@@ -17,18 +17,22 @@ extends RefCounted
 ##            is calmed (CALM_LOW to CALM_HIGH m), so a slow approach is not
 ##            held up off the ground by ridge lift or a gust.
 ##   ROLL     on its wheels, sliding or gripping (below). Boost opens the
-##            throttle (ROLL_PUSH, up to ROLL_TOP), the stick steers. Under
+##            throttle (ROLL_PUSH fading with the speed, up to ROLL_TOP: a
+##            heavy roll, 6 to 7 s to LIFT_SPEED), the stick steers. Under
 ##            power the tail comes up off the grass; rolling straight past
 ##            ROTATE_FROM with Boost held, the stick pulled back brings the
 ##            nose up on the main wheels, and nose up at LIFT_SPEED the
-##            wheels let go (`events.lifted`). Off them it is heavy a
-##            while (the unstick, below). Rolled or slid
+##            wheels let go (`events.lifted`). Never without the pull. Off
+##            them it is heavy a while (the unstick, below). Rolled or slid
 ##            off the land's edge it is flying again too, its slide carried on as the air drift's slip,
-##            and first it dips (`dipping`): it falls, the nose eases down
-##            to DIP_NOSE, and only once the dive (DIP_GAIN of the fall
-##            along it, Boost's PUSH) has it up to FLY_SPEED do the wings
-##            catch it (`events.wings`). Off slow it dips deep; nose held up
-##            it dips on; after DIP_MAX s the wings catch it anyway.
+##            and first it plummets (`dipping`): it drops ever harder
+##            (DIP_FALL), the nose falls to DIP_NOSE, and only once the
+##            dive (DIP_GAIN of the fall along it) has it up to FLY_SPEED,
+##            and DIP_BUILD over the speed it went off at, does the stick
+##            pulled back let the wings catch it (`events.wings`). Off slow
+##            it drops deep; pulled early the nose only mushes (DIP_MUSH)
+##            and it drops longer; after DIP_MAX s the wings catch it
+##            anyway.
 ##   STOPPED  stood still, the brakes holding, the engine ticking over. Boost
 ##            rolls it off again; Exit gets out. Brake and Boost held, the
 ##            stick near centre, runs it up on the brakes (`strain` builds
@@ -188,17 +192,20 @@ const BOUNCE_GRACE := 0.7
 ## takeoff's), how hard a slope pulls (m/s² per m per m), the tail wheel's
 ## turn (radians a second at full stick, at TAXI_FULL m/s and over; a
 ## quarter of it stopped), and the speed at which it lifts off with Boost
-## held.
+## held and the stick back (its own, over the sequence's 9.5: lifted only
+## once the roll has built up).
 const ROLL_DRAG := 0.9
 const WHEEL_BRAKE := 4.2
 const PUSH := PlaneLanding.PUSH
 const SLOPE_PULL := 7.0
 const TAXI_TURN := 0.9
 const TAXI_FULL := 3.0
-const LIFT_SPEED := PlaneLanding.LIFT_SPEED
-## The throttle's push rolling (m/s²): harder than the sequence's, so a
-## small isle has room to reach LIFT_SPEED.
-const ROLL_PUSH := 6.0
+const LIFT_SPEED := 12.5
+## The throttle's push rolling (m/s² stood still), fading with the speed
+## as (1 - (speed/ROLL_FADE)²): a heavy roll that builds over 6 to 7 s to
+## LIFT_SPEED (about 45 m), so a short isle runs out of turf first.
+const ROLL_PUSH := 2.6
+const ROLL_FADE := 16.0
 ## Lifting off the land: under power the tail comes up between TAIL_FROM
 ## and TAIL_FULL m/s (over TAIL_TIME s), the nose down to TAIL_NOSE
 ## (radians); the stick pulled back past ROTATE_PULL (or the mouse pulling
@@ -209,8 +216,8 @@ const TAIL_FULL := 6.0
 const TAIL_TIME := 0.5
 const TAIL_NOSE := 0.04
 const ROTATE_PULL := 0.3
-const ROTATE_FROM := 8.0
-const ROTATE_RATE := 0.35
+const ROTATE_FROM := 10.0
+const ROTATE_RATE := 0.3
 const ROTATE_NOSE := 0.22
 ## The unstick: UNSTICK_TIME s off the wheels it is heavy. It climbs only
 ## UNSTICK_FLOAT of what its nose asks at first (hanging over the grass),
@@ -224,19 +231,33 @@ const UNSTICK_NOSE := 0.18
 ## The run-up on the brakes (s to full strain), and the let-go's lunge: the
 ## push SURGE over at full strain, easing off over SURGE_TIME s.
 const SPOOL_TIME := 1.0
-const SURGE := 1.0
+const SURGE := 2.5
 const SURGE_TIME := 0.6
 ## The fastest the throttle rolls it on the wheels (m/s), under FLY_SPEED,
-## so every takeoff off an edge dips. The dip: the speed the wings catch
-## it at (m/s), the nose it eases to with the stick let go (radians, down
-## negative) and how fast (s), the pull along the dive (m/s² per sine of
-## it; a nose held up loses speed), and the longest it lasts (s).
-const ROLL_TOP := 11.0
-const FLY_SPEED := 12.5
-const DIP_NOSE := -0.35
-const EASE_DIP := 0.3
-const DIP_GAIN := 9.0
-const DIP_MAX := 3.0
+## so every takeoff off an edge plummets. The plummet (the dip): the
+## speed the wings can catch it at (m/s), and at least DIP_BUILD m/s over
+## the speed it went off at, so even a fast roll-off drops a while; only
+## the stick pulled back (ROTATE_PULL, or the mouse) catches it then, so
+## let be it dives on. The nose it falls to with the stick let go
+## (radians, down negative) and how fast (s); the highest a pull holds it
+## while the wings don't carry (a mush: no speed comes from it); the pull
+## along the dive (m/s² per sine of it) and Boost's share of it (m/s²);
+## the sink on top of the plane's own fall, growing at DIP_FALL m/s² to
+## DIP_SINK m/s (so the longer it drops the harder), and how fast it
+## fades once the wings catch (s). After DIP_MAX s the wings catch it
+## anyway.
+const ROLL_TOP := 13.5
+const FLY_SPEED := 15.0
+const DIP_BUILD := 4.0
+const DIP_NOSE := -0.85
+const EASE_DIP := 0.45
+const DIP_MUSH := -0.08
+const DIP_GAIN := 9.8
+const DIP_PUSH := 1.0
+const DIP_FALL := 5.0
+const DIP_SINK := 12.0
+const DIP_FADE := 0.5
+const DIP_MAX := 4.5
 ## The slide: the wheels' grip (m/s² sideways before they let go), the
 ## slowest it slides (m/s; a power-slide from POWER_MIN), the stick that
 ## starts a drift with the lean held, the nose already off its track that
@@ -357,6 +378,11 @@ var _kick := 0.0
 ## (negative: not dipping).
 var _dip_speed := 0.0
 var _dip_time := -1.0
+## The plummet's own sink (m/s, down positive), the speed the wings ask
+## this plummet (m/s), and the sink left fading after the catch (m/s).
+var _dip_sink := 0.0
+var _dip_need := FLY_SPEED
+var _dip_left := 0.0
 ## The air step's velocity before the wheels met the land, and its pose.
 var _air_velocity := Vector3.ZERO
 var _air_pitch := 0.0
@@ -434,6 +460,8 @@ func begin(on_plane: RefCounted, on_ground := false) -> void:
 	_grace = 0.0
 	_kick = 0.0
 	_dip_time = -1.0
+	_dip_sink = 0.0
+	_dip_left = 0.0
 	_air_velocity = plane.velocity
 	_air_pitch = float(plane.pitch)
 	_air_bank = float(plane.bank)
@@ -613,6 +641,10 @@ func _fly(delta: float, input: Dictionary, ground: Callable, floor_at: Callable,
 	throttle = float(plane.throttle)
 	if _unstick >= 0.0: _heavy(delta,nose_was)
 	if _dip_time >= 0.0: _dip(delta,input,out)
+	elif _dip_left > 0.0:
+		# Caught: the plummet's sink fading away.
+		_sink_by(_dip_left,delta)
+		_dip_left = maxf(0.0,_dip_left-_dip_left/DIP_FADE*delta-delta)
 	# A hop's kick, lifting it clear and dying away.
 	if _kick > 0.0:
 		plane.position.y += _kick*delta
@@ -635,21 +667,41 @@ func _fly(delta: float, input: Dictionary, ground: Callable, floor_at: Callable,
 	_air_rolling = bool(plane.rolling)
 	_air_slip = float(plane.slip)
 
-## One step of the dip: the nose eased down (the stick let go), the speed
-## gained down the dive and from the throttle, lost climbing; at FLY_SPEED
-## (or after DIP_MAX s) the wings catch it and the fall eases away.
+## One step of the plummet: the nose falls (the stick let go; a pull only
+## mushes it level, DIP_MUSH), the speed gained down the dive and a little
+## from the throttle, the sink growing; once it has the speed the wings
+## ask (`_dip_need`), the stick pulled back catches it (or DIP_MAX s
+## does) and the sink fades away.
 func _dip(delta: float, input: Dictionary, out: Dictionary) -> void:
 	_dip_time += delta
 	var look: Vector2 = input.get("look",Vector2.ZERO)
-	if is_zero_approx(float(input.get("pitch",0.0))) and is_zero_approx(look.y):
+	var stick := float(input.get("pitch",0.0))
+	var pull := stick > ROTATE_PULL or look.y > 0.002
+	if is_zero_approx(stick) and is_zero_approx(look.y):
 		plane.pitch = lerpf(float(plane.pitch),DIP_NOSE,1.0-exp(-delta/EASE_DIP))
 	var boost := clampf(float(input.get("boost",0.0)),0.0,1.0)
-	_dip_speed = clampf(_dip_speed+(-DIP_GAIN*sin(float(plane.pitch))+boost*PUSH)*delta,0.0,SkyPlane.FAST)
+	var fast := _dip_speed >= _dip_need
+	# The wings don't carry yet: a pull holds the nose up no higher than a
+	# mush (nothing gained by it but time).
+	if not fast: plane.pitch = minf(float(plane.pitch),DIP_MUSH)
+	_dip_speed = clampf(_dip_speed+(-DIP_GAIN*sin(float(plane.pitch))+boost*DIP_PUSH)*delta,0.0,SkyPlane.FAST)
 	plane.speed = maxf(_dip_speed,SkyPlane.SLOW)
-	if _dip_speed >= FLY_SPEED+load_dip or _dip_time >= DIP_MAX:
+	_dip_sink = minf(DIP_SINK,_dip_sink+DIP_FALL*delta)
+	_sink_by(_dip_sink,delta)
+	if fast and pull or _dip_time >= DIP_MAX:
 		_dip_time = -1.0
-		plane.speed = maxf(_dip_speed,FLY_SPEED+load_dip)
+		plane.speed = maxf(_dip_speed,_dip_need)
+		_dip_left = _dip_sink
+		_dip_sink = 0.0
 		out["wings"] = {"speed":_dip_speed}
+
+## The plummet's sink on top of the plane's step (m/s down): moved and in
+## its velocity (so a touch is graded on it), the plane told it is its own
+## (so a heavy plane's path is not started again).
+func _sink_by(sink: float, delta: float) -> void:
+	plane.position.y -= sink*delta
+	plane.velocity.y -= sink
+	if "_left" in plane: plane.set("_left",plane.velocity)
 
 ## The dive now: Vector2(radians nose down, m/s down the nose's line).
 func _dive_now() -> Vector2:
@@ -692,6 +744,7 @@ func _watch_go_around(land: float, out: Dictionary) -> void:
 ## The wheels meet the land: graded on the air step before.
 func _touch(at: Vector2, land: float, floor_at: Callable, out: Dictionary) -> void:
 	_dip_time = -1.0
+	_dip_left = 0.0
 	var v := _air_velocity
 	var speed := Vector2(v.x,v.z).length()
 	var sink := maxf(maxf(0.0,-v.y),sink_seen)
@@ -844,7 +897,7 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		# The scrub: the more sideways, the more; the brakes along the wheels.
 		var side := sin(beta)
 		var loss := ROLL_DRAG*(1.0-boost)+maxf(WHEEL_BRAKE*brake*absf(cos(beta)),SCRUB*side*side)
-		var push := boost*ROLL_PUSH*(1.0-load_roll)*(1.0-brake)*cos(beta) if speed < minf(ROLL_TOP,load_top) else 0.0
+		var push := boost*_roll_push(speed)*(1.0-load_roll)*(1.0-brake)*cos(beta) if speed < minf(ROLL_TOP,load_top) else 0.0
 		speed = maxf(0.0,speed+(push-loss)*delta)
 		# The path bends towards the nose, and the stick bends the line:
 		# into the slide tighter, against it wider.
@@ -870,7 +923,7 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		var fwd := Vector2(-sin(heading),-cos(heading))
 		var along := _v.dot(fwd)
 		along = move_toward(along,0.0,(ROLL_DRAG*(1.0-boost)+WHEEL_BRAKE*brake)*delta)
-		if along < minf(ROLL_TOP,load_top): along = minf(along+boost*ROLL_PUSH*(1.0-load_roll)*(1.0+SURGE*_surge)*(1.0-brake)*delta,maxf(along,minf(ROLL_TOP,load_top)))
+		if along < minf(ROLL_TOP,load_top): along = minf(along+boost*_roll_push(along)*(1.0-load_roll)*(1.0+SURGE*_surge)*(1.0-brake)*delta,maxf(along,minf(ROLL_TOP,load_top)))
 		_v = fwd*along
 		beta = 0.0
 		# Fast enough, Boost held and the stick back: the nose comes up.
@@ -921,6 +974,8 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		_lift(speed,0.0,true)
 		_dip_speed = speed
 		_dip_time = 0.0
+		_dip_sink = 0.0
+		_dip_need = maxf(FLY_SPEED,speed+DIP_BUILD)+load_dip
 		plane.slip = -clampf(beta,-1.2,1.2)
 		return
 	plane.carry(Vector3(next_at.x,plane.position.y,next_at.y),Vector3(_v.x,0.0,_v.y),speed)
@@ -1104,6 +1159,11 @@ static func _slope(floor_at: Callable, at: Vector2, v: Vector3) -> float:
 ## Where the wheels set down (global), for the rollout.
 func touched_at() -> Vector3:
 	return _touch_at
+
+## The throttle's push rolling at `speed` (m/s²): ROLL_PUSH, fading.
+static func _roll_push(speed: float) -> float:
+	var f := clampf(speed/ROLL_FADE,0.0,1.0)
+	return ROLL_PUSH*(1.0-f*f)
 
 ## The speed over the ground while rolling (m/s).
 func roll_speed() -> float:
