@@ -20,6 +20,8 @@ extends Node3D
 const Field = preload("res://scripts/endless/land_field.gd")
 const Plan = preload("res://scripts/endless/arch_plan.gd")
 const Build = preload("res://scripts/endless/arch_build.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+const STONE_LIFT := Color(3.0, 2.55, 1.95)
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 
@@ -73,6 +75,26 @@ func setup(land_seed: int, ground: Material = null) -> void:
 		material = plain
 	# The kit's shared materials are made lazily: once here, before workers.
 	RuinKit.materials()
+
+## The ruin stone for the endless land only (the kit's own material is shared
+## with the isles and the motif editor, so it is copied, not changed): the same
+## faces and weathering, lifted and warmed so the stone stands in the sun as
+## the land's rock does. `--old-ruin-stone` leaves the kit's dark stone.
+var _old_stone := "--old-ruin-stone" in LaunchArgs.user_args()
+var _stone: ShaderMaterial
+
+func _sunlit(node: Node) -> void:
+	var kit: Material = RuinKit.materials().stone
+	if _stone == null:
+		_stone = (kit as ShaderMaterial).duplicate() as ShaderMaterial
+		_stone.set_shader_parameter("albedo",STONE_LIFT)
+		_stone.set_shader_parameter("fill",3.6)
+		_stone.set_shader_parameter("rim",0.1)
+	for mi in node.find_children("*","MeshInstance3D",true,false):
+		var m := mi as MeshInstance3D
+		if m.mesh == null: continue
+		for i in m.mesh.get_surface_count():
+			if m.mesh.surface_get_material(i) == kit: m.set_surface_override_material(i,_stone)
 
 func _exit_tree() -> void:
 	_quit = true
@@ -194,6 +216,7 @@ func _commit_one(done: Dictionary) -> void:
 			stats.tris += int(b.tris)
 		else:
 			node = b.node
+			if not _old_stone: _sunlit(node)
 		for body in node.find_children("*","StaticBody3D",true,false):
 			(body as StaticBody3D).collision_layer = LAYER
 			(body as StaticBody3D).collision_mask = 0

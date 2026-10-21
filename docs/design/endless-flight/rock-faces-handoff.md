@@ -49,3 +49,16 @@ It needs only `zs_sun_direction` (global) and no other uniforms of the ground sh
 - **Verified:** headless smoke of `endless_flight.tscn` with no flag, `--old-rock` and `--rock-pass1` PASS; rendered stills judged by eye over six iterations.
 - **Unverified:** GPU cost (one more 27-tap cell search at 70 m plus about 4 value noises on rock pixels; not measured); shimmer in motion (plane edges are contour lines of the interpolated normal, softened by footprint, not checked in motion); other seeds, night. The wall seen close still has a slightly ghostly look where lit tan and shaded slate planes overlap softly, and faint horizontal moire from the 2 m beds at grazing angles (also in pass 1).
 - No tests added or run.
+
+## Rock decision and ruin stone
+
+Pass 2 stays the rock look. Later tries (pass 3's hard planes, a
+Poly Haven textured material, and a stylised version of it) live
+unmerged on branches `endless-rock-planes` and `endless-rock-material`
+(handoff sections there) for reference.
+
+The ruin arches take an endless-only copy of the kit's stone material,
+lifted and warmed so they read as sunlit stone instead of near-black
+(`_sunlit()` in `scripts/endless/land_arches.gd`). The kit's shared
+material, the isle and the motif editor are untouched.
+`--old-ruin-stone` keeps the dark kit stone.
