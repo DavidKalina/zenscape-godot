@@ -123,7 +123,7 @@ const FALL_VEIL := 0.2
 const CIRCLE_PAST := 84.0
 ## The plane finds no turf on what lies under the water (nor this far over
 ## it): the lake bed is rock to it.
-const LAKE_DRY := 0.05
+const LAKE_DRY := 0.15
 ## The landmarks: how many on the way (share along home -> heist, sideways
 ## off the line, m) and round each isle (distance range, m), their size
 ## range (m) and height off TOP (m); none within KEEP m of another.

@@ -427,3 +427,217 @@ cause it.
 - The strip's mown grass stays sparse and short, by design. Its edge to the
   long carpet reads as a line from the air.
 - From 300 m the top is a plain green, with no grain in it.
+
+## Round: merge, strip, bed, fall (`iter/home-merge`)
+
+Branch `iter/home-merge` merges `iter/home-water` and `iter/home-grass-lod`.
+
+Play: `./run-heist.command`, or
+`python tools/godot.py --rendered studies/heist_level.tscn -- --no-title --hunt-seed=4 --ledger=/tmp/home.json`.
+
+Both rounds' flags still work: `--no-home`, `--no-home-grass`,
+`--home-grass=`, `--home-grass-lod=` and `--home-grass-range=`.
+
+### The merge
+
+- **One grow.** The grass grows once, over the tableland and the lake dug in
+  it (`_grass(land, shape)`). The lake islet's grass, `BANK_BARE`'s old
+  meaning and `lake_spec.drifts` went with the islet.
+- **Off the water and the beach.** No tuft grows where the ground stands
+  under `IsletLake.BEACH_TOP + BANK_BARE` over the level within `BANK_NEAR`
+  (2.5 m) of the water. Those are the faces sky_islet paints as the bed and
+  the beach. The grass grows down the banks to there. At seed 3 that leaves
+  0 tufts in the water or on the beach and 17k on the banks.
+- **The rim spill** runs along the cliff lip. It keeps `SPILL_NOTCH` (6 m)
+  off the water, so no tuft hangs in the fall's notch. This uses KitFlora
+  Site `spill_off`, a new opt-in Callable.
+- **The reeds.** The lake's reeds and bank grass are the islet's own, as
+  before.
+
+### The strip at every seed
+
+- **The outline holds a full strip.** It leans to hold one along the
+  contours, through `scripts/island_outline.gd` form `spine` (opt-in). The
+  spine is a line the land leans to hold: land within 26 m of it is taken
+  first (`SPINE_PULL` 0.45), so a bay can't cut across it.
+- **The strip's heading and offset are sought** on the shaped ground
+  (`_seek_strip`):
+  - It tries headings every 10 degrees, then every 2.5 degrees near the best,
+    with offsets 3 m apart.
+  - It takes the longest clear run, up to 150 m. A run is clear while the
+    turf lies 6 m in from the shore and its fade is on the land. The strip's
+    ends stop 16 m short of where the run stops.
+  - Each metre of earthworks costs 1.5 m of score. Turning off the contours
+    costs a little.
+  - The search takes about 150 ms.
+- **When it is levelled.** The strip is levelled in a new opt-in sky_islet
+  recipe hook, `shaped`, before the lake is dug, so the basin keeps off the
+  line that was found.
+  - The hook also runs before the trees are planted, so the recipe's `clear`
+    now really keeps them off the strip. Before, it was set after planting
+    and did nothing.
+
+Strip length at hunt seeds 0-20 (`scratch/home/strip_seed.gd`, swept):
+
+| seeds | strip (m) |
+|---|---|
+| 0-20, every one | 150 |
+
+At every seed:
+
+- The bump is 0.0 m. That is how much `floor_at` varies along the strip's
+  middle and 6 m to each side.
+- No point along the strip is off the turf.
+- The lake's water and beach stay 29 to 51 m off the strip's middle line.
+  The turf runs 10 m each side of that line.
+
+Before this round, seed 6 gave 11 m, seed 7 15 m and seed 4 39 m. With the
+search but no spine, seeds 1, 2, 8, 9 and 17 got 122 to 148 m.
+
+### The lake bed's facets: the cause and the fix
+
+I found four causes by shooting the lake with the water hidden, then the bed
+hidden, then each of the water shader's switches toggled.
+
+1. **The bed was terraced.**
+   - The shelf fell to the deep over 2.4 m (`DROP`), which is one cell of
+     the 2 m grid. So the shelf's rim ran along the grid's triangle edges as
+     a straight-sided step.
+   - The isle stood on a flat apron 0.5 m under the water, ending in a 3.5 m
+     cliff.
+   - Seen through the clear water, these were the big flat triangles.
+   - Fix: a recipe `drop` (opt-in; home uses 7 m), so the shelf slopes into
+     the deep. With it, the isle's flank runs on down too (`ISLE_CROWN`).
+2. **The ground was lit face by face.**
+   - The ground material has `flat_faces` on and `facet_soft` 0.65. Sand and
+     silt don't get the grass's soft light, so each 2 m face of the bed
+     showed as a flat facet.
+   - Fix: `IsletLake.fine_bed` (opt-in). It takes the bed and beach faces
+     out of the top and draws each again as 16 faces.
+   - Those faces are bent onto a smooth surface (Phong tessellation from the
+     smooth normals). The bend fades to flat at the bed's edge, so the bed
+     meets the faces round it edge for edge.
+   - They are coloured point by point, fading from the colours round them at
+     the bed's edge to the bed's own colour inside.
+   - They are drawn in a copy of the ground material with `facet_soft` 1
+     (the `LakeBed` node). The banks within 9 m of the water go into that
+     mesh too, unchanged, so they are lit smooth with it.
+   - Their faces stand with the rest of the top, so collision has them.
+3. **The water's per-pixel depth read drew pale panes.**
+   - With `depth_read` on, the shader drew pale panes with straight edges
+     across the shallows. They stayed from every view, with shadows off and
+     with the rock under the bed hidden. I didn't find their root cause.
+   - Fix: home's sheet turns `depth_read` off, so the depth comes from its
+     own vertices. Those vertices sample the smooth bed
+     (`IsletLake.smooth_height`) every 0.25 m (`LAKE_CELL`, was 0.5).
+   - The colour now runs smoothly from the shallows to the deep, and the
+     bed shows through the shallows by the blend.
+4. **The water's chop wove a pattern seen from the air.**
+   - Its faces lined up on the regular grid.
+   - Fix: KitWater `jitter` (opt-in; home uses 0.3) moves each vertex off the
+     grid by a hash. From 22 m straight down, the chop is now an irregular
+     grain with no checker.
+
+Also: above the water, `bed_tone`'s sand and gravel stripes showed as
+hard-edged pale bands in the ground's look. The fine bed paints the beach
+evenly instead (`_fine_tone`).
+
+### The fall
+
+- **The sheet runs the whole wall.**
+  - Before: the islets' own sheet stopped `depth*0.5+7` m down, which is
+    mid-wall at home. The thread faded in behind it, which left the hole and
+    the ragged cut.
+  - Now: `_long_fall` lays the sheet down to the rock's foot under the notch,
+    plus 4 m (86 m at seed 3). The sheet's broken tail is no wider than the
+    sheet.
+- **The thread takes over** at the same width and carries on to the cloud
+  sea. Its spread is counted from the lip, so its width at the lip is set
+  narrower to make up for that.
+- **The veil** is 0.2 (was 0.35), so the sheet reads fuller.
+- **The spray cue** (`home/cue_home`) now hangs from where the sheet breaks.
+  - Its foot is 14 m wide (was 26).
+  - It fades in from 160 m to 420 m away, through the home_cue shader's new
+    `near` (off by default). Near the fall you see the fall itself; from
+    afar the column still marks home.
+  - Its far end is unchanged: 60 m wide and 300 m long.
+
+### Other changes
+
+- **`LAKE_DRY` is 0.15 m** (was 0.05). On the curved bed, a fine beach face
+  just over the coarse waterline could count as turf. Once, the plane's
+  wheels touched down there for one frame.
+- **Load time.**
+  - Home builds in about 5.2 s; of that, the fine bed takes 0.1 s and the
+    0.25 m sheet 0.5 s.
+  - In the smokes the heist was ready in 15.4 to 17 s, against 13 to 14 s
+    last round. Part of that is other runs loading the machine; I didn't
+    measure how much.
+
+### Proved
+
+- **Smokes**, headless, 0 errors:
+  - `heist_level` at seeds 3, 4, 6, 7 and a random seed
+  - `heist_level --no-home`
+  - `heist_level --no-home-grass --hunt-seed=6`
+  - `zenscape.tscn -- --no-title`
+  - `crag_reach`
+  - `cloister_tarn_isle`
+  - `motif_yard` with `editor_aqueduct_gorge` and with `editor_tarn_peak`
+- **`scratch/home/water_trip.gd`**, real input, passes 13/13 at seeds 3, 4
+  and 6:
+  - He walks to the lake, swims, walks out and walks back to the strip.
+  - `floor_at` is NAN over the water.
+  - The plane lands by hand on the strip.
+  - A landing aimed at the lake skims it and is never on its wheels over
+    the water.
+  - The driver now swims to the deepest water it finds, because the
+    basin's middle can be the isle (seed 4).
+- **`scratch/home/trip.gd`** at seed 3: every check passes, and it banks on
+  landing home.
+- **Headless tests that pass:** `test_landform_lake`, `test_landform_cliffs`,
+  `test_sky_islets`, `test_sky_fall_thread`, `test_character_study`,
+  `test_aqueduct_under`, `test_kit_water`, `test_ground_look`, `test_breeze`,
+  `test_pilot_wake`, `test_motif_sky`, `test_kit_time_weather`,
+  `test_isle_hall_chain` and `test_aqueduct_isle_sky`.
+- **`test_aqueduct_isle_look` fails** with the same four lines as on the
+  base: the plants' triangle budget, the catalog multimeshes, a plant on a
+  path, and plants off the turf. Not touched.
+
+### Stills
+
+In `scratch/home/shots/` (git-ignored), from
+`scratch/home/look.gd --rendered -- --seed=N --tag=T --parts=lake,fall,home,strip`:
+
+- **The lake now:**
+  - `final_s3_lake_air.png` from the air
+  - `final_s3_lake_down.png` straight down
+  - `final_s3_lake_eye.png` and `final_s3_lake_eye2.png` from the shore at
+    eye height
+  - `final_s6_lake_*` and `final_s4_lake_air.png` at other seeds
+- **The lake before:** `before_s3_lake_*.png`. `dry*_s3_*` show the bed with
+  the water hidden.
+- **The fall now:** `final_s3_fall_below.png`, `_side`, `_foot`, `_lip` and
+  `_far`. The fall before: `fall0_s3_*`.
+- **Home:** `final_s3_home_30.png` (30 m up) and `final_s3_home_300.png`
+  (300 m out).
+- **The strip:** `final_s4_strip_approach.png`, `final_s4_strip_side.png`
+  and `final_s6_strip_*`.
+- **Contact sheets:** `sheet_final_s3.png`, `sheet_lake46.png`,
+  `sheet_strip.png`.
+
+### Rough
+
+- **The bank by the near shore** is dark brown, with crisp pale triangles in
+  it, seen from the air. The fine bed doesn't change them; they come from
+  the ground shader's look, not the bed's colour. Not chased.
+- **The waterline.** With `depth_read` off, it follows the 0.25 m sheet, not
+  each pixel.
+- **The panes elsewhere.** The `depth_read` panes probably show on the other
+  isles' KitWater too, such as the aqueduct isle's. Only home turns
+  `depth_read` off.
+- **The outlines changed.** The spine makes the tableland a little longer
+  along the strip at every seed, so each seed's outline differs from last
+  round.
+- **The strip's heading.** The strip runs at the heading the search found.
+  At seed 4 that is 10 degrees off the contours, with 2.7 m of earthworks.
