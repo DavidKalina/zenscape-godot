@@ -20,6 +20,7 @@ shader_type spatial;
 render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/grass_look.gdshaderinc"
+#include "res://shaders/cloud_volume_shadow.gdshaderinc"
 
 uniform float sea_y = -40.0;
 uniform float beach = 2.2;
@@ -35,6 +36,9 @@ uniform float velvet : hint_range(0.0, 1.0) = 0.45;
 uniform float wind_sheen : hint_range(0.0, 2.0) = 1.0;
 // The wind's two wave trains (m between crests).
 uniform vec2 wave_lengths = vec2(22.0, 60.0);
+// How much of the sun a cloud's shadow takes off the ground (scripts/
+// endless/endless_clouds.gd; the sky's fill stays).
+uniform float cloud_shade : hint_range(0.0, 1.0) = 0.85;
 // How far the vertex colour's own hue shows through the field (0 none).
 uniform float vertex_hue : hint_range(0.0, 1.0) = 0.2;
 // The night's grade (studies/celestial.gd `night_grade`, which the isles'
@@ -199,14 +203,19 @@ void fragment() {
 	albedo = mix(albedo, sand, sandy * (1.0 - rocky * 0.5));
 	albedo = mix(albedo, snow, snowy);
 	albedo = mix(albedo, vec3(luma(albedo)) * night_grade.yzw, night_grade.x);
-	ALBEDO = albedo;
+	// Under a cloud's shadow the sun's share goes (the albedo the sun
+	// lights), the sky's fill (the emission below) stays.
+	float shade = zs_cloud_volume_shade(p);
+	float shaded = shade * cloud_shade;
+	ALBEDO = albedo * (1.0 - shaded);
 	float wet = sandy * smoothstep(0.7, 0.0, over) * step(-0.5, over);
 	ROUGHNESS = mix(mix(mix(0.92, 0.82, rocky), 0.6, snowy), 0.35, wet);
-	SPECULAR = mix(mix(0.25, 0.35, rocky), 0.5, max(snowy, wet));
+	SPECULAR = mix(mix(0.25, 0.35, rocky), 0.5, max(snowy, wet)) * (1.0 - shaded);
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 	// The hemisphere fill, as the isles' surfaces take it (environment
 	// ambient is off under LandscapeLighting).
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float hollow = 0.85 + 0.15 * n.y;
-	EMISSION = albedo * hemi * hollow;
+	// A cloud overhead takes a little of the sky's fill too.
+	EMISSION = albedo * hemi * hollow * (1.0 - 0.2 * shade);
 }

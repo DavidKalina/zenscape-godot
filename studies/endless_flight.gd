@@ -26,7 +26,9 @@ extends Node3D
 ## The look (scripts/endless/endless_look.gd): --mood=ID one of its
 ## moods (alpine_morning), --hour=H the sun's hour (the mood's), --day the
 ## hour runs, --plain-look round one's plain sky and colours; T steps to the
-## next quarter of the day, L to the next mood.
+## next quarter of the day, L to the next mood. The clouds (scripts/endless/
+## endless_clouds.gd): --no-clouds, --cloud-cover=X (1); C turns them off
+## and on.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
@@ -213,7 +215,7 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  land on the meadows  ·  R up again  ·  F1 numbers"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  land on the meadows  ·  R up again  ·  C clouds  ·  F1 numbers"
 	layer.add_child(_hint)
 
 # --- The plane ------------------------------------------------------------------------
@@ -301,7 +303,7 @@ func tick(delta: float) -> void:
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() else Vector3.ZERO
 	_frame(delta)
 	land.step(camera.global_position)
-	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z)
+	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
 	_show_hud()
 
@@ -364,9 +366,16 @@ func _unhandled_input(event: InputEvent) -> void:
 				if look != null: look.next_hour()
 			KEY_L:
 				if look != null: look.next_mood()
+			KEY_C:
+				if look != null and look.clouds != null: look.clouds.set_enabled(not look.clouds.enabled)
 			KEY_Q: _lean_tapped(-1.0)
 			KEY_E: _lean_tapped(1.0)
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func _cloud_note() -> String:
+	if look.clouds == null: return "  ·  no clouds"
+	if not look.clouds.enabled: return "  ·  clouds off (C)"
+	return "  ·  in cloud" if look.clouds.in_cloud(camera.global_position) else ""
 
 func _show_hud() -> void:
 	if not _hud.visible: return
@@ -379,6 +388,6 @@ func _show_hud() -> void:
 		seed,ManualLanding.NAMES[hand_landing.phase],float(plane.speed),p.y-maxf(field.height(p.x,p.z),Field.SEA_Y),"down" if flaps else "up",
 		p.x,p.z,Engine.get_frames_per_second(),1000.0/maxf(Engine.get_frames_per_second(),1.0),
 		("  ·  gpu %.2f ms" % gpu) if gpu > 0.0 else "",
-		("  ·  %s, %05.2f h" % [look.mood_title(),look.hour()]) if look != null else "",
+		("  ·  %s, %05.2f h%s" % [look.mood_title(),look.hour(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
 		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms)]

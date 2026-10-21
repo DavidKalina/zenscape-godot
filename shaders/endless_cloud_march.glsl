@@ -1,0 +1,771 @@
+#[compute]
+#version 450
+// The endless flight's clouds (scripts/endless/endless_clouds.gd), marched
+// as the isles' cloud volume marches its sea and towers (shaders/
+// cloud_volume_march.glsl, whose passes, bindings and outputs this keeps,
+// so scripts/cloud_volume_effect.gd and shaders/cloud_volume_resolve.glsl
+// run it unchanged), but over a field of cumulus that never runs out:
+//
+//   0 WEATHER: the map round the eye. Two lattices of cells in the wind's
+//     drifting frame, each cell hashed from the land's seed: broad cumulus
+//     (low ones you can fly into, mid ones standing over the flight's
+//     ceiling as a roof, the odd tower), and small puffs low in the band.
+//     Each texel keeps two layers, (low top, low base, high top, high
+//     base), so a puff can hang under a cumulus. Over the meadows (the
+//     ground map, `ground`) the low layer is lifted and thinned so the
+//     turf stays landable.
+//   1 CEILING: per block, the highest top and the lowest base round it, so
+//     the march leaps the clear air over and under the cloud.
+//   2 SHADOW: how much sun reaches up through the cloud from the sea's
+//     height, over its own square (the land reads it through shaders/
+//     cloud_volume_shadow.gdshaderinc).
+//   3 MARCH: as the isles' (one ray per quarter-res pixel, the light's
+//     cone of taps, three scattering octaves, powder, the sky's light from
+//     overhead), out to the map's reach.
+//
+// The cell hash is pcg3d on integers, mirrored in endless_clouds.gd
+// (`clouds_in`), so the CPU knows where every cloud is.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(push_constant, std430) uniform Pass {
+	int mode;
+	int pad0;
+	int pad1;
+	int pad2;
+} PASS;
+
+layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
+	mat4 camera;        // 0  world from view
+	vec4 lens;          // 16 tan half fov x, y, near, far
+	vec4 eye;           // 20 xyz, motion time
+	vec4 sun;           // 24 xyz, unused
+	vec4 key;           // 28 xyz the light on the cloud (sun, moon at night), unused
+	vec4 band;          // 32 sea y, slab top y, reach (m), on
+	vec4 drift;         // 36 drift xz (m, the field's offset), seed salt, cover
+	vec4 ground_at;     // 40 the ground map: corner xz, side, has one
+	vec4 shade_sq;      // 44 the shade's square: corner xz, side, unused
+	vec4 frame;         // 48 frame, unused, unused, deep night
+	vec4 knobs;         // 52 small puffs' cover, low share, tower share, meadow clearance (m)
+	vec4 spare[27];     // 56..163
+	vec4 weather_at;    // 164 corner xz, side, texels a side
+	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
+	vec4 flash;         // 172 unused
+	vec4 shadow_at;     // 176 unused, shade texels, weather redrawn, shade redrawn
+} P;
+
+layout(set = 0, binding = 1) uniform sampler2D ground;
+layout(set = 0, binding = 2) uniform sampler2D unused_swells;
+layout(set = 0, binding = 3) uniform sampler3D cauliflower;
+layout(set = 0, binding = 4) uniform sampler2D scene_depth;
+layout(set = 0, binding = 5) uniform sampler3D body0;
+layout(set = 0, binding = 6) uniform sampler3D body1;
+layout(set = 0, binding = 7) uniform sampler3D body2;
+layout(set = 0, binding = 8) uniform sampler3D body3;
+layout(rgba16f, set = 0, binding = 9) uniform restrict writeonly image2D out_a;
+layout(rgba16f, set = 0, binding = 10) uniform restrict writeonly image2D out_b;
+layout(r32f, set = 0, binding = 11) uniform restrict writeonly image2D out_depth;
+layout(rgba16f, set = 0, binding = 12) uniform restrict writeonly image2D out_weather;
+layout(set = 0, binding = 13) uniform sampler2D weather;
+layout(rgba16f, set = 0, binding = 14) uniform restrict writeonly image2D out_shadow;
+layout(rgba16f, set = 0, binding = 15) uniform restrict writeonly image2D out_ceiling;
+layout(set = 0, binding = 16) uniform sampler2D ceiling;
+
+const int MODE_WEATHER = 0;
+const int MODE_CEILING = 1;
+const int MODE_SHADOW = 2;
+const int MODE_MARCH = 3;
+
+// --- The field (mirrored in scripts/endless/endless_clouds.gd) -----------------
+// Broad cumulus: the cell (m), radius share range, base heights over the
+// sea by kind (low, mid, tower) and tall-for-wide by kind.
+const float BIG = 620.0;
+const vec2 BIG_R = vec2(0.16, 0.40);
+const vec2 LOW_BASE = vec2(26.0, 60.0);
+const vec2 MID_BASE = vec2(128.0, 190.0);
+const vec2 TOWER_BASE = vec2(115.0, 160.0);
+const vec2 LOW_TALL = vec2(0.8, 1.4);
+const vec2 MID_TALL = vec2(0.7, 1.3);
+const vec2 TOWER_TALL = vec2(1.2, 1.9);
+// A tower is broader than its cell's share by this.
+const float TOWER_WIDE = 1.35;
+// The crown's profile (lower: steeper flanks).
+const float PROFILE = 0.42;
+// The middle bubble's radius (share of the cloud's), and how far each
+// bubble's base curls up at its rim (share of its height).
+const float MAIN_R = 0.74;
+const float CURL = 0.0;
+const float BIG_COVER = 0.72;
+// Small puffs low in the band.
+const float SMALL = 230.0;
+const vec2 SMALL_R = vec2(0.13, 0.30);
+const vec2 SMALL_BASE = vec2(22.0, 115.0);
+const vec2 SMALL_TALL = vec2(0.8, 1.5);
+// The coverage's own weather: a lattice this wide (m) of clear and cloudier
+// regions, scaling the cover between these.
+const float REGION = 5200.0;
+const vec2 REGION_SCALE = vec2(0.3, 1.45);
+// No top over this far over the sea (m).
+const float TOP_MAX = 1250.0;
+
+// --- The shape ----------------------------------------------------------------------
+const float CEILING_BLOCK_F = 32.0;
+const int CEILING_BLOCK = 32;
+const float TILE_LOW = 230.0;
+const float TILE_HIGH = 460.0;
+const float LOBE = 40.0;
+const float MID = 95.0;
+const float MID_SWELL = 14.0;
+const float WISP = 3.0;
+const float FINE = 34.0;
+const float FINE_SWELL = 5.0;
+const float FINE_NEAR = 320.0;
+const vec2 SOFT = vec2(2.0, 6.0);
+const vec3 BOIL = vec3(0.6, -0.35, 0.4);
+const float SIGMA = 0.22;
+const float SIGMA_IN = 0.06;
+// How far billows may stand over a top or under a base.
+const float OVER = 70.0;
+const float SLOPE_MAX = 5.0;
+// How far past a rim (m) the billows may still reach.
+const float RIM_MARGIN = 50.0;
+// The slopes' stencil, in texels each way (wider is smoother).
+const float SLOPE_SPAN = 2.0;
+const vec2 NEAR_FADE = vec2(3.0, 22.0);
+
+// --- The march --------------------------------------------------------------------
+const int STEPS_MAX = 160;
+const vec2 STEP = vec2(2.5, 45.0);
+const float STEP_GROW = 0.008;
+const int TAPS_MAX = 6;
+const float TAP_AT[6] = float[](4.0, 12.0, 28.0, 60.0, 120.0, 220.0);
+const float TAP_LEN[6] = float[](8.0, 10.0, 22.0, 42.0, 80.0, 130.0);
+const float SUN_SIGMA = 0.03;
+const int OCTAVES = 3;
+const float MS_A = 0.45;
+const float MS_B = 0.55;
+const float MS_C = 0.5;
+const float PHASE_FORWARD = 0.82;
+const float PHASE_BACK = -0.25;
+const float PHASE_BACK_SHARE = 0.5;
+const float PHASE_MAX = 14.0;
+const float SUN_SCALE = 1.55;
+const float FACE_SHADE = 30.0;
+const float POWDER = 0.35;
+const float POWDER_DEPTH = 9.0;
+const float UP_SIGMA = 0.03;
+const float CREASE = 0.3;
+const float DEEP = 0.45;
+const float SKY = 0.5;
+// Light off the land and sea below on a cloud's base.
+const float BOUNCE = 0.08;
+const int LONG_TAPS = 3;
+const float LONG_AT[3] = float[](300.0, 460.0, 650.0);
+const float LONG_LEN = 140.0;
+
+ivec2 zs_block_offset(int frame) {
+	int k = frame & 3;
+	return k == 0 ? ivec2(0, 0) : (k == 1 ? ivec2(1, 1) : (k == 2 ? ivec2(1, 0) : ivec2(0, 1)));
+}
+
+float sstep(float a, float b, float x) {
+	float t = clamp((x - a) / (b - a), 0.0, 1.0);
+	return t * t * (3.0 - 2.0 * t);
+}
+
+// pcg3d (Jarzynski and Olano), on the cell's integer coordinates.
+uvec3 pcg3d(uvec3 v) {
+	v = v * 1664525u + 1013904223u;
+	v.x += v.y * v.z;
+	v.y += v.z * v.x;
+	v.z += v.x * v.y;
+	v ^= v >> 16u;
+	v.x += v.y * v.z;
+	v.y += v.z * v.x;
+	v.z += v.x * v.y;
+	return v;
+}
+
+vec3 hash3(ivec2 c, uint salt) {
+	uvec3 h = pcg3d(uvec3(uint(c.x), uint(c.y), salt));
+	return vec3(h >> 8u) / 16777216.0;
+}
+
+float hg(float c, float g) {
+	float g2 = g * g;
+	return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5);
+}
+
+float phase(float c, float scale) {
+	return min(mix(hg(c, PHASE_FORWARD * scale), hg(c, PHASE_BACK * scale), PHASE_BACK_SHARE), PHASE_MAX);
+}
+
+// --- WEATHER --------------------------------------------------------------------------
+
+// How cloudy the region round field point `f` is (a smooth value noise).
+float region_cover(vec2 f) {
+	vec2 g = f / REGION;
+	ivec2 i = ivec2(floor(g));
+	vec2 u = fract(g);
+	u = u * u * (3.0 - 2.0 * u);
+	uint salt = uint(P.drift.z) + 7u;
+	float a = hash3(i, salt).x;
+	float b = hash3(i + ivec2(1, 0), salt).x;
+	float c = hash3(i + ivec2(0, 1), salt).x;
+	float d = hash3(i + ivec2(1, 1), salt).x;
+	return mix(REGION_SCALE.x, REGION_SCALE.y, mix(mix(a, b, u.x), mix(c, d, u.x), u.y));
+}
+
+// A layer's (top, base) at a texel as clouds are found: the tallest
+// covering top and the lowest covering base; while nothing covers, the
+// nearest cloud's base and a top falling away past its rim, so the map
+// filters smoothly into clear air.
+void take(inout vec2 layer, inout float gap, float top, float base, float out_by) {
+	if (out_by <= 0.0) {
+		if (gap > 0.0) {
+			layer = vec2(top, base);
+			gap = 0.0;
+		} else {
+			layer = vec2(max(layer.x, top), min(layer.y, base));
+		}
+	} else if (gap > 0.0 && out_by < gap) {
+		gap = out_by;
+		layer = vec2(base - out_by, base);
+	}
+}
+
+// One lattice's clouds round field point `f` into the two layers.
+void lattice(vec2 f, bool big, float sea, float cover, inout vec2 low, inout float low_gap, inout vec2 high, inout float high_gap) {
+	float cell = big ? BIG : SMALL;
+	uint salt = uint(P.drift.z) + (big ? 101u : 211u);
+	ivec2 g = ivec2(floor(f / cell));
+	for (int y = -1; y <= 1; y++) {
+		for (int x = -1; x <= 1; x++) {
+			ivec2 c = g + ivec2(x, y);
+			vec3 h = hash3(c, salt);
+			vec3 k = hash3(c, salt + 1u);
+			vec2 middle = (vec2(c) + 0.2 + 0.6 * h.xy) * cell;
+			float here = region_cover(middle) * cover * (big ? BIG_COVER : P.knobs.x);
+			if (h.z >= here) continue;
+			vec2 rr = big ? BIG_R : SMALL_R;
+			float r = cell * mix(rr.x, rr.y, k.x);
+			float d = length(f - middle);
+			float base;
+			float tall;
+			bool is_low = !big;
+			if (big) {
+				if (k.y < P.knobs.y) {
+					is_low = true;
+					base = mix(LOW_BASE.x, LOW_BASE.y, k.z);
+					tall = mix(LOW_TALL.x, LOW_TALL.y, fract(k.z * 7.31));
+				} else if (k.y < P.knobs.y + P.knobs.z) {
+					base = mix(TOWER_BASE.x, TOWER_BASE.y, k.z);
+					tall = mix(TOWER_TALL.x, TOWER_TALL.y, fract(k.z * 7.31));
+					r *= TOWER_WIDE;
+				} else {
+					base = mix(MID_BASE.x, MID_BASE.y, k.z);
+					tall = mix(MID_TALL.x, MID_TALL.y, fract(k.z * 7.31));
+				}
+			} else {
+				base = mix(SMALL_BASE.x, SMALL_BASE.y, k.y);
+				tall = mix(SMALL_TALL.x, SMALL_TALL.y, k.z);
+			}
+			float H = min(r * tall, TOP_MAX - base);
+			// The cloud as a cluster of bubbles: a broad one in the middle and
+			// three round it, lower; each a round crown over a flat base that
+			// curls up toward its rim, so the cloud's foot is rounded.
+			vec3 b1 = hash3(c, salt + 2u);
+			vec3 b2 = hash3(c, salt + 3u);
+			float spin = b1.x * 6.2832;
+			float top_c = -1e4;
+			float base_c = 1e4;
+			float out_c = 1e9;
+			for (int i = 0; i < 4; i++) {
+				vec2 at = middle;
+				float br = r * MAIN_R;
+				float bh = H;
+				if (i > 0) {
+					float sh = i == 1 ? b1.y : (i == 2 ? b1.z : b2.x);
+					float a = spin + float(i) * 2.0944 + (i == 1 ? b2.y : (i == 2 ? b2.z : b1.y)) * 1.2;
+					at = middle + vec2(cos(a), sin(a)) * r * mix(0.32, 0.58, sh);
+					br = r * mix(0.36, 0.58, fract(sh * 3.7));
+					bh = H * mix(0.4, 0.85, fract(sh * 5.3));
+					// A tower's shoulders broad round its column.
+					if (tall > MID_TALL.y + 0.1) br *= 1.25;
+				}
+				float bd = length(f - at);
+				float u = bd / br;
+				if (u < 1.0) {
+					top_c = max(top_c, base + bh * pow(1.0 - u * u, PROFILE));
+					base_c = min(base_c, base + bh * CURL * u * u * u * u);
+				} else {
+					out_c = min(out_c, bd - br);
+				}
+			}
+			if (top_c > -1e3) {
+				if (is_low) take(low, low_gap, sea + top_c, sea + base_c, 0.0);
+				else take(high, high_gap, sea + top_c, sea + base_c, 0.0);
+			} else {
+				if (is_low) take(low, low_gap, sea + base, sea + base, out_c);
+				else take(high, high_gap, sea + base, sea + base, out_c);
+			}
+		}
+	}
+}
+
+// The ground map at world `xz`: (meadow round it, the ground's height).
+vec2 ground_at(vec2 xz) {
+	if (P.ground_at.w < 0.5) return vec2(0.0, P.band.x);
+	vec2 uv = (xz - P.ground_at.xy) / P.ground_at.z;
+	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec2(0.0, P.band.x);
+	return textureLod(ground, uv, 0.0).rg;
+}
+
+vec4 weather_texel(vec2 xz) {
+	float sea = P.band.x;
+	vec2 f = xz - P.drift.xy;
+	vec2 low = vec2(sea - 300.0, sea);
+	vec2 high = vec2(sea - 300.0, sea);
+	float low_gap = 1e9;
+	float high_gap = 1e9;
+	float cover = P.drift.w;
+	lattice(f, true, sea, cover, low, low_gap, high, high_gap);
+	lattice(f, false, sea, cover, low, low_gap, high, high_gap);
+	// The ground under it: no cloud base under the ground, and over the
+	// meadows the low layer lifted clear and thinned, so the turf stays
+	// landable.
+	vec2 g = ground_at(xz);
+	float meadow = clamp(g.x, 0.0, 1.0);
+	float floor_y = max(g.y, sea) + 4.0;
+	float lift = max(floor_y, mix(floor_y, g.y + P.knobs.w, meadow)) - low.y;
+	if (lift > 0.0) {
+		float thick = low.x - low.y;
+		low.y += lift;
+		low.x = low.y + (thick > 0.0 ? thick * mix(1.0, 0.5, meadow) : thick);
+	}
+	if (high.y < floor_y) {
+		float thick = high.x - high.y;
+		high.y = floor_y;
+		high.x = high.y + thick;
+	}
+	// Faded toward the map's reach.
+	float far = length(xz - P.eye.xz);
+	float keep = 1.0 - sstep(P.band.z * 0.85, P.band.z, far);
+	low.x = mix(low.y - 60.0, low.x, keep);
+	high.x = mix(high.y - 60.0, high.x, keep);
+	return vec4(low.x, low.y, high.x, high.y);
+}
+
+// --- The cloud at a point ----------------------------------------------------------------
+
+vec4 weather_map(vec2 xz) {
+	vec2 uv = (xz - P.weather_at.xy) / P.weather_at.z;
+	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec4(-1e3, 0.0, -1e3, 0.0);
+	return textureLod(weather, uv, 0.0);
+}
+
+// The map smoothed over two texels (four bilinear taps half a texel
+// about): its texels' creases, sharp down a steep flank, never show as
+// flutes in the cloud's form or its light.
+vec4 weather_smooth(vec2 xz) {
+	float h = 0.5 * P.weather_at.z / P.weather_at.w;
+	return 0.25 * (weather_map(xz + vec2(h, h)) + weather_map(xz + vec2(-h, h)) + weather_map(xz + vec2(h, -h)) + weather_map(xz + vec2(-h, -h)));
+}
+
+// The highest top and lowest base round `xz`.
+vec2 ceiling_at(vec2 xz) {
+	vec2 uv = (xz - P.weather_at.xy) / P.weather_at.z;
+	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec2(-1e3, 1e4);
+	return textureLod(ceiling, uv, 0.0).rg;
+}
+
+// How far into one layer's cloud a point is (m); `hh` its height in it.
+float layer_inside(vec3 p, float top, float base, float slope, float n_lobe, float n_wisp, float n_mid, float n_fine, out float hh) {
+	float thick = top - base;
+	hh = clamp((p.y - base) / max(thick, 4.0), 0.0, 1.0);
+	float size = clamp(thick / 110.0, 0.45, 2.6);
+	float billow = mix(0.3, 1.0, hh) * sstep(0.0, 14.0, thick) * size;
+	float inside = (top - p.y) / sqrt(1.0 + slope * slope) + billow * LOBE * (n_lobe - 0.45) + (n_wisp - 0.5) * WISP;
+	inside += billow * MID_SWELL * (n_mid - 0.45);
+	inside += n_fine > 0.0 ? n_fine * sstep(-4.0, 1.0, inside) : n_fine;
+	// A flat base, a little ragged.
+	return min(inside, (p.y - base + (n_wisp - 0.5) * 10.0 + (n_lobe - 0.45) * 8.0) * 1.2 + 1.0);
+}
+
+// This pixel's jitter this frame (0..1; the march's), for the stencils.
+float g_jitter = 0.5;
+
+struct Sample {
+	float density;
+	float sigma;
+	float inside;
+	float h;
+	float pocket;
+	float free;
+};
+
+// How far `p` stands clear of one layer's cloud (m, a lower bound) from its
+// texel's `top` and `base`: past the rim (where the map has no cloud it
+// keeps how far the nearest rim is, as base - top), over the crown, or
+// under the base.
+float layer_free(float y, float top, float base) {
+	float under = base - 6.0 - y;
+	if (top < base) return max(base - top - RIM_MARGIN, under);
+	return max(max(y - top - OVER, under), 0.0);
+}
+
+Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
+	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0);
+	if (P.band.w <= 0.0 || p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return s;
+	vec4 w = weather_smooth(p.xz);
+	s.free = min(layer_free(p.y, w.x, w.y), layer_free(p.y, w.z, w.w));
+	bool low_on = p.y > w.y - 6.0 && p.y < w.x + OVER;
+	bool high_on = p.y > w.w - 6.0 && p.y < w.z + OVER;
+	if (!low_on && !high_on) {
+		s.inside = max(w.x - p.y, w.z - p.y);
+		s.inside = min(s.inside, max(p.y - w.y, p.y - w.w) * 2.0);
+		return s;
+	}
+	// The tops' slopes (central differences over SLOPE_SPAN texels), held under
+	// SLOPE_MAX so the texels' facets never show as stripes on a flank.
+	float texel = P.weather_at.z / P.weather_at.w;
+	float span = texel * SLOPE_SPAN;
+	vec2 at = p.xz;
+	vec4 wx = weather_map(at + vec2(span, 0.0)) - weather_map(at - vec2(span, 0.0));
+	vec4 wz = weather_map(at + vec2(0.0, span)) - weather_map(at - vec2(0.0, span));
+	vec2 slope = vec2(length(vec2(wx.x, wz.x)), length(vec2(wx.z, wz.z))) / (2.0 * span);
+	slope = min(slope, vec2(SLOPE_MAX));
+	vec3 boil = BOIL * P.eye.w;
+	float fine_w = (fine && P.quality.w > 0.5) ? 1.0 - sstep(FINE_NEAR * 0.6, FINE_NEAR, t) : 0.0;
+	float hh_l = 0.0, hh_h = 0.0;
+	float in_l = -1e3, in_h = -1e3;
+	float wisp = 0.5;
+	if (low_on) {
+		vec2 n = textureLod(cauliflower, (p + boil) / TILE_LOW, 0.0).rg;
+		float nm = textureLod(cauliflower, (p + boil * 1.3 + 37.0) / MID, 0.0).r;
+		float nf = fine_w > 0.0 ? fine_w * FINE_SWELL * (textureLod(cauliflower, (p + boil * 1.6 + 71.0) / FINE, 0.0).r - 0.5) : 0.0;
+		in_l = layer_inside(p, w.x, w.y, slope.x, n.r, n.g, nm, nf, hh_l);
+		wisp = n.g;
+	}
+	if (high_on) {
+		vec2 n = textureLod(cauliflower, (p + boil * 1.4 + 113.0) / TILE_HIGH, 0.0).rg;
+		float nm = textureLod(cauliflower, (p + boil * 1.3 + 59.0) / (MID * 1.6), 0.0).r;
+		float nf = fine_w > 0.0 ? fine_w * FINE_SWELL * (textureLod(cauliflower, (p + boil * 1.6 + 23.0) / FINE, 0.0).r - 0.5) : 0.0;
+		in_h = layer_inside(p, w.z, w.w, slope.y, n.r, n.g, nm * 1.6 - 0.3, nf, hh_h);
+		if (in_h > in_l) wisp = n.g;
+	}
+	float inside = max(in_l, in_h);
+	float hh = in_h > in_l ? hh_h : hh_l;
+	float soft = mix(SOFT.y, SOFT.x, hh) * mix(0.5, 1.0, sstep(40.0, 300.0, t));
+	float d = sstep(0.0, soft, inside) * mix(0.55, 1.0, sstep(0.3, 0.68, wisp));
+	d *= sstep(P.band.x - 1.0, P.band.x + 4.0, p.y);
+	// In the cloud the fog round the eye comes in wisps and pockets, never
+	// clear: the whiteout closes in a few tens of metres.
+	d *= mix(1.0, 0.35 + 0.65 * sstep(0.38, 0.64, wisp), immersed);
+	s.inside = inside;
+	if (d > 0.0) {
+		s.density = d;
+		s.h = hh;
+		s.pocket = wisp;
+		s.sigma = mix(SIGMA, SIGMA_IN, immersed);
+	}
+	return s;
+}
+
+// The light taps' form: the density, one noise octave.
+float density_cheap(vec3 p) {
+	if (p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return 0.0;
+	vec4 w = weather_smooth(p.xz);
+	bool low_on = p.y > w.y - 6.0 && p.y < w.x + OVER;
+	bool high_on = p.y > w.w - 6.0 && p.y < w.z + OVER;
+	if (!low_on && !high_on) return 0.0;
+	vec2 n = textureLod(cauliflower, (p + BOIL * P.eye.w) / TILE_HIGH, 0.0).rg;
+	float hh;
+	float inside = -1e3;
+	if (low_on) inside = layer_inside(p, w.x, w.y, 0.6, n.r, n.g, 0.45, 0.0, hh);
+	if (high_on) inside = max(inside, layer_inside(p, w.z, w.w, 0.6, n.r, n.g, 0.45, 0.0, hh));
+	return sstep(-4.0, 12.0, inside);
+}
+
+// The coarse form's distance into the cloud, for the face a ray first meets.
+float inside_cheap(vec3 p) {
+	vec4 w = weather_smooth(p.xz);
+	vec2 n = textureLod(cauliflower, (p + BOIL * P.eye.w) / TILE_LOW, 0.0).rg;
+	float hh;
+	return max(layer_inside(p, w.x, w.y, 0.6, n.r, n.g, 0.45, 0.0, hh), layer_inside(p, w.z, w.w, 0.6, n.r, n.g, 0.45, 0.0, hh));
+}
+
+// How far a ray may leap from `p` before it can meet cloud (0: step here).
+float clear_ahead(vec3 p, vec3 rd, float level) {
+	vec2 c = ceiling_at(p.xz);
+	float block = P.weather_at.z / P.weather_at.w * CEILING_BLOCK_F;
+	float across = block * 0.9 / level;
+	float over = p.y - (c.x + OVER);
+	if (over > 0.0) return min(rd.y < 0.0 ? over / -rd.y : 1e9, across);
+	float under = (c.y - 8.0) - p.y;
+	if (under > 0.0) return min(rd.y > 0.0 ? under / rd.y : 1e9, across);
+	return 0.0;
+}
+
+// --- The passes --------------------------------------------------------------------------
+
+void weather_pass() {
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(out_weather);
+	if (any(greaterThanEqual(texel, size))) return;
+	vec2 xz = P.weather_at.xy + (vec2(texel) + 0.5) / vec2(size) * P.weather_at.z;
+	imageStore(out_weather, texel, weather_texel(xz));
+}
+
+void ceiling_pass() {
+	ivec2 block = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(out_ceiling);
+	if (any(greaterThanEqual(block, size))) return;
+	ivec2 texels = textureSize(weather, 0);
+	float top = -1e3;
+	float bottom = 1e4;
+	for (int y = -CEILING_BLOCK; y < 2 * CEILING_BLOCK; y += 2) {
+		for (int x = -CEILING_BLOCK; x < 2 * CEILING_BLOCK; x += 2) {
+			ivec2 t = clamp(block * CEILING_BLOCK + ivec2(x, y), ivec2(0), texels - 1);
+			vec4 w = texelFetch(weather, t, 0);
+			// Only a layer with any body counts.
+			if (w.x > w.y) {
+				top = max(top, w.x);
+				bottom = min(bottom, w.y);
+			}
+			if (w.z > w.w) {
+				top = max(top, w.z);
+				bottom = min(bottom, w.w);
+			}
+		}
+	}
+	imageStore(out_ceiling, block, vec4(top + 4.0, bottom - 4.0, 0.0, 0.0));
+}
+
+void shadow_pass() {
+	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(out_shadow);
+	if (any(greaterThanEqual(texel, size))) return;
+	vec3 key = normalize(P.key.xyz + vec3(0.0, 1e-4, 0.0));
+	if (key.y < 0.03 || P.band.w <= 0.0) {
+		imageStore(out_shadow, texel, vec4(1.0, 1.0, 0.0, 0.0));
+		return;
+	}
+	vec2 xz = P.shade_sq.xy + (vec2(texel) + 0.5) / vec2(size) * P.shade_sq.z;
+	vec3 p = vec3(xz.x, P.band.x, xz.y);
+	float t_end = (P.band.y + OVER - p.y) / key.y;
+	float thick = 0.0;
+	float at_y = 0.0;
+	float t = 4.0;
+	float step = 8.0;
+	for (int i = 0; i < 48; i++) {
+		if (t > t_end) break;
+		vec3 q = p + key * t;
+		float gap = clear_ahead(q, key, max(length(key.xz), 1e-3));
+		if (gap > 0.0) {
+			t += max(gap, step);
+			continue;
+		}
+		float d = density_cheap(q) * step;
+		thick += d;
+		at_y += d * q.y;
+		t += step;
+		step = min(step * 1.15, 50.0);
+	}
+	float keep = exp(-thick * SUN_SIGMA * 0.6);
+	imageStore(out_shadow, texel, vec4(keep, 1.0, thick > 0.01 ? at_y / thick : P.band.x, 0.0));
+}
+
+void march_pass() {
+	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(out_a);
+	if (any(greaterThanEqual(pixel, size))) return;
+	ivec2 full_size = textureSize(scene_depth, 0);
+	int scale = max(int(P.quality.z), 1);
+	ivec2 full = scale > 1 ? min(pixel * 2 + zs_block_offset(int(P.frame.x)), full_size - 1) : min(pixel, full_size - 1);
+	vec2 uv = (vec2(full) + 0.5) / vec2(full_size);
+	vec3 view_dir = normalize(vec3((uv.x * 2.0 - 1.0) * P.lens.x, (1.0 - uv.y * 2.0) * P.lens.y, -1.0));
+	vec3 rd = normalize(mat3(P.camera) * view_dir);
+	vec3 ro = P.eye.xyz;
+
+	float d = texelFetch(scene_depth, full, 0).r;
+	float near = P.lens.z;
+	float far = P.lens.w;
+	float t_solid = 1e9;
+	if (d > 0.0) {
+		float z = near * far / (near + d * (far - near));
+		t_solid = z / max(-view_dir.z, 1e-4);
+	}
+	imageStore(out_depth, pixel, vec4(t_solid));
+
+	// The slab of cloud, out to the reach.
+	float level = max(length(rd.xz), 1e-4);
+	float t_in = 1e9;
+	float t_out = 0.0;
+	if (P.band.w > 0.0) {
+		float top_y = P.band.y + OVER;
+		float bottom = P.band.x - 1.0;
+		float a, b;
+		if (abs(rd.y) < 1e-4) {
+			a = (ro.y < top_y && ro.y > bottom) ? 0.0 : 1e9;
+			b = 1e9;
+		} else {
+			float ta = (top_y - ro.y) / rd.y;
+			float tb = (bottom - ro.y) / rd.y;
+			a = max(min(ta, tb), 0.0);
+			b = max(ta, tb);
+		}
+		b = min(b, P.band.z / level);
+		if (b > a) {
+			t_in = a;
+			t_out = b;
+		}
+	}
+	t_out = min(t_out, t_solid);
+	if (t_out <= t_in) {
+		imageStore(out_a, pixel, vec4(0.0));
+		imageStore(out_b, pixel, vec4(0.0));
+		return;
+	}
+
+	float frame_index = P.frame.x;
+	vec2 jp = vec2(pixel) + vec2(5.588238, 5.588238) * mod(frame_index, 64.0);
+	float jitter = fract(52.9829189 * fract(dot(jp, vec2(0.06711056, 0.00583715))));
+	g_jitter = jitter;
+
+	vec3 key = normalize(P.key.xyz + vec3(0.0, 1e-4, 0.0));
+	float c = dot(rd, key);
+	float ph[OCTAVES];
+	for (int o = 0; o < OCTAVES; o++) ph[o] = phase(c, pow(MS_C, float(o)));
+	float powder_share = POWDER * sstep(0.2, -0.6, c);
+
+	// How deep in cloud the eye is: the fog round it glows.
+	float immersed = 0.0;
+	{
+		Sample e = cloud_at(ro, 60.0, 0.0, false);
+		if (e.density > 0.0) immersed = sstep(-4.0, 20.0, e.inside);
+	}
+
+	bool faced = false;
+	float turned = 1.0;
+	int steps = min(int(P.quality.x), STEPS_MAX);
+	int taps_full = min(int(P.quality.y), TAPS_MAX);
+	float T = 1.0;
+	vec4 acc_a = vec4(0.0);
+	float met = 0.0;
+	float crown = 0.0;
+	float glow = 0.0;
+	float t = t_in;
+	bool started = false;
+	bool hit = false;
+	int fine_left = 0;
+	for (int i = 0; i < STEPS_MAX; i++) {
+		if (i >= steps || t >= t_out || T < 0.03) break;
+		vec3 p = ro + rd * t;
+		float gap = clear_ahead(p, rd, level);
+		if (gap > 0.0) {
+			t += clamp(gap, STEP.x, 900.0);
+			started = false;
+			continue;
+		}
+		float step = clamp(STEP.x + t * STEP_GROW, STEP.x, STEP.y);
+		// Just past where the ray first met cloud, finer steps, so the
+		// surface's place never shows the steps as contours.
+		if (fine_left > 0) {
+			step = max(step * 0.25, STEP.x);
+			fine_left--;
+		}
+		if (!started) {
+			started = true;
+			t += step * jitter;
+			if (t >= t_out) break;
+			p = ro + rd * t;
+		}
+		Sample s = cloud_at(p, t, immersed, true);
+		// Close to the eye the cloud thins away, so the eye never meets a
+		// wall; in the cloud less so, but the plane ahead stays readable.
+		s.density *= mix(sstep(NEAR_FADE.x, NEAR_FADE.y, t), 0.25 + 0.75 * sstep(4.0, 18.0, t), immersed);
+		if (s.density > 0.002 && !hit) {
+			hit = true;
+			if (step > STEP.x * 2.0) {
+				t -= step * 0.75;
+				fine_left = 6;
+				continue;
+			}
+		}
+		if (s.density > 0.002) {
+			float od = 0.0;
+			// Far off, fewer taps over a longer cone, so a far cloud still
+			// shades itself.
+			int taps = T > 0.15 ? (t < 1500.0 ? taps_full : 4) : 2;
+			// Each pixel's cone a little longer or shorter (the resolve
+			// averages it), so the taps' steps never show as contours.
+			float reach = mix(1.0, 2.6, sstep(700.0, 3000.0, t)) * (0.8 + 0.4 * fract(jitter + float(i) * 0.618));
+			for (int k = 0; k < TAPS_MAX; k++) {
+				if (k >= taps) break;
+				od += density_cheap(p + key * TAP_AT[k] * reach) * TAP_LEN[k] * reach;
+			}
+			if (!faced) {
+				faced = true;
+				float e = mix(10.0, 28.0, sstep(60.0, 1500.0, t));
+				float here = inside_cheap(p);
+				vec3 grad = vec3(
+					inside_cheap(p + vec3(e, 0.0, 0.0)) - inside_cheap(p - vec3(e, 0.0, 0.0)),
+					inside_cheap(p + vec3(0.0, e, 0.0)) - inside_cheap(p - vec3(0.0, e, 0.0)),
+					inside_cheap(p + vec3(0.0, 0.0, e)) - inside_cheap(p - vec3(0.0, 0.0, e)));
+				turned = 0.5;
+				if (here > -500.0 && dot(grad, grad) > 1e-6 && dot(grad, grad) < 4e5 * e * e) turned = sstep(-0.6, 0.9, dot(-normalize(grad), key));
+			}
+			od += (1.0 - turned) * FACE_SHADE;
+			if (T > 0.1) {
+				for (int k = 0; k < LONG_TAPS; k++) od += density_cheap(p + key * LONG_AT[k]) * LONG_LEN;
+			}
+			float tau = od * SUN_SIGMA;
+			float sky_open = 1.0;
+			if (T > 0.25) {
+				float up = density_cheap(p + vec3(0.0, 14.0, 0.0)) * 14.0 + density_cheap(p + vec3(0.0, 40.0, 0.0)) * 28.0;
+				sky_open = mix(CREASE, 1.0, exp(-up * UP_SIGMA * 2.0));
+			}
+			float sun_light = 0.0;
+			float weight = 1.0;
+			float atten = 1.0;
+			for (int o = 0; o < OCTAVES; o++) {
+				sun_light += weight * exp(-tau * atten) * ph[o];
+				weight *= MS_B;
+				atten *= MS_A;
+			}
+			sun_light *= SUN_SCALE / (1.0 + MS_B + MS_B * MS_B);
+			float powder = 1.0 - exp(-max(s.inside, 0.0) / POWDER_DEPTH);
+			sun_light *= mix(1.0, powder, powder_share);
+			float deep = sstep(0.0, 50.0, s.inside);
+			float beer = exp(-tau);
+			float ambient = SKY * sky_open * mix(0.32, 1.0, s.h) * mix(1.0, DEEP, deep) * mix(1.0, 0.45, beer);
+			float bounce = BOUNCE * pow(1.0 - s.h, 2.0);
+			float alpha = 1.0 - exp(-s.density * s.sigma * step);
+			float w = T * alpha;
+			acc_a += w * (1.0 - immersed) * vec4(ambient, sun_light, bounce, 0.0);
+			// The whiteout mottled by the wisps streaming past.
+			glow += w * immersed * (0.75 + 0.3 * beer) * (0.75 + 0.5 * s.pocket);
+			met += w * t;
+			crown += w * s.h;
+			T *= 1.0 - alpha;
+			t += step;
+		} else {
+			// Clear air in the slab: on as far as the map says is clear.
+			t += clamp(s.free, step, 600.0);
+			// After a leap the next step jittered afresh, so where the steps
+			// fall on the cloud never shows as contours.
+			if (s.free > step) started = false;
+		}
+	}
+	float cover = 1.0 - T;
+	imageStore(out_a, pixel, acc_a);
+	imageStore(out_b, pixel, vec4(cover, met, crown, glow));
+}
+
+void main() {
+	if (PASS.mode == MODE_WEATHER) weather_pass();
+	else if (PASS.mode == MODE_CEILING) ceiling_pass();
+	else if (PASS.mode == MODE_SHADOW) shadow_pass();
+	else march_pass();
+}

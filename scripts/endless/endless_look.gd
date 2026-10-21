@@ -36,6 +36,7 @@ const SkyBelow = preload("res://scripts/sky_below.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Presets = preload("res://scripts/scene_look_presets.gd")
+const EndlessClouds = preload("res://scripts/endless/endless_clouds.gd")
 
 ## The moods L steps through (no winter: the season stays off it), and the
 ## one it opens on.
@@ -71,6 +72,12 @@ const TINT_MID := Color(0.10,0.58,0.66)
 const TINT_DEEP := Color(0.05,0.32,0.48)
 const TINT_ABYSS := Color(0.04,0.20,0.36)
 const TINT_DEPTHS := Vector3(2.5,9.0,26.0)
+## The sea draws first of the see-through things, so the clouds' sheet
+## (EndlessClouds RENDER_PRIORITY) lays the cloud over it.
+const SEA_PRIORITY := -8
+## The share of the land's haze the cloud takes (shaders/
+## endless_cloud_composite.gdshader `haze`.w).
+const CLOUD_HAZE := 0.6
 
 var plain := false
 var lighting: Node3D
@@ -84,6 +91,11 @@ var _gust := 0.0
 var _wind_angle := 0.0
 var _wind := WIND
 var mood := MOOD
+## The clouds (scripts/endless/endless_clouds.gd), or null (--no-clouds, no
+## RenderingDevice).
+var clouds: Node3D
+## The wind's heading over the ground now (unit xz).
+var wind_direction := Vector2.RIGHT
 
 ## Whether the full look runs (not --plain-look, not the Compatibility
 ## renderer).
@@ -149,6 +161,10 @@ func setup(land_seed: int) -> void:
 	ground.set_shader_parameter("beach",Field.BEACH)
 	ground.set_shader_parameter("snow_line",Field.SNOW)
 	_build_sea()
+	if EndlessClouds.wanted():
+		clouds = EndlessClouds.new()
+		add_child(clouds)
+		clouds.setup(land_seed,celestial,Vector4(FOG_BEGIN,FOG_END,FOG_CURVE,CLOUD_HAZE),SUN_SCATTER*0.5)
 	_publish(0.0)
 	_haze(Vector3.FORWARD)
 	# The ringed planet is the isles' option, off by default (look_pass.gd).
@@ -196,6 +212,9 @@ func _build_sea() -> void:
 	water.set_shader_parameter("tint_depths",TINT_DEPTHS)
 	water.set_shader_parameter("bed_fade",6.0)
 	water.set_shader_parameter("glint_share",1.0)
+	water.render_priority = SEA_PRIORITY
+	# The clouds' shadows on the water (none drawn without the clouds).
+	water.set_shader_parameter("cloud_shade",1.0)
 	sea = MeshInstance3D.new()
 	sea.name = "Sea"
 	sea.mesh = SkyBelow._sheet()
@@ -206,14 +225,15 @@ func _build_sea() -> void:
 	add_child(sea)
 
 ## One frame: the hour, the wind and the clocks the shaders read, the sea
-## under the eye.
-func step(delta: float, eye: Vector3, facing := Vector3.FORWARD) -> void:
+## under the eye, then the clouds round `view` (the camera that draws).
+func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D = null) -> void:
 	celestial.advance(delta,false)
 	_publish(delta)
 	_haze(facing)
 	ground.set_shader_parameter("night_grade",celestial.night_grade)
 	RenderingServer.global_shader_parameter_set("zs_camera_position",eye)
 	sea.position = Vector3(snappedf(eye.x,64.0),Field.SEA_Y,snappedf(eye.z,64.0))
+	if clouds != null: clouds.step(delta,view,wind_direction,_time)
 
 func _publish(delta: float) -> void:
 	_time += delta
@@ -221,6 +241,7 @@ func _publish(delta: float) -> void:
 	var angle := _wind_angle+0.35*sin(_time*0.013)
 	var strength := _wind*(0.85+0.15*sin(_time*0.21)*sin(_time*0.077))
 	_gust += delta*AIR_SPEED*(0.5+0.5*strength/WIND)
+	wind_direction = Vector2(cos(angle),sin(angle))
 	RenderingServer.global_shader_parameter_set("zs_motion_time",_time)
 	RenderingServer.global_shader_parameter_set("zs_flow_time",_time)
 	RenderingServer.global_shader_parameter_set("zs_wind_direction",Vector2(cos(angle),sin(angle)))

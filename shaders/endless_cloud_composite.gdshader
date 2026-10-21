@@ -1,0 +1,93 @@
+shader_type spatial;
+render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, depth_test_disabled, shadows_disabled, fog_disabled;
+// The endless flight's clouds into the scene (scripts/endless/
+// endless_clouds.gd): a sheet over the screen, drawn in the see-through
+// pass just after the sea, that colours the march's light terms
+// (shaders/endless_cloud_march.glsl, resolved over frames by shaders/
+// cloud_volume_resolve.glsl) in the cumulus' own light (shaders/
+// cumulus_light.gdshaderinc: the sun's hue on the lit side, the sky's on
+// the shaded), then lays the land's haze over them by distance, thinner
+// for cloud standing high, toward the dome's own colour behind each one,
+// so far cloud melts into the sky as the far land does.
+#include "res://shaders/reference_globals.gdshaderinc"
+#include "res://shaders/reference_sky_common.gdshaderinc"
+#include "res://shaders/cumulus_light.gdshaderinc"
+#include "res://shaders/reference_display.gdshaderinc"
+
+uniform sampler2D cloud_light : filter_nearest, repeat_disable;
+uniform sampler2D cloud_shape : filter_nearest, repeat_disable;
+// The land's haze (scripts/endless/endless_look.gd FOG_*): begin, end (m),
+// curve, and the share of the land's haze the cloud takes.
+uniform vec4 haze = vec4(120.0, 7600.0, 0.75, 0.8);
+// The air thins with height over the sea: the haze's scale height (m), and
+// the sea's height.
+uniform float haze_height = 650.0;
+uniform float sea_y = -40.0;
+// The sun's glow in the haze toward it (the land's fog_sun_scatter).
+uniform float sun_scatter = 0.18;
+
+// The sunny side lifted by day (the isles' LIFT).
+const float LIFT = 1.25;
+const float GLOW = 2.0;
+// The light off the land and sea below on the bases: a cool green-grey.
+const vec3 BOUNCE_TINT = vec3(0.78, 0.9, 0.82);
+// At night the shade and the moonlit side painted, so cloud reads as
+// moonlit cloud, never as dark ground.
+const float NIGHT_TINT = 0.6;
+
+void vertex() {
+	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
+}
+
+void fragment() {
+	ivec2 here = min(ivec2(FRAGCOORD.xy), textureSize(cloud_light, 0) - 1);
+	vec4 a = texelFetch(cloud_light, here, 0);
+	vec4 b = texelFetch(cloud_shape, here, 0);
+	float cloud_a = clamp(b.x, 0.0, 1.0);
+	if (cloud_a < 0.003) discard;
+	vec3 eye = CAMERA_POSITION_WORLD;
+	vec4 view = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, 1.0, 1.0);
+	vec3 rd = normalize(mat3(INV_VIEW_MATRIX) * (view.xyz / view.w));
+
+	vec3 sun = normalize(zs_sun_direction + vec3(0.0, 1e-4, 0.0));
+	vec3 sun_hue;
+	vec3 c_sun;
+	vec3 c_shade;
+	float lining;
+	zs_cumulus_palette(rd, sun, sun_hue, c_sun, c_shade, lining);
+	float toward_sun = max(dot(rd, sun), 0.0);
+	vec4 terms = a / cloud_a;
+	vec3 lit = (terms.x * c_shade + terms.y * c_sun + terms.z * c_sun * BOUNCE_TINT) * ZS_CUMULUS_LIT_SHARE;
+	lit *= mix(1.0, LIFT, zs_daylight);
+	float bright = clamp(terms.y / 0.95, 0.0, 1.0);
+	float met = b.y / cloud_a;
+	float glow = b.w / cloud_a;
+	// In the cloud: the white glow of the fog round the eye, warmer toward
+	// the sun.
+	vec3 glow_col = mix(vec3(0.95, 0.97, 1.0), sun_hue, 0.15) * GLOW * mix(1.0, 0.2, zs_night) * mix(0.6, 1.0, zs_daylight);
+	vec3 col = lit + glow_col * glow * (1.0 + 0.7 * pow(toward_sun, 3.0)) * ZS_CUMULUS_LIT_SHARE * 1.6;
+	vec3 painted = mix(c_shade * 0.55, c_sun * 0.9, bright) * ZS_CUMULUS_LIT_SHARE * 1.6;
+	col = mix(col, painted, NIGHT_TINT * zs_night);
+
+	// The haze between: the land's own by distance, thinner the higher the
+	// air it crosses (exponential air over the sea).
+	float y0 = max(eye.y - sea_y, 0.0);
+	float y1 = max(eye.y + rd.y * met - sea_y, 0.0);
+	float rise = y1 - y0;
+	float airmass = abs(rise) > 1.0 ? haze_height * (exp(-y0 / haze_height) - exp(-y1 / haze_height)) / rise : exp(-y0 / haze_height);
+	float dist = met * airmass / exp(-min(y0, 150.0) / haze_height);
+	float fog = pow(clamp((dist - haze.x) / (haze.y - haze.x), 0.0, 1.0), haze.z) * haze.w;
+	vec3 behind = normalize(vec3(rd.x, max(rd.y, 0.0), rd.z));
+	// The dome's colour behind, kept under white as the land's haze keeps it
+	// (EndlessLook.horizon): past it the display's inverse turns hue.
+	vec3 dome = zsSkyBase(behind);
+	dome *= 0.98 / max(max(max(dome.r, dome.g), dome.b), 0.98);
+	vec3 sky = scene_linear_for_display(dome);
+	float high = smoothstep(0.02, 0.4, sun.y);
+	sky += c_sun * pow(toward_sun, 6.0) * sun_scatter * mix(1.4, 0.7, high) * zs_celestial_clear;
+	col = mix(col, sky, fog);
+	ALBEDO = col;
+	// The march stops once the cloud is all but whole: whole it is, so the
+	// sun's disc never shines through a thick body.
+	ALPHA = min(cloud_a / 0.96, 1.0);
+}

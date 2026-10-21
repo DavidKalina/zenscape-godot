@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://bf8aff135wenq"
+path="res://.godot/imported/endless_cloud_march.glsl-89e93977d98a09d263eedc274ac4ca06.res"
+
+[deps]
+
+source_file="res://shaders/endless_cloud_march.glsl"
+dest_files=["res://.godot/imported/endless_cloud_march.glsl-89e93977d98a09d263eedc274ac4ca06.res"]
+
+[params]
+
