@@ -35,6 +35,8 @@ extends RefCounted
 ## fall's (m), for a wide curtain; reeds: a multiplier on the reeds and
 ## bank grass; tea: true to steep the water by what grows round it
 ## (`steep`), or the most it may steep (0 to 1).
+## drop: how far (m) the shelf's edge falls away to the deep (DROP unless
+## given; a long one reads as a sloping bowl through clear water).
 ## basin: a lake in part of a bigger land (home's tableland, studies/
 ## heist_home.gd) rather than taking the islet: a Dictionary {middle:
 ## Vector2, radius: m, slope: m, under: m, axis: Vector2, long: share,
@@ -77,6 +79,8 @@ const ISLE := 0.5
 const ISLE_RADIUS := Vector2(1.5,2.3)
 const ISLE_TOP := 0.55
 const ISLE_IN := 2.5
+## With a recipe's `drop`: the isle's flat crown, a share of its radius.
+const ISLE_CROWN := 0.6
 ## The field of distance to the water: its cell (m).
 const FIELD := 0.5
 ## Reeds: clumps along the shallows, reeds a clump and its spread (m);
@@ -127,6 +131,7 @@ static func cut(islet: RefCounted, rng: RandomNumberGenerator, inland: float) ->
 	var shelf := rng.randf_range(shelf_range.x,shelf_range.y)
 	var depth := rng.randf_range(depth_range.x,depth_range.y)
 	var beach := float(spec.get("beach",BEACH))
+	var drop := float(spec.get("drop",DROP))
 	var basin: Dictionary = spec.get("basin",{})
 	if basin.has("keep"): basin = seek_basin(islet,basin,spec.get("toward",Vector2.ZERO),bank.x)
 	var wander := FastNoiseLite.new()
@@ -201,8 +206,13 @@ static func cut(islet: RefCounted, rng: RandomNumberGenerator, inland: float) ->
 		else:
 			var bed := level-lerpf(0.05,SHELF_DEPTH,smoothstep(0.0,0.6,t))-0.06*clampf(t/shelf,0.0,1.0)
 			var deep := level-depth+swell.get_noise_2d(p.x,p.y)*BED_SWELL
-			h = lerpf(bed,deep,smoothstep(shelf,shelf+DROP,t))
-		if isle.z > 0.0:
+			h = lerpf(bed,deep,smoothstep(shelf,shelf+drop,t))
+		if isle.z > 0.0 and spec.has("drop"):
+			# With a long drop the isle's flank runs on down to the deep as
+			# the shelf's does, no flat apron and step round it.
+			var d := maxf(p.distance_to(Vector2(isle.x,isle.y))-isle.z*ISLE_CROWN,0.0)
+			h = maxf(h,level+ISLE_TOP-(ISLE_TOP+depth)*smoothstep(0.0,1.0,d/(drop+isle.z*0.6)))
+		elif isle.z > 0.0:
 			var r := p.distance_to(Vector2(isle.x,isle.y))/isle.z
 			if r < 1.6:
 				var mound := level-0.5+(ISLE_TOP+0.5)*pow(maxf(1.0-r*r/2.56,0.0),1.4)*1.0
@@ -450,6 +460,210 @@ static func bed_tone(islet: RefCounted, sand: Color, gravel: Color, y: float, at
 	if under < 0.0: return sand.lerp(gravel,0.25+0.25*sin(at.x*1.7+at.y*2.3))
 	var t := clampf(under/float(islet.lake.get("depth",1.6)),0.0,1.0)
 	return sand.lerp(WEEDY,WEED*smoothstep(0.0,0.1,under)).lerp(SILT,smoothstep(0.08,0.8,t))
+
+# --- A smooth bed (opt-in: studies/heist_home.gd) ----------------------------------
+
+## The bed and beach faces (the ones sky_islet paints as the lake's: a corner
+## under BEACH_TOP+BED_ROOM over the level within BED_NEAR m of the water, or
+## under the level in the basin)
+## are drawn finer and curved (`fine_bed`): each cut into BED_CUTS^2 faces,
+## its points raised onto the faces' smooth surface (`smooth_height`), so
+## the bed reads through clear water as a rounded basin and not a 2 m grid's
+## flat facets, and coloured a point at a time (`bed_tone`), not a face.
+const BED_ROOM := 0.12
+const BED_NEAR := 2.5
+const BED_CUTS := 4
+## How far the surface bends from the flat faces toward each corner's own
+## tangent plane (Phong tessellation's alpha, 0 flat, 1 full).
+const BED_BEND := 0.8
+
+## True for the islet's face `f` (corners `a`, `b`, `c`) in the lake's bed
+## or beach (the faces sky_islet's `top_arrays` paints with `bed_tone`).
+static func bed_face(islet: RefCounted, a: Vector3, b: Vector3, c: Vector3) -> bool:
+	var low := minf(a.y,minf(b.y,c.y))
+	if low >= float(islet.water_level)+BEACH_TOP+BED_ROOM: return false
+	var m := Vector2((a.x+b.x+c.x)/3.0,(a.z+b.z+c.z)/3.0)
+	return distance(islet,m) < BED_NEAR or (low < float(islet.water_level)+0.06 and in_basin(islet,m))
+
+## The smooth bed's data (made once, kept on islet.lake.smooth): each
+## point's slope (the smooth normals' gradient) and its bend (1 where every
+## face round it is a bed face, else 0, so the bed meets the plain faces
+## round it edge for edge).
+static func _smooth(islet: RefCounted) -> Dictionary:
+	var made: Variant = islet.lake.get("smooth")
+	if made is Dictionary: return made
+	var points: PackedVector2Array = islet.points
+	var ids: PackedInt32Array = islet.ids
+	var normals := PackedVector3Array()
+	normals.resize(points.size())
+	var around := PackedInt32Array()
+	around.resize(points.size())
+	var in_bed := PackedInt32Array()
+	in_bed.resize(points.size())
+	var faces := PackedByteArray()
+	faces.resize(ids.size()/3)
+	for f: int in islet.land:
+		var a: Vector3 = islet._vertex(ids[f*3])
+		var b: Vector3 = islet._vertex(ids[f*3+1])
+		var c: Vector3 = islet._vertex(ids[f*3+2])
+		var n: Vector3 = islet._face_normal(f)
+		var bed := bed_face(islet,a,b,c)
+		faces[f] = 1 if bed else 0
+		for k in range(3):
+			var i := ids[f*3+k]
+			normals[i] += n
+			around[i] += 1
+			if bed: in_bed[i] += 1
+	var grad := PackedVector2Array()
+	grad.resize(points.size())
+	var bend := PackedFloat32Array()
+	bend.resize(points.size())
+	for i in range(points.size()):
+		if around[i] == 0: continue
+		var n := normals[i].normalized()
+		grad[i] = Vector2(-n.x,-n.z)/maxf(n.y,0.2)
+		normals[i] = n
+		bend[i] = 1.0 if in_bed[i] == around[i] and float(islet.shore_distance[i]) > 0.0 else 0.0
+	var out := {"grad":grad,"bend":bend,"normals":normals,"faces":faces}
+	islet.lake.smooth = out
+	return out
+
+## The smooth bed's height in face `f` at barycentric `w` (the plain
+## faces' own off the bed).
+static func _curved(islet: RefCounted, s: Dictionary, f: int, w: Vector3, p: Vector2) -> float:
+	var ids: PackedInt32Array = islet.ids
+	var heights: PackedFloat32Array = islet.heights
+	var points: PackedVector2Array = islet.points
+	var grad: PackedVector2Array = s.grad
+	var bend: PackedFloat32Array = s.bend
+	var flat := 0.0
+	var tangent := 0.0
+	var k := 0.0
+	for c in range(3):
+		var i := ids[f*3+c]
+		var wc: float = w[c]
+		flat += wc*heights[i]
+		tangent += wc*(heights[i]+grad[i].dot(p-points[i]))
+		k += wc*bend[i]
+	return lerpf(flat,tangent,k*BED_BEND)
+
+## The ground's height at `p` with the lake's bed smoothed (`fine_bed`'s
+## surface), RIM_HEIGHT off the land: for the water sheet's depths.
+static func smooth_height(islet: RefCounted, p: Vector2) -> float:
+	var hit: Array = islet._locate(p)
+	var f: int = hit[0]
+	if f < 0: return RIM_HEIGHT
+	return _curved(islet,_smooth(islet),f,hit[1],p)
+
+## The islet's top arrays (SkyIslet `top_arrays`, shifted by `shift`)
+## split: {rest: the faces off the lake's bed and beach, as they were; bed:
+## those drawn again finer and curved (BED_CUTS), their colour a point at a
+## time, their normals the smooth surface's (to be lit smooth, not face by
+## face: studies/heist_home.gd draws them with the ground's facets off),
+## and the faces within `bank_near` m of the water as they were}.
+static func fine_bed(islet: RefCounted, top: Array, shift: Vector3, palette: Dictionary, bank_near := 0.0) -> Dictionary:
+	var s := _smooth(islet)
+	var sand: Color = palette.sand
+	var gravel: Color = palette.gravel
+	var src_v: PackedVector3Array = top[Mesh.ARRAY_VERTEX]
+	var src_n: PackedVector3Array = top[Mesh.ARRAY_NORMAL]
+	var src_c: PackedColorArray = top[Mesh.ARRAY_COLOR]
+	var src_uv: PackedVector2Array = top[Mesh.ARRAY_TEX_UV]
+	var src_uv2: PackedVector2Array = top[Mesh.ARRAY_TEX_UV2]
+	var rest := _arrays()
+	var bank := _arrays()
+	for t in range(0,src_v.size(),3):
+		var a := src_v[t]-shift
+		var b := src_v[t+1]-shift
+		var c := src_v[t+2]-shift
+		if bed_face(islet,a,b,c): continue
+		# The bank round it (within `bank_near` m of the water) goes with
+		# the bed as it is, to be lit smooth too.
+		var m := (a+b+c)/3.0
+		var into: Array = bank if bank_near > 0.0 and distance(islet,Vector2(m.x,m.z)) < bank_near else rest
+		for k in range(3):
+			into[Mesh.ARRAY_VERTEX].append(src_v[t+k])
+			into[Mesh.ARRAY_NORMAL].append(src_n[t+k])
+			into[Mesh.ARRAY_COLOR].append(src_c[t+k])
+			into[Mesh.ARRAY_TEX_UV].append(src_uv[t+k])
+			into[Mesh.ARRAY_TEX_UV2].append(src_uv2[t+k])
+	var vertices: PackedVector3Array = bank[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = bank[Mesh.ARRAY_NORMAL]
+	var colors: PackedColorArray = bank[Mesh.ARRAY_COLOR]
+	var uv: PackedVector2Array = bank[Mesh.ARRAY_TEX_UV]
+	var uv2: PackedVector2Array = bank[Mesh.ARRAY_TEX_UV2]
+	# Each corner's colour as the top drew it (softened, maybe), so the fine
+	# bed's colour runs from the faces round it at its edge to its own inside.
+	var drawn := {}
+	for t in range(src_v.size()): drawn[Vector3i((src_v[t]*500.0).round())] = src_c[t]
+	var ids: PackedInt32Array = islet.ids
+	var points: PackedVector2Array = islet.points
+	var heights: PackedFloat32Array = islet.heights
+	var bend: PackedFloat32Array = s.bend
+	var vn: PackedVector3Array = s.normals
+	var faces: PackedByteArray = s.faces
+	var n := BED_CUTS
+	var made := 0
+	for f: int in islet.land:
+		if faces[f] == 0: continue
+		made += 1
+		var ia := ids[f*3]
+		var ib := ids[f*3+1]
+		var ic := ids[f*3+2]
+		var edge := []
+		for i: int in [ia,ib,ic]:
+			edge.append(drawn.get(Vector3i(((Vector3(points[i].x,heights[i],points[i].y)+shift)*500.0).round()),sand))
+		# The face's points on a grid of n each way (barycentric), raised.
+		var at := {}
+		for i in range(n+1):
+			for j in range(n+1-i):
+				var w := Vector3(float(n-i-j),float(i),float(j))/float(n)
+				var p := points[ia]*w.x+points[ib]*w.y+points[ic]*w.z
+				var h := _curved(islet,s,f,w,p)
+				var nrm := (vn[ia]*w.x+vn[ib]*w.y+vn[ic]*w.z).normalized()
+				var own := _fine_tone(islet,sand,gravel,h,p)
+				var round_it: Color = (edge[0] as Color)*w.x+(edge[1] as Color)*w.y+(edge[2] as Color)*w.z
+				var inside := bend[ia]*w.x+bend[ib]*w.y+bend[ic]*w.z
+				at[Vector2i(i,j)] = [Vector3(p.x,h,p.y)+shift,nrm,round_it.lerp(own,inside)]
+		var tris: Array[Array] = []
+		for i in range(n):
+			for j in range(n-i):
+				tris.append([Vector2i(i,j),Vector2i(i+1,j),Vector2i(i,j+1)])
+				if i+j < n-1: tris.append([Vector2i(i+1,j),Vector2i(i+1,j+1),Vector2i(i,j+1)])
+		for tri: Array in tris:
+			for key: Vector2i in tri:
+				var pt: Array = at[key]
+				var v: Vector3 = pt[0]
+				vertices.append(v)
+				normals.append(pt[1])
+				colors.append(pt[2])
+				uv.append(Vector2(0.0,1.0))
+				uv2.append(Vector2(0.5,v.y))
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_TEX_UV] = uv
+	arrays[Mesh.ARRAY_TEX_UV2] = uv2
+	return {"rest":rest,"bed":arrays}
+
+## The fine bed's colour at `p` (`y` up): `bed_tone` under the water; over
+## it the beach's sand a little toward gravel, evenly (bed_tone's stripes
+## read as hard bands on the ground's look).
+static func _fine_tone(islet: RefCounted, sand: Color, gravel: Color, y: float, p: Vector2) -> Color:
+	if y >= float(islet.water_level): return sand.lerp(gravel,0.32+0.06*sin(p.x*0.37+p.y*0.29))
+	return bed_tone(islet,sand,gravel,y,p)
+
+static func _arrays() -> Array:
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array()
+	arrays[Mesh.ARRAY_NORMAL] = PackedVector3Array()
+	arrays[Mesh.ARRAY_COLOR] = PackedColorArray()
+	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array()
+	arrays[Mesh.ARRAY_TEX_UV2] = PackedVector2Array()
+	return arrays
 
 # --- What grows -------------------------------------------------------------------
 

@@ -3,7 +3,7 @@ shader_type spatial;
 // quad turned about its own up to the camera, drawn past the fog (the haze
 // hides the land, not this) and faded out past `far`. Its foot at the
 // node, its far end `up` (+1 over it, -1 under it); `foot` and `end` its
-// width there as shares of the quad's.
+// width there as shares of the quad's; `near` fades it in with distance.
 render_mode unshaded, fog_disabled, blend_mix, depth_draw_never, cull_disabled, shadows_disabled;
 
 uniform vec4 tint : source_color = vec4(0.9, 0.92, 0.95, 0.8);
@@ -13,6 +13,8 @@ uniform float up = 1.0;
 uniform float far = 1500.0;
 uniform float fade = 375.0;
 uniform float seed = 0.0;
+// Fades in from near.x to near.y m off (0, 0: drawn near too).
+uniform vec2 near = vec2(0.0);
 uniform float speed = 0.035;
 
 varying float v_far;
@@ -61,6 +63,7 @@ void fragment() {
 	// Dense at the foot, thinning to nothing at the far end.
 	a *= smoothstep(0.0, 0.06, h) * (1.0 - smoothstep(0.55, 1.0, h));
 	a *= 1.0 - smoothstep(far - fade, far, v_far);
+	if (near.y > 0.0) a *= smoothstep(near.x, near.y, v_far);
 	ALBEDO = tint.rgb * mix(0.85, 1.1, billow);
 	ALPHA = clamp(a * tint.a, 0.0, 1.0);
 }

@@ -106,10 +106,18 @@ const LAKE_SLOPE := 13.0
 const LAKE_UNDER := 0.9
 const LAKE_BANK := Vector2(7.0,10.0)
 const LAKE_FALL := 3.2
-const LAKE_CELL := 0.5
+const LAKE_CELL := 0.25
+## The shelf's edge falls to the deep over this far (m): a sloping bowl, not
+## a step the bed's grid shows as facets through the clear water.
+const LAKE_DROP := 7.0
+## The banks this near the water (m) are lit smooth with the bed.
+const LAKE_BANK_SMOOTH := 9.0
+## The sheet's vertices stand this share of a cell off its grid, so its
+## chop's faces don't line up into a weave seen from the air.
+const LAKE_JITTER := 0.3
 ## The fall's veil (shaders/flow_fall.gdshader: 0 a whole curtain, 1 a
 ## trickle torn into streaks).
-const FALL_VEIL := 0.35
+const FALL_VEIL := 0.2
 ## Home's circle (the clouds keep off it, banking counts in it) runs this
 ## far (m) past the tableland's reach.
 const CIRCLE_PAST := 84.0
@@ -126,10 +134,11 @@ const ROUND_AT := Vector2(420.0,700.0)
 const LANDMARK_SIZE := Vector2(9.0,17.0)
 const LANDMARK_LIFT := Vector2(-35.0,45.0)
 const KEEP := 260.0
-## The cues: [name, colour, width at its foot, width at its far end, length
-## (m), up (+1 rises, -1 hangs down)].
+## The cues: [colour, width at its foot, width at its far end, length
+## (m), up (+1 rises, -1 hangs down), and optionally the distance (m) it
+## fades in over (the spray: near the fall, the fall itself is seen)].
 const SMOKE := [Color(0.34,0.31,0.29,0.85),10.0,70.0,260.0,1.0]
-const SPRAY := [Color(0.93,0.95,0.97,0.8),26.0,60.0,300.0,-1.0]
+const SPRAY := [Color(0.93,0.95,0.97,0.8),14.0,60.0,300.0,-1.0,Vector2(160.0,420.0)]
 ## The heist's smoke rises from over the vault's court.
 const SMOKE_AT := Vector3(190.0,26.0,2.0)
 
@@ -215,6 +224,8 @@ var _grass_mid_tris := 0
 var _strip_local := [Vector2.ZERO,Vector2.ZERO]
 var _strip_y := 0.0
 var _strip_earth := 0.0
+## Where the fall's sheet ends (the land's frame, m).
+var _fall_low := NAN
 
 func _init() -> void:
 	name = "Home"
@@ -283,10 +294,21 @@ func build(h: Node3D, top: float) -> void:
 	table_spec.outline = {"spine":[spine_mid-t.orthogonal()*spine_half,spine_mid+t.orthogonal()*spine_half,STRIP_HALF+STRIP_FADE+STRIP_RIM,SPINE_PULL]}
 	var shape: RefCounted = SkyIslet.author(TABLE_SEED+hunt_seed,table_spec)
 	var made := SkyIslets.dress(shape,palette,middle.y-_strip_y)
+	if made.has("fall"): _long_fall(shape,made,middle.y-_strip_y)
 	table_at.y = middle.y-_strip_y
 	# Its ground a run of colour under the grass, not a quilt of triangles.
 	if grassed: LineBuild._soften_top(made)
+	# The lake's bed drawn finer and curved and lit smooth, so it reads as a
+	# rounded basin through the clear water (IsletLake `fine_bed`); its
+	# faces stand with the rest of the top (the walker's ground).
+	var bed: Array = []
+	if not (shape.lake as Dictionary).is_empty():
+		var split: Dictionary = IsletLake.fine_bed(shape,made.top,SkyIslets.OFF_MAP,palette,LAKE_BANK_SMOOTH)
+		bed = split.bed
+		made.meshes.top = SkyIslet.mesh_from(split.rest,null)
+		made.top = _joined(split.rest,bed)
 	land = _stand_islet("home/land","Land",table_at,made)
+	if land != null and not bed.is_empty(): _lay_bed(bed)
 	if land != null:
 		var xf := land.global_transform
 		strip_a = xf*Vector3(_strip_local[0].x,_strip_y,_strip_local[0].y)
@@ -326,6 +348,7 @@ func _lake_spec(lrng: RandomNumberGenerator, t: Vector2, table_at: Vector3) -> D
 	spec.beach = 3.5
 	spec.shelf = Vector2(2.2,3.2)
 	spec.depth = Vector2(3.2,4.2)
+	spec.drop = LAKE_DROP
 	spec.reeds = 3.5
 	spec.isle = 0.4
 	spec.isle_radius = Vector2(2.5,3.6)
@@ -360,12 +383,17 @@ func _lay_lake(shape: RefCounted, table_at: Vector3) -> void:
 	var water: Dictionary = shape.water()
 	var lip_world := land.global_transform*Vector3(water.lip.x,level,water.lip.y)
 	var sheet := KitWater.still({"name":"Water","level":0.0,
-		"ground":func(x: float, z: float) -> float: return IsletLake._raw(shape,Vector2(x+mid.x,z+mid.y))-level,
+		"ground":func(x: float, z: float) -> float: return IsletLake.smooth_height(shape,Vector2(x+mid.x,z+mid.y))-level,
 		"rect":Rect2(-half,-half,half*2.0,half*2.0),
 		"inside":func(p: Vector2) -> bool: return shape.on_land(p+mid) and IsletLake.in_basin(shape,p+mid),
 		"cell":LAKE_CELL,
+		"jitter":LAKE_JITTER,
 		"falls":[Vector4(lip_world.x,lip_world.z,LAKE_FALL*1.4,0.8)]})
 	lake.add_child(sheet)
+	# Its bed's depth from the sheet's own vertices (laid over the smooth
+	# bed every LAKE_CELL m), not read per pixel off the depth buffer: that
+	# read drew pale panes with straight edges across the shallows.
+	(sheet.material_override as ShaderMaterial).set_shader_parameter("depth_read",false)
 	# Its surface: a top the plane skims as it does the turf (on WATER_LAYER,
 	# as the cloister tarn's), never stood on; the walker's rays never see it.
 	if sheet.mesh != null:
@@ -383,6 +411,66 @@ func _lay_lake(shape: RefCounted, table_at: Vector3) -> void:
 	pool_rect = Rect2(mid.x-half,mid.y-half,half*2.0,half*2.0)
 	Layout.track("home/lake",lake,"token",_lake_coded)
 	print("home: lake %.0f m2 at level %.1f (%.1f under the strip), %d water cells" % [float(lake_d.area),level,_strip_y-level,int(sheet.get_meta("cells"))])
+
+## The fall as one: its sheet (SkyIslets `curtain`) running down the whole
+## wall under the notch, FALL_PAST m past the rock's foot there (the lowest
+## of the sides within FALL_NEAR m of the lip), before it breaks up over
+## FALL_TAIL m; the thread (SkyFallThread) taking over where it breaks, as
+## wide as the sheet is there, on down to the cloud sea. (The islets' own
+## sheet stops a set way down, in mid wall.)
+const FALL_PAST := 4.0
+const FALL_NEAR := 14.0
+const FALL_TAIL := 10.0
+func _long_fall(shape: RefCounted, made: Dictionary, home_y: float) -> void:
+	var water: Dictionary = shape.water()
+	var lip := Vector3(float((water.lip as Vector2).x),float(water.level),float((water.lip as Vector2).y))
+	var out := Vector3(float((water.out as Vector2).x),0.0,float((water.out as Vector2).y)).normalized()
+	var half := float(water.get("half",LAKE_FALL))
+	var low := lip.y-30.0
+	var sides: Array = made.sides
+	for v: Vector3 in sides[Mesh.ARRAY_VERTEX] as PackedVector3Array:
+		if Vector2(v.x-lip.x,v.z-lip.z).length() < FALL_NEAR: low = minf(low,v.y)
+	var drop := lip.y-low+FALL_PAST
+	var overhang := SkyIslets.IslandShore.RING_OUT.y+0.05
+	made.fall = SkyIslets.curtain(lip,out,drop,FALL_TAIL,half,overhang,SkyIslets.FALL_STRENGTH)
+	# The sheet's half width where it breaks (its widest ring's, before the
+	# tail spreads it): the thread's there too. Its spread is counted from
+	# the lip (SkyFallThread `half_at`), so its width at the lip is set back.
+	var across: PackedVector4Array = (made.fall as Dictionary).across
+	var wide := half
+	for r in range(SkyIslets.FALL_RINGS-8): wide = maxf(wide,across[r].w)
+	# Its broken tail no wider than the sheet, so it runs into the thread
+	# rather than flaring past it.
+	for r in range(SkyIslets.FALL_RINGS-8,SkyIslets.FALL_RINGS):
+		across[r].w = minf(across[r].w,wide*1.1)
+	(made.fall as Dictionary).across = across
+	var spread: Vector2 = SkyIslets.SkyFallThread.SPREAD
+	var width := maxf((wide-spread.y*drop)/(1.0+spread.x*drop),0.3)
+	made.thread = SkyIslets.SkyFallThread.plan(lip,out,width,SkyIslets.SkyFallThread.SEA-home_y,shape.seed,drop,SkyIslets.FALL_SPEED,overhang+0.2)
+	_fall_low = lip.y-drop
+	print("home: the fall's sheet %.0f m down the wall (its foot %.0f m under the lip), %.1f m wide" % [drop,lip.y-low,wide*2.0])
+
+## The lake's fine bed (IsletLake `fine_bed`) drawn in the ground's own
+## material lit by its smooth normals (`facet_soft` 1: no flat facets).
+func _lay_bed(bed: Array) -> void:
+	var m := (islets.ground_source as ShaderMaterial).duplicate() as ShaderMaterial
+	m.set_shader_parameter("facet_soft",1.0)
+	var node := MeshInstance3D.new()
+	node.name = "LakeBed"
+	node.mesh = SkyIslet.mesh_from(bed,m)
+	node.position = -SkyIslets.OFF_MAP
+	node.set_meta("skip_reflection",true)
+	land.add_child(node)
+
+## Two top arrays (vertex, normal, colour, uv, uv2) as one.
+static func _joined(a: Array, b: Array) -> Array:
+	var out := []
+	out.resize(Mesh.ARRAY_MAX)
+	for k: int in [Mesh.ARRAY_VERTEX,Mesh.ARRAY_NORMAL,Mesh.ARRAY_COLOR,Mesh.ARRAY_TEX_UV,Mesh.ARRAY_TEX_UV2]:
+		var joined: Variant = a[k].duplicate()
+		joined.append_array(b[k])
+		out[k] = joined
+	return out
 
 ## The lake as a pool the walker wades and swims (scripts/
 ## pilot_physics_ground.gd `pools`): its box (world), its top, and where
@@ -870,7 +958,9 @@ func _cues(shape: RefCounted) -> void:
 	if land != null and not water.is_empty():
 		var lip := land.global_transform*Vector3(float((water.lip as Vector2).x),float(water.level),float((water.lip as Vector2).y))
 		var out := Vector3(float((water.out as Vector2).x),0.0,float((water.out as Vector2).y))
-		_cue("home/cue_home","CueHome",lip+out*4.0+Vector3.DOWN*6.0,SPRAY)
+		# It hangs from where the fall's sheet breaks into the thread.
+		var under := float(water.level)-_fall_low if not is_nan(_fall_low) else 6.0
+		_cue("home/cue_home","CueHome",lip+out*4.0+Vector3.DOWN*under,SPRAY)
 	_cue("home/cue_heist","CueHeist",SMOKE_AT,SMOKE)
 
 func _cue(name_: String, node_name: String, at: Vector3, look: Array) -> void:
@@ -891,6 +981,7 @@ func _cue(name_: String, node_name: String, at: Vector3, look: Array) -> void:
 	m.set_shader_parameter("far",cue_far)
 	m.set_shader_parameter("fade",cue_far*CUE_FADE)
 	m.set_shader_parameter("seed",float(hash(name_) % 1000)*0.13)
+	if look.size() > 5: m.set_shader_parameter("near",look[5])
 	var node := MeshInstance3D.new()
 	node.name = node_name
 	node.mesh = quad
