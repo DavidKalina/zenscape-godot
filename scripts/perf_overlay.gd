@@ -1,7 +1,8 @@
 extends CanvasLayer
 ## The frame counter: fps, frame time (mean, worst 1 %, worst) over the last
 ## WINDOW frames, the main thread's split, the GPU's time and what was drawn
-## (draw calls, objects, primitives). F4 shows and hides it anywhere; --perf starts it shown.
+## (draw calls, objects, primitives). Shift+F4 shows and hides it anywhere (plain F4 is
+## the world view's, scripts/layout_edit.gd); --perf starts it shown.
 ## "logic" is the main thread from one frame's draw to the next (input,
 ## physics, every script's process), "draw" the renderer's turn on it
 ## (culling, recording, waiting on the GPU), read off RenderingServer's
@@ -72,7 +73,7 @@ func _on_post_draw() -> void:
 	if _pre > 0: _draw = lerpf(_draw,(_post-_pre)/1000.0,4.0/WINDOW)
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY:
+	if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY and (event as InputEventKey).shift_pressed:
 		visible = not visible
 		get_viewport().set_input_as_handled()
 

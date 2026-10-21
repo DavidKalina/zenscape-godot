@@ -28,6 +28,7 @@ extends "res://studies/kit_isle.gd"
 ##     [--greed-run]        the greed run (studies/crag_reach_greed.gd):
 ##                          the loot bag on his back, loot over the crag,
 ##                          the plane's rope hook to hitch it to
+##     [--first-person]     the on-foot camera at his eyes, his figure hidden
 ##   With the Olmec out: Tab / R3 lock on, X the gust shot (its charge
 ##   refills on foot), R you back at the start and him gone, up a cliff
 ##   again (at once with --olmec, N s on with --olmec-after); fallen off the
@@ -177,12 +178,19 @@ var debris := true
 var mass_tops := {}
 ## Every mass's unit by its short name (`main`, `west_terrace_1`).
 var named := {}
+## --first-person: the on-foot camera at his eyes (_frame).
+var first_person := false
+const FP_EYE := 1.1
+const FP_FOV := 75.0
+## The look's pitch (rad) at either end of the camera's polar range.
+const FP_PITCH := 1.3
 
 func _ready() -> void:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a == "--no-specks": specks = false
 		elif a == "--no-debris": debris = false
 		elif a == "--olmec": olmec_after = 0.0
+		elif a == "--first-person": first_person = true
 		elif a.begins_with("--olmec-after="): olmec_after = maxf(float(a.get_slice("=",1)),0.0)
 		elif a == "--greed-run": greed_on = true
 		elif a.begins_with("--body-knob="):
@@ -195,6 +203,7 @@ func _ready() -> void:
 	kit_breaks_on = olmec_after >= 0.0 or greed_on
 	olmec_armed = olmec_after >= 0.0
 	super._ready()
+	if first_person: _polar = (POLAR.x+POLAR.y)*0.5
 
 func _load_pack() -> void:
 	stations = []
@@ -1623,6 +1632,22 @@ func _olmec_take() -> void:
 	_olmec_clear()
 	_returning = true
 	_gone_t = OLMEC_AGAIN-OLMEC_BACK
+
+## First person (--first-person): the chase camera's yaw and polar read as
+## a look from his eyes (the polar range spread over FP_PITCH up and down,
+## level at its middle), no swing behind the run, his figure hidden.
+func _frame(delta: float) -> void:
+	if not first_person:
+		super._frame(delta)
+		return
+	_look_rest = 0.0
+	super._frame(delta)
+	figure.visible = false
+	var eye := (motor.origin() if motor.on_ledge() else motor.feet+Vector3.UP*step_smooth.lift)+Vector3.UP*FP_EYE*wanderer_scale
+	var pitch := lerpf(-FP_PITCH,FP_PITCH,inverse_lerp(POLAR.x,POLAR.y,_polar))
+	var look := Vector3(-sin(_yaw)*cos(pitch),sin(pitch),-cos(_yaw)*cos(pitch))
+	camera.look_at_from_position(eye,eye+look)
+	camera.fov = FP_FOV+cam_wide
 
 ## Flying, the hunt goes on (he makes for where you left the ground).
 func _process(delta: float) -> void:
