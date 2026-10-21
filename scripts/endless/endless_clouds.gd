@@ -1,0 +1,499 @@
+extends Node3D
+## The endless flight's clouds (docs/design/endless-flight/clouds-round-handoff.md):
+## the isles' raymarched cloud volume (scripts/cloud_volume.gd's passes, on
+## the camera's compositor, resolved over frames and laid into the scene by
+## a sheet in the see-through pass) over a field of cumulus that never runs
+## out, marched by shaders/endless_cloud_march.glsl.
+##
+##   the field   cells hashed from the land's seed, in the wind's drifting
+##               frame (so flying any way keeps meeting new cloud, and the
+##               cloud drifts): broad cumulus (some low enough to fly into,
+##               most standing over the flight's ceiling as a roof, the odd
+##               tower) and small puffs low in the band. `clouds_in` has
+##               the same field on the CPU.
+##   meadows     a ground map (meadow, height) worked out on a worker round
+##               the eye: over the meadows the low cloud is lifted
+##               MEADOW_CLEAR m clear of the turf and thinned, so they stay
+##               landable; no cloud's base goes under the ground.
+##   light       the mood's sun and sky (studies/celestial.gd globals) in
+##               the cumulus palette, the land's haze over far cloud
+##               (shaders/endless_cloud_composite.gdshader).
+##   shade       the cloud's shadow on the land and the sea: the shade map
+##               over SHADE_SIDE m round the eye, published as the isles' do
+##               (zs_cloud_shadow*, shaders/cloud_volume_shadow.gdshaderinc,
+##               read by shaders/endless_ground.gdshader and the sea's
+##               `cloud_shade`).
+##
+## Flags: --no-clouds leaves them out; --cloud-cover=X scales how much sky
+## they take (1; 0.5 sparse, 1.6 heavy); --cloud-haze=X the share of the
+## land's haze laid on them (EndlessLook CLOUD_HAZE); --cloud-steps=N the
+## march's steps (QUALITY); --cloud-full-res marches every pixel. C turns
+## them off and on.
+
+const Effect = preload("res://scripts/endless/endless_cloud_effect.gd")
+const CumulusNoise = preload("res://scripts/cumulus_noise.gd")
+const Field = preload("res://scripts/endless/land_field.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+
+const OFF_FLAG := "--no-clouds"
+## Drawn after the sea (EndlessLook SEA_PRIORITY) and before anything else
+## see-through.
+const RENDER_PRIORITY := -6
+## How far out cloud is marched (m) and the slab's top (m over the sea).
+const REACH := 7800.0
+const TOP := 1250.0
+## The weather map's square round the eye: the reach and this much past it.
+const WEATHER_PAST := 250.0
+## The shade on the land: its square's side (m).
+const SHADE_SIDE := 6000.0
+## The wind carries the field at this speed (m/s).
+const WIND_SPEED := 3.2
+## The low cloud over a meadow stands at least this far over the turf (m).
+const MEADOW_CLEAR := 70.0
+## The small puffs' cover, the broad cumulus' share that hang low, and the
+## share that tower (mirrored in the march: knobs).
+const SMALL_COVER := 0.34
+const LOW_SHARE := 0.3
+const TOWER_SHARE := 0.12
+## The march: steps, light taps, the march's scale (2: half the render each
+## axis), fine octaves near the eye.
+const QUALITY := [110,5,2,1]
+## The weather map and the shade redrawn every this many frames.
+const WEATHER_EVERY := 2
+const SHADE_EVERY := 2
+## The ground map: texels a side, its side (m), redrawn when the eye is
+## this far from its middle (m).
+const GROUND_TEXELS := 160
+const GROUND_SIDE := 20000.0
+const GROUND_MOVE := 1800.0
+const MARCHED_BLEND := 0.5
+const UPSAMPLED_BLEND := 0.08
+
+# The field, as the march has it (shaders/endless_cloud_march.glsl).
+const BIG := 620.0
+const BIG_R := Vector2(0.16,0.40)
+const LOW_BASE := Vector2(26.0,60.0)
+const MID_BASE := Vector2(128.0,190.0)
+const TOWER_BASE := Vector2(115.0,160.0)
+const LOW_TALL := Vector2(0.8,1.4)
+const MID_TALL := Vector2(0.7,1.3)
+const TOWER_TALL := Vector2(1.2,1.9)
+const TOWER_WIDE := 1.35
+const BIG_COVER := 0.72
+const SMALL := 230.0
+const SMALL_R := Vector2(0.13,0.30)
+const SMALL_BASE := Vector2(22.0,115.0)
+const SMALL_TALL := Vector2(0.8,1.5)
+const REGION := 5200.0
+const PROFILE := 0.42
+const MAIN_R := 0.74
+const CURL := 0.3
+const REGION_SCALE := Vector2(0.3,1.45)
+
+var effect := Effect.new()
+var material := ShaderMaterial.new()
+var sheet := MeshInstance3D.new()
+var camera: Camera3D
+var celestial: RefCounted
+var land_seed := 0
+var salt := 0
+var cover := 1.0
+## The march's quality this run (QUALITY; --cloud-full-res marches every
+## pixel, --cloud-steps=N sets the steps).
+var quality: Array = QUALITY.duplicate()
+var enabled := true
+## The field's drift so far (m): a cloud stands at its field point plus this.
+var drift := Vector2.ZERO
+var motion_time := 0.0
+var weather_corner := Vector2.ZERO
+var weather_side := 0.0
+var shade_at := Vector4.ZERO
+## The ground map: its texture, its square (corner, side), its worker.
+var ground := ImageTexture.new()
+var ground_at := Vector4.ZERO
+var _ground_task := -1
+var _ground_image: Image
+var _ground_next := Vector4.ZERO
+var _frame := 0
+var _prev_view := Projection.IDENTITY
+var _prev_lens := Vector2.ONE
+var _has_prev := false
+var _shade_drawn := Vector4.ZERO
+var _shade_published := false
+
+## Whether the clouds run: not --no-clouds, and a RenderingDevice to march
+## on (none headless or under the Compatibility renderer).
+static func wanted() -> bool:
+	return not OFF_FLAG in LaunchArgs.user_args() and RenderingServer.get_rendering_device() != null
+
+func _init() -> void:
+	name = "Clouds"
+	material.shader = preload("res://shaders/endless_cloud_composite.gdshader")
+	material.render_priority = RENDER_PRIORITY
+	material.set_shader_parameter("cloud_light",effect.resolved_a)
+	material.set_shader_parameter("cloud_shape",effect.resolved_b)
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.0,2.0)
+	sheet.name = "Sheet"
+	sheet.mesh = quad
+	sheet.material_override = material
+	sheet.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sheet.ignore_occlusion_culling = true
+	sheet.custom_aabb = AABB(Vector3.ONE*-1e6,Vector3.ONE*2e6)
+	sheet.visible = false
+	add_child(sheet)
+
+func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) -> void:
+	land_seed = seed_value
+	salt = (absi(hash(seed_value*7919+13))%100000)
+	celestial = sky
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--cloud-cover="): cover = clampf(a.get_slice("=",1).to_float(),0.0,3.0)
+		elif a == "--cloud-full-res": quality[2] = 1
+		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--cloud-haze="): haze.w = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
+	material.set_shader_parameter("haze",haze)
+	material.set_shader_parameter("sea_y",Field.SEA_Y)
+	material.set_shader_parameter("sun_scatter",sun_scatter)
+	CumulusNoise.request()
+
+func _enter_tree() -> void:
+	if not RenderingServer.frame_pre_draw.is_connected(_before_draw):
+		RenderingServer.frame_pre_draw.connect(_before_draw)
+
+func _exit_tree() -> void:
+	if RenderingServer.frame_pre_draw.is_connected(_before_draw):
+		RenderingServer.frame_pre_draw.disconnect(_before_draw)
+	_detach()
+	_publish_shade(false)
+	if _ground_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_ground_task)
+		_ground_task = -1
+
+## Each frame, after the sea has followed the eye: the camera that draws,
+## the wind (a unit direction) the field drifts on, the clock.
+func step(delta: float, view: Camera3D, wind: Vector2, time: float) -> void:
+	if view != null and view.is_inside_tree():
+		var drawing := view.get_viewport().get_camera_3d()
+		if drawing != null: view = drawing
+	if view != camera:
+		_detach()
+		camera = view
+		if enabled: _attach()
+	drift += wind*WIND_SPEED*delta
+	motion_time = time
+	if camera != null: _ground(camera.global_position)
+	sheet.visible = enabled and camera != null and ground_at.w > 0.5
+
+## On or off (C): off, nothing is marched and the land takes no shade.
+func set_enabled(on: bool) -> void:
+	if on == enabled: return
+	enabled = on
+	if on:
+		_attach()
+		effect.history_ok = false
+		_has_prev = false
+		return
+	_detach()
+	sheet.visible = false
+	_publish_shade(false)
+
+func _attach() -> void:
+	if camera == null: return
+	var compositor := camera.compositor
+	if compositor == null:
+		compositor = Compositor.new()
+		camera.compositor = compositor
+	var effects := compositor.compositor_effects
+	if not effects.has(effect):
+		effects.append(effect)
+		compositor.compositor_effects = effects
+
+func _detach() -> void:
+	if camera == null or not is_instance_valid(camera) or camera.compositor == null: return
+	var effects := camera.compositor.compositor_effects
+	if effects.has(effect):
+		effects.erase(effect)
+		camera.compositor.compositor_effects = effects
+
+## True once the camera's compositor carries the march.
+func attached() -> bool:
+	return camera != null and camera.compositor != null and camera.compositor.compositor_effects.has(effect)
+
+# --- The ground map -------------------------------------------------------------------
+
+## The ground map round `eye`: made at once the first time, then on a
+## worker whenever the eye strays GROUND_MOVE m from its middle.
+func _ground(eye: Vector3) -> void:
+	if _ground_task >= 0 and WorkerThreadPool.is_task_completed(_ground_task):
+		WorkerThreadPool.wait_for_task_completion(_ground_task)
+		_ground_task = -1
+		_take_ground()
+	var middle := Vector2(ground_at.x,ground_at.y)+Vector2.ONE*ground_at.z*0.5
+	var want := ground_at.w < 0.5 or Vector2(eye.x,eye.z).distance_to(middle) > GROUND_MOVE
+	if not want or _ground_task >= 0: return
+	var texel := GROUND_SIDE/GROUND_TEXELS
+	var corner := ((Vector2(eye.x,eye.z)-Vector2.ONE*GROUND_SIDE*0.5)/texel).floor()*texel
+	_ground_next = Vector4(corner.x,corner.y,GROUND_SIDE,1.0)
+	if ground_at.w < 0.5:
+		_ground_image = ground_image(land_seed,corner)
+		_take_ground()
+	else:
+		_ground_task = WorkerThreadPool.add_task(func() -> void: _ground_image = ground_image(land_seed,corner),false,"Cloud ground map")
+
+func _take_ground() -> void:
+	if _ground_image == null: return
+	if ground.get_image() != null and ground.get_size() == Vector2(_ground_image.get_size()): ground.update(_ground_image)
+	else: ground.set_image(_ground_image)
+	ground_at = _ground_next
+
+## The ground map over the square at `corner`: per texel the most meadow
+## and the highest ground round it (its texel and the eight about it).
+static func ground_image(seed_value: int, corner: Vector2) -> Image:
+	var field := Field.new(seed_value)
+	var n := GROUND_TEXELS
+	var texel := GROUND_SIDE/n
+	var meadow := PackedFloat32Array()
+	var height := PackedFloat32Array()
+	meadow.resize(n*n)
+	height.resize(n*n)
+	for j in n:
+		for i in n:
+			var s: Vector2 = field.sample(corner.x+(i+0.5)*texel,corner.y+(j+0.5)*texel)
+			meadow[j*n+i] = s.y
+			height[j*n+i] = s.x
+	var image := Image.create_empty(n,n,false,Image.FORMAT_RGF)
+	for j in n:
+		for i in n:
+			var m := 0.0
+			var h := -1e4
+			for dj in range(-1,2):
+				for di in range(-1,2):
+					var k := clampi(j+dj,0,n-1)*n+clampi(i+di,0,n-1)
+					m = maxf(m,meadow[k])
+					h = maxf(h,height[k])
+			image.set_pixel(i,j,Color(m,h,0.0))
+	return image
+
+# --- The field on the CPU --------------------------------------------------------------
+
+## pcg3d (shaders/endless_cloud_march.glsl), in 32-bit unsigned arithmetic.
+static func _mul(a: int, b: int) -> int:
+	return (a*(b & 0xFFFF)+(((a*(b >> 16)) & 0xFFFF) << 16)) & 0xFFFFFFFF
+
+## (Three uint32s, kept in 64-bit ints: a Vector3i would wrap them signed.)
+static func pcg3d(x: int, y: int, z: int) -> PackedInt64Array:
+	var m := 0xFFFFFFFF
+	x = (_mul(x & m,1664525)+1013904223) & m
+	y = (_mul(y & m,1664525)+1013904223) & m
+	z = (_mul(z & m,1664525)+1013904223) & m
+	x = (x+_mul(y,z)) & m
+	y = (y+_mul(z,x)) & m
+	z = (z+_mul(x,y)) & m
+	x ^= x >> 16
+	y ^= y >> 16
+	z ^= z >> 16
+	x = (x+_mul(y,z)) & m
+	y = (y+_mul(z,x)) & m
+	z = (z+_mul(x,y)) & m
+	return PackedInt64Array([x,y,z])
+
+static func hash3(cx: int, cy: int, s: int) -> Vector3:
+	var h := pcg3d(cx,cy,s)
+	return Vector3(float(h[0] >> 8),float(h[1] >> 8),float(h[2] >> 8))/16777216.0
+
+func _region(f: Vector2) -> float:
+	var g := f/REGION
+	var i := Vector2i(floori(g.x),floori(g.y))
+	var u := g-Vector2(i)
+	u = u*u*(Vector2(3.0,3.0)-2.0*u)
+	var s := salt+7
+	var a := hash3(i.x,i.y,s).x
+	var b := hash3(i.x+1,i.y,s).x
+	var c := hash3(i.x,i.y+1,s).x
+	var d := hash3(i.x+1,i.y+1,s).x
+	return lerpf(REGION_SCALE.x,REGION_SCALE.y,lerpf(lerpf(a,b,u.x),lerpf(c,d,u.x),u.y))
+
+## The clouds whose middles lie within `reach` m of world `at` (xz), as
+## they stand now (drifted), before the meadows lift them: each
+## {at: world xz, radius, base, top (world y), low, kind}.
+func clouds_in(at: Vector2, reach: float) -> Array:
+	var out := []
+	var f := at-drift
+	for big in [true,false]:
+		var cell: float = BIG if big else SMALL
+		var s: int = salt+(101 if big else 211)
+		var lo := Vector2i(floori((f.x-reach)/cell),floori((f.y-reach)/cell))
+		var hi := Vector2i(floori((f.x+reach)/cell),floori((f.y+reach)/cell))
+		for cy in range(lo.y,hi.y+1):
+			for cx in range(lo.x,hi.x+1):
+				var h := hash3(cx,cy,s)
+				var k := hash3(cx,cy,s+1)
+				var middle := (Vector2(cx,cy)+Vector2(0.2,0.2)+0.6*Vector2(h.x,h.y))*cell
+				if middle.distance_to(f) > reach: continue
+				var here := _region(middle)*cover*(BIG_COVER if big else SMALL_COVER)
+				if h.z >= here: continue
+				var rr: Vector2 = BIG_R if big else SMALL_R
+				var r := cell*lerpf(rr.x,rr.y,k.x)
+				var base: float
+				var tall: float
+				var kind := "puff"
+				if big:
+					var t2 := fposmod(k.z*7.31,1.0)
+					if k.y < LOW_SHARE:
+						kind = "low"
+						base = lerpf(LOW_BASE.x,LOW_BASE.y,k.z)
+						tall = lerpf(LOW_TALL.x,LOW_TALL.y,t2)
+					elif k.y < LOW_SHARE+TOWER_SHARE:
+						kind = "tower"
+						base = lerpf(TOWER_BASE.x,TOWER_BASE.y,k.z)
+						tall = lerpf(TOWER_TALL.x,TOWER_TALL.y,t2)
+						r *= TOWER_WIDE
+					else:
+						kind = "mid"
+						base = lerpf(MID_BASE.x,MID_BASE.y,k.z)
+						tall = lerpf(MID_TALL.x,MID_TALL.y,t2)
+				else:
+					base = lerpf(SMALL_BASE.x,SMALL_BASE.y,k.y)
+					tall = lerpf(SMALL_TALL.x,SMALL_TALL.y,k.z)
+				var H := minf(r*tall,TOP-base)
+				# Its bubbles (the march's cluster): [middle xz, radius, height].
+				var b1 := hash3(cx,cy,s+2)
+				var b2 := hash3(cx,cy,s+3)
+				var spin := b1.x*6.2832
+				var bubbles := [[middle+drift,r*MAIN_R,H]]
+				for i in range(1,4):
+					var sh: float = [b1.y,b1.z,b2.x][i-1]
+					var a: float = spin+i*2.0944+float([b2.y,b2.z,b1.y][i-1])*1.2
+					var br := r*lerpf(0.36,0.58,fposmod(sh*3.7,1.0))
+					if kind == "tower": br *= 1.25
+					bubbles.append([middle+drift+Vector2(cos(a),sin(a))*r*lerpf(0.32,0.58,sh),br,H*lerpf(0.4,0.85,fposmod(sh*5.3,1.0))])
+				out.append({"at":middle+drift,"radius":r,"base":Field.SEA_Y+base,"top":Field.SEA_Y+base+H,"low":kind == "low" or kind == "puff","kind":kind,"bubbles":bubbles})
+	return out
+
+## How far world point `p` is into a cloud's smooth body (m, up or down
+## to its crown or its base; no billows, before the meadows lift the low
+## ones), or a negative number outside every cloud.
+func cloud_depth(p: Vector3) -> float:
+	var best := -1e9
+	var xz := Vector2(p.x,p.z)
+	for c: Dictionary in clouds_in(xz,BIG*0.6):
+		var top := -1e9
+		var bottom := 1e9
+		for b: Array in c.bubbles:
+			var u: float = xz.distance_to(b[0])/float(b[1])
+			if u >= 1.0: continue
+			top = maxf(top,float(c.base)+float(b[2])*pow(1.0-u*u,PROFILE))
+			bottom = minf(bottom,float(c.base)+float(b[2])*CURL*u*u*u*u)
+		best = maxf(best,minf(top-p.y,p.y-bottom))
+	return best
+
+## Whether world point `p` is inside a cloud's body (`cloud_depth` > 0).
+func in_cloud(p: Vector3) -> bool:
+	return cloud_depth(p) > 0.0
+
+# --- Each frame, just before drawing --------------------------------------------------
+
+func _before_draw() -> void:
+	if camera == null or not is_instance_valid(camera) or not sheet.visible: return
+	var window := camera.get_window()
+	var viewport := camera.get_viewport()
+	var physical := Vector2(window.size) if window != null else Vector2(1280,720)
+	var scale := viewport.scaling_3d_scale if viewport != null else 1.0
+	effect.resize(Vector2i((physical*scale).round()),int(quality[2]))
+	_fill()
+
+func _fill() -> void:
+	var p := effect.march_params
+	p.fill(0.0)
+	var xf := camera.global_transform
+	var aspect := 16.0/9.0
+	var window := camera.get_window()
+	if window != null and window.size.y > 0: aspect = float(window.size.x)/window.size.y
+	var tan_y := tan(deg_to_rad(camera.fov)*0.5)
+	var tan_x := tan_y*aspect
+	if camera.keep_aspect == Camera3D.KEEP_WIDTH:
+		tan_x = tan_y
+		tan_y = tan_x/aspect
+	_put_transform(p,0,xf)
+	var eye := xf.origin
+	var sun := Vector3.UP
+	var moon := Vector3.DOWN
+	var night := 0.0
+	if celestial != null and celestial.get("state") is Dictionary:
+		sun = celestial.state.get("zs_sun_direction",Vector3.UP)
+		moon = celestial.state.get("zs_moon_direction",Vector3.DOWN)
+		night = float(celestial.state.get("zs_night",0.0))*float(celestial.state.get("zs_celestial_clear",1.0))
+	var key := sun.normalized().lerp(moon.normalized(),smoothstep(0.05,-0.1,sun.normalized().y)).normalized()
+	_put4(p,16,Vector4(tan_x,tan_y,camera.near,camera.far))
+	_put4(p,20,Vector4(eye.x,eye.y,eye.z,motion_time))
+	_put4(p,24,Vector4(sun.x,sun.y,sun.z,0.0))
+	_put4(p,28,Vector4(key.x,key.y,key.z,0.0))
+	_put4(p,32,Vector4(Field.SEA_Y,Field.SEA_Y+TOP,REACH,1.0))
+	_put4(p,36,Vector4(drift.x,drift.y,float(salt),cover))
+	_put4(p,40,ground_at)
+	var noise: Texture = CumulusNoise.request()
+	var shade_texel := SHADE_SIDE/Effect.SHADOW_TEXELS
+	var shade_corner := ((Vector2(eye.x,eye.z)-Vector2.ONE*SHADE_SIDE*0.5)/shade_texel).floor()*shade_texel
+	_put4(p,48,Vector4(_frame,0.0,0.0,night))
+	_put4(p,52,Vector4(SMALL_COVER,LOW_SHARE,TOWER_SHARE,MEADOW_CLEAR))
+	var weather_due := _frame%WEATHER_EVERY == 0 or weather_side == 0.0
+	var shade_due := _frame%SHADE_EVERY == 0
+	if weather_due:
+		weather_side = (REACH+WEATHER_PAST)*2.0
+		var texel := weather_side/Effect.WEATHER_TEXELS
+		weather_corner = ((Vector2(eye.x,eye.z)-Vector2.ONE*weather_side*0.5)/texel).floor()*texel
+	var shade_square := Vector4(shade_corner.x,shade_corner.y,SHADE_SIDE,1.0)
+	if shade_due: _put4(p,44,shade_square)
+	else: _put4(p,44,Vector4(_shade_drawn.x,_shade_drawn.y,SHADE_SIDE,1.0) if _shade_drawn != Vector4.ZERO else shade_square)
+	_put4(p,164,Vector4(weather_corner.x,weather_corner.y,weather_side,Effect.WEATHER_TEXELS))
+	_put4(p,168,Vector4(quality[0],quality[1],quality[2],quality[3]))
+	_put4(p,176,Vector4(0.0,Effect.SHADOW_TEXELS,1.0 if weather_due else 0.0,1.0 if shade_due else 0.0))
+	# The land reads the shade map the frame after it is drawn.
+	if _shade_drawn != Vector4.ZERO: _publish_shade(true,key,_shade_drawn)
+	if shade_due: _shade_drawn = shade_square
+	_frame = (_frame+1)%4096
+	effect.set_inputs(ground,null,noise,[])
+	var r := effect.resolve_params
+	_put_transform(r,0,xf)
+	_put_projection(r,16,_prev_view)
+	_put4(r,32,Vector4(tan_x,tan_y,UPSAMPLED_BLEND,1.0 if _has_prev else 0.0))
+	_put4(r,36,Vector4(_prev_lens.x,_prev_lens.y,0.0,0.0))
+	_put4(r,40,Vector4(eye.x,eye.y,eye.z,p[48]))
+	_put4(r,44,Vector4(camera.near,camera.far,MARCHED_BLEND,quality[2]))
+	if not _has_prev: effect.history_ok = false
+	_prev_view = Projection(xf.affine_inverse())
+	_prev_lens = Vector2(tan_x,tan_y)
+	_has_prev = true
+	sheet.global_position = eye
+
+## The shade on the land (shaders/cloud_volume_shadow.gdshaderinc): the map,
+## its square, the light and the height it looks up from (the sea's).
+func _publish_shade(on: bool, light := Vector3.UP, square := Vector4.ZERO) -> void:
+	if not on:
+		if _shade_published: RenderingServer.global_shader_parameter_set("zs_cloud_shadow_at",Vector4.ZERO)
+		_shade_published = false
+		shade_at = Vector4.ZERO
+		return
+	if not _shade_published:
+		RenderingServer.global_shader_parameter_set("zs_cloud_shadow",effect.shadow)
+	_shade_published = true
+	shade_at = square
+	RenderingServer.global_shader_parameter_set("zs_cloud_shadow_at",shade_at)
+	RenderingServer.global_shader_parameter_set("zs_cloud_shadow_light",Vector4(light.x,light.y,light.z,Field.SEA_Y))
+
+static func _put4(p: PackedFloat32Array, at: int, v: Vector4) -> void:
+	p[at] = v.x
+	p[at+1] = v.y
+	p[at+2] = v.z
+	p[at+3] = v.w
+
+static func _put_transform(p: PackedFloat32Array, at: int, xf: Transform3D) -> void:
+	_put_projection(p,at,Projection(xf))
+
+static func _put_projection(p: PackedFloat32Array, at: int, m: Projection) -> void:
+	_put4(p,at,m.x)
+	_put4(p,at+4,m.y)
+	_put4(p,at+8,m.z)
+	_put4(p,at+12,m.w)

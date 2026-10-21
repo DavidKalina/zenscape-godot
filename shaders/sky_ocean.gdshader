@@ -42,6 +42,7 @@ render_mode blend_mix, depth_draw_always, cull_back, unshaded, shadows_disabled;
 #include "res://shaders/reference_tonemap.gdshaderinc"
 #include "res://shaders/reference_lake_lighting.gdshaderinc"
 #include "res://shaders/reference_lake_glint.gdshaderinc"
+#include "res://shaders/cloud_volume_shadow.gdshaderinc"
 global uniform vec3 zs_palette_water;
 uniform sampler2D sea_screen : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D sea_depth : hint_depth_texture, filter_nearest, repeat_disable;
@@ -92,6 +93,10 @@ uniform float water_light = 2.6;
 // looked through: an island's shelf (SkyArchipelago SHELF_DEPTH) is gone
 // well before its foot.
 uniform float bed_fade = 3.2;
+// How much a cloud's shadow (shaders/cloud_volume_shadow.gdshaderinc)
+// darkens the water and takes the sun's glint off it; 0 (the default) reads
+// no shade (the endless flight's sea sets it: scripts/endless/endless_look.gd).
+uniform float cloud_shade = 0.0;
 
 varying vec3 world_position;
 varying vec2 rest_xz;
@@ -378,6 +383,11 @@ void fragment() {
 	// The sun's (or moon's) path, and its glitter on the chop.
 	vec4 path = zs_lake_glint(reflect(-eye, normal), zs_sun_direction, zs_moon_direction, zs_celestial_clear, 0.0, glint_share);
 	vec3 lit = water + zs_lake_direct(vec3(0.0), normal, eye, zs_key_direction, zs_key_irradiance, max(roughness, 0.25)) * glint_share * 0.18 * (1.0 - foamed);
+	if (cloud_shade > 0.0) {
+		float shaded = zs_cloud_volume_shade(world_position) * cloud_shade;
+		lit *= 1.0 - 0.45 * shaded;
+		path.a *= 1.0 - shaded;
+	}
 	float mirror_weight = fresnel * (1.0 - foamed);
 	vec3 display_color = mix(zs_scene_to_display(lit), reflection, mirror_weight);
 	display_color = mix(display_color, path.rgb, path.a * (1.0 - foamed));

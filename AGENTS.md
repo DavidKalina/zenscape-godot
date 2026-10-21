@@ -1,11 +1,24 @@
 # The game
 
-The game is the aqueduct isle. The project's main scene,
-`studies/zenscape.tscn` (`run-zenscape.command`), shows the title over the
-aqueduct isle (`studies/aqueduct_isle.gd`, `scripts/kit_isle/`), and
-**Begin** or `-- --no-title` puts you on foot beside the parked plane.
-`run-aqueduct-isle.command` opens the isle directly. When the user says
-"the game" or "the main scene", they mean this one.
+The game is endless flight: you fly the plane over procedural land that
+never ends (hills, mountains, cliffs, lakes, rivers, coast and sea, with
+bird flocks and scattered ruins), land anywhere flat, get out, walk and
+pick up collectibles. Its scene is `studies/endless_flight.tscn`
+(`run-endless-flight.command`; design and rounds:
+`docs/design/endless-flight/`). `project.godot`'s main scene is still the
+old title, `studies/zenscape.tscn`, until the new game has a front door.
+When the user says "the game" or "the main scene", they mean endless
+flight.
+
+In scope: the plane and its flight; on foot, run, jump (the held-height
+and pump jumps), crouch slide, slope surfing, chained long jumps, the
+glide (the motor's "sail") and probably swimming; collectibles; maybe
+flying challenges later. Out of scope: enemies, treasure heists, the
+Olmec, hearts and damage. Walls, wall-run, ledge grab and climb, rope,
+carrying and throwing, and rolling are turned off (`scripts/pilot_motor.gd`
+switches such as `wall_on`, `ledge_on`, `rope_on`). The aqueduct isle
+(`studies/aqueduct_isle.gd`, `scripts/kit_isle/`) and the other studies
+stay as parts to reuse.
 
 # Test execution
 
@@ -110,10 +123,12 @@ existing test its change breaks. Run the full suite only when the user asks.
   mechanics (steps, contracts, proof) and stay general. Code, assets and
   tools built for earlier directions stay; they are tools.
 
-# Landing turf
+# Meadows and flats
 
-Every isle the plane can reach keeps a clear stretch of turf long enough
-to land the plane by hand. Terrain added to an isle must not take it away.
+The land always has meadows and flats in reach: wherever the plane is
+over land, a flat stretch long enough to land by hand is never far off.
+Terrain, kinds of place and dressing added to the land must not take that
+away.
 
 # Handles
 
