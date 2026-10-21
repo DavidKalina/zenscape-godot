@@ -148,6 +148,17 @@ uniform vec3 flower_ripen_green_straw = vec3(0.30, 0.62, 0.12);
 uniform vec2 grass_root_blend = vec2(0.92, 0.6);
 // How far the tuft's living green leans to the ground's colour under it.
 uniform float grass_ground_pull = 0.4;
+// Opt-in: the ground under the tufts is not ground_look's but a painted one
+// (shaders/endless_ground.gdshader): its plain colour (linear, rgb) times the
+// tuft's instance colour (its patch tint there) is the root's colour and
+// what the blade leans to, w of the way (0: ground_look's, as before). The
+// root takes it after the mute, so tuft and turf meet in one colour.
+uniform vec4 grass_root_paint = vec4(0.0);
+// Opt-in: a cloud volume's shade takes this share of the sun's direct light
+// only, as a painted ground's (shaders/endless_ground.gdshader cloud_shade)
+// does, and leaves the sky's light alone; 0 halves the whole colour, as
+// before. So tufts in a cloud's shadow go soft with the turf round them.
+uniform float cloud_sun_shade = 0.0;
 // Opt-in: the grass muted, greyed toward a grey tinted `grass_mute_hue`
 // (red kept under green, or it reads straw) and a little darker:
 // `grass_mute` on the tufts, `ground_mute` on the turf (studies/
@@ -854,7 +865,8 @@ void fragment() {
 		vec3 living = zs_grass_living(zs_palette_grass * ZS_GRASS_SOURCE, grass_living, ZS_GRASS_LIVING_SATURATION);
 		// The tuft is the field's grass standing up: its green leans toward
 		// the ground's under it (ground_look), so it sits in the field.
-		vec3 ground_under = zs_ground_color(ZS_GROUND_GREEN, vec3(plant_root.x, 0.0, plant_root.y), 0.0, 1.0);
+		vec3 ground_under = grass_root_paint.rgb * own;
+		if (grass_root_paint.w < 1.0) ground_under = mix(zs_ground_color(ZS_GROUND_GREEN, vec3(plant_root.x, 0.0, plant_root.y), 0.0, 1.0), ground_under, grass_root_paint.w);
 		living = mix(living, ground_under, grass_ground_pull);
 		float tuft_shade = 1.0 + (fract(sin(dot(plant_root, vec2(37.1, 91.7))) * 43758.5453) - 0.5) * 2.0 * grass_variation;
 		float dry = zs_grass_dry(plant_root, ZS_GRASS_DRY_SCALE, zs_grass_offset) * grass_dry;
@@ -884,6 +896,11 @@ void fragment() {
 	if (ground && ground_mute > 0.0) tint = zs_grass_mute(tint, ground_mute * ground_grass);
 	if (grass_blades && grass_mute > 0.0) tint = zs_grass_mute(tint, grass_mute);
 	else if (grass_blades) tint = zs_ground_shaded(tint, zs_ground_shade_at(plant_root), 1.0);
+	if (grass_blades && grass_root_paint.w > 0.0) {
+		vec3 grass_src_root = max(grass_source_root, vec3(0.002));
+		vec3 paint_root = grass_root_paint.rgb * clamp(COLOR.rgb / mix(grass_src_root, max(grass_source_tip, vec3(0.002)), grass_along), vec3(0.0), vec3(3.0));
+		tint = mix(tint, paint_root, grass_root_paint.w * (1.0 - smoothstep(0.0, grass_root_blend.y, grass_along)));
+	}
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
@@ -937,7 +954,8 @@ void fragment() {
 	tint *= mix(1.0, 0.42 + 0.58 * cloud_shade, min(1.0, zs_cloud.x * 1.35) * 0.85);
 	// The cloud volume's shade (the cloud volume, default): a tower's shadow over an
 	// island, the heaps' over a range's foot.
-	tint *= 1.0 - 0.5 * zs_cloud_volume_shade(world_position);
+	float volume_shade = zs_cloud_volume_shade(world_position);
+	if (cloud_sun_shade <= 0.0) tint *= 1.0 - 0.5 * volume_shade;
 	// A storm cell over it (scripts/storm_cells.gd; the sky weather study).
 	float cell_shade = zs_cell_shade(world_position);
 	tint = mix(tint, vec3(dot(tint, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.8, 0.86, 0.95), 0.6 * cell_shade) * (1.0 - 0.72 * cell_shade);
@@ -1025,6 +1043,7 @@ void fragment() {
 	EMISSION += zs_afterglow(world_position, alpen_normal, tint) + char_ember;
 	if (sea_mist > 0.0) EMISSION += zs_cloud_sun * SEA_MIST_SUN * sea_level_view * sea_mist;
 	inversion_transmit = zs_inversion_paint(world_position, EMISSION);
+	if (cloud_sun_shade > 0.0) inversion_transmit *= 1.0 - cloud_sun_shade * volume_shade;
 }
 
 #define ZS_GRASS_TRANSLUCENCY
