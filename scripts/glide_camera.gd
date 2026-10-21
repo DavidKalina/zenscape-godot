@@ -225,7 +225,10 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	var moving: Vector3 = glide.velocity
 	var way: Vector3 = glide.forward()
 	if moving.length() > 0.5: way = (way+moving.normalized()).normalized()
-	_way = _way.slerp(way,_ease(EASE_WAY,delta)).normalized()
+	# Nearly the same way, a lerp: slerp's axis is then too short to
+	# normalise cleanly (the engine's "must be normalized" error, skimming).
+	var ease_way := _ease(EASE_WAY,delta)
+	_way = (_way.lerp(way,ease_way) if _way.dot(way) > 0.9999 else _way.slerp(way,ease_way)).normalized()
 	# Fast, the glide tucks in; the framed plane eases back instead.
 	var fast := 0.0 if framed else clampf((float(glide.speed)-16.0)/14.0,0.0,1.0)
 	tuck = lerpf(tuck,maxf(clampf(dive,0.0,1.0),fast*0.7),_ease(0.4,delta))
