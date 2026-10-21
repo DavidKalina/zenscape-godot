@@ -157,6 +157,14 @@ uniform float ground_mute = 0.0;
 uniform vec3 grass_mute_hue = vec3(0.72, 1.0, 0.78);
 // How much a passing wave's bow pales the blades (ZS_GRASS_WAVE_SHEEN).
 uniform float grass_wave_sheen = 0.34;
+// Opt-in distance rings (scripts/kit_isle/kit_flora.gd Site `lod`), measured
+// from the camera drawing the pass: each tuft of the batch shrinks into the
+// ground at its own distance in `grass_ring.x`..`.y` m (by a rank off its
+// root, over `.z` m), so the batch thins out across the band with no edge;
+// from `grass_ring_grow.x` to `.y` m the tufts grow `.z` times as wide and
+// `.w` as tall, so a thinned ring keeps its cover. `grass_ring.y` 0: off.
+uniform vec4 grass_ring = vec4(0.0);
+uniform vec4 grass_ring_grow = vec4(0.0, 1.0, 1.0, 1.0);
 uniform bool source_bird_flight = false;
 // How this part follows the seasons (scripts/scene_look.gd leaf_season): x
 // autumn gold and spring freshness, y winter leaf fall, z spring blossom
@@ -375,6 +383,16 @@ void vertex() {
 		// A dropped plant is one point: no motion, light or colour to work out
 		// (a vertex function cannot return early, so the rest is skipped).
 		flower_gone = fade <= 0.0;
+	}
+	if (grass_blades && grass_ring.y > 0.0) {
+		float ring_d = distance(CAMERA_POSITION_WORLD, MODEL_MATRIX[3].xyz);
+		float ring_rank = fract(sin(dot(MODEL_MATRIX[3].xz - look_shift.xz, vec2(19.31, 71.87))) * 43758.5453);
+		float ring_at = mix(grass_ring.x, grass_ring.y, ring_rank);
+		float ring_keep = 1.0 - smoothstep(ring_at - grass_ring.z, ring_at, ring_d);
+		float ring_grow = smoothstep(grass_ring_grow.x, grass_ring_grow.y, ring_d);
+		VERTEX.xz *= ring_keep * mix(1.0, grass_ring_grow.z, ring_grow);
+		VERTEX.y *= ring_keep * mix(1.0, grass_ring_grow.w, ring_grow);
+		flower_gone = ring_keep <= 0.0;
 	}
 	if (flower_cycle && !flower_gone && CUSTOM0.w >= 2.0) {
 		float cycle_state = COLOR.a;

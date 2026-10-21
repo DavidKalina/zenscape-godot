@@ -45,6 +45,7 @@ const UnitNode = preload("res://scripts/kit_isle/islet_unit_node.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const IsletLake = preload("res://scripts/islet_lake.gd")
 const KitWater = preload("res://scripts/kit_isle/kit_water.gd")
+const Carpet = preload("res://studies/aqueduct_isle_flora.gd")
 
 ## The heist isle's middle (x, z; world) home is placed round, and how far.
 const HEIST_MID := Vector2(110.0,10.0)
@@ -129,6 +130,40 @@ const SPRAY := [Color(0.93,0.95,0.97,0.8),26.0,60.0,300.0,-1.0]
 ## The heist's smoke rises from over the vault's court.
 const SMOKE_AT := Vector3(190.0,26.0,2.0)
 
+## The grass (the isles' carpet, studies/aqueduct_isle_flora.gd `carpeted`,
+## then `calm`; KitFlora.Grow over home's land and the lake's banks) at the
+## carpet's own density, drawn in distance rings (KitFlora Site `lod`): the
+## full carpet out to GRASS_LOD.x m, thinning by .y to its mid ring
+## (GRASS_MID_SHARE of the tufts, the cheaper tuft, grown GRASS_MID_GROW wide
+## and tall), which thins out over .z..w m; past that the turf alone. The
+## strip keeps a short mown grass of its own (STRIP_TUFTS a square metre,
+## sized STRIP_SIZE of a tuft: no tussocks, no wild rim), and the long grass
+## keeps STRIP_CLEAR m off its middle line. Grown on the workers, a job a
+## GRASS_COLUMN m band on GRASS_THREADS threads, stood within GRASS_STAND_USEC a frame.
+## --no-home-grass leaves it off; --home-grass=<share> of the carpet's
+## tufts; --home-grass-lod=x,y,z,w the rings (0: none, every tuft drawn to
+## --home-grass-range=<m>, the carpet's 220 by default).
+const GRASS_LOD := Vector4(30.0,55.0,110.0,170.0)
+const GRASS_MID_SHARE := 0.25
+const GRASS_MID_GROW := Vector2(1.5,1.25)
+## Wild tufts a metre of the rim leaning out over the cliff's lip (KitFlora
+## Site `spill`).
+const GRASS_SPILL := 3.0
+const GRASS_COLUMN := 24.0
+const GRASS_STAND_USEC := 4000
+const GRASS_THREADS := 3
+const BLOCK_CELL := 4.0
+const STRIP_TUFTS := 3.0
+const STRIP_SIZE := Vector2(0.3,0.5)
+const STRIP_CLEAR := 11.0
+## The lake's beach and water stay bare: ground under IsletLake.BEACH_TOP
+## plus BANK_BARE m over its level within BANK_NEAR m of the water (sky_islet
+## paints those faces as the bed and the beach). The rim spill keeps
+## SPILL_NOTCH m off the water, so none hangs in the fall's notch.
+const BANK_BARE := 0.12
+const BANK_NEAR := 2.5
+const SPILL_NOTCH := 6.0
+
 const TURF_LAYER := 1 << 11
 ## The lake's surface: the plane skims it (studies/heist_level.gd
 ## `plane_ground`), the walker's rays never see it.
@@ -161,6 +196,18 @@ var built_ms := 0
 var land_shape: RefCounted = null
 var pool_rect := Rect2()
 var _lake_coded := Transform3D.IDENTITY
+## The grass's jobs on the workers ([{task, job, into, range, done, at}]),
+## and once stood: how long after they began (ms), its instanced triangles.
+var grass_ms := -1
+var _grass_jobs: Array = []
+var _grass_queue: Array = []
+var _grass_threads: Array[Thread] = []
+var _grass_mutex := Mutex.new()
+var _grass_stop := false
+var _grass_grown_usec := 0
+var _grass_began := 0
+var _grass_tris := 0
+var _grass_mid_tris := 0
 ## The strip in the tableland's frame (x, z): its ends; its top there.
 var _strip_local := [Vector2.ZERO,Vector2.ZERO]
 var _strip_y := 0.0
@@ -200,7 +247,8 @@ func build(h: Node3D, top: float) -> void:
 	middle.y = top+LIFT
 	islets = SkyIslets.new()
 	islets.name = "Islets"
-	islets.ground_source = LineBuild.evergreen(KitLook.ground_material())
+	islets.ground_source = KitLook.ground_material()
+	var grassed := not "--no-home-grass" in LaunchArgs.user_args()
 	add_child(islets)
 	var palette: Dictionary = islets.prepare_authored()
 	var rng := RandomNumberGenerator.new()
@@ -218,6 +266,8 @@ func build(h: Node3D, top: float) -> void:
 	_level_strip(shape,t)
 	var made := SkyIslets.dress(shape,palette,middle.y-_strip_y)
 	table_at.y = middle.y-_strip_y
+	# Its ground a run of colour under the grass, not a quilt of triangles.
+	if grassed: LineBuild._soften_top(made)
 	land = _stand_islet("home/land","Land",table_at,made)
 	if land != null:
 		var xf := land.global_transform
@@ -226,8 +276,11 @@ func build(h: Node3D, top: float) -> void:
 		circle = Vector3(land.global_position.x,land.global_position.z,float(shape.reach)+CIRCLE_PAST)
 		if not lake_spec.is_empty(): _lay_lake(shape,table_at)
 	land_shape = shape
+	if grassed: _grass(land,shape)
 	_landmarks(top)
 	_cues(shape)
+	# The grass grows on while the heist's own isle builds.
+	_grass_start()
 	built_ms = Time.get_ticks_msec()-began
 	print("home: built in %d ms; strip %s -> %s (%.0f m), lake at %s" % [built_ms,strip_a.round(),strip_b.round(),strip_a.distance_to(strip_b),(lake.global_position if lake != null else Vector3.INF).round()])
 
@@ -336,7 +389,7 @@ func _table_spec(rng: RandomNumberGenerator, tilt: float) -> Dictionary:
 		"room":SeaCliffs.GAP.y+SeaCliffs.STACK.y*2.6,
 		"cliffs":{"height":TABLE_H,"low":TABLE_LOW,"tilt":tilt,"bed":TABLE_BED,"stacks":TABLE_STACKS,"arch":true,"cove":false},
 		"mounds":[],"dome":0.4,"keel":1.0,
-		"trees":Vector2i(10,16),"tree_pool":{"juniper":1.0,"tree":0.6,"birch":0.35},"drifts":Vector2i(6,10),"undergrowth":0.6,
+		"trees":Vector2i(20,30),"tree_pool":{"juniper":1.0,"tree":0.6,"birch":0.35},"drifts":Vector2i(0,0),"undergrowth":0.6,
 		"rock":{"palette":palettes[rng.randi() % palettes.size()],"tone":rng.randf_range(0.8,0.92),"vary":rng.randf(),"bed":TABLE_BED}}
 
 ## The strip levelled across the tableland, square to its tilt (along the
@@ -427,6 +480,215 @@ static func _split_wet(faces: PackedVector3Array, islet: RefCounted, under: floa
 		if low == wet: out.append_array([faces[i],faces[i+1],faces[i+2]])
 	return out
 
+## The carpet grass over `node`'s land (`shape`, in its frame): KitFlora's
+## Grow at the aqueduct isle's carpet settings, its probe the shape's own
+## ground (no physics): open land off the water, trunks and stones and not
+## steeper than the palette's rock slope. The long grass keeps off the
+## strip, which gets its own short grass. Round the lake dug in it (`shape`'s
+## basin) the grass grows down its banks to the beach and keeps off the beach
+## and the water (the faces sky_islet paints as the lake's bed and beach:
+## under BEACH_TOP+BANK_BARE over the level, within BANK_NEAR m of the
+## water); the rim spill keeps off the fall's notch. Drawn in distance rings
+## (GRASS_LOD), grown on the workers (plain sites, a job for each
+## GRASS_COLUMN m band of the land) and stood a few batches a frame as the
+## jobs finish (`_process`).
+func _grass(node: Node3D, shape: RefCounted) -> void:
+	if node == null: return
+	var share := 1.0
+	var range_m := Carpet.CARPET_RANGE
+	var lod := GRASS_LOD
+	for arg: String in LaunchArgs.user_args():
+		if arg.begins_with("--home-grass="): share = float(arg.get_slice("=",1))
+		elif arg.begins_with("--home-grass-range="): range_m = float(arg.get_slice("=",1))
+		elif arg.begins_with("--home-grass-lod="):
+			var p := arg.get_slice("=",1).split(",")
+			lod = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3])) if p.size() >= 4 else Vector4.ZERO
+	var outline := PackedVector2Array()
+	for j in range(160):
+		outline.append(shape.rim_point(TAU*j/160.0))
+	var steep: float = float(KitLook.palette().rock_slope)*KitFlora.STEEP_SHARE
+	var lake_on: bool = not shape.lake.is_empty()
+	var water_at: float = shape.water_level+IsletLake.BEACH_TOP+BANK_BARE
+	var a := _strip_local[0] as Vector2
+	var b := _strip_local[1] as Vector2
+	# The shape's `blocked`, its blocks filed by BLOCK_CELL m cells (it
+	# walks every trunk and stone for each of a million probes).
+	var cells := {}
+	for bk: Vector3 in shape.blocks:
+		for cx in range(floori((bk.x-bk.z)/BLOCK_CELL),floori((bk.x+bk.z)/BLOCK_CELL)+1):
+			for cz in range(floori((bk.y-bk.z)/BLOCK_CELL),floori((bk.y+bk.z)/BLOCK_CELL)+1):
+				var key := Vector2i(cx,cz)
+				if not cells.has(key): cells[key] = []
+				(cells[key] as Array).append(bk)
+	var watery: bool = lake_on or not shape.stream.is_empty() or shape.pond.z > 0.0
+	var swims: bool = shape.lake.get("swim",false)
+	var blocked := func(p: Vector2) -> bool:
+		var near: Variant = cells.get(Vector2i(floori(p.x/BLOCK_CELL),floori(p.y/BLOCK_CELL)))
+		if near != null:
+			for bk: Vector3 in near:
+				if p.distance_to(Vector2(bk.x,bk.y)) < bk.z: return true
+		return watery and shape.wet(p) and shape.deck_y(p) == -INF and not swims
+	# The ground's height at p, NAN off the land: `on_land` and `ground_at`
+	# in one look-up (the shape has no decks here).
+	var heights: PackedFloat32Array = shape.heights
+	var ids: PackedInt32Array = shape.ids
+	var plain_top: bool = shape.decks.is_empty()
+	var height := func(p: Vector2) -> float:
+		if not plain_top: return float(shape.ground_at(p)) if shape.on_land(p) else NAN
+		var hit: Array = shape._locate(p)
+		var f: int = hit[0]
+		if f < 0: return NAN
+		var w: Vector3 = hit[1]
+		return w.x*heights[ids[f*3]]+w.y*heights[ids[f*3+1]]+w.z*heights[ids[f*3+2]]
+	var open := func(p: Vector2, reach: float) -> float:
+		var h: float = height.call(p)
+		if is_nan(h) or blocked.call(p): return NAN
+		if lake_on and h < water_at and IsletLake.distance(shape,p) < BANK_NEAR: return NAN
+		for off: Vector2 in [Vector2(reach,0.0),Vector2(0.0,-reach)]:
+			var hq: float = height.call(p+off)
+			if is_nan(hq) or absf(hq-h)/maxf(reach,0.01) > steep: return NAN
+		return h
+	var long_probe := func(p: Vector2, reach: float) -> float:
+		if _to_segment(p,a,b) < STRIP_CLEAR: return NAN
+		return open.call(p,reach)
+	var mown_probe := func(p: Vector2, reach: float) -> float:
+		if _to_segment(p,a,b) > STRIP_CLEAR+1.0: return NAN
+		return open.call(p,reach)
+	var box: Rect2 = KitFlora.box_and_area([outline])[0]
+	var flora := Node3D.new()
+	flora.name = "Flora"
+	node.add_child(flora)
+	var mown_node := Node3D.new()
+	mown_node.name = "StripGrass"
+	node.add_child(mown_node)
+	# The rim spill keeps off the fall's notch (where the lake reaches the rim).
+	var notch := func(p: Vector2) -> bool: return lake_on and IsletLake.distance(shape,p) < SPILL_NOTCH
+	# A job a column of whole tiles, so no tile is split between two.
+	var x := floorf(box.position.x/KitFlora.TILE)*KitFlora.TILE
+	var column := 0
+	while x < box.end.x:
+		var cut := Rect2(x,box.position.y-1.0,GRASS_COLUMN,box.size.y+2.0)
+		var site := KitFlora.Site.new()
+		Carpet.carpeted(site)
+		site.tufts *= share
+		site.grass_range = range_m
+		site.probe = long_probe
+		site.spill = GRASS_SPILL
+		site.spill_off = notch
+		_grass_job(site,cut,lod,outline,flora,hash(["home_grass",hunt_seed,true,column]) & 0xffffff)
+		# The strip's own mown grass.
+		var mown := KitFlora.Site.new()
+		Carpet.carpeted(mown)
+		mown.variety = false
+		mown.shag = 0.0
+		mown.tuft_bump = 1.0
+		mown.height_field = 0.0
+		mown.tufts = STRIP_TUFTS
+		mown.tuft_size = STRIP_SIZE
+		mown.grass_range = range_m
+		mown.probe = mown_probe
+		_grass_job(mown,cut,lod,outline,mown_node,hash(["home_mown",hunt_seed,column]) & 0xffffff)
+		x += GRASS_COLUMN
+		column += 1
+
+## One grow job for the grass threads: `site` (plain, its candidates in
+## `cut`, its grass in rings `lod`) over `outline`, its batches for `into`;
+## the jobs nearest the parked plane first.
+func _grass_job(site: KitFlora.Site, cut: Rect2, lod: Vector4, outline: PackedVector2Array, into: Node3D, seed_value: int) -> void:
+	site.plain = true
+	site.box = cut
+	if lod != Vector4.ZERO:
+		site.lod = lod
+		site.lod_share = GRASS_MID_SHARE
+		site.lod_grow = GRASS_MID_GROW
+	var job := KitFlora.Grow.new(seed_value,null,[],[outline],site)
+	var near := absf(cut.get_center().x-(_strip_local[0] as Vector2).x)
+	var g := {"job":job,"into":into,"range":site.grass_range,"near":near,"grown":false,"done":false,"at":0}
+	_grass_mutex.lock()
+	_grass_jobs.append(g)
+	_grass_queue.append(g)
+	_grass_queue.sort_custom(func(p: Dictionary, q: Dictionary) -> bool: return float(p.near) < float(q.near))
+	_grass_mutex.unlock()
+
+## The grass threads (GRASS_THREADS of their own, not the worker pool, so
+## the heist's own build on the pool doesn't wait behind them), started
+## once every job is queued.
+func _grass_start() -> void:
+	if _grass_queue.is_empty(): return
+	_grass_began = Time.get_ticks_usec()
+	for k in range(GRASS_THREADS):
+		var thread := Thread.new()
+		thread.start(_grass_work,Thread.PRIORITY_LOW)
+		_grass_threads.append(thread)
+
+func _grass_work() -> void:
+	while true:
+		_grass_mutex.lock()
+		var g: Dictionary = {} if _grass_queue.is_empty() or _grass_stop else _grass_queue.pop_front()
+		_grass_mutex.unlock()
+		if g.is_empty(): return
+		var job: KitFlora.Grow = g.job
+		# In slices, so a restart or quit stops it soon.
+		while not job.step(50000):
+			if _grass_stop: return
+		_grass_mutex.lock()
+		g.grown = true
+		_grass_grown_usec = maxi(_grass_grown_usec,Time.get_ticks_usec()-_grass_began)
+		_grass_mutex.unlock()
+
+## Gone before the grass stood (a restart): its threads stopped first.
+func _exit_tree() -> void:
+	_grass_mutex.lock()
+	_grass_stop = true
+	_grass_mutex.unlock()
+	for thread: Thread in _grass_threads: thread.wait_to_finish()
+	_grass_threads.clear()
+	_grass_jobs.clear()
+
+## The grass jobs' batches stood as the jobs finish, within GRASS_STAND_USEC
+## a frame, each frame's share calmed (Carpet.calm) as it stands.
+func _process(_delta: float) -> void:
+	if _grass_jobs.is_empty(): return
+	var end := Time.get_ticks_usec()+GRASS_STAND_USEC
+	var left := 0
+	for g: Dictionary in _grass_jobs:
+		if g.done: continue
+		left += 1
+		if Time.get_ticks_usec() > end: continue
+		_grass_mutex.lock()
+		var grown: bool = g.grown
+		_grass_mutex.unlock()
+		if not grown: continue
+		var parts: Array = (g.job as KitFlora.Grow).parts
+		var into: Node3D = g.into
+		if not is_instance_valid(into):
+			g.done = true
+			left -= 1
+			continue
+		var holder := Node3D.new()
+		holder.name = "Part"
+		into.add_child(holder)
+		while int(g.at) < parts.size() and Time.get_ticks_usec() < end:
+			var part: Dictionary = parts[int(g.at)]
+			g.at = int(g.at)+1
+			var ring: Dictionary = part.get("ring",{})
+			var batch := KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer,float(g.range),ring)
+			holder.add_child(batch)
+			var tris := KitFlora._mesh_triangles(batch.multimesh.mesh)*int(part.count)
+			_grass_tris += tris
+			if int(ring.get("ring",0)) == 2: _grass_mid_tris += tris
+		Carpet.calm(holder)
+		if int(g.at) >= parts.size():
+			g.done = true
+			g.job = null
+			left -= 1
+	if left == 0:
+		_grass_jobs.clear()
+		for thread: Thread in _grass_threads: thread.wait_to_finish()
+		_grass_threads.clear()
+		grass_ms = (Time.get_ticks_usec()-_grass_began)/1000
+		print("home: grass grown in %d ms on %d threads, stood %d ms after they began: %d instanced triangles, %d of them the mid ring's" % [_grass_grown_usec/1000,GRASS_THREADS,grass_ms,_grass_tris,_grass_mid_tris])
+
 ## The landmarks (WAY on the line, ROUND round each isle), each a crag rock
 ## with a ruin on its top, named home/landmark_<n>; through the host's own
 ## unit stand (crag_reach.gd `_stand`).
@@ -461,10 +723,11 @@ func _landmarks(top: float) -> void:
 		var size := rng.randf_range(LANDMARK_SIZE.x,LANDMARK_SIZE.y)
 		var spec := {"seed":700+i+hunt_seed % 97,"size":size,"shape":rng.randf_range(0.5,0.95),"lean":rng.randf()*0.5,"drip":rng.randf_range(0.4,0.9),
 			"lopsided":rng.randf(),"growth":rng.randf_range(0.5,0.8),"weather":rng.randf_range(0.4,0.8),"flat":rng.randf_range(0.3,0.7),
-			"landmark":0,"grass":0.0,"debris":0.1,"mass":1 if size > 14.0 else 0}
+			"landmark":0,"grass":1.0,"debris":0.1,"mass":1 if size > 14.0 else 0}
 		var at := Vector3(p.x,top+rng.randf_range(LANDMARK_LIFT.x,LANDMARK_LIFT.y),p.y)
 		var n: Node3D = host.call("_stand","home/landmark_%d" % i,Transform3D(Basis(Vector3.UP,rng.randf()*TAU),at),spec)
-		if n != null: landmarks.append(n)
+		if n != null:
+			landmarks.append(n)
 	print("home: %d landmarks" % landmarks.size())
 
 ## The cues: the spray under home's fall, the smoke over the heist's vault.

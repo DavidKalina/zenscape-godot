@@ -86,6 +86,32 @@ static func blade_count() -> int:
 	for satellite: Array in SATELLITES: count += int(satellite[0])
 	return count
 
+## The far tuft (KitFlora Site `lod`'s mid ring, seen from 40 m on): LITE_BLADES
+## broad blades of one row each (a quad and its tip) and two small satellites,
+## about a third of the full tuft's triangles, the same root, height, lean
+## and UVs, so the same material lights it alike.
+const LITE_BLADES := 7
+const LITE_ROWS := [0.0, 0.55]
+const LITE_TAPER := [1.0, 0.7]
+const LITE_WIDTH := 1.7
+const LITE_SATELLITES := [[2, 0.27, 0.62], [2, 0.24, 0.55]]
+
+static func build_lite(root: Color, tip: Color) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_clump(surface, rng, root, tip, LITE_BLADES, Vector2.ZERO, 1.0, LITE_ROWS, LITE_TAPER, LITE_WIDTH)
+	var turn := rng.randf() * TAU
+	for satellite: Array in LITE_SATELLITES:
+		turn += rng.randf_range(2.0, 3.6)
+		_clump(surface, rng, root, tip, int(satellite[0]), Vector2.from_angle(turn) * float(satellite[1]), float(satellite[2]), LITE_ROWS, LITE_TAPER, LITE_WIDTH)
+	surface.index()
+	var mesh := surface.commit()
+	mesh.set_meta("grass_root", root)
+	mesh.set_meta("grass_tip", tip)
+	return mesh
+
 static func build(root: Color, tip: Color) -> ArrayMesh:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
@@ -100,7 +126,7 @@ static func build(root: Color, tip: Color) -> ArrayMesh:
 	return surface.commit()
 
 ## One clump of `blades` fanned round `at`, scaled by `size`.
-static func _clump(surface: SurfaceTool, rng: RandomNumberGenerator, root: Color, tip: Color, blades: int, at: Vector2, size: float) -> void:
+static func _clump(surface: SurfaceTool, rng: RandomNumberGenerator, root: Color, tip: Color, blades: int, at: Vector2, size: float, rows: Array = ROWS, taper: Array = TAPER, width := 1.0) -> void:
 	for blade in range(blades):
 		var angle := (float(blade) / blades) * TAU + rng.randf() * 0.9
 		var out := Vector2.from_angle(angle)
@@ -109,20 +135,20 @@ static func _clump(surface: SurfaceTool, rng: RandomNumberGenerator, root: Color
 		var base := at + out * lerpf(ROOT_RING.x, ROOT_RING.y, ring) * size
 		var height := lerpf(HEIGHT.y, HEIGHT.x, ring) * rng.randf_range(0.88, 1.08) * size
 		var lean := lerpf(LEAN.x, LEAN.y, ring) * rng.randf_range(0.85, 1.15) * size
-		var side := Vector2(-out.y, out.x) * HALF_WIDTH * rng.randf_range(0.85, 1.15) * lerpf(1.0, size, 0.5)
+		var side := Vector2(-out.y, out.x) * HALF_WIDTH * width * rng.randf_range(0.85, 1.15) * lerpf(1.0, size, 0.5)
 		var blade_tip := tip.lightened(rng.randf_range(0.0, TIP_JITTER)) if rng.randf() < 0.5 else tip.darkened(rng.randf_range(0.0, TIP_JITTER))
 		var strip := []
-		for k in range(ROWS.size()):
-			var t: float = ROWS[k]
+		for k in range(rows.size()):
+			var t: float = rows[k]
 			var centre := _point(base, out, height, lean, t)
-			var half: Vector2 = side * float(TAPER[k])
+			var half: Vector2 = side * float(taper[k])
 			strip.append([centre - Vector3(half.x, 0.0, half.y), centre + Vector3(half.x, 0.0, half.y), t])
-		for k in range(ROWS.size() - 1):
+		for k in range(rows.size() - 1):
 			var a: Array = strip[k]
 			var b: Array = strip[k + 1]
 			for corner in [[a[0], 0.0, a[2]], [a[1], 1.0, a[2]], [b[0], 0.0, b[2]], [a[1], 1.0, a[2]], [b[1], 1.0, b[2]], [b[0], 0.0, b[2]]]:
 				_vertex(surface, corner[0], Vector2(corner[1], corner[2]), root.lerp(blade_tip, corner[2]))
-		var last: Array = strip[ROWS.size() - 1]
+		var last: Array = strip[rows.size() - 1]
 		_vertex(surface, last[0], Vector2(0.0, last[2]), root.lerp(blade_tip, last[2]))
 		_vertex(surface, last[1], Vector2(1.0, last[2]), root.lerp(blade_tip, last[2]))
 		_vertex(surface, _point(base, out, height, lean, 1.0), Vector2(0.5, 1.0), blade_tip)
