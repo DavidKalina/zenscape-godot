@@ -160,6 +160,10 @@ var summits: Array[Vector3] = []
 var axis := Vector2.RIGHT
 var col := Vector3.ZERO
 var col_half := 6.0
+## The col's half width asked by the recipe (`massif.col_half`, m; 0: its
+## own, from the radius and the summits' spacing). Opt-in: a flown pass
+## sized by WorldScale.opening (studies/home_hub.gd).
+var col_want := 0.0
 ## The col's walls' steepness toward the main summit (x) and the second (y).
 var col_walls := Vector2(COL_WALL,COL_WALL)
 var across := Vector2.UP
@@ -199,6 +203,7 @@ func _raise_massif(islet: RefCounted) -> void:
 	foot = radius
 	snowy = bool(spec.get("snow",true))
 	with_trail = bool(spec.get("hut",true))
+	col_want = float(spec.get("col_half",0.0))
 	_raggy = _noise(83,0.05)
 	_lay_out(islet,rng)
 	_shape_massif(islet,rng)
@@ -290,6 +295,7 @@ func _lay_out(islet: RefCounted, rng: RandomNumberGenerator) -> void:
 			at_col = p
 	col = Vector3(at_col.x,at_col.y,minf(lowest,height*rng.randf_range(COL.x,COL.y)))
 	col_half = clampf(minf(radius*COL_HALF,main.distance_to(second)*0.2),COL_HALF_M.x,COL_HALF_M.y)
+	if col_want > 0.0: col_half = col_want
 	for k in range(2):
 		var run := absf((Vector2(summits[k].x,summits[k].y)-at_col).dot(axis))-col_half
 		col_walls[k] = maxf(COL_WALL,(summits[k].z*1.08-col.z)/maxf(run,1.0))
