@@ -118,31 +118,66 @@ const REST_SPEED := 0.15
 const REST_TIME := 0.4
 const SETTLE_TIME := 0.35
 const CLOTH_KG := 1.0
-## Thrown (THROW_KG or under), aimed: `walk_throw` held (RT, the left mouse
-## button or T) swings it up over his head and holds the wind-up; a reticle
-## on the ground shows where it lands and a dotted arc the way there. The
-## move stick and the camera move it (out to AIM_REACH, empty -> at
-## THROW_KG); it sits on whatever is under it (a ledge top, the pocket past a
-## wall), red where the arc is blocked or there's nothing to land on.
-## Released, he snaps forward, lets go at THROW_LET of THROW_TIME, and it
-## flies the arc shown to the reticle (on red he lowers it: no throw). On
-## landing it keeps LAND_KEEP of its run across and a little spin, then
-## rests as a roll does.
+## Thrown (THROW_KG or under), aimed on the move (docs/design/heist-level/
+## bag-throw-handoff.md): `walk_throw` held (RT, the left mouse button or T)
+## swings it up over his head, where he pumps it (the wind-up, AIM_PUMP) and
+## keeps walking or running under the stick. The camera picks the spot (as
+## the rope's whirl: mouse / right stick, turned faster while aiming,
+## AIM_MOUSE, AIM_STICK; eased out, AIM_FAR): along its look line, the first
+## top over his feet (a ledge: AIM_IN past its lip), else the far side of a
+## drop (a gap: AIM_IN past its lip), else AIM_START of the reach on. A
+## reticle shows where it lands and a dotted arc the way there; red where
+## the arc is blocked or there's nothing to land on. Released, he snaps
+## forward, lets go at THROW_LET of THROW_TIME, still going (THROW_PACE),
+## and it flies the arc shown from his hands, his run in it: at a run it
+## reaches further (RUN_REACH) and flies flatter (RUN_FLAT). On red he
+## lowers it: no throw. On landing it keeps LAND_KEEP of its run across and
+## a little spin, then rests as a roll does.
 const THROW_KG := 8.0
 const THROW_TIME := 0.62
 const THROW_LET := 0.36
 const THROW_SPIN := 5.0
 const LAND_KEEP := 0.12
-## The wind-up held while aiming: this much of THROW_TIME in.
+## His paces (times) through the throw's snap and follow-through.
+const THROW_PACE := 0.85
+## The wind-up held while aiming: this much of THROW_TIME in, pumped back
+## and forth AIM_PUMP of it at AIM_PUMP_RATE a second (more on the move).
 const AIM_HOLD := 0.27
-## The reticle's reach across from his feet (m, times size): empty, at THROW_KG.
+const AIM_PUMP := 0.05
+const AIM_PUMP_RATE := 1.7
+## The reticle's reach across from his feet (m, times size): empty, at
+## THROW_KG; at a full run (PilotMotor.RUN) RUN_REACH of it more.
 const AIM_REACH := Vector2(7.0,4.0)
 const AIM_MIN := 1.2
-## Where it starts (of the reach, along his facing) and how fast the stick moves it.
+const RUN_REACH := 0.3
+## Where it goes with no ledge or gap on the look line (of the reach).
 const AIM_START := 0.6
-const AIM_SPEED := 5.0
-## The arc's top over its higher end: this plus AIM_RISE_M per metre across.
+## The look line walked for a spot in AIM_STEP (m) steps: a top AIM_UP over
+## his feet is a ledge; one AIM_DROP under is a drop, and past it a top no
+## more than AIM_FAR_DROP under him is the far side. The spot is AIM_IN past
+## the lip (m, all times size).
+const AIM_STEP := 0.4
+const AIM_UP := 0.6
+const AIM_DROP := 1.5
+const AIM_FAR_DROP := 3.0
+const AIM_IN := 0.8
+## While aiming the camera turns faster (as the rope's whirl): the mouse
+## AIM_MOUSE times its own, the right stick AIM_STICK rad/s more.
+const AIM_MOUSE := 1.6
+const AIM_STICK := 2.4
+const MOUSE_LOOK := 0.0025
+## A host with no rope of its own: the camera eased out to AIM_FAR times
+## its reach, widened AIM_WIDE degrees and levelled toward AIM_POLAR while
+## aiming and the bag flies, at AIM_EASE (1/s); the same as the rope's
+## WHIRL_* (with the rope, its `_cam_step` eases for both).
+const AIM_FAR := 1.4
+const AIM_WIDE := 7.0
+const AIM_EASE := 3.0
+const AIM_POLAR := PI*0.5-0.3
+## The arc's top over its higher end: this plus AIM_RISE_M per metre across
+## (times RUN_FLAT at a full run).
 const AIM_RISE := 1.5
+const RUN_FLAT := 0.5
 ## Blocked, the aim tries these lobs higher (m) before it turns red, so a
 ## spot just behind a wall takes a steep lob over it.
 const AIM_LOBS := [0.0,1.0,2.0,3.0,4.5]
@@ -195,9 +230,16 @@ var aim_arc: PackedVector3Array = []
 var aims := 0
 var cancels := 0
 var throw_to := Vector3.INF
-var _aim := Vector2.ZERO
-## Drivers: aim as though the button were held (release() lets go).
+## Drivers: aim as though the button were held (release() lets go); the
+## camera turned toward `aim_point` (and kept on it) as the mouse would.
 var hold_aim := false
+var aim_point := Vector3.INF
+## The arc's rise, times (RUN_FLAT at a run): set while aiming.
+var _rise_k := 1.0
+var _pump_t := 0.0
+var _cam_k := 0.0
+var _polar_lift := 0.0
+var _polar_room := 0.0
 ## The lob the aim settled on (m over the plain arc; AIM_LOBS).
 var aim_lob := 0.0
 var _reticle: MeshInstance3D
@@ -913,8 +955,8 @@ func shove() -> void:
 	_apply_feel(STOW_PACE)
 
 ## Aiming: he swings it up over his head (still worn, see _place_sack) and
-## holds it there, the reticle out ahead; `release` throws it. Too heavy: a
-## balk and a line.
+## pumps it there, walking on; the reticle where the camera looks
+## (`look_spot`); `release` throws it. Too heavy: a balk and a line.
 func throw() -> void:
 	if state != "worn": return
 	if kg > throw_kg+0.001:
@@ -922,74 +964,110 @@ func throw() -> void:
 		_no_sound.play()
 		_say("Too heavy to throw (%s kg, throws to %d)" % [_kg(kg),int(throw_kg)])
 		return
-	var motor: Variant = study.get("motor")
-	var f := _forward()*reach()*AIM_START
-	_aim = _to_cam(Vector2(f.x,f.z))
 	aims += 1
+	_pump_t = 0.0
 	_begin("aim")
-	_apply_feel(0.0)
-	_aim_update(0.0,Vector2.ZERO)
+	_apply_feel(1.0)
+	_aim_update(0.0)
 
-## The reticle put on a world point (drivers; the heist's aim handed over
-## from the rope's).
+## Drivers: the camera turned toward a world point (and kept on it while
+## aiming), so the reticle picks what's there as the mouse would.
 func aim_toward(point: Vector3) -> void:
-	if act != "aim": return
+	aim_point = point
+	_turn_to_aim()
+	if act == "aim": _aim_update(0.0)
+
+func _turn_to_aim() -> void:
+	if aim_point == Vector3.INF: return
 	var feet: Vector3 = study.get("motor").feet
-	_aim = _to_cam(Vector2(point.x-feet.x,point.z-feet.z))
-	_aim_update(0.0,Vector2.ZERO)
+	var d := Vector2(aim_point.x-feet.x,aim_point.z-feet.z)
+	if d.length() > 0.2: study.set("_yaw",PilotMotor.facing_of(d.normalized()))
 
 ## The aim given up at once, no lowering, no line (the heist's aim handed
 ## over to the rope's).
 func aim_drop() -> void:
 	if act != "aim": return
 	act = ""
+	hold_aim = false
+	aim_point = Vector3.INF
 	_show_aim(false)
 	_apply_feel(1.0)
 
 ## Let go of the aim: thrown at the reticle, or on red lowered, no throw.
 func release() -> void:
 	if act != "aim": return
+	hold_aim = false
+	aim_point = Vector3.INF
 	if aim_ok:
 		throw_to = aim_at
 		act = "throw"
-		_apply_feel(STOW_PACE)
+		_apply_feel(THROW_PACE)
 	else:
 		cancels += 1
 		act = "lower"
+		_apply_feel(THROW_PACE)
 		_say("No throw: %s" % aim_why)
 	_show_aim(false)
 
-## How far across he can throw it at its kg (m).
+## How far across he can throw it at its kg (m), more at a run (RUN_REACH).
 func reach() -> float:
-	var s: float = study.get("motor").size
-	return lerpf(AIM_REACH.x,AIM_REACH.y,clampf(kg/throw_kg,0.0,1.0))*s
-
-## The stick's way (the motor's frame, x z) in the camera's: (right, ahead).
-func _to_cam(v: Vector2) -> Vector2:
-	var f := PilotMotor.forward(float(study.get("_yaw")))
-	var r := Vector2(-f.y,f.x)
-	return Vector2(v.dot(r),v.dot(f))
-
-func _from_cam(v: Vector2) -> Vector2:
-	var f := PilotMotor.forward(float(study.get("_yaw")))
-	var r := Vector2(-f.y,f.x)
-	return r*v.x+f*v.y
-
-## Aiming, each frame: the stick (`want`, the motor's frame) moves the
-## reticle, kept in reach; it finds the ground under it and the arc there,
-## he turns to face it. The study calls it from _want.
-func aim_steer(want: Vector2, delta: float) -> void:
-	if act != "aim": return
-	_aim_update(delta,want)
-
-func _aim_update(delta: float, want: Vector2) -> void:
 	var motor: Variant = study.get("motor")
 	var s: float = motor.size
-	var w := _from_cam(_aim)+want*AIM_SPEED*s*delta
-	var l := w.length()
-	if l < AIM_MIN*s: w = (w/l if l > 0.01 else Vector2(_forward().x,_forward().z))*AIM_MIN*s
-	w = w.limit_length(reach())
-	_aim = _to_cam(w)
+	return lerpf(AIM_REACH.x,AIM_REACH.y,clampf(kg/throw_kg,0.0,1.0))*s*(1.0+RUN_REACH*_run_k())
+
+## His run, 0 (standing) to 1 (PilotMotor.RUN on the ground).
+func _run_k() -> float:
+	var motor: Variant = study.get("motor")
+	var v: Vector3 = motor.velocity
+	return clampf(Vector2(v.x,v.z).length()/PilotMotor.RUN,0.0,1.0)
+
+## The camera's look, flat (its yaw's forward).
+func _look() -> Vector2:
+	return PilotMotor.forward(float(study.get("_yaw")))
+
+## Kept for the hosts that still call it: the stick moves him, not the
+## reticle, so nothing to do.
+func aim_steer(_want: Vector2, _delta: float) -> void:
+	pass
+
+## Where a throw along the camera's look goes, flat from his feet (x z):
+## the first top a step AIM_UP up from the line before it and over his feet
+## (a ledge's face, not a ramp), else the first top past a drop (AIM_DROP
+## down from the line before it) no lower than AIM_FAR_DROP under him (a
+## gap's far side), each
+## AIM_IN past its lip; else AIM_START of the reach on. Kept in reach. The
+## heist asks it too (crag_reach_greed.gd `aim_handover`).
+func look_spot() -> Vector2:
+	var motor: Variant = study.get("motor")
+	var s: float = motor.size
+	var feet: Vector3 = motor.feet
+	var u := _look()
+	var most := reach()
+	var space := get_world_3d().direct_space_state
+	var dropped := false
+	var was := 0.0
+	var d := AIM_STEP*s
+	while d <= most+AIM_STEP*s*0.5:
+		var p := Vector2(feet.x,feet.z)+u*d
+		var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(p.x,feet.y+8.0*s,p.y),Vector3(p.x,feet.y-30.0*s,p.y),CarryHost.SOLID_MASK))
+		var h := -INF if hit.is_empty() or (hit.normal as Vector3).y < 0.6 else (hit.position as Vector3).y-feet.y
+		# A step up from the last sample (a face, not a slope or a ramp),
+		# or back up out of a drop.
+		if (h-was >= AIM_UP*s and h >= AIM_UP*s) or (dropped and h >= -AIM_FAR_DROP*s):
+			return u*clampf(d+AIM_IN*s,AIM_MIN*s,most)
+		if h < was-AIM_DROP*s or h < -AIM_DROP*s-AIM_FAR_DROP*s: dropped = true
+		if h > -INF: was = h
+		d += AIM_STEP*s
+	return u*maxf(most*AIM_START,AIM_MIN*s)
+
+## Aiming, each frame: the spot where the camera looks (`look_spot`), the
+## ground under it and the arc there. Standing, he turns to it; on the move
+## he keeps his own way.
+func _aim_update(_delta: float) -> void:
+	var motor: Variant = study.get("motor")
+	var s: float = motor.size
+	var w := look_spot()
+	_rise_k = lerpf(1.0,RUN_FLAT,_run_k())
 	var feet: Vector3 = motor.feet
 	var rb := _r*s*0.95
 	var space := get_world_3d().direct_space_state
@@ -1025,6 +1103,55 @@ func _aim_update(delta: float, want: Vector2) -> void:
 		aim_ok = false
 		aim_why = "the way's blocked"
 	_show_aim(true)
+
+## Aiming, each frame (from _process): put away on a ledge, a rider (a
+## rope, a knock) or in the water; the camera kept on a driver's point, the
+## right stick turning it faster; the reticle updated.
+func _aim_step(delta: float) -> void:
+	var motor: Variant = study.get("motor")
+	if motor.rider != null or motor.on_ledge() or motor.swimming:
+		aim_drop()
+		return
+	_turn_to_aim()
+	var look := Pad.curve(Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down"),1.6)
+	if look.x != 0.0 and not _busy(): study.set("_yaw",float(study.get("_yaw"))-look.x*AIM_STICK*delta)
+	_aim_update(delta)
+
+## The mouse turns the camera faster while he aims (AIM_MOUSE).
+func _input(event: InputEvent) -> void:
+	if act != "aim" or study == null or not event is InputEventMouseMotion: return
+	if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED or _busy(): return
+	study.set("_yaw",float(study.get("_yaw"))-(event as InputEventMouseMotion).relative.x*MOUSE_LOOK*(AIM_MOUSE-1.0))
+
+func _busy() -> bool:
+	if study == null or not bool(study.get("walk_ready")): return true
+	var editor := study.get_node_or_null("LayoutEdit")
+	if editor != null and bool(editor.get("editing")): return true
+	return study.has_method("_tuning") and bool(study.call("_tuning"))
+
+## The camera wants easing out: aiming, throwing, the bag in the air (the
+## rope's `_cam_step` asks it too).
+func cam_wanted() -> bool:
+	return act == "aim" or act == "throw" or state == "fly"
+
+## A host with no rope: the camera eased out while he aims and the bag
+## flies (AIM_FAR, AIM_WIDE, AIM_POLAR), back in after.
+func _cam_step(delta: float) -> void:
+	if study.get("rope") != null or study.get("cam_far") == null: return
+	var want := 1.0 if cam_wanted() else 0.0
+	if _cam_k == 0.0 and want == 0.0: return
+	_cam_k = move_toward(_cam_k,want,delta*AIM_EASE*(1.0 if want > 0.0 else 0.7))
+	var k := _cam_k*_cam_k*(3.0-2.0*_cam_k)
+	study.set("cam_far",lerpf(1.0,AIM_FAR,k))
+	study.set("cam_wide",lerpf(0.0,AIM_WIDE,k))
+	var polar := float(study.get("_polar"))
+	if _cam_k > 0.0 and want > 0.0 and _polar_lift == 0.0 and k < 0.05: _polar_room = maxf(AIM_POLAR-polar,0.0)
+	var lift := _polar_room*k
+	study.set("_polar",polar+lift-_polar_lift)
+	_polar_lift = lift
+	if _cam_k == 0.0:
+		_polar_lift = 0.0
+		_polar_room = 0.0
 
 ## The arc from `from` to `to` lobbed `lob` m higher than the plain one,
 ## as dots, swept with a ball a hair bigger than the sack: {arc, blocked}
@@ -1063,12 +1190,13 @@ func release_point() -> Vector3:
 	return Vector3(motor.feet.x,chest.y,motor.feet.z)+Vector3.UP*(0.55*s+_r*s)+_forward()*0.3*s
 
 ## The velocity that carries it from `from` to `to` over a top AIM_RISE
-## (plus AIM_RISE_M a metre across) above the higher end.
+## (plus AIM_RISE_M a metre across; both times `_rise_k`, flatter at a run)
+## and `lob` above the higher end.
 func arc_to(from: Vector3, to: Vector3, lob := 0.0) -> Vector3:
 	var g := _gravity()
 	var s: float = study.get("motor").size
 	var flat := Vector3(to.x-from.x,0.0,to.z-from.z)
-	var top := maxf(from.y,to.y)+(AIM_RISE+lob)*s+AIM_RISE_M*flat.length()
+	var top := maxf(from.y,to.y)+(AIM_RISE*_rise_k+lob)*s+AIM_RISE_M*flat.length()*_rise_k
 	var up := sqrt(2.0*g*(top-from.y))
 	var t := up/g+sqrt(2.0*g*(top-to.y))/g
 	return flat/t+Vector3.UP*up
@@ -1219,6 +1347,8 @@ func _process(delta: float) -> void:
 		_prompt.visible = false
 		return
 	if state == "worn" and not buried and not _sack.visible: _sack.visible = true
+	_cam_step(delta)
+	if act == "aim": _aim_step(delta)
 	_act_step(delta)
 	_drag_look(delta)
 	_stow_step(delta)
@@ -1436,8 +1566,13 @@ func _act_step(delta: float) -> void:
 	if act == "": return
 	_act_t += delta
 	if act == "aim":
-		# Swung up and held at the top of the wind-up till let go.
-		_act_t = minf(_act_t,AIM_HOLD*THROW_TIME)
+		# Swung up to the top of the wind-up and pumped there till let go,
+		# deeper on the move (the sack rocks back over his head and forward).
+		var top := AIM_HOLD*THROW_TIME
+		if _act_t >= top:
+			_pump_t += delta
+			var deep := AIM_PUMP*THROW_TIME*lerpf(0.6,1.0,_run_k())
+			_act_t = top-deep*0.5*(1.0-cos(_pump_t*TAU*AIM_PUMP_RATE))
 		if not Input.is_action_pressed(&"walk_throw") and not hold_aim: release()
 	elif act == "lower":
 		# Let down from the wind-up: the swing up backwards.
@@ -1601,10 +1736,11 @@ func _roll_step(delta: float) -> void:
 ## figure is drawn.
 func leash(delta: float) -> void:
 	if act == "aim":
-		# Aiming: he turns to face the reticle.
+		# Aiming standing, he turns to face the reticle; on the move he
+		# keeps his own way (the stick's).
 		var motor_a: Variant = study.get("motor")
 		var to: Vector3 = aim_at-motor_a.feet
-		if Vector2(to.x,to.z).length() > 0.1:
+		if Vector2(to.x,to.z).length() > 0.1 and motor_a.grounded and motor_a.speed() < 0.6:
 			motor_a.facing = lerp_angle(float(motor_a.facing),PilotMotor.facing_of(Vector2(to.x,to.z)),clampf(14.0*delta,0.0,1.0))
 		return
 	if state != "drag": return

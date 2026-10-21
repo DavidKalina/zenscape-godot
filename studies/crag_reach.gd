@@ -865,19 +865,17 @@ func _unhandled_input(event: InputEvent) -> void:
 func _foot_text() -> String:
 	return super._foot_text()+("\n"+Greed.hint(call("greed_place") if has_method("greed_place") else "the crag",context_hands) if greed_on else "")
 
-## Dragging, the bag holds him to its rope; aiming a throw, the stick moves
-## the reticle, not him (as studies/wreck_cluster.gd).
+## Dragging, the bag holds him to its rope (`leash`). Aiming a throw of
+## the bag or whirling the hook, he walks on: the camera aims.
 func _want(delta: float) -> Vector2:
 	var want := super._want(delta)
 	# Context hands: an aim moves between the bag and the rope as the
-	# reticle goes onto a swing point, a post or a high lip, or off it.
+	# camera's look goes onto a swing point, a post or a high lip, or off it.
 	if context_hands and greed_on and not flying: Greed.aim_handover(self,delta)
 	# Tying the rope at a post or pulling it up, he stands (the rope
-	# study's); whirling the hook he walks on.
+	# study's).
 	if rope != null and rope.state in ["tug","pull_up"]: return Vector2.ZERO
-	if bag == null or bag.act != "aim": return want
-	bag.aim_steer(want,delta)
-	return Vector2.ZERO
+	return want
 
 func _sync_figure() -> void:
 	if bag != null: bag.leash(get_process_delta_time())

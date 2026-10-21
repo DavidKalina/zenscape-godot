@@ -270,18 +270,15 @@ static func hands_text(hands: String) -> String:
 ## (no ledge grab or chain gets him up it); lower, a ledge the bag is thrown
 ## up.
 const TALL_LIP := RuinKit.CHAIN_TOP+0.3
-## Lips looked for this far ahead of him (m, times the wanderer) when the
-## throw's pressed: a face right before him, not a crown beyond it.
-const LIP_AHEAD := 4.0
 ## A hand-over mid-aim waits this long (s) on the other's target, so a
-## reticle on a line's edge doesn't flicker between the two; the bag's aim
-## goes to the rope within HANDOVER_ON m (flat, times the wanderer) of a
-## swing point's line, the rope's to the bag past HANDOVER_OFF (the rope's
-## own snap is 2.5: a heavy bag's short throw across a gap under a lintel
-## lands inside it).
+## look on a line's edge doesn't flicker between the two. The bag's aim (or
+## a fresh press) goes to the hook only for a swing point or post within
+## HANDOVER_CONE of the rope's own snap cone (climb_rope.gd AIM_CONE); the
+## hook's goes back once off the whole cone: a narrower way on than off, so
+## the gap's lintel (over gap_far's lip) leaves room to look past its end
+## and throw the bag across.
 const HANDOVER_HOLD := 0.12
-const HANDOVER_ON := 1.0
-const HANDOVER_OFF := 1.6
+const HANDOVER_CONE := 0.6
 
 ## Which of the bag and the rope hears `action` now (the host's `key_for`,
 ## with `context_hands`). E and F are one key each for both (walk_carry /
@@ -294,9 +291,10 @@ const HANDOVER_OFF := 1.6
 ##   bag's; else the rope out anywhere is reeled; else the bag (off his
 ##   back, let go of the drag);
 ## - the throw: the rope out over a swing point is yanked back and aimed;
-##   coiled, the rope's when it would hook something ahead (`rope_ahead`)
-##   or the bag isn't on his back; else the bag's. Once aimed, the aim
-##   moves between the two as the reticle does (`aim_handover`).
+##   coiled, the rope's when the camera looks at something it would hook
+##   (`rope_ahead`) or the bag isn't on his back or is too heavy to throw;
+##   else the bag's. Once aimed, the aim moves between the two as the
+##   camera's look does (`aim_handover`).
 static func key_for(host: Node3D, action: StringName) -> String:
 	var rope: Node3D = host.get("rope")
 	var bag: Node3D = host.get("bag")
@@ -320,7 +318,7 @@ static func key_for(host: Node3D, action: StringName) -> String:
 				if str(rope.hold) == "beam" and not bs == "worn": return "rope"
 				if str(rope.hold) == "beam" and rope_ahead(host) != "": return "rope"
 				return "bag" if bs == "worn" else "rope"
-			if bs != "worn": return "rope"
+			if bs != "worn" or float(bag.kg) > float(bag.throw_kg)+0.001: return "rope"
 			return "rope" if rope_ahead(host) != "" else "bag"
 	return "bag"
 
@@ -351,79 +349,58 @@ static func face_tall(host: Node3D, lip: Vector3, out: Vector3, s: float) -> boo
 	if hit.is_empty(): return true
 	return lip.y-(hit.position as Vector3).y > TALL_LIP*s
 
-## What the rope would hook ahead of him ("beam", "anchor", "lip"; ""
-## none): along his facing and the camera's, a swing point's line or a post
-## over him within the rope's aim, or the first face within LIP_AHEAD m
-## too high to climb.
-static func rope_ahead(host: Node3D) -> String:
+## What the rope would hook where the camera looks ("beam", "anchor",
+## "lip"; "" none): the rope's own pick along the look line
+## (climb_rope.gd `_pick`: a swing point or post in its cone, else the first
+## lip above him), when the rope wants it (`rope_wants`: any swing point, a
+## post it catches, a lip on a face too tall to climb).
+## `strict`: a swing point or post only within HANDOVER_CONE of the cone.
+static func rope_ahead(host: Node3D, strict := true) -> String:
 	var rope: Node3D = host.get("rope")
 	var motor: Variant = host.get("motor")
 	if rope == null or motor == null: return ""
-	var s: float = motor.size
-	var feet: Vector3 = motor.feet
-	var dirs: Array[Vector2] = []
-	var f: Vector3 = rope._forward()
-	dirs.append(Vector2(f.x,f.z))
-	var c := PilotMotor.forward(float(host.get("_yaw")))
-	if c.dot(dirs[0]) < 0.97: dirs.append(c)
-	for dir: Vector2 in dirs:
-		# Faces only the way he faces; swing points and posts the camera's
-		# way too.
-		var lip_seen := dir != dirs[0]
-		var d := 1.5
-		while d <= ClimbRope.AIM_REACH:
-			var over := feet+Vector3(dir.x,0.0,dir.y)*d*s
-			var t: Dictionary = rope.target(over)
-			var hold := str(t.get("hold",""))
-			if hold == "beam" or (hold == "anchor" and str(t.why) == ""): return hold
-			# The first face ahead within LIP_AHEAD: high, the rope's; low,
-			# a ledge (the bag goes up it), and none further counts.
-			if not lip_seen and d <= LIP_AHEAD and (t.get("lip",Vector3.INF) as Vector3) != Vector3.INF:
-				lip_seen = true
-				if rope_wants(host,t,feet,s): return "lip"
-			d += 1.0
-	return ""
+	var t: Dictionary = rope.call("_pick",rope.call("_look"))
+	if not rope_wants(host,t,motor.feet,float(motor.size)): return ""
+	var hold := str(t.get("hold",""))
+	if hold != "beam" and hold != "anchor": return "lip"
+	if strict and float(rope.look_k(t)) >= HANDOVER_CONE: return ""
+	return hold
 
-## Each frame (the host's _want): an aim on the bag whose reticle goes onto
-## what the rope wants (`rope_wants`) is handed to the rope, at the same
-## spot; the rope's aim off anything it wants, the bag on his back and light
-## enough to throw, to the bag. After HANDOVER_HOLD s on the other's.
+## Each frame (the host's _want): both aims follow the camera's look, so
+## one held throw is the hook's while the look is on what the rope wants
+## (`rope_ahead`) and the bag's off it (the bag on his back and light
+## enough to throw). After HANDOVER_HOLD s on the other's. The camera's
+## ease (the rope's `_cam_step`) runs on through it.
 static func aim_handover(host: Node3D, delta: float) -> void:
 	var rope: Node3D = host.get("rope")
 	var bag: Node3D = host.get("bag")
 	var motor: Variant = host.get("motor")
 	if rope == null or bag == null or motor == null: return
-	var s: float = motor.size
-	var feet: Vector3 = motor.feet
 	var t := float(host.get_meta("handover_t",0.0))
 	if str(bag.act) == "aim" and str(rope.state) == "coiled":
-		var at: Vector3 = bag.aim_at
-		if at == Vector3.INF: return
-		var over := Vector3(at.x,feet.y,at.z)
-		if rope_wants(host,rope.target(over),feet,s,over,HANDOVER_ON):
+		if rope_ahead(host) != "":
 			t += delta
 			if t >= HANDOVER_HOLD:
 				t = 0.0
+				var held := bool(bag.hold_aim)
+				var point: Vector3 = bag.aim_point
 				bag.aim_drop()
 				rope.aim()
-				rope.aim_toward(over)
-				rope.hold_aim = bool(bag.hold_aim)
+				rope.hold_aim = held
+				if point != Vector3.INF: rope.aim_toward(point)
 				host.set_meta("handovers",int(host.get_meta("handovers",0))+1)
 		else: t = 0.0
 	elif str(rope.state) == "aim" and str(bag.state) == "worn" and str(bag.act) == "" and float(bag.kg) <= float(bag.throw_kg)+0.001:
-		# The reticle itself, not where it snapped to.
-		var w: Vector2 = rope._from_cam(rope._aim)
-		var over := Vector3(feet.x+w.x,feet.y,feet.z+w.y)
-		var rt: Dictionary = rope.target(over)
-		if not rope_wants(host,rt,feet,s,over,HANDOVER_OFF):
+		if rope_ahead(host,false) == "":
 			t += delta
 			if t >= HANDOVER_HOLD:
 				t = 0.0
 				var held := bool(rope.hold_aim)
+				var point: Vector3 = rope.aim_point
 				rope.reset()
 				bag.throw()
-				bag.aim_toward(over)
 				bag.hold_aim = held
+				if point != Vector3.INF: bag.aim_toward(point)
 				host.set_meta("handovers",int(host.get_meta("handovers",0))+1)
 		else: t = 0.0
 	else: t = 0.0
@@ -462,15 +439,16 @@ static func context_text(host: Node3D) -> String:
 	if f_does != "": lines.append("%s %s" % [fk,f_does])
 	# The throw
 	var t_does := ""
-	if rs == "aim": t_does = "release: throw the hook"
-	elif str(bag.act) == "aim": t_does = "release: throw the bag"
+	var bag_ok: bool = bs == "worn" and float(bag.kg) <= float(bag.throw_kg)+0.001
+	if rs == "aim": t_does = "let go: throw the hook" if not bag_ok else "let go: throw the hook (look off it: the bag)"
+	elif str(bag.act) == "aim": t_does = "let go: throw the bag"
 	elif key_for(host,&"walk_throw") == "rope":
 		if rs == "coiled":
 			var what := rope_ahead(host)
 			t_does = {"beam":"aim the hook at the swing","anchor":"aim the hook at the post","lip":"aim the hook up the wall"}.get(what,"aim the hook")
 		elif str(rope.hold) == "beam": t_does = "pull the hook back and aim again"
 	elif bs == "worn":
-		t_does = "aim a throw of the bag" if float(bag.kg) <= float(bag.throw_kg)+0.001 else ""
+		t_does = "aim a throw of the bag where you look" if bag_ok else ""
 	if t_does != "": lines.append("%s %s" % [th,t_does])
 	if rope.climber and not rope.rappel: lines.append("%s up · %s down the rope" % [Pad.pick("W","stick up"),Pad.pick("S","stick down")])
 	return "  ·  ".join(lines)
@@ -492,7 +470,7 @@ static func rope_post_near(host: Node3D) -> String:
 ## The bag's keys, for the foot hint.
 static func hint(place := "the crag", context := false) -> String:
 	if context:
-		return "Heist: the bag on your back and the rope at your side · E by loot bags it, by a post ties the rope · F sets the bag down / shoulders it, reels the rope in when it's out, hitches the bag at the plane's rope hook (again: banks it) · hold LMB/T (run while it whirls, the camera aims): the hook at a swing point, post or high wall, else a throw of the bag (the aim swaps as the reticle moves) · Space at the plane boards; fly clear of %s to end the run" % place
+		return "Heist: the bag on your back and the rope at your side · E by loot bags it, by a post ties the rope · F sets the bag down / shoulders it, reels the rope in when it's out, hitches the bag at the plane's rope hook (again: banks it) · hold LMB/T and keep moving, the camera (mouse) aims: looking at a swing point, post or high wall it's the hook, anywhere else a throw of the bag onto the ledge or across the gap you look at (one hold swaps between them as you look); let go to throw · Space at the plane boards; fly clear of %s to end the run" % place
 	return "Greed run: H (pad up) switches the bag / the rope in hand · bag: E by loot bags it · F off / on / drag · F by the plane's rope hook: hitch the bag (its load is the plane's), F again: its load into the plane's keep and the bag back on · Space at the plane boards; fly clear of %s to end the run" % place
 
 # --- The stone brood (scripts/brood/bag_brood.gd) ---------------------------------------

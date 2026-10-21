@@ -802,6 +802,26 @@ func _pick(look: Vector3) -> Dictionary:
 	if snap_k <= 1.0: return snap
 	return target(feet+look*reach*AIM_START,true)
 
+## How far a swing point's or post's target `t` (from `_pick`) is off the
+## camera's look line, as a share of AIM_CONE (`_cone_k`; its line's
+## nearest sample for a swing point; INF for anything else). The heist's
+## hand-over asks it (crag_reach_greed.gd `rope_ahead`).
+func look_k(t: Dictionary) -> float:
+	var s := _size()
+	var feet: Vector3 = study.get("motor").feet
+	var look := _look()
+	var u := Vector2(look.x,look.z).normalized()
+	var reach := AIM_REACH*s
+	match str(t.get("hold","")):
+		"anchor": return _cone_k(feet,u,t.lip,reach)
+		"beam":
+			var best := INF
+			for b: Dictionary in HookLine.all_in(get_tree()):
+				if str(b.piece) != str(t.get("piece","")): continue
+				for i in 13: best = minf(best,_cone_k(feet,u,(b.a as Vector3).lerp(b.b,float(i)/12.0),reach))
+			return best
+	return INF
+
 ## How far off the look line `p` is, as a share of the cone (0 on it, 1 at
 ## its edge; INF behind him, out of reach or under ABOVE).
 func _cone_k(feet: Vector3, u: Vector2, p: Vector3, reach: float) -> float:
@@ -1960,10 +1980,13 @@ func _process(delta: float) -> void:
 			_line.visible = false
 
 ## The camera eased out while he whirls and the hook flies (WHIRL_FAR,
-## WHIRL_WIDE), back in after; a host with its own pull keeps it.
+## WHIRL_WIDE), back in after; a host with its own pull keeps it. The bag's
+## aim and throw too, on a host with both (scripts/carry/loot_bag.gd
+## `cam_wanted`): one ease, so a hand-over between the two doesn't jolt it.
 func _cam_step(delta: float) -> void:
 	if study.has_method("_cam_pull") or study.get("cam_far") == null: return
-	var want := 1.0 if state in ["aim","fly","drag"] else 0.0
+	var bag: Variant = study.get("bag")
+	var want := 1.0 if state in ["aim","fly","drag"] or (bag != null and bool(bag.cam_wanted())) else 0.0
 	if _cam_k == 0.0 and want == 0.0: return
 	_cam_k = move_toward(_cam_k,want,delta*WHIRL_EASE*(1.0 if want > 0.0 else 0.7))
 	var k := _cam_k*_cam_k*(3.0-2.0*_cam_k)
