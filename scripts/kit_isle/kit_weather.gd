@@ -347,12 +347,22 @@ func choose_day(index: int) -> void:
 ## gliding to it as F11's do; Live goes back to the date's season and turns.
 ## A --season= flag keeps its own. Held under a look preset, it waits for the
 ## live sky (`_go_live`).
-func choose_season(index: int) -> void:
+## `snap`: the plants, tints and ground take the held season at once rather
+## than gliding there (a scene that opens in a held season: the glide from
+## the date's would walk it through the others first, a minute and more).
+func choose_season(index: int, snap := false) -> void:
 	if _season_flag: return
 	var was := season_choice
 	season_choice = clampi(index,0,SEASON_CHOICES.size()-1)
 	if not live: return
-	if season_choice > 0: _pin_season()
+	if season_choice > 0:
+		_pin_season()
+		if snap:
+			var surface: RefCounted = scene._precipitation.surface_weather
+			calendar.shown = -1.0
+			calendar.apply(clock,0.0,scene._precipitation,scheduler,true)
+			surface.autumn = surface.target_autumn
+			surface.cold = surface.target_cold
 	elif was > 0:
 		clock.season_override = -1.0
 		var day := roundi(date_season(Time.get_date_dict_from_system())*clock.year_days-clock.hour/WorldClock.HOURS_PER_DAY)

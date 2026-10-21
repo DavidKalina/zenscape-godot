@@ -429,8 +429,10 @@ func _ready() -> void:
 	# The haze that hides each isle from the other (HeistHome `apply_haze`).
 	if home != null: home.apply_haze(_environment)
 	# Never winter here: the year held at summer (the settings' Season row,
-	# kit_weather.gd SEASON_CHOICES); a --season= flag keeps its own.
-	if weather != null: weather.choose_season(2)
+	# kit_weather.gd SEASON_CHOICES); a --season= flag keeps its own. Snapped:
+	# gliding there from the date's season (autumn in October) walked the
+	# plants through autumn's gold and winter for the first ~90 s.
+	if weather != null: weather.choose_season(2,true)
 	# The day turns at the settings' slow pace (1440 s, kit_weather.gd
 	# DAY_SECONDS[1]): a whole heist (~6 min) is a few hours of light, not
 	# dusk and night by the escape; a --day-length= flag keeps its own.

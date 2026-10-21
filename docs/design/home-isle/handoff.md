@@ -196,3 +196,149 @@ the plane), `strip.png`, `rim.png`, `lake.png`, `mark.png` (a landmark).
 - Grass is grown only once at build, so Layout moves of `home/land` carry
   it (it is a child of the node).
 - Smokes pass: heist_level, `--no-home`, `--no-home-grass`; 0 errors.
+
+## Round: grass LOD (`iter/home-grass-lod`)
+
+Home's top now carries the carpet at its own density (7.8 tufts a m2, the
+aqueduct isle's look and grade). Distance rings set the cost, not a thinner
+carpet.
+
+### The rings (KitFlora Site `lod`, opt-in, off by default)
+
+- **Near ring:** every tile's grass, minus the mid ring's share, drawn with
+  the full tuft. Over `lod.x`..`.y` m (home: 30 to 55), each tuft shrinks into
+  the ground at its own distance. The distance comes from a hash of its root
+  (reference_surface `grass_ring`), so the density falls evenly across the
+  band, with no edge and no alpha pass.
+- **Mid ring:** `lod_share` of the tufts (0.25), drawn by lot per tile, in
+  a batch of their own. They use the cheaper tuft (`GrassTuft.build_lite`:
+  11 one-row blades, 33 triangles against 80). Across the near band they grow
+  `lod_grow` (1.5 wide, 1.25 tall; `grass_ring_grow`), so the sparser ring
+  keeps its cover. They thin out the same way over `lod.z`..`.w` (110 to 170
+  m).
+- **Far:** past 170 m, only the turf is drawn: home's ground material, the
+  shared one with `calm`'s grade. From 300 m it reads as a green meadow top
+  (`lod_out300.png`). No ground-shader grass texture was needed.
+- A ringed tile stops drawing (visibility range, no fade) one tile
+  half-diagonal past its band's end, when all its tufts are gone. No CPU
+  work a frame.
+- Flowers and wheat keep their own range (65 m, as before).
+
+### The other changes
+
+- **Off the main thread:** the grass grows as plain sites (`Grow.parts`) on
+  3 threads of home's own (`GRASS_THREADS`). They are not on the worker
+  pool, so the heist's own build doesn't queue behind them. Each job covers a
+  column of whole tiles, `GRASS_COLUMN` 24 m (Site `box`, opt-in), and the
+  jobs nearest the plane go first. `_process` stands the batches
+  (`KitFlora.batch_node`) within 4 ms a frame and calms each frame's share. A
+  restart stops the threads.
+  - The probe got about 30% cheaper: one `_locate` for both on_land and
+    ground_at, and the trunks and stones filed by 4 m cells.
+  - In the runs, the grass had stood about 0.15 s after the scene was ready.
+- **Rim spill** (Site `spill`, opt-in, `GRASS_SPILL` 3 a metre): wild tufts
+  are rooted 0.05 to 0.35 m in from the rim, lean 40 to 70 degrees outward
+  and are 1.2 to 1.9 times a tuft. They hang over the lip of the tableland
+  and of the lake islet.
+- **Lake banks:** `BANK_BARE` went from 0.35 to 0.12. Most of the lake
+  islet's dry land lies within 0.35 m of the water, so its banks had only 1
+  tuft a m2. Now they carry the carpet. The basin, the water and its shader
+  are untouched.
+- **Summer, fixed at the cause:** the heist pins summer with
+  `choose_season(2)`, but the calendar glided there from the date's season.
+  On 20 October that is autumn, 0.64 to 0.375 the long way round. That glide
+  walked the plants through autumn's gold and winter for about 90 s.
+  `KitWeather.choose_season(index, snap)` (an added arg, default false) now
+  snaps when the heist asks, and `zs_season` shows summer from the first
+  frame. All of home's `LineBuild.evergreen` copies are gone: the grass,
+  the trees, the landmarks and the ground (`islets.ground_source` is the
+  shared ground again). `calm`'s olive grade stays.
+- Shared code, all opt-in or added only:
+  - `kit_flora.gd`: Site `lod`, `lod_share`, `lod_grow`, `lod_soft`, `box`,
+    `spill`; `ringed`, `lite_tuft`, `ring_material`; `batch_node`'s `ring`
+    arg.
+  - `grass_tuft_mesh.gd`: `build_lite`. `_clump` takes rows, taper and
+    width, and its default output is unchanged.
+  - `reference_surface.gdshader`: `grass_ring` and `grass_ring_grow`
+    (0 = off).
+  - `kit_weather.gd`: `snap`.
+
+### Flags
+
+- `--home-grass-lod=x,y,z,w`: the rings. `0` turns them off: every tuft is
+  drawn to `--home-grass-range` (default 220).
+- `--home-grass=<share>`: the share of the carpet's density (default 1.0).
+- To get last round's state: `--home-grass-lod=0 --home-grass=0.2
+  --home-grass-range=70`.
+
+### Cost
+
+Rendered, `--hunt-seed=3` (`scratch/home/lod.gd`; primitives and draw calls
+from Godot's monitors). Frame wall time is only rough, about vsync, and GPU
+time isn't readable here.
+
+| view | rings (now) | last round (0.2, 70 m) | no grass |
+|---|---|---|---|
+| on foot by the plane | 4.67M / 288 | 3.03M / 258 | 1.97M / 185 |
+| 30 m up over the middle | 4.80M / 323 | 3.54M / 251 | 1.78M / 122 |
+| 150 m out, 50 m up | 3.36M / 299 | 2.32M / 229 | 1.97M / 204 |
+| 400 m out, 140 m up | 0.39M / 125 | 0.39M / 125 | 0.39M / 125 |
+
+- Without the rings, the full carpet drawn to 220 m is 9.1M primitives at
+  30 m up.
+- All instanced triangles, the whole tile set: 13.5M, 1.44M of them the mid
+  ring's. Last round: 4.9M.
+- Build, headless smoke: home builds in about 4.9 s (5.0 s without grass).
+  The grass grows in about 5.3 s on its threads, alongside the heist's
+  build. Ready in 13.1 to 13.8 s, against 11.3 to 12.4 s with no grass and
+  last round's 17 s. The extra ~1.5 to 2 s is the threads slowing the main
+  thread's build (the heist's units and the Olmec place graph). Fewer
+  threads didn't help.
+
+### Stills (`captures/home_grass_lod/`, git-ignored)
+
+- `lod_foot.png`: on foot by the plane.
+- `lod_pass.png`: a low pass over the strip.
+- `lod_along.png`: along the strip.
+- `lod_across.png`: across the lake, on the ground through the handovers.
+- `lod_low.png`: 30 m up.
+- `lod_out150.png`, `lod_out200.png`, `lod_out300.png`: from 150, 200 and
+  300 m.
+- `lod_rim.png`: the tableland's lip.
+- `bank_rim2.png`: the lake islet's lip and banks.
+
+### Switching it on for another isle
+
+On the isle's `KitFlora.Site`, after `Carpet.carpeted(site)`:
+
+1. Set `site.lod = Vector4(near_from, near_to, mid_from, mid_to)`.
+2. Optionally set `lod_share`, `lod_grow` and `spill`.
+3. Grow as usual. The Draw splits the grass batches, and `Carpet.calm`
+   handles the ringed batches as before.
+
+For a worker grow, also set `plain = true`, then stand `job.parts` with
+`KitFlora.batch_node(key, tile, count, buffer, range, part.get("ring", {}))`.
+
+### Tests
+
+These headless tests pass:
+
+- `test_sky_islets`
+- `test_ground_look`
+- `test_breeze`
+- `test_pilot_wake`
+- `test_landform_cliffs`
+- `test_motif_sky`
+- `test_kit_time_weather`
+- `test_isle_hall_chain`
+- `test_aqueduct_isle_sky`
+
+`test_aqueduct_isle_look` fails, but it fails the same way on the base
+commit (the carpet over its 1.2M budget, and others), so this round didn't
+cause it.
+
+### Rough
+
+- The strip's mown grass stays sparse and short, by design. Its edge to the
+  long carpet reads as a line from the air.
+- From 300 m the top is a plain green, with no grain in it.

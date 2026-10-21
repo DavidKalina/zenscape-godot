@@ -104,20 +104,33 @@ const SPRAY := [Color(0.93,0.95,0.97,0.8),26.0,60.0,300.0,-1.0]
 const SMOKE_AT := Vector3(190.0,26.0,2.0)
 
 ## The grass (the isles' carpet, studies/aqueduct_isle_flora.gd `carpeted`,
-## then `calm`; KitFlora.Grow over home's land and the lake's banks): its
-## tufts a square metre as a share of the carpet's, drawn out GRASS_RANGE m
-## (the carpet's own is 220: home's top is one big tile field, so near is
-## what is paid for). The strip keeps a short mown grass of its own
-## (STRIP_TUFTS a square metre, sized STRIP_SIZE of a tuft: no tussocks, no
-## wild rim), and the long grass keeps STRIP_CLEAR m off its middle line.
-## --no-home-grass leaves it off; --home-grass-range=<m>, --home-grass=<share>.
-const GRASS_SHARE := 0.2
-const GRASS_RANGE := 70.0
+## then `calm`; KitFlora.Grow over home's land and the lake's banks) at the
+## carpet's own density, drawn in distance rings (KitFlora Site `lod`): the
+## full carpet out to GRASS_LOD.x m, thinning by .y to its mid ring
+## (GRASS_MID_SHARE of the tufts, the cheaper tuft, grown GRASS_MID_GROW wide
+## and tall), which thins out over .z..w m; past that the turf alone. The
+## strip keeps a short mown grass of its own (STRIP_TUFTS a square metre,
+## sized STRIP_SIZE of a tuft: no tussocks, no wild rim), and the long grass
+## keeps STRIP_CLEAR m off its middle line. Grown on the workers, a job a
+## GRASS_COLUMN m band on GRASS_THREADS threads, stood within GRASS_STAND_USEC a frame.
+## --no-home-grass leaves it off; --home-grass=<share> of the carpet's
+## tufts; --home-grass-lod=x,y,z,w the rings (0: none, every tuft drawn to
+## --home-grass-range=<m>, the carpet's 220 by default).
+const GRASS_LOD := Vector4(30.0,55.0,110.0,170.0)
+const GRASS_MID_SHARE := 0.25
+const GRASS_MID_GROW := Vector2(1.5,1.25)
+## Wild tufts a metre of the rim leaning out over the cliff's lip (KitFlora
+## Site `spill`).
+const GRASS_SPILL := 3.0
+const GRASS_COLUMN := 24.0
+const GRASS_STAND_USEC := 4000
+const GRASS_THREADS := 3
+const BLOCK_CELL := 4.0
 const STRIP_TUFTS := 3.0
 const STRIP_SIZE := Vector2(0.3,0.5)
 const STRIP_CLEAR := 11.0
 ## Faces under this (m) over a lake's water are its beach, bare.
-const BANK_BARE := 0.35
+const BANK_BARE := 0.12
 
 const TURF_LAYER := 1 << 11
 
@@ -143,6 +156,18 @@ var landmarks: Array = []
 var cues: Array = []
 var islets: Node3D = null
 var built_ms := 0
+## The grass's jobs on the workers ([{task, job, into, range, done, at}]),
+## and once stood: how long after they began (ms), its instanced triangles.
+var grass_ms := -1
+var _grass_jobs: Array = []
+var _grass_queue: Array = []
+var _grass_threads: Array[Thread] = []
+var _grass_mutex := Mutex.new()
+var _grass_stop := false
+var _grass_grown_usec := 0
+var _grass_began := 0
+var _grass_tris := 0
+var _grass_mid_tris := 0
 ## The strip in the tableland's frame (x, z): its ends; its top there.
 var _strip_local := [Vector2.ZERO,Vector2.ZERO]
 var _strip_y := 0.0
@@ -182,7 +207,7 @@ func build(h: Node3D, top: float) -> void:
 	middle.y = top+LIFT
 	islets = SkyIslets.new()
 	islets.name = "Islets"
-	islets.ground_source = LineBuild.evergreen(KitLook.ground_material())
+	islets.ground_source = KitLook.ground_material()
 	var grassed := not "--no-home-grass" in LaunchArgs.user_args()
 	add_child(islets)
 	var palette: Dictionary = islets.prepare_authored()
@@ -226,9 +251,10 @@ func build(h: Node3D, top: float) -> void:
 	if grassed:
 		_grass(land,shape,true)
 		_grass(lake,lake_shape,false)
-		_ground_calm()
 	_landmarks(top)
 	_cues(lake_shape)
+	# The grass grows on while the heist's own isle builds.
+	_grass_start()
 	built_ms = Time.get_ticks_msec()-began
 	print("home: built in %d ms; strip %s -> %s (%.0f m), lake at %s" % [built_ms,strip_a.round(),strip_b.round(),strip_a.distance_to(strip_b),(lake.global_position if lake != null else Vector3.INF).round()])
 
@@ -312,7 +338,6 @@ func _stand_islet(name_: String, node_name: String, at: Vector3, made: Dictionar
 			k += 1
 			if part == "top": host.call("home_turf",body)
 	Layout.track(name_,node,"piece",coded)
-	if not "--no-home-grass" in LaunchArgs.user_args(): _evergreen_all(node)
 	return node
 
 ## The carpet grass over `node`'s land (`shape`, in its frame): KitFlora's
@@ -320,15 +345,21 @@ func _stand_islet(name_: String, node_name: String, at: Vector3, made: Dictionar
 ## ground (no physics): open land off the water, trunks and stones and not
 ## steeper than the palette's rock slope. On the tableland (`main`) the long
 ## grass keeps off the strip, which gets its own short grass; the lake's banks
-## stay bare of grass below BANK_BARE over the water.
+## stay bare of grass below BANK_BARE over the water. Drawn in distance rings
+## (GRASS_LOD), grown on the workers (plain sites, a job for each
+## GRASS_COLUMN m band of the land) and stood a few batches a frame as the
+## jobs finish (`_process`).
 func _grass(node: Node3D, shape: RefCounted, main: bool) -> void:
 	if node == null: return
-	var began := Time.get_ticks_usec()
-	var share := GRASS_SHARE
-	var range_m := GRASS_RANGE
+	var share := 1.0
+	var range_m := Carpet.CARPET_RANGE
+	var lod := GRASS_LOD
 	for arg: String in LaunchArgs.user_args():
 		if arg.begins_with("--home-grass="): share = float(arg.get_slice("=",1))
 		elif arg.begins_with("--home-grass-range="): range_m = float(arg.get_slice("=",1))
+		elif arg.begins_with("--home-grass-lod="):
+			var p := arg.get_slice("=",1).split(",")
+			lod = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3])) if p.size() >= 4 else Vector4.ZERO
 	var outline := PackedVector2Array()
 	for j in range(160):
 		outline.append(shape.rim_point(TAU*j/160.0))
@@ -337,83 +368,183 @@ func _grass(node: Node3D, shape: RefCounted, main: bool) -> void:
 	var water_at: float = shape.water_level+BANK_BARE
 	var a := _strip_local[0] as Vector2
 	var b := _strip_local[1] as Vector2
+	# The shape's `blocked`, its blocks filed by BLOCK_CELL m cells (it
+	# walks every trunk and stone for each of a million probes).
+	var cells := {}
+	for bk: Vector3 in shape.blocks:
+		for cx in range(floori((bk.x-bk.z)/BLOCK_CELL),floori((bk.x+bk.z)/BLOCK_CELL)+1):
+			for cz in range(floori((bk.y-bk.z)/BLOCK_CELL),floori((bk.y+bk.z)/BLOCK_CELL)+1):
+				var key := Vector2i(cx,cz)
+				if not cells.has(key): cells[key] = []
+				(cells[key] as Array).append(bk)
+	var watery: bool = lake_on or not shape.stream.is_empty() or shape.pond.z > 0.0
+	var swims: bool = shape.lake.get("swim",false)
+	var blocked := func(p: Vector2) -> bool:
+		var near: Variant = cells.get(Vector2i(floori(p.x/BLOCK_CELL),floori(p.y/BLOCK_CELL)))
+		if near != null:
+			for bk: Vector3 in near:
+				if p.distance_to(Vector2(bk.x,bk.y)) < bk.z: return true
+		return watery and shape.wet(p) and shape.deck_y(p) == -INF and not swims
+	# The ground's height at p, NAN off the land: `on_land` and `ground_at`
+	# in one look-up (the shape has no decks here).
+	var heights: PackedFloat32Array = shape.heights
+	var ids: PackedInt32Array = shape.ids
+	var plain_top: bool = shape.decks.is_empty()
+	var height := func(p: Vector2) -> float:
+		if not plain_top: return float(shape.ground_at(p)) if shape.on_land(p) else NAN
+		var hit: Array = shape._locate(p)
+		var f: int = hit[0]
+		if f < 0: return NAN
+		var w: Vector3 = hit[1]
+		return w.x*heights[ids[f*3]]+w.y*heights[ids[f*3+1]]+w.z*heights[ids[f*3+2]]
 	var open := func(p: Vector2, reach: float) -> float:
-		if not shape.on_land(p) or shape.blocked(p): return NAN
-		var h: float = shape.ground_at(p)
+		var h: float = height.call(p)
+		if is_nan(h) or blocked.call(p): return NAN
 		if lake_on and h < water_at: return NAN
 		for off: Vector2 in [Vector2(reach,0.0),Vector2(0.0,-reach)]:
-			var q: Vector2 = p+off
-			if not shape.on_land(q): return NAN
-			if absf(float(shape.ground_at(q))-h)/maxf(reach,0.01) > steep: return NAN
+			var hq: float = height.call(p+off)
+			if is_nan(hq) or absf(hq-h)/maxf(reach,0.01) > steep: return NAN
 		return h
-	var site := KitFlora.Site.new()
-	Carpet.carpeted(site)
-	site.tufts *= share
-	site.grass_range = range_m
-	site.probe = func(p: Vector2, reach: float) -> float:
+	var long_probe := func(p: Vector2, reach: float) -> float:
 		if main and _to_segment(p,a,b) < STRIP_CLEAR: return NAN
 		return open.call(p,reach)
-	var job := KitFlora.Grow.new(hash(["home_grass",hunt_seed,main]) & 0xffffff,null,[],[outline],site)
-	while not job.step(-1): pass
-	var flora: Node3D = job.node
+	var mown_probe := func(p: Vector2, reach: float) -> float:
+		if _to_segment(p,a,b) > STRIP_CLEAR+1.0: return NAN
+		return open.call(p,reach)
+	var box: Rect2 = KitFlora.box_and_area([outline])[0]
+	var flora := Node3D.new()
 	flora.name = "Flora"
 	node.add_child(flora)
-	Carpet.calm(flora)
-	_evergreen(flora)
-	var tris := int(flora.get_meta("triangles",0))
-	var long_tris := tris
+	var mown_node: Node3D = null
 	if main:
-		# The strip's own mown grass.
-		var mown := KitFlora.Site.new()
-		Carpet.carpeted(mown)
-		mown.variety = false
-		mown.shag = 0.0
-		mown.tuft_bump = 1.0
-		mown.height_field = 0.0
-		mown.tufts = STRIP_TUFTS
-		mown.tuft_size = STRIP_SIZE
-		mown.grass_range = range_m
-		mown.probe = func(p: Vector2, reach: float) -> float:
-			if _to_segment(p,a,b) > STRIP_CLEAR+1.0: return NAN
-			return open.call(p,reach)
-		var mjob := KitFlora.Grow.new(hash(["home_mown",hunt_seed]) & 0xffffff,null,[],[outline],mown)
-		while not mjob.step(-1): pass
-		var mf: Node3D = mjob.node
-		mf.name = "StripGrass"
-		node.add_child(mf)
-		Carpet.calm(mf)
-		_evergreen(mf)
-		tris += int(mf.get_meta("triangles",0))
-	print("home: grass on %s: %d instanced triangles (%d without the strip's), %d ms" % [node.name,tris,long_tris,(Time.get_ticks_usec()-began)/1000])
+		mown_node = Node3D.new()
+		mown_node.name = "StripGrass"
+		node.add_child(mown_node)
+	# A job a column of whole tiles, so no tile is split between two.
+	var x := floorf(box.position.x/KitFlora.TILE)*KitFlora.TILE
+	var column := 0
+	while x < box.end.x:
+		var cut := Rect2(x,box.position.y-1.0,GRASS_COLUMN,box.size.y+2.0)
+		var site := KitFlora.Site.new()
+		Carpet.carpeted(site)
+		site.tufts *= share
+		site.grass_range = range_m
+		site.probe = long_probe
+		site.spill = GRASS_SPILL
+		_grass_job(site,cut,lod,outline,flora,hash(["home_grass",hunt_seed,main,column]) & 0xffffff)
+		if main:
+			# The strip's own mown grass.
+			var mown := KitFlora.Site.new()
+			Carpet.carpeted(mown)
+			mown.variety = false
+			mown.shag = 0.0
+			mown.tuft_bump = 1.0
+			mown.height_field = 0.0
+			mown.tufts = STRIP_TUFTS
+			mown.tuft_size = STRIP_SIZE
+			mown.grass_range = range_m
+			mown.probe = mown_probe
+			_grass_job(mown,cut,lod,outline,mown_node,hash(["home_mown",hunt_seed,column]) & 0xffffff)
+		x += GRASS_COLUMN
+		column += 1
 
-## Home stays summer green whatever the season (as its ground is, and the
-## hall line's tufts: LineBuild.evergreen).
-func _evergreen(flora: Node3D) -> void:
-	for g: Node in flora.get_children():
-		if g is GeometryInstance3D:
-			var geo := g as GeometryInstance3D
-			geo.material_override = LineBuild.evergreen(geo.material_override)
+## One grow job for the grass threads: `site` (plain, its candidates in
+## `cut`, its grass in rings `lod`) over `outline`, its batches for `into`;
+## the jobs nearest the parked plane first.
+func _grass_job(site: KitFlora.Site, cut: Rect2, lod: Vector4, outline: PackedVector2Array, into: Node3D, seed_value: int) -> void:
+	site.plain = true
+	site.box = cut
+	if lod != Vector4.ZERO:
+		site.lod = lod
+		site.lod_share = GRASS_MID_SHARE
+		site.lod_grow = GRASS_MID_GROW
+	var job := KitFlora.Grow.new(seed_value,null,[],[outline],site)
+	var near := absf(cut.get_center().x-(_strip_local[0] as Vector2).x)
+	var g := {"job":job,"into":into,"range":site.grass_range,"near":near,"grown":false,"done":false,"at":0}
+	_grass_mutex.lock()
+	_grass_jobs.append(g)
+	_grass_queue.append(g)
+	_grass_queue.sort_custom(func(p: Dictionary, q: Dictionary) -> bool: return float(p.near) < float(q.near))
+	_grass_mutex.unlock()
 
-## Every plant batch and every face of the shared ground under `root` in
-## summer green (`_evergreen`): home's trees, its units' grass and turf.
-func _evergreen_all(root: Node) -> void:
-	var ground := KitLook.ground_material()
-	for g: Node in root.find_children("*","GeometryInstance3D",true,false):
-		if g is MultiMeshInstance3D:
-			var m := g as MultiMeshInstance3D
-			if m.material_override is ShaderMaterial: m.material_override = LineBuild.evergreen(m.material_override)
-		elif g is MeshInstance3D:
-			var mi := g as MeshInstance3D
-			if mi.mesh != null and mi.mesh.get_surface_count() > 0 and mi.material_override == null and mi.mesh.surface_get_material(0) == ground:
-				mi.material_override = LineBuild.evergreen(ground)
+## The grass threads (GRASS_THREADS of their own, not the worker pool, so
+## the heist's own build on the pool doesn't wait behind them), started
+## once every job is queued.
+func _grass_start() -> void:
+	if _grass_queue.is_empty(): return
+	_grass_began = Time.get_ticks_usec()
+	for k in range(GRASS_THREADS):
+		var thread := Thread.new()
+		thread.start(_grass_work,Thread.PRIORITY_LOW)
+		_grass_threads.append(thread)
 
-## The ground under the grass takes the carpet's calmer settings
-## (`Carpet.calm` set them on the shared ground material; home's own is a
-## copy, made before).
-func _ground_calm() -> void:
-	var shared := KitLook.ground_material()
-	for k: String in ["ground_dry","ground_patch","ground_mute"]:
-		(islets.ground_source as ShaderMaterial).set_shader_parameter(k,shared.get_shader_parameter(k))
+func _grass_work() -> void:
+	while true:
+		_grass_mutex.lock()
+		var g: Dictionary = {} if _grass_queue.is_empty() or _grass_stop else _grass_queue.pop_front()
+		_grass_mutex.unlock()
+		if g.is_empty(): return
+		var job: KitFlora.Grow = g.job
+		# In slices, so a restart or quit stops it soon.
+		while not job.step(50000):
+			if _grass_stop: return
+		_grass_mutex.lock()
+		g.grown = true
+		_grass_grown_usec = maxi(_grass_grown_usec,Time.get_ticks_usec()-_grass_began)
+		_grass_mutex.unlock()
+
+## Gone before the grass stood (a restart): its threads stopped first.
+func _exit_tree() -> void:
+	_grass_mutex.lock()
+	_grass_stop = true
+	_grass_mutex.unlock()
+	for thread: Thread in _grass_threads: thread.wait_to_finish()
+	_grass_threads.clear()
+	_grass_jobs.clear()
+
+## The grass jobs' batches stood as the jobs finish, within GRASS_STAND_USEC
+## a frame, each frame's share calmed (Carpet.calm) as it stands.
+func _process(_delta: float) -> void:
+	if _grass_jobs.is_empty(): return
+	var end := Time.get_ticks_usec()+GRASS_STAND_USEC
+	var left := 0
+	for g: Dictionary in _grass_jobs:
+		if g.done: continue
+		left += 1
+		if Time.get_ticks_usec() > end: continue
+		_grass_mutex.lock()
+		var grown: bool = g.grown
+		_grass_mutex.unlock()
+		if not grown: continue
+		var parts: Array = (g.job as KitFlora.Grow).parts
+		var into: Node3D = g.into
+		if not is_instance_valid(into):
+			g.done = true
+			left -= 1
+			continue
+		var holder := Node3D.new()
+		holder.name = "Part"
+		into.add_child(holder)
+		while int(g.at) < parts.size() and Time.get_ticks_usec() < end:
+			var part: Dictionary = parts[int(g.at)]
+			g.at = int(g.at)+1
+			var ring: Dictionary = part.get("ring",{})
+			var batch := KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer,float(g.range),ring)
+			holder.add_child(batch)
+			var tris := KitFlora._mesh_triangles(batch.multimesh.mesh)*int(part.count)
+			_grass_tris += tris
+			if int(ring.get("ring",0)) == 2: _grass_mid_tris += tris
+		Carpet.calm(holder)
+		if int(g.at) >= parts.size():
+			g.done = true
+			g.job = null
+			left -= 1
+	if left == 0:
+		_grass_jobs.clear()
+		for thread: Thread in _grass_threads: thread.wait_to_finish()
+		_grass_threads.clear()
+		grass_ms = (Time.get_ticks_usec()-_grass_began)/1000
+		print("home: grass grown in %d ms on %d threads, stood %d ms after they began: %d instanced triangles, %d of them the mid ring's" % [_grass_grown_usec/1000,GRASS_THREADS,grass_ms,_grass_tris,_grass_mid_tris])
 
 ## The landmarks (WAY on the line, ROUND round each isle), each a crag rock
 ## with a ruin on its top, named home/landmark_<n>; through the host's own
@@ -454,7 +585,6 @@ func _landmarks(top: float) -> void:
 		var n: Node3D = host.call("_stand","home/landmark_%d" % i,Transform3D(Basis(Vector3.UP,rng.randf()*TAU),at),spec)
 		if n != null:
 			landmarks.append(n)
-			if not "--no-home-grass" in LaunchArgs.user_args(): _evergreen_all(n)
 	print("home: %d landmarks" % landmarks.size())
 
 ## The cues: the spray under home's fall, the smoke over the heist's vault.
