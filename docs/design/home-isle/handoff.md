@@ -129,3 +129,70 @@ from an old scratch driver into `scratch/home/trip.gd`. A `fly_to` /
 
 A marking tool, a map, random isle placement or generation, more clues,
 the lake's swim, and building home on a worker to cut the load time.
+
+## Round: grass (`iter/home-grass`)
+
+Home's top now carries the isles' carpet grass. All of it is in
+`studies/heist_home.gd`; no shared file changed.
+
+- **Grass** (`_grass`): `KitFlora.Grow` with `aqueduct_isle_flora.gd`
+  `carpeted`, then `calm`, as the crag units do. Tussocks, thatch, seed
+  heads, flowers, contact darkening and the rolling height all come with
+  it. The probe is the islet shape's own ground (no physics): open land,
+  off water, trunks and stones, no steeper than the palette's rock slope.
+  It grows over the tableland and over the lake islet's banks (nothing
+  within `BANK_BARE` 0.35 m of the water). The old orange drift tufts are
+  off (`drifts` 0, tableland and lake).
+- **The strip**: the long grass keeps `STRIP_CLEAR` 11 m off the strip's
+  line. The strip has a short mown grass of its own (`StripGrass`: 3
+  tufts a m2, 0.3-0.5 of a tuft, no tussocks, no wild rim). Trees were
+  already kept off it by the recipe's `clear`.
+- **Ground tint**: both tops are softened with `LineBuild._soften_top`
+  (colour runs across the turf, no triangle quilt), and home's ground
+  material takes the carpet's calmer settings (`ground_dry`, `ground_patch`,
+  `ground_mute`).
+- **Summer green**: home's tree and grass batches, the landmarks' and the
+  ground are `LineBuild.evergreen` copies, so the current season's gold
+  doesn't show on home. (Winter stays off, as before.)
+- **Trees**: the tableland's count 10-16 up to 20-30.
+- **Landmarks**: `"grass":1.0` (was 0.0, bare ochre turf), so their crowns
+  grow the unit's own carpet. Each draws it within the unit's own
+  range (220 m); farther, the top shows its plain green turf.
+- **Heist isle**: left greybox (`"grass":0.0`), as asked.
+- Flags: `--no-home-grass` (the old look), `--home-grass=<share>` (0.2 of
+  the carpet's tufts), `--home-grass-range=<m>` (70, the carpet's is 220).
+
+### Cost
+
+- Instanced triangles, all tiles: 4.5M on the land (1.1M of it the strip's
+  short grass), 54k on the lake. Only tiles within 70 m (fade over 15 m)
+  draw, and frustum culling applies.
+- Rendered counts (`scratch/home/fps.gd`), primitives / draw calls with
+  grass against without: on foot 3.28M / 308 against 1.97M / 185; 30 m
+  over the middle 3.56M / 257 against 1.79M / 134; 80 m up, 120 m out
+  2.10M / 221 against 1.78M / 202. GPU time isn't measurable on this
+  machine's counters (reads 0), so no ms figure.
+- Build time: about +4 to +5 s on home's build (the grass is grown in
+  GDScript on the main thread: 3.8 s land, 0.25 s lake); the heist scene
+  was ready in 12.8 s without the grass and 17 s with, in the smoke. Moving
+  the grow to the worker (`plain` site, `KitFlora.batch_node`, as
+  `hall_line_build.gd` does) would cut that; not done.
+- Share 0.2 and range 70 are a compromise: 0.55 at 120 m was 9.4M
+  triangles and 8.5 s.
+
+### Stills (`captures/home_grass/`, git-ignored; `scratch/home/shots.gd`)
+
+`air.png`, `air2.png` (home from 230 m and 170 m), `foot.png` (on foot by
+the plane), `strip.png`, `rim.png`, `lake.png`, `mark.png` (a landmark).
+
+### Not done / rough
+
+- The lip: no wild grass spills over the tableland's rim (its edge is the
+  palette's orange earth).
+- The lake banks stay sandy where the lake's own bed tone paints them; the
+  grass only grows on the green. The water and its shader are untouched.
+- `_soften_top` also runs on the lake's top (colours only); if the water
+  agent recolours the bed in `IsletLake.bed_tone`, it is still softened.
+- Grass is grown only once at build, so Layout moves of `home/land` carry
+  it (it is a child of the node).
+- Smokes pass: heist_level, `--no-home`, `--no-home-grass`; 0 errors.
