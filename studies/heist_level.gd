@@ -466,6 +466,7 @@ func _load_pack() -> void:
 const HeistHome = preload("res://studies/heist_home.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const HeistSky = preload("res://studies/heist_level_sky.gd")
+const HomeHub = preload("res://studies/home_hub.gd")
 ## Home, null with --no-home.
 var home: Node3D = null
 var _heist_strip := Vector4.INF
@@ -503,7 +504,7 @@ func place_strip() -> Vector4:
 func home_places() -> Array:
 	if home == null or home.land == null: return []
 	var c: Vector3 = home.circle
-	return [["home",Vector3(c.x,TOP,c.y),c.z]]
+	return [["home",Vector3(c.x,TOP,c.y),c.z]]+HomeHub.places_of(home)
 
 func sky_script() -> Script:
 	return HeistSky
@@ -548,6 +549,7 @@ func _build_art() -> void:
 			start = st[0]
 			start_face = st[1]
 			_last_stood = start
+		HomeHub.add(home)
 	for m: Array in HEIST_MASSES:
 		var mname: String = m[0]
 		var mid: Vector3 = m[1]
