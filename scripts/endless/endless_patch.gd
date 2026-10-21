@@ -76,6 +76,7 @@ static func grass(x: float, z: float, meadow: float, over: float, up: float, hue
 	g = g.lerp(MEADOW*(1.0+mid*0.5),meadow*0.75)
 	var warm := clampf(broad*2.4+vast*1.8,-1.0,1.0)*PATCH_STRENGTH
 	g *= Vector3.ONE.lerp(Vector3(1.32,1.05,0.62) if warm > 0.0 else Vector3(0.80,0.97,1.16),absf(warm)*0.5)
+	g *= region(x,z,over)
 	if hue != Vector3.ZERO: g = g.lerp(hue/maxf(_luma(hue),0.01)*_luma(g),VERTEX_HUE*0.6)
 	var dry_far := smoothstep(0.05,0.32,broad+wide*0.6+0.1)
 	var dry := clampf(DRY_NEAR*0.6+dry_far*0.55,0.0,1.0)*(1.0-meadow*0.6)
@@ -100,3 +101,92 @@ static func tint(x: float, z: float, meadow: float, over: float, up: float, hue 
 	var g := grass(x,z,meadow,over,up,hue)
 	var p := plain()
 	return Color(g.x/p.x,g.y/p.y,g.z/p.z)
+
+# --- Grass colour regions and flower drifts (look round 5) ---------------------
+# The shader's ep_region, ep_bloom (shaders/endless_patch.gdshaderinc): keep
+# them in step.
+
+## The land seed's offset (m) both read at, set once before any worker runs
+## (scripts/endless/endless_grass.gd; the ground's `region_offset`).
+static var offset := Vector2.ZERO
+## How strongly the regions tint the grass (0: off; the ground's
+## `region_amount`), how many flower drifts there are (0: none; its
+## `bloom_amount`). Set once before any worker runs.
+static var region_amount := 1.0
+static var bloom_amount := 1.0
+
+const LUSH := Vector3(0.44,0.78,0.58)
+const LIME := Vector3(1.33,1.20,0.30)
+const SAGE := Vector3(0.92,0.90,1.65)
+const STRAW := Vector3(2.05,1.22,0.48)
+const HEATHER := Vector3(1.39,0.74,1.46)
+
+## The land seed's offset for `seed`: a few kilometres, so each seed's
+## regions and drifts are its own.
+static func seed_offset(land_seed: int) -> Vector2:
+	var h := _hash(land_seed,7717)
+	return Vector2(float(h & 0xffff)/65535.0,float(h >> 16)/65535.0)*4000.0
+
+static func _lerp3(a: Vector3, b: Vector3, t: float) -> Vector3:
+	return a+(b-a)*t
+
+static func _ss(a: float, b: float, x: float) -> float:
+	# GLSL's smoothstep, which (unlike Godot's) takes a > b as a falling edge.
+	var t := clampf((x-a)/(b-a),0.0,1.0)
+	return t*t*(3.0-2.0*t)
+
+## The region's hue at a world point (a multiplier over the grass).
+static func region(x: float, z: float, over: float) -> Vector3:
+	var amount := region_amount
+	if amount <= 0.0: return Vector3.ONE
+	var q := Vector2(x,z)+offset
+	var r := Vector2(q.x*0.8-q.y*0.6,q.x*0.6+q.y*0.8)
+	var a := noise(r.x/380.0+3.7,r.y/380.0+1.3)*0.8+noise(r.x/130.0-4.1,r.y/130.0+2.2)*0.2
+	var b := noise(q.y/300.0-2.1,q.x/300.0+8.4)*0.8+noise(q.x/110.0+6.3,q.y/110.0-1.7)*0.2
+	var c := noise(r.y/220.0+5.5,r.x/220.0-3.3)
+	var m := _lerp3(Vector3.ONE,LUSH,_ss(0.42,0.30,a)*amount)
+	m *= _lerp3(Vector3.ONE,LIME,_ss(0.58,0.70,a)*amount)
+	m *= _lerp3(Vector3.ONE,SAGE,_ss(0.42,0.30,b)*amount)
+	m *= _lerp3(Vector3.ONE,STRAW,_ss(0.60,0.72,b)*amount)
+	m *= _lerp3(Vector3.ONE,HEATHER,_ss(0.55,0.68,c)*_ss(16.0,34.0,over)*amount)
+	return m
+
+## The drifts' kinds by ep_bloom's index: [the flower kind (scripts/
+## meadow_types.gd FLOWER_KEYS), its colour variant, the wash (linear)].
+const KINDS := [
+	["buttercup",0.0,Vector3(0.815,0.509,0.018)],
+	["oxeye_daisy",0.0,Vector3(0.900,0.880,0.780)],
+	["poppy",0.0,Vector3(0.687,0.064,0.025)],
+	["lupine",0.1,Vector3(0.255,0.140,0.527)],
+	["cosmos",0.1,Vector3(0.730,0.188,0.392)],
+	["cosmos",0.4,Vector3(0.480,0.060,0.250)],
+	["dandelion",0.0,Vector3(0.800,0.480,0.012)],
+]
+const KIND_SLOTS := [0,0,0,1,1,6,6,2,2,3,3,3,4,5,0,4]
+
+static func _layer(q: Vector2, cell: float, chance: float, rad: Vector2, salt: int, best: Vector2) -> Vector2:
+	var cx := floori(q.x/cell-0.5)
+	var cz := floori(q.y/cell-0.5)
+	for j in range(0,2):
+		for i in range(0,2):
+			var c := Vector2i(cx+i,cz+j)
+			var h := _hash(c.x+salt,c.y+salt*3)
+			if float(h & 255)/255.0 >= chance: continue
+			var centre := (Vector2(c)+Vector2(0.2,0.2)+0.6*Vector2(float((h >> 8) & 255),float((h >> 16) & 255))/255.0)*cell
+			var radius := cell*lerpf(rad.x,rad.y,float((h >> 24) & 15)/15.0)
+			var w := 1.0-_ss(0.35,1.0,q.distance_to(centre)/radius)
+			if w > best.x: best = Vector2(w,float(KIND_SLOTS[(h >> 28) & 15]))
+	return best
+
+## The flower drifts at a world point: x their weight (0..1), y the kind
+## (KINDS' index).
+static func bloom(x: float, z: float) -> Vector2:
+	var best := Vector2.ZERO
+	var amount := bloom_amount
+	if amount <= 0.0: return best
+	var q := Vector2(x,z)+offset
+	q += (Vector2(noise(q.x/41.0+4.2,q.y/41.0-2.6),noise(q.x/41.0-3.3,q.y/41.0+7.9))-Vector2(0.5,0.5))*30.0
+	best = _layer(q,46.0,0.44*amount,Vector2(0.28,0.5),7151,best)
+	best = _layer(q,15.0,0.16*amount,Vector2(0.2,0.38),9241,best)
+	best.x *= lerpf(0.45,1.0,_ss(0.3,0.68,noise(q.x/6.5+2.9,q.y/6.5-8.1)))
+	return best

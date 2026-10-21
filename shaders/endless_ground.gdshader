@@ -74,6 +74,18 @@ uniform float carpet_velvet_cut : hint_range(0.0, 1.0) = 0.6;
 // look pass lays on the screen): x how far the colour gives way to a cool
 // rod-lit grey, yzw that grey's hue.
 uniform vec4 night_grade = vec4(0.0);
+// Look round 5 (shaders/endless_patch.gdshaderinc, scripts/endless/
+// endless_patch.gd): the grass's colour regions, how strongly (0: off), and
+// the flower drifts, how many (0: none), their wash under the drawn
+// flowers (x, out to `bloom_fade.x` m) and their painted heads' share past
+// them (y, from `bloom_fade.y`), the land seed's offset both read at.
+uniform float region_amount = 0.0;
+uniform float bloom_amount = 0.0;
+uniform vec2 bloom_wash = vec2(0.10, 0.9);
+// The painted heads' sizes (m), on two lattices.
+uniform vec2 bloom_dots = vec2(0.38, 0.62);
+uniform vec2 bloom_fade = vec2(22.0, 55.0);
+uniform vec2 region_offset = vec2(0.0);
 
 // The field's greens (linear): the calm field's (ground_look), a meadow's
 // lusher, brighter turf, the tundra over the high ground.
@@ -164,6 +176,10 @@ void fragment() {
 	// Warm and cool drift, mostly with the broad light.
 	float warm = clamp(broad * 2.4 + vast * 1.8, -1.0, 1.0) * patch_strength;
 	grass *= mix(vec3(1.0), warm > 0.0 ? vec3(1.32, 1.05, 0.62) : vec3(0.80, 0.97, 1.16), abs(warm) * 0.5);
+	// The broad regions' hue (endless_patch ep_region): lush, lime, sage,
+	// straw, heather on high ground.
+	vec3 region = ep_region(p.xz, over, region_amount, region_offset);
+	grass *= region;
 	// The land's own tint (the vertex colour's hue at the grass's light).
 	vec3 vc = land_colour.rgb;
 	grass = mix(grass, vc / max(luma(vc), 0.01) * luma(grass), vertex_hue * 0.6);
@@ -259,6 +275,7 @@ void fragment() {
 			vec3 coarse = mix(GREEN, sunny_c > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny_c));
 			coarse = mix(coarse, MEADOW * (1.0 + mid * 0.5), meadow * 0.75);
 			coarse *= mix(vec3(1.0), warm > 0.0 ? vec3(1.32, 1.05, 0.62) : vec3(0.80, 0.97, 1.16), abs(warm) * 0.5);
+			coarse *= region;
 			coarse = mix(coarse, vc / max(luma(vc), 0.01) * luma(coarse), vertex_hue * 0.6);
 			float dry_c = clamp(0.18 * 0.6 + dry_far * 0.55, 0.0, 1.0) * (1.0 - meadow * 0.6);
 			coarse = mix(coarse, DRY, dry_c * 0.4);
@@ -266,6 +283,29 @@ void fragment() {
 			coarse = mix(coarse, OLIVE, thin * 0.7);
 			coarse *= 1.0 + (grain_near + fine * 0.6 + tuft * 0.8) * carpet_near_grain;
 			grass = mix(grass, coarse, under);
+		}
+	}
+	// The flower drifts past the drawn flowers: heads of their colour dotted
+	// over the turf (two lattices, more of them at a drift's heart), which
+	// average to a wash of it as a pixel grows past a head; a light wash
+	// under the drawn flowers. On open turf only.
+	// Gone where a pixel is wider than a small patch's share (the horizon),
+	// so it doesn't shimmer.
+	float bloom_on = carpet_turf * (1.0 - smoothstep(4.0, 12.0, fp));
+	if (bloom_amount > 0.0 && bloom_on > 0.0) {
+		vec2 bloom = ep_bloom(p.xz, bloom_amount, region_offset);
+		float bloom_w = bloom.x * bloom_on;
+		if (bloom_w > 0.0) {
+			float d = length(CAMERA_POSITION_WORLD - p);
+			float past = smoothstep(bloom_fade.x, bloom_fade.y, d);
+			float cut = 0.78 - 0.3 * bloom_w;
+			float dot_a = smoothstep(cut, cut + 0.06, zs_noise(turned_speck(p.xz, 0) / bloom_dots.x));
+			float dot_b = smoothstep(cut, cut + 0.06, zs_noise(turned_speck(p.xz + 7.3, 1) / bloom_dots.y));
+			float dots = max(dot_a, dot_b);
+			// Their mean as the pixel outgrows a head.
+			dots = mix(dots, bloom_w * 0.42, smoothstep(bloom_dots.x * 0.4, bloom_dots.y * 1.2, fp));
+			float wash = mix(bloom_wash.x * bloom_w, bloom_wash.y * dots, past);
+			grass = mix(grass, ep_wash(int(bloom.y + 0.5)), clamp(wash, 0.0, 1.0));
 		}
 	}
 	vec3 albedo = mix(grass, rock, rocky);

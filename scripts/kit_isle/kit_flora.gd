@@ -151,6 +151,12 @@ class Site extends RefCounted:
 	## Opt-in: (p) -> how many times the flowers' share is kept at p (a
 	## drift of wildflowers where it is over 1); none: as before.
 	var flower_drift := Callable()
+	## Opt-in: (p, kind) -> [kind, colour variant] a flower at p grows as
+	## in place of the meadow type's `kind` (a drift of one kind), or []
+	## for the meadow's own; none: as before.
+	var flower_kind := Callable()
+	## Opt-in: flower candidates a square metre (zero: FLOWER_TRIES).
+	var flower_tries := 0.0
 	## Opt-in: Grow's draw gives its batches as plain data (`Grow.parts`:
 	## key, tile, count, buffer), no nodes or materials made, so it can run
 	## on a worker; `batch_node` stands one on the main thread.
@@ -398,7 +404,7 @@ class Grow extends RefCounted:
 			_area *= _box.intersection(site.box).get_area()/maxf(_box.get_area(),0.001)
 			_box = _box.intersection(site.box)
 		_grass = int(_box.get_area()*site.tufts)
-		_flowers = int(_box.get_area()*FLOWER_TRIES)
+		_flowers = int(_box.get_area()*(site.flower_tries if site.flower_tries > 0.0 else FLOWER_TRIES))
 
 	## 1 where something not turf stands within SHAG_FOOT.x of p's cell, 0.5
 	## within .y, else 0 (the rim's drop counts too).
@@ -556,6 +562,12 @@ class Grow extends RefCounted:
 			var p := Vector2(_rng.randf_range(_box.position.x,_box.end.x),_rng.randf_range(_box.position.y,_box.end.y))
 			var presence := _meadow.presence(p)
 			var kind := _meadow.kind_at(p,_rng.randf())
+			var variant := -1.0
+			if _site.flower_kind.is_valid():
+				var got: Array = _site.flower_kind.call(p,kind)
+				if not got.is_empty():
+					kind = str(got[0])
+					variant = float(got[1])
 			var keep := pow(presence,1.2)*MeadowTypes.packing(kind)*FLOWER_SHARE
 			if _site.flower_drift.is_valid(): keep *= float(_site.flower_drift.call(p))
 			if _rng.randf() > maxf(keep,STRAY): continue
@@ -563,7 +575,7 @@ class Grow extends RefCounted:
 			var range_of: Array = sizes.get(kind,[0.85,1.1])
 			var formed: Array = MeadowTypes.form(kind,_rng.randf_range(float(range_of[0]),float(range_of[1])),_rng.randf()*TAU)
 			var extra := {}
-			var tint := MeadowTypes.tint(kind,_meadow.variant(p))
+			var tint := MeadowTypes.tint(kind,variant if variant >= 0.0 else _meadow.variant(p))
 			if tint != "": extra.tint = tint
 			if not (formed[1] as Dictionary).is_empty(): extra.pose = formed[1]
 			_add(MeadowTypes.asset(kind),p,float(formed[0]),extra)

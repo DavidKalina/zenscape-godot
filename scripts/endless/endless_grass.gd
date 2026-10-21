@@ -46,7 +46,18 @@ extends Node3D
 ## --grass-fine=X (the near ring's FINE tuft at X of the isle's density;
 ## 0: the isle's own tuft at its own), --grass-patches=X (how much of the
 ## ground's patches the tufts carry, 1), --grass-set=, --far-set=,
-## --ground-set= (name=value: a shader setting, for tuning by hand).
+## --ground-set= (name=value: a shader setting, for tuning by hand),
+## --flower-drifts=X (how many flower drifts and patches, 1; 0 or
+## --no-drifts: round 4's drifts, no wash), --grass-regions=X (how strongly
+## the grass's colour regions show, 1; 0 or --no-regions: one palette).
+##
+## Look round 5 (docs/design/endless-flight/flowers-colour-handoff.md): the
+## grass's colour regions and the flower drifts are endless_patch.gd
+## `region` and `bloom`, the same hash as the ground's ep_region and
+## ep_bloom, so the tufts' tint, the flowers grown and the painted ground
+## agree. Each drift is one kind (its colour), with a few of the meadow's
+## own among them; past the flowers' reach the ground (and the far ring's
+## tufts, FAR_WASH) take the drift's wash, so it reads from cruise height.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const Carpet = preload("res://studies/aqueduct_isle_flora.gd")
@@ -72,6 +83,22 @@ const FAR_GROW := Vector2(2.0,1.8)
 ## patches thick with flowers among the sparse strays.
 const DRIFT_SCALE := 55.0
 const DRIFT := Vector3(0.68,0.82,6.0)
+## Round 5's drifts (endless_patch.gd `bloom`): the flowers kept up to
+## BLOOM_PEAK times as often at a drift's heart, its own kind all but
+## BLOOM_COMPANION of them (the meadow's own there), from BLOOM_KIND of its
+## weight in; up to FAR_WASH of the far ring's tufts are in its colour
+## (the ground's painted heads, `bloom_wash`, past the flowers).
+const BLOOM_PEAK := 16.0
+## Flower candidates a square metre with them on (KitFlora Site
+## `flower_tries`; its own FLOWER_TRIES is 2.2): thicker drifts, more strays.
+const BLOOM_TRIES := 3.4
+const BLOOM_COMPANION := 0.12
+const BLOOM_KIND := 0.12
+const FAR_WASH := 0.35
+## How many drifts (--flower-drifts=), how strong the regions
+## (--grass-regions=).
+var drifts := 1.0
+var regions := 1.0
 ## The far ring's colours at the root and the tip (linear; endless_tuft_far
 ## `root_colour`, `tip_colour`), matched to the near ring's tufts.
 const FAR_ROOT := Vector3(0.093,0.27,0.13)
@@ -193,6 +220,10 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 			fine = a.get_slice("=",1) != "0"
 			if fine and a.get_slice("=",1).to_float() > 0.0: _fine_share = a.get_slice("=",1).to_float()
 		elif a.begins_with("--grass-patches="): patches = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
+		elif a.begins_with("--flower-drifts="): drifts = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a == "--no-drifts": drifts = 0.0
+		elif a.begins_with("--grass-regions="): regions = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a == "--no-regions": regions = 0.0
 		elif a.begins_with("--grass-set=") or a.begins_with("--far-set=") or a.begins_with("--ground-set="):
 			var which := a.get_slice("-",2).get_slice("-",0)
 			var kv := a.substr(a.find("=")+1)
@@ -200,6 +231,10 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		elif a.begins_with("--grass-lod="):
 			var p := a.get_slice("=",1).split(",")
 			if p.size() >= 4: lod = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]))
+	# The regions and drifts, set before any worker reads them.
+	Patch.offset = Patch.seed_offset(seed)
+	Patch.region_amount = regions
+	Patch.bloom_amount = drifts if flowers else 0.0
 	# The isle's carpet settings, read here once (the workers copy them).
 	var s := KitFlora.Site.new()
 	Carpet.carpeted(s)
@@ -228,6 +263,10 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		ground.set_shader_parameter("turf_high",HIGH)
 		ground.set_shader_parameter("carpet_tone_top",TONE_TOP)
 		ground.set_shader_parameter("carpet_tone_low",TONE_LOW)
+		ground.set_shader_parameter("region_offset",Patch.offset)
+		ground.set_shader_parameter("region_amount",Patch.region_amount)
+		ground.set_shader_parameter("bloom_amount",Patch.bloom_amount)
+		ground.set_shader_parameter("bloom_fade",FLOWER_FADE)
 		for k: String in _sets.ground: ground.set_shader_parameter(k,_sets.ground[k])
 	_reach()
 
@@ -495,6 +534,7 @@ func counts() -> Dictionary:
 # --- On a worker ----------------------------------------------------------------------
 
 ## How many times the flowers' share is kept at p (DRIFT).
+## (Round 4's drifts: with round 5's on, grow_cell reads them off its grid.)
 static func flower_drift(p: Vector2) -> float:
 	var n := Patch.noise(p.x/DRIFT_SCALE+17.3,p.y/DRIFT_SCALE-5.1)
 	return 1.0+(DRIFT.z-1.0)*smoothstep(DRIFT.x,DRIFT.y,n)
@@ -567,7 +607,35 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 		if not k in ["flowers","patches"]: site.set(k,site_values[k])
 	site.plain = true
 	site.probe = probe
-	site.flower_drift = flower_drift
+	# The drifts (Patch `bloom`) read off a TINT_STEP m grid of the cell,
+	# for the flowers and the far ring's tufts.
+	var tg := int(CELL/TINT_STEP)+1
+	var blooms := PackedVector2Array()
+	if Patch.bloom_amount > 0.0:
+		blooms.resize(tg*tg)
+		for tj in tg:
+			for ti in tg: blooms[tj*tg+ti] = Patch.bloom(x0+ti*TINT_STEP,z0+tj*TINT_STEP)
+	var bloom_at := func(p: Vector2) -> Vector2:
+		var u := clampf((p.x-x0)/TINT_STEP,0.0,tg-1.001)
+		var v := clampf((p.y-z0)/TINT_STEP,0.0,tg-1.001)
+		var i := int(u)
+		var j := int(v)
+		var fu := u-i
+		var fv := v-j
+		var w := lerpf(lerpf(blooms[j*tg+i].x,blooms[j*tg+i+1].x,fu),lerpf(blooms[(j+1)*tg+i].x,blooms[(j+1)*tg+i+1].x,fu),fv)
+		return Vector2(w,blooms[(j+roundi(fv))*tg+i+roundi(fu)].y)
+	if blooms.is_empty():
+		site.flower_drift = flower_drift
+	else:
+		# (The far layer's flowers are dropped: none sown there.)
+		site.flower_tries = BLOOM_TRIES if flowers else 0.0001
+		site.flower_drift = func(p: Vector2) -> float: return 1.0+(BLOOM_PEAK-1.0)*float(bloom_at.call(p).x)
+		site.flower_kind = func(p: Vector2, _kind: String) -> Array:
+			var b: Vector2 = bloom_at.call(p)
+			if b.x < BLOOM_KIND: return []
+			if float(hash(Vector2i(roundi(p.x*53.0),roundi(p.y*53.0)))%10007)/10007.0 < BLOOM_COMPANION: return []
+			var k: Array = Patch.KINDS[int(b.y)]
+			return [k[0],k[1]]
 	site.box = Rect2(x0,z0,CELL,CELL)
 	site.rim = 0.0
 	site.lod = rings
@@ -585,7 +653,6 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	if job.node != null: job.node.free()
 	# The painted ground's patches on each tuft (Patch `tint`), read off a
 	# TINT_STEP m grid of the cell.
-	var tg := int(CELL/TINT_STEP)+1
 	var tints := PackedColorArray()
 	tints.resize(tg*tg)
 	for tj in tg:
@@ -616,6 +683,14 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 				var a := tints[j*tg+i].lerp(tints[j*tg+i+1],u-i)
 				var b := tints[(j+1)*tg+i].lerp(tints[(j+1)*tg+i+1],u-i)
 				var t := a.lerp(b,v-j)
+				# In a drift some of the far ring's tufts are in flower:
+				# its colour (the near ring's flowers are drawn).
+				if far_share >= 1.0 and not blooms.is_empty():
+					var bl: Vector2 = bloom_at.call(Vector2(buffer[k+3],buffer[k+11]))
+					if bl.x > 0.0 and float(hash(Vector2i(roundi(buffer[k+3]*37.0),roundi(buffer[k+11]*37.0)))%10007)/10007.0 < bl.x*FAR_WASH:
+						var w: Vector3 = Patch.KINDS[int(bl.y)][2]
+						var pl := Patch.plain()
+						t = Color(w.x/pl.x,w.y/pl.y,w.z/pl.z)
 				buffer[k+12] *= t.r
 				buffer[k+13] *= t.g
 				buffer[k+14] *= t.b
