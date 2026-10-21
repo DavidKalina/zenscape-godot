@@ -164,6 +164,7 @@
       col += vec3(0.42, 0.13, 0.16) * pink * zs_belt;
       col = mix(col, col * vec3(0.55, 0.62, 0.80), shade * 0.5 * zs_belt);
     }
+    col += zs_storm_flash_sky(dir);
     return col;
   }
   // Under the cloud sea (scripts/sky_below.gd) the light comes down through

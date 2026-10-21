@@ -130,6 +130,9 @@ var _since := CHECK
 var clock := 0.0
 var pace := 1.0
 var pinned := -1.0
+## Ages single cells' towers are held at, by cell (a storm cell's tower,
+## scripts/storm_cells.gd); before `pinned`.
+var held := {}
 ## Hand-laid towers (home coordinates, y 0), or none for the seeded cells'
 ## (`spot`). The spot at index i stands in for the cell (i, 0): its life
 ## and its shape are that cell's (the first's the home tower's), its key
@@ -239,6 +242,7 @@ func flush() -> void:
 
 ## Where a cell's tower is in its life (s, 0 to LIFE).
 func age_of(cell: Vector2i) -> float:
+	if held.has(cell): return float(held[cell])
 	if pinned >= 0.0: return pinned
 	return fposmod(clock+phase(cell),LIFE)
 

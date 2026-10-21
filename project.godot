@@ -634,6 +634,26 @@ zs_cloud={
 "type": "vec4",
 "value": Vector4(0.06, 0, 20, 12)
 }
+zs_storm_grade={
+"type": "float",
+"value": 0.0
+}
+zs_storm_thin={
+"type": "float",
+"value": 0.0
+}
+zs_front={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_cell={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_storm_flash={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_cloud_drift={
 "type": "vec3",
 "value": Vector3(0, 0, 0)
