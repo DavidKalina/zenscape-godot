@@ -12,6 +12,8 @@ const ENTRIES: Array[Dictionary] = [
 	# Ruins.
 	{"id":"aqueduct_isle","group":"Ruins","title":"Aqueduct isle","scene":"res://studies/aqueduct_isle.tscn","args":[],
 		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F. Find the lodestone, fly where the nose points; the halls follow."},
+	{"id":"heist","group":"Ruins","title":"The heist","scene":"res://studies/heist_level.tscn","args":[],
+		"detail":"On foot by your plane at home. Fly out through the haze to the vault's isle, bag the loot, fly it home to bank it."},
 	{"id":"crag_reach","group":"Ruins","title":"Crag reach","scene":"res://studies/crag_reach.tscn","args":[],
 		"detail":"Four crag masses tied by a rope bridge (east), a fallen column to slide with crouch (north) and an aqueduct (west), ruins on top. F4: move any piece."},
 	{"id":"sky_dragon","group":"Ruins","title":"Sky dragon","scene":"res://studies/aqueduct_isle.tscn","args":["--dragon"],

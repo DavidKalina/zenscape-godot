@@ -462,6 +462,7 @@ func _ready() -> void:
 	# (no slot to switch: what he's by picks, crag_reach_greed.gd `key_for`).
 	greed_on = true
 	context_hands = true
+	_keep_ledger_in_memory()
 	if not LaunchArgs.user_args().has("--no-home"):
 		home = HeistHome.new()
 		home.read_flags()
@@ -513,6 +514,28 @@ const HomeHub = preload("res://studies/home_hub.gd")
 ## Home, null with --no-home.
 var home: Node3D = null
 var _heist_strip := Vector4.INF
+var _ledger_was := []
+
+## The ledger in memory for this scene (no --ledger=, as from the scene
+## picker): nothing it marks reaches user://progress.json; put back as it
+## was on the way out (as studies/wreck_cluster.gd).
+func _keep_ledger_in_memory() -> void:
+	for arg: String in LaunchArgs.user_args():
+		if arg.begins_with("--ledger="): return
+	var book := Ledger.shared()
+	_ledger_was = [book.path]
+	book.path = ""
+	book.records = {}
+	book.plane = Ledger._no_plane()
+	book.vault = Ledger._no_vault()
+
+func _exit_tree() -> void:
+	if not _ledger_was.is_empty():
+		var book := Ledger.shared()
+		book.path = _ledger_was[0]
+		book.load_saved()
+		_ledger_was = []
+	super._exit_tree()
 
 ## Home's turf bodies, as the crag units' (`_stand`): the plane and the
 ## walker's turf.
