@@ -606,9 +606,12 @@ func empty() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_echo(): return
-	# A host with two slots (the greed run: the bag or the rope in hand)
-	# says when the keys are the bag's.
-	if study != null and study.get("bag_keys") == false: return
+	# A host with the rope too (the greed run, the heist) says when a key
+	# is the bag's (`key_for`: the slot in hand, or what he's by).
+	if study != null and study.has_method("key_for"):
+		for a: StringName in [&"walk_throw",&"walk_bag",&"walk_carry"]:
+			if event.is_action_pressed(a,false,true) and str(study.call("key_for",a)) != "bag": return
+	elif study != null and study.get("bag_keys") == false: return
 	if event.is_action_pressed(&"walk_throw",false,true):
 		if state != "worn" or not _on_foot() or not stowing.is_empty() or act != "": return
 		get_viewport().set_input_as_handled()
@@ -926,6 +929,22 @@ func throw() -> void:
 	_begin("aim")
 	_apply_feel(0.0)
 	_aim_update(0.0,Vector2.ZERO)
+
+## The reticle put on a world point (drivers; the heist's aim handed over
+## from the rope's).
+func aim_toward(point: Vector3) -> void:
+	if act != "aim": return
+	var feet: Vector3 = study.get("motor").feet
+	_aim = _to_cam(Vector2(point.x-feet.x,point.z-feet.z))
+	_aim_update(0.0,Vector2.ZERO)
+
+## The aim given up at once, no lowering, no line (the heist's aim handed
+## over to the rope's).
+func aim_drop() -> void:
+	if act != "aim": return
+	act = ""
+	_show_aim(false)
+	_apply_feel(1.0)
 
 ## Let go of the aim: thrown at the reticle, or on red lowered, no throw.
 func release() -> void:
