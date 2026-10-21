@@ -19,7 +19,9 @@ extends Node3D
 ##   ./run-endless-flight.command [--seed=7]
 ##   godot --path . res://studies/endless_flight.tscn -- --no-title [--seed=7] [--at=x,z] [--heading=deg] [--alt=m]
 ##
-## Flags: --seed=N the land (1), --at=x,z where it starts (0,0),
+## Flags: --seed=N the land (1), --at=x,z where it starts (0,0), the land's shape
+## (land_field.gd): --mountains=X, --peaks=X, --valleys=X, --no-valleys,
+## --old-land (round one's land and ceiling), --ceiling=m over the sea (215),
 ## --heading=deg clockwise from -z (0; `sun` toward the sun), --alt=m over
 ## the ground (45), --numbers opens with F1's numbers shown, --uncapped
 ## turns vsync and the frame cap off (the fps is then the frame's cost).
@@ -97,6 +99,8 @@ var _roll_asked := 0.0
 var _tap_dir := 0.0
 var _tap_at := -100000
 var _hud: Label
+## The plane's ceiling over the sea (Field CEILING_OVER; --ceiling=).
+var _ceiling_over := Field.CEILING_OVER
 var _hint: Label
 
 func _ready() -> void:
@@ -110,6 +114,8 @@ func _ready() -> void:
 		elif arg.begins_with("--heading="): _heading = -deg_to_rad(float(arg.get_slice("=",1)))
 		elif arg.begins_with("--alt="): _alt = float(arg.get_slice("=",1))
 		elif arg == "--numbers": _numbers = true
+		elif arg.begins_with("--ceiling="): _ceiling_over = float(arg.get_slice("=",1))
+		elif arg == "--old-land": _ceiling_over = SkyPlane.CEILING-Field.SEA_Y
 		elif arg == "--uncapped":
 			# No vsync and no cap, so the numbers' fps is the frame's cost.
 			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
@@ -245,6 +251,9 @@ func _launch(at: Vector3, heading: float) -> void:
 	plane.use_game_speed()
 	plane.floor_y = Field.SEA_Y-15.0
 	plane.water = Field.SEA_Y
+	# The ranges' tallest peaks stand into the cloud roof: the ceiling
+	# rises over the isles' (Field CEILING_OVER, --ceiling=m over the sea).
+	plane.ceiling_y = Field.SEA_Y+_ceiling_over
 	# The land is a heightfield: it rides up what is no cliff, and a
 	# cliff's face turns it aside (SkyGlide `stone`).
 	plane.stone = func(_p: Vector3) -> bool: return true

@@ -183,6 +183,8 @@ var _beat := 0.0
 ## ocean: scripts/sky_below.gd), and the height of open water it skims as
 ## it skims ground, never sinking in (-INF: none).
 var floor_y := FLOOR
+## The ceiling the rise fades over (CEILING; the endless flight raises it).
+var ceiling_y := CEILING
 var water := -INF
 ## Callable(Vector3) -> bool, true where the solid at a point is giant
 ## stone (scripts/sky_peaks.gd `solid`); if not set, every solid is ground
@@ -312,7 +314,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		speed += (-pull*sin(pitch)-settle*(speed-CRUISE))*delta
 	speed = clampf(speed,MIN,MAX)
 	# Rise eases in with a wingbeat; the ceiling fades it.
-	var ceiling := 1.0-clampf((position.y-CEILING)/CEILING_FADE,0.0,1.0)
+	var ceiling := 1.0-clampf((position.y-ceiling_y)/CEILING_FADE,0.0,1.0)
 	var airflow := smoothstep(RISE_SPEED.x,RISE_SPEED.y,speed)
 	climb = lerpf(climb,rise*RISE*ceiling*airflow,_ease(EASE_RISE,delta))
 	_beat += delta*BEAT*TAU*float(climb > 0.05)

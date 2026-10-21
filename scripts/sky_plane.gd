@@ -380,7 +380,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		pitch = lerpf(pitch,approach_pitch(ground) if approach else 0.0,_ease(EASE_LEVEL,delta))
 	pitch += shove.x*delta
 	if deep > 0.0: pitch = lerpf(pitch,CUSHION_PITCH,_ease(0.5,delta)*deep)
-	var over := clampf((position.y-CEILING)/CEILING_FADE,0.0,1.0)
+	var over := clampf((position.y-ceiling_y)/CEILING_FADE,0.0,1.0)
 	pitch = clampf(pitch,PITCH_LIMIT.x,lerpf(PITCH_LIMIT.y,CEILING_NOSE,over))
 	# Speed: the engine pulls it to the throttle's speed; the climb and the
 	# dive swing it either side.
