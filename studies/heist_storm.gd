@@ -21,9 +21,9 @@ extends Node
 ##              the dragon is called if it has not shown yet this storm. The
 ##              sightings come on their own only while a storm is on.
 ##   the haze   home's depth fog (HeistHome `apply_haze`) follows the storm:
-##              its colour to the storm's slate horizon, and in a whiteout
-##              in toward the murk's colour and reach, so the land fades into
-##              the murk, not through it (`fold_haze`).
+##              its colour to the storm's slate horizon, as the sky's dome
+##              goes (`fold_haze`); in a whiteout the murk's sheet seals land,
+##              cloud and sky alike over it.
 ## Flags: --storm=always|never, --storm-chance=<0..1>, --storm-at=<s> (the
 ## flight time it comes at). Debug keys (studies/heist_level.gd, in flight):
 ## C a cell toward the plane, M a whiteout, K / Shift+K the dragon far/close.
@@ -41,10 +41,6 @@ const CORE := 0.85
 const SIGHT_EVERY := 60.0
 ## The share of called sightings that are close.
 const CLOSE_SHARE := 0.6
-## The haze in a whiteout: its range (m) at full murk, and how far toward
-## the murk's colour.
-const MURK_HAZE := Vector2(30.0,240.0)
-const MURK_COLOUR := Color(0.29,0.335,0.4)
 
 var host: Node3D
 var mode := "chance"
@@ -65,7 +61,7 @@ var _whited := false
 var _called := false
 var _rain_hidden := false
 var _rng := RandomNumberGenerator.new()
-var _haze_from := Vector2.ZERO
+var _sight_every := SIGHT_EVERY
 ## What happened, for logs and drivers.
 var stats := {"sent_at":-1.0,"over_at":-1.0,"whiteouts":0,"murk_most":0.0,"sightings":0,"gust_most":0.0,"wind_most":0.0}
 
@@ -107,6 +103,8 @@ func ensure() -> bool:
 	host.add_child(elements)
 	elements.setup(host)
 	elements.cells.auto = false
+	# Their own wait (--sighting-every= or theirs) kept for while one is on.
+	_sight_every = float(elements.sightings.every)
 	elements.sightings.every = 0.0
 	elements.sightings.log_on = true
 	elements.sightings.sighted.connect(func(_e: Dictionary) -> void: stats.sightings += 1)
@@ -193,7 +191,7 @@ func send() -> void:
 	_reached = false
 	_whited = false
 	_called = false
-	elements.sightings.every = SIGHT_EVERY
+	elements.sightings.every = _sight_every
 	stats.sent_at = flown
 	print("heist storm: a storm cell rolls in %d m ahead of the plane at %s, coming at it (%d s of flight)" % [roundi(AHEAD),p.round(),roundi(flown)])
 
@@ -232,28 +230,23 @@ func _grade_frame() -> void:
 	env.adjustment_contrast = g.z
 
 ## Home's haze under the storm (after HeistHome `tint_haze` set its own):
-## toward the storm's slate horizon by the storm, in toward the murk's
-## colour and reach by the murk.
+## toward the storm's slate horizon by the storm.
 func fold_haze(env: Environment, home: Node) -> void:
 	if elements == null or env == null or home == null or not bool(home.get("haze_on")): return
-	var haze: Vector2 = home.get("haze")
 	var k := clampf(float(elements.storm),0.0,1.0)
-	var m := clampf(float(elements.murk),0.0,1.0)
-	if k <= 0.0 and m <= 0.0:
-		env.fog_depth_begin = haze.x
-		env.fog_depth_end = haze.y
-		return
+	if k <= 0.0: return
 	var sky: RefCounted = host.get("_celestial")
 	var day := 1.0
 	if sky != null:
 		var sun: Vector3 = sky.state.get("zs_sun_direction",Vector3.UP)
 		day = lerpf(PlaneWeather.SLATE_NIGHT,1.0,smoothstep(-0.08,0.3,sun.y))
 	var slate: Vector3 = PlaneWeather.SLATE_DOWN*day
-	var c := env.fog_light_color.lerp(Color(slate.x,slate.y,slate.z),k)
-	env.fog_light_color = c.lerp(MURK_COLOUR*lerpf(1.0,0.6,1.0-day),smoothstep(0.0,0.6,m))
-	var mm := smoothstep(0.0,0.5,m)
-	env.fog_depth_begin = lerpf(haze.x,MURK_HAZE.x,mm)
-	env.fog_depth_end = lerpf(haze.y,MURK_HAZE.y,mm)
+	# Its colour the horizon's, graded by the storm as the sky is. Its reach
+	# is left be in a whiteout: the murk's sheet lies over land, cloud and sky
+	# alike, and seals them all past `sealed`; a haze pulled in ahead of it
+	# (tried) stood the land out as a flat cut-out against the cloud sea,
+	# which no fog touches.
+	env.fog_light_color = env.fog_light_color.lerp(Color(slate.x,slate.y,slate.z),k)
 
 ## The plane's air: the storm's (PlaneWeather `air_at`) near the cell or in
 ## the murk, still air else (the field's calm gusts are not the heist's).
