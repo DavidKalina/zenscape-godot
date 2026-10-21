@@ -132,6 +132,11 @@ const SPRAY_LONGEST := 1.4
 const SPRAY_COLOUR := Color(0.86,0.9,0.96,0.32)
 const SPRAY_STORM := 0.25
 
+## Whether `setup` lays the field's jets (the heist's storm lays none).
+var jets := true
+## Whether `grade` grades the frame itself (the heist's storm folds it
+## with the greed meter's: `frame_grade`).
+var grade_frame := true
 ## The storm now (0 to 1), and an override (`--storm=<x>`; NAN: the sky's).
 var storm := 0.0
 var storm_pinned := NAN
@@ -174,29 +179,13 @@ func setup(scene: Node3D) -> void:
 	_noise.frequency = 0.9
 	_rng.randomize()
 	for arg in preload("res://scripts/launch_args.gd").user_args():
-		if arg.begins_with("--storm="): storm_pinned = clampf(float(arg.substr(8)),0.0,1.0)
+		# A number pins the storm (the study's); the heist's
+		# --storm=always|never is its own (studies/heist_storm.gd).
+		if arg.begins_with("--storm=") and arg.substr(8).is_valid_float(): storm_pinned = clampf(float(arg.substr(8)),0.0,1.0)
 	currents = SkyCurrents.new()
 	add_child(currents)
 	currents.name = "SkyCurrents"
-	var top: float = scene.isle_top()
-	var ring := []
-	for k in range(10):
-		var a := k*TAU/10.0
-		var swell := 10.0*sin(a*2.0)
-		ring.append(Vector3(cos(a)*LOOP_HALF.x,top-30.0+LOOP_UP+swell,sin(a)*LOOP_HALF.y))
-	currents.currents.append(currents._current(SkyCurrents._loop(ring),true,JET,JET_RADIUS,"jet"))
-	var cross := PackedVector3Array()
-	for k in range(7):
-		var x := lerpf(-520.0,520.0,k/6.0)
-		cross.append(Vector3(x,top-30.0+CROSS_UP+6.0*sin(k*1.7),60.0*sin(k*0.9)))
-	currents.add_jet(cross,"cross",JET)
-	currents.currents[-1].radius = JET_RADIUS
-	# The ribbons are sparse (SkyCurrents JET_RIBBONS); each jet laid
-	# SHOWN times over draws SHOWN times the strokes, the air the same (only
-	# the deepest jet counts).
-	for jet: Dictionary in currents.currents.duplicate():
-		for k in range(SHOWN-1): currents.currents.append(jet)
-	currents._wisps_later()
+	if jets: _build_jets(scene)
 	_build_rain()
 	lightning = PlaneLightning.new()
 	add_child(lightning)
@@ -233,6 +222,28 @@ func setup(scene: Node3D) -> void:
 	for old in ["Rain","RainCrowns"]:
 		var node: Node3D = scene._precipitation.get_node_or_null(old)
 		if node != null: node.visible = false
+
+## The jets: a loop round the field and a high one across it.
+func _build_jets(scene: Node3D) -> void:
+	var top: float = scene.isle_top()
+	var ring := []
+	for k in range(10):
+		var a := k*TAU/10.0
+		var swell := 10.0*sin(a*2.0)
+		ring.append(Vector3(cos(a)*LOOP_HALF.x,top-30.0+LOOP_UP+swell,sin(a)*LOOP_HALF.y))
+	currents.currents.append(currents._current(SkyCurrents._loop(ring),true,JET,JET_RADIUS,"jet"))
+	var cross := PackedVector3Array()
+	for k in range(7):
+		var x := lerpf(-520.0,520.0,k/6.0)
+		cross.append(Vector3(x,top-30.0+CROSS_UP+6.0*sin(k*1.7),60.0*sin(k*0.9)))
+	currents.add_jet(cross,"cross",JET)
+	currents.currents[-1].radius = JET_RADIUS
+	# The ribbons are sparse (SkyCurrents JET_RIBBONS); each jet laid
+	# SHOWN times over draws SHOWN times the strokes, the air the same (only
+	# the deepest jet counts).
+	for jet: Dictionary in currents.currents.duplicate():
+		for k in range(SHOWN-1): currents.currents.append(jet)
+	currents._wisps_later()
 
 func _build_rain() -> void:
 	_rain = _streaks("Rain",RAIN_DROPS,RAIN_LIFE,RAIN_BOX,RAIN_WIDTH,RAIN_COLOUR,4.0,30.0)
@@ -414,22 +425,29 @@ func grade() -> void:
 	RenderingServer.global_shader_parameter_set("zs_storm_grade",storm)
 	RenderingServer.global_shader_parameter_set("zs_storm_thin",storm)
 	_grade_sky(sky)
-	_grade_frame()
+	if grade_frame: _grade_frame()
 	lightning.publish(storm)
 
 func _grade_frame() -> void:
 	var env: Environment = _scene.get("_environment")
 	if env == null: return
+	var g := frame_grade()
+	env.adjustment_enabled = not g.is_equal_approx(Vector3.ONE)
+	if not env.adjustment_enabled: return
+	env.adjustment_brightness = g.x
+	env.adjustment_saturation = g.y
+	env.adjustment_contrast = g.z
+
+## The frame's grade now: (brightness, saturation, contrast), all 1 in fair
+## air.
+func frame_grade() -> Vector3:
 	var k := clampf(storm,0.0,1.0)
 	var m := clampf(murk,0.0,1.0)
-	env.adjustment_enabled = k > 0.0 or m > 0.0
-	if not env.adjustment_enabled: return
+	if k <= 0.0 and m <= 0.0: return Vector3.ONE
 	var back := clampf(lightning.flash*FLASH_UNGRADE,0.0,1.0)*(1.0-m)
 	var dim := lerpf(lerpf(1.0,GRADE_DIM,k),MURK_DIM,m)
 	var sat := lerpf(lerpf(1.0,GRADE_SAT,k),MURK_SAT,m)
-	env.adjustment_brightness = lerpf(dim,1.0,back)
-	env.adjustment_saturation = lerpf(sat,1.0,back*0.5)
-	env.adjustment_contrast = lerpf(1.0,1.08,m)
+	return Vector3(lerpf(dim,1.0,back),lerpf(sat,1.0,back*0.5),lerpf(1.0,1.08,m))
 
 func _grade_sky(sky) -> void:
 	if sky == null or storm <= 0.0: return

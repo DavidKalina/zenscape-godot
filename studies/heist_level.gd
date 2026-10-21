@@ -19,6 +19,10 @@ extends "res://studies/crag_reach.gd"
 ## banked by landing it home (`greed_banked`). Its flags: --home-far=,
 ## --hunt-seed=, --haze=, --no-haze, --cue-far=; --no-home the heist alone
 ## (the run starts on its landing, banked by flying clear).
+## The storm (studies/heist_storm.gd): on about one run in three, drawn
+## from the hunt's seed, a storm cell rolls in while he flies; --storm=
+## always|never, --storm-chance=<0..1>, --storm-at=<s of flight>. In
+## flight: C a cell toward the plane, M a whiteout, K / Shift+K the dragon.
 
 ## The masses: [name, the top unit's middle (x, height off TOP, z), its
 ## spec, its parts [part, offset (x, dy, z), spec]] (crag_reach.gd MASSES).
@@ -467,6 +471,10 @@ func _ready() -> void:
 		home = HeistHome.new()
 		home.read_flags()
 		add_child(home)
+	# The storm's draw, off the hunt's seed (studies/heist_storm.gd).
+	storm = HeistStorm.new()
+	add_child(storm)
+	storm.setup(self,int(home.hunt_seed) if home != null else 0)
 	super._ready()
 	# The haze that hides each isle from the other (HeistHome `apply_haze`).
 	if home != null: home.apply_haze(_environment)
@@ -513,6 +521,9 @@ const HeistSky = preload("res://studies/heist_level_sky.gd")
 const HomeHub = preload("res://studies/home_hub.gd")
 ## Home, null with --no-home.
 var home: Node3D = null
+const HeistStorm = preload("res://studies/heist_storm.gd")
+## The storm that may roll in on a flight (studies/heist_storm.gd).
+var storm: Node = null
 var _heist_strip := Vector4.INF
 var _ledger_was := []
 
@@ -1179,9 +1190,30 @@ func _stage_turf(delta: float) -> void:
 
 ## Flying (no foot tick then): the takeoff beat.
 func _process(delta: float) -> void:
+	if storm != null: storm.step(delta)
 	super._process(delta)
+	if storm != null: storm.after_sky()
 	if home != null: home.tint_haze(_environment,_celestial)
+	if storm != null and home != null: storm.fold_haze(_environment,home)
 	if flying and delta > 0.0: _stage_turf(delta)
+
+## The storm's debug keys, in flight only (on foot C crouches, M is the
+## rope study's moveset): C a cell toward the plane, M a whiteout, K /
+## Shift+K the dragon far / close (studies/heist_storm.gd).
+func _unhandled_input(event: InputEvent) -> void:
+	if storm != null and flying and event is InputEventKey and event.pressed and not event.echo:
+		var k := event as InputEventKey
+		if not (k.ctrl_pressed or k.meta_pressed or k.alt_pressed):
+			var said := ""
+			match k.keycode:
+				KEY_C: said = storm.key_cell()
+				KEY_M: said = storm.key_whiteout()
+				KEY_K: said = storm.key_dragon(k.shift_pressed)
+			if said != "":
+				_show_toast(said)
+				get_viewport().set_input_as_handled()
+				return
+	super._unhandled_input(event)
 
 func tick(delta: float) -> void:
 	super.tick(delta)
