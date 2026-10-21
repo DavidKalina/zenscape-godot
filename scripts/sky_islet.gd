@@ -620,6 +620,9 @@ func _lay_ground(rng: RandomNumberGenerator) -> void:
 	if recipe.has("downs"): HillDowns.shape(self,rng,inland)
 	_erode()
 	if cliffs != null: cliffs.lift(self)
+	# A recipe's own hook on the shaped ground, before its water is cut and
+	# its plants go in (studies/heist_home.gd levels its strip there).
+	if recipe.has("shaped"): (recipe.shaped as Callable).call(self)
 	if recipe.has("stream"): IsletStream.cut(self,rng)
 	if recipe.has("lake"): IsletLake.cut(self,rng,inland)
 	elif kind == "spring" or recipe.has("pond"): _cut_pond(rng,inland)

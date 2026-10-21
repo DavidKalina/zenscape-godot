@@ -79,6 +79,9 @@ const STRIP_HALF := 10.0
 const STRIP_FADE := 10.0
 const STRIP_RIM := 6.0
 const STRIP_OFF := 0.12
+## The outline leans to hold the strip (island_outline.gd `spine`): its
+## share cut by this much along the coded line.
+const SPINE_PULL := 0.45
 ## The strip's top stands this far (m) over the scene's TOP.
 const LIFT := 0.0
 ## The parked plane: this far (m) in from the strip's end; he starts beside
@@ -211,6 +214,7 @@ var _grass_mid_tris := 0
 ## The strip in the tableland's frame (x, z): its ends; its top there.
 var _strip_local := [Vector2.ZERO,Vector2.ZERO]
 var _strip_y := 0.0
+var _strip_earth := 0.0
 
 func _init() -> void:
 	name = "Home"
@@ -262,8 +266,22 @@ func build(h: Node3D, top: float) -> void:
 	var table_spec := _table_spec(rng,tilt)
 	var lake_spec := _lake_spec(lrng,t,table_at)
 	if not lake_spec.is_empty(): table_spec.lake = lake_spec
+	# The strip sought and levelled once the land is shaped, before the lake
+	# is dug (its basin keeps off the strip's line) and the trees planted
+	# (they keep off the strip).
+	table_spec.shaped = func(islet: RefCounted) -> void:
+		_level_strip(islet,t)
+		var basin: Dictionary = lake_spec.get("basin",{})
+		if basin.has("keep"):
+			var a: Vector2 = _strip_local[0]
+			var b: Vector2 = _strip_local[1]
+			basin.keep = {"point":(a+b)*0.5,"axis":(b-a).normalized(),"clear":STRIP_HALF+STRIP_FADE+LAKE_KEEP}
+	# Its outline leans to hold a full strip along the contours (a bay may
+	# not cut across it): scripts/island_outline.gd's `spine`.
+	var spine_mid := -t*TABLE_R*STRIP_OFF
+	var spine_half := STRIP*0.5+STRIP_RIM+STRIP_FADE
+	table_spec.outline = {"spine":[spine_mid-t.orthogonal()*spine_half,spine_mid+t.orthogonal()*spine_half,STRIP_HALF+STRIP_FADE+STRIP_RIM,SPINE_PULL]}
 	var shape: RefCounted = SkyIslet.author(TABLE_SEED+hunt_seed,table_spec)
-	_level_strip(shape,t)
 	var made := SkyIslets.dress(shape,palette,middle.y-_strip_y)
 	table_at.y = middle.y-_strip_y
 	# Its ground a run of colour under the grass, not a quilt of triangles.
@@ -392,17 +410,14 @@ func _table_spec(rng: RandomNumberGenerator, tilt: float) -> Dictionary:
 		"trees":Vector2i(20,30),"tree_pool":{"juniper":1.0,"tree":0.6,"birch":0.35},"drifts":Vector2i(0,0),"undergrowth":0.6,
 		"rock":{"palette":palettes[rng.randi() % palettes.size()],"tone":rng.randf_range(0.8,0.92),"vary":rng.randf(),"bed":TABLE_BED}}
 
-## The strip levelled across the tableland, square to its tilt (along the
-## contours), STRIP_OFF of the radius toward the low side; its plants kept
-## off. Its ends and top go in `_strip_local`, `_strip_y`.
+## The strip: the longest clear, flat run across the tableland (`_seek_strip`),
+## levelled to its mean height, fading back to the land over STRIP_FADE m;
+## its plants kept off. Its ends and top go in `_strip_local`, `_strip_y`.
 func _level_strip(shape: RefCounted, t: Vector2) -> void:
-	var along := t.orthogonal()
-	var mid := -t*TABLE_R*STRIP_OFF
-	var ra: Vector2 = shape.rim_point(atan2(along.y,along.x))
-	var rb: Vector2 = shape.rim_point(atan2(-along.y,-along.x))
-	var half := minf(STRIP*0.5,minf(ra.length(),rb.length())-STRIP_RIM-STRIP_FADE)
-	var a := mid-along*half
-	var b := mid+along*half
+	var sought := Time.get_ticks_msec()
+	var found := _seek_strip(shape,t)
+	var a: Vector2 = found[0]
+	var b: Vector2 = found[1]
 	var points: PackedVector2Array = shape.points
 	var heights: PackedFloat32Array = shape.heights
 	var dist: PackedFloat32Array = shape.shore_distance
@@ -420,14 +435,133 @@ func _level_strip(shape: RefCounted, t: Vector2) -> void:
 		if k > 0.0: heights[i] = lerpf(heights[i],level,k)
 	shape.heights = heights
 	var clear: Array = (shape.recipe.get("clear",[]) as Array).duplicate()
-	var steps := int(ceil(half*2.0/STRIP_HALF))
+	var steps := int(ceil(a.distance_to(b)/STRIP_HALF))
 	for s in range(steps+1):
 		var p := a.lerp(b,float(s)/steps)
 		clear.append(Vector3(p.x,p.y,STRIP_HALF+STRIP_FADE*0.5))
 	shape.recipe.clear = clear
 	_strip_local = [a,b]
 	_strip_y = level
-	print("home: strip %.0f m levelled at %.1f over %d points" % [half*2.0,level,n])
+	_strip_earth = float(found[3])
+	print("home: strip sought in %d ms" % (Time.get_ticks_msec()-sought))
+	print("home: strip %.0f m levelled at %.1f over %d points (%.0f deg off the contours, %.1f m of earthworks)" % [a.distance_to(b),level,n,rad_to_deg(found[2]),float(found[3])])
+
+## The strip's line sought over the land: headings round half a turn
+## (SEEK_TURN degree steps, then finer round the best) and offsets
+## (SEEK_SHIFT m), each walked in SEEK_PACE m paces; a pace is clear while
+## the turf (STRIP_HALF each side) lies STRIP_RIM m in from the shore and its
+## fade on the land. The longest clear run, its ends STRIP_RIM+STRIP_FADE m
+## short of where it stops, up to STRIP m; scored down SEEK_EARTH a metre of
+## earthworks (the most its ground strays from its mean), a little for
+## turning off the contours and for straying from the coded line (STRIP_OFF
+## of the radius toward the low side `-t`). [a, b, its turn off the
+## contours, earthworks (m)].
+const SEEK_TURN := 10.0
+const SEEK_SHIFT := 3.0
+const SEEK_PACE := 2.0
+const SEEK_EARTH := 1.5
+const SEEK_CELL := 2.0
+func _seek_strip(shape: RefCounted, t: Vector2) -> Array:
+	# The shore distance and the ground on a SEEK_CELL m raster (the shape's
+	# own look-up is too slow for the search).
+	var reach := float(shape.reach)+2.0
+	var side := ceili(reach*2.0/SEEK_CELL)+1
+	var shore := PackedFloat32Array()
+	var ground := PackedFloat32Array()
+	shore.resize(side*side)
+	ground.resize(side*side)
+	var dist: PackedFloat32Array = shape.shore_distance
+	var heights: PackedFloat32Array = shape.heights
+	for j in range(side):
+		for i in range(side):
+			var q := Vector2(-reach+i*SEEK_CELL,-reach+j*SEEK_CELL)
+			shore[j*side+i] = shape._sample(dist,q,-1.0)
+			ground[j*side+i] = shape._sample(heights,q,0.0)
+	var raster := {"shore":shore,"ground":ground,"side":side,"reach":reach}
+	var along0 := t.orthogonal()
+	var coded := -t*TABLE_R*STRIP_OFF
+	var best := [coded-along0*10.0,coded+along0*10.0,0.0,0.0,-INF]
+	for k in range(roundi(180.0/SEEK_TURN)):
+		var turn := deg_to_rad(k*SEEK_TURN)
+		if turn > PI*0.5: turn -= PI
+		var got := _seek_line(raster,along0,coded,turn)
+		if float(got[4]) > float(best[4]): best = got
+	var coarse: float = best[2]
+	for k in range(-3,4):
+		if k == 0: continue
+		var got := _seek_line(raster,along0,coded,coarse+deg_to_rad(k*SEEK_TURN/4.0))
+		if float(got[4]) > float(best[4]): best = got
+	return best
+
+## The best strip on lines at `turn` off the contours (`_seek_strip`):
+## [a, b, turn, earthworks, score].
+static func _seek_line(raster: Dictionary, along0: Vector2, coded: Vector2, turn: float) -> Array:
+	var shore: PackedFloat32Array = raster.shore
+	var ground: PackedFloat32Array = raster.ground
+	var side: int = raster.side
+	var reach: float = raster.reach
+	var along := along0.rotated(turn)
+	var across := along.orthogonal()
+	var trim := STRIP_RIM+STRIP_FADE
+	var widths := PackedFloat32Array([0.0,STRIP_HALF,-STRIP_HALF,STRIP_HALF+STRIP_FADE,-STRIP_HALF-STRIP_FADE])
+	var needs := PackedFloat32Array([STRIP_RIM,STRIP_RIM,STRIP_RIM,0.5,0.5])
+	var best := [Vector2.ZERO,Vector2.ZERO,turn,0.0,-INF]
+	var off := -reach
+	while off <= reach:
+		var o := across*off
+		off += SEEK_SHIFT
+		var run_from := NAN
+		var s := -reach
+		while s <= reach+SEEK_PACE:
+			var ok := s <= reach
+			if ok:
+				var c := o+along*s
+				for w in range(5):
+					var q: Vector2 = c+across*widths[w]
+					var i := roundi((q.x+reach)/SEEK_CELL)
+					var j := roundi((q.y+reach)/SEEK_CELL)
+					if i < 0 or j < 0 or i >= side or j >= side or shore[j*side+i] < needs[w]:
+						ok = false
+						break
+			if ok and is_nan(run_from): run_from = s
+			elif not ok and not is_nan(run_from):
+				var lo := run_from+trim
+				var hi := s-SEEK_PACE-trim
+				run_from = NAN
+				if hi-lo >= 20.0:
+					# The longest STRIP of it, its flattest stretch.
+					var fit := minf(hi-lo,STRIP)
+					var slide := lo
+					var pick := [INF,lo]
+					while slide+fit <= hi+0.01:
+						var earth := _earthworks(ground,side,reach,o,along,across,slide,slide+fit)
+						if earth < float(pick[0]): pick = [earth,slide]
+						slide += SEEK_PACE*2.0
+					var mid := o+along*(float(pick[1])+fit*0.5)
+					var score: float = fit-float(pick[0])*SEEK_EARTH-absf(turn)*4.0-mid.distance_to(coded)*0.02
+					if score > float(best[4]):
+						best = [o+along*float(pick[1]),o+along*(float(pick[1])+fit),turn,pick[0],score]
+			s += SEEK_PACE
+	return best
+
+## The most the ground under a strip from `from` to `to` (m along `along`
+## from `o`) strays from its mean (m), off the raster.
+static func _earthworks(ground: PackedFloat32Array, side: int, reach: float, o: Vector2, along: Vector2, across: Vector2, from: float, to: float) -> float:
+	var hs := PackedFloat32Array()
+	var s := from
+	while s <= to:
+		for w: float in [0.0,STRIP_HALF*0.9,-STRIP_HALF*0.9]:
+			var q := o+along*s+across*w
+			var i := clampi(roundi((q.x+reach)/SEEK_CELL),0,side-1)
+			var j := clampi(roundi((q.y+reach)/SEEK_CELL),0,side-1)
+			hs.append(ground[j*side+i])
+		s += SEEK_PACE*2.0
+	var mean := 0.0
+	for h in hs: mean += h
+	mean /= maxf(hs.size(),1)
+	var most := 0.0
+	for h in hs: most = maxf(most,absf(h-mean))
+	return most
 
 static func _to_segment(p: Vector2, a: Vector2, b: Vector2) -> float:
 	var ab := b-a
