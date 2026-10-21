@@ -28,7 +28,9 @@ extends Node3D
 ## hour runs, --plain-look round one's plain sky and colours; T steps to the
 ## next quarter of the day, L to the next mood. The clouds (scripts/endless/
 ## endless_clouds.gd): --no-clouds, --cloud-cover=X (1); C turns them off
-## and on.
+## and on. The grass carpet (scripts/endless/endless_grass.gd): --no-grass,
+## --grass=X (its density, 1), --grass-range=M (how far the tufts reach,
+## 230), --grass-lod=x,y,z,w (its rings); G turns it off and on.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
@@ -40,6 +42,7 @@ const GlideCamera = preload("res://scripts/glide_camera.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
 const EndlessLook = preload("res://scripts/endless/endless_look.gd")
+const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -73,6 +76,9 @@ var flaps := false
 var sea: MeshInstance3D
 ## The look (sky, light, haze, ground, sea), or null under --plain-look.
 var look: Node3D
+## The grass carpet round the eye (off at the start under --no-grass), or
+## null under --plain-look.
+var grass: Node3D
 var flown := 0.0
 var _start := Vector2.ZERO
 var _heading := 0.0
@@ -118,6 +124,11 @@ func _ready() -> void:
 	land.name = "Land"
 	add_child(land)
 	land.setup(seed,look.ground if look != null else null)
+	if look != null:
+		grass = EndlessGrass.new()
+		grass.setup(seed,look.ground)
+		add_child(grass)
+		grass.set_enabled(EndlessGrass.wanted())
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 	_build_ui()
 	_hud.visible = _numbers
@@ -126,6 +137,7 @@ func _ready() -> void:
 	camera.global_position = eye
 	var took: float = land.prime(eye)
 	_launch(Vector3(_start.x,_start_height(),_start.y),_heading)
+	if grass != null and grass.enabled: grass.prime(camera.global_position)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)" % [seed,took,int(land.counts().standing)])
 	if get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -215,7 +227,7 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  land on the meadows  ·  R up again  ·  C clouds  ·  F1 numbers"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  land on the meadows  ·  R up again  ·  C clouds  ·  G grass  ·  F1 numbers"
 	layer.add_child(_hint)
 
 # --- The plane ------------------------------------------------------------------------
@@ -303,6 +315,9 @@ func tick(delta: float) -> void:
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() else Vector3.ZERO
 	_frame(delta)
 	land.step(camera.global_position)
+	if grass != null:
+		var view := get_viewport().get_camera_3d()
+		grass.step((view if view != null else camera).global_position)
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
 	_show_hud()
@@ -368,6 +383,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				if look != null: look.next_mood()
 			KEY_C:
 				if look != null and look.clouds != null: look.clouds.set_enabled(not look.clouds.enabled)
+			KEY_G:
+				if grass != null: grass.set_enabled(not grass.enabled)
 			KEY_Q: _lean_tapped(-1.0)
 			KEY_E: _lean_tapped(1.0)
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -384,10 +401,18 @@ func _show_hud() -> void:
 	var s: Dictionary = land.stats
 	# The GPU's own time, where the driver reports it (not on Metal).
 	var gpu := RenderingServer.viewport_get_measured_render_time_gpu(get_viewport().get_viewport_rid())
-	_hud.text = "seed %d  ·  %s  ·  %.1f m/s  ·  %.0f m over the ground  ·  flaps %s\nat %.0f, %.0f  ·  %d fps (%.1f ms)%s%s\nland: %d drawn, %d standing, %d wanted, %d building, %d queued, %d colliders\nbuilt %d (%.1f ms each on a worker), slowest commit %.2f ms" % [
+	_hud.text = "seed %d  ·  %s  ·  %.1f m/s  ·  %.0f m over the ground  ·  flaps %s\nat %.0f, %.0f  ·  %d fps (%.1f ms)%s%s\nland: %d drawn, %d standing, %d wanted, %d building, %d queued, %d colliders\nbuilt %d (%.1f ms each on a worker), slowest commit %.2f ms%s" % [
 		seed,ManualLanding.NAMES[hand_landing.phase],float(plane.speed),p.y-maxf(field.height(p.x,p.z),Field.SEA_Y),"down" if flaps else "up",
 		p.x,p.z,Engine.get_frames_per_second(),1000.0/maxf(Engine.get_frames_per_second(),1.0),
 		("  ·  gpu %.2f ms" % gpu) if gpu > 0.0 else "",
 		("  ·  %s, %05.2f h%s" % [look.mood_title(),look.hour(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
-		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms)]
+		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()]
+
+func _grass_note() -> String:
+	if grass == null: return ""
+	if not grass.enabled: return "\ngrass off (G)"
+	var g: Dictionary = grass.counts()
+	var gs: Dictionary = grass.stats
+	return "\ngrass: %d cells, %d building, %d queued, %dk plants  ·  %.0f ms a cell on a worker, slowest stand %.2f ms" % [
+		int(g.cells),int(g.building),int(g.queued),int(g.instances)/1000,float(gs.grow_ms)/maxf(float(gs.grown),1.0),float(gs.slowest_stand_ms)]

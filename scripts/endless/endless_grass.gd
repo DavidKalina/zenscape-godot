@@ -1,0 +1,512 @@
+extends Node3D
+## The endless land's grass carpet (docs/design/endless-flight/grass-round-handoff.md):
+## the aqueduct isle's own carpet (studies/aqueduct_isle_flora.gd `carpeted`
+## and `calm`: KitFlora's Grow, scripts/kit_isle/kit_flora.gd, drawing the
+## game's shader grass tufts, scripts/grass_tuft_mesh.gd, and its meadow
+## flowers) grown over the streamed land round the eye, a CELL m square at a
+## time, and freed as the eye leaves it.
+##
+## Each cell grows on a WorkerThreadPool task from the land's own field
+## (scripts/endless/land_field.gd), with no physics: its probe reads a 1 m
+## height grid of the cell made on the task and interpolated as the land's
+## finest chunks draw it (scripts/endless/land_stream.gd), so a tuft stands
+## on the drawn turf. Grass grows on open turf only: over the beach
+## (BEACH_CLEAR m over the sea), on ground no steeper than SLOPE allows, and
+## thinning out over the tundra (HIGH); none on rock, sand, snow or seabed.
+## The tufts are drawn, no collision: the meadows land as before. Each tuft
+## takes the painted ground's patches under it (scripts/endless/
+## endless_patch.gd) as its instance colour, so the carpet sits in its field.
+##
+## Two layers of cells, in KitFlora's distance rings (Site `lod`, LOD m from
+## the eye, in 3D, so from high up each is a smaller disc below):
+##   near  the isle's carpet at its own density with its own tuft material
+##         (sway, light, colour), out to LOD.x, each tuft shrinking into the
+##         ground at its own distance by LOD.y; the wildflowers with it,
+##         thinning out over FLOWER_FADE.
+##   far   FAR_TUFTS a square metre of the cheaper tuft (GrassTuft.build_lite)
+##         grown FAR_GROW wide and tall, drawn plainly (shaders/
+##         endless_tuft_far.gdshader): growing in from nothing over
+##         LOD.x..LOD.y as the near ring thins, thinning out over LOD.z..LOD.w.
+## Past that the painted ground (shaders/endless_ground.gdshader) alone, which
+## takes the carpet's tone and grain past LOD.z (told here), so the tufts
+## give way to it with no ring.
+##
+## The main thread only stands the finished batches (KitFlora's tiles, one
+## multimesh a tile and part), within STAND_BUDGET ms a frame.
+##
+## Flags: --no-grass (none; G turns it off and on in flight), --grass=X (the
+## carpet's density, a share of the isle's, 1), --grass-range=M (where the
+## far ring ends, LOD.w; the rest of the rings scaled with it),
+## --grass-lod=x,y,z,w (the four ring distances), --no-flowers.
+
+const Field = preload("res://scripts/endless/land_field.gd")
+const Carpet = preload("res://studies/aqueduct_isle_flora.gd")
+const SkyIslets = preload("res://scripts/sky_islets.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+const Patch = preload("res://scripts/endless/endless_patch.gd")
+
+## A cell's side (m; the land's finest chunk), its height grid's border
+## (samples past each edge, for the growers' probes round a root).
+const CELL := 64.0
+const PAD := 4
+## The rings (m from the eye): the near carpet out to x, thinned by y; the
+## far ring grown in over x..y, out to z, thinned by w. A tuft goes over SOFT m.
+const LOD := Vector4(20.0,36.0,150.0,230.0)
+const SOFT := 8.0
+## The far ring: tufts a square metre (a share of the near carpet's 7.8),
+## grown this much (wide, tall) over the near ring's band.
+const FAR_TUFTS := 1.8
+const FAR_GROW := Vector2(2.0,1.8)
+## The far ring's colours at the root and the tip (linear; endless_tuft_far
+## `root_colour`, `tip_colour`), matched to the near ring's tufts.
+const FAR_ROOT := Vector3(0.093,0.27,0.13)
+const FAR_TIP := Vector3(0.28,0.55,0.22)
+## The flowers thin out between these distances (m), each at its own.
+const FLOWER_FADE := Vector2(22.0,55.0)
+## A cell is freed this far (m) past where it is wanted.
+const KEEP := 24.0
+## Open turf: from this far over the sea (m; the beach's sand is gone
+## there), on ground whose normal's up is over SLOPE.x (full past .y),
+## thinning to none from HIGH.x to HIGH.y m over the sea (the tundra).
+const BEACH_CLEAR := 2.55
+const BEACH_RAMP := 0.35
+const SLOPE := Vector2(0.905,0.95)
+const HIGH := Vector2(36.0,58.0)
+## The tufts' roots sink this much (m), so none stands on air where a
+## coarser chunk draws the turf a hair lower.
+const SINK := 0.04
+## The ground's patches are read onto the tufts off a grid this fine (m),
+## and the tufts' colour scaled by TUFT_TONE over them.
+const TINT_STEP := 2.0
+const TUFT_TONE := Color(1.0,1.0,1.0)
+## The painted grass's tone past the tufts (linear, over its own colour),
+## as the carpet reads from afar: seen from above, and at a glance.
+const TONE_TOP := Vector3(0.76,0.82,0.86)
+const TONE_LOW := Vector3(0.56,0.66,0.68)
+## Cells growing at once (the near layer's first), ms a frame for standing
+## their batches.
+const MAX_TASKS := 6
+const STAND_BUDGET := 1.5
+
+var seed := 0
+var enabled := true
+var share := 1.0
+var lod := LOD
+## The wildflowers in the near carpet (--no-flowers leaves them out).
+var flowers := true
+## Cells grown and freed, their grow times, the slowest stand, for the HUD
+## and drivers.
+var stats := {"grown":0,"freed":0,"grow_ms":0.0,"slowest_grow_ms":0.0,"slowest_stand_ms":0.0}
+var field: RefCounted
+## The land's ground (shaders/endless_ground.gdshader), told where the
+## tufts grow and how far they reach, so its paint takes over past them.
+var ground: ShaderMaterial
+
+## One layer of cells: how far (3D, m) it is wanted, its grower's settings
+## and its cells.
+class Layer extends RefCounted:
+	var far := false
+	var reach := 0.0
+	var site := {}
+	var share := 0.0
+	var cells := {}       # Vector2i -> Node3D
+	var pending := {}     # Vector2i -> task id
+	var wanted := {}
+	var queue: Array = []
+
+var near_layer := Layer.new()
+var far_layer := Layer.new()
+var _done: Array = []
+var _lock := Mutex.new()
+var _quit := false
+var _eye := Vector3.ZERO
+var _planned_at := Vector3.INF
+var _calmed := {}
+var _fars := {}
+var _since_plan := 0
+
+## Whether the grass is asked for (not --no-grass).
+static func wanted() -> bool:
+	return not "--no-grass" in LaunchArgs.user_args()
+
+func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
+	name = "Grass"
+	seed = land_seed
+	ground = ground_material
+	field = Field.new(seed)
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--grass="): share = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a.begins_with("--grass-range="):
+			var w := maxf(a.get_slice("=",1).to_float(),20.0)
+			lod = LOD*(w/LOD.w)
+		elif a == "--no-flowers": flowers = false
+		elif a.begins_with("--grass-lod="):
+			var p := a.get_slice("=",1).split(",")
+			if p.size() >= 4: lod = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]))
+	# The isle's carpet settings, read here once (the workers copy them).
+	var s := KitFlora.Site.new()
+	Carpet.carpeted(s)
+	var site := {"carpet":s.carpet,"tufts":s.tufts*share,"grass_range":lod.w,"tuft_bump":s.tuft_bump,"shag":s.shag,
+		"variety":s.variety,"contact":s.contact,"height_field":s.height_field,"tilt":s.tilt}
+	near_layer.site = site
+	near_layer.reach = maxf(lod.y,FLOWER_FADE.y)
+	near_layer.share = 0.0
+	near_layer.site.flowers = flowers
+	far_layer.far = true
+	far_layer.site = site.duplicate()
+	far_layer.site.tufts = FAR_TUFTS*share
+	# No wild grass or tussocks a few pixels across (their probes cost the
+	# most of a cell's grow).
+	far_layer.site.shag = 0.0
+	far_layer.site.variety = false
+	far_layer.reach = lod.w
+	far_layer.share = 1.0
+	# The plant catalog made on the main thread before any worker reads it.
+	SkyIslets.catalog()
+	if ground != null:
+		ground.set_shader_parameter("turf_beach",Vector2(BEACH_CLEAR,BEACH_CLEAR+BEACH_RAMP))
+		ground.set_shader_parameter("turf_slope",SLOPE)
+		ground.set_shader_parameter("turf_high",HIGH)
+		ground.set_shader_parameter("carpet_tone_top",TONE_TOP)
+		ground.set_shader_parameter("carpet_tone_low",TONE_LOW)
+	_reach()
+
+func _exit_tree() -> void:
+	_quit = true
+	for layer: Layer in [near_layer,far_layer]:
+		for key: Vector2i in layer.pending: WorkerThreadPool.wait_for_task_completion(layer.pending[key])
+		layer.pending.clear()
+
+## The ground's paint told how far the tufts reach (none while off).
+func _reach() -> void:
+	if ground != null: ground.set_shader_parameter("carpet_reach",Vector2(lod.z,lod.w) if enabled else Vector2.ZERO)
+
+## Turned off (freed) or on again (grown round the eye).
+func set_enabled(on: bool) -> void:
+	enabled = on
+	_reach()
+	if not on:
+		for layer: Layer in [near_layer,far_layer]:
+			for key: Vector2i in layer.cells.keys(): _free(layer,key)
+			layer.queue.clear()
+			layer.wanted.clear()
+		_lock.lock()
+		_done.clear()
+		_lock.unlock()
+	_planned_at = Vector3.INF
+
+## One frame: the cells round `eye` (the camera that draws) asked for,
+## finished ones stood within the budget, far ones freed.
+func step(eye: Vector3) -> void:
+	_eye = eye
+	_reap()
+	if not enabled:
+		_lock.lock()
+		_done.clear()
+		_lock.unlock()
+		return
+	if ground != null and not _fars.is_empty():
+		var night: Variant = ground.get_shader_parameter("night_grade")
+		for id: Variant in _fars: (_fars[id] as ShaderMaterial).set_shader_parameter("night_grade",night)
+	# Replanned as the eye moves, and now and then anyway, so a cell that
+	# finished while it wasn't wanted is asked for again once it is.
+	_since_plan += 1
+	if _planned_at == Vector3.INF or eye.distance_to(_planned_at) > 4.0 or _since_plan > 30: _plan()
+	_ask()
+	_stand()
+
+## The near cells under the full carpet (LOD.y), and the far ones within
+## PRIME_FAR m, grown before the first frame, the main thread waiting (at most PRIME_WAIT s); the rest grow in
+## flight.
+const PRIME_WAIT := 4.0
+const PRIME_FAR := 90.0
+func prime(at: Vector3) -> void:
+	var began := Time.get_ticks_msec()
+	step(at)
+	while Time.get_ticks_msec()-began < PRIME_WAIT*1000.0:
+		var left := false
+		for key: Vector2i in near_layer.wanted:
+			if not near_layer.cells.has(key) and _flat(key) < lod.y: left = true
+		for key: Vector2i in far_layer.wanted:
+			if not far_layer.cells.has(key) and _flat(key) < PRIME_FAR: left = true
+		if not left: break
+		OS.delay_msec(4)
+		_reap()
+		_ask()
+		_stand(true)
+	# The load's stands aren't flight's.
+	stats.slowest_stand_ms = 0.0
+
+## How far the eye stands over the ground under it (m, at least 0).
+func _over(eye: Vector3) -> float:
+	return maxf(eye.y-maxf(field.height(eye.x,eye.z),Field.SEA_Y),0.0)
+
+## The eye's flat distance to a cell's square.
+func _flat(key: Vector2i) -> float:
+	var x0 := key.x*CELL
+	var z0 := key.y*CELL
+	var dx := maxf(maxf(x0-_eye.x,_eye.x-(x0+CELL)),0.0)
+	var dz := maxf(maxf(z0-_eye.z,_eye.z-(z0+CELL)),0.0)
+	return sqrt(dx*dx+dz*dz)
+
+func _plan() -> void:
+	_planned_at = _eye
+	_since_plan = 0
+	var over := _over(_eye)
+	for layer: Layer in [near_layer,far_layer]:
+		# In 3D: the rings' disc on the ground shrinks as the eye rises.
+		var reach := sqrt(maxf(layer.reach*layer.reach-over*over,0.0))
+		layer.wanted.clear()
+		if reach > 0.0:
+			var r := ceili((reach+CELL)/CELL)
+			var cx := floori(_eye.x/CELL)
+			var cz := floori(_eye.z/CELL)
+			for dz in range(-r,r+1):
+				for dx in range(-r,r+1):
+					var key := Vector2i(cx+dx,cz+dz)
+					if _flat(key) <= reach: layer.wanted[key] = true
+		var free_past := sqrt(maxf((layer.reach+KEEP)*(layer.reach+KEEP)-over*over,0.0))
+		for key: Vector2i in layer.cells.keys():
+			if not layer.wanted.has(key) and _flat(key) > free_past: _free(layer,key)
+		layer.queue.clear()
+		for key: Vector2i in layer.wanted:
+			if not layer.cells.has(key) and not layer.pending.has(key): layer.queue.append(key)
+		layer.queue.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return _flat(a) < _flat(b))
+
+func _free(layer: Layer, key: Vector2i) -> void:
+	(layer.cells[key] as Node).queue_free()
+	layer.cells.erase(key)
+	stats.freed += 1
+
+func _ask() -> void:
+	for layer: Layer in [near_layer,far_layer]:
+		while near_layer.pending.size()+far_layer.pending.size() < MAX_TASKS and not layer.queue.is_empty():
+			var key: Vector2i = layer.queue.pop_front()
+			if layer.cells.has(key) or layer.pending.has(key): continue
+			layer.pending[key] = WorkerThreadPool.add_task(_grow.bind(layer,key,seed,layer.site.duplicate(),lod),false,"grass cell")
+
+## Finished tasks let go.
+func _reap() -> void:
+	for layer: Layer in [near_layer,far_layer]:
+		for key: Vector2i in layer.pending.keys():
+			var id: int = layer.pending[key]
+			if WorkerThreadPool.is_task_completed(id):
+				WorkerThreadPool.wait_for_task_completion(id)
+				layer.pending.erase(key)
+
+## Finished cells' batches stood, nearest first, within the budget; a cell
+## no longer wanted is dropped.
+func _stand(all := false) -> void:
+	_lock.lock()
+	var ready := _done
+	_done = []
+	_lock.unlock()
+	if ready.is_empty(): return
+	var began := Time.get_ticks_usec()
+	ready.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _flat(a.key) < _flat(b.key))
+	while not ready.is_empty():
+		if not all and (Time.get_ticks_usec()-began)/1000.0 > STAND_BUDGET: break
+		var r: Dictionary = ready.pop_front()
+		var key: Vector2i = r.key
+		var layer: Layer = r.layer
+		stats.grown += 1
+		stats.grow_ms += float(r.ms)
+		stats.slowest_grow_ms = maxf(stats.slowest_grow_ms,float(r.ms))
+		if layer.cells.has(key) or not layer.wanted.has(key): continue
+		var t0 := Time.get_ticks_usec()
+		var node := Node3D.new()
+		node.name = "%s_%d_%d" % ["Far" if layer.far else "Near",key.x,key.y]
+		var count := 0
+		for part: Dictionary in r.parts:
+			var ring: Dictionary = part.get("ring",{})
+			var batch := KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer,lod.w,ring)
+			count += int(part.count)
+			if layer.far: batch.material_override = _far(str(part.key),ring)
+			elif ring.is_empty():
+				# The flowers thin out each at its own distance (no tile
+				# fade, which would draw them in the transparent pass).
+				batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+				batch.visibility_range_end_margin = 0.0
+				batch.visibility_range_end = FLOWER_FADE.y+KitFlora.TILE*0.75
+			_calm(batch)
+			node.add_child(batch)
+		node.set_meta("instances",count)
+		add_child(node)
+		layer.cells[key] = node
+		stats.slowest_stand_ms = maxf(stats.slowest_stand_ms,(Time.get_ticks_usec()-t0)/1000.0)
+	if not ready.is_empty():
+		_lock.lock()
+		ready.append_array(_done)
+		_done = ready
+		_lock.unlock()
+
+## The isle's carpet calm (Carpet `calm`) on a batch's material, once a
+## material; the flowers thinned by distance.
+func _calm(batch: MultiMeshInstance3D) -> void:
+	var m := batch.material_override as ShaderMaterial
+	if m == null or _calmed.has(m.get_instance_id()) or _fars.values().has(m): return
+	_calmed[m.get_instance_id()] = true
+	if str(batch.get_meta("part","")).begins_with("grass"):
+		m.set_shader_parameter("grass_dry",Carpet.CARPET_GRASS_DRY)
+		m.set_shader_parameter("grass_mute",Carpet.CARPET_MUTE)
+		m.set_shader_parameter("grass_wave_sheen",Carpet.CARPET_SHEEN)
+	else:
+		m.set_shader_parameter("flower_far",Vector4(FLOWER_FADE.x,FLOWER_FADE.y,0.0,0.0))
+
+## The far ring's material (shaders/endless_tuft_far.gdshader): KitFlora's
+## mid ring (its `ring_material`'s grass_ring and grass_ring_grow) drawn
+## plainly, its tufts growing in from nothing as the near ring thins. The
+## isles' tuft material works out its sway, ground colour and light at every
+## vertex and pixel, which over a field to the horizon cost 10 to 20 ms a
+## frame.
+func _far(key: String, ring: Dictionary) -> Material:
+	var lod_v: Vector4 = ring.lod
+	var id := [key,lod_v,ring.grow,ring.soft]
+	if _fars.has(id): return _fars[id]
+	var m := ShaderMaterial.new()
+	m.shader = preload("res://shaders/endless_tuft_far.gdshader")
+	var grow: Vector2 = ring.grow
+	m.set_shader_parameter("grass_ring",Vector4(lod_v.z,lod_v.w,float(ring.soft),0.0))
+	m.set_shader_parameter("grass_ring_grow",Vector4(lod_v.x,lod_v.y,grow.x,grow.y))
+	m.set_shader_parameter("root_colour",FAR_ROOT)
+	m.set_shader_parameter("tip_colour",FAR_TIP)
+	var mesh: Mesh = KitFlora.lite_tuft(key)
+	if mesh.has_meta("grass_root"):
+		var root: Color = mesh.get_meta("grass_root")
+		var tip: Color = mesh.get_meta("grass_tip")
+		m.set_shader_parameter("grass_source_root",Vector3(root.r,root.g,root.b))
+		m.set_shader_parameter("grass_source_tip",Vector3(tip.r,tip.g,tip.b))
+	_fars[id] = m
+	return m
+
+## Cells standing, building and queued, and the instances drawn, both layers.
+func counts() -> Dictionary:
+	var out := {"cells":0,"building":0,"queued":0,"instances":0}
+	for layer: Layer in [near_layer,far_layer]:
+		out.cells += layer.cells.size()
+		out.building += layer.pending.size()
+		out.queued += layer.queue.size()
+		for key: Vector2i in layer.cells: out.instances += int((layer.cells[key] as Node).get_meta("instances",0))
+	out.near_cells = near_layer.cells.size()
+	out.far_cells = far_layer.cells.size()
+	return out
+
+# --- On a worker ----------------------------------------------------------------------
+
+func _grow(layer: Layer, key: Vector2i, land_seed: int, site_values: Dictionary, rings: Vector4) -> void:
+	if _quit: return
+	var began := Time.get_ticks_usec()
+	var parts := grow_cell(land_seed,key,site_values,rings,layer.share)
+	var took := (Time.get_ticks_usec()-began)/1000.0
+	_lock.lock()
+	_done.append({"layer":layer,"key":key,"parts":parts,"ms":took})
+	_lock.unlock()
+
+## One cell's grass (and, for the near layer, flowers) as plain batches, one
+## a KitFlora tile, part and ring ([{key, tile, count, buffer, ring}]):
+## KitFlora's Grow at the carpet's settings (`site_values`), its rings `rings`
+## with `far_share` of the tufts in the far one (0: all near, with the
+## flowers; 1: all far, the grass alone), its probe the cell's own height
+## grid. Worker-safe.
+static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, rings: Vector4, far_share := 0.0) -> Array:
+	var f: RefCounted = Field.new(land_seed)
+	var x0 := key.x*CELL
+	var z0 := key.y*CELL
+	var n := int(CELL)+1+PAD*2
+	var hs := PackedFloat32Array()
+	var ms := PackedFloat32Array()
+	hs.resize(n*n)
+	ms.resize(n*n)
+	for j in n:
+		for i in n:
+			var got: Vector2 = f.sample(x0+i-PAD,z0+j-PAD)
+			hs[j*n+i] = got.x
+			ms[j*n+i] = got.y
+	# No turf in it at all (the sea, the peaks): nothing to grow.
+	var any := false
+	for h: float in hs:
+		var over := h-Field.SEA_Y
+		if over >= BEACH_CLEAR and over < HIGH.y:
+			any = true
+			break
+	if not any: return []
+	var probe := func(p: Vector2, _reach: float) -> float:
+		var u := p.x-x0+PAD
+		var v := p.y-z0+PAD
+		var i := clampi(floori(u),1,n-3)
+		var j := clampi(floori(v),1,n-3)
+		var fx := clampf(u-i,0.0,1.0)
+		var fz := clampf(v-j,0.0,1.0)
+		var k := j*n+i
+		var h00 := hs[k]
+		var h10 := hs[k+1]
+		var h01 := hs[k+n]
+		var h11 := hs[k+n+1]
+		# As the land's mesh splits each quad: (00, 10, 01) and (10, 11, 01).
+		var h := h00+fx*(h10-h00)+fz*(h01-h00) if fx+fz <= 1.0 else h11+(1.0-fx)*(h01-h11)+(1.0-fz)*(h10-h11)
+		var over := h-Field.SEA_Y
+		if over < BEACH_CLEAR: return NAN
+		# The slope as the land's normals have it (central differences),
+		# at the nearer node.
+		var c := (j+roundi(fz))*n+i+roundi(fx)
+		var up := 2.0/Vector3(hs[c-1]-hs[c+1],2.0,hs[c-n]-hs[c+n]).length()
+		var keep := smoothstep(SLOPE.x,SLOPE.y,up)*(1.0-smoothstep(HIGH.x,HIGH.y,over))*smoothstep(BEACH_CLEAR,BEACH_CLEAR+BEACH_RAMP,over)
+		if keep <= 0.0: return NAN
+		if keep < 1.0 and float(hash(Vector2i(roundi(p.x*7.0),roundi(p.y*7.0)))%10007)/10007.0 > keep: return NAN
+		return h-SINK
+	var site := KitFlora.Site.new()
+	var flowers: bool = site_values.get("flowers",true) and far_share < 1.0
+	for k: String in site_values:
+		if k != "flowers": site.set(k,site_values[k])
+	site.plain = true
+	site.probe = probe
+	site.box = Rect2(x0,z0,CELL,CELL)
+	site.rim = 0.0
+	site.lod = rings
+	site.lod_share = far_share
+	site.lod_grow = FAR_GROW
+	site.lod_soft = SOFT
+	# The outline well round the cell, so no rim (wild grass, the rim's
+	# keep) falls inside it: the carpet runs on across cells.
+	var g := 16.0
+	var outline := PackedVector2Array([Vector2(x0-g,z0-g),Vector2(x0+CELL+g,z0-g),Vector2(x0+CELL+g,z0+CELL+g),Vector2(x0-g,z0+CELL+g)])
+	var job := KitFlora.Grow.new(hash([land_seed,"endless_grass",far_share,key]) & 0xffffff,null,[],[outline],site)
+	while not job.step(-1): pass
+	# The painted ground's patches on each tuft (Patch `tint`), read off a
+	# TINT_STEP m grid of the cell.
+	var tg := int(CELL/TINT_STEP)+1
+	var tints := PackedColorArray()
+	tints.resize(tg*tg)
+	for tj in tg:
+		for ti in tg:
+			var c := (int(tj*TINT_STEP)+PAD)*n+int(ti*TINT_STEP)+PAD
+			var x := x0+ti*TINT_STEP
+			var z := z0+tj*TINT_STEP
+			var y := hs[c]
+			var normal := Vector3(hs[c-1]-hs[c+1],2.0,hs[c-n]-hs[c+n]).normalized()
+			var vc: Color = f.colour(x,z,y,normal.y,ms[c])
+			var hue := Vector3(pow(vc.r,2.2),pow(vc.g,2.2),pow(vc.b,2.2))
+			tints[tj*tg+ti] = Patch.tint(x,z,ms[c],y-Field.SEA_Y,normal.y,hue)*TUFT_TONE
+	# Each of KitFlora's tile batches kept (KitFlora.TILE m), so each
+	# culls on its own by the view and its ring's reach.
+	var out := []
+	for part: Dictionary in job.parts:
+		var grass := str(part.key).begins_with("grass")
+		# The far layer is the grass alone (its flowers are the near's).
+		if far_share >= 1.0 and (not grass or int((part.get("ring",{}) as Dictionary).get("ring",0)) != 2): continue
+		if not grass and not flowers: continue
+		var buffer: PackedFloat32Array = part.buffer
+		if grass:
+			for k in range(0,buffer.size(),16):
+				var u := clampf((buffer[k+3]-x0)/TINT_STEP,0.0,tg-1.001)
+				var v := clampf((buffer[k+11]-z0)/TINT_STEP,0.0,tg-1.001)
+				var i := int(u)
+				var j := int(v)
+				var a := tints[j*tg+i].lerp(tints[j*tg+i+1],u-i)
+				var b := tints[(j+1)*tg+i].lerp(tints[(j+1)*tg+i+1],u-i)
+				var t := a.lerp(b,v-j)
+				buffer[k+12] *= t.r
+				buffer[k+13] *= t.g
+				buffer[k+14] *= t.b
+		out.append({"key":part.key,"tile":part.tile,"count":part.count,"buffer":buffer,"ring":part.get("ring",{})})
+	return out

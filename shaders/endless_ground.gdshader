@@ -21,6 +21,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/grass_look.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
+#include "res://shaders/endless_patch.gdshaderinc"
 
 uniform float sea_y = -40.0;
 uniform float beach = 2.2;
@@ -41,6 +42,25 @@ uniform vec2 wave_lengths = vec2(22.0, 60.0);
 uniform float cloud_shade : hint_range(0.0, 1.0) = 0.85;
 // How far the vertex colour's own hue shows through the field (0 none).
 uniform float vertex_hue : hint_range(0.0, 1.0) = 0.2;
+// The grass carpet's tufts (scripts/endless/endless_grass.gd) over the
+// near turf: they thin out between `carpet_reach.x` and `.y` m from the eye
+// (y 0: no carpet). Past it, and wherever no tuft grows, the grass takes
+// the carpet's own tone as it reads from afar (`carpet_tone_top` seen from
+// above, `_low` at a glance), so the tufts give way to paint with no ring.
+// Where tufts grow: the turf over `turf_beach` m over the sea (none to
+// full), its normal's up past `turf_slope`, thinning out over `turf_high`.
+uniform vec2 carpet_reach = vec2(0.0);
+uniform vec3 carpet_tone_top = vec3(1.0);
+uniform vec3 carpet_tone_low = vec3(1.0);
+uniform vec2 turf_beach = vec2(2.55, 2.9);
+uniform vec2 turf_slope = vec2(0.905, 0.95);
+uniform vec2 turf_high = vec2(36.0, 58.0);
+// The carpet's grain painted past its tufts (their speckle and gaps, at
+// their size, kept until a pixel is about that size), its strength.
+uniform float carpet_grain : hint_range(0.0, 2.0) = 0.6;
+uniform vec2 carpet_grain_sizes = vec2(0.75, 1.5);
+// The share of the velvet sheen the carpet's turf gives up.
+uniform float carpet_velvet_cut : hint_range(0.0, 1.0) = 0.6;
 // The night's grade (studies/celestial.gd `night_grade`, which the isles'
 // look pass lays on the screen): x how far the colour gives way to a cool
 // rod-lit grey, yzw that grey's hue.
@@ -90,6 +110,13 @@ float zs_patch(vec2 p, float scale, float fp) {
 	return (smoothstep(0.5 - w, 0.5 + w, zs_noise(p / scale)) - 0.5) * keep;
 }
 
+// A point turned and shifted for the carpet grain's two lattices, so no
+// grid lines up with the world's axes.
+vec2 turned_speck(vec2 p, int k) {
+	return k == 0 ? mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * p + vec2(13.1, 7.7)
+		: mat2(vec2(0.28, -0.96), vec2(0.96, 0.28)) * p + vec2(3.3, 51.9);
+}
+
 float luma(vec3 c) {
 	return dot(c, vec3(0.2126, 0.7152, 0.0722));
 }
@@ -111,14 +138,16 @@ void fragment() {
 	// --- The grass carpet ---------------------------------------------------
 	// Patches over every scale: the broad drift (hue) across hundreds of
 	// metres, then light and deep patches down to tufts a metre across.
-	float vast = zs_fade(p.xz + vec2(311.0, 97.0), 900.0, fp);
-	float broad = zs_fade(p.xz + vec2(71.0, 13.0), 260.0, fp);
-	float wide = zs_fade(p.xz + vec2(5.0, 211.0), 70.0, fp);
-	float mid = zs_fade(p.xz + vec2(133.0, 41.0), 19.0, fp);
+	// The scales from 8 m up on the patch noise the tufts read too
+	// (scripts/endless/endless_patch.gd mirrors this).
+	float vast = ep_fade(p.xz + vec2(311.0, 97.0), 900.0, fp);
+	float broad = ep_fade(p.xz + vec2(71.0, 13.0), 260.0, fp);
+	float wide = ep_fade(p.xz + vec2(5.0, 211.0), 70.0, fp);
+	float mid = ep_fade(p.xz + vec2(133.0, 41.0), 19.0, fp);
 	float fine = zs_fade(p.xz + vec2(17.0, 3.0), 5.5, fp);
 	float tuft = zs_fade(p.xz + vec2(9.0, 29.0), 1.4, fp);
 	// Patches with an edge: clover and lush hollows among the lighter grass.
-	float clump = zs_patch(p.xz + vec2(57.0, 19.0), 34.0, fp) * 0.7 + zs_patch(p.xz + vec2(3.0, 77.0), 8.0, fp) * 0.5;
+	float clump = ep_patch(p.xz + vec2(57.0, 19.0), 34.0, fp) * 0.7 + ep_patch(p.xz + vec2(3.0, 77.0), 8.0, fp) * 0.5;
 	float sunny = clamp((broad * 1.3 + wide * 1.5 + mid * 0.9 + fine * 0.6 + tuft * 0.8 + clump * 0.9) * patch_strength, -1.0, 1.0);
 	vec3 grass = mix(GREEN, sunny > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny));
 	// The meadows lusher and brighter.
@@ -158,9 +187,23 @@ void fragment() {
 	float crest = (crest_near * 0.35 + crest_far * 0.65) * air * wind_sheen;
 	// Velvet: turf seen low catches the light along its blades.
 	float grazing = pow(1.0 - clamp(dot(n, eye), 0.0, 1.0), 2.0);
-	float sheen = crest * (0.35 + 0.65 * grazing) + velvet * grazing * 0.6;
+	// (The carpet's tufts catch no velvet: past them its paint keeps less.)
+	float carpet_turf = smoothstep(turf_slope.x, turf_slope.y, n.y) * (1.0 - smoothstep(turf_high.x, turf_high.y, over))
+		* smoothstep(turf_beach.x, turf_beach.y, over);
+	float sheen = crest * (0.35 + 0.65 * grazing) + velvet * grazing * 0.6 * (1.0 - carpet_velvet_cut * carpet_turf);
 	vec3 sheen_colour = mix(grass, vec3(luma(grass)) * vec3(1.25, 1.22, 0.85), 0.55) * 1.55;
 	grass = mix(grass, sheen_colour, clamp(sheen * 0.42, 0.0, 0.8) * (1.0 - thin * 0.6));
+	// The carpet's tone past its tufts, and wherever none grow.
+	float turf = carpet_turf;
+	float beyond = carpet_reach.y > 0.0 ? clamp((length(CAMERA_POSITION_WORLD - p) - carpet_reach.x) / max(carpet_reach.y - carpet_reach.x, 1.0), 0.0, 1.0) : 1.0;
+	float toned = mix(1.0, beyond, turf);
+	grass *= mix(vec3(1.0), mix(carpet_tone_low, carpet_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
+	float speck_a = smoothstep(0.3, 0.7, zs_noise(turned_speck(p.xz, 0) / carpet_grain_sizes.x)) - 0.5;
+	float speck_b = smoothstep(0.3, 0.7, zs_noise(turned_speck(p.xz, 1) / carpet_grain_sizes.y)) - 0.5;
+	float speck = speck_a * (1.0 - smoothstep(carpet_grain_sizes.x * 0.5, carpet_grain_sizes.x * 1.2, fp))
+		+ speck_b * 0.7 * (1.0 - smoothstep(carpet_grain_sizes.y * 0.5, carpet_grain_sizes.y * 1.2, fp));
+	// Only off where tufts would be pixels: near, the paint's own grain.
+	grass *= 1.0 + speck * carpet_grain * turf * beyond * smoothstep(40.0, 110.0, length(CAMERA_POSITION_WORLD - p));
 
 	// --- Rock, sand, snow -----------------------------------------------------
 	float rock_edge = (zs_noise(p.xz / 9.0) - 0.5) * 0.10 + mid * 0.08;
