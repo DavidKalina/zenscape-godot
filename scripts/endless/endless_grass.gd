@@ -18,7 +18,14 @@ extends Node3D
 ## endless_patch.gd) as its instance colour, so the carpet sits in its field.
 ##
 ## Two layers of cells, in KitFlora's distance rings (Site `lod`, LOD m from
-## the eye, in 3D, so from high up each is a smaller disc below):
+## the eye). The ring distance (shaders/endless_ring.gdshaderinc, `ring_lead`)
+## is measured along the ground, so flying low doesn't put the turf under
+## the eye in a band; past FLAT_UP m over the ground the eye's height counts,
+## RISE times over (from high up each ring is a smaller disc below, and the
+## near carpet is gone a little past where the 3D rings had it). It is led out ahead
+## along the view (LEAD): a ring R m out stands R(1+LEAD) ahead and
+## R(1-LEAD) behind, as many tufts in it as unled; the cells streamed
+## follow the same discs, the ones ahead grown first:
 ##   near  the isle's carpet with its own tuft material (sway, light,
 ##         colour), drawn as a finer tuft (FINE, FINE_TUFTS of the isle's
 ##         density) that reads soft from a plane skimming over it, out to
@@ -28,10 +35,13 @@ extends Node3D
 ##         one surface; a cloud's shadow takes their sun as it takes the
 ##         turf's (CLOUD_SUN); the wildflowers with it, in drifts (DRIFT),
 ##         thinning out over FLOWER_FADE.
-##   far   FAR_TUFTS a square metre of the cheaper tuft (GrassTuft.build_lite)
-##         grown FAR_GROW wide and tall, drawn plainly (shaders/
-##         endless_tuft_far.gdshader): growing in from nothing over
-##         LOD.x..LOD.y as the near ring thins, thinning out over LOD.z..LOD.w.
+##   far   FAR_TUFTS a square metre of the cheaper tuft (GrassTuft.build_lite),
+##         drawn plainly (shaders/endless_tuft_far.gdshader): each comes up
+##         at its own distance over LOD.x..LOD.y as the near ring's go at
+##         theirs, at FAR_NEAR (wide, tall) where it comes up, growing
+##         slowly to FAR_GROW by LOD.z; thinning out over LOD.z..LOD.w. Its
+##         tufts in a drift's colour come up over FLOWER_FADE as the drawn
+##         flowers go, the colour on their upper blades.
 ## Past that the painted ground (shaders/endless_ground.gdshader) alone, which
 ## takes the carpet's tone and grain past LOD.z (told here), so the tufts
 ## give way to it with no ring.
@@ -49,7 +59,10 @@ extends Node3D
 ## --ground-set= (name=value: a shader setting, for tuning by hand),
 ## --flower-drifts=X (how many flower drifts and patches, 1; 0 or
 ## --no-drifts: round 4's drifts, no wash), --grass-regions=X (how strongly
-## the grass's colour regions show, 1; 0 or --no-regions: one palette).
+## the grass's colour regions show, 1; 0 or --no-regions: one palette),
+## --grass-lead=X (LEAD, 0.45), --no-grass-lead (no lead: rings round the
+## eye), --grass-flat-up=M (FLAT_UP, 20), --grass-ring=3d (round 5's
+## rings: 3D from the eye, no lead).
 ##
 ## Look round 5 (docs/design/endless-flight/flowers-colour-handoff.md): the
 ## grass's colour regions and the flower drifts are endless_patch.gd
@@ -77,6 +90,20 @@ const SOFT := 8.0
 ## grown this much (wide, tall) over the near ring's band.
 const FAR_TUFTS := 1.8
 const FAR_GROW := Vector2(2.0,1.8)
+## A far tuft's size (wide, tall) where it comes up (LOD.x..y): the near
+## tuft's look there (as tall; wider, its tufts fewer).
+const FAR_NEAR := Vector2(1.5,1.0)
+## The rings led ahead along the view: k of the ring's distance (0: none).
+## The lead follows the view's level direction at LEAD_RATE (1/s), none
+## while looking down steeply (the view's level share LEAD_LEVEL.x..y).
+const LEAD := 0.45
+const LEAD_RATE := 3.0
+const LEAD_LEVEL := Vector2(0.2,0.55)
+## The rings are measured along the ground up to this height over it (m);
+## past it the height counts, RISE times over (the discs shrink as the eye
+## rises: the near tufts gone from FLAT_UP+LOD.y/RISE m up, 39).
+const FLAT_UP := 20.0
+const RISE := 1.6
 ## Wildflower drifts in the near carpet (KitFlora Site `flower_drift`): where
 ## a value noise of DRIFT_SCALE m rises from DRIFT.x to .y, the flowers are
 ## kept up to DRIFT.z times as often (1 elsewhere), so the meadows have
@@ -105,6 +132,9 @@ const FAR_ROOT := Vector3(0.093,0.27,0.13)
 const FAR_TIP := Vector3(0.28,0.55,0.22)
 ## The flowers thin out between these distances (m), each at its own.
 const FLOWER_FADE := Vector2(22.0,55.0)
+## The flowers' leaves and buds (reference_surface `flower_lod`) shrink
+## away between these ring distances (m).
+const FLOWER_DETAIL := Vector2(14.0,30.0)
 ## A cell is freed this far (m) past where it is wanted.
 const KEEP := 24.0
 ## Open turf: from this far over the sea (m; the beach's sand is gone
@@ -154,6 +184,17 @@ const GrassTuft = preload("res://scripts/grass_tuft_mesh.gd")
 
 var seed := 0
 var enabled := true
+## The lead's share (--grass-lead=, --no-grass-lead), the height the rings
+## stay flat to (--grass-flat-up=), round 5's 3D rings (--grass-ring=3d).
+var lead := LEAD
+var flat_up := FLAT_UP
+var rings_3d := false
+## The lead now (world x, z; damped), the eye's height past flat_up, as
+## the shaders were told (`ring_lead`).
+var lead_now := Vector2.ZERO
+var rise := 0.0
+var _lead_planned := Vector2.ZERO
+var _ring_mats := {}
 var share := 1.0
 var lod := LOD
 ## The wildflowers in the near carpet (--no-flowers leaves them out).
@@ -224,6 +265,10 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		elif a == "--no-drifts": drifts = 0.0
 		elif a.begins_with("--grass-regions="): regions = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a == "--no-regions": regions = 0.0
+		elif a.begins_with("--grass-lead="): lead = clampf(a.get_slice("=",1).to_float(),0.0,0.85)
+		elif a == "--no-grass-lead": lead = 0.0
+		elif a.begins_with("--grass-flat-up="): flat_up = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a == "--grass-ring=3d": rings_3d = true
 		elif a.begins_with("--grass-set=") or a.begins_with("--far-set=") or a.begins_with("--ground-set="):
 			var which := a.get_slice("-",2).get_slice("-",0)
 			var kv := a.substr(a.find("=")+1)
@@ -268,6 +313,8 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		ground.set_shader_parameter("bloom_amount",Patch.bloom_amount)
 		ground.set_shader_parameter("bloom_fade",FLOWER_FADE)
 		for k: String in _sets.ground: ground.set_shader_parameter(k,_sets.ground[k])
+	if rings_3d: lead = 0.0
+	if ground != null: _ring_mats[ground.get_instance_id()] = ground
 	_reach()
 
 func _exit_tree() -> void:
@@ -307,8 +354,9 @@ func set_enabled(on: bool) -> void:
 
 ## One frame: the cells round `eye` (the camera that draws) asked for,
 ## finished ones stood within the budget, far ones freed.
-func step(eye: Vector3) -> void:
+func step(eye: Vector3, forward := Vector3.ZERO) -> void:
 	_eye = eye
+	_lead_step(forward)
 	_reap()
 	if not enabled:
 		_lock.lock()
@@ -321,24 +369,69 @@ func step(eye: Vector3) -> void:
 	# Replanned as the eye moves, and now and then anyway, so a cell that
 	# finished while it wasn't wanted is asked for again once it is.
 	_since_plan += 1
-	if _planned_at == Vector3.INF or eye.distance_to(_planned_at) > 4.0 or _since_plan > 30: _plan()
+	if _planned_at == Vector3.INF or eye.distance_to(_planned_at) > 4.0 or _since_plan > 30 or lead_now.distance_to(_lead_planned) > 0.06: _plan()
 	_ask()
 	_stand()
+
+## The lead toward the view's level direction `forward` (damped; at once
+## before the first plan), the eye's rise, told to every ring material.
+func _lead_step(forward: Vector3) -> void:
+	var want := Vector2.ZERO
+	var level := Vector2(forward.x,forward.z)
+	if lead > 0.0 and level.length() > 0.001:
+		want = level.normalized()*lead*smoothstep(LEAD_LEVEL.x,LEAD_LEVEL.y,level.length()/maxf(forward.length(),0.001))
+	if _planned_at == Vector3.INF: lead_now = want
+	else:
+		var dt: float = get_process_delta_time() if is_inside_tree() else 1.0/60.0
+		lead_now = lead_now.lerp(want,1.0-exp(-LEAD_RATE*maxf(dt,1.0/240.0)))
+	var over := _over(_eye)
+	rise = over if rings_3d else maxf(over-flat_up,0.0)*RISE
+	var v := Vector4(lead_now.x,lead_now.y,rise,0.0 if rings_3d else 1.0)
+	for id: int in _ring_mats: (_ring_mats[id] as ShaderMaterial).set_shader_parameter("ring_lead",v)
+
+## The ring distance (m) of ground point `p` from the eye: along the ground,
+## led ahead (shaders/endless_ring.gdshaderinc), the rise left out.
+func ring_d(p: Vector2) -> float:
+	var q := p-Vector2(_eye.x,_eye.z)
+	var ll := minf(lead_now.length_squared(),0.81)
+	var ql := q.dot(lead_now)
+	return (sqrt(ql*ql+(1.0-ll)*q.length_squared())-ql)/(1.0-ll)
+
+## A cell's ring distance, at its point nearest the eye (for the order).
+func _cell_d(key: Vector2i) -> float:
+	var x0 := key.x*CELL
+	var z0 := key.y*CELL
+	return ring_d(Vector2(clampf(_eye.x,x0,x0+CELL),clampf(_eye.z,z0,z0+CELL)))
+
+## The disc of ground (centre x, z, radius) within ring distance `reach`
+## (the rise taken off).
+func _disc(reach: float) -> Vector3:
+	var r := sqrt(maxf(reach*reach-rise*rise,0.0))
+	var c := Vector2(_eye.x,_eye.z)+lead_now*r
+	return Vector3(c.x,c.y,r)
+
+## A cell's square's flat distance from ground point `c`.
+func _square_d(key: Vector2i, c: Vector2) -> float:
+	var x0 := key.x*CELL
+	var z0 := key.y*CELL
+	var dx := maxf(maxf(x0-c.x,c.x-(x0+CELL)),0.0)
+	var dz := maxf(maxf(z0-c.y,c.y-(z0+CELL)),0.0)
+	return sqrt(dx*dx+dz*dz)
 
 ## The near cells under the full carpet (LOD.y), and the far ones within
 ## PRIME_FAR m, grown before the first frame, the main thread waiting (at most PRIME_WAIT s); the rest grow in
 ## flight.
 const PRIME_WAIT := 4.0
 const PRIME_FAR := 90.0
-func prime(at: Vector3) -> void:
+func prime(at: Vector3, forward := Vector3.ZERO) -> void:
 	var began := Time.get_ticks_msec()
-	step(at)
+	step(at,forward)
 	while Time.get_ticks_msec()-began < PRIME_WAIT*1000.0:
 		var left := false
 		for key: Vector2i in near_layer.wanted:
-			if not near_layer.cells.has(key) and _flat(key) < lod.y: left = true
+			if not near_layer.cells.has(key) and _cell_d(key) < lod.y: left = true
 		for key: Vector2i in far_layer.wanted:
-			if not far_layer.cells.has(key) and _flat(key) < PRIME_FAR: left = true
+			if not far_layer.cells.has(key) and _cell_d(key) < PRIME_FAR: left = true
 		if not left: break
 		OS.delay_msec(4)
 		_reap()
@@ -351,37 +444,35 @@ func prime(at: Vector3) -> void:
 func _over(eye: Vector3) -> float:
 	return maxf(eye.y-maxf(field.height(eye.x,eye.z),Field.SEA_Y),0.0)
 
-## The eye's flat distance to a cell's square.
-func _flat(key: Vector2i) -> float:
-	var x0 := key.x*CELL
-	var z0 := key.y*CELL
-	var dx := maxf(maxf(x0-_eye.x,_eye.x-(x0+CELL)),0.0)
-	var dz := maxf(maxf(z0-_eye.z,_eye.z-(z0+CELL)),0.0)
-	return sqrt(dx*dx+dz*dz)
-
 func _plan() -> void:
 	_planned_at = _eye
+	_lead_planned = lead_now
 	_since_plan = 0
-	var over := _over(_eye)
 	for layer: Layer in [near_layer,far_layer]:
-		# In 3D: the rings' disc on the ground shrinks as the eye rises.
-		var reach := sqrt(maxf(layer.reach*layer.reach-over*over,0.0))
+		# The disc within the ring's reach (led ahead; smaller as the eye
+		# rises past flat_up), and the one past which a cell goes.
+		# (The near layer goes with its grass: its flowers alone, past it,
+		# would be a pixel across.)
+		var disc := _disc(layer.reach if layer.far or rise < lod.y else 0.0)
+		var centre := Vector2(disc.x,disc.y)
+		var reach := disc.z
 		layer.wanted.clear()
 		if reach > 0.0:
 			var r := ceili((reach+CELL)/CELL)
-			var cx := floori(_eye.x/CELL)
-			var cz := floori(_eye.z/CELL)
+			var cx := floori(centre.x/CELL)
+			var cz := floori(centre.y/CELL)
 			for dz in range(-r,r+1):
 				for dx in range(-r,r+1):
 					var key := Vector2i(cx+dx,cz+dz)
-					if _flat(key) <= reach: layer.wanted[key] = true
-		var free_past := sqrt(maxf((layer.reach+KEEP)*(layer.reach+KEEP)-over*over,0.0))
+					if _square_d(key,centre) <= reach: layer.wanted[key] = true
+		var keep := _disc(layer.reach+KEEP)
 		for key: Vector2i in layer.cells.keys():
-			if not layer.wanted.has(key) and _flat(key) > free_past: _free(layer,key)
+			if not layer.wanted.has(key) and _square_d(key,Vector2(keep.x,keep.y)) > keep.z: _free(layer,key)
 		layer.queue.clear()
 		for key: Vector2i in layer.wanted:
 			if not layer.cells.has(key) and not layer.pending.has(key): layer.queue.append(key)
-		layer.queue.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return _flat(a) < _flat(b))
+		# Nearest by the ring distance first: ahead before behind.
+		layer.queue.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return _cell_d(a) < _cell_d(b))
 
 func _free(layer: Layer, key: Vector2i) -> void:
 	(layer.cells[key] as Node).queue_free()
@@ -413,7 +504,7 @@ func _stand(all := false) -> void:
 	_lock.unlock()
 	if ready.is_empty(): return
 	var began := Time.get_ticks_usec()
-	ready.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _flat(a.key) < _flat(b.key))
+	ready.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _cell_d(a.key) < _cell_d(b.key))
 	while not ready.is_empty():
 		if not all and (Time.get_ticks_usec()-began)/1000.0 > STAND_BUDGET: break
 		var r: Dictionary = ready.pop_front()
@@ -432,13 +523,19 @@ func _stand(all := false) -> void:
 			var own: Mesh = _fine(str(part.key)) if fine and not layer.far and str(part.key).begins_with("grass") else null
 			var batch := KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer,lod.w,ring,own)
 			count += int(part.count)
-			if layer.far: batch.material_override = _far(str(part.key),ring)
+			# A tile is drawn out to its ring's reach led ahead, and over
+			# the height the rings stay flat to (Godot's range is 3D).
+			var past := KitFlora.TILE*0.75+(rise if rings_3d else flat_up)
+			if layer.far:
+				batch.material_override = _far(str(part.key),ring)
+				batch.visibility_range_end = lod.w*(1.0+lead)+past
 			elif ring.is_empty():
 				# The flowers thin out each at its own distance (no tile
 				# fade, which would draw them in the transparent pass).
 				batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 				batch.visibility_range_end_margin = 0.0
-				batch.visibility_range_end = FLOWER_FADE.y+KitFlora.TILE*0.75
+				batch.visibility_range_end = FLOWER_FADE.y*(1.0+lead)+past
+			else: batch.visibility_range_end = lod.y*(1.0+lead)+past
 			_calm(batch)
 			node.add_child(batch)
 		node.set_meta("instances",count)
@@ -457,6 +554,8 @@ func _calm(batch: MultiMeshInstance3D) -> void:
 	var m := batch.material_override as ShaderMaterial
 	if m == null or _calmed.has(m.get_instance_id()) or _fars.values().has(m): return
 	_calmed[m.get_instance_id()] = true
+	_ring_mats[m.get_instance_id()] = m
+	m.set_shader_parameter("ring_lead",Vector4(lead_now.x,lead_now.y,rise,0.0 if rings_3d else 1.0))
 	m.set_shader_parameter("cloud_sun_shade",CLOUD_SUN)
 	if str(batch.get_meta("part","")).begins_with("grass"):
 		m.set_shader_parameter("grass_dry",Carpet.CARPET_GRASS_DRY)
@@ -467,6 +566,9 @@ func _calm(batch: MultiMeshInstance3D) -> void:
 		for k: String in _sets.grass: m.set_shader_parameter(k,_sets.grass[k])
 	else:
 		m.set_shader_parameter("flower_far",Vector4(FLOWER_FADE.x,FLOWER_FADE.y,0.0,0.0))
+		# Their leaves and buds gone before the heads (FLOWER_DETAIL; led
+		# out ahead, they would glint a pixel across).
+		m.set_shader_parameter("flower_lod",FLOWER_DETAIL)
 
 ## The FINE tuft for catalog part `key`, its root and tip colours the
 ## part's own (so the material divides them out alike), made once.
@@ -504,8 +606,20 @@ func _far(key: String, ring: Dictionary) -> Material:
 	var m := ShaderMaterial.new()
 	m.shader = preload("res://shaders/endless_tuft_far.gdshader")
 	var grow: Vector2 = ring.grow
-	m.set_shader_parameter("grass_ring",Vector4(lod_v.z,lod_v.w,float(ring.soft),0.0))
-	m.set_shader_parameter("grass_ring_grow",Vector4(lod_v.x,lod_v.y,grow.x,grow.y))
+	var soft := float(ring.soft)
+	m.set_shader_parameter("grass_ring",Vector4(lod_v.z,lod_v.w,soft,0.0))
+	# Each comes up over the soft metres where a near tuft at its rank goes.
+	m.set_shader_parameter("grass_ring_in",Vector4(lod_v.x-soft,lod_v.y-soft,soft,0.0))
+	m.set_shader_parameter("grow_near",FAR_NEAR)
+	m.set_shader_parameter("grass_ring_grow",Vector4(lod_v.y,lod_v.z,grow.x,grow.y))
+	# The drift's tufts come up as the flowers go (reference_surface
+	# `flower_far`: gone by FLOWER_FADE.y).
+	m.set_shader_parameter("wash_in",Vector4(FLOWER_FADE.x-soft*0.5,FLOWER_FADE.y-soft*0.5,soft*0.5,0.0))
+	var washes := PackedVector3Array()
+	for k: Array in Patch.KINDS: washes.append(k[2])
+	washes.resize(8)
+	m.set_shader_parameter("wash_colours",washes)
+	m.set_shader_parameter("ring_lead",Vector4(lead_now.x,lead_now.y,rise,0.0 if rings_3d else 1.0))
 	m.set_shader_parameter("root_colour",FAR_ROOT)
 	m.set_shader_parameter("tip_colour",FAR_TIP)
 	var mesh: Mesh = KitFlora.lite_tuft(key)
@@ -517,6 +631,7 @@ func _far(key: String, ring: Dictionary) -> Material:
 	m.set_shader_parameter("cloud_shade",CLOUD_SUN)
 	for k: String in _sets.far: m.set_shader_parameter(k,_sets.far[k])
 	_fars[id] = m
+	_ring_mats[m.get_instance_id()] = m
 	return m
 
 ## Cells standing, building and queued, and the instances drawn, both layers.
@@ -687,10 +802,10 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 				# its colour (the near ring's flowers are drawn).
 				if far_share >= 1.0 and not blooms.is_empty():
 					var bl: Vector2 = bloom_at.call(Vector2(buffer[k+3],buffer[k+11]))
+					# (Marked by its alpha, (kind+1)/16: the far material
+					# puts the colour on its upper blades, endless_tuft_far.)
 					if bl.x > 0.0 and float(hash(Vector2i(roundi(buffer[k+3]*37.0),roundi(buffer[k+11]*37.0)))%10007)/10007.0 < bl.x*FAR_WASH:
-						var w: Vector3 = Patch.KINDS[int(bl.y)][2]
-						var pl := Patch.plain()
-						t = Color(w.x/pl.x,w.y/pl.y,w.z/pl.z)
+						buffer[k+15] = (int(bl.y)+1)/16.0
 				buffer[k+12] *= t.r
 				buffer[k+13] *= t.g
 				buffer[k+14] *= t.b
