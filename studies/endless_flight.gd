@@ -20,7 +20,13 @@ extends Node3D
 ##   godot --path . res://studies/endless_flight.tscn -- --no-title [--seed=7] [--at=x,z] [--heading=deg] [--alt=m]
 ##
 ## Flags: --seed=N the land (1), --at=x,z where it starts (0,0),
-## --heading=deg clockwise from -z (0), --alt=m over the ground (45).
+## --heading=deg clockwise from -z (0; `sun` toward the sun), --alt=m over
+## the ground (45), --numbers opens with F1's numbers shown, --uncapped
+## turns vsync and the frame cap off (the fps is then the frame's cost).
+## The look (scripts/endless/endless_look.gd): --mood=ID one of its
+## moods (alpine_morning), --hour=H the sun's hour (the mood's), --day the
+## hour runs, --plain-look round one's plain sky and colours; T steps to the
+## next quarter of the day, L to the next mood.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
@@ -31,6 +37,7 @@ const ManualLanding = preload("res://scripts/manual_landing.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
+const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -62,9 +69,13 @@ var hand_landing := ManualLanding.new()
 var ground_scale := PlaneGroundScale.new()
 var flaps := false
 var sea: MeshInstance3D
+## The look (sky, light, haze, ground, sea), or null under --plain-look.
+var look: Node3D
 var flown := 0.0
 var _start := Vector2.ZERO
 var _heading := 0.0
+var _face_sun := false
+var _numbers := false
 var _alt := START_ALT
 var _fly_look := Vector2.ZERO
 var _roll_asked := 0.0
@@ -80,16 +91,34 @@ func _ready() -> void:
 		elif arg.begins_with("--at="):
 			var p := arg.get_slice("=",1).split(",")
 			if p.size() >= 2: _start = Vector2(float(p[0]),float(p[1]))
+		elif arg == "--heading=sun": _face_sun = true
 		elif arg.begins_with("--heading="): _heading = -deg_to_rad(float(arg.get_slice("=",1)))
 		elif arg.begins_with("--alt="): _alt = float(arg.get_slice("=",1))
+		elif arg == "--numbers": _numbers = true
+		elif arg == "--uncapped":
+			# No vsync and no cap, so the numbers' fps is the frame's cost.
+			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+			Engine.max_fps = 0
 	field = Field.new(seed)
-	_build_light()
-	_build_sea()
+	if EndlessLook.wanted():
+		look = EndlessLook.new()
+		add_child(look)
+		look.setup(seed)
+		sea = look.sea
+		_build_camera()
+		if _face_sun:
+			var s: Vector3 = look.celestial.state.zs_sun_direction
+			_heading = atan2(-s.x,-s.z)
+	else:
+		_build_light()
+		_build_sea()
 	land = LandStream.new()
 	land.name = "Land"
 	add_child(land)
-	land.setup(seed)
+	land.setup(seed,look.ground if look != null else null)
+	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 	_build_ui()
+	_hud.visible = _numbers
 	# The land round the start first, so it starts over ground that stands.
 	var eye := Vector3(_start.x,_start_height(),_start.y)
 	camera.global_position = eye
@@ -139,10 +168,16 @@ func _build_light() -> void:
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 220.0
 	add_child(sun)
+	_build_camera()
+
+func _build_camera() -> void:
 	camera = Camera3D.new()
 	camera.fov = GlideCamera.FOV
 	camera.near = 0.1
-	camera.far = FOG_END*2.2
+	# With the look, the haze is all sky by its end: nothing past it shows,
+	# and the aerial perspective reads the sharp sky there (Godot picks the
+	# radiance's blur by depth over the far plane).
+	camera.far = EndlessLook.FOG_END*1.04 if look != null else FOG_END*2.2
 	add_child(camera)
 	camera.current = true
 
@@ -266,7 +301,8 @@ func tick(delta: float) -> void:
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() else Vector3.ZERO
 	_frame(delta)
 	land.step(camera.global_position)
-	sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
+	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z)
+	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
 	_show_hud()
 
 func _frame(delta: float) -> void:
@@ -324,6 +360,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F: flaps = not flaps
 			KEY_F1: _hud.visible = not _hud.visible
 			KEY_R: respawn()
+			KEY_T:
+				if look != null: look.next_hour()
+			KEY_L:
+				if look != null: look.next_mood()
 			KEY_Q: _lean_tapped(-1.0)
 			KEY_E: _lean_tapped(1.0)
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -333,8 +373,12 @@ func _show_hud() -> void:
 	var p: Vector3 = plane.position
 	var c: Dictionary = land.counts()
 	var s: Dictionary = land.stats
-	_hud.text = "seed %d  ·  %s  ·  %.1f m/s  ·  %.0f m over the ground  ·  flaps %s\nat %.0f, %.0f  ·  %d fps\nland: %d drawn, %d standing, %d wanted, %d building, %d queued, %d colliders\nbuilt %d (%.1f ms each on a worker), slowest commit %.2f ms" % [
+	# The GPU's own time, where the driver reports it (not on Metal).
+	var gpu := RenderingServer.viewport_get_measured_render_time_gpu(get_viewport().get_viewport_rid())
+	_hud.text = "seed %d  ·  %s  ·  %.1f m/s  ·  %.0f m over the ground  ·  flaps %s\nat %.0f, %.0f  ·  %d fps (%.1f ms)%s%s\nland: %d drawn, %d standing, %d wanted, %d building, %d queued, %d colliders\nbuilt %d (%.1f ms each on a worker), slowest commit %.2f ms" % [
 		seed,ManualLanding.NAMES[hand_landing.phase],float(plane.speed),p.y-maxf(field.height(p.x,p.z),Field.SEA_Y),"down" if flaps else "up",
-		p.x,p.z,Engine.get_frames_per_second(),
+		p.x,p.z,Engine.get_frames_per_second(),1000.0/maxf(Engine.get_frames_per_second(),1.0),
+		("  ·  gpu %.2f ms" % gpu) if gpu > 0.0 else "",
+		("  ·  %s, %05.2f h" % [look.mood_title(),look.hour()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
 		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms)]

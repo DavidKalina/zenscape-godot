@@ -49,7 +49,9 @@ var seed := 0
 var field: RefCounted
 var eye := Vector3.ZERO
 var stats := {"asked":0,"built":0,"committed":0,"freed":0,"slowest_commit_ms":0.0,"slowest_build_ms":0.0,"build_ms":0.0}
-var material: StandardMaterial3D
+## The chunks' material: round one's vertex colours, or the look's ground
+## (scripts/endless/endless_look.gd) passed to `setup`.
+var material: Material
 
 var _chunks := {}          # key -> {node, heights, level, ix, iz}
 var _pending := {}         # key -> true (a task is making it)
@@ -64,15 +66,18 @@ var _indices := PackedInt32Array()
 var _bodies := {}          # key -> StaticBody3D
 var _quit := false
 
-func setup(land_seed: int) -> void:
+func setup(land_seed: int, ground: Material = null) -> void:
 	seed = land_seed
 	field = Field.new(seed)
-	material = StandardMaterial3D.new()
-	material.vertex_color_use_as_albedo = true
-	material.vertex_color_is_srgb = true
-	material.roughness = 1.0
-	material.metallic_specular = 0.08
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material = ground
+	if material == null:
+		var plain := StandardMaterial3D.new()
+		plain.vertex_color_use_as_albedo = true
+		plain.vertex_color_is_srgb = true
+		plain.roughness = 1.0
+		plain.metallic_specular = 0.08
+		plain.cull_mode = BaseMaterial3D.CULL_DISABLED
+		material = plain
 	_indices = _grid_indices()
 
 func _exit_tree() -> void:
@@ -224,7 +229,10 @@ func _build(key: Vector3i, land_seed: int) -> void:
 			var v := j*n+i
 			verts[v] = Vector3(i*step,y,j*step)
 			normals[v] = normal
-			colours[v] = f.colour(x0+i*step,z0+j*step,y,normal.y,ms[k])
+			# Its alpha the meadow, for the look's ground shader.
+			var c: Color = f.colour(x0+i*step,z0+j*step,y,normal.y,ms[k])
+			c.a = ms[k]
+			colours[v] = c
 			heights[v] = y
 	# The skirt: each edge's vertices again, dropped.
 	var drop := step*SKIRT+SKIRT_MIN
