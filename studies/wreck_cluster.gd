@@ -753,14 +753,8 @@ func back_to_plane() -> void:
 	if flying or not walk_ready: return
 	_return_to_plane()
 
-## --loot-bag: dragging, the bag holds him to its rope; aiming a throw, the
-## stick moves the reticle, not him (as studies/bag_study.gd).
-func _want(delta: float) -> Vector2:
-	var want := super._want(delta)
-	if bag == null or bag.act != "aim": return want
-	bag.aim_steer(want,delta)
-	return Vector2.ZERO
-
+## --loot-bag: dragging, the bag holds him to its rope (`leash`); aiming a
+## throw he walks on, the camera aims (scripts/carry/loot_bag.gd).
 func _sync_figure() -> void:
 	if bag != null: bag.leash(get_process_delta_time())
 	super._sync_figure()

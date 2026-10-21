@@ -391,46 +391,12 @@ func loot_kg() -> float:
 func dig_blocked() -> bool:
 	return brood != null and int(brood.clinging) > 0
 
-## Dragging, the bag holds him to its rope (scripts/carry/loot_bag.gd).
-## Aiming a throw, the stick moves the reticle, not him.
-func _want(delta: float) -> Vector2:
-	var want := super._want(delta)
-	if bag == null or bag.act != "aim": return want
-	bag.aim_steer(want,delta)
-	return Vector2.ZERO
-
-## Aiming, the camera eases back, lower and a little round to his right,
-## looking between him and the reticle, so the arc reads as an arc (the
-## reticle behind a wall shows through it, faint: loot_bag's ghost pass).
-const AIM_CAM_OUT := 0.45
-const AIM_CAM_POLAR := 0.22
-const AIM_CAM_SWING := 0.42
-const AIM_CAM_LOOK := 0.4
-const AIM_CAM_EASE := 0.35
-var _aim_cam := 0.0
-var _aim_look := Vector3.INF
-
-func _frame(delta: float) -> void:
-	super._frame(delta)
-	var aiming: bool = bag != null and bag.act == "aim" and bag.aim_at != Vector3.INF
-	if aiming: _aim_look = bag.aim_at
-	if delta > 0.0: _aim_cam = move_toward(_aim_cam,1.0 if aiming else 0.0,delta/AIM_CAM_EASE)
-	if _aim_cam <= 0.0 or _aim_look == Vector3.INF: return
-	var e := smoothstep(0.0,1.0,_aim_cam)
-	var pivot := Vector3(_cam_at.x,_cam_y,_cam_at.y)
-	var look := pivot.lerp(Vector3(_aim_look.x,pivot.y,_aim_look.z),AIM_CAM_LOOK*e)
-	var polar := clampf(_polar+AIM_CAM_POLAR*e,POLAR.x,POLAR.y)
-	var yaw := _yaw+AIM_CAM_SWING*e
-	var out := Vector3(sin(polar)*sin(yaw),cos(polar),sin(polar)*cos(yaw))
-	var dist := CAM_DISTANCE*wanderer_scale*(1.0+AIM_CAM_OUT*e)
-	var hit := ground.space.intersect_ray(PhysicsRayQueryParameters3D.create(look,look+out*(dist+0.3)))
-	if not hit.is_empty(): dist = maxf(look.distance_to(hit.position)-0.3,0.5)
-	var at := pivot+out*_cam_distance
-	camera.look_at_from_position(at.lerp(look+out*dist,e),pivot.lerp(look,e))
-
+## Dragging, the bag holds him to its rope (scripts/carry/loot_bag.gd
+## `leash`); aiming a throw he walks on, the camera aims and eases out (the
+## bag's own `_cam_step`).
 func _sync_figure() -> void:
 	if bag != null: bag.leash(get_process_delta_time())
 	super._sync_figure()
 
 func _hint_text() -> String:
-	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · hold LMB or T (pad RT) worn: aim a throw, let go to throw (8 kg or under) · V (pad right) by it: shove it · the stone brood wakes out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off; clingers rip pieces out and carry them to a burrow: bowl into the crew or E by the piece to take it back · leave the bag lying a few s and a crew sized to its kg hauls it off to a burrow: bowl into them or F by it · a bag or piece reaching a burrow is buried there under a fresh mound (a glint, a beam and its kg over it), a guard or two on it: take the spade (lying by the start, its glint over it), shake the guards off and G (pad Y) facing the mound digs it all out · with nothing to take they go home down the burrows (guards later); bag a piece and they come up again · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
+	return "Bag study: WASD run · Space jump · Shift/C crouch · E (pad B) by loot: into the bag · F (pad down) bag off / on / drag / let go · hold LMB or T (pad RT) worn: aim a throw and keep moving, the camera (mouse / right stick) picks the spot (a ledge or the far side of a drop you look at), let go to throw (8 kg or under) · V (pad right) by it: shove it · the stone brood wakes out of the burrows at the first piece bagged (--no-brood: none); a jump shakes clingers off; clingers rip pieces out and carry them to a burrow: bowl into the crew or E by the piece to take it back · leave the bag lying a few s and a crew sized to its kg hauls it off to a burrow: bowl into them or F by it · a bag or piece reaching a burrow is buried there under a fresh mound (a glint, a beam and its kg over it), a guard or two on it: take the spade (lying by the start, its glint over it), shake the guards off and G (pad Y) facing the mound digs it all out · with nothing to take they go home down the burrows (guards later); bag a piece and they come up again · 1 start, 2 ledge, 3 throw wall, 4 slope, 5 lower floor · R start · F1 numbers · F4 world view · Esc mouse"
