@@ -27,7 +27,8 @@ extends Node3D
 ## moods (alpine_morning), --hour=H the sun's hour (the mood's), --day the
 ## hour runs, --plain-look round one's plain sky and colours; T steps to the
 ## next quarter of the day, L to the next mood. The clouds (scripts/endless/
-## endless_clouds.gd): --no-clouds, --cloud-cover=X (1); C turns them off
+## endless_clouds.gd): --no-clouds, --cloud-cover=X (1), --cloud-field=old (the
+## earlier near-grid of mushrooms), --cloud-half-res (the earlier march); C turns them off
 ## and on. The grass carpet (scripts/endless/endless_grass.gd): --no-grass,
 ## --grass=X (its density, 1), --grass-range=M (how far the tufts reach,
 ## 230), --grass-lod=x,y,z,w (its rings, 16,30,150,230), --no-flowers,
