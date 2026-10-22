@@ -56,7 +56,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 spare[24];     // 68..163
 	vec4 weather_at;    // 164 corner xz, side, texels a side
 	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
-	vec4 flash;         // 172 grain jitter on, organic field on, stacked clouds yield, unused
+	vec4 flash;         // 172 grain jitter on, organic field on, stacked clouds yield, puffs' finer lobes on
 	vec4 shadow_at;     // 176 unused, shade texels, weather redrawn, shade redrawn
 } P;
 
@@ -121,6 +121,10 @@ const float CEILING_BLOCK_F = 32.0;
 const int CEILING_BLOCK = 32;
 const float TILE_LOW = 230.0;
 const float TILE_HIGH = 460.0;
+// Thin low cloud's (a puff's) lobes: their tile (m; the swells' 0.45 of it),
+// fully below PUFF_THIN.x of the map's thickness, gone by .y.
+const float PUFF_TILE = 70.0;
+const vec2 PUFF_THIN = vec2(25.0, 90.0);
 const float LOBE = 40.0;
 const float MID = 95.0;
 const float MID_SWELL = 14.0;
@@ -807,6 +811,15 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 		vec2 n = textureLod(cauliflower, (p + boil) / TILE_LOW, 0.0).rg;
 		float nm = textureLod(cauliflower, (p + boil * 1.3 + 37.0) / MID, 0.0).r;
 		float nf = fine_w > 0.0 ? fine_w * FINE_SWELL * (textureLod(cauliflower, (p + boil * 1.6 + 71.0) / FINE, 0.0).r - 0.5) : 0.0;
+		// A small puff is only a few of the map's texels across, under the
+		// lobes' and swells' scales, so it drew as a smooth bell with a flat
+		// base: thin low cloud takes its lobes and swells from finer noise
+		// (P.flash.w; --cloud-puffs=old: off).
+		float small_l = (1.0 - sstep(PUFF_THIN.x, PUFF_THIN.y, w.x - w.y)) * P.flash.w;
+		if (small_l > 0.0) {
+			n.r = mix(n.r, textureLod(cauliflower, (p + boil + 11.0) / PUFF_TILE, 0.0).r, small_l);
+			nm = mix(nm, textureLod(cauliflower, (p + boil * 1.3 + 53.0) / (PUFF_TILE * 0.45), 0.0).r, small_l);
+		}
 		in_l = layer_inside(p, w.x, w.y, slope.x, slope_b.x, n.r, n.g, nm, nf, hh_l);
 		wisp = n.g;
 	}

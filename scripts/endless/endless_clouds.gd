@@ -33,7 +33,8 @@ extends Node3D
 ## four-bubble mushrooms with flat bases; docs/design/endless-flight/
 ## cloud-shape-handoff.md). --cloud-stack=old lets two clouds of one layer
 ## stand one over the other again (the map's one span per layer drew them as
-## a mushroom on a stem; docs/design/endless-flight/cloud-water-fix-handoff.md).
+## a mushroom on a stem; docs/design/endless-flight/cloud-water-fix-handoff.md);
+## --cloud-puffs=old the small puffs as smooth bells again.
 ## C turns them off and on.
 ##
 ## The valley fog (docs/design/endless-flight/valley-fog-handoff.md): a low
@@ -167,6 +168,9 @@ var organic := true
 ## Two clouds of one layer, one over the other, never both placed (the
 ## march's `yields`; false: --cloud-stack=old, the mushrooms and stems).
 var stack_yield := true
+## Thin low cloud (the small puffs) takes its lobes from finer noise, so a
+## puff reads as a small cumulus, not a smooth bell (--cloud-puffs=old: off).
+var puff_lobes := true
 ## The field's drift so far (m): a cloud stands at its field point plus this.
 var drift := Vector2.ZERO
 var motion_time := 0.0
@@ -232,6 +236,7 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 		elif a == "--cloud-half-res": quality[2] = 2
 		elif a == "--cloud-field=old": organic = false
 		elif a == "--cloud-stack=old": stack_yield = false
+		elif a == "--cloud-puffs=old": puff_lobes = false
 		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
 		elif a == "--no-valley-fog": fog_on = false
 		elif a.begins_with("--valley-fog="):
@@ -853,7 +858,7 @@ func _fill() -> void:
 	else: _put4(p,44,Vector4(_shade_drawn.x,_shade_drawn.y,SHADE_SIDE,1.0) if _shade_drawn != Vector4.ZERO else shade_square)
 	_put4(p,164,Vector4(weather_corner.x,weather_corner.y,weather_side,Effect.WEATHER_TEXELS))
 	_put4(p,168,Vector4(quality[0],quality[1],quality[2],quality[3]))
-	_put4(p,172,Vector4(1.0 if grain else 0.0,1.0 if organic else 0.0,1.0 if stack_yield else 0.0,0.0))
+	_put4(p,172,Vector4(1.0 if grain else 0.0,1.0 if organic else 0.0,1.0 if stack_yield else 0.0,1.0 if puff_lobes else 0.0))
 	_put4(p,176,Vector4(0.0,Effect.SHADOW_TEXELS,1.0 if weather_due else 0.0,1.0 if shade_due else 0.0))
 	# The land reads the shade map the frame after it is drawn.
 	if _shade_drawn != Vector4.ZERO: _publish_shade(true,key,_shade_drawn)
