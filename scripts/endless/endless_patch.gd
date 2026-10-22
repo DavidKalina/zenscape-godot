@@ -52,6 +52,13 @@ static func noise(px: float, pz: float) -> float:
 	var b := lerpf(_lattice(ix,iz+1),_lattice(ix+1,iz+1),fx)
 	return lerpf(a,b,fz)
 
+## A river bank's width of sand and stones past the water at a point (m),
+## as the ground shader paints it (endless_ground `bank_w`, `river_bank`
+## 3.5), so the grass stops where the stones start.
+static func river_bank(x: float, z: float) -> float:
+	var n := noise(x/70.0+11.0,z/70.0+11.0)*0.75+noise(x/17.0+5.0,z/17.0+5.0)*0.25
+	return 3.5*lerpf(0.2,1.6,smoothstep(0.32,0.68,n))
+
 ## ep_fade and ep_patch near the eye (no fade).
 static func fade(x: float, z: float, scale: float) -> float:
 	return noise(x/scale,z/scale)-0.5

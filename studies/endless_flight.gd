@@ -321,14 +321,29 @@ func _size_chase() -> void:
 func plane_ground(p: Vector3) -> Variant:
 	return arches.ground(p,field.height(p.x,p.z))
 
-## The turf under the wheels at a world XZ point; NAN over the sea.
+## The turf under the wheels at a world XZ point; NAN over the sea and a
+## river's water (the land field's `last_river`, from the same sample).
 func floor_at(p: Vector2) -> float:
 	var h: float = field.height(p.x,p.y)
-	return NAN if h < Field.SEA_Y+0.2 else h
+	if h < Field.SEA_Y+0.2 or _on_river(): return NAN
+	return h
+
+## Whether the field's last sample was on a river's water (not the sea's
+## mouth, which the sea takes).
+func _on_river() -> bool:
+	return field.last_river < 0.0 and field.last_river_y > Field.SEA_Y+0.05
+
+## The water under a point: the sea's swell, or a river's level over it.
+func water_at(p: Vector3) -> float:
+	var level := Field.SEA_Y+sea_height(p)
+	var river: float = field.river_y(p.x,p.z)
+	return level if is_nan(river) else maxf(level,river)
 
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
-	return p.y < maxf(field.height(p.x,p.z),Field.SEA_Y+sea_height(p))+EYE_CLEAR*0.5 or arches.inside(p)
+	var h: float = field.height(p.x,p.z)
+	if _on_river(): h = maxf(h,field.last_river_y)
+	return p.y < maxf(h,Field.SEA_Y+sea_height(p))+EYE_CLEAR*0.5 or arches.inside(p)
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
@@ -355,8 +370,9 @@ func _process(delta: float) -> void:
 func tick(delta: float) -> void:
 	flown += delta
 	var input := _fly_input(delta)
-	# The plane skims the swell as drawn, not the sea's rest level.
-	plane.water = Field.SEA_Y+sea_height(plane.position)
+	# The plane skims the swell as drawn, not the sea's rest level, and a
+	# river's water as it skims the sea.
+	plane.water = water_at(plane.position)
 	input["flaps"] = 1.0 if flaps else 0.0
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(arches,"inside"))
@@ -386,7 +402,7 @@ func tick(delta: float) -> void:
 func _react(delta: float) -> void:
 	var p: Vector3 = plane.position
 	var h: float = field.height(p.x,p.z)
-	var over := p.y-h if h > Field.SEA_Y+0.2 else NAN
+	var over := p.y-h if h > Field.SEA_Y+0.2 and not _on_river() else NAN
 	var thrust := 0.0
 	if hand_landing.on_ground(): thrust = hand_landing.engine*(0.3+0.7*maxf(hand_landing.throttle,0.0))
 	else: thrust = float(plane.engine)*clampf(0.6+0.4*float(plane.throttle),0.35,1.0)
@@ -399,7 +415,7 @@ func _react(delta: float) -> void:
 ## The land's height where grass grows (open turf over the beach), else NAN.
 func _grass_at(x: float, z: float) -> float:
 	var h: float = field.height(x,z)
-	return h if h > Field.SEA_Y+3.0 else NAN
+	return h if h > Field.SEA_Y+3.0 and field.last_river > Field.RIVER_CLEAR else NAN
 
 func _frame(delta: float) -> void:
 	var right := Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")

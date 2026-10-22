@@ -31,6 +31,11 @@ extends RefCounted
 ##               --no-carve the land uncarved, --carve=X its strength,
 ##               --carve-blocks= / --carve-ledges= / --carve-gullies= each
 ##               form's share (rock-carve-handoff.md).
+##   rivers      one down each valley (`_river`, RIVER_*): a channel along a
+##               line near one edge of the floor, its water drawn by the
+##               ground shader at `last_river_y`, the level falling with
+##               the lowland to the sea. --no-rivers the land as before
+##               (rivers-handoff.md).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 
@@ -131,6 +136,60 @@ const GULLY_SHADE := [1.0,0.75,0.4]
 ## CARVE_FADE steps goes; at CARVE_DETAIL_OFF m steps there is no carve.
 const CARVE_FADE := Vector2(3.0,5.0)
 const CARVE_DETAIL_OFF := 16.0
+## Rivers (rivers-handoff.md): one down each valley, along its line, not a
+## drainage net. The water's full width (m) swings over RIVER_WIDE m; the
+## banks stand RIVER_DROP m over it (wider rivers the deeper) and run
+## RIVER_BANK m from the water's edge up to the floor; under the drawn
+## water the bed dips RIVER_BED m more at the middle (the wheels' and the
+## walker's ground; the ground shader draws the water flat). The river
+## runs near one edge of the floor, at the foot of that side (RIVER_HUG of
+## the floor's half-width off the valley's line; the side picked by a
+## noise of RIVER_SIDE m, so it crosses the floor now and then) and
+## meanders RIVER_SWAY of the half-width over RIVER_MEANDER m, leaving the
+## floor's flat whole to land on. Its level follows the lowland under the
+## valley (the continents, not the hills), RIVER_DROP under it and never
+## under the sea, so it runs down to the coast and into the sea; where
+## the hills dip under that level the valley's floor is filled up to it
+## (the floor and its sides, as the valley's cut) and, by the river, a
+## bank is raised (RIVER_RAMP m wide). --no-rivers the land as before,
+## --river-width=X its width (1), --river-drop=X its banks' height (1).
+const RIVER_WIDTH := Vector2(10.0,24.0)
+const RIVER_WIDE := 820.0
+## A closer swell and pinch of the width: its share (+-) and scale (m).
+const RIVER_PINCH := 0.28
+const RIVER_PINCH_SIZE := 150.0
+const RIVER_DROP := Vector2(2.0,3.0)
+const RIVER_BANK := 8.0
+const RIVER_BED := 0.6
+const RIVER_HUG := 0.9
+const RIVER_SIDE := 1900.0
+const RIVER_MEANDER := 470.0
+const RIVER_SWAY := 0.12
+const RIVER_RAMP := 40.0
+## How far either side of its line the river's sums are worked out (m, in
+## the valley noise's units; more near a coast, for the plain); past it a
+## mean stands in.
+const RIVER_REACH := 80.0
+## The most the land by the river is eased down to the banks (m over
+## them: all of it to .x, none past .y); the river ends where it is more.
+const RIVER_PLAIN := Vector2(26.0,40.0)
+## The plain widens RIVER_PLAIN_SPREAD m for each m it cuts down.
+const RIVER_PLAIN_SPREAD := 6.0
+## The flow: its speed (m/s) from the level's fall along the valley
+## (sqrt of rise over run times RIVER_FLOW.y, plus .x), stilled where the
+## fall is under RIVER_STILL (a level stretch reads as a pool).
+const RIVER_FLOW := Vector2(0.35,9.0)
+const RIVER_STILL := 0.0012
+## Grass, flowers and ruins keep this far outside a river's water (m): its
+## sand and pebble bank (the ground shader's `river_bank`).
+const RIVER_CLEAR := 5.0
+## With rivers, the valleys cut in fully by this `inland` (0..1, the
+## continents' rise off the coast; without rivers the cut scales by it).
+const RIVER_INLAND := 0.3
+## That full cut runs this share of the sides' width up them (0..1).
+const RIVER_CUT_SIDE := 0.5
+## A hollow under the floor is filled out to this far past it (m).
+const RIVER_FILL_SIDE := 110.0
 
 const SAND := Color(0.80,0.74,0.56)
 const SEABED := Color(0.42,0.46,0.40)
@@ -204,6 +263,32 @@ var _h_v := PackedFloat64Array()
 var _bench_warp := FastNoiseLite.new()
 var _bench_band := FastNoiseLite.new()
 var _gully_amp := FastNoiseLite.new()
+## Rivers (see RIVER_*): on (1) or off (--no-rivers 0), and the width and
+## bank knobs.
+var rivers := 1.0
+var river_width := 1.0
+var river_drop := 1.0
+## The floor's full cut and the hollows' fill (1 on, 0 off: the valleys as
+## they were), for the flats check (scratch) and --river-cut= / --river-fill=.
+var river_cut := 1.0
+var river_fill := 1.0
+## What the last `sample` found of the river (read by land_stream for the
+## ground shader, the grass, the arches and the flight): the signed
+## distance from the river's middle line (m, INF where no river reaches),
+## the water's half-width (0: no river), the water's level (world y), the
+## distance outside the water's edge (negative in the water, INF none) and
+## the flow (XZ, m/s, downhill along the valley).
+var last_river := INF
+var last_river_r := INF
+var last_river_w := 0.0
+var last_river_y := -INF
+var last_river_flow := Vector2.ZERO
+# The river's bank top (world y) and its strength, for the cut in `sample`.
+var _river_top := -INF
+var _river_k := 0.0
+var _river_side := FastNoiseLite.new()
+var _river_meander := FastNoiseLite.new()
+var _river_wide := FastNoiseLite.new()
 
 func _init(land_seed := 0) -> void:
 	seed = land_seed
@@ -218,6 +303,11 @@ func _init(land_seed := 0) -> void:
 		elif arg.begins_with("--carve-blocks="): carve_blocks = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--carve-ledges="): carve_ledges = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--carve-gullies="): carve_gullies = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg == "--no-rivers": rivers = 0.0
+		elif arg.begins_with("--river-width="): river_width = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--river-drop="): river_drop = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--river-cut="): river_cut = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--river-fill="): river_fill = maxf(0.0,float(arg.get_slice("=",1)))
 	_noise(_continent,1,CONTINENT,3,FastNoiseLite.FRACTAL_FBM)
 	_noise(_hills,2,HILLS,4,FastNoiseLite.FRACTAL_FBM)
 	_noise(_mask,3,MOUNTAINS if old_land else RANGE_MASK,2,FastNoiseLite.FRACTAL_FBM)
@@ -233,6 +323,9 @@ func _init(land_seed := 0) -> void:
 	_noise(_bench_warp,13,BENCH_WANDER,2,FastNoiseLite.FRACTAL_FBM)
 	_noise(_bench_band,14,BENCH_BANDS,1,FastNoiseLite.FRACTAL_NONE)
 	_noise(_gully_amp,15,1.0,1,FastNoiseLite.FRACTAL_NONE)
+	_noise(_river_side,16,RIVER_SIDE,1,FastNoiseLite.FRACTAL_NONE)
+	_noise(_river_meander,17,RIVER_MEANDER,1,FastNoiseLite.FRACTAL_NONE)
+	_noise(_river_wide,18,RIVER_WIDE,1,FastNoiseLite.FRACTAL_NONE)
 
 func _noise(n: FastNoiseLite, salt: int, scale: float, octaves: int, kind: int) -> void:
 	n.seed = seed*7919+salt*104729
@@ -245,10 +338,20 @@ func _noise(n: FastNoiseLite, salt: int, scale: float, octaves: int, kind: int) 
 ## broad shape (`_broad`), then the erosion carved into its steep rock
 ## (`_carve`).
 func sample(x: float, z: float) -> Vector2:
-	if old_land: return _old_sample(x,z)
+	if old_land:
+		last_river = INF
+		last_river_w = 0.0
+		return _old_sample(x,z)
 	var s := _broad(x,z)
 	last_cavity = 0.0
 	last_ridge = 0.0
+	# The river's, kept through the carve (it samples the broad land round).
+	var rr := last_river_r
+	var rw := last_river_w
+	var ry := last_river_y
+	var rf := last_river_flow
+	var rtop := _river_top
+	var rk := _river_k
 	if carve > 0.0 and last_mountain > CARVE_MOUNTAIN.x and detail < CARVE_DETAIL_OFF:
 		# The carve samples the broad land around; `shape` keeps this point's.
 		var k_mountain := last_mountain
@@ -264,7 +367,70 @@ func sample(x: float, z: float) -> Vector2:
 		last_half = k_half
 		last_side = k_side
 		last_across = k_across
+	last_river_r = rr
+	last_river_w = rw
+	last_river_y = ry
+	last_river_flow = rf
+	_river_top = rtop
+	_river_k = rk
+	last_river = INF
+	if rk > 0.0:
+		var reach := rw+RIVER_BANK+RIVER_RAMP+(RIVER_PLAIN.y*RIVER_PLAIN_SPREAD if last_inland < 0.95 else 0.0)
+		if absf(rr) < reach: s.x = _river(s.x)
+		else: last_river = absf(rr)-rw
 	return s
+
+## The river's channel at a point whose land (after the carve) is `h`
+## (world), from what `_broad` left in last_river_*: by the river the land
+## is raised to the banks' top where a hollow dips under it, then the
+## channel cut: soft banks down to the water, the bed under it. Where the
+## land still falls away under the water (a lake, the coast) the river
+## goes (its half-width to 0), so it ends plainly. Sets `last_river`.
+func _river(h: float) -> float:
+	var w := last_river_w
+	var s := absf(last_river_r)
+	var water := last_river_y
+	var top := _river_top
+	var drop := top-water
+	var core := w+RIVER_BANK
+	if s > core+RIVER_RAMP+RIVER_PLAIN.y*RIVER_PLAIN_SPREAD:
+		last_river = s-w
+		return h
+	# The bank raised through a hollow (not at the coast, where the sea takes it).
+	var raise := (1.0-smoothstep(core,core+RIVER_RAMP,s))*smoothstep(0.5,3.0,water-SEA_Y)*_river_k
+	if h < top and raise > 0.0: h = lerpf(h,top,raise)
+	# Land standing over the banks' top by the river (where the valley cuts
+	# little, near the coast) is eased down to it, a flood plain; where it
+	# stands higher than RIVER_PLAIN the river ends.
+	var over := h-top
+	if over > 0.0:
+		var plain := (1.0-smoothstep(core,core+RIVER_RAMP+over*RIVER_PLAIN_SPREAD,s))*_river_k*(1.0-smoothstep(RIVER_PLAIN.x,RIVER_PLAIN.y,over))*(1.0-smoothstep(0.0,0.15,last_mountain))*(1.0-smoothstep(0.55,0.95,last_inland))
+		h -= over*plain
+	# Where the land is still under the water, or over the plain, no river.
+	var banked := smoothstep(water-2.5,water-0.4,h)*(1.0-smoothstep(RIVER_PLAIN.x*0.6,RIVER_PLAIN.x,h-top))
+	w *= banked
+	last_river_w = w
+	last_river = s-w
+	if w <= 0.0: return h
+	core = w+RIVER_BANK
+	# The cut: the bed under the water, soft banks up to the floor and on
+	# up (steeper) where higher land stands by the river.
+	var cut: float
+	if s < w:
+		var u := s/w
+		cut = water-RIVER_BED*(1.0-u*u)
+	elif s < core:
+		var u := (s-w)/RIVER_BANK
+		cut = water+drop*u*u*(3.0-2.0*u)
+	else:
+		var o := s-core
+		cut = water+drop+o*(1.0+o*0.04)
+	# A coarse chunk's grid can't hold the channel: it fades out there (the
+	# ground shader still draws the water, per pixel).
+	var keep := 1.0
+	if detail > 1.0: keep = smoothstep(2.5,4.5,(core*2.0)/detail)
+	if cut < h: h -= (h-cut)*keep*banked
+	return h
 
 ## The land before the carve: continents, hills, ranges, meadows, valleys.
 func _broad(x: float, z: float) -> Vector2:
@@ -301,6 +467,12 @@ func _broad(x: float, z: float) -> Vector2:
 		h = lerpf(h,flat,meadow)
 	# The valleys: carved along the zero lines of a warped noise, their
 	# distance read from the noise over its slope.
+	last_river_r = INF
+	last_river_w = 0.0
+	last_river_y = -INF
+	last_river_flow = Vector2.ZERO
+	_river_top = -INF
+	_river_k = 0.0
 	if inland > 0.0 and valleys > 0.0:
 		var vx := x+_valley_warp.get_noise_2d(x,z)*VALLEY_WARP_MOVE
 		var vz := z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*VALLEY_WARP_MOVE
@@ -317,18 +489,112 @@ func _broad(x: float, z: float) -> Vector2:
 		if gx*gx+gz*gz > 0.0: last_across = Vector2(gx,gz).normalized()
 		if d < half+side:
 			var floor_y := maxf(base+hills*VALLEY_KEEP,MEADOW_ABOVE)
+			var fill := 0.0
+			if rivers > 0.0:
+				# The river down the floor: its line, width, banks and level,
+				# worked out only within its reach of the floor (RIVER_REACH
+				# past the floor's edge, more near a coast for the plain).
+				var k := smoothstep(0.0,0.12,inland)*minf(valleys,1.0)*minf(rivers,1.0)
+				var ds := v/maxf(sqrt(gx*gx+gz*gz),0.25/VALLEYS)
+				fill = smoothstep(0.5,3.0,base-RIVER_DROP.y*river_drop)*k
+				# To one side: its middle near the floor's edge, at the foot of
+				# that side (RIVER_HUG of the half-width), so the floor's flat
+				# stays whole to land on; it meanders RIVER_SWAY of it and
+				# crosses the floor where the side noise turns.
+				var reach_r := RIVER_REACH+(RIVER_PLAIN.y*RIVER_PLAIN_SPREAD if inland < 0.95 else 0.0)
+				var off := signf(ds)*half*RIVER_HUG
+				var far := k <= 0.0 or d > half*(RIVER_HUG+2.0*RIVER_SWAY)+reach_r
+				if not far:
+					var pick := _river_side.get_noise_2d(x,z)*4.0
+					pick = pick/sqrt(1.0+pick*pick)
+					off = half*(pick*RIVER_HUG+_river_meander.get_noise_2d(x,z)*2.0*RIVER_SWAY*absf(pick))
+					far = absf(ds-off) > reach_r
+				if far:
+					# Past its reach: the way to it in the noise's units, a mean
+					# width and the level, so a coarse chunk's triangles
+					# spanning out to here still draw the river where it is.
+					last_river_r = ds-off
+					last_river_w = (RIVER_WIDTH.x+RIVER_WIDTH.y)*0.25*river_width*k
+					last_river_y = SEA_Y+maxf(base-RIVER_DROP.y*river_drop,0.0)
+				else:
+					var wide := clampf(_river_wide.get_noise_2d(x,z)*0.9+0.5,0.0,1.0)
+					# Plus a closer swell and pinch, so no stretch runs even.
+					var pinch := 1.0+RIVER_PINCH*_river_wide.get_noise_2d(x*RIVER_WIDE/RIVER_PINCH_SIZE+911.0,z*RIVER_WIDE/RIVER_PINCH_SIZE-377.0)
+					var w := lerpf(RIVER_WIDTH.x,RIVER_WIDTH.y,wide)*river_width*0.5*k*pinch
+					var drop := lerpf(RIVER_DROP.x,RIVER_DROP.y,wide)*river_drop
+					# The floor is laid out in the warped noise's units (`d`); the
+					# river's width is held in the world's: the world's slope of
+					# the noise gives the scale between them (the warp's
+					# stretch, the floor's clamped slope), so it keeps its width
+					# round bends and stays on the floor.
+					var gw := maxf(sqrt(gx*gx+gz*gz),0.25/VALLEYS)
+					var scale := 1.0
+					var along := Vector2(-gz,gx)/gw
+					var wg := Vector2(_valley_at(x+4.0,z)-v,_valley_at(x,z+4.0)-v)*0.25
+					var wl := wg.length()
+					if wl > 1e-7:
+						scale = clampf(gw/wl,0.25,4.0)
+						along = Vector2(-wg.y,wg.x)/wl
+					# The signed distance from its line, in world metres.
+					var r := (ds-off)*scale
+					var s := absf(r)
+					# The level: the lowland's under the valley, never under the sea.
+					var top := maxf(base,MEADOW_ABOVE)
+					var water := maxf(base-drop,0.0)
+					# By the river the floor is the banks' top (the hills' bumps out).
+					var near := (1.0-smoothstep(w+RIVER_BANK,w+RIVER_BANK+RIVER_RAMP,s))*k
+					floor_y = lerpf(floor_y,top,near)
+					last_river_r = r
+					last_river_w = w
+					last_river_y = SEA_Y+water
+					_river_top = SEA_Y+top
+					_river_k = k
+					if s < w+RIVER_BANK+16.0 and water > 0.0:
+						# The flow: downhill along the valley, as fast as the
+						# level falls.
+						var fall := (_lowland(x-along.x*30.0,z-along.y*30.0)-_lowland(x+along.x*30.0,z+along.y*30.0))/60.0
+						var speed := RIVER_FLOW.x+sqrt(absf(fall))*RIVER_FLOW.y
+						last_river_flow = along*clampf(fall/RIVER_STILL,-1.0,1.0)*speed
 			_floor = SEA_Y+floor_y
 			var t := clampf((d-half)/side,0.0,1.0)
 			# U-shaped: flat floor, the sides steepening up off it.
 			var keep := t*t*(3.0-2.0*t)
-			keep = lerpf(1.0,keep,minf(valleys,1.0)*inland)
+			# With rivers the floor's cut comes in fully by a lower `inland`
+			# (RIVER_INLAND), so the floor a river runs on is the floor's
+			# level everywhere, not the ranges' foot left standing near a
+			# coast (it would hold the river under walls and run it uphill);
+			# up the sides it goes back to the cut as it was by
+			# RIVER_CUT_SIDE of their width.
+			var cut_in := inland
+			if rivers > 0.0 and river_cut > 0.0:
+				var tc := clampf((d-half)/(side*RIVER_CUT_SIDE),0.0,1.0)
+				cut_in = lerpf(inland,lerpf(smoothstep(0.0,RIVER_INLAND,inland),inland,tc*tc*(3.0-2.0*tc)),minf(river_cut,1.0))
+			keep = lerpf(1.0,keep,minf(valleys,1.0)*cut_in)
 			if h > floor_y: h = floor_y+(h-floor_y)*keep
+			elif fill > 0.0 and river_fill > 0.0:
+				# A hollow under the floor filled up to it, out to
+				# RIVER_FILL_SIDE m past the floor.
+				var tf := clampf((d-half)/RIVER_FILL_SIDE,0.0,1.0)
+				var keep_f := lerpf(1.0,tf*tf*(3.0-2.0*tf),minf(valleys,1.0)*cut_in)
+				h = lerpf(h,floor_y+(h-floor_y)*keep_f,fill*minf(river_fill,1.0))
 			var floor_meadow := (1.0-smoothstep(half*0.7,half+side*0.2,d))*inland*minf(valleys,1.0)
 			meadow = maxf(meadow,floor_meadow)
 	# The coast: the land eases flat into the sea (a beach), not a step.
 	if absf(h) < BEACH*2.0: h = h*lerpf(0.45,1.0,smoothstep(0.0,BEACH*2.0,absf(h)))
 	last_mountain = mountain
 	return Vector2(SEA_Y+h,meadow)
+
+## The continents' level (m over the sea) at a point, as `_broad` starts.
+func _lowland(x: float, z: float) -> float:
+	var b := _continent.get_noise_2d(x,z)*CONTINENT_SWING*2.0+CONTINENT_LIFT
+	if b > 0.0: b = LOWLAND*(1.0-exp(-b/LOWLAND))
+	return b
+
+## The valley noise at a world point, through its warp (as `_broad` reads it).
+func _valley_at(x: float, z: float) -> float:
+	var vx := x+_valley_warp.get_noise_2d(x,z)*VALLEY_WARP_MOVE
+	var vz := z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*VALLEY_WARP_MOVE
+	return _valley.get_noise_2d(vx,vz)
 
 ## --- The carve -------------------------------------------------------------
 
@@ -554,7 +820,15 @@ func shape(x: float, z: float) -> Dictionary:
 	last_valley = INF
 	last_inland = 0.0
 	var s := sample(x,z)
-	return {"height":s.x,"meadow":s.y,"mountain":last_mountain,"inland":last_inland,"valley":last_valley,"half":last_half,"side":last_side,"across":last_across}
+	return {"height":s.x,"meadow":s.y,"mountain":last_mountain,"inland":last_inland,"valley":last_valley,"half":last_half,"side":last_side,"across":last_across,
+		"river":last_river,"river_r":last_river_r,"river_w":last_river_w,"river_y":last_river_y}
+
+## The river's water level (world y) where a point is on a river's water,
+## else NAN (the sea is not a river: the estuary's level is the sea's).
+func river_y(x: float, z: float) -> float:
+	sample(x,z)
+	if last_river < 0.0 and last_river_y > SEA_Y+0.05: return last_river_y
+	return NAN
 
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:

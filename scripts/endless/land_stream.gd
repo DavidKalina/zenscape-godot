@@ -44,6 +44,8 @@ const LAYER := 1
 ## The skirt's depth: SKIRT quads of the chunk's own, plus SKIRT_MIN m.
 const SKIRT := 6.0
 const SKIRT_MIN := 4.0
+## The river's flow (m/s) at the ends of CUSTOM0.zw's range.
+const RIVER_FLOW_MAX := 4.0
 
 var seed := 0
 var field: RefCounted
@@ -206,9 +208,13 @@ func _build(key: Vector3i, land_seed: int) -> void:
 	var hs := PackedFloat32Array()
 	var ms := PackedFloat32Array()
 	var cv := PackedByteArray()
+	# The river (land_field last_river_*): signed distance from its line,
+	# water half-width, level and flow, per grid point.
+	var rv := PackedFloat32Array()
 	hs.resize(w*w)
 	ms.resize(w*w)
 	cv.resize(w*w*2)
+	rv.resize(w*w*5)
 	for j in w:
 		for i in w:
 			var got: Vector2 = f.sample(x0+(i-1)*step,z0+(j-1)*step)
@@ -216,15 +222,23 @@ func _build(key: Vector3i, land_seed: int) -> void:
 			ms[j*w+i] = got.y
 			cv[(j*w+i)*2] = int(clampf(f.last_cavity,0.0,1.0)*255.0)
 			cv[(j*w+i)*2+1] = int(clampf(f.last_ridge,0.0,1.0)*255.0)
+			var q := (j*w+i)*5
+			rv[q] = clampf(f.last_river_r,-1000.0,1000.0)
+			rv[q+1] = f.last_river_w
+			rv[q+2] = f.last_river_y if f.last_river_y > -INF else Field.SEA_Y-100.0
+			rv[q+3] = f.last_river_flow.x
+			rv[q+4] = f.last_river_flow.y
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colours := PackedColorArray()
 	var carved := PackedByteArray()
+	var river := PackedFloat32Array()
 	var heights := PackedFloat32Array()
 	verts.resize(n*n+4*n)
 	normals.resize(n*n+4*n)
 	colours.resize(n*n+4*n)
 	carved.resize((n*n+4*n)*4)
+	river.resize((n*n+4*n)*3)
 	heights.resize(n*n)
 	for j in n:
 		for i in n:
@@ -243,6 +257,15 @@ func _build(key: Vector3i, land_seed: int) -> void:
 			# The carve's groove and crest, for the rock (CUSTOM0.xy).
 			carved[v*4] = cv[k*2]
 			carved[v*4+1] = cv[k*2+1]
+			# The flow for the water's ripples (CUSTOM0.zw, RIVER_FLOW_MAX m/s
+			# at the ends), and the river (CUSTOM1, floats): its signed
+			# distance, half-width (the skirt's negative, so the shader never
+			# lifts it to the water) and level.
+			carved[v*4+2] = int(clampf(rv[k*5+3]/RIVER_FLOW_MAX*0.5+0.5,0.0,1.0)*255.0)
+			carved[v*4+3] = int(clampf(rv[k*5+4]/RIVER_FLOW_MAX*0.5+0.5,0.0,1.0)*255.0)
+			river[v*3] = rv[k*5]
+			river[v*3+1] = rv[k*5+1]
+			river[v*3+2] = rv[k*5+2]
 			heights[v] = y
 	# The skirt: each edge's vertices again, dropped.
 	var drop := step*SKIRT+SKIRT_MIN
@@ -256,9 +279,14 @@ func _build(key: Vector3i, land_seed: int) -> void:
 			colours[v] = colours[from]
 			carved[v*4] = carved[from*4]
 			carved[v*4+1] = carved[from*4+1]
+			carved[v*4+2] = carved[from*4+2]
+			carved[v*4+3] = carved[from*4+3]
+			river[v*3] = river[from*3]
+			river[v*3+1] = -river[from*3+1]
+			river[v*3+2] = river[from*3+2]
 	var ms_took := (Time.get_ticks_usec()-began)/1000.0
 	_done_lock.lock()
-	_done.append({"key":key,"verts":verts,"normals":normals,"colours":colours,"carved":carved,"heights":heights,"ms":ms_took})
+	_done.append({"key":key,"verts":verts,"normals":normals,"colours":colours,"carved":carved,"river":river,"heights":heights,"ms":ms_took})
 	_done_lock.unlock()
 
 ## The grid's vertex index along each edge, in order: -z, +x, +z, -x.
@@ -315,9 +343,10 @@ func _commit() -> bool:
 		arrays[Mesh.ARRAY_NORMAL] = r.normals
 		arrays[Mesh.ARRAY_COLOR] = r.colours
 		arrays[Mesh.ARRAY_CUSTOM0] = r.carved
+		arrays[Mesh.ARRAY_CUSTOM1] = r.river
 		arrays[Mesh.ARRAY_INDEX] = _indices
 		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},Mesh.ARRAY_CUSTOM_RGBA8_UNORM << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},(Mesh.ARRAY_CUSTOM_RGBA8_UNORM << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)|(Mesh.ARRAY_CUSTOM_RGB_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT))
 		mesh.surface_set_material(0,material)
 		var node := MeshInstance3D.new()
 		node.name = "Land_%d_%d_%d" % [key.x,key.y,key.z]
