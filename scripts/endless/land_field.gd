@@ -229,6 +229,9 @@ var last_valley := INF
 var last_half := 0.0
 var last_side := 0.0
 var last_across := Vector2.RIGHT
+## The nearest valley's floor (world y; INF where none reaches), read by the
+## valley fog's map (scripts/endless/endless_clouds.gd `fog_image`).
+var last_floor := INF
 ## The carve's strength (--carve=X, 1; --no-carve 0) and the grid step (m)
 ## the caller samples at (land_stream sets its chunk's; 0 is full detail).
 var carve := 1.0
@@ -444,6 +447,7 @@ func _broad(x: float, z: float) -> Vector2:
 	# The ranges: the crest lines of a warped noise, where the mask allows.
 	var mountain := 0.0
 	last_valley = INF
+	last_floor = INF
 	last_inland = inland
 	_floor = -INF
 	if inland > 0.0 and mountains > 0.0:
@@ -487,8 +491,9 @@ func _broad(x: float, z: float) -> Vector2:
 		last_half = half
 		last_side = side
 		if gx*gx+gz*gz > 0.0: last_across = Vector2(gx,gz).normalized()
+		var floor_y := maxf(base+hills*VALLEY_KEEP,MEADOW_ABOVE)
+		last_floor = SEA_Y+floor_y
 		if d < half+side:
-			var floor_y := maxf(base+hills*VALLEY_KEEP,MEADOW_ABOVE)
 			var fill := 0.0
 			if rivers > 0.0:
 				# The river down the floor: its line, width, banks and level,
@@ -556,6 +561,7 @@ func _broad(x: float, z: float) -> Vector2:
 						var speed := RIVER_FLOW.x+sqrt(absf(fall))*RIVER_FLOW.y
 						last_river_flow = along*clampf(fall/RIVER_STILL,-1.0,1.0)*speed
 			_floor = SEA_Y+floor_y
+			last_floor = _floor
 			var t := clampf((d-half)/side,0.0,1.0)
 			# U-shaped: flat floor, the sides steepening up off it.
 			var keep := t*t*(3.0-2.0*t)

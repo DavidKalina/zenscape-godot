@@ -32,11 +32,20 @@ extends Node3D
 ## the resolve's blends; --cloud-field=old the earlier field (a near-grid of
 ## four-bubble mushrooms with flat bases; docs/design/endless-flight/
 ## cloud-shape-handoff.md). C turns them off and on.
+##
+## The valley fog (docs/design/endless-flight/valley-fog-handoff.md): a low
+## layer in the same march, lying along the valleys between the ridges, from
+## a fog map baked off the land's shape (`fog_image`: the ground, the
+## nearest valley's floor, how much fog the valley holds there) round the
+## eye on a worker. --no-valley-fog leaves it out; --valley-fog=X scales its
+## density (1); --valley-fog-depth=M how deep it lies over a floor
+## (FOG_DEPTH); --valley-fog-steps=N its march's steps (FOG_STEPS).
 
 const Effect = preload("res://scripts/endless/endless_cloud_effect.gd")
 const CumulusNoise = preload("res://scripts/cumulus_noise.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 
 const OFF_FLAG := "--no-clouds"
 ## Drawn after the sea (EndlessLook SEA_PRIORITY) and before anything else
@@ -69,6 +78,20 @@ const SHADE_EVERY := 2
 const GROUND_TEXELS := 160
 const GROUND_SIDE := 20000.0
 const GROUND_MOVE := 1800.0
+## The valley fog's map: texels a side, its side (m), redrawn when the eye is
+## this far from its middle (m); the fog is drawn out to FOG_REACH m (faded
+## over the last FOG_FADE), well inside the map wherever the eye is.
+const FOG_TEXELS := 384
+const FOG_SIDE := 12000.0
+const FOG_MOVE := 1400.0
+const FOG_REACH := 4400.0
+const FOG_FADE := 1100.0
+## How deep the fog lies over a valley's floor at most (m, before the
+## patches thin it), its march's steps, and how fast its patches drift on
+## the wind (a share of the clouds').
+const FOG_DEPTH := 40.0
+const FOG_STEPS := 32
+const FOG_DRIFT := 0.3
 const MARCHED_BLEND := 0.5
 const UPSAMPLED_BLEND := 0.08
 ## Less grain: the new jitter, the resolve's 3x3 filter and sigma clip
@@ -150,6 +173,18 @@ var _ground_image: Image
 var _ground_next := Vector4.ZERO
 ## The ground map the march reads, kept for the CPU field (`_cloud_floor`).
 var _ground_cpu: Image
+## The valley fog: on, its density, depth and steps (the flags), its map.
+var fog_on := true
+var fog_density := 1.0
+var fog_depth := FOG_DEPTH
+var fog_steps := FOG_STEPS
+var fog := ImageTexture.new()
+var fog_at := Vector4.ZERO
+var fog_top := -1e3
+var _fog_task := -1
+var _fog_image: Image
+var _fog_next := Vector4.ZERO
+var _fog_next_top := -1e3
 var _frame := 0
 var _prev_view := Projection.IDENTITY
 var _prev_lens := Vector2.ONE
@@ -189,6 +224,12 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 		elif a == "--cloud-half-res": quality[2] = 2
 		elif a == "--cloud-field=old": organic = false
 		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
+		elif a == "--no-valley-fog": fog_on = false
+		elif a.begins_with("--valley-fog="):
+			fog_density = maxf(a.get_slice("=",1).to_float(),0.0)
+			if fog_density <= 0.0: fog_on = false
+		elif a.begins_with("--valley-fog-depth="): fog_depth = clampf(a.get_slice("=",1).to_float(),2.0,150.0)
+		elif a.begins_with("--valley-fog-steps="): fog_steps = clampi(int(a.get_slice("=",1)),4,96)
 		elif a == "--cloud-grain=old":
 			grain = false
 			marched_blend = MARCHED_BLEND
@@ -218,6 +259,9 @@ func _exit_tree() -> void:
 	if _ground_task >= 0:
 		WorkerThreadPool.wait_for_task_completion(_ground_task)
 		_ground_task = -1
+	if _fog_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_fog_task)
+		_fog_task = -1
 
 ## Each frame, after the sea has followed the eye: the camera that draws,
 ## the wind (a unit direction) the field drifts on, the clock.
@@ -231,7 +275,9 @@ func step(delta: float, view: Camera3D, wind: Vector2, time: float) -> void:
 		if enabled: _attach()
 	drift += wind*WIND_SPEED*delta
 	motion_time = time
-	if camera != null: _ground(camera.global_position)
+	if camera != null:
+		_ground(camera.global_position)
+		if fog_on: _fog(camera.global_position)
 	sheet.visible = enabled and camera != null and ground_at.w > 0.5
 
 ## On or off (C): off, nothing is marched and the land takes no shade.
@@ -296,6 +342,71 @@ func _take_ground() -> void:
 	if ground.get_image() != null and ground.get_size() == Vector2(_ground_image.get_size()): ground.update(_ground_image)
 	else: ground.set_image(_ground_image)
 	ground_at = _ground_next
+
+## The valley fog's map round `eye`, as the ground map is kept.
+func _fog(eye: Vector3) -> void:
+	if _fog_task >= 0 and WorkerThreadPool.is_task_completed(_fog_task):
+		WorkerThreadPool.wait_for_task_completion(_fog_task)
+		_fog_task = -1
+		_take_fog()
+	var middle := Vector2(fog_at.x,fog_at.y)+Vector2.ONE*fog_at.z*0.5
+	var want := fog_at.w < 0.5 or Vector2(eye.x,eye.z).distance_to(middle) > FOG_MOVE
+	if not want or _fog_task >= 0: return
+	var texel := FOG_SIDE/FOG_TEXELS
+	var corner := ((Vector2(eye.x,eye.z)-Vector2.ONE*FOG_SIDE*0.5)/texel).floor()*texel
+	_fog_next = Vector4(corner.x,corner.y,FOG_SIDE,1.0)
+	if fog_at.w < 0.5:
+		_fog_image = fog_image(land_seed,corner)
+		_take_fog()
+	else:
+		_fog_task = WorkerThreadPool.add_task(func() -> void: _fog_image = fog_image(land_seed,corner),false,"Valley fog map")
+
+func _take_fog() -> void:
+	if _fog_image == null: return
+	if fog.get_image() != null and fog.get_size() == Vector2(_fog_image.get_size()): fog.update(_fog_image)
+	else: fog.set_image(_fog_image)
+	fog_at = _fog_next
+	# The highest floor the fog lies on in this map (the march's slab top).
+	var top := -1e3
+	var n := _fog_image.get_width()
+	for j in range(0,n,2):
+		for i in range(0,n,2):
+			var c := _fog_image.get_pixel(i,j)
+			if c.b > 0.01: top = maxf(top,c.g)
+	fog_top = top
+
+## The valley fog's map over the square at `corner` (FOG_TEXELS a side):
+## per texel the ground (world y), the nearest valley's floor (world y), how
+## much fog the valley holds there (0..1: its middle and up its sides, more
+## through the ranges and where the floor widens into a pocket), and how
+## much of a range stands round it (0..1, deepening the fog).
+static func fog_image(seed_value: int, corner: Vector2) -> Image:
+	var field := Field.new(seed_value)
+	var n := FOG_TEXELS
+	var texel := FOG_SIDE/n
+	var floor_half := WorldScale.opening(Field.TOY_VALLEY)*0.5
+	var data := PackedFloat32Array()
+	data.resize(n*n*4)
+	for j in n:
+		for i in n:
+			var s: Vector2 = field.sample(corner.x+(i+0.5)*texel,corner.y+(j+0.5)*texel)
+			var k := (j*n+i)*4
+			data[k] = s.x
+			var amount := 0.0
+			var fl := s.x
+			if field.last_valley < INF and field.last_floor < INF:
+				var d: float = field.last_valley
+				var half: float = field.last_half
+				var side: float = field.last_side
+				fl = field.last_floor
+				var near := 1.0-smoothstep(half+side*0.3,half+side*1.05,d)
+				var ranged := smoothstep(0.0,0.45,field.last_mountain)
+				var pocket := clampf((half/floor_half-0.75)/0.95,0.0,1.0)
+				amount = near*smoothstep(0.2,0.8,field.last_inland)*lerpf(0.3,1.0,ranged)*lerpf(0.7,1.15,pocket)
+				data[k+3] = ranged
+			data[k+1] = fl
+			data[k+2] = clampf(amount,0.0,1.0)
+	return Image.create_from_data(n,n,false,Image.FORMAT_RGBAF,data.to_byte_array())
 
 ## The ground map over the square at `corner`: per texel the most meadow
 ## and the highest ground round it (its texel and the eight about it).
@@ -667,6 +778,10 @@ func _fill() -> void:
 	var shade_corner := ((Vector2(eye.x,eye.z)-Vector2.ONE*SHADE_SIDE*0.5)/shade_texel).floor()*shade_texel
 	_put4(p,48,Vector4(_frame,0.0,0.0,night))
 	_put4(p,52,Vector4(SMALL_COVER,LOW_SHARE,TOWER_SHARE,MEADOW_CLEAR))
+	var fog_live := fog_on and fog_at.w > 0.5 and fog_top > -1e2
+	_put4(p,56,fog_at if fog_live else Vector4.ZERO)
+	_put4(p,60,Vector4(fog_density,fog_depth,fog_steps,fog_top+fog_depth*1.6+16.0))
+	_put4(p,64,Vector4(drift.x*FOG_DRIFT,drift.y*FOG_DRIFT,FOG_REACH,FOG_FADE))
 	var weather_due := _frame%WEATHER_EVERY == 0 or weather_side == 0.0
 	var shade_due := _frame%SHADE_EVERY == 0
 	if weather_due:
@@ -684,7 +799,7 @@ func _fill() -> void:
 	if _shade_drawn != Vector4.ZERO: _publish_shade(true,key,_shade_drawn)
 	if shade_due: _shade_drawn = shade_square
 	_frame = (_frame+1)%4096
-	effect.set_inputs(ground,null,noise,[])
+	effect.set_inputs(ground,fog if fog_live else null,noise,[])
 	var r := effect.resolve_params
 	_put_transform(r,0,xf)
 	_put_projection(r,16,_prev_view)
