@@ -1,6 +1,6 @@
 # Grass tall (endless flight)
 
-Blades are 2x taller by default; `--grass-tall=X` (1.0 = the old grass, clamped 0.25..6).
+Blades are 4x taller by default (2x first; the user flew 3 and 5 and chose 4); `--grass-tall=X` (1.0 = the old grass, clamped 0.25..6).
 Only scripts/endless/endless_grass.gd changed (no shared flora/shader code): `TALL`/`tall`
 scales the FINE tuft mesh's vertex Y (width unchanged), the far ring's `grow_near` and
 `grass_ring_grow` tall sizes (so the near/far handoff stays matched), and the near

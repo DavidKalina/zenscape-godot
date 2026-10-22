@@ -94,7 +94,7 @@ const FAR_GROW := Vector2(2.0,1.8)
 ## The grass's height, a multiple of the isles' blade (--grass-tall=X; 1.0:
 ## the old grass). Height only: the near FINE tuft's mesh, the far ring's
 ## sizes (FAR_NEAR/FAR_GROW tall) and the near sway's arm scale with it.
-const TALL := 2.0
+const TALL := 4.0
 ## A far tuft's size (wide, tall) where it comes up (LOD.x..y): the near
 ## tuft's look there (as tall; wider, its tufts fewer).
 const FAR_NEAR := Vector2(1.5,1.0)
