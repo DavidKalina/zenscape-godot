@@ -8,6 +8,7 @@ shader_type spatial;
 #include "res://shaders/meadow_flower.gdshaderinc"
 #include "res://shaders/conifer_wind.gdshaderinc"
 #include "res://shaders/foliage_tread.gdshaderinc"
+#include "res://shaders/grass_react.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
 #include "res://shaders/reference_season.gdshaderinc"
 #include "res://shaders/shaping_reveal.gdshaderinc"
@@ -619,6 +620,14 @@ void vertex() {
 					float lean_sq = min(dot(shove, shove), arm * arm * 0.96);
 					VERTEX.y -= (arm - sqrt(arm * arm - lean_sq)) + arm * bend * press * ZS_TREAD_FLATTEN;
 				}
+			}
+			// The endless grass reacting (shaders/grass_react.gdshaderinc): the
+			// prop's wash, the walker and the gusts landing; off on the isles.
+			if (zs_react_live()) {
+				float react_sheen = 0.0;
+				VERTEX += zs_react_offset(root, arm, bend, MODEL_MATRIX, instance_scale, CAMERA_POSITION_WORLD.xz - root, react_sheen);
+				if (grass_blades) grass_bow = max(grass_bow, react_sheen);
+				foliage_gust = max(foliage_gust, react_sheen * bend);
 			}
 			VERTEX.y -= zs_foliage_wet * bend * wet_droop;
 			// Local gusts have a true world direction, even for rotated/scaled assets.
