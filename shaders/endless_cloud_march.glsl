@@ -56,7 +56,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 spare[24];     // 68..163
 	vec4 weather_at;    // 164 corner xz, side, texels a side
 	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
-	vec4 flash;         // 172 unused
+	vec4 flash;         // 172 grain jitter on, organic field on, stacked clouds yield, unused
 	vec4 shadow_at;     // 176 unused, shade texels, weather redrawn, shade redrawn
 } P;
 
@@ -384,6 +384,12 @@ const float LIFT = 0.3;
 // A bubble stands this many times its kind's tall-for-wide over its own
 // radius, so every bubble is a dome (cauliflower), never a pillar.
 const float DOME = 1.6;
+// Two clouds of one layer stand one over the other (and one yields) when the
+// upper one's base is over the lower's base by more than this share of the
+// lower's height.
+const float YIELD_LEVEL = 0.5;
+// How far past a cloud's reach (m) its yielding is still asked.
+const float YIELD_NEAR = 80.0;
 const int KIND_FAIR = 0;
 const int KIND_MID = 1;
 const int KIND_TOWER = 2;
@@ -430,8 +436,9 @@ struct Cloud {
 	bool low;
 };
 
-// The cloud of cell `c` (false: none).
-bool recipe(ivec2 c, bool big, float cover, out Cloud k) {
+// The cloud of cell `c` before it is lifted over the ground (false: none):
+// its kind, footprint and form.
+bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	float cell = big ? BIG : SMALL;
 	uint salt = uint(P.drift.z) + (big ? 101u : 211u);
 	vec3 h = hash3(c, salt);
@@ -497,17 +504,89 @@ bool recipe(ivec2 c, bool big, float cover, out Cloud k) {
 	k.ext = length(vec2(k.L, k.W)) + max(k.br.y, k.main_r) * (1.0 + WOB);
 	k.r = min(k.r, EXT_MAX * cell / k.ext);
 	k.tall = mix(tall.x, tall.y, t2) * DOME;
-	// Lifted whole over the ground, so the belly keeps its round (the map's
-	// clamp under it would cut it level); a lifted cloud a little higher
-	// again, its own, so lifted neighbours never share a base. Over the
-	// meadows a low one thins.
+	k.belly = mix(belly.x, belly.y, fract(m.y * 5.13 + s.x));
+	k.qb = mix(qb.x, qb.y, fract(m.z * 3.71 + h.x));
+	return true;
+}
+
+// Cloud `k` (of cell `c`) lifted whole over the ground, so the belly keeps
+// its round (the map's clamp under it would cut it level); a lifted cloud a
+// little higher again, its own, so lifted neighbours never share a base.
+// Over the meadows a low one thins.
+void recipe_lift(inout Cloud k, ivec2 c, bool big) {
+	uint salt = uint(P.drift.z) + (big ? 101u : 211u);
+	vec3 h = hash3(c, salt);
+	vec3 s = hash3(c, salt + 1u);
 	vec2 fl = cloud_floor(k.middle + P.drift.xy, k.r * k.ext, k.low);
 	if (fl.x > k.base) k.base = fl.x + 30.0 * fract(s.y * 13.7 + h.x);
 	if (k.low) k.tall *= mix(1.0, 0.6, fl.y);
 	k.H = min(k.r * k.main_r * k.tall, TOP_MAX - k.base);
-	k.belly = mix(belly.x, belly.y, fract(m.y * 5.13 + s.x));
-	k.qb = mix(qb.x, qb.y, fract(m.z * 3.71 + h.x));
+}
+
+// The cloud of cell `c` (false: none).
+bool recipe(ivec2 c, bool big, float cover, out Cloud k) {
+	if (!recipe_shape(c, big, cover, k)) return false;
+	recipe_lift(k, c, big);
 	return true;
+}
+
+// The weather map keeps one span (top, base) per layer in a texel, so two
+// clouds of one layer whose footprints overlap, one standing over the
+// other, cannot both be drawn there: the texels they share joined them into
+// a pillar (a wisp over a cumulus stood on a stem, a mushroom) or cut one
+// round the other. Such a pair is never placed: the lesser yields (a puff to
+// a broad cloud, a wisp to any other, a puff to a thicker puff). Two of a
+// layer at about one level still merge, as before, and the broad clouds
+// other than the wisps never yield (they seldom stand stacked, and asking
+// for every texel they cover costs too much). Mirrored in endless_clouds.gd
+// (`_yields`).
+bool clash(Cloud a, Cloud b) {
+	if (a.kind == KIND_WISP || b.kind == KIND_WISP) return true;
+	bool a_low = a.base <= b.base;
+	float lo_base = a_low ? a.base : b.base;
+	float lo_h = a_low ? a.H : b.H;
+	float hi_base = a_low ? b.base : a.base;
+	return hi_base > lo_base + YIELD_LEVEL * lo_h;
+}
+
+bool yields(Cloud k, ivec2 c, bool big, float cover) {
+	float reach = k.r * k.ext;
+	for (int pass = 0; pass < 2; pass++) {
+		bool other_big = pass == 0;
+		// A broad cloud never yields to a puff.
+		if (big && !other_big) continue;
+		float cell = other_big ? BIG : SMALL;
+		ivec2 g = ivec2(floor(k.middle / cell));
+		float most = reach + EXT_MAX * cell;
+		for (int y = -2; y <= 2; y++) {
+			for (int x = -2; x <= 2; x++) {
+				ivec2 n = g + ivec2(x, y);
+				if (other_big == big && n == c) continue;
+				// Cheap first: a cell's middle alone can rule it out.
+				uint salt = uint(P.drift.z) + (other_big ? 101u : 211u);
+				vec3 h = hash3(n, salt);
+				vec2 mid = (vec2(n) + 0.5 + JIT * (h.xy * 2.0 - 1.0)) * cell;
+				if (length(mid - k.middle) >= most) continue;
+				Cloud o;
+				if (!recipe_shape(n, other_big, cover, o)) continue;
+				if (o.low != k.low) continue;
+				if (length(o.middle - k.middle) >= reach + o.r * o.ext) continue;
+				bool wisps = k.kind == KIND_WISP || o.kind == KIND_WISP;
+				if (!wisps) {
+					recipe_lift(o, n, other_big);
+					if (!clash(k, o)) continue;
+				}
+				bool me;
+				bool order = c.x < n.x || (c.x == n.x && c.y < n.y);
+				if (big != other_big) me = true;
+				else if ((k.kind == KIND_WISP) != (o.kind == KIND_WISP)) me = k.kind == KIND_WISP;
+				else if (k.kind == KIND_WISP) me = order;
+				else me = k.H < o.H || (k.H == o.H && order);
+				if (me) return true;
+			}
+		}
+	}
+	return false;
 }
 
 // Bubble `i` of cloud `k` (from cell `c`) over field point `f`: (top,
@@ -558,6 +637,11 @@ void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout
 			float top_c = -1e4;
 			float base_c = 1e4;
 			float out_c = d - k.ext * k.r;
+			// Whether a puff or a wisp yields is asked over its reach and a
+			// margin round it, where its rim's height could still be the
+			// nearest rim a texel keeps and so bend a neighbour's smoothed edge
+			// (farther off it only gives the leap a shorter, safe distance).
+			if (out_c < YIELD_NEAR && P.flash.z > 0.5 && (!big || k.kind == KIND_WISP) && yields(k, c, big, cover)) continue;
 			// Past the rims the map keeps the nearest rim's height as the
 			// base (the cloud's lowest point there would drag the smoothed
 			// base down at the rim into hanging strands).
