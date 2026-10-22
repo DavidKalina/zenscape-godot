@@ -325,6 +325,7 @@ func tick(delta: float) -> void:
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		grass.step((view if view != null else camera).global_position)
+	if look != null: look.plane_at = plane.position
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
 	_show_hud()
