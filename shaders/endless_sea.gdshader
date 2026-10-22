@@ -212,6 +212,8 @@ uniform int wake_count = 0;
 uniform float wake_now = 0.0;
 uniform vec4 wake_head = vec4(0.0);
 uniform float wake = 1.0;
+// 1: the V ends at its oldest point (0: its arms close round it in a ring).
+uniform float wake_tail = 1.0;
 // How fast the V's arms ride out (m/s, from the plane's speed).
 uniform float wake_spread = 6.0;
 // 1: the water's depth (red 0..10 m, green 10..60 m), 2: foam cover,
@@ -690,7 +692,11 @@ float zs_wake(vec2 p, out vec2 slope, out float stirred) {
 		if (a.w <= 0.0 && b.w <= 0.0) continue;
 		vec2 ab = b.xy - a.xy;
 		float len2 = max(dot(ab, ab), 1e-4);
-		float t = clamp(dot(p - a.xy, ab) / len2, 0.0, 1.0);
+		float t_raw = dot(p - a.xy, ab) / len2;
+		// Past the oldest point there is no track: the nearest point of it
+		// would be that end, and its arm a ring round it.
+		if (wake_tail > 0.5 && t_raw > 1.0 && i + 2 >= wake_count) continue;
+		float t = clamp(t_raw, 0.0, 1.0);
 		vec2 near = a.xy + ab * t;
 		float d = distance(p, near);
 		if (d < best) {
