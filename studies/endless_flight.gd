@@ -44,7 +44,8 @@ extends Node3D
 ## view, 0.45), --no-grass-lead, --grass-flat-up=M (the height its rings are
 ## measured along the ground to, 20), --grass-ring=3d (the old 3D rings),
 ## --grass-silver=X (the silvery undersides the gusts flip into view, 0.8;
-## 0 or --no-grass-silver: off); G
+## 0 or --no-grass-silver: off), --grass-cover=old (bare slopes and hills as
+## before the bare-patches round), --grass-slope=a,b; G
 ## turns it off and on. The grass reacting (scripts/endless/grass_react.gd):
 ## --no-grass-react, --no-prop-wash, --no-grass-gusts, --no-grass-part,
 ## --prop-wash=X, --grass-gusts=X, --gust-every=S, --grass-bend=X. The arches (scripts/endless/land_arches.gd):
