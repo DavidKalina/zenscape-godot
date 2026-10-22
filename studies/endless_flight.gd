@@ -41,7 +41,9 @@ extends Node3D
 ## (how strongly the grass's colour regions show, 1; 0 or --no-regions:
 ## one palette), --grass-lead=X (how far its rings lead out ahead along the
 ## view, 0.45), --no-grass-lead, --grass-flat-up=M (the height its rings are
-## measured along the ground to, 20), --grass-ring=3d (the old 3D rings); G
+## measured along the ground to, 20), --grass-ring=3d (the old 3D rings),
+## --grass-silver=X (the silvery undersides the gusts flip into view, 0.8;
+## 0 or --no-grass-silver: off); G
 ## turns it off and on. The arches (scripts/endless/land_arches.gd):
 ## --arches=X (how many, 1; 0 or --no-arches none), --rock-arches=X /
 ## --ruin-arches=X (each family's share, 1; 0 none).

@@ -25,6 +25,8 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/reference_globals.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
 #include "res://shaders/endless_ring.gdshaderinc"
+#include "res://shaders/reference_wind.gdshaderinc"
+#include "res://shaders/grass_silver.gdshaderinc"
 
 uniform vec4 grass_ring = vec4(0.0);
 uniform vec4 grass_ring_in = vec4(0.0, 1.0, 1.0, 0.0);
@@ -59,6 +61,7 @@ varying vec3 mass;
 varying float glance;
 varying vec3 wash;
 varying float washed;
+varying float silver;
 
 void vertex() {
 	vec3 root = MODEL_MATRIX[3].xyz;
@@ -85,6 +88,14 @@ void vertex() {
 	vec3 world_n = normalize(mat3(MODEL_MATRIX) * NORMAL);
 	if (world_n.y < 0.0) world_n = -world_n;
 	mass = normalize(mix(world_n, vec3(0.0, 1.0, 0.0), mass_normal));
+	// The underside the wind flips (grass_silver): its field at the root, as
+	// the near tufts and the ground's paint read it, at a pixel's footprint.
+	silver = 0.0;
+	if (grass_silver.x > 0.0 && ring_keep > 0.0) {
+		float seen = length(CAMERA_POSITION_WORLD - root);
+		float rise = max(normalize(CAMERA_POSITION_WORLD - root).y, 0.08);
+		silver = zs_silver_drive(root.xz, seen * 0.0016 * (0.6 + 0.4 / rise));
+	}
 }
 
 void fragment() {
@@ -92,6 +103,7 @@ void fragment() {
 	vec3 own = clamp(COLOR.rgb / source, vec3(0.0), vec3(3.0));
 	vec3 c = own * mix(root_colour, tip_colour, pow(along, tip_curve)) * glance;
 	c = mix(c, wash * glance, washed * smoothstep(wash_tip.x, wash_tip.y, along));
+	if (grass_silver.x > 0.0) c = zs_silver_paint(c, silver, smoothstep(0.15, 0.85, along), 0.8);
 	c = mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))) * night_grade.yzw, night_grade.x);
 	ALBEDO = c * (1.0 - shade * cloud_shade);
 	ROUGHNESS = 0.85;

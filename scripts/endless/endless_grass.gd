@@ -62,7 +62,8 @@ extends Node3D
 ## the grass's colour regions show, 1; 0 or --no-regions: one palette),
 ## --grass-lead=X (LEAD, 0.45), --no-grass-lead (no lead: rings round the
 ## eye), --grass-flat-up=M (FLAT_UP, 20), --grass-ring=3d (round 5's
-## rings: 3D from the eye, no lead).
+## rings: 3D from the eye, no lead), --grass-silver=X (the silvery
+## undersides the wind flips, SILVER 0.8), --no-grass-silver.
 ##
 ## Look round 5 (docs/design/endless-flight/flowers-colour-handoff.md): the
 ## grass's colour regions and the flower drifts are endless_patch.gd
@@ -122,6 +123,23 @@ const BLOOM_TRIES := 3.4
 const BLOOM_COMPANION := 0.12
 const BLOOM_KIND := 0.12
 const FAR_WASH := 0.35
+## The silvery undersides the wind flips into view (shaders/
+## grass_silver.gdshaderinc): their strength (0: off), on the near tufts,
+## the far ring and the paint alike. With them on, the bowed blades' old
+## paling (the tufts' `grass_wave_sheen`, the paint's `wind_sheen`) is cut to
+## these, so the gusts don't brighten twice. --grass-silver=S, --no-grass-silver.
+const SILVER := 0.8
+## The drive (grass_silver zs_silver_drive) over which the underside
+## turns into view, and how much brighter it reads on the near tufts, the
+## far ones and the paint (each tier's own tone, so they meet as one).
+const SILVER_BOW := Vector2(0.25,1.25)
+const SILVER_LIFT := Vector3(1.9,1.5,1.25)
+## How much of each tier's own colour the underside keeps (the paint more,
+## or its bright turf goes to frost).
+const SILVER_KEEP := Vector3(0.45,0.55,0.7)
+const SILVER_SHEEN := 0.2
+const SILVER_WIND_SHEEN := 0.45
+var silver := SILVER
 ## How many drifts (--flower-drifts=), how strong the regions
 ## (--grass-regions=).
 var drifts := 1.0
@@ -265,6 +283,8 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		elif a == "--no-drifts": drifts = 0.0
 		elif a.begins_with("--grass-regions="): regions = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a == "--no-regions": regions = 0.0
+		elif a.begins_with("--grass-silver="): silver = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a == "--no-grass-silver": silver = 0.0
 		elif a.begins_with("--grass-lead="): lead = clampf(a.get_slice("=",1).to_float(),0.0,0.85)
 		elif a == "--no-grass-lead": lead = 0.0
 		elif a.begins_with("--grass-flat-up="): flat_up = maxf(a.get_slice("=",1).to_float(),0.0)
@@ -312,6 +332,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		ground.set_shader_parameter("region_amount",Patch.region_amount)
 		ground.set_shader_parameter("bloom_amount",Patch.bloom_amount)
 		ground.set_shader_parameter("bloom_fade",FLOWER_FADE)
+		_silver(ground,"wind_sheen",SILVER_WIND_SHEEN)
 		for k: String in _sets.ground: ground.set_shader_parameter(k,_sets.ground[k])
 	if rings_3d: lead = 0.0
 	if ground != null: _ring_mats[ground.get_instance_id()] = ground
@@ -563,6 +584,7 @@ func _calm(batch: MultiMeshInstance3D) -> void:
 		m.set_shader_parameter("grass_wave_sheen",Carpet.CARPET_SHEEN)
 		var plain := Patch.plain()
 		m.set_shader_parameter("grass_root_paint",Vector4(plain.x,plain.y,plain.z,ROOT_PAINT))
+		_silver(m,"grass_wave_sheen",SILVER_SHEEN)
 		for k: String in _sets.grass: m.set_shader_parameter(k,_sets.grass[k])
 	else:
 		m.set_shader_parameter("flower_far",Vector4(FLOWER_FADE.x,FLOWER_FADE.y,0.0,0.0))
@@ -629,10 +651,34 @@ func _far(key: String, ring: Dictionary) -> Material:
 		m.set_shader_parameter("grass_source_root",Vector3(root.r,root.g,root.b))
 		m.set_shader_parameter("grass_source_tip",Vector3(tip.r,tip.g,tip.b))
 	m.set_shader_parameter("cloud_shade",CLOUD_SUN)
+	_silver(m,"",0.0,true)
 	for k: String in _sets.far: m.set_shader_parameter(k,_sets.far[k])
 	_fars[id] = m
 	_ring_mats[m.get_instance_id()] = m
 	return m
+
+## The silvery undersides on material `m` (none while `silver` is 0), and
+## its old wind paling `sheen` cut to `cut` while they show.
+func _silver(m: ShaderMaterial, sheen := "", cut := 0.0, far := false) -> void:
+	if silver <= 0.0: return
+	_silver_tier(m,far)
+	if sheen != "": m.set_shader_parameter(sheen,cut)
+
+## grass_silver on material `m`, with its tier's lift and keep.
+func _silver_tier(m: ShaderMaterial, far := false) -> void:
+	var tier := 2 if m == ground else (1 if far or _fars.values().has(m) else 0)
+	m.set_shader_parameter("grass_silver",Vector4(silver,SILVER_BOW.x,SILVER_BOW.y,SILVER_LIFT[tier]))
+	m.set_shader_parameter("grass_silver_keep",SILVER_KEEP[tier])
+
+## The undersides turned to strength `s` on every grass material now
+## standing (0 off: the old paling back), for A/B in one run.
+func set_silver(s: float) -> void:
+	silver = maxf(s,0.0)
+	for m: ShaderMaterial in _ring_mats.values():
+		var on := silver > 0.0
+		_silver_tier(m)
+		if m == ground: m.set_shader_parameter("wind_sheen",SILVER_WIND_SHEEN if on else 1.0)
+		elif not _fars.values().has(m): m.set_shader_parameter("grass_wave_sheen",SILVER_SHEEN if on else Carpet.CARPET_SHEEN)
 
 ## Cells standing, building and queued, and the instances drawn, both layers.
 func counts() -> Dictionary:
