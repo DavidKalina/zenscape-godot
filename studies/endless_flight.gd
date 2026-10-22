@@ -29,7 +29,8 @@ extends Node3D
 ## moods (alpine_morning), --hour=H the sun's hour (the mood's), --day the
 ## hour runs, --plain-look round one's plain sky and colours; T steps to the
 ## next quarter of the day, L to the next mood. The clouds (scripts/endless/
-## endless_clouds.gd): --no-clouds, --cloud-cover=X (1); C turns them off
+## endless_clouds.gd): --no-clouds, --cloud-cover=X (1), --cloud-field=old (the
+## earlier near-grid of mushrooms), --cloud-half-res (the earlier march); C turns them off
 ## and on. The grass carpet (scripts/endless/endless_grass.gd): --no-grass,
 ## --grass=X (its density, 1), --grass-range=M (how far the tufts reach,
 ## 230), --grass-lod=x,y,z,w (its rings, 16,30,150,230), --no-flowers,
@@ -41,8 +42,12 @@ extends Node3D
 ## (how strongly the grass's colour regions show, 1; 0 or --no-regions:
 ## one palette), --grass-lead=X (how far its rings lead out ahead along the
 ## view, 0.45), --no-grass-lead, --grass-flat-up=M (the height its rings are
-## measured along the ground to, 20), --grass-ring=3d (the old 3D rings); G
-## turns it off and on. The arches (scripts/endless/land_arches.gd):
+## measured along the ground to, 20), --grass-ring=3d (the old 3D rings),
+## --grass-silver=X (the silvery undersides the gusts flip into view, 0.8;
+## 0 or --no-grass-silver: off); G
+## turns it off and on. The grass reacting (scripts/endless/grass_react.gd):
+## --no-grass-react, --no-prop-wash, --no-grass-gusts, --no-grass-part,
+## --prop-wash=X, --grass-gusts=X, --gust-every=S, --grass-bend=X. The arches (scripts/endless/land_arches.gd):
 ## --arches=X (how many, 1; 0 or --no-arches none), --rock-arches=X /
 ## --ruin-arches=X (each family's share, 1; 0 none).
 
@@ -57,6 +62,7 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
 const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
+const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const LandArches = preload("res://scripts/endless/land_arches.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 
@@ -95,6 +101,9 @@ var look: Node3D
 ## The grass carpet round the eye (off at the start under --no-grass), or
 ## null under --plain-look.
 var grass: Node3D
+## The grass reacting to the wash, the walker and the gusts (scripts/endless/
+## grass_react.gd), or null under --no-grass-react or --plain-look.
+var react: Node
 ## The arches over the land (scripts/endless/land_arches.gd).
 var arches: Node3D
 var flown := 0.0
@@ -156,6 +165,10 @@ func _ready() -> void:
 		grass.setup(seed,look.ground)
 		add_child(grass)
 		grass.set_enabled(EndlessGrass.wanted())
+		if GrassReact.wanted():
+			react = GrassReact.new()
+			add_child(react)
+			react.setup(seed)
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 	_build_ui()
 	_hud.visible = _numbers
@@ -315,7 +328,13 @@ func floor_at(p: Vector2) -> float:
 
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
-	return p.y < maxf(field.height(p.x,p.z),Field.SEA_Y)+EYE_CLEAR*0.5 or arches.inside(p)
+	return p.y < maxf(field.height(p.x,p.z),Field.SEA_Y+sea_height(p))+EYE_CLEAR*0.5 or arches.inside(p)
+
+## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
+## the flat sea), looked up only near the water.
+func sea_height(p: Vector3) -> float:
+	if look == null or look.water == null or p.y > Field.SEA_Y+12.0: return 0.0
+	return look.water.height_at(p.x,p.z)
 
 ## The share of the way from `from` to `to` clear of the land (GlideCamera
 ## `sight`), marched over the field.
@@ -336,6 +355,8 @@ func _process(delta: float) -> void:
 func tick(delta: float) -> void:
 	flown += delta
 	var input := _fly_input(delta)
+	# The plane skims the swell as drawn, not the sea's rest level.
+	plane.water = Field.SEA_Y+sea_height(plane.position)
 	input["flaps"] = 1.0 if flaps else 0.0
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(arches,"inside"))
@@ -354,9 +375,31 @@ func tick(delta: float) -> void:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera
 		grass.step(eye.global_position,-eye.global_basis.z)
+	if look != null: look.plane_at = plane.position
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
+	if react != null: _react(delta)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
 	_show_hud()
+
+## The grass reacting: the plane's wash (by its height and thrust) and the
+## look's breeze for the gusts (GrassReact `step`).
+func _react(delta: float) -> void:
+	var p: Vector3 = plane.position
+	var h: float = field.height(p.x,p.z)
+	var over := p.y-h if h > Field.SEA_Y+0.2 else NAN
+	var thrust := 0.0
+	if hand_landing.on_ground(): thrust = hand_landing.engine*(0.3+0.7*maxf(hand_landing.throttle,0.0))
+	else: thrust = float(plane.engine)*clampf(0.6+0.4*float(plane.throttle),0.35,1.0)
+	var facing := -camera.global_basis.z
+	react.step(delta,camera.global_position,
+		{"position": p, "forward": plane.forward(), "over": over, "thrust": thrust, "size": ground_scale.size()},
+		{"way": look.wind_direction, "travel": look._gust, "facing": Vector2(facing.x,facing.z)},
+		Callable(self,"_grass_at"))
+
+## The land's height where grass grows (open turf over the beach), else NAN.
+func _grass_at(x: float, z: float) -> float:
+	var h: float = field.height(x,z)
+	return h if h > Field.SEA_Y+3.0 else NAN
 
 func _frame(delta: float) -> void:
 	var right := Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
@@ -443,7 +486,11 @@ func _show_hud() -> void:
 		("  ·  gpu %.2f ms" % gpu) if gpu > 0.0 else "",
 		("  ·  %s, %05.2f h%s" % [look.mood_title(),look.hour(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
-		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_arch_note()]
+		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()]
+
+func _react_note() -> String:
+	if react == null: return ""
+	return "\ngrass react: %d stamps, wash %.2f, %d gusts" % [int(react.stats.stamps),float(react.stats.wash),int(react.stats.gusts)]
 
 func _arch_note() -> String:
 	if arches.density <= 0.0: return "\nno arches"

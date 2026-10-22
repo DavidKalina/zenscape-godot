@@ -5,9 +5,11 @@ shader_type spatial;
 // Worn paths drawn per pixel on the ground (0 segments: none).
 #include "res://shaders/path_dirt.gdshaderinc"
 #include "res://shaders/grass_look.gdshaderinc"
+#include "res://shaders/grass_silver.gdshaderinc"
 #include "res://shaders/meadow_flower.gdshaderinc"
 #include "res://shaders/conifer_wind.gdshaderinc"
 #include "res://shaders/foliage_tread.gdshaderinc"
+#include "res://shaders/grass_react.gdshaderinc"
 #include "res://shaders/reference_autumn.gdshaderinc"
 #include "res://shaders/reference_season.gdshaderinc"
 #include "res://shaders/shaping_reveal.gdshaderinc"
@@ -620,6 +622,14 @@ void vertex() {
 					VERTEX.y -= (arm - sqrt(arm * arm - lean_sq)) + arm * bend * press * ZS_TREAD_FLATTEN;
 				}
 			}
+			// The endless grass reacting (shaders/grass_react.gdshaderinc): the
+			// prop's wash, the walker and the gusts landing; off on the isles.
+			if (zs_react_live()) {
+				float react_sheen = 0.0;
+				VERTEX += zs_react_offset(root, arm, bend, MODEL_MATRIX, instance_scale, CAMERA_POSITION_WORLD.xz - root, react_sheen);
+				if (grass_blades) grass_bow = max(grass_bow, react_sheen);
+				foliage_gust = max(foliage_gust, react_sheen * bend);
+			}
 			VERTEX.y -= zs_foliage_wet * bend * wet_droop;
 			// Local gusts have a true world direction, even for rotated/scaled assets.
 			// Anchored roots stay fixed; flexible crowns bend with bounded amplitude.
@@ -903,6 +913,9 @@ void fragment() {
 		vec3 paint_root = grass_root_paint.rgb * clamp(COLOR.rgb / mix(grass_src_root, max(grass_source_tip, vec3(0.002)), grass_along), vec3(0.0), vec3(3.0));
 		tint = mix(tint, paint_root, grass_root_paint.w * (1.0 - smoothstep(0.0, grass_root_blend.y, grass_along)));
 	}
+	// The underside the wind flips into view (grass_silver, off by default).
+	if (grass_blades && grass_silver.x > 0.0) tint = zs_silver_paint(tint, zs_silver_tuft(plant_root, grass_bow), smoothstep(0.15, 0.85, grass_along),
+		zs_silver_side(dFdx(world_position), dFdy(world_position), zs_camera_position - world_position, zs_wind_direction));
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.

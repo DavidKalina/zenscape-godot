@@ -26,6 +26,9 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 // The grass's ring distance (scripts/endless/endless_grass.gd), for where
 // its tufts and flowers give way to paint.
 #include "res://shaders/endless_ring.gdshaderinc"
+// The underside the wind flips into view, as the tufts show it.
+#include "res://shaders/grass_silver.gdshaderinc"
+#include "res://shaders/grass_react.gdshaderinc"
 
 // Rock round: the painted rock (shaders/endless_rock.gdshaderinc); true is
 // the earlier smooth banded rock.
@@ -310,6 +313,9 @@ void fragment() {
 			grass = mix(grass, coarse, under);
 		}
 	}
+	// The grass's silvery underside where the breeze bows it (grass_silver,
+	// off by default): the tufts' own bands, carried on over the paint.
+	if (grass_silver.x > 0.0) grass = zs_silver_paint(grass, zs_silver_drive(gxz, fp), 1.0 - thin * 0.6, 0.8);
 	// The flower drifts past the drawn flowers: heads of their colour dotted
 	// over the turf (two lattices, more of them at a drift's heart), which
 	// average to a wash of it as a pixel grows past a head; a light wash
@@ -333,6 +339,8 @@ void fragment() {
 			grass = mix(grass, ep_wash(int(bloom.y + 0.5)), clamp(wash, 0.0, 1.0));
 		}
 	}
+	// Stirred by the wash, the walker or a gust (grass_react).
+	grass = zs_react_paint(grass, p.xz, CAMERA_POSITION_WORLD.xz - p.xz, carpet_turf);
 	vec3 albedo = mix(grass, rock, rocky);
 	albedo = mix(albedo, sand, sandy * (1.0 - rocky * 0.5));
 	albedo = mix(albedo, snow, snowy);

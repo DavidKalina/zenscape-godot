@@ -27,8 +27,11 @@ extends Node3D
 ## Flags: --no-clouds leaves them out; --cloud-cover=X scales how much sky
 ## they take (1; 0.5 sparse, 1.6 heavy); --cloud-haze=X the share of the
 ## land's haze laid on them (EndlessLook CLOUD_HAZE); --cloud-steps=N the
-## march's steps (QUALITY); --cloud-full-res marches every pixel. C turns
-## them off and on.
+## march's steps (QUALITY); every pixel is marched (--cloud-half-res: one
+## in four, as before); --cloud-grain=old the earlier grain; --cloud-blend=m,u
+## the resolve's blends; --cloud-field=old the earlier field (a near-grid of
+## four-bubble mushrooms with flat bases; docs/design/endless-flight/
+## cloud-shape-handoff.md). C turns them off and on.
 
 const Effect = preload("res://scripts/endless/endless_cloud_effect.gd")
 const CumulusNoise = preload("res://scripts/cumulus_noise.gd")
@@ -55,9 +58,9 @@ const MEADOW_CLEAR := 70.0
 const SMALL_COVER := 0.34
 const LOW_SHARE := 0.3
 const TOWER_SHARE := 0.12
-## The march: steps, light taps, the march's scale (2: half the render each
-## axis), fine octaves near the eye.
-const QUALITY := [110,5,2,1]
+## The march: steps, light taps, the march's scale (1: every pixel;
+## --cloud-half-res 2, half the render each axis), fine octaves near the eye.
+const QUALITY := [110,5,1,1]
 ## The weather map and the shade redrawn every this many frames.
 const WEATHER_EVERY := 2
 const SHADE_EVERY := 2
@@ -68,6 +71,11 @@ const GROUND_SIDE := 20000.0
 const GROUND_MOVE := 1800.0
 const MARCHED_BLEND := 0.5
 const UPSAMPLED_BLEND := 0.08
+## Less grain: the new jitter, the resolve's 3x3 filter and sigma clip
+## (shaders/endless_cloud_resolve.glsl) and a longer history. --cloud-grain=old
+## runs the earlier look; --cloud-blend=m,u sets the two blends by hand.
+const GRAIN_MARCHED_BLEND := 0.2
+const GRAIN_UPSAMPLED_BLEND := 0.06
 
 # The field, as the march has it (shaders/endless_cloud_march.glsl).
 const BIG := 620.0
@@ -90,6 +98,26 @@ const MAIN_R := 0.74
 const CURL := 0.3
 const REGION_SCALE := Vector2(0.3,1.45)
 
+# The organic field (the march's `recipe`, `bubble_span`): clouds gather in
+# fields under a cluster gate, jitter well past their cells, and come in
+# kinds with 2 to 9 wobbly bubbles, rounded bellies and their own heights.
+const JIT := 0.62
+const EXT_MAX := 0.85
+const CLUSTER := 2600.0
+const CLUSTER_GATE := Vector2(0.36,0.66)
+const BIG_COVER2 := 1.0
+const SMALL_COVER2 := 0.27
+const FAIR_SHARE := 0.28
+const TOWER_SHARE2 := 0.08
+const ROW_SHARE := 0.14
+const WISP_SHARE := 0.08
+const BIG_R2 := Vector2(0.09,0.44)
+const SMALL_R2 := Vector2(0.10,0.32)
+const SIZE_SKEW := 1.5
+const WOB := 0.2
+const LIFT := 0.3
+const DOME := 1.6
+
 var effect := Effect.new()
 var material := ShaderMaterial.new()
 var sheet := MeshInstance3D.new()
@@ -101,7 +129,13 @@ var cover := 1.0
 ## The march's quality this run (QUALITY; --cloud-full-res marches every
 ## pixel, --cloud-steps=N sets the steps).
 var quality: Array = QUALITY.duplicate()
+## The grain treatment (--cloud-grain=old turns it off) and the blends.
+var grain := true
+var marched_blend := GRAIN_MARCHED_BLEND
+var upsampled_blend := GRAIN_UPSAMPLED_BLEND
 var enabled := true
+## The organic field (false: --cloud-field=old).
+var organic := true
 ## The field's drift so far (m): a cloud stands at its field point plus this.
 var drift := Vector2.ZERO
 var motion_time := 0.0
@@ -114,6 +148,8 @@ var ground_at := Vector4.ZERO
 var _ground_task := -1
 var _ground_image: Image
 var _ground_next := Vector4.ZERO
+## The ground map the march reads, kept for the CPU field (`_cloud_floor`).
+var _ground_cpu: Image
 var _frame := 0
 var _prev_view := Projection.IDENTITY
 var _prev_lens := Vector2.ONE
@@ -150,7 +186,19 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--cloud-cover="): cover = clampf(a.get_slice("=",1).to_float(),0.0,3.0)
 		elif a == "--cloud-full-res": quality[2] = 1
+		elif a == "--cloud-half-res": quality[2] = 2
+		elif a == "--cloud-field=old": organic = false
 		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
+		elif a == "--cloud-grain=old":
+			grain = false
+			marched_blend = MARCHED_BLEND
+			upsampled_blend = UPSAMPLED_BLEND
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--cloud-blend="):
+			var bl := a.get_slice("=",1).split(",")
+			if bl.size() >= 2:
+				marched_blend = clampf(bl[0].to_float(),0.02,1.0)
+				upsampled_blend = clampf(bl[1].to_float(),0.01,1.0)
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--cloud-haze="): haze.w = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 	material.set_shader_parameter("haze",haze)
@@ -244,6 +292,7 @@ func _ground(eye: Vector3) -> void:
 
 func _take_ground() -> void:
 	if _ground_image == null: return
+	_ground_cpu = _ground_image
 	if ground.get_image() != null and ground.get_size() == Vector2(_ground_image.get_size()): ground.update(_ground_image)
 	else: ground.set_image(_ground_image)
 	ground_at = _ground_next
@@ -277,6 +326,39 @@ static func ground_image(seed_value: int, corner: Vector2) -> Image:
 	return image
 
 # --- The field on the CPU --------------------------------------------------------------
+
+## The ground map at world `xz` as the march reads it (bilinear):
+## (meadow, height).
+func _ground_sample(xz: Vector2) -> Vector2:
+	if _ground_cpu == null or ground_at.w < 0.5: return Vector2(0.0,Field.SEA_Y)
+	var uv := (xz-Vector2(ground_at.x,ground_at.y))/ground_at.z
+	if uv.x < 0.0 or uv.y < 0.0 or uv.x > 1.0 or uv.y > 1.0: return Vector2(0.0,Field.SEA_Y)
+	var n := _ground_cpu.get_width()
+	var g := uv*n-Vector2(0.5,0.5)
+	var i := Vector2i(floori(g.x),floori(g.y))
+	var t := g-Vector2(i)
+	var a := _ground_cpu.get_pixel(clampi(i.x,0,n-1),clampi(i.y,0,n-1))
+	var b := _ground_cpu.get_pixel(clampi(i.x+1,0,n-1),clampi(i.y,0,n-1))
+	var c := _ground_cpu.get_pixel(clampi(i.x,0,n-1),clampi(i.y+1,0,n-1))
+	var d := _ground_cpu.get_pixel(clampi(i.x+1,0,n-1),clampi(i.y+1,0,n-1))
+	var top := Vector2(a.r,a.g).lerp(Vector2(b.r,b.g),t.x)
+	var bottom := Vector2(c.r,c.g).lerp(Vector2(d.r,d.g),t.x)
+	return top.lerp(bottom,t.y)
+
+## How high a cloud over world `w` reaching `reach` keeps its lowest point
+## (over the sea) and the most meadow under it (the march's `cloud_floor`).
+func _cloud_floor(w: Vector2, reach: float, low: bool) -> Vector2:
+	var need := -1e4
+	var meadow := 0.0
+	for i in 7:
+		var a := float(i)*1.0472
+		var xz := w+(Vector2.ZERO if i == 0 else Vector2(cos(a),sin(a))*reach*0.55)
+		var g := _ground_sample(xz)
+		var m := clampf(g.x,0.0,1.0)
+		var fl := maxf(g.y,Field.SEA_Y)+4.0
+		need = maxf(need,maxf(fl,lerpf(fl,g.y+MEADOW_CLEAR,m)) if low else fl)
+		meadow = maxf(meadow,m)
+	return Vector2(need-Field.SEA_Y,meadow)
 
 ## pcg3d (shaders/endless_cloud_march.glsl), in 32-bit unsigned arithmetic.
 static func _mul(a: int, b: int) -> int:
@@ -319,6 +401,7 @@ func _region(f: Vector2) -> float:
 ## they stand now (drifted), before the meadows lift them: each
 ## {at: world xz, radius, base, top (world y), low, kind}.
 func clouds_in(at: Vector2, reach: float) -> Array:
+	if organic: return _clouds_in_organic(at,reach)
 	var out := []
 	var f := at-drift
 	for big in [true,false]:
@@ -372,12 +455,156 @@ func clouds_in(at: Vector2, reach: float) -> Array:
 				out.append({"at":middle+drift,"radius":r,"base":Field.SEA_Y+base,"top":Field.SEA_Y+base+H,"low":kind == "low" or kind == "puff","kind":kind,"bubbles":bubbles})
 	return out
 
+static func _vnoise(g: Vector2, s: int) -> float:
+	var i := Vector2i(floori(g.x),floori(g.y))
+	var u := g-Vector2(i)
+	u = u*u*(Vector2(3.0,3.0)-2.0*u)
+	var a := hash3(i.x,i.y,s).x
+	var b := hash3(i.x+1,i.y,s).x
+	var c := hash3(i.x,i.y+1,s).x
+	var d := hash3(i.x+1,i.y+1,s).x
+	return lerpf(lerpf(a,b,u.x),lerpf(c,d,u.x),u.y)
+
+func _cluster_gate(f: Vector2) -> float:
+	var n := 0.65*_vnoise(f/CLUSTER,salt+17)+0.35*_vnoise(f/(CLUSTER*0.43),salt+19)
+	return smoothstep(CLUSTER_GATE.x,CLUSTER_GATE.y,n)
+
+## The organic field's cloud of cell (cx, cy), in the field frame (the
+## march's `recipe`), or an empty dictionary.
+func _recipe(cx: int, cy: int, big: bool) -> Dictionary:
+	var cell: float = BIG if big else SMALL
+	var s0: int = salt+(101 if big else 211)
+	var h := hash3(cx,cy,s0)
+	var middle := (Vector2(cx,cy)+Vector2(0.5,0.5)+JIT*(Vector2(h.x,h.y)*2.0-Vector2.ONE))*cell
+	var gate := _cluster_gate(middle)
+	if not big: gate = lerpf(0.02,1.0,gate*gate)
+	if h.z >= _region(middle)*cover*(BIG_COVER2 if big else SMALL_COVER2)*gate: return {}
+	var s := hash3(cx,cy,s0+1)
+	var m := hash3(cx,cy,s0+2)
+	var rr: Vector2 = BIG_R2 if big else SMALL_R2
+	var r := cell*lerpf(rr.x,rr.y,pow(s.x,SIZE_SKEW))
+	var spin := m.x*6.2832
+	var t2 := fposmod(s.z*7.31,1.0)
+	var t3 := fposmod(s.z*3.17+m.y,1.0)
+	var k := {"cell":Vector2i(cx,cy),"salt":s0,"middle":middle,"axis":Vector2(cos(spin),sin(spin)),"profile":PROFILE,"low":false}
+	# [kind, n range, L, W, main_r, br, hs, tall, belly, qb]
+	var p: Array
+	if not big:
+		k.kind = "puff"; k.low = true; k.b0 = lerpf(SMALL_BASE.x,SMALL_BASE.y,s.y)
+		p = [Vector2(2,5),0.45,0.35,0.65,Vector2(0.4,0.62),Vector2(0.7,1.1),Vector2(0.6,1.25),Vector2(0.35,0.55),Vector2(0.5,0.85)]
+	elif s.y < FAIR_SHARE:
+		k.kind = "fair"; k.low = true; k.b0 = lerpf(LOW_BASE.x,LOW_BASE.y,s.z)
+		p = [Vector2(3,6),0.55,0.38,0.62,Vector2(0.35,0.6),Vector2(0.7,1.1),Vector2(0.55,1.0),Vector2(0.3,0.5),Vector2(0.45,0.8)]
+	elif s.y < FAIR_SHARE+TOWER_SHARE2:
+		k.kind = "tower"; k.b0 = lerpf(TOWER_BASE.x,TOWER_BASE.y,s.z)
+		p = [Vector2(5,9),0.5,0.45,0.6,Vector2(0.4,0.6),Vector2(0.6,1.0),Vector2(1.0,1.5),Vector2(0.25,0.4),Vector2(0.45,0.7)]
+		k.profile = 0.4
+		r *= 1.2
+	elif s.y < FAIR_SHARE+TOWER_SHARE2+ROW_SHARE:
+		k.kind = "row"; k.low = t3 < 0.4
+		k.b0 = lerpf(LOW_BASE.x,LOW_BASE.y+30.0,s.z) if k.low else lerpf(MID_BASE.x,MID_BASE.y,s.z)
+		p = [Vector2(6,9),1.15,0.18,0.5,Vector2(0.36,0.55),Vector2(0.8,1.15),Vector2(0.55,0.95),Vector2(0.32,0.5),Vector2(0.5,0.8)]
+	elif s.y < FAIR_SHARE+TOWER_SHARE2+ROW_SHARE+WISP_SHARE:
+		k.kind = "wisp"; k.b0 = lerpf(180.0,320.0,s.z)
+		p = [Vector2(2,4),1.0,0.4,0.6,Vector2(0.5,0.8),Vector2(0.9,1.1),Vector2(0.08,0.16),Vector2(0.45,0.5),Vector2(0.6,0.7)]
+		r *= 1.3
+	else:
+		k.kind = "mid"; k.b0 = lerpf(MID_BASE.x,MID_BASE.y,s.z)
+		p = [Vector2(4,8),0.6,0.45,0.6,Vector2(0.35,0.62),Vector2(0.7,1.15),Vector2(0.6,1.2),Vector2(0.35,0.55),Vector2(0.5,0.85)]
+	var nr: Vector2 = p[0]
+	k.L = float(p[1])*lerpf(0.8,1.45,m.y)
+	k.W = float(p[2])
+	k.main_r = float(p[3])
+	k.br = p[4]
+	k.hs = p[5]
+	k.n = int(nr.x)+mini(int(m.z*(nr.y-nr.x+1.0)),int(nr.y-nr.x))
+	k.ext = Vector2(k.L,k.W).length()+maxf(k.br.y,k.main_r)*(1.0+WOB)
+	r = minf(r,EXT_MAX*cell/k.ext)
+	k.r = r
+	var tall: Vector2 = p[6]
+	k.tall = lerpf(tall.x,tall.y,t2)*DOME
+	# Lifted whole over the ground (the march's `cloud_floor`).
+	var fl := _cloud_floor(middle+drift,r*float(k.ext),bool(k.low))
+	if fl.x > float(k.b0): k.b0 = fl.x+30.0*fposmod(s.y*13.7+h.x,1.0)
+	if k.low: k.tall = float(k.tall)*lerpf(1.0,0.6,fl.y)
+	k.H = minf(r*float(k.main_r)*float(k.tall),TOP-k.b0)
+	var bl: Vector2 = p[7]
+	var qb: Vector2 = p[8]
+	k.belly = lerpf(bl.x,bl.y,fposmod(m.y*5.13+s.x,1.0))
+	k.qb = lerpf(qb.x,qb.y,fposmod(m.z*3.71+h.x,1.0))
+	return k
+
+## Bubble `i` of cloud `k` over field point `f` (the march's `bubble_span`):
+## (top, bottom) over the sea where it covers f, else (-1e4, distance past
+## its rim).
+static func _bubble_span(k: Dictionary, i: int, f: Vector2) -> Vector2:
+	var c: Vector2i = k.cell
+	var q := hash3(c.x,c.y,int(k.salt)+10+i)
+	var off := Vector2.ZERO
+	var br: float = k.main_r
+	var hs := 1.0
+	var lift := 0.0
+	var L: float = k.L
+	if i > 0:
+		var along := (2.0*(float(i-1)+q.x)/float(maxi(int(k.n)-1,1))-1.0)*L if k.kind == "row" else (q.x*2.0-1.0)*L
+		off = Vector2(along,(q.y*2.0-1.0)*float(k.W))
+		br = lerpf(k.br.x,k.br.y,q.z)
+		hs = lerpf(k.hs.x,k.hs.y,fposmod(q.z*5.3,1.0))*(1.0-0.25*minf(off.length()/maxf(L,0.05),1.0))
+		lift = LIFT*fposmod(q.z*9.17,1.0)
+	else:
+		lift = LIFT*0.3*fposmod(q.z*9.17,1.0)
+	var ax: Vector2 = k.axis
+	var r: float = k.r
+	var at: Vector2 = k.middle+(ax*off.x+Vector2(-ax.y,ax.x)*off.y)*r
+	var d := f-at
+	var bd := d.length()
+	var a := atan2(d.y,d.x+1e-6)
+	var rw := br*r*(1.0+WOB*(0.6*sin(3.0*a+fposmod(q.x*7.7,1.0)*6.2832)+0.4*sin(5.0*a+fposmod(q.y*5.9,1.0)*6.2832)))
+	var u := bd/rw
+	if u >= 1.0: return Vector2(-1e4,bd-br*r*(1.0+WOB))
+	var bh: float = minf(br*r*float(k.tall)*hs,float(k.H)*1.2)
+	var down: float = bh*float(k.belly)*lerpf(0.75,1.3,fposmod(q.y*3.31+q.x,1.0))
+	var qb: float = float(k.qb)*lerpf(0.8,1.25,fposmod(q.x*4.13+q.z,1.0))
+	var rim: float = k.b0+k.H*lift+down
+	var v := 1.0-u*u
+	return Vector2(rim+maxf(bh-down,bh*0.3)*pow(v,k.profile),rim-down*pow(v,qb))
+
+func _clouds_in_organic(at: Vector2, reach: float) -> Array:
+	var out := []
+	var f := at-drift
+	for big in [true,false]:
+		var cell: float = BIG if big else SMALL
+		var lo := Vector2i(floori((f.x-reach)/cell)-1,floori((f.y-reach)/cell)-1)
+		var hi := Vector2i(floori((f.x+reach)/cell)+1,floori((f.y+reach)/cell)+1)
+		for cy in range(lo.y,hi.y+1):
+			for cx in range(lo.x,hi.x+1):
+				var k := _recipe(cx,cy,big)
+				if k.is_empty() or Vector2(k.middle).distance_to(f) > reach: continue
+				var w: Vector2 = k.middle
+				k["at"] = w+drift
+				k["radius"] = float(k.r)*float(k.ext)
+				k["base"] = Field.SEA_Y+float(k.b0)
+				k["top"] = Field.SEA_Y+float(k.b0)+float(k.H)*(1.2+LIFT)
+				out.append(k)
+	return out
+
 ## How far world point `p` is into a cloud's smooth body (m, up or down
 ## to its crown or its base; no billows, before the meadows lift the low
 ## ones), or a negative number outside every cloud.
 func cloud_depth(p: Vector3) -> float:
 	var best := -1e9
 	var xz := Vector2(p.x,p.z)
+	if organic:
+		for c: Dictionary in clouds_in(xz,BIG*1.6):
+			var top := -1e9
+			var bottom := 1e9
+			for i in int(c.n):
+				var b := _bubble_span(c,i,xz-drift)
+				if b.x < -1e3: continue
+				top = maxf(top,b.x)
+				bottom = minf(bottom,b.y)
+			if top > -1e3: best = maxf(best,minf(Field.SEA_Y+top-p.y,p.y-Field.SEA_Y-bottom))
+		return best
 	for c: Dictionary in clouds_in(xz,BIG*0.6):
 		var top := -1e9
 		var bottom := 1e9
@@ -449,6 +676,7 @@ func _fill() -> void:
 	else: _put4(p,44,Vector4(_shade_drawn.x,_shade_drawn.y,SHADE_SIDE,1.0) if _shade_drawn != Vector4.ZERO else shade_square)
 	_put4(p,164,Vector4(weather_corner.x,weather_corner.y,weather_side,Effect.WEATHER_TEXELS))
 	_put4(p,168,Vector4(quality[0],quality[1],quality[2],quality[3]))
+	_put4(p,172,Vector4(1.0 if grain else 0.0,1.0 if organic else 0.0,0.0,0.0))
 	_put4(p,176,Vector4(0.0,Effect.SHADOW_TEXELS,1.0 if weather_due else 0.0,1.0 if shade_due else 0.0))
 	# The land reads the shade map the frame after it is drawn.
 	if _shade_drawn != Vector4.ZERO: _publish_shade(true,key,_shade_drawn)
@@ -458,10 +686,10 @@ func _fill() -> void:
 	var r := effect.resolve_params
 	_put_transform(r,0,xf)
 	_put_projection(r,16,_prev_view)
-	_put4(r,32,Vector4(tan_x,tan_y,UPSAMPLED_BLEND,1.0 if _has_prev else 0.0))
-	_put4(r,36,Vector4(_prev_lens.x,_prev_lens.y,0.0,0.0))
+	_put4(r,32,Vector4(tan_x,tan_y,upsampled_blend,1.0 if _has_prev else 0.0))
+	_put4(r,36,Vector4(_prev_lens.x,_prev_lens.y,1.0 if grain else 0.0,0.0))
 	_put4(r,40,Vector4(eye.x,eye.y,eye.z,p[48]))
-	_put4(r,44,Vector4(camera.near,camera.far,MARCHED_BLEND,quality[2]))
+	_put4(r,44,Vector4(camera.near,camera.far,marched_blend,quality[2]))
 	if not _has_prev: effect.history_ok = false
 	_prev_view = Projection(xf.affine_inverse())
 	_prev_lens = Vector2(tan_x,tan_y)
