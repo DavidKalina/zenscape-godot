@@ -65,7 +65,8 @@ uniform float vertex_hue : hint_range(0.0, 1.0) = 0.2;
 // the carpet's own tone as it reads from afar (`carpet_tone_top` seen from
 // above, `_low` at a glance), so the tufts give way to paint with no ring.
 // Where tufts grow: the turf over `turf_beach` m over the sea (none to
-// full), its normal's up past `turf_slope`, thinning out over `turf_high`.
+// full), its normal's up past `turf_slope`, thinning out over `turf_high`
+// (or `turf_alpine`).
 uniform vec2 carpet_reach = vec2(0.0);
 // Under the near carpet (where its full tufts stand, thinning out from
 // `carpet_near.x` to `.y` m from the eye; y 0: off) the turf is the tufts'
@@ -81,6 +82,9 @@ uniform vec3 carpet_tone_low = vec3(1.0);
 uniform vec2 turf_beach = vec2(2.55, 2.9);
 uniform vec2 turf_slope = vec2(0.905, 0.95);
 uniform vec2 turf_high = vec2(36.0, 58.0);
+// (Set: thinning out as the paint turns to tundra, its `alpine` from x to y,
+// in place of turf_high.)
+uniform vec2 turf_alpine = vec2(0.0);
 // The carpet's grain painted past its tufts (their speckle and gaps, at
 // their size, kept until a pixel is about that size), its strength.
 uniform float carpet_grain : hint_range(0.0, 2.0) = 0.6;
@@ -374,7 +378,8 @@ void fragment() {
 	// Velvet: turf seen low catches the light along its blades.
 	float grazing = pow(1.0 - clamp(dot(n, eye), 0.0, 1.0), 2.0);
 	// (The carpet's tufts catch no velvet: past them its paint keeps less.)
-	float carpet_turf = smoothstep(turf_slope.x, turf_slope.y, n.y) * (1.0 - smoothstep(turf_high.x, turf_high.y, over))
+	float carpet_high = turf_alpine.y > 0.0 ? smoothstep(turf_alpine.x, turf_alpine.y, alpine) : smoothstep(turf_high.x, turf_high.y, over);
+	float carpet_turf = smoothstep(turf_slope.x, turf_slope.y, n.y) * (1.0 - carpet_high)
 		* smoothstep(turf_beach.x, turf_beach.y, over);
 	// No carpet on a river's bank or in its water.
 	carpet_turf *= 1.0 - max(banked, wet);

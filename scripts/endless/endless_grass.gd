@@ -12,7 +12,7 @@ extends Node3D
 ## finest chunks draw it (scripts/endless/land_stream.gd), so a tuft stands
 ## on the drawn turf. Grass grows on open turf only: over the beach
 ## (BEACH_CLEAR m over the sea), on ground no steeper than SLOPE allows, and
-## thinning out over the tundra (HIGH); none on rock, sand, snow or seabed.
+## thinning out over the tundra (ALPINE); none on rock, sand, snow or seabed.
 ## The tufts are drawn, no collision: the meadows land as before. Each tuft
 ## takes the painted ground's patches under it (scripts/endless/
 ## endless_patch.gd) as its instance colour, so the carpet sits in its field.
@@ -63,7 +63,9 @@ extends Node3D
 ## --grass-lead=X (LEAD, 0.45), --no-grass-lead (no lead: rings round the
 ## eye), --grass-flat-up=M (FLAT_UP, 20), --grass-ring=3d (round 5's
 ## rings: 3D from the eye, no lead), --grass-silver=X (the silvery
-## undersides the wind flips, SILVER 0.8), --no-grass-silver.
+## undersides the wind flips, SILVER 0.8), --no-grass-silver,
+## --grass-slope=a,b (SLOPE), --grass-cover=old (the bare-patches round's
+## masks off: none on turf steeper than OLD_SLOPE or HIGH m over the sea).
 ##
 ## Look round 5 (docs/design/endless-flight/flowers-colour-handoff.md): the
 ## grass's colour regions and the flower drifts are endless_patch.gd
@@ -163,12 +165,29 @@ const FLOWER_DETAIL := Vector2(14.0,30.0)
 ## A cell is freed this far (m) past where it is wanted.
 const KEEP := 24.0
 ## Open turf: from this far over the sea (m; the beach's sand is gone
-## there), on ground whose normal's up is over SLOPE.x (full past .y),
-## thinning to none from HIGH.x to HIGH.y m over the sea (the tundra).
+## there), on ground whose normal's up is over SLOPE.x (full past .y), up to
+## the rock's edge (the ground's `rock_up`, 0.80), thinning to none as the
+## paint turns to tundra (its `alpine`, from ALPINE.x to .y), so every slope
+## and hill the paint draws as turf carries the carpet.
 const BEACH_CLEAR := 2.55
 const BEACH_RAMP := 0.35
-const SLOPE := Vector2(0.905,0.95)
+const SLOPE := Vector2(0.83,0.88)
+## Under this up the rock's ragged edge is read (it swings the edge 0.13 at
+## most, so past this it never reaches SLOPE.x).
+const ROCK_NEAR := 0.95
+const ALPINE := Vector2(0.3,0.7)
+## Over the sea (m) past which ALPINE leaves no tuft anywhere (the paint's
+## alpine reaches ALPINE.y by then whatever its broad patch).
+const ALPINE_TOP := 84.0
+## The masks before the bare-patches round (--grass-cover=old): none on
+## turf steeper than OLD_SLOPE, none HIGH.x..HIGH.y m over the sea, which
+## left bare, dark hillsides and hollow sides in the carpet.
+const OLD_SLOPE := Vector2(0.905,0.95)
 const HIGH := Vector2(36.0,58.0)
+## The masks as flown: SLOPE (--grass-slope=a,b), and ALPINE or (zero, old)
+## HIGH.
+var slope := SLOPE
+var alpine := ALPINE
 ## The tufts' roots sink this much (m), so none stands on air where a
 ## coarser chunk draws the turf a hair lower.
 const SINK := 0.04
@@ -287,6 +306,12 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 			fine = a.get_slice("=",1) != "0"
 			if fine and a.get_slice("=",1).to_float() > 0.0: _fine_share = a.get_slice("=",1).to_float()
 		elif a.begins_with("--grass-tall="): tall = clampf(a.get_slice("=",1).to_float(),0.25,6.0)
+		elif a == "--grass-cover=old":
+			slope = OLD_SLOPE
+			alpine = Vector2.ZERO
+		elif a.begins_with("--grass-slope="):
+			var sp := a.get_slice("=",1).split(",")
+			if sp.size() >= 2: slope = Vector2(float(sp[0]),float(sp[1]))
 		elif a.begins_with("--grass-patches="): patches = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 		elif a.begins_with("--flower-drifts="): drifts = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a == "--no-drifts": drifts = 0.0
@@ -320,8 +345,12 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	near_layer.site.flowers = flowers
 	near_layer.site.patches = patches
 	near_layer.site.flower_tall = tall
+	near_layer.site.slope = slope
+	near_layer.site.alpine = alpine
 	far_layer.far = true
 	far_layer.site = site.duplicate()
+	far_layer.site.slope = slope
+	far_layer.site.alpine = alpine
 	far_layer.site.tufts = FAR_TUFTS*share
 	# No wild grass or tussocks a few pixels across (their probes cost the
 	# most of a cell's grow).
@@ -334,8 +363,9 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	SkyIslets.catalog()
 	if ground != null:
 		ground.set_shader_parameter("turf_beach",Vector2(BEACH_CLEAR,BEACH_CLEAR+BEACH_RAMP))
-		ground.set_shader_parameter("turf_slope",SLOPE)
+		ground.set_shader_parameter("turf_slope",slope)
 		ground.set_shader_parameter("turf_high",HIGH)
+		ground.set_shader_parameter("turf_alpine",alpine)
 		ground.set_shader_parameter("carpet_tone_top",TONE_TOP)
 		ground.set_shader_parameter("carpet_tone_low",TONE_LOW)
 		ground.set_shader_parameter("region_offset",Patch.offset)
@@ -737,6 +767,9 @@ func _grow(layer: Layer, key: Vector2i, land_seed: int, site_values: Dictionary,
 ## grid. Worker-safe.
 static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, rings: Vector4, far_share := 0.0) -> Array:
 	var f: RefCounted = Field.new(land_seed)
+	var sl: Vector2 = site_values.get("slope",SLOPE)
+	var alp: Vector2 = site_values.get("alpine",ALPINE)
+	var top := ALPINE_TOP if alp.y > 0.0 else HIGH.y
 	var x0 := key.x*CELL
 	var z0 := key.y*CELL
 	var n := int(CELL)+1+PAD*2
@@ -758,10 +791,18 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	var any := false
 	for h: float in hs:
 		var over := h-Field.SEA_Y
-		if over >= BEACH_CLEAR and over < HIGH.y:
+		if over >= BEACH_CLEAR and over < top:
 			any = true
 			break
 	if not any: return []
+	var ragged := {}
+	var lattice := {}
+	# The paint's broad patch (260 m across) at the cell's corners, for its
+	# alpine (EndlessPatch.alpine) eased across the cell.
+	var b00 := Patch.broad(x0,z0)
+	var b10 := Patch.broad(x0+CELL,z0)
+	var b01 := Patch.broad(x0,z0+CELL)
+	var b11 := Patch.broad(x0+CELL,z0+CELL)
 	var probe := func(p: Vector2, _reach: float) -> float:
 		var u := p.x-x0+PAD
 		var v := p.y-z0+PAD
@@ -785,7 +826,23 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 		# the ground paints them), a tuft or two leaning out over their edge.
 		if rs[c] < 12.0 and rs[c] < Patch.river_bank(p.x,p.y)*0.85: return NAN
 		var up := 2.0/Vector3(hs[c-1]-hs[c+1],2.0,hs[c-n]-hs[c+n]).length()
-		var keep := smoothstep(SLOPE.x,SLOPE.y,up)*(1.0-smoothstep(HIGH.x,HIGH.y,over))*smoothstep(BEACH_CLEAR,BEACH_CLEAR+BEACH_RAMP,over)
+		var high := 1.0
+		if alp.y <= 0.0: high = 1.0-smoothstep(HIGH.x,HIGH.y,over)
+		elif over > Patch.ALPINE_FROM:
+			var bx := clampf((p.x-x0)/CELL,0.0,1.0)
+			var bz := clampf((p.y-z0)/CELL,0.0,1.0)
+			var broad := lerpf(lerpf(b00,b10,bx),lerpf(b01,b11,bx),bz)
+			high = 1.0-smoothstep(alp.x,alp.y,Patch.alpine_of(over,broad))
+			if high <= 0.0: return NAN
+		# Near the rock (not with --grass-cover=old): its edge as the ground
+		# paints it, ragged (EndlessPatch.rock_ragged, kept per node), so the
+		# tufts stop where its tongues start.
+		if alp.y > 0.0 and up < ROCK_NEAR:
+			if up < sl.x-Patch.RAGGED_MOST: return NAN
+			if not ragged.has(c):
+				ragged[c] = Patch.rock_ragged(Vector3(x0+c%n-PAD,hs[c],z0+c/n-PAD),lattice)
+			up += ragged[c]
+		var keep := smoothstep(sl.x,sl.y,up)*high*smoothstep(BEACH_CLEAR,BEACH_CLEAR+BEACH_RAMP,over)
 		if keep <= 0.0: return NAN
 		if keep < 1.0 and float(hash(Vector2i(roundi(p.x*7.0),roundi(p.y*7.0)))%10007)/10007.0 > keep: return NAN
 		return h-SINK
@@ -793,7 +850,7 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	var flowers: bool = site_values.get("flowers",true) and far_share < 1.0
 	var patches: float = site_values.get("patches",1.0)
 	for k: String in site_values:
-		if not k in ["flowers","patches","flower_tall"]: site.set(k,site_values[k])
+		if not k in ["flowers","patches","flower_tall","slope","alpine"]: site.set(k,site_values[k])
 	site.plain = true
 	site.probe = probe
 	# The drifts (Patch `bloom`) read off a TINT_STEP m grid of the cell,

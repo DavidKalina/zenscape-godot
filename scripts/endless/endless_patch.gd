@@ -94,6 +94,61 @@ static func grass(x: float, z: float, meadow: float, over: float, up: float, hue
 	g = g.lerp(OLIVE,thin*0.7)
 	return g
 
+## The rock's hash and value noise (shaders/endless_rock.gdshaderinc
+## er_hash3's x, er_vnoise), for the rock's ragged edge.
+static func _rock_hash(x: int, y: int, z: int) -> float:
+	var vx := (_mul(x & M,1664525)+1013904223) & M
+	var vy := (_mul(y & M,1664525)+1013904223) & M
+	var vz := (_mul(z & M,1664525)+1013904223) & M
+	vx = (vx+_mul(vy,vz)) & M
+	vy = (vy+_mul(vz,vx)) & M
+	vz = (vz+_mul(vx,vy)) & M
+	vx ^= vx >> 16
+	vy ^= vy >> 16
+	vz ^= vz >> 16
+	vx = (vx+_mul(vy,vz)) & M
+	return float(vx & 65535)/65535.0
+
+static func _rock_noise(p: Vector3, lattice: Dictionary) -> float:
+	var i := p.floor()
+	var f := p-i
+	f = f*f*(Vector3(3.0,3.0,3.0)-2.0*f)
+	var q := Vector3i(i)
+	var h := PackedFloat32Array()
+	h.resize(8)
+	for k in 8:
+		var at := q+Vector3i(k & 1,(k >> 1) & 1,k >> 2)
+		if not lattice.has(at): lattice[at] = _rock_hash(at.x,at.y,at.z)
+		h[k] = lattice[at]
+	var a := lerpf(lerpf(h[0],h[1],f.x),lerpf(h[2],h[3],f.x),f.y)
+	var b := lerpf(lerpf(h[4],h[5],f.x),lerpf(h[6],h[7],f.x),f.y)
+	return lerpf(a,b,f.z)
+
+## The most the rock's ragged edge swings the normal's up.
+const RAGGED_MOST := 0.13
+
+## The rock's ragged edge at a world point (the ground's `ragged`): the
+## paint draws rock where the normal's up plus this is under ROCK_UP.
+## `lattice` keeps the hashes for the next call (one per caller).
+static func rock_ragged(p: Vector3, lattice := {}) -> float:
+	return (_rock_noise(p/7.0,lattice)-0.5)*0.10+(_rock_noise(p/31.0+Vector3(4.0,4.0,4.0),lattice)-0.5)*0.16
+
+## How far the paint has turned to tundra at a world point (0..1; the
+## shader's `alpine`), `over` m over the sea.
+static func alpine(x: float, z: float, over: float) -> float:
+	return alpine_of(over,broad(x,z))
+
+## The same from the broad patch there (`broad`).
+static func alpine_of(over: float, broad_patch: float) -> float:
+	return smoothstep(42.0,78.0,over+broad_patch*30.0)
+
+## Under this over the sea (m) alpine is 0 whatever the broad patch.
+const ALPINE_FROM := 42.0-15.0
+
+## The paint's broad patch (260 m across, -0.5..0.5) at a world point.
+static func broad(x: float, z: float) -> float:
+	return fade(x+71.0,z+13.0,260.0)
+
 ## The plain grass every tint is over: no patches, half meadow, low, level.
 static var _plain := Vector3.ZERO
 static func plain() -> Vector3:
