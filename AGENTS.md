@@ -179,7 +179,9 @@ To learn the code before working, any agent sends `scout`s instead of
 reading files itself or using Explore: one narrow question per scout, and
 several in one message when the question spans areas (up to about 5). The
 scouts return short `path:line` reports; read only the lines they point
-to.
+to. A scout's list is a lead, not a census: before an edit that must reach
+every call site, every user of a name or every file a change touches, run
+that grep yourself.
 
 # Sizes
 
