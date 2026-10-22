@@ -50,9 +50,14 @@ float zs_silver_drive(vec2 p, float fp) {
 
 // A near tuft's: the same at its root, and more where something bows it
 // past the breeze's usual (`bow`, reference_surface `grass_bow`: a gust
-// front, the wind tool, a wake).
+// front, the wind tool, a wake), the extra capped at ZS_SILVER_BOW_MAX so
+// grass pressed flat (the plane's wash) turns part way, not to white.
+const float ZS_SILVER_BOW_MAX = 0.35;
+// With silver on, the share of grass_react's paling the stirred grass keeps
+// (the underside already shows it's stirred; both at full read as white).
+const float ZS_SILVER_REACT_PALE = 0.5;
 float zs_silver_tuft(vec2 root, float bow) {
-	return clamp(zs_silver_drive(root, 0.0) + max(bow - 0.55, 0.0) * 1.5, 0.0, 1.0);
+	return clamp(zs_silver_drive(root, 0.0) + min(max(bow - 0.55, 0.0) * 1.5, ZS_SILVER_BOW_MAX), 0.0, 1.0);
 }
 
 // The underside's colour for a blade (or turf) of colour `c`.
