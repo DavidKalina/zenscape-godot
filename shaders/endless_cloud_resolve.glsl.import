@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cyl4v2vfcpanh"
+path="res://.godot/imported/endless_cloud_resolve.glsl-f0a0c0f07915fc148662cb99102a809e.res"
+
+[deps]
+
+source_file="res://shaders/endless_cloud_resolve.glsl"
+dest_files=["res://.godot/imported/endless_cloud_resolve.glsl-f0a0c0f07915fc148662cb99102a809e.res"]
+
+[params]
+

@@ -163,6 +163,9 @@ const int LONG_TAPS = 3;
 const float LONG_AT[3] = float[](300.0, 460.0, 650.0);
 const float LONG_LEN = 140.0;
 
+// The organic field is on (P.flash.y; --cloud-field=old: off).
+bool g_new = false;
+
 ivec2 zs_block_offset(int frame) {
 	int k = frame & 3;
 	return k == 0 ? ivec2(0, 0) : (k == 1 ? ivec2(1, 1) : (k == 2 ? ivec2(1, 0) : ivec2(0, 1)));
@@ -225,6 +228,10 @@ void take(inout vec2 layer, inout float gap, float top, float base, float out_by
 		if (gap > 0.0) {
 			layer = vec2(top, base);
 			gap = 0.0;
+		} else if (g_new && (base > layer.x || top < layer.y)) {
+			// Two clouds one over the other, apart: the thicker keeps the
+			// texel (joined, they would stand as a pillar between them).
+			if (top - base > layer.x - layer.y) layer = vec2(top, base);
 		} else {
 			layer = vec2(max(layer.x, top), min(layer.y, base));
 		}
@@ -321,6 +328,257 @@ vec2 ground_at(vec2 xz) {
 	return textureLod(ground, uv, 0.0).rg;
 }
 
+// How high a cloud over world `w` reaching `reach` must keep its lowest
+// point (m over the sea; the ground's highest under its footprint, and
+// for a low cloud the meadows' clearance), and the most meadow under it.
+// Mirrored in endless_clouds.gd (`_cloud_floor`).
+vec2 cloud_floor(vec2 w, float reach, bool low) {
+	float need = -1e4;
+	float meadow = 0.0;
+	for (int i = 0; i < 7; i++) {
+		float a = float(i) * 1.0472;
+		vec2 xz = w + (i == 0 ? vec2(0.0) : vec2(cos(a), sin(a)) * reach * 0.55);
+		vec2 g = ground_at(xz);
+		float m = clamp(g.x, 0.0, 1.0);
+		float fl = max(g.y, P.band.x) + 4.0;
+		need = max(need, low ? max(fl, mix(fl, g.y + P.knobs.w, m)) : fl);
+		meadow = max(meadow, m);
+	}
+	return vec2(need - P.band.x, meadow);
+}
+
+// --- The organic field (P.flash.y = 1; --cloud-field=old is the lattice above) ----
+// Mirrored in endless_clouds.gd (`_recipe`, `_bubble_span`). Cells jitter
+// JIT of a cell each way from their middle, and a cloud's reach (its
+// bubbles and their wobble) is held under EXT_MAX cells, so the 3x3 cells
+// round a texel always hold every cloud over it (JIT + EXT_MAX <= 1.5).
+const float JIT = 0.62;
+const float EXT_MAX = 0.85;
+// Clouds gather in fields: two octaves of value noise this wide (m) gate
+// the cover between CLUSTER_GATE, so there is clear sky between groups.
+const float CLUSTER = 2600.0;
+const vec2 CLUSTER_GATE = vec2(0.36, 0.66);
+const float BIG_COVER2 = 1.0;
+const float SMALL_COVER2 = 0.27;
+// Shares of the broad cells' kinds (the rest are mid cumulus).
+const float FAIR_SHARE = 0.28;
+const float TOWER_SHARE2 = 0.08;
+const float ROW_SHARE = 0.14;
+const float WISP_SHARE = 0.08;
+// Sizes: a cell's share, skewed small (k^SIZE_SKEW).
+const vec2 BIG_R2 = vec2(0.09, 0.44);
+const vec2 SMALL_R2 = vec2(0.10, 0.32);
+const float SIZE_SKEW = 1.5;
+// Each bubble's rim wobbles by this share (two sines round it).
+const float WOB = 0.2;
+// Side bubbles hang up to this share of the cloud's height over its base.
+const float LIFT = 0.3;
+// A bubble stands this many times its kind's tall-for-wide over its own
+// radius, so every bubble is a dome (cauliflower), never a pillar.
+const float DOME = 1.6;
+const int KIND_FAIR = 0;
+const int KIND_MID = 1;
+const int KIND_TOWER = 2;
+const int KIND_ROW = 3;
+const int KIND_WISP = 4;
+const int KIND_PUFF = 5;
+
+
+float value_noise(vec2 g, uint salt) {
+	ivec2 i = ivec2(floor(g));
+	vec2 u = fract(g);
+	u = u * u * (3.0 - 2.0 * u);
+	float a = hash3(i, salt).x;
+	float b = hash3(i + ivec2(1, 0), salt).x;
+	float c = hash3(i + ivec2(0, 1), salt).x;
+	float d = hash3(i + ivec2(1, 1), salt).x;
+	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float cluster_gate(vec2 f) {
+	uint salt = uint(P.drift.z);
+	float n = 0.65 * value_noise(f / CLUSTER, salt + 17u) + 0.35 * value_noise(f / (CLUSTER * 0.43), salt + 19u);
+	return sstep(CLUSTER_GATE.x, CLUSTER_GATE.y, n);
+}
+
+struct Cloud {
+	vec2 middle;
+	vec2 axis;
+	float r;
+	float base;
+	float H;
+	float tall;
+	int n;
+	int kind;
+	float L;
+	float W;
+	float main_r;
+	vec2 br;
+	vec2 hs;
+	float belly;
+	float qb;
+	float profile;
+	float ext;
+	bool low;
+};
+
+// The cloud of cell `c` (false: none).
+bool recipe(ivec2 c, bool big, float cover, out Cloud k) {
+	float cell = big ? BIG : SMALL;
+	uint salt = uint(P.drift.z) + (big ? 101u : 211u);
+	vec3 h = hash3(c, salt);
+	k.middle = (vec2(c) + 0.5 + JIT * (h.xy * 2.0 - 1.0)) * cell;
+	float gate = cluster_gate(k.middle);
+	if (!big) gate = mix(0.02, 1.0, gate * gate);
+	float here = region_cover(k.middle) * cover * (big ? BIG_COVER2 : SMALL_COVER2) * gate;
+	if (h.z >= here) return false;
+	vec3 s = hash3(c, salt + 1u);
+	vec3 m = hash3(c, salt + 2u);
+	vec2 rr = big ? BIG_R2 : SMALL_R2;
+	k.r = cell * mix(rr.x, rr.y, pow(s.x, SIZE_SKEW));
+	float spin = m.x * 6.2832;
+	k.axis = vec2(cos(spin), sin(spin));
+	float t2 = fract(s.z * 7.31);
+	float t3 = fract(s.z * 3.17 + m.y);
+	vec2 nr;
+	vec2 tall;
+	vec2 belly;
+	vec2 qb;
+	k.profile = PROFILE;
+	k.low = false;
+	if (!big) {
+		k.kind = KIND_PUFF;
+		k.low = true;
+		k.base = mix(SMALL_BASE.x, SMALL_BASE.y, s.y);
+		nr = vec2(2.0, 5.0); k.L = 0.45; k.W = 0.35; k.main_r = 0.65; k.br = vec2(0.4, 0.62); k.hs = vec2(0.7, 1.1);
+		tall = vec2(0.6, 1.25); belly = vec2(0.35, 0.55); qb = vec2(0.5, 0.85);
+	} else if (s.y < FAIR_SHARE) {
+		k.kind = KIND_FAIR;
+		k.low = true;
+		k.base = mix(LOW_BASE.x, LOW_BASE.y, s.z);
+		nr = vec2(3.0, 6.0); k.L = 0.55; k.W = 0.38; k.main_r = 0.62; k.br = vec2(0.35, 0.6); k.hs = vec2(0.7, 1.1);
+		tall = vec2(0.55, 1.0); belly = vec2(0.3, 0.5); qb = vec2(0.45, 0.8);
+	} else if (s.y < FAIR_SHARE + TOWER_SHARE2) {
+		k.kind = KIND_TOWER;
+		k.base = mix(TOWER_BASE.x, TOWER_BASE.y, s.z);
+		nr = vec2(5.0, 9.0); k.L = 0.5; k.W = 0.45; k.main_r = 0.6; k.br = vec2(0.4, 0.6); k.hs = vec2(0.6, 1.0);
+		tall = vec2(1.0, 1.5); belly = vec2(0.25, 0.4); qb = vec2(0.45, 0.7);
+		k.profile = 0.4;
+		k.r *= 1.2;
+	} else if (s.y < FAIR_SHARE + TOWER_SHARE2 + ROW_SHARE) {
+		k.kind = KIND_ROW;
+		k.low = t3 < 0.4;
+		k.base = k.low ? mix(LOW_BASE.x, LOW_BASE.y + 30.0, s.z) : mix(MID_BASE.x, MID_BASE.y, s.z);
+		nr = vec2(6.0, 9.0); k.L = 1.15; k.W = 0.18; k.main_r = 0.5; k.br = vec2(0.36, 0.55); k.hs = vec2(0.8, 1.15);
+		tall = vec2(0.55, 0.95); belly = vec2(0.32, 0.5); qb = vec2(0.5, 0.8);
+	} else if (s.y < FAIR_SHARE + TOWER_SHARE2 + ROW_SHARE + WISP_SHARE) {
+		k.kind = KIND_WISP;
+		k.base = mix(180.0, 320.0, s.z);
+		nr = vec2(2.0, 4.0); k.L = 1.0; k.W = 0.4; k.main_r = 0.6; k.br = vec2(0.5, 0.8); k.hs = vec2(0.9, 1.1);
+		tall = vec2(0.08, 0.16); belly = vec2(0.45, 0.5); qb = vec2(0.6, 0.7);
+		k.r *= 1.3;
+	} else {
+		k.kind = KIND_MID;
+		k.base = mix(MID_BASE.x, MID_BASE.y, s.z);
+		nr = vec2(4.0, 8.0); k.L = 0.6; k.W = 0.45; k.main_r = 0.6; k.br = vec2(0.35, 0.62); k.hs = vec2(0.7, 1.15);
+		tall = vec2(0.6, 1.2); belly = vec2(0.35, 0.55); qb = vec2(0.5, 0.85);
+	}
+	// Stretched along its axis by up to half again.
+	k.L *= mix(0.8, 1.45, m.y);
+	k.n = int(nr.x) + min(int(m.z * (nr.y - nr.x + 1.0)), int(nr.y - nr.x));
+	k.ext = length(vec2(k.L, k.W)) + max(k.br.y, k.main_r) * (1.0 + WOB);
+	k.r = min(k.r, EXT_MAX * cell / k.ext);
+	k.tall = mix(tall.x, tall.y, t2) * DOME;
+	// Lifted whole over the ground, so the belly keeps its round (the map's
+	// clamp under it would cut it level); a lifted cloud a little higher
+	// again, its own, so lifted neighbours never share a base. Over the
+	// meadows a low one thins.
+	vec2 fl = cloud_floor(k.middle + P.drift.xy, k.r * k.ext, k.low);
+	if (fl.x > k.base) k.base = fl.x + 30.0 * fract(s.y * 13.7 + h.x);
+	if (k.low) k.tall *= mix(1.0, 0.6, fl.y);
+	k.H = min(k.r * k.main_r * k.tall, TOP_MAX - k.base);
+	k.belly = mix(belly.x, belly.y, fract(m.y * 5.13 + s.x));
+	k.qb = mix(qb.x, qb.y, fract(m.z * 3.71 + h.x));
+	return true;
+}
+
+// Bubble `i` of cloud `k` (from cell `c`) over field point `f`: (top,
+// bottom, rim height) where it covers f, else (-1e4, distance past its
+// rim, rim height).
+vec3 bubble_span(Cloud k, ivec2 c, uint salt, int i, vec2 f) {
+	vec3 q = hash3(c, salt + 10u + uint(i));
+	vec2 off = vec2(0.0);
+	float br = k.main_r;
+	float hs = 1.0;
+	float lift = 0.0;
+	if (i > 0) {
+		float along = k.kind == KIND_ROW ? (2.0 * (float(i - 1) + q.x) / float(max(k.n - 1, 1)) - 1.0) * k.L : (q.x * 2.0 - 1.0) * k.L;
+		off = vec2(along, (q.y * 2.0 - 1.0) * k.W);
+		br = mix(k.br.x, k.br.y, q.z);
+		hs = mix(k.hs.x, k.hs.y, fract(q.z * 5.3)) * (1.0 - 0.25 * min(length(off) / max(k.L, 0.05), 1.0));
+		lift = LIFT * fract(q.z * 9.17);
+	} else {
+		lift = LIFT * 0.3 * fract(q.z * 9.17);
+	}
+	vec2 at = k.middle + (k.axis * off.x + vec2(-k.axis.y, k.axis.x) * off.y) * k.r;
+	vec2 d = f - at;
+	float bd = length(d);
+	float a = atan(d.y, d.x + 1e-6);
+	float rw = br * k.r * (1.0 + WOB * (0.6 * sin(3.0 * a + fract(q.x * 7.7) * 6.2832) + 0.4 * sin(5.0 * a + fract(q.y * 5.9) * 6.2832)));
+	float u = bd / rw;
+	float bh = min(br * k.r * k.tall * hs, k.H * 1.2);
+	// Its own round belly: deeper or shallower, rounder or blunter than
+	// its neighbours', so the cloud's underside is a run of lumps.
+	float down = bh * k.belly * mix(0.75, 1.3, fract(q.y * 3.31 + q.x));
+	float qb = k.qb * mix(0.8, 1.25, fract(q.x * 4.13 + q.z));
+	float rim = k.base + k.H * lift + down;
+	if (u >= 1.0) return vec3(-1e4, bd - br * k.r * (1.0 + WOB), rim);
+	float v = 1.0 - u * u;
+	return vec3(rim + max(bh - down, bh * 0.3) * pow(v, k.profile), rim - down * pow(v, qb), rim);
+}
+
+void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout float low_gap, inout vec2 high, inout float high_gap) {
+	float cell = big ? BIG : SMALL;
+	uint salt = uint(P.drift.z) + (big ? 101u : 211u);
+	ivec2 g = ivec2(floor(f / cell));
+	for (int y = -1; y <= 1; y++) {
+		for (int x = -1; x <= 1; x++) {
+			ivec2 c = g + ivec2(x, y);
+			Cloud k;
+			if (!recipe(c, big, cover, k)) continue;
+			float d = length(f - k.middle);
+			float top_c = -1e4;
+			float base_c = 1e4;
+			float out_c = d - k.ext * k.r;
+			// Past the rims the map keeps the nearest rim's height as the
+			// base (the cloud's lowest point there would drag the smoothed
+			// base down at the rim into hanging strands).
+			float rim_c = k.base + k.H * 0.4;
+			if (out_c <= 0.0) {
+				out_c = 1e9;
+				for (int i = 0; i < 9; i++) {
+					if (i >= k.n) break;
+					vec3 b = bubble_span(k, c, salt, i, f);
+					if (b.x > -1e3) {
+						top_c = max(top_c, b.x);
+						base_c = min(base_c, b.y);
+					} else if (b.y < out_c) {
+						out_c = b.y;
+						rim_c = b.z;
+					}
+				}
+			}
+			if (top_c > -1e3) {
+				if (k.low) take(low, low_gap, sea + top_c, sea + base_c, 0.0);
+				else take(high, high_gap, sea + top_c, sea + base_c, 0.0);
+			} else {
+				if (k.low) take(low, low_gap, sea + rim_c, sea + rim_c, out_c);
+				else take(high, high_gap, sea + rim_c, sea + rim_c, out_c);
+			}
+		}
+	}
+}
+
 vec4 weather_texel(vec2 xz) {
 	float sea = P.band.x;
 	vec2 f = xz - P.drift.xy;
@@ -329,8 +587,13 @@ vec4 weather_texel(vec2 xz) {
 	float low_gap = 1e9;
 	float high_gap = 1e9;
 	float cover = P.drift.w;
-	lattice(f, true, sea, cover, low, low_gap, high, high_gap);
-	lattice(f, false, sea, cover, low, low_gap, high, high_gap);
+	if (g_new) {
+		lattice_new(f, true, sea, cover, low, low_gap, high, high_gap);
+		lattice_new(f, false, sea, cover, low, low_gap, high, high_gap);
+	} else {
+		lattice(f, true, sea, cover, low, low_gap, high, high_gap);
+		lattice(f, false, sea, cover, low, low_gap, high, high_gap);
+	}
 	// The ground under it: no cloud base under the ground, and over the
 	// meadows the low layer lifted clear and thinned, so the turf stays
 	// landable.
@@ -380,7 +643,7 @@ vec2 ceiling_at(vec2 xz) {
 }
 
 // How far into one layer's cloud a point is (m); `hh` its height in it.
-float layer_inside(vec3 p, float top, float base, float slope, float n_lobe, float n_wisp, float n_mid, float n_fine, out float hh) {
+float layer_inside(vec3 p, float top, float base, float slope, float slope_b, float n_lobe, float n_wisp, float n_mid, float n_fine, out float hh) {
 	float thick = top - base;
 	hh = clamp((p.y - base) / max(thick, 4.0), 0.0, 1.0);
 	float size = clamp(thick / 110.0, 0.45, 2.6);
@@ -388,6 +651,13 @@ float layer_inside(vec3 p, float top, float base, float slope, float n_lobe, flo
 	float inside = (top - p.y) / sqrt(1.0 + slope * slope) + billow * LOBE * (n_lobe - 0.45) + (n_wisp - 0.5) * WISP;
 	inside += billow * MID_SWELL * (n_mid - 0.45);
 	inside += n_fine > 0.0 ? n_fine * sstep(-4.0, 1.0, inside) : n_fine;
+	if (g_new) {
+		// The underside: the map's rounded belly, carved up into lumps (only
+		// up, so the map's base stays the lowest any cloud reaches).
+		float lump = clamp(0.5 + (0.45 - n_lobe) * 1.2 + (0.45 - n_mid) * 1.6 + (0.5 - n_wisp) * 0.6, 0.0, 1.0);
+		float under = clamp(thick * 0.28, 2.0, 40.0) * lump;
+		return min(inside, (p.y - base - under) / sqrt(1.0 + slope_b * slope_b) * 1.2 + 1.0);
+	}
 	// A flat base, a little ragged.
 	return min(inside, (p.y - base + (n_wisp - 0.5) * 10.0 + (n_lobe - 0.45) * 8.0) * 1.2 + 1.0);
 }
@@ -435,6 +705,7 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 	vec4 wz = weather_map(at + vec2(0.0, span)) - weather_map(at - vec2(0.0, span));
 	vec2 slope = vec2(length(vec2(wx.x, wz.x)), length(vec2(wx.z, wz.z))) / (2.0 * span);
 	slope = min(slope, vec2(SLOPE_MAX));
+	vec2 slope_b = min(vec2(length(vec2(wx.y, wz.y)), length(vec2(wx.w, wz.w))) / (2.0 * span), vec2(SLOPE_MAX));
 	vec3 boil = BOIL * P.eye.w;
 	float fine_w = (fine && P.quality.w > 0.5) ? 1.0 - sstep(FINE_NEAR * 0.6, FINE_NEAR, t) : 0.0;
 	float hh_l = 0.0, hh_h = 0.0;
@@ -444,20 +715,30 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 		vec2 n = textureLod(cauliflower, (p + boil) / TILE_LOW, 0.0).rg;
 		float nm = textureLod(cauliflower, (p + boil * 1.3 + 37.0) / MID, 0.0).r;
 		float nf = fine_w > 0.0 ? fine_w * FINE_SWELL * (textureLod(cauliflower, (p + boil * 1.6 + 71.0) / FINE, 0.0).r - 0.5) : 0.0;
-		in_l = layer_inside(p, w.x, w.y, slope.x, n.r, n.g, nm, nf, hh_l);
+		in_l = layer_inside(p, w.x, w.y, slope.x, slope_b.x, n.r, n.g, nm, nf, hh_l);
 		wisp = n.g;
 	}
 	if (high_on) {
 		vec2 n = textureLod(cauliflower, (p + boil * 1.4 + 113.0) / TILE_HIGH, 0.0).rg;
 		float nm = textureLod(cauliflower, (p + boil * 1.3 + 59.0) / (MID * 1.6), 0.0).r;
 		float nf = fine_w > 0.0 ? fine_w * FINE_SWELL * (textureLod(cauliflower, (p + boil * 1.6 + 23.0) / FINE, 0.0).r - 0.5) : 0.0;
-		in_h = layer_inside(p, w.z, w.w, slope.y, n.r, n.g, nm * 1.6 - 0.3, nf, hh_h);
+		in_h = layer_inside(p, w.z, w.w, slope.y, slope_b.y, n.r, n.g, nm * 1.6 - 0.3, nf, hh_h);
 		if (in_h > in_l) wisp = n.g;
 	}
 	float inside = max(in_l, in_h);
 	float hh = in_h > in_l ? hh_h : hh_l;
 	float soft = mix(SOFT.y, SOFT.x, hh) * mix(0.5, 1.0, sstep(40.0, 300.0, t));
 	float d = sstep(0.0, soft, inside) * mix(0.55, 1.0, sstep(0.3, 0.68, wisp));
+	if (g_new) {
+		// Thin cloud in the high layer (the wisps, the mid cloud's very rims)
+		// frays into strands.
+		float thin = in_h > in_l ? 1.0 - sstep(10.0, 40.0, w.z - w.w) : 0.0;
+		if (thin > 0.0 && d > 0.0) {
+			// Streaked along the field's x, as wind-combed strands.
+			float strand = textureLod(cauliflower, (p + boil * 2.0) * vec3(1.0 / 260.0, 1.0 / 24.0, 1.0 / 55.0), 0.0).r;
+			d *= mix(1.0, 0.75 * sstep(0.42, 0.78, strand) * sstep(0.3, 0.6, wisp), thin);
+		}
+	}
 	d *= sstep(P.band.x - 1.0, P.band.x + 4.0, p.y);
 	// In the cloud the fog round the eye comes in wisps and pockets, never
 	// clear: the whiteout closes in a few tens of metres.
@@ -482,8 +763,8 @@ float density_cheap(vec3 p) {
 	vec2 n = textureLod(cauliflower, (p + BOIL * P.eye.w) / TILE_HIGH, 0.0).rg;
 	float hh;
 	float inside = -1e3;
-	if (low_on) inside = layer_inside(p, w.x, w.y, 0.6, n.r, n.g, 0.45, 0.0, hh);
-	if (high_on) inside = max(inside, layer_inside(p, w.z, w.w, 0.6, n.r, n.g, 0.45, 0.0, hh));
+	if (low_on) inside = layer_inside(p, w.x, w.y, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh);
+	if (high_on) inside = max(inside, layer_inside(p, w.z, w.w, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh));
 	return sstep(-4.0, 12.0, inside);
 }
 
@@ -492,7 +773,7 @@ float inside_cheap(vec3 p) {
 	vec4 w = weather_smooth(p.xz);
 	vec2 n = textureLod(cauliflower, (p + BOIL * P.eye.w) / TILE_LOW, 0.0).rg;
 	float hh;
-	return max(layer_inside(p, w.x, w.y, 0.6, n.r, n.g, 0.45, 0.0, hh), layer_inside(p, w.z, w.w, 0.6, n.r, n.g, 0.45, 0.0, hh));
+	return max(layer_inside(p, w.x, w.y, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh), layer_inside(p, w.z, w.w, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh));
 }
 
 // How far a ray may leap from `p` before it can meet cloud (0: step here).
@@ -539,7 +820,7 @@ void ceiling_pass() {
 			}
 		}
 	}
-	imageStore(out_ceiling, block, vec4(top + 4.0, bottom - 4.0, 0.0, 0.0));
+	imageStore(out_ceiling, block, vec4(top + 4.0, bottom - 12.0, 0.0, 0.0));
 }
 
 void shadow_pass() {
@@ -631,6 +912,14 @@ void march_pass() {
 	float frame_index = P.frame.x;
 	vec2 jp = vec2(pixel) + vec2(5.588238, 5.588238) * mod(frame_index, 64.0);
 	float jitter = fract(52.9829189 * fract(dot(jp, vec2(0.06711056, 0.00583715))));
+	if (P.flash.x > 0.5) {
+		// Interleaved gradient noise on the render's own pixel (the 2x2
+		// block's turn included), stepped by the golden ratio each frame:
+		// the frames' offsets spread evenly, so the resolve averages them
+		// toward the true mean sooner than white-ish jitter does.
+		float ign = fract(52.9829189 * fract(dot(vec2(full), vec2(0.06711056, 0.00583715))));
+		jitter = fract(ign + 0.61803398875 * mod(frame_index, 64.0));
+	}
 	g_jitter = jitter;
 
 	vec3 key = normalize(P.key.xyz + vec3(0.0, 1e-4, 0.0));
@@ -752,7 +1041,12 @@ void march_pass() {
 			t += step;
 		} else {
 			// Clear air in the slab: on as far as the map says is clear.
-			t += clamp(s.free, step, 600.0);
+			// The organic field's lumpy domes: also the sample's own distance
+			// to the surface (damped), so rays skimming the domes' billow
+			// margin don't crawl and spend the steps before far cloud.
+			float leap = g_new ? max(s.free, -s.inside * 0.6) : s.free;
+			t += clamp(leap, step, 600.0);
+			s.free = leap;
 			// After a leap the next step jittered afresh, so where the steps
 			// fall on the cloud never shows as contours.
 			if (s.free > step) started = false;
@@ -764,6 +1058,7 @@ void march_pass() {
 }
 
 void main() {
+	g_new = P.flash.y > 0.5;
 	if (PASS.mode == MODE_WEATHER) weather_pass();
 	else if (PASS.mode == MODE_CEILING) ceiling_pass();
 	else if (PASS.mode == MODE_SHADOW) shadow_pass();
