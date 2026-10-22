@@ -34,6 +34,11 @@ const vec3 BOUNCE_TINT = vec3(0.78, 0.9, 0.82);
 // At night the shade and the moonlit side painted, so cloud reads as
 // moonlit cloud, never as dark ground.
 const float NIGHT_TINT = 0.6;
+// The valley fog (the light's fourth term, its share; 0 for cloud): its
+// shade cooled toward the sky's blue and lifted, so fog in a ridge's shade
+// reads as pale blue air, never as a muddy wash over the ground.
+const vec3 FOG_COOL = vec3(0.8, 0.95, 1.2);
+const float FOG_LIFT = 1.2;
 
 void vertex() {
 	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
@@ -57,8 +62,10 @@ void fragment() {
 	zs_cumulus_palette(rd, sun, sun_hue, c_sun, c_shade, lining);
 	float toward_sun = max(dot(rd, sun), 0.0);
 	vec4 terms = a / cloud_a;
-	vec3 lit = (terms.x * c_shade + terms.y * c_sun + terms.z * c_sun * BOUNCE_TINT) * ZS_CUMULUS_LIT_SHARE;
-	lit *= mix(1.0, LIFT, zs_daylight);
+	float fog_share = clamp(terms.w, 0.0, 1.0);
+	vec3 shade_col = c_shade * mix(vec3(1.0), FOG_COOL, fog_share);
+	vec3 lit = (terms.x * shade_col + terms.y * c_sun + terms.z * c_sun * BOUNCE_TINT) * ZS_CUMULUS_LIT_SHARE;
+	lit *= mix(1.0, LIFT, zs_daylight) * mix(1.0, FOG_LIFT, fog_share);
 	float bright = clamp(terms.y / 0.95, 0.0, 1.0);
 	float met = b.y / cloud_a;
 	float glow = b.w / cloud_a;

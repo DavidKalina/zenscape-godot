@@ -19,7 +19,10 @@
 //   2 SHADOW: how much sun reaches up through the cloud from the sea's
 //     height, over its own square (the land reads it through shaders/
 //     cloud_volume_shadow.gdshaderinc).
-//   3 MARCH: as the isles' (one ray per quarter-res pixel, the light's
+//   3 MARCH: first the valley fog (a low layer lying along the valleys
+//     over their floors, from the fog map; its own short march over the
+//     slab it can fill, lit by the sun through the ridges' shade and its
+//     own depth, and the sky), then the clouds as the isles' (one ray per quarter-res pixel, the light's
 //     cone of taps, three scattering octaves, powder, the sky's light from
 //     overhead), out to the map's reach.
 //
@@ -47,7 +50,10 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 shade_sq;      // 44 the shade's square: corner xz, side, unused
 	vec4 frame;         // 48 frame, unused, unused, deep night
 	vec4 knobs;         // 52 small puffs' cover, low share, tower share, meadow clearance (m)
-	vec4 spare[27];     // 56..163
+	vec4 fog_at;        // 56 the valley fog's map: corner xz, side, has one
+	vec4 fog_knobs;     // 60 density scale, depth (m), steps, slab top (world y)
+	vec4 fog_drift;     // 64 the patches' drift xz (m), reach (m), fade (m)
+	vec4 spare[24];     // 68..163
 	vec4 weather_at;    // 164 corner xz, side, texels a side
 	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
 	vec4 flash;         // 172 unused
@@ -55,7 +61,9 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 } P;
 
 layout(set = 0, binding = 1) uniform sampler2D ground;
-layout(set = 0, binding = 2) uniform sampler2D unused_swells;
+// The valley fog's map (endless_clouds.gd `fog_image`): ground y, the
+// nearest valley's floor y, the fog it holds (0..1), the range round it.
+layout(set = 0, binding = 2) uniform sampler2D fog_map;
 layout(set = 0, binding = 3) uniform sampler3D cauliflower;
 layout(set = 0, binding = 4) uniform sampler2D scene_depth;
 layout(set = 0, binding = 5) uniform sampler3D body0;
@@ -788,6 +796,86 @@ float clear_ahead(vec3 p, vec3 rd, float level) {
 	return 0.0;
 }
 
+// --- The valley fog ------------------------------------------------------------------
+// A low layer lying along the valleys, between the ridges: over each
+// valley's floor (the fog map's), up to a top FOG depth over it that the
+// patches raise and lower, so it is thick in pockets and thin or gone
+// elsewhere, with a soft billowed top the ridges and spurs rise out of. It
+// thins near the ground, so the floor's meadows show under it.
+// The patches: two broad scales of the noise's soft wisps (m), slowly
+// morphing (the noise's third axis, per second) and drifting on the wind.
+const float FOG_PATCH = 820.0;
+const float FOG_PATCH2 = 2300.0;
+const float FOG_MORPH = 0.0025;
+// Where the patches' sum, in its own spreads from its mean (the noise's
+// soft wisps: mean 0.48, the sum's spread 0.075), turns from gap to fog.
+const vec2 FOG_GATE = vec2(-0.35, 0.9);
+const vec2 FOG_SUM = vec2(0.48, 0.0785);
+// The top's billows (m, their scale and height) and its softness (m).
+const float FOG_BILLOW = 70.0;
+const float FOG_BILLOW_H = 12.0;
+const float FOG_TOP_SOFT = 30.0;
+// Over the ground (m) the fog thins to FOG_UNDER of itself.
+const vec2 FOG_GROUND = vec2(2.0, 18.0);
+const float FOG_UNDER = 0.12;
+// Its density's scale (per m at 1) and the light's.
+const float FOG_SIGMA = 0.032;
+const float FOG_SUN_SIGMA = 0.005;
+const float FOG_SKY = 1.0;
+// The fog's light scatters more evenly than the cloud's (the share of the
+// cloud's phase it keeps, the rest even).
+const float FOG_PHASE = 0.45;
+// The patches' middle scale (m).
+const float FOG_PATCH3 = 340.0;
+const float FOG_BOUNCE = 0.16;
+// The sun's shade by the ridges: taps along the light (m).
+const vec4 FOG_SHADE_AT = vec4(30.0, 80.0, 170.0, 320.0);
+
+vec4 fog_texel(vec2 xz) {
+	if (P.fog_at.w < 0.5) return vec4(0.0, -1e3, 0.0, 0.0);
+	vec2 uv = (xz - P.fog_at.xy) / P.fog_at.z;
+	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec4(0.0, -1e3, 0.0, 0.0);
+	return textureLod(fog_map, uv, 0.0);
+}
+
+// The fog at `p`: (density 0..1, height share in its layer, depth to its
+// top (m), the ground's y).
+vec4 fog_at(vec3 p, vec4 f) {
+	if (f.b < 0.01) return vec4(0.0, 0.0, 0.0, f.r);
+	vec2 q = p.xz - P.fog_drift.xy;
+	float tm = P.eye.w * FOG_MORPH;
+	float a = textureLod(cauliflower, vec3(q.x / FOG_PATCH, tm, q.y / FOG_PATCH), 0.0).g;
+	float b = textureLod(cauliflower, vec3(q.x / FOG_PATCH2 + 0.37, tm * 0.6 + 0.5, q.y / FOG_PATCH2), 0.0).g;
+	float m = textureLod(cauliflower, vec3(q.x / FOG_PATCH3 + 0.71, tm * 1.7 + 0.21, q.y / FOG_PATCH3), 0.0).g;
+	float patch_ = sstep(FOG_GATE.x, FOG_GATE.y, (0.5 * a + 0.35 * b + 0.15 * m - FOG_SUM.x) / FOG_SUM.y);
+	float amount = f.b * patch_;
+	amount *= sstep(0.04, 0.3, amount);
+	if (amount < 0.01) return vec4(0.0, 0.0, 0.0, f.r);
+	float depth = P.fog_knobs.y * mix(0.75, 1.3, f.a) * (0.35 + 0.65 * sqrt(amount));
+	vec2 bl = textureLod(cauliflower, vec3(q.x, p.y * 1.6 + P.eye.w * 0.4, q.y) / FOG_BILLOW, 0.0).rg;
+	float top = f.g + depth + (bl.r - 0.5) * 2.0 * FOG_BILLOW_H;
+	if (p.y > top + 2.0) return vec4(0.0, 1.0, 0.0, f.r);
+	// A thin layer's top as soft for its depth, so a shallow one never smears.
+	float soft = min(FOG_TOP_SOFT, max(top - f.g, 6.0) * 0.6);
+	float body = sstep(top + 2.0, top - soft, p.y);
+	float ground = mix(FOG_UNDER, 1.0, sstep(FOG_GROUND.x, FOG_GROUND.y, p.y - f.r));
+	float wisp = mix(0.3, 1.0, sstep(0.3, 0.68, bl.g));
+	float hh = clamp((p.y - f.g) / max(top - f.g, 4.0), 0.0, 1.0);
+	return vec4(amount * body * ground * wisp, hh, max(top - p.y, 0.0), f.r);
+}
+
+// How much sun reaches `p` past the ridges (the fog map's ground along the
+// light).
+float fog_ridge_shade(vec3 p, vec3 key) {
+	float clear = 1e3;
+	for (int k = 0; k < 4; k++) {
+		vec3 q = p + key * FOG_SHADE_AT[k];
+		float g = fog_texel(q.xz).r;
+		clear = min(clear, q.y - g);
+	}
+	return sstep(-8.0, 6.0, clear);
+}
+
 // --- The passes --------------------------------------------------------------------------
 
 void weather_pass() {
@@ -903,11 +991,6 @@ void march_pass() {
 		}
 	}
 	t_out = min(t_out, t_solid);
-	if (t_out <= t_in) {
-		imageStore(out_a, pixel, vec4(0.0));
-		imageStore(out_b, pixel, vec4(0.0));
-		return;
-	}
 
 	float frame_index = P.frame.x;
 	vec2 jp = vec2(pixel) + vec2(5.588238, 5.588238) * mod(frame_index, 64.0);
@@ -927,6 +1010,73 @@ void march_pass() {
 	float ph[OCTAVES];
 	for (int o = 0; o < OCTAVES; o++) ph[o] = phase(c, pow(MS_C, float(o)));
 	float powder_share = POWDER * sstep(0.2, -0.6, c);
+
+	// The valley fog over its own slab (the sea up to the highest top it
+	// can reach), out to its reach and the solid ground.
+	vec4 fog_a = vec4(0.0);
+	float fog_T = 1.0;
+	float fog_met = 0.0;
+	float fog_crown = 0.0;
+	if (P.fog_at.w > 0.5 && P.fog_knobs.x > 0.0) {
+		float top_y = P.fog_knobs.w;
+		float bottom = P.band.x;
+		float fa = 0.0, fb = 0.0;
+		if (abs(rd.y) < 1e-4) {
+			fa = (ro.y < top_y && ro.y > bottom) ? 0.0 : 1e9;
+			fb = 1e9;
+		} else {
+			float ta = (top_y - ro.y) / rd.y;
+			float tb = (bottom - ro.y) / rd.y;
+			fa = max(min(ta, tb), 0.0);
+			fb = max(ta, tb);
+		}
+		fb = min(min(fb, P.fog_drift.z / level), t_solid);
+		if (fb > fa) {
+			int n = int(P.fog_knobs.z);
+			float span = fb - fa;
+			float sigma = FOG_SIGMA * P.fog_knobs.x;
+			float prev = fa;
+			for (int i = 0; i < 96; i++) {
+				if (i >= n || fog_T < 0.02) break;
+				// Finer near the eye, coarser far (u^1.7 over the span).
+				float u0 = float(i) / float(n);
+				float u1 = float(i + 1) / float(n);
+				float um = (float(i) + jitter) / float(n);
+				float t0 = fa + span * pow(u0, 1.7);
+				float t1 = fa + span * pow(u1, 1.7);
+				float tf = fa + span * pow(um, 1.7);
+				float dt = t1 - t0;
+				vec3 p = ro + rd * tf;
+				vec4 f = fog_texel(p.xz);
+				vec4 fs = fog_at(p, f);
+				float far = 1.0 - sstep(P.fog_drift.z - P.fog_drift.w, P.fog_drift.z, length(p.xz - ro.xz));
+				float dens = fs.x * far * sstep(1.0, 12.0, tf);
+				if (dens < 0.002) continue;
+				float alpha = 1.0 - exp(-dens * sigma * dt);
+				float shade = fog_ridge_shade(p, key);
+				float tau = fs.z * FOG_SUN_SIGMA * P.fog_knobs.x * f.b / max(key.y, 0.25);
+				float sun_light = 0.0;
+				float weight = 1.0;
+				float atten = 1.0;
+				for (int o = 0; o < OCTAVES; o++) {
+					sun_light += weight * exp(-tau * atten) * mix(1.0, ph[o], FOG_PHASE);
+					weight *= MS_B;
+					atten *= MS_A;
+				}
+				// In the ridges' shade the fog still glows a little (the sunlit
+				// fog round it), so shaded fog reads pale, never as a grey wash.
+				sun_light *= mix(0.3, 1.0, shade) * SUN_SCALE / (1.0 + MS_B + MS_B * MS_B);
+				float ambient = FOG_SKY * mix(0.7, 1.0, fs.y);
+				float bounce = FOG_BOUNCE * (1.0 - fs.y);
+				float w = fog_T * alpha;
+				// The fourth term is the fog's own share (the composite cools its shade).
+				fog_a += w * vec4(ambient, sun_light, bounce, 1.0);
+				fog_met += w * tf;
+				fog_crown += w * mix(0.25, 0.7, fs.y);
+				fog_T *= 1.0 - alpha;
+			}
+		}
+	}
 
 	// How deep in cloud the eye is: the fog round it glows.
 	float immersed = 0.0;
@@ -948,8 +1098,9 @@ void march_pass() {
 	bool started = false;
 	bool hit = false;
 	int fine_left = 0;
+	float t_first = 1e9;
 	for (int i = 0; i < STEPS_MAX; i++) {
-		if (i >= steps || t >= t_out || T < 0.03) break;
+		if (t_out <= t_in || i >= steps || t >= t_out || T < 0.03) break;
 		vec3 p = ro + rd * t;
 		float gap = clear_ahead(p, rd, level);
 		if (gap > 0.0) {
@@ -976,6 +1127,7 @@ void march_pass() {
 		s.density *= mix(sstep(NEAR_FADE.x, NEAR_FADE.y, t), 0.25 + 0.75 * sstep(4.0, 18.0, t), immersed);
 		if (s.density > 0.002 && !hit) {
 			hit = true;
+			t_first = t;
 			if (step > STEP.x * 2.0) {
 				t -= step * 0.75;
 				fine_left = 6;
@@ -1051,6 +1203,22 @@ void march_pass() {
 			// fall on the cloud never shows as contours.
 			if (s.free > step) started = false;
 		}
+	}
+	// The fog and the cloud, the nearer over the farther (they seldom share
+	// a ray's stretch: the fog lies under the low cloud's bases).
+	if (fog_T < 1.0) {
+		float fog_mean = fog_met / max(1.0 - fog_T, 1e-4);
+		if (t_first < fog_mean) {
+			acc_a += T * fog_a;
+			met += T * fog_met;
+			crown += T * fog_crown;
+		} else {
+			acc_a = fog_a + fog_T * acc_a;
+			met = fog_met + fog_T * met;
+			crown = fog_crown + fog_T * crown;
+			glow *= fog_T;
+		}
+		T *= fog_T;
 	}
 	float cover = 1.0 - T;
 	imageStore(out_a, pixel, acc_a);
