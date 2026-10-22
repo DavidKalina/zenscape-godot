@@ -68,3 +68,30 @@ Left:
 - There are fewer whitecaps in the toward-sun view than from cruise. The count is a balance between the coast view, where rough stretches can still look busy, and open sea.
 - The far sheet past 800 m is flat, with normals only.
 - The wake's foam doesn't ride over a crest's shove: it sits at the rest xz, so it is fine at skim range.
+
+## Foam round (whitecaps that linger and age into lace)
+
+`sea_foam` 1 (the default; `--sea-foam=old` gives the body round's short-lived caps, and the older flags still work).
+
+- Buffer: `scripts/endless/sea_foam.gd` keeps a 512 m square of foam (1024² RGBA16F, 0.5 m texels, centred 143 m ahead of the eye along the view), addressed by world position wrapped on its side, so moving it is free and what slides in starts clean. A compute pass, `shaders/endless_sea_foam.glsl`, runs as the camera's compositor effect before the opaque pass, ping-ponging two textures. Each frame it carries last frame's foam upstream to downstream (drift downwind plus the curl of a drifting noise, which pulls patches into streaks), spreads it, fades it, and lays new foam where the wind sea's crests are breaking. It finds those crests the same way the sea shader does, so a trail starts where the drawn cap stands. Channels: density, youth, churned water, the plane's wake (laid when it skims).
+- Look: the crest's own cap is analytic, dense and bright for `foam_fresh` s. The foam it leaves opens from a solid patch into marbled veins (crossing ridges of a bent noise, stretched downwind) with a thin milky film between them, then thins and goes, over `whitecaps.y` (6 s). Fresh foam is a little brighter and lit by its slope, there is a faint lighter churned halo, and far off the lace evens out into its mean cover. Past the buffer the same trail is worked out per crest (the last two crests of each wave), cross-faded over the last 40 m of the square.
+- More caps: `whitecaps.x` 1.6, caps start lower (`foam_caps.x` 0.42), more stand outside the gusts, and slicks keep a few in their wave groups' peaks (`foam_caps.z`). The rough stretches are capped as before, so they don't turn into a blanket. The crest glow is down a little (`sss_strength` 0.65); the palette is unchanged.
+
+Knobs (`--sea-set`, quoted): `"whitecaps:Vector3(1.6,6.0,1.0);foam_caps:Vector3(0.42,0.4,0.5);foam_fresh:0.5;foam_flow:Vector4(0.45,0.35,14.0,0.9);foam_spread:Vector2(0.03,0.3);foam_lace:Vector4(2.8,1.0,1.0,1.0)"`. `foam_flow`: drift m/s, swirl m/s, swirl size m, youth s (solid to lace). `foam_spread`: foam and churned-water diffusion, m²/s. `foam_lace`: vein size m, vein thickness and film, how far the veins bend, halo strength. `debug_view:6` shows density, youth and the buffer's reach; `debug_view:7` turns the buffer off (per-crest foam everywhere). The compute pass reads the material's values each frame, so the knobs reach the buffer too.
+
+Cost (3024x1898 window, 600 frames, three runs each): about +0.3 ms whole-frame median at the low sun view (12.10 ms against 11.81 ms), about +0.5 ms at cruise (`--alt=70`, 10.93 against 10.40). The GPU timer reads 0 on Metal, so the compute pass's share is unverified.
+
+Two Metal problems, both fixed and worth knowing:
+- Sampling (`texture()`) in the compute pass the texture it had written the frame before hung the GPU a few seconds in, whether it was dispatched from `call_on_render_thread` or from a compositor effect. Reading it with `imageLoad` and filtering by hand fixed it.
+- The first version put the whitecap code, with an inner loop over crests, inside the 11-wave loop. The first run after each shader edit then sat in the Metal shader compiler for over 8 minutes at 100% CPU. Moving the caps into their own loop over waves 5..8, with a helper per crest, brought it back to a normal start. Watch for this when growing `zs_swell_body`. Apart from that, I saw a rare capture hang that happens with `--sea-foam=old` too.
+
+Proof: smoke passes with the defaults and with each of `--sea-foam=old`, `--sea-body=old`, `--sea-motion=old`, `--sea-surface=old`, `--water=old` and `--no-wake`. A rendered 900-frame run through the real flight loop with `--sea-set` foam knobs gave no errors.
+
+Captures (`captures/water5/`): `cmp_{sun,away,low,close,coast,high,cap}.png` (top `--sea-foam=old`, bottom new); `life_cap_life.png` and `life_cap_motion.gif` (a cap's life, 16 frames 0.4 s apart, 9 m over a rough stretch: break, then veins and film, then gone) against `oldlife_cap_life.png`; `cmp_play_loop.png` (real loop, old on top). The driver is `scratch/water5.sh` (adds the `cap` view; `N=` frames, `E=` frames apart), with `scratch/crop8.py` (a grid of crops) and `scratch/cmp.py`.
+
+Left:
+- Fresh caps are still flat cream shapes with fairly clean edges. They could use a frothier rim, or a lift off the surface.
+- The far sea past about 400 m shows caps only as a faint wash; from the high view the distance reads calmer than the near sea.
+- The veins follow only the uniform drift, not the buffer's swirl, so in a long look the lace slides a little against its envelope.
+- The wake laid in the buffer is one blob round the plane each frame; it isn't shaped into the V's arms.
+- Shore foam is untouched and doesn't use the new lace.

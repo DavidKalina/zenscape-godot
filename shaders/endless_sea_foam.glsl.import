@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://chiyq55bo3olo"
+path="res://.godot/imported/endless_sea_foam.glsl-d5a15d6dc00021c9c4dd2a3f11fd5c40.res"
+
+[deps]
+
+source_file="res://shaders/endless_sea_foam.glsl"
+dest_files=["res://.godot/imported/endless_sea_foam.glsl-d5a15d6dc00021c9c4dd2a3f11fd5c40.res"]
+
+[params]
+

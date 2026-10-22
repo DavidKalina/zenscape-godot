@@ -9,11 +9,15 @@ extends RefCounted
 ##   wake        the plane's last WAKE_POINTS points while it flies low over
 ##               the water (one every WAKE_STEP m), with the time it passed
 ##               and how low it was.
+##   foam        the whitecaps' lingering foam, a buffer round the eye kept by
+##               a compute pass (scripts/endless/sea_foam.gd); --sea-foam=old
+##               keeps the body round's short-lived caps.
 ##
 ## `--water=old` keeps the earlier sea (shaders/sky_ocean.gdshader).
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const SeaFoam = preload("res://scripts/endless/sea_foam.gd")
 
 const DEPTH_TEXELS := 512
 const DEPTH_SIDE := 4096.0
@@ -42,6 +46,9 @@ var _now := 0.0
 var _last := Vector2.INF
 var _speed := 0.0
 var _last_time := 0.0
+## The lingering foam's buffer (sea_foam 1 with a rendering device).
+var foam: SeaFoam
+var _wake_low := 0.0
 
 ## Whether the new sea is wanted (not --water=old).
 static func wanted() -> bool:
@@ -52,6 +59,11 @@ static func wanted() -> bool:
 static func body_wanted() -> bool:
 	var a := LaunchArgs.user_args()
 	return wanted() and not ("--sea-body=old" in a or "--sea-motion=old" in a or "--sea-surface=old" in a)
+
+## Whether the whitecaps linger (a foam buffer, lace): not --sea-foam=old
+## or any older sea.
+static func foam_wanted() -> bool:
+	return body_wanted() and not "--sea-foam=old" in LaunchArgs.user_args()
 
 func _init(seed_value: int) -> void:
 	land_seed = seed_value
@@ -95,6 +107,14 @@ func _init(seed_value: int) -> void:
 				material.set_shader_parameter("tint_mid",Color(0.06,0.43,0.62))
 				material.set_shader_parameter("tint_deep",Color(0.035,0.2,0.47))
 				material.set_shader_parameter("tint_abyss",Color(0.02,0.11,0.28))
+				# The foam: --sea-foam=old keeps the body round's short-lived
+				# caps; the default is more caps whose foam lingers in a
+				# buffer round the eye and ages into lace.
+				if foam_wanted():
+					material.set_shader_parameter("sea_foam",1)
+					material.set_shader_parameter("whitecaps",FOAM_CAPS)
+					# The crest glow a touch down, so the foam stands out.
+					material.set_shader_parameter("sss_strength",0.65)
 	for a: String in LaunchArgs.user_args():
 		# --sea-set=name:value[;name:value]: a uniform by hand, for tuning.
 		if a.begins_with("--sea-set="):
@@ -102,6 +122,11 @@ func _init(seed_value: int) -> void:
 				var kv := pair.split(":")
 				if kv.size() == 2: material.set_shader_parameter(kv[0],str_to_var(kv[1]))
 		elif a == "--no-wake": material.set_shader_parameter("wake",0.0)
+	if int(_knob("sea_foam")) > 0:
+		foam = SeaFoam.new()
+		if foam.ready():
+			material.set_shader_parameter("foam_buffer",foam.textures[0])
+			material.set_shader_parameter("foam_buffer_b",foam.textures[1])
 
 ## The steady wind the wind sea runs along (EndlessLook's base heading, in
 ## radians; the wind's wander would race the far crests).
@@ -119,7 +144,8 @@ const GRAVITY := 9.81
 var _knobs := {}
 ## The shader's defaults for what the mirror reads (a material keeps only
 ## what was set).
-const KNOB_DEFAULTS := {"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0)}
+const FOAM_CAPS := Vector3(1.6,6.0,1.0)
+const KNOB_DEFAULTS := {"sea_foam":0,"whitecaps":Vector3(1.0,2.2,1.0),"foam_flow":Vector4(0.45,0.35,14.0,0.9),"foam_spread":Vector2(0.03,0.3),"foam_caps":Vector3(0.42,0.4,0.5),"wake":1.0,"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0)}
 
 ## The sea's surface height over its rest level (m) at world `x`,`z` now:
 ## the body's swell (0 without the body). The shader's sheet shoves its
@@ -287,11 +313,21 @@ static func _detail(seed_value: int, frequency: float, octaves: int) -> NoiseTex
 	tex.noise = noise
 	return tex
 
-## One frame: the depth map round `eye`, the wake from the plane at `plane`.
-func step(delta: float, eye: Vector3, plane: Vector3) -> void:
+## One frame: the depth map round `eye`, the wake from the plane at `plane`,
+## the lingering foam round the eye looking along `facing` (`time` the
+## shaders' zs_flow_time).
+func step(delta: float, eye: Vector3, plane: Vector3, facing := Vector3.FORWARD, time := -1.0, view: Camera3D = null) -> void:
 	_now += delta
 	_depth(eye)
 	_wake(plane)
+	if foam != null:
+		var knobs := {}
+		for k in ["body_wind","foam_flow","body_swell","body_patch","whitecaps","foam_spread","foam_caps","swell_groups","wind_patches"]: knobs[k] = _knob(k)
+		var strength := _wake_low*float(_knob("wake"))
+		foam.step(delta,eye,facing,time if time >= 0.0 else _now,knobs,Vector4(plane.x,plane.z,strength,2.2),view)
+		material.set_shader_parameter("foam_drift",foam.drift)
+		material.set_shader_parameter("foam_side",foam.side)
+		material.set_shader_parameter("foam_at",Vector4(foam.origin.x,foam.origin.y,foam.SIDE,1.0 if foam.ready() and foam.camera != null else 0.0))
 
 func _depth(eye: Vector3) -> void:
 	if _task >= 0 and WorkerThreadPool.is_task_completed(_task):
@@ -332,6 +368,7 @@ static func depth_image(seed_value: int, corner: Vector2) -> Image:
 
 func _wake(plane: Vector3) -> void:
 	var low := 1.0-smoothstep(WAKE_LOW,WAKE_HIGH,plane.y-Field.SEA_Y-height_at(plane.x,plane.z))
+	_wake_low = low
 	var at := Vector2(plane.x,plane.z)
 	# The newest point rides with the plane, so the wake starts under it; it
 	# is left behind for good once WAKE_STEP m past the one before.
@@ -365,6 +402,7 @@ func _wake(plane: Vector3) -> void:
 
 ## Waits for a worker still baking (before the sea is freed).
 func finish() -> void:
+	if foam != null: foam.free_buffers()
 	if _task >= 0:
 		WorkerThreadPool.wait_for_task_completion(_task)
 		_task = -1

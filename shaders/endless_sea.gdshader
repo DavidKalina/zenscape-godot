@@ -17,6 +17,9 @@ render_mode blend_mix, depth_draw_always, cull_back, unshaded, shadows_disabled;
 // - Foam: a broken line at the shore, bands rolling in over the shelf, a
 //   touch on the steepest crests, and the plane's wake (a trail of its recent
 //   points: a churned centre line and the two arms of a V spreading out).
+// - Whitecaps that linger (sea_foam 1): a dense cap on the breaking crest,
+//   then the foam it leaves, kept in a buffer round the eye
+//   (shaders/endless_sea_foam.glsl), opening into marbled lace and fading.
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
@@ -103,6 +106,33 @@ uniform vec3 sss_color : source_color = vec3(0.10, 0.80, 0.62);
 uniform float sss_strength = 0.8;
 uniform vec3 whitecaps = vec3(1.0, 2.2, 1.0);
 
+// The foam (EndlessSea, `--sea-foam=old` sets 0): 1 whitecaps that linger.
+// The crest's own cap is bright and dense for `foam_fresh` s; what it
+// leaves is kept in a buffer round the eye (scripts/endless/sea_foam.gd,
+// `foam_buffer` at `foam_at`: corner xz, side m, on), drifting downwind at
+// `foam_flow.x` m/s and swirled at `.y` m/s by eddies `.z` m across, so a
+// patch is pulled into streaks; it spreads (`foam_spread`: foam, churned
+// water, m^2/s), opens from a solid cap into lace and veins over
+// `foam_flow.w` s and fades over `whitecaps.y` s. Past the buffer the same
+// trail is worked out per crest. Lace: `foam_lace` cell size m, how thick
+// the veins stay, how far the cells are bent, the churned water's lift.
+// `whitecaps.x` sets how many, as before; `foam_caps` where they start.
+uniform int sea_foam = 0;
+uniform sampler2D foam_buffer : filter_linear, repeat_enable;
+uniform sampler2D foam_buffer_b : filter_linear, repeat_enable;
+// Which of the ping-pong pair holds the newest foam.
+uniform int foam_side = 0;
+uniform vec4 foam_at = vec4(0.0);
+uniform vec2 foam_drift = vec2(0.0);
+uniform float foam_fresh = 0.5;
+// Where caps start (the wind sea's height x its group, 0.72 in the body
+// round), how many stand outside the gusts (0.25 then), and the least
+// height a slick counts as (x its group), so slicks keep a few.
+uniform vec3 foam_caps = vec3(0.42, 0.4, 0.5);
+uniform vec4 foam_flow = vec4(0.45, 0.35, 14.0, 0.9);
+uniform vec2 foam_spread = vec2(0.03, 0.3);
+uniform vec4 foam_lace = vec4(2.8, 1.0, 1.0, 1.0);
+
 // The land's height (world y) over a square round the eye: corner xz, side,
 // on (EndlessSea `_depth`).
 uniform sampler2D depth_map : filter_linear, repeat_disable;
@@ -160,7 +190,9 @@ uniform vec4 wake_head = vec4(0.0);
 uniform float wake = 1.0;
 // How fast the V's arms ride out (m/s, from the plane's speed).
 uniform float wake_spread = 6.0;
-// 1: the water's depth (red 0..10 m, green 10..60 m), 2: foam cover.
+// 1: the water's depth (red 0..10 m, green 10..60 m), 2: foam cover,
+// 6 (sea_foam 1): the lace's density, youth, buffer reach and churn, 7: the
+// foam worked out per crest everywhere (no buffer).
 uniform int debug_view = 0;
 
 varying vec3 world_position;
@@ -256,12 +288,47 @@ const float BODY_TURN[11] = float[11](0.0, 0.16, -0.22, 0.0, 0.3, 0.0, 0.38, -0.
 // The swell's heights (m, by body_swell.x) and the wind sea's steepness.
 const float BODY_SIZE[11] = float[11](0.45, 0.42, 0.38, 0.32, 0.28, 0.07, 0.068, 0.064, 0.06, 0.055, 0.05);
 
+// One crest of wave `fi` (sea_foam 1): `k` 0 the crest that passed last
+// (returns its fresh cap), 1 the one before; with `analytic` over 0 its
+// trail goes into `trail` (density, youth).
+float zs_cap_crest(vec2 p, vec2 d, float L, float fi, float since, float id, float period, float chance, float soft, float fine, float footprint, vec2 hw, float k, float analytic, inout vec2 trail) {
+	vec2 across = vec2(-d.y, d.x);
+	float sk = since + k;
+	float age = sk * period;
+	float idk = id - k;
+	// Where it was laid: upstream by the drift since.
+	vec2 lp = p - hw * age * foam_flow.x;
+	float nn = zs_body_noise(vec2(dot(lp, across) / (L * 0.3), dot(lp, d) / (L * 0.4)) + vec2(idk * 1.37 + fi * 5.1, idk * 2.71));
+	float ragged = zs_body_noise(lp / 1.7 + vec2(idk * 0.73, fi * 2.9));
+	float birth = smoothstep(1.0 - chance, 1.0 + soft - chance, nn + (ragged - 0.5) * 0.3) * smoothstep(0.0, soft * 0.7, chance);
+	float cap = 0.0;
+	if (k < 0.5) {
+		float front = smoothstep(0.0, max(footprint / L * 4.0, 0.03), since + (ragged - 0.5) * 0.04);
+		cap = birth * front * exp(-age / max(foam_fresh, 0.05)) * 1.25;
+		float mean = chance * 0.25 * (foam_fresh / period) * 2.0;
+		cap = mix(mean, cap, fine);
+	}
+	if (analytic > 0.0) {
+		float life = max(whitecaps.y, 0.2);
+		float laid = smoothstep(0.03, 0.12, sk);
+		float dens = birth * laid * max(exp(-age / life) - age * 0.012, 0.0);
+		float mean = chance * 0.25 * (life / period) * 0.9;
+		trail.x = max(trail.x, mix(mean, dens, fine));
+		trail.y = max(trail.y, birth * laid * exp(-age / max(foam_flow.w, 0.05)) * fine);
+	}
+	return cap;
+}
+
 // The body's heave at `p` (rest xz): the shove and rise (`shift`), the
 // sheet's squeeze (`jac`, 1 flat .. 0 a fold), the slope lost to the
 // footprint (`rough`), the slope of the displaced sheet (returned) and, with
 // `foamy`, the whitecaps' cover (`caps`). `held` waves only (finer than
 // `footprint` they fade); the CPU mirror holds them all.
-vec2 zs_swell_body(vec2 p, float t, float footprint, bool foamy, out vec3 shift, out float jac, out float rough, out float caps) {
+// sea_foam 1: `caps` is the crest's own fresh cap only, and with `analytic`
+// over 0 `trail` is the foam it left (density, youth) worked out per crest
+// (the buffer's stand-in, past its reach).
+vec2 zs_swell_body(vec2 p, float t, float footprint, bool foamy, float analytic, out vec3 shift, out float jac, out float rough, out float caps, out vec2 trail) {
+	trail = vec2(0.0);
 	vec2 h0 = normalize(swell_heading);
 	float cx = cos(swell_cross.x), sx = sin(swell_cross.x);
 	vec2 h1 = vec2(cx * h0.x - sx * h0.y, sx * h0.x + cx * h0.y);
@@ -319,36 +386,60 @@ vec2 zs_swell_body(vec2 p, float t, float footprint, bool foamy, out vec3 shift,
 		slope += d * steep * cp * held;
 		j -= vec3(d.x * d.x, d.y * d.y, d.x * d.y) * q * steep * sp * held;
 		rough += 0.5 * steep * steep * (1.0 - held * held);
-		if (foamy && i >= 5 && i <= 8) {
-			// The whitecaps of this wave's crests: whether the crest that
-			// passed last was breaking here (more where its group is high and
-			// the sea rough), and how long ago it passed.
-			float omega = sqrt(GRAVITY * ks[i]);
-			float u = (PI * 0.5 - phases[i]) / TAU;
-			float since = fract(u), id = floor(u);
-			float age = since * TAU / omega;
-			float r = steep / (BODY_SIZE[i] * max(body_swell.y, 0.05));
-			float chance = clamp((r - 0.72) * 0.32 * whitecaps.x, 0.0, 0.3) * (0.25 + 0.75 * gust);
-			vec2 lp = p - hw * age * 0.5;
-			float n = zs_body_noise(vec2(dot(lp, vec2(-d.y, d.x)) / (L * 0.3), dot(lp, d) / (L * 0.4)) + vec2(id * 1.37 + float(i) * 5.1, id * 2.71));
-			// Ragged edges: the outline wanders with a finer noise.
-			float ragged = zs_body_noise(lp / 1.7 + vec2(id * 0.73, float(i) * 2.9)) * 0.6 + zs_body_noise(lp / 0.6 + vec2(4.4, id)) * 0.4;
-			ragged = mix(0.5, ragged, 1.0 - smoothstep(0.15, 0.6, footprint));
-			float soft = 0.2 + clamp(footprint / L * 3.0, 0.0, 0.35);
-			float birth = smoothstep(1.0 - chance, 1.0 + soft - chance, n + (ragged - 0.5) * 0.3) * smoothstep(0.0, soft * 0.7, chance);
-			float front = smoothstep(0.0, max(footprint / L * 4.0, 0.03), since + (ragged - 0.5) * 0.04) * (1.0 - smoothstep(0.45, 0.9, since));
-			float life = max(whitecaps.y, 0.1);
-			float cap = birth * front * (exp(-age / life) * 0.7 + exp(-age / 0.35) * 0.6);
-			// Older foam pulled out in streaks downwind.
-			vec2 sp = vec2(dot(lp, hw) / 9.0, dot(lp, vec2(-hw.y, hw.x)) / 1.8) + vec2(id * 3.3, float(i));
-			float streak = zs_body_noise(sp) * 0.65 + zs_body_noise(sp * vec2(1.7, 2.3) + 4.1) * 0.35;
-			streak = mix(0.5, streak, 1.0 - smoothstep(0.2, 0.8, footprint));
-			cap *= mix(1.0, smoothstep(0.3, 0.7, streak) * 1.4, smoothstep(0.3, 2.5, age) * 0.6 * whitecaps.z);
-			// Finer than the pixel: the crests' mean cover instead.
-			float period = TAU / omega;
-			float mean = chance * 0.25 * (life / period) * (1.0 - exp(-period / life)) * 0.8;
-			cap = mix(mean, cap, 1.0 - smoothstep(L * 0.04, L * 0.15, footprint));
-			caps = 1.0 - (1.0 - caps) * (1.0 - clamp(cap, 0.0, 1.0));
+	}
+	// The whitecaps, apart from the heave (one pass over the wind sea's
+	// waves 5..8; kept out of the loop above so the shader compiles fast).
+	if (foamy) {
+		for (int i = 5; i <= 8; i++) {
+			float L = BODY_LENGTH[i];
+			vec2 d = dirs[i];
+			float steep = steeps[i];
+			if (sea_foam > 0) {
+				// The crest's own cap (as the buffer's pass finds it,
+				// shaders/endless_sea_foam.glsl), bright for foam_fresh s.
+				float omega = sqrt(GRAVITY * ks[i]);
+				float period = TAU / omega;
+				float u = (PI * 0.5 - phases[i]) / TAU;
+				float since = fract(u), id = floor(u);
+				float r = steep / (BODY_SIZE[i] * max(body_swell.y, 0.05));
+				// Slicks keep a few, in their wave groups' peaks.
+				r = max(r, foam_caps.z * r / max(wsea, 0.05));
+				float chance = clamp((r - foam_caps.x) * 0.32 * whitecaps.x, 0.0, 0.3) * (foam_caps.y + (1.0 - foam_caps.y) * gust);
+				float fine = 1.0 - smoothstep(L * 0.04, L * 0.15, footprint);
+				float soft = 0.2 + clamp(footprint / L * 3.0, 0.0, 0.35);
+				caps = max(caps, zs_cap_crest(p, d, L, float(i), since, id, period, chance, soft, fine, footprint, hw, 0.0, analytic, trail));
+				if (analytic > 0.0) zs_cap_crest(p, d, L, float(i), since, id, period, chance, soft, fine, footprint, hw, 1.0, analytic, trail);
+			} else {
+				// The whitecaps of this wave's crests: whether the crest that
+				// passed last was breaking here (more where its group is high and
+				// the sea rough), and how long ago it passed.
+				float omega = sqrt(GRAVITY * ks[i]);
+				float u = (PI * 0.5 - phases[i]) / TAU;
+				float since = fract(u), id = floor(u);
+				float age = since * TAU / omega;
+				float r = steep / (BODY_SIZE[i] * max(body_swell.y, 0.05));
+				float chance = clamp((r - 0.72) * 0.32 * whitecaps.x, 0.0, 0.3) * (0.25 + 0.75 * gust);
+				vec2 lp = p - hw * age * 0.5;
+				float n = zs_body_noise(vec2(dot(lp, vec2(-d.y, d.x)) / (L * 0.3), dot(lp, d) / (L * 0.4)) + vec2(id * 1.37 + float(i) * 5.1, id * 2.71));
+				// Ragged edges: the outline wanders with a finer noise.
+				float ragged = zs_body_noise(lp / 1.7 + vec2(id * 0.73, float(i) * 2.9)) * 0.6 + zs_body_noise(lp / 0.6 + vec2(4.4, id)) * 0.4;
+				ragged = mix(0.5, ragged, 1.0 - smoothstep(0.15, 0.6, footprint));
+				float soft = 0.2 + clamp(footprint / L * 3.0, 0.0, 0.35);
+				float birth = smoothstep(1.0 - chance, 1.0 + soft - chance, n + (ragged - 0.5) * 0.3) * smoothstep(0.0, soft * 0.7, chance);
+				float front = smoothstep(0.0, max(footprint / L * 4.0, 0.03), since + (ragged - 0.5) * 0.04) * (1.0 - smoothstep(0.45, 0.9, since));
+				float life = max(whitecaps.y, 0.1);
+				float cap = birth * front * (exp(-age / life) * 0.7 + exp(-age / 0.35) * 0.6);
+				// Older foam pulled out in streaks downwind.
+				vec2 sp = vec2(dot(lp, hw) / 9.0, dot(lp, vec2(-hw.y, hw.x)) / 1.8) + vec2(id * 3.3, float(i));
+				float streak = zs_body_noise(sp) * 0.65 + zs_body_noise(sp * vec2(1.7, 2.3) + 4.1) * 0.35;
+				streak = mix(0.5, streak, 1.0 - smoothstep(0.2, 0.8, footprint));
+				cap *= mix(1.0, smoothstep(0.3, 0.7, streak) * 1.4, smoothstep(0.3, 2.5, age) * 0.6 * whitecaps.z);
+				// Finer than the pixel: the crests' mean cover instead.
+				float period = TAU / omega;
+				float mean = chance * 0.25 * (life / period) * (1.0 - exp(-period / life)) * 0.8;
+				cap = mix(mean, cap, 1.0 - smoothstep(L * 0.04, L * 0.15, footprint));
+				caps = 1.0 - (1.0 - caps) * (1.0 - clamp(cap, 0.0, 1.0));
+			}
 		}
 	}
 	jac = j.x * j.y - j.z * j.z;
@@ -612,6 +703,50 @@ float zs_foam_soft(vec2 p, float t, float cover, float footprint) {
 	return smoothstep(1.0 - cover, 1.0 - cover + 0.4, n) * smoothstep(0.0, 0.15, cover);
 }
 
+// The lace (sea_foam 1): marbled veins, stretched downwind and bent.
+// Foam of `density` (0..1) and `youth` (1 just laid .. 0 old) at `p`: a
+// solid cap when young, opening into a net of veins that thin and break as
+// it fades. Finer than the pixel, it evens out into its mean cover.
+float zs_foam_lace(vec2 p, float density, float youth, float footprint) {
+	if (density < 0.004) return 0.0;
+	float cell = max(foam_lace.x, 0.2);
+	vec2 hw = normalize(body_wind);
+	vec2 q = p - foam_drift;
+	q = vec2(dot(q, hw) / 1.7, dot(q, vec2(-hw.y, hw.x)));
+	vec2 bent = vec2(zs_body_noise(q / (cell * 2.3)), zs_body_noise(q / (cell * 2.3) + vec2(7.3, 2.1))) - 0.5;
+	bent += (vec2(zs_body_noise(q / (cell * 0.9) + vec2(3.3, 5.1)), zs_body_noise(q / (cell * 0.9) + vec2(8.1, 0.7))) - 0.5) * 0.45;
+	q += bent * cell * 2.2 * foam_lace.z;
+	float hold = 1.0 - smoothstep(cell * 0.06, cell * 0.3, footprint);
+	float hold_fine = 1.0 - smoothstep(cell * 0.025, cell * 0.12, footprint);
+	// Marbled veins: the ridges of a bent noise at two sizes.
+	float big = 1.0 - abs(2.0 * zs_body_noise(q / cell) - 1.0);
+	float small = 1.0 - abs(2.0 * zs_body_noise(q / (cell * 0.4) + vec2(3.1, 8.7)) - 1.0);
+	vec2 turned = vec2(q.x * 0.6 - q.y * 0.8, q.x * 0.8 + q.y * 0.6);
+	float mid = 1.0 - abs(2.0 * zs_body_noise(turned / (cell * 0.62) + vec2(6.2, 1.4)) - 1.0);
+	big *= big; big *= big;
+	small *= small; small *= small;
+	mid *= mid; mid *= mid;
+	float grain = zs_body_noise(q / (cell * 0.16) + vec2(1.9, 4.4));
+	// Crossing ridges close into a net.
+	float veins = max(max(big, mid * 0.92), small * 0.85 * hold_fine) * (0.85 + 0.15 * grain);
+	float open = clamp(1.0 - youth, 0.0, 1.0);
+	open = open * open * (3.0 - 2.0 * open);
+	// Young foam fills in solid (a little grain at its edge); as it ages
+	// only the veins stay, thinner as it fades.
+	float net = mix(0.55 + 0.45 * grain, veins, open);
+	float want = mix(0.85, 0.2 + 0.4 * foam_lace.y * density, open);
+	want *= smoothstep(0.0, 0.6, density);
+	float soft = mix(0.32, 0.2, open);
+	float covered = smoothstep(1.0 - want - soft * 0.5, 1.0 - want + soft * 0.5, net);
+	// Finer than the pixel: the share of it the lace would cover.
+	float mean = want * mix(1.0, 0.45, open);
+	covered = mix(mean, covered, hold * 0.75 + hold_fine * 0.25);
+	// Between the veins a thin milky film, the foam spreading out.
+	float film = density * open * (0.4 + 0.6 * grain) * 0.45 * foam_lace.y;
+	covered = max(covered, film * smoothstep(0.0, 0.3, density));
+	return covered * mix(0.45, 1.0, youth) * (0.45 + 0.55 * density) * smoothstep(0.0, 0.3, density);
+}
+
 void vertex() {
 	vec3 world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	rest_xz = world.xz;
@@ -626,7 +761,8 @@ void vertex() {
 		cell = max(1.0, reach / 32.0);
 		near = 1.0 - smoothstep(body_reach.x, body_reach.y, reach);
 		float jac, caps;
-		zs_swell_body(world.xz, zs_flow_time, cell * 0.6, false, shift, jac, rough, caps);
+		vec2 trail;
+		zs_swell_body(world.xz, zs_flow_time, cell * 0.6, false, 0.0, shift, jac, rough, caps, trail);
 	} else {
 		zs_swell(world.xz, zs_flow_time, cell, shift, crest, rough);
 	}
@@ -645,8 +781,19 @@ void fragment() {
 	float crest, swell_rough, chop_rough;
 	float jac = 1.0, caps = 0.0;
 	vec2 slope;
+	// The foam buffer's reach (sea_foam 1): inside it the trail is read
+	// from it, past it worked out per crest, cross-faded over its rim.
+	vec2 trail = vec2(0.0);
+	vec4 held = vec4(0.0);
+	float in_buffer = 0.0;
+	if (sea_foam > 0 && foam_at.w > 0.5) {
+		vec2 rel = rest_xz - foam_at.xy;
+		vec2 rim = min(rel, vec2(foam_at.z) - rel);
+		in_buffer = smoothstep(6.0, 40.0, min(rim.x, rim.y)) * float(debug_view != 7);
+		if (in_buffer > 0.0) held = foam_side == 0 ? textureLod(foam_buffer, rest_xz / foam_at.z, 0.0) : textureLod(foam_buffer_b, rest_xz / foam_at.z, 0.0);
+	}
 	if (sea_body > 0) {
-		slope = zs_swell_body(rest_xz, t, footprint, true, shift, jac, swell_rough, caps);
+		slope = zs_swell_body(rest_xz, t, footprint, true, 1.0 - in_buffer, shift, jac, swell_rough, caps, trail);
 		crest = 0.0;
 	} else {
 		slope = zs_swell(rest_xz, t, footprint, shift, crest, swell_rough);
@@ -736,7 +883,19 @@ void fragment() {
 	float crested = smoothstep(0.12, 0.2, crest + detail.x * 0.15) * crest_foam * smoothstep(8.0, 20.0, water_depth) * (0.5 + 0.5 * paw) * min(zs_wind_strength * 1.3, 1.0);
 	float cover = max(shore, crested * 0.55);
 	// The whitecaps, out on the open sea.
-	if (sea_body > 0) {
+	// sea_foam 1: the fresh cap and the trail it leaves, as lace.
+	float lace_density = 0.0, lace_youth = 0.0, churned = 0.0, wake_laid = 0.0;
+	if (sea_body > 0 && sea_foam > 0) {
+		float open_sea = smoothstep(4.0, 12.0, water_depth);
+		caps *= open_sea;
+		vec2 left = mix(trail, held.rg, in_buffer) * open_sea;
+		lace_density = max(left.x, caps);
+		lace_youth = max(left.y, min(caps * 1.5, 1.0));
+		churned = max(mix(left.x * 0.7, held.b, in_buffer) * open_sea, caps);
+		wake_laid = held.a * in_buffer * wake;
+		// The churned water round them, lighter and greener.
+		water = mix(water, mix(tint_mid, sss_color, 0.25) * zs_palette_water * light * 1.15, smoothstep(0.02, 0.6, churned) * 0.12 * foam_lace.w);
+	} else if (sea_body > 0) {
 		float open_sea = smoothstep(4.0, 12.0, water_depth);
 		caps *= open_sea;
 		cover = max(cover, caps);
@@ -746,16 +905,24 @@ void fragment() {
 	float foamed = zs_foam_pattern(rest_xz, t, cover, footprint) * foam;
 	// Whitecaps: the same breakup but softer-edged, so they read as foam and
 	// not as cut paper.
-	if (sea_body > 0 && caps > shore) foamed = mix(foamed, mix(zs_foam_soft(rest_xz, t, caps, footprint), caps * 0.75, smoothstep(0.1, 0.45, footprint)) * foam, smoothstep(0.0, 0.05, caps - shore));
+	if (sea_body > 0 && sea_foam == 0 && caps > shore) foamed = mix(foamed, mix(zs_foam_soft(rest_xz, t, caps, footprint), caps * 0.75, smoothstep(0.1, 0.45, footprint)) * foam, smoothstep(0.0, 0.05, caps - shore));
 	// The wake's foam: lines broken softly rather than into islands.
 	float fleck = zs_noise(rest_xz * 0.9 + vec2(t * 0.3, 0.0)) * 0.6 + zs_noise(rest_xz * 2.6 - vec2(0.0, t * 0.4)) * 0.4;
 	foamed = max(foamed, (smoothstep(0.2, 0.55, waked * (0.15 + 1.3 * fleck)) * 0.9 + smoothstep(0.4, 0.85, fleck) * stirred * 0.18) * foam);
 	cover = max(cover, waked);
 	// Far off the pattern is finer than a pixel: an even wash instead.
 	foamed = mix(foamed, cover * 0.6 * foam, smoothstep(0.15, 0.8, footprint));
+	if (sea_foam > 0) {
+		// The wake's foam left in the buffer joins in as foam already old.
+		float wake_youth = clamp(wake_laid * 1.2 - 0.4, 0.0, 0.6);
+		float laced = zs_foam_lace(rest_xz, max(lace_density, wake_laid * 0.9), lace_density >= wake_laid * 0.9 ? lace_youth : wake_youth, footprint);
+		foamed = max(foamed, laced * foam);
+	}
 	foamed = clamp(foamed, 0.0, 1.0) * float(depth > 0.0 || known > 0.0 || waked > 0.0);
 	float lip = (1.0 - smoothstep(0.0, 0.15, bed_depth)) * float(depth > 0.0);
 	vec3 white = vec3(0.9, 0.96, 1.0) * (ambient * 1.1 + key * 0.8);
+	// Fresh foam stands up a little: brighter, and lit by its own slope.
+	if (sea_foam > 0) white *= 1.0 + 0.1 * lace_youth + 0.18 * clamp(dot(normal, zs_key_direction), -0.5, 1.0) * float(lace_density > 0.0);
 	water = mix(water, white, foamed * 0.92);
 	water += tint_shallow * (ambient + key) * lip * 0.4;
 
@@ -891,6 +1058,7 @@ void fragment() {
 	if (debug_view == 4) display_color = reflection * mirror_weight;
 	if (debug_view == 5) display_color = vec3(glow, lift * 0.5, (1.0 - jac) * 2.0);
 	if (debug_view == 2) display_color = vec3(cover, foamed, waked);
+	if (debug_view == 6) display_color = vec3(lace_density, lace_youth, in_buffer * 0.5 + churned * 0.5);
 	ALBEDO = scene_linear_for_display(clamp(display_color, vec3(0.0), vec3(1.0)));
 	ALPHA = depth > 0.0 ? smoothstep(0.0, 0.05, bed_depth) : 1.0;
 }
