@@ -95,6 +95,9 @@ const FAR_GROW := Vector2(2.0,1.8)
 ## the old grass). Height only: the near FINE tuft's mesh, the far ring's
 ## sizes (FAR_NEAR/FAR_GROW tall) and the near sway's arm scale with it.
 const TALL := 4.0
+## The flowers' stem lift as a share of the grass's growth (x..y, by a hash
+## of where each stands): 1.0 stands level with the extra grass.
+const FLOWER_LIFT := Vector2(0.8,1.3)
 ## A far tuft's size (wide, tall) where it comes up (LOD.x..y): the near
 ## tuft's look there (as tall; wider, its tufts fewer).
 const FAR_NEAR := Vector2(1.5,1.0)
@@ -316,6 +319,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	near_layer.share = 0.0
 	near_layer.site.flowers = flowers
 	near_layer.site.patches = patches
+	near_layer.site.flower_tall = tall
 	far_layer.far = true
 	far_layer.site = site.duplicate()
 	far_layer.site.tufts = FAR_TUFTS*share
@@ -781,7 +785,7 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	var flowers: bool = site_values.get("flowers",true) and far_share < 1.0
 	var patches: float = site_values.get("patches",1.0)
 	for k: String in site_values:
-		if not k in ["flowers","patches"]: site.set(k,site_values[k])
+		if not k in ["flowers","patches","flower_tall"]: site.set(k,site_values[k])
 	site.plain = true
 	site.probe = probe
 	# The drifts (Patch `bloom`) read off a TINT_STEP m grid of the cell,
@@ -813,6 +817,12 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 			if float(hash(Vector2i(roundi(p.x*53.0),roundi(p.y*53.0)))%10007)/10007.0 < BLOOM_COMPANION: return []
 			var k: Array = Patch.KINDS[int(b.y)]
 			return [k[0],k[1]]
+	# The flowers stand above the taller grass (a little height variety).
+	var lift_by: float = site_values.get("flower_tall",1.0)
+	if not is_equal_approx(lift_by,1.0):
+		site.flower_lift = func(p: Vector2) -> float:
+			var h := float(hash(Vector2i(roundi(p.x*31.0),roundi(p.y*31.0)))%10007)/10007.0
+			return 1.0+(lift_by-1.0)*(FLOWER_LIFT.x+(FLOWER_LIFT.y-FLOWER_LIFT.x)*h)
 	site.box = Rect2(x0,z0,CELL,CELL)
 	site.rim = 0.0
 	site.lod = rings

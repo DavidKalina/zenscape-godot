@@ -273,12 +273,14 @@ static func wash_of(kind: String, variant: float) -> String:
 ## kind's own height) turned `angle`: [record size, pose]. The kit's mesh
 ## takes the size as it is; a stand-in is stretched to the kind's height and
 ## head width, and its record size is the head's stretch.
-static func form(kind: String, size: float, angle: float) -> Array:
-	if not standing_in(kind): return [size,{}]
+static func form(kind: String, size: float, angle: float, lift := 1.0) -> Array:
+	if not standing_in(kind):
+		if is_equal_approx(lift,1.0): return [size,{}]
+		return [size,NativeObjectPose.make(Basis(Vector3.UP,angle)*Basis.from_scale(Vector3(size,size*lift,size)),0.0)]
 	var entry: Dictionary = FLOWER_KEYS[kind]
 	var stand_in: Array = FALLBACK_FORMS[entry.fallback]
 	var across := size*float(entry.head)/float(stand_in[1])
-	var up := size*float(entry.height)/float(stand_in[0])
+	var up := size*float(entry.height)/float(stand_in[0])*lift
 	var basis := Basis(Vector3.UP,angle)*Basis.from_scale(Vector3(across,up,across))
 	return [clampf(across,0.1,5.0),NativeObjectPose.make(basis,0.0)]
 

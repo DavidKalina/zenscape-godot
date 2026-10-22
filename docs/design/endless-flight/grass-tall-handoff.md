@@ -10,3 +10,13 @@ Not scaled: `--grass-fine=0` (isle tuft) near ring; flowers (partly hidden in th
 at meadow height; from cruise they read as before); the painted ground (no retune needed).
 Stills: captures/grass-tall/{low,alt14,alt70}_t{1,2}.png, `--seed=1 --at=1640,580 --heading=0`.
 Smoke passes at 2 and 1. No frame-time change measured (same triangle count).
+
+## Flowers stand above the tall grass
+Flower stems follow `tall`: each near flower is stretched in Y by `1+(tall-1)*k`, k from
+`FLOWER_LIFT` (0.8..1.3, a hash of its spot, so a drift is not a flat lid); `--grass-tall=1` is
+exactly the old flowers. Heads stretch with the stem (not separately resized); they read fine.
+Opt-in shared hooks: `KitFlora.Site.flower_lift` (callable, none by default) and a `lift`
+argument on `MeadowTypes.form` (default 1.0); isles and motifs build as before (bell_spires and
+editor_hill smoked). The far flowered tufts and painted dots were not changed (they already
+follow the tall grass; no pop seen at alt 14). The sway arm grows with the stem through the instance scale.
+Stills: captures/grass-tall/flowers_{before,after}_alt{3,14,70}.png (`--seed=1 --at=1640,580 --heading=0`).

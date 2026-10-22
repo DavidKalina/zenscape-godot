@@ -157,6 +157,9 @@ class Site extends RefCounted:
 	var flower_kind := Callable()
 	## Opt-in: flower candidates a square metre (zero: FLOWER_TRIES).
 	var flower_tries := 0.0
+	## Opt-in: (p) -> how many times taller the flower at p stands (its
+	## stem and head together); none: as before.
+	var flower_lift := Callable()
 	## Opt-in: Grow's draw gives its batches as plain data (`Grow.parts`:
 	## key, tile, count, buffer), no nodes or materials made, so it can run
 	## on a worker; `batch_node` stands one on the main thread.
@@ -573,7 +576,8 @@ class Grow extends RefCounted:
 			if _rng.randf() > maxf(keep,STRAY): continue
 			if _site.worn(p) > PATH_THIN or _edges.upto(p) < RIM+0.3: continue
 			var range_of: Array = sizes.get(kind,[0.85,1.1])
-			var formed: Array = MeadowTypes.form(kind,_rng.randf_range(float(range_of[0]),float(range_of[1])),_rng.randf()*TAU)
+			var lift := float(_site.flower_lift.call(p)) if _site.flower_lift.is_valid() else 1.0
+			var formed: Array = MeadowTypes.form(kind,_rng.randf_range(float(range_of[0]),float(range_of[1])),_rng.randf()*TAU,lift)
 			var extra := {}
 			var tint := MeadowTypes.tint(kind,variant if variant >= 0.0 else _meadow.variant(p))
 			if tint != "": extra.tint = tint
