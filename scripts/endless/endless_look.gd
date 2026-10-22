@@ -15,8 +15,10 @@ extends Node3D
 ##                  in it looking toward the sun.
 ##   shadows        the sun's, in four splits out to SHADOW_REACH m.
 ##   ground         shaders/endless_ground.gdshader on every chunk.
-##   sea            shaders/sky_ocean.gdshader (the plane-height sea) on
-##                  SkyBelow's ringed sheet, following the eye.
+##   sea            shaders/endless_sea.gdshader (scripts/endless/
+##                  endless_sea.gd: depth-coloured, mirrored, foam and the
+##                  plane's wake; --water=old: shaders/sky_ocean.gdshader)
+##                  on SkyBelow's ringed sheet, following the eye.
 ##   wind           the shared wind globals (zs_wind_*, zs_gust_distance)
 ##                  the grass sheen and the sea's chop ride.
 ##
@@ -34,6 +36,7 @@ const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://studies/celestial.gd")
 const SkyBelow = preload("res://scripts/sky_below.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
+const EndlessSea = preload("res://scripts/endless/endless_sea.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Presets = preload("res://scripts/scene_look_presets.gd")
 const EndlessClouds = preload("res://scripts/endless/endless_clouds.gd")
@@ -87,6 +90,12 @@ var celestial: RefCounted
 var environment: Environment
 var sun: DirectionalLight3D
 var sea: MeshInstance3D
+## The sea's material and its feeds (scripts/endless/endless_sea.gd), or
+## null under --water=old.
+var water: EndlessSea
+## The plane now, for the sea's wake (set each frame before `step`).
+var plane_at := Vector3(0.0,1.0e4,0.0)
+var _land_seed := 0
 var ground: ShaderMaterial
 var _time := 0.0
 var _gust := 0.0
@@ -107,6 +116,7 @@ static func wanted() -> bool:
 
 func setup(land_seed: int) -> void:
 	name = "Look"
+	_land_seed = land_seed
 	var hour := -1.0
 	var day := false
 	for a: String in LaunchArgs.user_args():
@@ -205,6 +215,24 @@ func _exposure() -> void:
 	RenderingServer.global_shader_parameter_set("zs_exposure",exposure)
 
 func _build_sea() -> void:
+	sea = MeshInstance3D.new()
+	sea.name = "Sea"
+	sea.mesh = SkyBelow._sheet()
+	sea.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sea.extra_cull_margin = 16384.0
+	sea.position.y = Field.SEA_Y
+	add_child(sea)
+	if EndlessSea.wanted():
+		water = EndlessSea.new(_land_seed)
+		water.set_wind(_wind_angle)
+		if EndlessSea.body_wanted(): sea.mesh = EndlessSea.sheet()
+		water.material.render_priority = SEA_PRIORITY
+		sea.material_override = water.material
+		return
+	_build_old_sea()
+
+## The earlier sea (--water=old): the lower world's ocean shader.
+func _build_old_sea() -> void:
 	var water := ShaderMaterial.new()
 	water.shader = preload("res://shaders/sky_ocean.gdshader")
 	# The open sky mirrored, not the lower world's overcast.
@@ -219,14 +247,7 @@ func _build_sea() -> void:
 	water.render_priority = SEA_PRIORITY
 	# The clouds' shadows on the water (none drawn without the clouds).
 	water.set_shader_parameter("cloud_shade",1.0)
-	sea = MeshInstance3D.new()
-	sea.name = "Sea"
-	sea.mesh = SkyBelow._sheet()
 	sea.material_override = water
-	sea.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	sea.extra_cull_margin = 16384.0
-	sea.position.y = Field.SEA_Y
-	add_child(sea)
 
 ## One frame: the hour, the wind and the clocks the shaders read, the sea
 ## under the eye, then the clouds round `view` (the camera that draws).
@@ -237,6 +258,7 @@ func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D 
 	ground.set_shader_parameter("night_grade",celestial.night_grade)
 	RenderingServer.global_shader_parameter_set("zs_camera_position",eye)
 	sea.position = Vector3(snappedf(eye.x,64.0),Field.SEA_Y,snappedf(eye.z,64.0))
+	if water != null: water.step(delta,eye,plane_at)
 	if clouds != null: clouds.step(delta,view,wind_direction,_time)
 
 func _publish(delta: float) -> void:
@@ -305,3 +327,6 @@ func next_hour() -> void:
 ## The hour now (0..24).
 func hour() -> float:
 	return fposmod(float(celestial.phase),1.0)*24.0
+
+func _exit_tree() -> void:
+	if water != null: water.finish()

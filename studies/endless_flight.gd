@@ -316,7 +316,13 @@ func floor_at(p: Vector2) -> float:
 
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
-	return p.y < maxf(field.height(p.x,p.z),Field.SEA_Y)+EYE_CLEAR*0.5 or arches.inside(p)
+	return p.y < maxf(field.height(p.x,p.z),Field.SEA_Y+sea_height(p))+EYE_CLEAR*0.5 or arches.inside(p)
+
+## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
+## the flat sea), looked up only near the water.
+func sea_height(p: Vector3) -> float:
+	if look == null or look.water == null or p.y > Field.SEA_Y+12.0: return 0.0
+	return look.water.height_at(p.x,p.z)
 
 ## The share of the way from `from` to `to` clear of the land (GlideCamera
 ## `sight`), marched over the field.
@@ -337,6 +343,8 @@ func _process(delta: float) -> void:
 func tick(delta: float) -> void:
 	flown += delta
 	var input := _fly_input(delta)
+	# The plane skims the swell as drawn, not the sea's rest level.
+	plane.water = Field.SEA_Y+sea_height(plane.position)
 	input["flaps"] = 1.0 if flaps else 0.0
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(arches,"inside"))
@@ -355,6 +363,7 @@ func tick(delta: float) -> void:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera
 		grass.step(eye.global_position,-eye.global_basis.z)
+	if look != null: look.plane_at = plane.position
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
 	_show_hud()
