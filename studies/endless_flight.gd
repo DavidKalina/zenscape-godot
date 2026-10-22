@@ -331,7 +331,7 @@ func floor_at(p: Vector2) -> float:
 ## Whether the field's last sample was on a river's water (not the sea's
 ## mouth, which the sea takes).
 func _on_river() -> bool:
-	return field.last_river < 0.0 and field.last_river_y > Field.SEA_Y+0.05
+	return field.last_river < 0.0 and field.river_drawn() > Field.SEA_Y+0.05
 
 ## The water under a point: the sea's swell, or a river's level over it.
 func water_at(p: Vector3) -> float:
@@ -342,14 +342,15 @@ func water_at(p: Vector3) -> float:
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
 	var h: float = field.height(p.x,p.z)
-	if _on_river(): h = maxf(h,field.last_river_y)
+	if _on_river(): h = maxf(h,field.river_drawn())
 	return p.y < maxf(h,Field.SEA_Y+sea_height(p))+EYE_CLEAR*0.5 or arches.inside(p)
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
 func sea_height(p: Vector3) -> float:
 	if look == null or look.water == null or p.y > Field.SEA_Y+12.0: return 0.0
-	return look.water.height_at(p.x,p.z)
+	# Up a river's mouth the sea lies still, as the sea shader draws it.
+	return look.water.height_at(p.x,p.z)*(1.0-field.sea_calm(p.x,p.z))
 
 ## The share of the way from `from` to `to` clear of the land (GlideCamera
 ## `sight`), marched over the field.

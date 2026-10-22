@@ -354,7 +354,9 @@ func _take() -> void:
 	depth_at = _next
 	material.set_shader_parameter("depth_at",depth_at)
 
-## The land's height (world y) per texel over the square at `corner`.
+## The land's height (world y) per texel over the square at `corner` (red),
+## and how still the sea lies there (green: 1 up a river's mouth, LandField
+## `calm_here`; the shader stills the swell there).
 static func depth_image(seed_value: int, corner: Vector2) -> Image:
 	var field := Field.new(seed_value)
 	var n := DEPTH_TEXELS
@@ -362,11 +364,13 @@ static func depth_image(seed_value: int, corner: Vector2) -> Image:
 	# A map this coarse takes the land's carve at its own texel (land_field.gd).
 	field.detail = texel
 	var data := PackedFloat32Array()
-	data.resize(n*n)
+	data.resize(n*n*2)
 	for j in n:
 		for i in n:
-			data[j*n+i] = field.height(corner.x+(i+0.5)*texel,corner.y+(j+0.5)*texel)
-	return Image.create_from_data(n,n,false,Image.FORMAT_RF,data.to_byte_array())
+			var k := (j*n+i)*2
+			data[k] = field.height(corner.x+(i+0.5)*texel,corner.y+(j+0.5)*texel)
+			data[k+1] = field.calm_here()
+	return Image.create_from_data(n,n,false,Image.FORMAT_RGF,data.to_byte_array())
 
 func _wake(plane: Vector3) -> void:
 	var low := 1.0-smoothstep(WAKE_LOW,WAKE_HIGH,plane.y-Field.SEA_Y-height_at(plane.x,plane.z))

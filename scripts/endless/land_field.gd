@@ -190,6 +190,22 @@ const RIVER_INLAND := 0.3
 const RIVER_CUT_SIDE := 0.5
 ## A hollow under the floor is filled out to this far past it (m).
 const RIVER_FILL_SIDE := 110.0
+## The mouth (river-mouths-handoff.md): over the last RIVER_MOUTH_RISE m of
+## its fall to the sea the river opens out to 1+RIVER_FLARE times its width
+## (wider the nearer the sea, a funnel), its bed deepens by RIVER_MOUTH_DEEP
+## m (so the sea fills the channel past the drawn water, troughs and all),
+## its current slows as it widens, and its level eases into the sea's over
+## RIVER_MOUTH_EASE m (it meets it flat, not on a slope). In its channel the
+## sea's swell is stilled (`sea_calm`, the sea's depth map's green).
+## --river-mouth=0 the mouths as before.
+const RIVER_MOUTH_RISE := 5.0
+const RIVER_FLARE := 1.4
+const RIVER_MOUTH_DEEP := 3.6
+const RIVER_MOUTH_EASE := 1.2
+## The ground shader draws the water sinking under the sea's over the last
+## RIVER_MOUTH_SINK m of its level (by its bed's depth at the sea), so it
+## meets the sea with no step; `river_drawn` mirrors it for the flight.
+const RIVER_MOUTH_SINK := 1.5
 
 const SAND := Color(0.80,0.74,0.56)
 const SEABED := Color(0.42,0.46,0.40)
@@ -275,6 +291,11 @@ var river_drop := 1.0
 ## they were), for the flats check (scratch) and --river-cut= / --river-fill=.
 var river_cut := 1.0
 var river_fill := 1.0
+## The mouths' opening out, deepening and easing (RIVER_MOUTH_*; 1 on, 0 the
+## mouths as before, between a share of it: --river-mouth=X), and the
+## funnel's width (RIVER_FLARE times --river-flare=X, 1).
+var river_mouth := 1.0
+var river_flare := 1.0
 ## What the last `sample` found of the river (read by land_stream for the
 ## ground shader, the grass, the arches and the flight): the signed
 ## distance from the river's middle line (m, INF where no river reaches),
@@ -289,6 +310,10 @@ var last_river_flow := Vector2.ZERO
 # The river's bank top (world y) and its strength, for the cut in `sample`.
 var _river_top := -INF
 var _river_k := 0.0
+# The mouth's share (0 upstream, 1 at the sea) and the bed's depth under
+# the water at the middle (RIVER_BED, more at a mouth), for `_river`.
+var _river_mouth := 0.0
+var _river_bed := RIVER_BED
 var _river_side := FastNoiseLite.new()
 var _river_meander := FastNoiseLite.new()
 var _river_wide := FastNoiseLite.new()
@@ -311,6 +336,8 @@ func _init(land_seed := 0) -> void:
 		elif arg.begins_with("--river-drop="): river_drop = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--river-cut="): river_cut = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--river-fill="): river_fill = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--river-mouth="): river_mouth = clampf(float(arg.get_slice("=",1)),0.0,1.0)
+		elif arg.begins_with("--river-flare="): river_flare = maxf(0.0,float(arg.get_slice("=",1)))
 	_noise(_continent,1,CONTINENT,3,FastNoiseLite.FRACTAL_FBM)
 	_noise(_hills,2,HILLS,4,FastNoiseLite.FRACTAL_FBM)
 	_noise(_mask,3,MOUNTAINS if old_land else RANGE_MASK,2,FastNoiseLite.FRACTAL_FBM)
@@ -355,6 +382,8 @@ func sample(x: float, z: float) -> Vector2:
 	var rf := last_river_flow
 	var rtop := _river_top
 	var rk := _river_k
+	var rm := _river_mouth
+	var rb := _river_bed
 	if carve > 0.0 and last_mountain > CARVE_MOUNTAIN.x and detail < CARVE_DETAIL_OFF:
 		# The carve samples the broad land around; `shape` keeps this point's.
 		var k_mountain := last_mountain
@@ -376,6 +405,8 @@ func sample(x: float, z: float) -> Vector2:
 	last_river_flow = rf
 	_river_top = rtop
 	_river_k = rk
+	_river_mouth = rm
+	_river_bed = rb
 	last_river = INF
 	if rk > 0.0:
 		var reach := rw+RIVER_BANK+RIVER_RAMP+(RIVER_PLAIN.y*RIVER_PLAIN_SPREAD if last_inland < 0.95 else 0.0)
@@ -420,8 +451,9 @@ func _river(h: float) -> float:
 	# up (steeper) where higher land stands by the river.
 	var cut: float
 	if s < w:
+		# At a mouth the bed is deeper and flatter across (the sea fills it).
 		var u := s/w
-		cut = water-RIVER_BED*(1.0-u*u)
+		cut = water-_river_bed*(1.0-pow(u,2.0+2.0*_river_mouth))
 	elif s < core:
 		var u := (s-w)/RIVER_BANK
 		cut = water+drop*u*u*(3.0-2.0*u)
@@ -477,6 +509,8 @@ func _broad(x: float, z: float) -> Vector2:
 	last_river_flow = Vector2.ZERO
 	_river_top = -INF
 	_river_k = 0.0
+	_river_mouth = 0.0
+	_river_bed = RIVER_BED
 	if inland > 0.0 and valleys > 0.0:
 		var vx := x+_valley_warp.get_noise_2d(x,z)*VALLEY_WARP_MOVE
 		var vz := z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*VALLEY_WARP_MOVE
@@ -519,14 +553,19 @@ func _broad(x: float, z: float) -> Vector2:
 					# width and the level, so a coarse chunk's triangles
 					# spanning out to here still draw the river where it is.
 					last_river_r = ds-off
-					last_river_w = (RIVER_WIDTH.x+RIVER_WIDTH.y)*0.25*river_width*k
-					last_river_y = SEA_Y+maxf(base-RIVER_DROP.y*river_drop,0.0)
+					var mean_mouth := _mouth(base-RIVER_DROP.y*river_drop)
+					last_river_w = (RIVER_WIDTH.x+RIVER_WIDTH.y)*0.25*river_width*k*(1.0+RIVER_FLARE*river_flare*mean_mouth*mean_mouth*minf(river_mouth,1.0))
+					last_river_y = SEA_Y+_mouth_level(base-RIVER_DROP.y*river_drop)
 				else:
 					var wide := clampf(_river_wide.get_noise_2d(x,z)*0.9+0.5,0.0,1.0)
 					# Plus a closer swell and pinch, so no stretch runs even.
 					var pinch := 1.0+RIVER_PINCH*_river_wide.get_noise_2d(x*RIVER_WIDE/RIVER_PINCH_SIZE+911.0,z*RIVER_WIDE/RIVER_PINCH_SIZE-377.0)
 					var w := lerpf(RIVER_WIDTH.x,RIVER_WIDTH.y,wide)*river_width*0.5*k*pinch
 					var drop := lerpf(RIVER_DROP.x,RIVER_DROP.y,wide)*river_drop
+					# Near the sea it opens out (a funnel, widest at the sea).
+					var mouth := _mouth(base-drop)
+					var flare := 1.0+RIVER_FLARE*river_flare*mouth*mouth*minf(river_mouth,1.0)
+					w *= flare
 					# The floor is laid out in the warped noise's units (`d`); the
 					# river's width is held in the world's: the world's slope of
 					# the noise gives the scale between them (the warp's
@@ -545,7 +584,7 @@ func _broad(x: float, z: float) -> Vector2:
 					var s := absf(r)
 					# The level: the lowland's under the valley, never under the sea.
 					var top := maxf(base,MEADOW_ABOVE)
-					var water := maxf(base-drop,0.0)
+					var water := _mouth_level(base-drop)
 					# By the river the floor is the banks' top (the hills' bumps out).
 					var near := (1.0-smoothstep(w+RIVER_BANK,w+RIVER_BANK+RIVER_RAMP,s))*k
 					floor_y = lerpf(floor_y,top,near)
@@ -554,11 +593,13 @@ func _broad(x: float, z: float) -> Vector2:
 					last_river_y = SEA_Y+water
 					_river_top = SEA_Y+top
 					_river_k = k
+					_river_mouth = mouth
+					_river_bed = RIVER_BED+RIVER_MOUTH_DEEP*mouth*minf(river_mouth,1.0)
 					if s < w+RIVER_BANK+16.0 and water > 0.0:
 						# The flow: downhill along the valley, as fast as the
 						# level falls.
 						var fall := (_lowland(x-along.x*30.0,z-along.y*30.0)-_lowland(x+along.x*30.0,z+along.y*30.0))/60.0
-						var speed := RIVER_FLOW.x+sqrt(absf(fall))*RIVER_FLOW.y
+						var speed := (RIVER_FLOW.x+sqrt(absf(fall))*RIVER_FLOW.y)/flare
 						last_river_flow = along*clampf(fall/RIVER_STILL,-1.0,1.0)*speed
 			_floor = SEA_Y+floor_y
 			last_floor = _floor
@@ -589,6 +630,22 @@ func _broad(x: float, z: float) -> Vector2:
 	if absf(h) < BEACH*2.0: h = h*lerpf(0.45,1.0,smoothstep(0.0,BEACH*2.0,absf(h)))
 	last_mountain = mountain
 	return Vector2(SEA_Y+h,meadow)
+
+## How far into its mouth a river is whose level, unclamped, stands `lv` m
+## over the sea: 0 upstream, 1 at the sea and past it (RIVER_MOUTH_RISE).
+func _mouth(lv: float) -> float:
+	if river_mouth <= 0.0: return 0.0
+	return 1.0-smoothstep(0.0,RIVER_MOUTH_RISE,lv)
+
+## A river's level (m over the sea) from its unclamped `lv`: never under
+## the sea, and at a mouth easing into it flat (RIVER_MOUTH_EASE; a soft
+## floor, the same as `maxf(lv,0)` past the ease either side).
+func _mouth_level(lv: float) -> float:
+	if river_mouth <= 0.0: return maxf(lv,0.0)
+	var e := RIVER_MOUTH_EASE
+	if lv >= e: return lv
+	if lv <= -e: return 0.0
+	return (lv+e)*(lv+e)/(4.0*e)
 
 ## The continents' level (m over the sea) at a point, as `_broad` starts.
 func _lowland(x: float, z: float) -> float:
@@ -833,8 +890,28 @@ func shape(x: float, z: float) -> Dictionary:
 ## else NAN (the sea is not a river: the estuary's level is the sea's).
 func river_y(x: float, z: float) -> float:
 	sample(x,z)
-	if last_river < 0.0 and last_river_y > SEA_Y+0.05: return last_river_y
+	if last_river < 0.0 and river_drawn() > SEA_Y+0.05: return river_drawn()
 	return NAN
+
+## The river's water as the ground shader draws it, from the last `sample`
+## (world y): its level, sunk under the sea's at a mouth (RIVER_MOUTH_SINK).
+func river_drawn() -> float:
+	if river_mouth <= 0.0 or last_river_y == -INF: return last_river_y
+	var over := last_river_y-SEA_Y
+	return last_river_y-(RIVER_BED+RIVER_MOUTH_DEEP)*minf(river_mouth,1.0)*(1.0-smoothstep(0.0,RIVER_MOUTH_SINK,over))
+
+## How still the sea's swell lies at the point the last `sample` read: 1 in
+## a river's channel and just past its edge (the sea reaching up a mouth
+## lies calm there), 0 off it or with --river-mouth=0. The sea's depth map
+## carries it (EndlessSea), and the flight's skim reads it (`sea_calm`).
+func calm_here() -> float:
+	if river_mouth <= 0.0 or rivers <= 0.0 or last_river_w <= 0.0: return 0.0
+	return smoothstep(0.5,3.0,last_river_w)*(1.0-smoothstep(2.0,12.0,last_river))
+
+## `calm_here` at a world XZ point.
+func sea_calm(x: float, z: float) -> float:
+	sample(x,z)
+	return calm_here()
 
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:
