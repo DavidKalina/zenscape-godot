@@ -108,6 +108,25 @@ var clouds: Node3D
 ## The wind's heading over the ground now (unit xz).
 var wind_direction := Vector2.RIGHT
 
+## The season and weather shader globals a title world, isle or study may
+## have left set (the isle publishes the real date's autumn, its snow, wet
+## and haze); shader globals outlive a scene change. Endless flight never
+## publishes them, so it puts each back to its project.godot value on start:
+## a green land, dry, no frost, the plants and sky in no season.
+const SEASON_GLOBALS := ["zs_season","zs_sky_season","zs_autumn","zs_snow","zs_ice","zs_ground_wet","zs_foliage_wet","zs_storm_grade","zs_storm_thin","zs_haze","zs_surface_post",
+		"zs_palette_grass","zs_palette_foliage","zs_palette_rock","zs_palette_earth","zs_palette_water",
+		"zs_look_ao","zs_look_rim","zs_look_shore","zs_look_bounce","zs_look_fill","zs_night_style"]
+
+static func reset_season_globals() -> void:
+	# The plant materials the isle shares through static caches (SkyIslets,
+	# KitFlora's rings) carry whatever look the isle gave them: made fresh.
+	preload("res://scripts/sky_islets.gd")._plant_materials.clear()
+	preload("res://scripts/kit_isle/kit_flora.gd")._ring_materials.clear()
+	for key in SEASON_GLOBALS:
+		var path := "shader_globals/%s" % key
+		if ProjectSettings.has_setting(path):
+			RenderingServer.global_shader_parameter_set(key,(ProjectSettings.get_setting(path) as Dictionary).get("value"))
+
 ## Whether the full look runs (not --plain-look, not the Compatibility
 ## renderer).
 static func wanted() -> bool:
