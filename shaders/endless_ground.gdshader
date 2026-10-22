@@ -28,6 +28,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/endless_ring.gdshaderinc"
 // The underside the wind flips into view, as the tufts show it.
 #include "res://shaders/grass_silver.gdshaderinc"
+#include "res://shaders/grass_react.gdshaderinc"
 
 // Rock round: the painted rock (shaders/endless_rock.gdshaderinc); true is
 // the earlier smooth banded rock.
@@ -338,6 +339,8 @@ void fragment() {
 			grass = mix(grass, ep_wash(int(bloom.y + 0.5)), clamp(wash, 0.0, 1.0));
 		}
 	}
+	// Stirred by the wash, the walker or a gust (grass_react).
+	grass = zs_react_paint(grass, p.xz, CAMERA_POSITION_WORLD.xz - p.xz, carpet_turf);
 	vec3 albedo = mix(grass, rock, rocky);
 	albedo = mix(albedo, sand, sandy * (1.0 - rocky * 0.5));
 	albedo = mix(albedo, snow, snowy);

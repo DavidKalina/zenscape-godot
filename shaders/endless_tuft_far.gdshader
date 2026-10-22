@@ -27,6 +27,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/endless_ring.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/grass_silver.gdshaderinc"
+#include "res://shaders/grass_react.gdshaderinc"
 
 uniform vec4 grass_ring = vec4(0.0);
 uniform vec4 grass_ring_in = vec4(0.0, 1.0, 1.0, 0.0);
@@ -62,6 +63,8 @@ varying float glance;
 varying vec3 wash;
 varying float washed;
 varying float silver;
+// How stirred its patch is (shaders/grass_react.gdshaderinc).
+varying float react;
 
 void vertex() {
 	vec3 root = MODEL_MATRIX[3].xyz;
@@ -81,6 +84,12 @@ void vertex() {
 	vec2 size = mix(grow_near, grass_ring_grow.zw, smoothstep(grass_ring_grow.x, grass_ring_grow.y, ring_d));
 	VERTEX.xz *= ring_keep * size.x;
 	VERTEX.y *= ring_keep * size.y;
+	// The grass reacting: bent and laid over by the wash, the walker, a gust.
+	react = 0.0;
+	if (zs_react_live() && ring_keep > 0.0) {
+		float react_scale = length(MODEL_MATRIX[1].xyz);
+		VERTEX += zs_react_offset(root.xz, max(VERTEX.y, 0.0) * react_scale, 1.0, MODEL_MATRIX, react_scale, CAMERA_POSITION_WORLD.xz - root.xz, react);
+	}
 	along = clamp(UV.y, 0.0, 1.0);
 	glance = mix(graze_tone, 1.0, smoothstep(graze_angles.x, graze_angles.y, normalize(CAMERA_POSITION_WORLD - MODEL_MATRIX[3].xyz).y));
 	shade = ring_keep > 0.0 ? zs_cloud_volume_shade(MODEL_MATRIX[3].xyz) : 0.0;
@@ -104,6 +113,7 @@ void fragment() {
 	vec3 c = own * mix(root_colour, tip_colour, pow(along, tip_curve)) * glance;
 	c = mix(c, wash * glance, washed * smoothstep(wash_tip.x, wash_tip.y, along));
 	if (grass_silver.x > 0.0) c = zs_silver_paint(c, silver, smoothstep(0.15, 0.85, along), 0.8);
+	c = zs_react_tone(c, react * along);
 	c = mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))) * night_grade.yzw, night_grade.x);
 	ALBEDO = c * (1.0 - shade * cloud_shade);
 	ROUGHNESS = 0.85;
