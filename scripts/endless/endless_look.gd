@@ -182,6 +182,7 @@ func setup(land_seed: int) -> void:
 	ground.set_shader_parameter("beach",Field.BEACH)
 	ground.set_shader_parameter("snow_line",Field.new(land_seed).snow_line())
 	_build_sea()
+	_river_water(land_seed)
 	if EndlessClouds.wanted():
 		clouds = EndlessClouds.new()
 		add_child(clouds)
@@ -237,6 +238,25 @@ func _build_sea() -> void:
 		sea.material_override = water.material
 		return
 	_build_old_sea()
+
+## The rivers' water, painted by the ground shader (rivers-handoff.md):
+## the sea's chop maps and its colours, so a river reads as the same water.
+## Off with the land's rivers (--no-rivers).
+func _river_water(land_seed: int) -> void:
+	var on := Field.new(land_seed).rivers > 0.0
+	ground.set_shader_parameter("river_on",1.0 if on else 0.0)
+	if not on: return
+	if water != null:
+		ground.set_shader_parameter("river_detail_a",water.material.get_shader_parameter("detail_a"))
+		ground.set_shader_parameter("river_detail_b",water.material.get_shader_parameter("detail_b"))
+		for k: String in ["tint_shallow","tint_mid","tint_deep"]:
+			ground.set_shader_parameter("river_"+k,water.material.get_shader_parameter(k))
+	else:
+		ground.set_shader_parameter("river_detail_a",EndlessSea._detail(land_seed,0.022,5))
+		ground.set_shader_parameter("river_detail_b",EndlessSea._detail(land_seed+7,0.035,4))
+	for arg: String in LaunchArgs.user_args():
+		if arg.begins_with("--river-knob="):
+			ground.set_shader_parameter(arg.get_slice("=",1),str_to_var(arg.get_slice("=",2)))
 
 ## The earlier sea (--water=old): the lower world's ocean shader.
 func _build_old_sea() -> void:

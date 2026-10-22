@@ -742,13 +742,18 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	var n := int(CELL)+1+PAD*2
 	var hs := PackedFloat32Array()
 	var ms := PackedFloat32Array()
+	# How far outside a river's water each node is (land_field `last_river`):
+	# no tuft or flower on its bank.
+	var rs := PackedFloat32Array()
 	hs.resize(n*n)
 	ms.resize(n*n)
+	rs.resize(n*n)
 	for j in n:
 		for i in n:
 			var got: Vector2 = f.sample(x0+i-PAD,z0+j-PAD)
 			hs[j*n+i] = got.x
 			ms[j*n+i] = got.y
+			rs[j*n+i] = f.last_river
 	# No turf in it at all (the sea, the peaks): nothing to grow.
 	var any := false
 	for h: float in hs:
@@ -776,6 +781,9 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 		# The slope as the land's normals have it (central differences),
 		# at the nearer node.
 		var c := (j+roundi(fz))*n+i+roundi(fx)
+		# By a river: none on its bank's stones (EndlessPatch.river_bank, as
+		# the ground paints them), a tuft or two leaning out over their edge.
+		if rs[c] < 12.0 and rs[c] < Patch.river_bank(p.x,p.y)*0.85: return NAN
 		var up := 2.0/Vector3(hs[c-1]-hs[c+1],2.0,hs[c-n]-hs[c+n]).length()
 		var keep := smoothstep(SLOPE.x,SLOPE.y,up)*(1.0-smoothstep(HIGH.x,HIGH.y,over))*smoothstep(BEACH_CLEAR,BEACH_CLEAR+BEACH_RAMP,over)
 		if keep <= 0.0: return NAN

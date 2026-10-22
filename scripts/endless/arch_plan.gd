@@ -26,6 +26,7 @@ extends RefCounted
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const Field = preload("res://scripts/endless/land_field.gd")
 
 ## The world cell (m) and the candidate spots tried in each, at density 1.
 const CELL := 480.0
@@ -94,11 +95,27 @@ static func plan(field: RefCounted, cx: int, cz: int, density := 1.0, rock := 1.
 		elif float(s.meadow) > 0.06 and float(s.meadow) < 0.7 and m < 0.1 and v > half+30.0 and float(s.inland) > 0.8:
 			if roll < TAKE.gate*ruin: spec = _gate(field,x,z,sub)
 		if spec.is_empty(): continue
+		if spec.kind != "aqueduct" and _in_river(field,spec): continue
 		spec["name"] = "endless/arch/%d_%d/%d" % [cx,cz,out.size()]
 		spec["seed"] = pick
 		taken.append(Vector2(x,z))
 		out.append(spec)
 	return out
+
+## Whether any of an arch's feet stands in a river or on its bank
+## (land_field `last_river`; its corners and middle tried).
+static func _in_river(field: RefCounted, spec: Dictionary) -> bool:
+	for foot: Array in spec.get("foot",[]):
+		var c: Vector2 = foot[0]
+		var e: Vector2 = foot[1]
+		var yaw := float(foot[2])
+		var ax := Vector2(cos(yaw),-sin(yaw))
+		var az := Vector2(-ax.y,ax.x)
+		for k: Vector2 in [Vector2.ZERO,Vector2(1,1),Vector2(1,-1),Vector2(-1,1),Vector2(-1,-1)]:
+			var p := c+ax*e.x*k.x+az*e.y*k.y
+			field.sample(p.x,p.y)
+			if float(field.last_river) < Field.RIVER_CLEAR: return true
+	return false
 
 ## The level way at a point: the unit XZ direction along which the ground
 ## changes least over `reach` m either side.
@@ -220,6 +237,17 @@ static func _aqueduct(field: RefCounted, x: float, z: float, s: Dictionary, rng:
 	var count := clampi(int(room/span),2,RUN_MOST+1)
 	var head := rng.randf() < 0.6
 	var length := span*count
+	# A river down the floor (land_field `_river`) runs through one of the
+	# run's openings, its piers on the banks: the run slides along its line
+	# so the river is mid-span, or there is none if no opening clears it.
+	var river_w := float(s.get("river_w",0.0))
+	if river_w > 0.0 and absf(float(s.river_r)) < length*0.5+river_w+Field.RIVER_CLEAR:
+		if Aqueduct.CLEAR*grow < river_w*2.0+Field.RIVER_CLEAR: return {}
+		var o := -float(s.river_r)
+		var m := clampi(roundi((o+length*0.5)/span-0.5),0,count-1)
+		var slide := o+length*0.5-(m+0.5)*span
+		x += across.x*slide
+		z += across.y*slide
 	var spec := {"kind":"aqueduct","grow":grow,"count":count,"head":head,"break_at":(rng.randi_range(1,count-1) if rng.randf() < 0.45 else -1),
 		"weathered":rng.randf_range(0.2,0.6),"yaw":_yaw(across),"length":length}
 	spec["pos"] = _level(field,x,z,across,length*0.5,2.8*grow)
