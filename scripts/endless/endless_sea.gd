@@ -66,6 +66,16 @@ func _init(seed_value: int) -> void:
 		material.set_shader_parameter("calm_share",0.9)
 		material.set_shader_parameter("path_share",0.7)
 		material.set_shader_parameter("mirror_calm",0.85)
+		# The motion: --sea-motion=old keeps the rigidly scrolling layers and
+		# four swells (the surface round); the default is the live surface
+		# (crossing swells in groups, chop that rises and fades in place,
+		# peaked wavelets, glitter filtered into a sheen far off).
+		if not "--sea-motion=old" in LaunchArgs.user_args():
+			material.set_shader_parameter("sea_motion",1)
+			material.set_shader_parameter("body_shade",1.0)
+			material.set_shader_parameter("swell",0.75)
+			material.set_shader_parameter("fresnel_floor",0.08)
+			material.set_shader_parameter("fresnel_power",3.5)
 	for a: String in LaunchArgs.user_args():
 		# --sea-set=name:value[;name:value]: a uniform by hand, for tuning.
 		if a.begins_with("--sea-set="):

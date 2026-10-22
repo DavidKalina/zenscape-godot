@@ -43,6 +43,39 @@ uniform vec2 ripple_strength = vec2(0.0, 0.0);
 uniform float calm_share = 0.5;
 uniform float path_share = 0.2;
 
+// The motion (EndlessSea, `--sea-motion=old` sets 0): 0 the rigidly
+// scrolling layers and four Gerstner swells; 1 a live surface:
+// - eight swells in two crossing trains (the second `swell_cross.x` rad off
+//   the first, at `swell_cross.y` of its height), crests sharpened toward
+//   `swell_peak` (1 = a cusp where they all line up), rising and falling
+//   in wave groups (`swell_groups`, 0 = even);
+// - the noise chop cross-faded between two copies that live `flow_cycle` s
+//   each, so its lumps rise and fade as they drift instead of sliding;
+// - packets of peaked wavelets (`wavelet_size` longest..shortest m,
+//   `wavelet_strength`, crest sharpness `wavelet_peak`, headings spread
+//   `wavelet_spread` rad round the wind, each living `wavelet_life` s per
+//   sqrt m of length), crests running at deep-water speed, so they cross,
+//   build and vanish;
+// - the wind over the sea varying in broad patches (`wind_patches`: size m,
+//   contrast) as well as the paws;
+// - what each layer loses to the pixel's footprint widening the sun's
+//   glitter into a soft sheen (`glitter_filter`).
+uniform int sea_motion = 0;
+uniform float swell_peak = 0.8;
+uniform vec2 swell_cross = vec2(1.05, 0.6);
+uniform float swell_groups = 0.9;
+uniform float flow_cycle = 2.6;
+uniform vec2 wavelet_size = vec2(2.5, 0.25);
+uniform float wavelet_strength = 0.25;
+uniform float wavelet_peak = 1.0;
+uniform float wavelet_spread = 1.25;
+uniform float wavelet_life = 1.6;
+uniform vec2 wind_patches = vec2(380.0, 0.35);
+uniform float glitter_filter = 1.0;
+// How much the water's body brightens on slopes toward the sun (and darkens
+// away), so the chop's shape reads where the sky's mirror is faint.
+uniform float body_shade = 0.0;
+
 // The land's height (world y) over a square round the eye: corner xz, side,
 // on (EndlessSea `_depth`).
 uniform sampler2D depth_map : filter_linear, repeat_disable;
@@ -110,10 +143,66 @@ const int SWELLS = 4;
 const float GRAVITY = 9.81;
 const float DEEP = 1.0e4;
 
+// The live swell (sea_motion 1): eight Gerstner waves in two crossing
+// trains, each rising and falling in its own wave groups. The slope is the
+// displaced sheet's (divided by its squeeze), so crests come out peaked and
+// troughs broad and flat. `crest` is scaled to the old swell's range.
+vec2 zs_swell_live(vec2 p, float t, float footprint, out vec3 shift, out float crest, out float rough) {
+	const int N = 8;
+	const float LENGTH[8] = float[8](64.0, 45.0, 33.0, 24.0, 17.5, 12.8, 9.4, 6.9);
+	const float TRAIN[8] = float[8](0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0);
+	const float TURN[8] = float[8](0.0, 0.0, 0.34, -0.22, -0.46, 0.62, 0.3, -0.8);
+	const float STEEP[8] = float[8](0.05, 0.05, 0.055, 0.05, 0.055, 0.05, 0.045, 0.045);
+	vec2 h0 = normalize(swell_heading);
+	float cx = cos(swell_cross.x), sx = sin(swell_cross.x);
+	vec2 h1 = vec2(cx * h0.x - sx * h0.y, sx * h0.x + cx * h0.y);
+	// Wave groups: two broad fields riding each train at its group speed.
+	vec2 g0p = vec2(dot(p, h0), dot(p, vec2(-h0.y, h0.x)));
+	vec2 g1p = vec2(dot(p, h1), dot(p, vec2(-h1.y, h1.x)));
+	float g0 = zs_noise((g0p - vec2(t * 4.5, 0.0)) / vec2(150.0, 260.0) + vec2(1.7, 5.3));
+	float g1 = zs_noise((g1p - vec2(t * 3.8, 0.0)) / vec2(120.0, 210.0) + vec2(8.2, 2.6));
+	float g2 = zs_noise(p / 70.0 + vec2(t * 0.02, 3.3));
+	// The crests bend: a broad, slow warp of every wave's phase.
+	float bend = (zs_noise(p / 95.0 + vec2(t * 0.01, 7.1)) - 0.5) * 3.0 + (zs_noise(p / 37.0 + vec2(2.4, t * 0.015)) - 0.5) * 1.2;
+	vec2 slope = vec2(0.0);
+	shift = vec3(0.0);
+	float squeeze = 0.0;
+	rough = 0.0;
+	float wind = 0.6 + 0.4 * min(zs_wind_strength, 1.5);
+	for (int i = 0; i < N; i++) {
+		vec2 h = TRAIN[i] > 0.5 ? h1 : h0;
+		float c = cos(TURN[i]), s = sin(TURN[i]);
+		vec2 d = vec2(c * h.x - s * h.y, s * h.x + c * h.y);
+		float k = TAU / LENGTH[i];
+		// Each wave's own groups, a few lengths long along it and wider
+		// across, riding at half its speed: crests that build and die off.
+		vec2 along = vec2(dot(p, d), dot(p, vec2(-d.y, d.x)));
+		float own = zs_noise((along - vec2(0.5 * sqrt(GRAVITY / k) * t, 0.0)) / (LENGTH[i] * vec2(2.6, 3.2)) + vec2(float(i) * 3.7, float(i) * 1.3));
+		// Shaped so a crest often dies out entirely between its groups.
+		float group = smoothstep(0.22, 0.78, mix(mix(TRAIN[i] > 0.5 ? g1 : g0, g2, 0.3), own, 0.7));
+		group = mix(1.0, 0.12 + 1.6 * group * group, swell_groups);
+		float share = TRAIN[i] > 0.5 ? swell_cross.y : 1.0;
+		float steep = STEEP[i] * swell * wind * share * group;
+		float held = 1.0 - smoothstep(LENGTH[i] * 0.06, LENGTH[i] * 0.18, footprint);
+		float phase = dot(p, d) * k - sqrt(GRAVITY * k) * t + float(i) * 2.39 + bend * (0.6 + 0.15 * float(i));
+		float a = steep / k;
+		float q = clamp(swell_peak / (STEEP[i] * float(N)), 0.0, 2.5);
+		float cp = cos(phase), sp = sin(phase);
+		shift.xz += d * q * a * cp * held;
+		shift.y += a * sp * held;
+		slope += d * steep * cp * held;
+		squeeze += q * steep * sp * held;
+		rough += 0.5 * steep * steep * (1.0 - held * held);
+	}
+	crest = squeeze / max(swell_peak, 0.05) * 0.2;
+	return slope / max(1.0 - squeeze, 0.12);
+}
+
 // The Gerstner swells at `p` (rest xz): the sideways shove and rise
 // (`shift`), the slope, the crest's sharpness (`crest`, toward 1 at a cusp),
 // each faded out where finer than `footprint`; `rough` gathers what fades.
 vec2 zs_swell(vec2 p, float t, float footprint, out vec3 shift, out float crest, out float rough) {
+	if (sea_motion > 0) return zs_swell_live(p, t, footprint, shift, crest, rough);
 	const float LENGTH[4] = float[4](44.0, 27.0, 17.0, 10.5);
 	const float TURN[4] = float[4](0.0, 0.45, -0.38, 0.9);
 	const float STEEP[4] = float[4](0.055, 0.05, 0.05, 0.045);
@@ -142,8 +231,101 @@ vec2 zs_swell(vec2 p, float t, float footprint, out vec3 shift, out float crest,
 	return slope;
 }
 
+vec4 zs_sea_hash4(vec2 p) {
+	vec4 q = vec4(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)), dot(p, vec2(419.2, 371.9)), dot(p, vec2(89.3, 241.7)));
+	return fract(sin(q) * 43758.5453);
+}
+
+// One noise layer that lives and dies in place: two copies, each drifting
+// `speed` m/s along `dir` for one `flow_cycle` then jumping to a fresh spot,
+// cross-faded half a cycle apart (and kept at the same contrast through
+// the fade), so the lumps rise and fade as they go instead of sliding.
+vec2 zs_flow_layer(sampler2D tex, vec2 p, vec2 dir, float speed, float size, float offset, float t) {
+	float cycle = max(flow_cycle * sqrt(size / 15.0), 0.2);
+	float c0 = t / cycle + offset;
+	float c1 = c0 + 0.5;
+	float f0 = fract(c0), f1 = fract(c1);
+	vec2 j0 = fract(vec2(0.3183, 0.6180) * floor(c0) + offset);
+	vec2 j1 = fract(vec2(0.7071, 0.2360) * floor(c1) + offset * 1.7);
+	vec2 s0 = texture(tex, (p - dir * speed * cycle * f0) / size + j0).xy * 2.0 - 1.0;
+	vec2 s1 = texture(tex, (p - dir * speed * cycle * f1) / size + j1).xy * 2.0 - 1.0;
+	float w0 = 1.0 - abs(2.0 * f0 - 1.0);
+	float w1 = 1.0 - w0;
+	return (s0 * w0 + s1 * w1) * inversesqrt(w0 * w0 + w1 * w1);
+}
+
+// The live chop (sea_motion 1): the noise layers living in place, crossing
+// three ways at speeds that grow with their size, under packets of peaked
+// wavelets that build and vanish in place rather than slide. Each fades into `rough` where finer
+// than the pixel.
+vec2 zs_chop_live(vec2 p, float t, float air, float footprint, out float rough) {
+	vec2 wind = zs_wind_direction;
+	vec2 side = vec2(-wind.y, wind.x);
+	vec2 d1 = normalize(wind * 0.9 + side * 0.3);
+	vec2 d2 = normalize(wind * 0.5 - side * 0.85);
+	vec2 d3 = normalize(wind * 0.6 + side * 0.8);
+	// Deep-water phase speed sqrt(g L / 2 pi), slowed: the pattern's lumps
+	// are crests of many lengths, not one wave.
+	vec3 speed = sqrt(GRAVITY * detail_size / TAU) * 0.35;
+	vec2 a = zs_flow_layer(detail_a, p, d1, speed.x, detail_size.x, 0.0, t);
+	vec2 b = zs_flow_layer(detail_b, p.yx * vec2(1.0, -1.0), vec2(d2.y, -d2.x), speed.y, detail_size.y, 0.37, t);
+	vec2 c = zs_flow_layer(detail_a, p * vec2(-1.0, 1.0) + vec2(13.7, 5.1), vec2(-d3.x, d3.y), speed.z, detail_size.z, 0.71, t);
+	b = vec2(-b.y, b.x);
+	c.x = -c.x;
+	vec3 held = vec3(1.0) - smoothstep(detail_size * 0.04, detail_size * 0.2, vec3(footprint));
+	vec3 strength = detail_strength * air;
+	rough = dot(strength * strength * (vec3(1.0) - held * held), vec3(0.5));
+	vec2 slope = a * strength.x * held.x + b * strength.y * held.y + c * strength.z * held.z;
+	// The wavelets: packets of a few peaked crests, one round a jittered
+	// spot in each cell of a grid per size (each size's grid turned its own
+	// way). Each packet swells and dies over its life, then comes back with a
+	// new heading and phase; its crests run through it at their deep-water
+	// speed. So the small waves build, peak and vanish in place, crossing
+	// every way, with no lattice.
+	const int SIZES = 6;
+	float base = atan(wind.y, wind.x);
+	float peak = max(wavelet_peak, 0.0);
+	float norm = 1.0 + 0.45 * peak;
+	for (int i = 0; i < SIZES; i++) {
+		float f = float(i) / float(SIZES - 1);
+		float len = wavelet_size.x * pow(wavelet_size.y / wavelet_size.x, f);
+		float hold = 1.0 - smoothstep(len * 0.07, len * 0.28, footprint);
+		float s = wavelet_strength * (0.6 + 0.4 * (1.0 - f)) * mix(1.0, air, 0.35 + 0.65 * f);
+		rough += 0.5 * s * s * 0.35 * (1.0 - hold * hold);
+		if (hold <= 0.0) continue;
+		float spin = float(i) * 2.399 + 0.6;
+		mat2 to_grid = mat2(vec2(cos(spin), -sin(spin)), vec2(sin(spin), cos(spin)));
+		float cell = len * 2.4;
+		vec2 q = to_grid * p / cell + vec2(float(i) * 7.31, float(i) * 3.17);
+		vec2 corner = floor(q - 0.5);
+		float k = TAU / len;
+		float omega = sqrt(GRAVITY * k);
+		float life = max(wavelet_life * sqrt(len), 0.1);
+		vec2 sum = vec2(0.0);
+		for (int n = 0; n < 4; n++) {
+			vec2 id = corner + vec2(float(n % 2), float(n / 2));
+			vec4 h = zs_sea_hash4(id);
+			vec2 r = (q - (id + 0.25 + 0.5 * h.xy)) * cell;
+			float w = exp(-dot(r, r) / (cell * cell * 0.3));
+			float age = t / life + h.z;
+			vec4 g = zs_sea_hash4(id + floor(age) * vec2(17.13, 3.71));
+			float pulse = sin(PI * fract(age));
+			pulse *= pulse * smoothstep(0.1, 0.45, g.w);
+			float angle = base - spin + wavelet_spread * (g.x * 2.0 - 1.0) + (g.y > 0.88 ? 2.6 : 0.0);
+			vec2 d = vec2(cos(angle), sin(angle));
+			float phase = dot(r, d) * k - omega * t + g.z * TAU;
+			float e = exp(peak * (sin(phase) - 1.0));
+			sum += d * (cos(phase) * e * w * pulse);
+		}
+		// Back from the grid's turn to the world's.
+		slope += (sum * to_grid) * (s * norm * hold * 1.6);
+	}
+	return slope;
+}
+
 // The chop: two noise normal maps at three scales, scrolling three ways.
 vec2 zs_chop(vec2 p, float t, float air, float footprint, out float rough) {
+	if (sea_motion > 0) return zs_chop_live(p, t, air, footprint, rough);
 	vec2 wind = zs_wind_direction;
 	vec2 side = vec2(-wind.y, wind.x);
 	vec2 d1 = wind;
@@ -179,7 +361,14 @@ float zs_sea_air(vec2 p, out float paw) {
 	float lane = zs_noise(vec2(dot(p, across) * 0.06, dot(p, dir) * 0.004 - zs_gust_distance * 0.002));
 	float slick = smoothstep(0.62, 0.86, lane) * (1.0 - paw);
 	float air = clamp(zs_wind_strength, 0.0, 2.5);
-	return (0.45 + 0.55 * air) * (0.6 + 0.9 * paw) * (1.0 - 0.6 * slick) * chop;
+	float patch = 1.0;
+	if (sea_motion > 0) {
+		// Broad stretches of rougher and calmer sea, drifting downwind.
+		vec2 r = (a - vec2(zs_gust_distance * 0.4, 0.0)) / vec2(wind_patches.x, wind_patches.x * 0.7);
+		float wide = zs_noise(r + vec2(5.9, 1.3)) * 0.7 + zs_noise(r * 2.3 + vec2(2.2, 9.1)) * 0.3;
+		patch = max(1.0 + wind_patches.y * (smoothstep(0.2, 0.8, wide) * 2.0 - 1.0), 0.15);
+	}
+	return (0.45 + 0.55 * air) * (0.6 + 0.9 * paw) * (1.0 - 0.6 * slick) * chop * patch;
 }
 
 vec3 zs_sea_receiver(vec2 uv, float depth, mat4 inv_projection, mat4 inv_view) {
@@ -247,8 +436,11 @@ float zs_wake(vec2 p, out vec2 slope, out float stirred) {
 }
 
 // Broken foam: `cover` 0..1 turned into a soft, cellular pattern.
-float zs_foam_pattern(vec2 p, float t, float cover) {
-	float n = zs_noise(p * 0.55 + vec2(t * 0.05, 0.0)) * 0.55 + zs_noise(p * 1.7 - vec2(0.0, t * 0.08)) * 0.3 + zs_noise(p * 4.3 + vec2(t * 0.11)) * 0.15;
+// (sea_motion 1: each octave evens out where finer than `footprint`, so
+// far foam softens instead of flecking.)
+float zs_foam_pattern(vec2 p, float t, float cover, float footprint) {
+	vec3 hold = sea_motion > 0 ? vec3(1.0) - smoothstep(vec3(0.25, 0.08, 0.03), vec3(0.9, 0.3, 0.12), vec3(footprint)) : vec3(1.0);
+	float n = mix(0.5, zs_noise(p * 0.55 + vec2(t * 0.05, 0.0)), hold.x) * 0.55 + mix(0.5, zs_noise(p * 1.7 - vec2(0.0, t * 0.08)), hold.y) * 0.3 + mix(0.5, zs_noise(p * 4.3 + vec2(t * 0.11)), hold.z) * 0.15;
 	return smoothstep(1.0 - cover, 1.0 - cover + 0.22, n) * smoothstep(0.0, 0.1, cover);
 }
 
@@ -326,6 +518,7 @@ void fragment() {
 	vec3 key = zs_key_irradiance * max(zs_key_direction.y, 0.0) / PI;
 	vec3 light = (ambient + key * 0.8) * water_light;
 	vec3 water = column * light * (vec3(1.0) - seen) + bed * seen;
+	if (sea_motion > 0) water *= 1.0 + clamp(dot(normal.xz, normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.0, -0.5, 0.5) * body_shade;
 	// Stirred water behind the plane: lighter with the air churned into it.
 	water = mix(water, mix(tint_mid, tint_deep, 0.5) * zs_palette_water * light, stirred * 0.18);
 
@@ -347,7 +540,7 @@ void fragment() {
 	// The crests: only the sharpest, and more where the wind works.
 	float crested = smoothstep(0.12, 0.2, crest + detail.x * 0.15) * crest_foam * smoothstep(8.0, 20.0, water_depth) * (0.5 + 0.5 * paw) * min(zs_wind_strength * 1.3, 1.0);
 	float cover = max(shore, crested * 0.55);
-	float foamed = zs_foam_pattern(rest_xz, t, cover) * foam;
+	float foamed = zs_foam_pattern(rest_xz, t, cover, footprint) * foam;
 	// The wake's foam: lines broken softly rather than into islands.
 	float fleck = zs_noise(rest_xz * 0.9 + vec2(t * 0.3, 0.0)) * 0.6 + zs_noise(rest_xz * 2.6 - vec2(0.0, t * 0.4)) * 0.4;
 	foamed = max(foamed, (smoothstep(0.2, 0.55, waked * (0.15 + 1.3 * fleck)) * 0.9 + smoothstep(0.4, 0.85, fleck) * stirred * 0.18) * foam);
@@ -446,8 +639,25 @@ void fragment() {
 	path.a *= 1.0 - shaded;
 	float sunlight = smoothstep(-0.03, 0.12, sun.y);
 	float spark_dot = dot(reflect(-eye, normal), sun);
-	float spark_edge = mix(0.9993, 0.99, smoothstep(0.5, 6.0, footprint));
-	float spark = smoothstep(spark_edge, spark_edge + (1.0 - spark_edge) * 0.35, spark_dot);
+	float spark;
+	if (sea_motion > 0) {
+		// The crisp glints hold their size; what the layers lost to the
+		// pixel turns them into an even sheen (a lobe as wide as the slope
+		// lost), so far water glows rather than sparkles.
+		float spark_edge = 0.9993;
+		float crisp = smoothstep(spark_edge, spark_edge + (1.0 - spark_edge) * 0.35, spark_dot);
+		float lost = (swell_rough + chop_rough) * glitter_filter;
+		const float SPOT = 0.0025;
+		float keep = SPOT / (SPOT + lost);
+		vec3 half_way = normalize(eye + sun);
+		float tilt = max(1.0 - dot(half_way, normal), 0.0) * 2.0;
+		// The same light spread over the wider lobe: dimmer as it widens.
+		float sheen = exp(-tilt / (SPOT + lost)) * min(keep * 2.5, 0.45);
+		spark = crisp * keep + sheen * (1.0 - keep);
+	} else {
+		float spark_edge = mix(0.9993, 0.99, smoothstep(0.5, 6.0, footprint));
+		spark = smoothstep(spark_edge, spark_edge + (1.0 - spark_edge) * 0.35, spark_dot);
+	}
 	spark *= smoothstep(0.85, 0.97, dot(reflect(-eye, calm), sun));
 	spark *= glitter * zs_celestial_clear * sunlight * (1.0 - shaded) * (1.0 - foamed);
 	vec3 lit = water + zs_lake_direct(vec3(0.0), normal, eye, zs_key_direction, zs_key_irradiance, max(roughness, 0.3)) * glint_share * 0.06 * (1.0 - foamed);
