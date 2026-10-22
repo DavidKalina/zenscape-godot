@@ -116,12 +116,16 @@ const vec3 SNOW = vec3(0.860, 0.890, 0.950);
 varying vec3 world_position;
 varying vec3 world_normal;
 varying vec4 land_colour;
+// The land's carve (land_field.gd, via land_stream's CUSTOM0): x how deep
+// in a groove or a ledge's inner corner, y a buttress crest or ledge lip.
+varying vec2 land_carve;
 
 void vertex() {
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	// The vertex colour is sRGB; its alpha the meadow.
 	land_colour = vec4(pow(COLOR.rgb, vec3(2.2)), COLOR.a);
+	land_carve = CUSTOM0.xy;
 }
 
 // Noise at `scale` m round its mean (-0.5..0.5), faded to the mean where a
@@ -268,7 +272,7 @@ void fragment() {
 	vec3 lit_n = n;
 	vec3 rock_glow = vec3(0.0);
 	if (!old_rock && rocky > 0.002) {
-		rock = er_rock(p, n, fp3, zs_sun_direction, grass * 0.85, lit_n, rock_glow);
+		rock = er_rock(p, n, fp3, zs_sun_direction, grass * 0.85, land_carve, lit_n, rock_glow);
 		lit_n = normalize(mix(n, lit_n, rocky));
 	}
 

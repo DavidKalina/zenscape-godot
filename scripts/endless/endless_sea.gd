@@ -359,6 +359,8 @@ static func depth_image(seed_value: int, corner: Vector2) -> Image:
 	var field := Field.new(seed_value)
 	var n := DEPTH_TEXELS
 	var texel := DEPTH_SIDE/n
+	# A map this coarse takes the land's carve at its own texel (land_field.gd).
+	field.detail = texel
 	var data := PackedFloat32Array()
 	data.resize(n*n)
 	for j in n:

@@ -198,26 +198,33 @@ func _build(key: Vector3i, land_seed: int) -> void:
 	var f: RefCounted = Field.new(land_seed)
 	var s := size_of(key.x)
 	var step := s/CELLS
+	f.detail = step
 	var x0 := key.y*s
 	var z0 := key.z*s
 	var n := CELLS+1
 	var w := n+2
 	var hs := PackedFloat32Array()
 	var ms := PackedFloat32Array()
+	var cv := PackedByteArray()
 	hs.resize(w*w)
 	ms.resize(w*w)
+	cv.resize(w*w*2)
 	for j in w:
 		for i in w:
 			var got: Vector2 = f.sample(x0+(i-1)*step,z0+(j-1)*step)
 			hs[j*w+i] = got.x
 			ms[j*w+i] = got.y
+			cv[(j*w+i)*2] = int(clampf(f.last_cavity,0.0,1.0)*255.0)
+			cv[(j*w+i)*2+1] = int(clampf(f.last_ridge,0.0,1.0)*255.0)
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colours := PackedColorArray()
+	var carved := PackedByteArray()
 	var heights := PackedFloat32Array()
 	verts.resize(n*n+4*n)
 	normals.resize(n*n+4*n)
 	colours.resize(n*n+4*n)
+	carved.resize((n*n+4*n)*4)
 	heights.resize(n*n)
 	for j in n:
 		for i in n:
@@ -233,6 +240,9 @@ func _build(key: Vector3i, land_seed: int) -> void:
 			var c: Color = f.colour(x0+i*step,z0+j*step,y,normal.y,ms[k])
 			c.a = ms[k]
 			colours[v] = c
+			# The carve's groove and crest, for the rock (CUSTOM0.xy).
+			carved[v*4] = cv[k*2]
+			carved[v*4+1] = cv[k*2+1]
 			heights[v] = y
 	# The skirt: each edge's vertices again, dropped.
 	var drop := step*SKIRT+SKIRT_MIN
@@ -244,9 +254,11 @@ func _build(key: Vector3i, land_seed: int) -> void:
 			verts[v] = verts[from]-Vector3(0.0,drop,0.0)
 			normals[v] = normals[from]
 			colours[v] = colours[from]
+			carved[v*4] = carved[from*4]
+			carved[v*4+1] = carved[from*4+1]
 	var ms_took := (Time.get_ticks_usec()-began)/1000.0
 	_done_lock.lock()
-	_done.append({"key":key,"verts":verts,"normals":normals,"colours":colours,"heights":heights,"ms":ms_took})
+	_done.append({"key":key,"verts":verts,"normals":normals,"colours":colours,"carved":carved,"heights":heights,"ms":ms_took})
 	_done_lock.unlock()
 
 ## The grid's vertex index along each edge, in order: -z, +x, +z, -x.
@@ -302,9 +314,10 @@ func _commit() -> bool:
 		arrays[Mesh.ARRAY_VERTEX] = r.verts
 		arrays[Mesh.ARRAY_NORMAL] = r.normals
 		arrays[Mesh.ARRAY_COLOR] = r.colours
+		arrays[Mesh.ARRAY_CUSTOM0] = r.carved
 		arrays[Mesh.ARRAY_INDEX] = _indices
 		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},Mesh.ARRAY_CUSTOM_RGBA8_UNORM << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 		mesh.surface_set_material(0,material)
 		var node := MeshInstance3D.new()
 		node.name = "Land_%d_%d_%d" % [key.x,key.y,key.z]
