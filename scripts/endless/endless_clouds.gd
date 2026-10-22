@@ -171,6 +171,10 @@ var stack_yield := true
 ## Thin low cloud (the small puffs) takes its lobes from finer noise, so a
 ## puff reads as a small cumulus, not a smooth bell (--cloud-puffs=old: off).
 var puff_lobes := true
+## The sea's material (EndlessLook sets it): it reads the shade map with the
+## square drawn this frame (`shade_square`), not the land's (--sea-shade=old).
+var sea_material: ShaderMaterial
+var sea_shade_sync := true
 ## The field's drift so far (m): a cloud stands at its field point plus this.
 var drift := Vector2.ZERO
 var motion_time := 0.0
@@ -237,6 +241,7 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 		elif a == "--cloud-field=old": organic = false
 		elif a == "--cloud-stack=old": stack_yield = false
 		elif a == "--cloud-puffs=old": puff_lobes = false
+		elif a == "--sea-shade=old": sea_shade_sync = false
 		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
 		elif a == "--no-valley-fog": fog_on = false
 		elif a.begins_with("--valley-fog="):
@@ -306,6 +311,7 @@ func set_enabled(on: bool) -> void:
 	_detach()
 	sheet.visible = false
 	_publish_shade(false)
+	if sea_material != null: sea_material.set_shader_parameter("shade_square",Vector4.ZERO)
 
 func _attach() -> void:
 	if camera == null: return
@@ -860,6 +866,10 @@ func _fill() -> void:
 	_put4(p,168,Vector4(quality[0],quality[1],quality[2],quality[3]))
 	_put4(p,172,Vector4(1.0 if grain else 0.0,1.0 if organic else 0.0,1.0 if stack_yield else 0.0,1.0 if puff_lobes else 0.0))
 	_put4(p,176,Vector4(0.0,Effect.SHADOW_TEXELS,1.0 if weather_due else 0.0,1.0 if shade_due else 0.0))
+	# The sea draws after this frame's passes: the square they leave in the map.
+	if sea_material != null:
+		var now := shade_square if shade_due or _shade_drawn == Vector4.ZERO else _shade_drawn
+		sea_material.set_shader_parameter("shade_square",now if sea_shade_sync else Vector4.ZERO)
 	# The land reads the shade map the frame after it is drawn.
 	if _shade_drawn != Vector4.ZERO: _publish_shade(true,key,_shade_drawn)
 	if shade_due: _shade_drawn = shade_square

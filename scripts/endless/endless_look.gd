@@ -187,6 +187,8 @@ func setup(land_seed: int) -> void:
 		clouds = EndlessClouds.new()
 		add_child(clouds)
 		clouds.setup(land_seed,celestial,Vector4(FOG_BEGIN,FOG_END,FOG_CURVE,CLOUD_HAZE),SUN_SCATTER*0.5)
+		if sea != null and sea.material_override is ShaderMaterial and (sea.material_override as ShaderMaterial).shader == preload("res://shaders/endless_sea.gdshader"):
+			clouds.sea_material = sea.material_override
 	_publish(0.0)
 	_haze(Vector3.FORWARD)
 	# The ringed planet is the isles' option, off by default (look_pass.gd).
