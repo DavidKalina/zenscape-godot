@@ -55,6 +55,17 @@ func _init(seed_value: int) -> void:
 	material.set_shader_parameter("detail_a",_detail(seed_value,0.022,5))
 	material.set_shader_parameter("detail_b",_detail(seed_value+7,0.035,4))
 	material.set_shader_parameter("depth_map",depth)
+	# The surface: --sea-surface=old keeps the smooth look (no fine ripples,
+	# reflections off a calmed normal); the default is ripples at several
+	# scales that the reflections see nearly whole.
+	if "--sea-surface=old" in LaunchArgs.user_args():
+		material.set_shader_parameter("mirror_calm",0.4)
+	else:
+		material.set_shader_parameter("detail_strength",Vector3(0.3,0.22,0.15))
+		material.set_shader_parameter("ripple_strength",Vector2(0.24,0.15))
+		material.set_shader_parameter("calm_share",0.9)
+		material.set_shader_parameter("path_share",0.7)
+		material.set_shader_parameter("mirror_calm",0.85)
 	for a: String in LaunchArgs.user_args():
 		# --sea-set=name:value[;name:value]: a uniform by hand, for tuning.
 		if a.begins_with("--sea-set="):

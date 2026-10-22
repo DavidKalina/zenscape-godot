@@ -34,6 +34,14 @@ uniform sampler2D detail_b : hint_normal, filter_linear_mipmap_anisotropic, repe
 // The detail layers' sizes (m a tile) and strengths.
 uniform vec3 detail_size = vec3(46.0, 15.0, 4.6);
 uniform vec3 detail_strength = vec3(0.16, 0.12, 0.08);
+// Fine ripples: two more layers (m a tile, strength), faded out with the
+// pixel's footprint so they never sparkle into noise at range.
+uniform vec2 ripple_size = vec2(1.3, 0.55);
+uniform vec2 ripple_strength = vec2(0.0, 0.0);
+// How much of the detail slope the reflections see: the sky's mirror and
+// fresnel (`calm_share`), the soft sun path (`path_share`). 1 = all of it.
+uniform float calm_share = 0.5;
+uniform float path_share = 0.2;
 
 // The land's height (world y) over a square round the eye: corner xz, side,
 // on (EndlessSea `_depth`).
@@ -147,7 +155,17 @@ vec2 zs_chop(vec2 p, float t, float air, float footprint, out float rough) {
 	vec3 held = vec3(1.0) - smoothstep(detail_size * 0.04, detail_size * 0.2, vec3(footprint));
 	vec3 strength = detail_strength * air;
 	rough = dot(strength * strength * (vec3(1.0) - held * held), vec3(0.5));
-	return a * strength.x * held.x + b * strength.y * held.y + c * strength.z * held.z;
+	vec2 slope = a * strength.x * held.x + b * strength.y * held.y + c * strength.z * held.z;
+	if (ripple_strength.x + ripple_strength.y > 0.0) {
+		vec2 e = texture(detail_b, (p.yx * vec2(-1.0, 1.0) + (d1 * 0.7 + d2 * 0.5) * t) / ripple_size.x).xy * 2.0 - 1.0;
+		vec2 f = texture(detail_a, (p * 0.8 + vec2(d3.y, -d3.x) * t * 0.6) / ripple_size.y + vec2(0.37, 0.61)).xy * 2.0 - 1.0;
+		vec2 hf = vec2(1.0) - smoothstep(ripple_size * 0.05, ripple_size * 0.3, vec2(footprint));
+		// Ripples ride the wind a little harder than the broad chop.
+		vec2 rs = ripple_strength * (0.35 + 0.65 * air);
+		rough += dot(rs * rs * (vec2(1.0) - hf * hf), vec2(0.5));
+		slope += e * rs.x * hf.x + f * rs.y * hf.y;
+	}
+	return slope;
 }
 
 // How hard the wind works the sea at `p`: cat's paws and slicks.
@@ -264,7 +282,7 @@ void fragment() {
 	vec3 normal = normalize(vec3(-(slope.x + detail.x + wake_slope.x), 1.0, -(slope.y + detail.y + wake_slope.y)));
 	// A calmer normal for the sky's mirror, so the reflection reads as one
 	// rippled image rather than noise.
-	vec3 calm = normalize(vec3(-(slope.x + detail.x * 0.5), 1.0, -(slope.y + detail.y * 0.5)));
+	vec3 calm = normalize(vec3(-(slope.x + detail.x * calm_share), 1.0, -(slope.y + detail.y * calm_share)));
 	float facing = max(dot(eye, normal), 0.0);
 	float sigma = sqrt(swell_rough + chop_rough);
 	float roughness = clamp(0.06 + sigma * 1.4 + footprint * 0.0015, 0.06, 0.5);
@@ -423,7 +441,7 @@ void fragment() {
 	// The sun: a soft path off the calm normal, and a crisp glitter off the
 	// chop's own (hard-edged spots, fewer and finer far off).
 	float shaded = cloud_shade > 0.0 ? zs_cloud_volume_shade(world_position) * cloud_shade : 0.0;
-	vec3 smooth_n = normalize(vec3(-(slope.x + detail.x * 0.2), 1.0, -(slope.y + detail.y * 0.2)));
+	vec3 smooth_n = normalize(vec3(-(slope.x + detail.x * path_share), 1.0, -(slope.y + detail.y * path_share)));
 	vec4 path = zs_lake_glint(reflect(-eye, smooth_n), sun, zs_moon_direction, zs_celestial_clear, 0.0, glint_share);
 	path.a *= 1.0 - shaded;
 	float sunlight = smoothstep(-0.03, 0.12, sun.y);

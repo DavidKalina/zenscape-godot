@@ -20,3 +20,7 @@ What's left:
 - The mirror shows faint dark specks of the plane behind it at about 6 m.
 - The endless land has no lakes or rivers of its own: its inland water is land below sea level under the same sheet, so it takes the same depth colour and shore foam. I didn't capture an inland pool on its own.
 - The wake doesn't know about land, so it can draw across a beach the plane skims.
+
+## Surface round (finer ripples, reflections off the rippled normal)
+
+Two fine ripple layers (1.3 m and 0.55 m tiles, `ripple_size`/`ripple_strength`, faded by pixel footprint like the other layers) and stronger chop (`detail_strength` 0.30/0.22/0.15). The sky mirror, fresnel (`calm_share` 0.9), soft sun path (`path_share` 0.7) and ray-march normal (`mirror_calm` 0.85) now see most of the detail slope, so reflections and glints break up. Swell, colour, foam, wake and motion untouched. `--sea-surface=old` restores the previous surface values; `--water=old` still gives the original sea. Syntax: `--sea-set=ripple_strength:Vector2(0.3,0.2);calm_share:1.0;detail_strength:Vector3(0.3,0.22,0.15);ripple_size:Vector2(1.3,0.55);path_share:0.7;mirror_calm:0.85` (values go through str_to_var; no ':' or ';' inside values). Cost: no measurable change (about 8.9 ms median both ways, CPU/vsync-bound; GPU timer reads 0 on Metal). Captures: `captures/water2/{new,old}_{opensea_sun_60,coast_alt70_0,close_60}.png`. Left: swell crests are still the same smooth Gerstner form (peakier, form-and-fade crests are the next round); the far sea reads fine but was not stress-tested for shimmer in motion.
