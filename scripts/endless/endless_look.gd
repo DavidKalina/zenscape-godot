@@ -222,6 +222,8 @@ func _build_sea() -> void:
 	add_child(sea)
 	if EndlessSea.wanted():
 		water = EndlessSea.new(_land_seed)
+		water.set_wind(_wind_angle)
+		if EndlessSea.body_wanted(): sea.mesh = EndlessSea.sheet()
 		water.material.render_priority = SEA_PRIORITY
 		sea.material_override = water.material
 		return

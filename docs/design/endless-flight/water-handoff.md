@@ -42,3 +42,29 @@ Cost: whole-frame median, 3024x1898 window, sun view, 600 frames: 9.8-10.0 ms ne
 Captures: `captures/water3/cmp_{sun,coast,close,away}.png` (top old motion, bottom new), `captures/water3/{new,old}_{sun,coast,close,away}_motion.gif` (5 frames 0.13 s apart, camera and plane held, sea clock running). Raw frames and 2x2 crop sheets (`motion_*.png`) are on disk only. Drivers: `scratch/water3_cap.gd` (holds camera, steps `look.step`), `scratch/water3.sh`, `scratch/strip.py`/`quad.py`/`sheet.py` (PIL; on the Mac use `/usr/bin/python3`, the brew python lacks PIL).
 
 Left: wavelet crests at grazing angles read as thin dashes, a touch stylised; the screen-space mirror shows a sharp inverted island at range; swell bands toward the horizon are softer but still there in calm patches; the wake and its V untouched.
+
+## Body round (height, light across the wave, whitecaps)
+
+`sea_body` 1 (the default; `--sea-body=old` gives the motion round, and `--sea-motion=old`, `--sea-surface=old`, `--water=old` still give the earlier ones). In `shaders/endless_sea.gdshader` `zs_swell_body`:
+
+- Height: eleven Gerstner waves, a long swell in two crossing trains (118-52 m, heights scaled by `body_swell.x` m) and a wind sea along the steady wind (28-5.5 m, steepness `body_swell.y`), each rising and dying in its own groups. The squeeze is shared out so crests peak toward `body_swell.z` without folding; normals come from the full Jacobian. Crests reach about +1 m and troughs -1.3 m near the eye. The heave reaches `body_reach` (420 m, gone by 800 m) on a finer sheet (`EndlessSea.sheet()`: 1 m cells to 48 m, doubling ring by ring; about 65k vertices against 45k), so near swells hide the water behind them and the low horizon undulates.
+- The plane: `EndlessSea.height_at(x,z)` mirrors the swell on the CPU (a sine-free hash, so its noise reads the same as the GPU's). `studies/endless_flight.gd` sets `plane.water` from it each tick, the camera's `_solid` keeps above it, and the wake's strength measures height over it.
+- Light: troughs at `body_value.x` of the body's light, crests at `.y`, a touch greener up the crests; thin crests glow `sss_color` when the eye looks toward the sun (`sss_strength`). Deep tints are a little darker (tint_mid/deep/abyss set in endless_sea.gd).
+- Whitecaps (`whitecaps`: amount, life s, streak): born on the wind sea's crests where the wave's group and the rough stretch are high, and clustered by a drifting gust field. They are left behind as the crest passes, fade over `life`, streak downwind and have ragged edges. Jacobian cusps add a few more. Past the pixel footprint they soften to a wash. Lighter, greener aerated water rings them. They show only in open water (over 4-12 m deep).
+- Slicks and rough: one field (`zs_body_rough`, size `wind_patches.x`) drives the wind sea's height (`body_patch.x` in a slick, `.y` in the rough), the chop (`body_patch.z` contrast), the whitecaps and a slight darkening of the rough.
+- Crinkles down: `detail_strength` (0.2,0.12,0.045), `wavelet_strength` 0.1, `wavelet_size` (3.2,0.7).
+
+Knobs, e.g. `--sea-set="body_swell:Vector3(0.85,1.0,0.9);body_reach:Vector2(420,800);body_patch:Vector3(0.3,1.3,1.0);body_value:Vector2(0.6,1.2);sss_color:Color(0.1,0.8,0.62);sss_strength:0.8;whitecaps:Vector3(1.0,2.2,1.0);wind_patches:Vector2(320,0.35)"`. `debug_view:5` shows glow, height and squeeze. The CPU mirror reads the material's values, so swell knobs set through `--sea-set` move the plane's skim too.
+
+Cost: whole-frame median, 3024x1898 window, sun view at 8 m, 600 frames, 2 runs each: 11.47 ms new against 9.90 ms `--sea-body=old`, so about +1.6 ms. The GPU timer reads 0 on Metal, so I couldn't split the GPU share out. Most of it is likely the denser sheet with the 11-wave vertex shader, plus the whitecap loop per pixel.
+
+Proof: smoke passes with the defaults and with each of `--sea-body=old`, `--sea-motion=old`, `--sea-surface=old`, `--water=old` and `--no-wake`. In a throwaway drive through the real loop (`scratch/skim_drive.gd`), the plane was held nose-down onto the water for 900 frames. It stayed 0.82 m or more over the drawn swell (-1.34..+1.0 m) and never went under it; the rendered side shots in `captures/water4/skim_sheet.png` show it riding the surface.
+
+Captures: `captures/water4/cmp_{sun,away,low,close,coast,high}.png` (top `--sea-body=old`, bottom new) and `{new,old}_*_motion.gif`. The drivers are `scratch/water4.sh` (adds `low`, 2 m toward the sun, and `high`, 170 m over open sea, to last round's views) and `scratch/water3_cap.gd`.
+
+Left:
+- Toward the sun the glow on the crests is broad green bands rather than thin rims.
+- From high up, the crossing wind sea can read as a faint lattice in rough stretches.
+- There are fewer whitecaps in the toward-sun view than from cruise. The count is a balance between the coast view, where rough stretches can still look busy, and open sea.
+- The far sheet past 800 m is flat, with normals only.
+- The wake's foam doesn't ride over a crest's shove: it sits at the rest xz, so it is fine at skim range.

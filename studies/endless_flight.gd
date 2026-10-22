@@ -289,7 +289,13 @@ func floor_at(p: Vector2) -> float:
 
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
-	return p.y < maxf(field.height(p.x,p.z),Field.SEA_Y)+EYE_CLEAR*0.5
+	return p.y < maxf(field.height(p.x,p.z),Field.SEA_Y+sea_height(p))+EYE_CLEAR*0.5
+
+## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
+## the flat sea), looked up only near the water.
+func sea_height(p: Vector3) -> float:
+	if look == null or look.water == null or p.y > Field.SEA_Y+12.0: return 0.0
+	return look.water.height_at(p.x,p.z)
 
 ## The share of the way from `from` to `to` clear of the land (GlideCamera
 ## `sight`), marched over the field.
@@ -310,6 +316,8 @@ func _process(delta: float) -> void:
 func tick(delta: float) -> void:
 	flown += delta
 	var input := _fly_input(delta)
+	# The plane skims the swell as drawn, not the sea's rest level.
+	plane.water = Field.SEA_Y+sea_height(plane.position)
 	input["flaps"] = 1.0 if flaps else 0.0
 	hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"))
 	plane.engine = hand_landing.engine*float(plane.sputter)

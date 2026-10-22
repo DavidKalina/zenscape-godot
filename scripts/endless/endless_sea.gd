@@ -47,6 +47,12 @@ var _last_time := 0.0
 static func wanted() -> bool:
 	return not "--water=old" in LaunchArgs.user_args()
 
+## Whether the sea has its body (tall swell, whitecaps): not --sea-body=old
+## nor an earlier round's flag.
+static func body_wanted() -> bool:
+	var a := LaunchArgs.user_args()
+	return wanted() and not ("--sea-body=old" in a or "--sea-motion=old" in a or "--sea-surface=old" in a)
+
 func _init(seed_value: int) -> void:
 	land_seed = seed_value
 	material = ShaderMaterial.new()
@@ -76,6 +82,19 @@ func _init(seed_value: int) -> void:
 			material.set_shader_parameter("swell",0.75)
 			material.set_shader_parameter("fresnel_floor",0.08)
 			material.set_shader_parameter("fresnel_power",3.5)
+			# The body: --sea-body=old keeps the motion round's sheet; the
+			# default is a tall swell and wind sea on a finer sheet, light
+			# across the wave, whitecaps, slicks and rough stretches, and the
+			# finest crinkles turned down.
+			if body_wanted():
+				material.set_shader_parameter("sea_body",1)
+				material.set_shader_parameter("detail_strength",Vector3(0.2,0.12,0.045))
+				material.set_shader_parameter("wavelet_strength",0.1)
+				material.set_shader_parameter("wavelet_size",Vector2(3.2,0.7))
+				material.set_shader_parameter("wind_patches",Vector2(320.0,0.35))
+				material.set_shader_parameter("tint_mid",Color(0.06,0.43,0.62))
+				material.set_shader_parameter("tint_deep",Color(0.035,0.2,0.47))
+				material.set_shader_parameter("tint_abyss",Color(0.02,0.11,0.28))
 	for a: String in LaunchArgs.user_args():
 		# --sea-set=name:value[;name:value]: a uniform by hand, for tuning.
 		if a.begins_with("--sea-set="):
@@ -83,6 +102,172 @@ func _init(seed_value: int) -> void:
 				var kv := pair.split(":")
 				if kv.size() == 2: material.set_shader_parameter(kv[0],str_to_var(kv[1]))
 		elif a == "--no-wake": material.set_shader_parameter("wake",0.0)
+
+## The steady wind the wind sea runs along (EndlessLook's base heading, in
+## radians; the wind's wander would race the far crests).
+func set_wind(angle: float) -> void:
+	material.set_shader_parameter("body_wind",Vector2(cos(angle),sin(angle)))
+	_knobs.clear()
+
+# --- The body's swell on the CPU (shaders/endless_sea.gdshader zs_swell_body)
+
+const BODY_LENGTH := [118.0,86.0,64.0,74.0,52.0,28.0,20.0,14.5,10.5,7.6,5.5]
+const BODY_TRAIN := [0,0,0,1,1,2,2,2,2,2,2]
+const BODY_TURN := [0.0,0.16,-0.22,0.0,0.3,0.0,0.38,-0.32,0.62,-0.55,0.9]
+const BODY_SIZE := [0.45,0.42,0.38,0.32,0.28,0.07,0.068,0.064,0.06,0.055,0.05]
+const GRAVITY := 9.81
+var _knobs := {}
+## The shader's defaults for what the mirror reads (a material keeps only
+## what was set).
+const KNOB_DEFAULTS := {"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0)}
+
+## The sea's surface height over its rest level (m) at world `x`,`z` now:
+## the body's swell (0 without the body). The shader's sheet shoves its
+## points sideways, so the rest point under `x`,`z` is found by a few steps.
+func height_at(x: float, z: float) -> float:
+	if int(_knob("sea_body")) == 0: return 0.0
+	var target := Vector2(x,z)
+	var p := target
+	var shift := Vector3.ZERO
+	for i in 4:
+		shift = _body_shift(p,_now)
+		p = target-Vector2(shift.x,shift.z)
+	return _body_shift(p,_now).y
+
+func _knob(name: String) -> Variant:
+	if not _knobs.has(name):
+		var v: Variant = material.get_shader_parameter(name)
+		if v == null: v = KNOB_DEFAULTS[name]
+		_knobs[name] = v
+	return _knobs[name]
+
+static func _fract(v: float) -> float:
+	return v-floorf(v)
+
+static func _hash(p: Vector2) -> float:
+	var a := _fract(p.x*0.1031)
+	var b := _fract(p.y*0.1031)
+	var c := a
+	var d := a*(b+33.33)+b*(c+33.33)+c*(a+33.33)
+	a += d
+	b += d
+	c += d
+	return _fract((a+b)*c)
+
+static func _noise(p: Vector2) -> float:
+	var i := p.floor()
+	var f := p-i
+	f = f*f*(Vector2(3.0,3.0)-2.0*f)
+	var x0 := lerpf(_hash(i),_hash(i+Vector2(1.0,0.0)),f.x)
+	var x1 := lerpf(_hash(i+Vector2(0.0,1.0)),_hash(i+Vector2(1.0,1.0)),f.x)
+	return lerpf(x0,x1,f.y)
+
+static func _rot(v: Vector2, a: float) -> Vector2:
+	return Vector2(cos(a)*v.x-sin(a)*v.y,sin(a)*v.x+cos(a)*v.y)
+
+func _body_shift(p: Vector2, t: float) -> Vector3:
+	var body: Vector3 = _knob("body_swell")
+	var cross: Vector2 = _knob("swell_cross")
+	var groups: float = _knob("swell_groups")
+	var patches: Vector2 = _knob("wind_patches")
+	var bpatch: Vector3 = _knob("body_patch")
+	var h0: Vector2 = Vector2(_knob("swell_heading")).normalized()
+	var h1 := _rot(h0,cross.x)
+	var hw: Vector2 = Vector2(_knob("body_wind")).normalized()
+	var wa := Vector2(p.dot(hw),p.dot(Vector2(-hw.y,hw.x)))-Vector2(t*1.5,0.0)
+	var wr := wa/Vector2(patches.x,patches.x*0.7)
+	var rough := smoothstep(0.3,0.7,_noise(wr+Vector2(5.9,1.3))*0.65+_noise(wr*2.3+Vector2(2.2,9.1))*0.35)
+	var wsea := lerpf(bpatch.x,bpatch.y,rough)
+	var bend := (_noise(p/95.0+Vector2(t*0.01,7.1))-0.5)*2.4+(_noise(p/37.0+Vector2(2.4,t*0.015))-0.5)*0.9
+	var gt := [
+		_noise(Vector2(p.dot(h0)-t*6.0,p.dot(Vector2(-h0.y,h0.x)))/Vector2(260.0,420.0)+Vector2(1.7,5.3)),
+		_noise(Vector2(p.dot(h1)-t*5.0,p.dot(Vector2(-h1.y,h1.x)))/Vector2(200.0,330.0)+Vector2(8.2,2.6)),
+		_noise(Vector2(p.dot(hw)-t*2.6,p.dot(Vector2(-hw.y,hw.x)))/Vector2(90.0,120.0)+Vector2(3.1,6.6))]
+	var dirs: Array[Vector2] = []
+	var amps: Array[float] = []
+	var phases: Array[float] = []
+	var total := 0.0
+	for i in BODY_LENGTH.size():
+		var train: int = BODY_TRAIN[i]
+		var h: Vector2 = h0 if train == 0 else (h1 if train == 1 else hw)
+		var d := _rot(h,BODY_TURN[i])
+		var length: float = BODY_LENGTH[i]
+		var k := TAU/length
+		var omega := sqrt(GRAVITY*k)
+		var along := Vector2(p.dot(d)-0.5*omega/k*t,p.dot(Vector2(-d.y,d.x)))
+		var own := _noise(along/(length*Vector2(2.6,3.4))+Vector2(i*3.7,i*1.3))
+		var group := smoothstep(0.2,0.8,lerpf(gt[train],own,0.65))
+		group = lerpf(1.0,0.12+1.6*group*group,groups)
+		var a: float
+		if train < 2: a = BODY_SIZE[i]*body.x*(cross.y/0.6 if train == 1 else 1.0)*group
+		else: a = BODY_SIZE[i]*body.y*wsea*group/k
+		dirs.append(d)
+		amps.append(a)
+		phases.append(p.dot(d)*k-omega*t+i*2.39+bend*(0.5+0.1*i))
+		total += a*k
+	var q := body.z/maxf(total,0.35)
+	var shift := Vector3.ZERO
+	for i in dirs.size():
+		var c := cos(phases[i])
+		shift.x += dirs[i].x*q*amps[i]*c
+		shift.z += dirs[i].y*q*amps[i]*c
+		shift.y += amps[i]*sin(phases[i])
+	return shift
+
+## The body's sheet: SkyBelow's rings, finer near the eye (`step` m cells,
+## `cells` of them each way of the middle, doubling ring by ring to `reach`).
+static var _body_sheet: ArrayMesh
+static func sheet(step := 1.0, cells := 48, reach := 9000.0) -> ArrayMesh:
+	if _body_sheet != null: return _body_sheet
+	var vertices := PackedVector3Array()
+	var index := {}
+	var faces := PackedInt32Array()
+	var unit := step*0.5
+	var at := func(p: Vector2) -> int:
+		var key := Vector2i(roundi(p.x/unit),roundi(p.y/unit))
+		if index.has(key): return index[key]
+		var id := vertices.size()
+		vertices.append(Vector3(p.x,0.0,p.y))
+		index[key] = id
+		return id
+	var n := cells
+	var level := 0
+	var size := step
+	while true:
+		var hole := n/2 if level > 0 else 0
+		for j in range(-n,n):
+			for i in range(-n,n):
+				if level > 0 and i >= -hole and i < hole and j >= -hole and j < hole: continue
+				var corners: Array[Vector2] = [Vector2(i,j)*size,Vector2(i+1,j)*size,Vector2(i+1,j+1)*size,Vector2(i,j+1)*size]
+				var ring: Array[Vector2] = []
+				for e in range(4):
+					ring.append(corners[e])
+					if level > 0 and _on_hole(corners[e],corners[(e+1)%4],hole*size): ring.append((corners[e]+corners[(e+1)%4])*0.5)
+				if ring.size() == 4:
+					var ids := [at.call(ring[0]),at.call(ring[1]),at.call(ring[2]),at.call(ring[3])]
+					faces.append_array([ids[0],ids[1],ids[2],ids[0],ids[2],ids[3]])
+				else:
+					var middle: int = at.call((corners[0]+corners[2])*0.5)
+					for e in range(ring.size()): faces.append_array([middle,at.call(ring[e]),at.call(ring[(e+1)%ring.size()])])
+		if n*size >= reach: break
+		level += 1
+		size *= 2.0
+	var normals := PackedVector3Array()
+	normals.resize(vertices.size())
+	normals.fill(Vector3.UP)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_INDEX] = faces
+	_body_sheet = ArrayMesh.new()
+	_body_sheet.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	return _body_sheet
+
+static func _on_hole(a: Vector2, b: Vector2, edge: float) -> bool:
+	if is_equal_approx(a.x,b.x) and is_equal_approx(absf(a.x),edge): return absf(a.y) <= edge+0.01 and absf(b.y) <= edge+0.01
+	if is_equal_approx(a.y,b.y) and is_equal_approx(absf(a.y),edge): return absf(a.x) <= edge+0.01 and absf(b.x) <= edge+0.01
+	return false
 
 static func _detail(seed_value: int, frequency: float, octaves: int) -> NoiseTexture2D:
 	var noise := FastNoiseLite.new()
@@ -146,7 +331,7 @@ static func depth_image(seed_value: int, corner: Vector2) -> Image:
 	return Image.create_from_data(n,n,false,Image.FORMAT_RF,data.to_byte_array())
 
 func _wake(plane: Vector3) -> void:
-	var low := 1.0-smoothstep(WAKE_LOW,WAKE_HIGH,plane.y-Field.SEA_Y)
+	var low := 1.0-smoothstep(WAKE_LOW,WAKE_HIGH,plane.y-Field.SEA_Y-height_at(plane.x,plane.z))
 	var at := Vector2(plane.x,plane.z)
 	# The newest point rides with the plane, so the wake starts under it; it
 	# is left behind for good once WAKE_STEP m past the one before.

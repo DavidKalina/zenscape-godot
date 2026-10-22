@@ -76,6 +76,33 @@ uniform float glitter_filter = 1.0;
 // away), so the chop's shape reads where the sky's mirror is faint.
 uniform float body_shade = 0.0;
 
+// The body (EndlessSea, `--sea-body=old` sets 0): 1 a sea with mass:
+// - a long swell (`body_swell.x` m a wave's height scale) in two crossing
+//   trains and a wind sea along the steady wind (`body_wind`, steepness
+//   `body_swell.y`), crests peaked toward `body_swell.z` with the squeeze
+//   shared out so the sheet never folds; the whole heave out to `body_reach`
+//   m (fading to `.y`), on a finer sheet near the eye;
+// - stretches of glossy slick and rough water (`wind_patches` size): the wind
+//   sea at `body_patch.x` of its height in a slick, `.y` in the rough, the
+//   chop's contrast `.z`; whitecaps, darkness and gloss follow;
+// - light across the wave: troughs at `body_value.x` of the body's light,
+//   crests at `.y`; thin crests glowing `sss_color` with the sun behind them
+//   (`sss_strength`);
+// - whitecaps: born where the wind sea's crests are steepest (more in the
+//   rough), left behind as the crest moves on, streaking downwind and fading
+//   (`whitecaps`: amount, life s, streak).
+// The swell is mirrored on the CPU (EndlessSea `height_at`) for the plane's
+// skim, so its noise is a sine-free hash that reads the same there.
+uniform int sea_body = 0;
+uniform vec3 body_swell = vec3(0.85, 1.0, 0.9);
+uniform vec2 body_wind = vec2(1.0, 0.0);
+uniform vec2 body_reach = vec2(420.0, 800.0);
+uniform vec3 body_patch = vec3(0.3, 1.3, 1.0);
+uniform vec2 body_value = vec2(0.6, 1.2);
+uniform vec3 sss_color : source_color = vec3(0.10, 0.80, 0.62);
+uniform float sss_strength = 0.8;
+uniform vec3 whitecaps = vec3(1.0, 2.2, 1.0);
+
 // The land's height (world y) over a square round the eye: corner xz, side,
 // on (EndlessSea `_depth`).
 uniform sampler2D depth_map : filter_linear, repeat_disable;
@@ -196,6 +223,138 @@ vec2 zs_swell_live(vec2 p, float t, float footprint, out vec3 shift, out float c
 	}
 	crest = squeeze / max(swell_peak, 0.05) * 0.2;
 	return slope / max(1.0 - squeeze, 0.12);
+}
+
+// A hash with no sine (so the CPU's mirror, EndlessSea, reads the same).
+float zs_body_hash(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
+
+float zs_body_noise(vec2 p) {
+	vec2 i = floor(p), f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(zs_body_hash(i), zs_body_hash(i + vec2(1.0, 0.0)), f.x), mix(zs_body_hash(i + vec2(0.0, 1.0)), zs_body_hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+// How rough the sea is at `p`: 0 a glossy slick .. 1 a rough stretch, in
+// broad patches drifting downwind.
+float zs_body_rough(vec2 p, float t) {
+	vec2 w = normalize(body_wind);
+	vec2 a = vec2(dot(p, w), dot(p, vec2(-w.y, w.x))) - vec2(t * 1.5, 0.0);
+	vec2 r = a / vec2(wind_patches.x, wind_patches.x * 0.7);
+	float n = zs_body_noise(r + vec2(5.9, 1.3)) * 0.65 + zs_body_noise(r * 2.3 + vec2(2.2, 9.1)) * 0.35;
+	return smoothstep(0.3, 0.7, n);
+}
+
+// The body's waves: a long swell in two trains (0, 1) and the wind sea (2).
+const int BODY = 11;
+const float BODY_LENGTH[11] = float[11](118.0, 86.0, 64.0, 74.0, 52.0, 28.0, 20.0, 14.5, 10.5, 7.6, 5.5);
+const int BODY_TRAIN[11] = int[11](0, 0, 0, 1, 1, 2, 2, 2, 2, 2, 2);
+const float BODY_TURN[11] = float[11](0.0, 0.16, -0.22, 0.0, 0.3, 0.0, 0.38, -0.32, 0.62, -0.55, 0.9);
+// The swell's heights (m, by body_swell.x) and the wind sea's steepness.
+const float BODY_SIZE[11] = float[11](0.45, 0.42, 0.38, 0.32, 0.28, 0.07, 0.068, 0.064, 0.06, 0.055, 0.05);
+
+// The body's heave at `p` (rest xz): the shove and rise (`shift`), the
+// sheet's squeeze (`jac`, 1 flat .. 0 a fold), the slope lost to the
+// footprint (`rough`), the slope of the displaced sheet (returned) and, with
+// `foamy`, the whitecaps' cover (`caps`). `held` waves only (finer than
+// `footprint` they fade); the CPU mirror holds them all.
+vec2 zs_swell_body(vec2 p, float t, float footprint, bool foamy, out vec3 shift, out float jac, out float rough, out float caps) {
+	vec2 h0 = normalize(swell_heading);
+	float cx = cos(swell_cross.x), sx = sin(swell_cross.x);
+	vec2 h1 = vec2(cx * h0.x - sx * h0.y, sx * h0.x + cx * h0.y);
+	vec2 hw = normalize(body_wind);
+	float patch = zs_body_rough(p, t);
+	float wsea = mix(body_patch.x, body_patch.y, patch);
+	float bend = (zs_body_noise(p / 95.0 + vec2(t * 0.01, 7.1)) - 0.5) * 2.4 + (zs_body_noise(p / 37.0 + vec2(2.4, t * 0.015)) - 0.5) * 0.9;
+	float gt[3];
+	gt[0] = zs_body_noise(vec2(dot(p, h0) - t * 6.0, dot(p, vec2(-h0.y, h0.x))) / vec2(260.0, 420.0) + vec2(1.7, 5.3));
+	gt[1] = zs_body_noise(vec2(dot(p, h1) - t * 5.0, dot(p, vec2(-h1.y, h1.x))) / vec2(200.0, 330.0) + vec2(8.2, 2.6));
+	gt[2] = zs_body_noise(vec2(dot(p, hw) - t * 2.6, dot(p, vec2(-hw.y, hw.x))) / vec2(90.0, 120.0) + vec2(3.1, 6.6));
+	vec2 dirs[11];
+	float ks[11], amps[11], phases[11], steeps[11];
+	float total = 0.0;
+	for (int i = 0; i < BODY; i++) {
+		int train = BODY_TRAIN[i];
+		vec2 h = train == 0 ? h0 : (train == 1 ? h1 : hw);
+		float c = cos(BODY_TURN[i]), s = sin(BODY_TURN[i]);
+		vec2 d = vec2(c * h.x - s * h.y, s * h.x + c * h.y);
+		float k = TAU / BODY_LENGTH[i];
+		float omega = sqrt(GRAVITY * k);
+		// Each wave's own groups riding at half its speed, mixed with its
+		// train's: crests that build and die away.
+		vec2 along = vec2(dot(p, d) - 0.5 * omega / k * t, dot(p, vec2(-d.y, d.x)));
+		float own = zs_body_noise(along / (BODY_LENGTH[i] * vec2(2.6, 3.4)) + vec2(float(i) * 3.7, float(i) * 1.3));
+		float group = smoothstep(0.2, 0.8, mix(gt[train], own, 0.65));
+		group = mix(1.0, 0.12 + 1.6 * group * group, swell_groups);
+		float a = train < 2 ? BODY_SIZE[i] * body_swell.x * (train == 1 ? swell_cross.y / 0.6 : 1.0) * group : BODY_SIZE[i] * body_swell.y * wsea * group / k;
+		dirs[i] = d;
+		ks[i] = k;
+		amps[i] = a;
+		steeps[i] = a * k;
+		phases[i] = dot(p, d) * k - omega * t + float(i) * 2.39 + bend * (0.5 + 0.1 * float(i));
+		total += a * k;
+	}
+	// Where the wind gusts hardest: whitecaps cluster in loose drifting
+	// clumps instead of along every crest.
+	vec2 gp = (p - hw * t * 2.0) / 55.0;
+	float gust = smoothstep(0.45, 0.8, zs_body_noise(gp + vec2(9.1, 3.7)) * 0.7 + zs_body_noise(gp * 2.7 + vec2(1.3, 8.8)) * 0.3);
+	// The squeeze shared out: the crests peak toward body_swell.z together.
+	float q = body_swell.z / max(total, 0.35);
+	shift = vec3(0.0);
+	vec2 slope = vec2(0.0);
+	vec3 j = vec3(1.0, 1.0, 0.0);
+	rough = 0.0;
+	caps = 0.0;
+	for (int i = 0; i < BODY; i++) {
+		float L = BODY_LENGTH[i];
+		float held = 1.0 - smoothstep(L * 0.06, L * 0.18, footprint);
+		vec2 d = dirs[i];
+		float cp = cos(phases[i]), sp = sin(phases[i]);
+		float steep = steeps[i];
+		shift.xz += d * q * amps[i] * cp * held;
+		shift.y += amps[i] * sp * held;
+		slope += d * steep * cp * held;
+		j -= vec3(d.x * d.x, d.y * d.y, d.x * d.y) * q * steep * sp * held;
+		rough += 0.5 * steep * steep * (1.0 - held * held);
+		if (foamy && i >= 5 && i <= 8) {
+			// The whitecaps of this wave's crests: whether the crest that
+			// passed last was breaking here (more where its group is high and
+			// the sea rough), and how long ago it passed.
+			float omega = sqrt(GRAVITY * ks[i]);
+			float u = (PI * 0.5 - phases[i]) / TAU;
+			float since = fract(u), id = floor(u);
+			float age = since * TAU / omega;
+			float r = steep / (BODY_SIZE[i] * max(body_swell.y, 0.05));
+			float chance = clamp((r - 0.72) * 0.32 * whitecaps.x, 0.0, 0.3) * (0.25 + 0.75 * gust);
+			vec2 lp = p - hw * age * 0.5;
+			float n = zs_body_noise(vec2(dot(lp, vec2(-d.y, d.x)) / (L * 0.3), dot(lp, d) / (L * 0.4)) + vec2(id * 1.37 + float(i) * 5.1, id * 2.71));
+			// Ragged edges: the outline wanders with a finer noise.
+			float ragged = zs_body_noise(lp / 1.7 + vec2(id * 0.73, float(i) * 2.9)) * 0.6 + zs_body_noise(lp / 0.6 + vec2(4.4, id)) * 0.4;
+			ragged = mix(0.5, ragged, 1.0 - smoothstep(0.15, 0.6, footprint));
+			float soft = 0.2 + clamp(footprint / L * 3.0, 0.0, 0.35);
+			float birth = smoothstep(1.0 - chance, 1.0 + soft - chance, n + (ragged - 0.5) * 0.3) * smoothstep(0.0, soft * 0.7, chance);
+			float front = smoothstep(0.0, max(footprint / L * 4.0, 0.03), since + (ragged - 0.5) * 0.04) * (1.0 - smoothstep(0.45, 0.9, since));
+			float life = max(whitecaps.y, 0.1);
+			float cap = birth * front * (exp(-age / life) * 0.7 + exp(-age / 0.35) * 0.6);
+			// Older foam pulled out in streaks downwind.
+			vec2 sp = vec2(dot(lp, hw) / 9.0, dot(lp, vec2(-hw.y, hw.x)) / 1.8) + vec2(id * 3.3, float(i));
+			float streak = zs_body_noise(sp) * 0.65 + zs_body_noise(sp * vec2(1.7, 2.3) + 4.1) * 0.35;
+			streak = mix(0.5, streak, 1.0 - smoothstep(0.2, 0.8, footprint));
+			cap *= mix(1.0, smoothstep(0.3, 0.7, streak) * 1.4, smoothstep(0.3, 2.5, age) * 0.6 * whitecaps.z);
+			// Finer than the pixel: the crests' mean cover instead.
+			float period = TAU / omega;
+			float mean = chance * 0.25 * (life / period) * (1.0 - exp(-period / life)) * 0.8;
+			cap = mix(mean, cap, 1.0 - smoothstep(L * 0.04, L * 0.15, footprint));
+			caps = 1.0 - (1.0 - caps) * (1.0 - clamp(cap, 0.0, 1.0));
+		}
+	}
+	jac = j.x * j.y - j.z * j.z;
+	if (foamy) caps = max(caps, smoothstep(0.24, 0.08, jac) * patch * (0.25 + 0.75 * gust) * min(whitecaps.x, 1.0));
+	float det = max(jac, 0.1);
+	return vec2(j.y * slope.x - j.z * slope.y, j.x * slope.y - j.z * slope.x) / det;
 }
 
 // The Gerstner swells at `p` (rest xz): the sideways shove and rise
@@ -368,6 +527,9 @@ float zs_sea_air(vec2 p, out float paw) {
 		float wide = zs_noise(r + vec2(5.9, 1.3)) * 0.7 + zs_noise(r * 2.3 + vec2(2.2, 9.1)) * 0.3;
 		patch = max(1.0 + wind_patches.y * (smoothstep(0.2, 0.8, wide) * 2.0 - 1.0), 0.15);
 	}
+	// The body: the chop follows the same slicks and rough stretches as the
+	// wind sea and its whitecaps.
+	if (sea_body > 0) patch = mix(1.0 - 0.65 * body_patch.z, 1.0 + 0.45 * body_patch.z, zs_body_rough(p, zs_flow_time));
 	return (0.45 + 0.55 * air) * (0.6 + 0.9 * paw) * (1.0 - 0.6 * slick) * chop * patch;
 }
 
@@ -444,6 +606,12 @@ float zs_foam_pattern(vec2 p, float t, float cover, float footprint) {
 	return smoothstep(1.0 - cover, 1.0 - cover + 0.22, n) * smoothstep(0.0, 0.1, cover);
 }
 
+float zs_foam_soft(vec2 p, float t, float cover, float footprint) {
+	vec3 hold = vec3(1.0) - smoothstep(vec3(0.25, 0.08, 0.03), vec3(0.9, 0.3, 0.12), vec3(footprint));
+	float n = mix(0.5, zs_noise(p * 0.7 + vec2(t * 0.05, 0.0)), hold.x) * 0.5 + mix(0.5, zs_noise(p * 2.1 - vec2(0.0, t * 0.08)), hold.y) * 0.32 + mix(0.5, zs_noise(p * 5.3 + vec2(t * 0.11)), hold.z) * 0.18;
+	return smoothstep(1.0 - cover, 1.0 - cover + 0.4, n) * smoothstep(0.0, 0.15, cover);
+}
+
 void vertex() {
 	vec3 world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	rest_xz = world.xz;
@@ -452,7 +620,16 @@ void vertex() {
 	float near = 1.0 - smoothstep(heave_reach.x, heave_reach.y, reach);
 	vec3 shift;
 	float crest, rough;
-	zs_swell(world.xz, zs_flow_time, cell, shift, crest, rough);
+	if (sea_body > 0) {
+		// The finer sheet (EndlessSea `sheet`): 1 m cells, doubling ring by
+		// ring; a wave is held while its length spans a few cells.
+		cell = max(1.0, reach / 32.0);
+		near = 1.0 - smoothstep(body_reach.x, body_reach.y, reach);
+		float jac, caps;
+		zs_swell_body(world.xz, zs_flow_time, cell * 0.6, false, shift, jac, rough, caps);
+	} else {
+		zs_swell(world.xz, zs_flow_time, cell, shift, crest, rough);
+	}
 	VERTEX += shift * near;
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
@@ -466,7 +643,14 @@ void fragment() {
 	float air = zs_sea_air(rest_xz, paw);
 	vec3 shift;
 	float crest, swell_rough, chop_rough;
-	vec2 slope = zs_swell(rest_xz, t, footprint, shift, crest, swell_rough);
+	float jac = 1.0, caps = 0.0;
+	vec2 slope;
+	if (sea_body > 0) {
+		slope = zs_swell_body(rest_xz, t, footprint, true, shift, jac, swell_rough, caps);
+		crest = 0.0;
+	} else {
+		slope = zs_swell(rest_xz, t, footprint, shift, crest, swell_rough);
+	}
 	vec2 detail = zs_chop(rest_xz, t, air, footprint, chop_rough);
 	vec2 wake_slope;
 	float stirred;
@@ -517,6 +701,17 @@ void fragment() {
 	vec3 ambient = zs_hemi_sky * zs_hemi_energy / PI;
 	vec3 key = zs_key_irradiance * max(zs_key_direction.y, 0.0) / PI;
 	vec3 light = (ambient + key * 0.8) * water_light;
+	// The body: the water's light across the wave, darker in the troughs and
+	// lighter, greener up the crests, and a touch darker where it is rough.
+	float lift = 0.5;
+	float rough_here = 0.0;
+	if (sea_body > 0) {
+		float scale = body_swell.x * 0.9 + body_swell.y * 0.3 + 0.05;
+		lift = smoothstep(-1.0, 1.0, shift.y / scale);
+		rough_here = zs_body_rough(rest_xz, t);
+		vec3 up_tint = mix(column, sss_color * zs_palette_water * 0.55, 0.07);
+		column = mix(column * body_value.x, up_tint * body_value.y, lift) * mix(1.0, 0.85, rough_here);
+	}
 	vec3 water = column * light * (vec3(1.0) - seen) + bed * seen;
 	if (sea_motion > 0) water *= 1.0 + clamp(dot(normal.xz, normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.0, -0.5, 0.5) * body_shade;
 	// Stirred water behind the plane: lighter with the air churned into it.
@@ -540,7 +735,18 @@ void fragment() {
 	// The crests: only the sharpest, and more where the wind works.
 	float crested = smoothstep(0.12, 0.2, crest + detail.x * 0.15) * crest_foam * smoothstep(8.0, 20.0, water_depth) * (0.5 + 0.5 * paw) * min(zs_wind_strength * 1.3, 1.0);
 	float cover = max(shore, crested * 0.55);
+	// The whitecaps, out on the open sea.
+	if (sea_body > 0) {
+		float open_sea = smoothstep(4.0, 12.0, water_depth);
+		caps *= open_sea;
+		cover = max(cover, caps);
+		// The aerated water round and under them, lighter and greener.
+		water = mix(water, mix(tint_shallow, sss_color, 0.4) * zs_palette_water * light * 0.8, smoothstep(0.05, 0.6, caps) * 0.16);
+	}
 	float foamed = zs_foam_pattern(rest_xz, t, cover, footprint) * foam;
+	// Whitecaps: the same breakup but softer-edged, so they read as foam and
+	// not as cut paper.
+	if (sea_body > 0 && caps > shore) foamed = mix(foamed, mix(zs_foam_soft(rest_xz, t, caps, footprint), caps * 0.75, smoothstep(0.1, 0.45, footprint)) * foam, smoothstep(0.0, 0.05, caps - shore));
 	// The wake's foam: lines broken softly rather than into islands.
 	float fleck = zs_noise(rest_xz * 0.9 + vec2(t * 0.3, 0.0)) * 0.6 + zs_noise(rest_xz * 2.6 - vec2(0.0, t * 0.4)) * 0.4;
 	foamed = max(foamed, (smoothstep(0.2, 0.55, waked * (0.15 + 1.3 * fleck)) * 0.9 + smoothstep(0.4, 0.85, fleck) * stirred * 0.18) * foam);
@@ -660,10 +866,22 @@ void fragment() {
 	}
 	spark *= smoothstep(0.85, 0.97, dot(reflect(-eye, calm), sun));
 	spark *= glitter * zs_celestial_clear * sunlight * (1.0 - shaded) * (1.0 - foamed);
+	// The body: thin crests the sun shines through, glowing green-turquoise
+	// when the eye looks toward it (strongest on the faces turned this way).
+	float glow = 0.0;
+	if (sea_body > 0) {
+		vec3 view = -eye;
+		float back = smoothstep(-0.1, 0.7, dot(view, sun)) * 0.6 + 0.4 * pow(clamp(dot(normalize(view.xz + vec2(1e-4)), sun_flat), 0.0, 1.0), 3.0);
+		float thin = smoothstep(0.62, 0.95, lift) * (0.2 + 0.8 * smoothstep(0.95, 0.65, jac));
+		float toward_eye = clamp(dot(normal.xz, eye.xz) * 4.0 + 0.35, 0.0, 1.0);
+		glow = sss_strength * thin * back * toward_eye * smoothstep(-0.02, 0.15, sun.y) * (1.0 - shaded * 0.7) * smoothstep(3.0, 10.0, water_depth);
+		water += sss_color * (key * 1.2 + ambient * 0.3) * glow;
+		fresnel *= 1.0 - 0.15 * rough_here;
+	}
 	vec3 lit = water + zs_lake_direct(vec3(0.0), normal, eye, zs_key_direction, zs_key_irradiance, max(roughness, 0.3)) * glint_share * 0.06 * (1.0 - foamed);
 	lit *= 1.0 - 0.4 * shaded;
 
-	float mirror_weight = fresnel * (1.0 - foamed);
+	float mirror_weight = fresnel * (1.0 - foamed) * (1.0 - clamp(glow, 0.0, 0.6));
 	vec3 display_color = mix(zs_scene_to_display(lit), reflection, mirror_weight);
 	display_color = mix(display_color, path.rgb, path.a * (1.0 - foamed));
 	vec3 warm = mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, sun.y));
@@ -671,6 +889,7 @@ void fragment() {
 	if (debug_view == 1) display_color = water_depth < 5.0 ? vec3(1.0, 0.0, 0.0) : (water_depth < 20.0 ? vec3(0.0, 1.0, 0.0) : (water_depth < 60.0 ? vec3(0.0, 0.0, 1.0) : vec3(1.0))) * (0.5 + 0.5 * known);
 	if (debug_view == 3) display_color = zs_scene_to_display(lit);
 	if (debug_view == 4) display_color = reflection * mirror_weight;
+	if (debug_view == 5) display_color = vec3(glow, lift * 0.5, (1.0 - jac) * 2.0);
 	if (debug_view == 2) display_color = vec3(cover, foamed, waked);
 	ALBEDO = scene_linear_for_display(clamp(display_color, vec3(0.0), vec3(1.0)));
 	ALPHA = depth > 0.0 ? smoothstep(0.0, 0.05, bed_depth) : 1.0;
