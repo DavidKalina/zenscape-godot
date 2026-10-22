@@ -33,6 +33,17 @@ uniform float rock_facets : hint_range(0.0, 1.5) = 1.0;
 uniform float rock_bounce : hint_range(0.0, 2.0) = 1.0;
 uniform bool rock_pass1 = false;
 
+// Erosion round: a tileable relief of runnels (down the face), ledges (along
+// it) and rounded bulges, projected in world space on three axes at two sizes.
+// rock_relief is its strength (0 off), rock_relief_size scales both tiles,
+// rock_calm (0..1) quiets pass 2's painted plane tones and facets so the relief
+// does the work; rock_flat gives pass 2 exactly as it was.
+uniform sampler2D rock_erosion_tex : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float rock_relief : hint_range(0.0, 3.0) = 1.2;
+uniform float rock_relief_size : hint_range(0.25, 4.0) = 1.0;
+uniform float rock_calm : hint_range(0.0, 1.0) = 0.5;
+uniform bool rock_flat = false;
+
 const vec3 ER_SHADOW1 = vec3(0.105, 0.115, 0.150);
 const vec3 ER_SHADOW = vec3(0.135, 0.130, 0.175);
 const vec3 ER_SKY_BOUNCE = vec3(0.30, 0.38, 0.72);
@@ -136,6 +147,39 @@ vec3 er_planes(vec3 n, vec3 p, float steps_az, float steps_el, float w, out vec2
 	return vec3(cos(el) * cos(az), sin(el), cos(el) * sin(az));
 }
 
+// Relief: the sum of two tiles' normal offsets (world), and `cav` the cavity
+// (0 hollow .. 1 proud, 0.5 flat), faded as pixels widen past each tile's forms.
+vec3 er_relief(vec3 p, vec3 n, float fp, out float cav) {
+	vec3 w = pow(abs(n), vec3(4.0));
+	w /= (w.x + w.y + w.z + 1e-5);
+	vec3 off = vec3(0.0);
+	cav = 0.5;
+	float tiles[2] = float[2](110.0, 38.0);
+	float amps[2] = float[2](1.0, 0.55);
+	float keeps[2] = float[2](14.0, 5.0);
+	for (int k = 0; k < 2; k++) {
+		float T = tiles[k] * rock_relief_size;
+		float kp = er_keep(keeps[k] * rock_relief_size, fp);
+		if (kp <= 0.0) continue;
+		vec2 g = vec2(fp / T);
+		vec2 dx = vec2(g.x, 0.0);
+		vec2 dy = vec2(0.0, g.y);
+		vec2 sh = vec2(float(k) * 0.37, float(k) * 0.61);
+		vec4 a = textureGrad(rock_erosion_tex, vec2(p.x, -p.y) / T + sh, dx, dy);
+		vec4 b = textureGrad(rock_erosion_tex, vec2(p.z + 37.0, -p.y) / T + sh, dx, dy);
+		vec4 c = textureGrad(rock_erosion_tex, vec2(p.x + 11.0, p.z) / T + sh, dx, dy);
+		if (a.b < 0.1) return vec3(0.0);
+		vec2 ta = a.xy * 2.0 - 1.0;
+		vec2 tb = b.xy * 2.0 - 1.0;
+		vec2 tc = c.xy * 2.0 - 1.0;
+		// A top face's runnels have no down-slope; keep it to the bulges.
+		vec3 o = w.z * vec3(ta.x, -ta.y, 0.0) + w.x * vec3(0.0, -tb.y, tb.x) + w.y * 0.5 * vec3(tc.x, 0.0, tc.y);
+		off += o * amps[k] * kp;
+		cav += ((w.z * a.a + w.x * b.a + w.y * c.a) - 0.5) * amps[k] * kp * 0.5;
+	}
+	return off;
+}
+
 // The rock's albedo at world point `p` on a surface of world normal `n`;
 // `bumped` comes back the normal to light it with. See the file's head.
 vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped, out vec3 glow) {
@@ -166,9 +210,14 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped, 
 		vec3 np = er_planes(n, p / sz, 9.0, 6.0, 0.05 + fq * 0.004, plane_id);
 		vec3 rnd_c;
 		cell_c = er_cells(vec3(q.x, q.y * 1.3, q.z) / 70.0 + vec3(1.0, 8.0, 2.0), rnd_c);
-		np = er_tilt(np, rnd_c, 0.34 * rock_bump);
+		np = er_tilt(np, rnd_c, 0.34 * rock_bump * (1.0 - 0.5 * (rock_flat ? 0.0 : rock_calm)));
 		nf = normalize(mix(nf, np, clamp(0.95 * facet_k, 0.0, 1.0)));
-		nf = er_tilt(nf, rnd_b, 0.34 * rock_bump * er_keep(38.0, fq) * facet_k);
+		nf = er_tilt(nf, rnd_b, 0.34 * rock_bump * er_keep(38.0, fq) * facet_k * (1.0 - 0.5 * (rock_flat ? 0.0 : rock_calm)));
+	}
+	float cav = 0.5;
+	if (!rock_pass1 && !rock_flat && rock_relief > 0.0) {
+		vec3 off = er_relief(p, n, fp, cav);
+		nf = normalize(nf + off * rock_relief);
 	}
 	vec3 rnd_f = vec3(0.5);
 	vec2 cell_f = vec2(1.0, 1.0);
@@ -193,7 +242,8 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped, 
 	if (!rock_pass1 && facet_k > 0.0) {
 		// Each plane its own tone and a hue leaning warm or cool.
 		vec3 hp = er_hash3(ivec3(int(plane_id.x), int(plane_id.y), 19));
-		col *= (1.0 + (hp.x - 0.5) * 0.26 * facet_k)
+		float calm = rock_flat ? 0.0 : rock_calm;
+		col *= (1.0 + (hp.x - 0.5) * 0.26 * facet_k * (1.0 - calm))
 			* mix(vec3(0.94, 0.97, 1.08), vec3(1.08, 1.02, 0.90), hp.y);
 	}
 	// A rock of its own: warm sandy to cool grey over the drift.
@@ -255,7 +305,7 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped, 
 	// Dry-brush strokes along the beds: light flecks on the lit side.
 	float stroke = er_vnoise(vec3(q.x / 7.0, q.y / 0.8, q.z / 7.0) + vec3(4.0, 1.0, 8.0));
 	float sk = er_keep(0.8, fq);
-	col *= 1.0 + (smoothstep(0.55, 0.62, stroke) - 0.5) * 0.4 * sk * (0.4 + t);
+	col *= 1.0 + (smoothstep(0.55, 0.62, stroke) - 0.5) * 0.4 * sk * (0.4 + t) * (1.0 - 0.6 * (rock_flat ? 0.0 : rock_calm));
 	// Weathering streaks running down the face.
 	float gully = er_vnoise(vec3(q.x / 2.6, q.y / 36.0, q.z / 2.6) + vec3(2.0, 0.0, 5.0));
 	float gk = er_keep(2.6, fq);
@@ -265,6 +315,9 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped, 
 	// In shade the lips keep a cool glint and the cracks stay violet, not black.
 	vec3 glint = mix(ER_GLINT, vec3(0.40, 0.40, 0.54), shade);
 	vec3 crack_col = mix(ER_CRACK, vec3(0.085, 0.075, 0.135), shade);
+	float calm_k = rock_flat ? 0.0 : rock_calm;
+	crack *= 1.0 - 0.45 * calm_k;
+	lip *= 1.0 - 0.4 * calm_k;
 	col = mix(col, glint, lip * (0.35 + 0.6 * t + 0.15 * shade) * 0.9);
 	col = mix(col, crack_col, clamp(crack, 0.0, 1.0) * (0.85 - 0.2 * shade));
 
@@ -278,6 +331,10 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, inout vec3 bumped, 
 	// The sun's own light takes the facets' normal.
 	bumped = normalize(mix(n, nf, rock_pass1 ? 0.7 : 0.92));
 	col = mix(col, ER_MID * 1.2, 1.0 - rock_paint);
+	if (!rock_flat && !rock_pass1) {
+		// Hollows a little darker, proud ledges a little lighter.
+		col *= 1.0 + (cav - 0.5) * 0.5 * clamp(rock_relief, 0.0, 1.5);
+	}
 	if (!rock_pass1 && rock_bounce > 0.0) {
 		// Bounce light the sun does not give: cool sky from above, warm from
 		// the valley floor below, strongest in the shade.
