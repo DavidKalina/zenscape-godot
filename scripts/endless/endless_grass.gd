@@ -91,6 +91,10 @@ const SOFT := 8.0
 ## grown this much (wide, tall) over the near ring's band.
 const FAR_TUFTS := 1.8
 const FAR_GROW := Vector2(2.0,1.8)
+## The grass's height, a multiple of the isles' blade (--grass-tall=X; 1.0:
+## the old grass). Height only: the near FINE tuft's mesh, the far ring's
+## sizes (FAR_NEAR/FAR_GROW tall) and the near sway's arm scale with it.
+const TALL := 2.0
 ## A far tuft's size (wide, tall) where it comes up (LOD.x..y): the near
 ## tuft's look there (as tall; wider, its tufts fewer).
 const FAR_NEAR := Vector2(1.5,1.0)
@@ -223,6 +227,7 @@ var patches := 1.0
 var fine := true
 var _fine_meshes := {}
 var _fine_share := FINE_TUFTS
+var tall := TALL
 ## Cells grown and freed, their grow times, the slowest stand, for the HUD
 ## and drivers.
 var stats := {"grown":0,"freed":0,"grow_ms":0.0,"slowest_grow_ms":0.0,"slowest_stand_ms":0.0}
@@ -278,6 +283,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		elif a.begins_with("--grass-fine="):
 			fine = a.get_slice("=",1) != "0"
 			if fine and a.get_slice("=",1).to_float() > 0.0: _fine_share = a.get_slice("=",1).to_float()
+		elif a.begins_with("--grass-tall="): tall = clampf(a.get_slice("=",1).to_float(),0.25,6.0)
 		elif a.begins_with("--grass-patches="): patches = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 		elif a.begins_with("--flower-drifts="): drifts = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a == "--no-drifts": drifts = 0.0
@@ -586,6 +592,9 @@ func _calm(batch: MultiMeshInstance3D) -> void:
 		m.set_shader_parameter("grass_root_paint",Vector4(plain.x,plain.y,plain.z,ROOT_PAINT))
 		_silver(m,"grass_wave_sheen",SILVER_SHEEN)
 		for k: String in _sets.grass: m.set_shader_parameter(k,_sets.grass[k])
+		# The sway's arm is the blade's height: taller blades bend as far.
+		var sway = m.get_shader_parameter("sway_shape")
+		if sway is Vector4 and fine: m.set_shader_parameter("sway_shape",Vector4(sway.x,sway.y*tall,sway.z,sway.w))
 	else:
 		m.set_shader_parameter("flower_far",Vector4(FLOWER_FADE.x,FLOWER_FADE.y,0.0,0.0))
 		# Their leaves and buds gone before the heads (FLOWER_DETAIL; led
@@ -610,6 +619,13 @@ func _fine(key: String) -> Mesh:
 		GrassTuft._clump(surface,rng,root,tip,int(satellite[0]),Vector2.from_angle(turn)*float(satellite[1]),float(satellite[2]),FINE.rows,FINE.taper,float(FINE.width))
 	surface.index()
 	var mesh := surface.commit()
+	if not is_equal_approx(tall,1.0):
+		var arrays := mesh.surface_get_arrays(0)
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for i in v.size(): v[i].y *= tall
+		arrays[Mesh.ARRAY_VERTEX] = v
+		mesh = ArrayMesh.new()
+		(mesh as ArrayMesh).add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	mesh.set_meta("grass_root",root)
 	mesh.set_meta("grass_tip",tip)
 	_fine_meshes[key] = mesh
@@ -632,8 +648,8 @@ func _far(key: String, ring: Dictionary) -> Material:
 	m.set_shader_parameter("grass_ring",Vector4(lod_v.z,lod_v.w,soft,0.0))
 	# Each comes up over the soft metres where a near tuft at its rank goes.
 	m.set_shader_parameter("grass_ring_in",Vector4(lod_v.x-soft,lod_v.y-soft,soft,0.0))
-	m.set_shader_parameter("grow_near",FAR_NEAR)
-	m.set_shader_parameter("grass_ring_grow",Vector4(lod_v.y,lod_v.z,grow.x,grow.y))
+	m.set_shader_parameter("grow_near",Vector2(FAR_NEAR.x,FAR_NEAR.y*tall))
+	m.set_shader_parameter("grass_ring_grow",Vector4(lod_v.y,lod_v.z,grow.x,grow.y*tall))
 	# The drift's tufts come up as the flowers go (reference_surface
 	# `flower_far`: gone by FLOWER_FADE.y).
 	m.set_shader_parameter("wash_in",Vector4(FLOWER_FADE.x-soft*0.5,FLOWER_FADE.y-soft*0.5,soft*0.5,0.0))
