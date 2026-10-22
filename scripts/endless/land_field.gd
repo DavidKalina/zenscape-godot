@@ -25,6 +25,12 @@ extends RefCounted
 ## field): --mountains=X how much land the ranges cover (1; 0 none),
 ## --peaks=X their height (1), --valleys=X how deep the valleys cut (1;
 ## over 1 their sides widen; 0 or --no-valleys none), --old-land round one's land exactly.
+##   carve       erosion cut into the steep rock only (`_carve`, CARVE_*):
+##               broken block planes, ledges, gullies down the fall line at
+##               three sizes; never on meadows or valley floors.
+##               --no-carve the land uncarved, --carve=X its strength,
+##               --carve-blocks= / --carve-ledges= / --carve-gullies= each
+##               form's share (rock-carve-handoff.md).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 
@@ -86,6 +92,45 @@ const VALLEY_KEEP := 0.08
 const BEACH := 2.2
 ## Snow from SNOW m over the sea, on what is no steeper than the shader's.
 const SNOW := 125.0
+## The carve (rock-carve-handoff.md): erosion cut into the steep rock only,
+## all local maths, so a chunk, a collider and the plane's ground agree.
+## The broad land's slope is read off a lattice of CARVE_GRID m (cached per
+## field) and eased between its nodes. Carving rises in over the slope
+## band CARVE_SLOPE (rise over run; the ground shader's rock starts near
+## 0.75), only where a range stands (CARVE_MOUNTAIN) and never on a meadow
+## or a valley floor (both flat, and the meadow mask fades it too).
+const CARVE_GRID := 8.0
+const CARVE_SLOPE := Vector2(0.38,0.9)
+const CARVE_MOUNTAIN := Vector2(0.004,0.08)
+## Blocks: Voronoi cells of FACET_CELL m, each a plane (the slope at its
+## centre, tilted up to FACET_TILT of it, lifted up to FACET_STEP m), blended
+## sharply (FACET_EDGE, 1/m^2) so a wall breaks into planes with notched
+## edges; FACET_KEEP the share of the wall they take.
+const FACET_CELL := 32.0
+const FACET_TILT := 0.35
+const FACET_STEP := 3.5
+const FACET_EDGE := 0.010
+const FACET_KEEP := 0.8
+## Ledges: benches every BENCH m of height whose contours wander (BENCH_WARP
+## of a step over BENCH_WANDER m), BENCH_FLAT of each step the bench, and
+## only where a band noise (BENCH_BANDS m) allows.
+const BENCH := 14.0
+const BENCH_WARP := 1.4
+const BENCH_WANDER := 70.0
+const BENCH_FLAT := 0.42
+const BENCH_BANDS := 220.0
+## Gullies down the fall line, three sizes: (spacing m, depth m). Each is
+## waves across the slope from a cell lattice of its spacing, every cell its
+## own phase and spacing (GULLY_JITTER), so they fork and stop rather than
+## run as stripes; GULLY_SHARP narrows the grooves between broad buttresses.
+const GULLIES := [Vector2(36.0,10.0),Vector2(15.0,4.5),Vector2(6.0,1.0)]
+const GULLY_JITTER := 0.45
+const GULLY_SHARP := 1.7
+const GULLY_SHADE := [1.0,0.75,0.4]
+## The carve fades by the chunk's grid step (`detail`): a size under
+## CARVE_FADE steps goes; at CARVE_DETAIL_OFF m steps there is no carve.
+const CARVE_FADE := Vector2(3.0,5.0)
+const CARVE_DETAIL_OFF := 16.0
 
 const SAND := Color(0.80,0.74,0.56)
 const SEABED := Color(0.42,0.46,0.40)
@@ -125,6 +170,40 @@ var last_valley := INF
 var last_half := 0.0
 var last_side := 0.0
 var last_across := Vector2.RIGHT
+## The carve's strength (--carve=X, 1; --no-carve 0) and the grid step (m)
+## the caller samples at (land_stream sets its chunk's; 0 is full detail).
+var carve := 1.0
+## Each form's share (--carve-blocks=, --carve-ledges=, --carve-gullies=; 1).
+var carve_blocks := 1.0
+var carve_ledges := 1.0
+var carve_gullies := 1.0
+var detail := 0.0
+## What the last `sample` carved, for the ground shader (land_stream's
+## CUSTOM0): how deep in a groove or a ledge's inner corner (0..1) and how
+## much on a buttress's crest or a ledge's lip (0..1).
+var last_cavity := 0.0
+var last_ridge := 0.0
+var _floor := -INF
+# The carve's memos (samples come in rows, so neighbours share cells).
+var _bs_key := Vector2i(1<<30,0)
+var _bs_00 := Vector3.ZERO
+var _bs_10 := Vector3.ZERO
+var _bs_01 := Vector3.ZERO
+var _bs_11 := Vector3.ZERO
+var _fc_key := Vector2i(1<<30,0)
+var _fc := PackedFloat32Array()
+var _gc_key: Array[Vector2i] = [Vector2i(1<<30,0),Vector2i(1<<30,0),Vector2i(1<<30,0)]
+var _gc: Array[PackedFloat32Array] = [PackedFloat32Array([0,0,0,0,0,0,0,0]),PackedFloat32Array([0,0,0,0,0,0,0,0]),PackedFloat32Array([0,0,0,0,0,0,0,0])]
+const LAT_SLOTS := 128
+var _node_key := PackedInt64Array()
+var _node_set := PackedByteArray()
+var _node_v := PackedFloat64Array()
+var _h_key := PackedInt64Array()
+var _h_set := PackedByteArray()
+var _h_v := PackedFloat64Array()
+var _bench_warp := FastNoiseLite.new()
+var _bench_band := FastNoiseLite.new()
+var _gully_amp := FastNoiseLite.new()
 
 func _init(land_seed := 0) -> void:
 	seed = land_seed
@@ -134,6 +213,11 @@ func _init(land_seed := 0) -> void:
 		elif arg.begins_with("--valleys="): valleys = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg == "--no-valleys": valleys = 0.0
 		elif arg == "--old-land": old_land = true
+		elif arg == "--no-carve": carve = 0.0
+		elif arg.begins_with("--carve="): carve = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--carve-blocks="): carve_blocks = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--carve-ledges="): carve_ledges = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--carve-gullies="): carve_gullies = maxf(0.0,float(arg.get_slice("=",1)))
 	_noise(_continent,1,CONTINENT,3,FastNoiseLite.FRACTAL_FBM)
 	_noise(_hills,2,HILLS,4,FastNoiseLite.FRACTAL_FBM)
 	_noise(_mask,3,MOUNTAINS if old_land else RANGE_MASK,2,FastNoiseLite.FRACTAL_FBM)
@@ -146,6 +230,9 @@ func _init(land_seed := 0) -> void:
 	_noise(_valley,10,VALLEYS,2,FastNoiseLite.FRACTAL_FBM)
 	_noise(_valley_warp,11,VALLEY_WARP,1,FastNoiseLite.FRACTAL_NONE)
 	_noise(_valley_wide,12,900.0,1,FastNoiseLite.FRACTAL_NONE)
+	_noise(_bench_warp,13,BENCH_WANDER,2,FastNoiseLite.FRACTAL_FBM)
+	_noise(_bench_band,14,BENCH_BANDS,1,FastNoiseLite.FRACTAL_NONE)
+	_noise(_gully_amp,15,1.0,1,FastNoiseLite.FRACTAL_NONE)
 
 func _noise(n: FastNoiseLite, salt: int, scale: float, octaves: int, kind: int) -> void:
 	n.seed = seed*7919+salt*104729
@@ -154,9 +241,33 @@ func _noise(n: FastNoiseLite, salt: int, scale: float, octaves: int, kind: int) 
 	n.fractal_type = kind
 	n.fractal_octaves = octaves
 
-## Vector2(world height, meadow 0..1) at a world XZ point.
+## Vector2(world height, meadow 0..1) at a world XZ point: the land's
+## broad shape (`_broad`), then the erosion carved into its steep rock
+## (`_carve`).
 func sample(x: float, z: float) -> Vector2:
 	if old_land: return _old_sample(x,z)
+	var s := _broad(x,z)
+	last_cavity = 0.0
+	last_ridge = 0.0
+	if carve > 0.0 and last_mountain > CARVE_MOUNTAIN.x and detail < CARVE_DETAIL_OFF:
+		# The carve samples the broad land around; `shape` keeps this point's.
+		var k_mountain := last_mountain
+		var k_inland := last_inland
+		var k_valley := last_valley
+		var k_half := last_half
+		var k_side := last_side
+		var k_across := last_across
+		s.x = _carve(x,z,s.x,s.y,k_mountain,_floor)
+		last_mountain = k_mountain
+		last_inland = k_inland
+		last_valley = k_valley
+		last_half = k_half
+		last_side = k_side
+		last_across = k_across
+	return s
+
+## The land before the carve: continents, hills, ranges, meadows, valleys.
+func _broad(x: float, z: float) -> Vector2:
 	var base := _continent.get_noise_2d(x,z)*CONTINENT_SWING*2.0+CONTINENT_LIFT
 	# Inland the continents level off at LOWLAND m: the peaks come from
 	# the ranges, not from the continents.
@@ -168,6 +279,7 @@ func sample(x: float, z: float) -> Vector2:
 	var mountain := 0.0
 	last_valley = INF
 	last_inland = inland
+	_floor = -INF
 	if inland > 0.0 and mountains > 0.0:
 		var band := RANGE_BAND+Vector2.ONE*(1.0-mountains)*0.35
 		var where := smoothstep(band.x,band.y,_mask.get_noise_2d(x,z))*inland
@@ -205,6 +317,7 @@ func sample(x: float, z: float) -> Vector2:
 		if gx*gx+gz*gz > 0.0: last_across = Vector2(gx,gz).normalized()
 		if d < half+side:
 			var floor_y := maxf(base+hills*VALLEY_KEEP,MEADOW_ABOVE)
+			_floor = SEA_Y+floor_y
 			var t := clampf((d-half)/side,0.0,1.0)
 			# U-shaped: flat floor, the sides steepening up off it.
 			var keep := t*t*(3.0-2.0*t)
@@ -216,6 +329,205 @@ func sample(x: float, z: float) -> Vector2:
 	if absf(h) < BEACH*2.0: h = h*lerpf(0.45,1.0,smoothstep(0.0,BEACH*2.0,absf(h)))
 	last_mountain = mountain
 	return Vector2(SEA_Y+h,meadow)
+
+## --- The carve -------------------------------------------------------------
+
+## The broad land's height and slope at lattice node (i, j), cached:
+## Vector3(world height, d/dx, d/dz). The caches are direct-mapped on
+## LAT_SLOTS^2 slots (a chunk spans fewer nodes, so it never evicts its own).
+func _node(i: int, j: int) -> Vector3:
+	var slot := (i&(LAT_SLOTS-1))+(j&(LAT_SLOTS-1))*LAT_SLOTS
+	var key := (i<<32)^(j&0xFFFFFFFF)
+	if _node_key[slot] == key and _node_set[slot] == 1:
+		return Vector3(_node_v[slot*3],_node_v[slot*3+1],_node_v[slot*3+2])
+	var g := CARVE_GRID
+	var hx0 := _lat_h(i-1,j)
+	var hx1 := _lat_h(i+1,j)
+	var hz0 := _lat_h(i,j-1)
+	var hz1 := _lat_h(i,j+1)
+	var v := Vector3(_lat_h(i,j),(hx1-hx0)/(2.0*g),(hz1-hz0)/(2.0*g))
+	_node_key[slot] = key
+	_node_set[slot] = 1
+	_node_v[slot*3] = v.x
+	_node_v[slot*3+1] = v.y
+	_node_v[slot*3+2] = v.z
+	return v
+
+func _lat_h(i: int, j: int) -> float:
+	var slot := (i&(LAT_SLOTS-1))+(j&(LAT_SLOTS-1))*LAT_SLOTS
+	var key := (i<<32)^(j&0xFFFFFFFF)
+	if _h_key[slot] == key and _h_set[slot] == 1: return _h_v[slot]
+	var h := _broad(i*CARVE_GRID,j*CARVE_GRID).x
+	_h_key[slot] = key
+	_h_set[slot] = 1
+	_h_v[slot] = h
+	return h
+
+## The broad land's height and slope at any point, eased between the
+## lattice's nodes: Vector3(height, d/dx, d/dz).
+func _broad_slope(x: float, z: float) -> Vector3:
+	if _h_set.is_empty():
+		var slots := LAT_SLOTS*LAT_SLOTS
+		_node_key.resize(slots)
+		_node_set.resize(slots)
+		_node_v.resize(slots*3)
+		_h_key.resize(slots)
+		_h_set.resize(slots)
+		_h_v.resize(slots)
+	var fx := x/CARVE_GRID
+	var fz := z/CARVE_GRID
+	var i := floori(fx)
+	var j := floori(fz)
+	var u := fx-i
+	var v := fz-j
+	if i != _bs_key.x or j != _bs_key.y:
+		_bs_key = Vector2i(i,j)
+		_bs_00 = _node(i,j)
+		_bs_10 = _node(i+1,j)
+		_bs_01 = _node(i,j+1)
+		_bs_11 = _node(i+1,j+1)
+	return _bs_00.lerp(_bs_10,u).lerp(_bs_01.lerp(_bs_11,u),v)
+
+## The 3x3 block cells round cell (ci, cj), each (x, z, height, slope x,
+## slope z, lift), kept while the samples stay in that cell.
+func _facet_cells(ci: int, cj: int, salt: int) -> PackedFloat32Array:
+	if ci == _fc_key.x and cj == _fc_key.y: return _fc
+	_fc_key = Vector2i(ci,cj)
+	_fc.resize(54)
+	var n := 0
+	for dj in range(-1,2):
+		for di in range(-1,2):
+			var hh := _hash(ci+di,cj+dj,salt)
+			var cx := (ci+di+0.1+0.8*_rand(hh,1))*FACET_CELL
+			var cz := (cj+dj+0.1+0.8*_rand(hh,2))*FACET_CELL
+			var c := _broad_slope(cx,cz)
+			var cg := Vector2(c.y,c.z)
+			var cl := cg.length()
+			cg += Vector2(_rand(hh,3)-0.5,_rand(hh,4)-0.5)*2.0*FACET_TILT*cl
+			_fc[n] = cx
+			_fc[n+1] = cz
+			_fc[n+2] = c.x
+			_fc[n+3] = cg.x
+			_fc[n+4] = cg.y
+			_fc[n+5] = (_rand(hh,5)-0.5)*2.0*FACET_STEP*smoothstep(0.2,0.8,cl)
+			n += 6
+	return _fc
+
+## Gully size `o`'s four lattice corners round (i, j), each (wave number,
+## phase), kept while the samples stay in that cell.
+func _gully_cells(o: int, i: int, j: int, salt: int) -> PackedFloat32Array:
+	var got: PackedFloat32Array = _gc[o]
+	if _gc_key[o] == Vector2i(i,j): return got
+	_gc_key[o] = Vector2i(i,j)
+	var size: float = GULLIES[o].x
+	for c in 4:
+		var hh := _hash(i+(c&1),j+(c>>1),salt+o*1013)
+		got[c*2] = TAU/(size*(1.0+(_rand(hh,1)-0.5)*2.0*GULLY_JITTER))
+		got[c*2+1] = _rand(hh,2)*TAU
+	return got
+
+static func _hash(i: int, j: int, salt: int) -> int:
+	var h := (i*73856093)^(j*19349663)^(salt*83492791)
+	h = (h^(h>>13))*1274126177
+	h = (h^(h>>16))*1103515245
+	return (h^(h>>15))&0xFFFFFF
+
+static func _rand(h: int, k: int) -> float:
+	return float(((h*(k*2654435761+1))>>7)&0xFFFF)/65535.0
+
+## How much of a size (m) the chunk's grid can show.
+func _keep(size: float) -> float:
+	if detail <= 1.0: return 1.0
+	return smoothstep(CARVE_FADE.x,CARVE_FADE.y,size/detail)
+
+## The carved height at a point whose broad height is `h` (world).
+func _carve(x: float, z: float, h: float, meadow: float, mountain: float, floor_y: float) -> float:
+	var bs := _broad_slope(x,z)
+	var slope := Vector2(bs.y,bs.z)
+	var steep := slope.length()
+	var mask := smoothstep(CARVE_SLOPE.x,CARVE_SLOPE.y,steep)*smoothstep(CARVE_MOUNTAIN.x,CARVE_MOUNTAIN.y,mountain)*(1.0-smoothstep(0.2,0.5,meadow))*minf(carve,2.0)
+	if mask <= 0.0: return h
+	var salt := seed*31+7
+	# Blocks: each Voronoi cell's own plane.
+	var fk := _keep(FACET_CELL)*FACET_KEEP*minf(mask,1.0)*minf(carve_blocks,1.0/FACET_KEEP)
+	var g := slope
+	if fk > 0.0:
+		var cells := _facet_cells(floori(x/FACET_CELL),floori(z/FACET_CELL),salt)
+		var sum := 0.0
+		var plane := 0.0
+		var gsx := 0.0
+		var gsz := 0.0
+		for n in range(0,54,6):
+			var dx := x-cells[n]
+			var dz := z-cells[n+1]
+			var w := exp(-FACET_EDGE*(dx*dx+dz*dz))
+			if w < 1e-3: continue
+			plane += w*(cells[n+2]+cells[n+3]*dx+cells[n+4]*dz+cells[n+5])
+			gsx += w*cells[n+3]
+			gsz += w*cells[n+4]
+			sum += w
+		var gsum := Vector2(gsx,gsz)
+		if sum > 0.0:
+			h = lerpf(h,plane/sum,fk)
+			g = g.lerp(gsum/sum,fk)
+	# Ledges: benches cut back into the face where the band allows.
+	var bk := minf(_keep(BENCH)*mask*smoothstep(0.2,0.55,_bench_band.get_noise_2d(x,z))*carve_ledges,1.0)
+	if bk > 0.0:
+		var warp := _bench_warp.get_noise_2d(x,z)*BENCH*BENCH_WARP
+		var y := (h-SEA_Y+warp)/BENCH
+		var f := y-floorf(y)
+		var stepped := (floorf(y)+smoothstep(BENCH_FLAT,1.0,f))*BENCH-warp+SEA_Y
+		h = lerpf(h,stepped,bk)
+		# The inner corner under the riser, the lip over the one below.
+		last_cavity = maxf(last_cavity,bk*(1.0-smoothstep(0.0,0.18,absf(f-BENCH_FLAT-0.04))))
+		last_ridge = maxf(last_ridge,bk*(1.0-smoothstep(0.0,0.1,minf(f,1.0-f)))*0.8)
+	# Gullies down the fall line, biggest first; each size follows the
+	# slope the last one left.
+	for o in GULLIES.size():
+		var gl: Vector2 = GULLIES[o]
+		var gk := _keep(gl.x)*mask*carve_gullies
+		if gk <= 0.0: continue
+		var glen := g.length()
+		if glen < 1e-4: break
+		var down := g/glen
+		var across := Vector2(-down.y,down.x)
+		var lx := x/gl.x
+		var lz := z/gl.x
+		var i := floori(lx)
+		var j := floori(lz)
+		var u := lx-i
+		var v := lz-j
+		u = u*u*u*(u*(u*6.0-15.0)+10.0)
+		v = v*v*v*(v*(v*6.0-15.0)+10.0)
+		# The four corners' waves, unrolled (the hot loop of a chunk build).
+		var corner := _gully_cells(o,i,j,salt)
+		var sz := gl.x
+		var base := x*across.x+z*across.y-sz*(i*across.x+j*across.y)
+		var a0 := base*corner[0]+corner[1]
+		var a1 := (base-sz*across.x)*corner[2]+corner[3]
+		var a2 := (base-sz*across.y)*corner[4]+corner[5]
+		var a3 := (base-sz*(across.x+across.y))*corner[6]+corner[7]
+		var w0 := (1.0-u)*(1.0-v)
+		var w1 := u*(1.0-v)
+		var w2 := (1.0-u)*v
+		var w3 := u*v
+		var wave := w0*cos(a0)+w1*cos(a1)+w2*cos(a2)+w3*cos(a3)
+		var dwave := -(w0*sin(a0)*corner[0]+w1*sin(a1)*corner[2]+w2*sin(a2)*corner[4]+w3*sin(a3)*corner[6])
+		# Gullies start and stop along their run.
+		var amp := smoothstep(-0.25,0.35,_gully_amp.get_noise_2d(x/sz*0.35+o*97.0,z/sz*0.35-o*61.0))
+		if amp <= 0.0: continue
+		var groove := clampf((1.0-wave)*0.5,0.0,1.0)
+		var gp1 := pow(groove,GULLY_SHARP-1.0)
+		var gp := gp1*groove
+		var depth := gl.y*gk*amp*clampf(steep,0.6,1.6)
+		var weight: float = GULLY_SHADE[o]*gk*amp
+		var rim := 1.0-groove
+		last_cavity = maxf(last_cavity,weight*gp)
+		last_ridge = maxf(last_ridge,weight*rim*rim*rim)
+		h -= depth*gp
+		g += across*(depth*GULLY_SHARP*gp1*0.5*dwave)
+	if floor_y > -INF: h = maxf(h,floor_y)
+	return h
 
 ## Round one's land (--old-land), exactly.
 func _old_sample(x: float, z: float) -> Vector2:

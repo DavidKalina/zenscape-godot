@@ -303,6 +303,8 @@ static func ground_image(seed_value: int, corner: Vector2) -> Image:
 	var field := Field.new(seed_value)
 	var n := GROUND_TEXELS
 	var texel := GROUND_SIDE/n
+	# A map this coarse takes the land's carve at its own texel (land_field.gd).
+	field.detail = texel
 	var meadow := PackedFloat32Array()
 	var height := PackedFloat32Array()
 	meadow.resize(n*n)
