@@ -137,8 +137,30 @@ uniform float river_calm = 0.85;
 // darker over `.y` m; the pale line at the water's edge (m wide).
 uniform vec2 river_bank = vec2(3.5, 1.4);
 uniform float river_edge = 0.55;
-// The water's level over the sea under which the sea takes it (the mouth).
+// The water's level over the sea under which the sea takes it (the mouth,
+// with --river-mouth=0; else the drawn water sinks under the sea instead).
 uniform float river_mouth = 0.35;
+// The mouth (river-mouths-handoff.md; EndlessLook sets these from LandField
+// RIVER_MOUTH_*, and `river_mouth_blend` 0 with --river-mouth=0): over the
+// last `river_mouth_rise` m of its fall the water takes the sea's colour for
+// the channel's real depth (`river_mouth_deep`: the bed's depth at the
+// middle, and how much more at the sea), so it runs into the sea, which
+// lies still up the channel, with no seam; the banks' stones give way to
+// sand. The sea's tint depths, bed fade and calm body light (EndlessLook).
+// The drawn water doesn't stop on a step: over the last `river_mouth_sink.y`
+// m of its level it sinks `.x` m, under the sea's still water, which fades
+// in over it (endless_sea.gdshader `river_calm`), and the paint gives way to
+// the bed as it goes under.
+uniform float river_mouth_blend = 1.0;
+uniform vec2 river_mouth_sink = vec2(4.2, 1.5);
+// How much of the sea's look the water takes at the sea (the rest stays the
+// river's own, carried out into the sea's still water).
+uniform float river_mouth_tint = 0.8;
+uniform float river_mouth_rise = 5.0;
+uniform vec2 river_mouth_deep = vec2(0.6, 3.6);
+uniform vec4 river_sea_tint_depths = vec4(1.5, 7.0, 22.0, 55.0);
+uniform float river_sea_bed_fade = 5.0;
+uniform float river_sea_body = 0.9;
 // The banks in the mirror: from reflected rays this high (.x) to this
 // low (.y), this much of them.
 uniform vec3 river_shore_mirror = vec3(0.28, 0.04, 0.7);
@@ -185,9 +207,12 @@ void vertex() {
 	river_flow = (CUSTOM0.zw * 2.0 - 1.0) * 4.0;
 	// The river's water drawn flat at its level: the grid's bed under it
 	// lifted (the land's own heights, its colliders, keep the bed).
-	if (river_on > 0.5 && CUSTOM1.y > 0.05 && abs(CUSTOM1.x) < CUSTOM1.y + 1.0 && CUSTOM1.z - sea_y > river_mouth) {
-		float lift = CUSTOM1.z - world_position.y;
-		if (lift > 0.0 && lift < 3.0) {
+	float r_over = CUSTOM1.z - sea_y;
+	if (river_on > 0.5 && CUSTOM1.y > 0.05 && abs(CUSTOM1.x) < CUSTOM1.y + 1.0 && (r_over > river_mouth || river_mouth_blend > 0.0)) {
+		// At a mouth the drawn water sinks under the sea's.
+		float drawn = CUSTOM1.z - river_mouth_sink.x * river_mouth_blend * (1.0 - smoothstep(0.0, river_mouth_sink.y, r_over));
+		float lift = drawn - world_position.y;
+		if (lift > 0.0 && lift < 3.0 + river_mouth_deep.y * river_mouth_blend) {
 			VERTEX.y += lift;
 			world_position.y += lift;
 		}
@@ -277,7 +302,14 @@ void fragment() {
 	float r_ragged = (zs_noise(p.xz / 3.3) - 0.5) * 0.9 * (1.0 - smoothstep(0.5, 2.0, fp));
 	// How far outside the water's edge (m; negative in the water).
 	float r_out = r_s - r_w + r_ragged;
-	float wet = r_here * smoothstep(river_mouth, river_mouth + 0.3, river.z - sea_y) * (1.0 - smoothstep(-r_aa, r_aa, r_out));
+	// (At a mouth the paint goes on under the sea's still water, giving way
+	// to the bed as it sinks.)
+	float r_level = mix(smoothstep(river_mouth, river_mouth + 0.3, river.z - sea_y), smoothstep(-1.6, -0.3, over), river_mouth_blend);
+	float wet = r_here * r_level * (1.0 - smoothstep(-r_aa, r_aa, r_out));
+	// How far into its mouth (0 upstream, 1 at the sea's level).
+	float r_mouth = r_here * river_mouth_blend * (1.0 - smoothstep(0.0, river_mouth_rise, river.z - sea_y));
+	// It takes on the sea's look over twice that, so the colour turns slowly.
+	float r_tint = r_here * river_mouth_blend * (1.0 - smoothstep(0.0, river_mouth_rise * 2.0, river.z - sea_y));
 	// The bank's width swings along the river: a wide bar of sand and stones
 	// here, the turf down to a muddy lip there.
 	// (endless_patch's noise, which the grass mirrors (EndlessPatch.river_bank),
@@ -408,6 +440,8 @@ void fragment() {
 		bank_c = mix(bank_c, ROCK * 1.1, cobbles * 0.45);
 		// Far off, the pebbles' mean.
 		bank_c = mix(bank_c, mix(bank_c, ROCK_PALE, 0.15), smoothstep(0.1, 0.6, fp));
+		// At a mouth the stones give way to the beach's sand.
+		bank_c = mix(bank_c, SAND * (1.0 + fine * 0.25 + mid * 0.2), r_mouth * 0.85);
 		damp = 1.0 - smoothstep(0.0, river_bank.y, r_out);
 		bank_c = mix(bank_c, SAND_WET * 0.85, damp * 0.85);
 	}
@@ -526,6 +560,26 @@ void fragment() {
 		vec3 seen = exp(-river_absorb * through) * exp(-depth / river_bed_fade);
 		vec3 bed_c = mix(SAND * 0.75, ROCK_PALE, 0.35) * (ambient * 0.9 + key);
 		vec3 water = column * light * (vec3(1.0) - seen) + bed_c * seen;
+		if (r_tint > 0.0) {
+			// Toward the sea: the sea's colour (endless_sea.gdshader) for the
+			// channel's real depth (land_field `_river`'s bed, deeper and
+			// flatter at a mouth), seen as the sea sees the bed up the channel.
+			float u = clamp(r_s / max(r_w, 0.01), 0.0, 1.0);
+			// (Up the river, before the bed deepens, the faked depth.)
+			float real = (river_mouth_deep.x + river_mouth_deep.y * r_mouth) * (1.0 - pow(u, 2.0 + 2.0 * r_mouth));
+			real = mix(depth, real, smoothstep(0.0, 0.6, r_mouth));
+			float through_m = real / max(abs(eye.y), 0.15);
+			float waver = mix(0.8, 1.25, zs_noise(p.xz * 0.03) * 0.7 + zs_noise(p.xz * 0.11 + vec2(4.1, 7.3)) * 0.3);
+			float wd = max(real, through_m * 0.55) * waver;
+			vec4 td = river_sea_tint_depths;
+			vec3 sc = mix(river_tint_shallow, river_tint_mid, smoothstep(0.0, td.y, wd));
+			sc = mix(sc, river_tint_deep, smoothstep(td.y * 0.6, td.z, wd));
+			sc = mix(river_tint_shallow, sc, smoothstep(0.0, td.x, wd) * 0.6 + 0.4);
+			sc *= zs_palette_water * river_sea_body;
+			vec3 seen_m = exp(-river_absorb * through_m) * exp(-max(real, through_m * 0.4) / river_sea_bed_fade);
+			vec3 bed_m = SAND_WET * 0.85 * (ambient + key);
+			water = mix(water, sc * light * (vec3(1.0) - seen_m) + bed_m * seen_m, r_tint * river_mouth_tint);
+		}
 		// The current: faint pale streaks drawn out down the flow, drifting
 		// with it (two copies cross-faded as the ripples), gone far off.
 		float streak_keep = (1.0 - smoothstep(0.4, 2.5, fp)) * river_streaks;

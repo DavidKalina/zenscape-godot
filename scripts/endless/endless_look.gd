@@ -243,14 +243,32 @@ func _build_sea() -> void:
 ## the sea's chop maps and its colours, so a river reads as the same water.
 ## Off with the land's rivers (--no-rivers).
 func _river_water(land_seed: int) -> void:
-	var on := Field.new(land_seed).rivers > 0.0
+	var field := Field.new(land_seed)
+	var on := field.rivers > 0.0
 	ground.set_shader_parameter("river_on",1.0 if on else 0.0)
 	if not on: return
+	# The mouths (river-mouths-handoff.md): --river-mouth=0 as before.
+	var mouth := minf(field.river_mouth,1.0)
+	ground.set_shader_parameter("river_mouth_blend",mouth)
+	ground.set_shader_parameter("river_mouth_sink",Vector2((Field.RIVER_BED+Field.RIVER_MOUTH_DEEP)*mouth,Field.RIVER_MOUTH_SINK))
+	ground.set_shader_parameter("river_mouth_rise",Field.RIVER_MOUTH_RISE)
+	ground.set_shader_parameter("river_mouth_deep",Vector2(Field.RIVER_BED,Field.RIVER_MOUTH_DEEP*mouth))
 	if water != null:
 		ground.set_shader_parameter("river_detail_a",water.material.get_shader_parameter("detail_a"))
 		ground.set_shader_parameter("river_detail_b",water.material.get_shader_parameter("detail_b"))
 		for k: String in ["tint_shallow","tint_mid","tint_deep"]:
 			ground.set_shader_parameter("river_"+k,water.material.get_shader_parameter(k))
+		# The sea's colour by depth and its calm body light, for the mouths.
+		var td: Variant = water.material.get_shader_parameter("tint_depths")
+		if td is Vector4: ground.set_shader_parameter("river_sea_tint_depths",td)
+		var bf: Variant = water.material.get_shader_parameter("bed_fade")
+		if bf is float: ground.set_shader_parameter("river_sea_bed_fade",bf)
+		# The body's light on calm water (half way from trough to crest; the
+		# shader's default body_value (0.6, 1.2) unless it was set).
+		var body: Variant = water.material.get_shader_parameter("sea_body")
+		var bv: Variant = water.material.get_shader_parameter("body_value")
+		var mean := ((bv as Vector2).x+(bv as Vector2).y)*0.5 if bv is Vector2 else 0.9
+		ground.set_shader_parameter("river_sea_body",mean if body is int and body > 0 else 1.0)
 	else:
 		ground.set_shader_parameter("river_detail_a",EndlessSea._detail(land_seed,0.022,5))
 		ground.set_shader_parameter("river_detail_b",EndlessSea._detail(land_seed+7,0.035,4))

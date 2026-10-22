@@ -137,6 +137,13 @@ uniform vec4 foam_lace = vec4(2.8, 1.0, 1.0, 1.0);
 // on (EndlessSea `_depth`).
 uniform sampler2D depth_map : filter_linear, repeat_disable;
 uniform vec4 depth_at = vec4(0.0);
+// Up a river's mouth the sea lies still (the depth map's green, LandField
+// `calm_here`; river-mouths-handoff.md): its swell and its shore foam are
+// taken away by this share there, and its colour reads the bed it sees.
+uniform float river_calm = 1.0;
+// ...and over this many m of water it fades in over what lies under it (the
+// river's drawn water sinking under it), not on a line.
+uniform float river_calm_fade = 2.0;
 uniform float sea_level = -40.0;
 
 // The water's colour by depth (m of water under the surface).
@@ -640,6 +647,14 @@ float zs_map_depth(vec2 p, out float known) {
 	return sea_level - texture(depth_map, uv).r;
 }
 
+// How still the sea lies at `p` up a river's mouth (0 open sea, 1 calm).
+float zs_river_calm(vec2 p) {
+	if (depth_at.w <= 0.0 || river_calm <= 0.0) return 0.0;
+	vec2 uv = (p - depth_at.xy) / depth_at.z;
+	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 0.0;
+	return clamp(textureLod(depth_map, uv, 0.0).g, 0.0, 1.0) * river_calm;
+}
+
 // The plane's wake at `p`: its foam (returned), the stirred water round it
 // (`stirred`, 0..1) and the slope its ripples add. Only the nearest point of
 // the track counts, so the arms are one V and not a ring per point.
@@ -766,7 +781,7 @@ void vertex() {
 	} else {
 		zs_swell(world.xz, zs_flow_time, cell, shift, crest, rough);
 	}
-	VERTEX += shift * near;
+	VERTEX += shift * near * (1.0 - zs_river_calm(world.xz));
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
@@ -798,6 +813,11 @@ void fragment() {
 	} else {
 		slope = zs_swell(rest_xz, t, footprint, shift, crest, swell_rough);
 	}
+	// Up a river's mouth the swell is stilled (the vertex's heave too).
+	float still = zs_river_calm(rest_xz);
+	slope *= 1.0 - still;
+	shift *= 1.0 - still;
+	crest *= 1.0 - still;
 	vec2 detail = zs_chop(rest_xz, t, air, footprint, chop_rough);
 	vec2 wake_slope;
 	float stirred;
@@ -833,6 +853,8 @@ void fragment() {
 	// The water's depth here: the map's where it reaches, else the bed seen.
 	float known;
 	float mapped = zs_map_depth(rest_xz, known);
+	// A mouth's channel is finer than the map: the bed seen gives its depth.
+	known *= 1.0 - still;
 	float waver = mix(0.8, 1.25, zs_noise(rest_xz * 0.03) * 0.7 + zs_noise(rest_xz * 0.11 + vec2(4.1, 7.3)) * 0.3);
 	float fallback = max(bed_depth, through * 0.55);
 	float water_depth = max(mix(fallback, mapped, known), 0.0) * waver;
@@ -875,9 +897,9 @@ void fragment() {
 	// rolling in over the shelf.
 	float near_bed = depth > 0.0 ? min(bed_depth, mix(bed_depth, mapped, known * 0.5)) : mapped;
 	float lap = shore_foam * (0.75 + 0.25 * sin(t * 0.9 + zs_noise(rest_xz * 0.2) * 6.2832));
-	float line = 1.0 - smoothstep(lap * 0.3, lap, near_bed);
+	float line = (1.0 - smoothstep(lap * 0.3, lap, near_bed)) * (1.0 - 0.8 * still);
 	float band_phase = water_depth * 1.6 + t * 0.9 + zs_noise(rest_xz * 0.035) * 4.0;
-	float bands = smoothstep(0.55, 0.95, sin(band_phase)) * (1.0 - smoothstep(wash_depth * 0.35, wash_depth, water_depth)) * smoothstep(lap * 0.5, lap * 1.5, near_bed);
+	float bands = smoothstep(0.55, 0.95, sin(band_phase)) * (1.0 - smoothstep(wash_depth * 0.35, wash_depth, water_depth)) * smoothstep(lap * 0.5, lap * 1.5, near_bed) * (1.0 - still);
 	float shore = max(line, bands * 0.75);
 	// The crests: only the sharpest, and more where the wind works.
 	float crested = smoothstep(0.12, 0.2, crest + detail.x * 0.15) * crest_foam * smoothstep(8.0, 20.0, water_depth) * (0.5 + 0.5 * paw) * min(zs_wind_strength * 1.3, 1.0);
@@ -919,7 +941,7 @@ void fragment() {
 		foamed = max(foamed, laced * foam);
 	}
 	foamed = clamp(foamed, 0.0, 1.0) * float(depth > 0.0 || known > 0.0 || waked > 0.0);
-	float lip = (1.0 - smoothstep(0.0, 0.15, bed_depth)) * float(depth > 0.0);
+	float lip = (1.0 - smoothstep(0.0, 0.15, bed_depth)) * float(depth > 0.0) * (1.0 - still);
 	vec3 white = vec3(0.9, 0.96, 1.0) * (ambient * 1.1 + key * 0.8);
 	// Fresh foam stands up a little: brighter, and lit by its own slope.
 	if (sea_foam > 0) white *= 1.0 + 0.1 * lace_youth + 0.18 * clamp(dot(normal, zs_key_direction), -0.5, 1.0) * float(lace_density > 0.0);
@@ -1060,5 +1082,5 @@ void fragment() {
 	if (debug_view == 2) display_color = vec3(cover, foamed, waked);
 	if (debug_view == 6) display_color = vec3(lace_density, lace_youth, in_buffer * 0.5 + churned * 0.5);
 	ALBEDO = scene_linear_for_display(clamp(display_color, vec3(0.0), vec3(1.0)));
-	ALPHA = depth > 0.0 ? smoothstep(0.0, 0.05, bed_depth) : 1.0;
+	ALPHA = depth > 0.0 ? smoothstep(0.0, mix(0.05, river_calm_fade, still), bed_depth) : 1.0;
 }
