@@ -25,6 +25,10 @@ Reply with the answer only, in at most 300 words:
 - **Where**: `path:line` for each relevant spot, with a few words on what
   it is. Quote at most 10 lines of code in all, only when the exact code is
   the point.
+- **Searched**: only when the answer lists every one of something (call
+  sites, users of a name, files touched): each search behind the list and
+  its hit count, e.g. `grep -rn "rocky" scripts shaders`: 4 hits.
 - **Unsure**: what you could not find or confirm, if anything.
 
-No preamble, no list of what you searched, no advice on what to change.
+Open with the answer. Searches go only under **Searched**. Leave out
+advice on what to change.
