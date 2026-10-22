@@ -31,7 +31,11 @@ extends Node3D
 ## in four, as before); --cloud-grain=old the earlier grain; --cloud-blend=m,u
 ## the resolve's blends; --cloud-field=old the earlier field (a near-grid of
 ## four-bubble mushrooms with flat bases; docs/design/endless-flight/
-## cloud-shape-handoff.md). C turns them off and on.
+## cloud-shape-handoff.md). --cloud-stack=old lets two clouds of one layer
+## stand one over the other again (the map's one span per layer drew them as
+## a mushroom on a stem; docs/design/endless-flight/cloud-water-fix-handoff.md);
+## --cloud-puffs=old the small puffs as smooth bells again.
+## C turns them off and on.
 ##
 ## The valley fog (docs/design/endless-flight/valley-fog-handoff.md): a low
 ## layer in the same march, lying along the valleys between the ridges, from
@@ -140,6 +144,8 @@ const SIZE_SKEW := 1.5
 const WOB := 0.2
 const LIFT := 0.3
 const DOME := 1.6
+## The march's YIELD_LEVEL (`clash`).
+const YIELD_LEVEL := 0.5
 
 var effect := Effect.new()
 var material := ShaderMaterial.new()
@@ -159,6 +165,16 @@ var upsampled_blend := GRAIN_UPSAMPLED_BLEND
 var enabled := true
 ## The organic field (false: --cloud-field=old).
 var organic := true
+## Two clouds of one layer, one over the other, never both placed (the
+## march's `yields`; false: --cloud-stack=old, the mushrooms and stems).
+var stack_yield := true
+## Thin low cloud (the small puffs) takes its lobes from finer noise, so a
+## puff reads as a small cumulus, not a smooth bell (--cloud-puffs=old: off).
+var puff_lobes := true
+## The sea's material (EndlessLook sets it): it reads the shade map with the
+## square drawn this frame (`shade_square`), not the land's (--sea-shade=old).
+var sea_material: ShaderMaterial
+var sea_shade_sync := true
 ## The field's drift so far (m): a cloud stands at its field point plus this.
 var drift := Vector2.ZERO
 var motion_time := 0.0
@@ -223,6 +239,9 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 		elif a == "--cloud-full-res": quality[2] = 1
 		elif a == "--cloud-half-res": quality[2] = 2
 		elif a == "--cloud-field=old": organic = false
+		elif a == "--cloud-stack=old": stack_yield = false
+		elif a == "--cloud-puffs=old": puff_lobes = false
+		elif a == "--sea-shade=old": sea_shade_sync = false
 		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
 		elif a == "--no-valley-fog": fog_on = false
 		elif a.begins_with("--valley-fog="):
@@ -292,6 +311,7 @@ func set_enabled(on: bool) -> void:
 	_detach()
 	sheet.visible = false
 	_publish_shade(false)
+	if sea_material != null: sea_material.set_shader_parameter("shade_square",Vector4.ZERO)
 
 func _attach() -> void:
 	if camera == null: return
@@ -584,7 +604,7 @@ func _cluster_gate(f: Vector2) -> float:
 
 ## The organic field's cloud of cell (cx, cy), in the field frame (the
 ## march's `recipe`), or an empty dictionary.
-func _recipe(cx: int, cy: int, big: bool) -> Dictionary:
+func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	var cell: float = BIG if big else SMALL
 	var s0: int = salt+(101 if big else 211)
 	var h := hash3(cx,cy,s0)
@@ -636,16 +656,66 @@ func _recipe(cx: int, cy: int, big: bool) -> Dictionary:
 	k.r = r
 	var tall: Vector2 = p[6]
 	k.tall = lerpf(tall.x,tall.y,t2)*DOME
-	# Lifted whole over the ground (the march's `cloud_floor`).
-	var fl := _cloud_floor(middle+drift,r*float(k.ext),bool(k.low))
-	if fl.x > float(k.b0): k.b0 = fl.x+30.0*fposmod(s.y*13.7+h.x,1.0)
-	if k.low: k.tall = float(k.tall)*lerpf(1.0,0.6,fl.y)
-	k.H = minf(r*float(k.main_r)*float(k.tall),TOP-k.b0)
 	var bl: Vector2 = p[7]
 	var qb: Vector2 = p[8]
 	k.belly = lerpf(bl.x,bl.y,fposmod(m.y*5.13+s.x,1.0))
 	k.qb = lerpf(qb.x,qb.y,fposmod(m.z*3.71+h.x,1.0))
+	k.big = big
+	if lift: _recipe_lift(k)
 	return k
+
+## Cloud `k` lifted whole over the ground (the march's `recipe_lift`).
+func _recipe_lift(k: Dictionary) -> void:
+	var c: Vector2i = k.cell
+	var h := hash3(c.x,c.y,int(k.salt))
+	var s := hash3(c.x,c.y,int(k.salt)+1)
+	var fl := _cloud_floor(Vector2(k.middle)+drift,float(k.r)*float(k.ext),bool(k.low))
+	if fl.x > float(k.b0): k.b0 = fl.x+30.0*fposmod(s.y*13.7+h.x,1.0)
+	if k.low: k.tall = float(k.tall)*lerpf(1.0,0.6,fl.y)
+	k.H = minf(float(k.r)*float(k.main_r)*float(k.tall),TOP-float(k.b0))
+
+## Whether cloud `k` (a puff or a wisp) stands one over another of its
+## layer whose footprint overlaps its own, and is the lesser of the two (the
+## march's `yields`; the other broad clouds never yield).
+func _yields(k: Dictionary) -> bool:
+	var reach := float(k.r)*float(k.ext)
+	var big: bool = k.big
+	var c: Vector2i = k.cell
+	for other_big: bool in [true,false]:
+		if big and not other_big: continue
+		var cell: float = BIG if other_big else SMALL
+		var s0: int = salt+(101 if other_big else 211)
+		var mid0: Vector2 = k.middle
+		var g := Vector2i(floori(mid0.x/cell),floori(mid0.y/cell))
+		var most := reach+EXT_MAX*cell
+		for y in range(-2,3):
+			for x in range(-2,3):
+				var n := g+Vector2i(x,y)
+				if other_big == big and n == c: continue
+				var h := hash3(n.x,n.y,s0)
+				var mid := (Vector2(n)+Vector2(0.5,0.5)+JIT*(Vector2(h.x,h.y)*2.0-Vector2.ONE))*cell
+				if mid.distance_to(mid0) >= most: continue
+				var o := _recipe(n.x,n.y,other_big,false)
+				if o.is_empty() or bool(o.low) != bool(k.low): continue
+				if Vector2(o.middle).distance_to(mid0) >= reach+float(o.r)*float(o.ext): continue
+				if k.kind != "wisp" and o.kind != "wisp":
+					_recipe_lift(o)
+					if not _clash(k,o): continue
+				var me: bool
+				var order := c.x < n.x or (c.x == n.x and c.y < n.y)
+				if big != other_big: me = true
+				elif (k.kind == "wisp") != (o.kind == "wisp"): me = k.kind == "wisp"
+				elif k.kind == "wisp": me = order
+				else: me = float(k.H) < float(o.H) or (float(k.H) == float(o.H) and order)
+				if me: return true
+	return false
+
+static func _clash(a: Dictionary, b: Dictionary) -> bool:
+	if a.kind == "wisp" or b.kind == "wisp": return true
+	var a_low := float(a.b0) <= float(b.b0)
+	var lo: Dictionary = a if a_low else b
+	var hi: Dictionary = b if a_low else a
+	return float(hi.b0) > float(lo.b0)+YIELD_LEVEL*float(lo.H)
 
 ## Bubble `i` of cloud `k` over field point `f` (the march's `bubble_span`):
 ## (top, bottom) over the sea where it covers f, else (-1e4, distance past
@@ -693,6 +763,7 @@ func _clouds_in_organic(at: Vector2, reach: float) -> Array:
 			for cx in range(lo.x,hi.x+1):
 				var k := _recipe(cx,cy,big)
 				if k.is_empty() or Vector2(k.middle).distance_to(f) > reach: continue
+				if stack_yield and (not big or k.kind == "wisp") and _yields(k): continue
 				var w: Vector2 = k.middle
 				k["at"] = w+drift
 				k["radius"] = float(k.r)*float(k.ext)
@@ -793,8 +864,12 @@ func _fill() -> void:
 	else: _put4(p,44,Vector4(_shade_drawn.x,_shade_drawn.y,SHADE_SIDE,1.0) if _shade_drawn != Vector4.ZERO else shade_square)
 	_put4(p,164,Vector4(weather_corner.x,weather_corner.y,weather_side,Effect.WEATHER_TEXELS))
 	_put4(p,168,Vector4(quality[0],quality[1],quality[2],quality[3]))
-	_put4(p,172,Vector4(1.0 if grain else 0.0,1.0 if organic else 0.0,0.0,0.0))
+	_put4(p,172,Vector4(1.0 if grain else 0.0,1.0 if organic else 0.0,1.0 if stack_yield else 0.0,1.0 if puff_lobes else 0.0))
 	_put4(p,176,Vector4(0.0,Effect.SHADOW_TEXELS,1.0 if weather_due else 0.0,1.0 if shade_due else 0.0))
+	# The sea draws after this frame's passes: the square they leave in the map.
+	if sea_material != null:
+		var now := shade_square if shade_due or _shade_drawn == Vector4.ZERO else _shade_drawn
+		sea_material.set_shader_parameter("shade_square",now if sea_shade_sync else Vector4.ZERO)
 	# The land reads the shade map the frame after it is drawn.
 	if _shade_drawn != Vector4.ZERO: _publish_shade(true,key,_shade_drawn)
 	if shade_due: _shade_drawn = shade_square

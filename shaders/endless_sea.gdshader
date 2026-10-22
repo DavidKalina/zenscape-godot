@@ -161,6 +161,15 @@ uniform vec2 swell_heading = vec2(0.8, 0.6);
 uniform float swell = 1.0;
 uniform float chop = 1.0;
 uniform vec2 heave_reach = vec2(90.0, 150.0);
+// Which waves the sheet holds and how far it heaves, by the distance from the
+// eye (1) or from the sheet's middle (0, the earlier sea, which popped as
+// the sheet jumped under the eye).
+uniform int lod_from_eye = 1;
+// How far the eye stands from the sheet's middle at most, each way (m: half
+// its 64 m snap). A vertex's own reach (the larger of |x|, |z|) is never
+// past its distance from the eye plus this, so the held waves are never
+// finer than the sheet's cells; at the eye it is 1 m, as the middle was.
+const float SNAP_SLACK = 32.0;
 uniform vec2 paw_size = vec2(90.0, 55.0);
 uniform float paws = 1.0;
 
@@ -177,6 +186,14 @@ uniform float mirror_calm = 0.4;
 uniform float glint_share = 1.0;
 uniform float glitter = 1.0;
 uniform float cloud_shade = 1.0;
+// The clouds' shade map's square as drawn this frame (corner xz, side, on;
+// scripts/endless/endless_clouds.gd sets it). The sea draws with the see-
+// through pass, after the clouds' passes have redrawn the map, while the
+// global square (zs_cloud_shadow_at) is the one the solid land reads, drawn
+// the frame before; read with that one, the sea's shade and mirrored cloud
+// jumped a texel (23 m) for a frame each time the square moved, a flicker.
+// w 0: the global.
+uniform vec4 shade_square = vec4(0.0);
 // The light through the crests facing the sun.
 uniform float crest_glow = 0.5;
 
@@ -762,10 +779,41 @@ float zs_foam_lace(vec2 p, float density, float youth, float footprint) {
 	return covered * mix(0.45, 1.0, youth) * (0.45 + 0.55 * density) * smoothstep(0.0, 0.3, density);
 }
 
+// The square the shade map holds as the sea draws.
+vec4 zs_sea_shade_at() {
+	return shade_square.w > 0.0 && zs_cloud_shadow_at.w > 0.0 ? shade_square : zs_cloud_shadow_at;
+}
+
+// zs_cloud_volume_shade (shaders/cloud_volume_shadow.gdshaderinc) over the
+// square as drawn this frame.
+float zs_sea_cloud_shade(vec3 p) {
+	vec4 at = zs_sea_shade_at();
+	if (at.w <= 0.0) return 0.0;
+	vec3 light = zs_cloud_shadow_light.xyz;
+	if (light.y < 0.03) return 0.0;
+	vec2 q = p.xz + light.xz / max(light.y, 0.12) * (zs_cloud_shadow_light.w - p.y);
+	vec2 uv = (q - at.xy) / max(at.z, 1.0);
+	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 0.0;
+	vec3 s = texture(zs_cloud_shadow, uv).rgb;
+	float over = smoothstep(s.b + 30.0, s.b - 15.0, p.y);
+	float keep = mix(1.0, s.r, over) * mix(s.g, 1.0, smoothstep(ZS_CLOUD_SHADE_SPLIT - 30.0, ZS_CLOUD_SHADE_SPLIT, p.y));
+	vec2 rim = min(uv, 1.0 - uv);
+	return (1.0 - keep) * smoothstep(0.0, 0.06, min(rim.x, rim.y)) * at.w;
+}
+
 void vertex() {
 	vec3 world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	rest_xz = world.xz;
 	float reach = max(abs(VERTEX.x), abs(VERTEX.z));
+	if (lod_from_eye > 0) {
+		// The sheet jumps 64 m under the eye (EndlessLook `step`); its own
+		// reach jumped with it, and so did which waves it held and how far
+		// it heaved, so the whole sea popped each time (a flicker of the
+		// glitter and the swell every second or two in flight). Measured
+		// from the eye they change smoothly. Past the sheet's middle by up
+		// to SNAP_SLACK, never finer than the sheet's own cells.
+		reach = length(world.xz - CAMERA_POSITION_WORLD.xz) + SNAP_SLACK;
+	}
 	float cell = max(2.0, reach / 28.0);
 	float near = 1.0 - smoothstep(heave_reach.x, heave_reach.y, reach);
 	vec3 shift;
@@ -952,13 +1000,14 @@ void fragment() {
 	vec3 reflected = reflect(-eye, calm);
 	reflected.y = abs(reflected.y);
 	vec3 sky = clamp(zsSkyGradient(reflected), vec3(0.0), vec3(0.98));
-	if (cloud_mirror > 0.0 && zs_cloud_shadow_at.w > 0.0 && reflected.y > 0.02) {
+	vec4 shade_at = zs_sea_shade_at();
+	if (cloud_mirror > 0.0 && shade_at.w > 0.0 && reflected.y > 0.02) {
 		// Where the mirrored ray meets the cloud's height, the shade map's
 		// spot under that cloud along the sun's line.
 		vec3 c = world_position + reflected * ((cloud_mirror_y - world_position.y) / reflected.y);
 		vec3 l = zs_cloud_shadow_light.xyz;
 		vec2 q = c.xz - l.xz / max(l.y, 0.12) * (cloud_mirror_y - zs_cloud_shadow_light.w);
-		vec2 cuv = (q - zs_cloud_shadow_at.xy) / max(zs_cloud_shadow_at.z, 1.0);
+		vec2 cuv = (q - shade_at.xy) / max(shade_at.z, 1.0);
 		if (all(greaterThan(cuv, vec2(0.0))) && all(lessThan(cuv, vec2(1.0)))) {
 			// Four taps a texel and a half apart: the map is coarse, and a
 			// mirror magnifies it.
@@ -1028,7 +1077,7 @@ void fragment() {
 
 	// The sun: a soft path off the calm normal, and a crisp glitter off the
 	// chop's own (hard-edged spots, fewer and finer far off).
-	float shaded = cloud_shade > 0.0 ? zs_cloud_volume_shade(world_position) * cloud_shade : 0.0;
+	float shaded = cloud_shade > 0.0 ? zs_sea_cloud_shade(world_position) * cloud_shade : 0.0;
 	vec3 smooth_n = normalize(vec3(-(slope.x + detail.x * path_share), 1.0, -(slope.y + detail.y * path_share)));
 	vec4 path = zs_lake_glint(reflect(-eye, smooth_n), sun, zs_moon_direction, zs_celestial_clear, 0.0, glint_share);
 	path.a *= 1.0 - shaded;
