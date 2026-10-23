@@ -1,133 +1,144 @@
 # Birds round: handoff
 
-## What it does
+## Songbirds round (latest)
 
-`scripts/endless/endless_birds.gd`, hooked into `studies/endless_flight.gd`
-(built after the trees, stepped after them each frame, a line on F1's numbers).
+The user found the endless birds (one MultiMesh of a dove-like body with a
+vertex-shader flap) far too jittery and asked for the isles' songbirds.
+`scripts/endless/endless_birds.gd` is rewritten around them; the hook in
+`studies/endless_flight.gd` is unchanged (`setup`, `step`, `note`).
 
-- **Perched flocks.** Every 0.5 s, if fewer than 2 flocks are waiting and
-  the plane is under 80 m over the ground, it samples trees 140 to 280 m
-  ahead along the plane's way and 5 to 38 m off its line. It reads the
-  trees from the forests' own stood cells (new `LandTrees.cell_trees(ck)`,
-  additive; no physics), puts 9 to 17 birds on the top third of the crown,
-  and then waits `PERCH_GAP` s before putting the next. A flock the plane
-  has passed, or one far off its way, is dropped unflushed.
-- **Flush.** The plane within `FLUSH_SPANS` (16) of its span (WorldScale.span,
-  about 45 m), and closing, flushes the flock. The birds go in a ripple,
-  nearest the plane first (0 to 0.35 s). Each one crouches for 0.1 s (squat,
-  wings eased off the back), then bursts up and out from the tree with its
-  wings flung up for the first stroke, a stretch on the body and 19 beats a
-  second. The flock's anchor climbs toward the plane's height and heads the
-  plane's way.
-- **Ride along.** For 6 s (`--bird-ride=`), the anchor holds a slot 6 to 9 m
-  out on the tree's side and 0 to 2.5 m over the plane. The slot slides from
-  16 m ahead to level with the plane, and the birds top out at 1.08 times
-  the plane's cruise. At cruise they start ahead and drift back to beside
-  it; on a boost they fall more than 25 m behind and peel early.
-- **Peel.** They turn 1 rad away over 3 s, at 0.78 times cruise, climbing
-  or dropping a little and gliding for longer. They are dropped once more
-  than 200 m from the eye, more than 50 m away and behind the camera, or
-  after 20 s.
-- **Far flocks.** Up to 2 flocks of 16 to 26 birds, drawn at 2 times the
-  size, wheel 130 to 300 m ahead of the eye. Each wheels on a 35 to 75 m
-  circle 28 to 70 m over the higher of two sampled spots (so along ridges
-  more often), and its spread breathes. They are dropped past 650 m and put
-  again ahead. They fly every other frame.
-- **Flocking.** Each bird keeps station on the flock's anchor at its own
-  drifting place in the flock's frame (cohesion), with alignment to the
-  flock's mean velocity, separation from 3 neighbours, a hard push off the
-  plane (1.5 spans) and the ground clamp. Facing lags velocity (follow-through)
-  and they roll into turns. The wings flap and glide in bounds (0.3 to 0.65 s
-  of flapping, 0.18 to 0.5 s of gliding at a small dihedral, longer when
-  relaxed), and they beat when climbing or working hard. The downstroke is
-  fast and the recovery slow, the hand lags the arm, and the body bobs on
-  the stroke.
-- **Body.** One MultiMesh of a small faceted dove-like bird (80 triangles:
-  6-sided body rings, beak, tail fan, two-segment wings), 1.05 m span at the
-  size knobs (0.38 times the plane's span). The bird is pale grey with a
-  buff belly and dark wingtips, which reads over dark forest and against
-  the sky. `shaders/endless_birds.gdshader` poses the wings from instance
-  custom data (inner angle, outer bend, spread/tuck, warm tint). It casts
-  no shadow, is visual only and never touches the plane.
-  `songbird_body.gd` was not used: six nodes and a material per bird cost
-  too much here. Its isle code is untouched.
+### The jitter's cause
 
-## Model budget (docs/art/model-budget.md)
+The flight paths were already smooth: a headless/rendered metric
+(`scratch/birds_jitter.gd`: change of yaw rate, roll step and the second
+difference of each bird's screen position per frame) showed sub-pixel
+path noise. The buzz came from the pose and the update rate:
 
-The bird is 80 triangles in one MultiMesh, posed in its vertex shader.
-Vertex colours carry the colour, and flat facets carry the silhouette.
-None of the tricks saves anything worth doing here:
+- **The wingbeat.** 12 beats a second cruising and 19 on the burst, with a
+  warped fast downstroke and the body bobbing on every stroke: 3 to 5
+  rendered frames a beat at 60 fps, so the wings aliased into a flicker
+  (worse at uneven frame times). The songbirds beat 2.4 a second
+  (`BEAT` 15 rad/s; 3.8 on the burst) in bounds with the wings tucked.
+- **Far flocks stepped every other frame** with twice the delta: they
+  moved at 30 Hz against a 60 Hz camera (judder).
+- **Bank read off the clamped steering acceleration** (bang-bang: the
+  acceleration cap was saturated against a stiff spring and separation),
+  so the roll swung with it; perched birds also snapped their facing.
 
-- **Sculpt and bake:** no use; the bird is too small on screen.
-- **Import LODs and visibility ranges:** they would save under 80
-  triangles times about 100 birds, which is nothing.
-- **Rigid parts on bones:** the wings are already bent in the shader with
-  no skeleton.
-- **Parallax:** no use.
-- **Vertex-colour grime:** the vertex colours are already used for the
-  belly and the dark hands.
+Now every bird steps every frame. A flying bird follows its place in the
+flock on a critically damped spring (velocity eased toward the place's
+velocity plus a quarter-response pull on the gap; no clamp), places sit on
+a sunflower disc so no separation steering is needed, facing follows the
+smoothed velocity, bank comes from the smoothed turn rate, and the flock's
+frame turns smoothly (no snap to FORWARD at low speed).
 
-## Flags
+### What it does now
 
-`--birds=0` (or `--no-birds`) off; `--birds=X` how many perched flocks wait
-(1); `--bird-range=X` flush reach (1); `--bird-size=X` (1); `--bird-ride=S`
-(6); `--ambient-birds=X` far flocks (1; 0 none).
+- **Bodies.** The songbird's own meshes (`SongbirdBody.meshes_for`, its
+  `HEAD_AT`, `SHOULDER`), drawn as six MultiMeshes per species: sitting
+  (body and folded wings) plus the head apart (so it can look about),
+  flying with wings tucked (the bounds), flying without wings, and each
+  spread wing hinged at its shoulder. 3 species (sparrow, robin,
+  goldfinch; one per flock) = 18 draw calls at any count, no LOD and no
+  pop: every bird is the full songbird at every distance (~430 triangles).
+  `shaders/endless_birds.gdshader` is now the songbird look (vertex colour,
+  rough) with a wrapped light, backlight and a small fill, since with the
+  plain songbird shader their shaded sides went near black against the
+  land. They cast shadows. Span 0.85 m (0.3 of the plane's span; 2.2 times
+  the isles' bird), `--bird-size=` scales it.
+- **Flight (the isles').** Bounding flap-and-glide: beating 0.34 s
+  (0.48 s while with the plane, wheeling or peeling), tucked 0.22 s, always
+  beating when climbing or landing; lift `sin(beat)*0.95+0.15`, the
+  isles' formula. Pitch from the climb, bank into turns, head held a
+  little down in flight.
+- **Startle.** A ripple through the crown (nearest first), a 0.12 s
+  crouch (squat, lean forward, wings folded), then out and up with the
+  wings flung up for the first stroke and a stretch that eases off.
+- **Perched life** (flocks within 110 m of the eye): look-about snaps (head
+  eased at 14/s to a new glance every 0.4 to 1.6 s), tail flicks, hops
+  round and up or down the crown (0.35 s arcs) every 4 to 14 s; birds on
+  the ground hop and peck (the isles' forage).
+- **Perches** use the trees' real crown (`cell_trees` crown bottom and
+  radius) rather than a guessed cone.
+- **In the plane:** as before. Perched flocks ahead along the plane's way,
+  flushed by the plane, ride alongside, peel, dropped out of sight; far
+  wheeling flocks.
+- **On foot:** up to 2 flocks kept in trees 22 to 85 m from him (the ones
+  in view preferred), 30% of each foraging round the foot of the tree.
+  Him within `FIGURE_NEAR` (3.6 m, 5.5 at a run over 4 m/s; times 1.33 for
+  the birds' scale) of a bird across (and under 14 m below it), or under
+  the crown, flushes it: out all at once, wheeling over the tree for 2.5 to
+  4.5 s, then off to another tree 45 to 95 m from him, each bird coming in
+  to its own perch (front point, then the slow approach), then the perched
+  life again (calm 6 s). With no tree it flies off and is dropped. Dropped
+  past 240 m from him.
 
-## Cost
+Flags as before: `--birds=0` / `--no-birds`, `--birds=X`, `--bird-range=X`,
+`--bird-size=X`, `--bird-ride=S`, `--ambient-birds=X`.
 
-These figures are from an RTX 4070 Super at 1440p, uncapped, on a low pass
-over forest. The numbers are 20 s averages from the scratch driver
-`scratch/birds_cost.gd`.
+### Cost
+
+RTX 4070 Super, 2560x1440 window, uncapped, the low pass over forest of
+`scratch/birds_cost.gd` (20 s averages):
 
 | | birds on | `--birds=0` |
 |---|---|---|
-| birds alive | ~58 (peak ~105) | 0 |
-| birds CPU (GDScript) | 0.29 ms | 0 |
-| GPU | 11.63 ms | 11.64 ms |
-| frame | 12.81 ms | 12.85 ms |
-| draw calls | 764 | 746 (noise between runs; the birds are 1 MultiMesh) |
+| birds alive | ~62 | 0 |
+| birds step (GDScript) | 0.48 ms | 0 |
+| GPU | 13.2 ms | 13.3 ms (noise) |
+| frame | 14.2 ms | 14.3 ms |
+| draw calls | 982 | 964 (+18: the parts' MultiMeshes and shadows) |
 
-In headless runs with ~90 to 105 birds alive the step is 0.5 to 0.7 ms on
-a loaded machine, and drawing is about 0.25 ms of it. F1 shows birds
-flying and perched, flushes and the step's ms.
+Headless with 60 to 80 birds the step is 0.4 to 0.9 ms, of which drawing
+(composing up to three transforms a bird into the buffers) is 0.3 to 0.45.
+F1 shows flying/perched, flushes and the step's and the draw's ms.
 
-## Proof
+### Proof (scratch drivers, uncommitted)
 
-- Smoke: `studies/endless_flight.tscn`, both default and `--birds=0`, pass
-  400 frames with 0 errors.
-- Scratch driver `scratch/birds_pass.gd` (uncommitted): it flies the plane
-  low past the densest forest near the start through the real loop. Three
-  flocks flush, ride, peel and are dropped. The closest bird came 4.3 m from
-  the plane, there are no errors, and `--shots=N` / `--film` give stills.
-- Sheets: `captures/shots/birds_pass_play_crops.png` (play view: the burst,
-  the ride, the peel), `captures/shots/birds_flush_sheet.png` and
-  `birds_flush_crops.png` (a side camera on the burst).
+- `scratch/birds_pass.gd`: a flock flushes, rides, peels, is dropped;
+  closest bird 3.4 m from the plane, no errors.
+- `scratch/birds_foot.gd -- --scene-args --on-foot`: a flock in a tree
+  74 m off, all 10 look about, ~30 hops while he walks up through the
+  real input, flushed 10.5 m from the trunk (by a forager), wheel, flit,
+  settled in another tree, no errors.
+- `scratch/birds_film.gd` (`--side` a camera beside the flock): crops.
+- Sheets: `captures/shots/birds_side_sheet.png` (burst and ride from the
+  side, every 2nd frame), `birds_chase_sheet.png` and `birds_chase_16.png`
+  (the ride at the chase camera), `birds_chase_full.png` (a far flock
+  over the ridge), `birds_foot_perched.png`, `birds_foot_close_sheet.png`,
+  `birds_foot_flush_sheet.png`.
+- Smoke passes: default, `--on-foot`, `--birds=0`, `--birds=3
+  --bird-size=2 --ambient-birds=2`. Shared songbird code untouched, so
+  the isles are unchanged.
 
-## Weak
+### Weak spots
 
-- At the chase camera's distance the riding flock is small (roughly 25 to
-  60 px at 1440p) and often flies among the crowns, not against the sky. A
-  slot higher over the plane reads better but sits at the frame's top edge.
-- The burst starts about 45 m ahead, so most of the "alongside" is the plane
-  catching a flock that is slowing down. It reads at cruise; on a hard turn
-  the slot swings with the plane, and the flock can cut across.
-- Birds fly through neighbouring crowns while bursting (they have no tree
-  avoidance), and perched birds sit on a guessed crown cone (0.19 times
-  the tree's height), so on some trees they float off or sit inside.
-- Far flocks are 2 to 3 px specks past about 250 m and pop in at 130 m and
-  up. They pick ridges only crudely (the higher of two spots), not meadows
-  or ridgelines.
-- GDScript CPU of 0.3 to 0.7 ms at peak. If it's needed, the next step is
-  fewer far birds, or moving the steering into a compute pass or the
-  native kernels.
-- No walker flushes, gust flushes or calls, and there's no sound.
+- Stills, not a film: the smoothness is shown by the metric and frame
+  strips; judge it by playing.
+- At the chase camera the flushed flock starts ~40 m off the plane and
+  out to the side, outside the frame for the first 1 to 2 s; it is in view
+  once the slot closes (the ride geometry is unchanged from before).
+- They still fly through neighbouring crowns (no tree avoidance), and
+  sit on the crown's surface, not on boughs; no branch sway (the isles'
+  `ride` uniform is per material, not per instance).
+- On foot a forager can flush the flock while he is still ~10 m from the
+  trunk.
+- No sound, no gust flush, no dusk leaving.
 
-## Next
+---
 
-Judge the size and ride slot by playing (`--bird-size=`, `--bird-ride=`,
-`--bird-range=`). Try a slot over the plane's far wing at a slower bank.
-Add a sound of wings on the flush. Flush on the walker too. Give the far
-flocks a murmuration squeeze or seabirds over the coast.
+## First round (kept for reference)
 
-No existing test touches these files (`grep endless_flight|land_trees tests/`
-finds none); `test_world_scale_guard` passes.
+`scripts/endless/endless_birds.gd`, hooked into `studies/endless_flight.gd`
+(built after the trees, stepped after them each frame, a line on F1's
+numbers). Perched flocks are put 140 to 280 m ahead along the plane's way
+and 5 to 38 m off its line, every 0.5 s when fewer than 2 wait and the
+plane is under 80 m over the ground. The plane within `FLUSH_SPANS` (16) of
+its span flushes one: they burst, form up, ride a slot 6 to 9 m out and 0
+to 2.5 m over the plane for 6 s (`--bird-ride=`) sliding from 16 m ahead to
+beside it, top out at 1.08 times cruise, then peel 1 rad away over 3 s at
+0.78 times cruise and are dropped past 200 m, behind the camera past 50 m,
+or after 20 s. Up to 2 far flocks of 16 to 26 birds at twice the size wheel
+130 to 300 m ahead over the higher of two sampled spots and are dropped
+past 650 m. The first body was an 80-triangle dove in one MultiMesh,
+flapped in its vertex shader; it is replaced.
