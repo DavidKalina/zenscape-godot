@@ -70,7 +70,8 @@ extends Node3D
 ## --grass-cull=0 (no tile culling by the rings: every tile drawn to its
 ## visibility range, as before), --grass-sub=M (the near grass's tiles, SUB m;
 ## 24: KitFlora's own), --grass-far-lod=M (the far ring's tiles wholly past M m
-## draw the far lod tuft, one triangle a blade; 0: off).
+## draw the far lod tuft, one triangle a blade, FAR_LOD; 0: off, the lite
+## tuft throughout).
 ##
 ## Look round 5 (docs/design/endless-flight/flowers-colour-handoff.md): the
 ## grass's colour regions and the flower drifts are endless_patch.gd
@@ -235,11 +236,15 @@ const GrassTuft = preload("res://scripts/grass_tuft_mesh.gd")
 ## tile past them runs every tuft's vertices at zero size). The near grass in
 ## SUB m tiles, so the tiles at the ring's edge are small. Past FAR_LOD m the
 ## far ring's tiles draw a tuft of one triangle a blade (GrassTuft
-## build_far), switching back FAR_LOD_BACK m nearer.
+## build_far), switching back FAR_LOD_BACK m nearer; nearer, each tuft eases
+## into that shape over FAR_MORPH m, done FAR_LOD_SAFE m short of FAR_LOD
+## (endless_tuft_far `far_morph`), so the swap changes no pixel.
 const CULL_SLACK := 2.0
 const SUB := 8.0
-const FAR_LOD := 0.0
+const FAR_LOD := 100.0
 const FAR_LOD_BACK := 6.0
+const FAR_MORPH := 30.0
+const FAR_LOD_SAFE := 5.0
 var cull := true
 var sub := SUB
 var far_lod := FAR_LOD
@@ -415,7 +420,9 @@ func _warm() -> void:
 		if key.begins_with("grass") and KitFlora.ringed(key):
 			if fine: _fine(key)
 			KitFlora.lite_tuft(key)
-			if far_lod > 0.0: _far_mesh(key)
+			if far_lod > 0.0:
+				_far_mesh(key)
+				_lite_morph(key)
 
 func _exit_tree() -> void:
 	_quit = true
@@ -625,6 +632,7 @@ func _stand(all := false) -> void:
 		for part: Dictionary in r.parts:
 			var ring: Dictionary = part.get("ring",{})
 			var own: Mesh = _fine(str(part.key)) if fine and not layer.far and str(part.key).begins_with("grass") else null
+			if layer.far and far_lod > 0.0: own = _lite_morph(str(part.key))
 			var batch := KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer,lod.w,ring,own)
 			count += int(part.count)
 			# A tile is drawn out to its ring's reach led ahead, and over
@@ -694,7 +702,7 @@ func _cull() -> void:
 						for b: Node in (g[1] as Node3D).get_children():
 							var mm := (b as MultiMeshInstance3D).multimesh
 							var k := str(b.get_meta("part",""))
-							mm.mesh = _far_mesh(k) if lite else KitFlora.lite_tuft(k)
+							mm.mesh = _far_mesh(k) if lite else _lite_morph(k)
 
 ## The ground disc within ring distance `reach` [centre x, z, radius squared]
 ## (radius squared below zero: none).
@@ -717,6 +725,16 @@ func _far_mesh(key: String) -> Mesh:
 	var lite: Mesh = KitFlora.lite_tuft(key)
 	var mesh: Mesh = GrassTuft.build_far(lite.get_meta("grass_root"),lite.get_meta("grass_tip"))
 	_far_meshes[key] = mesh
+	return mesh
+
+## The lite tuft that eases into the far lod's shape (GrassTuft
+## build_lite_morph), drawn by the far ring while the far lod is on.
+func _lite_morph(key: String) -> Mesh:
+	var id := "morph:"+key
+	if _far_meshes.has(id): return _far_meshes[id]
+	var lite: Mesh = KitFlora.lite_tuft(key)
+	var mesh: Mesh = GrassTuft.build_lite_morph(lite.get_meta("grass_root"),lite.get_meta("grass_tip"))
+	_far_meshes[id] = mesh
 	return mesh
 
 ## The isle's carpet calm (Carpet `calm`) on a batch's material, once a
@@ -811,6 +829,9 @@ func _far(key: String, ring: Dictionary) -> Material:
 		m.set_shader_parameter("grass_source_root",Vector3(root.r,root.g,root.b))
 		m.set_shader_parameter("grass_source_tip",Vector3(tip.r,tip.g,tip.b))
 	m.set_shader_parameter("cloud_shade",CLOUD_SUN)
+	# The far lod: each tuft in its shape by FAR_LOD_SAFE m short of it, so a
+	# tile swapping there (its nearest root past it) changes no pixel.
+	if far_lod > 0.0: m.set_shader_parameter("far_morph",Vector2(far_lod-FAR_MORPH,far_lod-FAR_LOD_SAFE))
 	_silver(m,"",0.0,true)
 	for k: String in _sets.far: m.set_shader_parameter(k,_sets.far[k])
 	_fars[id] = m

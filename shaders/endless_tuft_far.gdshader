@@ -34,6 +34,11 @@ uniform vec4 grass_ring_in = vec4(0.0, 1.0, 1.0, 0.0);
 uniform vec2 grow_near = vec2(1.0);
 uniform vec4 grass_ring_grow = vec4(0.0, 1.0, 1.0, 1.0);
 uniform vec4 wash_in = vec4(0.0, 1.0, 1.0, 0.0);
+// The far lod (endless_grass.gd `far_lod`): over this ring distance (m) each
+// tuft eases into the far lod tuft's shape (CUSTOM0.xyz, GrassTuft
+// build_lite_morph), so a tile swapping to that tuft past it changes no
+// pixel. Zero: off.
+uniform vec2 far_morph = vec2(0.0);
 uniform vec3 wash_colours[8];
 // How far up the blade the wash takes over (along the blade, 0 root, 1 tip).
 uniform vec2 wash_tip = vec2(0.3, 0.75);
@@ -81,6 +86,7 @@ void vertex() {
 	float in_rank = fract(sin(dot(root.xz, vec2(41.37, 17.93))) * 24634.6345);
 	float in_at = mix(band.x, band.y, in_rank);
 	ring_keep *= smoothstep(in_at, in_at + band.z, ring_d);
+	if (far_morph.y > 0.0) VERTEX += CUSTOM0.xyz * smoothstep(far_morph.x, far_morph.y, ring_d);
 	vec2 size = mix(grow_near, grass_ring_grow.zw, smoothstep(grass_ring_grow.x, grass_ring_grow.y, ring_d));
 	VERTEX.xz *= ring_keep * size.x;
 	VERTEX.y *= ring_keep * size.y;

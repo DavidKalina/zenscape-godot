@@ -133,6 +133,26 @@ static func wanted() -> bool:
 	if "--plain-look" in LaunchArgs.user_args(): return false
 	return RenderingServer.get_current_rendering_method() != "gl_compatibility"
 
+## Frame rate (docs/design/endless-flight/frame-rate-handoff.md). No
+## ambient occlusion: the land's surfaces take their sky fill as emission,
+## which it never darkens, so in stills at every spot it changed no pixel
+## past the clouds' own frame-to-frame noise, and it cost 2.3 to 3.2 ms a
+## frame on the M5 Pro; --ssao=1 brings it back. Trades the eye can see,
+## for the user to try, none by default: --shadow-size=N (the sun's shadow
+## map, 8192 a side; 4096 saves 0.5 to 0.8 ms, shadow edges a little
+## softer), --msaa=N (0, 2, 4: the 3D's MSAA, 4).
+const SSAO := false
+func _frame_trades() -> void:
+	environment.ssao_enabled = SSAO
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--ssao="): environment.ssao_enabled = a.get_slice("=",1) != "0"
+		elif a.begins_with("--shadow-size="):
+			RenderingServer.directional_shadow_atlas_set_size(clampi(int(a.get_slice("=",1)),1024,16384),true)
+		elif a.begins_with("--msaa="):
+			var n := int(a.get_slice("=",1))
+			var root := (Engine.get_main_loop() as SceneTree).root
+			root.msaa_3d = Viewport.MSAA_4X if n >= 4 else (Viewport.MSAA_2X if n >= 2 else Viewport.MSAA_DISABLED)
+
 func setup(land_seed: int) -> void:
 	name = "Look"
 	_land_seed = land_seed
@@ -163,6 +183,7 @@ func setup(land_seed: int) -> void:
 	sun.directional_shadow_fade_start = 0.85
 	sun.shadow_bias = 0.04
 	sun.shadow_normal_bias = 1.2
+	_frame_trades()
 	celestial = Celestial.new()
 	celestial.cloud = 0.0
 	celestial.setup(lighting.lights)
