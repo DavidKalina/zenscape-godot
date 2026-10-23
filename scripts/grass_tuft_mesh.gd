@@ -112,6 +112,31 @@ static func build_lite(root: Color, tip: Color) -> ArrayMesh:
 	mesh.set_meta("grass_tip", tip)
 	return mesh
 
+## The lite tuft from far off (the endless grass's far ring past its far lod,
+## scripts/endless/endless_grass.gd): the same blades, roots, heights and
+## leans, each one triangle (root edge to tip, FAR_WIDTH wider at the root so
+## it covers as much), a third of the lite tuft's triangles and 3/5 of its
+## vertices. Opt-in: nothing else draws it.
+const FAR_WIDTH := 1.25
+
+static func build_far(root: Color, tip: Color) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rows := [0.0]
+	var taper := [FAR_WIDTH]
+	_clump(surface, rng, root, tip, LITE_BLADES, Vector2.ZERO, 1.0, rows, taper, LITE_WIDTH)
+	var turn := rng.randf() * TAU
+	for satellite: Array in LITE_SATELLITES:
+		turn += rng.randf_range(2.0, 3.6)
+		_clump(surface, rng, root, tip, int(satellite[0]), Vector2.from_angle(turn) * float(satellite[1]), float(satellite[2]), rows, taper, LITE_WIDTH)
+	surface.index()
+	var mesh := surface.commit()
+	mesh.set_meta("grass_root", root)
+	mesh.set_meta("grass_tip", tip)
+	return mesh
+
 static func build(root: Color, tip: Color) -> ArrayMesh:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
