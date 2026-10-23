@@ -59,6 +59,11 @@ uniform vec4 sway_shape = vec4(0.0, 1.0, 0.0, 0.0);
 uniform vec4 sway_frequency = vec4(1.0, 2.0, 1.0, 0.5);
 uniform vec3 sway_phase = vec3(0.9, 0.7, 1.3);
 uniform bool flat_faces = false;
+// A level of detail by distance (scripts/endless/land_trees.gd, --spruce=sprays):
+// each instance draws only while its foot is lod_band.x..lod_band.y m from the
+// eye, and collapses to its foot outside it, so its faces cull.
+uniform bool lod_band_on = false;
+uniform vec2 lod_band = vec2(0.0, 1e9);
 uniform bool wet_ground = false;
 uniform float wet_droop = 0.0;
 uniform bool terrain_growth = false;
@@ -377,6 +382,10 @@ vec3 zs_strata(vec3 p, float surface) {
 }
 
 void vertex() {
+	if (lod_band_on) {
+		float lod_d = distance(MODEL_MATRIX[3].xyz, CAMERA_POSITION_WORLD);
+		if (lod_d < lod_band.x || lod_d >= lod_band.y) VERTEX = vec3(0.0);
+	}
 	// A flower's head offset from its neck (CUSTOM0.xyz), as the distance
 	// thinning grows it; a dropped plant collapses to its root and skips the rest.
 	vec3 flower_offset = CUSTOM0.xyz;

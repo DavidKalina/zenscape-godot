@@ -17,6 +17,12 @@ const SWAPS := {
 	"redwood-canopies": ["res://assets/models/zenscape-hero-redwood.glb", "Foliage", Vector3(0.6, 0.93, 0.6), OWN],
 }
 const SPRUCE_GLB := "res://assets/models/zenscape-spruce-family.glb"
+## `--spruce=sprays`: the same six variants rebuilt as drooping bough sprays with
+## a sawtooth needle fringe (tools/blender_trees/spruce_sprays.py).
+const SPRUCE_LOOKS := {"sprays":"res://assets/models/zenscape-spruce-sprays.glb"}
+## Looks whose glb also holds a coarser far crown per variant, which the
+## endless land draws past its detail distance (land_trees.gd DETAIL).
+const SPRUCE_FAR := ["res://assets/models/zenscape-spruce-sprays.glb"]
 ## The source pine stands 4.26 m and 1.2 m wide; the family keeps that width and
 ## height while the variants keep their differences.
 const SPRUCE_SCALE := Vector3(1.0, 1.46, 1.0)
@@ -58,6 +64,12 @@ static func swap(node_name: String, original: Mesh) -> Mesh:
 	if node_name == "mesh-11": built = preload("res://scripts/perch_limbs.gd").add_to(built)
 	return built
 
+## The spruce family's glb: `--spruce=<look>` picks one of SPRUCE_LOOKS.
+static func spruce_glb() -> String:
+	for a in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with("--spruce=") and SPRUCE_LOOKS.has(a.get_slice("=",1)): return SPRUCE_LOOKS[a.get_slice("=",1)]
+	return SPRUCE_GLB
+
 ## Batch keys for the spruce family: [trunk, canopy] per variant, in SPRUCE order.
 ## Named so scene_look roles and the "canopies" tint rule apply unchanged.
 static func spruce_keys() -> Array:
@@ -68,7 +80,19 @@ static func spruce_keys() -> Array:
 
 static func spruce_mesh(index: int, canopy: bool, material: Material) -> Mesh:
 	var variant: String = SPRUCE[index][0]
-	return _build(SPRUCE_GLB, "%s %s" % [variant, "canopy" if canopy else "trunk"], SPRUCE_SCALE, GREY, material)
+	return _build(spruce_glb(), "%s %s" % [variant, "canopy" if canopy else "trunk"], SPRUCE_SCALE, GREY, material)
+
+## True when the picked look carries a far level of detail ("<variant> canopy far").
+static func spruce_has_far() -> bool:
+	return spruce_glb() in SPRUCE_FAR
+
+## A variant's crown in the default look (the faceted family), whatever look is picked.
+static func spruce_family_crown(index: int, material: Material) -> Mesh:
+	return _build(SPRUCE_GLB, "%s canopy" % SPRUCE[index][0], SPRUCE_SCALE, GREY, material)
+
+## A variant's far crown (spruce_has_far looks only).
+static func spruce_far_mesh(index: int, material: Material) -> Mesh:
+	return _build(spruce_glb(), "%s canopy far" % SPRUCE[index][0], SPRUCE_SCALE, GREY, material)
 
 static func joshua_mesh(node_name: String) -> Mesh:
 	var material := ShaderMaterial.new()

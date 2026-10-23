@@ -80,6 +80,17 @@ const FAR_BAKED := 0.75
 const FLOOR_STEP := 16.0
 const FLOOR_COLOUR := Color(0.2,0.29,0.14)
 const FLOOR_STRENGTH := 0.82
+## A look with a far crown (HeroTrees.spruce_has_far, --spruce=sprays): each
+## near tree draws its full crown within DETAIL m of the eye, its far crown out
+## to FAR_CUT m and the faceted family's crown past that (a per-tree band in
+## the crowns' shader). The full crowns stand in DETAIL_TILE m squares made
+## only within DETAIL, the far ones in FAR_TILE squares made only within
+## FAR_CUT, so the rest of the near ring never draws them. --spruce-detail=M and --spruce-far=M move the two; --spruce-detail=all
+## gives every near tree its full crown.
+const DETAIL := 150.0
+const FAR_CUT := 200.0
+const DETAIL_TILE := 64.0
+const FAR_TILE := 128.0
 
 var seed := 1
 var share := 1.0
@@ -99,6 +110,14 @@ var _arch_flags := {}
 var _floor := true
 var _shadows := not ("--no-tree-shadows" in LaunchArgs.user_args())
 var _near_floor: ShaderMaterial
+var _detail := -1.0           # DETAIL in force, or < 0: one crown for every near tree
+var _far_crowns: Array = []   # variant -> far crown mesh (with _detail)
+var _detail_material: Array = []  # variant -> the full crown's material, banded within _detail
+var _far_material_v: Array = []   # variant -> the far crown's material, banded _detail.._far_cut
+var _far_cut := FAR_CUT
+var _family_crowns: Array = []    # variant -> the faceted family's crown (with _detail)
+var _family_material_v: Array = [] # variant -> its material, banded past _far_cut
+var _tiles := {}              # Vector4i(block x, block z, tile, 0 full / 1 far) -> Node3D of crowns
 var _far_floor: ShaderMaterial
 
 var _blocks := {}             # Vector2i -> {node, cells: {Vector2i: {trees, buckets}}}
@@ -139,6 +158,28 @@ func setup(land_seed: int) -> void:
 		var box := (parts[1] as Mesh).get_aabb()
 		_dims.append(Vector3(maxf(box.size.x,box.size.z)*0.5,box.end.y,maxf(box.position.y,0.0)))
 	_tint = SkyIslets.get("_canopy_tint")
+	if HeroTrees.spruce_has_far():
+		_detail = DETAIL
+		for a in LaunchArgs.user_args():
+			if a == "--spruce-detail=all": _detail = -1.0
+			elif a.begins_with("--spruce-detail="): _detail = maxf(0.0,float(a.get_slice("=",1)))
+			elif a.begins_with("--spruce-far="): _far_cut = float(a.get_slice("=",1))
+		_far_cut = maxf(_far_cut,_detail)
+	if _detail >= 0.0:
+		for v in HeroTrees.SPRUCE.size():
+			var base: Material = (_parts[v][1] as Mesh).surface_get_material(0)
+			var near_m: Material = base.duplicate()
+			var far_m: Material = base.duplicate()
+			var family_m: Material = base.duplicate()
+			if near_m is ShaderMaterial:
+				for pair in [[near_m,Vector2(0.0,_detail)],[far_m,Vector2(_detail,_far_cut)],[family_m,Vector2(_far_cut,1e9)]]:
+					(pair[0] as ShaderMaterial).set_shader_parameter("lod_band_on",true)
+					(pair[0] as ShaderMaterial).set_shader_parameter("lod_band",pair[1])
+			_detail_material.append(near_m)
+			_far_material_v.append(far_m)
+			_family_material_v.append(family_m)
+			_far_crowns.append(HeroTrees.spruce_far_mesh(v,base))
+			_family_crowns.append(HeroTrees.spruce_family_crown(v,base))
 	_crown = FarTrees.proxy("tree:spruce-endless-canopies",_parts[0][1])
 	var base: Vector3 = _dims[0]
 	for d: Vector3 in _dims:
@@ -221,7 +262,59 @@ func step(at: Vector3, plane_at: Vector3) -> void:
 			stats.slowest_commit_ms = took
 			stats.slowest_commit = "%s %s, %d trees" % [next.kind,next.key,int(next.n)]
 		if (Time.get_ticks_usec()-began)/1000.0 > COMMIT_BUDGET: break
+	if _detail >= 0.0: _detail_tiles(at)
 	_collide(plane_at)
+
+## The full crowns' squares within the detail distance stood, and the far
+## crowns' (FAR_TILE squares) within FAR_CUT; those well past it freed (their
+## trees past it draw the next crown in any case).
+func _detail_tiles(at: Vector3) -> void:
+	_stand_tiles(at,0,_detail,DETAIL_TILE,_parts.map(func(p: Array) -> Mesh: return p[1]),_detail_material)
+	_stand_tiles(at,1,_far_cut,FAR_TILE,_far_crowns,_far_material_v)
+
+func _stand_tiles(at: Vector3, kind: int, reach: float, size: float, meshes: Array, materials: Array) -> void:
+	var per := int(BLOCK/size)
+	var sub := int(size/DETAIL_TILE)
+	var per_sub := int(BLOCK/DETAIL_TILE)
+	for t: Vector4i in _tiles.keys():
+		if t.w != kind: continue
+		if _rect_distance(t.x*BLOCK+(t.z%per)*size,t.y*BLOCK+(t.z/per)*size,size,at) > reach+size*0.5:
+			(_tiles[t] as Node).queue_free()
+			_tiles.erase(t)
+	if reach <= 0.0: return
+	var lo := _block_of(at.x-reach,at.z-reach)
+	var hi := _block_of(at.x+reach,at.z+reach)
+	for bx in range(lo.x,hi.x+1):
+		for bz in range(lo.y,hi.y+1):
+			var key := Vector2i(bx,bz)
+			if not _blocks.has(key): continue
+			var b: Dictionary = _blocks[key]
+			for ti in per*per:
+				var t := Vector4i(bx,bz,ti,kind)
+				if _tiles.has(t): continue
+				if _rect_distance(bx*BLOCK+(ti%per)*size,bz*BLOCK+(ti/per)*size,size,at) > reach: continue
+				# The square's trees, gathered from its DETAIL_TILE squares.
+				var bufs := []
+				for v in meshes.size(): bufs.append([PackedFloat32Array(),0])
+				for sj in sub:
+					for si in sub:
+						var sti := (ti%per)*sub+si+per_sub*((ti/per)*sub+sj)
+						if not (b.tiles as Dictionary).has(sti): continue
+						var slots: Array = b.tiles[sti]
+						for v in slots.size():
+							bufs[v][0].append_array(slots[v][0])
+							bufs[v][1] = int(bufs[v][1])+int(slots[v][1])
+				var holder := Node3D.new()
+				holder.name = "%s_%d" % [["Detail","Far"][kind],ti]
+				for v in bufs.size():
+					var n := int(bufs[v][1])
+					if n == 0: continue
+					var batch := _batch(meshes[v],bufs[v][0],n,materials[v])
+					batch.name = "Spruce%dCrown" % v
+					batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+					holder.add_child(batch)
+				(b.node as Node).add_child(holder)
+				_tiles[t] = holder
 
 # --- Streaming ---------------------------------------------------------------
 
@@ -325,6 +418,9 @@ func _build_block(key: Vector2i, field: RefCounted, plan: RefCounted) -> Diction
 	var near: Array = []
 	for v in variants: near.append([PackedFloat32Array(),PackedFloat32Array(),0])
 	var mid := PackedFloat32Array()
+	# The full crowns by DETAIL_TILE square: tile index -> variant -> [buffer, count].
+	var tiles := {}
+	var per_tile := int(BLOCK/DETAIL_TILE)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([seed,key.x,key.y,"trees"])
 	for t in n:
@@ -340,12 +436,21 @@ func _build_block(key: Vector2i, field: RefCounted, plan: RefCounted) -> Diction
 		_put(slot[0],basis,at,Color.WHITE)
 		_put(slot[1],basis,at,tone)
 		slot[2] = int(slot[2])+1
+		if _detail >= 0.0:
+			var ti := clampi(int((at.x-key.x*BLOCK)/DETAIL_TILE),0,per_tile-1)+per_tile*clampi(int((at.z-key.y*BLOCK)/DETAIL_TILE),0,per_tile-1)
+			if not tiles.has(ti):
+				var empty := []
+				for u in variants: empty.append([PackedFloat32Array(),0])
+				tiles[ti] = empty
+			var ts: Array = tiles[ti][v]
+			_put(ts[0],basis,at,tone)
+			ts[1] = int(ts[1])+1
 		var fit: Vector3 = _crown_fit[v]
 		var cb := Basis(Vector3.UP,yaw).scaled(Vector3(sc*wide*fit.x,sc*fit.y,sc*wide*fit.x)*MID_SIZE)
 		_put(mid,cb,at+Vector3(0.0,fit.z*sc,0.0),Color(tone.r/_tint.r,tone.g/_tint.g,tone.b/_tint.b))
 	var ground: Dictionary = _floor_arrays(plan.floor_grid(field,key.x*BLOCK,key.y*BLOCK,BLOCK,FLOOR_STEP)) if _floor else {}
 	var ms := (Time.get_ticks_usec()-began)/1000.0
-	return {"kind":"b","key":key,"cells":cells,"near":near,"mid":mid,"n":n,"floor":ground,"ms":ms}
+	return {"kind":"b","key":key,"cells":cells,"near":near,"mid":mid,"n":n,"floor":ground,"ms":ms,"tiles":tiles}
 
 ## The far cell's crowns' buffer.
 func _build_far(key: Vector2i, field: RefCounted, plan: RefCounted) -> Dictionary:
@@ -482,7 +587,10 @@ func _commit(done: Dictionary) -> void:
 		var slot: Array = done.near[v]
 		if int(slot[2]) == 0: continue
 		for part in 2:
-			var batch := _batch(_parts[v][part],slot[part],int(slot[2]),null)
+			# With far crowns, the block draws the family's crown past FAR_CUT;
+			# the full and far crowns stand in their squares (_detail_tiles).
+			var family := part == 1 and _detail >= 0.0
+			var batch := _batch(_family_crowns[v] if family else _parts[v][part],slot[part],int(slot[2]),_family_material_v[v] if family else null)
 			batch.name = "Spruce%d%s" % [v,"Crown" if part == 1 else "Trunk"]
 			batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			batch.visibility_range_end = NEAR_END
@@ -505,7 +613,7 @@ func _commit(done: Dictionary) -> void:
 			holder.add_child(shade)
 	if not (done.floor as Dictionary).is_empty(): holder.add_child(_floor_node(done.floor,_near_floor))
 	add_child(holder)
-	_blocks[key] = {"node":holder,"cells":done.cells,"n":int(done.n)}
+	_blocks[key] = {"node":holder,"cells":done.cells,"n":int(done.n),"tiles":done.get("tiles",{})}
 	stats.blocks = _blocks.size()
 	stats.trees += int(done.n)
 
@@ -525,6 +633,8 @@ func _batch(mesh: Mesh, buf: PackedFloat32Array, count: int, material: Material)
 func _free_block(key: Vector2i) -> void:
 	var b: Dictionary = _blocks[key]
 	(b.node as Node).queue_free()
+	for t: Vector4i in _tiles.keys():
+		if t.x == key.x and t.y == key.y: _tiles.erase(t)
 	stats.trees -= int(b.n)
 	for ck: Vector2i in b.cells:
 		if _bodies.has(ck):
