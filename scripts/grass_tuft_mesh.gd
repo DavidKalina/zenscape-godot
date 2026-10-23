@@ -112,6 +112,88 @@ static func build_lite(root: Color, tip: Color) -> ArrayMesh:
 	mesh.set_meta("grass_tip", tip)
 	return mesh
 
+## The lite tuft from far off (the endless grass's far ring past its far lod,
+## scripts/endless/endless_grass.gd): the same blades, roots, heights and
+## leans, each one triangle (root edge to tip, FAR_WIDTH wider at the root so
+## it covers as much), a third of the lite tuft's triangles and 3/5 of its
+## vertices. Opt-in: nothing else draws it.
+const FAR_WIDTH := 1.25
+
+static func build_far(root: Color, tip: Color) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rows := [0.0]
+	var taper := [FAR_WIDTH]
+	_clump(surface, rng, root, tip, LITE_BLADES, Vector2.ZERO, 1.0, rows, taper, LITE_WIDTH)
+	var turn := rng.randf() * TAU
+	for satellite: Array in LITE_SATELLITES:
+		turn += rng.randf_range(2.0, 3.6)
+		_clump(surface, rng, root, tip, int(satellite[0]), Vector2.from_angle(turn) * float(satellite[1]), float(satellite[2]), rows, taper, LITE_WIDTH)
+	surface.index()
+	var mesh := surface.commit()
+	mesh.set_meta("grass_root", root)
+	mesh.set_meta("grass_tip", tip)
+	return mesh
+
+## The lite tuft carrying, in CUSTOM0.xyz, each vertex's way to build_far's
+## shape (the blade's root corners FAR_WIDTH out, its middle row onto the
+## straight edge root to tip): a shader that adds it all (shaders/
+## endless_tuft_far.gdshader `far_morph`) draws build_far's triangles, so
+## the two swap with no pixel changed. Opt-in: nothing else draws it.
+static func build_lite_morph(root: Color, tip: Color) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	surface.set_custom_format(0, SurfaceTool.CUSTOM_RGBA_FLOAT)
+	_clump_morph(surface, rng, root, tip, LITE_BLADES, Vector2.ZERO, 1.0)
+	var turn := rng.randf() * TAU
+	for satellite: Array in LITE_SATELLITES:
+		turn += rng.randf_range(2.0, 3.6)
+		_clump_morph(surface, rng, root, tip, int(satellite[0]), Vector2.from_angle(turn) * float(satellite[1]), float(satellite[2]))
+	surface.index()
+	var mesh := surface.commit()
+	mesh.set_meta("grass_root", root)
+	mesh.set_meta("grass_tip", tip)
+	return mesh
+
+## `_clump` at the lite tuft's rows, each vertex with its way to build_far's.
+static func _clump_morph(surface: SurfaceTool, rng: RandomNumberGenerator, root: Color, tip: Color, blades: int, at: Vector2, size: float) -> void:
+	for blade in range(blades):
+		var angle := (float(blade) / blades) * TAU + rng.randf() * 0.9
+		var out := Vector2.from_angle(angle)
+		var ring := clampf((0.25 if blade % 2 == 0 else 0.8) + rng.randf_range(-0.2, 0.2), 0.0, 1.0)
+		var base := at + out * lerpf(ROOT_RING.x, ROOT_RING.y, ring) * size
+		var height := lerpf(HEIGHT.y, HEIGHT.x, ring) * rng.randf_range(0.88, 1.08) * size
+		var lean := lerpf(LEAN.x, LEAN.y, ring) * rng.randf_range(0.85, 1.15) * size
+		var side := Vector2(-out.y, out.x) * HALF_WIDTH * LITE_WIDTH * rng.randf_range(0.85, 1.15) * lerpf(1.0, size, 0.5)
+		var blade_tip := tip.lightened(rng.randf_range(0.0, TIP_JITTER)) if rng.randf() < 0.5 else tip.darkened(rng.randf_range(0.0, TIP_JITTER))
+		var top := _point(base, out, height, lean, 1.0)
+		var c0 := _point(base, out, height, lean, 0.0)
+		var far_half := side * FAR_WIDTH
+		var far_l := c0 - Vector3(far_half.x, 0.0, far_half.y)
+		var far_r := c0 + Vector3(far_half.x, 0.0, far_half.y)
+		var strip := []
+		for k in range(LITE_ROWS.size()):
+			var t: float = LITE_ROWS[k]
+			var centre := _point(base, out, height, lean, t)
+			var half: Vector2 = side * float(LITE_TAPER[k])
+			strip.append([centre - Vector3(half.x, 0.0, half.y), centre + Vector3(half.x, 0.0, half.y), t, far_l.lerp(top, t), far_r.lerp(top, t)])
+		var a: Array = strip[0]
+		var b: Array = strip[1]
+		for corner in [[a[0], 0.0, a[2], a[3]], [a[1], 1.0, a[2], a[4]], [b[0], 0.0, b[2], b[3]], [a[1], 1.0, a[2], a[4]], [b[1], 1.0, b[2], b[4]], [b[0], 0.0, b[2], b[3]]]:
+			_vertex_morph(surface, corner[0], Vector2(corner[1], corner[2]), root.lerp(blade_tip, corner[2]), corner[3])
+		_vertex_morph(surface, b[0], Vector2(0.0, b[2]), root.lerp(blade_tip, b[2]), b[3])
+		_vertex_morph(surface, b[1], Vector2(1.0, b[2]), root.lerp(blade_tip, b[2]), b[4])
+		_vertex_morph(surface, top, Vector2(0.5, 1.0), blade_tip, top)
+
+static func _vertex_morph(surface: SurfaceTool, point: Vector3, uv: Vector2, color: Color, goal: Vector3) -> void:
+	var way := goal - point
+	surface.set_custom(0, Color(way.x, way.y, way.z, 0.0))
+	_vertex(surface, point, uv, color)
+
 static func build(root: Color, tip: Color) -> ArrayMesh:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11

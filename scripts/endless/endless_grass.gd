@@ -66,6 +66,12 @@ extends Node3D
 ## undersides the wind flips, SILVER 0.8), --no-grass-silver,
 ## --grass-slope=a,b (SLOPE), --grass-cover=old (the bare-patches round's
 ## masks off: none on turf steeper than OLD_SLOPE or HIGH m over the sea).
+## Frame rate (docs/design/endless-flight/frame-rate-handoff.md):
+## --grass-cull=0 (no tile culling by the rings: every tile drawn to its
+## visibility range, as before), --grass-sub=M (the near grass's tiles, SUB m;
+## 24: KitFlora's own), --grass-far-lod=M (the far ring's tiles wholly past M m
+## draw the far lod tuft, one triangle a blade, FAR_LOD; 0: off, the lite
+## tuft throughout).
 ##
 ## Look round 5 (docs/design/endless-flight/flowers-colour-handoff.md): the
 ## grass's colour regions and the flower drifts are endless_patch.gd
@@ -225,6 +231,25 @@ const FINE := {"blades":12,"rows":[0.0,0.6],"taper":[1.0,0.55],"width":0.6,"sate
 ## the isle's (its blades are narrower: more of them cover the turf alike).
 const FINE_TUFTS := 1.2
 const GrassTuft = preload("res://scripts/grass_tuft_mesh.gd")
+## Frame rate: each frame a tile is drawn only while the rings could show a
+## tuft of it (its roots' box meets the ring's disc, CULL_SLACK m to spare; a
+## tile past them runs every tuft's vertices at zero size). The near grass in
+## SUB m tiles, so the tiles at the ring's edge are small. Past FAR_LOD m the
+## far ring's tiles draw a tuft of one triangle a blade (GrassTuft
+## build_far), switching back FAR_LOD_BACK m nearer; nearer, each tuft eases
+## into that shape over FAR_MORPH m, done FAR_LOD_SAFE m short of FAR_LOD
+## (endless_tuft_far `far_morph`), so the swap changes no pixel.
+const CULL_SLACK := 2.0
+const SUB := 8.0
+const FAR_LOD := 100.0
+const FAR_LOD_BACK := 6.0
+const FAR_MORPH := 30.0
+const FAR_LOD_SAFE := 5.0
+var cull := true
+var sub := SUB
+var far_lod := FAR_LOD
+var _far_meshes := {}
+var _cull_frame := 0
 
 var seed := 0
 var enabled := true
@@ -330,6 +355,9 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		elif a.begins_with("--grass-lod="):
 			var p := a.get_slice("=",1).split(",")
 			if p.size() >= 4: lod = Vector4(float(p[0]),float(p[1]),float(p[2]),float(p[3]))
+		elif a.begins_with("--grass-cull="): cull = a.get_slice("=",1) != "0"
+		elif a.begins_with("--grass-sub="): sub = clampf(a.get_slice("=",1).to_float(),0.0,64.0)
+		elif a.begins_with("--grass-far-lod="): far_lod = maxf(a.get_slice("=",1).to_float(),0.0)
 	# The regions and drifts, set before any worker reads them.
 	Patch.offset = Patch.seed_offset(seed)
 	Patch.region_amount = regions
@@ -347,6 +375,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	near_layer.site.flower_tall = tall
 	near_layer.site.slope = slope
 	near_layer.site.alpine = alpine
+	near_layer.site.sub = sub if cull and sub < KitFlora.TILE else 0.0
 	far_layer.far = true
 	far_layer.site = site.duplicate()
 	far_layer.site.slope = slope
@@ -377,6 +406,23 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	if rings_3d: lead = 0.0
 	if ground != null: _ring_mats[ground.get_instance_id()] = ground
 	_reach()
+	if warm: _warm()
+
+## Frame rate: the materials and tufts the cells draw made at setup (about
+## 0.15 s), not by the first cell stood in flight (an 85 ms hitch: each
+## plant material folds its shader, scripts/shader_fold.gd). --grass-warm=0:
+## made on first use, as before.
+var warm := not "--grass-warm=0" in LaunchArgs.user_args()
+func _warm() -> void:
+	for key: String in (SkyIslets.catalog().meshes as Dictionary).keys():
+		if key.begins_with("grass") or key.contains("meadow-flower"):
+			SkyIslets._plant_material(key)
+		if key.begins_with("grass") and KitFlora.ringed(key):
+			if fine: _fine(key)
+			KitFlora.lite_tuft(key)
+			if far_lod > 0.0:
+				_far_mesh(key)
+				_lite_morph(key)
 
 func _exit_tree() -> void:
 	_quit = true
@@ -433,6 +479,7 @@ func step(eye: Vector3, forward := Vector3.ZERO) -> void:
 	if _planned_at == Vector3.INF or eye.distance_to(_planned_at) > 4.0 or _since_plan > 30 or lead_now.distance_to(_lead_planned) > 0.06: _plan()
 	_ask()
 	_stand()
+	if cull: _cull()
 
 ## The lead toward the view's level direction `forward` (damped; at once
 ## before the first plan), the eye's rise, told to every ring material.
@@ -579,9 +626,13 @@ func _stand(all := false) -> void:
 		var node := Node3D.new()
 		node.name = "%s_%d_%d" % ["Far" if layer.far else "Near",key.x,key.y]
 		var count := 0
+		# Culled: the batches under a holder a tile and ring (its roots' box,
+		# its ring's reach), [reach, holder, box, shown, far lod].
+		var groups := {}
 		for part: Dictionary in r.parts:
 			var ring: Dictionary = part.get("ring",{})
 			var own: Mesh = _fine(str(part.key)) if fine and not layer.far and str(part.key).begins_with("grass") else null
+			if layer.far and far_lod > 0.0: own = _lite_morph(str(part.key))
 			var batch := KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer,lod.w,ring,own)
 			count += int(part.count)
 			# A tile is drawn out to its ring's reach led ahead, and over
@@ -598,7 +649,19 @@ func _stand(all := false) -> void:
 				batch.visibility_range_end = FLOWER_FADE.y*(1.0+lead)+past
 			else: batch.visibility_range_end = lod.y*(1.0+lead)+past
 			_calm(batch)
-			node.add_child(batch)
+			if cull and part.has("box"):
+				var reach := lod.w if layer.far else (FLOWER_FADE.y if ring.is_empty() else lod.y)
+				var gk := [reach,part.get("sub",part.tile)]
+				if not groups.has(gk):
+					var holder := Node3D.new()
+					holder.name = "Tile_%d" % groups.size()
+					node.add_child(holder)
+					groups[gk] = [reach,holder,part.box,true,false]
+				var g: Array = groups[gk]
+				g[2] = (g[2] as Rect2).merge(part.box)
+				(g[1] as Node3D).add_child(batch)
+			else: node.add_child(batch)
+		if cull: node.set_meta("groups",groups.values())
 		node.set_meta("instances",count)
 		add_child(node)
 		layer.cells[key] = node
@@ -608,6 +671,71 @@ func _stand(all := false) -> void:
 		ready.append_array(_done)
 		_done = ready
 		_lock.unlock()
+
+## The tiles culled by the rings (see CULL_SLACK): a tile shown while its
+## roots' box meets its ring's disc (endless_ring.gdshaderinc: ring distance R
+## is a disc of radius r = sqrt(R*R-rise*rise) centred lead*r ahead), the far
+## ring's every other frame; its far lod swapped past far_lod.
+func _cull() -> void:
+	_cull_frame += 1
+	var discs := {}
+	var eye := Vector2(_eye.x,_eye.z)
+	for layer: Layer in [near_layer,far_layer]:
+		if layer.far and _cull_frame%2 == 1: continue
+		var slack := CULL_SLACK*(2.0 if layer.far else 1.0)
+		for key: Vector2i in layer.cells:
+			var node: Node3D = layer.cells[key]
+			var groups: Array = node.get_meta("groups",[])
+			for g: Array in groups:
+				var reach: float = g[0]
+				if not discs.has(reach): discs[reach] = _cull_disc(reach+slack,eye)
+				var show := _box_meets(g[2],discs[reach])
+				if show != bool(g[3]):
+					g[3] = show
+					(g[1] as Node3D).visible = show
+				if layer.far and far_lod > 0.0 and show:
+					var lod_r: float = far_lod if bool(g[4]) else far_lod+FAR_LOD_BACK
+					if not discs.has(-lod_r): discs[-lod_r] = _cull_disc(lod_r,eye)
+					var lite := not _box_meets(g[2],discs[-lod_r])
+					if lite != bool(g[4]):
+						g[4] = lite
+						for b: Node in (g[1] as Node3D).get_children():
+							var mm := (b as MultiMeshInstance3D).multimesh
+							var k := str(b.get_meta("part",""))
+							mm.mesh = _far_mesh(k) if lite else _lite_morph(k)
+
+## The ground disc within ring distance `reach` [centre x, z, radius squared]
+## (radius squared below zero: none).
+func _cull_disc(reach: float, eye: Vector2) -> PackedFloat32Array:
+	var rr := reach*reach-rise*rise
+	if rr <= 0.0: return PackedFloat32Array([0.0,0.0,-1.0])
+	var r := sqrt(rr)
+	return PackedFloat32Array([eye.x+lead_now.x*r,eye.y+lead_now.y*r,rr])
+
+static func _box_meets(box: Rect2, disc: PackedFloat32Array) -> bool:
+	if disc[2] < 0.0: return false
+	var dx := maxf(maxf(box.position.x-disc[0],disc[0]-box.end.x),0.0)
+	var dz := maxf(maxf(box.position.y-disc[1],disc[1]-box.end.y),0.0)
+	return dx*dx+dz*dz <= disc[2]
+
+## The far lod's tuft for catalog part `key` (GrassTuft.build_far in the lite
+## tuft's colours), made once.
+func _far_mesh(key: String) -> Mesh:
+	if _far_meshes.has(key): return _far_meshes[key]
+	var lite: Mesh = KitFlora.lite_tuft(key)
+	var mesh: Mesh = GrassTuft.build_far(lite.get_meta("grass_root"),lite.get_meta("grass_tip"))
+	_far_meshes[key] = mesh
+	return mesh
+
+## The lite tuft that eases into the far lod's shape (GrassTuft
+## build_lite_morph), drawn by the far ring while the far lod is on.
+func _lite_morph(key: String) -> Mesh:
+	var id := "morph:"+key
+	if _far_meshes.has(id): return _far_meshes[id]
+	var lite: Mesh = KitFlora.lite_tuft(key)
+	var mesh: Mesh = GrassTuft.build_lite_morph(lite.get_meta("grass_root"),lite.get_meta("grass_tip"))
+	_far_meshes[id] = mesh
+	return mesh
 
 ## The isle's carpet calm (Carpet `calm`) on a batch's material, once a
 ## material; the flowers thinned by distance.
@@ -701,6 +829,9 @@ func _far(key: String, ring: Dictionary) -> Material:
 		m.set_shader_parameter("grass_source_root",Vector3(root.r,root.g,root.b))
 		m.set_shader_parameter("grass_source_tip",Vector3(tip.r,tip.g,tip.b))
 	m.set_shader_parameter("cloud_shade",CLOUD_SUN)
+	# The far lod: each tuft in its shape by FAR_LOD_SAFE m short of it, so a
+	# tile swapping there (its nearest root past it) changes no pixel.
+	if far_lod > 0.0: m.set_shader_parameter("far_morph",Vector2(far_lod-FAR_MORPH,far_lod-FAR_LOD_SAFE))
 	_silver(m,"",0.0,true)
 	for k: String in _sets.far: m.set_shader_parameter(k,_sets.far[k])
 	_fars[id] = m
@@ -843,7 +974,7 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	var flowers: bool = site_values.get("flowers",true) and far_share < 1.0
 	var patches: float = site_values.get("patches",1.0)
 	for k: String in site_values:
-		if not k in ["flowers","patches","flower_tall","slope","alpine"]: site.set(k,site_values[k])
+		if not k in ["flowers","patches","flower_tall","slope","alpine","sub"]: site.set(k,site_values[k])
 	site.plain = true
 	site.probe = probe
 	# The drifts (Patch `bloom`) read off a TINT_STEP m grid of the cell,
@@ -939,5 +1070,39 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 				buffer[k+12] *= t.r
 				buffer[k+13] *= t.g
 				buffer[k+14] *= t.b
-		out.append({"key":part.key,"tile":part.tile,"count":part.count,"buffer":buffer,"ring":part.get("ring",{})})
+		var sub_m: float = site_values.get("sub",0.0)
+		if grass and far_share < 1.0 and sub_m > 0.0:
+			out.append_array(_split(part.key,part.tile,buffer,part.get("ring",{}),sub_m))
+		else:
+			out.append({"key":part.key,"tile":part.tile,"count":part.count,"buffer":buffer,"ring":part.get("ring",{}),"box":_roots_box(buffer)})
+	return out
+
+## The box (world x, z) round a batch buffer's roots.
+static func _roots_box(buffer: PackedFloat32Array) -> Rect2:
+	if buffer.size() < 16: return Rect2()
+	var x0 := buffer[3]
+	var x1 := x0
+	var z0 := buffer[11]
+	var z1 := z0
+	for k in range(16,buffer.size(),16):
+		x0 = minf(x0,buffer[k+3])
+		x1 = maxf(x1,buffer[k+3])
+		z0 = minf(z0,buffer[k+11])
+		z1 = maxf(z1,buffer[k+11])
+	return Rect2(x0,z0,x1-x0,z1-z0)
+
+## A batch split into `size` m tiles by its roots, each a part with its box
+## and its tile ("sub").
+static func _split(key: String, tile: Vector2i, buffer: PackedFloat32Array, ring: Dictionary, size: float) -> Array:
+	var by := {}
+	for k in range(0,buffer.size(),16):
+		var t := Vector2i(floori(buffer[k+3]/size),floori(buffer[k+11]/size))
+		if not by.has(t): by[t] = []
+		(by[t] as Array).append(k)
+	var out := []
+	for t: Vector2i in by:
+		var at: Array = by[t]
+		var b := PackedFloat32Array()
+		for k: int in at: b.append_array(buffer.slice(k,k+16))
+		out.append({"key":key,"tile":tile,"count":at.size(),"buffer":b,"ring":ring,"box":_roots_box(b),"sub":t})
 	return out
