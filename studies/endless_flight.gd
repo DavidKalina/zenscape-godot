@@ -50,7 +50,9 @@ extends Node3D
 ## --no-grass-react, --no-prop-wash, --no-grass-gusts, --no-grass-part,
 ## --prop-wash=X, --grass-gusts=X, --gust-every=S, --grass-bend=X. The arches (scripts/endless/land_arches.gd):
 ## --arches=X (how many, 1; 0 or --no-arches none), --rock-arches=X /
-## --ruin-arches=X (each family's share, 1; 0 none).
+## --ruin-arches=X (each family's share, 1; 0 none). The spruce forests
+## (scripts/endless/land_trees.gd): --no-trees, --forest=X (their share, 1),
+## --forest-meadows=X (how far onto the meadows, as groves, 1; 0 none).
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
@@ -66,6 +68,7 @@ const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const EndlessEddies = preload("res://scripts/endless/endless_eddies.gd")
 const LandArches = preload("res://scripts/endless/land_arches.gd")
+const LandTrees = preload("res://scripts/endless/land_trees.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 
 const FLY_LOOK := 0.0025
@@ -110,6 +113,8 @@ var react: Node
 var eddies: Node3D
 ## The arches over the land (scripts/endless/land_arches.gd).
 var arches: Node3D
+## The spruce forests (scripts/endless/land_trees.gd; off under --no-trees).
+var trees: Node3D
 var flown := 0.0
 var _start := Vector2.ZERO
 var _heading := 0.0
@@ -165,6 +170,10 @@ func _ready() -> void:
 	arches.name = "Arches"
 	add_child(arches)
 	arches.setup(seed,look.ground if look != null else null)
+	trees = LandTrees.new()
+	trees.name = "Trees"
+	add_child(trees)
+	trees.setup(seed)
 	if look != null:
 		grass = EndlessGrass.new()
 		grass.setup(seed,look.ground)
@@ -188,6 +197,7 @@ func _ready() -> void:
 	camera.global_position = eye
 	var took: float = land.prime(eye)
 	arches.prime(eye)
+	trees.prime(eye)
 	_launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
@@ -330,7 +340,11 @@ func _size_chase() -> void:
 ## The arches stand on it (LandArches `ground`): a leg raises it, a span
 ## over it is a solid the plane slides under.
 func plane_ground(p: Vector3) -> Variant:
-	return arches.ground(p,field.height(p.x,p.z))
+	return trees.ground(p,arches.ground(p,field.height(p.x,p.z)))
+
+## In the way of the rolling plane: an arch's leg or pier, a tree.
+func _blocked(p: Vector3) -> bool:
+	return arches.inside(p) or trees.inside(p)
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
@@ -387,7 +401,7 @@ func tick(delta: float) -> void:
 	plane.water = water_at(plane.position)
 	input["flaps"] = 1.0 if flaps else 0.0
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
-	hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(arches,"inside"))
+	hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
 	plane.engine = hand_landing.engine*float(plane.sputter)
 	var ground := Callable(self,"plane_ground")
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")))
@@ -399,6 +413,7 @@ func tick(delta: float) -> void:
 	_frame(delta)
 	land.step(camera.global_position)
 	arches.step(camera.global_position)
+	trees.step(camera.global_position,plane.position)
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera
@@ -516,7 +531,7 @@ func _show_hud() -> void:
 		("  ·  gpu %.2f ms" % gpu) if gpu > 0.0 else "",
 		("  ·  %s, %05.2f h%s" % [look.mood_title(),look.hour(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
-		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()]
+		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+trees.note()]
 
 func _react_note() -> String:
 	if react == null: return ""

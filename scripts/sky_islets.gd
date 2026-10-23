@@ -814,6 +814,8 @@ static func _grow_trees() -> void:
 		if node_name == "mesh-9" and original.multimesh.use_colors and original.multimesh.instance_count > 0:
 			_canopy_tint = original.multimesh.get_instance_color(0)
 	source.free()
+	# The sprays look's painted crown (HeroTrees.spruce_paint; off otherwise).
+	if HeroTrees.enabled(): HeroTrees.spruce_paint(materials[1],_canopy_tint)
 	for variant in range(HeroTrees.SPRUCE.size()):
 		var parts: Array
 		if HeroTrees.enabled():

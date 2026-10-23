@@ -28,6 +28,9 @@ shader_type spatial;
 #include "res://shaders/kit_weather.gdshaderinc"
 // The look pass's cloud bounce and sky fill (shaders/look_fill.gdshaderinc).
 #include "res://shaders/look_fill.gdshaderinc"
+// The sprays spruce's painted crown (shaders/spruce_paint.gdshaderinc; off at 0).
+#include "res://shaders/endless_patch.gdshaderinc"
+#include "res://shaders/spruce_paint.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
 uniform bool brush_visible = false;
@@ -59,6 +62,21 @@ uniform vec4 sway_shape = vec4(0.0, 1.0, 0.0, 0.0);
 uniform vec4 sway_frequency = vec4(1.0, 2.0, 1.0, 0.5);
 uniform vec3 sway_phase = vec3(0.9, 0.7, 1.3);
 uniform bool flat_faces = false;
+// A level of detail by distance (scripts/endless/land_trees.gd, --spruce=sprays):
+// each instance draws only while its foot is lod_band.x..lod_band.y m from the
+// eye, and collapses to its foot outside it, so its faces cull.
+uniform bool lod_band_on = false;
+uniform vec2 lod_band = vec2(0.0, 1e9);
+// The sprays spruce's painted crown (shaders/spruce_paint.gdshaderinc,
+// scripts/hero_trees.gd `spruce_paint`), all off at 0: how far the light
+// normal bends to the crown's volume, the blue, the painted patches, the
+// light's wrap and backlit glow, and the luminance of the crown's instance
+// tint (so COLOR over it is the generator's grey bake).
+uniform float spruce_round = 0.0;
+uniform float spruce_blue = 0.0;
+uniform float spruce_paint = 0.0;
+uniform vec2 spruce_light = vec2(0.0);
+uniform float spruce_bake_luma = 1.0;
 uniform bool wet_ground = false;
 uniform float wet_droop = 0.0;
 uniform bool terrain_growth = false;
@@ -377,6 +395,10 @@ vec3 zs_strata(vec3 p, float surface) {
 }
 
 void vertex() {
+	if (lod_band_on) {
+		float lod_d = distance(MODEL_MATRIX[3].xyz, CAMERA_POSITION_WORLD);
+		if (lod_d < lod_band.x || lod_d >= lod_band.y) VERTEX = vec3(0.0);
+	}
 	// A flower's head offset from its neck (CUSTOM0.xyz), as the distance
 	// thinning grows it; a dropped plant collapses to its root and skips the rest.
 	vec3 flower_offset = CUSTOM0.xyz;
@@ -802,8 +824,15 @@ void fragment() {
 		if (dot(face_normal, zs_camera_position - world_position) < 0.0) face_normal = -face_normal;
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
-	if (!ground) light_normal = face_normal;
-	else if (facet_soft > 0.0) NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
+	// The sprays spruce: its crown lit as a volume (spruce_paint.gdshaderinc).
+	float spruce_under = 0.0;
+	if (spruce_round > 0.0 && !ground) {
+		spruce_under = smoothstep(0.0, -0.6, face_normal.y);
+		light_normal = zs_spruce_volume_normal(face_normal, world_position.xz - look_shift.xz - plant_root, spruce_round);
+		NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
+	}
+	if (!ground && spruce_round <= 0.0) light_normal = face_normal;
+	else if (ground && facet_soft > 0.0) NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
 	if (sea_mist > 0.0) {
 		// A sky peak's foot is lit as the cloud sea's level top is, so it
 		// takes the sea's light at every hour and no facet stands out dark.
@@ -917,6 +946,8 @@ void fragment() {
 	if (grass_blades && grass_silver.x > 0.0) tint = zs_silver_paint(tint, zs_silver_tuft(plant_root, grass_bow), smoothstep(0.15, 0.85, grass_along),
 		zs_silver_side(dFdx(world_position), dFdy(world_position), zs_camera_position - world_position, zs_wind_direction));
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
+	if (spruce_blue > 0.0 || spruce_paint > 0.0)
+		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint);
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
 	float char_scorch = 0.0;
@@ -1027,6 +1058,7 @@ void fragment() {
 	if (earth_sides) contact = 1.0;
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, light_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION = emissive_color + tint * hemi * contact;
+	if (spruce_round > 0.0) EMISSION += tint * hemi * contact * SPRUCE_FILL;
 	// Look pass: the sunlit cloud sea below lighting the bellies and keels;
 	// its sky fill into the sun's shade is in light() (reference_direct_light).
 	EMISSION += tint * zs_look_bounce_light(light_normal);
@@ -1067,4 +1099,5 @@ void fragment() {
 #define ZS_FLOWER_TRANSLUCENCY
 #define ZS_FLOWER_SHARE grass_along
 #define ZS_FLOWER_GLOW (flower_heads ? flower_glow : 0.0)
+#define ZS_SPRUCE_LIGHT spruce_light
 #include "res://shaders/reference_direct_light.gdshaderinc"

@@ -7,6 +7,22 @@ void light() {
 #ifdef ZS_COMPLETE_LAKE_LIGHTING
 	if (!flowing && lake_display_lighting) energy = vec3(0.0);
 #endif
+#ifdef ZS_SPRUCE_LIGHT
+	// The sprays spruce (shaders/spruce_paint.gdshaderinc): the rock's
+	// painted steps over a wrapped term, and a soft glow through a crown
+	// seen against the sun; off at x = 0.
+	if (ZS_SPRUCE_LIGHT.x > 0.0) {
+		// The crown is porous: its own shadow (the proxy cone's) takes only
+		// part of the sun, so a backlit crown has no hard dark half.
+		vec3 open_sun = LIGHT_COLOR * gate * inversion_transmit;
+		vec3 crown_sun = open_sun * mix(0.5, 1.0, ATTENUATION);
+		float d = dot(NORMAL, LIGHT);
+		float t = zs_spruce_painted_light(d, ZS_SPRUCE_LIGHT.x);
+		DIFFUSE_LIGHT += crown_sun * t * mix(vec3(0.86, 0.94, 1.08), vec3(1.06, 1.02, 0.92), t) / PI;
+		float through = pow(max(dot(-LIGHT, VIEW), 0.0), 2.0);
+		DIFFUSE_LIGHT += open_sun * ZS_SPRUCE_LIGHT.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
+	} else
+#endif
 	DIFFUSE_LIGHT += energy * nl / PI * (1.0 - metalness_value);
 #ifdef ZS_LOOK_FILL
 	// The look pass's sky fill (shaders/look_fill.gdshaderinc), the sun's
