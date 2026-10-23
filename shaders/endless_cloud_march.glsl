@@ -177,6 +177,11 @@ const float LONG_LEN = 140.0;
 
 // The organic field is on (P.flash.y; --cloud-field=old: off).
 bool g_new = false;
+// The field's offset this weather pass (clouds of the low layer and the high
+// layer drift at their own speeds, the cloud life's shear) and which layer it
+// is drawing.
+vec2 g_drift = vec2(0.0);
+bool g_high = false;
 
 ivec2 zs_block_offset(int frame) {
 	int k = frame & 3;
@@ -419,7 +424,29 @@ float cluster_gate(vec2 f) {
 	return sstep(CLUSTER_GATE.x, CLUSTER_GATE.y, n);
 }
 
+// --- Cloud life (P.spare[1].x = 1; --cloud-life=0 is the rigid field) ---------------
+// Each cell keeps its own clock: a cycle of PERIOD seconds (by the cell's own
+// pace) in which its cloud grows from a thin wisp, stands, and thins away to
+// nothing, and the next cycle's cloud (a fresh hash of the cell, so another
+// shape and place) forms from nothing, so nothing pops. Mirrored in
+// endless_clouds.gd (`_cell_life`).
+const float LIFE_COVER = 1.6;
+float cell_life(ivec2 c, bool big, out uint cyc) {
+	cyc = 0u;
+	if (P.spare[1].x < 0.5) return 1.0;
+	uint base = uint(P.drift.z) + (big ? 101u : 211u);
+	vec3 lh = hash3(c, base + 31u);
+	float period = P.spare[1].y * mix(0.6, 1.5, lh.x) * (big ? 1.0 : 0.6);
+	float ph = P.spare[2].x / period + lh.y;
+	float f = floor(ph);
+	cyc = uint(max(f, 0.0));
+	float u = ph - f;
+	return sstep(0.0, 0.4, u) * (1.0 - sstep(0.55, 1.0, u));
+}
+
 struct Cloud {
+	uint salt;
+	float life;
 	vec2 middle;
 	vec2 axis;
 	float r;
@@ -444,12 +471,17 @@ struct Cloud {
 // its kind, footprint and form.
 bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	float cell = big ? BIG : SMALL;
-	uint salt = uint(P.drift.z) + (big ? 101u : 211u);
+	uint cyc;
+	k.life = cell_life(c, big, cyc);
+	uint salt = uint(P.drift.z) + (big ? 101u : 211u) + cyc * 977u;
+	k.salt = salt;
+	bool lifed = P.spare[1].x > 0.5;
+	if (lifed && k.life < 0.01) return false;
 	vec3 h = hash3(c, salt);
 	k.middle = (vec2(c) + 0.5 + JIT * (h.xy * 2.0 - 1.0)) * cell;
 	float gate = cluster_gate(k.middle);
 	if (!big) gate = mix(0.02, 1.0, gate * gate);
-	float here = region_cover(k.middle) * cover * (big ? BIG_COVER2 : SMALL_COVER2) * gate;
+	float here = region_cover(k.middle) * cover * (big ? BIG_COVER2 : SMALL_COVER2) * gate * (lifed ? LIFE_COVER : 1.0);
 	if (h.z >= here) return false;
 	vec3 s = hash3(c, salt + 1u);
 	vec3 m = hash3(c, salt + 2u);
@@ -518,13 +550,22 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 // little higher again, its own, so lifted neighbours never share a base.
 // Over the meadows a low one thins.
 void recipe_lift(inout Cloud k, ivec2 c, bool big) {
-	uint salt = uint(P.drift.z) + (big ? 101u : 211u);
+	uint salt = k.salt;
 	vec3 h = hash3(c, salt);
 	vec3 s = hash3(c, salt + 1u);
-	vec2 fl = cloud_floor(k.middle + P.drift.xy, k.r * k.ext, k.low);
+	vec2 fl = cloud_floor(k.middle + g_drift, k.r * k.ext, k.low);
 	if (fl.x > k.base) k.base = fl.x + 30.0 * fract(s.y * 13.7 + h.x);
 	if (k.low) k.tall *= mix(1.0, 0.6, fl.y);
 	k.H = min(k.r * k.main_r * k.tall, TOP_MAX - k.base);
+}
+
+// The cloud as its own life has it now: grown from a wisp (thin and a little
+// narrower) to its full size, and back. The base stays where the lift put it.
+void apply_life(inout Cloud k) {
+	float lr = mix(0.7, 1.0, k.life);
+	k.r *= lr;
+	k.tall *= k.life;
+	k.H *= lr * k.life;
 }
 
 // The cloud of cell `c` (false: none).
@@ -553,7 +594,8 @@ bool clash(Cloud a, Cloud b) {
 	return hi_base > lo_base + YIELD_LEVEL * lo_h;
 }
 
-bool yields(Cloud k, ivec2 c, bool big, float cover) {
+float yields(Cloud k, ivec2 c, bool big, float cover) {
+	float press = 0.0;
 	float reach = k.r * k.ext;
 	for (int pass = 0; pass < 2; pass++) {
 		bool other_big = pass == 0;
@@ -567,7 +609,9 @@ bool yields(Cloud k, ivec2 c, bool big, float cover) {
 				ivec2 n = g + ivec2(x, y);
 				if (other_big == big && n == c) continue;
 				// Cheap first: a cell's middle alone can rule it out.
-				uint salt = uint(P.drift.z) + (other_big ? 101u : 211u);
+				uint ncyc;
+				cell_life(n, other_big, ncyc);
+				uint salt = uint(P.drift.z) + (other_big ? 101u : 211u) + ncyc * 977u;
 				vec3 h = hash3(n, salt);
 				vec2 mid = (vec2(n) + 0.5 + JIT * (h.xy * 2.0 - 1.0)) * cell;
 				if (length(mid - k.middle) >= most) continue;
@@ -586,11 +630,14 @@ bool yields(Cloud k, ivec2 c, bool big, float cover) {
 				else if ((k.kind == KIND_WISP) != (o.kind == KIND_WISP)) me = k.kind == KIND_WISP;
 				else if (k.kind == KIND_WISP) me = order;
 				else me = k.H < o.H || (k.H == o.H && order);
-				if (me) return true;
+				// A neighbour still forming or thinning away presses less: the
+				// cloud under it gives way as it grows, never in one step.
+				if (me) press = max(press, sstep(0.05, 0.4, o.life));
+				if (press >= 0.999) return press;
 			}
 		}
 	}
-	return false;
+	return press;
 }
 
 // Bubble `i` of cloud `k` (from cell `c`) over field point `f`: (top,
@@ -630,13 +677,15 @@ vec3 bubble_span(Cloud k, ivec2 c, uint salt, int i, vec2 f) {
 
 void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout float low_gap, inout vec2 high, inout float high_gap) {
 	float cell = big ? BIG : SMALL;
-	uint salt = uint(P.drift.z) + (big ? 101u : 211u);
 	ivec2 g = ivec2(floor(f / cell));
 	for (int y = -1; y <= 1; y++) {
 		for (int x = -1; x <= 1; x++) {
 			ivec2 c = g + ivec2(x, y);
 			Cloud k;
-			if (!recipe(c, big, cover, k)) continue;
+			if (!recipe_shape(c, big, cover, k)) continue;
+			bool lifed = P.spare[1].x > 0.5;
+			if (lifed && k.low == g_high) continue;
+			recipe_lift(k, c, big);
 			float d = length(f - k.middle);
 			float top_c = -1e4;
 			float base_c = 1e4;
@@ -645,7 +694,16 @@ void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout
 			// margin round it, where its rim's height could still be the
 			// nearest rim a texel keeps and so bend a neighbour's smoothed edge
 			// (farther off it only gives the leap a shorter, safe distance).
-			if (out_c < YIELD_NEAR && P.flash.z > 0.5 && (!big || k.kind == KIND_WISP) && yields(k, c, big, cover)) continue;
+			if (out_c < YIELD_NEAR && P.flash.z > 0.5 && (!big || k.kind == KIND_WISP)) {
+				float press = yields(k, c, big, cover);
+				if (press >= 0.999) continue;
+				k.life *= 1.0 - press;
+			}
+			if (lifed) {
+				if (k.life < 0.01) continue;
+				apply_life(k);
+				out_c = d - k.ext * k.r;
+			}
 			// Past the rims the map keeps the nearest rim's height as the
 			// base (the cloud's lowest point there would drag the smoothed
 			// base down at the rim into hanging strands).
@@ -654,7 +712,7 @@ void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout
 				out_c = 1e9;
 				for (int i = 0; i < 9; i++) {
 					if (i >= k.n) break;
-					vec3 b = bubble_span(k, c, salt, i, f);
+					vec3 b = bubble_span(k, c, k.salt, i, f);
 					if (b.x > -1e3) {
 						top_c = max(top_c, b.x);
 						base_c = min(base_c, b.y);
@@ -677,7 +735,9 @@ void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout
 
 vec4 weather_texel(vec2 xz) {
 	float sea = P.band.x;
-	vec2 f = xz - P.drift.xy;
+	g_drift = P.drift.xy;
+	g_high = false;
+	vec2 f = xz - g_drift;
 	vec2 low = vec2(sea - 300.0, sea);
 	vec2 high = vec2(sea - 300.0, sea);
 	float low_gap = 1e9;
@@ -686,6 +746,14 @@ vec4 weather_texel(vec2 xz) {
 	if (g_new) {
 		lattice_new(f, true, sea, cover, low, low_gap, high, high_gap);
 		lattice_new(f, false, sea, cover, low, low_gap, high, high_gap);
+		if (P.spare[1].x > 0.5) {
+			// The high layer on its own, faster wind.
+			g_high = true;
+			g_drift = P.spare[1].zw;
+			f = xz - g_drift;
+			lattice_new(f, true, sea, cover, low, low_gap, high, high_gap);
+			lattice_new(f, false, sea, cover, low, low_gap, high, high_gap);
+		}
 	} else {
 		lattice(f, true, sea, cover, low, low_gap, high, high_gap);
 		lattice(f, false, sea, cover, low, low_gap, high, high_gap);
