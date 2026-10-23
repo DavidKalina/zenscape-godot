@@ -9,6 +9,9 @@ extends RefCounted
 ## scene loads.
 
 const ENTRIES: Array[Dictionary] = [
+	# The game (studies/endless_flight.tscn, docs/design/endless-flight/).
+	{"id":"endless_flight","group":"Endless flight","title":"Endless flight","scene":"res://studies/endless_flight.tscn","args":[],
+		"detail":"The plane over endless land: hills, mountains, coast and sea, meadows to land on. R back up, T time of day, L mood, C clouds, G grass, F1 numbers."},
 	# Ruins.
 	{"id":"aqueduct_isle","group":"Ruins","title":"Aqueduct isle","scene":"res://studies/aqueduct_isle.tscn","args":[],
 		"detail":"The ruin platforming isle: grass, look presets (L), the plane on F. Find the lodestone, fly where the nose points; the halls follow."},
