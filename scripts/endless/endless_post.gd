@@ -6,7 +6,8 @@ extends CompositorEffect
 ## light into a shadow colour and a sun colour, and gathers light shafts
 ## toward the sun through the gaps the land, the cloud and the fog leave.
 ##
-## Flags: --post=0 leaves the pass out (and its cost); --rays=X the shafts'
+## Off by default (all of it together read processed, comic-book): --post=1
+## puts it in. Flags: --rays=X the shafts'
 ## strength times X (0 off); --grade=X the light split's; --air=X the second
 ## air's; --haze-hue=0 leaves the haze one colour as before; --rays-taps=N.
 
@@ -55,7 +56,7 @@ var _haze := Vector3(120.0,7600.0,0.75)
 var _ready_flag := false
 
 static func wanted() -> bool:
-	return not "--post=0" in LaunchArgs.user_args() and RenderingServer.get_rendering_device() != null
+	return "--post=1" in LaunchArgs.user_args() and RenderingServer.get_rendering_device() != null
 
 ## The tuning of mood `id`.
 static func tuning(id: String) -> Dictionary:

@@ -107,7 +107,7 @@ var mood := MOOD
 ## The clouds (scripts/endless/endless_clouds.gd), or null (--no-clouds, no
 ## RenderingDevice).
 var clouds: Node3D
-## The light pass (scripts/endless/endless_post.gd), or null (--post=0).
+## The light pass (scripts/endless/endless_post.gd), or null (the default; --post=1 puts it in).
 var post: CompositorEffect
 ## The mood's key and fill scales on the sun and the sky's fill
 ## (EndlessPost MOODS); --light=0 leaves the isles' light as it was.
