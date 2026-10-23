@@ -123,6 +123,7 @@ var _ceiling_over := Field.CEILING_OVER
 var _hint: Label
 
 func _ready() -> void:
+	EndlessLook.reset_season_globals()
 	Pad.ensure()
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--seed="): seed = int(arg.get_slice("=",1))
