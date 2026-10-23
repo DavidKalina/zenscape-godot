@@ -81,6 +81,11 @@ uniform vec4 spruce_tone2 = vec4(0.0, 0.5, 0.0, 0.0);
 // Round 3: x the sky's fill share, y the warmth of the shaded side, z how far the bake's light/dark is flattened, w the fine dabs' gain.
 uniform vec4 spruce_tone = vec4(0.6, 0.0, 0.0, 1.0);
 uniform float spruce_bake_luma = 1.0;
+// Texture variants (spruce_paint.gdshaderinc zs_spruce_texture; 0 off): 1 a
+// per-bough gradient and tone, 2 b micro-facets (the "<variant> canopy b" mesh,
+// its facets' tilt added to the light normal), 3 c dabs along the boughs.
+uniform int spruce_texture = 0;
+uniform float spruce_texture_gain = 1.0;
 uniform bool wet_ground = false;
 uniform float wet_droop = 0.0;
 uniform bool terrain_growth = false;
@@ -833,6 +838,13 @@ void fragment() {
 	if (spruce_round > 0.0 && !ground) {
 		spruce_under = smoothstep(0.0, -0.6, face_normal.y);
 		light_normal = zs_spruce_volume_normal(face_normal, world_position.xz - look_shift.xz - plant_root, spruce_round);
+		if (spruce_texture == 2) {
+			// b: each small facet's tilt off the smooth sheet, put back over the volume normal.
+			vec3 smooth_n = normalize(world_normal);
+			if (dot(smooth_n, face_normal) < 0.0) smooth_n = -smooth_n;
+			float b_keep = 1.0 - smoothstep(40.0, 110.0, distance(world_position, zs_camera_position));
+			light_normal = normalize(light_normal + (face_normal - smooth_n) * 1.6 * spruce_texture_gain * b_keep);
+		}
 		NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
 	}
 	if (!ground && spruce_round <= 0.0) light_normal = face_normal;
@@ -952,6 +964,8 @@ void fragment() {
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
 	if (spruce_blue > 0.0 || spruce_paint > 0.0)
 		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint, spruce_tone.zw, spruce_tone2, distance(world_position, zs_camera_position));
+	if (spruce_texture == 1 || spruce_texture == 3)
+		tint = zs_spruce_texture(tint, spruce_texture, UV, UV2, spruce_texture_gain, distance(world_position, zs_camera_position));
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
 	float char_scorch = 0.0;

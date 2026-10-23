@@ -12,7 +12,7 @@ tips): the game tints conifers per instance.
 
 Run: python3 tools/blender.py run tools/blender_trees/spruce_sprays.py [-- --no-render]
 """
-import sys, math, zlib
+import sys, math, zlib, random
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bpy, bmesh
@@ -49,6 +49,13 @@ ARCH = 1.25        # how far a bough's edges hang below its spine, of the half w
 CORE = 0.45        # the dark core cone's radius, of the tier's reach
 V_CORE = 0.42      # bake: the core's value
 V_ROOT, V_TIP = 0.55, 1.02    # bake: a bough's value at the trunk and at its tips
+# Bough space for the game's texture (hero_trees.gd --spruce-texture): per vertex
+# UV = (along the bough 0..1, the bough's own hash 0..1) and UV2 = (across: 0 on
+# the spine, +-NOTCH at a notch, +-1 at a tooth's tip; the bough's length).
+# Written as Godot reads them (glTF flips v), so Godot's UV.y is the hash, UV2.y the length.
+FACETS = False     # the "b" crown: each sheet cell and tooth split into small jittered facets
+FACET_JIT = 0.35   # the facets' jitter, of the local half width (sheets) and tooth size
+jit = random.Random(7)
 
 
 def axis_at(z, P):
@@ -69,10 +76,12 @@ class Crown:
 	def __init__(self):
 		self.bm = bmesh.new()
 		self.value = {}
+		self.uv = {}
 
-	def vert(self, co, v):
+	def vert(self, co, v, uv=(0.0, 0.0, 0.0, 0.0)):
 		vert = self.bm.verts.new(co)
 		self.value[vert] = v
+		self.uv[vert] = uv
 		return vert
 
 	def face(self, *verts):
@@ -94,6 +103,7 @@ def bough(c, root, d, L, droop, rise, bright, K=None):
 	"""One spray from root along horizontal direction d, length L.
 	Tented sheet: spine on top, edges hang; sawtooth teeth point out and forward."""
 	side = Vector((-d.y, d.x, 0)).normalized()
+	hb = jit.random()  # the bough's own hash (its own rng, so the tree's shape keeps its seed)
 	K = K or max(LOD['kmin'], min(10, round((1 - BARE) * L / LOD['tooth'])))
 	W = LOD['wide'] * L * rng.uniform(0.85, 1.15)
 	roll = rng.uniform(-0.25, 0.25)  # one edge hangs lower than the other
@@ -111,23 +121,47 @@ def bough(c, root, d, L, droop, rise, bright, K=None):
 		return (V_ROOT + (V_TIP - V_ROOT) * t ** 0.85) * bright + extra
 
 	ts = [0.0] + [BARE + (1 - BARE) * k / K for k in range(K + 1)]
-	spine_v = [c.vert(spine(t), val(t, 0.03)) for t in ts]
+	spine_v = [c.vert(spine(t), val(t, 0.03), (t, hb, 0.0, L)) for t in ts]
 	last = len(ts) - 1
+
+	def facet_mid(p, q, tq, sq, w):
+		"""A vertex between p and q pushed off the sheet a little (the "b" facets)."""
+		co = (p.co + q.co) * 0.5 + Z * (jit.uniform(-1, 1) * FACET_JIT * w) + d * (jit.uniform(-0.5, 0.5) * FACET_JIT * w)
+		return c.vert(co, (c.value[p] + c.value[q]) * 0.5, (tq, hb, sq, L))
+
 	for s in (1, -1):
-		notches = [spine_v[0]] + [c.vert(edge(t, s, NOTCH), val(t, -0.08)) for t in ts[1:-1]] + [spine_v[-1]]
+		notches = [spine_v[0]] + [c.vert(edge(t, s, NOTCH), val(t, -0.08), (t, hb, s * NOTCH, L)) for t in ts[1:-1]] + [spine_v[-1]]
+		mids = None
+		if FACETS:
+			# A row between spine and notches, each pushed up or down: four facets a cell.
+			mids = [None] + [facet_mid(spine_v[k], notches[k], ts[k], s * NOTCH * 0.5, W * width_at(ts[k]) * NOTCH) for k in range(1, last)] + [None]
 		for k in range(last):
 			a, b, e0, e1 = spine_v[k], spine_v[k + 1], notches[k], notches[k + 1]
 			if k == 0:
-				c.sheet(a, b, e1)
+				if mids: c.sheet(a, mids[1], e1); c.sheet(a, b, mids[1])
+				else: c.sheet(a, b, e1)
 			elif k == last - 1:
-				c.sheet(a, b, e0)
+				if mids: c.sheet(a, b, mids[k]); c.sheet(mids[k], b, e0)
+				else: c.sheet(a, b, e0)
 			else:
-				c.sheet(a, b, e1, e0)
+				if mids:
+					c.sheet(a, b, mids[k + 1], mids[k])
+					c.sheet(mids[k], mids[k + 1], e1, e0)
+				else:
+					c.sheet(a, b, e1, e0)
 		# Teeth: one per segment past the bare part, notch to notch, tip out and forward.
 		for k in range(1, last):
 			t = min(ts[k] + 0.8 * (ts[k + 1] - ts[k]), 0.97)
-			tip = c.vert(edge(t, s, 1.0) + d * (0.5 * (1 - BARE) * L / K), val(t, 0.12))
-			c.sheet(notches[k], tip, notches[k + 1])
+			tip = c.vert(edge(t, s, 1.0) + d * (0.5 * (1 - BARE) * L / K), val(t, 0.12), (t, hb, float(s), L))
+			if FACETS:
+				# The tooth in three facets round a jittered centre.
+				n0, n1 = notches[k], notches[k + 1]
+				size = (tip.co - (n0.co + n1.co) * 0.5).length
+				co = (n0.co + n1.co + tip.co) / 3 + Z * (jit.uniform(-1, 1) * FACET_JIT * 0.5 * size)
+				mid = c.vert(co, (c.value[n0] + c.value[n1] + c.value[tip]) / 3, ((ts[k] + ts[k + 1] + t) / 3, hb, s * (2 * NOTCH + 1) / 3, L))
+				c.sheet(n0, tip, mid); c.sheet(tip, n1, mid); c.sheet(n1, n0, mid)
+			else:
+				c.sheet(notches[k], tip, notches[k + 1])
 	return K
 
 
@@ -139,12 +173,13 @@ def core(c, P, z0, z_top, r, droop, bright):
 	sides = 6
 	twist = rng.uniform(0, math.tau)
 	rr = CORE * r
+	hc = (0.0, jit.random(), 0.0, 0.0)
 	rim = []
 	for j in range(sides):
 		a = twist + j * math.tau / sides
 		d = Vector((math.cos(a), math.sin(a), 0))
-		rim.append(c.vert(centre + d * rr - Z * (droop * rr * 0.9), V_CORE * bright))
-	top, bottom = c.vert(apex, V_CORE * bright * 1.15), c.vert(under, V_CORE * bright * 0.9)
+		rim.append(c.vert(centre + d * rr - Z * (droop * rr * 0.9), V_CORE * bright, hc))
+	top, bottom = c.vert(apex, V_CORE * bright * 1.15, hc), c.vert(under, V_CORE * bright * 0.9, hc)
 	for j in range(sides):
 		a, b = rim[j], rim[(j + 1) % sides]
 		c.face(a, b, top)
@@ -211,6 +246,16 @@ def build(name, P):
 	return c, wood
 
 
+def paint_uvs(obj, uv_of_vert):
+	"""Bough space (see FACETS's note) per corner from the per-vertex values."""
+	mesh = obj.data
+	a, b = mesh.uv_layers.new(name='UVMap'), mesh.uv_layers.new(name='UV2')
+	for li, loop in enumerate(mesh.loops):
+		t, h, s, L = uv_of_vert[loop.vertex_index]
+		a.data[li].uv = (t, 1.0 - h)
+		b.data[li].uv = (s, 1.0 - L)
+
+
 def paint_values(obj, value_of_vert):
 	"""Per-corner greyscale from the per-vertex values, so corners share vertices."""
 	mesh = obj.data
@@ -254,35 +299,45 @@ def tinted(name, tint, roughness):
 asset = kit.fresh_scene('EXPORT - spruce sprays')
 roots = {}
 faces = {}
+faceted_objs = []
 for name, P in VARIANTS.items():
 	objs = {}
-	for lod in ('near', 'far'):
-		# The same seed for both levels, so the far tree keeps the near one's trunk and lean.
+	for lod in ('near', 'far', 'b'):
+		# The same seed for all levels, so the far tree keeps the near one's trunk and lean
+		# and the "b" (faceted) crown is the near one with its sheets split.
 		kit.seed(zlib.crc32(name.encode()))
-		LOD = LODS[lod]
+		jit.seed(zlib.crc32(name.encode()) + 1)
+		LOD = LODS['far' if lod == 'far' else 'near']
+		FACETS = lod == 'b'
 		c, wood_bm = build(name, P)
 		# Vertex values survive to_object in creation order.
 		order = [c.value[v] for v in c.bm.verts]
-		objs[lod] = kit.to_object(c.bm, f'{name} canopy' + (' far' if lod == 'far' else ''), asset)
+		uvs = [c.uv[v] for v in c.bm.verts]
+		objs[lod] = kit.to_object(c.bm, f'{name} canopy' + {'near': '', 'far': ' far', 'b': ' b'}[lod], asset)
 		paint_values(objs[lod], order)
+		paint_uvs(objs[lod], uvs)
 		if lod == 'near':
 			trunk = kit.to_object(wood_bm, f'{name} trunk', asset)
 		else:
 			wood_bm.free()
-	crown, far = objs['near'], objs['far']
+	crown, far, faceted = objs['near'], objs['far'], objs['b']
 	kit.paint(trunk, bark_value(P['H'] * P.get('live', 2.0)))
 	root = bpy.data.objects.new(f'Spruce_{name.replace("-", "_")}', None)
 	asset.objects.link(root)
 	root['height_m'] = round(P['H'] + 0.12, 2)
 	root['description'] = 'Bough sprays. Greyscale canopy and bark: multiply by the stand tint. Origin at ground contact. "<variant> canopy far" is the far level of detail.'
-	for o in (crown, trunk, far):
+	for o in (crown, trunk, far, faceted):
 		o.parent = root
 	roots[name] = (root, crown, trunk, far)
-	faces[name] = (len(crown.data.polygons), len(far.data.polygons), len(trunk.data.polygons))
-print('SPRUCE_SPRAYS faces (canopy, far canopy, trunk)', faces)
+	faces[name] = (len(crown.data.polygons), len(far.data.polygons), len(trunk.data.polygons), len(faceted.data.polygons))
+	faceted_objs.append(faceted)
+print('SPRUCE_SPRAYS faces (canopy, far canopy, trunk, canopy b)', faces)
 
 glb = kit.ROOT / 'assets/models/zenscape-spruce-sprays.glb'
 bpy.ops.object.select_all(action='DESELECT')
+for o in faceted_objs:
+	o.data.materials.append(kit.material('Canopy', 0.9))
+	o.select_set(True)
 for root, crown, trunk, far in roots.values():
 	crown.data.materials.append(kit.material('Canopy', 0.9))
 	far.data.materials.append(kit.material('Canopy', 0.9))
@@ -301,6 +356,8 @@ scene.collection.children.link(stage)
 kit.ground(stage, 9, srgb('5f8c3c'), srgb('86ad4e'))
 greens = [srgb(h) for h in ('35683a', '3f7a3c', '2f5f3a', '46784a', '3a6c40', '2f6a44')]
 bark_tint = srgb('635c56')
+for o in faceted_objs:
+	o.hide_render = True
 for i, (name, (root, crown, trunk, far)) in enumerate(roots.items()):
 	for o in (crown, trunk, far):
 		o.data.materials.clear()

@@ -96,6 +96,49 @@ vec3 zs_spruce_paint(vec3 tint, vec3 world, vec2 root, float bake, float under, 
 	return tint;
 }
 
+// Texture variants (--spruce-texture=a|c, scripts/hero_trees.gd; 0 off). Bough
+// space from the generator (tools/blender_trees/spruce_sprays.py): `uv` is
+// (along the bough 0..1, the bough's own hash 0..1), `uv2` (across: 0 on the
+// spine, +-0.4 at a notch, +-1 at a tooth's tip; the bough's length in model
+// units). The core has along 0 and length 0.
+// - a (1): each bough like a grass blade: dark where it leaves the tier, light at
+//   its tip, each tooth lighter to its tip, and its own value and hue.
+// - c (3): soft irregular dabs laid along each bough, stretched along it, each
+//   bough's own, so they never line up across boughs.
+// `gain` scales either; both fade by `dist` (m) and the pixel's footprint.
+vec3 zs_spruce_texture(vec3 tint, int mode, vec2 uv, vec2 uv2, float gain, float dist) {
+	float t = uv.x;
+	float h = uv.y;
+	float s = uv2.x;
+	float L = uv2.y;
+	float near = 1.0 - smoothstep(40.0, 120.0, dist);
+	if (mode == 1) {
+		float h2 = fract(h * 7.31 + 0.27);
+		// Most of a bough's area is a little inside its middle, so the ramp's mean sits there.
+		float grad = mix(0.86, 1.20, smoothstep(0.28, 1.0, t));
+		grad *= mix(0.97, 1.12, smoothstep(0.4, 1.0, abs(s)));
+		float own = 1.0 + (h - 0.5) * 0.22;
+		vec3 hue = mix(vec3(1.05, 1.02, 0.88), vec3(0.95, 1.0, 1.08), h2);
+		vec3 m = mix(vec3(1.0), grad * own * hue, L > 0.0 ? 1.0 : 0.4);
+		return tint * mix(vec3(1.0), m, clamp(gain * mix(0.5, 1.0, near), 0.0, 2.0));
+	}
+	if (mode == 3 && L > 0.0) {
+		float a = t * L;
+		float fp = fwidth(a);
+		float keep = (1.0 - smoothstep(0.004, 0.02, fp)) * near;
+		if (keep <= 0.0) return tint;
+		// Along in model units (a tooth is 0.07), across a side in about two.
+		vec2 q = vec2(a / 0.05, s * 2.2) + vec2(h * 53.0, h * 29.0);
+		q += vec2(ep_noise(q * 0.6 + vec2(h * 31.0, 7.0)) - 0.5, (ep_noise(q * 0.8 + vec2(3.0, h * 17.0)) - 0.5) * 0.6) * 1.4;
+		float n = ep_noise(q) * 0.65 + ep_noise(q * vec2(2.1, 1.7) + vec2(11.0, 5.0)) * 0.35;
+		float dab = smoothstep(0.54, 0.64, n) - smoothstep(0.46, 0.36, n);
+		vec3 lit = vec3(1.27, 1.25, 1.08);
+		vec3 deep = vec3(0.76, 0.79, 0.72);
+		return tint * mix(vec3(1.0), dab > 0.0 ? lit : deep, abs(dab) * clamp(gain * keep, 0.0, 2.0));
+	}
+	return tint;
+}
+
 // The carved rock's painted light (shaders/endless_rock.gdshaderinc, "the
 // painted light"): the facet's sun in three soft steps, part of the way from
 // the smooth term, here over a wrapped term so the shade side keeps some

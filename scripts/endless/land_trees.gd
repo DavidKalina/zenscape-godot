@@ -178,6 +178,7 @@ func setup(land_seed: int) -> void:
 			if family_m is ShaderMaterial and HeroTrees.spruce_has_far():
 				# The old faceted crown past _far_cut has its own bake, so it takes none of the sprays' paint.
 				for k in ["spruce_round","spruce_blue","spruce_paint"]: (family_m as ShaderMaterial).set_shader_parameter(k,0.0)
+				(family_m as ShaderMaterial).set_shader_parameter("spruce_texture",0)
 			_detail_material.append(near_m)
 			_far_material_v.append(far_m)
 			_family_material_v.append(family_m)

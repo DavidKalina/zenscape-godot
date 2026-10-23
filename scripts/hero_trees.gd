@@ -77,7 +77,7 @@ static func spruce_glb() -> String:
 ## patches and stepped light. Knobs (each `--spruce-<knob>=X`; `--spruce-paint=off`
 ## turns it all off to compare): round, blue, dabs, wrap, glow.
 const SPRUCE_PAINT := {"round":0.7, "blue":1.0, "dabs":1.0, "wrap":1.0, "glow":0.35, "fill":2.6, "warm":1.0, "flat":1.25, "fine":3.0, "farlift":2.0,
-	"steps":0.25, "soft":0.5, "speck":1.0, "floor":0.85, "olive":1.0, "hemiolive":0.85, "farblue":0.6, "farbaked":0.4}
+	"steps":0.25, "soft":0.5, "speck":1.0, "floor":0.85, "olive":1.0, "hemiolive":0.85, "farblue":0.6, "farbaked":0.4, "texgain":1.0}
 const SPRUCE_R3 := {"blue":0.85, "fill":2.2, "flat":1.0, "farlift":1.45, "steps":0.7, "soft":0.18, "speck":0.0, "floor":0.5, "olive":0.0, "hemiolive":0.0, "farblue":1.0, "farbaked":0.75}
 
 ## The painted crown's knobs for the picked look ({} when it has none).
@@ -105,6 +105,18 @@ static func spruce_paint(material: Material, tint: Color) -> void:
 	m.set_shader_parameter("spruce_tone",Vector4(knobs.fill,knobs.warm,knobs.flat,knobs.fine))
 	m.set_shader_parameter("spruce_tone2",Vector4(knobs.speck,knobs.floor,knobs.olive,knobs.hemiolive))
 	m.set_shader_parameter("spruce_bake_luma",maxf(tint.get_luminance(),0.001))
+	m.set_shader_parameter("spruce_texture",spruce_texture())
+	m.set_shader_parameter("spruce_texture_gain",knobs.texgain)
+
+## `--spruce-texture=a|b|c`: a texture variant on the sprays crown (0 off, the
+## round-4 look): a per-bough gradient and tone, b micro-facets (the glb's
+## "<variant> canopy b"), c dabs along the boughs. `--spruce-texgain=` scales it.
+const SPRUCE_TEXTURES := {"a":1, "b":2, "c":3}
+static func spruce_texture() -> int:
+	if spruce_glb() != SPRUCE_LOOKS["sprays"]: return 0
+	for a in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with("--spruce-texture="): return SPRUCE_TEXTURES.get(a.get_slice("=",1),0)
+	return 0
 
 ## The far rings' crown colour under the picked look: the sprays' blue, as
 ## the shader puts it on the near crowns (spruce_paint.gdshaderinc, at a
@@ -132,7 +144,8 @@ static func spruce_keys() -> Array:
 
 static func spruce_mesh(index: int, canopy: bool, material: Material) -> Mesh:
 	var variant: String = SPRUCE[index][0]
-	return _build(spruce_glb(), "%s %s" % [variant, "canopy" if canopy else "trunk"], SPRUCE_SCALE, GREY, material)
+	var part := "canopy b" if canopy and spruce_texture() == 2 else ("canopy" if canopy else "trunk")
+	return _build(spruce_glb(), "%s %s" % [variant, part], SPRUCE_SCALE, GREY, material)
 
 ## True when the picked look carries a far level of detail ("<variant> canopy far").
 static func spruce_has_far() -> bool:

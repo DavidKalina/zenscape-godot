@@ -367,3 +367,76 @@ Shading only. `--spruce-look=r3` brings round 3 back (`SPRUCE_R3` in `scripts/he
 | dense | lit/shaded | 3.15 | 2.18 | |
 | dense | blotch8 | 0.916 | 0.877 | |
 | dense | shade hue | 159 | 107 | |
+
+## Texture variants (round 5, rough)
+
+User after round 4: good, but the crown is a little too smooth next to the
+grass; not the cards' fur or the tufts' stripes. Three rough ways to add
+texture, each a flag; without the flag the crown is round 4.
+
+**Why the grass reads textured.** Measured on one still (crown crop vs a
+grass crop, `look_measure.py`, which now also prints `std1/2/4` and
+`local4/8`, the mean luma spread inside 4 and 8 px windows). The crown has
+as much contrast as the grass (std at 1 px 0.066 vs 0.069), but it sits in
+a few hard facet edges: its median pixel gradient is 0.0035 against the
+grass's 0.025, and the spread in a 4 px window 0.016 against 0.035. The
+grass has a gradient everywhere: thin blades (0.08 to 0.14 m), each ramped
+root to tip about 2.2 to 2.8x, each tuft +-12 %, dark gaps between; the
+grass shaders add no pixel noise. The crown's facets are near-uniform, and
+round 3's `flat` pulled the bake's per-bough ramp nearly flat.
+
+**The variants** (`--spruce-texture=a|b|c`, `--spruce-texgain=` scales any of them, default 1):
+
+- **a: per-bough gradient and tone.** Each bough dark where it leaves the
+  tier and light at its tip (0.86 to 1.20), each tooth lighter to its tip,
+  each bough its own value (+-11 %) and a slight olive-to-blue hue.
+  Reads as boughs told apart, each a little shaded; the fine grain barely moves.
+- **b: micro-facets.** The glb's `<variant> canopy b`: each sheet cell is
+  split by a jittered row between spine and notches, each tooth into three
+  facets round a jittered centre (`FACETS`, `FACET_JIT` 0.35 in the
+  generator). The shader adds each facet's tilt off the smooth sheet back
+  over the volume normal (x1.6), fading out 40 to 110 m. Reads as a crinkled,
+  faceted shimmer, low-poly. **Cost:** near crown 4140 -> 9564 triangles
+  (mature; young 5844, windswept 9438, dead-top 8152, sparse 6934, spire
+  11114), about 2.3x, within the 150 m detail band only. Frame time not measured.
+- **c: dabs along the boughs.** Soft value dabs in bough space (along in
+  0.05 model units, across about two a side), warped value noise of two
+  sizes, each bough offset by its own hash so they never line up; lights
+  warm, darks olive; fade by footprint and 40 to 120 m. Reads as brushy
+  streaks along each bough.
+
+**Bough space.** The generator now writes UV = (along 0..1, bough hash) and
+UV2 = (across: 0 spine, +-0.4 notch, +-1 tooth tip; bough length) on every
+crown (near, far, b). The near crown's positions are unchanged (same
+vertices; the new hash uses its own rng). The default look ignores them.
+Shader: `spruce_texture` / `spruce_texture_gain` on `reference_surface`,
+`zs_spruce_texture` in `spruce_paint.gdshaderinc`; no new varyings (UV and UV2
+were already in the shader). The family crown past 200 m gets `spruce_texture` 0.
+
+**Measures** (crown crops; close = 0.40,0.30,0.62,0.70 of the lone tree at
+about 5 m, wood = 0.56,0.36,0.70,0.62 of the nearest tree in the wood view at about 20 m):
+
+| crop | measure | round 4 | a | b | c | grass |
+|---|---|---|---|---|---|---|
+| close | edge p50 | 0.0035 | 0.004 | 0.008 | 0.010 | 0.025 near, 0.0165 mid |
+| close | local4 | 0.016 | 0.018 | 0.021 | 0.023 | 0.035 near, 0.022 mid |
+| close | V p50 | 0.455 | 0.439 | 0.447 | 0.459 | |
+| close | lit/shaded | 1.67 | 1.85 | 1.86 | 1.90 | 1.65 |
+| close | blotch8 | 0.826 | 0.843 | 0.818 | 0.822 | 0.72 |
+| wood | edge p50 | 0.0175 | 0.0235 | 0.024 | 0.0275 | 0.0245 |
+| wood | local4 | 0.0325 | 0.044 | 0.040 | 0.0435 | 0.040 |
+| wood | V p50 | 0.506 | 0.510 | 0.506 | 0.498 | |
+
+At wood range the crowns already carry about the grass's grain; up close
+all three still sit under it (c closest), so `--spruce-texgain=1.5..2` is the
+next thing to try on the one the user picks.
+
+**Stills:** `scratch/spruce-sprays/texture/` (`stills.sh <label> [args]`,
+`measure.sh <labels>`): `sheet_close.png`, `sheet_close_zoom.png`,
+`sheet_wood.png`, each a 2x2 grid: round 4 top left, a top right, b bottom
+left, c bottom right. Copies in `/tmp/spruce-texture/` (`0 ROUND4 - close.png`,
+`1 A - ...`, `2 B - ...`, `3 C - ...`, each close, close zoom and wood).
+The wood view: eye 3.4 m over -700,-2540 looking at -714,-2505.
+
+**Launch:** `./run-endless-flight.command --spruce-texture=a --at=-704,-2700 --heading=0 --alt=8` (b, c likewise).
+**Smoke:** endless flight plain and with a, b, c: 400 frames, 0 errors.
