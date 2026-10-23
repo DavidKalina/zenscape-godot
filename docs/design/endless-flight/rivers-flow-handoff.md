@@ -1,4 +1,4 @@
-﻿# Endless flight, rivers flow round
+# Endless flight, rivers flow round
 
 The user's report: "The rivers look like roads, and are flat, when they
 should be more like rapids, or flowing." This is a prototype look round:
