@@ -104,7 +104,10 @@ void main() {
 	// it, so a dark tuft or tree behind thin fog shows as a cutout in it: the
 	// fog's own colour is the floor under it, in step with its opacity.
 	if (land && cloud > 0.03) {
-		vec3 fogc = horizon_toward(rd) * mix(P.air_cool.rgb, P.air_warm.rgb, pow(toward, P.air.z)) * 0.8;
+		// Mostly grey: the sky's own blue lifted per channel turned every shadow
+		// in the fog violet.
+		vec3 h = horizon_toward(rd);
+		vec3 fogc = mix(vec3(dot(h, LUMA)), h, 0.3) * mix(vec3(0.95, 0.97, 1.03), vec3(1.06, 1.0, 0.94), pow(toward, P.air.z)) * 0.8;
 		col = max(col, fogc * clamp(cloud, 0.0, 1.0) * P.rays_col.w * 7.0);
 	}
 	if (P.split.x > 0.0 && land) {
