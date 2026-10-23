@@ -162,7 +162,37 @@ func _class_stats(idx: PackedInt32Array, H: PackedFloat32Array, S: PackedFloat32
 	st["dominant"] = dom
 	st["scale"] = _scale(idx, L, w, h)
 	st["edges"] = _edges(idx, L, w, h)
+	st["local"] = _local(idx, L, w, h)
 	return st
+
+## Value spread within a small window (px at 720 wide): the mean, over
+## windows lying wholly in the class, of the luma std inside each window.
+## Grain a texture carries at that size, whatever the larger shading does.
+func _local(idx: PackedInt32Array, L: PackedFloat32Array, w: int, h: int) -> Dictionary:
+	var inside := PackedByteArray(); inside.resize(w * h)
+	for i in idx: inside[i] = 1
+	var out := {}
+	for bs: int in [4, 8]:
+		var acc := 0.0
+		var cnt := 0
+		for by: int in range(0, h - bs + 1, bs):
+			for bx: int in range(0, w - bs + 1, bs):
+				var ok := true
+				var s := 0.0
+				var s2 := 0.0
+				for yy in bs:
+					for xx in bs:
+						var i := (by + yy) * w + bx + xx
+						if inside[i] == 0:
+							ok = false; break
+						s += L[i]; s2 += L[i] * L[i]
+					if not ok: break
+				if not ok: continue
+				var m := s / (bs * bs)
+				acc += sqrt(maxf(s2 / (bs * bs) - m * m, 0.0))
+				cnt += 1
+		if cnt >= 12: out[str(bs)] = _round(acc / cnt, 0.0005)
+	return out
 
 func _pcts(a: PackedFloat32Array) -> Dictionary:
 	var r := {}

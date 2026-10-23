@@ -78,6 +78,11 @@ def flat(m):
             f[cname + ".blotch8"] = round(s["8"] / s["1"], 3)
         if "1" in s and "32" in s:
             f[cname + ".blotch32"] = round(s["32"] / s["1"], 3)
+        for k in ("1", "2", "4"):
+            if k in s:
+                f["%s.std%s" % (cname, k)] = s[k]
+        for k, v in c.get("local", {}).items():
+            f["%s.local%s" % (cname, k)] = v
         e = c.get("edges", {})
         for k in ("p50", "p90", "hard_share"):
             if k in e:

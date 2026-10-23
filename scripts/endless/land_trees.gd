@@ -15,6 +15,10 @@ extends Node3D
 ##         own distance, so it stands inside the near tree where both draw);
 ##   far   the same crown for TreePlan `far_cell`'s thinned, grown trees,
 ##         one MultiMesh a FAR_CELL square, FAR.x to FAR.z m.
+## With the sprays look (the default) the crowns are the generator's own at
+## every distance, in the near crowns' painted material, each level dithered
+## into the next (DETAIL, FAR_CUT, MID_START below): the mid and far rings draw
+## its "low" crown instead of FarTrees' and no longer stand inside the near trees.
 ## Blocks and far cells are planned on WorkerThreadPool tasks (TASKS at
 ## once, the near blocks first) and stood on the main thread within
 ## COMMIT_BUDGET ms a frame.
@@ -41,6 +45,9 @@ const LandArches = preload("res://scripts/endless/land_arches.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const FAR_SHADER = preload("res://shaders/endless_tree_far.gdshader")
 const FLOOR_SHADER = preload("res://shaders/endless_forest_floor.gdshader")
+const RING_SHADER = preload("res://shaders/endless_spruce_ring.gdshader")
+## The ring shader's albedo over the crowns' vertex colour (their scene palette), measured.
+const RING_GAIN := Vector3(1.11,1.08,0.98)
 
 ## The near and mid rings' square (m; whole plan cells), and the ring
 ## distances (m): the near trees while the block's middle is within
@@ -87,10 +94,22 @@ const FLOOR_STRENGTH := 0.82
 ## only within DETAIL, the far ones in FAR_TILE squares made only within
 ## FAR_CUT, so the rest of the near ring never draws them. --spruce-detail=M and --spruce-far=M move the two; --spruce-detail=all
 ## gives every near tree its full crown.
-const DETAIL := 150.0
+const DETAIL := 80.0
 const FAR_CUT := 200.0
 const DETAIL_TILE := 64.0
 const FAR_TILE := 128.0
+## The sprays look's distance crowns (round 5): past FAR_CUT each near tree
+## draws its variant's "mid" crown (HeroTrees.spruce_mid_mesh) to MID_START m,
+## and the mid and far rings draw the mature's "low" crown fitted to each tree
+## (spruce_low_mesh), all in the near crowns' own painted material, so value, hue
+## and outline carry to the horizon. Each hand-over is a dither FADE m either
+## side of it (reference_surface `lod_fade`): full to far crown, far to mid, mid to
+## the ring. The blocks draw the mid crowns while their middle is within
+## MID_CROWN_END (MID_START, its fade and slack, and a block's half diagonal).
+const MID_START := 400.0
+const FADE := Vector3(12.0,15.0,30.0)
+const LOD_SLACK := 25.0
+const MID_CROWN_END := 670.0
 
 var seed := 1
 var share := 1.0
@@ -119,6 +138,9 @@ var _family_crowns: Array = []    # variant -> the faceted family's crown (with 
 var _family_material_v: Array = [] # variant -> its material, banded past _far_cut
 var _tiles := {}              # Vector4i(block x, block z, tile, 0 full / 1 far) -> Node3D of crowns
 var _far_floor: ShaderMaterial
+var _mid_start := MID_START
+var _rings := false           # the mid and far rings draw the sprays' low crown (HeroTrees.spruce_has_far)
+var _shadow_crown: Mesh       # the near trees' shadow caster (FarTrees proxy of the mature crown)
 
 var _blocks := {}             # Vector2i -> {node, cells: {Vector2i: {trees, buckets}}}
 var _far := {}                # Vector2i -> node
@@ -164,23 +186,30 @@ func setup(land_seed: int) -> void:
 			if a == "--spruce-detail=all": _detail = -1.0
 			elif a.begins_with("--spruce-detail="): _detail = maxf(0.0,float(a.get_slice("=",1)))
 			elif a.begins_with("--spruce-far="): _far_cut = float(a.get_slice("=",1))
+			elif a.begins_with("--spruce-mid="): _mid_start = float(a.get_slice("=",1))
 		_far_cut = maxf(_far_cut,_detail)
+		_mid_start = maxf(_mid_start,_far_cut)
 	if _detail >= 0.0:
 		for v in HeroTrees.SPRUCE.size():
 			var base: Material = (_parts[v][1] as Mesh).surface_get_material(0)
 			var near_m: Material = base.duplicate()
 			var far_m: Material = base.duplicate()
 			var family_m: Material = base.duplicate()
-			if near_m is ShaderMaterial:
-				for pair in [[near_m,Vector2(0.0,_detail)],[far_m,Vector2(_detail,_far_cut)],[family_m,Vector2(_far_cut,1e9)]]:
-					(pair[0] as ShaderMaterial).set_shader_parameter("lod_band_on",true)
-					(pair[0] as ShaderMaterial).set_shader_parameter("lod_band",pair[1])
+			# Full crown, far crown, mid crown, each dithered into the next.
+			_band(near_m,Vector2(0.0,_detail),Vector2(0.0,FADE.x))
+			_band(far_m,Vector2(_detail,_far_cut),Vector2(FADE.x,FADE.y))
+			_band(family_m,Vector2(_far_cut,_mid_start),Vector2(FADE.y,FADE.z))
+			_lift(family_m,"midlift")
 			_detail_material.append(near_m)
 			_far_material_v.append(far_m)
 			_family_material_v.append(family_m)
 			_far_crowns.append(HeroTrees.spruce_far_mesh(v,base))
-			_family_crowns.append(HeroTrees.spruce_family_crown(v,base))
-	_crown = FarTrees.proxy("tree:spruce-endless-canopies",_parts[0][1])
+			_family_crowns.append(HeroTrees.spruce_mid_mesh(v,base))
+	_shadow_crown = FarTrees.proxy("tree:spruce-endless-canopies",_parts[0][1])
+	_crown = _shadow_crown
+	# --spruce-rings=old: the rings as before (FarTrees' crown, the small far shader, inside the near trees).
+	_rings = _detail >= 0.0 and (_parts[0][1] as Mesh).surface_get_material(0) is ShaderMaterial and not ("--spruce-rings=old" in LaunchArgs.user_args())
+	if _rings: _crown = HeroTrees.spruce_low_mesh(0,(_parts[0][1] as Mesh).surface_get_material(0))
 	var base: Vector3 = _dims[0]
 	for d: Vector3 in _dims:
 		var sy := (d.y-d.z)/maxf(base.y-base.z,0.01)
@@ -189,8 +218,63 @@ func setup(land_seed: int) -> void:
 	_shade_material = StandardMaterial3D.new()
 	_shade_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_far_material = _far_shader(FAR)
+	if _rings:
+		# The rings in the near crowns' painted material: the mid from MID_START,
+		# the far from the middle of the old crossing, the far's end its old fade.
+		# By default in RING_SHADER, a small copy of that material's light (the full
+		# reference_surface costs about 12 ms at cruise on ~30k trees);
+		# --spruce-rings=ref puts them in the near crowns' material itself.
+		var crown_m: Material = (_parts[0][1] as Mesh).surface_get_material(0)
+		var hand := MID.z-MID.w*0.5
+		if "--spruce-rings=ref" in LaunchArgs.user_args():
+			_mid_material = crown_m.duplicate() as ShaderMaterial
+			_band(_mid_material,Vector2(_mid_start,hand),Vector2(FADE.z,MID.w*0.5))
+			_lift(_mid_material,"ringlift")
+			_far_material = crown_m.duplicate() as ShaderMaterial
+			_band(_far_material,Vector2(hand,FAR.z-FAR.w*0.5),Vector2(MID.w*0.5,FAR.w*0.5))
+			_lift(_far_material,"ringlift")
+		else:
+			_mid_material = _ring_shader(crown_m as ShaderMaterial,Vector2(_mid_start,hand),Vector2(FADE.z,MID.w*0.5))
+			_far_material = _ring_shader(crown_m as ShaderMaterial,Vector2(hand,FAR.z-FAR.w*0.5),Vector2(MID.w*0.5,FAR.w*0.5))
+		if "--spruce-ring-paint=off" in LaunchArgs.user_args():
+			for m: ShaderMaterial in [_mid_material,_far_material]:
+				m.set_shader_parameter("spruce_paint",0.0)
+				m.set_shader_parameter("spruce_texture",0)
+		if "--spruce-ring-sway=off" in LaunchArgs.user_args():
+			for m: ShaderMaterial in [_mid_material,_far_material]: m.set_shader_parameter("conifer_sway",false)
 	_near_floor = _floor_shader(Vector4(-1.0,1.0,MID.z,MID.w))
 	_far_floor = _floor_shader(Vector4(MID.z-MID.w,MID.w,FAR.z,FAR.w))
+
+## A distance crown's value over the near crown's (HeroTrees SPRUCE_PAINT `knob`):
+## the near crown's gaps and core read as a darker mass at range.
+static func _lift(m: Material, knob: String) -> void:
+	var knobs := HeroTrees.spruce_paint_knobs()
+	if not m is ShaderMaterial or knobs.is_empty(): return
+	(m as ShaderMaterial).set_shader_parameter("spruce_value",Vector2(knobs.value*knobs[knob],knobs.bfar))
+
+## The rings' material (RING_SHADER) from the near crowns' painted one.
+func _ring_shader(crown: ShaderMaterial, band: Vector2, fade: Vector2) -> ShaderMaterial:
+	var knobs := HeroTrees.spruce_paint_knobs()
+	var m := ShaderMaterial.new()
+	m.shader = RING_SHADER
+	m.set_shader_parameter("band",band)
+	m.set_shader_parameter("fade",fade)
+	m.set_shader_parameter("gain",RING_GAIN*float(knobs.get("ringgain",1.0)))
+	var light: Vector4 = crown.get_shader_parameter("spruce_light")
+	var tone: Vector4 = crown.get_shader_parameter("spruce_tone")
+	var tone2: Vector4 = crown.get_shader_parameter("spruce_tone2")
+	m.set_shader_parameter("paint",Vector4(knobs.value*knobs.ringlift,knobs.blue,crown.get_shader_parameter("spruce_bake_luma"),knobs.round))
+	m.set_shader_parameter("sun",light)
+	m.set_shader_parameter("tone",Vector4(tone.x,tone.y,tone2.y,tone2.w))
+	m.set_shader_parameter("olive",tone2.z)
+	return m
+
+## A crown material drawn only for trees `band` m off, dithered `fade` m round each end.
+static func _band(m: Material, band: Vector2, fade: Vector2) -> void:
+	if not m is ShaderMaterial: return
+	(m as ShaderMaterial).set_shader_parameter("lod_band_on",true)
+	(m as ShaderMaterial).set_shader_parameter("lod_band",band)
+	(m as ShaderMaterial).set_shader_parameter("lod_fade",fade)
 
 func _floor_shader(band: Vector4) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
@@ -205,7 +289,7 @@ func _far_shader(band: Vector4) -> ShaderMaterial:
 	m.shader = FAR_SHADER
 	m.set_shader_parameter("band",band)
 	m.set_shader_parameter("albedo",HeroTrees.spruce_far_albedo(FAR_ALBEDO))
-	m.set_shader_parameter("baked",FAR_BAKED)
+	m.set_shader_parameter("baked",HeroTrees.spruce_far_baked(FAR_BAKED))
 	return m
 
 func _plan_for() -> RefCounted:
@@ -269,8 +353,9 @@ func step(at: Vector3, plane_at: Vector3) -> void:
 ## crowns' (FAR_TILE squares) within FAR_CUT; those well past it freed (their
 ## trees past it draw the next crown in any case).
 func _detail_tiles(at: Vector3) -> void:
-	_stand_tiles(at,0,_detail,DETAIL_TILE,_parts.map(func(p: Array) -> Mesh: return p[1]),_detail_material)
-	_stand_tiles(at,1,_far_cut,FAR_TILE,_far_crowns,_far_material_v)
+	# Out to each crown's fade and the shader's slack.
+	_stand_tiles(at,0,_detail+FADE.x+LOD_SLACK,DETAIL_TILE,_parts.map(func(p: Array) -> Mesh: return p[1]),_detail_material)
+	_stand_tiles(at,1,_far_cut+FADE.y+LOD_SLACK,FAR_TILE,_far_crowns,_far_material_v)
 
 func _stand_tiles(at: Vector3, kind: int, reach: float, size: float, meshes: Array, materials: Array) -> void:
 	var per := int(BLOCK/size)
@@ -446,8 +531,9 @@ func _build_block(key: Vector2i, field: RefCounted, plan: RefCounted) -> Diction
 			_put(ts[0],basis,at,tone)
 			ts[1] = int(ts[1])+1
 		var fit: Vector3 = _crown_fit[v]
-		var cb := Basis(Vector3.UP,yaw).scaled(Vector3(sc*wide*fit.x,sc*fit.y,sc*wide*fit.x)*MID_SIZE)
-		_put(mid,cb,at+Vector3(0.0,fit.z*sc,0.0),Color(tone.r/_tint.r,tone.g/_tint.g,tone.b/_tint.b))
+		# The sprays' rings take over from the mid crown, so stand full size in the crown's tint.
+		var cb := Basis(Vector3.UP,yaw).scaled(Vector3(sc*wide*fit.x,sc*fit.y,sc*wide*fit.x)*(1.0 if _rings else MID_SIZE))
+		_put(mid,cb,at+Vector3(0.0,fit.z*sc,0.0),tone if _rings else Color(tone.r/_tint.r,tone.g/_tint.g,tone.b/_tint.b))
 	var ground: Dictionary = _floor_arrays(plan.floor_grid(field,key.x*BLOCK,key.y*BLOCK,BLOCK,FLOOR_STEP)) if _floor else {}
 	var ms := (Time.get_ticks_usec()-began)/1000.0
 	return {"kind":"b","key":key,"cells":cells,"near":near,"mid":mid,"n":n,"floor":ground,"ms":ms,"tiles":tiles}
@@ -467,7 +553,7 @@ func _build_far(key: Vector2i, field: RefCounted, plan: RefCounted) -> Dictionar
 		var wide := trees[q+4]
 		var cb := Basis(Vector3.UP,trees[q+5]).scaled(Vector3(sc*wide*fit.x,sc*fit.y,sc*wide*fit.x))
 		var shade := lerpf(TINT_SPREAD.x,TINT_SPREAD.y,fposmod(trees[q]*0.37+trees[q+2]*0.61,1.0))
-		_put(buf,cb,Vector3(trees[q],trees[q+1]+fit.z*sc,trees[q+2]),Color(shade,shade,shade))
+		_put(buf,cb,Vector3(trees[q],trees[q+1]+fit.z*sc,trees[q+2]),_tint*shade if _rings else Color(shade,shade,shade))
 	var ground: Dictionary = _floor_arrays(far) if _floor else {}
 	return {"kind":"f","key":key,"buf":buf,"n":n,"floor":ground,"ms":(Time.get_ticks_usec()-began)/1000.0}
 
@@ -593,9 +679,10 @@ func _commit(done: Dictionary) -> void:
 			var batch := _batch(_family_crowns[v] if family else _parts[v][part],slot[part],int(slot[2]),_family_material_v[v] if family else null)
 			batch.name = "Spruce%d%s" % [v,"Crown" if part == 1 else "Trunk"]
 			batch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			batch.visibility_range_end = NEAR_END
+			# The sprays' mid crowns reach past the trunks (MID_START), each tree's own fade.
+			batch.visibility_range_end = _mid_start+MID_CROWN_END-MID_START if family and _rings else NEAR_END
 			batch.visibility_range_end_margin = NEAR_MARGIN
-			batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+			batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED if family and _rings else GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 			holder.add_child(batch)
 	if int(done.n) > 0:
 		var mid := _batch(_crown,done.mid,int(done.n),_mid_material)
@@ -605,7 +692,7 @@ func _commit(done: Dictionary) -> void:
 		if _shadows:
 			# The near trees' shadows, cast by their faceted crowns (a tenth
 			# of the faces, one batch a block): SHADOWS_ONLY.
-			var shade := _batch(_crown,done.mid,int(done.n),_shade_material)
+			var shade := _batch(_shadow_crown,done.mid,int(done.n),_shade_material)
 			shade.name = "Shade"
 			shade.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 			shade.visibility_range_end = NEAR_END
