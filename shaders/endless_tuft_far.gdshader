@@ -116,7 +116,9 @@ void vertex() {
 void fragment() {
 	vec3 source = max(mix(grass_source_root, grass_source_tip, along), vec3(0.002));
 	vec3 own = clamp(COLOR.rgb / source, vec3(0.0), vec3(3.0));
-	vec3 c = own * mix(root_colour, tip_colour, pow(along, tip_curve)) * glance;
+	// pow's base kept off 0: NVIDIA's Vulkan driver can make pow(0, y) NaN at
+	// the root, which the glow blooms into white flashes (Windows only).
+	vec3 c = own * mix(root_colour, tip_colour, pow(max(along, 1.0e-4), tip_curve)) * glance;
 	c = mix(c, wash * glance, washed * smoothstep(wash_tip.x, wash_tip.y, along));
 	if (grass_silver.x > 0.0) c = zs_silver_paint(c, silver, smoothstep(0.15, 0.85, along), 0.8);
 	c = zs_react_tone(c, react * along * (grass_silver.x > 0.0 ? ZS_SILVER_REACT_PALE : 1.0));

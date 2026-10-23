@@ -40,6 +40,7 @@ const EndlessSea = preload("res://scripts/endless/endless_sea.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Presets = preload("res://scripts/scene_look_presets.gd")
 const EndlessClouds = preload("res://scripts/endless/endless_clouds.gd")
+const LandStream = preload("res://scripts/endless/land_stream.gd")
 
 ## The moods L steps through (no winter: the season stays off it), and the
 ## one it opens on.
@@ -142,7 +143,10 @@ static func wanted() -> bool:
 ## Pro; --mac-trades=0 leaves them off there too): --shadow-size=N (the
 ## sun's shadow map, 8192 a side; 4096 saves 0.5 to 0.8 ms, shadow edges a
 ## little softer), --msaa=N (0, 2, 4: the 3D's MSAA, 4), and the clouds'
-## half-res march (EndlessClouds.setup, --cloud-full-res). The flags win.
+## half-res march (EndlessClouds.setup, --cloud-full-res). On a discrete GPU
+## off the Mac (LandStream.high_end) SMAA over the MSAA, 0 to 0.4 ms
+## (docs/design/endless-flight/aa-view-handoff.md). --screen-aa=smaa|fxaa|off,
+## --taa=1 (2 to 5 ms, and the grass ghosts). The flags win.
 const SSAO := false
 const MAC_SHADOW := 4096
 static func mac_trades() -> bool:
@@ -152,6 +156,8 @@ func _frame_trades() -> void:
 	if mac_trades():
 		RenderingServer.directional_shadow_atlas_set_size(MAC_SHADOW,true)
 		(Engine.get_main_loop() as SceneTree).root.msaa_3d = Viewport.MSAA_2X
+	if LandStream.high_end():
+		(Engine.get_main_loop() as SceneTree).root.screen_space_aa = Viewport.SCREEN_SPACE_AA_SMAA
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--ssao="): environment.ssao_enabled = a.get_slice("=",1) != "0"
 		elif a.begins_with("--shadow-size="):
@@ -159,7 +165,11 @@ func _frame_trades() -> void:
 		elif a.begins_with("--msaa="):
 			var n := int(a.get_slice("=",1))
 			var root := (Engine.get_main_loop() as SceneTree).root
-			root.msaa_3d = Viewport.MSAA_4X if n >= 4 else (Viewport.MSAA_2X if n >= 2 else Viewport.MSAA_DISABLED)
+			root.msaa_3d = Viewport.MSAA_8X if n >= 8 else (Viewport.MSAA_4X if n >= 4 else (Viewport.MSAA_2X if n >= 2 else Viewport.MSAA_DISABLED))
+		elif a.begins_with("--screen-aa="):
+			var kind := a.get_slice("=",1)
+			(Engine.get_main_loop() as SceneTree).root.screen_space_aa = Viewport.SCREEN_SPACE_AA_SMAA if kind == "smaa" else (Viewport.SCREEN_SPACE_AA_FXAA if kind == "fxaa" else Viewport.SCREEN_SPACE_AA_DISABLED)
+		elif a.begins_with("--taa="): (Engine.get_main_loop() as SceneTree).root.use_taa = a.get_slice("=",1) != "0"
 
 func setup(land_seed: int) -> void:
 	name = "Look"
@@ -208,7 +218,7 @@ func setup(land_seed: int) -> void:
 	# Depth fog's density scales its curve: 1 runs it to all sky.
 	environment.fog_density = 1.0
 	environment.fog_depth_begin = FOG_BEGIN
-	environment.fog_depth_end = FOG_END
+	environment.fog_depth_end = FOG_END*LandStream.view()
 	environment.fog_depth_curve = FOG_CURVE
 	environment.fog_aerial_perspective = AERIAL
 	environment.fog_sky_affect = 0.0
@@ -234,7 +244,7 @@ func setup(land_seed: int) -> void:
 	if EndlessClouds.wanted():
 		clouds = EndlessClouds.new()
 		add_child(clouds)
-		clouds.setup(land_seed,celestial,Vector4(FOG_BEGIN,FOG_END,FOG_CURVE,CLOUD_HAZE),SUN_SCATTER*0.5)
+		clouds.setup(land_seed,celestial,Vector4(FOG_BEGIN,FOG_END*LandStream.view(),FOG_CURVE,CLOUD_HAZE),SUN_SCATTER*0.5)
 		if sea != null and sea.material_override is ShaderMaterial and (sea.material_override as ShaderMaterial).shader == preload("res://shaders/endless_sea.gdshader"):
 			clouds.sea_material = sea.material_override
 	_publish(0.0)

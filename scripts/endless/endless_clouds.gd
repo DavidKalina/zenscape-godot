@@ -180,6 +180,8 @@ var drift := Vector2.ZERO
 var motion_time := 0.0
 var weather_corner := Vector2.ZERO
 var weather_side := 0.0
+## The draw distance (LandStream.view()): the march reaches REACH times it.
+var _view: float = preload("res://scripts/endless/land_stream.gd").view()
 var shade_at := Vector4.ZERO
 ## The ground map: its texture, its square (corner, side), its worker.
 var ground := ImageTexture.new()
@@ -843,7 +845,7 @@ func _fill() -> void:
 	_put4(p,20,Vector4(eye.x,eye.y,eye.z,motion_time))
 	_put4(p,24,Vector4(sun.x,sun.y,sun.z,0.0))
 	_put4(p,28,Vector4(key.x,key.y,key.z,0.0))
-	_put4(p,32,Vector4(Field.SEA_Y,Field.SEA_Y+TOP,REACH,1.0))
+	_put4(p,32,Vector4(Field.SEA_Y,Field.SEA_Y+TOP,REACH*_view,1.0))
 	_put4(p,36,Vector4(drift.x,drift.y,float(salt),cover))
 	_put4(p,40,ground_at)
 	var noise: Texture = CumulusNoise.request()
@@ -858,7 +860,7 @@ func _fill() -> void:
 	var weather_due := _frame%WEATHER_EVERY == 0 or weather_side == 0.0
 	var shade_due := _frame%SHADE_EVERY == 0
 	if weather_due:
-		weather_side = (REACH+WEATHER_PAST)*2.0
+		weather_side = (REACH*_view+WEATHER_PAST)*2.0
 		var texel := weather_side/Effect.WEATHER_TEXELS
 		weather_corner = ((Vector2(eye.x,eye.z)-Vector2.ONE*weather_side*0.5)/texel).floor()*texel
 	var shade_square := Vector4(shade_corner.x,shade_corner.y,SHADE_SIDE,1.0)

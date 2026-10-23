@@ -253,7 +253,7 @@ func _build_camera() -> void:
 	# With the look, the haze is all sky by its end: nothing past it shows,
 	# and the aerial perspective reads the sharp sky there (Godot picks the
 	# radiance's blur by depth over the far plane).
-	camera.far = EndlessLook.FOG_END*1.04 if look != null else FOG_END*2.2
+	camera.far = EndlessLook.FOG_END*LandStream.view()*1.04 if look != null else FOG_END*2.2
 	add_child(camera)
 	camera.current = true
 

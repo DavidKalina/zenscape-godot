@@ -139,6 +139,7 @@ var _family_material_v: Array = [] # variant -> its material, banded past _far_c
 var _tiles := {}              # Vector4i(block x, block z, tile, 0 full / 1 far) -> Node3D of crowns
 var _far_floor: ShaderMaterial
 var _mid_start := MID_START
+var far_ring := FAR           # FAR, its reach and fade times LandStream.view()
 var _rings := false           # the mid and far rings draw the sprays' low crown (HeroTrees.spruce_has_far)
 var _shadow_crown: Mesh       # the near trees' shadow caster (FarTrees proxy of the mature crown)
 
@@ -173,6 +174,8 @@ func setup(land_seed: int) -> void:
 	_floor = f.floor
 	_arch_flags = LandArches.flags()
 	if not enabled: return
+	var view := preload("res://scripts/endless/land_stream.gd").view()
+	far_ring = Vector4(FAR.x,FAR.y,FAR.z*view,FAR.w*view)
 	var SkyIslets: GDScript = load("res://scripts/sky_islets.gd")
 	for v in HeroTrees.SPRUCE.size():
 		var parts: Array = SkyIslets.call("_tree_parts",v)
@@ -217,7 +220,7 @@ func setup(land_seed: int) -> void:
 	_mid_material = _far_shader(MID)
 	_shade_material = StandardMaterial3D.new()
 	_shade_material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_far_material = _far_shader(FAR)
+	_far_material = _far_shader(far_ring)
 	if _rings:
 		# The rings in the near crowns' painted material: the mid from MID_START,
 		# the far from the middle of the old crossing, the far's end its old fade.
@@ -231,11 +234,11 @@ func setup(land_seed: int) -> void:
 			_band(_mid_material,Vector2(_mid_start,hand),Vector2(FADE.z,MID.w*0.5))
 			_lift(_mid_material,"ringlift")
 			_far_material = crown_m.duplicate() as ShaderMaterial
-			_band(_far_material,Vector2(hand,FAR.z-FAR.w*0.5),Vector2(MID.w*0.5,FAR.w*0.5))
+			_band(_far_material,Vector2(hand,far_ring.z-far_ring.w*0.5),Vector2(MID.w*0.5,far_ring.w*0.5))
 			_lift(_far_material,"ringlift")
 		else:
 			_mid_material = _ring_shader(crown_m as ShaderMaterial,Vector2(_mid_start,hand),Vector2(FADE.z,MID.w*0.5))
-			_far_material = _ring_shader(crown_m as ShaderMaterial,Vector2(hand,FAR.z-FAR.w*0.5),Vector2(MID.w*0.5,FAR.w*0.5))
+			_far_material = _ring_shader(crown_m as ShaderMaterial,Vector2(hand,far_ring.z-far_ring.w*0.5),Vector2(MID.w*0.5,far_ring.w*0.5))
 		if "--spruce-ring-paint=off" in LaunchArgs.user_args():
 			for m: ShaderMaterial in [_mid_material,_far_material]:
 				m.set_shader_parameter("spruce_paint",0.0)
@@ -243,7 +246,7 @@ func setup(land_seed: int) -> void:
 		if "--spruce-ring-sway=off" in LaunchArgs.user_args():
 			for m: ShaderMaterial in [_mid_material,_far_material]: m.set_shader_parameter("conifer_sway",false)
 	_near_floor = _floor_shader(Vector4(-1.0,1.0,MID.z,MID.w))
-	_far_floor = _floor_shader(Vector4(MID.z-MID.w,MID.w,FAR.z,FAR.w))
+	_far_floor = _floor_shader(Vector4(MID.z-MID.w,MID.w,far_ring.z,far_ring.w))
 
 ## A distance crown's value over the near crown's (HeroTrees SPRUCE_PAINT `knob`):
 ## the near crown's gaps and core read as a darker mass at range.
@@ -438,7 +441,7 @@ func _wanted_far(at: Vector3, reach: float) -> Array:
 func _plan(at: Vector3) -> void:
 	_queue.clear()
 	var blocks := _wanted_blocks(at,MID.z)
-	var fars := _wanted_far(at,FAR.z)
+	var fars := _wanted_far(at,far_ring.z)
 	var near: Array = []
 	var rest: Array = []
 	for key: Vector2i in blocks:
@@ -462,7 +465,7 @@ func _plan(at: Vector3) -> void:
 	for key: Vector2i in _blocks.keys():
 		if _rect_distance(key.x*BLOCK,key.y*BLOCK,BLOCK,at) > MID.z+BLOCK: _free_block(key)
 	for key: Vector2i in _far.keys():
-		if _rect_distance(key.x*Plan.FAR_CELL,key.y*Plan.FAR_CELL,Plan.FAR_CELL,at) > FAR.z+Plan.FAR_CELL*0.5:
+		if _rect_distance(key.x*Plan.FAR_CELL,key.y*Plan.FAR_CELL,Plan.FAR_CELL,at) > far_ring.z+Plan.FAR_CELL*0.5:
 			var gone: MultiMeshInstance3D = _far[key]
 			stats.far_trees -= gone.multimesh.instance_count
 			gone.queue_free()
@@ -656,7 +659,7 @@ func _commit(done: Dictionary) -> void:
 	stats.plans += 1
 	stats.slowest_plan_ms = maxf(stats.slowest_plan_ms,float(done.ms))
 	if done.kind == "f":
-		if _far.has(key) or _rect_distance(key.x*Plan.FAR_CELL,key.y*Plan.FAR_CELL,Plan.FAR_CELL,_eye) > FAR.z+Plan.FAR_CELL: return
+		if _far.has(key) or _rect_distance(key.x*Plan.FAR_CELL,key.y*Plan.FAR_CELL,Plan.FAR_CELL,_eye) > far_ring.z+Plan.FAR_CELL: return
 		var node := _batch(_crown,done.buf,int(done.n),_far_material)
 		node.name = "Far_%d_%d" % [key.x,key.y]
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
