@@ -120,6 +120,11 @@ const LEAD_LEVEL := Vector2(0.2,0.55)
 ## rises: the near tufts gone from FLAT_UP+LOD.y/RISE m up, 39).
 const FLAT_UP := 20.0
 const RISE := 1.6
+## The height over the ground (m) above which no tuft grows (--tuft-top=H; 0
+## off): the rise runs fast enough to close the far ring's whole reach
+## (LOD.w) by then, so tufts thin and pull in with altitude and the painted
+## ground (endless_ground.gdshader) carries the look from there.
+const TUFT_TOP := 80.0
 ## Wildflower drifts in the near carpet (KitFlora Site `flower_drift`): where
 ## a value noise of DRIFT_SCALE m rises from DRIFT.x to .y, the flowers are
 ## kept up to DRIFT.z times as often (1 elsewhere), so the meadows have
@@ -257,6 +262,7 @@ var enabled := true
 ## stay flat to (--grass-flat-up=), round 5's 3D rings (--grass-ring=3d).
 var lead := LEAD
 var flat_up := FLAT_UP
+var tuft_top := TUFT_TOP
 var rings_3d := false
 ## The lead now (world x, z; damped), the eye's height past flat_up, as
 ## the shaders were told (`ring_lead`).
@@ -347,6 +353,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		elif a.begins_with("--grass-lead="): lead = clampf(a.get_slice("=",1).to_float(),0.0,0.85)
 		elif a == "--no-grass-lead": lead = 0.0
 		elif a.begins_with("--grass-flat-up="): flat_up = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a.begins_with("--tuft-top="): tuft_top = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a == "--grass-ring=3d": rings_3d = true
 		elif a.begins_with("--grass-set=") or a.begins_with("--far-set=") or a.begins_with("--ground-set="):
 			var which := a.get_slice("-",2).get_slice("-",0)
@@ -494,7 +501,9 @@ func _lead_step(forward: Vector3) -> void:
 		var dt: float = get_process_delta_time() if is_inside_tree() else 1.0/60.0
 		lead_now = lead_now.lerp(want,1.0-exp(-LEAD_RATE*maxf(dt,1.0/240.0)))
 	var over := _over(_eye)
-	rise = over if rings_3d else maxf(over-flat_up,0.0)*RISE
+	var rise_rate := RISE
+	if tuft_top > flat_up: rise_rate = maxf(RISE,lod.w/(tuft_top-flat_up))
+	rise = over if rings_3d else maxf(over-flat_up,0.0)*rise_rate
 	var v := Vector4(lead_now.x,lead_now.y,rise,0.0 if rings_3d else 1.0)
 	for id: int in _ring_mats: (_ring_mats[id] as ShaderMaterial).set_shader_parameter("ring_lead",v)
 
