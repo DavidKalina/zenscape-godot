@@ -741,6 +741,13 @@ func _cell_data(ck: Vector2i) -> Variant:
 	if b == null: return null
 	return (b as Dictionary).cells.get(ck)
 
+## The stood trees of plan cell `ck`, 8 floats each (x, z, foot y, height,
+## crown bottom over the foot, solid reach, crown radius, 0), or none: the
+## birds' perches (scripts/endless/endless_birds.gd).
+func cell_trees(ck: Vector2i) -> PackedFloat32Array:
+	var cell: Variant = _cell_data(ck)
+	return (cell as Dictionary).solid if cell != null else PackedFloat32Array()
+
 ## The tallest tree solid over world XZ `p` (world y), or -INF.
 func top_at(p: Vector3) -> float:
 	if _blocks.is_empty(): return -INF
