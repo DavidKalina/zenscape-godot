@@ -30,6 +30,8 @@ const WAKE_EVERY := 0.12
 const WAKE_STEP := 0.6
 const WAKE_LIFE := 4.8
 const WAKE_SPREAD := 0.3
+## No wake under WAKE_SPEED.x m/s of travel, all of it from WAKE_SPEED.y.
+const WAKE_SPEED := Vector2(3.0,9.0)
 ## The wake starts under WAKE_HIGH m over the water and is full by WAKE_LOW.
 const WAKE_HIGH := 7.0
 const WAKE_LOW := 1.6
@@ -49,6 +51,8 @@ var _last_time := 0.0
 ## The lingering foam's buffer (sea_foam 1 with a rendering device).
 var foam: SeaFoam
 var _wake_low := 0.0
+## False under --wake=old: the wake at any speed, rings and all.
+var _wake_needs_speed := not "--wake=old" in LaunchArgs.user_args()
 
 ## Whether the new sea is wanted (not --water=old).
 static func wanted() -> bool:
@@ -122,6 +126,7 @@ func _init(seed_value: int) -> void:
 				var kv := pair.split(":")
 				if kv.size() == 2: material.set_shader_parameter(kv[0],str_to_var(kv[1]))
 		elif a == "--no-wake": material.set_shader_parameter("wake",0.0)
+		elif a == "--wake=old": material.set_shader_parameter("wake_tail",0.0)
 	if int(_knob("sea_foam")) > 0:
 		foam = SeaFoam.new()
 		if foam.ready():
@@ -145,7 +150,7 @@ var _knobs := {}
 ## The shader's defaults for what the mirror reads (a material keeps only
 ## what was set).
 const FOAM_CAPS := Vector3(1.6,6.0,1.0)
-const KNOB_DEFAULTS := {"sea_foam":0,"whitecaps":Vector3(1.0,2.2,1.0),"foam_flow":Vector4(0.45,0.35,14.0,0.9),"foam_spread":Vector2(0.03,0.3),"foam_caps":Vector3(0.42,0.4,0.5),"wake":1.0,"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0)}
+const KNOB_DEFAULTS := {"sea_foam":0,"whitecaps":Vector3(1.0,2.2,1.0),"foam_flow":Vector4(0.45,0.35,14.0,0.9),"foam_spread":Vector2(0.03,0.3),"foam_caps":Vector3(0.42,0.4,0.5),"wake":1.0,"wake_tail":1.0,"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0)}
 
 ## The sea's surface height over its rest level (m) at world `x`,`z` now:
 ## the body's swell (0 without the body). The shader's sheet shoves its
@@ -374,7 +379,6 @@ static func depth_image(seed_value: int, corner: Vector2) -> Image:
 
 func _wake(plane: Vector3) -> void:
 	var low := 1.0-smoothstep(WAKE_LOW,WAKE_HIGH,plane.y-Field.SEA_Y-height_at(plane.x,plane.z))
-	_wake_low = low
 	var at := Vector2(plane.x,plane.z)
 	# The newest point rides with the plane, so the wake starts under it; it
 	# is left behind for good once WAKE_STEP m past the one before.
@@ -382,6 +386,12 @@ func _wake(plane: Vector3) -> void:
 		_speed = lerpf(_speed,at.distance_to(_last)/maxf(_now-_last_time,1e-3),0.2)
 	_last = at
 	_last_time = _now
+	# A plane that is not travelling (parked, landed, hanging in a stall)
+	# stirs nothing: its newest trail point never leaves it, so the V's arm
+	# round that point is a ring, widening, fading, and laid again from a
+	# fresh point as the old one expires, forever.
+	if _wake_needs_speed: low *= smoothstep(WAKE_SPEED.x,WAKE_SPEED.y,_speed)
+	_wake_low = low
 	var point := Vector4(at.x,at.y,_now,low)
 	var since := _trail[1] if _trail.size() >= 2 else Vector4.ZERO
 	if _trail.size() < 2 or (_now-since.z > WAKE_EVERY and at.distance_to(Vector2(since.x,since.y)) > WAKE_STEP):
