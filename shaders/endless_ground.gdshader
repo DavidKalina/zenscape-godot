@@ -144,7 +144,8 @@ uniform float river_cycle = 2.4;
 uniform vec2 river_fresnel = vec2(0.08, 3.5);
 uniform float river_calm = 0.85;
 // The bank: sand and pebbles out to `river_bank` m past the water, wet
-// darker over `.y` m; the pale line at the water's edge (m wide).
+// darker over `.y` m. `river_edge` is retired: the bank foam
+// (`river_bank_foam`) draws the water's edge now.
 uniform vec2 river_bank = vec2(3.5, 1.4);
 uniform float river_edge = 0.55;
 // The water's level over the sea under which the sea takes it (the mouth,
@@ -183,6 +184,28 @@ uniform vec3 river_pads = vec3(1.0, 1.15, 0.22);
 uniform vec3 river_pad_colour : source_color = vec3(0.42, 0.56, 0.24);
 // How much of the cloud field the water mirrors (the sea's cloud_mirror).
 uniform float river_cloud_mirror = 0.8;
+// The flow's look (rivers-flow-handoff.md). White water: from the current's
+// speed .x (m/s) it breaks, by .y it is all white water, .z how much.
+uniform vec3 river_rapids = vec3(1.0, 2.2, 1.0);
+// Riffles: patches of broken water this big (m) down any running stretch,
+// and how white they get on a slower one (0..1).
+uniform vec2 river_riffle = vec2(48.0, 0.45);
+// The drawn motion runs this many times the current (so it reads from the
+// air), and never slower than .y m/s.
+uniform vec2 river_flow_look = vec2(1.8, 0.45);
+// The foam's grain: its streaks' width (m; drawn out ~4x down the flow), its
+// fine break-up (m), how long a copy rides (s) before a fresh one.
+uniform vec3 river_foam_size = vec3(1.0, 0.4, 2.0);
+// Foam along both banks: its reach in (m) on calm water and on white water,
+// and how much.
+uniform vec3 river_bank_foam = vec3(0.6, 2.8, 1.0);
+// A foam front where the river meets the sea (0 none).
+uniform float river_mouth_foam = 1.0;
+// White water churns: its ripples this much rougher at full white.
+uniform float river_churn = 1.6;
+// Slicks down running water: their width (m), how much they shade the body
+// and the mirror.
+uniform vec3 river_slick = vec3(4.5, 0.22, 0.7);
 // The ripples' faces lit toward the sun (the sea's body_shade).
 uniform float river_body_shade = 1.0;
 
@@ -260,6 +283,71 @@ vec2 zs_river_layer(sampler2D tex, vec2 p, vec2 dir, float speed, float size, fl
 	return dir * s.x / river_streak + across * s.y;
 }
 
+// The current's grain at a point, drawn out down the flow by averaging the
+// noise along it (no frame turned about the world's origin, so it holds
+// round bends and far out): x the streaky field (0..1, mean 0.5), y it
+// broken up finer, for foam.
+vec2 zs_river_grain(vec2 q, vec2 dir) {
+	// (The noise's lattice turned off the world's axes, so its cells don't
+	// line up into blocks.)
+	const mat2 TURN = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8));
+	float s = river_foam_size.x;
+	vec2 qa = TURN * q / s;
+	vec2 da = TURN * dir;
+	float a = 0.0;
+	for (int k = 0; k < 6; k++) a += ep_noise(qa + da * (float(k) - 2.5));
+	a = clamp(0.5 + (a / 6.0 - 0.5) * 2.1, 0.0, 1.0);
+	vec2 qf = TURN * (q / river_foam_size.y);
+	float f = ep_noise(qf + vec2(17.3, 4.1)) * 0.6 + ep_noise(qf * 2.7 + vec2(3.9, 8.2)) * 0.4;
+	return vec2(a, a * 0.7 + f * 0.3);
+}
+
+// White water and streak lines riding down the flow: two copies of the
+// grain, each drifting `vspd` m/s for `river_foam_size.z` s then jumping to
+// a fresh spot, cross-faded half a cycle apart (as the ripples), so foam
+// forms, rides down and breaks up. `th` is the grain over which it is foam
+// (lower: more). Returns (foam 0..1, streak lines 0..1, slicks 0..1).
+vec3 zs_river_foam(vec2 p, vec2 dir, float vspd, float t, float th, float fp) {
+	float cyc = river_foam_size.z;
+	float c0 = t / cyc, c1 = c0 + 0.5;
+	float f0 = fract(c0), f1 = fract(c1);
+	vec2 q0 = p - dir * vspd * cyc * f0 + vec2(13.7, 5.3) * floor(c0);
+	vec2 q1 = p - dir * vspd * cyc * f1 + vec2(7.1, 11.9) * floor(c1) + 40.0;
+	vec2 g0 = zs_river_grain(q0, dir);
+	vec2 g1 = zs_river_grain(q1, dir);
+	float w0 = 1.0 - abs(2.0 * f0 - 1.0);
+	float soft = 0.08 + fp / river_foam_size.x * 0.3;
+	// Thin at its edges, thick in its cores.
+	float a0 = smoothstep(th - soft, th + soft, g0.y) * mix(0.45, 1.0, smoothstep(th, th + 0.18, g0.y));
+	float a1 = smoothstep(th - soft, th + soft, g1.y) * mix(0.45, 1.0, smoothstep(th, th + 0.18, g1.y));
+	float foam = mix(a1, a0, w0);
+	float lw = 0.04;
+	float lines = mix(1.0 - smoothstep(0.0, lw, abs(g1.x - 0.66)), 1.0 - smoothstep(0.0, lw, abs(g0.x - 0.66)), w0);
+	lines *= 1.0 - smoothstep(0.12, 0.5, fp);
+	// Far off, its share of the water as a soft whitening, no grain.
+	float far = smoothstep(river_foam_size.x * 0.5, river_foam_size.x * 2.5, fp);
+	foam = mix(foam, smoothstep(0.78, 0.3, th) * 0.75, far);
+	// Slicks: broad bands down the current (river_slick m across, ~6x that
+	// long), drifting on a slower cycle, which read from the air where the
+	// grain is gone.
+	const mat2 TURN = mat2(vec2(0.6, -0.8), vec2(0.8, 0.6));
+	float scyc = cyc * 3.0;
+	float e0 = t / scyc, e1 = e0 + 0.5;
+	float h0 = fract(e0), h1 = fract(e1);
+	vec2 da = TURN * dir;
+	vec2 r0 = TURN * (p - dir * vspd * scyc * h0 + vec2(29.3, 3.1) * floor(e0)) / river_slick.x;
+	vec2 r1 = TURN * (p - dir * vspd * scyc * h1 + vec2(5.9, 23.7) * floor(e1) + 90.0) / river_slick.x;
+	float s0 = 0.0, s1 = 0.0;
+	for (int k = 0; k < 4; k++) {
+		s0 += ep_noise(r0 + da * (float(k) - 1.5) * 1.6);
+		s1 += ep_noise(r1 + da * (float(k) - 1.5) * 1.6);
+	}
+	float v0 = 1.0 - abs(2.0 * h0 - 1.0);
+	float slick = clamp(0.5 + (mix(s1, s0, v0) * 0.25 - 0.5) * 2.4, 0.0, 1.0);
+	slick = mix(slick, 0.5, smoothstep(river_slick.x * 0.25, river_slick.x * 0.8, fp));
+	return vec3(foam, lines * (1.0 - far), slick);
+}
+
 // Noise at `scale` m round its mean (-0.5..0.5), faded to the mean where a
 // pixel's footprint `fp` (m) grows past a share of the scale.
 float zs_fade(vec2 p, float scale, float fp) {
@@ -314,6 +402,9 @@ void fragment() {
 	float r_w = abs(river.y);
 	float r_here = river_on * step(0.05, r_w);
 	float r_aa = clamp(fwidth(river.x), 0.02, 40.0) * 0.6;
+	// The water's own footprint: it lies flat, so not the bed's steep-ground
+	// one (which jumps between chunks with the bed's normals).
+	float r_fp = mix(min(fp_x, fp_y), max(fp_x, fp_y), 0.4);
 	float r_ragged = (zs_noise(p.xz / 3.3) - 0.5) * 0.9 * (1.0 - smoothstep(0.5, 2.0, fp));
 	// How far outside the water's edge (m; negative in the water).
 	float r_out = r_s - r_w + r_ragged;
@@ -573,21 +664,42 @@ void fragment() {
 		float spd = length(fl);
 		vec2 dir = spd > 0.02 ? fl / spd : vec2(0.8, 0.6);
 		float t = TIME;
-		float speed = max(spd, 0.12);
+		float speed = max(spd, 0.12) * river_flow_look.x;
+		// How broken the water is (0 calm, 1 white water): by the current's
+		// speed (the level's fall), more in riffle patches down any running
+		// stretch, none in a still pool, and settling into the mouth.
+		float rif = smoothstep(0.42, 0.66, ep_noise(p.xz / river_riffle.x) * 0.7 + ep_noise(p.xz / (river_riffle.x * 0.3) + 9.1) * 0.3);
+		float running = smoothstep(0.45, 1.1, spd);
+		float tb = smoothstep(river_rapids.x, river_rapids.y, spd) * (0.45 + 0.75 * rif) + rif * running * river_riffle.y;
+		// (The mouth read from the drawn water's own height, not the level's
+		// interpolation, which runs off to nothing toward a vertex out of
+		// the river's reach.)
+		float r_sea = river_mouth_blend * (1.0 - smoothstep(0.0, river_mouth_rise, over));
+		tb = clamp(tb, 0.0, 1.0) * river_rapids.z * (1.0 - r_sea);
 		vec2 slope = vec2(0.0);
 		float rough = 0.0;
-		float k0 = 1.0 - smoothstep(river_ripple_size.x * 0.04, river_ripple_size.x * 0.22, fp);
-		float k1 = 1.0 - smoothstep(river_ripple_size.y * 0.04, river_ripple_size.y * 0.22, fp);
-		float k2 = 1.0 - smoothstep(river_ripple_size.z * 0.04, river_ripple_size.z * 0.22, fp);
+		float k0 = 1.0 - smoothstep(river_ripple_size.x * 0.04, river_ripple_size.x * 0.22, r_fp);
+		float k1 = 1.0 - smoothstep(river_ripple_size.y * 0.04, river_ripple_size.y * 0.22, r_fp);
+		float k2 = 1.0 - smoothstep(river_ripple_size.z * 0.04, river_ripple_size.z * 0.22, r_fp);
 		if (k0 > 0.0) slope += zs_river_layer(river_detail_a, p.xz, dir, speed * 0.85, river_ripple_size.x, 0.0, t) * river_ripple_strength.x * k0;
 		if (k1 > 0.0) slope += zs_river_layer(river_detail_b, p.xz, dir, speed, river_ripple_size.y, 0.37, t) * river_ripple_strength.y * k1;
 		if (k2 > 0.0) slope += zs_river_layer(river_detail_a, p.xz + 17.0, dir, speed * 1.15, river_ripple_size.z, 0.71, t) * river_ripple_strength.z * k2;
 		rough = river_ripple_strength.x * river_ripple_strength.x * (1.0 - k0) + river_ripple_strength.y * river_ripple_strength.y * (1.0 - k1)
 			+ river_ripple_strength.z * river_ripple_strength.z * (1.0 - k2);
+		// White water churns; and the surface leans down the fall (the level's
+		// slope, from the speed as land_field's RIVER_FLOW makes it).
+		float churn = 1.0 + tb * river_churn;
+		slope *= churn;
+		rough *= churn * churn;
+		float fall = pow(max(spd - 0.35, 0.0) / 9.0, 2.0);
+		slope -= dir * fall;
 		vec3 wn = normalize(vec3(-slope.x, 1.0, -slope.y));
 		vec3 calm = normalize(vec3(-slope.x * river_calm, 1.0, -slope.y * river_calm));
 		float d_in = max(-r_out, 0.0);
-		float depth = min(d_in * river_depth.x, river_depth.y);
+		// The depth swings down the river (bars and pools), shallower over a
+		// riffle, so the shallows' band never runs even.
+		float bars = mix(0.6, 1.45, ep_noise(p.xz / 37.0 + 3.7));
+		float depth = min(d_in * river_depth.x * bars, river_depth.y) * (1.0 - 0.4 * rif * running);
 		vec3 column = mix(river_tint_shallow, river_tint_mid, smoothstep(0.0, river_tint_depths.x, depth));
 		column = mix(column, river_tint_deep, smoothstep(river_tint_depths.x * 0.5, river_tint_depths.y, depth));
 		column *= zs_palette_water;
@@ -618,27 +730,30 @@ void fragment() {
 			vec3 bed_m = SAND_WET * 0.85 * (ambient + key);
 			water = mix(water, sc * light * (vec3(1.0) - seen_m) + bed_m * seen_m, r_tint * river_mouth_tint);
 		}
-		// The current: faint pale streaks drawn out down the flow, drifting
-		// with it (two copies cross-faded as the ripples), gone far off.
 		// (Still water, a pond: no current to streak.)
 		float still = 1.0 - smoothstep(0.05, 0.3, spd);
-		float streak_keep = (1.0 - smoothstep(0.4, 2.5, fp)) * river_streaks * (1.0 - still);
-		if (streak_keep > 0.0) {
-			vec2 across_f = vec2(-dir.y, dir.x);
-			float cyc = river_cycle * 2.0;
-			float c0 = t / cyc, c1 = c0 + 0.5;
-			float f0 = fract(c0), f1 = fract(c1);
-			vec2 q0 = p.xz - dir * speed * cyc * f0 + vec2(floor(c0) * 7.3, 0.0);
-			vec2 q1 = p.xz - dir * speed * cyc * f1 + vec2(0.0, floor(c1) * 5.1);
-			// The chop's smooth noise (not the value noise, whose cells show
-			// when drawn out this far).
-			float n0 = texture(river_detail_b, vec2(dot(q0, dir) / 60.0, dot(q0, across_f) / 6.0)).x;
-			float n1 = texture(river_detail_b, vec2(dot(q1, dir) / 60.0, dot(q1, across_f) / 6.0) + 0.37).x;
-			float w0 = 1.0 - abs(2.0 * f0 - 1.0);
-			float streak = mix(n1, n0, w0);
-			float lines = smoothstep(0.58, 0.75, streak) * (0.4 + 0.6 * smoothstep(0.0, 3.0, d_in));
-			water = mix(water, column * light * 1.45 + vec3(0.02), lines * 0.22 * streak_keep);
-		}
+		vec3 white = vec3(0.9, 0.96, 1.0) * (ambient * 1.1 + key * 0.8);
+		// White water: the body aerated, paler and milkier.
+		water = mix(water, white * 0.62 + column * light * 0.35, tb * 0.4);
+		// Foam riding down the flow (zs_river_foam): over white water, in a
+		// broken fringe along both banks (wider the rougher), and in a front
+		// where the river meets the sea; on calm water only streak lines.
+		float vspd = max(spd * river_flow_look.x, river_flow_look.y);
+		float fringe = mix(river_bank_foam.x, river_bank_foam.y, tb) * (0.45 + 1.1 * ep_noise(p.xz / 9.0 + 2.3)) + r_fp * 0.5;
+		float at_bank = (1.0 - smoothstep(0.0, fringe, d_in)) * river_bank_foam.z;
+		float front = river_mouth_foam * smoothstep(0.45, 0.72, r_sea) * (1.0 - smoothstep(0.82, 0.97, r_sea));
+		float th = mix(1.05, 0.55, tb);
+		th = min(th, mix(1.05, mix(0.6, 0.4, tb), at_bank));
+		th = min(th, mix(1.05, 0.5, front));
+		vec3 fm = zs_river_foam(p.xz, dir, vspd, t, th, r_fp);
+		float line = fm.x;
+		// Streak lines on the running water (paler threads drifting down).
+		float streak = fm.y * river_streaks * smoothstep(0.15, 0.7, spd) * (1.0 - tb) * smoothstep(0.0, 2.0, d_in);
+		water = mix(water, column * light * 1.5 + vec3(0.02), streak * 0.3);
+		// The slicks: broad bands down the current, the body a shade lighter
+		// or darker and the mirror glassier or duller.
+		float sl = (fm.z - 0.5) * 2.0 * (0.4 + 0.6 * running) * (1.0 - 0.7 * tb);
+		water *= 1.0 + sl * river_slick.y;
 		// The ripples' faces: lighter toward the sun, darker away (the
 		// sea's body_shade), so the chop reads where the mirror is dim.
 		water *= 1.0 + clamp(dot(slope, -normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.5, -0.45, 0.45) * river_body_shade;
@@ -668,11 +783,7 @@ void fragment() {
 				water = mix(water, pc, pad);
 			}
 		}
-		// The pale line at the edge, lapping, broken; far off a soft rim.
-		float lap = river_edge * (0.6 + 0.4 * zs_noise(p.xz / 23.0)) * (0.85 + 0.15 * sin(t * 0.8 + zs_noise(p.xz * 0.15) * 6.2832)) + fp * 0.5;
-		float line = (1.0 - smoothstep(0.0, lap, d_in)) * mix(0.25 + 0.3 * zs_noise(p.xz * 0.35 - dir * t * 0.3), 0.3, smoothstep(0.3, 1.5, fp));
-		vec3 white = vec3(0.9, 0.96, 1.0) * (ambient * 1.1 + key * 0.8);
-		water = mix(water, white, line * 0.7);
+		water = mix(water, white * (1.0 - 0.4 * shaded), line * 0.9);
 		vec3 refl = reflect(-eye, calm);
 		refl.y = abs(refl.y);
 		vec3 sky = clamp(zsSkyGradient(refl), vec3(0.0), vec3(0.98));
@@ -706,6 +817,7 @@ void fragment() {
 			}
 		}
 		float fres = river_fresnel.x + (1.0 - river_fresnel.x) * pow(1.0 - max(dot(eye, calm), 0.0), river_fresnel.y);
+		fres = clamp(fres * (1.0 + sl * river_slick.z), 0.0, 1.0);
 		vec3 disp = mix(zs_scene_to_display(water), sky, fres * (1.0 - line) * (1.0 - pad));
 		vec4 path = zs_lake_glint(refl, zs_sun_direction, zs_moon_direction, zs_celestial_clear, 0.0, 1.0);
 		disp = mix(disp, path.rgb, path.a * (1.0 - shaded) * (1.0 - line) * (1.0 - pad));
