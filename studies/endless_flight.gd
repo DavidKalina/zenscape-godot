@@ -756,6 +756,7 @@ func _foot_tick(delta: float) -> void:
 	land.step(eye)
 	arches.step(eye)
 	trees.step(eye,walker.motor.feet)
+	birds.step(delta,eye,plane)
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var at: Camera3D = view if view != null else camera
