@@ -41,7 +41,16 @@ VARIANTS = {
 LODS = {
 	'near': dict(whorls=((1.08, 1.6), (0.8, 1.3), (0.5, 1.0), (0.28, 0.7)), tooth=0.07, kmin=3, wide=0.36),
 	'far': dict(whorls=((1.08, 1.0), (0.64, 0.75)), tooth=0.2, kmin=2, wide=0.46),
+	# The distance crowns (land_trees.gd): the same tiers, each one skirt from the
+	# tier's top on the trunk down to `skirt` drooping bough tips, notched in and up
+	# between them, so a tree reads as the near crown's mass with its jagged tiers
+	# (thin tents read see-through and dark at range). "mid" per variant, 200 to
+	# 400 m; "low" the mid and far rings past 400 m. (bough_low's tents are kept for
+	# a LOD with 'tent'.)
+	'mid': dict(skirt=6),
+	'low': dict(skirt=4),
 }
+LOW_LIFT = 1.0     # the distance crowns' bake over the near crown's (the shader eases the bake at range)
 LOD = LODS['near']
 BARE = 0.3         # the inner part of a bough (hidden under the boughs above) has no teeth
 NOTCH = 0.4        # the notches between teeth, of the half width
@@ -165,12 +174,65 @@ def bough(c, root, d, L, droop, rise, bright, K=None):
 	return K
 
 
+def bough_low(c, root, d, L, droop, rise, bright):
+	"""A distance crown's bough (LOD 'tent' 1 or 2): the spray's spine and hanging
+	edges with no teeth, its tip drooped as the near bough's."""
+	side = Vector((-d.y, d.x, 0)).normalized()
+	hb = jit.random()
+	W = LOD['wide'] * L * rng.uniform(0.85, 1.15)
+
+	def spine(t):
+		return root + d * (L * t) + Z * (L * (rise * t - (rise + droop) * t * t))
+
+	def val(t, extra=0.0):
+		return ((V_ROOT + (V_TIP - V_ROOT) * t ** 0.85) * bright + extra) * LOW_LIFT
+
+	tm = 0.5
+	w = W * width_at(tm)
+	R = c.vert(spine(0.0), val(0.0, 0.03), (0.0, hb, 0.0, L))
+	T = c.vert(spine(1.0), val(1.0, 0.12), (1.0, hb, 0.0, L))
+	E = [c.vert(spine(tm) + side * (s * w) - Z * (ARCH * w) - d * (0.15 * w), val(tm, -0.08), (tm, hb, float(s), L)) for s in (1, -1)]
+	if LOD['tent'] == 1:
+		for e in E:
+			c.sheet(R, T, e)
+	else:
+		M = c.vert(spine(tm), val(tm, 0.03), (tm, hb, 0.0, L))
+		for e in E:
+			c.sheet(R, M, e)
+			c.sheet(M, T, e)
+
+
+def skirt(c, P, z0, z_top, r, droop, bright, twist):
+	"""A distance crown's tier (LOD 'skirt'): from the tier's top on the trunk down
+	to K drooping bough tips at the rim, the rim notched in and up between them."""
+	K = LOD['skirt']
+	apex = c.vert(axis_at(z_top, P), (V_ROOT + 0.05) * bright * LOW_LIFT, (0.0, jit.random(), 0.0, 0.0))
+	rim = []
+	for j in range(2 * K):
+		a = twist + j * math.pi / K + rng.uniform(-0.12, 0.12)
+		d = Vector((math.cos(a), math.sin(a), 0))
+		reach = r * 1.05 * rng.uniform(0.9, 1.1)
+		if P.get('lean'):
+			reach *= 1.0 - 0.3 * d.dot(-WIND) if d.dot(-WIND) > 0 else 1.0 + 0.25 * d.dot(WIND)
+		if j % 2 == 0:   # a bough's tip, drooped
+			co = axis_at(z0, P) + d * reach - Z * (droop * reach)
+			v = V_TIP * bright
+		else:            # the notch between two tips
+			co = axis_at(z0 + 0.3 * (z_top - z0), P) + d * (reach * 0.55)
+			v = (V_ROOT + 0.6 * (V_TIP - V_ROOT)) * bright
+		rim.append(c.vert(co, v * LOW_LIFT, (1.0 if j % 2 == 0 else 0.5, jit.random(), 0.0, reach)))
+	for j in range(2 * K):
+		c.sheet(apex, rim[j], rim[(j + 1) % (2 * K)])
+
+
 def core(c, P, z0, z_top, r, droop, bright):
 	"""The dark bicone inside the tier that stops the eye between boughs."""
 	apex = axis_at(z0 + 0.9 * (z_top - z0), P)
 	centre = axis_at(z0, P)
 	under = axis_at(z0 - 0.05, P)
-	sides = 6
+	sides = LOD.get('core', 6)
+	if sides == 0:
+		return
 	twist = rng.uniform(0, math.tau)
 	rr = CORE * r
 	hc = (0.0, jit.random(), 0.0, 0.0)
@@ -183,7 +245,8 @@ def core(c, P, z0, z_top, r, droop, bright):
 	for j in range(sides):
 		a, b = rim[j], rim[(j + 1) % sides]
 		c.face(a, b, top)
-		c.face(b, a, bottom)
+		if 'core' not in LOD:
+			c.face(b, a, bottom)
 
 
 def whorl(c, P, z, r, count, droop, rise, gaps, bright, twist, spread_k=1.0):
@@ -199,7 +262,7 @@ def whorl(c, P, z, r, count, droop, rise, gaps, bright, twist, spread_k=1.0):
 			reach *= 0.4
 		start = 0.05 * r
 		root = centre + d * start + Z * rng.uniform(-0.02, 0.02)
-		bough(c, root, d, max(reach - start, 0.05), droop * rng.uniform(0.8, 1.2), rise,
+		(bough_low if 'tent' in LOD else bough)(c, root, d, max(reach - start, 0.05), droop * rng.uniform(0.8, 1.2), rise,
 			bright * rng.uniform(0.93, 1.06))
 
 
@@ -220,9 +283,12 @@ def build(name, P):
 		size_k = 0.55 + 0.45 * r / P['spread']
 		gaps = P.get('gaps', 0) if i < T - 1 else 0
 		twist = rng.uniform(0, math.tau)
+		if 'skirt' in LOD:
+			skirt(c, P, z0, z_top, r, droop, bright, twist)
+			continue
 		core(c, P, z0, z_top, r, droop, bright)
 		for w, (k, per) in enumerate(LOD['whorls']):
-			count = max(4, round(P['n'] * per * size_k))
+			count = LOD['count'] if 'count' in LOD else max(3 if 'tent' in LOD else 4, round(P['n'] * per * size_k))
 			# Each whorl's tips land on the tier's cone, from its rim up to its apex.
 			tip_z = z0 - droop * r + (1 - k) * (z_top - z0 + droop * r)
 			wdroop = droop * (1 + 0.3 * w)
@@ -231,7 +297,7 @@ def build(name, P):
 				twist + w * math.pi / count)
 		if i == T - 1:
 			# The top: a small whorl near the apex, boughs angled up round the leader.
-			whorl(c, P, z0 + 0.8 * (z_top - z0), r * 0.22, 5, -0.3, 0.3, set(), bright * 1.06,
+			whorl(c, P, z0 + 0.8 * (z_top - z0), r * 0.22, LOD.get('count', 5), -0.3, 0.3, set(), bright * 1.06,
 				rng.uniform(0, math.tau))
 	# Trunk runs up into the crown; the leader is a thin crooked spike above it.
 	zs = [-0.05, b * 0.5, b + step, H * 0.75, H + 0.12]
@@ -302,18 +368,18 @@ faces = {}
 faceted_objs = []
 for name, P in VARIANTS.items():
 	objs = {}
-	for lod in ('near', 'far', 'b'):
+	for lod in ('near', 'far', 'b', 'mid', 'low'):
 		# The same seed for all levels, so the far tree keeps the near one's trunk and lean
 		# and the "b" (faceted) crown is the near one with its sheets split.
 		kit.seed(zlib.crc32(name.encode()))
 		jit.seed(zlib.crc32(name.encode()) + 1)
-		LOD = LODS['far' if lod == 'far' else 'near']
+		LOD = LODS['near' if lod == 'b' else lod]
 		FACETS = lod == 'b'
 		c, wood_bm = build(name, P)
 		# Vertex values survive to_object in creation order.
 		order = [c.value[v] for v in c.bm.verts]
 		uvs = [c.uv[v] for v in c.bm.verts]
-		objs[lod] = kit.to_object(c.bm, f'{name} canopy' + {'near': '', 'far': ' far', 'b': ' b'}[lod], asset)
+		objs[lod] = kit.to_object(c.bm, f'{name} canopy' + {'near': '', 'far': ' far', 'b': ' b', 'mid': ' mid', 'low': ' low'}[lod], asset)
 		paint_values(objs[lod], order)
 		paint_uvs(objs[lod], uvs)
 		if lod == 'near':
@@ -321,17 +387,18 @@ for name, P in VARIANTS.items():
 		else:
 			wood_bm.free()
 	crown, far, faceted = objs['near'], objs['far'], objs['b']
+	extra = [objs['mid'], objs['low']]
 	kit.paint(trunk, bark_value(P['H'] * P.get('live', 2.0)))
 	root = bpy.data.objects.new(f'Spruce_{name.replace("-", "_")}', None)
 	asset.objects.link(root)
 	root['height_m'] = round(P['H'] + 0.12, 2)
 	root['description'] = 'Bough sprays. Greyscale canopy and bark: multiply by the stand tint. Origin at ground contact. "<variant> canopy far" is the far level of detail.'
-	for o in (crown, trunk, far, faceted):
+	for o in (crown, trunk, far, faceted, *extra):
 		o.parent = root
 	roots[name] = (root, crown, trunk, far)
-	faces[name] = (len(crown.data.polygons), len(far.data.polygons), len(trunk.data.polygons), len(faceted.data.polygons))
-	faceted_objs.append(faceted)
-print('SPRUCE_SPRAYS faces (canopy, far canopy, trunk, canopy b)', faces)
+	faces[name] = (len(crown.data.polygons), len(far.data.polygons), len(trunk.data.polygons), len(faceted.data.polygons), len(extra[0].data.polygons), len(extra[1].data.polygons))
+	faceted_objs.extend([faceted, *extra])
+print('SPRUCE_SPRAYS faces (canopy, far canopy, trunk, canopy b, canopy mid, canopy low)', faces)
 
 glb = kit.ROOT / 'assets/models/zenscape-spruce-sprays.glb'
 bpy.ops.object.select_all(action='DESELECT')

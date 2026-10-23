@@ -67,6 +67,14 @@ uniform bool flat_faces = false;
 // eye, and collapses to its foot outside it, so its faces cull.
 uniform bool lod_band_on = false;
 uniform vec2 lod_band = vec2(0.0, 1e9);
+// A dithered hand-over (m) round the band's start (x) and end (y), 0 a hard
+// cut: over band.x-x..band.x+x the instance comes in, pixel by pixel, where the
+// level before it (its end fade the same width) goes out, so the two never
+// both draw a pixel and a swap never pops. The fade's distance is the tree's
+// foot (plant_root) across and the pixel's own height, the same for both
+// levels; the vertex keeps the instance LOD_SLACK m wider so none is cut early.
+uniform vec2 lod_fade = vec2(0.0);
+const float LOD_SLACK = 25.0;
 // The sprays spruce's painted crown (shaders/spruce_paint.gdshaderinc,
 // scripts/hero_trees.gd `spruce_paint`), all off at 0: how far the light
 // normal bends to the crown's volume, the blue, the painted patches, the
@@ -86,6 +94,10 @@ uniform float spruce_bake_luma = 1.0;
 // its facets' tilt added to the light normal), 3 c dabs along the boughs.
 uniform int spruce_texture = 0;
 uniform float spruce_texture_gain = 1.0;
+// x: the crown's value (1 as made, under 1 darker, the lit and shaded sides
+// alike); y: b's micro-facets folded into tone where they fade out (40 to
+// 110 m) and on the distance crowns past them.
+uniform vec2 spruce_value = vec2(1.0);
 uniform bool wet_ground = false;
 uniform float wet_droop = 0.0;
 uniform bool terrain_growth = false;
@@ -406,7 +418,8 @@ vec3 zs_strata(vec3 p, float surface) {
 void vertex() {
 	if (lod_band_on) {
 		float lod_d = distance(MODEL_MATRIX[3].xyz, CAMERA_POSITION_WORLD);
-		if (lod_d < lod_band.x || lod_d >= lod_band.y) VERTEX = vec3(0.0);
+		vec2 lod_slack = vec2(lod_fade.x > 0.0 ? lod_fade.x + LOD_SLACK : 0.0, lod_fade.y > 0.0 ? lod_fade.y + LOD_SLACK : 0.0);
+		if (lod_d < lod_band.x - lod_slack.x || lod_d >= lod_band.y + lod_slack.y) VERTEX = vec3(0.0);
 	}
 	// A flower's head offset from its neck (CUSTOM0.xyz), as the distance
 	// thinning grows it; a dropped plant collapses to its root and skips the rest.
@@ -795,6 +808,15 @@ void fragment() {
 	if (leaf_season.y > 0.0 && zs_leaf_fallen(leaf_local, plant_root, leaf_season.y)) discard;
 	// Trees thin round a shaping tool at work (shaders/shaping_reveal.gdshaderinc).
 	if (tree_tread && zs_revealed(leaf_local, plant_root, tree_tread_height, FRAGCOORD.xy)) discard;
+	if (lod_band_on && (lod_fade.x > 0.0 || lod_fade.y > 0.0)) {
+		vec2 lod_foot = zs_camera_position.xz - (plant_root + look_shift.xz);
+		float lod_d = length(vec3(lod_foot.x, zs_camera_position.y - world_position.y, lod_foot.y));
+		// Interleaved gradient noise: one threshold a pixel, the same for both levels.
+		float lod_h = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
+		float lod_in = lod_fade.x > 0.0 ? smoothstep(lod_band.x - lod_fade.x, lod_band.x + lod_fade.x, lod_d) : 1.0;
+		float lod_out = lod_fade.y > 0.0 ? 1.0 - smoothstep(lod_band.y - lod_fade.y, lod_band.y + lod_fade.y, lod_d) : 1.0;
+		if (1.0 - lod_h > lod_in || lod_h >= lod_out) discard;
+	}
 	vec3 face_normal = world_normal;
 	// The normal the light sees: the face's own, except on grass ground,
 	// which leans `ground_soft` of the way to the smoothed ground.
@@ -828,7 +850,9 @@ void fragment() {
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
 	if (flat_faces && !grass_blades) {
-		face_normal = normalize(cross(dFdx(world_position), dFdy(world_position)));
+		// A face under a pixel (a far crown's) can have no derivatives: keep the mesh's normal then.
+		vec3 flat_n = cross(dFdx(world_position), dFdy(world_position));
+		face_normal = dot(flat_n, flat_n) > 1e-24 ? normalize(flat_n) : normalize(world_normal);
 		// Three.js flat DoubleSide surfaces shade the face toward the viewer.
 		if (dot(face_normal, zs_camera_position - world_position) < 0.0) face_normal = -face_normal;
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
@@ -966,6 +990,10 @@ void fragment() {
 		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint, spruce_tone.zw, spruce_tone2, distance(world_position, zs_camera_position));
 	if (spruce_texture == 1 || spruce_texture == 3)
 		tint = zs_spruce_texture(tint, spruce_texture, UV, UV2, spruce_texture_gain, distance(world_position, zs_camera_position));
+	if (spruce_round > 0.0) {
+		tint *= spruce_value.x;
+		if (spruce_texture == 2) tint *= mix(spruce_value.y, 1.0, 1.0 - smoothstep(40.0, 110.0, distance(world_position, zs_camera_position)));
+	}
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
 	float char_scorch = 0.0;

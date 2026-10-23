@@ -440,3 +440,147 @@ The wood view: eye 3.4 m over -700,-2540 looking at -714,-2505.
 
 **Launch:** `./run-endless-flight.command --spruce-texture=a --at=-704,-2700 --heading=0 --alt=8` (b, c likewise).
 **Smoke:** endless flight plain and with a, b, c: 400 frames, 0 errors.
+
+## Round 5: B default, matching distance crowns
+
+User after the texture variants: B looks solid, a little darker maybe; the
+distance versions stick out like a sore thumb.
+
+**B is the default.** `HeroTrees.spruce_texture()` returns b unless
+`--spruce-texture=off|a|c` (off is round 4). With b the crown takes
+`SPRUCE_B` over `SPRUCE_PAINT`: `value` 0.85 (new uniform `spruce_value.x`,
+the crown's albedo times it at every level), `flat` 1.6 and `floor` 0.95 (they
+lift the darks so the lit/shaded ratio does not rise), `bfar` 0.985 (b's
+micro-facets' mean tone, measured -1.8 % on the close crop, kept where the
+facets fade out, 40 to 110 m, and on every distance crown). Off, a and c keep
+value 1. Dials: `--spruce-value= -bfar= -midlift= -ringlift=`.
+
+| close crop (lone tree) | B as flag, before | after | world |
+|---|---|---|---|
+| V p50 | 0.447 | 0.427 | 0.54-0.78 |
+| darkest tenth V | 0.322 | 0.305 | 0.36-0.67 |
+| lit/shaded | 1.86 | 1.85 | 1.2-2.1 |
+| darkest tenth hue | 121 | 124 | 66-100 |
+| blotch8 | 0.818 | 0.794 | 0.53-0.83 |
+
+(value 0.9 alone gave p50 0.416 but lit/shaded 1.93; a higher `fill` did not move it.)
+
+**Distance crowns from the same generator** (`tools/blender_trees/spruce_sprays.py`
+LODS `mid` and `low`, glb nodes `<variant> canopy mid` / `<variant> canopy low`,
+`HeroTrees.spruce_mid_mesh` / `spruce_low_mesh`). The same tiers, droop, lean,
+gaps and seed as the near tree; each tier one skirt from the tier's top on the
+trunk down to drooping bough tips at the rim, notched in and up between them
+(`skirt()`; mid 6 tips a tier, low 4). The bake is the near crown's logic
+(root dark, tips `V_TIP`). Thin tents of the near boughs (still in the code as
+`bough_low`, LOD key `tent`) were tried first: at range they read
+see-through and dark.
+
+**Levels** (`scripts/endless/land_trees.gd`, sprays look):
+
+| level | distance | mesh | triangles (mature; range over variants) before -> after |
+|---|---|---|---|
+| near | 0-150 m | full crown, b | 4140 (round 4 default) / 9564 (b flag) -> 9564 (5844-11114) |
+| lighter | 150-200 m | `canopy far` | 960 -> 960 (612-1248) |
+| mid crown | 200-400 m (was 200-430) | `canopy mid` per variant (was the faceted family) | 192 -> 72 (48-96) |
+| mid ring | 400-1440 m (was 190-1500, standing inside the near trees) | `mature canopy low`, fitted per variant (was FarTrees' proxy) | 20 -> 48 |
+| far ring | 1440-5750 m, fade to 6200 | the same | 20 -> 48 |
+
+- The near, lighter and mid crowns draw in the near crown's own material
+  (reference_surface with the spruce paint, the volume light, the olive
+  shade). The rings first did too, but on ~30k trees that cost about 12 ms
+  at cruise (52.3 ms with the old rings, 64.4 with them; neither the paint
+  noise nor the sway was the cost). So the rings have their own small
+  shader, `shaders/endless_spruce_ring.gdshader`: the same blue (eased as at
+  range), value, volume normal, wrapped soft-stepped sun with the porous
+  own shadow and backlit glow, olive hemisphere, fill and look fill, the
+  same dither; its knobs are read off the crown material
+  (`land_trees.gd _ring_shader`). `RING_GAIN` (1.11, 1.08, 0.98) matches it
+  to the reference on a view of forced rings (crop V p50 0.427 vs 0.435,
+  hue 103 vs 100; `sheet_rings.png`, reference over cheap).
+  `--spruce-rings=ref` draws the rings in the full material,
+  `--spruce-rings=old` brings back FarTrees' crown in `endless_tree_far`
+  (still what `--spruce=family` uses).
+- `midlift` / `ringlift` 0.965 match the distance crowns' value to the
+  full crown's at 150 to 400 m (crop V p50: full 0.431, far 0.435, mid and
+  low skirts 0.447 before the lift).
+- **Fades.** `reference_surface` `lod_fade` (x at the band's start, y at its
+  end, m): a dither in screen space (interleaved gradient noise), the
+  outgoing level drawing where the noise is under its fade and the incoming
+  one where it is over, so the two never both draw a pixel. Widths: 12 m at
+  150, 15 m at 200, 30 m at 400, 60 m at 1440, 450 m at the far end.
+  The fade's distance is the foot across (`plant_root`) and the pixel's own
+  height, the same for both levels; the vertex keeps an instance
+  `LOD_SLACK` 25 m past its band. The detail tiles stand out to their fade
+  plus slack. The mid crown batches draw to a block middle of
+  `MID_CROWN_END` 670 m (was the trunks' 430 with Godot's block-wise fade)
+  and the rings start at 400 m with no overlap, so the old double draw of
+  the mid ring inside the near trees from 190 m is gone.
+- Flags: `--spruce-mid=M` moves the mid crown to ring hand-over (400).
+  Forcing one level on a whole view: `scratch/spruce-sprays/lod/levels.sh`.
+- `reference_surface` `flat_faces`: a face smaller than a pixel can have no
+  derivatives; it keeps the mesh normal then (it showed as stray blue-purple
+  pixels on the far crowns).
+- Shadows are still cast by FarTrees' 20-triangle proxy (unchanged).
+- **Backlit distant trees.** At cruise heading north (into the sun) the
+  rings and the 200-430 m crowns read navy before: the faceted family crown
+  took none of the sprays paint and the rings were lit by Godot's own light
+  and ambient in `endless_tree_far`. Both now go through the sprays light and
+  read grey-green like the near crowns (sheet `cruise_zoom`).
+
+**Stills** (`scratch/spruce-sprays/lod/`, `stills.sh <label> [args]`):
+`sheet_close.png`, `sheet_mid.png`, `sheet_cruise.png` (before left, after
+right), `sheet_mid_zoom.png` and `sheet_cruise_zoom.png` (before over after),
+`sheet_levels.png` (the mid view with every tree forced to full, lighter,
+mid, ring crown, top to bottom; shape check, rendered before the final value).
+Copies in `/tmp/spruce-lod/` (`0 BEFORE - mid.png`, `1 AFTER - mid.png`, ...).
+Views: close as round 4; mid eye 16 m over -712,-2372 looking at -712,-2700
+(trees at 30 to 1000 m); cruise eye 60 m over -704,-2380 looking at
+-704,-2900 (into the sun).
+
+**Launch:** `./run-endless-flight.command --at=-700,-1900 --heading=0 --alt=45`
+(no flags: b and the new crowns). `--spruce-texture=off` for round 4.
+
+**Smoke:** endless flight plain, `--spruce=family`, `--spruce-texture=off`
+(400 frames, 0 errors), and `studies/aqueduct_isle.tscn -- --no-title`
+(passes). B as the default also puts b's near crown (2.3x the triangles) on
+the islets and the aqueduct isle, which have no levels of detail;
+`test_aqueduct_isle_look`'s plant triangle budget already failed before.
+
+**Frame time** (this Mac; `scratch/spruce-sprays/lod/perf.sh`, `iso.sh`):
+rendered, `--uncapped`, not fixed-fps, 1500 frames to settle, the median
+of 600; one Godot at a time (the script waits while any other Godot runs,
+bar the user's idle editor, PID 82102; other agents' Godots came and went,
+and one run that overlapped one, off/dense 87.9 ms, is dropped). Main is the
+plain checkout at 374e19d4 (round 3, which now also has the native land
+field). Dense: 8 m over -704,-2700 looking north; cruise: 45 m over
+-704,-2380 looking at -704,15,-2900 (north, into the sun, woods out to the
+far rings).
+
+| build | dense | cruise |
+|---|---|---|
+| main (round 3) | 35.4 / 35.4 | 40.2 / 40.4 |
+| this round, `--spruce-texture=off` (round 4 near crown, new distance crowns) | 34.1 / 33.9 | 39.7 / 39.6 |
+| this round, default (b) | 35.1 / 34.9 (-0.4) | 53.0 / 53.0 (+12.7) |
+| default, rings in the full material (`--spruce-rings=ref`, first try) | 46.1 / 45.8 | 64.0 / 64.4 |
+| default, `--spruce-rings=old` | | 52.3 |
+| default, `--spruce-detail=100` | 34.6 | 46.4 (+6.1) |
+| default, `--spruce-detail=60` | | 37.5 (-2.8) |
+
+- In the dense wood the new default is within noise of main.
+- At cruise b's near crown costs about +13 ms: from 45 m over a wood many
+  trees are inside the 150 m detail distance, and b's crown is 2.3x the
+  triangles. `--spruce-detail=80` should land about +2 to +3 (between the
+  two measured); 60 brings it under main. The default is left at 150.
+
+**Model budget** (`docs/art/model-budget.md`) for the mid and low crowns:
+- Import LODs / visibility ranges: this is the round. Per tree past 200 m:
+  72 instead of 192 triangles (mid, about -60 %); in the rings 48 instead of
+  20 (+28 a tree, about +0.5 M triangles over ~10k mid and ~20k far trees;
+  the frame's primitives went from 15.0 M to 15.4 M in the dense view).
+- Silhouette geometry: applies, cheaply: the notched, drooping skirt rims
+  are the outline breaks; no teeth past 200 m.
+- Vertex-colour grime: applies, used (root dark, tips light); at range the
+  shader eases the bake to its mean, so the tone is set per level
+  (`midlift`, `ringlift`).
+- Sculpt high/bake low, rigid parts on bones, parallax depth: do not apply
+  (no textures, no rig).
