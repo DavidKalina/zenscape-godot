@@ -204,7 +204,7 @@ func _far_shader(band: Vector4) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = FAR_SHADER
 	m.set_shader_parameter("band",band)
-	m.set_shader_parameter("albedo",FAR_ALBEDO)
+	m.set_shader_parameter("albedo",HeroTrees.spruce_far_albedo(FAR_ALBEDO))
 	m.set_shader_parameter("baked",FAR_BAKED)
 	return m
 

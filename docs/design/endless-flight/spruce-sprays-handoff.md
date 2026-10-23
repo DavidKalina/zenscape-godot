@@ -218,3 +218,61 @@ Open questions for the user:
 - A higher `--spruce-detail`, if the 150 m change is noticed in flight?
 - A lighter bake (`V_ROOT`, `V_CORE` at the top of the generator), if the
   interiors read too dark under the game's tint?
+
+## Round 2: painted crown (less flat, bluer, painterly)
+
+Shading only; the sprays shape and glb are unchanged. All of it is on
+under `--spruce=sprays` and off otherwise (every new uniform is 0 by default).
+
+- **Less flat.** The light normal bends out from the trunk and up
+  (`spruce_round` 0.7), so light rolls round the crown instead of each
+  bough sheet taking its own flat shade. The sun goes through the carved
+  rock's three-step painted ramp over a wrapped term. The crown's own
+  shadow (the proxy cone's) takes only half the sun, so a backlit crown
+  has no hard black half. A soft glow comes through a crown seen against
+  the sun, and the sky's fill is 1.6x the plain hemisphere term.
+- **Bluer.** The colour is kept at its own luminance and moved to a glaucous
+  blue-green (sRGB about 0.39, 0.55, 0.63). Each tree gets between 0.62x
+  and 1.12x of the blue, hashed from its foot. The tips (bake over 0.8)
+  are frostier. The far rings' `FAR_ALBEDO` gets the same blue, so trees
+  don't turn green with distance.
+- **Painterly.** This uses the endless ground's patch language (`ep_fade`
+  / `ep_patch` from `endless_patch.gdshaderinc`, with the ground's
+  sun/deep mix and warm/cool drift multipliers). It has a 70 m drift
+  across a wood, a 4.5 m light and deep half, 1.5 m clumps, and dabs
+  with an edge at 0.45 and 1.4 m. All of them fade to the mean with the
+  pixel footprint. Undersides and the core go cooler, not darker.
+- **Files:**
+  - `shaders/spruce_paint.gdshaderinc` (new) holds the functions and
+    constants.
+  - `shaders/reference_surface.gdshader` has the uniforms, the volume
+    normal, the paint call and the fill.
+  - `shaders/reference_direct_light.gdshaderinc` has an
+    `#ifdef ZS_SPRUCE_LIGHT` branch. Only `reference_surface` defines it.
+  - `scripts/hero_trees.gd` has `SPRUCE_PAINT`, `spruce_paint()` and
+    `spruce_far_albedo()`.
+  - `scripts/sky_islets.gd` calls `spruce_paint` on the crown material.
+  - `scripts/endless/land_trees.gd` sets the far albedo.
+- **Knobs:**
+  - `--spruce-round=`: volume, default 0.7.
+  - `--spruce-blue=`: blue, default 0.85.
+  - `--spruce-dabs=`: painted patches, default 1.0.
+  - `--spruce-wrap=`: ramp wrap, default 0.6.
+  - `--spruce-glow=`: backlit glow, default 0.35.
+  - `--spruce-paint=off`: the round-1 look, to compare.
+- **Cost:** no new varyings (the shader sits at Metal's 31). Per crown
+  pixel it adds about 4 value-noise lookups and a small branch in
+  `light()`. Frame time was not measured.
+- **Stills:** `scratch/spruce-sprays/painterly/painterly_sheet.png` puts
+  before on the left and after on the right. The rows are the lone tree
+  close, the dense wood start (backlit) and cruise over -1500,-2900. The
+  views are in `scratch/spruce-sprays/painterly/stills.sh <label> [args]`.
+- **Smoke:** endless flight passes with `--spruce=sprays` and with the
+  default look (400 frames, 0 errors).
+- **Not done yet:**
+  - The mid and far rings (`_far_shader`) only got the hue. At cruise
+    they still read dark; their light could take the same fill.
+  - The dabs are subtle at walking distance. `--spruce-dabs=1.5..2`
+    makes them stronger.
+  - The ramp's steps barely show on the bent normal. More steps, or less
+    `round`, would bring the stepped look up.

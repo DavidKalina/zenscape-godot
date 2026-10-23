@@ -70,6 +70,44 @@ static func spruce_glb() -> String:
 		if a.begins_with("--spruce=") and SPRUCE_LOOKS.has(a.get_slice("=",1)): return SPRUCE_LOOKS[a.get_slice("=",1)]
 	return SPRUCE_GLB
 
+## The sprays look's painted crown (shaders/spruce_paint.gdshaderinc): the
+## crown lit as a volume, a blue spruce's blue and the world's painted
+## patches and stepped light. Knobs (each `--spruce-<knob>=X`; `--spruce-paint=off`
+## turns it all off to compare): round, blue, dabs, wrap, glow.
+const SPRUCE_PAINT := {"round":0.7, "blue":0.85, "dabs":1.0, "wrap":0.6, "glow":0.35}
+
+## The painted crown's knobs for the picked look ({} when it has none).
+static func spruce_paint_knobs() -> Dictionary:
+	if spruce_glb() != SPRUCE_LOOKS["sprays"]: return {}
+	var knobs := SPRUCE_PAINT.duplicate()
+	for a in preload("res://scripts/launch_args.gd").user_args():
+		if a == "--spruce-paint=off": return {}
+		for k in knobs:
+			if a.begins_with("--spruce-%s=" % k): knobs[k] = float(a.get_slice("=",1))
+	return knobs
+
+## Puts the painted crown on a crown material; `tint` is the crowns'
+## instance tint (so the shader can read the grey bake back out of COLOR).
+static func spruce_paint(material: Material, tint: Color) -> void:
+	var knobs := spruce_paint_knobs()
+	if knobs.is_empty() or not material is ShaderMaterial: return
+	var m := material as ShaderMaterial
+	m.set_shader_parameter("spruce_round",knobs.round)
+	m.set_shader_parameter("spruce_blue",knobs.blue)
+	m.set_shader_parameter("spruce_paint",knobs.dabs)
+	m.set_shader_parameter("spruce_light",Vector2(knobs.wrap,knobs.glow))
+	m.set_shader_parameter("spruce_bake_luma",maxf(tint.get_luminance(),0.001))
+
+## The far rings' crown colour under the picked look: the sprays' blue, as
+## the shader puts it on the near crowns (spruce_paint.gdshaderinc, at a
+## middling tree's share).
+static func spruce_far_albedo(albedo: Color) -> Color:
+	var knobs := spruce_paint_knobs()
+	if knobs.is_empty(): return albedo
+	var l := albedo.get_luminance()
+	var glaucous := Color(0.54,1.115,1.205).lerp(Color(1,1,1),0.12)*l
+	return albedo.lerp(glaucous,clampf(knobs.blue*0.87,0.0,1.0))
+
 ## Batch keys for the spruce family: [trunk, canopy] per variant, in SPRUCE order.
 ## Named so scene_look roles and the "canopies" tint rule apply unchanged.
 static func spruce_keys() -> Array:
