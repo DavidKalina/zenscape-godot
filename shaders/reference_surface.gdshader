@@ -76,6 +76,8 @@ uniform float spruce_round = 0.0;
 uniform float spruce_blue = 0.0;
 uniform float spruce_paint = 0.0;
 uniform vec2 spruce_light = vec2(0.0);
+// Round 3: x the sky's fill share, y the warmth of the shaded side, z how far the bake's light/dark is flattened, w the fine dabs' gain.
+uniform vec4 spruce_tone = vec4(0.6, 0.0, 0.0, 1.0);
 uniform float spruce_bake_luma = 1.0;
 uniform bool wet_ground = false;
 uniform float wet_droop = 0.0;
@@ -947,7 +949,7 @@ void fragment() {
 		zs_silver_side(dFdx(world_position), dFdy(world_position), zs_camera_position - world_position, zs_wind_direction));
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
 	if (spruce_blue > 0.0 || spruce_paint > 0.0)
-		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint);
+		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint, spruce_tone.zw);
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
 	float char_scorch = 0.0;
@@ -1058,7 +1060,7 @@ void fragment() {
 	if (earth_sides) contact = 1.0;
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, light_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION = emissive_color + tint * hemi * contact;
-	if (spruce_round > 0.0) EMISSION += tint * hemi * contact * SPRUCE_FILL;
+	if (spruce_round > 0.0) EMISSION += mix(tint, SPRUCE_SHADE_OLIVE * zs_spruce_luma(tint), spruce_tone.y) * hemi * contact * spruce_tone.x;
 	// Look pass: the sunlit cloud sea below lighting the bellies and keels;
 	// its sky fill into the sun's shade is in light() (reference_direct_light).
 	EMISSION += tint * zs_look_bounce_light(light_normal);

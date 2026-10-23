@@ -18,7 +18,7 @@ void light() {
 		vec3 crown_sun = open_sun * mix(0.5, 1.0, ATTENUATION);
 		float d = dot(NORMAL, LIGHT);
 		float t = zs_spruce_painted_light(d, ZS_SPRUCE_LIGHT.x);
-		DIFFUSE_LIGHT += crown_sun * t * mix(vec3(0.86, 0.94, 1.08), vec3(1.06, 1.02, 0.92), t) / PI;
+		DIFFUSE_LIGHT += crown_sun * t * mix(vec3(0.96, 0.99, 1.04), vec3(1.04, 1.02, 0.94), t) / PI;
 		float through = pow(max(dot(-LIGHT, VIEW), 0.0), 2.0);
 		DIFFUSE_LIGHT += open_sun * ZS_SPRUCE_LIGHT.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
 	} else

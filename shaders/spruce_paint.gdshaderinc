@@ -36,7 +36,8 @@ float zs_spruce_tree_rank(vec2 root) {
 // The sky's fill on the crown over the plain hemisphere term: the world's
 // shade sides read soft and lit (the ground's hemisphere, the clouds' lift),
 // a dense crown's would read black.
-const float SPRUCE_FILL = 0.6;
+// The shaded side's olive (over the crown's own luminance), like the world's shadows (hue 66-100).
+const vec3 SPRUCE_SHADE_OLIVE = vec3(1.20, 1.05, 0.22);
 
 // The light normal of a crown lit as a volume: out from the trunk and up,
 // `round` of the way from the face's own normal. `out_xz` is the point's
@@ -51,7 +52,7 @@ vec3 zs_spruce_volume_normal(vec3 face, vec2 out_xz, float round) {
 // The crown's colour: hue, frost and the painted patches.
 // `bake` is the generator's grey (0.42 core, 0.55 at the trunk, 1.02 at the
 // tips); `under` 1 where the eye sees a bough's underside.
-vec3 zs_spruce_paint(vec3 tint, vec3 world, vec2 root, float bake, float under, float blue, float paint) {
+vec3 zs_spruce_paint(vec3 tint, vec3 world, vec2 root, float bake, float under, float blue, float paint, vec2 tone) {
 	float rank = zs_spruce_tree_rank(root);
 	float tip = smoothstep(0.8, 1.0, bake);
 	// Blue: the colour's own luminance in the glaucous hue, a little greyer
@@ -62,6 +63,8 @@ vec3 zs_spruce_paint(vec3 tint, vec3 world, vec2 root, float bake, float under, 
 		tint = mix(tint, glaucous, clamp(blue * mix(0.62, 1.12, rank), 0.0, 1.0));
 		tint *= mix(vec3(1.0), SPRUCE_FROST, tip * blue * 0.7);
 	}
+	// Flatten the bake's light/dark toward its mean (0.7): less contrast.
+	tint *= pow(clamp(bake, 0.25, 1.3) / 0.85, -tone.x * 0.6);
 	if (paint <= 0.0) return tint;
 	float fp = length(fwidth(world));
 	// The world's xz with height folded in, so the dabs differ up the tree.
@@ -72,7 +75,7 @@ vec3 zs_spruce_paint(vec3 tint, vec3 world, vec2 root, float bake, float under, 
 	float half_tree = ep_fade(p + vec2(71.0, 13.0), 4.5, fp);
 	float clump = ep_fade(p + vec2(5.0, 211.0), 1.5, fp);
 	float dab = ep_patch(p + vec2(57.0, 19.0), 0.45, fp) * 1.0 + ep_patch(p + vec2(3.0, 77.0), 1.4, fp) * 0.8;
-	float sunny = clamp((half_tree * 1.2 + clump * 1.0 + dab * 1.8 + (rank - 0.5) * 0.5) * paint, -1.0, 1.0);
+	float sunny = clamp((half_tree * 1.2 + clump * 1.0 + dab * 1.8 * tone.y + (rank - 0.5) * 0.5) * paint, -1.0, 1.0);
 	tint *= mix(vec3(1.0), sunny > 0.0 ? SPRUCE_SUNLIT : SPRUCE_DEEP, abs(sunny));
 	float warm = clamp(grove * 2.4 + (rank - 0.5) * 0.6, -1.0, 1.0) * paint;
 	tint *= mix(vec3(1.0), warm > 0.0 ? SPRUCE_WARM : SPRUCE_COOL, abs(warm) * 0.35);
