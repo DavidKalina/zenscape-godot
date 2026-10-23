@@ -234,6 +234,8 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 	land_seed = seed_value
 	salt = (absi(hash(seed_value*7919+13))%100000)
 	celestial = sky
+	# On a Mac the half-res march is the default (endless_look.gd mac_trades).
+	if OS.get_name() == "macOS" and not "--mac-trades=0" in LaunchArgs.user_args(): quality[2] = 2
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--cloud-cover="): cover = clampf(a.get_slice("=",1).to_float(),0.0,3.0)
 		elif a == "--cloud-full-res": quality[2] = 1

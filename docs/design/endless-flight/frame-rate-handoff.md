@@ -57,7 +57,9 @@ before (smoked with `bell_spires` and `editor_aqueduct_gorge`).
   everywhere, no morph.
 - `--grass-warm=0`: the grass materials are made on first use, as before.
 - `--ssao=1`: ambient occlusion on, as before.
-- Visible trades, all off by default, for the user to judge:
+- Visible trades. The user chose all three for the Mac (M5 Pro), so on
+  macOS they are on by default (`EndlessLook.mac_trades`), and off elsewhere.
+  `--mac-trades=0` turns them off on the Mac too; each flag below still wins:
   - `--msaa=2` (or 0): MSAA 2x instead of 4x. Saves 1.2 to 1.7 ms.
   - `--cloud-half-res` (an existing flag): the cloud march at half
     resolution. Saves 1.2 to 2.7 ms. The clouds are visibly softer and lose
@@ -175,9 +177,10 @@ walks a cell's children for batches should use
 
 ## Next steps
 
-- **Trades for the user to judge:** MSAA 2x, cloud half-res and the 4096
-  shadow map (numbers above). Together they are about 3 to 5 ms, enough
-  for range and coast to reach 60 fps.
+- **Trades:** MSAA 2x, cloud half-res and the 4096 shadow map (numbers
+  above) are on by default on macOS, the user's call. Together they are
+  about 3 to 5 ms, enough for range and coast to reach 60 fps. Not yet
+  re-timed together in a rendered run.
 - **Clouds** (3 to 5 ms, pixel-bound): a march between full and half
   resolution (for example a checkerboard with the temporal resolve), or
   cheaper valley-fog steps. Judge in motion. `--cloud-steps=80` saved

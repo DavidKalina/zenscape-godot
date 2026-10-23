@@ -138,12 +138,20 @@ static func wanted() -> bool:
 ## which it never darkens, so in stills at every spot it changed no pixel
 ## past the clouds' own frame-to-frame noise, and it cost 2.3 to 3.2 ms a
 ## frame on the M5 Pro; --ssao=1 brings it back. Trades the eye can see,
-## for the user to try, none by default: --shadow-size=N (the sun's shadow
-## map, 8192 a side; 4096 saves 0.5 to 0.8 ms, shadow edges a little
-## softer), --msaa=N (0, 2, 4: the 3D's MSAA, 4).
+## off elsewhere and on by default on a Mac (the user's call for the M5
+## Pro; --mac-trades=0 leaves them off there too): --shadow-size=N (the
+## sun's shadow map, 8192 a side; 4096 saves 0.5 to 0.8 ms, shadow edges a
+## little softer), --msaa=N (0, 2, 4: the 3D's MSAA, 4), and the clouds'
+## half-res march (EndlessClouds.setup, --cloud-full-res). The flags win.
 const SSAO := false
+const MAC_SHADOW := 4096
+static func mac_trades() -> bool:
+	return OS.get_name() == "macOS" and not "--mac-trades=0" in LaunchArgs.user_args()
 func _frame_trades() -> void:
 	environment.ssao_enabled = SSAO
+	if mac_trades():
+		RenderingServer.directional_shadow_atlas_set_size(MAC_SHADOW,true)
+		(Engine.get_main_loop() as SceneTree).root.msaa_3d = Viewport.MSAA_2X
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--ssao="): environment.ssao_enabled = a.get_slice("=",1) != "0"
 		elif a.begins_with("--shadow-size="):
