@@ -121,6 +121,30 @@ Not verified: ghosting from the half-res resolve on near clouds while
 turning fast. An older note (clouds-round-handoff.md) saw a little ghosting
 and blocky near-cloud edges at a lower resolution.
 
+## Round 3: render scale, for the user to judge
+
+F2 in flight cycles the 3D through 100, 85, 75 and 67% of the window,
+upscaled by FSR. The hint line and the numbers show the scale. The
+`--render-scale=X` flag (0.5 to 1) sets it at launch, and
+`--render-upscale=fsr2|bilinear` changes the upscaler. Both are in
+`scripts/render_resolution.gd` (`scale_override`), which wins over the
+saved cap. The default is unchanged (100% on a discrete GPU).
+
+GPU median in ms, frozen, full screen 2560 x 1440, with this round's
+defaults (half-res clouds, MSAA 4x, SMAA, view 2):
+
+| spot | 100% | 85% | 75% | 67% | 75% with FSR2 |
+|---|---|---|---|---|---|
+| meadow | 14.0 | 12.4 | 11.5 | 11.1 | 15.1 |
+| woods | 12.3 | 10.9 | 10.0 | 9.3 | 11.0 |
+| worst | 14.3 | 13.6 | 11.8 | 11.4 | 14.8 |
+| coast | 12.2 | 10.9 | 9.8 | 8.8 | 11.0 |
+
+Stills at 1:1 (`scratch/shots/scale_*.png`): 85% is hard to tell from
+100%, 75% is a little softer in the grass and tree edges, and 67% is
+clearly mushier. FSR2 costs more than it saves at the meadow; it is not
+worth it here.
+
 ## Next
 
 - Near grass is the next GPU item (2.6 to 4.3 ms low over meadow).

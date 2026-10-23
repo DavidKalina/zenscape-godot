@@ -30,11 +30,22 @@ static func attach(viewport: Viewport) -> void:
 	viewport.size_changed.connect(update)
 	update.call()
 
+## A scale that wins over the cap while above 0: --render-scale=X (0.5..1),
+## or set at run time (endless flight's F2). --render-upscale=fsr2 (temporal)
+## or bilinear in place of FSR.
+static var scale_override := -1.0
+
 static func apply(viewport: Viewport, cap: int) -> void:
 	# In pixels: a Retina window's visible rect is in points, half its pixels.
 	var height := float((viewport as Window).size.y if viewport is Window else (viewport as SubViewport).size.y)
 	var scale := 1.0 if cap <= 0 or height <= cap else cap/height
-	viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_METALFX_SPATIAL if RenderingServer.get_current_rendering_driver_name() == "metal" else Viewport.SCALING_3D_MODE_FSR
+	var mode := Viewport.SCALING_3D_MODE_METALFX_SPATIAL if RenderingServer.get_current_rendering_driver_name() == "metal" else Viewport.SCALING_3D_MODE_FSR
+	for a: String in OS.get_cmdline_user_args():
+		if a.begins_with("--render-scale=") and scale_override < 0.0: scale_override = clampf(float(a.get_slice("=",1)),0.5,1.0)
+		elif a == "--render-upscale=fsr2": mode = Viewport.SCALING_3D_MODE_FSR2
+		elif a == "--render-upscale=bilinear": mode = Viewport.SCALING_3D_MODE_BILINEAR
+	if scale_override > 0.0: scale = scale_override
+	viewport.scaling_3d_mode = mode
 	viewport.scaling_3d_scale = scale
 
 static func load_cap(path := SETTINGS_PATH) -> int:
