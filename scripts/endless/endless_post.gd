@@ -19,16 +19,16 @@ const FLOATS := (17+LUT)*4
 ## (tints), and the key and fill (EndlessLook scales the sun and the sky's
 ## fill by them). Missing keys take DEFAULT.
 const DEFAULT := {"rays":0.9,"split":0.65,"contrast":1.08,"air":0.55,"sat":1.06,
-	"shade":Vector3(0.80,0.88,1.18),"light":Vector3(1.14,1.02,0.86),"key":1.0,"fill":1.0,"airpow":2.0,"rim":0.9}
+	"shade":Vector3(0.84,0.9,1.12),"light":Vector3(1.14,1.02,0.86),"key":1.0,"fill":1.0,"airpow":2.0,"rim":0.9,"lift":0.5,"relief":1.2,"hot":0.7}
 const MOODS := {
-	"alpine_morning": {"rays":0.8,"shade":Vector3(0.82,0.9,1.18),"key":1.05,"fill":0.9},
+	"alpine_morning": {"rays":0.9,"shade":Vector3(0.86,0.91,1.1),"key":1.05,"fill":0.95,"lift":0.6},
 	"golden_meadow": {"rays":1.0,"split":0.7,"shade":Vector3(0.82,0.88,1.16),"light":Vector3(1.22,1.03,0.80),"key":1.15,"fill":0.75,"air":0.6},
 	"rosewater_dusk": {"rays":1.4,"split":0.95,"contrast":1.14,"air":0.7,"sat":1.1,"shade":Vector3(0.78,0.66,1.22),"light":Vector3(1.28,1.0,0.82),"key":1.15,"fill":0.5},
 	"rose_dusk": {"rays":1.4,"split":0.95,"contrast":1.14,"air":0.7,"sat":1.1,"shade":Vector3(0.80,0.64,1.15),"light":Vector3(1.32,0.98,0.78),"key":1.15,"fill":0.5},
-	"ocean_light": {"rays":0.7,"shade":Vector3(0.82,0.9,1.15),"key":1.1,"fill":0.85},
-	"meadow_morning": {"rays":0.9,"shade":Vector3(0.80,0.90,1.15),"key":1.1,"fill":0.8},
-	"after_the_rain": {"rays":1.2,"split":0.5,"air":0.6,"fill":0.9},
-	"desert_afternoon": {"rays":0.6,"shade":Vector3(0.82,0.78,1.12),"light":Vector3(1.2,1.02,0.82),"key":1.15,"fill":0.75},
+	"ocean_light": {"rays":0.9,"shade":Vector3(0.88,0.92,1.08),"key":1.1,"fill":0.95,"lift":0.65,"relief":1.4},
+	"meadow_morning": {"rays":1.1,"shade":Vector3(0.86,0.92,1.08),"light":Vector3(1.12,1.04,0.88),"key":1.1,"fill":0.9,"lift":0.5},
+	"after_the_rain": {"rays":1.4,"split":0.6,"air":0.6,"fill":1.05,"lift":0.75,"shade":Vector3(0.88,0.94,1.08),"light":Vector3(1.12,1.04,0.9),"sat":1.1,"contrast":1.1},
+	"desert_afternoon": {"rays":0.9,"shade":Vector3(0.86,0.8,1.06),"light":Vector3(1.2,1.02,0.82),"key":1.15,"fill":0.85,"lift":0.6,"hot":1.0,"relief":1.5},
 	"moonlit_stillness": {"rays":0.0,"split":0.0,"air":0.2},
 }
 
@@ -37,6 +37,8 @@ var grade_scale := 1.0
 var air_scale := 1.0
 var haze_hue := 1.0
 var rim_scale := 1.0
+var lift_scale := 1.0
+var relief_scale := 1.0
 var taps := 16
 var camera: Camera3D
 ## The clouds' resolved shape texture (x is the cloud's opacity), or null.
@@ -95,6 +97,8 @@ func setup(look: Node3D, haze: Vector3) -> void:
 		elif a.begins_with("--grade="): grade_scale = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--air="): air_scale = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--haze-hue="): haze_hue = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
+		elif a.begins_with("--lift="): lift_scale = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a.begins_with("--relief="): relief_scale = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--rim="): rim_scale = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--rays-taps="): taps = clampi(int(a.get_slice("=",1)),4,64)
 	set_mood(look.mood)
@@ -143,11 +147,11 @@ func step(view: Camera3D, look: Node3D, facing: Vector3) -> void:
 	_put4(p,28,Vector4(float(_mood.air)*air_scale,5200.0,float(_mood.airpow),0.0))
 	_put4(p,32,Vector4(0.62,0.78,1.25,0.0))
 	_put4(p,36,Vector4(1.35,1.05,0.72,0.0))
-	_put4(p,40,Vector4(float(_mood.split)*grade_scale,1.0+(float(_mood.contrast)-1.0)*grade_scale,1.0+(float(_mood.sat)-1.0)*grade_scale,0.0))
+	_put4(p,40,Vector4(float(_mood.split)*grade_scale,1.0+(float(_mood.contrast)-1.0)*grade_scale,1.0+(float(_mood.sat)-1.0)*grade_scale,float(_mood.lift)*lift_scale*grade_scale))
 	var sh: Vector3 = _mood.shade
 	var li: Vector3 = _mood.light
-	_put4(p,44,Vector4(sh.x,sh.y,sh.z,0.0))
-	_put4(p,48,Vector4(li.x,li.y,li.z,0.0))
+	_put4(p,44,Vector4(sh.x,sh.y,sh.z,float(_mood.relief)*relief_scale))
+	_put4(p,48,Vector4(li.x,li.y,li.z,float(_mood.hot)*relief_scale))
 	_put4(p,52,Vector4(0.05,0.9,float(_mood.rim)*rim_scale,5.0))
 	# The sun on screen and the shafts' strength.
 	var strength := 0.0
