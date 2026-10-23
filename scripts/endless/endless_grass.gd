@@ -402,6 +402,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		ground.set_shader_parameter("bloom_amount",Patch.bloom_amount)
 		ground.set_shader_parameter("bloom_fade",FLOWER_FADE)
 		_silver(ground,"wind_sheen",SILVER_WIND_SHEEN)
+		GrassSheen.apply(ground)
 		for k: String in _sets.ground: ground.set_shader_parameter(k,_sets.ground[k])
 	if rings_3d: lead = 0.0
 	if ground != null: _ring_mats[ground.get_instance_id()] = ground
@@ -833,6 +834,7 @@ func _far(key: String, ring: Dictionary) -> Material:
 	# tile swapping there (its nearest root past it) changes no pixel.
 	if far_lod > 0.0: m.set_shader_parameter("far_morph",Vector2(far_lod-FAR_MORPH,far_lod-FAR_LOD_SAFE))
 	_silver(m,"",0.0,true)
+	GrassSheen.apply(m,true)
 	for k: String in _sets.far: m.set_shader_parameter(k,_sets.far[k])
 	_fars[id] = m
 	_ring_mats[m.get_instance_id()] = m

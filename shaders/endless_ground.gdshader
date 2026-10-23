@@ -28,6 +28,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/endless_ring.gdshaderinc"
 // The underside the wind flips into view, as the tufts show it.
 #include "res://shaders/grass_silver.gdshaderinc"
+#include "res://shaders/grass_sheen.gdshaderinc"
 #include "res://shaders/grass_react.gdshaderinc"
 // The rivers' water (scripts/endless/land_field.gd `_river`): drawn as the
 // sea is (its sky, display and glint helpers).
@@ -490,6 +491,12 @@ void fragment() {
 	// The grass's silvery underside where the breeze bows it (grass_silver,
 	// off by default): the tufts' own bands, carried on over the paint.
 	if (grass_silver.x > 0.0) grass = zs_silver_paint(grass, zs_silver_drive(gxz, fp), 1.0 - thin * 0.6, 0.8);
+	// The wind's sheen: light and dark swells rolling over the far meadow (grass_sheen).
+	if (grass_sheen.x > 0.0) {
+		float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);
+		float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6);
+		if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(zs_sheen_field(gxz, fp), gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
+	}
 	// The flower drifts past the drawn flowers: heads of their colour dotted
 	// over the turf (two lattices, more of them at a drift's heart), which
 	// average to a wash of it as a pixel grows past a head; a light wash
