@@ -39,6 +39,10 @@ extends RefCounted
 ##               ground shader at `last_river_y`, the level falling with
 ##               the lowland to the sea. --no-rivers the land as before
 ##               (rivers-handoff.md).
+##   ponds       still water in hollows on the meadows (land_ponds.gd), a
+##               layer over the field cut in by LandField; they read as
+##               still rivers. --ponds=X their density, 0 none
+##               (ponds-handoff.md).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 
@@ -309,16 +313,34 @@ var last_cavity: float:
 	get: return _impl.last_cavity
 var last_ridge: float:
 	get: return _impl.last_ridge
+## (By a pond, the pond's: it reads as a still river; land_ponds.gd.)
 var last_river: float:
-	get: return _impl.last_river
+	get: return _p_out if _p_on else _impl.last_river
 var last_river_r: float:
-	get: return _impl.last_river_r
+	get: return _p_r if _p_on else _impl.last_river_r
 var last_river_w: float:
-	get: return _impl.last_river_w
+	get: return _p_w if _p_on else _impl.last_river_w
 var last_river_y: float:
-	get: return _impl.last_river_y
+	get: return _p_y if _p_on else _impl.last_river_y
 var last_river_flow: Vector2:
-	get: return _impl.last_river_flow
+	get: return Vector2.ZERO if _p_on else _impl.last_river_flow
+
+## Ponds (scripts/endless/land_ponds.gd): a layer over either field, cut
+## in here after it. `ponds` their density (--ponds=X; 0 none).
+const Ponds = preload("res://scripts/endless/land_ponds.gd")
+var ponds := 1.0
+var _pond_local := {}
+## The square the last sample asked about, and its pond.
+var _pond_cell := Vector2i(1 << 30,0)
+var _pond_here := PackedFloat32Array()
+## The last sample's pond, when it was within the pond's reach and nearer
+## than any river: distance outside its edge, from its centre, its radius
+## that way, its level.
+var _p_on := false
+var _p_out := INF
+var _p_r := 0.0
+var _p_w := 0.0
+var _p_y := 0.0
 
 func _init(land_seed := 0) -> void:
 	seed = land_seed
@@ -344,6 +366,7 @@ func _init(land_seed := 0) -> void:
 		elif arg.begins_with("--river-flare="): k.river_flare = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg == "--land-native=0" or arg == "--gdscript-kernels": want_native = false
 		elif arg == "--land-libm": k.libm = true
+	ponds = 0.0 if k.get("old_land",false) else Ponds.wanted()
 	if want_native and native_available():
 		_impl = ClassDB.instantiate(NATIVE_CLASS)
 		_impl.configure(land_seed,float(k.floor_half),k)
@@ -374,21 +397,69 @@ func native_on() -> bool:
 
 ## Vector2(world height, meadow 0..1) at a world XZ point.
 func sample(x: float, z: float) -> Vector2:
-	return _impl.sample(x,z)
+	_p_on = false
+	if ponds <= 0.0: return _impl.sample(x,z)
+	# (The square's pond first: finding it samples the field.)
+	var p := _pond_for(x,z)
+	var got: Vector2 = _impl.sample(x,z)
+	if not p.is_empty(): got.x = _pond(p,x,z,got.x,float(_impl.last_river))
+	return got
+
+## The pond of the square holding (x, z) (the last square's kept).
+func _pond_for(x: float, z: float) -> PackedFloat32Array:
+	var cx := floori(x/Ponds.CELL)
+	var cz := floori(z/Ponds.CELL)
+	if cx != _pond_cell.x or cz != _pond_cell.y:
+		_pond_here = Ponds.cell_pond(_impl,seed,ponds,x,z,_pond_local)
+		_pond_cell = Vector2i(cx,cz)
+	return _pond_here
+
+## Pond `p` cut into `base` at (x, z); its reads set (`_p_*`) where it is
+## nearer than the river (`river`, the field's `last_river`).
+func _pond(p: PackedFloat32Array, x: float, z: float, base: float, river: float) -> float:
+	var e := Ponds.at(p,x,z)
+	if e.x >= Ponds.REACH: return base
+	if e.x < river:
+		_p_on = true
+		_p_out = e.x
+		_p_r = e.y
+		_p_w = e.z
+		_p_y = p[3]
+	return Ponds.carve(p,base,e) if e.x < Ponds.LIP.y else base
+
+## The ponds whose reach meets the box (x0, z0)..(x1, z1) (land_ponds.gd's
+## arrays), for the fish (EndlessFish).
+func ponds_in(x0: float, z0: float, x1: float, z1: float) -> Array:
+	if ponds <= 0.0: return []
+	return Ponds.ponds_in(_impl,seed,ponds,x0,z0,x1,z1,_pond_local)
 
 ## The land's shape at a world XZ point: {height, meadow, mountain, inland,
 ## valley, half, side, across, river, river_r, river_w, river_y}.
 func shape(x: float, z: float) -> Dictionary:
-	return _impl.shape(x,z)
+	_p_on = false
+	if ponds <= 0.0: return _impl.shape(x,z)
+	var p := _pond_for(x,z)
+	var s: Dictionary = _impl.shape(x,z)
+	if p.is_empty(): return s
+	s.height = _pond(p,x,z,float(s.height),float(s.river))
+	if _p_on:
+		s.river = _p_out
+		s.river_r = _p_r
+		s.river_w = _p_w
+		s.river_y = _p_y
+	return s
 
 ## The river's water level (world y) where a point is on a river's water,
 ## else NAN.
 func river_y(x: float, z: float) -> float:
+	if ponds > 0.0:
+		sample(x,z)
+		if _p_on: return _p_y if _p_out < 0.0 else NAN
 	return _impl.river_y(x,z)
 
 ## The river's water as the ground shader draws it, from the last `sample`.
 func river_drawn() -> float:
-	return _impl.river_drawn()
+	return _p_y if _p_on else _impl.river_drawn()
 
 ## How still the sea's swell lies at the point the last `sample` read.
 func calm_here() -> float:
@@ -400,6 +471,7 @@ func sea_calm(x: float, z: float) -> float:
 
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:
+	if ponds > 0.0: return sample(x,z).x
 	return _impl.height(x,z)
 
 ## The snow line over the sea for this land (round one's under --old-land).
@@ -417,6 +489,12 @@ func colour(x: float, z: float, y: float, up: float, meadow: float) -> Color:
 ## `skirt_drop` m, the river's flow packed at +-flow_max m/s. Sets `detail`
 ## to `step`.
 func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: float, flow_max: float) -> Dictionary:
+	var ps: Array = ponds_in(x0,z0,x0+cells*step,z0+cells*step)
+	var made := _build_chunk(x0,z0,step,cells,skirt_drop,flow_max)
+	if not ps.is_empty(): Ponds.apply_chunk(self,_impl,made,ps,x0,z0,step,cells,skirt_drop)
+	return made
+
+func _build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: float, flow_max: float) -> Dictionary:
 	if _native: return _impl.build_chunk(x0,z0,step,cells,skirt_drop,flow_max)
 	var g: GDField = _impl
 	g.detail = step
@@ -512,6 +590,12 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 ## before it each way (x = x0+(i-pad)*step): {heights, meadows, river}
 ## (PackedFloat32Arrays row by row; river is `last_river` at each sample).
 func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:
+	var ps: Array = ponds_in(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step)
+	var got := _grid(x0,z0,step,nx,nz,pad)
+	if not ps.is_empty(): Ponds.apply_grid(got,ps,x0,z0,step,nx,nz,pad)
+	return got
+
+func _grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:
 	if _native: return _impl.grid(x0,z0,step,nx,nz,pad)
 	var g: GDField = _impl
 	var hs := PackedFloat32Array()

@@ -27,6 +27,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/endless_ring.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/grass_silver.gdshaderinc"
+#include "res://shaders/grass_sheen.gdshaderinc"
 #include "res://shaders/grass_react.gdshaderinc"
 
 uniform vec4 grass_ring = vec4(0.0);
@@ -68,6 +69,8 @@ varying float glance;
 varying vec3 wash;
 varying float washed;
 varying float silver;
+// The wind's sheen tone at its root (grass_sheen).
+varying vec3 sheen;
 // How stirred its patch is (shaders/grass_react.gdshaderinc).
 varying float react;
 
@@ -96,6 +99,13 @@ void vertex() {
 		float react_scale = length(MODEL_MATRIX[1].xyz);
 		VERTEX += zs_react_offset(root.xz, max(VERTEX.y, 0.0) * react_scale, 1.0, MODEL_MATRIX, react_scale, CAMERA_POSITION_WORLD.xz - root.xz, react);
 	}
+	sheen = vec3(1.0);
+	if (grass_sheen.x > 0.0 && ring_keep > 0.0) {
+		float sheen_seen = length(CAMERA_POSITION_WORLD - root);
+		float sheen_rise = max(normalize(CAMERA_POSITION_WORLD - root).y, 0.08);
+		float sheen_fp = sheen_seen * 0.0016 * (0.6 + 0.4 / sheen_rise);
+		sheen = mix(vec3(1.0), zs_sheen_tone(zs_sheen_field(root.xz, sheen_fp), root.xz, CAMERA_POSITION_WORLD, ring_d, zs_key_irradiance), smoothstep(grass_sheen.y, grass_sheen.z, ring_d));
+	}
 	along = clamp(UV.y, 0.0, 1.0);
 	glance = mix(graze_tone, 1.0, smoothstep(graze_angles.x, graze_angles.y, normalize(CAMERA_POSITION_WORLD - MODEL_MATRIX[3].xyz).y));
 	shade = ring_keep > 0.0 ? zs_cloud_volume_shade(MODEL_MATRIX[3].xyz) : 0.0;
@@ -121,6 +131,7 @@ void fragment() {
 	vec3 c = own * mix(root_colour, tip_colour, pow(max(along, 1.0e-4), tip_curve)) * glance;
 	c = mix(c, wash * glance, washed * smoothstep(wash_tip.x, wash_tip.y, along));
 	if (grass_silver.x > 0.0) c = zs_silver_paint(c, silver, smoothstep(0.15, 0.85, along), 0.8);
+	c *= sheen;
 	c = zs_react_tone(c, react * along * (grass_silver.x > 0.0 ? ZS_SILVER_REACT_PALE : 1.0));
 	c = mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))) * night_grade.yzw, night_grade.x);
 	ALBEDO = c * (1.0 - shade * cloud_shade);

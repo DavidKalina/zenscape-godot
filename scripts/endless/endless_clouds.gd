@@ -64,6 +64,14 @@ const WEATHER_PAST := 250.0
 const SHADE_SIDE := 6000.0
 ## The wind carries the field at this speed (m/s).
 const WIND_SPEED := 3.2
+## Cloud life (shaders/endless_cloud_march.glsl `cell_life`): each cloud's
+## cycle runs about LIFE_PERIOD s (0.6 to 1.5 times by the cloud), growing
+## over the first 30 % and thinning away over the last 32 %; the low layer
+## drifts at LOW_WIND times the wind and the high layer at HIGH_WIND.
+const LIFE_PERIOD := 110.0
+const LIFE_COVER := 1.6
+const LOW_WIND := 0.8
+const HIGH_WIND := 2.0
 ## The low cloud over a meadow stands at least this far over the turf (m).
 const MEADOW_CLEAR := 70.0
 ## The small puffs' cover, the broad cumulus' share that hang low, and the
@@ -178,6 +186,16 @@ var sea_shade_sync := true
 ## The field's drift so far (m): a cloud stands at its field point plus this.
 var drift := Vector2.ZERO
 var motion_time := 0.0
+## Cloud life (--cloud-life=0 off, =X scales the cycle's length; --cloud-shear=
+## X scales how far the layers' winds differ, 0 one wind; --cloud-clock=S starts
+## the clouds S seconds into their life, for stills).
+var life := true
+var life_scale := 1.0
+var shear := 1.0
+var clock_start := 0.0
+var _clock_pending := false
+var drift_lo := Vector2.ZERO
+var drift_hi := Vector2.ZERO
 var weather_corner := Vector2.ZERO
 var weather_side := 0.0
 ## The draw distance (LandStream.view()): the march reaches REACH times it.
@@ -193,6 +211,10 @@ var _ground_next := Vector4.ZERO
 var _ground_cpu: Image
 ## The valley fog: on, its density, depth and steps (the flags), its map.
 var fog_on := true
+## The fog's look (floor share, density scale, top thinning): the soft one
+## by default, --fog=old the first pass's (valley-fog-handoff.md).
+var fog_look := Vector4(0.8,0.35,0.6,0.0)
+var fog_gain := 0.75
 var fog_density := 1.0
 var fog_depth := FOG_DEPTH
 var fog_steps := FOG_STEPS
@@ -249,9 +271,23 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 		elif a == "--cloud-field=old": organic = false
 		elif a == "--cloud-stack=old": stack_yield = false
 		elif a == "--cloud-puffs=old": puff_lobes = false
+		elif a.begins_with("--cloud-life="):
+			life_scale = maxf(a.get_slice("=",1).to_float(),0.0)
+			if life_scale <= 0.0: life = false
+		elif a.begins_with("--cloud-shear="): shear = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a.begins_with("--cloud-clock="):
+			clock_start = a.get_slice("=",1).to_float()
+			_clock_pending = clock_start != 0.0
 		elif a == "--sea-shade=old": sea_shade_sync = false
 		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
 		elif a == "--no-valley-fog": fog_on = false
+		elif a == "--fog=old":
+			fog_look = Vector4(0.12,1.0,0.0,0.0)
+			fog_gain = 1.0
+		elif a.begins_with("--fog-gain="): fog_gain = a.get_slice("=",1).to_float()
+		elif a.begins_with("--fog-look="):
+			var fl := a.get_slice("=",1).split(",")
+			if fl.size() >= 3: fog_look = Vector4(fl[0].to_float(),fl[1].to_float(),fl[2].to_float(),0.0)
 		elif a.begins_with("--valley-fog="):
 			fog_density = maxf(a.get_slice("=",1).to_float(),0.0)
 			if fog_density <= 0.0: fog_on = false
@@ -270,6 +306,7 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--cloud-haze="): haze.w = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 	material.set_shader_parameter("haze",haze)
+	material.set_shader_parameter("fog_gain",fog_gain)
 	material.set_shader_parameter("sea_y",Field.SEA_Y)
 	material.set_shader_parameter("sun_scatter",sun_scatter)
 	CumulusNoise.request()
@@ -301,6 +338,14 @@ func step(delta: float, view: Camera3D, wind: Vector2, time: float) -> void:
 		camera = view
 		if enabled: _attach()
 	drift += wind*WIND_SPEED*delta
+	if _clock_pending:
+		# Stills: the field as it stands clock_start s into its drift.
+		_clock_pending = false
+		drift += wind*WIND_SPEED*clock_start
+		drift_lo += wind*WIND_SPEED*lerpf(1.0,LOW_WIND,shear)*clock_start
+		drift_hi += wind*WIND_SPEED*lerpf(1.0,HIGH_WIND,shear)*clock_start
+	drift_lo += wind*WIND_SPEED*lerpf(1.0,LOW_WIND,shear)*delta
+	drift_hi += wind*WIND_SPEED*lerpf(1.0,HIGH_WIND,shear)*delta
 	motion_time = time
 	if camera != null:
 		_ground(camera.global_position)
@@ -606,6 +651,24 @@ static func _vnoise(g: Vector2, s: int) -> float:
 	var d := hash3(i.x+1,i.y+1,s).x
 	return lerpf(lerpf(a,b,u.x),lerpf(c,d,u.x),u.y)
 
+## Cell (cx, cy)'s life now and its cycle (the march's `cell_life`): x 0..1.
+func _cell_life(cx: int, cy: int, big: bool) -> Vector2:
+	if not _lifed(): return Vector2(1.0,0.0)
+	var h := hash3(cx,cy,salt+(101 if big else 211)+31)
+	var period := LIFE_PERIOD*life_scale*lerpf(0.6,1.5,h.x)*(1.0 if big else 0.6)
+	var ph := (motion_time+clock_start)/period+h.y
+	var f := floorf(ph)
+	var u := ph-f
+	return Vector2(smoothstep(0.0,0.4,u)*(1.0-smoothstep(0.55,1.0,u)),maxf(f,0.0))
+
+func _lifed() -> bool:
+	return life and organic
+
+## The drift of the layer a cloud is in (the weather pass's `g_drift`).
+func _layer_drift(low: bool) -> Vector2:
+	if not _lifed(): return drift
+	return drift_lo if low else drift_hi
+
 func _cluster_gate(f: Vector2) -> float:
 	var n := 0.65*_vnoise(f/CLUSTER,salt+17)+0.35*_vnoise(f/(CLUSTER*0.43),salt+19)
 	return smoothstep(CLUSTER_GATE.x,CLUSTER_GATE.y,n)
@@ -614,12 +677,15 @@ func _cluster_gate(f: Vector2) -> float:
 ## march's `recipe`), or an empty dictionary.
 func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	var cell: float = BIG if big else SMALL
-	var s0: int = salt+(101 if big else 211)
+	var lf := _cell_life(cx,cy,big)
+	var lifed := _lifed()
+	if lifed and lf.x < 0.01: return {}
+	var s0: int = salt+(101 if big else 211)+int(lf.y)*977
 	var h := hash3(cx,cy,s0)
 	var middle := (Vector2(cx,cy)+Vector2(0.5,0.5)+JIT*(Vector2(h.x,h.y)*2.0-Vector2.ONE))*cell
 	var gate := _cluster_gate(middle)
 	if not big: gate = lerpf(0.02,1.0,gate*gate)
-	if h.z >= _region(middle)*cover*(BIG_COVER2 if big else SMALL_COVER2)*gate: return {}
+	if h.z >= _region(middle)*cover*(BIG_COVER2 if big else SMALL_COVER2)*gate*(LIFE_COVER if lifed else 1.0): return {}
 	var s := hash3(cx,cy,s0+1)
 	var m := hash3(cx,cy,s0+2)
 	var rr: Vector2 = BIG_R2 if big else SMALL_R2
@@ -627,7 +693,7 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	var spin := m.x*6.2832
 	var t2 := fposmod(s.z*7.31,1.0)
 	var t3 := fposmod(s.z*3.17+m.y,1.0)
-	var k := {"cell":Vector2i(cx,cy),"salt":s0,"middle":middle,"axis":Vector2(cos(spin),sin(spin)),"profile":PROFILE,"low":false}
+	var k := {"cell":Vector2i(cx,cy),"salt":s0,"life":lf.x,"middle":middle,"axis":Vector2(cos(spin),sin(spin)),"profile":PROFILE,"low":false}
 	# [kind, n range, L, W, main_r, br, hs, tall, belly, qb]
 	var p: Array
 	if not big:
@@ -672,12 +738,20 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	if lift: _recipe_lift(k)
 	return k
 
+## The cloud as its life has it now (the march's `apply_life`).
+func _apply_life(k: Dictionary) -> void:
+	if not _lifed(): return
+	var lr := lerpf(0.7,1.0,float(k.life))
+	k.r = float(k.r)*lr
+	k.tall = float(k.tall)*float(k.life)
+	k.H = float(k.H)*lr*float(k.life)
+
 ## Cloud `k` lifted whole over the ground (the march's `recipe_lift`).
 func _recipe_lift(k: Dictionary) -> void:
 	var c: Vector2i = k.cell
 	var h := hash3(c.x,c.y,int(k.salt))
 	var s := hash3(c.x,c.y,int(k.salt)+1)
-	var fl := _cloud_floor(Vector2(k.middle)+drift,float(k.r)*float(k.ext),bool(k.low))
+	var fl := _cloud_floor(Vector2(k.middle)+_layer_drift(bool(k.low)),float(k.r)*float(k.ext),bool(k.low))
 	if fl.x > float(k.b0): k.b0 = fl.x+30.0*fposmod(s.y*13.7+h.x,1.0)
 	if k.low: k.tall = float(k.tall)*lerpf(1.0,0.6,fl.y)
 	k.H = minf(float(k.r)*float(k.main_r)*float(k.tall),TOP-float(k.b0))
@@ -762,7 +836,13 @@ static func _bubble_span(k: Dictionary, i: int, f: Vector2) -> Vector2:
 
 func _clouds_in_organic(at: Vector2, reach: float) -> Array:
 	var out := []
-	var f := at-drift
+	for layer_low in ([true,false] if _lifed() else [true]):
+		_clouds_in_layer(at,reach,layer_low,out)
+	return out
+
+func _clouds_in_layer(at: Vector2, reach: float, layer_low: bool, out: Array) -> void:
+	var dr := _layer_drift(layer_low)
+	var f := at-dr
 	for big in [true,false]:
 		var cell: float = BIG if big else SMALL
 		var lo := Vector2i(floori((f.x-reach)/cell)-1,floori((f.y-reach)/cell)-1)
@@ -771,14 +851,16 @@ func _clouds_in_organic(at: Vector2, reach: float) -> Array:
 			for cx in range(lo.x,hi.x+1):
 				var k := _recipe(cx,cy,big)
 				if k.is_empty() or Vector2(k.middle).distance_to(f) > reach: continue
+				if _lifed() and bool(k.low) != layer_low: continue
 				if stack_yield and (not big or k.kind == "wisp") and _yields(k): continue
+				_apply_life(k)
 				var w: Vector2 = k.middle
-				k["at"] = w+drift
+				k["drift"] = dr
+				k["at"] = w+dr
 				k["radius"] = float(k.r)*float(k.ext)
 				k["base"] = Field.SEA_Y+float(k.b0)
 				k["top"] = Field.SEA_Y+float(k.b0)+float(k.H)*(1.2+LIFT)
 				out.append(k)
-	return out
 
 ## How far world point `p` is into a cloud's smooth body (m, up or down
 ## to its crown or its base; no billows, before the meadows lift the low
@@ -791,7 +873,7 @@ func cloud_depth(p: Vector3) -> float:
 			var top := -1e9
 			var bottom := 1e9
 			for i in int(c.n):
-				var b := _bubble_span(c,i,xz-drift)
+				var b := _bubble_span(c,i,xz-Vector2(c.get("drift",drift)))
 				if b.x < -1e3: continue
 				top = maxf(top,b.x)
 				bottom = minf(bottom,b.y)
@@ -850,7 +932,11 @@ func _fill() -> void:
 	_put4(p,24,Vector4(sun.x,sun.y,sun.z,0.0))
 	_put4(p,28,Vector4(key.x,key.y,key.z,0.0))
 	_put4(p,32,Vector4(Field.SEA_Y,Field.SEA_Y+TOP,REACH*_view,1.0))
-	_put4(p,36,Vector4(drift.x,drift.y,float(salt),cover))
+	var lifed := life and organic
+	var low_at := drift_lo if lifed else drift
+	_put4(p,36,Vector4(low_at.x,low_at.y,float(salt),cover))
+	_put4(p,72,Vector4(1.0 if lifed else 0.0,LIFE_PERIOD*life_scale,drift_hi.x,drift_hi.y))
+	_put4(p,76,Vector4(motion_time+clock_start,0.0,0.0,0.0))
 	_put4(p,40,ground_at)
 	var noise: Texture = CumulusNoise.request()
 	var shade_texel := SHADE_SIDE/Effect.SHADOW_TEXELS
@@ -861,6 +947,7 @@ func _fill() -> void:
 	_put4(p,56,fog_at if fog_live else Vector4.ZERO)
 	_put4(p,60,Vector4(fog_density,fog_depth,fog_steps,fog_top+fog_depth*1.6+16.0))
 	_put4(p,64,Vector4(drift.x*FOG_DRIFT,drift.y*FOG_DRIFT,FOG_REACH,FOG_FADE))
+	_put4(p,68,fog_look)
 	var weather_due := _frame%WEATHER_EVERY == 0 or weather_side == 0.0
 	var shade_due := _frame%SHADE_EVERY == 0
 	if weather_due:

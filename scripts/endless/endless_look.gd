@@ -41,6 +41,7 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Presets = preload("res://scripts/scene_look_presets.gd")
 const EndlessClouds = preload("res://scripts/endless/endless_clouds.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
+const EndlessPost = preload("res://scripts/endless/endless_post.gd")
 
 ## The moods L steps through (no winter: the season stays off it), and the
 ## one it opens on.
@@ -50,7 +51,7 @@ const MOOD := "alpine_morning"
 ## aqueduct isle opens on it. (Round one's 7.6, a low sun raking every
 ## blade's edge, read the carpet's tufts as coarse dark-sided clumps from
 ## the plane: docs/design/endless-flight/grass-tune-handoff.md.)
-const HOUR := 9.6
+const HOUR := 8.6
 
 ## The haze: from FOG_BEGIN m it thickens to all sky by FOG_END m (inside
 ## the land's reach, LandStream ROOT_REACH), along FOG_CURVE.
@@ -106,6 +107,16 @@ var mood := MOOD
 ## The clouds (scripts/endless/endless_clouds.gd), or null (--no-clouds, no
 ## RenderingDevice).
 var clouds: Node3D
+## The light pass (scripts/endless/endless_post.gd), or null (the default; --post=1 puts it in).
+var post: CompositorEffect
+## The mood's key and fill scales on the sun and the sky's fill
+## (EndlessPost MOODS); --light=0 leaves the isles' light as it was.
+var _key := 1.0
+var _fill := 1.0
+var _light_on := true
+## --key=X and --fill=X scale the mood's own (to try a value).
+var _key_arg := 1.0
+var _fill_arg := 1.0
 ## The wind's heading over the ground now (unit xz).
 var wind_direction := Vector2.RIGHT
 
@@ -179,6 +190,8 @@ func setup(land_seed: int) -> void:
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--hour="): hour = clampf(a.get_slice("=",1).to_float(),0.0,24.0)
 		elif a == "--day": day = true
+		elif a.begins_with("--key="): _key_arg = a.get_slice("=",1).to_float()
+		elif a.begins_with("--fill="): _fill_arg = a.get_slice("=",1).to_float()
 		elif a.begins_with("--mood=") and a.get_slice("=",1) in MOODS: mood = a.get_slice("=",1)
 	# The opening mood at HOUR; another at its own hour.
 	if hour < 0.0 and mood == MOOD: hour = HOUR
@@ -247,6 +260,11 @@ func setup(land_seed: int) -> void:
 		clouds.setup(land_seed,celestial,Vector4(FOG_BEGIN,FOG_END*LandStream.view(),FOG_CURVE,CLOUD_HAZE),SUN_SCATTER*0.5)
 		if sea != null and sea.material_override is ShaderMaterial and (sea.material_override as ShaderMaterial).shader == preload("res://shaders/endless_sea.gdshader"):
 			clouds.sea_material = sea.material_override
+	_light_on = not "--light=0" in LaunchArgs.user_args()
+	if EndlessPost.wanted():
+		post = EndlessPost.new()
+		post.setup(self,Vector3(FOG_BEGIN,FOG_END*LandStream.view(),FOG_CURVE))
+		if clouds != null: post.cloud_shape = clouds.effect.resolved_b
 	_publish(0.0)
 	_haze(Vector3.FORWARD)
 	# The ringed planet is the isles' option, off by default (look_pass.gd).
@@ -266,6 +284,10 @@ func show_mood(id: String, keep_hour := true) -> void:
 	_wind = clampf(float(p.wind),0.3,1.2)
 	if not keep_hour: celestial.set_phase(float(p.phase))
 	celestial.update_rig()
+	var t := EndlessPost.tuning(id)
+	_key = float(t.key)*_key_arg
+	_fill = float(t.fill)*_fill_arg
+	if post != null: post.set_mood(id)
 
 ## The next mood in MOODS, keeping the hour.
 func next_mood() -> void:
@@ -358,8 +380,12 @@ func _build_old_sea() -> void:
 ## under the eye, then the clouds round `view` (the camera that draws).
 func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D = null) -> void:
 	celestial.advance(delta,false)
+	if _light_on:
+		sun.light_energy *= _key
+		RenderingServer.global_shader_parameter_set("zs_hemi_energy",float(celestial.state.zs_hemi_energy)*_fill)
 	_publish(delta)
 	_haze(facing)
+	if post != null: post.step(view,self,facing)
 	ground.set_shader_parameter("night_grade",celestial.night_grade)
 	RenderingServer.global_shader_parameter_set("zs_camera_position",eye)
 	sea.position = Vector3(snappedf(eye.x,64.0),Field.SEA_Y,snappedf(eye.z,64.0))
@@ -434,4 +460,5 @@ func hour() -> float:
 	return fposmod(float(celestial.phase),1.0)*24.0
 
 func _exit_tree() -> void:
+	if post != null: post.free_buffers()
 	if water != null: water.finish()

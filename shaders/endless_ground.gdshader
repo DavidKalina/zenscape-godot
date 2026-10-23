@@ -28,6 +28,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/endless_ring.gdshaderinc"
 // The underside the wind flips into view, as the tufts show it.
 #include "res://shaders/grass_silver.gdshaderinc"
+#include "res://shaders/grass_sheen.gdshaderinc"
 #include "res://shaders/grass_react.gdshaderinc"
 // The rivers' water (scripts/endless/land_field.gd `_river`): drawn as the
 // sea is (its sky, display and glint helpers).
@@ -170,6 +171,11 @@ uniform float river_sea_body = 0.9;
 uniform vec3 river_shore_mirror = vec3(0.28, 0.04, 0.7);
 // The current's pale streaks down the flow (0 none).
 uniform float river_streaks = 1.0;
+// Still water (a pond, land_ponds.gd; a river's still pool): lily pads in
+// clusters through its shallow ring. x: how many (0 none), y: cell (m),
+// z: pad radius share of the cell.
+uniform vec3 river_pads = vec3(1.0, 1.15, 0.22);
+uniform vec3 river_pad_colour : source_color = vec3(0.42, 0.56, 0.24);
 // How much of the cloud field the water mirrors (the sea's cloud_mirror).
 uniform float river_cloud_mirror = 0.8;
 // The ripples' faces lit toward the sun (the sea's body_shade).
@@ -485,6 +491,12 @@ void fragment() {
 	// The grass's silvery underside where the breeze bows it (grass_silver,
 	// off by default): the tufts' own bands, carried on over the paint.
 	if (grass_silver.x > 0.0) grass = zs_silver_paint(grass, zs_silver_drive(gxz, fp), 1.0 - thin * 0.6, 0.8);
+	// The wind's sheen: light and dark swells rolling over the far meadow (grass_sheen).
+	if (grass_sheen.x > 0.0) {
+		float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);
+		float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6);
+		if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(zs_sheen_field(gxz, fp), gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
+	}
 	// The flower drifts past the drawn flowers: heads of their colour dotted
 	// over the turf (two lattices, more of them at a drift's heart), which
 	// average to a wash of it as a pixel grows past a head; a light wash
@@ -587,7 +599,9 @@ void fragment() {
 		}
 		// The current: faint pale streaks drawn out down the flow, drifting
 		// with it (two copies cross-faded as the ripples), gone far off.
-		float streak_keep = (1.0 - smoothstep(0.4, 2.5, fp)) * river_streaks;
+		// (Still water, a pond: no current to streak.)
+		float still = 1.0 - smoothstep(0.05, 0.3, spd);
+		float streak_keep = (1.0 - smoothstep(0.4, 2.5, fp)) * river_streaks * (1.0 - still);
 		if (streak_keep > 0.0) {
 			vec2 across_f = vec2(-dir.y, dir.x);
 			float cyc = river_cycle * 2.0;
@@ -608,6 +622,31 @@ void fragment() {
 		// sea's body_shade), so the chop reads where the mirror is dim.
 		water *= 1.0 + clamp(dot(slope, -normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.5, -0.45, 0.45) * river_body_shade;
 		water *= 1.0 - 0.4 * shaded;
+		// Lily pads on still water: a pad in most cells of a cluster, through
+		// the shallow ring; far off, the clusters' mean green.
+		float pad = 0.0;
+		if (still > 0.0 && river_pads.x > 0.0 && d_in > 0.5) {
+			float cluster = smoothstep(0.52, 0.72, zs_noise(p.xz / 7.0 + 2.3)) * smoothstep(0.6, 1.8, d_in) * (1.0 - smoothstep(4.5, 7.5, d_in)) * still * river_pads.x;
+			if (cluster > 0.0) {
+				vec2 g = p.xz / river_pads.y;
+				vec2 cell = floor(g);
+				vec2 h = fract(sin(vec2(dot(cell, vec2(127.1, 311.7)), dot(cell, vec2(269.5, 183.3)))) * 43758.5453);
+				vec2 q = g - cell - (vec2(0.5) + (fract(h * 7.31 + 0.17) - 0.5) * 0.62);
+				float rad = river_pads.z * mix(0.8, 1.35, h.y);
+				float aa = max(fp / river_pads.y, 0.01);
+				// The notch: a wedge cut to the middle.
+				float ang = atan(q.y, q.x) - h.x * 6.2832;
+				float notch = smoothstep(0.1, 0.22, abs(mod(ang + 3.14159, 6.2832) - 3.14159));
+				float one = (1.0 - smoothstep(rad - aa, rad + aa, length(q))) * mix(notch, 1.0, smoothstep(0.02, 0.06, aa)) * step(h.x, 0.8);
+				// Far off, the mean cover.
+				pad = mix(one, 0.3, smoothstep(0.1, 0.4, aa)) * smoothstep(0.0, 0.2, cluster);
+				vec3 pc = river_pad_colour * (0.75 + 0.45 * h.y) * (ambient + key * 0.9);
+				// The odd flower in its middle.
+				float bloom = (1.0 - smoothstep(rad * 0.28 - aa, rad * 0.28 + aa, length(q + vec2(0.0, rad * 0.15)))) * step(0.86, h.y) * (1.0 - smoothstep(0.03, 0.08, aa));
+				pc = mix(pc, vec3(0.95, 0.78, 0.82) * (ambient + key), bloom);
+				water = mix(water, pc, pad);
+			}
+		}
 		// The pale line at the edge, lapping, broken; far off a soft rim.
 		float lap = river_edge * (0.6 + 0.4 * zs_noise(p.xz / 23.0)) * (0.85 + 0.15 * sin(t * 0.8 + zs_noise(p.xz * 0.15) * 6.2832)) + fp * 0.5;
 		float line = (1.0 - smoothstep(0.0, lap, d_in)) * mix(0.25 + 0.3 * zs_noise(p.xz * 0.35 - dir * t * 0.3), 0.3, smoothstep(0.3, 1.5, fp));
@@ -646,11 +685,11 @@ void fragment() {
 			}
 		}
 		float fres = river_fresnel.x + (1.0 - river_fresnel.x) * pow(1.0 - max(dot(eye, calm), 0.0), river_fresnel.y);
-		vec3 disp = mix(zs_scene_to_display(water), sky, fres * (1.0 - line));
+		vec3 disp = mix(zs_scene_to_display(water), sky, fres * (1.0 - line) * (1.0 - pad));
 		vec4 path = zs_lake_glint(refl, zs_sun_direction, zs_moon_direction, zs_celestial_clear, 0.0, 1.0);
-		disp = mix(disp, path.rgb, path.a * (1.0 - shaded) * (1.0 - line));
+		disp = mix(disp, path.rgb, path.a * (1.0 - shaded) * (1.0 - line) * (1.0 - pad));
 		float spark = smoothstep(0.9993, 0.99955, dot(reflect(-eye, wn), zs_sun_direction)) * (0.0025 / (0.0025 + rough));
-		spark *= zs_celestial_clear * smoothstep(-0.03, 0.12, zs_sun_direction.y) * (1.0 - shaded) * (1.0 - line);
+		spark *= zs_celestial_clear * smoothstep(-0.03, 0.12, zs_sun_direction.y) * (1.0 - shaded) * (1.0 - line) * (1.0 - pad);
 		vec3 warm_c = mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, zs_sun_direction.y));
 		disp = mix(disp, warm_c, clamp(spark, 0.0, 1.0));
 		vec3 water_em = scene_linear_for_display(clamp(disp, vec3(0.0), vec3(1.0)));
