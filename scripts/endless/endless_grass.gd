@@ -740,20 +740,13 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	var x0 := key.x*CELL
 	var z0 := key.y*CELL
 	var n := int(CELL)+1+PAD*2
-	var hs := PackedFloat32Array()
-	var ms := PackedFloat32Array()
-	# How far outside a river's water each node is (land_field `last_river`):
-	# no tuft or flower on its bank.
-	var rs := PackedFloat32Array()
-	hs.resize(n*n)
-	ms.resize(n*n)
-	rs.resize(n*n)
-	for j in n:
-		for i in n:
-			var got: Vector2 = f.sample(x0+i-PAD,z0+j-PAD)
-			hs[j*n+i] = got.x
-			ms[j*n+i] = got.y
-			rs[j*n+i] = f.last_river
+	# The cell's 1 m grid in one call (LandField.grid; native when built):
+	# heights, meadows and how far outside a river's water each node is
+	# (land_field `last_river`): no tuft or flower on its bank.
+	var got: Dictionary = f.grid(x0,z0,1.0,n,n,PAD)
+	var hs: PackedFloat32Array = got.heights
+	var ms: PackedFloat32Array = got.meadows
+	var rs: PackedFloat32Array = got.river
 	# No turf in it at all (the sea, the peaks): nothing to grow.
 	var any := false
 	for h: float in hs:
