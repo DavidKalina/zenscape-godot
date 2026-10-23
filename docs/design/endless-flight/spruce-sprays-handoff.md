@@ -276,3 +276,54 @@ under `--spruce=sprays` and off otherwise (every new uniform is 0 by default).
     makes them stronger.
   - The ramp's steps barely show on the bent normal. More steps, or less
     `round`, would bring the stepped look up.
+
+## Round 3: contrast (flatter, lighter, warmer shade)
+
+Shading only. User: too much contrast, a little too dark, still clearly
+different from the grass.
+
+- **Default spruce is now sprays.** `HeroTrees.spruce_glb()` returns the
+  sprays glb unless `--spruce=family` (the old faceted family). This is
+  global (every scene that builds spruce through HeroTrees), not only
+  endless flight.
+- **New defaults** (`SPRUCE_PAINT` in `scripts/hero_trees.gd`):
+  - `wrap` 0.6 -> 1.0: the shade side keeps more of the stepped sun.
+  - `fill` 2.2 (was a constant 0.6): the sky's fill on the crown.
+  - `warm` 1.0: the fill takes an olive (`SPRUCE_SHADE_OLIVE`) in place of the blue tint, so the shade moves warm; the lit side keeps the blue.
+  - `flat` 1.0: the bake's light/dark is pulled toward a lighter mean
+    (`pow(bake/0.85, -0.6*flat)`), lifting the core and trimming the tips.
+  - `fine` 3.0: gain on the 0.45 m and 1.4 m dabs (was 1.8x1).
+  - `farlift` 1.45: the mid and far rings' albedo, so a wood is not
+    darker with distance.
+  - The sun's cool/warm ramp in `reference_direct_light.gdshaderinc` is
+    nearly neutral (0.96,0.99,1.04 to 1.04,1.02,0.94).
+  - New uniform `spruce_tone` (vec4: fill, warm, flat, fine) on `reference_surface`.
+- **Round 2 back:** `--spruce-look=r2` (the sun ramp's tint change stays).
+  Each dial is also `--spruce-fill=`, `-warm=`, `-flat=`, `-fine=`, `-farlift=`.
+- **Measures** (crown crops, `look_measure.py --no-classes`; close = crop
+  0.40,0.35,0.60,0.65 of the lone tree, dense = 0.36,0.55,0.52,0.95 of the
+  near tree's lower half; the close crop has no sky, the dense one a few
+  gaps):
+
+  | | before | after | world |
+  |---|---|---|---|
+  | close V p50 | 0.416 | 0.471 | 0.54-0.78 |
+  | close darkest tenth V | 0.207 | 0.279 | 0.36-0.67 |
+  | close lit/shaded | 3.2 | 2.4 | 1.2-2.1 |
+  | close blotch8 | 0.845 | 0.838 | 0.53-0.83 |
+  | close darkest-tenth hue | 174 | 163 | 66-100 |
+  | dense V p50 | 0.267 | 0.337 | |
+  | dense darkest tenth V | 0.117 | 0.215 | |
+  | dense lit/shaded | 6.2 | 3.2 | |
+  | dense blotch8 | 0.917 | 0.916 | |
+
+- **Not reached:** the targets for darkest tenth (0.30), p50 (0.45-0.55) in
+  a dense wood, lit/shaded 2.5 in the shaded lower crown, blotch8, and the shade
+  hue (still teal-ish, 160s). The olive fill barely moves it because the
+  shade's hue also comes from the look pass's sky fill (`zs_look_fill`) and
+  bounce, not from `spruce_tone`. Next: gate those for the crown, then raise `fill` or `flat`.
+  `--spruce-blue=0` alone drops the shade hue to about 120.
+- **Stills:** `scratch/spruce-sprays/contrast/contrast_sheet.png` (rows:
+  close, dense, cruise; left round 2, right round 3), singles `v6_*.png`.
+  The distant trees at cruise are only slightly lighter.
+- **Smoke:** endless flight, default, `--spruce=family`, `--spruce=sprays`: 400 frames, 0 errors.
