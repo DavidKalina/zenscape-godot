@@ -67,6 +67,8 @@ extends Node3D
 ## --forest-meadows=X (how far onto the meadows, as groves, 1; 0 none).
 ## The birds (scripts/endless/endless_birds.gd): --birds=0 off, --birds=X,
 ## --bird-range=X, --bird-size=X, --bird-ride=S, --ambient-birds=X.
+## Other planes (scripts/endless/endless_traffic.gd): --traffic=0 off,
+## --traffic=N how many (3), --trails=0 no smoke trails.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
@@ -87,6 +89,8 @@ const LandTrees = preload("res://scripts/endless/land_trees.gd")
 const EndlessBirds = preload("res://scripts/endless/endless_birds.gd")
 ## Fish leaping in the ponds (scripts/endless/endless_fish.gd; --fish=0 off).
 const EndlessFish = preload("res://scripts/endless/endless_fish.gd")
+## Other planes and their trails (--traffic=0 off).
+const EndlessTraffic = preload("res://scripts/endless/endless_traffic.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const EndlessWalker = preload("res://scripts/endless/endless_walker.gd")
 const PlaneLanding = preload("res://scripts/plane_landing.gd")
@@ -139,6 +143,8 @@ var trees: Node3D
 ## The birds flushed from the trees and the far flocks.
 var birds: Node3D
 var fish: Node3D
+## Other planes in the sky, or null under --traffic=0.
+var traffic: Node
 var flown := 0.0
 var _start := Vector2.ZERO
 var _heading := 0.0
@@ -218,6 +224,10 @@ func _ready() -> void:
 	birds.name = "Birds"
 	add_child(birds)
 	birds.setup(seed,field,trees)
+	if EndlessTraffic.wanted() > 0:
+		traffic = EndlessTraffic.new()
+		add_child(traffic)
+		traffic.setup(seed,field,look,EndlessTraffic.wanted())
 	if look != null:
 		grass = EndlessGrass.new()
 		grass.setup(seed,look.ground)
@@ -472,6 +482,7 @@ func tick(delta: float) -> void:
 	trees.step(camera.global_position,plane.position)
 	birds.step(delta,camera.global_position,plane)
 	if fish != null: fish.step(delta,camera.global_position,plane.position,plane.velocity,false)
+	if traffic != null: traffic.step(delta,camera.global_position,-camera.global_basis.z,plane.position,Vector3(-sin(plane.heading),0.0,-cos(plane.heading)),float(plane.speed))
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera
@@ -614,7 +625,7 @@ func _show_hud() -> void:
 		"  ·  3D at %d%%" % roundi(get_viewport().scaling_3d_scale*100.0),
 		("  ·  %s, %05.2f h%s" % [look.mood_title(),look.hour(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
-		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+trees.note()+birds.note()+(fish.note() if fish != null else "")]
+		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+trees.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]
 
 func _react_note() -> String:
 	if react == null: return ""
@@ -767,6 +778,7 @@ func _foot_tick(delta: float) -> void:
 	trees.step(eye,walker.motor.feet)
 	birds.step(delta,eye,plane)
 	if fish != null: fish.step(delta,eye,walker.motor.feet,walker.motor.velocity,true)
+	if traffic != null: traffic.step(delta,eye,-camera.global_basis.z,eye,-camera.global_basis.z,0.0)
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var at: Camera3D = view if view != null else camera
