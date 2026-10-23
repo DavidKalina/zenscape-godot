@@ -76,7 +76,9 @@ static func spruce_glb() -> String:
 ## crown lit as a volume, a blue spruce's blue and the world's painted
 ## patches and stepped light. Knobs (each `--spruce-<knob>=X`; `--spruce-paint=off`
 ## turns it all off to compare): round, blue, dabs, wrap, glow.
-const SPRUCE_PAINT := {"round":0.7, "blue":0.85, "dabs":1.0, "wrap":1.0, "glow":0.35, "fill":2.2, "warm":1.0, "flat":1.0, "fine":3.0, "farlift":1.45}
+const SPRUCE_PAINT := {"round":0.7, "blue":1.0, "dabs":1.0, "wrap":1.0, "glow":0.35, "fill":2.6, "warm":1.0, "flat":1.25, "fine":3.0, "farlift":2.0,
+	"steps":0.25, "soft":0.5, "speck":1.0, "floor":0.85, "olive":1.0, "hemiolive":0.85, "farblue":0.6, "farbaked":0.4}
+const SPRUCE_R3 := {"blue":0.85, "fill":2.2, "flat":1.0, "farlift":1.45, "steps":0.7, "soft":0.18, "speck":0.0, "floor":0.5, "olive":0.0, "hemiolive":0.0, "farblue":1.0, "farbaked":0.75}
 
 ## The painted crown's knobs for the picked look ({} when it has none).
 static func spruce_paint_knobs() -> Dictionary:
@@ -84,7 +86,8 @@ static func spruce_paint_knobs() -> Dictionary:
 	var knobs := SPRUCE_PAINT.duplicate()
 	for a in preload("res://scripts/launch_args.gd").user_args():
 		if a == "--spruce-paint=off": return {}
-		if a == "--spruce-look=r2": knobs.merge({"wrap":0.6, "fill":0.6, "warm":0.0, "flat":0.0, "fine":1.0, "farlift":1.0}, true)
+		if a == "--spruce-look=r3": knobs.merge(SPRUCE_R3, true)
+		if a == "--spruce-look=r2": knobs.merge({"wrap":0.6, "fill":0.6, "warm":0.0, "flat":0.0, "blue":0.85, "fine":1.0, "farlift":1.0, "steps":0.7, "soft":0.18, "speck":0.0, "floor":0.5, "olive":0.0, "hemiolive":0.0, "farblue":1.0, "farbaked":0.75}, true)
 		for k in knobs:
 			if a.begins_with("--spruce-%s=" % k): knobs[k] = float(a.get_slice("=",1))
 	return knobs
@@ -98,8 +101,9 @@ static func spruce_paint(material: Material, tint: Color) -> void:
 	m.set_shader_parameter("spruce_round",knobs.round)
 	m.set_shader_parameter("spruce_blue",knobs.blue)
 	m.set_shader_parameter("spruce_paint",knobs.dabs)
-	m.set_shader_parameter("spruce_light",Vector2(knobs.wrap,knobs.glow))
+	m.set_shader_parameter("spruce_light",Vector4(knobs.wrap,knobs.glow,knobs.steps,knobs.soft))
 	m.set_shader_parameter("spruce_tone",Vector4(knobs.fill,knobs.warm,knobs.flat,knobs.fine))
+	m.set_shader_parameter("spruce_tone2",Vector4(knobs.speck,knobs.floor,knobs.olive,knobs.hemiolive))
 	m.set_shader_parameter("spruce_bake_luma",maxf(tint.get_luminance(),0.001))
 
 ## The far rings' crown colour under the picked look: the sprays' blue, as
@@ -110,8 +114,13 @@ static func spruce_far_albedo(albedo: Color) -> Color:
 	if knobs.is_empty(): return albedo
 	var l := albedo.get_luminance()
 	var glaucous := Color(0.54,1.115,1.205).lerp(Color(1,1,1),0.12)*l
-	var c := albedo.lerp(glaucous,clampf(knobs.blue*0.87,0.0,1.0))
+	var c := albedo.lerp(glaucous,clampf(knobs.blue*0.87*knobs.farblue,0.0,1.0))
 	return Color(c.r*knobs.farlift,c.g*knobs.farlift,c.b*knobs.farlift)
+
+## How much of the far rings' baked light and shade shows (the plain value off the sprays look).
+static func spruce_far_baked(plain: float) -> float:
+	var knobs := spruce_paint_knobs()
+	return plain if knobs.is_empty() else knobs.farbaked
 
 ## Batch keys for the spruce family: [trunk, canopy] per variant, in SPRUCE order.
 ## Named so scene_look roles and the "canopies" tint rule apply unchanged.

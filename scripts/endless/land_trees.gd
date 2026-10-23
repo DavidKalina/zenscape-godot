@@ -175,6 +175,9 @@ func setup(land_seed: int) -> void:
 				for pair in [[near_m,Vector2(0.0,_detail)],[far_m,Vector2(_detail,_far_cut)],[family_m,Vector2(_far_cut,1e9)]]:
 					(pair[0] as ShaderMaterial).set_shader_parameter("lod_band_on",true)
 					(pair[0] as ShaderMaterial).set_shader_parameter("lod_band",pair[1])
+			if family_m is ShaderMaterial and HeroTrees.spruce_has_far():
+				# The old faceted crown past _far_cut has its own bake, so it takes none of the sprays' paint.
+				for k in ["spruce_round","spruce_blue","spruce_paint"]: (family_m as ShaderMaterial).set_shader_parameter(k,0.0)
 			_detail_material.append(near_m)
 			_far_material_v.append(far_m)
 			_family_material_v.append(family_m)
@@ -205,7 +208,7 @@ func _far_shader(band: Vector4) -> ShaderMaterial:
 	m.shader = FAR_SHADER
 	m.set_shader_parameter("band",band)
 	m.set_shader_parameter("albedo",HeroTrees.spruce_far_albedo(FAR_ALBEDO))
-	m.set_shader_parameter("baked",FAR_BAKED)
+	m.set_shader_parameter("baked",HeroTrees.spruce_far_baked(FAR_BAKED))
 	return m
 
 func _plan_for() -> RefCounted:

@@ -327,3 +327,43 @@ different from the grass.
   close, dense, cruise; left round 2, right round 3), singles `v6_*.png`.
   The distant trees at cruise are only slightly lighter.
 - **Smoke:** endless flight, default, `--spruce=family`, `--spruce=sprays`: 400 frames, 0 errors.
+
+## Round 4: split, shade hue, speckle, lift
+
+Shading only. `--spruce-look=r3` brings round 3 back (`SPRUCE_R3` in `scripts/hero_trees.gd`).
+
+- **The hard vertical split.** The cause was the painted sun's three tiers
+  (`zs_spruce_painted_light`, 70 % stepped, edge width 0.18) read over the bent
+  "round" normal: across the crown the normal sweeps from the sun side to the far
+  side, and where the sweep crosses a tier edge the tone jumps along a straight
+  line down the tree. Fix: the step share is 0.25 with a fully soft edge
+  (`steps`, `soft`), so the tiers read as a gradient. No cone or per-half bake is
+  involved.
+- **Shade hue.** The crown's share of the look pass's sky fill and bounce is
+  cancelled off the blue albedo and put back olive (`olive`, in
+  `reference_direct_light.gdshaderinc` and the emission), the plain hemisphere term leans
+  olive (`hemiolive`), the deep patches and the dark depths take an olive tint
+  instead of a blue one. The lit side keeps the blue (`blue` 1.0).
+- **Fine variation.** Edged dabs at 0.16, 0.33 and 0.075 m (`ep_patch`, the
+  ground's model), gain `speck` (new uniform `spruce_tone2.x`).
+- **Dark.** `fill` 2.6, `flat` 1.25, the crown's own-shadow floor `floor` 0.85
+  (was 0.5), and at range the bake and blue ease to the mean (`away`, 40..160 m).
+- **Distant.** Far rings: `farlift` 2.0, `farblue` 0.6 (less blue), `farbaked` 0.4
+  (less baked dark) via `HeroTrees.spruce_far_baked`. The faceted family crown past 200 m takes none of the sprays paint.
+  Backlit trees at 150 to 300 m still read dark at cruise heading north (the old family is darker); not a sprays fault.
+- Dials: `--spruce-steps= -soft= -speck= -floor= -olive= -hemiolive= -farblue= -farbaked=`.
+- Stills: `scratch/spruce-sprays/round4/round4_sheet.png` (left r3, right r4; rows
+  close, dense, cruise). Smoke: endless flight default, `--spruce=family`, `--spruce-look=r3`.
+
+| crop | measure | r3 | r4 | world |
+|---|---|---|---|---|
+| close | V p50 | 0.471 | 0.482 | 0.54-0.78 |
+| close | darkest tenth V | 0.279 | 0.381 | 0.36-0.67 |
+| close | lit/shaded | 2.42 | 1.77 | 1.2-2.1 |
+| close | blotch8 | 0.838 | 0.821 | 0.53-0.83 |
+| close | shade hue | 163 | 108 | 66-100 |
+| dense | V p50 | 0.337 | 0.451 | |
+| dense | darkest tenth V | 0.215 | 0.308 | |
+| dense | lit/shaded | 3.15 | 2.18 | |
+| dense | blotch8 | 0.916 | 0.877 | |
+| dense | shade hue | 159 | 107 | |

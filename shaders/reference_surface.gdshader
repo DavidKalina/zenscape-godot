@@ -75,7 +75,9 @@ uniform vec2 lod_band = vec2(0.0, 1e9);
 uniform float spruce_round = 0.0;
 uniform float spruce_blue = 0.0;
 uniform float spruce_paint = 0.0;
-uniform vec2 spruce_light = vec2(0.0);
+uniform vec4 spruce_light = vec4(0.0, 0.0, 0.7, 0.18);
+// (speck, crown shadow floor, shade olive in light(), olive share of the hemisphere), all 0 = round 3
+uniform vec4 spruce_tone2 = vec4(0.0, 0.5, 0.0, 0.0);
 // Round 3: x the sky's fill share, y the warmth of the shaded side, z how far the bake's light/dark is flattened, w the fine dabs' gain.
 uniform vec4 spruce_tone = vec4(0.6, 0.0, 0.0, 1.0);
 uniform float spruce_bake_luma = 1.0;
@@ -949,7 +951,7 @@ void fragment() {
 		zs_silver_side(dFdx(world_position), dFdy(world_position), zs_camera_position - world_position, zs_wind_direction));
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
 	if (spruce_blue > 0.0 || spruce_paint > 0.0)
-		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint, spruce_tone.zw);
+		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint, spruce_tone.zw, spruce_tone2, distance(world_position, zs_camera_position));
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
 	float char_scorch = 0.0;
@@ -1060,10 +1062,16 @@ void fragment() {
 	if (earth_sides) contact = 1.0;
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, light_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION = emissive_color + tint * hemi * contact;
-	if (spruce_round > 0.0) EMISSION += mix(tint, SPRUCE_SHADE_OLIVE * zs_spruce_luma(tint), spruce_tone.y) * hemi * contact * spruce_tone.x;
+	vec3 spruce_olive = vec3(0.0);
+	if (spruce_round > 0.0) {
+		spruce_olive = SPRUCE_SHADE_OLIVE * zs_spruce_luma(tint);
+		// The plain hemisphere term leans olive too (tone2.w), so the shade is not teal.
+		EMISSION = emissive_color + mix(tint, spruce_olive, spruce_tone2.w) * hemi * contact;
+		EMISSION += mix(tint, spruce_olive, spruce_tone.y) * hemi * contact * spruce_tone.x;
+	}
 	// Look pass: the sunlit cloud sea below lighting the bellies and keels;
 	// its sky fill into the sun's shade is in light() (reference_direct_light).
-	EMISSION += tint * zs_look_bounce_light(light_normal);
+	EMISSION += mix(tint, spruce_olive, spruce_round > 0.0 ? spruce_tone2.z : 0.0) * zs_look_bounce_light(light_normal);
 	if (underglow > 0.0 && !grass_blades && !flower_heads) EMISSION += tint * vec3(1.0, 0.88, 0.62) * underglow * grass_along * (0.6 + 0.4 * zs_hemi_energy / PI);
 	// A seed clock holds light through itself: a soft sky glow of its own.
 	if (flower_heads && grass_along > 0.95) EMISSION += tint * mix(zs_hemi_sky, vec3(1.0), 0.5) * zs_hemi_energy / PI * ZS_FLOWER_PUFF_LIGHT;
@@ -1102,4 +1110,5 @@ void fragment() {
 #define ZS_FLOWER_SHARE grass_along
 #define ZS_FLOWER_GLOW (flower_heads ? flower_glow : 0.0)
 #define ZS_SPRUCE_LIGHT spruce_light
+#define ZS_SPRUCE_TONE2 spruce_tone2
 #include "res://shaders/reference_direct_light.gdshaderinc"
