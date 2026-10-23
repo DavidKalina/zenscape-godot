@@ -64,6 +64,7 @@ const Pad = preload("res://scripts/pad.gd")
 const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
+const EndlessEddies = preload("res://scripts/endless/endless_eddies.gd")
 const LandArches = preload("res://scripts/endless/land_arches.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 
@@ -105,6 +106,8 @@ var grass: Node3D
 ## The grass reacting to the wash, the walker and the gusts (scripts/endless/
 ## grass_react.gd), or null under --no-grass-react or --plain-look.
 var react: Node
+## The gusts as sweeping breeze ribbons (scripts/endless/endless_eddies.gd), or null under --gusts=rings.
+var eddies: Node3D
 ## The arches over the land (scripts/endless/land_arches.gd).
 var arches: Node3D
 var flown := 0.0
@@ -171,6 +174,12 @@ func _ready() -> void:
 			react = GrassReact.new()
 			add_child(react)
 			react.setup(seed)
+			var gust_mode := EndlessEddies.mode()
+			react.rings_on = gust_mode != "eddies"
+			if gust_mode != "rings":
+				eddies = EndlessEddies.new()
+				add_child(eddies)
+				eddies.setup(seed,Callable(field,"height"),react)
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 	_build_ui()
 	_hud.visible = _numbers
@@ -410,6 +419,8 @@ func _react(delta: float) -> void:
 	if hand_landing.on_ground(): thrust = hand_landing.engine*(0.3+0.7*maxf(hand_landing.throttle,0.0))
 	else: thrust = float(plane.engine)*clampf(0.6+0.4*float(plane.throttle),0.35,1.0)
 	var facing := -camera.global_basis.z
+	if eddies != null:
+		eddies.step(delta,camera.global_position,Vector2(facing.x,facing.z),look.wind_direction,1.0,Callable(self,"_grass_at"))
 	react.step(delta,camera.global_position,
 		{"position": p, "forward": plane.forward(), "over": over, "thrust": thrust, "size": ground_scale.size()},
 		{"way": look.wind_direction, "travel": look._gust, "facing": Vector2(facing.x,facing.z)},

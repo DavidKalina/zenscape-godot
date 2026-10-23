@@ -121,6 +121,7 @@ var _rng := RandomNumberGenerator.new()
 var _wash_at := 0.0
 var _walk_from := Vector2.INF
 var _walk_at := 0.0
+var rings_on := true
 var _gust_next := 3.0
 var _gusts: Array[Dictionary] = []
 var _parcels: Array = []
@@ -197,7 +198,7 @@ func step(delta: float, eye: Vector3, plane: Dictionary, air: Dictionary, land: 
 	_min = centre-Vector2.ONE*MAP_M*0.5
 	if wash_on and not plane.is_empty(): _wash(plane)
 	else: stats.wash = 0.0
-	if gusts_on and not air.is_empty(): _gust_step(delta,eye,air,land)
+	if gusts_on and rings_on and not air.is_empty(): _gust_step(delta,eye,air,land)
 	_draw()
 	_publish_rect()
 
@@ -322,6 +323,16 @@ func gusts(travel: float, way: Vector2) -> Array:
 	for g: Dictionary in _gusts:
 		out.append({"at": g.at+way*(travel-float(g.travel)), "age": time-float(g.born)})
 	return out
+
+## One stamp of a swept band: the endless eddies (scripts/endless/
+## endless_eddies.gd) drop these along a breeze ribbon's head, so the grass
+## bows along its path and springs back behind it. `way` the head's unit way.
+func eddy(at: Vector2, way: Vector2, strength: float, reach: float) -> void:
+	if not enabled or not gusts_on: return
+	# Stamps a spacing apart overlap about 2*reach/spacing deep; a push
+	# along the path with a little spread to the sides.
+	_add({"at": at, "way": way*0.9, "strength": strength*gust_scale*0.55, "swirl": 0.0,
+		"reach": reach, "front": 0.0, "hold": 0.25})
 
 # --- The map --------------------------------------------------------------------------
 
