@@ -18,8 +18,8 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Ribbons = preload("res://scripts/breeze_ribbons.gd")
 
 ## Seconds between fronts (+-JITTER), and the plate the ribbons live on.
-var every := 3.0
-const JITTER := 2.0
+var every := 6.0
+const JITTER := 3.0
 var radius := 150.0
 ## How far ahead of the eye (along its facing) the plate sits, as a share of radius.
 const AHEAD := 0.55
@@ -30,10 +30,10 @@ const AHEAD_FAR := 130.0
 var spacing := 2.0
 var reach := 7.0
 var push := 3.0
-## The strokes seen from cruise are far: widen and brighten them (x the isle's).
-var stroke := 10.0
-## Their tails, longer to read from up here (x the isle's).
-var tail_scale := 3.0
+## The strokes' width (x the isle's): the isle's thin ones.
+var stroke := 1.0
+## Their tails (x the isle's).
+var tail_scale := 1.0
 
 var ribbons: Node3D
 var react: Node
@@ -84,7 +84,7 @@ func step(delta: float, eye: Vector3, facing: Vector2, wind: Vector2, strength: 
 		var way := wind.normalized()
 		var side := Vector2(-way.y, way.x)
 		var spot := Vector2(eye.x, eye.z) + facing * _rng.randf_range(AHEAD_NEAR, AHEAD_FAR) + side * _rng.randf_range(-45.0, 45.0)
-		var count := _rng.randi_range(3, 5)
+		var count := _rng.randi_range(1, 2)
 		var swept := _rng.randi_range(0, count - 1)
 		var speed := _rng.randf_range(5.0, 7.0)
 		for i in count:
