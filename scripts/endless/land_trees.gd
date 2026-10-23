@@ -94,7 +94,7 @@ const FLOOR_STRENGTH := 0.82
 ## only within DETAIL, the far ones in FAR_TILE squares made only within
 ## FAR_CUT, so the rest of the near ring never draws them. --spruce-detail=M and --spruce-far=M move the two; --spruce-detail=all
 ## gives every near tree its full crown.
-const DETAIL := 150.0
+const DETAIL := 80.0
 const FAR_CUT := 200.0
 const DETAIL_TILE := 64.0
 const FAR_TILE := 128.0

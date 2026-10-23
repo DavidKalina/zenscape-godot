@@ -22,7 +22,7 @@ many needle tips. The shape, sizes and six variants are the family's.
 | Flag | What it does |
 |---|---|
 | `--spruce=sprays` | Use the sprays glb for every spruce (the endless land, the islets, the garden). |
-| `--spruce-detail=M` | How far out a tree keeps its full crown (default 150 m). `all` gives every near tree its full crown (the cost is in Numbers). |
+| `--spruce-detail=M` | How far out a tree keeps its full crown (default 80 m; it was 150 m to round 5). `all` gives every near tree its full crown (the cost is in Numbers). |
 | `--spruce-far=M` | Where the far sprays crown hands over to the faceted family's crown (default 200 m). |
 
 ## What was built
@@ -479,8 +479,8 @@ see-through and dark.
 
 | level | distance | mesh | triangles (mature; range over variants) before -> after |
 |---|---|---|---|
-| near | 0-150 m | full crown, b | 4140 (round 4 default) / 9564 (b flag) -> 9564 (5844-11114) |
-| lighter | 150-200 m | `canopy far` | 960 -> 960 (612-1248) |
+| near | 0-80 m (150 m before the merge) | full crown, b | 4140 (round 4 default) / 9564 (b flag) -> 9564 (5844-11114) |
+| lighter | 80-200 m | `canopy far` | 960 -> 960 (612-1248) |
 | mid crown | 200-400 m (was 200-430) | `canopy mid` per variant (was the faceted family) | 192 -> 72 (48-96) |
 | mid ring | 400-1440 m (was 190-1500, standing inside the near trees) | `mature canopy low`, fitted per variant (was FarTrees' proxy) | 20 -> 48 |
 | far ring | 1440-5750 m, fade to 6200 | the same | 20 -> 48 |
@@ -565,12 +565,13 @@ far rings).
 | default, `--spruce-rings=old` | | 52.3 |
 | default, `--spruce-detail=100` | 34.6 | 46.4 (+6.1) |
 | default, `--spruce-detail=60` | | 37.5 (-2.8) |
+| default, `--spruce-detail=80` (the default from the merge; two runs, a third with the window hidden dropped) | | 41.5 / 41.6 (+1.2) |
 
 - In the dense wood the new default is within noise of main.
 - At cruise b's near crown costs about +13 ms: from 45 m over a wood many
   trees are inside the 150 m detail distance, and b's crown is 2.3x the
   triangles. `--spruce-detail=80` should land about +2 to +3 (between the
-  two measured); 60 brings it under main. The default is left at 150.
+  two measured); 60 brings it under main. The round left the default at 150; at the merge it went to 80 (below).
 
 **Model budget** (`docs/art/model-budget.md`) for the mid and low crowns:
 - Import LODs / visibility ranges: this is the round. Per tree past 200 m:
