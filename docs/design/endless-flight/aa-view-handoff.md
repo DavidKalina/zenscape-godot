@@ -80,7 +80,53 @@ grass.
 - The Mac (unchanged by design) and other PCs.
 - The full suite (a prototype round). Smoke passed.
 
+## Round 2: the 40 fps the user saw
+
+The user played at about 40 fps. Two causes:
+
+1. **The numbers overlay (`--numbers`, F1) cost about 4 ms of CPU a
+   frame.** It walked the land's and the grass's counts and laid out the
+   label every frame. It now writes every `HUD_EVERY` (250 ms;
+   `studies/endless_flight.gd`). Meadow, live: 42.7 fps with the overlay,
+   49.2 after the fix, 50.5 without it.
+2. **The cloud march was the biggest GPU part at native 1440p.** GPU ms
+   saved by hiding each part, full screen, interleaved in one window over 3
+   rounds (`scratch/gpu_parts.gd`):
+
+   | | total | clouds | grass | trees | shadows | MSAA 4x to 2x | MSAA off | 3D at 0.75 | land | sea |
+   |---|---|---|---|---|---|---|---|---|---|---|
+   | meadow | 17.7 | 5.9 | 4.3 | 0.7 | 1.2 | 1.2 | 2.5 | 3.6 | -0.5 | 0.4 |
+   | woods | 17.3 | 7.0 | 2.6 | 1.0 | 1.2 | 1.1 | 2.3 | 4.0 | -0.8 | 0.4 |
+   | worst | 18.2 | 5.6 | 2.9 | 2.4 | 1.4 | 1.5 | 3.1 | 3.9 | 0.4 | 0.5 |
+   | coast | 16.0 | 6.2 | 0.8 | 1.4 | 1.1 | 1.1 | 2.5 | 4.2 | 2.0 | 1.8 |
+
+   A high-end GPU now gets the half-res march (`EndlessClouds`
+   `quality[2] = 2`, as on the Mac). That march does one pixel of each 2x2
+   block a frame, rotating, and resolves over frames. At 1440p it is still
+   720 lines high, and at 1:1 the clouds read the same, only a touch
+   softer at the billows' edges. It saves 2.6 to 3.4 ms (frozen: meadow
+   17.3 to 14.3, woods 16.2 to 12.8, worst 17.4 to 14.4, coast 15.2 to
+   12.6). `--cloud-full-res` brings back the full march.
+
+Live, full screen with vsync (the game's own setting), 30 s:
+
+| | before this round | now |
+|---|---|---|
+| meadow, 14 m up | 50.5 fps (GPU 17.8) | 62.5 fps (GPU 14.4) |
+| low by a wood, 7 m up | 56.9 fps (GPU 16.1) | 70.5 fps (GPU 12.8) |
+
+Mailbox vsync made no difference (62.1 and 70.3 fps). It was not kept.
+
+Not verified: ghosting from the half-res resolve on near clouds while
+turning fast. An older note (clouds-round-handoff.md) saw a little ghosting
+and blocky near-cloud edges at a lower resolution.
+
 ## Next
+
+- Near grass is the next GPU item (2.6 to 4.3 ms low over meadow).
+- Getting to 77 fps (two refreshes at 154 Hz) needs about 13 ms of GPU.
+  The cheapest ways there are the 3D at 0.75 scale with FSR (about 4 ms
+  back, softer) or MSAA 2x with SMAA (about 1.2 ms back).
 
 - 8x MSAA (`--msaa=8`) fits only with about 2 ms bought back elsewhere.
   Near grass in `reference_surface`'s vertex path is the biggest item

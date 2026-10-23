@@ -518,8 +518,14 @@ func _cloud_note() -> String:
 	if not look.clouds.enabled: return "  ·  clouds off (C)"
 	return "  ·  in cloud" if look.clouds.in_cloud(camera.global_position) else ""
 
+## The numbers (F1) are written HUD_EVERY ms apart: walking the land's and
+## the grass's counts and laying the label out every frame cost about 4 ms.
+const HUD_EVERY := 250
+var _hud_at := -HUD_EVERY
+
 func _show_hud() -> void:
-	if not _hud.visible: return
+	if not _hud.visible or Time.get_ticks_msec()-_hud_at < HUD_EVERY: return
+	_hud_at = Time.get_ticks_msec()
 	var p: Vector3 = plane.position
 	var c: Dictionary = land.counts()
 	var s: Dictionary = land.stats

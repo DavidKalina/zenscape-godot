@@ -238,6 +238,10 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 	celestial = sky
 	# On a Mac the half-res march is the default (endless_look.gd mac_trades).
 	if OS.get_name() == "macOS" and not "--mac-trades=0" in LaunchArgs.user_args(): quality[2] = 2
+	# So on a discrete GPU drawing at the window's own resolution: 2.6 to
+	# 3.4 ms back at 1440p, and the march still 720 lines high, its edges a
+	# touch softer (docs/design/endless-flight/aa-view-handoff.md).
+	if preload("res://scripts/endless/land_stream.gd").high_end(): quality[2] = 2
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--cloud-cover="): cover = clampf(a.get_slice("=",1).to_float(),0.0,3.0)
 		elif a == "--cloud-full-res": quality[2] = 1
