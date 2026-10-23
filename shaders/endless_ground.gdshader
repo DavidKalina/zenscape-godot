@@ -89,6 +89,11 @@ uniform vec2 turf_alpine = vec2(0.0);
 // their size, kept until a pixel is about that size), its strength.
 uniform float carpet_grain : hint_range(0.0, 2.0) = 0.6;
 uniform vec2 carpet_grain_sizes = vec2(0.75, 1.5);
+// From high up (the eye's height over the ground, m, from x to y) the turf is
+// painted, not speckled: the carpet's grain gone, broad colour patches,
+// soft streaks along the wind and darker hollows in the creases, by this much.
+uniform float high_paint : hint_range(0.0, 2.0) = 1.0;
+uniform vec2 high_paint_alt = vec2(35.0, 120.0);
 // The share of the velvet sheen the carpet's turf gives up.
 uniform float carpet_velvet_cut : hint_range(0.0, 1.0) = 0.6;
 // The night's grade (studies/celestial.gd `night_grade`, which the isles'
@@ -396,7 +401,23 @@ void fragment() {
 	float speck = speck_a * (1.0 - smoothstep(carpet_grain_sizes.x * 0.5, carpet_grain_sizes.x * 1.2, fp))
 		+ speck_b * 0.7 * (1.0 - smoothstep(carpet_grain_sizes.y * 0.5, carpet_grain_sizes.y * 1.2, fp));
 	// Only off where tufts would be pixels: near, the paint's own grain.
-	grass *= 1.0 + speck * carpet_grain * turf * beyond * smoothstep(40.0, 110.0, length(CAMERA_POSITION_WORLD - p));
+	float high_up = smoothstep(high_paint_alt.x, high_paint_alt.y, CAMERA_POSITION_WORLD.y - p.y) * high_paint;
+	grass *= 1.0 + speck * carpet_grain * turf * beyond * smoothstep(40.0, 110.0, length(CAMERA_POSITION_WORLD - p)) * (1.0 - clamp(high_up, 0.0, 1.0));
+	if (high_up > 0.0) {
+		// Broad patches of lighter and deeper, warmer and cooler meadow.
+		float hp = turf * high_up * (1.0 - smoothstep(60.0, 400.0, fp));
+		grass *= 1.0 + (broad * 0.30 + wide * 0.34 + mid * 0.16) * hp;
+		grass *= mix(vec3(1.0), wide > 0.0 ? vec3(1.07, 1.03, 0.86) : vec3(0.88, 0.98, 1.06), clamp(abs(wide) * 0.6, 0.0, 1.0) * hp);
+		// Soft streaks, long along the wind, as if combed.
+		vec2 sdir = normalize(zs_sun_direction.xz + vec2(0.6, 0.3));
+		vec2 sperp = vec2(-sdir.y, sdir.x);
+		float streak = zs_noise(vec2(dot(gxz, sdir) / 190.0, dot(gxz, sperp) / 16.0) + 7.0) - 0.5;
+		streak += (zs_noise(vec2(dot(gxz, sdir) / 90.0, dot(gxz, sperp) / 7.0) + 19.0) - 0.5) * 0.5;
+		grass *= 1.0 + streak * 0.30 * hp * (1.0 - smoothstep(3.0, 14.0, fp));
+		// Hollows and creases darker, as shade settles in them.
+		float hollow = max(-wide, 0.0) * 0.16 + max(-mid, 0.0) * 0.08 + smoothstep(0.97, 0.86, n.y) * 0.22;
+		grass *= 1.0 - hollow * hp;
+	}
 
 	// --- Rock, sand, snow -----------------------------------------------------
 	float rock_edge = (zs_noise(gxz / 9.0) - 0.5) * 0.10 + mid * 0.08;
