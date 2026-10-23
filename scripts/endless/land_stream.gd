@@ -29,6 +29,24 @@ const CELLS := 64
 const BASE := 64.0
 const TOP_LEVEL := 7
 const ROOT_REACH := 1
+## The draw distance: --view=K (VIEW_RANGE) draws the haze's end
+## (EndlessLook FOG_END), the camera's far plane, the far trees (LandTrees
+## FAR), the clouds' march (EndlessClouds REACH) and the land's roots K
+## times as far. A discrete GPU off the Mac (high_end) draws HIGH_VIEW as
+## far by default: about 0.5 to 1 ms on an RTX 4070 Super at 1440p
+## (docs/design/endless-flight/aa-view-handoff.md).
+const VIEW_RANGE := Vector2(0.5,2.5)
+const HIGH_VIEW := 2.0
+static func view() -> float:
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with("--view="): return clampf(float(a.get_slice("=",1)),VIEW_RANGE.x,VIEW_RANGE.y)
+	return HIGH_VIEW if high_end() else 1.0
+
+## A discrete GPU, not a Mac's: the draw distance and SMAA (EndlessLook
+## _frame_trades) go up by default; --high-end=0 leaves them as before.
+static func high_end() -> bool:
+	if "--high-end=0" in preload("res://scripts/launch_args.gd").user_args(): return false
+	return OS.get_name() != "macOS" and RenderingServer.get_video_adapter_type() == RenderingDevice.DEVICE_TYPE_DISCRETE_GPU
 ## A chunk splits while the eye is nearer than SPLIT times its size.
 const SPLIT := 1.3
 ## The tree is looked at again once the eye has moved REPLAN m.
@@ -55,6 +73,8 @@ var stats := {"asked":0,"built":0,"committed":0,"freed":0,"slowest_commit_ms":0.
 ## (scripts/endless/endless_look.gd) passed to `setup`.
 var material: Material
 
+## ROOT_REACH, or more under --view (view()).
+var root_reach := ROOT_REACH
 var _chunks := {}          # key -> {node, heights, level, ix, iz}
 var _pending := {}         # key -> true (a task is making it)
 var _queue: Array = []     # keys wanted, not yet asked
@@ -72,6 +92,7 @@ func setup(land_seed: int, ground: Material = null) -> void:
 	seed = land_seed
 	field = Field.new(seed)
 	material = ground
+	root_reach = maxi(ROOT_REACH,ceili(ROOT_REACH*view()))
 	if material == null:
 		var plain := StandardMaterial3D.new()
 		plain.vertex_color_use_as_albedo = true
@@ -144,8 +165,8 @@ func _plan() -> void:
 	var root := size_of(TOP_LEVEL)
 	var cx := floori(eye.x/root)
 	var cz := floori(eye.z/root)
-	for dz in range(-ROOT_REACH,ROOT_REACH+1):
-		for dx in range(-ROOT_REACH,ROOT_REACH+1):
+	for dz in range(-root_reach,root_reach+1):
+		for dx in range(-root_reach,root_reach+1):
 			_split(TOP_LEVEL,cx+dx,cz+dz)
 	_queue.clear()
 	for key: Vector3i in _wanted.keys():
@@ -297,8 +318,8 @@ func _show() -> void:
 	var root := size_of(TOP_LEVEL)
 	var cx := floori(_planned_at.x/root)
 	var cz := floori(_planned_at.z/root)
-	for dz in range(-ROOT_REACH,ROOT_REACH+1):
-		for dx in range(-ROOT_REACH,ROOT_REACH+1):
+	for dz in range(-root_reach,root_reach+1):
+		for dx in range(-root_reach,root_reach+1):
 			var root_key := Vector3i(TOP_LEVEL,cx+dx,cz+dz)
 			var got: Variant = _cover(root_key)
 			# A root not yet covered whole (new at the far edge) draws what

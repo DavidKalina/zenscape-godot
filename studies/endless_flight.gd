@@ -253,7 +253,7 @@ func _build_camera() -> void:
 	# With the look, the haze is all sky by its end: nothing past it shows,
 	# and the aerial perspective reads the sharp sky there (Godot picks the
 	# radiance's blur by depth over the far plane).
-	camera.far = EndlessLook.FOG_END*1.04 if look != null else FOG_END*2.2
+	camera.far = EndlessLook.FOG_END*LandStream.view()*1.04 if look != null else FOG_END*2.2
 	add_child(camera)
 	camera.current = true
 
@@ -289,7 +289,7 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  land on the meadows  ·  R up again  ·  C clouds  ·  G grass  ·  F1 numbers"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  land on the meadows  ·  R up again  ·  C clouds  ·  G grass  ·  F1 numbers  ·  F2 3D scale"
 	layer.add_child(_hint)
 
 # --- The plane ------------------------------------------------------------------------
@@ -500,6 +500,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		match (event as InputEventKey).keycode:
 			KEY_F: flaps = not flaps
 			KEY_F1: _hud.visible = not _hud.visible
+			KEY_F2: _next_scale()
 			KEY_R: respawn()
 			KEY_T:
 				if look != null: look.next_hour()
@@ -513,22 +514,43 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_E: _lean_tapped(1.0)
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
+## F2: the 3D's resolution through SCALES (the window's own, then upscaled
+## by FSR), to judge sharpness against the frame rate; shown on the hint
+## line and the numbers.
+const SCALES := [1.0,0.85,0.75,0.67]
+func _next_scale() -> void:
+	var rr := preload("res://scripts/render_resolution.gd")
+	var now := get_viewport().scaling_3d_scale
+	var i := 0
+	for k in SCALES.size():
+		if absf(SCALES[k]-now) < 0.01: i = k
+	rr.scale_override = SCALES[(i+1)%SCALES.size()]
+	rr.apply(get_tree().root,rr.load_cap())
+	_hint.text = _hint.text.get_slice("  ·  3D at",0)+"  ·  3D at %d%%" % roundi(rr.scale_override*100.0)
+
 func _cloud_note() -> String:
 	if look.clouds == null: return "  ·  no clouds"
 	if not look.clouds.enabled: return "  ·  clouds off (C)"
 	return "  ·  in cloud" if look.clouds.in_cloud(camera.global_position) else ""
 
+## The numbers (F1) are written HUD_EVERY ms apart: walking the land's and
+## the grass's counts and laying the label out every frame cost about 4 ms.
+const HUD_EVERY := 250
+var _hud_at := -HUD_EVERY
+
 func _show_hud() -> void:
-	if not _hud.visible: return
+	if not _hud.visible or Time.get_ticks_msec()-_hud_at < HUD_EVERY: return
+	_hud_at = Time.get_ticks_msec()
 	var p: Vector3 = plane.position
 	var c: Dictionary = land.counts()
 	var s: Dictionary = land.stats
 	# The GPU's own time, where the driver reports it (not on Metal).
 	var gpu := RenderingServer.viewport_get_measured_render_time_gpu(get_viewport().get_viewport_rid())
-	_hud.text = "seed %d  ·  %s  ·  %.1f m/s  ·  %.0f m over the ground  ·  flaps %s\nat %.0f, %.0f  ·  %d fps (%.1f ms)%s%s\nland: %d drawn, %d standing, %d wanted, %d building, %d queued, %d colliders\nbuilt %d (%.1f ms each on a worker), slowest commit %.2f ms%s" % [
+	_hud.text = "seed %d  ·  %s  ·  %.1f m/s  ·  %.0f m over the ground  ·  flaps %s\nat %.0f, %.0f  ·  %d fps (%.1f ms)%s%s%s\nland: %d drawn, %d standing, %d wanted, %d building, %d queued, %d colliders\nbuilt %d (%.1f ms each on a worker), slowest commit %.2f ms%s" % [
 		seed,ManualLanding.NAMES[hand_landing.phase],float(plane.speed),p.y-maxf(field.height(p.x,p.z),Field.SEA_Y),"down" if flaps else "up",
 		p.x,p.z,Engine.get_frames_per_second(),1000.0/maxf(Engine.get_frames_per_second(),1.0),
 		("  ·  gpu %.2f ms" % gpu) if gpu > 0.0 else "",
+		"  ·  3D at %d%%" % roundi(get_viewport().scaling_3d_scale*100.0),
 		("  ·  %s, %05.2f h%s" % [look.mood_title(),look.hour(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
 		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+trees.note()]
