@@ -203,90 +203,13 @@ func _build(key: Vector3i, land_seed: int) -> void:
 	f.detail = step
 	var x0 := key.y*s
 	var z0 := key.z*s
-	var n := CELLS+1
-	var w := n+2
-	var hs := PackedFloat32Array()
-	var ms := PackedFloat32Array()
-	var cv := PackedByteArray()
-	# The river (land_field last_river_*): signed distance from its line,
-	# water half-width, level and flow, per grid point.
-	var rv := PackedFloat32Array()
-	hs.resize(w*w)
-	ms.resize(w*w)
-	cv.resize(w*w*2)
-	rv.resize(w*w*5)
-	for j in w:
-		for i in w:
-			var got: Vector2 = f.sample(x0+(i-1)*step,z0+(j-1)*step)
-			hs[j*w+i] = got.x
-			ms[j*w+i] = got.y
-			cv[(j*w+i)*2] = int(clampf(f.last_cavity,0.0,1.0)*255.0)
-			cv[(j*w+i)*2+1] = int(clampf(f.last_ridge,0.0,1.0)*255.0)
-			var q := (j*w+i)*5
-			rv[q] = clampf(f.last_river_r,-1000.0,1000.0)
-			rv[q+1] = f.last_river_w
-			rv[q+2] = f.last_river_y if f.last_river_y > -INF else Field.SEA_Y-100.0
-			rv[q+3] = f.last_river_flow.x
-			rv[q+4] = f.last_river_flow.y
-	var verts := PackedVector3Array()
-	var normals := PackedVector3Array()
-	var colours := PackedColorArray()
-	var carved := PackedByteArray()
-	var river := PackedFloat32Array()
-	var heights := PackedFloat32Array()
-	verts.resize(n*n+4*n)
-	normals.resize(n*n+4*n)
-	colours.resize(n*n+4*n)
-	carved.resize((n*n+4*n)*4)
-	river.resize((n*n+4*n)*3)
-	heights.resize(n*n)
-	for j in n:
-		for i in n:
-			var k := (j+1)*w+i+1
-			var y := hs[k]
-			var nx := hs[k-1]-hs[k+1]
-			var nz := hs[k-w]-hs[k+w]
-			var normal := Vector3(nx,2.0*step,nz).normalized()
-			var v := j*n+i
-			verts[v] = Vector3(i*step,y,j*step)
-			normals[v] = normal
-			# Its alpha the meadow, for the look's ground shader.
-			var c: Color = f.colour(x0+i*step,z0+j*step,y,normal.y,ms[k])
-			c.a = ms[k]
-			colours[v] = c
-			# The carve's groove and crest, for the rock (CUSTOM0.xy).
-			carved[v*4] = cv[k*2]
-			carved[v*4+1] = cv[k*2+1]
-			# The flow for the water's ripples (CUSTOM0.zw, RIVER_FLOW_MAX m/s
-			# at the ends), and the river (CUSTOM1, floats): its signed
-			# distance, half-width (the skirt's negative, so the shader never
-			# lifts it to the water) and level.
-			carved[v*4+2] = int(clampf(rv[k*5+3]/RIVER_FLOW_MAX*0.5+0.5,0.0,1.0)*255.0)
-			carved[v*4+3] = int(clampf(rv[k*5+4]/RIVER_FLOW_MAX*0.5+0.5,0.0,1.0)*255.0)
-			river[v*3] = rv[k*5]
-			river[v*3+1] = rv[k*5+1]
-			river[v*3+2] = rv[k*5+2]
-			heights[v] = y
-	# The skirt: each edge's vertices again, dropped.
-	var drop := step*SKIRT+SKIRT_MIN
-	var edges := _edges()
-	for e in 4:
-		for t in n:
-			var from: int = edges[e][t]
-			var v := n*n+e*n+t
-			verts[v] = verts[from]-Vector3(0.0,drop,0.0)
-			normals[v] = normals[from]
-			colours[v] = colours[from]
-			carved[v*4] = carved[from*4]
-			carved[v*4+1] = carved[from*4+1]
-			carved[v*4+2] = carved[from*4+2]
-			carved[v*4+3] = carved[from*4+3]
-			river[v*3] = river[from*3]
-			river[v*3+1] = -river[from*3+1]
-			river[v*3+2] = river[from*3+2]
-	var ms_took := (Time.get_ticks_usec()-began)/1000.0
+	# The whole chunk in one call (LandField.build_chunk: native when built,
+	# else the same loops in GDScript).
+	var made: Dictionary = f.build_chunk(x0,z0,step,CELLS,step*SKIRT+SKIRT_MIN,RIVER_FLOW_MAX)
+	made.key = key
+	made.ms = (Time.get_ticks_usec()-began)/1000.0
 	_done_lock.lock()
-	_done.append({"key":key,"verts":verts,"normals":normals,"colours":colours,"carved":carved,"river":river,"heights":heights,"ms":ms_took})
+	_done.append(made)
 	_done_lock.unlock()
 
 ## The grid's vertex index along each edge, in order: -z, +x, +z, -x.

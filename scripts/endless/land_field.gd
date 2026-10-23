@@ -4,7 +4,10 @@ extends RefCounted
 ## land (docs/design/endless-flight/round-1-handoff.md,
 ## terrain-shape-handoff.md). Plain maths over FastNoiseLite; each worker
 ## builds its own field (`new(seed)`), so chunks are made off the main
-## thread without sharing one.
+## thread without sharing one. The maths runs natively (C++,
+## native/terrain_kernels/land_field.h) when the library is built, else in
+## GDScript (`GDField` below), the same land either way
+## (native-land-handoff.md); --land-native=0 the GDScript field.
 ##
 ## The land, in metres over the sea (`SEA_Y` world):
 ##   continents  CONTINENT, very broad: where land stands and where it
@@ -215,721 +218,1033 @@ const MEADOW := Color(0.52,0.64,0.28)
 const ROCK := Color(0.47,0.44,0.40)
 const SNOW_COLOUR := Color(0.93,0.94,0.97)
 
+## --- The field --------------------------------------------------------------
+## LandField is the public face: the same members and methods as ever, each
+## handed to the field that does the work, the native one
+## (native/terrain_kernels/land_field.h, ZenScapeLandField) when the library
+## is built, else the GDScript one below (`GDField`), which is the reference
+## the native one matches (docs/design/endless-flight/native-land-handoff.md).
+## --land-native=0 (or --gdscript-kernels) runs the GDScript field;
+## --land-libm the native one on the C library's exp/pow/sin/cos (as
+## GDScript), to check the two match bit for bit on one machine.
+
+## The native field's version this script calls (ZenScapeLandField `version`).
+const NATIVE_VERSION := 1
+const NATIVE_CLASS := &"ZenScapeLandField"
+static var _native_state := -1
+static var _native_lock := Mutex.new()
+
 var seed := 0
-## The flags (see the top).
-var mountains := 1.0
-var peaks := 1.0
-var valleys := 1.0
-var old_land := false
-var _continent := FastNoiseLite.new()
-var _hills := FastNoiseLite.new()
-var _mask := FastNoiseLite.new()
-var _ridges := FastNoiseLite.new()
-var _meadows := FastNoiseLite.new()
-var _tint := FastNoiseLite.new()
-var _warp := FastNoiseLite.new()
-var _range := FastNoiseLite.new()
-var _peak := FastNoiseLite.new()
-var _valley := FastNoiseLite.new()
-var _valley_warp := FastNoiseLite.new()
-var _valley_wide := FastNoiseLite.new()
-var _floor_half := WorldScale.opening(TOY_VALLEY)*0.5
-## What the last `sample` found (read by `shape`, for placing things such as
-## the arches, scripts/endless/arch_plan.gd): how much of a range stands
-## there (0..1), how inland it is, the distance to the nearest valley's line
-## (INF where none reaches), that valley's floor half-width and side width,
-## and the way across the valley (XZ, unit).
-var last_mountain := 0.0
-var last_inland := 0.0
-var last_valley := INF
-var last_half := 0.0
-var last_side := 0.0
-var last_across := Vector2.RIGHT
-## The nearest valley's floor (world y; INF where none reaches), read by the
-## valley fog's map (scripts/endless/endless_clouds.gd `fog_image`).
-var last_floor := INF
-## The carve's strength (--carve=X, 1; --no-carve 0) and the grid step (m)
-## the caller samples at (land_stream sets its chunk's; 0 is full detail).
-var carve := 1.0
-## Each form's share (--carve-blocks=, --carve-ledges=, --carve-gullies=; 1).
-var carve_blocks := 1.0
-var carve_ledges := 1.0
-var carve_gullies := 1.0
-var detail := 0.0
-## What the last `sample` carved, for the ground shader (land_stream's
-## CUSTOM0): how deep in a groove or a ledge's inner corner (0..1) and how
-## much on a buttress's crest or a ledge's lip (0..1).
-var last_cavity := 0.0
-var last_ridge := 0.0
-var _floor := -INF
-# The carve's memos (samples come in rows, so neighbours share cells).
-var _bs_key := Vector2i(1<<30,0)
-var _bs_00 := Vector3.ZERO
-var _bs_10 := Vector3.ZERO
-var _bs_01 := Vector3.ZERO
-var _bs_11 := Vector3.ZERO
-var _fc_key := Vector2i(1<<30,0)
-var _fc := PackedFloat32Array()
-var _gc_key: Array[Vector2i] = [Vector2i(1<<30,0),Vector2i(1<<30,0),Vector2i(1<<30,0)]
-var _gc: Array[PackedFloat32Array] = [PackedFloat32Array([0,0,0,0,0,0,0,0]),PackedFloat32Array([0,0,0,0,0,0,0,0]),PackedFloat32Array([0,0,0,0,0,0,0,0])]
-const LAT_SLOTS := 128
-var _node_key := PackedInt64Array()
-var _node_set := PackedByteArray()
-var _node_v := PackedFloat64Array()
-var _h_key := PackedInt64Array()
-var _h_set := PackedByteArray()
-var _h_v := PackedFloat64Array()
-var _bench_warp := FastNoiseLite.new()
-var _bench_band := FastNoiseLite.new()
-var _gully_amp := FastNoiseLite.new()
-## Rivers (see RIVER_*): on (1) or off (--no-rivers 0), and the width and
-## bank knobs.
-var rivers := 1.0
-var river_width := 1.0
-var river_drop := 1.0
-## The floor's full cut and the hollows' fill (1 on, 0 off: the valleys as
-## they were), for the flats check (scratch) and --river-cut= / --river-fill=.
-var river_cut := 1.0
-var river_fill := 1.0
-## The mouths' opening out, deepening and easing (RIVER_MOUTH_*; 1 on, 0 the
-## mouths as before, between a share of it: --river-mouth=X), and the
-## funnel's width (RIVER_FLARE times --river-flare=X, 1).
-var river_mouth := 1.0
-var river_flare := 1.0
-## What the last `sample` found of the river (read by land_stream for the
-## ground shader, the grass, the arches and the flight): the signed
-## distance from the river's middle line (m, INF where no river reaches),
-## the water's half-width (0: no river), the water's level (world y), the
-## distance outside the water's edge (negative in the water, INF none) and
-## the flow (XZ, m/s, downhill along the valley).
-var last_river := INF
-var last_river_r := INF
-var last_river_w := 0.0
-var last_river_y := -INF
-var last_river_flow := Vector2.ZERO
-# The river's bank top (world y) and its strength, for the cut in `sample`.
-var _river_top := -INF
-var _river_k := 0.0
-# The mouth's share (0 upstream, 1 at the sea) and the bed's depth under
-# the water at the middle (RIVER_BED, more at a mouth), for `_river`.
-var _river_mouth := 0.0
-var _river_bed := RIVER_BED
-var _river_side := FastNoiseLite.new()
-var _river_meander := FastNoiseLite.new()
-var _river_wide := FastNoiseLite.new()
+## The field doing the work (ZenScapeLandField or GDField).
+var _impl: Object
+var _native := false
+
+## The flags (see the top), read and set through to the field.
+var mountains: float:
+	get: return _impl.mountains
+	set(v): _impl.mountains = v
+var peaks: float:
+	get: return _impl.peaks
+	set(v): _impl.peaks = v
+var valleys: float:
+	get: return _impl.valleys
+	set(v): _impl.valleys = v
+var old_land: bool:
+	get: return _impl.old_land
+	set(v): _impl.old_land = v
+var carve: float:
+	get: return _impl.carve
+	set(v): _impl.carve = v
+var carve_blocks: float:
+	get: return _impl.carve_blocks
+	set(v): _impl.carve_blocks = v
+var carve_ledges: float:
+	get: return _impl.carve_ledges
+	set(v): _impl.carve_ledges = v
+var carve_gullies: float:
+	get: return _impl.carve_gullies
+	set(v): _impl.carve_gullies = v
+## The grid step (m) the caller samples at (land_stream sets its chunk's; 0
+## is full detail).
+var detail: float:
+	get: return _impl.detail
+	set(v): _impl.detail = v
+var rivers: float:
+	get: return _impl.rivers
+	set(v): _impl.rivers = v
+var river_width: float:
+	get: return _impl.river_width
+	set(v): _impl.river_width = v
+var river_drop: float:
+	get: return _impl.river_drop
+	set(v): _impl.river_drop = v
+var river_cut: float:
+	get: return _impl.river_cut
+	set(v): _impl.river_cut = v
+var river_fill: float:
+	get: return _impl.river_fill
+	set(v): _impl.river_fill = v
+var river_mouth: float:
+	get: return _impl.river_mouth
+	set(v): _impl.river_mouth = v
+var river_flare: float:
+	get: return _impl.river_flare
+	set(v): _impl.river_flare = v
+## What the last `sample` found (see GDField's for each).
+var last_mountain: float:
+	get: return _impl.last_mountain
+var last_inland: float:
+	get: return _impl.last_inland
+var last_valley: float:
+	get: return _impl.last_valley
+var last_half: float:
+	get: return _impl.last_half
+var last_side: float:
+	get: return _impl.last_side
+var last_across: Vector2:
+	get: return _impl.last_across
+var last_floor: float:
+	get: return _impl.last_floor
+var last_cavity: float:
+	get: return _impl.last_cavity
+var last_ridge: float:
+	get: return _impl.last_ridge
+var last_river: float:
+	get: return _impl.last_river
+var last_river_r: float:
+	get: return _impl.last_river_r
+var last_river_w: float:
+	get: return _impl.last_river_w
+var last_river_y: float:
+	get: return _impl.last_river_y
+var last_river_flow: Vector2:
+	get: return _impl.last_river_flow
 
 func _init(land_seed := 0) -> void:
 	seed = land_seed
+	var k := {"floor_half":WorldScale.opening(TOY_VALLEY)*0.5}
+	var want_native := true
 	for arg: String in preload("res://scripts/launch_args.gd").user_args():
-		if arg.begins_with("--mountains="): mountains = maxf(0.0,float(arg.get_slice("=",1)))
-		elif arg.begins_with("--peaks="): peaks = maxf(0.0,float(arg.get_slice("=",1)))
-		elif arg.begins_with("--valleys="): valleys = maxf(0.0,float(arg.get_slice("=",1)))
-		elif arg == "--no-valleys": valleys = 0.0
-		elif arg == "--old-land": old_land = true
-		elif arg == "--no-carve": carve = 0.0
-		elif arg.begins_with("--carve="): carve = maxf(0.0,float(arg.get_slice("=",1)))
-		elif arg.begins_with("--carve-blocks="): carve_blocks = maxf(0.0,float(arg.get_slice("=",1)))
-		elif arg.begins_with("--carve-ledges="): carve_ledges = maxf(0.0,float(arg.get_slice("=",1)))
-		elif arg.begins_with("--carve-gullies="): carve_gullies = maxf(0.0,float(arg.get_slice("=",1)))
-		elif arg == "--no-rivers": rivers = 0.0
-		elif arg.begins_with("--river-width="): river_width = maxf(0.0,float(arg.get_slice("=",1)))
-		elif arg.begins_with("--river-drop="): river_drop = maxf(0.0,float(arg.get_slice("=",1)))
-		elif arg.begins_with("--river-cut="): river_cut = maxf(0.0,float(arg.get_slice("=",1)))
-		elif arg.begins_with("--river-fill="): river_fill = maxf(0.0,float(arg.get_slice("=",1)))
-		elif arg.begins_with("--river-mouth="): river_mouth = clampf(float(arg.get_slice("=",1)),0.0,1.0)
-		elif arg.begins_with("--river-flare="): river_flare = maxf(0.0,float(arg.get_slice("=",1)))
-	_noise(_continent,1,CONTINENT,3,FastNoiseLite.FRACTAL_FBM)
-	_noise(_hills,2,HILLS,4,FastNoiseLite.FRACTAL_FBM)
-	_noise(_mask,3,MOUNTAINS if old_land else RANGE_MASK,2,FastNoiseLite.FRACTAL_FBM)
-	_noise(_ridges,4,900.0 if old_land else RIDGES,5,FastNoiseLite.FRACTAL_RIDGED)
-	_noise(_meadows,5,MEADOWS,2,FastNoiseLite.FRACTAL_FBM)
-	_noise(_tint,6,180.0,2,FastNoiseLite.FRACTAL_FBM)
-	_noise(_warp,7,WARP,2,FastNoiseLite.FRACTAL_FBM)
-	_noise(_range,8,RANGES,2,FastNoiseLite.FRACTAL_FBM)
-	_noise(_peak,9,PEAK_SCALE,2,FastNoiseLite.FRACTAL_FBM)
-	_noise(_valley,10,VALLEYS,2,FastNoiseLite.FRACTAL_FBM)
-	_noise(_valley_warp,11,VALLEY_WARP,1,FastNoiseLite.FRACTAL_NONE)
-	_noise(_valley_wide,12,900.0,1,FastNoiseLite.FRACTAL_NONE)
-	_noise(_bench_warp,13,BENCH_WANDER,2,FastNoiseLite.FRACTAL_FBM)
-	_noise(_bench_band,14,BENCH_BANDS,1,FastNoiseLite.FRACTAL_NONE)
-	_noise(_gully_amp,15,1.0,1,FastNoiseLite.FRACTAL_NONE)
-	_noise(_river_side,16,RIVER_SIDE,1,FastNoiseLite.FRACTAL_NONE)
-	_noise(_river_meander,17,RIVER_MEANDER,1,FastNoiseLite.FRACTAL_NONE)
-	_noise(_river_wide,18,RIVER_WIDE,1,FastNoiseLite.FRACTAL_NONE)
-
-func _noise(n: FastNoiseLite, salt: int, scale: float, octaves: int, kind: int) -> void:
-	n.seed = seed*7919+salt*104729
-	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	n.frequency = 1.0/scale
-	n.fractal_type = kind
-	n.fractal_octaves = octaves
-
-## Vector2(world height, meadow 0..1) at a world XZ point: the land's
-## broad shape (`_broad`), then the erosion carved into its steep rock
-## (`_carve`).
-func sample(x: float, z: float) -> Vector2:
-	if old_land:
-		last_river = INF
-		last_river_w = 0.0
-		return _old_sample(x,z)
-	var s := _broad(x,z)
-	last_cavity = 0.0
-	last_ridge = 0.0
-	# The river's, kept through the carve (it samples the broad land round).
-	var rr := last_river_r
-	var rw := last_river_w
-	var ry := last_river_y
-	var rf := last_river_flow
-	var rtop := _river_top
-	var rk := _river_k
-	var rm := _river_mouth
-	var rb := _river_bed
-	if carve > 0.0 and last_mountain > CARVE_MOUNTAIN.x and detail < CARVE_DETAIL_OFF:
-		# The carve samples the broad land around; `shape` keeps this point's.
-		var k_mountain := last_mountain
-		var k_inland := last_inland
-		var k_valley := last_valley
-		var k_half := last_half
-		var k_side := last_side
-		var k_across := last_across
-		s.x = _carve(x,z,s.x,s.y,k_mountain,_floor)
-		last_mountain = k_mountain
-		last_inland = k_inland
-		last_valley = k_valley
-		last_half = k_half
-		last_side = k_side
-		last_across = k_across
-	last_river_r = rr
-	last_river_w = rw
-	last_river_y = ry
-	last_river_flow = rf
-	_river_top = rtop
-	_river_k = rk
-	_river_mouth = rm
-	_river_bed = rb
-	last_river = INF
-	if rk > 0.0:
-		var reach := rw+RIVER_BANK+RIVER_RAMP+(RIVER_PLAIN.y*RIVER_PLAIN_SPREAD if last_inland < 0.95 else 0.0)
-		if absf(rr) < reach: s.x = _river(s.x)
-		else: last_river = absf(rr)-rw
-	return s
-
-## The river's channel at a point whose land (after the carve) is `h`
-## (world), from what `_broad` left in last_river_*: by the river the land
-## is raised to the banks' top where a hollow dips under it, then the
-## channel cut: soft banks down to the water, the bed under it. Where the
-## land still falls away under the water (a lake, the coast) the river
-## goes (its half-width to 0), so it ends plainly. Sets `last_river`.
-func _river(h: float) -> float:
-	var w := last_river_w
-	var s := absf(last_river_r)
-	var water := last_river_y
-	var top := _river_top
-	var drop := top-water
-	var core := w+RIVER_BANK
-	if s > core+RIVER_RAMP+RIVER_PLAIN.y*RIVER_PLAIN_SPREAD:
-		last_river = s-w
-		return h
-	# The bank raised through a hollow (not at the coast, where the sea takes it).
-	var raise := (1.0-smoothstep(core,core+RIVER_RAMP,s))*smoothstep(0.5,3.0,water-SEA_Y)*_river_k
-	if h < top and raise > 0.0: h = lerpf(h,top,raise)
-	# Land standing over the banks' top by the river (where the valley cuts
-	# little, near the coast) is eased down to it, a flood plain; where it
-	# stands higher than RIVER_PLAIN the river ends.
-	var over := h-top
-	if over > 0.0:
-		var plain := (1.0-smoothstep(core,core+RIVER_RAMP+over*RIVER_PLAIN_SPREAD,s))*_river_k*(1.0-smoothstep(RIVER_PLAIN.x,RIVER_PLAIN.y,over))*(1.0-smoothstep(0.0,0.15,last_mountain))*(1.0-smoothstep(0.55,0.95,last_inland))
-		h -= over*plain
-	# Where the land is still under the water, or over the plain, no river.
-	var banked := smoothstep(water-2.5,water-0.4,h)*(1.0-smoothstep(RIVER_PLAIN.x*0.6,RIVER_PLAIN.x,h-top))
-	w *= banked
-	last_river_w = w
-	last_river = s-w
-	if w <= 0.0: return h
-	core = w+RIVER_BANK
-	# The cut: the bed under the water, soft banks up to the floor and on
-	# up (steeper) where higher land stands by the river.
-	var cut: float
-	if s < w:
-		# At a mouth the bed is deeper and flatter across (the sea fills it).
-		var u := s/w
-		cut = water-_river_bed*(1.0-pow(u,2.0+2.0*_river_mouth))
-	elif s < core:
-		var u := (s-w)/RIVER_BANK
-		cut = water+drop*u*u*(3.0-2.0*u)
+		if arg.begins_with("--mountains="): k.mountains = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--peaks="): k.peaks = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--valleys="): k.valleys = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg == "--no-valleys": k.valleys = 0.0
+		elif arg == "--old-land": k.old_land = true
+		elif arg == "--no-carve": k.carve = 0.0
+		elif arg.begins_with("--carve="): k.carve = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--carve-blocks="): k.carve_blocks = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--carve-ledges="): k.carve_ledges = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--carve-gullies="): k.carve_gullies = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg == "--no-rivers": k.rivers = 0.0
+		elif arg.begins_with("--river-width="): k.river_width = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--river-drop="): k.river_drop = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--river-cut="): k.river_cut = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--river-fill="): k.river_fill = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--river-mouth="): k.river_mouth = clampf(float(arg.get_slice("=",1)),0.0,1.0)
+		elif arg.begins_with("--river-flare="): k.river_flare = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg == "--land-native=0" or arg == "--gdscript-kernels": want_native = false
+		elif arg == "--land-libm": k.libm = true
+	if want_native and native_available():
+		_impl = ClassDB.instantiate(NATIVE_CLASS)
+		_impl.configure(land_seed,float(k.floor_half),k)
+		_native = true
 	else:
-		var o := s-core
-		cut = water+drop+o*(1.0+o*0.04)
-	# A coarse chunk's grid can't hold the channel: it fades out there (the
-	# ground shader still draws the water, per pixel).
-	var keep := 1.0
-	if detail > 1.0: keep = smoothstep(2.5,4.5,(core*2.0)/detail)
-	if cut < h: h -= (h-cut)*keep*banked
-	return h
+		_impl = GDField.new(land_seed,k)
 
-## The land before the carve: continents, hills, ranges, meadows, valleys.
-func _broad(x: float, z: float) -> Vector2:
-	var base := _continent.get_noise_2d(x,z)*CONTINENT_SWING*2.0+CONTINENT_LIFT
-	# Inland the continents level off at LOWLAND m: the peaks come from
-	# the ranges, not from the continents.
-	if base > 0.0: base = LOWLAND*(1.0-exp(-base/LOWLAND))
-	var inland := smoothstep(-6.0,18.0,base)
-	var hills := _hills.get_noise_2d(x,z)*HILL_TALL*2.0*(0.35+0.65*inland)
-	var h := base+hills
-	# The ranges: the crest lines of a warped noise, where the mask allows.
-	var mountain := 0.0
-	last_valley = INF
-	last_floor = INF
-	last_inland = inland
-	_floor = -INF
-	if inland > 0.0 and mountains > 0.0:
-		var band := RANGE_BAND+Vector2.ONE*(1.0-mountains)*0.35
-		var where := smoothstep(band.x,band.y,_mask.get_noise_2d(x,z))*inland
-		if where > 0.0:
-			var wx := x+_warp.get_noise_2d(x,z)*WARP_MOVE
-			var wz := z+_warp.get_noise_2d(x+7919.0,z-3301.0)*WARP_MOVE
-			var off := absf(_range.get_noise_2d(wx,wz))/RANGE_WIDTH
-			if off < 1.0:
-				var crest := 1.0-off
-				crest = crest*crest*(3.0-2.0*crest)
-				mountain = crest*where
-				var tall := lerpf(PEAK_TALL.x,PEAK_TALL.y,clampf(_peak.get_noise_2d(x,z)*0.9+0.5,0.0,1.0))*peaks
-				var ridge := _ridges.get_noise_2d(x,z)*0.5+0.5
-				# A massif under the ridged crests; the ridges rise with it.
-				h += tall*(0.4*pow(mountain,1.4)+0.75*ridge*ridge*mountain*mountain)
-	var meadow := smoothstep(MEADOW_BAND.x,MEADOW_BAND.y,_meadows.get_noise_2d(x,z))*inland*(1.0-smoothstep(0.0,0.35,mountain))
-	if meadow > 0.0:
-		var flat := maxf(base+hills*MEADOW_KEEP,MEADOW_ABOVE)
-		h = lerpf(h,flat,meadow)
-	# The valleys: carved along the zero lines of a warped noise, their
-	# distance read from the noise over its slope.
-	last_river_r = INF
-	last_river_w = 0.0
-	last_river_y = -INF
-	last_river_flow = Vector2.ZERO
-	_river_top = -INF
-	_river_k = 0.0
-	_river_mouth = 0.0
-	_river_bed = RIVER_BED
-	if inland > 0.0 and valleys > 0.0:
-		var vx := x+_valley_warp.get_noise_2d(x,z)*VALLEY_WARP_MOVE
-		var vz := z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*VALLEY_WARP_MOVE
-		var v := _valley.get_noise_2d(vx,vz)
-		var e := 6.0
-		var gx := (_valley.get_noise_2d(vx+e,vz)-v)/e
-		var gz := (_valley.get_noise_2d(vx,vz+e)-v)/e
-		var d := absf(v)/maxf(sqrt(gx*gx+gz*gz),0.25/VALLEYS)
-		var half := _floor_half*lerpf(VALLEY_SWING.x,VALLEY_SWING.y,clampf(_valley_wide.get_noise_2d(x,z)*0.8+0.5,0.0,1.0))
-		var side := lerpf(VALLEY_SIDE.x,VALLEY_SIDE.y,smoothstep(0.0,0.6,mountain))*maxf(valleys,1.0)
-		last_valley = d
-		last_half = half
-		last_side = side
-		if gx*gx+gz*gz > 0.0: last_across = Vector2(gx,gz).normalized()
-		var floor_y := maxf(base+hills*VALLEY_KEEP,MEADOW_ABOVE)
-		last_floor = SEA_Y+floor_y
-		if d < half+side:
-			var fill := 0.0
-			if rivers > 0.0:
-				# The river down the floor: its line, width, banks and level,
-				# worked out only within its reach of the floor (RIVER_REACH
-				# past the floor's edge, more near a coast for the plain).
-				var k := smoothstep(0.0,0.12,inland)*minf(valleys,1.0)*minf(rivers,1.0)
-				var ds := v/maxf(sqrt(gx*gx+gz*gz),0.25/VALLEYS)
-				fill = smoothstep(0.5,3.0,base-RIVER_DROP.y*river_drop)*k
-				# To one side: its middle near the floor's edge, at the foot of
-				# that side (RIVER_HUG of the half-width), so the floor's flat
-				# stays whole to land on; it meanders RIVER_SWAY of it and
-				# crosses the floor where the side noise turns.
-				var reach_r := RIVER_REACH+(RIVER_PLAIN.y*RIVER_PLAIN_SPREAD if inland < 0.95 else 0.0)
-				var off := signf(ds)*half*RIVER_HUG
-				var far := k <= 0.0 or d > half*(RIVER_HUG+2.0*RIVER_SWAY)+reach_r
-				if not far:
-					var pick := _river_side.get_noise_2d(x,z)*4.0
-					pick = pick/sqrt(1.0+pick*pick)
-					off = half*(pick*RIVER_HUG+_river_meander.get_noise_2d(x,z)*2.0*RIVER_SWAY*absf(pick))
-					far = absf(ds-off) > reach_r
-				if far:
-					# Past its reach: the way to it in the noise's units, a mean
-					# width and the level, so a coarse chunk's triangles
-					# spanning out to here still draw the river where it is.
-					last_river_r = ds-off
-					var mean_mouth := _mouth(base-RIVER_DROP.y*river_drop)
-					last_river_w = (RIVER_WIDTH.x+RIVER_WIDTH.y)*0.25*river_width*k*(1.0+RIVER_FLARE*river_flare*mean_mouth*mean_mouth*minf(river_mouth,1.0))
-					last_river_y = SEA_Y+_mouth_level(base-RIVER_DROP.y*river_drop)
-				else:
-					var wide := clampf(_river_wide.get_noise_2d(x,z)*0.9+0.5,0.0,1.0)
-					# Plus a closer swell and pinch, so no stretch runs even.
-					var pinch := 1.0+RIVER_PINCH*_river_wide.get_noise_2d(x*RIVER_WIDE/RIVER_PINCH_SIZE+911.0,z*RIVER_WIDE/RIVER_PINCH_SIZE-377.0)
-					var w := lerpf(RIVER_WIDTH.x,RIVER_WIDTH.y,wide)*river_width*0.5*k*pinch
-					var drop := lerpf(RIVER_DROP.x,RIVER_DROP.y,wide)*river_drop
-					# Near the sea it opens out (a funnel, widest at the sea).
-					var mouth := _mouth(base-drop)
-					var flare := 1.0+RIVER_FLARE*river_flare*mouth*mouth*minf(river_mouth,1.0)
-					w *= flare
-					# The floor is laid out in the warped noise's units (`d`); the
-					# river's width is held in the world's: the world's slope of
-					# the noise gives the scale between them (the warp's
-					# stretch, the floor's clamped slope), so it keeps its width
-					# round bends and stays on the floor.
-					var gw := maxf(sqrt(gx*gx+gz*gz),0.25/VALLEYS)
-					var scale := 1.0
-					var along := Vector2(-gz,gx)/gw
-					var wg := Vector2(_valley_at(x+4.0,z)-v,_valley_at(x,z+4.0)-v)*0.25
-					var wl := wg.length()
-					if wl > 1e-7:
-						scale = clampf(gw/wl,0.25,4.0)
-						along = Vector2(-wg.y,wg.x)/wl
-					# The signed distance from its line, in world metres.
-					var r := (ds-off)*scale
-					var s := absf(r)
-					# The level: the lowland's under the valley, never under the sea.
-					var top := maxf(base,MEADOW_ABOVE)
-					var water := _mouth_level(base-drop)
-					# By the river the floor is the banks' top (the hills' bumps out).
-					var near := (1.0-smoothstep(w+RIVER_BANK,w+RIVER_BANK+RIVER_RAMP,s))*k
-					floor_y = lerpf(floor_y,top,near)
-					last_river_r = r
-					last_river_w = w
-					last_river_y = SEA_Y+water
-					_river_top = SEA_Y+top
-					_river_k = k
-					_river_mouth = mouth
-					_river_bed = RIVER_BED+RIVER_MOUTH_DEEP*mouth*minf(river_mouth,1.0)
-					if s < w+RIVER_BANK+16.0 and water > 0.0:
-						# The flow: downhill along the valley, as fast as the
-						# level falls.
-						var fall := (_lowland(x-along.x*30.0,z-along.y*30.0)-_lowland(x+along.x*30.0,z+along.y*30.0))/60.0
-						var speed := (RIVER_FLOW.x+sqrt(absf(fall))*RIVER_FLOW.y)/flare
-						last_river_flow = along*clampf(fall/RIVER_STILL,-1.0,1.0)*speed
-			_floor = SEA_Y+floor_y
-			last_floor = _floor
-			var t := clampf((d-half)/side,0.0,1.0)
-			# U-shaped: flat floor, the sides steepening up off it.
-			var keep := t*t*(3.0-2.0*t)
-			# With rivers the floor's cut comes in fully by a lower `inland`
-			# (RIVER_INLAND), so the floor a river runs on is the floor's
-			# level everywhere, not the ranges' foot left standing near a
-			# coast (it would hold the river under walls and run it uphill);
-			# up the sides it goes back to the cut as it was by
-			# RIVER_CUT_SIDE of their width.
-			var cut_in := inland
-			if rivers > 0.0 and river_cut > 0.0:
-				var tc := clampf((d-half)/(side*RIVER_CUT_SIDE),0.0,1.0)
-				cut_in = lerpf(inland,lerpf(smoothstep(0.0,RIVER_INLAND,inland),inland,tc*tc*(3.0-2.0*tc)),minf(river_cut,1.0))
-			keep = lerpf(1.0,keep,minf(valleys,1.0)*cut_in)
-			if h > floor_y: h = floor_y+(h-floor_y)*keep
-			elif fill > 0.0 and river_fill > 0.0:
-				# A hollow under the floor filled up to it, out to
-				# RIVER_FILL_SIDE m past the floor.
-				var tf := clampf((d-half)/RIVER_FILL_SIDE,0.0,1.0)
-				var keep_f := lerpf(1.0,tf*tf*(3.0-2.0*tf),minf(valleys,1.0)*cut_in)
-				h = lerpf(h,floor_y+(h-floor_y)*keep_f,fill*minf(river_fill,1.0))
-			var floor_meadow := (1.0-smoothstep(half*0.7,half+side*0.2,d))*inland*minf(valleys,1.0)
-			meadow = maxf(meadow,floor_meadow)
-	# The coast: the land eases flat into the sea (a beach), not a step.
-	if absf(h) < BEACH*2.0: h = h*lerpf(0.45,1.0,smoothstep(0.0,BEACH*2.0,absf(h)))
-	last_mountain = mountain
-	return Vector2(SEA_Y+h,meadow)
+## Whether the native field is built and current (checked once).
+static func native_available() -> bool:
+	if _native_state >= 0: return _native_state == 1
+	_native_lock.lock()
+	if _native_state < 0:
+		var path := "res://native/terrain_kernels/zenscape_kernels.gdextension"
+		if not ClassDB.class_exists(NATIVE_CLASS) and FileAccess.file_exists(path):
+			GDExtensionManager.load_extension(path)
+		var ok := false
+		if ClassDB.class_exists(NATIVE_CLASS):
+			var probe: Object = ClassDB.instantiate(NATIVE_CLASS)
+			ok = probe.has_method("version") and int(probe.version()) == NATIVE_VERSION
+			if not ok: push_warning("ZenScapeLandField is not version %d: rebuild it (tools/build_native_kernels.py); the land is grown in GDScript" % NATIVE_VERSION)
+		_native_state = 1 if ok else 0
+	_native_lock.unlock()
+	return _native_state == 1
 
-## How far into its mouth a river is whose level, unclamped, stands `lv` m
-## over the sea: 0 upstream, 1 at the sea and past it (RIVER_MOUTH_RISE).
-func _mouth(lv: float) -> float:
-	if river_mouth <= 0.0: return 0.0
-	return 1.0-smoothstep(0.0,RIVER_MOUTH_RISE,lv)
+## Whether this field is the native one.
+func native_on() -> bool:
+	return _native
 
-## A river's level (m over the sea) from its unclamped `lv`: never under
-## the sea, and at a mouth easing into it flat (RIVER_MOUTH_EASE; a soft
-## floor, the same as `maxf(lv,0)` past the ease either side).
-func _mouth_level(lv: float) -> float:
-	if river_mouth <= 0.0: return maxf(lv,0.0)
-	var e := RIVER_MOUTH_EASE
-	if lv >= e: return lv
-	if lv <= -e: return 0.0
-	return (lv+e)*(lv+e)/(4.0*e)
-
-## The continents' level (m over the sea) at a point, as `_broad` starts.
-func _lowland(x: float, z: float) -> float:
-	var b := _continent.get_noise_2d(x,z)*CONTINENT_SWING*2.0+CONTINENT_LIFT
-	if b > 0.0: b = LOWLAND*(1.0-exp(-b/LOWLAND))
-	return b
-
-## The valley noise at a world point, through its warp (as `_broad` reads it).
-func _valley_at(x: float, z: float) -> float:
-	var vx := x+_valley_warp.get_noise_2d(x,z)*VALLEY_WARP_MOVE
-	var vz := z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*VALLEY_WARP_MOVE
-	return _valley.get_noise_2d(vx,vz)
-
-## --- The carve -------------------------------------------------------------
-
-## The broad land's height and slope at lattice node (i, j), cached:
-## Vector3(world height, d/dx, d/dz). The caches are direct-mapped on
-## LAT_SLOTS^2 slots (a chunk spans fewer nodes, so it never evicts its own).
-func _node(i: int, j: int) -> Vector3:
-	var slot := (i&(LAT_SLOTS-1))+(j&(LAT_SLOTS-1))*LAT_SLOTS
-	var key := (i<<32)^(j&0xFFFFFFFF)
-	if _node_key[slot] == key and _node_set[slot] == 1:
-		return Vector3(_node_v[slot*3],_node_v[slot*3+1],_node_v[slot*3+2])
-	var g := CARVE_GRID
-	var hx0 := _lat_h(i-1,j)
-	var hx1 := _lat_h(i+1,j)
-	var hz0 := _lat_h(i,j-1)
-	var hz1 := _lat_h(i,j+1)
-	var v := Vector3(_lat_h(i,j),(hx1-hx0)/(2.0*g),(hz1-hz0)/(2.0*g))
-	_node_key[slot] = key
-	_node_set[slot] = 1
-	_node_v[slot*3] = v.x
-	_node_v[slot*3+1] = v.y
-	_node_v[slot*3+2] = v.z
-	return v
-
-func _lat_h(i: int, j: int) -> float:
-	var slot := (i&(LAT_SLOTS-1))+(j&(LAT_SLOTS-1))*LAT_SLOTS
-	var key := (i<<32)^(j&0xFFFFFFFF)
-	if _h_key[slot] == key and _h_set[slot] == 1: return _h_v[slot]
-	var h := _broad(i*CARVE_GRID,j*CARVE_GRID).x
-	_h_key[slot] = key
-	_h_set[slot] = 1
-	_h_v[slot] = h
-	return h
-
-## The broad land's height and slope at any point, eased between the
-## lattice's nodes: Vector3(height, d/dx, d/dz).
-func _broad_slope(x: float, z: float) -> Vector3:
-	if _h_set.is_empty():
-		var slots := LAT_SLOTS*LAT_SLOTS
-		_node_key.resize(slots)
-		_node_set.resize(slots)
-		_node_v.resize(slots*3)
-		_h_key.resize(slots)
-		_h_set.resize(slots)
-		_h_v.resize(slots)
-	var fx := x/CARVE_GRID
-	var fz := z/CARVE_GRID
-	var i := floori(fx)
-	var j := floori(fz)
-	var u := fx-i
-	var v := fz-j
-	if i != _bs_key.x or j != _bs_key.y:
-		_bs_key = Vector2i(i,j)
-		_bs_00 = _node(i,j)
-		_bs_10 = _node(i+1,j)
-		_bs_01 = _node(i,j+1)
-		_bs_11 = _node(i+1,j+1)
-	return _bs_00.lerp(_bs_10,u).lerp(_bs_01.lerp(_bs_11,u),v)
-
-## The 3x3 block cells round cell (ci, cj), each (x, z, height, slope x,
-## slope z, lift), kept while the samples stay in that cell.
-func _facet_cells(ci: int, cj: int, salt: int) -> PackedFloat32Array:
-	if ci == _fc_key.x and cj == _fc_key.y: return _fc
-	_fc_key = Vector2i(ci,cj)
-	_fc.resize(54)
-	var n := 0
-	for dj in range(-1,2):
-		for di in range(-1,2):
-			var hh := _hash(ci+di,cj+dj,salt)
-			var cx := (ci+di+0.1+0.8*_rand(hh,1))*FACET_CELL
-			var cz := (cj+dj+0.1+0.8*_rand(hh,2))*FACET_CELL
-			var c := _broad_slope(cx,cz)
-			var cg := Vector2(c.y,c.z)
-			var cl := cg.length()
-			cg += Vector2(_rand(hh,3)-0.5,_rand(hh,4)-0.5)*2.0*FACET_TILT*cl
-			_fc[n] = cx
-			_fc[n+1] = cz
-			_fc[n+2] = c.x
-			_fc[n+3] = cg.x
-			_fc[n+4] = cg.y
-			_fc[n+5] = (_rand(hh,5)-0.5)*2.0*FACET_STEP*smoothstep(0.2,0.8,cl)
-			n += 6
-	return _fc
-
-## Gully size `o`'s four lattice corners round (i, j), each (wave number,
-## phase), kept while the samples stay in that cell.
-func _gully_cells(o: int, i: int, j: int, salt: int) -> PackedFloat32Array:
-	var got: PackedFloat32Array = _gc[o]
-	if _gc_key[o] == Vector2i(i,j): return got
-	_gc_key[o] = Vector2i(i,j)
-	var size: float = GULLIES[o].x
-	for c in 4:
-		var hh := _hash(i+(c&1),j+(c>>1),salt+o*1013)
-		got[c*2] = TAU/(size*(1.0+(_rand(hh,1)-0.5)*2.0*GULLY_JITTER))
-		got[c*2+1] = _rand(hh,2)*TAU
-	return got
-
-static func _hash(i: int, j: int, salt: int) -> int:
-	var h := (i*73856093)^(j*19349663)^(salt*83492791)
-	h = (h^(h>>13))*1274126177
-	h = (h^(h>>16))*1103515245
-	return (h^(h>>15))&0xFFFFFF
-
-static func _rand(h: int, k: int) -> float:
-	return float(((h*(k*2654435761+1))>>7)&0xFFFF)/65535.0
-
-## How much of a size (m) the chunk's grid can show.
-func _keep(size: float) -> float:
-	if detail <= 1.0: return 1.0
-	return smoothstep(CARVE_FADE.x,CARVE_FADE.y,size/detail)
-
-## The carved height at a point whose broad height is `h` (world).
-func _carve(x: float, z: float, h: float, meadow: float, mountain: float, floor_y: float) -> float:
-	var bs := _broad_slope(x,z)
-	var slope := Vector2(bs.y,bs.z)
-	var steep := slope.length()
-	var mask := smoothstep(CARVE_SLOPE.x,CARVE_SLOPE.y,steep)*smoothstep(CARVE_MOUNTAIN.x,CARVE_MOUNTAIN.y,mountain)*(1.0-smoothstep(0.2,0.5,meadow))*minf(carve,2.0)
-	if mask <= 0.0: return h
-	var salt := seed*31+7
-	# Blocks: each Voronoi cell's own plane.
-	var fk := _keep(FACET_CELL)*FACET_KEEP*minf(mask,1.0)*minf(carve_blocks,1.0/FACET_KEEP)
-	var g := slope
-	if fk > 0.0:
-		var cells := _facet_cells(floori(x/FACET_CELL),floori(z/FACET_CELL),salt)
-		var sum := 0.0
-		var plane := 0.0
-		var gsx := 0.0
-		var gsz := 0.0
-		for n in range(0,54,6):
-			var dx := x-cells[n]
-			var dz := z-cells[n+1]
-			var w := exp(-FACET_EDGE*(dx*dx+dz*dz))
-			if w < 1e-3: continue
-			plane += w*(cells[n+2]+cells[n+3]*dx+cells[n+4]*dz+cells[n+5])
-			gsx += w*cells[n+3]
-			gsz += w*cells[n+4]
-			sum += w
-		var gsum := Vector2(gsx,gsz)
-		if sum > 0.0:
-			h = lerpf(h,plane/sum,fk)
-			g = g.lerp(gsum/sum,fk)
-	# Ledges: benches cut back into the face where the band allows.
-	var bk := minf(_keep(BENCH)*mask*smoothstep(0.2,0.55,_bench_band.get_noise_2d(x,z))*carve_ledges,1.0)
-	if bk > 0.0:
-		var warp := _bench_warp.get_noise_2d(x,z)*BENCH*BENCH_WARP
-		var y := (h-SEA_Y+warp)/BENCH
-		var f := y-floorf(y)
-		var stepped := (floorf(y)+smoothstep(BENCH_FLAT,1.0,f))*BENCH-warp+SEA_Y
-		h = lerpf(h,stepped,bk)
-		# The inner corner under the riser, the lip over the one below.
-		last_cavity = maxf(last_cavity,bk*(1.0-smoothstep(0.0,0.18,absf(f-BENCH_FLAT-0.04))))
-		last_ridge = maxf(last_ridge,bk*(1.0-smoothstep(0.0,0.1,minf(f,1.0-f)))*0.8)
-	# Gullies down the fall line, biggest first; each size follows the
-	# slope the last one left.
-	for o in GULLIES.size():
-		var gl: Vector2 = GULLIES[o]
-		var gk := _keep(gl.x)*mask*carve_gullies
-		if gk <= 0.0: continue
-		var glen := g.length()
-		if glen < 1e-4: break
-		var down := g/glen
-		var across := Vector2(-down.y,down.x)
-		var lx := x/gl.x
-		var lz := z/gl.x
-		var i := floori(lx)
-		var j := floori(lz)
-		var u := lx-i
-		var v := lz-j
-		u = u*u*u*(u*(u*6.0-15.0)+10.0)
-		v = v*v*v*(v*(v*6.0-15.0)+10.0)
-		# The four corners' waves, unrolled (the hot loop of a chunk build).
-		var corner := _gully_cells(o,i,j,salt)
-		var sz := gl.x
-		var base := x*across.x+z*across.y-sz*(i*across.x+j*across.y)
-		var a0 := base*corner[0]+corner[1]
-		var a1 := (base-sz*across.x)*corner[2]+corner[3]
-		var a2 := (base-sz*across.y)*corner[4]+corner[5]
-		var a3 := (base-sz*(across.x+across.y))*corner[6]+corner[7]
-		var w0 := (1.0-u)*(1.0-v)
-		var w1 := u*(1.0-v)
-		var w2 := (1.0-u)*v
-		var w3 := u*v
-		var wave := w0*cos(a0)+w1*cos(a1)+w2*cos(a2)+w3*cos(a3)
-		var dwave := -(w0*sin(a0)*corner[0]+w1*sin(a1)*corner[2]+w2*sin(a2)*corner[4]+w3*sin(a3)*corner[6])
-		# Gullies start and stop along their run.
-		var amp := smoothstep(-0.25,0.35,_gully_amp.get_noise_2d(x/sz*0.35+o*97.0,z/sz*0.35-o*61.0))
-		if amp <= 0.0: continue
-		var groove := clampf((1.0-wave)*0.5,0.0,1.0)
-		var gp1 := pow(groove,GULLY_SHARP-1.0)
-		var gp := gp1*groove
-		var depth := gl.y*gk*amp*clampf(steep,0.6,1.6)
-		var weight: float = GULLY_SHADE[o]*gk*amp
-		var rim := 1.0-groove
-		last_cavity = maxf(last_cavity,weight*gp)
-		last_ridge = maxf(last_ridge,weight*rim*rim*rim)
-		h -= depth*gp
-		g += across*(depth*GULLY_SHARP*gp1*0.5*dwave)
-	if floor_y > -INF: h = maxf(h,floor_y)
-	return h
-
-## Round one's land (--old-land), exactly.
-func _old_sample(x: float, z: float) -> Vector2:
-	var base := _continent.get_noise_2d(x,z)*CONTINENT_SWING*2.0+CONTINENT_LIFT
-	if base > 0.0: base = LOWLAND*(1.0-exp(-base/LOWLAND))
-	var inland := smoothstep(-6.0,18.0,base)
-	var h := base+_hills.get_noise_2d(x,z)*HILL_TALL*2.0*(0.35+0.65*inland)
-	var mountain := smoothstep(MOUNTAIN_BAND.x,MOUNTAIN_BAND.y,_mask.get_noise_2d(x,z))*inland
-	if mountain > 0.0:
-		var ridge := _ridges.get_noise_2d(x,z)*0.5+0.5
-		h += ridge*ridge*MOUNTAIN_TALL*mountain
-	var meadow := smoothstep(MEADOW_BAND.x,MEADOW_BAND.y,_meadows.get_noise_2d(x,z))*inland*(1.0-mountain)
-	if meadow > 0.0:
-		var flat := maxf(base+(h-base)*MEADOW_KEEP,MEADOW_ABOVE)
-		h = lerpf(h,flat,meadow)
-	if absf(h) < BEACH*2.0: h = h*lerpf(0.45,1.0,smoothstep(0.0,BEACH*2.0,absf(h)))
-	return Vector2(SEA_Y+h,meadow)
+## Vector2(world height, meadow 0..1) at a world XZ point.
+func sample(x: float, z: float) -> Vector2:
+	return _impl.sample(x,z)
 
 ## The land's shape at a world XZ point: {height, meadow, mountain, inland,
-## valley (distance to a valley's line, INF where none reaches), half, side,
-## across} (see `last_mountain`). Round one's land has no ranges or valleys.
+## valley, half, side, across, river, river_r, river_w, river_y}.
 func shape(x: float, z: float) -> Dictionary:
-	last_mountain = 0.0
-	last_valley = INF
-	last_inland = 0.0
-	var s := sample(x,z)
-	return {"height":s.x,"meadow":s.y,"mountain":last_mountain,"inland":last_inland,"valley":last_valley,"half":last_half,"side":last_side,"across":last_across,
-		"river":last_river,"river_r":last_river_r,"river_w":last_river_w,"river_y":last_river_y}
+	return _impl.shape(x,z)
 
 ## The river's water level (world y) where a point is on a river's water,
-## else NAN (the sea is not a river: the estuary's level is the sea's).
+## else NAN.
 func river_y(x: float, z: float) -> float:
-	sample(x,z)
-	if last_river < 0.0 and river_drawn() > SEA_Y+0.05: return river_drawn()
-	return NAN
+	return _impl.river_y(x,z)
 
-## The river's water as the ground shader draws it, from the last `sample`
-## (world y): its level, sunk under the sea's at a mouth (RIVER_MOUTH_SINK).
+## The river's water as the ground shader draws it, from the last `sample`.
 func river_drawn() -> float:
-	if river_mouth <= 0.0 or last_river_y == -INF: return last_river_y
-	var over := last_river_y-SEA_Y
-	return last_river_y-(RIVER_BED+RIVER_MOUTH_DEEP)*minf(river_mouth,1.0)*(1.0-smoothstep(0.0,RIVER_MOUTH_SINK,over))
+	return _impl.river_drawn()
 
-## How still the sea's swell lies at the point the last `sample` read: 1 in
-## a river's channel and just past its edge (the sea reaching up a mouth
-## lies calm there), 0 off it or with --river-mouth=0. The sea's depth map
-## carries it (EndlessSea), and the flight's skim reads it (`sea_calm`).
+## How still the sea's swell lies at the point the last `sample` read.
 func calm_here() -> float:
-	if river_mouth <= 0.0 or rivers <= 0.0 or last_river_w <= 0.0: return 0.0
-	return smoothstep(0.5,3.0,last_river_w)*(1.0-smoothstep(2.0,12.0,last_river))
+	return _impl.calm_here()
 
 ## `calm_here` at a world XZ point.
 func sea_calm(x: float, z: float) -> float:
-	sample(x,z)
-	return calm_here()
+	return _impl.sea_calm(x,z)
 
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:
-	return sample(x,z).x
+	return _impl.height(x,z)
 
 ## The snow line over the sea for this land (round one's under --old-land).
 func snow_line() -> float:
-	return 95.0 if old_land else SNOW
+	return _impl.snow_line()
 
 ## The ground's colour at a world point: its height over the sea, its
 ## slope (the normal's up) and its meadow.
 func colour(x: float, z: float, y: float, up: float, meadow: float) -> Color:
-	var over := y-SEA_Y
-	if over < -0.5: return SEABED.lerp(SAND,clampf(1.0+over/6.0,0.0,1.0))
-	var grass := GRASS.lerp(GRASS_DRY,clampf(_tint.get_noise_2d(x,z)*0.9+0.45,0.0,1.0))
-	grass = grass.lerp(MEADOW,meadow)
-	var c := SAND.lerp(grass,smoothstep(BEACH*0.6,BEACH*1.4,over))
-	c = c.lerp(ROCK,smoothstep(0.86,0.72,up))
-	var snow := snow_line()
-	if over > snow-12.0: c = c.lerp(SNOW_COLOUR,smoothstep(snow-12.0,snow+6.0,over)*smoothstep(0.62,0.8,up))
-	return c
+	return _impl.colour(x,z,y,up,meadow)
+
+## land_stream `_build`'s arrays in one call (native, or the same loops in
+## GDScript): {verts, normals, colours, carved, river, heights} for
+## the chunk at (x0, z0), `cells` quads of `step` m a side, its skirt dropped
+## `skirt_drop` m, the river's flow packed at +-flow_max m/s. Sets `detail`
+## to `step`.
+func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: float, flow_max: float) -> Dictionary:
+	if _native: return _impl.build_chunk(x0,z0,step,cells,skirt_drop,flow_max)
+	var g: GDField = _impl
+	g.detail = step
+	var n := cells+1
+	var w := n+2
+	var hs := PackedFloat32Array()
+	var ms := PackedFloat32Array()
+	var cv := PackedByteArray()
+	# The river (last_river_*): signed distance from its line,
+	# water half-width, level and flow, per grid point.
+	var rv := PackedFloat32Array()
+	hs.resize(w*w)
+	ms.resize(w*w)
+	cv.resize(w*w*2)
+	rv.resize(w*w*5)
+	for j in w:
+		for i in w:
+			var got: Vector2 = g.sample(x0+(i-1)*step,z0+(j-1)*step)
+			hs[j*w+i] = got.x
+			ms[j*w+i] = got.y
+			cv[(j*w+i)*2] = int(clampf(g.last_cavity,0.0,1.0)*255.0)
+			cv[(j*w+i)*2+1] = int(clampf(g.last_ridge,0.0,1.0)*255.0)
+			var q := (j*w+i)*5
+			rv[q] = clampf(g.last_river_r,-1000.0,1000.0)
+			rv[q+1] = g.last_river_w
+			rv[q+2] = g.last_river_y if g.last_river_y > -INF else SEA_Y-100.0
+			rv[q+3] = g.last_river_flow.x
+			rv[q+4] = g.last_river_flow.y
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colours := PackedColorArray()
+	var carved := PackedByteArray()
+	var river := PackedFloat32Array()
+	var heights := PackedFloat32Array()
+	verts.resize(n*n+4*n)
+	normals.resize(n*n+4*n)
+	colours.resize(n*n+4*n)
+	carved.resize((n*n+4*n)*4)
+	river.resize((n*n+4*n)*3)
+	heights.resize(n*n)
+	for j in n:
+		for i in n:
+			var k := (j+1)*w+i+1
+			var y := hs[k]
+			var nx := hs[k-1]-hs[k+1]
+			var nz := hs[k-w]-hs[k+w]
+			var normal := Vector3(nx,2.0*step,nz).normalized()
+			var v := j*n+i
+			verts[v] = Vector3(i*step,y,j*step)
+			normals[v] = normal
+			# Its alpha the meadow, for the look's ground shader.
+			var c: Color = g.colour(x0+i*step,z0+j*step,y,normal.y,ms[k])
+			c.a = ms[k]
+			colours[v] = c
+			# The carve's groove and crest, for the rock (CUSTOM0.xy).
+			carved[v*4] = cv[k*2]
+			carved[v*4+1] = cv[k*2+1]
+			# The flow for the water's ripples (CUSTOM0.zw, flow_max m/s
+			# at the ends), and the river (CUSTOM1, floats): its signed
+			# distance, half-width (the skirt's negative, so the shader never
+			# lifts it to the water) and level.
+			carved[v*4+2] = int(clampf(rv[k*5+3]/flow_max*0.5+0.5,0.0,1.0)*255.0)
+			carved[v*4+3] = int(clampf(rv[k*5+4]/flow_max*0.5+0.5,0.0,1.0)*255.0)
+			river[v*3] = rv[k*5]
+			river[v*3+1] = rv[k*5+1]
+			river[v*3+2] = rv[k*5+2]
+			heights[v] = y
+	# The skirt: each edge's vertices again, dropped.
+	var drop := skirt_drop
+	var edges := [[],[],[],[]]
+	for t in n:
+		edges[0].append(t)
+		edges[1].append(t*n+cells)
+		edges[2].append(cells*n+t)
+		edges[3].append(t*n)
+	for e in 4:
+		for t in n:
+			var from: int = edges[e][t]
+			var v := n*n+e*n+t
+			verts[v] = verts[from]-Vector3(0.0,drop,0.0)
+			normals[v] = normals[from]
+			colours[v] = colours[from]
+			carved[v*4] = carved[from*4]
+			carved[v*4+1] = carved[from*4+1]
+			carved[v*4+2] = carved[from*4+2]
+			carved[v*4+3] = carved[from*4+3]
+			river[v*3] = river[from*3]
+			river[v*3+1] = -river[from*3+1]
+			river[v*3+2] = river[from*3+2]
+	return {"verts":verts,"normals":normals,"colours":colours,"carved":carved,"river":river,"heights":heights}
+
+## The field over an nx by nz grid of `step` m from (x0, z0), `pad` samples
+## before it each way (x = x0+(i-pad)*step): {heights, meadows, river}
+## (PackedFloat32Arrays row by row; river is `last_river` at each sample).
+func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:
+	if _native: return _impl.grid(x0,z0,step,nx,nz,pad)
+	var g: GDField = _impl
+	var hs := PackedFloat32Array()
+	var ms := PackedFloat32Array()
+	var rs := PackedFloat32Array()
+	hs.resize(nx*nz)
+	ms.resize(nx*nz)
+	rs.resize(nx*nz)
+	for j in nz:
+		for i in nx:
+			var got: Vector2 = g.sample(x0+(i-pad)*step,z0+(j-pad)*step)
+			hs[j*nx+i] = got.x
+			ms[j*nx+i] = got.y
+			rs[j*nx+i] = g.last_river
+	return {"heights":hs,"meadows":ms,"river":rs}
+
+## The GDScript field: the land's maths as it always was, the reference the
+## native field (native/terrain_kernels/land_field.h) mirrors line for line.
+## A change here is a change there (and the other way round).
+class GDField extends RefCounted:
+	var seed := 0
+	## The flags (see the top).
+	var mountains := 1.0
+	var peaks := 1.0
+	var valleys := 1.0
+	var old_land := false
+	var _continent := FastNoiseLite.new()
+	var _hills := FastNoiseLite.new()
+	var _mask := FastNoiseLite.new()
+	var _ridges := FastNoiseLite.new()
+	var _meadows := FastNoiseLite.new()
+	var _tint := FastNoiseLite.new()
+	var _warp := FastNoiseLite.new()
+	var _range := FastNoiseLite.new()
+	var _peak := FastNoiseLite.new()
+	var _valley := FastNoiseLite.new()
+	var _valley_warp := FastNoiseLite.new()
+	var _valley_wide := FastNoiseLite.new()
+	var _floor_half := WorldScale.opening(TOY_VALLEY)*0.5
+	## What the last `sample` found (read by `shape`, for placing things such as
+	## the arches, scripts/endless/arch_plan.gd): how much of a range stands
+	## there (0..1), how inland it is, the distance to the nearest valley's line
+	## (INF where none reaches), that valley's floor half-width and side width,
+	## and the way across the valley (XZ, unit).
+	var last_mountain := 0.0
+	var last_inland := 0.0
+	var last_valley := INF
+	var last_half := 0.0
+	var last_side := 0.0
+	var last_across := Vector2.RIGHT
+	## The nearest valley's floor (world y; INF where none reaches), read by the
+	## valley fog's map (scripts/endless/endless_clouds.gd `fog_image`).
+	var last_floor := INF
+	## The carve's strength (--carve=X, 1; --no-carve 0) and the grid step (m)
+	## the caller samples at (land_stream sets its chunk's; 0 is full detail).
+	var carve := 1.0
+	## Each form's share (--carve-blocks=, --carve-ledges=, --carve-gullies=; 1).
+	var carve_blocks := 1.0
+	var carve_ledges := 1.0
+	var carve_gullies := 1.0
+	var detail := 0.0
+	## What the last `sample` carved, for the ground shader (land_stream's
+	## CUSTOM0): how deep in a groove or a ledge's inner corner (0..1) and how
+	## much on a buttress's crest or a ledge's lip (0..1).
+	var last_cavity := 0.0
+	var last_ridge := 0.0
+	var _floor := -INF
+	# The carve's memos (samples come in rows, so neighbours share cells).
+	var _bs_key := Vector2i(1<<30,0)
+	var _bs_00 := Vector3.ZERO
+	var _bs_10 := Vector3.ZERO
+	var _bs_01 := Vector3.ZERO
+	var _bs_11 := Vector3.ZERO
+	var _fc_key := Vector2i(1<<30,0)
+	var _fc := PackedFloat32Array()
+	var _gc_key: Array[Vector2i] = [Vector2i(1<<30,0),Vector2i(1<<30,0),Vector2i(1<<30,0)]
+	var _gc: Array[PackedFloat32Array] = [PackedFloat32Array([0,0,0,0,0,0,0,0]),PackedFloat32Array([0,0,0,0,0,0,0,0]),PackedFloat32Array([0,0,0,0,0,0,0,0])]
+	const LAT_SLOTS := 128
+	var _node_key := PackedInt64Array()
+	var _node_set := PackedByteArray()
+	var _node_v := PackedFloat64Array()
+	var _h_key := PackedInt64Array()
+	var _h_set := PackedByteArray()
+	var _h_v := PackedFloat64Array()
+	var _bench_warp := FastNoiseLite.new()
+	var _bench_band := FastNoiseLite.new()
+	var _gully_amp := FastNoiseLite.new()
+	## Rivers (see RIVER_*): on (1) or off (--no-rivers 0), and the width and
+	## bank knobs.
+	var rivers := 1.0
+	var river_width := 1.0
+	var river_drop := 1.0
+	## The floor's full cut and the hollows' fill (1 on, 0 off: the valleys as
+	## they were), for the flats check (scratch) and --river-cut= / --river-fill=.
+	var river_cut := 1.0
+	var river_fill := 1.0
+	## The mouths' opening out, deepening and easing (RIVER_MOUTH_*; 1 on, 0 the
+	## mouths as before, between a share of it: --river-mouth=X), and the
+	## funnel's width (RIVER_FLARE times --river-flare=X, 1).
+	var river_mouth := 1.0
+	var river_flare := 1.0
+	## What the last `sample` found of the river (read by land_stream for the
+	## ground shader, the grass, the arches and the flight): the signed
+	## distance from the river's middle line (m, INF where no river reaches),
+	## the water's half-width (0: no river), the water's level (world y), the
+	## distance outside the water's edge (negative in the water, INF none) and
+	## the flow (XZ, m/s, downhill along the valley).
+	var last_river := INF
+	var last_river_r := INF
+	var last_river_w := 0.0
+	var last_river_y := -INF
+	var last_river_flow := Vector2.ZERO
+	# The river's bank top (world y) and its strength, for the cut in `sample`.
+	var _river_top := -INF
+	var _river_k := 0.0
+	# The mouth's share (0 upstream, 1 at the sea) and the bed's depth under
+	# the water at the middle (RIVER_BED, more at a mouth), for `_river`.
+	var _river_mouth := 0.0
+	var _river_bed := RIVER_BED
+	var _river_side := FastNoiseLite.new()
+	var _river_meander := FastNoiseLite.new()
+	var _river_wide := FastNoiseLite.new()
+
+	func _init(land_seed: int, k: Dictionary) -> void:
+		seed = land_seed
+		_floor_half = float(k.get("floor_half",_floor_half))
+		mountains = float(k.get("mountains",1.0))
+		peaks = float(k.get("peaks",1.0))
+		valleys = float(k.get("valleys",1.0))
+		old_land = bool(k.get("old_land",false))
+		carve = float(k.get("carve",1.0))
+		carve_blocks = float(k.get("carve_blocks",1.0))
+		carve_ledges = float(k.get("carve_ledges",1.0))
+		carve_gullies = float(k.get("carve_gullies",1.0))
+		rivers = float(k.get("rivers",1.0))
+		river_width = float(k.get("river_width",1.0))
+		river_drop = float(k.get("river_drop",1.0))
+		river_cut = float(k.get("river_cut",1.0))
+		river_fill = float(k.get("river_fill",1.0))
+		river_mouth = float(k.get("river_mouth",1.0))
+		river_flare = float(k.get("river_flare",1.0))
+		_noise(_continent,1,CONTINENT,3,FastNoiseLite.FRACTAL_FBM)
+		_noise(_hills,2,HILLS,4,FastNoiseLite.FRACTAL_FBM)
+		_noise(_mask,3,MOUNTAINS if old_land else RANGE_MASK,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_ridges,4,900.0 if old_land else RIDGES,5,FastNoiseLite.FRACTAL_RIDGED)
+		_noise(_meadows,5,MEADOWS,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_tint,6,180.0,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_warp,7,WARP,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_range,8,RANGES,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_peak,9,PEAK_SCALE,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_valley,10,VALLEYS,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_valley_warp,11,VALLEY_WARP,1,FastNoiseLite.FRACTAL_NONE)
+		_noise(_valley_wide,12,900.0,1,FastNoiseLite.FRACTAL_NONE)
+		_noise(_bench_warp,13,BENCH_WANDER,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_bench_band,14,BENCH_BANDS,1,FastNoiseLite.FRACTAL_NONE)
+		_noise(_gully_amp,15,1.0,1,FastNoiseLite.FRACTAL_NONE)
+		_noise(_river_side,16,RIVER_SIDE,1,FastNoiseLite.FRACTAL_NONE)
+		_noise(_river_meander,17,RIVER_MEANDER,1,FastNoiseLite.FRACTAL_NONE)
+		_noise(_river_wide,18,RIVER_WIDE,1,FastNoiseLite.FRACTAL_NONE)
+
+	func _noise(n: FastNoiseLite, salt: int, scale: float, octaves: int, kind: int) -> void:
+		n.seed = seed*7919+salt*104729
+		n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		n.frequency = 1.0/scale
+		n.fractal_type = kind
+		n.fractal_octaves = octaves
+
+	## Vector2(world height, meadow 0..1) at a world XZ point: the land's
+	## broad shape (`_broad`), then the erosion carved into its steep rock
+	## (`_carve`).
+	func sample(x: float, z: float) -> Vector2:
+		if old_land:
+			last_river = INF
+			last_river_w = 0.0
+			return _old_sample(x,z)
+		var s := _broad(x,z)
+		last_cavity = 0.0
+		last_ridge = 0.0
+		# The river's, kept through the carve (it samples the broad land round).
+		var rr := last_river_r
+		var rw := last_river_w
+		var ry := last_river_y
+		var rf := last_river_flow
+		var rtop := _river_top
+		var rk := _river_k
+		var rm := _river_mouth
+		var rb := _river_bed
+		if carve > 0.0 and last_mountain > CARVE_MOUNTAIN.x and detail < CARVE_DETAIL_OFF:
+			# The carve samples the broad land around; `shape` keeps this point's.
+			var k_mountain := last_mountain
+			var k_inland := last_inland
+			var k_valley := last_valley
+			var k_half := last_half
+			var k_side := last_side
+			var k_across := last_across
+			s.x = _carve(x,z,s.x,s.y,k_mountain,_floor)
+			last_mountain = k_mountain
+			last_inland = k_inland
+			last_valley = k_valley
+			last_half = k_half
+			last_side = k_side
+			last_across = k_across
+		last_river_r = rr
+		last_river_w = rw
+		last_river_y = ry
+		last_river_flow = rf
+		_river_top = rtop
+		_river_k = rk
+		_river_mouth = rm
+		_river_bed = rb
+		last_river = INF
+		if rk > 0.0:
+			var reach := rw+RIVER_BANK+RIVER_RAMP+(RIVER_PLAIN.y*RIVER_PLAIN_SPREAD if last_inland < 0.95 else 0.0)
+			if absf(rr) < reach: s.x = _river(s.x)
+			else: last_river = absf(rr)-rw
+		return s
+
+	## The river's channel at a point whose land (after the carve) is `h`
+	## (world), from what `_broad` left in last_river_*: by the river the land
+	## is raised to the banks' top where a hollow dips under it, then the
+	## channel cut: soft banks down to the water, the bed under it. Where the
+	## land still falls away under the water (a lake, the coast) the river
+	## goes (its half-width to 0), so it ends plainly. Sets `last_river`.
+	func _river(h: float) -> float:
+		var w := last_river_w
+		var s := absf(last_river_r)
+		var water := last_river_y
+		var top := _river_top
+		var drop := top-water
+		var core := w+RIVER_BANK
+		if s > core+RIVER_RAMP+RIVER_PLAIN.y*RIVER_PLAIN_SPREAD:
+			last_river = s-w
+			return h
+		# The bank raised through a hollow (not at the coast, where the sea takes it).
+		var raise := (1.0-smoothstep(core,core+RIVER_RAMP,s))*smoothstep(0.5,3.0,water-SEA_Y)*_river_k
+		if h < top and raise > 0.0: h = lerpf(h,top,raise)
+		# Land standing over the banks' top by the river (where the valley cuts
+		# little, near the coast) is eased down to it, a flood plain; where it
+		# stands higher than RIVER_PLAIN the river ends.
+		var over := h-top
+		if over > 0.0:
+			var plain := (1.0-smoothstep(core,core+RIVER_RAMP+over*RIVER_PLAIN_SPREAD,s))*_river_k*(1.0-smoothstep(RIVER_PLAIN.x,RIVER_PLAIN.y,over))*(1.0-smoothstep(0.0,0.15,last_mountain))*(1.0-smoothstep(0.55,0.95,last_inland))
+			h -= over*plain
+		# Where the land is still under the water, or over the plain, no river.
+		var banked := smoothstep(water-2.5,water-0.4,h)*(1.0-smoothstep(RIVER_PLAIN.x*0.6,RIVER_PLAIN.x,h-top))
+		w *= banked
+		last_river_w = w
+		last_river = s-w
+		if w <= 0.0: return h
+		core = w+RIVER_BANK
+		# The cut: the bed under the water, soft banks up to the floor and on
+		# up (steeper) where higher land stands by the river.
+		var cut: float
+		if s < w:
+			# At a mouth the bed is deeper and flatter across (the sea fills it).
+			var u := s/w
+			cut = water-_river_bed*(1.0-pow(u,2.0+2.0*_river_mouth))
+		elif s < core:
+			var u := (s-w)/RIVER_BANK
+			cut = water+drop*u*u*(3.0-2.0*u)
+		else:
+			var o := s-core
+			cut = water+drop+o*(1.0+o*0.04)
+		# A coarse chunk's grid can't hold the channel: it fades out there (the
+		# ground shader still draws the water, per pixel).
+		var keep := 1.0
+		if detail > 1.0: keep = smoothstep(2.5,4.5,(core*2.0)/detail)
+		if cut < h: h -= (h-cut)*keep*banked
+		return h
+
+	## The land before the carve: continents, hills, ranges, meadows, valleys.
+	func _broad(x: float, z: float) -> Vector2:
+		var base := _continent.get_noise_2d(x,z)*CONTINENT_SWING*2.0+CONTINENT_LIFT
+		# Inland the continents level off at LOWLAND m: the peaks come from
+		# the ranges, not from the continents.
+		if base > 0.0: base = LOWLAND*(1.0-exp(-base/LOWLAND))
+		var inland := smoothstep(-6.0,18.0,base)
+		var hills := _hills.get_noise_2d(x,z)*HILL_TALL*2.0*(0.35+0.65*inland)
+		var h := base+hills
+		# The ranges: the crest lines of a warped noise, where the mask allows.
+		var mountain := 0.0
+		last_valley = INF
+		last_floor = INF
+		last_inland = inland
+		_floor = -INF
+		if inland > 0.0 and mountains > 0.0:
+			var band := RANGE_BAND+Vector2.ONE*(1.0-mountains)*0.35
+			var where := smoothstep(band.x,band.y,_mask.get_noise_2d(x,z))*inland
+			if where > 0.0:
+				var wx := x+_warp.get_noise_2d(x,z)*WARP_MOVE
+				var wz := z+_warp.get_noise_2d(x+7919.0,z-3301.0)*WARP_MOVE
+				var off := absf(_range.get_noise_2d(wx,wz))/RANGE_WIDTH
+				if off < 1.0:
+					var crest := 1.0-off
+					crest = crest*crest*(3.0-2.0*crest)
+					mountain = crest*where
+					var tall := lerpf(PEAK_TALL.x,PEAK_TALL.y,clampf(_peak.get_noise_2d(x,z)*0.9+0.5,0.0,1.0))*peaks
+					var ridge := _ridges.get_noise_2d(x,z)*0.5+0.5
+					# A massif under the ridged crests; the ridges rise with it.
+					h += tall*(0.4*pow(mountain,1.4)+0.75*ridge*ridge*mountain*mountain)
+		var meadow := smoothstep(MEADOW_BAND.x,MEADOW_BAND.y,_meadows.get_noise_2d(x,z))*inland*(1.0-smoothstep(0.0,0.35,mountain))
+		if meadow > 0.0:
+			var flat := maxf(base+hills*MEADOW_KEEP,MEADOW_ABOVE)
+			h = lerpf(h,flat,meadow)
+		# The valleys: carved along the zero lines of a warped noise, their
+		# distance read from the noise over its slope.
+		last_river_r = INF
+		last_river_w = 0.0
+		last_river_y = -INF
+		last_river_flow = Vector2.ZERO
+		_river_top = -INF
+		_river_k = 0.0
+		_river_mouth = 0.0
+		_river_bed = RIVER_BED
+		if inland > 0.0 and valleys > 0.0:
+			var vx := x+_valley_warp.get_noise_2d(x,z)*VALLEY_WARP_MOVE
+			var vz := z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*VALLEY_WARP_MOVE
+			var v := _valley.get_noise_2d(vx,vz)
+			var e := 6.0
+			var gx := (_valley.get_noise_2d(vx+e,vz)-v)/e
+			var gz := (_valley.get_noise_2d(vx,vz+e)-v)/e
+			var d := absf(v)/maxf(sqrt(gx*gx+gz*gz),0.25/VALLEYS)
+			var half := _floor_half*lerpf(VALLEY_SWING.x,VALLEY_SWING.y,clampf(_valley_wide.get_noise_2d(x,z)*0.8+0.5,0.0,1.0))
+			var side := lerpf(VALLEY_SIDE.x,VALLEY_SIDE.y,smoothstep(0.0,0.6,mountain))*maxf(valleys,1.0)
+			last_valley = d
+			last_half = half
+			last_side = side
+			if gx*gx+gz*gz > 0.0: last_across = Vector2(gx,gz).normalized()
+			var floor_y := maxf(base+hills*VALLEY_KEEP,MEADOW_ABOVE)
+			last_floor = SEA_Y+floor_y
+			if d < half+side:
+				var fill := 0.0
+				if rivers > 0.0:
+					# The river down the floor: its line, width, banks and level,
+					# worked out only within its reach of the floor (RIVER_REACH
+					# past the floor's edge, more near a coast for the plain).
+					var k := smoothstep(0.0,0.12,inland)*minf(valleys,1.0)*minf(rivers,1.0)
+					var ds := v/maxf(sqrt(gx*gx+gz*gz),0.25/VALLEYS)
+					fill = smoothstep(0.5,3.0,base-RIVER_DROP.y*river_drop)*k
+					# To one side: its middle near the floor's edge, at the foot of
+					# that side (RIVER_HUG of the half-width), so the floor's flat
+					# stays whole to land on; it meanders RIVER_SWAY of it and
+					# crosses the floor where the side noise turns.
+					var reach_r := RIVER_REACH+(RIVER_PLAIN.y*RIVER_PLAIN_SPREAD if inland < 0.95 else 0.0)
+					var off := signf(ds)*half*RIVER_HUG
+					var far := k <= 0.0 or d > half*(RIVER_HUG+2.0*RIVER_SWAY)+reach_r
+					if not far:
+						var pick := _river_side.get_noise_2d(x,z)*4.0
+						pick = pick/sqrt(1.0+pick*pick)
+						off = half*(pick*RIVER_HUG+_river_meander.get_noise_2d(x,z)*2.0*RIVER_SWAY*absf(pick))
+						far = absf(ds-off) > reach_r
+					if far:
+						# Past its reach: the way to it in the noise's units, a mean
+						# width and the level, so a coarse chunk's triangles
+						# spanning out to here still draw the river where it is.
+						last_river_r = ds-off
+						var mean_mouth := _mouth(base-RIVER_DROP.y*river_drop)
+						last_river_w = (RIVER_WIDTH.x+RIVER_WIDTH.y)*0.25*river_width*k*(1.0+RIVER_FLARE*river_flare*mean_mouth*mean_mouth*minf(river_mouth,1.0))
+						last_river_y = SEA_Y+_mouth_level(base-RIVER_DROP.y*river_drop)
+					else:
+						var wide := clampf(_river_wide.get_noise_2d(x,z)*0.9+0.5,0.0,1.0)
+						# Plus a closer swell and pinch, so no stretch runs even.
+						var pinch := 1.0+RIVER_PINCH*_river_wide.get_noise_2d(x*RIVER_WIDE/RIVER_PINCH_SIZE+911.0,z*RIVER_WIDE/RIVER_PINCH_SIZE-377.0)
+						var w := lerpf(RIVER_WIDTH.x,RIVER_WIDTH.y,wide)*river_width*0.5*k*pinch
+						var drop := lerpf(RIVER_DROP.x,RIVER_DROP.y,wide)*river_drop
+						# Near the sea it opens out (a funnel, widest at the sea).
+						var mouth := _mouth(base-drop)
+						var flare := 1.0+RIVER_FLARE*river_flare*mouth*mouth*minf(river_mouth,1.0)
+						w *= flare
+						# The floor is laid out in the warped noise's units (`d`); the
+						# river's width is held in the world's: the world's slope of
+						# the noise gives the scale between them (the warp's
+						# stretch, the floor's clamped slope), so it keeps its width
+						# round bends and stays on the floor.
+						var gw := maxf(sqrt(gx*gx+gz*gz),0.25/VALLEYS)
+						var scale := 1.0
+						var along := Vector2(-gz,gx)/gw
+						var wg := Vector2(_valley_at(x+4.0,z)-v,_valley_at(x,z+4.0)-v)*0.25
+						var wl := wg.length()
+						if wl > 1e-7:
+							scale = clampf(gw/wl,0.25,4.0)
+							along = Vector2(-wg.y,wg.x)/wl
+						# The signed distance from its line, in world metres.
+						var r := (ds-off)*scale
+						var s := absf(r)
+						# The level: the lowland's under the valley, never under the sea.
+						var top := maxf(base,MEADOW_ABOVE)
+						var water := _mouth_level(base-drop)
+						# By the river the floor is the banks' top (the hills' bumps out).
+						var near := (1.0-smoothstep(w+RIVER_BANK,w+RIVER_BANK+RIVER_RAMP,s))*k
+						floor_y = lerpf(floor_y,top,near)
+						last_river_r = r
+						last_river_w = w
+						last_river_y = SEA_Y+water
+						_river_top = SEA_Y+top
+						_river_k = k
+						_river_mouth = mouth
+						_river_bed = RIVER_BED+RIVER_MOUTH_DEEP*mouth*minf(river_mouth,1.0)
+						if s < w+RIVER_BANK+16.0 and water > 0.0:
+							# The flow: downhill along the valley, as fast as the
+							# level falls.
+							var fall := (_lowland(x-along.x*30.0,z-along.y*30.0)-_lowland(x+along.x*30.0,z+along.y*30.0))/60.0
+							var speed := (RIVER_FLOW.x+sqrt(absf(fall))*RIVER_FLOW.y)/flare
+							last_river_flow = along*clampf(fall/RIVER_STILL,-1.0,1.0)*speed
+				_floor = SEA_Y+floor_y
+				last_floor = _floor
+				var t := clampf((d-half)/side,0.0,1.0)
+				# U-shaped: flat floor, the sides steepening up off it.
+				var keep := t*t*(3.0-2.0*t)
+				# With rivers the floor's cut comes in fully by a lower `inland`
+				# (RIVER_INLAND), so the floor a river runs on is the floor's
+				# level everywhere, not the ranges' foot left standing near a
+				# coast (it would hold the river under walls and run it uphill);
+				# up the sides it goes back to the cut as it was by
+				# RIVER_CUT_SIDE of their width.
+				var cut_in := inland
+				if rivers > 0.0 and river_cut > 0.0:
+					var tc := clampf((d-half)/(side*RIVER_CUT_SIDE),0.0,1.0)
+					cut_in = lerpf(inland,lerpf(smoothstep(0.0,RIVER_INLAND,inland),inland,tc*tc*(3.0-2.0*tc)),minf(river_cut,1.0))
+				keep = lerpf(1.0,keep,minf(valleys,1.0)*cut_in)
+				if h > floor_y: h = floor_y+(h-floor_y)*keep
+				elif fill > 0.0 and river_fill > 0.0:
+					# A hollow under the floor filled up to it, out to
+					# RIVER_FILL_SIDE m past the floor.
+					var tf := clampf((d-half)/RIVER_FILL_SIDE,0.0,1.0)
+					var keep_f := lerpf(1.0,tf*tf*(3.0-2.0*tf),minf(valleys,1.0)*cut_in)
+					h = lerpf(h,floor_y+(h-floor_y)*keep_f,fill*minf(river_fill,1.0))
+				var floor_meadow := (1.0-smoothstep(half*0.7,half+side*0.2,d))*inland*minf(valleys,1.0)
+				meadow = maxf(meadow,floor_meadow)
+		# The coast: the land eases flat into the sea (a beach), not a step.
+		if absf(h) < BEACH*2.0: h = h*lerpf(0.45,1.0,smoothstep(0.0,BEACH*2.0,absf(h)))
+		last_mountain = mountain
+		return Vector2(SEA_Y+h,meadow)
+
+	## How far into its mouth a river is whose level, unclamped, stands `lv` m
+	## over the sea: 0 upstream, 1 at the sea and past it (RIVER_MOUTH_RISE).
+	func _mouth(lv: float) -> float:
+		if river_mouth <= 0.0: return 0.0
+		return 1.0-smoothstep(0.0,RIVER_MOUTH_RISE,lv)
+
+	## A river's level (m over the sea) from its unclamped `lv`: never under
+	## the sea, and at a mouth easing into it flat (RIVER_MOUTH_EASE; a soft
+	## floor, the same as `maxf(lv,0)` past the ease either side).
+	func _mouth_level(lv: float) -> float:
+		if river_mouth <= 0.0: return maxf(lv,0.0)
+		var e := RIVER_MOUTH_EASE
+		if lv >= e: return lv
+		if lv <= -e: return 0.0
+		return (lv+e)*(lv+e)/(4.0*e)
+
+	## The continents' level (m over the sea) at a point, as `_broad` starts.
+	func _lowland(x: float, z: float) -> float:
+		var b := _continent.get_noise_2d(x,z)*CONTINENT_SWING*2.0+CONTINENT_LIFT
+		if b > 0.0: b = LOWLAND*(1.0-exp(-b/LOWLAND))
+		return b
+
+	## The valley noise at a world point, through its warp (as `_broad` reads it).
+	func _valley_at(x: float, z: float) -> float:
+		var vx := x+_valley_warp.get_noise_2d(x,z)*VALLEY_WARP_MOVE
+		var vz := z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*VALLEY_WARP_MOVE
+		return _valley.get_noise_2d(vx,vz)
+
+	## --- The carve -------------------------------------------------------------
+
+	## The broad land's height and slope at lattice node (i, j), cached:
+	## Vector3(world height, d/dx, d/dz). The caches are direct-mapped on
+	## LAT_SLOTS^2 slots (a chunk spans fewer nodes, so it never evicts its own).
+	func _node(i: int, j: int) -> Vector3:
+		var slot := (i&(LAT_SLOTS-1))+(j&(LAT_SLOTS-1))*LAT_SLOTS
+		var key := (i<<32)^(j&0xFFFFFFFF)
+		if _node_key[slot] == key and _node_set[slot] == 1:
+			return Vector3(_node_v[slot*3],_node_v[slot*3+1],_node_v[slot*3+2])
+		var g := CARVE_GRID
+		var hx0 := _lat_h(i-1,j)
+		var hx1 := _lat_h(i+1,j)
+		var hz0 := _lat_h(i,j-1)
+		var hz1 := _lat_h(i,j+1)
+		var v := Vector3(_lat_h(i,j),(hx1-hx0)/(2.0*g),(hz1-hz0)/(2.0*g))
+		_node_key[slot] = key
+		_node_set[slot] = 1
+		_node_v[slot*3] = v.x
+		_node_v[slot*3+1] = v.y
+		_node_v[slot*3+2] = v.z
+		return v
+
+	func _lat_h(i: int, j: int) -> float:
+		var slot := (i&(LAT_SLOTS-1))+(j&(LAT_SLOTS-1))*LAT_SLOTS
+		var key := (i<<32)^(j&0xFFFFFFFF)
+		if _h_key[slot] == key and _h_set[slot] == 1: return _h_v[slot]
+		var h := _broad(i*CARVE_GRID,j*CARVE_GRID).x
+		_h_key[slot] = key
+		_h_set[slot] = 1
+		_h_v[slot] = h
+		return h
+
+	## The broad land's height and slope at any point, eased between the
+	## lattice's nodes: Vector3(height, d/dx, d/dz).
+	func _broad_slope(x: float, z: float) -> Vector3:
+		if _h_set.is_empty():
+			var slots := LAT_SLOTS*LAT_SLOTS
+			_node_key.resize(slots)
+			_node_set.resize(slots)
+			_node_v.resize(slots*3)
+			_h_key.resize(slots)
+			_h_set.resize(slots)
+			_h_v.resize(slots)
+		var fx := x/CARVE_GRID
+		var fz := z/CARVE_GRID
+		var i := floori(fx)
+		var j := floori(fz)
+		var u := fx-i
+		var v := fz-j
+		if i != _bs_key.x or j != _bs_key.y:
+			_bs_key = Vector2i(i,j)
+			_bs_00 = _node(i,j)
+			_bs_10 = _node(i+1,j)
+			_bs_01 = _node(i,j+1)
+			_bs_11 = _node(i+1,j+1)
+		return _bs_00.lerp(_bs_10,u).lerp(_bs_01.lerp(_bs_11,u),v)
+
+	## The 3x3 block cells round cell (ci, cj), each (x, z, height, slope x,
+	## slope z, lift), kept while the samples stay in that cell.
+	func _facet_cells(ci: int, cj: int, salt: int) -> PackedFloat32Array:
+		if ci == _fc_key.x and cj == _fc_key.y: return _fc
+		_fc_key = Vector2i(ci,cj)
+		_fc.resize(54)
+		var n := 0
+		for dj in range(-1,2):
+			for di in range(-1,2):
+				var hh := _hash(ci+di,cj+dj,salt)
+				var cx := (ci+di+0.1+0.8*_rand(hh,1))*FACET_CELL
+				var cz := (cj+dj+0.1+0.8*_rand(hh,2))*FACET_CELL
+				var c := _broad_slope(cx,cz)
+				var cg := Vector2(c.y,c.z)
+				var cl := cg.length()
+				cg += Vector2(_rand(hh,3)-0.5,_rand(hh,4)-0.5)*2.0*FACET_TILT*cl
+				_fc[n] = cx
+				_fc[n+1] = cz
+				_fc[n+2] = c.x
+				_fc[n+3] = cg.x
+				_fc[n+4] = cg.y
+				_fc[n+5] = (_rand(hh,5)-0.5)*2.0*FACET_STEP*smoothstep(0.2,0.8,cl)
+				n += 6
+		return _fc
+
+	## Gully size `o`'s four lattice corners round (i, j), each (wave number,
+	## phase), kept while the samples stay in that cell.
+	func _gully_cells(o: int, i: int, j: int, salt: int) -> PackedFloat32Array:
+		var got: PackedFloat32Array = _gc[o]
+		if _gc_key[o] == Vector2i(i,j): return got
+		_gc_key[o] = Vector2i(i,j)
+		var size: float = GULLIES[o].x
+		for c in 4:
+			var hh := _hash(i+(c&1),j+(c>>1),salt+o*1013)
+			got[c*2] = TAU/(size*(1.0+(_rand(hh,1)-0.5)*2.0*GULLY_JITTER))
+			got[c*2+1] = _rand(hh,2)*TAU
+		return got
+
+	static func _hash(i: int, j: int, salt: int) -> int:
+		var h := (i*73856093)^(j*19349663)^(salt*83492791)
+		h = (h^(h>>13))*1274126177
+		h = (h^(h>>16))*1103515245
+		return (h^(h>>15))&0xFFFFFF
+
+	static func _rand(h: int, k: int) -> float:
+		return float(((h*(k*2654435761+1))>>7)&0xFFFF)/65535.0
+
+	## How much of a size (m) the chunk's grid can show.
+	func _keep(size: float) -> float:
+		if detail <= 1.0: return 1.0
+		return smoothstep(CARVE_FADE.x,CARVE_FADE.y,size/detail)
+
+	## The carved height at a point whose broad height is `h` (world).
+	func _carve(x: float, z: float, h: float, meadow: float, mountain: float, floor_y: float) -> float:
+		var bs := _broad_slope(x,z)
+		var slope := Vector2(bs.y,bs.z)
+		var steep := slope.length()
+		var mask := smoothstep(CARVE_SLOPE.x,CARVE_SLOPE.y,steep)*smoothstep(CARVE_MOUNTAIN.x,CARVE_MOUNTAIN.y,mountain)*(1.0-smoothstep(0.2,0.5,meadow))*minf(carve,2.0)
+		if mask <= 0.0: return h
+		var salt := seed*31+7
+		# Blocks: each Voronoi cell's own plane.
+		var fk := _keep(FACET_CELL)*FACET_KEEP*minf(mask,1.0)*minf(carve_blocks,1.0/FACET_KEEP)
+		var g := slope
+		if fk > 0.0:
+			var cells := _facet_cells(floori(x/FACET_CELL),floori(z/FACET_CELL),salt)
+			var sum := 0.0
+			var plane := 0.0
+			var gsx := 0.0
+			var gsz := 0.0
+			for n in range(0,54,6):
+				var dx := x-cells[n]
+				var dz := z-cells[n+1]
+				var w := exp(-FACET_EDGE*(dx*dx+dz*dz))
+				if w < 1e-3: continue
+				plane += w*(cells[n+2]+cells[n+3]*dx+cells[n+4]*dz+cells[n+5])
+				gsx += w*cells[n+3]
+				gsz += w*cells[n+4]
+				sum += w
+			var gsum := Vector2(gsx,gsz)
+			if sum > 0.0:
+				h = lerpf(h,plane/sum,fk)
+				g = g.lerp(gsum/sum,fk)
+		# Ledges: benches cut back into the face where the band allows.
+		var bk := minf(_keep(BENCH)*mask*smoothstep(0.2,0.55,_bench_band.get_noise_2d(x,z))*carve_ledges,1.0)
+		if bk > 0.0:
+			var warp := _bench_warp.get_noise_2d(x,z)*BENCH*BENCH_WARP
+			var y := (h-SEA_Y+warp)/BENCH
+			var f := y-floorf(y)
+			var stepped := (floorf(y)+smoothstep(BENCH_FLAT,1.0,f))*BENCH-warp+SEA_Y
+			h = lerpf(h,stepped,bk)
+			# The inner corner under the riser, the lip over the one below.
+			last_cavity = maxf(last_cavity,bk*(1.0-smoothstep(0.0,0.18,absf(f-BENCH_FLAT-0.04))))
+			last_ridge = maxf(last_ridge,bk*(1.0-smoothstep(0.0,0.1,minf(f,1.0-f)))*0.8)
+		# Gullies down the fall line, biggest first; each size follows the
+		# slope the last one left.
+		for o in GULLIES.size():
+			var gl: Vector2 = GULLIES[o]
+			var gk := _keep(gl.x)*mask*carve_gullies
+			if gk <= 0.0: continue
+			var glen := g.length()
+			if glen < 1e-4: break
+			var down := g/glen
+			var across := Vector2(-down.y,down.x)
+			var lx := x/gl.x
+			var lz := z/gl.x
+			var i := floori(lx)
+			var j := floori(lz)
+			var u := lx-i
+			var v := lz-j
+			u = u*u*u*(u*(u*6.0-15.0)+10.0)
+			v = v*v*v*(v*(v*6.0-15.0)+10.0)
+			# The four corners' waves, unrolled (the hot loop of a chunk build).
+			var corner := _gully_cells(o,i,j,salt)
+			var sz := gl.x
+			var base := x*across.x+z*across.y-sz*(i*across.x+j*across.y)
+			var a0 := base*corner[0]+corner[1]
+			var a1 := (base-sz*across.x)*corner[2]+corner[3]
+			var a2 := (base-sz*across.y)*corner[4]+corner[5]
+			var a3 := (base-sz*(across.x+across.y))*corner[6]+corner[7]
+			var w0 := (1.0-u)*(1.0-v)
+			var w1 := u*(1.0-v)
+			var w2 := (1.0-u)*v
+			var w3 := u*v
+			var wave := w0*cos(a0)+w1*cos(a1)+w2*cos(a2)+w3*cos(a3)
+			var dwave := -(w0*sin(a0)*corner[0]+w1*sin(a1)*corner[2]+w2*sin(a2)*corner[4]+w3*sin(a3)*corner[6])
+			# Gullies start and stop along their run.
+			var amp := smoothstep(-0.25,0.35,_gully_amp.get_noise_2d(x/sz*0.35+o*97.0,z/sz*0.35-o*61.0))
+			if amp <= 0.0: continue
+			var groove := clampf((1.0-wave)*0.5,0.0,1.0)
+			var gp1 := pow(groove,GULLY_SHARP-1.0)
+			var gp := gp1*groove
+			var depth := gl.y*gk*amp*clampf(steep,0.6,1.6)
+			var weight: float = GULLY_SHADE[o]*gk*amp
+			var rim := 1.0-groove
+			last_cavity = maxf(last_cavity,weight*gp)
+			last_ridge = maxf(last_ridge,weight*rim*rim*rim)
+			h -= depth*gp
+			g += across*(depth*GULLY_SHARP*gp1*0.5*dwave)
+		if floor_y > -INF: h = maxf(h,floor_y)
+		return h
+
+	## Round one's land (--old-land), exactly.
+	func _old_sample(x: float, z: float) -> Vector2:
+		var base := _continent.get_noise_2d(x,z)*CONTINENT_SWING*2.0+CONTINENT_LIFT
+		if base > 0.0: base = LOWLAND*(1.0-exp(-base/LOWLAND))
+		var inland := smoothstep(-6.0,18.0,base)
+		var h := base+_hills.get_noise_2d(x,z)*HILL_TALL*2.0*(0.35+0.65*inland)
+		var mountain := smoothstep(MOUNTAIN_BAND.x,MOUNTAIN_BAND.y,_mask.get_noise_2d(x,z))*inland
+		if mountain > 0.0:
+			var ridge := _ridges.get_noise_2d(x,z)*0.5+0.5
+			h += ridge*ridge*MOUNTAIN_TALL*mountain
+		var meadow := smoothstep(MEADOW_BAND.x,MEADOW_BAND.y,_meadows.get_noise_2d(x,z))*inland*(1.0-mountain)
+		if meadow > 0.0:
+			var flat := maxf(base+(h-base)*MEADOW_KEEP,MEADOW_ABOVE)
+			h = lerpf(h,flat,meadow)
+		if absf(h) < BEACH*2.0: h = h*lerpf(0.45,1.0,smoothstep(0.0,BEACH*2.0,absf(h)))
+		return Vector2(SEA_Y+h,meadow)
+
+	## The land's shape at a world XZ point: {height, meadow, mountain, inland,
+	## valley (distance to a valley's line, INF where none reaches), half, side,
+	## across} (see `last_mountain`). Round one's land has no ranges or valleys.
+	func shape(x: float, z: float) -> Dictionary:
+		last_mountain = 0.0
+		last_valley = INF
+		last_inland = 0.0
+		var s := sample(x,z)
+		return {"height":s.x,"meadow":s.y,"mountain":last_mountain,"inland":last_inland,"valley":last_valley,"half":last_half,"side":last_side,"across":last_across,
+			"river":last_river,"river_r":last_river_r,"river_w":last_river_w,"river_y":last_river_y}
+
+	## The river's water level (world y) where a point is on a river's water,
+	## else NAN (the sea is not a river: the estuary's level is the sea's).
+	func river_y(x: float, z: float) -> float:
+		sample(x,z)
+		if last_river < 0.0 and river_drawn() > SEA_Y+0.05: return river_drawn()
+		return NAN
+
+	## The river's water as the ground shader draws it, from the last `sample`
+	## (world y): its level, sunk under the sea's at a mouth (RIVER_MOUTH_SINK).
+	func river_drawn() -> float:
+		if river_mouth <= 0.0 or last_river_y == -INF: return last_river_y
+		var over := last_river_y-SEA_Y
+		return last_river_y-(RIVER_BED+RIVER_MOUTH_DEEP)*minf(river_mouth,1.0)*(1.0-smoothstep(0.0,RIVER_MOUTH_SINK,over))
+
+	## How still the sea's swell lies at the point the last `sample` read: 1 in
+	## a river's channel and just past its edge (the sea reaching up a mouth
+	## lies calm there), 0 off it or with --river-mouth=0. The sea's depth map
+	## carries it (EndlessSea), and the flight's skim reads it (`sea_calm`).
+	func calm_here() -> float:
+		if river_mouth <= 0.0 or rivers <= 0.0 or last_river_w <= 0.0: return 0.0
+		return smoothstep(0.5,3.0,last_river_w)*(1.0-smoothstep(2.0,12.0,last_river))
+
+	## `calm_here` at a world XZ point.
+	func sea_calm(x: float, z: float) -> float:
+		sample(x,z)
+		return calm_here()
+
+	## The world height at a world XZ point.
+	func height(x: float, z: float) -> float:
+		return sample(x,z).x
+
+	## The snow line over the sea for this land (round one's under --old-land).
+	func snow_line() -> float:
+		return 95.0 if old_land else SNOW
+
+	## The ground's colour at a world point: its height over the sea, its
+	## slope (the normal's up) and its meadow.
+	func colour(x: float, z: float, y: float, up: float, meadow: float) -> Color:
+		var over := y-SEA_Y
+		if over < -0.5: return SEABED.lerp(SAND,clampf(1.0+over/6.0,0.0,1.0))
+		var grass := GRASS.lerp(GRASS_DRY,clampf(_tint.get_noise_2d(x,z)*0.9+0.45,0.0,1.0))
+		grass = grass.lerp(MEADOW,meadow)
+		var c := SAND.lerp(grass,smoothstep(BEACH*0.6,BEACH*1.4,over))
+		c = c.lerp(ROCK,smoothstep(0.86,0.72,up))
+		var snow := snow_line()
+		if over > snow-12.0: c = c.lerp(SNOW_COLOUR,smoothstep(snow-12.0,snow+6.0,over)*smoothstep(0.62,0.8,up))
+		return c

@@ -27,6 +27,28 @@ one must be made to the other. Check with
 `tools/probe_terrain_erosion.gd -- 400 --reference 400`, which must report 0
 mismatches. The kernel takes under 1 ms per world; the mirror takes about 70 ms.
 
+## The endless land
+
+`land_field.h` is the endless flight's land (`scripts/endless/land_field.gd`)
+in C++, exposed as `ZenScapeLandField` (`land_field_bind.h`). LandField stays
+the public face: it hands every call to the native field when this library is
+built and current (`NATIVE_VERSION`), else to its GDScript field (`GDField`,
+the same file), which is the reference. `--land-native=0` (or
+`--gdscript-kernels`) forces the GDScript field. `build_chunk` makes a whole
+land chunk's arrays in one call; `grid` a grid of samples.
+
+The noise is the engine's own FastNoiseLite (`FastNoiseLite.h`, vendored
+unchanged from Godot 4.7.2's `thirdparty/misc`), asked with float coordinates
+as `get_noise_2d` is. Vector maths runs in floats and the rest in doubles, as
+GDScript does. exp, pow, sin and cos are `land_math.h`'s (fdlibm's algorithms,
+plain arithmetic), not the C runtime's, so a seed grows the same land on every
+machine; `--land-libm` uses the C runtime's instead, which matches GDScript
+bit for bit on one machine. Contraction must stay off (SConstruct): with fused
+multiply-add, three spots in four move, by up to 3 cm.
+`python tools/land_hash.py --seed N` prints the land's hash to compare
+machines. Any change to one field must be made to the other; check with
+`scratch/`'s comparison (the handoff, docs/design/endless-flight/native-land-handoff.md).
+
 ## Build and run
 
 Prerequisites: Godot 4.7 editor, a C++17 compiler, Python 3, SCons 4.x, and the

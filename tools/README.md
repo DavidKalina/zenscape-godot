@@ -31,6 +31,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | A new RuinKit piece: scaffold, sizes, recipe, yard, check | `python tools/kit_piece.py new\|numbers\|recipe\|yard\|check` |
 | A terraced solid (scripts/kit_isle/terrace_rock.gd) swept for see-in gaps, sight through rock, floor holes, collision off the drawn | `python tools/drive.py tools/terrace_check_run.gd -- --scene=studies/terrace_rock_test.tscn`; in a driver `await preload("res://tools/terrace_check.gd").sweep(node)` |
 | Measure a still's look (palette, shadows, blotch scale, edges, aerial) against the world's ranges, or two stills | `python tools/look_measure.py a.png [b.png] [--crop x0,y0,x1,y1] [--no-classes]` (stills: `tools/harness/look_views.gd`; `docs/art/look-breakdown.md`) |
+| The endless land's hash for a seed, to compare machines (co-op) | `python tools/land_hash.py --seed 1 [-- --land-native=0]`; `--compare a.txt b.txt` |
 | Find an existing tool | `python tools/index.py <word>` |
 
 ## godot.py: the base

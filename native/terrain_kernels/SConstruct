@@ -4,7 +4,10 @@ if not godot_cpp:
     print('Pass godot_cpp=/absolute/path/to/godot-cpp, or use tools/build_native_kernels.py')
     Exit(1)
 env = SConscript(os.path.join(godot_cpp, 'SConstruct'))
-env.Append(CXXFLAGS=['/fp:strict'] if env.get('is_msvc', False) else ['-ffp-contract=off'])
+# No fused multiply-add and strict IEEE doubles, so the kernels (and the endless
+# land, land_field.h) give the same bits on every machine; -fwrapv makes the
+# noise's integer hashing wrap by definition rather than by habit.
+env.Append(CXXFLAGS=['/fp:strict'] if env.get('is_msvc', False) else ['-ffp-contract=off', '-fwrapv', '-fno-fast-math'])
 # The descriptor names the Windows library without MinGW's 'lib' prefix (as MSVC builds it).
 if env['platform'] == 'windows':
     env['SHLIBPREFIX'] = ''

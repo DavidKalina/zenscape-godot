@@ -1,0 +1,308 @@
+// ZenScapeLandField: the endless land's field (land_field.h) for GDScript.
+// scripts/endless/land_field.gd (LandField) makes one per field it would have
+// made (each chunk worker its own, as before) and reads it through these
+// methods and properties; callers never see this class. Per-point calls
+// mirror the GDScript field's; `build_chunk` and `grid` do a whole grid in
+// one call (land_stream `_build`, endless_grass `grow_cell`).
+#pragma once
+
+#include <godot_cpp/classes/ref_counted.hpp>
+#include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/color.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_byte_array.hpp>
+#include <godot_cpp/variant/packed_color_array.hpp>
+#include <godot_cpp/variant/packed_float32_array.hpp>
+#include <godot_cpp/variant/packed_vector3_array.hpp>
+#include <godot_cpp/variant/vector2.hpp>
+#include <godot_cpp/variant/vector3.hpp>
+#include "land_field.h"
+
+using namespace godot;
+
+#define ZSL_KNOB(name) \
+	double get_##name() const { return f.name; } \
+	void set_##name(double v) { f.name = v; }
+#define ZSL_OUT(name) \
+	double get_##name() const { return f.name; }
+#define ZSL_BIND_KNOB(name) \
+	ClassDB::bind_method(D_METHOD("get_" #name), &ZenScapeLandField::get_##name); \
+	ClassDB::bind_method(D_METHOD("set_" #name, "value"), &ZenScapeLandField::set_##name); \
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, #name), "set_" #name, "get_" #name);
+#define ZSL_BIND_OUT(name) \
+	ClassDB::bind_method(D_METHOD("get_" #name), &ZenScapeLandField::get_##name); \
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, #name), "", "get_" #name);
+
+class ZenScapeLandField : public RefCounted {
+	GDCLASS(ZenScapeLandField, RefCounted)
+
+	zsland::LandField f;
+
+	static Vector2 v2(const zsland::V2 &v) { return Vector2(v.x, v.y); }
+
+protected:
+	static void _bind_methods() {
+		ClassDB::bind_method(D_METHOD("version"), &ZenScapeLandField::version);
+		ClassDB::bind_method(D_METHOD("configure", "seed", "floor_half", "knobs"), &ZenScapeLandField::configure);
+		ClassDB::bind_method(D_METHOD("sample", "x", "z"), &ZenScapeLandField::sample);
+		ClassDB::bind_method(D_METHOD("height", "x", "z"), &ZenScapeLandField::height);
+		ClassDB::bind_method(D_METHOD("shape", "x", "z"), &ZenScapeLandField::shape);
+		ClassDB::bind_method(D_METHOD("river_y", "x", "z"), &ZenScapeLandField::river_y);
+		ClassDB::bind_method(D_METHOD("river_drawn"), &ZenScapeLandField::river_drawn);
+		ClassDB::bind_method(D_METHOD("calm_here"), &ZenScapeLandField::calm_here);
+		ClassDB::bind_method(D_METHOD("sea_calm", "x", "z"), &ZenScapeLandField::sea_calm);
+		ClassDB::bind_method(D_METHOD("snow_line"), &ZenScapeLandField::snow_line);
+		ClassDB::bind_method(D_METHOD("colour", "x", "z", "y", "up", "meadow"), &ZenScapeLandField::colour);
+		ClassDB::bind_method(D_METHOD("build_chunk", "x0", "z0", "step", "cells", "skirt_drop", "flow_max"), &ZenScapeLandField::build_chunk);
+		ClassDB::bind_method(D_METHOD("grid", "x0", "z0", "step", "nx", "nz", "pad"), &ZenScapeLandField::grid);
+		ClassDB::bind_method(D_METHOD("get_seed"), &ZenScapeLandField::get_seed);
+		ADD_PROPERTY(PropertyInfo(Variant::INT, "seed"), "", "get_seed");
+		ClassDB::bind_method(D_METHOD("get_old_land"), &ZenScapeLandField::get_old_land);
+		ClassDB::bind_method(D_METHOD("set_old_land", "value"), &ZenScapeLandField::set_old_land);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "old_land"), "set_old_land", "get_old_land");
+		ClassDB::bind_method(D_METHOD("get_libm"), &ZenScapeLandField::get_libm);
+		ClassDB::bind_method(D_METHOD("set_libm", "value"), &ZenScapeLandField::set_libm);
+		ADD_PROPERTY(PropertyInfo(Variant::BOOL, "libm"), "set_libm", "get_libm");
+		ZSL_BIND_KNOB(mountains)
+		ZSL_BIND_KNOB(peaks)
+		ZSL_BIND_KNOB(valleys)
+		ZSL_BIND_KNOB(carve)
+		ZSL_BIND_KNOB(carve_blocks)
+		ZSL_BIND_KNOB(carve_ledges)
+		ZSL_BIND_KNOB(carve_gullies)
+		ZSL_BIND_KNOB(detail)
+		ZSL_BIND_KNOB(rivers)
+		ZSL_BIND_KNOB(river_width)
+		ZSL_BIND_KNOB(river_drop)
+		ZSL_BIND_KNOB(river_cut)
+		ZSL_BIND_KNOB(river_fill)
+		ZSL_BIND_KNOB(river_mouth)
+		ZSL_BIND_KNOB(river_flare)
+		ZSL_BIND_OUT(last_mountain)
+		ZSL_BIND_OUT(last_inland)
+		ZSL_BIND_OUT(last_valley)
+		ZSL_BIND_OUT(last_half)
+		ZSL_BIND_OUT(last_side)
+		ZSL_BIND_OUT(last_floor)
+		ZSL_BIND_OUT(last_cavity)
+		ZSL_BIND_OUT(last_ridge)
+		ZSL_BIND_OUT(last_river)
+		ZSL_BIND_OUT(last_river_r)
+		ZSL_BIND_OUT(last_river_w)
+		ZSL_BIND_OUT(last_river_y)
+		ClassDB::bind_method(D_METHOD("get_last_across"), &ZenScapeLandField::get_last_across);
+		ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "last_across"), "", "get_last_across");
+		ClassDB::bind_method(D_METHOD("get_last_river_flow"), &ZenScapeLandField::get_last_river_flow);
+		ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "last_river_flow"), "", "get_last_river_flow");
+	}
+
+public:
+	// Bumped when the land's output or this interface changes, so LandField
+	// refuses a stale library (and runs its GDScript field instead).
+	int64_t version() const { return 1; }
+
+	// The flags LandField parsed (see land_field.gd), then the noises built.
+	void configure(int64_t seed, double floor_half, const Dictionary &knobs) {
+		f.seed = seed;
+		f.floor_half = floor_half;
+		f.mountains = double(knobs.get("mountains", 1.0));
+		f.peaks = double(knobs.get("peaks", 1.0));
+		f.valleys = double(knobs.get("valleys", 1.0));
+		f.old_land = bool(knobs.get("old_land", false));
+		f.carve = double(knobs.get("carve", 1.0));
+		f.carve_blocks = double(knobs.get("carve_blocks", 1.0));
+		f.carve_ledges = double(knobs.get("carve_ledges", 1.0));
+		f.carve_gullies = double(knobs.get("carve_gullies", 1.0));
+		f.rivers = double(knobs.get("rivers", 1.0));
+		f.river_width = double(knobs.get("river_width", 1.0));
+		f.river_drop = double(knobs.get("river_drop", 1.0));
+		f.river_cut = double(knobs.get("river_cut", 1.0));
+		f.river_fill = double(knobs.get("river_fill", 1.0));
+		f.river_mouth = double(knobs.get("river_mouth", 1.0));
+		f.river_flare = double(knobs.get("river_flare", 1.0));
+		f.libm = bool(knobs.get("libm", false));
+		f.setup();
+	}
+
+	Vector2 sample(double x, double z) { return v2(f.sample(x, z)); }
+	double height(double x, double z) { return f.height(x, z); }
+	Dictionary shape(double x, double z) {
+		f.shape_reset();
+		const zsland::V2 s = f.sample(x, z);
+		Dictionary d;
+		d["height"] = double(s.x);
+		d["meadow"] = double(s.y);
+		d["mountain"] = f.last_mountain;
+		d["inland"] = f.last_inland;
+		d["valley"] = f.last_valley;
+		d["half"] = f.last_half;
+		d["side"] = f.last_side;
+		d["across"] = v2(f.last_across);
+		d["river"] = f.last_river;
+		d["river_r"] = f.last_river_r;
+		d["river_w"] = f.last_river_w;
+		d["river_y"] = f.last_river_y;
+		return d;
+	}
+	double river_y(double x, double z) { return f.river_y(x, z); }
+	double river_drawn() const { return f.river_drawn(); }
+	double calm_here() const { return f.calm_here(); }
+	double sea_calm(double x, double z) { return f.sea_calm(x, z); }
+	double snow_line() const { return f.snow_line(); }
+	Color colour(double x, double z, double y, double up, double meadow) const {
+		const zsland::C4 c = f.colour(x, z, y, up, meadow);
+		return Color(c.r, c.g, c.b, c.a);
+	}
+
+	// land_stream `_build`'s arrays for the chunk whose corner is (x0, z0):
+	// its (cells+1)^2 grid at `step` m, sampled with a one-sample border for
+	// the normals, then the skirt's four edges dropped `skirt_drop` m; the
+	// river's flow packed at +-flow_max m/s. The same bits as the GDScript loop.
+	Dictionary build_chunk(double x0, double z0, double step, int64_t cells, double skirt_drop, double flow_max) {
+		f.detail = step;
+		const int n = int(cells) + 1;
+		const int w = n + 2;
+		std::vector<float> hs(size_t(w) * w), ms(size_t(w) * w), rv(size_t(w) * w * 5);
+		std::vector<uint8_t> cv(size_t(w) * w * 2);
+		for (int j = 0; j < w; ++j) {
+			for (int i = 0; i < w; ++i) {
+				const zsland::V2 got = f.sample(x0 + double(i - 1) * step, z0 + double(j - 1) * step);
+				const int k = j * w + i;
+				hs[k] = got.x;
+				ms[k] = got.y;
+				cv[k * 2] = uint8_t(int64_t(zsland::clampf(f.last_cavity, 0.0, 1.0) * 255.0));
+				cv[k * 2 + 1] = uint8_t(int64_t(zsland::clampf(f.last_ridge, 0.0, 1.0) * 255.0));
+				const int q = k * 5;
+				rv[q] = float(zsland::clampf(f.last_river_r, -1000.0, 1000.0));
+				rv[q + 1] = float(f.last_river_w);
+				rv[q + 2] = float(f.last_river_y > -zsland::INF ? f.last_river_y : zsland::LandField::SEA_Y - 100.0);
+				rv[q + 3] = f.last_river_flow.x;
+				rv[q + 4] = f.last_river_flow.y;
+			}
+		}
+		const int total = n * n + 4 * n;
+		PackedVector3Array verts, normals;
+		PackedColorArray colours;
+		PackedByteArray carved;
+		PackedFloat32Array river, heights;
+		verts.resize(total);
+		normals.resize(total);
+		colours.resize(total);
+		carved.resize(total * 4);
+		river.resize(total * 3);
+		heights.resize(n * n);
+		Vector3 *vp = verts.ptrw();
+		Vector3 *np = normals.ptrw();
+		Color *cp = colours.ptrw();
+		uint8_t *kp = carved.ptrw();
+		float *rp = river.ptrw();
+		float *hp = heights.ptrw();
+		for (int j = 0; j < n; ++j) {
+			for (int i = 0; i < n; ++i) {
+				const int k = (j + 1) * w + i + 1;
+				const double y = hs[k];
+				const double nx = double(hs[k - 1]) - double(hs[k + 1]);
+				const double nzv = double(hs[k - w]) - double(hs[k + w]);
+				const zsland::V3 normal = zsland::V3(nx, 2.0 * step, nzv).normalized();
+				const int v = j * n + i;
+				vp[v] = Vector3(float(double(i) * step), float(y), float(double(j) * step));
+				np[v] = Vector3(normal.x, normal.y, normal.z);
+				zsland::C4 c = f.colour(x0 + double(i) * step, z0 + double(j) * step, y, normal.y, ms[k]);
+				c.a = ms[k];
+				cp[v] = Color(c.r, c.g, c.b, c.a);
+				kp[v * 4] = cv[k * 2];
+				kp[v * 4 + 1] = cv[k * 2 + 1];
+				kp[v * 4 + 2] = uint8_t(int64_t(zsland::clampf(double(rv[k * 5 + 3]) / flow_max * 0.5 + 0.5, 0.0, 1.0) * 255.0));
+				kp[v * 4 + 3] = uint8_t(int64_t(zsland::clampf(double(rv[k * 5 + 4]) / flow_max * 0.5 + 0.5, 0.0, 1.0) * 255.0));
+				rp[v * 3] = rv[k * 5];
+				rp[v * 3 + 1] = rv[k * 5 + 1];
+				rp[v * 3 + 2] = rv[k * 5 + 2];
+				hp[v] = float(y);
+			}
+		}
+		// The skirt: each edge's vertices again (-z, +x, +z, -x), dropped.
+		const float drop = float(skirt_drop);
+		for (int e = 0; e < 4; ++e) {
+			for (int t = 0; t < n; ++t) {
+				const int from = e == 0 ? t : (e == 1 ? t * n + (n - 1) : (e == 2 ? (n - 1) * n + t : t * n));
+				const int v = n * n + e * n + t;
+				vp[v] = Vector3(vp[from].x - 0.0f, vp[from].y - drop, vp[from].z - 0.0f);
+				np[v] = np[from];
+				cp[v] = cp[from];
+				for (int b = 0; b < 4; ++b) kp[v * 4 + b] = kp[from * 4 + b];
+				rp[v * 3] = rp[from * 3];
+				rp[v * 3 + 1] = -rp[from * 3 + 1];
+				rp[v * 3 + 2] = rp[from * 3 + 2];
+			}
+		}
+		Dictionary out;
+		out["verts"] = verts;
+		out["normals"] = normals;
+		out["colours"] = colours;
+		out["carved"] = carved;
+		out["river"] = river;
+		out["heights"] = heights;
+		return out;
+	}
+
+	// The field over an nx by nz grid from (x0, z0), `pad` samples before it
+	// each way (x = x0+(i-pad)*step): heights, meadows and `last_river` per
+	// sample, row by row (endless_grass `grow_cell`'s probe grid).
+	Dictionary grid(double x0, double z0, double step, int64_t nx, int64_t nz, int64_t pad) {
+		PackedFloat32Array hs, ms, rs;
+		hs.resize(nx * nz);
+		ms.resize(nx * nz);
+		rs.resize(nx * nz);
+		float *hp = hs.ptrw();
+		float *mp = ms.ptrw();
+		float *rp = rs.ptrw();
+		for (int64_t j = 0; j < nz; ++j) {
+			for (int64_t i = 0; i < nx; ++i) {
+				const zsland::V2 got = f.sample(x0 + double(i - pad) * step, z0 + double(j - pad) * step);
+				hp[j * nx + i] = got.x;
+				mp[j * nx + i] = got.y;
+				rp[j * nx + i] = float(f.last_river);
+			}
+		}
+		Dictionary out;
+		out["heights"] = hs;
+		out["meadows"] = ms;
+		out["river"] = rs;
+		return out;
+	}
+
+	int64_t get_seed() const { return f.seed; }
+	bool get_old_land() const { return f.old_land; }
+	void set_old_land(bool v) { f.old_land = v; }
+	bool get_libm() const { return f.libm; }
+	void set_libm(bool v) { f.libm = v; }
+	Vector2 get_last_across() const { return v2(f.last_across); }
+	Vector2 get_last_river_flow() const { return v2(f.last_river_flow); }
+	ZSL_KNOB(mountains)
+	ZSL_KNOB(peaks)
+	ZSL_KNOB(valleys)
+	ZSL_KNOB(carve)
+	ZSL_KNOB(carve_blocks)
+	ZSL_KNOB(carve_ledges)
+	ZSL_KNOB(carve_gullies)
+	ZSL_KNOB(detail)
+	ZSL_KNOB(rivers)
+	ZSL_KNOB(river_width)
+	ZSL_KNOB(river_drop)
+	ZSL_KNOB(river_cut)
+	ZSL_KNOB(river_fill)
+	ZSL_KNOB(river_mouth)
+	ZSL_KNOB(river_flare)
+	ZSL_OUT(last_mountain)
+	ZSL_OUT(last_inland)
+	ZSL_OUT(last_valley)
+	ZSL_OUT(last_half)
+	ZSL_OUT(last_side)
+	ZSL_OUT(last_floor)
+	ZSL_OUT(last_cavity)
+	ZSL_OUT(last_ridge)
+	ZSL_OUT(last_river)
+	ZSL_OUT(last_river_r)
+	ZSL_OUT(last_river_w)
+	ZSL_OUT(last_river_y)
+};
