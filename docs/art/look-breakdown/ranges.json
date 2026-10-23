@@ -1,0 +1,506 @@
+{
+ "ranges": {
+  "aerial.dS": {
+   "max": 0.057,
+   "min": -0.098,
+   "n": 10
+  },
+  "aerial.dV": {
+   "max": 0.137,
+   "min": -0.242,
+   "n": 10
+  },
+  "aerial.dhue": {
+   "max": 11.0,
+   "min": -17.0,
+   "n": 10
+  },
+  "cloud.S.p5": {
+   "max": 0.059,
+   "min": 0.025,
+   "n": 7
+  },
+  "cloud.S.p50": {
+   "max": 0.205,
+   "min": 0.057,
+   "n": 7
+  },
+  "cloud.S.p95": {
+   "max": 0.313,
+   "min": 0.201,
+   "n": 7
+  },
+  "cloud.V.p5": {
+   "max": 0.757,
+   "min": 0.541,
+   "n": 7
+  },
+  "cloud.V.p50": {
+   "max": 0.855,
+   "min": 0.729,
+   "n": 7
+  },
+  "cloud.V.p95": {
+   "max": 0.925,
+   "min": 0.824,
+   "n": 7
+  },
+  "cloud.blotch32": {
+   "max": 0.86,
+   "min": 0.86,
+   "n": 1
+  },
+  "cloud.blotch8": {
+   "max": 0.953,
+   "min": 0.714,
+   "n": 7
+  },
+  "cloud.dark10_V": {
+   "max": 0.747,
+   "min": 0.544,
+   "n": 7
+  },
+  "cloud.dark10_hue": {
+   "max": 255.0,
+   "min": 2.0,
+   "n": 7
+  },
+  "cloud.edge_hard_share": {
+   "max": 0.1485,
+   "min": 0.0,
+   "n": 7
+  },
+  "cloud.edge_p50": {
+   "max": 0.029,
+   "min": 0.0015,
+   "n": 7
+  },
+  "cloud.edge_p90": {
+   "max": 0.111,
+   "min": 0.008,
+   "n": 7
+  },
+  "cloud.hue": {
+   "max": 344.0,
+   "min": 15.0,
+   "n": 7
+  },
+  "cloud.lit_dark": {
+   "max": 1.81,
+   "min": 1.23,
+   "n": 7
+  },
+  "grass.S.p5": {
+   "max": 0.364,
+   "min": 0.168,
+   "n": 10
+  },
+  "grass.S.p50": {
+   "max": 0.538,
+   "min": 0.217,
+   "n": 10
+  },
+  "grass.S.p95": {
+   "max": 0.627,
+   "min": 0.276,
+   "n": 10
+  },
+  "grass.V.p5": {
+   "max": 0.682,
+   "min": 0.388,
+   "n": 10
+  },
+  "grass.V.p50": {
+   "max": 0.776,
+   "min": 0.541,
+   "n": 10
+  },
+  "grass.V.p95": {
+   "max": 0.831,
+   "min": 0.71,
+   "n": 10
+  },
+  "grass.blotch32": {
+   "max": 0.576,
+   "min": 0.409,
+   "n": 4
+  },
+  "grass.blotch8": {
+   "max": 0.832,
+   "min": 0.533,
+   "n": 10
+  },
+  "grass.dark10_V": {
+   "max": 0.669,
+   "min": 0.355,
+   "n": 10
+  },
+  "grass.dark10_hue": {
+   "max": 100.0,
+   "min": 66.0,
+   "n": 10
+  },
+  "grass.edge_hard_share": {
+   "max": 0.142,
+   "min": 0.003,
+   "n": 10
+  },
+  "grass.edge_p50": {
+   "max": 0.039,
+   "min": 0.0125,
+   "n": 10
+  },
+  "grass.edge_p90": {
+   "max": 0.09,
+   "min": 0.033,
+   "n": 10
+  },
+  "grass.hue": {
+   "max": 89.0,
+   "min": 65.0,
+   "n": 10
+  },
+  "grass.lit_dark": {
+   "max": 2.07,
+   "min": 1.21,
+   "n": 10
+  },
+  "other.S.p5": {
+   "max": 0.074,
+   "min": 0.029,
+   "n": 9
+  },
+  "other.S.p50": {
+   "max": 0.171,
+   "min": 0.1,
+   "n": 9
+  },
+  "other.S.p95": {
+   "max": 0.619,
+   "min": 0.169,
+   "n": 9
+  },
+  "other.V.p5": {
+   "max": 0.671,
+   "min": 0.22,
+   "n": 9
+  },
+  "other.V.p50": {
+   "max": 0.812,
+   "min": 0.365,
+   "n": 9
+  },
+  "other.V.p95": {
+   "max": 0.914,
+   "min": 0.761,
+   "n": 9
+  },
+  "other.blotch32": {
+   "max": 0.261,
+   "min": 0.198,
+   "n": 2
+  },
+  "other.blotch8": {
+   "max": 1.059,
+   "min": 0.189,
+   "n": 8
+  },
+  "other.dark10_V": {
+   "max": 0.66,
+   "min": 0.218,
+   "n": 9
+  },
+  "other.dark10_hue": {
+   "max": 291.0,
+   "min": 60.0,
+   "n": 9
+  },
+  "other.edge_hard_share": {
+   "max": 0.106,
+   "min": 0.0125,
+   "n": 9
+  },
+  "other.edge_p50": {
+   "max": 0.0265,
+   "min": 0.0065,
+   "n": 9
+  },
+  "other.edge_p90": {
+   "max": 0.083,
+   "min": 0.0285,
+   "n": 9
+  },
+  "other.hue": {
+   "max": 316.0,
+   "min": 27.0,
+   "n": 9
+  },
+  "other.lit_dark": {
+   "max": 4.07,
+   "min": 1.39,
+   "n": 9
+  },
+  "rock_sand.S.p5": {
+   "max": 0.122,
+   "min": 0.033,
+   "n": 10
+  },
+  "rock_sand.S.p50": {
+   "max": 0.363,
+   "min": 0.147,
+   "n": 10
+  },
+  "rock_sand.S.p95": {
+   "max": 0.52,
+   "min": 0.269,
+   "n": 10
+  },
+  "rock_sand.V.p5": {
+   "max": 0.675,
+   "min": 0.325,
+   "n": 10
+  },
+  "rock_sand.V.p50": {
+   "max": 0.788,
+   "min": 0.651,
+   "n": 10
+  },
+  "rock_sand.V.p95": {
+   "max": 0.89,
+   "min": 0.824,
+   "n": 10
+  },
+  "rock_sand.blotch32": {
+   "max": 0.78,
+   "min": 0.337,
+   "n": 3
+  },
+  "rock_sand.blotch8": {
+   "max": 0.965,
+   "min": 0.277,
+   "n": 10
+  },
+  "rock_sand.dark10_V": {
+   "max": 0.663,
+   "min": 0.32,
+   "n": 10
+  },
+  "rock_sand.dark10_hue": {
+   "max": 46.0,
+   "min": 12.0,
+   "n": 10
+  },
+  "rock_sand.edge_hard_share": {
+   "max": 0.206,
+   "min": 0.007,
+   "n": 10
+  },
+  "rock_sand.edge_p50": {
+   "max": 0.0315,
+   "min": 0.0075,
+   "n": 10
+  },
+  "rock_sand.edge_p90": {
+   "max": 0.1205,
+   "min": 0.029,
+   "n": 10
+  },
+  "rock_sand.hue": {
+   "max": 50.0,
+   "min": 35.0,
+   "n": 10
+  },
+  "rock_sand.lit_dark": {
+   "max": 2.85,
+   "min": 1.33,
+   "n": 10
+  },
+  "sky.S.p5": {
+   "max": 0.459,
+   "min": 0.228,
+   "n": 8
+  },
+  "sky.S.p50": {
+   "max": 0.631,
+   "min": 0.394,
+   "n": 8
+  },
+  "sky.S.p95": {
+   "max": 0.727,
+   "min": 0.481,
+   "n": 8
+  },
+  "sky.V.p5": {
+   "max": 0.702,
+   "min": 0.631,
+   "n": 8
+  },
+  "sky.V.p50": {
+   "max": 0.749,
+   "min": 0.659,
+   "n": 8
+  },
+  "sky.V.p95": {
+   "max": 0.82,
+   "min": 0.753,
+   "n": 8
+  },
+  "sky.blotch32": {
+   "max": 0.889,
+   "min": 0.615,
+   "n": 7
+  },
+  "sky.blotch8": {
+   "max": 0.974,
+   "min": 0.843,
+   "n": 8
+  },
+  "sky.dark10_V": {
+   "max": 0.706,
+   "min": 0.584,
+   "n": 8
+  },
+  "sky.dark10_hue": {
+   "max": 215.0,
+   "min": 212.0,
+   "n": 8
+  },
+  "sky.edge_hard_share": {
+   "max": 0.017,
+   "min": 0.002,
+   "n": 8
+  },
+  "sky.edge_p50": {
+   "max": 0.002,
+   "min": 0.0005,
+   "n": 8
+  },
+  "sky.edge_p90": {
+   "max": 0.004,
+   "min": 0.003,
+   "n": 8
+  },
+  "sky.hue": {
+   "max": 215.0,
+   "min": 210.0,
+   "n": 8
+  },
+  "sky.lit_dark": {
+   "max": 1.74,
+   "min": 1.34,
+   "n": 8
+  },
+  "water.S.p5": {
+   "max": 0.294,
+   "min": 0.266,
+   "n": 6
+  },
+  "water.S.p50": {
+   "max": 0.623,
+   "min": 0.446,
+   "n": 6
+  },
+  "water.S.p95": {
+   "max": 0.904,
+   "min": 0.551,
+   "n": 6
+  },
+  "water.V.p5": {
+   "max": 0.749,
+   "min": 0.38,
+   "n": 6
+  },
+  "water.V.p50": {
+   "max": 0.776,
+   "min": 0.71,
+   "n": 6
+  },
+  "water.V.p95": {
+   "max": 0.89,
+   "min": 0.761,
+   "n": 6
+  },
+  "water.blotch32": {
+   "max": 0.787,
+   "min": 0.634,
+   "n": 3
+  },
+  "water.blotch8": {
+   "max": 0.871,
+   "min": 0.626,
+   "n": 6
+  },
+  "water.dark10_V": {
+   "max": 0.732,
+   "min": 0.383,
+   "n": 6
+  },
+  "water.dark10_hue": {
+   "max": 216.0,
+   "min": 200.0,
+   "n": 6
+  },
+  "water.edge_hard_share": {
+   "max": 0.087,
+   "min": 0.0055,
+   "n": 6
+  },
+  "water.edge_p50": {
+   "max": 0.021,
+   "min": 0.005,
+   "n": 6
+  },
+  "water.edge_p90": {
+   "max": 0.0715,
+   "min": 0.0135,
+   "n": 6
+  },
+  "water.hue": {
+   "max": 207.0,
+   "min": 189.0,
+   "n": 6
+  },
+  "water.lit_dark": {
+   "max": 2.64,
+   "min": 1.67,
+   "n": 6
+  },
+  "whole.L.p1": {
+   "max": 0.504,
+   "min": 0.207,
+   "n": 10
+  },
+  "whole.L.p5": {
+   "max": 0.611,
+   "min": 0.313,
+   "n": 10
+  },
+  "whole.L.p50": {
+   "max": 0.791,
+   "min": 0.486,
+   "n": 10
+  },
+  "whole.L.p95": {
+   "max": 0.88,
+   "min": 0.702,
+   "n": 10
+  },
+  "whole.dark2_hue": {
+   "max": 323.0,
+   "min": 54.0,
+   "n": 10
+  }
+ },
+ "stills": [
+  "coast_h12.5.png",
+  "coast.png",
+  "cruise_h12.5.png",
+  "cruise.png",
+  "high.png",
+  "hills.png",
+  "meadow_low.png",
+  "river.png",
+  "rock_h12.5.png",
+  "rock.png"
+ ]
+}
