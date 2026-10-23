@@ -1,5 +1,5 @@
 shader_type spatial;
-// A songbird (scripts/songbird_body.gd, docs/scenic/songbirds.md). Faceted and
+// A songbird (scripts/songbird_body.gd, docs/scenic/songbirds.md). Smooth and
 // vertex-coloured. On a perch it rides its limb: the wood's own breeze lean
 // and wind-tool perch_bend (reference_surface's trunk path, `blow_enabled` without
 // `sway_enabled`) are evaluated at the perch point in the tree's mesh space,
