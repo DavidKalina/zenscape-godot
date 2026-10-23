@@ -53,7 +53,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 fog_at;        // 56 the valley fog's map: corner xz, side, has one
 	vec4 fog_knobs;     // 60 density scale, depth (m), steps, slab top (world y)
 	vec4 fog_drift;     // 64 the patches' drift xz (m), reach (m), fade (m)
-	vec4 spare[24];     // 68..163
+	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -
 	vec4 weather_at;    // 164 corner xz, side, texels a side
 	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
 	vec4 flash;         // 172 grain jitter on, organic field on, stacked clouds yield, puffs' finer lobes on
@@ -955,10 +955,12 @@ vec4 fog_at(vec3 p, vec4 f) {
 	// A thin layer's top as soft for its depth, so a shallow one never smears.
 	float soft = min(FOG_TOP_SOFT, max(top - f.g, 6.0) * 0.6);
 	float body = sstep(top + 2.0, top - soft, p.y);
-	float ground = mix(FOG_UNDER, 1.0, sstep(FOG_GROUND.x, FOG_GROUND.y, p.y - f.r));
+	float ground = mix(P.spare[0].x, 1.0, sstep(FOG_GROUND.x, FOG_GROUND.y, p.y - f.r));
 	float wisp = mix(0.3, 1.0, sstep(0.3, 0.68, bl.g));
 	float hh = clamp((p.y - f.g) / max(top - f.g, 4.0), 0.0, 1.0);
-	return vec4(amount * body * ground * wisp, hh, max(top - p.y, 0.0), f.r);
+	// Thicker low, thinning toward its top.
+	float thin = 1.0 - P.spare[0].z * hh * hh;
+	return vec4(amount * body * ground * wisp * thin, hh, max(top - p.y, 0.0), f.r);
 }
 
 // How much sun reaches `p` past the ridges (the fog map's ground along the
@@ -1131,7 +1133,7 @@ void march_pass() {
 		if (fb > fa) {
 			int n = int(P.fog_knobs.z);
 			float span = fb - fa;
-			float sigma = FOG_SIGMA * P.fog_knobs.x;
+			float sigma = FOG_SIGMA * P.fog_knobs.x * P.spare[0].y;
 			float prev = fa;
 			for (int i = 0; i < 96; i++) {
 				if (i >= n || fog_T < 0.02) break;

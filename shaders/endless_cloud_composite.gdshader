@@ -39,6 +39,8 @@ const float NIGHT_TINT = 0.6;
 // reads as pale blue air, never as a muddy wash over the ground.
 const vec3 FOG_COOL = vec3(0.8, 0.95, 1.2);
 const float FOG_LIFT = 1.2;
+// The valley fog's light scaled (1 as the first pass drew it).
+uniform float fog_gain = 1.0;
 
 void vertex() {
 	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
@@ -65,7 +67,7 @@ void fragment() {
 	float fog_share = clamp(terms.w, 0.0, 1.0);
 	vec3 shade_col = c_shade * mix(vec3(1.0), FOG_COOL, fog_share);
 	vec3 lit = (terms.x * shade_col + terms.y * c_sun + terms.z * c_sun * BOUNCE_TINT) * ZS_CUMULUS_LIT_SHARE;
-	lit *= mix(1.0, LIFT, zs_daylight) * mix(1.0, FOG_LIFT, fog_share);
+	lit *= mix(1.0, LIFT, zs_daylight) * mix(1.0, FOG_LIFT * fog_gain, fog_share);
 	float bright = clamp(terms.y / 0.95, 0.0, 1.0);
 	float met = b.y / cloud_a;
 	float glow = b.w / cloud_a;

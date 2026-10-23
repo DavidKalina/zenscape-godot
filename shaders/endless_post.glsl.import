@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://baxeclucq38s4"
+path="res://.godot/imported/endless_post.glsl-0e55f06d98f7d140d5028d622e4b1011.res"
+
+[deps]
+
+source_file="res://shaders/endless_post.glsl"
+dest_files=["res://.godot/imported/endless_post.glsl-0e55f06d98f7d140d5028d622e4b1011.res"]
+
+[params]
+

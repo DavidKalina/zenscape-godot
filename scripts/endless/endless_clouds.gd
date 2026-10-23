@@ -193,6 +193,10 @@ var _ground_next := Vector4.ZERO
 var _ground_cpu: Image
 ## The valley fog: on, its density, depth and steps (the flags), its map.
 var fog_on := true
+## The fog's look (floor share, density scale, top thinning): the soft one
+## by default, --fog=old the first pass's (valley-fog-handoff.md).
+var fog_look := Vector4(0.8,0.35,0.6,0.0)
+var fog_gain := 0.75
 var fog_density := 1.0
 var fog_depth := FOG_DEPTH
 var fog_steps := FOG_STEPS
@@ -252,6 +256,13 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 		elif a == "--sea-shade=old": sea_shade_sync = false
 		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
 		elif a == "--no-valley-fog": fog_on = false
+		elif a == "--fog=old":
+			fog_look = Vector4(0.12,1.0,0.0,0.0)
+			fog_gain = 1.0
+		elif a.begins_with("--fog-gain="): fog_gain = a.get_slice("=",1).to_float()
+		elif a.begins_with("--fog-look="):
+			var fl := a.get_slice("=",1).split(",")
+			if fl.size() >= 3: fog_look = Vector4(fl[0].to_float(),fl[1].to_float(),fl[2].to_float(),0.0)
 		elif a.begins_with("--valley-fog="):
 			fog_density = maxf(a.get_slice("=",1).to_float(),0.0)
 			if fog_density <= 0.0: fog_on = false
@@ -270,6 +281,7 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--cloud-haze="): haze.w = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 	material.set_shader_parameter("haze",haze)
+	material.set_shader_parameter("fog_gain",fog_gain)
 	material.set_shader_parameter("sea_y",Field.SEA_Y)
 	material.set_shader_parameter("sun_scatter",sun_scatter)
 	CumulusNoise.request()
@@ -861,6 +873,7 @@ func _fill() -> void:
 	_put4(p,56,fog_at if fog_live else Vector4.ZERO)
 	_put4(p,60,Vector4(fog_density,fog_depth,fog_steps,fog_top+fog_depth*1.6+16.0))
 	_put4(p,64,Vector4(drift.x*FOG_DRIFT,drift.y*FOG_DRIFT,FOG_REACH,FOG_FADE))
+	_put4(p,68,fog_look)
 	var weather_due := _frame%WEATHER_EVERY == 0 or weather_side == 0.0
 	var shade_due := _frame%SHADE_EVERY == 0
 	if weather_due:
