@@ -69,6 +69,10 @@ extends Node3D
 ## --bird-range=X, --bird-size=X, --bird-ride=S, --ambient-birds=X.
 ## Other planes (scripts/endless/endless_traffic.gd): --traffic=0 off,
 ## --traffic=N how many (3), --trails=0 no smoke trails.
+## The plane's speed (SkyPlane FLIGHT_SPEED, use_flight_speed): --plane-speed=X
+## (times the toy's 14 m/s cruise, 2.1; 1.15 the isles'), --plane-turn=X; the
+## view widens with speed RUSH_FOV times the chase's own (--cam-speed-fov=X
+## sets it), and past cruise the eye buffets a little (--rush=X, 1; 0 off).
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
@@ -111,6 +115,14 @@ const SEA_SIZE := 40000.0
 ## The plane's start over the ground (m), and the eye's clearance over it.
 const START_ALT := 45.0
 const EYE_CLEAR := 0.6
+## Speed's feel: the chase's speed widening times RUSH_FOV (GlideCamera
+## FOV_FAST; at cruise about +6 degrees, at boost +12), and the wind's
+## buffet on the eye, RUSH_SHAKE radians at most, coming in from
+## RUSH_FROM of the cruise to Boost's speed, shaken at RUSH_HZ.
+const RUSH_FOV := 1.8
+const RUSH_SHAKE := 0.0045
+const RUSH_FROM := 0.9
+const RUSH_HZ := Vector3(7.3,11.9,17.1)
 
 ## True once the land under the start stands and it flies (the harness
 ## waits on it: tools/harness/drive.gd `open`).
@@ -169,6 +181,9 @@ var _hop_from := Vector3.ZERO
 var _hop_to := Vector3.INF
 var _parked_at := Vector3.ZERO
 var _boarding := -1.0
+## The buffet's strength (--rush=X) and its clock.
+var _rush := 1.0
+var _rush_t := 0.0
 
 func _ready() -> void:
 	EndlessLook.reset_season_globals()
@@ -183,6 +198,7 @@ func _ready() -> void:
 		elif arg.begins_with("--alt="): _alt = float(arg.get_slice("=",1))
 		elif arg == "--numbers": _numbers = true
 		elif arg == "--on-foot": _on_foot_start = true
+		elif arg.begins_with("--rush="): _rush = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--ceiling="): _ceiling_over = float(arg.get_slice("=",1))
 		elif arg == "--old-land": _ceiling_over = SkyPlane.CEILING-Field.SEA_Y
 		elif arg == "--uncapped":
@@ -356,7 +372,7 @@ func _build_ui() -> void:
 ## Flying from `at` on `heading`, at cruise, the chase camera behind it.
 func _launch(at: Vector3, heading: float) -> void:
 	plane = SkyPlane.new()
-	plane.use_game_speed()
+	plane.use_flight_speed()
 	plane.floor_y = Field.SEA_Y-15.0
 	plane.water = Field.SEA_Y
 	# The ranges' tallest peaks stand into the cloud roof: the ceiling
@@ -382,6 +398,7 @@ func _launch(at: Vector3, heading: float) -> void:
 	chase.sight = _sight
 	chase.reset(plane,at+(-plane.forward()*GlideCamera.BACK.x+Vector3.UP*GlideCamera.UP.x)*ground_scale.size(),camera.fov)
 	chase.linger = LOOK_LINGER
+	if not _has_arg("--cam-speed-fov="): chase.speed_fov = RUSH_FOV
 	_size_chase()
 	_frame(0.0)
 
@@ -477,6 +494,7 @@ func tick(delta: float) -> void:
 	_size_chase()
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() else Vector3.ZERO
 	_frame(delta)
+	land.lead_with(plane.velocity)
 	land.step(camera.global_position)
 	arches.step(camera.global_position)
 	trees.step(camera.global_position,plane.position)
@@ -525,7 +543,28 @@ func _frame(delta: float) -> void:
 	if way.length() < 0.01: way = plane.forward()
 	camera.look_at(camera.global_position+way,Vector3.UP)
 	camera.rotate_object_local(Vector3.FORWARD,chase.roll)
+	_buffet(delta)
 	camera.fov = chase.fov
+
+## The wind's buffet past cruise: a small shake of the eye's aim, three
+## sines out of step, growing to RUSH_SHAKE at Boost's speed. None on the
+## wheels.
+func _buffet(delta: float) -> void:
+	if _rush <= 0.0 or hand_landing.on_ground(): return
+	_rush_t += delta
+	var v: float = plane.velocity.length()
+	var k := smoothstep(plane.cruise()*RUSH_FROM,plane.boost_speed(),v)*RUSH_SHAKE*_rush
+	if k <= 0.0: return
+	var t := _rush_t*TAU
+	var yaw := sin(t*RUSH_HZ.x)*0.6+sin(t*RUSH_HZ.z+1.7)*0.4
+	var nod := sin(t*RUSH_HZ.y+0.9)*0.6+sin(t*RUSH_HZ.x*1.31+2.3)*0.4
+	camera.rotate_object_local(Vector3.UP,yaw*k)
+	camera.rotate_object_local(Vector3.RIGHT,nod*k*0.7)
+
+static func _has_arg(prefix: String) -> bool:
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with(prefix): return true
+	return false
 
 ## The plane's input, as the isle reads it (studies/kit_isle.gd `_fly_input`).
 func _fly_input(_delta: float) -> Dictionary:
