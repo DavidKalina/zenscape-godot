@@ -42,6 +42,13 @@ var size := Vector2i.ZERO
 var full_size := Vector2i.ZERO
 ## 2: the march takes one pixel of each 2x2 block a frame; 1: every pixel.
 var scale := 2
+## Above 1, the weather map is drawn a slice of rows a frame into a second
+## map, round the square the driver asks for when the slice cycle begins,
+## and the two swap (and the ceiling is redrawn) when it is whole: the map
+## costs 1/weather_slices of a whole draw each frame, and is at most two
+## cycles old. 0 or 1: whole, when the driver says it is due (as before).
+## The driver's march shader reads the slice's square from SLICE_SQUARE.
+var weather_slices := 0
 var history_ok := false
 ## Frames the passes actually ran (tests, probes).
 var runs := 0
@@ -59,6 +66,22 @@ const SHADOW_TEXELS := 256
 ## SHADE_EVERY).
 const WEATHER_DUE := 178
 const SHADE_DUE := 179
+## The march block's weather square (corner xz, side, texels), and where the
+## sliced weather pass reads the square its slice is drawn round.
+const WEATHER_SQUARE := 164
+const SLICE_SQUARE := 160
+## Sliced, the endless march's block (shaders/endless_cloud_march.glsl):
+## the low layer's drift, the high layer's (with whether the high layer has
+## its own), the clouds' life clock, and where the march reads how far each
+## layer has drifted since the front map was drawn (low xz, high xz). Every
+## slice of a cycle is drawn at the drift and clock the cycle began with, so
+## each map is one moment, and the march shifts its look-ups by the drift
+## since that moment, so the clouds move smoothly between swaps.
+const LOW_DRIFT := 36
+const HIGH_DRIFT := 74
+const HIGH_OWN := 72
+const LIFE_CLOCK := 76
+const DRIFT_SINCE := 156
 ## The march shader's passes (its push constant).
 enum {PASS_WEATHER, PASS_CEILING, PASS_SHADOW, PASS_MARCH}
 
@@ -82,6 +105,15 @@ var _resolved_b := RID()
 var _history_a := RID()
 var _history_b := RID()
 var _weather := RID()
+var _weather_back := RID()
+var _front_square := Vector4.ZERO
+var _back_square := Vector4.ZERO
+var _slice := 0
+## The drifts and clock (low xz, high xz; clock) the front map and the
+## cycle being drawn were drawn at.
+var _front_drift := Vector4.ZERO
+var _back_drift := Vector4.ZERO
+var _back_clock := 0.0
 var _ceiling := RID()
 var _shadow := RID()
 var _scratch := RID()
@@ -157,6 +189,7 @@ func _allocate(want: Vector2i, whole: Vector2i) -> void:
 		empty.usage_bits = RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT
 		_empty_body = _rd.texture_create(empty,RDTextureView.new(),[PackedFloat32Array([1000.0,1000.0]).to_byte_array()])
 		_weather = _target(Vector2i(WEATHER_TEXELS,WEATHER_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
+		if weather_slices > 1: _weather_back = _target(Vector2i(WEATHER_TEXELS,WEATHER_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
 		_ceiling = _target(Vector2i(CEILING_TEXELS,CEILING_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
 		_shadow = _target(Vector2i(SHADOW_TEXELS,SHADOW_TEXELS),RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT)
 		# Stands in for whichever of those a pass does not write.
@@ -236,16 +269,70 @@ func _render_callback(_type: int, data: RenderData) -> void:
 	_rd.capture_timestamp("Cloud volume")
 	var trust := history_ok and not _fresh
 	resolve_params[16+16+3] = 1.0 if trust else 0.0
-	_rd.buffer_update(_march_buffer,0,MARCH_FLOATS*4,march_params.to_byte_array())
+	var params := march_params
+	var sliced := weather_slices > 1
+	var swap := false
+	if sliced:
+		# The square the driver wants now starts the next cycle; the passes
+		# read the front map's square, and the slice its own.
+		params = march_params.duplicate()
+		var want := Vector4(params[WEATHER_SQUARE],params[WEATHER_SQUARE+1],params[WEATHER_SQUARE+2],params[WEATHER_SQUARE+3])
+		var own := params[HIGH_OWN] > 0.5
+		var drift_now := Vector4(params[LOW_DRIFT],params[LOW_DRIFT+1],params[HIGH_DRIFT] if own else params[LOW_DRIFT],params[HIGH_DRIFT+1] if own else params[LOW_DRIFT+1])
+		if _fresh or _front_square == Vector4.ZERO:
+			_front_square = want
+			_front_drift = drift_now
+			_slice = 0
+		else:
+			if _slice == 0:
+				_back_square = want
+				_back_drift = drift_now
+				_back_clock = params[LIFE_CLOCK]
+			swap = _slice == weather_slices-1
+			for i in 4:
+				params[SLICE_SQUARE+i] = _back_square[i]
+				params[WEATHER_SQUARE+i] = _front_square[i]
+			params[LOW_DRIFT] = _back_drift.x
+			params[LOW_DRIFT+1] = _back_drift.y
+			if own:
+				params[HIGH_DRIFT] = _back_drift.z
+				params[HIGH_DRIFT+1] = _back_drift.w
+			params[LIFE_CLOCK] = _back_clock
+		for i in 4: params[DRIFT_SINCE+i] = drift_now[i]-_front_drift[i]
+		if not _weather_back.is_valid(): sliced = false
+	_rd.buffer_update(_march_buffer,0,MARCH_FLOATS*4,params.to_byte_array())
 	_rd.buffer_update(_resolve_buffer,0,RESOLVE_FLOATS*4,resolve_params.to_byte_array())
 	# The weather map, its ceiling, the shade on the land, then the march:
 	# each pass writes one target and reads what the ones before it wrote.
-	if march_params[WEATHER_DUE] > 0.5 or _fresh:
+	if _fresh or (not sliced and march_params[WEATHER_DUE] > 0.5):
 		_pass(PASS_WEATHER,depth,_weather,_flat,_scratch,_scratch,_flat,Vector2i(WEATHER_TEXELS,WEATHER_TEXELS))
 		_pass(PASS_CEILING,depth,_scratch,_weather,_scratch,_ceiling,_flat,Vector2i(CEILING_TEXELS,CEILING_TEXELS))
+	elif sliced:
+		var rows := ceili(WEATHER_TEXELS/float(weather_slices))
+		_pass(PASS_WEATHER,depth,_weather_back,_flat,_scratch,_scratch,_flat,Vector2i(WEATHER_TEXELS,rows),_slice*rows)
+		_slice = (_slice+1)%weather_slices
+		if swap:
+			# Next frame's params carry the new front's square (the driver's
+			# want); this frame's passes after here read the new map, so the
+			# march block is rewritten with its square first.
+			var front := _weather
+			_weather = _weather_back
+			_weather_back = front
+			_front_square = _back_square
+			_front_drift = _back_drift
+			var drift_now := Vector4(march_params[LOW_DRIFT],march_params[LOW_DRIFT+1],march_params[HIGH_DRIFT],march_params[HIGH_DRIFT+1])
+			if march_params[HIGH_OWN] < 0.5: drift_now = Vector4(drift_now.x,drift_now.y,drift_now.x,drift_now.y)
+			for i in 4:
+				params[WEATHER_SQUARE+i] = _front_square[i]
+				params[DRIFT_SINCE+i] = drift_now[i]-_front_drift[i]
+			_rd.buffer_update(_march_buffer,0,MARCH_FLOATS*4,params.to_byte_array())
+			_pass(PASS_CEILING,depth,_scratch,_weather,_scratch,_ceiling,_flat,Vector2i(CEILING_TEXELS,CEILING_TEXELS))
+	_rd.capture_timestamp("Cloud weather done")
 	if march_params[SHADE_DUE] > 0.5 or _fresh:
 		_pass(PASS_SHADOW,depth,_scratch,_weather,_shadow,_scratch,_ceiling,Vector2i(SHADOW_TEXELS,SHADOW_TEXELS))
+	_rd.capture_timestamp("Cloud shade done")
 	_pass(PASS_MARCH,depth,_scratch,_weather,_scratch,_scratch,_ceiling,size)
+	_rd.capture_timestamp("Cloud march done")
 	var resolve := UniformSetCacheRD.get_cache(_resolve_shader,0,[
 		_buffer(0,_resolve_buffer),
 		_sampled(1,_nearest,_march_a,_flat),
@@ -261,6 +348,7 @@ func _render_callback(_type: int, data: RenderData) -> void:
 	_rd.compute_list_bind_uniform_set(list,resolve,0)
 	_rd.compute_list_dispatch(list,ceili(full_size.x/8.0),ceili(full_size.y/8.0),1)
 	_rd.compute_list_end()
+	_rd.capture_timestamp("Cloud resolve done")
 	var whole := Vector3(full_size.x,full_size.y,1)
 	_rd.texture_copy(_resolved_a,_history_a,Vector3.ZERO,Vector3.ZERO,whole,0,0,0,0)
 	_rd.texture_copy(_resolved_b,_history_b,Vector3.ZERO,Vector3.ZERO,whole,0,0,0,0)
@@ -273,7 +361,8 @@ func _render_callback(_type: int, data: RenderData) -> void:
 ## (`weather_out`, `shadow_out`, `ceiling_out`; the scratch texel where a
 ## pass writes none) and the maps it reads (`weather_in`, `ceiling_in`),
 ## over `texels` threads.
-func _pass(mode: int, depth: RID, weather_out: RID, weather_in: RID, shadow_out: RID, ceiling_out: RID, ceiling_in: RID, texels: Vector2i) -> void:
+## `first_row` 0 or more: a weather slice from that row, round SLICE_SQUARE.
+func _pass(mode: int, depth: RID, weather_out: RID, weather_in: RID, shadow_out: RID, ceiling_out: RID, ceiling_in: RID, texels: Vector2i, first_row := -1) -> void:
 	var set := UniformSetCacheRD.get_cache(_march_shader,0,[
 		_buffer(0,_march_buffer),
 		_sampled(1,_linear,envelope,_flat),
@@ -292,7 +381,7 @@ func _pass(mode: int, depth: RID, weather_out: RID, weather_in: RID, shadow_out:
 		_image(14,shadow_out),
 		_image(15,ceiling_out),
 		_sampled(16,_linear,ceiling_in,_flat)])
-	var push := PackedInt32Array([mode,0,0,0]).to_byte_array()
+	var push := PackedInt32Array([mode,1 if first_row >= 0 else 0,maxi(first_row,0),0]).to_byte_array()
 	var list := _rd.compute_list_begin()
 	_rd.compute_list_bind_compute_pipeline(list,_march_pipeline)
 	_rd.compute_list_bind_uniform_set(list,set,0)
@@ -307,5 +396,5 @@ func _notification(what: int) -> void:
 	march_depth.texture_rd_rid = RID()
 	weather.texture_rd_rid = RID()
 	shadow.texture_rd_rid = RID()
-	for rid in [_march_a,_march_b,_depth,_resolved_a,_resolved_b,_history_a,_history_b,_weather,_ceiling,_shadow,_scratch,_march_buffer,_resolve_buffer,_flat,_empty_body,_linear,_repeat,_nearest,_march_pipeline,_resolve_pipeline,_march_shader,_resolve_shader]:
+	for rid in [_march_a,_march_b,_depth,_resolved_a,_resolved_b,_history_a,_history_b,_weather,_weather_back,_ceiling,_shadow,_scratch,_march_buffer,_resolve_buffer,_flat,_empty_body,_linear,_repeat,_nearest,_march_pipeline,_resolve_pipeline,_march_shader,_resolve_shader]:
 		if rid.is_valid(): _rd.free_rid(rid)

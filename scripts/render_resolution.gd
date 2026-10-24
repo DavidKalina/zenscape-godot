@@ -34,11 +34,15 @@ static func attach(viewport: Viewport) -> void:
 ## or set at run time (endless flight's F2). --render-upscale=fsr2 (temporal)
 ## or bilinear in place of FSR.
 static var scale_override := -1.0
+## The scale a Native draw (cap 0) takes, upscaled by FSR: a scene that wants
+## its 3D drawn under the window's resolution even at the player's Native
+## sets it while it runs (endless flight, NATIVE_3D) and puts it back.
+static var native_scale := 1.0
 
 static func apply(viewport: Viewport, cap: int) -> void:
 	# In pixels: a Retina window's visible rect is in points, half its pixels.
 	var height := float((viewport as Window).size.y if viewport is Window else (viewport as SubViewport).size.y)
-	var scale := 1.0 if cap <= 0 or height <= cap else cap/height
+	var scale := native_scale if cap <= 0 else (1.0 if height <= cap else cap/height)
 	var mode := Viewport.SCALING_3D_MODE_METALFX_SPATIAL if RenderingServer.get_current_rendering_driver_name() == "metal" else Viewport.SCALING_3D_MODE_FSR
 	for a: String in OS.get_cmdline_user_args():
 		if a.begins_with("--render-scale=") and scale_override < 0.0: scale_override = clampf(float(a.get_slice("=",1)),0.5,1.0)

@@ -196,7 +196,17 @@ var _boarding := -1.0
 var _rush := 0.0
 var _rush_t := 0.0
 
+## The 3D at a Native draw (the player's render resolution, and the default
+## on a discrete GPU): 75%, upscaled by FSR (scripts/render_resolution.gd
+## native_scale). About 2.5 ms back at 1440p on an RTX 4070 SUPER, a little
+## softer (docs/design/endless-flight/cloud-weather-slices-handoff.md).
+## --render-scale=1 draws at the window's own; F2 still cycles SCALES.
+const NATIVE_3D := 0.75
+
 func _ready() -> void:
+	var rr := preload("res://scripts/render_resolution.gd")
+	rr.native_scale = NATIVE_3D
+	rr.apply(get_tree().root,rr.load_cap())
 	EndlessLook.reset_season_globals()
 	# The world: its shader globals over the reset, its start under the flags.
 	world = WorldProfile.current()
@@ -643,6 +653,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_Q: _lean_tapped(-1.0)
 			KEY_E: _lean_tapped(1.0)
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func _exit_tree() -> void:
+	var rr := preload("res://scripts/render_resolution.gd")
+	rr.native_scale = 1.0
+	rr.apply(get_tree().root,rr.load_cap())
 
 ## F2: the 3D's resolution through SCALES (the window's own, then upscaled
 ## by FSR), to judge sharpness against the frame rate; shown on the hint
