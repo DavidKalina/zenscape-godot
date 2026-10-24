@@ -574,10 +574,11 @@ func sample(x: float, z: float) -> Vector2:
 ## (x, z): the meadow fades with the lift; `_t_on` where it was lifted.
 func _tunnel(ts: Array, got: Vector2, x: float, z: float) -> Vector2:
 	for t: RefCounted in ts:
-		var y := Tunnels.carve(t,got.x,x,z)
+		var ym: Vector2 = Tunnels.carve_m(t,got.x,x,z)
+		var y := ym.x
 		var d := y-got.x
 		if d == 0.0: continue
-		got.y *= Tunnels._meadow_keep(d)
+		got.y = maxf(got.y*Tunnels._meadow_keep(d),Tunnels.SHELF_MEADOW*ym.y)
 		if d > 1.0: _t_on = true
 		got.x = y
 	return got

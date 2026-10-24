@@ -201,6 +201,31 @@ const PIT_RAGGED := 7.0
 const PIT_BLEND := 14.0
 const HOLE_PAD := 3.0
 
+## The shelves (knobs; AGENTS.md's meadows and flats: a landing flat in
+## reach on a massif's top too): along the crest where it stands high
+## enough, the crest planed off flat at SHELF_CUT m under its lowest over
+## runs of up to SHELF_LEN m (at least SHELF_MIN, SHELF_GAP m of crest
+## between them), the flat as wide as the massif stands over it, open to
+## both flanks, its ends rising back to the crest at
+## SHELF_WALL (rise over run, ragged by SHELF_RAGGED m) with a smooth min of
+## SHELF_BLEND m. A shelf leaves SHELF_ROCK m of rock over the vault, keeps
+## SHELF_SHAFT m along the path from a shaft's sinkhole's rim, and has no gullies within
+## SHELF_SPAN m of the path (fading out over SHELF_FADE m); its floor is a
+## meadow (SHELF_MEADOW). Only the massif is planed: land standing higher
+## stays. `--tunnel-shelves=0` turns them off.
+const SHELF_LEN := 320.0
+const SHELF_MIN := 180.0
+const SHELF_GAP := 220.0
+const SHELF_CUT := 75.0
+const SHELF_WALL := 0.9
+const SHELF_RAGGED := 6.0
+const SHELF_BLEND := 10.0
+const SHELF_ROCK := 60.0
+const SHELF_SHAFT := 15.0
+const SHELF_SPAN := 220.0
+const SHELF_FADE := 80.0
+const SHELF_MEADOW := 0.9
+
 ## One tunnel. Built once (on whichever thread asks first), then only read.
 class Site extends RefCounted:
 	var name := ""
@@ -248,6 +273,9 @@ class Site extends RefCounted:
 	## The shafts: {s (along the path), at (the axis, world xz), top (the
 	## pit's floor, world y), crown (the vault's crown under it, world y)}.
 	var shafts: Array = []
+	## The shelves: {a, b (the flat's run along the path), y (its floor,
+	## world y)}, the crest planed off over a hall stretch's middle.
+	var shelves: Array = []
 
 ## The tunnels' density: the world's `tunnels` layer (0: none), then
 ## `--tunnels=X` or `--no-tunnels`.
@@ -263,6 +291,9 @@ static func test_wanted() -> bool:
 	return "--tunnel-test" in LaunchArgs.user_args()
 
 ## How many caverns get a shaft: SHAFT_MOST, or `--tunnel-shafts=N`.
+static func shelves_wanted() -> bool:
+	return not ("--tunnel-shelves=0" in LaunchArgs.user_args())
+
 static func shafts_wanted() -> int:
 	var out := SHAFT_MOST
 	for a: String in LaunchArgs.user_args():
@@ -567,6 +598,7 @@ static func _build(impl: Object, seed: int, frame: Transform3D, test: bool) -> S
 		var p := t.pts[_box_i(t,i)]
 		t.box = t.box.merge(Rect2(p-Vector2(reach[i],reach[i]),Vector2(reach[i],reach[i])*2.0))
 	_place_shafts(t)
+	_place_shelves(t)
 	return t
 
 ## The shafts (SHAFT_MOST): over the middle of each cavern's longest bend,
@@ -595,6 +627,50 @@ static func _place_shafts(t: Site) -> void:
 		var top_y := crown+SHAFT_ROCK
 		if massif(t,axis.x,axis.y) < top_y+SHAFT_DEEP: continue
 		t.shafts.append({"s":s,"at":axis,"top":top_y,"crown":crown})
+
+## The shelves: along the crest where it stands high enough over the
+## vault, clear of the shafts' sinkholes (as wide as they are at the
+## shelf's height), in runs of up to SHELF_LEN m, SHELF_GAP m of crest
+## between them.
+static func _place_shelves(t: Site) -> void:
+	if not shelves_wanted(): return
+	var need := t.floor_y+CAVE_VAULT+CAVE_INSIDE+SHELF_ROCK+SHELF_CUT
+	# Where the crest is high enough, every STEP*2 m.
+	var free: Array = []
+	var s := 0.0
+	var from := -1.0
+	while s <= t.length:
+		var ok := top(t,s) >= need
+		if ok:
+			for sh: Dictionary in t.shafts:
+				var r := (top(t,float(sh.s))-SHELF_CUT-float(sh.top))/PIT_WALL+PIT_FLOOR+SHELF_SHAFT
+				if absf(s-float(sh.s)) < r: ok = false
+		if ok and from < 0.0: from = s
+		if not ok and from >= 0.0:
+			free.append(Vector2(from,s-STEP*2.0))
+			from = -1.0
+		s += STEP*2.0
+	if from >= 0.0: free.append(Vector2(from,t.length))
+	for iv: Vector2 in free:
+		var span := iv.y-iv.x
+		if span < SHELF_MIN: continue
+		var k := maxi(1,floori((span+SHELF_GAP)/(SHELF_LEN+SHELF_GAP)))
+		var run := minf(SHELF_LEN,(span-(k-1)*SHELF_GAP)/k)
+		if run < SHELF_MIN:
+			k = 1
+			run = minf(SHELF_LEN,span)
+		var gap := (span-k*run)/maxi(k-1,1) if k > 1 else 0.0
+		var a := iv.x if k > 1 else (iv.x+iv.y-run)*0.5
+		for n in k:
+			var b := a+run
+			var lo := INF
+			var q := a
+			while q <= b:
+				lo = minf(lo,top(t,q))
+				q += STEP*2.0
+			lo = minf(lo,top(t,b))
+			t.shelves.append({"a":a,"b":b,"y":lo-SHELF_CUT})
+			a = b+gap
 
 ## The path's samples every STEP m (and its end), from its segments.
 static func _sample_path(t: Site) -> void:
@@ -699,14 +775,35 @@ static func top(t: Site, s: float) -> float:
 
 ## The massif's surface (world y) at (x, z), before it meets the land.
 static func massif(t: Site, x: float, z: float) -> float:
-	var q := local(t,x,z)
+	return _massif_q(t,local(t,x,z),x,z)
+
+static func _massif_q(t: Site, q: Vector2, x: float, z: float) -> float:
 	var a := absf(q.y)
 	# Each side's fall varies along the path (the crest noise, read apart).
 	var fall := FLANK*(1.0+FLANK_VARY*t.crest_noise.get_noise_2d(q.x*0.7,7000.0 if q.y > 0.0 else -7000.0))
 	var y := top(t,q.x)-fall*(a*a/(2.0*CREST_R) if a < CREST_R else a-CREST_R*0.5)
 	var w := smoothstep(GULLY_FROM.x,GULLY_FROM.y,a)
+	if w > 0.0 and not t.shelves.is_empty():
+		# No gully on a shelf's flat or its edges.
+		for sv: Dictionary in t.shelves:
+			var along := maxf(maxf(float(sv.a)-q.x,q.x-float(sv.b)),0.0)
+			w *= smoothstep(0.0,SHELF_FADE,maxf(along,a-SHELF_SPAN))
 	if w > 0.0: y += GULLY*w*t.gully.get_noise_2d(x,z)
 	return y
+
+## The shelves over the massif's surface `y` at path frame `q` (x, z):
+## Vector2(the surface, how much of a shelf's meadow it stands on 0..1).
+static func _shelve(t: Site, y: float, q: Vector2, x: float, z: float) -> Vector2:
+	var m := 0.0
+	for sv: Dictionary in t.shelves:
+		var along := maxf(maxf(float(sv.a)-q.x,q.x-float(sv.b)),0.0)
+		var floor_y := float(sv.y)
+		var wall := floor_y+along*SHELF_WALL
+		if wall-SHELF_BLEND >= y: continue
+		if along > 0.0: wall += SHELF_RAGGED*(t.rock.get_noise_2d(x*1.5,z*1.5)*0.5+0.5)*smoothstep(0.0,20.0,along)
+		y = -_smax(-y,-wall,SHELF_BLEND)
+		m = maxf(m,(1.0-smoothstep(1.0,6.0,absf(y-floor_y)))*(1.0-smoothstep(0.0,30.0,along)))
+	return Vector2(y,m)
 
 ## A smooth max: exactly the larger where they're `k` or more apart.
 static func _smax(a: float, b: float, k: float) -> float:
@@ -716,15 +813,24 @@ static func _smax(a: float, b: float, k: float) -> float:
 ## The land's height `base` with tunnel `t`'s massif raised and its mouths'
 ## trenches cut, at (x, z).
 static func carve(t: Site, base: float, x: float, z: float) -> float:
-	if not t.box.has_point(Vector2(x,z)): return base
-	var y := _smax(massif(t,x,z),base,BLEND)
+	return carve_m(t,base,x,z).x
+
+## carve's height, and how much of a shelf's meadow (x, z) stands on (0..1).
+static func carve_m(t: Site, base: float, x: float, z: float) -> Vector2:
+	if not t.box.has_point(Vector2(x,z)): return Vector2(base,0.0)
+	var q := local(t,x,z)
+	var sm := Vector2(_massif_q(t,q,x,z),0.0)
+	if not t.shelves.is_empty(): sm = _shelve(t,sm.x,q,x,z)
+	var y := _smax(sm.x,base,BLEND)
+	# A shelf's meadow only where the massif stands (not the land under it).
+	var meadow := sm.y*smoothstep(0.0,BLEND,sm.x-base)
 	if y != base:
 		# Land lower than the box allows for: the lift fades out at its edge.
 		var e := minf(minf(x-t.box.position.x,t.box.end.x-x),minf(z-t.box.position.y,t.box.end.y-z))
 		if e < EDGE_FADE: y = base+(y-base)*smoothstep(0.0,EDGE_FADE,e)
 	y = _trench(t,y,t.origin,-t.way,x,z)
 	y = _trench(t,y,t.mouth_b,t.out_b,x,z)
-	return _pit(t,y,x,z)
+	return Vector2(_pit(t,y,x,z),meadow)
 
 ## The shafts' sinkholes over `y` at (x, z): flat at the shaft's top within
 ## PIT_FLOOR, the walls rising at PIT_WALL (ragged) into the land above.
@@ -1089,6 +1195,7 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ts: Array
 	lift.resize(n*n)
 	var moved := PackedByteArray()
 	moved.resize(n*n)
+	var shelf := PackedFloat32Array()
 	var any_moved := false
 	for t: Site in ts:
 		var i0 := clampi(floori((t.box.position.x-x0)/step),0,cells)
@@ -1098,7 +1205,11 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ts: Array
 		for j in range(j0,j1+1):
 			for i in range(i0,i1+1):
 				var v := j*n+i
-				var y := carve(t,heights[v],x0+i*step,z0+j*step)
+				var ym := carve_m(t,heights[v],x0+i*step,z0+j*step)
+				var y := ym.x
+				if ym.y > 0.0:
+					if shelf.is_empty(): shelf.resize(n*n)
+					shelf[v] = maxf(shelf[v],ym.y)
 				if absf(y-heights[v]) > 0.0005:
 					lift[v] += y-heights[v]
 					heights[v] = y
@@ -1129,6 +1240,7 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ts: Array
 			normals[v] = normal
 			var meadow := colours[v].a
 			if moved[v] != 0: meadow *= _meadow_keep(lift[v])
+			if not shelf.is_empty(): meadow = maxf(meadow,SHELF_MEADOW*shelf[v])
 			var c: Color = impl.colour(x,z,heights[v],normal.y,meadow)
 			c.a = meadow
 			colours[v] = c
@@ -1190,11 +1302,12 @@ static func apply_grid(got: Dictionary, ts: Array, x0: float, z0: float, step: f
 				var x := x0+(i-pad)*step
 				var z := z0+(j-pad)*step
 				var k := j*nx+i
-				var y := carve(t,hs[k],x,z)
+				var ym := carve_m(t,hs[k],x,z)
+				var y := ym.x
 				var d := y-hs[k]
 				if absf(d) <= 0.0005: continue
 				hs[k] = y
-				ms[k] *= _meadow_keep(d)
+				ms[k] = maxf(ms[k]*_meadow_keep(d),SHELF_MEADOW*ym.y)
 				if d > 1.0: rs[k] = maxf(rs[k],1000.0)
 				if d < 0.0 and on_trench(t,x,z): rs[k] = minf(rs[k],-1.0)
 	got.heights = hs
