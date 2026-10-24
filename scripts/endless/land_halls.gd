@@ -546,8 +546,24 @@ static func over(p: Vector3, h: float, list: Array) -> Variant:
 
 ## True inside a hall's solid (the camera keeps out, the wheels stop).
 func inside(p: Vector3) -> bool:
-	for s: Vector2 in stretches(p):
-		if p.y >= s.x and p.y <= s.y: return true
+	# As `stretches`, without building the list (the camera's sight asks
+	# this every half metre).
+	for key: Vector2i in _halls:
+		var r: Dictionary = _halls[key]
+		if r.is_empty(): continue
+		var site: PackedFloat32Array = r.site
+		if absf(p.x-site[0]) > site[7]+40.0 or absf(p.z-site[1]) > site[7]+40.0: continue
+		var local: Vector3 = (r.inv as Transform3D)*p
+		var y := p.y-(r.frame as Transform3D).origin.y
+		for sec: Dictionary in r.sections:
+			var g: Dictionary = sec.solid
+			var i := int(floor((local.x-float(g.x0))/GRID))
+			var j := int(floor((local.z-float(g.z0))/GRID))
+			if i < 0 or j < 0 or i >= int(g.nx) or j >= int(g.nz): continue
+			var data: PackedFloat32Array = g.data
+			var at := (j*int(g.nx)+i)*STRIDE
+			for k in range(int(data[at])):
+				if y >= data[at+1+k*2] and y <= data[at+2+k*2]: return true
 	return false
 
 ## One line for the numbers HUD.

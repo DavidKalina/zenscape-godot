@@ -499,14 +499,19 @@ func sea_height(p: Vector3) -> float:
 	return look.water.height_at(p.x,p.z)*(1.0-field.sea_calm(p.x,p.z))
 
 ## The share of the way from `from` to `to` clear of the land (GlideCamera
-## `sight`), marched over the field.
+## `sight`), marched over the field; in a bore, finer (LandTunnels `sight`).
 func _sight(from: Vector3, to: Vector3) -> float:
 	const STEPS := 10
+	var bore: float = tunnels.sight(from,to)
+	if tunnels.sight_whole: return bore
 	for i in range(1,STEPS+1):
 		var t := float(i)/STEPS
+		if t > bore: break
 		var p := from.lerp(to,t)
+		# In a bore's tube the fine march has answered.
+		if tunnels.tube(p) >= 0: continue
 		if p.y < tunnels.land_y(p,field.height(p.x,p.z)) or arches.inside(p) or halls.inside(p) or tunnels.inside(p): return float(i-1)/STEPS
-	return 1.0
+	return bore
 
 func _process(delta: float) -> void:
 	if not walk_ready: return
@@ -585,6 +590,7 @@ func _frame(delta: float) -> void:
 	var right := Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
 	if right != Vector2.ZERO: chase.turn(Vector2(-right.x,-right.y)*STICK_LOOK*delta)
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
+	chase.tight = tunnels.near(plane.position)
 	chase.step(delta,plane,0.0,_solid)
 	camera.global_position = chase.eye
 	var way: Vector3 = chase.look-chase.eye

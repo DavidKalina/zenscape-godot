@@ -107,6 +107,10 @@ const BEAM_ALPHA := 0.035
 const BEAM_TINT := Color(1.0,0.93,0.78)
 ## How far past the tube's walls `inside` counts the rock (m).
 const WALL_NEAR := 12.0
+## The camera's sight in a bore (`sight`): marched every SIGHT_STEP m
+## where either end is within a tunnel's box and SIGHT_UP m over its floor.
+const SIGHT_STEP := 0.75
+const SIGHT_UP := 60.0
 
 ## The greybox torch: its bracket (across, up, out of the wall), its flame
 ## (radius, height), the size and glow by kind.
@@ -165,6 +169,8 @@ var clouds: Node
 var _sites: Array = []
 ## The plane's wingtip: the tube's half width it may fly in.
 var _grow := 0.0
+## Whether `sight`'s last march was all in a bore's tube.
+var sight_whole := false
 var _rock_tris := 0
 ## Every torch's light spot (world) and its size, all sites.
 var _lamps := PackedVector3Array()
@@ -384,6 +390,50 @@ func inside(p: Vector3) -> bool:
 		var q := Tunnels.local(t,p.x,p.z)
 		if q.x >= -Tunnels.PORTAL_OUT and q.x <= t.length+Tunnels.PORTAL_OUT and absf(q.y) < Tunnels.section(t,q.x).x+WALL_NEAR: return true
 	return false
+
+## The chase camera's sight inside a bore (studies/endless_flight.gd
+## `_sight`, GlideCamera `sight`): the share of the way from `from` to `to`
+## clear of the rock and the hall stretches, marched every SIGHT_STEP m (the
+## field's own march is too coarse for a stretch's columns and lintels, or
+## a bend's inside corner, so the eye went through them). 1 where neither
+## end is near a bore. `sight_whole` says whether the tube answered every
+## point (nothing else can be in the way there, so the caller's own march
+## can be skipped).
+func sight(from: Vector3, to: Vector3) -> float:
+	sight_whole = false
+	if not near(from) and not near(to): return 1.0
+	var n := maxi(1,ceili(from.distance_to(to)/SIGHT_STEP))
+	var whole := true
+	for i in range(1,n+1):
+		var p := from.lerp(to,float(i)/n)
+		var got := tube(p)
+		if got < 0:
+			whole = false
+			if inside(p) or p.y < land_y(p,field.height(p.x,p.z)): got = 1
+		if got == 1:
+			sight_whole = whole
+			return float(i-1)/n
+	sight_whole = whole
+	return 1.0
+
+## Whether `p` is in a tunnel's box, low enough to be in its bore.
+func near(p: Vector3) -> bool:
+	for t: Tunnels.Site in _sites:
+		if t.box.has_point(Vector2(p.x,p.z)) and p.y < t.floor_y+SIGHT_UP: return true
+	return false
+
+## The quick answer in a bore's tube away from its portals (and up a
+## shaft), where the land over it can't matter: 1 in the rock or a hall
+## stretch, 0 open, -1 elsewhere (ask `inside` and `land_y`).
+func tube(p: Vector3) -> int:
+	for t: Tunnels.Site in _sites:
+		if not t.box.has_point(Vector2(p.x,p.z)) or p.y > t.floor_y+SIGHT_UP: continue
+		var sh := Tunnels.shaft_at(t,p.x,p.z)
+		if sh >= 0 and p.y < float(t.shafts[sh].top): return 1 if p.y < t.floor_y else 0
+		var b := Tunnels.bore_at(t,p.x,p.z)
+		if is_nan(b.x) or Tunnels.portal_at(t,p.x,p.z) >= 0: return -1
+		return 1 if p.y < b.x or p.y > b.y or halls.inside(p) else 0
+	return -1
 
 ## One line for the numbers HUD.
 func note() -> String:
