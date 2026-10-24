@@ -65,3 +65,19 @@ Rebuild the dylib for both targets (the commands are in world-profiles-handoff.m
 
 - The windows' look in the stills (orange mood) is the parallel look round's work, not this one.
 - In the landing driver, the walk after getting out moved only 0.5 m in 180 frames of stick. The driver's walk check may be wrong, so on-foot walking after a landing is unverified here. Getting out and the `--on-foot` smoke both work.
+
+## Tuning
+
+After a flight the ridges read, from a distance, like a lattice of spaced posts (the crest cut into separate teeth by notches, thin crests sampled intermittently by far LOD chunks), becoming clear only when close. Values only, in `scripts/endless/world/overgrown/land.gd`:
+
+| Key | Before | After |
+|---|---|---|
+| `range_width` | 0.12 | 0.16 |
+| `ridge_crisp` | 0.85 | 0.7 |
+| `notch` | 0.8 | 0.5 |
+| `notch_scale` | 2600 | 5000 |
+| `notch_width` | (0.05, 0.10) | (0.04, 0.09) |
+
+Notches are now rare, shallower saddles, and crests are broader, so a ridge reads as one ridgeline from 1 to 3 km and is still crisp up close. Grass: `grass_tall` 1.35 to 1.5 in `overgrown/look.gd`.
+
+Checks: native and GDScript agree (`land_hash.py` seed 1 overgrown `1629a047...`, both; parity.gd: heights and meadows differ 0). Flats (blocks >400 m / >600 m, worst) for seeds 1, 3, 7, 42: 19/9 1205 m, 7/0 540 m, 8/3 818 m, 17/11 1168 m. This is slightly worse than before this tuning (13/9, 4/0, 6/1, 14/5; seed 42 gets 6 more far blocks) and still better than wilderness on most seeds. Stills: `captures/tune/` (git-ignored; `*_before` and `*_v1`, e.g. `nsE_*`).
