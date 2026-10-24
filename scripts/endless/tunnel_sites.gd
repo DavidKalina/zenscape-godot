@@ -125,6 +125,27 @@ const TRENCH_REACH := APRON+RAMP_MOST
 ## `--tunnel-test`: mouth A this far ahead of the start (m).
 const TEST_AHEAD := 450.0
 
+## The shafts to the sky (sundered_hall.gd's MAX_SHUT: a long shut run needs
+## a way out, and a glimpse of daylight partway through), knobs: in up to
+## SHAFT_MOST caverns (`--tunnel-shafts=N`), the deepest first, over the
+## middle of the cavern's longest bend, a round shaft SHAFT_R m in radius
+## rises from the vault's crown through SHAFT_ROCK m of rock to the floor
+## of a sinkhole sunk into the massif: flat PIT_FLOOR m round the shaft,
+## its walls rising at PIT_WALL (rise over run), ragged by up to PIT_RAGGED
+## m, into the massif with a smooth min of PIT_BLEND m. No shaft where the
+## massif stands less than SHAFT_DEEP m over the shaft's top. The land mesh
+## drops its triangles within SHAFT_R+HOLE_PAD m of the axis (portal_mask);
+## land_tunnels.gd's curb covers the hole's edge.
+const SHAFT_MOST := 2
+const SHAFT_R := 7.0
+const SHAFT_ROCK := 28.0
+const SHAFT_DEEP := 30.0
+const PIT_FLOOR := 26.0
+const PIT_WALL := 1.7
+const PIT_RAGGED := 7.0
+const PIT_BLEND := 14.0
+const HOLE_PAD := 3.0
+
 ## One tunnel. Built once (on whichever thread asks first), then only read.
 class Site extends RefCounted:
 	var name := ""
@@ -169,6 +190,9 @@ class Site extends RefCounted:
 	var vt := PackedFloat32Array()
 	var rn := PackedFloat32Array()
 	var rock: FastNoiseLite
+	## The shafts: {s (along the path), at (the axis, world xz), top (the
+	## pit's floor, world y), crown (the vault's crown under it, world y)}.
+	var shafts: Array = []
 
 ## The tunnels' density: the world's `tunnels` layer (0: none), then
 ## `--tunnels=X` or `--no-tunnels`.
@@ -182,6 +206,13 @@ static func wanted(default := 0.0) -> float:
 ## Whether `--tunnel-test` asks for the one tunnel ahead of the start.
 static func test_wanted() -> bool:
 	return "--tunnel-test" in LaunchArgs.user_args()
+
+## How many caverns get a shaft: SHAFT_MOST, or `--tunnel-shafts=N`.
+static func shafts_wanted() -> int:
+	var out := SHAFT_MOST
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--tunnel-shafts="): out = maxi(0,int(a.get_slice("=",1)))
+	return out
 
 ## The test tunnel: mouth A TEST_AHEAD m ahead of the start on its heading,
 ## the floor at the land there (read from `impl`, the field doing the work,
@@ -305,7 +336,35 @@ static func _build(impl: Object, seed: int, frame: Transform3D, test: bool) -> S
 		lo = Vector2(minf(lo.x,p.x),minf(lo.y,p.y))
 		hi = Vector2(maxf(hi.x,p.x),maxf(hi.y,p.y))
 	t.box = Rect2(lo,hi-lo).grow(reach)
+	_place_shafts(t)
 	return t
+
+## The shafts (SHAFT_MOST): over the middle of each cavern's longest bend,
+## the deepest from the mouths first, where the massif stands SHAFT_DEEP m
+## over the shaft's top.
+static func _place_shafts(t: Site) -> void:
+	var picks: Array = []
+	for pi in t.pieces.size():
+		if t.pieces[pi].kind != "cave": continue
+		var best := -1.0
+		var at_s_mid := 0.0
+		for sg: Dictionary in t.segs:
+			if int(sg.piece) != pi or sg.type != "arc": continue
+			if float(sg.s1)-float(sg.s0) > best:
+				best = float(sg.s1)-float(sg.s0)
+				at_s_mid = (float(sg.s0)+float(sg.s1))*0.5
+		if best > 0.0: picks.append(at_s_mid)
+	picks.sort_custom(func(a: float, b: float) -> bool: return minf(a,t.length-a) > minf(b,t.length-b))
+	for s: float in picks:
+		if t.shafts.size() >= shafts_wanted(): break
+		var pr := profile(t,s)
+		var at: Array = at_s(t,s)
+		var tg: Vector2 = at[1]
+		var axis: Vector2 = (at[0] as Vector2)+Vector2(-tg.y,tg.x)*(pr.y-pr.x)*0.5
+		var crown := t.floor_y+pr.z
+		var top_y := crown+SHAFT_ROCK
+		if massif(t,axis.x,axis.y) < top_y+SHAFT_DEEP: continue
+		t.shafts.append({"s":s,"at":axis,"top":top_y,"crown":crown})
 
 ## The path's samples every STEP m (and its end), from its segments.
 static func _sample_path(t: Site) -> void:
@@ -430,7 +489,25 @@ static func carve(t: Site, base: float, x: float, z: float) -> float:
 	if not t.box.has_point(Vector2(x,z)): return base
 	var y := _smax(massif(t,x,z),base,BLEND)
 	y = _trench(t,y,t.origin,-t.way,x,z)
-	return _trench(t,y,t.mouth_b,t.out_b,x,z)
+	y = _trench(t,y,t.mouth_b,t.out_b,x,z)
+	return _pit(t,y,x,z)
+
+## The shafts' sinkholes over `y` at (x, z): flat at the shaft's top within
+## PIT_FLOOR, the walls rising at PIT_WALL (ragged) into the land above.
+static func _pit(t: Site, y: float, x: float, z: float) -> float:
+	for sh: Dictionary in t.shafts:
+		var d := Vector2(x,z).distance_to(sh.at)
+		var wall: float = float(sh.top)+maxf(d-PIT_FLOOR,0.0)*PIT_WALL
+		if wall-PIT_BLEND >= y: continue
+		if d > PIT_FLOOR: wall += PIT_RAGGED*(t.rock.get_noise_2d(x*2.0,z*2.0)*0.5+0.5)*smoothstep(PIT_FLOOR,PIT_FLOOR+12.0,d)
+		y = -_smax(-y,-wall,PIT_BLEND)
+	return y
+
+## Which shaft (x, z) is in (within SHAFT_R-`grow` of its axis), or -1.
+static func shaft_at(t: Site, x: float, z: float, grow := 0.0) -> int:
+	for i in t.shafts.size():
+		if Vector2(x,z).distance_to(t.shafts[i].at) < SHAFT_R-grow: return i
+	return -1
 
 ## The trench out of the mouth at `m` (xz), facing out along `o`.
 static func _trench(t: Site, y: float, m: Vector2, o: Vector2, x: float, z: float) -> float:
@@ -604,6 +681,8 @@ static func tree_keepouts(t: Site) -> Array:
 		var turned := atan2(-tg.y,tg.x)+PI*0.5
 		out.append([mid[0],cos(turned),sin(turned),CAVE_HALF+CAVE_INSIDE,(e-s)*0.5])
 		s = e
+	# The shafts' pits' floors.
+	for sh: Dictionary in t.shafts: out.append([sh.at,1.0,0.0,PIT_FLOOR+4.0,PIT_FLOOR+4.0])
 	return out
 
 const KEEP_RUN := 40.0
@@ -739,6 +818,21 @@ static func portal_mask(ts: Array, x0: float, z0: float, step: float, cells: int
 				for i in range(i0,i1+1):
 					var q := portal_local(t,m,x0+i*step,z0+j*step)
 					if q.x < -PORTAL_OUT or q.x > PORTAL_IN or absf(q.y) > PORTAL_HALF: continue
+					if not any:
+						out.resize(n*n)
+						any = true
+					out[j*n+i] = 1
+		for sh: Dictionary in t.shafts:
+			var at: Vector2 = sh.at
+			var r := SHAFT_R+HOLE_PAD
+			var i0 := clampi(floori((at.x-r-x0)/step),0,cells)
+			var i1 := clampi(ceili((at.x+r-x0)/step),0,cells)
+			var j0 := clampi(floori((at.y-r-z0)/step),0,cells)
+			var j1 := clampi(ceili((at.y+r-z0)/step),0,cells)
+			if i0 >= i1 or j0 >= j1: continue
+			for j in range(j0,j1+1):
+				for i in range(i0,i1+1):
+					if Vector2(x0+i*step,z0+j*step).distance_to(at) > r: continue
 					if not any:
 						out.resize(n*n)
 						any = true

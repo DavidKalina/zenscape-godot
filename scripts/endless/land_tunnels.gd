@@ -82,6 +82,29 @@ const SPILL_ATTEN := 0.35
 ## The test tunnel's start: this high over the bore's floor, so the plane
 ## flies straight in at mouth A (unless --alt= is given).
 const TEST_ALT := 9.0
+## The shafts (Tunnels.shafts), knobs: the vault's roof is cut open within
+## SHAFT_CUT m of the axis (past SHAFT_R: the jagged edge of whole
+## triangles), and a lip rises from LIP_R m (a skirt from the vault's solid
+## LIP_UP m up into the rock, then a flare to the shaft's radius FLARE_H m
+## over the crown); the shaft's wall in rings every SHAFT_RING m, SHAFT_SEGS
+## round, lumped outward by up to ROCK_LUMP m, its tint darkening from the
+## sky down; a curb of dressed stone CURB_H m high and CURB_W m wide round
+## the top (covering the land's hole, HOLE_PAD), sunk SKIRT m. Daylight
+## down it: a spot from the top (SHAFT_SPREAD: the pool's radius on the
+## floor over the shaft's), SHAFT_ENERGY x the sun, and a faint beam
+## (BEAM_ALPHA).
+const SHAFT_CUT := Tunnels.SHAFT_R+4.0
+const LIP_R := SHAFT_CUT+1.0
+const LIP_UP := Tunnels.ROCK_LUMP+0.4
+const FLARE_H := 3.0
+const SHAFT_RING := 4.0
+const SHAFT_SEGS := 28
+const CURB_H := 1.1
+const CURB_W := 3.6
+const SHAFT_SPREAD := 2.2
+const SHAFT_ENERGY := 8.0
+const BEAM_ALPHA := 0.035
+const BEAM_TINT := Color(1.0,0.93,0.78)
 ## How far past the tube's walls `inside` counts the rock (m).
 const WALL_NEAR := 12.0
 
@@ -152,6 +175,8 @@ var _sky_cut := false
 ## The sun (the brightest DirectionalLight3D) and each mouth's daylight.
 var _sun: DirectionalLight3D
 var _spills: Array[SpotLight3D] = []
+var _spill_gain := PackedFloat32Array()
+var _beams: Array[MeshInstance3D] = []
 
 func setup(land_field: RefCounted) -> void:
 	field = land_field
@@ -230,7 +255,9 @@ func step(at: Vector3) -> void:
 func under(p: Vector3) -> float:
 	for t: Tunnels.Site in _sites:
 		var b := Tunnels.bore_at(t,p.x,p.z)
-		if is_nan(b.x) or p.y > b.y: continue
+		if is_nan(b.x): continue
+		var sh := Tunnels.shaft_at(t,p.x,p.z)
+		if p.y > (b.y if sh < 0 else float(t.shafts[sh].top)): continue
 		var q := Tunnels.local(t,p.x,p.z)
 		return smoothstep(0.0,HUSH_IN,minf(q.x,t.length-q.x))
 	return 0.0
@@ -240,11 +267,13 @@ func _spill() -> void:
 	if _spills.is_empty(): return
 	if not _sky_cut: _cut_sky()
 	var lit := _sun != null and is_instance_valid(_sun) and _sun.visible
-	for l in _spills:
+	for b in _beams: b.visible = lit
+	for i in _spills.size():
+		var l := _spills[i]
 		l.visible = lit
 		if not lit: continue
 		l.light_color = _sun.light_color
-		l.light_energy = SPILL_ENERGY*_sun.light_energy
+		l.light_energy = _spill_gain[i]*_sun.light_energy
 
 ## The pool of torch lights: the nearest TORCH_LIGHTS torches to `at`
 ## within LIGHT_REACH get one, the farthest of them fading out.
@@ -309,6 +338,9 @@ func ground(p: Vector3, h: Variant) -> Variant:
 	if not h is float: return h
 	for t: Tunnels.Site in _sites:
 		if not t.box.has_point(Vector2(p.x,p.z)): continue
+		# Up a shaft, under its top: open to the bore's floor.
+		var sh := Tunnels.shaft_at(t,p.x,p.z,_grow)
+		if sh >= 0 and p.y < float(t.shafts[sh].top): return t.floor_y
 		var cover := _cover(t,p.x,p.z,h)
 		var b := Tunnels.bore_at(t,p.x,p.z,_grow)
 		if not is_nan(b.x) and cover > b.y:
@@ -324,6 +356,8 @@ func ground(p: Vector3, h: Variant) -> Variant:
 func land_y(p: Vector3, h: float) -> float:
 	for t: Tunnels.Site in _sites:
 		if not t.box.has_point(Vector2(p.x,p.z)): continue
+		var sh := Tunnels.shaft_at(t,p.x,p.z)
+		if sh >= 0 and p.y < float(t.shafts[sh].top): return t.floor_y
 		var cover := _cover(t,p.x,p.z,h)
 		var b := Tunnels.bore_at(t,p.x,p.z)
 		if not is_nan(b.x) and cover > b.y and p.y < b.y: return b.x
@@ -337,6 +371,8 @@ func inside(p: Vector3) -> bool:
 	if halls.inside(p): return true
 	for t: Tunnels.Site in _sites:
 		if not t.box.has_point(Vector2(p.x,p.z)): continue
+		var sh := Tunnels.shaft_at(t,p.x,p.z)
+		if sh >= 0 and p.y < float(t.shafts[sh].top): return p.y < t.floor_y
 		var h: float = field.height(p.x,p.z)
 		var cover := _cover(t,p.x,p.z,h)
 		var b := Tunnels.bore_at(t,p.x,p.z)
@@ -376,6 +412,7 @@ func _build(t: Tunnels.Site) -> void:
 	blocks.mesh = _surface(mesh,1,_portal_material(t))
 	add_child(blocks)
 	for m in 2: _build_fires(t,m)
+	tris += _build_shafts(t,mesh,node.name,mat)
 	var body := StaticBody3D.new()
 	body.name = node.name+"_body"
 	body.collision_layer = LAYER
@@ -532,6 +569,7 @@ func _build_fires(t: Tunnels.Site, m: int) -> void:
 	spot.light_specular = 0.2
 	add_child(spot)
 	_spills.append(spot)
+	_spill_gain.append(SPILL_ENERGY)
 
 ## The land's height at mouth `m`'s (a, d).
 func _land(t: Tunnels.Site, m: int, a: float, d: float) -> float:
@@ -681,7 +719,10 @@ func _build_rock(t: Tunnels.Site) -> SurfaceTool:
 			var base := Vector3(c.x,t.floor_y,c.y)+n3*q.x+Vector3.UP*q.y
 			var nz := clampf(grain.get_noise_3dv(base)*0.5+0.5,0.0,1.0)
 			var out := n3*g.x+Vector3.UP*g.y
-			var v := base+out*lump*nz
+			# None round a shaft's lip, so its skirt meets the rock's face.
+			var calm := 1.0
+			for sh: Dictionary in t.shafts: calm = minf(calm,smoothstep(LIP_R+0.5,LIP_R+4.0,Vector2(base.x,base.z).distance_to(sh.at)))
+			var v := base+out*lump*nz*calm
 			if k == 0 or k == RING_SEGS: feet.append(v)
 			pos.append(v)
 			inward.append(-out)
@@ -697,14 +738,207 @@ func _build_rock(t: Tunnels.Site) -> SurfaceTool:
 		if r == 0: continue
 		var b0 := (r-1)*per
 		var b1 := r*per
+		var near_shaft := false
+		for sh: Dictionary in t.shafts: near_shaft = near_shaft or absf(s-float(sh.s)) < SHAFT_CUT+CAVE_RING*2.0
 		for k in RING_SEGS:
-			tris += _tri(st,pos,inward,b0+k,b0+k+1,b1+k+1)+_tri(st,pos,inward,b0+k,b1+k+1,b1+k)
+			for tri: Array in [[b0+k,b0+k+1,b1+k+1],[b0+k,b1+k+1,b1+k]]:
+				if near_shaft and _opened(t,pos,tri): continue
+				tris += _tri(st,pos,inward,tri[0],tri[1],tri[2])
 		var f := RING_SEGS+1
 		for k in FLOOR_SEGS:
 			tris += _tri(st,pos,inward,b0+f+k,b0+f+k+1,b1+f+k+1)+_tri(st,pos,inward,b0+f+k,b1+f+k+1,b1+f+k)
 	st.generate_normals()
 	_rock_tris = tris
 	return st
+
+## Tunnel `t`'s shafts (Tunnels.shafts): the lip in the vault (a skirt and
+## a flare, the rock's material on the inside's layer), the wall up to the
+## pit's floor and the curb round its top (in the day), each added to
+## `mesh` too (the collider's); a spot of daylight down each and a faint
+## beam. Returns the triangles.
+func _build_shafts(t: Tunnels.Site, mesh: ArrayMesh, base_name: String, rock_mat: Material) -> int:
+	if t.shafts.is_empty(): return 0
+	var tris := 0
+	var dark := SurfaceTool.new()
+	dark.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var wall := SurfaceTool.new()
+	wall.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var curb := SurfaceTool.new()
+	curb.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var dpos := PackedVector3Array()
+	var dnrm := PackedVector3Array()
+	var wpos := PackedVector3Array()
+	var wnrm := PackedVector3Array()
+	var r := Tunnels.SHAFT_R
+	var lump := Tunnels.ROCK_LUMP
+	var n := SHAFT_SEGS+1
+	for si in t.shafts.size():
+		var sh: Dictionary = t.shafts[si]
+		var at: Vector2 = sh.at
+		var crown: float = sh.crown
+		var top_y: float = sh.top
+		# The lip: per angle, the vault's solid at LIP_R, LIP_UP over it,
+		# then the shaft's radius FLARE_H over the crown.
+		var d0 := dpos.size()
+		for k in n:
+			var th := TAU*float(k)/SHAFT_SEGS
+			var rad := Vector3(cos(th),0.0,sin(th))
+			var lip := at+Vector2(rad.x,rad.z)*LIP_R
+			var q := Tunnels.local(t,lip.x,lip.y)
+			var hy := Tunnels.roof_over(Tunnels.profile(t,q.x),q.y)
+			var ys := t.floor_y+(hy if not is_nan(hy) else crown-t.floor_y-4.0)
+			var p0 := Vector3(lip.x,ys-0.1,lip.y)
+			var p1 := Vector3(lip.x,ys+LIP_UP,lip.y)
+			var p2 := Vector3(at.x,crown+FLARE_H,at.y)+rad*r
+			var dr := r-LIP_R
+			var dy := p2.y-p1.y
+			var flare := (-rad*dy+Vector3.UP*dr).normalized()
+			for v: Array in [[p0,-rad],[p1,-rad],[p1,flare],[p2,flare]]:
+				dark.set_normal(v[1])
+				dark.set_color(CAVE_TINT.darkened(0.3))
+				dark.add_vertex(v[0])
+				dpos.append(v[0])
+				dnrm.append(v[1])
+		for k in SHAFT_SEGS:
+			var a := d0+k*4
+			var b := d0+(k+1)*4
+			for band in [[0,1],[2,3]]:
+				tris += _tri(dark,dpos,dnrm,a+band[0],b+band[0],b+band[1])+_tri(dark,dpos,dnrm,a+band[0],b+band[1],a+band[1])
+		# The wall: rings from the flare's top to the curb's, lumped out
+		# (none at the top, where the curb meets it), darkening downward.
+		var y0 := crown+FLARE_H
+		var y1 := top_y+CURB_H
+		var rings := maxi(2,ceili((y1-y0)/SHAFT_RING))
+		var w0 := wpos.size()
+		for j in rings+1:
+			var u := float(j)/rings
+			var y := lerpf(y0,y1,u)
+			var lumped := lump*(1.0-smoothstep(y1-6.0,y1-1.0,y))
+			for k in n:
+				var th := TAU*float(k % SHAFT_SEGS)/SHAFT_SEGS
+				var rad := Vector3(cos(th),0.0,sin(th))
+				var base := Vector3(at.x,y,at.y)+rad*r
+				var nz := clampf(t.rock.get_noise_3d(base.x*3.0,base.y*3.0,base.z*3.0)*0.5+0.5,0.0,1.0)
+				var v := base+rad*lumped*nz
+				wall.set_normal(-rad)
+				wall.set_color(CAVE_TINT.darkened(0.82).lerp(FACE_TINT,pow(u,1.6)).darkened(0.25*nz))
+				wall.add_vertex(v)
+				wpos.append(v)
+				wnrm.append(-rad)
+		for j in rings:
+			for k in SHAFT_SEGS:
+				var a := w0+j*n+k
+				var b := a+n
+				tris += _tri(wall,wpos,wnrm,a,a+1,b+1)+_tri(wall,wpos,wnrm,a,b+1,b)
+		# The curb: a flat top and its outer face sunk into the pit's floor.
+		for k in SHAFT_SEGS:
+			var ta := TAU*float(k)/SHAFT_SEGS
+			var tb := TAU*float(k+1)/SHAFT_SEGS
+			var ra := Vector3(cos(ta),0.0,sin(ta))
+			var rb := Vector3(cos(tb),0.0,sin(tb))
+			var c := Vector3(at.x,y1,at.y)
+			var tint := FRAME_TINT.darkened(0.1*(t.rock.get_noise_2d(float(k)*9.0,float(si)*200.0)*0.5+0.5))
+			tris += _quad(curb,c+ra*r,c+rb*r,c+rb*(r+CURB_W),c+ra*(r+CURB_W),Vector3.UP,tint)
+			var down := Vector3.DOWN*(CURB_H+SKIRT)
+			tris += _quad(curb,c+ra*(r+CURB_W),c+rb*(r+CURB_W),c+rb*(r+CURB_W)+down,c+ra*(r+CURB_W)+down,(ra+rb).normalized(),tint.darkened(0.12))
+		_shaft_light(t,si,base_name)
+	var dmesh := dark.commit()
+	var wmesh := wall.commit()
+	curb.commit(wmesh)
+	for m: ArrayMesh in [dmesh,wmesh]:
+		for i in m.get_surface_count(): mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,m.surface_get_arrays(i))
+	var lipn := MeshInstance3D.new()
+	lipn.name = base_name+"_shaft_lips"
+	lipn.mesh = _surface(dmesh,0,rock_mat)
+	lipn.layers = UNDER_LAYER
+	add_child(lipn)
+	var day := _portal_material(t)
+	var walls := MeshInstance3D.new()
+	walls.name = base_name+"_shafts"
+	var wm := _surface(wmesh,0,day)
+	wm.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,wmesh.surface_get_arrays(1))
+	wm.surface_set_material(1,day)
+	walls.mesh = wm
+	add_child(walls)
+	return tris
+
+## Shaft `si`'s daylight: a spot from its top down onto the bore's floor
+## (the inside's layer only, the sun's colour, SHAFT_ENERGY x it) and a
+## faint beam of light from the vault down into the cavern.
+func _shaft_light(t: Tunnels.Site, si: int, base_name: String) -> void:
+	var sh: Dictionary = t.shafts[si]
+	var at: Vector2 = sh.at
+	var top_y: float = sh.top
+	var drop := top_y-1.0-t.floor_y
+	var spot := SpotLight3D.new()
+	spot.name = "%s_shaft%d_light" % [base_name,si]
+	spot.transform = Transform3D(Basis.looking_at(Vector3.DOWN,Vector3.FORWARD),Vector3(at.x,top_y-1.0,at.y))
+	spot.spot_range = drop+12.0
+	spot.spot_angle = rad_to_deg(atan(Tunnels.SHAFT_R*SHAFT_SPREAD/drop))
+	spot.spot_attenuation = SPILL_ATTEN
+	spot.light_cull_mask = UNDER_LAYER
+	spot.shadow_enabled = false
+	spot.light_specular = 0.2
+	add_child(spot)
+	_spills.append(spot)
+	_spill_gain.append(SHAFT_ENERGY)
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = Tunnels.SHAFT_R*0.92
+	cyl.bottom_radius = Tunnels.SHAFT_R*SHAFT_SPREAD*0.7
+	# From just over the vault's crown (under the rock's cut edge) down.
+	var beam_top := float(sh.crown)+FLARE_H*0.5
+	cyl.height = beam_top-t.floor_y
+	cyl.radial_segments = 24
+	cyl.rings = 1
+	cyl.cap_top = false
+	cyl.cap_bottom = false
+	var mat := ShaderMaterial.new()
+	mat.shader = _beam_shader()
+	mat.set_shader_parameter("tint",BEAM_TINT)
+	mat.set_shader_parameter("alpha",BEAM_ALPHA)
+	cyl.material = mat
+	var beam := MeshInstance3D.new()
+	beam.name = "%s_shaft%d_beam" % [base_name,si]
+	beam.mesh = cyl
+	beam.position = Vector3(at.x,(beam_top+t.floor_y)*0.5,at.y)
+	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	beam.layers = UNDER_LAYER
+	add_child(beam)
+	_beams.append(beam)
+
+static var _beam: Shader
+
+## The beam's shader: added light, faint at its edges (seen side on) and
+## fading toward the floor.
+static func _beam_shader() -> Shader:
+	if _beam != null: return _beam
+	_beam = Shader.new()
+	_beam.code = """shader_type spatial;
+render_mode blend_add, unshaded, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
+uniform vec4 tint : source_color = vec4(1.0);
+uniform float alpha = 0.07;
+void fragment() {
+	float face = pow(clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 3.0);
+	float down = mix(1.0, 0.4, UV.y)*smoothstep(1.0, 0.9, UV.y)*smoothstep(0.0, 0.2, UV.y);
+	ALBEDO = tint.rgb;
+	ALPHA = alpha*face*down;
+}
+"""
+	return _beam
+
+## Whether the rock's triangle `tri` (indices into `pos`) lies wholly in a
+## shaft's opening: every corner within SHAFT_CUT of the axis, in the roof.
+static func _opened(t: Tunnels.Site, pos: PackedVector3Array, tri: Array) -> bool:
+	for sh: Dictionary in t.shafts:
+		var at: Vector2 = sh.at
+		var all := true
+		for i: int in tri:
+			var v := pos[i]
+			if v.y < t.floor_y+2.0 or Vector2(v.x,v.z).distance_to(at) > SHAFT_CUT:
+				all = false
+				break
+		if all: return true
+	return false
 
 ## One triangle of the rock, wound to face `inward` (Godot's front faces are
 ## clockwise as seen; generate_normals follows the winding).
