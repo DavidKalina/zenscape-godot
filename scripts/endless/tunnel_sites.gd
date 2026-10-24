@@ -136,6 +136,8 @@ class Site extends RefCounted:
 	var ts := PackedFloat32Array()
 	## Everything the massif and the trenches touch (world xz).
 	var box := Rect2()
+	## Each portal's top (world y; land_tunnels.gd sets it).
+	var portal_top := PackedFloat32Array([NAN,NAN])
 	var crest_noise: FastNoiseLite
 	var gully: FastNoiseLite
 
@@ -441,6 +443,107 @@ static func blocks_hall(sites: Array, s: PackedFloat32Array) -> bool:
 	for t: Site in sites:
 		if t.box.intersects(hb,true): return true
 	return false
+
+# --- The bore and its portals ------------------------------------------------------
+
+## A portal: a block of carved stone set into the flank at each mouth, the
+## bore's tube running through it. Its footprint (m along the way in from
+## the mouth: PORTAL_OUT out, PORTAL_IN in; PORTAL_HALF across) is where the
+## land mesh drops its triangles, so the plug of rock a heightmap leaves at
+## the mouth is gone at every LOD up to 16 m quads, and the block hides the
+## hole's ragged edge. Its top stands over the land on its footprint
+## (Site.portal_top, set by land_tunnels.gd).
+const PORTAL_OUT := 20.0
+const PORTAL_IN := 24.0
+static var PORTAL_HALF: float = HALL_HALF+EDGE+20.0
+
+## The bore's cross-section at distance `s`: Vector2(half width, vault over
+## the floor); a cavern's eased from the hall's over CAVE_END at its ends.
+static func section(t: Site, s: float) -> Vector2:
+	for p: Dictionary in t.pieces:
+		if p.kind != "cave" or s <= float(p.s0) or s >= float(p.s1): continue
+		var e := smoothstep(0.0,CAVE_END,minf(s-float(p.s0),float(p.s1)-s))
+		return Vector2(lerpf(HALL_HALF,CAVE_HALF,e),lerpf(HALL_VAULT,CAVE_VAULT,e))
+	return Vector2(HALL_HALF,HALL_VAULT)
+
+## Vector2(floor, roof) (world y) where (x, z) is over the bore's tube (its
+## half width less `grow`; through the portals too), else Vector2(NAN, NAN).
+static func bore_at(t: Site, x: float, z: float, grow := 0.0) -> Vector2:
+	if not t.box.has_point(Vector2(x,z)): return Vector2(NAN,NAN)
+	var q := local(t,x,z)
+	if q.x < -PORTAL_OUT or q.x > t.length+PORTAL_OUT: return Vector2(NAN,NAN)
+	var c := section(t,q.x)
+	if absf(q.y) > c.x-grow: return Vector2(NAN,NAN)
+	return Vector2(t.floor_y,t.floor_y+c.y)
+
+## Which mouth's portal footprint (x, z) is on: 0 (A), 1 (B) or -1.
+static func portal_at(t: Site, x: float, z: float) -> int:
+	for m in 2:
+		var q := portal_local(t,m,x,z)
+		if q.x >= -PORTAL_OUT and q.x <= PORTAL_IN and absf(q.y) <= PORTAL_HALF: return m
+	return -1
+
+## (x, z) in mouth `m`'s frame: Vector2(along the way in, across).
+static func portal_local(t: Site, m: int, x: float, z: float) -> Vector2:
+	var at: Vector2 = t.origin if m == 0 else t.mouth_b
+	var inward: Vector2 = t.way if m == 0 else -t.out_b
+	var q := Vector2(x,z)-at
+	return Vector2(q.dot(inward),inward.cross(q))
+
+## Mouth `m`'s point (world xz) `a` m in along its way and `d` across.
+static func portal_point(t: Site, m: int, a: float, d: float) -> Vector2:
+	var at: Vector2 = t.origin if m == 0 else t.mouth_b
+	var inward: Vector2 = t.way if m == 0 else -t.out_b
+	return at+inward*a+Vector2(-inward.y,inward.x)*d
+
+## Each mouth's trench and portal as an arch for the trees' keep-out
+## (tree_plan.gd `_arches_near`): [centre xz, cos, sin, half span across,
+## half depth along], the approach running along the trench.
+static func tree_keepouts(t: Site) -> Array:
+	var out: Array = []
+	for m in 2:
+		var o: Vector2 = -t.way if m == 0 else t.out_b
+		var at: Vector2 = t.origin if m == 0 else t.mouth_b
+		var turned := atan2(-o.y,o.x)+PI*0.5
+		out.append([at+o*(TRENCH_REACH-PORTAL_IN)*0.5,cos(turned),sin(turned),HALL_HALF+EDGE,(TRENCH_REACH+PORTAL_IN)*0.5])
+	# The bore itself, in straight runs of at most KEEP_RUN m: the trees'
+	# plan put some on the land's floor inside it.
+	var s := 0.0
+	while s < t.length:
+		var e := minf(s+KEEP_RUN,t.length)
+		var mid: Array = at_s(t,(s+e)*0.5)
+		var tg: Vector2 = mid[1]
+		var turned := atan2(-tg.y,tg.x)+PI*0.5
+		out.append([mid[0],cos(turned),sin(turned),CAVE_HALF+CAVE_INSIDE,(e-s)*0.5])
+		s = e
+	return out
+
+const KEEP_RUN := 40.0
+
+## Which of a chunk's grid vertices stand on a portal's footprint (1), for
+## land_stream.gd to drop the triangles wholly on one; empty if none do.
+static func portal_mask(ts: Array, x0: float, z0: float, step: float, cells: int) -> PackedByteArray:
+	var n := cells+1
+	var out := PackedByteArray()
+	var any := false
+	for t: Site in ts:
+		for m in 2:
+			var at: Vector2 = t.origin if m == 0 else t.mouth_b
+			var r := PORTAL_HALF+PORTAL_IN+PORTAL_OUT
+			var i0 := clampi(floori((at.x-r-x0)/step),0,cells)
+			var i1 := clampi(ceili((at.x+r-x0)/step),0,cells)
+			var j0 := clampi(floori((at.y-r-z0)/step),0,cells)
+			var j1 := clampi(ceili((at.y+r-z0)/step),0,cells)
+			if i0 >= i1 or j0 >= j1: continue
+			for j in range(j0,j1+1):
+				for i in range(i0,i1+1):
+					var q := portal_local(t,m,x0+i*step,z0+j*step)
+					if q.x < -PORTAL_OUT or q.x > PORTAL_IN or absf(q.y) > PORTAL_HALF: continue
+					if not any:
+						out.resize(n*n)
+						any = true
+					out[j*n+i] = 1
+	return out
 
 # --- Over a chunk's and a grid's arrays ---------------------------------------------
 

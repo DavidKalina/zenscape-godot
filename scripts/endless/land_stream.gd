@@ -22,6 +22,7 @@ extends Node3D
 ## commit, for a driver (scratch/) to log.
 
 const Field = preload("res://scripts/endless/land_field.gd")
+const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
 
 ## Quads along a chunk's side, the finest chunk's size (m, so 1 m quads),
 ## the coarsest level and how many root chunks reach out each way.
@@ -267,6 +268,7 @@ func _build(key: Vector3i, land_seed: int) -> void:
 	# else the same loops in GDScript).
 	var made: Dictionary = f.build_chunk(x0,z0,step,CELLS,step*SKIRT+SKIRT_MIN,RIVER_FLOW_MAX)
 	if river_live: made.frame = _river_frame(f,made,x0,z0,step)
+	_portal_holes(f,made,key,x0,z0,step)
 	made.key = key
 	made.ms = (Time.get_ticks_usec()-began)/1000.0
 	_done_lock.lock()
@@ -353,6 +355,33 @@ static func _edges() -> Array:
 		out[3].append(t*n)
 	return out
 
+## A mountain tunnel's mouths (tunnel_sites.gd, portals): a chunk under a
+## portal's footprint gets its own triangles, without those wholly on it
+## (the plug of rock the heightmap leaves in the mouth; the portal's block
+## hides the hole's edge), and a level-0 chunk keeps them as its collider's
+## faces (chunk-local), since a HeightMapShape3D has no holes.
+static func _portal_holes(f: RefCounted, made: Dictionary, key: Vector3i, x0: float, z0: float, step: float) -> void:
+	if not f.has_method("tunnels_in"): return
+	var ts: Array = f.tunnels_in(x0,z0,x0+step*CELLS,z0+step*CELLS)
+	if ts.is_empty(): return
+	var mask: PackedByteArray = Tunnels.portal_mask(ts,x0,z0,step,CELLS)
+	if mask.is_empty(): return
+	var n := CELLS+1
+	var out := PackedInt32Array()
+	var verts: PackedVector3Array = made.verts
+	var faces := PackedVector3Array()
+	for j in CELLS:
+		for i in CELLS:
+			var a := j*n+i
+			for tri: Array in [[a,a+1,a+n],[a+1,a+n+1,a+n]]:
+				if mask[tri[0]] != 0 and mask[tri[1]] != 0 and mask[tri[2]] != 0: continue
+				out.append_array(PackedInt32Array(tri))
+				if key.x == 0: faces.append_array([verts[tri[0]],verts[tri[1]],verts[tri[2]]])
+	var grid := _grid_indices()
+	out.append_array(grid.slice(CELLS*CELLS*6))
+	made.indices = out
+	if key.x == 0: made.faces = faces
+
 ## The triangles every chunk shares: the grid's, then the skirt's.
 static func _grid_indices() -> PackedInt32Array:
 	var n := CELLS+1
@@ -397,7 +426,7 @@ func _commit() -> bool:
 		arrays[Mesh.ARRAY_COLOR] = r.colours
 		arrays[Mesh.ARRAY_CUSTOM0] = r.carved
 		arrays[Mesh.ARRAY_CUSTOM1] = r.river
-		arrays[Mesh.ARRAY_INDEX] = _indices
+		arrays[Mesh.ARRAY_INDEX] = r.get("indices",_indices)
 		var format := (Mesh.ARRAY_CUSTOM_RGBA8_UNORM << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)|(Mesh.ARRAY_CUSTOM_RGB_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
 		if r.has("frame"):
 			arrays[Mesh.ARRAY_CUSTOM2] = r.frame
@@ -413,7 +442,7 @@ func _commit() -> bool:
 		var s := size_of(key.x)
 		node.position = Vector3(key.y*s,0.0,key.z*s)
 		add_child(node)
-		_chunks[key] = {"node":node,"heights":r.heights if key.x == 0 else PackedFloat32Array()}
+		_chunks[key] = {"node":node,"heights":r.heights if key.x == 0 else PackedFloat32Array(),"faces":r.get("faces",PackedVector3Array())}
 		stats.committed += 1
 		stats.slowest_commit_ms = maxf(stats.slowest_commit_ms,(Time.get_ticks_usec()-t0)/1000.0)
 		made += 1
@@ -506,10 +535,20 @@ func _collide() -> void:
 		for ix in range(x0,x1+1):
 			var key := Vector3i(0,ix,iz)
 			if _bodies.has(key) or not _chunks.has(key) or _distance_flat(key) > COLLIDE: continue
-			var shape := HeightMapShape3D.new()
-			shape.map_width = CELLS+1
-			shape.map_depth = CELLS+1
-			shape.map_data = _chunks[key].heights
+			var faces: PackedVector3Array = _chunks[key].faces
+			var shape: Shape3D
+			if faces.is_empty():
+				var hm := HeightMapShape3D.new()
+				hm.map_width = CELLS+1
+				hm.map_depth = CELLS+1
+				hm.map_data = _chunks[key].heights
+				shape = hm
+			else:
+				# Holed at a tunnel's mouth: the triangles that stand.
+				var cp := ConcavePolygonShape3D.new()
+				cp.set_faces(faces)
+				cp.backface_collision = true
+				shape = cp
 			var body := StaticBody3D.new()
 			body.name = "Ground_%d_%d" % [ix,iz]
 			body.collision_layer = LAYER
@@ -517,7 +556,7 @@ func _collide() -> void:
 			var cs := CollisionShape3D.new()
 			cs.shape = shape
 			body.add_child(cs)
-			body.position = Vector3(ix*BASE+BASE*0.5,0.0,iz*BASE+BASE*0.5)
+			body.position = Vector3(ix*BASE+BASE*0.5,0.0,iz*BASE+BASE*0.5) if faces.is_empty() else Vector3(ix*BASE,0.0,iz*BASE)
 			add_child(body)
 			_bodies[key] = body
 
