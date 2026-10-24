@@ -132,7 +132,7 @@ const RISE := 1.6
 ## off): the rise runs fast enough to close the far ring's whole reach
 ## (LOD.w) by then, so tufts thin and pull in with altitude and the painted
 ## ground (endless_ground.gdshader) carries the look from there.
-const TUFT_TOP := 80.0
+const TUFT_TOP := 160.0
 ## Wildflower drifts in the near carpet (KitFlora Site `flower_drift`): where
 ## a value noise of DRIFT_SCALE m rises from DRIFT.x to .y, the flowers are
 ## kept up to DRIFT.z times as often (1 elsewhere), so the meadows have

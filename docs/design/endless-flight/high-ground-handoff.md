@@ -17,4 +17,8 @@ Captures (seed 2, heading 200, altitude 10 / 60 / 140 over the start, before and
 (git-ignored; in the worktree). Low (10 m) is unchanged.
 
 Smoke: endless_flight.tscn PASS, 0 errors. No tests reference EndlessGrass; none known broken.
+2026-10-24: `TUFT_TOP` raised to 160 m (rise rate 1.64): the grass vanished too
+soon from a little height. Now the near carpet goes by about 38 m (was 28), the far
+tufts start to thin around 110 m (was 60) and are gone by 160 m (was 80).
+
 Not tuned: streak/patch strengths (0.30/0.34/0.30 in the block after `speck`).
