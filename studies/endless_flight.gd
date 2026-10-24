@@ -311,6 +311,7 @@ func _ready() -> void:
 	walker.name = "Walker"
 	add_child(walker)
 	walker.setup(camera,field,Callable(self,"water_at"),react)
+	walker.land_at = tunnels.land_y
 	if _on_foot_start: await _start_on_foot()
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true

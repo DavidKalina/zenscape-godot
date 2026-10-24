@@ -520,6 +520,53 @@ static func tree_keepouts(t: Site) -> Array:
 
 const KEEP_RUN := 40.0
 
+## The torch lines: both walls every TORCH_GAP m along the path, staggered
+## side to side, closer (TORCH_GAP_OUT) on a bend's outside wall so a bend
+## ahead shows as a curve of lights; TORCH_Y over the floor, TORCH_IN off
+## the wall. A bigger pair stands MOUTH_TORCH_IN inside each portal's
+## front, MOUTH_TORCH_Y up.
+const TORCH_GAP := 24.0
+const TORCH_GAP_OUT := 14.0
+const TORCH_Y := 6.5
+const TORCH_IN := 0.35
+## A bend counts where the tangent turns more than this over 12 m (rad).
+const TORCH_BEND := 0.02
+const MOUTH_TORCH_IN := 2.0
+const MOUTH_TORCH_Y := 7.5
+
+## Every torch of the bore: {pos (world), into (xz, the wall's normal into
+## the bore), s, side (-1, 1: the path's left/right by `local`'s d), kind
+## ("wall", "outside", "mouth")}: each side's wall torches in order along
+## s, then the mouths'.
+static func torch_spots(t: Site) -> Array:
+	var out: Array = []
+	for side: float in [-1.0,1.0]:
+		var s := 6.0 if side < 0.0 else 6.0+TORCH_GAP*0.5
+		while s < t.length-4.0:
+			var at: Array = at_s(t,s)
+			var c: Vector2 = at[0]
+			var tg: Vector2 = at[1]
+			var n := Vector2(-tg.y,tg.x)
+			var t0: Vector2 = at_s(t,maxf(s-6.0,0.0))[1]
+			var t1: Vector2 = at_s(t,minf(s+6.0,t.length))[1]
+			var turn := (t1-t0).dot(n)
+			var outside := absf(turn) > TORCH_BEND and signf(turn) != side
+			var w := section(t,s).x-TORCH_IN
+			var p := c+n*side*w
+			out.append({"pos":Vector3(p.x,t.floor_y+TORCH_Y,p.y),"into":-n*side,"s":s,"side":side,"kind":"outside" if outside else "wall"})
+			s += TORCH_GAP_OUT if outside else TORCH_GAP
+	# The mouths: a big pair on the tube's walls just inside each portal's
+	# front (the trench's rock hides anything beside the opening).
+	for ms: float in [-PORTAL_OUT+MOUTH_TORCH_IN,t.length+PORTAL_OUT-MOUTH_TORCH_IN]:
+		var at: Array = at_s(t,ms)
+		var c: Vector2 = at[0]
+		var tg: Vector2 = at[1]
+		var n := Vector2(-tg.y,tg.x)
+		for side: float in [-1.0,1.0]:
+			var p := c+n*side*(HALL_HALF-TORCH_IN)
+			out.append({"pos":Vector3(p.x,t.floor_y+MOUTH_TORCH_Y,p.y),"into":-n*side,"s":ms,"side":side,"kind":"mouth"})
+	return out
+
 ## Which of a chunk's grid vertices stand on a portal's footprint (1), for
 ## land_stream.gd to drop the triangles wholly on one; empty if none do.
 static func portal_mask(ts: Array, x0: float, z0: float, step: float, cells: int) -> PackedByteArray:

@@ -27,6 +27,13 @@ const TEST_ALT := 9.0
 ## How far past the tube's walls `inside` counts the rock (m).
 const WALL_NEAR := 12.0
 
+## The greybox torch: its bracket (across, up, out of the wall), its flame
+## (radius, height), the size and glow by kind.
+const TORCH_BRACKET := Vector3(0.22,0.9,0.55)
+const TORCH_FLAME := Vector2(0.24,0.75)
+const TORCH_BIG := {"wall":1.0,"outside":1.35,"mouth":2.2}
+const TORCH_GLOW := {"wall":Color(1.0,0.55,0.16),"outside":Color(1.0,0.78,0.38),"mouth":Color(1.0,0.66,0.26)}
+
 const FLOOR_TINT := Color(0.36,0.33,0.29)
 const WALL_TINT := Color(0.5,0.48,0.45)
 const ROOF_TINT := Color(0.42,0.4,0.38)
@@ -34,7 +41,7 @@ const CAVE_TINT := Color(0.46,0.4,0.33)
 const BLOCK_TINT := Color(0.4,0.37,0.33)
 
 var field: RefCounted
-var stats := {"tunnels":0,"tris":0}
+var stats := {"tunnels":0,"tris":0,"torches":0}
 var _sites: Array = []
 ## The plane's wingtip: the tube's half width it may fly in.
 var _grow := 0.0
@@ -46,6 +53,7 @@ func setup(land_field: RefCounted) -> void:
 	for t: Tunnels.Site in _sites:
 		for m in 2: t.portal_top[m] = _portal_top(t,m)
 		_build(t)
+		_build_torches(t)
 	stats.tunnels = _sites.size()
 
 ## Where the test tunnel's start stands (world y), NAN with none.
@@ -107,7 +115,7 @@ func inside(p: Vector3) -> bool:
 
 ## One line for the numbers HUD.
 func note() -> String:
-	return "tunnels %d, greybox %dk tris" % [stats.tunnels,stats.tris/1000]
+	return "tunnels %d, greybox %dk tris, %d torches" % [stats.tunnels,stats.tris/1000,stats.torches]
 
 # --- The greybox ----------------------------------------------------------------------
 
@@ -193,6 +201,54 @@ func _build(t: Tunnels.Site) -> void:
 	body.add_child(cs)
 	add_child(body)
 	stats.tris += tris
+
+## The greybox torch lines (Tunnels.torch_spots): an iron bracket off the
+## wall and an unlit glowing flame on it, bigger and whiter on a bend's
+## outside wall and at the mouths. No lights yet (real torches come from
+## scripts/flame.gd, pooled along the path).
+func _build_torches(t: Tunnels.Site) -> void:
+	var spots: Array = Tunnels.torch_spots(t)
+	var bracket := BoxMesh.new()
+	bracket.size = TORCH_BRACKET
+	var iron := StandardMaterial3D.new()
+	iron.albedo_color = Color(0.09,0.08,0.07)
+	iron.roughness = 0.8
+	bracket.material = iron
+	var flame := SphereMesh.new()
+	flame.radius = TORCH_FLAME.x
+	flame.height = TORCH_FLAME.y
+	flame.radial_segments = 8
+	flame.rings = 4
+	var glow := StandardMaterial3D.new()
+	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glow.vertex_color_use_as_albedo = true
+	flame.material = glow
+	var mb := MultiMesh.new()
+	mb.transform_format = MultiMesh.TRANSFORM_3D
+	mb.mesh = bracket
+	mb.instance_count = spots.size()
+	var mf := MultiMesh.new()
+	mf.transform_format = MultiMesh.TRANSFORM_3D
+	mf.use_colors = true
+	mf.mesh = flame
+	mf.instance_count = spots.size()
+	for i in spots.size():
+		var sp: Dictionary = spots[i]
+		var into: Vector2 = sp.into
+		var pos: Vector3 = sp.pos
+		var big: float = TORCH_BIG.get(sp.kind,1.0)
+		# The bracket's long side runs out of the wall (local z).
+		var b := Basis.looking_at(Vector3(into.x,0.0,into.y),Vector3.UP)
+		mb.set_instance_transform(i,Transform3D(b.scaled(Vector3.ONE*big),pos+Vector3(into.x,0.0,into.y)*TORCH_BRACKET.z*0.5*big))
+		mf.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*big),pos+Vector3(into.x,0.0,into.y)*TORCH_BRACKET.z*big+Vector3.UP*(TORCH_BRACKET.y*0.5+TORCH_FLAME.y*0.4)*big))
+		mf.set_instance_color(i,(TORCH_GLOW.get(sp.kind,TORCH_GLOW.wall) as Color).srgb_to_linear())
+	for pair: Array in [[mb,"_torch_brackets"],[mf,"_torch_flames"]]:
+		var node := MultiMeshInstance3D.new()
+		node.name = t.name.replace("/","_")+str(pair[1])
+		node.multimesh = pair[0]
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(node)
+	stats.torches += spots.size()
 
 ## Mouth `m`'s point `a` in, `d` across, at height `y`.
 static func _v(t: Tunnels.Site, m: int, a: float, d: float, y: float) -> Vector3:

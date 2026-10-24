@@ -107,6 +107,10 @@ var _skid_was := false
 var _column: StaticBody3D
 var _field_read := false
 var _afloat_ok := false
+## The solid's top under a point over the land field's height there
+## (p: Vector3, h: float) -> float: a bore's floor under its rock
+## (LandTunnels `land_y`). Unset, the field's height is the top.
+var land_at: Callable
 
 ## Made after it is in the tree (it reads the world's physics space).
 func setup(cam: Camera3D, land_field: RefCounted, level: Callable, grass_react: Node) -> void:
@@ -231,7 +235,7 @@ func tick(delta: float, controls := true) -> Dictionary:
 	_field_read = false
 	var events := motor.step(delta,want,motor.run,jump,_ground_c,_slide_c,ground.ledge_callable())
 	if _field_read: field_reads += 1
-	var land: float = field.height(motor.feet.x,motor.feet.z)
+	var land := _land(motor.feet)
 	if not motor.grounded and not motor.swimming and motor.feet.y < land-UNDER_LAND:
 		rescues += 1
 		push_warning("endless walker: under the land at %s, set back on it" % motor.feet)
@@ -269,11 +273,17 @@ func _ground(p: Vector2) -> float:
 ## collider stands yet the field is the ground.
 func _ground_from(p: Vector2, y: float) -> float:
 	var h := ground.height_from(p,y)
-	var land: float = field.height(p.x,p.y)
+	var land := _land(Vector3(p.x,y,p.y))
 	if h < land-0.5:
 		_field_read = true
 		return land
 	return h
+
+## The land's top under `p` seen from its height: the field's, or a bore's
+## floor under the mountain's rock (`land_at`).
+func _land(p: Vector3) -> float:
+	var h: float = field.height(p.x,p.z)
+	return float(land_at.call(p,h)) if land_at.is_valid() else h
 
 ## The water's depth over the land's bed at `p` (0 on dry land), as the
 ## motor reads it: walked in (not come down from the air, not swimming), never
@@ -445,7 +455,7 @@ func _frame(delta: float) -> void:
 			out_left -= out_dt
 	var eye := pivot+out*_cam_distance
 	# Over the land even where no collider stands yet.
-	eye.y = maxf(eye.y,float(field.height(eye.x,eye.z))+0.4)
+	eye.y = maxf(eye.y,_land(eye)+0.4)
 	camera.look_at_from_position(eye,pivot)
 	var riding: bool = motor.move == "sail" and motor.sail.riding
 	if delta <= 0.0: camera.fov = FOV
