@@ -34,6 +34,7 @@ extends RefCounted
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const ArchPlan = preload("res://scripts/endless/arch_plan.gd")
+const HallSites = preload("res://scripts/endless/hall_sites.gd")
 const HeroTrees = preload("res://scripts/hero_trees.gd")
 
 enum {DENSE, GROVE, LONE}
@@ -285,8 +286,15 @@ func clump(x: float, z: float) -> float:
 ## (shared cache: ArchPlan is a pure function of the seed and cell).
 func _arches_near(field: RefCounted, x0: float, z0: float, x1: float, z1: float) -> Array:
 	var out: Array = []
-	if float(arches.density) <= 0.0: return out
 	var pad := ARCH_APPROACH+120.0
+	# The slot halls' cuts (scripts/endless/hall_sites.gd) as arches whose
+	# span runs across the slot and whose approach runs along it: no tree in
+	# the cut, on its rims or in the way in and out.
+	if field.has_method("halls_in"):
+		for s: PackedFloat32Array in field.halls_in(x0-pad,z0-pad,x1+pad,z1+pad):
+			var turned := atan2(-s[3],s[2])+PI*0.5
+			out.append([Vector2(s[0],s[1]),cos(turned),sin(turned),s[8],s[7]])
+	if float(arches.density) <= 0.0: return out
 	var a := ArchPlan.cell_of(x0-pad,z0-pad)
 	var b := ArchPlan.cell_of(x1+pad,z1+pad)
 	for cz in range(a.y,b.y+1):

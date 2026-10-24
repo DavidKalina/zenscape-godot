@@ -96,6 +96,7 @@ const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const EndlessEddies = preload("res://scripts/endless/endless_eddies.gd")
 const LandArches = preload("res://scripts/endless/land_arches.gd")
+const LandHalls = preload("res://scripts/endless/land_halls.gd")
 const LandTrees = preload("res://scripts/endless/land_trees.gd")
 ## The birds (scripts/endless/endless_birds.gd; --birds=0 off).
 const EndlessBirds = preload("res://scripts/endless/endless_birds.gd")
@@ -160,6 +161,8 @@ var react: Node
 var eddies: Node3D
 ## The arches over the land (scripts/endless/land_arches.gd).
 var arches: Node3D
+## The slot halls in the ridges' cuts (scripts/endless/land_halls.gd).
+var halls: Node3D
 ## The spruce forests (scripts/endless/land_trees.gd; off under --no-trees).
 var trees: Node3D
 ## The birds flushed from the trees and the far flocks.
@@ -223,6 +226,9 @@ func _ready() -> void:
 			# No vsync and no cap, so the numbers' fps is the frame's cost.
 			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 			Engine.max_fps = 0
+	# The layout file first: the slot halls' sites read its moves when
+	# the land is first looked at (scripts/endless/hall_sites.gd).
+	LayoutOverrides.begin("endless_flight")
 	field = Field.new(seed,world)
 	if EndlessLook.wanted():
 		look = EndlessLook.new()
@@ -240,11 +246,14 @@ func _ready() -> void:
 	land.name = "Land"
 	add_child(land)
 	land.setup(seed,look.ground if look != null else null)
-	LayoutOverrides.begin("endless_flight")
 	arches = LandArches.new()
 	arches.name = "Arches"
 	add_child(arches)
 	arches.setup(seed,look.ground if look != null else null)
+	halls = LandHalls.new()
+	halls.name = "Halls"
+	add_child(halls)
+	halls.setup(seed)
 	trees = LandTrees.new()
 	trees.name = "Trees"
 	add_child(trees)
@@ -285,6 +294,7 @@ func _ready() -> void:
 	camera.global_position = eye
 	var took: float = land.prime(eye)
 	arches.prime(eye)
+	halls.prime(eye)
 	trees.prime(eye)
 	_launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	walker = EndlessWalker.new()
@@ -434,11 +444,11 @@ func _size_chase() -> void:
 ## The arches stand on it (LandArches `ground`): a leg raises it, a span
 ## over it is a solid the plane slides under.
 func plane_ground(p: Vector3) -> Variant:
-	return trees.ground(p,arches.ground(p,field.height(p.x,p.z)))
+	return halls.ground(p,trees.ground(p,arches.ground(p,field.height(p.x,p.z))))
 
 ## In the way of the rolling plane: an arch's leg or pier, a tree.
 func _blocked(p: Vector3) -> bool:
-	return arches.inside(p) or trees.inside(p)
+	return arches.inside(p) or trees.inside(p) or halls.inside(p)
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
@@ -462,7 +472,7 @@ func water_at(p: Vector3) -> float:
 func _solid(p: Vector3) -> bool:
 	var h: float = field.height(p.x,p.z)
 	if _on_river(): h = maxf(h,field.river_drawn())
-	return p.y < maxf(h,Field.SEA_Y+sea_height(p))+EYE_CLEAR*0.5 or arches.inside(p)
+	return p.y < maxf(h,Field.SEA_Y+sea_height(p))+EYE_CLEAR*0.5 or arches.inside(p) or halls.inside(p)
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
@@ -478,7 +488,7 @@ func _sight(from: Vector3, to: Vector3) -> float:
 	for i in range(1,STEPS+1):
 		var t := float(i)/STEPS
 		var p := from.lerp(to,t)
-		if p.y < field.height(p.x,p.z) or arches.inside(p): return float(i-1)/STEPS
+		if p.y < field.height(p.x,p.z) or arches.inside(p) or halls.inside(p): return float(i-1)/STEPS
 	return 1.0
 
 func _process(delta: float) -> void:
@@ -515,6 +525,7 @@ func tick(delta: float) -> void:
 	land.lead_with(plane.velocity)
 	land.step(camera.global_position)
 	arches.step(camera.global_position)
+	halls.step(camera.global_position)
 	trees.step(camera.global_position,plane.position)
 	birds.step(delta,camera.global_position,plane)
 	if fish != null: fish.step(delta,camera.global_position,plane.position,plane.velocity,false)
@@ -683,7 +694,7 @@ func _show_hud() -> void:
 		"  ·  3D at %d%%" % roundi(get_viewport().scaling_3d_scale*100.0),
 		("  ·  %s, %05.2f h%s" % [look.mood_title(),look.hour(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
-		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+trees.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]
+		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+_hall_note()+trees.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]
 
 func _react_note() -> String:
 	if react == null: return ""
@@ -693,6 +704,11 @@ func _arch_note() -> String:
 	if arches.density <= 0.0: return "\nno arches"
 	var a: Dictionary = arches.stats
 	return "\narches: %d standing in %d cells  ·  slowest build %.0f ms on a worker, slowest commit %.2f ms" % [int(a.arches),int(a.cells),float(a.slowest_build_ms),float(a.slowest_commit_ms)]
+
+func _hall_note() -> String:
+	if halls.density <= 0.0: return ""
+	return "
+"+halls.note()
 
 func _grass_note() -> String:
 	if grass == null: return ""
@@ -755,7 +771,7 @@ func _hop_spot() -> Vector3:
 		var h := floor_at(Vector2(p.x,p.z))
 		if is_nan(h): continue
 		var spot := Vector3(p.x,h,p.z)
-		if trees.inside(spot+Vector3.UP*0.5) or arches.inside(spot+Vector3.UP*0.5): continue
+		if trees.inside(spot+Vector3.UP*0.5) or arches.inside(spot+Vector3.UP*0.5) or halls.inside(spot+Vector3.UP*0.5): continue
 		return spot
 	var p := at-right*hop.x
 	return Vector3(p.x,field.height(p.x,p.z),p.z)
@@ -833,6 +849,7 @@ func _foot_tick(delta: float) -> void:
 	var eye := camera.global_position
 	land.step(eye)
 	arches.step(eye)
+	halls.step(eye)
 	trees.step(eye,walker.motor.feet)
 	birds.step(delta,eye,plane)
 	if fish != null: fish.step(delta,eye,walker.motor.feet,walker.motor.velocity,true)
@@ -920,6 +937,6 @@ func _dry_spot(near: Vector2) -> Vector2:
 				var q := floor_at(p+d)
 				if is_nan(q) or absf(q-h) > 0.4 or walker.water_depth(p+d) > 0.0: ok = false
 			var up := Vector3(p.x,h+1.0,p.y)
-			if ok and not trees.inside(up) and not arches.inside(up): return p
+			if ok and not trees.inside(up) and not arches.inside(up) and not halls.inside(up): return p
 		r += 4.0
 	return near

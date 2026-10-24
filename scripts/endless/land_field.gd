@@ -439,6 +439,15 @@ var _p_r := 0.0
 var _p_w := 0.0
 var _p_y := 0.0
 
+## Slot halls (scripts/endless/hall_sites.gd): a cut through the ridges, a
+## layer over either field as the ponds are, cut in after them. `halls`
+## their density (the world's `halls` layer, --halls=X; 0 none).
+const Sites = preload("res://scripts/endless/hall_sites.gd")
+var halls := 0.0
+var _hall_local := {}
+var _hall_cell := Vector2i(1 << 30,0)
+var _hall_here := PackedFloat32Array()
+
 func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	seed = land_seed
 	# The world's recipe and knobs first (the profile `--world=` names unless
@@ -469,6 +478,7 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 		elif arg == "--land-native=0" or arg == "--gdscript-kernels": want_native = false
 		elif arg == "--land-libm": k.libm = true
 	ponds = 0.0 if k.get("old_land",false) else Ponds.wanted(float(k.get("ponds",1.0)))
+	halls = 0.0 if k.get("old_land",false) else Sites.wanted(float(world.layer("halls",0.0)))
 	if want_native and native_available(need):
 		_impl = ClassDB.instantiate(NATIVE_CLASS)
 		_impl.configure(land_seed,float(k.floor_half),k)
@@ -526,12 +536,42 @@ func native_impl() -> Object:
 ## Vector2(world height, meadow 0..1) at a world XZ point.
 func sample(x: float, z: float) -> Vector2:
 	_p_on = false
-	if ponds <= 0.0: return _impl.sample(x,z)
-	# (The square's pond first: finding it samples the field.)
-	var p := _pond_for(x,z)
+	if ponds <= 0.0 and halls <= 0.0: return _impl.sample(x,z)
+	# (The square's pond and hall first: finding them samples the field.)
+	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
+	var s := _hall_for(x,z) if halls > 0.0 else PackedFloat32Array()
 	var got: Vector2 = _impl.sample(x,z)
 	if not p.is_empty(): got.x = _pond(p,x,z,got.x,float(_impl.last_river))
+	if not s.is_empty(): got.x = Sites.carve(s,got.x,x,z)
 	return got
+
+## The hall site of the square holding (x, z) (the last square's kept).
+func _hall_for(x: float, z: float) -> PackedFloat32Array:
+	var cx := floori(x/Sites.CELL)
+	var cz := floori(z/Sites.CELL)
+	if cx != _hall_cell.x or cz != _hall_cell.y:
+		_hall_here = Sites.cell_site(_impl,seed,halls,ponds,x,z,_hall_local)
+		_hall_cell = Vector2i(cx,cz)
+	return _hall_here
+
+## The hall sites whose cut meets the box (x0, z0)..(x1, z1) (hall_sites.gd's
+## arrays).
+func halls_in(x0: float, z0: float, x1: float, z1: float) -> Array:
+	if halls <= 0.0: return []
+	return Sites.sites_in(_impl,seed,halls,ponds,x0,z0,x1,z1,_hall_local)
+
+## A square's hall for the builder (hall_sites.gd `site_info`), or empty.
+func hall_info(key: Vector2i) -> Dictionary:
+	if halls <= 0.0: return {}
+	return Sites.site_info(_impl,seed,halls,ponds,key)
+
+## The hall site whose cut holds (x, z) (or comes within `margin` m), or
+## an empty array.
+func hall_at(x: float, z: float, margin := 0.0) -> PackedFloat32Array:
+	if halls <= 0.0: return PackedFloat32Array()
+	var s := _hall_for(x,z)
+	if s.is_empty() or not Sites.on_cut(s,x,z,margin): return PackedFloat32Array()
+	return s
 
 ## The pond of the square holding (x, z) (the last square's kept).
 func _pond_for(x: float, z: float) -> PackedFloat32Array:
@@ -565,16 +605,18 @@ func ponds_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 ## valley, half, side, across, river, river_r, river_w, river_y}.
 func shape(x: float, z: float) -> Dictionary:
 	_p_on = false
-	if ponds <= 0.0: return _impl.shape(x,z)
-	var p := _pond_for(x,z)
+	if ponds <= 0.0 and halls <= 0.0: return _impl.shape(x,z)
+	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
+	var h := _hall_for(x,z) if halls > 0.0 else PackedFloat32Array()
 	var s: Dictionary = _impl.shape(x,z)
-	if p.is_empty(): return s
-	s.height = _pond(p,x,z,float(s.height),float(s.river))
-	if _p_on:
-		s.river = _p_out
-		s.river_r = _p_r
-		s.river_w = _p_w
-		s.river_y = _p_y
+	if not p.is_empty():
+		s.height = _pond(p,x,z,float(s.height),float(s.river))
+		if _p_on:
+			s.river = _p_out
+			s.river_r = _p_r
+			s.river_w = _p_w
+			s.river_y = _p_y
+	if not h.is_empty(): s.height = Sites.carve(h,float(s.height),x,z)
 	return s
 
 ## The river's water level (world y) where a point is on a river's water,
@@ -599,7 +641,7 @@ func sea_calm(x: float, z: float) -> float:
 
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:
-	if ponds > 0.0: return sample(x,z).x
+	if ponds > 0.0 or halls > 0.0: return sample(x,z).x
 	return _impl.height(x,z)
 
 ## The snow line over the sea for this land (round one's under --old-land).
@@ -618,8 +660,10 @@ func colour(x: float, z: float, y: float, up: float, meadow: float) -> Color:
 ## to `step`.
 func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: float, flow_max: float) -> Dictionary:
 	var ps: Array = ponds_in(x0,z0,x0+cells*step,z0+cells*step)
+	var hs: Array = halls_in(x0,z0,x0+cells*step,z0+cells*step)
 	var made := _build_chunk(x0,z0,step,cells,skirt_drop,flow_max)
 	if not ps.is_empty(): Ponds.apply_chunk(self,_impl,made,ps,x0,z0,step,cells,skirt_drop)
+	if not hs.is_empty(): Sites.apply_chunk(self,_impl,made,hs,x0,z0,step,cells,skirt_drop)
 	return made
 
 func _build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: float, flow_max: float) -> Dictionary:
@@ -719,8 +763,10 @@ func _build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: flo
 ## (PackedFloat32Arrays row by row; river is `last_river` at each sample).
 func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:
 	var ps: Array = ponds_in(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step)
+	var hs: Array = halls_in(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step)
 	var got := _grid(x0,z0,step,nx,nz,pad)
 	if not ps.is_empty(): Ponds.apply_grid(got,ps,x0,z0,step,nx,nz,pad)
+	if not hs.is_empty(): Sites.apply_grid(got,hs,x0,z0,step,nx,nz,pad)
 	return got
 
 func _grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:

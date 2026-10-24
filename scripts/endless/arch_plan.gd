@@ -31,6 +31,8 @@ const Field = preload("res://scripts/endless/land_field.gd")
 ## The world cell (m) and the candidate spots tried in each, at density 1.
 const CELL := 480.0
 const TRIES := 6
+## How far off a slot hall's cut an arch keeps (m).
+const HALL_CLEAR := 60.0
 ## At most this many arches a cell, and at least this far apart (m).
 const MOST := 2
 const APART := 200.0
@@ -80,6 +82,8 @@ static func plan(field: RefCounted, cx: int, cz: int, density := 1.0, rock := 1.
 		if near: continue
 		var s: Dictionary = field.shape(x,z)
 		if float(s.height) < -38.0: continue
+		# None in or by a slot hall's cut (scripts/endless/hall_sites.gd).
+		if field.has_method("hall_at") and not (field.hall_at(x,z,HALL_CLEAR) as PackedFloat32Array).is_empty(): continue
 		var m := float(s.mountain)
 		var v := float(s.valley)
 		var half := float(s.half)
