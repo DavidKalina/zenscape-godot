@@ -125,14 +125,17 @@ const LEAD_RATE := 3.0
 const LEAD_LEVEL := Vector2(0.2,0.55)
 ## The rings are measured along the ground up to this height over it (m);
 ## past it the height counts, RISE times over (the discs shrink as the eye
-## rises: the near tufts gone from FLAT_UP+LOD.y/RISE m up, 39).
+## rises: the near tufts gone from FLAT_UP+LOD.y/RISE m up, 39). With
+## TUFT_TOP on, its own rate stands in for RISE.
 const FLAT_UP := 20.0
 const RISE := 1.6
 ## The height over the ground (m) above which no tuft grows (--tuft-top=H; 0
-## off): the rise runs fast enough to close the far ring's whole reach
-## (LOD.w) by then, so tufts thin and pull in with altitude and the painted
-## ground (endless_ground.gdshader) carries the look from there.
-const TUFT_TOP := 80.0
+## off): the rise runs at the rate that closes the far ring's whole reach
+## (LOD.w) by then, LOD.w/(TUFT_TOP-FLAT_UP) (1.05 at 240: the near tufts gone
+## by about 48 m up, the far ones thinning from about 160), so tufts thin and
+## pull in with altitude and the painted ground (endless_ground.gdshader)
+## carries the look from there.
+const TUFT_TOP := 240.0
 ## Wildflower drifts in the near carpet (KitFlora Site `flower_drift`): where
 ## a value noise of DRIFT_SCALE m rises from DRIFT.x to .y, the flowers are
 ## kept up to DRIFT.z times as often (1 elsewhere), so the meadows have
@@ -661,7 +664,7 @@ func _lead_step(forward: Vector3) -> void:
 ## The rings' rise (`ring_lead`'s z) with the eye `over` m over the ground.
 func _rise_of(over: float) -> float:
 	var rise_rate := RISE
-	if tuft_top > flat_up: rise_rate = maxf(RISE,lod.w/(tuft_top-flat_up))
+	if tuft_top > flat_up: rise_rate = lod.w/(tuft_top-flat_up)
 	return over if rings_3d else maxf(over-flat_up,0.0)*rise_rate
 
 ## The ring distance (m) of ground point `p` from the eye: along the ground,
