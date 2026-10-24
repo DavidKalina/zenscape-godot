@@ -18,4 +18,4 @@ static func paint() -> Dictionary:
 		"globals":{"zs_autumn":1.0,"zs_season":Vector4(0,0,0,0.7)}}
 
 static func layers() -> Dictionary:
-	return {"trees":true,"grass":true,"birds":true,"fish":true,"arches":1.0,"halls":1.0,"traffic":-1}
+	return {"trees":true,"grass":true,"birds":true,"fish":true,"arches":1.0,"halls":1.0,"tunnels":1.0,"traffic":-1}
