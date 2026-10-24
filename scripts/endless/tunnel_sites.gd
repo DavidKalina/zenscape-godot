@@ -125,6 +125,61 @@ const TRENCH_REACH := APRON+RAMP_MOST
 ## `--tunnel-test`: mouth A this far ahead of the start (m).
 const TEST_AHEAD := 450.0
 
+## The box (Site `box`): the path grown, every BOX_EVERY samples, by the
+## reach of its flanks down to LOW m under the floor (times BOX_SLACK, and
+## the samples' spacing); where the land falls lower still the massif's
+## lift fades out over EDGE_FADE m inside the box's edge, so a point past
+## the box never needs it.
+const LOW := 60.0
+const BOX_EVERY := 6
+const BOX_SLACK := 1.1
+const EDGE_FADE := 160.0
+
+## Streamed tunnels (knobs): at most one per CELL m square, from the seed
+## and the square alone, as hall_sites.gd's are. A square rolls (CHANCE
+## times the density, up to CHANCE_MAX), then makes TRIES tries: a path
+## turned to YAWS headings, each put near the square's middle (its box
+## moved up to JITTER of the room the square leaves it), the floor at the
+## lower mouth's land. A heading stands when its box lies CELL_MARGIN m
+## inside the square (so a point asks only its own square), both mouths
+## are DRY m over the sea with their land within MOUTH_SPREAD m, no river
+## lies within MOUTH_DRY m of a mouth under the lifted land (`_wet`), and a
+## flat lies within FLAT_REACH m of each mouth (FLAT_RUN m of land within
+## FLAT_RISE m, dry, read every FLAT_STEP m on FLAT_FAN rays out of it). Of
+## those, the one whose path runs under the most land already standing
+## over the floor (a ridge or a hill), less RIVER_COST m for each sample of
+## river it buries, wins: the massif eats the fewest flats and rivers.
+## Ponds are left as they are: the massif's flanks rise out of any under it.
+const CELL := 4096.0
+const CHANCE := 0.85
+const CHANCE_MAX := 0.95
+const TRIES := 6
+const YAWS := 8
+const JITTER := 0.8
+const CELL_MARGIN := 32.0
+const DRY := 6.0
+const MOUTH_SPREAD := 24.0
+const RIVER_OFF := 40.0
+const RIVER_LIFT := 2.0
+const MOUTH_DRY := 300.0
+const RIVER_COST := 3.0
+const SCAN := 128.0
+const FLAT_REACH := 1100.0
+const FLAT_RUN := 192.0
+const FLAT_RISE := 4.0
+const FLAT_STEP := 16.0
+const FLAT_FAN := [-0.6,-0.3,0.0,0.3,0.6]
+
+static var _cache := {}
+static var _lock := Mutex.new()
+## Why tries fell (a count by reason, for the drivers).
+static var why := {}
+
+static func _why(k: String) -> void:
+	_lock.lock()
+	why[k] = int(why.get(k,0))+1
+	_lock.unlock()
+
 ## The shafts to the sky (sundered_hall.gd's MAX_SHUT: a long shut run needs
 ## a way out, and a glimpse of daylight partway through), knobs: in up to
 ## SHAFT_MOST caverns (`--tunnel-shafts=N`), the deepest first, over the
@@ -244,6 +299,180 @@ static func test_site(impl: Object, seed: int, world: RefCounted) -> Site:
 static func _h(impl: Object, x: float, z: float) -> float:
 	return (impl.sample(x,z) as Vector2).x
 
+# --- Streamed sites ------------------------------------------------------------------
+
+## The tunnels (none or one Site) of the CELL square `key`, as hall_sites.gd
+## `cell_site`: `impl` the field doing the work (its last sample is
+## overwritten when the square is first looked at, read at full detail);
+## `local` the asking LandField's own cache.
+static func cell_sites(impl: Object, seed: int, density: float, key: Vector2i, local: Dictionary) -> Array:
+	var got: Variant = local.get(key)
+	if got != null: return got
+	var k4 := Vector4i(key.x,key.y,seed,int(density*1000.0))
+	_lock.lock()
+	got = _cache.get(k4)
+	_lock.unlock()
+	if got == null:
+		var was: float = impl.detail
+		impl.detail = 0.0
+		var t := _make(impl,seed,density,key.x,key.y)
+		impl.detail = was
+		got = [] if t == null else [t]
+		_lock.lock()
+		# Whichever thread made it first, every field shares one Site.
+		if _cache.has(k4): got = _cache[k4]
+		else: _cache[k4] = got
+		_lock.unlock()
+	local[key] = got
+	return got
+
+## The square key holding (x, z).
+static func cell_of(x: float, z: float) -> Vector2i:
+	return Vector2i(floori(x/CELL),floori(z/CELL))
+
+## Square (ci, cj)'s tunnel, or null.
+static func _make(impl: Object, seed: int, density: float, ci: int, cj: int) -> Site:
+	if density <= 0.0: return null
+	if float(hash([seed,ci,cj,"tunnel_roll"]) & 0xffffff)/16777216.0 >= minf(CHANCE*density,CHANCE_MAX): return null
+	var name := "%s/tunnel/%d_%d" % [_world_id(),ci,cj]
+	if LayoutOverrides.deleted(name): return null
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([seed,ci,cj,"tunnel_place"])
+	var sq := Rect2(ci*CELL,cj*CELL,CELL,CELL).grow(-CELL_MARGIN)
+	var best: Site = null
+	var best_score := -INF
+	for k in TRIES:
+		var tseed := hash([seed,ci,cj,"tunnel",k])
+		var jit := Vector2(rng.randf_range(-1.0,1.0),rng.randf_range(-1.0,1.0))
+		var yaw0 := rng.randf()*TAU
+		# The path's shape (a dry run at the origin along +X), turned to each
+		# of YAWS headings: its box centred in the room the square leaves it,
+		# its mouths on land, scored by the land over its floor.
+		var dry := _build(null,tseed,Transform3D.IDENTITY,false)
+		var reach := _box_reach(dry)
+		for w in YAWS:
+			var yaw := yaw0+w*TAU/YAWS
+			var box := Rect2(dry.pts[0].rotated(-yaw),Vector2.ZERO)
+			for i in reach.size(): box = box.merge(Rect2(dry.pts[_box_i(dry,i)].rotated(-yaw)-Vector2(reach[i],reach[i]),Vector2(reach[i],reach[i])*2.0))
+			if box.size.x > sq.size.x or box.size.y > sq.size.y:
+				_why("box")
+				continue
+			var room := (sq.size-box.size)*0.5*JITTER
+			var a := sq.get_center()+jit*room-box.get_center()
+			var b := a+dry.mouth_b.rotated(-yaw)
+			# The floor: the lower mouth's land (the higher one's trench cuts down).
+			var ha := _h(impl,a.x,a.y)
+			var hb := _h(impl,b.x,b.y)
+			if minf(ha,hb) < SEA_Y+DRY:
+				_why("sea")
+				continue
+			if absf(ha-hb) > MOUTH_SPREAD:
+				_why("mouths")
+				continue
+			var floor_y := minf(ha,hb)
+			var score := _hill(impl,dry,a,yaw,floor_y)
+			if score <= best_score: continue
+			var t := _build(impl,tseed,Transform3D(Basis(Vector3.UP,yaw),Vector3(a.x,floor_y,a.y)),false)
+			if not sq.encloses(t.box):
+				_why("box")
+				continue
+			var wet := _wet(impl,t)
+			if wet < 0:
+				_why("wet")
+				continue
+			score -= RIVER_COST*wet
+			if score <= best_score: continue
+			if not (_flat_near(impl,t,0) and _flat_near(impl,t,1)):
+				_why("flat")
+				continue
+			best = t
+			best_score = score
+	if best == null: return null
+	# Placed through the layout file, as the test tunnel is.
+	var coded := best.frame
+	var xf := LayoutOverrides.xform(name,coded)
+	if not xf.is_equal_approx(coded):
+		var frame := Transform3D(Basis(Vector3.UP,atan2(-xf.basis.x.z,xf.basis.x.x)),xf.origin)
+		best = _build(impl,best.seed,frame,false)
+	best.name = name
+	best.coded = coded
+	return best
+
+## The box's samples along the path (every BOX_EVERY, and the last) and
+## each one's reach (m, Site `box`).
+static func _box_i(t: Site, i: int) -> int:
+	return mini(i*BOX_EVERY,t.pts.size()-1)
+
+static func _box_reach(t: Site) -> PackedFloat32Array:
+	var slope := FLANK*(1.0-FLANK_VARY)
+	var out := PackedFloat32Array()
+	for i in ceili(float(t.pts.size()-1)/BOX_EVERY)+1:
+		out.append(((top(t,t.ss[_box_i(t,i)])-t.floor_y+LOW+GULLY+BLEND)/slope+CREST_R)*BOX_SLACK+STEP*BOX_EVERY)
+	return out
+
+## How much land already stands over `floor_y` along path `t` (m, the
+## mean), turned by `yaw` and moved to mouth A at `a`: a ridge or a hill
+## the bore runs under scores high.
+static func _hill(impl: Object, t: Site, a: Vector2, yaw: float, floor_y: float) -> float:
+	var sum := 0.0
+	var n := 0
+	var k := 0
+	while k < t.pts.size():
+		var p := a+(t.pts[k]-t.origin).rotated(-yaw)
+		sum += maxf(_h(impl,p.x,p.y)-floor_y,0.0)
+		n += 1
+		k += 8
+	return sum/maxi(n,1)
+
+## The rivers the massif would bury: how many samples (every SCAN m over
+## the box) where it lifts the land RIVER_LIFT m or more lie within
+## RIVER_OFF m of a river, or -1 where one lies within MOUTH_DRY m of a
+## mouth (no river runs into a mouth). The field clears a buried river's
+## water (LandField `last_river`, apply_chunk), so it ends at the flank.
+## The sea may lie under the far flanks: they rise out of it as a coast.
+static func _wet(impl: Object, t: Site) -> int:
+	var out := 0
+	var z := t.box.position.y+SCAN*0.5
+	while z < t.box.end.y:
+		var x := t.box.position.x+SCAN*0.5
+		while x < t.box.end.x:
+			var h := _h(impl,x,z)
+			if h > SEA_Y and float(impl.last_river) < RIVER_OFF and massif(t,x,z) > h+RIVER_LIFT:
+				if Vector2(x,z).distance_to(t.origin) < MOUTH_DRY or Vector2(x,z).distance_to(t.mouth_b) < MOUTH_DRY: return -1
+				out += 1
+			x += SCAN
+		z += SCAN
+	return out
+
+## Whether a flat lies within FLAT_REACH m out of mouth `m` (past its
+## trench): FLAT_RUN m of dry land within FLAT_RISE m on one of the rays.
+static func _flat_near(impl: Object, t: Site, m: int) -> bool:
+	var at: Vector2 = t.origin if m == 0 else t.mouth_b
+	var o: Vector2 = -t.way if m == 0 else t.out_b
+	var need := ceili(FLAT_RUN/FLAT_STEP)+1
+	for turn: float in FLAT_FAN:
+		var d := o.rotated(turn)
+		var run := PackedFloat32Array()
+		var a := TRENCH_REACH
+		while a < FLAT_REACH:
+			var p := at+d*a
+			var h := _h(impl,p.x,p.y)
+			if h < SEA_Y+DRY or float(impl.last_river) < 20.0: run.clear()
+			else:
+				run.append(h)
+				# Drop from the front till the run lies within FLAT_RISE.
+				while run.size() > 1:
+					var lo := INF
+					var hi := -INF
+					for v: float in run:
+						lo = minf(lo,v)
+						hi = maxf(hi,v)
+					if hi-lo <= FLAT_RISE: break
+					run.remove_at(0)
+				if run.size() >= need: return true
+			a += FLAT_STEP
+	return false
+
 static func _world_id() -> String:
 	return String(preload("res://scripts/endless/world/world_profile.gd").current().id)
 
@@ -310,13 +539,14 @@ static func _build(impl: Object, seed: int, frame: Transform3D, test: bool) -> S
 	_sample_path(t)
 	_table(t)
 	_carve_profile(t)
-	# The crest: over the highest land on the path by CREST_OVER at least.
-	var top := t.floor_y
+	# The crest: over the highest land on the path by CREST_OVER at least
+	# (without a field, a dry run for the path's shape: the rolled crest).
+	var land_top := t.floor_y
 	var k := 0
-	while k < t.pts.size():
-		top = maxf(top,_h(impl,t.pts[k].x,t.pts[k].y))
+	while impl != null and k < t.pts.size():
+		land_top = maxf(land_top,_h(impl,t.pts[k].x,t.pts[k].y))
 		k += 12
-	t.crest = maxf(rng.randf_range(CREST.x,CREST.y),top-t.floor_y+CREST_OVER)
+	t.crest = maxf(rng.randf_range(CREST.x,CREST.y),land_top-t.floor_y+CREST_OVER)
 	t.crest_noise = FastNoiseLite.new()
 	t.crest_noise.seed = seed & 0x7fffffff
 	t.crest_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
@@ -328,14 +558,14 @@ static func _build(impl: Object, seed: int, frame: Transform3D, test: bool) -> S
 	t.gully.fractal_type = FastNoiseLite.FRACTAL_RIDGED
 	t.gully.frequency = 1.0/GULLY_WAVE
 	t.gully.fractal_octaves = 4
-	# The box: the path grown by the flanks' reach.
-	var reach := (t.crest+GULLY+BLEND)/(FLANK*(1.0-FLANK_VARY))+CREST_R
-	var lo := t.pts[0]
-	var hi := t.pts[0]
-	for p: Vector2 in t.pts:
-		lo = Vector2(minf(lo.x,p.x),minf(lo.y,p.y))
-		hi = Vector2(maxf(hi.x,p.x),maxf(hi.y,p.y))
-	t.box = Rect2(lo,hi-lo).grow(reach)
+	# The box: each stretch of the path grown by its flanks' reach (where
+	# the massif falls LOW m under the floor), so it hugs the low noses at
+	# the mouths and swells round the crest.
+	var reach := _box_reach(t)
+	t.box = Rect2(t.pts[0],Vector2.ZERO)
+	for i in reach.size():
+		var p := t.pts[_box_i(t,i)]
+		t.box = t.box.merge(Rect2(p-Vector2(reach[i],reach[i]),Vector2(reach[i],reach[i])*2.0))
 	_place_shafts(t)
 	return t
 
@@ -488,6 +718,10 @@ static func _smax(a: float, b: float, k: float) -> float:
 static func carve(t: Site, base: float, x: float, z: float) -> float:
 	if not t.box.has_point(Vector2(x,z)): return base
 	var y := _smax(massif(t,x,z),base,BLEND)
+	if y != base:
+		# Land lower than the box allows for: the lift fades out at its edge.
+		var e := minf(minf(x-t.box.position.x,t.box.end.x-x),minf(z-t.box.position.y,t.box.end.y-z))
+		if e < EDGE_FADE: y = base+(y-base)*smoothstep(0.0,EDGE_FADE,e)
 	y = _trench(t,y,t.origin,-t.way,x,z)
 	y = _trench(t,y,t.mouth_b,t.out_b,x,z)
 	return _pit(t,y,x,z)

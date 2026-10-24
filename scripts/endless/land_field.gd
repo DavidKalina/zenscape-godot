@@ -452,11 +452,18 @@ var _hall_here := PackedFloat32Array()
 ## a winding bore and its mouths' trenches cut, a layer over either field
 ## after the ponds and before the slot halls' cut (a hall keeps out of a
 ## tunnel's box). `tunnels` their density (the world's `tunnels` layer,
-## --tunnels=X; 0 none); `--tunnel-test` the one tunnel ahead of the start.
-## `_t_on`: the last sample's land was lifted (no river there).
+## --tunnels=X; 0 none): at most one per Tunnels.CELL square, from the seed
+## and the square alone, its box inside the square so a point asks only its
+## own square. `--tunnel-test`: the one tunnel ahead of the start instead
+## (`_tunnel_sites`, `_tunnel_test`). `_t_on`: the last sample's land was
+## lifted (no river there).
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
 var tunnels := 0.0
 var _tunnel_sites: Array = []
+var _tunnel_test := false
+var _tunnel_local := {}
+var _tunnel_cell := Vector2i(1 << 30,0)
+var _tunnel_here: Array = []
 var _t_on := false
 
 func _init(land_seed := 0, profile: RefCounted = null) -> void:
@@ -497,7 +504,9 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	else:
 		_impl = GDField.new(land_seed,k)
 	tunnels = 0.0 if k.get("old_land",false) else Tunnels.wanted(float(world.layer("tunnels",0.0)))
-	if tunnels > 0.0 and Tunnels.test_wanted(): _tunnel_sites = [Tunnels.test_site(_impl,land_seed,world)]
+	if tunnels > 0.0 and Tunnels.test_wanted():
+		_tunnel_sites = [Tunnels.test_site(_impl,land_seed,world)]
+		_tunnel_test = true
 
 ## Whether the knobs `k` grow the stock recipe (every recipe key at its
 ## constant), which a version-1 native library still grows right.
@@ -550,20 +559,21 @@ func native_impl() -> Object:
 func sample(x: float, z: float) -> Vector2:
 	_p_on = false
 	_t_on = false
-	if ponds <= 0.0 and halls <= 0.0 and _tunnel_sites.is_empty(): return _impl.sample(x,z)
-	# (The square's pond and hall first: finding them samples the field.)
+	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0: return _impl.sample(x,z)
+	# (The square's pond, tunnel and hall first: finding them samples the field.)
 	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
+	var ts := _tunnels_for(x,z) if tunnels > 0.0 else _NONE
 	var s := _hall_for(x,z) if halls > 0.0 else PackedFloat32Array()
 	var got: Vector2 = _impl.sample(x,z)
 	if not p.is_empty(): got.x = _pond(p,x,z,got.x,float(_impl.last_river))
-	if not _tunnel_sites.is_empty(): got = _tunnel(got,x,z)
+	if not ts.is_empty(): got = _tunnel(ts,got,x,z)
 	if not s.is_empty(): got.x = Sites.carve(s,got.x,x,z)
 	return got
 
 ## Vector2(height, meadow) `got` with the tunnels' massifs and trenches at
 ## (x, z): the meadow fades with the lift; `_t_on` where it was lifted.
-func _tunnel(got: Vector2, x: float, z: float) -> Vector2:
-	for t: RefCounted in _tunnel_sites:
+func _tunnel(ts: Array, got: Vector2, x: float, z: float) -> Vector2:
+	for t: RefCounted in ts:
 		var y := Tunnels.carve(t,got.x,x,z)
 		var d := y-got.x
 		if d == 0.0: continue
@@ -575,12 +585,34 @@ func _tunnel(got: Vector2, x: float, z: float) -> Vector2:
 ## The tunnels whose massif or trenches meet the box (x0, z0)..(x1, z1)
 ## (tunnel_sites.gd's Site).
 func tunnels_in(x0: float, z0: float, x1: float, z1: float) -> Array:
-	if _tunnel_sites.is_empty(): return []
-	return Tunnels.sites_in(_tunnel_sites,x0,z0,x1,z1)
+	if tunnels <= 0.0: return []
+	if _tunnel_test: return Tunnels.sites_in(_tunnel_sites,x0,z0,x1,z1)
+	var all: Array = []
+	for cj in range(floori(z0/Tunnels.CELL),floori(z1/Tunnels.CELL)+1):
+		for ci in range(floori(x0/Tunnels.CELL),floori(x1/Tunnels.CELL)+1):
+			all.append_array(Tunnels.cell_sites(_impl,seed,tunnels,Vector2i(ci,cj),_tunnel_local))
+	return Tunnels.sites_in(all,x0,z0,x1,z1)
 
-## Every tunnel this field knows (for now the test tunnel).
+## The tunnels that may touch (x, z): its square's (the last square's
+## kept), or the test tunnel.
+func _tunnels_for(x: float, z: float) -> Array:
+	if _tunnel_test: return _tunnel_sites
+	var key := Tunnels.cell_of(x,z)
+	if key != _tunnel_cell:
+		_tunnel_here = Tunnels.cell_sites(_impl,seed,tunnels,key,_tunnel_local)
+		_tunnel_cell = key
+	return _tunnel_here
+
+const _NONE: Array = []
+
+## The fixed tunnels this field knows: the --tunnel-test one (streamed ones
+## come from `tunnels_in`).
 func tunnel_sites() -> Array:
 	return _tunnel_sites
+
+## Whether the tunnels are the --tunnel-test one alone.
+func tunnel_test() -> bool:
+	return _tunnel_test
 
 ## The hall site of the square holding (x, z) (the last square's kept).
 func _hall_for(x: float, z: float) -> PackedFloat32Array:
@@ -588,7 +620,7 @@ func _hall_for(x: float, z: float) -> PackedFloat32Array:
 	var cz := floori(z/Sites.CELL)
 	if cx != _hall_cell.x or cz != _hall_cell.y:
 		_hall_here = Sites.cell_site(_impl,seed,halls,ponds,x,z,_hall_local)
-		if Tunnels.blocks_hall(_tunnel_sites,_hall_here): _hall_here = PackedFloat32Array()
+		if tunnels > 0.0 and Tunnels.blocks_hall(_tunnels_for(x,z),_hall_here): _hall_here = PackedFloat32Array()
 		_hall_cell = Vector2i(cx,cz)
 	return _hall_here
 
@@ -597,14 +629,14 @@ func _hall_for(x: float, z: float) -> PackedFloat32Array:
 func halls_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 	if halls <= 0.0: return []
 	var got := Sites.sites_in(_impl,seed,halls,ponds,x0,z0,x1,z1,_hall_local)
-	if _tunnel_sites.is_empty(): return got
-	return got.filter(func(s: PackedFloat32Array) -> bool: return not Tunnels.blocks_hall(_tunnel_sites,s))
+	if tunnels <= 0.0: return got
+	return got.filter(func(s: PackedFloat32Array) -> bool: return not Tunnels.blocks_hall(_tunnels_for(s[0],s[1]),s))
 
 ## A square's hall for the builder (hall_sites.gd `site_info`), or empty.
 func hall_info(key: Vector2i) -> Dictionary:
 	if halls <= 0.0: return {}
 	var got := Sites.site_info(_impl,seed,halls,ponds,key)
-	if not got.is_empty() and Tunnels.blocks_hall(_tunnel_sites,got.site): return {}
+	if not got.is_empty() and tunnels > 0.0 and Tunnels.blocks_hall(_tunnels_for(got.site[0],got.site[1]),got.site): return {}
 	return got
 
 ## The hall site whose cut holds (x, z) (or comes within `margin` m), or
@@ -648,8 +680,9 @@ func ponds_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 func shape(x: float, z: float) -> Dictionary:
 	_p_on = false
 	_t_on = false
-	if ponds <= 0.0 and halls <= 0.0 and _tunnel_sites.is_empty(): return _impl.shape(x,z)
+	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0: return _impl.shape(x,z)
 	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
+	var ts := _tunnels_for(x,z) if tunnels > 0.0 else _NONE
 	var h := _hall_for(x,z) if halls > 0.0 else PackedFloat32Array()
 	var s: Dictionary = _impl.shape(x,z)
 	if not p.is_empty():
@@ -659,8 +692,8 @@ func shape(x: float, z: float) -> Dictionary:
 			s.river_r = _p_r
 			s.river_w = _p_w
 			s.river_y = _p_y
-	if not _tunnel_sites.is_empty():
-		var got := _tunnel(Vector2(float(s.height),float(s.meadow)),x,z)
+	if not ts.is_empty():
+		var got := _tunnel(ts,Vector2(float(s.height),float(s.meadow)),x,z)
 		s.height = got.x
 		s.meadow = got.y
 		if _t_on:
@@ -672,7 +705,7 @@ func shape(x: float, z: float) -> Dictionary:
 ## The river's water level (world y) where a point is on a river's water,
 ## else NAN.
 func river_y(x: float, z: float) -> float:
-	if not _tunnel_sites.is_empty():
+	if tunnels > 0.0:
 		sample(x,z)
 		if _t_on: return NAN
 	if ponds > 0.0:
@@ -694,7 +727,7 @@ func sea_calm(x: float, z: float) -> float:
 
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:
-	if ponds > 0.0 or halls > 0.0 or not _tunnel_sites.is_empty(): return sample(x,z).x
+	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0: return sample(x,z).x
 	return _impl.height(x,z)
 
 ## The snow line over the sea for this land (round one's under --old-land).

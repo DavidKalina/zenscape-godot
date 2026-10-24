@@ -16,8 +16,11 @@ extends Node3D
 ## bore's floor with the rock roof as one more stretch over them
 ## (LandHalls `over`), and `inside` counts them.
 ##
-## For now every tunnel the field knows (the --tunnel-test one) is built
-## whole at setup: a tube of a few thousand quads.
+## The --tunnel-test tunnel is built whole at setup (a tube of a few
+## thousand quads); streamed ones (the field's `tunnels_in`, one per
+## Tunnels.CELL square from the seed) are built whole on the main thread
+## as their box comes within STREAM_REACH m of the eye (checked every
+## STREAM_MOVE m), and kept.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
@@ -108,6 +111,10 @@ const SHAFT_SPREAD := 2.2
 const SHAFT_ENERGY := 8.0
 const BEAM_ALPHA := 0.035
 const BEAM_TINT := Color(1.0,0.93,0.78)
+## Streaming (`_stream`): a tunnel is built when its box comes within
+## STREAM_REACH m of the eye, looked for every STREAM_MOVE m it moves.
+const STREAM_REACH := 2500.0
+const STREAM_MOVE := 200.0
 ## How far past the tube's walls `inside` counts the rock (m).
 const WALL_NEAR := 12.0
 ## The camera's sight in a bore (`sight`): marched every SIGHT_STEP m
@@ -185,6 +192,9 @@ var halls: Node3D
 ## The look's clouds (their valley fog hushed in the bore), or null.
 var clouds: Node
 var _sites: Array = []
+## The built tunnels by name, and where `_stream` last looked.
+var _known := {}
+var _streamed_at := Vector3.INF
 ## The plane's wingtip: the tube's half width it may fly in.
 var _grow := 0.0
 ## Whether `sight`'s last march was all in a bore's tube.
@@ -225,22 +235,45 @@ func setup(land_field: RefCounted) -> void:
 	add_child(halls)
 	halls.setup(int(field.seed))
 	halls.density = 1.0
-	for ti in _sites.size():
-		var t: Tunnels.Site = _sites[ti]
-		_build(t)
-		_build_torches(t)
-		for h: Dictionary in Tunnels.stretches(t):
-			var frame: Transform3D = h.frame
-			var half := float(h.piece.s1-h.piece.s0)*0.5
-			var mid := frame*Vector3(half,0.0,0.0)
-			var site := PackedFloat32Array([mid.x,mid.z,0,0,0,0,0,half+Tunnels.HALL_HALF])
-			halls.add_fixed(Vector2i(ti,int(h.n)),{"name":"%s/stretch_%d" % [t.name,int(h.n)],"seed":h.seed,"bays":h.bays,
-				"frame":frame,"coded":frame,"site":site,"piece":Tunnels.stretch_piece(h)})
-			stats.stretches += 1
-	stats.tunnels = _sites.size()
 	stats.lights = 0
 	stats["flames"] = 0
-	for i in (FLAME_POOL if not _feet.is_empty() else 0):
+	var fixed: Array = _sites
+	_sites = []
+	for t: Tunnels.Site in fixed: _add(t)
+
+## Builds tunnel `t` whole (its rock, portals, torches and hall stretches)
+## and readies the pools with the first torches.
+func _add(t: Tunnels.Site) -> void:
+	var t0 := Time.get_ticks_usec()
+	var ti := _sites.size()
+	_sites.append(t)
+	_known[t.name] = t
+	_build(t)
+	_build_torches(t)
+	for h: Dictionary in Tunnels.stretches(t):
+		var frame: Transform3D = h.frame
+		var half := float(h.piece.s1-h.piece.s0)*0.5
+		var mid := frame*Vector3(half,0.0,0.0)
+		var site := PackedFloat32Array([mid.x,mid.z,0,0,0,0,0,half+Tunnels.HALL_HALF])
+		halls.add_fixed(Vector2i(ti,int(h.n)),{"name":"%s/stretch_%d" % [t.name,int(h.n)],"seed":h.seed,"bays":h.bays,
+			"frame":frame,"coded":frame,"site":site,"piece":Tunnels.stretch_piece(h)})
+		stats.stretches += 1
+	stats.tunnels = _sites.size()
+	_ensure_pools()
+	stats["build_ms"] = maxf(float(stats.get("build_ms",0.0)),(Time.get_ticks_usec()-t0)/1000.0)
+
+## Builds the streamed tunnels whose box is within STREAM_REACH of `at`.
+func _stream(at: Vector3) -> void:
+	if field == null or not field.has_method("tunnel_test") or field.tunnel_test(): return
+	if _streamed_at != Vector3.INF and Vector2(at.x-_streamed_at.x,at.z-_streamed_at.z).length() < STREAM_MOVE: return
+	_streamed_at = at
+	for t: Tunnels.Site in field.tunnels_in(at.x-STREAM_REACH,at.z-STREAM_REACH,at.x+STREAM_REACH,at.z+STREAM_REACH):
+		if not _known.has(t.name): _add(t)
+
+## The flame and light pools, made once there are torches.
+func _ensure_pools() -> void:
+	if not _flames.is_empty() or _feet.is_empty(): return
+	for i in FLAME_POOL:
 		var fl: Node3D = Flame.new()
 		fl.name = "TorchFlame%d" % i
 		fl.set("kind","torch")
@@ -253,7 +286,7 @@ func setup(land_field: RefCounted) -> void:
 		_flames.append(fl)
 		_flame_on.append(-1)
 		_flame_burn.append(0.0)
-	for i in (TORCH_LIGHTS if not _lamps.is_empty() else 0):
+	for i in TORCH_LIGHTS:
 		var l := OmniLight3D.new()
 		l.name = "TorchLight%d" % i
 		l.light_color = TORCH_LIGHT
@@ -291,9 +324,11 @@ static func _dark_materials() -> Dictionary:
 
 ## Builds the hall stretches' far detail now, and the near detail round `at`.
 func prime(at: Vector3) -> void:
+	_stream(at)
 	halls.prime(at)
 
 func step(at: Vector3) -> void:
+	_stream(at)
 	halls.step(at)
 	_light_torches(at)
 	_spill()
@@ -537,7 +572,7 @@ func tube(p: Vector3) -> int:
 
 ## One line for the numbers HUD.
 func note() -> String:
-	return "tunnels %d, greybox %dk tris, %d torches (%d lit), %d stretches: %s" % [stats.tunnels,stats.tris/1000,stats.torches,stats.lights,stats.stretches,halls.note()]
+	return "tunnels %d (built in %.0f ms worst), greybox %dk tris, %d torches (%d lit), %d stretches: %s" % [stats.tunnels,float(stats.get("build_ms",0.0)),stats.tris/1000,stats.torches,stats.lights,stats.stretches,halls.note()]
 
 # --- The greybox ----------------------------------------------------------------------
 
