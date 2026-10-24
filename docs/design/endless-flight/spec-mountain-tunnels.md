@@ -33,6 +33,16 @@ stretches keep their centre column row, which makes two lanes). Don't settle
 it: keep such choices as named knobs or handles, and keep the autopilot's
 flight proof working whichever way they're set.
 
+## Flats come back
+
+The user rejected the flats loss from streamed tunnels (8619d733: on seed 7
+blocks over 600 m from a flat went 3 -> 17, worst 818 -> 1364 m). A landing
+flat stays in reach everywhere, massif tops included. Make tunnels rarer,
+or keep a landable flat on or beside each massif (a shoulder terrace, a
+mesa step on the flank), or both, until `scratch/overgrown/flats.gd`
+(seeds 1, 3, 7, 42) is back to about the `--no-tunnels` numbers. Report
+before and after per seed.
+
 ## Checks each iteration
 
 - Smoke (`tools/smoke.py`) of `studies/endless_flight.tscn` with
