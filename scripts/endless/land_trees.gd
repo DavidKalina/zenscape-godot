@@ -48,6 +48,7 @@ const FarTrees = preload("res://scripts/far_trees.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const LandArches = preload("res://scripts/endless/land_arches.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const FAR_SHADER = preload("res://shaders/endless_tree_far.gdshader")
 const FLOOR_SHADER = preload("res://shaders/endless_forest_floor.gdshader")
 const RING_SHADER = preload("res://shaders/endless_spruce_ring.gdshader")
@@ -163,10 +164,15 @@ var _bodies := {}             # plan cell -> StaticBody3D
 var _filling := {}            # plan cell -> its trees' shapes added so far
 ## The native plan and building (ZenScapeTrees), or null: GDScript.
 var native: Object
+## The world profile: its forest at setup, and per block whether the woods
+## stand there (`layer_at`, asked only in a world of regions).
+var world: RefCounted
 
-## The flags: {on, share, meadows}.
+## The flags: {on, share, meadows}, over the world's (its trees layer and
+## flora's forest, forest_meadows).
 static func flags() -> Dictionary:
-	var out := {"on":true,"share":1.0,"meadows":1.0,"floor":true}
+	var w: RefCounted = WorldProfile.current()
+	var out := {"on":bool(w.layer("trees",true)),"share":float(w.flora_value("forest",1.0)),"meadows":float(w.flora_value("forest_meadows",1.0)),"floor":true}
 	for a: String in LaunchArgs.user_args():
 		if a == "--no-trees": out.on = false
 		elif a.begins_with("--forest="): out.share = maxf(0.0,float(a.get_slice("=",1)))
@@ -177,6 +183,7 @@ static func flags() -> Dictionary:
 
 func setup(land_seed: int) -> void:
 	seed = land_seed
+	world = WorldProfile.current()
 	var f := flags()
 	enabled = f.on
 	share = f.share
@@ -275,8 +282,7 @@ static func native_wanted() -> bool:
 
 ## What ZenScapeTrees needs of the plan and the building.
 func _native_config() -> Dictionary:
-	var weights := PackedFloat32Array()
-	for entry: Array in HeroTrees.SPRUCE: weights.append(float(entry[1]))
+	var weights := Plan.variant_weights()
 	return {"seed":seed,"share":share,"meadows":meadows,"gap":WorldScale.opening(Plan.TOY_GAP),"lane_open":WorldScale.opening(Plan.TOY_LANE),
 		"dims":PackedVector3Array(_dims),"weights":weights,"tint":_tint,"crown_fit":PackedVector3Array(_crown_fit),"detail":_detail >= 0.0,"rings":_rings}
 
@@ -735,6 +741,12 @@ func _commit(done: Dictionary) -> void:
 	stats.slowest_plan_ms = maxf(stats.slowest_plan_ms,float(done.ms))
 	if done.kind == "f":
 		if _far.has(key) or _rect_distance(key.x*Plan.FAR_CELL,key.y*Plan.FAR_CELL,Plan.FAR_CELL,_eye) > far_ring.z+Plan.FAR_CELL: return
+		if not world.uniform and not world.layer_at(&"trees",(key.x+0.5)*Plan.FAR_CELL,(key.y+0.5)*Plan.FAR_CELL):
+			var bare := _batch(_crown,PackedFloat32Array(),0,null)
+			bare.name = "Far_%d_%d" % [key.x,key.y]
+			add_child(bare)
+			_far[key] = bare
+			return
 		var node := _batch(_crown,done.buf,int(done.n),_far_material)
 		node.name = "Far_%d_%d" % [key.x,key.y]
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -745,6 +757,9 @@ func _commit(done: Dictionary) -> void:
 		stats.far_trees += int(done.n)
 		return
 	if _blocks.has(key) or _rect_distance(key.x*BLOCK,key.y*BLOCK,BLOCK,_eye) > MID.z+BLOCK*2.0: return
+	if not world.uniform and not world.layer_at(&"trees",(key.x+0.5)*BLOCK,(key.y+0.5)*BLOCK):
+		_blocks[key] = {"node":_bare("Block_%d_%d" % [key.x,key.y]),"cells":{},"n":0,"tiles":{}}
+		return
 	var holder := Node3D.new()
 	holder.name = "Block_%d_%d" % [key.x,key.y]
 	for v in done.near.size():
@@ -781,6 +796,13 @@ func _commit(done: Dictionary) -> void:
 	_blocks[key] = {"node":holder,"cells":done.cells,"n":int(done.n),"tiles":done.get("tiles",{})}
 	stats.blocks = _blocks.size()
 	stats.trees += int(done.n)
+
+## An empty block, where the world's regions say no woods.
+func _bare(node_name: String) -> Node3D:
+	var n := Node3D.new()
+	n.name = node_name
+	add_child(n)
+	return n
 
 func _batch(mesh: Mesh, buf: PackedFloat32Array, count: int, material: Material) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()

@@ -78,7 +78,7 @@ var ms_avg := 0.0
 
 ## --fish=0 none.
 static func wanted() -> bool:
-	return not ("--fish=0" in preload("res://scripts/launch_args.gd").user_args())
+	return bool(preload("res://scripts/endless/world/world_profile.gd").current().layer("fish",true)) and not ("--fish=0" in preload("res://scripts/launch_args.gd").user_args())
 
 func setup(land_seed: int, field: RefCounted) -> void:
 	_field = field

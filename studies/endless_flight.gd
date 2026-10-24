@@ -30,6 +30,13 @@ extends Node3D
 ##   ./run-endless-flight.command [--seed=7]
 ##   godot --path . res://studies/endless_flight.tscn -- --no-title [--seed=7] [--at=x,z] [--heading=deg] [--alt=m] [--on-foot]
 ##
+## The world: this script is the engine's (the plane and flight, on foot,
+## streaming, the look, the dressing machinery, the HUD and harness hooks);
+## what makes the world this world is its profile
+## (scripts/endless/world/world_profile.gd, profiles/<id>.gd): --world=ID
+## (wilderness; test_dry is a test profile). The profile sets the defaults;
+## every flag below still wins (docs/design/endless-flight/world-profiles-handoff.md).
+##
 ## Flags: --on-foot starts parked at --at (on the land there) with the pilot
 ## out beside the plane. --seed=N the land (1), --at=x,z where it starts (0,0), the land's shape
 ## (land_field.gd): --mountains=X, --peaks=X, --valleys=X, --no-valleys,
@@ -75,6 +82,7 @@ extends Node3D
 ## sets it), and past cruise the eye can buffet a little (--rush=X, 0 off by default).
 
 const Field = preload("res://scripts/endless/land_field.gd")
+const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
@@ -128,6 +136,8 @@ const RUSH_HZ := Vector3(7.3,11.9,17.1)
 ## waits on it: tools/harness/drive.gd `open`).
 var walk_ready := false
 var seed := 1
+## The world profile in play (--world=; scripts/endless/world/world_profile.gd).
+var world: RefCounted
 var land: Node3D
 var field: RefCounted
 var camera: Camera3D
@@ -188,6 +198,13 @@ var _rush_t := 0.0
 
 func _ready() -> void:
 	EndlessLook.reset_season_globals()
+	# The world: its shader globals over the reset, its start under the flags.
+	world = WorldProfile.current()
+	world.apply_globals()
+	_start = world.spawn.get("at",_start)
+	_alt = float(world.spawn.get("alt",_alt))
+	var spawn_heading := float(world.spawn.get("heading",0.0))
+	if spawn_heading != 0.0: _heading = -deg_to_rad(spawn_heading)
 	Pad.ensure()
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--seed="): seed = int(arg.get_slice("=",1))
@@ -206,7 +223,7 @@ func _ready() -> void:
 			# No vsync and no cap, so the numbers' fps is the frame's cost.
 			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 			Engine.max_fps = 0
-	field = Field.new(seed)
+	field = Field.new(seed,world)
 	if EndlessLook.wanted():
 		look = EndlessLook.new()
 		add_child(look)
@@ -277,7 +294,7 @@ func _ready() -> void:
 	if _on_foot_start: await _start_on_foot()
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
-	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)" % [seed,took,int(land.counts().standing)])
+	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.DEFAULT else ", world "+str(world.id)])
 	if get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _start_height() -> float:

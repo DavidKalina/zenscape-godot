@@ -237,7 +237,8 @@ var _wing_at := [Vector3.ZERO,Vector3.ZERO]
 var _head_at := Vector3.ZERO
 
 static func flags() -> Dictionary:
-	var out := {"on":true,"density":1.0,"reach":1.0,"size":1.0,"ride":RIDE,"ambient":1.0}
+	# The world's birds layer, the flags over it.
+	var out := {"on":bool(preload("res://scripts/endless/world/world_profile.gd").current().layer("birds",true)),"density":1.0,"reach":1.0,"size":1.0,"ride":RIDE,"ambient":1.0}
 	for a: String in LaunchArgs.user_args():
 		var v := a.get_slice("=",1)
 		if a.begins_with("--birds="):

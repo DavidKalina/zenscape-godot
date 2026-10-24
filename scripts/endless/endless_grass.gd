@@ -89,6 +89,7 @@ extends Node3D
 ## tufts, FAR_WASH) take the drift's wash, so it reads from cruise height.
 
 const Field = preload("res://scripts/endless/land_field.gd")
+const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const Carpet = preload("res://studies/aqueduct_isle_flora.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
@@ -308,6 +309,10 @@ var tall := TALL
 ## and drivers.
 var stats := {"grown":0,"freed":0,"grow_ms":0.0,"slowest_grow_ms":0.0,"slowest_stand_ms":0.0}
 var field: RefCounted
+## The world profile (scripts/endless/world/world_profile.gd): its flora at
+## setup, and per cell whether the grass grows there (`layer_at`, asked only
+## in a world of regions).
+var world: RefCounted
 ## The land's ground (shaders/endless_ground.gdshader), told where the
 ## tufts grow and how far they reach, so its paint takes over past them.
 var ground: ShaderMaterial
@@ -344,15 +349,19 @@ var _calmed := {}
 var _fars := {}
 var _since_plan := 0
 
-## Whether the grass is asked for (not --no-grass).
+## Whether the grass is asked for (the world's layer, and not --no-grass).
 static func wanted() -> bool:
-	return not "--no-grass" in LaunchArgs.user_args()
+	return bool(WorldProfile.current().layer("grass",true)) and not "--no-grass" in LaunchArgs.user_args()
 
 func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	name = "Grass"
 	seed = land_seed
 	ground = ground_material
 	field = Field.new(seed)
+	# The world's flora first (its tufts' share, its flowers), the flags over it.
+	world = field.world
+	share = float(world.flora_value("grass",share))
+	flowers = bool(world.flora_value("flowers",flowers))
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--grass="): share = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--grass-range="):
@@ -437,6 +446,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		ground.set_shader_parameter("bloom_fade",FLOWER_FADE)
 		_silver(ground,"wind_sheen",SILVER_WIND_SHEEN)
 		GrassSheen.apply(ground)
+		world.apply_ground(ground)
 		for k: String in _sets.ground: ground.set_shader_parameter(k,_sets.ground[k])
 	if rings_3d: lead = 0.0
 	if ground != null: _ring_mats[ground.get_instance_id()] = ground
@@ -1094,7 +1104,9 @@ static func flower_drift(p: Vector2) -> float:
 func _grow(layer: Layer, key: Vector2i, land_seed: int, site_values: Dictionary, rings: Vector4, native: Object) -> void:
 	if _quit: return
 	var began := Time.get_ticks_usec()
-	var parts := grow_cell(land_seed,key,site_values,rings,layer.share,native)
+	var parts := []
+	if world.uniform or world.layer_at(&"grass",(key.x+0.5)*CELL,(key.y+0.5)*CELL):
+		parts = grow_cell(land_seed,key,site_values,rings,layer.share,native)
 	var took := (Time.get_ticks_usec()-began)/1000.0
 	_lock.lock()
 	_done.append({"layer":layer,"key":key,"parts":parts,"ms":took})

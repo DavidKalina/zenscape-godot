@@ -52,7 +52,8 @@ var _eye := Vector3.ZERO
 
 ## Whether the flags want arches: --no-arches or --arches=0 none.
 static func flags() -> Dictionary:
-	var out := {"density":1.0,"rock":1.0,"ruin":1.0}
+	# The world's arches layer (its density), the flags over it.
+	var out := {"density":float(preload("res://scripts/endless/world/world_profile.gd").current().layer("arches",1.0)),"rock":1.0,"ruin":1.0}
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a == "--no-arches": out.density = 0.0
 		elif a.begins_with("--arches="): out.density = maxf(0.0,float(a.get_slice("=",1)))

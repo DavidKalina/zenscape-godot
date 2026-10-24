@@ -164,7 +164,16 @@ func _init(land_seed := 1, forest_share := 1.0, variant_dims: Array = [], arch_f
 	_noise(_lane_warp,4,LANE*0.6,1,FastNoiseLite.FRACTAL_NONE)
 	_noise(_clearing,5,CLEARING,2,FastNoiseLite.FRACTAL_FBM)
 	_noise(_meadow_keep,6,MEADOW_KEEP,2,FastNoiseLite.FRACTAL_FBM)
-	for entry: Array in HeroTrees.SPRUCE: _weights.append(float(entry[1]))
+	_weights = variant_weights()
+
+## The spruce family's variant weights: the world's flora `tree_weights`, or
+## HeroTrees.SPRUCE's own (wilderness).
+static func variant_weights() -> PackedFloat32Array:
+	var w: PackedFloat32Array = preload("res://scripts/endless/world/world_profile.gd").current().flora_value("tree_weights",PackedFloat32Array())
+	if w.size() == HeroTrees.SPRUCE.size(): return w.duplicate()
+	var out := PackedFloat32Array()
+	for entry: Array in HeroTrees.SPRUCE: out.append(float(entry[1]))
+	return out
 
 func _noise(n: FastNoiseLite, salt: int, scale: float, octaves: int, kind: int) -> void:
 	n.seed = seed*6271+salt*92821+17
