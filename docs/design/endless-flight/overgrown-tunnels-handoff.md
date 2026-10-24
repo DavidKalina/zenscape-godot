@@ -256,12 +256,38 @@ message as on the slot halls' base:
 - test_isle_hall_chain: the no-hitch budget, 5.40 ms, with another Godot
   window loading the PC
 
+## Found in play (the user, by hand, after the loop)
+
+The checks above passed, but the user flew it by hand and found it rough.
+Start the next round here, not from the proof.
+
+- **Can't get through by hand.** Every flight proof was an autopilot
+  holding one line within 1.8 m. The hall stretches use the kit's threading
+  lane (`Hall.LANE`, about 7 m wide, 2.2 m past each wingtip), with the
+  roof ties over it, so a person at boost round bends brushes and gets
+  pinned. The gate's frame pieces stand up to 3 m proud of the face and
+  are not in the flight solid. Next: wide clear lanes in the tunnel's
+  hall stretches only (a tunnel width knob that doesn't touch the slot or
+  sky halls; `--opening-ratio=` already widens everything for a quick
+  try, untested), the gate frame in the solid, and a proof flown with a
+  human-like wobble, not one line.
+- **Lighting bugs.** Not yet described in detail; ask the user.
+- **Trees flickering.** Seen while playing `--world=overgrown`; where and
+  how not yet pinned down. Check whether it is tunnel-side (light pools,
+  brazier lights, the under-layer cull mask on the DirectionalLight3Ds,
+  tree keep-outs) or from the merged base.
+- **Artifacts.** Not yet described; ask the user for stills.
+
+Wanted later: a bigger tunnel (cavern size is `CAVE_*`; hall size needs
+the width knob above, and a roof-height knob), lighting tuning (`TORCH_*`,
+`tunnel_stone.gdshader`), and overgrowth inside (new: a scatter along the
+path, on the under layer, drawn only near the eye as the torches are).
+
 ## Open
 
-- **The glide over the ceiling.** This was there before this loop. Flying up
-  a slope that rises over the plane's ceiling fade (~295 m world) puts the
-  plane inside the rock: `sky_plane.gd` CEILING_NOSE and `sky_glide.gd`
-  `_skim`. A massif's crest (+280 to +380 m) can stand over it.
+- **The glide over the ceiling: fixed** (7c10fa16,
+  `ceiling-stone-sink-fix.md`). Flying up a slope over the ceiling fade no
+  longer puts the plane inside the rock.
 - **The shaft.**
   - Its cut edge is jagged.
   - From afar, its hole is not cut past 4 m quads, and its curb sits on the
