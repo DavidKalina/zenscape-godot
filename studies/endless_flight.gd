@@ -424,6 +424,12 @@ func _launch(at: Vector3, heading: float) -> void:
 	# The land is a heightfield: it rides up what is no cliff, and a
 	# cliff's face turns it aside (SkyGlide `stone`).
 	plane.stone = func(_p: Vector3) -> bool: return true
+	# In a tunnel's bore a soft guard eases it off the walls, roof and floor
+	# before the rock stops it, and its walls are slippery (LandTunnels
+	# `guide`, `keep`).
+	if tunnels != null:
+		plane.guide = Callable(tunnels,"guide")
+		plane.keep = Callable(tunnels,"keep")
 	plane.launch(at,heading,plane.cruise(),false)
 	hand_landing.begin(plane)
 	if plane_figure == null:

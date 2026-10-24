@@ -35,6 +35,123 @@ plus throwaway drivers in `scratch/tunnel/`, with no committed tests.
     column row (two lanes, or one open nave).
   - `--tunnel-shafts=N` sets the shafts per tunnel.
 
+## Round 2: open naves, slippery walls, basalt, overgrowth
+
+This round answers the first "Found in play" item below: the user couldn't
+get through by hand unless exactly on line and still. They asked for more
+overgrowth and a basalt interior.
+
+### Flying through
+
+- **Open naves** (`Tunnels.OPEN_NAVE`, `--tunnel-nave=open|shut`). A hall
+  stretch is now only its two column rows, their architraves and its
+  walls. There are no centre row, ties, roof slabs, roof beams across,
+  fallen beams, gables or apse ring. The nave between the rows is clear
+  up to the rock vault (18 m): 18.6 m clear across past the wingtips
+  (`NAVE_CLEAR`, to the capitals less a flight-grid cell). It was the
+  8 m lane under ties every bay. `shut` brings back the slot hall's plan.
+  Kit additions, both off by default: a piece's `apse` key and a plan's
+  `last_beam`.
+- **The guard** (SkyGlide `guide`, LandTunnels `guide`). Within 6 m of the
+  clear room's edge, here or 0.5 s ahead, a push off the wall grows to
+  14 m/s. If the plane points at that wall, its heading eases along the
+  path. Near the roof a climb levels and it is pushed down; near the floor
+  a dive levels (not when coming in to land).
+- **Slippery walls** (SkyGlide `keep`, LandTunnels `keep`). After each move,
+  a point past the clear room is put back on its edge with its way along
+  kept. Pressed into a wall, the plane slides along it. Before, the brush
+  stopped and turned it every frame: the pin. In an open nave the column
+  rows are also one smooth wall to the solid (`_in_nave`), so the plane
+  can't slip between two columns into the aisle. That pocket pinned it at
+  full speed forever.
+
+### The look
+
+- **Basalt** (`shaders/tunnel_basalt.gdshader`, `_basalt_material`). Upright
+  columns about 1.8 m across sit on a jittered hex lattice in world XZ. The
+  walls show their facets as bands broken by cross joints; the vault and
+  floor show hex ends. Each facet bends the normal. Grit and silt cover
+  what faces up, with some iron streaks. A faint cold fill means the dark
+  between torches reads as grey stone. The torch light is less orange
+  (`TORCH_LIGHT` 1, 0.74, 0.5); that warms the hall stone less too.
+- **Basalt columns in the caverns** (`_build_columns`). Three rows of hex
+  prisms stand along each wall's foot, stepping down outward like a
+  causeway, kept under 5 m by a torch. They are part of the rock mesh, so
+  the walker stands on them. The flight solid is still the bore: the tall
+  row stands within the wingtip's reach of the wall, and only low steps
+  come further out. Vertex alpha 0 tells the shader not to draw the
+  lattice over them.
+- **Overgrowth** (`_build_growth`, in 120 m chunks drawn within 150 m, torch
+  lit):
+  - roots and vines from the vault (HangingRoots' strand,
+    `shaders/tunnel_strands.gdshader`);
+  - leafy vine curtains (`shaders/tunnel_vines.gdshader`: cards cut to
+    stems and alternating leaves, swaying) down the cavern walls, off the
+    hall architraves and in tufts from the vault;
+  - ferns (UndergrowthMesh's fern, `shaders/tunnel_fern.gdshader`) at the
+    wall feet, round the column bases and out of the rock up the walls;
+  - moss in the basalt: on what faces up, low on the walls and in the
+    joints.
+
+  The amount follows the vertex green (`_green`): 0.3 anywhere, more in
+  patches, full within 90 m of a mouth and 40 m round a shaft. The knobs
+  are `GREEN_*`, `VINE_*`, `CURTAIN*`, `FERN*`, `CARD_WIDE` and `TUFT_GREEN`.
+
+### Proof (Windows PC)
+
+These are throwaway drivers in `scratch/tunnel/` (git-ignored).
+
+**Hand-like flights** (`scratch/tunnel/hand.gd`, new). The aim weaves
+across the bore (±swing m over 140 m) and up and down. The stick is read
+only every 0.2 to 0.35 s, with noise, looking 22 m ahead, so it runs wide
+round bends. All runs were headless at boost unless noted.
+
+| run | before this round | now |
+|---|---|---|
+| ±6 m, shut lane (the old tunnel) | stuck, 8272 brush frames | (`shut` unchanged) |
+| ±6 m | — | through, 0 brush, 37.6 s |
+| ±9 m, 2 seeds | open nave without the guard: 4909 brush frames, 122 s | through, 0 brush, 38 s |
+| ±11 m | open nave without the guard: 349 brush frames | through, 0 brush, 39 s |
+| ±14 m, 2 seeds | pinned between two columns at s 89 | through, 0 brush, 40 to 42 s |
+| ±18 m | — | through, 0 brush, 41 s |
+| ±25 m (aims well past the walls) | — | through, 0 brush, 43.6 s, never under 44 m/s |
+| ±9 m at cruise | — | through, 0 brush, 59 s |
+
+Boost holds 45 to 46 m/s throughout. The line autopilot (`bore.gd
+--boost`) also went through with 0 brush frames and 0 rock frames.
+
+**On foot** (`walk.gd`): all five legs THROUGH with 0 rescues: feet 0 to
+1.1 m over the floor, camera 4.4 to 5.9 m.
+
+**Frame time** (`bore.gd --boost --rendered`, inside): GPU 7.45 / 9.30 ms
+(mean / p95), frame 8.37 / 11.28. That is about the first round's
+6.75 to 7.26 / 8.85 to 9.58, so the growth and basalt cost little.
+
+**Smoke**: passed with 0 errors for `--world=overgrown` (with and without
+`--on-foot`), `--tunnel-test` (with and without `--on-foot`),
+`--tunnel-nave=shut`, and the default world.
+
+**Stills**: `captures/tunnel/basalt/` (`*_4.png`: bend, cave_in,
+shaft_cave, cave_up, curve; `spill_2.png`, `nave_2.png` near the mouth).
+
+**Exit noise**: a rendered run can end with "N shaders of type
+SceneForwardClusteredShaderRD were never freed". The first round's build
+logs it on the same `cave_in` view, so it predates this round.
+
+### Not done, next
+
+- The hand driver once dove into the trench floor 29 m outside mouth A and
+  landed there, with a 0.3 s reaction and the old pitch gain. Nothing
+  funnels the plane into a mouth from outside; the guard starts at the
+  portal.
+- The gate frame is still not in the flight solid (it stands proud of the
+  face, outside the opening).
+- `shut` naves have no guard for their columns and ties, so they still
+  pin.
+- Whether the curtains read as cards up close hasn't been judged in play.
+- The lighting bugs, tree flicker and artifacts below are still not
+  described.
+
 ## What's there
 
 - **`scripts/endless/tunnel_sites.gd`** (new, `Tunnels`) holds the sites and

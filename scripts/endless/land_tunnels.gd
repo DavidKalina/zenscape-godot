@@ -30,9 +30,13 @@ const Field = preload("res://scripts/endless/land_field.gd")
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
 const LandHalls = preload("res://scripts/endless/land_halls.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const SkyGlide = preload("res://scripts/sky_glide.gd")
+const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const TUNNEL_STONE = preload("res://shaders/tunnel_stone.gdshader")
 const Flame = preload("res://scripts/flame.gd")
+const HangingRoots = preload("res://scripts/kit_isle/hanging_roots.gd")
+const UndergrowthMesh = preload("res://scripts/undergrowth_mesh.gd")
 
 ## Physics layer of the greybox's bodies (the walker, the wheels).
 const LAYER := 1
@@ -148,6 +152,18 @@ const BODY_TRIS := 4000
 const BODY_BUDGET := 3.0
 ## How far past the tube's walls `inside` counts the rock (m).
 const WALL_NEAR := 12.0
+## The guard (`guide`): how near the clear room's edge it starts (m), its
+## push off a wall or the roof at the edge and its lift off the floor
+## (m/s), how far ahead it reads the room (s at the speed), and how near
+## the roof and the floor it starts (m).
+const GUARD_MARGIN := 6.0
+const GUARD_PUSH := 14.0
+const GUARD_LIFT := 6.0
+const GUARD_LOOK := 0.5
+const GUARD_ROOF := 4.0
+const GUARD_FLOOR := 2.5
+## How far inside the clear room's edge `keep` puts a point back (m).
+const KEEP_IN := 0.05
 ## The camera's sight in a bore (`sight`): marched every SIGHT_STEP m
 ## where either end is within a tunnel's box and SIGHT_UP m over its floor.
 const SIGHT_STEP := 0.75
@@ -185,6 +201,51 @@ const HALL_ROCK_TINT := Color(0.42,0.4,0.37)
 const FLOOR_TINT := Color(0.36,0.33,0.29)
 const CAVE_TINT := Color(0.46,0.4,0.33)
 const BLOCK_TINT := Color(0.4,0.37,0.33)
+## The basalt (shaders/tunnel_basalt.gdshader): its growth (`_green`: the
+## least anywhere, more in patches, full GREEN_MOUTH m in from a mouth and
+## GREEN_SHAFT m round a shaft); the columns along the caverns' walls
+## (`_build_columns`): a column's width, the rows out from each wall, the
+## first row's height (m, a range by the wall's swell), the second's top,
+## the first's top by a torch.
+const GREEN_BASE := 0.3
+const GREEN_PATCH := 0.5
+const GREEN_MOUTH := 90.0
+const GREEN_SHAFT := 40.0
+const COLUMN_CELL := 1.7
+const COLUMN_ROWS := 3
+const COLUMN_TALL := Vector2(1.6,7.5)
+const COLUMN_STEP := 1.4
+const COLUMN_UNDER_TORCH := 5.0
+const BASALT = preload("res://shaders/tunnel_basalt.gdshader")
+## The overgrowth (`_build_growth`), each the more where the rock is green
+## (`_green`): strands from the vault every VINE_STEP m along, VINE_VAULT of
+## them at the most, VINE_LONG m long (by the walls; shorter by the crown);
+## a curtain down a cavern's wall where it is greener than CURTAIN_GREEN,
+## CURTAIN strands; vines off a hall stretch's architraves; ferns at the
+## walls' feet and out of the rock every FERN_STEP m, FERN of them at the
+## most, FERN_SIZE across (a range). Drawn within GROWTH_FAR m, in chunks
+## GROWTH_CHUNK m along. Their colours: bark, vine green, fern green. The
+## leafy curtains (shaders/tunnel_vines.gdshader): cards CARD_WIDE m wide
+## (a range) in a curtain or off an architrave; a vault's leafy tuft where
+## it is greener than TUFT_GREEN.
+const VINE_STEP := 2.0
+const VINE_VAULT := 6
+const VINE_LONG := Vector2(2.0,11.0)
+const CURTAIN_GREEN := 0.25
+const CURTAIN := 9
+const FERN_STEP := 1.6
+const FERN := 6
+const FERN_SIZE := Vector2(1.6,3.8)
+const GROWTH_FAR := 150.0
+const GROWTH_CHUNK := 120.0
+const ROOT_BARK := Color(0.16,0.12,0.09)
+const VINE_GREEN := Color(0.1,0.21,0.05)
+const FERN_GREEN := Color(0.14,0.3,0.07)
+const CARD_WIDE := Vector2(1.1,2.0)
+const TUFT_GREEN := 0.45
+const VINES = preload("res://shaders/tunnel_vines.gdshader")
+const STRANDS = preload("res://shaders/tunnel_strands.gdshader")
+const FERN_LOOK = preload("res://shaders/tunnel_fern.gdshader")
 ## The rock's texture: a ridged noise worn triplanar in world space, ROCK_TILE
 ## m a repeat, its relief ROCK_BUMP; ROCK_TEX_LOW the darkest it takes the
 ## vertex colour to.
@@ -209,7 +270,7 @@ const TORCH_RANGE := 30.0
 const TORCH_ENERGY := 5.0
 const TORCH_ATTEN := 0.8
 const TORCH_FLICKER := 0.12
-const TORCH_LIGHT := Color(1.0,0.62,0.32)
+const TORCH_LIGHT := Color(1.0,0.74,0.5)
 const LIGHT_REACH := 260.0
 const LIGHT_FADE := 40.0
 ## The valley fog (EndlessClouds `fog_hush`) fades out over the first
@@ -270,6 +331,8 @@ var _quit := false
 var _streamed_at := Vector3.INF
 ## The plane's wingtip: the tube's half width it may fly in.
 var _grow := 0.0
+## Whether the hall stretches' naves stand open (Tunnels `open_nave`).
+var _open_nave := true
 ## Whether `sight`'s last march was all in a bore's tube.
 var sight_whole := false
 var _lights: Array[OmniLight3D] = []
@@ -286,10 +349,12 @@ var _sun: DirectionalLight3D
 func setup(land_field: RefCounted) -> void:
 	field = land_field
 	_grow = WorldScale.span*0.5
+	_open_nave = Tunnels.open_nave()
 	# Made here, once: the workers' builds share them.
 	_beam_shader()
 	_card_shader()
 	_door_material()
+	_growth_materials()
 	halls = LandHalls.new()
 	halls.name = "Stretches"
 	halls.squares = false
@@ -720,11 +785,124 @@ func ground(p: Vector3, h: Variant) -> Variant:
 		var b := Tunnels.bore_at(t,p.x,p.z,_grow)
 		if not is_nan(b.x) and cover > b.y:
 			if p.y >= b.y: return cover
+			# An open nave's column rows are one smooth wall to the glide
+			# (NAVE_CLEAR off the line, the wingtip's reach in), so it glances
+			# along them; found in play, it slipped between two columns into
+			# the aisle behind, where every way out was a column or the wall.
+			if _open_nave and _in_nave(t,p): return cover
 			var list: Array = halls.stretches(p)
 			list.append(Vector2(b.y,cover))
 			return LandHalls.over(p,b.x,list)
 		if cover > h: return cover
 	return h
+
+## SkyGlide's `guide` at `p` (heading, speed): in a bore under its roof, a
+## soft guard that works before the solid does, so a hand that wanders
+## off the middle is eased back, not stopped. Found in play: a brush on the
+## rock stopped and turned the plane every frame it touched, so near a wall
+## it felt pinned. The clear room across is the wall at the plane's height
+## (an open nave's column rows in a hall stretch), the narrower of here and
+## GUARD_LOOK s ahead, less the wingtip's reach; within GUARD_MARGIN m of it
+## the push off it grows to GUARD_PUSH m/s and, pointing at it, the heading
+## eases along the path. Within GUARD_ROOF m of the roof a climb levels
+## and it is pushed down; within GUARD_FLOOR m of the floor a dive levels.
+func guide(p: Vector3, heading: float, speed: float) -> Dictionary:
+	for t: Tunnels.Site in _sites:
+		if not t.box.has_point(Vector2(p.x,p.z)): continue
+		var b := Tunnels.bore_at(t,p.x,p.z)
+		if is_nan(b.x) or p.y >= b.y: continue
+		var sh := Tunnels.shaft_at(t,p.x,p.z)
+		if sh >= 0 and p.y > b.y-GUARD_ROOF: continue
+		var q := Tunnels.local(t,p.x,p.z)
+		var h := p.y-t.floor_y
+		var got: Array = Tunnels.at_s(t,clampf(q.x,0.0,t.length))
+		var tg: Vector2 = got[1]
+		var across := Vector3(-tg.y,0.0,tg.x)
+		var fwd := Vector2(-sin(heading),-cos(heading))
+		var sense := 1.0 if fwd.dot(tg) >= 0.0 else -1.0
+		# The room across: here and ahead the way it is going.
+		var mid := 0.0
+		var room := INF
+		for ds: float in [0.0,sense*maxf(speed,10.0)*GUARD_LOOK]:
+			var r := _room(t,q.x+ds,h)
+			if r.y < room:
+				room = r.y
+				mid = r.x
+		var off := q.y-mid
+		var near := clampf((absf(off)-(room-GUARD_MARGIN))/GUARD_MARGIN,0.0,1.0)
+		var push := -signf(off)*across*GUARD_PUSH*near*near
+		var turn := 0.0
+		var way := atan2(-tg.x*sense,-tg.y*sense)
+		# Pointing at the near wall: the heading eases along.
+		if near > 0.0 and Vector2(across.x,across.z).dot(fwd)*signf(off) > 0.0: turn = near
+		var level := 0.0
+		var top := b.y-t.floor_y-SkyGlide.CLEAR
+		var up := clampf((h-(top-GUARD_ROOF))/GUARD_ROOF,0.0,1.0)
+		if up > 0.0:
+			push.y -= GUARD_PUSH*up*up
+			level = up
+		var down := clampf((SkyGlide.SKIM+GUARD_FLOOR-h)/GUARD_FLOOR,0.0,1.0)
+		if down > 0.0:
+			push.y += GUARD_LIFT*down*down
+			level = -down
+		if near == 0.0 and level == 0.0: return {}
+		return {"push":push,"heading":way,"turn":turn,"level":level}
+	return {}
+
+## True where `p` is past an open nave's clear room (Tunnels NAVE_CLEAR off
+## its line), along a hall stretch and its end columns.
+func _in_nave(t: Tunnels.Site, p: Vector3) -> bool:
+	var q := Tunnels.local(t,p.x,p.z)
+	if absf(q.y) <= Tunnels.NAVE_CLEAR: return false
+	var reach := Hall.COLUMN_R+_grow
+	for piece: Dictionary in t.pieces:
+		if piece.kind == "hall" and q.x >= float(piece.s0)-reach and q.x <= float(piece.s1)+reach: return true
+	return false
+
+## SkyGlide's `keep`: `p` in a bore under its roof, past its clear room
+## across (`_room`, the wall at its height or an open nave's column rows)
+## or over its roof's (less CLEAR), put back on that edge, its way along
+## kept; so pressed into a wall it slides along it, where the solid alone
+## stopped it and turned it every frame (found in play: pinned).
+func keep(p: Vector3) -> Vector3:
+	for t: Tunnels.Site in _sites:
+		if not t.box.has_point(Vector2(p.x,p.z)): continue
+		var b := Tunnels.bore_at(t,p.x,p.z)
+		if is_nan(b.x) or p.y >= b.y: continue
+		var sh := Tunnels.shaft_at(t,p.x,p.z)
+		if sh >= 0: return p
+		var q := Tunnels.local(t,p.x,p.z)
+		if q.x < 0.0 or q.x > t.length: return p
+		var h := p.y-t.floor_y
+		var r := _room(t,q.x,h)
+		var off := q.y-r.x
+		var out := p
+		if absf(off) > r.y-KEEP_IN:
+			var tg: Vector2 = Tunnels.at_s(t,q.x)[1]
+			var across := Vector3(-tg.y,0.0,tg.x)
+			out -= across*signf(off)*(absf(off)-(r.y-KEEP_IN))
+		var bg := Tunnels.bore_at(t,out.x,out.z,_grow)
+		if not is_nan(bg.y) and out.y > bg.y-SkyGlide.CLEAR-KEEP_IN: out.y = bg.y-SkyGlide.CLEAR-KEEP_IN
+		return out
+	return p
+
+## Vector2(the middle across, the clear half width from it) at `s` along
+## `t`, `h` m over the floor: the carved wall at that height (the wingtip's
+## reach off it); in an open nave's hall stretch, its column rows.
+func _room(t: Tunnels.Site, s: float, h: float) -> Vector2:
+	var pr := Tunnels.profile(t,s)
+	var hw := (pr.x+pr.y)*0.5
+	# The eye keeps CLEAR under the rock (SkyGlide `_skim`), so the wall
+	# that counts is the rock's at CLEAR over it.
+	var f := clampf((h+SkyGlide.CLEAR)/pr.z,0.0,0.999)
+	var out := Vector2((pr.y-pr.x)*0.5,hw*pow(1.0-pow(f,pr.w),1.0/pr.w)-_grow)
+	if _open_nave:
+		var reach := Hall.COLUMN_R+_grow
+		for piece: Dictionary in t.pieces:
+			if piece.kind == "hall" and s >= float(piece.s0)-reach and s <= float(piece.s1)+reach:
+				out = Vector2(0.0,minf(out.y,Tunnels.NAVE_CLEAR))
+				break
+	return out
 
 ## The solid's top under `p` over the land's `h`: the bore's floor in the
 ## tube under its roof, else the cover.
@@ -821,7 +999,7 @@ func _build(b: Built, f: RefCounted) -> void:
 	st.commit(mesh)
 	# Seen: the rock on the inside's layer (torch lit), the portal blocks
 	# in the day (sun, sky and haze); the collider is both.
-	var mat := _rock_material(t)
+	var mat := _basalt_material(t)
 	var node := MeshInstance3D.new()
 	node.name = t.name.replace("/","_")
 	node.mesh = _surface(mesh,0,mat)
@@ -834,6 +1012,7 @@ func _build(b: Built, f: RefCounted) -> void:
 	for m in 2: _build_fires(b,m)
 	b.node.add_child(_build_doors(t,node.name))
 	tris += _build_shafts(b,mesh,node.name,mat)
+	tris += _build_growth(b)
 	# The collider in BODY_TRIS pieces (in the mesh's order, so each is a
 	# run of the bore), stood one a frame (`_stand_bodies`): Jolt builds a
 	# trimesh's tree as it enters the space, ~30 ms for a whole tunnel.
@@ -1132,6 +1311,14 @@ static func _rock_material(t: Tunnels.Site, low := ROCK_TEX_LOW) -> StandardMate
 	mat.disable_fog = true
 	return mat
 
+## The bore's carved rock: columnar basalt (shaders/tunnel_basalt.gdshader),
+## its growth by the vertex green (`_green`), lit by the torches alone.
+static func _basalt_material(t: Tunnels.Site) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = BASALT
+	mat.set_shader_parameter("floor_y",t.floor_y)
+	return mat
+
 ## The carved rock of the bore (Tunnels.profile: superellipse rings from
 ## the -d wall's foot over the crown to the +d wall's foot, RING_SEGS
 ## segments, every CAVE_RING m in the caverns and every STEP m in the
@@ -1191,14 +1378,14 @@ func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 			if k == 0 or k == RING_SEGS: feet.append(v)
 			pos.append(v)
 			inward.append(-out)
-			st.set_color(CAVE_TINT.lerp(HALL_ROCK_TINT,1.0-e).darkened(0.35*nz).lightened(0.12*(1.0-nz)*y))
+			st.set_color(Color(1.0-0.6*nz,_green(t,s,v),e))
 			st.add_vertex(v)
 		for k in FLOOR_SEGS+1:
 			var v: Vector3 = (feet[0] as Vector3).lerp(feet[1],float(k)/FLOOR_SEGS)
 			var nz := t.rock.get_noise_2d(v.x*3.0,v.z*3.0)*0.5+0.5
 			pos.append(v)
 			inward.append(Vector3.UP)
-			st.set_color(FLOOR_TINT.lerp(FLOOR_TINT.lightened(0.3),nz))
+			st.set_color(Color(0.6+0.4*nz,_green(t,s,v),e))
 			st.add_vertex(v)
 		if r == 0: continue
 		var b0 := (r-1)*per
@@ -1212,9 +1399,333 @@ func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 		var f := RING_SEGS+1
 		for k in FLOOR_SEGS:
 			tris += _tri(st,pos,inward,b0+f+k,b0+f+k+1,b1+f+k+1)+_tri(st,pos,inward,b0+f+k,b1+f+k+1,b1+f+k)
+	tris += _build_columns(t,st,pos,inward)
 	st.generate_normals()
 	b.tris += tris
 	return st
+
+## The overgrowth's materials (main thread, once): the hanging strands'
+## (HangingRoots' strand and sway, torch lit, bark or vine green) and the
+## ferns' (UndergrowthMesh's fern, torch lit, a little light through).
+static var _root_mat: ShaderMaterial
+static var _vine_mat: ShaderMaterial
+static var _fern_mat: ShaderMaterial
+static var _card_mat: ShaderMaterial
+static var _card_mesh: QuadMesh
+
+static func _growth_materials() -> void:
+	if _fern_mat != null: return
+	HangingRoots.warm()
+	UndergrowthMesh.fern()
+	_root_mat = ShaderMaterial.new()
+	_root_mat.shader = STRANDS
+	_root_mat.set_shader_parameter("tint",ROOT_BARK)
+	_vine_mat = ShaderMaterial.new()
+	_vine_mat.shader = STRANDS
+	_vine_mat.set_shader_parameter("tint",VINE_GREEN)
+	_fern_mat = ShaderMaterial.new()
+	_fern_mat.shader = FERN_LOOK
+	_fern_mat.set_shader_parameter("tint",FERN_GREEN)
+	_card_mat = ShaderMaterial.new()
+	_card_mat.shader = VINES
+	_card_mesh = QuadMesh.new()
+
+## Tunnel `b`'s overgrowth, in GROWTH_CHUNK m chunks along it, each drawn
+## within GROWTH_FAR m (on the inside's layer, torch lit): strands from the
+## vault (roots and vines), curtains of vines down the caverns' walls,
+## vines off the hall stretches' architraves, ferns at the walls' feet and
+## out of the rock. All the thicker where the rock is green (`_green`).
+## Drawn only, never collided. Returns the triangles.
+func _build_growth(b: Built) -> int:
+	var t: Tunnels.Site = b.site
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([t.seed,"growth"])
+	var halls: Array = []
+	for piece: Dictionary in t.pieces:
+		if piece.kind == "hall": halls.append(Vector2(float(piece.s0),float(piece.s1)))
+	var chunks := ceili(t.length/GROWTH_CHUNK)
+	var tris := 0
+	for ci in chunks:
+		var roots: Array = []
+		var vines: Array = []
+		var ferns: Array[Transform3D] = []
+		var cards: Array[Transform3D] = []
+		var sa := ci*GROWTH_CHUNK
+		var sb := minf(sa+GROWTH_CHUNK,t.length)
+		var s := sa+rng.randf()*VINE_STEP
+		while s < sb:
+			var got: Array = Tunnels.at_s(t,s)
+			var c: Vector2 = got[0]
+			var tg: Vector2 = got[1]
+			var n := Vector2(-tg.y,tg.x)
+			var pr := Tunnels.profile(t,s)
+			var hw := (pr.x+pr.y)*0.5
+			var mid := (pr.y-pr.x)*0.5
+			var in_hall := false
+			for h: Vector2 in halls: in_hall = in_hall or (s >= h.x and s <= h.y)
+			var g := _green(t,s,Vector3(c.x,0.0,c.y))
+			# From the vault: roots by the crown, vines towards the walls.
+			for k in int(round(g*VINE_VAULT+rng.randf()*0.8)):
+				var x := rng.randf_range(-0.9,0.9)
+				var d := mid+x*hw
+				var roof := Tunnels.roof_over(pr,d)
+				if is_nan(roof): continue
+				var at := c+n*d+tg*rng.randf_range(-1.0,1.0)
+				var long := lerpf(VINE_LONG.x,VINE_LONG.y,absf(x))*rng.randf_range(0.4,1.0)*(0.6+0.6*g)
+				(vines if rng.randf() < 0.35+0.6*g else roots).append(Vector4(at.x,t.floor_y+roof+0.8,at.y,long+0.8))
+				if g > TUFT_GREEN and rng.randf() < g*0.5:
+					var face := Vector3(tg.x,0.0,tg.y).rotated(Vector3.UP,rng.randf_range(-1.2,1.2))
+					cards.append(_leaf_card(Vector3(at.x,t.floor_y+roof+0.6,at.y),face,rng.randf_range(CARD_WIDE.x,CARD_WIDE.y),long*rng.randf_range(0.4,0.8)+0.6))
+			if in_hall:
+				# Off the architraves along the column rows.
+				if rng.randf() < 0.3+0.6*g:
+					for side: float in [-1.0,1.0]:
+						if rng.randf() < 0.5: continue
+						for k in rng.randi_range(2,5):
+							var at := c+n*side*(Hall.ROW_Z+rng.randf_range(-0.7,0.7))+tg*rng.randf_range(-1.5,1.5)
+							vines.append(Vector4(at.x,t.floor_y+Hall.COLUMN_H+Hall.BEAM.x*0.5,at.y,rng.randf_range(1.5,7.0)))
+						for k in rng.randi_range(1,3):
+							var at := c+n*side*(Hall.ROW_Z-Hall.BEAM.y-0.05)+tg*rng.randf_range(-4.0,4.0)
+							cards.append(_leaf_card(Vector3(at.x,t.floor_y+Hall.COLUMN_H+0.6,at.y),Vector3(n.x,0.0,n.y)*-side,rng.randf_range(CARD_WIDE.x,CARD_WIDE.y),rng.randf_range(2.0,6.5)))
+			elif g > CURTAIN_GREEN and rng.randf() < 0.45:
+				# A curtain down the cavern's wall.
+				var side := -1.0 if rng.randf() < 0.5 else 1.0
+				var top := rng.randf_range(0.45,0.7)*pr.z
+				var wx := hw*pow(1.0-pow(top/pr.z,pr.w),1.0/pr.w)
+				for k in int(CURTAIN*rng.randf_range(0.5,1.0)):
+					var along := (k-CURTAIN*0.5)*0.45+rng.randf_range(-0.15,0.15)
+					var at := c+tg*along+n*(mid+side*(wx-0.35))
+					vines.append(Vector4(at.x,t.floor_y+top+0.5,at.y,top*rng.randf_range(0.55,0.97)))
+				var into := Vector3(n.x,0.0,n.y)*-side
+				var run := -CURTAIN*0.25
+				while run < CURTAIN*0.25:
+					var wide := rng.randf_range(CARD_WIDE.x,CARD_WIDE.y)
+					var at := c+tg*(run+wide*0.5)+n*(mid+side*(wx-0.45))
+					cards.append(_leaf_card(Vector3(at.x,t.floor_y+top+0.3,at.y),into,wide,top*rng.randf_range(0.45,0.9)))
+					run += wide*0.8
+			s += VINE_STEP*rng.randf_range(0.6,1.4)
+		# The ferns.
+		s = sa+rng.randf()*FERN_STEP
+		while s < sb:
+			var got: Array = Tunnels.at_s(t,s)
+			var c: Vector2 = got[0]
+			var tg: Vector2 = got[1]
+			var n := Vector2(-tg.y,tg.x)
+			var pr := Tunnels.profile(t,s)
+			var hw := (pr.x+pr.y)*0.5
+			var mid := (pr.y-pr.x)*0.5
+			var in_hall := false
+			for h: Vector2 in halls: in_hall = in_hall or (s >= h.x and s <= h.y)
+			var g := _green(t,s,Vector3(c.x,0.0,c.y))
+			for k in int(round(g*FERN+rng.randf()*0.7)):
+				var side := -1.0 if rng.randf() < 0.5 else 1.0
+				var size := rng.randf_range(FERN_SIZE.x,FERN_SIZE.y)
+				var up := Vector3.UP
+				var at := Vector3.ZERO
+				if in_hall:
+					# At the hall walls' feet or round a column's foot.
+					var d := side*(Tunnels.HALL_INNER-0.7) if rng.randf() < 0.6 else side*(Hall.ROW_Z+rng.randf_range(-2.2,2.2))
+					var p := c+n*d+tg*rng.randf_range(-1.0,1.0)
+					at = Vector3(p.x,t.floor_y+0.1,p.y)
+				elif rng.randf() < 0.55:
+					# At the wall's foot, among the columns' steps.
+					var p := c+n*(mid+side*(hw-rng.randf_range(0.6,4.5)))+tg*rng.randf_range(-1.0,1.0)
+					at = Vector3(p.x,t.floor_y+0.05,p.y)
+				else:
+					# Out of the rock, up the wall.
+					var hgt := rng.randf_range(2.0,0.75*pr.z)
+					var wx := hw*pow(1.0-pow(hgt/pr.z,pr.w),1.0/pr.w)
+					var p := c+n*(mid+side*(wx-0.2))+tg*rng.randf_range(-1.0,1.0)
+					at = Vector3(p.x,t.floor_y+hgt,p.y)
+					var into := Vector3(n.x,0.0,n.y)*-side
+					up = (into*0.8+Vector3.UP*0.6).normalized()
+					size *= 0.75
+				var yaw := Basis(Vector3.UP,rng.randf()*TAU)
+				var turn := Basis.IDENTITY
+				var axis := Vector3.UP.cross(up)
+				if axis.length() > 0.001: turn = Basis(axis.normalized(),Vector3.UP.angle_to(up))
+				ferns.append(Transform3D((turn*yaw).scaled(Vector3.ONE*size),at))
+			s += FERN_STEP*rng.randf_range(0.6,1.4)
+		var base := "%s_growth%d" % [b.node.name,ci]
+		for pair: Array in [[roots,_root_mat,"roots"],[vines,_vine_mat,"vines"]]:
+			var list: Array = pair[0]
+			if list.is_empty(): continue
+			var mi := HangingRoots.batch(list,hash([t.seed,ci,pair[2]]))
+			mi.name = "%s_%s" % [base,pair[2]]
+			mi.material_override = pair[1]
+			_far_draw(mi,list)
+			b.node.add_child(mi)
+			tris += list.size()*HangingRoots.triangles()
+		if not cards.is_empty():
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.use_custom_data = true
+			mm.mesh = _card_mesh
+			mm.instance_count = cards.size()
+			var spots: Array = []
+			for i in cards.size():
+				mm.set_instance_transform(i,cards[i])
+				mm.set_instance_custom_data(i,Color(rng.randf(),0.0,0.0,0.0))
+				spots.append(Vector4(cards[i].origin.x,cards[i].origin.y,cards[i].origin.z,0.0))
+			var mi := MultiMeshInstance3D.new()
+			mi.name = base+"_curtains"
+			mi.multimesh = mm
+			mi.material_override = _card_mat
+			_far_draw(mi,spots)
+			b.node.add_child(mi)
+			tris += cards.size()*2
+		if not ferns.is_empty():
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.use_colors = true
+			mm.use_custom_data = true
+			mm.mesh = UndergrowthMesh.fern()
+			mm.instance_count = ferns.size()
+			var spots: Array = []
+			for i in ferns.size():
+				mm.set_instance_transform(i,ferns[i])
+				mm.set_instance_color(i,Color.WHITE*rng.randf_range(0.75,1.15))
+				mm.set_instance_custom_data(i,Color(rng.randf(),0.0,0.0,0.0))
+				spots.append(Vector4(ferns[i].origin.x,ferns[i].origin.y,ferns[i].origin.z,0.0))
+			var mi := MultiMeshInstance3D.new()
+			mi.name = base+"_ferns"
+			mi.multimesh = mm
+			mi.material_override = _fern_mat
+			_far_draw(mi,spots)
+			b.node.add_child(mi)
+			tris += ferns.size()*_fern_tris()
+	return tris
+
+## A leafy curtain card (a unit QuadMesh) hung from `top`, facing `face`
+## (flat), `wide` m across and `long` m down.
+static func _leaf_card(top: Vector3, face: Vector3, wide: float, long: float) -> Transform3D:
+	var z := face.normalized()
+	var x := Vector3.UP.cross(z).normalized()
+	return Transform3D(Basis(x*wide,Vector3.UP*long,z),top-Vector3.UP*long*0.5)
+
+## A growth chunk drawn on the inside's layer, no shadows, out past
+## GROWTH_FAR m from the middle of its spots (Vector4: x, y, z).
+static func _far_draw(mi: GeometryInstance3D, spots: Array) -> void:
+	mi.layers = UNDER_LAYER
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var lo := Vector3(INF,INF,INF)
+	var hi := -lo
+	for v: Vector4 in spots:
+		lo = lo.min(Vector3(v.x,v.y,v.z))
+		hi = hi.max(Vector3(v.x,v.y,v.z))
+	mi.visibility_range_end = GROWTH_FAR+(hi-lo).length()*0.5
+	mi.visibility_range_end_margin = 20.0
+
+static var _fern_n := -1
+
+## The fern mesh's triangles.
+static func _fern_tris() -> int:
+	if _fern_n < 0:
+		var m: ArrayMesh = UndergrowthMesh.fern()
+		_fern_n = 0
+		for i in m.get_surface_count():
+			var arr: Array = m.surface_get_arrays(i)
+			var idx: Variant = arr[Mesh.ARRAY_INDEX]
+			_fern_n += (idx as PackedInt32Array).size()/3 if idx != null else (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()/3
+	return _fern_n
+
+## How much growth the rock at `v` (`s` along) takes (0..1, the basalt's
+## vertex green): GREEN_BASE everywhere, more in patches along the path,
+## full by the mouths (GREEN_MOUTH m in) and under a shaft (GREEN_SHAFT m
+## round), where the daylight reaches.
+static func _green(t: Tunnels.Site, s: float, v: Vector3) -> float:
+	var g := GREEN_BASE+GREEN_PATCH*smoothstep(0.1,0.6,t.rock.get_noise_2d(s*0.6,9000.0))
+	g = maxf(g,1.0-smoothstep(0.0,GREEN_MOUTH,minf(s,t.length-s)))
+	for sh: Dictionary in t.shafts: g = maxf(g,1.0-smoothstep(GREEN_SHAFT*0.3,GREEN_SHAFT,Vector2(v.x,v.z).distance_to(sh.at)))
+	return clampf(g,0.0,1.0)
+
+## The basalt columns along the caverns' walls (into the rock's mesh, so
+## the walker's collider has them too): hexagonal prisms on a lattice along
+## each wall's foot, COLUMN_ROWS rows out from it, stepped down as they
+## come out (a causeway at the wall's foot), the first row never over
+## COLUMN_UNDER_TORCH by a torch (the vault shows the columns' ends in
+## the basalt's own pattern). The flight's solid is the bore's own, so the
+## rows stand within the wingtip's reach of the wall but for the low steps.
+## Their alpha 0 tells the basalt they are columns of their own (no
+## lattice drawn over them). Returns the triangles.
+func _build_columns(t: Tunnels.Site, st: SurfaceTool, pos: PackedVector3Array, inward: PackedVector3Array) -> int:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([t.seed,"columns"])
+	var torches: Array = Tunnels.torch_spots(t)
+	var tris := 0
+	for piece: Dictionary in t.pieces:
+		if piece.kind != "cave": continue
+		var s0 := float(piece.s0)+COLUMN_CELL
+		var s1 := float(piece.s1)-COLUMN_CELL
+		for side: float in [-1.0,1.0]:
+			var s := s0+rng.randf()*COLUMN_CELL
+			var k := 0
+			while s < s1:
+				var got: Array = Tunnels.at_s(t,s)
+				var c: Vector2 = got[0]
+				var tg: Vector2 = got[1]
+				var n := Vector2(-tg.y,tg.x)
+				var pr := Tunnels.profile(t,s)
+				var foot := (pr.y-pr.x)*0.5+side*(pr.x+pr.y)*0.5
+				var swell := t.rock.get_noise_2d(s*0.05,side*700.0)*0.5+0.5
+				var by_torch := false
+				for tc: Dictionary in torches:
+					if float(tc.side) == side and absf(float(tc.s)-s) < COLUMN_CELL*2.0: by_torch = true
+				for row in COLUMN_ROWS:
+					var r := COLUMN_CELL*0.5*rng.randf_range(0.85,1.0)
+					var inset := COLUMN_CELL*0.35+row*COLUMN_CELL*0.87
+					var stagger := COLUMN_CELL*0.5 if (row+k)%2 == 1 else 0.0
+					var at := c+tg*stagger+n*(foot-side*inset)
+					var h := 0.0
+					if row == 0: h = lerpf(COLUMN_TALL.x,COLUMN_TALL.y,swell)*rng.randf_range(0.7,1.0)
+					elif row == 1: h = lerpf(0.3,COLUMN_STEP,swell)*rng.randf_range(0.5,1.0) if rng.randf() < 0.3+0.6*swell else 0.0
+					else: h = rng.randf_range(0.15,0.55) if rng.randf() < 0.45*swell else 0.0
+					if row == 0 and by_torch: h = minf(h,COLUMN_UNDER_TORCH)
+					if h <= 0.05: continue
+					tris += _prism(st,pos,inward,Vector3(at.x,t.floor_y-0.6,at.y),Vector3(at.x,t.floor_y+h,at.y),r,rng,Color(rng.randf(),_green(t,s,Vector3(at.x,0.0,at.y)),1.0,0.0))
+				s += COLUMN_CELL
+				k += 1
+	return tris
+
+## A hexagonal prism from `a` (its back end, in the rock) to `b` (its face:
+## a top or a hanging end), radius `r`, its corners jittered, its face a
+## little tilted; flat shaded (its own corners), wound to face out,
+## coloured `tint` (the basalt's tone and growth).
+static func _prism(st: SurfaceTool, pos: PackedVector3Array, inward: PackedVector3Array, a: Vector3, b: Vector3, r: float, rng: RandomNumberGenerator, tint: Color) -> int:
+	var axis := signf(b.y-a.y)
+	var spin := rng.randf()*TAU
+	var ring: Array[Vector2] = []
+	for i in 6:
+		var ang := spin+TAU*i/6.0+rng.randf_range(-0.12,0.12)
+		ring.append(Vector2(cos(ang),sin(ang))*r*rng.randf_range(0.88,1.06))
+	var tilt := Vector2(rng.randf_range(-0.08,0.08),rng.randf_range(-0.08,0.08))
+	var tris := 0
+	for i in 6:
+		var p0 := ring[i]
+		var p1 := ring[(i+1)%6]
+		var out := Vector3((p0.x+p1.x)*0.5,0.0,(p0.y+p1.y)*0.5).normalized()
+		tris += _faces_out(st,pos,inward,[Vector3(a.x+p0.x,a.y,a.z+p0.y),Vector3(a.x+p1.x,a.y,a.z+p1.y),
+			Vector3(b.x+p1.x,b.y+tilt.dot(p1),b.z+p1.y),Vector3(b.x+p0.x,b.y+tilt.dot(p0),b.z+p0.y)],out,tint)
+	# The face: a fan round its middle.
+	var face_n := Vector3(-tilt.x*axis,axis,-tilt.y*axis).normalized()
+	for i in 6:
+		var p0 := ring[i]
+		var p1 := ring[(i+1)%6]
+		tris += _faces_out(st,pos,inward,[b,Vector3(b.x+p0.x,b.y+tilt.dot(p0),b.z+p0.y),Vector3(b.x+p1.x,b.y+tilt.dot(p1),b.z+p1.y)],face_n,tint)
+	return tris
+
+## A triangle or quad (`corners`) of its own corners into the indexed rock,
+## wound to face `out`, coloured `tint`.
+static func _faces_out(st: SurfaceTool, pos: PackedVector3Array, inward: PackedVector3Array, corners: Array, out: Vector3, tint: Color) -> int:
+	var at := pos.size()
+	for v: Vector3 in corners:
+		pos.append(v)
+		inward.append(out)
+		st.set_color(tint)
+		st.add_vertex(v)
+	var n := _tri(st,pos,inward,at,at+1,at+2)
+	if corners.size() == 4: n += _tri(st,pos,inward,at,at+2,at+3)
+	return n
 
 ## Tunnel `t`'s shafts (Tunnels.shafts): the lip in the vault (a skirt and
 ## a flare, the rock's material on the inside's layer), the wall up to the

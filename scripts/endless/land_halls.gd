@@ -230,7 +230,7 @@ static func _sub(piece: Dictionary, a: int, b: int) -> Dictionary:
 	var path := HallPath.make(layout,Hall.BAY)
 	var plans: Array = (piece.plans as Array).slice(a,b)
 	return {"index":a,"act":"slot","bays":b-a,"layout":layout,"path":path,"length":path.length,"frame":Transform3D.IDENTITY,
-		"floor":0.0,"theta":0.0,"first":a == 0,"last":b == int(piece.bays),"s0":0.0,"seed":hash([int(piece.seed),a]) & 0xffffff,"plans":plans}
+		"floor":0.0,"theta":0.0,"first":a == 0,"last":b == int(piece.bays),"apse":piece.get("apse",true),"s0":0.0,"seed":hash([int(piece.seed),a]) & 0xffffff,"plans":plans}
 
 ## A section's solid from its plan (section frame): its walls, its bay
 ## lines' columns and its whole roofs; the near build's hulls replace it.

@@ -360,7 +360,8 @@ static func slabs(seed_value: int, weathered := 0.0) -> Node3D:
 ##   of BREACHES indices, left and right: 0 a whole wall), buttress ("",
 ##   "plain", "stair"), lancets (Vector2: odds, left and right), gable
 ##   (bool: a gable over the bay line, standing over the roof), last (bool:
-##   the closing bay line at x BAY too), last_gable (a gable on it).
+##   the closing bay line at x BAY too), last_gable (a gable on it),
+##   last_beam (bool: the roof beam across on it, default on).
 static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callable(), path: HallPath = null) -> Node3D:
 	if plan.is_empty():
 		plan = {"inner":[-INNER_Z],"tie":"low","roof":"broken","gaps":[2],"fallen":weathered > 0.3,"screen":true,"buttress":"stair","lancets":Vector2(1.0,1.0),"breach":Vector2i(0,BREACHES.find("arch")),"gable":true,"last":true}
@@ -396,7 +397,7 @@ static func bay(seed_value: int, weathered := 0.0, plan := {}, ground := Callabl
 			feet.append(Vector3(x,foot-(FOUNDATION if b.terrain.is_valid() else 0.0),z))
 		# The roof beam across, wall to wall, in three stones resting on the
 		# outer columns (and the inner ones, which it passes over).
-		if (bool(plan.get("beam",true)) or x > 0.0) and not torn_line:
+		if (bool(plan.get("beam",true)) if x == 0.0 else bool(plan.get("last_beam",true))) and not torn_line:
 			var turn := Basis(Vector3.UP,PI*0.5)
 			for span: Vector2 in [Vector2(-WALL_Z+0.2,-ROW_Z),Vector2(-ROW_Z,ROW_Z),Vector2(ROW_Z,WALL_Z-0.2)]:
 				_beam(b,Transform3D(turn,Vector3(x,COLUMN_H,(span.x+span.y)*0.5)),absf(span.y-span.x))

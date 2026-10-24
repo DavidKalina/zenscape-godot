@@ -41,6 +41,7 @@ const Sites = preload("res://scripts/endless/hall_sites.gd")
 const Sundered = preload("res://scripts/sundered_hall.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
 
 ## The bore's cross-section (m): its half width and its vault's crown over
 ## the floor, in the hall stretches (the slot halls' walls' outer faces)
@@ -1088,15 +1089,48 @@ static func centre_row() -> bool:
 		if a.begins_with("--tunnel-row="): out = a.get_slice("=",1) not in ["0","off","false"]
 	return out
 
-## Stretch `h`'s slot piece (Tunnels.stretches), with the centre row as
-## `centre_row` sets it: what LandHalls builds and the torches read.
+## The hall stretches' nave (knob): open, a stretch is only its two column
+## rows, their architraves and its walls, the nave between them clear to
+## the rock vault (no centre row, ties, roof slabs, roof beams across,
+## fallen beams or apse ring), 18.6 m clear across past the wingtips at
+## plane 2 (NAVE_CLEAR); shut, the slot hall's own plan (ties under its roof, the centre
+## row as `centre_row` sets it), the narrow lane flown by hand. Found in
+## play: the shut lane was too tight to fly. `--tunnel-nave=open|shut`.
+const OPEN_NAVE := true
+
+static func open_nave() -> bool:
+	var out := OPEN_NAVE
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--tunnel-nave="): out = a.get_slice("=",1) not in ["shut","0","off","false"]
+	return out
+
+## Stretch `h`'s slot piece (Tunnels.stretches), its nave as `open_nave`
+## and `centre_row` set it: what LandHalls builds and the torches read.
 static func stretch_piece(h: Dictionary) -> Dictionary:
 	var piece := Sundered.slot_piece(int(h.seed),int(h.bays))
-	if not centre_row():
+	var open := open_nave()
+	if open: piece.apse = false
+	if open or not centre_row():
 		for p: Dictionary in piece.plans:
 			p.inner = []
 			p.screen = false
+	if open:
+		for p: Dictionary in piece.plans:
+			p.tie = ""
+			p.roof = "open"
+			p.gaps = []
+			p.beam = false
+			p.fallen = false
+			p.gable = false
+			p.last_gable = false
+			p.last_beam = false
 	return piece
+
+## The clear half width across an open nave (m, from the stretch's line):
+## to the column rows' capitals (their widest), less the wingtip's reach and
+## a cell of the halls' flight grid (LandHalls GRID, which marks a cell
+## any part of a column is in): 9.3 at plane 2, 18.6 m clear across.
+static var NAVE_CLEAR: float = Hall.ROW_Z-Hall.ABACUS-WorldScale.span*0.5-1.0
 
 ## A hall wall's inner face off the stretch's line (m).
 static var HALL_INNER: float = Hall.WALL_Z-Hall.WALL_THICK*0.5

@@ -328,7 +328,7 @@ static func far(piece: Dictionary) -> ArrayMesh:
 			var depth := PODIUM_COURSE*rng.randf_range(2.0,3.5)
 			_far_block(b,RuinKit._box(b,Vector3((x1-x)*0.5,depth*0.5,0.6),0.0),Vector3((x+x1)*0.5,PODIUM_TOP-depth*0.5,s*PODIUM_Z),0.82)
 			x = x1
-	if piece.last: _far_apse(b,piece,rng)
+	if piece.last and bool(piece.get("apse",true)): _far_apse(b,piece,rng)
 	if int(plans[0].get("torn",0)) & 1 != 0: SunderedGrowth.far_torn(b,0.0,-1.0,PODIUM_TOP,Hall.WALL_Z,grow_rng)
 	if int(plans[bays-1].get("torn",0)) & 2 != 0: SunderedGrowth.far_torn(b,length,1.0,PODIUM_TOP,Hall.WALL_Z,grow_rng)
 	return _far_mesh(b)
@@ -423,7 +423,7 @@ static func near(piece: Dictionary) -> Node3D:
 		for key: String in weave:
 			for item: Variant in w[key]: weave[key].append(Hall._moved(item,Vector3(x0,0.0,0.0)))
 	root.add_child(_podium(piece))
-	if piece.last: root.add_child(_apse(piece))
+	if piece.last and bool(piece.get("apse",true)): root.add_child(_apse(piece))
 	RuinKit.merge(root)
 	RuinKit.forget_arrays(root)
 	_chunk_body(root)

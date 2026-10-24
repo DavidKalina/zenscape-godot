@@ -100,6 +100,10 @@ const SKIM_DRAG := 1.4
 const CLEAR := 1.0
 const LIP := 1.2
 const BRUSH := 0.25
+## The guard (`guide`): how fast it eases the heading along and a climb or
+## dive level (s, at its full pull).
+const GUARD_TURN := 0.3
+const GUARD_LEVEL := 0.25
 ## Giant stone (`stone`: a mountain risen through the sea, scripts/
 ## sky_peaks.gd) is ridden only where it rises no steeper than STEEP, metres
 ## up per metre across, give or take RIDE m, so a cliff never carries the
@@ -190,6 +194,23 @@ var water := -INF
 ## stone (scripts/sky_peaks.gd `solid`); if not set, every solid is ground
 ## the eye can ride up.
 var stone := Callable()
+## Callable(position: Vector3, heading: float, speed: float) -> Dictionary,
+## a soft guard in a tight place (scripts/endless/land_tunnels.gd `guide`),
+## or {} where there is none: push (Vector3, m/s added to the way, off a
+## near wall, roof or floor), heading (rad, the way along the place) and
+## turn (0..1, how hard the heading is eased to it), level (> 0 a near
+## roof: a climb eases level; < 0 a near floor: a dive does, unless coming
+## in to land). It works before the solid does, so a brush is the last
+## word, not the first.
+var guide := Callable()
+## The guard's pull this step (0..1, the numbers HUD and the drivers).
+var guarded := 0.0
+## Callable(Vector3) -> Vector3: a tight place's walls made slippery (scripts/
+## endless/land_tunnels.gd `keep`): the point moved back inside its clear
+## room, keeping its way along, so pressed into a wall it slides along it
+## rather than being stopped and turned. Applied after each step's move,
+## before the solid's.
+var keep := Callable()
 
 ## Steps off from `from` facing `towards` (the scene's yaw), at `pace` m/s.
 ## Off an edge (`drop`) it falls a moment before the glide catches; opened
@@ -344,9 +365,11 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var own := 1.0-CARRIED*in_jet*(1.0-steering)
 	var hold: Vector3 = here.get("hold",Vector3.ZERO)*(1.0-steering)
 	var drop := approach_drop(ground) if approach else 0.0
-	velocity = forward()*speed*own+Vector3.UP*(beat+flap_lift+lift-sink*own-fall-drop)+wind+hold
+	var push := _guard(delta)
+	velocity = forward()*speed*own+Vector3.UP*(beat+flap_lift+lift-sink*own-fall-drop)+wind+hold+push
 	var was := position
 	position += velocity*delta
+	if keep.is_valid(): position = keep.call(position)
 	_skim(delta,ground,was)
 	_water(delta)
 
@@ -412,6 +435,24 @@ func _skim(delta: float, ground: Callable, was: Vector3) -> void:
 		_under(delta,body)
 	else:
 		_ride(delta,Vector3(position.x,body.x+SKIM,position.z))
+
+## The guard (`guide`) this step: the heading eased along the place when
+## it points at a near wall, a climb or dive levelled by a near roof or
+## floor; the push it adds to the way.
+func _guard(delta: float) -> Vector3:
+	guarded = 0.0
+	if not guide.is_valid(): return Vector3.ZERO
+	var g: Dictionary = guide.call(position,heading,speed)
+	if g.is_empty(): return Vector3.ZERO
+	var turn := clampf(float(g.get("turn",0.0)),0.0,1.0)
+	if turn > 0.0: heading = lerp_angle(heading,float(g.heading),_ease(GUARD_TURN,delta)*turn)
+	var level := clampf(float(g.get("level",0.0)),-1.0,1.0)
+	if level > 0.0 and pitch > 0.0: pitch = lerpf(pitch,0.0,_ease(GUARD_LEVEL,delta)*level)
+	if level < 0.0 and pitch < 0.0 and not approach: pitch = lerpf(pitch,0.0,_ease(GUARD_LEVEL,delta)*-level)
+	var push: Vector3 = g.get("push",Vector3.ZERO)
+	if approach and push.y > 0.0: push.y = 0.0
+	guarded = maxf(turn,absf(level))
+	return push
 
 ## Open water (`water`) is ridden as the ground is: never under it.
 func _water(delta: float) -> void:
