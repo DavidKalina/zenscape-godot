@@ -14,15 +14,15 @@ static func recipe() -> Dictionary:
 	land.merge({
 		# Ranges: longer and straighter crest lines, lower, a gable crest.
 		"range_scale":3400.0,
-		"range_width":0.12,
+		"range_width":0.16,
 		"warp_move":140.0,
 		"peak_tall":Vector2(70.0,150.0),
 		"ridge_scale":1500.0,
-		"ridge_crisp":0.85,
+		"ridge_crisp":0.7,
 		"range_band":Vector2(-0.7,-0.3),
-		"notch":0.8,
-		"notch_scale":2600.0,
-		"notch_width":Vector2(0.05,0.1),
+		"notch":0.5,
+		"notch_scale":5000.0,
+		"notch_width":Vector2(0.04,0.09),
 		# Hills as wilderness's, terraced.
 		"hill_tall":16.0,
 		"terrace":1.0,

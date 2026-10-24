@@ -5,7 +5,7 @@ extends RefCounted
 
 static func flora() -> Dictionary:
 	return {"forest":0.5,"forest_meadows":0.5,
-		"tree_weights":PackedFloat32Array([1.0,0.8,0.4,3.0,3.0,1.5]),"grass":1.0,"grass_tall":1.35,"flowers":true}
+		"tree_weights":PackedFloat32Array([1.0,0.8,0.4,3.0,3.0,1.5]),"grass":1.0,"grass_tall":1.5,"flowers":true}
 
 static func paint() -> Dictionary:
 	return {"mood":"desert_afternoon","hour":14.8,
