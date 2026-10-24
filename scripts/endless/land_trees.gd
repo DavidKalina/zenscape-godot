@@ -31,6 +31,11 @@ extends Node3D
 ## for the rolling plane. Plan cells within COLLIDE m of the plane also
 ## stand a convex collider a tree on layer 1 (the wheels, whoever walks).
 ##
+## The plan and the building run natively (ZenScapeTrees, native/terrain_kernels/
+## tree_cell.h: the same trees, buffers and floor, bit for bit) when the
+## library is built and current and the land field is native; --trees-native=0
+## (or --gdscript-kernels, --land-native=0) builds them in GDScript.
+##
 ## Flags: --no-trees, --forest=X (the woods' share: 1; 0 none; 1.5 more),
 ## --forest-meadows=X (how far the woods come out onto the meadows as
 ## groves, 1; 0 keeps every meadow and flat open), --no-forest-floor (no
@@ -43,6 +48,7 @@ const FarTrees = preload("res://scripts/far_trees.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const LandArches = preload("res://scripts/endless/land_arches.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const FAR_SHADER = preload("res://shaders/endless_tree_far.gdshader")
 const FLOOR_SHADER = preload("res://shaders/endless_forest_floor.gdshader")
 const RING_SHADER = preload("res://shaders/endless_spruce_ring.gdshader")
@@ -63,7 +69,7 @@ const MID_SIZE := 0.94
 ## Blocks are built out to MID.z+BLOCK, far cells to FAR.z+FAR_CELL/2;
 ## replanned every REPLAN m; TASKS at once; COMMIT_BUDGET ms a frame.
 const REPLAN := 48.0
-const TASKS := 3
+const TASKS := 6
 const COMMIT_BUDGET := 1.5
 const PRIME := 420.0
 ## The flight's solid: the crown's reach times CROWN_SOLID plus WING_SOLID
@@ -71,8 +77,10 @@ const PRIME := 420.0
 const CROWN_SOLID := 0.85
 const WING_SOLID := 0.5
 const BUCKET := 16.0
-## Plan cells within this of the plane (m, to the cell) stand colliders.
+## Plan cells within this of the plane (m, to the cell) stand colliders,
+## their trees' shapes added within COLLIDE_BUDGET ms a frame.
 const COLLIDE := 70.0
+const COLLIDE_BUDGET := 0.4
 const LAYER := 1
 ## The crowns' tint over the islets' (each tree a little either way), and
 ## the far crowns' colour (linear) and how much of their baked shade shows.
@@ -153,10 +161,18 @@ var _planned_at := Vector3.INF
 var _quit := false
 var _eye := Vector3.ZERO
 var _bodies := {}             # plan cell -> StaticBody3D
+var _filling := {}            # plan cell -> its trees' shapes added so far
+## The native plan and building (ZenScapeTrees), or null: GDScript.
+var native: Object
+## The world profile: its forest at setup, and per block whether the woods
+## stand there (`layer_at`, asked only in a world of regions).
+var world: RefCounted
 
-## The flags: {on, share, meadows}.
+## The flags: {on, share, meadows}, over the world's (its trees layer and
+## flora's forest, forest_meadows).
 static func flags() -> Dictionary:
-	var out := {"on":true,"share":1.0,"meadows":1.0,"floor":true}
+	var w: RefCounted = WorldProfile.current()
+	var out := {"on":bool(w.layer("trees",true)),"share":float(w.flora_value("forest",1.0)),"meadows":float(w.flora_value("forest_meadows",1.0)),"floor":true}
 	for a: String in LaunchArgs.user_args():
 		if a == "--no-trees": out.on = false
 		elif a.begins_with("--forest="): out.share = maxf(0.0,float(a.get_slice("=",1)))
@@ -167,6 +183,7 @@ static func flags() -> Dictionary:
 
 func setup(land_seed: int) -> void:
 	seed = land_seed
+	world = WorldProfile.current()
 	var f := flags()
 	enabled = f.on
 	share = f.share
@@ -247,6 +264,27 @@ func setup(land_seed: int) -> void:
 			for m: ShaderMaterial in [_mid_material,_far_material]: m.set_shader_parameter("conifer_sway",false)
 	_near_floor = _floor_shader(Vector4(-1.0,1.0,MID.z,MID.w))
 	_far_floor = _floor_shader(Vector4(MID.z-MID.w,MID.w,far_ring.z,far_ring.w))
+	if native_wanted():
+		native = ClassDB.instantiate(NATIVE_CLASS)
+		native.configure(_native_config())
+
+## The native plan and building (native/terrain_kernels/tree_cell.h), when
+## the library is built and current (--trees-native=0 or --gdscript-kernels:
+## GDScript).
+const NATIVE_CLASS := &"ZenScapeTrees"
+const NATIVE_VERSION := 1
+static func native_wanted() -> bool:
+	var args := LaunchArgs.user_args()
+	if "--trees-native=0" in args or "--gdscript-kernels" in args or "--land-native=0" in args: return false
+	if not Field.native_available() or not ClassDB.class_exists(NATIVE_CLASS): return false
+	var probe: Object = ClassDB.instantiate(NATIVE_CLASS)
+	return probe.has_method("version") and int(probe.version()) == NATIVE_VERSION
+
+## What ZenScapeTrees needs of the plan and the building.
+func _native_config() -> Dictionary:
+	var weights := Plan.variant_weights()
+	return {"seed":seed,"share":share,"meadows":meadows,"gap":WorldScale.opening(Plan.TOY_GAP),"lane_open":WorldScale.opening(Plan.TOY_LANE),
+		"dims":PackedVector3Array(_dims),"weights":weights,"tint":_tint,"crown_fit":PackedVector3Array(_crown_fit),"detail":_detail >= 0.0,"rings":_rings}
 
 ## A distance crown's value over the near crown's (HeroTrees SPRUCE_PAINT `knob`):
 ## the near crown's gaps and core read as a darker mass at range.
@@ -304,15 +342,32 @@ func _exit_tree() -> void:
 	_quit = true
 	for id: int in _pending.values(): WorkerThreadPool.wait_for_task_completion(id)
 
-## Stands the blocks within PRIME m of `at` now, on this thread.
+## Stands the blocks within PRIME m of `at` now, on this thread; with the
+## native building, every block and far cell the rings want, built on the
+## workers at once (so the start shows no ring still filling in).
 func prime(at: Vector3) -> void:
 	if not enabled: return
 	_eye = at
-	var field := Field.new(seed)
-	var plan := _plan_for()
-	for key: Vector2i in _wanted_blocks(at,PRIME):
-		if _blocks.has(key): continue
-		_commit(_build_block(key,field,plan))
+	var began := Time.get_ticks_usec()
+	if native != null:
+		var ids: Array = []
+		for key: Vector2i in _wanted_blocks(at,MID.z):
+			if not _blocks.has(key): ids.append(WorkerThreadPool.add_task(_task.bind("b",key),true))
+		for key: Vector2i in _wanted_far(at,far_ring.z):
+			if not _far.has(key): ids.append(WorkerThreadPool.add_task(_task.bind("f",key),true))
+		for id: int in ids: WorkerThreadPool.wait_for_task_completion(id)
+		_lock.lock()
+		var done := _done.duplicate()
+		_done.clear()
+		_lock.unlock()
+		for next: Dictionary in done: _commit(next)
+	else:
+		var field := Field.new(seed)
+		var plan := _plan_for()
+		for key: Vector2i in _wanted_blocks(at,PRIME):
+			if _blocks.has(key): continue
+			_commit(_build("b",key,field,plan))
+	stats.prime_ms = (Time.get_ticks_usec()-began)/1000.0
 	_planned_at = Vector3.INF
 
 ## One frame: replanned if the eye has moved, tasks asked, finished blocks
@@ -415,25 +470,26 @@ func _rect_distance(x0: float, z0: float, size: float, at: Vector3) -> float:
 	return sqrt(dx*dx+dz*dz)
 
 func _wanted_blocks(at: Vector3, reach: float) -> Array:
-	var out: Array = []
-	var c := _block_of(at.x,at.z)
-	var r := int(ceil(reach/BLOCK))+1
-	for dz in range(-r,r+1):
-		for dx in range(-r,r+1):
-			var key := c+Vector2i(dx,dz)
-			if _rect_distance(key.x*BLOCK,key.y*BLOCK,BLOCK,at) <= reach: out.append(key)
-	out.sort_custom(func(p: Vector2i, q: Vector2i) -> bool: return _rect_distance(p.x*BLOCK,p.y*BLOCK,BLOCK,at) < _rect_distance(q.x*BLOCK,q.y*BLOCK,BLOCK,at))
-	return out
+	return _wanted(at,reach,BLOCK)
 
 func _wanted_far(at: Vector3, reach: float) -> Array:
-	var out: Array = []
-	var c := Vector2i(floori(at.x/Plan.FAR_CELL),floori(at.z/Plan.FAR_CELL))
-	var r := int(ceil(reach/Plan.FAR_CELL))+1
+	return _wanted(at,reach,Plan.FAR_CELL)
+
+## The `size` m squares within `reach` of `at`, nearest first (sorted by the
+## engine on [distance, x, z], no script comparator: the replan's cost).
+func _wanted(at: Vector3, reach: float, size: float) -> Array:
+	var near: Array = []
+	var c := Vector2i(floori(at.x/size),floori(at.z/size))
+	var r := int(ceil(reach/size))+1
 	for dz in range(-r,r+1):
 		for dx in range(-r,r+1):
 			var key := c+Vector2i(dx,dz)
-			if _rect_distance(key.x*Plan.FAR_CELL,key.y*Plan.FAR_CELL,Plan.FAR_CELL,at) <= reach: out.append(key)
-	out.sort_custom(func(p: Vector2i, q: Vector2i) -> bool: return _rect_distance(p.x*Plan.FAR_CELL,p.y*Plan.FAR_CELL,Plan.FAR_CELL,at) < _rect_distance(q.x*Plan.FAR_CELL,q.y*Plan.FAR_CELL,Plan.FAR_CELL,at))
+			var d := _rect_distance(key.x*size,key.y*size,size,at)
+			if d <= reach: near.append([d,key.x,key.y])
+	near.sort()
+	var out: Array = []
+	out.resize(near.size())
+	for i in near.size(): out[i] = Vector2i(near[i][1],near[i][2])
 	return out
 
 ## The queue: the blocks out to the mid ring's end, nearest first, with the
@@ -476,19 +532,36 @@ func _task(kind: String, key: Vector2i) -> void:
 	if _quit: return
 	var field := Field.new(seed)
 	var plan := _plan_for()
-	var result: Dictionary = _build_block(key,field,plan) if kind == "b" else _build_far(key,field,plan)
+	var result: Dictionary = _build(kind,key,field,plan)
 	_lock.lock()
 	_done.append(result)
 	_lock.unlock()
 
 # --- Building (on a worker) ------------------------------------------------------
 
-## A block's trees: its plan cells' trees, the near batches' buffers (per
-## variant and part), the mid crowns' buffer and each cell's lookup.
-func _build_block(key: Vector2i, field: RefCounted, plan: RefCounted) -> Dictionary:
+## A block ("b") or far cell ("f"), natively when it can be.
+func _build(kind: String, key: Vector2i, field: RefCounted, plan: RefCounted) -> Dictionary:
+	var impl: Object = field.native_impl() if native != null else null
+	if impl == null: return _build_block(key,field,plan) if kind == "b" else _build_far(key,field,plan)
 	var began := Time.get_ticks_usec()
+	var size := BLOCK if kind == "b" else Plan.FAR_CELL
+	var x0 := key.x*size
+	var z0 := key.y*size
+	var arches: PackedFloat64Array = plan.arches_flat(field,x0,z0,x0+size,z0+size)
+	var pad: float = plan.sample_pad()
+	var ponds: Array = field.ponds_in(x0-pad,z0-pad,x0+size+pad,z0+size+pad)
+	if kind == "f":
+		var far: Dictionary = native.far(impl,key,arches,ponds,_floor)
+		return {"kind":"f","key":key,"buf":far.buf,"n":int(far.n),"floor":far.floor,"ms":(Time.get_ticks_usec()-began)/1000.0}
+	var got: Dictionary = native.block(impl,key,arches,ponds,hash([seed,key.x,key.y,"trees"]),_floor)
+	var all: PackedFloat32Array = got.all
+	var n := all.size()/Plan.STRIDE
+	var cells := _cells(key,all)
+	return {"kind":"b","key":key,"cells":cells,"near":got.near,"mid":got.mid,"n":n,"floor":got.floor,"ms":(Time.get_ticks_usec()-began)/1000.0,"tiles":got.tiles}
+
+## A block's plan cells' lookups from its trees (`_lookup` each).
+func _cells(key: Vector2i, all: PackedFloat32Array) -> Dictionary:
 	var per := int(BLOCK/Plan.CELL)
-	var all: PackedFloat32Array = plan.area(field,key.x*BLOCK,key.y*BLOCK,BLOCK)
 	var split := {}
 	for q in range(0,all.size(),Plan.STRIDE):
 		var ck := Plan.cell_of(all[q],all[q+2])
@@ -501,6 +574,14 @@ func _build_block(key: Vector2i, field: RefCounted, plan: RefCounted) -> Diction
 		for i in per:
 			var ck := Vector2i(key.x*per+i,key.y*per+j)
 			cells[ck] = _lookup(ck,split.get(ck,PackedFloat32Array()))
+	return cells
+
+## A block's trees: its plan cells' trees, the near batches' buffers (per
+## variant and part), the mid crowns' buffer and each cell's lookup.
+func _build_block(key: Vector2i, field: RefCounted, plan: RefCounted) -> Dictionary:
+	var began := Time.get_ticks_usec()
+	var all: PackedFloat32Array = plan.area(field,key.x*BLOCK,key.y*BLOCK,BLOCK)
+	var cells := _cells(key,all)
 	var n := all.size()/Plan.STRIDE
 	var variants := _dims.size()
 	var near: Array = []
@@ -660,6 +741,12 @@ func _commit(done: Dictionary) -> void:
 	stats.slowest_plan_ms = maxf(stats.slowest_plan_ms,float(done.ms))
 	if done.kind == "f":
 		if _far.has(key) or _rect_distance(key.x*Plan.FAR_CELL,key.y*Plan.FAR_CELL,Plan.FAR_CELL,_eye) > far_ring.z+Plan.FAR_CELL: return
+		if not world.uniform and not world.layer_at(&"trees",(key.x+0.5)*Plan.FAR_CELL,(key.y+0.5)*Plan.FAR_CELL):
+			var bare := _batch(_crown,PackedFloat32Array(),0,null)
+			bare.name = "Far_%d_%d" % [key.x,key.y]
+			add_child(bare)
+			_far[key] = bare
+			return
 		var node := _batch(_crown,done.buf,int(done.n),_far_material)
 		node.name = "Far_%d_%d" % [key.x,key.y]
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -670,6 +757,9 @@ func _commit(done: Dictionary) -> void:
 		stats.far_trees += int(done.n)
 		return
 	if _blocks.has(key) or _rect_distance(key.x*BLOCK,key.y*BLOCK,BLOCK,_eye) > MID.z+BLOCK*2.0: return
+	if not world.uniform and not world.layer_at(&"trees",(key.x+0.5)*BLOCK,(key.y+0.5)*BLOCK):
+		_blocks[key] = {"node":_bare("Block_%d_%d" % [key.x,key.y]),"cells":{},"n":0,"tiles":{}}
+		return
 	var holder := Node3D.new()
 	holder.name = "Block_%d_%d" % [key.x,key.y]
 	for v in done.near.size():
@@ -707,6 +797,13 @@ func _commit(done: Dictionary) -> void:
 	stats.blocks = _blocks.size()
 	stats.trees += int(done.n)
 
+## An empty block, where the world's regions say no woods.
+func _bare(node_name: String) -> Node3D:
+	var n := Node3D.new()
+	n.name = node_name
+	add_child(n)
+	return n
+
 func _batch(mesh: Mesh, buf: PackedFloat32Array, count: int, material: Material) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -730,6 +827,7 @@ func _free_block(key: Vector2i) -> void:
 		if _bodies.has(ck):
 			(_bodies[ck] as Node).queue_free()
 			_bodies.erase(ck)
+			_filling.erase(ck)
 	_blocks.erase(key)
 	stats.blocks = _blocks.size()
 
@@ -794,29 +892,50 @@ func _collide(at: Vector3) -> void:
 		if _rect_distance(ck.x*Plan.CELL,ck.y*Plan.CELL,Plan.CELL,at) > COLLIDE*1.5:
 			(_bodies[ck] as Node).queue_free()
 			_bodies.erase(ck)
+			_filling.erase(ck)
+	var t0 := Time.get_ticks_usec()
+	# The bodies begun, nearest cell first, filled within the budget.
+	for ck: Vector2i in _filling.keys():
+		var cell: Variant = _cell_data(ck)
+		if cell == null:
+			_filling.erase(ck)
+			continue
+		_filling[ck] = _fill(_bodies[ck],cell,int(_filling[ck]),t0)
+		if int(_filling[ck]) >= int((cell as Dictionary).n): _filling.erase(ck)
+		if (Time.get_ticks_usec()-t0)/1000.0 > COLLIDE_BUDGET: break
 	var c := Plan.cell_of(at.x,at.z)
-	# At most one plan cell's colliders a frame.
+	# At most one plan cell's body begun a frame.
 	for dz in range(-1,2):
 		for dx in range(-1,2):
 			var ck := c+Vector2i(dx,dz)
 			if _bodies.has(ck) or _rect_distance(ck.x*Plan.CELL,ck.y*Plan.CELL,Plan.CELL,at) > COLLIDE: continue
 			var cell: Variant = _cell_data(ck)
 			if cell == null: continue
-			var t0 := Time.get_ticks_usec()
-			_bodies[ck] = _body(ck,cell)
+			_bodies[ck] = _body(ck)
+			var done := _fill(_bodies[ck],cell,0,t0)
+			if done < int((cell as Dictionary).n): _filling[ck] = done
 			stats.slowest_collider_ms = maxf(float(stats.get("slowest_collider_ms",0.0)),(Time.get_ticks_usec()-t0)/1000.0)
 			stats.colliders = _bodies.size()
 			return
+	stats.slowest_collider_ms = maxf(float(stats.get("slowest_collider_ms",0.0)),(Time.get_ticks_usec()-t0)/1000.0)
 
-## A convex spinning top a tree: the trunk's foot, the crown's widest ring
-## (its reach, CROWN_SOLID), the top.
-func _body(ck: Vector2i, cell: Dictionary) -> StaticBody3D:
+## A plan cell's body, its shapes added by `_fill`.
+func _body(ck: Vector2i) -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.name = "Trees_%d_%d" % [ck.x,ck.y]
 	body.collision_layer = LAYER
 	body.collision_mask = 0
+	add_child(body)
+	return body
+
+## The cell's trees from `from` added to its body as convex spinning tops (the
+## trunk's foot, the crown's widest ring: its reach, CROWN_SOLID, the top)
+## until COLLIDE_BUDGET ms past `began`; the next tree to add.
+func _fill(body: StaticBody3D, cell: Dictionary, from: int, began: int) -> int:
 	var solid: PackedFloat32Array = cell.solid
-	for t in int(cell.n):
+	var t := from
+	while t < int(cell.n):
+		if t > from and (Time.get_ticks_usec()-began)/1000.0 > COLLIDE_BUDGET: break
 		var q := t*8
 		var r := solid[q+6]
 		var bottom := solid[q+4]
@@ -833,8 +952,8 @@ func _body(ck: Vector2i, cell: Dictionary) -> StaticBody3D:
 		cs.shape = shape
 		cs.position = Vector3(solid[q],solid[q+2],solid[q+1])
 		body.add_child(cs)
-	add_child(body)
-	return body
+		t += 1
+	return t
 
 ## The numbers line (F1).
 func note() -> String:

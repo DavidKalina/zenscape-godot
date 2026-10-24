@@ -132,6 +132,8 @@ func _init(seed_value: int) -> void:
 					material.set_shader_parameter("whitecaps",FOAM_CAPS)
 					# The crest glow a touch down, so the foam stands out.
 					material.set_shader_parameter("sss_strength",0.65)
+	# The world's sea tints (its paint), then the flags over them.
+	preload("res://scripts/endless/world/world_profile.gd").current().apply_sea(material)
 	for a: String in LaunchArgs.user_args():
 		# --sea-set=name:value[;name:value]: a uniform by hand, for tuning.
 		if a.begins_with("--sea-set="):

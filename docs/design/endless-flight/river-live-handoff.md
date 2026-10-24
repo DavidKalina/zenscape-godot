@@ -38,13 +38,13 @@ Decision: `--river-live=1` uses the FFT only when `--sea-fft=1` is also on (it s
   - `river_shear` `Vector4(0.12,1.3,0.6,3.0)`: speed share at the bank and in the middle, profile power, bend outside speed-up.
   - `river_live_cycle` `Vector2(0.65,22)`: copy life (s), phase-stagger noise size (m).
   - `river_fft_use` `Vector4(0.25,0.7,0.30,0.22)`: tile shares of cascades 1 and 2, their slope strengths.
-  - `river_riffle` `Vector4(1.1,2.6,0.45,1.0)`: start and full speed (m/s), slope strength, white water.
+  - `river_live_riffle` `Vector4(1.1,2.6,0.45,1.0)`: start and full speed (m/s), slope strength, white water.
   - `river_riffle_where` `Vector4(0.7,0.5,40,0.3)`: narrowing weight, bend weight, gravel-bar size (m), base share.
   - `river_eddy` `Vector4(1.0,1.4,5.0,0.3)`: strength, turn-back (1 still, 2 full reverse), swirl size (m), swirl strength.
   - `river_foam` `Vector4(0.7,0.35,1.0,1.0)`: flecks, fleck size (m), gathering, lines.
   - `river_bed` `Vector4(1.0,0.5,1.0,1.8)`: bed pattern, refraction shift, caustics, caustic size (m).
   - `river_live_debug` (int): 1 bend outside/inside, 2 eddies, 3 riffles, 4 speed, 5 foam (paints the mask over the water).
-- Example: `--river-live=1 --sea-fft=1 "--river-knob=river_riffle=Vector4(0.9,2.2,0.6,1.0)"`.
+- Example: `--river-live=1 --sea-fft=1 "--river-knob=river_live_riffle=Vector4(0.9,2.2,0.6,1.0)"`.
 
 ## Timing
 
@@ -92,7 +92,7 @@ What they show:
 
 ## What's left
 
-- Riffle crest trains read clearly only in the average and in motion. In a single still under the FFT chop they are subtle. `river_riffle.z` is the knob.
+- Riffle crest trains read clearly only in the average and in motion. In a single still under the FFT chop they are subtle. `river_live_riffle.z` is the knob.
 - Foam on a bend's inside (the eddy share) reads a little heavy in the bend view; the outside gathers less than it might.
 - The lace flecks are isotropic. Real foam streaks along the current, and only the shear stretches them here. A flow-aligned frame (like the riffles' four cells) would cost about 4× the taps.
 - Frame derivatives are per chunk vertex. On coarse chunks (8 m+ steps) curvature and width change get rough, but by then the features have faded by footprint.
