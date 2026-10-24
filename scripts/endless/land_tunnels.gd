@@ -43,9 +43,14 @@ const TORCH_FLAME := Vector2(0.24,0.75)
 const TORCH_BIG := {"wall":1.0,"outside":1.35,"mouth":2.2}
 const TORCH_GLOW := {"wall":Color(1.0,0.55,0.16),"outside":Color(1.0,0.78,0.38),"mouth":Color(1.0,0.66,0.26)}
 
+## The carved rock's mesh: segments round a ring, across the floor, a
+## cavern's rings apart (m); the lumps (m, Tunnels.ROCK_LUMP).
+const RING_SEGS := 32
+const FLOOR_SEGS := 6
+const CAVE_RING := 2.0
+const ROCK_LUMP := Tunnels.ROCK_LUMP
+const HALL_ROCK_TINT := Color(0.42,0.4,0.37)
 const FLOOR_TINT := Color(0.36,0.33,0.29)
-const WALL_TINT := Color(0.5,0.48,0.45)
-const ROOF_TINT := Color(0.42,0.4,0.38)
 const CAVE_TINT := Color(0.46,0.4,0.33)
 const BLOCK_TINT := Color(0.4,0.37,0.33)
 
@@ -56,6 +61,7 @@ var halls: Node3D
 var _sites: Array = []
 ## The plane's wingtip: the tube's half width it may fly in.
 var _grow := 0.0
+var _rock_tris := 0
 
 func setup(land_field: RefCounted) -> void:
 	field = land_field
@@ -173,36 +179,10 @@ func _portal_top(t: Tunnels.Site, m: int) -> float:
 	return top+PORTAL_OVER
 
 func _build(t: Tunnels.Site) -> void:
+	var rock := _build_rock(t)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var tris := 0
-	# The tube: cross-sections along the path, through both portals.
-	var ss := PackedFloat32Array([-Tunnels.PORTAL_OUT,0.0])
-	for s: float in t.ss:
-		if s > 0.0 and s < t.length: ss.append(s)
-	ss.append_array([t.length,t.length+Tunnels.PORTAL_OUT])
-	var prev: Array = []
-	for s: float in ss:
-		var at: Array = Tunnels.at_s(t,s)
-		var c: Vector2 = at[0]
-		var tg: Vector2 = at[1]
-		var n := Vector2(-tg.y,tg.x)
-		var sec := Tunnels.section(t,s)
-		var l := c-n*sec.x
-		var r := c+n*sec.x
-		var y0 := t.floor_y
-		var y1 := t.floor_y+sec.y
-		var cave := sec.x > Tunnels.HALL_HALF+0.01
-		var cur := [Vector3(l.x,y0,l.y),Vector3(r.x,y0,r.y),Vector3(l.x,y1,l.y),Vector3(r.x,y1,r.y),cave,n]
-		if not prev.is_empty():
-			var tint: Color = CAVE_TINT if cave or prev[4] else WALL_TINT
-			var nn: Vector2 = cur[5]
-			# Floor, the left wall, the right wall, the roof (normals inward).
-			tris += _quad(st,prev[0],prev[1],cur[1],cur[0],Vector3.UP,FLOOR_TINT)
-			tris += _quad(st,prev[0],cur[0],cur[2],prev[2],Vector3(nn.x,0.0,nn.y),tint)
-			tris += _quad(st,prev[1],prev[3],cur[3],cur[1],Vector3(-nn.x,0.0,-nn.y),tint)
-			tris += _quad(st,prev[2],cur[2],cur[3],prev[3],Vector3.DOWN,ROOF_TINT if not cave else CAVE_TINT.darkened(0.15))
-		prev = cur
 	# The portal blocks: a front with the tube's opening, two sides, a top.
 	for m in 2:
 		var top: float = t.portal_top[m]
@@ -220,12 +200,14 @@ func _build(t: Tunnels.Site) -> void:
 			var sn := _v(t,m,0.0,side*(k+1.0),0.0)-_v(t,m,0.0,side*k,0.0)
 			tris += _quad(st,_v(t,m,a0,side*k,lo),_v(t,m,a1,side*k,lo),_v(t,m,a1,side*k,top),_v(t,m,a0,side*k,top),sn,BLOCK_TINT.darkened(0.08))
 		tris += _quad(st,_v(t,m,a0,-k,top),_v(t,m,a0,k,top),_v(t,m,a1,k,top),_v(t,m,a1,-k,top),Vector3.UP,BLOCK_TINT.darkened(0.04))
-	var mesh := st.commit()
+	var mesh: ArrayMesh = rock.commit()
+	st.commit(mesh)
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
+	mat.vertex_color_is_srgb = true
 	mat.roughness = 1.0
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mesh.surface_set_material(0,mat)
+	for i in mesh.get_surface_count(): mesh.surface_set_material(i,mat)
 	var node := MeshInstance3D.new()
 	node.name = t.name.replace("/","_")
 	node.mesh = mesh
@@ -240,7 +222,97 @@ func _build(t: Tunnels.Site) -> void:
 	cs.shape = shape
 	body.add_child(cs)
 	add_child(body)
-	stats.tris += tris
+	stats.tris += tris+_rock_tris
+
+## The carved rock of the bore (Tunnels.profile: superellipse rings from
+## the -d wall's foot over the crown to the +d wall's foot, RING_SEGS
+## segments, every CAVE_RING m in the caverns and every STEP m in the
+## hall stretches and the portals), lumped outward into the rock
+## (ROCK_LUMP; none in the portals, so the opening stays true) and a flat
+## floor of FLOOR_SEGS strips between the walls' feet. Indexed, its normals
+## smoothed, so the lumps shade.
+func _build_rock(t: Tunnels.Site) -> SurfaceTool:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var ss := PackedFloat32Array([-Tunnels.PORTAL_OUT,0.0])
+	for i in t.ss.size():
+		var s: float = t.ss[i]
+		if s <= 0.0 or s >= t.length: continue
+		var prev: float = ss[ss.size()-1]
+		var sub := ceili((s-prev)/CAVE_RING) if Tunnels.cave_ease(t,(s+prev)*0.5) > 0.0 else 1
+		for k in range(1,sub): ss.append(lerpf(prev,s,float(k)/sub))
+		ss.append(s)
+	ss.append_array([t.length,t.length+Tunnels.PORTAL_OUT])
+	# The lumps: ridged noise, so the rock reads broken rather than poured.
+	var grain := FastNoiseLite.new()
+	grain.seed = hash([t.seed,"grain"]) & 0x7fffffff
+	grain.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	grain.fractal_type = FastNoiseLite.FRACTAL_RIDGED
+	grain.fractal_octaves = 3
+	grain.frequency = 1.0/Tunnels.ROCK_GRAIN
+	var pos := PackedVector3Array()
+	var inward := PackedVector3Array()
+	var per := RING_SEGS+1+FLOOR_SEGS+1
+	var tris := 0
+	for r in ss.size():
+		var s: float = ss[r]
+		var at: Array = Tunnels.at_s(t,s)
+		var c: Vector2 = at[0]
+		var tg: Vector2 = at[1]
+		var n := Vector2(-tg.y,tg.x)
+		var n3 := Vector3(n.x,0.0,n.y)
+		var pr := Tunnels.profile(t,s)
+		var e := Tunnels.cave_ease(t,s)
+		var lump := 0.0 if s <= 0.0 or s >= t.length else ROCK_LUMP*(0.45+0.55*e)
+		var hw := (pr.x+pr.y)*0.5
+		var feet: Array = []
+		for k in RING_SEGS+1:
+			var th := PI*(1.0-float(k)/RING_SEGS)
+			var q := Tunnels.profile_point(pr,th)
+			var x := (q.x-(pr.y-pr.x)*0.5)/hw
+			var y := q.y/pr.z
+			# Out of the rock's surface (the superellipse's gradient).
+			var g := Vector2(signf(x)*pow(absf(x),pr.w-1.0)/hw,pow(y,pr.w-1.0)/pr.z).normalized()
+			var base := Vector3(c.x,t.floor_y,c.y)+n3*q.x+Vector3.UP*q.y
+			var nz := clampf(grain.get_noise_3dv(base)*0.5+0.5,0.0,1.0)
+			var out := n3*g.x+Vector3.UP*g.y
+			var v := base+out*lump*nz
+			if k == 0 or k == RING_SEGS: feet.append(v)
+			pos.append(v)
+			inward.append(-out)
+			st.set_color(CAVE_TINT.lerp(HALL_ROCK_TINT,1.0-e).darkened(0.35*nz).lightened(0.12*(1.0-nz)*y))
+			st.add_vertex(v)
+		for k in FLOOR_SEGS+1:
+			var v: Vector3 = (feet[0] as Vector3).lerp(feet[1],float(k)/FLOOR_SEGS)
+			var nz := t.rock.get_noise_2d(v.x*3.0,v.z*3.0)*0.5+0.5
+			pos.append(v)
+			inward.append(Vector3.UP)
+			st.set_color(FLOOR_TINT.lerp(FLOOR_TINT.lightened(0.3),nz))
+			st.add_vertex(v)
+		if r == 0: continue
+		var b0 := (r-1)*per
+		var b1 := r*per
+		for k in RING_SEGS:
+			tris += _tri(st,pos,inward,b0+k,b0+k+1,b1+k+1)+_tri(st,pos,inward,b0+k,b1+k+1,b1+k)
+		var f := RING_SEGS+1
+		for k in FLOOR_SEGS:
+			tris += _tri(st,pos,inward,b0+f+k,b0+f+k+1,b1+f+k+1)+_tri(st,pos,inward,b0+f+k,b1+f+k+1,b1+f+k)
+	st.generate_normals()
+	_rock_tris = tris
+	return st
+
+## One triangle of the rock, wound to face `inward` (Godot's front faces are
+## clockwise as seen; generate_normals follows the winding).
+static func _tri(st: SurfaceTool, pos: PackedVector3Array, inward: PackedVector3Array, a: int, b: int, c: int) -> int:
+	var nm := inward[a]+inward[b]+inward[c]
+	if (pos[b]-pos[a]).cross(pos[c]-pos[a]).dot(nm) > 0.0:
+		var k := b
+		b = c
+		c = k
+	st.add_index(a)
+	st.add_index(b)
+	st.add_index(c)
+	return 1
 
 ## The greybox torch lines (Tunnels.torch_spots): an iron bracket off the
 ## wall and an unlit glowing flame on it, bigger and whiter on a bend's

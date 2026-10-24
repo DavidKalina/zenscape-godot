@@ -51,6 +51,27 @@ static var CAVE_HALF: float = Sites.HALF+5.0
 const CAVE_VAULT := 22.0
 const CAVE_INSIDE := 6.0
 
+## The caverns' carved rock (knobs): its cross-section a superellipse from
+## the floor's edge on one side over the crown to the other, |x|^n + |y|^n
+## = 1 (n: CAVE_ROUND, rolled along the path; lower is rounder), so the
+## walls rise steeply from the floor and curve into the vault. A hall
+## stretch's tube is the same shape at HALL_ROUND (all but square). The
+## walls swell in and out by ROCK_SWELL m (the vault by VAULT_SWELL) over
+## ROCK_WAVE m along the path; the inside of a bend gets up to CAVE_INSIDE
+## m more room (full where the path turns INSIDE_TURN rad over
+## 2*BEND_LOOK m). The mesh lumps outward only, into the rock (ROCK_LUMP m,
+## noise ROCK_GRAIN m), so the solid (`bore_at`) is never outside what is
+## seen.
+const CAVE_ROUND := Vector2(2.6,3.6)
+const HALL_ROUND := 24.0
+const ROCK_SWELL := 1.8
+const VAULT_SWELL := 2.0
+const ROCK_WAVE := 34.0
+const INSIDE_TURN := 0.1
+const BEND_LOOK := 20.0
+const ROCK_LUMP := 1.4
+const ROCK_GRAIN := 9.0
+
 ## The path: its length (m, rolled), the bends over the run, a bend's
 ## radius (m) and turn (rad), a cavern's straight runs between its bends
 ## and at its ends (m), a hall stretch's fewest bays, the samples' spacing.
@@ -141,6 +162,15 @@ class Site extends RefCounted:
 	var portal_top := PackedFloat32Array([NAN,NAN])
 	var crest_noise: FastNoiseLite
 	var gully: FastNoiseLite
+	## The bore's carved profile at each sample (`ss`): the half width on
+	## the -d and the +d side, the crown over the floor, the roundness
+	## (`profile`); `rock` swells the walls along the path and lumps the
+	## carved rock's mesh.
+	var wn := PackedFloat32Array()
+	var wp := PackedFloat32Array()
+	var vt := PackedFloat32Array()
+	var rn := PackedFloat32Array()
+	var rock: FastNoiseLite
 
 ## The tunnels' density: the world's `tunnels` layer (0: none), then
 ## `--tunnels=X` or `--no-tunnels`.
@@ -250,6 +280,7 @@ static func _build(impl: Object, seed: int, frame: Transform3D, test: bool) -> S
 	t.length = s
 	_sample_path(t)
 	_table(t)
+	_carve_profile(t)
 	# The crest: over the highest land on the path by CREST_OVER at least.
 	var top := t.floor_y
 	var k := 0
@@ -458,24 +489,82 @@ const PORTAL_OUT := 20.0
 const PORTAL_IN := 24.0
 static var PORTAL_HALF: float = HALL_HALF+EDGE+20.0
 
-## The bore's cross-section at distance `s`: Vector2(half width, vault over
-## the floor); a cavern's eased from the hall's over CAVE_END at its ends.
-static func section(t: Site, s: float) -> Vector2:
+## A cavern's ease at distance `s`: 0 in the hall stretches and past the
+## mouths, rising to 1 over CAVE_END inside each cavern's ends.
+static func cave_ease(t: Site, s: float) -> float:
 	for p: Dictionary in t.pieces:
 		if p.kind != "cave" or s <= float(p.s0) or s >= float(p.s1): continue
-		var e := smoothstep(0.0,CAVE_END,minf(s-float(p.s0),float(p.s1)-s))
-		return Vector2(lerpf(HALL_HALF,CAVE_HALF,e),lerpf(HALL_VAULT,CAVE_VAULT,e))
-	return Vector2(HALL_HALF,HALL_VAULT)
+		return smoothstep(0.0,CAVE_END,minf(s-float(p.s0),float(p.s1)-s))
+	return 0.0
 
-## Vector2(floor, roof) (world y) where (x, z) is over the bore's tube (its
-## half width less `grow`; through the portals too), else Vector2(NAN, NAN).
+## The carved profile at every sample of the path (Site wn, wp, vt, rn).
+static func _carve_profile(t: Site) -> void:
+	t.rock = FastNoiseLite.new()
+	t.rock.seed = hash([t.seed,"rock"]) & 0x7fffffff
+	t.rock.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	t.rock.frequency = 1.0/ROCK_WAVE
+	t.rock.fractal_octaves = 2
+	for i in t.ss.size():
+		var s := t.ss[i]
+		var e := cave_ease(t,s)
+		var n := Vector2(-t.tans[i].y,t.tans[i].x)
+		# Turning toward +d: the bend's inside is the +d side.
+		var turn: float = ((at_s(t,minf(s+BEND_LOOK,t.length))[1] as Vector2)-(at_s(t,maxf(s-BEND_LOOK,0.0))[1] as Vector2)).dot(n)
+		var room := CAVE_INSIDE*clampf(absf(turn)/INSIDE_TURN,0.0,1.0)
+		var half := lerpf(HALL_HALF,CAVE_HALF,e)
+		t.wn.append(half+e*(ROCK_SWELL*t.rock.get_noise_2d(s,0.0)+(room if turn < 0.0 else 0.0)))
+		t.wp.append(half+e*(ROCK_SWELL*t.rock.get_noise_2d(s,400.0)+(room if turn > 0.0 else 0.0)))
+		t.vt.append(lerpf(HALL_VAULT,CAVE_VAULT+VAULT_SWELL*t.rock.get_noise_2d(s,800.0),e))
+		t.rn.append(lerpf(HALL_ROUND,lerpf(CAVE_ROUND.x,CAVE_ROUND.y,t.rock.get_noise_2d(s,1200.0)*0.5+0.5),e))
+
+## The bore's carved profile at distance `s`: Vector4(half width on the -d
+## side, on the +d side, the crown over the floor, the roundness n); a
+## hall's past the mouths.
+static func profile(t: Site, s: float) -> Vector4:
+	if s <= 0.0 or s >= t.length or t.wn.is_empty(): return Vector4(HALL_HALF,HALL_HALF,HALL_VAULT,HALL_ROUND)
+	var i := clampi(int(s/STEP),0,t.ss.size()-2)
+	while i < t.ss.size()-2 and t.ss[i+1] < s: i += 1
+	while i > 0 and t.ss[i] > s: i -= 1
+	var a := clampf((s-t.ss[i])/maxf(t.ss[i+1]-t.ss[i],0.0001),0.0,1.0)
+	return Vector4(lerpf(t.wn[i],t.wn[i+1],a),lerpf(t.wp[i],t.wp[i+1],a),lerpf(t.vt[i],t.vt[i+1],a),lerpf(t.rn[i],t.rn[i+1],a))
+
+## The carved rock's height over the floor at offset `d` across, for the
+## profile `pr`: the superellipse's top, or NAN past either wall.
+static func roof_over(pr: Vector4, d: float) -> float:
+	var hw := (pr.x+pr.y)*0.5
+	var x := absf((d-(pr.y-pr.x)*0.5)/hw)
+	if x >= 1.0: return NAN
+	return pr.z*pow(1.0-pow(x,pr.w),1.0/pr.w)
+
+## The profile's point at `th` (0: the +d wall's foot, PI/2 the crown, PI
+## the -d wall's foot): Vector2(offset across, height over the floor), on
+## the superellipse exactly (roof_over agrees there).
+static func profile_point(pr: Vector4, th: float) -> Vector2:
+	var c := cos(th)
+	# The feet exactly on the floor (sin(PI)'s 1e-16 is 0.05 at n 24).
+	var sn := sin(th) if sin(th) > 1e-5 else 0.0
+	var hw := (pr.x+pr.y)*0.5
+	return Vector2((pr.y-pr.x)*0.5+hw*signf(c)*pow(absf(c),2.0/pr.w),pr.z*pow(sn,2.0/pr.w))
+
+## The bore's cross-section at distance `s`: Vector2(the wider side's half
+## width, the crown over the floor).
+static func section(t: Site, s: float) -> Vector2:
+	var pr := profile(t,s)
+	return Vector2(maxf(pr.x,pr.y),pr.z)
+
+## Vector2(floor, roof) (world y) where (x, z) is over the bore's carved
+## tube (through the portals too), else Vector2(NAN, NAN). `grow` reads
+## the roof `grow` m farther from the crown (a wingtip's reach): NAN where
+## that is past the wall.
 static func bore_at(t: Site, x: float, z: float, grow := 0.0) -> Vector2:
 	if not t.box.has_point(Vector2(x,z)): return Vector2(NAN,NAN)
 	var q := local(t,x,z)
 	if q.x < -PORTAL_OUT or q.x > t.length+PORTAL_OUT: return Vector2(NAN,NAN)
-	var c := section(t,q.x)
-	if absf(q.y) > c.x-grow: return Vector2(NAN,NAN)
-	return Vector2(t.floor_y,t.floor_y+c.y)
+	var pr := profile(t,q.x)
+	var mid := (pr.y-pr.x)*0.5
+	var h := roof_over(pr,q.y+(grow if q.y >= mid else -grow))
+	if is_nan(h): return Vector2(NAN,NAN)
+	return Vector2(t.floor_y,t.floor_y+h)
 
 ## Which mouth's portal footprint (x, z) is on: 0 (A), 1 (B) or -1.
 static func portal_at(t: Site, x: float, z: float) -> int:
@@ -590,8 +679,13 @@ static func torch_spots(t: Site) -> Array:
 			var t1: Vector2 = at_s(t,minf(s+6.0,t.length))[1]
 			var turn := (t1-t0).dot(n)
 			var outside := absf(turn) > TORCH_BEND and signf(turn) != side
-			var w := (section(t,on).x if hall.is_empty() else HALL_INNER)-TORCH_IN
-			var p := c+n*side*w
+			# In a cavern, on the carved wall where it stands TORCH_Y high.
+			var off := side*(HALL_INNER-TORCH_IN)
+			if hall.is_empty():
+				var pr := profile(t,on)
+				var x := pow(1.0-pow(minf(TORCH_Y/pr.z,0.99),pr.w),1.0/pr.w)
+				off = (pr.y-pr.x)*0.5+side*((pr.x+pr.y)*0.5*x-TORCH_IN)
+			var p := c+n*off
 			out.append({"pos":Vector3(p.x,t.floor_y+TORCH_Y,p.y),"into":-n*side,"s":on,"side":side,"kind":"outside" if outside else "wall"})
 			s += TORCH_GAP_OUT if outside else TORCH_GAP
 	# The mouths: a big pair on the tube's walls just inside each portal's
