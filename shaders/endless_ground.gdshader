@@ -80,6 +80,8 @@ uniform vec2 carpet_near = vec2(0.0);
 uniform float carpet_near_grain : hint_range(0.0, 1.0) = 0.6;
 uniform vec3 carpet_tone_top = vec3(1.0);
 uniform vec3 carpet_tone_low = vec3(1.0);
+// A world's tone over the turf's own colour wherever tufts stand (the carpet's tone takes over past them; 1: none).
+uniform vec3 carpet_under_tone = vec3(1.0);
 uniform vec2 turf_beach = vec2(2.55, 2.9);
 uniform vec2 turf_slope = vec2(0.905, 0.95);
 uniform vec2 turf_high = vec2(36.0, 58.0);
@@ -503,6 +505,7 @@ void fragment() {
 	float beyond = carpet_reach.y > 0.0 ? clamp((endless_ring_d(CAMERA_POSITION_WORLD, p) - carpet_reach.x) / max(carpet_reach.y - carpet_reach.x, 1.0), 0.0, 1.0) : 1.0;
 	float toned = mix(1.0, beyond, turf);
 	grass *= mix(vec3(1.0), mix(carpet_tone_low, carpet_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
+	grass *= mix(vec3(1.0), carpet_under_tone, turf * (1.0 - toned));
 	float speck_a = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 0) / carpet_grain_sizes.x)) - 0.5;
 	float speck_b = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 1) / carpet_grain_sizes.y)) - 0.5;
 	float speck = speck_a * (1.0 - smoothstep(carpet_grain_sizes.x * 0.5, carpet_grain_sizes.x * 1.2, fp))
@@ -537,6 +540,7 @@ void fragment() {
 		gw *= region;
 		gw = mix(gw, vc / max(luma(vc), 0.01) * luma(gw), vertex_hue * 0.6);
 		gw *= mix(vec3(1.0), mix(carpet_tone_low, carpet_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
+		gw *= mix(vec3(1.0), carpet_under_tone, turf * (1.0 - toned));
 		grass = mix(grass, gw, wk * 0.8);
 		// Washes: warped fields, so their edges wander and bleed.
 		vec2 wq = gxz / wc_scale;
@@ -645,6 +649,7 @@ void fragment() {
 			coarse = mix(coarse, TUNDRA * (1.0 + mid * 0.6), alpine * 0.8);
 			coarse = mix(coarse, OLIVE, thin * 0.7);
 			coarse *= 1.0 + (grain_near + fine * 0.6 + tuft * 0.8) * carpet_near_grain;
+			coarse *= carpet_under_tone;
 			grass = mix(grass, coarse, under);
 		}
 	}

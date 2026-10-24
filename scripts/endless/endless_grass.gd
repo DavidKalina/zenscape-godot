@@ -362,6 +362,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	world = field.world
 	share = float(world.flora_value("grass",share))
 	flowers = bool(world.flora_value("flowers",flowers))
+	tall = clampf(float(world.flora_value("grass_tall",tall)),0.25,6.0)
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--grass="): share = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--grass-range="):
@@ -1053,6 +1054,7 @@ func _far(key: String, ring: Dictionary) -> Material:
 	if far_lod > 0.0: m.set_shader_parameter("far_morph",Vector2(far_lod-FAR_MORPH,far_lod-FAR_LOD_SAFE))
 	_silver(m,"",0.0,true)
 	GrassSheen.apply(m,true)
+	world.apply_far(m)
 	for k: String in _sets.far: m.set_shader_parameter(k,_sets.far[k])
 	_fars[id] = m
 	_ring_mats[m.get_instance_id()] = m

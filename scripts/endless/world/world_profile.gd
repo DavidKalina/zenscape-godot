@@ -84,6 +84,13 @@ func apply_ground(material: ShaderMaterial) -> void:
 	var g: Dictionary = paint.get("ground",{})
 	for k: String in g: material.set_shader_parameter(k,g[k])
 
+## The far tuft ring's uniforms this world sets (paint.far: root_colour,
+## tip_colour...; before --far-set=). Absent: the engine's own.
+func apply_far(material: ShaderMaterial) -> void:
+	if material == null: return
+	var f: Dictionary = paint.get("far",{})
+	for k: String in f: material.set_shader_parameter(k,f[k])
+
 ## The sea's uniforms this world tints (before --sea-set=).
 func apply_sea(material: ShaderMaterial) -> void:
 	if material == null: return
