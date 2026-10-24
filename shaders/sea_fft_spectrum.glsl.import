@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://dl08e1wqogyvp"
+path="res://.godot/imported/sea_fft_spectrum.glsl-1ff1f8493b322a71246272b9f5cde24f.res"
+
+[deps]
+
+source_file="res://shaders/sea_fft_spectrum.glsl"
+dest_files=["res://.godot/imported/sea_fft_spectrum.glsl-1ff1f8493b322a71246272b9f5cde24f.res"]
+
+[params]
+

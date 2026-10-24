@@ -73,6 +73,15 @@ const SKIRT := 6.0
 const SKIRT_MIN := 4.0
 ## The river's flow (m/s) at the ends of CUSTOM0.zw's range.
 const RIVER_FLOW_MAX := 4.0
+## --river-live=1 (docs/design/endless-flight/river-live-handoff.md): each
+## chunk also carries the river's channel frame in CUSTOM2 (RGBA float):
+## xy the channel's direction down the flow (across the signed distance's
+## gradient, turned to the flow), z its curvature signed so that the side
+## of positive distance is the bend's outside where it is positive (the
+## divergence of the distance's unit gradient, 1/m), w the water's width
+## change per metre down the flow. Off, the chunks are as before.
+static func river_live_wanted() -> bool:
+	return "--river-live=1" in preload("res://scripts/launch_args.gd").user_args()
 
 var seed := 0
 var field: RefCounted
@@ -88,6 +97,8 @@ var material: Material
 
 ## ROOT_REACH, or more under --view (view()).
 var root_reach := ROOT_REACH
+## Whether chunks carry the channel frame (river_live_wanted()).
+var river_live := false
 var _chunks := {}          # key -> {node, heights, level, ix, iz}
 var _pending := {}         # key -> true (a task is making it)
 var _queue: Array = []     # keys wanted, not yet asked
@@ -106,6 +117,7 @@ func setup(land_seed: int, ground: Material = null) -> void:
 	field = Field.new(seed)
 	material = ground
 	root_reach = maxi(ROOT_REACH,ceili(ROOT_REACH*view()))
+	river_live = river_live_wanted()
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--land-lead="): lead_time = maxf(0.0,float(a.get_slice("=",1)))
 	if material == null:
@@ -254,11 +266,81 @@ func _build(key: Vector3i, land_seed: int) -> void:
 	# The whole chunk in one call (LandField.build_chunk: native when built,
 	# else the same loops in GDScript).
 	var made: Dictionary = f.build_chunk(x0,z0,step,CELLS,step*SKIRT+SKIRT_MIN,RIVER_FLOW_MAX)
+	if river_live: made.frame = _river_frame(f,made,x0,z0,step)
 	made.key = key
 	made.ms = (Time.get_ticks_usec()-began)/1000.0
 	_done_lock.lock()
 	_done.append(made)
 	_done_lock.unlock()
+
+## The channel frame for CUSTOM2 (see river_live_wanted), from the chunk's
+## river distance and width (CUSTOM1) and a two-sample ring round it read
+## from the field, so the differences are central everywhere and match the
+## neighbouring chunks'. Zeros where no river is near.
+static func _river_frame(f: RefCounted, made: Dictionary, x0: float, z0: float, step: float) -> PackedFloat32Array:
+	var n := CELLS+1
+	var frame := PackedFloat32Array()
+	frame.resize((n*n+4*n)*4)
+	var river: PackedFloat32Array = made.river
+	var carved: PackedByteArray = made.carved
+	var near := false
+	for v in n*n:
+		if river[v*3+1] > 0.05 and absf(river[v*3]) < river[v*3+1]+40.0:
+			near = true
+			break
+	if not near: return frame
+	var m := n+4
+	var rs := PackedFloat32Array()
+	var ws := PackedFloat32Array()
+	rs.resize(m*m)
+	ws.resize(m*m)
+	for j in m:
+		for i in m:
+			var k := j*m+i
+			if i >= 2 and i < n+2 and j >= 2 and j < n+2:
+				var v := (j-2)*n+i-2
+				rs[k] = river[v*3]
+				ws[k] = river[v*3+1]
+			else:
+				f.sample(x0+(i-2)*step,z0+(j-2)*step)
+				rs[k] = clampf(float(f.last_river_r),-1000.0,1000.0)
+				ws[k] = float(f.last_river_w)
+	# The distance's unit gradient over the grid and a one-sample ring.
+	var nx := PackedFloat32Array()
+	var nz := PackedFloat32Array()
+	nx.resize(m*m)
+	nz.resize(m*m)
+	for j in range(1,m-1):
+		for i in range(1,m-1):
+			var k := j*m+i
+			var g := Vector2(rs[k+1]-rs[k-1],rs[k+m]-rs[k-m])
+			if g.length_squared() > 1e-12:
+				g = g.normalized()
+				nx[k] = g.x
+				nz[k] = g.y
+	var h2 := 1.0/(2.0*step)
+	for j in n:
+		for i in n:
+			var v := j*n+i
+			if river[v*3+1] <= 0.05 or absf(river[v*3]) > river[v*3+1]+40.0: continue
+			var k := (j+2)*m+i+2
+			var t := Vector2(-nz[k],nx[k])
+			var flow := Vector2(carved[v*4+2]/255.0*2.0-1.0,carved[v*4+3]/255.0*2.0-1.0)
+			if t.dot(flow) < 0.0: t = -t
+			var bend := ((nx[k+1]-nx[k-1])+(nz[k+m]-nz[k-m]))*h2
+			var widen := Vector2(ws[k+1]-ws[k-1],ws[k+m]-ws[k-m])*h2
+			frame[v*4] = t.x
+			frame[v*4+1] = t.y
+			frame[v*4+2] = clampf(bend,-0.2,0.2)
+			frame[v*4+3] = clampf(widen.dot(t),-1.0,1.0)
+	# The skirt: its edge's frame.
+	var edges := _edges()
+	for e in 4:
+		for t in n:
+			var from: int = edges[e][t]
+			var v := n*n+e*n+t
+			for c in 4: frame[v*4+c] = frame[from*4+c]
+	return frame
 
 ## The grid's vertex index along each edge, in order: -z, +x, +z, -x.
 static func _edges() -> Array:
@@ -316,8 +398,12 @@ func _commit() -> bool:
 		arrays[Mesh.ARRAY_CUSTOM0] = r.carved
 		arrays[Mesh.ARRAY_CUSTOM1] = r.river
 		arrays[Mesh.ARRAY_INDEX] = _indices
+		var format := (Mesh.ARRAY_CUSTOM_RGBA8_UNORM << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)|(Mesh.ARRAY_CUSTOM_RGB_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT)
+		if r.has("frame"):
+			arrays[Mesh.ARRAY_CUSTOM2] = r.frame
+			format |= Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM2_SHIFT
 		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},(Mesh.ARRAY_CUSTOM_RGBA8_UNORM << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)|(Mesh.ARRAY_CUSTOM_RGB_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT))
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},format)
 		mesh.surface_set_material(0,material)
 		var node := MeshInstance3D.new()
 		node.name = "Land_%d_%d_%d" % [key.x,key.y,key.z]

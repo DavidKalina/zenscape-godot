@@ -16,7 +16,7 @@ const TEXELS := 1024
 const SIDE := 512.0
 ## How far ahead of the eye the square's middle sits, as a share of SIDE.
 const AHEAD := 0.28
-const FLOATS := 36
+const FLOATS := 48
 
 ## The two halves of the ping-pong: a frame reads one and writes the other;
 ## `side` says which holds the newest.
@@ -35,8 +35,13 @@ var _bytes := PackedByteArray()
 var _from := 0
 var _pending := false
 var camera: Camera3D
+## The FFT cascades (sea_fft 1, scripts/endless/sea_fft.gd), whose folds lay
+## the foam instead of the Gerstner wind sea's crests; null without them.
+var fft: RefCounted
+var _stand_in := RID()
 
-func _init() -> void:
+func _init(cascades: RefCounted = null) -> void:
+	fft = cascades
 	effect_callback_type = EFFECT_CALLBACK_TYPE_PRE_OPAQUE
 	needs_motion_vectors = false
 	_rd = RenderingServer.get_rendering_device()
@@ -77,8 +82,30 @@ func _allocate() -> void:
 		o.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
 		o.binding = 2
 		o.add_id(_tex[1-i])
-		_sets[i] = _rd.uniform_set_create([b,s,o],_shader,0)
+		_sets[i] = _rd.uniform_set_create([b,s,o,_fold(3,0),_fold(4,2)],_shader,0)
 		textures[i].texture_rd_rid = _tex[i]
+
+## The FFT maps' mip `mip` as image `binding` (a blank stand-in without them).
+func _fold(binding: int, mip: int) -> RDUniform:
+	var rid := RID()
+	if fft != null and fft.ready(): rid = fft.mip_view(mip)
+	if not rid.is_valid():
+		if not _stand_in.is_valid():
+			var f := RDTextureFormat.new()
+			f.texture_type = RenderingDevice.TEXTURE_TYPE_2D_ARRAY
+			f.width = 4
+			f.height = 4
+			f.array_layers = 6
+			f.format = RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT
+			f.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT
+			_stand_in = _rd.texture_create(f,RDTextureView.new())
+			_rd.texture_clear(_stand_in,Color(0,0,0,0),0,1,0,6)
+		rid = _stand_in
+	var u := RDUniform.new()
+	u.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	u.binding = binding
+	u.add_id(rid)
+	return u
 
 ## One frame. `eye` and `facing` place the square; `time` is the sea's clock
 ## (zs_flow_time); `knobs` the material's values the crests and the flow
@@ -113,7 +140,10 @@ func step(delta: float, eye: Vector3, facing: Vector3, time: float, knobs: Dicti
 		caps.x,caps.y,caps.z,spread.y,
 		flow.x,flow.y,flow.z,flow.w,
 		wake.x,wake.y,wake.z,wake.w,
-		Vector3(knobs.foam_caps).x,Vector3(knobs.foam_caps).y,Vector3(knobs.foam_caps).z,0.0])
+		Vector3(knobs.foam_caps).x,Vector3(knobs.foam_caps).y,Vector3(knobs.foam_caps).z,0.0,
+		Vector3(knobs.fft_sizes).x,Vector3(knobs.fft_sizes).y,1.0 if int(knobs.sea_fft) > 0 and fft != null else 0.0,0.0,
+		Vector3(knobs.fft_foam).x,Vector3(knobs.fft_foam).y,Vector3(knobs.fft_foam).z,0.0,
+		Vector2(knobs.fft_patch).x,Vector2(knobs.fft_patch).y,Vector3(knobs.fft_strength).x,Vector3(knobs.fft_strength).y])
 	_before = origin
 	_bytes = p.to_byte_array()
 	_from = side
@@ -157,5 +187,5 @@ func free_buffers() -> void:
 	RenderingServer.call_on_render_thread(_free)
 
 func _free() -> void:
-	for rid: RID in [_sets[0],_sets[1],_pipeline,_shader,_params]:
+	for rid: RID in [_sets[0],_sets[1],_pipeline,_shader,_params,_stand_in]:
 		if rid.is_valid(): _rd.free_rid(rid)

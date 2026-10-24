@@ -20,6 +20,9 @@ render_mode blend_mix, depth_draw_always, cull_back, unshaded, shadows_disabled;
 // - Whitecaps that linger (sea_foam 1): a dense cap on the breaking crest,
 //   then the foam it leaves, kept in a buffer round the eye
 //   (shaders/endless_sea_foam.glsl), opening into marbled lace and fading.
+// - The FFT sea (sea_fft 1, `--sea-fft=1`): the wind sea and its chop as
+//   Tessendorf cascades (scripts/endless/sea_fft.gd) in place of Gerstner
+//   waves 5..10, the noise layers and the wavelets.
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
@@ -132,6 +135,34 @@ uniform vec3 foam_caps = vec3(0.42, 0.4, 0.5);
 uniform vec4 foam_flow = vec4(0.45, 0.35, 14.0, 0.9);
 uniform vec2 foam_spread = vec2(0.03, 0.3);
 uniform vec4 foam_lace = vec4(2.8, 1.0, 1.0, 1.0);
+
+// The FFT sea (EndlessSea `--sea-fft=1`, scripts/endless/sea_fft.gd): the
+// wind sea and its chop as Tessendorf cascades, tiles `fft_sizes` m, in
+// `fft_maps` (layer c: the shove xyz and dDx/dz; layer 3 + c: the height's
+// slope and the shove's stretch dDx/dx, dDz/dz; with mips). The Gerstner sum
+// keeps only the swell trains (waves 0..4), and they alone are mirrored on
+// the CPU. Each cascade at `fft_strength`, all scaled by the slicks and
+// rough stretches (`fft_patch`: slick, rough), the finer two also by the
+// wind's paws (`fft_air` of zs_sea_air's swing). The heave (cascades 0 and 1,
+// `fft_heave` of it) reaches as far as the body's. Past the pixel each
+// cascade's lost slope (`fft_slope_var` over its band, `fft_band_long` ..
+// `fft_band_short` m) turns into roughness. Fresh caps stand where the fold
+// (1 - the Jacobian of cascades 0 and 1) passes `fft_foam.x`, full by `.y`,
+// times `.z`; the foam buffer lays its trail at the same folds; far off,
+// where the folds are finer than the pixel, `fft_far_foam` (cover in the
+// rough, in a slick) stands in.
+uniform int sea_fft = 0;
+uniform sampler2DArray fft_maps : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform vec3 fft_sizes = vec3(250.0, 37.0, 5.7);
+uniform vec3 fft_strength = vec3(1.0, 0.85, 0.45);
+uniform vec2 fft_patch = vec2(0.55, 1.25);
+uniform float fft_air = 0.7;
+uniform float fft_heave = 1.0;
+uniform vec3 fft_slope_var = vec3(0.0);
+uniform vec3 fft_band_long = vec3(250.0, 6.2, 0.95);
+uniform vec3 fft_band_short = vec3(6.2, 0.95, 0.05);
+uniform vec3 fft_foam = vec3(0.25, 0.55, 1.2);
+uniform vec2 fft_far_foam = vec2(0.05, 0.01);
 
 // The land's height (world y) over a square round the eye: corner xz, side,
 // on (EndlessSea `_depth`).
@@ -369,7 +400,10 @@ vec2 zs_swell_body(vec2 p, float t, float footprint, bool foamy, float analytic,
 	vec2 dirs[11];
 	float ks[11], amps[11], phases[11], steeps[11];
 	float total = 0.0;
+	// The FFT sea (sea_fft 1) keeps only the swell trains here.
+	int count = sea_fft > 0 ? 5 : BODY;
 	for (int i = 0; i < BODY; i++) {
+		if (i >= count) break;
 		int train = BODY_TRAIN[i];
 		vec2 h = train == 0 ? h0 : (train == 1 ? h1 : hw);
 		float c = cos(BODY_TURN[i]), s = sin(BODY_TURN[i]);
@@ -402,6 +436,7 @@ vec2 zs_swell_body(vec2 p, float t, float footprint, bool foamy, float analytic,
 	rough = 0.0;
 	caps = 0.0;
 	for (int i = 0; i < BODY; i++) {
+		if (i >= count) break;
 		float L = BODY_LENGTH[i];
 		float held = 1.0 - smoothstep(L * 0.06, L * 0.18, footprint);
 		vec2 d = dirs[i];
@@ -415,7 +450,7 @@ vec2 zs_swell_body(vec2 p, float t, float footprint, bool foamy, float analytic,
 	}
 	// The whitecaps, apart from the heave (one pass over the wind sea's
 	// waves 5..8; kept out of the loop above so the shader compiles fast).
-	if (foamy) {
+	if (foamy && sea_fft == 0) {
 		for (int i = 5; i <= 8; i++) {
 			float L = BODY_LENGTH[i];
 			vec2 d = dirs[i];
@@ -472,6 +507,74 @@ vec2 zs_swell_body(vec2 p, float t, float footprint, bool foamy, float analytic,
 	if (foamy) caps = max(caps, smoothstep(0.24, 0.08, jac) * patch * (0.25 + 0.75 * gust) * min(whitecaps.x, 1.0));
 	float det = max(jac, 0.1);
 	return vec2(j.y * slope.x - j.z * slope.y, j.x * slope.y - j.z * slope.x) / det;
+}
+
+// Where the wind gusts hardest (zs_swell_body's clumps of whitecaps).
+float zs_body_gust(vec2 p, float t) {
+	vec2 hw = normalize(body_wind);
+	vec2 gp = (p - hw * t * 2.0) / 55.0;
+	return smoothstep(0.45, 0.8, zs_body_noise(gp + vec2(9.1, 3.7)) * 0.7 + zs_body_noise(gp * 2.7 + vec2(1.3, 8.8)) * 0.3);
+}
+
+const float FFT_N = 256.0;
+
+// Cascade `c`'s map coordinates at rest xz `p` (layer c; + 3 for slopes).
+vec3 zs_fft_uv(vec2 p, int c) {
+	return vec3(p / fft_sizes[c] + 0.5 / FFT_N, float(c));
+}
+
+// The FFT sea's heave at rest xz `p` on a sheet of `cell` m cells: cascades
+// 0 and 1 (the finest is finer than any vertex), each at the mip its cells
+// can hold, scaled by `scale`.
+vec3 zs_fft_heave(vec2 p, float cell, float scale) {
+	vec3 s = vec3(0.0);
+	for (int c = 0; c < 2; c++) {
+		float lod = log2(max(cell * 2.0 * FFT_N / fft_sizes[c], 1.0));
+		s += textureLod(fft_maps, zs_fft_uv(p, c), lod).xyz * fft_strength[c];
+	}
+	return s * scale * fft_heave;
+}
+
+// The FFT sea's surface at rest xz `p`: the slope of its coarse cascade
+// (`wave`, the wind sea) and of the finer two (returned, the chop), the
+// Jacobian of all three (`jac`) and of the two the foam reads (`fold`), the
+// height (`height`) and the slope variance the mips have smoothed away past
+// the pixel (`lost`). `scale` the slicks' and rough stretches', `air` the
+// wind's paws (zs_sea_air).
+vec2 zs_fft_surface(vec2 p, float footprint, float scale, float air, out vec2 wave, out float jac, out float fold, out float height, out float lost) {
+	float dxx = 0.0, dzz = 0.0, dxz = 0.0;
+	float fxx = 0.0, fzz = 0.0, fxz = 0.0;
+	vec2 dh = vec2(0.0);
+	wave = vec2(0.0);
+	height = 0.0;
+	lost = 0.0;
+	for (int c = 0; c < 3; c++) {
+		float base = fft_strength[c] * scale;
+		float sc = base * (c > 0 ? mix(1.0, air, fft_air) : 1.0);
+		vec3 uv = zs_fft_uv(p, c);
+		vec4 a = texture(fft_maps, uv);
+		vec4 b = texture(fft_maps, vec3(uv.xy, float(c + 3)));
+		if (c == 0) wave = b.xy * sc; else dh += b.xy * sc;
+		dxx += b.z * sc;
+		dzz += b.w * sc;
+		dxz += a.w * sc;
+		height += a.y * sc;
+		if (c < 2) {
+			fxx += b.z * base;
+			fzz += b.w * base;
+			fxz += a.w * base;
+		}
+		// The share of the band finer than the pixel (the slope's variance is
+		// about even per octave of a wind sea's tail).
+		float gone = clamp(log(max(2.0 * footprint / fft_band_short[c], 1.0)) / log(max(fft_band_long[c] / fft_band_short[c], 1.001)), 0.0, 1.0);
+		lost += fft_slope_var[c] * sc * sc * gone;
+	}
+	jac = (1.0 + dxx) * (1.0 + dzz) - dxz * dxz;
+	fold = (1.0 + fxx) * (1.0 + fzz) - fxz * fxz;
+	// The slope of the shoved sheet: steeper where the shove bunches it.
+	vec2 bunch = 1.0 / max(vec2(1.0 + dxx, 1.0 + dzz), vec2(0.3));
+	wave *= bunch;
+	return dh * bunch;
 }
 
 // The Gerstner swells at `p` (rest xz): the sideways shove and rise
@@ -832,6 +935,7 @@ void vertex() {
 		float jac, caps;
 		vec2 trail;
 		zs_swell_body(world.xz, zs_flow_time, cell * 0.6, false, 0.0, shift, jac, rough, caps, trail);
+		if (sea_fft > 0) shift += zs_fft_heave(world.xz, cell, mix(fft_patch.x, fft_patch.y, zs_body_rough(world.xz, zs_flow_time)));
 	} else {
 		zs_swell(world.xz, zs_flow_time, cell, shift, crest, rough);
 	}
@@ -872,7 +976,31 @@ void fragment() {
 	slope *= 1.0 - still;
 	shift *= 1.0 - still;
 	crest *= 1.0 - still;
-	vec2 detail = zs_chop(rest_xz, t, air, footprint, chop_rough);
+	vec2 detail;
+	// The FFT sea (sea_fft 1): the wind sea's slope joins the swell's, the
+	// finer cascades are the chop, and the folds make the fresh caps.
+	float fft_jac = 1.0;
+	if (sea_fft > 0) {
+		float rough_patch = zs_body_rough(rest_xz, t);
+		vec2 wave;
+		float fold, height;
+		detail = zs_fft_surface(rest_xz, footprint, mix(fft_patch.x, fft_patch.y, rough_patch), air, wave, fft_jac, fold, height, chop_rough) * (1.0 - still);
+		slope += wave * (1.0 - still);
+		shift.y += height * (1.0 - still);
+		jac *= mix(clamp(fft_jac, 0.0, 1.5), 1.0, still);
+		float gust = zs_body_gust(rest_xz, t);
+		// Ragged edges: the fold's outline wanders with a finer noise.
+		float ragged = zs_body_noise(rest_xz / 1.7 + vec2(3.1, 0.4)) * 0.6 + zs_body_noise(rest_xz / 0.6 + vec2(7.7, 2.2)) * 0.4;
+		ragged = mix(0.5, ragged, 1.0 - smoothstep(0.15, 0.6, footprint));
+		float fresh = clamp(smoothstep(fft_foam.x, fft_foam.y, 1.0 - fold + (ragged - 0.5) * 0.3) * fft_foam.z, 0.0, 1.0) * (foam_caps.y + (1.0 - foam_caps.y) * gust) * (1.0 - still);
+		// Far off the folds are finer than the pixel: their mean cover.
+		float fine = 1.0 - smoothstep(fft_band_short.x, fft_band_long.x * 0.25, footprint * 4.0);
+		float far = mix(fft_far_foam.y, fft_far_foam.x, rough_patch) * (0.5 + gust);
+		caps = max(caps, mix(far * 0.5, fresh, fine));
+		trail = vec2(mix(far, fresh * 0.9, fine), fresh * fine);
+	} else {
+		detail = zs_chop(rest_xz, t, air, footprint, chop_rough);
+	}
 	vec2 wake_slope;
 	float stirred;
 	float waked = zs_wake(rest_xz, wake_slope, stirred);

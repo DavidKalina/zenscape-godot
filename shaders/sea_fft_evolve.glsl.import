@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://cahb4jnu4teyu"
+path="res://.godot/imported/sea_fft_evolve.glsl-ed2b589accc7f60f87521fd1e43292b1.res"
+
+[deps]
+
+source_file="res://shaders/sea_fft_evolve.glsl"
+dest_files=["res://.godot/imported/sea_fft_evolve.glsl-ed2b589accc7f60f87521fd1e43292b1.res"]
+
+[params]
+
