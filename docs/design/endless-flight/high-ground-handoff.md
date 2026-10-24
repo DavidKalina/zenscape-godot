@@ -20,5 +20,11 @@ Smoke: endless_flight.tscn PASS, 0 errors. No tests reference EndlessGrass; none
 2026-10-24: `TUFT_TOP` raised to 160 m (rise rate 1.64): the grass vanished too
 soon from a little height. Now the near carpet goes by about 38 m (was 28), the far
 tufts start to thin around 110 m (was 60) and are gone by 160 m (was 80).
+Then to 240 m: the rise rate is now LOD.w/(tuft_top-FLAT_UP) itself (1.05), no
+longer floored at RISE, which had capped any --tuft-top at about 164 m. The near
+carpet goes by about 48 m, the far tufts thin from about 160 m. GPU cost over the
+80 m ceiling (RTX 4070 SUPER, 1440x900, fixed eye over a meadow; runs vary about
+1 ms): +1.6 ms at 60 m, +2.9 at 120, +1.0 at 180, none at 10 or 240+. Grass from
+height never draws more triangles than skimming a meadow (5.0 M at most vs 8.0 M).
 
 Not tuned: streak/patch strengths (0.30/0.34/0.30 in the block after `speck`).
