@@ -101,6 +101,42 @@ const TOY_VALLEY := 50.0
 const VALLEY_SWING := Vector2(0.75,1.7)
 const VALLEY_SIDE := Vector2(300.0,150.0)
 const VALLEY_KEEP := 0.08
+## The built land's forms (overgrown-land-handoff.md), each off (0) unless a
+## world's recipe turns it on, so a world without them grows bit for bit as
+## before.
+## Cut ridges: RIDGE_CRISP blends the ranges' rounded massif toward a gable
+## (sharp crest, straight flanks, the ridged noise only a ripple on it); NOTCH
+## the depth (share of the range's height) of clean flat-floored notches where
+## the zero lines of a noise (NOTCH_SCALE m) cross a crest, NOTCH_WIDTH their
+## floor and lip (|noise|).
+const RIDGE_CRISP := 0.0
+const NOTCH := 0.0
+const NOTCH_SCALE := 1300.0
+const NOTCH_WIDTH := Vector2(0.025,0.07)
+## Terraces on the hills (and a range's lower flanks): TERRACE their strength,
+## a tread every TERRACE_STEP m of height, TERRACE_FLAT of each step the tread
+## (the rest the riser), where a mask noise (TERRACE_SCALE m) rises through
+## TERRACE_BAND.
+const TERRACE := 0.0
+const TERRACE_STEP := 5.0
+const TERRACE_FLAT := 0.65
+const TERRACE_SCALE := 1500.0
+const TERRACE_BAND := Vector2(-0.15,0.2)
+## Mesas: tablelands MESA_TALL m over the lowland (MESA strength 0..1), where
+## a noise (MESA_SCALE m) stands over MESA_LEVEL, their walls MESA_EDGE of the
+## noise wide (sheer), in MESA_STEPS tiers MESA_GAP of the noise apart (a
+## ledge between), their tops keeping MESA_KEEP of the hills; only where a
+## broad mask (MESA_MASK m) rises through MESA_BAND, away from the ranges.
+const MESA := 0.0
+const MESA_TALL := 50.0
+const MESA_SCALE := 800.0
+const MESA_LEVEL := 0.3
+const MESA_EDGE := 0.035
+const MESA_STEPS := 2.0
+const MESA_GAP := 0.12
+const MESA_KEEP := 0.12
+const MESA_MASK := 3800.0
+const MESA_BAND := Vector2(-0.1,0.25)
 ## The coast: the beach's height band over the sea (m).
 const BEACH := 2.2
 ## Snow from SNOW m over the sea, on what is no steeper than the shader's.
@@ -254,7 +290,26 @@ static func recipe_defaults() -> Dictionary:
 		"valley_swing":VALLEY_SWING,
 		"valley_side":VALLEY_SIDE,
 		"valley_keep":VALLEY_KEEP,
-		"snow":SNOW}
+		"snow":SNOW,
+		"ridge_crisp":RIDGE_CRISP,
+		"notch":NOTCH,
+		"notch_scale":NOTCH_SCALE,
+		"notch_width":NOTCH_WIDTH,
+		"terrace":TERRACE,
+		"terrace_step":TERRACE_STEP,
+		"terrace_flat":TERRACE_FLAT,
+		"terrace_scale":TERRACE_SCALE,
+		"terrace_band":TERRACE_BAND,
+		"mesa":MESA,
+		"mesa_tall":MESA_TALL,
+		"mesa_scale":MESA_SCALE,
+		"mesa_level":MESA_LEVEL,
+		"mesa_edge":MESA_EDGE,
+		"mesa_steps":MESA_STEPS,
+		"mesa_gap":MESA_GAP,
+		"mesa_keep":MESA_KEEP,
+		"mesa_mask_scale":MESA_MASK,
+		"mesa_band":MESA_BAND}
 
 ## --- The field --------------------------------------------------------------
 ## LandField is the public face: the same members and methods as ever, each
@@ -269,7 +324,11 @@ static func recipe_defaults() -> Dictionary:
 ## The native field's version this script calls (ZenScapeLandField `version`):
 ## 2 takes the world's land recipe in `configure`; 1 (a library not yet
 ## rebuilt) is still used for the stock recipe (`native_available`).
-const NATIVE_VERSION := 2
+## 3 also takes the built land's forms (V3_KEYS); a version-2 library still
+## grows a recipe that leaves them off.
+const NATIVE_VERSION := 3
+const V3_KEYS := ["ridge_crisp","notch","notch_scale","notch_width","terrace","terrace_step","terrace_flat","terrace_scale","terrace_band",
+	"mesa","mesa_tall","mesa_scale","mesa_level","mesa_edge","mesa_steps","mesa_gap","mesa_keep","mesa_mask_scale","mesa_band"]
 const NATIVE_CLASS := &"ZenScapeLandField"
 static var _native_state := -1
 static var _native_lock := Mutex.new()
@@ -387,7 +446,7 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	world = profile if profile != null else WorldProfile.current()
 	var k: Dictionary = (world.land as Dictionary).duplicate()
 	k.floor_half = WorldScale.opening(TOY_VALLEY)*0.5
-	var need := 1 if _stock(k) else 2
+	var need := _need(k)
 	var want_native := true
 	for arg: String in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--mountains="): k.mountains = maxf(0.0,float(arg.get_slice("=",1)))
@@ -424,6 +483,15 @@ static func _stock(k: Dictionary) -> bool:
 	for key: String in d:
 		if k.has(key) and k[key] != d[key]: return false
 	return true
+
+## The native library version the knobs `k` need: 1 the stock recipe, 2 a
+## recipe of its own, 3 one with the built land's forms (V3_KEYS).
+static func _need(k: Dictionary) -> int:
+	if _stock(k): return 1
+	var d := recipe_defaults()
+	for key: String in V3_KEYS:
+		if k.has(key) and k[key] != d[key]: return 3
+	return 2
 
 ## Whether the native field is built and at least version `need` (checked
 ## once): version 2 takes the world's recipe in `configure`; a version-1
@@ -709,6 +777,32 @@ class GDField extends RefCounted:
 	var r_valley_side: Vector2 = VALLEY_SIDE
 	var r_valley_keep: float = VALLEY_KEEP
 	var r_snow: float = SNOW
+	var r_ridge_crisp: float = RIDGE_CRISP
+	var r_notch: float = NOTCH
+	var r_notch_scale: float = NOTCH_SCALE
+	var r_notch_width: Vector2 = NOTCH_WIDTH
+	var r_terrace: float = TERRACE
+	var r_terrace_step: float = TERRACE_STEP
+	var r_terrace_flat: float = TERRACE_FLAT
+	var r_terrace_scale: float = TERRACE_SCALE
+	var r_terrace_band: Vector2 = TERRACE_BAND
+	var r_mesa: float = MESA
+	var r_mesa_tall: float = MESA_TALL
+	var r_mesa_scale: float = MESA_SCALE
+	var r_mesa_level: float = MESA_LEVEL
+	var r_mesa_edge: float = MESA_EDGE
+	var r_mesa_steps: float = MESA_STEPS
+	var r_mesa_gap: float = MESA_GAP
+	var r_mesa_keep: float = MESA_KEEP
+	var r_mesa_mask: float = MESA_MASK
+	var r_mesa_band: Vector2 = MESA_BAND
+	var _notch := FastNoiseLite.new()
+	var _terrace := FastNoiseLite.new()
+	var _mesa := FastNoiseLite.new()
+	var _mesa_mask := FastNoiseLite.new()
+	## How much of a mesa stands at the last `_broad` point (0..1), which
+	## the carve reads as rock as it reads a range (`_rock`, the larger).
+	var _rock := 0.0
 	var _continent := FastNoiseLite.new()
 	var _hills := FastNoiseLite.new()
 	var _mask := FastNoiseLite.new()
@@ -850,6 +944,29 @@ class GDField extends RefCounted:
 		r_valley_side = Vector2(k.get("valley_side",r_valley_side))
 		r_valley_keep = float(k.get("valley_keep",r_valley_keep))
 		r_snow = float(k.get("snow",r_snow))
+		r_ridge_crisp = float(k.get("ridge_crisp",r_ridge_crisp))
+		r_notch = float(k.get("notch",r_notch))
+		r_notch_scale = float(k.get("notch_scale",r_notch_scale))
+		r_notch_width = Vector2(k.get("notch_width",r_notch_width))
+		r_terrace = float(k.get("terrace",r_terrace))
+		r_terrace_step = float(k.get("terrace_step",r_terrace_step))
+		r_terrace_flat = float(k.get("terrace_flat",r_terrace_flat))
+		r_terrace_scale = float(k.get("terrace_scale",r_terrace_scale))
+		r_terrace_band = Vector2(k.get("terrace_band",r_terrace_band))
+		r_mesa = float(k.get("mesa",r_mesa))
+		r_mesa_tall = float(k.get("mesa_tall",r_mesa_tall))
+		r_mesa_scale = float(k.get("mesa_scale",r_mesa_scale))
+		r_mesa_level = float(k.get("mesa_level",r_mesa_level))
+		r_mesa_edge = float(k.get("mesa_edge",r_mesa_edge))
+		r_mesa_steps = float(k.get("mesa_steps",r_mesa_steps))
+		r_mesa_gap = float(k.get("mesa_gap",r_mesa_gap))
+		r_mesa_keep = float(k.get("mesa_keep",r_mesa_keep))
+		r_mesa_mask = float(k.get("mesa_mask_scale",r_mesa_mask))
+		r_mesa_band = Vector2(k.get("mesa_band",r_mesa_band))
+		_noise(_notch,19,r_notch_scale,1,FastNoiseLite.FRACTAL_NONE)
+		_noise(_terrace,20,r_terrace_scale,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_mesa,21,r_mesa_scale,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_mesa_mask,22,r_mesa_mask,1,FastNoiseLite.FRACTAL_NONE)
 		_noise(_continent,1,r_continent,3,FastNoiseLite.FRACTAL_FBM)
 		_noise(_hills,2,r_hills,4,FastNoiseLite.FRACTAL_FBM)
 		_noise(_mask,3,MOUNTAINS if old_land else r_range_mask,2,FastNoiseLite.FRACTAL_FBM)
@@ -896,7 +1013,9 @@ class GDField extends RefCounted:
 		var rk := _river_k
 		var rm := _river_mouth
 		var rb := _river_bed
-		if carve > 0.0 and last_mountain > CARVE_MOUNTAIN.x and detail < CARVE_DETAIL_OFF:
+		# A mesa's walls are carved as a range's are (`_rock`; 0 without mesas).
+		var rock := maxf(last_mountain,_rock)
+		if carve > 0.0 and rock > CARVE_MOUNTAIN.x and detail < CARVE_DETAIL_OFF:
 			# The carve samples the broad land around; `shape` keeps this point's.
 			var k_mountain := last_mountain
 			var k_inland := last_inland
@@ -904,7 +1023,7 @@ class GDField extends RefCounted:
 			var k_half := last_half
 			var k_side := last_side
 			var k_across := last_across
-			s.x = _carve(x,z,s.x,s.y,k_mountain,_floor)
+			s.x = _carve(x,z,s.x,s.y,rock,_floor)
 			last_mountain = k_mountain
 			last_inland = k_inland
 			last_valley = k_valley
@@ -1000,7 +1119,8 @@ class GDField extends RefCounted:
 			if where > 0.0:
 				var wx := x+_warp.get_noise_2d(x,z)*r_warp_move
 				var wz := z+_warp.get_noise_2d(x+7919.0,z-3301.0)*r_warp_move
-				var off := absf(_range.get_noise_2d(wx,wz))/r_range_width
+				var rn := _range.get_noise_2d(wx,wz)
+				var off := absf(rn)/r_range_width
 				if off < 1.0:
 					var crest := 1.0-off
 					crest = crest*crest*(3.0-2.0*crest)
@@ -1008,11 +1128,62 @@ class GDField extends RefCounted:
 					var tall := lerpf(r_peak_tall.x,r_peak_tall.y,clampf(_peak.get_noise_2d(x,z)*0.9+0.5,0.0,1.0))*peaks
 					var ridge := _ridges.get_noise_2d(x,z)*0.5+0.5
 					# A massif under the ridged crests; the ridges rise with it.
-					h += tall*(0.4*pow(mountain,1.4)+0.75*ridge*ridge*mountain*mountain)
+					var add := tall*(0.4*pow(mountain,1.4)+0.75*ridge*ridge*mountain*mountain)
+					if r_ridge_crisp > 0.0:
+						# A gable: straight flanks up to a sharp crest (the
+						# crest line's own V), the foot eased, the ridges a ripple.
+						var a := 1.0-off
+						var gable := tall*where*a*smoothstep(0.0,0.35,a)*(0.8+0.35*ridge)
+						add = lerpf(add,gable,minf(r_ridge_crisp,1.0))
+					if r_notch > 0.0:
+						# A notch where a zero line crosses the crest: a flat floor
+						# and steep sides; none where the line runs along the crest
+						# (the two noises' slopes near parallel).
+						var ns := _notch.get_noise_2d(x,z)
+						var nn := absf(ns)
+						if nn < r_notch_width.y:
+							var e := 8.0
+							var ngx := _notch.get_noise_2d(x+e,z)-ns
+							var ngz := _notch.get_noise_2d(x,z+e)-ns
+							var rgx := _range.get_noise_2d(wx+e,wz)-rn
+							var rgz := _range.get_noise_2d(wx,wz+e)-rn
+							var dn := sqrt((ngx*ngx+ngz*ngz)*(rgx*rgx+rgz*rgz))
+							var along := absf(ngx*rgx+ngz*rgz)/dn if dn > 0.0 else 1.0
+							add *= 1.0-minf(r_notch,1.0)*(1.0-smoothstep(r_notch_width.x,r_notch_width.y,nn))*(1.0-smoothstep(0.45,0.8,along))
+					h += add
+		if r_terrace > 0.0 and inland > 0.0:
+			# Terraces: treads every r_terrace_step m of height, short risers.
+			var tm := smoothstep(r_terrace_band.x,r_terrace_band.y,_terrace.get_noise_2d(x,z))*inland*(1.0-smoothstep(0.3,0.8,mountain))*minf(r_terrace,1.0)
+			if tm > 0.0:
+				var ty := h/r_terrace_step
+				var tf := ty-floorf(ty)
+				var stepped := (floorf(ty)+smoothstep(r_terrace_flat,1.0,tf))*r_terrace_step
+				h = lerpf(h,stepped,tm)
 		var meadow := smoothstep(r_meadow_band.x,r_meadow_band.y,_meadows.get_noise_2d(x,z))*inland*(1.0-smoothstep(0.0,0.35,mountain))
 		if meadow > 0.0:
 			var flat := maxf(base+hills*r_meadow_keep,r_meadow_above)
 			h = lerpf(h,flat,meadow)
+		# Mesas: flat tops r_mesa_tall m over the lowland, sheer walls in tiers.
+		var mesa := 0.0
+		if r_mesa > 0.0 and inland > 0.0:
+			var region := smoothstep(r_mesa_band.x,r_mesa_band.y,_mesa_mask.get_noise_2d(x,z))*smoothstep(0.0,0.25,inland)*(1.0-smoothstep(0.05,0.3,mountain))*minf(r_mesa,1.0)
+			if region > 0.0:
+				# Out of the region they shrink to nothing rather than sink.
+				var lv := r_mesa_level+(1.0-region)*1.2
+				var mn := _mesa.get_noise_2d(x,z)
+				if mn > lv:
+					var tiers := maxf(floorf(r_mesa_steps),1.0)
+					var wall := 0.0
+					for t in int(tiers):
+						var at := lv+t*r_mesa_gap
+						var st := smoothstep(at,at+r_mesa_edge,mn)
+						mesa += st/tiers
+						wall = maxf(wall,1.0-absf(2.0*st-1.0))
+					var top := base+hills*r_mesa_keep+r_mesa_tall*mesa
+					h = lerpf(h,maxf(top,r_meadow_above),minf(mesa*tiers,1.0))
+					# The walls bare (no turf), the tops a meadow to land on.
+					meadow = maxf(meadow*(1.0-smoothstep(0.0,0.3,wall)),smoothstep(0.9,1.0,mesa)*inland)
+		_rock = mesa
 		# The valleys: carved along the zero lines of a warped noise, their
 		# distance read from the noise over its slope.
 		last_river_r = INF
@@ -1032,7 +1203,8 @@ class GDField extends RefCounted:
 			var gz := (_valley.get_noise_2d(vx,vz+e)-v)/e
 			var d := absf(v)/maxf(sqrt(gx*gx+gz*gz),0.25/r_valleys)
 			var half := _floor_half*lerpf(r_valley_swing.x,r_valley_swing.y,clampf(_valley_wide.get_noise_2d(x,z)*0.8+0.5,0.0,1.0))
-			var side := lerpf(r_valley_side.x,r_valley_side.y,smoothstep(0.0,0.6,mountain))*maxf(valleys,1.0)
+			# (Through a mesa as steep as through a range: a canyon.)
+			var side := lerpf(r_valley_side.x,r_valley_side.y,smoothstep(0.0,0.6,maxf(mountain,mesa)))*maxf(valleys,1.0)
 			last_valley = d
 			last_half = half
 			last_side = side

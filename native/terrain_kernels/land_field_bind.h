@@ -103,8 +103,9 @@ public:
 
 	// Bumped when the land's output or this interface changes, so LandField
 	// refuses a stale library (and runs its GDScript field instead).
-	// 2: `configure` takes the world's land recipe (land_field.gd recipe_defaults()).
-	int64_t version() const { return 2; }
+	// 2: `configure` takes the world's land recipe (land_field.gd recipe_defaults());
+	// 3: and the built land's forms (ridge_crisp, notch, terrace, mesa keys).
+	int64_t version() const { return 3; }
 
 	// The flags LandField parsed (see land_field.gd), then the noises built.
 	void configure(int64_t seed, double floor_half, const Dictionary &knobs) {
@@ -156,6 +157,26 @@ public:
 		ZS_RECIPE2("valley_side", VALLEY_SIDE_X, VALLEY_SIDE_Y);
 		ZS_RECIPE("valley_keep", VALLEY_KEEP);
 		ZS_RECIPE("snow", SNOW);
+		// Version 3: the built land's forms.
+		ZS_RECIPE("ridge_crisp", RIDGE_CRISP);
+		ZS_RECIPE("notch", NOTCH);
+		ZS_RECIPE("notch_scale", NOTCH_SCALE);
+		ZS_RECIPE2("notch_width", NOTCH_WIDTH_X, NOTCH_WIDTH_Y);
+		ZS_RECIPE("terrace", TERRACE);
+		ZS_RECIPE("terrace_step", TERRACE_STEP);
+		ZS_RECIPE("terrace_flat", TERRACE_FLAT);
+		ZS_RECIPE("terrace_scale", TERRACE_SCALE);
+		ZS_RECIPE2("terrace_band", TERRACE_BAND_X, TERRACE_BAND_Y);
+		ZS_RECIPE("mesa", MESA);
+		ZS_RECIPE("mesa_tall", MESA_TALL);
+		ZS_RECIPE("mesa_scale", MESA_SCALE);
+		ZS_RECIPE("mesa_level", MESA_LEVEL);
+		ZS_RECIPE("mesa_edge", MESA_EDGE);
+		ZS_RECIPE("mesa_steps", MESA_STEPS);
+		ZS_RECIPE("mesa_gap", MESA_GAP);
+		ZS_RECIPE("mesa_keep", MESA_KEEP);
+		ZS_RECIPE("mesa_mask_scale", MESA_MASK);
+		ZS_RECIPE2("mesa_band", MESA_BAND_X, MESA_BAND_Y);
 #undef ZS_RECIPE
 #undef ZS_RECIPE2
 		f.setup();
