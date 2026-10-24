@@ -72,7 +72,7 @@ extends Node3D
 ## The plane's speed (SkyPlane FLIGHT_SPEED, use_flight_speed): --plane-speed=X
 ## (times the toy's 14 m/s cruise, 2.1; 1.15 the isles'), --plane-turn=X; the
 ## view widens with speed RUSH_FOV times the chase's own (--cam-speed-fov=X
-## sets it), and past cruise the eye buffets a little (--rush=X, 1; 0 off).
+## sets it), and past cruise the eye can buffet a little (--rush=X, 0 off by default).
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
@@ -181,8 +181,9 @@ var _hop_from := Vector3.ZERO
 var _hop_to := Vector3.INF
 var _parked_at := Vector3.ZERO
 var _boarding := -1.0
-## The buffet's strength (--rush=X) and its clock.
-var _rush := 1.0
+## The buffet's strength (--rush=X; off by default, it read as jitter)
+## and its clock.
+var _rush := 0.0
 var _rush_t := 0.0
 
 func _ready() -> void:
