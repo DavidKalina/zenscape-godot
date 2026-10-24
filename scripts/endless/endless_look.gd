@@ -354,9 +354,42 @@ func _river_water(land_seed: int) -> void:
 	else:
 		ground.set_shader_parameter("river_detail_a",EndlessSea._detail(land_seed,0.022,5))
 		ground.set_shader_parameter("river_detail_b",EndlessSea._detail(land_seed+7,0.035,4))
+	_river_live(land_seed)
 	for arg: String in LaunchArgs.user_args():
 		if arg.begins_with("--river-knob="):
 			ground.set_shader_parameter(arg.get_slice("=",1),str_to_var(arg.get_slice("=",2)))
+
+## Rivers as moving water (--river-live=1, river-live-handoff.md): the
+## ground shader's live path, which reads the channel frame the land's
+## chunks carry in CUSTOM2 (LandStream river_live_wanted). A noise height
+## map and its normals for the riffles, foam and the bed; and, with the
+## sea's FFT cascades running (--sea-fft=1 and a rendering device), their
+## slopes for the ripples, else the sea's noise maps. Off, nothing is set.
+func _river_live(land_seed: int) -> void:
+	if not LandStream.river_live_wanted(): return
+	ground.set_shader_parameter("river_live",1.0)
+	var noise := FastNoiseLite.new()
+	noise.seed = land_seed+41
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = 0.03
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.fractal_octaves = 3
+	noise.fractal_gain = 0.5
+	for normals in [false,true]:
+		var tex := NoiseTexture2D.new()
+		tex.width = 512
+		tex.height = 512
+		tex.seamless = true
+		tex.as_normal_map = normals
+		tex.bump_strength = 8.0
+		tex.normalize = true
+		tex.generate_mipmaps = true
+		tex.noise = noise
+		ground.set_shader_parameter("river_live_normal" if normals else "river_live_height",tex)
+	if water != null and water.fft != null:
+		ground.set_shader_parameter("river_fft",1)
+		ground.set_shader_parameter("river_fft_maps",water.fft.texture)
+		ground.set_shader_parameter("river_fft_sizes",water.fft.knobs.sizes)
 
 ## The earlier sea (--water=old): the lower world's ocean shader.
 func _build_old_sea() -> void:
