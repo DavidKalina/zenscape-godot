@@ -42,6 +42,7 @@ const Presets = preload("res://scripts/scene_look_presets.gd")
 const EndlessClouds = preload("res://scripts/endless/endless_clouds.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const EndlessPost = preload("res://scripts/endless/endless_post.gd")
+const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 
 ## The moods L steps through (no winter: the season stays off it), and the
 ## one it opens on.
@@ -185,6 +186,10 @@ func _frame_trades() -> void:
 func setup(land_seed: int) -> void:
 	name = "Look"
 	_land_seed = land_seed
+	# The world's mood and hour (its paint), then the flags over them.
+	var world: RefCounted = WorldProfile.current()
+	var world_mood := str(world.paint.get("mood",MOOD))
+	if world_mood in MOODS: mood = world_mood
 	var hour := -1.0
 	var day := false
 	for a: String in LaunchArgs.user_args():
@@ -193,8 +198,9 @@ func setup(land_seed: int) -> void:
 		elif a.begins_with("--key="): _key_arg = a.get_slice("=",1).to_float()
 		elif a.begins_with("--fill="): _fill_arg = a.get_slice("=",1).to_float()
 		elif a.begins_with("--mood=") and a.get_slice("=",1) in MOODS: mood = a.get_slice("=",1)
-	# The opening mood at HOUR; another at its own hour.
-	if hour < 0.0 and mood == MOOD: hour = HOUR
+	# The world's mood at its hour (wilderness: MOOD at HOUR; -1 the mood's
+	# own); another mood at its own hour.
+	if hour < 0.0 and mood == world_mood: hour = float(world.paint.get("hour",HOUR))
 	var source: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://assets/zen_reference/scene.json"))
 	lighting = LandscapeLighting.new()
 	lighting.name = "Lighting"
@@ -244,6 +250,7 @@ func setup(land_seed: int) -> void:
 	ground.set_shader_parameter("rock_pass1","--rock-pass1" in LaunchArgs.user_args())
 	ground.set_shader_parameter("rock_flat","--rock-flat" in LaunchArgs.user_args())
 	ground.set_shader_parameter("rock_erosion_tex",load("res://assets/textures/endless_rock_erosion.png"))
+	world.apply_ground(ground)
 	# --rock-knob=name=value (repeatable): any rock_* float uniform, to try a
 	# value without editing the shader (rock-carve-handoff.md).
 	for arg: String in LaunchArgs.user_args():

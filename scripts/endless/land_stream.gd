@@ -56,6 +56,15 @@ const REPLAN := 6.0
 const MAX_TASKS := 0
 ## Milliseconds a frame for meshes and colliders; at least one a frame.
 const COMMIT_BUDGET := 2.5
+## The tree is planned round a point led ahead of the eye along the
+## flight (`lead_with`): LEAD_TIME s of its level velocity, at most
+## LEAD_MOST m, so the detail ahead is asked for before the plane gets
+## there (endless flight's boost covers a level-0 chunk in under 1.5 s).
+## The eye's own ground stays full detail (a level-0 leaf reaches 83 m round
+## the planned point and more); the colliders stay round the eye.
+## --land-lead=S sets LEAD_TIME (0 off).
+const LEAD_TIME := 0.9
+const LEAD_MOST := 48.0
 ## Level-0 chunks nearer the eye than this (m, to the chunk) collide.
 const COLLIDE := 70.0
 const LAYER := 1
@@ -68,6 +77,10 @@ const RIVER_FLOW_MAX := 4.0
 var seed := 0
 var field: RefCounted
 var eye := Vector3.ZERO
+## The lead off the eye the tree is planned round (`lead_with`), and its
+## seconds of flight.
+var lead := Vector3.ZERO
+var lead_time := LEAD_TIME
 var stats := {"asked":0,"built":0,"committed":0,"freed":0,"slowest_commit_ms":0.0,"slowest_build_ms":0.0,"build_ms":0.0}
 ## The chunks' material: round one's vertex colours, or the look's ground
 ## (scripts/endless/endless_look.gd) passed to `setup`.
@@ -93,6 +106,8 @@ func setup(land_seed: int, ground: Material = null) -> void:
 	field = Field.new(seed)
 	material = ground
 	root_reach = maxi(ROOT_REACH,ceili(ROOT_REACH*view()))
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with("--land-lead="): lead_time = maxf(0.0,float(a.get_slice("=",1)))
 	if material == null:
 		var plain := StandardMaterial3D.new()
 		plain.vertex_color_use_as_albedo = true
@@ -130,12 +145,23 @@ func prime(at: Vector3) -> float:
 func solid_at(x: float, z: float) -> bool:
 	return _bodies.has(Vector3i(0,floori(x/BASE),floori(z/BASE)))
 
+## The lead from the flight's velocity (m/s): LEAD_TIME s of its level
+## part, at most LEAD_MOST m. Before `step`.
+func lead_with(velocity: Vector3) -> void:
+	lead = Vector3(velocity.x,0.0,velocity.z)*lead_time
+	if lead.length() > LEAD_MOST: lead = lead.normalized()*LEAD_MOST
+
+## The point the tree is planned round: the eye, led ahead.
+func centre() -> Vector3:
+	return eye+lead
+
 ## One frame: the tree replanned if the eye has moved, tasks asked, finished
 ## chunks turned into meshes within the budget, what is drawn swapped.
 func step(at: Vector3) -> void:
 	eye = at
 	var t0 := Time.get_ticks_usec()
-	if _planned_at == Vector3.INF or Vector2(at.x-_planned_at.x,at.z-_planned_at.z).length() > REPLAN or absf(at.y-_planned_at.y) > REPLAN:
+	var c := centre()
+	if _planned_at == Vector3.INF or Vector2(c.x-_planned_at.x,c.z-_planned_at.z).length() > REPLAN or absf(c.y-_planned_at.y) > REPLAN:
 		_plan()
 	var t1 := Time.get_ticks_usec()
 	_ask()
@@ -160,11 +186,11 @@ static func size_of(level: int) -> float:
 	return BASE*pow(2.0,level)
 
 func _plan() -> void:
-	_planned_at = eye
+	_planned_at = centre()
 	_wanted.clear()
 	var root := size_of(TOP_LEVEL)
-	var cx := floori(eye.x/root)
-	var cz := floori(eye.z/root)
+	var cx := floori(_planned_at.x/root)
+	var cz := floori(_planned_at.z/root)
 	for dz in range(-root_reach,root_reach+1):
 		for dx in range(-root_reach,root_reach+1):
 			_split(TOP_LEVEL,cx+dx,cz+dz)
@@ -185,15 +211,16 @@ func _split(level: int, ix: int, iz: int) -> void:
 	else:
 		_wanted[key] = true
 
-## The eye's distance to a chunk: across to its square, and up from the
-## sea's height plus a little.
+## The planned point's distance to a chunk (the eye's, led ahead): across
+## to its square, and up from the sea's height plus a little.
 func _distance(key: Vector3i) -> float:
+	var at := _planned_at if _planned_at != Vector3.INF else centre()
 	var s := size_of(key.x)
 	var x0 := key.y*s
 	var z0 := key.z*s
-	var dx := maxf(maxf(x0-eye.x,eye.x-(x0+s)),0.0)
-	var dz := maxf(maxf(z0-eye.z,eye.z-(z0+s)),0.0)
-	var dy := maxf(eye.y-(Field.SEA_Y+20.0),0.0)
+	var dx := maxf(maxf(x0-at.x,at.x-(x0+s)),0.0)
+	var dz := maxf(maxf(z0-at.z,at.z-(z0+s)),0.0)
+	var dy := maxf(at.y-(Field.SEA_Y+20.0),0.0)
 	return sqrt(dx*dx+dy*dy+dz*dz)
 
 func _ask() -> void:

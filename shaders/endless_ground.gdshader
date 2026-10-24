@@ -80,6 +80,8 @@ uniform vec2 carpet_near = vec2(0.0);
 uniform float carpet_near_grain : hint_range(0.0, 1.0) = 0.6;
 uniform vec3 carpet_tone_top = vec3(1.0);
 uniform vec3 carpet_tone_low = vec3(1.0);
+// A world's tone over the turf's own colour wherever tufts stand (the carpet's tone takes over past them; 1: none).
+uniform vec3 carpet_under_tone = vec3(1.0);
 uniform vec2 turf_beach = vec2(2.55, 2.9);
 uniform vec2 turf_slope = vec2(0.905, 0.95);
 uniform vec2 turf_high = vec2(36.0, 58.0);
@@ -90,6 +92,21 @@ uniform vec2 turf_alpine = vec2(0.0);
 // their size, kept until a pixel is about that size), its strength.
 uniform float carpet_grain : hint_range(0.0, 2.0) = 0.6;
 uniform vec2 carpet_grain_sizes = vec2(0.75, 1.5);
+// From high up (the eye's height over the ground, m, from x to y) the turf is
+// painted, not speckled: the carpet's grain gone, broad colour patches,
+// soft streaks along the wind and darker hollows in the creases, by this much.
+uniform float high_paint : hint_range(0.0, 2.0) = 1.0;
+uniform vec2 high_paint_alt = vec2(20.0, 75.0);
+// Watercolour meadow (docs/design/endless-flight/watercolour-meadow-handoff.md):
+// from the same height up, the turf is a few big washes of colour that bleed
+// into one another (domain-warped), darker pigment pooled on their edges and
+// in hollows, pale paper-light on the crowns, the small patches, sheen and
+// flower dots melted into them. `wc_paint` its strength (0: off), `wc_scale`
+// the washes' size (m), `wc_edge` the wet edges', `wc_paper` the paper light.
+uniform float wc_paint : hint_range(0.0, 2.0) = 1.0;
+uniform float wc_scale = 170.0;
+uniform float wc_edge : hint_range(0.0, 1.0) = 0.5;
+uniform float wc_paper : hint_range(0.0, 1.0) = 0.5;
 // The share of the velvet sheen the carpet's turf gives up.
 uniform float carpet_velvet_cut : hint_range(0.0, 1.0) = 0.6;
 // The night's grade (studies/celestial.gd `night_grade`, which the isles'
@@ -139,7 +156,8 @@ uniform float river_cycle = 2.4;
 uniform vec2 river_fresnel = vec2(0.08, 3.5);
 uniform float river_calm = 0.85;
 // The bank: sand and pebbles out to `river_bank` m past the water, wet
-// darker over `.y` m; the pale line at the water's edge (m wide).
+// darker over `.y` m. `river_edge` is retired: the bank foam
+// (`river_bank_foam`) draws the water's edge now.
 uniform vec2 river_bank = vec2(3.5, 1.4);
 uniform float river_edge = 0.55;
 // The water's level over the sea under which the sea takes it (the mouth,
@@ -178,6 +196,28 @@ uniform vec3 river_pads = vec3(1.0, 1.15, 0.22);
 uniform vec3 river_pad_colour : source_color = vec3(0.42, 0.56, 0.24);
 // How much of the cloud field the water mirrors (the sea's cloud_mirror).
 uniform float river_cloud_mirror = 0.8;
+// The flow's look (rivers-flow-handoff.md). White water: from the current's
+// speed .x (m/s) it breaks, by .y it is all white water, .z how much.
+uniform vec3 river_rapids = vec3(1.0, 2.2, 1.0);
+// Riffles: patches of broken water this big (m) down any running stretch,
+// and how white they get on a slower one (0..1).
+uniform vec2 river_riffle = vec2(48.0, 0.45);
+// The drawn motion runs this many times the current (so it reads from the
+// air), and never slower than .y m/s.
+uniform vec2 river_flow_look = vec2(1.8, 0.45);
+// The foam's grain: its streaks' width (m; drawn out ~4x down the flow), its
+// fine break-up (m), how long a copy rides (s) before a fresh one.
+uniform vec3 river_foam_size = vec3(1.0, 0.4, 2.0);
+// Foam along both banks: its reach in (m) on calm water and on white water,
+// and how much.
+uniform vec3 river_bank_foam = vec3(0.6, 2.8, 1.0);
+// A foam front where the river meets the sea (0 none).
+uniform float river_mouth_foam = 1.0;
+// White water churns: its ripples this much rougher at full white.
+uniform float river_churn = 1.6;
+// Slicks down running water: their width (m), how much they shade the body
+// and the mirror.
+uniform vec3 river_slick = vec3(4.5, 0.22, 0.7);
 // The ripples' faces lit toward the sun (the sea's body_shade).
 uniform float river_body_shade = 1.0;
 
@@ -255,6 +295,71 @@ vec2 zs_river_layer(sampler2D tex, vec2 p, vec2 dir, float speed, float size, fl
 	return dir * s.x / river_streak + across * s.y;
 }
 
+// The current's grain at a point, drawn out down the flow by averaging the
+// noise along it (no frame turned about the world's origin, so it holds
+// round bends and far out): x the streaky field (0..1, mean 0.5), y it
+// broken up finer, for foam.
+vec2 zs_river_grain(vec2 q, vec2 dir) {
+	// (The noise's lattice turned off the world's axes, so its cells don't
+	// line up into blocks.)
+	const mat2 TURN = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8));
+	float s = river_foam_size.x;
+	vec2 qa = TURN * q / s;
+	vec2 da = TURN * dir;
+	float a = 0.0;
+	for (int k = 0; k < 6; k++) a += ep_noise(qa + da * (float(k) - 2.5));
+	a = clamp(0.5 + (a / 6.0 - 0.5) * 2.1, 0.0, 1.0);
+	vec2 qf = TURN * (q / river_foam_size.y);
+	float f = ep_noise(qf + vec2(17.3, 4.1)) * 0.6 + ep_noise(qf * 2.7 + vec2(3.9, 8.2)) * 0.4;
+	return vec2(a, a * 0.7 + f * 0.3);
+}
+
+// White water and streak lines riding down the flow: two copies of the
+// grain, each drifting `vspd` m/s for `river_foam_size.z` s then jumping to
+// a fresh spot, cross-faded half a cycle apart (as the ripples), so foam
+// forms, rides down and breaks up. `th` is the grain over which it is foam
+// (lower: more). Returns (foam 0..1, streak lines 0..1, slicks 0..1).
+vec3 zs_river_foam(vec2 p, vec2 dir, float vspd, float t, float th, float fp) {
+	float cyc = river_foam_size.z;
+	float c0 = t / cyc, c1 = c0 + 0.5;
+	float f0 = fract(c0), f1 = fract(c1);
+	vec2 q0 = p - dir * vspd * cyc * f0 + vec2(13.7, 5.3) * floor(c0);
+	vec2 q1 = p - dir * vspd * cyc * f1 + vec2(7.1, 11.9) * floor(c1) + 40.0;
+	vec2 g0 = zs_river_grain(q0, dir);
+	vec2 g1 = zs_river_grain(q1, dir);
+	float w0 = 1.0 - abs(2.0 * f0 - 1.0);
+	float soft = 0.08 + fp / river_foam_size.x * 0.3;
+	// Thin at its edges, thick in its cores.
+	float a0 = smoothstep(th - soft, th + soft, g0.y) * mix(0.45, 1.0, smoothstep(th, th + 0.18, g0.y));
+	float a1 = smoothstep(th - soft, th + soft, g1.y) * mix(0.45, 1.0, smoothstep(th, th + 0.18, g1.y));
+	float foam = mix(a1, a0, w0);
+	float lw = 0.04;
+	float lines = mix(1.0 - smoothstep(0.0, lw, abs(g1.x - 0.66)), 1.0 - smoothstep(0.0, lw, abs(g0.x - 0.66)), w0);
+	lines *= 1.0 - smoothstep(0.12, 0.5, fp);
+	// Far off, its share of the water as a soft whitening, no grain.
+	float far = smoothstep(river_foam_size.x * 0.5, river_foam_size.x * 2.5, fp);
+	foam = mix(foam, smoothstep(0.78, 0.3, th) * 0.75, far);
+	// Slicks: broad bands down the current (river_slick m across, ~6x that
+	// long), drifting on a slower cycle, which read from the air where the
+	// grain is gone.
+	const mat2 TURN = mat2(vec2(0.6, -0.8), vec2(0.8, 0.6));
+	float scyc = cyc * 3.0;
+	float e0 = t / scyc, e1 = e0 + 0.5;
+	float h0 = fract(e0), h1 = fract(e1);
+	vec2 da = TURN * dir;
+	vec2 r0 = TURN * (p - dir * vspd * scyc * h0 + vec2(29.3, 3.1) * floor(e0)) / river_slick.x;
+	vec2 r1 = TURN * (p - dir * vspd * scyc * h1 + vec2(5.9, 23.7) * floor(e1) + 90.0) / river_slick.x;
+	float s0 = 0.0, s1 = 0.0;
+	for (int k = 0; k < 4; k++) {
+		s0 += ep_noise(r0 + da * (float(k) - 1.5) * 1.6);
+		s1 += ep_noise(r1 + da * (float(k) - 1.5) * 1.6);
+	}
+	float v0 = 1.0 - abs(2.0 * h0 - 1.0);
+	float slick = clamp(0.5 + (mix(s1, s0, v0) * 0.25 - 0.5) * 2.4, 0.0, 1.0);
+	slick = mix(slick, 0.5, smoothstep(river_slick.x * 0.25, river_slick.x * 0.8, fp));
+	return vec3(foam, lines * (1.0 - far), slick);
+}
+
 // Noise at `scale` m round its mean (-0.5..0.5), faded to the mean where a
 // pixel's footprint `fp` (m) grows past a share of the scale.
 float zs_fade(vec2 p, float scale, float fp) {
@@ -309,6 +414,9 @@ void fragment() {
 	float r_w = abs(river.y);
 	float r_here = river_on * step(0.05, r_w);
 	float r_aa = clamp(fwidth(river.x), 0.02, 40.0) * 0.6;
+	// The water's own footprint: it lies flat, so not the bed's steep-ground
+	// one (which jumps between chunks with the bed's normals).
+	float r_fp = mix(min(fp_x, fp_y), max(fp_x, fp_y), 0.4);
 	float r_ragged = (zs_noise(p.xz / 3.3) - 0.5) * 0.9 * (1.0 - smoothstep(0.5, 2.0, fp));
 	// How far outside the water's edge (m; negative in the water).
 	float r_out = r_s - r_w + r_ragged;
@@ -397,12 +505,68 @@ void fragment() {
 	float beyond = carpet_reach.y > 0.0 ? clamp((endless_ring_d(CAMERA_POSITION_WORLD, p) - carpet_reach.x) / max(carpet_reach.y - carpet_reach.x, 1.0), 0.0, 1.0) : 1.0;
 	float toned = mix(1.0, beyond, turf);
 	grass *= mix(vec3(1.0), mix(carpet_tone_low, carpet_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
+	grass *= mix(vec3(1.0), carpet_under_tone, turf * (1.0 - toned));
 	float speck_a = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 0) / carpet_grain_sizes.x)) - 0.5;
 	float speck_b = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 1) / carpet_grain_sizes.y)) - 0.5;
 	float speck = speck_a * (1.0 - smoothstep(carpet_grain_sizes.x * 0.5, carpet_grain_sizes.x * 1.2, fp))
 		+ speck_b * 0.7 * (1.0 - smoothstep(carpet_grain_sizes.y * 0.5, carpet_grain_sizes.y * 1.2, fp));
 	// Only off where tufts would be pixels: near, the paint's own grain.
-	grass *= 1.0 + speck * carpet_grain * turf * beyond * smoothstep(40.0, 110.0, length(CAMERA_POSITION_WORLD - p));
+	float high_up = smoothstep(high_paint_alt.x, high_paint_alt.y, CAMERA_POSITION_WORLD.y - p.y) * high_paint;
+	grass *= 1.0 + speck * carpet_grain * turf * beyond * smoothstep(40.0, 110.0, length(CAMERA_POSITION_WORLD - p)) * (1.0 - clamp(high_up, 0.0, 1.0));
+	float wc_up = clamp(high_up, 0.0, 1.0) * wc_paint;
+	if (high_up > 0.0) {
+		// Broad patches of lighter and deeper, warmer and cooler meadow.
+		float hp = turf * high_up * (1.0 - smoothstep(200.0, 900.0, fp));
+		grass *= 1.0 + (broad * 0.30 + wide * 0.34 + mid * 0.16) * hp;
+		grass *= mix(vec3(1.0), wide > 0.0 ? vec3(1.07, 1.03, 0.86) : vec3(0.88, 0.98, 1.06), clamp(abs(wide) * 0.6, 0.0, 1.0) * hp);
+		// Soft streaks, long along the wind, as if combed.
+		vec2 sdir = normalize(zs_sun_direction.xz + vec2(0.6, 0.3));
+		vec2 sperp = vec2(-sdir.y, sdir.x);
+		float streak = zs_noise(vec2(dot(gxz, sdir) / 190.0, dot(gxz, sperp) / 16.0) + 7.0) - 0.5;
+		streak += (zs_noise(vec2(dot(gxz, sdir) / 90.0, dot(gxz, sperp) / 7.0) + 19.0) - 0.5) * 0.5;
+		grass *= 1.0 + streak * 0.30 * hp * (1.0 - smoothstep(3.0, 14.0, fp));
+		// Hollows and creases darker, as shade settles in them.
+		float hollow = max(-wide, 0.0) * 0.16 + max(-mid, 0.0) * 0.08 + smoothstep(0.97, 0.86, n.y) * 0.22;
+		grass *= 1.0 - hollow * hp;
+	}
+	if (wc_up > 0.0) {
+		float wk = turf * (1.0 - thin) * (1.0 - alpine) * wc_up * (1.0 - smoothstep(300.0, 1200.0, fp));
+		// The small patches (tuft, fine, mid, clump) melted out: the same
+		// colour from the broad scales alone.
+		float sunny_w = clamp((broad * 1.3 + wide * 1.5) * patch_strength, -1.0, 1.0);
+		vec3 gw = mix(GREEN, sunny_w > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny_w));
+		gw = mix(gw, MEADOW, meadow * 0.75);
+		gw *= mix(vec3(1.0), warm > 0.0 ? vec3(1.32, 1.05, 0.62) : vec3(0.80, 0.97, 1.16), abs(warm) * 0.5);
+		gw *= region;
+		gw = mix(gw, vc / max(luma(vc), 0.01) * luma(gw), vertex_hue * 0.6);
+		gw *= mix(vec3(1.0), mix(carpet_tone_low, carpet_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
+		gw *= mix(vec3(1.0), carpet_under_tone, turf * (1.0 - toned));
+		grass = mix(grass, gw, wk * 0.8);
+		// Washes: warped fields, so their edges wander and bleed.
+		vec2 wq = gxz / wc_scale;
+		vec2 warp = vec2(zs_noise(wq * 0.8 + vec2(3.1, 8.7)), zs_noise(wq * 0.8 + vec2(9.4, 1.3))) - 0.5;
+		wq += warp * 2.6 + (vec2(zs_noise(wq * 2.3 + vec2(14.0, 4.0)), zs_noise(wq * 2.3 + vec2(2.0, 27.0))) - 0.5) * 0.9;
+		float f1 = zs_noise(wq + vec2(21.0, 5.0)) * 0.72 + zs_noise(wq * 2.7 + vec2(4.0, 33.0)) * 0.28;
+		float f2 = zs_noise(wq * 1.7 + vec2(60.0, 17.0)) * 0.7 + zs_noise(wq * 4.1 + vec2(8.0, 2.0)) * 0.3;
+		// Three pigments laid in washes: yellow-green, cool blue-green, olive.
+		float wa = smoothstep(0.32, 0.68, f1);
+		float wb = smoothstep(0.42, 0.78, f2);
+		vec3 pig = mix(vec3(0.72, 0.96, 1.02), vec3(1.30, 1.14, 0.58), wa);
+		pig = mix(pig, vec3(1.12, 0.92, 0.62), wb * 0.6);
+		grass *= mix(vec3(1.0), pig, wk * 0.9);
+		// Wet edges: pigment pools darker and a touch richer where two washes meet.
+		float edge = exp(-pow((f1 - 0.51) / 0.05, 2.0)) * 0.7 + exp(-pow((f2 - 0.61) / 0.045, 2.0)) * 0.5;
+		grass *= mix(vec3(1.0), vec3(0.66, 0.76, 0.70), clamp(edge, 0.0, 1.0) * wc_edge * wk);
+		// Paper light: the pale crowns of the washes, where the water dried thin.
+		float crown = smoothstep(0.52, 0.80, f2 * 0.6 + f1 * 0.4 + broad * 0.4 + max(facing, 0.0) * 0.1);
+		vec3 paper = vec3(luma(grass)) * vec3(1.18, 1.16, 0.98) * 1.18;
+		grass = mix(grass, paper, crown * 0.4 * wc_paper * wk);
+		// Pooled pigment in the low washes: deeper and cooler.
+		float pool = smoothstep(0.42, 0.22, f2 * 0.6 + f1 * 0.4 + wide * 0.3);
+		grass *= mix(vec3(1.0), vec3(0.62, 0.80, 0.78), pool * 0.7 * wk);
+		// A river's bank and the water's edge: pigment collected along it.
+		grass *= 1.0 - 0.22 * r_here * (1.0 - smoothstep(2.0, 22.0, max(r_out, 0.0))) * wk;
+	}
 
 	// --- Rock, sand, snow -----------------------------------------------------
 	float rock_edge = (zs_noise(gxz / 9.0) - 0.5) * 0.10 + mid * 0.08;
@@ -472,7 +636,7 @@ void fragment() {
 	grass *= 1.0 + grain_near * (1.0 - thin * 0.4);
 	// Under the near carpet: the tufts' own ground (endless_patch.gd `grass`).
 	if (carpet_near.y > 0.0) {
-		float under = carpet_turf * (1.0 - smoothstep(carpet_near.x, carpet_near.y, endless_ring_d(CAMERA_POSITION_WORLD, p)));
+		float under = carpet_turf * (1.0 - smoothstep(carpet_near.x, carpet_near.y, endless_ring_d(CAMERA_POSITION_WORLD, p))) * (1.0 - wc_up);
 		if (under > 0.0) {
 			float sunny_c = clamp((broad * 1.3 + wide * 1.5 + mid * 0.9 + clump * 0.9) * patch_strength, -1.0, 1.0);
 			vec3 coarse = mix(GREEN, sunny_c > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny_c));
@@ -485,6 +649,7 @@ void fragment() {
 			coarse = mix(coarse, TUNDRA * (1.0 + mid * 0.6), alpine * 0.8);
 			coarse = mix(coarse, OLIVE, thin * 0.7);
 			coarse *= 1.0 + (grain_near + fine * 0.6 + tuft * 0.8) * carpet_near_grain;
+			coarse *= carpet_under_tone;
 			grass = mix(grass, coarse, under);
 		}
 	}
@@ -494,7 +659,7 @@ void fragment() {
 	// The wind's sheen: light and dark swells rolling over the far meadow (grass_sheen).
 	if (grass_sheen.x > 0.0) {
 		float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);
-		float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6);
+		float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up);
 		if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(zs_sheen_field(gxz, fp), gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
 	}
 	// The flower drifts past the drawn flowers: heads of their colour dotted
@@ -509,13 +674,15 @@ void fragment() {
 		float bloom_w = bloom.x * bloom_on;
 		if (bloom_w > 0.0) {
 			float d = endless_ring_d(CAMERA_POSITION_WORLD, p);
-			float past = smoothstep(bloom_fade.x, bloom_fade.y, d);
+			float past = mix(smoothstep(bloom_fade.x, bloom_fade.y, d), 1.0, wc_up);
 			float cut = 0.78 - 0.3 * bloom_w;
 			float dot_a = smoothstep(cut, cut + 0.06, zs_noise(turned_speck(gxz, 0) / bloom_dots.x));
 			float dot_b = smoothstep(cut, cut + 0.06, zs_noise(turned_speck(gxz + 7.3, 1) / bloom_dots.y));
 			float dots = max(dot_a, dot_b);
 			// Their mean as the pixel outgrows a head.
 			dots = mix(dots, bloom_w * 0.42, smoothstep(bloom_dots.x * 0.4, bloom_dots.y * 1.2, fp));
+			// From high up the dots melt into soft blooms of colour.
+			dots = mix(dots, bloom_w * smoothstep(0.30, 0.85, zs_noise(gxz / 38.0 + 3.0)) * 0.34, wc_up);
 			float wash = mix(bloom_wash.x * bloom_w, bloom_wash.y * dots, past);
 			grass = mix(grass, ep_wash(int(bloom.y + 0.5)), clamp(wash, 0.0, 1.0));
 		}
@@ -552,21 +719,42 @@ void fragment() {
 		float spd = length(fl);
 		vec2 dir = spd > 0.02 ? fl / spd : vec2(0.8, 0.6);
 		float t = TIME;
-		float speed = max(spd, 0.12);
+		float speed = max(spd, 0.12) * river_flow_look.x;
+		// How broken the water is (0 calm, 1 white water): by the current's
+		// speed (the level's fall), more in riffle patches down any running
+		// stretch, none in a still pool, and settling into the mouth.
+		float rif = smoothstep(0.42, 0.66, ep_noise(p.xz / river_riffle.x) * 0.7 + ep_noise(p.xz / (river_riffle.x * 0.3) + 9.1) * 0.3);
+		float running = smoothstep(0.45, 1.1, spd);
+		float tb = smoothstep(river_rapids.x, river_rapids.y, spd) * (0.45 + 0.75 * rif) + rif * running * river_riffle.y;
+		// (The mouth read from the drawn water's own height, not the level's
+		// interpolation, which runs off to nothing toward a vertex out of
+		// the river's reach.)
+		float r_sea = river_mouth_blend * (1.0 - smoothstep(0.0, river_mouth_rise, over));
+		tb = clamp(tb, 0.0, 1.0) * river_rapids.z * (1.0 - r_sea);
 		vec2 slope = vec2(0.0);
 		float rough = 0.0;
-		float k0 = 1.0 - smoothstep(river_ripple_size.x * 0.04, river_ripple_size.x * 0.22, fp);
-		float k1 = 1.0 - smoothstep(river_ripple_size.y * 0.04, river_ripple_size.y * 0.22, fp);
-		float k2 = 1.0 - smoothstep(river_ripple_size.z * 0.04, river_ripple_size.z * 0.22, fp);
+		float k0 = 1.0 - smoothstep(river_ripple_size.x * 0.04, river_ripple_size.x * 0.22, r_fp);
+		float k1 = 1.0 - smoothstep(river_ripple_size.y * 0.04, river_ripple_size.y * 0.22, r_fp);
+		float k2 = 1.0 - smoothstep(river_ripple_size.z * 0.04, river_ripple_size.z * 0.22, r_fp);
 		if (k0 > 0.0) slope += zs_river_layer(river_detail_a, p.xz, dir, speed * 0.85, river_ripple_size.x, 0.0, t) * river_ripple_strength.x * k0;
 		if (k1 > 0.0) slope += zs_river_layer(river_detail_b, p.xz, dir, speed, river_ripple_size.y, 0.37, t) * river_ripple_strength.y * k1;
 		if (k2 > 0.0) slope += zs_river_layer(river_detail_a, p.xz + 17.0, dir, speed * 1.15, river_ripple_size.z, 0.71, t) * river_ripple_strength.z * k2;
 		rough = river_ripple_strength.x * river_ripple_strength.x * (1.0 - k0) + river_ripple_strength.y * river_ripple_strength.y * (1.0 - k1)
 			+ river_ripple_strength.z * river_ripple_strength.z * (1.0 - k2);
+		// White water churns; and the surface leans down the fall (the level's
+		// slope, from the speed as land_field's RIVER_FLOW makes it).
+		float churn = 1.0 + tb * river_churn;
+		slope *= churn;
+		rough *= churn * churn;
+		float fall = pow(max(spd - 0.35, 0.0) / 9.0, 2.0);
+		slope -= dir * fall;
 		vec3 wn = normalize(vec3(-slope.x, 1.0, -slope.y));
 		vec3 calm = normalize(vec3(-slope.x * river_calm, 1.0, -slope.y * river_calm));
 		float d_in = max(-r_out, 0.0);
-		float depth = min(d_in * river_depth.x, river_depth.y);
+		// The depth swings down the river (bars and pools), shallower over a
+		// riffle, so the shallows' band never runs even.
+		float bars = mix(0.6, 1.45, ep_noise(p.xz / 37.0 + 3.7));
+		float depth = min(d_in * river_depth.x * bars, river_depth.y) * (1.0 - 0.4 * rif * running);
 		vec3 column = mix(river_tint_shallow, river_tint_mid, smoothstep(0.0, river_tint_depths.x, depth));
 		column = mix(column, river_tint_deep, smoothstep(river_tint_depths.x * 0.5, river_tint_depths.y, depth));
 		column *= zs_palette_water;
@@ -597,27 +785,30 @@ void fragment() {
 			vec3 bed_m = SAND_WET * 0.85 * (ambient + key);
 			water = mix(water, sc * light * (vec3(1.0) - seen_m) + bed_m * seen_m, r_tint * river_mouth_tint);
 		}
-		// The current: faint pale streaks drawn out down the flow, drifting
-		// with it (two copies cross-faded as the ripples), gone far off.
 		// (Still water, a pond: no current to streak.)
 		float still = 1.0 - smoothstep(0.05, 0.3, spd);
-		float streak_keep = (1.0 - smoothstep(0.4, 2.5, fp)) * river_streaks * (1.0 - still);
-		if (streak_keep > 0.0) {
-			vec2 across_f = vec2(-dir.y, dir.x);
-			float cyc = river_cycle * 2.0;
-			float c0 = t / cyc, c1 = c0 + 0.5;
-			float f0 = fract(c0), f1 = fract(c1);
-			vec2 q0 = p.xz - dir * speed * cyc * f0 + vec2(floor(c0) * 7.3, 0.0);
-			vec2 q1 = p.xz - dir * speed * cyc * f1 + vec2(0.0, floor(c1) * 5.1);
-			// The chop's smooth noise (not the value noise, whose cells show
-			// when drawn out this far).
-			float n0 = texture(river_detail_b, vec2(dot(q0, dir) / 60.0, dot(q0, across_f) / 6.0)).x;
-			float n1 = texture(river_detail_b, vec2(dot(q1, dir) / 60.0, dot(q1, across_f) / 6.0) + 0.37).x;
-			float w0 = 1.0 - abs(2.0 * f0 - 1.0);
-			float streak = mix(n1, n0, w0);
-			float lines = smoothstep(0.58, 0.75, streak) * (0.4 + 0.6 * smoothstep(0.0, 3.0, d_in));
-			water = mix(water, column * light * 1.45 + vec3(0.02), lines * 0.22 * streak_keep);
-		}
+		vec3 white = vec3(0.9, 0.96, 1.0) * (ambient * 1.1 + key * 0.8);
+		// White water: the body aerated, paler and milkier.
+		water = mix(water, white * 0.62 + column * light * 0.35, tb * 0.4);
+		// Foam riding down the flow (zs_river_foam): over white water, in a
+		// broken fringe along both banks (wider the rougher), and in a front
+		// where the river meets the sea; on calm water only streak lines.
+		float vspd = max(spd * river_flow_look.x, river_flow_look.y);
+		float fringe = mix(river_bank_foam.x, river_bank_foam.y, tb) * (0.45 + 1.1 * ep_noise(p.xz / 9.0 + 2.3)) + r_fp * 0.5;
+		float at_bank = (1.0 - smoothstep(0.0, fringe, d_in)) * river_bank_foam.z;
+		float front = river_mouth_foam * smoothstep(0.45, 0.72, r_sea) * (1.0 - smoothstep(0.82, 0.97, r_sea));
+		float th = mix(1.05, 0.55, tb);
+		th = min(th, mix(1.05, mix(0.6, 0.4, tb), at_bank));
+		th = min(th, mix(1.05, 0.5, front));
+		vec3 fm = zs_river_foam(p.xz, dir, vspd, t, th, r_fp);
+		float line = fm.x;
+		// Streak lines on the running water (paler threads drifting down).
+		float streak = fm.y * river_streaks * smoothstep(0.15, 0.7, spd) * (1.0 - tb) * smoothstep(0.0, 2.0, d_in);
+		water = mix(water, column * light * 1.5 + vec3(0.02), streak * 0.3);
+		// The slicks: broad bands down the current, the body a shade lighter
+		// or darker and the mirror glassier or duller.
+		float sl = (fm.z - 0.5) * 2.0 * (0.4 + 0.6 * running) * (1.0 - 0.7 * tb);
+		water *= 1.0 + sl * river_slick.y;
 		// The ripples' faces: lighter toward the sun, darker away (the
 		// sea's body_shade), so the chop reads where the mirror is dim.
 		water *= 1.0 + clamp(dot(slope, -normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.5, -0.45, 0.45) * river_body_shade;
@@ -647,11 +838,7 @@ void fragment() {
 				water = mix(water, pc, pad);
 			}
 		}
-		// The pale line at the edge, lapping, broken; far off a soft rim.
-		float lap = river_edge * (0.6 + 0.4 * zs_noise(p.xz / 23.0)) * (0.85 + 0.15 * sin(t * 0.8 + zs_noise(p.xz * 0.15) * 6.2832)) + fp * 0.5;
-		float line = (1.0 - smoothstep(0.0, lap, d_in)) * mix(0.25 + 0.3 * zs_noise(p.xz * 0.35 - dir * t * 0.3), 0.3, smoothstep(0.3, 1.5, fp));
-		vec3 white = vec3(0.9, 0.96, 1.0) * (ambient * 1.1 + key * 0.8);
-		water = mix(water, white, line * 0.7);
+		water = mix(water, white * (1.0 - 0.4 * shaded), line * 0.9);
 		vec3 refl = reflect(-eye, calm);
 		refl.y = abs(refl.y);
 		vec3 sky = clamp(zsSkyGradient(refl), vec3(0.0), vec3(0.98));
@@ -685,6 +872,7 @@ void fragment() {
 			}
 		}
 		float fres = river_fresnel.x + (1.0 - river_fresnel.x) * pow(1.0 - max(dot(eye, calm), 0.0), river_fresnel.y);
+		fres = clamp(fres * (1.0 + sl * river_slick.z), 0.0, 1.0);
 		vec3 disp = mix(zs_scene_to_display(water), sky, fres * (1.0 - line) * (1.0 - pad));
 		vec4 path = zs_lake_glint(refl, zs_sun_direction, zs_moon_direction, zs_celestial_clear, 0.0, 1.0);
 		disp = mix(disp, path.rgb, path.a * (1.0 - shaded) * (1.0 - line) * (1.0 - pad));

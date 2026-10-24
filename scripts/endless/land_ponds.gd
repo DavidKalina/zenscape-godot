@@ -67,10 +67,10 @@ static var _cache := {}
 static var _lock := Mutex.new()
 
 ## The `--ponds=X` density (1; 0 none).
-static func wanted() -> float:
+static func wanted(default := 1.0) -> float:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--ponds="): return maxf(0.0,float(a.get_slice("=",1)))
-	return 1.0
+	return default
 
 static func _hash01(seed: int, i: int, j: int, salt: int) -> float:
 	return float(hash([seed,i,j,salt,7717]) & 0xffffff)/16777216.0

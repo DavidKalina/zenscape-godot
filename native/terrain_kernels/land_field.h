@@ -123,23 +123,35 @@ class LandField {
 public:
 	// --- Constants (land_field.gd; Vector2 constants as floats) ----------------------
 	static constexpr double SEA_Y = -40.0;
-	static constexpr double CONTINENT = 3600.0, CONTINENT_SWING = 70.0, CONTINENT_LIFT = 14.0, LOWLAND = 26.0;
-	static constexpr double HILLS = 320.0, HILL_TALL = 16.0;
+	// The land recipe (land_field.gd recipe_defaults(); the world profile's `land`,
+	// read in `configure`): members, not constants, at wilderness's values.
+	double CONTINENT = 3600.0, CONTINENT_SWING = 70.0, CONTINENT_LIFT = 14.0, LOWLAND = 26.0;
+	double HILLS = 320.0, HILL_TALL = 16.0;
 	static constexpr double MOUNTAINS = 2600.0, MOUNTAIN_TALL = 105.0;
 	static constexpr float MOUNTAIN_BAND_X = 0.18f, MOUNTAIN_BAND_Y = 0.5f;
-	static constexpr double RANGES = 2300.0, RANGE_WIDTH = 0.36, RANGE_MASK = 3400.0;
-	static constexpr float RANGE_BAND_X = -0.50f, RANGE_BAND_Y = -0.12f;
-	static constexpr double WARP = 1500.0, WARP_MOVE = 520.0, RIDGES = 700.0;
-	static constexpr float PEAK_TALL_X = 95.0f, PEAK_TALL_Y = 215.0f;
-	static constexpr double PEAK_SCALE = 1700.0;
-	static constexpr double MEADOWS = 650.0;
-	static constexpr float MEADOW_BAND_X = -0.05f, MEADOW_BAND_Y = 0.22f;
-	static constexpr double MEADOW_KEEP = 0.07, MEADOW_ABOVE = 3.0;
-	static constexpr double VALLEYS = 2100.0, VALLEY_WARP = 1100.0, VALLEY_WARP_MOVE = 380.0;
-	static constexpr float VALLEY_SWING_X = 0.75f, VALLEY_SWING_Y = 1.7f;
-	static constexpr float VALLEY_SIDE_X = 300.0f, VALLEY_SIDE_Y = 150.0f;
-	static constexpr double VALLEY_KEEP = 0.08;
-	static constexpr double BEACH = 2.2, SNOW = 125.0;
+	double RANGES = 2300.0, RANGE_WIDTH = 0.36, RANGE_MASK = 3400.0;
+	float RANGE_BAND_X = -0.50f, RANGE_BAND_Y = -0.12f;
+	double WARP = 1500.0, WARP_MOVE = 520.0, RIDGES = 700.0;
+	float PEAK_TALL_X = 95.0f, PEAK_TALL_Y = 215.0f;
+	double PEAK_SCALE = 1700.0;
+	double MEADOWS = 650.0;
+	float MEADOW_BAND_X = -0.05f, MEADOW_BAND_Y = 0.22f;
+	double MEADOW_KEEP = 0.07, MEADOW_ABOVE = 3.0;
+	double VALLEYS = 2100.0, VALLEY_WARP = 1100.0, VALLEY_WARP_MOVE = 380.0;
+	float VALLEY_SWING_X = 0.75f, VALLEY_SWING_Y = 1.7f;
+	float VALLEY_SIDE_X = 300.0f, VALLEY_SIDE_Y = 150.0f;
+	double VALLEY_KEEP = 0.08;
+	double SNOW = 125.0;
+	// The built land's forms (land_field.gd RIDGE_CRISP..MESA_BAND), off unless set.
+	double RIDGE_CRISP = 0.0, NOTCH = 0.0, NOTCH_SCALE = 1300.0;
+	float NOTCH_WIDTH_X = 0.025f, NOTCH_WIDTH_Y = 0.07f;
+	double TERRACE = 0.0, TERRACE_STEP = 5.0, TERRACE_FLAT = 0.65, TERRACE_SCALE = 1500.0;
+	float TERRACE_BAND_X = -0.15f, TERRACE_BAND_Y = 0.2f;
+	double MESA = 0.0, MESA_TALL = 50.0, MESA_SCALE = 800.0, MESA_LEVEL = 0.3, MESA_EDGE = 0.035;
+	double MESA_STEPS = 2.0, MESA_GAP = 0.12, MESA_KEEP = 0.12, MESA_MASK = 3800.0;
+	float MESA_BAND_X = -0.1f, MESA_BAND_Y = 0.25f;
+	// (The recipe's end; constants again from here.)
+	static constexpr double BEACH = 2.2;
 	static constexpr double CARVE_GRID = 8.0;
 	static constexpr float CARVE_SLOPE_X = 0.38f, CARVE_SLOPE_Y = 0.9f;
 	static constexpr float CARVE_MOUNTAIN_X = 0.004f, CARVE_MOUNTAIN_Y = 0.08f;
@@ -201,6 +213,10 @@ public:
 		noise(n_river_side, 16, RIVER_SIDE, 1, FNL::FractalType_None);
 		noise(n_river_meander, 17, RIVER_MEANDER, 1, FNL::FractalType_None);
 		noise(n_river_wide, 18, RIVER_WIDE, 1, FNL::FractalType_None);
+		noise(n_notch, 19, NOTCH_SCALE, 1, FNL::FractalType_None);
+		noise(n_terrace, 20, TERRACE_SCALE, 2, FNL::FractalType_FBm);
+		noise(n_mesa, 21, MESA_SCALE, 2, FNL::FractalType_FBm);
+		noise(n_mesa_mask, 22, MESA_MASK, 1, FNL::FractalType_None);
 	}
 
 	// Vector2(world height, meadow) at a world XZ point (`sample`).
@@ -216,11 +232,13 @@ public:
 		const double rr = last_river_r, rw = last_river_w, ry = last_river_y;
 		const V2 rf = last_river_flow;
 		const double rtop = river_top, rk = river_k, rm = river_mouth_s, rb = river_bed;
-		if (carve > 0.0 && last_mountain > double(CARVE_MOUNTAIN_X) && detail < CARVE_DETAIL_OFF) {
+		// A mesa's walls are carved as a range's are (`rock_`; 0 without mesas).
+		const double rock = maxf(last_mountain, rock_);
+		if (carve > 0.0 && rock > double(CARVE_MOUNTAIN_X) && detail < CARVE_DETAIL_OFF) {
 			const double k_mountain = last_mountain, k_inland = last_inland, k_valley = last_valley;
 			const double k_half = last_half, k_side = last_side;
 			const V2 k_across = last_across;
-			s.x = float(carve_at(x, z, s.x, s.y, k_mountain, floor_y_));
+			s.x = float(carve_at(x, z, s.x, s.y, rock, floor_y_));
 			last_mountain = k_mountain;
 			last_inland = k_inland;
 			last_valley = k_valley;
@@ -296,7 +314,9 @@ private:
 	FNL n_continent, n_hills, n_mask, n_ridges, n_meadows, n_tint, n_warp, n_range, n_peak;
 	FNL n_valley, n_valley_warp, n_valley_wide, n_bench_warp, n_bench_band, n_gully_amp;
 	FNL n_river_side, n_river_meander, n_river_wide;
+	FNL n_notch, n_terrace, n_mesa, n_mesa_mask;
 	double floor_y_ = -INF;
+	double rock_ = 0.0;
 	double river_top = -INF, river_k = 0.0, river_mouth_s = 0.0, river_bed = RIVER_BED;
 	// The carve's memos and lattice caches (land_field.gd), kept as GDScript
 	// keeps them: they hold only what a recompute would give, but `last_floor`
@@ -352,15 +372,45 @@ private:
 			if (where > 0.0) {
 				const double wx = x + nz(n_warp, x, z) * WARP_MOVE;
 				const double wz = z + nz(n_warp, x + 7919.0, z - 3301.0) * WARP_MOVE;
-				const double off = absf(nz(n_range, wx, wz)) / RANGE_WIDTH;
+				const double rn = nz(n_range, wx, wz);
+				const double off = absf(rn) / RANGE_WIDTH;
 				if (off < 1.0) {
 					double crest = 1.0 - off;
 					crest = crest * crest * (3.0 - 2.0 * crest);
 					mountain = crest * where;
 					const double tall = lerpf(PEAK_TALL_X, PEAK_TALL_Y, clampf(nz(n_peak, x, z) * 0.9 + 0.5, 0.0, 1.0)) * peaks;
 					const double ridge = nz(n_ridges, x, z) * 0.5 + 0.5;
-					h += tall * (0.4 * POW(mountain, 1.4) + 0.75 * ridge * ridge * mountain * mountain);
+					double add = tall * (0.4 * POW(mountain, 1.4) + 0.75 * ridge * ridge * mountain * mountain);
+					if (RIDGE_CRISP > 0.0) {
+						const double a = 1.0 - off;
+						const double gable = tall * where * a * smoothstep(0.0, 0.35, a) * (0.8 + 0.35 * ridge);
+						add = lerpf(add, gable, minf(RIDGE_CRISP, 1.0));
+					}
+					if (NOTCH > 0.0) {
+						const double ns = nz(n_notch, x, z);
+						const double nn = absf(ns);
+						if (nn < double(NOTCH_WIDTH_Y)) {
+							const double e = 8.0;
+							const double ngx = nz(n_notch, x + e, z) - ns;
+							const double ngz = nz(n_notch, x, z + e) - ns;
+							const double rgx = nz(n_range, wx + e, wz) - rn;
+							const double rgz = nz(n_range, wx, wz + e) - rn;
+							const double dn = std::sqrt((ngx * ngx + ngz * ngz) * (rgx * rgx + rgz * rgz));
+							const double along = dn > 0.0 ? absf(ngx * rgx + ngz * rgz) / dn : 1.0;
+							add *= 1.0 - minf(NOTCH, 1.0) * (1.0 - smoothstep(NOTCH_WIDTH_X, NOTCH_WIDTH_Y, nn)) * (1.0 - smoothstep(0.45, 0.8, along));
+						}
+					}
+					h += add;
 				}
+			}
+		}
+		if (TERRACE > 0.0 && inland > 0.0) {
+			const double tm = smoothstep(TERRACE_BAND_X, TERRACE_BAND_Y, nz(n_terrace, x, z)) * inland * (1.0 - smoothstep(0.3, 0.8, mountain)) * minf(TERRACE, 1.0);
+			if (tm > 0.0) {
+				const double ty = h / TERRACE_STEP;
+				const double tf = ty - std::floor(ty);
+				const double stepped = (std::floor(ty) + smoothstep(TERRACE_FLAT, 1.0, tf)) * TERRACE_STEP;
+				h = lerpf(h, stepped, tm);
 			}
 		}
 		double meadow = smoothstep(MEADOW_BAND_X, MEADOW_BAND_Y, nz(n_meadows, x, z)) * inland * (1.0 - smoothstep(0.0, 0.35, mountain));
@@ -368,6 +418,29 @@ private:
 			const double flat = maxf(base + hills * MEADOW_KEEP, MEADOW_ABOVE);
 			h = lerpf(h, flat, meadow);
 		}
+		double mesa = 0.0;
+		if (MESA > 0.0 && inland > 0.0) {
+			const double region = smoothstep(MESA_BAND_X, MESA_BAND_Y, nz(n_mesa_mask, x, z)) * smoothstep(0.0, 0.25, inland) * (1.0 - smoothstep(0.05, 0.3, mountain)) * minf(MESA, 1.0);
+			if (region > 0.0) {
+				const double lv = MESA_LEVEL + (1.0 - region) * 1.2;
+				const double mn = nz(n_mesa, x, z);
+				if (mn > lv) {
+					const double tiers = maxf(std::floor(MESA_STEPS), 1.0);
+					double wall = 0.0;
+					const int64_t nt = int64_t(tiers);
+					for (int64_t t = 0; t < nt; ++t) {
+						const double at = lv + double(t) * MESA_GAP;
+						const double st = smoothstep(at, at + MESA_EDGE, mn);
+						mesa += st / tiers;
+						wall = maxf(wall, 1.0 - absf(2.0 * st - 1.0));
+					}
+					const double top = base + hills * MESA_KEEP + MESA_TALL * mesa;
+					h = lerpf(h, maxf(top, MEADOW_ABOVE), minf(mesa * tiers, 1.0));
+					meadow = maxf(meadow * (1.0 - smoothstep(0.0, 0.3, wall)), smoothstep(0.9, 1.0, mesa) * inland);
+				}
+			}
+		}
+		rock_ = mesa;
 		last_river_r = INF;
 		last_river_w = 0.0;
 		last_river_y = -INF;
@@ -385,7 +458,7 @@ private:
 			const double gz = (nz(n_valley, vx, vz + e) - v) / e;
 			const double d = absf(v) / maxf(std::sqrt(gx * gx + gz * gz), 0.25 / VALLEYS);
 			const double half = floor_half * lerpf(VALLEY_SWING_X, VALLEY_SWING_Y, clampf(nz(n_valley_wide, x, z) * 0.8 + 0.5, 0.0, 1.0));
-			const double side = lerpf(VALLEY_SIDE_X, VALLEY_SIDE_Y, smoothstep(0.0, 0.6, mountain)) * maxf(valleys, 1.0);
+			const double side = lerpf(VALLEY_SIDE_X, VALLEY_SIDE_Y, smoothstep(0.0, 0.6, maxf(mountain, mesa))) * maxf(valleys, 1.0);
 			last_valley = d;
 			last_half = half;
 			last_side = side;

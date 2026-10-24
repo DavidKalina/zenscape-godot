@@ -49,6 +49,21 @@ multiply-add, three spots in four move, by up to 3 cm.
 machines. Any change to one field must be made to the other; check with
 `scratch/`'s comparison (the handoff, docs/design/endless-flight/native-land-handoff.md).
 
+## The endless grass
+
+`grass_cell.h` is `scripts/endless/endless_grass.gd` `grow_cell` past its
+height grid (the probe's masks, KitFlora's Grow at the carpet's settings,
+its Draw of the grass into multimesh buffers, the patches' tint, the far
+wash and the sub tiles), exposed as `ZenScapeGrass`. endless_grass.gd sets
+one up per layer (`native_config`) and calls it from its workers; the
+flowers and seed heads it keeps come back as records GDScript draws.
+`--grass-native=0` (or `--gdscript-kernels`) runs the GDScript placement,
+which stays the reference. It matches it bit for bit on Windows (the
+engine's PCG32, Variant hash and FastNoiseLite setup; float cos and sin as
+the double result rounded, as the official build's runtime gives them):
+any change to one must be made to the other, checked with the handoff's
+comparison (docs/design/endless-flight/native-grass-handoff.md).
+
 ## Build and run
 
 Prerequisites: Godot 4.7 editor, a C++17 compiler, Python 3, SCons 4.x, and the

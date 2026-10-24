@@ -109,7 +109,9 @@ var _pull := 0.0
 static func wanted() -> int:
 	for arg: String in LaunchArgs.user_args():
 		if arg.begins_with("--traffic="): return clampi(int(arg.get_slice("=",1)),0,MAX_COUNT)
-	return DEFAULT_COUNT
+	# The world's traffic layer (planes; -1 the engine's DEFAULT_COUNT).
+	var n := int(preload("res://scripts/endless/world/world_profile.gd").current().layer("traffic",-1))
+	return DEFAULT_COUNT if n < 0 else clampi(n,0,MAX_COUNT)
 
 func setup(seed: int, land_field: RefCounted, mood: Node3D, planes_wanted := DEFAULT_COUNT) -> void:
 	name = "Traffic"

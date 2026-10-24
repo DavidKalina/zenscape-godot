@@ -30,6 +30,13 @@ extends Node3D
 ##   ./run-endless-flight.command [--seed=7]
 ##   godot --path . res://studies/endless_flight.tscn -- --no-title [--seed=7] [--at=x,z] [--heading=deg] [--alt=m] [--on-foot]
 ##
+## The world: this script is the engine's (the plane and flight, on foot,
+## streaming, the look, the dressing machinery, the HUD and harness hooks);
+## what makes the world this world is its profile
+## (scripts/endless/world/world_profile.gd, profiles/<id>.gd): --world=ID
+## (wilderness; test_dry is a test profile). The profile sets the defaults;
+## every flag below still wins (docs/design/endless-flight/world-profiles-handoff.md).
+##
 ## Flags: --on-foot starts parked at --at (on the land there) with the pilot
 ## out beside the plane. --seed=N the land (1), --at=x,z where it starts (0,0), the land's shape
 ## (land_field.gd): --mountains=X, --peaks=X, --valleys=X, --no-valleys,
@@ -69,8 +76,13 @@ extends Node3D
 ## --bird-range=X, --bird-size=X, --bird-ride=S, --ambient-birds=X.
 ## Other planes (scripts/endless/endless_traffic.gd): --traffic=0 off,
 ## --traffic=N how many (3), --trails=0 no smoke trails.
+## The plane's speed (SkyPlane FLIGHT_SPEED, use_flight_speed): --plane-speed=X
+## (times the toy's 14 m/s cruise, 2.1; 1.15 the isles'), --plane-turn=X; the
+## view widens with speed RUSH_FOV times the chase's own (--cam-speed-fov=X
+## sets it), and past cruise the eye can buffet a little (--rush=X, 0 off by default).
 
 const Field = preload("res://scripts/endless/land_field.gd")
+const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
@@ -111,11 +123,21 @@ const SEA_SIZE := 40000.0
 ## The plane's start over the ground (m), and the eye's clearance over it.
 const START_ALT := 45.0
 const EYE_CLEAR := 0.6
+## Speed's feel: the chase's speed widening times RUSH_FOV (GlideCamera
+## FOV_FAST; at cruise about +6 degrees, at boost +12), and the wind's
+## buffet on the eye, RUSH_SHAKE radians at most, coming in from
+## RUSH_FROM of the cruise to Boost's speed, shaken at RUSH_HZ.
+const RUSH_FOV := 1.8
+const RUSH_SHAKE := 0.0045
+const RUSH_FROM := 0.9
+const RUSH_HZ := Vector3(7.3,11.9,17.1)
 
 ## True once the land under the start stands and it flies (the harness
 ## waits on it: tools/harness/drive.gd `open`).
 var walk_ready := false
 var seed := 1
+## The world profile in play (--world=; scripts/endless/world/world_profile.gd).
+var world: RefCounted
 var land: Node3D
 var field: RefCounted
 var camera: Camera3D
@@ -169,9 +191,20 @@ var _hop_from := Vector3.ZERO
 var _hop_to := Vector3.INF
 var _parked_at := Vector3.ZERO
 var _boarding := -1.0
+## The buffet's strength (--rush=X; off by default, it read as jitter)
+## and its clock.
+var _rush := 0.0
+var _rush_t := 0.0
 
 func _ready() -> void:
 	EndlessLook.reset_season_globals()
+	# The world: its shader globals over the reset, its start under the flags.
+	world = WorldProfile.current()
+	world.apply_globals()
+	_start = world.spawn.get("at",_start)
+	_alt = float(world.spawn.get("alt",_alt))
+	var spawn_heading := float(world.spawn.get("heading",0.0))
+	if spawn_heading != 0.0: _heading = -deg_to_rad(spawn_heading)
 	Pad.ensure()
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--seed="): seed = int(arg.get_slice("=",1))
@@ -183,13 +216,14 @@ func _ready() -> void:
 		elif arg.begins_with("--alt="): _alt = float(arg.get_slice("=",1))
 		elif arg == "--numbers": _numbers = true
 		elif arg == "--on-foot": _on_foot_start = true
+		elif arg.begins_with("--rush="): _rush = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--ceiling="): _ceiling_over = float(arg.get_slice("=",1))
 		elif arg == "--old-land": _ceiling_over = SkyPlane.CEILING-Field.SEA_Y
 		elif arg == "--uncapped":
 			# No vsync and no cap, so the numbers' fps is the frame's cost.
 			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 			Engine.max_fps = 0
-	field = Field.new(seed)
+	field = Field.new(seed,world)
 	if EndlessLook.wanted():
 		look = EndlessLook.new()
 		add_child(look)
@@ -260,7 +294,7 @@ func _ready() -> void:
 	if _on_foot_start: await _start_on_foot()
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
-	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)" % [seed,took,int(land.counts().standing)])
+	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.DEFAULT else ", world "+str(world.id)])
 	if get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _start_height() -> float:
@@ -356,7 +390,7 @@ func _build_ui() -> void:
 ## Flying from `at` on `heading`, at cruise, the chase camera behind it.
 func _launch(at: Vector3, heading: float) -> void:
 	plane = SkyPlane.new()
-	plane.use_game_speed()
+	plane.use_flight_speed()
 	plane.floor_y = Field.SEA_Y-15.0
 	plane.water = Field.SEA_Y
 	# The ranges' tallest peaks stand into the cloud roof: the ceiling
@@ -382,6 +416,7 @@ func _launch(at: Vector3, heading: float) -> void:
 	chase.sight = _sight
 	chase.reset(plane,at+(-plane.forward()*GlideCamera.BACK.x+Vector3.UP*GlideCamera.UP.x)*ground_scale.size(),camera.fov)
 	chase.linger = LOOK_LINGER
+	if not _has_arg("--cam-speed-fov="): chase.speed_fov = RUSH_FOV
 	_size_chase()
 	_frame(0.0)
 
@@ -477,6 +512,7 @@ func tick(delta: float) -> void:
 	_size_chase()
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() else Vector3.ZERO
 	_frame(delta)
+	land.lead_with(plane.velocity)
 	land.step(camera.global_position)
 	arches.step(camera.global_position)
 	trees.step(camera.global_position,plane.position)
@@ -486,6 +522,7 @@ func tick(delta: float) -> void:
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera
+		grass.lead_with(plane.velocity)
 		grass.step(eye.global_position,-eye.global_basis.z)
 	if look != null: look.plane_at = plane.position
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
@@ -525,7 +562,28 @@ func _frame(delta: float) -> void:
 	if way.length() < 0.01: way = plane.forward()
 	camera.look_at(camera.global_position+way,Vector3.UP)
 	camera.rotate_object_local(Vector3.FORWARD,chase.roll)
+	_buffet(delta)
 	camera.fov = chase.fov
+
+## The wind's buffet past cruise: a small shake of the eye's aim, three
+## sines out of step, growing to RUSH_SHAKE at Boost's speed. None on the
+## wheels.
+func _buffet(delta: float) -> void:
+	if _rush <= 0.0 or hand_landing.on_ground(): return
+	_rush_t += delta
+	var v: float = plane.velocity.length()
+	var k := smoothstep(plane.cruise()*RUSH_FROM,plane.boost_speed(),v)*RUSH_SHAKE*_rush
+	if k <= 0.0: return
+	var t := _rush_t*TAU
+	var yaw := sin(t*RUSH_HZ.x)*0.6+sin(t*RUSH_HZ.z+1.7)*0.4
+	var nod := sin(t*RUSH_HZ.y+0.9)*0.6+sin(t*RUSH_HZ.x*1.31+2.3)*0.4
+	camera.rotate_object_local(Vector3.UP,yaw*k)
+	camera.rotate_object_local(Vector3.RIGHT,nod*k*0.7)
+
+static func _has_arg(prefix: String) -> bool:
+	for a: String in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with(prefix): return true
+	return false
 
 ## The plane's input, as the isle reads it (studies/kit_isle.gd `_fly_input`).
 func _fly_input(_delta: float) -> Dictionary:
@@ -782,6 +840,7 @@ func _foot_tick(delta: float) -> void:
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var at: Camera3D = view if view != null else camera
+		grass.lead_with(walker.motor.velocity)
 		grass.step(at.global_position,-at.global_basis.z)
 	if look != null: look.plane_at = plane.position
 	if look != null: look.step(delta,eye,-camera.global_basis.z,camera)

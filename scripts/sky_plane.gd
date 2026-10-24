@@ -68,6 +68,17 @@ const LANDING_SPEED := 8.0
 ## kit_isle.gd) sets it with `use_game_speed`; a bare SkyPlane (the flight
 ## study, its pinned benches) flies at 1 unless `--plane-speed=` says.
 const GAME_SPEED := 1.15
+## Endless flight's plane (studies/endless_flight.gd `use_flight_speed`)
+## flies FLIGHT_SPEED times the toy's cruise and boost (about 29 and 46
+## m/s): the land is wide open, nothing to thread. Its brake comes down to
+## FLIGHT_BRAKE of its cruise (never above the toy's scaled brake), its
+## dive's cap rises with the speed (FAST times FLIGHT_SPEED over
+## GAME_SPEED), and it turns FLIGHT_TURN times the toy's rate (a wider turn
+## than the toy's radius: at the full scale the roll would snap round).
+## Landing, flap and stall speeds stay, so a hand landing comes in as ever.
+const FLIGHT_SPEED := 2.1
+const FLIGHT_BRAKE := 0.45
+const FLIGHT_TURN := 1.3
 ## Flaps down: the speed the engine holds, the floor it never drops below
 ## (m/s), and the extra sink (m/s).
 const FLAP_SPEED := 5.5
@@ -172,6 +183,10 @@ var _left := Vector3.INF
 ## rate, a wider turn).
 var speed_scale := speed_flag(preload("res://scripts/launch_args.gd").user_args())
 var turn_scale := turn_flag(preload("res://scripts/launch_args.gd").user_args(),speed_scale)
+## Brake's speed (m/s; 0: BRAKE_SPEED times `speed_scale`) and the cap a
+## dive reaches (m/s), set by `use_flight_speed`.
+var brake_pace := 0.0
+var top := FAST
 var drift := 0.0
 var slip := 0.0
 var drift_held := 0.0
@@ -191,7 +206,7 @@ var _free_bank := 0.0
 
 func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 	super.launch(from,towards,pace,drop)
-	speed = clampf(maxf(pace,CRUISE_SPEED*0.8),SLOW,FAST)
+	speed = clampf(maxf(pace,CRUISE_SPEED*0.8),SLOW,top)
 	pitch = 0.0
 	spin = 0.0
 	rolling = false
@@ -212,7 +227,7 @@ func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 ## takeoff's lift; scripts/plane_landing.gd): at `pace` m/s, the nose at
 ## `nose`, level, the engine on, nothing turning it.
 func resume(pace: float, nose: float) -> void:
-	speed = clampf(pace,SLOW,FAST)
+	speed = clampf(pace,SLOW,top)
 	pitch = clampf(nose,PITCH_LIMIT.x,PITCH_LIMIT.y)
 	spin = 0.0
 	rolling = false
@@ -291,9 +306,25 @@ func use_game_speed() -> void:
 	speed_scale = game_speed()
 	turn_scale = turn_flag(preload("res://scripts/launch_args.gd").user_args(),speed_scale)
 
+## Flies at endless flight's speed (FLIGHT_SPEED, or `--plane-speed=`):
+## brake, cap and turn to match (`--plane-turn=` still wins).
+func use_flight_speed() -> void:
+	var args: PackedStringArray = preload("res://scripts/launch_args.gd").user_args()
+	speed_scale = speed_flag(args,FLIGHT_SPEED)
+	turn_scale = turn_flag(args,minf(speed_scale,FLIGHT_TURN))
+	brake_pace = minf(BRAKE_SPEED*speed_scale,maxf(BRAKE_SPEED*GAME_SPEED,cruise()*FLIGHT_BRAKE))
+	top = maxf(FAST,FAST*speed_scale/GAME_SPEED)
+
 ## The speed the engine holds with the throttle let be (m/s).
 func cruise() -> float:
 	return CRUISE_SPEED*speed_scale
+
+## The speeds Boost and Brake hold (m/s).
+func boost_speed() -> float:
+	return BOOST_SPEED*speed_scale
+
+func brake_speed() -> float:
+	return brake_pace if brake_pace > 0.0 else BRAKE_SPEED*speed_scale
 
 ## The direction it travels: the nose's, swung back by the drift's slip.
 func travel() -> Vector3:
@@ -384,7 +415,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	pitch = clampf(pitch,PITCH_LIMIT.x,lerpf(PITCH_LIMIT.y,CEILING_NOSE,over))
 	# Speed: the engine pulls it to the throttle's speed; the climb and the
 	# dive swing it either side.
-	var target := (CRUISE_SPEED+boost*(BOOST_SPEED-CRUISE_SPEED)-brake*(CRUISE_SPEED-BRAKE_SPEED))*speed_scale
+	var target := cruise()+boost*(boost_speed()-cruise())-brake*(cruise()-brake_speed())
 	if power < 1.0: target = lerpf(CRUISE_SPEED*DEAD_GLIDE*speed_scale,target,power)
 	if approach: target = minf(target,LANDING_SPEED)
 	# Flaps down slow it and lower its floor; Boost takes them over.
@@ -395,7 +426,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var path := _heavy_path(delta) if heavy > 0.0 else travel()
 	var climb := path.y if heavy > 0.0 else sin(pitch)
 	speed += (-SWING*(1.0+HEAVY_SWING*heavy)*climb-THROTTLE*(1.0-HEAVY_THROTTLE*heavy)*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
-	speed = clampf(speed,slow,FAST)
+	speed = clampf(speed,slow,top)
 	lift = clampf((floor_y-position.y)*CUSHION,0.0,CUSHION_MAX)
 	var fall := FALL*minf(airborne,FALL_TIME)*(1.0-smoothstep(FALL_TIME,FALL_TIME+CATCH,airborne))
 	var drop := approach_drop(ground) if approach else 0.0

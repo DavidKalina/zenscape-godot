@@ -1,7 +1,7 @@
 shader_type spatial;
 // The endless flight's songbirds (scripts/endless/endless_birds.gd): the
-// isles' carved birds (scripts/songbird_body.gd's meshes, vertex-coloured,
-// faceted) drawn as MultiMeshes. Like shaders/songbird.gdshader without the
+// isles' songbirds (scripts/songbird_body.gd's meshes, vertex-coloured,
+// smooth) drawn as MultiMeshes. Like shaders/songbird.gdshader without the
 // perch ride, with a wrapped light and a little light through the feathers,
 // so a bird's shaded side keeps its colour against the land's lit crowns.
 render_mode diffuse_lambert_wrap, specular_schlick_ggx;
