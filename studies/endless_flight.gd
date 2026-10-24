@@ -505,6 +505,7 @@ func tick(delta: float) -> void:
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera
+		grass.lead_with(plane.velocity)
 		grass.step(eye.global_position,-eye.global_basis.z)
 	if look != null: look.plane_at = plane.position
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
@@ -822,6 +823,7 @@ func _foot_tick(delta: float) -> void:
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var at: Camera3D = view if view != null else camera
+		grass.lead_with(walker.motor.velocity)
 		grass.step(at.global_position,-at.global_basis.z)
 	if look != null: look.plane_at = plane.position
 	if look != null: look.step(delta,eye,-camera.global_basis.z,camera)

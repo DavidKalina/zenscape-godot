@@ -17,6 +17,7 @@
 #include "water_flow.h"
 #include "isle_kernels.h"
 #include "land_field_bind.h"
+#include "grass_cell.h"
 
 using namespace godot;
 
@@ -321,6 +322,7 @@ static void initialize(ModuleInitializationLevel level) {
     ClassDB::register_class<ZenScapeWaterFlow>();
     ClassDB::register_class<ZenScapeIsleKernels>();
     ClassDB::register_class<ZenScapeLandField>();
+    ClassDB::register_class<ZenScapeGrass>();
 }
 extern "C" GDExtensionBool GDE_EXPORT zenscape_kernels_init(GDExtensionInterfaceGetProcAddress get_proc,
         GDExtensionClassLibraryPtr library, GDExtensionInitialization *initialization) {

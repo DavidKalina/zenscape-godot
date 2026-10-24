@@ -47,7 +47,8 @@ extends Node3D
 ## give way to it with no ring.
 ##
 ## The main thread only stands the finished batches (KitFlora's tiles, one
-## multimesh a tile and part), within STAND_BUDGET ms a frame.
+## multimesh a tile and part), within STAND_BUDGET ms a frame, a cell over
+## as many frames as that takes.
 ##
 ## Flags: --no-grass (none; G turns it off and on in flight), --grass=X (the
 ## carpet's density, a share of the isle's, 1), --grass-range=M (where the
@@ -72,6 +73,12 @@ extends Node3D
 ## 24: KitFlora's own), --grass-far-lod=M (the far ring's tiles wholly past M m
 ## draw the far lod tuft, one triangle a blade, FAR_LOD; 0: off, the lite
 ## tuft throughout).
+## Native placement (docs/design/endless-flight/native-grass-handoff.md): a
+## cell's tufts are placed by ZenScapeGrass (native/terrain_kernels/
+## grass_cell.h) when the library is built, the same tufts bit for bit;
+## --grass-native=0 (or --gdscript-kernels) places them in GDScript.
+## --grass-prefetch=S (PREFETCH, 1: the cells round where the eye will be S s
+## on asked for too; 0 off).
 ##
 ## Look round 5 (docs/design/endless-flight/flowers-colour-handoff.md): the
 ## grass's colour regions and the flower drifts are endless_patch.gd
@@ -211,9 +218,15 @@ const TUFT_TONE := Color(1.0,1.0,1.0)
 const TONE_TOP := Vector3(0.76,0.82,0.86)
 const TONE_LOW := Vector3(0.56,0.66,0.68)
 ## Cells growing at once (the near layer's first), ms a frame for standing
-## their batches.
-const MAX_TASKS := 6
+## their batches (a cell's batches stood over as many frames as that takes).
+const MAX_TASKS := 8
 const STAND_BUDGET := 1.5
+## Prefetch (`lead_with`): each layer's cells are also asked for round where
+## the eye will be PREFETCH s on along the flight's level velocity, at most
+## PREFETCH_MOST m ahead, so at boost the rings ahead are grown before
+## they're in view (--grass-prefetch=S; 0 off).
+const PREFETCH := 1.0
+const PREFETCH_MOST := 64.0
 ## How far the near tufts' roots take the painted ground's colour under them
 ## (reference_surface `grass_root_paint`; 0: the isles' ground_look colour),
 ## the paint under them taking the tufts' own ground (endless_ground
@@ -245,6 +258,8 @@ const GrassTuft = preload("res://scripts/grass_tuft_mesh.gd")
 ## into that shape over FAR_MORPH m, done FAR_LOD_SAFE m short of FAR_LOD
 ## (endless_tuft_far `far_morph`), so the swap changes no pixel.
 const CULL_SLACK := 2.0
+const CULL_SPREAD := 4
+const CULL_SPREAD_NEAR := 2
 const SUB := 8.0
 const FAR_LOD := 100.0
 const FAR_LOD_BACK := 6.0
@@ -252,6 +267,14 @@ const FAR_MORPH := 30.0
 const FAR_LOD_SAFE := 5.0
 var cull := true
 var sub := SUB
+var prefetch := PREFETCH
+## The prefetch's offset now (world, level; `lead_with`), and the climb or
+## descent over it (m: a descent asks for the near ring before it shows).
+var ahead := Vector3.ZERO
+var ahead_y := 0.0
+## The cell being stood over several frames: [result, node, groups, count,
+## next part], or empty.
+var _standing: Array = []
 var far_lod := FAR_LOD
 var _far_meshes := {}
 var _cull_frame := 0
@@ -306,6 +329,9 @@ class Layer extends RefCounted:
 	var pending := {}     # Vector2i -> task id
 	var wanted := {}
 	var queue: Array = []
+	## The native placement (ZenScapeGrass, native/terrain_kernels/
+	## grass_cell.h) set up for this layer's site, or null: GDScript.
+	var native: Object
 
 var near_layer := Layer.new()
 var far_layer := Layer.new()
@@ -365,6 +391,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		elif a.begins_with("--grass-cull="): cull = a.get_slice("=",1) != "0"
 		elif a.begins_with("--grass-sub="): sub = clampf(a.get_slice("=",1).to_float(),0.0,64.0)
 		elif a.begins_with("--grass-far-lod="): far_lod = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a.begins_with("--grass-prefetch="): prefetch = maxf(a.get_slice("=",1).to_float(),0.0)
 	# The regions and drifts, set before any worker reads them.
 	Patch.offset = Patch.seed_offset(seed)
 	Patch.region_amount = regions
@@ -415,6 +442,114 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	if ground != null: _ring_mats[ground.get_instance_id()] = ground
 	_reach()
 	if warm: _warm()
+	if native_wanted():
+		for layer: Layer in [near_layer,far_layer]:
+			layer.native = ClassDB.instantiate(NATIVE_CLASS)
+			layer.native.configure(native_config(layer.site,layer.share,lod))
+
+## The native placement (native/terrain_kernels/grass_cell.h): each cell's
+## tufts placed by ZenScapeGrass, the same tufts in the same places as
+## `grow_cell` in GDScript, when the library is built and current
+## (--grass-native=0 or --gdscript-kernels: GDScript).
+const NATIVE_CLASS := &"ZenScapeGrass"
+const NATIVE_VERSION := 1
+static func native_wanted() -> bool:
+	var args := LaunchArgs.user_args()
+	if "--grass-native=0" in args or "--gdscript-kernels" in args: return false
+	Field.native_available()
+	if not ClassDB.class_exists(NATIVE_CLASS): return false
+	var probe: Object = ClassDB.instantiate(NATIVE_CLASS)
+	return probe.has_method("version") and probe.has_method("assets") and int(probe.version()) == NATIVE_VERSION
+
+## The native placement's settings for a layer: its site (`site_values`),
+## its far share and rings, and every table grow_cell's Grow reads (the
+## catalog's grass tuft, the meadow type's and the drifts' flower kinds).
+static func native_config(site_values: Dictionary, far_share: float, rings: Vector4) -> Dictionary:
+	const MeadowTypes = preload("res://scripts/meadow_types.gd")
+	var data: Dictionary = SkyIslets.catalog().data
+	var c := {}
+	for k: String in ["tufts","tuft_bump","shag","contact","height_field","tilt","rim","variety","patches","flower_tall","slope","alpine"]:
+		if site_values.has(k): c[k] = site_values[k]
+	c.sub = site_values.get("sub",0.0)
+	c.flowers = bool(site_values.get("flowers",true)) and far_share < 1.0
+	c.flower_tries = (BLOOM_TRIES if c.flowers else 0.0001) if Patch.bloom_amount > 0.0 else KitFlora.FLOWER_TRIES
+	c.high = HIGH
+	c.lod = rings
+	c.lod_grow = FAR_GROW
+	c.lod_soft = SOFT
+	c.far_share = far_share
+	c.patch_offset = Patch.offset
+	c.region_amount = Patch.region_amount
+	c.bloom_amount = Patch.bloom_amount
+	c.plain = Patch.plain()
+	c.tint_step = TINT_STEP
+	c.sink = SINK
+	c.sea_y = Field.SEA_Y
+	c.beach_clear = BEACH_CLEAR
+	c.beach_ramp = BEACH_RAMP
+	c.rock_near = ROCK_NEAR
+	c.alpine_top = ALPINE_TOP
+	c.tuft_tone = TUFT_TONE
+	c.thatch_straw = KitFlora.THATCH_STRAW.srgb_to_linear()
+	c.bloom_peak = BLOOM_PEAK
+	c.bloom_companion = BLOOM_COMPANION
+	c.bloom_kind = BLOOM_KIND
+	c.far_wash = FAR_WASH
+	c.drift = DRIFT
+	c.drift_scale = DRIFT_SCALE
+	c.flower_lift = FLOWER_LIFT
+	var parts := []
+	var grass_keys: Array = data.parts.get("grass_tuft",[])
+	for key: String in grass_keys:
+		parts.append({"key":key,"pose":data.poses.get(key,Transform3D.IDENTITY),"tint":data.tints.get(key,Color.WHITE),"ringed":KitFlora.ringed(key)})
+	c.grass_parts = parts
+	# The flower kinds: the meadow type's, the drifts' and the seed heads'.
+	var meadow: Dictionary = MeadowTypes.TYPES[KitFlora.MEADOW]
+	var names := []
+	for fl: Array in meadow.flowers: if not str(fl[0]) in names: names.append(str(fl[0]))
+	for k: Array in Patch.KINDS: if not str(k[0]) in names: names.append(str(k[0]))
+	if not "wheat" in names: names.append("wheat")
+	var assets := PackedStringArray()
+	var kinds := []
+	for kind: String in names:
+		var asset := MeadowTypes.asset(kind)
+		if not asset in assets: assets.append(asset)
+		var range_of: Array = meadow.sizes.get(kind,[0.85,1.1])
+		var row := {"asset":assets.find(asset),"packing":MeadowTypes.packing(kind),"sizes":Vector2(float(range_of[0]),float(range_of[1])),"standing_in":MeadowTypes.standing_in(kind)}
+		if MeadowTypes.standing_in(kind):
+			var entry: Dictionary = MeadowTypes.FLOWER_KEYS[kind]
+			var stand_in: Array = MeadowTypes.FALLBACK_FORMS[entry.fallback]
+			row.head = float(entry.head)
+			row.height = float(entry.height)
+			row.fb_top = float(stand_in[0])
+			row.fb_head = float(stand_in[1])
+		var tints := PackedColorArray()
+		if MeadowTypes.tint(kind,0.0) != "":
+			var count: int = (MeadowTypes.FLOWER_KEYS[kind].tints as Array).size()
+			for i in count: tints.append(NativeObjectPose.decode_tint(MeadowTypes.tint(kind,(i+0.5)/count)))
+		row.tints = tints
+		kinds.append(row)
+	c.assets = assets
+	c.kinds = kinds
+	var mk := PackedInt32Array()
+	var mw := PackedFloat64Array()
+	for fl: Array in meadow.flowers:
+		mk.append(names.find(str(fl[0])))
+		mw.append(float(fl[1]))
+	c.meadow_kinds = mk
+	c.meadow_weights = mw
+	c.meadow_cover = float(meadow.drift.cover)
+	c.meadow_frequency = float(meadow.drift.frequency)
+	c.meadow_mix = float(meadow.drift.mix)
+	var bk := PackedInt32Array()
+	var bv := PackedFloat64Array()
+	for k: Array in Patch.KINDS:
+		bk.append(names.find(str(k[0])))
+		bv.append(float(k[1]))
+	c.bloom_kinds = bk
+	c.bloom_variants = bv
+	c.wheat = names.find("wheat")
+	return c
 
 ## Frame rate: the materials and tufts the cells draw made at setup (about
 ## 0.15 s), not by the first cell stood in flight (an 85 ms hitch: each
@@ -458,6 +593,7 @@ func set_enabled(on: bool) -> void:
 	enabled = on
 	_reach()
 	if not on:
+		_drop_standing()
 		for layer: Layer in [near_layer,far_layer]:
 			for key: Vector2i in layer.cells.keys(): _free(layer,key)
 			layer.queue.clear()
@@ -466,6 +602,13 @@ func set_enabled(on: bool) -> void:
 		_done.clear()
 		_lock.unlock()
 	_planned_at = Vector3.INF
+
+## The prefetch from the flight's velocity (m/s): PREFETCH s of its level
+## part, at most PREFETCH_MOST m. Before `step`.
+func lead_with(velocity: Vector3) -> void:
+	ahead = Vector3(velocity.x,0.0,velocity.z)*prefetch
+	if ahead.length() > PREFETCH_MOST: ahead = ahead.normalized()*PREFETCH_MOST
+	ahead_y = clampf(velocity.y*prefetch,-PREFETCH_MOST,PREFETCH_MOST)
 
 ## One frame: the cells round `eye` (the camera that draws) asked for,
 ## finished ones stood within the budget, far ones freed.
@@ -500,12 +643,15 @@ func _lead_step(forward: Vector3) -> void:
 	else:
 		var dt: float = get_process_delta_time() if is_inside_tree() else 1.0/60.0
 		lead_now = lead_now.lerp(want,1.0-exp(-LEAD_RATE*maxf(dt,1.0/240.0)))
-	var over := _over(_eye)
-	var rise_rate := RISE
-	if tuft_top > flat_up: rise_rate = maxf(RISE,lod.w/(tuft_top-flat_up))
-	rise = over if rings_3d else maxf(over-flat_up,0.0)*rise_rate
+	rise = _rise_of(_over(_eye))
 	var v := Vector4(lead_now.x,lead_now.y,rise,0.0 if rings_3d else 1.0)
 	for id: int in _ring_mats: (_ring_mats[id] as ShaderMaterial).set_shader_parameter("ring_lead",v)
+
+## The rings' rise (`ring_lead`'s z) with the eye `over` m over the ground.
+func _rise_of(over: float) -> float:
+	var rise_rate := RISE
+	if tuft_top > flat_up: rise_rate = maxf(RISE,lod.w/(tuft_top-flat_up))
+	return over if rings_3d else maxf(over-flat_up,0.0)*rise_rate
 
 ## The ring distance (m) of ground point `p` from the eye: along the ground,
 ## led ahead (shaders/endless_ring.gdshaderinc), the rise left out.
@@ -523,8 +669,9 @@ func _cell_d(key: Vector2i) -> float:
 
 ## The disc of ground (centre x, z, radius) within ring distance `reach`
 ## (the rise taken off).
-func _disc(reach: float) -> Vector3:
-	var r := sqrt(maxf(reach*reach-rise*rise,0.0))
+func _disc(reach: float, at_rise := -1.0) -> Vector3:
+	var ri := rise if at_rise < 0.0 else at_rise
+	var r := sqrt(maxf(reach*reach-ri*ri,0.0))
 	var c := Vector2(_eye.x,_eye.z)+lead_now*r
 	return Vector3(c.x,c.y,r)
 
@@ -566,26 +713,38 @@ func _plan() -> void:
 	_planned_at = _eye
 	_lead_planned = lead_now
 	_since_plan = 0
+	# Planned for the lowest of the eye now and where the prefetch has it,
+	# half way and all the way (over the ground there: a hill ahead
+	# brings the near ring in as a descent does).
+	var plan_rise := rise
+	if ahead != Vector3.ZERO or ahead_y != 0.0:
+		for k: float in [0.5,1.0]:
+			plan_rise = minf(plan_rise,_rise_of(_over(_eye+Vector3(ahead.x,ahead_y,ahead.z)*k)))
 	for layer: Layer in [near_layer,far_layer]:
 		# The disc within the ring's reach (led ahead; smaller as the eye
 		# rises past flat_up), and the one past which a cell goes.
 		# (The near layer goes with its grass: its flowers alone, past it,
 		# would be a pixel across.)
-		var disc := _disc(layer.reach if layer.far or rise < lod.y else 0.0)
+		var disc := _disc(layer.reach if layer.far or plan_rise < lod.y else 0.0,plan_rise)
 		var centre := Vector2(disc.x,disc.y)
 		var reach := disc.z
 		layer.wanted.clear()
-		if reach > 0.0:
+		# Round the eye, and round where it will be (the prefetch).
+		var centres := [centre]
+		if ahead != Vector3.ZERO: centres.append(centre+Vector2(ahead.x,ahead.z))
+		for at: Vector2 in centres:
+			if reach <= 0.0: break
 			var r := ceili((reach+CELL)/CELL)
-			var cx := floori(centre.x/CELL)
-			var cz := floori(centre.y/CELL)
+			var cx := floori(at.x/CELL)
+			var cz := floori(at.y/CELL)
 			for dz in range(-r,r+1):
 				for dx in range(-r,r+1):
 					var key := Vector2i(cx+dx,cz+dz)
-					if _square_d(key,centre) <= reach: layer.wanted[key] = true
+					if _square_d(key,at) <= reach: layer.wanted[key] = true
 		var keep := _disc(layer.reach+KEEP)
 		for key: Vector2i in layer.cells.keys():
 			if not layer.wanted.has(key) and _square_d(key,Vector2(keep.x,keep.y)) > keep.z: _free(layer,key)
+		if not _standing.is_empty() and _standing[0].layer == layer and not layer.wanted.has(_standing[0].key): _drop_standing()
 		layer.queue.clear()
 		for key: Vector2i in layer.wanted:
 			if not layer.cells.has(key) and not layer.pending.has(key): layer.queue.append(key)
@@ -602,7 +761,7 @@ func _ask() -> void:
 		while near_layer.pending.size()+far_layer.pending.size() < MAX_TASKS and not layer.queue.is_empty():
 			var key: Vector2i = layer.queue.pop_front()
 			if layer.cells.has(key) or layer.pending.has(key): continue
-			layer.pending[key] = WorkerThreadPool.add_task(_grow.bind(layer,key,seed,layer.site.duplicate(),lod),false,"grass cell")
+			layer.pending[key] = WorkerThreadPool.add_task(_grow.bind(layer,key,seed,layer.site.duplicate(),lod,layer.native),false,"grass cell")
 
 ## Finished tasks let go.
 func _reap() -> void:
@@ -613,87 +772,111 @@ func _reap() -> void:
 				WorkerThreadPool.wait_for_task_completion(id)
 				layer.pending.erase(key)
 
-## Finished cells' batches stood, nearest first, within the budget; a cell
-## no longer wanted is dropped.
+## Finished cells' batches stood, nearest first, within the budget (a cell's
+## batches over as many frames as that takes, the cell in the tree from its
+## first); a cell no longer wanted is dropped.
 func _stand(all := false) -> void:
 	_lock.lock()
 	var ready := _done
 	_done = []
 	_lock.unlock()
-	if ready.is_empty(): return
+	if ready.is_empty() and _standing.is_empty(): return
 	var began := Time.get_ticks_usec()
 	ready.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _cell_d(a.key) < _cell_d(b.key))
-	while not ready.is_empty():
-		if not all and (Time.get_ticks_usec()-began)/1000.0 > STAND_BUDGET: break
-		var r: Dictionary = ready.pop_front()
-		var key: Vector2i = r.key
-		var layer: Layer = r.layer
-		stats.grown += 1
-		stats.grow_ms += float(r.ms)
-		stats.slowest_grow_ms = maxf(stats.slowest_grow_ms,float(r.ms))
-		if layer.cells.has(key) or not layer.wanted.has(key): continue
-		var t0 := Time.get_ticks_usec()
-		var node := Node3D.new()
-		node.name = "%s_%d_%d" % ["Far" if layer.far else "Near",key.x,key.y]
-		var count := 0
-		# Culled: the batches under a holder a tile and ring (its roots' box,
-		# its ring's reach), [reach, holder, box, shown, far lod].
-		var groups := {}
-		for part: Dictionary in r.parts:
-			var ring: Dictionary = part.get("ring",{})
-			var own: Mesh = _fine(str(part.key)) if fine and not layer.far and str(part.key).begins_with("grass") else null
-			if layer.far and far_lod > 0.0: own = _lite_morph(str(part.key))
-			var batch := KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer,lod.w,ring,own)
-			count += int(part.count)
-			# A tile is drawn out to its ring's reach led ahead, and over
-			# the height the rings stay flat to (Godot's range is 3D).
-			var past := KitFlora.TILE*0.75+(rise if rings_3d else flat_up)
-			if layer.far:
-				batch.material_override = _far(str(part.key),ring)
-				batch.visibility_range_end = lod.w*(1.0+lead)+past
-			elif ring.is_empty():
-				# The flowers thin out each at its own distance (no tile
-				# fade, which would draw them in the transparent pass).
-				batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
-				batch.visibility_range_end_margin = 0.0
-				batch.visibility_range_end = FLOWER_FADE.y*(1.0+lead)+past
-			else: batch.visibility_range_end = lod.y*(1.0+lead)+past
-			_calm(batch)
-			if cull and part.has("box"):
-				var reach := lod.w if layer.far else (FLOWER_FADE.y if ring.is_empty() else lod.y)
-				var gk := [reach,part.get("sub",part.tile)]
-				if not groups.has(gk):
-					var holder := Node3D.new()
-					holder.name = "Tile_%d" % groups.size()
-					node.add_child(holder)
-					groups[gk] = [reach,holder,part.box,true,false]
-				var g: Array = groups[gk]
-				g[2] = (g[2] as Rect2).merge(part.box)
-				(g[1] as Node3D).add_child(batch)
-			else: node.add_child(batch)
-		if cull: node.set_meta("groups",groups.values())
-		node.set_meta("instances",count)
-		add_child(node)
-		layer.cells[key] = node
-		stats.slowest_stand_ms = maxf(stats.slowest_stand_ms,(Time.get_ticks_usec()-t0)/1000.0)
+	while all or (Time.get_ticks_usec()-began)/1000.0 <= STAND_BUDGET:
+		if _standing.is_empty():
+			if ready.is_empty(): break
+			var r: Dictionary = ready.pop_front()
+			var layer: Layer = r.layer
+			stats.grown += 1
+			stats.grow_ms += float(r.ms)
+			stats.slowest_grow_ms = maxf(stats.slowest_grow_ms,float(r.ms))
+			if layer.cells.has(r.key) or not layer.wanted.has(r.key): continue
+			var node := Node3D.new()
+			node.name = "%s_%d_%d" % ["Far" if layer.far else "Near",r.key.x,r.key.y]
+			add_child(node)
+			_standing = [r,node,{},0,0]
+		_stand_some(all,began)
+	stats.slowest_stand_ms = maxf(stats.slowest_stand_ms,(Time.get_ticks_usec()-began)/1000.0)
 	if not ready.is_empty():
 		_lock.lock()
 		ready.append_array(_done)
 		_done = ready
 		_lock.unlock()
 
+## The standing cell's next batches, until the budget is spent (`all`: every
+## one); the cell is the layer's once its last is stood.
+func _stand_some(all: bool, began: int) -> void:
+	var r: Dictionary = _standing[0]
+	var node: Node3D = _standing[1]
+	var groups: Dictionary = _standing[2]
+	var layer: Layer = r.layer
+	var parts: Array = r.parts
+	while int(_standing[4]) < parts.size():
+		if not all and (Time.get_ticks_usec()-began)/1000.0 > STAND_BUDGET: return
+		var part: Dictionary = parts[_standing[4]]
+		_standing[4] = int(_standing[4])+1
+		var ring: Dictionary = part.get("ring",{})
+		var own: Mesh = _fine(str(part.key)) if fine and not layer.far and str(part.key).begins_with("grass") else null
+		if layer.far and far_lod > 0.0: own = _lite_morph(str(part.key))
+		var batch := KitFlora.batch_node(str(part.key),part.tile,int(part.count),part.buffer,lod.w,ring,own)
+		_standing[3] = int(_standing[3])+int(part.count)
+		# A tile is drawn out to its ring's reach led ahead, and over
+		# the height the rings stay flat to (Godot's range is 3D).
+		var past := KitFlora.TILE*0.75+(rise if rings_3d else flat_up)
+		if layer.far:
+			batch.material_override = _far(str(part.key),ring)
+			batch.visibility_range_end = lod.w*(1.0+lead)+past
+			# Its buffer kept for the far lod's swap (_swap_mesh).
+			if far_lod > 0.0: batch.set_meta("buffer",part.buffer)
+		elif ring.is_empty():
+			# The flowers thin out each at its own distance (no tile
+			# fade, which would draw them in the transparent pass).
+			batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+			batch.visibility_range_end_margin = 0.0
+			batch.visibility_range_end = FLOWER_FADE.y*(1.0+lead)+past
+		else: batch.visibility_range_end = lod.y*(1.0+lead)+past
+		_calm(batch)
+		# Culled: the batches under a holder a tile and ring (its roots' box,
+		# its ring's reach), [reach, holder, box, shown, far lod].
+		if cull and part.has("box"):
+			var reach := lod.w if layer.far else (FLOWER_FADE.y if ring.is_empty() else lod.y)
+			var gk := [reach,part.get("sub",part.tile)]
+			if not groups.has(gk):
+				var holder := Node3D.new()
+				holder.name = "Tile_%d" % groups.size()
+				node.add_child(holder)
+				groups[gk] = [reach,holder,part.box,true,false]
+			var g: Array = groups[gk]
+			g[2] = (g[2] as Rect2).merge(part.box)
+			(g[1] as Node3D).add_child(batch)
+		else: node.add_child(batch)
+	if cull: node.set_meta("groups",groups.values())
+	node.set_meta("instances",int(_standing[3]))
+	layer.cells[r.key] = node
+	_standing = []
+
+## The cell half stood let go.
+func _drop_standing() -> void:
+	if _standing.is_empty(): return
+	(_standing[1] as Node).queue_free()
+	_standing = []
+
 ## The tiles culled by the rings (see CULL_SLACK): a tile shown while its
 ## roots' box meets its ring's disc (endless_ring.gdshaderinc: ring distance R
 ## is a disc of radius r = sqrt(R*R-rise*rise) centred lead*r ahead), the far
-## ring's every other frame; its far lod swapped past far_lod.
+## ring's a quarter of its cells a frame (each every CULL_SPREAD frames: at
+## boost, 46 m/s, 3 m, inside its 4 m slack), the near's half (1.5 m, inside
+## its 2 m); the far ring's lod swapped past far_lod.
 func _cull() -> void:
 	_cull_frame += 1
 	var discs := {}
 	var eye := Vector2(_eye.x,_eye.z)
 	for layer: Layer in [near_layer,far_layer]:
-		if layer.far and _cull_frame%2 == 1: continue
 		var slack := CULL_SLACK*(2.0 if layer.far else 1.0)
 		for key: Vector2i in layer.cells:
+			var spread := CULL_SPREAD if layer.far else CULL_SPREAD_NEAR
+			if posmod(key.x+key.y*3,spread) != _cull_frame%spread: continue
 			var node: Node3D = layer.cells[key]
 			var groups: Array = node.get_meta("groups",[])
 			for g: Array in groups:
@@ -710,9 +893,25 @@ func _cull() -> void:
 					if lite != bool(g[4]):
 						g[4] = lite
 						for b: Node in (g[1] as Node3D).get_children():
-							var mm := (b as MultiMeshInstance3D).multimesh
 							var k := str(b.get_meta("part",""))
-							mm.mesh = _far_mesh(k) if lite else _lite_morph(k)
+							_swap_mesh(b as MultiMeshInstance3D,_far_mesh(k) if lite else _lite_morph(k))
+
+## Batch `b` drawing `mesh`: a new multimesh of its kept buffer. Setting a
+## standing multimesh's mesh makes the renderer work its bounds out again
+## from the instances, reading the buffer back off the GPU: about 10 ms a
+## frame at boost, with every far tile there.
+static func _swap_mesh(b: MultiMeshInstance3D, mesh: Mesh) -> void:
+	var old := b.multimesh
+	if not b.has_meta("buffer"):
+		old.mesh = mesh
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = mesh
+	mm.instance_count = old.instance_count
+	mm.buffer = b.get_meta("buffer")
+	b.multimesh = mm
 
 ## The ground disc within ring distance `reach` [centre x, z, radius squared]
 ## (radius squared below zero: none).
@@ -892,10 +1091,10 @@ static func flower_drift(p: Vector2) -> float:
 	var n := Patch.noise(p.x/DRIFT_SCALE+17.3,p.y/DRIFT_SCALE-5.1)
 	return 1.0+(DRIFT.z-1.0)*smoothstep(DRIFT.x,DRIFT.y,n)
 
-func _grow(layer: Layer, key: Vector2i, land_seed: int, site_values: Dictionary, rings: Vector4) -> void:
+func _grow(layer: Layer, key: Vector2i, land_seed: int, site_values: Dictionary, rings: Vector4, native: Object) -> void:
 	if _quit: return
 	var began := Time.get_ticks_usec()
-	var parts := grow_cell(land_seed,key,site_values,rings,layer.share)
+	var parts := grow_cell(land_seed,key,site_values,rings,layer.share,native)
 	var took := (Time.get_ticks_usec()-began)/1000.0
 	_lock.lock()
 	_done.append({"layer":layer,"key":key,"parts":parts,"ms":took})
@@ -906,8 +1105,9 @@ func _grow(layer: Layer, key: Vector2i, land_seed: int, site_values: Dictionary,
 ## KitFlora's Grow at the carpet's settings (`site_values`), its rings `rings`
 ## with `far_share` of the tufts in the far one (0: all near, with the
 ## flowers; 1: all far, the grass alone), its probe the cell's own height
-## grid. Worker-safe.
-static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, rings: Vector4, far_share := 0.0) -> Array:
+## grid. Worker-safe. `native` (ZenScapeGrass, set up by native_config for
+## these settings): the same cell placed natively (_grow_native).
+static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, rings: Vector4, far_share := 0.0, native: Object = null) -> Array:
 	var f: RefCounted = Field.new(land_seed)
 	var sl: Vector2 = site_values.get("slope",SLOPE)
 	var alp: Vector2 = site_values.get("alpine",ALPINE)
@@ -922,6 +1122,7 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	var hs: PackedFloat32Array = got.heights
 	var ms: PackedFloat32Array = got.meadows
 	var rs: PackedFloat32Array = got.river
+	if native != null: return _grow_native(native,f,land_seed,key,got,site_values,far_share)
 	# No turf in it at all (the sea, the peaks): nothing to grow.
 	var any := false
 	for h: float in hs:
@@ -1086,6 +1287,52 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 			out.append_array(_split(part.key,part.tile,buffer,part.get("ring",{}),sub_m))
 		else:
 			out.append({"key":part.key,"tile":part.tile,"count":part.count,"buffer":buffer,"ring":part.get("ring",{}),"box":_roots_box(buffer)})
+	return out
+
+## grow_cell placed natively (ZenScapeGrass `grow_cell`, native/terrain_kernels/
+## grass_cell.h): the grass parts as grow_cell makes them; the flowers and seed
+## heads it keeps come back as records, drawn here by KitFlora's Draw.
+static func _grow_native(native: Object, f: RefCounted, land_seed: int, key: Vector2i, got: Dictionary, site_values: Dictionary, far_share: float) -> Array:
+	var x0 := key.x*CELL
+	var z0 := key.y*CELL
+	var n := int(CELL)+1+PAD*2
+	var cell := {"x0":x0,"z0":z0,"n":n,"pad":PAD,"seed":hash([land_seed,"endless_grass",far_share,key]) & 0xffffff,
+		"heights":got.heights,"river":got.river,"meadows":got.meadows}
+	if f.native_on(): cell.field = f._impl
+	else:
+		# The ground's colour on the tint grid (the native field reads it itself).
+		var hs: PackedFloat32Array = got.heights
+		var ms: PackedFloat32Array = got.meadows
+		var tg := int(CELL/TINT_STEP)+1
+		var cols := PackedColorArray()
+		cols.resize(tg*tg)
+		for tj in tg:
+			for ti in tg:
+				var c := (int(tj*TINT_STEP)+PAD)*n+int(ti*TINT_STEP)+PAD
+				var normal := Vector3(hs[c-1]-hs[c+1],2.0,hs[c-n]-hs[c+n]).normalized()
+				cols[tj*tg+ti] = f.colour(x0+ti*TINT_STEP,z0+tj*TINT_STEP,hs[c],normal.y,ms[c])
+		cell.colours = cols
+	var r: Dictionary = native.grow_cell(cell)
+	var out: Array = r.parts
+	var recs: PackedFloat64Array = r.records
+	var flowers: bool = site_values.get("flowers",true) and far_share < 1.0
+	if recs.is_empty() or not flowers: return out
+	var assets: PackedStringArray = native.assets()
+	var records := []
+	var ground := KitFlora.Ground.new()
+	for i in range(0,recs.size(),20):
+		var item := {"id":records.size()+1,"asset":assets[int(recs[i])],"x":recs[i+1],"z":recs[i+2],"angle":recs[i+3],"scale":recs[i+4]}
+		if recs[i+6] > 0.5: item.tint = NativeObjectPose.encode_tint(Color(recs[i+7],recs[i+8],recs[i+9]))
+		if recs[i+10] > 0.5: item.pose = NativeObjectPose.make(Basis(Vector3(recs[i+11],recs[i+12],recs[i+13]),Vector3(recs[i+14],recs[i+15],recs[i+16]),Vector3(recs[i+17],recs[i+18],recs[i+19])),0.0)
+		ground.heights[item.id] = recs[i+5]
+		records.append(item)
+	var draw := KitFlora.Draw.new(records,ground,0.0)
+	draw.plain = true
+	draw.step(-1)
+	draw.node.free()
+	for part: Dictionary in draw.parts:
+		var buffer: PackedFloat32Array = part.buffer
+		out.append({"key":part.key,"tile":part.tile,"count":part.count,"buffer":buffer,"ring":part.get("ring",{}),"box":_roots_box(buffer)})
 	return out
 
 ## The box (world x, z) round a batch buffer's roots.
