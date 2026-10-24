@@ -158,8 +158,6 @@ class Site extends RefCounted:
 	var ts := PackedFloat32Array()
 	## Everything the massif and the trenches touch (world xz).
 	var box := Rect2()
-	## Each portal's top (world y; land_tunnels.gd sets it).
-	var portal_top := PackedFloat32Array([NAN,NAN])
 	var crest_noise: FastNoiseLite
 	var gully: FastNoiseLite
 	## The bore's carved profile at each sample (`ss`): the half width on
@@ -478,13 +476,13 @@ static func blocks_hall(sites: Array, s: PackedFloat32Array) -> bool:
 
 # --- The bore and its portals ------------------------------------------------------
 
-## A portal: a block of carved stone set into the flank at each mouth, the
-## bore's tube running through it. Its footprint (m along the way in from
-## the mouth: PORTAL_OUT out, PORTAL_IN in; PORTAL_HALF across) is where the
-## land mesh drops its triangles, so the plug of rock a heightmap leaves at
-## the mouth is gone at every LOD up to 16 m quads, and the block hides the
-## hole's ragged edge. Its top stands over the land on its footprint
-## (Site.portal_top, set by land_tunnels.gd).
+## A portal: a mass of carved rock set into the flank at each mouth, the
+## bore's tube running through it and a dressed gate on its sheer front
+## (land_tunnels.gd builds it, its top over the land). Its footprint (m
+## along the way in from the mouth: PORTAL_OUT out, PORTAL_IN in;
+## PORTAL_HALF across) is where the land mesh drops its triangles, so the
+## plug of rock a heightmap leaves at the mouth is gone at every LOD up to
+## 16 m quads, and the mass hides the hole's ragged edge.
 const PORTAL_OUT := 20.0
 const PORTAL_IN := 24.0
 static var PORTAL_HALF: float = HALL_HALF+EDGE+20.0

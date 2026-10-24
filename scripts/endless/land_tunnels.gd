@@ -32,10 +32,53 @@ const LAYER := 1
 ## stretches, the torches): the sun and the moon (every DirectionalLight3D)
 ## leave it out, so only the torches light the inside.
 const UNDER_LAYER := 1 << 14
-## The portal block's top over the highest land on its footprint (m), and
-## the step its footprint is read at.
-const PORTAL_OVER := 1.5
-const PORTAL_READ := 4.0
+## The portal (knobs): a mass of carved rock on the mouth's footprint
+## (Tunnels.portal_at), its top PORTAL_OVER m over the land or, over the
+## opening, CAP_OVER m over the vault, flat CAP_FLAT m either side of the
+## way and falling CAP_FALL m a metre past that; its skin a grid of
+## SKIN_STEP m, its edges sunk SKIRT m into the land. Its front is cut
+## sheer at the footprint's outer edge.
+const PORTAL_OVER := 0.6
+const CAP_OVER := 16.0
+const CAP_FLAT := 24.0
+const CAP_FALL := 2.4
+## The cap's top broken by up to CAP_ROUGH m of the bore's rock noise,
+## CAP_GRAIN times finer than the walls' swell.
+const CAP_ROUGH := 3.5
+const CAP_GRAIN := 4.0
+const SKIN_STEP := 4.0
+const SKIRT := 5.0
+## The gate on the portal's front: jambs JAMB_W wide either side of the
+## opening, a lintel LINTEL_H high over the vault running LINTEL_PAST past
+## the jambs, a pediment PED_H high over it, all FRAME_OUT proud of the
+## face; a fire bowl on each end of the lintel (BOWL: half width, height),
+## its glow FIRE_R round and a light FIRE_RANGE m.
+const JAMB_W := 4.0
+const LINTEL_H := 4.5
+const LINTEL_PAST := 2.0
+const PED_H := 9.0
+const FRAME_OUT := 2.5
+const BOWL := Vector2(1.6,1.4)
+const FIRE_R := 0.9
+const FIRE_RANGE := 26.0
+const FIRE_ENERGY := 4.0
+const FACE_TINT := Color(0.5,0.43,0.36)
+const SKIN_TINT := Color(0.74,0.64,0.52)
+const FRAME_TINT := Color(0.94,0.9,0.83)
+## The portals' texture: its darkest (ROCK_TEX_LOW for the bore's rock),
+## so the cut stone reads even in the sun.
+const PORTAL_TEX_LOW := 0.86
+## Daylight in at each mouth: a spot SPILL_IN m inside the front, SPILL_Y
+## over the floor, looking SPILL_AIM m in at the floor, lighting the
+## inside's layer in the sun's colour at SPILL_ENERGY x its energy, its
+## falloff SPILL_ATTEN (Godot's decay: low, so it carries in).
+const SPILL_IN := 1.0
+const SPILL_Y := 13.0
+const SPILL_AIM := 45.0
+const SPILL_RANGE := 110.0
+const SPILL_ANGLE := 50.0
+const SPILL_ENERGY := 2.0
+const SPILL_ATTEN := 0.35
 ## The test tunnel's start: this high over the bore's floor, so the plane
 ## flies straight in at mouth A (unless --alt= is given).
 const TEST_ALT := 9.0
@@ -106,6 +149,9 @@ var _lamp_big := PackedFloat32Array()
 var _lights: Array[OmniLight3D] = []
 var _time := 0.0
 var _sky_cut := false
+## The sun (the brightest DirectionalLight3D) and each mouth's daylight.
+var _sun: DirectionalLight3D
+var _spills: Array[SpotLight3D] = []
 
 func setup(land_field: RefCounted) -> void:
 	field = land_field
@@ -121,7 +167,6 @@ func setup(land_field: RefCounted) -> void:
 	halls.density = 1.0
 	for ti in _sites.size():
 		var t: Tunnels.Site = _sites[ti]
-		for m in 2: t.portal_top[m] = _portal_top(t,m)
 		_build(t)
 		_build_torches(t)
 		for h: Dictionary in Tunnels.stretches(t):
@@ -150,7 +195,9 @@ func setup(land_field: RefCounted) -> void:
 ## the moon), once they stand.
 func _cut_sky() -> void:
 	var lights: Array = get_tree().root.find_children("*","DirectionalLight3D",true,false)
-	for l: DirectionalLight3D in lights: l.light_cull_mask &= ~UNDER_LAYER
+	for l: DirectionalLight3D in lights:
+		l.light_cull_mask &= ~UNDER_LAYER
+		if _sun == null or l.light_energy > _sun.light_energy: _sun = l
 	_sky_cut = not lights.is_empty()
 
 ## The hall stretches' own materials for the kit's (LandHalls `swap`): the
@@ -175,6 +222,7 @@ func prime(at: Vector3) -> void:
 func step(at: Vector3) -> void:
 	halls.step(at)
 	_light_torches(at)
+	_spill()
 	if clouds != null and "fog_hush" in clouds: clouds.fog_hush = under(at)
 
 ## How deep in a bore `p` is: 0 outside (or in a portal), 1 HUSH_IN m or
@@ -186,6 +234,17 @@ func under(p: Vector3) -> float:
 		var q := Tunnels.local(t,p.x,p.z)
 		return smoothstep(0.0,HUSH_IN,minf(q.x,t.length-q.x))
 	return 0.0
+
+## Each mouth's daylight in the sun's colour and strength (none at night).
+func _spill() -> void:
+	if _spills.is_empty(): return
+	if not _sky_cut: _cut_sky()
+	var lit := _sun != null and is_instance_valid(_sun) and _sun.visible
+	for l in _spills:
+		l.visible = lit
+		if not lit: continue
+		l.light_color = _sun.light_color
+		l.light_energy = SPILL_ENERGY*_sun.light_energy
 
 ## The pool of torch lights: the nearest TORCH_LIGHTS torches to `at`
 ## within LIGHT_REACH get one, the farthest of them fading out.
@@ -226,11 +285,19 @@ func start_y() -> float:
 
 # --- The solid ------------------------------------------------------------------------
 
-## The cover over (x, z): the land `h`, or the portal block's top on its
+## The cover over (x, z): the land `h`, or the portal's top on its
 ## footprint.
 func _cover(t: Tunnels.Site, x: float, z: float, h: float) -> float:
 	var m := Tunnels.portal_at(t,x,z)
-	return h if m < 0 else maxf(h,t.portal_top[m])
+	if m < 0: return h
+	var q := Tunnels.portal_local(t,m,x,z)
+	return maxf(h+PORTAL_OVER,_cap(t,m,q.x,q.y))
+
+## Mouth `m`'s portal cap at `a` in, `d` across: CAP_OVER over the vault,
+## broken by CAP_ROUGH, falling past CAP_FLAT.
+static func _cap(t: Tunnels.Site, m: int, a: float, d: float) -> float:
+	var rough := CAP_ROUGH*(t.rock.get_noise_2d(d*CAP_GRAIN,a*CAP_GRAIN+5000.0*(m+1))*0.5+0.5)
+	return t.floor_y+Tunnels.HALL_VAULT+CAP_OVER+rough-CAP_FALL*maxf(absf(d)-CAP_FLAT,0.0)
 
 ## SkyGlide's `ground` at `p` over `h` (what the layers under answered), as
 ## LandHalls `ground`: in the tube under its roof, the hall stretch's solid
@@ -288,41 +355,12 @@ func note() -> String:
 
 # --- The greybox ----------------------------------------------------------------------
 
-## The portal block's top at mouth `m`: over the land on its footprint.
-func _portal_top(t: Tunnels.Site, m: int) -> float:
-	var top := t.floor_y+Tunnels.HALL_VAULT
-	var a := -Tunnels.PORTAL_OUT
-	while a <= Tunnels.PORTAL_IN+0.01:
-		var d := -Tunnels.PORTAL_HALF
-		while d <= Tunnels.PORTAL_HALF+0.01:
-			var q := Tunnels.portal_point(t,m,a,d)
-			top = maxf(top,field.height(q.x,q.y))
-			d += PORTAL_READ
-		a += PORTAL_READ
-	return top+PORTAL_OVER
-
 func _build(t: Tunnels.Site) -> void:
 	var rock := _build_rock(t)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var tris := 0
-	# The portal blocks: a front with the tube's opening, two sides, a top.
-	for m in 2:
-		var top: float = t.portal_top[m]
-		var lo := t.floor_y-Tunnels.SINK-2.0
-		var w := Tunnels.HALL_HALF
-		var k := Tunnels.PORTAL_HALF
-		var a0 := -Tunnels.PORTAL_OUT
-		var a1 := Tunnels.PORTAL_IN
-		var vault := t.floor_y+Tunnels.HALL_VAULT
-		var out := _v(t,m,a0-1.0,0.0,0.0)-_v(t,m,a0,0.0,0.0)
-		tris += _quad(st,_v(t,m,a0,-k,lo),_v(t,m,a0,-w,lo),_v(t,m,a0,-w,top),_v(t,m,a0,-k,top),out,BLOCK_TINT)
-		tris += _quad(st,_v(t,m,a0,w,lo),_v(t,m,a0,k,lo),_v(t,m,a0,k,top),_v(t,m,a0,w,top),out,BLOCK_TINT)
-		tris += _quad(st,_v(t,m,a0,-w,vault),_v(t,m,a0,w,vault),_v(t,m,a0,w,top),_v(t,m,a0,-w,top),out,BLOCK_TINT)
-		for side: float in [-1.0,1.0]:
-			var sn := _v(t,m,0.0,side*(k+1.0),0.0)-_v(t,m,0.0,side*k,0.0)
-			tris += _quad(st,_v(t,m,a0,side*k,lo),_v(t,m,a1,side*k,lo),_v(t,m,a1,side*k,top),_v(t,m,a0,side*k,top),sn,BLOCK_TINT.darkened(0.08))
-		tris += _quad(st,_v(t,m,a0,-k,top),_v(t,m,a0,k,top),_v(t,m,a1,k,top),_v(t,m,a1,-k,top),Vector3.UP,BLOCK_TINT.darkened(0.04))
+	for m in 2: tris += _build_portal(st,t,m)
 	var mesh: ArrayMesh = rock.commit()
 	st.commit(mesh)
 	# Seen: the rock on the inside's layer (torch lit), the portal blocks
@@ -333,15 +371,11 @@ func _build(t: Tunnels.Site) -> void:
 	node.mesh = _surface(mesh,0,mat)
 	node.layers = UNDER_LAYER
 	add_child(node)
-	var day := StandardMaterial3D.new()
-	day.vertex_color_use_as_albedo = true
-	day.vertex_color_is_srgb = true
-	day.roughness = 1.0
-	day.cull_mode = BaseMaterial3D.CULL_DISABLED
 	var blocks := MeshInstance3D.new()
 	blocks.name = node.name+"_portals"
-	blocks.mesh = _surface(mesh,1,day)
+	blocks.mesh = _surface(mesh,1,_portal_material(t))
 	add_child(blocks)
+	for m in 2: _build_fires(t,m)
 	var body := StaticBody3D.new()
 	body.name = node.name+"_body"
 	body.collision_layer = LAYER
@@ -354,6 +388,191 @@ func _build(t: Tunnels.Site) -> void:
 	add_child(body)
 	stats.tris += tris+_rock_tris
 
+## Mouth `m`'s portal into `st`: the skin over its footprint (the land's
+## top PORTAL_OVER over it, or the cap over the opening: `_cover`), sunk
+## SKIRT into the land at its sides and back; the sheer front with the
+## opening (filleted to the bore's rounded corners); the gate (jambs, a
+## lintel, a pediment) and a fire bowl on each end of the lintel. Flat
+## shaded, so it reads as cut stone. Returns its triangles.
+func _build_portal(st: SurfaceTool, t: Tunnels.Site, m: int) -> int:
+	var tris := 0
+	var a0 := -Tunnels.PORTAL_OUT
+	var k := Tunnels.PORTAL_HALF
+	var w := Tunnels.HALL_HALF
+	var f := t.floor_y
+	var vault := f+Tunnels.HALL_VAULT
+	var as_: Array[float] = []
+	var a := a0
+	while a < Tunnels.PORTAL_IN-0.01:
+		as_.append(a)
+		a += SKIN_STEP
+	as_.append(Tunnels.PORTAL_IN)
+	var ds: Array[float] = [-w,w]
+	var d := -k
+	while d < k-0.01:
+		if absf(absf(d)-w) > 0.5: ds.append(d)
+		d += SKIN_STEP
+	ds.append(k)
+	ds.sort()
+	# The skin's heights.
+	var ys: Array = []
+	for i in as_.size():
+		var row := PackedFloat32Array()
+		for j in ds.size():
+			var q := Tunnels.portal_point(t,m,as_[i],ds[j])
+			row.append(_cover(t,q.x,q.y,field.height(q.x,q.y)))
+		ys.append(row)
+	var inward := _v(t,m,1.0,0.0,0.0)-_v(t,m,0.0,0.0,0.0)
+	var across := _v(t,m,0.0,1.0,0.0)-_v(t,m,0.0,0.0,0.0)
+	for i in as_.size()-1:
+		for j in ds.size()-1:
+			var p00 := _v(t,m,as_[i],ds[j],ys[i][j])
+			var p10 := _v(t,m,as_[i+1],ds[j],ys[i+1][j])
+			var p11 := _v(t,m,as_[i+1],ds[j+1],ys[i+1][j+1])
+			var p01 := _v(t,m,as_[i],ds[j+1],ys[i][j+1])
+			var nm := (p11-p00).cross(p01-p10)
+			if nm.y < 0.0: nm = -nm
+			nm = nm.normalized()
+			tris += _quad(st,p00,p10,p11,p01,nm,FACE_TINT.lerp(SKIN_TINT,smoothstep(0.4,0.9,nm.y)))
+	# Skirts into the land: the sides and the back.
+	for side in 2:
+		var j := 0 if side == 0 else ds.size()-1
+		var dd := ds[j]
+		for i in as_.size()-1:
+			var y0: float = ys[i][j]
+			var y1: float = ys[i+1][j]
+			tris += _quad(st,_v(t,m,as_[i],dd,y0),_v(t,m,as_[i+1],dd,y1),_v(t,m,as_[i+1],dd,_land(t,m,as_[i+1],dd)-SKIRT),_v(t,m,as_[i],dd,_land(t,m,as_[i],dd)-SKIRT),across*signf(dd),FACE_TINT)
+	var back := as_.size()-1
+	var ab := as_[back]
+	for j in ds.size()-1:
+		tris += _quad(st,_v(t,m,ab,ds[j],ys[back][j]),_v(t,m,ab,ds[j+1],ys[back][j+1]),_v(t,m,ab,ds[j+1],_land(t,m,ab,ds[j+1])-SKIRT),_v(t,m,ab,ds[j],_land(t,m,ab,ds[j])-SKIRT),inward,FACE_TINT)
+	# The sheer front, the opening cut out of it.
+	var lo := f-Tunnels.SINK-SKIRT
+	for j in ds.size()-1:
+		var bot := vault if absf((ds[j]+ds[j+1])*0.5) < w else lo
+		var tint := FACE_TINT.darkened(0.12*(t.rock.get_noise_2d(ds[j]*7.0,float(m)*300.0)*0.5+0.5))
+		tris += _quad(st,_v(t,m,a0,ds[j],ys[0][j]),_v(t,m,a0,ds[j+1],ys[0][j+1]),_v(t,m,a0,ds[j+1],bot),_v(t,m,a0,ds[j],bot),-inward,tint)
+	# The fillets between the square opening and the bore's rounded ring.
+	var pr := Tunnels.profile(t,-1.0)
+	for r in RING_SEGS:
+		var q0 := Tunnels.profile_point(pr,PI*(1.0-float(r)/RING_SEGS))
+		var q1 := Tunnels.profile_point(pr,PI*(1.0-float(r+1)/RING_SEGS))
+		var c := _v(t,m,a0,signf(q0.x+q1.x)*w,vault)
+		var v0 := _v(t,m,a0,q0.x,f+q0.y)
+		var v1 := _v(t,m,a0,q1.x,f+q1.y)
+		if (v1-v0).cross(c-v0).length() < 0.01: continue
+		tris += _tri_flat(st,c,v0,v1,-inward,FACE_TINT)
+	# The gate: jambs, a lintel, a pediment.
+	var out := a0-FRAME_OUT
+	for sg: float in [-1.0,1.0]:
+		tris += _box(st,t,m,out,a0+0.3,sg*w,sg*(w+JAMB_W),f-Tunnels.SINK,vault,FRAME_TINT.darkened(0.05),false)
+	var lw := w+JAMB_W+LINTEL_PAST
+	tris += _box(st,t,m,out-0.6,a0+0.3,-lw,lw,vault,vault+LINTEL_H,FRAME_TINT,true)
+	var base := vault+LINTEL_H
+	var pw := w+JAMB_W
+	var pa := out+0.4
+	var apex_f := _v(t,m,pa,0.0,base+PED_H)
+	var apex_b := _v(t,m,a0+0.3,0.0,base+PED_H)
+	tris += _tri_flat(st,_v(t,m,pa,-pw,base),_v(t,m,pa,pw,base),apex_f,-inward,FRAME_TINT.lightened(0.04))
+	for sg: float in [-1.0,1.0]:
+		var e_f := _v(t,m,pa,sg*pw,base)
+		var e_b := _v(t,m,a0+0.3,sg*pw,base)
+		var slope := (apex_f-e_f).cross(inward)
+		if slope.y < 0.0: slope = -slope
+		tris += _quad(st,e_f,e_b,apex_b,apex_f,slope,FRAME_TINT.darkened(0.04))
+	# A fire bowl on each end of the lintel.
+	for sg: float in [-1.0,1.0]:
+		var bd := sg*(lw-BOWL.x)
+		tris += _box(st,t,m,out-0.6,out-0.6+2.0*BOWL.x,bd-BOWL.x,bd+BOWL.x,base,base+BOWL.y,Color(0.16,0.14,0.12),false)
+	return tris
+
+## Mouth `m`'s fires: on the lintel's bowls, a glow and a light each; and
+## its daylight in (`_spill`), lighting the inside's layer only.
+func _build_fires(t: Tunnels.Site, m: int) -> void:
+	var f := t.floor_y
+	var a0 := -Tunnels.PORTAL_OUT
+	var top := f+Tunnels.HALL_VAULT+LINTEL_H+BOWL.y
+	var glow := SphereMesh.new()
+	glow.radius = FIRE_R
+	glow.height = FIRE_R*2.6
+	glow.radial_segments = 10
+	glow.rings = 5
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = TORCH_GLOW.mouth
+	glow.material = mat
+	var lw := Tunnels.HALL_HALF+JAMB_W+LINTEL_PAST
+	var out := _v(t,m,-1.0,0.0,0.0)-_v(t,m,0.0,0.0,0.0)
+	for sg: float in [-1.0,1.0]:
+		var at := _v(t,m,a0-FRAME_OUT-0.6+BOWL.x,sg*(lw-BOWL.x),top)
+		var fire := MeshInstance3D.new()
+		fire.name = "%s_fire%d%s" % [t.name.replace("/","_"),m,"l" if sg < 0.0 else "r"]
+		fire.mesh = glow
+		fire.position = at+Vector3.UP*FIRE_R*1.2
+		fire.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(fire)
+		var l := OmniLight3D.new()
+		l.name = fire.name+"_light"
+		l.light_color = TORCH_LIGHT
+		l.omni_range = FIRE_RANGE
+		l.omni_attenuation = TORCH_ATTEN
+		l.light_energy = FIRE_ENERGY
+		l.shadow_enabled = false
+		l.position = at+Vector3.UP*(FIRE_R*2.4)+out*1.5
+		add_child(l)
+	var spot := SpotLight3D.new()
+	spot.name = "%s_spill%d" % [t.name.replace("/","_"),m]
+	var from := _v(t,m,a0+SPILL_IN,0.0,f+SPILL_Y)
+	spot.transform = Transform3D(Basis.looking_at(_v(t,m,SPILL_AIM,0.0,f)-from,Vector3.UP),from)
+	spot.spot_range = SPILL_RANGE
+	spot.spot_angle = SPILL_ANGLE
+	spot.spot_attenuation = SPILL_ATTEN
+	spot.light_cull_mask = UNDER_LAYER
+	spot.shadow_enabled = false
+	spot.light_specular = 0.2
+	add_child(spot)
+	_spills.append(spot)
+
+## The land's height at mouth `m`'s (a, d).
+func _land(t: Tunnels.Site, m: int, a: float, d: float) -> float:
+	var q := Tunnels.portal_point(t,m,a,d)
+	return field.height(q.x,q.y)
+
+## A box in mouth `m`'s frame (a along the way in, d across, y world),
+## without its back (into the portal's face) and, unless `bottom`, its
+## underside.
+static func _box(st: SurfaceTool, t: Tunnels.Site, m: int, a0: float, a1: float, d0: float, d1: float, y0: float, y1: float, tint: Color, bottom: bool) -> int:
+	var inward := _v(t,m,1.0,0.0,0.0)-_v(t,m,0.0,0.0,0.0)
+	var across := _v(t,m,0.0,1.0,0.0)-_v(t,m,0.0,0.0,0.0)
+	var dl := minf(d0,d1)
+	var dh := maxf(d0,d1)
+	var n := 0
+	n += _quad(st,_v(t,m,a0,dl,y0),_v(t,m,a0,dh,y0),_v(t,m,a0,dh,y1),_v(t,m,a0,dl,y1),-inward,tint)
+	n += _quad(st,_v(t,m,a0,dl,y1),_v(t,m,a0,dh,y1),_v(t,m,a1,dh,y1),_v(t,m,a1,dl,y1),Vector3.UP,tint.lightened(0.05))
+	n += _quad(st,_v(t,m,a0,dl,y0),_v(t,m,a1,dl,y0),_v(t,m,a1,dl,y1),_v(t,m,a0,dl,y1),-across,tint.darkened(0.08))
+	n += _quad(st,_v(t,m,a0,dh,y0),_v(t,m,a1,dh,y0),_v(t,m,a1,dh,y1),_v(t,m,a0,dh,y1),across,tint.darkened(0.08))
+	if bottom: n += _quad(st,_v(t,m,a0,dl,y0),_v(t,m,a0,dh,y0),_v(t,m,a1,dh,y0),_v(t,m,a1,dl,y0),Vector3.DOWN,tint.darkened(0.15))
+	return n
+
+## One flat triangle facing `normal`.
+static func _tri_flat(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, normal: Vector3, tint: Color) -> int:
+	var nm := normal.normalized()
+	var order := [a,b,c]
+	if (b-a).cross(c-a).dot(nm) > 0.0: order = [a,c,b]
+	for v: Vector3 in order:
+		st.set_normal(nm)
+		st.set_color(tint)
+		st.add_vertex(v)
+	return 1
+
+## The portals' material: the rock's texture in the day (sun, sky, haze).
+static func _portal_material(t: Tunnels.Site) -> StandardMaterial3D:
+	var mat := _rock_material(t,PORTAL_TEX_LOW)
+	mat.disable_ambient_light = false
+	mat.disable_fog = false
+	mat.roughness = 0.95
+	return mat
+
 ## Surface `i` of `mesh` as a mesh of its own, wearing `mat`.
 static func _surface(mesh: ArrayMesh, i: int, mat: Material) -> ArrayMesh:
 	var out := ArrayMesh.new()
@@ -363,7 +582,7 @@ static func _surface(mesh: ArrayMesh, i: int, mat: Material) -> ArrayMesh:
 
 ## The rock's material: its vertex colours under a noise worn
 ## triplanar in world space (grain and relief), lit by the torches alone.
-static func _rock_material(t: Tunnels.Site) -> StandardMaterial3D:
+static func _rock_material(t: Tunnels.Site, low := ROCK_TEX_LOW) -> StandardMaterial3D:
 	var noise := FastNoiseLite.new()
 	noise.seed = hash([t.seed,"rock_tex"]) & 0x7fffffff
 	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
@@ -377,7 +596,7 @@ static func _rock_material(t: Tunnels.Site) -> StandardMaterial3D:
 	fine.fractal_octaves = 6
 	fine.frequency = 0.012
 	var grad := Gradient.new()
-	grad.set_color(0,Color(ROCK_TEX_LOW,ROCK_TEX_LOW*0.97,ROCK_TEX_LOW*0.93))
+	grad.set_color(0,Color(low,low*0.97,low*0.93))
 	grad.set_color(1,Color(1.0,0.98,0.95))
 	var albedo := NoiseTexture2D.new()
 	albedo.width = 512
