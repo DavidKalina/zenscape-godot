@@ -1,4 +1,4 @@
-﻿extends RefCounted
+extends RefCounted
 ## Overgrown's land recipe (scripts/endless/world/profiles/overgrown.gd): the
 ## old builders' land (docs/design/endless-flight/overgrown-land-handoff.md).
 ## Lower, broader, straighter ranges with gable crests and clean notches (the
@@ -33,11 +33,11 @@ static func recipe() -> Dictionary:
 		# Mesas.
 		"mesa":1.0,
 		"mesa_tall":50.0,
-		"mesa_scale":800.0,
-		"mesa_level":0.12,
-		"mesa_edge":0.035,
+		"mesa_scale":1400.0,
+		"mesa_level":0.05,
+		"mesa_edge":0.025,
 		"mesa_steps":2.0,
-		"mesa_gap":0.1,
+		"mesa_gap":0.06,
 		"mesa_keep":0.12,
 		"mesa_mask_scale":3800.0,
 		"mesa_band":Vector2(-0.1,0.2),
