@@ -103,7 +103,8 @@ public:
 
 	// Bumped when the land's output or this interface changes, so LandField
 	// refuses a stale library (and runs its GDScript field instead).
-	int64_t version() const { return 1; }
+	// 2: `configure` takes the world's land recipe (land_field.gd recipe_defaults()).
+	int64_t version() const { return 2; }
 
 	// The flags LandField parsed (see land_field.gd), then the noises built.
 	void configure(int64_t seed, double floor_half, const Dictionary &knobs) {
@@ -125,6 +126,38 @@ public:
 		f.river_mouth = double(knobs.get("river_mouth", 1.0));
 		f.river_flare = double(knobs.get("river_flare", 1.0));
 		f.libm = bool(knobs.get("libm", false));
+		// The land recipe (the world profile's `land`; keys left out keep
+		// wilderness's values, land_field.gd recipe_defaults()).
+#define ZS_RECIPE(key, member) f.member = double(knobs.get(key, f.member))
+#define ZS_RECIPE2(key, mx, my) { const Vector2 v = knobs.get(key, Vector2(f.mx, f.my)); f.mx = v.x; f.my = v.y; }
+		ZS_RECIPE("continent_scale", CONTINENT);
+		ZS_RECIPE("continent_swing", CONTINENT_SWING);
+		ZS_RECIPE("continent_lift", CONTINENT_LIFT);
+		ZS_RECIPE("lowland", LOWLAND);
+		ZS_RECIPE("hill_scale", HILLS);
+		ZS_RECIPE("hill_tall", HILL_TALL);
+		ZS_RECIPE("range_scale", RANGES);
+		ZS_RECIPE("range_width", RANGE_WIDTH);
+		ZS_RECIPE("range_mask_scale", RANGE_MASK);
+		ZS_RECIPE2("range_band", RANGE_BAND_X, RANGE_BAND_Y);
+		ZS_RECIPE("warp_scale", WARP);
+		ZS_RECIPE("warp_move", WARP_MOVE);
+		ZS_RECIPE("ridge_scale", RIDGES);
+		ZS_RECIPE2("peak_tall", PEAK_TALL_X, PEAK_TALL_Y);
+		ZS_RECIPE("peak_scale", PEAK_SCALE);
+		ZS_RECIPE("meadow_scale", MEADOWS);
+		ZS_RECIPE2("meadow_band", MEADOW_BAND_X, MEADOW_BAND_Y);
+		ZS_RECIPE("meadow_keep", MEADOW_KEEP);
+		ZS_RECIPE("meadow_above", MEADOW_ABOVE);
+		ZS_RECIPE("valley_scale", VALLEYS);
+		ZS_RECIPE("valley_warp_scale", VALLEY_WARP);
+		ZS_RECIPE("valley_warp_move", VALLEY_WARP_MOVE);
+		ZS_RECIPE2("valley_swing", VALLEY_SWING_X, VALLEY_SWING_Y);
+		ZS_RECIPE2("valley_side", VALLEY_SIDE_X, VALLEY_SIDE_Y);
+		ZS_RECIPE("valley_keep", VALLEY_KEEP);
+		ZS_RECIPE("snow", SNOW);
+#undef ZS_RECIPE
+#undef ZS_RECIPE2
 		f.setup();
 	}
 

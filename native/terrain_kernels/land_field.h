@@ -123,23 +123,27 @@ class LandField {
 public:
 	// --- Constants (land_field.gd; Vector2 constants as floats) ----------------------
 	static constexpr double SEA_Y = -40.0;
-	static constexpr double CONTINENT = 3600.0, CONTINENT_SWING = 70.0, CONTINENT_LIFT = 14.0, LOWLAND = 26.0;
-	static constexpr double HILLS = 320.0, HILL_TALL = 16.0;
+	// The land recipe (land_field.gd recipe_defaults(); the world profile's `land`,
+	// read in `configure`): members, not constants, at wilderness's values.
+	double CONTINENT = 3600.0, CONTINENT_SWING = 70.0, CONTINENT_LIFT = 14.0, LOWLAND = 26.0;
+	double HILLS = 320.0, HILL_TALL = 16.0;
 	static constexpr double MOUNTAINS = 2600.0, MOUNTAIN_TALL = 105.0;
 	static constexpr float MOUNTAIN_BAND_X = 0.18f, MOUNTAIN_BAND_Y = 0.5f;
-	static constexpr double RANGES = 2300.0, RANGE_WIDTH = 0.36, RANGE_MASK = 3400.0;
-	static constexpr float RANGE_BAND_X = -0.50f, RANGE_BAND_Y = -0.12f;
-	static constexpr double WARP = 1500.0, WARP_MOVE = 520.0, RIDGES = 700.0;
-	static constexpr float PEAK_TALL_X = 95.0f, PEAK_TALL_Y = 215.0f;
-	static constexpr double PEAK_SCALE = 1700.0;
-	static constexpr double MEADOWS = 650.0;
-	static constexpr float MEADOW_BAND_X = -0.05f, MEADOW_BAND_Y = 0.22f;
-	static constexpr double MEADOW_KEEP = 0.07, MEADOW_ABOVE = 3.0;
-	static constexpr double VALLEYS = 2100.0, VALLEY_WARP = 1100.0, VALLEY_WARP_MOVE = 380.0;
-	static constexpr float VALLEY_SWING_X = 0.75f, VALLEY_SWING_Y = 1.7f;
-	static constexpr float VALLEY_SIDE_X = 300.0f, VALLEY_SIDE_Y = 150.0f;
-	static constexpr double VALLEY_KEEP = 0.08;
-	static constexpr double BEACH = 2.2, SNOW = 125.0;
+	double RANGES = 2300.0, RANGE_WIDTH = 0.36, RANGE_MASK = 3400.0;
+	float RANGE_BAND_X = -0.50f, RANGE_BAND_Y = -0.12f;
+	double WARP = 1500.0, WARP_MOVE = 520.0, RIDGES = 700.0;
+	float PEAK_TALL_X = 95.0f, PEAK_TALL_Y = 215.0f;
+	double PEAK_SCALE = 1700.0;
+	double MEADOWS = 650.0;
+	float MEADOW_BAND_X = -0.05f, MEADOW_BAND_Y = 0.22f;
+	double MEADOW_KEEP = 0.07, MEADOW_ABOVE = 3.0;
+	double VALLEYS = 2100.0, VALLEY_WARP = 1100.0, VALLEY_WARP_MOVE = 380.0;
+	float VALLEY_SWING_X = 0.75f, VALLEY_SWING_Y = 1.7f;
+	float VALLEY_SIDE_X = 300.0f, VALLEY_SIDE_Y = 150.0f;
+	double VALLEY_KEEP = 0.08;
+	double SNOW = 125.0;
+	// (The recipe's end; constants again from here.)
+	static constexpr double BEACH = 2.2;
 	static constexpr double CARVE_GRID = 8.0;
 	static constexpr float CARVE_SLOPE_X = 0.38f, CARVE_SLOPE_Y = 0.9f;
 	static constexpr float CARVE_MOUNTAIN_X = 0.004f, CARVE_MOUNTAIN_Y = 0.08f;

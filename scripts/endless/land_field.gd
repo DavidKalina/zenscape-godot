@@ -45,6 +45,7 @@ extends RefCounted
 ##               (ponds-handoff.md).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
+const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 
 ## The sea's height in the world. The endless flight raises the plane's
 ## ceiling to CEILING_OVER over the sea (SkyGlide `ceiling_y`), so the
@@ -222,6 +223,39 @@ const MEADOW := Color(0.52,0.64,0.28)
 const ROCK := Color(0.47,0.44,0.40)
 const SNOW_COLOUR := Color(0.93,0.94,0.97)
 
+## The land recipe's numbers as a world profile's `land` table keys them
+## (scripts/endless/world/world_profile.gd): these constants, wilderness's.
+## LandField hands a profile's own to the field (and the native field's
+## `configure`); keys left out are these.
+static func recipe_defaults() -> Dictionary:
+	return {
+		"continent_scale":CONTINENT,
+		"continent_swing":CONTINENT_SWING,
+		"continent_lift":CONTINENT_LIFT,
+		"lowland":LOWLAND,
+		"hill_scale":HILLS,
+		"hill_tall":HILL_TALL,
+		"range_scale":RANGES,
+		"range_width":RANGE_WIDTH,
+		"range_mask_scale":RANGE_MASK,
+		"range_band":RANGE_BAND,
+		"warp_scale":WARP,
+		"warp_move":WARP_MOVE,
+		"ridge_scale":RIDGES,
+		"peak_tall":PEAK_TALL,
+		"peak_scale":PEAK_SCALE,
+		"meadow_scale":MEADOWS,
+		"meadow_band":MEADOW_BAND,
+		"meadow_keep":MEADOW_KEEP,
+		"meadow_above":MEADOW_ABOVE,
+		"valley_scale":VALLEYS,
+		"valley_warp_scale":VALLEY_WARP,
+		"valley_warp_move":VALLEY_WARP_MOVE,
+		"valley_swing":VALLEY_SWING,
+		"valley_side":VALLEY_SIDE,
+		"valley_keep":VALLEY_KEEP,
+		"snow":SNOW}
+
 ## --- The field --------------------------------------------------------------
 ## LandField is the public face: the same members and methods as ever, each
 ## handed to the field that does the work, the native one
@@ -232,13 +266,17 @@ const SNOW_COLOUR := Color(0.93,0.94,0.97)
 ## --land-libm the native one on the C library's exp/pow/sin/cos (as
 ## GDScript), to check the two match bit for bit on one machine.
 
-## The native field's version this script calls (ZenScapeLandField `version`).
-const NATIVE_VERSION := 1
+## The native field's version this script calls (ZenScapeLandField `version`):
+## 2 takes the world's land recipe in `configure`; 1 (a library not yet
+## rebuilt) is still used for the stock recipe (`native_available`).
+const NATIVE_VERSION := 2
 const NATIVE_CLASS := &"ZenScapeLandField"
 static var _native_state := -1
 static var _native_lock := Mutex.new()
 
 var seed := 0
+## The world profile whose `land` this field grows (world_profile.gd).
+var world: RefCounted
 ## The field doing the work (ZenScapeLandField or GDField).
 var _impl: Object
 var _native := false
@@ -342,9 +380,14 @@ var _p_r := 0.0
 var _p_w := 0.0
 var _p_y := 0.0
 
-func _init(land_seed := 0) -> void:
+func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	seed = land_seed
-	var k := {"floor_half":WorldScale.opening(TOY_VALLEY)*0.5}
+	# The world's recipe and knobs first (the profile `--world=` names unless
+	# one is given), then the flags over them.
+	world = profile if profile != null else WorldProfile.current()
+	var k: Dictionary = (world.land as Dictionary).duplicate()
+	k.floor_half = WorldScale.opening(TOY_VALLEY)*0.5
+	var need := 1 if _stock(k) else 2
 	var want_native := true
 	for arg: String in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--mountains="): k.mountains = maxf(0.0,float(arg.get_slice("=",1)))
@@ -366,17 +409,27 @@ func _init(land_seed := 0) -> void:
 		elif arg.begins_with("--river-flare="): k.river_flare = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg == "--land-native=0" or arg == "--gdscript-kernels": want_native = false
 		elif arg == "--land-libm": k.libm = true
-	ponds = 0.0 if k.get("old_land",false) else Ponds.wanted()
-	if want_native and native_available():
+	ponds = 0.0 if k.get("old_land",false) else Ponds.wanted(float(k.get("ponds",1.0)))
+	if want_native and native_available(need):
 		_impl = ClassDB.instantiate(NATIVE_CLASS)
 		_impl.configure(land_seed,float(k.floor_half),k)
 		_native = true
 	else:
 		_impl = GDField.new(land_seed,k)
 
-## Whether the native field is built and current (checked once).
-static func native_available() -> bool:
-	if _native_state >= 0: return _native_state == 1
+## Whether the knobs `k` grow the stock recipe (every recipe key at its
+## constant), which a version-1 native library still grows right.
+static func _stock(k: Dictionary) -> bool:
+	var d := recipe_defaults()
+	for key: String in d:
+		if k.has(key) and k[key] != d[key]: return false
+	return true
+
+## Whether the native field is built and at least version `need` (checked
+## once): version 2 takes the world's recipe in `configure`; a version-1
+## library (a dylib not yet rebuilt) still grows the stock recipe.
+static func native_available(need := 1) -> bool:
+	if _native_state >= 0: return _native_state >= need
 	_native_lock.lock()
 	if _native_state < 0:
 		var path := "res://native/terrain_kernels/zenscape_kernels.gdextension"
@@ -385,11 +438,13 @@ static func native_available() -> bool:
 		var ok := false
 		if ClassDB.class_exists(NATIVE_CLASS):
 			var probe: Object = ClassDB.instantiate(NATIVE_CLASS)
-			ok = probe.has_method("version") and int(probe.version()) == NATIVE_VERSION
-			if not ok: push_warning("ZenScapeLandField is not version %d: rebuild it (tools/build_native_kernels.py); the land is grown in GDScript" % NATIVE_VERSION)
-		_native_state = 1 if ok else 0
+			var v := int(probe.version()) if probe.has_method("version") else 0
+			ok = v >= 1 and v <= NATIVE_VERSION
+			if v < NATIVE_VERSION: push_warning("ZenScapeLandField is version %d, not %d: rebuild it (tools/build_native_kernels.py); %s" % [v,NATIVE_VERSION,"a world with its own land recipe is grown in GDScript" if ok else "the land is grown in GDScript"])
+			if ok: _native_state = v
+		if _native_state < 0: _native_state = 0
 	_native_lock.unlock()
-	return _native_state == 1
+	return _native_state >= need
 
 ## Whether this field is the native one.
 func native_on() -> bool:
@@ -627,6 +682,33 @@ class GDField extends RefCounted:
 	var peaks := 1.0
 	var valleys := 1.0
 	var old_land := false
+	## The land recipe (LandField.recipe_defaults(); the world profile's `land`).
+	var r_continent: float = CONTINENT
+	var r_continent_swing: float = CONTINENT_SWING
+	var r_continent_lift: float = CONTINENT_LIFT
+	var r_lowland: float = LOWLAND
+	var r_hills: float = HILLS
+	var r_hill_tall: float = HILL_TALL
+	var r_ranges: float = RANGES
+	var r_range_width: float = RANGE_WIDTH
+	var r_range_mask: float = RANGE_MASK
+	var r_range_band: Vector2 = RANGE_BAND
+	var r_warp: float = WARP
+	var r_warp_move: float = WARP_MOVE
+	var r_ridges: float = RIDGES
+	var r_peak_tall: Vector2 = PEAK_TALL
+	var r_peak_scale: float = PEAK_SCALE
+	var r_meadows: float = MEADOWS
+	var r_meadow_band: Vector2 = MEADOW_BAND
+	var r_meadow_keep: float = MEADOW_KEEP
+	var r_meadow_above: float = MEADOW_ABOVE
+	var r_valleys: float = VALLEYS
+	var r_valley_warp: float = VALLEY_WARP
+	var r_valley_warp_move: float = VALLEY_WARP_MOVE
+	var r_valley_swing: Vector2 = VALLEY_SWING
+	var r_valley_side: Vector2 = VALLEY_SIDE
+	var r_valley_keep: float = VALLEY_KEEP
+	var r_snow: float = SNOW
 	var _continent := FastNoiseLite.new()
 	var _hills := FastNoiseLite.new()
 	var _mask := FastNoiseLite.new()
@@ -742,17 +824,43 @@ class GDField extends RefCounted:
 		river_fill = float(k.get("river_fill",1.0))
 		river_mouth = float(k.get("river_mouth",1.0))
 		river_flare = float(k.get("river_flare",1.0))
-		_noise(_continent,1,CONTINENT,3,FastNoiseLite.FRACTAL_FBM)
-		_noise(_hills,2,HILLS,4,FastNoiseLite.FRACTAL_FBM)
-		_noise(_mask,3,MOUNTAINS if old_land else RANGE_MASK,2,FastNoiseLite.FRACTAL_FBM)
-		_noise(_ridges,4,900.0 if old_land else RIDGES,5,FastNoiseLite.FRACTAL_RIDGED)
-		_noise(_meadows,5,MEADOWS,2,FastNoiseLite.FRACTAL_FBM)
+		r_continent = float(k.get("continent_scale",r_continent))
+		r_continent_swing = float(k.get("continent_swing",r_continent_swing))
+		r_continent_lift = float(k.get("continent_lift",r_continent_lift))
+		r_lowland = float(k.get("lowland",r_lowland))
+		r_hills = float(k.get("hill_scale",r_hills))
+		r_hill_tall = float(k.get("hill_tall",r_hill_tall))
+		r_ranges = float(k.get("range_scale",r_ranges))
+		r_range_width = float(k.get("range_width",r_range_width))
+		r_range_mask = float(k.get("range_mask_scale",r_range_mask))
+		r_range_band = Vector2(k.get("range_band",r_range_band))
+		r_warp = float(k.get("warp_scale",r_warp))
+		r_warp_move = float(k.get("warp_move",r_warp_move))
+		r_ridges = float(k.get("ridge_scale",r_ridges))
+		r_peak_tall = Vector2(k.get("peak_tall",r_peak_tall))
+		r_peak_scale = float(k.get("peak_scale",r_peak_scale))
+		r_meadows = float(k.get("meadow_scale",r_meadows))
+		r_meadow_band = Vector2(k.get("meadow_band",r_meadow_band))
+		r_meadow_keep = float(k.get("meadow_keep",r_meadow_keep))
+		r_meadow_above = float(k.get("meadow_above",r_meadow_above))
+		r_valleys = float(k.get("valley_scale",r_valleys))
+		r_valley_warp = float(k.get("valley_warp_scale",r_valley_warp))
+		r_valley_warp_move = float(k.get("valley_warp_move",r_valley_warp_move))
+		r_valley_swing = Vector2(k.get("valley_swing",r_valley_swing))
+		r_valley_side = Vector2(k.get("valley_side",r_valley_side))
+		r_valley_keep = float(k.get("valley_keep",r_valley_keep))
+		r_snow = float(k.get("snow",r_snow))
+		_noise(_continent,1,r_continent,3,FastNoiseLite.FRACTAL_FBM)
+		_noise(_hills,2,r_hills,4,FastNoiseLite.FRACTAL_FBM)
+		_noise(_mask,3,MOUNTAINS if old_land else r_range_mask,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_ridges,4,900.0 if old_land else r_ridges,5,FastNoiseLite.FRACTAL_RIDGED)
+		_noise(_meadows,5,r_meadows,2,FastNoiseLite.FRACTAL_FBM)
 		_noise(_tint,6,180.0,2,FastNoiseLite.FRACTAL_FBM)
-		_noise(_warp,7,WARP,2,FastNoiseLite.FRACTAL_FBM)
-		_noise(_range,8,RANGES,2,FastNoiseLite.FRACTAL_FBM)
-		_noise(_peak,9,PEAK_SCALE,2,FastNoiseLite.FRACTAL_FBM)
-		_noise(_valley,10,VALLEYS,2,FastNoiseLite.FRACTAL_FBM)
-		_noise(_valley_warp,11,VALLEY_WARP,1,FastNoiseLite.FRACTAL_NONE)
+		_noise(_warp,7,r_warp,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_range,8,r_ranges,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_peak,9,r_peak_scale,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_valley,10,r_valleys,2,FastNoiseLite.FRACTAL_FBM)
+		_noise(_valley_warp,11,r_valley_warp,1,FastNoiseLite.FRACTAL_NONE)
 		_noise(_valley_wide,12,900.0,1,FastNoiseLite.FRACTAL_NONE)
 		_noise(_bench_warp,13,BENCH_WANDER,2,FastNoiseLite.FRACTAL_FBM)
 		_noise(_bench_band,14,BENCH_BANDS,1,FastNoiseLite.FRACTAL_NONE)
@@ -873,12 +981,12 @@ class GDField extends RefCounted:
 
 	## The land before the carve: continents, hills, ranges, meadows, valleys.
 	func _broad(x: float, z: float) -> Vector2:
-		var base := _continent.get_noise_2d(x,z)*CONTINENT_SWING*2.0+CONTINENT_LIFT
-		# Inland the continents level off at LOWLAND m: the peaks come from
+		var base := _continent.get_noise_2d(x,z)*r_continent_swing*2.0+r_continent_lift
+		# Inland the continents level off at r_lowland m: the peaks come from
 		# the ranges, not from the continents.
-		if base > 0.0: base = LOWLAND*(1.0-exp(-base/LOWLAND))
+		if base > 0.0: base = r_lowland*(1.0-exp(-base/r_lowland))
 		var inland := smoothstep(-6.0,18.0,base)
-		var hills := _hills.get_noise_2d(x,z)*HILL_TALL*2.0*(0.35+0.65*inland)
+		var hills := _hills.get_noise_2d(x,z)*r_hill_tall*2.0*(0.35+0.65*inland)
 		var h := base+hills
 		# The ranges: the crest lines of a warped noise, where the mask allows.
 		var mountain := 0.0
@@ -887,23 +995,23 @@ class GDField extends RefCounted:
 		last_inland = inland
 		_floor = -INF
 		if inland > 0.0 and mountains > 0.0:
-			var band := RANGE_BAND+Vector2.ONE*(1.0-mountains)*0.35
+			var band := r_range_band+Vector2.ONE*(1.0-mountains)*0.35
 			var where := smoothstep(band.x,band.y,_mask.get_noise_2d(x,z))*inland
 			if where > 0.0:
-				var wx := x+_warp.get_noise_2d(x,z)*WARP_MOVE
-				var wz := z+_warp.get_noise_2d(x+7919.0,z-3301.0)*WARP_MOVE
-				var off := absf(_range.get_noise_2d(wx,wz))/RANGE_WIDTH
+				var wx := x+_warp.get_noise_2d(x,z)*r_warp_move
+				var wz := z+_warp.get_noise_2d(x+7919.0,z-3301.0)*r_warp_move
+				var off := absf(_range.get_noise_2d(wx,wz))/r_range_width
 				if off < 1.0:
 					var crest := 1.0-off
 					crest = crest*crest*(3.0-2.0*crest)
 					mountain = crest*where
-					var tall := lerpf(PEAK_TALL.x,PEAK_TALL.y,clampf(_peak.get_noise_2d(x,z)*0.9+0.5,0.0,1.0))*peaks
+					var tall := lerpf(r_peak_tall.x,r_peak_tall.y,clampf(_peak.get_noise_2d(x,z)*0.9+0.5,0.0,1.0))*peaks
 					var ridge := _ridges.get_noise_2d(x,z)*0.5+0.5
 					# A massif under the ridged crests; the ridges rise with it.
 					h += tall*(0.4*pow(mountain,1.4)+0.75*ridge*ridge*mountain*mountain)
-		var meadow := smoothstep(MEADOW_BAND.x,MEADOW_BAND.y,_meadows.get_noise_2d(x,z))*inland*(1.0-smoothstep(0.0,0.35,mountain))
+		var meadow := smoothstep(r_meadow_band.x,r_meadow_band.y,_meadows.get_noise_2d(x,z))*inland*(1.0-smoothstep(0.0,0.35,mountain))
 		if meadow > 0.0:
-			var flat := maxf(base+hills*MEADOW_KEEP,MEADOW_ABOVE)
+			var flat := maxf(base+hills*r_meadow_keep,r_meadow_above)
 			h = lerpf(h,flat,meadow)
 		# The valleys: carved along the zero lines of a warped noise, their
 		# distance read from the noise over its slope.
@@ -916,20 +1024,20 @@ class GDField extends RefCounted:
 		_river_mouth = 0.0
 		_river_bed = RIVER_BED
 		if inland > 0.0 and valleys > 0.0:
-			var vx := x+_valley_warp.get_noise_2d(x,z)*VALLEY_WARP_MOVE
-			var vz := z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*VALLEY_WARP_MOVE
+			var vx := x+_valley_warp.get_noise_2d(x,z)*r_valley_warp_move
+			var vz := z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*r_valley_warp_move
 			var v := _valley.get_noise_2d(vx,vz)
 			var e := 6.0
 			var gx := (_valley.get_noise_2d(vx+e,vz)-v)/e
 			var gz := (_valley.get_noise_2d(vx,vz+e)-v)/e
-			var d := absf(v)/maxf(sqrt(gx*gx+gz*gz),0.25/VALLEYS)
-			var half := _floor_half*lerpf(VALLEY_SWING.x,VALLEY_SWING.y,clampf(_valley_wide.get_noise_2d(x,z)*0.8+0.5,0.0,1.0))
-			var side := lerpf(VALLEY_SIDE.x,VALLEY_SIDE.y,smoothstep(0.0,0.6,mountain))*maxf(valleys,1.0)
+			var d := absf(v)/maxf(sqrt(gx*gx+gz*gz),0.25/r_valleys)
+			var half := _floor_half*lerpf(r_valley_swing.x,r_valley_swing.y,clampf(_valley_wide.get_noise_2d(x,z)*0.8+0.5,0.0,1.0))
+			var side := lerpf(r_valley_side.x,r_valley_side.y,smoothstep(0.0,0.6,mountain))*maxf(valleys,1.0)
 			last_valley = d
 			last_half = half
 			last_side = side
 			if gx*gx+gz*gz > 0.0: last_across = Vector2(gx,gz).normalized()
-			var floor_y := maxf(base+hills*VALLEY_KEEP,MEADOW_ABOVE)
+			var floor_y := maxf(base+hills*r_valley_keep,r_meadow_above)
 			last_floor = SEA_Y+floor_y
 			if d < half+side:
 				var fill := 0.0
@@ -938,7 +1046,7 @@ class GDField extends RefCounted:
 					# worked out only within its reach of the floor (RIVER_REACH
 					# past the floor's edge, more near a coast for the plain).
 					var k := smoothstep(0.0,0.12,inland)*minf(valleys,1.0)*minf(rivers,1.0)
-					var ds := v/maxf(sqrt(gx*gx+gz*gz),0.25/VALLEYS)
+					var ds := v/maxf(sqrt(gx*gx+gz*gz),0.25/r_valleys)
 					fill = smoothstep(0.5,3.0,base-RIVER_DROP.y*river_drop)*k
 					# To one side: its middle near the floor's edge, at the foot of
 					# that side (RIVER_HUG of the half-width), so the floor's flat
@@ -975,7 +1083,7 @@ class GDField extends RefCounted:
 						# the noise gives the scale between them (the warp's
 						# stretch, the floor's clamped slope), so it keeps its width
 						# round bends and stays on the floor.
-						var gw := maxf(sqrt(gx*gx+gz*gz),0.25/VALLEYS)
+						var gw := maxf(sqrt(gx*gx+gz*gz),0.25/r_valleys)
 						var scale := 1.0
 						var along := Vector2(-gz,gx)/gw
 						var wg := Vector2(_valley_at(x+4.0,z)-v,_valley_at(x,z+4.0)-v)*0.25
@@ -987,7 +1095,7 @@ class GDField extends RefCounted:
 						var r := (ds-off)*scale
 						var s := absf(r)
 						# The level: the lowland's under the valley, never under the sea.
-						var top := maxf(base,MEADOW_ABOVE)
+						var top := maxf(base,r_meadow_above)
 						var water := _mouth_level(base-drop)
 						# By the river the floor is the banks' top (the hills' bumps out).
 						var near := (1.0-smoothstep(w+RIVER_BANK,w+RIVER_BANK+RIVER_RAMP,s))*k
@@ -1053,14 +1161,14 @@ class GDField extends RefCounted:
 
 	## The continents' level (m over the sea) at a point, as `_broad` starts.
 	func _lowland(x: float, z: float) -> float:
-		var b := _continent.get_noise_2d(x,z)*CONTINENT_SWING*2.0+CONTINENT_LIFT
-		if b > 0.0: b = LOWLAND*(1.0-exp(-b/LOWLAND))
+		var b := _continent.get_noise_2d(x,z)*r_continent_swing*2.0+r_continent_lift
+		if b > 0.0: b = r_lowland*(1.0-exp(-b/r_lowland))
 		return b
 
 	## The valley noise at a world point, through its warp (as `_broad` reads it).
 	func _valley_at(x: float, z: float) -> float:
-		var vx := x+_valley_warp.get_noise_2d(x,z)*VALLEY_WARP_MOVE
-		var vz := z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*VALLEY_WARP_MOVE
+		var vx := x+_valley_warp.get_noise_2d(x,z)*r_valley_warp_move
+		var vz := z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*r_valley_warp_move
 		return _valley.get_noise_2d(vx,vz)
 
 	## --- The carve -------------------------------------------------------------
@@ -1264,17 +1372,17 @@ class GDField extends RefCounted:
 
 	## Round one's land (--old-land), exactly.
 	func _old_sample(x: float, z: float) -> Vector2:
-		var base := _continent.get_noise_2d(x,z)*CONTINENT_SWING*2.0+CONTINENT_LIFT
-		if base > 0.0: base = LOWLAND*(1.0-exp(-base/LOWLAND))
+		var base := _continent.get_noise_2d(x,z)*r_continent_swing*2.0+r_continent_lift
+		if base > 0.0: base = r_lowland*(1.0-exp(-base/r_lowland))
 		var inland := smoothstep(-6.0,18.0,base)
-		var h := base+_hills.get_noise_2d(x,z)*HILL_TALL*2.0*(0.35+0.65*inland)
+		var h := base+_hills.get_noise_2d(x,z)*r_hill_tall*2.0*(0.35+0.65*inland)
 		var mountain := smoothstep(MOUNTAIN_BAND.x,MOUNTAIN_BAND.y,_mask.get_noise_2d(x,z))*inland
 		if mountain > 0.0:
 			var ridge := _ridges.get_noise_2d(x,z)*0.5+0.5
 			h += ridge*ridge*MOUNTAIN_TALL*mountain
-		var meadow := smoothstep(MEADOW_BAND.x,MEADOW_BAND.y,_meadows.get_noise_2d(x,z))*inland*(1.0-mountain)
+		var meadow := smoothstep(r_meadow_band.x,r_meadow_band.y,_meadows.get_noise_2d(x,z))*inland*(1.0-mountain)
 		if meadow > 0.0:
-			var flat := maxf(base+(h-base)*MEADOW_KEEP,MEADOW_ABOVE)
+			var flat := maxf(base+(h-base)*r_meadow_keep,r_meadow_above)
 			h = lerpf(h,flat,meadow)
 		if absf(h) < BEACH*2.0: h = h*lerpf(0.45,1.0,smoothstep(0.0,BEACH*2.0,absf(h)))
 		return Vector2(SEA_Y+h,meadow)
@@ -1323,7 +1431,7 @@ class GDField extends RefCounted:
 
 	## The snow line over the sea for this land (round one's under --old-land).
 	func snow_line() -> float:
-		return 95.0 if old_land else SNOW
+		return 95.0 if old_land else r_snow
 
 	## The ground's colour at a world point: its height over the sea, its
 	## slope (the normal's up) and its meadow.
