@@ -208,5 +208,10 @@ void fragment() {
 		EMISSION += diffuse * night_bounce_colour * night_bounce * warm;
 	}
 #endif
+#ifdef ZS_DIM_FILL
+	// Under rock (shaders/tunnel_stone.gdshader): the sky's fill and the
+	// bounce dimmed, so the lights (the torches) carry the stone.
+	EMISSION *= dim_fill;
+#endif
 }
 #endif

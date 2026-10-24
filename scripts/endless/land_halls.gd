@@ -78,6 +78,12 @@ var _planned_at := Vector3.INF
 var _quit := false
 var _eye := Vector3.ZERO
 var _stone: ShaderMaterial
+## Materials of its own for the kit's (kit material -> its own), worn in
+## place of the sunlit stone: the tunnels' stretches under rock
+## (land_tunnels.gd, the dark inside). Empty: the sunlit stone.
+var swap: Dictionary = {}
+## With `swap`, the render layers its pieces stand on (0: as built).
+var swap_layers := 0
 var _old_stone := "--old-ruin-stone" in LaunchArgs.user_args()
 ## Fixed pieces (key -> info: name, seed, bays, frame, coded, site), built
 ## from their own infos rather than the squares' sites, never freed:
@@ -191,7 +197,9 @@ func _build_hall(key: Vector2i, field: RefCounted) -> Dictionary:
 ## `_build_hall`.
 func _build_from(key: Vector2i, info: Dictionary) -> Dictionary:
 	if info.is_empty(): return {"key":key}
-	var piece := Sundered.slot_piece(int(info.seed),int(info.bays))
+	# A fixed hall may bring its piece ready made (the tunnels' stretches,
+	# their centre row as Tunnels.centre_row sets it).
+	var piece: Dictionary = info.piece if info.has("piece") else Sundered.slot_piece(int(info.seed),int(info.bays))
 	var sections: Array = []
 	var bays := int(piece.bays)
 	var a := 0
@@ -415,7 +423,7 @@ func _stand_near(r: Dictionary, sec: Dictionary) -> void:
 	var node: Node3D = made
 	node.position.x = float(sec.x0)
 	(r.node as Node3D).add_child(node)
-	if not _old_stone: _sunlit(node)
+	if not _old_stone or not swap.is_empty(): _sunlit(node)
 	sec.near = node
 	sec.bodies = (node.get_meta("bodies",[]) as Array).duplicate()
 	node.remove_meta("bodies")
@@ -443,6 +451,9 @@ func _stand_body(sec: Dictionary) -> bool:
 	return true
 
 func _sunlit(node: Node) -> void:
+	if not swap.is_empty():
+		_swap(node)
+		return
 	if _old_stone: return
 	var kit: Material = RuinKit.materials().stone
 	if _stone == null:
@@ -456,6 +467,24 @@ func _sunlit(node: Node) -> void:
 		if mi.mesh == null: continue
 		for i in mi.mesh.get_surface_count():
 			if mi.mesh.surface_get_material(i) == kit: mi.set_surface_override_material(i,_stone)
+
+func _swap(node: Node) -> void:
+	var list: Array = node.find_children("*","GeometryInstance3D",true,false)
+	if node is GeometryInstance3D: list.append(node)
+	for gi: GeometryInstance3D in list:
+		if swap_layers != 0: gi.layers = swap_layers
+		if gi is MeshInstance3D:
+			var mi: MeshInstance3D = gi
+			if mi.mesh == null: continue
+			for i in mi.mesh.get_surface_count():
+				var own: Variant = swap.get(mi.mesh.surface_get_material(i))
+				if own != null: mi.set_surface_override_material(i,own)
+		elif gi is MultiMeshInstance3D:
+			var mm: MultiMesh = (gi as MultiMeshInstance3D).multimesh
+			if mm == null or mm.mesh == null: continue
+			for i in mm.mesh.get_surface_count():
+				var own: Variant = swap.get(mm.mesh.surface_get_material(i))
+				if own != null: gi.material_override = own
 
 ## Every hall standing now: [{name, info, node, sections...}].
 func standing() -> Array:

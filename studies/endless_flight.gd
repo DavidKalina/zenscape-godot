@@ -264,6 +264,7 @@ func _ready() -> void:
 	tunnels.name = "Tunnels"
 	add_child(tunnels)
 	tunnels.setup(field)
+	if look != null: tunnels.clouds = look.clouds
 	trees = LandTrees.new()
 	trees.name = "Trees"
 	add_child(trees)

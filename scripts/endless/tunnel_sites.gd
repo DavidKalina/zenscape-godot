@@ -630,6 +630,28 @@ static func stretches(t: Site) -> Array:
 			"frame":Transform3D(Basis(x,Vector3.UP,x.cross(Vector3.UP)),Vector3(c.x,t.floor_y,c.y))})
 	return out
 
+## The hall stretches' centre column row (knob, the user's to tune): on, a
+## stretch keeps its plan's inner columns (and the screens hung off them),
+## which split the nave into two lanes; off, the nave stands open between
+## the rows. `--tunnel-row=0|1` overrides it.
+const CENTRE_ROW := true
+
+static func centre_row() -> bool:
+	var out := CENTRE_ROW
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--tunnel-row="): out = a.get_slice("=",1) not in ["0","off","false"]
+	return out
+
+## Stretch `h`'s slot piece (Tunnels.stretches), with the centre row as
+## `centre_row` sets it: what LandHalls builds and the torches read.
+static func stretch_piece(h: Dictionary) -> Dictionary:
+	var piece := Sundered.slot_piece(int(h.seed),int(h.bays))
+	if not centre_row():
+		for p: Dictionary in piece.plans:
+			p.inner = []
+			p.screen = false
+	return piece
+
 ## A hall wall's inner face off the stretch's line (m).
 static var HALL_INNER: float = Hall.WALL_Z-Hall.WALL_THICK*0.5
 
@@ -657,7 +679,7 @@ static func torch_spots(t: Site) -> Array:
 	# bay's wall is whole, else on the jamb at its bay line.
 	var halls: Array = stretches(t)
 	var plans := {}
-	for h: Dictionary in halls: plans[h.n] = Sundered.slot_piece(int(h.seed),int(h.bays)).plans
+	for h: Dictionary in halls: plans[h.n] = stretch_piece(h).plans
 	for side: float in [-1.0,1.0]:
 		var s := 6.0 if side < 0.0 else 6.0+TORCH_GAP*0.5
 		while s < t.length-4.0:

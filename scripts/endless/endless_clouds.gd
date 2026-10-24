@@ -216,6 +216,9 @@ var fog_on := true
 var fog_look := Vector4(0.8,0.35,0.6,0.0)
 var fog_gain := 0.75
 var fog_density := 1.0
+## 0..1: the valley fog thinned toward none (a tunnel's dark inside sets it,
+## scripts/endless/land_tunnels.gd); 0 leaves it as it is.
+var fog_hush := 0.0
 var fog_depth := FOG_DEPTH
 var fog_steps := FOG_STEPS
 var fog := ImageTexture.new()
@@ -943,9 +946,9 @@ func _fill() -> void:
 	var shade_corner := ((Vector2(eye.x,eye.z)-Vector2.ONE*SHADE_SIDE*0.5)/shade_texel).floor()*shade_texel
 	_put4(p,48,Vector4(_frame,0.0,0.0,night))
 	_put4(p,52,Vector4(SMALL_COVER,LOW_SHARE,TOWER_SHARE,MEADOW_CLEAR))
-	var fog_live := fog_on and fog_at.w > 0.5 and fog_top > -1e2
+	var fog_live := fog_on and fog_at.w > 0.5 and fog_top > -1e2 and fog_hush < 1.0
 	_put4(p,56,fog_at if fog_live else Vector4.ZERO)
-	_put4(p,60,Vector4(fog_density,fog_depth,fog_steps,fog_top+fog_depth*1.6+16.0))
+	_put4(p,60,Vector4(fog_density*(1.0-fog_hush),fog_depth,fog_steps,fog_top+fog_depth*1.6+16.0))
 	_put4(p,64,Vector4(drift.x*FOG_DRIFT,drift.y*FOG_DRIFT,FOG_REACH,FOG_FADE))
 	_put4(p,68,fog_look)
 	var weather_due := _frame%WEATHER_EVERY == 0 or weather_side == 0.0
