@@ -14,6 +14,12 @@
 //   g  how young it is (1 at the crest, fading over `flow.w` s)
 //   b  the churned water round it (spreads wider, fades slower)
 //   a  the wake's foam laid into the buffer
+//
+// Under the FFT sea (sea_fft 1, scripts/endless/sea_fft.gd) the crests that
+// break are the folds of the FFT's wind sea instead: foam is laid where the
+// Jacobian of its two coarser cascades (read from their maps with
+// imageLoad, at mip 0 and mip 2) drops toward a fold, as the sea shader's
+// own fresh caps do.
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -27,12 +33,19 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 flow;    // drift m/s; swirl m/s; swirl size m; youth s
 	vec4 wake;    // plane x, z; strength 0..1; radius m
 	vec4 extra;   // foam_caps xyz; -
+	vec4 fft;     // cascade 0 and 1 tile m; on; -
+	vec4 fold;    // fft_foam xyz (fold start, full, amount); -
+	vec4 fold2;   // fft_patch xy (slick, rough); fft_strength xy
 } P;
 
 // Last frame's foam, read as an image (sampling the texture the pass wrote
 // the frame before hung Metal), filtered by hand.
 layout(set = 0, binding = 1, rgba16f) uniform restrict readonly image2D prev;
 layout(set = 0, binding = 2, rgba16f) uniform restrict writeonly image2D next;
+// The FFT's maps (sea_fft 1; a stand-in otherwise): mip 0 for cascade 0,
+// mip 2 for cascade 1 (about the buffer's texel).
+layout(set = 0, binding = 3, rgba16f) uniform restrict readonly image2DArray fold_a;
+layout(set = 0, binding = 4, rgba16f) uniform restrict readonly image2DArray fold_b;
 
 const float PI = 3.14159265;
 const float TAU = 6.2831853;
@@ -76,6 +89,32 @@ vec4 prev_at(vec2 p) {
 	ivec2 b = ivec2((a.x + 1) % m, (a.y + 1) % m);
 	vec4 c00 = imageLoad(prev, a), c10 = imageLoad(prev, ivec2(b.x, a.y));
 	vec4 c01 = imageLoad(prev, ivec2(a.x, b.y)), c11 = imageLoad(prev, b);
+	return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+// The FFT map's layer at world `p` for a tile `L` m, filtered by hand, as
+// the sea shader samples it (uv = p / L + 0.5 / 256).
+vec4 fold_at_a(vec2 p, float L, int layer) {
+	int m = imageSize(fold_a).x;
+	vec2 at = (p / L + 0.5 / 256.0) * float(m) - 0.5;
+	ivec2 i = ivec2(floor(at));
+	vec2 f = at - vec2(i);
+	ivec2 a = ivec2((i.x % m + m) % m, (i.y % m + m) % m);
+	ivec2 b = ivec2((a.x + 1) % m, (a.y + 1) % m);
+	vec4 c00 = imageLoad(fold_a, ivec3(a, layer)), c10 = imageLoad(fold_a, ivec3(b.x, a.y, layer));
+	vec4 c01 = imageLoad(fold_a, ivec3(a.x, b.y, layer)), c11 = imageLoad(fold_a, ivec3(b, layer));
+	return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+}
+
+vec4 fold_at_b(vec2 p, float L, int layer) {
+	int m = imageSize(fold_b).x;
+	vec2 at = (p / L + 0.5 / 256.0) * float(m) - 0.5;
+	ivec2 i = ivec2(floor(at));
+	vec2 f = at - vec2(i);
+	ivec2 a = ivec2((i.x % m + m) % m, (i.y % m + m) % m);
+	ivec2 b = ivec2((a.x + 1) % m, (a.y + 1) % m);
+	vec4 c00 = imageLoad(fold_b, ivec3(a, layer)), c10 = imageLoad(fold_b, ivec3(b.x, a.y, layer));
+	vec4 c01 = imageLoad(fold_b, ivec3(a.x, b.y, layer)), c11 = imageLoad(fold_b, ivec3(b, layer));
 	return mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
 }
 
@@ -123,7 +162,19 @@ void main() {
 	vec2 gp = (p - hw * t * 2.0) / 55.0;
 	float gust = smoothstep(0.45, 0.8, body_noise(gp + vec2(9.1, 3.7)) * 0.7 + body_noise(gp * 2.7 + vec2(1.3, 8.8)) * 0.3);
 	float laid = 0.0;
+	if (P.fft.z > 0.5) {
+		// The FFT's folds: the Jacobian of cascades 0 and 1, scaled as the
+		// sea shader scales them in slicks and rough stretches.
+		float sp = mix(P.fold2.x, P.fold2.y, rough);
+		float s0 = sp * P.fold2.z, s1 = sp * P.fold2.w;
+		vec4 a = fold_at_a(p, P.fft.x, 0), as = fold_at_a(p, P.fft.x, 3);
+		vec4 b = fold_at_b(p, P.fft.y, 1), bs = fold_at_b(p, P.fft.y, 4);
+		float dxx = as.z * s0 + bs.z * s1, dzz = as.w * s0 + bs.w * s1, dxz = a.w * s0 + b.w * s1;
+		float jac = (1.0 + dxx) * (1.0 + dzz) - dxz * dxz;
+		laid = clamp(smoothstep(P.fold.x, P.fold.y, 1.0 - jac) * P.fold.z, 0.0, 1.0) * (P.extra.y + (1.0 - P.extra.y) * gust);
+	}
 	for (int i = 5; i <= 8; i++) {
+		if (P.fft.z > 0.5) break;
 		float L = BODY_LENGTH[i];
 		float c = cos(BODY_TURN[i]), s = sin(BODY_TURN[i]);
 		vec2 d = vec2(c * hw.x - s * hw.y, s * hw.x + c * hw.y);

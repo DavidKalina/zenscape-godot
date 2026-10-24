@@ -1,0 +1,14 @@
+[remap]
+
+importer="glsl"
+type="RDShaderFile"
+uid="uid://flka1ggm1jit"
+path="res://.godot/imported/sea_fft_mips.glsl-14f83b4cf36714570b406e2bcf87cf18.res"
+
+[deps]
+
+source_file="res://shaders/sea_fft_mips.glsl"
+dest_files=["res://.godot/imported/sea_fft_mips.glsl-14f83b4cf36714570b406e2bcf87cf18.res"]
+
+[params]
+

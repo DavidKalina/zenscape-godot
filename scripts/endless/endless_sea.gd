@@ -12,12 +12,17 @@ extends RefCounted
 ##   foam        the whitecaps' lingering foam, a buffer round the eye kept by
 ##               a compute pass (scripts/endless/sea_foam.gd); --sea-foam=old
 ##               keeps the body round's short-lived caps.
+##   fft         --sea-fft=1: the wind sea and its chop as FFT cascades
+##               (scripts/endless/sea_fft.gd) instead of Gerstner waves 5..10
+##               and the noise layers; the swell trains stay Gerstner, and
+##               they alone are mirrored by `height_at`.
 ##
 ## `--water=old` keeps the earlier sea (shaders/sky_ocean.gdshader).
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const SeaFoam = preload("res://scripts/endless/sea_foam.gd")
+const SeaFFT = preload("res://scripts/endless/sea_fft.gd")
 
 const DEPTH_TEXELS := 512
 const DEPTH_SIDE := 4096.0
@@ -50,6 +55,9 @@ var _speed := 0.0
 var _last_time := 0.0
 ## The lingering foam's buffer (sea_foam 1 with a rendering device).
 var foam: SeaFoam
+## The FFT cascades (--sea-fft=1 with a rendering device).
+var fft: SeaFFT
+var _fft_wind_set := false
 var _wake_low := 0.0
 ## False under --wake=old: the wake at any speed, rings and all.
 var _wake_needs_speed := not "--wake=old" in LaunchArgs.user_args()
@@ -63,6 +71,11 @@ static func wanted() -> bool:
 static func body_wanted() -> bool:
 	var a := LaunchArgs.user_args()
 	return wanted() and not ("--sea-body=old" in a or "--sea-motion=old" in a or "--sea-surface=old" in a)
+
+## Whether the wind sea and chop come from FFT cascades (--sea-fft=1; it
+## needs the body).
+static func fft_wanted() -> bool:
+	return body_wanted() and "--sea-fft=1" in LaunchArgs.user_args()
 
 ## Whether the whitecaps linger (a foam buffer, lace): not --sea-foam=old
 ## or any older sea.
@@ -127,16 +140,40 @@ func _init(seed_value: int) -> void:
 				if kv.size() == 2: material.set_shader_parameter(kv[0],str_to_var(kv[1]))
 		elif a == "--no-wake": material.set_shader_parameter("wake",0.0)
 		elif a == "--wake=old": material.set_shader_parameter("wake_tail",0.0)
+	# The FFT cascades before the foam, which reads their folds. Headless
+	# (no rendering device) the sea keeps its Gerstner wind sea and chop.
+	if fft_wanted() and int(_knob("sea_body")) > 0:
+		var cascades := SeaFFT.new()
+		if cascades.ready():
+			fft = cascades
+			fft.timing = "--sea-fft-time" in LaunchArgs.user_args()
+			_fft_wind_set = fft.read_args(LaunchArgs.user_args())
+			material.set_shader_parameter("sea_fft",1)
+			material.set_shader_parameter("fft_maps",fft.texture)
+			_fft_uniforms()
 	if int(_knob("sea_foam")) > 0:
-		foam = SeaFoam.new()
+		foam = SeaFoam.new(fft)
 		if foam.ready():
 			material.set_shader_parameter("foam_buffer",foam.textures[0])
 			material.set_shader_parameter("foam_buffer_b",foam.textures[1])
 
 ## The steady wind the wind sea runs along (EndlessLook's base heading, in
 ## radians; the wind's wander would race the far crests).
-func set_wind(angle: float) -> void:
+func set_wind(angle: float, strength := 0.75) -> void:
 	material.set_shader_parameter("body_wind",Vector2(cos(angle),sin(angle)))
+	_knobs.clear()
+	if fft != null:
+		fft.set_wind(angle,strength,_fft_wind_set)
+		_fft_uniforms()
+
+## What the sea shader reads of the FFT's spectrum: the tiles, each band's
+## slope variance (what fades into roughness past the pixel) and its
+## wavelengths.
+func _fft_uniforms() -> void:
+	material.set_shader_parameter("fft_sizes",fft.knobs.sizes)
+	material.set_shader_parameter("fft_slope_var",fft.slope_var)
+	material.set_shader_parameter("fft_band_long",fft.band_long)
+	material.set_shader_parameter("fft_band_short",fft.band_short)
 	_knobs.clear()
 
 # --- The body's swell on the CPU (shaders/endless_sea.gdshader zs_swell_body)
@@ -150,7 +187,7 @@ var _knobs := {}
 ## The shader's defaults for what the mirror reads (a material keeps only
 ## what was set).
 const FOAM_CAPS := Vector3(1.6,6.0,1.0)
-const KNOB_DEFAULTS := {"sea_foam":0,"whitecaps":Vector3(1.0,2.2,1.0),"foam_flow":Vector4(0.45,0.35,14.0,0.9),"foam_spread":Vector2(0.03,0.3),"foam_caps":Vector3(0.42,0.4,0.5),"wake":1.0,"wake_tail":1.0,"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0)}
+const KNOB_DEFAULTS := {"sea_fft":0,"fft_sizes":Vector3(250.0,37.0,5.7),"fft_foam":Vector3(0.25,0.55,1.2),"fft_patch":Vector2(0.55,1.25),"fft_strength":Vector3(1.0,0.85,0.45),"sea_foam":0,"whitecaps":Vector3(1.0,2.2,1.0),"foam_flow":Vector4(0.45,0.35,14.0,0.9),"foam_spread":Vector2(0.03,0.3),"foam_caps":Vector3(0.42,0.4,0.5),"wake":1.0,"wake_tail":1.0,"sea_body":0,"body_swell":Vector3(0.85,1.0,0.9),"swell_cross":Vector2(1.05,0.6),"swell_groups":0.9,"wind_patches":Vector2(380.0,0.35),"body_patch":Vector3(0.3,1.3,1.0),"swell_heading":Vector2(0.8,0.6),"body_wind":Vector2(1.0,0.0)}
 
 ## The sea's surface height over its rest level (m) at world `x`,`z` now:
 ## the body's swell (0 without the body). The shader's sheet shoves its
@@ -218,7 +255,9 @@ func _body_shift(p: Vector2, t: float) -> Vector3:
 	var amps: Array[float] = []
 	var phases: Array[float] = []
 	var total := 0.0
-	for i in BODY_LENGTH.size():
+	# Under the FFT sea only the swell trains (waves 0..4) are Gerstner.
+	var count := 5 if int(_knob("sea_fft")) > 0 else BODY_LENGTH.size()
+	for i in count:
 		var train: int = BODY_TRAIN[i]
 		var h: Vector2 = h0 if train == 0 else (h1 if train == 1 else hw)
 		var d := _rot(h,BODY_TURN[i])
@@ -325,9 +364,10 @@ func step(delta: float, eye: Vector3, plane: Vector3, facing := Vector3.FORWARD,
 	_now += delta
 	_depth(eye)
 	_wake(plane)
+	if fft != null: fft.step(time if time >= 0.0 else _now,view)
 	if foam != null:
 		var knobs := {}
-		for k in ["body_wind","foam_flow","body_swell","body_patch","whitecaps","foam_spread","foam_caps","swell_groups","wind_patches"]: knobs[k] = _knob(k)
+		for k in ["body_wind","foam_flow","body_swell","body_patch","whitecaps","foam_spread","foam_caps","swell_groups","wind_patches","sea_fft","fft_sizes","fft_foam","fft_patch","fft_strength"]: knobs[k] = _knob(k)
 		var strength := _wake_low*float(_knob("wake"))
 		foam.step(delta,eye,facing,time if time >= 0.0 else _now,knobs,Vector4(plane.x,plane.z,strength,2.2),view)
 		material.set_shader_parameter("foam_drift",foam.drift)
@@ -419,6 +459,7 @@ func _wake(plane: Vector3) -> void:
 ## Waits for a worker still baking (before the sea is freed).
 func finish() -> void:
 	if foam != null: foam.free_buffers()
+	if fft != null: fft.free_buffers()
 	if _task >= 0:
 		WorkerThreadPool.wait_for_task_completion(_task)
 		_task = -1
