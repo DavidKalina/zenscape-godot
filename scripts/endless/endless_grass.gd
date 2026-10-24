@@ -1072,6 +1072,9 @@ func _silver_tier(m: ShaderMaterial, far := false) -> void:
 	var tier := 2 if m == ground else (1 if far or _fars.values().has(m) else 0)
 	m.set_shader_parameter("grass_silver",Vector4(silver,SILVER_BOW.x,SILVER_BOW.y,SILVER_LIFT[tier]))
 	m.set_shader_parameter("grass_silver_keep",SILVER_KEEP[tier])
+	# The world's own underside hue (paint.silver_colour; absent: the shader's sage).
+	if world != null and world.paint.has("silver_colour"):
+		m.set_shader_parameter("grass_silver_colour",world.paint.silver_colour)
 
 ## The undersides turned to strength `s` on every grass material now
 ## standing (0 off: the old paling back), for A/B in one run.
