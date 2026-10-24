@@ -53,7 +53,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 fog_at;        // 56 the valley fog's map: corner xz, side, has one
 	vec4 fog_knobs;     // 60 density scale, depth (m), steps, slab top (world y)
 	vec4 fog_drift;     // 64 the patches' drift xz (m), reach (m), fade (m)
-	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -
+	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square
 	vec4 weather_at;    // 164 corner xz, side, texels a side
 	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
 	vec4 flash;         // 172 grain jitter on, organic field on, stacked clouds yield, puffs' finer lobes on
@@ -785,10 +785,20 @@ vec4 weather_texel(vec2 xz) {
 
 // --- The cloud at a point ----------------------------------------------------------------
 
-vec4 weather_map(vec2 xz) {
+vec4 weather_layers(vec2 xz) {
 	vec2 uv = (xz - P.weather_at.xy) / P.weather_at.z;
 	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec4(-1e3, 0.0, -1e3, 0.0);
 	return textureLod(weather, uv, 0.0);
+}
+
+// The map drawn a slice a frame (scripts/cloud_volume_effect.gd
+// weather_slices) is one moment, up to two cycles old: each layer is read
+// where its cloud stood then, spare[22] (low xz, high xz) the drift since.
+vec4 weather_map(vec2 xz) {
+	vec4 since = P.spare[22];
+	vec4 w = weather_layers(xz - since.xy);
+	if (since.zw != since.xy) w.zw = weather_layers(xz - since.zw).zw;
+	return w;
 }
 
 // The map smoothed over two texels (four bilinear taps half a texel
@@ -1048,8 +1058,15 @@ float fog_ridge_shade(vec3 p, vec3 key) {
 void weather_pass() {
 	ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
 	ivec2 size = imageSize(out_weather);
+	// A slice (PASS.pad0 1): rows from PASS.pad1, round the square in
+	// spare[23] (scripts/cloud_volume_effect.gd weather_slices).
+	vec4 square = P.weather_at;
+	if (PASS.pad0 == 1) {
+		texel.y += PASS.pad1;
+		square = P.spare[23];
+	}
 	if (any(greaterThanEqual(texel, size))) return;
-	vec2 xz = P.weather_at.xy + (vec2(texel) + 0.5) / vec2(size) * P.weather_at.z;
+	vec2 xz = square.xy + (vec2(texel) + 0.5) / vec2(size) * square.z;
 	imageStore(out_weather, texel, weather_texel(xz));
 }
 

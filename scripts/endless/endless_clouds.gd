@@ -85,6 +85,13 @@ const QUALITY := [110,5,1,1]
 ## The weather map and the shade redrawn every this many frames.
 const WEATHER_EVERY := 2
 const SHADE_EVERY := 2
+## The weather map drawn this many slices of rows a frame, into a second map
+## that takes over when whole (scripts/cloud_volume_effect.gd
+## weather_slices): about 1/WEATHER_SLICES of a whole draw a frame, the map
+## at most two cycles old (0.27 s at 60 fps; the high layer drifts under
+## 2 m of its 15 m texels in that). --cloud-weather-slices=N, 0 the whole map
+## every WEATHER_EVERY frames as before.
+const WEATHER_SLICES := 8
 ## The ground map: texels a side, its side (m), redrawn when the eye is
 ## this far from its middle (m).
 const GROUND_TEXELS := 160
@@ -264,7 +271,9 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 	# 3.4 ms back at 1440p, and the march still 720 lines high, its edges a
 	# touch softer (docs/design/endless-flight/aa-view-handoff.md).
 	if preload("res://scripts/endless/land_stream.gd").high_end(): quality[2] = 2
+	effect.weather_slices = WEATHER_SLICES
 	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--cloud-weather-slices="): effect.weather_slices = clampi(int(a.get_slice("=",1)),0,64)
 		if a.begins_with("--cloud-cover="): cover = clampf(a.get_slice("=",1).to_float(),0.0,3.0)
 		elif a == "--cloud-full-res": quality[2] = 1
 		elif a == "--cloud-half-res": quality[2] = 2
@@ -950,7 +959,9 @@ func _fill() -> void:
 	_put4(p,68,fog_look)
 	var weather_due := _frame%WEATHER_EVERY == 0 or weather_side == 0.0
 	var shade_due := _frame%SHADE_EVERY == 0
-	if weather_due:
+	# Sliced, the square round the eye is asked for every frame; the effect
+	# takes it when a cycle begins.
+	if weather_due or effect.weather_slices > 1:
 		weather_side = (REACH*_view+WEATHER_PAST)*2.0
 		var texel := weather_side/Effect.WEATHER_TEXELS
 		weather_corner = ((Vector2(eye.x,eye.z)-Vector2.ONE*weather_side*0.5)/texel).floor()*texel

@@ -154,20 +154,23 @@ static func wanted() -> bool:
 ## off elsewhere and on by default on a Mac (the user's call for the M5
 ## Pro; --mac-trades=0 leaves them off there too): --shadow-size=N (the
 ## sun's shadow map, 8192 a side; 4096 saves 0.5 to 0.8 ms, shadow edges a
-## little softer), --msaa=N (0, 2, 4: the 3D's MSAA, 4), and the clouds'
-## half-res march (EndlessClouds.setup, --cloud-full-res). On a discrete GPU
+## little softer), and the clouds' half-res march (EndlessClouds.setup, --cloud-full-res). On a discrete GPU
 ## off the Mac (LandStream.high_end) SMAA over the MSAA, 0 to 0.4 ms
 ## (docs/design/endless-flight/aa-view-handoff.md). --screen-aa=smaa|fxaa|off,
-## --taa=1 (2 to 5 ms, and the grass ghosts). The flags win.
+## --taa=1 (2 to 5 ms, and the grass ghosts). MSAA 2x everywhere (MSAA_3D;
+## 4x cost 1.2 to 1.7 ms more on the Mac and about 1.5 at 1440p on an RTX
+## 4070 SUPER, the grass edges a little rougher at 2x): --msaa=N (0, 2, 4,
+## 8). The flags win.
 const SSAO := false
+const MSAA_3D := Viewport.MSAA_2X
 const MAC_SHADOW := 4096
 static func mac_trades() -> bool:
 	return OS.get_name() == "macOS" and not "--mac-trades=0" in LaunchArgs.user_args()
 func _frame_trades() -> void:
 	environment.ssao_enabled = SSAO
+	(Engine.get_main_loop() as SceneTree).root.msaa_3d = MSAA_3D
 	if mac_trades():
 		RenderingServer.directional_shadow_atlas_set_size(MAC_SHADOW,true)
-		(Engine.get_main_loop() as SceneTree).root.msaa_3d = Viewport.MSAA_2X
 	if LandStream.high_end():
 		(Engine.get_main_loop() as SceneTree).root.screen_space_aa = Viewport.SCREEN_SPACE_AA_SMAA
 	for a: String in LaunchArgs.user_args():
