@@ -267,7 +267,8 @@ static func far(piece: Dictionary) -> ArrayMesh:
 		var x0 := i*Hall.BAY
 		var torn: int = p.get("torn",0)
 		var lines: Array = [0.0]
-		if i == bays-1: lines.append(Hall.BAY)
+		# (A slot hall's section closes only at the hall's end: Hall.plan `last`.)
+		if i == bays-1 and bool(p.get("last",true)): lines.append(Hall.BAY)
 		for x: float in lines:
 			var torn_line: bool = (x == 0.0 and torn & 1 != 0) or (x > 0.0 and torn & 2 != 0)
 			var zs: Array = [-Hall.ROW_Z,Hall.ROW_Z]
