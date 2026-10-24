@@ -97,6 +97,10 @@ protected:
 	}
 
 public:
+	// The field itself, for other native kernels handed this object
+	// (ZenScapeTrees, tree_cell.h); not bound.
+	zsland::LandField &land() { return f; }
+
 	// Bumped when the land's output or this interface changes, so LandField
 	// refuses a stale library (and runs its GDScript field instead).
 	int64_t version() const { return 1; }

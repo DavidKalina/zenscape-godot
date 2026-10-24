@@ -315,6 +315,25 @@ func _arches_near(field: RefCounted, x0: float, z0: float, x1: float, z1: float)
 			out.append_array(got)
 	return out
 
+## The arches near a world rectangle (`_arches_near`) as six floats each,
+## [x, z, cos, sin, half span, half depth]: for the native plan (ZenScapeTrees).
+func arches_flat(field: RefCounted, x0: float, z0: float, x1: float, z1: float) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	for a: Array in _arches_near(field,x0,z0,x1,z1):
+		var p: Vector2 = a[0]
+		out.append_array([p.x,p.y,float(a[1]),float(a[2]),float(a[3]),float(a[4])])
+	return out
+
+## How far past a square `area`, `far_cell` and `floor_grid` read the land
+## (m): its border's slots, the flats' reach, a far slot or two, and slack.
+func sample_pad() -> float:
+	var gap := WorldScale.opening(TOY_GAP)
+	var r_most := 0.0
+	for d: Vector3 in dims: r_most = maxf(r_most,d.x)
+	var reach_most := r_most*maxf(SIZE_LONE.y,SIZE_DENSE.y)*maxf(WIDE_LONE.y,WIDE_DENSE.y)*SPACE_AT*2.0+gap*maxf(GAP_GROVE.y,GAP_DENSE.y)
+	var border := int(ceil(reach_most*BORDER/SLOT))+1
+	return maxf((border+3)*SLOT,FAR_SLOT*3.0)+FLAT_REACH+FLAT_STEP+8.0
+
 static func _by_arch(list: Array, x: float, z: float) -> bool:
 	for a: Array in list:
 		var p: Vector2 = a[0]

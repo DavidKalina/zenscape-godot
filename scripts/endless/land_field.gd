@@ -395,6 +395,11 @@ static func native_available() -> bool:
 func native_on() -> bool:
 	return _native
 
+## The native field doing the work (ZenScapeLandField), or null: for other
+## native kernels that read it directly (ZenScapeTrees, land_trees.gd).
+func native_impl() -> Object:
+	return _impl if _native else null
+
 ## Vector2(world height, meadow 0..1) at a world XZ point.
 func sample(x: float, z: float) -> Vector2:
 	_p_on = false
