@@ -79,6 +79,12 @@ var _quit := false
 var _eye := Vector3.ZERO
 var _stone: ShaderMaterial
 var _old_stone := "--old-ruin-stone" in LaunchArgs.user_args()
+## Fixed pieces (key -> info: name, seed, bays, frame, coded, site), built
+## from their own infos rather than the squares' sites, never freed:
+## scripts/endless/land_tunnels.gd's hall stretches. With `squares` false
+## (a tunnel's own streamer) no square is planned at all.
+var fixed := {}
+var squares := true
 
 func setup(land_seed: int) -> void:
 	seed = land_seed
@@ -93,14 +99,22 @@ func _exit_tree() -> void:
 		for sec: Dictionary in r.get("sections",[]):
 			if int(sec.task) >= 0: WorkerThreadPool.wait_for_task_completion(int(sec.task))
 
-## Builds the halls within `near` of `at` now, far and near, on this thread.
+## A fixed piece (`fixed`): planned with the next step, never freed.
+func add_fixed(key: Vector2i, info: Dictionary) -> void:
+	fixed[key] = info
+	_planned_at = Vector3.INF
+
+## Builds the halls within `near` of `at` now, far and near, on this thread
+## (every fixed piece's far detail too).
 func prime(at: Vector3, near := 700.0) -> void:
 	if density <= 0.0: return
 	_eye = at
-	var field := Field.new(seed)
-	for key: Vector2i in _wanted(at,near):
+	var field := Field.new(seed) if squares else null
+	for key: Vector2i in (_wanted(at,near) if squares else []):
 		if _halls.has(key): continue
 		_commit(_build_hall(key,field))
+	for key: Vector2i in fixed:
+		if not _halls.has(key) and not _pending.has(key): _commit(_build_from(key,fixed[key]))
 	for key: Vector2i in _halls:
 		var r: Dictionary = _halls[key]
 		for sec: Dictionary in r.get("sections",[]):
@@ -151,14 +165,17 @@ func _cell_distance(key: Vector2i, at: Vector3) -> float:
 
 func _plan(at: Vector3) -> void:
 	_queue.clear()
+	for key: Vector2i in fixed:
+		if not _halls.has(key) and not _pending.has(key): _queue.append(key)
+	if not squares: return
 	for key: Vector2i in _wanted(at,REACH):
 		if not _halls.has(key) and not _pending.has(key): _queue.append(key)
 	for key: Vector2i in _halls.keys():
-		if _cell_distance(key,at) > REACH+Sites.CELL: _free(key)
+		if not fixed.has(key) and _cell_distance(key,at) > REACH+Sites.CELL: _free(key)
 
 func _task(key: Vector2i) -> void:
 	if _quit: return
-	var result := _build_hall(key,Field.new(seed))
+	var result := _build_from(key,fixed[key]) if fixed.has(key) else _build_hall(key,Field.new(seed))
 	_lock.lock()
 	_done.append(result)
 	_lock.unlock()
@@ -168,7 +185,11 @@ func _task(key: Vector2i) -> void:
 ## A square's hall planned and its far detail built: {key, info, sections:
 ## [{sub, x0, x1, far, solid}]}, or {key} for a square with none.
 func _build_hall(key: Vector2i, field: RefCounted) -> Dictionary:
-	var info: Dictionary = field.hall_info(key)
+	return _build_from(key,field.hall_info(key))
+
+## A hall from its info ({name, seed, bays, frame, coded, site}), as
+## `_build_hall`.
+func _build_from(key: Vector2i, info: Dictionary) -> Dictionary:
 	if info.is_empty(): return {"key":key}
 	var piece := Sundered.slot_piece(int(info.seed),int(info.bays))
 	var sections: Array = []
@@ -288,7 +309,7 @@ func _build_near(sec: Dictionary) -> Dictionary:
 func _commit(done: Dictionary) -> void:
 	var key: Vector2i = done.key
 	var t0 := Time.get_ticks_usec()
-	if _halls.has(key) or _cell_distance(key,_eye) > REACH+Sites.CELL*2.0: return
+	if _halls.has(key) or (not fixed.has(key) and _cell_distance(key,_eye) > REACH+Sites.CELL*2.0): return
 	if not done.has("info"):
 		_halls[key] = {}
 		return
@@ -472,6 +493,14 @@ func ground(p: Vector3, h: Variant) -> Variant:
 	if not h is float: return h
 	var list := stretches(p)
 	if list.is_empty(): return h
+	return over(p,h,list)
+
+## SkyGlide's `ground` at `p` over the floor `h` with the solid `list`
+## (stretches, world y, low to high) standing on it: the land raised by
+## what stands on it, or Vector2(top, underside) under the stretch the
+## plane is nearer than the floor (land_tunnels.gd adds the bore's rock
+## roof as one more).
+static func over(p: Vector3, h: float, list: Array) -> Variant:
 	var top: float = h
 	var under := -INF
 	for s: Vector2 in list:

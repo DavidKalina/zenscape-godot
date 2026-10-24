@@ -8,11 +8,20 @@ extends Node3D
 ## rock round the tube. The land mesh drops its triangles on each portal's
 ## footprint (land_stream.gd), and the block hides the hole's edge.
 ##
+## The hall stretches (Tunnels.stretches: one straight slot piece on each
+## hall piece of the path) stand in the tube through a LandHalls of their
+## own (`halls`, fixed pieces only: far detail on a worker, near detail
+## streamed section by section round the eye, the kit's bodies on layer 1).
+## Their solid joins the bore's: `ground` stands the hall's stretches on the
+## bore's floor with the rock roof as one more stretch over them
+## (LandHalls `over`), and `inside` counts them.
+##
 ## For now every tunnel the field knows (the --tunnel-test one) is built
 ## whole at setup: a tube of a few thousand quads.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
+const LandHalls = preload("res://scripts/endless/land_halls.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 
 ## Physics layer of the greybox's bodies (the walker, the wheels).
@@ -41,7 +50,9 @@ const CAVE_TINT := Color(0.46,0.4,0.33)
 const BLOCK_TINT := Color(0.4,0.37,0.33)
 
 var field: RefCounted
-var stats := {"tunnels":0,"tris":0,"torches":0}
+var stats := {"tunnels":0,"tris":0,"torches":0,"stretches":0}
+## The hall stretches' streamer.
+var halls: Node3D
 var _sites: Array = []
 ## The plane's wingtip: the tube's half width it may fly in.
 var _grow := 0.0
@@ -50,11 +61,33 @@ func setup(land_field: RefCounted) -> void:
 	field = land_field
 	_grow = WorldScale.span*0.5
 	_sites = field.tunnel_sites() if field.has_method("tunnel_sites") else []
-	for t: Tunnels.Site in _sites:
+	halls = LandHalls.new()
+	halls.name = "Stretches"
+	halls.squares = false
+	add_child(halls)
+	halls.setup(int(field.seed))
+	halls.density = 1.0
+	for ti in _sites.size():
+		var t: Tunnels.Site = _sites[ti]
 		for m in 2: t.portal_top[m] = _portal_top(t,m)
 		_build(t)
 		_build_torches(t)
+		for h: Dictionary in Tunnels.stretches(t):
+			var frame: Transform3D = h.frame
+			var half := float(h.piece.s1-h.piece.s0)*0.5
+			var mid := frame*Vector3(half,0.0,0.0)
+			var site := PackedFloat32Array([mid.x,mid.z,0,0,0,0,0,half+Tunnels.HALL_HALF])
+			halls.add_fixed(Vector2i(ti,int(h.n)),{"name":"%s/stretch_%d" % [t.name,int(h.n)],"seed":h.seed,"bays":h.bays,
+				"frame":frame,"coded":frame,"site":site})
+			stats.stretches += 1
 	stats.tunnels = _sites.size()
+
+## Builds the hall stretches' far detail now, and the near detail round `at`.
+func prime(at: Vector3) -> void:
+	halls.prime(at)
+
+func step(at: Vector3) -> void:
+	halls.step(at)
 
 ## Where the test tunnel's start stands (world y), NAN with none.
 func start_y() -> float:
@@ -71,8 +104,11 @@ func _cover(t: Tunnels.Site, x: float, z: float, h: float) -> float:
 	return h if m < 0 else maxf(h,t.portal_top[m])
 
 ## SkyGlide's `ground` at `p` over `h` (what the layers under answered), as
-## LandHalls `ground`: in the tube under its roof, Vector2(floor, roof) (the
-## plane slides under the rock); in the rock round it, the cover (a wall).
+## LandHalls `ground`: in the tube under its roof, the hall stretch's solid
+## standing on the bore's floor with the rock roof (roof to cover) over it
+## (LandHalls `over`: the floor or a column's top, or Vector2(top,
+## underside) for a roof the plane is nearer, which it slides under); in
+## the rock round it, the cover (a wall).
 func ground(p: Vector3, h: Variant) -> Variant:
 	if not h is float: return h
 	for t: Tunnels.Site in _sites:
@@ -80,7 +116,10 @@ func ground(p: Vector3, h: Variant) -> Variant:
 		var cover := _cover(t,p.x,p.z,h)
 		var b := Tunnels.bore_at(t,p.x,p.z,_grow)
 		if not is_nan(b.x) and cover > b.y:
-			return Vector2(b.x,b.y) if p.y < b.y else cover
+			if p.y >= b.y: return cover
+			var list: Array = halls.stretches(p)
+			list.append(Vector2(b.y,cover))
+			return LandHalls.over(p,b.x,list)
 		if cover > h: return cover
 	return h
 
@@ -99,6 +138,7 @@ func land_y(p: Vector3, h: float) -> float:
 ## out, the wheels stop): under the tube's floor, over its roof under the
 ## cover, or in the walls beside it under the land.
 func inside(p: Vector3) -> bool:
+	if halls.inside(p): return true
 	for t: Tunnels.Site in _sites:
 		if not t.box.has_point(Vector2(p.x,p.z)): continue
 		var h: float = field.height(p.x,p.z)
@@ -115,7 +155,7 @@ func inside(p: Vector3) -> bool:
 
 ## One line for the numbers HUD.
 func note() -> String:
-	return "tunnels %d, greybox %dk tris, %d torches" % [stats.tunnels,stats.tris/1000,stats.torches]
+	return "tunnels %d, greybox %dk tris, %d torches, %d stretches: %s" % [stats.tunnels,stats.tris/1000,stats.torches,stats.stretches,halls.note()]
 
 # --- The greybox ----------------------------------------------------------------------
 

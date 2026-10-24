@@ -305,6 +305,7 @@ func _ready() -> void:
 	var took: float = land.prime(eye)
 	arches.prime(eye)
 	halls.prime(eye)
+	tunnels.prime(eye)
 	trees.prime(eye)
 	_launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	walker = EndlessWalker.new()
@@ -541,6 +542,7 @@ func tick(delta: float) -> void:
 	land.step(camera.global_position)
 	arches.step(camera.global_position)
 	halls.step(camera.global_position)
+	tunnels.step(camera.global_position)
 	trees.step(camera.global_position,plane.position)
 	birds.step(delta,camera.global_position,plane)
 	if fish != null: fish.step(delta,camera.global_position,plane.position,plane.velocity,false)
@@ -721,9 +723,9 @@ func _arch_note() -> String:
 	return "\narches: %d standing in %d cells  ·  slowest build %.0f ms on a worker, slowest commit %.2f ms" % [int(a.arches),int(a.cells),float(a.slowest_build_ms),float(a.slowest_commit_ms)]
 
 func _hall_note() -> String:
-	if halls.density <= 0.0: return ""
-	return "
-"+halls.note()
+	var out: String = "" if halls.density <= 0.0 else "\n"+halls.note()
+	if tunnels != null and int(tunnels.stats.tunnels) > 0: out += "\n"+tunnels.note()
+	return out
 
 func _grass_note() -> String:
 	if grass == null: return ""
@@ -865,6 +867,7 @@ func _foot_tick(delta: float) -> void:
 	land.step(eye)
 	arches.step(eye)
 	halls.step(eye)
+	tunnels.step(eye)
 	trees.step(eye,walker.motor.feet)
 	birds.step(delta,eye,plane)
 	if fish != null: fish.step(delta,eye,walker.motor.feet,walker.motor.velocity,true)
