@@ -26,6 +26,13 @@ The brief's **Proof the user will want**, every line, seen:
 - One trunk, no lanes: the massif, the bore's path, its solid, the mesh holes
   and the torches all hang off the same path.
 
+## Layout is the user's to tune
+
+The user will tune the inside's layout by hand later (e.g. whether the hall
+stretches keep their centre column row, which makes two lanes). Don't settle
+it: keep such choices as named knobs or handles, and keep the autopilot's
+flight proof working whichever way they're set.
+
 ## Checks each iteration
 
 - Smoke (`tools/smoke.py`) of `studies/endless_flight.tscn` with
