@@ -163,6 +163,11 @@ uniform vec4 flower_far = vec4(12.0, 30.0, 1.0, 0.4);
 // MeadowFlowerMesh DETAIL) shrinks away from `.x` to `.y` metres, so far
 // flowers are stems and heads. `.x` 0 keeps it at every distance.
 uniform vec2 flower_lod = vec2(0.0, 1.0);
+// The endless land's taller grass (scripts/endless/endless_grass.gd
+// FLOWER_HEAD): its flowers' stems are lifted by a taller y scale, so the
+// head keeps its own shape (its offset from the neck undoes the stretch) and
+// grows by this much. 0 off: the plant scales as placed.
+uniform float flower_head_grow = 0.0;
 // The dandelion's round (scripts/dandelion_seeds.gd, docs/scenic/dandelions.md),
 // on the seed clock's material only. The instance alpha is the clock's state:
 // 1 whole; 1 + f with the share f of its seeds blown away; 4 + t when it went
@@ -425,6 +430,12 @@ void vertex() {
 	// thinning grows it; a dropped plant collapses to its root and skips the rest.
 	vec3 flower_offset = CUSTOM0.xyz;
 	bool flower_gone = false;
+	if (flower_heads && flower_head_grow > 0.0 && UV2.y > 0.5) {
+		vec3 kept = flower_offset * flower_head_grow;
+		kept.y *= length(MODEL_MATRIX[0].xyz) / max(length(MODEL_MATRIX[1].xyz), 1.0e-4);
+		VERTEX += kept - flower_offset;
+		flower_offset = kept;
+	}
 	if (flower_heads && (flower_far.z < 1.0 || flower_lod.x > 0.0)) {
 		float far_d = endless_ring_d(zs_camera_position, MODEL_MATRIX[3].xyz);
 		float far_t = smoothstep(flower_far.x, flower_far.y, far_d);

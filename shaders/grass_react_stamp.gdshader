@@ -6,23 +6,30 @@ shader_type canvas_item;
 //   COLOR  = (way x, way z, strength, swirl): `way` the drag along the air's
 //            way (the wash blown back, his walk, the wind), added to the
 //            push out from the centre; swirl the share turned about it.
-//   CUSTOM = (reach m, age s, front speed m/s (0: at once), hold s).
+//   CUSTOM = (press share, age s, front speed m/s (0: at once), hold s).
+// The reach (m) is the quad's own size: its side is 2 x reach x px_per_m.
 // The spring, as plants have no memory here: a point's push rises as the
 // front reaches it (at reach/speed), holds `hold` s, then swings back past
 // rest and settles (the wind tool's zs_blow_swing, a little slower for wide
-// stamps). The middle is pressed while it is pushed, and pops up a touch.
+// stamps). The middle is pressed while it is pushed (times the press share:
+// 1 the wash and the walker, less for the eddies' swept bands, which bow
+// the grass without laying it down), and pops up a touch.
 render_mode blend_premul_alpha, unshaded;
 
 const float DAMP = 2.4;
 const float RING = 5.2;
+uniform float px_per_m = 1.0;
 
 varying vec4 way;
 varying vec4 shape;
 varying vec2 local;
+varying float shape_press;
 
 void vertex() {
 	way = COLOR;
 	shape = INSTANCE_CUSTOM;
+	shape.x = length(MODEL_MATRIX[0].xy) * 0.5 / px_per_m;
+	shape_press = INSTANCE_CUSTOM.x;
 	local = VERTEX * 2.0;
 }
 
@@ -45,6 +52,6 @@ void fragment() {
 	vec2 turn = vec2(-out_way.y, out_way.x) * way.w;
 	vec2 push = (out_way + turn + way.xy) * (way.z * swing * fall);
 	float core = 1.0 - smoothstep(0.0, 0.5, u);
-	float press = way.z * core * (swing > 0.0 ? swing : swing * 0.5);
+	float press = way.z * shape_press * core * (swing > 0.0 ? swing : swing * 0.5);
 	COLOR = vec4(push, press, 0.0);
 }

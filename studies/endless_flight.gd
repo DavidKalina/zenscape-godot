@@ -95,6 +95,7 @@ const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const EndlessEddies = preload("res://scripts/endless/endless_eddies.gd")
+const EndlessMotes = preload("res://scripts/endless/endless_motes.gd")
 const LandArches = preload("res://scripts/endless/land_arches.gd")
 const LandTrees = preload("res://scripts/endless/land_trees.gd")
 ## The birds (scripts/endless/endless_birds.gd; --birds=0 off).
@@ -158,6 +159,8 @@ var grass: Node3D
 var react: Node
 ## The gusts as sweeping breeze ribbons (scripts/endless/endless_eddies.gd), or null under --gusts=rings.
 var eddies: Node3D
+## The pollen and the grass the wash kicks up (scripts/endless/endless_motes.gd).
+var motes: Node3D
 ## The arches over the land (scripts/endless/land_arches.gd).
 var arches: Node3D
 ## The spruce forests (scripts/endless/land_trees.gd; off under --no-trees).
@@ -287,6 +290,10 @@ func _ready() -> void:
 				eddies = EndlessEddies.new()
 				add_child(eddies)
 				eddies.setup(seed,Callable(field,"height"),react)
+			if EndlessMotes.wanted():
+				motes = EndlessMotes.new()
+				add_child(motes)
+				motes.setup(seed,Callable(field,"height"))
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 	_build_ui()
 	_hud.visible = _numbers
@@ -556,6 +563,9 @@ func _react(delta: float) -> void:
 		{"position": p, "forward": plane.forward(), "over": over, "thrust": thrust, "size": ground_scale.size()},
 		{"way": look.wind_direction, "travel": look._gust, "facing": Vector2(facing.x,facing.z)},
 		Callable(self,"_grass_at"))
+	if motes != null:
+		motes.step(delta,camera.global_position,look.wind_direction,look._gust,react.wash_spot,
+			eddies.ribbons.ribbons if eddies != null else [],Callable(self,"_grass_at"))
 
 ## The land's height where grass grows (open turf over the beach), else NAN.
 func _grass_at(x: float, z: float) -> float:

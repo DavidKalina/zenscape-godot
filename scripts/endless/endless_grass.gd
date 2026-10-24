@@ -54,6 +54,7 @@ extends Node3D
 ## carpet's density, a share of the isle's, 1), --grass-range=M (where the
 ## far ring ends, LOD.w; the rest of the rings scaled with it),
 ## --grass-lod=x,y,z,w (the four ring distances), --no-flowers,
+## --flower-head=X (the heads' growth, FLOWER_HEAD),
 ## --grass-fine=X (the near ring's FINE tuft at X of the isle's density;
 ## 0: the isle's own tuft at its own), --grass-patches=X (how much of the
 ## ground's patches the tufts carry, 1), --grass-set=, --far-set=,
@@ -114,6 +115,12 @@ const TALL := 4.0
 ## The flowers' stem lift as a share of the grass's growth (x..y, by a hash
 ## of where each stands): 1.0 stands level with the extra grass.
 const FLOWER_LIFT := Vector2(0.8,1.3)
+## The flowers' heads: kept their own shape on the lifted stems (the lift
+## stretched them tall, so spikes and cups read as painted blades) and drawn
+## this much larger, to read among blades TALL times the isles'
+## (--flower-head=X; 0 the old stretched heads).
+const FLOWER_HEAD := 2.4
+var flower_head := FLOWER_HEAD
 ## A far tuft's size (wide, tall) where it comes up (LOD.x..y): the near
 ## tuft's look there (as tall; wider, its tufts fewer).
 const FAR_NEAR := Vector2(1.5,1.0)
@@ -385,6 +392,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		elif a.begins_with("--grass-patches="): patches = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 		elif a.begins_with("--flower-drifts="): drifts = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a == "--no-drifts": drifts = 0.0
+		elif a.begins_with("--flower-head="): flower_head = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a.begins_with("--grass-regions="): regions = maxf(a.get_slice("=",1).to_float(),0.0)
 		elif a == "--no-regions": regions = 0.0
 		elif a.begins_with("--grass-silver="): silver = maxf(a.get_slice("=",1).to_float(),0.0)
@@ -982,6 +990,9 @@ func _calm(batch: MultiMeshInstance3D) -> void:
 		if sway is Vector4 and fine: m.set_shader_parameter("sway_shape",Vector4(sway.x,sway.y*tall,sway.z,sway.w))
 	else:
 		m.set_shader_parameter("flower_far",Vector4(FLOWER_FADE.x,FLOWER_FADE.y,0.0,0.0))
+		# The heads keep their shape on the lifted stems, and grow to suit
+		# the taller grass (reference_surface `flower_head_grow`).
+		m.set_shader_parameter("flower_head_grow",flower_head)
 		# Their leaves and buds gone before the heads (FLOWER_DETAIL; led
 		# out ahead, they would glint a pixel across).
 		m.set_shader_parameter("flower_lod",FLOWER_DETAIL)

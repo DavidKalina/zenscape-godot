@@ -35,7 +35,8 @@ extends Node
 ## Flags: --no-grass-react (none of it), --no-prop-wash, --no-grass-gusts,
 ## --no-grass-part (the walker's), --prop-wash=X (its strength, 1),
 ## --grass-gusts=X (their strength, 1), --gust-every=S (GUST_EVERY),
-## --grass-bend=X (how far every push bends the grass, 1).
+## --grass-bend=X (how far every push bends the grass, 1), --eddy-press=X
+## (how far the eddies' bands press it down, EDDY_PRESS).
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
@@ -108,9 +109,17 @@ var wash_scale := 1.0
 var gust_scale := 1.0
 var bend := 1.0
 var gust_every := GUST_EVERY
+## How far an eddy's swept band presses the grass down, as a share of the
+## wash's and the walker's press (EDDY_PRESS; --eddy-press=X).
+const EDDY_PRESS := 0.25
+var eddy_press := EDDY_PRESS
 var time := 0.0
 ## For the numbers: stamps alive, the wash's strength now, gusts so far.
 var stats := {"stamps": 0, "wash": 0.0, "gusts": 0}
+## Where the wash comes down now (for the motes, scripts/endless/
+## endless_motes.gd): at (xz), reach (m), k (its strength 0..1), back (the
+## way it blows, xz); empty while it doesn't reach the grass.
+var wash_spot := {}
 
 var _viewport: SubViewport
 var _multimesh: MultiMesh
@@ -140,6 +149,7 @@ func setup(land_seed: int) -> void:
 		elif a.begins_with("--grass-gusts="): gust_scale = float(a.get_slice("=",1))
 		elif a.begins_with("--gust-every="): gust_every = maxf(float(a.get_slice("=",1)),0.5)
 		elif a.begins_with("--grass-bend="): bend = float(a.get_slice("=",1))
+		elif a.begins_with("--eddy-press="): eddy_press = float(a.get_slice("=",1))
 	if wash_scale <= 0.0: wash_on = false
 	if gust_scale <= 0.0: gusts_on = false
 	_parcels.resize(SLOTS)
@@ -165,6 +175,7 @@ func setup(land_seed: int) -> void:
 	drawn.multimesh = _multimesh
 	var m := ShaderMaterial.new()
 	m.shader = STAMP_SHADER
+	m.set_shader_parameter("px_per_m",MAP_PX/MAP_M)
 	drawn.material = m
 	_viewport.add_child(drawn)
 	RenderingServer.global_shader_parameter_set("zs_react_map",_viewport.get_texture())
@@ -197,7 +208,9 @@ func step(delta: float, eye: Vector3, plane: Dictionary, air: Dictionary, land: 
 	var centre := Vector2(snappedf(c.x,snap),snappedf(c.y,snap))
 	_min = centre-Vector2.ONE*MAP_M*0.5
 	if wash_on and not plane.is_empty(): _wash(plane)
-	else: stats.wash = 0.0
+	else:
+		stats.wash = 0.0
+		wash_spot = {}
 	if gusts_on and rings_on and not air.is_empty(): _gust_step(delta,eye,air,land)
 	_draw()
 	_publish_rect()
@@ -221,7 +234,10 @@ func _wash(plane: Dictionary) -> void:
 	var over: float = plane.get("over",NAN)
 	var k := wash_strength(over,float(plane.get("thrust",1.0)),s)*wash_scale
 	stats.wash = k
-	if k < 0.02 or time-_wash_at < WASH_EVERY: return
+	if k < 0.02:
+		wash_spot = {}
+		return
+	if time-_wash_at < WASH_EVERY: return
 	var spent := minf(time-_wash_at,WASH_EVERY*3.0)
 	_wash_at = time
 	var p: Vector3 = plane.position
@@ -232,6 +248,7 @@ func _wash(plane: Dictionary) -> void:
 	var lift := clampf(over/up,0.0,1.0)
 	var hit := Vector2(p.x,p.z)-flat*(maxf(over,0.0)*WASH_LAG+s*0.25)
 	var reach := s*lerpf(WASH_REACH.x,WASH_REACH.y,lift)
+	wash_spot = {"at": hit, "reach": reach, "k": k, "back": -flat}
 	var strength := WASH_STRENGTH*k*spent/SUM_SPAN*(1.0+_rng.randf_range(-WASH_TURB,WASH_TURB))
 	_add({"at": hit, "way": -flat*WASH_BACK, "strength": strength, "swirl": WASH_SWIRL,
 		"reach": reach, "front": WASH_FRONT, "hold": WASH_HOLD})
@@ -330,9 +347,11 @@ func gusts(travel: float, way: Vector2) -> Array:
 func eddy(at: Vector2, way: Vector2, strength: float, reach: float) -> void:
 	if not enabled or not gusts_on: return
 	# Stamps a spacing apart overlap about 2*reach/spacing deep; a push
-	# along the path with a little spread to the sides.
+	# along the path with a little spread to the sides, pressing the grass
+	# down only by eddy_press of the push (at 1 the band lay flat and
+	# showed the tufts' roots).
 	_add({"at": at, "way": way*0.9, "strength": strength*gust_scale*0.55, "swirl": 0.0,
-		"reach": reach, "front": 0.0, "hold": 0.25})
+		"reach": reach, "front": 0.0, "hold": 0.25, "press": eddy_press})
 
 # --- The map --------------------------------------------------------------------------
 
@@ -373,7 +392,7 @@ func _draw() -> void:
 		_buffer[o+9] = way.y
 		_buffer[o+10] = float(s.strength)
 		_buffer[o+11] = float(s.swirl)
-		_buffer[o+12] = reach
+		_buffer[o+12] = float(s.get("press",1.0))
 		_buffer[o+13] = time-float(s.born)
 		_buffer[o+14] = float(s.front)
 		_buffer[o+15] = float(s.hold)
@@ -402,6 +421,6 @@ func push_at(p: Vector2) -> Vector3:
 		var turn := Vector2(-out.y,out.x)*float(s.swirl)
 		var push: Vector2 = (out+turn+Vector2(s.way))*(float(s.strength)*swing*fall)
 		var core := 1.0-smoothstep(0.0,0.5,u)
-		var press := float(s.strength)*core*(swing if swing > 0.0 else swing*0.5)
+		var press := float(s.strength)*float(s.get("press",1.0))*core*(swing if swing > 0.0 else swing*0.5)
 		sum += Vector3(push.x,push.y,press)
 	return sum
