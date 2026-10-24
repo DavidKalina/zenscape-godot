@@ -1,5 +1,5 @@
 extends CompositorEffect
-## The sea's FFT cascades (--sea-fft=1; docs/design/endless-flight/sea-fft-handoff.md):
+## The sea's FFT cascades (on unless --sea-fft=0; docs/design/endless-flight/sea-fft-handoff.md):
 ## the wind sea and its chop as Tessendorf waves, CASCADES tiles of N^2,
 ## each holding its own band of a JONSWAP spectrum (the wind's speed and
 ## fetch, spread round the wind), moved on by deep-water dispersion and

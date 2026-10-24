@@ -366,11 +366,11 @@ func _river_water(land_seed: int) -> void:
 		if arg.begins_with("--river-knob="):
 			ground.set_shader_parameter(arg.get_slice("=",1),str_to_var(arg.get_slice("=",2)))
 
-## Rivers as moving water (--river-live=1, river-live-handoff.md): the
+## Rivers as moving water (unless --river-live=0, river-live-handoff.md): the
 ## ground shader's live path, which reads the channel frame the land's
 ## chunks carry in CUSTOM2 (LandStream river_live_wanted). A noise height
 ## map and its normals for the riffles, foam and the bed; and, with the
-## sea's FFT cascades running (--sea-fft=1 and a rendering device), their
+## sea's FFT cascades running (not --sea-fft=0, and a rendering device), their
 ## slopes for the ripples, else the sea's noise maps. Off, nothing is set.
 func _river_live(land_seed: int) -> void:
 	if not LandStream.river_live_wanted(): return

@@ -20,7 +20,7 @@ render_mode blend_mix, depth_draw_always, cull_back, unshaded, shadows_disabled;
 // - Whitecaps that linger (sea_foam 1): a dense cap on the breaking crest,
 //   then the foam it leaves, kept in a buffer round the eye
 //   (shaders/endless_sea_foam.glsl), opening into marbled lace and fading.
-// - The FFT sea (sea_fft 1, `--sea-fft=1`): the wind sea and its chop as
+// - The FFT sea (sea_fft 1, on unless `--sea-fft=0`): the wind sea and its chop as
 //   Tessendorf cascades (scripts/endless/sea_fft.gd) in place of Gerstner
 //   waves 5..10, the noise layers and the wavelets.
 #include "res://shaders/reference_wind.gdshaderinc"
@@ -136,7 +136,7 @@ uniform vec4 foam_flow = vec4(0.45, 0.35, 14.0, 0.9);
 uniform vec2 foam_spread = vec2(0.03, 0.3);
 uniform vec4 foam_lace = vec4(2.8, 1.0, 1.0, 1.0);
 
-// The FFT sea (EndlessSea `--sea-fft=1`, scripts/endless/sea_fft.gd): the
+// The FFT sea (EndlessSea, on unless `--sea-fft=0`, scripts/endless/sea_fft.gd): the
 // wind sea and its chop as Tessendorf cascades, tiles `fft_sizes` m, in
 // `fft_maps` (layer c: the shove xyz and dDx/dz; layer 3 + c: the height's
 // slope and the shove's stretch dDx/dx, dDz/dz; with mips). The Gerstner sum

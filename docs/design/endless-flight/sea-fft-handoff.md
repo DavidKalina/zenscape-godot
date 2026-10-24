@@ -2,6 +2,8 @@
 
 What changed: behind a new flag, `--sea-fft=1` (default off, so the default sea is unchanged), the wind sea and its chop come from three Tessendorf FFT cascades computed on the GPU each frame. The Gerstner swell trains stay.
 
+Now the default (2026-10-24, after the user played it): the FFT sea is on unless `--sea-fft=0`. Headless, with no rendering device, it still falls back to the Gerstner wind sea.
+
 ## What was built
 
 - `scripts/endless/sea_fft.gd` (a CompositorEffect, like the foam's): three cascades of 256², tiles 250 / 37 / 5.7 m. Each holds its own band of one JONSWAP spectrum, so no wave is counted twice. Band edges: waves longer than the finer tile / 6 go to the coarser cascade, so cascade 0 holds 250-6.2 m, cascade 1 holds 6.2-0.95 m, and cascade 2 holds 0.95 m down to its grid. The spectrum takes the wind's speed and fetch, and is spread round `body_wind` by cos(θ/2)^2s. Waves move by deep-water dispersion (ω = √(gk)).

@@ -12,7 +12,7 @@ extends RefCounted
 ##   foam        the whitecaps' lingering foam, a buffer round the eye kept by
 ##               a compute pass (scripts/endless/sea_foam.gd); --sea-foam=old
 ##               keeps the body round's short-lived caps.
-##   fft         --sea-fft=1: the wind sea and its chop as FFT cascades
+##   fft         on unless --sea-fft=0: the wind sea and its chop as FFT cascades
 ##               (scripts/endless/sea_fft.gd) instead of Gerstner waves 5..10
 ##               and the noise layers; the swell trains stay Gerstner, and
 ##               they alone are mirrored by `height_at`.
@@ -55,7 +55,7 @@ var _speed := 0.0
 var _last_time := 0.0
 ## The lingering foam's buffer (sea_foam 1 with a rendering device).
 var foam: SeaFoam
-## The FFT cascades (--sea-fft=1 with a rendering device).
+## The FFT cascades (not --sea-fft=0, with a rendering device).
 var fft: SeaFFT
 var _fft_wind_set := false
 var _wake_low := 0.0
@@ -72,10 +72,10 @@ static func body_wanted() -> bool:
 	var a := LaunchArgs.user_args()
 	return wanted() and not ("--sea-body=old" in a or "--sea-motion=old" in a or "--sea-surface=old" in a)
 
-## Whether the wind sea and chop come from FFT cascades (--sea-fft=1; it
-## needs the body).
+## Whether the wind sea and chop come from FFT cascades (not --sea-fft=0;
+## it needs the body).
 static func fft_wanted() -> bool:
-	return body_wanted() and "--sea-fft=1" in LaunchArgs.user_args()
+	return body_wanted() and not "--sea-fft=0" in LaunchArgs.user_args()
 
 ## Whether the whitecaps linger (a foam buffer, lace): not --sea-foam=old
 ## or any older sea.

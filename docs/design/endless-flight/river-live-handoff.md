@@ -2,6 +2,8 @@
 
 What changed: behind a new flag, `--river-live=1` (default off), the river's water in the ground shader moves as a current with a shape instead of one sheet sliding down the valley. With the flag off, chunks, mesh format and shader output are as before (the river pixels of six held views match the pre-change captures exactly; the only differing pixels are far haze and trees streamed in at a different frame).
 
+Now the default (2026-10-24, after the user played it): live rivers are on unless `--river-live=0`, and they take the FFT ripples unless `--sea-fft=0`. Merged with main's rivers-flow round (rivers-flow-handoff.md): that look is what `--river-live=0` draws, and its foam and slicks stay off on the live path. The live riffles' knob is `river_live_riffle` (main's `river_riffle` is its own).
+
 ## What was built
 
 - **Channel frame per vertex** (`scripts/endless/land_stream.gd` `_river_frame`, flag on only). Each chunk gets a CUSTOM2 channel (RGBA float), computed on the worker from the chunk's own CUSTOM1 plus a two-sample ring read from the field, so the differences are central everywhere and match the neighbouring chunks:

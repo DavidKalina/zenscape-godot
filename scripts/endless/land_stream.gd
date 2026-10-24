@@ -73,15 +73,16 @@ const SKIRT := 6.0
 const SKIRT_MIN := 4.0
 ## The river's flow (m/s) at the ends of CUSTOM0.zw's range.
 const RIVER_FLOW_MAX := 4.0
-## --river-live=1 (docs/design/endless-flight/river-live-handoff.md): each
+## Unless --river-live=0 (docs/design/endless-flight/river-live-handoff.md), each
 ## chunk also carries the river's channel frame in CUSTOM2 (RGBA float):
 ## xy the channel's direction down the flow (across the signed distance's
 ## gradient, turned to the flow), z its curvature signed so that the side
 ## of positive distance is the bend's outside where it is positive (the
 ## divergence of the distance's unit gradient, 1/m), w the water's width
-## change per metre down the flow. Off, the chunks are as before.
+## change per metre down the flow; only with the look's ground (`setup`'s
+## material). Off, the chunks are as before.
 static func river_live_wanted() -> bool:
-	return "--river-live=1" in preload("res://scripts/launch_args.gd").user_args()
+	return not "--river-live=0" in preload("res://scripts/launch_args.gd").user_args()
 
 var seed := 0
 var field: RefCounted
@@ -117,7 +118,7 @@ func setup(land_seed: int, ground: Material = null) -> void:
 	field = Field.new(seed)
 	material = ground
 	root_reach = maxi(ROOT_REACH,ceili(ROOT_REACH*view()))
-	river_live = river_live_wanted()
+	river_live = river_live_wanted() and ground != null
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
 		if a.begins_with("--land-lead="): lead_time = maxf(0.0,float(a.get_slice("=",1)))
 	if material == null:

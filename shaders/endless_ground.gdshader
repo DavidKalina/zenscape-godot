@@ -220,7 +220,7 @@ uniform float river_churn = 1.6;
 uniform vec3 river_slick = vec3(4.5, 0.22, 0.7);
 // The ripples' faces lit toward the sun (the sea's body_shade).
 uniform float river_body_shade = 1.0;
-// --- Rivers as moving water (`river_live` 1, --river-live=1; docs/design/
+// --- Rivers as moving water (`river_live` 1, unless --river-live=0; docs/design/
 // endless-flight/river-live-handoff.md). The chunks then carry the channel's
 // frame in CUSTOM2 (scripts/endless/land_stream.gd `_river_frame`): its
 // direction down the flow, its curvature (positive: the side of positive
@@ -231,7 +231,7 @@ uniform float river_live = 0.0;
 // (EndlessLook `_river_live`): riffles, foam, eddies' swirl and the bed.
 uniform sampler2D river_live_height : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D river_live_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
-// The sea's FFT cascades (scripts/endless/sea_fft.gd; 1 with --sea-fft=1 and
+// The sea's FFT cascades (scripts/endless/sea_fft.gd; 1 unless --sea-fft=0, with
 // a rendering device): cascades 1 and 2's slopes for the ripples, their
 // tiles shrunk to `river_fft_use.x` and `.y` of the sea's, at strengths `.z`
 // and `.w`. Without them the sea's noise maps (river_detail_a/b).
