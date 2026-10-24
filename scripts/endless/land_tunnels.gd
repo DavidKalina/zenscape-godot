@@ -25,6 +25,7 @@ const LandHalls = preload("res://scripts/endless/land_halls.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const TUNNEL_STONE = preload("res://shaders/tunnel_stone.gdshader")
+const Flame = preload("res://scripts/flame.gd")
 
 ## Physics layer of the greybox's bodies (the walker, the wheels).
 const LAYER := 1
@@ -52,7 +53,7 @@ const SKIRT := 5.0
 ## opening, a lintel LINTEL_H high over the vault running LINTEL_PAST past
 ## the jambs, a pediment PED_H high over it, all FRAME_OUT proud of the
 ## face; a fire bowl on each end of the lintel (BOWL: half width, height),
-## its glow FIRE_R round and a light FIRE_RANGE m.
+## its fire FIRE_R round and a light FIRE_RANGE m.
 const JAMB_W := 4.0
 const LINTEL_H := 4.5
 const LINTEL_PAST := 2.0
@@ -60,6 +61,8 @@ const PED_H := 9.0
 const FRAME_OUT := 2.5
 const BOWL := Vector2(1.6,1.4)
 const FIRE_R := 0.9
+## The bowls' fires: flame.gd braziers this big (its light is FIRE_RANGE's).
+const FIRE_SCALE := 3.6
 const FIRE_RANGE := 26.0
 const FIRE_ENERGY := 4.0
 const FACE_TINT := Color(0.5,0.43,0.36)
@@ -112,12 +115,27 @@ const WALL_NEAR := 12.0
 const SIGHT_STEP := 0.75
 const SIGHT_UP := 60.0
 
-## The greybox torch: its bracket (across, up, out of the wall), its flame
-## (radius, height), the size and glow by kind.
-const TORCH_BRACKET := Vector3(0.22,0.9,0.55)
-const TORCH_FLAME := Vector2(0.24,0.75)
+## The torch: an iron sconce (a plate on the wall, an arm rising out of it
+## to a cup TORCH_CUP out and up), its flame card (width, height) and its
+## real flame (flame.gd's torch times TORCH_FIRE), the size and glow by
+## kind, all times TORCH_SIZE.
+const TORCH_CUP := Vector2(0.62,0.12)
+const TORCH_FLAME := Vector2(0.9,1.25)
+const TORCH_FIRE := 1.6
+const TORCH_SIZE := 1.5
 const TORCH_BIG := {"wall":1.0,"outside":1.35,"mouth":2.2}
 const TORCH_GLOW := {"wall":Color(1.0,0.55,0.16),"outside":Color(1.0,0.78,0.38),"mouth":Color(1.0,0.66,0.26)}
+## Its fire in three tiers: the FLAME_POOL torches nearest the eye burn as
+## real flames (scripts/flame.gd: volumes, sparks, smoke), easing in and out
+## over FLAME_EASE s as the pool moves; every other torch is a glowing flame
+## card (one MultiMesh), and far down the bore the card holds at least
+## CARD_DOT rad across, a dot of glow.
+const FLAME_POOL := 16
+const FLAME_EASE := 0.35
+const CARD_DOT := 0.006
+## The pools (flames and lights) rank torches by their distance from a point
+## POOL_AHEAD m ahead of the eye, so more of them light the way ahead.
+const POOL_AHEAD := 24.0
 
 ## The carved rock's mesh: segments round a ring, across the floor, a
 ## cavern's rings apart (m); the lumps (m, Tunnels.ROCK_LUMP).
@@ -176,6 +194,17 @@ var _rock_tris := 0
 var _lamps := PackedVector3Array()
 var _lamp_big := PackedFloat32Array()
 var _lights: Array[OmniLight3D] = []
+## Every torch's flame foot (world) and its size; the cards' MultiMesh and
+## each card's tint; the pooled flames, which torch each burns (-1 none)
+## and how far it has burned in.
+var _feet := PackedVector3Array()
+var _feet_big := PackedFloat32Array()
+var _cards: Array[MultiMesh] = []
+var _card_of := PackedInt32Array()
+var _card_tint: Array[Color] = []
+var _flames: Array[Node3D] = []
+var _flame_on := PackedInt32Array()
+var _flame_burn := PackedFloat32Array()
 var _time := 0.0
 var _sky_cut := false
 ## The sun (the brightest DirectionalLight3D) and each mouth's daylight.
@@ -210,6 +239,20 @@ func setup(land_field: RefCounted) -> void:
 			stats.stretches += 1
 	stats.tunnels = _sites.size()
 	stats.lights = 0
+	stats["flames"] = 0
+	for i in (FLAME_POOL if not _feet.is_empty() else 0):
+		var fl: Node3D = Flame.new()
+		fl.name = "TorchFlame%d" % i
+		fl.set("kind","torch")
+		fl.set("with_light",false)
+		fl.set("dark",true)
+		fl.set("layer_mask",UNDER_LAYER)
+		fl.set("vis_end",LIGHT_REACH)
+		fl.set("burn",0.0)
+		add_child(fl)
+		_flames.append(fl)
+		_flame_on.append(-1)
+		_flame_burn.append(0.0)
 	for i in (TORCH_LIGHTS if not _lamps.is_empty() else 0):
 		var l := OmniLight3D.new()
 		l.name = "TorchLight%d" % i
@@ -281,16 +324,22 @@ func _spill() -> void:
 		l.light_color = _sun.light_color
 		l.light_energy = _spill_gain[i]*_sun.light_energy
 
-## The pool of torch lights: the nearest TORCH_LIGHTS torches to `at`
-## within LIGHT_REACH get one, the farthest of them fading out.
+## The pools: the TORCH_LIGHTS torches nearest `at` (biased POOL_AHEAD
+## ahead of the eye) within LIGHT_REACH get a light, the farthest of them
+## fading out, and the FLAME_POOL nearest burn as real flames.
 func _light_torches(at: Vector3) -> void:
 	if _lights.is_empty(): return
 	if not _sky_cut: _cut_sky()
-	_time += get_process_delta_time()
+	var dt := get_process_delta_time()
+	_time += dt
+	var key := at
+	var cam := get_viewport().get_camera_3d() if is_inside_tree() else null
+	if cam != null and cam.global_position.distance_squared_to(at) < 1.0:
+		key = at-cam.global_basis.z*POOL_AHEAD
 	var near: Array = []
 	var reach2 := LIGHT_REACH*LIGHT_REACH
 	for i in _lamps.size():
-		var d2 := at.distance_squared_to(_lamps[i])
+		var d2 := key.distance_squared_to(_lamps[i])
 		if d2 < reach2: near.append(Vector2(d2,i))
 	near.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
 	var n := mini(near.size(),_lights.size())
@@ -311,6 +360,57 @@ func _light_torches(at: Vector3) -> void:
 		l.light_energy = TORCH_ENERGY*_lamp_big[i]*fade*flick
 		l.visible = fade > 0.0
 	stats.lights = n
+	_burn_flames(near,dt)
+
+## The flame pool: the FLAME_POOL first of `near` (ranked torches) burn as
+## real flames, easing in over FLAME_EASE while their cards fade out, and a
+## flame whose torch left the pool eases out before it moves.
+func _burn_flames(near: Array, dt: float) -> void:
+	if _flames.is_empty(): return
+	var want := {}
+	for k in mini(near.size(),FLAME_POOL): want[int((near[k] as Vector2).y)] = true
+	var held := {}
+	for j in _flames.size():
+		if _flame_on[j] >= 0: held[_flame_on[j]] = j
+	var rate := dt/FLAME_EASE
+	var free: Array[int] = []
+	for j in _flames.size():
+		var i := _flame_on[j]
+		if i < 0:
+			free.append(j)
+			continue
+		var b := _flame_burn[j]
+		b = minf(b+rate,1.0) if want.has(i) else maxf(b-rate,0.0)
+		_flame_burn[j] = b
+		if b <= 0.0:
+			held.erase(i)
+			_flame_on[j] = -1
+			_card(i,1.0)
+			_flames[j].set("burn",0.0)
+			free.append(j)
+			continue
+		_flames[j].set("burn",b)
+		_card(i,1.0-b)
+	for k in mini(near.size(),FLAME_POOL):
+		if free.is_empty(): break
+		var i := int((near[k] as Vector2).y)
+		if held.has(i): continue
+		var j: int = free.pop_back()
+		_flame_on[j] = i
+		_flame_burn[j] = 0.0
+		var fl := _flames[j]
+		fl.global_position = _feet[i]
+		fl.scale = Vector3.ONE*_feet_big[i]*TORCH_FIRE
+		held[i] = j
+	var lit := 0
+	for j in _flames.size(): if _flame_on[j] >= 0: lit += 1
+	stats.flames = lit
+
+## Torch `i`'s card at `show` (1 whole, 0 hidden by its real flame).
+func _card(i: int, show: float) -> void:
+	var c := _card_tint[i]
+	c.a = show
+	_cards[_card_of[i] >> 16].set_instance_color(_card_of[i] & 0xffff,c)
 
 ## Where the test tunnel's start stands (world y), NAN with none.
 func start_y() -> float:
@@ -579,24 +679,16 @@ func _build_fires(t: Tunnels.Site, m: int) -> void:
 	var f := t.floor_y
 	var a0 := -Tunnels.PORTAL_OUT
 	var top := f+Tunnels.HALL_VAULT+LINTEL_H+BOWL.y
-	var glow := SphereMesh.new()
-	glow.radius = FIRE_R
-	glow.height = FIRE_R*2.6
-	glow.radial_segments = 10
-	glow.rings = 5
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = TORCH_GLOW.mouth
-	glow.material = mat
 	var lw := Tunnels.HALL_HALF+JAMB_W+LINTEL_PAST
 	var out := _v(t,m,-1.0,0.0,0.0)-_v(t,m,0.0,0.0,0.0)
 	for sg: float in [-1.0,1.0]:
 		var at := _v(t,m,a0-FRAME_OUT-0.6+BOWL.x,sg*(lw-BOWL.x),top)
-		var fire := MeshInstance3D.new()
+		var fire: Node3D = Flame.new()
 		fire.name = "%s_fire%d%s" % [t.name.replace("/","_"),m,"l" if sg < 0.0 else "r"]
-		fire.mesh = glow
-		fire.position = at+Vector3.UP*FIRE_R*1.2
-		fire.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		fire.set("kind","brazier")
+		fire.set("scale_by",FIRE_SCALE)
+		fire.set("with_light",false)
+		fire.position = at
 		add_child(fire)
 		var l := OmniLight3D.new()
 		l.name = fire.name+"_light"
@@ -1003,27 +1095,20 @@ static func _tri(st: SurfaceTool, pos: PackedVector3Array, inward: PackedVector3
 	st.add_index(c)
 	return 1
 
-## The greybox torch lines (Tunnels.torch_spots): an iron bracket off the
-## wall and an unlit glowing flame on it, bigger and whiter on a bend's
-## outside wall and at the mouths. No lights yet (real torches come from
-## scripts/flame.gd, pooled along the path).
+## The torch lines (Tunnels.torch_spots): an iron bracket off the wall and
+## a glowing flame card on it (one MultiMesh each), bigger and whiter on a
+## bend's outside wall and at the mouths. The nearest burn as real flames
+## and get lights (`_light_torches`); their feet and light spots are kept.
 func _build_torches(t: Tunnels.Site) -> void:
 	var spots: Array = Tunnels.torch_spots(t)
-	var bracket := BoxMesh.new()
-	bracket.size = TORCH_BRACKET
-	var iron := StandardMaterial3D.new()
-	iron.albedo_color = Color(0.09,0.08,0.07)
-	iron.roughness = 0.8
-	bracket.material = iron
-	var flame := SphereMesh.new()
-	flame.radius = TORCH_FLAME.x
-	flame.height = TORCH_FLAME.y
-	flame.radial_segments = 8
-	flame.rings = 4
-	var glow := StandardMaterial3D.new()
-	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	glow.vertex_color_use_as_albedo = true
-	flame.material = glow
+	var bracket := _sconce()
+	var card := QuadMesh.new()
+	card.size = TORCH_FLAME
+	card.center_offset = Vector3(0.0,TORCH_FLAME.y*0.5,0.0)
+	var glow := ShaderMaterial.new()
+	glow.shader = _card_shader()
+	glow.set_shader_parameter("dot_rad",CARD_DOT)
+	card.material = glow
 	var mb := MultiMesh.new()
 	mb.transform_format = MultiMesh.TRANSFORM_3D
 	mb.mesh = bracket
@@ -1031,21 +1116,31 @@ func _build_torches(t: Tunnels.Site) -> void:
 	var mf := MultiMesh.new()
 	mf.transform_format = MultiMesh.TRANSFORM_3D
 	mf.use_colors = true
-	mf.mesh = flame
+	mf.mesh = card
 	mf.instance_count = spots.size()
+	var mi := _cards.size()
+	_cards.append(mf)
 	for i in spots.size():
 		var sp: Dictionary = spots[i]
 		var into: Vector2 = sp.into
 		var pos: Vector3 = sp.pos
-		var big: float = TORCH_BIG.get(sp.kind,1.0)
-		# The bracket's long side runs out of the wall (local z).
-		var b := Basis.looking_at(Vector3(into.x,0.0,into.y),Vector3.UP)
-		mb.set_instance_transform(i,Transform3D(b.scaled(Vector3.ONE*big),pos+Vector3(into.x,0.0,into.y)*TORCH_BRACKET.z*0.5*big))
-		mf.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*big),pos+Vector3(into.x,0.0,into.y)*TORCH_BRACKET.z*big+Vector3.UP*(TORCH_BRACKET.y*0.5+TORCH_FLAME.y*0.4)*big))
-		mf.set_instance_color(i,(TORCH_GLOW.get(sp.kind,TORCH_GLOW.wall) as Color).srgb_to_linear())
+		var big: float = float(TORCH_BIG.get(sp.kind,1.0))*TORCH_SIZE
+		var out := Vector3(into.x,0.0,into.y)
+		# The sconce stands on the wall at `pos`, its arm out (local -z).
+		var b := Basis.looking_at(out,Vector3.UP)
+		mb.set_instance_transform(i,Transform3D(b.scaled(Vector3.ONE*big),pos))
+		# The flame's foot: in the cup.
+		var foot := pos+out*TORCH_CUP.x*big+Vector3.UP*TORCH_CUP.y*big
+		mf.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*big),foot))
+		var tint := (TORCH_GLOW.get(sp.kind,TORCH_GLOW.wall) as Color).srgb_to_linear()
+		mf.set_instance_color(i,tint)
+		_card_of.append((mi << 16) | i)
+		_card_tint.append(tint)
+		_feet.append(foot)
+		_feet_big.append(big)
 		# The light: at the flame, a little out of it into the bore.
-		_lamps.append(pos+Vector3(into.x,0.0,into.y)*(TORCH_BRACKET.z+0.4)*big+Vector3.UP*(TORCH_BRACKET.y*0.5+TORCH_FLAME.y*0.6)*big)
-		_lamp_big.append(sqrt(big))
+		_lamps.append(foot+out*0.4*big+Vector3.UP*TORCH_FLAME.y*0.4*big)
+		_lamp_big.append(sqrt(big/TORCH_SIZE))
 	for pair: Array in [[mb,"_torch_brackets"],[mf,"_torch_flames"]]:
 		var node := MultiMeshInstance3D.new()
 		node.name = t.name.replace("/","_")+str(pair[1])
@@ -1054,6 +1149,88 @@ func _build_torches(t: Tunnels.Site) -> void:
 		node.layers = UNDER_LAYER
 		add_child(node)
 	stats.torches += spots.size()
+
+## The sconce in its own space (the wall at z 0, out along -z, the cup's
+## rim at TORCH_CUP): a plate, an arm rising out to the cup, the cup. Iron.
+static func _sconce() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var plate := BoxMesh.new()
+	plate.size = Vector3(0.3,0.62,0.06)
+	st.append_from(plate,0,Transform3D(Basis.IDENTITY,Vector3(0.0,-0.42,-0.03)))
+	var from := Vector3(0.0,-0.5,-0.04)
+	var to := Vector3(0.0,TORCH_CUP.y-0.3,-TORCH_CUP.x)
+	var arm := BoxMesh.new()
+	arm.size = Vector3(0.08,0.08,from.distance_to(to)+0.06)
+	st.append_from(arm,0,Transform3D(Basis.looking_at(to-from,Vector3.UP),(from+to)*0.5))
+	var cup := CylinderMesh.new()
+	cup.top_radius = 0.2
+	cup.bottom_radius = 0.07
+	cup.height = 0.32
+	cup.radial_segments = 10
+	cup.rings = 1
+	st.append_from(cup,0,Transform3D(Basis.IDENTITY,Vector3(0.0,TORCH_CUP.y-0.16,-TORCH_CUP.x)))
+	var mesh := st.commit()
+	var iron := StandardMaterial3D.new()
+	iron.albedo_color = Color(0.09,0.08,0.07)
+	iron.roughness = 0.75
+	iron.metallic = 0.4
+	mesh.surface_set_material(0,iron)
+	return mesh
+
+static var _card_sh: Shader
+
+## The flame card's shader: an upright billboard (it turns about its own
+## up), a flickering teardrop of fire with a pale heart and a soft halo,
+## added light. Far off it grows to hold `dot` rad across and rounds into a
+## dot of glow. The instance colour is its tint; its alpha hides it under a
+## real flame.
+static func _card_shader() -> Shader:
+	if _card_sh != null: return _card_sh
+	_card_sh = Shader.new()
+	_card_sh.code = """shader_type spatial;
+render_mode blend_add, unshaded, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
+uniform float dot_rad = 0.006;
+varying vec4 tint;
+varying float seed;
+varying float grow;
+void vertex() {
+	tint = COLOR;
+	seed = float(INSTANCE_ID)*1.731;
+	vec3 at = MODEL_MATRIX[3].xyz;
+	float size = length(MODEL_MATRIX[0].xyz);
+	vec3 to_eye = CAMERA_POSITION_WORLD-at;
+	float d = length(to_eye);
+	vec3 side = normalize(cross(vec3(0.0, 1.0, 0.0), to_eye+vec3(1e-4, 0.0, 0.0)));
+	vec3 face = cross(side, vec3(0.0, 1.0, 0.0));
+	grow = max(1.0, d*dot_rad/(size*0.62));
+	vec3 v = VERTEX*size*grow;
+	// A grown dot stands on its middle, not its foot.
+	v.y -= (grow-1.0)*size*0.55*0.5;
+	vec3 w = at+side*v.x+vec3(0.0, 1.0, 0.0)*v.y+face*v.z;
+	POSITION = PROJECTION_MATRIX*VIEW_MATRIX*vec4(w, 1.0);
+}
+void fragment() {
+	float y = 1.0-UV.y;
+	float t = TIME*1.0+seed;
+	float x = UV.x-0.5+sin(y*7.0-t*9.0)*0.05*y+sin(t*3.1)*0.03*y;
+	float flick = 0.86+0.1*sin(t*11.0)+0.06*sin(t*23.0+1.7);
+	float tall = 0.82+0.12*sin(t*5.3)*sin(t*1.9+0.4);
+	float yb = y/tall;
+	float w = 0.3*smoothstep(0.0, 0.28, yb)*pow(clamp(1.0-yb, 0.0, 1.0), 0.85)+0.001;
+	float core = 1.0-smoothstep(0.0, w, abs(x));
+	core *= step(yb, 1.0);
+	float hot = core*core*(1.0-yb);
+	vec2 c = vec2(UV.x-0.5, y-0.32)*vec2(1.0, 0.8);
+	float halo = exp(-dot(c, c)*22.0)*0.35;
+	vec3 fire = mix(tint.rgb, vec3(1.0, 0.86, 0.6), hot)*(core*1.6+hot)+tint.rgb*halo;
+	vec2 r = (UV-0.5)*2.0;
+	float spot = exp(-dot(r, r)*5.0);
+	float k = clamp((grow-1.0)*2.0, 0.0, 1.0);
+	ALBEDO = mix(fire, tint.rgb*vec3(1.4, 1.2, 1.0)*spot*1.6, k)*flick*tint.a;
+}
+"""
+	return _card_sh
 
 ## Mouth `m`'s point `a` in, `d` across, at height `y`.
 static func _v(t: Tunnels.Site, m: int, a: float, d: float, y: float) -> Vector3:
