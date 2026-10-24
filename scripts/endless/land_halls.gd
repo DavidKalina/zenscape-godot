@@ -105,10 +105,18 @@ func _exit_tree() -> void:
 		for sec: Dictionary in r.get("sections",[]):
 			if int(sec.task) >= 0: WorkerThreadPool.wait_for_task_completion(int(sec.task))
 
-## A fixed piece (`fixed`): planned with the next step, never freed.
+## A fixed piece (`fixed`): planned with the next step, freed only by
+## `remove_fixed`.
 func add_fixed(key: Vector2i, info: Dictionary) -> void:
 	fixed[key] = info
 	_planned_at = Vector3.INF
+
+## Drops fixed piece `key` and whatever of it stands (a build of it still
+## on a worker is thrown away when it comes back).
+func remove_fixed(key: Vector2i) -> void:
+	fixed.erase(key)
+	_queue.erase(key)
+	if _halls.has(key): _free(key)
 
 ## Builds the halls within `near` of `at` now, far and near, on this thread
 ## (every fixed piece's far detail too).
@@ -144,7 +152,8 @@ func step(at: Vector3) -> void:
 	while _pending.size() < TASKS and not _queue.is_empty():
 		var key: Vector2i = _queue.pop_front()
 		if _halls.has(key) or _pending.has(key): continue
-		_pending[key] = WorkerThreadPool.add_task(_task.bind(key))
+		# The info goes with the task: `fixed` changes on this thread.
+		_pending[key] = WorkerThreadPool.add_task(_task.bind(key,fixed.get(key)))
 	var began := Time.get_ticks_usec()
 	while true:
 		_lock.lock()
@@ -179,9 +188,9 @@ func _plan(at: Vector3) -> void:
 	for key: Vector2i in _halls.keys():
 		if not fixed.has(key) and _cell_distance(key,at) > REACH+Sites.CELL: _free(key)
 
-func _task(key: Vector2i) -> void:
-	if _quit: return
-	var result := _build_from(key,fixed[key]) if fixed.has(key) else _build_hall(key,Field.new(seed))
+func _task(key: Vector2i, info: Variant = null) -> void:
+	if _quit or (info == null and not squares): return
+	var result := _build_from(key,info) if info != null else _build_hall(key,Field.new(seed))
 	_lock.lock()
 	_done.append(result)
 	_lock.unlock()
@@ -317,7 +326,7 @@ func _build_near(sec: Dictionary) -> Dictionary:
 func _commit(done: Dictionary) -> void:
 	var key: Vector2i = done.key
 	var t0 := Time.get_ticks_usec()
-	if _halls.has(key) or (not fixed.has(key) and _cell_distance(key,_eye) > REACH+Sites.CELL*2.0): return
+	if _halls.has(key) or (not fixed.has(key) and (not squares or _cell_distance(key,_eye) > REACH+Sites.CELL*2.0)): return
 	if not done.has("info"):
 		_halls[key] = {}
 		return

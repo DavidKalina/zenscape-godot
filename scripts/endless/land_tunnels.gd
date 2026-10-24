@@ -18,9 +18,13 @@ extends Node3D
 ##
 ## The --tunnel-test tunnel is built whole at setup (a tube of a few
 ## thousand quads); streamed ones (the field's `tunnels_in`, one per
-## Tunnels.CELL square from the seed) are built whole on the main thread
-## as their box comes within STREAM_REACH m of the eye (checked every
-## STREAM_MOVE m), and kept.
+## Tunnels.CELL square from the seed) are found and built whole on a
+## WorkerThreadPool task (its own field) as their box comes within
+## STREAM_REACH m of the eye (looked for every STREAM_MOVE m), stood on the
+## main thread one a frame, and dropped past STREAM_DROP. `prime` builds
+## those within PRIME_REACH on the main thread, so the start's is there at
+## once. Each built tunnel is a `Built`: its node and what the pools, the
+## braziers and the daylight read; only those near the eye are ranked.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
@@ -112,9 +116,22 @@ const SHAFT_ENERGY := 8.0
 const BEAM_ALPHA := 0.035
 const BEAM_TINT := Color(1.0,0.93,0.78)
 ## Streaming (`_stream`): a tunnel is built when its box comes within
-## STREAM_REACH m of the eye, looked for every STREAM_MOVE m it moves.
+## STREAM_REACH m of the eye, looked for every STREAM_MOVE m it moves, and
+## dropped when its box is past STREAM_DROP; `prime` builds those within
+## PRIME_REACH at once.
 const STREAM_REACH := 2500.0
+const STREAM_DROP := 3500.0
 const STREAM_MOVE := 200.0
+const PRIME_REACH := 800.0
+## The braziers burn (and their bowls' lights shine) within FIRE_REACH m of
+## the eye, past their flames' own draw distance (FIRE_SCALE x 110 m); the
+## mouths' and shafts' daylight within DAY_REACH of the tunnel's box.
+const FIRE_REACH := 450.0
+const DAY_REACH := 600.0
+## The collider's pieces (triangles each), and the main thread's time for
+## standing them each frame (ms; at least one stands a frame).
+const BODY_TRIS := 4000
+const BODY_BUDGET := 3.0
 ## How far past the tube's walls `inside` counts the rock (m).
 const WALL_NEAR := 12.0
 ## The camera's sight in a bore (`sight`): marched every SIGHT_STEP m
@@ -185,48 +202,79 @@ const LIGHT_FADE := 40.0
 ## HUSH_IN m into the bore from either mouth: it would haze the dark inside.
 const HUSH_IN := 60.0
 
+## A built tunnel: its site, the node holding everything it stands (not
+## yet in the tree while a worker builds it), and what the pools, the
+## braziers and the daylight read. `id` keys its torches (id << 16 | i).
+class Built extends RefCounted:
+	var id := 0
+	var site: RefCounted
+	var node: Node3D
+	## Each torch's light spot (world) and size; its flame's foot and size;
+	## its card's tint; the cards' MultiMesh.
+	var lamps := PackedVector3Array()
+	var lamp_big := PackedFloat32Array()
+	var feet := PackedVector3Array()
+	var feet_big := PackedFloat32Array()
+	var tint: Array[Color] = []
+	var cards: MultiMesh
+	## The mouths' and shafts' daylight (its gain on the sun), the beams.
+	var spills: Array[SpotLight3D] = []
+	var spill_gain := PackedFloat32Array()
+	var beams: Array[MeshInstance3D] = []
+	## The braziers and their bowls' lights, and whether they burn.
+	var fires: Array[Node3D] = []
+	var fire_lights: Array[OmniLight3D] = []
+	var burning := false
+	## The hall stretches' infos (LandHalls `add_fixed`) and their keys
+	## once stood.
+	var stretches: Array = []
+	var keys: Array[Vector2i] = []
+	## The collider's pieces not yet stood (`_stand_bodies`).
+	var bodies: Array[StaticBody3D] = []
+	var tris := 0
+	var torches := 0
+	var ms := 0.0
+
 var field: RefCounted
 var stats := {"tunnels":0,"tris":0,"torches":0,"stretches":0,"lights":0}
 ## The hall stretches' streamer.
 var halls: Node3D
 ## The look's clouds (their valley fog hushed in the bore), or null.
 var clouds: Node
+## The stood tunnels' sites (the solid's queries walk these), and each
+## Built by its name and by its id.
 var _sites: Array = []
-## The built tunnels by name, and where `_stream` last looked.
-var _known := {}
+var _built := {}
+var _by_id := {}
+var _next_id := 1
+## The streaming task (-1 none), the tunnels it built waiting to stand
+## (under `_lock`), where `_stream` last looked.
+var _task := -1
+var _lock := Mutex.new()
+var _done: Array = []
+var _quit := false
 var _streamed_at := Vector3.INF
 ## The plane's wingtip: the tube's half width it may fly in.
 var _grow := 0.0
 ## Whether `sight`'s last march was all in a bore's tube.
 var sight_whole := false
-var _rock_tris := 0
-## Every torch's light spot (world) and its size, all sites.
-var _lamps := PackedVector3Array()
-var _lamp_big := PackedFloat32Array()
 var _lights: Array[OmniLight3D] = []
-## Every torch's flame foot (world) and its size; the cards' MultiMesh and
-## each card's tint; the pooled flames, which torch each burns (-1 none)
-## and how far it has burned in.
-var _feet := PackedVector3Array()
-var _feet_big := PackedFloat32Array()
-var _cards: Array[MultiMesh] = []
-var _card_of := PackedInt32Array()
-var _card_tint: Array[Color] = []
+## The pooled flames, which torch each burns (id << 16 | i, -1 none) and
+## how far it has burned in.
 var _flames: Array[Node3D] = []
-var _flame_on := PackedInt32Array()
+var _flame_on := PackedInt64Array()
 var _flame_burn := PackedFloat32Array()
 var _time := 0.0
 var _sky_cut := false
-## The sun (the brightest DirectionalLight3D) and each mouth's daylight.
+## The sun (the brightest DirectionalLight3D).
 var _sun: DirectionalLight3D
-var _spills: Array[SpotLight3D] = []
-var _spill_gain := PackedFloat32Array()
-var _beams: Array[MeshInstance3D] = []
 
 func setup(land_field: RefCounted) -> void:
 	field = land_field
 	_grow = WorldScale.span*0.5
-	_sites = field.tunnel_sites() if field.has_method("tunnel_sites") else []
+	# Made here, once: the workers' builds share them.
+	_beam_shader()
+	_card_shader()
 	halls = LandHalls.new()
 	halls.name = "Stretches"
 	halls.squares = false
@@ -237,42 +285,150 @@ func setup(land_field: RefCounted) -> void:
 	halls.density = 1.0
 	stats.lights = 0
 	stats["flames"] = 0
-	var fixed: Array = _sites
-	_sites = []
-	for t: Tunnels.Site in fixed: _add(t)
+	stats["fires"] = 0
+	stats["commit_ms"] = 0.0
+	stats["dropped"] = 0
+	var fixed: Array = field.tunnel_sites() if field.has_method("tunnel_sites") else []
+	for t: Tunnels.Site in fixed: _commit(_make(t,field))
 
-## Builds tunnel `t` whole (its rock, portals, torches and hall stretches)
-## and readies the pools with the first torches.
-func _add(t: Tunnels.Site) -> void:
+func _exit_tree() -> void:
+	_quit = true
+	if _task >= 0: WorkerThreadPool.wait_for_task_completion(_task)
+	_task = -1
+	for b: Built in _done: _free_built(b)
+	_done.clear()
+
+## Frees built tunnel `b` that never stood.
+static func _free_built(b: Built) -> void:
+	for body in b.bodies: body.free()
+	b.bodies.clear()
+	b.node.free()
+
+## Tunnel `t` built whole off the tree with field `f` (the caller's own:
+## a worker's, or `field` on the main thread): its rock, portals, fires,
+## shafts, torches and its hall stretches' infos.
+func _make(t: Tunnels.Site, f: RefCounted) -> Built:
 	var t0 := Time.get_ticks_usec()
-	var ti := _sites.size()
-	_sites.append(t)
-	_known[t.name] = t
-	_build(t)
-	_build_torches(t)
+	var b := Built.new()
+	b.site = t
+	b.node = Node3D.new()
+	b.node.name = t.name.replace("/","_")
+	_build(b,f)
+	_build_torches(b)
 	for h: Dictionary in Tunnels.stretches(t):
 		var frame: Transform3D = h.frame
 		var half := float(h.piece.s1-h.piece.s0)*0.5
 		var mid := frame*Vector3(half,0.0,0.0)
 		var site := PackedFloat32Array([mid.x,mid.z,0,0,0,0,0,half+Tunnels.HALL_HALF])
-		halls.add_fixed(Vector2i(ti,int(h.n)),{"name":"%s/stretch_%d" % [t.name,int(h.n)],"seed":h.seed,"bays":h.bays,
-			"frame":frame,"coded":frame,"site":site,"piece":Tunnels.stretch_piece(h)})
-		stats.stretches += 1
+		b.stretches.append({"n":int(h.n),"info":{"name":"%s/stretch_%d" % [t.name,int(h.n)],"seed":h.seed,"bays":h.bays,
+			"frame":frame,"coded":frame,"site":site,"piece":Tunnels.stretch_piece(h)}})
+	b.ms = (Time.get_ticks_usec()-t0)/1000.0
+	return b
+
+## Stands built tunnel `b` (main thread): into the tree, its stretches to
+## the halls, the pools readied with the first torches.
+func _commit(b: Built) -> void:
+	var t0 := Time.get_ticks_usec()
+	b.id = _next_id
+	_next_id += 1
+	add_child(b.node)
+	_sites.append(b.site)
+	_built[b.site.name] = b
+	_by_id[b.id] = b
+	for h: Dictionary in b.stretches:
+		var key := Vector2i(b.id,int(h.n))
+		halls.add_fixed(key,h.info)
+		b.keys.append(key)
+	stats.stretches += b.keys.size()
+	stats.tris += b.tris
+	stats.torches += b.torches
 	stats.tunnels = _sites.size()
 	_ensure_pools()
-	stats["build_ms"] = maxf(float(stats.get("build_ms",0.0)),(Time.get_ticks_usec()-t0)/1000.0)
+	stats["build_ms"] = maxf(float(stats.get("build_ms",0.0)),b.ms)
+	stats.commit_ms = maxf(float(stats.commit_ms),(Time.get_ticks_usec()-t0)/1000.0)
 
-## Builds the streamed tunnels whose box is within STREAM_REACH of `at`.
+## Takes tunnel `b` down: its flames out of the pool, its stretches, its
+## node.
+func _drop(b: Built) -> void:
+	for j in _flames.size():
+		if _flame_on[j] >= 0 and (_flame_on[j] >> 16) == b.id:
+			_flame_on[j] = -1
+			_flame_burn[j] = 0.0
+			_flames[j].set("burn",0.0)
+	for key: Vector2i in b.keys: halls.remove_fixed(key)
+	for body in b.bodies: body.free()
+	b.bodies.clear()
+	_sites.erase(b.site)
+	_built.erase(b.site.name)
+	_by_id.erase(b.id)
+	b.node.queue_free()
+	stats.stretches -= b.keys.size()
+	stats.tris -= b.tris
+	stats.torches -= b.torches
+	stats.tunnels = _sites.size()
+	stats.dropped += 1
+
+## How far (x, z) of `at` lies outside `box` (0 in it).
+static func _gap(box: Rect2, at: Vector3) -> float:
+	var dx := maxf(maxf(box.position.x-at.x,at.x-box.end.x),0.0)
+	var dz := maxf(maxf(box.position.y-at.z,at.z-box.end.y),0.0)
+	return Vector2(dx,dz).length()
+
+## Whether tunnels stream (not with --tunnel-test, which keeps its own).
+func _streams() -> bool:
+	return field != null and field.has_method("tunnel_test") and not field.tunnel_test()
+
+## Streaming: stands one tunnel the worker built (a frame), and every
+## STREAM_MOVE m drops those past STREAM_DROP and sends a task to find and
+## build those within STREAM_REACH.
 func _stream(at: Vector3) -> void:
-	if field == null or not field.has_method("tunnel_test") or field.tunnel_test(): return
+	if not _streams(): return
+	_stand_one(at)
+	if _task >= 0:
+		if not WorkerThreadPool.is_task_completed(_task): return
+		WorkerThreadPool.wait_for_task_completion(_task)
+		_task = -1
 	if _streamed_at != Vector3.INF and Vector2(at.x-_streamed_at.x,at.z-_streamed_at.z).length() < STREAM_MOVE: return
 	_streamed_at = at
-	for t: Tunnels.Site in field.tunnels_in(at.x-STREAM_REACH,at.z-STREAM_REACH,at.x+STREAM_REACH,at.z+STREAM_REACH):
-		if not _known.has(t.name): _add(t)
+	for b: Built in _built.values():
+		if _gap(b.site.box,at) > STREAM_DROP: _drop(b)
+	var have := {}
+	for name: String in _built: have[name] = true
+	_lock.lock()
+	for b: Built in _done: have[b.site.name] = true
+	_lock.unlock()
+	_task = WorkerThreadPool.add_task(_find_and_build.bind(at,have),false,"Tunnels")
+
+## The worker: finds the tunnels within STREAM_REACH of `at` with a field
+## of its own and builds, nearest first, those not in `have`.
+func _find_and_build(at: Vector3, have: Dictionary) -> void:
+	if _quit: return
+	var f: RefCounted = Field.new(int(field.seed),field.world)
+	var got: Array = f.tunnels_in(at.x-STREAM_REACH,at.z-STREAM_REACH,at.x+STREAM_REACH,at.z+STREAM_REACH)
+	got.sort_custom(func(a: Tunnels.Site, b: Tunnels.Site) -> bool: return _gap(a.box,at) < _gap(b.box,at))
+	for t: Tunnels.Site in got:
+		if _quit: return
+		if have.has(t.name) or _gap(t.box,at) > STREAM_REACH: continue
+		var b := _make(t,f)
+		_lock.lock()
+		_done.append(b)
+		_lock.unlock()
+
+## Stands the next built tunnel, unless it is stood already or now past
+## STREAM_DROP.
+func _stand_one(at: Vector3) -> void:
+	_lock.lock()
+	var b: Built = _done.pop_front() if not _done.is_empty() else null
+	_lock.unlock()
+	if b == null: return
+	if _built.has(b.site.name) or _gap(b.site.box,at) > STREAM_DROP:
+		_free_built(b)
+		return
+	_commit(b)
 
 ## The flame and light pools, made once there are torches.
 func _ensure_pools() -> void:
-	if not _flames.is_empty() or _feet.is_empty(): return
+	if not _flames.is_empty() or int(stats.torches) <= 0: return
 	for i in FLAME_POOL:
 		var fl: Node3D = Flame.new()
 		fl.name = "TorchFlame%d" % i
@@ -322,17 +478,43 @@ static func _dark_materials() -> Dictionary:
 	growth.set_shader_parameter("shelter_fill",4.5*GROWTH_DIM)
 	return {kit.stone:stone,kit.growth:growth}
 
-## Builds the hall stretches' far detail now, and the near detail round `at`.
+## Builds, on this thread, the streamed tunnels within PRIME_REACH of `at`
+## (waiting out a task first; the rest stream) and the hall stretches' far
+## detail now, and the near detail round `at`.
 func prime(at: Vector3) -> void:
-	_stream(at)
+	if _streams():
+		if _task >= 0:
+			WorkerThreadPool.wait_for_task_completion(_task)
+			_task = -1
+		while not _done.is_empty(): _stand_one(at)
+		for t: Tunnels.Site in field.tunnels_in(at.x-PRIME_REACH,at.z-PRIME_REACH,at.x+PRIME_REACH,at.z+PRIME_REACH):
+			if not _built.has(t.name) and _gap(t.box,at) <= PRIME_REACH: _commit(_make(t,field))
+		_streamed_at = Vector3.INF
+		_stream(at)
+	_stand_bodies(Time.get_ticks_usec(),true)
 	halls.prime(at)
 
+## Stands the colliders' pieces waiting, in the order the tunnels stood: one at
+## least, then while the frame's BODY_BUDGET (from `began`) lasts, or all
+## of them with `all`.
+func _stand_bodies(began: int, all: bool) -> void:
+	var first := true
+	for b: Built in _built.values():
+		while not b.bodies.is_empty():
+			if not first and not all and (Time.get_ticks_usec()-began)/1000.0 > BODY_BUDGET: return
+			first = false
+			b.node.add_child(b.bodies.pop_back())
+
 func step(at: Vector3) -> void:
+	var t0 := Time.get_ticks_usec()
 	_stream(at)
+	_stand_bodies(t0,false)
 	halls.step(at)
 	_light_torches(at)
-	_spill()
+	_spill(at)
+	_burn_fires(at)
 	if clouds != null and "fog_hush" in clouds: clouds.fog_hush = under(at)
+	stats["step_ms"] = (Time.get_ticks_usec()-t0)/1000.0
 
 ## How deep in a bore `p` is: 0 outside (or in a portal), 1 HUSH_IN m or
 ## more past either mouth, under the roof.
@@ -346,22 +528,42 @@ func under(p: Vector3) -> float:
 		return smoothstep(0.0,HUSH_IN,minf(q.x,t.length-q.x))
 	return 0.0
 
-## Each mouth's daylight in the sun's colour and strength (none at night).
-func _spill() -> void:
-	if _spills.is_empty(): return
+## Each mouth's and shaft's daylight in the sun's colour and strength (none
+## at night, nor past DAY_REACH of its tunnel).
+func _spill(at: Vector3) -> void:
+	if _built.is_empty(): return
 	if not _sky_cut: _cut_sky()
-	var lit := _sun != null and is_instance_valid(_sun) and _sun.visible
-	for b in _beams: b.visible = lit
-	for i in _spills.size():
-		var l := _spills[i]
-		l.visible = lit
-		if not lit: continue
-		l.light_color = _sun.light_color
-		l.light_energy = _spill_gain[i]*_sun.light_energy
+	var sun := _sun != null and is_instance_valid(_sun) and _sun.visible
+	for b: Built in _built.values():
+		var lit := sun and _gap(b.site.box,at) < DAY_REACH
+		for beam in b.beams: beam.visible = lit
+		for i in b.spills.size():
+			var l := b.spills[i]
+			l.visible = lit
+			if not lit: continue
+			l.light_color = _sun.light_color
+			l.light_energy = b.spill_gain[i]*_sun.light_energy
+
+## The braziers: burning, and their bowls' lights on, within FIRE_REACH of
+## the eye only (out, their sparks and smoke stop).
+func _burn_fires(at: Vector3) -> void:
+	var n := 0
+	for b: Built in _built.values():
+		var on := false
+		if _gap(b.site.box,at) < FIRE_REACH:
+			for fire in b.fires:
+				if fire.global_position.distance_to(at) < FIRE_REACH: on = true
+		if on != b.burning:
+			b.burning = on
+			for fire in b.fires: fire.set("burn",1.0 if on else 0.0)
+			for l in b.fire_lights: l.visible = on
+		if b.burning: n += b.fires.size()
+	stats.fires = n
 
 ## The pools: the TORCH_LIGHTS torches nearest `at` (biased POOL_AHEAD
 ## ahead of the eye) within LIGHT_REACH get a light, the farthest of them
-## fading out, and the FLAME_POOL nearest burn as real flames.
+## fading out, and the FLAME_POOL nearest burn as real flames. Only the
+## tunnels whose box is within LIGHT_REACH are looked at.
 func _light_torches(at: Vector3) -> void:
 	if _lights.is_empty(): return
 	if not _sky_cut: _cut_sky()
@@ -373,29 +575,40 @@ func _light_torches(at: Vector3) -> void:
 		key = at-cam.global_basis.z*POOL_AHEAD
 	var near: Array = []
 	var reach2 := LIGHT_REACH*LIGHT_REACH
-	for i in _lamps.size():
-		var d2 := key.distance_squared_to(_lamps[i])
-		if d2 < reach2: near.append(Vector2(d2,i))
-	near.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
+	var looked := 0
+	for b: Built in _built.values():
+		if _gap(b.site.box,key) > LIGHT_REACH: continue
+		looked += b.lamps.size()
+		for i in b.lamps.size():
+			var d2 := key.distance_squared_to(b.lamps[i])
+			if d2 < reach2: near.append(Vector3(d2,b.id,i))
+	stats["ranked"] = looked
+	near.sort_custom(func(a: Vector3, b: Vector3) -> bool: return a.x < b.x)
 	var n := mini(near.size(),_lights.size())
 	# The farthest lit one fades out as the next one in comes nearer.
 	var last := LIGHT_REACH
-	if near.size() > n: last = sqrt((near[n] as Vector2).x)
+	if near.size() > n: last = sqrt((near[n] as Vector3).x)
 	for k in _lights.size():
 		var l := _lights[k]
 		if k >= n:
 			l.visible = false
 			continue
-		var i := int((near[k] as Vector2).y)
-		var d := sqrt((near[k] as Vector2).x)
+		var c := near[k] as Vector3
+		var b: Built = _by_id[int(c.y)]
+		var i := int(c.z)
+		var d := sqrt(c.x)
 		var fade := clampf((last-d)/LIGHT_FADE,0.0,1.0)
 		var flick := 1.0+TORCH_FLICKER*(sin(_time*11.0+i*1.7)*0.6+sin(_time*23.0+i*3.1)*0.4)
-		l.position = _lamps[i]
-		l.omni_range = TORCH_RANGE*_lamp_big[i]
-		l.light_energy = TORCH_ENERGY*_lamp_big[i]*fade*flick
+		l.position = b.lamps[i]
+		l.omni_range = TORCH_RANGE*b.lamp_big[i]
+		l.light_energy = TORCH_ENERGY*b.lamp_big[i]*fade*flick
 		l.visible = fade > 0.0
 	stats.lights = n
 	_burn_flames(near,dt)
+
+## A ranked torch's key (id << 16 | i).
+static func _key(c: Vector3) -> int:
+	return (int(c.y) << 16) | int(c.z)
 
 ## The flame pool: the FLAME_POOL first of `near` (ranked torches) burn as
 ## real flames, easing in over FLAME_EASE while their cards fade out, and a
@@ -403,7 +616,7 @@ func _light_torches(at: Vector3) -> void:
 func _burn_flames(near: Array, dt: float) -> void:
 	if _flames.is_empty(): return
 	var want := {}
-	for k in mini(near.size(),FLAME_POOL): want[int((near[k] as Vector2).y)] = true
+	for k in mini(near.size(),FLAME_POOL): want[_key(near[k])] = true
 	var held := {}
 	for j in _flames.size():
 		if _flame_on[j] >= 0: held[_flame_on[j]] = j
@@ -428,24 +641,30 @@ func _burn_flames(near: Array, dt: float) -> void:
 		_card(i,1.0-b)
 	for k in mini(near.size(),FLAME_POOL):
 		if free.is_empty(): break
-		var i := int((near[k] as Vector2).y)
+		var c := near[k] as Vector3
+		var i := _key(c)
 		if held.has(i): continue
 		var j: int = free.pop_back()
 		_flame_on[j] = i
 		_flame_burn[j] = 0.0
 		var fl := _flames[j]
-		fl.global_position = _feet[i]
-		fl.scale = Vector3.ONE*_feet_big[i]*TORCH_FIRE
+		var built: Built = _by_id[int(c.y)]
+		fl.global_position = built.feet[int(c.z)]
+		fl.scale = Vector3.ONE*built.feet_big[int(c.z)]*TORCH_FIRE
 		held[i] = j
 	var lit := 0
 	for j in _flames.size(): if _flame_on[j] >= 0: lit += 1
 	stats.flames = lit
 
-## Torch `i`'s card at `show` (1 whole, 0 hidden by its real flame).
-func _card(i: int, show: float) -> void:
-	var c := _card_tint[i]
+## Torch `key`'s card (id << 16 | i) at `show` (1 whole, 0 hidden by its
+## real flame).
+func _card(key: int, show: float) -> void:
+	var b: Built = _by_id.get(key >> 16)
+	if b == null: return
+	var i := key & 0xffff
+	var c := b.tint[i]
 	c.a = show
-	_cards[_card_of[i] >> 16].set_instance_color(_card_of[i] & 0xffff,c)
+	b.cards.set_instance_color(i,c)
 
 ## Where the test tunnel's start stands (world y), NAN with none.
 func start_y() -> float:
@@ -572,16 +791,17 @@ func tube(p: Vector3) -> int:
 
 ## One line for the numbers HUD.
 func note() -> String:
-	return "tunnels %d (built in %.0f ms worst), greybox %dk tris, %d torches (%d lit), %d stretches: %s" % [stats.tunnels,float(stats.get("build_ms",0.0)),stats.tris/1000,stats.torches,stats.lights,stats.stretches,halls.note()]
+	return "tunnels %d (built in %.0f ms worst, stood in %.1f ms worst, %d dropped), greybox %dk tris, %d torches (%d lit), %d stretches: %s" % [stats.tunnels,float(stats.get("build_ms",0.0)),float(stats.commit_ms),int(stats.dropped),stats.tris/1000,stats.torches,stats.lights,stats.stretches,halls.note()]
 
 # --- The greybox ----------------------------------------------------------------------
 
-func _build(t: Tunnels.Site) -> void:
-	var rock := _build_rock(t)
+func _build(b: Built, f: RefCounted) -> void:
+	var t: Tunnels.Site = b.site
+	var rock := _build_rock(t,b)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var tris := 0
-	for m in 2: tris += _build_portal(st,t,m)
+	for m in 2: tris += _build_portal(st,t,m,f)
 	var mesh: ArrayMesh = rock.commit()
 	st.commit(mesh)
 	# Seen: the rock on the inside's layer (torch lit), the portal blocks
@@ -591,24 +811,33 @@ func _build(t: Tunnels.Site) -> void:
 	node.name = t.name.replace("/","_")
 	node.mesh = _surface(mesh,0,mat)
 	node.layers = UNDER_LAYER
-	add_child(node)
+	b.node.add_child(node)
 	var blocks := MeshInstance3D.new()
 	blocks.name = node.name+"_portals"
 	blocks.mesh = _surface(mesh,1,_portal_material(t))
-	add_child(blocks)
-	for m in 2: _build_fires(t,m)
-	tris += _build_shafts(t,mesh,node.name,mat)
-	var body := StaticBody3D.new()
-	body.name = node.name+"_body"
-	body.collision_layer = LAYER
-	body.collision_mask = 0
-	var cs := CollisionShape3D.new()
-	var shape := mesh.create_trimesh_shape()
-	shape.backface_collision = true
-	cs.shape = shape
-	body.add_child(cs)
-	add_child(body)
-	stats.tris += tris+_rock_tris
+	b.node.add_child(blocks)
+	for m in 2: _build_fires(b,m)
+	tris += _build_shafts(b,mesh,node.name,mat)
+	# The collider in BODY_TRIS pieces (in the mesh's order, so each is a
+	# run of the bore), stood one a frame (`_stand_bodies`): Jolt builds a
+	# trimesh's tree as it enters the space, ~30 ms for a whole tunnel.
+	var faces := mesh.get_faces()
+	var per := BODY_TRIS*3
+	var i0 := 0
+	while i0 < faces.size():
+		var body := StaticBody3D.new()
+		body.name = "%s_body%d" % [node.name,b.bodies.size()]
+		body.collision_layer = LAYER
+		body.collision_mask = 0
+		var cs := CollisionShape3D.new()
+		var shape := ConcavePolygonShape3D.new()
+		shape.set_faces(faces.slice(i0,mini(i0+per,faces.size())))
+		shape.backface_collision = true
+		cs.shape = shape
+		body.add_child(cs)
+		b.bodies.append(body)
+		i0 += per
+	b.tris += tris
 
 ## Mouth `m`'s portal into `st`: the skin over its footprint (the land's
 ## top PORTAL_OVER over it, or the cap over the opening: `_cover`), sunk
@@ -616,7 +845,7 @@ func _build(t: Tunnels.Site) -> void:
 ## opening (filleted to the bore's rounded corners); the gate (jambs, a
 ## lintel, a pediment) and a fire bowl on each end of the lintel. Flat
 ## shaded, so it reads as cut stone. Returns its triangles.
-func _build_portal(st: SurfaceTool, t: Tunnels.Site, m: int) -> int:
+func _build_portal(st: SurfaceTool, t: Tunnels.Site, m: int, lf: RefCounted) -> int:
 	var tris := 0
 	var a0 := -Tunnels.PORTAL_OUT
 	var k := Tunnels.PORTAL_HALF
@@ -642,7 +871,7 @@ func _build_portal(st: SurfaceTool, t: Tunnels.Site, m: int) -> int:
 		var row := PackedFloat32Array()
 		for j in ds.size():
 			var q := Tunnels.portal_point(t,m,as_[i],ds[j])
-			row.append(_cover(t,q.x,q.y,field.height(q.x,q.y)))
+			row.append(_cover(t,q.x,q.y,lf.height(q.x,q.y)))
 		ys.append(row)
 	var inward := _v(t,m,1.0,0.0,0.0)-_v(t,m,0.0,0.0,0.0)
 	var across := _v(t,m,0.0,1.0,0.0)-_v(t,m,0.0,0.0,0.0)
@@ -663,11 +892,11 @@ func _build_portal(st: SurfaceTool, t: Tunnels.Site, m: int) -> int:
 		for i in as_.size()-1:
 			var y0: float = ys[i][j]
 			var y1: float = ys[i+1][j]
-			tris += _quad(st,_v(t,m,as_[i],dd,y0),_v(t,m,as_[i+1],dd,y1),_v(t,m,as_[i+1],dd,_land(t,m,as_[i+1],dd)-SKIRT),_v(t,m,as_[i],dd,_land(t,m,as_[i],dd)-SKIRT),across*signf(dd),FACE_TINT)
+			tris += _quad(st,_v(t,m,as_[i],dd,y0),_v(t,m,as_[i+1],dd,y1),_v(t,m,as_[i+1],dd,_land(t,m,as_[i+1],dd,lf)-SKIRT),_v(t,m,as_[i],dd,_land(t,m,as_[i],dd,lf)-SKIRT),across*signf(dd),FACE_TINT)
 	var back := as_.size()-1
 	var ab := as_[back]
 	for j in ds.size()-1:
-		tris += _quad(st,_v(t,m,ab,ds[j],ys[back][j]),_v(t,m,ab,ds[j+1],ys[back][j+1]),_v(t,m,ab,ds[j+1],_land(t,m,ab,ds[j+1])-SKIRT),_v(t,m,ab,ds[j],_land(t,m,ab,ds[j])-SKIRT),inward,FACE_TINT)
+		tris += _quad(st,_v(t,m,ab,ds[j],ys[back][j]),_v(t,m,ab,ds[j+1],ys[back][j+1]),_v(t,m,ab,ds[j+1],_land(t,m,ab,ds[j+1],lf)-SKIRT),_v(t,m,ab,ds[j],_land(t,m,ab,ds[j],lf)-SKIRT),inward,FACE_TINT)
 	# The sheer front, the opening cut out of it.
 	var lo := f-Tunnels.SINK-SKIRT
 	for j in ds.size()-1:
@@ -710,7 +939,8 @@ func _build_portal(st: SurfaceTool, t: Tunnels.Site, m: int) -> int:
 
 ## Mouth `m`'s fires: on the lintel's bowls, a glow and a light each; and
 ## its daylight in (`_spill`), lighting the inside's layer only.
-func _build_fires(t: Tunnels.Site, m: int) -> void:
+func _build_fires(b: Built, m: int) -> void:
+	var t: Tunnels.Site = b.site
 	var f := t.floor_y
 	var a0 := -Tunnels.PORTAL_OUT
 	var top := f+Tunnels.HALL_VAULT+LINTEL_H+BOWL.y
@@ -723,8 +953,11 @@ func _build_fires(t: Tunnels.Site, m: int) -> void:
 		fire.set("kind","brazier")
 		fire.set("scale_by",FIRE_SCALE)
 		fire.set("with_light",false)
+		# Out until the eye comes near (`_burn_fires`).
+		fire.set("burn",0.0)
 		fire.position = at
-		add_child(fire)
+		b.node.add_child(fire)
+		b.fires.append(fire)
 		var l := OmniLight3D.new()
 		l.name = fire.name+"_light"
 		l.light_color = TORCH_LIGHT
@@ -733,7 +966,9 @@ func _build_fires(t: Tunnels.Site, m: int) -> void:
 		l.light_energy = FIRE_ENERGY
 		l.shadow_enabled = false
 		l.position = at+Vector3.UP*(FIRE_R*2.4)+out*1.5
-		add_child(l)
+		l.visible = false
+		b.node.add_child(l)
+		b.fire_lights.append(l)
 	var spot := SpotLight3D.new()
 	spot.name = "%s_spill%d" % [t.name.replace("/","_"),m]
 	var from := _v(t,m,a0+SPILL_IN,0.0,f+SPILL_Y)
@@ -744,14 +979,15 @@ func _build_fires(t: Tunnels.Site, m: int) -> void:
 	spot.light_cull_mask = UNDER_LAYER
 	spot.shadow_enabled = false
 	spot.light_specular = 0.2
-	add_child(spot)
-	_spills.append(spot)
-	_spill_gain.append(SPILL_ENERGY)
+	spot.visible = false
+	b.node.add_child(spot)
+	b.spills.append(spot)
+	b.spill_gain.append(SPILL_ENERGY)
 
 ## The land's height at mouth `m`'s (a, d).
-func _land(t: Tunnels.Site, m: int, a: float, d: float) -> float:
+static func _land(t: Tunnels.Site, m: int, a: float, d: float, f: RefCounted) -> float:
 	var q := Tunnels.portal_point(t,m,a,d)
-	return field.height(q.x,q.y)
+	return f.height(q.x,q.y)
 
 ## A box in mouth `m`'s frame (a along the way in, d across, y world),
 ## without its back (into the portal's face) and, unless `bottom`, its
@@ -851,7 +1087,7 @@ static func _rock_material(t: Tunnels.Site, low := ROCK_TEX_LOW) -> StandardMate
 ## (ROCK_LUMP; none in the portals, so the opening stays true) and a flat
 ## floor of FLOOR_SEGS strips between the walls' feet. Indexed, its normals
 ## smoothed, so the lumps shade.
-func _build_rock(t: Tunnels.Site) -> SurfaceTool:
+func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var ss := PackedFloat32Array([-Tunnels.PORTAL_OUT,0.0])
@@ -925,7 +1161,7 @@ func _build_rock(t: Tunnels.Site) -> SurfaceTool:
 		for k in FLOOR_SEGS:
 			tris += _tri(st,pos,inward,b0+f+k,b0+f+k+1,b1+f+k+1)+_tri(st,pos,inward,b0+f+k,b1+f+k+1,b1+f+k)
 	st.generate_normals()
-	_rock_tris = tris
+	b.tris += tris
 	return st
 
 ## Tunnel `t`'s shafts (Tunnels.shafts): the lip in the vault (a skirt and
@@ -933,7 +1169,8 @@ func _build_rock(t: Tunnels.Site) -> SurfaceTool:
 ## pit's floor and the curb round its top (in the day), each added to
 ## `mesh` too (the collider's); a spot of daylight down each and a faint
 ## beam. Returns the triangles.
-func _build_shafts(t: Tunnels.Site, mesh: ArrayMesh, base_name: String, rock_mat: Material) -> int:
+func _build_shafts(bt: Built, mesh: ArrayMesh, base_name: String, rock_mat: Material) -> int:
+	var t: Tunnels.Site = bt.site
 	if t.shafts.is_empty(): return 0
 	var tris := 0
 	var dark := SurfaceTool.new()
@@ -1018,7 +1255,7 @@ func _build_shafts(t: Tunnels.Site, mesh: ArrayMesh, base_name: String, rock_mat
 			tris += _quad(curb,c+ra*r,c+rb*r,c+rb*(r+CURB_W),c+ra*(r+CURB_W),Vector3.UP,tint)
 			var down := Vector3.DOWN*(CURB_H+SKIRT)
 			tris += _quad(curb,c+ra*(r+CURB_W),c+rb*(r+CURB_W),c+rb*(r+CURB_W)+down,c+ra*(r+CURB_W)+down,(ra+rb).normalized(),tint.darkened(0.12))
-		_shaft_light(t,si,base_name)
+		_shaft_light(bt,si,base_name)
 	var dmesh := dark.commit()
 	var wmesh := wall.commit()
 	curb.commit(wmesh)
@@ -1028,7 +1265,7 @@ func _build_shafts(t: Tunnels.Site, mesh: ArrayMesh, base_name: String, rock_mat
 	lipn.name = base_name+"_shaft_lips"
 	lipn.mesh = _surface(dmesh,0,rock_mat)
 	lipn.layers = UNDER_LAYER
-	add_child(lipn)
+	bt.node.add_child(lipn)
 	var day := _portal_material(t)
 	var walls := MeshInstance3D.new()
 	walls.name = base_name+"_shafts"
@@ -1036,13 +1273,14 @@ func _build_shafts(t: Tunnels.Site, mesh: ArrayMesh, base_name: String, rock_mat
 	wm.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,wmesh.surface_get_arrays(1))
 	wm.surface_set_material(1,day)
 	walls.mesh = wm
-	add_child(walls)
+	bt.node.add_child(walls)
 	return tris
 
 ## Shaft `si`'s daylight: a spot from its top down onto the bore's floor
 ## (the inside's layer only, the sun's colour, SHAFT_ENERGY x it) and a
 ## faint beam of light from the vault down into the cavern.
-func _shaft_light(t: Tunnels.Site, si: int, base_name: String) -> void:
+func _shaft_light(b: Built, si: int, base_name: String) -> void:
+	var t: Tunnels.Site = b.site
 	var sh: Dictionary = t.shafts[si]
 	var at: Vector2 = sh.at
 	var top_y: float = sh.top
@@ -1056,9 +1294,10 @@ func _shaft_light(t: Tunnels.Site, si: int, base_name: String) -> void:
 	spot.light_cull_mask = UNDER_LAYER
 	spot.shadow_enabled = false
 	spot.light_specular = 0.2
-	add_child(spot)
-	_spills.append(spot)
-	_spill_gain.append(SHAFT_ENERGY)
+	spot.visible = false
+	b.node.add_child(spot)
+	b.spills.append(spot)
+	b.spill_gain.append(SHAFT_ENERGY)
 	var cyl := CylinderMesh.new()
 	cyl.top_radius = Tunnels.SHAFT_R*0.92
 	cyl.bottom_radius = Tunnels.SHAFT_R*SHAFT_SPREAD*0.7
@@ -1080,8 +1319,9 @@ func _shaft_light(t: Tunnels.Site, si: int, base_name: String) -> void:
 	beam.position = Vector3(at.x,(beam_top+t.floor_y)*0.5,at.y)
 	beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	beam.layers = UNDER_LAYER
-	add_child(beam)
-	_beams.append(beam)
+	beam.visible = false
+	b.node.add_child(beam)
+	b.beams.append(beam)
 
 static var _beam: Shader
 
@@ -1134,7 +1374,8 @@ static func _tri(st: SurfaceTool, pos: PackedVector3Array, inward: PackedVector3
 ## a glowing flame card on it (one MultiMesh each), bigger and whiter on a
 ## bend's outside wall and at the mouths. The nearest burn as real flames
 ## and get lights (`_light_torches`); their feet and light spots are kept.
-func _build_torches(t: Tunnels.Site) -> void:
+func _build_torches(b: Built) -> void:
+	var t: Tunnels.Site = b.site
 	var spots: Array = Tunnels.torch_spots(t)
 	var bracket := _sconce()
 	var card := QuadMesh.new()
@@ -1153,8 +1394,7 @@ func _build_torches(t: Tunnels.Site) -> void:
 	mf.use_colors = true
 	mf.mesh = card
 	mf.instance_count = spots.size()
-	var mi := _cards.size()
-	_cards.append(mf)
+	b.cards = mf
 	for i in spots.size():
 		var sp: Dictionary = spots[i]
 		var into: Vector2 = sp.into
@@ -1162,28 +1402,27 @@ func _build_torches(t: Tunnels.Site) -> void:
 		var big: float = float(TORCH_BIG.get(sp.kind,1.0))*TORCH_SIZE
 		var out := Vector3(into.x,0.0,into.y)
 		# The sconce stands on the wall at `pos`, its arm out (local -z).
-		var b := Basis.looking_at(out,Vector3.UP)
-		mb.set_instance_transform(i,Transform3D(b.scaled(Vector3.ONE*big),pos))
+		var bs := Basis.looking_at(out,Vector3.UP)
+		mb.set_instance_transform(i,Transform3D(bs.scaled(Vector3.ONE*big),pos))
 		# The flame's foot: in the cup.
 		var foot := pos+out*TORCH_CUP.x*big+Vector3.UP*TORCH_CUP.y*big
 		mf.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*big),foot))
 		var tint := (TORCH_GLOW.get(sp.kind,TORCH_GLOW.wall) as Color).srgb_to_linear()
 		mf.set_instance_color(i,tint)
-		_card_of.append((mi << 16) | i)
-		_card_tint.append(tint)
-		_feet.append(foot)
-		_feet_big.append(big)
+		b.tint.append(tint)
+		b.feet.append(foot)
+		b.feet_big.append(big)
 		# The light: at the flame, a little out of it into the bore.
-		_lamps.append(foot+out*0.4*big+Vector3.UP*TORCH_FLAME.y*0.4*big)
-		_lamp_big.append(sqrt(big/TORCH_SIZE))
+		b.lamps.append(foot+out*0.4*big+Vector3.UP*TORCH_FLAME.y*0.4*big)
+		b.lamp_big.append(sqrt(big/TORCH_SIZE))
 	for pair: Array in [[mb,"_torch_brackets"],[mf,"_torch_flames"]]:
 		var node := MultiMeshInstance3D.new()
 		node.name = t.name.replace("/","_")+str(pair[1])
 		node.multimesh = pair[0]
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		node.layers = UNDER_LAYER
-		add_child(node)
-	stats.torches += spots.size()
+		b.node.add_child(node)
+	b.torches = spots.size()
 
 ## The sconce in its own space (the wall at z 0, out along -z, the cup's
 ## rim at TORCH_CUP): a plate, an arm rising out to the cup, the cup. Iron.
