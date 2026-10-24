@@ -396,7 +396,9 @@ func _skim(delta: float, ground: Callable, was: Vector3) -> void:
 	if stone.is_valid() and bool(stone.call(position)):
 		var give := RIDE+Vector2(position.x-was.x,position.z-was.z).length()*STEEP
 		var up := Vector3(position.x,body.x+SKIM,position.z)
-		if was.y >= body.x+SKIM-give:
+		# The rise is the land's since the last step: a step begun under SKIM
+		# (held low from outside, a takeoff's unstick) counts from there.
+		if _lifted(ground,was).y >= body.x+SKIM-give:
 			_ride(delta,up)
 		elif was.y <= body.y-CLEAR+0.01:
 			_under(delta,body)
@@ -440,16 +442,25 @@ func _solid(ground: Callable, point: Vector3) -> Vector2:
 	if under is Vector2: return under
 	return Vector2(float(under),-INF)
 
+## Where it was, raised to SKIM over the land there if under it, unless it
+## was under that solid's underside: the height a step from `was` starts
+## from on giant stone, never inside it.
+func _lifted(ground: Callable, was: Vector3) -> Vector3:
+	var s := _solid(ground,was)
+	if s == Vector2.INF or was.y <= s.y-CLEAR+0.01: return was
+	return Vector3(was.x,maxf(was.y,s.x+SKIM),was.z)
+
 ## At an island's side: back out along whichever way it crossed in, and the
 ## heading turns along the face. Against giant stone, whose solid stands
 ## under every point near it, a way back counts as out if it is over the
-## rock there; failing all, back to where it was.
+## rock there; failing all, back to where it was, raised out of the rock
+## (never left inside it, so a step begun too low can't sink on through).
 func _brush(delta: float, ground: Callable, was: Vector3) -> void:
 	brushing = true
 	var tried := position
 	var options := [Vector3(was.x,position.y,position.z),Vector3(position.x,position.y,was.z),Vector3(was.x,position.y,was.z)]
 	var rock := stone.is_valid() and bool(stone.call(position))
-	if rock: options.append(was)
+	if rock: options.append(_lifted(ground,was))
 	for p: Vector3 in options:
 		var s := _solid(ground,p)
 		if s == Vector2.INF or (rock and (p.y >= s.x+SKIM-0.01 or p.y <= s.y-CLEAR+0.01)):
