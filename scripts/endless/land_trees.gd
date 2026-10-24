@@ -52,6 +52,7 @@ const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const FAR_SHADER = preload("res://shaders/endless_tree_far.gdshader")
 const FLOOR_SHADER = preload("res://shaders/endless_forest_floor.gdshader")
 const RING_SHADER = preload("res://shaders/endless_spruce_ring.gdshader")
+const SpruceSprites = preload("res://scripts/endless/spruce_sprites.gd")
 ## The ring shader's albedo over the crowns' vertex colour (their scene palette), measured.
 const RING_GAIN := Vector3(1.11,1.08,0.98)
 
@@ -118,6 +119,15 @@ const MID_START := 400.0
 const FADE := Vector3(12.0,15.0,30.0)
 const LOD_SLACK := 25.0
 const MID_CROWN_END := 670.0
+## The sprites (scripts/endless/spruce_sprites.gd, the default with the sprays
+## look; --spruce-sprites=0 the crowns and rings above): past FAR_CUT every
+## tree of the blocks is its sprite out to SPRITE_END m (dithered SPRITE_FADE m
+## either side), the near crowns and trunks banded to FAR_CUT; past that no
+## trees stand, the forest floor turning to a painted canopy from CANOPY.x m
+## (in over CANOPY.y m) in the sprites' mean colour.
+const SPRITE_END := 1440.0
+const SPRITE_FADE := 60.0
+const CANOPY := Vector2(1250.0,250.0)
 
 var seed := 1
 var share := 1.0
@@ -150,6 +160,9 @@ var _mid_start := MID_START
 var far_ring := FAR           # FAR, its reach and fade times LandStream.view()
 var _rings := false           # the mid and far rings draw the sprays' low crown (HeroTrees.spruce_has_far)
 var _shadow_crown: Mesh       # the near trees' shadow caster (FarTrees proxy of the mature crown)
+var sprites: Node             # SpruceSprites, or null: the crowns and rings
+var _trunk_band: Array = []   # variant -> the trunk's material, banded to FAR_CUT (with sprites)
+var _crown_band: Array = []   # variant -> the full crown's, likewise (with sprites and every crown full)
 
 var _blocks := {}             # Vector2i -> {node, cells: {Vector2i: {trees, buckets}}}
 var _far := {}                # Vector2i -> node
@@ -262,6 +275,19 @@ func setup(land_seed: int) -> void:
 				m.set_shader_parameter("spruce_texture",0)
 		if "--spruce-ring-sway=off" in LaunchArgs.user_args():
 			for m: ShaderMaterial in [_mid_material,_far_material]: m.set_shader_parameter("conifer_sway",false)
+	var knobs := HeroTrees.spruce_paint_knobs()
+	if not knobs.is_empty() and not ("--spruce-sprites=0" in LaunchArgs.user_args()):
+		sprites = SpruceSprites.new()
+		sprites.name = "Sprites"
+		sprites.setup(_parts.map(func(p: Array) -> Array: return [p[0],p[1]]),_tint,knobs,Vector2(_far_cut,SPRITE_END),Vector2(FADE.y,SPRITE_FADE))
+		add_child(sprites)
+		sprites.baked.connect(_sprites_baked)
+		sprites.bake.call_deferred()
+		for v in _parts.size():
+			for part in 2:
+				var m: Material = (_parts[v][part] as Mesh).surface_get_material(0).duplicate()
+				_band(m,Vector2(0.0,_far_cut),Vector2(0.0,FADE.y))
+				(_crown_band if part == 1 else _trunk_band).append(m)
 	_near_floor = _floor_shader(Vector4(-1.0,1.0,MID.z,MID.w))
 	_far_floor = _floor_shader(Vector4(MID.z-MID.w,MID.w,far_ring.z,far_ring.w))
 	if native_wanted():
@@ -323,7 +349,17 @@ func _floor_shader(band: Vector4) -> ShaderMaterial:
 	m.set_shader_parameter("band",band)
 	m.set_shader_parameter("colour",FLOOR_COLOUR)
 	m.set_shader_parameter("strength",FLOOR_STRENGTH)
+	if sprites != null:
+		var knobs := HeroTrees.spruce_paint_knobs()
+		m.set_shader_parameter("canopy",CANOPY)
+		m.set_shader_parameter("canopy_fill",float(knobs.fill))
+		m.set_shader_parameter("canopy_light",Vector4(knobs.wrap,knobs.floor,knobs.warm,knobs.hemiolive))
 	return m
+
+## The painted canopy in the sprites' mean colour once they are baked.
+func _sprites_baked() -> void:
+	for m: ShaderMaterial in [_near_floor,_far_floor]:
+		m.set_shader_parameter("canopy_colour",sprites.mean)
 
 func _far_shader(band: Vector4) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
@@ -747,14 +783,16 @@ func _commit(done: Dictionary) -> void:
 			add_child(bare)
 			_far[key] = bare
 			return
-		var node := _batch(_crown,done.buf,int(done.n),_far_material)
+		# With sprites the far cells stand no crowns, only the floor (the painted canopy).
+		var far_n := 0 if sprites != null else int(done.n)
+		var node := _batch(_crown,done.buf if far_n > 0 else PackedFloat32Array(),far_n,_far_material)
 		node.name = "Far_%d_%d" % [key.x,key.y]
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		if not (done.floor as Dictionary).is_empty(): node.add_child(_floor_node(done.floor,_far_floor))
 		add_child(node)
 		_far[key] = node
 		stats.far = _far.size()
-		stats.far_trees += int(done.n)
+		stats.far_trees += far_n
 		return
 	if _blocks.has(key) or _rect_distance(key.x*BLOCK,key.y*BLOCK,BLOCK,_eye) > MID.z+BLOCK*2.0: return
 	if not world.uniform and not world.layer_at(&"trees",(key.x+0.5)*BLOCK,(key.y+0.5)*BLOCK):
@@ -766,6 +804,16 @@ func _commit(done: Dictionary) -> void:
 		var slot: Array = done.near[v]
 		if int(slot[2]) == 0: continue
 		for part in 2:
+			if sprites != null:
+				# With sprites: the trunks, and the full crowns when every near tree
+				# has one, banded to FAR_CUT; the sprites take over past it.
+				if part == 1 and _detail >= 0.0: continue
+				var near := _batch(_parts[v][part],slot[part],int(slot[2]),(_crown_band if part == 1 else _trunk_band)[v])
+				near.name = "Spruce%d%s" % [v,"Crown" if part == 1 else "Trunk"]
+				near.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				near.visibility_range_end = _far_cut+FADE.y+LOD_SLACK
+				holder.add_child(near)
+				continue
 			# With far crowns, the block draws the family's crown past FAR_CUT;
 			# the full and far crowns stand in their squares (_detail_tiles).
 			var family := part == 1 and _detail >= 0.0
@@ -777,11 +825,22 @@ func _commit(done: Dictionary) -> void:
 			batch.visibility_range_end_margin = NEAR_MARGIN
 			batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED if family and _rings else GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 			holder.add_child(batch)
+	if int(done.n) > 0 and sprites != null:
+		for v in done.near.size():
+			var slot: Array = done.near[v]
+			if int(slot[2]) == 0: continue
+			var sprite := _batch(sprites.quad,slot[1],int(slot[2]),sprites.materials[v])
+			sprite.name = "Spruce%dSprite" % v
+			sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			# The quads stand up from each foot (the batch's bounds are the feet).
+			sprite.extra_cull_margin = sprites.size*3.0
+			holder.add_child(sprite)
 	if int(done.n) > 0:
-		var mid := _batch(_crown,done.mid,int(done.n),_mid_material)
-		mid.name = "Mid"
-		mid.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		holder.add_child(mid)
+		if sprites == null:
+			var mid := _batch(_crown,done.mid,int(done.n),_mid_material)
+			mid.name = "Mid"
+			mid.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			holder.add_child(mid)
 		if _shadows:
 			# The near trees' shadows, cast by their faceted crowns (a tenth
 			# of the faces, one batch a block): SHADOWS_ONLY.
