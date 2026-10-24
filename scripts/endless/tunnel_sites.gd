@@ -864,6 +864,35 @@ static func _trench(t: Site, y: float, m: Vector2, o: Vector2, x: float, z: floa
 	if b <= HALL_HALF+EDGE: return minf(y,lid+SHEER*(b-HALL_HALF)/EDGE)
 	return minf(y,lid+SHEER+(b-HALL_HALF-EDGE)/LEAN)
 
+## A coarse chunk's vertex (quads `step` m) at (x, z) by a mouth: no
+## higher than the trench's cut `step` m nearer its floor and its mouth, so
+## the coarse mesh never stands over the trench's floor (a heightmap's quads
+## wider than the trench would fill it and bury the gate); the notch it
+## leaves is the trench widened by a quad each side, and a quad (at most
+## FACE_REACH) into the mouth's face (under the portal; the land then crosses the tube behind
+## the gate, which land_tunnels.gd's far door hides). INF elsewhere.
+## Only the chunk mesh's vertices (apply_chunk); the field, the collider
+## (level 0) and everything sampling the height are untouched.
+## Into the face only FACE_REACH m: past that (32 m quads, from ~2.7 km) the
+## coarse land behind the portal would fall farther than its skirts reach.
+const FACE_REACH := 16.0
+static func trench_under(t: Site, x: float, z: float, step: float) -> float:
+	if not t.box.has_point(Vector2(x,z)): return INF
+	var out := INF
+	for mm in 2:
+		var at: Vector2 = t.origin if mm == 0 else t.mouth_b
+		var o: Vector2 = -t.way if mm == 0 else t.out_b
+		var q := Vector2(x,z)-at
+		var a := q.dot(o)
+		if a < -minf(step,FACE_REACH) or a > TRENCH_REACH+step: continue
+		var b := maxf(absf(o.cross(q))-step,0.0)
+		if b > TRENCH_WIDE: continue
+		var lid := t.floor_y-SINK+maxf(clampf(a-step,0.0,TRENCH_REACH)-APRON,0.0)*GRADE
+		if b > HALL_HALF+EDGE: lid += SHEER+(b-HALL_HALF-EDGE)/LEAN
+		elif b > HALL_HALF: lid += SHEER*(b-HALL_HALF)/EDGE
+		out = minf(out,lid)
+	return out
+
 ## True where (x, z) is on a trench's floor (no grass there).
 static func on_trench(t: Site, x: float, z: float) -> bool:
 	for m in 2:
@@ -1207,6 +1236,7 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ts: Array
 				var v := j*n+i
 				var ym := carve_m(t,heights[v],x0+i*step,z0+j*step)
 				var y := ym.x
+				if step > 1.0: y = minf(y,trench_under(t,x0+i*step,z0+j*step,step))
 				if ym.y > 0.0:
 					if shelf.is_empty(): shelf.resize(n*n)
 					shelf[v] = maxf(shelf[v],ym.y)

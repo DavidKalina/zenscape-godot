@@ -56,6 +56,20 @@ const CAP_ROUGH := 3.5
 const CAP_GRAIN := 4.0
 const SKIN_STEP := 4.0
 const SKIRT := 5.0
+## The sides and back sink SKIRT_FAR m (over the tube only down to
+## SKIRT_TUBE m over its crown): a coarse chunk's quads (16-64 m, from about
+## 1.3 km) fall that far under the land the skin follows, and the skin would
+## stand on nothing there.
+const SKIRT_FAR := 30.0
+const SKIRT_TUBE := 1.5
+## Past DOOR_FROM m a dark door stands DOOR_IN m inside each gate (seen
+## only from outside): a coarse chunk's land crosses the tube behind the
+## gate (the heightmap can't step from the trench's floor to the rock over
+## the tube within a quad), and from afar the opening reads as a dark way
+## in, not a sunlit slope in a frame.
+const DOOR_FROM := 1200.0
+const DOOR_IN := 1.0
+const DOOR_TINT := Color(0.035,0.026,0.02)
 ## The gate on the portal's front: jambs JAMB_W wide either side of the
 ## opening, a lintel LINTEL_H high over the vault running LINTEL_PAST past
 ## the jambs, a pediment PED_H high over it, all FRAME_OUT proud of the
@@ -275,6 +289,7 @@ func setup(land_field: RefCounted) -> void:
 	# Made here, once: the workers' builds share them.
 	_beam_shader()
 	_card_shader()
+	_door_material()
 	halls = LandHalls.new()
 	halls.name = "Stretches"
 	halls.squares = false
@@ -817,6 +832,7 @@ func _build(b: Built, f: RefCounted) -> void:
 	blocks.mesh = _surface(mesh,1,_portal_material(t))
 	b.node.add_child(blocks)
 	for m in 2: _build_fires(b,m)
+	b.node.add_child(_build_doors(t,node.name))
 	tris += _build_shafts(b,mesh,node.name,mat)
 	# The collider in BODY_TRIS pieces (in the mesh's order, so each is a
 	# run of the bore), stood one a frame (`_stand_bodies`): Jolt builds a
@@ -892,11 +908,18 @@ func _build_portal(st: SurfaceTool, t: Tunnels.Site, m: int, lf: RefCounted) -> 
 		for i in as_.size()-1:
 			var y0: float = ys[i][j]
 			var y1: float = ys[i+1][j]
-			tris += _quad(st,_v(t,m,as_[i],dd,y0),_v(t,m,as_[i+1],dd,y1),_v(t,m,as_[i+1],dd,_land(t,m,as_[i+1],dd,lf)-SKIRT),_v(t,m,as_[i],dd,_land(t,m,as_[i],dd,lf)-SKIRT),across*signf(dd),FACE_TINT)
+			tris += _quad(st,_v(t,m,as_[i],dd,y0),_v(t,m,as_[i+1],dd,y1),_v(t,m,as_[i+1],dd,_land(t,m,as_[i+1],dd,lf)-SKIRT_FAR),_v(t,m,as_[i],dd,_land(t,m,as_[i],dd,lf)-SKIRT_FAR),across*signf(dd),FACE_TINT)
 	var back := as_.size()-1
 	var ab := as_[back]
+	var sec := Tunnels.section(t,ab if m == 0 else t.length-ab)
+	var bottoms := PackedFloat32Array()
+	for j in ds.size():
+		var land := _land(t,m,ab,ds[j],lf)
+		var deep := land-SKIRT_FAR
+		if absf(ds[j]) < sec.x+SKIN_STEP: deep = minf(maxf(deep,f+sec.y+SKIRT_TUBE),land-SKIRT)
+		bottoms.append(deep)
 	for j in ds.size()-1:
-		tris += _quad(st,_v(t,m,ab,ds[j],ys[back][j]),_v(t,m,ab,ds[j+1],ys[back][j+1]),_v(t,m,ab,ds[j+1],_land(t,m,ab,ds[j+1],lf)-SKIRT),_v(t,m,ab,ds[j],_land(t,m,ab,ds[j],lf)-SKIRT),inward,FACE_TINT)
+		tris += _quad(st,_v(t,m,ab,ds[j],ys[back][j]),_v(t,m,ab,ds[j+1],ys[back][j+1]),_v(t,m,ab,ds[j+1],bottoms[j+1]),_v(t,m,ab,ds[j],bottoms[j]),inward,FACE_TINT)
 	# The sheer front, the opening cut out of it.
 	var lo := f-Tunnels.SINK-SKIRT
 	for j in ds.size()-1:
@@ -936,6 +959,35 @@ func _build_portal(st: SurfaceTool, t: Tunnels.Site, m: int, lf: RefCounted) -> 
 		var bd := sg*(lw-BOWL.x)
 		tris += _box(st,t,m,out-0.6,out-0.6+2.0*BOWL.x,bd-BOWL.x,bd+BOWL.x,base,base+BOWL.y,Color(0.16,0.14,0.12),false)
 	return tris
+
+## The far doors (DOOR_FROM): a dark quad filling each gate's opening
+## DOOR_IN m inside its front, facing out (so not seen from inside), drawn
+## only past DOOR_FROM m; no light, the haze still on it.
+func _build_doors(t: Tunnels.Site, base: String) -> MeshInstance3D:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var w := Tunnels.HALL_HALF
+	var f := t.floor_y
+	var a := -Tunnels.PORTAL_OUT+DOOR_IN
+	for m in 2:
+		var out := _v(t,m,0.0,0.0,0.0)-_v(t,m,1.0,0.0,0.0)
+		_quad(st,_v(t,m,a,-w,f+Tunnels.HALL_VAULT),_v(t,m,a,w,f+Tunnels.HALL_VAULT),_v(t,m,a,w,f-Tunnels.SINK),_v(t,m,a,-w,f-Tunnels.SINK),out,DOOR_TINT)
+	var door := MeshInstance3D.new()
+	door.name = base+"_doors"
+	door.mesh = st.commit()
+	door.material_override = _door_material()
+	door.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	door.visibility_range_begin = DOOR_FROM
+	return door
+
+## The doors' material (made in setup, shared).
+static func _door_material() -> StandardMaterial3D:
+	if _door_mat != null: return _door_mat
+	_door_mat = StandardMaterial3D.new()
+	_door_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_door_mat.vertex_color_use_as_albedo = true
+	_door_mat.albedo_color = Color.WHITE
+	return _door_mat
 
 ## Mouth `m`'s fires: on the lintel's bowls, a glow and a light each; and
 ## its daylight in (`_spill`), lighting the inside's layer only.
@@ -1324,6 +1376,7 @@ func _shaft_light(b: Built, si: int, base_name: String) -> void:
 	b.beams.append(beam)
 
 static var _beam: Shader
+static var _door_mat: StandardMaterial3D
 
 ## The beam's shader: added light, faint at its edges (seen side on) and
 ## fading toward the floor.
