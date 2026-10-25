@@ -15,6 +15,10 @@ extends RefCounted
 ##   plus KICK.y per m/s into it (SkyPlane `scrape`). For GRACE s after one
 ##   another touch only crashes.
 ##
+## A spruce is neither: the plane knocks it down (scripts/endless/
+## tree_knock.gd, before the move; a tree touch that still gets here is
+## handed to TreeKnock `at_hit` and comes back as "knock").
+##
 ## The wheels' own touches are left to the hand landing: a touch of the land
 ## no faster along it than LAND_MOST m/s (ManualLanding `land_most`; Brake's
 ## 13.2 under it) is a landing as ever, and the water ridden that slowly is
@@ -52,7 +56,7 @@ func reset() -> void:
 ## One frame, after the plane's step and NearMiss `measure`. `game` is the
 ## endless flight study. Returns {} or one of "scrape" / "crash", each
 ## {at, normal, what (land, water, tree, stone), into (m/s), angle (rad),
-## speed (m/s before)}.
+## speed (m/s before)}; or "knock" (TreeKnock `at_hit`) for a tree.
 func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	_grace = maxf(0.0,_grace-delta)
 	var plane = game.plane
@@ -64,6 +68,11 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	if hit.is_empty() and not touching.is_empty():
 		hit = {"at":touching.at,"normal":touching.normal,"what":touching.what,"velocity":plane.velocity}
 	if hit.is_empty(): return {}
+	# A tree (weighted) is knocked down, not grazed or crashed into
+	# (scripts/endless/tree_knock.gd; this is a touch its own tries missed).
+	if str(hit.what) == "tree" and game.get("knock") != null:
+		var k: Dictionary = game.knock.at_hit(game,hit.at)
+		if not k.is_empty(): return {"knock":k}
 	var v: Vector3 = hit.velocity
 	var n: Vector3 = hit.normal
 	var speed := v.length()

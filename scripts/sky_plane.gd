@@ -653,6 +653,17 @@ func scrape(normal: Vector3, keep: float, kick: float) -> void:
 	velocity = path*speed+bump
 	_left = velocity
 
+## Through a tree it knocked down (scripts/endless/tree_knock.gd): `keep`
+## of the speed kept, the nose and path turned `yaw` rad and flying on that
+## way, and a shove of `shove` m/s dying away (`bump`).
+func knock(keep: float, shove: Vector3, yaw: float) -> void:
+	speed = maxf(SLOW,speed*keep)
+	heading += yaw
+	if not is_nan(_path_h): _path_h += yaw
+	bump = shove
+	velocity = path_now()*speed+bump
+	_left = velocity
+
 ## The lean on its spring (critically damped, `roll_hz`), towards `goal`
 ## radians: the roll's rate builds and settles. Stepped finer than a frame.
 func _roll_spring(goal: float, delta: float) -> void:

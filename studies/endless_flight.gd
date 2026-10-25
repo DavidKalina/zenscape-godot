@@ -24,6 +24,8 @@ extends Node3D
 ## tree or a ruin scores (scripts/endless/near_miss.gd), chained into the
 ## surge's meter; the HUD (scripts/endless/near_miss_hud.gd), the debris
 ## (scripts/endless/flight_debris.gd), a FOV punch and a shake show it.
+## A spruce flown into is knocked down instead, at a scrape's cost (scripts/
+## endless/tree_knock.gd; docs/design/endless-flight/tree-knockdown-handoff.md).
 ##
 ##   ./run-endless-flight.command [--seed=7]
 ##   godot --path . res://studies/endless_flight.tscn -- --no-title [--seed=7] [--at=x,z] [--heading=deg] [--alt=m]
@@ -116,6 +118,8 @@ const NearMiss = preload("res://scripts/endless/near_miss.gd")
 const FlightContact = preload("res://scripts/endless/flight_contact.gd")
 const NearMissHud = preload("res://scripts/endless/near_miss_hud.gd")
 const FlightDebris = preload("res://scripts/endless/flight_debris.gd")
+## Spruces flown into are knocked down (weighted presets).
+const TreeKnock = preload("res://scripts/endless/tree_knock.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -301,6 +305,8 @@ var sound := FlightSound.new()
 var near := NearMiss.new()
 var contact := FlightContact.new()
 var debris: Node3D
+## The trees knocked down and falling (scripts/endless/tree_knock.gd).
+var knock: Node3D
 var _near_hud: Control
 var _fade: ColorRect
 var _fade_left := 0.0
@@ -443,6 +449,9 @@ func _ready() -> void:
 	debris = FlightDebris.new()
 	debris.name = "Debris"
 	add_child(debris)
+	knock = TreeKnock.new()
+	knock.name = "TreeKnock"
+	add_child(knock)
 	_launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
@@ -714,7 +723,10 @@ func tick(delta: float) -> void:
 	# In a bore's tube the low zone lets be (SkyPlane `roofed`).
 	plane.roofed = tunnels != null and int(tunnels.tube(plane.position)) == 0
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
+	# The trees the coming move meets are knocked down first, so it flies on through.
+	var knocked: Dictionary = knock.before(delta,self)
 	var events := hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
+	if not knocked.is_empty(): _knocked(events,knocked)
 	plane.engine = hand_landing.engine*float(plane.sputter)
 	_near_misses(delta,events)
 	var ground := Callable(self,"plane_ground")
@@ -736,6 +748,7 @@ func tick(delta: float) -> void:
 	halls.step(camera.global_position)
 	tunnels.step(camera.global_position)
 	trees.step(camera.global_position,plane.position)
+	knock.step(delta,self)
 	birds.step(delta,camera.global_position,plane)
 	if fish != null: fish.step(delta,camera.global_position,plane.position,plane.velocity,false)
 	if traffic != null: traffic.step(delta,camera.global_position,-camera.global_basis.z,plane.position,Vector3(-sin(plane.heading),0.0,-cos(plane.heading)),float(plane.speed))
@@ -793,6 +806,7 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 		return
 	near.measure(delta,self)
 	var hit := contact.step(delta,self,near.touching)
+	if hit.has("knock"): _knocked(events,hit.knock)
 	if hit.has("crash"):
 		var c: Dictionary = hit.crash
 		events["crash"] = c
@@ -819,6 +833,21 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 	var p: Vector3 = plane.position
 	var wet: bool = near.ground_surface == "water" and near.ground_clear < WorldScale.span*SPRAY_SPANS and float(plane.speed) > plane.cruise()*SPRAY_FAST
 	debris.spray(wet,Vector3(p.x,water_at(p),p.z),plane.velocity)
+
+## Trees knocked down this frame (TreeKnock `before`, `at_hit`): `events`
+## gets "knock" (more than one in a frame add up) and, with TreeKnock
+## LOSES_CHAIN, the unbanked chain's "lost"; the shake a scrape's.
+func _knocked(events: Dictionary, k: Dictionary) -> void:
+	var was: Variant = events.get("knock")
+	if was is Dictionary:
+		k = k.duplicate()
+		k.count = int(k.count)+int((was as Dictionary).count)
+		k.heft = maxf(float(k.heft),float((was as Dictionary).heft))
+	events["knock"] = k
+	if TreeKnock.LOSES_CHAIN:
+		var lost := near.lose()
+		if lost > 0.0: events["lost"] = {"points":lost}
+	_shake = maxf(_shake,SCRAPE_SHAKE*_shake_scale)
 
 ## Crashed: flying on from a little behind and above where it was, on the
 ## way it was going, at cruise (CRASH_BACK, CRASH_UP over what stands to
@@ -1110,7 +1139,7 @@ func _show_hud() -> void:
 		"  ·  3D at %d%%" % roundi(get_viewport().scaling_3d_scale*100.0),
 		("  ·  %s, %05.2f h%s" % [look.mood_title(),look.hour(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
-		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+_hall_note()+trees.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]
+		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+_hall_note()+trees.note()+knock.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]
 	_hud.text += "
 weight %s  ·  pace %s (cruise %.1f, Boost %.1f)  ·  %.1f g  ·  nose over path %.0f°  ·  soft %.2f  ·  streaks %.2f, fov %.1f" % [weight,pace,plane.cruise(),plane.boost_speed(),float(plane.g_load),rad_to_deg(float(plane.aoa)),float(plane.soft),_streaks.strength,camera.fov]
 	if plane.weighted: _hud.text += "\nnear: ground %.1f m (%s)  ·  stone %.1f m  ·  low %.2f  ·  chain %d x%.1f  ·  meter %.2f  ·  total %d  ·  scrapes %d, crashes %d" % [

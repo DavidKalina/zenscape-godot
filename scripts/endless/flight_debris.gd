@@ -4,7 +4,8 @@ extends Node3D
 ## particles, each kind a pair of CPU emitters taken in turn.
 ## - dust: earth kicked up by a scrape on the land or a crash.
 ## - sparks: off stone (an arch, a hall, a bore's rock).
-## - leaves: off a tree grazed or scraped.
+## - leaves: off a tree grazed or scraped, or knocked down (and where it lands).
+## - wood: chips off a trunk the plane knocks down (scripts/endless/tree_knock.gd).
 ## - spray: off the water, as a burst on a scrape, and a running trail
 ##   (`spray`) while it skims the water low and fast.
 
@@ -12,6 +13,7 @@ const KINDS := {
 	"dust":{"color":Color(0.55,0.47,0.36),"amount":28,"size":0.55,"speed":Vector2(3.0,8.0),"gravity":-6.0,"life":1.1,"spread":55.0,"damp":2.0},
 	"sparks":{"color":Color(1.0,0.78,0.42),"amount":24,"size":0.12,"speed":Vector2(8.0,16.0),"gravity":-9.8,"life":0.45,"spread":70.0,"damp":0.5},
 	"leaves":{"color":Color(0.33,0.5,0.24),"amount":22,"size":0.3,"speed":Vector2(2.0,6.0),"gravity":-2.0,"life":1.6,"spread":80.0,"damp":2.5},
+	"wood":{"color":Color(0.5,0.36,0.22),"amount":18,"size":0.2,"speed":Vector2(4.0,10.0),"gravity":-9.8,"life":1.2,"spread":60.0,"damp":1.0},
 	"spray":{"color":Color(0.88,0.94,0.97),"amount":30,"size":0.45,"speed":Vector2(3.0,9.0),"gravity":-9.0,"life":0.9,"spread":40.0,"damp":1.0},
 }
 ## A crash's burst is this many times a scrape's in size and speed.
