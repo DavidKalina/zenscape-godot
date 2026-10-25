@@ -417,6 +417,12 @@ var held_by_load := false
 ## Takes charge of `on_plane`: in the air (`on_ground` false, flying as it
 ## is), or stood stopped where it is (`on_ground`, as a parked plane boarded
 ## without the takeoff sequence).
+## Over this speed along the land (m/s) a flown touch is no landing: the
+## wheels leave it to the flight's own contact (endless flight's weighted
+## presets, scripts/endless/flight_contact.gd: a scrape or a crash). INF,
+## the default: every touch is graded as a landing, as ever.
+var land_most := INF
+
 func begin(on_plane: RefCounted, on_ground := false) -> void:
 	plane = on_plane
 	phase = STOPPED if on_ground else AIR
@@ -623,7 +629,7 @@ func _fly(delta: float, input: Dictionary, ground: Callable, floor_at: Callable,
 	if not is_nan(land): _land_y = land
 	_watch_go_around(land,out)
 	var on_land: bool = not is_nan(land) and plane.skimming and plane.position.y <= land+SkyPlane.SKIM+0.05
-	if on_land and _grace <= 0.0:
+	if on_land and _grace <= 0.0 and Vector2(_air_velocity.x,_air_velocity.z).length() <= land_most:
 		_touch(at,land,floor_at,out)
 		return
 	_remember(delta,on_land)

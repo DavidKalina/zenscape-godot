@@ -166,6 +166,9 @@ var airborne := 0.0
 var skimming := false
 var under_rock := false
 var brushing := false
+## The way out of the face the last brush put it back along (flat, unit;
+## zero before any): a contact's normal for whoever reads one.
+var brush_normal := Vector3.ZERO
 ## The air it is in this step: the wind (m/s) and how far into a jet and a
 ## thermal it is (0 to 1).
 var wind := Vector3.ZERO
@@ -512,6 +515,7 @@ func _brush(delta: float, ground: Callable, was: Vector3) -> void:
 	var normal := Vector2(position.x-tried.x,position.z-tried.z)
 	if normal.length() > 0.0001:
 		normal = normal.normalized()
+		brush_normal = Vector3(normal.x,0.0,normal.y)
 		var along := Vector2(-normal.y,normal.x)
 		if along.dot(Vector2(-sin(heading),-cos(heading))) < 0.0: along = -along
 		heading = lerp_angle(heading,atan2(-along.x,-along.y),_ease(BRUSH,delta))

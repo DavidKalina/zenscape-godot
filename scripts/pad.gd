@@ -100,6 +100,15 @@ const ACTIONS := {
 	"fly_lean_left":[["button",JOY_BUTTON_LEFT_SHOULDER]],
 	"fly_lean_right":[["button",JOY_BUTTON_RIGHT_SHOULDER]],
 	"fly_land":[["button",JOY_BUTTON_Y]],
+	# In endless flight, pressed: the next weight preset (scripts/flight_weight.gd).
+	"fly_weight":[["key",KEY_V],["button",JOY_BUTTON_DPAD_UP]],
+	# In endless flight, held: the surge, spending the near misses' meter
+	# (scripts/endless/near_miss.gd). X is free in flight (eject went with
+	# the walker).
+	"fly_surge":[["key",KEY_B],["button",JOY_BUTTON_X]],
+	# In endless flight, pressed: the next pace preset (scripts/flight_pace.gd).
+	# The d-pad's right is free in flight (the walker's shove went with him).
+	"fly_pace":[["key",KEY_P],["button",JOY_BUTTON_DPAD_RIGHT]],
 	"fly_camera":[["button",JOY_BUTTON_RIGHT_STICK]],
 	# In flight, pressed: open the cargo bag and let its load fall (the
 	# home isle's drop pass, scripts/home/drop_pass.gd).

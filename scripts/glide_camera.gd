@@ -112,6 +112,10 @@ const EASE_LEAD := 0.25
 const FOV_SHARE := Vector2(0.57,2.86)
 const PULL_BACK := 0.12
 const PULL_SHARE := Vector2(1.05,1.65)
+## Fast, the framed eye comes in and down a touch: from CLOSE_SHARE.x to
+## CLOSE_SHARE.y times the cruise its distance is `close_in` less and its
+## height `close_down` less (shares; none as it was, endless flight sets them).
+const CLOSE_SHARE := Vector2(1.5,3.0)
 ## The old toy's cruise, the share's base when no cruise is given.
 const TOY_CRUISE: float = preload("res://scripts/sky_plane.gd").CRUISE_SPEED
 
@@ -150,6 +154,13 @@ var speed_fov := _flag("--cam-speed-fov=",1.0)
 ## How close in it is now (0 cruise, 1 tucked) and how wide (the float).
 var tuck := 0.0
 var float_out := 0.0
+## The plane's weight (scripts/flight_weight.gd, `use_weight`): its idea of
+## the flight's way and its roll follow `way_lag` times slower, the way is
+## `path_share` the path's (the rest the nose's), and the view eases over
+## `ease_fov` s. 1, a half and EASE_FOV as it was.
+var way_lag := 1.0
+var path_share := 0.5
+var ease_fov := EASE_FOV
 var _way := Vector3.FORWARD
 var _offset := Vector3.ZERO
 var _offset_v := Vector3.ZERO
@@ -175,6 +186,8 @@ const TIGHT_NEAR := 0.45
 ## width over height, and the plane's reach from its middle (m).
 var framed := false
 var cruise := 0.0
+var close_in := 0.0
+var close_down := 0.0
 var aspect := 16.0/9.0
 var extent := 0.0
 ## The swing round and lift it holds off rock, how far out it is now
@@ -208,6 +221,12 @@ func reset(glide: RefCounted, from: Vector3, view := FOV) -> void:
 	eye = from
 	look = glide.position+_way*AHEAD
 
+## Follows with a weight preset's camera knobs (FlightWeight PRESETS).
+func use_weight(knobs: Dictionary) -> void:
+	way_lag = float(knobs.get("cam_lag",1.0))
+	path_share = float(knobs.get("cam_path",0.5))
+	ease_fov = float(knobs.get("fov_ease",EASE_FOV))
+
 ## Turns the free look by `by` radians (round, up).
 func turn(by: Vector2) -> void:
 	free.x = wrapf(free.x+by.x,-PI,PI)
@@ -230,10 +249,12 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	# The way it flies: half where it points, half where it goes.
 	var moving: Vector3 = glide.velocity
 	var way: Vector3 = glide.forward()
-	if moving.length() > 0.5: way = (way+moving.normalized()).normalized()
+	if moving.length() > 0.5:
+		if path_share == 0.5: way = (way+moving.normalized()).normalized()
+		else: way = (way*(1.0-path_share)+moving.normalized()*path_share).normalized()
 	# Nearly the same way, a lerp: slerp's axis is then too short to
 	# normalise cleanly (the engine's "must be normalized" error, skimming).
-	var ease_way := _ease(EASE_WAY,delta)
+	var ease_way := _ease(EASE_WAY*way_lag,delta)
 	_way = (_way.lerp(way,ease_way) if _way.dot(way) > 0.9999 else _way.slerp(way,ease_way)).normalized()
 	# Fast, the glide tucks in; the framed plane eases back instead.
 	var fast := 0.0 if framed else clampf((float(glide.speed)-16.0)/14.0,0.0,1.0)
@@ -244,8 +265,9 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	float_out = lerpf(float_out,hang,_ease(FLOAT_IN if hang > float_out else FLOAT_OUT,delta))
 	_cine = _cine.lerp(cine,_ease(EASE_CINE,delta))
 	var pull := 1.0+PULL_BACK*smoothstep(PULL_SHARE.x,PULL_SHARE.y,_pace(glide)) if framed else 1.0
-	var back := lerpf(lerpf(BACK.x,BACK.y,float_out),BACK.z,tuck)*(1.0+_cine.z)*size*distance_scale*pull
-	var up := lerpf(lerpf(UP.x,UP.y,float_out),UP.z,tuck)*(1.0+_cine.z*0.5)*size*distance_scale
+	var closer := smoothstep(CLOSE_SHARE.x,CLOSE_SHARE.y,_pace(glide)) if framed and (close_in > 0.0 or close_down > 0.0) else 0.0
+	var back := lerpf(lerpf(BACK.x,BACK.y,float_out),BACK.z,tuck)*(1.0+_cine.z)*size*distance_scale*pull*(1.0-close_in*closer)
+	var up := lerpf(lerpf(UP.x,UP.y,float_out),UP.z,tuck)*(1.0+_cine.z*0.5)*size*distance_scale*(1.0-close_down*closer)
 	_since_turn += delta
 	if not free_held and _since_turn >= linger: free = free.lerp(Vector2.ZERO,_ease(EASE_BACK,delta))
 	var swing := free+Vector2(_cine.x,_cine.y)
@@ -273,7 +295,7 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 		var own := 1.0-clampf(Vector2(_cine.x,_cine.y).length()+absf(_cine.z),0.0,1.0)
 		on = on.rotated(Vector3.UP,clampf(_yaw_rate*LEAD_TIME,-LEAD_MAX,LEAD_MAX)*own)
 	look = at.lerp(at+on+Vector3.UP*LOOK_UP*size,1.0-smoothstep(0.3,1.0,absf(swing.x)/PI))
-	roll = lerpf(roll,_lean(float(glide.bank)),_ease(EASE_ROLL,delta))
+	roll = lerpf(roll,_lean(float(glide.bank)),_ease(EASE_ROLL*way_lag,delta))
 	clipped = false
 	if framed:
 		if solid.is_valid() or sight.is_valid(): _keep_clear(delta,at,solid)
@@ -305,7 +327,7 @@ func _widen(delta: float, glide: RefCounted) -> void:
 	var kick := smoothstep(0.0,0.5,jet-_jet_felt)
 	var want := (FOV_FIRST+FOV_FIRST_FAST*fast) if first_person else (base_fov+FOV_FAST*speed_fov*fast)
 	want += JET_KICK*kick-FOV_FLOAT*float(glide.hang)
-	fov = lerpf(fov,want,_ease(EASE_FOV,delta))
+	fov = lerpf(fov,want,_ease(ease_fov,delta))
 
 ## Out from the glider towards the eye: if rock is in the way it swings
 ## round or lifts over it (the nearest of DODGES that sees the glider

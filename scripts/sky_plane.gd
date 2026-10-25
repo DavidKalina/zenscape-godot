@@ -119,6 +119,16 @@ const HEAVY_THROTTLE := 0.5
 const HEAVY_PITCH := 0.18
 const HEAVY_ROLL := 1.0
 const HEAVY_SAG := 3.0
+## The weight presets (`--weight=`, `use_weight`; scripts/flight_weight.gd):
+## the roll on a spring, the turn a beat after the bank, the path bending
+## after the nose, the bleed and the mush when slow. `off`, the default
+## for a bare SkyPlane, is the flight as it was (the `--heavy` prototype
+## above still answers then); endless flight starts on medium.
+const FlightWeight = preload("res://scripts/flight_weight.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
+## In a weighted preset the drawn bank follows the lean over this (s),
+## ahead of the turn's rate, so the plane leans in before it comes round.
+const WEIGHT_BANK_EASE := 0.03
 ## The knife edge: how far over a held lean tips it (radians) and how fast
 ## it tips in and out (seconds).
 const KNIFE_BANK := PI*0.5
@@ -175,6 +185,54 @@ const DEAD_GLIDE := 0.75
 const DEAD_SINK := 1.6
 var _path := Vector3.ZERO
 var _pitch_rate := 0.0
+## The weight preset's name and knobs (FlightWeight), and whether it is on.
+var weight_name := FlightWeight.flag("off")
+var weight: Dictionary = FlightWeight.knobs(weight_name)
+var weighted := weight_name != "off"
+## Read out in a weighted preset, for the rumble and the HUD: the load (g,
+## 1 flying straight: speed times the path's turn rate over G, plus one),
+## the nose's pitch over the path's (radians; up while it sinks through a
+## pull-out), and how soft the controls are (0 to 1, slow).
+var g_load := 1.0
+var aoa := 0.0
+var soft := 0.0
+## Near the land (weighted, FlightWeight `low_spans`): how deep into the low
+## zone this step flew, 0 over it to 1 at LOW_FULL spans (the square root of
+## the share of the way down, so it bites from the zone's top; 0 slow), and the belly's
+## clearance over what is under it there (m: the height over it less SKIM;
+## INF over nothing or under a span).
+var low := 0.0
+var low_clear := INF
+## Set from outside each frame: true under a roof the ground can't tell
+## (a tunnel's bore, studies/endless_flight.gd), where it is never low.
+var roofed := false
+## What this step's move ran into (weighted only; {} nothing): "kind" ride
+## (onto the top of what is under it), brush (a face, turned aside), under
+## (an underside) or water; "velocity" the way it was going into it;
+## "normal" out of a brushed face. Graded by scripts/endless/flight_contact.gd.
+var contact := {}
+## A shove off a scrape (m/s, `scrape`), dying away over BUMP_FADE s.
+var bump := Vector3.ZERO
+const BUMP_FADE := 0.3
+## A scrape turns the path off the surface to this much of the way out.
+const SCRAPE_OUT := 0.08
+## The surge (0 to 1, set from outside each frame: scripts/endless/
+## near_miss.gd's meter spent): the speed driven to SURGE_OVER times Boost's,
+## SURGE_PULL times harder than the throttle pulls, the cap lifted to it and
+## falling back CAP_FALL m/s² after.
+var surge := 0.0
+const SURGE_OVER := 1.3
+const SURGE_PULL := 2.5
+const CAP_FALL := 6.0
+var _cap := 0.0
+var _buffet_t := 0.0
+## The weighted path's heading and pitch (NAN: started again along the
+## nose), the lean's rate on its spring (rad/s) and the turn's rate
+## following the bank (rad/s).
+var _path_h := NAN
+var _path_p := 0.0
+var _roll_v := 0.0
+var _turn := 0.0
 var _left := Vector3.INF
 ## `--plane-speed=<x>` (1 by default, GAME_SPEED in the game): times the
 ## cruise, boost and brake speeds only; landing, flap and stall speeds stay
@@ -187,6 +245,10 @@ var turn_scale := turn_flag(preload("res://scripts/launch_args.gd").user_args(),
 ## dive reaches (m/s), set by `use_flight_speed`.
 var brake_pace := 0.0
 var top := FAST
+## The pace (scripts/flight_pace.gd, `use_pace`): times the cruise, Boost,
+## the dive's cap (`top`) and the surge; Brake, the floor, flaps, landing
+## and takeoff speeds stay. 1 as it was.
+var pace_scale := 1.0
 var drift := 0.0
 var slip := 0.0
 var drift_held := 0.0
@@ -206,7 +268,7 @@ var _free_bank := 0.0
 
 func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 	super.launch(from,towards,pace,drop)
-	speed = clampf(maxf(pace,CRUISE_SPEED*0.8),SLOW,top)
+	speed = clampf(maxf(pace,CRUISE_SPEED*0.8),SLOW,top_speed())
 	pitch = 0.0
 	spin = 0.0
 	rolling = false
@@ -221,13 +283,14 @@ func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 	slip = 0.0
 	drift_held = 0.0
 	_free_bank = 0.0
+	_weight_reset()
 	velocity = forward()*speed
 
 ## Flying on from a pose set from outside (a landing called off, a
 ## takeoff's lift; scripts/plane_landing.gd): at `pace` m/s, the nose at
 ## `nose`, level, the engine on, nothing turning it.
 func resume(pace: float, nose: float) -> void:
-	speed = clampf(pace,SLOW,top)
+	speed = clampf(pace,SLOW,top_speed())
 	pitch = clampf(nose,PITCH_LIMIT.x,PITCH_LIMIT.y)
 	spin = 0.0
 	rolling = false
@@ -243,6 +306,7 @@ func resume(pace: float, nose: float) -> void:
 	drift_held = 0.0
 	_free_bank = 0.0
 	_roll_time = 0.0
+	_weight_reset()
 	velocity = forward()*speed
 
 ## Parked at `at` on its wheels: nose on `towards`, sat at `nose` and
@@ -272,6 +336,32 @@ func carry(at: Vector3, moving: Vector3, pace: float) -> void:
 	position = at
 	velocity = moving
 	speed = pace
+
+## Flies with the weight preset `preset` (FlightWeight NAMES; off the
+## flight as it was). Mid-flight the path starts again along the nose and
+## the turn goes on at the rate it had.
+func use_weight(preset: String) -> void:
+	weight_name = preset if preset in FlightWeight.NAMES else "off"
+	weight = FlightWeight.knobs(weight_name)
+	weighted = weight_name != "off"
+	_path_h = NAN
+	_roll_v = 0.0
+	_turn = -_lean/BANK_HELD*TURN_RATE*turn_scale
+	g_load = 1.0
+	aoa = 0.0
+	soft = 0.0
+
+func _weight_reset() -> void:
+	low = 0.0
+	low_clear = INF
+	contact = {}
+	bump = Vector3.ZERO
+	_path_h = NAN
+	_roll_v = 0.0
+	_turn = 0.0
+	_pitch_rate = 0.0 if weighted else _pitch_rate
+	g_load = 1.0
+	aoa = 0.0
 
 ## The weight asked for on the command line: `--heavy` 1, `--heavy=<x>`
 ## that (0 to 1), else 0.
@@ -312,16 +402,27 @@ func use_flight_speed() -> void:
 	var args: PackedStringArray = preload("res://scripts/launch_args.gd").user_args()
 	speed_scale = speed_flag(args,FLIGHT_SPEED)
 	turn_scale = turn_flag(args,minf(speed_scale,FLIGHT_TURN))
-	brake_pace = minf(BRAKE_SPEED*speed_scale,maxf(BRAKE_SPEED*GAME_SPEED,cruise()*FLIGHT_BRAKE))
+	brake_pace = minf(BRAKE_SPEED*speed_scale,maxf(BRAKE_SPEED*GAME_SPEED,CRUISE_SPEED*speed_scale*FLIGHT_BRAKE))
 	top = maxf(FAST,FAST*speed_scale/GAME_SPEED)
+
+## Flies at the pace `scale` (scripts/flight_pace.gd): the cruise, Boost,
+## the dive's cap and the surge times it. Brake keeps its speed (it was set
+## from the unpaced cruise), as do the floor, flaps and landing. Mid-flight
+## the speed eases to the new throttle's as ever.
+func use_pace(scale: float) -> void:
+	pace_scale = maxf(scale,0.1)
 
 ## The speed the engine holds with the throttle let be (m/s).
 func cruise() -> float:
-	return CRUISE_SPEED*speed_scale
+	return CRUISE_SPEED*speed_scale*pace_scale
 
 ## The speeds Boost and Brake hold (m/s).
 func boost_speed() -> float:
-	return BOOST_SPEED*speed_scale
+	return BOOST_SPEED*speed_scale*pace_scale
+
+## The cap a long dive reaches (m/s): `top` at the pace.
+func top_speed() -> float:
+	return top*pace_scale
 
 func brake_speed() -> float:
 	return brake_pace if brake_pace > 0.0 else BRAKE_SPEED*speed_scale
@@ -343,7 +444,9 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	airborne += delta
 	# Set from outside since the last step (launched, resumed, carried,
 	# turned aside): the heavy path starts again along it.
-	if _left == Vector3.INF or not velocity.is_equal_approx(_left): _path = Vector3.ZERO
+	if _left == Vector3.INF or not velocity.is_equal_approx(_left):
+		_path = Vector3.ZERO
+		_path_h = NAN
 	var here: Dictionary = air.call(position) if air.is_valid() else {}
 	wind = here.get("wind",Vector3.ZERO)
 	in_jet = float(here.get("jet",0.0))
@@ -380,7 +483,16 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	# the mouse turns it directly and leans it a little; coming in to land
 	# it turns itself to the target.
 	var aim := _aim(delta) if approach and is_zero_approx(turn) and is_zero_approx(look.x) else 0.0
-	_lean = lerpf(_lean,turn*BANK_HELD,_ease(EASE_ROLL_IN*(1.0+HEAVY_ROLL*heavy),delta))
+	# Weighted: slow (flaps up) the stick goes soft; the lean rides a spring.
+	var firm := 1.0
+	if weighted:
+		var flaps_in := clampf(float(input.get("flaps",0.0)),0.0,1.0)*(1.0-boost)
+		var floor_speed := lerpf(SLOW,FLAP_SLOW,flaps_in)
+		soft = (1.0-smoothstep(floor_speed,floor_speed+FlightWeight.SOFT_SPAN,speed))*(1.0-flaps_in)
+		firm = lerpf(1.0,float(weight.soft_keep),soft)
+		_roll_spring(turn*firm*BANK_HELD,delta)
+	else:
+		_lean = lerpf(_lean,turn*BANK_HELD,_ease(EASE_ROLL_IN*(1.0+HEAVY_ROLL*heavy),delta))
 	# On the knife edge a real turn of the stick drifts: tighter, nose in.
 	var lean_in := clampf(float(input.get("lean",0.0)),-1.0,1.0)
 	var want := 0.0
@@ -389,6 +501,10 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		if signf(turn) != signf(knife): want *= DRIFT_COUNTER
 	drift = lerpf(drift,want,_ease(EASE_DRIFT,delta))
 	var rate := -_lean/BANK_HELD*TURN_RATE*turn_scale*(1.0+DRIFT_TURN*drift_strength*drift)
+	# Weighted, the turn comes round a beat after the bank.
+	if weighted:
+		_turn = lerpf(_turn,rate,_ease(maxf(float(weight.turn_lag),0.0001),delta))
+		rate = _turn
 	heading += rate*delta-look.x+aim+shove.y*delta
 	slip = lerpf(slip,-rate*DRIFT_SLIP*drift,_ease(EASE_DRIFT,delta))
 	var boost_out := 0.0
@@ -397,18 +513,25 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		if drift_held >= DRIFT_MIN: boost_out = DRIFT_BOOST*drift_strength*clampf(drift_held/DRIFT_CHARGE,0.0,1.0)
 		drift_held = 0.0
 	_mouse_rate = lerpf(_mouse_rate,(look.x-aim)/maxf(delta,0.0001),_ease(EASE_TURN,delta))
-	_free_bank = lerpf(_free_bank,clampf(_lean+_mouse_rate*MOUSE_BANK,-BANK_TOP,BANK_TOP),_ease(EASE_TURN,delta))
+	_free_bank = lerpf(_free_bank,clampf(_lean+_mouse_rate*MOUSE_BANK,-BANK_TOP,BANK_TOP),_ease(WEIGHT_BANK_EASE if weighted else EASE_TURN,delta))
 	if shove != Vector3.ZERO: _free_bank = clampf(_free_bank+shove.z*delta,-BANK_TOP,BANK_TOP)
 	# The knife edge tips it up on a wingtip over the turn's bank.
 	knife = lerpf(knife,clampf(float(input.get("lean",0.0)),-1.0,1.0),_ease(EASE_KNIFE,delta))
 	bank = lerpf(_free_bank,signf(knife)*KNIFE_BANK,absf(knife))
+	# Weighted, low and fast over the land the helping hand lets go.
+	if weighted: _low_zone(ground)
 	# Pitch: the stick and mouse steer it; let go, it eases level, or down
-	# the approach's slope; under the floor the cushion lifts the nose.
+	# the approach's slope (low and fast, weighted: down a touch, so it
+	# settles); under the floor the cushion lifts the nose.
 	# Heavy, the stick builds the pitch's rate rather than setting it.
-	_pitch_rate = lerpf(_pitch_rate,steer*PITCH_SPEED,_ease(HEAVY_PITCH*heavy,delta)) if heavy > 0.0 else steer*PITCH_SPEED
+	if weighted: _pitch_rate = lerpf(_pitch_rate,steer*firm*PITCH_SPEED,_ease(maxf(float(weight.pitch_build),0.0001),delta))
+	else: _pitch_rate = lerpf(_pitch_rate,steer*PITCH_SPEED,_ease(HEAVY_PITCH*heavy,delta)) if heavy > 0.0 else steer*PITCH_SPEED
 	pitch += look.y+_pitch_rate*delta
 	if is_zero_approx(steer) and is_zero_approx(look.y):
-		pitch = lerpf(pitch,approach_pitch(ground) if approach else 0.0,_ease(EASE_LEVEL,delta))
+		var rest := approach_pitch(ground) if approach else 0.0
+		# Over the pace, so the settle sinks as many m/s at any pace.
+		if low > 0.0 and not approach: rest = lerpf(rest,float(weight.settle_pitch)/pace_scale,low)
+		pitch = lerpf(pitch,rest,_ease(EASE_LEVEL,delta))
 	pitch += shove.x*delta
 	if deep > 0.0: pitch = lerpf(pitch,CUSHION_PITCH,_ease(0.5,delta)*deep)
 	var over := clampf((position.y-ceiling_y)/CEILING_FADE,0.0,1.0)
@@ -421,29 +544,147 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	# Flaps down slow it and lower its floor; Boost takes them over.
 	var flap := clampf(float(input.get("flaps",0.0)),0.0,1.0)*(1.0-boost)
 	target = lerpf(target,minf(target,FLAP_SPEED),flap)
+	# The surge drives it past Boost, flaps or not.
+	if surge > 0.0: target = lerpf(target,boost_speed()*SURGE_OVER,surge)
 	var slow := lerpf(SLOW,FLAP_SLOW,flap)
 	# Heavy, the climb and dive are the path's, not the nose's.
-	var path := _heavy_path(delta) if heavy > 0.0 else travel()
-	var climb := path.y if heavy > 0.0 else sin(pitch)
-	speed += (-SWING*(1.0+HEAVY_SWING*heavy)*climb-THROTTLE*(1.0-HEAVY_THROTTLE*heavy)*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
-	speed = clampf(speed,slow,top)
+	var path: Vector3
+	var climb: float
+	var bleed := 0.0
+	if weighted:
+		path = _weight_path(delta)
+		climb = path.y
+		# Pulling and turning bleed it: a g past one costs `bleed` m/s².
+		bleed = float(weight.bleed)*(g_load-1.0)
+		speed += (-SWING*climb-THROTTLE*(1.0+SURGE_PULL*surge)*(speed-target)-DRIFT_BLEED*drift_strength*drift-bleed)*delta+boost_out
+	else:
+		path = _heavy_path(delta) if heavy > 0.0 else travel()
+		climb = path.y if heavy > 0.0 else sin(pitch)
+		speed += (-SWING*(1.0+HEAVY_SWING*heavy)*climb-THROTTLE*(1.0-HEAVY_THROTTLE*heavy)*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
+	if surge > 0.0: _cap = maxf(_cap,boost_speed()*SURGE_OVER)
+	_cap = maxf(top_speed(),_cap-CAP_FALL*delta)
+	speed = clampf(speed,slow,_cap)
 	lift = clampf((floor_y-position.y)*CUSHION,0.0,CUSHION_MAX)
 	var fall := FALL*minf(airborne,FALL_TIME)*(1.0-smoothstep(FALL_TIME,FALL_TIME+CATCH,airborne))
 	var drop := approach_drop(ground) if approach else 0.0
 	var side := Vector3(cos(heading),0.0,-sin(heading))
 	var sag := HEAVY_SAG*heavy*(1.0-cos(_free_bank))
+	# Weighted: the bank's sag, and slow it mushes down.
+	if weighted: sag = float(weight.sag)*(1.0-cos(_free_bank))+float(weight.mush)*soft
+	# Low and fast (weighted): it settles toward the land, and the air there
+	# buffets it.
+	var shake := 0.0
+	if low > 0.0:
+		sag += float(weight.settle)*low
+		_buffet_t += delta
+		var bt := _buffet_t*TAU
+		shake = float(weight.buffet)*low*clampf(speed/cruise(),0.5,1.6)*(sin(bt*5.3)*0.6+sin(bt*8.9+1.3)*0.4)
 	var along := path*speed
 	if climb_share*power < 1.0 and along.y > 0.0: along.y *= climb_share*power
 	# The guard in a tight place (SkyGlide `guide`).
 	var push := _guard(delta)
-	velocity = along+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag-DEAD_SINK*(1.0-power))+wind+push
+	velocity = along+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag-DEAD_SINK*(1.0-power)+shake)+wind+push
+	if bump != Vector3.ZERO:
+		velocity += bump
+		bump *= exp(-delta/BUMP_FADE)
+		if bump.length() < 0.05: bump = Vector3.ZERO
 	var was := position
+	var moved := velocity
 	position += velocity*delta
 	if keep.is_valid(): position = keep.call(position)
 	_skim(delta,ground,was)
+	var dry := position.y
 	_water(delta)
+	if weighted: _note_contact(moved,position.y > dry)
 	speed = maxf(speed,slow)
 	_left = velocity
+
+## The low zone this step (weighted): the belly's clearance over what is
+## under it (`low_clear`) and how deep into the zone that is (`low`), fast
+## only. Under a span or a roof it is never low.
+func _low_zone(ground: Callable) -> void:
+	low = 0.0
+	low_clear = INF
+	if roofed: return
+	var body := _solid(ground,position)
+	var top := water
+	if body != Vector2.INF:
+		if position.y < body.y: return
+		top = maxf(top,body.x)
+	if top == -INF: return
+	low_clear = position.y-top-SKIM
+	var spans := float(weight.low_spans)*WorldScale.span
+	if spans <= 0.0: return
+	var slow_end := FlightWeight.LOW_SLOW
+	var fast := smoothstep(slow_end,maxf(cruise()*FlightWeight.LOW_FAST,slow_end+1.0),speed)
+	var full := FlightWeight.LOW_FULL*WorldScale.span
+	low = sqrt(clampf((spans-low_clear)/maxf(spans-full,0.01),0.0,1.0))*fast
+
+## What this step's move ran into (`contact`), from what the skim did.
+func _note_contact(moved: Vector3, wet: bool) -> void:
+	contact = {}
+	if wet: contact = {"kind":"water","velocity":moved}
+	elif brushing: contact = {"kind":"brush","velocity":moved,"normal":brush_normal}
+	elif under_rock: contact = {"kind":"under","velocity":moved}
+	elif skimming: contact = {"kind":"ride","velocity":moved}
+
+## The way it travels now: the weighted path's, else the nose's.
+func path_now() -> Vector3:
+	if weighted and not is_nan(_path_h): return Vector3(-sin(_path_h)*cos(_path_p),sin(_path_p),-cos(_path_h)*cos(_path_p))
+	return travel()
+
+## Scraped along a surface (`normal` out of it; scripts/endless/
+## flight_contact.gd): `keep` of the speed kept, the path turned off the
+## surface (SCRAPE_OUT of the way out), the nose with it where it pointed in,
+## and a shove of `kick` m/s out of it dying away (`bump`).
+func scrape(normal: Vector3, keep: float, kick: float) -> void:
+	speed = maxf(SLOW,speed*keep)
+	var path := path_now()
+	var into := path.dot(normal)
+	if into < SCRAPE_OUT: path = (path+normal*(SCRAPE_OUT-into)).normalized()
+	if Vector2(path.x,path.z).length() > 0.01: _path_h = atan2(-path.x,-path.z)
+	else: _path_h = heading+slip
+	_path_p = asin(clampf(path.y,-1.0,1.0))
+	if forward().dot(normal) < 0.0:
+		if normal.y > 0.5: pitch = maxf(pitch,_path_p)
+		elif normal.y < -0.5: pitch = minf(pitch,_path_p)
+		else: heading = _path_h-slip
+	bump = normal*kick
+	velocity = path*speed+bump
+	_left = velocity
+
+## The lean on its spring (critically damped, `roll_hz`), towards `goal`
+## radians: the roll's rate builds and settles. Stepped finer than a frame.
+func _roll_spring(goal: float, delta: float) -> void:
+	var w := float(weight.roll_hz)
+	if w <= 0.0:
+		_lean = goal
+		_roll_v = 0.0
+		return
+	var n := maxi(1,ceili(delta*w/0.12))
+	var h := delta/n
+	for i in n:
+		_roll_v += ((goal-_lean)*w*w-_roll_v*2.0*w)*h
+		_lean += _roll_v*h
+
+## The weighted path: its heading bends after the nose's (`travel`, with
+## the drift's slip) over `yaw_lag` s and its pitch over `pitch_lag` s, at
+## cruise, longer slower (FlightWeight LAG_SCALE); started again along the
+## nose. Sets `g_load` from how fast the path turns, and `aoa`.
+func _weight_path(delta: float) -> Vector3:
+	var nose_h := heading+slip
+	if is_nan(_path_h):
+		_path_h = nose_h
+		_path_p = pitch
+	var was := Vector3(-sin(_path_h)*cos(_path_p),sin(_path_p),-cos(_path_h)*cos(_path_p))
+	var scale := clampf(cruise()/maxf(speed,SLOW),FlightWeight.LAG_SCALE.x,FlightWeight.LAG_SCALE.y)
+	_path_h += angle_difference(_path_h,nose_h)*_ease(maxf(float(weight.yaw_lag)*scale,0.0001),delta)
+	_path_p = lerpf(_path_p,pitch,_ease(maxf(float(weight.pitch_lag)*scale,0.0001),delta))
+	var path := Vector3(-sin(_path_h)*cos(_path_p),sin(_path_p),-cos(_path_h)*cos(_path_p))
+	var bend := was.angle_to(path)/delta if delta > 0.0 else 0.0
+	g_load = 1.0+speed*bend/FlightWeight.G
+	aoa = pitch-_path_p
+	return path
 
 ## The heavy path: swung after the nose (`travel`) over HEAVY_LAG s at
 ## cruise, longer the slower it goes; started again along the nose.
