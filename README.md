@@ -3,7 +3,9 @@
 ## Play
 
 The game is endless flight: you fly a plane over procedural land that never
-ends. Double-click **`run-endless-flight.command`** (Mac), or open
+ends. Double-click **`run-endless-flight.command`** (Mac) or
+**`run-endless-flight.cmd`** (Windows); both import first, so a fresh merge
+never opens to an empty sea. Or open
 `project.godot` in **Godot 4.7.2** (standard edition; no .NET needed) and
 press **F5**. Both open `studies/endless_flight.tscn`.
 
