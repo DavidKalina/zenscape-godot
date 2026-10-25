@@ -85,7 +85,10 @@ PowerShell from the repo root:
   nothing to the terminal): `$env:GODOT = "C:\Tools\Godot\Godot_v4.7.2-stable_win64_console.exe"`.
   `tools/run_tests.py` reads `GODOT`; other tools take `--godot $env:GODOT`.
 - Import: `& $env:GODOT --headless --editor --path . --import`.
-- Play: `& $env:GODOT --path . --rendering-method forward_plus --windowed --resolution 1440x900 -- --no-title`.
+- Play: `.\run-endless-flight.cmd` (double-click, or launch flags after it,
+  e.g. `.\run-endless-flight.cmd --weight=heavy`). It runs `tools/play.py`,
+  which finds Godot, imports if needed and opens the window. By hand:
+  `& $env:GODOT --path . --rendering-method forward_plus --windowed --resolution 1440x900 -- --no-title`.
   A study: put its scene after `--path .`, e.g. `studies/flight_study.tscn -- --pack=lines`.
   A `run-*.command` file shows the scene and flags it launches.
 - Tests: `python tools/run_tests.py` (same flags as above).
