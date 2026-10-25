@@ -98,6 +98,8 @@ const EndlessTraffic = preload("res://scripts/endless/endless_traffic.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
+## The plane's and the air's sound (scripts/endless/flight_sound.gd; --sound=0 off).
+const FlightSound = preload("res://scripts/endless/flight_sound.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -203,6 +205,7 @@ const REGION_TAKE := 0.7
 var _rush := 0.0
 var _rush_t := 0.0
 var rumble := FlightRumble.new()
+var sound := FlightSound.new()
 ## The flight path's way last frame, for the vapour's pull, and the pull.
 var _last_way := Vector3.ZERO
 var _pull := 0.0
@@ -218,6 +221,7 @@ func _ready() -> void:
 	# Which hands are on it, the pad's or the keyboard's (Pad `note`): the
 	# rumble and the prompts follow it.
 	get_tree().root.window_input.connect(Pad.note)
+	add_child(sound)
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = NATIVE_3D
 	rr.apply(get_tree().root,rr.load_cap())
@@ -573,6 +577,7 @@ func tick(delta: float) -> void:
 	_pull = _pull_of(delta)
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")),_pull,float(plane.bank))
 	_rumble(delta,events,float(input.get("boost",0.0)))
+	sound.step(delta,self,events,float(input.get("boost",0.0)))
 	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane)
 	ground_scale.apply(plane_figure)
 	plane_figure._mark.visible = false
