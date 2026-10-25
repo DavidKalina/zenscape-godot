@@ -100,6 +100,8 @@ const ACTIONS := {
 	"fly_lean_left":[["button",JOY_BUTTON_LEFT_SHOULDER]],
 	"fly_lean_right":[["button",JOY_BUTTON_RIGHT_SHOULDER]],
 	"fly_land":[["button",JOY_BUTTON_Y]],
+	# In endless flight, pressed: the next weight preset (scripts/flight_weight.gd).
+	"fly_weight":[["key",KEY_V],["button",JOY_BUTTON_DPAD_UP]],
 	"fly_camera":[["button",JOY_BUTTON_RIGHT_STICK]],
 	# In flight, pressed: open the cargo bag and let its load fall (the
 	# home isle's drop pass, scripts/home/drop_pass.gd).

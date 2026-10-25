@@ -5,7 +5,9 @@ extends RefCounted
 ## soft tap, a touch that sticks firmer, a thump by how hard, a bounce, a
 ## slide breaking loose, a hit. Under the knocks a running hum: the wheels
 ## on the land by the ground speed and their grit, Boost, a hard pull (the
-## wingtip vapour's own pull) and skimming the land low and fast.
+## wingtip vapour's own pull) and skimming the land low and fast. With
+## weight (scripts/flight_weight.gd) a strain hum by the load, and a heavy
+## thrum sinking through the bottom of a hard pull-out.
 
 const Pad = preload("res://scripts/pad.gd")
 
@@ -18,6 +20,10 @@ const THUMP_MORE := Vector3(0.35,0.5,0.15)
 const BOUNCE := Vector3(0.4,0.45,0.16)
 const SLIDE := Vector3(0.3,0.15,0.3)
 const HIT := Vector3(0.7,1.0,0.35)
+## Sinking through a pull-out (`events` "sink", its `k` 0 to 1): mostly the
+## strong motor, low and long, SINK_MORE more at a full `k`.
+const SINK := Vector3(0.15,0.35,0.35)
+const SINK_MORE := Vector3(0.15,0.4,0.15)
 ## The hum's weak motor: on the wheels at ROLL_FAST m/s and more (and
 ## ROLL_GRIT more with their grit), at Boost, at a full pull, and skimming
 ## low (`step`'s `skim`, 0 to 1); the strong motor's share of it on the
@@ -30,6 +36,9 @@ const BOOST := 0.16
 const PULL := 0.3
 const PULL_STRONG := 0.12
 const SKIM := 0.24
+## The strain hum at a full `strain` (0 to 1, the load): weak and strong.
+const STRAIN := 0.26
+const STRAIN_STRONG := 0.16
 ## The hum under this on both motors is nothing.
 const QUIET := 0.03
 ## Seconds between settings of the motors; each lasts twice that.
@@ -42,7 +51,7 @@ var _clock := 0.0
 
 ## One frame: `events` what the landing's step returned, `hum` its running
 ## parts: "roll" (m/s over the ground, 0 in the air), "grit" (0 to 1),
-## "boost", "pull" and "skim" (0 to 1 each).
+## "boost", "pull", "skim" and "strain" (0 to 1 each).
 func step(delta: float, events: Dictionary, hum: Dictionary) -> void:
 	var knocked := _knocks(events)
 	_knock_left = maxf(_knock_left-delta,0.0)
@@ -52,7 +61,10 @@ func step(delta: float, events: Dictionary, hum: Dictionary) -> void:
 	weak = maxf(weak,BOOST*float(hum.get("boost",0.0)))
 	weak = maxf(weak,PULL*float(hum.get("pull",0.0)))
 	weak = maxf(weak,SKIM*float(hum.get("skim",0.0)))
+	var strain := clampf(float(hum.get("strain",0.0)),0.0,1.0)
+	weak = maxf(weak,STRAIN*strain)
 	var strong := PULL_STRONG*float(hum.get("pull",0.0))
+	strong = maxf(strong,STRAIN_STRONG*strain*strain)
 	strong = maxf(strong,ROLL_STRONG*clampf(float(hum.get("roll",0.0))/ROLL_FAST,0.0,1.0))
 	if weak < QUIET and strong < QUIET:
 		weak = 0.0
@@ -75,6 +87,8 @@ func _knocks(events: Dictionary) -> bool:
 	if events.has("bounce"): best = _top(best,BOUNCE)
 	if events.has("slide"): best = _top(best,SLIDE)
 	if events.has("hit"): best = _top(best,HIT)
+	var sink: Variant = events.get("sink")
+	if sink is Dictionary: best = _top(best,SINK+SINK_MORE*clampf(float((sink as Dictionary).get("k",0.0)),0.0,1.0))
 	var ringing := _knock*(_knock_left/_knock_for if _knock_for > 0.0 else 0.0)
 	if best.z <= 0.0 or best.x+best.y <= ringing.x+ringing.y: return false
 	_knock = Vector2(best.x,best.y)

@@ -98,6 +98,7 @@ const EndlessTraffic = preload("res://scripts/endless/endless_traffic.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
+const FlightWeight = preload("res://scripts/flight_weight.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -194,6 +195,21 @@ var _region_id := ""
 var _region_shown := -100000
 ## The caption shows for REGION_HOLD ms, then fades over REGION_FADE.
 const REGION_HOLD := 3500
+## The plane's weight preset (scripts/flight_weight.gd; `--weight=`, else
+## medium), cycled with V or the pad's d-pad up (`fly_weight`); the note
+## that names it, held WEIGHT_HOLD ms and faded over WEIGHT_FADE ms.
+var weight := FlightWeight.flag(FlightWeight.DEFAULT)
+var _weight_note: Label
+var _weight_shown := -100000
+const WEIGHT_HOLD := 1400
+const WEIGHT_FADE := 600
+## Sinking through a pull-out, for the rumble's thrum: the nose this far
+## over the path (radians) while it sinks faster than SINK_DOWN m/s knocks
+## once, and it is felt again once the nose is back within SINK_REARM.
+const SINK_AOA := 0.14
+const SINK_DOWN := 3.0
+const SINK_REARM := 0.05
+var _sink_felt := false
 const REGION_FADE := 1500
 ## A region takes the caption once its weight under the eye passes this
 ## (so weaving along a border does not flicker it).
@@ -421,8 +437,18 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  F flaps (stopped: get out)  ·  land on the meadows  ·  R up again  ·  C clouds  ·  G grass  ·  F1 numbers  ·  F2 3D scale"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  F flaps (stopped: get out)  ·  land on the meadows  ·  R up again  ·  V weight  ·  C clouds  ·  G grass  ·  F1 numbers  ·  F2 3D scale"
 	layer.add_child(_hint)
+	_weight_note = Label.new()
+	_weight_note.anchor_left = 0.0
+	_weight_note.anchor_right = 1.0
+	_weight_note.offset_top = 124.0
+	_weight_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_weight_note.add_theme_font_size_override("font_size",24)
+	_weight_note.add_theme_color_override("font_outline_color",Color(0,0,0,0.7))
+	_weight_note.add_theme_constant_override("outline_size",5)
+	_weight_note.modulate.a = 0.0
+	layer.add_child(_weight_note)
 	if not world.uniform:
 		_region_caption = Label.new()
 		_region_caption.anchor_left = 0.0
@@ -450,6 +476,8 @@ func _build_ui() -> void:
 func _launch(at: Vector3, heading: float) -> void:
 	plane = SkyPlane.new()
 	plane.use_flight_speed()
+	plane.use_weight(weight)
+	_sink_felt = false
 	plane.floor_y = Field.SEA_Y-15.0
 	plane.water = Field.SEA_Y
 	# The ranges' tallest peaks stand into the cloud roof: the ceiling
@@ -481,6 +509,7 @@ func _launch(at: Vector3, heading: float) -> void:
 	chase.sight = _sight
 	chase.reset(plane,at+(-plane.forward()*GlideCamera.BACK.x+Vector3.UP*GlideCamera.UP.x)*ground_scale.size(),camera.fov)
 	chase.linger = LOOK_LINGER
+	chase.use_weight(FlightWeight.knobs(weight))
 	if not _has_arg("--cam-speed-fov="): chase.speed_fov = RUSH_FOV
 	_size_chase()
 	_frame(0.0)
@@ -572,6 +601,7 @@ func tick(delta: float) -> void:
 	var ground := Callable(self,"plane_ground")
 	_pull = _pull_of(delta)
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")),_pull,float(plane.bank))
+	_feel_sink(events)
 	_rumble(delta,events,float(input.get("boost",0.0)))
 	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane)
 	ground_scale.apply(plane_figure)
@@ -623,7 +653,29 @@ func _rumble(delta: float, events: Dictionary, boost: float) -> void:
 		var fast := smoothstep(plane.cruise()*0.8,plane.cruise(),float(plane.speed))
 		if h > Field.SEA_Y: skim = (1.0-smoothstep(low*0.4,low,p.y-h))*fast
 	rumble.step(delta,events,{"roll":hand_landing.roll_speed() if rolling else 0.0,"grit":hand_landing.grit,
-		"boost":0.0 if rolling else boost,"pull":_pull,"skim":skim})
+		"boost":0.0 if rolling else boost,"pull":_pull,"skim":skim,
+		"strain":0.0 if rolling else smoothstep(1.3,6.5,float(plane.g_load))})
+
+## A hard pull-out sinking through (the weight's path under the nose):
+## `events` gets a "sink" knock for the rumble, once per pull-out.
+func _feel_sink(events: Dictionary) -> void:
+	if not plane.weighted or not hand_landing.flying():
+		_sink_felt = false
+		return
+	var aoa := float(plane.aoa)
+	if aoa < SINK_REARM: _sink_felt = false
+	elif not _sink_felt and aoa > SINK_AOA and float(plane.velocity.y) < -SINK_DOWN:
+		_sink_felt = true
+		events["sink"] = {"k":clampf((aoa-SINK_AOA)/0.25,0.0,1.0)}
+
+## The next weight preset (V, the pad's d-pad up), mid-flight, named on
+## screen.
+func _next_weight() -> void:
+	weight = FlightWeight.next(weight)
+	plane.use_weight(weight)
+	chase.use_weight(FlightWeight.knobs(weight))
+	_weight_note.text = "Weight: %s" % weight
+	_weight_shown = Time.get_ticks_msec()
 
 ## The grass reacting: the plane's wash (by its height and thrust) and the
 ## look's breeze for the gusts (GrassReact `step`).
@@ -720,6 +772,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		else: _roll_asked = -1.0 if float(plane.bank) < -0.05 else 1.0
 	elif Pad.pressed(event,&"fly_land"): _land_key()
+	elif Pad.pressed(event,&"fly_weight"): _next_weight()
 	elif Pad.pressed(event,&"fly_lean_left"): _lean_tapped(-1.0)
 	elif Pad.pressed(event,&"fly_lean_right"): _lean_tapped(1.0)
 	elif event is InputEventKey and event.pressed and not event.echo:
@@ -728,6 +781,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F1: _hud.visible = not _hud.visible
 			KEY_F2: _next_scale()
 			KEY_R: respawn()
+			KEY_V: _next_weight()
 			KEY_T:
 				if look != null: look.next_hour()
 			KEY_L:
@@ -790,6 +844,8 @@ func _show_region() -> void:
 
 func _show_hud() -> void:
 	_show_region()
+	var since := Time.get_ticks_msec()-_weight_shown
+	_weight_note.modulate.a = clampf(1.0-float(since-WEIGHT_HOLD)/WEIGHT_FADE,0.0,1.0)
 	if not _hud.visible or Time.get_ticks_msec()-_hud_at < HUD_EVERY: return
 	_hud_at = Time.get_ticks_msec()
 	var p: Vector3 = plane.position
@@ -805,6 +861,8 @@ func _show_hud() -> void:
 		("  ·  %s, %05.2f h%s" % [look.mood_title(),look.hour(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
 		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+_hall_note()+trees.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]
+	_hud.text += "
+weight %s  ·  %.1f g  ·  nose over path %.0f°  ·  soft %.2f" % [weight,float(plane.g_load),rad_to_deg(float(plane.aoa)),float(plane.soft)]
 
 func _react_note() -> String:
 	if react == null: return ""
