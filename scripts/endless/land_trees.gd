@@ -140,7 +140,7 @@ var enabled := true
 ## meadows, weights (the variants'), native (its ZenScapeTrees, or null)};
 ## empty in a one-profile world.
 var regional: Array = []
-var stats := {"blocks":0,"far":0,"trees":0,"far_trees":0,"plan_ms":0.0,"plans":0,"slowest_plan_ms":0.0,"slowest_commit_ms":0.0,"slowest_commit":"","colliders":0}
+var stats := {"blocks":0,"far":0,"trees":0,"far_trees":0,"plan_ms":0.0,"plans":0,"slowest_plan_ms":0.0,"slowest_commit_ms":0.0,"slowest_commit":"","colliders":0,"knocked":0}
 
 var _parts: Array = []        # variant -> [trunk mesh, crown mesh]
 var _dims: Array = []         # variant -> Vector3(crown radius, top, bottom) at scale 1
@@ -650,21 +650,34 @@ func _build(kind: String, key: Vector2i, field: RefCounted, plan: RefCounted) ->
 	var cells := _cells(key,all)
 	return {"kind":"b","key":key,"cells":cells,"near":got.near,"mid":got.mid,"n":n,"floor":got.floor,"ms":(Time.get_ticks_usec()-began)/1000.0,"tiles":got.tiles}
 
-## A block's plan cells' lookups from its trees (`_lookup` each).
+## A block's plan cells' lookups from its trees (`_lookup` each), each tree's
+## place in the block's batches beside it (`slots`: variant, index in that
+## variant's near batches, index in the block's: `_block_from`'s order).
 func _cells(key: Vector2i, all: PackedFloat32Array) -> Dictionary:
 	var per := int(BLOCK/Plan.CELL)
 	var split := {}
+	var slots := {}
+	var counts := PackedInt32Array()
+	counts.resize(maxi(_dims.size(),1))
 	for q in range(0,all.size(),Plan.STRIDE):
 		var ck := Plan.cell_of(all[q],all[q+2])
-		if not split.has(ck): split[ck] = PackedFloat32Array()
+		if not split.has(ck):
+			split[ck] = PackedFloat32Array()
+			slots[ck] = PackedInt32Array()
 		var list: PackedFloat32Array = split[ck]
 		list.append_array(all.slice(q,q+Plan.STRIDE))
 		split[ck] = list
+		var v := clampi(int(all[q+6]),0,counts.size()-1)
+		var at: PackedInt32Array = slots[ck]
+		at.append_array([v,counts[v],q/Plan.STRIDE])
+		slots[ck] = at
+		counts[v] += 1
 	var cells := {}
 	for j in per:
 		for i in per:
 			var ck := Vector2i(key.x*per+i,key.y*per+j)
 			cells[ck] = _lookup(ck,split.get(ck,PackedFloat32Array()))
+			cells[ck].slots = slots.get(ck,PackedInt32Array())
 	return cells
 
 ## A block's trees: its plan cells' trees, the near batches' buffers (per
@@ -893,10 +906,13 @@ static func _put(buf: PackedFloat32Array, b: Basis, o: Vector3, c: Color) -> voi
 	buf.append_array([b.x.x,b.y.x,b.z.x,o.x,b.x.y,b.y.y,b.z.y,o.y,b.x.z,b.y.z,b.z.z,o.z,c.r,c.g,c.b,c.a])
 
 ## A plan cell's trees for the flight: Vector4s of [x, z, foot y, top] and
-## [crown bottom over the foot, solid reach, -, -], bucketed BUCKET m.
+## [crown bottom over the foot, solid reach, crown radius, knocked (0, or 1
+## once `knock`ed: its top, reach and radius 0)], bucketed BUCKET m; `pose`
+## each tree's scale, wide and yaw (the falling copy's).
 func _lookup(ck: Vector2i, trees: PackedFloat32Array) -> Dictionary:
 	var n := trees.size()/Plan.STRIDE
 	var solid := PackedFloat32Array()
+	var pose := PackedFloat32Array()
 	var buckets := {}
 	var wing := WorldScale.span*0.5*WING_SOLID
 	for t in n:
@@ -905,12 +921,13 @@ func _lookup(ck: Vector2i, trees: PackedFloat32Array) -> Dictionary:
 		var sc := trees[q+3]
 		var reach := d.x*sc*trees[q+4]*CROWN_SOLID+wing
 		solid.append_array([trees[q],trees[q+2],trees[q+1],d.y*sc,d.z*sc,reach,d.x*sc*trees[q+4]*CROWN_SOLID,0.0])
+		pose.append_array([trees[q+3],trees[q+4],trees[q+5]])
 		var b := Vector2i(floori(trees[q]/BUCKET),floori(trees[q+2]/BUCKET))
 		if not buckets.has(b): buckets[b] = PackedInt32Array()
 		var list: PackedInt32Array = buckets[b]
 		list.append(t)
 		buckets[b] = list
-	return {"solid":solid,"buckets":buckets,"n":n}
+	return {"solid":solid,"buckets":buckets,"n":n,"pose":pose}
 
 # --- Standing (main thread) --------------------------------------------------------
 
@@ -997,6 +1014,9 @@ func _commit(done: Dictionary) -> void:
 	if not (done.floor as Dictionary).is_empty(): holder.add_child(_floor_node(done.floor,_near_floor))
 	add_child(holder)
 	_blocks[key] = {"node":holder,"cells":done.cells,"n":int(done.n),"tiles":done.get("tiles",{})}
+	if not knocked.is_empty():
+		var here := _knocked_in(key.x*BLOCK,key.y*BLOCK,BLOCK)
+		if not here.is_empty(): _hide_block(key,here,{})
 	stats.blocks = _blocks.size()
 	stats.trees += int(done.n)
 
@@ -1043,8 +1063,9 @@ func _cell_data(ck: Vector2i) -> Variant:
 	return (b as Dictionary).cells.get(ck)
 
 ## The stood trees of plan cell `ck`, 8 floats each (x, z, foot y, height,
-## crown bottom over the foot, solid reach, crown radius, 0), or none: the
-## birds' perches (scripts/endless/endless_birds.gd).
+## crown bottom over the foot, solid reach, crown radius, knocked: 1 with
+## height, reach and radius 0), or none: the birds' perches (scripts/endless/
+## endless_birds.gd, which pass a tree under 4 m).
 func cell_trees(ck: Vector2i) -> PackedFloat32Array:
 	var cell: Variant = _cell_data(ck)
 	return (cell as Dictionary).solid if cell != null else PackedFloat32Array()
@@ -1140,6 +1161,10 @@ func _fill(body: StaticBody3D, cell: Dictionary, from: int, began: int) -> int:
 	while t < int(cell.n):
 		if t > from and (Time.get_ticks_usec()-began)/1000.0 > COLLIDE_BUDGET: break
 		var q := t*8
+		if solid[q+7] > 0.5:
+			# Knocked down (`knock`): no collider.
+			t += 1
+			continue
 		var r := solid[q+6]
 		var bottom := solid[q+4]
 		var top := solid[q+3]
@@ -1154,9 +1179,190 @@ func _fill(body: StaticBody3D, cell: Dictionary, from: int, began: int) -> int:
 		var cs := CollisionShape3D.new()
 		cs.shape = shape
 		cs.position = Vector3(solid[q],solid[q+2],solid[q+1])
+		cs.name = "T%d" % t
 		body.add_child(cs)
 		t += 1
 	return t
+
+# --- Knocked down (scripts/endless/tree_knock.gd) ---------------------------------
+
+## The trees the plane has knocked down, game state (the plan is untouched):
+## `tree_key` -> true. Each is hidden in its block's batches (near, mid,
+## shade, sprites) and detail squares, its solid's top, reach and radius
+## zeroed (`top_at`, `ground`, `inside`, the birds and the near misses pass it)
+## and its collider gone; again whenever its block is stood anew. (The far
+## ring's thinned trees, drawn past FAR.x only with --spruce-sprites=0, keep it.)
+var knocked := {}
+
+## A tree's stable key: its plan position (x, z) in decimetres. The plan puts
+## the same tree at the same float32 spot every build, native or GDScript.
+static func tree_key(x: float, z: float) -> Vector2i:
+	return Vector2i(roundi(x*10.0),roundi(z*10.0))
+
+## The standing tree whose solid holds `p`, or {}: with `body` the flight's
+## cone (`top_at`: CROWN_SOLID of the crown plus WING_SOLID of the half span)
+## raised `above` m, else the bare crown (the collider's spinning top) raised
+## `above` m (negative: that deep into it). Of several, the one `p` is
+## deepest in. {ck, i, x, z, foot, height, bottom (crown bottom over the
+## foot), radius (CROWN_SOLID of the crown), reach, depth (m under its top at `p`)}.
+func tree_in(p: Vector3, body: bool, above := 0.0) -> Dictionary:
+	if not enabled or _blocks.is_empty(): return {}
+	var best := {}
+	var bx := floori(p.x/BUCKET)
+	var bz := floori(p.z/BUCKET)
+	for dz in range(-1,2):
+		for dx in range(-1,2):
+			var b := Vector2i(bx+dx,bz+dz)
+			var ck := Plan.cell_of((b.x+0.5)*BUCKET,(b.y+0.5)*BUCKET)
+			var cell: Variant = _cell_data(ck)
+			if cell == null: continue
+			var list: Variant = (cell as Dictionary).buckets.get(b)
+			if list == null: continue
+			var solid: PackedFloat32Array = (cell as Dictionary).solid
+			for t: int in list:
+				var q := t*8
+				var reach := solid[q+5] if body else solid[q+6]
+				if reach <= 0.0: continue
+				var ox := p.x-solid[q]
+				var oz := p.z-solid[q+1]
+				var d2 := ox*ox+oz*oz
+				if d2 >= reach*reach: continue
+				var foot := solid[q+2]
+				var top := lerpf(foot+solid[q+3],foot+solid[q+4],sqrt(d2)/reach)
+				var depth := top+above-p.y
+				if depth <= 0.0 or p.y < foot-1.0: continue
+				if not best.is_empty() and depth <= float(best.depth): continue
+				best = {"ck":ck,"i":t,"x":solid[q],"z":solid[q+1],"foot":foot,"height":solid[q+3],"bottom":solid[q+4],
+					"radius":solid[q+6],"reach":solid[q+5],"depth":top-p.y}
+	return best
+
+## The meshes of variant `v`: [trunk, crown] (the near ring's), and the
+## crowns' mean tint.
+func parts(v: int) -> Array:
+	return _parts[clampi(v,0,_parts.size()-1)]
+
+func tint() -> Color:
+	return _tint
+
+## Knocks tree `t` (a `tree_in` result) down: kept in `knocked`, hidden, no
+## solid, no collider. Returns how it stood, for the falling copy: {variant,
+## trunk (its Transform3D, the foot its origin), tone (the crown's colour)},
+## or {} if it was down already.
+func knock(t: Dictionary) -> Dictionary:
+	var key := tree_key(float(t.x),float(t.z))
+	if knocked.has(key): return {}
+	knocked[key] = true
+	var out := {"variant":-1,"trunk":Transform3D(Basis(),Vector3(float(t.x),float(t.foot),float(t.z))),"tone":_tint}
+	var bkey := _block_of(float(t.x),float(t.z))
+	if _blocks.has(bkey): _hide_block(bkey,{key:true},out)
+	stats.knocked = knocked.size()
+	return out
+
+## The knocked trees' keys in the square at (x0, z0), `size` m.
+func _knocked_in(x0: float, z0: float, size: float) -> Dictionary:
+	var out := {}
+	var lo := Vector2(x0*10.0,z0*10.0)
+	var hi := lo+Vector2.ONE*size*10.0
+	for k: Vector2i in knocked:
+		if k.x >= lo.x-1 and k.x < hi.x+1 and k.y >= lo.y-1 and k.y < hi.y+1: out[k] = true
+	return out
+
+## Hidden instances, by batch kind, for the drivers (`_hide_block` counts).
+var hidden := {}
+
+## Block `bkey`'s trees in `keys` hidden: their solids zeroed (and colliders
+## dropped); their instances shrunk to nothing in the block's near batches
+## (trunk, crown, sprite: by variant and index; mid and shade: by index, the
+## cell's `slots`); taken out of its detail squares' buffers and the squares
+## made again (`_stand_tiles`). `out` (if it has "variant") gets the first
+## one's variant, trunk transform and crown tone.
+func _hide_block(bkey: Vector2i, keys: Dictionary, out: Dictionary) -> void:
+	var b: Dictionary = _blocks[bkey]
+	var holder: Node = b.node
+	for ck: Vector2i in b.cells:
+		var cell: Dictionary = b.cells[ck]
+		var solid: PackedFloat32Array = cell.solid
+		var slots: PackedInt32Array = cell.get("slots",PackedInt32Array())
+		var changed := false
+		for t in int(cell.n):
+			var q := t*8
+			if solid[q+7] > 0.5 or not keys.has(tree_key(solid[q],solid[q+1])): continue
+			var foot := Vector3(solid[q],solid[q+2],solid[q+1])
+			solid[q+3] = 0.0
+			solid[q+5] = 0.0
+			solid[q+6] = 0.0
+			solid[q+7] = 1.0
+			changed = true
+			if _bodies.has(ck):
+				var cs := (_bodies[ck] as Node).get_node_or_null("T%d" % t)
+				if cs != null:
+					# Out of the physics space now, not at the frame's end.
+					cs.get_parent().remove_child(cs)
+					cs.queue_free()
+			if slots.size() < (t+1)*3: continue
+			var v := slots[t*3]
+			var vi := slots[t*3+1]
+			var bi := slots[t*3+2]
+			for part: String in ["Trunk","Crown","Sprite"]:
+				_shrink(holder.get_node_or_null("Spruce%d%s" % [v,part]),vi,foot,part)
+			for part: String in ["Mid","Shade"]:
+				_shrink(holder.get_node_or_null(part),bi,foot,part)
+			if out.has("variant") and int(out.variant) < 0:
+				var pose: PackedFloat32Array = cell.pose
+				var sc := pose[t*3]
+				var wide := pose[t*3+1]
+				out.variant = v
+				out.trunk = Transform3D(Basis(Vector3.UP,pose[t*3+2]).scaled(Vector3(sc*wide,sc,sc*wide)),foot)
+				out.tone = _tone_of(bkey,bi)
+		if changed: cell.solid = solid
+	# The detail squares: out of their buffers, and those standing made again.
+	var tiles: Dictionary = b.get("tiles",{})
+	var per_sub := int(BLOCK/DETAIL_TILE)
+	for sti: Variant in tiles:
+		var slots: Array = tiles[sti]
+		var hit := false
+		for v in slots.size():
+			var slot: Array = slots[v]
+			var buf: PackedFloat32Array = slot[0]
+			var n := int(slot[1])
+			var stride := buf.size()/n if n > 0 else 16
+			var changed := false
+			for i in n:
+				var q := i*stride
+				if not keys.has(tree_key(buf[q+3],buf[q+11])): continue
+				for k: int in [0,1,2,4,5,6,8,9,10]: buf[q+k] = 0.0
+				changed = true
+			if changed:
+				slot[0] = buf
+				hit = true
+				hidden["tile"] = int(hidden.get("tile",0))+1
+		if not hit: continue
+		var sx := int(sti)%per_sub
+		var sz := int(sti)/per_sub
+		for t: Vector4i in _tiles.keys():
+			if t.x != bkey.x or t.y != bkey.y: continue
+			var size := DETAIL_TILE if t.w == 0 else FAR_TILE
+			var per := int(BLOCK/size)
+			var sub := int(size/DETAIL_TILE)
+			if (t.z%per)*sub <= sx and sx < (t.z%per+1)*sub and (t.z/per)*sub <= sz and sz < (t.z/per+1)*sub:
+				(_tiles[t] as Node).queue_free()
+				_tiles.erase(t)
+
+## Instance `i` of `batch` (if there is one) shrunk to nothing at `at`.
+func _shrink(batch: Node, i: int, at: Vector3, kind: String) -> void:
+	if not batch is MultiMeshInstance3D: return
+	var mm := (batch as MultiMeshInstance3D).multimesh
+	if mm == null or i < 0 or i >= mm.instance_count: return
+	mm.set_instance_transform(i,Transform3D(Basis.from_scale(Vector3.ZERO),at))
+	hidden[kind] = int(hidden.get(kind,0))+1
+
+## The crown's tone of block `bkey`'s tree `bi` (`_block_from`'s draw).
+func _tone_of(bkey: Vector2i, bi: int) -> Color:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([seed,bkey.x,bkey.y,"trees"])
+	var f := 1.0
+	for i in bi+1: f = rng.randf_range(TINT_SPREAD.x,TINT_SPREAD.y)
+	return _tint*f
 
 ## The numbers line (F1).
 func note() -> String:

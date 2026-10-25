@@ -140,6 +140,9 @@ const NEAR := Vector2(0.14,0.32)
 const NEAR_PITCH := Vector2(1.05,1.35)
 const SCRAPE := 0.4
 const CRASH := 0.7
+## A tree knocked down (`events` "knock"): its crack, branches and needles
+## (the fall's creak and thud are scripts/endless/tree_knock.gd's, at the tree).
+const KNOCK := 0.45
 ## The air over the ground: the breeze's gain on the ground and well up (m
 ## over the land), the thin high wind's (over the sea, up to the ceiling),
 ## the shore's.
@@ -333,6 +336,10 @@ func _ready() -> void:
 		"swish":_takes(KIT+"swish-%d.wav",4),"grind":_takes(FOLEY+"land-grind-%d.wav",6),
 		"crash":_takes(FOLEY+"mesa-break-%d.wav",6),"debris":_takes(KIT+"rock-debris-%d.wav",3),
 		"splash":_takes(FOLEY+"water-splash-%d.wav",6),"leaves":_takes(FOLEY+"trees-%d.wav",6),
+		# A tree knocked down (scripts/endless/tree_knock.gd): broken branches,
+		# a rock crack pitched up for the trunk, a heavy body fall on dirt.
+		"snap":[load(FOLEY+"trees-6.wav")],"crack":_takes(FOLEY+"mesa-break-%d.wav",2),
+		"thud":[load(FOLEY+"pat-4.wav"),load(FOLEY+"pat-6.wav")],
 	}
 
 static func _takes(pattern: String, count: int) -> Array:
@@ -536,6 +543,13 @@ func _near(events: Dictionary) -> void:
 		shot("whoosh",lerpf(NEAR.x,NEAR.y,k)*0.8,lerpf(NEAR_PITCH.x,NEAR_PITCH.y,k)+0.1,Vector3.INF,AIR)
 		_whoosh_wait = WHOOSH_GAP
 		if str((m as Dictionary).get("surface","")) == "tree": shot("leaves",SCRAPE*0.5,1.1)
+	var k: Variant = events.get("knock")
+	if k is Dictionary:
+		# Through a tree: the trunk's crack, branches and a burst of needles.
+		var heft := clampf(float((k as Dictionary).get("heft",0.0)),0.0,1.0)
+		shot("crack",KNOCK*lerpf(0.5,1.0,heft),1.7)
+		shot("snap",KNOCK,lerpf(1.1,0.9,heft))
+		shot("leaves",KNOCK*1.2,0.95)
 	for key: String in ["scrape","crash"]:
 		var h: Variant = events.get(key)
 		if not h is Dictionary: continue

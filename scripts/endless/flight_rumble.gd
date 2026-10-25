@@ -35,6 +35,9 @@ const NEAR_MORE := Vector3(0.45,0.35,0.06)
 const SCRAPE := Vector3(0.55,0.55,0.28)
 const SCRAPE_MORE := Vector3(0.3,0.4,0.1)
 const CRASH := Vector3(0.9,1.0,0.5)
+## A tree knocked down (`events` "knock", its `heft` 0 to 1).
+const KNOCK := Vector3(0.45,0.4,0.22)
+const KNOCK_MORE := Vector3(0.25,0.35,0.08)
 ## The buffet low and fast (`step`'s `low`, 0 to 1): weak and strong.
 const LOW := 0.2
 const LOW_STRONG := 0.08
@@ -110,6 +113,8 @@ func _knocks(events: Dictionary) -> bool:
 	if near is Dictionary: best = _top(best,NEAR+NEAR_MORE*clampf(float((near as Dictionary).get("k",0.0)),0.0,1.0))
 	var scrape: Variant = events.get("scrape")
 	if scrape is Dictionary: best = _top(best,SCRAPE+SCRAPE_MORE*clampf(float((scrape as Dictionary).get("into",0.0))/7.0,0.0,1.0))
+	var knock: Variant = events.get("knock")
+	if knock is Dictionary: best = _top(best,KNOCK+KNOCK_MORE*clampf(float((knock as Dictionary).get("heft",0.0)),0.0,1.0))
 	if events.has("crash"): best = _top(best,CRASH)
 	var ringing := _knock*(_knock_left/_knock_for if _knock_for > 0.0 else 0.0)
 	if best.z <= 0.0 or best.x+best.y <= ringing.x+ringing.y: return false
