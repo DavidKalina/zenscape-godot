@@ -8,37 +8,26 @@ extends Node3D
 ## land streams in chunks round the camera (scripts/endless/land_stream.gd
 ## over scripts/endless/land_field.gd): rolling hills, a few mountains,
 ## coast and sea, and broad flat meadows to put it down on. Land on the
-## turf as on the isle; stopped, Space (Boost) rolls it off again, and F
-## (pad Y) gets out: the pilot hops down beside it and walks the land
-## (scripts/endless/endless_walker.gd: the game's motor, figure and walker
-## camera; docs/design/endless-flight/get-out-handoff.md), the plane parked
-## where it stopped. Back by it, F or Space (pad Y or A) climbs in, stopped
-## on its wheels to take off again.
+## turf as on the isle; stopped, Space (Boost) rolls it off again. (Getting
+## out and walking was cut on 2026-10-24: docs/archive.md.)
 ##
 ## Keys: WASD or the left stick bank and pitch (W nose down), the mouse
 ## steers, Space boost, Shift brake, Q E held knife edge (twice quick a
-## barrel roll, or click), F flaps in the air (pad Y), stopped F gets out,
-## hold right mouse to look round, F1 the numbers, R back up into the air
-## over where it is (on foot too), Esc lets the mouse go.
-## On foot: WASD or the stick walk (the mouse or right stick turn the view),
-## Space jumps (held higher, again on landing the pump), Shift (C, LT)
-## crouches: at a run the slide, on a slope the surf, with Space the long
-## jump (again on each landing, chained); Space in the air with room under
-## him opens the sail, again folds it. He wades the shallows; deeper water
-## stops him (come down in it, he swims). By the plane F or Space boards.
+## barrel roll, or click), F flaps in the air (pad Y), hold right mouse to
+## look round, F1 the numbers, R back up into the air over where it is, Esc
+## lets the mouse go.
 ##
 ##   ./run-endless-flight.command [--seed=7]
-##   godot --path . res://studies/endless_flight.tscn -- --no-title [--seed=7] [--at=x,z] [--heading=deg] [--alt=m] [--on-foot]
+##   godot --path . res://studies/endless_flight.tscn -- --no-title [--seed=7] [--at=x,z] [--heading=deg] [--alt=m]
 ##
-## The world: this script is the engine's (the plane and flight, on foot,
+## The world: this script is the engine's (the plane and flight,
 ## streaming, the look, the dressing machinery, the HUD and harness hooks);
 ## what makes the world this world is its profile
 ## (scripts/endless/world/world_profile.gd, profiles/<id>.gd): --world=ID
 ## (wilderness; test_dry is a test profile). The profile sets the defaults;
 ## every flag below still wins (docs/design/endless-flight/world-profiles-handoff.md).
 ##
-## Flags: --on-foot starts parked at --at (on the land there) with the pilot
-## out beside the plane. --seed=N the land (1), --at=x,z where it starts (0,0), the land's shape
+## Flags: --seed=N the land (1), --at=x,z where it starts (0,0), the land's shape
 ## (land_field.gd): --mountains=X, --peaks=X, --valleys=X, --no-valleys,
 ## --old-land (round one's land and ceiling), --ceiling=m over the sea (215),
 ## --heading=deg clockwise from -z (0; `sun` toward the sun), --alt=m over
@@ -107,9 +96,6 @@ const EndlessFish = preload("res://scripts/endless/endless_fish.gd")
 ## Other planes and their trails (--traffic=0 off).
 const EndlessTraffic = preload("res://scripts/endless/endless_traffic.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
-const EndlessWalker = preload("res://scripts/endless/endless_walker.gd")
-const PlaneLanding = preload("res://scripts/plane_landing.gd")
-const PlaneStrip = preload("res://scripts/plane_strip.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -156,7 +142,7 @@ var look: Node3D
 ## The grass carpet round the eye (off at the start under --no-grass), or
 ## null under --plain-look.
 var grass: Node3D
-## The grass reacting to the wash, the walker and the gusts (scripts/endless/
+## The grass reacting to the wash and the gusts (scripts/endless/
 ## grass_react.gd), or null under --no-grass-react or --plain-look.
 var react: Node
 ## The gusts as sweeping breeze ribbons (scripts/endless/endless_eddies.gd), or null under --gusts=rings.
@@ -203,16 +189,6 @@ const REGION_FADE := 1500
 ## A region takes the caption once its weight under the eye passes this
 ## (so weaving along a border does not flicker it).
 const REGION_TAKE := 0.7
-## On foot (scripts/endless/endless_walker.gd), the plane parked: see the
-## "On foot" part below.
-var walker: Node3D
-var on_foot := false
-var _exit_asked := false
-var _on_foot_start := false
-var _hop_from := Vector3.ZERO
-var _hop_to := Vector3.INF
-var _parked_at := Vector3.ZERO
-var _boarding := -1.0
 ## The buffet's strength (--rush=X; off by default, it read as jitter)
 ## and its clock.
 var _rush := 0.0
@@ -249,7 +225,6 @@ func _ready() -> void:
 			_alt = float(arg.get_slice("=",1))
 			_alt_given = true
 		elif arg == "--numbers": _numbers = true
-		elif arg == "--on-foot": _on_foot_start = true
 		elif arg.begins_with("--rush="): _rush = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--ceiling="): _ceiling_over = float(arg.get_slice("=",1))
 		elif arg == "--old-land": _ceiling_over = SkyPlane.CEILING-Field.SEA_Y
@@ -338,12 +313,6 @@ func _ready() -> void:
 	tunnels.prime(eye)
 	trees.prime(eye)
 	_launch(Vector3(_start.x,_start_height(),_start.y),_heading)
-	walker = EndlessWalker.new()
-	walker.name = "Walker"
-	add_child(walker)
-	walker.setup(camera,field,Callable(self,"water_at"),react)
-	walker.land_at = tunnels.land_y
-	if _on_foot_start: await _start_on_foot()
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.DEFAULT else ", world "+str(world.id)])
@@ -576,23 +545,16 @@ func _process(delta: float) -> void:
 ## the eye, the sea under it.
 func tick(delta: float) -> void:
 	flown += delta
-	if on_foot:
-		_foot_tick(delta)
-		return
 	var input := _fly_input(delta)
 	# The plane skims the swell as drawn, not the sea's rest level, and a
 	# river's water as it skims the sea.
 	plane.water = water_at(plane.position)
 	input["flaps"] = 1.0 if flaps else 0.0
-	input["exit"] = _exit_asked
-	_exit_asked = false
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
-	var wheels := hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
+	hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
 	plane.engine = hand_landing.engine*float(plane.sputter)
 	var ground := Callable(self,"plane_ground")
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")))
-	_hop_out(wheels,delta)
-	if on_foot: return
 	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane)
 	ground_scale.apply(plane_figure)
 	plane_figure._mark.visible = false
@@ -706,9 +668,6 @@ func respawn() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not walk_ready: return
-	if on_foot:
-		_foot_event(event)
-		return
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: return
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): chase.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK)
@@ -824,226 +783,6 @@ func _grass_note() -> String:
 	return "\ngrass: %d cells, %d building, %d queued, %dk plants  ·  %.0f ms a cell on a worker, slowest stand %.2f ms" % [
 		int(g.cells),int(g.building),int(g.queued),int(g.instances)/1000,float(gs.grow_ms)/maxf(float(gs.grown),1.0),float(gs.slowest_stand_ms)]
 
-# --- On foot ------------------------------------------------------------------------
-# Stopped, F (pad Y) gets out: the engine spins down and the pilot hops down
-# beside the plane (ManualLanding EXIT, `hop`), which stays parked where it
-# stopped; he walks the land (scripts/endless/endless_walker.gd). Back by
-# it, F or Space (pad Y or A) climbs in: the hop run backwards, then the
-# hand landing has it stopped on its wheels, as a parked plane boarded on
-# the isles (studies/kit_isle.gd `board_parked`, without its takeoff run).
-
-## As the isles': Space or F within BOARD_REACH m (times the plane's
-## ground size's root) of its middle boards; he keeps PARKED_ROOM m off its
-## middle (a column PARKED_TALL m up only he sees); the hop out lands
-## HOP_SIDE m to its left and HOP_AHEAD m ahead (studies/kit_isle.gd).
-const BOARD_REACH := 1.9
-const PARKED_ROOM := 0.75
-const PARKED_TALL := 6.0
-const HOP_SIDE := 1.4
-const HOP_AHEAD := 0.3
-const FOOT_HINT := "WASD walk  ·  mouse looks  ·  Space jump (again landing: higher)  ·  Shift slide, surf, with Space long jump  ·  Space in the air: sail  ·  by the plane F or Space climbs in  ·  R back in the air  ·  F1 numbers"
-var _plane_hint := ""
-
-## F (pad Y) in the plane: in the air the flaps go down or up; on the
-## wheels it asks to get out (only stopped does it: ManualLanding `step`).
+## F (pad Y) in the air: the flaps go down or up.
 func _land_key() -> void:
 	if hand_landing.flying(): flaps = not flaps
-	else: _exit_asked = true
-
-## The hop out as the hand landing runs it, and out at its end.
-func _hop_out(wheels: Dictionary, delta: float) -> void:
-	if hand_landing.phase == ManualLanding.EXIT:
-		if _hop_to == Vector3.INF:
-			_hop_from = ground_scale.point(plane_figure,plane.position+Vector3.UP*0.1)
-			_hop_to = _hop_spot()
-			plane_figure.show_pilot(false)
-			var way := Vector2(_hop_to.x-_hop_from.x,_hop_to.z-_hop_from.z)
-			if way.length() > 0.01: walker.motor.facing = walker.motor.facing_of(way.normalized())
-		walker.hop(_hop_from,_hop_to,hand_landing.hop,delta)
-	if wheels.has("out"): _get_out()
-
-## Where the hop out lands: HOP_SIDE m to the plane's left and HOP_AHEAD m
-## ahead on open turf; else to its right; else beside it on the land.
-func _hop_spot() -> Vector3:
-	var heading := float(plane.heading)
-	var at: Vector3 = plane.position
-	var forward := Vector3(-sin(heading),0.0,-cos(heading))
-	var right := Vector3(cos(heading),0.0,-sin(heading))
-	var hop: Vector2 = ground_scale.hop_offset(HOP_SIDE,HOP_AHEAD)
-	# Clear of the column he keeps off (else he lands on its top).
-	hop.x = maxf(hop.x,_column_radius()+walker.ground.RADIUS*walker.size+0.15)
-	for side: float in [-1.0,1.0]:
-		var p := at+right*hop.x*side+forward*hop.y
-		var h := floor_at(Vector2(p.x,p.z))
-		if is_nan(h): continue
-		var spot := Vector3(p.x,h,p.z)
-		if trees.inside(spot+Vector3.UP*0.5) or arches.inside(spot+Vector3.UP*0.5) or halls.inside(spot+Vector3.UP*0.5) or tunnels.inside(spot+Vector3.UP*0.5): continue
-		return spot
-	var p := at-right*hop.x
-	return Vector3(p.x,field.height(p.x,p.z),p.z)
-
-## Out: the plane parked where it stands, the pilot on foot at `_hop_to`
-## facing it.
-func _get_out() -> void:
-	on_foot = true
-	flaps = false
-	plane.engine = 0.0
-	var under: float = field.height(plane.position.x,plane.position.z)
-	_parked_at = Vector3(plane.position.x,under,plane.position.z)
-	plane_figure.show_pilot(false)
-	walker.set_column(_parked_at,_column_radius(),PARKED_TALL)
-	var spot := _hop_to if _hop_to != Vector3.INF else _hop_spot()
-	var to := Vector2(_parked_at.x-spot.x,_parked_at.z-spot.z)
-	walker.place(spot,to.normalized() if to.length() > 0.01 else Vector2(0.0,-1.0))
-	_hop_to = Vector3.INF
-	if _plane_hint == "": _plane_hint = _hint.text
-	_hint.text = FOOT_HINT
-
-func _column_radius() -> float:
-	return PARKED_ROOM*sqrt(ground_scale.ground_size())
-
-## True on foot within reach of the parked plane.
-func by_plane() -> bool:
-	if not on_foot or _boarding >= 0.0: return false
-	var feet: Vector3 = walker.motor.feet
-	return Vector2(feet.x-_parked_at.x,feet.z-_parked_at.z).length() <= BOARD_REACH*sqrt(ground_scale.ground_size()) and absf(feet.y-_parked_at.y) < 1.5
-
-## Climbing in: the hop run backwards (PlaneLanding BOARD_TIME), then in.
-func board() -> void:
-	if not by_plane(): return
-	_boarding = 0.0
-	_hop_from = walker.motor.feet
-	_hop_to = ground_scale.point(plane_figure,plane.position+Vector3.UP*0.1)
-	walker.clear_column()
-
-## In the plane, stopped on its wheels, the chase camera from where the
-## walker's camera stood.
-func _into_plane() -> void:
-	_leave_foot()
-	plane_figure.show_pilot(true)
-	hand_landing.begin(plane,true)
-	ground_scale.reset(true)
-	ground_scale.apply(plane_figure)
-	chase = GlideCamera.new()
-	chase.framed = true
-	chase.sight = _sight
-	chase.reset(plane,camera.global_position,camera.fov)
-	chase.linger = LOOK_LINGER
-	_size_chase()
-	_frame(0.0)
-
-func _leave_foot() -> void:
-	on_foot = false
-	_boarding = -1.0
-	_hop_to = Vector3.INF
-	walker.hide_figure()
-	walker.clear_column()
-	if _plane_hint != "": _hint.text = _plane_hint
-
-## One frame on foot: the walker (or his hop in), then the land, trees,
-## arches, grass, look and grass reacting round the eye as in the plane.
-func _foot_tick(delta: float) -> void:
-	if _boarding >= 0.0:
-		_boarding += delta
-		var k := 1.0-clampf(_boarding/PlaneLanding.BOARD_TIME,0.0,1.0)
-		walker.hop(_hop_to,_hop_from,k,delta)
-		if _boarding >= PlaneLanding.BOARD_TIME:
-			_into_plane()
-			return
-	else:
-		walker.tick(delta)
-	var eye := camera.global_position
-	land.step(eye)
-	arches.step(eye)
-	halls.step(eye)
-	tunnels.step(eye)
-	trees.step(eye,walker.motor.feet)
-	birds.step(delta,eye,plane)
-	if fish != null: fish.step(delta,eye,walker.motor.feet,walker.motor.velocity,true)
-	if traffic != null: traffic.step(delta,eye,-camera.global_basis.z,eye,-camera.global_basis.z,0.0)
-	if grass != null:
-		var view := get_viewport().get_camera_3d()
-		var at: Camera3D = view if view != null else camera
-		grass.lead_with(walker.motor.velocity)
-		grass.step(at.global_position,-at.global_basis.z)
-	if look != null: look.plane_at = plane.position
-	if look != null: look.step(delta,eye,-camera.global_basis.z,camera)
-	if react != null: _react(delta)
-	else: sea.position = Vector3(snappedf(eye.x,64.0),Field.SEA_Y,snappedf(eye.z,64.0))
-	_show_hud()
-
-## On foot: the mouse turns the view, F or Space by the plane boards it, R
-## back into the air over where he stands; the look's keys as in the plane
-## (C is crouch here, not the clouds).
-func _foot_event(event: InputEvent) -> void:
-	if event is InputEventMouseMotion:
-		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED: walker.look(event.relative)
-		return
-	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		return
-	var key := (event as InputEventKey).keycode if event is InputEventKey and event.pressed and not event.echo else KEY_NONE
-	if (key == KEY_F or key == KEY_SPACE or Pad.pressed(event,&"fly_land") or Pad.pressed(event,&"walk_jump")) and by_plane():
-		board()
-		Input.action_release(&"walk_jump")
-		return
-	match key:
-		KEY_F1: _hud.visible = not _hud.visible
-		KEY_F2: _next_scale()
-		KEY_R: _fly_from_foot()
-		KEY_T:
-			if look != null: look.next_hour()
-		KEY_L:
-			if look != null: look.next_mood()
-		KEY_G:
-			if grass != null: grass.set_enabled(not grass.enabled)
-		KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-
-## R on foot: back up into the air in the plane, over where he stands, on
-## the way the view looks.
-func _fly_from_foot() -> void:
-	var feet: Vector3 = walker.motor.feet
-	var heading: float = walker.yaw()
-	_leave_foot()
-	_start = Vector2(feet.x,feet.z)
-	_launch(Vector3(feet.x,_start_height(),feet.z),heading)
-
-## --on-foot: the plane parked on the land at the start, the pilot out
-## beside it, once the colliders under it stand.
-func _start_on_foot() -> void:
-	_start = _dry_spot(_start)
-	var height := func(p: Vector2) -> float: return field.height(p.x,p.y)
-	var r := PlaneStrip.rest(height,_start,_heading)
-	plane.park(Vector3(_start.x,r.x,_start.y),_heading,r.y,r.z)
-	hand_landing.begin(plane,true)
-	plane_figure.reset(plane)
-	ground_scale.reset(true)
-	ground_scale.apply(plane_figure)
-	plane_figure.update(0.0,plane,0.0,Callable(self,"plane_ground"),false)
-	var eye := Vector3(_start.x,r.w+2.0,_start.y)
-	for i in range(3):
-		land.step(eye)
-		trees.step(eye,eye)
-		await get_tree().physics_frame
-	_get_out()
-
-## The nearest open, level, dry turf to `near` (x, z) within 300 m, rings
-## out from it: the turf under it and 3 m round within 0.4 m, no water, no
-## tree or arch; failing all, `near`.
-func _dry_spot(near: Vector2) -> Vector2:
-	var r := 0.0
-	while r <= 300.0:
-		var count := 1 if r == 0.0 else 16
-		for i in range(count):
-			var a := TAU*float(i)/float(count)+r*0.37
-			var p := near+Vector2(cos(a),sin(a))*r
-			var h := floor_at(p)
-			if is_nan(h) or h < Field.SEA_Y+1.0: continue
-			var ok := true
-			for d: Vector2 in [Vector2(3,0),Vector2(-3,0),Vector2(0,3),Vector2(0,-3),Vector2(6,0),Vector2(-6,0)]:
-				var q := floor_at(p+d)
-				if is_nan(q) or absf(q-h) > 0.4 or walker.water_depth(p+d) > 0.0: ok = false
-			var up := Vector3(p.x,h+1.0,p.y)
-			if ok and not trees.inside(up) and not arches.inside(up) and not halls.inside(up): return p
-		r += 4.0
-	return near

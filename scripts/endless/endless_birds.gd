@@ -356,10 +356,11 @@ func step(delta: float, eye: Vector3, plane: RefCounted) -> void:
 	stats.ms = ms
 	stats.ms_avg = lerpf(float(stats.ms_avg),ms,0.05)
 
-## His feet while he is on foot, else INF.
+## His feet while he is on foot, else INF (a host with `on_foot` and a
+## `walker`; endless flight has none since walking was cut, docs/archive.md).
 func _feet() -> Vector3:
 	var host := get_parent()
-	if host == null or not bool(host.get("on_foot")): return Vector3.INF
+	if host == null or host.get("on_foot") != true: return Vector3.INF
 	var walker: Variant = host.get("walker")
 	if walker == null: return Vector3.INF
 	var motor: Variant = (walker as Node).get("motor")
