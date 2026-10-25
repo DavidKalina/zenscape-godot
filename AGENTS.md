@@ -2,23 +2,24 @@
 
 The game is endless flight: you fly the plane over procedural land that
 never ends (hills, mountains, cliffs, lakes, rivers, coast and sea, with
-bird flocks and scattered ruins), land anywhere flat, get out, walk and
-pick up collectibles. Its scene is `studies/endless_flight.tscn`
-(`run-endless-flight.command`; design and rounds:
-`docs/design/endless-flight/`). `project.godot`'s main scene is still the
-old title, `studies/zenscape.tscn`, until the new game has a front door.
-When the user says "the game" or "the main scene", they mean endless
-flight.
+bird flocks, overgrown halls and tunnels and scattered ruins) and land
+anywhere flat. Its scene is `studies/endless_flight.tscn`, the project's
+main scene (`run-endless-flight.command`; design and rounds:
+`docs/design/endless-flight/`). It is to ship on Steam. When the user says
+"the game" or "the main scene", they mean endless flight.
 
-In scope: the plane and its flight; on foot, run, jump (the held-height
-and pump jumps), crouch slide, slope surfing, chained long jumps, the
-glide (the motor's "sail") and probably swimming; collectibles; maybe
-flying challenges later. Out of scope: enemies, treasure heists, the
-Olmec, hearts and damage. Walls, wall-run, ledge grab and climb, rope,
-carrying and throwing, and rolling are turned off (`scripts/pilot_motor.gd`
-switches such as `wall_on`, `ledge_on`, `rope_on`). The aqueduct isle
-(`studies/aqueduct_isle.gd`, `scripts/kit_isle/`) and the other studies
-stay as parts to reuse.
+In scope: the plane, its flight, landing and the camera; the land, sky,
+water and ambience; collectibles and flying challenges (the flight packs in
+`studies/flight_study.tscn`); light destruction of the ruins
+(`scripts/breaks/`). Out of scope: walking (cut on 2026-10-24), enemies,
+treasure heists, the Olmec, hearts and damage.
+
+On 2026-10-24 everything else was cut: the aqueduct isle and the kit isles,
+the motif editor, the walking character, the Olmec and the city kit,
+enemies and their studies. They are whole at the git tag
+`archive/before-the-cut`; `docs/archive.md` lists each and how to bring it
+back. `scripts/pilot_motor.gd` (the walker's motor) stays only because the
+ruin kit, the gusts and the wind horn are sized by its numbers.
 
 # Test execution
 
@@ -85,7 +86,7 @@ PowerShell from the repo root:
   `tools/run_tests.py` reads `GODOT`; other tools take `--godot $env:GODOT`.
 - Import: `& $env:GODOT --headless --editor --path . --import`.
 - Play: `& $env:GODOT --path . --rendering-method forward_plus --windowed --resolution 1440x900 -- --no-title`.
-  A study: put its scene after `--path .`, e.g. `studies/motif_yard.tscn -- --motif=sundered_gorge`.
+  A study: put its scene after `--path .`, e.g. `studies/flight_study.tscn -- --pack=lines`.
   A `run-*.command` file shows the scene and flags it launches.
 - Tests: `python tools/run_tests.py` (same flags as above).
 - Blender scripts: `python tools/blender.py run art/blender/plane/plane_build.py [-- args]`.
@@ -132,30 +133,18 @@ away.
 
 # Handles
 
-The user tunes what agents build by hand in the world view (F4 in the
-aqueduct isle; `docs/design/world-editor/world-editor-handoff.md`). So
-placement code names its pieces: it asks `scripts/layout_overrides.gd` for
-each piece, islet or platform section by a stable name (`<route>/<piece>`),
-the user's moves in the layout file win over the coded spot, and a
-procedural build (a stair, a run) also shows its knobs. Keep those names
-stable; saved layouts key on them.
+Placement code names its pieces: it asks `scripts/layout_overrides.gd` for
+each piece by a stable name (`<route>/<piece>`), and the moves in the layout
+file (`layouts/<scene>.json`) win over the coded spot; the slot halls read
+theirs this way (`scripts/endless/hall_sites.gd`). Keep those names stable;
+saved layouts key on them. (The in-world editor that wrote layout files,
+F4, was part of the aqueduct isle and is in the archive.)
 
-# The motif editor
+# The ruin kit
 
-The user hand-authors motifs in `studies/motif_editor.tscn` (design and
-rounds: `docs/design/motif-editor/level-editor*.md`). Its saves,
-`motifs/authored/*.json`, are recipes (piece ids, seeds, settings,
-transforms) rebuilt from the current code on every load. So when you change
-RuinKit pieces, KitLand, flora or the motif contract:
-
-- Keep piece ids stable; a rename breaks saved motifs.
-- A piece whose size or shape changes gets its connectors updated in
-  `scripts/ruin_kit_fit.gd`.
-- Keep KitLand and flora changes additive or opt-in (the editor's `stable`
-  mode), so existing motifs build as before. Smoke a kit motif and an
-  `editor_*` one in the motif yard.
-
-Work that touches none of these can ignore the editor.
+The arches, halls and tunnels in the land are built from RuinKit pieces
+(`scripts/ruin_kit*.gd`). Keep piece ids stable: the land's recipes and the
+break kinds (`scripts/breaks/break_kinds.gd` `KIND_OF`) name them.
 
 # Subagent models
 
@@ -163,12 +152,11 @@ Pick a subagent's model by what it makes:
 
 - **Opus**, the default: physics, moving bodies, input, movement and feel,
   complex logic, animation (new clips and changes to existing ones), new
-  models, new kit pieces, new motif places (land, routes and threat under
-  the real motor) and the combo lab. Brief it to prove
+  models, new kit pieces, new kinds of place in the land. Brief it to prove
   the work through the real play loop and input path, not only scripted test
   ticks.
 - **Sonnet**, assembly and looks: putting pieces that already exist together
-  into a scene, motifs, layouts; shaders, materials, textures, reskins and
+  into a scene, layouts; shaders, materials, textures, reskins and
   other surface changes that leave shape, motion and collision alone.
 - **Haiku**: names, labels and other small brainstorms, and code search:
   the `scout` agent (`.claude/agents/scout.md`).
@@ -192,8 +180,8 @@ e.g. `TOY_THREAD := 3.5`) with `WorldScale.opening(toy_width)`: toy width x
 plane x `RATIO` (1.0), floored at `SNUG` (1.2 m past each wingtip). At
 `--plane-scale=1 --opening-ratio=1` every opening is its toy width exactly.
 Use `gap(room)` only for spacing with no toy width, and a knife-edge slot
-only on purpose with `knife()`. Derive walker reach, steps, ledges and jump
-gaps from the wanderer size (`PilotMotor.set_size`,
+only on purpose with `knife()`. The ruin kit's steps, ledges and jump gaps
+derive from the wanderer size (`PilotMotor.set_size`,
 `RuinKit.GRAB_TOP`/`CHAIN_TOP`). Other files ask WorldScale rather than
 copy 2.0, 2.4, the ratio, 1.2 (`pilot_size`) or the toy span 1.4. Guarded by
 `tests/test_world_scale_guard.gd`.

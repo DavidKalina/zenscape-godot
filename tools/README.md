@@ -12,26 +12,21 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Run any Godot command | `python tools/godot.py <godot args>` |
 | Smoke a scene (400 frames, no errors) | `python tools/smoke.py studies/x.tscn [-- scene flags]` |
 | A check through the real play loop | write `scratch/x.gd` extending `tools/harness/drive.gd`, then `python tools/drive.py scratch/x.gd` |
-| Every helper a driver has, with its doc | `python tools/drive.py --api [route\|watch\|ray\|...]` (read from drive.gd, chain.gd, stations.gd; no Godot run) |
+| Every helper a driver has, with its doc | `python tools/drive.py --api [route\|watch\|ray\|...]` (read from drive.gd and stations.gd; no Godot run) |
 | The same over seeds and knobs | `python tools/sweep.py scratch/x.gd --seed 1..8 --knob gulf=40,60` |
 | The same over the driver's own args | `python tools/sweep.py scratch/x.gd --arg pilot=stand,flee,dodge` (the driver gets `--pilot=...`) |
-| One motif alone on the real stage (the yard) | `python tools/smoke.py studies/motif_yard.tscn -- --motif=plumb_well [--grey] [--bodies=0] [--rims]` |
-| A motif's chain, 10 jittered trials | write `scratch/x_chain.gd` extending `tools/harness/chain.gd`, then `python tools/drive.py scratch/x_chain.gd -- --trials=10 --scene-args --motif=x [--grey]` |
-| Walk points through real input (lips, walls, falls, stuns) | in a driver: `await route([start, p1, {"to": p2, "jump": "long"}])`; a motif's paths: `walk_paths(owner, offset)` / chain.gd `walk_motif_paths()` (drive.gd, Routes) |
-| Log an enemy over time while he stands, flees, dodges or walks | in a driver: `await watch(enemy, {"pilot": "flee", "frames": 600})`; `--pilot-at=`, `--enemy-at=`; `"row": true` or `--watch-row` for a sweep table (drive.gd, Watching an enemy) |
 | Who's at a point, what a ray hits | in a driver: `say(hit_text(ray(a, b)))`, `pierce(a, b)`, `what_is_at(p, r)`, `what_is_in(box)`, `colliders(node)` (drive.gd, Collider probes) |
 | Parse-check a script without running it | `python tools/godot.py --check-only -s res://scratch/x.gd` (one script; exit 1 with the parse error) |
 | Check a land outline (bowtie, wrong winding) | `KitLand.outline_problems(outline, winding)`; `KitLand.island` warns on its own |
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
 | A still of a moment in a driven run (him mid-jump, a piece by its AABB) | in a driver: `await shot_at("side", motor, {"when": cond})`, then `route()`/`watch()`; run with `drive.py --rendered` (drive.gd, Shots) |
-| A short film and contact sheet while a route or watch plays | in a driver: `var f := film(enemy, {"view": "shoulder", "every": 6, "seconds": 3})`, `await watch(enemy)`, `await film_end(f)` (drive.gd, Shots) |
+| A short film and contact sheet of something moving | in a driver: `var f := film(node, {"view": "shoulder", "every": 6, "seconds": 3})`, step frames, `await film_end(f)` (drive.gd, Shots) |
 | Run a Blender script (Mac, Windows, the Store build) | `python tools/blender.py run art/blender/x/x_build.py [--blend F] [--timeout S] -- args`; `--where`; `--expr "..."` |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
 | The test suite | `python tools/run_tests.py [--tests 'test_x*.gd'] [--quick]` |
-| A new RuinKit piece: scaffold, sizes, recipe, yard, check | `python tools/kit_piece.py new\|numbers\|recipe\|yard\|check` |
-| A terraced solid (scripts/kit_isle/terrace_rock.gd) swept for see-in gaps, sight through rock, floor holes, collision off the drawn | `python tools/drive.py tools/terrace_check_run.gd -- --scene=studies/terrace_rock_test.tscn`; in a driver `await preload("res://tools/terrace_check.gd").sweep(node)` |
 | Measure a still's look (palette, shadows, blotch scale, edges, aerial) against the world's ranges, or two stills | `python tools/look_measure.py a.png [b.png] [--crop x0,y0,x1,y1] [--no-classes]` (stills: `tools/harness/look_views.gd`; `docs/art/look-breakdown.md`) |
 | The endless land's hash for a seed, to compare machines (co-op) | `python tools/land_hash.py --seed 1 [-- --land-native=0]`; `--compare a.txt b.txt` |
+| What a scene or folder reaches (scripts, scenes, shaders, assets), or why a file is reached, before cutting or moving files | `python tools/reach.py studies/x.tscn scripts/endless [--out F]`; in Python `reach.why(starts, file)`. It reads res:// strings, class_name words, uid:// ids and #includes; a compressed binary scene's dependencies come from Godot (`ResourceLoader.get_dependencies`) |
 | Find an existing tool | `python tools/index.py <word>` |
 
 ## godot.py: the base
@@ -52,14 +47,14 @@ exits 124.
 ## smoke.py: the smoke check
 
 ```
-python tools/smoke.py studies/greybox/lidstack.tscn studies/trap_yard.tscn -j 4
-python tools/smoke.py --greybox
+python tools/smoke.py studies/endless_flight.tscn studies/flight_study.tscn -j 2
+python tools/smoke.py studies/endless_flight.tscn -- --world=regions
 ```
 
 Each scene is opened the way the game opens it (`change_scene`), then runs
 400 frames at `--fixed-fps 60`. It prints one PASS/FAIL line per scene,
 with how long the scene took to be walkable and any errors with their
-`at:` lines. A trap yard takes about 8 s.
+`at:` lines. Endless flight takes about 10 s (15 s with `--world=regions`).
 
 ## drive.gd + drive.py: checks through the real play loop
 
@@ -67,16 +62,16 @@ with how long the scene took to be walkable and any errors with their
 extends "res://tools/harness/drive.gd"
 
 func drive() -> void:
-	await open("studies/trap_yard.tscn")           # walkable, or a FAIL line
-	await place(Vector3(0, 0, 3.6), Vector2(0, -1))
-	var got := await walk_to(Vector3(0, 0, -4), 600, 0.6, 0.5)   # jump halfway
-	check(got, "crossed the gap", "feet %s" % motor.feet)
-	var landed := await until(func() -> bool: return motor.grounded, 120)
-	result("airtime_frames", landed)
-	row({"seed": arg("seed"), "feet": motor.feet})
+	await open("studies/endless_flight.tscn")      # flying, or a FAIL line
+	var plane: RefCounted = study.plane
+	hold(&"fly_brake")                              # the real input actions
+	var down := await until(func() -> bool: return not study.hand_landing.flying(), 3000)
+	check(down >= 0, "touched down", "speed %.1f" % float(plane.speed))
+	result("touch_frames", down)
+	row({"seed": arg("seed"), "speed": plane.speed})
 ```
 
-`python tools/drive.py scratch/gap.gd -- --seed=2 --scene-args --motif=sundered_gorge`
+`python tools/drive.py scratch/land.gd -- --seed=2 --scene-args --at=720,760 --alt=14`
 
 - **Args.** Args after `--` belong to the driver: `arg`, `arg_int`,
   `arg_float`, `arg_vec3`, `flag`. Args after `--scene-args` are the
@@ -104,7 +99,7 @@ func drive() -> void:
   section's notes (a route's opts, what `watch` returns). drive.gd's
   header index comes from the same parse: after changing a helper, run
   `python tools/drive.py --api --update`. `--api` exits 1 while the index
-  or chain.gd's header misses a helper.
+  misses a helper.
 - **Reporting.** `check(ok, label, detail)` prints `OK`/`FAIL`.
   `result(k, v)` adds to the closing `RESULT {json}` line. `row(dict)`
   prints `ROW {json}`, which a sweep turns into table rows. `say(text)`
@@ -119,41 +114,6 @@ func drive() -> void:
   `var d := x.get("k")`. drive.py points this out when it happens. A
   script that doesn't parse fails in about a second.
 
-## The motif yard and chain.gd
-
-`studies/motif_yard.tscn` stands one motif and nothing else, on the study
-base, with the pilot, motor, input and camera; its live parts (traps,
-ropes, cannons, heads and their bodies) are set up as they are anywhere
-else. It stands in about 2 s, and 10 trials
-of the Plumb Well column take about 10 s.
-
-```
-python tools/smoke.py studies/motif_yard.tscn -- --motif=lidstack [--grey] [--bodies=0] [--rims] [--at=x,y,z] [--sky]
-python tools/drive.py tools/harness/examples/plumb_well_chain.gd -- --trials=10 --scene-args --motif=plumb_well --bodies=0 [--grey]
-python tools/shot.py studies/motif_yard.tscn --frame Motif_gb_vigil_bellows --view three -- --motif=vigil_bellows [--sky]
-```
-
-- `--motif=` takes a greybox slug (`scripts/kit_isle/greybox/registry.gd`)
-  or a kit pool id (`bell_spires`: stood, no heads). `--grey` sets the
-  motif's own grey flag (`--well-grey` and so on). `--bodies=0` turns the
-  headless bodies off, `--rims` adds a pad a route stride off each rim,
-  `--at=` moves the motif, and `--sky` adds the clouds and life for stills
-  (a drifting puff can hide a low motif; shoot it without `--sky` then).
-  R in the yard resets the stage and sets him at the start.
-- **The trial helper.** `tools/harness/chain.gd` extends drive.gd.
-  `open_motif(slug)` opens the yard. `motif_point(p)` moves a point of the
-  motif's own table into the world. `motif_isle`, `motif_host` (its traps,
-  ropes) and `motif_heads` find its parts. `reset_all()` puts the stage
-  back as built. `trials(n, fn, jitter, delay)` runs `fn` n times from a
-  jittered start, after a jittered delay with the traps and heads running,
-  and prints a `ROW` per trial and `RESULT {passed, trials, rate}`.
-  `rest(region)` waits until he comes to rest. The header has the rest.
-- **Examples.** `tools/harness/examples/plumb_well_chain.gd` (the column,
-  and `--chain=cannon`) and `wardens_well_chain.gd` (the head relay, and
-  `--chain=cannon`, the missed relay). Copy one into `scratch/`.
-- **What the yard leaves out.** Neighbouring isles (`--rims` stands in a
-  pad off each rim), and the load of anything else on the frame.
-
 ## sweep.py: a table over seeds and knobs
 
 ```
@@ -163,7 +123,7 @@ python tools/sweep.py scratch/gap.gd --seed 1..6 --knob gulf=40,60,80 --csv scra
 Each axis becomes a scene flag: `--seed=N`, `--shape=S`, `--knob=k=v`, and
 `--set name=a,b` gives `--name=a`. `--arg name=a,b` gives the driver
 `--name=a` instead (before `--scene-args`), so the scene never sees it:
-`python tools/sweep.py scratch/watch_enemy.gd --arg pilot=stand,flee,dodge -- --watch-row`. Ranges are written `1..5` or `0..20..5`.
+`python tools/sweep.py scratch/x.gd --arg line=low,high`. Ranges are written `1..5` or `0..20..5`.
 The columns are the driver's RESULT values, or one row per ROW line it
 printed, plus `ok` and seconds. To try a value, pass it as a flag. Don't
 `sed` it into the source.
@@ -171,9 +131,9 @@ printed, plus `ok` and seconds. To try a value, pass it as a flag. Don't
 ## shot.py: rendered stills
 
 ```
-python tools/shot.py studies/trap_yard.tscn                                # its own camera
-python tools/shot.py studies/trap_yard.tscn --frame walker --view three,front,top,close --sheet
-python tools/shot.py studies/kit_isle.tscn --at 0,30,60 --look 0,0,0
+python tools/shot.py studies/ruin_kit_gallery.tscn                         # its own camera
+python tools/shot.py studies/flight_study.tscn --frame all --view three,front,top,close --sheet
+python tools/shot.py studies/endless_flight.tscn --at 0,30,60 --look 0,0,0
 python tools/shot.py --sheet-of a.png b.png --out scratch/sheet.png        # headless
 ```
 
@@ -184,42 +144,6 @@ The views are three, front, back, left, right, top and close. The HUD is
 hidden unless you pass `--hud`. Files go to `captures/shots/<scene>_<view>.png`
 unless `--out` says otherwise. Read the PNGs and judge them yourself.
 Headless runs can't take stills.
-
-## kit_piece.py: a new RuinKit piece
-
-```
-python tools/kit_piece.py new <id> --family <family> [--name "Display name"]
-python tools/kit_piece.py numbers                  # GRAB_TOP, CHAIN_TOP, SET_OFF, STAND, HEAD, SLIDE_AUTO, opening(TOY_THREAD)...
-python tools/kit_piece.py recipe                   # tools/kit_piece_recipe.md
-python tools/kit_piece.py yard <id> [--seed 3 --weathered 0.4]
-python tools/kit_piece.py check <id> [--shots]
-```
-
-- `new` writes `scripts/ruin_kit_<id>.gd` from a stub (one worn block on a
-  clean walk box) and registers it in `scripts/ruin_kit.gd` (a
-  `<ID>_PIECES` const, FAMILIES, ALL_PIECES, NAMES, the `piece` line) and a
-  connector arm in `scripts/ruin_kit_fit.gd`. It never overwrites a file
-  and skips edits already made; the piece is in the editor palette and
-  passes tests/test_ruin_kit.gd straight away.
-- `numbers` prints the sizing constants read live from the code (a
-  headless `tools/kit_piece_numbers.gd`), each with its file and name.
-  Carries are ballistic estimates: prove a gap with a drive.
-- `recipe` is the Build helpers, collision, ledges, meta, ropes, live
-  rigs, connectors and LOD by symbol name.
-- `yard` prints the shot.py and drive.py lines for
-  `studies/kit_piece_yard.tscn` (`--piece=<id> --seed= --weathered=
-  --turn=`; the piece is node "Piece" at the origin, its ropes hung live).
-  The drive skeleton is `tools/harness/examples/kit_piece_drive.gd`.
-- `check` prints one PASS/FAIL line each: the editor round trip
-  (`tools/harness/kit_piece_editor.gd`: palette, place, turn, save,
-  reload rebuilds the same after a dress, ropes, temp save deleted),
-  tests/test_ruin_kit.gd, smokes of the motif editor, motif_yard
-  editor_aqueduct_gorge and bell_spires, and the yard; `--shots` adds a
-  still sheet. Exits 1 on any failure (about 40 s). Run one `check` at a
-  time: the editor round trip uses one temp slug.
-- Tool and study scripts get the editor's FootPieces with
-  `load("res://scripts/roguelike/layer_greybox.gd").FootPieces` at run
-  time; a const preload of it leaks the script graph at exit.
 
 ## blender.py: Blender scripts
 
@@ -267,9 +191,10 @@ python tools/bg.py wait suite          # blocks up to 540 s, prints the tail; ex
 Logs and state go to `scratch/bg/`. Use this rather than `sleep` and
 `until` polling loops.
 
-## The other ~330 tools
+## The other tools
 
 These are one-off probes, captures, films, benches and dumps from earlier
-rounds. Most say what they do and how to run them in their header.
+rounds (the ones for the cut scenes went with them on 2026-10-24:
+docs/archive.md). Most say what they do and how to run them in their header.
 `python tools/index.py <word>` lists them with that line. Reuse one, or
 copy its idea into a driver, before writing another.

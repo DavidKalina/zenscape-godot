@@ -2,41 +2,49 @@
 
 ## Play
 
-Double-click **`run-zenscape.command`**, or open `project.godot` in
-**Godot 4.7.2** (standard edition; no .NET needed) and press **F5**. Both open
-the front door, `studies/zenscape.tscn`: the title over the aqueduct isle
-(`studies/aqueduct_isle.gd`), the camera orbiting it. **Begin** puts you on
-foot beside your parked plane; **Scenes** opens every study and greybox;
-**Settings** (look, day and night, weather, sound, controller); **Quit**.
-`-- --no-title` goes straight in. The sky is live: the day turns (8 minutes a
-day), the year turns from the real date's season, the weather drifts and
-storms flash in the clouds (`scripts/kit_isle/kit_weather.gd`;
-`--day-length=60 --weather=storm` to watch it fast). In the game, **Esc** or
-the pad's **Menu** pauses: Resume, Back to the plane (also **R** on foot),
-Settings, Scenes, Back to the title and Quit. The study's developer keys
-(F1-F12, the station keys, L, B) and capture flags work only in editor and
-debug runs. Pad controls are in [gamepad](docs/gamepad.md).
+The game is endless flight: you fly a plane over procedural land that never
+ends. Double-click **`run-endless-flight.command`** (Mac), or open
+`project.godot` in **Godot 4.7.2** (standard edition; no .NET needed) and
+press **F5**. Both open `studies/endless_flight.tscn`.
+
+Keys: WASD or the left stick bank and pitch (W nose down), the mouse steers,
+Space boost, Shift brake, Q and E hold a knife edge (twice quickly, a barrel
+roll, or click), F the flaps, hold the right mouse button to look round, R
+back up into the air, F1 the numbers, Esc frees the mouse. Land on any flat
+turf; stopped, Space rolls it off again. Pad controls are in
+[gamepad](docs/gamepad.md). Flags such as `--seed=7`, `--world=regions` and
+`--hour=17` are listed at the top of `studies/endless_flight.gd`.
 
 For a standalone Windows or Mac app, see
 [desktop builds](docs/desktop-builds.md).
 
 ## Structure
 
-- `studies/zenscape.tscn` and `scripts/kit_isle/front_door.gd`: the title and
-  the game.
-- `studies/aqueduct_isle.gd` with `scripts/kit_isle/`: the isle, its land,
-  life, sky, sound and settings.
+- `studies/endless_flight.gd`: the game's engine (the plane, the camera,
+  streaming, the HUD). `scripts/endless/`: the land, sky, clouds, sea,
+  rivers, grass, trees, birds, the ruins in the land, and the world profiles
+  and regions (`scripts/endless/world/`).
+- `scripts/sky_plane.gd`, `manual_landing.gd`, `plane_figure.gd`,
+  `glide_camera.gd`: the plane, its hand landing, its look and the chase
+  camera.
+- `scripts/ruin_kit*.gd`: the ruin kit the arches, halls and tunnels are
+  built from. `scripts/breaks/`: its break system (cut pieces, falling
+  parts), kept for light destruction.
+- `scripts/shared/`: pieces from the old sky isles the land still uses.
+- `studies/flight_study.tscn` (a greybox flying course with the crash) and
+  `studies/ruin_kit_gallery.tscn`: test beds.
 - `native/terrain_kernels/`: the optional native terrain kernels
   (`tools/build_native_kernels.py`); without a built kernel the GDScript
   versions run.
+- `docs/archive.md`: what was cut on 2026-10-24 (the isles, the walking
+  character, the Olmec, enemies, the motif editor) and how to bring it back
+  from the `archive/before-the-cut` tag.
 
 ## Checks
 
 ```sh
 godot --headless --editor --path . --import
-godot --headless --path . --script tests/test_landscape.gd
-godot --headless --path . --script tests/test_garden.gd
-godot --headless --path . --script tests/test_world_clock.gd
+python3 tools/smoke.py studies/endless_flight.tscn
 ```
 
 The test runner runs every script under `tests/`, headless, eight at a time,

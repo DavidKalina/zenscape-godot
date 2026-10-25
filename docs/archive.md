@@ -31,9 +31,9 @@ git checkout archive/before-the-cut -- scripts/olmec_boss studies/olmec_field.gd
 
 A piece brought back usually needs the files it leaned on too. Each entry
 below names its own files and what else it needed. To list everything a
-scene reached at the tag, run the reach tool in an archive worktree:
-`python scratch/cut/reach.py studies/<scene>.tscn` (kept in
-`tools/reach.py` after the cut). The longer a piece sits, the more the
+scene reached at the tag, copy today's `tools/reach.py` into an archive
+worktree and run `python tools/reach.py studies/<scene>.tscn` there (it
+was written for the cut; see its header). The longer a piece sits, the more the
 code round it has moved on, so expect a round of fixing to make it fit.
 
 Older shelved work has its own branches: `shelved/calm-olmec` (the calm
@@ -63,11 +63,17 @@ the sky, the water paths, the front door, pause and settings menus.
 - Docs: `docs/design/isle-look/`, `big-isle/`, `home-isle/`,
   `crag-reach/`, `layout-edit/`, `docs/scenic/`.
 
-Still in the game from this family: `scripts/kit_isle/kit_land.gd`,
-`kit_flora.gd`, `kit_look.gd`, `kit_water.gd`, `path_dirt.gd`,
-`turf_lips.gd`, `hanging_roots.gd`, and `studies/aqueduct_isle_art.gd` and
-`aqueduct_isle_flora.gd` (the endless grass and the layout handles use
-them). They moved to `scripts/shared/`.
+Still in the game from this family, moved to `scripts/shared/`:
+`scripts/kit_isle/kit_land.gd`, `kit_flora.gd`, `kit_look.gd`,
+`kit_water.gd`, `path_dirt.gd`, `turf_lips.gd`, `hanging_roots.gd`;
+`studies/aqueduct_isle_art.gd`, `aqueduct_isle_flora.gd`, `celestial.gd`,
+`fall_foam.gd`, `fall_mist.gd`, `surface_depth.gd`, `gust_fronts.gd`,
+`studies/crossings/gust_arrows.gd`; `scripts/interactables/islet.gd`,
+`bob_slab.gd`, `foot_slab.gd`, `swing_rope.gd`; `scripts/traps/trap.gd` and
+`gust.gd`. The endless grass, look, tunnels, the layout handles and the ruin
+kit's gadgets (the wind horn, the torana's rope, the keel's hung stair) use
+them. The in-world layout editor (F4, `docs/design/world-editor/`) was the
+isle's; its handoffs stay in the docs because the layout file still works.
 
 ### The motif editor
 
@@ -89,17 +95,22 @@ nearly all of it.
 The wanderer on foot: run, jump (held-height and pump jumps), crouch
 slide, slope surf, chained long jumps, the glide ("sail"), wall-run,
 ledge grab and climb, rope, carry and throw, roll, lock-on. It played
-well; it left because the game is the plane.
-- Code: `scripts/pilot_motor.gd` (the motor, PilotMotor) stays for now as
-  the ruin kit's size reference: the kit's steps, ledges and gaps are
-  sized from its numbers. The rest went: `scripts/endless/endless_walker.gd`
-  (getting out of the plane in endless flight), `scripts/pilot_figure.gd`
-  and the pilot rig's helpers (`pilot_pose`, `pilot_paint`, `pilot_puffs`,
-  `pilot_ripples`, `pilot_step_smooth`, `pilot_physics_ground`,
-  `pilot_ledge`, `pilot_drop_shadow`, `wanderer_steps`), `pocket_sail*`,
-  `scripts/lock_on/`, `scripts/rope/`, `scripts/noise/`,
-  `scripts/interactables/` (the foot pieces).
-- Model: `assets/models/pilot.glb`, `art/blender/pilot/`.
+well; it left because the game is the plane. In endless flight F on the
+wheels got out and the walker walked the land
+(`scripts/endless/endless_walker.gd`, `--on-foot`); that is gone.
+- Still in the repo, dormant: `scripts/pilot_motor.gd` (PilotMotor) and
+  the pieces it loads (`pilot_figure`, `pilot_pose`, `pilot_paint`,
+  `pilot_physics_ground`, `pilot_ledge`, `pocket_sail`). The ruin kit's
+  steps, ledges and gaps are sized from the motor's numbers, and the wind
+  horn, gusts and slams push it, so it stays until those numbers are frozen
+  into the kit. The cockpit pilot in the plane is drawn from
+  `assets/models/pilot.glb` (`art/blender/pilot/`), which stays too.
+- Gone: `scripts/endless/endless_walker.gd`, `pilot_puffs`,
+  `pilot_ripples`, `pilot_step_smooth`, `pilot_drop_shadow`,
+  `wanderer_steps`, `pocket_sail_figure`, `character_recording`,
+  `scripts/lock_on/`, `scripts/rope/`, `scripts/noise/`, the rest of
+  `scripts/interactables/`, and the tests of moves that need a scene
+  (the motor's own unit tests, `tests/test_pilot_*.gd`, still run).
 - Scenes: `character_study`, `character_runs/`, `pocket_sail_study`,
   `rope_study`, `swing_study`, `interactables_yard`, `crossing_yard`,
   `whole_body_chase`, `whole_body_leap_grab`.
@@ -149,15 +160,41 @@ brood and then the Olmec, the broken plane's six parts.
 - Scenes: `heist_level`, `wreck_cluster`, `bag_study`, `bridge_study`,
   `chest_study`, `cannon_yard`, `snag_study`, `broken_plane_gallery`,
   `plane_parts_gallery`, `collectible_gallery`, `lodestone_study`,
-  `fire_study`, `landing_study`.
+  `fire_study`.
+- The HUD glyphs and icons: `assets/ui/`, `scripts/hud_icons.gd`,
+  `collectibles_hud.gd`.
 - Docs: `docs/design/heist-level/`, `greed-run/`, `bag/`, `bag-hitch/`,
   `bridge-snap/`.
+
+### The landing study
+
+`studies/landing_study.tscn`: greybox fields of rising landing difficulty
+with a landing bot (`scripts/landing_bot.gd`, `landing_course.gd`,
+`landing_run.gd`, `landing_readout.gd`; tools `landing_bench.gd`,
+`landing_trace.gd`). Endless flight lands by hand with
+`scripts/manual_landing.gd`, which stays.
 
 ### Traps and greybox studies
 
 - Code: `scripts/traps/` (all but the trap base and the gust the wind
   horn uses), `studies/greybox/`, `scripts/kit_isle/greybox/`.
 - Scenes: `trap_yard`, `wind_horn_study`, `studies/greybox/*`.
+
+### Everything else that went with them
+
+- The `GameState` autoload (`scripts/ledger/`, `data/ledger/`: the isles'
+  objectives) and `data/layer/`, `motifs/`, `layouts/aqueduct_isle.json`.
+- 101 tests and about 70 tools for the cut scenes (the kit isle captures and
+  fingerprints, the motif chain harness `tools/harness/chain.gd`,
+  `tools/kit_piece.py`, the serpent, character and capture tools).
+- Design docs: every `docs/design/` folder but `endless-flight/`,
+  `harness-tools/`, `world-editor/` and
+  `architecture/sky-plane-verbs-handoff.md`.
+- Blender sources of the cut models: `art/blender/brood`, `city_relief`,
+  `face_colossus`, `guacharo`, `headless_body`, `inhaler_head`,
+  `rim_dragon`, `rune_knight`.
+- The launchers of every cut scene (`run-*.command`), and
+  `selection-garden.json` (the old diorama editor's selection).
 
 ## What stayed
 
@@ -166,6 +203,7 @@ rivers, flora, birds, the overgrown halls and tunnels, the world regions,
 the ruin kit (its arches, halls and tunnels stand in the land), the
 layout handles, the native terrain kernels and the harness. The ruin
 kit's break system (cutting pieces and dropping their parts) moved to
-`scripts/breaks/`, for light destruction later. `studies/flight_study`
+`scripts/breaks/`, for light destruction later; the hub already names a
+`plane` breaker, switched off. `studies/flight_study`
 (the greybox flying course, with the crash) and `studies/ruin_kit_gallery`
 stayed as test beds.
