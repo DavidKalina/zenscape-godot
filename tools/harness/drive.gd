@@ -16,8 +16,9 @@ extends SceneTree
 ##
 ## Args after `--` are the driver's (`arg("seed")`); the ones after a
 ## `--scene-args` token are the scene's (`arg` falls back to them): `open` hands those to it as its
-## launch flags (scripts/launch_args.gd), with `--no-title`, so the scene
-## never sees the driver's. `--timeout=S` (default 240) is wall-clock.
+## launch flags (scripts/launch_args.gd), with `--no-title` (unless they
+## hold `--title`: then the scene opens on its title, endless flight's main
+## menu), so the scene never sees the driver's. `--timeout=S` (default 240) is wall-clock.
 ##
 ## What it prints, for tools/drive.py and tools/sweep.py to read:
 ##   OK   label / FAIL label: detail   from check()
@@ -185,7 +186,10 @@ func scene_args() -> PackedStringArray:
 func open(scene: String, args: Variant = null, ready_frames := 3000) -> int:
 	if not scene.begins_with("res://"): scene = "res://"+scene
 	var given := PackedStringArray(scene_args() if args == null else args)
-	if not "--no-title" in given: given.insert(0,"--no-title")
+	# `--title` among them keeps the scene's title (endless flight's main
+	# menu): no `--no-title` then.
+	if "--title" in given: given.remove_at(given.find("--title"))
+	elif not "--no-title" in given: given.insert(0,"--no-title")
 	LaunchArgs.set_override(given)
 	var packed: PackedScene = load(scene)
 	if packed == null:

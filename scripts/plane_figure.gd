@@ -35,8 +35,19 @@ extends Node3D
 ##
 ## Landed, it stands on its two wheels and a tail skid, nose up (`park`,
 ## scripts/plane_strip.gd `rest`), the propeller still.
+##
+## Idling (`hum`, 0 to 1; the main menu's parked plane, scripts/endless/
+## main_menu.gd): the propeller at IDLE_TURNS, a blur; the engine's buzz, a
+## fast small shake (HUM_BUZZ m and HUM_TWITCH radians, sines out of step
+## at HUM_HZ); the body swaying slowly on its wheels' springs (HUM_SWAY
+## radians of roll and pitch at HUM_SWAY_HZ, bobbing HUM_BOB m) and leaning
+## a little against the propeller's torque (HUM_TORQUE); the elevator and
+## ailerons fluttering in the propeller's wash (HUM_FLUTTER radians at
+## HUM_FLUTTER_HZ). `rev` (0 to 1) runs the engine up: the propeller REV_TURNS
+## times faster, the buzz and flutter REV_SHAKE times stronger.
 
 const FacetMesh = preload("res://scripts/facet_mesh.gd")
+const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const PLANE_SURFACE := preload("res://shaders/plane_surface.gdshader")
 const PROP_BLUR := preload("res://shaders/prop_blur.gdshader")
 ## Each paint slot's colour: "wood" the body, "dark" the struts, legs and
@@ -131,6 +142,19 @@ const BLUR := Vector2(0.22,0.55)
 const BLUR_CRAWL := 1.4
 ## The landing mark shows within MARK_HEIGHT m of the ground.
 const MARK_HEIGHT := 28.0
+## Idling (`hum`; the header's last paragraph).
+const IDLE_TURNS := 16.0
+const REV_TURNS := 1.6
+const HUM_BUZZ := Vector3(0.003,0.004,0.002)
+const HUM_TWITCH := Vector3(0.003,0.002,0.004)
+const HUM_HZ := Vector3(23.0,29.0,17.0)
+const HUM_SWAY := Vector2(0.018,0.009)
+const HUM_SWAY_HZ := Vector2(0.55,0.83)
+const HUM_BOB := 0.008
+const HUM_TORQUE := 0.012
+const HUM_FLUTTER := Vector2(0.07,0.035)
+const HUM_FLUTTER_HZ := Vector2(6.3,9.7)
+const REV_SHAKE := 1.8
 ## The wingtip vapour: points kept a tip, laid every VAPOUR_EVERY seconds
 ## (so a trail lasts VAPOUR*VAPOUR_EVERY), its width new and old and its
 ## strength (toy m, grown with the plane), its drift up and outward (m/s),
@@ -147,6 +171,16 @@ var _prop: Node3D
 var _blur: MeshInstance3D
 ## True while it stands parked on the land, not flying.
 var parked := false
+## Idling on its wheels (0 to 1) and the engine run up (0 to 1): the
+## header's last paragraph.
+var hum := 0.0
+var rev := 0.0
+## How much of the hum's sway on the springs shows (rolling, it goes).
+var sway := 1.0
+var _hum_t := 0.0
+## The control surfaces' angles from the stick, under the hum's flutter.
+var _aileron_at := Vector2.ZERO
+var _elevator_at := 0.0
 var _blur_material: ShaderMaterial
 var _blades_shown := true
 var _prop_angle := 0.0
@@ -346,12 +380,14 @@ func update(delta: float, glide: RefCounted, _dive: float, ground: Callable, lan
 		var k := 1.0-exp(-delta/0.08)
 		for s in range(2):
 			var hand := -1.0 if s == 0 else 1.0
-			_ailerons[s].rotation.x = lerpf(_ailerons[s].rotation.x,rolled*hand,k)
-		_elevator.rotation.x = lerpf(_elevator.rotation.x,pitched,k)
+			_aileron_at[s] = lerpf(_aileron_at[s],rolled*hand,k)
+		_elevator_at = lerpf(_elevator_at,pitched,k)
 	_last_roll = roll
 	_last_pitch = float(glide.pitch)
+	var on := float(running) if running != null else 1.0
+	_idle(delta,on)
 	var pace := float(glide.speed)
-	_spin_prop(delta,pace,float(running) if running != null else 1.0)
+	_spin_prop(delta,pace,on)
 	_trail_vapour(delta,near,lean)
 	_place_mark(delta,at,ground,landable)
 
@@ -360,6 +396,7 @@ func update(delta: float, glide: RefCounted, _dive: float, ground: Callable, lan
 ## give way to the disc alone, its sweeps crawling round.
 func _spin_prop(delta: float, pace: float, running: float) -> void:
 	var turns := (PROP_TURNS+PROP_PER*pace)*running
+	if hum > 0.0: turns = maxf(turns,IDLE_TURNS*(1.0+REV_TURNS*rev)*running*hum)
 	_prop_angle = wrapf(_prop_angle+delta*turns*TAU,0.0,TAU)
 	_prop.rotation.z = _prop_angle
 	if _blades_shown and turns > PROP_HIDE: _blades_shown = false
@@ -370,6 +407,37 @@ func _spin_prop(delta: float, pace: float, running: float) -> void:
 	_blur_material.set_shader_parameter("spread",fast)
 	_blur_material.set_shader_parameter("phase",fmod(Time.get_ticks_msec()*0.001*BLUR_CRAWL,TAU)*running)
 	_blur.visible = running > 0.01
+
+## Idling (`hum`, the engine `running` 0 to 1): the shake and sway laid
+## over the pose (in the pose's frame, about the wheels, so the ground
+## scale's growing about them keeps it), the control surfaces' flutter
+## over the stick's angles.
+func _idle(delta: float, running: float) -> void:
+	var on := hum*running
+	var flutter := Vector2.ZERO
+	if on > 0.0:
+		_hum_t += delta
+		var t := _hum_t*TAU
+		var buzz := on*(1.0+REV_SHAKE*rev)
+		var jig := func(hz: float, phase: float) -> float: return sin(t*hz+phase)*0.65+sin(t*hz*1.37+phase*2.1)*0.35
+		var shake := Vector3(jig.call(HUM_HZ.x,0.3),jig.call(HUM_HZ.y,1.9),jig.call(HUM_HZ.z,4.1))*HUM_BUZZ*buzz
+		var twitch := Vector3(jig.call(HUM_HZ.y*0.9,2.7),jig.call(HUM_HZ.z*1.1,0.8),jig.call(HUM_HZ.x*0.8,5.3))*HUM_TWITCH*buzz
+		# The springs: a slow roll and nod about the wheels, out of step, and
+		# a bob; leaning a touch against the torque, more run up.
+		var springy := Vector2(sin(t*HUM_SWAY_HZ.x)*0.7+sin(t*HUM_SWAY_HZ.x*1.9+1.3)*0.3,sin(t*HUM_SWAY_HZ.y+0.6)*0.75+sin(t*HUM_SWAY_HZ.y*2.3+2.2)*0.25)*HUM_SWAY*on*sway*(1.0+0.6*rev)
+		var bob := sin(t*HUM_SWAY_HZ.y*1.6+0.4)*HUM_BOB*on*sway
+		var lean := HUM_TORQUE*on*sway*(1.0+rev)
+		var wheels := PIVOT
+		var springs := Basis.from_euler(Vector3(springy.y+twitch.x,twitch.y,-(springy.x+lean)+twitch.z))
+		transform = transform*Transform3D(Basis.IDENTITY,wheels+shake+Vector3.UP*bob)*Transform3D(springs,Vector3.ZERO)*Transform3D(Basis.IDENTITY,-wheels)
+		var wash := on*(1.0+REV_SHAKE*rev)
+		flutter = Vector2(jig.call(HUM_FLUTTER_HZ.x,0.0)*HUM_FLUTTER.x,jig.call(HUM_FLUTTER_HZ.y,1.1)*HUM_FLUTTER.y)*wash
+	for s in range(2): _ailerons[s].rotation.x = _aileron_at[s]+flutter.y*(1.0 if s == 0 else -0.8)
+	_elevator.rotation.x = _elevator_at+flutter.x
+
+## The wheels' contact under the body's middle, in the figure's frame
+## (scripts/plane_ground_scale.gd PIVOT).
+const PIVOT := Vector3(0.0,-PlaneStrip.WHEEL_DROP,-PlaneStrip.WHEEL)
 
 ## Where the figure stands for a flight's pose: its position (the flight's,
 ## the figure hangs FIGURE_DROP under it), heading, pitch and roll.
