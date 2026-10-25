@@ -552,7 +552,17 @@ func _blend_of(land_seed: int, want_native: bool) -> Object:
 			f = _field_of(land_seed,sk,want_native)
 			softs.append(f[0])
 			soft_natives.append(f[1])
-	return Blend.new(fields,natives,world.map,int(world.start_region),softs,soft_natives)
+	var b: Object = Blend.new(fields,natives,world.map,int(world.start_region),softs,soft_natives)
+	# The regions' own layers: a hall or tunnel stands only wholly inside a
+	# region whose profile grows it (LandBlend `site_ok`); `--halls=X` /
+	# `--tunnels=X` (X > 0) grow them in every region.
+	var flagged := {&"halls":Sites.wanted(-1.0) > 0.0,&"tunnels":Tunnels.wanted(-1.0) > 0.0}
+	for layer: StringName in flagged:
+		var on := PackedByteArray()
+		for p: RefCounted in world.regions:
+			on.append(1 if bool(flagged[layer]) or float(p.layers.get(String(layer),0.0)) > 0.0 else 0)
+		b.layer_on[layer] = on
+	return b
 
 ## [field, native] for the knobs `k`: the native field where built, else GDField.
 static func _field_of(land_seed: int, k: Dictionary, want_native: bool) -> Array:

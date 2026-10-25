@@ -299,6 +299,42 @@ func one_in(x0: float, z0: float, x1: float, z1: float, k := 0) -> int:
 			one = c
 	return maxi(one,-1)
 
+# --- The regions' own layers (halls, tunnels) ------------------------------------------
+
+## How far a site's footprint keeps inside the pure lattice cells (m): its
+## box grown by this must lie wholly in one region, so its cut or massif
+## never meets the band.
+const SITE_CLEAR := 128.0
+## Per layer (&"halls", &"tunnels"), whether each region (by index) grows it
+## (LandField sets it from the regions' layers and the flags). A layer not
+## here stands nowhere.
+var layer_on := {}
+
+## Whether region `r` grows `layer`.
+func _layer_in(layer: StringName, r: int) -> bool:
+	var on: Variant = layer_on.get(layer)
+	return r >= 0 and on != null and r < (on as PackedByteArray).size() and (on as PackedByteArray)[r] != 0
+
+## Whether a site of `layer` may look at (x, z): the point's lattice cell
+## lies wholly in a region that grows it (a cheap first test for a search).
+func site_spot(layer: StringName, x: float, z: float) -> bool:
+	return _layer_in(layer,_at(x,z))
+
+## Whether a site of `layer` whose footprint is the box (x0, z0)..(x1, z1)
+## may stand: the box grown by SITE_CLEAR lies wholly in the pure lattice
+## cells of one region that grows it. Its corners and middle first (most
+## boxes in the band fail there), then every lattice cell.
+func site_ok(layer: StringName, x0: float, z0: float, x1: float, z1: float) -> bool:
+	x0 -= SITE_CLEAR
+	z0 -= SITE_CLEAR
+	x1 += SITE_CLEAR
+	z1 += SITE_CLEAR
+	var r := _at((x0+x1)*0.5,(z0+z1)*0.5)
+	if not _layer_in(layer,r): return false
+	for p: Vector2 in [Vector2(x0,z0),Vector2(x1,z0),Vector2(x0,z1),Vector2(x1,z1)]:
+		if _at(p.x,p.y) != r: return false
+	return one_in(x0,z0,x1,z1) == r
+
 # --- The field ----------------------------------------------------------------------
 
 ## Every region in the band at (x, z) sampled and blended by `_w`.

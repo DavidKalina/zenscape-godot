@@ -78,9 +78,14 @@ func _init() -> void:
 	flora = home.flora.duplicate(true)
 	paint = home.paint.duplicate(true)
 	layers = home.layers.duplicate(true)
-	# Halls and tunnels stand only once their sites keep inside their region.
-	layers.halls = 0.0
-	layers.tunnels = 0.0
+	# A region's own layers (halls, tunnels, arches) run at the densest
+	# region's density; each site then keeps to the regions that grow it
+	# (halls and tunnels wholly inside one, clear of the band: LandBlend
+	# `site_ok`; arches by the region at the spot: ArchPlan).
+	for key: String in ["halls","tunnels","arches"]:
+		var most := 0.0
+		for p: RefCounted in regions: most = maxf(most,float(p.layers.get(key,1.0 if key == "arches" else 0.0)))
+		layers[key] = most
 
 ## --regions=wilderness:2:start,overgrown:1 into registry entries.
 static func _parse_list(text: String) -> Array:

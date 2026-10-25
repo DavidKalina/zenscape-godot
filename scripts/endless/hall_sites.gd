@@ -30,6 +30,10 @@ extends RefCounted
 ## the cut's half width at its widest (its top)].
 ## `site_info` has the rest (the name, the hall frame, the bays, the seed).
 ##
+## In a world of regions (the field a LandBlend) a hall stands only where
+## its whole cut, and SITE_CLEAR m round it, lies in one region that grows
+## halls (LandBlend `site_ok`), so no cut meets a border band.
+##
 ## Each is named `<world>/hall/<cx>_<cz>` and placed through
 ## scripts/layout_overrides.gd: a move in the layout file moves the hall and
 ## its cut (only its yaw and place are kept), a deletion drops both.
@@ -183,10 +187,14 @@ static func _make(impl: Object, seed: int, density: float, ponds: float, ci: int
 	var z0 := cj*CELL+MARGIN
 	var span := CELL-MARGIN*2.0
 	var spots: Array = []
+	var gated := impl.has_method("site_ok")
 	for gj in SCAN:
 		for gi in SCAN:
 			var x := x0+(gi+0.5)/SCAN*span
 			var z := z0+(gj+0.5)/SCAN*span
+			# In a world of regions, only where the land is wholly a region
+			# that grows halls (LandBlend `site_spot`).
+			if gated and not impl.site_spot(&"halls",x,z): continue
 			impl.sample(x,z)
 			var m: float = impl.last_mountain
 			if m >= CREST_MIN: spots.append([m,x,z])
@@ -283,6 +291,13 @@ static func _fit(impl: Object, seed: int, ponds: float, ci: int, cj: int, x: flo
 	var site := _site(coded,half_len,reach,hc)
 	var centre := Vector2(site[0],site[1])
 	var way := Vector2(site[2],site[3])
+	# In a world of regions, the whole cut inside one region that grows
+	# halls, clear of the band (the coded place: a move in the layout file
+	# still wins).
+	if impl.has_method("site_ok"):
+		var ex := absf(way.x)*site[7]+absf(way.y)*site[8]
+		var ez := absf(way.y)*site[7]+absf(way.x)*site[8]
+		if not impl.site_ok(&"halls",centre.x-ex,centre.y-ez,centre.x+ex,centre.y+ez): return {}
 	# The ends climb out to the land within the reach, and no pond is near.
 	for end: float in [-1.0,1.0]:
 		var q := centre+way*end*reach
