@@ -107,6 +107,10 @@ func setup(look: Node3D, haze: Vector3) -> void:
 func set_mood(id: String) -> void:
 	_mood = tuning(id)
 
+## A tuning made by hand (EndlessLook.blend_moods: moods blended by weight).
+func set_tuning(t: Dictionary) -> void:
+	_mood = t
+
 static func _put4(p: PackedFloat32Array, at: int, v: Vector4) -> void:
 	p[at] = v.x
 	p[at+1] = v.y

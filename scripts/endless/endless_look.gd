@@ -105,6 +105,9 @@ var _gust := 0.0
 var _wind_angle := 0.0
 var _wind := WIND
 var mood := MOOD
+## A world of regions paints the mood and hour by the eye (blend_moods)
+## until --mood=, --hour=, --day, L or T takes them over.
+var world_paint := true
 ## The clouds (scripts/endless/endless_clouds.gd), or null (--no-clouds, no
 ## RenderingDevice).
 var clouds: Node3D
@@ -201,6 +204,7 @@ func setup(land_seed: int) -> void:
 		elif a.begins_with("--key="): _key_arg = a.get_slice("=",1).to_float()
 		elif a.begins_with("--fill="): _fill_arg = a.get_slice("=",1).to_float()
 		elif a.begins_with("--mood=") and a.get_slice("=",1) in MOODS: mood = a.get_slice("=",1)
+	if hour >= 0.0 or day or mood != world_mood: world_paint = false
 	# The world's mood at its hour (wilderness: MOOD at HOUR; -1 the mood's
 	# own); another mood at its own hour.
 	if hour < 0.0 and mood == world_mood: hour = float(world.paint.get("hour",HOUR))
@@ -301,7 +305,118 @@ func show_mood(id: String, keep_hour := true) -> void:
 
 ## The next mood in MOODS, keeping the hour.
 func next_mood() -> void:
+	world_paint = false
 	show_mood(MOODS[(MOODS.find(mood)+1)%MOODS.size()])
+
+## A world of regions: the moods meeting under the eye, [[id, hour, weight],
+## ...] (the regions profile's moods_at_eye), blended as one: the sky's and
+## light's colours and settings, the night light, the wind, the key and
+## fill, the post's grade and the hour (its own preset's where a region's is
+## -1), so the sky eases over a border band as the eye crosses it. Off once
+## --mood=, --hour=, --day, L or T takes the look over.
+func blend_moods(list: Array) -> void:
+	if not world_paint or list.is_empty() or celestial == null: return
+	var total := 0.0
+	for e: Array in list: total += float(e[2])
+	if total <= 0.0: return
+	var colors := {}
+	var settings := {}
+	var night := Vector3.ZERO
+	var wind := 0.0
+	var tune := {}
+	var hour_at := 0.0
+	var heaviest := -1.0
+	var so_far := 0.0
+	for e: Array in list:
+		var id := str(e[0])
+		if not Presets.PRESETS.has(id): id = MOOD
+		var w := float(e[2])/total
+		if w > heaviest:
+			heaviest = w
+			mood = id
+		var doc: Dictionary = Presets.look_document(id)
+		# The colours mix one mood at a time into the running mix, by hue,
+		# saturation and lightness (OkHSL): a straight RGB mix of the alpine
+		# blue and the desert's violet and orange greys and darkens half way.
+		so_far += w
+		var into := w/so_far if so_far > 0.0 else 1.0
+		for k: String in doc.colors:
+			var c: Array = doc.colors[k]
+			var col := Color(float(c[0]),float(c[1]),float(c[2]))
+			var acc: Variant = colors.get(k)
+			colors[k] = col if acc == null else mix_hue(acc as Color,col,into)
+		for k: String in doc.settings: settings[k] = float(settings.get(k,0.0))+float(doc.settings[k])*w
+		var c: Dictionary = Presets.controls(id)._celestial
+		night += Vector3(float(c.night_fill),float(c.night_look),float(c.aurora_strength))*w
+		wind += clampf(float(Presets.recipe(id).wind),0.3,1.2)*w
+		var t := EndlessPost.tuning(id)
+		for k: String in t:
+			var v: Variant = t[k]
+			if v is Vector3: tune[k] = (tune.get(k,Vector3.ZERO) as Vector3)+v*w
+			elif v is float or v is int: tune[k] = float(tune.get(k,0.0))+float(v)*w
+			elif not tune.has(k): tune[k] = v
+		var h := float(e[1])
+		if h < 0.0: h = float(Presets.recipe(id).phase)*24.0
+		hour_at += h*w
+	celestial.night_fill = night.x
+	celestial.night_look = night.y
+	celestial.aurora_strength = night.z
+	_wind = wind
+	_key = float(tune.key)*_key_arg
+	_fill = float(tune.fill)*_fill_arg
+	if post != null: post.set_tuning(tune)
+	if not celestial.cycling: celestial.set_phase(hour_at/24.0)
+	var encoded := {}
+	for k: String in colors:
+		var c: Color = colors[k]
+		encoded[k] = [c.r,c.g,c.b]
+	celestial.look.restore({"version":1,"palette":"Custom","colors":encoded,"settings":settings})
+	celestial.update_rig()
+
+## Colour a toward b by t, by hue (the short way round, unless that passes
+## the greens), saturation and
+## lightness in OkHSL: the middle is as bright and as clean as the ends. A
+## grey end takes the other's hue. Colours past 1 (light, not paint) mix
+## straight.
+static func mix_hue(a: Color, b: Color, t: float) -> Color:
+	if t <= 0.0: return a
+	if t >= 1.0: return b
+	if maxf(maxf(a.r,a.g),a.b) > 1.0 or maxf(maxf(b.r,b.g),b.b) > 1.0: return a.lerp(b,t)
+	var sa := a.ok_hsl_s
+	var sb := b.ok_hsl_s
+	var ha := a.ok_hsl_h
+	var hb := b.ok_hsl_h
+	# Below a little saturation the hue means nothing: borrow the other's,
+	# easing in, so a grey never snaps.
+	var ga := smoothstep(0.0,0.06,sa)
+	var gb := smoothstep(0.0,0.06,sb)
+	var dh := wrapf(hb-ha,-0.5,0.5)
+	var ha2 := ha+dh*(1.0-ga)*gb
+	var hb2 := ha+dh-dh*(1.0-gb)*ga
+	ha = ha2
+	dh = hb2-ha2
+	# Never through the greens (the short way from the alpine glow's cyan to
+	# the desert's orange would pass a green neither sky has): the other way
+	# round, by violet and rose, as a sky turns at dusk. A green end (the
+	# grass, the foliage) turns the short way.
+	var green_end := absf(wrapf(ha-HUE_GREEN,-0.5,0.5)) < 0.12 or absf(wrapf(ha+dh-HUE_GREEN,-0.5,0.5)) < 0.12
+	if not green_end and _turns_through(ha,dh,HUE_GREEN): dh -= signf(dh)
+	# A wide turn (past HUE_WIDE) pales on its way, so the hues it passes
+	# (violet, rose) show as a light haze, not a sky of their own.
+	var s := lerpf(sa,sb,t)
+	if absf(dh) > HUE_WIDE: s *= 1.0-HUE_PALE*4.0*t*(1.0-t)*clampf((absf(dh)-HUE_WIDE)/0.15,0.0,1.0)
+	return Color.from_ok_hsl(wrapf(ha+dh*t,0.0,1.0),s,lerpf(a.ok_hsl_l,b.ok_hsl_l,t))
+
+## The green (OkHSL hue, of a full turn) mix_hue never turns through.
+const HUE_GREEN := 0.42
+## A turn of hue past this pales by up to HUE_PALE at its middle.
+const HUE_WIDE := 0.2
+const HUE_PALE := 0.55
+
+## Whether hue h turned by dh passes hue g.
+static func _turns_through(h: float, dh: float, g: float) -> bool:
+	var to := wrapf(g-h,0.0,1.0)
+	return to <= dh if dh >= 0.0 else to >= 1.0+dh
 
 ## The mood's title.
 func mood_title() -> String:
@@ -496,6 +611,7 @@ static func _scene_linear(display: Vector3, exposure: float) -> Color:
 
 ## The next quarter of the day (dawn, noon, dusk, midnight), eased to.
 func next_hour() -> void:
+	world_paint = false
 	celestial.next_hour()
 
 ## The hour now (0..24).

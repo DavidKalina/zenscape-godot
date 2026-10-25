@@ -534,6 +534,14 @@ zs_react_rect={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+zs_region_map={
+"type": "sampler2D",
+"value": ""
+}
+zs_region_rect={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_cloud_shadow_at={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)

@@ -29,6 +29,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/grass_silver.gdshaderinc"
 #include "res://shaders/grass_sheen.gdshaderinc"
 #include "res://shaders/grass_react.gdshaderinc"
+#include "res://shaders/region_paint.gdshaderinc"
 
 uniform vec4 grass_ring = vec4(0.0);
 uniform vec4 grass_ring_in = vec4(0.0, 1.0, 1.0, 0.0);
@@ -51,6 +52,13 @@ uniform vec3 grass_source_root = vec3(0.0396, 0.1329, 0.0423);
 uniform vec3 grass_source_tip = vec3(0.2917, 0.5271, 0.1145);
 uniform vec3 root_colour = vec3(0.10, 0.22, 0.07);
 uniform vec3 tip_colour = vec3(0.30, 0.45, 0.12);
+// Each region's (region_paint.gdshaderinc), read where region_paint_on.
+uniform vec3 root_colour_r[4];
+uniform vec3 tip_colour_r[4];
+// The root, tip and underside colours at this tuft's spot.
+varying vec3 rp_root;
+varying vec3 rp_tip;
+varying vec3 rp_silver;
 uniform float tip_curve = 1.0;
 // The share of the normal leant up, so the clump lights as one soft mass.
 uniform float mass_normal : hint_range(0.0, 1.0) = 0.8;
@@ -76,6 +84,15 @@ varying float react;
 
 void vertex() {
 	vec3 root = MODEL_MATRIX[3].xyz;
+	rp_root = root_colour;
+	rp_tip = tip_colour;
+	rp_silver = grass_silver_colour;
+	if (zs_region_paints()) {
+		vec4 rw = zs_region_at(root.xz);
+		rp_root = zs_region_mix3(rw, root_colour_r);
+		rp_tip = zs_region_mix3(rw, tip_colour_r);
+		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
+	}
 	float ring_d = endless_ring_d(CAMERA_POSITION_WORLD, root);
 	float ring_rank = fract(sin(dot(root.xz, vec2(19.31, 71.87))) * 43758.5453);
 	float ring_at = mix(grass_ring.x, grass_ring.y, ring_rank);
@@ -128,9 +145,9 @@ void fragment() {
 	vec3 own = clamp(COLOR.rgb / source, vec3(0.0), vec3(3.0));
 	// pow's base kept off 0: NVIDIA's Vulkan driver can make pow(0, y) NaN at
 	// the root, which the glow blooms into white flashes (Windows only).
-	vec3 c = own * mix(root_colour, tip_colour, pow(max(along, 1.0e-4), tip_curve)) * glance;
+	vec3 c = own * mix(rp_root, rp_tip, pow(max(along, 1.0e-4), tip_curve)) * glance;
 	c = mix(c, wash * glance, washed * smoothstep(wash_tip.x, wash_tip.y, along));
-	if (grass_silver.x > 0.0) c = zs_silver_paint(c, silver, smoothstep(0.15, 0.85, along), 0.8);
+	if (grass_silver.x > 0.0) c = zs_silver_paint_hue(c, silver, smoothstep(0.15, 0.85, along), 0.8, rp_silver);
 	c *= sheen;
 	c = zs_react_tone(c, react * along * (grass_silver.x > 0.0 ? ZS_SILVER_REACT_PALE : 1.0));
 	c = mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))) * night_grade.yzw, night_grade.x);

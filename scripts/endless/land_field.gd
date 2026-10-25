@@ -329,6 +329,13 @@ static func recipe_defaults() -> Dictionary:
 const NATIVE_VERSION := 3
 const V3_KEYS := ["ridge_crisp","notch","notch_scale","notch_width","terrace","terrace_step","terrace_flat","terrace_scale","terrace_band",
 	"mesa","mesa_tall","mesa_scale","mesa_level","mesa_edge","mesa_steps","mesa_gap","mesa_keep","mesa_mask_scale","mesa_band"]
+## The recipe's sharp forms (gable crests, notches, terraces, mesas): their
+## walls stand near-vertical at any height, so blended in at a low weight they
+## would make thin steps (a 22 m mesa wall at weight 0.1 is a 2 m sheer
+## step). In the regions world a recipe with any of them on also grows a soft
+## twin with them off, and its band eases the sharp forms in by a steeper
+## weight than the rest (land_blend.gd `sharp_share`).
+const SHARP_KEYS := ["ridge_crisp","notch","terrace","mesa"]
 const NATIVE_CLASS := &"ZenScapeLandField"
 static var _native_state := -1
 static var _native_lock := Mutex.new()
@@ -339,6 +346,9 @@ var world: RefCounted
 ## The field doing the work (ZenScapeLandField or GDField).
 var _impl: Object
 var _native := false
+## Whether `_impl` is the regions world's blend (land_blend.gd).
+var _blend := false
+const Blend = preload("res://scripts/endless/land_blend.gd")
 
 ## The flags (see the top), read and set through to the field.
 var mountains: float:
@@ -471,10 +481,28 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	# The world's recipe and knobs first (the profile `--world=` names unless
 	# one is given), then the flags over them.
 	world = profile if profile != null else WorldProfile.current()
-	var k: Dictionary = (world.land as Dictionary).duplicate()
+	var k := _knobs(world.land)
+	var want_native := _want_native()
+	ponds = 0.0 if k.get("old_land",false) else Ponds.wanted(float(k.get("ponds",1.0)))
+	halls = 0.0 if k.get("old_land",false) else Sites.wanted(float(world.layer("halls",0.0)))
+	if not world.uniform and world.get("regions") != null:
+		_impl = _blend_of(land_seed,want_native)
+		_blend = true
+	elif want_native and native_available(_need(k)):
+		_impl = ClassDB.instantiate(NATIVE_CLASS)
+		_impl.configure(land_seed,float(k.floor_half),k)
+		_native = true
+	else:
+		_impl = GDField.new(land_seed,k)
+	tunnels = 0.0 if k.get("old_land",false) else Tunnels.wanted(float(world.layer("tunnels",0.0)))
+	if tunnels > 0.0 and Tunnels.test_wanted():
+		_tunnel_sites = [Tunnels.test_site(_impl,land_seed,world)]
+		_tunnel_test = true
+
+## A land recipe with the field's floor and the flags over it.
+static func _knobs(land: Dictionary) -> Dictionary:
+	var k: Dictionary = land.duplicate()
 	k.floor_half = WorldScale.opening(TOY_VALLEY)*0.5
-	var need := _need(k)
-	var want_native := true
 	for arg: String in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--mountains="): k.mountains = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--peaks="): k.peaks = maxf(0.0,float(arg.get_slice("=",1)))
@@ -493,20 +521,66 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 		elif arg.begins_with("--river-fill="): k.river_fill = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--river-mouth="): k.river_mouth = clampf(float(arg.get_slice("=",1)),0.0,1.0)
 		elif arg.begins_with("--river-flare="): k.river_flare = maxf(0.0,float(arg.get_slice("=",1)))
-		elif arg == "--land-native=0" or arg == "--gdscript-kernels": want_native = false
 		elif arg == "--land-libm": k.libm = true
-	ponds = 0.0 if k.get("old_land",false) else Ponds.wanted(float(k.get("ponds",1.0)))
-	halls = 0.0 if k.get("old_land",false) else Sites.wanted(float(world.layer("halls",0.0)))
-	if want_native and native_available(need):
-		_impl = ClassDB.instantiate(NATIVE_CLASS)
-		_impl.configure(land_seed,float(k.floor_half),k)
-		_native = true
-	else:
-		_impl = GDField.new(land_seed,k)
-	tunnels = 0.0 if k.get("old_land",false) else Tunnels.wanted(float(world.layer("tunnels",0.0)))
-	if tunnels > 0.0 and Tunnels.test_wanted():
-		_tunnel_sites = [Tunnels.test_site(_impl,land_seed,world)]
-		_tunnel_test = true
+	return k
+
+## Whether the flags allow the native field (--land-native=0 or
+## --gdscript-kernels: the GDScript one).
+static func _want_native() -> bool:
+	for arg: String in preload("res://scripts/launch_args.gd").user_args():
+		if arg == "--land-native=0" or arg == "--gdscript-kernels": return false
+	return true
+
+## The regions world's land (land_blend.gd): one field per region's recipe
+## (native where built), blended by the region map's weights; a recipe with
+## sharp forms (SHARP_KEYS) also grows its soft twin for the band.
+func _blend_of(land_seed: int, want_native: bool) -> Object:
+	var fields: Array = []
+	var natives: Array = []
+	var softs: Array = []
+	var soft_natives: Array = []
+	for p: RefCounted in world.regions:
+		var k := _knobs(p.land)
+		var f := _field_of(land_seed,k,want_native)
+		fields.append(f[0])
+		natives.append(f[1])
+		var sk := soft_knobs(k)
+		if sk.is_empty():
+			softs.append(null)
+			soft_natives.append(false)
+		else:
+			f = _field_of(land_seed,sk,want_native)
+			softs.append(f[0])
+			soft_natives.append(f[1])
+	var b: Object = Blend.new(fields,natives,world.map,int(world.start_region),softs,soft_natives)
+	# The regions' own layers: a hall or tunnel stands only wholly inside a
+	# region whose profile grows it (LandBlend `site_ok`); `--halls=X` /
+	# `--tunnels=X` (X > 0) grow them in every region.
+	var flagged := {&"halls":Sites.wanted(-1.0) > 0.0,&"tunnels":Tunnels.wanted(-1.0) > 0.0}
+	for layer: StringName in flagged:
+		var on := PackedByteArray()
+		for p: RefCounted in world.regions:
+			on.append(1 if bool(flagged[layer]) or float(p.layers.get(String(layer),0.0)) > 0.0 else 0)
+		b.layer_on[layer] = on
+	return b
+
+## [field, native] for the knobs `k`: the native field where built, else GDField.
+static func _field_of(land_seed: int, k: Dictionary, want_native: bool) -> Array:
+	if want_native and native_available(_need(k)):
+		var f: Object = ClassDB.instantiate(NATIVE_CLASS)
+		f.configure(land_seed,float(k.floor_half),k)
+		return [f,true]
+	return [GDField.new(land_seed,k),false]
+
+## The knobs `k` with the sharp forms (SHARP_KEYS) off, or {} when none is on.
+static func soft_knobs(k: Dictionary) -> Dictionary:
+	var on := false
+	for key: String in SHARP_KEYS:
+		if float(k.get(key,0.0)) > 0.0: on = true
+	if not on: return {}
+	var soft := k.duplicate()
+	for key: String in SHARP_KEYS: soft[key] = 0.0
+	return soft
 
 ## Whether the knobs `k` grow the stock recipe (every recipe key at its
 ## constant), which a version-1 native library still grows right.
@@ -554,6 +628,43 @@ func native_on() -> bool:
 ## native kernels that read it directly (ZenScapeTrees, land_trees.gd).
 func native_impl() -> Object:
 	return _impl if _native else null
+
+## The native field that grows the box (x0, z0)..(x1, z1), or null: in the
+## regions world, the region's own where the box lies wholly in one.
+func native_impl_in(x0: float, z0: float, x1: float, z1: float) -> Object:
+	if not _blend: return native_impl()
+	var one: int = _impl.one_in(x0,z0,x1,z1)
+	return _impl.kids[one] if one >= 0 and _impl.kid_native[one] else null
+
+## The regions' weights at (x, z) as the land blends them (by region index),
+## or empty in a one-region world.
+func region_weights(x: float, z: float) -> PackedFloat32Array:
+	return _impl.weights(x,z) if _blend else PackedFloat32Array()
+
+## The one region the box (x0, z0)..(x1, z1) lies wholly in (by index), or
+## -1 where it reaches the band; 0 in a one-region world.
+func region_in(x0: float, z0: float, x1: float, z1: float) -> int:
+	return _impl.one_in(x0,z0,x1,z1) if _blend else 0
+
+## Region `r`'s own native field (ZenScapeLandField), or null (GDScript).
+func region_impl(r: int) -> Object:
+	if not _blend: return native_impl()
+	return _impl.kids[r] if _impl.kid_native[r] else null
+
+## The region a dither `u` (0..1) picks at (x, z): the region whose share of
+## the land's weights there holds u (so over the band each region's share of
+## the picks is its weight); 0 in a one-region world.
+func region_pick(x: float, z: float, u: float) -> int:
+	if not _blend: return 0
+	var w: PackedFloat32Array = _impl.weights(x,z)
+	var acc := 0.0
+	var last := 0
+	for r in w.size():
+		if w[r] <= 0.0: continue
+		last = r
+		acc += w[r]
+		if u < acc: return r
+	return last
 
 ## Vector2(world height, meadow 0..1) at a world XZ point.
 func sample(x: float, z: float) -> Vector2:
@@ -757,7 +868,16 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 
 func _build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: float, flow_max: float) -> Dictionary:
 	if _native: return _impl.build_chunk(x0,z0,step,cells,skirt_drop,flow_max)
-	var g: GDField = _impl
+	# The field the loop reads: the GDScript field, or in the regions world the
+	# blend, or the region's own where the chunk (and its normals' rim) lies
+	# wholly in one (natively when it can).
+	var g: Object = _impl
+	if _blend:
+		var one: int = _impl.one_in(x0-step,z0-step,x0+(cells+1)*step,z0+(cells+1)*step,Blend.lattice_k(step))
+		if one >= 0:
+			g = _impl.kids[one]
+			if _impl.kid_native[one]: return g.build_chunk(x0,z0,step,cells,skirt_drop,flow_max)
+		elif _impl.all_native(): return _impl.build_chunk(x0,z0,step,cells,skirt_drop,flow_max)
 	g.detail = step
 	var n := cells+1
 	var w := n+2
@@ -862,7 +982,12 @@ func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dict
 
 func _grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:
 	if _native: return _impl.grid(x0,z0,step,nx,nz,pad)
-	var g: GDField = _impl
+	var g: Object = _impl
+	if _blend:
+		var one: int = _impl.one_in(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step)
+		if one >= 0:
+			g = _impl.kids[one]
+			if _impl.kid_native[one]: return g.grid(x0,z0,step,nx,nz,pad)
 	var hs := PackedFloat32Array()
 	var ms := PackedFloat32Array()
 	var rs := PackedFloat32Array()

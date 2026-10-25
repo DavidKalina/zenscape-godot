@@ -62,7 +62,9 @@ static func cell_of(x: float, z: float) -> Vector2i:
 
 ## The arches of cell (cx, cz) on `field`'s land, `density` x as many
 ## tries, `rock`/`ruin` x the chance a fitting spot takes a rock or a
-## ruin arch (0: none of that family).
+## ruin arch (0: none of that family). In a world of regions each try keeps
+## to the region at its spot (its profile's arches layer; `_region_takes`),
+## so the trees (tree_plan.gd, which plans the same arches) agree.
 static func plan(field: RefCounted, cx: int, cz: int, density := 1.0, rock := 1.0, ruin := 1.0) -> Array:
 	var out: Array = []
 	if density <= 0.0: return out
@@ -70,6 +72,9 @@ static func plan(field: RefCounted, cx: int, cz: int, density := 1.0, rock := 1.
 	rng.seed = hash([int(field.seed),cx,cz,"endless arches"])
 	var tries := int(round(TRIES*density))
 	var taken: Array = []
+	# A world of regions: each spot keeps to its region's arches (`_masked`).
+	var world: Variant = field.get("world")
+	var masked := world != null and not bool(world.uniform) and _masked()
 	for t in range(tries):
 		var x := (cx+0.0)*CELL+rng.randf_range(MARGIN,CELL-MARGIN)
 		var z := (cz+0.0)*CELL+rng.randf_range(MARGIN,CELL-MARGIN)
@@ -80,6 +85,7 @@ static func plan(field: RefCounted, cx: int, cz: int, density := 1.0, rock := 1.
 		for p: Vector2 in taken:
 			if p.distance_to(Vector2(x,z)) < APART: near = true
 		if near: continue
+		if masked and not _region_takes(world,x,z,density,hash([int(field.seed),cx,cz,t,"arch region"])): continue
 		var s: Dictionary = field.shape(x,z)
 		if float(s.height) < -38.0: continue
 		# None in or by a slot hall's cut (scripts/endless/hall_sites.gd).
@@ -105,6 +111,27 @@ static func plan(field: RefCounted, cx: int, cz: int, density := 1.0, rock := 1.
 		taken.append(Vector2(x,z))
 		out.append(spec)
 	return out
+
+## Whether the region mask applies: not when `--arches=X` / `--no-arches`
+## sets the density for the whole world (the flags win over the profiles).
+static var _mask_state := -1
+static func _masked() -> bool:
+	if _mask_state < 0:
+		var on := 1
+		for a: String in preload("res://scripts/launch_args.gd").user_args():
+			if a == "--no-arches" or a.begins_with("--arches="): on = 0
+		_mask_state = on
+	return _mask_state == 1
+
+## Whether the region holding (x, z) in the world of regions `world` takes
+## an arch tried there: its profile's arches layer (density) against the
+## world's `density` (the densest region's), rolled on the hash `roll` (not
+## the cell's rng, so the tries after it are the same).
+static func _region_takes(world: RefCounted, x: float, z: float, density: float, roll: int) -> bool:
+	var d := float(world.at(x,z).layers.get("arches",1.0))
+	if d <= 0.0: return false
+	if d >= density: return true
+	return float(roll & 0xffffff)/16777216.0 < d/density
 
 ## Whether any of an arch's feet stands in a river or on its bank
 ## (land_field `last_river`; its corners and middle tried).

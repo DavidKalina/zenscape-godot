@@ -21,6 +21,8 @@ uniform vec4 grass_silver = vec4(0.0, 0.25, 1.25, 1.3);
 // brightness is the blade's own times grass_silver.w), and how much of the
 // blade's own colour it keeps (so regions and drifts still show through).
 uniform vec3 grass_silver_colour = vec3(0.42, 0.62, 0.55);
+// Each region's (shaders/region_paint.gdshaderinc), where a region map is drawn.
+uniform vec3 grass_silver_colour_r[4];
 uniform float grass_silver_keep : hint_range(0.0, 1.0) = 0.45;
 // The three wave trains the undersides ride (m between crests): the
 // tufts' own (ZS_BREEZE_WAVE_LENGTH) and the painted ground's two
@@ -61,17 +63,26 @@ float zs_silver_tuft(vec2 root, float bow) {
 }
 
 // The underside's colour for a blade (or turf) of colour `c`.
-vec3 zs_silver_under(vec3 c) {
+// `sc` the underside's hue (grass_silver_colour, or a region's at the spot).
+vec3 zs_silver_under_hue(vec3 c, vec3 sc) {
 	float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-	vec3 hue = grass_silver_colour / max(dot(grass_silver_colour, vec3(0.2126, 0.7152, 0.0722)), 0.01);
+	vec3 hue = sc / max(dot(sc, vec3(0.2126, 0.7152, 0.0722)), 0.01);
 	return mix(hue * l, c, grass_silver_keep) * grass_silver.w;
+}
+
+vec3 zs_silver_under(vec3 c) {
+	return zs_silver_under_hue(c, grass_silver_colour);
 }
 
 // `c` with its underside shown: `flip` (zs_silver_drive) how far it is
 // turned, `up` 0..1 how much of it can turn (a blade's upper part; 1 the
 // turf), `side` how much this face is the underside (0.8 the mean).
+vec3 zs_silver_paint_hue(vec3 c, float flip, float up, float side, vec3 sc) {
+	return mix(c, zs_silver_under_hue(c, sc), clamp(grass_silver.x * flip * up * side, 0.0, 1.0));
+}
+
 vec3 zs_silver_paint(vec3 c, float flip, float up, float side) {
-	return mix(c, zs_silver_under(c), clamp(grass_silver.x * flip * up * side, 0.0, 1.0));
+	return zs_silver_paint_hue(c, flip, up, side, grass_silver_colour);
 }
 // How much a blade's face seen here is its underside, 0.55..1.05 (mean
 // 0.8): the face turned downwind is the bowed blade's back. `dx`, `dy` the

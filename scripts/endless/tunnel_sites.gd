@@ -28,6 +28,11 @@ extends RefCounted
 ## at the floor, then climbing at GRADE to the land, with sheer walls
 ## leaning back.
 ##
+## In a world of regions (the field a LandBlend) a square's tunnel stands
+## only where its whole box, and SITE_CLEAR m round it, lies in one region
+## that grows tunnels (LandBlend `site_ok`; the tries that fail it count as
+## `why.region`), so no massif or trench meets a border band.
+##
 ## `--tunnel-test`: one tunnel TEST_AHEAD m ahead of the start, on its
 ## heading (the world's spawn, `--at=` and `--heading=`). Named
 ## `<world>/tunnel/test`; a streamed tunnel will be `<world>/tunnel/<cx>_<cz>`.
@@ -373,6 +378,9 @@ static func _make(impl: Object, seed: int, density: float, ci: int, cj: int) -> 
 	var sq := Rect2(ci*CELL,cj*CELL,CELL,CELL).grow(-CELL_MARGIN)
 	var best: Site = null
 	var best_score := -INF
+	# In a world of regions (the field a LandBlend), only a tunnel whose
+	# whole box lies in one region that grows tunnels, clear of the band.
+	var gated := impl != null and impl.has_method("site_ok")
 	for k in TRIES:
 		var tseed := hash([seed,ci,cj,"tunnel",k])
 		var jit := Vector2(rng.randf_range(-1.0,1.0),rng.randf_range(-1.0,1.0))
@@ -391,6 +399,11 @@ static func _make(impl: Object, seed: int, density: float, ci: int, cj: int) -> 
 				continue
 			var room := (sq.size-box.size)*0.5*JITTER
 			var a := sq.get_center()+jit*room-box.get_center()
+			if gated:
+				var placed := Rect2(box.position+a,box.size)
+				if not impl.site_ok(&"tunnels",placed.position.x,placed.position.y,placed.end.x,placed.end.y):
+					_why("region")
+					continue
 			var b := a+dry.mouth_b.rotated(-yaw)
 			# The floor: the lower mouth's land (the higher one's trench cuts down).
 			var ha := _h(impl,a.x,a.y)
@@ -407,6 +420,9 @@ static func _make(impl: Object, seed: int, density: float, ci: int, cj: int) -> 
 			var t := _build(impl,tseed,Transform3D(Basis(Vector3.UP,yaw),Vector3(a.x,floor_y,a.y)),false)
 			if not sq.encloses(t.box):
 				_why("box")
+				continue
+			if gated and not impl.site_ok(&"tunnels",t.box.position.x,t.box.position.y,t.box.end.x,t.box.end.y):
+				_why("region")
 				continue
 			var wet := _wet(impl,t)
 			if wet < 0:

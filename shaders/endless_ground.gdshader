@@ -30,6 +30,8 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/grass_silver.gdshaderinc"
 #include "res://shaders/grass_sheen.gdshaderinc"
 #include "res://shaders/grass_react.gdshaderinc"
+// A world of regions: its paint per spot.
+#include "res://shaders/region_paint.gdshaderinc"
 // The rivers' water (scripts/endless/land_field.gd `_river`): drawn as the
 // sea is (its sky, display and glint helpers).
 #include "res://shaders/reference_sky_common.gdshaderinc"
@@ -82,6 +84,10 @@ uniform vec3 carpet_tone_top = vec3(1.0);
 uniform vec3 carpet_tone_low = vec3(1.0);
 // A world's tone over the turf's own colour wherever tufts stand (the carpet's tone takes over past them; 1: none).
 uniform vec3 carpet_under_tone = vec3(1.0);
+// Each region's carpet tones (region_paint.gdshaderinc), read where region_paint_on.
+uniform vec3 carpet_tone_top_r[4];
+uniform vec3 carpet_tone_low_r[4];
+uniform vec3 carpet_under_tone_r[4];
 uniform vec2 turf_beach = vec2(2.55, 2.9);
 uniform vec2 turf_slope = vec2(0.905, 0.95);
 uniform vec2 turf_high = vec2(36.0, 58.0);
@@ -554,6 +560,18 @@ float luma(vec3 c) {
 
 void fragment() {
 	vec3 p = world_position;
+	// The paint's tones: this spot's regions' in a world of regions, else the material's.
+	vec3 rp_tone_top = carpet_tone_top;
+	vec3 rp_tone_low = carpet_tone_low;
+	vec3 rp_under_tone = carpet_under_tone;
+	vec3 rp_silver = grass_silver_colour;
+	if (zs_region_paints()) {
+		vec4 rw = zs_region_at(p.xz);
+		rp_tone_top = zs_region_mix3(rw, carpet_tone_top_r);
+		rp_tone_low = zs_region_mix3(rw, carpet_tone_low_r);
+		rp_under_tone = zs_region_mix3(rw, carpet_under_tone_r);
+		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
+	}
 	vec3 n = normalize(world_normal);
 	if (!FRONT_FACING) n = -n;
 	// A pixel's footprint on the ground (m): between its short and long
@@ -671,8 +689,8 @@ void fragment() {
 	float turf = carpet_turf;
 	float beyond = carpet_reach.y > 0.0 ? clamp((endless_ring_d(CAMERA_POSITION_WORLD, p) - carpet_reach.x) / max(carpet_reach.y - carpet_reach.x, 1.0), 0.0, 1.0) : 1.0;
 	float toned = mix(1.0, beyond, turf);
-	grass *= mix(vec3(1.0), mix(carpet_tone_low, carpet_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
-	grass *= mix(vec3(1.0), carpet_under_tone, turf * (1.0 - toned));
+	grass *= mix(vec3(1.0), mix(rp_tone_low, rp_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
+	grass *= mix(vec3(1.0), rp_under_tone, turf * (1.0 - toned));
 	float speck_a = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 0) / carpet_grain_sizes.x)) - 0.5;
 	float speck_b = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 1) / carpet_grain_sizes.y)) - 0.5;
 	float speck = speck_a * (1.0 - smoothstep(carpet_grain_sizes.x * 0.5, carpet_grain_sizes.x * 1.2, fp))
@@ -706,8 +724,8 @@ void fragment() {
 		gw *= mix(vec3(1.0), warm > 0.0 ? vec3(1.32, 1.05, 0.62) : vec3(0.80, 0.97, 1.16), abs(warm) * 0.5);
 		gw *= region;
 		gw = mix(gw, vc / max(luma(vc), 0.01) * luma(gw), vertex_hue * 0.6);
-		gw *= mix(vec3(1.0), mix(carpet_tone_low, carpet_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
-		gw *= mix(vec3(1.0), carpet_under_tone, turf * (1.0 - toned));
+		gw *= mix(vec3(1.0), mix(rp_tone_low, rp_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
+		gw *= mix(vec3(1.0), rp_under_tone, turf * (1.0 - toned));
 		grass = mix(grass, gw, wk * 0.8);
 		// Washes: warped fields, so their edges wander and bleed.
 		vec2 wq = gxz / wc_scale;
@@ -816,13 +834,13 @@ void fragment() {
 			coarse = mix(coarse, TUNDRA * (1.0 + mid * 0.6), alpine * 0.8);
 			coarse = mix(coarse, OLIVE, thin * 0.7);
 			coarse *= 1.0 + (grain_near + fine * 0.6 + tuft * 0.8) * carpet_near_grain;
-			coarse *= carpet_under_tone;
+			coarse *= rp_under_tone;
 			grass = mix(grass, coarse, under);
 		}
 	}
 	// The grass's silvery underside where the breeze bows it (grass_silver,
 	// off by default): the tufts' own bands, carried on over the paint.
-	if (grass_silver.x > 0.0) grass = zs_silver_paint(grass, zs_silver_drive(gxz, fp), 1.0 - thin * 0.6, 0.8);
+	if (grass_silver.x > 0.0) grass = zs_silver_paint_hue(grass, zs_silver_drive(gxz, fp), 1.0 - thin * 0.6, 0.8, rp_silver);
 	// The wind's sheen: light and dark swells rolling over the far meadow (grass_sheen).
 	if (grass_sheen.x > 0.0) {
 		float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);

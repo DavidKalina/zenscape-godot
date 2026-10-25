@@ -99,6 +99,9 @@ const Patch = preload("res://scripts/endless/endless_patch.gd")
 ## A cell's side (m; the land's finest chunk), its height grid's border
 ## (samples past each edge, for the growers' probes round a root).
 const CELL := 64.0
+## The band's per-tuft dither reads the regions' weights on this many nodes a
+## side over a cell (_cell_mix).
+const DITHER_GRID := 3
 const PAD := 4
 ## The rings (m from the eye): the near carpet out to x, thinned by y; the
 ## far ring grown in over x..y, out to z, thinned by w. A tuft goes over SOFT m.
@@ -347,6 +350,10 @@ class Layer extends RefCounted:
 	## The native placement (ZenScapeGrass, native/terrain_kernels/
 	## grass_cell.h) set up for this layer's site, or null: GDScript.
 	var native: Object
+	## A world of regions: each region's [site, native, grows grass, group]
+	## by region index (its tufts' share, flowers and flower height; the
+	## group: the first region with the same carpet); empty in a one-profile world.
+	var regional: Array = []
 
 var near_layer := Layer.new()
 var far_layer := Layer.new()
@@ -370,6 +377,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	field = Field.new(seed)
 	# The world's flora first (its tufts' share, its flowers), the flags over it.
 	world = field.world
+	var stock := {"share":share,"tall":tall,"flowers":flowers}
 	share = float(world.flora_value("grass",share))
 	flowers = bool(world.flora_value("flowers",flowers))
 	tall = clampf(float(world.flora_value("grass_tall",tall)),0.25,6.0)
@@ -443,6 +451,28 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	far_layer.reach = lod.w
 	if fine: near_layer.site.tufts = s.tufts*share*_fine_share
 	far_layer.share = 1.0
+	if not world.uniform:
+		# Each region's carpet: its tufts' share, flowers and flower height, the flags over each.
+		for p: RefCounted in world.regions:
+			var rf := _flora_of(p,stock)
+			var near_r: Dictionary = near_layer.site.duplicate()
+			near_r.tufts = s.tufts*float(rf.share)*(_fine_share if fine else 1.0)
+			near_r.flowers = rf.flowers
+			near_r.flower_tall = rf.tall
+			var far_r: Dictionary = far_layer.site.duplicate()
+			far_r.tufts = FAR_TUFTS*float(rf.share)
+			# [site, native, grows grass, group]: the group is the first region
+			# with the same carpet (a band cell between two of one group grows once).
+			var lv: Variant = p.layers.get("grass",true)
+			var on: bool = lv if lv is bool else float(lv) > 0.0
+			for pair: Array in [[near_layer,near_r],[far_layer,far_r]]:
+				var layer: Layer = pair[0]
+				var group := layer.regional.size()
+				for q in layer.regional.size():
+					if layer.regional[q][2] == on and (layer.regional[q][0] as Dictionary).recursive_equal(pair[1],2):
+						group = int(layer.regional[q][3])
+						break
+				layer.regional.append([pair[1],null,on,group])
 	# The plant catalog made on the main thread before any worker reads it.
 	SkyIslets.catalog()
 	if ground != null:
@@ -468,6 +498,125 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		for layer: Layer in [near_layer,far_layer]:
 			layer.native = ClassDB.instantiate(NATIVE_CLASS)
 			layer.native.configure(native_config(layer.site,layer.share,lod))
+			for one: Array in layer.regional:
+				one[1] = ClassDB.instantiate(NATIVE_CLASS)
+				(one[1] as Object).configure(native_config(one[0],layer.share,lod))
+
+## A profile's carpet {share, tall, flowers} from `stock` (the engine's), the
+## flags over it (each region's, in a world of regions).
+static func _flora_of(p: RefCounted, stock: Dictionary) -> Dictionary:
+	var out := {"share":float(p.flora_value("grass",stock.share)),"flowers":bool(p.flora_value("flowers",stock.flowers)),
+		"tall":clampf(float(p.flora_value("grass_tall",stock.tall)),0.25,6.0)}
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--grass="): out.share = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a == "--no-flowers": out.flowers = false
+		elif a.begins_with("--grass-tall="): out.tall = clampf(a.get_slice("=",1).to_float(),0.25,6.0)
+	return out
+
+## How a cell grows in a world of regions: {"groups": [[site, native, grows
+## grass]...], "w": the groups' land weights on a DITHER_GRID x DITHER_GRID
+## grid over the cell (node-major, a weight per group)}. A cell wholly in one
+## region, or whose regions all grow the same carpet (one group), has one
+## group; in the band each tuft and flower is kept from the group a hash at
+## its root picks by the weights there (_dither), so the carpet changes
+## tuft by tuft over the band, never by cell.
+func _cell_mix(layer: Layer, key: Vector2i) -> Dictionary:
+	var x0 := key.x*CELL
+	var z0 := key.y*CELL
+	var step := CELL/(DITHER_GRID-1)
+	var nodes: Array = []
+	var order: Array = []
+	for j in DITHER_GRID:
+		for i in DITHER_GRID:
+			var w: PackedFloat32Array = field.region_weights(x0+i*step,z0+j*step)
+			nodes.append(w)
+			for r in w.size():
+				if w[r] <= 0.0: continue
+				var gp := int(layer.regional[r][3])
+				if not gp in order: order.append(gp)
+	if order.size() <= 1:
+		var one: Array = layer.regional[order[0] if not order.is_empty() else _cell_region(key)]
+		return {"groups":[[one[0],one[1],one[2]]],"w":PackedFloat32Array()}
+	var groups: Array = []
+	for gp: int in order:
+		var one: Array = layer.regional[gp]
+		groups.append([one[0],one[1],one[2]])
+	var ws := PackedFloat32Array()
+	ws.resize(DITHER_GRID*DITHER_GRID*order.size())
+	for n in nodes.size():
+		var w: PackedFloat32Array = nodes[n]
+		for r in w.size():
+			if w[r] > 0.0: ws[n*order.size()+order.find(int(layer.regional[r][3]))] += w[r]
+	return {"groups":groups,"w":ws}
+
+## The region a cell wholly in one region grows as (by a hash against the
+## weights at its middle; a band cell is dithered per tuft, _cell_mix).
+func _cell_region(key: Vector2i) -> int:
+	var u := float(hash([seed,key.x,key.y,"grass region"]) & 0xffffff)/16777216.0
+	return field.region_pick((key.x+0.5)*CELL,(key.y+0.5)*CELL,u)
+
+## The parts of group `g`'s grow kept where the dither picks g: a hash of each
+## instance's root against the groups' weights there (`ws`, _cell_mix's
+## grid, bilinear: the land's weights are bilinear over its 64 m lattice, so
+## this is the land's own weight). Worker-safe.
+static func _dither(parts: Array, key: Vector2i, ws: PackedFloat32Array, count: int, g: int) -> Array:
+	var x0 := key.x*CELL
+	var z0 := key.y*CELL
+	var step := CELL/(DITHER_GRID-1)
+	var out := []
+	for part: Dictionary in parts:
+		var buffer: PackedFloat32Array = part.buffer
+		var kept := PackedFloat32Array()
+		for k in range(0,buffer.size(),16):
+			var x := buffer[k+3]
+			var z := buffer[k+11]
+			var u := clampf((x-x0)/step,0.0,DITHER_GRID-1.001)
+			var v := clampf((z-z0)/step,0.0,DITHER_GRID-1.001)
+			var i := int(u)
+			var j := int(v)
+			var fu := u-i
+			var fv := v-j
+			var n00 := (j*DITHER_GRID+i)*count
+			var n10 := n00+count
+			var n01 := n00+DITHER_GRID*count
+			var n11 := n01+count
+			var d := float(hash(Vector3i(roundi(x*113.0),roundi(z*113.0),7919)) & 0xffffff)/16777216.0
+			var acc := 0.0
+			var pick := count-1
+			var total := 0.0
+			for q in count: total += lerpf(lerpf(ws[n00+q],ws[n10+q],fu),lerpf(ws[n01+q],ws[n11+q],fu),fv)
+			d *= total
+			for q in count:
+				acc += lerpf(lerpf(ws[n00+q],ws[n10+q],fu),lerpf(ws[n01+q],ws[n11+q],fu),fv)
+				if d < acc:
+					pick = q
+					break
+			if pick == g: kept.append_array(buffer.slice(k,k+16))
+		if kept.is_empty(): continue
+		var p := part.duplicate()
+		p.buffer = kept
+		p.count = kept.size()/16
+		p.box = _roots_box(kept)
+		out.append(p)
+	return out
+
+## Parts of the same batch (key, tile, sub-tile, ring) joined into one.
+static func _join(parts: Array) -> Array:
+	var by := {}
+	var out := []
+	for part: Dictionary in parts:
+		var id := [str(part.key),part.tile,part.get("sub",null),int((part.get("ring",{}) as Dictionary).get("ring",-1))]
+		if not by.has(id):
+			by[id] = part
+			out.append(part)
+			continue
+		var into: Dictionary = by[id]
+		var b: PackedFloat32Array = into.buffer
+		b.append_array(part.buffer)
+		into.buffer = b
+		into.count = b.size()/16
+		into.box = (into.box as Rect2).merge(part.box)
+	return out
 
 ## The native placement (native/terrain_kernels/grass_cell.h): each cell's
 ## tufts placed by ZenScapeGrass, the same tufts in the same places as
@@ -783,7 +932,13 @@ func _ask() -> void:
 		while near_layer.pending.size()+far_layer.pending.size() < MAX_TASKS and not layer.queue.is_empty():
 			var key: Vector2i = layer.queue.pop_front()
 			if layer.cells.has(key) or layer.pending.has(key): continue
-			layer.pending[key] = WorkerThreadPool.add_task(_grow.bind(layer,key,seed,layer.site.duplicate(),lod,layer.native),false,"grass cell")
+			var mix := {}
+			if layer.regional.is_empty(): mix = {"groups":[[layer.site,layer.native,true]],"w":PackedFloat32Array()}
+			else: mix = _cell_mix(layer,key)
+			for one: Array in mix.groups:
+				one[0] = (one[0] as Dictionary).duplicate()
+				if layer.native == null: one[1] = null
+			layer.pending[key] = WorkerThreadPool.add_task(_grow.bind(layer,key,seed,mix,lod),false,"grass cell")
 
 ## Finished tasks let go.
 func _reap() -> void:
@@ -1087,8 +1242,7 @@ func _silver_tier(m: ShaderMaterial, far := false) -> void:
 	m.set_shader_parameter("grass_silver",Vector4(silver,SILVER_BOW.x,SILVER_BOW.y,SILVER_LIFT[tier]))
 	m.set_shader_parameter("grass_silver_keep",SILVER_KEEP[tier])
 	# The world's own underside hue (paint.silver_colour; absent: the shader's sage).
-	if world != null and world.paint.has("silver_colour"):
-		m.set_shader_parameter("grass_silver_colour",world.paint.silver_colour)
+	if world != null: world.apply_silver(m)
 
 ## The undersides turned to strength `s` on every grass material now
 ## standing (0 off: the old paling back), for A/B in one run.
@@ -1120,12 +1274,23 @@ static func flower_drift(p: Vector2) -> float:
 	var n := Patch.noise(p.x/DRIFT_SCALE+17.3,p.y/DRIFT_SCALE-5.1)
 	return 1.0+(DRIFT.z-1.0)*smoothstep(DRIFT.x,DRIFT.y,n)
 
-func _grow(layer: Layer, key: Vector2i, land_seed: int, site_values: Dictionary, rings: Vector4, native: Object) -> void:
+## One cell grown on a worker: `mix` (_cell_mix) its groups' carpets, one
+## grown whole, or in the band each grown and dithered per tuft by the
+## groups' weights (a group that grows no grass keeps its share bare).
+func _grow(layer: Layer, key: Vector2i, land_seed: int, mix: Dictionary, rings: Vector4) -> void:
 	if _quit: return
 	var began := Time.get_ticks_usec()
 	var parts := []
-	if world.uniform or world.layer_at(&"grass",(key.x+0.5)*CELL,(key.y+0.5)*CELL):
-		parts = grow_cell(land_seed,key,site_values,rings,layer.share,native)
+	var groups: Array = mix.groups
+	if groups.size() == 1:
+		if groups[0][2]: parts = grow_cell(land_seed,key,groups[0][0],rings,layer.share,groups[0][1])
+	else:
+		for g in groups.size():
+			if _quit: return
+			if not groups[g][2]: continue
+			var grown := grow_cell(land_seed,key,groups[g][0],rings,layer.share,groups[g][1])
+			parts.append_array(_dither(grown,key,mix.w,groups.size(),g))
+		parts = _join(parts)
 	var took := (Time.get_ticks_usec()-began)/1000.0
 	_lock.lock()
 	_done.append({"layer":layer,"key":key,"parts":parts,"ms":took})
@@ -1329,7 +1494,10 @@ static func _grow_native(native: Object, f: RefCounted, land_seed: int, key: Vec
 	var n := int(CELL)+1+PAD*2
 	var cell := {"x0":x0,"z0":z0,"n":n,"pad":PAD,"seed":hash([land_seed,"endless_grass",far_share,key]) & 0xffffff,
 		"heights":got.heights,"river":got.river,"meadows":got.meadows}
-	if f.native_on(): cell.field = f._impl
+	# The native field (in the regions world, the region's own where the cell
+	# lies wholly in one; in the band the blend's colours, below).
+	var nf: Object = f.native_impl_in(x0-PAD,z0-PAD,x0+CELL+PAD,z0+CELL+PAD)
+	if nf != null: cell.field = nf
 	else:
 		# The ground's colour on the tint grid (the native field reads it itself).
 		var hs: PackedFloat32Array = got.heights

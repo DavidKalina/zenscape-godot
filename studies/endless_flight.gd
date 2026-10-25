@@ -191,6 +191,18 @@ var _hud: Label
 ## The plane's ceiling over the sea (Field CEILING_OVER; --ceiling=).
 var _ceiling_over := Field.CEILING_OVER
 var _hint: Label
+## A world of regions (--world=regions): the caption naming the region the
+## eye crosses into, and --region-debug's line (region, cell, weights).
+var _region_caption: Label
+var _region_debug: Label
+var _region_id := ""
+var _region_shown := -100000
+## The caption shows for REGION_HOLD ms, then fades over REGION_FADE.
+const REGION_HOLD := 3500
+const REGION_FADE := 1500
+## A region takes the caption once its weight under the eye passes this
+## (so weaving along a border does not flicker it).
+const REGION_TAKE := 0.7
 ## On foot (scripts/endless/endless_walker.gd), the plane parked: see the
 ## "On foot" part below.
 var walker: Node3D
@@ -426,6 +438,26 @@ func _build_ui() -> void:
 	_hint.add_theme_constant_override("outline_size",4)
 	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  F flaps (stopped: get out)  ·  land on the meadows  ·  R up again  ·  C clouds  ·  G grass  ·  F1 numbers  ·  F2 3D scale"
 	layer.add_child(_hint)
+	if not world.uniform:
+		_region_caption = Label.new()
+		_region_caption.anchor_left = 0.0
+		_region_caption.anchor_right = 1.0
+		_region_caption.offset_top = 72.0
+		_region_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_region_caption.add_theme_font_size_override("font_size",30)
+		_region_caption.add_theme_color_override("font_outline_color",Color(0,0,0,0.6))
+		_region_caption.add_theme_constant_override("outline_size",6)
+		_region_caption.modulate.a = 0.0
+		layer.add_child(_region_caption)
+		if "--region-debug" in preload("res://scripts/launch_args.gd").user_args():
+			_region_debug = Label.new()
+			_region_debug.anchor_top = 1.0
+			_region_debug.anchor_bottom = 1.0
+			_region_debug.offset_top = -70.0
+			_region_debug.offset_left = 16.0
+			_region_debug.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
+			_region_debug.add_theme_constant_override("outline_size",4)
+			layer.add_child(_region_debug)
 
 # --- The plane ------------------------------------------------------------------------
 
@@ -734,7 +766,26 @@ func _cloud_note() -> String:
 const HUD_EVERY := 250
 var _hud_at := -HUD_EVERY
 
+## The region under the eye (a world of regions): its caption when the eye
+## crosses into it, faded out after a few seconds, and --region-debug's line.
+func _show_region() -> void:
+	if _region_caption == null: return
+	var eye := camera.global_position
+	# The paint (ground, far ring, sea, globals, mood and hour) by the eye's weights.
+	if world.paint_eye(eye.x,eye.z) and look != null: look.blend_moods(world.moods_at_eye())
+	var now := Time.get_ticks_msec()
+	var w: Dictionary = world.weights_at(eye.x,eye.z)
+	for r: RefCounted in w:
+		if str(r.id) != _region_id and (float(w[r]) >= REGION_TAKE or _region_id == ""):
+			_region_id = str(r.id)
+			_region_caption.text = str(r.title)
+			_region_shown = now
+	var age := now-_region_shown
+	_region_caption.modulate.a = clampf(age/400.0,0.0,1.0)*clampf(1.0-float(age-REGION_HOLD)/REGION_FADE,0.0,1.0)
+	if _region_debug != null: _region_debug.text = world.describe(eye.x,eye.z)
+
 func _show_hud() -> void:
+	_show_region()
 	if not _hud.visible or Time.get_ticks_msec()-_hud_at < HUD_EVERY: return
 	_hud_at = Time.get_ticks_msec()
 	var p: Vector3 = plane.position

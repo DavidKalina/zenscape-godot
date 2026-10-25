@@ -170,7 +170,12 @@ func _init(land_seed := 1, forest_share := 1.0, variant_dims: Array = [], arch_f
 ## The spruce family's variant weights: the world's flora `tree_weights`, or
 ## HeroTrees.SPRUCE's own (wilderness).
 static func variant_weights() -> PackedFloat32Array:
-	var w: PackedFloat32Array = preload("res://scripts/endless/world/world_profile.gd").current().flora_value("tree_weights",PackedFloat32Array())
+	return weights_of(preload("res://scripts/endless/world/world_profile.gd").current())
+
+## A world profile's variant weights (its flora `tree_weights`, or
+## HeroTrees.SPRUCE's own): each region's, in a world of regions.
+static func weights_of(profile: RefCounted) -> PackedFloat32Array:
+	var w: PackedFloat32Array = profile.flora_value("tree_weights",PackedFloat32Array())
 	if w.size() == HeroTrees.SPRUCE.size(): return w.duplicate()
 	var out := PackedFloat32Array()
 	for entry: Array in HeroTrees.SPRUCE: out.append(float(entry[1]))
