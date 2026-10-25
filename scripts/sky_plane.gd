@@ -245,6 +245,10 @@ var turn_scale := turn_flag(preload("res://scripts/launch_args.gd").user_args(),
 ## dive reaches (m/s), set by `use_flight_speed`.
 var brake_pace := 0.0
 var top := FAST
+## The pace (scripts/flight_pace.gd, `use_pace`): times the cruise, Boost,
+## the dive's cap (`top`) and the surge; Brake, the floor, flaps, landing
+## and takeoff speeds stay. 1 as it was.
+var pace_scale := 1.0
 var drift := 0.0
 var slip := 0.0
 var drift_held := 0.0
@@ -264,7 +268,7 @@ var _free_bank := 0.0
 
 func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 	super.launch(from,towards,pace,drop)
-	speed = clampf(maxf(pace,CRUISE_SPEED*0.8),SLOW,top)
+	speed = clampf(maxf(pace,CRUISE_SPEED*0.8),SLOW,top_speed())
 	pitch = 0.0
 	spin = 0.0
 	rolling = false
@@ -286,7 +290,7 @@ func launch(from: Vector3, towards: float, pace: float, drop := true) -> void:
 ## takeoff's lift; scripts/plane_landing.gd): at `pace` m/s, the nose at
 ## `nose`, level, the engine on, nothing turning it.
 func resume(pace: float, nose: float) -> void:
-	speed = clampf(pace,SLOW,top)
+	speed = clampf(pace,SLOW,top_speed())
 	pitch = clampf(nose,PITCH_LIMIT.x,PITCH_LIMIT.y)
 	spin = 0.0
 	rolling = false
@@ -398,16 +402,27 @@ func use_flight_speed() -> void:
 	var args: PackedStringArray = preload("res://scripts/launch_args.gd").user_args()
 	speed_scale = speed_flag(args,FLIGHT_SPEED)
 	turn_scale = turn_flag(args,minf(speed_scale,FLIGHT_TURN))
-	brake_pace = minf(BRAKE_SPEED*speed_scale,maxf(BRAKE_SPEED*GAME_SPEED,cruise()*FLIGHT_BRAKE))
+	brake_pace = minf(BRAKE_SPEED*speed_scale,maxf(BRAKE_SPEED*GAME_SPEED,CRUISE_SPEED*speed_scale*FLIGHT_BRAKE))
 	top = maxf(FAST,FAST*speed_scale/GAME_SPEED)
+
+## Flies at the pace `scale` (scripts/flight_pace.gd): the cruise, Boost,
+## the dive's cap and the surge times it. Brake keeps its speed (it was set
+## from the unpaced cruise), as do the floor, flaps and landing. Mid-flight
+## the speed eases to the new throttle's as ever.
+func use_pace(scale: float) -> void:
+	pace_scale = maxf(scale,0.1)
 
 ## The speed the engine holds with the throttle let be (m/s).
 func cruise() -> float:
-	return CRUISE_SPEED*speed_scale
+	return CRUISE_SPEED*speed_scale*pace_scale
 
 ## The speeds Boost and Brake hold (m/s).
 func boost_speed() -> float:
-	return BOOST_SPEED*speed_scale
+	return BOOST_SPEED*speed_scale*pace_scale
+
+## The cap a long dive reaches (m/s): `top` at the pace.
+func top_speed() -> float:
+	return top*pace_scale
 
 func brake_speed() -> float:
 	return brake_pace if brake_pace > 0.0 else BRAKE_SPEED*speed_scale
@@ -514,7 +529,8 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	pitch += look.y+_pitch_rate*delta
 	if is_zero_approx(steer) and is_zero_approx(look.y):
 		var rest := approach_pitch(ground) if approach else 0.0
-		if low > 0.0 and not approach: rest = lerpf(rest,float(weight.settle_pitch),low)
+		# Over the pace, so the settle sinks as many m/s at any pace.
+		if low > 0.0 and not approach: rest = lerpf(rest,float(weight.settle_pitch)/pace_scale,low)
 		pitch = lerpf(pitch,rest,_ease(EASE_LEVEL,delta))
 	pitch += shove.x*delta
 	if deep > 0.0: pitch = lerpf(pitch,CUSHION_PITCH,_ease(0.5,delta)*deep)
@@ -546,7 +562,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		climb = path.y if heavy > 0.0 else sin(pitch)
 		speed += (-SWING*(1.0+HEAVY_SWING*heavy)*climb-THROTTLE*(1.0-HEAVY_THROTTLE*heavy)*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
 	if surge > 0.0: _cap = maxf(_cap,boost_speed()*SURGE_OVER)
-	_cap = maxf(top,_cap-CAP_FALL*delta)
+	_cap = maxf(top_speed(),_cap-CAP_FALL*delta)
 	speed = clampf(speed,slow,_cap)
 	lift = clampf((floor_y-position.y)*CUSHION,0.0,CUSHION_MAX)
 	var fall := FALL*minf(airborne,FALL_TIME)*(1.0-smoothstep(FALL_TIME,FALL_TIME+CATCH,airborne))

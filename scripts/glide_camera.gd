@@ -112,6 +112,10 @@ const EASE_LEAD := 0.25
 const FOV_SHARE := Vector2(0.57,2.86)
 const PULL_BACK := 0.12
 const PULL_SHARE := Vector2(1.05,1.65)
+## Fast, the framed eye comes in and down a touch: from CLOSE_SHARE.x to
+## CLOSE_SHARE.y times the cruise its distance is `close_in` less and its
+## height `close_down` less (shares; none as it was, endless flight sets them).
+const CLOSE_SHARE := Vector2(1.5,3.0)
 ## The old toy's cruise, the share's base when no cruise is given.
 const TOY_CRUISE: float = preload("res://scripts/sky_plane.gd").CRUISE_SPEED
 
@@ -182,6 +186,8 @@ const TIGHT_NEAR := 0.45
 ## width over height, and the plane's reach from its middle (m).
 var framed := false
 var cruise := 0.0
+var close_in := 0.0
+var close_down := 0.0
 var aspect := 16.0/9.0
 var extent := 0.0
 ## The swing round and lift it holds off rock, how far out it is now
@@ -259,8 +265,9 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	float_out = lerpf(float_out,hang,_ease(FLOAT_IN if hang > float_out else FLOAT_OUT,delta))
 	_cine = _cine.lerp(cine,_ease(EASE_CINE,delta))
 	var pull := 1.0+PULL_BACK*smoothstep(PULL_SHARE.x,PULL_SHARE.y,_pace(glide)) if framed else 1.0
-	var back := lerpf(lerpf(BACK.x,BACK.y,float_out),BACK.z,tuck)*(1.0+_cine.z)*size*distance_scale*pull
-	var up := lerpf(lerpf(UP.x,UP.y,float_out),UP.z,tuck)*(1.0+_cine.z*0.5)*size*distance_scale
+	var closer := smoothstep(CLOSE_SHARE.x,CLOSE_SHARE.y,_pace(glide)) if framed and (close_in > 0.0 or close_down > 0.0) else 0.0
+	var back := lerpf(lerpf(BACK.x,BACK.y,float_out),BACK.z,tuck)*(1.0+_cine.z)*size*distance_scale*pull*(1.0-close_in*closer)
+	var up := lerpf(lerpf(UP.x,UP.y,float_out),UP.z,tuck)*(1.0+_cine.z*0.5)*size*distance_scale*(1.0-close_down*closer)
 	_since_turn += delta
 	if not free_held and _since_turn >= linger: free = free.lerp(Vector2.ZERO,_ease(EASE_BACK,delta))
 	var swing := free+Vector2(_cine.x,_cine.y)

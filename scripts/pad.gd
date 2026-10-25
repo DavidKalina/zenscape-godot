@@ -106,6 +106,9 @@ const ACTIONS := {
 	# (scripts/endless/near_miss.gd). X is free in flight (eject went with
 	# the walker).
 	"fly_surge":[["key",KEY_B],["button",JOY_BUTTON_X]],
+	# In endless flight, pressed: the next pace preset (scripts/flight_pace.gd).
+	# The d-pad's right is free in flight (the walker's shove went with him).
+	"fly_pace":[["key",KEY_P],["button",JOY_BUTTON_DPAD_RIGHT]],
 	"fly_camera":[["button",JOY_BUTTON_RIGHT_STICK]],
 	# In flight, pressed: open the cargo bag and let its load fall (the
 	# home isle's drop pass, scripts/home/drop_pass.gd).

@@ -23,7 +23,8 @@ extends RefCounted
 ## The score (`_score`): BASE[kind] x (1 + CLOSE_GAIN k²), k = 1 - least
 ## over REACH (bands RAZOR and CLOSE name it), x speed over cruise, x for a
 ## pull-out the closing rate's (1 + (closing / CLOSING_REF)^1.5, at most
-## CLOSING_TOP), x the farming cut. Kinds:
+## CLOSING_TOP), x the farming cut. CLOSING_REF and PULL_MIN are times the
+## plane's pace (scripts/flight_pace.gd). Kinds:
 ## - pull-out: a ground moment over land or water closing at PULL_MIN m/s
 ##   or more (a dive or a hill saved low); slower, it is only skimming.
 ## - graze: a ground moment over a tree or ruin, or a stone moment from one
@@ -340,7 +341,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	if _track(_ground,ground_clear,reach,speed,game):
 		if _ground.surface in ["tree","stone"]:
 			if _ground.least < CLOSE*WorldScale.span: _moment("graze",_ground,reach,cruise,out,game)
-		elif _ground.closing >= PULL_MIN: _moment("pull-out",_ground,reach,cruise,out,game)
+		elif _ground.closing >= PULL_MIN*_pace(game): _moment("pull-out",_ground,reach,cruise,out,game)
 	if _ground.active:
 		_ground.closing = maxf(_ground.closing,closing)
 		if ground_clear <= _ground.least:
@@ -432,7 +433,7 @@ func _moment(kind: String, t: Tracker, reach: float, cruise: float, out: Diction
 	if t.speed < FAST_FROM*cruise: return
 	var k := clampf(1.0-maxf(t.least,0.0)/reach,0.0,1.0)
 	var points := float(BASE[kind])*(1.0+CLOSE_GAIN*k*k)*clampf(t.speed/cruise,0.5,2.0)
-	if kind == "pull-out": points *= minf(1.0+pow(maxf(t.closing,0.0)/CLOSING_REF,1.5),CLOSING_TOP)
+	if kind == "pull-out": points *= minf(1.0+pow(maxf(t.closing,0.0)/(CLOSING_REF*_pace(game)),1.5),CLOSING_TOP)
 	var farm := _farm(t.at,t.id)
 	points *= farm
 	var band := "razor" if t.least < RAZOR*WorldScale.span else ("close" if t.least < CLOSE*WorldScale.span else "near")
@@ -446,6 +447,12 @@ func _moment(kind: String, t: Tracker, reach: float, cruise: float, out: Diction
 	moments.append(last)
 	_recent.append({"at":t.at,"t":clock,"id":t.id})
 	out["near"] = last
+
+## The plane's pace (scripts/flight_pace.gd): PULL_MIN and CLOSING_REF are
+## times it, so a dive at the same angle grades the same at any pace.
+static func _pace(game: Node3D) -> float:
+	var p: Variant = game.plane.get("pace_scale")
+	return maxf(float(p),0.1) if p != null else 1.0
 
 ## The farming cut for a moment at `at` on surface `id`: less for every
 ## recent one near it, and less again for the same surface.

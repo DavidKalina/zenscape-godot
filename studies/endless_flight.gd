@@ -107,6 +107,8 @@ const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
 const FlightWeight = preload("res://scripts/flight_weight.gd")
+const FlightPace = preload("res://scripts/flight_pace.gd")
+const SpeedStreaks = preload("res://scripts/endless/speed_streaks.gd")
 ## The plane's and the air's sound (scripts/endless/flight_sound.gd; --sound=0 off).
 const FlightSound = preload("res://scripts/endless/flight_sound.gd")
 ## Near misses, the land's contact, their HUD and debris (weighted presets).
@@ -146,11 +148,16 @@ const RUSH_HZ := Vector3(7.3,11.9,17.1)
 const VAPOUR_TURN := Vector2(0.7,1.5)
 const SKIM_LOW := 4.0
 ## The near misses' feel: a scored moment widens the view PUNCH degrees by
-## its closeness and shakes the eye NEAR_SHAKE radians, both dying over
-## PUNCH_FADE and SHAKE_FADE s; a scrape shakes it SCRAPE_SHAKE; low and fast
-## the air buffets it LOW_SHAKE at the land (by SkyPlane `low` and the speed).
-const PUNCH := 6.0
-const PUNCH_FADE := 0.28
+## its closeness, eased in over PUNCH_IN s and dying over PUNCH_FADE s. The
+## eye's shake is off by default (the camera stays smooth; the buffet is felt
+## in the plane, the rumble and the sound): SHAKE times (`--shake=<x>`, 1 the
+## near-miss round's amounts) a scored moment's NEAR_SHAKE radians by its
+## closeness, a scrape's SCRAPE_SHAKE, and low and fast the air's LOW_SHAKE at
+## the land (by SkyPlane `low` and the speed), dying over SHAKE_FADE s.
+const PUNCH := 3.0
+const PUNCH_IN := 0.12
+const PUNCH_FADE := 0.4
+const SHAKE := 0.0
 const NEAR_SHAKE := 0.006
 const SCRAPE_SHAKE := 0.012
 const LOW_SHAKE := 0.0022
@@ -240,6 +247,37 @@ var _weight_note: Label
 var _weight_shown := -100000
 const WEIGHT_HOLD := 1400
 const WEIGHT_FADE := 600
+## The plane's pace preset (scripts/flight_pace.gd; `--pace=`, else brisk),
+## cycled with P or the pad's d-pad right (`fly_pace`), named on the same
+## note as the weight.
+var pace := FlightPace.flag(FlightPace.DEFAULT)
+## Selling the speed: the view widens WIDE_FOV degrees more from WIDE_SPEED.x
+## to WIDE_SPEED.y m/s, and LOW_WIDE more low and fast over the land, eased
+## over WIDE_EASE s; the eye comes in CLOSE_IN and down CLOSE_DOWN at speed
+## (GlideCamera `close_in`, `close_down`); the streaks (scripts/endless/
+## speed_streaks.gd) come in from STREAK_SPEED.x to .y m/s (to STREAK_TOP of
+## full), low and fast over the land (within LOW_SPANS wingspans, from
+## LOW_SPEED.x to .y m/s) by LOW_STREAK, with Boost by BOOST_STREAK and the
+## surge by SURGE_STREAK; their dashes run at the speed over STREAK_FLOW.
+## `--streaks=<x>` times them (0 off).
+const WIDE_FOV := 3.0
+const WIDE_SPEED := Vector2(46.0,92.0)
+const LOW_WIDE := 1.5
+const WIDE_EASE := 0.5
+const CLOSE_IN := 0.12
+const CLOSE_DOWN := 0.18
+const STREAK_SPEED := Vector2(40.0,95.0)
+const STREAK_TOP := 0.75
+const LOW_SPANS := Vector2(1.0,4.0)
+const LOW_SPEED := Vector2(25.0,45.0)
+const LOW_STREAK := 0.55
+const BOOST_STREAK := 0.25
+const SURGE_STREAK := 0.45
+const STREAK_FLOW := 30.0
+var _streaks: ColorRect
+var _streak_scale := 1.0
+var _wide := 0.0
+var _low_k := 0.0
 ## Sinking through a pull-out, for the rumble's thrum: the nose this far
 ## over the path (radians) while it sinks faster than SINK_DOWN m/s knocks
 ## once, and it is felt again once the nose is back within SINK_REARM.
@@ -267,7 +305,9 @@ var _near_hud: Control
 var _fade: ColorRect
 var _fade_left := 0.0
 var _punch := 0.0
+var _punch_want := 0.0
 var _shake := 0.0
+var _shake_scale := SHAKE
 var _shake_t := 0.0
 var crashes := 0
 ## This frame's events (the landing's and the near misses'), for the HUD.
@@ -312,6 +352,8 @@ func _ready() -> void:
 			_alt_given = true
 		elif arg == "--numbers": _numbers = true
 		elif arg.begins_with("--rush="): _rush = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--shake="): _shake_scale = maxf(0.0,float(arg.get_slice("=",1)))
+		elif arg.begins_with("--streaks="): _streak_scale = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--ceiling="): _ceiling_over = float(arg.get_slice("=",1))
 		elif arg == "--old-land": _ceiling_over = SkyPlane.CEILING-Field.SEA_Y
 		elif arg == "--uncapped":
@@ -494,7 +536,7 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Q E knife edge (twice: roll)  ·  F flaps (stopped: get out)  ·  land on the meadows  ·  R up again  ·  V weight  ·  C clouds  ·  G grass  ·  F1 numbers  ·  F2 3D scale"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Q E knife edge (twice: roll)  ·  F flaps (stopped: get out)  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  F1 numbers  ·  F2 3D scale"
 	layer.add_child(_hint)
 	_near_hud = NearMissHud.new()
 	_near_hud.visible = false
@@ -504,6 +546,8 @@ func _build_ui() -> void:
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_fade.color = Color(0.03,0.03,0.04,0.0)
 	layer.add_child(_fade)
+	_streaks = SpeedStreaks.new()
+	layer.add_child(_streaks)
 	_weight_note = Label.new()
 	_weight_note.anchor_left = 0.0
 	_weight_note.anchor_right = 1.0
@@ -541,6 +585,7 @@ func _build_ui() -> void:
 func _launch(at: Vector3, heading: float) -> void:
 	plane = SkyPlane.new()
 	plane.use_flight_speed()
+	plane.use_pace(FlightPace.speed(pace))
 	plane.use_weight(weight)
 	_sink_felt = false
 	plane.floor_y = Field.SEA_Y-15.0
@@ -578,6 +623,8 @@ func _launch(at: Vector3, heading: float) -> void:
 	chase.reset(plane,at+(-plane.forward()*GlideCamera.BACK.x+Vector3.UP*GlideCamera.UP.x)*ground_scale.size(),camera.fov)
 	chase.linger = LOOK_LINGER
 	chase.use_weight(FlightWeight.knobs(weight))
+	chase.close_in = CLOSE_IN
+	chase.close_down = CLOSE_DOWN
 	if not _has_arg("--cam-speed-fov="): chase.speed_fov = RUSH_FOV
 	_size_chase()
 	_frame(0.0)
@@ -588,7 +635,8 @@ func _size_chase() -> void:
 	var span := WorldScale.TOY_SPAN*ground_scale.size()
 	chase.near = span*GlideCamera.NEAR_SPANS
 	chase.extent = span*0.5
-	chase.cruise = plane.cruise()
+	# Today's cruise, so the view widens with the speed itself at any pace.
+	chase.cruise = plane.cruise()/float(plane.pace_scale)
 	var view := get_viewport().get_visible_rect().size
 	if view.y > 0.0: chase.aspect = view.x/view.y
 
@@ -758,13 +806,13 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 		var lost := near.lose()
 		if lost > 0.0: events["lost"] = {"points":lost}
 		debris.hit(str(s.what),s.at,s.normal)
-		_shake = maxf(_shake,SCRAPE_SHAKE)
+		_shake = maxf(_shake,SCRAPE_SHAKE*_shake_scale)
 	events.merge(near.score(delta,self,Input.is_action_pressed(&"fly_surge")))
 	if events.has("near"):
 		var m: Dictionary = events.near
 		var k := float(m.k)
-		_punch = maxf(_punch,PUNCH*k)
-		_shake = maxf(_shake,NEAR_SHAKE*k)
+		_punch_want = maxf(_punch_want,PUNCH*k)
+		_shake = maxf(_shake,NEAR_SHAKE*k*_shake_scale)
 		var at: Vector3 = m.at
 		if m.surface == "tree": debris.burst("leaves",at,Vector3.UP)
 		elif m.surface == "water": debris.burst("spray",Vector3(at.x,water_at(at),at.z),Vector3.UP)
@@ -814,6 +862,14 @@ func _next_weight() -> void:
 	_weight_note.text = "Weight: %s" % weight
 	_weight_shown = Time.get_ticks_msec()
 
+## The next pace preset (P, the pad's d-pad right), mid-flight, named on
+## screen with its cruise and Boost.
+func _next_pace() -> void:
+	pace = FlightPace.next(pace)
+	plane.use_pace(FlightPace.speed(pace))
+	_weight_note.text = "Pace: %s  ·  cruise %d, Boost %d m/s" % [pace,roundi(plane.cruise()),roundi(plane.boost_speed())]
+	_weight_shown = Time.get_ticks_msec()
+
 ## The grass reacting: the plane's wash (by its height and thrust) and the
 ## look's breeze for the gusts (GrassReact `step`).
 func _react(delta: float) -> void:
@@ -852,8 +908,46 @@ func _frame(delta: float) -> void:
 	camera.rotate_object_local(Vector3.FORWARD,chase.roll)
 	_buffet(delta)
 	_shake_eye(delta)
-	_punch *= exp(-delta/PUNCH_FADE)
-	camera.fov = chase.fov+_punch
+	_streak_step(delta)
+	_punch_want *= exp(-delta/PUNCH_FADE)
+	_punch = lerpf(_punch,_punch_want,1.0-exp(-delta/PUNCH_IN)) if delta > 0.0 else _punch_want
+	camera.fov = chase.fov+_punch+_speed_wide(delta)
+
+## How low and fast it is over the land (0 to 1): within LOW_SPANS
+## wingspans of what is under it (the near misses' ground clearance when
+## weighted, else the land's), from LOW_SPEED.x to .y m/s; none on the wheels.
+func _low_fast() -> float:
+	if hand_landing.on_ground(): return 0.0
+	var p: Vector3 = plane.position
+	var clear := p.y-maxf(float(field.height(p.x,p.z)),Field.SEA_Y)
+	if plane.weighted and near.ground_clear < INF: clear = minf(clear,float(near.ground_clear))
+	var span := WorldScale.span
+	return (1.0-smoothstep(LOW_SPANS.x*span,LOW_SPANS.y*span,clear))*smoothstep(LOW_SPEED.x,LOW_SPEED.y,float(plane.velocity.length()))
+
+## The view's extra widening with the speed and low over the land (degrees,
+## eased over WIDE_EASE s).
+func _speed_wide(delta: float) -> float:
+	var v: float = plane.velocity.length()
+	var want := 0.0 if hand_landing.on_ground() else WIDE_FOV*smoothstep(WIDE_SPEED.x,WIDE_SPEED.y,v)+LOW_WIDE*_low_k
+	_wide = lerpf(_wide,want,1.0-exp(-delta/WIDE_EASE)) if delta > 0.0 else want
+	return _wide
+
+## The streaks this frame: by the speed, low over the land, Boost and the
+## surge, running out from where it is going on screen.
+func _streak_step(delta: float) -> void:
+	_low_k = _low_fast()
+	if _streaks == null: return
+	var v: float = plane.velocity.length()
+	var want := 0.0
+	var centre := Vector2(0.5,0.5)
+	if not hand_landing.on_ground() and _streak_scale > 0.0:
+		var boost := Input.get_action_strength(&"fly_boost")*smoothstep(30.0,50.0,v)
+		want = (STREAK_TOP*smoothstep(STREAK_SPEED.x,STREAK_SPEED.y,v)+LOW_STREAK*_low_k+BOOST_STREAK*boost+SURGE_STREAK*float(plane.surge))*_streak_scale
+		var ahead: Vector3 = camera.global_position+plane.velocity.normalized()*200.0
+		if not camera.is_position_behind(ahead):
+			var view := get_viewport().get_visible_rect().size
+			if view.x > 0.0 and view.y > 0.0: centre = (camera.unproject_position(ahead)/view).clamp(Vector2(0.2,0.2),Vector2(0.8,0.8))
+	_streaks.show_state(delta,want,v/STREAK_FLOW,centre,_low_k)
 
 ## The wind's buffet past cruise: a small shake of the eye's aim, three
 ## sines out of step, growing to RUSH_SHAKE at Boost's speed. None on the
@@ -875,7 +969,7 @@ func _buffet(delta: float) -> void:
 func _shake_eye(delta: float) -> void:
 	_shake *= exp(-delta/SHAKE_FADE)
 	var k := _shake
-	if plane.weighted and not hand_landing.on_ground(): k += LOW_SHAKE*float(plane.low)*clampf(float(plane.speed)/plane.cruise(),0.5,1.5)
+	if plane.weighted and not hand_landing.on_ground(): k += LOW_SHAKE*_shake_scale*float(plane.low)*clampf(float(plane.speed)/plane.cruise(),0.5,1.5)
 	if k < 0.0002: return
 	_shake_t += delta
 	var t := _shake_t*TAU
@@ -924,6 +1018,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		else: _roll_asked = -1.0 if float(plane.bank) < -0.05 else 1.0
 	elif Pad.pressed(event,&"fly_land"): _land_key()
 	elif Pad.pressed(event,&"fly_weight"): _next_weight()
+	elif Pad.pressed(event,&"fly_pace"): _next_pace()
 	elif Pad.pressed(event,&"fly_lean_left"): _lean_tapped(-1.0)
 	elif Pad.pressed(event,&"fly_lean_right"): _lean_tapped(1.0)
 	elif event is InputEventKey and event.pressed and not event.echo:
@@ -933,6 +1028,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F2: _next_scale()
 			KEY_R: respawn()
 			KEY_V: _next_weight()
+			KEY_P: _next_pace()
 			KEY_T:
 				if look != null: look.next_hour()
 			KEY_L:
@@ -1016,7 +1112,7 @@ func _show_hud() -> void:
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
 		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+_hall_note()+trees.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]
 	_hud.text += "
-weight %s  ·  %.1f g  ·  nose over path %.0f°  ·  soft %.2f" % [weight,float(plane.g_load),rad_to_deg(float(plane.aoa)),float(plane.soft)]
+weight %s  ·  pace %s (cruise %.1f, Boost %.1f)  ·  %.1f g  ·  nose over path %.0f°  ·  soft %.2f  ·  streaks %.2f, fov %.1f" % [weight,pace,plane.cruise(),plane.boost_speed(),float(plane.g_load),rad_to_deg(float(plane.aoa)),float(plane.soft),_streaks.strength,camera.fov]
 	if plane.weighted: _hud.text += "\nnear: ground %.1f m (%s)  ·  stone %.1f m  ·  low %.2f  ·  chain %d x%.1f  ·  meter %.2f  ·  total %d  ·  scrapes %d, crashes %d" % [
 		near.ground_clear,near.ground_surface,near.stone_clear,float(plane.low),near.chain_count,near.multiplier(),near.meter,roundi(near.total),contact.scrapes,crashes]
 

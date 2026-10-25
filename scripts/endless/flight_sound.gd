@@ -55,7 +55,16 @@ const OLD := "res://assets/audio/"
 
 ## Airspeed as a share of the plane's cruise where the rush starts and is
 ## full (cruise is about 0.44 of the way, Boost about 0.78, a dive's top 1).
+## The cruise is today's (the plane's over its pace, scripts/flight_pace.gd),
+## so a faster pace sounds faster. Past the full end, `over` runs 0 to 1 over
+## AIR_OVER more shares (a fast pace's Boost and surge): the rush and whistle
+## rise OVER_PITCH higher, the whistle gains WHISTLE_OVER and the air opens
+## OVER_CUT Hz more.
 const AIR_SPEED := Vector2(0.3,1.85)
+const AIR_OVER := 1.3
+const OVER_PITCH := 0.15
+const WHISTLE_OVER := 0.04
+const OVER_CUT := 3000.0
 ## The rush's gain at the quiet end and the full end, and what rock close
 ## by, a dive and a hard pull add; its low-pass (Hz) closed and open, and
 ## what rock close by and a dive add.
@@ -195,6 +204,7 @@ var dive := 0.0
 ## Airspeed as the rush reads it (0 to 1), the height over the ground and
 ## over the sea (m), and the share of water round the plane (0 to 1).
 var fast := 0.0
+var over := 0.0
 var agl := 0.0
 var alt := 0.0
 var water := 0.0
@@ -424,8 +434,10 @@ func step(delta: float, game: Node3D, events: Dictionary, boost: float) -> void:
 	var on_wheels: bool = landing.on_ground()
 	var velocity: Vector3 = plane.velocity
 	var speed: float = landing.roll_speed() if on_wheels else velocity.length()
-	var cruise: float = maxf(float(plane.cruise()),1.0)
+	var paced: Variant = plane.get("pace_scale")
+	var cruise: float = maxf(float(plane.cruise())/(maxf(float(paced),0.1) if paced != null else 1.0),1.0)
 	fast = clampf((speed/cruise-AIR_SPEED.x)/(AIR_SPEED.y-AIR_SPEED.x),0.0,1.0)
+	over = clampf((speed/cruise-AIR_SPEED.y)/AIR_OVER,0.0,1.0)
 	_flight(delta,velocity,speed,on_wheels)
 	if on_wheels:
 		_settle_probe(delta)
@@ -459,10 +471,10 @@ func _flight(delta: float, velocity: Vector3, speed: float, on_wheels: bool) -> 
 ## The rush, whistle and howl, and the air's brightness.
 func _air(boost: float, flying: bool) -> void:
 	rush.goal = lerpf(RUSH.x,RUSH.y,pow(fast,1.6))*(1.0 if fast > 0.0 or flying else 0.0)+RUSH_NEAR*near+RUSH_DIVE*dive+RUSH_PULL*pull+RUSH_BOOST*boost*fast
-	rush.pitch_goal = 0.85+0.3*fast+0.08*near+0.06*dive
-	if _air_lpf != null: _air_lpf.cutoff_hz = clampf(RUSH_CUT.x+(RUSH_CUT.y-RUSH_CUT.x)*pow(fast,1.3)+RUSH_CUT_NEAR*near+RUSH_CUT_DIVE*dive,200.0,18000.0)
-	whistle.goal = WHISTLE*smoothstep(0.4,1.0,fast)+WHISTLE_NEAR*near*fast+WHISTLE_PULL*pull*fast+WHISTLE_DIVE*dive*(0.4+0.6*fast)
-	whistle.pitch_goal = 0.9+0.25*fast+0.08*dive
+	rush.pitch_goal = 0.85+0.3*fast+0.08*near+0.06*dive+OVER_PITCH*over
+	if _air_lpf != null: _air_lpf.cutoff_hz = clampf(RUSH_CUT.x+(RUSH_CUT.y-RUSH_CUT.x)*pow(fast,1.3)+RUSH_CUT_NEAR*near+RUSH_CUT_DIVE*dive+OVER_CUT*over,200.0,18000.0)
+	whistle.goal = WHISTLE*smoothstep(0.4,1.0,fast)+WHISTLE_NEAR*near*fast+WHISTLE_PULL*pull*fast+WHISTLE_DIVE*dive*(0.4+0.6*fast)+WHISTLE_OVER*over
+	whistle.pitch_goal = 0.9+0.25*fast+0.08*dive+OVER_PITCH*over
 	howl.goal = HOWL*enclosed+0.04*near
 	howl.pitch_goal = 0.8+0.4*fast
 
