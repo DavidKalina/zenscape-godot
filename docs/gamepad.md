@@ -92,7 +92,8 @@ The cannon prompt names each button for the mode, the kegs in hand and the power
 | LB / RB | Barrel roll | Q / E, click |
 | Y | Land. Again before the touch flies on; after it, hops out. | F |
 | X | Eject (the skydive, docs/skydive.md) | X |
-| R3 | Chase / first-person camera | C |
+| R3 | Chase / first-person camera (the isles) | C |
+| R3, held | Endless flight: challenge the bracketed plane to a race; pressed in the race, call it off (scripts/endless/rival_race.gd) | Tab, held |
 | B or View | Step out | V / Esc |
 | Menu | Pause | — |
 

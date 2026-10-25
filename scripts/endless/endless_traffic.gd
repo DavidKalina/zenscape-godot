@@ -24,6 +24,10 @@ extends "res://scripts/sky_traffic.gd"
 ## else. Hard turns pull vapour off the wingtips (the figure's own vapour,
 ## PlaneFigure `_trail_vapour`).
 ##
+## A plane challenged to a race (scripts/endless/rival_race.gd) carries a
+## `rival` (scripts/endless/rival_line.gd) that flies it in place of `_fly`;
+## it keeps off the player by its own, nearer, SAFE and is not recycled.
+##
 ## Flags: --traffic=0 off, --traffic=N planes (DEFAULT_COUNT), --trails=0
 ## no trails.
 
@@ -82,6 +86,10 @@ const TRAIL_LIFE := 10.0
 const TRAIL_EVERY := 0.2
 const TRAIL_WIDTH := Vector2(0.5,4.5)
 const TRAIL_ALPHA := 0.9
+## Near the eye it fades out (m: gone at the first, whole from the
+## second), so a trail flown through (a rival's, followed close) is never
+## a wall across the view.
+const TRAIL_NEAR := Vector2(12.0,70.0)
 ## Further than this from the eye (m) a plane is only posed (`FarPose`):
 ## no vapour, propeller or control surfaces worked.
 const DETAIL := 260.0
@@ -182,11 +190,14 @@ func step(delta: float, eye: Vector3, view: Vector3, player: Vector3, player_fwd
 		plane.life = float(plane.life)+delta
 		_reaim(plane)
 		_detail(plane)
-		_fly(plane,delta)
+		# A challenged rival flies its own line (scripts/endless/rival_line.gd).
+		var rival: RefCounted = plane.get("rival")
+		if rival != null: rival.fly(self,delta)
+		else: _fly(plane,delta)
 		if plane.figure != plane.body: plane.body.transform = plane.far.transform
 		_keep_off(plane)
 		if plane.trail != null: plane.trail.lay(delta,_tail(plane),eye,true)
-		if _recycle(plane,delta): _put_away(plane)
+		if rival == null and _recycle(plane,delta): _put_away(plane)
 	if _trail_material != null: _trail_material.set_shader_parameter("tint",_light())
 	stats.up = up
 	stats.ms = float(Time.get_ticks_usec()-t0)/1000.0
@@ -202,6 +213,22 @@ func note() -> String:
 func force(n: int, plan: String) -> void:
 	if n < 0 or n >= planes.size(): return
 	_spawn(planes[n],plan)
+
+## Plane `n` put at `at` on `heading` now, cruising on ahead
+## (--race-near-start: a rival to challenge in view).
+func place(n: int, at: Vector3, heading: float) -> void:
+	if n < 0 or n >= planes.size(): return
+	var plane: Dictionary = planes[n]
+	_spawn(plane,"cruise")
+	var flight: Flight = plane.flight
+	flight.position = at
+	flight.heading = heading
+	flight.velocity = flight.forward()*flight.speed
+	plane.goal = _leg(plane,at,heading)
+	plane.body.update(0.0,flight,0.0,Callable(),false)
+	PlaneGroundScale.grow(plane.body,_size)
+	plane.body.reset(flight)
+	if plane.trail != null: plane.trail.restart()
 
 func _spawn(plane: Dictionary, plan := "") -> void:
 	var rng: RandomNumberGenerator = plane.rng
@@ -440,9 +467,11 @@ func _keep_off(plane: Dictionary) -> void:
 	var off := flight.position-_player
 	var d := off.length()
 	plane.near = minf(float(plane.near),d)
-	if d >= SAFE: return
+	# A rival races close: its own, nearer, keep-off.
+	var safe := SAFE if plane.get("rival") == null else float(plane.rival.safe_r())
+	if d >= safe: return
 	var away := off.normalized() if d > 0.01 else Vector3.UP
-	flight.position = _player+away*SAFE
+	flight.position = _player+away*safe
 	var under := float(ground.call(flight.position))+KEEP_CLEAR*0.5
 	if flight.position.y < under: flight.position.y = under
 	plane.body.update(0.0,flight,0.0,Callable(),false,_pull,flight.bank)
@@ -574,7 +603,7 @@ class Trail extends MeshInstance3D:
 			var w := lerpf(TRAIL_WIDTH.x,TRAIL_WIDTH.y,sqrt(age))*_scale*0.5
 			# Far off, it never thins under about a pixel and a half.
 			w = maxf(w,eye.distance_to(p)*0.0017)
-			var a := TRAIL_ALPHA*pow(1.0-age,1.2)*smoothstep(0.0,0.03,age+0.005)
+			var a := TRAIL_ALPHA*pow(1.0-age,1.2)*smoothstep(0.0,0.03,age+0.005)*smoothstep(TRAIL_NEAR.x,TRAIL_NEAR.y,eye.distance_to(p))
 			var c := Color(1.0,1.0,1.0,a)
 			var side := across.normalized()*w
 			_mesh.surface_set_color(c)
