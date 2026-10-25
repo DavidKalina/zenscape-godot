@@ -165,6 +165,12 @@ var clipped := false
 var sight := Callable()
 ## The least it comes in to the glider when rock is in the way (m).
 var near := 0.0
+## Tight (the game's plane in a bore, scripts/endless/land_tunnels.gd):
+## the eased way round is checked too, so on its way to a clear way the eye
+## draws in short of a column or a wall rather than pass through it, and
+## when nothing round is clear it may come in to TIGHT_NEAR of `near`.
+var tight := false
+const TIGHT_NEAR := 0.45
 ## The game's plane (see the top): framed, its cruise (m/s), the view's
 ## width over height, and the plane's reach from its middle (m).
 var framed := false
@@ -312,7 +318,11 @@ func _keep_clear(delta: float, at: Vector3, solid: Callable) -> void:
 	if full < 0.01: return
 	var pick := _dodge
 	var pick_clear := 1.0
-	if _dodge != Vector2.ZERO or _clear(at,_turned(want,_dodge),solid) < 1.0:
+	if _dodge != Vector2.ZERO and _clear(at,want,solid) >= 1.0:
+		# The way straight out is clear: no way round scores higher (by the
+		# scan's own sums), so it eases back without the scan.
+		pick = Vector2.ZERO
+	elif _dodge != Vector2.ZERO or _clear(at,_turned(want,_dodge),solid) < 1.0:
 		var best := -INF
 		for d: Vector2 in DODGES:
 			var c := _clear(at,_turned(want,d),solid)
@@ -327,7 +337,10 @@ func _keep_clear(delta: float, at: Vector3, solid: Callable) -> void:
 	var dir := _turned(want,_dodge).normalized()
 	# Swinging to a clear way round, it doesn't draw in on the way there.
 	var allowed := full
-	if pick_clear < 1.0: allowed = minf(full,maxf(_clear(at,dir*full,solid)*full,near))
+	if pick_clear < 1.0 or tight:
+		var room := _clear(at,dir*full,solid)*full
+		var least := near*(TIGHT_NEAR if tight else 1.0)
+		allowed = minf(full,maxf(room,least))
 	if allowed < _reach: _reach = allowed
 	else: _reach = minf(lerpf(_reach,allowed,_ease(EASE_OUT,delta)),full)
 	eye = at+dir*_reach

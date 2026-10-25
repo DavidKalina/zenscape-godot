@@ -243,6 +243,45 @@ static func _piece(index: int, act: String, bays: int, start: Vector3, theta: fl
 	piece.plans = _plans(piece,rng)
 	return piece
 
+## A slot hall's acts, in order, and their bays (a range): the nave takes
+## what the others leave (scripts/endless/hall_sites.gd).
+const SLOT_ACTS := [["gate",Vector2i(3,4)],["nave",Vector2i(3,6)],["shafts",Vector2i(2,4)],["cloister",Vector2i(0,3)],["apse",Vector2i(3,4)]]
+
+## One straight piece of `bays` bays for a slot cut through a ridge
+## (scripts/endless/hall_sites.gd): the gate's gabled mouth at its start,
+## the apse's ring past its end, the acts (SLOT_ACTS) one after another
+## along it, no torn ends. Its walls back onto the slot's rock, so only its
+## roof gives a way out: no more than MAX_SHUT bays in a row are roofed
+## whole. Hall frame: the gate's mouth at the origin, the nave along +X.
+static func slot_piece(seed_value: int, bays: int) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([seed_value,"slot"])
+	var acts: Array = []
+	var used := 0
+	for a: Array in SLOT_ACTS:
+		var n := rng.randi_range((a[1] as Vector2i).x,(a[1] as Vector2i).y)
+		acts.append([a[0],n])
+		used += n
+	# The nave takes up the rest (never under 2), then the cloister and the
+	# shafts give bays back if still too many.
+	acts[1][1] = maxi(2,int(acts[1][1])+bays-used)
+	used = 0
+	for a: Array in acts: used += int(a[1])
+	for k: int in [3,2]:
+		while used > bays and int(acts[k][1]) > (0 if k == 3 else 1):
+			acts[k][1] = int(acts[k][1])-1
+			used -= 1
+	var kept: Array = []
+	for a: Array in acts:
+		if int(a[1]) > 0: kept.append(a)
+	bays = used
+	var layout := [{"bays":bays,"turn":0.0}]
+	var path := HallPath.make(layout,BAY)
+	var piece := {"index":0,"act":"slot","acts":kept,"slot":true,"bays":bays,"layout":layout,"path":path,"length":path.length,
+		"frame":Transform3D.IDENTITY,"floor":0.0,"theta":0.0,"first":true,"last":true,"s0":0.0,"seed":hash([seed_value,"piece","slot"]) & 0xffffff}
+	piece.plans = _plans(piece,rng)
+	return piece
+
 ## The total turn of a layout (rad).
 static func _turned(layout: Array) -> float:
 	var t := 0.0
@@ -258,27 +297,14 @@ static func _plans(piece: Dictionary, rng: RandomNumberGenerator) -> Array:
 	var plans: Array = Hall.plan(rng,WEATHERED,bays)
 	var torn_start: bool = not piece.first
 	var torn_end: bool = not piece.last
-	# The roofs by act.
+	# The roofs by act (a slot piece's by each of its acts in turn).
 	var roofs: Array = []
-	match act:
-		"gate":
-			roofs = ["whole","whole","broken","whole","broken","open","open","broken","whole","broken"]
-		"nave":
-			var k := 0
-			while roofs.size() < bays:
-				var run := rng.randi_range(2,3)
-				for j in range(run): roofs.append("whole")
-				roofs.append("broken" if rng.randf() < 0.75 else "open")
-				k += 1
-		"shafts":
-			for j in range(bays): roofs.append("whole" if rng.randf() < 0.18 else "broken")
-		"cloister":
-			for j in range(bays): roofs.append("broken" if rng.randf() < 0.15 else "open")
-		"slit":
-			for j in range(bays): roofs.append("whole" if j%2 == 1 else "broken")
-		"apse":
-			roofs = ["broken","whole","whole","broken","open","broken","open","open","open","open"]
+	if piece.has("acts"):
+		for a: Array in piece.acts: roofs.append_array(_roofs(a[0],int(a[1]),rng))
+	else:
+		roofs = _roofs(act,bays,rng)
 	while roofs.size() < bays: roofs.append("broken")
+	var slot: bool = piece.get("slot",false)
 	for i in range(bays):
 		var p: Dictionary = plans[i]
 		p.roof = roofs[i]
@@ -288,6 +314,11 @@ static func _plans(piece: Dictionary, rng: RandomNumberGenerator) -> Array:
 		p.gaps = []
 		p.screen = false
 		p.breach = Vector2i.ZERO
+		if slot:
+			p.slot = true
+			# The plane flies a slot hall's nave on the endless flight's
+			# glide, which keeps a metre under any tie: its ties stand high.
+			if p.tie == "low": p.tie = "high"
 	if torn_start:
 		plans[0].torn = 1
 	if torn_end:
@@ -315,6 +346,36 @@ static func _plans(piece: Dictionary, rng: RandomNumberGenerator) -> Array:
 			if int(p.torn) == 0: p.architraves = Vector2(float(rng.randf() < 0.6),float(rng.randf() < 0.6))
 		if i > 0 and (prev == "open") != (p.roof == "open") and int(p.torn) & 1 == 0: p.gable = true
 		if p.roof == "open" and bool(p.fallen): p.fallen = false
+	_screens_and_breaches(piece,plans,rng)
+	return plans
+
+## The roofs an act draws for `bays` bays.
+static func _roofs(act: String, bays: int, rng: RandomNumberGenerator) -> Array:
+	var roofs: Array = []
+	match act:
+		"gate":
+			roofs = ["whole","whole","broken","whole","broken","open","open","broken","whole","broken"]
+		"nave":
+			var k := 0
+			while roofs.size() < bays:
+				var run := rng.randi_range(2,3)
+				for j in range(run): roofs.append("whole")
+				roofs.append("broken" if rng.randf() < 0.75 else "open")
+				k += 1
+		"shafts":
+			for j in range(bays): roofs.append("whole" if rng.randf() < 0.18 else "broken")
+		"cloister":
+			for j in range(bays): roofs.append("broken" if rng.randf() < 0.15 else "open")
+		"slit":
+			for j in range(bays): roofs.append("whole" if j%2 == 1 else "broken")
+		"apse":
+			roofs = ["broken","whole","whole","broken","open","broken","open","open","open","open"]
+	return roofs
+
+## The slit's screens, then the breaches (every run of shut bays opened).
+static func _screens_and_breaches(piece: Dictionary, plans: Array, rng: RandomNumberGenerator) -> void:
+	var bays: int = piece.bays
+	var act: String = piece.act
 	# The slit: screens every other bay (the slit through each), the inner
 	# columns paired.
 	if act == "slit":
@@ -351,6 +412,11 @@ static func _plans(piece: Dictionary, rng: RandomNumberGenerator) -> Array:
 		if bay_exit(p).is_empty(): shut += 1
 		else: shut = 0
 		if shut > MAX_SHUT-1 and not (piece.first and i == 0):
+			# In a slot the walls back onto rock: the roof opens instead.
+			if bool(p.get("slot",false)):
+				p.roof = "broken"
+				shut = 0
+				continue
 			# Open this one: an arch out on the lane's side, else the left.
 			var v: Vector2i = p.breach
 			var left := not bool(p.fallen) and Hall.breach_fits(piece.get("path"),i,0)
@@ -363,7 +429,6 @@ static func _plans(piece: Dictionary, rng: RandomNumberGenerator) -> Array:
 	# A stair up near each end on foot, where the bay keeps its buttress.
 	for i in [1,bays-2]:
 		if i >= 0 and i < bays and int(plans[i].torn) == 0: plans[i].buttress = "stair"
-	return plans
 
 ## What a bay's plan gives as a way out: [] if none, else its kinds
 ## ("roof", "open", "breach", "torn").
@@ -372,6 +437,8 @@ static func bay_exit(p: Dictionary) -> Array:
 	if int(p.get("torn",0)) != 0: out.append("torn")
 	if p.roof == "open": out.append("open")
 	elif p.roof == "broken" or not (p.get("gaps",[]) as Array).is_empty(): out.append("roof")
+	# A slot piece's breaches open onto the rock of the slot's walls.
+	if bool(p.get("slot",false)): return out
 	var b: Vector2i = p.get("breach",Vector2i.ZERO)
 	for k in range(2):
 		if Hall.BREACHES[b[k]] in ["low","arch","collapse"]: out.append("breach")

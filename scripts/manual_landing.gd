@@ -611,7 +611,7 @@ func _fly(delta: float, input: Dictionary, ground: Callable, floor_at: Callable,
 	var nose_was := float(plane.pitch)
 	plane.step(delta,input,ground,calm)
 	throttle = float(plane.throttle)
-	if _unstick >= 0.0: _heavy(delta,nose_was)
+	if _unstick >= 0.0: _heavy(delta,nose_was,floor_at)
 	if _dip_time >= 0.0: _dip(delta,input,out)
 	# A hop's kick, lifting it clear and dying away.
 	if _kick > 0.0:
@@ -1050,8 +1050,10 @@ func _hold(floor_at: Callable) -> void:
 	_place_on(land,floor_at,1.0)
 
 ## Just off the wheels, heavy: the climb held back and let out, the speed
-## slow to build, the nose slow to answer (the unstick's constants).
-func _heavy(delta: float, nose_was: float) -> void:
+## slow to build, the nose slow to answer (the unstick's constants). Never
+## held under the land (`floor_at`): with the nose kept down (over the
+## ceiling) it runs on along it.
+func _heavy(delta: float, nose_was: float, floor_at: Callable) -> void:
 	_unstick += delta
 	var u := clampf(_unstick/(UNSTICK_TIME*load_unstick),0.0,1.0)
 	var most := _unstick_nose+UNSTICK_NOSE*_unstick
@@ -1061,6 +1063,8 @@ func _heavy(delta: float, nose_was: float) -> void:
 	var climb := float(plane.speed)*sin(float(plane.pitch))
 	plane.velocity.y = climb*share if climb > 0.0 else climb
 	_unstick_y += float(plane.velocity.y)*delta
+	var land := float(floor_at.call(Vector2(plane.position.x,plane.position.z)))
+	if not is_nan(land): _unstick_y = maxf(_unstick_y,land+PlaneStrip.contact(float(plane.pitch)))
 	plane.position.y = maxf(_unstick_y,float(plane.position.y)) if u >= 1.0 else _unstick_y
 	# Hanging low over the grass, the wheels don't count as a touch.
 	_grace = maxf(_grace,0.1)

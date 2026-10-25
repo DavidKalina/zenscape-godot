@@ -55,6 +55,12 @@ const LIGHT_FADE := [60.0,24.0]
 @export var with_smoke := true
 ## How far its volumes draw (m); 0 takes VIS_PER_SCALE x scale_by.
 @export var vis_end := 0.0
+## A fire under rock (before it enters the tree): its smoke takes no sky
+## fill and no fog, so only lights near it show it.
+@export var dark := false
+## Render layers for every part it draws (before it enters the tree); 0
+## keeps the default.
+@export var layer_mask := 0
 ## How much it burns: 0 out (all hidden, nothing emits), 1 as the kind,
 ## over 1 flaring (taller, brighter). A piece that eases its fire in and out
 ## sets this each frame.
@@ -131,6 +137,13 @@ func _ready() -> void:
 	if with_smoke and float(_spec.smoke) > 0.0: _smoke = _make_smoke(tallest)
 	for pt: GeometryInstance3D in [_sparks,_smoke]:
 		if pt != null: pt.visibility_range_end = minf(reach,PARTICLE_REACH*maxf(scale_by,1.0))
+	if dark and _smoke != null:
+		var sm := (_smoke.draw_pass_1 as QuadMesh).material as StandardMaterial3D
+		sm.disable_ambient_light = true
+		sm.disable_fog = true
+	if layer_mask != 0:
+		for c in get_children():
+			if c is VisualInstance3D: (c as VisualInstance3D).layers = layer_mask
 
 ## A lantern's flame (the stone lamp's fire box, scripts/stone_lamp.gd): a
 ## candle volume standing in `parent` (the lantern's own space) with its foot

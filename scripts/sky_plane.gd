@@ -434,9 +434,12 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var sag := HEAVY_SAG*heavy*(1.0-cos(_free_bank))
 	var along := path*speed
 	if climb_share*power < 1.0 and along.y > 0.0: along.y *= climb_share*power
-	velocity = along+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag-DEAD_SINK*(1.0-power))+wind
+	# The guard in a tight place (SkyGlide `guide`).
+	var push := _guard(delta)
+	velocity = along+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag-DEAD_SINK*(1.0-power))+wind+push
 	var was := position
 	position += velocity*delta
+	if keep.is_valid(): position = keep.call(position)
 	_skim(delta,ground,was)
 	_water(delta)
 	speed = maxf(speed,slow)
