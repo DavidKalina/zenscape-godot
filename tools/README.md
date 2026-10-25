@@ -10,7 +10,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 |---|---|
 | A fresh worktree made runnable (kernels, caches, import) | `python tools/worktree.py setup <path> [--cache toad_tex] [--from DIR]`; `check <path>` |
 | Run any Godot command | `python tools/godot.py <godot args>` |
-| Play the game or a study in a window (for the user; no timeout) | `python tools/play.py [studies/x.tscn] [-- flags]`; on Windows `.\run-endless-flight.cmd [flags]` |
+| Play the game or a study in a window (for the user; no timeout) | `python tools/play.py [studies/x.tscn] [-- flags]`; the launchers `run-endless-flight.command` (Mac) and `.cmd` (Windows) wrap it; it imports first every launch |
 | Smoke a scene (400 frames, no errors) | `python tools/smoke.py studies/x.tscn [-- scene flags]` |
 | A check through the real play loop | write `scratch/x.gd` extending `tools/harness/drive.gd`, then `python tools/drive.py scratch/x.gd` |
 | Every helper a driver has, with its doc | `python tools/drive.py --api [ray\|shot\|film\|...]` (read from drive.gd; no Godot run) |
