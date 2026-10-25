@@ -78,11 +78,11 @@ func _init() -> void:
 	flora = home.flora.duplicate(true)
 	paint = home.paint.duplicate(true)
 	layers = home.layers.duplicate(true)
-	# A region's own layers (halls, tunnels, arches) run at the densest
+	# A region's own layers (halls, tunnels, arches, splits) run at the densest
 	# region's density; each site then keeps to the regions that grow it
 	# (halls and tunnels wholly inside one, clear of the band: LandBlend
 	# `site_ok`; arches by the region at the spot: ArchPlan).
-	for key: String in ["halls","tunnels","arches"]:
+	for key: String in ["halls","tunnels","arches","splits"]:
 		var most := 0.0
 		for p: RefCounted in regions: most = maxf(most,float(p.layers.get(key,1.0 if key == "arches" else 0.0)))
 		layers[key] = most

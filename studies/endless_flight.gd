@@ -51,6 +51,10 @@ extends Node3D
 ## --heading=deg clockwise from -z (0; `sun` toward the sun), --alt=m over
 ## the ground (45), --numbers opens with F1's numbers shown, --uncapped
 ## turns vsync and the frame cap off (the fps is then the frame's cost).
+## Split mountains (scripts/endless/split_sites.gd): --split-near-start starts
+## 520 m out of the nearest one's lower mouth, heading in, 28 m up (--alt
+## wins); --splits=X their density, --no-splits none, --split-slot=X the
+## slot's toy width (9: 18 m).
 ## The look (scripts/endless/endless_look.gd): --mood=ID one of its
 ## moods (alpine_morning), --hour=H the sun's hour (the mood's), --day the
 ## hour runs, --plain-look round one's plain sky and colours; T steps to the
@@ -106,6 +110,7 @@ const EndlessEddies = preload("res://scripts/endless/endless_eddies.gd")
 const EndlessMotes = preload("res://scripts/endless/endless_motes.gd")
 const LandArches = preload("res://scripts/endless/land_arches.gd")
 const LandHalls = preload("res://scripts/endless/land_halls.gd")
+const SplitSites = preload("res://scripts/endless/split_sites.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
 const LandTrees = preload("res://scripts/endless/land_trees.gd")
 ## The birds (scripts/endless/endless_birds.gd; --birds=0 off).
@@ -389,8 +394,20 @@ func _ready() -> void:
 	# the land is first looked at (scripts/endless/hall_sites.gd).
 	LayoutOverrides.begin("endless_flight")
 	field = Field.new(seed,world)
-	# The main menu parks the plane on a meadow near the start.
-	var spots: Array = [] if _no_title else MenuSpot.find(field,_start,_heading)
+	# --split-near-start: the start moved out of the nearest split
+	# mountain's lower mouth, heading in (scripts/endless/split_sites.gd).
+	if SplitSites.near_start_wanted():
+		var s: PackedFloat32Array = field.split_near(_start)
+		if s.is_empty(): push_warning("--split-near-start: no split mountain near the start")
+		else:
+			var pose: Dictionary = SplitSites.approach(s)
+			_start = pose.at
+			_heading = -deg_to_rad(float(pose.heading))
+			if not _alt_given: _alt = SplitSites.START_ALT
+			print("split mountain: %.0f m long, mouth at %s, exit at %s; start %s heading %.0f" % [s[4]*2.0,str(pose.mouth),str(pose.exit),str(_start),float(pose.heading)])
+	# The main menu parks the plane on a meadow near the start; a split
+	# mountain start goes straight into the air, as --no-title does.
+	var spots: Array = [] if _no_title or SplitSites.near_start_wanted() else MenuSpot.find(field,_start,_heading)
 	if not spots.is_empty():
 		_start = spots[0].at
 		_heading = float(spots[0].heading)

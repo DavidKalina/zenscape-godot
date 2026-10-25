@@ -43,6 +43,10 @@ extends RefCounted
 ##               layer over the field cut in by LandField; they read as
 ##               still rivers. --ponds=X their density, 0 none
 ##               (ponds-handoff.md).
+##   splits      split mountains: a slot canyon cut through a range, foot to
+##               foot (split_sites.gd), a layer cut in last; the world's
+##               `splits` layer (wilderness), --splits=X their density, 0 or
+##               --no-splits none (split-mountain-handoff.md).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
@@ -476,6 +480,16 @@ var _tunnel_cell := Vector2i(1 << 30,0)
 var _tunnel_here: Array = []
 var _t_on := false
 
+## Split mountains (scripts/endless/split_sites.gd): a slot canyon cut
+## through a range, a layer over either field as the slot halls are, cut in
+## last. `splits` their density (the world's `splits` layer, --splits=X; 0
+## none). A split keeps out of the halls' and the tunnels' ground.
+const Splits = preload("res://scripts/endless/split_sites.gd")
+var splits := 0.0
+var _split_local := {}
+var _split_key := Vector2i(1 << 30,0)
+var _split_here := PackedFloat32Array()
+
 func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	seed = land_seed
 	# The world's recipe and knobs first (the profile `--world=` names unless
@@ -498,6 +512,7 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	if tunnels > 0.0 and Tunnels.test_wanted():
 		_tunnel_sites = [Tunnels.test_site(_impl,land_seed,world)]
 		_tunnel_test = true
+	splits = 0.0 if k.get("old_land",false) else Splits.wanted(float(world.layer("splits",0.0)))
 
 ## A land recipe with the field's floor and the flags over it.
 static func _knobs(land: Dictionary) -> Dictionary:
@@ -556,7 +571,7 @@ func _blend_of(land_seed: int, want_native: bool) -> Object:
 	# The regions' own layers: a hall or tunnel stands only wholly inside a
 	# region whose profile grows it (LandBlend `site_ok`); `--halls=X` /
 	# `--tunnels=X` (X > 0) grow them in every region.
-	var flagged := {&"halls":Sites.wanted(-1.0) > 0.0,&"tunnels":Tunnels.wanted(-1.0) > 0.0}
+	var flagged := {&"halls":Sites.wanted(-1.0) > 0.0,&"tunnels":Tunnels.wanted(-1.0) > 0.0,&"splits":Splits.wanted(-1.0) > 0.0}
 	for layer: StringName in flagged:
 		var on := PackedByteArray()
 		for p: RefCounted in world.regions:
@@ -670,15 +685,18 @@ func region_pick(x: float, z: float, u: float) -> int:
 func sample(x: float, z: float) -> Vector2:
 	_p_on = false
 	_t_on = false
-	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0: return _impl.sample(x,z)
-	# (The square's pond, tunnel and hall first: finding them samples the field.)
+	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0: return _impl.sample(x,z)
+	# (The square's pond, tunnel, hall and split first: finding them samples
+	# the field.)
 	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
 	var ts := _tunnels_for(x,z) if tunnels > 0.0 else _NONE
 	var s := _hall_for(x,z) if halls > 0.0 else PackedFloat32Array()
+	var sp := _split_for(x,z) if splits > 0.0 else PackedFloat32Array()
 	var got: Vector2 = _impl.sample(x,z)
 	if not p.is_empty(): got.x = _pond(p,x,z,got.x,float(_impl.last_river))
 	if not ts.is_empty(): got = _tunnel(ts,got,x,z)
 	if not s.is_empty(): got.x = Sites.carve(s,got.x,x,z)
+	if not sp.is_empty(): got.x = Splits.carve(sp,got.x,x,z)
 	return got
 
 ## Vector2(height, meadow) `got` with the tunnels' massifs and trenches at
@@ -759,6 +777,70 @@ func hall_at(x: float, z: float, margin := 0.0) -> PackedFloat32Array:
 	if s.is_empty() or not Sites.on_cut(s,x,z,margin): return PackedFloat32Array()
 	return s
 
+## The split of the square `key` (split_sites.gd), or an empty array: none
+## where a slot hall's cut or a tunnel's box meets its cut.
+func _split_cell(key: Vector2i) -> PackedFloat32Array:
+	var s := Splits.cell_site(_impl,seed,splits,ponds,key,_split_local)
+	if s.is_empty(): return s
+	var r := s[7]+s[8]
+	if tunnels > 0.0 and Tunnels.blocks_hall(tunnels_in(s[0]-r,s[1]-r,s[0]+r,s[1]+r),s): return PackedFloat32Array()
+	if halls > 0.0:
+		for h: PackedFloat32Array in Sites.sites_in(_impl,seed,halls,ponds,s[0]-r,s[1]-r,s[0]+r,s[1]+r,_hall_local):
+			if Vector2(h[0],h[1]).distance_to(Vector2(s[0],s[1])) < r+h[7]+h[8]: return PackedFloat32Array()
+	return s
+
+## The split of the square holding (x, z) (the last square's kept).
+func _split_for(x: float, z: float) -> PackedFloat32Array:
+	var key := Splits.cell_of(x,z)
+	if key != _split_key:
+		_split_here = _split_cell(key)
+		_split_key = key
+	return _split_here
+
+## The split mountains whose cut meets the box (x0, z0)..(x1, z1)
+## (split_sites.gd's arrays).
+func splits_in(x0: float, z0: float, x1: float, z1: float) -> Array:
+	if splits <= 0.0: return []
+	var out: Array = []
+	for cj in range(floori(z0/Splits.CELL),floori(z1/Splits.CELL)+1):
+		for ci in range(floori(x0/Splits.CELL),floori(x1/Splits.CELL)+1):
+			var s := _split_cell(Vector2i(ci,cj))
+			if s.is_empty(): continue
+			var r := s[7]+s[8]
+			if s[0]+r < x0 or s[0]-r > x1 or s[1]+r < z0 or s[1]-r > z1: continue
+			out.append(s)
+	return out
+
+## The split whose cut holds (x, z) (or comes within `margin` m, and
+## `along` m more past its ends), or an empty array.
+func split_at(x: float, z: float, margin := 0.0, along := 0.0) -> PackedFloat32Array:
+	if splits <= 0.0: return PackedFloat32Array()
+	var r := margin+along
+	for s: PackedFloat32Array in splits_in(x-r,z-r,x+r,z+r):
+		if Splits.on_cut(s,x,z,margin,along): return s
+	return PackedFloat32Array()
+
+## The split nearest `at` (by its middle) within `rings` squares round it,
+## or an empty array (--split-near-start).
+func split_near(at: Vector2, rings := Splits.START_RINGS) -> PackedFloat32Array:
+	if splits <= 0.0: return PackedFloat32Array()
+	var home := Splits.cell_of(at.x,at.y)
+	var best := PackedFloat32Array()
+	var best_d := INF
+	for ring in rings+1:
+		for cj in range(home.y-ring,home.y+ring+1):
+			for ci in range(home.x-ring,home.x+ring+1):
+				if maxi(absi(ci-home.x),absi(cj-home.y)) != ring: continue
+				var s := _split_cell(Vector2i(ci,cj))
+				if s.is_empty(): continue
+				var d := Vector2(s[0],s[1]).distance_to(at)
+				if d < best_d:
+					best_d = d
+					best = s
+		# A nearer one can lie only a ring further out.
+		if not best.is_empty() and best_d < ring*Splits.CELL: break
+	return best
+
 ## The pond of the square holding (x, z) (the last square's kept).
 func _pond_for(x: float, z: float) -> PackedFloat32Array:
 	var cx := floori(x/Ponds.CELL)
@@ -792,10 +874,11 @@ func ponds_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 func shape(x: float, z: float) -> Dictionary:
 	_p_on = false
 	_t_on = false
-	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0: return _impl.shape(x,z)
+	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0: return _impl.shape(x,z)
 	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
 	var ts := _tunnels_for(x,z) if tunnels > 0.0 else _NONE
 	var h := _hall_for(x,z) if halls > 0.0 else PackedFloat32Array()
+	var sp := _split_for(x,z) if splits > 0.0 else PackedFloat32Array()
 	var s: Dictionary = _impl.shape(x,z)
 	if not p.is_empty():
 		s.height = _pond(p,x,z,float(s.height),float(s.river))
@@ -812,6 +895,7 @@ func shape(x: float, z: float) -> Dictionary:
 			s.river = 1000.0
 			s.river_r = 1000.0
 	if not h.is_empty(): s.height = Sites.carve(h,float(s.height),x,z)
+	if not sp.is_empty(): s.height = Splits.carve(sp,float(s.height),x,z)
 	return s
 
 ## The river's water level (world y) where a point is on a river's water,
@@ -839,7 +923,7 @@ func sea_calm(x: float, z: float) -> float:
 
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:
-	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0: return sample(x,z).x
+	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0 or splits > 0.0: return sample(x,z).x
 	return _impl.height(x,z)
 
 ## The snow line over the sea for this land (round one's under --old-land).
@@ -860,10 +944,12 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 	var ps: Array = ponds_in(x0,z0,x0+cells*step,z0+cells*step)
 	var hs: Array = halls_in(x0,z0,x0+cells*step,z0+cells*step)
 	var ts: Array = tunnels_in(x0,z0,x0+cells*step,z0+cells*step)
+	var sps: Array = splits_in(x0,z0,x0+cells*step,z0+cells*step)
 	var made := _build_chunk(x0,z0,step,cells,skirt_drop,flow_max)
 	if not ps.is_empty(): Ponds.apply_chunk(self,_impl,made,ps,x0,z0,step,cells,skirt_drop)
 	if not ts.is_empty(): Tunnels.apply_chunk(self,_impl,made,ts,x0,z0,step,cells,skirt_drop)
 	if not hs.is_empty(): Sites.apply_chunk(self,_impl,made,hs,x0,z0,step,cells,skirt_drop)
+	if not sps.is_empty(): Splits.apply_chunk(self,_impl,made,sps,x0,z0,step,cells,skirt_drop)
 	return made
 
 func _build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: float, flow_max: float) -> Dictionary:
@@ -974,10 +1060,12 @@ func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dict
 	var ps: Array = ponds_in(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step)
 	var hs: Array = halls_in(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step)
 	var ts: Array = tunnels_in(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step)
+	var sps: Array = splits_in(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step)
 	var got := _grid(x0,z0,step,nx,nz,pad)
 	if not ps.is_empty(): Ponds.apply_grid(got,ps,x0,z0,step,nx,nz,pad)
 	if not ts.is_empty(): Tunnels.apply_grid(got,ts,x0,z0,step,nx,nz,pad)
 	if not hs.is_empty(): Sites.apply_grid(got,hs,x0,z0,step,nx,nz,pad)
+	if not sps.is_empty(): Splits.apply_grid(got,sps,x0,z0,step,nx,nz,pad)
 	return got
 
 func _grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:

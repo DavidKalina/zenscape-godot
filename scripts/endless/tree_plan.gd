@@ -299,6 +299,11 @@ func _arches_near(field: RefCounted, x0: float, z0: float, x1: float, z1: float)
 		for s: PackedFloat32Array in field.halls_in(x0-pad,z0-pad,x1+pad,z1+pad):
 			var turned := atan2(-s[3],s[2])+PI*0.5
 			out.append([Vector2(s[0],s[1]),cos(turned),sin(turned),s[8],s[7]])
+	# The split mountains' slots (split_sites.gd), likewise: none on the
+	# floor, the walls or in the way in and out.
+	if field.has_method("splits_in"):
+		for s: PackedFloat32Array in field.splits_in(x0-pad,z0-pad,x1+pad,z1+pad):
+			out.append_array(preload("res://scripts/endless/split_sites.gd").tree_keepouts(s))
 	# The mountain tunnels' trenches and portals (tunnel_sites.gd), likewise.
 	if field.has_method("tunnels_in"):
 		for t: RefCounted in field.tunnels_in(x0-pad,z0-pad,x1+pad,z1+pad):
