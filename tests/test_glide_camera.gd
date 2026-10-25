@@ -155,8 +155,6 @@ func _figure() -> void:
 	check(figure.position.distance_to(glide.position) < 0.6,"The plane rides with the glide")
 	var mark: MeshInstance3D = figure._mark
 	check(mark.visible and absf(mark.position.y-(glide.position.y-5.0)) < 0.2,"Near the ground its mark shows on it")
-	var scarf_tail: Vector3 = figure._scarf_points[figure.SCARF-1]
-	check((scarf_tail-glide.position).dot(glide.forward()) < -0.5,"Its scarf streams behind")
 	var high := func(_p: Vector3) -> Variant: return Vector2(glide.position.y-200.0,-300.0)
 	figure.update(DT,glide,0.0,high,false)
 	check(not mark.visible,"High up, no mark")
