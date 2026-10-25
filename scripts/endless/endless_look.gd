@@ -326,6 +326,7 @@ func blend_moods(list: Array) -> void:
 	var tune := {}
 	var hour_at := 0.0
 	var heaviest := -1.0
+	var so_far := 0.0
 	for e: Array in list:
 		var id := str(e[0])
 		if not Presets.PRESETS.has(id): id = MOOD
@@ -334,10 +335,16 @@ func blend_moods(list: Array) -> void:
 			heaviest = w
 			mood = id
 		var doc: Dictionary = Presets.look_document(id)
+		# The colours mix one mood at a time into the running mix, by hue,
+		# saturation and lightness (OkHSL): a straight RGB mix of the alpine
+		# blue and the desert's violet and orange greys and darkens half way.
+		so_far += w
+		var into := w/so_far if so_far > 0.0 else 1.0
 		for k: String in doc.colors:
 			var c: Array = doc.colors[k]
-			var acc: Array = colors.get(k,[0.0,0.0,0.0])
-			colors[k] = [acc[0]+float(c[0])*w,acc[1]+float(c[1])*w,acc[2]+float(c[2])*w]
+			var col := Color(float(c[0]),float(c[1]),float(c[2]))
+			var acc: Variant = colors.get(k)
+			colors[k] = col if acc == null else mix_hue(acc as Color,col,into)
 		for k: String in doc.settings: settings[k] = float(settings.get(k,0.0))+float(doc.settings[k])*w
 		var c: Dictionary = Presets.controls(id)._celestial
 		night += Vector3(float(c.night_fill),float(c.night_look),float(c.aurora_strength))*w
@@ -359,8 +366,57 @@ func blend_moods(list: Array) -> void:
 	_fill = float(tune.fill)*_fill_arg
 	if post != null: post.set_tuning(tune)
 	if not celestial.cycling: celestial.set_phase(hour_at/24.0)
-	celestial.look.restore({"version":1,"palette":"Custom","colors":colors,"settings":settings})
+	var encoded := {}
+	for k: String in colors:
+		var c: Color = colors[k]
+		encoded[k] = [c.r,c.g,c.b]
+	celestial.look.restore({"version":1,"palette":"Custom","colors":encoded,"settings":settings})
 	celestial.update_rig()
+
+## Colour a toward b by t, by hue (the short way round, unless that passes
+## the greens), saturation and
+## lightness in OkHSL: the middle is as bright and as clean as the ends. A
+## grey end takes the other's hue. Colours past 1 (light, not paint) mix
+## straight.
+static func mix_hue(a: Color, b: Color, t: float) -> Color:
+	if t <= 0.0: return a
+	if t >= 1.0: return b
+	if maxf(maxf(a.r,a.g),a.b) > 1.0 or maxf(maxf(b.r,b.g),b.b) > 1.0: return a.lerp(b,t)
+	var sa := a.ok_hsl_s
+	var sb := b.ok_hsl_s
+	var ha := a.ok_hsl_h
+	var hb := b.ok_hsl_h
+	# Below a little saturation the hue means nothing: borrow the other's,
+	# easing in, so a grey never snaps.
+	var ga := smoothstep(0.0,0.06,sa)
+	var gb := smoothstep(0.0,0.06,sb)
+	var dh := wrapf(hb-ha,-0.5,0.5)
+	var ha2 := ha+dh*(1.0-ga)*gb
+	var hb2 := ha+dh-dh*(1.0-gb)*ga
+	ha = ha2
+	dh = hb2-ha2
+	# Never through the greens (the short way from the alpine glow's cyan to
+	# the desert's orange would pass a green neither sky has): the other way
+	# round, by violet and rose, as a sky turns at dusk. A green end (the
+	# grass, the foliage) turns the short way.
+	var green_end := absf(wrapf(ha-HUE_GREEN,-0.5,0.5)) < 0.12 or absf(wrapf(ha+dh-HUE_GREEN,-0.5,0.5)) < 0.12
+	if not green_end and _turns_through(ha,dh,HUE_GREEN): dh -= signf(dh)
+	# A wide turn (past HUE_WIDE) pales on its way, so the hues it passes
+	# (violet, rose) show as a light haze, not a sky of their own.
+	var s := lerpf(sa,sb,t)
+	if absf(dh) > HUE_WIDE: s *= 1.0-HUE_PALE*4.0*t*(1.0-t)*clampf((absf(dh)-HUE_WIDE)/0.15,0.0,1.0)
+	return Color.from_ok_hsl(wrapf(ha+dh*t,0.0,1.0),s,lerpf(a.ok_hsl_l,b.ok_hsl_l,t))
+
+## The green (OkHSL hue, of a full turn) mix_hue never turns through.
+const HUE_GREEN := 0.42
+## A turn of hue past this pales by up to HUE_PALE at its middle.
+const HUE_WIDE := 0.2
+const HUE_PALE := 0.55
+
+## Whether hue h turned by dh passes hue g.
+static func _turns_through(h: float, dh: float, g: float) -> bool:
+	var to := wrapf(g-h,0.0,1.0)
+	return to <= dh if dh >= 0.0 else to >= 1.0+dh
 
 ## The mood's title.
 func mood_title() -> String:

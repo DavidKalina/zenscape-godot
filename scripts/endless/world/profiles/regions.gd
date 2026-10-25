@@ -247,6 +247,7 @@ func apply_globals() -> void:
 ## The eye at world XZ (x, z): the paint follows its weights. True when the
 ## paint changed (the look then blends its moods: moods_at_eye).
 func paint_eye(x: float, z: float) -> bool:
+	_spot_tick(x,z)
 	var w: PackedFloat32Array = map.weights(x,z)
 	var moved := w.size() != eye_weights.size() or not _eye_seen
 	_eye_seen = true
@@ -317,6 +318,7 @@ func _register(material: ShaderMaterial, channel: String) -> void:
 		if base == null: continue
 		own[k] = [base,null]
 	_paint_entry(entry)
+	_paint_spots(entry)
 
 ## Paints one kept material at the eye's weights; false once it is gone.
 func _paint_entry(entry: Array) -> bool:
@@ -327,6 +329,8 @@ func _paint_entry(entry: Array) -> bool:
 		var slot: Array = own[k]
 		if slot[1] != null and not _same(m.get_shader_parameter(k),slot[1]):
 			own.erase(k)
+			# Its per-spot array (if it has one) takes the new value everywhere.
+			_spot_array(m,entry[1],k,m.get_shader_parameter(k),true)
 			continue
 		m.set_shader_parameter(k,_blend(entry[1],k,slot[0]))
 		slot[1] = m.get_shader_parameter(k)
@@ -366,3 +370,100 @@ static func _as(v: Variant, t: int) -> Variant:
 
 static func _same(a: Variant, b: Variant) -> bool:
 	return typeof(a) == typeof(b) and a == b
+
+# --- Paint per spot --------------------------------------------------------------------
+#
+# The far paint (the ground's carpet tones, the far tuft ring's root and tip,
+# the grass's underside hue) is each region's at its own spot, not the eye's:
+# a material whose shader has a `<key>_r` array (shaders/region_paint.
+# gdshaderinc) gets each region's value of that key there, and the shader
+# mixes them by zs_region_map, the region weights round the eye (rgba =
+# regions 0..3, SPOT_CELL m a texel, drawn on a worker, redrawn on the same
+# texel grid once the eye is SPOT_RECENTRE from its middle). Until the first
+# map is drawn (or past its rim, clamped) the key's eye blend stands.
+
+## The map's texels a side, their size (m) and how far the eye goes from the
+## map's middle before it is redrawn round it: 24.6 km square, redrawn every
+## 4 km (8 km of it still ahead), ~1.5 s on a worker (37k weights()).
+const SPOT_N := 192
+const SPOT_CELL := 128.0
+const SPOT_RECENTRE := 4000.0
+## The map's middle (INF: none yet) and the one being drawn.
+var _spot_centre := Vector2(INF,INF)
+var _spot_next := Vector2.ZERO
+var _spot_task := -1
+var _spot_bytes := PackedByteArray()
+var _spot_tex: ImageTexture
+## Shader RID -> {uniform name: true}.
+var _uniforms := {}
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		if _spot_task >= 0: WorkerThreadPool.wait_for_task_completion(_spot_task)
+		_spot_task = -1
+		if _spot_tex != null: RenderingServer.global_shader_parameter_set("zs_region_rect",Vector4.ZERO)
+
+## The region map round the eye: publishes a drawn one, starts the next.
+func _spot_tick(x: float, z: float) -> void:
+	if _spot_task >= 0:
+		if not WorkerThreadPool.is_task_completed(_spot_task): return
+		WorkerThreadPool.wait_for_task_completion(_spot_task)
+		_spot_task = -1
+		_spot_publish()
+	if Vector2(x,z).distance_to(_spot_centre) <= SPOT_RECENTRE: return
+	_spot_next = Vector2(x,z).snapped(Vector2(SPOT_CELL,SPOT_CELL))
+	_spot_task = WorkerThreadPool.add_task(_spot_draw.bind(_spot_next),false,"region paint map")
+
+## The weights of regions 0..3 at each texel's middle, as bytes (a worker).
+func _spot_draw(centre: Vector2) -> void:
+	var bytes := PackedByteArray()
+	bytes.resize(SPOT_N*SPOT_N*4)
+	var lo := centre-Vector2.ONE*(SPOT_N*SPOT_CELL*0.5)
+	var at := 0
+	for j in SPOT_N:
+		var pz := lo.y+(j+0.5)*SPOT_CELL
+		for i in SPOT_N:
+			var w: PackedFloat32Array = map.weights(lo.x+(i+0.5)*SPOT_CELL,pz)
+			for c in 4:
+				bytes[at+c] = roundi(clampf(w[c],0.0,1.0)*255.0) if c < w.size() else 0
+			at += 4
+	_spot_bytes = bytes
+
+func _spot_publish() -> void:
+	var img := Image.create_from_data(SPOT_N,SPOT_N,false,Image.FORMAT_RGBA8,_spot_bytes)
+	if _spot_tex == null:
+		_spot_tex = ImageTexture.create_from_image(img)
+		RenderingServer.global_shader_parameter_set("zs_region_map",_spot_tex)
+	else: _spot_tex.update(img)
+	_spot_centre = _spot_next
+	var lo := _spot_next-Vector2.ONE*(SPOT_N*SPOT_CELL*0.5)
+	RenderingServer.global_shader_parameter_set("zs_region_rect",Vector4(lo.x,lo.y,SPOT_N*SPOT_CELL,1.0))
+
+## Each region's value of every kept key on a kept material, into its
+## `<key>_r` array where its shader has one.
+func _paint_spots(entry: Array) -> void:
+	var m: ShaderMaterial = entry[0].get_ref()
+	if m == null: return
+	var own: Dictionary = entry[2]
+	for k: String in own: _spot_array(m,entry[1],k,own[k][0],false)
+
+## `key`'s `<key>_r` array on `m` (if its shader has one): each region's
+## value (or `base`), or `base` for all when `all_base`.
+func _spot_array(m: ShaderMaterial, channel: String, key: String, base: Variant, all_base: bool) -> void:
+	if m.shader == null or not (base is Vector3 or base is Color): return
+	var rid := m.shader.get_rid()
+	if not _uniforms.has(rid):
+		var names := {}
+		for u: Dictionary in m.shader.get_shader_uniform_list(true): names[str(u.name)] = true
+		_uniforms[rid] = names
+	if not (_uniforms[rid] as Dictionary).has(key+"_r"): return
+	var arr := PackedVector3Array()
+	arr.resize(4)
+	for r in 4:
+		var v: Variant = base
+		if not all_base and r < regions.size():
+			var own: Variant = _value_of(regions[r],channel,key)
+			if own != null: v = own
+		arr[r] = _as(v,TYPE_VECTOR3) if v is Color or v is Vector3 else _as(base,TYPE_VECTOR3)
+	m.set_shader_parameter(key+"_r",arr)
+	if (_uniforms[rid] as Dictionary).has("region_paint_on"): m.set_shader_parameter("region_paint_on",true)
