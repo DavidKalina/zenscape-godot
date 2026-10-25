@@ -1329,7 +1329,10 @@ static func _grow_native(native: Object, f: RefCounted, land_seed: int, key: Vec
 	var n := int(CELL)+1+PAD*2
 	var cell := {"x0":x0,"z0":z0,"n":n,"pad":PAD,"seed":hash([land_seed,"endless_grass",far_share,key]) & 0xffffff,
 		"heights":got.heights,"river":got.river,"meadows":got.meadows}
-	if f.native_on(): cell.field = f._impl
+	# The native field (in the regions world, the region's own where the cell
+	# lies wholly in one; in the band the blend's colours, below).
+	var nf: Object = f.native_impl_in(x0-PAD,z0-PAD,x0+CELL+PAD,z0+CELL+PAD)
+	if nf != null: cell.field = nf
 	else:
 		# The ground's colour on the tint grid (the native field reads it itself).
 		var hs: PackedFloat32Array = got.heights

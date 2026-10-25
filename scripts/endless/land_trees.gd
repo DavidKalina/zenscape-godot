@@ -577,14 +577,16 @@ func _task(kind: String, key: Vector2i) -> void:
 
 ## A block ("b") or far cell ("f"), natively when it can be.
 func _build(kind: String, key: Vector2i, field: RefCounted, plan: RefCounted) -> Dictionary:
-	var impl: Object = field.native_impl() if native != null else null
-	if impl == null: return _build_block(key,field,plan) if kind == "b" else _build_far(key,field,plan)
-	var began := Time.get_ticks_usec()
 	var size := BLOCK if kind == "b" else Plan.FAR_CELL
 	var x0 := key.x*size
 	var z0 := key.y*size
-	var arches: PackedFloat64Array = plan.arches_flat(field,x0,z0,x0+size,z0+size)
 	var pad: float = plan.sample_pad()
+	# (In the regions world, the region's own native field where the block
+	# lies wholly in one; in the band the GDScript build reads the blend.)
+	var impl: Object = field.native_impl_in(x0-pad,z0-pad,x0+size+pad,z0+size+pad) if native != null else null
+	if impl == null: return _build_block(key,field,plan) if kind == "b" else _build_far(key,field,plan)
+	var began := Time.get_ticks_usec()
+	var arches: PackedFloat64Array = plan.arches_flat(field,x0,z0,x0+size,z0+size)
 	var ponds: Array = field.ponds_in(x0-pad,z0-pad,x0+size+pad,z0+size+pad)
 	if kind == "f":
 		var far: Dictionary = native.far(impl,key,arches,ponds,_floor)
