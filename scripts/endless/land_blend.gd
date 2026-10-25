@@ -299,13 +299,13 @@ func one_in(x0: float, z0: float, x1: float, z1: float, k := 0) -> int:
 			one = c
 	return maxi(one,-1)
 
-# --- The regions' own layers (halls, tunnels) ------------------------------------------
+# --- The regions' own layers (halls, tunnels, splits) ------------------------------------------
 
 ## How far a site's footprint keeps inside the pure lattice cells (m): its
 ## box grown by this must lie wholly in one region, so its cut or massif
 ## never meets the band.
 const SITE_CLEAR := 128.0
-## Per layer (&"halls", &"tunnels"), whether each region (by index) grows it
+## Per layer (&"halls", &"tunnels", &"splits"), whether each region (by index) grows it
 ## (LandField sets it from the regions' layers and the flags). A layer not
 ## here stands nowhere.
 var layer_on := {}

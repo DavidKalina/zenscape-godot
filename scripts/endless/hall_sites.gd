@@ -332,10 +332,6 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ss: Array
 	var n := cells+1
 	var heights: PackedFloat32Array = made.heights
 	var verts: PackedVector3Array = made.verts
-	var normals: PackedVector3Array = made.normals
-	var colours: PackedColorArray = made.colours
-	var carved: PackedByteArray = made.carved
-	var river: PackedFloat32Array = made.river
 	var moved := PackedByteArray()
 	moved.resize(n*n)
 	var any_moved := false
@@ -355,8 +351,24 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ss: Array
 					moved[v] = 1
 					any_moved = true
 	if not any_moved: return
-	# Normals round what moved (central differences, as the field's), and
-	# the colour for them; the carve's groove and crest off the cut rock.
+	made.heights = heights
+	made.verts = verts
+	refresh(field,impl,made,moved,x0,z0,step,cells,skirt_drop)
+
+## After a cut moved a chunk's heights (`moved`, 1 per vertex that moved):
+## the normals round what moved (central differences, as the field's), the
+## colour for them, the carve's groove and crest (`marks`, two bytes a
+## vertex for the moved ones; empty: none, off the cut rock) and the skirt's
+## copies of the edges. A moved vertex loses its meadow unless `keep` (one
+## byte a vertex, or empty) says 1. The split mountains' pass shares it
+## (split_sites.gd).
+static func refresh(field: Object, impl: Object, made: Dictionary, moved: PackedByteArray, x0: float, z0: float, step: float, cells: int, skirt_drop: float, marks := PackedByteArray(), keep := PackedByteArray()) -> void:
+	var n := cells+1
+	var heights: PackedFloat32Array = made.heights
+	var verts: PackedVector3Array = made.verts
+	var normals: PackedVector3Array = made.normals
+	var colours: PackedColorArray = made.colours
+	var carved: PackedByteArray = made.carved
 	var redo := PackedByteArray()
 	redo.resize(n*n)
 	for j in n:
@@ -379,13 +391,13 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ss: Array
 			var normal := Vector3(hl-hr,2.0*step,hd-hu).normalized()
 			normals[v] = normal
 			var meadow := colours[v].a
-			if moved[v] != 0: meadow = 0.0
+			if moved[v] != 0 and (keep.is_empty() or keep[v] == 0): meadow = 0.0
 			var c: Color = impl.colour(x,z,heights[v],normal.y,meadow)
 			c.a = meadow
 			colours[v] = c
 			if moved[v] != 0:
-				carved[v*4] = 0
-				carved[v*4+1] = 0
+				carved[v*4] = 0 if marks.is_empty() else marks[v*2]
+				carved[v*4+1] = 0 if marks.is_empty() else marks[v*2+1]
 	# The skirt's copies of the edges.
 	var edges := [[],[],[],[]]
 	for t in n:
@@ -402,12 +414,10 @@ static func apply_chunk(field: Object, impl: Object, made: Dictionary, ss: Array
 			normals[v] = normals[from]
 			colours[v] = colours[from]
 			for q in 4: carved[v*4+q] = carved[from*4+q]
-	made.heights = heights
 	made.verts = verts
 	made.normals = normals
 	made.colours = colours
 	made.carved = carved
-	made.river = river
 
 ## The slot pass over LandField.grid's arrays (the grass's): the cut's
 ## heights, and its floor and walls read as a river's water (`river` -1),

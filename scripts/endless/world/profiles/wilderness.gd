@@ -24,6 +24,6 @@ func _init() -> void:
 	# paint, the sea's tints), no shader globals past the season reset.
 	paint = {"mood":"alpine_morning","hour":8.6,"ground":{},"sea":{},"globals":{}}
 	# Every dressing layer.
-	layers = {"trees":true,"grass":true,"birds":true,"fish":true,"arches":1.0,"traffic":-1}
+	layers = {"trees":true,"grass":true,"birds":true,"fish":true,"arches":1.0,"splits":1.0,"traffic":-1}
 	# The start: over the origin, 45 m up (endless_flight START_ALT), north.
 	spawn = {"at":Vector2.ZERO,"alt":45.0,"heading":0.0}
