@@ -29,7 +29,7 @@ extends RefCounted
 ## less 100), y over the island.
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
-const PathDirt = preload("res://scripts/kit_isle/path_dirt.gd")
+const PathDirt = preload("res://scripts/shared/path_dirt.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Build = RuinKit.Build
@@ -204,7 +204,7 @@ static func aqueduct(seed_value: int) -> Dictionary:
 	node.transform = AQ
 	return {"node":node,"parts":parts,"water":water}
 
-## The channel's water (scripts/kit_isle/kit_water.gd), in the world's
+## The channel's water (scripts/shared/kit_water.gd), in the world's
 ## frame (the chop reads world axes): the edit chunks' water a hand deep
 ## over the channel's floor, from the head to the snap, its edges at the
 ## parapets' inner faces, tipping over the snap into the spill. So thin a
@@ -772,7 +772,7 @@ static func path_wear(at: Vector2) -> float:
 			best = minf(best,at.distance_to(Geometry2D.get_closest_point_to_segment(at,path[i],path[i+1])))
 	return clampf(1.25-best/1.5,0.0,1.0)
 
-## The world's ground look: the kit isles' (scripts/kit_isle/kit_look.gd,
+## The world's ground look: the kit isles' (scripts/shared/kit_look.gd,
 ## the plate's ground material and palette).
 static func palette() -> Dictionary:
 	return KitLook.palette()
@@ -893,7 +893,7 @@ const BOULDERS := 22
 ## `flat` (world (x, z) -> y), and its sides and keel of hanging rock down
 ## from `top`, its keel's point `depth` under it. `hill`: the hill's cliffs
 ## laid in as ground points, its faces finer. The kit isles' shared builder
-## (scripts/kit_isle/kit_land.gd `island`).
+## (scripts/shared/kit_land.gd `island`).
 static func island(outline: Array, depth: float, seed_value: int, flat: Callable, top := TOP, hill := false) -> Node3D:
 	var spec := {"outline":outline,"depth":depth,"seed":seed_value,"ground":flat,"top":top,
 		# The paths' wear is drawn per pixel by the ground (scripts/kit_isle/

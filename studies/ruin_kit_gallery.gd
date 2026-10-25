@@ -13,7 +13,7 @@ extends Node3D
 ## the medallion with the fallen mask beside them, dim under the roof, the
 ## sun coming down through its gaps in shafts (volumetric fog in a box
 ## round the hall, as the redwood mist does its rays). Lit as the game is: its sky,
-## sun and grade (scripts/landscape_lighting.gd, studies/celestial.gd) and
+## sun and grade (scripts/landscape_lighting.gd, scripts/shared/celestial.gd) and
 ## its look pass (scripts/look_pass.gd: the cloud sea and cloud volume under
 ## the plate, the hour's grade, the night style the player chose), at the
 ## game's own noon and midnight (the look tour's hours, tools/
@@ -36,7 +36,7 @@ extends Node3D
 ##                   starts in one
 ## The growth (scripts/ruin_growth.gd, docs/scenic/ruin-overgrowth.md) sways
 ## in the game's breeze, run here as the atmosphere runs it: the air's
-## travel, its gust fronts (studies/gust_fronts.gd) and the breeze.
+## travel, its gust fronts (scripts/shared/gust_fronts.gd) and the breeze.
 ##   --still        start with the growth held still     --no-vines  no vine curtains
 ##   --gust=<s>     send a strong gust front that many seconds in
 ##   --breeze=<x>   the breeze (zs_breeze; the game's default air is 0.53)
@@ -53,7 +53,7 @@ const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const PilotFigure = preload("res://scripts/pilot_figure.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
-const Celestial = preload("res://studies/celestial.gd")
+const Celestial = preload("res://scripts/shared/celestial.gd")
 const LookPass = preload("res://scripts/look_pass.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 ## Seconds between two lean presses that make a barrel roll.
@@ -62,7 +62,7 @@ const GlideCamera = preload("res://scripts/glide_camera.gd")
 const Pad = preload("res://scripts/pad.gd")
 const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 const RuinGrowthPush = preload("res://scripts/ruin_growth_push.gd")
-const GustFronts = preload("res://studies/gust_fronts.gd")
+const GustFronts = preload("res://scripts/shared/gust_fronts.gd")
 const StoneStyle = preload("res://scripts/ruin_stone_style.gd")
 ## The game's sizes (scripts/world_scale.gd): the planes and walkers drawn
 ## at them, the fly mode's body and camera too.
@@ -114,7 +114,7 @@ const TERRAIN_FADE := 14.0
 ## The room between a pair's two (m) and between pairs.
 const PAIR_GAP := 0.8
 const SLOT_GAP := 2.6
-## The hours (studies/celestial.gd phase): a late morning, the sun high
+## The hours (scripts/shared/celestial.gd phase): a late morning, the sun high
 ## enough to be the game's day and low enough to model the faces; midnight.
 const DAY := 0.45
 const NIGHT := 0.0

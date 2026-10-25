@@ -180,7 +180,7 @@ const PLATE_RIM := Vector2(Plate.HALF-3.1,Plate.HALF-2.15)
 ## The flower candidates' lattice covers this half-width round the centre.
 const REACH := Plate.LEGACY_HALF-2.1
 ## The yaw that turns a kit flower's face (its local +x) toward the noon
-## sun's side of the plate: studies/celestial.gd's sun ring is yawed
+## sun's side of the plate: scripts/shared/celestial.gd's sun ring is yawed
 ## atan2(20, 12) round, so at noon the sun stands toward +x, +z, which is
 ## also the side the diorama camera starts on.
 const SUN_FACE := -0.54

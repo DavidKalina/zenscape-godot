@@ -35,7 +35,7 @@ const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const TUNNEL_STONE = preload("res://shaders/tunnel_stone.gdshader")
 const Flame = preload("res://scripts/flame.gd")
-const HangingRoots = preload("res://scripts/kit_isle/hanging_roots.gd")
+const HangingRoots = preload("res://scripts/shared/hanging_roots.gd")
 const UndergrowthMesh = preload("res://scripts/undergrowth_mesh.gd")
 
 ## Physics layer of the greybox's bodies (the walker, the wheels).

@@ -129,7 +129,7 @@ var publish := true
 var windup := WINDUP
 var cooldown := COOLDOWN
 ## A host's own knobs (another launcher than the dragon: the crossing
-## yard's gust arrows, studies/crossings/gust_arrows.gd); the defaults are
+## yard's gust arrows, scripts/shared/gust_arrows.gd); the defaults are
 ## the dragon's, so he is unchanged. The ball's speed (m/s), how far it
 ## flies (m), how near he winds up (m), the knock (walker heights), the
 ## fuse (below), and

@@ -1,7 +1,7 @@
 extends Node3D
 ## A floating stone slab the pilot stands on (scripts/interactables/
 ## foot_pieces.gd carries him with it): one of the aqueduct isle's floating
-## stones (studies/aqueduct_isle_art.gd `floating_stones`, its eroded
+## stones (scripts/shared/aqueduct_isle_art.gd `floating_stones`, its eroded
 ## basalt, worn arrises, the clod torn up under it and ivy hanging), on a
 ## clean walking box, its top's middle at this node's origin.
 ##
@@ -34,7 +34,7 @@ extends Node3D
 ##
 ## Its feel is the subclass's: `sink`, `tilt`, `give`, `hz` (the spring,
 ## Hz), `damp` (its damping ratio), `bob`, `bob_time`.
-const Art = preload("res://studies/aqueduct_isle_art.gd")
+const Art = preload("res://scripts/shared/aqueduct_isle_art.gd")
 const Slam = preload("res://scripts/slam.gd")
 ## A full slam at its middle: m/s down, rad/s of tip, m/s aside.
 const SLAM_SINK := 2.6

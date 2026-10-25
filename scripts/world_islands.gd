@@ -16,7 +16,7 @@ extends RefCounted
 
 const FREE_KINDS := ["air_ring","bob_slab","sink_slab","drift_slab","land"]
 ## Not anchored: what carries itself (meta "world_carried": the loose
-## leaves, carried by the study's `island_carriers`); the grass and flowers (scripts/kit_isle/kit_flora.gd's
+## leaves, carried by the study's `island_carriers`); the grass and flowers (scripts/shared/kit_flora.gd's
 ## chunks, cut on a grid, not by island; regrown over the turf when an
 ## island is let go, not moved) and the editor's own selection box.
 const SKIP := ["Flora","LayoutSelection"]
@@ -445,7 +445,7 @@ static func carry_flora(name: String, study: Node) -> int:
 		var mm := batch.multimesh
 		if mm == null or mm.instance_count == 0: continue
 		# A plant's 12 floats of transform (rows), then its colour and
-		# custom data (scripts/kit_isle/kit_flora.gd batch_buffer).
+		# custom data (scripts/shared/kit_flora.gd batch_buffer).
 		var w := 12+(4 if mm.use_colors else 0)+(4 if mm.use_custom_data else 0)
 		var buf := mm.buffer
 		var bt := batch.global_transform

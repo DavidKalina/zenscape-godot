@@ -1,7 +1,7 @@
 extends Node3D
 ## The endless land's grass carpet (docs/design/endless-flight/grass-round-handoff.md):
-## the aqueduct isle's own carpet (studies/aqueduct_isle_flora.gd `carpeted`
-## and `calm`: KitFlora's Grow, scripts/kit_isle/kit_flora.gd, drawing the
+## the aqueduct isle's own carpet (scripts/shared/aqueduct_isle_flora.gd `carpeted`
+## and `calm`: KitFlora's Grow, scripts/shared/kit_flora.gd, drawing the
 ## game's shader grass tufts, scripts/grass_tuft_mesh.gd, and its meadow
 ## flowers) grown over the streamed land round the eye, a CELL m square at a
 ## time, and freed as the eye leaves it.
@@ -91,7 +91,7 @@ extends Node3D
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
-const Carpet = preload("res://studies/aqueduct_isle_flora.gd")
+const Carpet = preload("res://scripts/shared/aqueduct_isle_flora.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Patch = preload("res://scripts/endless/endless_patch.gd")

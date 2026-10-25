@@ -180,13 +180,13 @@ func update(camera: Camera3D, celestial) -> void:
 	# cool at golden hour, nearly neutral at noon and under overcast.
 	target.set_shader_parameter("grade_highlight", _tint(celestial.aerial_sun_color, 0.35))
 	target.set_shader_parameter("grade_shadow", _tint(celestial.state.get("zs_hemi_sky",Vector3.ONE), 0.22))
-	# Night's rod-lit shift, by the hour and the moon (studies/celestial.gd).
+	# Night's rod-lit shift, by the hour and the moon (scripts/shared/celestial.gd).
 	var night: Vector4 = celestial.get("night_grade") if celestial.get("night_grade") != null else Vector4.ZERO
 	target.set_shader_parameter("grade_night", Vector4(night.x * on, night.y, night.z, night.w))
 	# The light shafts, on whichever of the two draws the grade: the native
 	# woodland mist hides the blend whenever the plate has woods, which is
 	# most of play, so the standalone grade gathers them too, from the same
-	# depth copy (studies/surface_depth.gd).
+	# depth copy (scripts/shared/surface_depth.gd).
 	var depth: Texture2D = fog.depth.texture if fog != null else null
 	if depth != null and _grade.get_shader_parameter("surface_depth") != depth:
 		_grade.set_shader_parameter("surface_depth", depth)

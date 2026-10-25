@@ -53,7 +53,7 @@ Space at the far top: far deck B.
   The hook wraps over (WRAP_TIME 0.22 s) and hangs under the far side; the
   tug seats it. The play camera tips up toward the beam while aiming.
 - **The swing**: the pendulum is the motor's fixed swing rope's own
-  (`scripts/interactables/swing_rope.gd`, an instance never added to the
+  (`scripts/shared/swing_rope.gd`, an instance never added to the
   tree): its pump, steer, MOST, release timing. Holding on the ground he
   takes in the slack (rope as long as his hands are from the beam's top,
   1.4 m to 13 m); the frame he leaves the ground he mounts at that length.

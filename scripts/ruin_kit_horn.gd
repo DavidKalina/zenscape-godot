@@ -25,7 +25,7 @@ class_name RuinKitHorn
 ##   "Rig"   the runtime (scripts/wind_horn.gd): `aim_at`, `tell`, `fired`,
 ##           `disabled`, `is_disabled`, `yaw_arc`; and `watch(motor)`, which
 ##           makes it blow: it notices him, draws breath and gusts him with
-##           the wind blaster's knock (scripts/traps/gust.gd), the horn as
+##           the wind blaster's knock (scripts/shared/gust.gd), the horn as
 ##           the source. Unwatched it is dressing only.
 ## Meta: "mouth_radius" (the clear radius at the mouth, m), "top" (the
 ## standable cap's height over the foot, m), "top_radius" (its apothem),

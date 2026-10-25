@@ -1,4 +1,4 @@
-extends "res://scripts/interactables/foot_slab.gd"
+extends "res://scripts/shared/foot_slab.gd"
 ## A bobbing slab (docs/design/foot-interactables.md): a floating stone that
 ## bobs gently on its own (BOB m up and down over BOB_TIME s), sinks SINK
 ## and tips TILT toward him under his weight, takes a kick down landed on

@@ -3,7 +3,7 @@ extends RefCounted
 ## kit_flora.gd, the game's shader grass tufts and meadow flowers grown as
 ## its sky islands grow them) over this isle's turf, its worn paths
 ## (Art `path_wear`) bare.
-const Art = preload("res://studies/aqueduct_isle_art.gd")
+const Art = preload("res://scripts/shared/aqueduct_isle_art.gd")
 
 ## The kit's numbers (KitFlora), named here as the isle's tests read them.
 const PATH_BARE := KitFlora.PATH_BARE

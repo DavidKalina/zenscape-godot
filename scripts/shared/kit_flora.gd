@@ -11,7 +11,7 @@ extends RefCounted
 ## (SkyIslets `_plant_material`). So the breeze and the gust fronts sway
 ## them, the pilot's wake (scripts/pilot_wake.gd) parts them, and they take
 ## the scene look's grass and flower colours and the seasons as the game's do.
-## The aqueduct isle's growers (studies/aqueduct_isle_flora.gd,
+## The aqueduct isle's growers (scripts/shared/aqueduct_isle_flora.gd,
 ## _undergrowth.gd), which every motif had copied, its isle's own ground
 ## given as a `Site`.
 ##

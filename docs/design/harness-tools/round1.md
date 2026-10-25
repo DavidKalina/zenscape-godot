@@ -30,7 +30,7 @@ The existing API is unchanged.
 Demo (scratch, uncommitted): `python3 tools/drive.py scratch/probe_demo.gd`
 runs on the aqueduct isle. It makes 4 checks and all pass.
 
-## Land-outline check (`scripts/kit_isle/kit_land.gd`)
+## Land-outline check (`scripts/shared/kit_land.gd`)
 
 `KitLand.island` now checks `spec.outline` before it builds and calls
 `push_warning("KitLand.island [name=.., seed=.., from (x, z)]: outline ...")`

@@ -13,7 +13,7 @@ extends RefCounted
 ##
 ##   TurfLips.dress(land, seed)   adds "TurfLips" (and "LipRoots") under land
 
-const HangingRoots = preload("res://scripts/kit_isle/hanging_roots.gd")
+const HangingRoots = preload("res://scripts/shared/hanging_roots.gd")
 
 ## A lip's samples along its edge (m).
 const STEP := 0.45

@@ -6,7 +6,7 @@ const Plate = preload("res://scripts/plate.gd")
 ## leave at the plate's edge, and run the same at any frame rate. Headless:
 ## the stroke's look is GPU work.
 const Ribbons = preload("res://scripts/breeze_ribbons.gd")
-const GustFronts = preload("res://studies/gust_fronts.gd")
+const GustFronts = preload("res://scripts/shared/gust_fronts.gd")
 var failures := 0
 
 func _initialize() -> void:

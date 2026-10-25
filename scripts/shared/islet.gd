@@ -10,9 +10,9 @@ extends Node3D
 ## (the isle's carpet, KitFlora over its turf where it stands then), kept
 ## under it so a move carries it; --no-flora: none.
 
-const Art = preload("res://studies/aqueduct_isle_art.gd")
-const TurfLips = preload("res://scripts/kit_isle/turf_lips.gd")
-const IsleFlora = preload("res://studies/aqueduct_isle_flora.gd")
+const Art = preload("res://scripts/shared/aqueduct_isle_art.gd")
+const TurfLips = preload("res://scripts/shared/turf_lips.gd")
+const IsleFlora = preload("res://scripts/shared/aqueduct_isle_flora.gd")
 
 const SIZE := 4.0
 const SIZE_MIN := 1.5

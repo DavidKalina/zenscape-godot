@@ -3,8 +3,8 @@ extends RefCounted
 ## The kit isles' land builder (docs/scenic/kit-isle-shared.md): the ground
 ## of a hand-built sky isle over a height function, its cliffs, its
 ## collision and its hanging sides, in the kit isles' one look
-## (scripts/kit_isle/kit_look.gd). The aqueduct isle's island builder
-## (studies/aqueduct_isle_art.gd) generalised, as its motifs had each copied
+## (scripts/shared/kit_look.gd). The aqueduct isle's island builder
+## (scripts/shared/aqueduct_isle_art.gd) generalised, as its motifs had each copied
 ## it: the bell spires' turf, the cloister tarn's mother and satellites, the
 ## sundered gorge's halves, the colonnade spine's ridge all build on these.
 ##

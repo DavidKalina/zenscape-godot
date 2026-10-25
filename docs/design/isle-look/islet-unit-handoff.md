@@ -207,7 +207,7 @@ the aqueduct isle's flora are used as they are, with no edits.
 - **Grass.** The unit's own dry tufts (`islet_tuft`) are gone, and the
   shader file is deleted. The crown now grows the isles' own grass:
   - `KitFlora.Grow` runs with the aqueduct isle's carpet settings
-    (`studies/aqueduct_isle_flora.gd` `carpeted`), so it has the carpet, the
+    (`scripts/shared/aqueduct_isle_flora.gd` `carpeted`), so it has the carpet, the
     shag, the variety (tussocks, thatch, seed heads), the contact darkening,
     the rolling height and the tilt. Its flowers come too. `calm` runs after
     it, as on the aqueduct isle.

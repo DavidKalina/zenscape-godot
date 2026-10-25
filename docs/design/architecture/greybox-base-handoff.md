@@ -6,7 +6,7 @@ fingerprints below confirm it.
 
 ## What moved where
 
-- **`KitLand.island` spec keys** (`scripts/kit_isle/kit_land.gd`). These
+- **`KitLand.island` spec keys** (`scripts/shared/kit_land.gd`). These
   are opt-in, so every existing caller and saved motif builds as before.
   - `"collide_sides": true` collides the hanging sides as drawn. It adds a
     "Sides" StaticBody3D as the island's last child.

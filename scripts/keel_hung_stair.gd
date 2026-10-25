@@ -1,7 +1,7 @@
-extends "res://scripts/traps/trap.gd"
+extends "res://scripts/shared/trap.gd"
 ## The hung stair's runtime (scripts/ruin_kit_keel.gd builds the stone and
 ## adds this as its "Rig"): it turns the flight about its hinge. Built to
-## the trap contract (scripts/traps/trap.gd: knobs, the tell, `reset`),
+## the trap contract (scripts/shared/trap.gd: knobs, the tell, `reset`),
 ## and it steps itself each frame (`auto`), so a piece placed anywhere (the
 ## motif editor, an authored place, a study) runs live with no host: it
 ## hears the slam by its group (scripts/slam.gd GROUP) and finds the

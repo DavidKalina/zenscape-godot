@@ -44,7 +44,7 @@ their own `leg()`. A same-named override with another signature does not parse.
 ### `walk_paths(owner, offset, opts) -> Dictionary` and chain.gd `walk_motif_paths(opts)`
 
 ```gdscript
-var all := await walk_paths(load("res://studies/aqueduct_isle_art.gd"))   # a script or an object
+var all := await walk_paths(load("res://scripts/shared/aqueduct_isle_art.gd"))   # a script or an object
 var all := await walk_motif_paths()                                        # chain.gd: the motif, moved into the world
 ```
 

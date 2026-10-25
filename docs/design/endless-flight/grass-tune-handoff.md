@@ -34,7 +34,7 @@ Not causes:
   - `grass_root_paint` (vec4): the tuft's root and the green it leans to become a painted ground's colour (rgb) times the tuft's instance tint. When w is 1, the ground_look call is skipped.
   - `cloud_sun_shade` (float): a cloud volume's shadow takes this share of the sun only, through the light pass, and leaves the sky's light alone, as the endless ground does.
 - `shaders/endless_ground.gdshader`: a new `carpet_near` (vec2). Under the near carpet, the paint becomes the tufts' own ground: the patches from 8 m up (`endless_patch.gd grass`, which the roots carry) plus `carpet_near_grain` (0.6) of its fine grain. The dry flecks, velvet, crests and speckle are dropped there.
-- `scripts/kit_isle/kit_flora.gd` (shared), opt-in:
+- `scripts/shared/kit_flora.gd` (shared), opt-in:
   - Site `flower_drift`, a callable from a point to a multiplier on the flowers' keep.
   - A `batch_node(..., mesh)` override. The mesh is set before the buffer; set after, it cost a 24 ms stand.
 - `scripts/endless/endless_grass.gd`:

@@ -44,7 +44,7 @@ func update_view(camera: Camera3D, shared_depth: CompositorEffect = null) -> voi
 	var depth: CompositorEffect = shared_depth
 	if depth == null:
 		if fallback_depth == null:
-			fallback_depth = preload("res://studies/surface_depth.gd").new()
+			fallback_depth = preload("res://scripts/shared/surface_depth.gd").new()
 			var compositor := Compositor.new()
 			compositor.compositor_effects = [fallback_depth]
 			camera.compositor = compositor

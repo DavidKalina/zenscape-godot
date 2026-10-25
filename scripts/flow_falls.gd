@@ -19,7 +19,7 @@ extends Node3D
 ##   foamCluster), a droplet burst, ripple rings on a pool, and foam painted
 ##   into the water itself (`fall_foam` on the live water's materials);
 ## - mist rising from the base, sized by flux and drop, drifting with the wind
-##   (the source's mist sprites, studies/fall_mist.gd).
+##   (the source's mist sprites, scripts/shared/fall_mist.gd).
 const RINGS := 14
 const SECTIONS := 24
 ## ZenScapeWaterFlow::cascades. A wet cell faster than `min_speed` m/s is steep
@@ -51,7 +51,7 @@ const POUR_START := 1.5
 const POUR_MAX := 7.0
 const BURST_SECONDS := 1.6
 const MAX_SHOWN := 4
-## Mist sprites at most a fall (studies/fall_mist.gd holds 64).
+## Mist sprites at most a fall (scripts/shared/fall_mist.gd holds 64).
 const MIST := 48
 const FOAM := Color("f2f7f8")
 const FOAM_BLOBS := 7
@@ -693,7 +693,7 @@ func _create(id: int) -> Dictionary:
 	waves.multimesh.instance_count = RING_WAVES
 	waves.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(waves)
-	var mist := preload("res://studies/fall_mist.gd").new()
+	var mist := preload("res://scripts/shared/fall_mist.gd").new()
 	mist.name = "FlowFallMist_%d" % id
 	var recipe := {"positions":[],"velocity":[],"phase":[],"size":[],"rise":1.0}
 	for i in range(MIST):
