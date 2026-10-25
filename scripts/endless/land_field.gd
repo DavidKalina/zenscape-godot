@@ -600,6 +600,31 @@ func native_impl_in(x0: float, z0: float, x1: float, z1: float) -> Object:
 func region_weights(x: float, z: float) -> PackedFloat32Array:
 	return _impl.weights(x,z) if _blend else PackedFloat32Array()
 
+## The one region the box (x0, z0)..(x1, z1) lies wholly in (by index), or
+## -1 where it reaches the band; 0 in a one-region world.
+func region_in(x0: float, z0: float, x1: float, z1: float) -> int:
+	return _impl.one_in(x0,z0,x1,z1) if _blend else 0
+
+## Region `r`'s own native field (ZenScapeLandField), or null (GDScript).
+func region_impl(r: int) -> Object:
+	if not _blend: return native_impl()
+	return _impl.kids[r] if _impl.kid_native[r] else null
+
+## The region a dither `u` (0..1) picks at (x, z): the region whose share of
+## the land's weights there holds u (so over the band each region's share of
+## the picks is its weight); 0 in a one-region world.
+func region_pick(x: float, z: float, u: float) -> int:
+	if not _blend: return 0
+	var w: PackedFloat32Array = _impl.weights(x,z)
+	var acc := 0.0
+	var last := 0
+	for r in w.size():
+		if w[r] <= 0.0: continue
+		last = r
+		acc += w[r]
+		if u < acc: return r
+	return last
+
 ## Vector2(world height, meadow 0..1) at a world XZ point.
 func sample(x: float, z: float) -> Vector2:
 	_p_on = false

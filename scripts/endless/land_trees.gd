@@ -133,6 +133,10 @@ var seed := 1
 var share := 1.0
 var meadows := 1.0
 var enabled := true
+## A world of regions: each region's woods by region index, {share,
+## meadows, weights (the variants'), native (its ZenScapeTrees, or null)};
+## empty in a one-profile world.
+var regional: Array = []
 var stats := {"blocks":0,"far":0,"trees":0,"far_trees":0,"plan_ms":0.0,"plans":0,"slowest_plan_ms":0.0,"slowest_commit_ms":0.0,"slowest_commit":"","colliders":0}
 
 var _parts: Array = []        # variant -> [trunk mesh, crown mesh]
@@ -184,7 +188,11 @@ var world: RefCounted
 ## The flags: {on, share, meadows}, over the world's (its trees layer and
 ## flora's forest, forest_meadows).
 static func flags() -> Dictionary:
-	var w: RefCounted = WorldProfile.current()
+	return flags_of(WorldProfile.current())
+
+## A profile's woods {on, share, meadows, floor}, the flags over it (each
+## region's, in a world of regions).
+static func flags_of(w: RefCounted) -> Dictionary:
 	var out := {"on":bool(w.layer("trees",true)),"share":float(w.flora_value("forest",1.0)),"meadows":float(w.flora_value("forest_meadows",1.0)),"floor":true}
 	for a: String in LaunchArgs.user_args():
 		if a == "--no-trees": out.on = false
@@ -203,6 +211,14 @@ func setup(land_seed: int) -> void:
 	meadows = f.meadows
 	_floor = f.floor
 	_arch_flags = LandArches.flags()
+	if not world.uniform:
+		# Each region's woods (the flags over each); the woods stand if any region's do.
+		var any := false
+		for p: RefCounted in world.regions:
+			var rf := flags_of(p)
+			any = any or rf.on
+			regional.append({"share":rf.share if rf.on else 0.0,"meadows":rf.meadows,"weights":Plan.weights_of(p),"native":null})
+		enabled = any and not ("--no-trees" in LaunchArgs.user_args())
 	if not enabled: return
 	var view := preload("res://scripts/endless/land_stream.gd").view()
 	far_ring = Vector4(FAR.x,FAR.y,FAR.z*view,FAR.w*view)
@@ -293,6 +309,10 @@ func setup(land_seed: int) -> void:
 	if native_wanted():
 		native = ClassDB.instantiate(NATIVE_CLASS)
 		native.configure(_native_config())
+		for r in regional.size():
+			var rn: Object = ClassDB.instantiate(NATIVE_CLASS)
+			rn.configure(_native_config(r))
+			regional[r].native = rn
 
 ## The native plan and building (native/terrain_kernels/tree_cell.h), when
 ## the library is built and current (--trees-native=0 or --gdscript-kernels:
@@ -307,9 +327,9 @@ static func native_wanted() -> bool:
 	return probe.has_method("version") and int(probe.version()) == NATIVE_VERSION
 
 ## What ZenScapeTrees needs of the plan and the building.
-func _native_config() -> Dictionary:
-	var weights := Plan.variant_weights()
-	return {"seed":seed,"share":share,"meadows":meadows,"gap":WorldScale.opening(Plan.TOY_GAP),"lane_open":WorldScale.opening(Plan.TOY_LANE),
+func _native_config(r := -1) -> Dictionary:
+	var weights: PackedFloat32Array = Plan.variant_weights() if r < 0 else regional[r].weights
+	return {"seed":seed,"share":share if r < 0 else float(regional[r].share),"meadows":meadows if r < 0 else float(regional[r].meadows),"gap":WorldScale.opening(Plan.TOY_GAP),"lane_open":WorldScale.opening(Plan.TOY_LANE),
 		"dims":PackedVector3Array(_dims),"weights":weights,"tint":_tint,"crown_fit":PackedVector3Array(_crown_fit),"detail":_detail >= 0.0,"rings":_rings}
 
 ## A distance crown's value over the near crown's (HeroTrees SPRUCE_PAINT `knob`):
@@ -369,10 +389,18 @@ func _far_shader(band: Vector4) -> ShaderMaterial:
 	m.set_shader_parameter("baked",HeroTrees.spruce_far_baked(FAR_BAKED))
 	return m
 
-func _plan_for() -> RefCounted:
-	var p: RefCounted = Plan.new(seed,share,_dims,_arch_flags)
-	p.meadows = meadows
-	return p
+## The plan (region `r`'s, in a world of regions: its share, meadows and
+## variant weights).
+func _plan_for(r := -1) -> RefCounted:
+	if r < 0 or regional.is_empty():
+		var p: RefCounted = Plan.new(seed,share,_dims,_arch_flags)
+		p.meadows = meadows
+		return p
+	var g: Dictionary = regional[r]
+	var q: RefCounted = Plan.new(seed,float(g.share),_dims,_arch_flags)
+	q.meadows = float(g.meadows)
+	q._weights = g.weights
+	return q
 
 func _exit_tree() -> void:
 	_quit = true
@@ -581,17 +609,25 @@ func _build(kind: String, key: Vector2i, field: RefCounted, plan: RefCounted) ->
 	var x0 := key.x*size
 	var z0 := key.y*size
 	var pad: float = plan.sample_pad()
-	# (In the regions world, the region's own native field where the block
-	# lies wholly in one; in the band the GDScript build reads the blend.)
-	var impl: Object = field.native_impl_in(x0-pad,z0-pad,x0+size+pad,z0+size+pad) if native != null else null
+	var nat: Object = native
+	if not regional.is_empty():
+		# A world of regions: where the block lies wholly in one region, that
+		# region's woods (its plan and native building over its own native
+		# field); in the band each region's plan over the blend, its trees
+		# dithered by the weights (_build_mixed).
+		var r: int = field.region_in(x0-pad,z0-pad,x0+size+pad,z0+size+pad)
+		if r < 0: return _build_mixed(kind,key,field)
+		plan = _plan_for(r)
+		nat = regional[r].native
+	var impl: Object = field.native_impl_in(x0-pad,z0-pad,x0+size+pad,z0+size+pad) if nat != null else null
 	if impl == null: return _build_block(key,field,plan) if kind == "b" else _build_far(key,field,plan)
 	var began := Time.get_ticks_usec()
 	var arches: PackedFloat64Array = plan.arches_flat(field,x0,z0,x0+size,z0+size)
 	var ponds: Array = field.ponds_in(x0-pad,z0-pad,x0+size+pad,z0+size+pad)
 	if kind == "f":
-		var far: Dictionary = native.far(impl,key,arches,ponds,_floor)
+		var far: Dictionary = nat.far(impl,key,arches,ponds,_floor)
 		return {"kind":"f","key":key,"buf":far.buf,"n":int(far.n),"floor":far.floor,"ms":(Time.get_ticks_usec()-began)/1000.0}
-	var got: Dictionary = native.block(impl,key,arches,ponds,hash([seed,key.x,key.y,"trees"]),_floor)
+	var got: Dictionary = nat.block(impl,key,arches,ponds,hash([seed,key.x,key.y,"trees"]),_floor)
 	var all: PackedFloat32Array = got.all
 	var n := all.size()/Plan.STRIDE
 	var cells := _cells(key,all)
@@ -619,6 +655,11 @@ func _cells(key: Vector2i, all: PackedFloat32Array) -> Dictionary:
 func _build_block(key: Vector2i, field: RefCounted, plan: RefCounted) -> Dictionary:
 	var began := Time.get_ticks_usec()
 	var all: PackedFloat32Array = plan.area(field,key.x*BLOCK,key.y*BLOCK,BLOCK)
+	var grid: Dictionary = plan.floor_grid(field,key.x*BLOCK,key.y*BLOCK,BLOCK,FLOOR_STEP) if _floor else {}
+	return _block_from(key,all,grid,began)
+
+## A block's result from its trees and floor grid (TreePlan `floor_grid`, {} none).
+func _block_from(key: Vector2i, all: PackedFloat32Array, grid: Dictionary, began: int) -> Dictionary:
 	var cells := _cells(key,all)
 	var n := all.size()/Plan.STRIDE
 	var variants := _dims.size()
@@ -656,14 +697,16 @@ func _build_block(key: Vector2i, field: RefCounted, plan: RefCounted) -> Diction
 		# The sprays' rings take over from the mid crown, so stand full size in the crown's tint.
 		var cb := Basis(Vector3.UP,yaw).scaled(Vector3(sc*wide*fit.x,sc*fit.y,sc*wide*fit.x)*(1.0 if _rings else MID_SIZE))
 		_put(mid,cb,at+Vector3(0.0,fit.z*sc,0.0),tone if _rings else Color(tone.r/_tint.r,tone.g/_tint.g,tone.b/_tint.b))
-	var ground: Dictionary = _floor_arrays(plan.floor_grid(field,key.x*BLOCK,key.y*BLOCK,BLOCK,FLOOR_STEP)) if _floor else {}
+	var ground: Dictionary = _floor_arrays(grid) if not grid.is_empty() else {}
 	var ms := (Time.get_ticks_usec()-began)/1000.0
 	return {"kind":"b","key":key,"cells":cells,"near":near,"mid":mid,"n":n,"floor":ground,"ms":ms,"tiles":tiles}
 
 ## The far cell's crowns' buffer.
 func _build_far(key: Vector2i, field: RefCounted, plan: RefCounted) -> Dictionary:
-	var began := Time.get_ticks_usec()
-	var far: Dictionary = plan.far_cell(field,key.x,key.y)
+	return _far_from(key,plan.far_cell(field,key.x,key.y),Time.get_ticks_usec())
+
+## A far cell's result from its plan (TreePlan `far_cell`).
+func _far_from(key: Vector2i, far: Dictionary, began: int) -> Dictionary:
 	var trees: PackedFloat32Array = far.trees
 	var n := trees.size()/Plan.STRIDE
 	var buf := PackedFloat32Array()
@@ -678,6 +721,88 @@ func _build_far(key: Vector2i, field: RefCounted, plan: RefCounted) -> Dictionar
 		_put(buf,cb,Vector3(trees[q],trees[q+1]+fit.z*sc,trees[q+2]),_tint*shade if _rings else Color(shade,shade,shade))
 	var ground: Dictionary = _floor_arrays(far) if _floor else {}
 	return {"kind":"f","key":key,"buf":buf,"n":n,"floor":ground,"ms":(Time.get_ticks_usec()-began)/1000.0}
+
+## The square (m) a band tree's dither is drawn for (so where two regions'
+## plans stand the same tree, one of the two is kept), and its warp (m), so
+## the squares draw no lines.
+const DITHER := 6.0
+const DITHER_WARP := 9.0
+
+## A block or far cell in the band, in a world of regions: each region's
+## plan over the blended land, each tree kept from the region the dither
+## picks at its spot (TreePlan positions come from the seed and the spot,
+## so where two regions' woods both stand a tree there, one is kept), the
+## forest floor's weights blended by the land's weights at each node.
+func _build_mixed(kind: String, key: Vector2i, field: RefCounted) -> Dictionary:
+	var began := Time.get_ticks_usec()
+	var size := BLOCK if kind == "b" else Plan.FAR_CELL
+	var x0 := key.x*size
+	var z0 := key.y*size
+	# The regions met in the square (the land's weights on a 64 m grid).
+	var meet := {}
+	var step := 64.0
+	for j in int(size/step)+1:
+		for i in int(size/step)+1:
+			var w: PackedFloat32Array = field.region_weights(x0+i*step,z0+j*step)
+			for r in w.size():
+				if w[r] > 0.0: meet[r] = true
+	var all := PackedFloat32Array()
+	var grid := {}
+	var far := {}
+	for r: int in meet:
+		if float(regional[r].share) <= 0.0: continue
+		var plan := _plan_for(r)
+		var trees: PackedFloat32Array
+		var g: Dictionary
+		if kind == "b":
+			trees = plan.area(field,x0,z0,BLOCK)
+			g = plan.floor_grid(field,x0,z0,BLOCK,FLOOR_STEP) if _floor else {}
+		else:
+			g = plan.far_cell(field,key.x,key.y)
+			trees = g.trees
+		for q in range(0,trees.size(),Plan.STRIDE):
+			if _dither_pick(field,trees[q],trees[q+2]) == r: all.append_array(trees.slice(q,q+Plan.STRIDE))
+		if g.is_empty() or (g.w as PackedFloat32Array).is_empty(): continue
+		grid = _blend_floor(grid,g,field,r)
+		if kind == "f": far = g
+	if kind == "b":
+		return _block_from(key,all,grid if _floor else {},began)
+	if far.is_empty():
+		far = {"h":PackedFloat32Array(),"w":PackedFloat32Array(),"n":0,"x":0.0,"z":0.0,"step":Plan.FAR_SLOT}
+	else:
+		far = far.duplicate()
+		far.w = grid.w
+	far.trees = all
+	return _far_from(key,far,began)
+
+## The region the dither picks for a band tree at (x, z).
+func _dither_pick(field: RefCounted, x: float, z: float) -> int:
+	var wx := x+DITHER_WARP*sin(z*0.071+x*0.013)
+	var wz := z+DITHER_WARP*sin(x*0.083-z*0.017)
+	var u := float(hash([seed,floori(wx/DITHER),floori(wz/DITHER),"region"]) & 0xffffff)/16777216.0
+	return field.region_pick(x,z,u)
+
+## `acc` (a floor grid, or {}) plus region r's grid `g`, its weights each
+## times r's land weight at the node.
+static func _blend_floor(acc: Dictionary, g: Dictionary, field: RefCounted, r: int) -> Dictionary:
+	var n := int(g.n)
+	var step := float(g.step)
+	var gw: PackedFloat32Array = g.w
+	var out := acc
+	if out.is_empty():
+		out = g.duplicate()
+		var zero := PackedFloat32Array()
+		zero.resize(gw.size())
+		out.w = zero
+	var ws: PackedFloat32Array = out.w
+	for j in range(1,n-1):
+		for i in range(1,n-1):
+			var k := (j-1)*(n-2)+i-1
+			if gw[k] <= 0.0: continue
+			var lw: PackedFloat32Array = field.region_weights(float(g.x)+i*step,float(g.z)+j*step)
+			ws[k] += gw[k]*(lw[r] if r < lw.size() else 0.0)
+	out.w = ws
+	return out
 
 ## The floor's sheet from a grid (TreePlan `floor_grid`, `far_cell`):
 ## each weight softened by its eight neighbours, the quads from the grid's

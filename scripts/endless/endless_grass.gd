@@ -347,6 +347,9 @@ class Layer extends RefCounted:
 	## The native placement (ZenScapeGrass, native/terrain_kernels/
 	## grass_cell.h) set up for this layer's site, or null: GDScript.
 	var native: Object
+	## A world of regions: each region's [site, native] by region index
+	## (its tufts' share, flowers and flower height); empty in a one-profile world.
+	var regional: Array = []
 
 var near_layer := Layer.new()
 var far_layer := Layer.new()
@@ -370,6 +373,7 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	field = Field.new(seed)
 	# The world's flora first (its tufts' share, its flowers), the flags over it.
 	world = field.world
+	var stock := {"share":share,"tall":tall,"flowers":flowers}
 	share = float(world.flora_value("grass",share))
 	flowers = bool(world.flora_value("flowers",flowers))
 	tall = clampf(float(world.flora_value("grass_tall",tall)),0.25,6.0)
@@ -443,6 +447,18 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 	far_layer.reach = lod.w
 	if fine: near_layer.site.tufts = s.tufts*share*_fine_share
 	far_layer.share = 1.0
+	if not world.uniform:
+		# Each region's carpet: its tufts' share, flowers and flower height, the flags over each.
+		for p: RefCounted in world.regions:
+			var rf := _flora_of(p,stock)
+			var near_r: Dictionary = near_layer.site.duplicate()
+			near_r.tufts = s.tufts*float(rf.share)*(_fine_share if fine else 1.0)
+			near_r.flowers = rf.flowers
+			near_r.flower_tall = rf.tall
+			var far_r: Dictionary = far_layer.site.duplicate()
+			far_r.tufts = FAR_TUFTS*float(rf.share)
+			near_layer.regional.append([near_r,null])
+			far_layer.regional.append([far_r,null])
 	# The plant catalog made on the main thread before any worker reads it.
 	SkyIslets.catalog()
 	if ground != null:
@@ -468,6 +484,27 @@ func setup(land_seed: int, ground_material: ShaderMaterial = null) -> void:
 		for layer: Layer in [near_layer,far_layer]:
 			layer.native = ClassDB.instantiate(NATIVE_CLASS)
 			layer.native.configure(native_config(layer.site,layer.share,lod))
+			for one: Array in layer.regional:
+				one[1] = ClassDB.instantiate(NATIVE_CLASS)
+				(one[1] as Object).configure(native_config(one[0],layer.share,lod))
+
+## A profile's carpet {share, tall, flowers} from `stock` (the engine's), the
+## flags over it (each region's, in a world of regions).
+static func _flora_of(p: RefCounted, stock: Dictionary) -> Dictionary:
+	var out := {"share":float(p.flora_value("grass",stock.share)),"flowers":bool(p.flora_value("flowers",stock.flowers)),
+		"tall":clampf(float(p.flora_value("grass_tall",stock.tall)),0.25,6.0)}
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--grass="): out.share = maxf(a.get_slice("=",1).to_float(),0.0)
+		elif a == "--no-flowers": out.flowers = false
+		elif a.begins_with("--grass-tall="): out.tall = clampf(a.get_slice("=",1).to_float(),0.25,6.0)
+	return out
+
+## The region a cell grows as, in a world of regions: picked by a hash of the
+## cell against the land's weights at its middle, so over the band each
+## region's share of the cells is its weight, with no line.
+func _cell_region(key: Vector2i) -> int:
+	var u := float(hash([seed,key.x,key.y,"grass region"]) & 0xffffff)/16777216.0
+	return field.region_pick((key.x+0.5)*CELL,(key.y+0.5)*CELL,u)
 
 ## The native placement (native/terrain_kernels/grass_cell.h): each cell's
 ## tufts placed by ZenScapeGrass, the same tufts in the same places as
@@ -783,7 +820,13 @@ func _ask() -> void:
 		while near_layer.pending.size()+far_layer.pending.size() < MAX_TASKS and not layer.queue.is_empty():
 			var key: Vector2i = layer.queue.pop_front()
 			if layer.cells.has(key) or layer.pending.has(key): continue
-			layer.pending[key] = WorkerThreadPool.add_task(_grow.bind(layer,key,seed,layer.site.duplicate(),lod,layer.native),false,"grass cell")
+			var site_values: Dictionary = layer.site
+			var nat: Object = layer.native
+			if not layer.regional.is_empty():
+				var one: Array = layer.regional[_cell_region(key)]
+				site_values = one[0]
+				nat = one[1] if layer.native != null else null
+			layer.pending[key] = WorkerThreadPool.add_task(_grow.bind(layer,key,seed,site_values.duplicate(),lod,nat),false,"grass cell")
 
 ## Finished tasks let go.
 func _reap() -> void:
