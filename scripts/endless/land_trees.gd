@@ -73,6 +73,9 @@ const REPLAN := 48.0
 const TASKS := 6
 const COMMIT_BUDGET := 1.5
 const PRIME := 420.0
+## A world of regions: the far cells in a border's band past this (m) are
+## left to stream after the start (see prime).
+const PRIME_BAND_FAR := 2000.0
 ## The flight's solid: the crown's reach times CROWN_SOLID plus WING_SOLID
 ## of the plane's half span; the bucket (m) the trees are looked up by.
 const CROWN_SOLID := 0.85
@@ -415,10 +418,17 @@ func prime(at: Vector3) -> void:
 	var began := Time.get_ticks_usec()
 	if native != null:
 		var ids: Array = []
+		# A world of regions: the band's far cells past PRIME_BAND_FAR are
+		# left to stream (their GDScript blend builds are ~10x a native one's
+		# and scale badly over threads, so priming them held the start ~25 s).
+		var probe: RefCounted = Field.new(seed) if not regional.is_empty() else null
 		for key: Vector2i in _wanted_blocks(at,MID.z):
-			if not _blocks.has(key): ids.append(WorkerThreadPool.add_task(_task.bind("b",key),true))
+			if _blocks.has(key): continue
+			ids.append(WorkerThreadPool.add_task(_task.bind("b",key),true))
 		for key: Vector2i in _wanted_far(at,far_ring.z):
-			if not _far.has(key): ids.append(WorkerThreadPool.add_task(_task.bind("f",key),true))
+			if _far.has(key): continue
+			if probe != null and _rect_distance(key.x*Plan.FAR_CELL,key.y*Plan.FAR_CELL,Plan.FAR_CELL,at) > PRIME_BAND_FAR and _in_band(probe,"f",key): continue
+			ids.append(WorkerThreadPool.add_task(_task.bind("f",key),true))
 		for id: int in ids: WorkerThreadPool.wait_for_task_completion(id)
 		_lock.lock()
 		var done := _done.duplicate()
@@ -433,6 +443,13 @@ func prime(at: Vector3) -> void:
 			_commit(_build("b",key,field,plan))
 	stats.prime_ms = (Time.get_ticks_usec()-began)/1000.0
 	_planned_at = Vector3.INF
+
+## Whether block ("b") or far cell ("f") `key` meets a region border's band
+## (built by _build_mixed), in a world of regions.
+func _in_band(field: RefCounted, kind: String, key: Vector2i) -> bool:
+	var size := BLOCK if kind == "b" else Plan.FAR_CELL
+	var pad: float = _plan_for().sample_pad()
+	return field.region_in(key.x*size-pad,key.y*size-pad,(key.x+1)*size+pad,(key.y+1)*size+pad) < 0
 
 ## One frame: replanned if the eye has moved, tasks asked, finished blocks
 ## stood within the budget, colliders round `plane_at`.
