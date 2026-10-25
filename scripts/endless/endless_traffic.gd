@@ -83,7 +83,7 @@ const TRAIL_EVERY := 0.2
 const TRAIL_WIDTH := Vector2(0.5,4.5)
 const TRAIL_ALPHA := 0.9
 ## Further than this from the eye (m) a plane is only posed (`FarPose`):
-## no pilot drawn, no scarf, vapour, propeller or control surfaces worked.
+## no vapour, propeller or control surfaces worked.
 const DETAIL := 260.0
 ## Its shadow is cast only nearer the eye than this (m): each plane is a
 ## dozen draws, and every shadow split draws them again.
@@ -333,12 +333,9 @@ func _detail(plane: Dictionary) -> void:
 	var near := gap < DETAIL
 	if near and plane.figure != plane.body:
 		plane.figure = plane.body
-		plane.body.show_pilot(true)
 		plane.body.reset(plane.flight)
 	elif not near and plane.figure == plane.body:
 		plane.figure = plane.far
-		# Too small to see from here, and a dozen draws more.
-		plane.body.show_pilot(false)
 
 ## Its parts that cast a shadow as built, on or off.
 static func _cast(casters: Array, on: bool) -> void:

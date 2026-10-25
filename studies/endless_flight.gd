@@ -96,6 +96,8 @@ const EndlessFish = preload("res://scripts/endless/endless_fish.gd")
 ## Other planes and their trails (--traffic=0 off).
 const EndlessTraffic = preload("res://scripts/endless/endless_traffic.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
+## The pad's rumble (scripts/endless/flight_rumble.gd).
+const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -120,6 +122,13 @@ const RUSH_FOV := 1.8
 const RUSH_SHAKE := 0.0045
 const RUSH_FROM := 0.9
 const RUSH_HZ := Vector3(7.3,11.9,17.1)
+## Wingtip vapour (PlaneFigure `update`'s `near`): pulled off as the flight
+## path turns faster than VAPOUR_TURN.x radians a second, full at .y (a
+## hard turn or pull-up), the stronger the faster it flies; never on the
+## wheels. Skimming for the rumble: within SKIM_LOW m of the land (times
+## the plane's size) at cruise or more.
+const VAPOUR_TURN := Vector2(0.7,1.5)
+const SKIM_LOW := 4.0
 
 ## True once the land under the start stands and it flies (the harness
 ## waits on it: tools/harness/drive.gd `open`).
@@ -193,6 +202,10 @@ const REGION_TAKE := 0.7
 ## and its clock.
 var _rush := 0.0
 var _rush_t := 0.0
+var rumble := FlightRumble.new()
+## The flight path's way last frame, for the vapour's pull, and the pull.
+var _last_way := Vector3.ZERO
+var _pull := 0.0
 
 ## The 3D at a Native draw (the player's render resolution, and the default
 ## on a discrete GPU): 75%, upscaled by FSR (scripts/render_resolution.gd
@@ -202,6 +215,9 @@ var _rush_t := 0.0
 const NATIVE_3D := 0.75
 
 func _ready() -> void:
+	# Which hands are on it, the pad's or the keyboard's (Pad `note`): the
+	# rumble and the prompts follow it.
+	get_tree().root.window_input.connect(Pad.note)
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = NATIVE_3D
 	rr.apply(get_tree().root,rr.load_cap())
@@ -454,8 +470,8 @@ func _launch(at: Vector3, heading: float) -> void:
 		plane_figure = PlaneFigure.new()
 		plane_figure.name = "Plane"
 		add_child(plane_figure)
-	plane_figure.show_pilot(true)
 	plane_figure.reset(plane)
+	_last_way = Vector3.ZERO
 	ground_scale.reset(false)
 	ground_scale.apply(plane_figure)
 	plane_figure._mark.visible = false
@@ -551,10 +567,12 @@ func tick(delta: float) -> void:
 	plane.water = water_at(plane.position)
 	input["flaps"] = 1.0 if flaps else 0.0
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
-	hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
+	var events := hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
 	plane.engine = hand_landing.engine*float(plane.sputter)
 	var ground := Callable(self,"plane_ground")
-	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")))
+	_pull = _pull_of(delta)
+	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")),_pull,float(plane.bank))
+	_rumble(delta,events,float(input.get("boost",0.0)))
 	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane)
 	ground_scale.apply(plane_figure)
 	plane_figure._mark.visible = false
@@ -580,6 +598,32 @@ func tick(delta: float) -> void:
 	if react != null: _react(delta)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
 	_show_hud()
+
+## How hard the vapour pulls off the wingtips (0 to 1): the flight path's
+## turn rate over VAPOUR_TURN, more past cruise.
+func _pull_of(delta: float) -> float:
+	var v: Vector3 = plane.velocity
+	var way := v.normalized()
+	var turn := 0.0
+	if delta > 0.0 and _last_way != Vector3.ZERO and v.length() > 1.0: turn = _last_way.angle_to(way)/delta
+	_last_way = way
+	if hand_landing.on_ground(): return 0.0
+	var fast := smoothstep(plane.cruise()*0.8,plane.boost_speed(),v.length())
+	return smoothstep(VAPOUR_TURN.x,VAPOUR_TURN.y,turn)*lerpf(0.6,1.0,fast)
+
+## The pad's rumble: the landing's `events` knock, the wheels, Boost
+## (`boost` held, in the air), the pull and skimming low hum.
+func _rumble(delta: float, events: Dictionary, boost: float) -> void:
+	var rolling := hand_landing.on_ground()
+	var skim := 0.0
+	if not rolling:
+		var p: Vector3 = plane.position
+		var h: float = field.height(p.x,p.z)
+		var low := SKIM_LOW*ground_scale.size()
+		var fast := smoothstep(plane.cruise()*0.8,plane.cruise(),float(plane.speed))
+		if h > Field.SEA_Y: skim = (1.0-smoothstep(low*0.4,low,p.y-h))*fast
+	rumble.step(delta,events,{"roll":hand_landing.roll_speed() if rolling else 0.0,"grit":hand_landing.grit,
+		"boost":0.0 if rolling else boost,"pull":_pull,"skim":skim})
 
 ## The grass reacting: the plane's wash (by its height and thrust) and the
 ## look's breeze for the gusts (GrassReact `step`).
@@ -697,6 +741,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _exit_tree() -> void:
+	if get_tree().root.window_input.is_connected(Pad.note): get_tree().root.window_input.disconnect(Pad.note)
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = 1.0
 	rr.apply(get_tree().root,rr.load_cap())

@@ -865,7 +865,6 @@ func _plane(parent: Node3D, at: Vector3, turn: Vector3) -> Node3D:
 	parent.add_child(plane)
 	plane.position = at
 	plane.rotation = turn
-	plane.show_pilot(true)
 	plane._mark.visible = false
 	plane._vapour.visible = false
 	plane.scale = Vector3.ONE*WorldScale.plane
@@ -1149,7 +1148,6 @@ func _fly(on: bool) -> void:
 	_fly_figure = PlaneFigure.new()
 	_fly_figure.name = "Flying"
 	add_child(_fly_figure)
-	_fly_figure.show_pilot(true)
 	_chase = GlideCamera.new()
 	_fly_launch()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
