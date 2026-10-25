@@ -5,6 +5,8 @@ extends Node3D
 ## - dust: earth kicked up by a scrape on the land or a crash.
 ## - sparks: off stone (an arch, a hall, a bore's rock).
 ## - leaves: off a tree grazed or scraped, or knocked down (and where it lands).
+## - needles: shed off a knocked tree's crown as it snaps and whips (from
+##   a ball `sphere` m round, not a point; faded out `near` the eye).
 ## - wood: chips off a trunk the plane knocks down (scripts/endless/tree_knock.gd).
 ## - spray: off the water, as a burst on a scrape, and a running trail
 ##   (`spray`) while it skims the water low and fast.
@@ -13,6 +15,7 @@ const KINDS := {
 	"dust":{"color":Color(0.55,0.47,0.36),"amount":28,"size":0.55,"speed":Vector2(3.0,8.0),"gravity":-6.0,"life":1.1,"spread":55.0,"damp":2.0},
 	"sparks":{"color":Color(1.0,0.78,0.42),"amount":24,"size":0.12,"speed":Vector2(8.0,16.0),"gravity":-9.8,"life":0.45,"spread":70.0,"damp":0.5},
 	"leaves":{"color":Color(0.33,0.5,0.24),"amount":22,"size":0.3,"speed":Vector2(2.0,6.0),"gravity":-2.0,"life":1.6,"spread":80.0,"damp":2.5},
+	"needles":{"color":Color(0.16,0.27,0.12),"amount":64,"size":0.2,"speed":Vector2(2.0,6.0),"gravity":-3.5,"life":1.8,"spread":80.0,"damp":1.6,"sphere":1.5,"pool":4,"near":Vector2(1.5,5.0)},
 	"wood":{"color":Color(0.5,0.36,0.22),"amount":18,"size":0.2,"speed":Vector2(4.0,10.0),"gravity":-9.8,"life":1.2,"spread":60.0,"damp":1.0},
 	"spray":{"color":Color(0.88,0.94,0.97),"amount":30,"size":0.45,"speed":Vector2(3.0,9.0),"gravity":-9.0,"life":0.9,"spread":40.0,"damp":1.0},
 }
@@ -25,7 +28,9 @@ var _trail: CPUParticles3D
 
 func _ready() -> void:
 	for kind: String in KINDS:
-		_pools[kind] = [_emitter(KINDS[kind],true),_emitter(KINDS[kind],true)]
+		var pool: Array = []
+		for i in int((KINDS[kind] as Dictionary).get("pool",2)): pool.append(_emitter(KINDS[kind],true))
+		_pools[kind] = pool
 		_turn[kind] = 0
 	_trail = _emitter(KINDS.spray,false)
 	_trail.amount = 40
@@ -42,6 +47,9 @@ func _emitter(k: Dictionary, one_shot: bool) -> CPUParticles3D:
 	p.local_coords = false
 	p.direction = Vector3.UP
 	p.spread = float(k.spread)
+	if k.has("sphere"):
+		p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		p.emission_sphere_radius = float(k.sphere)
 	p.initial_velocity_min = (k.speed as Vector2).x
 	p.initial_velocity_max = (k.speed as Vector2).y
 	p.gravity = Vector3(0.0,float(k.gravity),0.0)
@@ -64,6 +72,12 @@ func _emitter(k: Dictionary, one_shot: bool) -> CPUParticles3D:
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.vertex_color_use_as_albedo = true
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	if k.has("near"):
+		# Faded out this near the eye (m: gone, whole), so the camera flying
+		# through a burst isn't filled with it.
+		m.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+		m.distance_fade_min_distance = (k.near as Vector2).x
+		m.distance_fade_max_distance = (k.near as Vector2).y
 	quad.material = m
 	p.mesh = quad
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
