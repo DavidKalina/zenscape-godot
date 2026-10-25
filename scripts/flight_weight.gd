@@ -20,6 +20,15 @@ extends RefCounted
 ## - camera: its idea of the flight's way and its roll follow `cam_lag`
 ##   times slower, the way is `cam_path` the path's (the rest the nose's), and
 ##   the field of view eases over `fov_ease` s.
+## - low: under `low_spans` wingspans of clearance over whatever is under it
+##   (the land, a tree, a ruin, the water) and fast (over LOW_SLOW m/s, full
+##   by LOW_FAST of cruise), the nose stops easing level and eases to
+##   `settle_pitch` instead, and the plane settles `settle` m/s toward the
+##   land, both by how deep into the zone it is (0 at its top, 1 at
+##   LOW_FULL spans, the square root of the share of the way down): hands off, it scrapes in a couple of seconds, and a
+##   low line takes small steady corrections. A buffet of `buffet` m/s
+##   shakes it up and down there, by the depth and the speed. Slow (a hand
+##   landing's approach, a braked pass) none of this acts.
 ##
 ## `--weight=<off|light|medium|heavy>` picks one at launch; endless flight
 ## starts on DEFAULT and cycles them with V or the pad's d-pad up.
@@ -29,19 +38,29 @@ const DEFAULT := "medium"
 
 const PRESETS := {
 	"off":{"roll_hz":0.0,"turn_lag":0.0,"yaw_lag":0.0,"pitch_lag":0.0,"pitch_build":0.0,
-		"bleed":0.0,"soft_keep":1.0,"mush":0.0,"sag":0.0,"cam_lag":1.0,"cam_path":0.5,"fov_ease":0.3},
+		"bleed":0.0,"soft_keep":1.0,"mush":0.0,"sag":0.0,"cam_lag":1.0,"cam_path":0.5,"fov_ease":0.3,
+		"low_spans":0.0,"settle":0.0,"settle_pitch":0.0,"buffet":0.0},
 	"light":{"roll_hz":13.0,"turn_lag":0.04,"yaw_lag":0.05,"pitch_lag":0.18,"pitch_build":0.06,
-		"bleed":0.3,"soft_keep":0.75,"mush":0.8,"sag":0.6,"cam_lag":1.25,"cam_path":0.56,"fov_ease":0.4},
+		"bleed":0.3,"soft_keep":0.75,"mush":0.8,"sag":0.6,"cam_lag":1.25,"cam_path":0.56,"fov_ease":0.4,
+		"low_spans":1.6,"settle":1.0,"settle_pitch":-0.06,"buffet":0.35},
 	"medium":{"roll_hz":11.0,"turn_lag":0.06,"yaw_lag":0.08,"pitch_lag":0.3,"pitch_build":0.09,
-		"bleed":0.6,"soft_keep":0.6,"mush":1.4,"sag":1.0,"cam_lag":1.5,"cam_path":0.62,"fov_ease":0.55},
+		"bleed":0.6,"soft_keep":0.6,"mush":1.4,"sag":1.0,"cam_lag":1.5,"cam_path":0.62,"fov_ease":0.55,
+		"low_spans":1.8,"settle":1.4,"settle_pitch":-0.09,"buffet":0.5},
 	"heavy":{"roll_hz":7.0,"turn_lag":0.12,"yaw_lag":0.13,"pitch_lag":0.48,"pitch_build":0.15,
-		"bleed":1.0,"soft_keep":0.45,"mush":2.2,"sag":1.8,"cam_lag":2.0,"cam_path":0.7,"fov_ease":0.8},
+		"bleed":1.0,"soft_keep":0.45,"mush":2.2,"sag":1.8,"cam_lag":2.0,"cam_path":0.7,"fov_ease":0.8,
+		"low_spans":2.0,"settle":1.8,"settle_pitch":-0.11,"buffet":0.65},
 }
 
 ## The path's lag at a speed: times cruise over speed, within these.
 const LAG_SCALE := Vector2(0.7,1.6)
 ## The soft band: this many m/s over the floor (SkyPlane SLOW) and under.
 const SOFT_SPAN := 6.0
+## The low zone is full this many wingspans over the land, acts only over
+## LOW_SLOW m/s (a hand landing's approach and Brake's 13.2 stay under it)
+## and is full from LOW_FAST of cruise.
+const LOW_FULL := 0.25
+const LOW_SLOW := 16.0
+const LOW_FAST := 0.85
 const G := 9.8
 
 ## The preset's knobs by name (an unknown name: off).

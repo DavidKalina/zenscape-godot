@@ -15,7 +15,15 @@ extends Node3D
 ## steers, Space boost, Shift brake, Q E held knife edge (twice quick a
 ## barrel roll, or click), F flaps in the air (pad Y), hold right mouse to
 ## look round, F1 the numbers, R back up into the air over where it is, Esc
-## lets the mouse go.
+## lets the mouse go. B (pad X) spends the near misses' meter on a surge.
+##
+## Near misses (the weighted presets; docs/design/endless-flight/
+## near-miss-handoff.md): low and fast the plane settles toward the land
+## (SkyPlane `low`), what it runs into is a scrape or a crash (scripts/
+## endless/flight_contact.gd), and how close its body comes to the land, a
+## tree or a ruin scores (scripts/endless/near_miss.gd), chained into the
+## surge's meter; the HUD (scripts/endless/near_miss_hud.gd), the debris
+## (scripts/endless/flight_debris.gd), a FOV punch and a shake show it.
 ##
 ##   ./run-endless-flight.command [--seed=7]
 ##   godot --path . res://studies/endless_flight.tscn -- --no-title [--seed=7] [--at=x,z] [--heading=deg] [--alt=m]
@@ -101,6 +109,11 @@ const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
 const FlightWeight = preload("res://scripts/flight_weight.gd")
 ## The plane's and the air's sound (scripts/endless/flight_sound.gd; --sound=0 off).
 const FlightSound = preload("res://scripts/endless/flight_sound.gd")
+## Near misses, the land's contact, their HUD and debris (weighted presets).
+const NearMiss = preload("res://scripts/endless/near_miss.gd")
+const FlightContact = preload("res://scripts/endless/flight_contact.gd")
+const NearMissHud = preload("res://scripts/endless/near_miss_hud.gd")
+const FlightDebris = preload("res://scripts/endless/flight_debris.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -132,6 +145,28 @@ const RUSH_HZ := Vector3(7.3,11.9,17.1)
 ## the plane's size) at cruise or more.
 const VAPOUR_TURN := Vector2(0.7,1.5)
 const SKIM_LOW := 4.0
+## The near misses' feel: a scored moment widens the view PUNCH degrees by
+## its closeness and shakes the eye NEAR_SHAKE radians, both dying over
+## PUNCH_FADE and SHAKE_FADE s; a scrape shakes it SCRAPE_SHAKE; low and fast
+## the air buffets it LOW_SHAKE at the land (by SkyPlane `low` and the speed).
+const PUNCH := 6.0
+const PUNCH_FADE := 0.28
+const NEAR_SHAKE := 0.006
+const SCRAPE_SHAKE := 0.012
+const LOW_SHAKE := 0.0022
+const SHAKE_FADE := 0.3
+const SHAKE_HZ := Vector3(13.1,17.3,21.7)
+## Spray trails off the water under SPRAY_SPANS wingspans, over SPRAY_FAST
+## of cruise.
+const SPRAY_SPANS := 0.8
+const SPRAY_FAST := 0.7
+## A crash: back CRASH_BACK m along the way it came, CRASH_UP m over the
+## highest of what stands from there to CRASH_LOOK m on, the screen dipped
+## dark and lifting over FADE_TIME s.
+const CRASH_BACK := 45.0
+const CRASH_UP := 14.0
+const CRASH_LOOK := 140.0
+const FADE_TIME := 0.7
 
 ## True once the land under the start stands and it flies (the harness
 ## waits on it: tools/harness/drive.gd `open`).
@@ -222,6 +257,21 @@ var _rush := 0.0
 var _rush_t := 0.0
 var rumble := FlightRumble.new()
 var sound := FlightSound.new()
+## The near misses (scored, chained, the meter), the land's contact, their
+## HUD and debris; the FOV punch (degrees), the shake (radians) and its
+## clock, the crash's dark fade (s left), and crashes so far.
+var near := NearMiss.new()
+var contact := FlightContact.new()
+var debris: Node3D
+var _near_hud: Control
+var _fade: ColorRect
+var _fade_left := 0.0
+var _punch := 0.0
+var _shake := 0.0
+var _shake_t := 0.0
+var crashes := 0
+## This frame's events (the landing's and the near misses'), for the HUD.
+var _events := {}
 ## The flight path's way last frame, for the vapour's pull, and the pull.
 var _last_way := Vector3.ZERO
 var _pull := 0.0
@@ -348,6 +398,9 @@ func _ready() -> void:
 	halls.prime(eye)
 	tunnels.prime(eye)
 	trees.prime(eye)
+	debris = FlightDebris.new()
+	debris.name = "Debris"
+	add_child(debris)
 	_launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
@@ -441,8 +494,16 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  F flaps (stopped: get out)  ·  land on the meadows  ·  R up again  ·  V weight  ·  C clouds  ·  G grass  ·  F1 numbers  ·  F2 3D scale"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Q E knife edge (twice: roll)  ·  F flaps (stopped: get out)  ·  land on the meadows  ·  R up again  ·  V weight  ·  C clouds  ·  G grass  ·  F1 numbers  ·  F2 3D scale"
 	layer.add_child(_hint)
+	_near_hud = NearMissHud.new()
+	_near_hud.visible = false
+	layer.add_child(_near_hud)
+	_fade = ColorRect.new()
+	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade.color = Color(0.03,0.03,0.04,0.0)
+	layer.add_child(_fade)
 	_weight_note = Label.new()
 	_weight_note.anchor_left = 0.0
 	_weight_note.anchor_right = 1.0
@@ -498,6 +559,9 @@ func _launch(at: Vector3, heading: float) -> void:
 		plane.keep = Callable(tunnels,"keep")
 	plane.launch(at,heading,plane.cruise(),false)
 	hand_landing.begin(plane)
+	hand_landing.land_most = FlightContact.LAND_MOST if plane.weighted else INF
+	near.reset()
+	contact.reset()
 	if plane_figure == null:
 		plane_figure = PlaneFigure.new()
 		plane_figure.name = "Plane"
@@ -599,12 +663,16 @@ func tick(delta: float) -> void:
 	# river's water as it skims the sea.
 	plane.water = water_at(plane.position)
 	input["flaps"] = 1.0 if flaps else 0.0
+	# In a bore's tube the low zone lets be (SkyPlane `roofed`).
+	plane.roofed = tunnels != null and int(tunnels.tube(plane.position)) == 0
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	var events := hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
 	plane.engine = hand_landing.engine*float(plane.sputter)
+	_near_misses(delta,events)
 	var ground := Callable(self,"plane_ground")
 	_pull = _pull_of(delta)
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")),_pull,float(plane.bank))
+	_events = events
 	_feel_sink(events)
 	_rumble(delta,events,float(input.get("boost",0.0)))
 	sound.step(delta,self,events,float(input.get("boost",0.0)))
@@ -659,7 +727,69 @@ func _rumble(delta: float, events: Dictionary, boost: float) -> void:
 		if h > Field.SEA_Y: skim = (1.0-smoothstep(low*0.4,low,p.y-h))*fast
 	rumble.step(delta,events,{"roll":hand_landing.roll_speed() if rolling else 0.0,"grit":hand_landing.grit,
 		"boost":0.0 if rolling else boost,"pull":_pull,"skim":skim,
-		"strain":0.0 if rolling else smoothstep(1.3,6.5,float(plane.g_load))})
+		"strain":0.0 if rolling else smoothstep(1.3,6.5,float(plane.g_load)),
+		"low":0.0 if rolling else float(plane.low)*clampf(float(plane.speed)/plane.cruise(),0.5,1.5)})
+
+## The near misses and the land's contact (weighted presets, flying):
+## measured round the body, a touch graded (a scrape, or a crash and back
+## up), the moments scored and the surge spent (`fly_surge` held); the
+## frame's `events` get "near", "banked", "scrape", "crash", "lost", "surge"
+## for the rumble, the sound and the HUD, and the punch, shake and debris
+## fire off them.
+func _near_misses(delta: float, events: Dictionary) -> void:
+	_fade_left = maxf(0.0,_fade_left-delta)
+	if not plane.weighted or not hand_landing.flying():
+		plane.surge = 0.0
+		near.surge = 0.0
+		debris.spray(false,Vector3.ZERO,Vector3.ZERO)
+		return
+	near.measure(delta,self)
+	var hit := contact.step(delta,self,near.touching)
+	if hit.has("crash"):
+		var c: Dictionary = hit.crash
+		events["crash"] = c
+		events["lost"] = {"points":near.lose()}
+		debris.hit(str(c.what),c.at,c.normal,true)
+		crash()
+		return
+	if hit.has("scrape"):
+		var s: Dictionary = hit.scrape
+		events["scrape"] = s
+		var lost := near.lose()
+		if lost > 0.0: events["lost"] = {"points":lost}
+		debris.hit(str(s.what),s.at,s.normal)
+		_shake = maxf(_shake,SCRAPE_SHAKE)
+	events.merge(near.score(delta,self,Input.is_action_pressed(&"fly_surge")))
+	if events.has("near"):
+		var m: Dictionary = events.near
+		var k := float(m.k)
+		_punch = maxf(_punch,PUNCH*k)
+		_shake = maxf(_shake,NEAR_SHAKE*k)
+		var at: Vector3 = m.at
+		if m.surface == "tree": debris.burst("leaves",at,Vector3.UP)
+		elif m.surface == "water": debris.burst("spray",Vector3(at.x,water_at(at),at.z),Vector3.UP)
+	var p: Vector3 = plane.position
+	var wet: bool = near.ground_surface == "water" and near.ground_clear < WorldScale.span*SPRAY_SPANS and float(plane.speed) > plane.cruise()*SPRAY_FAST
+	debris.spray(wet,Vector3(p.x,water_at(p),p.z),plane.velocity)
+
+## Crashed: flying on from a little behind and above where it was, on the
+## way it was going, at cruise (CRASH_BACK, CRASH_UP over what stands to
+## CRASH_LOOK on), the screen dipped dark and lifting.
+func crash() -> void:
+	var p: Vector3 = plane.position
+	var way := Vector2(plane.velocity.x,plane.velocity.z)
+	if way.length() < 0.5: way = Vector2(-sin(float(plane.heading)),-cos(float(plane.heading)))
+	way = way.normalized()
+	var back := Vector2(p.x,p.z)-way*CRASH_BACK
+	var top := Field.SEA_Y
+	for i in range(9):
+		var q := back+way*(CRASH_BACK+CRASH_LOOK)*i/8.0
+		var h: float = field.height(q.x,q.y)
+		var under: Variant = plane_ground(Vector3(q.x,h+300.0,q.y))
+		top = maxf(top,(under as Vector2).x if under is Vector2 else (float(under) if under != null else h))
+	crashes += 1
+	_launch(Vector3(back.x,top+CRASH_UP,back.y),atan2(-way.x,-way.y))
+	_fade_left = FADE_TIME
 
 ## A hard pull-out sinking through (the weight's path under the nose):
 ## `events` gets a "sink" knock for the rumble, once per pull-out.
@@ -679,6 +809,8 @@ func _next_weight() -> void:
 	weight = FlightWeight.next(weight)
 	plane.use_weight(weight)
 	chase.use_weight(FlightWeight.knobs(weight))
+	hand_landing.land_most = FlightContact.LAND_MOST if plane.weighted else INF
+	if not plane.weighted: near.reset()
 	_weight_note.text = "Weight: %s" % weight
 	_weight_shown = Time.get_ticks_msec()
 
@@ -719,7 +851,9 @@ func _frame(delta: float) -> void:
 	camera.look_at(camera.global_position+way,Vector3.UP)
 	camera.rotate_object_local(Vector3.FORWARD,chase.roll)
 	_buffet(delta)
-	camera.fov = chase.fov
+	_shake_eye(delta)
+	_punch *= exp(-delta/PUNCH_FADE)
+	camera.fov = chase.fov+_punch
 
 ## The wind's buffet past cruise: a small shake of the eye's aim, three
 ## sines out of step, growing to RUSH_SHAKE at Boost's speed. None on the
@@ -735,6 +869,18 @@ func _buffet(delta: float) -> void:
 	var nod := sin(t*RUSH_HZ.y+0.9)*0.6+sin(t*RUSH_HZ.x*1.31+2.3)*0.4
 	camera.rotate_object_local(Vector3.UP,yaw*k)
 	camera.rotate_object_local(Vector3.RIGHT,nod*k*0.7)
+
+## The near misses' shake (a scored moment's, a scrape's, dying away) and
+## the buffet low and fast over the land: three sines out of step.
+func _shake_eye(delta: float) -> void:
+	_shake *= exp(-delta/SHAKE_FADE)
+	var k := _shake
+	if plane.weighted and not hand_landing.on_ground(): k += LOW_SHAKE*float(plane.low)*clampf(float(plane.speed)/plane.cruise(),0.5,1.5)
+	if k < 0.0002: return
+	_shake_t += delta
+	var t := _shake_t*TAU
+	camera.rotate_object_local(Vector3.UP,(sin(t*SHAKE_HZ.x)*0.6+sin(t*SHAKE_HZ.z+1.1)*0.4)*k)
+	camera.rotate_object_local(Vector3.RIGHT,(sin(t*SHAKE_HZ.y+0.4)*0.6+sin(t*SHAKE_HZ.x*1.37+2.0)*0.4)*k)
 
 static func _has_arg(prefix: String) -> bool:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
@@ -849,6 +995,9 @@ func _show_region() -> void:
 
 func _show_hud() -> void:
 	_show_region()
+	_near_hud.key_name = "X" if Pad.using_pad() else "B"
+	_near_hud.show_state(get_process_delta_time(),near,bool(plane.weighted) and not hand_landing.on_ground(),_events)
+	_fade.color.a = 0.85*smoothstep(0.0,FADE_TIME,_fade_left)
 	var since := Time.get_ticks_msec()-_weight_shown
 	_weight_note.modulate.a = clampf(1.0-float(since-WEIGHT_HOLD)/WEIGHT_FADE,0.0,1.0)
 	if not _hud.visible or Time.get_ticks_msec()-_hud_at < HUD_EVERY: return
@@ -868,6 +1017,8 @@ func _show_hud() -> void:
 		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+_hall_note()+trees.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]
 	_hud.text += "
 weight %s  ·  %.1f g  ·  nose over path %.0f°  ·  soft %.2f" % [weight,float(plane.g_load),rad_to_deg(float(plane.aoa)),float(plane.soft)]
+	if plane.weighted: _hud.text += "\nnear: ground %.1f m (%s)  ·  stone %.1f m  ·  low %.2f  ·  chain %d x%.1f  ·  meter %.2f  ·  total %d  ·  scrapes %d, crashes %d" % [
+		near.ground_clear,near.ground_surface,near.stone_clear,float(plane.low),near.chain_count,near.multiplier(),near.meter,roundi(near.total),contact.scrapes,crashes]
 
 func _react_note() -> String:
 	if react == null: return ""

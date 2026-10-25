@@ -48,6 +48,7 @@ const AIR := &"SFX Air"
 const AMBIENCE := &"Ambience"
 const DEFAULT_AMBIENCE := 0.8
 const KIT := "res://assets/audio/kit/"
+const FOLEY := "res://assets/audio/foley/"
 const OLD := "res://assets/audio/"
 
 # --- Tuning ----------------------------------------------------------------------
@@ -121,6 +122,15 @@ const TAP_PITCH := 1.2
 const HOP := Vector2(0.3,0.7)
 const HOP_SINK := 9.0
 const HIT := 0.5
+## Near the land (scripts/endless/near_miss.gd, flight_contact.gd): a scored
+## moment's sharp swish and a whoosh over it, louder and higher by its
+## closeness (NEAR gain from k 0 to 1, NEAR_PITCH); a scrape's grind
+## (SCRAPE, with leaves off a tree, a splash off the water, debris off
+## stone); a crash's break and debris (CRASH).
+const NEAR := Vector2(0.14,0.32)
+const NEAR_PITCH := Vector2(1.05,1.35)
+const SCRAPE := 0.4
+const CRASH := 0.7
 ## The air over the ground: the breeze's gain on the ground and well up (m
 ## over the land), the thin high wind's (over the sea, up to the ceiling),
 ## the shore's.
@@ -310,6 +320,9 @@ func _ready() -> void:
 	_clips = {
 		"thump":_takes(KIT+"thump-%d.wav",3),"creak":_takes(KIT+"creak-%d.wav",6),
 		"whoosh":_takes(KIT+"whoosh-%d.wav",4),"start":[load(KIT+"engine-start.wav")],
+		"swish":_takes(KIT+"swish-%d.wav",4),"grind":_takes(FOLEY+"land-grind-%d.wav",6),
+		"crash":_takes(FOLEY+"mesa-break-%d.wav",6),"debris":_takes(KIT+"rock-debris-%d.wav",3),
+		"splash":_takes(FOLEY+"water-splash-%d.wav",6),"leaves":_takes(FOLEY+"trees-%d.wav",6),
 	}
 
 static func _takes(pattern: String, count: int) -> Array:
@@ -499,6 +512,31 @@ func _landing(events: Dictionary) -> void:
 		shot("thump",lerpf(THUMP.x,THUMP.y,k),lerpf(THUMP_PITCH.x,THUMP_PITCH.y,k))
 		if k > 0.45: shot("creak",0.06+0.08*k,0.9)
 	if events.has("slide"): shot("creak",0.05,1.1)
+	_near(events)
+
+## The near misses' events: a scored moment's swish and whoosh, a scrape's
+## grind and what it hit, a crash.
+func _near(events: Dictionary) -> void:
+	var m: Variant = events.get("near")
+	if m is Dictionary:
+		var k := clampf(float((m as Dictionary).get("k",0.0)),0.0,1.0)
+		shot("swish",lerpf(NEAR.x,NEAR.y,k),lerpf(NEAR_PITCH.x,NEAR_PITCH.y,k),Vector3.INF,AIR)
+		shot("whoosh",lerpf(NEAR.x,NEAR.y,k)*0.8,lerpf(NEAR_PITCH.x,NEAR_PITCH.y,k)+0.1,Vector3.INF,AIR)
+		_whoosh_wait = WHOOSH_GAP
+		if str((m as Dictionary).get("surface","")) == "tree": shot("leaves",SCRAPE*0.5,1.1)
+	for key: String in ["scrape","crash"]:
+		var h: Variant = events.get(key)
+		if not h is Dictionary: continue
+		var hard := key == "crash"
+		var what := str((h as Dictionary).get("what","land"))
+		if hard:
+			shot("crash",CRASH,0.85)
+			shot("debris",CRASH*0.6,0.9)
+		else: shot("grind",SCRAPE,1.0)
+		match what:
+			"tree": shot("leaves",SCRAPE*(1.4 if hard else 1.0),1.0)
+			"water": shot("splash",SCRAPE*(1.6 if hard else 1.0),0.9)
+			"stone": shot("debris",SCRAPE*0.7,1.1)
 
 # --- The probes ---------------------------------------------------------------------
 
