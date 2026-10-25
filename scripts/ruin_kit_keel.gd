@@ -9,7 +9,7 @@ extends RefCounted
 ## SOFFIT under its nosings), not the kit's solid one: the solid flight's
 ## underside is flat, and hung it would show a flat face, not a slide.
 ## Hung, it is turned HUNG about the beam: its treads face the void, its
-## soffit faces the sky at HUNG_STEEP (over the motor's SLIDE_AUTO), so
+## soffit faces the sky at HUNG_STEEP (over the walker's SLIDE_AUTO), so
 ## landed on, he boot-surfs down it and off. A slam on the carved boss in
 ## the turf above turns it (scripts/keel_hung_stair.gd, its "Rig") right
 ## way up, a plain walked flight, for `hold` s, then back.
@@ -28,8 +28,7 @@ extends RefCounted
 ##   "Hinge"            the beam and its two sockets: its own "Mesh" and
 ##                      "Body" (static, the beam's top walked)
 ##   "Pivot"            on the hinge's axis, turned about it by the Rig
-##   "Pivot/Flight"     the flight: "Mesh" and "Body" (clean boxes, marked
-##                      moving_ground: he rides it)
+##   "Pivot/Flight"     the flight: "Mesh" and "Body" (clean boxes)
 ##   "Rig"              the runtime (scripts/keel_hung_stair.gd)
 ## Meta (piece frame): "axis" [from, to] the hinge's axis, "hung_angle"
 ## (rad, the Pivot's turn hung), "boss" (its top), "foot" and "head" (the
@@ -39,8 +38,6 @@ extends RefCounted
 ## treads and hang from them: hung, the strands stand up toward the sky.
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
-const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
-const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const Build = RuinKit.Build
 
 const PIECES := ["keel_hung_stair"]
@@ -55,9 +52,13 @@ const CHEEK := RuinKit.CHEEK
 ## The flight's thickness square to its pitch, nosing line to soffit: the
 ## throat under each riser's foot is this less a riser's reach in.
 const SOFFIT := 0.5
-## The hung soffit's slope (deg): past the motor's SLIDE_AUTO, so he can't
-## stand on it and surfs.
-const HUNG_STEEP := PilotMotor.SLIDE_AUTO+6.0
+## The walker's steepest standing slope (deg), frozen: the pilot on foot
+## (scripts/pilot_motor.gd SLIDE_AUTO) is gone from the flight game, whole
+## at the tag archive/before-the-cut.
+const SLIDE_AUTO := 44.0
+## The hung soffit's slope (deg): past the walker's SLIDE_AUTO, so he
+## couldn't stand on it and surfed.
+const HUNG_STEEP := SLIDE_AUTO+6.0
 ## The turned flight's head (its last tread's top) under the boss: two
 ## climbing set-offs (the shaft's floor in the keel).
 const KEEL_DROP := 2.0*RuinKit.SET_OFF
@@ -210,8 +211,6 @@ static func keel_hung_stair(seed_value: int, weathered := 0.0) -> Node3D:
 	root.add_child(pivot)
 	flight.transform = Transform3D(f.basis,f.origin-(L.a as Vector3))
 	pivot.add_child(flight)
-	var body := flight.get_node("Body") as StaticBody3D
-	PhysicsGround.mark_moving(body)
 	pivot.transform = Transform3D(Basis(L.dir,float(L.hung)),L.a)
 	# --- Meta and the runtime.
 	root.set_meta("axis",[L.a,(L.a as Vector3)+(L.dir as Vector3)*float(L.length)])

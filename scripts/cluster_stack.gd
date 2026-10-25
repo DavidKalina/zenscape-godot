@@ -38,7 +38,10 @@ extends RefCounted
 ## (box beehives by the cabin or the garden).
 
 const SkyIslet = preload("res://scripts/sky_islet.gd")
-const PilotMotor = preload("res://scripts/pilot_motor.gd")
+## The walker's step (m), frozen: the pilot on foot (scripts/
+## pilot_motor.gd STEP_UP) is gone from the flight game, whole at the tag
+## archive/before-the-cut.
+const STEP_UP := 0.45
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
 
 ## Clear air (m) between a member's hanging rock and the land under it, and
@@ -424,7 +427,7 @@ static func _walled(shape: RefCounted, p: Vector2, points: Array) -> bool:
 		var flat := Geometry2D.get_closest_point_to_segment(p,Vector2(a.x,a.z),Vector2(b.x,b.z))
 		if flat.distance_to(p) > STAIR_WIDTH*0.5+0.35: continue
 		var t := Vector2(a.x,a.z).distance_to(flat)/maxf(Vector2(a.x,a.z).distance_to(Vector2(b.x,b.z)),0.001)
-		if lerpf(a.y,b.y,t)-g > PilotMotor.STEP_UP: return true
+		if lerpf(a.y,b.y,t)-g > STEP_UP: return true
 	return false
 
 ## True when the pilot can come in up the stair arriving (`came`, its run

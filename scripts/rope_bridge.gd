@@ -22,21 +22,25 @@ extends MeshInstance3D
 const Sim = preload("res://scripts/rope_bridge_sim.gd")
 const SHADER = preload("res://shaders/rope_bridge.gdshader")
 const WorldScale = preload("res://scripts/world_scale.gd")
-const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
+## The walker's body radius and head height (m at size 1), frozen: the
+## pilot on foot (scripts/pilot_physics_ground.gd RADIUS, HEAD) is gone
+## from the flight game, whole at the tag archive/before-the-cut.
+const WALKER_RADIUS := 0.28
+const WALKER_HEAD := 1.12
 
 ## A rope bridge's sizes, every rope bridge's and footbridge's (Footbridge
 ## WIDTH, HAND_ROPE read these), grown with the wanderer (WorldScale): the
-## deck WIDE_BODIES of his bodies across (PhysicsGround.RADIUS twice, at
+## deck WIDE_BODIES of his bodies across (WALKER_RADIUS twice, at
 ## his size): 1.01 m at the knobs (it was 0.74); the hand ropes ROPE_AT of
-## his height (PhysicsGround.HEAD at his size) over the planks, at his
+## his height (WALKER_HEAD at his size) over the planks, at his
 ## shoulders: 1.04 m (it was 0.8); the timber (planks' depth and pitch, the
 ## ropes, cords, posts and sills) CHUNK times its first cut, by his size.
 ## Spans are the gaps they cross; only the cross-section grows.
 const WIDE_BODIES := 1.8
 const ROPE_AT := 0.93
 const CHUNK := 1.35
-static var width: float = WIDE_BODIES*2.0*PhysicsGround.RADIUS*WorldScale.wanderer
-static var hand_rope: float = ROPE_AT*PhysicsGround.HEAD*WorldScale.wanderer
+static var width: float = WIDE_BODIES*2.0*WALKER_RADIUS*WorldScale.wanderer
+static var hand_rope: float = ROPE_AT*WALKER_HEAD*WorldScale.wanderer
 static var chunk: float = CHUNK*WorldScale.wanderer
 
 ## Within WAKE m of the eye a bridge lives; over the next FADE m its swing

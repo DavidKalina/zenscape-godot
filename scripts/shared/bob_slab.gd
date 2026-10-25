@@ -27,7 +27,7 @@ static var t_damp := DAMP
 static var t_bob := BOB
 static var t_bob_time := BOB_TIME
 
-## The launch off its spring: this many of his pump (PilotMotor `jumps`,
+## The launch off its spring: this many of his pump (the walker's `jumps`,
 ## by his size), well past anything a jump reaches (the side flip's 1.9,
 ## a twirl on top).
 const SPRING_PUMPS := 6.0

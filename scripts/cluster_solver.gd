@@ -36,7 +36,6 @@ const SkyIslet = preload("res://scripts/sky_islet.gd")
 const Motifs = preload("res://scripts/cluster_motifs.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const Cabin = preload("res://scripts/cabin.gd")
-const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const MeadowTypes = preload("res://scripts/meadow_types.gd")
 const RockLooks = preload("res://scripts/rock_looks.gd")
 const ClusterLake = preload("res://scripts/cluster_lake.gd")
@@ -49,8 +48,12 @@ const Mountain = preload("res://scripts/cluster_mountain.gd")
 ## Rim to rim (m): any two members at least MIN_GAP; stepping stones
 ## STONE_GAP apart (a running jump is about 2.5 to 3 m; checked against
 ## STONE_MAX), each at most STONE_RISE up or down from the last (a jump
-## lifts PilotMotor JUMPS[1], the pump).
+## lifts JUMPS_PUMP, the pump).
 const MIN_GAP := 1.5
+## The walker's pump's lift (m), frozen: the pilot on foot (scripts/
+## pilot_motor.gd JUMPS[1]) is gone from the flight game, whole at the tag
+## archive/before-the-cut.
+const JUMPS_PUMP := 1.5
 const STONE_GAP := Vector2(1.1,1.7)
 const STONE_MAX := 2.2
 const STONE_RISE := 0.85
@@ -628,7 +631,7 @@ static func validate(plan: Dictionary) -> Array:
 			var b: Dictionary = by_name[route[k+1]]
 			var gap := rim_gap(rims[a.name],a.offset,rims[b.name],b.offset)
 			if gap > STONE_MAX: problems.append("unjumpable: %s to %s is %.2f m" % [a.name,b.name,gap])
-			if absf(b.offset.y-a.offset.y) > float(PilotMotor.JUMPS[1]): problems.append("unjumpable: %s to %s rises %.2f m" % [a.name,b.name,absf(b.offset.y-a.offset.y)])
+			if absf(b.offset.y-a.offset.y) > JUMPS_PUMP: problems.append("unjumpable: %s to %s rises %.2f m" % [a.name,b.name,absf(b.offset.y-a.offset.y)])
 	for br: Dictionary in plan.bridges:
 		var from: Dictionary = by_name[br.from]
 		var to: Dictionary = by_name[br.to]

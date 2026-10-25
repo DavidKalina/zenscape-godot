@@ -12,11 +12,17 @@ extends SceneTree
 ## stair's finer steps reach the flight's head; no joint between
 ## treads or slabs left as a gap: the drawn treads, worn, settled and laid
 ## in slabs, have no hulls); and the scale constants still answer the pilot's and the plane's limits
-## (scripts/pilot_motor.gd, scripts/plane_figure.gd).
+## (the walker's frozen numbers, scripts/plane_figure.gd).
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
-const PilotMotor = preload("res://scripts/pilot_motor.gd")
+## The walker's numbers the kit was sized by, frozen: the pilot on foot
+## (scripts/pilot_motor.gd) is at the tag archive/before-the-cut.
+const STEP_UP := 0.45
+const JUMPS := [0.8,1.5]
+const HANG_DROP := 0.825
+const GRAB_LOW := 0.25
+const CLIMB_IN := 0.3
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const SEEDS := [1,77,4242]
@@ -85,19 +91,19 @@ func _run() -> void:
 	_terrain()
 	_connections()
 	_stairs_walk()
-	check(is_equal_approx(RuinKit.GRAND_STEPS*RuinKit.GRAND_RISER,RuinKit.STEPS*RuinKit.RISER) and RuinKit.GRAND_RISER < PilotMotor.STEP_UP,"the grand stair's flight rises as the kit's, on finer, walkable steps")
+	check(is_equal_approx(RuinKit.GRAND_STEPS*RuinKit.GRAND_RISER,RuinKit.STEPS*RuinKit.RISER) and RuinKit.GRAND_RISER < STEP_UP,"the grand stair's flight rises as the kit's, on finer, walkable steps")
 	_scale()
 	print("PASS: ruin kit" if failures == 0 else "FAIL: ruin kit (%d)" % failures)
 	quit(1 if failures else 0)
 
 ## The scale, against the limits it was set by.
 func _scale() -> void:
-	var first_grab: float = PilotMotor.JUMPS[0]+PilotMotor.HANG_DROP+PilotMotor.GRAB_LOW
-	var chain_grab: float = PilotMotor.JUMPS[1]+PilotMotor.HANG_DROP+PilotMotor.GRAB_LOW
+	var first_grab: float = JUMPS[0]+HANG_DROP+GRAB_LOW
+	var chain_grab: float = JUMPS[1]+HANG_DROP+GRAB_LOW
 	check(is_equal_approx(RuinKit.GRAB_TOP,first_grab) and is_equal_approx(RuinKit.CHAIN_TOP,chain_grab),"GRAB_TOP and CHAIN_TOP follow the jumps")
-	check(is_equal_approx(RuinKit.STAND,PilotMotor.CLIMB_IN+RuinKit.BODY),"STAND follows the climb")
-	check(RuinKit.RISER < PilotMotor.STEP_UP-0.1,"a riser is walked up")
-	check(RuinKit.PLINTH_COURSE.x < PilotMotor.STEP_UP and RuinKit.SUB_BASE.x < PilotMotor.STEP_UP and RuinKit.FLOOR.z < PilotMotor.STEP_UP,"plinth courses, pier bases and slabs are stepped onto")
+	check(is_equal_approx(RuinKit.STAND,CLIMB_IN+RuinKit.BODY),"STAND follows the climb")
+	check(RuinKit.RISER < STEP_UP-0.1,"a riser is walked up")
+	check(RuinKit.PLINTH_COURSE.x < STEP_UP and RuinKit.SUB_BASE.x < STEP_UP and RuinKit.FLOOR.z < STEP_UP,"plinth courses, pier bases and slabs are stepped onto")
 	check(RuinKit.SET_OFF < first_grab-0.2,"each set-off is caught with one jump")
 	check(RuinKit.WALL_HEIGHT > first_grab and RuinKit.WALL_HEIGHT < chain_grab-0.1,"a wall is caught from the pump")
 	check(RuinKit.WINDOW.y < first_grab-0.2 and RuinKit.ARCH_DEPTH >= RuinKit.STAND,"a window's sill is caught and stood in")
@@ -117,7 +123,7 @@ func _scale() -> void:
 	check(Aqueduct.CLEAR >= WorldScale.span+1.8 and is_equal_approx(Aqueduct.CLEAR,Aqueduct.SPAN-Aqueduct.PIER.x),"an aqueduct arch clears the game's plane, 0.9 m and more past each wingtip")
 	check(crown < Aqueduct.DECK-Aqueduct.FLOOR,"the span's arch stands under its deck")
 	check(Aqueduct.CHANNEL >= RuinKit.TOP_ROOM,"the channel is walked along")
-	check(Aqueduct.PARAPET.y < PilotMotor.STEP_UP and Aqueduct.WATER < Aqueduct.PARAPET.y,"the parapets are stepped over, the water within them")
+	check(Aqueduct.PARAPET.y < STEP_UP and Aqueduct.WATER < Aqueduct.PARAPET.y,"the parapets are stepped over, the water within them")
 	check(is_equal_approx(Aqueduct.CHANNEL+2.0*Aqueduct.PARAPET.x,Aqueduct.DECK_WIDTH),"the deck is the channel and its parapets")
 	var lower := Aqueduct.LOWER_SPRING+RuinKit._rise(Aqueduct.CLEAR*0.5,Aqueduct.CLEAR)+RuinKit.ORDER*2.0
 	var upper_half := (Aqueduct.SPAN-Aqueduct.UPPER_PIER.x)*0.5
@@ -132,7 +138,7 @@ func _scale() -> void:
 	check(Hall.COLUMN_H-Hall.CAPITAL_H-(Hall.TIE_HIGH+Hall.TIE_DEPTH) >= 2.0 and Hall.COLUMN_H-Hall.CAPITAL_H-(Hall.TIE_LOW+Hall.TIE_DEPTH) >= 3.5,"over a tie there is room to hop it, under the capitals")
 	check(Hall.ROW_Z*2.0-2.0*Hall.COLUMN_R > RuinKit.THREAD*3.0,"the nave is wide enough to weave")
 	check(Hall.COLUMN_R > RuinKit.PIER_CORE+RuinKit.SHAFT_MAIN.y*1.5,"a colossus column is far heavier than a clustered pier")
-	check(Hall.PLINTH.x < PilotMotor.STEP_UP and Hall.PAVING.x < PilotMotor.STEP_UP,"the column plinths and paving are stepped onto")
+	check(Hall.PLINTH.x < STEP_UP and Hall.PAVING.x < STEP_UP,"the column plinths and paving are stepped onto")
 	check(Hall.BEAM.y*2.0 >= RuinKit.TOP_ROOM and Hall.ABACUS*2.0 >= RuinKit.TOP_ROOM,"beam, tie and abacus tops are walked")
 	check(Hall.RAMP < deg_to_rad(35.0),"a fallen beam is walked up onto its tie")
 	check(Hall.TREAD >= RuinKit.STAND,"the buttress's treads are stood on, each a jump over the last")

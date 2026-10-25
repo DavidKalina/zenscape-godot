@@ -17,8 +17,8 @@ extends Node3D
 ## its look pass (scripts/look_pass.gd: the cloud sea and cloud volume under
 ## the plate, the hour's grade, the night style the player chose), at the
 ## game's own noon and midnight (the look tour's hours, tools/
-## capture_look_tour.gd). The pilot on foot (scripts/pilot_figure.gd)
-## stands about for scale and the plane (scripts/plane_figure.gd) hangs in
+## capture_look_tour.gd). The pilot on foot (his model and paint, idling:
+## `StandingPilot`) stands about for scale and the plane (scripts/plane_figure.gd) hangs in
 ## the pointed arch, under an aqueduct arch and inside the hall.
 ##   Drag            orbit          Wheel     zoom
 ##   F1 F2 F3 F4 F5  frame the gothic, aqueduct, hall, tower or wind-horn family
@@ -50,7 +50,8 @@ extends Node3D
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
-const PilotFigure = preload("res://scripts/pilot_figure.gd")
+const PilotPaint = preload("res://scripts/pilot_paint.gd")
+const PILOT_MODEL := preload("res://assets/models/pilot.glb")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://scripts/shared/celestial.gd")
@@ -825,11 +826,10 @@ func _place_figures() -> void:
 	_pilot(stump,1,Vector3(1.4,0.0,1.6),-0.4)
 	var run: Node3D = _areas.aqueduct.run
 	_plane(run,Vector3(Aqueduct.SPAN*1.5,3.4,0.8),Vector3(0.0,0.35,0.12))
-	var walker := PilotFigure.new()
+	var walker := StandingPilot.new()
 	run.add_child(walker)
 	walker.position = Vector3(Aqueduct.SPAN*0.7,Aqueduct.DECK,0.0)
 	walker.rotation.y = PI*0.5
-	walker.settle()
 	_pilots.append(walker)
 	# The hall: the pilot at a column's foot, and in the long hall on the
 	# nave's floor and up on a low tie; the plane cruising down the lane, a
@@ -838,20 +838,18 @@ func _place_figures() -> void:
 	_pilot(column,0,Vector3(2.0,0.0,1.4),0.5)
 	var scene: Node3D = _areas.hall.scene
 	var weave: Dictionary = scene.get_meta("weave")
-	var floor_pilot := PilotFigure.new()
+	var floor_pilot := StandingPilot.new()
 	scene.add_child(floor_pilot)
 	floor_pilot.position = Vector3(Hall.BAY*1.5,0.0,2.0)
 	floor_pilot.rotation.y = 0.6
-	floor_pilot.settle()
 	_pilots.append(floor_pilot)
 	if not (weave.low_ties as Array).is_empty():
 		var tie: Vector3 = weave.low_ties[0]
-		var up := PilotFigure.new()
+		var up := StandingPilot.new()
 		scene.add_child(up)
 		var path = scene.get_meta("path")
 		up.position = path.point(Vector3(tie.x,Hall.TIE_LOW+Hall.TIE_DEPTH,-5.0))
 		up.rotation.y = 1.2+atan2(-(path.tangent(tie.x) as Vector3).z,(path.tangent(tie.x) as Vector3).x)
-		up.settle()
 		_pilots.append(up)
 	# Heading +X: SkyGlide's forward is (-sin h, 0, -cos h), so h -PI/2.
 	_hall_planes = [_plane(scene,Vector3(Hall.BAY*2.4,2.6,6.0),Vector3(0.0,-PI*0.5+0.12,0.3))]
@@ -874,11 +872,10 @@ func _plane(parent: Node3D, at: Vector3, turn: Vector3) -> Node3D:
 	return plane
 
 func _pilot(slot: Dictionary, k: int, at: Vector3, turn: float) -> void:
-	var pilot := PilotFigure.new()
+	var pilot := StandingPilot.new()
 	(slot.pieces[k] as Node3D).add_child(pilot)
 	pilot.position = at
 	pilot.rotation.y = turn
-	pilot.settle()
 	_pilots.append(pilot)
 
 ## Which of each pair shows (W): both, or one alone standing in its pair's
@@ -1257,3 +1254,33 @@ func _inside_stone(p: Vector3) -> bool:
 	var query := PhysicsPointQueryParameters3D.new()
 	query.position = p
 	return not get_world_3d().direct_space_state.intersect_point(query,1).is_empty()
+
+## The pilot on foot standing for scale: his model (assets/models/pilot.glb)
+## in his paint (scripts/pilot_paint.gd), idling from a random point of the
+## clip, stepped by the gallery (`_advance`). The walker that moved him
+## (scripts/pilot_figure.gd) is at the tag archive/before-the-cut.
+class StandingPilot extends Node3D:
+	var _player: AnimationPlayer
+
+	func _init() -> void:
+		name = "Pilot"
+		var model: Node3D = PILOT_MODEL.instantiate()
+		model.name = "Body"
+		add_child(model)
+		var outfit := PilotPaint.outfit()
+		for node: MeshInstance3D in model.find_children("*","MeshInstance3D",true,false):
+			var mesh := node.mesh.duplicate() as ArrayMesh
+			for i in range(mesh.get_surface_count()):
+				var material := mesh.surface_get_material(i)
+				var key := material.resource_name if material != null else ""
+				if outfit.has(key): mesh.surface_set_material(i,outfit[key])
+			node.mesh = mesh
+		_player = model.find_child("AnimationPlayer",true,false) as AnimationPlayer
+		var idle := _player.get_animation(&"idle")
+		idle.loop_mode = Animation.LOOP_LINEAR
+		_player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
+		_player.play(&"idle")
+		_player.seek(randf()*idle.length,true)
+
+	func _advance(delta: float) -> void:
+		_player.advance(delta)

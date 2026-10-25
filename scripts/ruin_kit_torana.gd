@@ -12,14 +12,14 @@ extends RefCounted
 ##
 ## The ropes are not built here: the piece carries them as meta ("ropes",
 ## as city_court and gb_sunken_giant pass theirs) and its host hangs them
-## live (SwingRope, scripts/shared/swing_rope.gd: scripts/kit_isle/
-## motif_authored.gd `live` and `hang_ropes`, the motif editor's
-## `hang_ropes`).
+## live (the swing rope, scripts/shared/swing_rope.gd, and its hosts are
+## at the tag archive/before-the-cut; nothing in the flight game hangs
+## them).
 ##
 ## Sizes (from the code, the card's names):
 ## - Rope 1 hangs over the turf a swing clear of the jamb, its knot at
-##   SwingRope.KNOT over the foot (a run takes it, RUN_IN); each next one
-##   SwingRope.LENGTH further out and SET_OFF higher (the lintel's slope:
+##   ROPE_KNOT over the foot (a run takes it, RUN_IN); each next one
+##   ROPE_LENGTH further out and SET_OFF higher (the lintel's slope:
 ##   TILT over SPACING, 16 deg), as long as the first (`tilt` over SET_OFF
 ##   shortens each by the difference, never under half LENGTH): the arc
 ##   under MOST carries his hands to about 0.15 m short of the next one.
@@ -53,7 +53,12 @@ extends RefCounted
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Build = RuinKit.Build
-const SwingRope = preload("res://scripts/shared/swing_rope.gd")
+## The swing rope's length and its knot's height over the ground it hangs
+## over (m), frozen: the live rope (scripts/shared/swing_rope.gd LENGTH,
+## KNOT) is gone from the flight game with the pilot on foot, whole at the
+## tag archive/before-the-cut.
+const ROPE_LENGTH := 5.6
+const ROPE_KNOT := 0.9
 
 ## The relic pieces this file builds (RuinKit TORANA_PIECES).
 const PIECES := ["relic_torana"]
@@ -95,7 +100,7 @@ const RING_DOWN := 0.12
 ## The ring's height over the beam's top under it.
 const RING_OVER := POST.y-RING_DOWN
 ## The ropes' spacing along X and how much each ring rises over the last.
-const SPACING := SwingRope.LENGTH
+const SPACING := ROPE_LENGTH
 const TILT := RuinKit.SET_OFF
 ## The ropes' line out past the top tier's face: a body and a hand, so he
 ## rises past the face clear of it.
@@ -120,7 +125,7 @@ static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
 static func lines(ropes := ROPES.z) -> Dictionary:
 	var t := TILT/SPACING
 	var x_root := -JAMB.x*0.5+ROOT_BACK
-	var anchor1 := SwingRope.KNOT+SwingRope.LENGTH
+	var anchor1 := ROPE_KNOT+ROPE_LENGTH
 	var depth := float(TIERS[2][1])/cos(atan(t))
 	var x1 := x_root+(anchor1-RING_OVER-depth-JAMB_TOP)/t
 	var x_last := x1+SPACING*(ropes-1)
@@ -270,7 +275,7 @@ static func torana(seed_value: int, weathered := 0.0, ropes := ROPES.z, tilt := 
 		var x := float(L.x1)+SPACING*r
 		var top := soffit(L,x)+float(L.depth)
 		var ring := Vector3(x,top+RING_OVER,ROPE_Z)
-		var length := clampf(SwingRope.LENGTH-(tilt-TILT)*r,SwingRope.LENGTH*0.5,SwingRope.LENGTH*1.5)
+		var length := clampf(ROPE_LENGTH-(tilt-TILT)*r,ROPE_LENGTH*0.5,ROPE_LENGTH*1.5)
 		var pz := top_hw-POST.x*0.5-0.02
 		var low := top-0.3
 		var head := top+POST.y

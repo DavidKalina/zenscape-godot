@@ -11,8 +11,8 @@ class_name RuinKitTower
 ## course round its middle, a coping along its two side walls and snapped
 ## pinnacles on the corners where the head stands whole. The two side walls
 ## (east and west, facing each other across the shaft) are the kick walls:
-## they always stand to the full height, KICK_GAP apart, and the motor
-## (scripts/pilot_motor.gd) kicks between them all the way up. Weathered,
+## they always stand to the full height, KICK_GAP apart, and the walker
+## kicked between them all the way up. Weathered,
 ## the front and back walls are torn: breaches up them (a way out
 ## mid-climb, a sill to stand on, a place to fall out), their heads
 ## ragged, drifts of fallen stone at the foot. `open_side`: the back wall
@@ -32,20 +32,29 @@ class_name RuinKitTower
 ##   ./run-tower-shell.command [--tower-height=16] [--tower-weathered=1] [--tower-open]
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
-const PilotMotor = preload("res://scripts/pilot_motor.gd")
-const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Build = RuinKit.Build
 
 const PIECES := ["tower_shell"]
 
 # --- The kick: what sets the shaft --------------------------------------------
-# A kick off a wall (PilotMotor `_kick_off`) sends him up at sqrt(2 g
+# A kick off a wall (the walker's `_kick_off`) sent him up at sqrt(2 g
 # WALL_JUMP) and out at WALL_KICK, the stick not steering for WALL_LOCK, his
-# rise on GRAVITY uncut. He feels the far wall when his feet are WALL_PROBE
-# from it, and he leaves the near one with his body (PhysicsGround RADIUS,
-# by the walker's size) and its SKIN between him and it. So the far wall is
-# felt after (gap - WALL_PROBE - RADIUS - SKIN) / WALL_KICK seconds.
+# rise on GRAVITY uncut. He felt the far wall when his feet were WALL_PROBE
+# from it, and he left the near one with his body (RADIUS, by the walker's
+# size) and its SKIN between him and it. So the far wall was felt after
+# (gap - WALL_PROBE - RADIUS - SKIN) / WALL_KICK seconds.
+#
+# The walker's numbers, frozen: the pilot on foot (scripts/pilot_motor.gd,
+# scripts/pilot_physics_ground.gd) is gone from the flight game, whole at
+# the tag archive/before-the-cut.
+const GRAVITY := 26.0
+const WALL_JUMP := 1.4
+const WALL_KICK := 5.2
+const WALL_LOCK := 0.28
+const WALL_PROBE := 0.45
+const RADIUS := 0.28
+const SKIN := 0.01
 
 ## When he reaches the far wall, as a share of WALL_LOCK: inside the lock,
 ## so the stick never matters on the way across (pushed into the wall left
@@ -55,18 +64,18 @@ const PIECES := ["tower_shell"]
 ## of a kick and a late one still gains.
 const ARRIVE := 0.85
 ## The kick's rise (m/s) and the seconds to the far wall.
-static var KICK_RISE: float = sqrt(2.0*PilotMotor.GRAVITY*PilotMotor.WALL_JUMP)
-static var KICK_TIME: float = PilotMotor.WALL_LOCK*ARRIVE
+static var KICK_RISE: float = sqrt(2.0*GRAVITY*WALL_JUMP)
+static var KICK_TIME: float = WALL_LOCK*ARRIVE
 ## His body's radius and its gap off a wall (by the walker's size).
-static var BODY: float = PhysicsGround.RADIUS*WorldScale.wanderer+PhysicsGround.SKIN
+static var BODY: float = RADIUS*WorldScale.wanderer+SKIN
 ## The shaft between the kick walls' faces (m): 1.98 at the defaults. A
 ## kick reaches the far wall 0.24 s out, rising at 2.3 m/s, 1.3 m up
 ## (KICK_GAIN); a press held to the kick's top gains WALL_JUMP (1.4).
-static var KICK_GAP: float = PilotMotor.WALL_KICK*KICK_TIME+PilotMotor.WALL_PROBE+BODY
+static var KICK_GAP: float = WALL_KICK*KICK_TIME+WALL_PROBE+BODY
 ## The height a kick has gained when he touches the far wall (m), and his
 ## rise then (m/s).
-static var KICK_GAIN: float = KICK_RISE*KICK_TIME-0.5*PilotMotor.GRAVITY*KICK_TIME*KICK_TIME
-static var KICK_ARRIVE_RISE: float = KICK_RISE-PilotMotor.GRAVITY*KICK_TIME
+static var KICK_GAIN: float = KICK_RISE*KICK_TIME-0.5*GRAVITY*KICK_TIME*KICK_TIME
+static var KICK_ARRIVE_RISE: float = KICK_RISE-GRAVITY*KICK_TIME
 
 # --- The shell ---------------------------------------------------------------
 
