@@ -39,7 +39,7 @@ extends Node3D
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const EarthMouth = preload("res://scripts/city_mouths/earth_mouth.gd")
 const LooseStone = preload("res://scripts/city_mouths/loose_stone.gd")
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 
 signal ate(kind: String, mouth: int)
 signal spat(kind: String, mouth: int)

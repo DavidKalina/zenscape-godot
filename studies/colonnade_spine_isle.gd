@@ -71,7 +71,7 @@ const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
 const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 const Breaks = preload("res://scripts/kit_isle/colonnade_breaks.gd")
-const Breakables = preload("res://scripts/kit_isle/breakables.gd")
+const Breakables = preload("res://scripts/breaks/breakables.gd")
 ## Where he and his head are set down: (x along the axis, d across it), on
 ## the ground there. He stands on the low terrace's east end, facing up the
 ## way; his head heaves in the temple's cella on the podium, behind the
@@ -82,7 +82,7 @@ const OLMEC_STEP := 2.4
 var olmec := false
 var enemies: Node
 var breaks: Node3D
-## The breakables hub (scripts/kit_isle/breakables.gd): every body's
+## The breakables hub (scripts/breaks/breakables.gd): every body's
 ## breaker, the colonnade's breaks one of its `others`.
 var hub: Node3D
 var _olmec_at := OLMEC_AT

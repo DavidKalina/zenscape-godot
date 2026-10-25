@@ -31,7 +31,7 @@ const BuriedFind = preload("res://scripts/buried_find.gd")
 const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
 const Telescope = preload("res://scripts/telescope.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 const HudIcons = preload("res://scripts/hud_icons.gd")
 const Glint = preload("res://scripts/kit_isle/kit_cache_glint.gd")
 

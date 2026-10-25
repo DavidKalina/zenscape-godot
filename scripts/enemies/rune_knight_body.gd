@@ -43,7 +43,7 @@ extends Node3D
 ##   `spills`, `broken`, `_root_v`.
 const Look = preload("res://scripts/enemies/rune_knight_look.gd")
 const Breakup = preload("res://scripts/enemies/rune_knight_breakup.gd")
-const BodyDust = preload("res://scripts/enemies/body_dust.gd")
+const BodyDust = preload("res://scripts/breaks/body_dust.gd")
 const RuneSpill = preload("res://scripts/enemies/rune_spill.gd")
 const DragonCyclone = preload("res://scripts/dragon_cyclone.gd")
 const Standin = preload("res://scripts/enemies/rune_knight_body_standin.gd")

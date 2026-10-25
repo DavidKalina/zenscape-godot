@@ -20,7 +20,7 @@ extends RefCounted
 ## Each piece is a Node3D, its foot on y 0 round the origin, its front toward
 ## +Z, with "Mesh" and "Body" as RuinKit's (the static part: plinth, court
 ## frame), and its live parts under it. They join the group BREAKABLE; the
-## Olmec reaches them through a breaker hub (scripts/kit_isle/breakables.gd)
+## Olmec reaches them through a breaker hub (scripts/breaks/breakables.gd)
 ## set as his `breaker`. Built in the Olmec's weathered basalt (shaders/
 ## olmec_stone.gdshader by scripts/kit_isle/greybox/giant_stone.gd), with
 ## smooth rounded drums (painterly, not faceted) and cut faces pale.

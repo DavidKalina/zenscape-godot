@@ -4,7 +4,7 @@ extends "res://studies/inhaler_isle.gd"
 ## aqueduct, its cover) with the rolling coin (scripts/enemies/
 ## rolling_coin.gd) alone, no body, and its stone breakable: the cover and
 ## a few more piers and walls in the way of its charges are kit pieces the
-## breakables hub (scripts/kit_isle/breakables.gd, kit_breaks.gd) breaks
+## breakables hub (scripts/breaks/breakables.gd, kit_breaks.gd) breaks
 ## when the coin rolls into them hard enough (the breaker `coin`; the slam
 ## breaks them too).
 ##   R   back to the start, the coin back too (what broke stays broken)
@@ -12,8 +12,8 @@ extends "res://studies/inhaler_isle.gd"
 ##   godot --path . res://studies/rolling_coin_isle.tscn -- --no-title
 ##     [--head-at=x,z] [--head-knob=<knob>=<value>] (e.g.
 ##     --head-knob=charge_speed=10) [--breakers=-coin]
-const Breakables = preload("res://scripts/kit_isle/breakables.gd")
-const KitBreaks = preload("res://scripts/kit_isle/kit_breaks.gd")
+const Breakables = preload("res://scripts/breaks/breakables.gd")
+const KitBreaks = preload("res://scripts/breaks/kit_breaks.gd")
 
 ## More stone in the way of its charges: [piece, seed, (x, z), yaw, weathered].
 const MORE := [

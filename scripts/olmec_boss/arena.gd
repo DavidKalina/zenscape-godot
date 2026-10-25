@@ -3,7 +3,7 @@ extends Node3D
 ## spec-olmec-boss.md, item 1): a horseshoe of tall colossus columns
 ## (RuinKit `hall_column`), a broken colonnade gate (`arch`), a few
 ## standing stones and low walls for cover, all breaking through the
-## kit-breaks hub (scripts/kit_isle/breakables.gd, kit_breaks.gd), not a
+## kit-breaks hub (scripts/breaks/breakables.gd, kit_breaks.gd), not a
 ## breaking system of its own. The west side, the plane's landing run, is
 ## kept clear (RUN), and so is the middle round the Olmec (OPEN).
 ##
@@ -22,9 +22,9 @@ extends Node3D
 ## its face, a lean away from the blow, chips and dust; the cracks add up,
 ## and the one that brings the sum to its toughness topples it.
 ## `rebuild()` (the study's R) puts the arena back whole.
-const Breakables = preload("res://scripts/kit_isle/breakables.gd")
-const KitBreaks = preload("res://scripts/kit_isle/kit_breaks.gd")
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Breakables = preload("res://scripts/breaks/breakables.gd")
+const KitBreaks = preload("res://scripts/breaks/kit_breaks.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 const DragonAirBlast = preload("res://scripts/dragon_air_blast.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 

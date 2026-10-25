@@ -49,7 +49,7 @@ const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
 
 ## Master toggle (also `--no-side-slam`).
 const ON := true
-## The breaker name the hubs know it by (scripts/kit_isle/breakables.gd).
+## The breaker name the hubs know it by (scripts/breaks/breakables.gd).
 const SOURCE := &"side_slam"
 # --- The trigger
 const HOLD := 0.16               # s the key is held before it is the side slam, not the burst

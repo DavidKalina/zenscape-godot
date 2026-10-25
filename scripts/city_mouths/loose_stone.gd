@@ -10,7 +10,7 @@ extends "res://scripts/enemies/enemy.gd"
 const RefugesKit = preload("res://scripts/city_kit_refuges.gd")
 const GiantStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
 const Slam = preload("res://scripts/slam.gd")
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 
 ## Its block (m): across, up, along.
 const SIZE := Vector3(1.4,1.1,1.4)

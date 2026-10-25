@@ -13,7 +13,7 @@ extends Node3D
 ## `state` is "pending", never "flying", so nothing catches, strikes or
 ## meets it in the air.
 const Gust = preload("res://scripts/traps/gust.gd")
-const BodyDust = preload("res://scripts/enemies/body_dust.gd")
+const BodyDust = preload("res://scripts/breaks/body_dust.gd")
 
 const GROUP := "wind_shot"
 ## The ring's run out (s) and its band's width (share of its radius).

@@ -668,7 +668,7 @@ static func hall(seed_value: int, weathered := 0.6, bays := 12, ground := Callab
 		var node := bay(bay_seed,bay_worn,plans[i],shifted,bay_path)
 		node.name = "Bay%d" % i
 		# Unmerged, each bay keeps how to build it again (a break by its
-		# joints, scripts/kit_isle/kit_breaks.gd `add`).
+		# joints, scripts/breaks/kit_breaks.gd `add`).
 		if not merged:
 			var bay_plan: Dictionary = plans[i]
 			node.set_meta("rebuild",func() -> Node3D: return bay(bay_seed,bay_worn,bay_plan,shifted,bay_path))

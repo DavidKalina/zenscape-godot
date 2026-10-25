@@ -1,4 +1,4 @@
-extends "res://scripts/kit_isle/break_pieces.gd"
+extends "res://scripts/breaks/break_pieces.gd"
 ## The Olmec's destruction (round2.md): the colonnade spine's piers, its
 ## lintels, its portals' arches
 ## (studies/colonnade_spine_isle_art.gd `colonnade`, `breakable`) and the
@@ -13,7 +13,7 @@ extends "res://scripts/kit_isle/break_pieces.gd"
 ##   pushed (or out from the wave), and bursts into its drums and capital
 ##   where it hits; a lintel it bore, or one his chest meets, breaks in two
 ##   near that end and falls. A portal's pier taken, or its ring met, the
-##   arch comes down in chunks after it (scripts/kit_isle/masonry_cuts.gd
+##   arch comes down in chunks after it (scripts/breaks/masonry_cuts.gd
 ##   `ring`), its far springer left on the pier still standing.
 ##   The rose gable (`ahead`, `smash`): walked at, he plants and punches
 ##   through its door; it falls in big slabs, the door's first, then the
@@ -29,11 +29,11 @@ extends "res://scripts/kit_isle/break_pieces.gd"
 ## What still stands is left out of the body's rays (`standing_rids`): he
 ## plans and walks through it as if it were air, and it breaks as he does.
 ## Breaks last the session. The fall, the cap, the settling and the hub's
-## `changed` are the shared breakable's (scripts/kit_isle/break_pieces.gd);
-## the hub (scripts/kit_isle/breakables.gd) gates who may break (`olmec`) and
+## `changed` are the shared breakable's (scripts/breaks/break_pieces.gd);
+## the hub (scripts/breaks/breakables.gd) gates who may break (`olmec`) and
 ## hands `hit` on here.
 const Spine = preload("res://studies/colonnade_spine_isle_art.gd")
-const Cuts = preload("res://scripts/kit_isle/masonry_cuts.gd")
+const Cuts = preload("res://scripts/breaks/masonry_cuts.gd")
 const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 ## His veer into a pier beside his way (`veer`): how far on (m), how far

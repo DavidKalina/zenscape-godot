@@ -10,7 +10,7 @@ extends RefCounted
 ## Pieces (`build(id, parent, xform, opts)`, or the builders):
 ##   maker_cresset   `cresset`: a basalt fire bowl on a plinth (`size`:
 ##                   "cresset" one tier, "great" two). Lit, a real light. A
-##                   breakable (the group of scripts/kit_isle/breakables.gd,
+##                   breakable (the group of scripts/breaks/breakables.gd,
 ##                   the Olmec's breaker hub): standing it is air to his
 ##                   routes, so a body that barges into it (or lands his
 ##                   shockwave by it) tips it over, its fire out. A scene
@@ -360,7 +360,7 @@ class Cresset extends Node3D:
 		lit = true
 		fire.burn()
 
-	# --- The breakables hub's protocol (scripts/kit_isle/breakables.gd) ---------------
+	# --- The breakables hub's protocol (scripts/breaks/breakables.gd) ---------------
 
 	## Standing, it is air to his rays: he plans through it and barges it.
 	func standing_rids() -> Array[RID]:

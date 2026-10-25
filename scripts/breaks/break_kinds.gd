@@ -2,7 +2,7 @@ extends RefCounted
 ## Break kinds: the public contract by which any kit's pieces break (spec:
 ## docs/design/kit-breaks/spec-kit-breaks.md). A kind owns how a piece of
 ## it splits; the fall, the body cap, the rubble and the re-plan are the
-## breakable's (scripts/kit_isle/kit_breaks.gd on scripts/kit_isle/
+## breakable's (scripts/breaks/kit_breaks.gd on scripts/kit_isle/
 ## break_pieces.gd), never a kit's.
 ##
 ## A kit makes its pieces breakable by one of:
@@ -11,7 +11,7 @@ extends RefCounted
 ##   - registering a cut for a genuinely new shape: `register(kind, cut)`,
 ##     `cut` a Callable(t: Dictionary) -> {stands: Node3D or null, parts:
 ##     [part]}; every piece tagged with that kind then breaks by it;
-##   - answering the hub itself (scripts/kit_isle/breakables.gd), with its
+##   - answering the hub itself (scripts/breaks/breakables.gd), with its
 ##     own choreography (the city kit's set pieces).
 ##
 ## A cut's result may say "topple": true (its parts' ids "<along>_<up>":
@@ -41,7 +41,7 @@ extends RefCounted
 ## chunks' size (m along, m up), the fall's kind, and its toughness (the
 ## least hit strength that breaks it: 1 the Olmec's).
 const RuinKit = preload("res://scripts/ruin_kit.gd")
-const Cuts = preload("res://scripts/kit_isle/masonry_cuts.gd")
+const Cuts = preload("res://scripts/breaks/masonry_cuts.gd")
 const Build = RuinKit.Build
 const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 

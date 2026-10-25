@@ -1,7 +1,7 @@
 extends Node3D
 ## What city breaks round 2's pieces share (scripts/city_kit_breaks2.gd builds
 ## them): a piece of
-## the breakables hub (scripts/kit_isle/breakables.gd), its stone, its
+## the breakables hub (scripts/breaks/breakables.gd), its stone, its
 ## scripted falls, its hits on the wanderer, and its word to the bodies'
 ## planners when its rest is down.
 ##
@@ -19,7 +19,7 @@ extends Node3D
 ## the hub's `slam` toggle governs it. Subclasses override `_met`, `_wave`,
 ## `_slam`, `_step`.
 const Stone = preload("res://scripts/city_kit_stone.gd")
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
 const Slam = preload("res://scripts/slam.gd")
@@ -102,7 +102,7 @@ func takes_shock(_hub_in: Node, _b: Node3D, _w: Dictionary) -> bool:
 func slam(at: Vector3, radius: float, strength: float) -> void:
 	_slam(at,radius,strength)
 
-## The hub's `hit` from a breaker that is on (scripts/kit_isle/breakables.gd):
+## The hub's `hit` from a breaker that is on (scripts/breaks/breakables.gd):
 ## the slam's is the piece's own slam; any other's is taken as the Olmec's
 ## landing shockwave at `at`, grown to `radius`, of power `strength`, so
 ## the piece keeps its own choreography and its own thresholds. True if it

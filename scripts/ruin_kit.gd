@@ -377,7 +377,7 @@ const FLOAT_MOST := 3
 
 
 ## The piece with PIECES id `id`, its recipe kept as meta "kit_piece"
-## ([id, seed, weathered]: a break, scripts/kit_isle/kit_breaks.gd, builds
+## ([id, seed, weathered]: a break, scripts/breaks/kit_breaks.gd, builds
 ## it again in parts from it).
 static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
 	var node := _piece_of(id,seed_value,weathered)

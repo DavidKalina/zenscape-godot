@@ -22,7 +22,7 @@ extends Node3D
 ## under a pivot at its own centre (so it spins about itself), reparented
 ## here; its material overrides go with it. The model (and its skeleton
 ## and sockets) is hidden.
-const BodyDust = preload("res://scripts/enemies/body_dust.gd")
+const BodyDust = preload("res://scripts/breaks/body_dust.gd")
 
 ## The stand-in's numbers (shares of tall where it says so).
 ## (crumble drifts less than the stand-in: 43 pieces, not ~30 blocks.)

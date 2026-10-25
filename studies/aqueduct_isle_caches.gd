@@ -15,8 +15,8 @@ extends RefCounted
 ## (toughness 1.6, its kind's) by the rubble slope never breaks to a slam:
 ## its glint only flares.
 const LaunchArgs = preload("res://scripts/launch_args.gd")
-const Breakables = preload("res://scripts/kit_isle/breakables.gd")
-const KitBreaks = preload("res://scripts/kit_isle/kit_breaks.gd")
+const Breakables = preload("res://scripts/breaks/breakables.gd")
+const KitBreaks = preload("res://scripts/breaks/kit_breaks.gd")
 const KitCaches = preload("res://scripts/kit_isle/kit_caches.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Layout = preload("res://scripts/layout_overrides.gd")

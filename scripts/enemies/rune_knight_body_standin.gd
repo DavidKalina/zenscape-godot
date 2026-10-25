@@ -42,7 +42,7 @@ extends Node3D
 ## - **The skid** (`skid`, beats `plant` as the heels dig in, `end`): the
 ##   mind slides his root; his feet slide with it, braced one ahead of the
 ##   other along the way he goes, heels leading, dust off them
-##   (scripts/enemies/body_dust.gd) while he moves fast; he leans into the
+##   (scripts/breaks/body_dust.gd) while he moves fast; he leans into the
 ##   push (the key's lean turned to face it), arms out for balance, low.
 ## - **The teeter** (`teeter`, `end`): arms windmilling, leaning out over
 ##   the drop and back (the way his last skid went), runes flickering.
@@ -73,7 +73,7 @@ extends Node3D
 ##   over a few seconds (scripts/enemies/rune_spill.gd). One-shot; `on`
 ##   false does nothing.
 const RuinKit = preload("res://scripts/ruin_kit.gd")
-const BodyDust = preload("res://scripts/enemies/body_dust.gd")
+const BodyDust = preload("res://scripts/breaks/body_dust.gd")
 const RuneSpill = preload("res://scripts/enemies/rune_spill.gd")
 const DragonCyclone = preload("res://scripts/dragon_cyclone.gd")
 

@@ -24,7 +24,7 @@ extends Node3D
 ## `quake`), `sound(name, at)`, `changed(box)` (rubble or a felled piece at
 ## rest: every body's routes read the box afresh), `knocked(source, kind,
 ## v)` (a hit on the wanderer, logged), `live_count()` (pieces falling now,
-## across the hub, against the shared cap: scripts/kit_isle/break_pieces.gd).
+## across the hub, against the shared cap: scripts/breaks/break_pieces.gd).
 ##
 ## Who may break things (spec: docs/design/kit-breaks/spec-kit-breaks.md):
 ## named breakers, each on or off with a strength. The Olmec's calls above
@@ -45,7 +45,10 @@ const BREAKABLE := &"breakable"
 const HUBS := &"breakables_hub"
 const QUAKE_FADE := 1.4
 const LaunchArgs = preload("res://scripts/launch_args.gd")
-const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
+## A big body's bulk about its feet, times its height `hh` (the Olmec's:
+## scripts/enemies/headless_body.gd BULK_W, BULK_L, at archive/before-the-cut).
+const BULK_W := 1.0
+const BULK_L := 0.5
 ## His shove's foot over his feet (m): a slab flat on the ground is shoved too.
 const SHOVE_FOOT := 0.15
 ## The breakers as they start: on, and their hits' strength (1 the Olmec's;
@@ -171,7 +174,7 @@ func _shove(body: Node3D) -> void:
 	var hh: float = body.hh
 	var low := SHOVE_FOOT
 	var high := float(body._bulk_top())
-	var size := Vector3(hh*HeadlessBody.BULK_W*2.0,high-low,hh*HeadlessBody.BULK_L*2.0)
+	var size := Vector3(hh*BULK_W*2.0,high-low,hh*BULK_L*2.0)
 	var xf := Transform3D(Basis(Vector3.UP,float(body.facing)),body.position+Vector3.UP*(low+high)*0.5)
 	for o: Object in others:
 		if o.has_method("shove"): o.shove(xf,size,body.vel)
@@ -217,13 +220,6 @@ func shake(k: float) -> void:
 
 func sound(sound_name: StringName, at: Vector3) -> void:
 	if sound_hook.is_valid(): sound_hook.call(sound_name,at)
-	# Heard across the layer.
-	var loud := float(BREAK_HEARD.get(sound_name,0.0))
-	if loud > 0.0 and is_inside_tree(): NoiseBus.make(self,at,loud,&"break")
-
-## How far the pieces' sounds carry (m) on the NoiseBus (scripts/noise/noise_bus.gd).
-const BREAK_HEARD := {&"ruin_crack":20.0,&"ruin_fall":28.0,&"ruin_boom":40.0,&"ruin_thud":18.0,
-	&"drum_ring":30.0,&"drum_thud":14.0}
 
 func changed(box: AABB) -> void:
 	if field == null: return

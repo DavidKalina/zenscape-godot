@@ -21,7 +21,7 @@ extends Node3D
 ## `sound(name, at)` (his `field`) or null; add it to the field.
 const GlyphPickup = preload("res://scripts/glyph_pickup.gd")
 const Lines = preload("res://scripts/collectible_lines.gd")
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 const KitCaches = preload("res://scripts/kit_isle/kit_caches.gd")
 
 signal taken

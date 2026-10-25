@@ -27,7 +27,7 @@ extends "res://studies/character_study.gd"
 ##   ./run-city-kit.command [--underground=haze] [--olmec=causeway]
 const CityKit = preload("res://scripts/city_kit.gd")
 const CityStone = preload("res://scripts/city_kit_stone.gd")
-const Breakables = preload("res://scripts/kit_isle/breakables.gd")
+const Breakables = preload("res://scripts/breaks/breakables.gd")
 ## The ruin sounds' placeholder voices (the destruction round's).
 const RuinVoices = preload("res://scripts/kit_isle/colonnade_breaks.gd")
 const Underground = preload("res://scripts/underground/underground.gd")
@@ -282,7 +282,7 @@ func _build_room() -> void:
 	add_child(slot)
 	foot_pieces = slot
 	# The breaks, and the Olmec.
-	# The breakables hub (scripts/kit_isle/breakables.gd): his breaker; the
+	# The breakables hub (scripts/breaks/breakables.gd): his breaker; the
 	# stair's fault and the causeway's bay are its pieces (their units,
 	# scripts/city_breaks/floor_break.gd, in its group).
 	breaks = Breakables.new()

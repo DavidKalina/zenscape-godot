@@ -27,7 +27,7 @@ extends RefCounted
 ## `hear_noise` (1.0) its ears' reach, x every loudness; `noise_memory`
 ## (15 s); `noise_dwell` (4 s, looking there); `noise_wall` (0.6).
 
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 
 ## A noise's place, as a beacon only its body heeds.
 class Lure extends Beacon:

@@ -44,8 +44,8 @@ const Registry = preload("res://scripts/kit_isle/greybox/registry.gd")
 const MotifSky = preload("res://scripts/kit_isle/motif_sky.gd")
 const YardSky = preload("res://studies/motif_yard_sky.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
-const Breakables = preload("res://scripts/kit_isle/breakables.gd")
-const KitBreaks = preload("res://scripts/kit_isle/kit_breaks.gd")
+const Breakables = preload("res://scripts/breaks/breakables.gd")
+const KitBreaks = preload("res://scripts/breaks/kit_breaks.gd")
 const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
 const InhalerHead = preload("res://scripts/enemies/inhaler_head.gd")
 
@@ -354,7 +354,7 @@ func reset_yard() -> void:
 
 # --- The breaks --------------------------------------------------------------------------
 
-## The motif's kit pieces breakable (scripts/kit_isle/kit_breaks.gd): in
+## The motif's kit pieces breakable (scripts/breaks/kit_breaks.gd): in
 ## the layer's breakables hub (LayerOlmec's) or one of its own. Nothing
 ## about a piece changes until a breaker hits it.
 var hub: Node3D = null

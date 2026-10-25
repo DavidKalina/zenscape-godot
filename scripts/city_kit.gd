@@ -43,7 +43,7 @@ const Stone = preload("res://scripts/city_kit_stone.gd")
 const Balustrade = preload("res://scripts/interactables/balustrade.gd")
 const WalkerOnly = preload("res://scripts/walker_only.gd")
 ## The floors that break (the stair's fault, the causeway's bay): pieces of
-## the breakables hub (scripts/kit_isle/breakables.gd).
+## the breakables hub (scripts/breaks/breakables.gd).
 const FloorBreak = preload("res://scripts/city_breaks/floor_break.gd")
 ## The family's other breakables: the felled column and the drum floor
 ## (scripts/city_kit_breaks.gd).

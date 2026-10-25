@@ -1,12 +1,12 @@
 extends Node3D
 ## A breakable's shared fall (spec: docs/design/kit-breaks/spec-kit-breaks.md):
 ## what any break does once it has cut its stone along real joints
-## (scripts/kit_isle/masonry_cuts.gd, RuinKit `Build.keep_only`). Lifted
+## (scripts/breaks/masonry_cuts.gd, RuinKit `Build.keep_only`). Lifted
 ## out of the colonnade's breaks (scripts/kit_isle/colonnade_breaks.gd,
 ## which extends this), so every kit piece comes down the same way:
 ##
 ##   each piece a Jolt RigidBody3D a second or two (MAX_BODIES live at most
-##   across the hub, scripts/kit_isle/breakables.gd `live_count`; past that
+##   across the hub, scripts/breaks/breakables.gd `live_count`; past that
 ##   a piece skips the physics and is laid as rubble where it would lie);
 ##   a hard stop puffs dust, thuds, shakes; a column bursts into its drums;
 ##   still, it freezes where it is: static rubble he and the walker stand
@@ -20,7 +20,7 @@ extends Node3D
 ## `smash`) are a subclass's, each optional.
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Build = RuinKit.Build
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 
 ## Live pieces at most (scripts/native_explosives.gd's MAX_BODIES, at this
 ## scale), across the hub: past it a piece lands as rubble at once.
@@ -71,7 +71,7 @@ const PUSH_OUT := 2.4
 const PUSH_ROLL := 0.8
 const PUSH_AFTER := 0.3
 
-## The hub (scripts/kit_isle/breakables.gd) this answers to, or null (then
+## The hub (scripts/breaks/breakables.gd) this answers to, or null (then
 ## its own pause, `field` and `sound_hook`).
 var hub: Node = null
 ## Live pieces: {rb, t, still, group, v, kind, wait, lin, ang, burst}.

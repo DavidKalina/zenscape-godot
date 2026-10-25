@@ -105,7 +105,7 @@ const Look = preload("res://scripts/enemies/headless_body_look.gd")
 ## Whole, his head holds your eyes over the clips (olmec-look).
 const OlmecGaze = preload("res://scripts/enemies/olmec_gaze.gd")
 var gaze := OlmecGaze.new()
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 const Routes = preload("res://scripts/enemies/body_routes.gd")
 const Sight = preload("res://scripts/enemies/body_sight.gd")
 const Hearing = preload("res://scripts/enemies/body_hearing.gd")

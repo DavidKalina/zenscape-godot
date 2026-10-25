@@ -82,7 +82,7 @@ extends SceneTree
 ##     walk_paths(owner = null, offset = Vector3.ZERO, opts = {}) -> Dictionary
 ##   Watching an enemy
 ##     watch(enemy, opts = {}) -> Dictionary
-##   Breaking (scripts/kit_isle/breakables.gd, spec docs/design/kit-breaks)
+##   Breaking (scripts/breaks/breakables.gd, spec docs/design/kit-breaks)
 ##     hubs() -> Array[Node]
 ##     hit(at, radius, strength = -1.0, source = &"olmec") -> int
 ##   Reporting
@@ -1580,7 +1580,7 @@ func _dodge_way(from: Vector3) -> Vector3:
 		return -side
 	return side
 
-# --- Breaking (scripts/kit_isle/breakables.gd, spec docs/design/kit-breaks) --
+# --- Breaking (scripts/breaks/breakables.gd, spec docs/design/kit-breaks) --
 
 ## Every breakables hub in the scene (group "breakables_hub", Breakables.HUBS).
 func hubs() -> Array[Node]:

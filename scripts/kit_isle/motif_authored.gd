@@ -32,7 +32,7 @@ extends "res://scripts/kit_isle/motif_greybox.gd"
 ##    "breakable" (optional; false: no piece of it breaks)}
 ## A piece's "breakable" (optional; false: it never breaks) and the motif's
 ## only set meta "breakable" false on the built piece, which the kit
-## breaks skip (scripts/kit_isle/kit_breaks.gd `adopt`); absent, a piece
+## breaks skip (scripts/breaks/kit_breaks.gd `adopt`); absent, a piece
 ## breaks by its kind and builds exactly as before.
 ## A piece's "holds" (optional; e.g. "rune") only sets meta "holds" on the
 ## built piece: a kit cache (scripts/kit_isle/kit_caches.gd) glows it and

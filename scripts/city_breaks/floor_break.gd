@@ -3,7 +3,7 @@ extends Node3D
 ## landing and the
 ## causeway's bay (scripts/city_kit.gd `_fault`, `_bay` build it as their
 ## unit: this script on it, its "Body" and its pre-cut pieces "P0".."Pn").
-## A piece of the breakables hub (scripts/kit_isle/breakables.gd): it joins
+## A piece of the breakables hub (scripts/breaks/breakables.gd): it joins
 ## the group BREAKABLE and answers the hub's calls.
 ##
 ## A floor is ground to him and the walker until it goes (never in
@@ -18,7 +18,7 @@ extends Node3D
 ## slabs he wades (out of his rays, as round 2's) and the walker climbs, and every
 ## body's routes round them are read afresh (the hub's `changed`).
 ## Breaks last the session.
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 const BREAKABLE := &"breakable"
 
 ## Each falling piece's box this much smaller across than it stood (m).
@@ -104,7 +104,7 @@ func wave(hub: Node, _body: Node3D, w: Dictionary) -> void:
 	if local.x > box.position.x-1.0 and local.x < box.end.x+1.0 and local.z > box.position.z-1.0 and local.z < box.end.z+1.0 and absf(local.y-box.end.y) < 1.5:
 		break_now(hub,w.at,Vector3.ZERO)
 
-## The hub's `hit` from a breaker that is on (scripts/kit_isle/breakables.gd):
+## The hub's `hit` from a breaker that is on (scripts/breaks/breakables.gd):
 ## taken as his landing's shockwave at `at` (it goes if that is on it). The
 ## slam is too light for it. True if it went.
 func take_hit(hub: Node, at: Vector3, radius: float, strength: float, source: StringName) -> bool:

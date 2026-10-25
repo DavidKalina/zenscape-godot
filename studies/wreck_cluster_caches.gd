@@ -10,11 +10,11 @@ extends "res://scripts/kit_isle/kit_caches.gd"
 ##
 ## Use: `WreckCaches.stand(cluster, hidden)` builds the pieces, a kit
 ## breakable on the cluster's own breakables hub (the slam and side slam
-## reach it: scripts/kit_isle/breakables.gd), and the caches; again on a
+## reach it: scripts/breaks/breakables.gd), and the caches; again on a
 ## re-deal, which frees the old set (broken pieces, rubble and all) first.
 ## `hidden`: spot index -> part id.
-const KitBreaks = preload("res://scripts/kit_isle/kit_breaks.gd")
-const Breakables = preload("res://scripts/kit_isle/breakables.gd")
+const KitBreaks = preload("res://scripts/breaks/kit_breaks.gd")
+const Breakables = preload("res://scripts/breaks/breakables.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Layout = preload("res://scripts/layout_overrides.gd")
 const Art = preload("res://studies/wreck_cluster_art.gd")

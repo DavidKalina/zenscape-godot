@@ -35,7 +35,7 @@ extends Node3D
 ## The study (studies/olmec_field.gd) owns it; `motor` the wanderer's.
 ## (The file keeps its old name from the crescent "air arcs".)
 
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 
 ## A slice: its chord along its run (m), its crown's height (m), its
 ## thickness at the crown (m, across). Its pace: V0 m/s as it goes, ACCEL

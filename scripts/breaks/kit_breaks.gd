@@ -1,8 +1,8 @@
-extends "res://scripts/kit_isle/break_pieces.gd"
+extends "res://scripts/breaks/break_pieces.gd"
 ## Any kit piece broken by its kind (spec: docs/design/kit-breaks/
 ## spec-kit-breaks.md): a breakable for the hub's `others` (scripts/
-## kit_isle/breakables.gd) holding the pieces of a place, each cut by its
-## break kind (scripts/kit_isle/break_kinds.gd) on the first hit strong
+## breaks/breakables.gd) holding the pieces of a place, each cut by its
+## break kind (scripts/breaks/break_kinds.gd) on the first hit strong
 ## enough to break it. Until then nothing about a piece changes: `adopt`
 ## only notes where it stands.
 ##
@@ -10,8 +10,11 @@ extends "res://scripts/kit_isle/break_pieces.gd"
 ## again in its kind's parts (what stands, the falling parts), the whole
 ## swapped for what stands, the parts let go as bodies (the base's fall,
 ## cap, rubble and `changed`), out from where it was hit.
-const Kinds = preload("res://scripts/kit_isle/break_kinds.gd")
-const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
+const Kinds = preload("res://scripts/breaks/break_kinds.gd")
+## A big body's bulk about its feet, times its height `hh` (the Olmec's:
+## scripts/enemies/headless_body.gd BULK_W, BULK_L, at archive/before-the-cut).
+const BULK_W := 1.0
+const BULK_L := 0.5
 ## A stack going over: its turn at first (rad/s), more for his push (m/s).
 const TOPPLE_W := 0.55
 const TOPPLE_PUSH := 0.12
@@ -228,8 +231,8 @@ func met(body: Node3D) -> void:
 	Kinds.serve()
 	var olmec := float(hub.strength_of(&"olmec")) if hub != null else 1.0
 	var hh: float = body.hh
-	var hw := hh*HeadlessBody.BULK_W
-	var hl := hh*HeadlessBody.BULK_L
+	var hw := hh*BULK_W
+	var hl := hh*BULK_L
 	var low: float = body.position.y+0.3
 	var high: float = body.position.y+float(body._bulk_top())
 	var inv := Basis(Vector3.UP,float(body.facing)).inverse()

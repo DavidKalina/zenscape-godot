@@ -29,12 +29,12 @@ extends Node
 ## head put on now (the beat).
 
 const HeadlessBody = preload("res://scripts/enemies/headless_body.gd")
-const Breakables = preload("res://scripts/kit_isle/breakables.gd")
+const Breakables = preload("res://scripts/breaks/breakables.gd")
 const OlmecBreach = preload("res://scripts/enemies/olmec_breach.gd")
 const OlmecTilt = preload("res://scripts/enemies/olmec_tilt.gd")
 const OlmecVoid = preload("res://scripts/enemies/olmec_void.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 
 ## Travel: you unseen this long (s) and this far off (m, flat; or this far
 ## over or under him), or him stuck in a STUCK_BOX m box this long (s).

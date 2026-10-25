@@ -16,7 +16,7 @@ play as before.
 
 - **Down to you** (`down_to`, `down_deep`): from a rim he finds a floor
   near you up to about 27 m down and leaps to it, on a higher arc over a lip.
-- **Breaks** (`studies/crag_reach.gd`, `scripts/kit_isle/kit_breaks.gd`): 33
+- **Breaks** (`studies/crag_reach.gd`, `scripts/breaks/kit_breaks.gd`): 33
   kit pieces (aqueduct spans, hall bays, colonnade columns, single ruins,
   terrace and islet landmarks) break under his bulk and landings through
   the breakables hub. Each piece's cut is made ahead on a worker at spawn,

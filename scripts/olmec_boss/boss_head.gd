@@ -36,7 +36,7 @@ extends "res://scripts/enemies/inhaler_head.gd"
 
 const Puffs = preload("res://scripts/olmec_boss/puffs.gd")
 const Slam = preload("res://scripts/slam.gd")
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 const Glint = preload("res://scripts/kit_isle/kit_cache_glint.gd")
 
 ## The stomp (docs/design/olmec-boss/spec-olmec-knockoff.md item 1): its

@@ -43,7 +43,7 @@ const BossBody = preload("res://scripts/olmec_boss/boss_body.gd")
 ## The tilt set piece (spec "The tilt"): the field tipped steeply toward him
 ## braced on its rim, the steep mode of the Olmec's tilt.
 const OlmecTilt = preload("res://scripts/enemies/olmec_tilt.gd")
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 ## His lines of wind up the tipped field (scripts/olmec_boss/air_arcs.gd).
 const AirArcs = preload("res://scripts/olmec_boss/air_arcs.gd")
 ## The third knock-off's finish: the rune out of his heap (a bigger break-to-find).

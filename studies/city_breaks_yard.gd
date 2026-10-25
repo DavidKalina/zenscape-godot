@@ -30,7 +30,7 @@ const BodySpawner = preload("res://scripts/enemies/body_spawner.gd")
 const EnemyYard = preload("res://studies/enemy_yard.gd")
 const SightOverlay = preload("res://scripts/enemies/body_sight_overlay.gd")
 const Breaks = preload("res://scripts/kit_isle/colonnade_breaks.gd")
-const Breakables = preload("res://scripts/kit_isle/breakables.gd")
+const Breakables = preload("res://scripts/breaks/breakables.gd")
 const CityBreaks = preload("res://scripts/city_kit_breaks.gd")
 const Underground = preload("res://scripts/underground/underground.gd")
 

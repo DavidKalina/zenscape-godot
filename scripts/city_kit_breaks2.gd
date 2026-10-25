@@ -29,7 +29,7 @@ extends RefCounted
 ## Each piece is a Node3D with its front toward +Z (y 0 where it meets its
 ## neighbours: each file says), its live parts under it, built in the city's
 ## stone (scripts/city_kit_stone.gd). They join the group BREAKABLE (the
-## breakables hub, scripts/kit_isle/breakables.gd, set as each Olmec's
+## breakables hub, scripts/breaks/breakables.gd, set as each Olmec's
 ## `breaker`, hands them his calls) and the slam's group. Each keeps the
 ## card's three states: whole, cracked (a tell), fallen (an authored rest of
 ## clean walk boxes, ground to both bodies; the hub's `changed` makes every

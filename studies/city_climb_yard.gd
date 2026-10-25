@@ -32,7 +32,7 @@ const CityKit = preload("res://scripts/city_kit.gd")
 const Stone = preload("res://scripts/city_kit_stone.gd")
 const Underground = preload("res://scripts/underground/underground.gd")
 const GroundCover = preload("res://scripts/underground/ground_cover.gd")
-const Breakables = preload("res://scripts/kit_isle/breakables.gd")
+const Breakables = preload("res://scripts/breaks/breakables.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const YARD_LOST := -40.0

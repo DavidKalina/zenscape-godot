@@ -20,7 +20,7 @@ extends "res://scripts/enemies/inhaler_head.gd"
 ##             itself back up onto its rim.
 ##   "crash"   into stone it can't break: a thud, it reels back and topples.
 ##
-## Breaking (scripts/kit_isle/breakables.gd, the breaker `coin`, on in its
+## Breaking (scripts/breaks/breakables.gd, the breaker `coin`, on in its
 ## study): rolling into stone at speed it hits the hub there with
 ## `smash_strength` times its share of `charge_speed`; what breaks, it rolls
 ## on through, keeping `smash_keep` of its speed (stone it isn't strong
@@ -58,7 +58,7 @@ const WHEEL_MODEL := "res://assets/models/wheel_head.glb"
 ## The model as authored: its diameter (chin to crown), its thickness.
 const WHEEL_HEIGHT := 3.36
 const WHEEL_THICK := 1.72
-const Breakables = preload("res://scripts/kit_isle/breakables.gd")
+const Breakables = preload("res://scripts/breaks/breakables.gd")
 ## Its breaker's name in the hub.
 const BREAKER := &"coin"
 ## The slam (its GROUP, `decent`): a buried find (scripts/buried_find.gd)

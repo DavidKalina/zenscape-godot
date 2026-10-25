@@ -28,7 +28,7 @@ extends Node3D
 ## as one mesh (three draws for the court).
 const K = preload("res://scripts/city_kit_breaks.gd")
 const GiantStone = preload("res://scripts/kit_isle/greybox/giant_stone.gd")
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const Slam = preload("res://scripts/slam.gd")
 
@@ -242,7 +242,7 @@ func wave(hub: Node, b: Node3D, w: Dictionary) -> void:
 		var amp := lerpf(HOP.x,HOP.y,share)*sqrt(float(w.power))
 		_hop(k,amp,d < foot,Vector3(top.x-at.x,0.0,top.z-at.z),1.0-share*0.5,true)
 
-## The hub's `hit` from a breaker that is on (scripts/kit_isle/breakables.gd):
+## The hub's `hit` from a breaker that is on (scripts/breaks/breakables.gd):
 ## taken as his landing's shockwave at `at`, grown to `radius`, of power
 ## `strength`: the slabs round it hop. The slam is not taken here: the court
 ## stays in scripts/slam.gd GROUP (its hop is no break, so no toggle holds

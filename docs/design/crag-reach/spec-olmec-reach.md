@@ -28,8 +28,8 @@ broke the immersion.
   Pacing a rim on a loop, or looping seek/chase on a spot, is the failure.
 - He breaks things. The crag reach's kit pieces (halls, colonnades, columns,
   the aqueduct, walls, the fallen pillar) break under him through the
-  existing break system: the hub `scripts/kit_isle/breakables.gd`, the kit
-  breaks `scripts/kit_isle/kit_breaks.gd` with their break kinds
+  existing break system: the hub `scripts/breaks/breakables.gd`, the kit
+  breaks `scripts/breaks/kit_breaks.gd` with their break kinds
   (`break_kinds.gd`), and his `breach` knob. Most of what's there should be
   breakable: he smashes through a wall or column in his way instead of
   going round, his landings and pounces knock pieces down, and broken

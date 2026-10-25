@@ -3,7 +3,7 @@ extends "res://scripts/kit_isle/mechanics/mechanic.gd"
 ## isle's --kit-caches, studies/aqueduct_isle_caches.gd): a breakable ruin
 ## kit piece (`piece`, a RuinKit id) holding a find (`holds`, a GlyphPickup
 ## glyph), its one-spot glint showing. Playing, it is a kit breakable
-## (scripts/kit_isle/kit_breaks.gd, in a breakables hub the slam reaches)
+## (scripts/breaks/kit_breaks.gd, in a breakables hub the slam reaches)
 ## `tough` strong (0.5 is the slam's own; it grows with the drop); broken,
 ## the find comes up and is his when he comes to it. Its own hub, breaks and
 ## caches stand under its pieces, so `reset` takes them with the piece.
@@ -40,10 +40,10 @@ func woke() -> void:
 	if piece == null: return
 	var KitCaches: GDScript = load("res://scripts/kit_isle/kit_caches.gd")
 	KitCaches.dress(piece,true)
-	var hub: Node3D = load("res://scripts/kit_isle/breakables.gd").new()
+	var hub: Node3D = load("res://scripts/breaks/breakables.gd").new()
 	hub.top_level = true
 	host.add_child(hub)
-	breaks = load("res://scripts/kit_isle/kit_breaks.gd").new()
+	breaks = load("res://scripts/breaks/kit_breaks.gd").new()
 	breaks.name = "KitBreaks"
 	breaks.hub = hub
 	breaks.top_level = true

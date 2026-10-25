@@ -15,7 +15,7 @@ extends Node3D
 ##     (by their middles) cut out of a copy of its mesh (`_cut`);
 ##   - chunks of the stone fly out the way he punched, a plume, a crack and
 ##     a boom, a hit-stop and the camera's quake through the layer's hub
-##     (scripts/kit_isle/breakables.gd: `pause`, `shake`, `sound`,
+##     (scripts/breaks/breakables.gd: `pause`, `shake`, `sound`,
 ##     `changed`, so every body's routes read the gap afresh).
 ## The punch is the body's own `smash` beat (fists up, then down: the tell).
 ## A span (`crack_under`): the crossings' stone under his feet cracks (dust
@@ -24,7 +24,7 @@ extends Node3D
 ## (the layer's Olmec brings him back up a cliff, scripts/roguelike/
 ## layer_olmec.gd).
 
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 
 ## A block wider than this (m, flat) is no wall.
 const BLOCK_MOST := 9.0

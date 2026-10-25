@@ -25,7 +25,7 @@ extends Node
 ## upslope always wins.
 
 const PilotMotor = preload("res://scripts/pilot_motor.gd")
-const Dust = preload("res://scripts/enemies/body_dust.gd")
+const Dust = preload("res://scripts/breaks/body_dust.gd")
 
 ## The largest stone that tips (m, flat across).
 const TIP_MOST := 80.0

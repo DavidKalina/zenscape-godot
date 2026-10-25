@@ -46,7 +46,7 @@ const SkyScript = preload("res://studies/islet_yard_sky.gd")
 const Footbridge = preload("res://scripts/footbridge.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
-const BreakKinds = preload("res://scripts/kit_isle/break_kinds.gd")
+const BreakKinds = preload("res://scripts/breaks/break_kinds.gd")
 
 ## The masses: name, the top unit's middle (x, height off TOP, z), its
 ## spec; then its parts, each [part, offset from the top's middle (x, dy,
@@ -984,7 +984,7 @@ var olmec_after := -1.0
 ## The ruins, the aqueduct's spans and the colonnade's columns break under
 ## him (on with --olmec / --olmec-after): each piece built as its own node
 ## with how to build it again (meta "crag_break" [kind, Callable]), handed
-## to the breakables hub (scripts/kit_isle/breakables.gd) through
+## to the breakables hub (scripts/breaks/breakables.gd) through
 ## CragBreaks (kit_breaks.gd, with his landings' waves).
 var kit_breaks_on := false
 var breakables: Node3D = null
@@ -1032,8 +1032,8 @@ func _build_room() -> void:
 	_spawner.setup(self,enemies)
 	_wire_breaks()
 
-const Breakables = preload("res://scripts/kit_isle/breakables.gd")
-const BreakPieces = preload("res://scripts/kit_isle/break_pieces.gd")
+const Breakables = preload("res://scripts/breaks/breakables.gd")
+const BreakPieces = preload("res://scripts/breaks/break_pieces.gd")
 ## His landing's shockwave (the hunt's leaps, drops and pounces): the
 ## pieces within LAND_REACH head heights of where he came down (times the
 ## wave's power's root) take a hit of his strength.
@@ -1041,7 +1041,7 @@ const LAND_REACH := 1.1
 
 ## The kit breaks, his landings' too: a wave's first front hits what is
 ## round where he landed.
-class CragBreaks extends "res://scripts/kit_isle/kit_breaks.gd":
+class CragBreaks extends "res://scripts/breaks/kit_breaks.gd":
 	var landings := 0
 	func wave(body: Node3D, w: Dictionary) -> void:
 		if w.has("kit"): return
