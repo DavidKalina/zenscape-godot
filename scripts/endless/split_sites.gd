@@ -1,46 +1,61 @@
 extends RefCounted
-## Split mountains (docs/design/endless-flight/split-mountain-handoff.md): a
-## narrow slot canyon cut through a range from foot to foot, rock walls
-## standing close on both sides, its floor flown in at one end and out at
-## the other. A layer over the land field, as the ponds and the slot halls'
-## cuts are: LandField (land_field.gd) cuts the slot in after the native or
-## GDScript field has worked, so both fields read the same slots and
-## nothing native changes.
+## Split mountains (docs/design/endless-flight/split-mountain-handoff.md,
+## split-types-handoff.md): a canyon cut through a range from foot to foot,
+## rock walls standing on both sides, its floor flown in at one end and out
+## at the other. A layer over the land field, as the ponds and the slot
+## halls' cuts are: LandField (land_field.gd) cuts the canyon in after the
+## native or GDScript field has worked, so both fields read the same
+## canyons and nothing native changes.
 ##
 ## At most one per CELL m square, from the seed and the square alone. A
 ## square rolls (CHANCE times the density), then scans its middle for a
 ## range's crest (`mountain` at least CREST_MIN) and tries the best spots,
 ## as hall_sites.gd does: up onto the crest, the crest's way read off a
 ## ring, the crest checked straight either side, then the range walked
-## across to its feet (each at least TALL_MIN m under the crest). The slot
-## runs foot to foot (LENGTH m), its path bending gently (an S of BEND_MOST
-## m at most, no tighter than TURN_MIN m), its floor falling from the higher
-## foot to the lower at GRADE_MOST at the most. The whole cut stays inside
-## the square, so a point asks only its own square.
+## across to its feet (each at least TALL_MIN m under the crest). The
+## canyon runs foot to foot, its floor falling from the higher foot to the
+## lower at GRADE_MOST at the most. The whole cut stays inside the square,
+## so a point asks only its own square.
+##
+## Kinds (TYPES): each canyon is one of slot, winding, gorge or grand,
+## picked from the seed and the square among the kinds its crossing fits
+## (each kind's length and depth), weighed by the world's mix (the
+## profile's `split_kinds` layer, MIX by default) and by the land: a sharp
+## crest leans to slot and winding, a broad high crossing (a tableland) to
+## gorge and grand (`_fill`). Each kind rolls its own numbers within its
+## ranges: the floor's width (WorldScale.opening of the kind's toy width),
+## the bends, the tiers and benches, the lean, the wander, the buttresses,
+## the strata, the mouths. `--split-kind=K` forces one.
 ##
 ## Kept: no river's water within RIVER_OFF m of its floor or mouths, no pond
 ## by it, the sea off it, and a flat to land on (FLAT_RUN m of land within
 ## FLAT_RISE m) within FLAT_REACH m out of each mouth (AGENTS.md, meadows).
 ##
-## The cut: the floor is WorldScale.opening(TOY_SLOT) wide at its narrowest;
-## each wall stands back from it by its own flutes (ROUGH, a groove and a
-## buttress in turn, so the rock reads carved) and the slot swells wider in
-## places (WIDEN). From the floor each wall rises in two sheer tiers with a
-## bench between (TIER, BENCH, TIER_UP), then leans back at LEAN (run over
-## rise) to the land, so the cut reads as a deep notch in the ridgeline from
-## afar. Toward each mouth the slot flares open (FLARE*). Past each end the
-## floor climbs at GRADE till it meets the land; the cut's edges ease back
-## into the land (EASE).
+## The cut: the floor is the kind's opening wide at its narrowest; each wall
+## stands back from it by its own wander (so the walls are never parallel),
+## its buttresses and alcoves (ribs standing out, bays set in, each the
+## whole wall's height) and small flutes. From the floor each wall rises in
+## the kind's tiers with benches between, each bench pinching out and
+## widening along the canyon, so each tier's line wanders on its own. Over
+## the top tier it leans back to the land in strata: level ledges at the
+## same heights on both walls. Toward each mouth the canyon flares open
+## (the kind's flare). Past each end the floor climbs at GRADE till it
+## meets the land; the cut's edges ease back into the land (EASE).
 ##
 ## A site is a PackedFloat32Array laid out as hall_sites.gd's where they
 ## share (tunnel_sites.gd `blocks_hall`, tree_plan.gd's keep-outs read
 ## [0], [1], [2], [3], [7], [8]): [centre x, centre z, way x, way z (unit,
-## along the slot), half length (foot to foot), the floor's half width at
+## along the canyon), half length (foot to foot), the floor's half width at
 ## its narrowest, the floor's height at the middle, reach (half length of
 ## the whole cut), the cut's half width round its centre line (its widest
-## plus the bend), the bend (m, the S's swing), the floor's slope along the
-## way (rise per m), the cut's half width off the path (its top), the
-## flutes' salt, the crest's height].
+## plus the bend), the bend (m, the swing's amplitude), the floor's slope
+## along the way (rise per m), the cut's half width off the path (its top),
+## the walls' salt, the crest's height], then the kind's rolled numbers at
+## K_* (the kind's index, the bend's half waves, the tiers, a tier's rise
+## least and most, a bench's width least and most, a tier's riser across,
+## the lean, the wander and its scale, the buttresses' depth and scale, the
+## flare's length and widening, the strata's step and tread share, the
+## walls' setback at the most).
 ##
 ## In a world of regions (the field a LandBlend) a split stands only where
 ## its whole cut, and SITE_CLEAR m round it, lies in one region that grows
@@ -63,7 +78,7 @@ const CELL := 1536.0
 const MARGIN := 300.0
 ## How often: the share of squares that roll a split (times the density,
 ## the world's `splits` layer or --splits=X, up to CHANCE_MOST). Of the
-## squares that roll, only those with a range's crest fit for a slot get
+## squares that roll, only those with a range's crest fit for a canyon get
 ## one: at 0.9 the wilderness of seeds 1 to 4 has one every 4.6 to 9.6 km²
 ## (docs/design/endless-flight/split-mountain-handoff.md).
 const CHANCE := 0.9
@@ -82,58 +97,125 @@ const STRAIGHT := 40.0
 ## The walk out to the feet: step (m), how far (m), the flank's slope
 ## (rise over run, over FOOT_RUN m) the foot eases under; the crest at least
 ## TALL_MIN m over each foot, and a foot taken wherever the flank stands
-## FOOT_DEEP m under the crest (the slot then opens high on the flank); the
-## slot's length foot to foot (m).
+## FOOT_DEEP m under the crest (the canyon then opens high on the flank);
+## the crossing's length foot to foot (m) any kind takes.
 const WALK := 4.0
 const WALK_MOST := 520.0
 const FOOT_SLOPE := 0.14
 const FOOT_RUN := 16.0
-const TALL_MIN := 75.0
+const TALL_MIN := 70.0
 const FOOT_DEEP := 110.0
-const LENGTH := Vector2(180.0,860.0)
-## The floor's toy-era width at its narrowest (WorldScale.opening: 18 m at
-## the knobs, 7.6 m past each wingtip; --split-slot=X another toy width),
-## its slope along the slot at the most (rise over run), how far under the
-## lower foot it is sunk (m).
-const TOY_SLOT := 9.0
-static var HALF: float = WorldScale.opening(_toy_slot())*0.5
+const LENGTH := Vector2(160.0,860.0)
+## The floor's slope along the canyon at the most (rise over run), how far
+## under the lower foot it is sunk (m).
 const GRADE_MOST := 0.07
 const SINK := 0.3
 
-static func _toy_slot() -> float:
-	for a: String in LaunchArgs.user_args():
-		if a.begins_with("--split-slot="): return maxf(0.0,float(a.get_slice("=",1)))
-	return TOY_SLOT
+## The kinds, by index (a site's K_KIND).
+const KINDS := ["slot","winding","gorge","grand"]
+## Each kind's floor at its narrowest, a toy-era width (WorldScale.opening:
+## 12, 18, 36 and 76 m at the knobs; --split-slot=X the slot's).
+const TOY_SLOT := 6.0
+const TOY_WINDING := 9.0
+const TOY_GORGE := 18.0
+const TOY_GRAND := 38.0
+## The mix of kinds when the world names none (its `split_kinds` layer).
+const MIX := {"slot":1.0,"winding":1.0,"gorge":1.0,"grand":1.0}
+## Each kind's numbers; a Vector2 is a range a site rolls within:
+##   toy        the floor's toy width at its narrowest (above)
+##   wide       the floor's width over that, a share (1 the narrowest)
+##   length     the crossing it takes, foot to foot (m)
+##   tall       the crest over the floor at the least (m)
+##   land       the land it leans to: -1 a sharp crest, 1 a broad one
+##   half_wave  the bend's half wave along the canyon (m); `waves` the
+##              count of them at the least and most (a Vector2i)
+##   turn       the bend's tightest turn (m); `bend` its swing at the most
+##   tiers      the walls' tiers (a Vector2i, up to TIERS_MOST); `tier` each
+##              one's rise (m). Each tier stands to its own level, the same
+##              world height along the canyon and on both walls (strata).
+##   bench      the bench between two tiers (m across; pinching out)
+##   edge       a tier's riser across (m: the smaller, the sheerer)
+##   lean       over the top tier, run over rise up to the land
+##   talus      the scree apron at the walls' foot: (rise, across) m
+##   blocks     the joints: blocks (m along) each tier's line steps by
+##              (up to m), each tier its own
+##   wander     each wall's own setback's swing (m) and its scale along
+##   buttress   the ribs' and alcoves' depth (m) and their scale along
+##   flare      the mouths' flare (m along) and the floor's widening there
+##   strata     the ledges' step over the lean (m; 0 none) and the treads'
+##              share of it
+##   wide_most  the cut's half width at the most (m)
+const TYPES := {
+	"slot":{"toy":TOY_SLOT,"wide":Vector2(1.0,1.1),"length":Vector2(160.0,400.0),"tall":70.0,"land":-1.0,
+		"half_wave":320.0,"waves":Vector2i(1,2),"turn":240.0,"bend":9.0,
+		"tiers":Vector2i(2,2),"tier":Vector2(28.0,46.0),"bench":Vector2(0.0,2.0),"edge":2.2,"lean":Vector2(0.07,0.11),
+		"talus":Vector2(0.0,0.0),"blocks":Vector2(4.5,0.9),
+		"wander":Vector2(0.6,1.6),"wander_scale":55.0,"buttress":Vector2(2.0,3.5),"buttress_scale":Vector2(14.0,22.0),
+		"flare":Vector2(80.0,100.0),"flare_widen":Vector2(2.2,2.8),"strata":Vector2(0.0,0.0),"tread":Vector2(0.5,0.6),"wide_most":200.0},
+	"winding":{"toy":TOY_WINDING,"wide":Vector2(1.0,1.15),"length":Vector2(240.0,700.0),"tall":70.0,"land":-0.6,
+		"half_wave":150.0,"waves":Vector2i(2,5),"turn":120.0,"bend":30.0,
+		"tiers":Vector2i(2,3),"tier":Vector2(18.0,32.0),"bench":Vector2(0.5,5.0),"edge":3.0,"lean":Vector2(0.14,0.22),
+		"talus":Vector2(2.0,3.0),"blocks":Vector2(7.0,1.6),
+		"wander":Vector2(2.5,4.5),"wander_scale":60.0,"buttress":Vector2(4.0,7.0),"buttress_scale":Vector2(20.0,30.0),
+		"flare":Vector2(70.0,90.0),"flare_widen":Vector2(1.3,1.7),"strata":Vector2(7.0,10.0),"tread":Vector2(0.45,0.6),"wide_most":240.0},
+	"gorge":{"toy":TOY_GORGE,"wide":Vector2(1.0,1.2),"length":Vector2(180.0,640.0),"tall":95.0,"land":0.6,
+		"half_wave":260.0,"waves":Vector2i(1,2),"turn":300.0,"bend":28.0,
+		"tiers":Vector2i(3,4),"tier":Vector2(18.0,32.0),"bench":Vector2(3.0,12.0),"edge":4.5,"lean":Vector2(0.28,0.42),
+		"talus":Vector2(4.0,7.0),"blocks":Vector2(10.0,2.6),
+		"wander":Vector2(6.0,11.0),"wander_scale":90.0,"buttress":Vector2(10.0,16.0),"buttress_scale":Vector2(36.0,55.0),
+		"flare":Vector2(90.0,110.0),"flare_widen":Vector2(0.8,1.1),"strata":Vector2(8.0,12.0),"tread":Vector2(0.5,0.65),"wide_most":300.0},
+	"grand":{"toy":TOY_GRAND,"wide":Vector2(1.0,1.3),"length":Vector2(400.0,860.0),"tall":85.0,"land":1.0,
+		"half_wave":280.0,"waves":Vector2i(2,3),"turn":320.0,"bend":40.0,
+		"tiers":Vector2i(3,5),"tier":Vector2(14.0,26.0),"bench":Vector2(6.0,22.0),"edge":5.5,"lean":Vector2(0.45,0.7),
+		"talus":Vector2(6.0,12.0),"blocks":Vector2(14.0,3.5),
+		"wander":Vector2(12.0,20.0),"wander_scale":140.0,"buttress":Vector2(16.0,26.0),"buttress_scale":Vector2(50.0,80.0),
+		"flare":Vector2(100.0,130.0),"flare_widen":Vector2(0.5,0.8),"strata":Vector2(6.0,9.0),"tread":Vector2(0.5,0.65),"wide_most":370.0},
+}
+## The land's fill under the crossing (`_fill`: the mean of the land over
+## the line between the feet, as a share of the crest over it): under
+## FILL_SHARP a sharp crest, over FILL_BROAD a broad one (a tableland). A
+## kind's lean to the land it does not lean to keeps LAND_KEEP of its
+## weight.
+const FILL_SHARP := 0.44
+const FILL_BROAD := 0.62
+const LAND_KEEP := 0.25
 
-## The walls: their flutes (each wall's own setback from the floor's edge,
-## m: Vector2(scale along the slot, depth)), two sizes; the swell (the
-## floor wider in places, up to WIDEN of its half width each side, over
-## WIDEN_SCALE m along).
-const ROUGH := [Vector2(22.0,4.5),Vector2(7.0,1.8)]
-const WIDEN := 0.2
-const WIDEN_SCALE := 140.0
-## Each wall stands in two sheer tiers with a bench between, each its own
-## along the slot: the lower tier's rise (m, least..most, wandering over
-## TIER_SCALE m), the bench (m across, least..most; it climbs BENCH_RISE
-## over its width), the upper tier's rise; a tier rises within EDGE m
-## across. Over the upper tier the wall leans back at LEAN (run over rise)
-## to the land.
-const TIER := Vector2(18.0,36.0)
-const TIER_SCALE := 70.0
-const BENCH := Vector2(1.5,6.0)
-const BENCH_RISE := 0.3
-const TIER_UP := Vector2(14.0,30.0)
-const EDGE := 2.5
-const LEAN := 0.24
-## The mouths: over the last FLARE m of each end (FLARE_SHARE of the half
-## length at the most) the slot opens out, its floor up to 1+FLARE_WIDEN
-## times as wide, its tiers down to FLARE_LOW of their rise, softened to
-## FLARE_SOFT times their width across (slopes, not steps, where the land
-## is low) and its lean out to FLARE_LEAN, so the range opens round the
-## way in rather than a trench ending in a wall.
-const FLARE := 80.0
+## A site's slots past the shared ones (above): K_LEVEL holds TIERS_MOST
+## tiers' levels (m over the floor's middle), the pairs their least and
+## most, or a size and depth.
+const TIERS_MOST := 5
+const K_KIND := 14
+const K_WAVES := 15
+const K_TIERS := 16
+const K_LEVEL := 17
+const K_BENCH := 22
+const K_EDGE := 24
+const K_LEAN := 25
+const K_WANDER := 26
+const K_BUTTRESS := 28
+const K_FLARE := 30
+const K_STRATA := 32
+const K_TALUS := 34
+const K_BLOCK := 36
+const K_BACK := 38
+
+## The walls' small flutes (m: Vector2(scale along, depth)); a bench's
+## width wanders over BENCH_SCALE m along and it climbs BENCH_RISE over its
+## width. The buttresses' edges: their noise stepped over RIB_EDGE (the
+## nearer, the squarer the ribs). A joint's step takes BLOCK_EDGE of its
+## block.
+const FLUTE := Vector2(6.0,1.0)
+const BENCH_SCALE := 45.0
+const BENCH_RISE := 0.25
+const RIB_EDGE := Vector2(0.4,0.6)
+const BLOCK_EDGE := 0.15
+## The mouths: over the last of the kind's flare (FLARE_SHARE of the half
+## length at the most) the canyon opens out, its floor widened by the
+## kind's flare widening, its tiers down to FLARE_LOW of their rise,
+## softened to FLARE_SOFT times their width across (slopes, not steps,
+## where the land is low) and its lean out to FLARE_LEAN, so the range
+## opens round the way in rather than a trench ending in a wall.
 const FLARE_SHARE := 0.35
-const FLARE_WIDEN := 0.8
 const FLARE_LOW := 0.2
 const FLARE_SOFT := 8.0
 const FLARE_LEAN := 1.1
@@ -144,12 +226,7 @@ const EASE := 12.0
 ## the most.
 const GRADE := 0.25
 const RAMP_MOST := 120.0
-## The bend: the S's swing at the most (m) and its tightest turn (m).
-const BEND_MOST := 30.0
-const TURN_MIN := 220.0
-## The cut's half width off the path at the most (m), and how far over the
-## land round it the top of the walls is kept (m).
-const WIDE_MOST := 230.0
+## How far over the land round it the top of the walls is kept (m).
 const TOP_OVER := 6.0
 ## Water: a river's water kept this far from the floor and the mouths (m).
 const RIVER_OFF := 40.0
@@ -168,13 +245,15 @@ const FLAT_RISE := 4.0
 const FLAT_STEP := 16.0
 const FLAT_FAN := [-0.7,-0.35,0.0,0.35,0.7]
 ## --split-near-start: the start this far out of the lower mouth, on the
-## slot's way in, ALT m over the land; the squares searched round the start.
+## canyon's way in, ALT m over the land; the squares searched round the start.
 const START_BACK := 520.0
 const START_ALT := 28.0
 const START_RINGS := 5
 
 static var _cache := {}
 static var _lock := Mutex.new()
+static var _forced: int = _kind_forced()
+static var _toy_slot_arg: float = _toy_slot()
 
 ## The splits' density: the world's `splits` layer (0: none), then
 ## `--splits=X` or `--no-splits`.
@@ -189,6 +268,24 @@ static func wanted(default := 0.0) -> float:
 static func near_start_wanted() -> bool:
 	return "--split-near-start" in LaunchArgs.user_args()
 
+## `--split-kind=K`'s kind index, or -1.
+static func _kind_forced() -> int:
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--split-kind="):
+			var k := KINDS.find(a.get_slice("=",1))
+			if k < 0: push_warning("--split-kind: one of %s" % str(KINDS))
+			return k
+	return -1
+
+static func _toy_slot() -> float:
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--split-slot="): return maxf(0.0,float(a.get_slice("=",1)))
+	return TOY_SLOT
+
+## Site `s`'s kind's name.
+static func kind_name(s: PackedFloat32Array) -> String:
+	return KINDS[int(s[K_KIND])]
+
 static func _hash01(seed: int, i: int, j: int, salt: int) -> float:
 	return float(hash([seed,i,j,salt,7717]) & 0xffffff)/16777216.0
 
@@ -199,18 +296,19 @@ static func cell_of(x: float, z: float) -> Vector2i:
 ## The site of square `key`, or an empty array. `impl` is the field doing
 ## the work (its last sample is overwritten when the square is first looked
 ## at, read at full detail); `local` is the asking LandField's own cache;
-## `ponds` the field's pond density.
-static func cell_site(impl: Object, seed: int, density: float, ponds: float, key: Vector2i, local: Dictionary) -> PackedFloat32Array:
+## `ponds` the field's pond density; `mix` the world's mix of kinds
+## (`split_kinds`; empty: MIX).
+static func cell_site(impl: Object, seed: int, density: float, ponds: float, key: Vector2i, local: Dictionary, mix: Dictionary = {}) -> PackedFloat32Array:
 	var got: Variant = local.get(key)
 	if got != null: return got
-	var k4 := Vector4i(key.x,key.y,seed,int(density*1000.0))
+	var k4 := [key.x,key.y,seed,int(density*1000.0),hash(mix)]
 	_lock.lock()
 	got = _cache.get(k4)
 	_lock.unlock()
 	if got == null:
 		var was: float = impl.detail
 		impl.detail = 0.0
-		got = _make(impl,seed,density,ponds,key.x,key.y)
+		got = _make(impl,seed,density,ponds,key.x,key.y,mix if not mix.is_empty() else MIX)
 		impl.detail = was
 		_lock.lock()
 		if _cache.has(k4): got = _cache[k4]
@@ -219,19 +317,22 @@ static func cell_site(impl: Object, seed: int, density: float, ponds: float, key
 	local[key] = got
 	return got
 
-## (x, z) in site `s`'s frame: Vector2(along the slot from its middle, across).
+## (x, z) in site `s`'s frame: Vector2(along the canyon from its middle, across).
 static func local(s: PackedFloat32Array, x: float, z: float) -> Vector2:
 	var dx := x-s[0]
 	var dz := z-s[1]
 	return Vector2(dx*s[2]+dz*s[3],-dx*s[3]+dz*s[2])
 
-## The path's centre line across at `u` along (clamped to the slot's ends)
-## and its slope there: Vector2(offset, d offset / d u).
+## The path's centre line across at `u` along (held at its ends' past
+## them) and its slope there: Vector2(offset, d offset / d u). It swings
+## the bend's amplitude in K_WAVES half waves, straight along the way at
+## both mouths.
 static func path(s: PackedFloat32Array, u: float) -> Vector2:
 	var hl := s[4]
-	if absf(u) >= hl: return Vector2.ZERO
-	var k := PI/hl
-	return Vector2(s[9]*sin(u*k),s[9]*k*cos(u*k))
+	var k := PI*s[K_WAVES]/(2.0*hl)
+	if absf(u) >= hl: return Vector2(s[9]*cos(k*(signf(u)*hl+hl)),0.0)
+	var a := k*(u+hl)
+	return Vector2(s[9]*cos(a),-s[9]*k*sin(a))
 
 ## The floor's height at `u` along (world y), the climb past the ends in.
 static func floor_at(s: PackedFloat32Array, u: float) -> float:
@@ -268,13 +369,14 @@ static func tree_keepouts(s: PackedFloat32Array) -> Array:
 	var n := maxi(1,ceili(s[7]*2.0/KEEP_STRETCH))
 	var half := s[7]/n
 	var way := Vector2(s[2],s[3])
+	var across := Vector2(-way.y,way.x)
 	for k in n:
 		var u := -s[7]+half*(2*k+1)
 		out.append([Vector2(s[0],s[1])+way*u,cos(turned),sin(turned),s[8],half])
 	# A lane on through the woods out of each mouth, LANE m on, as wide as
-	# the mouth.
+	# the mouth, on the path's line there.
 	for end: float in [-1.0,1.0]:
-		out.append([Vector2(s[0],s[1])+way*end*(s[7]+LANE*0.5),cos(turned),sin(turned),s[5]*(1.0+FLARE_WIDEN)+10.0,LANE*0.5])
+		out.append([Vector2(s[0],s[1])+way*end*(s[7]+LANE*0.5)+across*path(s,end*s[4]).x,cos(turned),sin(turned),s[5]*(1.0+s[K_FLARE+1])+10.0,LANE*0.5])
 	return out
 
 # --- The cut --------------------------------------------------------------------------
@@ -292,56 +394,103 @@ static func _vn(t: float, salt: int) -> float:
 	f = f*f*(3.0-2.0*f)
 	return lerpf(_r(i,salt),_r(i+1,salt),f)
 
-## The most a wall stands back from the floor's narrowest edge (m).
-static func setback_most() -> float:
-	var out := HALF*WIDEN
-	for r: Vector2 in ROUGH: out += r.y
-	return out
-
 ## How far into a mouth's flare `u` along lies (0 inside, 1 at the mouth
 ## and past it).
 static func _flare(s: PackedFloat32Array, u: float) -> float:
-	var reach := minf(FLARE,s[4]*FLARE_SHARE)
+	var reach := minf(s[K_FLARE],s[4]*FLARE_SHARE)
 	return smoothstep(s[4]-reach,s[4],absf(u))
 
 ## The floor's half width at `u` along before the walls' own setbacks: the
 ## narrowest, the mouths' flare in.
 static func _half(s: PackedFloat32Array, u: float) -> float:
-	return s[5]*(1.0+FLARE_WIDEN*_flare(s,u))
+	return s[5]*(1.0+s[K_FLARE+1]*_flare(s,u))
 
 ## Wall `side` (0 or 1)'s setback from the floor's edge at `u` along:
-## Vector2(m, the flutes' share of their most, 0..1).
+## Vector2(m, the alcove's share 0..1: 0 a buttress standing out, 1 an
+## alcove set in). Each wall wanders on its own, so the two never run
+## parallel; its foot steps in blocks (the joints).
 static func _back(s: PackedFloat32Array, u: float, side: int) -> Vector2:
-	var salt := int(s[12])
-	var flute := 0.0
-	var most := 0.0
-	for k in ROUGH.size():
-		var r: Vector2 = ROUGH[k]
-		flute += r.y*_vn(u/r.x,salt+side*17+k*5)
-		most += r.y
-	return Vector2(flute+s[5]*WIDEN*_vn(u/WIDEN_SCALE,salt+3),flute/most)
+	var salt := int(s[12])+side*17
+	var wander := s[K_WANDER]*_vn(u/s[K_WANDER+1],salt+3)
+	var bay := smoothstep(RIB_EDGE.x,RIB_EDGE.y,_vn(u/s[K_BUTTRESS+1],salt+5))
+	var flute := FLUTE.y*_vn(u/FLUTE.x,salt+7)
+	return Vector2(wander+s[K_BUTTRESS]*bay+flute+_blocks(s,u,salt+19),bay)
+
+## The joints: a step of up to the kind's block depth, the same along each
+## block (the kind's block size along), changing over BLOCK_EDGE of it.
+static func _blocks(s: PackedFloat32Array, u: float, salt: int) -> float:
+	var t := u/s[K_BLOCK]
+	var i := floori(t)
+	return s[K_BLOCK+1]*lerpf(_r(i-1,salt),_r(i,salt),smoothstep(0.0,BLOCK_EDGE,t-i))
+
+## Bench `k` of wall `side`'s width at `u` along: pinching out to the
+## kind's least in places (the tiers then one face), widening to its most
+## (a ledge) in others, stepped by its own joints. `lowest`: the widest.
+static func _bench(s: PackedFloat32Array, u: float, salt: int, k: int, lowest: bool) -> float:
+	if lowest: return s[K_BENCH+1]+s[K_BLOCK+1]
+	return lerpf(s[K_BENCH],s[K_BENCH+1],smoothstep(0.2,0.8,_vn(u/BENCH_SCALE+k*3.7,salt+9+k*13)))+_blocks(s,u,salt+23+k*7)
 
 ## Wall `side`'s height over the floor `e` m past the floor's edge (its
-## setback in) at `u` along: the lower tier, the bench, the upper tier, the
-## lean; the mouths' flare in.
-static func _rise(s: PackedFloat32Array, u: float, side: int, e: float) -> float:
+## setback in) at `u` along, the floor there at world height `lid`: the
+## talus, the tiers each to its level with their benches between, then the
+## lean in its strata; the mouths' flare in. `lowest` reads the lowest the
+## wall can stand there (the widest benches, no strata), for the cut's
+## extent.
+static func _rise(s: PackedFloat32Array, u: float, side: int, e: float, lid: float, lowest := false) -> float:
 	if e <= 0.0: return 0.0
 	var salt := int(s[12])+side*31
 	var f := _flare(s,u)
 	var low := lerpf(1.0,FLARE_LOW,f)
-	var edge := EDGE*lerpf(1.0,FLARE_SOFT,f)
-	var t1 := lerpf(TIER.x,TIER.y,_vn(u/TIER_SCALE,salt+7))*low
-	if e <= edge: return t1*e/edge
-	e -= edge
-	var b := lerpf(BENCH.x,BENCH.y,_vn(u/(TIER_SCALE*0.6),salt+9))
-	if e <= b: return t1+e*BENCH_RISE
-	e -= b
-	var y := t1+b*BENCH_RISE
-	var t2 := lerpf(TIER_UP.x,TIER_UP.y,_vn(u/TIER_SCALE,salt+13))*low
-	if e <= edge: return y+t2*e/edge
-	return y+t2+(e-edge)/lerpf(LEAN,FLARE_LEAN,f)
+	var edge := s[K_EDGE]*lerpf(1.0,FLARE_SOFT,f)
+	var y := 0.0
+	# The talus: a scree apron at the foot, steepening to the rock.
+	var tw := s[K_TALUS+1]
+	if tw > 0.0:
+		var th := s[K_TALUS]*low
+		if e <= tw:
+			var a := e/tw
+			return th*a*a
+		e -= tw
+		y = th
+	# The tiers, each up to its level over the floor's middle (so a tier
+	# under the floor where it climbs is gone), each riser rounded at its
+	# foot and lip.
+	var under := s[6]-lid
+	var n := int(s[K_TIERS])
+	for k in n:
+		var t := (s[K_LEVEL+k]+under)*low-y
+		if t <= 0.5: continue
+		if e <= edge:
+			var a := e/edge
+			return y+t*a*a*(3.0-2.0*a)
+		e -= edge
+		y += t
+		if k < n-1:
+			var b := _bench(s,u,salt,k,lowest)
+			if e <= b: return y+e*BENCH_RISE
+			e -= b
+			y += b*BENCH_RISE
+	var h := e/lerpf(s[K_LEAN],FLARE_LEAN,f)
+	if lowest: return y+h
+	return y+_strata(s,lid+y,h,f)
 
-## Vector3(the land's height `base` with site `s`'s slot cut in at (x, z),
+## The strata over the lean: the rise `h` over the lean's foot (at world
+## height `y0`) stepped in level ledges, the treads at the same world
+## heights on both walls (a step of K_STRATA m, its tread K_STRATA+1 of
+## it), fading out toward the mouths (`f`).
+static func _strata(s: PackedFloat32Array, y0: float, h: float, f: float) -> float:
+	var step := s[K_STRATA]
+	if step <= 0.0 or h <= 0.0: return h
+	var tread := s[K_STRATA+1]
+	var a := _terrace(y0/step,tread)
+	var b := _terrace((y0+h)/step,tread)
+	return lerpf((b-a)*step,h,f)
+
+static func _terrace(t: float, tread: float) -> float:
+	var i := floorf(t)
+	return i+smoothstep(tread,1.0,t-i)
+
+## Vector3(the land's height `base` with site `s`'s canyon cut in at (x, z),
 ## the groove 0..1, the buttress 0..1 (the carve's marks for the rock), or
 ## a negative groove where the cut leaves the land be; a negative buttress
 ## on the floor).
@@ -358,15 +507,15 @@ static func cut(s: PackedFloat32Array, base: float, x: float, z: float) -> Vecto
 	var side := 1 if off > 0.0 else 0
 	var back := _back(s,q.x,side)
 	var e := d-_half(s,q.x)-back.x
-	var y := lid+_rise(s,q.x,side,e)
+	var y := lid+_rise(s,q.x,side,e,lid)
 	# Eased back into the land at the cut's edge and its ends.
 	var t := maxf(smoothstep(s[11]-EASE,s[11],d),smoothstep(s[7]-EASE,s[7],au))
 	y = lerpf(y,base,t)
 	if y >= base-0.0005: return Vector3(base,-1.0,0.0)
 	if e <= 0.0: return Vector3(y,0.0,-1.0)
-	return Vector3(y,smoothstep(0.45,0.9,back.y),smoothstep(0.55,0.1,back.y))
+	return Vector3(y,smoothstep(0.55,1.0,back.y)*0.8,smoothstep(0.45,0.0,back.y)*0.7)
 
-## The land's height `base` with site `s`'s slot cut in at (x, z).
+## The land's height `base` with site `s`'s canyon cut in at (x, z).
 static func carve(s: PackedFloat32Array, base: float, x: float, z: float) -> float:
 	return cut(s,base,x,z).x
 
@@ -375,7 +524,7 @@ static func carve(s: PackedFloat32Array, base: float, x: float, z: float) -> flo
 static func _h(impl: Object, x: float, z: float) -> float:
 	return (impl.sample(x,z) as Vector2).x
 
-static func _make(impl: Object, seed: int, density: float, ponds: float, ci: int, cj: int) -> PackedFloat32Array:
+static func _make(impl: Object, seed: int, density: float, ponds: float, ci: int, cj: int, mix: Dictionary) -> PackedFloat32Array:
 	var none := PackedFloat32Array()
 	if density <= 0.0: return none
 	if _hash01(seed,ci,cj,1) >= minf(CHANCE*density,CHANCE_MOST): return none
@@ -394,10 +543,67 @@ static func _make(impl: Object, seed: int, density: float, ponds: float, ci: int
 			if m >= CREST_MIN: spots.append([m,x,z])
 	if spots.is_empty(): return none
 	spots.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0])
-	for t in mini(TRIES,spots.size()):
-		var got := _fit(impl,seed,ponds,ci,cj,float(spots[t][1]),float(spots[t][2]))
-		if not got.is_empty(): return got
+	# The square's kinds in an order drawn from the world's mix (or the
+	# forced one alone), each tried at every spot whose crossing fits it:
+	# first only where the land takes it (a kind's land lean as a chance,
+	# _likes), then anywhere it fits.
+	var order: Array = [_forced] if _forced >= 0 else _draws(seed,ci,cj,mix)
+	var tries := mini(TRIES,spots.size())
+	var crossings: Array = []
+	crossings.resize(tries)
+	for gate: bool in ([false] if _forced >= 0 else [true,false]):
+		for kind: int in order:
+			for t in tries:
+				if crossings[t] == null: crossings[t] = _cross(impl,seed,ci,cj,float(spots[t][1]),float(spots[t][2]))
+				var x: Dictionary = crossings[t]
+				if x.is_empty() or not _fits(kind,x): continue
+				var take := lerpf(LAND_KEEP,1.0,_likes(kind,float(x.fill)))
+				if gate == (_hash01(seed,ci,cj,70+t*5+kind) >= take): continue
+				var got := _kind_site(impl,seed,ponds,ci,cj,kind,x)
+				if not got.is_empty(): return got
 	return none
+
+## The kinds in an order drawn from `mix` ({name: weight}) for square
+## (ci, cj), each from what is left; those the mix weighs nothing left out.
+static func _draws(seed: int, ci: int, cj: int, mix: Dictionary) -> Array:
+	var w := PackedFloat32Array()
+	for k in KINDS.size(): w.append(maxf(float(mix.get(KINDS[k],0.0)),0.0))
+	var out: Array = []
+	for draw in KINDS.size():
+		var k := _draw(_hash01(seed,ci,cj,6+draw*7),w)
+		if k < 0: break
+		out.append(k)
+		w[k] = 0.0
+	return out
+
+## A kind drawn by its weight in `w` (a weight a kind) at `roll` (0..1),
+## or -1 where nothing weighs.
+static func _draw(roll: float, w: PackedFloat32Array) -> int:
+	var sum := 0.0
+	for v: float in w: sum += v
+	if sum <= 0.0: return -1
+	roll *= sum
+	var got := -1
+	for k in w.size():
+		if w[k] <= 0.0: continue
+		got = k
+		roll -= w[k]
+		if roll < 0.0: break
+	return got
+
+## Whether kind `k` fits crossing `x` (_cross): its length and depth.
+static func _fits(k: int, x: Dictionary) -> bool:
+	var t: Dictionary = TYPES[KINDS[k]]
+	var r: Vector2 = t.length
+	var crossing := float(x.hl)*2.0
+	return crossing >= r.x and crossing <= r.y and float(x.deep) >= float(t.tall)
+
+## How well kind `k` likes land of fill `fill` (_fill), 0..1: a sharp
+## crest suits the kinds whose `land` is -1, a broad one those at 1.
+static func _likes(k: int, fill: float) -> float:
+	var broad := smoothstep(FILL_SHARP,FILL_BROAD,fill)
+	var lean: float = TYPES[KINDS[k]].land
+	return lerpf(1.0-broad,broad,lean*0.5+0.5)
 
 ## The crest nearest `p` across way `d`: the highest point along it.
 static func _snap(impl: Object, p: Vector2, d: Vector2, reach: float, step: float) -> Vector2:
@@ -415,8 +621,9 @@ static func _snap(impl: Object, p: Vector2, d: Vector2, reach: float, step: floa
 
 ## Walks from `c` (the crest, `top` high) along `d` to the range's foot,
 ## where the flank eases (or, FOOT_DEEP m under the crest, wherever it is:
-## the slot then opens high on the flank): Vector3(distance, height there,
-## 1 if fit, 0 by a river's water or on the sea, -1 none within WALK_MOST).
+## the canyon then opens high on the flank): Vector3(distance, height
+## there, 1 if fit, 0 by a river's water or on the sea, -1 none within
+## WALK_MOST).
 static func _foot(impl: Object, c: Vector2, d: Vector2, top: float) -> Vector3:
 	var back := int(FOOT_RUN/WALK)
 	var hs: Array = [top]
@@ -434,8 +641,31 @@ static func _foot(impl: Object, c: Vector2, d: Vector2, top: float) -> Vector3:
 		t += WALK
 	return Vector3(t,0.0,-1.0)
 
-static func _fit(impl: Object, seed: int, ponds: float, ci: int, cj: int, x: float, z: float) -> PackedFloat32Array:
-	var none := PackedFloat32Array()
+## The land's fill under the crossing from `a` (`ya` high) to `b` (`yb`)
+## over crest height `top`: the mean, over the line, of the land's height
+## over the line between the feet as a share of the crest's (0.5 a straight
+## sided ridge, toward 1 a tableland, under it a peak with concave flanks).
+static func _fill(impl: Object, a: Vector2, ya: float, b: Vector2, yb: float, top: float) -> float:
+	var n := maxi(8,int(a.distance_to(b)/12.0))
+	var sum := 0.0
+	for k in n:
+		var t := (k+0.5)/n
+		var p := a.lerp(b,t)
+		var base := lerpf(ya,yb,t)
+		sum += clampf((_h(impl,p.x,p.y)-base)/maxf(top-base,1.0),0.0,1.2)
+	return sum/n
+
+## Kind `k`'s number `key` rolled within its range for square (ci, cj).
+static func _roll(seed: int, ci: int, cj: int, k: int, key: String, salt: int) -> float:
+	var r: Vector2 = TYPES[KINDS[k]][key]
+	return lerpf(r.x,r.y,_hash01(seed,ci,cj,40+salt))
+
+## The crossing of the range from the crest nearest (x, z) to its feet:
+## {name, coded (the floor's middle, the way along +X), hl, reach, slope,
+## crest, deep (the crest over the floor's higher end), fill (_fill)}, or
+## an empty one where no crossing fits.
+static func _cross(impl: Object, seed: int, ci: int, cj: int, x: float, z: float) -> Dictionary:
+	var none := {}
 	# Up the slope onto the crest, its way off a ring, straight either side.
 	var e := 6.0
 	var g := Vector2(_h(impl,x+e,z)-_h(impl,x-e,z),_h(impl,x,z+e)-_h(impl,x,z-e))
@@ -467,7 +697,7 @@ static func _fit(impl: Object, seed: int, ponds: float, ci: int, cj: int, x: flo
 	if crossing < LENGTH.x or crossing > LENGTH.y: return none
 	var mid := c+across*((fb.x-fa.x)*0.5)
 	var hl := crossing*0.5
-	# The way along the slot (from foot a to foot b), from the seed.
+	# The way along the canyon (from foot a to foot b), from the seed.
 	var way := across
 	var ya := fa.y
 	var yb := fb.y
@@ -483,20 +713,41 @@ static func _fit(impl: Object, seed: int, ponds: float, ci: int, cj: int, x: flo
 	var eb := minf(yb,lo+GRADE_MOST*crossing)
 	var slope := (eb-ea)/crossing
 	var floor_mid := (ea+eb)*0.5-SINK
-	if hc-maxf(ea,eb) < TALL_MIN: return none
-	var rise := maxf(ya-ea,yb-eb)
-	var reach := hl+minf(rise/GRADE+16.0,RAMP_MOST)
-	# The bend: an S no tighter than TURN_MIN.
-	var bend := minf(BEND_MOST,hl*hl/(PI*PI*TURN_MIN))*(_hash01(seed,ci,cj,3)*2.0-1.0)
-	var salt := int(hash([seed,ci,cj,"split"]) & 0xffff)
-	# The cut's top: the land round the path read along its edge, the walls
-	# widened till they stand over it.
+	var deep := hc-maxf(ea,eb)
+	if deep < TALL_MIN: return none
+	# The land under it, for the kinds (_likes).
+	var fill := _fill(impl,c-across*fa.x,fa.y,c+across*fb.x,fb.y,hc)
 	var name := "%s/split/%d_%d" % [_world_id(),ci,cj]
 	if LayoutOverrides.deleted(name): return none
 	var yaw := atan2(-way.y,way.x)
 	var coded := Transform3D(Basis(Vector3.UP,yaw),Vector3(mid.x,floor_mid,mid.y))
+	var rise := maxf(ya-ea,yb-eb)
+	var reach := hl+minf(rise/GRADE+16.0,RAMP_MOST)
+	return {"name":name,"coded":coded,"hl":hl,"reach":reach,"slope":slope,"crest":hc,"deep":deep,"fill":fill}
+
+## The site of kind `kind` on crossing `x` (_cross), or an empty array
+## where its cut does not fit the land round it (too wide, out of its square or its region,
+## by water, no way on or no flat out of a mouth).
+static func _kind_site(impl: Object, seed: int, ponds: float, ci: int, cj: int, kind: int, x: Dictionary) -> PackedFloat32Array:
+	var none := PackedFloat32Array()
+	var name: String = x.name
+	var coded: Transform3D = x.coded
+	var hl: float = x.hl
+	var reach: float = x.reach
+	var slope: float = x.slope
+	var hc: float = x.crest
+	var salt := int(hash([seed,ci,cj,"split"]) & 0xffff)
+	var mid := Vector2(coded.origin.x,coded.origin.z)
+	var kn := _numbers(seed,ci,cj,kind,hl)
+	# The bend: the kind's swing in its half waves, no tighter than its turn.
+	var tk: Dictionary = TYPES[KINDS[kind]]
+	var kk := PI*kn[K_WAVES-13]/(hl*2.0)
+	var bend := minf(float(tk.bend),1.0/(float(tk.turn)*kk*kk))*lerpf(0.65,1.0,_hash01(seed,ci,cj,3))*(1.0 if _hash01(seed,ci,cj,5) < 0.5 else -1.0)
+	# The cut's top: the land round the path read along its edge, the walls
+	# widened till they stand over it.
 	var top := hc+TOP_OVER
-	var site := _site(coded,hl,reach,slope,bend,top,salt,hc)
+	var wide_most: float = tk.wide_most
+	var site := _site(coded,hl,reach,slope,bend,top,salt,hc,kn)
 	for _round in 3:
 		var over := -INF
 		var u := -reach
@@ -507,9 +758,9 @@ static func _fit(impl: Object, seed: int, ponds: float, ci: int, cj: int, x: flo
 			u += 12.0
 		if over <= 0.0: break
 		top += over+TOP_OVER
-		site = _site(coded,hl,reach,slope,bend,top,salt,hc)
-		if site[11] > WIDE_MOST: return none
-	if site[11] > WIDE_MOST: return none
+		site = _site(coded,hl,reach,slope,bend,top,salt,hc,kn)
+		if site[11] > wide_most: return none
+	if site[11] > wide_most: return none
 	# The whole cut inside the square.
 	var sq := Rect2(ci*CELL,cj*CELL,CELL,CELL).grow(-8.0)
 	var w2 := Vector2(site[2],site[3])
@@ -548,8 +799,38 @@ static func _fit(impl: Object, seed: int, ponds: float, ci: int, cj: int, x: flo
 	# A move in the layout file wins (its yaw and place).
 	var xf := LayoutOverrides.xform(name,coded)
 	var frame := Transform3D(Basis(Vector3.UP,atan2(-xf.basis.x.z,xf.basis.x.x)),xf.origin)
-	if frame != coded: site = _site(frame,hl,reach,slope,bend,top,salt,hc)
+	if frame != coded: site = _site(frame,hl,reach,slope,bend,top,salt,hc,kn)
 	return site
+
+## Kind `kind`'s numbers rolled for square (ci, cj), a crossing `hl` m
+## half long: the site's slots from K_KIND on, up to K_BACK (the floor's
+## half width first, at [0], kept out by _site).
+static func _numbers(seed: int, ci: int, cj: int, kind: int, hl: float) -> PackedFloat32Array:
+	var t: Dictionary = TYPES[KINDS[kind]]
+	var toy: float = _toy_slot_arg if kind == 0 else float(t.toy)
+	var waves: Vector2i = t.waves
+	var tiers: Vector2i = t.tiers
+	var hw: float = t.half_wave
+	var n_waves := clampi(roundi(hl*2.0/hw),waves.x,waves.y)
+	var n_tiers := mini(tiers.x+int(_hash01(seed,ci,cj,60)*(tiers.y-tiers.x+1)*0.9999),TIERS_MOST)
+	var tier: Vector2 = t.tier
+	var bench: Vector2 = t.bench
+	var bs: Vector2 = t.buttress_scale
+	var talus: Vector2 = t.talus
+	var blocks: Vector2 = t.blocks
+	var out := PackedFloat32Array([WorldScale.opening(toy)*0.5*_roll(seed,ci,cj,kind,"wide",1),float(kind),float(n_waves),float(n_tiers)])
+	# Each tier's level: the rises rolled one by one, summed.
+	var level := 0.0
+	for k in TIERS_MOST:
+		level += lerpf(tier.x,tier.y,_hash01(seed,ci,cj,61+k))
+		out.append(level if k < n_tiers else 0.0)
+	out.append_array([bench.x,bench.y,float(t.edge),
+		_roll(seed,ci,cj,kind,"lean",2),_roll(seed,ci,cj,kind,"wander",3),float(t.wander_scale),
+		_roll(seed,ci,cj,kind,"buttress",4),lerpf(bs.x,bs.y,_hash01(seed,ci,cj,45)),
+		_roll(seed,ci,cj,kind,"flare",6),_roll(seed,ci,cj,kind,"flare_widen",7),
+		_roll(seed,ci,cj,kind,"strata",8),_roll(seed,ci,cj,kind,"tread",9),
+		talus.x,talus.y,blocks.x,blocks.y])
+	return out
 
 ## The world XZ `v` m across the path at `u` along (site `s`).
 static func _edge(s: PackedFloat32Array, u: float, v: float) -> Vector2:
@@ -560,24 +841,34 @@ static func _edge(s: PackedFloat32Array, u: float, v: float) -> Vector2:
 	var nn := Vector2(-t.y,t.x)
 	return Vector2(s[0],s[1])+way*u+n*c.x+nn*v
 
-## The wall's lowest height `d` m off the path at `u` along (the flutes
-## and swell standing back their most).
+## The wall's lowest height `d` m off the path at `u` along (the wander,
+## the alcoves, the joints and the flutes standing back their most, the
+## strata's step under the lean).
 static func _wall(s: PackedFloat32Array, u: float, d: float) -> float:
-	var e := d-_half(s,u)-setback_most()
-	return floor_at(s,u)+minf(_rise(s,u,0,e),_rise(s,u,1,e))
+	var e := d-_half(s,u)-s[K_BACK]
+	var lid := floor_at(s,u)
+	return lid+minf(_rise(s,u,0,e,lid,true),_rise(s,u,1,e,lid,true))-s[K_STRATA]
 
 ## A site's array for the frame `frame` (the floor's middle at its origin,
-## the slot along its +X).
-static func _site(frame: Transform3D, hl: float, reach: float, slope: float, bend: float, top: float, salt: int, crest: float) -> PackedFloat32Array:
+## the canyon along its +X); `kn` the kind's numbers (_numbers).
+static func _site(frame: Transform3D, hl: float, reach: float, slope: float, bend: float, top: float, salt: int, crest: float, kn: PackedFloat32Array) -> PackedFloat32Array:
 	var way := Vector2(frame.basis.x.x,frame.basis.x.z).normalized()
 	var lid_lo := frame.origin.y-absf(slope)*hl
-	var wide := HALF*(1.0+FLARE_WIDEN)+setback_most()+EDGE*2.0+BENCH.y+maxf(top-lid_lo-TIER.x-TIER_UP.x,0.0)*LEAN+EASE
-	return PackedFloat32Array([frame.origin.x,frame.origin.z,way.x,way.y,hl,HALF,frame.origin.y,reach,wide+absf(bend),bend,slope,wide,float(salt),crest])
+	var half := kn[0]
+	var tiers := kn[K_TIERS-13]
+	var back_most := kn[K_WANDER-13]+kn[K_BUTTRESS-13]+FLUTE.y+kn[K_BLOCK-13+1]
+	var steps := kn[K_TALUS-13+1]+kn[K_EDGE-13]*tiers+(kn[K_BENCH-13+1]+kn[K_BLOCK-13+1])*(tiers-1)
+	var lean := kn[K_LEAN-13]
+	var wide := half*(1.0+kn[K_FLARE-13+1])+back_most+steps+maxf(top-lid_lo-kn[K_LEVEL-13+int(tiers)-1],0.0)*lean+EASE
+	var out := PackedFloat32Array([frame.origin.x,frame.origin.z,way.x,way.y,hl,half,frame.origin.y,reach,wide+absf(bend),bend,slope,wide,float(salt),crest])
+	out.append_array(kn.slice(1))
+	out.append(back_most)
+	return out
 
 ## Whether the way out of the mouth at `end` (-1 or 1) runs on open for
 ## OPEN m: the land along it, and OPEN_FAN either side, stays under the
 ## floor at the mouth plus OPEN_RISE m and OPEN_CLIMB of the way, so the
-## slot never sends the plane at a hill it cannot climb.
+## canyon never sends the plane at a hill it cannot climb.
 static func _open(impl: Object, s: PackedFloat32Array, end: float) -> bool:
 	var m := point(s,end*s[4])
 	var at := Vector2(m.x,m.z)
@@ -625,14 +916,25 @@ static func _world_id() -> String:
 
 ## --split-near-start: the start for site `s`, START_BACK m out of its lower
 ## mouth on the way in: {at (Vector2), heading (degrees clockwise from -z),
-## mouth (Vector3), exit (Vector3)}.
-static func approach(s: PackedFloat32Array) -> Dictionary:
+## mouth (Vector3), exit (Vector3), alt (m over the ground at `at`:
+## START_ALT, or more so the way in stands START_CLEAR m over the land of
+## `field` all the way to the mouth)}.
+const START_CLEAR := 18.0
+static func approach(s: PackedFloat32Array, field: Object = null) -> Dictionary:
 	var end := -1.0 if s[10] >= 0.0 else 1.0
 	var mouth := point(s,end*s[4])
 	var other := point(s,-end*s[4])
 	var inward := Vector2(s[2],s[3])*-end
 	var at := Vector2(mouth.x,mouth.z)-inward*START_BACK
-	return {"at":at,"heading":rad_to_deg(atan2(inward.x,-inward.y)),"mouth":mouth,"exit":other}
+	var alt := START_ALT
+	if field != null:
+		var ground: float = field.height(at.x,at.y)
+		var a := 16.0
+		while a < START_BACK:
+			var p := at+inward*a
+			alt = maxf(alt,float(field.height(p.x,p.y))+START_CLEAR-ground)
+			a += 16.0
+	return {"at":at,"heading":rad_to_deg(atan2(inward.x,-inward.y)),"mouth":mouth,"exit":other,"alt":alt}
 
 # --- The cut over a chunk's and a grid's arrays ------------------------------------
 
