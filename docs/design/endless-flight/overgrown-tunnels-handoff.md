@@ -35,6 +35,33 @@ plus throwaway drivers in `scratch/tunnel/`, with no committed tests.
     column row (two lanes, or one open nave).
   - `--tunnel-shafts=N` sets the shafts per tunnel.
 
+## Lighting: torch shadows and harder stone
+
+Found in play: inside, everything looked like cardboard. With the torches
+off the halls go black, so it wasn't sky light. The 16 torch lights had no
+shadows and a flat falloff (`omni_attenuation` 0.8, 30 m), so many
+torches from both walls lit every face of a column alike. The smooth,
+lifted kit stone had nothing left for the light to pick out.
+
+All in `scripts/endless/land_tunnels.gd`:
+- The 4 nearest torch lights cast shadows (`TORCH_SHADOWS`,
+  `--torch-shadows=N`; 0 is the old look). The falloff is steeper
+  (`TORCH_ATTEN` 1.15) and brighter at the torch (`TORCH_ENERGY` 13).
+- Each shadowed torch has a dim bounce light with no shadow, out in the
+  bore (`BOUNCE*`, `--torch-bounce=X`). It is weaker in the caverns, where
+  it lit the floor flat.
+- The hall stone is weathered harder (`STONE_WEATHER` 1.5, `STONE_CRACK`
+  1.6, `STONE_BUMP` 2.0; `--hall-weather=X`, `--hall-bump=X`) and lifted
+  less (`STONE_LIFT` x0.85).
+
+Cost, flying through at boost (Windows PC, rendered): GPU 7.39 -> 8.74 ms
+mean (p95 9.21 -> 10.85), render CPU 1.29 -> 1.89 ms. 8 shadowed lights
+cost GPU 9.42 / render CPU 2.41.
+
+Tried and dropped: SSAO and SSIL inside. They changed under 3% of pixels:
+the tunnel materials take no ambient light. Stills are in
+`captures/tunnel/flat/` (`*_base` before, `*_final` after).
+
 ## Round 2: open naves, slippery walls, basalt, overgrowth
 
 This round answers the first "Found in play" item below: the user couldn't

@@ -259,20 +259,51 @@ const ROCK_TEX_LOW := 0.62
 const STONE_DIM := 0.08
 ## The stretches' stone lifted less than in the sun (LandHalls STONE_LIFT),
 ## so under the torches it sits with the rock.
-const STONE_LIFT := Color(1.8,1.55,1.25)
+const STONE_LIFT := Color(1.53,1.32,1.06)
+## The stretches' stone weathered harder than in the sun (kit_weather's
+## grain, pits and cracks, `--hall-weather=X`) and its bump deeper
+## (`--hall-bump=X`): under a torch's raking light the smooth kit stone read
+## as card (found in play).
+const STONE_WEATHER := 1.5
+const STONE_CRACK := 1.6
+const STONE_BUMP := 2.0
 const GROWTH_DIM := 0.08
 ## The torches' lights: the nearest TORCH_LIGHTS torches to the eye get a
-## real light (no shadows), TORCH_RANGE m, TORCH_ENERGY, flickering by
-## TORCH_FLICKER; past LIGHT_REACH m none do, and the farthest lit ones fade
-## over LIGHT_FADE m so a light coming on doesn't pop.
+## real light, TORCH_RANGE m, TORCH_ENERGY, falling off by TORCH_ATTEN,
+## flickering by TORCH_FLICKER; past LIGHT_REACH m none do, and the farthest
+## lit ones fade over LIGHT_FADE m so a light coming on doesn't pop. The
+## TORCH_SHADOWS nearest cast shadows (`--torch-shadows=N`), so a column
+## darkens its far side and throws its shadow on the floor; about +1.4 ms
+## GPU and +0.6 ms render CPU inside at 4 (8: +2.0, +1.1). Before, 16 lights
+## without shadows and a flat falloff (0.8) lit every face of a hall alike:
+## the cardboard look (found in play). `--torch-energy=X`, `--torch-atten=X`.
 const TORCH_LIGHTS := 16
+const TORCH_SHADOWS := 4
 const TORCH_RANGE := 30.0
-const TORCH_ENERGY := 5.0
-const TORCH_ATTEN := 0.8
+const TORCH_ENERGY := 13.0
+const TORCH_ATTEN := 1.15
 const TORCH_FLICKER := 0.12
 const TORCH_LIGHT := Color(1.0,0.74,0.5)
 const LIGHT_REACH := 260.0
 const LIGHT_FADE := 40.0
+## Each shadowed torch's bounce: a dim light with no shadow or gleam, out in
+## the bore (BOUNCE_OUT of the way from the wall to the path, BOUNCE_DOWN m
+## under the torch), BOUNCE of its torch's energy (BOUNCE_CAVE of that in a
+## cavern, whose floor it would light flat), so the far side of a column is
+## dim, not black (`--torch-bounce=X`, 0 none).
+const BOUNCE := 0.1
+const BOUNCE_CAVE := 0.3
+const BOUNCE_RANGE := 34.0
+const BOUNCE_ATTEN := 0.6
+const BOUNCE_OUT := 0.6
+const BOUNCE_DOWN := 0.5
+const BOUNCE_LIGHT := Color(1.0,0.8,0.6)
+
+## `--name=X` as a float, else `fallback`.
+static func _knob(name: String, fallback: float) -> float:
+	for a: String in Tunnels.LaunchArgs.user_args():
+		if a.begins_with("--%s=" % name): return float(a.get_slice("=",1))
+	return fallback
 ## The valley fog (EndlessClouds `fog_hush`) fades out over the first
 ## HUSH_IN m into the bore from either mouth: it would haze the dark inside.
 const HUSH_IN := 60.0
@@ -336,6 +367,9 @@ var _open_nave := true
 ## Whether `sight`'s last march was all in a bore's tube.
 var sight_whole := false
 var _lights: Array[OmniLight3D] = []
+var _bounce: Array[OmniLight3D] = []
+var _torch_energy := TORCH_ENERGY
+var _bounce_gain := BOUNCE
 ## The pooled flames, which torch each burns (id << 16 | i, -1 none) and
 ## how far it has burned in.
 var _flames: Array[Node3D] = []
@@ -522,17 +556,33 @@ func _ensure_pools() -> void:
 		_flames.append(fl)
 		_flame_on.append(-1)
 		_flame_burn.append(0.0)
+	# The pool is ranked nearest first, so the first lights are the shadowed.
+	var shadows := int(_knob("torch-shadows",TORCH_SHADOWS))
+	var atten := _knob("torch-atten",TORCH_ATTEN)
+	_torch_energy = _knob("torch-energy",TORCH_ENERGY)
+	_bounce_gain = _knob("torch-bounce",BOUNCE)
 	for i in TORCH_LIGHTS:
 		var l := OmniLight3D.new()
 		l.name = "TorchLight%d" % i
 		l.light_color = TORCH_LIGHT
 		l.omni_range = TORCH_RANGE
-		l.omni_attenuation = TORCH_ATTEN
-		l.shadow_enabled = false
+		l.omni_attenuation = atten
+		l.shadow_enabled = i < shadows
+		l.shadow_blur = 1.5
 		l.light_specular = 0.3
 		l.visible = false
 		add_child(l)
 		_lights.append(l)
+		if i < shadows and _bounce_gain > 0.0:
+			var bl := OmniLight3D.new()
+			bl.name = "TorchBounce%d" % i
+			bl.light_color = BOUNCE_LIGHT
+			bl.omni_attenuation = BOUNCE_ATTEN
+			bl.shadow_enabled = false
+			bl.light_specular = 0.0
+			bl.visible = false
+			add_child(bl)
+			_bounce.append(bl)
 
 ## Leaves the inside's layer out of every DirectionalLight3D (the sun and
 ## the moon), once they stand.
@@ -544,7 +594,8 @@ func _cut_sky() -> void:
 	_sky_cut = not lights.is_empty()
 
 ## The hall stretches' own materials for the kit's (LandHalls `swap`): the
-## stone and the growth with their sky fill dimmed.
+## stone and the growth with their sky fill dimmed, the stone weathered
+## harder.
 static func _dark_materials() -> Dictionary:
 	var kit: Dictionary = RuinKit.materials()
 	var stone := (kit.stone as ShaderMaterial).duplicate() as ShaderMaterial
@@ -552,6 +603,12 @@ static func _dark_materials() -> Dictionary:
 	stone.set_shader_parameter("albedo",STONE_LIFT)
 	stone.set_shader_parameter("rim",0.0)
 	stone.set_shader_parameter("dim_fill",STONE_DIM)
+	# --kit-stone=smooth keeps the smooth stone here too.
+	var weathered: Variant = stone.get_shader_parameter("stone_weather")
+	if weathered != null and float(weathered) > 0.0:
+		stone.set_shader_parameter("stone_weather",_knob("hall-weather",STONE_WEATHER))
+		stone.set_shader_parameter("weather_crack",STONE_CRACK)
+		stone.set_shader_parameter("weather_bump",_knob("hall-bump",STONE_BUMP))
 	var growth := (kit.growth as ShaderMaterial).duplicate() as ShaderMaterial
 	growth.set_shader_parameter("fill",1.25*GROWTH_DIM)
 	growth.set_shader_parameter("rim",0.0)
@@ -681,8 +738,20 @@ func _light_torches(at: Vector3) -> void:
 		var flick := 1.0+TORCH_FLICKER*(sin(_time*11.0+i*1.7)*0.6+sin(_time*23.0+i*3.1)*0.4)
 		l.position = b.lamps[i]
 		l.omni_range = TORCH_RANGE*b.lamp_big[i]
-		l.light_energy = TORCH_ENERGY*b.lamp_big[i]*fade*flick
+		l.light_energy = _torch_energy*b.lamp_big[i]*fade*flick
 		l.visible = fade > 0.0
+		if k < _bounce.size():
+			# Its bounce, out in the bore.
+			var bl := _bounce[k]
+			var lp: Vector3 = b.lamps[i]
+			var q := Tunnels.local(b.site,lp.x,lp.z)
+			var mid: Vector2 = Tunnels.at_s(b.site,q.x)[0]
+			var out := Vector2(lp.x,lp.z).lerp(mid,BOUNCE_OUT)
+			bl.position = Vector3(out.x,lp.y-BOUNCE_DOWN,out.y)
+			bl.omni_range = BOUNCE_RANGE*b.lamp_big[i]
+			bl.light_energy = _bounce_gain*l.light_energy*lerpf(1.0,BOUNCE_CAVE,Tunnels.cave_ease(b.site,q.x))
+			bl.visible = l.visible
+	for k in range(n,_bounce.size()): _bounce[k].visible = false
 	stats.lights = n
 	_burn_flames(near,dt)
 
