@@ -7,7 +7,8 @@
 
 Finds Godot the way the harness does (tools/godot.py: $GODOT, the WinGet
 install, C:\\Tools\\Godot, the Mac app), imports first if the checkout needs
-it, then opens a Forward+ 1440x900 window with `--no-title` and no timeout.
+it, then opens a Forward+ 1440x900 window with no timeout. Endless flight
+opens on its main menu (pass `--no-title` to start in the air).
 On Windows, `run-endless-flight.cmd` wraps this (double-click, or
 `.\\run-endless-flight.cmd --weight=heavy` from PowerShell).
 """
@@ -39,7 +40,7 @@ def main(argv: list[str]) -> int:
         if code != 0:
             return code
     args = [godot, "--path", str(ROOT), "--rendering-method", "forward_plus",
-            "--windowed", "--resolution", "1440x900", scene, "--", "--no-title", *argv]
+            "--windowed", "--resolution", "1440x900", scene, "--", *argv]
     print(f"== opening {scene}")
     return subprocess.call(args)
 

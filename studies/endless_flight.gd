@@ -28,6 +28,14 @@ extends Node3D
 ##   ./run-endless-flight.command [--seed=7]
 ##   godot --path . res://studies/endless_flight.tscn -- --no-title [--seed=7] [--at=x,z] [--heading=deg] [--alt=m]
 ##
+## The main menu (docs/design/endless-flight/main-menu-handoff.md): without
+## `--no-title` it opens on the plane parked in a meadow near the start
+## (scripts/endless/menu_spot.gd), idling, the eye circling it, the ZENSCAPE
+## inscription and Start over it (scripts/endless/main_menu.gd); Start
+## swings the eye round behind it, runs it up and rolls it off into the
+## flight (scripts/endless/menu_stage.gd). `--no-title` (the harness's, the
+## captures') starts in the air as ever.
+##
 ## The world: this script is the engine's (the plane and flight,
 ## streaming, the look, the dressing machinery, the HUD and harness hooks);
 ## what makes the world this world is its profile
@@ -84,6 +92,7 @@ const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
+const PlaneStrip = preload("res://scripts/plane_strip.gd")
 const ManualLanding = preload("res://scripts/manual_landing.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
@@ -116,6 +125,10 @@ const NearMiss = preload("res://scripts/endless/near_miss.gd")
 const FlightContact = preload("res://scripts/endless/flight_contact.gd")
 const NearMissHud = preload("res://scripts/endless/near_miss_hud.gd")
 const FlightDebris = preload("res://scripts/endless/flight_debris.gd")
+## The main menu: the parked plane's spot, the stage and the overlay.
+const MenuSpot = preload("res://scripts/endless/menu_spot.gd")
+const MenuStage = preload("res://scripts/endless/menu_stage.gd")
+const MainMenu = preload("res://scripts/endless/main_menu.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -218,6 +231,7 @@ var fish: Node3D
 var traffic: Node
 var flown := 0.0
 var _start := Vector2.ZERO
+var _no_title := false
 var _heading := 0.0
 var _face_sun := false
 var _numbers := false
@@ -315,6 +329,10 @@ var _events := {}
 ## The flight path's way last frame, for the vapour's pull, and the pull.
 var _last_way := Vector3.ZERO
 var _pull := 0.0
+## The main menu's stage (scripts/endless/menu_stage.gd) until the takeoff
+## is the player's, else null (`--no-title`); its overlay.
+var stage: RefCounted
+var menu: Control
 
 ## The 3D at a Native draw (the player's render resolution, and the default
 ## on a discrete GPU): 75%, upscaled by FSR (scripts/render_resolution.gd
@@ -356,6 +374,7 @@ func _ready() -> void:
 		elif arg.begins_with("--streaks="): _streak_scale = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--ceiling="): _ceiling_over = float(arg.get_slice("=",1))
 		elif arg == "--old-land": _ceiling_over = SkyPlane.CEILING-Field.SEA_Y
+		elif arg == "--no-title": _no_title = true
 		elif arg == "--uncapped":
 			# No vsync and no cap, so the numbers' fps is the frame's cost.
 			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
@@ -364,6 +383,11 @@ func _ready() -> void:
 	# the land is first looked at (scripts/endless/hall_sites.gd).
 	LayoutOverrides.begin("endless_flight")
 	field = Field.new(seed,world)
+	# The main menu parks the plane on a meadow near the start.
+	var spots: Array = [] if _no_title else MenuSpot.find(field,_start,_heading)
+	if not spots.is_empty():
+		_start = spots[0].at
+		_heading = float(spots[0].heading)
 	if EndlessLook.wanted():
 		look = EndlessLook.new()
 		add_child(look)
@@ -443,11 +467,48 @@ func _ready() -> void:
 	debris = FlightDebris.new()
 	debris.name = "Debris"
 	add_child(debris)
-	_launch(Vector3(_start.x,_start_height(),_start.y),_heading)
+	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading)
+	else: _park_for_menu(spots)
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.DEFAULT else ", world "+str(world.id)])
-	if get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if stage == null and get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+## The grass parted round the parked plane in the menu: out to PART_SPANS
+## wingspans (round the eye EYE_PART_SPANS), PART_PUSH times a standing walker's push (GrassReact `part`).
+const PART_SPANS := 0.8
+const PART_PUSH := 1.6
+const EYE_PART_SPANS := 1.3
+
+## The main menu: parked on the first of `spots` (MenuSpot `find`) that
+## nothing standing on the land is in the way of (trees, arches, halls,
+## tunnels primed there first), the stage and the overlay up.
+func _park_for_menu(spots: Array) -> void:
+	var spot: Dictionary = spots[0]
+	for s: Dictionary in spots:
+		var at: Vector2 = s.at
+		var here := Vector3(at.x,field.height(at.x,at.y)+2.0,at.y)
+		for part: Node3D in [arches,halls,tunnels,trees]: part.prime(here)
+		if MenuSpot.clear(field,s,WorldScale.TOY_SPAN*ground_scale.ground_size()*MenuStage.ORBIT_R+2.0,Callable(self,"_blocked")):
+			spot = s
+			break
+	_start = spot.at
+	_heading = float(spot.heading)
+	_launch(Vector3(_start.x,field.height(_start.x,_start.y),_start.y),_heading,true)
+	menu = MainMenu.new()
+	menu.name = "MainMenu"
+	_hint.get_parent().add_child(menu)
+	menu.picked.connect(_menu_picked)
+	stage = MenuStage.new()
+	stage.begin(_heading,menu)
+	_hint.visible = false
+
+## The menu's pick: Start hands off into the takeoff, Quit quits.
+func _menu_picked(what: String) -> void:
+	if what == "quit":
+		get_tree().quit()
+		return
+	if stage != null: stage.start()
 
 func _start_height() -> float:
 	# --tunnel-test: level with mouth A, to fly straight in.
@@ -581,8 +642,10 @@ func _build_ui() -> void:
 
 # --- The plane ------------------------------------------------------------------------
 
-## Flying from `at` on `heading`, at cruise, the chase camera behind it.
-func _launch(at: Vector3, heading: float) -> void:
+## Flying from `at` on `heading`, at cruise, the chase camera behind it;
+## or, `parked`, stood still on its wheels on the land at `at` (the main
+## menu's), the engine off.
+func _launch(at: Vector3, heading: float, parked := false) -> void:
 	plane = SkyPlane.new()
 	plane.use_flight_speed()
 	plane.use_pace(FlightPace.speed(pace))
@@ -602,8 +665,13 @@ func _launch(at: Vector3, heading: float) -> void:
 	if tunnels != null:
 		plane.guide = Callable(tunnels,"guide")
 		plane.keep = Callable(tunnels,"keep")
-	plane.launch(at,heading,plane.cruise(),false)
-	hand_landing.begin(plane)
+	if parked:
+		var rest := PlaneStrip.rest(func(p: Vector2) -> float: return field.height(p.x,p.y),Vector2(at.x,at.z),heading)
+		plane.park(Vector3(at.x,rest.x,at.z),heading,rest.y,rest.z)
+	else:
+		plane.launch(at,heading,plane.cruise(),false)
+		if stage != null: _menu_done()
+	hand_landing.begin(plane,parked)
 	hand_landing.land_most = FlightContact.LAND_MOST if plane.weighted else INF
 	near.reset()
 	contact.reset()
@@ -613,7 +681,7 @@ func _launch(at: Vector3, heading: float) -> void:
 		add_child(plane_figure)
 	plane_figure.reset(plane)
 	_last_way = Vector3.ZERO
-	ground_scale.reset(false)
+	ground_scale.reset(parked)
 	ground_scale.apply(plane_figure)
 	plane_figure._mark.visible = false
 	flaps = false
@@ -707,6 +775,7 @@ func _process(delta: float) -> void:
 func tick(delta: float) -> void:
 	flown += delta
 	var input := _fly_input(delta)
+	if stage != null: input = stage.input(delta,input,hand_landing,plane_figure)
 	# The plane skims the swell as drawn, not the sea's rest level, and a
 	# river's water as it skims the sea.
 	plane.water = water_at(plane.position)
@@ -715,7 +784,7 @@ func tick(delta: float) -> void:
 	plane.roofed = tunnels != null and int(tunnels.tube(plane.position)) == 0
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	var events := hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
-	plane.engine = hand_landing.engine*float(plane.sputter)
+	plane.engine = hand_landing.engine*float(plane.sputter)*(float(stage.engine) if stage != null else 1.0)
 	_near_misses(delta,events)
 	var ground := Callable(self,"plane_ground")
 	_pull = _pull_of(delta)
@@ -728,8 +797,13 @@ func tick(delta: float) -> void:
 	ground_scale.apply(plane_figure)
 	plane_figure._mark.visible = false
 	_size_chase()
-	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() else Vector3.ZERO
+	# On the wheels the chase stands off to the side, but not on the menu's
+	# takeoff: it comes round behind the plane and stays there.
+	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() and stage == null else Vector3.ZERO
 	_frame(delta)
+	if stage != null:
+		stage.frame(delta,camera,plane.position+ground_scale.lift(),ground_scale.size(),Callable(field,"height"))
+		if not stage.running(): _menu_done()
 	land.lead_with(plane.velocity)
 	land.step(camera.global_position)
 	arches.step(camera.global_position)
@@ -886,8 +960,17 @@ func _react(delta: float) -> void:
 		{"position": p, "forward": plane.forward(), "over": over, "thrust": thrust, "size": ground_scale.size()},
 		{"way": look.wind_direction, "travel": look._gust, "facing": Vector2(facing.x,facing.z)},
 		Callable(self,"_grass_at"))
+	# Parked in the menu, the grass lies parted round the wheels.
+	# And round the eye circling it, so the blades at its feet lean out of
+	# its way rather than across the view.
+	if stage != null and stage.holding():
+		var span := WorldScale.TOY_SPAN*ground_scale.size()
+		react.part(Vector2(p.x,p.z),span*PART_SPANS,PART_PUSH)
+		var e := camera.global_position
+		react.part(Vector2(e.x,e.z),span*EYE_PART_SPANS,PART_PUSH,1)
 	if motes != null:
-		motes.step(delta,camera.global_position,look.wind_direction,look._gust,react.wash_spot,
+		# Parked in the menu the idling wash stirs the grass but kicks none up.
+		motes.step(delta,camera.global_position,look.wind_direction,look._gust,{} if stage != null and stage.holding() else react.wash_spot,
 			eddies.ribbons.ribbons if eddies != null else [],Callable(self,"_grass_at"))
 
 ## The land's height where grass grows (open turf over the beach), else NAN.
@@ -896,7 +979,7 @@ func _grass_at(x: float, z: float) -> float:
 	return h if h > Field.SEA_Y+3.0 and field.last_river > Field.RIVER_CLEAR else NAN
 
 func _frame(delta: float) -> void:
-	var right := Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
+	var right := Vector2.ZERO if stage != null and stage.holding() else Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
 	if right != Vector2.ZERO: chase.turn(Vector2(-right.x,-right.y)*STICK_LOOK*delta)
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
 	chase.tight = tunnels.near(plane.position)
@@ -1001,6 +1084,15 @@ func _lean_tapped(dir: float) -> void:
 		_tap_dir = dir
 		_tap_at = now
 
+## The takeoff is the player's: the stage gone, the mouse taken, the hints
+## back.
+func _menu_done() -> void:
+	if stage != null and stage.running(): stage.finish(plane_figure)
+	stage = null
+	if camera.attributes != null: camera.attributes = null
+	_hint.visible = true
+	if get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
 ## Back up into the air over where it is, on the heading it had.
 func respawn() -> void:
 	var at: Vector3 = plane.position
@@ -1009,6 +1101,8 @@ func respawn() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not walk_ready: return
+	# The menu holds the flight: none of its keys while it is up.
+	if stage != null and stage.holding(): return
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: return
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): chase.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK)

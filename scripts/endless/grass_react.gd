@@ -275,6 +275,21 @@ func walker(at: Vector3, velocity: Vector3, sliding := false) -> void:
 	_add({"at": here, "way": way*WALK_DRAG, "strength": WALK_STRENGTH*still*2.2/overlap, "swirl": 0.0,
 		"reach": reach, "front": 0.0, "hold": WALK_HOLD})
 
+## Something parked at `at` (the main menu's plane, studies/endless_flight.gd):
+## the grass parted round it out to `reach` m, `strength` times a standing
+## walker's push, kept so while it is called each frame (a stamp every
+## PART_EVERY s, overlapping as his do standing). `slot` (0 or 1) keeps two
+## such things apart.
+func part(at: Vector2, reach: float, strength := 1.0, slot := 0) -> void:
+	if not enabled: return
+	if time-_part_at[slot] < PART_EVERY: return
+	_part_at[slot] = time
+	_add({"at": at, "way": Vector2.ZERO, "strength": WALK_STRENGTH*strength*2.2*PART_EVERY/(WALK_HOLD+SUM_SPAN), "swirl": 0.0,
+		"reach": reach, "front": 0.0, "hold": WALK_HOLD})
+
+const PART_EVERY := 0.2
+var _part_at := [-INF,-INF]
+
 # --- Gusts ----------------------------------------------------------------------------
 
 func _gust_step(delta: float, eye: Vector3, air: Dictionary, land: Callable) -> void:

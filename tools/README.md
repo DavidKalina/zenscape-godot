@@ -77,7 +77,8 @@ func drive() -> void:
 - **Args.** Args after `--` belong to the driver: `arg`, `arg_int`,
   `arg_float`, `arg_vec3`, `flag`. Args after `--scene-args` are the
   scene's launch flags. `open` hands those to the scene, with
-  `--no-title`, through `scripts/launch_args.gd`.
+  `--no-title`, through `scripts/launch_args.gd`; `--title` among them
+  keeps the scene's title instead (endless flight's main menu).
 - **Time.** `frames(n)` and `until(cond, max)` step the real loop: the
   study's own `_process`, with input read as actions.
 - **Input.** `stick(v)` (Godot's convention: (0, -1) is forward),
