@@ -29,8 +29,6 @@ extends RefCounted
 ## the inner edge" all the way up have no head room past the equator).
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
-const PilotMotor = preload("res://scripts/pilot_motor.gd")
-const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Build = RuinKit.Build
 

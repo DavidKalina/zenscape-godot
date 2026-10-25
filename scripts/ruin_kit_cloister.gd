@@ -258,9 +258,11 @@ static func slab_bridge(seed_value: int, weathered: float, length: float, width:
 
 # --- The pent hood (round 2 card: kit-k5-hide-descend.md) -------------------
 
-const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
-const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
+## The walker's head over his feet (m at size 1), frozen: the pilot on foot
+## (scripts/pilot_physics_ground.gd HEAD) is gone from the flight game,
+## whole at the tag archive/before-the-cut.
+const WALKER_HEAD := 1.12
 
 ## The cloister's pieces built by id (RuinKit CLOISTER_PIECES).
 const PIECES := ["pent_hood"]
@@ -269,7 +271,7 @@ const PIECES := ["pent_hood"]
 ## parapet's (TOP_ROOM: one body, no passing) and its floor's top.
 const HOOD_GALLERY := RuinKit.TOP_ROOM
 const HOOD_FLOOR := 0.14
-## The parapet: thickness, height over the floor (over PhysicsGround.HEAD,
+## The parapet: thickness, height over the floor (over WALKER_HEAD,
 ## so his head ray is hidden behind it; under GRAB_TOP, so one jump catches
 ## its coping), its coping's depth.
 const HOOD_PARAPET := Vector3(0.5,1.45,0.18)
@@ -302,7 +304,7 @@ static func hood_lines() -> Dictionary:
 	var ze := zp1+HOOD_EAVES
 	var t := tan(deg_to_rad(HOOD_PITCH))
 	var slab := HOOD_SLAB/cos(deg_to_rad(HOOD_PITCH))
-	var under_p := HOOD_FLOOR+HOOD_PARAPET.y+PhysicsGround.HEAD*WorldScale.wanderer+HOOD_STAND_ROOM
+	var under_p := HOOD_FLOOR+HOOD_PARAPET.y+WALKER_HEAD*WorldScale.wanderer+HOOD_STAND_ROOM
 	var under := func(z: float) -> float: return under_p+(zp1-z)*t
 	var high := float(under.call(zw))+slab
 	return {"zw":zw,"zp0":zp0,"zp1":zp1,"ze":ze,"tan":t,"slab":slab,"under_p":under_p,

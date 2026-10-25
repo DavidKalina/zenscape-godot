@@ -25,7 +25,7 @@ func drive() -> void:
 		return
 	await open(String(arg("scene","")))
 	if study == null: return
-	if _args.has("place") and motor != null:
+	if _args.has("place") and study.has_method("place"):
 		var p := String(arg("place")).split(",")
 		var yaw := deg_to_rad(float(p[3])) if p.size() > 3 else 0.0
 		await place(Vector3(float(p[0]),float(p[1]),float(p[2])),Vector2(sin(yaw),cos(yaw)))

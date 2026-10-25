@@ -8,9 +8,7 @@ extends Node3D
 ## setting `transform`.
 ##
 ## - `knobs`: every timing, force and size, in one dictionary
-##   (`defaults`), sized from the pilot's real numbers (`pilot()`: the
-##   motor at WorldScale's wanderer size), never from metres copied out of
-##   the idea doc, so a tier randomizes or a resize follows by changing
+##   (`defaults`), so a tier randomizes or a resize follows by changing
 ##   values here. `configure` merges overrides before the trap is added.
 ## - `cost`: danger 1 to 5 (`danger()` adds 1 over a drop to the void,
 ##   `under` = "void"; "layer" is the softer fail one layer down).
@@ -20,19 +18,16 @@ extends Node3D
 ##   later audio hook connects to). Authored in the module, never random.
 ## - The way in and out: `entry()` and `exit()` (Transform3D in the world,
 ##   facing along the route), `length()` of the route, `footprint()` (its
-##   local x z rect, for the yard's decks), `run_up()` (room to build
-##   speed before the entry), and `verbs` (what it asks of the pilot).
-## - Stepping: a TrapField (scripts/traps/trap_field.gd) calls `before`
-##   (ahead of the motor's step: carry or push him, `motor.carry`,
-##   `motor.toss`) and `after` (the step done, `events` as the motor gave
-##   them: what he stands on, `landed`) every frame, as foot_pieces.gd
-##   steps slabs. `air_at(p)` answers for wind (the motor's `air`: {wind,
-##   thermal} at a point, the field sums the traps'). `reset` puts it back.
+##   local x z rect, for the yard's decks), and `verbs` (what it asked of
+##   the pilot on foot).
+## - Stepping: a field calls `before` and `after` (the step done, `events`)
+##   every frame. `air_at(p)` answers for wind ({wind, thermal} at a
+##   point). `reset` puts it back. The pilot on foot the traps moved, and
+##   the trap field that stepped him, are gone from the flight game, whole
+##   at the tag archive/before-the-cut.
 ##
 ## A trap overrides `defaults`, `build` (once in the tree), `before`,
 ## `after`, `reset`, and the tell; the rest is here.
-const WorldScale = preload("res://scripts/world_scale.gd")
-const PilotMotor = preload("res://scripts/pilot_motor.gd")
 
 ## Heard a trap's sound: `kind` (a name), `at` (world).
 signal sounded(kind: StringName, at: Vector3)
@@ -49,20 +44,11 @@ var verbs := PackedStringArray()
 var knobs: Dictionary = {}
 ## The sounds it has made, newest last: [kind, at].
 var heard: Array = []
-## The pilot's motor, set by the field.
-var motor: PilotMotor
 
 func _init() -> void:
 	knobs = defaults()
 
-## The pilot as sizes are read from: a motor at the wanderer's size (its
-## walk, run, jumps), as the game's own.
-static func pilot() -> PilotMotor:
-	var p := PilotMotor.new()
-	p.set_size(WorldScale.wanderer)
-	return p
-
-## The knobs and their defaults; a trap overrides, from `pilot()`.
+## The knobs and their defaults; a trap overrides.
 func defaults() -> Dictionary:
 	return {}
 
@@ -93,10 +79,6 @@ func length() -> float:
 func footprint() -> Rect2:
 	return Rect2(-1.0,-length(),2.0,length())
 
-## Room to build speed before the way in (m): the run's pace for 0.75 s.
-func run_up() -> float:
-	return pilot().run*0.75
-
 ## The way in and out in the world, facing along the route (-z local).
 func entry() -> Transform3D:
 	return global_transform
@@ -104,11 +86,11 @@ func entry() -> Transform3D:
 func exit() -> Transform3D:
 	return global_transform*Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,-length()))
 
-## Ahead of the motor's step.
+## Ahead of the step.
 func before(_delta: float) -> void:
 	pass
 
-## After it (`events`: the motor's, as foot_pieces.gd gets them).
+## After it.
 func after(_delta: float, _events: Dictionary) -> void:
 	pass
 

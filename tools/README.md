@@ -12,14 +12,14 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Run any Godot command | `python tools/godot.py <godot args>` |
 | Smoke a scene (400 frames, no errors) | `python tools/smoke.py studies/x.tscn [-- scene flags]` |
 | A check through the real play loop | write `scratch/x.gd` extending `tools/harness/drive.gd`, then `python tools/drive.py scratch/x.gd` |
-| Every helper a driver has, with its doc | `python tools/drive.py --api [route\|watch\|ray\|...]` (read from drive.gd and stations.gd; no Godot run) |
+| Every helper a driver has, with its doc | `python tools/drive.py --api [ray\|shot\|film\|...]` (read from drive.gd; no Godot run) |
 | The same over seeds and knobs | `python tools/sweep.py scratch/x.gd --seed 1..8 --knob gulf=40,60` |
 | The same over the driver's own args | `python tools/sweep.py scratch/x.gd --arg pilot=stand,flee,dodge` (the driver gets `--pilot=...`) |
 | Who's at a point, what a ray hits | in a driver: `say(hit_text(ray(a, b)))`, `pierce(a, b)`, `what_is_at(p, r)`, `what_is_in(box)`, `colliders(node)` (drive.gd, Collider probes) |
 | Parse-check a script without running it | `python tools/godot.py --check-only -s res://scratch/x.gd` (one script; exit 1 with the parse error) |
 | Check a land outline (bowtie, wrong winding) | `KitLand.outline_problems(outline, winding)`; `KitLand.island` warns on its own |
 | Rendered stills to look at | `python tools/shot.py studies/x.tscn --frame Trap --view three,top --sheet` |
-| A still of a moment in a driven run (him mid-jump, a piece by its AABB) | in a driver: `await shot_at("side", motor, {"when": cond})`, then `route()`/`watch()`; run with `drive.py --rendered` (drive.gd, Shots) |
+| A still of a moment in a driven run (the plane touching down, a piece by its AABB) | in a driver: `await shot_at("side", node, {"when": cond})`, then step frames; run with `drive.py --rendered` (drive.gd, Shots) |
 | A short film and contact sheet of something moving | in a driver: `var f := film(node, {"view": "shoulder", "every": 6, "seconds": 3})`, step frames, `await film_end(f)` (drive.gd, Shots) |
 | Run a Blender script (Mac, Windows, the Store build) | `python tools/blender.py run art/blender/x/x_build.py [--blend F] [--timeout S] -- args`; `--where`; `--expr "..."` |
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
@@ -80,23 +80,17 @@ func drive() -> void:
 - **Time.** `frames(n)` and `until(cond, max)` step the real loop: the
   study's own `_process`, with input read as actions.
 - **Input.** `stick(v)` (Godot's convention: (0, -1) is forward),
-  `stick_toward(point)`, `walk_to(point, max, near, jump_at)`,
-  `jump(n)`, `press(action, n)`, `hold(action, on)` and `let_go()`.
-  `yaw_follows_facing = true` holds the camera behind him. `press` only
-  sets an action's state: a key a study reads as an event (Space by the
-  parked plane boards it, E picks up, R resets) needs `tap(KEY_SPACE)` or
-  `tap(&"walk_jump")`, a real key event through `Input.parse_input_event`.
-- **Scripted ticks.** `scripted_ticks(n, want, jump)` uses the study's
-  scripted ticks (`script_want`, `tick`). It is faster, but it skips the
-  input path. Use it for setup, and prove the result with real input
-  (AGENTS.md).
+  `press(action, n)`, `hold(action, on)` and `let_go()`. `press` only
+  sets an action's state: a key a study reads as an event needs
+  `tap(KEY_SPACE)` or `tap(&"walk_jump")`, a real key event through
+  `Input.parse_input_event`.
 - **Looking around.** `find(pattern)` and `first(pattern)` look up nodes
   by name, class or script path. `shot(path)` takes a still of the window,
   `shot_at(view, target)` and `film(target)` place a camera of their own
   (`--api shot`); all three only in a rendered run, and print SKIP headless.
 - **The full list.** `python tools/drive.py --api` prints every helper's
   signature and doc, read from the scripts; `--api WORD` adds the
-  section's notes (a route's opts, what `watch` returns). drive.gd's
+  section's notes (a shot's opts, what `film_end` returns). drive.gd's
   header index comes from the same parse: after changing a helper, run
   `python tools/drive.py --api --update`. `--api` exits 1 while the index
   misses a helper.
@@ -105,8 +99,6 @@ func drive() -> void:
   prints `ROW {json}`, which a sweep turns into table rows. `say(text)`
   and `note(text)` print lines drive.py shows. The run exits 0, or 1 if a
   check failed, or 2 on `--timeout=` (wall clock, default 240 s).
-- **Stations.** `tools/harness/stations.gd` is a ready driver: he stands
-  at every station of `--scene=`.
 - **Throwaway drivers** go in `scratch/`, which git ignores and Godot
   doesn't scan.
 - **Typing.** The project treats an untyped `:=` from a Variant as a
@@ -139,7 +131,7 @@ python tools/shot.py --sheet-of a.png b.png --out scratch/sheet.png        # hea
 
 Each run opens one Forward+ window. A lock keeps it to one window across
 agents, and a watchdog closes it. `--frame PATTERN` frames the meshes
-under the matching nodes. `walker` frames him and `all` frames the scene.
+under the matching nodes. `walker` frames the study's figure (if it has one) and `all` frames the scene.
 The views are three, front, back, left, right, top and close. The HUD is
 hidden unless you pass `--hud`. Files go to `captures/shots/<scene>_<view>.png`
 unless `--out` says otherwise. Read the PNGs and judge them yourself.

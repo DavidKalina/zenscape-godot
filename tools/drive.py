@@ -39,7 +39,7 @@ def res_path(script: str) -> str:
 # --- --api: the helpers, read from the harness scripts themselves ------------
 
 HARNESS = Path(__file__).resolve().parent / "harness"
-API_FILES = ["drive.gd", "chain.gd", "stations.gd"]
+API_FILES = ["drive.gd"]
 INDEX_BEGIN = "## Index (`python tools/drive.py --api [word]` adds the docs; `--api --update` rewrites it):"
 INDEX_END = "## (end of index)"
 _SECTION = re.compile(r"^# -+ (.+?) -*$")
@@ -149,9 +149,6 @@ def api(argv: list[str]) -> int:
                 continue
         first_doc = header.splitlines()[0][2:].strip() if header else ""
         print(f"\n## tools/harness/{name}: {first_doc}")
-        if name == "stations.gd":
-            print("\n".join("   " + l[2:] for l in header.splitlines()[1:]))
-            continue
         group = None
         for it in items:
             if it["group"] != group:
@@ -165,7 +162,7 @@ def api(argv: list[str]) -> int:
                 doc = it["doc"] if words else re.split(r"(?<!e\.g\.)(?<=\.)\s+(?=[A-Z`])", it["doc"])[0]
                 print(f"        {doc}")
     if not words:
-        print("\n`--api WORD` (route, watch, ray, open...): those helpers' whole docs and their section's notes (opts, what it returns).")
+        print("\n`--api WORD` (ray, shot, film, open...): those helpers' whole docs and their section's notes (opts, what it returns).")
     for s in stale:
         print(f"== stale header: {s}")
     return 1 if stale else 0

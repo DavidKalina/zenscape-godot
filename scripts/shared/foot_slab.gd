@@ -85,7 +85,7 @@ var slammed := 0
 ## Whether a slam onto it springs (see the header), its phase ("" at rest,
 ## "coil", "hold", "release") and seconds in it, and how often it sprang.
 var spring_on := false
-## The launch off it, in his pumps (PilotMotor `jumps`, by his size).
+## The launch off it, in the walker's pumps (his `jumps`, by his size).
 var spring_pumps := 4.0
 var spring_phase := ""
 var spring_t := 0.0

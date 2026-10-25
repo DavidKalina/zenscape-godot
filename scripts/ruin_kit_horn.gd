@@ -23,10 +23,8 @@ class_name RuinKitHorn
 ##           fronts). Its global_position is where a blast leaves; its
 ##           global basis.z is the way it points.
 ##   "Rig"   the runtime (scripts/wind_horn.gd): `aim_at`, `tell`, `fired`,
-##           `disabled`, `is_disabled`, `yaw_arc`; and `watch(motor)`, which
-##           makes it blow: it notices him, draws breath and gusts him with
-##           the wind blaster's knock (scripts/shared/gust.gd), the horn as
-##           the source. Unwatched it is dressing only.
+##           `disabled`, `is_disabled`, `yaw_arc`: dressing only (the ward
+##           that blew the pilot on foot over is at archive/before-the-cut).
 ## Meta: "mouth_radius" (the clear radius at the mouth, m), "top" (the
 ## standable cap's height over the foot, m), "top_radius" (its apothem),
 ## "ped_height".
@@ -34,7 +32,6 @@ class_name RuinKitHorn
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
-const AirBlast = preload("res://scripts/dragon_air_blast.gd")
 const Build = RuinKit.Build
 
 const PIECES := ["wind_horn"]
@@ -73,10 +70,16 @@ const LIP := Vector2(0.22,0.14)
 const MOUTH_FIT := 1.3
 const THROAT_SHARE := 0.55
 
-## The clear radius at the mouth: the air ball (the dragon's air blast) with
-## room round it.
+## The air ball the horn was sized round (the dragon's air blast,
+## scripts/dragon_air_blast.gd BALL, a share of the walker's height,
+## scripts/pilot_physics_ground.gd HEAD), frozen: both are gone from the
+## flight game, whole at the tag archive/before-the-cut.
+const BALL := 0.55
+const WALKER_HEAD := 1.12
+
+## The clear radius at the mouth: the air ball with room round it.
 static func mouth_radius() -> float:
-	return AirBlast.ball_radius()*MOUTH_FIT
+	return BALL*(WALKER_HEAD*WorldScale.wanderer)*MOUTH_FIT
 
 ## The piece with PIECES id `id`.
 static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:

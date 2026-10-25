@@ -37,7 +37,7 @@ const WANDERER := 1.0
 ## the wing).
 const TOY_SPAN := 1.4
 const TOY_TALL := 0.74
-## The walker (pilot_figure.gd) over the cockpit pilot (plane_pilot.gd in
+## The walker (his model, assets/models/pilot.glb) over the cockpit pilot (plane_pilot.gd in
 ## the toy rig): 0.44 m shoulders to cap top over 0.185, 2.38. A plane PLANE
 ## times the toy seats a pilot this over PLANE times the walker's size.
 const PILOT_RATIO := 2.4

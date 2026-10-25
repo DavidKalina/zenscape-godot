@@ -4,8 +4,7 @@ extends "res://scripts/shared/trap.gd"
 ## the trap contract (scripts/shared/trap.gd: knobs, the tell, `reset`),
 ## and it steps itself each frame (`auto`), so a piece placed anywhere (the
 ## motif editor, an authored place, a study) runs live with no host: it
-## hears the slam by its group (scripts/slam.gd GROUP) and finds the
-## pilot's motor on the scene (`motor`, or `watch(motor)` from a host).
+## hears the slam by its group (scripts/slam.gd GROUP).
 ##
 ## States: "hung" (the soffit up: a slide), "turned" (the treads up: a
 ## walked flight), and between them "tell" (it grinds and sheds grit for
@@ -15,13 +14,8 @@ extends "res://scripts/shared/trap.gd"
 ## over. Turned, after `hold` s it tells and turns back (never, `latch`).
 ## `start` "hung" or "turned"; `reset` puts it back there.
 ##
-## Riding (trap_flip's rule): the flight's body is moving ground, so the
-## motor carries him on it as it turns (his feet or his hands on a lip);
-## stood on it once it has turned past `knock_angle` (deg) since the turn
-## began, he is thrown off along the swing with the flight's own pace at
-## his feet, up a little and out `knock` m/s: a `toss` while that pace is
-## under `knock_pace`, a `knock` (this piece the source) past it. Hanging
-## from it he is carried round and keeps his hold.
+## The pilot on foot rode it as it turned and was thrown off past a turn;
+## he is gone from the flight game, whole at the tag archive/before-the-cut.
 const Slam = preload("res://scripts/slam.gd")
 
 const S_HUNG := 0
@@ -50,11 +44,8 @@ var _to := 0.0
 var _t := 0.0
 ## Where it goes once the tell ends (S_TURNED or S_HUNG).
 var _going := S_TURNED
-var _thrown := false
-var _seek := 0
-## Turns made and pilots thrown (counts).
+## Turns made.
 var turns := 0
-var knocks := 0
 var grit: CPUParticles3D
 
 func _init() -> void:
@@ -65,10 +56,8 @@ func _init() -> void:
 	verbs = PackedStringArray(["slam","run","slide"])
 
 func defaults() -> Dictionary:
-	var p := pilot()
 	return {"start":"hung","hold":12.0,"latch":false,"tell":0.5,"turn":1.2,
-		"knock_angle":70.0,"knock":p.walk*0.8,"knock_pace":p.run*1.2,"slam":Slam.decent(),
-		"trigger":["slam"]}
+		"slam":Slam.decent(),"trigger":["slam"]}
 
 ## The piece it turns: reads the pivot, axis and boss from it.
 func bind(root: Node3D) -> void:
@@ -104,20 +93,15 @@ func _ready() -> void:
 	grit = _grit()
 	add_child(grit)
 
-## A host's pilot (else the scene's `motor` is looked up).
-func watch(m: PilotMotor) -> void:
-	motor = m
-
 func state_name() -> String:
 	return STATE_NAMES[state]
 
 func _process(delta: float) -> void:
 	if auto: step(delta)
 
-## One frame: the tell, the turn (carrying and throwing), the hold.
+## One frame: the tell, the turn, the hold.
 func step(delta: float) -> void:
 	if pivot == null or delta <= 0.0: return
-	_find_motor()
 	_t += delta
 	var shudder := 0.0
 	var loud := 0.0
@@ -130,7 +114,6 @@ func step(delta: float) -> void:
 			var u := clampf(_t/maxf(float(knob("turn")),0.02),0.0,1.0)
 			angle = lerpf(_from,_to,_ease(u))
 			loud = 1.0-u
-			_ride(u)
 			if u >= 1.0:
 				angle = _to
 				state = _going
@@ -156,7 +139,6 @@ func _tell(going: int) -> void:
 func _begin_turn() -> void:
 	state = S_TURN
 	_t = 0.0
-	_thrown = false
 	_from = angle
 	_to = 0.0 if _going == S_TURNED else hung_angle
 
@@ -180,46 +162,9 @@ func slam(at: Vector3, radius: float, strength: float) -> void:
 func _world(p: Vector3) -> Vector3:
 	return piece.global_transform*p if piece != null and piece.is_inside_tree() else p
 
-## The pilot on the flight as it turns: carried by the motor (moving
-## ground); past `knock_angle`, thrown along the swing (trap_flip's rule).
-func _ride(u: float) -> void:
-	if _thrown or motor == null or not _on_it(): return
-	var turned := absf(angle-_from)
-	if turned < deg_to_rad(float(knob("knock_angle"))): return
-	_thrown = true
-	var omega := (_to-_from)*6.0*u*(1.0-u)/maxf(float(knob("turn")),0.02)
-	var g := piece.global_transform
-	var w_axis := (g.basis*axis_dir).normalized()
-	var w_from := g*axis_from
-	var tangent := (w_axis*omega).cross(motor.feet-w_from)
-	var flat := Vector3(tangent.x,0.0,tangent.z)
-	var out := flat.normalized()*float(knob("knock")) if flat.length() > 0.05 else Vector3.ZERO
-	var up := sqrt(2.0*motor.gravity*float(motor.jumps[0])*0.5)
-	var push := tangent+out+Vector3.UP*up
-	if tangent.length() > float(knob("knock_pace")): motor.knock(push,piece)
-	else: motor.toss(push)
-	knocks += 1
-
-## He stands on the flight (not hanging from it).
-func _on_it() -> bool:
-	if not motor.grounded or motor.hold != "": return false
-	var under: Node3D = motor.platform
-	return under != null and is_instance_valid(under) and (under == body or body.is_ancestor_of(under))
-
-func _find_motor() -> void:
-	if motor != null: return
-	_seek -= 1
-	if _seek > 0: return
-	_seek = 30
-	var scene := get_tree().current_scene if is_inside_tree() else null
-	if scene != null and "motor" in scene:
-		var m: Variant = scene.get("motor")
-		if m is PilotMotor: motor = m
-
 func reset() -> void:
 	super()
 	turns = 0
-	knocks = 0
 	_start()
 
 ## Grit off the flight's hinge while it tells and turns: small stone

@@ -35,7 +35,6 @@ extends RefCounted
 ## the ruins are stone and growth only.
 ##   ./run-ruin-kit.command
 
-const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const STONE_SHADER = preload("res://shaders/ruin_stone.gdshader")
@@ -82,21 +81,28 @@ const NAMES := {"pier":"Clustered pier","arch":"Pointed arch","lancet_wall":"Lan
 	"pent_hood":"Pent hood","relic_nimbus":"Broken nimbus","keel_hung_stair":"Hung stair","relic_torana":"Prayer lintel"}
 
 # --- Scale: what the pilot on foot and the plane can do drives these ---------
-# (scripts/pilot_motor.gd, scripts/plane_figure.gd, scripts/sky_glide.gd)
+# (the walker's frozen numbers below, scripts/plane_figure.gd, scripts/sky_glide.gd)
 
+## The walker's numbers the kit is sized by, frozen: the pilot on foot
+## (scripts/pilot_motor.gd) is gone from the flight game, whole at the tag
+## archive/before-the-cut. How far a climb sets him in from a lip, his
+## hands over his feet hanging, the slack under a lip a catch allows.
+const CLIMB_IN := 0.3
+const HANG_DROP := 0.825
+const GRAB_LOW := 0.25
 ## The pilot's body radius (scripts/wanderer_eye.gd RADIUS). A climb sets him
 ## down CLIMB_IN from the lip with his body behind that, so a tread or ledge
 ## meant to be climbed onto is at least STAND deep; a top meant to be walked
 ## along, TOP_ROOM across (room either side).
 const BODY := 0.28
-const STAND := PilotMotor.CLIMB_IN+BODY
+const STAND := CLIMB_IN+BODY
 const TOP_ROOM := 2.0*STAND
 ## The highest lip one plain jump catches: the first jump's height (JUMPS[0]
 ## 0.8) plus the hands over the feet hanging (HANG_DROP) plus the slack under
 ## the lip a catch allows (GRAB_LOW): 1.875. The pump, jumped again on
 ## landing (JUMPS[1] 1.5), catches CHAIN_TOP, 2.575.
-const GRAB_TOP := 0.8+PilotMotor.HANG_DROP+PilotMotor.GRAB_LOW
-const CHAIN_TOP := 1.5+PilotMotor.HANG_DROP+PilotMotor.GRAB_LOW
+const GRAB_TOP := 0.8+HANG_DROP+GRAB_LOW
+const CHAIN_TOP := 1.5+HANG_DROP+GRAB_LOW
 ## The rise between one standing place and the next on a climbing route (a
 ## buttress's set-offs, a vault wall's broken steps), a margin under GRAB_TOP.
 const SET_OFF := 1.6

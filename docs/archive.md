@@ -68,11 +68,11 @@ Still in the game from this family, moved to `scripts/shared/`:
 `kit_water.gd`, `path_dirt.gd`, `turf_lips.gd`, `hanging_roots.gd`;
 `studies/aqueduct_isle_art.gd`, `aqueduct_isle_flora.gd`, `celestial.gd`,
 `fall_foam.gd`, `fall_mist.gd`, `surface_depth.gd`, `gust_fronts.gd`,
-`studies/crossings/gust_arrows.gd`; `scripts/interactables/islet.gd`,
-`bob_slab.gd`, `foot_slab.gd`, `swing_rope.gd`; `scripts/traps/trap.gd` and
-`gust.gd`. The endless grass, look, tunnels, the layout handles and the ruin
-kit's gadgets (the wind horn, the torana's rope, the keel's hung stair) use
-them. The in-world layout editor (F4, `docs/design/world-editor/`) was the
+`scripts/interactables/islet.gd`, `bob_slab.gd`, `foot_slab.gd`;
+`scripts/traps/trap.gd`. The endless grass, look, tunnels, the layout
+handles and the keel's hung stair use them. (`studies/crossings/
+gust_arrows.gd`, `swing_rope.gd` and `scripts/traps/gust.gd` moved too, then
+went with the walker on 2026-10-25: below.) The in-world layout editor (F4, `docs/design/world-editor/`) was the
 isle's; its handoffs stay in the docs because the layout file still works.
 
 ### The motif editor
@@ -98,19 +98,31 @@ ledge grab and climb, rope, carry and throw, roll, lock-on. It played
 well; it left because the game is the plane. In endless flight F on the
 wheels got out and the walker walked the land
 (`scripts/endless/endless_walker.gd`, `--on-foot`); that is gone.
-- Still in the repo, dormant: `scripts/pilot_motor.gd` (PilotMotor) and
-  the pieces it loads (`pilot_figure`, `pilot_pose`, `pilot_paint`,
-  `pilot_physics_ground`, `pilot_ledge`, `pocket_sail`). The ruin kit's
-  steps, ledges and gaps are sized from the motor's numbers, and the wind
-  horn, gusts and slams push it, so it stays until those numbers are frozen
-  into the kit. The cockpit pilot in the plane is drawn from
-  `assets/models/pilot.glb` (`art/blender/pilot/`), which stays too.
+- The motor went a day later (2026-10-25,
+  `docs/design/endless-flight/walker-motor-cut-handoff.md`):
+  `scripts/pilot_motor.gd` (PilotMotor), `pilot_figure`, `pilot_pose`,
+  `pilot_physics_ground`, `pilot_ledge`, `pocket_sail`, `updraft`, and its
+  tests (`tests/test_pilot_*.gd`). The ruin kit keeps the walker's numbers
+  it was sized by as frozen constants (`RuinKit` `CLIMB_IN`, `HANG_DROP`,
+  `GRAB_LOW`; the tower's kick; the keel's `SLIDE_AUTO`; the cloister's,
+  the horn's and the rope bridge's walker heights). Its gadgets kept their
+  shapes and lost what pushed him: the wind horn is dressing (its ward,
+  gust and air ball went, with `scripts/shared/gust.gd`, `gust_arrows.gd`
+  and the dragon's `dragon_air_blast`, `dragon_cyclone`, `dragon_gale`,
+  `dragon_breath`, `dragon_downwash` and `wind_kicked_blades`), the hung
+  stair turns and no longer throws him, `scripts/slam.gd` is only the push
+  its listeners hear (the walker's dive went), and the live swing rope
+  (`scripts/shared/swing_rope.gd`) went (the torana keeps its rope sizes).
+  The harness lost `walk_to`, `jump`, the scripted ticks, routes, the enemy
+  watch and `tools/harness/stations.gd`; `tools/view_pilot.gd` went. The
+  gallery's scale figures are the pilot's model in his paint, idling.
+  The cockpit pilot in the plane is drawn from `assets/models/pilot.glb`
+  (`art/blender/pilot/`) and `pilot_paint`, which stay.
 - Gone: `scripts/endless/endless_walker.gd`, `pilot_puffs`,
   `pilot_ripples`, `pilot_step_smooth`, `pilot_drop_shadow`,
   `wanderer_steps`, `pocket_sail_figure`, `character_recording`,
   `scripts/lock_on/`, `scripts/rope/`, `scripts/noise/`, the rest of
-  `scripts/interactables/`, and the tests of moves that need a scene
-  (the motor's own unit tests, `tests/test_pilot_*.gd`, still run).
+  `scripts/interactables/`, and the tests of moves that need a scene.
 - Scenes: `character_study`, `character_runs/`, `pocket_sail_study`,
   `rope_study`, `swing_study`, `interactables_yard`, `crossing_yard`,
   `whole_body_chase`, `whole_body_leap_grab`.
@@ -176,8 +188,8 @@ with a landing bot (`scripts/landing_bot.gd`, `landing_course.gd`,
 
 ### Traps and greybox studies
 
-- Code: `scripts/traps/` (all but the trap base and the gust the wind
-  horn uses), `studies/greybox/`, `scripts/kit_isle/greybox/`.
+- Code: `scripts/traps/` (all but the trap base the hung stair extends),
+  `studies/greybox/`, `scripts/kit_isle/greybox/`.
 - Scenes: `trap_yard`, `wind_horn_study`, `studies/greybox/*`.
 
 ### Everything else that went with them

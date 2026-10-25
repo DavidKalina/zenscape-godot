@@ -6,14 +6,13 @@ extends SceneTree
 ## islet are the same for the same draw; the water lies in its bowl, dry
 ## land all round its rim but the spill, where it pours off as a wide fall;
 ## the lake is a fair share of the land, shallow round a deep middle; a
-## tarn steeps dark, a mere stays clear; the pilot's motor wades into it
-## and swims its deep water, held to the surface over the bed; and the
-## biggest builds in time (its triangles printed).
+## tarn steeps dark, a mere stays clear; its deep water isn't blocked; and
+## the biggest builds in time (its triangles printed). (The pilot on foot
+## that waded in and swam it is at the tag archive/before-the-cut.)
 const Landform = preload("res://scripts/landform_lake.gd")
 const SkyIslet = preload("res://scripts/sky_islet.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 const IsletLake = preload("res://scripts/islet_lake.gd")
-const PilotMotor = preload("res://scripts/pilot_motor.gd")
 const SEEDS := [3,11,29,47]
 const SIZES := [30.0,60.0,90.0]
 ## The biggest island's shape and arrays must build within this (ms,
@@ -31,7 +30,7 @@ func _initialize() -> void:
 	_shares(islets)
 	_spills(islets)
 	_tea()
-	_swims(islets)
+	_open_water(islets)
 	_build_time()
 	print("Landform lake: %d failures" % failures)
 	quit(1 if failures > 0 else 0)
@@ -132,60 +131,17 @@ func _tea() -> void:
 	check(not tarns.is_empty() and tarns.all(func(t: float) -> bool: return t > 0.2 and t <= Landform.TEA+0.001),"A tarn steeps dark (%s)" % str(tarns))
 	check(clear,"A mere stays clear")
 
-## The pilot's motor (scripts/pilot_motor.gd), walked from the bank toward
-## deep water as the wanderer walks it on an islet (WandererEye
-## `_advance_perch`, its water SkyIslet `swim_depth`): it wades, slowed,
-## then swims, its feet SWIM_DRAFT under the surface and never under the
-## bed; the walker isn't blocked by the water.
-func _swims(islets: Array) -> void:
+## The lake's deep water isn't blocked to a walker (SkyIslets `blocked`).
+func _open_water(islets: Array) -> void:
 	var tried := 0
-	var waded := 0
-	var swam := 0
-	var afloat := true
 	var open := true
 	for islet: RefCounted in islets:
 		if tried >= 6: break
 		var deep := _deep_point(islet)
 		if deep == Vector2.INF: continue
-		if SkyIslets.blocked(islet,deep): open = false
-		# Out from the deep water to the first dry ground, then a metre on.
-		var way := Vector2.from_angle(float(tried)*1.3)
-		var start := Vector2.INF
-		for k in range(1,200):
-			var p := deep+way*k*0.25
-			if not islet.inside(p): break
-			if float(islet.swim_depth(p)) <= 0.0 and not islet.wet(p):
-				start = p+way*1.0
-				break
-		if start == Vector2.INF or not islet.inside(start) or SkyIslets.blocked(islet,start): continue
 		tried += 1
-		var motor := PilotMotor.new()
-		motor.water = func(p: Vector2) -> float: return float(islet.swim_depth(p))
-		var ground := func(p: Vector2) -> float: return float(islet.ground_at(p)) if islet.inside(p) else -INF
-		var slide := func(feet: Vector3, step: Vector2) -> Vector3:
-			var next := Vector2(feet.x,feet.z)+step
-			if SkyIslets.blocked(islet,next): next = Vector2(feet.x,feet.z)
-			return Vector3(next.x,feet.y,next.y)
-		motor.reset(Vector3(start.x,float(islet.ground_at(start)),start.y),0.0)
-		var did_wade := false
-		var did_swim := false
-		for frame in range(60*20):
-			var to := deep-Vector2(motor.feet.x,motor.feet.z)
-			if to.length() < 0.4: break
-			motor.step(1.0/60.0,to.normalized(),PilotMotor.WALK,false,ground,slide)
-			if motor.grounded and motor.wade > PilotMotor.WADE_FROM: did_wade = true
-			if motor.swimming:
-				did_swim = true
-				var at := Vector2(motor.feet.x,motor.feet.z)
-				var bed := float(islet.ground_at(at))
-				if motor.feet.y < bed-0.01: afloat = false
-				if frame % 30 == 0 and motor.feet.y > float(islet.water_level)-PilotMotor.SWIM_DRAFT*0.4: afloat = false
-		if did_wade: waded += 1
-		if did_swim: swam += 1
-	check(open,"The walker isn't blocked by a lake's water")
-	check(tried >= 4 and waded == tried,"Walked in from the bank, the pilot wades (%d of %d)" % [waded,tried])
-	check(swam == tried,"And swims its deep water (%d of %d)" % [swam,tried])
-	check(afloat,"Swimming, he floats under the surface and never under the bed")
+		if SkyIslets.blocked(islet,deep): open = false
+	check(tried >= 4 and open,"A lake's deep water isn't blocked (%d lakes)" % tried)
 
 ## A point of the lake at least two metres deep, well in from its edge.
 func _deep_point(islet: RefCounted) -> Vector2:

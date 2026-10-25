@@ -19,7 +19,4 @@ func drive() -> void:
 	t = Time.get_ticks_msec()
 	await frames(n)
 	result("run_s",snappedf((Time.get_ticks_msec()-t)/1000.0,0.1))
-	if motor != null:
-		result("feet",motor.feet)
-		result("grounded",bool(motor.grounded))
 	result("nodes",study.find_children("*","",true,false).size())

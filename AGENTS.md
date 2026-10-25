@@ -18,8 +18,8 @@ On 2026-10-24 everything else was cut: the aqueduct isle and the kit isles,
 the motif editor, the walking character, the Olmec and the city kit,
 enemies and their studies. They are whole at the git tag
 `archive/before-the-cut`; `docs/archive.md` lists each and how to bring it
-back. `scripts/pilot_motor.gd` (the walker's motor) stays only because the
-ruin kit, the gusts and the wind horn are sized by its numbers.
+back. The walker's motor went too (2026-10-25): the ruin kit keeps the
+walker's numbers it was sized by as frozen constants.
 
 # Test execution
 
@@ -181,8 +181,8 @@ plane x `RATIO` (1.0), floored at `SNUG` (1.2 m past each wingtip). At
 `--plane-scale=1 --opening-ratio=1` every opening is its toy width exactly.
 Use `gap(room)` only for spacing with no toy width, and a knife-edge slot
 only on purpose with `knife()`. The ruin kit's steps, ledges and jump gaps
-derive from the wanderer size (`PilotMotor.set_size`,
-`RuinKit.GRAB_TOP`/`CHAIN_TOP`). Other files ask WorldScale rather than
+come from the walker's numbers, frozen in the kit when the walker was cut
+(`RuinKit.STAND`, `GRAB_TOP`/`CHAIN_TOP`, the tower's kick). Other files ask WorldScale rather than
 copy 2.0, 2.4, the ratio, 1.2 (`pilot_size`) or the toy span 1.4. Guarded by
 `tests/test_world_scale_guard.gd`.
 
