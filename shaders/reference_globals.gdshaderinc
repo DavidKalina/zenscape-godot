@@ -36,7 +36,7 @@ global uniform float zs_gust_speed;
 // docs/scenic/breeze.md): the air's strength lifted to a gentle floor and
 // breathing slowly. 0 is a dead calm; a light day is about 0.53.
 global uniform float zs_breeze;
-// The breeze's gust fronts (studies/gust_fronts.gd, docs/scenic/gust-fronts.md):
+// The breeze's gust fronts (scripts/shared/gust_fronts.gd, docs/scenic/gust-fronts.md):
 // per slot, a = origin x, z and way x, z; b = age s, speed m/s, peak lean,
 // half width m. An empty slot is all zeros.
 global uniform vec4 zs_front_0_a;
@@ -152,7 +152,7 @@ global uniform vec3 zs_sky_down;
 global uniform vec3 zs_sky_up;
 global uniform vec3 zs_sky_glow;
 global uniform vec3 zs_sun_direction;
-// The room's turn about the vertical (radians, studies/celestial.gd
+// The room's turn about the vertical (radians, scripts/shared/celestial.gd
 // room_yaw): the sky's stars and horizon are drawn in the room, which keeps
 // its bearing to the camera while the diorama turns under it.
 global uniform float zs_room_yaw;
@@ -181,7 +181,7 @@ global uniform float zs_bow_grow;
 global uniform vec2 zs_bow_shape;
 global uniform float zs_bow_double;
 global uniform vec4 zs_aurora;
-// A moonbow's strength (studies/celestial.gd moon_bow), drawn about the antilunar point.
+// A moonbow's strength (scripts/shared/celestial.gd moon_bow), drawn about the antilunar point.
 global uniform float zs_moonbow;
 global uniform float zs_night;
 // The night sky's style (scripts/look_pass.gd NIGHT_STYLES; shaders/night_sky.gdshaderinc):

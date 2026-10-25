@@ -44,7 +44,7 @@ extends RefCounted
 ## token's holder) stand at their own transform: their coded one is where
 ## the node itself stood, and a move sets the node's world transform. `spawn` makes the
 ## kinds the file can add (air_ring, bob_slab, islet: a small free islet,
-## scripts/interactables/islet.gd, its size and seed its tunes).
+## scripts/shared/islet.gd, its size and seed its tunes).
 
 const VERSION := 1
 const ADDABLE := ["air_ring","bob_slab","islet"]
@@ -238,7 +238,7 @@ static func spawn(host: Node3D, name: String, kind: String, t: Transform3D, pump
 		node = host.bob_slab(t.origin,Vector3(2.3,0.7,2.2),0.0,seed_value)
 		if pumps > 0.0: node.spring_pumps = pumps
 	elif kind == "islet":
-		node = preload("res://scripts/interactables/islet.gd").new()
+		node = preload("res://scripts/shared/islet.gd").new()
 		node.name = name.replace("/","_")
 		host.add_child(node)
 		node.setup(t)
@@ -277,7 +277,7 @@ static func save(gone: Array, moved_islands := {}) -> Error:
 			var a := to_json(t)
 			a["name"] = name
 			a["kind"] = e.kind
-			if e.has("pumps") and float(e.pumps) != float(preload("res://scripts/interactables/bob_slab.gd").SPRING_PUMPS): a["pumps"] = e.pumps
+			if e.has("pumps") and float(e.pumps) != float(preload("res://scripts/shared/bob_slab.gd").SPRING_PUMPS): a["pumps"] = e.pumps
 			if e.has("size0") and not _same_size(size_of(name),e.size0): a["size"] = size_to_json(size_of(name))
 			if str(e.get("on","")) != "": a["on"] = str(e.on)
 			var off := tunes_off(name,["pumps"])

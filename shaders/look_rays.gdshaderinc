@@ -2,7 +2,7 @@
 // blend (shaders/reference_air_blend.gdshader) and the standalone grade
 // (shaders/look_grade.gdshader) that draws when native mist hides the blend,
 // which is most of play. The including shader declares `scene_color` (the
-// frame) and `surface_depth` (studies/surface_depth.gd's copy of the scene's
+// frame) and `surface_depth` (scripts/shared/surface_depth.gd's copy of the scene's
 // depth, r = 0 where nothing solid stands) before including this.
 // Zero strength leaves the frame untouched.
 uniform float rays_strength = 0.0;

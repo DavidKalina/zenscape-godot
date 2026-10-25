@@ -1,7 +1,7 @@
 shader_type spatial;
 // The tunnels' hanging roots and vines (scripts/endless/land_tunnels.gd
 // `_build_growth`): HangingRoots' strand, wander, kinks, fork and sway
-// (scripts/kit_isle/hanging_roots.gd SHADER, its FORK_AT 0.35), worn in
+// (scripts/shared/hanging_roots.gd SHADER, its FORK_AT 0.35), worn in
 // `tint` (bark or vine green) and torch lit only, with a faint fill.
 render_mode cull_back, ambient_light_disabled, fog_disabled;
 uniform vec3 tint : source_color = vec3(0.1);

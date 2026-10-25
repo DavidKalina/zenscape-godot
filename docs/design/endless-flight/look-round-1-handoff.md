@@ -9,7 +9,7 @@ round. The land's shape is untouched.
 - `scripts/endless/endless_look.gd` (new) builds the look and steps it each
   frame:
   - Sky and light: `LandscapeLighting` (the reference sky, ACES, glow,
-    SSAO, the sun and rim lights), driven by `studies/celestial.gd` with
+    SSAO, the sun and rim lights), driven by `scripts/shared/celestial.gd` with
     one of the isles' look presets (`scripts/scene_look_presets.gd`) as
     the mood.
   - The sky's own cloud deck is off (`zs_cloud.x = 0`), and the ringed

@@ -7,7 +7,7 @@ extends Node3D
 ## through a loop. Its tail is where the mote has been, so the stroke is
 ## continuous and travels, never a mark stamped in place.
 ##
-## Ribbons ride gust fronts (studies/gust_fronts.gd): a front brings a few in
+## Ribbons ride gust fronts (scripts/shared/gust_fronts.gd): a front brings a few in
 ## along its line, at its own pace, so the stroke and the plants bowing under
 ## it are the same air. Between fronts a lone ribbon drifts through now and
 ## then. Same interface as scripts/weather_wind_trails.gd (setup, advance),

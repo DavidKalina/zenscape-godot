@@ -313,7 +313,7 @@ func rebuild(force := false, frame_tree: SceneTree = null) -> bool:
 		_landscape_foam.setup(strands,data._recipe.source.g.chute.flow,_foam_template)
 		var mist_recipe: Dictionary=preload("res://scripts/native_fall_mist.gd").build(strands,data._recipe.source.g.chute.flow)
 		for batch in preload("res://scripts/native_fall_mist.gd").batches(mist_recipe,data.waterfall_transform()):
-			var mist:=preload("res://studies/fall_mist.gd").new()
+			var mist:=preload("res://scripts/shared/fall_mist.gd").new()
 			add_child(mist)
 			mist.setup(batch)
 			_landscape_mists.append(mist)

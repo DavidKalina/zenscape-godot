@@ -153,7 +153,7 @@ func _create(item: Dictionary,description: Dictionary) -> Dictionary:
 	mesh.add_child(plunge)
 	plunge.setup(ends[1],float(item.scale),bool(description.get("in_pool",false)))
 
-	var spray := preload("res://studies/fall_mist.gd").new()
+	var spray := preload("res://scripts/shared/fall_mist.gd").new()
 	var recipe := _mist_recipe.duplicate(true)
 	var center := Vector3.ZERO
 	for i in range(recipe.phase.size()):

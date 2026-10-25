@@ -28,7 +28,7 @@ extends Node
 ## rising inhale), then, settled on him (`on_him`), blows for `blast_time`
 ## (the chest empties, the head kicks, fast puffs): the first frame his chest is
 ## within `cone` of its facing and in reach, the wind blaster's own knock
-## (scripts/traps/gust.gd: `blast_out` m along the barrel's flat facing,
+## (scripts/shared/gust.gd: `blast_out` m along the barrel's flat facing,
 ## `blast_up` m up), once per blow, the horn piece as the source. Then it
 ## rests `rearm` s. A breath on him that never lines up blows anyway
 ## `turn_max` past the tell. Knobs from the pilot at the wanderer's size
@@ -45,7 +45,7 @@ extends Node
 ## `may_draw` (a Callable -> bool), if set, is asked before it draws
 ## breath: a shared bellows. `step` runs by itself each frame (`auto`);
 ## a host may turn that off and call `step(delta)` itself.
-const Gust = preload("res://scripts/traps/gust.gd")
+const Gust = preload("res://scripts/shared/gust.gd")
 const PhysicsGround = preload("res://scripts/pilot_physics_ground.gd")
 const AirBlast = preload("res://scripts/dragon_air_blast.gd")
 
@@ -109,7 +109,7 @@ const PITCH_DOWN_WARD := 0.55
 ## The ball (shot "ball"): the gust arrows' ball (studies/crossings/
 ## gust_arrows.gd, scripts/dragon_air_blast.gd), here leading him rather
 ## than homing, so a juke beats it.
-const GustArrows = preload("res://studies/crossings/gust_arrows.gd")
+const GustArrows = preload("res://scripts/shared/gust_arrows.gd")
 ## Slammed on its pedestal top or cap (scripts/slam.gd GROUP): down this long.
 const SlamScript = preload("res://scripts/slam.gd")
 

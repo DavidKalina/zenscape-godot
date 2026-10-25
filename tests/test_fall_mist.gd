@@ -10,7 +10,7 @@ func run() -> void:
 	var camera := Camera3D.new()
 	root.add_child(camera)
 	camera.position.z = 5
-	var cloud = load("res://studies/fall_mist.gd").new()
+	var cloud = load("res://scripts/shared/fall_mist.gd").new()
 	root.add_child(cloud)
 	cloud.setup({"positions":[0,0,0],"velocity":[0,0,0],"phase":[0.25],"size":[1.0],"rise":0.0})
 	cloud.update_view(camera)

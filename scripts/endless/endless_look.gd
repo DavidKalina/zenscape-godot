@@ -33,7 +33,7 @@ extends Node3D
 ## next mood.
 
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
-const Celestial = preload("res://studies/celestial.gd")
+const Celestial = preload("res://scripts/shared/celestial.gd")
 const SkyBelow = preload("res://scripts/sky_below.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const EndlessSea = preload("res://scripts/endless/endless_sea.gd")
@@ -137,7 +137,7 @@ static func reset_season_globals() -> void:
 	# The plant materials the isle shares through static caches (SkyIslets,
 	# KitFlora's rings) carry whatever look the isle gave them: made fresh.
 	preload("res://scripts/sky_islets.gd")._plant_materials.clear()
-	preload("res://scripts/kit_isle/kit_flora.gd")._ring_materials.clear()
+	preload("res://scripts/shared/kit_flora.gd")._ring_materials.clear()
 	for key in SEASON_GLOBALS:
 		var path := "shader_globals/%s" % key
 		if ProjectSettings.has_setting(path):

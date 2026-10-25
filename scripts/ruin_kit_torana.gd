@@ -12,7 +12,7 @@ extends RefCounted
 ##
 ## The ropes are not built here: the piece carries them as meta ("ropes",
 ## as city_court and gb_sunken_giant pass theirs) and its host hangs them
-## live (SwingRope, scripts/interactables/swing_rope.gd: scripts/kit_isle/
+## live (SwingRope, scripts/shared/swing_rope.gd: scripts/kit_isle/
 ## motif_authored.gd `live` and `hang_ropes`, the motif editor's
 ## `hang_ropes`).
 ##
@@ -53,7 +53,7 @@ extends RefCounted
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Build = RuinKit.Build
-const SwingRope = preload("res://scripts/interactables/swing_rope.gd")
+const SwingRope = preload("res://scripts/shared/swing_rope.gd")
 
 ## The relic pieces this file builds (RuinKit TORANA_PIECES).
 const PIECES := ["relic_torana"]

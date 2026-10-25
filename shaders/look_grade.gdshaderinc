@@ -6,7 +6,7 @@ uniform vec3 grade_shadow = vec3(1.0);
 uniform vec3 grade_highlight = vec3(1.0);
 uniform float grade_saturation = 1.0;
 uniform float vignette = 0.0;
-// Night (studies/celestial.gd `night_grade`): x how much colour gives way to
+// Night (scripts/shared/celestial.gd `night_grade`): x how much colour gives way to
 // a cool rod-lit grey, yzw that grey's hue. Zero by day.
 uniform vec4 grade_night = vec4(0.0);
 

@@ -178,7 +178,7 @@ render_mode use_half_res_pass;
           float y = dir.y;
           // The stars and the horizon hills are the room's: they stay put while
           // the diorama turns. The sun, moon, meteor, glow and bow already
-          // arrive turned (studies/celestial.gd room_yaw).
+          // arrive turned (scripts/shared/celestial.gd room_yaw).
           vec3 room = zsRoomDir(dir);
           // The gradient itself is zsSkyGradient (above): the dome is a caller
           // of it like anything else that has to know what colour the sky is.
@@ -337,7 +337,7 @@ render_mode use_half_res_pass;
 
           // The moon: smaller and cooler, in phase. The disc is shaded as a
           // sphere lit by the sun, so its terminator follows the month
-          // (studies/celestial.gd moon_age) with a faint earthshine on the dark
+          // (scripts/shared/celestial.gd moon_age) with a faint earthshine on the dark
           // side and soft grey seas. Its glow and HDR light follow the lit
           // share. Faintly there by day, full presence at night.
           float md = dot(dir, zs_moon_direction);

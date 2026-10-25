@@ -1,6 +1,6 @@
 extends Node3D
 ## Source foamCluster placement, animated by the same controller as fidelity.
-var animator:=preload("res://studies/fall_foam.gd").new()
+var animator:=preload("res://scripts/shared/fall_foam.gd").new()
 static func clusters(strands: Array,flow: float) -> Array[Dictionary]:
 	var blobs: Array[Dictionary]=[]
 	for i in range(strands.size()):

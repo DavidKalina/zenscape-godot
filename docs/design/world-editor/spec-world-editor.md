@@ -45,7 +45,7 @@ F4 and gets the **world view** (the layout edit mode, `scripts/layout_edit.gd`):
   island whose outline it stands over), over editing every placer by hand.
   Floating pieces with no island under them are free pieces.
 - **Two land systems.** The isle's islands are built by
-  `studies/aqueduct_isle_art.gd` (`Art.island`), while the motif editor builds
+  `scripts/shared/aqueduct_isle_art.gd` (`Art.island`), while the motif editor builds
   KitLand. Teach the editor to open the isle's island type first, so
   nothing looks different until the user changes it. Converting islands to
   KitLand isn't part of this loop.

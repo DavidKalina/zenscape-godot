@@ -4,7 +4,7 @@ Endless flight's gusts now work as the aqueduct isle's eddies do, in place of th
 
 ## What the isle uses
 
-The visible eddies are `scripts/breeze_ribbons.gd` (BreezeRibbons): painterly strokes, each the trace of a mote of air that flows downwind, meanders, rides over the ground, curls through eddy loops and now and then dives to skim the grass and kick up off it (sweeps). The atmosphere (`studies/atmosphere.gd`) owns one, and brings ribbons in along its gust fronts (`studies/gust_fronts.gd`, `carry_front`). Each head is published as `zs_ribbon_0..7`, and `zs_ribbon_wake` (`shaders/reference_wind.gdshaderinc`) bows the plants behind it. `disturbance.gd` and `wind_leaf_litter.gd` are not the eddies (leaf litter reads `air_at`).
+The visible eddies are `scripts/breeze_ribbons.gd` (BreezeRibbons): painterly strokes, each the trace of a mote of air that flows downwind, meanders, rides over the ground, curls through eddy loops and now and then dives to skim the grass and kick up off it (sweeps). The atmosphere (`studies/atmosphere.gd`) owns one, and brings ribbons in along its gust fronts (`scripts/shared/gust_fronts.gd`, `carry_front`). Each head is published as `zs_ribbon_0..7`, and `zs_ribbon_wake` (`shaders/reference_wind.gdshaderinc`) bows the plants behind it. `disturbance.gd` and `wind_leaf_litter.gd` are not the eddies (leaf litter reads `air_at`).
 
 ## What was brought over
 

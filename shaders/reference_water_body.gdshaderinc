@@ -139,7 +139,7 @@ uniform bool depth_read = false;
 // cloud's underside (zsBelowAir), not the open sky's gradient.
 uniform float below_sky = 0.0;
 // Water with no planar view standing in a bowl of land (a kit isle's tarn,
-// scripts/kit_isle/kit_water.gd): a reflected ray lower than the rim round
+// scripts/shared/kit_water.gd): a reflected ray lower than the rim round
 // it (`surround.w`, the sine of the rim's elevation seen from the water)
 // would meet the walls, not the sky, so it takes the sky's light dimmed by
 // `surround.rgb`. Without it the pale sky low on the horizon sheened a dark

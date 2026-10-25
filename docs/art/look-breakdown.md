@@ -62,7 +62,7 @@ weak glow (0.12 at threshold 1.8) (`landscape_lighting.gd:41-47`). Ambient
 light is off; the sky reflects, and the grass fills itself.
 
 **Time of day and mood.** T steps the sun's hour through 6, 12, 18, 0
-(`studies/celestial.gd:263-268`); L steps the nine moods
+(`scripts/shared/celestial.gd:263-268`); L steps the nine moods
 (`endless_look.gd:46`: alpine_morning, golden_meadow, ocean_light,
 meadow_morning, after_the_rain, desert_afternoon, rosewater_dusk, rose_dusk,
 moonlit_stillness). A mood is a palette (sky, horizon, glow, grass, water

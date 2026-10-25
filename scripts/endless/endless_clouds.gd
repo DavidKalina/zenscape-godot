@@ -15,7 +15,7 @@ extends Node3D
 ##               the eye: over the meadows the low cloud is lifted
 ##               MEADOW_CLEAR m clear of the turf and thinned, so they stay
 ##               landable; no cloud's base goes under the ground.
-##   light       the mood's sun and sky (studies/celestial.gd globals) in
+##   light       the mood's sun and sky (scripts/shared/celestial.gd globals) in
 ##               the cumulus palette, the land's haze over far cloud
 ##               (shaders/endless_cloud_composite.gdshader).
 ##   shade       the cloud's shadow on the land and the sea: the shade map

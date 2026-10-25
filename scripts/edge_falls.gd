@@ -25,7 +25,7 @@ extends Node3D
 ##   breaks into strands, then droplets, then nothing (the shader's
 ##   `break_from`, `break_length`);
 ## - droplets fall from where it breaks up (GPU beads), and mist trails below
-##   it (studies/fall_mist.gd, sinking): there is no ground to plunge into,
+##   it (scripts/shared/fall_mist.gd, sinking): there is no ground to plunge into,
 ##   so no plunge foam and no ripple rings.
 ## A trickle is a torn veil and a full spring a curtain, as the waterfalls.
 ## It is drawn in the terrain's frame, so it turns with the world; while the
@@ -546,7 +546,7 @@ func _create(id: int) -> Dictionary:
 	drops.draw_pass_1 = _drop_mesh
 	drops.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(drops)
-	var mist := preload("res://studies/fall_mist.gd").new()
+	var mist := preload("res://scripts/shared/fall_mist.gd").new()
 	mist.name = "EdgeFallMist_%d" % id
 	var recipe := {"positions":[],"velocity":[],"phase":[],"size":[],"rise":-1.0}
 	for i in range(MIST):

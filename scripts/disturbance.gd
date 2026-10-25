@@ -11,7 +11,7 @@ extends RefCounted
 ##   how far it goes), "run" and "wind_up" (seconds), and "across" (metres
 ##   either side of the line the air reaches). The head is at
 ##   from+span*(1-(1-u)²) at wind_up+u*run seconds. A breeze gust front
-##   (studies/gust_fronts.gd) sets "steady": its head runs at an even pace,
+##   (scripts/shared/gust_fronts.gd) sets "steady": its head runs at an even pace,
 ##   from+span*u, and keeps its strength the whole way.
 ## - "poke": a tap on the clay (scripts/land_clay.gd `_poke`).
 ## - "night", "dawn": a snap of the fingers turned the hour

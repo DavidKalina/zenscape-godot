@@ -2,7 +2,7 @@
 #define ZS_PATH_DIRT
 // Worn paths drawn per pixel on the ground (reference_surface, ground only):
 // the isle hands its paths' segments in (`path_segs`, world x z of each end;
-// scripts/kit_isle/path_dirt.gd), and each pixel finds how worn it is from
+// scripts/shared/path_dirt.gd), and each pixel finds how worn it is from
 // its distance to them, so the edge is the path's own, ragged, with grass
 // pushing in, not the turf mesh's facets blurred. Inside, packed earth in the
 // isle's dirt colour: soil in clumps and tones, damp patches darker, the

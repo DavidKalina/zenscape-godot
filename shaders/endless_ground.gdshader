@@ -115,7 +115,7 @@ uniform float wc_edge : hint_range(0.0, 1.0) = 0.5;
 uniform float wc_paper : hint_range(0.0, 1.0) = 0.5;
 // The share of the velvet sheen the carpet's turf gives up.
 uniform float carpet_velvet_cut : hint_range(0.0, 1.0) = 0.6;
-// The night's grade (studies/celestial.gd `night_grade`, which the isles'
+// The night's grade (scripts/shared/celestial.gd `night_grade`, which the isles'
 // look pass lays on the screen): x how far the colour gives way to a cool
 // rod-lit grey, yzw that grey's hue.
 uniform vec4 night_grade = vec4(0.0);

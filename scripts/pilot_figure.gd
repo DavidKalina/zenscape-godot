@@ -1262,7 +1262,7 @@ func _drive_ledge(pose: PilotPose, hold: String, delta: float) -> Dictionary:
 			_climbing = move_toward(_climbing,1.0,delta/CLIMB_FADE)
 			_climb_at = clampf(pose.hold_t,0.0,1.0)*CLIMB_LENGTH
 		"hang", "swing":
-			# A swing rope's hold (scripts/interactables/swing_rope.gd) hangs
+			# A swing rope's hold (scripts/shared/swing_rope.gd) hangs
 			# as the ledge's does, the rope's tilt the caller's.
 			if was == "lower": _hang_time = 0.0
 			if was == "":

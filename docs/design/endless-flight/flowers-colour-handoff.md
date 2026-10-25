@@ -11,7 +11,7 @@ The ask: "Can we add flowers here and there and different colored grass in some 
   - `scripts/endless/endless_patch.gd`: `region`, `bloom`, `KINDS`, `seed_offset`.
   - `shaders/endless_patch.gdshaderinc`: `ep_region`, `ep_bloom`, `ep_wash`.
   - Each land seed has its own offset.
-- **Shared file, opt-in only.** `scripts/kit_isle/kit_flora.gd` gains two Site fields:
+- **Shared file, opt-in only.** `scripts/shared/kit_flora.gd` gains two Site fields:
   - `flower_kind`: a callable that returns a kind and colour variant for a point.
   - `flower_tries`: flower candidates per m².
 
