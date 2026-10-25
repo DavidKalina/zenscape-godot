@@ -359,7 +359,7 @@ float zs_wave_crest_at(vec2 root, float crest_length, float crest_speed, vec2 of
 	return smoothstep(0.25, 0.95, a * 0.68 + b * 0.32);
 }
 
-// --- Gust fronts (studies/gust_fronts.gd, docs/scenic/gust-fronts.md) -------
+// --- Gust fronts (scripts/shared/gust_fronts.gd, docs/scenic/gust-fronts.md) -------
 // A front of stronger air rolling across the plate along its way. At a point
 // it arrives fast, holds and lets go slowly, overshooting at the hit. Its
 // line is ragged and its strength patchy across it. Keep in step with

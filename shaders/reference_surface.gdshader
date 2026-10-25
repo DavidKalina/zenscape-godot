@@ -216,7 +216,7 @@ uniform float ground_mute = 0.0;
 uniform vec3 grass_mute_hue = vec3(0.72, 1.0, 0.78);
 // How much a passing wave's bow pales the blades (ZS_GRASS_WAVE_SHEEN).
 uniform float grass_wave_sheen = 0.34;
-// Opt-in distance rings (scripts/kit_isle/kit_flora.gd Site `lod`), measured
+// Opt-in distance rings (scripts/shared/kit_flora.gd Site `lod`), measured
 // from the camera drawing the pass: each tuft of the batch shrinks into the
 // ground at its own distance in `grass_ring.x`..`.y` m (by a rank off its
 // root, over `.z` m), so the batch thins out across the band with no edge;
