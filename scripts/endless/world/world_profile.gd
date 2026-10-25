@@ -97,6 +97,12 @@ func apply_sea(material: ShaderMaterial) -> void:
 	var s: Dictionary = paint.get("sea",{})
 	for k: String in s: material.set_shader_parameter(k,s[k])
 
+## The grass's underside hue (paint.silver_colour) on grass material `m`.
+## Absent: the shader's own sage.
+func apply_silver(material: ShaderMaterial) -> void:
+	if material == null or not paint.has("silver_colour"): return
+	material.set_shader_parameter("grass_silver_colour",paint.silver_colour)
+
 ## The shader globals this world sets (after the season reset).
 func apply_globals() -> void:
 	var g: Dictionary = paint.get("globals",{})

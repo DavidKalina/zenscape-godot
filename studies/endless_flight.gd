@@ -771,6 +771,8 @@ var _hud_at := -HUD_EVERY
 func _show_region() -> void:
 	if _region_caption == null: return
 	var eye := camera.global_position
+	# The paint (ground, far ring, sea, globals, mood and hour) by the eye's weights.
+	if world.paint_eye(eye.x,eye.z) and look != null: look.blend_moods(world.moods_at_eye())
 	var now := Time.get_ticks_msec()
 	var w: Dictionary = world.weights_at(eye.x,eye.z)
 	for r: RefCounted in w:
