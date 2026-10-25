@@ -329,6 +329,13 @@ static func recipe_defaults() -> Dictionary:
 const NATIVE_VERSION := 3
 const V3_KEYS := ["ridge_crisp","notch","notch_scale","notch_width","terrace","terrace_step","terrace_flat","terrace_scale","terrace_band",
 	"mesa","mesa_tall","mesa_scale","mesa_level","mesa_edge","mesa_steps","mesa_gap","mesa_keep","mesa_mask_scale","mesa_band"]
+## The recipe's sharp forms (gable crests, notches, terraces, mesas): their
+## walls stand near-vertical at any height, so blended in at a low weight they
+## would make thin steps (a 22 m mesa wall at weight 0.1 is a 2 m sheer
+## step). In the regions world a recipe with any of them on also grows a soft
+## twin with them off, and its band eases the sharp forms in by a steeper
+## weight than the rest (land_blend.gd `sharp_share`).
+const SHARP_KEYS := ["ridge_crisp","notch","terrace","mesa"]
 const NATIVE_CLASS := &"ZenScapeLandField"
 static var _native_state := -1
 static var _native_lock := Mutex.new()
@@ -525,21 +532,45 @@ static func _want_native() -> bool:
 	return true
 
 ## The regions world's land (land_blend.gd): one field per region's recipe
-## (native where built), blended by the region map's weights.
+## (native where built), blended by the region map's weights; a recipe with
+## sharp forms (SHARP_KEYS) also grows its soft twin for the band.
 func _blend_of(land_seed: int, want_native: bool) -> Object:
 	var fields: Array = []
 	var natives: Array = []
+	var softs: Array = []
+	var soft_natives: Array = []
 	for p: RefCounted in world.regions:
 		var k := _knobs(p.land)
-		if want_native and native_available(_need(k)):
-			var f: Object = ClassDB.instantiate(NATIVE_CLASS)
-			f.configure(land_seed,float(k.floor_half),k)
-			fields.append(f)
-			natives.append(true)
+		var f := _field_of(land_seed,k,want_native)
+		fields.append(f[0])
+		natives.append(f[1])
+		var sk := soft_knobs(k)
+		if sk.is_empty():
+			softs.append(null)
+			soft_natives.append(false)
 		else:
-			fields.append(GDField.new(land_seed,k))
-			natives.append(false)
-	return Blend.new(fields,natives,world.map,int(world.start_region))
+			f = _field_of(land_seed,sk,want_native)
+			softs.append(f[0])
+			soft_natives.append(f[1])
+	return Blend.new(fields,natives,world.map,int(world.start_region),softs,soft_natives)
+
+## [field, native] for the knobs `k`: the native field where built, else GDField.
+static func _field_of(land_seed: int, k: Dictionary, want_native: bool) -> Array:
+	if want_native and native_available(_need(k)):
+		var f: Object = ClassDB.instantiate(NATIVE_CLASS)
+		f.configure(land_seed,float(k.floor_half),k)
+		return [f,true]
+	return [GDField.new(land_seed,k),false]
+
+## The knobs `k` with the sharp forms (SHARP_KEYS) off, or {} when none is on.
+static func soft_knobs(k: Dictionary) -> Dictionary:
+	var on := false
+	for key: String in SHARP_KEYS:
+		if float(k.get(key,0.0)) > 0.0: on = true
+	if not on: return {}
+	var soft := k.duplicate()
+	for key: String in SHARP_KEYS: soft[key] = 0.0
+	return soft
 
 ## Whether the knobs `k` grow the stock recipe (every recipe key at its
 ## constant), which a version-1 native library still grows right.

@@ -14,6 +14,14 @@ extends RefCounted
 ## valley's reads (discrete: its line, floor, side) are the heaviest
 ## region's.
 ##
+## A region whose recipe has sharp forms (mesas, terraces, gable crests,
+## notches: LandField.SHARP_KEYS) also has a soft twin, its recipe with them
+## off. In the band its weight w is split between the two: the full field
+## takes `sharp_share(w)` of it, the twin the rest, so the sharp forms come
+## in by w^3 overall while the rest of its land comes in by w. A sheer wall
+## blended in at a low weight would stay sheer, only lower (thin steps whose
+## shadows read as dashed lines); this way it is a few cm high there.
+##
 ## The weights are the map's (region_map.gd) at a fixed lattice of LATTICE m,
 ## bilinear between: a function of the point alone (every chunk, LOD,
 ## collider and worker reads the same), exactly 1 and 0 inside a region
@@ -36,12 +44,23 @@ static var _shared_lock := Mutex.new()
 ## The region fields by region index (the map's), and whether each is native.
 var kids: Array[Object] = []
 var kid_native: Array[bool] = []
+## Each region's soft twin (null: none) and whether it is native.
+var soft: Array = []
+var soft_native: Array[bool] = []
 ## The region map (region_map.gd): pure maths, shared read-only.
 var map: RefCounted
 ## The start region's index (the snow line's, until the paint blends).
 var home := 0
 
 var _n := 0
+## The fields a band sample reads (each region's, then the soft twins), the
+## region each belongs to and its part: 0 the region's whole weight, 1 the
+## full field's sharp share, 2 the soft twin's rest.
+var _slots: Array[Object] = []
+var _slot_r := PackedInt32Array()
+var _slot_part := PackedByteArray()
+var _ns := 0
+var _sw := PackedFloat32Array()
 var _corners := {}
 var _cells := {}
 ## The last point's weights (where it was in the band).
@@ -65,13 +84,27 @@ var _drawn := -INF
 var _flow := Vector2.ZERO
 var _calm := 0.0
 
-func _init(fields: Array, natives: Array, region_map: RefCounted, home_index := 0) -> void:
+func _init(fields: Array, natives: Array, region_map: RefCounted, home_index := 0, softs: Array = [], soft_natives: Array = []) -> void:
 	for f: Object in fields: kids.append(f)
 	for b: bool in natives: kid_native.append(b)
 	map = region_map
 	home = home_index
 	_n = kids.size()
 	_w.resize(_n)
+	for r in _n:
+		var t: Object = softs[r] if r < softs.size() else null
+		soft.append(t)
+		soft_native.append(bool(soft_natives[r]) if t != null else true)
+		_slots.append(kids[r])
+		_slot_r.append(r)
+		_slot_part.append(0 if t == null else 1)
+	for r in _n:
+		if soft[r] == null: continue
+		_slots.append(soft[r])
+		_slot_r.append(r)
+		_slot_part.append(2)
+	_ns = _slots.size()
+	_sw.resize(_ns)
 	_kid = kids[home]
 	_one = home
 
@@ -127,7 +160,21 @@ var river_flare: float:
 	set(v): _all(&"river_flare",v)
 
 func _all(prop: StringName, v: Variant) -> void:
-	for k in kids: k.set(prop,v)
+	for k in _slots: k.set(prop,v)
+
+## The full field's share of a region's weight `w` where it has a soft twin
+## (the twin takes the rest): the sharp forms come in by w^3 overall.
+static func sharp_share(w: float) -> float:
+	return w*w
+
+## Slot weights into `out` at `oo` from region weights `rw` at `ro`.
+func _slot_weights(rw: PackedFloat32Array, ro: int, out: PackedFloat32Array, oo: int) -> void:
+	for s in _ns:
+		var w := rw[ro+_slot_r[s]]
+		var part := _slot_part[s]
+		if part == 1: w *= sharp_share(w)
+		elif part == 2: w *= 1.0-sharp_share(w)
+		out[oo+s] = w
 
 # --- What the last sample found ---------------------------------------------------------
 
@@ -271,10 +318,11 @@ func _mix(x: float, z: float) -> void:
 	var dr := 0.0
 	var wet := 0.0
 	var best := -1.0
-	for r in _n:
-		var wt := _w[r]
+	_slot_weights(_w,0,_sw,0)
+	for r in _ns:
+		var wt := _sw[r]
 		if wt <= 0.0: continue
-		var k: Object = kids[r]
+		var k: Object = _slots[r]
 		var s: Vector2 = k.sample(x,z)
 		if wt > best:
 			best = wt
@@ -346,10 +394,11 @@ func colour(x: float, z: float, y: float, up: float, meadow: float) -> Color:
 	var one := _at(x,z)
 	if one >= 0: return kids[one].colour(x,z,y,up,meadow)
 	var c := Color(0.0,0.0,0.0,0.0)
-	for r in _n:
-		var wt := _w[r]
+	_slot_weights(_w,0,_sw,0)
+	for r in _ns:
+		var wt := _sw[r]
 		if wt <= 0.0: continue
-		var kc: Color = kids[r].colour(x,z,y,up,meadow)
+		var kc: Color = _slots[r].colour(x,z,y,up,meadow)
 		c += kc*wt
 	return c
 
@@ -367,21 +416,24 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 	var w := n+2
 	var lk := lattice_k(step)
 	# The weights over the chunk and a one-sample rim (for their slope).
+	var ns := _ns
 	var ws := PackedFloat32Array()
-	ws.resize(w*w*_n)
+	ws.resize(w*w*ns)
 	var used := PackedByteArray()
-	used.resize(_n)
+	used.resize(ns)
+	var reg := PackedFloat32Array()
+	reg.resize(_n)
 	for j in w:
 		for i in w:
 			var one := _at(x0+(i-1)*step,z0+(j-1)*step,lk)
-			var q := (j*w+i)*_n
-			for r in _n:
-				var v := (1.0 if r == one else 0.0) if one >= 0 else _w[r]
-				ws[q+r] = v
-				if v > 0.0: used[r] = 1
+			for r in _n: reg[r] = (1.0 if r == one else 0.0) if one >= 0 else _w[r]
+			var q := (j*w+i)*ns
+			_slot_weights(reg,0,ws,q)
+			for r in ns:
+				if ws[q+r] > 0.0: used[r] = 1
 	var made: Array = []
-	for r in _n:
-		made.append(kids[r].build_chunk(x0,z0,step,cells,skirt_drop,flow_max) if used[r] == 1 else {})
+	for r in ns:
+		made.append(_slots[r].build_chunk(x0,z0,step,cells,skirt_drop,flow_max) if used[r] == 1 else {})
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colours := PackedColorArray()
@@ -398,7 +450,7 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 	for j in n:
 		for i in n:
 			var v := j*n+i
-			var q := ((j+1)*w+i+1)*_n
+			var q := ((j+1)*w+i+1)*ns
 			var y := 0.0
 			var gx := 0.0
 			var gz := 0.0
@@ -411,14 +463,14 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 			var rw := 0.0
 			var ry := 0.0
 			var wet := 0.0
-			for r in _n:
+			for r in ns:
 				if used[r] == 0: continue
 				var wt := ws[q+r]
 				var m: Dictionary = made[r]
 				var h: float = (m.heights as PackedFloat32Array)[v]
 				# The weight's slope (zero where the rim is wholly one region).
-				gx += h*(ws[q+_n+r]-ws[q-_n+r])*inv
-				gz += h*(ws[q+w*_n+r]-ws[q-w*_n+r])*inv
+				gx += h*(ws[q+ns+r]-ws[q-ns+r])*inv
+				gz += h*(ws[q+w*ns+r]-ws[q-w*ns+r])*inv
 				if wt <= 0.0: continue
 				var nm: Vector3 = (m.normals as PackedVector3Array)[v]
 				y += wt*h
@@ -441,10 +493,10 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 			normals[v] = normal
 			heights[v] = y
 			var c := Color(0.0,0.0,0.0,0.0)
-			for r in _n:
+			for r in ns:
 				var wt := ws[q+r]
 				if wt <= 0.0: continue
-				var kc: Color = kids[r].colour(x0+i*step,z0+j*step,y,normal.y,meadow)
+				var kc: Color = _slots[r].colour(x0+i*step,z0+j*step,y,normal.y,meadow)
 				c += kc*wt
 			c.a = meadow
 			colours[v] = c
@@ -472,4 +524,4 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 ## Whether every region's field is native (the band's chunks blend their
 ## native builds; else they are sampled point by point).
 func all_native() -> bool:
-	return not kid_native.has(false)
+	return not kid_native.has(false) and not soft_native.has(false)
