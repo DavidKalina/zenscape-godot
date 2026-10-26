@@ -929,7 +929,7 @@ static func _world_id() -> String:
 ## mouth on the way in: {at (Vector2), heading (degrees clockwise from -z),
 ## mouth (Vector3), exit (Vector3), alt (m over the ground at `at`:
 ## START_ALT, or more so the way in stands START_CLEAR m over the land of
-## `field` all the way to the mouth)}.
+## `field` all the way to the mouth, and over the mouth's floor)}.
 const START_CLEAR := 18.0
 static func approach(s: PackedFloat32Array, field: Object = null) -> Dictionary:
 	var end := -1.0 if s[10] >= 0.0 else 1.0
@@ -940,6 +940,9 @@ static func approach(s: PackedFloat32Array, field: Object = null) -> Dictionary:
 	var alt := START_ALT
 	if field != null:
 		var ground: float = field.height(at.x,at.y)
+		# Over the mouth's floor too: a mouth high on the flank stands over
+		# the land before it, and the way in glides down into it.
+		alt = maxf(alt,mouth.y+START_CLEAR-ground)
 		var a := 16.0
 		while a < START_BACK:
 			var p := at+inward*a
