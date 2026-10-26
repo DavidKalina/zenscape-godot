@@ -364,11 +364,15 @@ func _arches_near(field: RefCounted, x0: float, z0: float, x1: float, z1: float)
 			out.append_array(got)
 	return out
 
-## The rock shapes' densities (RockPlan `flags`), read once.
+## The rock shapes' densities (RockPlan `flags`), read once (under the
+## arches' lock: the tree workers ask at once).
 static var _rocks := {}
 static func _rock_flags() -> Dictionary:
+	_arch_lock.lock()
 	if _rocks.is_empty(): _rocks = RockPlan.flags()
-	return _rocks
+	var got := _rocks
+	_arch_lock.unlock()
+	return got
 
 ## The arches near a world rectangle (`_arches_near`) as six floats each,
 ## [x, z, cos, sin, half span, half depth]: for the native plan (ZenScapeTrees).

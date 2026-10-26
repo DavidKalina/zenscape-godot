@@ -63,9 +63,10 @@ static func flags() -> Dictionary:
 				if a.begins_with("--%s=" % k):
 					out[k] = maxf(0.0,float(a.get_slice("=",1)))
 					forced[k] = true
-	# --rock-start=K wants K standing.
+	# --rock-start=K wants K standing (not under --no-rocks: the same start
+	# with none, to compare).
 	var start := start_wanted()
-	if start != "" and KINDS.has(start) and float(out[start]) <= 0.0:
+	if start != "" and KINDS.has(start) and float(out[start]) <= 0.0 and not "--no-rocks" in LaunchArgs.user_args():
 		out[start] = 1.0
 		forced[start] = true
 	out["forced"] = forced
@@ -177,10 +178,16 @@ static func _crowded(field: RefCounted, spec: Dictionary) -> bool:
 				if Vector2(at.x-pos.x,at.z-pos.z).length() < reach+float(arch.get("w",40.0)): return true
 	return false
 
+## The arches' flags, read once (under a lock: workers of the rocks and the
+## trees ask at once).
 static var _arch_flags := {}
+static var _arch_lock := Mutex.new()
 static func _arches() -> Dictionary:
+	_arch_lock.lock()
 	if _arch_flags.is_empty(): _arch_flags = preload("res://scripts/endless/land_arches.gd").flags()
-	return _arch_flags
+	var got := _arch_flags
+	_arch_lock.unlock()
+	return got
 
 ## Whether the region at (x, z) in the world of regions `world` takes a
 ## group of kind `kind` planned at the world's density `density` (arch_plan

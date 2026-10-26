@@ -34,8 +34,10 @@ const POCKET_WIDE := Vector2(60.0,105.0)
 const TOY_LANE := Vector2(12.0,16.0)
 const LANE_SWING := Vector2(0.12,0.32)
 const LANE_WAVE := Vector2(1.0,1.6)
-## The gaps between hoodoos (toy widths), the darts thrown, the most kept,
-## the fewest a pocket needs.
+## The gaps between hoodoos (toy widths; squat stands wider, their broad
+## caps stand at the plane's height), the darts thrown, the most kept, the
+## fewest a pocket needs.
+const TOY_GAP_SQUAT := Vector2(7.0,12.0)
 const TOY_GAP := Vector2(5.5,10.0)
 ## Clumps: the pocket's hoodoos crowd round CLUMPS spots (CLUMP_R m, shares
 ## of the half width), so it reads as stands to thread with glades between;
@@ -144,7 +146,7 @@ static func _pocket(field: RefCounted, x: float, z: float, a: float, s: Dictiona
 		var u := rng.randf_range(-a,a)
 		var w := rng.randf_range(-b,b)
 		var rho := (u*u)/(a*a)+(w*w)/(b*b)
-		var gap := WorldScale.opening(rng.randf_range(TOY_GAP.x,TOY_GAP.y))
+		var gap := WorldScale.opening(rng.randf_range(lerpf(TOY_GAP_SQUAT.x,TOY_GAP.x,t),lerpf(TOY_GAP_SQUAT.y,TOY_GAP.y,t)))
 		var size_roll := rng.randf()
 		var keep_roll := rng.randf()
 		if rho > 1.0: continue
@@ -190,7 +192,16 @@ static func _pocket(field: RefCounted, x: float, z: float, a: float, s: Dictiona
 		"axis":axis,"half":Vector2(a,b),"lane":lane,"lane_wave":Vector3(swing,wave,phase),"bare":true,"foot":_keepouts(centre,axis,yaw,a,b)}
 	# The approach: down the pocket's long way, from past its end.
 	var way := axis if rng.randf() < 0.5 else -axis
-	spec["approach"] = {"at":centre-way*(a+START_BACK),"heading":rad_to_deg(atan2(way.x,-way.y)),"alt":START_ALT}
+	var start := centre-way*(a+START_BACK)
+	# High enough over the start to clear the ground on the way in.
+	var g0: float = maxf(float(field.height(start.x,start.y)),Field.SEA_Y)
+	var high := g0
+	var d := 0.0
+	while d < START_BACK:
+		var q := start+way*d
+		high = maxf(high,float(field.height(q.x,q.y)))
+		d += 20.0
+	spec["approach"] = {"at":start,"heading":rad_to_deg(atan2(way.x,-way.y)),"alt":maxf(START_ALT,high-g0+START_ALT)}
 	return spec
 
 ## The trees kept out of the pocket: strips across it every STRIP m, each

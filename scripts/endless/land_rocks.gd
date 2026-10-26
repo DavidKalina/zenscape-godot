@@ -49,7 +49,7 @@ var material: Material
 var bare: Material
 ## Levels of detail (off: --no-rock-lod, to compare).
 var lod: bool = not "--no-rock-lod" in LaunchArgs.user_args()
-var stats := {"cells":0,"groups":0,"pillars":0,"tris":0,"slowest_build_ms":0.0,"slowest_commit_ms":0.0}
+var stats := {"cells":0,"groups":0,"pillars":0,"tris":0,"slowest_build_ms":0.0,"slowest_commit_ms":0.0,"slowest_body_ms":0.0}
 
 var _cells := {}        # Vector2i -> Array of records (committed)
 var _pending := {}      # Vector2i -> task id
@@ -60,6 +60,7 @@ var _planned_at := Vector3.INF
 var _quit := false
 var _eye := Vector3.ZERO
 var _grid := {}         # Vector2i -> Array of [record, pillar index]
+var _bodies: Array = []  # [node, shape] waiting for their collider
 var _pad := Build.wingtip()
 
 func setup(land_seed: int, ground: Material = null) -> void:
@@ -87,7 +88,9 @@ static func start_pose(field: RefCounted, at: Vector2) -> Dictionary:
 	if not Plan.KINDS.has(kind):
 		push_warning("--rock-start: one of %s" % str(Plan.KINDS.keys()))
 		return {}
-	var spec := Plan.nearest(field,at,kind,Plan.flags())
+	var densities := Plan.flags()
+	if float(densities.get(kind,0.0)) <= 0.0: densities[kind] = 1.0
+	var spec := Plan.nearest(field,at,kind,densities)
 	if spec.is_empty():
 		push_warning("--rock-start=%s: none near the start" % kind)
 		return {}
@@ -107,7 +110,14 @@ func prime(at: Vector3) -> void:
 		if _cells.has(key): continue
 		_done.append(_build_cell(key,field))
 	_planned_at = Vector3.INF
+	var t0 := Time.get_ticks_usec()
 	while not _done.is_empty(): _commit_one(_done.pop_back())
+	_add_bodies(Time.get_ticks_usec())
+	while not _bodies.is_empty(): _add_bodies(Time.get_ticks_usec())
+	# The start's own commits are its load, not a frame's.
+	stats.prime_ms = float(stats.get("prime_ms",0.0))+(Time.get_ticks_usec()-t0)/1000.0
+	stats.slowest_commit_ms = 0.0
+	stats.slowest_body_ms = 0.0
 
 func step(at: Vector3) -> void:
 	if not on: return
@@ -125,6 +135,7 @@ func step(at: Vector3) -> void:
 		if _cells.has(key) or _pending.has(key): continue
 		_pending[key] = WorkerThreadPool.add_task(_task.bind(key))
 	var began := Time.get_ticks_usec()
+	if _add_bodies(began): return
 	while true:
 		_lock.lock()
 		var next: Variant = _done.pop_front() if not _done.is_empty() else null
@@ -132,6 +143,27 @@ func step(at: Vector3) -> void:
 		if next == null: break
 		_commit_one(next)
 		if (Time.get_ticks_usec()-began)/1000.0 > COMMIT_BUDGET: break
+
+## The colliders waiting, a pillar's trimesh at a time within half the
+## frame's budget (at least one a frame); true when that left no time for
+## a commit.
+func _add_bodies(began: int) -> bool:
+	while not _bodies.is_empty():
+		var e: Array = _bodies[0]
+		var body: StaticBody3D = e[0]
+		var shapes: Array = e[1]
+		var i := int(e[2])
+		if not is_instance_valid(body) or body.is_queued_for_deletion() or i >= shapes.size():
+			_bodies.pop_front()
+			continue
+		var t0 := Time.get_ticks_usec()
+		var cs := CollisionShape3D.new()
+		cs.shape = shapes[i]
+		body.add_child(cs)
+		e[2] = i+1
+		stats.slowest_body_ms = maxf(stats.slowest_body_ms,(Time.get_ticks_usec()-t0)/1000.0)
+		if (Time.get_ticks_usec()-began)/1000.0 > COMMIT_BUDGET*0.5: return true
+	return false
 
 func _wanted(at: Vector3, reach: float) -> Array:
 	var out: Array = []
@@ -167,9 +199,12 @@ func _build_cell(key: Vector2i, field: RefCounted) -> Dictionary:
 	var built: Array = []
 	for spec: Dictionary in Plan.plan(field,key.x,key.y,densities):
 		var b := Build.build(spec)
-		var shape := ConcavePolygonShape3D.new()
-		shape.set_faces(b.faces)
-		b["shape"] = shape
+		var shapes: Array = []
+		for f: PackedVector3Array in b.faces:
+			var shape := ConcavePolygonShape3D.new()
+			shape.set_faces(f)
+			shapes.append(shape)
+		b["shapes"] = shapes
 		built.append(b)
 	return {"key":key,"groups":built,"ms":(Time.get_ticks_usec()-began)/1000.0}
 
@@ -195,14 +230,6 @@ func _commit_one(done: Dictionary) -> void:
 		mi.name = "Mesh"
 		mi.mesh = mesh
 		node.add_child(mi)
-		var body := StaticBody3D.new()
-		body.name = "Body"
-		body.collision_layer = LAYER
-		body.collision_mask = 0
-		var cs := CollisionShape3D.new()
-		cs.shape = b.shape
-		body.add_child(cs)
-		node.add_child(body)
 		node.name = name.replace("/","_")
 		node.transform = xf
 		add_child(node)
@@ -211,6 +238,14 @@ func _commit_one(done: Dictionary) -> void:
 			"solid":b.solid,"tris":b.tris,"grid":[]}
 		_index(rec)
 		records.append(rec)
+		# Its collider a frame or more later (`_add_bodies`), so a big
+		# group's trimesh and mesh don't land in one frame.
+		var body := StaticBody3D.new()
+		body.name = "Body"
+		body.collision_layer = LAYER
+		body.collision_mask = 0
+		node.add_child(body)
+		_bodies.append([body,b.shapes,0])
 		stats.groups += 1
 		stats.pillars += (b.solid as Array).size()
 		stats.tris += int(b.tris[0])
@@ -356,5 +391,5 @@ func note() -> String:
 	var kinds: Array = []
 	for k: String in Plan.KINDS:
 		if float(densities.get(k,0.0)) > 0.0: kinds.append("%s %.1f" % [k,float(densities[k])])
-	return "rocks (%s): %d groups, %d pillars in %d cells, %dk tris at full detail  ·  slowest build %.0f ms on a worker, slowest commit %.2f ms" % [
-		", ".join(kinds),int(stats.groups),int(stats.pillars),int(stats.cells),int(stats.tris)/1000,float(stats.slowest_build_ms),float(stats.slowest_commit_ms)]
+	return "rocks (%s): %d groups, %d pillars in %d cells, %dk tris at full detail  ·  slowest build %.0f ms on a worker, slowest commit %.2f ms (collider %.2f), the start's %.0f ms" % [
+		", ".join(kinds),int(stats.groups),int(stats.pillars),int(stats.cells),int(stats.tris)/1000,float(stats.slowest_build_ms),float(stats.slowest_commit_ms),float(stats.slowest_body_ms),float(stats.get("prime_ms",0.0))]

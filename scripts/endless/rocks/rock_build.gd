@@ -15,8 +15,8 @@ extends RefCounted
 ## as the rock arches do (scripts/endless/arch_build.gd), so faces read as
 ## the land's rock and flat tops grow its turf.
 ##
-## The collider is a trimesh of level 1 (a quarter of the triangles), on
-## layer 1. The flight's solid (`solid`): per pillar, per ring, its centre
+## The collider is a trimesh of level 1 (a quarter of the triangles) a
+## pillar, on layer 1. The flight's solid (`solid`): per pillar, per ring, its centre
 ## and SECTORS radii (the most any point reaches in that turn of the ring
 ## and its neighbours), read by scripts/endless/land_rocks.gd.
 
@@ -36,7 +36,8 @@ static func wingtip() -> float:
 	return WorldScale.span*0.5
 
 ## A built group: {spec, arrays (level 0's surface), lods ({error: indices}),
-## faces (the collider's), solid ([pillar solid...]), tris ([per level])}.
+## faces (the collider's, a PackedVector3Array a pillar), solid ([pillar
+## solid...]), tris ([per level])}.
 static func build(spec: Dictionary) -> Dictionary:
 	var pos: Vector3 = spec.pos
 	var v := PackedVector3Array()
@@ -46,8 +47,10 @@ static func build(spec: Dictionary) -> Dictionary:
 	var solid: Array = []
 	var radii := PackedFloat32Array()
 	var spacing := 0.0
+	var cuts: Array = [0]
 	for p: Dictionary in spec.pillars:
 		var s := _pillar(v,c,levels,p,pos)
+		cuts.append((levels[1] as PackedInt32Array).size())
 		solid.append(s)
 		radii.append(float(s.size))
 		spacing = maxf(spacing,float(s.dy))
@@ -66,10 +69,15 @@ static func build(spec: Dictionary) -> Dictionary:
 		var e: Vector2 = LOD_ERROR[l-1]
 		lods[e.x*typical+e.y*spacing] = levels[l]
 		tris.append((levels[l] as PackedInt32Array).size()/3)
+	# The collider: a trimesh of level 1 a pillar, so they can be added a
+	# few at a time (scripts/endless/land_rocks.gd).
 	var coarse: PackedInt32Array = levels[1]
-	var faces := PackedVector3Array()
-	faces.resize(coarse.size())
-	for i in range(coarse.size()): faces[i] = v[coarse[i]]
+	var faces: Array = []
+	for k in range(cuts.size()-1):
+		var f := PackedVector3Array()
+		f.resize(int(cuts[k+1])-int(cuts[k]))
+		for i in range(f.size()): f[i] = v[coarse[int(cuts[k])+i]]
+		faces.append(f)
 	return {"spec":spec,"arrays":arrays,"lods":lods,"faces":faces,"solid":solid,"tris":tris}
 
 ## The control ring at height `y` (linear between them): [rx, rz, ox, oz].
