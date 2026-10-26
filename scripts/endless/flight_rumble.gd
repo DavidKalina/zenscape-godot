@@ -53,6 +53,13 @@ const BOOST := 0.16
 const PULL := 0.3
 const PULL_STRONG := 0.12
 const SKIM := 0.24
+## Low over water (`step`'s `spray`, 0 to 1, already fluttering:
+## scripts/endless/water_contact.gd `hum`): weak, and strong by its square.
+## A splash (`events` "splash", its `k`).
+const SPRAY := 0.34
+const SPRAY_STRONG := 0.26
+const SPLASH := Vector3(0.35,0.3,0.14)
+const SPLASH_MORE := Vector3(0.35,0.5,0.14)
 ## The strain hum at a full `strain` (0 to 1, the load): weak and strong.
 const STRAIN := 0.26
 const STRAIN_STRONG := 0.16
@@ -68,7 +75,7 @@ var _clock := 0.0
 
 ## One frame: `events` what the landing's step returned, `hum` its running
 ## parts: "roll" (m/s over the ground, 0 in the air), "grit" (0 to 1),
-## "boost", "pull", "skim", "strain" and "low" (0 to 1 each).
+## "boost", "pull", "skim", "strain", "low" and "spray" (0 to 1 each).
 func step(delta: float, events: Dictionary, hum: Dictionary) -> void:
 	var knocked := _knocks(events)
 	_knock_left = maxf(_knock_left-delta,0.0)
@@ -82,9 +89,12 @@ func step(delta: float, events: Dictionary, hum: Dictionary) -> void:
 	weak = maxf(weak,STRAIN*strain)
 	var low := clampf(float(hum.get("low",0.0)),0.0,1.0)
 	weak = maxf(weak,LOW*low)
+	var spray := clampf(float(hum.get("spray",0.0)),0.0,1.0)
+	weak = maxf(weak,SPRAY*spray)
 	var strong := PULL_STRONG*float(hum.get("pull",0.0))
 	strong = maxf(strong,STRAIN_STRONG*strain*strain)
 	strong = maxf(strong,LOW_STRONG*low)
+	strong = maxf(strong,SPRAY_STRONG*spray*spray)
 	strong = maxf(strong,ROLL_STRONG*clampf(float(hum.get("roll",0.0))/ROLL_FAST,0.0,1.0))
 	if weak < QUIET and strong < QUIET:
 		weak = 0.0
@@ -115,6 +125,8 @@ func _knocks(events: Dictionary) -> bool:
 	if scrape is Dictionary: best = _top(best,SCRAPE+SCRAPE_MORE*clampf(float((scrape as Dictionary).get("into",0.0))/7.0,0.0,1.0))
 	var knock: Variant = events.get("knock")
 	if knock is Dictionary: best = _top(best,KNOCK+KNOCK_MORE*clampf(float((knock as Dictionary).get("heft",0.0)),0.0,1.0))
+	var splash: Variant = events.get("splash")
+	if splash is Dictionary: best = _top(best,SPLASH+SPLASH_MORE*clampf(float((splash as Dictionary).get("k",0.0)),0.0,1.0))
 	if events.has("crash"): best = _top(best,CRASH)
 	var ringing := _knock*(_knock_left/_knock_for if _knock_for > 0.0 else 0.0)
 	if best.z <= 0.0 or best.x+best.y <= ringing.x+ringing.y: return false
