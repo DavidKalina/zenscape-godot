@@ -216,6 +216,10 @@ var played := {}
 var last_shot := {}
 ## True when there are players (a windowed run).
 var audible := false
+## Muffled (0 to 1, set from outside: scripts/endless/water_contact.gd when
+## the screen is doused): the air's low-pass closed down to MUFFLE_CUT of it.
+var muffle := 0.0
+const MUFFLE_CUT := 0.12
 
 var _rng := RandomNumberGenerator.new()
 var _beds: Array[Bed] = []
@@ -340,6 +344,9 @@ func _ready() -> void:
 		# a rock crack pitched up for the trunk, a heavy body fall on dirt.
 		"snap":[load(FOLEY+"trees-6.wav")],"crack":_takes(FOLEY+"mesa-break-%d.wav",2),
 		"thud":[load(FOLEY+"pat-4.wav"),load(FOLEY+"pat-6.wav")],
+		# The rival race's beats (scripts/endless/rival_race.gd).
+		"race-count":[load(KIT+"race-count.wav")],"race-go":[load(KIT+"race-go.wav")],
+		"race-win":[load(KIT+"race-win.wav")],"race-lose":[load(KIT+"race-lose.wav")],
 	}
 
 static func _takes(pattern: String, count: int) -> Array:
@@ -479,7 +486,7 @@ func _flight(delta: float, velocity: Vector3, speed: float, on_wheels: bool) -> 
 func _air(boost: float, flying: bool) -> void:
 	rush.goal = lerpf(RUSH.x,RUSH.y,pow(fast,1.6))*(1.0 if fast > 0.0 or flying else 0.0)+RUSH_NEAR*near+RUSH_DIVE*dive+RUSH_PULL*pull+RUSH_BOOST*boost*fast
 	rush.pitch_goal = 0.85+0.3*fast+0.08*near+0.06*dive+OVER_PITCH*over
-	if _air_lpf != null: _air_lpf.cutoff_hz = clampf(RUSH_CUT.x+(RUSH_CUT.y-RUSH_CUT.x)*pow(fast,1.3)+RUSH_CUT_NEAR*near+RUSH_CUT_DIVE*dive+OVER_CUT*over,200.0,18000.0)
+	if _air_lpf != null: _air_lpf.cutoff_hz = clampf((RUSH_CUT.x+(RUSH_CUT.y-RUSH_CUT.x)*pow(fast,1.3)+RUSH_CUT_NEAR*near+RUSH_CUT_DIVE*dive+OVER_CUT*over)*lerpf(1.0,MUFFLE_CUT,clampf(muffle,0.0,1.0)),200.0,18000.0)
 	whistle.goal = WHISTLE*smoothstep(0.4,1.0,fast)+WHISTLE_NEAR*near*fast+WHISTLE_PULL*pull*fast+WHISTLE_DIVE*dive*(0.4+0.6*fast)+WHISTLE_OVER*over
 	whistle.pitch_goal = 0.9+0.25*fast+0.08*dive+OVER_PITCH*over
 	howl.goal = HOWL*enclosed+0.04*near

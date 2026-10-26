@@ -56,6 +56,9 @@ extends Node3D
 ## to clear the land on the way in (--alt wins); --splits=X their density, --no-splits none, --split-kind=K every
 ## one of kind K (slot, winding, gorge, grand) where it fits, --split-slot=X
 ## the slot kind's toy width (6: 12 m).
+## Water (scripts/endless/water_contact.gd): --water-near-start starts 3 m
+## over the sea off the nearest river's mouth, heading for it; --water-contact=0
+## turns the cushion, spray, marks and wet screen off.
 ## The look (scripts/endless/endless_look.gd): --mood=ID one of its
 ## moods (alpine_morning), --hour=H the sun's hour (the mood's), --day the
 ## hour runs, --plain-look round one's plain sky and colours; T steps to the
@@ -143,6 +146,8 @@ const NearMissHud = preload("res://scripts/endless/near_miss_hud.gd")
 const NearMissHudGlyph = preload("res://scripts/endless/near_miss_hud_glyph.gd")
 const NearMissHudHandoff = preload("res://scripts/endless/near_miss_hud_handoff.gd")
 const FlightDebris = preload("res://scripts/endless/flight_debris.gd")
+## Low over water: the cushion, the spray, the wake's marks, the wet screen.
+const WaterContact = preload("res://scripts/endless/water_contact.gd")
 ## Spruces flown into are knocked down (weighted presets).
 const TreeKnock = preload("res://scripts/endless/tree_knock.gd")
 ## The main menu: the parked plane's spot, the stage and the overlay.
@@ -341,6 +346,7 @@ var sound := FlightSound.new()
 var near := NearMiss.new()
 var contact := FlightContact.new()
 var debris: Node3D
+var water: Node3D
 ## The trees knocked down and falling (scripts/endless/tree_knock.gd).
 var knock: Node3D
 var _near_hud: Control
@@ -422,6 +428,14 @@ func _ready() -> void:
 			_heading = -deg_to_rad(float(pose.heading))
 			if not _alt_given: _alt = float(pose.alt)
 			print("split mountain (%s): %.0f m long, floor %.0f m at its narrowest, mouth at %s, exit at %s; start %s heading %.0f" % [SplitSites.kind_name(s),s[4]*2.0,s[5]*2.0,str(pose.mouth),str(pose.exit),str(_start),float(pose.heading)])
+	if WaterContact.near_start_wanted():
+		var w: Dictionary = WaterContact.near_start(field,_start)
+		if w.is_empty(): push_warning("--water-near-start: no river mouth near the start")
+		else:
+			_start = w.at
+			_heading = float(w.heading)
+			if not _alt_given: _alt = float(w.alt)
+			print("water near start: river mouth at %s; start %s heading %.0f" % [str(w.mouth),str(_start),-rad_to_deg(_heading)])
 	# The main menu parks the plane on a meadow near the start; a split
 	# mountain start goes straight into the air, as --no-title does.
 	# --rock-start=K: the start moved back from the nearest group of rock
@@ -434,7 +448,7 @@ func _ready() -> void:
 		if not _alt_given: _alt = float(rock_pose.alt)
 		var rs: Dictionary = rock_pose.spec
 		print("rock start: %s (%s, %d pillars) at %s; start %s heading %.0f" % [rs.name,str(rs.get("form","")),(rs.pillars as Array).size(),str((rs.pos as Vector3).round()),str(_start.round()),float(rock_pose.heading)])
-	var spots: Array = [] if _no_title or SplitSites.near_start_wanted() or RivalRace.near_start_wanted() or not rock_pose.is_empty() else MenuSpot.find(field,_start,_heading)
+	var spots: Array = [] if _no_title or SplitSites.near_start_wanted() or RivalRace.near_start_wanted() or WaterContact.near_start_wanted() or not rock_pose.is_empty() else MenuSpot.find(field,_start,_heading)
 	if not spots.is_empty():
 		_start = spots[0].at
 		_heading = float(spots[0].heading)
@@ -525,6 +539,11 @@ func _ready() -> void:
 	debris = FlightDebris.new()
 	debris.name = "Debris"
 	add_child(debris)
+	if WaterContact.wanted():
+		water = WaterContact.new()
+		water.name = "Water"
+		add_child(water)
+		water.setup(self)
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
@@ -850,6 +869,7 @@ func tick(delta: float) -> void:
 	# The plane skims the swell as drawn, not the sea's rest level, and a
 	# river's water as it skims the sea.
 	plane.water = water_at(plane.position)
+	if water != null: water.feel(delta)
 	input["flaps"] = 1.0 if flaps else 0.0
 	# In a bore's tube the low zone lets be (SkyPlane `roofed`).
 	plane.roofed = tunnels != null and int(tunnels.tube(plane.position)) == 0
@@ -860,6 +880,7 @@ func tick(delta: float) -> void:
 	if not knocked.is_empty(): _knocked(events,knocked)
 	plane.engine = hand_landing.engine*float(plane.sputter)*(float(stage.engine) if stage != null else 1.0)
 	_near_misses(delta,events)
+	if water != null: water.step(delta,events)
 	var ground := Callable(self,"plane_ground")
 	_pull = _pull_of(delta)
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")),_pull,float(plane.bank))
@@ -869,6 +890,7 @@ func tick(delta: float) -> void:
 	sound.step(delta,self,events,float(input.get("boost",0.0)))
 	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane)
 	ground_scale.apply(plane_figure)
+	if water != null: water.shake_figure(plane_figure)
 	plane_figure._mark.visible = false
 	_size_chase()
 	# On the wheels the chase stands off to the side, but not on the menu's
@@ -925,7 +947,7 @@ func _rumble(delta: float, events: Dictionary, boost: float) -> void:
 		var fast := smoothstep(plane.cruise()*0.8,plane.cruise(),float(plane.speed))
 		if h > Field.SEA_Y: skim = (1.0-smoothstep(low*0.4,low,p.y-h))*fast
 	rumble.step(delta,events,{"roll":hand_landing.roll_speed() if rolling else 0.0,"grit":hand_landing.grit,
-		"boost":0.0 if rolling else boost,"pull":_pull,"skim":skim,
+		"boost":0.0 if rolling else boost,"pull":_pull,"skim":skim,"spray":water.hum() if water != null and not rolling else 0.0,
 		"strain":0.0 if rolling else smoothstep(1.3,6.5,float(plane.g_load)),
 		"low":0.0 if rolling else float(plane.low)*clampf(float(plane.speed)/plane.cruise(),0.5,1.5)})
 
@@ -949,7 +971,8 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 		var c: Dictionary = hit.crash
 		events["crash"] = c
 		events["lost"] = {"points":near.lose()}
-		debris.hit(str(c.what),c.at,c.normal,true)
+		if water != null and str(c.what) == "water": water.splash(c.at,1.5,events)
+		else: debris.hit(str(c.what),c.at,c.normal,true)
 		crash()
 		return
 	if hit.has("scrape"):
@@ -957,7 +980,8 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 		events["scrape"] = s
 		var lost := near.lose()
 		if lost > 0.0: events["lost"] = {"points":lost}
-		debris.hit(str(s.what),s.at,s.normal)
+		if water != null and str(s.what) == "water": water.splash(s.at,0.5+clampf(float(s.get("into",0.0))/7.0,0.0,1.0)*0.5,events)
+		else: debris.hit(str(s.what),s.at,s.normal)
 		_shake = maxf(_shake,SCRAPE_SHAKE*_shake_scale)
 	events.merge(near.score(delta,self,Input.is_action_pressed(&"fly_surge")))
 	if events.has("near"):
@@ -967,10 +991,10 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 		_shake = maxf(_shake,NEAR_SHAKE*k*_shake_scale)
 		var at: Vector3 = m.at
 		if m.surface == "tree": debris.burst("leaves",at,Vector3.UP)
-		elif m.surface == "water": debris.burst("spray",Vector3(at.x,water_at(at),at.z),Vector3.UP)
+		elif m.surface == "water" and water == null: debris.burst("spray",Vector3(at.x,water_at(at),at.z),Vector3.UP)
 	var p: Vector3 = plane.position
 	var wet: bool = near.ground_surface == "water" and near.ground_clear < WorldScale.span*SPRAY_SPANS and float(plane.speed) > plane.cruise()*SPRAY_FAST
-	debris.spray(wet,Vector3(p.x,water_at(p),p.z),plane.velocity)
+	debris.spray(wet and water == null,Vector3(p.x,water_at(p),p.z),plane.velocity)
 
 ## Trees knocked down this frame (TreeKnock `before`, `at_hit`): `events`
 ## gets "knock" (more than one in a frame add up) and, with TreeKnock
@@ -986,6 +1010,11 @@ func _knocked(events: Dictionary, k: Dictionary) -> void:
 		var lost := near.lose()
 		if lost > 0.0: events["lost"] = {"points":lost}
 	_shake = maxf(_shake,SCRAPE_SHAKE*_shake_scale)
+
+## Water on the screen (0 to 1; WaterContact `douse`): a splash in the
+## sound and the air muffled a moment. For anything that douses the eye.
+func wet(amount: float) -> void:
+	if water != null: water.douse(amount)
 
 ## Crashed: flying on from a little behind and above where it was, on the
 ## way it was going, at cruise (CRASH_BACK, CRASH_UP over what stands to
@@ -1312,6 +1341,8 @@ func _show_hud() -> void:
 weight %s  ·  pace %s (cruise %.1f, Boost %.1f)  ·  %.1f g  ·  nose over path %.0f°  ·  soft %.2f  ·  streaks %.2f, fov %.1f" % [weight,pace,plane.cruise(),plane.boost_speed(),float(plane.g_load),rad_to_deg(float(plane.aoa)),float(plane.soft),_streaks.strength,camera.fov]
 	if plane.weighted: _hud.text += "\nnear: ground %.1f m (%s)  ·  stone %.1f m  ·  low %.2f  ·  chain %d x%.1f  ·  meter %.2f  ·  total %d  ·  scrapes %d, crashes %d" % [
 		near.ground_clear,near.ground_surface,near.stone_clear,float(plane.low),near.chain_count,near.multiplier(),near.meter,roundi(near.total),contact.scrapes,crashes]
+	if water != null: _hud.text += "
+"+water.note()
 
 func _react_note() -> String:
 	if react == null: return ""
