@@ -203,11 +203,24 @@ const CARVE_DETAIL_OFF := 16.0
 ## --river-width=X its width (1), --river-drop=X its banks' height (1).
 const RIVER_WIDTH := Vector2(10.0,24.0)
 const RIVER_WIDE := 820.0
-## A closer swell and pinch of the width: its share (+-) and scale (m).
-const RIVER_PINCH := 0.28
-const RIVER_PINCH_SIZE := 150.0
+## A closer swell and pinch of the width: its share (+-) and scale (m),
+## then a closer one again (.y), so no stretch runs even.
+const RIVER_PINCH := Vector2(0.34,0.16)
+const RIVER_PINCH_SIZE := Vector2(150.0,48.0)
+## Its line winds at closer scales than the floor's sway, so it never runs
+## as one long even sweep: RIVER_WIND m each way over RIVER_WIND_SIZE m
+## (x the bends, y the kinks on them), the wider rivers winding the wider
+## (by RIVER_WIND_WIDE of the width's swing).
+const RIVER_WIND := Vector2(30.0,7.0)
+const RIVER_WIND_SIZE := Vector2(260.0,80.0)
+const RIVER_WIND_WIDE := Vector2(0.6,1.3)
 const RIVER_DROP := Vector2(2.0,3.0)
 const RIVER_BANK := 8.0
+## The banks' run swings along the river and differs side to side, from
+## RIVER_BANK_SWING.x to .y times RIVER_BANK over RIVER_BANK_SIZE m: a short
+## cut bank here, a long slope down to the water there.
+const RIVER_BANK_SWING := Vector2(0.35,1.9)
+const RIVER_BANK_SIZE := 90.0
 const RIVER_BED := 0.6
 const RIVER_HUG := 0.9
 const RIVER_SIDE := 1900.0
@@ -1250,6 +1263,8 @@ class GDField extends RefCounted:
 	# the water at the middle (RIVER_BED, more at a mouth), for `_river`.
 	var _river_mouth := 0.0
 	var _river_bed := RIVER_BED
+	# This side's bank run (m, RIVER_BANK_SWING), for `_river`.
+	var _river_bank := RIVER_BANK
 	var _river_side := FastNoiseLite.new()
 	var _river_meander := FastNoiseLite.new()
 	var _river_wide := FastNoiseLite.new()
@@ -1367,6 +1382,7 @@ class GDField extends RefCounted:
 		var rk := _river_k
 		var rm := _river_mouth
 		var rb := _river_bed
+		var rbk := _river_bank
 		# A mesa's walls are carved as a range's are (`_rock`; 0 without mesas).
 		var rock := maxf(last_mountain,_rock)
 		if carve > 0.0 and rock > CARVE_MOUNTAIN.x and detail < CARVE_DETAIL_OFF:
@@ -1392,9 +1408,10 @@ class GDField extends RefCounted:
 		_river_k = rk
 		_river_mouth = rm
 		_river_bed = rb
+		_river_bank = rbk
 		last_river = INF
 		if rk > 0.0:
-			var reach := rw+RIVER_BANK+RIVER_RAMP+(RIVER_PLAIN.y*RIVER_PLAIN_SPREAD if last_inland < 0.95 else 0.0)
+			var reach := rw+rbk+RIVER_RAMP+(RIVER_PLAIN.y*RIVER_PLAIN_SPREAD if last_inland < 0.95 else 0.0)
 			if absf(rr) < reach: s.x = _river(s.x)
 			else: last_river = absf(rr)-rw
 		return s
@@ -1411,7 +1428,7 @@ class GDField extends RefCounted:
 		var water := last_river_y
 		var top := _river_top
 		var drop := top-water
-		var core := w+RIVER_BANK
+		var core := w+_river_bank
 		if s > core+RIVER_RAMP+RIVER_PLAIN.y*RIVER_PLAIN_SPREAD:
 			last_river = s-w
 			return h
@@ -1431,7 +1448,7 @@ class GDField extends RefCounted:
 		last_river_w = w
 		last_river = s-w
 		if w <= 0.0: return h
-		core = w+RIVER_BANK
+		core = w+_river_bank
 		# The cut: the bed under the water, soft banks up to the floor and on
 		# up (steeper) where higher land stands by the river.
 		var cut: float
@@ -1440,7 +1457,7 @@ class GDField extends RefCounted:
 			var u := s/w
 			cut = water-_river_bed*(1.0-pow(u,2.0+2.0*_river_mouth))
 		elif s < core:
-			var u := (s-w)/RIVER_BANK
+			var u := (s-w)/_river_bank
 			cut = water+drop*u*u*(3.0-2.0*u)
 		else:
 			var o := s-core
@@ -1548,6 +1565,7 @@ class GDField extends RefCounted:
 		_river_k = 0.0
 		_river_mouth = 0.0
 		_river_bed = RIVER_BED
+		_river_bank = RIVER_BANK
 		if inland > 0.0 and valleys > 0.0:
 			var vx := x+_valley_warp.get_noise_2d(x,z)*r_valley_warp_move
 			var vz := z+_valley_warp.get_noise_2d(x-4111.0,z+2027.0)*r_valley_warp_move
@@ -1580,11 +1598,15 @@ class GDField extends RefCounted:
 					# crosses the floor where the side noise turns.
 					var reach_r := RIVER_REACH+(RIVER_PLAIN.y*RIVER_PLAIN_SPREAD if inland < 0.95 else 0.0)
 					var off := signf(ds)*half*RIVER_HUG
-					var far := k <= 0.0 or d > half*(RIVER_HUG+2.0*RIVER_SWAY)+reach_r
+					var far := k <= 0.0 or d > half*(RIVER_HUG+2.0*RIVER_SWAY)+(RIVER_WIND.x+RIVER_WIND.y)*RIVER_WIND_WIDE.y+reach_r
+					var wide := 0.0
+					var wind := 0.0
 					if not far:
 						var pick := _river_side.get_noise_2d(x,z)*4.0
 						pick = pick/sqrt(1.0+pick*pick)
-						off = half*(pick*RIVER_HUG+_river_meander.get_noise_2d(x,z)*2.0*RIVER_SWAY*absf(pick))
+						wide = clampf(_river_wide.get_noise_2d(x,z)*0.9+0.5,0.0,1.0)
+						wind = _wind(x,z,wide)
+						off = half*(pick*RIVER_HUG+_river_meander.get_noise_2d(x,z)*2.0*RIVER_SWAY*absf(pick))+wind
 						far = absf(ds-off) > reach_r
 					if far:
 						# Past its reach: the way to it in the noise's units, a mean
@@ -1595,9 +1617,8 @@ class GDField extends RefCounted:
 						last_river_w = (RIVER_WIDTH.x+RIVER_WIDTH.y)*0.25*river_width*k*(1.0+RIVER_FLARE*river_flare*mean_mouth*mean_mouth*minf(river_mouth,1.0))
 						last_river_y = SEA_Y+_mouth_level(base-RIVER_DROP.y*river_drop)
 					else:
-						var wide := clampf(_river_wide.get_noise_2d(x,z)*0.9+0.5,0.0,1.0)
 						# Plus a closer swell and pinch, so no stretch runs even.
-						var pinch := 1.0+RIVER_PINCH*_river_wide.get_noise_2d(x*RIVER_WIDE/RIVER_PINCH_SIZE+911.0,z*RIVER_WIDE/RIVER_PINCH_SIZE-377.0)
+						var pinch := 1.0+RIVER_PINCH.x*_river_wide.get_noise_2d(x*RIVER_WIDE/RIVER_PINCH_SIZE.x+911.0,z*RIVER_WIDE/RIVER_PINCH_SIZE.x-377.0)+RIVER_PINCH.y*_river_wide.get_noise_2d(x*RIVER_WIDE/RIVER_PINCH_SIZE.y-1531.0,z*RIVER_WIDE/RIVER_PINCH_SIZE.y+263.0)
 						var w := lerpf(RIVER_WIDTH.x,RIVER_WIDTH.y,wide)*river_width*0.5*k*pinch
 						var drop := lerpf(RIVER_DROP.x,RIVER_DROP.y,wide)*river_drop
 						# Near the sea it opens out (a funnel, widest at the sea).
@@ -1613,6 +1634,9 @@ class GDField extends RefCounted:
 						var scale := 1.0
 						var along := Vector2(-gz,gx)/gw
 						var wg := Vector2(_valley_at(x+4.0,z)-v,_valley_at(x,z+4.0)-v)*0.25
+						# (Its winding tilts the line off the valley's: the line's
+						# own slope is the valley's less the winding's.)
+						wg -= Vector2(_wind(x+4.0,z,wide)-wind,_wind(x,z+4.0,wide)-wind)*(0.25*gw)
 						var wl := wg.length()
 						if wl > 1e-7:
 							scale = clampf(gw/wl,0.25,4.0)
@@ -1620,11 +1644,13 @@ class GDField extends RefCounted:
 						# The signed distance from its line, in world metres.
 						var r := (ds-off)*scale
 						var s := absf(r)
+						# This side's bank run.
+						var bank := RIVER_BANK*lerpf(RIVER_BANK_SWING.x,RIVER_BANK_SWING.y,_bank_swing(x,z,r))
 						# The level: the lowland's under the valley, never under the sea.
 						var top := maxf(base,r_meadow_above)
 						var water := _mouth_level(base-drop)
 						# By the river the floor is the banks' top (the hills' bumps out).
-						var near := (1.0-smoothstep(w+RIVER_BANK,w+RIVER_BANK+RIVER_RAMP,s))*k
+						var near := (1.0-smoothstep(w+bank,w+bank+RIVER_RAMP,s))*k
 						floor_y = lerpf(floor_y,top,near)
 						last_river_r = r
 						last_river_w = w
@@ -1633,6 +1659,7 @@ class GDField extends RefCounted:
 						_river_k = k
 						_river_mouth = mouth
 						_river_bed = RIVER_BED+RIVER_MOUTH_DEEP*mouth*minf(river_mouth,1.0)
+						_river_bank = bank
 						if s < w+RIVER_BANK+16.0 and water > 0.0:
 							# The flow: downhill along the valley, as fast as the
 							# level falls.
@@ -1668,6 +1695,21 @@ class GDField extends RefCounted:
 		if absf(h) < BEACH*2.0: h = h*lerpf(0.45,1.0,smoothstep(0.0,BEACH*2.0,absf(h)))
 		last_mountain = mountain
 		return Vector2(SEA_Y+h,meadow)
+
+	## The river's line wound off the floor's (m, either way) at a point, for
+	## its width's swing `wide` (0..1): bends, and kinks on them (RIVER_WIND).
+	func _wind(x: float, z: float, wide: float) -> float:
+		var a := lerpf(RIVER_WIND_WIDE.x,RIVER_WIND_WIDE.y,wide)
+		var b := RIVER_MEANDER/RIVER_WIND_SIZE.x
+		var c := RIVER_MEANDER/RIVER_WIND_SIZE.y
+		return a*(RIVER_WIND.x*_river_meander.get_noise_2d(x*b-2741.0,z*b+1187.0)+RIVER_WIND.y*_river_meander.get_noise_2d(x*c+653.0,z*c-3119.0))
+
+	## Where a river's bank run is in its swing (0..1, RIVER_BANK_SWING) at a
+	## point on the side `r` (its signed distance) is: each side its own.
+	func _bank_swing(x: float, z: float, r: float) -> float:
+		var b := RIVER_SIDE/RIVER_BANK_SIZE
+		var o := Vector2(417.0,91.0) if r >= 0.0 else Vector2(-2203.0,1777.0)
+		return clampf(_river_side.get_noise_2d(x*b+o.x,z*b+o.y)*0.9+0.5,0.0,1.0)
 
 	## How far into its mouth a river is whose level, unclamped, stands `lv` m
 	## over the sea: 0 upstream, 1 at the sea and past it (RIVER_MOUTH_RISE).

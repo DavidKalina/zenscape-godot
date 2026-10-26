@@ -56,8 +56,8 @@ static func noise(px: float, pz: float) -> float:
 ## as the ground shader paints it (endless_ground `bank_w`, `river_bank`
 ## 3.5), so the grass stops where the stones start.
 static func river_bank(x: float, z: float) -> float:
-	var n := noise(x/70.0+11.0,z/70.0+11.0)*0.75+noise(x/17.0+5.0,z/17.0+5.0)*0.25
-	return 3.5*lerpf(0.2,1.6,smoothstep(0.32,0.68,n))
+	var n := noise(x/55.0+11.0,z/55.0+11.0)*0.45+noise(x/19.0+5.0,z/19.0+5.0)*0.55
+	return 3.5*lerpf(0.0,1.8,smoothstep(0.42,0.62,n))
 
 ## ep_fade and ep_patch near the eye (no fade).
 static func fade(x: float, z: float, scale: float) -> float:
