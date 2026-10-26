@@ -3,11 +3,17 @@
 
   python tools/light_split.py shares LOG [LOG...]     # each light's share per class, summed over the views
   python tools/light_split.py views LOG [LOG...]      # the same per view, with the view's bearing to the sun
-  python tools/light_split.py match BEFORE AFTER [--views a,b]   # pixel-matched V, S, B/R over BEFORE's masks
+  python tools/light_split.py stats BEFORE_LOG AFTER_LOG [--views a,b]   # each run's own classes, not pixel-matched
+  python tools/light_split.py match BEFORE AFTER [--views a,b] [--min-agree 0.8]   # pixel-matched V, S, B/R over BEFORE's masks
 
 A LOG is the light_split run's output (drive.py ... > LOG). BEFORE and AFTER
-are its --out folders; BEFORE's run needs --save-mask. Classes: grass, rock,
-tree, each _lit (the sun gives over 60%) or _shade (under 10%).
+are its --out folders; BEFORE's run needs --save-mask. With AFTER's masks
+too, a view where under --min-agree of the classed pixels keep their class
+is skipped: the land and trees stream in on worker threads, and now and then
+a run holds a view with them in a different state (and the clouds' places
+can differ run to run: --no-clouds for land numbers). Classes: grass, rock,
+tree, each _lit (the sun gives over 60%) or _shade (under 10%), and
+haze_far (far land, the depth fog over 40% of its light).
 """
 from __future__ import annotations
 
@@ -67,7 +73,40 @@ def shares(paths, per_view=False):
                     luma(s) / max(luma(l), 1e-5), rel(f), rel(fo)))
 
 
-def match(bdir, adir, views):
+def stats(blog, alog, views):
+    """Each class's on-screen median V and S (n-weighted over the views) and
+    its linear B/R, in two runs' own classes: not pixel-matched, so steady
+    when the runs' frames differ a little."""
+    def agg(path):
+        t = {}
+        for r in rows(path):
+            if views and r["view"] not in views:
+                continue
+            for k, c in r["classes"].items():
+                a = t.setdefault(k, {"n": 0, "V": 0.0, "S": 0.0, "f": [0.0, 0.0, 0.0]})
+                n = c["n"]
+                a["n"] += n
+                a["V"] += c["V"] * n
+                a["S"] += c["S"] * n
+                for i in range(3):
+                    a["f"][i] += c["full"][i] * n
+        return t
+    A, B = agg(blog), agg(alog)
+    print("== %s -> %s (%s)" % (blog, alog, ",".join(views) if views else "all views"))
+    for k in sorted(set(A) | set(B)):
+        if k not in A or k not in B:
+            print("  %-12s only in %s" % (k, "before" if k in A else "after"))
+            continue
+        a, b = A[k], B[k]
+        V, V2 = a["V"] / a["n"], b["V"] / b["n"]
+        S, S2 = a["S"] / a["n"], b["S"] / b["n"]
+        br = a["f"][2] / max(a["f"][0], 1e-6)
+        br2 = b["f"][2] / max(b["f"][0], 1e-6)
+        print("  %-12s n %6d -> %6d  V %.3f -> %.3f (%+5.1f%%)  S %.3f -> %.3f (%+5.1f%%)  B/R(lin) %.2f -> %.2f" % (
+            k, a["n"], b["n"], V, V2, (V2 / V - 1) * 100, S, S2, (S2 / S - 1) * 100, br, br2))
+
+
+def match(bdir, adir, views, min_agree=0.8):
     if not views:
         views = sorted(p.stem[:-5] for p in Path(bdir).glob("*_mask.png"))
     tot = {}
@@ -77,12 +116,18 @@ def match(bdir, adir, views):
         b = os.path.abspath(f"{adir}/{v}.png")
         if not (os.path.exists(m) and os.path.exists(b)):
             continue
-        r = godot.run(["-s", "res://tools/harness/light_match.gd", "--", "--mask=" + m, a, b])
+        m2 = os.path.abspath(f"{adir}/{v}_mask.png")
+        extra = ["--mask2=" + m2] if os.path.exists(m2) else []
+        r = godot.run(["-s", "res://tools/harness/light_match.gd", "--", "--mask=" + m, *extra, a, b])
         lines = [x for x in r["output"].splitlines() if x.startswith("CMP ")]
         if not lines:
             print("no CMP line for", v)
             continue
         d = json.loads(lines[0][4:])
+        agree = d.get("agree")
+        if agree is not None and agree < min_agree:
+            print("  (skipped %s: only %.0f%% of its pixels keep their class: the runs' land or trees differ)" % (v, agree * 100))
+            continue
         for k, c in d[a].items():
             c2 = d[b].get(k)
             if not c2:
@@ -108,18 +153,30 @@ def match(bdir, adir, views):
 
 def main() -> int:
     a = sys.argv[1:]
-    if not a or a[0] not in ("shares", "views", "match"):
+    if not a or a[0] not in ("shares", "views", "match", "stats"):
         print(__doc__)
         return 1
     if a[0] in ("shares", "views"):
         shares(a[1:], a[0] == "views")
+    elif a[0] == "stats":
+        views = []
+        if "--views" in a:
+            i = a.index("--views")
+            views = a[i + 1].split(",")
+            del a[i:i + 2]
+        stats(a[1], a[2], views)
     else:
         views = []
         if "--views" in a:
             i = a.index("--views")
             views = a[i + 1].split(",")
             del a[i:i + 2]
-        match(a[1], a[2], views)
+        min_agree = 0.8
+        if "--min-agree" in a:
+            i = a.index("--min-agree")
+            min_agree = float(a[i + 1])
+            del a[i:i + 2]
+        match(a[1], a[2], views, min_agree)
     return 0
 
 

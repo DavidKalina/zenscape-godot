@@ -71,8 +71,8 @@ const AERIAL := 0.35
 ## bearing to the sun (warm into it, blue away) and the far land meets the
 ## dome's own horizon in every direction; and the sun's scatter in it grows
 ## to this.
-const AERIAL_SUN := 0.7
-const SUN_SCATTER_SUN := 0.3
+const AERIAL_SUN := 0.6
+const SUN_SCATTER_SUN := 0.45
 ## shaders/reference_sky_common.gdshaderinc ZS_HAZE_GATHER, _COOL, _BLUE.
 const HAZE_GATHER := 0.4
 const HAZE_COOL := 0.55

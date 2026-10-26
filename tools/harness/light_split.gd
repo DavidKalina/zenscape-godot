@@ -7,7 +7,8 @@ extends "res://tools/harness/look_views.gd"
 ## share: the fog's colour and its aerial sky, not its sun scatter, which
 ## goes with the sun), and the frame without trees (the tree mask).
 ## Pixels are sorted into grass, rock and tree, sunlit (the sun gives over
-## 60% of their light) or deep shade (under 10%); a ROW per view gives each
+## 60% of their light) or deep shade (under 10%), and far land in the haze
+## (haze_far: the depth fog gives over 40% of its light); a ROW per view gives each
 ## class's median V, S, H on screen and each light's share. The shares come
 ## from separate passes, so they are approximate.
 ##   python tools/drive.py tools/harness/light_split.gd --rendered -- --out=DIR --views=hills,sun_toward --save-mask --scene-args --no-title --hour=17.5
@@ -153,9 +154,24 @@ func _stats(disp: Image, full: Image, sun: Image, fill: Image, none: Image, rimi
 		var t := Vector3(lut[T[k]],lut[T[k+1]],lut[T[k+2]])
 		var fl := _luma(f)
 		if fl < 0.002: continue
+		var dc := Color8(D[k],D[k+1],D[k+2])
+		# Far land in the haze: the depth fog is over 40% of its light (the
+		# sky is untouched by the fog). Its display colour only, class "haze".
+		var nfv := Vector3(lut[NF[k]],lut[NF[k+1]],lut[NF[k+2]])
+		if _luma(no-nfv) > 0.4*fl:
+			_mask.set_pixel(i%W,i/W,Color8(40,255,0))
+			if not acc.has("haze_far"): acc["haze_far"] = {"n":0,"f":Vector3.ZERO,"s":Vector3.ZERO,"l":Vector3.ZERO,"no":Vector3.ZERO,"r":Vector3.ZERO,"fog":Vector3.ZERO,"v":[],"sat":[],"h":[]}
+			var ah: Dictionary = acc["haze_far"]
+			ah.n += 1
+			ah.f += f
+			ah.no += no
+			ah.fog += no-nfv
+			(ah.v as Array).append(dc.v)
+			(ah.sat as Array).append(dc.s)
+			(ah.h as Array).append(dc.h)
+			continue
 		# Light-made share: sky and fogged-out land are mostly `none`.
 		if _luma(no) > 0.5*fl: continue
-		var dc := Color8(D[k],D[k+1],D[k+2])
 		var cls := ""
 		if (f-t).length() > 0.02 + 0.15*f.length(): cls = "tree"
 		else:

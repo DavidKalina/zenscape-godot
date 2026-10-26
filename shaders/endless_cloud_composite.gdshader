@@ -109,7 +109,7 @@ void fragment() {
 	float high = smoothstep(0.02, 0.4, sun.y);
 	// At a low sun the scatter grows as the land's does (endless_look.gd
 	// SUN_SCATTER_SUN over SUN_SCATTER, with zs_haze_sun).
-	sky += c_sun * pow(toward_sun, 6.0) * sun_scatter * mix(1.0, 0.3 / 0.18, zs_haze_sun) * mix(1.4, 0.7, high) * zs_celestial_clear;
+	sky += c_sun * pow(toward_sun, 6.0) * sun_scatter * mix(1.0, 0.45 / 0.18, zs_haze_sun) * mix(1.4, 0.7, high) * zs_celestial_clear;
 	col = mix(col, sky, fog);
 	ALBEDO = col;
 	// The march stops once the cloud is all but whole: whole it is, so the
