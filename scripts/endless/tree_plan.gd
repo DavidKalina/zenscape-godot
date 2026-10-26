@@ -34,6 +34,7 @@ extends RefCounted
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const ArchPlan = preload("res://scripts/endless/arch_plan.gd")
+const RockPlan = preload("res://scripts/endless/rocks/rock_plan.gd")
 const HallSites = preload("res://scripts/endless/hall_sites.gd")
 const HeroTrees = preload("res://scripts/hero_trees.gd")
 
@@ -308,11 +309,28 @@ func _arches_near(field: RefCounted, x0: float, z0: float, x1: float, z1: float)
 	if field.has_method("tunnels_in"):
 		for t: RefCounted in field.tunnels_in(x0-pad,z0-pad,x1+pad,z1+pad):
 			out.append_array(preload("res://scripts/endless/tunnel_sites.gd").tree_keepouts(t))
-	if float(arches.density) <= 0.0: return out
+	var rocks := _rock_flags()
+	var any_rocks: bool = RockPlan.any(rocks)
+	if float(arches.density) <= 0.0 and not any_rocks: return out
 	var a := ArchPlan.cell_of(x0-pad,z0-pad)
 	var b := ArchPlan.cell_of(x1+pad,z1+pad)
 	for cz in range(a.y,b.y+1):
 		for cx in range(a.x,b.x+1):
+			# The rock shapes' keep-outs (hoodoo pockets: RockPlan, the
+			# same cells), cached as the arches are.
+			if any_rocks:
+				var rkey := Vector3i(cx,cz,-1-seed)
+				_arch_lock.lock()
+				var kept: Variant = _arch_cache.get(rkey)
+				_arch_lock.unlock()
+				if kept == null:
+					kept = RockPlan.tree_keepouts(field,cx,cz,rocks)
+					_arch_lock.lock()
+					if _arch_cache.size() > 4000: _arch_cache.clear()
+					_arch_cache[rkey] = kept
+					_arch_lock.unlock()
+				out.append_array(kept)
+			if float(arches.density) <= 0.0: continue
 			var key := Vector3i(cx,cz,seed)
 			_arch_lock.lock()
 			var got: Variant = _arch_cache.get(key)
@@ -345,6 +363,16 @@ func _arches_near(field: RefCounted, x0: float, z0: float, x1: float, z1: float)
 				_arch_lock.unlock()
 			out.append_array(got)
 	return out
+
+## The rock shapes' densities (RockPlan `flags`), read once (under the
+## arches' lock: the tree workers ask at once).
+static var _rocks := {}
+static func _rock_flags() -> Dictionary:
+	_arch_lock.lock()
+	if _rocks.is_empty(): _rocks = RockPlan.flags()
+	var got := _rocks
+	_arch_lock.unlock()
+	return got
 
 ## The arches near a world rectangle (`_arches_near`) as six floats each,
 ## [x, z, cos, sin, half span, half depth]: for the native plan (ZenScapeTrees).
