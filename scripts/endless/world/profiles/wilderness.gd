@@ -23,7 +23,9 @@ func _init() -> void:
 	# ground and sea shaders' own defaults (the watercolour meadows, the high
 	# paint, the sea's tints), no shader globals past the season reset.
 	paint = {"mood":"alpine_morning","hour":8.6,"ground":{},"sea":{},"globals":{}}
-	# Every dressing layer.
-	layers = {"trees":true,"grass":true,"birds":true,"fish":true,"arches":1.0,"splits":1.0,"split_kinds":{"slot":0.7,"winding":1.0,"gorge":1.8,"grand":2.5},"traffic":-1}
+	# Every dressing layer. The rock shapes (stacks, hoodoos) are off until
+	# they are placed by play: --rocks=stacks,hoodoos turns them on.
+	layers = {"trees":true,"grass":true,"birds":true,"fish":true,"arches":1.0,"splits":1.0,"split_kinds":{"slot":0.7,"winding":1.0,"gorge":1.8,"grand":2.5},
+		"stacks":0.0,"hoodoos":0.0,"traffic":-1}
 	# The start: over the origin, 45 m up (endless_flight START_ALT), north.
 	spawn = {"at":Vector2.ZERO,"alt":45.0,"heading":0.0}

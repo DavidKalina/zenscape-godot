@@ -31,7 +31,9 @@ extends RefCounted
 ##   layers  which dressing layers run: trees, grass, birds, fish (bools),
 ##           arches (density, 0 none), splits (split mountains' density, 0
 ##           none), split_kinds (their mix of kinds, {slot, winding, gorge,
-##           grand: weight}; split_sites.gd TYPES), traffic (planes, -1 the
+##           grand: weight}; split_sites.gd TYPES), stacks and hoodoos (each
+##           rock shape kind's density, 0 none: scripts/endless/rocks/
+##           rock_plan.gd KINDS, one layer a kind), traffic (planes, -1 the
 ##           engine's count).
 ##   spawn   at (Vector2 xz), alt (m over the ground), heading (degrees).
 ##
@@ -53,7 +55,7 @@ var test := false
 var land := {}
 var flora := {"forest":1.0,"forest_meadows":1.0,"tree_weights":PackedFloat32Array(),"grass":1.0,"flowers":true}
 var paint := {"mood":"alpine_morning","hour":8.6,"ground":{},"sea":{},"globals":{}}
-var layers := {"trees":true,"grass":true,"birds":true,"fish":true,"arches":1.0,"traffic":-1}
+var layers := {"trees":true,"grass":true,"birds":true,"fish":true,"arches":1.0,"stacks":0.0,"hoodoos":0.0,"traffic":-1}
 var spawn := {"at":Vector2.ZERO,"alt":45.0,"heading":0.0}
 ## One profile everywhere (the engine skips the per-spot asks).
 var uniform := true

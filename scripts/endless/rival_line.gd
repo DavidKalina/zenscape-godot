@@ -335,6 +335,7 @@ static func _ease(seconds: float, delta: float) -> float:
 func _in_solid(p: Vector3, bore: bool) -> String:
 	if not bore and p.y < float(game.field.height(p.x,p.z)): return "land"
 	if game.arches.inside(p): return "arch"
+	if game.get("rocks") != null and game.rocks.inside(p): return "rock"
 	if game.halls.inside(p): return "hall"
 	if game.trees.inside(p): return "tree"
 	return ""
@@ -343,6 +344,8 @@ func _in_solid(p: Vector3, bore: bool) -> String:
 ## tree's crown, and with `spans` an arch's or hall's top too.
 func _ground_top(p: Vector3, spans: bool) -> float:
 	var h := maxf(float(game.field.height(p.x,p.z)),-40.0)
+	# The rock shapes (LandRocks) it goes over, read READ_SIDE round.
+	if game.get("rocks") != null: h = maxf(h,float(game.rocks.top_near(p,READ_SIDE)))
 	if spans:
 		var g: Variant = game.plane_ground(Vector3(p.x,h+400.0,p.z))
 		if g is Vector2: return maxf(h,(g as Vector2).x)

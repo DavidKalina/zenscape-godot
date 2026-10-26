@@ -81,8 +81,9 @@ func _init() -> void:
 	# A region's own layers (halls, tunnels, arches, splits) run at the densest
 	# region's density; each site then keeps to the regions that grow it
 	# (halls and tunnels wholly inside one, clear of the band: LandBlend
-	# `site_ok`; arches by the region at the spot: ArchPlan).
-	for key: String in ["halls","tunnels","arches","splits"]:
+	# `site_ok`; arches by the region at the spot: ArchPlan; the rock
+	# shapes likewise: RockPlan).
+	for key: String in ["halls","tunnels","arches","splits"]+(preload("res://scripts/endless/rocks/rock_plan.gd").KINDS.keys() as Array):
 		var most := 0.0
 		for p: RefCounted in regions: most = maxf(most,float(p.layers.get(key,1.0 if key == "arches" else 0.0)))
 		layers[key] = most
