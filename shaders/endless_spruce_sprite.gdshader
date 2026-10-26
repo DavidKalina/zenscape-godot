@@ -24,6 +24,12 @@ global uniform vec3 zs_cloud_sun;
 #include "res://shaders/look_fill.gdshaderinc"
 // The shade's olive turns with the shade's hue (light_leans; 0 fixed).
 #include "res://shaders/light_leans.gdshaderinc"
+#include "res://shaders/backlight.gdshaderinc"
+global uniform vec3 zs_key_direction;
+// Backlight's gain on the crown's silhouette (shaders/backlight.gdshaderinc).
+const float BACKLIGHT_GAIN = 2.0;
+// The crown's outline in the atlas (its cover near the cut), for backlight.
+varying float edge;
 
 uniform sampler2D albedo_atlas : filter_linear_mipmap, repeat_disable;
 uniform sampler2D normal_atlas : filter_linear_mipmap, repeat_disable;
@@ -111,6 +117,7 @@ void fragment() {
 	float lod = log2(max(max(length(dFdx(UV)), length(dFdy(UV))) * cell_px, 1.0));
 	float cover = a.a * (1.0 + 0.32 * lod);
 	if (cover < 0.5) discard;
+	edge = 1.0 - smoothstep(0.5, 0.95, cover);
 	vec3 c = sprite_linear(clamp(a.rgb / max(a.a, 1e-3), 0.0, 1.0));
 	c *= COLOR.rgb / max(tint, vec3(1e-3));
 	vec4 nb = textureGrad(normal_atlas, uv, gx, gy);
@@ -134,6 +141,11 @@ void light() {
 	DIFFUSE_LIGHT += crown_sun * t * mix(vec3(0.96, 0.99, 1.04), vec3(1.04, 1.02, 0.94), t) / PI;
 	float through = pow(max(dot(-LIGHT, VIEW), 0.0), 2.0);
 	DIFFUSE_LIGHT += LIGHT_COLOR * sun.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
+	// Backlight: the crown's silhouette, seen against a low sun, catches it.
+	if (zs_backlight > 0.0 && LIGHT_IS_DIRECTIONAL && dot((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz, zs_key_direction) > 0.999) {
+		float rim = max(0.6 * pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 3.0), edge);
+		DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-LIGHT, VIEW), rim, BACKLIGHT_GAIN)) / PI;
+	}
 	if (zs_look_fill > 0.0 && LIGHT_IS_DIRECTIONAL) {
 		vec3 fill_light = zs_look_fill_light(1.0 - ATTENUATION * smoothstep(0.0, 0.2, max(d, 0.0)));
 		float la = sprite_luma(ALBEDO);

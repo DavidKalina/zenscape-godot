@@ -573,6 +573,10 @@ zs_haze_sun={
 "type": "float",
 "value": 0.0
 }
+zs_backlight={
+"type": "float",
+"value": 0.0
+}
 zs_bow={
 "type": "float",
 "value": 0.0

@@ -233,6 +233,11 @@ const GOLDEN_E := Vector2(0.42, 0.14)
 ## takes more of the sky behind each pixel and more of the sun's scatter
 ## (scripts/endless/endless_look.gd `_haze`). --haze-sun=0 turns it off.
 static var haze_sun := _arg_float("--haze-sun=", 1.0)
+## Backlight: grass tips and spruce silhouettes seen against a low sun glow
+## in its colour (shaders/backlight.gdshaderinc). zs_backlight follows
+## golden hour (GOLDEN_E, clear sky, light follow) times --backlight=X
+## (1; 0 off).
+static var backlight := _arg_float("--backlight=", 1.0)
 ## --light-follow=0 is the light as it was before the light pass (the leans 1,
 ## the fill and rim their old colours and dips); between, part way.
 static var light_follow := _arg_float("--light-follow=", 1.0)
@@ -480,6 +485,7 @@ func update_rig() -> void:
 	_publish("zs_shade_lean", shade_lean)
 	_publish("zs_light_follow", follow)
 	_publish("zs_haze_sun", golden_f * follow * clampf(haze_sun, 0.0, 1.0))
+	_publish("zs_backlight", golden_f * follow * maxf(backlight, 0.0) * (0.0 if moon_energy > sun_energy else 1.0))
 	# The sky fill is the shade's hue at the fill's strength; the rim (a
 	# second fill from the side) leans as the shade does, and both ease off at
 	# golden hour so the low sun leads.
