@@ -244,7 +244,9 @@ func measure(delta: float, game: Node3D) -> void:
 	var points: Array[Vector3] = [xf.origin+Vector3.DOWN*SkyGlide.SKIM]
 	for b: Vector3 in BODY: points.append(xf*(b*size))
 	for p: Vector3 in points:
-		var under: Variant = game.plane_ground(p)
+		# The middle's belly asks the ground as the glide does; a body point
+		# is on the plane's edge, so it asks the stone ungrown.
+		var under: Variant = game.plane_ground(p,-1.0 if p == points[0] else 0.0)
 		var top := -INF
 		if under is Vector2:
 			var span_under := (under as Vector2).y

@@ -17,8 +17,9 @@ extends RefCounted
 ##
 ## The collider is a trimesh of level 1 (a quarter of the triangles) a
 ## pillar, on layer 1. The flight's solid (`solid`): per pillar, per ring, its centre
-## and SECTORS radii (the most any point reaches in that turn of the ring
-## and its neighbours), read by scripts/endless/land_rocks.gd.
+## and SECTORS radii (the most its outline reaches in that turn of the
+## ring, `_sectors`), read by scripts/endless/land_rocks.gd, which follows
+## the skin from ring to ring as it is lofted, in straight lines.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
@@ -138,6 +139,8 @@ static func _pillar(v: PackedVector3Array, c: PackedColorArray, levels: Array, p
 		centres.append(Vector2(centre.x,centre.z))
 		# The top ring weathers less, so the cap's edge stays clean.
 		var keep := 0.5 if i == rings else 1.0
+		var offs := PackedVector2Array()
+		offs.resize(segs)
 		for j in range(segs):
 			var ang := TAU*j/segs
 			var ca := cos(ang)
@@ -155,24 +158,14 @@ static func _pillar(v: PackedVector3Array, c: PackedColorArray, levels: Array, p
 			v.append(q)
 			var shade := 0.82+noise.get_noise_3d(world.x/6.0,world.y/2.5,world.z/6.0)*0.22+push*0.6
 			c.append(Color(rock.r*shade*tint.r,rock.g*shade*tint.g,rock.b*shade*0.97*tint.b,0.0))
-			# The solid: the most the ring reaches in each sector.
-			var off := Vector2(q.x-centre.x,q.z-centre.z)
-			var k := clampi(int(floor((off.angle()+PI)/TAU*SECTORS)),0,SECTORS-1)
-			rad[i*SECTORS+k] = maxf(rad[i*SECTORS+k],off.length())
-	# Each sector widened to its neighbours' reach (the chords between
-	# points, a sector no point fell in).
+			offs[j] = Vector2(q.x-centre.x,q.z-centre.z)
+		_sectors(offs,rad,i*SECTORS)
 	var reach := 0.0
 	var mid := Vector2.ZERO
 	for i in range(rings+1): mid += centres[i]
 	mid /= rings+1
 	for i in range(rings+1):
-		var row := PackedFloat32Array()
-		row.resize(SECTORS)
-		for k in range(SECTORS):
-			row[k] = maxf(rad[i*SECTORS+k],maxf(rad[i*SECTORS+(k+1)%SECTORS],rad[i*SECTORS+(k+SECTORS-1)%SECTORS]))
-		for k in range(SECTORS):
-			rad[i*SECTORS+k] = row[k]
-			reach = maxf(reach,row[k]+centres[i].distance_to(mid))
+		for k in range(SECTORS): reach = maxf(reach,rad[i*SECTORS+k]+centres[i].distance_to(mid))
 	# The top's middle.
 	var last := _at(profile,top)
 	var dome := float(p.get("dome",0.8))
@@ -194,6 +187,41 @@ static func _pillar(v: PackedVector3Array, c: PackedColorArray, levels: Array, p
 		levels[l] = idx
 	return {"c":centres,"r":rad,"y0":at.y+bottom,"dy":dy,"rings":rings+1,"top":at.y+top+maxf(dome,0.0),"mid":mid,"reach":reach,"size":size,
 		"base":at.y}
+
+## A ring's sector radii into `rad` from `at`: the most its outline (the
+## points `offs` off its centre, in turn, and the edges between them)
+## reaches within each sector's turn. The most is at a point inside the
+## sector or where an edge crosses the sector's side, so both are taken.
+static func _sectors(offs: PackedVector2Array, rad: PackedFloat32Array, at: int) -> void:
+	var n := offs.size()
+	for k in range(SECTORS): rad[at+k] = 0.0
+	for j in range(n):
+		var a := offs[j]
+		var k := clampi(int(floor((a.angle()+PI)/TAU*SECTORS)),0,SECTORS-1)
+		rad[at+k] = maxf(rad[at+k],a.length())
+		# The edge to the next point: where it crosses each sector side
+		# between their turns.
+		var b := offs[(j+1)%n]
+		var ta := a.angle()+PI
+		var tb := b.angle()+PI
+		var turn := wrapf(tb-ta,-PI,PI)
+		var ka := ta/TAU*SECTORS
+		var kb := (ta+turn)/TAU*SECTORS
+		var lo := int(ceil(minf(ka,kb)))
+		var hi := int(floor(maxf(ka,kb)))
+		for side in range(lo,hi+1):
+			var ang := float(side)*TAU/SECTORS-PI
+			var u := Vector2(cos(ang),sin(ang))
+			# a + t(b-a) along u: the cross of it with u is 0.
+			var e := b-a
+			var den := e.x*u.y-e.y*u.x
+			if absf(den) < 1e-6: continue
+			var t := clampf(-(a.x*u.y-a.y*u.x)/den,0.0,1.0)
+			var r := (a+e*t).length()
+			var s0 := posmod(side,SECTORS)
+			var s1 := posmod(side-1,SECTORS)
+			rad[at+s0] = maxf(rad[at+s0],r)
+			rad[at+s1] = maxf(rad[at+s1],r)
 
 ## Smooth normals, each facing out the way the skin's winding does.
 static func _normals(v: PackedVector3Array, idx: PackedInt32Array) -> PackedVector3Array:

@@ -348,6 +348,9 @@ var sound := FlightSound.new()
 ## clock, the crash's dark fade (s left), and crashes so far.
 var near := NearMiss.new()
 var contact := FlightContact.new()
+## How far the stone is grown round the plane's middle this frame
+## (`plane_ground`).
+var solid_pad := WorldScale.span*0.5
 var debris: Node3D
 var water: Node3D
 ## The trees knocked down and falling (scripts/endless/tree_knock.gd).
@@ -804,8 +807,14 @@ func _size_chase() -> void:
 ## over it is a solid the plane slides under. So do the rock shapes, every
 ## kind (LandRocks `ground`): a pillar raises it, a cap's overhang is an
 ## underside.
-func plane_ground(p: Vector3) -> Variant:
-	return tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z))))))
+##
+## The stone (arches, rocks, halls, bores) is grown by `pad` m round `p`:
+## by default `solid_pad`, the plane's reach off its middle as it is rolled
+## now (WorldScale `reach_rolled`); 0 for a point on the plane's own edge
+## (NearMiss's body points), which is in the stone only where it truly is.
+func plane_ground(p: Vector3, pad := -1.0) -> Variant:
+	if pad < 0.0: pad = solid_pad
+	return tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad)
 
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
@@ -879,6 +888,7 @@ func tick(delta: float) -> void:
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	# The trees the coming move meets are knocked down first, so it flies on through.
 	var knocked: Dictionary = knock.before(delta,self)
+	solid_pad = WorldScale.reach_rolled(float(plane.bank)+float(plane.spin))
 	var events := hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
 	if not knocked.is_empty(): _knocked(events,knocked)
 	plane.engine = hand_landing.engine*float(plane.sputter)*(float(stage.engine) if stage != null else 1.0)

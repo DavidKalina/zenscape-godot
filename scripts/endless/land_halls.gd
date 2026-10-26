@@ -15,8 +15,9 @@ extends Node3D
 ## wheels' layer as well as the ruins'.
 ##
 ## The flight's solid: the land is a heightfield, so a section gives its
-## solid as a grid of GRID m cells in the hall's frame, each holding up to
-## MOST stretches (low, high over the floor), grown by the plane's wingtip.
+## solid as its boxes in the hall's frame (scripts/endless/box_solid.gd),
+## grown as each query asks: by the plane's reach round its middle, none
+## for a point on its edge.
 ## Until its near detail is made, a section's grid comes from its plan (its
 ## walls, columns and whole roofs); then from the near build's own hulls.
 ## `ground(p, h)` answers SkyGlide's `ground` with them as the arches do:
@@ -38,6 +39,7 @@ const RuinKit = preload("res://scripts/ruin_kit.gd")
 const ArchBuild = preload("res://scripts/endless/arch_build.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 ## The squares whose hall stands round the eye (m to the square's middle).
@@ -56,11 +58,6 @@ const NEAR_FORGET := 800.0
 const NEAR_TASKS := 1
 ## The walker's and the wheels' layer (the ruins' own stays as well).
 const LAYER := 1
-## The flight's grid: cell (m), stretches a cell, how near two stretches
-## count as one (m).
-const GRID := 1.0
-const MOST := 3
-const STRIDE := 1+MOST*2
 ## The ruin stone lifted for the endless land's sun (LandArches' STONE_LIFT).
 const STONE_LIFT := Color(3.0,2.55,1.95)
 
@@ -251,44 +248,10 @@ static func _plan_boxes(sub: Dictionary) -> Array:
 		if p.roof == "whole": out.append(AABB(Vector3(x0,soffit,-Hall.WALL_Z),Vector3(Hall.BAY,Hall.SLAB,Hall.WALL_Z*2.0)))
 	return out
 
-## Boxes (section frame, its x0 along the hall) as the flight's grid:
-## {x0, z0 (hall frame), nx, nz, data}: cell (i, j) at data[(j*nx+i)*STRIDE]
-## = [count, then count (low, high) stretches], grown by the wingtip.
+## Boxes (section frame, its x0 along the hall) as the flight's solid
+## (BoxSolid, hall frame).
 static func _grid(boxes: Array, shift: float) -> Dictionary:
-	var grow := WorldScale.span*0.5
-	var lo := Vector2(INF,INF)
-	var hi := Vector2(-INF,-INF)
-	for b: AABB in boxes:
-		lo = lo.min(Vector2(b.position.x,b.position.z))
-		hi = hi.max(Vector2(b.end.x,b.end.z))
-	if boxes.is_empty(): return {"x0":0.0,"z0":0.0,"nx":0,"nz":0,"data":PackedFloat32Array()}
-	lo -= Vector2.ONE*(grow+GRID)
-	hi += Vector2.ONE*(grow+GRID)
-	var nx := int(ceil((hi.x-lo.x)/GRID))
-	var nz := int(ceil((hi.y-lo.y)/GRID))
-	var lists: Array = []
-	lists.resize(nx*nz)
-	for b: AABB in boxes:
-		var i0 := clampi(int(floor((b.position.x-grow-lo.x)/GRID)),0,nx-1)
-		var i1 := clampi(int(floor((b.end.x+grow-lo.x)/GRID)),0,nx-1)
-		var j0 := clampi(int(floor((b.position.z-grow-lo.y)/GRID)),0,nz-1)
-		var j1 := clampi(int(floor((b.end.z+grow-lo.y)/GRID)),0,nz-1)
-		var s := Vector2(b.position.y,b.end.y)
-		for j in range(j0,j1+1):
-			for i in range(i0,i1+1):
-				var k := j*nx+i
-				if lists[k] == null: lists[k] = [s]
-				else: (lists[k] as Array).append(s)
-	var data := PackedFloat32Array()
-	data.resize(nx*nz*STRIDE)
-	for k in range(nx*nz):
-		if lists[k] == null: continue
-		var merged: Array = ArchBuild._merge(lists[k])
-		data[k*STRIDE] = merged.size()
-		for m in range(merged.size()):
-			data[k*STRIDE+1+m*2] = (merged[m] as Vector2).x
-			data[k*STRIDE+2+m*2] = (merged[m] as Vector2).y
-	return {"x0":lo.x+shift,"z0":lo.y,"nx":nx,"nz":nz,"data":data}
+	return BoxSolid.build(boxes,shift)
 
 ## A section's near detail and its exact solid (on a worker).
 func _build_near(sec: Dictionary) -> Dictionary:
@@ -504,9 +467,11 @@ func standing() -> Array:
 
 # --- The flight's solid -----------------------------------------------------
 
-## The solid stretches over world XZ `p` (world y, low to high).
-func stretches(p: Vector3) -> Array:
+## The solid stretches over world XZ `p` (world y, low to high), each box
+## grown by `pad` m round (the wingtip's reach when not given).
+func stretches(p: Vector3, pad := -1.0) -> Array:
 	var out: Array = []
+	if pad < 0.0: pad = WorldScale.span*0.5
 	for key: Vector2i in _halls:
 		var r: Dictionary = _halls[key]
 		if r.is_empty(): continue
@@ -515,21 +480,14 @@ func stretches(p: Vector3) -> Array:
 		var local: Vector3 = (r.inv as Transform3D)*p
 		var floor_y: float = (r.frame as Transform3D).origin.y
 		for sec: Dictionary in r.sections:
-			var g: Dictionary = sec.solid
-			var i := int(floor((local.x-float(g.x0))/GRID))
-			var j := int(floor((local.z-float(g.z0))/GRID))
-			if i < 0 or j < 0 or i >= int(g.nx) or j >= int(g.nz): continue
-			var data: PackedFloat32Array = g.data
-			var at := (j*int(g.nx)+i)*STRIDE
-			for k in range(int(data[at])): out.append(Vector2(data[at+1+k*2]+floor_y,data[at+2+k*2]+floor_y))
-	if out.size() > 1: out.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
-	return out
+			BoxSolid.stretches(sec.solid,local.x,local.z,pad,floor_y,out)
+	return BoxSolid.joined(out,ArchBuild.JOIN)
 
 ## SkyGlide's `ground` at `p` over `h` (the land's height, or what the
 ## layers under this one answered): as LandArches `ground`.
-func ground(p: Vector3, h: Variant) -> Variant:
+func ground(p: Vector3, h: Variant, pad := -1.0) -> Variant:
 	if not h is float: return h
-	var list := stretches(p)
+	var list := stretches(p,pad)
 	if list.is_empty(): return h
 	return over(p,h,list)
 
@@ -553,26 +511,21 @@ static func over(p: Vector3, h: float, list: Array) -> Variant:
 		break
 	return top if under == -INF else Vector2(top,under)
 
-## True inside a hall's solid (the camera keeps out, the wheels stop).
-func inside(p: Vector3) -> bool:
+## True inside a hall's solid, grown by `pad` (as `stretches`; the camera
+## keeps out, the wheels stop).
+func inside(p: Vector3, pad := -1.0) -> bool:
 	# As `stretches`, without building the list (the camera's sight asks
 	# this every half metre).
+	if pad < 0.0: pad = WorldScale.span*0.5
 	for key: Vector2i in _halls:
 		var r: Dictionary = _halls[key]
 		if r.is_empty(): continue
 		var site: PackedFloat32Array = r.site
 		if absf(p.x-site[0]) > site[7]+40.0 or absf(p.z-site[1]) > site[7]+40.0: continue
 		var local: Vector3 = (r.inv as Transform3D)*p
-		var y := p.y-(r.frame as Transform3D).origin.y
+		local.y = p.y-(r.frame as Transform3D).origin.y
 		for sec: Dictionary in r.sections:
-			var g: Dictionary = sec.solid
-			var i := int(floor((local.x-float(g.x0))/GRID))
-			var j := int(floor((local.z-float(g.z0))/GRID))
-			if i < 0 or j < 0 or i >= int(g.nx) or j >= int(g.nz): continue
-			var data: PackedFloat32Array = g.data
-			var at := (j*int(g.nx)+i)*STRIDE
-			for k in range(int(data[at])):
-				if y >= data[at+1+k*2] and y <= data[at+2+k*2]: return true
+			if BoxSolid.inside(sec.solid,local,pad): return true
 	return false
 
 ## One line for the numbers HUD.
