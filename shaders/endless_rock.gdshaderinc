@@ -20,6 +20,13 @@
 // cool shadow tone to a warm lit one, on top of the sun's own lighting.
 // Each scale fades to its mean tone where a pixel is wider than it, so far
 // rock is the near rock's average and nothing shimmers.
+//
+// The painted light's tones are the rock's own under the reference light
+// (the default mood's morning) and turn with the light from there
+// (shaders/light_leans.gdshaderinc): the lit and glint tones with the sun's
+// hue, the shade, crack and sky-bounce tones with the shade's, by rock_follow
+// (0 fixed as before).
+#include "res://shaders/light_leans.gdshaderinc"
 
 // How much facets tilt the lit normal (0 none), the painted light's share,
 // the moss's share, and a scale on every pattern's size.
@@ -55,6 +62,8 @@ uniform float rock_seams : hint_range(0.0, 1.0) = 0.12;
 uniform float rock_beds : hint_range(0.0, 1.0) = 0.65;
 uniform float rock_plane_calm : hint_range(0.0, 1.0) = 0.1;
 uniform float rock_relief_big : hint_range(0.0, 1.0) = 0.45;
+// How far the painted light's tones follow the light's leans (0 fixed).
+uniform float rock_follow : hint_range(0.0, 2.0) = 0.75;
 
 const vec3 ER_SHADOW1 = vec3(0.105, 0.115, 0.150);
 const vec3 ER_SHADOW = vec3(0.135, 0.130, 0.175);
@@ -64,6 +73,8 @@ const vec3 ER_MID = vec3(0.250, 0.225, 0.200);
 const vec3 ER_LIT = vec3(0.580, 0.470, 0.330);
 const vec3 ER_GLINT = vec3(0.780, 0.680, 0.520);
 const vec3 ER_CRACK = vec3(0.045, 0.045, 0.060);
+// The sky fill's luma (zs_hemi_sky's luma x zs_hemi_energy) at the reference light.
+const float ER_REF_FILL = 0.146;
 
 vec3 er_hash3(ivec3 c) {
 	uvec3 v = uvec3(c) * 1664525u + 1013904223u;
@@ -272,9 +283,11 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout 
 	float t = floor(tier) + smoothstep(0.5 - soft, 0.5 + soft, fract(tier));
 	t = clamp(t / (steps - 1.0) - 0.0, 0.0, 1.0);
 	t = mix(lit, t, 0.7);
-	vec3 shadow_tone = rock_pass1 ? ER_SHADOW1 : ER_SHADOW;
+	vec3 shadow_tone = zs_cool(rock_pass1 ? ER_SHADOW1 : ER_SHADOW, rock_follow);
+	vec3 mid_tone = zs_warm(ER_MID, 0.5 * rock_follow);
+	vec3 lit_tone = zs_warm(ER_LIT, rock_follow);
 	t = rock_pass1 ? 0.22 + t * 0.78 : 0.26 + t * 0.74;
-	vec3 col = t < 0.5 ? mix(shadow_tone, ER_MID, t * 2.0) : mix(ER_MID, ER_LIT, t * 2.0 - 1.0);
+	vec3 col = t < 0.5 ? mix(shadow_tone, mid_tone, t * 2.0) : mix(mid_tone, lit_tone, t * 2.0 - 1.0);
 	if (!rock_pass1 && facet_k > 0.0) {
 		// Each plane its own tone and a hue leaning warm or cool.
 		vec3 hp = er_hash3(ivec3(int(plane_id.x), int(plane_id.y), 19));
@@ -353,8 +366,8 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout 
 	// A pale lip along the facet's top and along the lit side of a seam.
 	float shade = rock_pass1 ? 0.0 : 1.0 - smoothstep(0.05, 0.6, dot(nf, sun));
 	// In shade the lips keep a cool glint and the cracks stay violet, not black.
-	vec3 glint = mix(ER_GLINT, vec3(0.40, 0.40, 0.54), shade);
-	vec3 crack_col = mix(ER_CRACK, vec3(0.085, 0.075, 0.135), shade);
+	vec3 glint = mix(zs_warm(ER_GLINT, rock_follow), zs_cool(vec3(0.40, 0.40, 0.54), rock_follow), shade);
+	vec3 crack_col = mix(ER_CRACK, zs_cool(vec3(0.085, 0.075, 0.135), rock_follow), shade);
 	float calm_k = rock_flat ? 0.0 : rock_calm;
 	crack *= 1.0 - 0.45 * calm_k;
 	lip *= 1.0 - 0.4 * calm_k;
@@ -370,7 +383,7 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout 
 
 	// The sun's own light takes the facets' normal.
 	bumped = normalize(mix(n, nf, rock_pass1 ? 0.7 : 0.92));
-	col = mix(col, ER_MID * 1.2, 1.0 - rock_paint);
+	col = mix(col, mid_tone * 1.2, 1.0 - rock_paint);
 	if (!rock_flat && !rock_pass1) {
 		// Hollows a little darker, proud ledges a little lighter.
 		col *= 1.0 + (cav - 0.5) * 0.5 * clamp(rock_relief, 0.0, 1.5);
@@ -379,16 +392,16 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout 
 		float cv = clamp(carved.x, 0.0, 1.0) * rock_carve_shade;
 		float cr = clamp(carved.y, 0.0, 1.0) * rock_carve_shade;
 		float sunny = smoothstep(-0.1, 0.5, dot(nf, sun));
-		col = mix(col, col * vec3(0.50, 0.50, 0.66), clamp(cv * 0.55, 0.0, 0.7));
-		col = mix(col, col * vec3(1.30, 1.22, 1.08), clamp(cr * (0.25 + 0.5 * sunny), 0.0, 0.8));
+		col = mix(col, col * zs_cool(vec3(0.50, 0.50, 0.66), rock_follow), clamp(cv * 0.55, 0.0, 0.7));
+		col = mix(col, col * zs_warm(vec3(1.30, 1.22, 1.08), rock_follow), clamp(cr * (0.25 + 0.5 * sunny), 0.0, 0.8));
 	}
 	if (!rock_pass1 && rock_bounce > 0.0) {
 		// Bounce light the sun does not give: cool sky from above, warm from
 		// the valley floor below, strongest in the shade.
 		float up = nf.y * 0.5 + 0.5;
 		float low = smoothstep(170.0, 10.0, p.y + 40.0);
-		vec3 bounce = ER_SKY_BOUNCE * (0.35 + 0.65 * up)
-			+ ER_GROUND_BOUNCE * (1.0 - up) * (0.3 + 0.7 * low) * 0.8;
+		vec3 bounce = zs_cool(ER_SKY_BOUNCE, rock_follow) * (0.35 + 0.65 * up)
+			+ zs_warm(ER_GROUND_BOUNCE, rock_follow) * (1.0 - up) * (0.3 + 0.7 * low) * 0.8;
 		glow = col * bounce * (0.12 + 0.88 * shade) * 0.22 * rock_bounce
 			* (1.0 - 0.5 * clamp(carved.x * rock_carve_shade, 0.0, 1.0));
 	}
