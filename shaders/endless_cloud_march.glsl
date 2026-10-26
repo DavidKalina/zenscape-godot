@@ -53,7 +53,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 fog_at;        // 56 the valley fog's map: corner xz, side, has one
 	vec4 fog_knobs;     // 60 density scale, depth (m), steps, slab top (world y)
 	vec4 fog_drift;     // 64 the patches' drift xz (m), reach (m), fade (m)
-	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square
+	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[3], spare[4] the storm front (shaders/storm_cloud.glslinc); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square
 	vec4 weather_at;    // 164 corner xz, side, texels a side
 	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
 	vec4 flash;         // 172 grain jitter on, organic field on, stacked clouds yield, puffs' finer lobes on
@@ -733,6 +733,9 @@ void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout
 	}
 }
 
+// The storm front's deck (P.spare[3], P.spare[4]; off unless --storm).
+#include "storm_cloud.glslinc"
+
 vec4 weather_texel(vec2 xz) {
 	float sea = P.band.x;
 	g_drift = P.drift.xy;
@@ -770,6 +773,7 @@ vec4 weather_texel(vec2 xz) {
 		low.y += lift;
 		low.x = low.y + (thick > 0.0 ? thick * mix(1.0, 0.5, meadow) : thick);
 	}
+	storm_merge(xz, sea, max(floor_y, mix(floor_y, g.y + P.knobs.w, meadow)), low);
 	if (high.y < floor_y) {
 		float thick = high.x - high.y;
 		high.y = floor_y;
@@ -885,6 +889,7 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 	float hh_l = 0.0, hh_h = 0.0;
 	float in_l = -1e3, in_h = -1e3;
 	float wisp = 0.5;
+	float sw = 0.0;
 	if (low_on) {
 		vec2 n = textureLod(cauliflower, (p + boil) / TILE_LOW, 0.0).rg;
 		float nm = textureLod(cauliflower, (p + boil * 1.3 + 37.0) / MID, 0.0).r;
@@ -893,7 +898,10 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 		// lobes' and swells' scales, so it drew as a smooth bell with a flat
 		// base: thin low cloud takes its lobes and swells from finer noise
 		// (P.flash.w; --cloud-puffs=old: off).
-		float small_l = (1.0 - sstep(PUFF_THIN.x, PUFF_THIN.y, w.x - w.y)) * P.flash.w;
+		// The storm's deck takes its own billows (shaders/storm_cloud.glslinc).
+		sw = storm_weight(p.xz);
+		if (sw > 0.0) storm_billows(p, boil, sw, n, nm);
+		float small_l = (1.0 - sstep(PUFF_THIN.x, PUFF_THIN.y, w.x - w.y)) * P.flash.w * (1.0 - sw);
 		if (small_l > 0.0) {
 			n.r = mix(n.r, textureLod(cauliflower, (p + boil + 11.0) / PUFF_TILE, 0.0).r, small_l);
 			nm = mix(nm, textureLod(cauliflower, (p + boil * 1.3 + 53.0) / (PUFF_TILE * 0.45), 0.0).r, small_l);
@@ -910,6 +918,8 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 	}
 	float inside = max(in_l, in_h);
 	float hh = in_h > in_l ? hh_h : hh_l;
+	// The deck's height share by the world's height, not its column's.
+	if (sw > 0.0 && in_l >= in_h) hh = mix(hh, storm_height(p.y), sw);
 	float soft = mix(SOFT.y, SOFT.x, hh) * mix(0.5, 1.0, sstep(40.0, 300.0, t));
 	float d = sstep(0.0, soft, inside) * mix(0.55, 1.0, sstep(0.3, 0.68, wisp));
 	if (g_new) {
@@ -1360,11 +1370,15 @@ void march_pass() {
 				atten *= MS_A;
 			}
 			sun_light *= SUN_SCALE / (1.0 + MS_B + MS_B * MS_B);
+			// Under the storm's anvil (shaders/storm_cloud.glslinc).
+			float sw = storm_weight(p.xz);
+			sun_light *= mix(1.0, storm_sun(p.y), sw);
 			float powder = 1.0 - exp(-max(s.inside, 0.0) / POWDER_DEPTH);
 			sun_light *= mix(1.0, powder, powder_share);
 			float deep = sstep(0.0, 50.0, s.inside);
 			float beer = exp(-tau);
 			float ambient = SKY * sky_open * mix(0.32, 1.0, s.h) * mix(1.0, DEEP, deep) * mix(1.0, 0.45, beer);
+			if (sw > 0.0) ambient = mix(ambient, max(ambient, SC_BASE_SKY) * storm_mottle(p, s.h), sw);
 			float bounce = BOUNCE * pow(1.0 - s.h, 2.0);
 			float alpha = 1.0 - exp(-s.density * s.sigma * step);
 			float w = T * alpha;
