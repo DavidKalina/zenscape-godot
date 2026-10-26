@@ -9,8 +9,8 @@ extends Node
 ##
 ## Flags: --look=clean starts with every item on; --clean=paint,shadows,...
 ## starts with those only (paint, shadows, light, clouds, snags, distance,
-## water, grade, edges); --clouds=beige|cream|white picks the clouds (white
-## when on and not said); --edges=1 starts with the edge line. Keys (in
+## water, grade, edges); the clouds are never in --look=clean or K: they stay
+## as they were until --clouds=cream|white or key 4 (white when on and not said); --edges=1 starts with the edge line. Keys (in
 ## studies/endless_flight.gd): K the master flip, O (F8) the panel, 1-9 one
 ## item each, J the edge line.
 
@@ -87,7 +87,7 @@ func setup(look_node: Node3D, view: Camera3D) -> void:
 	if clouds in ["cream","white"]: _cloud_pick = 1 if clouds == "cream" else 2
 	var on: Array = []
 	if wanted_look():
-		for it in ITEMS: if it[0] != "edges": on.append(it[0])
+		for it in ITEMS: if it[0] != "edges" and it[0] != "clouds": on.append(it[0])
 	var list := _arg("--clean=")
 	if not list.is_empty(): on.append_array(list.split(",",false))
 	if wanted_edges(): on.append("edges")
@@ -136,11 +136,16 @@ func any_on() -> bool:
 ## set goes to all on). Returns the note.
 func flip_look() -> String:
 	var off := true
-	for k in target: if k != "edges" and target[k] == 0.0: off = false
+	for k in target: if k != "edges" and k != "clouds" and target[k] == 0.0: off = false
 	for it in ITEMS:
 		var n: String = it[0]
 		if n == "edges": continue
-		target[n] = 0.0 if off else (float(_cloud_pick) if n == "clouds" else 1.0)
+		# The clouds stay as they were unless asked (key 4, --clouds=); the
+		# master only switches them off with the rest.
+		if n == "clouds":
+			if off: target[n] = 0.0
+			continue
+		target[n] = 0.0 if off else 1.0
 	_changed()
 	return "Look: %s" % ("as it was" if off else "clean")
 
@@ -171,7 +176,44 @@ func _edge_colour() -> void:
 	var e := _env.fog_light_energy
 	post.edge_colour = Vector3(c.r,c.g,c.b)*e*0.75+Vector3(0.125,0.125,0.125)
 
+## The clean look's tints from the published light (celestial.state), each
+## frame: the sun side from the key's colour, the shade from the sky's fill,
+## the distance planes and the grade from both and the haze. Hue only, eased
+## toward the plain colour, so the strength stays what the look chose.
+## (At alpine_morning, hour 9.6, they come to the round 2 constants.)
+const LUMA := Vector3(0.2126,0.7152,0.0722)
+static func _rel(c: Vector3) -> Vector3:
+	return c / maxf(c.dot(LUMA),0.02)
+
+func _tints() -> void:
+	if look == null or look.get("celestial") == null: return
+	var st: Dictionary = look.celestial.state
+	if not (st.has("zs_key_irradiance") and st.has("zs_hemi_sky")): return
+	var sun_y := (st.zs_sun_direction as Vector3).y if st.has("zs_sun_direction") else 0.5
+	var low := smoothstep(0.45,0.1,sun_y)
+	var sun_rel := _rel(st.zs_key_irradiance)
+	var sky_rel := _rel(st.zs_hemi_sky)
+	var warm := Vector3.ONE.lerp(sun_rel,lerpf(0.12,0.30,low))
+	var cool := Vector3.ONE.lerp(sky_rel,0.66)*Vector3(1.0,0.885,1.0)
+	var haze := Vector3.ONE
+	if _env != null:
+		var h := _env.fog_light_color.srgb_to_linear()
+		haze = _rel(Vector3(h.r,h.g,h.b)).clamp(Vector3(0.35,0.35,0.35),Vector3(2.2,2.2,2.2))
+	var mid := Vector3.ONE.lerp(haze,0.12)*0.95
+	var far := Vector3.ONE.lerp(haze,0.22)*0.84
+	_publish_vec("zs_cl_warm",warm)
+	_publish_vec("zs_cl_cool",cool)
+	_publish_vec("zs_cl_haze_mid",mid)
+	_publish_vec("zs_cl_haze_far",far)
+	if post != null:
+		post.tint_warm = Vector3.ONE.lerp(sun_rel,lerpf(0.15,0.28,low))*Vector3(1.0,1.03,1.0)
+		post.tint_cool = Vector3.ONE.lerp(sky_rel,0.22)*Vector3(0.975,0.975,1.0)
+
+static func _publish_vec(n: String, v: Vector3) -> void:
+	RenderingServer.global_shader_parameter_set(n,v)
+
 func _process(delta: float) -> void:
+	_tints()
 	if target["edges"] > 0.0: _edge_colour()
 	var moving := _dirty
 	for k in target:

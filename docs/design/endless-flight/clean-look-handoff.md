@@ -151,3 +151,52 @@ edit (it is a resource); other moods, winter, performance, the flip under a
 long flight; the K/number keys were not tried with a pad. The panel text is
 small at 4K. Fine paint noise: meadow_low blotch8 is a hair above main's.
 Tests likely broken: any that read the `zs_clean` global.
+
+## Round 3: tints follow the light, clouds as they were, the light audit
+
+Audit: `docs/design/endless-flight/light-audit.md`.
+
+What changed
+- `--look=clean` and K no longer include the clouds item: clouds stay as they
+  were (beige) until `--clouds=cream|white` or key 4 (cycles as it was /
+  cream / white). K's "all off" still turns them off.
+- Clouds as it was equals main: in `endless_cloud_composite.gdshader` every
+  clean-look change (crisper split, valley-fog copy, soft floor, sun scatter) is
+  now inside `if (ZS_CL_CLOUD_ON > 0.0)`, so with the item off the old maths
+  run unchanged. The cream and white options now read the sun's hue and the
+  shade's hue (`cumulus_light.gdshaderinc`).
+- Tints from the light: four new globals (`zs_cl_warm`, `zs_cl_cool`,
+  `zs_cl_haze_mid`, `zs_cl_haze_far`, vec3, defaults in project.godot are
+  round 2's constants), set every frame by `clean_look.gd` `_tints` from
+  `celestial.state`: warm = 1 lerped to the key colour's hue (luma-normalised)
+  by 0.12, rising to 0.30 as the sun drops under elevation 0.45 (full at 0.1);
+  cool = 1 lerped to `zs_hemi_sky`'s hue by 0.66, trimmed `(1,0.885,1)`; distance
+  planes from `fog_light_color` (mid 0.12 x 0.95, far 0.22 x 0.84); the grade's
+  warm and cool (`CleanPost.tint_warm/tint_cool`, were consts) from the sun and
+  sky by 0.15 to 0.28 and 0.22. The spruce, forest floor and far tree shaders,
+  which had the constants inline, read the globals. Knobs are those numbers.
+- `--look=clean` turns on: paint, shadows, light, snags, distance, water, grade
+  (edges by `--edges=1`, clouds by key 4 or `--clouds=`).
+
+Numbers (default lighting, grass median V / S, `tools/look_measure.py`):
+
+| view | round 2 clean | round 3 off | round 3 clean |
+|---|---|---|---|
+| cruise | 0.608 / 0.616 | 0.620 / 0.594 | 0.616 / 0.606 |
+| coast | 0.659 / 0.460 | 0.659 / 0.446 | 0.663 / 0.448 |
+| hills | 0.506 / 0.494 | 0.522 / 0.489 | 0.522 / 0.481 |
+
+Within 0.03 of round 2 (largest: hills V +0.016, coast S -0.012). (The
+off column differs from main's by shot-to-shot spawn variation, as in round 2.)
+
+Stills: `/tmp/look_clean3/<default|golden_meadow|rosewater_dusk>_<off|on>/`
+(cruise, coast, hills). At dusk the clean look's grass, sand and water go
+with the mood and the clouds are the old gold ones.
+
+Unverified: the three moods and views only (no winter, regions, other hours);
+golden_meadow's sun is high (0.48) so it hardly tests a low sun; the rock, the
+sunset glints and the old post keep fixed colours (audit); `grade` was rendered
+but its dusk warm/cool is a few percent only; headless smoke passed with no
+flags and with `--look=clean --edges=1` (shaders only compile in rendered
+runs, which were clean). The audit's sun : fill numbers do not match the
+measured 1.4 lit/shade; cause not found.

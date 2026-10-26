@@ -5,9 +5,11 @@
 // paints it, with a cool shade and a warm sun side.
 #include "res://shaders/reference_globals.gdshaderinc"
 
-// The sun's tint on lit sides and the sky's on shaded ones.
-const vec3 ZS_CLEAN_WARM = vec3(1.05, 1.0, 0.93);
-const vec3 ZS_CLEAN_COOL = vec3(0.86, 0.90, 1.22);
+// The sun's tint on lit sides and the sky's on shaded ones: globals the look
+// sets each frame from the published light (zs_cl_warm from the sun's colour,
+// zs_cl_cool from the sky's fill), not fixed colours.
+#define ZS_CLEAN_WARM zs_cl_warm
+#define ZS_CLEAN_COOL zs_cl_cool
 
 // Three soft steps from shade to full sun over wrapped n.l (0..1), the rock's
 // ramp (endless_rock.gdshaderinc), mapped to a share of the sun (0.1..0.86).

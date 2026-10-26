@@ -49,10 +49,13 @@ void zs_cumulus_palette(vec3 rd, vec3 sun, out vec3 sun_hue, out vec3 sun_col, o
 	// grey shade), the shade kept light and soft.
 	float shade_l = dot(shade_col, vec3(0.2126, 0.7152, 0.0722));
 	float soft_l = mix(shade_l, max(shade_l, 0.5), 0.7);
-	vec3 cream_sun = mix(sun_col, vec3(1.0, 0.95, 0.82), 0.7) * 1.08;
-	vec3 white_sun = mix(sun_col, vec3(1.0), 0.75) * 1.12;
-	vec3 cream_shade = vec3(0.97, 0.91, 0.84) * soft_l;
-	vec3 white_shade = vec3(0.86, 0.85, 1.0) * soft_l;
+	// (Both read the light: the sun's own hue, the sky's own shade hue.)
+	vec3 shade_hue = shade_col / max(shade_l, 1e-3);
+	vec3 sun_rel = sun_hue / max(dot(sun_hue, vec3(0.2126, 0.7152, 0.0722)), 1e-3);
+	vec3 cream_sun = mix(sun_col, mix(vec3(1.0), sun_hue, 0.8), 0.7) * 1.08;
+	vec3 white_sun = mix(sun_col, mix(vec3(1.0), sun_hue, 0.25), 0.75) * 1.12;
+	vec3 cream_shade = mix(shade_hue, sun_rel, 0.35) * soft_l;
+	vec3 white_shade = mix(shade_hue, vec3(0.86, 0.85, 1.0), 0.4) * soft_l;
 	sun_col = mix(mix(sun_col, cream_sun, ZS_CL_CLOUD_ON), white_sun, ZS_CL_CLOUD_WHITE);
 	shade_col = mix(mix(shade_col, cream_shade, ZS_CL_CLOUD_ON), white_shade, ZS_CL_CLOUD_WHITE);
 }

@@ -917,8 +917,8 @@ void fragment() {
 		float cam_d = length(CAMERA_POSITION_WORLD - p);
 		float mid_k = smoothstep(240.0, 900.0, cam_d);
 		float far_k = smoothstep(1100.0, 3600.0, cam_d);
-		vec3 lay = mix(vec3(1.0), vec3(0.76, 0.98, 1.0), mid_k * zs_cl_dist);
-		lay = mix(lay, vec3(0.62, 0.86, 1.2), far_k * zs_cl_dist);
+		vec3 lay = mix(vec3(1.0), zs_cl_haze_mid, mid_k * zs_cl_dist);
+		lay = mix(lay, zs_cl_haze_far, far_k * zs_cl_dist);
 		ALBEDO *= lay;
 		EMISSION *= lay;
 	}

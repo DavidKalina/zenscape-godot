@@ -4,8 +4,10 @@ extends CompositorEffect
 ## key J) and the light grade of the clean look (K). Attached to the camera
 ## only while either is on.
 
-const TINT_WARM := Vector3(1.07, 1.02, 0.92)
-const TINT_COOL := Vector3(0.93, 0.98, 1.08)
+## The grade's tints, set each frame from the sun and sky (clean_look.gd _tints);
+## these are round 2's, the values at the default mood and hour.
+var tint_warm := Vector3(1.07, 1.02, 0.92)
+var tint_cool := Vector3(0.93, 0.98, 1.08)
 ## The edge starts to show from EDGE_BEGIN m and is whole by EDGE_FULL m.
 const EDGE_BEGIN := 140.0
 const EDGE_FULL := 500.0
@@ -70,8 +72,8 @@ func _render_callback(_type: int, data: RenderData) -> void:
 	var push := PackedFloat32Array([
 		near,far,edge_strength,grade_strength,
 		edge_colour.x,edge_colour.y,edge_colour.z,edge_reach,
-		TINT_WARM.x,TINT_WARM.y,TINT_WARM.z,EDGE_BEGIN,
-		TINT_COOL.x,TINT_COOL.y,TINT_COOL.z,EDGE_FULL])
+		tint_warm.x,tint_warm.y,tint_warm.z,EDGE_BEGIN,
+		tint_cool.x,tint_cool.y,tint_cool.z,EDGE_FULL])
 	var u0 := RDUniform.new()
 	u0.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
 	u0.binding = 0

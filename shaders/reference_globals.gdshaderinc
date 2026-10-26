@@ -16,6 +16,13 @@ global uniform float zs_cl_cloud;
 global uniform float zs_cl_snag;
 global uniform float zs_cl_dist;
 global uniform float zs_cl_water;
+// The clean look's tints, set each frame from the published light
+// (scripts/endless/clean_look.gd): the sun side's, the shade's, and the
+// distance planes' (middle, far).
+global uniform vec3 zs_cl_warm;
+global uniform vec3 zs_cl_cool;
+global uniform vec3 zs_cl_haze_mid;
+global uniform vec3 zs_cl_haze_far;
 #define ZS_CL_CLOUD_ON clamp(zs_cl_cloud, 0.0, 1.0)
 #define ZS_CL_CLOUD_WHITE clamp(zs_cl_cloud - 1.0, 0.0, 1.0)
 global uniform float zs_plate_half;
