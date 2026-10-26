@@ -327,7 +327,8 @@ func _standing(game: Node3D, p: Vector3, top: float) -> String:
 ## One frame after `measure` (and the contact's grading): the moments'
 ## turning points scored, the skim's trickle, the chain banked, the surge
 ## spent (`surge_held`: the key or button held). Returns the frame's
-## events: "near" {kind, band, points, k, clear, at, surface}, "banked"
+## events: "near" {kind, band, points, k, clear, at, surface, under (a
+## passage's thread, not a gap's)}, "banked"
 ## {points}, "surge" {start}.
 func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	clock += delta
@@ -443,7 +444,7 @@ func _moment(kind: String, t: Tracker, reach: float, cruise: float, out: Diction
 	total += points
 	game.plane.speed = float(game.plane.speed)+lerpf(KICK.x,KICK.y,k)
 	last = {"kind":kind,"band":band,"points":points,"k":k,"clear":t.least,"at":t.at,"surface":t.surface,
-		"closing":t.closing,"speed":t.speed,"farm":farm,"t":clock}
+		"closing":t.closing,"speed":t.speed,"farm":farm,"t":clock,"under":t == _pass}
 	moments.append(last)
 	_recent.append({"at":t.at,"t":clock,"id":t.id})
 	out["near"] = last
