@@ -569,6 +569,10 @@ zs_belt={
 "type": "float",
 "value": 0.0
 }
+zs_haze_sun={
+"type": "float",
+"value": 0.0
+}
 zs_bow={
 "type": "float",
 "value": 0.0

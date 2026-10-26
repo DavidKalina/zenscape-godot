@@ -20,13 +20,14 @@ const SPOTS := {
 	"high": [720,560,260, 720,400,0],
 	"forest": [330,-150,14, 330,-300,4],
 }
-# name: [eye x,z,above, how far ahead the look is (m), its drop (m), toward
-# the sun (1) or away (-1)]
+# name: [eye x,z,above, how far ahead the look is (m), its drop (m), its
+# bearing from the sun's (degrees: 0 toward it, 180 away, 90 across)]
 const SUN := {
-	"sun_toward": [720,520,40, 600,60, 1],
-	"sun_away": [720,520,40, 600,60, -1],
-	"sun_toward_low": [720,500,6, 300,4, 1],
-	"sun_away_low": [720,500,6, 300,4, -1],
+	"sun_toward": [720,520,40, 600,60, 0],
+	"sun_away": [720,520,40, 600,60, 180],
+	"sun_side": [720,520,40, 600,60, 90],
+	"sun_toward_low": [720,500,6, 300,4, 0],
+	"sun_away_low": [720,500,6, 300,4, 180],
 }
 const ALL := "meadow_low,hills,rock,coast,river,cruise,high"
 func drive() -> void:
@@ -49,7 +50,7 @@ func aim(n: String) -> void:
 	if SUN.has(n):
 		var s: Array = SUN[n]
 		var sun: Vector3 = study.look.celestial.state.zs_sun_direction
-		var flat := Vector3(sun.x,0.0,sun.z).normalized()*float(s[5])
+		var flat := Vector3(sun.x,0.0,sun.z).normalized().rotated(Vector3.UP,deg_to_rad(float(s[5])))
 		var e := Vector3(s[0],field.height(s[0],s[1])+s[2],s[1])
 		cam.global_position = e
 		cam.look_at(e+flat*float(s[3])-Vector3(0.0,float(s[4]),0.0),Vector3.UP)

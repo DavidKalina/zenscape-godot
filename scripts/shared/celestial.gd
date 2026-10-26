@@ -225,6 +225,14 @@ const GOLDEN_DEEPEN := 0.5
 ## dip's 0.3 to 0.1, so a late afternoon sun already leans golden; the default
 ## mood's 8.6 h sun stands at 0.48).
 const GOLDEN_E := Vector2(0.42, 0.14)
+## Light pass round 2 (docs/design/endless-flight/light-pass-2-handoff.md):
+## haze toward and away from a low sun. Over golden hour (GOLDEN_E, clear
+## sky, light follow on) zs_haze_sun rises to 1: the sky's horizon glow
+## gathers toward the sun's bearing and the side away from it cools to the
+## zenith's hue (reference_sky_common zsSkyBase), and the land's depth fog
+## takes more of the sky behind each pixel and more of the sun's scatter
+## (scripts/endless/endless_look.gd `_haze`). --haze-sun=0 turns it off.
+static var haze_sun := _arg_float("--haze-sun=", 1.0)
 ## --light-follow=0 is the light as it was before the light pass (the leans 1,
 ## the fill and rim their old colours and dips); between, part way.
 static var light_follow := _arg_float("--light-follow=", 1.0)
@@ -471,6 +479,7 @@ func update_rig() -> void:
 	_publish("zs_sun_lean", sun_lean)
 	_publish("zs_shade_lean", shade_lean)
 	_publish("zs_light_follow", follow)
+	_publish("zs_haze_sun", golden_f * follow * clampf(haze_sun, 0.0, 1.0))
 	# The sky fill is the shade's hue at the fill's strength; the rim (a
 	# second fill from the side) leans as the shade does, and both ease off at
 	# golden hour so the low sun leads.
