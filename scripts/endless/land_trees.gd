@@ -99,6 +99,12 @@ const FAR_BAKED := 0.75
 const FLOOR_STEP := 16.0
 const FLOOR_COLOUR := Color(0.2,0.29,0.14)
 const FLOOR_STRENGTH := 0.82
+## The floor is see-through but lies on the land, so it draws before the
+## clouds' sheet (EndlessClouds RENDER_PRIORITY -6) and after the sea
+## (EndlessLook SEA_PRIORITY -8): drawn after the sheet it painted itself
+## over a low cloud wherever no crown hid it, and the crowns showed through
+## as pale cut-outs.
+const FLOOR_PRIORITY := -7
 ## A look with a far crown (HeroTrees.spruce_has_far, --spruce=sprays): each
 ## near tree draws its full crown within DETAIL m of the eye, its far crown out
 ## to FAR_CUT m and the faceted family's crown past that (a per-tree band in
@@ -369,6 +375,7 @@ static func _band(m: Material, band: Vector2, fade: Vector2) -> void:
 func _floor_shader(band: Vector4) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = FLOOR_SHADER
+	m.render_priority = FLOOR_PRIORITY
 	m.set_shader_parameter("band",band)
 	m.set_shader_parameter("colour",FLOOR_COLOUR)
 	m.set_shader_parameter("strength",FLOOR_STRENGTH)
