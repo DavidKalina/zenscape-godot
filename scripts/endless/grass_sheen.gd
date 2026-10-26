@@ -18,6 +18,11 @@ const FAR := 0.25
 
 static var strength := _arg("--sheen=",STRENGTH)
 static var far := _arg("--sheen-far=",FAR)
+## The far blade read on the painted ground (shaders/grass_sheen.gdshaderinc
+## zs_blade_paint): strength (--blades=X, 0 off) and the three streak widths (m).
+const BLADES := 1.0
+const BLADE_WIDTHS := Vector3(1.3,3.2,8.0)
+static var blades := _arg("--blades=",BLADES)
 
 static func _text(key: String) -> String:
 	for a: String in LaunchArgs.user_args():
@@ -35,6 +40,7 @@ static func apply(m: ShaderMaterial, tufts := false) -> void:
 	var only := _text("--sheen-tier=")
 	var on := strength if only == "" or (only == "tufts") == tufts else 0.0
 	m.set_shader_parameter("grass_sheen",Vector4(on,IN.x,IN.y,far))
+	if not tufts: m.set_shader_parameter("grass_far_blades",Vector4(blades if on > 0.0 else 0.0,BLADE_WIDTHS.x,BLADE_WIDTHS.y,BLADE_WIDTHS.z))
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--sheen-set="):
 			var kv := a.substr(12).split("=")

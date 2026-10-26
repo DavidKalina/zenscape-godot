@@ -30,6 +30,12 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 // The underside the wind flips into view, as the tufts show it.
 #include "res://shaders/grass_silver.gdshaderinc"
 #include "res://shaders/grass_sheen.gdshaderinc"
+
+// Far water: calm from this far (m from the eye), fully by the second, with
+// a broad glint (exponent, strength) in place of the ripples' sparkle.
+const float WATER_FAR_BEGIN = 90.0;
+const float WATER_FAR_END = 300.0;
+const vec2 WATER_FAR_GLINT = vec2(28.0, 0.28);
 #include "res://shaders/grass_react.gdshaderinc"
 // A world of regions: its paint per spot.
 #include "res://shaders/region_paint.gdshaderinc"
@@ -866,8 +872,18 @@ void fragment() {
 	// The wind's sheen: light and dark swells rolling over the far meadow (grass_sheen).
 	if (grass_sheen.x > 0.0) {
 		float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);
-		float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up);
-		if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(zs_sheen_field(gxz, fp), gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
+		float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6);
+		if (sheen_on > 0.0) {
+			float sheen_s = zs_sheen_field(gxz, fp);
+			// (From high up the watercolour paint is calm already, so the swells' tone is a third of itself there; the blades keep their full.)
+			grass *= mix(vec3(1.0), zs_sheen_tone(sheen_s, gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on * (1.0 - 0.6 * wc_up));
+			// The far blade read (clean look round 5): wind-long streaks lit by the sheen.
+			if (grass_far_blades.x > 0.0) {
+				vec2 wd = zs_wind_direction;
+				vec2 blade_fp = vec2(abs(dot(dpx, vec2(-wd.y, wd.x))) + abs(dot(dpy, vec2(-wd.y, wd.x))), abs(dot(dpx, wd)) + abs(dot(dpy, wd)));
+				grass = mix(grass, zs_blade_paint(grass, sheen_s, gxz, blade_fp, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance, ZS_CLEAN_WARM, ZS_CLEAN_COOL), sheen_on);
+			}
+		}
 	}
 	// The flower drifts past the drawn flowers: heads of their colour dotted
 	// over the turf (two lattices, more of them at a drift's heart), which
@@ -1064,6 +1080,11 @@ void fragment() {
 		// the fine ripple normals toned right down.
 		slope *= 0.25;
 		rough *= 0.5;
+		// Far water (clean look round 5): the ripples, streaks, slicks and
+		// flecks give way to the calm surface and a soft broad glint, from
+		// WATER_FAR_BEGIN to WATER_FAR_END m from the eye.
+		float far_w = smoothstep(WATER_FAR_BEGIN, WATER_FAR_END, length(CAMERA_POSITION_WORLD - p));
+		slope *= 1.0 - 0.9 * far_w;
 		vec3 wn = normalize(vec3(-slope.x, 1.0, -slope.y));
 		vec3 calm = normalize(vec3(-slope.x * river_calm, 1.0, -slope.y * river_calm));
 		float d_in = max(-r_out, 0.0);
@@ -1154,11 +1175,11 @@ void fragment() {
 			vec3 fm = zs_river_foam(p.xz, dir, vspd, t, th, r_fp);
 			line = fm.x;
 			// Streak lines on the running water (paler threads drifting down).
-			float streak = fm.y * river_streaks * smoothstep(0.15, 0.7, spd) * (1.0 - tb) * smoothstep(0.0, 2.0, d_in);
+			float streak = fm.y * river_streaks * smoothstep(0.15, 0.7, spd) * (1.0 - tb) * smoothstep(0.0, 2.0, d_in) * (1.0 - far_w);
 			water = mix(water, column * light * 1.5 + vec3(0.02), streak * 0.3);
 			// The slicks: broad bands down the current, the body a shade lighter
 			// or darker and the mirror glassier or duller.
-			sl = (fm.z - 0.5) * 2.0 * (0.4 + 0.6 * running) * (1.0 - 0.7 * tb);
+			sl = (fm.z - 0.5) * 2.0 * (0.4 + 0.6 * running) * (1.0 - 0.7 * tb) * (1.0 - 0.85 * far_w);
 			water *= 1.0 + sl * river_slick.y;
 		}
 		// The ripples' faces: lighter toward the sun, darker away (the
@@ -1168,7 +1189,7 @@ void fragment() {
 		// The live river's foam and white water.
 		if (river_live > 0.5 && live_foam > 0.0) {
 			vec3 froth = vec3(0.92, 0.96, 1.0) * (ambient * 1.15 + key * 0.85);
-			water = mix(water, froth, live_foam * 0.8);
+			water = mix(water, froth, live_foam * 0.8 * (1.0 - 0.7 * far_w));
 		}
 		// Lily pads on still water: a pad in most cells of a cluster, through
 		// the shallow ring; far off, the clusters' mean green.
@@ -1248,6 +1269,10 @@ void fragment() {
 		spark *= zs_celestial_clear * smoothstep(-0.03, 0.12, zs_sun_direction.y) * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad);
 		vec3 warm_c = mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, zs_sun_direction.y));
 		disp = mix(disp, warm_c, clamp(spark, 0.0, 1.0));
+		// The far surface's soft broad glint: the sun's path off a calm level, wide.
+		float broad_g = pow(max(dot(vec3(refl.x, abs(refl.y), refl.z), zs_sun_direction), 0.0), WATER_FAR_GLINT.x) * WATER_FAR_GLINT.y
+			* far_w * zs_celestial_clear * smoothstep(-0.03, 0.2, zs_sun_direction.y) * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad);
+		disp = mix(disp, warm_c, clamp(broad_g, 0.0, 0.6));
 		vec3 water_em = scene_linear_for_display(clamp(disp, vec3(0.0), vec3(1.0)));
 		ALBEDO = mix(ALBEDO, vec3(0.0), wet);
 		SPECULAR = mix(SPECULAR, 0.0, wet);
