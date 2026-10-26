@@ -145,7 +145,7 @@ void fragment() {
 	vec3 source = max(mix(grass_source_root, grass_source_tip, along), vec3(0.002));
 	vec3 own = clamp(COLOR.rgb / source, vec3(0.0), vec3(3.0));
 	// Clean look: the tufts' own patch variation calmed, as the ground's.
-	own = mix(own, vec3(1.0), 0.3 * zs_cl_paint);
+	own = mix(own, vec3(1.0), 0.12 * zs_cl_paint);
 	// pow's base kept off 0: NVIDIA's Vulkan driver can make pow(0, y) NaN at
 	// the root, which the glow blooms into white flashes (Windows only).
 	vec3 c = own * mix(rp_root, rp_tip, pow(max(along, 1.0e-4), tip_curve)) * glance;

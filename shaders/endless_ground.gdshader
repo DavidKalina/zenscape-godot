@@ -641,7 +641,10 @@ void fragment() {
 		clump = mix(clump, crisp, zs_cl_paint);
 	}
 	float k_small = 1.0 - 0.9 * zs_cl_paint;
-	float sunny = clamp((broad * 1.3 + wide * 1.5 * (1.0 + 0.2 * zs_cl_paint) + mid * 0.9 * (1.0 - 0.6 * zs_cl_paint) + fine * 0.6 * k_small + tuft * 0.8 * k_small + clump * 0.9) * patch_strength, -1.0, 1.0);
+	// (The crisp clumps add light the soft ones did not: a share of it is
+	// taken back so the grass keeps its colour, not a paler one.)
+	float sunny_bias = -0.10 * zs_cl_paint;
+	float sunny = clamp(sunny_bias + (broad * 1.3 + wide * 1.5 * (1.0 + 0.2 * zs_cl_paint) + mid * 0.9 * (1.0 - 0.6 * zs_cl_paint) + fine * 0.6 * k_small + tuft * 0.8 * k_small + clump * 0.9) * patch_strength, -1.0, 1.0);
 	// (Stepped three ways each side of the mean, the steps soft.)
 	float sunny_q = sunny * 3.0;
 	sunny_q = (floor(sunny_q) + smoothstep(0.36, 0.64, fract(sunny_q))) / 3.0;

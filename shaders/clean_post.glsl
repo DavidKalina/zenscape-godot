@@ -52,6 +52,9 @@ void main() {
 		float lw = smoothstep(0.2, 1.0, l);
 		col *= mix(vec3(1.0), P.cool.rgb, sw * P.lens.w);
 		col *= mix(vec3(1.0), P.warm.rgb, lw * P.lens.w);
+		// The tints cost the greens some colour; give it back.
+		float l2 = dot(col, vec3(0.2126, 0.7152, 0.0722));
+		col = max(mix(vec3(l2), col, 1.0 + 0.03 * P.lens.w), vec3(0.0));
 	}
 	imageStore(color_image, pixel, vec4(col, 1.0));
 }

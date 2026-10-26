@@ -1130,6 +1130,8 @@ void fragment() {
 	}
 	// Clean look: a crisp shore line, the open water's foam calmer.
 	float shore_line = (1.0 - smoothstep(max(0.35, footprint * 1.2), max(0.5, footprint * 1.8), near_bed)) * (1.0 - still);
+	// (Far off a pixel spans more than the shore's width: no line, or the whole far sea turns to foam.)
+	shore_line *= 1.0 - smoothstep(0.6, 2.5, footprint);
 	foamed = mix(foamed, max(foamed * 0.4, shore_line), zs_cl_water);
 	foamed = clamp(foamed, 0.0, 1.0) * float(depth > 0.0 || known > 0.0 || waked > 0.0);
 	float lip = (1.0 - smoothstep(0.0, 0.15, bed_depth)) * float(depth > 0.0) * (1.0 - still);

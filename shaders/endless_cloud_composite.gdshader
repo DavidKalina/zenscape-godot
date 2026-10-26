@@ -81,6 +81,8 @@ void fragment() {
 	vec3 lit_was = (terms_was.x * w_shade * mix(vec3(1.0), FOG_COOL, fog_share) + terms_was.y * w_sun + terms_was.z * w_sun * BOUNCE_TINT) * ZS_CUMULUS_LIT_SHARE;
 	lit_was *= mix(1.0, LIFT, zs_daylight) * mix(1.0, FOG_LIFT * fog_gain, fog_share);
 	lit = mix(lit, lit_was, fog_share);
+	// (A floor of soft sky light so a clean cloud's underside stays light.)
+	lit = max(lit, c_shade * ZS_CUMULUS_LIT_SHARE * mix(1.0, LIFT, zs_daylight) * 0.62 * ZS_CL_CLOUD_ON * (1.0 - fog_share));
 	float bright = clamp(terms.y / 0.95, 0.0, 1.0);
 	float met = b.y / cloud_a;
 	float glow = b.w / cloud_a;
