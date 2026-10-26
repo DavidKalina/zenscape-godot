@@ -27,6 +27,8 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Anything that runs over ~8 min | `python tools/bg.py start NAME -- <command>`, then `python tools/bg.py wait NAME` |
 | The test suite | `python tools/run_tests.py [--tests 'test_x*.gd'] [--quick]` |
 | Measure a still's look (palette, shadows, blotch scale, edges, aerial) against the world's ranges, or two stills | `python tools/look_measure.py a.png [b.png] [--crop x0,y0,x1,y1] [--no-classes]` (stills: `tools/harness/look_views.gd`; `docs/art/look-breakdown.md`) |
+| Where the light on screen comes from (sun, sky fill, rim, haze per class, sunlit and shade), and a pixel-matched before/after of two runs | `python tools/drive.py tools/harness/light_split.gd --rendered --log L.txt -- --out=DIR --views=hills,sun_toward --save-mask --scene-args --no-title --hour=17.5`, then `python tools/light_split.py shares L.txt` or `match BEFORE_DIR AFTER_DIR` (views: `tools/harness/look_views.gd` SPOTS and SUN, the ones facing toward and away from the sun) |
+| Frame time at the look views | `python tools/drive.py tools/harness/look_views.gd --rendered --log L.txt -- --views=high,cruise --time=240 --scene-args --no-title` (a ROW per view: median ms from frame to frame, vsync off) |
 | The endless land's hash for a seed, to compare machines (co-op) | `python tools/land_hash.py --seed 1 [-- --land-native=0]`; `--compare a.txt b.txt` |
 | What a scene or folder reaches (scripts, scenes, shaders, assets), or why a file is reached, before cutting or moving files | `python tools/reach.py studies/x.tscn scripts/endless [--out F]`; in Python `reach.why(starts, file)`. It reads res:// strings, class_name words, uid:// ids and #includes; a compressed binary scene's dependencies come from Godot (`ResourceLoader.get_dependencies`) |
 | Find an existing tool | `python tools/index.py <word>` |
@@ -87,6 +89,12 @@ func drive() -> void:
   sets an action's state: a key a study reads as an event needs
   `tap(KEY_SPACE)` or `tap(&"walk_jump")`, a real key event through
   `Input.parse_input_event`.
+- **The window.** In a rendered run `open` sets the window to `--win=WxH`
+  (else the driver's `--size=`, else 1440x900) after the scene opens, and
+  notes the window, viewport and 3D scale: the project starts full screen,
+  and on a Mac that could win over `--windowed --resolution`, so a run drew
+  at the screen's size with its 3D scaled down. `--win=keep` skips it;
+  `fit_window(size)` does it again.
 - **Looking around.** `find(pattern)` and `first(pattern)` look up nodes
   by name, class or script path. `shot(path)` takes a still of the window,
   `shot_at(view, target)` and `film(target)` place a camera of their own
