@@ -45,7 +45,7 @@ const float FOG_LIFT = 1.2;
 // strength, this many times over, more on the sun's side of the sky. Valley
 // fog keeps its own.
 global uniform float zs_cloud_under;
-const float UNDER_GAIN = 12.0;
+const float UNDER_GAIN = 6.0;
 const vec3 UNDER_ROSE = vec3(1.0, 0.42, 0.52);
 const float UNDER_ROSE_SHARE = 0.5;
 // The valley fog's light scaled (1 as the first pass drew it).

@@ -242,7 +242,7 @@ static var backlight := _arg_float("--backlight=", 1.0)
 ## UNDER_*): zs_cloud_under comes in as the sun falls from CLOUD_UNDER_E.x
 ## to .y and goes as it sinks from .z to .w under the horizon, under a clear
 ## sky, with light follow, times --cloud-under=X (1; 0 off).
-const CLOUD_UNDER_E := Vector4(0.3, 0.06, 0.0, -0.08)
+const CLOUD_UNDER_E := Vector4(0.16, 0.03, 0.0, -0.08)
 static var cloud_under := _arg_float("--cloud-under=", 1.0)
 ## --light-follow=0 is the light as it was before the light pass (the leans 1,
 ## the fill and rim their old colours and dips); between, part way.
