@@ -211,6 +211,10 @@ var roofed := false
 ## (an underside) or water; "velocity" the way it was going into it;
 ## "normal" out of a brushed face. Graded by scripts/endless/flight_contact.gd.
 var contact := {}
+## Over water (set from outside each frame, scripts/endless/water_contact.gd
+## `feel`): the cushion's lift and shudder (m/s up) and its drag (m/s²).
+var cushion := 0.0
+var cushion_drag := 0.0
 ## A shove off a scrape (m/s, `scrape`), dying away over BUMP_FADE s.
 var bump := Vector3.ZERO
 const BUMP_FADE := 0.3
@@ -563,7 +567,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		speed += (-SWING*(1.0+HEAVY_SWING*heavy)*climb-THROTTLE*(1.0-HEAVY_THROTTLE*heavy)*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
 	if surge > 0.0: _cap = maxf(_cap,boost_speed()*SURGE_OVER)
 	_cap = maxf(top_speed(),_cap-CAP_FALL*delta)
-	speed = clampf(speed,slow,_cap)
+	speed = clampf(speed-cushion_drag*delta,slow,_cap)
 	lift = clampf((floor_y-position.y)*CUSHION,0.0,CUSHION_MAX)
 	var fall := FALL*minf(airborne,FALL_TIME)*(1.0-smoothstep(FALL_TIME,FALL_TIME+CATCH,airborne))
 	var drop := approach_drop(ground) if approach else 0.0
@@ -583,7 +587,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	if climb_share*power < 1.0 and along.y > 0.0: along.y *= climb_share*power
 	# The guard in a tight place (SkyGlide `guide`).
 	var push := _guard(delta)
-	velocity = along+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag-DEAD_SINK*(1.0-power)+shake)+wind+push
+	velocity = along+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag-DEAD_SINK*(1.0-power)+shake+cushion)+wind+push
 	if bump != Vector3.ZERO:
 		velocity += bump
 		bump *= exp(-delta/BUMP_FADE)
