@@ -225,11 +225,11 @@ var alpine := ALPINE
 const SINK := 0.04
 ## The ground's patches are read onto the tufts off a grid this fine (m),
 ## and the tufts' colour scaled by TUFT_TONE over them.
-## The tufts' tint from the calmed paint (EndlessPatch.sunny_of) is laid on in
-## script over the native cell's tufts (the native pass told to carry none),
-## so it works with kernels built before grass_cell.h's matching change. Set
-## false once the kernels are rebuilt: they then lay it on themselves, faster.
-const SCRIPT_TINT := true
+## The tufts' tint from the calmed paint (EndlessPatch.sunny_of): true lays it
+## on in script over the native cell's tufts (the native pass told to carry
+## none), for kernels built before grass_cell.h's matching change; false lets
+## the rebuilt kernels lay it on themselves, faster.
+const SCRIPT_TINT := false
 const TINT_STEP := 2.0
 const TUFT_TONE := Color(1.0,1.0,1.0)
 ## The painted grass's tone past the tufts (linear, over its own colour),
