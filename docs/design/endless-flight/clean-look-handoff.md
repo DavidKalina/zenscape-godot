@@ -579,3 +579,77 @@ Cheap saves if wanted: 4 layers, drop the 9 m scale.
 - `--blades=1` together with clumps was not looked at.
 - Tests likely to break: those reading `endless_ground.gdshader` /
   `grass_sheen.gd` as text (`test_ground_look`, `test_sky_peak_look`); none run.
+
+## Round 8: far grass as a fine lawn (replaces the clumps)
+
+Launch: `cd /Users/davidkalina/Documents/Projects/zenscape-look-clean && python3 tools/play.py -- --ledger=/tmp/look_clean_ledger.json`.
+Compare: `-- --lawn=0` (no grain), `-- --lawn=0 --clumps=1` (round 7), `-- --nap=0` (grain without nap and sheen).
+Stills: `/tmp/look_clean8/` (high, cruise, hills, meadow_low, coast, far120,
+`high_dusk` / `far120_dusk`; `crop_grain_260.png`, `crop_grain_120.png`;
+`tile_far_turf.png` the baked tile, `tile_shade_crop.png` / `tile_height_crop.png` its R and G (512 crop);
+`dive/dive_0..8_H.png` + `sheetA/B.png`; `seq/` 40-frame sets). `/tmp/look_clean8_off/` = same views with `--lawn=0`.
+
+### The bake
+- `tools/bake_turf.gd` (run: `python tools/godot.py --rendered --timeout 150 -s res://tools/bake_turf.gd [-- --preview=/tmp]`; a window for ~1 s).
+  Lays 48 x 48 jittered cells (+2 duplicated border cells each side, drawn from the
+  wrapped cell's own random draw so the tile is seamless) of the game's real soft tuft
+  (`GrassTuftMesh.build`, scaled 5x, random yaw / size / shade) and draws them from
+  straight above with an orthographic camera (MSAA 8x), unlit, in two passes:
+  shade + height, then the blade's lean direction.
+- `assets/textures/far_turf.png` (1024 px RGBA8, 2.2 MB, lossless, mipmaps on,
+  `fix_alpha_border` off): R shade (mean 0.5; blade colour from the tuft's own root to tip,
+  gaps dark), G height of the blade surface (mean 0.5), B / A the blade's lean on the ground
+  (0.5 + 0.5 v; mips average it to "no lean" so far off the wind decides).
+- Sampled `filter_linear_mipmap_anisotropic, repeat_enable`. The project does not set
+  anisotropic level, so it is Godot's default (4x); left alone.
+
+### Shading (`shaders/far_lawn.gdshaderinc`, hook `endless_ground.gdshader:899-904`, after the clumps)
+- Gated as the sheen is (`carpet_turf`, minus 60 % of `thin`): grass only. Ring distance
+  fade `smoothstep(140, 230)` (`grass_lawn.yz`, `LAWN_RING`), a little before the
+  tufts thin out (150..230); full by 230 m.
+- Scales: tiles of 64 m and 39 m (`LAWN_TILES`, `grass_lawn_tiles`; second turned 0.83 rad
+  and offset). A blade is ~6 texels: 0.37 m / 0.23 m, about 1.5-2 px at 120 m. The two grains
+  are summed (spread rescaled by 0.707) so no repeat shows, over the paint's own broad variation.
+- Micro shadows: second sample 2..5.5 texels toward the sun (`reach`, line 43, longer at
+  a low sun), `shadow = clamp((h_sun - h) * 3.5)`, darkens up to 30 % and cools; off at night
+  (`day`). Gaps (low height) darker and cooler (`cool`), tips lighter and warmer (key tint).
+  At mip level the offset samples agree, so shadows fade out without shimmer.
+- Nap: lean = `zs_wind_direction` turned by `s * 0.9` rad, `s` = the sheen's `zs_sheen_field`
+  x 1.7 (so gust bands, waves and fronts turn and lay it); per blade the texture's own
+  lean is added. Shade `1 + 0.3 * nap * nap_k`, `nap` = dot(lean, view's flat direction):
+  lighter looking along, darker against, along-side only 0.45 as strong (keeps a meadow from
+  brightening as a whole downwind); `nap_k` grows with the laid-down amount (line 96).
+  Soft sheen: Kajiya-Kay along the lean with the sun's half-vector, x 0.12 (line 105).
+- Lift: x1.17 while the grain is seen (`seen_grain`, fp 0.15..1.3 m, line 88) because gaps
+  and shadows take more than tips give; far off the mips are the mean.
+- Knobs: `scripts/endless/grass_sheen.gd` `LAWN`, `NAP`, `LAWN_RING`, `LAWN_TILES`,
+  `--lawn=X`, `--nap=X`, `--sheen-set=grass_lawn=...`. Clumps default `CLUMPS := 0.0`
+  (`--clumps=1`; parallax code kept in `far_clumps.gdshaderinc`, unused by default, no cost).
+  Round 5's streaks stay off (`--blades=1`).
+
+### Numbers
+Grass median V / S in the same view list (`scratch/l6.sh`), lawn off -> on: high .514/.554 ->
+.482/.547; far120 .541/.589 -> .525/.587; cruise .624/.608 -> .620/.608; hills and
+meadow_low and coast unchanged (.553/.431, .467/.538, .659/.447). Against `/tmp/look_clean6/`:
+high -.028, far120 -.024, cruise +.016, meadow_low -.015 (all inside 0.03). Hills
+reads .553/.431 against round 6's .510/.500, but that is with the lawn off too (round 7's
+clumps had pulled it down; the lawn does not touch that view), so it is a round 7 baseline shift, not this round.
+Frame time (uncapped wall ms, median of 400, `scratch/perf6.gd`, same run): high round 7
+12.39 -> round 8 10.88 (round 6 was 11.74); far120 17.95 -> 17.87. 4 texture fetches
+per far grass pixel instead of 3 Voronoi + 6 layers.
+
+### Seen
+- high: fine even grain of tiny blades, lawn-like, no cells or moss; no tiling visible at 260 m.
+- Dive 260 -> 22 m: lawn into real tufts with no line or pop; at 260/200 the lawn is a
+  slightly darker, cooler green than the yellower tufts at 160 (the one place the characters differ).
+- Seq (0.67 s and 2.5 s apart): no flicker or shimmer. Nap bands are visible but gentle at
+  high, clearer at 120 m; the long swell is slow.
+- Dusk (rosewater_dusk) follows the light.
+
+### Unverified / not done
+- Judged by stills, no film; bands rolling in motion are inferred from sets 0.7 s and 2.5 s apart.
+- Only default and rosewater_dusk moods; no winter or regions.
+- Grazing-angle crispness depends on the default 4x anisotropy.
+- Tests likely to break: those reading `endless_ground.gdshader` / `grass_sheen.gd` as text
+  (`test_ground_look`, `test_sky_peak_look`); none run.
+- Models budget: no model made; a texture only.
