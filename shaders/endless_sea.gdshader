@@ -38,6 +38,13 @@ const float SEA_FAR_BEGIN = 90.0;
 const float SEA_FAR_END = 300.0;
 const vec2 SEA_FAR_GLINT = vec2(28.0, 0.28);
 const float SEA_FAR_BLUR = 4.0;
+// Clean look round 6: far off, the share of the bed seen through the water
+// taken away (the column's banded colour shows instead). The seabed's lit
+// relief (the rills and streaks down the shelf) and its paint, seen through
+// thin water at a share that follows each bump's depth, read from afar as a
+// milky, cloudy mottle over the shallows; the blur alone (SEA_FAR_BLUR) left
+// it, its streaks being wider than the blur.
+const float SEA_FAR_BED = 0.7;
 global uniform vec3 zs_palette_water;
 uniform sampler2D sea_screen : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D sea_depth : hint_depth_texture, filter_nearest, repeat_disable;
@@ -1057,6 +1064,7 @@ void fragment() {
 	float water_depth = max(mix(fallback, mapped, known), 0.0) * waver;
 
 	vec3 seen = exp(-absorb * through) * exp(-max(bed_depth, through * 0.4) / bed_fade);
+	seen *= 1.0 - SEA_FAR_BED * far_w;
 	// (Far off the bed is seen blurred: no frosted mottle of the sea floor's paint.)
 	vec3 bed = textureLod(sea_screen, uv, far_w * SEA_FAR_BLUR).rgb;
 
