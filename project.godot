@@ -621,6 +621,26 @@ zs_hemi_sky={
 "type": "vec3",
 "value": Vector3(0.28269485, 0.4541367, 0.6909623)
 }
+zs_sun_hue={
+"type": "vec3",
+"value": Vector3(1.432, 0.927, 0.454)
+}
+zs_shadow_tint={
+"type": "vec3",
+"value": Vector3(0.801, 1.025, 1.336)
+}
+zs_sun_lean={
+"type": "vec3",
+"value": Vector3(1, 1, 1)
+}
+zs_shade_lean={
+"type": "vec3",
+"value": Vector3(1, 1, 1)
+}
+zs_light_follow={
+"type": "float",
+"value": 1.0
+}
 zs_hemi_ground={
 "type": "vec3",
 "value": Vector3(0.06847817, 0.08437621, 0.05126946)
