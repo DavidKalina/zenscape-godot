@@ -498,3 +498,84 @@ noise.
   (`test_ground_look`, `test_sky_peak_look`). New uniforms: `grass_mass`,
   `grass_mass_top`, `grass_mass_shade`, `grass_mass_lift`, `grass_mass_cool`
   (surface); `carpet_near_mass` (ground).
+
+## Round 7: far grass as clumps with depth
+
+Launch: `cd /Users/davidkalina/Documents/Projects/zenscape-look-clean && python3 tools/play.py -- --ledger=/tmp/look_clean_ledger.json`.
+Stills: `/tmp/look_clean7/` (high, cruise, hills, meadow_low, coast, far120,
+`high_dusk` / `far120_dusk` at `--mood=rosewater_dusk`; `dive/dive_0..8_H.png`
+260, 200, 160, 130, 105, 80, 58, 38, 22 m over open meadow, `dive/sheetA.png`
+and `sheetB.png` are crops; `seq/far120_0..4.png` and `seq/high_0..4.png`
+40 frames (0.67 s) apart, `seq/sheet_*.png` crops). Compare `/tmp/look_clean6/`.
+Throwaway drivers `scratch/dive7.gd` (dive) and `scratch/look5.gd --seq=5 --gap=40`.
+
+### What it is (ground shader only, no geometry)
+- `shaders/far_clumps.gdshaderinc` (new, included after `grass_sheen`),
+  hooked in `endless_ground.gdshader` right after the sheen block (~line 893),
+  gated like the sheen (`carpet_turf`, minus 60 % of `thin`).
+- **Clumps:** three scales of jittered cells (`grass_far_clump_sizes`, default
+  1.2 / 3.0 / 9 m; `grass_sheen.gd` `CLUMP_SIZES`). Each scale fades to its
+  mean when a pixel nears a third of it (full under 0.15 x size, gone at
+  0.36 x), so nothing under ~3 px; its weight (0.9 / 0.8 / 0.45, `zs_far_clumps`)
+  is varied slowly over the meadow (`patch_k`, x0.6..1.4) so it is not even
+  bubble wrap. Each clump: lit on its sun side (dome normal against
+  `zs_sun_direction`), dark cool gaps (`zs_cl_cool`), a soft shadow on a
+  clump's sun-facing edge (the neighbour toward the sun throws it), ragged
+  blade tips on the height (finer noise, gone with the pixel).
+- **Parallax:** `ZS_CLUMP_LAYERS` 6 layers marched under the surface along the
+  view ray (`ZS_CLUMP_DEPTH` 0.9 m tall field; layer k reads the same clump's
+  dome shifted by `(view.xz/vert + lean) * depth`, no new hashes), front to back,
+  so tips cover the dark floor and hide each other at grazing angles. Lower
+  layers darker and cooler (round 6's mass). The 9 m scale has no layers.
+  `--clump-depth=X` scales the shift (0: sides and gaps only).
+- **View angle:** `look` (0 along the ground, 1 straight down): floor 0.70 -> 0.60,
+  lower layers cooler, a 1.2 -> 1.12 gain, and along the ground a +35 % saturation
+  lift. Climbing and diving changes the read.
+- **Wind:** `lean = wind_dir * (0.14 + 0.22 * s)` m per m of height, `s` the
+  sheen's own wave field (`zs_sheen_field`, the near tufts' crests, gust
+  bands and fronts), so direction and timing agree with the tufts. It moves
+  the clump tops (`q` is taken at `p - lean * depth`), shifts the layers, and
+  tilts the lit side. Texture only: flat meadows stay flat.
+- **Light:** `zs_sun_direction`, `zs_key_irradiance` tint, `zs_cl_warm/cool`;
+  dusk checked (`*_dusk.png`).
+- **Handoff to the tufts:** the clumps come in over ring distance 150..240 m
+  (`grass_far_clumps.zw`, `CLUMP_RING`), as the far ring's tufts thin out
+  (LOD.z 150 to LOD.w 230, not the 100 m mesh morph, which is not where tufts
+  end). The ring distance counts height, so from 200 m up it is on over all of
+  the ground the tufts thin on. Tops are lifted and yellowed (+12 % at
+  the top layers) toward the tufts' light.
+- Round 5's streaks stay in code, off by default: `BLADES := 0.0`
+  (`--blades=1` brings them back, `--clumps=0` removes the clumps).
+- Knobs: `--clumps=X` strength, `--clump-depth=X`, uniforms
+  `grass_far_clumps` (x strength, y depth, zw ring), `grass_far_clump_sizes`.
+
+### Numbers
+Grass median V / S (`scratch/gm.py` = `look_measure.py`), `/tmp/look_clean6/`
+-> `/tmp/look_clean7/`: high .510/.538 -> .514/.563; far120 .549/.604 ->
+.553/.599; cruise .604/.621 -> .616/.608; hills .510/.500 -> .510/.500;
+meadow_low .482/.521 -> .471/.537; coast .655/.444 -> .651/.461. All within
+0.03; high's S +0.025. (Before the lift tuning high was .455: the first version
+read as moss; the deliberate darker-from-above is now mostly in the gaps, not the median.)
+Frame time (uncapped wall ms per frame, median of 400, `scratch/perf6.gd`):
+high 11.74 -> 14.28; far120 18.15 -> 19.86. About +2.5 ms from 260 m, where
+the whole ground is far grass; the cost is 3 Voronoi + 6 layers per far grass pixel.
+Cheap saves if wanted: 4 layers, drop the 9 m scale.
+
+### Seen
+- high: the meadow now reads as tufted grass with gaps, not a wash (it can
+  still read a little like a rounded canopy from straight above; the sizes
+  1.2/3/9 are what keeps it fine).
+- Dive: smooth change from clumps (260, 200) to real tufts (160 and nearer),
+  no line. At 200 m the clump zone is a touch darker and rounder than the
+  tufts' spiky yellow-green; the 150..240 ramp softens it but it is still the
+  one place two characters meet.
+- Motion (far120 and high, 0.67 s apart): no flicker or shimmer; the bow is
+  subtle (top shift 0.1..0.3 m on 3 m clumps).
+
+### Unverified / not done
+- Only default and rosewater_dusk moods; no winter, regions.
+- Wind bow checked by stills only (no film); with a strong gust front the
+  top shift is larger (s clamps at 1) and was not seen.
+- `--blades=1` together with clumps was not looked at.
+- Tests likely to break: those reading `endless_ground.gdshader` /
+  `grass_sheen.gd` as text (`test_ground_look`, `test_sky_peak_look`); none run.
