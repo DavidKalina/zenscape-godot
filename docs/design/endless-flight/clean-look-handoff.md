@@ -279,3 +279,94 @@ of grass tufts on seed 1 would change.
 Not done / limits: C++ edit uncompiled (above); other moods besides default and
 dusk, winter and regions not re-checked; stills of the 6 views were taken with
 the script tint path.
+
+## Round 5: far grass as blades, calm far water, calmer blade lighting
+
+Launch: `cd /Users/davidkalina/Documents/Projects/zenscape-look-clean && python3 tools/play.py -- --ledger=/tmp/look_clean_ledger.json`.
+Stills: `/tmp/look_clean5/` (meadow_low, hills, coast, cruise, high; `far120.png`
+120 m over open meadow looking out; `*_dusk.png` at `--mood=rosewater_dusk`;
+`title.png`; `seq/high_0..3.png` the same high view 4 s apart). Compare with
+`/tmp/look_clean4/`.
+
+### 1. Far grass: a blade read on the sheen (`shaders/grass_sheen.gdshaderinc`, ground shader hook)
+- Builds on the existing sheen (`grass_sheen`, same ring fade 28 to 85 m, same
+  wave field `zs_sheen_field`, same wind globals), not a second sheen.
+- `zs_blade_paint` (grass_sheen.gdshaderinc:116): three layers of streaks long
+  along the wind (6x their width, each leaning a little off the wind so no grid),
+  widths 1.3, 3.2 and 8 m (`BLADE_WIDTHS`, `scripts/endless/grass_sheen.gd:24`;
+  uniform `grass_far_blades`, :95). Each fades to its mean when a pixel across
+  the streak is wider than 0.3 of its width (full under 0.12): so none draws
+  under about 3 px and none shimmers (`zs_blade_layer`, :98). The pixel width
+  comes from `dFdx/dFdy` projected across the wind (`endless_ground.gdshader`
+  ~line 881), not the paint's mixed footprint, so low views keep them.
+- Light: lit streaks go toward a luma-keyed silver in the key light's tint
+  (`zs_key_irradiance`, so dusk is warm) and `zs_cl_warm`; dark ones toward
+  `zs_cl_cool`. Which face the eye gets is the sheen's `turn` (wind lean against
+  sun and eye), so a field brightens and darkens as you fly over it. The sheen's
+  crests (`s`) set how much the streaks show (`roll`, :132), so the waves roll
+  through them with the wind; streaks stay put, the light moves.
+- From high up the old sheen was 85 % off (`wc_up`, the watercolour paint). Now
+  the swell tone keeps 40 % there (`endless_ground.gdshader` ~line 877) and the
+  blades keep all of it.
+- Knobs: `--blades=X` (0 off, default 1, `grass_sheen.gd:25`), the weights
+  0.4/0.4/0.2 and the contrast 2.5 in `zs_blade_paint`, dark 0.14, lit 0.4,
+  cool 0.3.
+- Check: `seq/high_0..3.png`: the bright band moves with the wind, no flicker.
+  A frame-diff or film was not made.
+
+### 2. Far water
+- Rivers and lakes (`endless_ground.gdshader`, `wet` block): from `WATER_FAR_BEGIN`
+  90 m to `WATER_FAR_END` 300 m (:36) the ripple slope goes down 90 %, the
+  streak lines, slicks and flecks fade, and a soft broad glint (`WATER_FAR_GLINT`
+  exponent 28, strength 0.28; the sun's path off a calm level) comes in. Depth
+  bands, banks and the shore line are as they were. Near water unchanged.
+- Sea (`endless_sea.gdshader`, :37 `SEA_FAR_*`, same 90 to 300 m): chop detail
+  down 90 %, swell slope down 50 %, foam lace x0.12 (was 0.4), the bed seen
+  blurred (`SEA_FAR_BLUR`), the same broad glint; the wake keeps its own.
+- Not fixed: the milky mottle over the shallows at the left of `high.png`
+  (the sea shader's shallows over the sea-floor paint) is unchanged: with foam
+  off and the bed blurred it stayed, so it is something else (the floor paint
+  seen through thin water, or the ground's watercolour paint under it). Not found.
+
+### 3. Calmer blades (`reference_surface.gdshader`, `reference_direct_light.gdshaderinc`)
+- One uniform `grass_calm` (:132, default 1, blades only; `ZS_GRASS_CALM` is 0
+  for everything else): blade normals lean 50 % toward up (:868), each tuft's
+  own shade swings 60 % less (:972), the sun is pulled 75 % toward the mean a
+  blade tilted 0.45 gets round the compass (`ZS_GRASS_PULL/TILT`, :1180) and the
+  little shadows between blades soften 40 % (`ZS_GRASS_SOFT`). Root-to-tip
+  gradient, translucency, specular and the sun side untouched.
+- What I found, measured by taking terms out one at a time (meadow_low): the
+  blades' colour (`own`) is nearly uniform across blades, the sun's banded
+  diffuse is already on its plateau for almost every blade, and neighbours'
+  shadows are not on the tufts. So there is little blade-to-blade lighting to
+  take out and the user's "noisy grass" is mostly the blades' own shapes,
+  overlaps and root-to-tip gradient. Removing the specular term made it worse
+  (V -0.05, S +0.09). Tried and dropped: a sky-fill lift with the sun giving it
+  back (V -0.024, std up), flattening `own` (kills the gradient).
+- Result: small. meadow_low `local4` 0.028 -> 0.025 (-11 %), std at 1 px 0.0965
+  -> 0.0965, at 4 px 0.080 -> 0.082; hills std1 0.1695 -> 0.163, std4 0.145 ->
+  0.1375; cruise std1 0.095 -> 0.091; coast 0.058 -> 0.055. The title can't be
+  A/B'd (its camera differs between runs): `title.png` looks calmer, std1 0.0955.
+  If the user wants it much calmer, the next lever is the blades' shape and
+  overlap (fewer, wider blades near, or a softer gradient), not lighting.
+
+### Numbers
+Grass median V / S (`tools/look_measure.py`), `/tmp/look_clean4/` -> `/tmp/look_clean5/`:
+meadow_low .518/.548 -> .518/.528; hills .502/.508 -> .510/.500; coast .655/.462
+-> .659/.444; cruise .604/.615 -> .604/.621; high .518/.542 -> .506/.538. All
+within 0.03 (coast S -0.018, meadow_low S -0.020).
+Frame time (`--print-fps --disable-vsync`, 1440x900 Forward+, title scene,
+1500 frames, mid-run): before 21.7-26.3 ms (noisy, shader compile in the first
+run), after 20.0-22.7 ms: same within noise. Not measured from the high view,
+where the ground shader's new far work actually runs (about 3 x 2 noise reads
+plus the sheen's, per grass pixel past 28 m).
+
+### Unverified
+- Dusk and one more mood only checked by eye (`*_dusk.png`); no winter, regions.
+- The motion proof is four stills; the waves are soft from 260 m.
+- The sea's new glint was not seen (the views have the sun off the water's path).
+- Native kernels still uncompiled; `SCRIPT_TINT := true` left as is.
+- Tests likely to break: those reading `reference_surface.gdshader`,
+  `endless_ground.gdshader`, `endless_sea.gdshader` as text (`test_ground_look`,
+  `test_sky_peak_look`); none run. New uniforms `grass_far_blades` (ground) and
+  `grass_calm` (surface).
