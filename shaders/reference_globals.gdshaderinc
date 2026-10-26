@@ -5,6 +5,9 @@
 // ground, stream and shade maps (the plate and a margin), both in metres. The
 // maps hold 4 texels a metre (zs_water_map, ground_map, stream_map) and 2
 // (zs_ground_shade), so their sizes follow from zs_map_half.
+// The clean look's blend (scripts/endless/clean_look.gd): 0 the look as it
+// was, 1 the calmer one, mixed live.
+global uniform float zs_clean;
 global uniform float zs_plate_half;
 global uniform float zs_map_half;
 #define ZS_MAP_TEXELS int(zs_map_half * 8.0)

@@ -105,6 +105,7 @@ const GlideCamera = preload("res://scripts/glide_camera.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
 const EndlessLook = preload("res://scripts/endless/endless_look.gd")
+const CleanLook = preload("res://scripts/endless/clean_look.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const EndlessEddies = preload("res://scripts/endless/endless_eddies.gd")
@@ -424,6 +425,9 @@ func _ready() -> void:
 		look.setup(seed)
 		sea = look.sea
 		_build_camera()
+		clean = CleanLook.new()
+		add_child(clean)
+		clean.setup(look,camera)
 		if _face_sun:
 			var s: Vector3 = look.celestial.state.zs_sun_direction
 			_heading = atan2(-s.x,-s.z)
@@ -1001,6 +1005,13 @@ func _next_weight() -> void:
 	_weight_note.text = "Weight: %s" % weight
 	_weight_shown = Time.get_ticks_msec()
 
+## K / J (F6 / F7): the clean look (scripts/endless/clean_look.gd) and its edge line.
+var clean: Node
+func _clean_key(edge: bool) -> void:
+	if clean == null: return
+	_weight_note.text = clean.flip_edges() if edge else clean.flip_look()
+	_weight_shown = Time.get_ticks_msec()
+
 ## H: the near misses' HUD in the tag by the plane or at the top, kept.
 func _next_near_layout() -> void:
 	if not _near_hud.has_method("set_tag"): return
@@ -1193,6 +1204,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F: _land_key()
 			KEY_F1: _hud.visible = not _hud.visible
 			KEY_F2: _next_scale()
+			KEY_K, KEY_F6: _clean_key(false)
+			KEY_J, KEY_F7: _clean_key(true)
 			KEY_R: respawn()
 			KEY_V: _next_weight()
 			KEY_P: _next_pace()
