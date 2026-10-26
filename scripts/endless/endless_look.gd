@@ -66,6 +66,17 @@ const SUN_SCATTER := 0.18
 ## of it is the sky's blurred light round each pixel (Godot's aerial
 ## perspective), which turns the middle distance bluer.
 const AERIAL := 0.35
+## At a low sun (zs_haze_sun, celestial.gd haze_sun) the haze takes this
+## share of the sky behind each pixel instead, so it turns with the view's
+## bearing to the sun (warm into it, blue away) and the far land meets the
+## dome's own horizon in every direction; and the sun's scatter in it grows
+## to this.
+const AERIAL_SUN := 0.6
+const SUN_SCATTER_SUN := 0.45
+## shaders/reference_sky_common.gdshaderinc ZS_HAZE_GATHER, _COOL, _BLUE.
+const HAZE_GATHER := 0.4
+const HAZE_COOL := 0.55
+const HAZE_BLUE := 0.6
 ## The sun's shadows reach this far (m), in four splits.
 const SHADOW_REACH := 900.0
 ## The wind over the land and sea: its strength (the isles' 0..2) and the
@@ -572,6 +583,9 @@ func _haze(facing: Vector3) -> void:
 	var top := maxf(maxf(c.r,c.g),maxf(c.b,1e-4))
 	environment.fog_light_color = Color(c.r/top,c.g/top,c.b/top).linear_to_srgb()
 	environment.fog_light_energy = top
+	var k := float(celestial.state.get("zs_haze_sun",0.0))
+	environment.fog_aerial_perspective = lerpf(AERIAL,AERIAL_SUN,k)
+	environment.fog_sun_scatter = lerpf(SUN_SCATTER,SUN_SCATTER_SUN,k)
 
 ## The sky's colour (scene linear) at the horizon toward `facing`.
 func horizon(facing: Vector3) -> Color:
@@ -584,7 +598,15 @@ func horizon(facing: Vector3) -> Color:
 	var to_sun := flat.dot(Vector2(sun_dir.x,sun_dir.z).normalized())*0.5+0.5
 	# smoothstep(-0.4, 0.7, 0)
 	var col := down.lerp(up,0.3005)
-	col += glow*lerpf(1.0,to_sun*to_sun*1.6+0.08,float(st.zs_dusk_direction))
+	var k := float(st.get("zs_haze_sun",0.0))
+	var dusk := float(st.zs_dusk_direction)
+	var was := col+glow*lerpf(1.0,to_sun*to_sun*1.6+0.08,dusk)
+	col += glow*lerpf(1.0,to_sun*to_sun*1.6+0.08,lerpf(dusk,1.0,k*HAZE_GATHER))
+	if k > 0.001:
+		var luma := Vector3(0.2126,0.7152,0.0722)
+		var zen := Vector3.ONE.lerp(up/maxf(up.dot(luma),1e-4),HAZE_BLUE)
+		zen /= zen.dot(luma)
+		col = col.lerp(zen*was.dot(luma),(1.0-to_sun)*(1.0-to_sun)*k*HAZE_COOL)
 	col *= 0.98/maxf(maxf(maxf(col.x,col.y),col.z),0.98)
 	return _scene_linear(col,environment.tonemap_exposure)
 

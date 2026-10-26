@@ -66,6 +66,7 @@ extends SceneTree
 ##     hit_text(h) -> String
 ##   Shots
 ##     shot(path, hud = false, size = Vector2i.ZERO) -> void
+##     fit_window(size = Vector2i.ZERO) -> void
 ##     shot_at(view, target, opts = {}) -> String
 ##     film(target, opts = {}) -> Dictionary
 ##     film_end(f, now = false) -> Dictionary
@@ -200,6 +201,7 @@ func open(scene: String, args: Variant = null, ready_frames := 3000) -> int:
 	while current_scene == null or current_scene == was:
 		await process_frame
 	study = current_scene
+	await fit_window()
 	if not "walk_ready" in study: return 0
 	# A study that holds him after walk_ready (run_layer's city layers wait
 	# for the landing to stand, then set him back at the spawn) says so.
@@ -563,6 +565,28 @@ func shot(path: String, hud := false, size := Vector2i.ZERO) -> void:
 		return
 	var err := await _grab(path,hud,size)
 	print("saved %s" % path if err == OK else "FAIL shot %s: error %d" % [path,err])
+
+## The window to `size` (default `--win=WxH`, else `--size=`, else
+## 1440x900), windowed, in a rendered run; `--win=keep` leaves it. `open`
+## calls it once the scene stands: the project starts full screen
+## (window/size/mode=3), and on a Mac that sometimes wins over the
+## launcher's `--windowed --resolution`, so a run drew at the screen's size
+## with its 3D scaled down, and `shot` scaled the still back without a word.
+## The 3D scale follows (scripts/render_resolution.gd on size_changed).
+## Notes the window, the viewport and the 3D scale.
+func fit_window(size := Vector2i.ZERO) -> void:
+	if _headless() or str(arg("win","")) == "keep": return
+	if size == Vector2i.ZERO:
+		var wh := str(arg("win",arg("size","1440x900"))).split("x")
+		size = Vector2i(int(wh[0]),int(wh[1]))
+	for i in 3:
+		if root.mode != Window.MODE_WINDOWED:
+			root.mode = Window.MODE_WINDOWED
+			for f in 10: await process_frame
+		if root.size == size: break
+		root.size = size
+		for f in 10: await process_frame
+	note("window %s (asked %s) viewport %s 3d scale %.2f" % [root.size,size,root.get_visible_rect().size,root.scaling_3d_scale])
 
 ## A still of `target` from `view`, the camera placed by its size (opts
 ## above); the PNG's path ("" headless or failed). With `when`: armed.

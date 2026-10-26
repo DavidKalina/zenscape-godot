@@ -30,6 +30,9 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/grass_sheen.gdshaderinc"
 #include "res://shaders/grass_react.gdshaderinc"
 #include "res://shaders/region_paint.gdshaderinc"
+#include "res://shaders/backlight.gdshaderinc"
+// Backlight's gain on the far ring's tips (Godot's BACKLIGHT, shadowed).
+const float BACKLIGHT_GAIN = 5.0;
 
 uniform vec4 grass_ring = vec4(0.0);
 uniform vec4 grass_ring_in = vec4(0.0, 1.0, 1.0, 0.0);
@@ -158,4 +161,10 @@ void fragment() {
 	vec3 n = mass;
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION = c * hemi * (0.75 + 0.25 * along);
+	// Backlight: the tips seen against a low sun catch it. Godot lights it
+	// (x the light's colour and shadow, on the face turned from it).
+	if (zs_backlight > 0.0) {
+		vec3 sun_v = normalize((VIEW_MATRIX * vec4(zs_key_direction, 0.0)).xyz);
+		BACKLIGHT = zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-sun_v, VIEW), pow(along, 6.0), BACKLIGHT_GAIN));
+	}
 }

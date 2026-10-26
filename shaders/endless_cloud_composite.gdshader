@@ -39,6 +39,15 @@ const float NIGHT_TINT = 0.6;
 // reads as pale blue air, never as a muddy wash over the ground.
 const vec3 FOG_COOL = vec3(0.8, 0.95, 1.2);
 const float FOG_LIFT = 1.2;
+// Clouds lit from below at sunset (zs_cloud_under, scripts/shared/
+// celestial.gd CLOUD_UNDER_E): the march's bounce term (strongest at a
+// cloud's base) takes the low sun's colour, half of it a rose at the sun's
+// strength, this many times over, more on the sun's side of the sky. Valley
+// fog keeps its own.
+global uniform float zs_cloud_under;
+const float UNDER_GAIN = 6.0;
+const vec3 UNDER_ROSE = vec3(1.0, 0.42, 0.52);
+const float UNDER_ROSE_SHARE = 0.5;
 // The valley fog's light scaled (1 as the first pass drew it).
 uniform float fog_gain = 1.0;
 
@@ -67,6 +76,11 @@ void fragment() {
 	float fog_share = clamp(terms.w, 0.0, 1.0);
 	vec3 shade_col = c_shade * mix(vec3(1.0), FOG_COOL, fog_share);
 	vec3 lit = (terms.x * shade_col + terms.y * c_sun + terms.z * c_sun * BOUNCE_TINT) * ZS_CUMULUS_LIT_SHARE;
+	if (zs_cloud_under > 0.0) {
+		float sun_side = dot(normalize(rd.xz + 1e-4), normalize(sun.xz + 1e-4)) * 0.5 + 0.5;
+		vec3 under_col = mix(c_sun, UNDER_ROSE * max(c_sun.r, max(c_sun.g, c_sun.b)), UNDER_ROSE_SHARE);
+		lit += terms.z * under_col * UNDER_GAIN * zs_cloud_under * (1.0 - fog_share) * mix(0.55, 1.0, sun_side) * ZS_CUMULUS_LIT_SHARE;
+	}
 	lit *= mix(1.0, LIFT, zs_daylight) * mix(1.0, FOG_LIFT * fog_gain, fog_share);
 	float bright = clamp(terms.y / 0.95, 0.0, 1.0);
 	float met = b.y / cloud_a;
@@ -93,7 +107,9 @@ void fragment() {
 	dome *= 0.98 / max(max(max(dome.r, dome.g), dome.b), 0.98);
 	vec3 sky = scene_linear_for_display(dome);
 	float high = smoothstep(0.02, 0.4, sun.y);
-	sky += c_sun * pow(toward_sun, 6.0) * sun_scatter * mix(1.4, 0.7, high) * zs_celestial_clear;
+	// At a low sun the scatter grows as the land's does (endless_look.gd
+	// SUN_SCATTER_SUN over SUN_SCATTER, with zs_haze_sun).
+	sky += c_sun * pow(toward_sun, 6.0) * sun_scatter * mix(1.0, 0.45 / 0.18, zs_haze_sun) * mix(1.4, 0.7, high) * zs_celestial_clear;
 	col = mix(col, sky, fog);
 	ALBEDO = col;
 	// The march stops once the cloud is all but whole: whole it is, so the

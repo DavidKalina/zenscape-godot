@@ -1,4 +1,5 @@
 #include "res://shaders/light_leans.gdshaderinc"
+#include "res://shaders/backlight.gdshaderinc"
 // Source Lambert + GGX direct lighting. The climbing valley shadow gates only
 // direct contributions, preserving hemisphere and reflected-sky afterglow.
 void light() {
@@ -22,6 +23,13 @@ void light() {
 		DIFFUSE_LIGHT += crown_sun * t * mix(vec3(0.96, 0.99, 1.04), vec3(1.04, 1.02, 0.94), t) / PI;
 		float through = pow(max(dot(-LIGHT, VIEW), 0.0), 2.0);
 		DIFFUSE_LIGHT += open_sun * ZS_SPRUCE_LIGHT.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
+#ifdef ZS_BACKLIGHT_SPRUCE
+		// Backlight: the crown's silhouette, seen against a low sun, catches it.
+		if (zs_backlight > 0.0 && dot((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz, zs_key_direction) > 0.999) {
+			float rim = pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 3.0);
+			DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * gate * inversion_transmit * zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-LIGHT, VIEW), rim, ZS_BACKLIGHT_SPRUCE)) / PI;
+		}
+#endif
 	} else
 #endif
 	DIFFUSE_LIGHT += energy * nl / PI * (1.0 - metalness_value);
@@ -55,6 +63,13 @@ void light() {
 	// backscatter above never sees a back face; its tips glow toward the sun
 	// instead. The shader names its tip fraction and strength.
 	if (ZS_GRASS_GLOW > 0.0) DIFFUSE_LIGHT += energy * zs_grass_translucency(LIGHT, VIEW, ALBEDO, ZS_GRASS_ALONG, ZS_GRASS_GLOW);
+#ifdef ZS_BACKLIGHT_GRASS
+	// Backlight: the blades' thin tips seen against a low sun catch it.
+	if (ZS_GRASS_GLOW > 0.0 && zs_backlight > 0.0 && dot((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz, zs_key_direction) > 0.999) {
+		float tip = pow(ZS_GRASS_ALONG, 8.0);
+		DIFFUSE_LIGHT += energy * zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-LIGHT, VIEW), tip, ZS_BACKLIGHT_GRASS)) / PI;
+	}
+#endif
 #endif
 #ifdef ZS_FLOWER_TRANSLUCENCY
 	// Petals glow their own colour when backlit (shaders/meadow_flower.gdshaderinc).

@@ -144,6 +144,12 @@
   }
   // The sky's own colour, without the bow. The horizon hills paint with
   // this along a flattened direction; the bow would smear down them.
+  // How far the glow gathers toward a low sun, how far the horizon away from
+  // it takes the cool hue, and how much of the zenith's blue that hue has
+  // (the rest white: a pale blue haze, as bright as the horizon was).
+  const float ZS_HAZE_GATHER = 0.4;
+  const float ZS_HAZE_COOL = 0.55;
+  const float ZS_HAZE_BLUE = 0.6;
   vec3 zsSkyBase(vec3 dir) {
     float y = dir.y;
     vec3 col = mix(zs_sky_down, zs_sky_up, smoothstep(-0.4, 0.7, y));
@@ -151,7 +157,23 @@
     // horizon crossings (zs_dusk_direction rises) it gathers toward the sun's side
     // of the sky — a sunset lives somewhere, not everywhere.
     float toSun = dot(normalize(dir.xz + 1e-4), normalize(zs_sun_direction.xz + 1e-4)) * 0.5 + 0.5;
-    col += exp(-abs(y) * 3.5) * zs_sky_glow * mix(1.0, toSun * toSun * 1.6 + 0.08, zs_dusk_direction);
+    // Haze toward and away from a low sun (zs_haze_sun): the glow gathers
+    // further toward the sun's side, and the horizon away from it takes the
+    // zenith's hue (part white), so the air reads warm into the
+    // sun and blue behind it. scripts/endless/endless_look.gd `horizon`
+    // mirrors this at y 0 for the land's haze.
+    // (The cool side keeps the brightness the horizon had before the glow
+    // gathered, so the air behind the sun goes blue, not dark.)
+    float gather = mix(zs_dusk_direction, 1.0, zs_haze_sun * ZS_HAZE_GATHER);
+    vec3 band = exp(-abs(y) * 3.5) * zs_sky_glow;
+    vec3 was = col + band * mix(1.0, toSun * toSun * 1.6 + 0.08, zs_dusk_direction);
+    col += band * mix(1.0, toSun * toSun * 1.6 + 0.08, gather);
+    if (zs_haze_sun > 0.001) {
+      float away = 1.0 - toSun;
+      vec3 zen = mix(vec3(1.0), zs_sky_up / max(dot(zs_sky_up, vec3(0.2126, 0.7152, 0.0722)), 1e-4), ZS_HAZE_BLUE);
+      zen /= dot(zen, vec3(0.2126, 0.7152, 0.0722));
+      col = mix(col, zen * dot(was, vec3(0.2126, 0.7152, 0.0722)), away * away * exp(-abs(y) * 3.5) * zs_haze_sun * ZS_HAZE_COOL);
+    }
     // The Belt of Venus: on the side AWAY from the sun, the earth's
     // shadow stands on the horizon as a blue-grey band, and the air
     // above it still catches the sun and glows pink. The pink sits a

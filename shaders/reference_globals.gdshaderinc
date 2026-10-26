@@ -176,6 +176,10 @@ global uniform vec3 zs_moon_direction;
 global uniform vec3 zs_moon_shadow_direction;
 global uniform float zs_dusk_direction;
 global uniform float zs_belt;
+// Haze toward and away from a low sun (scripts/shared/celestial.gd
+// HAZE_SUN_*; 0 by day and with --haze-sun=0): the horizon's glow gathers
+// toward the sun's bearing and the side away from it cools.
+global uniform float zs_haze_sun;
 global uniform float zs_bow;
 global uniform float zs_bow_grow;
 global uniform vec2 zs_bow_shape;

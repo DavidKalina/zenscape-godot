@@ -225,6 +225,25 @@ const GOLDEN_DEEPEN := 0.5
 ## dip's 0.3 to 0.1, so a late afternoon sun already leans golden; the default
 ## mood's 8.6 h sun stands at 0.48).
 const GOLDEN_E := Vector2(0.42, 0.14)
+## Light pass round 2 (docs/design/endless-flight/light-pass-2-handoff.md):
+## haze toward and away from a low sun. Over golden hour (GOLDEN_E, clear
+## sky, light follow on) zs_haze_sun rises to 1: the sky's horizon glow
+## gathers toward the sun's bearing and the side away from it cools to the
+## zenith's hue (reference_sky_common zsSkyBase), and the land's depth fog
+## takes more of the sky behind each pixel and more of the sun's scatter
+## (scripts/endless/endless_look.gd `_haze`). --haze-sun=0 turns it off.
+static var haze_sun := _arg_float("--haze-sun=", 1.0)
+## Backlight: grass tips and spruce silhouettes seen against a low sun glow
+## in its colour (shaders/backlight.gdshaderinc). zs_backlight follows
+## golden hour (GOLDEN_E, clear sky, light follow) times --backlight=X
+## (1; 0 off).
+static var backlight := _arg_float("--backlight=", 1.0)
+## Clouds lit from below at sunset (shaders/endless_cloud_composite.gdshader
+## UNDER_*): zs_cloud_under comes in as the sun falls from CLOUD_UNDER_E.x
+## to .y and goes as it sinks from .z to .w under the horizon, under a clear
+## sky, with light follow, times --cloud-under=X (1; 0 off).
+const CLOUD_UNDER_E := Vector4(0.16, 0.03, 0.0, -0.08)
+static var cloud_under := _arg_float("--cloud-under=", 1.0)
 ## --light-follow=0 is the light as it was before the light pass (the leans 1,
 ## the fill and rim their old colours and dips); between, part way.
 static var light_follow := _arg_float("--light-follow=", 1.0)
@@ -471,6 +490,9 @@ func update_rig() -> void:
 	_publish("zs_sun_lean", sun_lean)
 	_publish("zs_shade_lean", shade_lean)
 	_publish("zs_light_follow", follow)
+	_publish("zs_haze_sun", golden_f * follow * clampf(haze_sun, 0.0, 1.0))
+	_publish("zs_backlight", golden_f * follow * maxf(backlight, 0.0) * (0.0 if moon_energy > sun_energy else 1.0))
+	_publish("zs_cloud_under", smoothstep(CLOUD_UNDER_E.x, CLOUD_UNDER_E.y, e) * smoothstep(CLOUD_UNDER_E.w, CLOUD_UNDER_E.z, e) * (1.0 - minf(1.0, cloud * 1.3)) * follow * maxf(cloud_under, 0.0))
 	# The sky fill is the shade's hue at the fill's strength; the rim (a
 	# second fill from the side) leans as the shade does, and both ease off at
 	# golden hour so the low sun leads.
