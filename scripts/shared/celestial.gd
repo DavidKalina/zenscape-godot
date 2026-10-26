@@ -435,6 +435,7 @@ func update_rig() -> void:
 	var follow := clampf(light_follow, 0.0, 1.0)
 	var deepen := _vpow(_lean(_hue(tint) / REF_SUN_HUE), GOLDEN_DEEPEN * golden_f * follow)
 	tint = _hue_keep(tint, deepen)
+	var sun_tint := tint
 	var key_direction := _lifted(sun)
 	var energy := sun_energy
 	if moon_energy > sun_energy:
@@ -469,11 +470,14 @@ func update_rig() -> void:
 	_publish("zs_key_irradiance", Vector3(key_color.r, key_color.g, key_color.b) * _sun.light_energy * PI)
 	_publish("zs_rim_direction", _rim.global_basis.z.normalized())
 	_publish("zs_cloud_direction", key_direction)
-	var cloud_sun := tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7).lerp(Vector3(1.0, 0.70, 0.38), autumn_lit * 0.35).lerp(Vector3(0.82, 0.88, 1.0), cold * 0.4) * (0.9 + 0.5 * overcast)
+	# (The sun's tint, not the key's: just after sunset the moon outshines
+	# the set sun and the key takes the moon's tint, which lit the clouds
+	# moon-white at full strength the moment the sun went down.)
+	var cloud_sun := sun_tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7).lerp(Vector3(1.0, 0.70, 0.38), autumn_lit * 0.35).lerp(Vector3(0.82, 0.88, 1.0), cold * 0.4) * (0.9 + 0.5 * overcast)
 	# The source lights air and cloud with the key's colour at full strength
 	# even when nothing is up. At night that left the mist lit like day (and
 	# orange under a new moon): lean it on the moon instead.
-	cloud_sun = cloud_sun.lerp(moon_tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7) * lerpf(NIGHT_CLOUD_LIGHT.x, NIGHT_CLOUD_LIGHT.y * night_cloud, moon_glow) * (0.9 + 0.5 * overcast), dark)
+	cloud_sun = cloud_sun.lerp(moon_tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7) * lerpf(NIGHT_CLOUD_LIGHT.x, NIGHT_CLOUD_LIGHT.y * night_cloud, moon_glow) * (0.9 + 0.5 * overcast), maxf(dark, smoothstep(0.0, -0.07, e)))
 	cloud_sun = cloud_sun.lerp(BLUE_CLOUD * lerpf(1.0, 0.7, cloud), blue)
 	_publish("zs_cloud_sun", cloud_sun)
 	_publish("zs_cloud_sky", hemi_sky * 0.55)
