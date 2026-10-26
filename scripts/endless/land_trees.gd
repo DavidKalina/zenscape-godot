@@ -620,8 +620,52 @@ func _task(kind: String, key: Vector2i) -> void:
 
 # --- Building (on a worker) ------------------------------------------------------
 
-## A block ("b") or far cell ("f"), natively when it can be.
+## A block ("b") or far cell ("f"), natively when it can be, its forest
+## floor kept off the split mountains' cuts (`_floor_off_cuts`).
 func _build(kind: String, key: Vector2i, field: RefCounted, plan: RefCounted) -> Dictionary:
+	var got := _build_raw(kind,key,field,plan)
+	if got.has("floor"): got.floor = _floor_off_cuts(got.floor,field)
+	return got
+
+## Forest floor `floor` ({arrays}, `_floor_arrays`'s or the native one's)
+## without its triangles that have a corner on a split mountain's cut
+## (split_sites.gd). The native building drapes the floor over the native
+## field, which knows nothing of the splits (a layer LandField cuts in after
+## it), so over a canyon the sheet hung at the old ground's height, see-
+## through in the air where the rock was carved away; and on the floor's
+## coarse lattice (FLOOR_STEP, TreePlan.FAR_SLOT) even the GDScript one's
+## triangles reach from the rim across the canyon. Off the cut the two
+## fields' heights are the same, so what is kept lies on the land.
+static func _floor_off_cuts(floor: Dictionary, field: RefCounted) -> Dictionary:
+	if floor.is_empty() or not field.has_method("splits_in"): return floor
+	var arrays: Array = floor.arrays
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var index: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	if verts.is_empty(): return floor
+	var box := AABB(verts[0],Vector3.ZERO)
+	for v: Vector3 in verts: box = box.expand(v)
+	var cuts: Array = field.splits_in(box.position.x,box.position.z,box.end.x,box.end.z)
+	if cuts.is_empty(): return floor
+	const Splits = preload("res://scripts/endless/split_sites.gd")
+	var on := PackedByteArray()
+	on.resize(verts.size())
+	var any := false
+	for k in verts.size():
+		for s: PackedFloat32Array in cuts:
+			if Splits.on_cut(s,verts[k].x,verts[k].z):
+				on[k] = 1
+				any = true
+				break
+	if not any: return floor
+	var kept := PackedInt32Array()
+	for t in range(0,index.size(),3):
+		if on[index[t]]+on[index[t+1]]+on[index[t+2]] == 0: kept.append_array([index[t],index[t+1],index[t+2]])
+	if kept.is_empty(): return {}
+	var out := arrays.duplicate()
+	out[Mesh.ARRAY_INDEX] = kept
+	return {"arrays":out}
+
+func _build_raw(kind: String, key: Vector2i, field: RefCounted, plan: RefCounted) -> Dictionary:
 	var size := BLOCK if kind == "b" else Plan.FAR_CELL
 	var x0 := key.x*size
 	var z0 := key.y*size

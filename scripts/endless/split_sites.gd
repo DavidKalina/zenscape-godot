@@ -148,9 +148,9 @@ const MIX := {"slot":1.0,"winding":1.0,"gorge":1.0,"grand":1.0}
 const TYPES := {
 	"slot":{"toy":TOY_SLOT,"wide":Vector2(1.0,1.1),"length":Vector2(160.0,400.0),"tall":70.0,"land":-1.0,
 		"half_wave":320.0,"waves":Vector2i(1,2),"turn":240.0,"bend":9.0,
-		"tiers":Vector2i(2,2),"tier":Vector2(28.0,46.0),"bench":Vector2(0.0,2.0),"edge":2.2,"lean":Vector2(0.07,0.11),
-		"talus":Vector2(0.0,0.0),"blocks":Vector2(4.5,0.9),
-		"wander":Vector2(0.6,1.6),"wander_scale":55.0,"buttress":Vector2(2.0,3.5),"buttress_scale":Vector2(14.0,22.0),
+		"tiers":Vector2i(2,3),"tier":Vector2(22.0,38.0),"bench":Vector2(0.0,2.5),"edge":2.2,"lean":Vector2(0.07,0.11),
+		"talus":Vector2(0.0,0.0),"blocks":Vector2(4.0,1.6),
+		"wander":Vector2(1.0,2.5),"wander_scale":55.0,"buttress":Vector2(3.5,6.0),"buttress_scale":Vector2(12.0,18.0),
 		"flare":Vector2(80.0,100.0),"flare_widen":Vector2(2.2,2.8),"strata":Vector2(0.0,0.0),"tread":Vector2(0.5,0.6),"wide_most":200.0},
 	"winding":{"toy":TOY_WINDING,"wide":Vector2(1.0,1.15),"length":Vector2(240.0,700.0),"tall":70.0,"land":-0.6,
 		"half_wave":150.0,"waves":Vector2i(2,5),"turn":120.0,"bend":30.0,
@@ -209,6 +209,10 @@ const BENCH_SCALE := 45.0
 const BENCH_RISE := 0.25
 const RIB_EDGE := Vector2(0.4,0.6)
 const BLOCK_EDGE := 0.15
+## Down in the canyon the walls shade as a deep groove (the carve's groove
+## mark): from DEEP_SHADE.x to DEEP_SHADE.y times the canyon's width under
+## the old ground (none at the rim, all of it that deep and more).
+const DEEP_SHADE := Vector2(0.15,1.6)
 ## The mouths: over the last of the kind's flare (FLARE_SHARE of the half
 ## length at the most) the canyon opens out, its floor widened by the
 ## kind's flare widening, its tiers down to FLARE_LOW of their rise,
@@ -513,7 +517,14 @@ static func cut(s: PackedFloat32Array, base: float, x: float, z: float) -> Vecto
 	y = lerpf(y,base,t)
 	if y >= base-0.0005: return Vector3(base,-1.0,0.0)
 	if e <= 0.0: return Vector3(y,0.0,-1.0)
-	return Vector3(y,smoothstep(0.55,1.0,back.y)*0.8,smoothstep(0.45,0.0,back.y)*0.7)
+	# The groove: an alcove's, or the canyon's depth here (how far under the
+	# old ground, over the canyon's width), so the rock down in a canyon
+	# shades as the deep groove it is (endless_rock.gdshaderinc: darker,
+	# cooler, its painted light leaning to shade) rather than as an open
+	# face in the sun.
+	var wide := 2.0*(_half(s,q.x)+back.x)
+	var deep := smoothstep(DEEP_SHADE.x,DEEP_SHADE.y,(base-y)/wide)*(1.0-t)
+	return Vector3(y,maxf(smoothstep(0.55,1.0,back.y)*0.8,deep),smoothstep(0.45,0.0,back.y)*0.7*(1.0-deep))
 
 ## The land's height `base` with site `s`'s canyon cut in at (x, z).
 static func carve(s: PackedFloat32Array, base: float, x: float, z: float) -> float:

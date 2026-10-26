@@ -261,6 +261,10 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout 
 
 	// The painted light: the facet's own sun, in steps from shadow to warm lit.
 	float lit = dot(nf, sun) * 0.5 + 0.5;
+	// Down a deep groove (the carve's, a canyon's: `carved.x`) the sun seldom
+	// reaches: its painted light leans to the shade tone, so a wall in real
+	// shadow is not painted with sunlit facets (they read as pale sheets).
+	if (!rock_flat) lit = mix(lit, min(lit, 0.3), smoothstep(0.6, 1.0, carved.x) * rock_carve_shade);
 	lit += (rnd_b.x - 0.5) * 0.07 * er_keep(38.0, fq) + (rnd_f.y - 0.5) * 0.02 * keep_f;
 	float steps = 3.0;
 	float soft = 0.18 + clamp(fq * 0.02, 0.0, 0.3);
