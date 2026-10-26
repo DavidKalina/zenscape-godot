@@ -57,7 +57,31 @@ environment/defaults/default_clear_color=Color(0.84, 0.87, 0.82, 1)
 
 [shader_globals]
 
-zs_clean={
+zs_cl_paint={
+"type": "float",
+"value": 0.0
+}
+zs_cl_shadow={
+"type": "float",
+"value": 0.0
+}
+zs_cl_light={
+"type": "float",
+"value": 0.0
+}
+zs_cl_cloud={
+"type": "float",
+"value": 0.0
+}
+zs_cl_snag={
+"type": "float",
+"value": 0.0
+}
+zs_cl_dist={
+"type": "float",
+"value": 0.0
+}
+zs_cl_water={
 "type": "float",
 "value": 0.0
 }

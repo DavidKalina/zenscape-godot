@@ -25,7 +25,7 @@ void light() {
 	} else
 #endif
 	// Clean look: the sun in soft steps, the sun side warm (clean_look.gdshaderinc).
-	DIFFUSE_LIGHT += energy * mix(nl, zs_clean_steps(dot(NORMAL, LIGHT)), zs_clean) * zs_clean_sun_tint() / PI * (1.0 - metalness_value);
+	DIFFUSE_LIGHT += energy * mix(nl, zs_clean_banded(dot(NORMAL, LIGHT)), zs_cl_light) * zs_clean_sun_tint() / PI * (1.0 - metalness_value);
 #ifdef ZS_LOOK_FILL
 	// The look pass's sky fill (shaders/look_fill.gdshaderinc), the sun's
 	// light only: where its shadow falls or the face turns from it.

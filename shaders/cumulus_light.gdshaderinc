@@ -31,7 +31,7 @@ const float ZS_CUMULUS_SUN_SIGMA = 0.028;
 // The sun's hue (deepened toward peach and gold as it gets low), its colour
 // at no more than white, the shade's colour off the sky, and the lining's
 // strength along `rd`.
-void zs_cumulus_palette(vec3 rd, vec3 sun, out vec3 sun_hue, out vec3 sun_col, out vec3 shade_col, out float lining) {
+void zs_cumulus_palette_plain(vec3 rd, vec3 sun, out vec3 sun_hue, out vec3 sun_col, out vec3 shade_col, out float lining) {
 	float toward_sun = max(dot(rd, sun), 0.0);
 	float golden = smoothstep(0.35, 0.04, sun.y) * smoothstep(-0.1, 0.02, sun.y);
 	float sun_level = max(max(zs_cloud_sun.r, zs_cloud_sun.g), max(zs_cloud_sun.b, 1e-3));
@@ -40,10 +40,21 @@ void zs_cumulus_palette(vec3 rd, vec3 sun, out vec3 sun_hue, out vec3 sun_col, o
 	sun_col = sun_hue * min(sun_level, 1.0);
 	shade_col = zs_cloud_sky * vec3(1.3, 1.02, 0.98) * ZS_CUMULUS_SHADE;
 	lining = pow(toward_sun, 10.0) * 0.6 + pow(toward_sun, 60.0) * 1.6;
-	// Clean look: white lit tops, a cool lilac-grey shade.
+}
+
+// The palette with the clean clouds mixed in (zs_cl_cloud).
+void zs_cumulus_palette(vec3 rd, vec3 sun, out vec3 sun_hue, out vec3 sun_col, out vec3 shade_col, out float lining) {
+	zs_cumulus_palette_plain(rd, sun, sun_hue, sun_col, shade_col, lining);
+	// Clean look: cream (warm lit tops, a warm grey shade) or white (a lilac
+	// grey shade), the shade kept light and soft.
 	float shade_l = dot(shade_col, vec3(0.2126, 0.7152, 0.0722));
-	sun_col = mix(sun_col, mix(sun_col, vec3(1.0), 0.75) * 1.12, zs_clean);
-	shade_col = mix(shade_col, vec3(0.80, 0.78, 1.0) * shade_l * 0.95, zs_clean);
+	float soft_l = mix(shade_l, max(shade_l, 0.5), 0.7);
+	vec3 cream_sun = mix(sun_col, vec3(1.0, 0.95, 0.82), 0.7) * 1.08;
+	vec3 white_sun = mix(sun_col, vec3(1.0), 0.75) * 1.12;
+	vec3 cream_shade = vec3(0.97, 0.91, 0.84) * soft_l;
+	vec3 white_shade = vec3(0.86, 0.85, 1.0) * soft_l;
+	sun_col = mix(mix(sun_col, cream_sun, ZS_CL_CLOUD_ON), white_sun, ZS_CL_CLOUD_WHITE);
+	shade_col = mix(mix(shade_col, cream_shade, ZS_CL_CLOUD_ON), white_shade, ZS_CL_CLOUD_WHITE);
 }
 
 // How much of the sun reaches a point under `thick` of cloud toward it.

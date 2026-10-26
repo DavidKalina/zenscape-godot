@@ -61,16 +61,26 @@ void fragment() {
 	vec3 c_sun;
 	vec3 c_shade;
 	float lining;
+	vec3 w_hue;
+	vec3 w_sun;
+	vec3 w_shade;
+	float w_lining;
+	zs_cumulus_palette_plain(rd, sun, w_hue, w_sun, w_shade, w_lining);
 	zs_cumulus_palette(rd, sun, sun_hue, c_sun, c_shade, lining);
 	float toward_sun = max(dot(rd, sun), 0.0);
 	vec4 terms = a / cloud_a;
+	vec4 terms_was = terms;
 	// Clean look: a crisper split of lit and shaded.
-	terms.y *= mix(1.0, smoothstep(0.08, 0.7, terms.y) * 1.25, zs_clean);
-	terms.x *= mix(1.0, 0.85, zs_clean);
+	terms.y *= mix(1.0, smoothstep(0.08, 0.7, terms.y) * 1.25, ZS_CL_CLOUD_ON);
+	terms.x *= mix(1.0, 0.85, ZS_CL_CLOUD_ON);
 	float fog_share = clamp(terms.w, 0.0, 1.0);
 	vec3 shade_col = c_shade * mix(vec3(1.0), FOG_COOL, fog_share);
 	vec3 lit = (terms.x * shade_col + terms.y * c_sun + terms.z * c_sun * BOUNCE_TINT) * ZS_CUMULUS_LIT_SHARE;
 	lit *= mix(1.0, LIFT, zs_daylight) * mix(1.0, FOG_LIFT * fog_gain, fog_share);
+	// (Valley fog keeps the colours it had: only cloud goes cream or white.)
+	vec3 lit_was = (terms_was.x * w_shade * mix(vec3(1.0), FOG_COOL, fog_share) + terms_was.y * w_sun + terms_was.z * w_sun * BOUNCE_TINT) * ZS_CUMULUS_LIT_SHARE;
+	lit_was *= mix(1.0, LIFT, zs_daylight) * mix(1.0, FOG_LIFT * fog_gain, fog_share);
+	lit = mix(lit, lit_was, fog_share);
 	float bright = clamp(terms.y / 0.95, 0.0, 1.0);
 	float met = b.y / cloud_a;
 	float glow = b.w / cloud_a;
@@ -96,7 +106,7 @@ void fragment() {
 	dome *= 0.98 / max(max(max(dome.r, dome.g), dome.b), 0.98);
 	vec3 sky = scene_linear_for_display(dome);
 	float high = smoothstep(0.02, 0.4, sun.y);
-	sky += c_sun * pow(toward_sun, 6.0) * sun_scatter * mix(1.4, 0.7, high) * zs_celestial_clear;
+	sky += mix(c_sun, w_sun, fog_share) * pow(toward_sun, 6.0) * sun_scatter * mix(1.4, 0.7, high) * zs_celestial_clear;
 	col = mix(col, sky, fog);
 	ALBEDO = col;
 	// The march stops once the cloud is all but whole: whole it is, so the

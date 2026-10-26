@@ -1002,7 +1002,7 @@ void fragment() {
 		detail = zs_chop(rest_xz, t, air, footprint, chop_rough);
 	}
 	// Clean look: the fine ripple normals toned down.
-	detail *= 1.0 - 0.7 * zs_clean;
+	detail *= 1.0 - 0.7 * zs_cl_water;
 	vec2 wake_slope;
 	float stirred;
 	float waked = zs_wake(rest_xz, wake_slope, stirred);
@@ -1049,7 +1049,7 @@ void fragment() {
 	// Clean look: the depth in flat bands.
 	float wd_u = log2(1.0 + water_depth) * 1.1;
 	float wd_q = exp2((floor(wd_u) + smoothstep(0.42, 0.58, fract(wd_u))) / 1.1) - 1.0;
-	water_depth = mix(water_depth, wd_q, zs_clean);
+	water_depth = mix(water_depth, wd_q, zs_cl_water);
 	vec3 column = mix(tint_shallow, tint_mid, smoothstep(0.0, tint_depths.y, water_depth));
 	column = mix(column, tint_deep, smoothstep(tint_depths.y * 0.6, tint_depths.z, water_depth));
 	column = mix(column, tint_abyss, smoothstep(tint_depths.z, tint_depths.w, water_depth));
@@ -1130,7 +1130,7 @@ void fragment() {
 	}
 	// Clean look: a crisp shore line, the open water's foam calmer.
 	float shore_line = (1.0 - smoothstep(max(0.35, footprint * 1.2), max(0.5, footprint * 1.8), near_bed)) * (1.0 - still);
-	foamed = mix(foamed, max(foamed * 0.4, shore_line), zs_clean);
+	foamed = mix(foamed, max(foamed * 0.4, shore_line), zs_cl_water);
 	foamed = clamp(foamed, 0.0, 1.0) * float(depth > 0.0 || known > 0.0 || waked > 0.0);
 	float lip = (1.0 - smoothstep(0.0, 0.15, bed_depth)) * float(depth > 0.0) * (1.0 - still);
 	vec3 white = vec3(0.9, 0.96, 1.0) * (ambient * 1.1 + key * 0.8);
@@ -1231,7 +1231,7 @@ void fragment() {
 		// The crisp glints hold their size; what the layers lost to the
 		// pixel turns them into an even sheen (a lobe as wide as the slope
 		// lost), so far water glows rather than sparkles.
-		float spark_edge = mix(0.9993, 0.9984, zs_clean);
+		float spark_edge = mix(0.9993, 0.9984, zs_cl_water);
 		float crisp = smoothstep(spark_edge, spark_edge + (1.0 - spark_edge) * 0.35, spark_dot);
 		float lost = (swell_rough + chop_rough) * glitter_filter;
 		const float SPOT = 0.0025;
@@ -1246,7 +1246,7 @@ void fragment() {
 		spark = smoothstep(spark_edge, spark_edge + (1.0 - spark_edge) * 0.35, spark_dot);
 	}
 	spark *= smoothstep(0.85, 0.97, dot(reflect(-eye, calm), sun));
-	spark *= (1.0 + 0.5 * zs_clean) * glitter * zs_celestial_clear * sunlight * (1.0 - shaded) * (1.0 - foamed);
+	spark *= (1.0 + 0.5 * zs_cl_water) * glitter * zs_celestial_clear * sunlight * (1.0 - shaded) * (1.0 - foamed);
 	// The body: thin crests the sun shines through, glowing green-turquoise
 	// when the eye looks toward it (strongest on the faces turned this way).
 	float glow = 0.0;

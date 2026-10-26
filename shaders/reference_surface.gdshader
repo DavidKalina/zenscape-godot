@@ -1098,9 +1098,9 @@ void fragment() {
 	}
 	// Clean look: dead wood (snags, logs, trunks: the earth role) lifted from
 	// near-black to a grey-brown inside the scene's value range.
-	if (zs_clean > 0.0 && clean_lift && !earth_sides && !terrain_growth && !grass_blades && !flower_heads && !(spruce_round > 0.0) && (palette_role == 4 || palette_role == 0)) {
+	if (zs_cl_snag > 0.0 && clean_lift && !earth_sides && !terrain_growth && !grass_blades && !flower_heads && !(spruce_round > 0.0) && (palette_role == 4 || palette_role == 0)) {
 		float wl = dot(tint, vec3(0.2126, 0.7152, 0.0722));
-		tint = mix(tint, vec3(0.36, 0.305, 0.26), zs_clean * 0.95 * (1.0 - smoothstep(0.08, 0.25, wl)));
+		tint = mix(tint, vec3(0.36, 0.305, 0.26), zs_cl_snag * 0.95 * (1.0 - smoothstep(0.08, 0.25, wl)));
 	}
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);

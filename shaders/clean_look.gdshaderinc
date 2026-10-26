@@ -20,22 +20,28 @@ float zs_clean_steps(float ndl) {
 	return (0.10 + 0.90 * t) * 0.86;
 }
 
+// The banded sun as a share of the light, kept level with Lambert on flat
+// ground (so the steps move light about the mean rather than raising it).
+float zs_clean_banded(float ndl) {
+	float flat_n = clamp(zs_sun_direction.y, 0.12, 1.0);
+	return zs_clean_steps(ndl) * flat_n / zs_clean_steps(flat_n);
+}
+
 // The factor on an albedo that turns the engine's Lambert sun into the
-// banded one: banded / n.l where the sun reaches, 1 off (zs_clean 0).
+// banded one: banded / n.l where the sun reaches, 1 off (zs_cl_light 0).
 float zs_clean_sun_ratio(vec3 n) {
 	float ndl = dot(n, zs_sun_direction);
-	float banded = zs_clean_steps(ndl);
-	float r = banded / max(ndl, 0.12);
-	return mix(1.0, clamp(r, 0.35, 2.4), zs_clean);
+	float r = zs_clean_banded(ndl) / max(ndl, 0.12);
+	return mix(1.0, clamp(r, 0.35, 2.4), zs_cl_light);
 }
 
 // The sun side warm, as a tint on the albedo the sun lights.
 vec3 zs_clean_sun_tint() {
-	return mix(vec3(1.0), ZS_CLEAN_WARM, zs_clean);
+	return mix(vec3(1.0), ZS_CLEAN_WARM, zs_cl_shadow);
 }
 
 // The shade's fill leaning to the sky's blue-violet.
 vec3 zs_clean_cool_fill(vec3 hemi) {
-	return mix(hemi, hemi * ZS_CLEAN_COOL * 1.0, zs_clean);
+	return mix(hemi, hemi * ZS_CLEAN_COOL * 1.0, zs_cl_shadow);
 }
 #endif
