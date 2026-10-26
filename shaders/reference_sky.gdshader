@@ -220,7 +220,9 @@ render_mode use_half_res_pass;
           col += zsNightLights(dir);
           if (starK > 0.001 && real_stars) {
             // The Milky Way and the style's veils.
-            col += zs_night_light(room, pixel) * starK;
+            // Only well into the night: at dusk and in the blue hour the
+            // stars come out first (scripts/shared/celestial.gd BLUE_NIGHT).
+            col += zs_night_light(room, pixel) * starK * smoothstep(0.4, 0.8, zs_night);
           }
           if (starK > 0.001) {
             float veil = 1.0;

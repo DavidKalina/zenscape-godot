@@ -74,6 +74,32 @@ var _yaw := atan2(20.0, 12.0)
 ## bearing to the camera while the land turns. Zero leaves everything where
 ## the source put it (`--classic-orbit`, the studies, the captures).
 var room_yaw := 0.0
+## How deep the sun may sink (sun height under the horizon), or 0 for no floor
+## (a full night, the isles' and studies' own). Endless flight's day cycle
+## (scripts/endless/day_cycle.gd) sets it, so night is only a blue hour: the
+## sun goes down as ever, then eases toward this depth instead of falling to
+## the bottom of its ring, and runs along under the horizon at it, keeping
+## its ring's bearing, to where it rises (as the sun does on a midsummer
+## night in the far north). The ring's own height is unchanged above the
+## horizon, so a day's light is as it was.
+var night_floor := 0.0
+## The blue hour (with a night floor): as the sun sinks from BLUE_E.x to .y
+## (the floor's depth), after the afterglow's rose, the sky turns a deep
+## clear blue (BLUE_UP overhead, BLUE_DOWN low) instead of going on to the
+## night's navy and black, the night (stars, the night dome, the moon's
+## key) comes only BLUE_NIGHT of the way in, the night look's rod-lit grade
+## only BLUE_DARK of its way, and the clouds take a dim twilight blue
+## (BLUE_CLOUD) rather than the moon's white, and the Belt of Venus (the
+## pink band away from the sun) goes as the blue comes. `blue_hour` is how
+## far in.
+const BLUE_E := Vector2(-0.04, -0.085)
+const BLUE_UP := Vector3(0.02, 0.055, 0.17)
+const BLUE_DOWN := Vector3(0.018, 0.035, 0.08)
+const BLUE_NIGHT := 0.72
+const BLUE_DARK := 0.5
+const BLUE_CLOUD := Vector3(0.2, 0.24, 0.4)
+const BLUE_MOON := 0.5
+var blue_hour := 0.0
 ## A shimmer of the key light (0..1) that scripts/spin_time.gd raises as a
 ## spinning world nears the speed that winds time, and lowers as it runs on.
 var shimmer := 0.0
@@ -369,7 +395,7 @@ func advance(delta: float, paused: bool) -> void:
 
 func update_rig() -> void:
 	var theta := (phase - 0.25) * TAU
-	var sun := _ring_direction(theta, _tilt)
+	var sun := floored(_ring_direction(theta, _tilt))
 	moon_age = lunar_age()
 	moon_lit = 0.5 + 0.5 * cos(moon_age * TAU)
 	var moon := moon_direction(phase)
@@ -377,18 +403,23 @@ func update_rig() -> void:
 	sun_height = e
 	var day := smoothstep(-0.06, 0.28, e)
 	daylight = day
-	var night := 1.0 - smoothstep(-0.16, 0.02, e)
+	var blue := smoothstep(BLUE_E.x, BLUE_E.y, e) if night_floor > 0.0 else 0.0
+	blue_hour = blue
+	# (The land's night fill keeps the whole night's: the blue hour's sky
+	# lights it as the night's would.)
+	var night_full := 1.0 - smoothstep(-0.16, 0.02, e)
+	var night := night_full * (1.0 - BLUE_NIGHT * blue)
 	var warmth := exp(-e * e / (2.0 * 0.13 * 0.13))
 	# A low sun stays a strong key down to the horizon (golden hour's long
 	# light) and goes out over the last degree or two.
 	var sun_energy := 3.4 * smoothstep(-0.035, 0.05, e) * (0.68 + 0.32 * smoothstep(0.08, 0.45, e))
 	var sky_day := smoothstep(SKY_DAY_E.x, SKY_DAY_E.y, e)
 	var moon_up := smoothstep(0.02, 0.30, moon.y)
-	var moon_energy := 3.4 * 0.11 * moon_up * night * lerpf(MOON_LIGHT.x, MOON_LIGHT.y, moon_lit) * moon_key
+	var moon_energy := 3.4 * 0.11 * moon_up * night * lerpf(MOON_LIGHT.x, MOON_LIGHT.y, moon_lit) * moon_key * (1.0 - BLUE_MOON * blue)
 	# How much moon there is to see by (phase and height), and how deep into
 	# the night the look has gone.
 	var moon_glow := moon_lit * moon_up
-	var dark := 1.0 - smoothstep(NIGHT_LOOK_E.x, NIGHT_LOOK_E.y, e)
+	var dark := (1.0 - smoothstep(NIGHT_LOOK_E.x, NIGHT_LOOK_E.y, e)) * (1.0 - BLUE_DARK * blue)
 	# Autumn's warm cast on the light, the fill and the haze is the sun's:
 	# under the moon only NIGHT_AUTUMN of it is left (night light round 2).
 	var autumn_lit := autumn * lerpf(1.0, NIGHT_AUTUMN, dark)
@@ -443,11 +474,12 @@ func update_rig() -> void:
 	# even when nothing is up. At night that left the mist lit like day (and
 	# orange under a new moon): lean it on the moon instead.
 	cloud_sun = cloud_sun.lerp(moon_tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7) * lerpf(NIGHT_CLOUD_LIGHT.x, NIGHT_CLOUD_LIGHT.y * night_cloud, moon_glow) * (0.9 + 0.5 * overcast), dark)
+	cloud_sun = cloud_sun.lerp(BLUE_CLOUD * lerpf(1.0, 0.7, cloud), blue)
 	_publish("zs_cloud_sun", cloud_sun)
 	_publish("zs_cloud_sky", hemi_sky * 0.55)
 	# Native night adaptation: a cool surface fill keeps the miniature readable.
 	# Keep sky/cloud/fog colors independent so stars retain their dark backdrop.
-	var fill := night * night_fill * lerpf(1.0, 0.4, storm) * lerpf(MOON_FILL.x, MOON_FILL.y, moon_glow)
+	var fill := night_full * night_fill * lerpf(1.0, 0.4, storm) * lerpf(MOON_FILL.x, MOON_FILL.y, moon_glow)
 	# Dusk's fill (DUSK_FILL): the afterglow sky lighting the land, rose-lavender
 	# under a clear sky, grey under cloud.
 	var dusk_fill := smoothstep(DUSK_FILL_E.x, DUSK_FILL_E.y, e) * smoothstep(DUSK_FILL_E.z, DUSK_FILL_E.w, e) * lerpf(1.0, DUSK_FILL_CLOUD, minf(1.0, cloud * 1.3)) * lerpf(1.0, 0.4, storm)
@@ -457,8 +489,8 @@ func update_rig() -> void:
 	var down := Vector3(0.006, 0.009, 0.016).lerp(DAY_SKY[0], sky_day)
 	var up := Vector3(0.01, 0.016, 0.038).lerp(DAY_SKY[1], sky_day).lerp(Vector3(0.1, 0.07, 0.16), warmth * 0.55)
 	var glow := Vector3(0.016, 0.024, 0.045).lerp(DAY_SKY[2], sky_day).lerp(Vector3(0.85, 0.3, 0.09), warmth * 0.8)
-	up = up.lerp(AFTERGLOW_SKY, dusk_glow * 0.7)
-	down = down.lerp(AFTERGLOW_DOWN, dusk_glow * 0.7)
+	up = up.lerp(AFTERGLOW_SKY, dusk_glow * 0.7).lerp(BLUE_UP, blue)
+	down = down.lerp(AFTERGLOW_DOWN, dusk_glow * 0.7).lerp(BLUE_DOWN, blue)
 	down *= look.ratio("horizon")
 	up *= look.ratio("sky")
 	glow *= look.ratio("glow")
@@ -550,7 +582,7 @@ func update_rig() -> void:
 	_publish("zs_daylight", day)
 	_publish("zs_celestial_clear", 1.0 - minf(1.0, cloud * 1.3))
 	_publish("zs_dusk_direction", warmth * 0.9)
-	_publish("zs_belt", smoothstep(0.06, -0.01, e) * smoothstep(-0.14, -0.06, e) * (1.0 - minf(1.0, cloud * 1.3)))
+	_publish("zs_belt", smoothstep(0.06, -0.01, e) * smoothstep(-0.14, -0.06, e) * (1.0 - minf(1.0, cloud * 1.3)) * (1.0 - 0.8 * blue))
 	# The aurora's heading is a bearing, so the room's turn simply adds to it.
 	_publish("zs_aurora", Vector4(maxf(maxf(aurora_strength, forced_aurora), _aurora), 1.0, 0.15, -1.2 + room_yaw))
 	_publish("zs_room_yaw", room_yaw)
@@ -596,6 +628,16 @@ func _lifted(sun: Vector3) -> Vector3:
 	if flat < 0.0001: return sun
 	var height := sun.y + KEY_LIFT * (1.0 - smoothstep(KEY_LIFT_E.x, KEY_LIFT_E.y, sun.y))
 	return Vector3(sun.x / flat * sqrt(maxf(0.0, 1.0 - height * height)), height, sun.z / flat * sqrt(maxf(0.0, 1.0 - height * height))).normalized()
+
+## The sun's direction `sun` under the night floor: its height eased (a
+## tanh, so the descent's pace carries on unbroken through the horizon) to
+## no deeper than `night_floor`, its bearing kept. Unchanged above the
+## horizon or with no floor.
+func floored(sun: Vector3) -> Vector3:
+	if night_floor <= 0.0 or sun.y >= 0.0: return sun
+	var y := -night_floor * tanh(-sun.y / night_floor)
+	var flat := Vector2(sun.x, sun.z).normalized() * sqrt(1.0 - y * y)
+	return Vector3(flat.x, y, flat.y)
 
 ## A body's direction on its ring, turned by the room.
 func _ring_direction(theta: float, tilt: float) -> Vector3:
