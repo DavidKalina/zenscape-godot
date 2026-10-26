@@ -130,6 +130,19 @@ uniform float grass_tip_glow = 0.55;
 // together, each tuft's own shade swings less, the sun and the shadows
 // between blades are softer (reference_direct_light). Blades only.
 uniform float grass_calm : hint_range(0.0, 1.0) = 1.0;
+// Clean look round 6: how far the root-to-tip tone follows the field's height
+// (the blade's height in the tuft over `grass_mass_top` m, model space)
+// rather than each blade's own length (0: per blade, as before), so blades
+// side by side at one height take one tone and the field darkens toward its
+// base as a mass; `grass_mass_cool` cools that lower mass toward zs_cl_cool.
+uniform float grass_mass : hint_range(0.0, 1.0) = 0.0;
+uniform float grass_mass_top = 1.0;
+uniform float grass_mass_cool = 0.0;
+// The field's lower mass in its own shade, over the root paint too: the tone
+// at the root (1: none), rising to 1 at `grass_mass_top`.
+uniform float grass_mass_shade = 1.0;
+// ... and the tone at the field's top (1: none), so its lit tops stay light.
+uniform float grass_mass_lift = 1.0;
 // The tuft mesh's own root and tip colours (GrassTuft.dress, linear): the
 // vertex colour over these keeps each blade's jitter and any instance tint,
 // while the colour itself is the family's living green (grass_look).
@@ -804,6 +817,8 @@ vec3 zs_grass_mute(vec3 g_color, float g_amount) {
 
 void fragment() {
 	float sea_mist = 0.0;
+	// The blade's tone along the field's height (grass_mass), else its own.
+	float grass_tone = grass_mass > 0.0 ? mix(grass_along, clamp(leaf_local.y / max(grass_mass_top, 0.01), 0.0, 1.0), grass_mass) : grass_along;
 	// A sky peak's point in its range's own frame (sky_peak_look).
 	vec3 peak_rel = vec3(0.0);
 	if (sea_cut > -1.0e8 && sea_open) {
@@ -971,10 +986,10 @@ void fragment() {
 		living = mix(living, ground_under, grass_ground_pull);
 		float tuft_shade = 1.0 + (fract(sin(dot(plant_root, vec2(37.1, 91.7))) * 43758.5453) - 0.5) * 2.0 * grass_variation * (1.0 - 0.6 * grass_calm);
 		float dry = zs_grass_dry(plant_root, ZS_GRASS_DRY_SCALE, zs_grass_offset) * grass_dry;
-		tint = zs_grass_paint(living * base_color.rgb * own, grass_along, dry, ZS_GRASS_STRAW, ZS_GRASS_ROOT_SHADE, ZS_GRASS_TIP_LIFT, ZS_GRASS_TIP_CURVE) * tuft_shade;
+		tint = zs_grass_paint(living * base_color.rgb * own, grass_tone, dry, ZS_GRASS_STRAW, ZS_GRASS_ROOT_SHADE, ZS_GRASS_TIP_LIFT, ZS_GRASS_TIP_CURVE) * tuft_shade;
 		// The root grows out of the ground's own colour (ground_look) and
 		// only the upper blade is the tuft's, so no dark base rings it.
-		tint = mix(ground_under * grass_root_blend.x, tint, smoothstep(0.0, grass_root_blend.y, grass_along));
+		tint = mix(ground_under * grass_root_blend.x, tint, smoothstep(0.0, grass_root_blend.y, grass_tone));
 		tint *= 1.0 + grass_wave_sheen * grass_bow * grass_along;
 	}
 	if (terrain_growth && !peak_rock && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,look_position,face_normal);
@@ -1000,7 +1015,11 @@ void fragment() {
 	if (grass_blades && grass_root_paint.w > 0.0) {
 		vec3 grass_src_root = max(grass_source_root, vec3(0.002));
 		vec3 paint_root = grass_root_paint.rgb * clamp(COLOR.rgb / mix(grass_src_root, max(grass_source_tip, vec3(0.002)), grass_along), vec3(0.0), vec3(3.0));
-		tint = mix(tint, paint_root, grass_root_paint.w * (1.0 - smoothstep(0.0, grass_root_blend.y, grass_along)));
+		tint = mix(tint, paint_root, grass_root_paint.w * (1.0 - smoothstep(0.0, grass_root_blend.y, grass_tone)));
+	}
+	if (grass_blades && (grass_mass_shade < 1.0 || grass_mass_cool > 0.0 || grass_mass_lift != 1.0)) {
+		float mass_low = 1.0 - smoothstep(0.0, 1.0, clamp(leaf_local.y / max(grass_mass_top, 0.01), 0.0, 1.0));
+		tint *= mix(vec3(grass_mass_lift), grass_mass_shade * mix(vec3(1.0), zs_cl_cool, grass_mass_cool), mass_low);
 	}
 	// The underside the wind flips into view (grass_silver, off by default).
 	if (grass_blades && grass_silver.x > 0.0) tint = zs_silver_paint(tint, zs_silver_tuft(plant_root, grass_bow), smoothstep(0.15, 0.85, grass_along),
@@ -1124,7 +1143,7 @@ void fragment() {
 	// so the hemisphere term is where grounding has to happen.
 	float contact = mix(1.0, 0.42 + 0.58 * smoothstep(0.0, 0.85, contact_height), zs_look_ao);
 	// Tufts keep a little of it up the blade; the root matches the ground.
-	if (grass_blades) contact = mix(1.0, contact, grass_contact * smoothstep(0.0, grass_root_blend.y, grass_along));
+	if (grass_blades) contact = mix(1.0, contact, grass_contact * smoothstep(0.0, grass_root_blend.y, grass_tone));
 	if (flower_heads) contact = mix(1.0, contact, flower_contact);
 	// The sides hang below their origin; the contact term would halve them.
 	if (earth_sides) contact = 1.0;

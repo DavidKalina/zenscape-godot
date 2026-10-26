@@ -87,6 +87,12 @@ uniform vec2 carpet_near = vec2(0.0);
 // How much of the turf's own fine grain (the tuft-sized light and dark the
 // paint draws near the eye) stays under the near carpet, between its tufts.
 uniform float carpet_near_grain : hint_range(0.0, 1.0) = 0.6;
+// Clean look round 6: the turf under the near carpet is the bottom of the
+// field's mass, in the same shade as the tufts' roots (reference_surface
+// `grass_mass_shade`, `grass_mass_cool`): x the tone, y the share of
+// zs_cl_cool (1, 0: none), so the turf seen between blades is no brighter
+// than the blades' feet.
+uniform vec2 carpet_near_mass = vec2(1.0, 0.0);
 uniform vec3 carpet_tone_top = vec3(1.0);
 uniform vec3 carpet_tone_low = vec3(1.0);
 // A world's tone over the turf's own colour wherever tufts stand (the carpet's tone takes over past them; 1: none).
@@ -863,6 +869,7 @@ void fragment() {
 			coarse = mix(coarse, OLIVE, thin * 0.7);
 			coarse *= 1.0 + (grain_near + fine * 0.6 + tuft * 0.8) * carpet_near_grain * 0.25;
 			coarse *= rp_under_tone;
+			coarse *= carpet_near_mass.x * mix(vec3(1.0), ZS_CLEAN_COOL, carpet_near_mass.y);
 			grass = mix(grass, coarse, under);
 		}
 	}

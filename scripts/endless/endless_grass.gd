@@ -251,6 +251,14 @@ const PREFETCH_MOST := 64.0
 ## the paint under them taking the tufts' own ground (endless_ground
 ## `carpet_near`).
 const ROOT_PAINT := 1.0
+## Clean look round 6: the near tufts toned as one mass by the field's height
+## rather than blade by blade (reference_surface `grass_mass*`): the share
+## that follows the field's height, its top as a share of the blade's
+## height (x tall), the tone at the root and at the top, and the share of the
+## sky's cool (zs_cl_cool) at the root. The turf under the near carpet takes
+## the root's tone too (endless_ground `carpet_near_mass`), so what shows
+## between blades is the field's dark floor, not lighter paint.
+const MASS := {"follow":1.0,"top":0.35,"shade":0.66,"lift":1.1,"cool":0.5}
 ## The share of the sun a cloud's shadow takes off the tufts and flowers, the
 ## sky's light left (reference_surface `cloud_sun_shade`, endless_tuft_far
 ## `cloud_shade`), as the painted ground's (endless_ground `cloud_shade`), so
@@ -755,6 +763,7 @@ func _reach() -> void:
 	if ground == null: return
 	ground.set_shader_parameter("carpet_reach",Vector2(lod.z,lod.w) if enabled else Vector2.ZERO)
 	ground.set_shader_parameter("carpet_near",Vector2(lod.x,lod.y) if enabled and ROOT_PAINT > 0.0 else Vector2.ZERO)
+	ground.set_shader_parameter("carpet_near_mass",Vector2(MASS.shade,MASS.cool) if enabled and fine else Vector2(1.0,0.0))
 
 ## A --*-set= value: a float, or a Vector2/3/4 of comma-joined floats.
 static func _value(text: String) -> Variant:
@@ -1144,6 +1153,12 @@ func _calm(batch: MultiMeshInstance3D) -> void:
 		m.set_shader_parameter("grass_wave_sheen",Carpet.CARPET_SHEEN)
 		var plain := Patch.plain()
 		m.set_shader_parameter("grass_root_paint",Vector4(plain.x,plain.y,plain.z,ROOT_PAINT))
+		if fine:
+			m.set_shader_parameter("grass_mass",MASS.follow)
+			m.set_shader_parameter("grass_mass_top",float(MASS.top)*tall)
+			m.set_shader_parameter("grass_mass_shade",MASS.shade)
+			m.set_shader_parameter("grass_mass_lift",MASS.lift)
+			m.set_shader_parameter("grass_mass_cool",MASS.cool)
 		_silver(m,"grass_wave_sheen",SILVER_SHEEN)
 		for k: String in _sets.grass: m.set_shader_parameter(k,_sets.grass[k])
 		# The sway's arm is the blade's height: taller blades bend as far.
