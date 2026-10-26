@@ -584,7 +584,12 @@ void fragment() {
 	// samples a point sheared by height (gxz), and a pixel's size is its 3D one.
 	float fp3 = er_footprint(p);
 	float shear = old_rock ? 0.0 : smoothstep(0.93, 0.55, n.y);
-	vec2 gxz = p.xz + shear * vec2(p.y * 0.8, p.y * 0.55);
+	// Sheared by the height over the sea, not the world's y: where the slope
+	// turns (a bank's lip) the shear changes across a triangle, and the point
+	// moves by that change times the height, so at y -37 the noise raced past
+	// in zigzag stripes along the triangles. The sea is the low land's level.
+	float sheared_y = p.y - sea_y;
+	vec2 gxz = p.xz + shear * vec2(sheared_y * 0.8, sheared_y * 0.55);
 	fp = max(fp, fp3 * shear);
 	float over = p.y - sea_y;
 	float meadow = clamp(land_colour.a, 0.0, 1.0);
