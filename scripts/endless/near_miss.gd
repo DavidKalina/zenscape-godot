@@ -21,7 +21,9 @@ extends RefCounted
 ## HYST_SHARE of the least) past the least, or leaves REACH.
 ##
 ## The score (`_score`): BASE[kind] x (1 + CLOSE_GAIN k²), k = 1 - least
-## over REACH (bands RAZOR and CLOSE name it), x speed over cruise, x for a
+## over REACH (bands RAZOR and CLOSE name it), x the edge's (under EDGE
+## spans, (EDGE + EDGE_SOFT) / (least + EDGE_SOFT): x2 at 0.4 m, x4 at
+## 0.1 m, x6 touching, at plane 2), x speed over cruise, x for a
 ## pull-out the closing rate's (1 + (closing / CLOSING_REF)^1.5, at most
 ## CLOSING_TOP), x the farming cut. CLOSING_REF and PULL_MIN are times the
 ## plane's pace (scripts/flight_pace.gd). Kinds:
@@ -80,6 +82,8 @@ const HYST_SHARE := 0.5
 ## The score's parts (see the header).
 const BASE := {"pull-out":100.0,"graze":200.0,"thread":300.0}
 const CLOSE_GAIN := 3.0
+const EDGE := 0.36
+const EDGE_SOFT := 0.072
 const PULL_MIN := 3.0
 const CLOSING_REF := 5.0
 const CLOSING_TOP := 6.0
@@ -134,6 +138,10 @@ var bank_left := 0.0
 var meter := 0.0
 ## How hard the surge drives now (0 to 1; SkyPlane `surge`).
 var surge := 0.0
+## The nearest thing in reach now (m; INF: none, or slow, or not flying):
+## the ground's clearance under REACH spans, the stone's under STONE_REACH;
+## the HUD's live gap.
+var gap := INF
 ## Skimming now (holds the bank timer), and the score so far this flight.
 var skimming := false
 var total := 0.0
@@ -388,6 +396,11 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		chain_points += add
 		total += add
 		if bank_left <= 0.0: bank_left = BANK_AFTER
+	# The live gap.
+	gap = INF
+	if fast and bool(game.hand_landing.flying()):
+		if ground_clear < reach: gap = maxf(ground_clear,0.0)
+		if stone_clear < stone_reach: gap = minf(gap,maxf(stone_clear,0.0))
 	# The bank.
 	if chain_points > 0.0 and not skimming:
 		bank_left -= delta
@@ -433,7 +446,7 @@ func _track(t: Tracker, clear: float, reach: float, speed: float, game: Node3D) 
 func _moment(kind: String, t: Tracker, reach: float, cruise: float, out: Dictionary, game: Node3D) -> void:
 	if t.speed < FAST_FROM*cruise: return
 	var k := clampf(1.0-maxf(t.least,0.0)/reach,0.0,1.0)
-	var points := float(BASE[kind])*(1.0+CLOSE_GAIN*k*k)*clampf(t.speed/cruise,0.5,2.0)
+	var points := float(BASE[kind])*(1.0+CLOSE_GAIN*k*k)*edge(t.least)*clampf(t.speed/cruise,0.5,2.0)
 	if kind == "pull-out": points *= minf(1.0+pow(maxf(t.closing,0.0)/(CLOSING_REF*_pace(game)),1.5),CLOSING_TOP)
 	var farm := _farm(t.at,t.id)
 	points *= farm
@@ -448,6 +461,11 @@ func _moment(kind: String, t: Tracker, reach: float, cruise: float, out: Diction
 	moments.append(last)
 	_recent.append({"at":t.at,"t":clock,"id":t.id})
 	out["near"] = last
+
+## The edge's gain for a least clearance of `least` m (see the header).
+static func edge(least: float) -> float:
+	var span := WorldScale.span
+	return maxf((EDGE+EDGE_SOFT)*span/(maxf(least,0.0)+EDGE_SOFT*span),1.0)
 
 ## The plane's pace (scripts/flight_pace.gd): PULL_MIN and CLOSING_REF are
 ## times it, so a dive at the same angle grades the same at any pace.

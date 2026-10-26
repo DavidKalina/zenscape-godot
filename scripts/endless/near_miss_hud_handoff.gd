@@ -23,12 +23,18 @@ extends Control
 ##   number sized to the run (a nod, big, huge), counting up, then pouring
 ##   into the meter; a scrape freezes 60 ms, cracks the total in coral,
 ##   splits it and lets it fall, the loss in a coral line.
+## - the gap: at the cluster's foot, the closest the plane has come this
+##   pass (NearMiss `gap`), counting down live as it closes, heating from
+##   mist through cream and gold to burning as it shrinks; a scored pass
+##   locks it on the moment's least with a pop and holds it GAP_HOLD s. Each
+##   feed line carries its least too, between the kind and the points.
 
 const NearMiss = preload("res://scripts/endless/near_miss.gd")
 const Glyphs = preload("res://scripts/endless/near_glyphs.gd")
 const Badges = preload("res://scripts/endless/near_badges.gd")
 const WORDS = preload("res://assets/fonts/newsreader-latin.woff2")
 const NUMS = preload("res://assets/fonts/barlow-semi-condensed-800-latin.woff2")
+const WorldScale = preload("res://scripts/world_scale.gd")
 const NUMS_ITALIC = preload("res://assets/fonts/barlow-semi-condensed-800-italic-latin.woff2")
 ## The player's kept layout: [near] layout = "tag" or "top".
 const SETTINGS_PATH := "user://hud.cfg"
@@ -48,8 +54,16 @@ const TOTAL_Y := 60.0
 const TOTAL_PX := 120.0
 const DRAIN_Y := 144.0
 const DRAIN := Vector2(560.0,8.0)
-const ROWS := [[352.0,80.0,46.0,60.0,1.0],[268.0,56.0,34.0,42.0,0.7],[204.0,48.0,30.0,36.0,0.35],[160.0,44.0,28.0,34.0,0.0]]
-const CLUSTER_FOOT := 392.0
+const ROWS := [[380.0,108.0,62.0,81.0,1.0],[267.0,76.0,46.0,57.0,0.7],[180.0,65.0,40.0,49.0,0.35],[121.0,59.0,38.0,46.0,0.0]]
+const CLUSTER_FOOT := 590.0
+## The gap (D): its middle, its number's size from the reach to touching,
+## the hold of a locked pass and its fade (s).
+const GAP_Y := 502.0
+const GAP_PX := Vector2(104.0,150.0)
+const GAP_HOLD := 1.0
+const GAP_FADE := 0.3
+## After a pass the gap shows again once closing this fast (m/s).
+const GAP_CLOSING := 0.6
 ## The tag's meter: in from the lower right corner (D) and its size.
 const TAG_METER_AT := Vector2(72.0,90.0)
 const TAG_METER := Vector2(300.0,14.0)
@@ -101,6 +115,18 @@ var _hold_until := 0
 var _hold_scale := 1.0
 var _clock := 0.0
 var _near: NearMiss
+## The gap: the closest this pass (INF none), the last frame's and its
+## closing rate (m/s, smoothed), waiting for it to close again after a pass,
+## the locked moment's least and its age, and the readout's value and
+## opacity.
+var _gap_min := INF
+var _gap_prev := INF
+var _gap_rate := 0.0
+var _gap_rising := false
+var _gap_lock := INF
+var _gap_lock_t := INF
+var _gap_value := INF
+var _gap_alpha := 0.0
 
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -177,7 +203,11 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 		var band := str(m.band)
 		if band == "razor": _hold(0.25,50)
 		_feed.push_front({"id":Glyphs.for_moment(m),"kind":str(m.kind).to_upper(),"band":band,
-			"points":float(m.points),"age":0.0,"slot":0.0,"landed":false,"fade":-1.0})
+			"points":float(m.points),"clear":float(m.clear),"age":0.0,"slot":0.0,"landed":false,"fade":-1.0})
+		_gap_lock = maxf(float(m.clear),0.0)
+		_gap_lock_t = 0.0
+		_gap_min = INF
+		_gap_rising = true
 		if not _loss.is_empty(): _loss.age = maxf(float(_loss.age),0.6)
 	if events.has("banked"):
 		var pts := float(events.banked.points)
@@ -237,6 +267,7 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 		_loss.age += delta*float(_loss.pace)
 		if _loss.age >= 1.4: _loss = {}
 	_flare = maxf(_flare-delta,0.0)
+	_step_gap(delta,near,crash or events.has("scrape"))
 	_place_block()
 	_place_halves()
 	_prev_chain = near.chain_points
@@ -246,6 +277,64 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 	for h: Node2D in _halves:
 		h.queue_redraw()
 		(h.get_child(0) as Node2D).queue_redraw()
+
+## The gap's pass: the closest so far while it closes; once the plane
+## pulls away (a scored pass, a turn as NearMiss's, a scrape) it fades and
+## waits for the plane to close in again at GAP_CLOSING m/s.
+func _step_gap(delta: float, near: NearMiss, hit: bool) -> void:
+	var g := near.gap
+	_gap_lock_t += delta
+	if g < INF and _gap_prev < INF and delta > 0.0:
+		_gap_rate = lerpf(_gap_rate,(_gap_prev-g)/delta,1.0-exp(-delta/0.1))
+	else:
+		_gap_rate = 0.0
+	_gap_prev = g
+	if hit:
+		_gap_lock_t = INF
+		_gap_min = INF
+		_gap_rising = true
+	if g == INF:
+		_gap_min = INF
+		_gap_rising = false
+	elif _gap_rising:
+		if _gap_rate > GAP_CLOSING:
+			_gap_rising = false
+			_gap_min = g
+	elif _gap_min == INF:
+		_gap_min = g
+	else:
+		_gap_min = minf(_gap_min,g)
+		var back := maxf(NearMiss.HYST*WorldScale.span,NearMiss.HYST_SHARE*_gap_min)
+		if g > _gap_min+back:
+			_gap_min = INF
+			_gap_rising = true
+	var locked := _gap_lock_t < GAP_HOLD and _gap_lock <= _gap_min
+	var want := 0.0
+	if locked:
+		_gap_value = _gap_lock
+		want = 1.0
+	elif _gap_min < INF:
+		_gap_value = _gap_min
+		want = 1.0
+	_gap_alpha = move_toward(_gap_alpha,want,delta/(0.12 if want > _gap_alpha else GAP_FADE))
+
+## A clearance as the readout writes it: two places under a metre, one to
+## ten, none past.
+static func _metres(v: float) -> String:
+	if v < 1.0: return "%.2f" % maxf(v,0.0)
+	if v < 10.0: return "%.1f" % v
+	return "%d" % roundi(v)
+
+## The gap's heat (0 to 1): none from the close band out, 1 touching.
+static func _gap_heat(v: float) -> float:
+	return clampf(1.0-v/(NearMiss.CLOSE*WorldScale.span),0.0,1.0)
+
+## The gap's colour: mist out at the reach, cream at the close band, then up
+## the multiplier's heat to burning.
+func _gap_col(v: float) -> Color:
+	var close := NearMiss.CLOSE*WorldScale.span
+	if v >= close: return NEAR_C.lerp(CREAM,clampf((NearMiss.REACH*WorldScale.span-v)/(NearMiss.REACH*WorldScale.span-close),0.0,1.0))
+	return _ramp(HEAT,_gap_heat(v))
 
 func _end_feed() -> void:
 	for f: Dictionary in _feed:
@@ -359,6 +448,47 @@ func _draw_block() -> void:
 			var dl := _row_left(dw)
 			_bar(_block,Rect2(dl,DRAIN_Y*s,dw,DRAIN.y*s),share,3.0*s,[CREAM,CREAM],tag)
 	for i in range(_feed.size()-1,-1,-1): _draw_line(_feed[i],total_c,s)
+	_draw_gap(s)
+
+## The gap at the cluster's foot: a chevron down to the land and the
+## closest this pass in metres, swelling and heating as it shrinks; locked,
+## one white frame and a pop.
+func _draw_gap(s: float) -> void:
+	if _gap_alpha <= 0.01 or _gap_value == INF: return
+	var v := _gap_value
+	var h := _gap_heat(v)
+	var col := _gap_col(v)
+	var glow: Color = _ramp(GLOW,h)
+	var glow_px := float(_ramp(GLOW_PX,h))*s
+	var px := lerpf(GAP_PX.x,GAP_PX.y,h*h)*s
+	var unit_px := px*0.6
+	var grow := 1.0
+	var locked := _gap_lock_t < GAP_HOLD and is_equal_approx(v,_gap_lock)
+	if locked:
+		grow = 1.0+0.3*(1.0-smoothstep(0.0,0.18,_gap_lock_t))
+		if _gap_lock_t < 0.034: col = Color.WHITE
+	# Under the razor band it throbs.
+	if v < NearMiss.RAZOR*WorldScale.span and not locked: grow *= 1.0+0.05*sin(_clock*TAU*4.0)
+	var text := _metres(v)
+	var unit := _word_font(unit_px,0.04)
+	var tw := _width(_nums,text,px)
+	var uw := _width(unit,"m",unit_px)
+	var chev := px*0.5
+	var gap := 12.0*s
+	var whole := chev+gap+tw+gap*0.5+uw
+	var left := _row_left(whole)
+	var y := GAP_Y*s
+	var mid := left+whole*0.5
+	var a := _gap_alpha
+	# The chevron, pointing down.
+	var c := (Vector2(left+chev*0.5,y)-Vector2(mid,y))*grow+Vector2(mid,y)
+	var r := chev*0.5*grow
+	var tri := PackedVector2Array([c+Vector2(-r,-r*0.55),c+Vector2(r,-r*0.55),c+Vector2(0.0,r*0.75)])
+	var key := PackedVector2Array([tri[0]+Vector2(-3.0,-2.0)*s,tri[1]+Vector2(3.0,-2.0)*s,tri[2]+Vector2(0.0,4.0)*s])
+	_block.draw_colored_polygon(key,Color(KEY,a))
+	_block.draw_colored_polygon(tri,Color(col,a))
+	_txt(_block,_nums,text,(Vector2(left+chev+gap+tw*0.5,y)-Vector2(mid,y))*grow+Vector2(mid,y),px,Color(col,a),14.0*s,grow,0.0,Color(glow,glow.a*a),glow_px)
+	_txt(_block,unit,"m",(Vector2(left+whole-uw*0.5,y+px*0.12)-Vector2(mid,y))*grow+Vector2(mid,y),unit_px,Color(col,a),8.0*s,grow)
 
 func _mult_px(mult: float) -> float:
 	var x := clampf(mult-1.0,0.0,4.0)
@@ -431,13 +561,17 @@ func _draw_line(f: Dictionary, total_c: Vector2, s: float) -> void:
 	var font := _word_font(kind_px,0.12)
 	var kw := _width(font,kind,kind_px)
 	var pw := _width(_nums,pts,pts_px)
+	var clear := "%s m" % _metres(float(f.clear))
+	var clear_px := pts_px*0.8
+	var cw := _width(_nums,clear,clear_px)
 	var gap := lerpf(20.0,16.0,clampf(slot,0.0,1.0))*s
-	var whole := badge+gap+kw+gap+pw
+	var whole := badge+gap+kw+gap+cw+gap+pw
 	var left := _row_left(whole)
 	var pop := lerpf(0.7,1.0,1.0-pow(1.0-clampf(age/0.12,0.0,1.0),3.0))
 	var stroke := (12.0 if slot < 0.5 else 8.0)*s
 	var row_mid := left+whole*0.5
 	_txt(_block,font,kind,Vector2(left+badge+gap+kw*0.5-row_mid,0.0)*pop+Vector2(row_mid,y),kind_px,Color(col,alpha),stroke,pop)
+	_txt(_block,_nums,clear,Vector2(left+badge+gap+kw+gap+cw*0.5-row_mid,0.0)*pop+Vector2(row_mid,y),clear_px,Color(_gap_col(float(f.clear)),alpha),stroke*0.8,pop)
 	var pts_at := Vector2(left+whole-pw*0.5-row_mid,0.0)*pop+Vector2(row_mid,y)
 	_txt(_block,_nums,pts,pts_at,pts_px,Color(col,alpha),stroke,pop)
 	# The badge: 0.6x to 1.18x to 1x over 0.3 s, one gleam (none on near).
