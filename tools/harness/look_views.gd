@@ -28,6 +28,9 @@ const SUN := {
 	"sun_side": [720,520,40, 600,60, 90],
 	"sun_toward_low": [720,500,6, 300,4, 0],
 	"sun_away_low": [720,500,6, 300,4, 180],
+	"clouds_toward": [720,520,40, 600,-180, 35],
+	"clouds_away": [720,520,40, 600,-180, 145],
+	"clouds_up": [720,520,15, 300,-220, 60],
 }
 const ALL := "meadow_low,hills,rock,coast,river,cruise,high"
 func drive() -> void:
