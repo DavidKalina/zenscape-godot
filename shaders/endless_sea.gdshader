@@ -30,6 +30,21 @@ render_mode blend_mix, depth_draw_always, cull_back, unshaded, shadows_disabled;
 #include "res://shaders/reference_lake_lighting.gdshaderinc"
 #include "res://shaders/reference_lake_glint.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
+
+// Far water (clean look round 5): ripples and lace give way to a calm
+// surface and a broad soft glint (exponent, strength) from SEA_FAR_BEGIN to
+// SEA_FAR_END m from the eye.
+const float SEA_FAR_BEGIN = 90.0;
+const float SEA_FAR_END = 300.0;
+const vec2 SEA_FAR_GLINT = vec2(28.0, 0.28);
+const float SEA_FAR_BLUR = 4.0;
+// Clean look round 6: far off, the share of the bed seen through the water
+// taken away (the column's banded colour shows instead). The seabed's lit
+// relief (the rills and streaks down the shelf) and its paint, seen through
+// thin water at a share that follows each bump's depth, read from afar as a
+// milky, cloudy mottle over the shallows; the blur alone (SEA_FAR_BLUR) left
+// it, its streaks being wider than the blur.
+const float SEA_FAR_BED = 0.7;
 global uniform vec3 zs_palette_water;
 uniform sampler2D sea_screen : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D sea_depth : hint_depth_texture, filter_nearest, repeat_disable;
@@ -1001,9 +1016,16 @@ void fragment() {
 	} else {
 		detail = zs_chop(rest_xz, t, air, footprint, chop_rough);
 	}
+	// the fine ripple normals toned down.
+	detail *= 0.3;
 	vec2 wake_slope;
 	float stirred;
 	float waked = zs_wake(rest_xz, wake_slope, stirred);
+	// Far water (clean look round 5): the ripples flatten out from SEA_FAR_BEGIN
+	// to SEA_FAR_END m, the wake's stays.
+	float far_w = smoothstep(SEA_FAR_BEGIN, SEA_FAR_END, distance_to);
+	detail *= 1.0 - 0.9 * far_w;
+	slope *= 1.0 - 0.5 * far_w;
 	vec3 normal = normalize(vec3(-(slope.x + detail.x + wake_slope.x), 1.0, -(slope.y + detail.y + wake_slope.y)));
 	// A calmer normal for the sky's mirror, so the reflection reads as one
 	// rippled image rather than noise.
@@ -1042,8 +1064,14 @@ void fragment() {
 	float water_depth = max(mix(fallback, mapped, known), 0.0) * waver;
 
 	vec3 seen = exp(-absorb * through) * exp(-max(bed_depth, through * 0.4) / bed_fade);
-	vec3 bed = textureLod(sea_screen, uv, 0.0).rgb;
+	seen *= 1.0 - SEA_FAR_BED * far_w;
+	// (Far off the bed is seen blurred: no frosted mottle of the sea floor's paint.)
+	vec3 bed = textureLod(sea_screen, uv, far_w * SEA_FAR_BLUR).rgb;
 
+	// the depth in flat bands.
+	float wd_u = log2(1.0 + water_depth) * 1.1;
+	float wd_q = exp2((floor(wd_u) + smoothstep(0.42, 0.58, fract(wd_u))) / 1.1) - 1.0;
+	water_depth = wd_q;
 	vec3 column = mix(tint_shallow, tint_mid, smoothstep(0.0, tint_depths.y, water_depth));
 	column = mix(column, tint_deep, smoothstep(tint_depths.y * 0.6, tint_depths.z, water_depth));
 	column = mix(column, tint_abyss, smoothstep(tint_depths.z, tint_depths.w, water_depth));
@@ -1122,6 +1150,11 @@ void fragment() {
 		float laced = zs_foam_lace(rest_xz, max(lace_density, wake_laid * 0.9), lace_density >= wake_laid * 0.9 ? lace_youth : wake_youth, footprint);
 		foamed = max(foamed, laced * foam);
 	}
+	// a crisp shore line, the open water's foam calmer.
+	float shore_line = (1.0 - smoothstep(max(0.35, footprint * 1.2), max(0.5, footprint * 1.8), near_bed)) * (1.0 - still);
+	// (Far off a pixel spans more than the shore's width: no line, or the whole far sea turns to foam.)
+	shore_line *= 1.0 - smoothstep(0.6, 2.5, footprint);
+	foamed = max(foamed * mix(0.4, 0.12, far_w), shore_line);
 	foamed = clamp(foamed, 0.0, 1.0) * float(depth > 0.0 || known > 0.0 || waked > 0.0);
 	float lip = (1.0 - smoothstep(0.0, 0.15, bed_depth)) * float(depth > 0.0) * (1.0 - still);
 	vec3 white = vec3(0.9, 0.96, 1.0) * (ambient * 1.1 + key * 0.8);
@@ -1222,7 +1255,7 @@ void fragment() {
 		// The crisp glints hold their size; what the layers lost to the
 		// pixel turns them into an even sheen (a lobe as wide as the slope
 		// lost), so far water glows rather than sparkles.
-		float spark_edge = 0.9993;
+		float spark_edge = 0.9984;
 		float crisp = smoothstep(spark_edge, spark_edge + (1.0 - spark_edge) * 0.35, spark_dot);
 		float lost = (swell_rough + chop_rough) * glitter_filter;
 		const float SPOT = 0.0025;
@@ -1237,7 +1270,7 @@ void fragment() {
 		spark = smoothstep(spark_edge, spark_edge + (1.0 - spark_edge) * 0.35, spark_dot);
 	}
 	spark *= smoothstep(0.85, 0.97, dot(reflect(-eye, calm), sun));
-	spark *= glitter * zs_celestial_clear * sunlight * (1.0 - shaded) * (1.0 - foamed);
+	spark *= 1.5 * glitter * zs_celestial_clear * sunlight * (1.0 - shaded) * (1.0 - foamed);
 	// The body: thin crests the sun shines through, glowing green-turquoise
 	// when the eye looks toward it (strongest on the faces turned this way).
 	float glow = 0.0;
@@ -1258,6 +1291,11 @@ void fragment() {
 	display_color = mix(display_color, path.rgb, path.a * (1.0 - foamed));
 	vec3 warm = mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, sun.y));
 	display_color = mix(display_color, warm, clamp(spark, 0.0, 1.0));
+	// The far sea's soft broad glint (the sun's path off a calm level, wide).
+	vec3 rc = reflect(-eye, calm);
+	float broad_g = pow(max(dot(vec3(rc.x, abs(rc.y), rc.z), sun), 0.0), SEA_FAR_GLINT.x) * SEA_FAR_GLINT.y
+		* far_w * zs_celestial_clear * sunlight * (1.0 - shaded) * (1.0 - foamed);
+	display_color = mix(display_color, warm, clamp(broad_g, 0.0, 0.6));
 	if (debug_view == 1) display_color = water_depth < 5.0 ? vec3(1.0, 0.0, 0.0) : (water_depth < 20.0 ? vec3(0.0, 1.0, 0.0) : (water_depth < 60.0 ? vec3(0.0, 0.0, 1.0) : vec3(1.0))) * (0.5 + 0.5 * known);
 	if (debug_view == 3) display_color = zs_scene_to_display(lit);
 	if (debug_view == 4) display_color = reflection * mirror_weight;

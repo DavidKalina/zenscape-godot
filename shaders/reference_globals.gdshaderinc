@@ -5,6 +5,13 @@
 // ground, stream and shade maps (the plate and a margin), both in metres. The
 // maps hold 4 texels a metre (zs_water_map, ground_map, stream_map) and 2
 // (zs_ground_shade), so their sizes follow from zs_map_half.
+// The look's tints, set each frame from the published light
+// (scripts/endless/clean_look.gd): the sun side's, the shade's, and the
+// distance planes' (middle, far).
+global uniform vec3 zs_cl_warm;
+global uniform vec3 zs_cl_cool;
+global uniform vec3 zs_cl_haze_mid;
+global uniform vec3 zs_cl_haze_far;
 global uniform float zs_plate_half;
 global uniform float zs_map_half;
 #define ZS_MAP_TEXELS int(zs_map_half * 8.0)

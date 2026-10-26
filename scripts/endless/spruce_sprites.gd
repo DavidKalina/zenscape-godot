@@ -122,6 +122,7 @@ func bake() -> void:
 			var m: Material = (_parts[v][part] as Mesh).surface_get_material(0).duplicate()
 			if m is ShaderMaterial:
 				(m as ShaderMaterial).set_shader_parameter("sway_enabled",false)
+				(m as ShaderMaterial).set_shader_parameter("clean_lift",false)
 				(m as ShaderMaterial).set_shader_parameter("conifer_sway",false)
 			pair.append(m)
 		still.append(pair)

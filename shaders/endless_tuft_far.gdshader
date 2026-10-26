@@ -23,6 +23,7 @@ shader_type spatial;
 // instead, as the drawn flowers go.
 render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/reference_globals.gdshaderinc"
+#include "res://shaders/clean_look.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
 #include "res://shaders/endless_ring.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
@@ -143,6 +144,8 @@ void vertex() {
 void fragment() {
 	vec3 source = max(mix(grass_source_root, grass_source_tip, along), vec3(0.002));
 	vec3 own = clamp(COLOR.rgb / source, vec3(0.0), vec3(3.0));
+	// The tufts' own patch variation calmed, as the ground's.
+	own = mix(own, vec3(1.0), 0.12);
 	// pow's base kept off 0: NVIDIA's Vulkan driver can make pow(0, y) NaN at
 	// the root, which the glow blooms into white flashes (Windows only).
 	vec3 c = own * mix(rp_root, rp_tip, pow(max(along, 1.0e-4), tip_curve)) * glance;
@@ -151,11 +154,11 @@ void fragment() {
 	c *= sheen;
 	c = zs_react_tone(c, react * along * (grass_silver.x > 0.0 ? ZS_SILVER_REACT_PALE : 1.0));
 	c = mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))) * night_grade.yzw, night_grade.x);
-	ALBEDO = c * (1.0 - shade * cloud_shade);
+	ALBEDO = c * (1.0 - shade * cloud_shade) * zs_clean_sun_ratio(mass) * zs_clean_sun_tint();
 	ROUGHNESS = 0.85;
 	SPECULAR = 0.2;
 	NORMAL = normalize((VIEW_MATRIX * vec4(mass, 0.0)).xyz);
 	vec3 n = mass;
-	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	vec3 hemi = zs_clean_cool_fill(mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI);
 	EMISSION = c * hemi * (0.75 + 0.25 * along);
 }
