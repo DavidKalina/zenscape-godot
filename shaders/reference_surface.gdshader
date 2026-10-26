@@ -82,7 +82,7 @@ const float LOD_SLACK = 25.0;
 // light's wrap and backlit glow, and the luminance of the crown's instance
 // tint (so COLOR over it is the generator's grey bake).
 uniform float spruce_round = 0.0;
-// Clean look: lift near-black dead wood (off for the spruce sprites' bake, which paints the crowns).
+// lift near-black dead wood (off for the spruce sprites' bake, which paints the crowns).
 uniform bool clean_lift = true;
 uniform float spruce_blue = 0.0;
 uniform float spruce_paint = 0.0;
@@ -1096,11 +1096,11 @@ void fragment() {
 		tint = max(vec3(0.0), vec3(grey) + (tint - vec3(grey)) * mix(1.0, NIGHT_NEAR_RICH, night_near));
 		tint *= mix(1.0, NIGHT_NEAR_DIM * min(1.0, pow(NIGHT_NEAR_LEVEL.x / max(grey, 1e-3), NIGHT_NEAR_LEVEL.y)), night_near);
 	}
-	// Clean look: dead wood (snags, logs, trunks: the earth role) lifted from
+	// dead wood (snags, logs, trunks: the earth role) lifted from
 	// near-black to a grey-brown inside the scene's value range.
-	if (zs_cl_snag > 0.0 && clean_lift && !earth_sides && !terrain_growth && !grass_blades && !flower_heads && !(spruce_round > 0.0) && (palette_role == 4 || palette_role == 0)) {
+	if (clean_lift && !earth_sides && !terrain_growth && !grass_blades && !flower_heads && !(spruce_round > 0.0) && (palette_role == 4 || palette_role == 0)) {
 		float wl = dot(tint, vec3(0.2126, 0.7152, 0.0722));
-		tint = mix(tint, vec3(0.36, 0.305, 0.26), zs_cl_snag * 0.95 * (1.0 - smoothstep(0.08, 0.25, wl)));
+		tint = mix(tint, vec3(0.36, 0.305, 0.26), 0.95 * (1.0 - smoothstep(0.08, 0.25, wl)));
 	}
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);

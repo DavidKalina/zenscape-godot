@@ -5,26 +5,13 @@
 // ground, stream and shade maps (the plate and a margin), both in metres. The
 // maps hold 4 texels a metre (zs_water_map, ground_map, stream_map) and 2
 // (zs_ground_shade), so their sizes follow from zs_map_half.
-// The clean look's items, each 0 (as it was) to 1 (clean), mixed live
-// (scripts/endless/clean_look.gd): the ground paint, cool shadows with a warm
-// sun, one banded light model, dead wood, distance layers and water. The
-// clouds are 0 as they were, 1 cream, 2 white.
-global uniform float zs_cl_paint;
-global uniform float zs_cl_shadow;
-global uniform float zs_cl_light;
-global uniform float zs_cl_cloud;
-global uniform float zs_cl_snag;
-global uniform float zs_cl_dist;
-global uniform float zs_cl_water;
-// The clean look's tints, set each frame from the published light
+// The look's tints, set each frame from the published light
 // (scripts/endless/clean_look.gd): the sun side's, the shade's, and the
 // distance planes' (middle, far).
 global uniform vec3 zs_cl_warm;
 global uniform vec3 zs_cl_cool;
 global uniform vec3 zs_cl_haze_mid;
 global uniform vec3 zs_cl_haze_far;
-#define ZS_CL_CLOUD_ON clamp(zs_cl_cloud, 0.0, 1.0)
-#define ZS_CL_CLOUD_WHITE clamp(zs_cl_cloud - 1.0, 0.0, 1.0)
 global uniform float zs_plate_half;
 global uniform float zs_map_half;
 #define ZS_MAP_TEXELS int(zs_map_half * 8.0)

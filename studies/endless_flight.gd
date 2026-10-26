@@ -425,7 +425,7 @@ func _ready() -> void:
 		look.setup(seed)
 		sea = look.sea
 		_build_camera()
-		clean = CleanLook.new()
+		var clean := CleanLook.new()
 		add_child(clean)
 		clean.setup(look,camera)
 		if _face_sun:
@@ -1005,24 +1005,6 @@ func _next_weight() -> void:
 	_weight_note.text = "Weight: %s" % weight
 	_weight_shown = Time.get_ticks_msec()
 
-## K / J (F6 / F7): the clean look (scripts/endless/clean_look.gd) and its edge line.
-var clean: Node
-func _clean_key(edge: bool) -> void:
-	if clean == null: return
-	_weight_note.text = clean.flip_edges() if edge else clean.flip_look()
-	_weight_shown = Time.get_ticks_msec()
-
-## O (F8) the clean look's panel; 1-9 one item each.
-func _clean_panel() -> void:
-	if clean == null: return
-	_weight_note.text = clean.toggle_panel()
-	_weight_shown = Time.get_ticks_msec()
-
-func _clean_item(index: int) -> void:
-	if clean == null: return
-	_weight_note.text = clean.flip_item(index)
-	_weight_shown = Time.get_ticks_msec()
-
 ## H: the near misses' HUD in the tag by the plane or at the top, kept.
 func _next_near_layout() -> void:
 	if not _near_hud.has_method("set_tag"): return
@@ -1215,10 +1197,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F: _land_key()
 			KEY_F1: _hud.visible = not _hud.visible
 			KEY_F2: _next_scale()
-			KEY_K, KEY_F6: _clean_key(false)
-			KEY_J, KEY_F7: _clean_key(true)
-			KEY_O, KEY_F8: _clean_panel()
-			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9: _clean_item((event as InputEventKey).keycode-KEY_1)
 			KEY_R: respawn()
 			KEY_V: _next_weight()
 			KEY_P: _next_pace()

@@ -1,7 +1,6 @@
 #ifndef ZS_CLEAN_LOOK
 #define ZS_CLEAN_LOOK
-// The clean look's shared light (scripts/endless/clean_look.gd; zs_clean 0..1
-// mixes it in): one soft-banded sun for ground, grass and trees, as the rock
+// The look's shared light (scripts/endless/clean_look.gd): one soft-banded sun for ground, grass and trees, as the rock
 // paints it, with a cool shade and a warm sun side.
 #include "res://shaders/reference_globals.gdshaderinc"
 
@@ -30,20 +29,20 @@ float zs_clean_banded(float ndl) {
 }
 
 // The factor on an albedo that turns the engine's Lambert sun into the
-// banded one: banded / n.l where the sun reaches, 1 off (zs_cl_light 0).
+// banded one: banded / n.l where the sun reaches.
 float zs_clean_sun_ratio(vec3 n) {
 	float ndl = dot(n, zs_sun_direction);
 	float r = zs_clean_banded(ndl) / max(ndl, 0.12);
-	return mix(1.0, clamp(r, 0.35, 2.4), zs_cl_light);
+	return clamp(r, 0.35, 2.4);
 }
 
 // The sun side warm, as a tint on the albedo the sun lights.
 vec3 zs_clean_sun_tint() {
-	return mix(vec3(1.0), ZS_CLEAN_WARM, zs_cl_shadow);
+	return ZS_CLEAN_WARM;
 }
 
 // The shade's fill leaning to the sky's blue-violet.
 vec3 zs_clean_cool_fill(vec3 hemi) {
-	return mix(hemi, hemi * ZS_CLEAN_COOL * 1.0, zs_cl_shadow);
+	return hemi * ZS_CLEAN_COOL;
 }
 #endif

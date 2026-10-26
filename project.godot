@@ -57,34 +57,6 @@ environment/defaults/default_clear_color=Color(0.84, 0.87, 0.82, 1)
 
 [shader_globals]
 
-zs_cl_paint={
-"type": "float",
-"value": 0.0
-}
-zs_cl_shadow={
-"type": "float",
-"value": 0.0
-}
-zs_cl_light={
-"type": "float",
-"value": 0.0
-}
-zs_cl_cloud={
-"type": "float",
-"value": 0.0
-}
-zs_cl_snag={
-"type": "float",
-"value": 0.0
-}
-zs_cl_dist={
-"type": "float",
-"value": 0.0
-}
-zs_cl_water={
-"type": "float",
-"value": 0.0
-}
 zs_cl_warm={
 "type": "vec3",
 "value": Vector3(1.05, 1, 0.93)
@@ -100,10 +72,6 @@ zs_cl_haze_mid={
 zs_cl_haze_far={
 "type": "vec3",
 "value": Vector3(0.62, 0.86, 1.2)
-}
-zs_edges={
-"type": "float",
-"value": 0.0
 }
 
 zs_plate_half={
