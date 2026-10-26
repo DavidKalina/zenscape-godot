@@ -66,6 +66,23 @@ static func fade(x: float, z: float, scale: float) -> float:
 static func patch(x: float, z: float, scale: float) -> float:
 	return smoothstep(0.43,0.57,noise(x/scale,z/scale))-0.5
 
+## patch with its edge's softness `w0` (the ground's `ep_patch_edge`, near
+## the eye where its pixel widening is nil).
+static func patch_edge(x: float, z: float, scale: float, w0: float) -> float:
+	return smoothstep(0.5-w0,0.5+w0,noise(x/scale,z/scale))-0.5
+
+## The calmed paint's light/deep share (-1..1) from the scales of 19 m up, as
+## endless_ground.gdshader `sunny` (PAINT_BIAS, the crisp clumps, the soft
+## thirds): the tufts carry no finer variation, so neighbours agree.
+const PAINT_BIAS := -0.10
+const PAINT_STEPS := 0.92
+static func sunny_of(broad: float, wide: float, mid: float, x: float, z: float) -> float:
+	var clump := patch_edge(x+57.0,z+19.0,34.0,0.02)*1.5+patch_edge(x+3.0,z+77.0,8.0,0.04)*0.18
+	var s := clampf(PAINT_BIAS+(broad*1.3+wide*1.8+mid*0.36+clump*0.9)*PATCH_STRENGTH,-1.0,1.0)
+	var q := s*3.0
+	q = (floorf(q)+smoothstep(0.36,0.64,q-floorf(q)))/3.0
+	return lerpf(s,q,PAINT_STEPS)
+
 static func _luma(c: Vector3) -> float:
 	return c.dot(Vector3(0.2126,0.7152,0.0722))
 
@@ -77,8 +94,7 @@ static func grass(x: float, z: float, meadow: float, over: float, up: float, hue
 	var broad := fade(x+71.0,z+13.0,260.0)
 	var wide := fade(x+5.0,z+211.0,70.0)
 	var mid := fade(x+133.0,z+41.0,19.0)
-	var clump := patch(x+57.0,z+19.0,34.0)*0.7+patch(x+3.0,z+77.0,8.0)*0.5
-	var sunny := clampf((broad*1.3+wide*1.5+mid*0.9+clump*0.9)*PATCH_STRENGTH,-1.0,1.0)
+	var sunny := sunny_of(broad,wide,mid,x,z)
 	var g := GREEN.lerp(SUNLIT if sunny > 0.0 else DEEP*0.82,absf(sunny))
 	g = g.lerp(MEADOW*(1.0+mid*0.5),meadow*0.75)
 	var warm := clampf(broad*2.4+vast*1.8,-1.0,1.0)*PATCH_STRENGTH

@@ -237,6 +237,8 @@ struct Patch {
 	}
 	static double fade(double x, double z, double scale) { return noise(x / scale, z / scale) - 0.5; }
 	static double patch(double x, double z, double scale) { return smoothstep(0.43, 0.57, noise(x / scale, z / scale)) - 0.5; }
+	// patch with its edge's softness w0 (endless_patch.gd `patch_edge`).
+	static double patch_edge(double x, double z, double scale, double w0) { return smoothstep(0.5 - w0, 0.5 + w0, noise(x / scale, z / scale)) - 0.5; }
 	static double luma(const Vector3 &c) { return double(c.dot(Vector3(0.2126, 0.7152, 0.0722))); }
 	static double ss(double a, double b, double x) {
 		const double t = clampf((x - a) / (b - a), 0.0, 1.0);
@@ -268,8 +270,11 @@ struct Patch {
 		const double broad = fade(x + 71.0, z + 13.0, 260.0);
 		const double wide = fade(x + 5.0, z + 211.0, 70.0);
 		const double mid = fade(x + 133.0, z + 41.0, 19.0);
-		const double clump = patch(x + 57.0, z + 19.0, 34.0) * 0.7 + patch(x + 3.0, z + 77.0, 8.0) * 0.5;
-		const double sunny = clampf((broad * 1.3 + wide * 1.5 + mid * 0.9 + clump * 0.9) * PATCH_STRENGTH, -1.0, 1.0);
+		// The calmed paint (endless_patch.gd `sunny_of`): crisp clumps, no finer scales, soft thirds.
+		const double clump = patch_edge(x + 57.0, z + 19.0, 34.0, 0.02) * 1.5 + patch_edge(x + 3.0, z + 77.0, 8.0, 0.04) * 0.18;
+		const double sunny_raw = clampf(-0.10 + (broad * 1.3 + wide * 1.8 + mid * 0.36 + clump * 0.9) * PATCH_STRENGTH, -1.0, 1.0);
+		const double sunny_q = sunny_raw * 3.0;
+		const double sunny = lerpf(sunny_raw, (std::floor(sunny_q) + smoothstep(0.36, 0.64, sunny_q - std::floor(sunny_q))) / 3.0, 0.92);
 		Vector3 g = GREEN.lerp(sunny > 0.0 ? SUNLIT : DEEP * float(0.82), float(std::fabs(sunny)));
 		g = g.lerp(MEADOW * float(1.0 + mid * 0.5), float(meadow * 0.75));
 		const double warm = clampf(broad * 2.4 + vast * 1.8, -1.0, 1.0) * PATCH_STRENGTH;

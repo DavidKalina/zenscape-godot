@@ -836,7 +836,11 @@ void fragment() {
 	if (carpet_near.y > 0.0) {
 		float under = carpet_turf * (1.0 - smoothstep(carpet_near.x, carpet_near.y, endless_ring_d(CAMERA_POSITION_WORLD, p))) * (1.0 - wc_up);
 		if (under > 0.0) {
-			float sunny_c = clamp((broad * 1.3 + wide * 1.5 + mid * 0.9 + clump * 0.9) * patch_strength, -1.0, 1.0);
+			// (The calmed paint without the 5.5 m and 1.4 m scales, as endless_patch.gd `sunny_of`.)
+			float sunny_c = clamp(sunny_bias + (broad * 1.3 + wide * 1.8 + mid * 0.36 + clump * 0.9) * patch_strength, -1.0, 1.0);
+			float sunny_cq = sunny_c * 3.0;
+			sunny_cq = (floor(sunny_cq) + smoothstep(0.36, 0.64, fract(sunny_cq))) / 3.0;
+			sunny_c = mix(sunny_c, sunny_cq, 0.92);
 			vec3 coarse = mix(GREEN, sunny_c > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny_c));
 			coarse = mix(coarse, MEADOW * (1.0 + mid * 0.5), meadow * 0.75);
 			coarse *= mix(vec3(1.0), warm > 0.0 ? vec3(1.32, 1.05, 0.62) : vec3(0.80, 0.97, 1.16), abs(warm) * 0.5);
@@ -846,7 +850,7 @@ void fragment() {
 			coarse = mix(coarse, DRY, dry_c * 0.4);
 			coarse = mix(coarse, TUNDRA * (1.0 + mid * 0.6), alpine * 0.8);
 			coarse = mix(coarse, OLIVE, thin * 0.7);
-			coarse *= 1.0 + (grain_near + fine * 0.6 + tuft * 0.8) * carpet_near_grain;
+			coarse *= 1.0 + (grain_near + fine * 0.6 + tuft * 0.8) * carpet_near_grain * 0.25;
 			coarse *= rp_under_tone;
 			grass = mix(grass, coarse, under);
 		}

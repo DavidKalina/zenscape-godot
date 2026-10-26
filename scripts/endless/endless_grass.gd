@@ -225,6 +225,11 @@ var alpine := ALPINE
 const SINK := 0.04
 ## The ground's patches are read onto the tufts off a grid this fine (m),
 ## and the tufts' colour scaled by TUFT_TONE over them.
+## The tufts' tint from the calmed paint (EndlessPatch.sunny_of) is laid on in
+## script over the native cell's tufts (the native pass told to carry none),
+## so it works with kernels built before grass_cell.h's matching change. Set
+## false once the kernels are rebuilt: they then lay it on themselves, faster.
+const SCRIPT_TINT := true
 const TINT_STEP := 2.0
 const TUFT_TONE := Color(1.0,1.0,1.0)
 ## The painted grass's tone past the tufts (linear, over its own colour),
@@ -642,6 +647,7 @@ static func native_config(site_values: Dictionary, far_share: float, rings: Vect
 	for k: String in ["tufts","tuft_bump","shag","contact","height_field","tilt","rim","variety","patches","flower_tall","slope","alpine"]:
 		if site_values.has(k): c[k] = site_values[k]
 	c.sub = site_values.get("sub",0.0)
+	if SCRIPT_TINT: c.patches = 0.0
 	c.flowers = bool(site_values.get("flowers",true)) and far_share < 1.0
 	c.flower_tries = (BLOOM_TRIES if c.flowers else 0.0001) if Patch.bloom_amount > 0.0 else KitFlora.FLOWER_TRIES
 	c.high = HIGH
@@ -1513,6 +1519,37 @@ static func _grow_native(native: Object, f: RefCounted, land_seed: int, key: Vec
 		cell.colours = cols
 	var r: Dictionary = native.grow_cell(cell)
 	var out: Array = r.parts
+	if SCRIPT_TINT:
+		var hs2: PackedFloat32Array = got.heights
+		var ms2: PackedFloat32Array = got.meadows
+		var tg2 := int(CELL/TINT_STEP)+1
+		var tints2 := PackedColorArray()
+		tints2.resize(tg2*tg2)
+		for tj in tg2:
+			for ti in tg2:
+				var c2 := (int(tj*TINT_STEP)+PAD)*n+int(ti*TINT_STEP)+PAD
+				var xx := x0+ti*TINT_STEP
+				var zz := z0+tj*TINT_STEP
+				var yy := hs2[c2]
+				var nm := Vector3(hs2[c2-1]-hs2[c2+1],2.0,hs2[c2-n]-hs2[c2+n]).normalized()
+				var vc: Color = f.colour(xx,zz,yy,nm.y,ms2[c2])
+				var hue := Vector3(pow(vc.r,2.2),pow(vc.g,2.2),pow(vc.b,2.2))
+				tints2[tj*tg2+ti] = Patch.tint(xx,zz,ms2[c2],yy-Field.SEA_Y,nm.y,hue)*TUFT_TONE
+		for part: Dictionary in out:
+			if not str(part.key).begins_with("grass"): continue
+			var buffer: PackedFloat32Array = part.buffer
+			for k in range(0,buffer.size(),16):
+				var u := clampf((buffer[k+3]-x0)/TINT_STEP,0.0,tg2-1.001)
+				var v := clampf((buffer[k+11]-z0)/TINT_STEP,0.0,tg2-1.001)
+				var i := int(u)
+				var j := int(v)
+				var a := tints2[j*tg2+i].lerp(tints2[j*tg2+i+1],u-i)
+				var b := tints2[(j+1)*tg2+i].lerp(tints2[(j+1)*tg2+i+1],u-i)
+				var t := a.lerp(b,v-j)
+				buffer[k+12] *= t.r
+				buffer[k+13] *= t.g
+				buffer[k+14] *= t.b
+			part.buffer = buffer
 	var recs: PackedFloat64Array = r.records
 	var flowers: bool = site_values.get("flowers",true) and far_share < 1.0
 	if recs.is_empty() or not flowers: return out
