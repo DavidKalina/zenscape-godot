@@ -75,7 +75,7 @@ void fragment() {
 	float r = length(out_xz);
 	vec3 n = normalize(vec3(out_xz / max(r, 1e-3) * smoothstep(0.0, 0.5, r), 0.62).xzy);
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
-	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI * mix(vec3(1.0), vec3(0.86, 0.90, 1.22) * 1.12, zs_clean);
+	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI * mix(vec3(1.0), vec3(0.86, 0.90, 1.22) , zs_clean);
 	vec3 ol = OLIVE * ring_luma(c);
 	EMISSION = mix(c, ol, tone.w) * hemi + mix(c, ol, tone.y) * hemi * tone.x + mix(c, ol, olive) * zs_look_bounce_light(n);
 }

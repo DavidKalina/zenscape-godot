@@ -94,7 +94,7 @@ void fragment() {
 		litter = mix(litter, top, crown);
 		// Thin woods thin, and the gaps between crowns let the land through.
 		alpha = mix(alpha, smoothstep(0.05, 0.75, COLOR.a) * mix(0.55, 0.95, mix(0.8, b, far)), crown);
-		vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, bumped.y * 0.5 + 0.5) * zs_hemi_energy / PI * mix(vec3(1.0), vec3(0.86, 0.90, 1.22) * 1.12, zs_clean);
+		vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, bumped.y * 0.5 + 0.5) * zs_hemi_energy / PI * mix(vec3(1.0), vec3(0.86, 0.90, 1.22) , zs_clean);
 		vec3 ol = vec3(1.20, 1.05, 0.22) * dot(top, vec3(0.2126, 0.7152, 0.0722));
 		EMISSION = (mix(top, ol, canopy_light.w) * hemi + mix(top, ol, canopy_light.z) * hemi * canopy_fill) * crown;
 	}

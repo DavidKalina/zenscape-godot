@@ -17,8 +17,8 @@ const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 ## The Environment's haze in the clean look: clear to CLEAN_BEGIN m, then
 ## thicker through the middle distance, bluer by the aerial share.
 const CLEAN_FOG_BEGIN := 260.0
-const CLEAN_FOG_CURVE := 0.58
-const CLEAN_AERIAL := 0.6
+const CLEAN_FOG_CURVE := 0.52
+const CLEAN_AERIAL := 0.7
 const CLEAN_GLOW := 0.06
 ## Seconds the flip takes (the uniform eases, so the change is seen).
 const FADE := 0.35

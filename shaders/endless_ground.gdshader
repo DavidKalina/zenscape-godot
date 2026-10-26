@@ -637,15 +637,15 @@ void fragment() {
 	// Clean look: the smallest scales gone, the 8 m clumps few, the 34 m ones
 	// crisp-edged and bolder, and the whole blend stepped into flat shapes.
 	if (zs_clean > 0.0) {
-		float crisp = ep_patch_edge(gxz + vec2(57.0, 19.0), 34.0, fp, 0.025) * 1.15 + ep_patch_edge(gxz + vec2(3.0, 77.0), 8.0, fp, 0.04) * 0.18;
+		float crisp = ep_patch_edge(gxz + vec2(57.0, 19.0), 34.0, fp, 0.02) * 1.5 + ep_patch_edge(gxz + vec2(3.0, 77.0), 8.0, fp, 0.04) * 0.18;
 		clump = mix(clump, crisp, zs_clean);
 	}
 	float k_small = 1.0 - 0.9 * zs_clean;
 	float sunny = clamp((broad * 1.3 + wide * 1.5 * (1.0 + 0.2 * zs_clean) + mid * 0.9 * (1.0 - 0.6 * zs_clean) + fine * 0.6 * k_small + tuft * 0.8 * k_small + clump * 0.9) * patch_strength, -1.0, 1.0);
 	// (Stepped three ways each side of the mean, the steps soft.)
 	float sunny_q = sunny * 3.0;
-	sunny_q = (floor(sunny_q) + smoothstep(0.3, 0.7, fract(sunny_q))) / 3.0;
-	sunny = mix(sunny, sunny_q, 0.7 * zs_clean);
+	sunny_q = (floor(sunny_q) + smoothstep(0.36, 0.64, fract(sunny_q))) / 3.0;
+	sunny = mix(sunny, sunny_q, 0.92 * zs_clean);
 	vec3 grass = mix(GREEN, sunny > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny));
 	// The meadows lusher and brighter.
 	grass = mix(grass, MEADOW * (1.0 + mid * 0.5), meadow * 0.75);
@@ -914,8 +914,8 @@ void fragment() {
 		float cam_d = length(CAMERA_POSITION_WORLD - p);
 		float mid_k = smoothstep(240.0, 900.0, cam_d);
 		float far_k = smoothstep(1100.0, 3600.0, cam_d);
-		vec3 lay = mix(vec3(1.0), vec3(0.78, 0.98, 1.0), mid_k * zs_clean);
-		lay = mix(lay, vec3(0.70, 0.90, 1.12), far_k * zs_clean);
+		vec3 lay = mix(vec3(1.0), vec3(0.76, 0.98, 1.0), mid_k * zs_clean);
+		lay = mix(lay, vec3(0.62, 0.86, 1.2), far_k * zs_clean);
 		ALBEDO *= lay;
 		EMISSION *= lay;
 	}
