@@ -126,8 +126,6 @@ var mood := MOOD
 var cycle: DayCycle
 ## The hour is the clock's (T took it): a region's paint keeps off it.
 var _hour_taken := false
-## The sky's light map (radiance) last redrawn at this sun height.
-var _radiance_at := -2.0
 ## A world of regions paints the mood and hour by the eye (blend_moods)
 ## until --mood=, --hour=, --day, L or T takes them over.
 var world_paint := true
@@ -584,7 +582,6 @@ func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D 
 		celestial.phase = cycle.phase()
 	else: cycle.follow(celestial.phase)
 	celestial.advance(delta,false)
-	_refresh_radiance()
 	if _light_on:
 		sun.light_energy *= _key
 		RenderingServer.global_shader_parameter_set("zs_hemi_energy",float(celestial.state.zs_hemi_energy)*_fill)
@@ -685,21 +682,6 @@ func time_note() -> String:
 	if not cycle.running: s += ", still"
 	elif cycle.speed() > 1.0: s += ", x%d" % int(cycle.speed())
 	return s
-
-## The sky's light map (Sky.radiance, read by glossy surfaces: wet sheen,
-## the plane's paint) is drawn from the sky only when the sky's material
-## changes, not when the shader globals the sky reads do; as the sun moves
-## it is asked to redraw (over several frames, Sky PROCESS_MODE_INCREMENTAL)
-## each time the sun has moved RADIANCE_STEP in height.
-const RADIANCE_STEP := 0.01
-func _refresh_radiance() -> void:
-	var e := float(celestial.sun_height)
-	if absf(e-_radiance_at) < RADIANCE_STEP: return
-	var first := _radiance_at < -1.5
-	_radiance_at = e
-	if first: return
-	var sky := environment.sky.sky_material as ShaderMaterial if environment.sky != null else null
-	if sky != null: sky.set_shader_parameter("half_res_clouds",sky.get_shader_parameter("half_res_clouds"))
 
 ## The hour now (0..24).
 func hour() -> float:
