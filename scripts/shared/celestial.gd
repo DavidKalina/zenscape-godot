@@ -217,13 +217,14 @@ const LEAN_RANGE := Vector2(0.3, 3.0)
 ## With light follow on: the fill's golden-hour dip (GOLDEN_FILL_DIP off), and
 ## the rim's, the key's lift, and how far the sun's hue deepens past the
 ## reference's (a power of its lean).
-const GOLDEN_FILL_DIP_FOLLOW := 0.5
-const RIM_GOLDEN_DIP := 0.6
+const GOLDEN_FILL_DIP_FOLLOW := 0.3
+const RIM_GOLDEN_DIP := 0.3
 const GOLDEN_KEY_LIFT := 0.3
 const GOLDEN_DEEPEN := 0.5
 ## Light follow's golden hour: in from sun height x to y (wider than the old
-## dip's 0.3 to 0.1, so a late afternoon sun already leans golden).
-const GOLDEN_E := Vector2(0.38, 0.12)
+## dip's 0.3 to 0.1, so a late afternoon sun already leans golden; the default
+## mood's 8.6 h sun stands at 0.48).
+const GOLDEN_E := Vector2(0.42, 0.14)
 ## --light-follow=0 is the light as it was before the light pass (the leans 1,
 ## the fill and rim their old colours and dips); between, part way.
 static var light_follow := _arg_float("--light-follow=", 1.0)
@@ -382,7 +383,8 @@ func update_rig() -> void:
 	var golden := smoothstep(0.3, 0.1, e) * clear_sun
 	var golden_f := smoothstep(GOLDEN_E.x, GOLDEN_E.y, e) * clear_sun
 	var follow := clampf(light_follow, 0.0, 1.0)
-	tint = _hue_keep(tint, _vpow(_lean(_hue(tint) / REF_SUN_HUE), GOLDEN_DEEPEN * golden_f * follow))
+	var deepen := _vpow(_lean(_hue(tint) / REF_SUN_HUE), GOLDEN_DEEPEN * golden_f * follow)
+	tint = _hue_keep(tint, deepen)
 	var key_direction := _lifted(sun)
 	var energy := sun_energy
 	if moon_energy > sun_energy:
@@ -463,7 +465,8 @@ func update_rig() -> void:
 	shadow_hue = fill_hue.lerp(shadow_hue, follow)
 	_publish("zs_sun_hue", sun_hue)
 	_publish("zs_shadow_tint", shadow_hue)
-	var sun_lean := Vector3.ONE.lerp(_lean(sun_hue / REF_SUN_HUE), sun_up * follow)
+	# (The paint follows the hour's sun, not golden hour's deepening of it.)
+	var sun_lean := Vector3.ONE.lerp(_lean(sun_hue / deepen / REF_SUN_HUE), sun_up * follow)
 	var shade_lean := Vector3.ONE.lerp(_lean(shadow_hue / REF_FILL_HUE), (1.0 - dark) * follow)
 	_publish("zs_sun_lean", sun_lean)
 	_publish("zs_shade_lean", shade_lean)

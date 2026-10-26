@@ -48,7 +48,7 @@ uniform bool old_rock = false;
 // How far the grass's painted warm and cool tones (the drift, the slopes to
 // and from the sun, the sheen, the paper light) follow the light's leans
 // (shaders/light_leans.gdshaderinc; 0 fixed as before).
-uniform float paint_follow : hint_range(0.0, 2.0) = 1.0;
+uniform float paint_follow : hint_range(0.0, 2.0) = 0.5;
 uniform float sea_y = -40.0;
 uniform float beach = 2.2;
 uniform float snow_line = 95.0;
