@@ -40,6 +40,10 @@ void zs_cumulus_palette(vec3 rd, vec3 sun, out vec3 sun_hue, out vec3 sun_col, o
 	sun_col = sun_hue * min(sun_level, 1.0);
 	shade_col = zs_cloud_sky * vec3(1.3, 1.02, 0.98) * ZS_CUMULUS_SHADE;
 	lining = pow(toward_sun, 10.0) * 0.6 + pow(toward_sun, 60.0) * 1.6;
+	// Clean look: white lit tops, a cool lilac-grey shade.
+	float shade_l = dot(shade_col, vec3(0.2126, 0.7152, 0.0722));
+	sun_col = mix(sun_col, mix(sun_col, vec3(1.0), 0.75) * 1.12, zs_clean);
+	shade_col = mix(shade_col, vec3(0.80, 0.78, 1.0) * shade_l * 0.95, zs_clean);
 }
 
 // How much of the sun reaches a point under `thick` of cloud toward it.

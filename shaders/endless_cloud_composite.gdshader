@@ -64,6 +64,9 @@ void fragment() {
 	zs_cumulus_palette(rd, sun, sun_hue, c_sun, c_shade, lining);
 	float toward_sun = max(dot(rd, sun), 0.0);
 	vec4 terms = a / cloud_a;
+	// Clean look: a crisper split of lit and shaded.
+	terms.y *= mix(1.0, smoothstep(0.08, 0.7, terms.y) * 1.25, zs_clean);
+	terms.x *= mix(1.0, 0.85, zs_clean);
 	float fog_share = clamp(terms.w, 0.0, 1.0);
 	vec3 shade_col = c_shade * mix(vec3(1.0), FOG_COOL, fog_share);
 	vec3 lit = (terms.x * shade_col + terms.y * c_sun + terms.z * c_sun * BOUNCE_TINT) * ZS_CUMULUS_LIT_SHARE;

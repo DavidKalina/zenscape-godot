@@ -23,7 +23,7 @@ const CLEAN_GLOW := 0.06
 ## Seconds the flip takes (the uniform eases, so the change is seen).
 const FADE := 0.35
 ## The edge line's strength.
-const EDGE_STRENGTH := 0.4
+const EDGE_STRENGTH := 0.55
 
 var look: Node3D
 var camera: Camera3D
@@ -33,7 +33,10 @@ var edges := false
 var post: CompositorEffect
 var _env: Environment
 var _base := {}
-var _agx := false
+var _base_agx := false
+## AgX in place of ACES was tried and turned the greens khaki and the spruce tan
+## (the palette is built against ACES), so it is off: --clean-agx puts it back.
+var AGX := "--clean-agx" in LaunchArgs.user_args()
 
 static func wanted_look() -> bool:
 	return "--look=clean" in LaunchArgs.user_args()
@@ -46,6 +49,7 @@ func setup(look_node: Node3D, view: Camera3D) -> void:
 	look = look_node
 	camera = view
 	_env = look.environment
+	_base_agx = _env.tonemap_mode == Environment.TONE_MAPPER_AGX
 	_base = {"begin":_env.fog_depth_begin,"curve":_env.fog_depth_curve,"aerial":_env.fog_aerial_perspective,"glow":_env.glow_intensity}
 	if CleanPost.available():
 		post = CleanPost.new()
@@ -69,7 +73,15 @@ func flip_edges() -> String:
 func note() -> String:
 	return "Look: %s" % ("clean" if target > 0.5 else "as it was")
 
+## The haze's own colour (scene linear), eased toward white: mist, not ink.
+func _edge_colour() -> void:
+	if post == null or _env == null: return
+	var c := _env.fog_light_color.srgb_to_linear()
+	var e := _env.fog_light_energy
+	post.edge_colour = Vector3(c.r,c.g,c.b)*e*0.75+Vector3(0.125,0.125,0.125)
+
 func _process(delta: float) -> void:
+	if edges: _edge_colour()
 	if is_equal_approx(amount,target) and not _dirty: return
 	amount = move_toward(amount,target,delta/FADE)
 	_apply()
@@ -81,6 +93,13 @@ func _apply() -> void:
 	RenderingServer.global_shader_parameter_set("zs_clean",amount)
 	RenderingServer.global_shader_parameter_set("zs_edges",1.0 if edges else 0.0)
 	if _env != null:
+		# AgX over ACES (which yellows the brights), at the half way mark.
+		if AGX and amount > 0.5 and _env.tonemap_mode != Environment.TONE_MAPPER_AGX:
+			_env.tonemap_mode = Environment.TONE_MAPPER_AGX
+			_env.tonemap_agx_white = 16.0
+			_env.tonemap_agx_contrast = 1.25
+		elif amount <= 0.5 and _env.tonemap_mode == Environment.TONE_MAPPER_AGX and not _base_agx:
+			_env.tonemap_mode = Environment.TONE_MAPPER_ACES
 		_env.fog_depth_begin = lerpf(_base.begin,CLEAN_FOG_BEGIN*1.0,amount)
 		_env.fog_depth_curve = lerpf(_base.curve,CLEAN_FOG_CURVE,amount)
 		_env.fog_aerial_perspective = lerpf(_base.aerial,CLEAN_AERIAL,amount)
@@ -88,10 +107,7 @@ func _apply() -> void:
 	if post != null:
 		post.grade_strength = amount
 		post.edge_strength = EDGE_STRENGTH if edges else 0.0
-		# The haze's colour, lifted a little, so the line is mist not ink.
-		var c := _env.fog_light_color.srgb_to_linear() * _env.fog_light_energy
-		var top := maxf(maxf(c.r,c.g),maxf(c.b,1e-4))
-		post.edge_colour = Vector3(c.r,c.g,c.b)/top*0.9*minf(top,1.0)*1.0
+		_edge_colour()
 		post.refresh()
 
 func _exit_tree() -> void:

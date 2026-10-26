@@ -12,6 +12,7 @@ uniform vec4 albedo : source_color = vec4(1.0);
 // How much the baked light and shade of the crown shows (0: flat albedo).
 uniform float baked = 1.0;
 
+global uniform float zs_clean;
 varying float keep;
 
 void vertex() {
@@ -23,6 +24,6 @@ void vertex() {
 
 void fragment() {
 	vec3 shade = mix(vec3(1.0), COLOR.rgb, baked);
-	ALBEDO = albedo.rgb * shade;
+	ALBEDO = albedo.rgb * shade * mix(vec3(1.0), vec3(0.9, 0.97, 1.12), zs_clean);
 	ROUGHNESS = 1.0;
 }

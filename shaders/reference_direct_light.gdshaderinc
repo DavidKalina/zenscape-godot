@@ -1,3 +1,4 @@
+#include "res://shaders/clean_look.gdshaderinc"
 // Source Lambert + GGX direct lighting. The climbing valley shadow gates only
 // direct contributions, preserving hemisphere and reflected-sky afterglow.
 void light() {
@@ -23,7 +24,8 @@ void light() {
 		DIFFUSE_LIGHT += open_sun * ZS_SPRUCE_LIGHT.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
 	} else
 #endif
-	DIFFUSE_LIGHT += energy * nl / PI * (1.0 - metalness_value);
+	// Clean look: the sun in soft steps, the sun side warm (clean_look.gdshaderinc).
+	DIFFUSE_LIGHT += energy * mix(nl, zs_clean_steps(dot(NORMAL, LIGHT)), zs_clean) * zs_clean_sun_tint() / PI * (1.0 - metalness_value);
 #ifdef ZS_LOOK_FILL
 	// The look pass's sky fill (shaders/look_fill.gdshaderinc), the sun's
 	// light only: where its shadow falls or the face turns from it.

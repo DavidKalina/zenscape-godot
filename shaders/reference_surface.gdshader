@@ -1,5 +1,6 @@
 shader_type spatial;
 #include "res://shaders/world_play_bend.gdshaderinc"
+#include "res://shaders/clean_look.gdshaderinc"
 #include "res://shaders/scene_palette.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
 // Worn paths drawn per pixel on the ground (0 segments: none).
@@ -81,6 +82,8 @@ const float LOD_SLACK = 25.0;
 // light's wrap and backlit glow, and the luminance of the crown's instance
 // tint (so COLOR over it is the generator's grey bake).
 uniform float spruce_round = 0.0;
+// Clean look: lift near-black dead wood (off for the spruce sprites' bake, which paints the crowns).
+uniform bool clean_lift = true;
 uniform float spruce_blue = 0.0;
 uniform float spruce_paint = 0.0;
 uniform vec4 spruce_light = vec4(0.0, 0.0, 0.7, 0.18);
@@ -1093,6 +1096,12 @@ void fragment() {
 		tint = max(vec3(0.0), vec3(grey) + (tint - vec3(grey)) * mix(1.0, NIGHT_NEAR_RICH, night_near));
 		tint *= mix(1.0, NIGHT_NEAR_DIM * min(1.0, pow(NIGHT_NEAR_LEVEL.x / max(grey, 1e-3), NIGHT_NEAR_LEVEL.y)), night_near);
 	}
+	// Clean look: dead wood (snags, logs, trunks: the earth role) lifted from
+	// near-black to a grey-brown inside the scene's value range.
+	if (zs_clean > 0.0 && clean_lift && !earth_sides && !terrain_growth && !grass_blades && !flower_heads && !(spruce_round > 0.0) && (palette_role == 4 || palette_role == 0)) {
+		float wl = dot(tint, vec3(0.2126, 0.7152, 0.0722));
+		tint = mix(tint, vec3(0.36, 0.305, 0.26), zs_clean * 0.95 * (1.0 - smoothstep(0.08, 0.25, wl)));
+	}
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
 	ROUGHNESS = mix(ROUGHNESS, 0.48, coat_wetness);
@@ -1113,7 +1122,7 @@ void fragment() {
 	if (flower_heads) contact = mix(1.0, contact, flower_contact);
 	// The sides hang below their origin; the contact term would halve them.
 	if (earth_sides) contact = 1.0;
-	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, light_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	vec3 hemi = zs_clean_cool_fill(mix(zs_hemi_ground, zs_hemi_sky, light_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI);
 	EMISSION = emissive_color + tint * hemi * contact;
 	vec3 spruce_olive = vec3(0.0);
 	if (spruce_round > 0.0) {

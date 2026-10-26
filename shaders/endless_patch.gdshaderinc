@@ -45,6 +45,14 @@ float ep_patch(vec2 p, float scale, float fp) {
 	return (smoothstep(0.5 - w, 0.5 + w, ep_noise(p / scale)) - 0.5) * keep;
 }
 
+// ep_patch with its edge's softness `w0` (the clean look's crisper one).
+float ep_patch_edge(vec2 p, float scale, float fp, float w0) {
+	float keep = 1.0 - smoothstep(scale * 0.18, scale * 0.6, fp);
+	if (keep <= 0.0) return 0.0;
+	float w = w0 + fp / scale * 1.2;
+	return (smoothstep(0.5 - w, 0.5 + w, ep_noise(p / scale)) - 0.5) * keep;
+}
+
 // --- Grass colour regions and flower drifts (look round 5) -----------------
 // Both on the same hash, mirrored in scripts/endless/endless_patch.gd
 // (`region`, `bloom`), so the tufts' tint (near and far ring), the flowers

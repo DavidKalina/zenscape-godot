@@ -23,6 +23,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
 #include "res://shaders/endless_patch.gdshaderinc"
 #include "res://shaders/endless_rock.gdshaderinc"
+#include "res://shaders/clean_look.gdshaderinc"
 // The grass's ring distance (scripts/endless/endless_grass.gd), for where
 // its tufts and flowers give way to paint.
 #include "res://shaders/endless_ring.gdshaderinc"
@@ -633,7 +634,18 @@ void fragment() {
 	float tuft = zs_fade(gxz + vec2(9.0, 29.0), 1.4, fp);
 	// Patches with an edge: clover and lush hollows among the lighter grass.
 	float clump = ep_patch(gxz + vec2(57.0, 19.0), 34.0, fp) * 0.7 + ep_patch(gxz + vec2(3.0, 77.0), 8.0, fp) * 0.5;
-	float sunny = clamp((broad * 1.3 + wide * 1.5 + mid * 0.9 + fine * 0.6 + tuft * 0.8 + clump * 0.9) * patch_strength, -1.0, 1.0);
+	// Clean look: the smallest scales gone, the 8 m clumps few, the 34 m ones
+	// crisp-edged and bolder, and the whole blend stepped into flat shapes.
+	if (zs_clean > 0.0) {
+		float crisp = ep_patch_edge(gxz + vec2(57.0, 19.0), 34.0, fp, 0.025) * 1.15 + ep_patch_edge(gxz + vec2(3.0, 77.0), 8.0, fp, 0.04) * 0.18;
+		clump = mix(clump, crisp, zs_clean);
+	}
+	float k_small = 1.0 - 0.9 * zs_clean;
+	float sunny = clamp((broad * 1.3 + wide * 1.5 * (1.0 + 0.2 * zs_clean) + mid * 0.9 * (1.0 - 0.6 * zs_clean) + fine * 0.6 * k_small + tuft * 0.8 * k_small + clump * 0.9) * patch_strength, -1.0, 1.0);
+	// (Stepped three ways each side of the mean, the steps soft.)
+	float sunny_q = sunny * 3.0;
+	sunny_q = (floor(sunny_q) + smoothstep(0.3, 0.7, fract(sunny_q))) / 3.0;
+	sunny = mix(sunny, sunny_q, 0.7 * zs_clean);
 	vec3 grass = mix(GREEN, sunny > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny));
 	// The meadows lusher and brighter.
 	grass = mix(grass, MEADOW * (1.0 + mid * 0.5), meadow * 0.75);
@@ -684,7 +696,7 @@ void fragment() {
 	carpet_turf *= 1.0 - max(banked, wet);
 	float sheen = crest * (0.35 + 0.65 * grazing) + velvet * grazing * 0.6 * (1.0 - carpet_velvet_cut * carpet_turf);
 	vec3 sheen_colour = mix(grass, vec3(luma(grass)) * vec3(1.25, 1.22, 0.85), 0.55) * 1.55;
-	grass = mix(grass, sheen_colour, clamp(sheen * 0.42, 0.0, 0.8) * (1.0 - thin * 0.6));
+	grass = mix(grass, sheen_colour, clamp(sheen * 0.42 * (1.0 - 0.6 * zs_clean), 0.0, 0.8) * (1.0 - thin * 0.6));
 	// The carpet's tone past its tufts, and wherever none grow.
 	float turf = carpet_turf;
 	float beyond = carpet_reach.y > 0.0 ? clamp((endless_ring_d(CAMERA_POSITION_WORLD, p) - carpet_reach.x) / max(carpet_reach.y - carpet_reach.x, 1.0), 0.0, 1.0) : 1.0;
@@ -697,7 +709,7 @@ void fragment() {
 		+ speck_b * 0.7 * (1.0 - smoothstep(carpet_grain_sizes.y * 0.5, carpet_grain_sizes.y * 1.2, fp));
 	// Only off where tufts would be pixels: near, the paint's own grain.
 	float high_up = smoothstep(high_paint_alt.x, high_paint_alt.y, CAMERA_POSITION_WORLD.y - p.y) * high_paint;
-	grass *= 1.0 + speck * carpet_grain * turf * beyond * smoothstep(40.0, 110.0, length(CAMERA_POSITION_WORLD - p)) * (1.0 - clamp(high_up, 0.0, 1.0));
+	grass *= 1.0 + speck * (1.0 - 0.7 * zs_clean) * carpet_grain * turf * beyond * smoothstep(40.0, 110.0, length(CAMERA_POSITION_WORLD - p)) * (1.0 - clamp(high_up, 0.0, 1.0));
 	float wc_up = clamp(high_up, 0.0, 1.0) * wc_paint;
 	if (high_up > 0.0) {
 		// Broad patches of lighter and deeper, warmer and cooler meadow.
@@ -818,7 +830,7 @@ void fragment() {
 	vec2 turned2 = mat2(vec2(0.342, -0.94), vec2(0.94, 0.342)) * gxz;
 	float grain_near = zs_fade(turned + vec2(3.3, 1.1), 0.3, fp) * 0.8 + zs_fade(turned2 + vec2(41.0, 7.0), 0.55, fp) * 0.7
 		+ zs_fade(gxz + vec2(9.0, 2.0), 1.3, fp) * 0.5;
-	grass *= 1.0 + grain_near * (1.0 - thin * 0.4);
+	grass *= 1.0 + grain_near * (1.0 - thin * 0.4) * (1.0 - 0.75 * zs_clean);
 	// Under the near carpet: the tufts' own ground (endless_patch.gd `grass`).
 	if (carpet_near.y > 0.0) {
 		float under = carpet_turf * (1.0 - smoothstep(carpet_near.x, carpet_near.y, endless_ring_d(CAMERA_POSITION_WORLD, p))) * (1.0 - wc_up);
@@ -883,7 +895,8 @@ void fragment() {
 	// lights), the sky's fill (the emission below) stays.
 	float shade = zs_cloud_volume_shade(p);
 	float shaded = shade * cloud_shade;
-	ALBEDO = albedo * (1.0 - shaded);
+	// Clean look: the banded sun on the albedo the engine's sun lights, warm.
+	ALBEDO = albedo * (1.0 - shaded) * mix(zs_clean_sun_ratio(lit_n), 1.0, rocky * 0.85) * zs_clean_sun_tint();
 	float wet_sand = max(sandy * smoothstep(0.7, 0.0, over) * step(-0.5, over), damp * banked);
 	ROUGHNESS = mix(mix(mix(0.92, 0.82, rocky), 0.6, snowy), 0.35, wet_sand);
 	SPECULAR = mix(mix(0.25, 0.35, rocky), 0.5, max(snowy, wet_sand)) * (1.0 - shaded);
@@ -893,7 +906,19 @@ void fragment() {
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float hollow = 0.85 + 0.15 * n.y;
 	// A cloud overhead takes a little of the sky's fill too.
+	hemi = zs_clean_cool_fill(hemi);
 	EMISSION = albedo * hemi * hollow * (1.0 - 0.2 * shade) + rock_glow * rocky * (1.0 - snowy);
+	// Clean look: planes of distance by colour, near green, then a blue-green
+	// middle, then pale blue (the depth fog lays its haze over these).
+	if (zs_clean > 0.0) {
+		float cam_d = length(CAMERA_POSITION_WORLD - p);
+		float mid_k = smoothstep(240.0, 900.0, cam_d);
+		float far_k = smoothstep(1100.0, 3600.0, cam_d);
+		vec3 lay = mix(vec3(1.0), vec3(0.78, 0.98, 1.0), mid_k * zs_clean);
+		lay = mix(lay, vec3(0.70, 0.90, 1.12), far_k * zs_clean);
+		ALBEDO *= lay;
+		EMISSION *= lay;
+	}
 	if (wet > 0.0) {
 		// The river's water, as the sea draws it (endless_sea.gdshader): its
 		// colour by the depth (faked from the way in from the bank), the bed
@@ -1026,6 +1051,9 @@ void fragment() {
 			float fall = pow(max(spd - 0.35, 0.0) / 9.0, 2.0);
 			slope -= dir * fall;
 		}
+		// Clean look: the fine ripple normals toned right down.
+		slope *= 1.0 - 0.75 * zs_clean;
+		rough *= 1.0 - 0.5 * zs_clean;
 		vec3 wn = normalize(vec3(-slope.x, 1.0, -slope.y));
 		vec3 calm = normalize(vec3(-slope.x * river_calm, 1.0, -slope.y * river_calm));
 		float d_in = max(-r_out, 0.0);
@@ -1033,6 +1061,12 @@ void fragment() {
 		// riffle, so the shallows' band never runs even.
 		float bars = mix(0.6, 1.45, ep_noise(p.xz / 37.0 + 3.7));
 		float depth = min(d_in * river_depth.x * bars, river_depth.y) * (1.0 - 0.4 * rif * running);
+		// Clean look: the depth in flat bands.
+		{
+			float du = log2(1.0 + depth) * 1.3;
+			float dq = floor(du) + smoothstep(0.42, 0.58, fract(du));
+			depth = mix(depth, exp2(dq / 1.3) - 1.0, zs_clean);
+		}
 		vec3 column = mix(river_tint_shallow, river_tint_mid, smoothstep(0.0, river_tint_depths.x, depth));
 		column = mix(column, river_tint_deep, smoothstep(river_tint_depths.x * 0.5, river_tint_depths.y, depth));
 		column *= zs_palette_water;
@@ -1156,6 +1190,8 @@ void fragment() {
 			// The pale line at the edge, lapping, broken; far off a soft rim.
 			float lap = river_edge * (0.6 + 0.4 * zs_noise(p.xz / 23.0)) * (0.85 + 0.15 * sin(t * 0.8 + zs_noise(p.xz * 0.15) * 6.2832)) + r_fp * 0.5;
 			line = (1.0 - smoothstep(0.0, lap, d_in)) * mix(0.25 + 0.3 * zs_noise(p.xz * 0.35 - dir * t * 0.3), 0.3, smoothstep(0.3, 1.5, r_fp));
+			// (Clean look: one crisp pale line at the edge, then plain water.)
+			line = mix(line, (1.0 - smoothstep(lap * 0.8, lap, d_in)) * 0.9, zs_clean);
 			water = mix(water, white, line * 0.7);
 			skin = max(line, live_foam);
 		} else {
@@ -1198,7 +1234,7 @@ void fragment() {
 		vec3 disp = mix(zs_scene_to_display(water), sky, fres * (1.0 - skin) * (1.0 - pad));
 		vec4 path = zs_lake_glint(refl, zs_sun_direction, zs_moon_direction, zs_celestial_clear, 0.0, 1.0);
 		disp = mix(disp, path.rgb, path.a * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad));
-		float spark = smoothstep(0.9993, 0.99955, dot(reflect(-eye, wn), zs_sun_direction)) * (0.0025 / (0.0025 + rough));
+		float spark = smoothstep(mix(0.9993, 0.9984, zs_clean), mix(0.99955, 0.9991, zs_clean), dot(reflect(-eye, wn), zs_sun_direction)) * (0.0025 / (0.0025 + rough)) * (1.0 + 0.5 * zs_clean);
 		spark *= zs_celestial_clear * smoothstep(-0.03, 0.12, zs_sun_direction.y) * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad);
 		vec3 warm_c = mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, zs_sun_direction.y));
 		disp = mix(disp, warm_c, clamp(spark, 0.0, 1.0));
