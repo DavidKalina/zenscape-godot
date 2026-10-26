@@ -57,23 +57,6 @@ environment/defaults/default_clear_color=Color(0.84, 0.87, 0.82, 1)
 
 [shader_globals]
 
-zs_cl_warm={
-"type": "vec3",
-"value": Vector3(1.05, 1, 0.93)
-}
-zs_cl_cool={
-"type": "vec3",
-"value": Vector3(0.86, 0.9, 1.22)
-}
-zs_cl_haze_mid={
-"type": "vec3",
-"value": Vector3(0.76, 0.98, 1)
-}
-zs_cl_haze_far={
-"type": "vec3",
-"value": Vector3(0.62, 0.86, 1.2)
-}
-
 zs_plate_half={
 "type": "float",
 "value": 24.0

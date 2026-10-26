@@ -1,6 +1,5 @@
 shader_type spatial;
 #include "res://shaders/world_play_bend.gdshaderinc"
-#include "res://shaders/clean_look.gdshaderinc"
 #include "res://shaders/scene_palette.gdshaderinc"
 #include "res://shaders/reference_wind.gdshaderinc"
 // Worn paths drawn per pixel on the ground (0 segments: none).
@@ -82,8 +81,6 @@ const float LOD_SLACK = 25.0;
 // light's wrap and backlit glow, and the luminance of the crown's instance
 // tint (so COLOR over it is the generator's grey bake).
 uniform float spruce_round = 0.0;
-// lift near-black dead wood (off for the spruce sprites' bake, which paints the crowns).
-uniform bool clean_lift = true;
 uniform float spruce_blue = 0.0;
 uniform float spruce_paint = 0.0;
 uniform vec4 spruce_light = vec4(0.0, 0.0, 0.7, 0.18);
@@ -125,24 +122,6 @@ uniform bool grass_blades = false;
 uniform float grass_round = 0.55;
 uniform float grass_dry = 0.25;
 uniform float grass_tip_glow = 0.55;
-// Clean look round 5: how far the grass is lit and shaded as a mass rather
-// than blade by blade (0: as before): the blades' normals lean to the sky
-// together, each tuft's own shade swings less, the sun and the shadows
-// between blades are softer (reference_direct_light). Blades only.
-uniform float grass_calm : hint_range(0.0, 1.0) = 1.0;
-// Clean look round 6: how far the root-to-tip tone follows the field's height
-// (the blade's height in the tuft over `grass_mass_top` m, model space)
-// rather than each blade's own length (0: per blade, as before), so blades
-// side by side at one height take one tone and the field darkens toward its
-// base as a mass; `grass_mass_cool` cools that lower mass toward zs_cl_cool.
-uniform float grass_mass : hint_range(0.0, 1.0) = 0.0;
-uniform float grass_mass_top = 1.0;
-uniform float grass_mass_cool = 0.0;
-// The field's lower mass in its own shade, over the root paint too: the tone
-// at the root (1: none), rising to 1 at `grass_mass_top`.
-uniform float grass_mass_shade = 1.0;
-// ... and the tone at the field's top (1: none), so its lit tops stay light.
-uniform float grass_mass_lift = 1.0;
 // The tuft mesh's own root and tip colours (GrassTuft.dress, linear): the
 // vertex colour over these keeps each blade's jitter and any instance tint,
 // while the colour itself is the family's living green (grass_look).
@@ -817,8 +796,6 @@ vec3 zs_grass_mute(vec3 g_color, float g_amount) {
 
 void fragment() {
 	float sea_mist = 0.0;
-	// The blade's tone along the field's height (grass_mass), else its own.
-	float grass_tone = grass_mass > 0.0 ? mix(grass_along, clamp(leaf_local.y / max(grass_mass_top, 0.01), 0.0, 1.0), grass_mass) : grass_along;
 	// A sky peak's point in its range's own frame (sky_peak_look).
 	vec3 peak_rel = vec3(0.0);
 	if (sea_cut > -1.0e8 && sea_open) {
@@ -880,7 +857,6 @@ void fragment() {
 		NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
 	}
 	if (grass_blades || flower_heads) {
-		if (grass_blades) face_normal = mix(face_normal, vec3(0.0, 1.0, 0.0), 0.5 * grass_calm);
 		face_normal = normalize(face_normal);
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
@@ -984,12 +960,12 @@ void fragment() {
 		vec3 ground_under = grass_root_paint.rgb * own;
 		if (grass_root_paint.w < 1.0) ground_under = mix(zs_ground_color(ZS_GROUND_GREEN, vec3(plant_root.x, 0.0, plant_root.y), 0.0, 1.0), ground_under, grass_root_paint.w);
 		living = mix(living, ground_under, grass_ground_pull);
-		float tuft_shade = 1.0 + (fract(sin(dot(plant_root, vec2(37.1, 91.7))) * 43758.5453) - 0.5) * 2.0 * grass_variation * (1.0 - 0.6 * grass_calm);
+		float tuft_shade = 1.0 + (fract(sin(dot(plant_root, vec2(37.1, 91.7))) * 43758.5453) - 0.5) * 2.0 * grass_variation;
 		float dry = zs_grass_dry(plant_root, ZS_GRASS_DRY_SCALE, zs_grass_offset) * grass_dry;
-		tint = zs_grass_paint(living * base_color.rgb * own, grass_tone, dry, ZS_GRASS_STRAW, ZS_GRASS_ROOT_SHADE, ZS_GRASS_TIP_LIFT, ZS_GRASS_TIP_CURVE) * tuft_shade;
+		tint = zs_grass_paint(living * base_color.rgb * own, grass_along, dry, ZS_GRASS_STRAW, ZS_GRASS_ROOT_SHADE, ZS_GRASS_TIP_LIFT, ZS_GRASS_TIP_CURVE) * tuft_shade;
 		// The root grows out of the ground's own colour (ground_look) and
 		// only the upper blade is the tuft's, so no dark base rings it.
-		tint = mix(ground_under * grass_root_blend.x, tint, smoothstep(0.0, grass_root_blend.y, grass_tone));
+		tint = mix(ground_under * grass_root_blend.x, tint, smoothstep(0.0, grass_root_blend.y, grass_along));
 		tint *= 1.0 + grass_wave_sheen * grass_bow * grass_along;
 	}
 	if (terrain_growth && !peak_rock && (rock_treatment > 0 || inland_rock_amount > 0.0 || desert_enabled)) tint = terrain_geology(tint,look_position,face_normal);
@@ -1015,11 +991,7 @@ void fragment() {
 	if (grass_blades && grass_root_paint.w > 0.0) {
 		vec3 grass_src_root = max(grass_source_root, vec3(0.002));
 		vec3 paint_root = grass_root_paint.rgb * clamp(COLOR.rgb / mix(grass_src_root, max(grass_source_tip, vec3(0.002)), grass_along), vec3(0.0), vec3(3.0));
-		tint = mix(tint, paint_root, grass_root_paint.w * (1.0 - smoothstep(0.0, grass_root_blend.y, grass_tone)));
-	}
-	if (grass_blades && (grass_mass_shade < 1.0 || grass_mass_cool > 0.0 || grass_mass_lift != 1.0)) {
-		float mass_low = 1.0 - smoothstep(0.0, 1.0, clamp(leaf_local.y / max(grass_mass_top, 0.01), 0.0, 1.0));
-		tint *= mix(vec3(grass_mass_lift), grass_mass_shade * mix(vec3(1.0), zs_cl_cool, grass_mass_cool), mass_low);
+		tint = mix(tint, paint_root, grass_root_paint.w * (1.0 - smoothstep(0.0, grass_root_blend.y, grass_along)));
 	}
 	// The underside the wind flips into view (grass_silver, off by default).
 	if (grass_blades && grass_silver.x > 0.0) tint = zs_silver_paint(tint, zs_silver_tuft(plant_root, grass_bow), smoothstep(0.15, 0.85, grass_along),
@@ -1121,12 +1093,6 @@ void fragment() {
 		tint = max(vec3(0.0), vec3(grey) + (tint - vec3(grey)) * mix(1.0, NIGHT_NEAR_RICH, night_near));
 		tint *= mix(1.0, NIGHT_NEAR_DIM * min(1.0, pow(NIGHT_NEAR_LEVEL.x / max(grey, 1e-3), NIGHT_NEAR_LEVEL.y)), night_near);
 	}
-	// dead wood (snags, logs, trunks: the earth role) lifted from
-	// near-black to a grey-brown inside the scene's value range.
-	if (clean_lift && !earth_sides && !terrain_growth && !grass_blades && !flower_heads && !(spruce_round > 0.0) && (palette_role == 4 || palette_role == 0)) {
-		float wl = dot(tint, vec3(0.2126, 0.7152, 0.0722));
-		tint = mix(tint, vec3(0.36, 0.305, 0.26), 0.95 * (1.0 - smoothstep(0.08, 0.25, wl)));
-	}
 	ALBEDO = tint;
 	ROUGHNESS = mix(roughness_value, mix(0.58, 0.20, mineral), surface_wet);
 	ROUGHNESS = mix(ROUGHNESS, 0.48, coat_wetness);
@@ -1143,11 +1109,11 @@ void fragment() {
 	// so the hemisphere term is where grounding has to happen.
 	float contact = mix(1.0, 0.42 + 0.58 * smoothstep(0.0, 0.85, contact_height), zs_look_ao);
 	// Tufts keep a little of it up the blade; the root matches the ground.
-	if (grass_blades) contact = mix(1.0, contact, grass_contact * smoothstep(0.0, grass_root_blend.y, grass_tone));
+	if (grass_blades) contact = mix(1.0, contact, grass_contact * smoothstep(0.0, grass_root_blend.y, grass_along));
 	if (flower_heads) contact = mix(1.0, contact, flower_contact);
 	// The sides hang below their origin; the contact term would halve them.
 	if (earth_sides) contact = 1.0;
-	vec3 hemi = zs_clean_cool_fill(mix(zs_hemi_ground, zs_hemi_sky, light_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI);
+	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, light_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	EMISSION = emissive_color + tint * hemi * contact;
 	vec3 spruce_olive = vec3(0.0);
 	if (spruce_round > 0.0) {
@@ -1193,12 +1159,6 @@ void fragment() {
 #define ZS_GRASS_TRANSLUCENCY
 #define ZS_GRASS_ALONG grass_along
 #define ZS_GRASS_GLOW (grass_blades ? grass_tip_glow : 0.0)
-// Clean look round 5: how far grass blades are lit as a mass (reference_direct_light).
-#define ZS_GRASS_CALM (grass_blades ? grass_calm : 0.0)
-// (How far each blade's sun goes to the mean, the blade tilt that mean is of, and how far the shadows between blades soften: each times grass_calm.)
-#define ZS_GRASS_PULL 0.75
-#define ZS_GRASS_TILT 0.45
-#define ZS_GRASS_SOFT 0.4
 #define ZS_FLOWER_TRANSLUCENCY
 #define ZS_FLOWER_SHARE grass_along
 #define ZS_FLOWER_GLOW (flower_heads ? flower_glow : 0.0)

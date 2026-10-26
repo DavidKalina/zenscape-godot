@@ -20,8 +20,6 @@ render_mode world_vertex_coords, cull_disabled, diffuse_lambert, specular_disabl
 global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
-global uniform vec3 zs_cl_warm;
-global uniform vec3 zs_cl_cool;
 global uniform vec3 zs_cloud_sun;
 #include "res://shaders/look_fill.gdshaderinc"
 
@@ -118,7 +116,7 @@ void fragment() {
 	ALBEDO = c;
 	ROUGHNESS = 1.0;
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
-	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI * zs_cl_cool;
+	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	vec3 ol = OLIVE * sprite_luma(c);
 	EMISSION = mix(c, ol, tone.w) * hemi + mix(c, ol, tone.y) * hemi * tone.x + mix(c, ol, olive) * zs_look_bounce_light(n);
 }
@@ -130,7 +128,7 @@ void light() {
 	float tier = lit * 3.0;
 	float t = clamp((floor(tier) + smoothstep(0.5 - sun.w, 0.5 + sun.w, fract(tier))) / 3.0, 0.0, 1.0);
 	t = mix(lit, t, sun.z);
-	DIFFUSE_LIGHT += crown_sun * zs_cl_warm * t * mix(vec3(0.96, 0.99, 1.04), vec3(1.04, 1.02, 0.94), t) / PI;
+	DIFFUSE_LIGHT += crown_sun * t * mix(vec3(0.96, 0.99, 1.04), vec3(1.04, 1.02, 0.94), t) / PI;
 	float through = pow(max(dot(-LIGHT, VIEW), 0.0), 2.0);
 	DIFFUSE_LIGHT += LIGHT_COLOR * sun.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
 	if (zs_look_fill > 0.0 && LIGHT_IS_DIRECTIONAL) {

@@ -1,4 +1,3 @@
-#include "res://shaders/clean_look.gdshaderinc"
 // Source Lambert + GGX direct lighting. The climbing valley shadow gates only
 // direct contributions, preserving hemisphere and reflected-sky afterglow.
 void light() {
@@ -24,32 +23,7 @@ void light() {
 		DIFFUSE_LIGHT += open_sun * ZS_SPRUCE_LIGHT.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
 	} else
 #endif
-	// the sun in soft steps, the sun side warm (clean_look.gdshaderinc).
-#ifdef ZS_GRASS_CALM
-	// Grass blades (clean look round 5): the blades' own normals and their
-	// neighbours' shadows would light each one differently, bright beside
-	// dark. Each blade's banded sun is pulled toward the mean a blade tilted
-	// out by ZS_GRASS_TILT gets round the compass (so the tuft keeps its
-	// brightness and the sun's side), and the little shadows between blades
-	// are softened.
-	{
-	float grass_calm_k = ZS_GRASS_CALM;
-	if (grass_calm_k > 0.0) {
-		float up_l = clamp(zs_sun_direction.y, 0.1, 1.0);
-		float side_l = sqrt(max(1.0 - up_l * up_l, 0.0)) * ZS_GRASS_TILT;
-		float base_l = up_l * sqrt(1.0 - ZS_GRASS_TILT * ZS_GRASS_TILT);
-		float mean_b = 0.25 * (zs_clean_banded(base_l + side_l) + zs_clean_banded(base_l - side_l) + 2.0 * zs_clean_banded(base_l));
-		float banded = mix(zs_clean_banded(dot(NORMAL, LIGHT)), mean_b, ZS_GRASS_PULL * grass_calm_k);
-		float calm_open = mix(ATTENUATION, 1.0, ZS_GRASS_SOFT * grass_calm_k);
-		vec3 calm_energy = LIGHT_COLOR * calm_open * gate * inversion_transmit;
-		DIFFUSE_LIGHT += calm_energy * banded * zs_clean_sun_tint() / PI * (1.0 - metalness_value);
-	} else {
-		DIFFUSE_LIGHT += energy * zs_clean_banded(dot(NORMAL, LIGHT)) * zs_clean_sun_tint() / PI * (1.0 - metalness_value);
-	}
-	}
-#else
-	DIFFUSE_LIGHT += energy * zs_clean_banded(dot(NORMAL, LIGHT)) * zs_clean_sun_tint() / PI * (1.0 - metalness_value);
-#endif
+	DIFFUSE_LIGHT += energy * nl / PI * (1.0 - metalness_value);
 #ifdef ZS_LOOK_FILL
 	// The look pass's sky fill (shaders/look_fill.gdshaderinc), the sun's
 	// light only: where its shadow falls or the face turns from it.
