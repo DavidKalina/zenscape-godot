@@ -370,3 +370,131 @@ plus the sheen's, per grass pixel past 28 m).
   `endless_ground.gdshader`, `endless_sea.gdshader` as text (`test_ground_look`,
   `test_sky_peak_look`); none run. New uniforms `grass_far_blades` (ground) and
   `grass_calm` (surface).
+
+## Round 6: near grass as one mass, clean far shallows (far grass dropped)
+
+Launch: `cd /Users/davidkalina/Documents/Projects/zenscape-look-clean && python3 tools/play.py -- --ledger=/tmp/look_clean_ledger.json`.
+Stills: `/tmp/look_clean6/` (meadow_low, hills, coast, cruise, high, far120,
+`*_dusk.png` at `--mood=rosewater_dusk`, `seq/far120_0..3.png` 0.75 s apart,
+`title.png` with `title_main.png` and `title_r5.png` taken from the same
+pinned camera). Trials are in `x/`.
+
+### Title camera pinned
+The title's spot is the same every run (seed 1: (108.8, 26.7), heading
+-1.963), but the orbit's angle runs on from when the stage begins, so stills
+differed. `scratch/title6.gd` (a throwaway driver, uncommitted) holds
+`stage.angle` at heading + ORBIT_FROM and `stage.elapsed` at 4.5 s for the
+whole hold: `python3 tools/drive.py scratch/title6.gd --rendered -- --out=F
+--scene-args --title`. Main's title came from a `git archive` of main's HEAD
+in `/tmp/main_ro` (the main checkout was only read), set up with
+`tools/worktree.py`. The harness has no title-orbit flag; a `--menu-orbit=`
+in `menu_stage.gd` would be the committed version.
+
+### 1. Near grass: calm and deep
+- What made it flat: round 5's blades were calm already (flicker at 1 to 4 px
+  was about half of main's on the title) but the field had no lower mass. Each
+  blade's lower 60 % takes the ground paint's colour (`grass_root_paint`, so
+  no dark rings), and the turf under the tufts is that same light paint. So
+  the field's floor, seen between blades, was as light as the blades
+  (`title_r5.png`: light yellow-green under the plane and in every gap), and
+  the clean look's soft banded sun gives the blades little light and shade of
+  their own. It read as hazy. Main's depth came from blade-by-blade light and
+  dark, which is the flicker.
+- Fix (`shaders/reference_surface.gdshader`):
+  - `grass_tone` (:821): the root-to-tip tone follows the height in the
+    field (model-space height over `grass_mass_top`) rather than each blade's
+    own length (`grass_mass`, :138). Blades side by side at one height take
+    one tone. A short blade's tip is no longer as light as a tall one's. Used
+    for the paint gradient, the root blend, the root paint and the contact
+    term (:989, :992, :1018, :1146).
+  - The mass shade (:1020): after the root paint, the tint goes from
+    `grass_mass_shade` x a share of `zs_cl_cool` at the root up to
+    `grass_mass_lift` at the field's top (smoothstep), so the lower field is
+    darker and cooler as one mass and the tops stay light.
+  - The turf under the near carpet takes the root's shade
+    (`shaders/endless_ground.gdshader` `carpet_near_mass` :95, applied :872),
+    so the gaps between blades show the field's dark floor, not light paint.
+    It fades with `carpet_near` (16 to 30 m) and is off from high up (`wc_up`).
+- Knobs: `scripts/endless/endless_grass.gd:261` `MASS` (follow 1.0, top 0.35 x
+  tall = 1.4 m, shade 0.66, lift 1.1, cool 0.5), set in `_calm` (:1157) and on
+  the ground (:766). By hand: `--grass-set=grass_mass_shade=0.75`,
+  `--ground-set=carpet_near_mass=0.75,0.5`. The shader defaults are neutral,
+  so every other user of `reference_surface` is unchanged.
+- Tried and dropped: per-blade tone along the field's height alone (no
+  visible change: the root paint covers the base); per-tuft brightness hash
+  off (`grass_variation=0`, no change); fewer, wider blades (9 x 0.8 width, 2
+  per satellite: flicker -6 %, but the near tufts read as reeds or leaves);
+  `grass_calm=0` and the tip glow off (both minor). The mesh is unchanged, so
+  there is no model-budget assessment to do.
+- Not changed: the very dark olive tufts on the steep river bank in
+  `meadow_low` (the land's thin-turf tint on steep ground, there on main too).
+  They are now the strongest dark slivers in that view.
+
+### 2. Far grass: dropped on purpose
+Dropped mid-round at the user's request: the streaks read "a little streaky",
+and round 7 will try fake depth with clumps and layered parallax blades
+instead. A trial (sheen kept from high up, far boost 0.6, stronger and wider
+streaks) was reverted. The far grass is exactly as round 5 left it.
+
+### 3. Milky mottle over far shallows
+- Reproduced in `high`; isolated with the sea's own uniforms
+  (`--sea-set=bed_fade:0.001` hides the bed: clean bands;
+  `--sea-set=bed_fade:100000.0;absorb:Vector3(0,0,0)` shows only the bed).
+  `--no-clouds` changed nothing. Stills: `x/hi_base`, `x/hi_nobed`,
+  `x/hi_bedonly`, `x/hi_fix1`.
+- Cause: the bed seen through the sea (`seen * bed`). The seabed's lit relief
+  (rills and streaks down the shelf) and its paint, seen through thin water at
+  a share that follows each bump's depth, read from afar as a milky, cloudy
+  mottle. Round 5's blur (`SEA_FAR_BLUR`, mip 4) is narrower than those
+  streaks, so it stayed.
+- Fix: `shaders/endless_sea.gdshader:47` `SEA_FAR_BED` 0.7, applied at :1067:
+  over the far-water ramp (90 to 300 m) 70 % of the bed is taken away, and the
+  column's banded colour shows instead. Near shallows (coast's lagoon) are
+  unchanged. Inland lakes are the ground shader's water and were not changed
+  (no mottle seen there).
+
+### Numbers
+Near grass (`scratch/grass_metric.gd`, run headless: flick = luma std at 1 to
+4 px, mid = std at about 5 to 25 px, mass = p85 - p15 of the 6 px-blurred
+luma; the title cropped below the logo, meadow_low below the horizon):
+
+| still | luma | flick | mid | mass |
+|---|---|---|---|---|
+| title main | 0.466 | 0.0446 | 0.0465 | 0.226 |
+| title r5 | 0.493 | 0.0248 | 0.0278 | 0.226 |
+| title r6 | 0.442 | 0.0259 | 0.0281 | 0.210 |
+| meadow_low main | 0.459 | 0.0529 | 0.0492 | 0.200 |
+| meadow_low r5 | 0.488 | 0.0343 | 0.0375 | 0.172 |
+| meadow_low r6 | 0.458 | 0.0327 | 0.0347 | 0.197 |
+
+Flicker stays about 42 % (title) and 38 % (meadow_low) under main's. The
+depth shows more by eye than in these numbers: the lower field is darker
+than its tops, and nothing light shows through it.
+
+Grass median V / S (`tools/look_measure.py`), r5 -> r6: meadow_low
+.518/.528 -> .482/.521 (V -0.036, on purpose: main is .490); title (pinned)
+.549/.577 -> .498/.590 (V -0.051, on purpose: main's is .502); hills
+.510/.500 and cruise .604/.621 unchanged; coast .659/.444 -> .655/.444; high
+.506/.538 -> .510/.538.
+
+Frame time (`scratch/perf6.gd`, Forward+ 1440x900, vsync and the fps cap off,
+the median of 400 frames after a 330-frame hold, wall clock; the Metal GPU
+timer reads 0): `high` r5 11.3 to 11.8 ms, r6 11.3 to 11.8 ms; `far120` r5
+18.0, r6 18.1; title r5 12.9 to 13.0, r6 12.5 to 13.3. All the same within
+noise.
+
+### Unverified
+- One machine (Mac, Forward+). Headless smoke passes; the shaders only
+  compile in rendered runs, which were clean.
+- Moods: default and rosewater dusk only (`*_dusk.png`). No winter or
+  regions. The isles' tufts are untouched (neutral defaults), but not
+  rendered.
+- The near ring's tufts against the far ring at 16 to 30 m: no ring seen in
+  meadow_low or the title, but not checked in flight.
+- `native/terrain_kernels/grass_cell.h` was not touched (nothing it computes
+  changed); `SCRIPT_TINT := true` stays.
+- Tests likely to break (none run): those reading `reference_surface.gdshader`,
+  `endless_ground.gdshader` or `endless_sea.gdshader` as text
+  (`test_ground_look`, `test_sky_peak_look`). New uniforms: `grass_mass`,
+  `grass_mass_top`, `grass_mass_shade`, `grass_mass_lift`, `grass_mass_cool`
+  (surface); `carpet_near_mass` (ground).
