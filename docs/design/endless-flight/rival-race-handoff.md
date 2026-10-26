@@ -2,6 +2,8 @@
 
 Any of the three traffic planes can now be challenged to a race. You fly up behind one, hold a button, and it accepts with a wing waggle and speeds off low and fast through the land's openings: arches, split mountains, and slot halls and tunnels where the world has them. You win by passing it and holding the lead for a moment. This is a prototype round: smoke checks, throwaway drivers and stills. No tests were committed.
 
+The polish round (`rival-race-polish-handoff.md`) changed the start (a count), the marks (the race tag, the rival's trail and gate), the win rule (6 m ahead, 150 m off its line, 1.5 s) and the result. Where this doc's numbers differ, that one holds.
+
 ## Play it
 
 ```

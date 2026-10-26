@@ -106,6 +106,17 @@ func step(delta: float, events: Dictionary, hum: Dictionary) -> void:
 	_clock = 0.0
 	if weak > 0.0 or strong > 0.0: Pad.pulse(clampf(weak,0.0,1.0),clampf(strong,0.0,1.0),EVERY*2.0)
 
+## A knock from outside the landing (the rival race's beats): `v` weak
+## motor, strong motor, seconds; taken if it beats what is still ringing,
+## and set on the motors at the next step.
+func knock(v: Vector3) -> void:
+	var ringing := _knock*(_knock_left/_knock_for if _knock_for > 0.0 else 0.0)
+	if v.z <= 0.0 or v.x+v.y <= ringing.x+ringing.y: return
+	_knock = Vector2(v.x,v.y)
+	_knock_for = v.z
+	_knock_left = v.z
+	_clock = EVERY
+
 ## Takes the strongest knock in `events`, if it beats what is still
 ## ringing; true if one did.
 func _knocks(events: Dictionary) -> bool:
