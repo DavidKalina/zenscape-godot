@@ -1,3 +1,4 @@
+#include "res://shaders/light_leans.gdshaderinc"
 // Source Lambert + GGX direct lighting. The climbing valley shadow gates only
 // direct contributions, preserving hemisphere and reflected-sky afterglow.
 void light() {
@@ -34,7 +35,7 @@ void light() {
 		// A crown's fill is cancelled off its blue albedo and put back olive (gated by tone2.z).
 		if (ZS_SPRUCE_LIGHT.x > 0.0 && ZS_SPRUCE_TONE2.z > 0.0) {
 			float la = dot(ALBEDO, vec3(0.2126, 0.7152, 0.0722));
-			vec3 ratio = vec3(1.20, 1.05, 0.22) * la / max(ALBEDO, vec3(0.03));
+			vec3 ratio = zs_cool(vec3(1.20, 1.05, 0.22), 1.0) * la / max(ALBEDO, vec3(0.03));
 			fill_light *= mix(vec3(1.0), clamp(ratio, 0.0, 3.0), ZS_SPRUCE_TONE2.z);
 		}
 #endif

@@ -22,6 +22,8 @@ global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
 global uniform vec3 zs_cloud_sun;
 #include "res://shaders/look_fill.gdshaderinc"
+// The shade's olive turns with the shade's hue (light_leans; 0 fixed).
+#include "res://shaders/light_leans.gdshaderinc"
 
 uniform sampler2D albedo_atlas : filter_linear_mipmap, repeat_disable;
 uniform sampler2D normal_atlas : filter_linear_mipmap, repeat_disable;
@@ -42,6 +44,7 @@ uniform vec4 sun = vec4(1.0, 0.35, 0.25, 0.5);
 // fill, warm (fill olive), floor (own shadow), hemiolive
 uniform vec4 tone = vec4(2.6, 1.0, 0.85, 0.85);
 uniform float olive = 1.0;
+uniform float shade_follow : hint_range(0.0, 2.0) = 1.0;
 
 const vec3 OLIVE = vec3(1.20, 1.05, 0.22);
 const float SLACK = 25.0;
@@ -117,7 +120,7 @@ void fragment() {
 	ROUGHNESS = 1.0;
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
-	vec3 ol = OLIVE * sprite_luma(c);
+	vec3 ol = zs_cool(OLIVE, shade_follow) * sprite_luma(c);
 	EMISSION = mix(c, ol, tone.w) * hemi + mix(c, ol, tone.y) * hemi * tone.x + mix(c, ol, olive) * zs_look_bounce_light(n);
 }
 
@@ -134,7 +137,7 @@ void light() {
 	if (zs_look_fill > 0.0 && LIGHT_IS_DIRECTIONAL) {
 		vec3 fill_light = zs_look_fill_light(1.0 - ATTENUATION * smoothstep(0.0, 0.2, max(d, 0.0)));
 		float la = sprite_luma(ALBEDO);
-		fill_light *= mix(vec3(1.0), clamp(OLIVE * la / max(ALBEDO, vec3(0.03)), 0.0, 3.0), olive);
+		fill_light *= mix(vec3(1.0), clamp(zs_cool(OLIVE, shade_follow) * la / max(ALBEDO, vec3(0.03)), 0.0, 3.0), olive);
 		DIFFUSE_LIGHT += fill_light;
 	}
 }
