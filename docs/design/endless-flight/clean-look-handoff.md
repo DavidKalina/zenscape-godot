@@ -73,3 +73,81 @@ mood here), `/tmp/look_toggle/` (the live K / J flip through the key path).
 - Tests likely to break: any golden-image or shader-parameter tests of
   `reference_surface`, `endless_ground`, `endless_sea`, and tests that count
   `[shader_globals]` or check `project.godot`; none run.
+
+## Round 2: one switch per item, grass kept, clouds in three
+
+Launch (from the worktree):
+
+    python3 tools/play.py -- --look=clean --edges=1 --ledger=/tmp/look_clean_ledger.json
+    python3 tools/play.py -- --clean=paint,shadows,water --clouds=cream --ledger=/tmp/look_clean_ledger.json
+
+Flags: `--look=clean` all items on (clouds white); `--clean=a,b,...` only those
+(paint, shadows, light, clouds, snags, distance, water, grade, edges);
+`--clouds=beige|cream|white` (beige is as it was; cream or white also turns the
+clouds item on); `--edges=1` as before. No flags: every item off, which is main's
+look.
+
+Keys (`studies/endless_flight.gd`, `scripts/endless/clean_look.gd`): **K** (F6)
+master (all on; all off when all are on); **O** (F8) the panel listing each item
+and its state; **1..9** one item each (1 paint, 2 shadows, 3 light, 4 clouds
+cycling as it was / cream / white, 5 snags, 6 distance, 7 water, 8 grade,
+9 edges); **J** edges. Each flip eases over 0.35 s. The globals are now
+`zs_cl_paint, zs_cl_shadow, zs_cl_light, zs_cl_cloud (0/1/2), zs_cl_snag,
+zs_cl_dist, zs_cl_water` (`zs_clean` is gone); grade and edges are the post pass.
+
+Where each switch acts: paint = ground paint block + far tuft tint pull (now
+12 %, was 30 %); shadows = cool fill, warm sun tint, spruce and far tree tints;
+light = banded sun on ground, tufts and the surface shader; clouds =
+`cumulus_light.gdshaderinc` (`zs_cumulus_palette_plain` is the old palette) and
+`endless_cloud_composite.gdshader`; snags = dead-wood lift; distance = ground
+colour planes plus Environment haze; water = sea and river shader changes;
+grade = `clean_post.glsl`.
+
+What made the grass pale and why now fixed:
+- The big one was the clouds item: the valley fog is drawn by the cloud
+  composite, and white cloud light made it a haze over the near grass (coast).
+  Valley fog now keeps its old colours; only cloud goes cream or white.
+- The banded sun was brighter than Lambert on flat ground (about +18 %). It is
+  now levelled to Lambert on flat ground (`zs_clean_banded`), steps move light
+  around the mean.
+- The crisp clumps pushed the paint toward SUNLIT (paler, less saturated):
+  `sunny_bias` -0.10 takes it back. Far tuft neutral pull 30 % -> 12 %.
+- The grade cost saturation; it gives 3 % back (`clean_post.glsl`).
+- Far sea beige band: the shore line foam (water item) used a pixel footprint
+  wider than the shore, so the whole far sea foamed. Faded out by footprint
+  0.6..2.5 m.
+- Cloud undersides: a soft floor of sky light (0.62 of the shade) keeps them light;
+  white shade lilac grey, cream shade warm grey.
+
+Grass median V / S (`tools/look_measure.py`), main stills `/tmp/look_now/` vs all on
+`/tmp/look_clean2/`:
+
+| view | main V/S | clean V/S | blotch8 main -> clean |
+|---|---|---|---|
+| cruise | 0.608 / 0.605 | 0.608 / 0.616 | 0.063 -> 0.062 |
+| coast | 0.655 / 0.456 | 0.659 / 0.460 | 0.056 -> 0.048 |
+| hills | 0.506 / 0.503 | 0.506 / 0.494 | 0.138 -> 0.131 |
+| meadow_low | 0.490 / 0.548 | 0.498 / 0.550 | 0.0725 -> 0.0745 (slightly above) |
+| high | 0.510 / 0.540 | 0.522 / 0.542 | 0.093 -> 0.0905 |
+
+Single items (coast, cruise, hills), V/S, against the same build with all off
+(0.659/0.451, 0.627/0.597, 0.522/0.489): paint .659/.441, .627/.579, .529/.472;
+shadows .659/.449, .627/.601, .518/.503; light .667/.453, .631/.596, .522/.486;
+clouds .659/.451, .627/.597, .522/.489; snags, distance, water within 0.005;
+grade .655/.463, .627/.621, .522/.477. None moves V more than 0.01 or S more
+than 0.02 (the off build itself differs from the main stills by up to 0.02).
+
+Stills: `/tmp/look_clean2/` (all on: meadow_low hills rock coast cruise high),
+`clouds_beige|cream|white/` (coast, cruise), `single_<item>/` (coast, cruise,
+hills), `panel.png` (the panel through the key path).
+
+Proof: smoke (headless) passes with no flags, `--look=clean --edges=1`, and
+`--clean=paint,water --clouds=cream`. A scratch driver sent real key events
+(O, 1, 4 x3, 9, J, K, K): 13 of 13 checks. Note headless does not compile
+shaders; shader errors only show in rendered runs (all rendered runs clean).
+
+Unverified: the compute shader needs `python3 tools/godot.py --import` after an
+edit (it is a resource); other moods, winter, performance, the flip under a
+long flight; the K/number keys were not tried with a pad. The panel text is
+small at 4K. Fine paint noise: meadow_low blotch8 is a hair above main's.
+Tests likely broken: any that read the `zs_clean` global.

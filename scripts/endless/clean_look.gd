@@ -132,10 +132,11 @@ func any_on() -> bool:
 	for k in target: if target[k] > 0.0: return true
 	return false
 
-## K: the master, all items on, or all off when any is on. Returns the note.
+## K: the master, all items on, or all off when all are on already (a mixed
+## set goes to all on). Returns the note.
 func flip_look() -> String:
-	var off := false
-	for k in target: if k != "edges" and target[k] > 0.0: off = true
+	var off := true
+	for k in target: if k != "edges" and target[k] == 0.0: off = false
 	for it in ITEMS:
 		var n: String = it[0]
 		if n == "edges": continue
