@@ -200,3 +200,82 @@ but its dusk warm/cool is a few percent only; headless smoke passed with no
 flags and with `--look=clean --edges=1` (shaders only compile in rendered
 runs, which were clean). The audit's sun : fill numbers do not match the
 measured 1.4 lit/shade; cause not found.
+
+## Round 4: the look is the game's look, calmer near tufts
+
+The sections above describe the experiment; the switches, panel, keys and
+flags they name are gone (below).
+
+Baked in (new path only): paint, shadows, light, snags, distance, water,
+grade, with round 3's light-following tints. The tint globals stay
+(`zs_cl_warm`, `zs_cl_cool`, `zs_cl_haze_mid`, `zs_cl_haze_far`, set per frame
+by `scripts/endless/clean_look.gd` `_tints`; defaults in project.godot).
+
+Removed
+- Switch globals `zs_cl_paint/shadow/light/cloud/snag/dist/water`, `zs_edges`
+  (project.godot `[shader_globals]`, `shaders/reference_globals.gdshaderinc`,
+  and every `mix(old, new, zs_cl_x)` in the shaders).
+- Clouds: `cumulus_light.gdshaderinc` and `endless_cloud_composite.gdshader`
+  restored to main's bytes (cream/white code deleted).
+- Edges: the depth read, edge colour and strength from `clean_post.gd` and
+  `clean_post.glsl` (the pass is now the grade only; it no longer reads depth).
+- Panel, K/J/O/1-9/F6-F8 keys and their code in `studies/endless_flight.gd`,
+  flags `--look`, `--clean`, `--clouds`, `--edges`, `--clean-agx` (AgX code).
+- `clean_look.gd` is now ~80 lines: the tints each frame, and the Environment's
+  haze (`FOG_BEGIN/CURVE/AERIAL`, `GLOW`) set once. Built in
+  `studies/endless_flight.gd` right after `EndlessLook`, which the title/menu
+  world shares (same scene, same camera), so the title gets the look too
+  (checked: `/tmp/look_clean4/title_clean.png`).
+- Grade without a RenderingDevice: `CleanPost.available()` is false there
+  (Compatibility), the pass is not made, the game runs without it. Compat also
+  never builds `EndlessLook`, so the plain look is unchanged. Headless
+  `--rendering-method gl_compatibility`: no errors (only the existing FSR1
+  warning).
+
+Near tufts calmed
+- `scripts/endless/endless_patch.gd` `sunny_of` (and `patch_edge`, `PAINT_BIAS`,
+  `PAINT_STEPS`): the tufts' baked tint now follows the ground's calmed paint:
+  34 m clumps crisp at 1.5, 8 m clumps 0.18, wide 1.8, mid 0.36, bias -0.10,
+  soft thirds at 0.92; no 5.5 m or 1.4 m scales (the tufts never carried them,
+  the old mirror's soft 8 m clumps at 0.5 and mid 0.9 were the fine part).
+  Root-dark to tip-light gradient and the 2 m tint grid are untouched.
+- Ground under the tufts (`shaders/endless_ground.gdshader`, the `coarse`
+  block, ~line 840): the same `sunny_c`, and its grain (`carpet_near_grain`)
+  at 0.25, so tufts and ground agree where they meet.
+- Placement, counts, seeds untouched.
+- **Native kernels:** the tint is also computed in C++ (`native/terrain_kernels/
+  grass_cell.h` `Patch::grass`). I edited it to match but have no scons or
+  godot-cpp here, so it is NOT compiled or run. Until rebuilt,
+  `endless_grass.gd` `SCRIPT_TINT := true` tells the native pass to carry no
+  tint and lays it on in script (worker threads, per tuft). After a rebuild
+  (`tools/build_native_kernels.py`) set it false. Per-cell cost of the script
+  pass not measured; the frame time below includes it. A rendered check of the
+  C++ version is still owed.
+
+Numbers (grass median V / S, `tools/look_measure.py`, main `/tmp/look_now/`
+vs `/tmp/look_clean4/`): cruise .608/.605 -> .604/.615; coast .655/.456 ->
+.655/.462; hills .506/.503 -> .502/.508; meadow_low .490/.548 -> .518/.548
+(+0.028, round 2 was .498: the tufts are a little brighter than main's);
+high .510/.540 -> .518/.542. meadow_low std at 1-4 px: -4 % against round 2.
+Stills match round 2/3 apart from the tufts. Dusk (`cruise_dusk.png`,
+`--mood=rosewater_dusk`) follows the mood.
+
+Frame time (`--print-fps --disable-vsync`, Forward+ 1440x900, title scene,
+1500 frames, two runs each): main 22.2-23.8 ms mid-run, branch 22.2-24.4;
+the same within noise.
+
+Stills: `/tmp/look_clean4/` (meadow_low, hills, rock, coast, cruise, high,
+cruise_dusk, title_main, title_clean). Title: the branch's grass is calmer
+and a little hazier/cooler; the plane and menu read the same.
+
+Existing tests this may break (none run; grep found no test reading the
+removed globals, flags, `clean_look`/`clean_post`, edges or `EndlessPatch`):
+`tests/test_ground_look.gd` and `tests/test_sky_peak_look.gd` read
+`reference_surface.gdshader` as text (varying count, includes), which round 1
+added an include and a uniform to; they are the ones to check. Nothing
+compares shader output. Nothing tests the tuft tint colours; any colour test
+of grass tufts on seed 1 would change.
+
+Not done / limits: C++ edit uncompiled (above); other moods besides default and
+dusk, winter and regions not re-checked; stills of the 6 views were taken with
+the script tint path.
