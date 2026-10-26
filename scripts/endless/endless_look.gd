@@ -26,11 +26,16 @@ extends Node3D
 ## the palette's sky, horizon, glow, sun and ambient colours, the exposure,
 ## the wind and the hour), from MOODS, none of them winter.
 ##
-## Flags: --mood=ID (MOOD), --hour=H (0..24, the mood's own by default),
-## --day (the hour runs, a day in about eight minutes), --plain-look (round
-## one's procedural sky, flat sea and vertex colours; also under the
-## Compatibility renderer). T steps to the next quarter of the day, L to the
-## next mood.
+## Flags: --mood=ID (MOOD), --hour=H (0..24, the mood's own by default;
+## the time stands still there), --plain-look (round one's procedural sky,
+## flat sea and vertex colours; also under the Compatibility renderer).
+## The day cycle (scripts/endless/day_cycle.gd, day-cycle-handoff.md) runs
+## by default from the opening hour: --day=0 stops it (--day or --day=1
+## runs it from --hour=H too), --day-length=S (seconds a cycle, 1200),
+## --day-at=dawn|noon|dusk|blue (where it starts), --night=1 (the full night
+## under the horizon instead of the blue hour). T sweeps to the next stop
+## (dawn, noon, dusk, blue hour), ] and [ speed time up and back, L steps
+## to the next mood.
 
 const LandscapeLighting = preload("res://scripts/landscape_lighting.gd")
 const Celestial = preload("res://scripts/shared/celestial.gd")
@@ -43,6 +48,7 @@ const EndlessClouds = preload("res://scripts/endless/endless_clouds.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const EndlessPost = preload("res://scripts/endless/endless_post.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
+const DayCycle = preload("res://scripts/endless/day_cycle.gd")
 
 ## The moods L steps through (no winter: the season stays off it), and the
 ## one it opens on.
@@ -116,6 +122,10 @@ var _gust := 0.0
 var _wind_angle := 0.0
 var _wind := WIND
 var mood := MOOD
+## The day cycle: owns the sun's phase while it moves.
+var cycle: DayCycle
+## The hour is the clock's (T took it): a region's paint keeps off it.
+var _hour_taken := false
 ## A world of regions paints the mood and hour by the eye (blend_moods)
 ## until --mood=, --hour=, --day, L or T takes them over.
 var world_paint := true
@@ -208,14 +218,23 @@ func setup(land_seed: int) -> void:
 	var world_mood := str(world.paint.get("mood",MOOD))
 	if world_mood in MOODS: mood = world_mood
 	var hour := -1.0
-	var day := false
+	# The day cycle: on unless --hour= stills it or --day=0 stops it.
+	var day := -1
+	var day_length := DayCycle.LENGTH
+	var day_at := ""
+	var full_night := false
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--hour="): hour = clampf(a.get_slice("=",1).to_float(),0.0,24.0)
-		elif a == "--day": day = true
+		elif a == "--day": day = 1
+		elif a.begins_with("--day="): day = 0 if a.get_slice("=",1) == "0" else 1
+		elif a.begins_with("--day-length="): day_length = maxf(a.get_slice("=",1).to_float(),1.0)
+		elif a.begins_with("--day-at="): day_at = a.get_slice("=",1)
+		elif a.begins_with("--night="): full_night = a.get_slice("=",1) != "0"
 		elif a.begins_with("--key="): _key_arg = a.get_slice("=",1).to_float()
 		elif a.begins_with("--fill="): _fill_arg = a.get_slice("=",1).to_float()
 		elif a.begins_with("--mood=") and a.get_slice("=",1) in MOODS: mood = a.get_slice("=",1)
-	if hour >= 0.0 or day or mood != world_mood: world_paint = false
+	var still := hour >= 0.0
+	if hour >= 0.0 or day == 1 or mood != world_mood or day_at != "": world_paint = false
 	# The world's mood at its hour (wilderness: MOOD at HOUR; -1 the mood's
 	# own); another mood at its own hour.
 	if hour < 0.0 and mood == world_mood: hour = float(world.paint.get("hour",HOUR))
@@ -244,8 +263,18 @@ func setup(land_seed: int) -> void:
 	celestial.setup(lighting.lights)
 	celestial.look.changed.connect(_exposure)
 	show_mood(mood,false)
-	celestial.cycling = day
+	# The cycle owns the phase (celestial's own 480 s loop stays off).
+	celestial.cycling = false
+	if not full_night: celestial.night_floor = DayCycle.FLOOR
 	if hour >= 0.0: celestial.set_phase(hour/24.0)
+	cycle = DayCycle.new(day_length)
+	cycle.running = day == 1 or (day == -1 and not still)
+	cycle.set_phase(celestial.phase)
+	if day_at != "":
+		if cycle.go_to(day_at): celestial.set_phase(cycle.phase())
+		elif day_at.is_valid_float():
+			celestial.set_phase(clampf(day_at.to_float(),0.0,24.0)/24.0)
+			cycle.set_phase(celestial.phase)
 	_exposure()
 	# The sky's own cloud deck off; the cloud volume comes later as a pass.
 	RenderingServer.global_shader_parameter_set("zs_cloud",Vector4(0.0,0.0,20.0,12.0))
@@ -376,7 +405,7 @@ func blend_moods(list: Array) -> void:
 	_key = float(tune.key)*_key_arg
 	_fill = float(tune.fill)*_fill_arg
 	if post != null: post.set_tuning(tune)
-	if not celestial.cycling: celestial.set_phase(hour_at/24.0)
+	if not cycle.running and not _hour_taken: celestial.set_phase(hour_at/24.0)
 	var encoded := {}
 	for k: String in colors:
 		var c: Color = colors[k]
@@ -548,6 +577,10 @@ func _build_old_sea() -> void:
 ## One frame: the hour, the wind and the clocks the shaders read, the sea
 ## under the eye, then the clouds round `view` (the camera that draws).
 func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D = null) -> void:
+	if cycle.moving():
+		cycle.advance(delta)
+		celestial.phase = cycle.phase()
+	else: cycle.follow(celestial.phase)
 	celestial.advance(delta,false)
 	if _light_on:
 		sun.light_energy *= _key
@@ -631,10 +664,24 @@ static func _scene_linear(display: Vector3, exposure: float) -> Color:
 	var lin := input.inverse()*x/(1.8*exposure)
 	return Color(maxf(lin.x,0.0),maxf(lin.y,0.0),maxf(lin.z,0.0))
 
-## The next quarter of the day (dawn, noon, dusk, midnight), eased to.
+## The next stop of the day (dawn, noon, dusk, the blue hour), swept to
+## through the hours between.
 func next_hour() -> void:
-	world_paint = false
-	celestial.next_hour()
+	_hour_taken = true
+	cycle.follow(celestial.phase)
+	cycle.next_stop()
+
+## Time faster or slower (DayCycle SPEEDS: 1, 8, 30, 120 times).
+func faster() -> void: cycle.faster()
+func slower() -> void: cycle.slower()
+
+## The clock for the HUD: the part of the day, and how fast it runs if not
+## at its own pace, or that it stands still.
+func time_note() -> String:
+	var s := cycle.part()
+	if not cycle.running: s += ", still"
+	elif cycle.speed() > 1.0: s += ", x%d" % int(cycle.speed())
+	return s
 
 ## The hour now (0..24).
 func hour() -> float:

@@ -60,9 +60,12 @@ extends Node3D
 ## over the sea off the nearest river's mouth, heading for it; --water-contact=0
 ## turns the cushion, spray, marks and wet screen off.
 ## The look (scripts/endless/endless_look.gd): --mood=ID one of its
-## moods (alpine_morning), --hour=H the sun's hour (the mood's), --day the
-## hour runs, --plain-look round one's plain sky and colours; T steps to the
-## next quarter of the day, L to the next mood. The clouds (scripts/endless/
+## moods (alpine_morning), --hour=H the sun's hour, held (the mood's; the
+## day cycle runs from it by default: --day=0 stops it, --day-length=S,
+## --day-at=dawn|noon|dusk|blue), --plain-look round one's plain sky and
+## colours; T sweeps to the next stop of the day (dawn, noon, dusk, blue
+## hour), ] and [ run time faster and back (1, 8, 30, 120 times), L the next
+## mood. The clouds (scripts/endless/
 ## endless_clouds.gd): --no-clouds, --cloud-cover=X (1), --cloud-field=old (the
 ## earlier near-grid of mushrooms), --cloud-half-res (the earlier march); C turns them off
 ## and on. The grass carpet (scripts/endless/endless_grass.gd): --no-grass,
@@ -918,6 +921,9 @@ func tick(delta: float) -> void:
 		grass.lead_with(plane.velocity)
 		grass.step(eye.global_position,-eye.global_basis.z)
 	if look != null: look.plane_at = plane.position
+	# The day's clock waits while the menu holds the flight: a flight starts
+	# at its opening hour.
+	if look != null: look.cycle.held = stage != null and stage.holding()
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
 	if react != null: _react(delta)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
@@ -1257,6 +1263,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				if look != null: look.next_hour()
 			KEY_L:
 				if look != null: look.next_mood()
+			KEY_BRACKETRIGHT:
+				if look != null: look.faster()
+			KEY_BRACKETLEFT:
+				if look != null: look.slower()
 			KEY_C:
 				if look != null and look.clouds != null: look.clouds.set_enabled(not look.clouds.enabled)
 			KEY_G:
@@ -1334,7 +1344,7 @@ func _show_hud() -> void:
 		p.x,p.z,Engine.get_frames_per_second(),1000.0/maxf(Engine.get_frames_per_second(),1.0),
 		("  ·  gpu %.2f ms" % gpu) if gpu > 0.0 else "",
 		"  ·  3D at %d%%" % roundi(get_viewport().scaling_3d_scale*100.0),
-		("  ·  %s, %05.2f h%s" % [look.mood_title(),look.hour(),_cloud_note()]) if look != null else "",
+		("  ·  %s, %05.2f h (%s)%s" % [look.mood_title(),look.hour(),look.time_note(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
 		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+_rock_note()+_hall_note()+trees.note()+knock.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]
 	_hud.text += "
