@@ -22,8 +22,8 @@ Stills are in `/tmp/look_bugs/`: `before/`, `after/` (high, coast, cruise),
   triangles. How I proved it: `--no-forest-floor` and a debug composite
   showing the cloud's cover both took the triangles away. `--cloud-full-res`
   and `--no-valley-fog` changed nothing.
-- **Fix.** `scripts/endless/land_trees.gd:100` `FLOOR_PRIORITY := -7`, set
-  on both floor materials in `_floor_shader` (`:377`). The floor now draws
+- **Fix.** `scripts/endless/land_trees.gd:107` `FLOOR_PRIORITY := -7`, set
+  on both floor materials in `_floor_shader` (`:378`). The floor now draws
   between the sea (-8) and the clouds' sheet (-6).
 - **Stills.** `before/high_clk30.png` vs `after/high_clk30.png`.
 
@@ -58,7 +58,7 @@ Stills are in `/tmp/look_bugs/`: `before/`, `after/` (high, coast, cruise),
   zigzag along the triangles. A variant with no shear made the lip clean;
   a footprint-only fix (fading the noise by gxz's own derivatives) left
   big zigzags.
-- **Fix.** `shaders/endless_ground.gdshader:587-592`: shear by the height
+- **Fix.** `shaders/endless_ground.gdshader:586-592`: shear by the height
   over the sea (`p.y - sea_y`), not the world's y. The shear's slant on a
   wall stays the same. Only its pivot moves, so the warp term is small on
   low land by the sea.
