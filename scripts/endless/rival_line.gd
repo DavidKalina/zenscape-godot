@@ -152,6 +152,16 @@ const WAGGLE_HZ := 1.5
 const WAGGLE_BANK := 0.6
 ## The peel off at the end: the turn away (rad) and its seconds.
 const PEEL_TURN := 1.1
+## The marks (`intent`): the trail's point spacing (m), the share of the
+## asked length it shows down an open valley, the gate's share of the
+## opening's room and its most half width (m).
+const TRAIL_STEP := 6.0
+const OPEN_TRAIL := 0.6
+const GATE_FILL := 0.8
+const GATE_MOST := 40.0
+## A split's gate stands this far in from its foot (m), past the mouth's
+## flare (split_sites.gd TYPES), or at its middle when shorter.
+const SPLIT_GATE_IN := 110.0
 const PEEL_TIME := 3.0
 
 var game: Node
@@ -536,10 +546,54 @@ func _keep_clear(traffic: Node, aim: Vector3, pos: Vector3, speed: float) -> Vec
 	var away := closest/maxf(miss,0.01) if miss > 0.5 else Vector3.UP
 	return aim+away.normalized()*(reach-miss)*3.0
 
+# --- Its intent, for the race's marks ---------------------------------------------------
+
+## Where it is going, for the marks (scripts/endless/rival_marks.gd): {trail
+## (points every TRAIL_STEP m along where it will fly, from where it is, up
+## to `ahead` m on), open (true: down a valley, no opening), gate ({} or the
+## opening's mouth: {p, dir, half_w, half_h, kind, left (m to it)})}; {} while
+## it peels off.
+func intent(ahead: float) -> Dictionary:
+	if peel > 0.0: return {}
+	var flight: RefCounted = plane.flight
+	var pos: Vector3 = flight.position
+	var trail := PackedVector3Array()
+	if route.is_empty() or _lens.size() < 2:
+		if _leg == Vector3.INF: return {}
+		var to := Vector3(_leg.x-pos.x,0.0,_leg.z-pos.z)
+		var most := minf(to.length(),ahead*OPEN_TRAIL)
+		var way := to.normalized()
+		var d := 0.0
+		while d <= most:
+			var q := pos+way*d
+			q.y = maxf(lerpf(pos.y,_ground_top(q,true)+LOW,smoothstep(0.0,120.0,d)),_ground_top(q,true)+LOW_LEAST)
+			trail.append(q)
+			d += TRAIL_STEP
+		return {"trail":trail,"open":true,"gate":{}}
+	var end := _lens[_lens.size()-1]
+	var s := _s
+	while s <= minf(_s+ahead,end):
+		var q: Vector3 = _at(s).p
+		# On the lead-in it flies low over the land, not the straight line.
+		if s < _lens[1]: q.y = maxf(q.y,_ground_top(q,false)+LOW_LEAST*2.0)
+		trail.append(q)
+		s += TRAIL_STEP
+	var gate := {}
+	var m := int(feature.get("mouth",-1))+1
+	if m >= 1 and m < route.size() and _s < _lens[m]:
+		var a: Vector3 = route[maxi(m-1,0)].p
+		var b: Vector3 = route[mini(m+1,route.size()-1)].p
+		var dir := Vector3(b.x-a.x,0.0,b.z-a.z).normalized()
+		var room := float(route[m].room)
+		var half_w := clampf(room*GATE_FILL if room < INF else WorldScale.span*3.0,WorldScale.span*1.2,GATE_MOST)
+		gate = {"p":route[m].p,"dir":dir,"half_w":half_w,"half_h":clampf(half_w*0.6,WorldScale.span*0.9,GATE_MOST*0.6),"kind":String(feature.kind),"left":_lens[m]-_s}
+	return {"trail":trail,"open":false,"gate":gate}
+
 # --- The openings -------------------------------------------------------------------
 
 ## Every opening near `pos`, each both ways: {id, kind, points: [{p, room,
-## bore}], through (the index of the point in the opening's middle)}.
+## bore}], through (the index of the point in the opening's middle), mouth
+## (the index of the point where it goes in)}.
 func _candidates(pos: Vector3) -> Array:
 	var out: Array = []
 	var r := REACH+200.0
@@ -556,7 +610,7 @@ func _candidates(pos: Vector3) -> Array:
 				var w := z*sgn
 				if not _level_way(c,w): continue
 				var pts: Array = [_pt(c-w*APPROACH,o.room,false),_pt(c-w*20.0,o.room,false),_pt(c,o.room,false),_pt(c+w*EXIT,INF,false)]
-				out.append({"id":String(a.name),"kind":"arch","points":pts,"through":2})
+				out.append({"id":String(a.name),"kind":"arch","points":pts,"through":2,"mouth":2})
 	for s: PackedFloat32Array in field.splits_in(pos.x-r,pos.z-r,pos.x+r,pos.z+r):
 		var id := "split/%d_%d" % [roundi(s[0]),roundi(s[1])]
 		var hl := s[4]
@@ -565,15 +619,18 @@ func _candidates(pos: Vector3) -> Array:
 			var pts: Array = []
 			var u := -hl-APPROACH
 			var through := 0
+			var mouth := -1
 			while u <= hl+EXIT+0.1:
 				var p := SplitSites.point(s,u*sgn)
 				var inside := absf(u) <= hl
 				p.y += SPLIT_FLY
 				if not inside: p.y = maxf(p.y,float(field.height(p.x,p.z))+SPLIT_FLY)
 				if absf(u) < SPLIT_STEP*0.5: through = pts.size()
+				# The gate goes where the walls have closed in, past the flare.
+				if absf(u) <= maxf(hl-SPLIT_GATE_IN,SPLIT_STEP*0.5) and mouth < 0: mouth = pts.size()
 				pts.append(_pt(p,room if absf(u) <= hl+20.0 else INF,false))
 				u += SPLIT_STEP
-			out.append({"id":id,"kind":"split","points":pts,"through":through})
+			out.append({"id":id,"kind":"split","points":pts,"through":through,"mouth":maxi(mouth,0)})
 	if float(field.halls) > 0.0:
 		for s: PackedFloat32Array in field.halls_in(pos.x-r,pos.z-r,pos.x+r,pos.z+r):
 			var id := "hall/%d_%d" % [roundi(s[0]),roundi(s[1])]
@@ -582,7 +639,7 @@ func _candidates(pos: Vector3) -> Array:
 			var fly := _hall_fly(c,way,s[4])
 			for sgn: float in [1.0,-1.0]:
 				var w := way*sgn
-				out.append({"id":id,"kind":"hall","points":_hall_points(c,w,s[4],s[5],fly),"through":2,"hall":[c,w,s[4],s[5]],"fly":fly})
+				out.append({"id":id,"kind":"hall","points":_hall_points(c,w,s[4],s[5],fly),"through":2,"mouth":1,"hall":[c,w,s[4],s[5]],"fly":fly})
 	if float(field.tunnels) > 0.0:
 		for t: RefCounted in field.tunnels_in(pos.x-r,pos.z-r,pos.x+r,pos.z+r):
 			var id := "tunnel/"+String(t.name)
@@ -607,7 +664,7 @@ func _candidates(pos: Vector3) -> Array:
 					i += step
 				var tail := b2+out_way*EXIT
 				pts.append(_pt(Vector3(tail.x,fy,tail.y),INF,false))
-				out.append({"id":id,"kind":"tunnel","points":pts,"through":pts.size()/2})
+				out.append({"id":id,"kind":"tunnel","points":pts,"through":pts.size()/2,"mouth":1})
 	return out
 
 ## Whether the way `w` through an opening at `c` is level enough: the
