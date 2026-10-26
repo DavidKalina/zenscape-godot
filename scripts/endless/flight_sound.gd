@@ -347,6 +347,8 @@ func _ready() -> void:
 		# The rival race's beats (scripts/endless/rival_race.gd).
 		"race-count":[load(KIT+"race-count.wav")],"race-go":[load(KIT+"race-go.wav")],
 		"race-win":[load(KIT+"race-win.wav")],"race-lose":[load(KIT+"race-lose.wav")],
+		# The storm front's thunder (scripts/endless/storm_lightning.gd).
+		"thunder":_takes("res://assets/audio/thunder-%d.mp3",3),
 	}
 
 static func _takes(pattern: String, count: int) -> Array:
