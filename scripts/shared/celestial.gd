@@ -200,6 +200,50 @@ const SKY_GREEN_CAP := 0.5
 static func _luma(c: Vector3) -> float:
 	return c.dot(Vector3(0.2126, 0.7152, 0.0722))
 
+## Light follow (docs/design/endless-flight/light-pass-handoff.md): the
+## reference look's light, the default mood (alpine_morning) at 8.6 h: its
+## key's hue and its sky fill's hue (luma 1). zs_sun_lean and zs_shade_lean are
+## today's hues over these, so a material's painted warm and cool tones are its
+## own at the reference and turn with the light from there.
+const REF_SUN_HUE := Vector3(1.432, 0.927, 0.454)
+const REF_FILL_HUE := Vector3(0.801, 1.025, 1.336)
+## The shade's hue follows the zenith's turn from its day colour by this power
+## (golden hour's violet), and cools against a sun warmer than the reference's
+## by this power of the sun's hue's inverse (shade reads as the sun's complement).
+const SHADOW_SKY := 0.5
+const SHADOW_COMPLEMENT := 0.3
+## Each lean's channels stay within this.
+const LEAN_RANGE := Vector2(0.3, 3.0)
+## With light follow on: the fill's golden-hour dip (GOLDEN_FILL_DIP off), and
+## the rim's, the key's lift, and how far the sun's hue deepens past the
+## reference's (a power of its lean).
+const GOLDEN_FILL_DIP_FOLLOW := 0.3
+const RIM_GOLDEN_DIP := 0.3
+const GOLDEN_KEY_LIFT := 0.3
+const GOLDEN_DEEPEN := 0.5
+## Light follow's golden hour: in from sun height x to y (wider than the old
+## dip's 0.3 to 0.1, so a late afternoon sun already leans golden; the default
+## mood's 8.6 h sun stands at 0.48).
+const GOLDEN_E := Vector2(0.42, 0.14)
+## --light-follow=0 is the light as it was before the light pass (the leans 1,
+## the fill and rim their old colours and dips); between, part way.
+static var light_follow := _arg_float("--light-follow=", 1.0)
+
+## A colour's hue at luma 1.
+static func _hue(c: Vector3) -> Vector3:
+	return c / maxf(_luma(c), 1e-5)
+
+static func _vpow(c: Vector3, k: float) -> Vector3:
+	return Vector3(pow(maxf(c.x, 1e-5), k), pow(maxf(c.y, 1e-5), k), pow(maxf(c.z, 1e-5), k))
+
+## A ratio of hues as a lean: luma 1, each channel in LEAN_RANGE.
+static func _lean(r: Vector3) -> Vector3:
+	return _hue(r).clamp(Vector3.ONE * LEAN_RANGE.x, Vector3.ONE * LEAN_RANGE.y)
+
+## `c` leaned by `lean`, keeping its luma.
+static func _hue_keep(c: Vector3, lean: Vector3) -> Vector3:
+	return _hue(c * lean) * _luma(c)
+
 static func _temper_fill(c: Vector3) -> Vector3:
 	return Vector3.ONE * _luma(c) + (c - Vector3.ONE * _luma(c)) * FILL_SATURATION
 
@@ -332,6 +376,15 @@ func update_rig() -> void:
 	var moon_tint := _rgb(MOON_TINT[0]).lerp(_rgb(MOON_TINT[1]), moon_lit)
 	var tint := look.rgb("sun").lerp(Vector3(1, 0.97, 0.9), smoothstep(0.35, 0.9, e) * 0.5)
 	tint = _rgb("ff6222").lerp(_rgb("ffb45c"), smoothstep(-0.02, 0.1, e)).lerp(tint, smoothstep(0.1, 0.4, e))
+	# Golden hour (a low sun, up, under a clear sky): with light follow on, the
+	# sun's hue deepens past the reference's (GOLDEN_DEEPEN) and the key grows
+	# (GOLDEN_KEY_LIFT) as the fill and rim ease off, so the low sun leads.
+	var clear_sun := smoothstep(-0.03, 0.05, e) * (1.0 - minf(1.0, cloud * 1.3))
+	var golden := smoothstep(0.3, 0.1, e) * clear_sun
+	var golden_f := smoothstep(GOLDEN_E.x, GOLDEN_E.y, e) * clear_sun
+	var follow := clampf(light_follow, 0.0, 1.0)
+	var deepen := _vpow(_lean(_hue(tint) / REF_SUN_HUE), GOLDEN_DEEPEN * golden_f * follow)
+	tint = _hue_keep(tint, deepen)
 	var key_direction := _lifted(sun)
 	var energy := sun_energy
 	if moon_energy > sun_energy:
@@ -341,7 +394,7 @@ func update_rig() -> void:
 	var overcast := lerpf(1.0, 0.44, cloud) * lerpf(1.0, 0.8, storm) * lerpf(1.0, 0.86, shroud) * lerpf(1.0, 0.92, cold)
 	_sun.position = key_direction * Vector3(20, 14, 12).length()
 	_sun.look_at(Vector3.ZERO)
-	_sun.light_energy = energy * overcast / PI * look.settings.sun_energy * lerpf(1.0, key_gain, day)
+	_sun.light_energy = energy * overcast / PI * look.settings.sun_energy * lerpf(1.0, key_gain, day) * (1.0 + GOLDEN_KEY_LIFT * golden_f * follow * (0.0 if moon_energy > sun_energy else 1.0))
 	if shimmer > 0.0:
 		var t := Time.get_ticks_msec() * 0.001
 		_sun.light_energy *= 1.0 + shimmer * 0.16 * (0.5 * sin(t * 37.0) + 0.5 * sin(t * 23.0 + 1.3))
@@ -365,9 +418,6 @@ func update_rig() -> void:
 	var key_color := _sun.light_color.srgb_to_linear()
 	_publish("zs_key_irradiance", Vector3(key_color.r, key_color.g, key_color.b) * _sun.light_energy * PI)
 	_publish("zs_rim_direction", _rim.global_basis.z.normalized())
-	_rim.light_color = _color(look.rgb("rim")).linear_to_srgb()
-	var rim_color := _rim.light_color.srgb_to_linear()
-	_publish("zs_rim_irradiance", Vector3(rim_color.r, rim_color.g, rim_color.b) * _rim.light_energy * PI)
 	_publish("zs_cloud_direction", key_direction)
 	var cloud_sun := tint.lerp(Vector3(0.78, 0.84, 0.95), cloud * 0.7).lerp(Vector3(1.0, 0.70, 0.38), autumn_lit * 0.35).lerp(Vector3(0.82, 0.88, 1.0), cold * 0.4) * (0.9 + 0.5 * overcast)
 	# The source lights air and cloud with the key's colour at full strength
@@ -383,10 +433,8 @@ func update_rig() -> void:
 	# under a clear sky, grey under cloud.
 	var dusk_fill := smoothstep(DUSK_FILL_E.x, DUSK_FILL_E.y, e) * smoothstep(DUSK_FILL_E.z, DUSK_FILL_E.w, e) * lerpf(1.0, DUSK_FILL_CLOUD, minf(1.0, cloud * 1.3)) * lerpf(1.0, 0.4, storm)
 	var surface_sky := hemi_sky.lerp(AFTERGLOW_AMBIENT * maxf(hemi_sky.dot(Vector3(0.2126, 0.7152, 0.0722)), 0.0) / AFTERGLOW_AMBIENT.dot(Vector3(0.2126, 0.7152, 0.0722)), dusk_fill * (1.0 - minf(1.0, cloud * 1.3)) * 0.5)
-	_publish("zs_hemi_sky", surface_sky + NIGHT_FILL * fill)
-	_publish("zs_hemi_ground", hemi_ground + Vector3(0.08, 0.1, 0.13) * fill)
-	var golden := smoothstep(0.3, 0.1, e) * smoothstep(-0.03, 0.05, e) * (1.0 - minf(1.0, cloud * 1.3))
-	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - GOLDEN_FILL_DIP * golden) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) * lerpf(1.0, fill_gain, day) + night_fill_energy * fill + DUSK_FILL * dusk_fill) * look.settings.ambient_energy)
+	var dip := lerpf(GOLDEN_FILL_DIP * golden, GOLDEN_FILL_DIP_FOLLOW * golden_f, follow)
+	_publish("zs_hemi_energy", (0.55 * (0.22 + 0.78 * ambient) * (1.0 - dip) * lerpf(1.0, 1.25, cloud) * lerpf(1.0, 0.55, storm) * lerpf(1.0, fill_gain, day) + night_fill_energy * fill + DUSK_FILL * dusk_fill) * look.settings.ambient_energy)
 	var down := Vector3(0.006, 0.009, 0.016).lerp(DAY_SKY[0], sky_day)
 	var up := Vector3(0.01, 0.016, 0.038).lerp(DAY_SKY[1], sky_day).lerp(Vector3(0.1, 0.07, 0.16), warmth * 0.55)
 	var glow := Vector3(0.016, 0.024, 0.045).lerp(DAY_SKY[2], sky_day).lerp(Vector3(0.85, 0.3, 0.09), warmth * 0.8)
@@ -404,6 +452,34 @@ func update_rig() -> void:
 	_publish("zs_sky_down", _temper_sky(down))
 	_publish("zs_sky_up", _temper_sky(up))
 	_publish("zs_sky_glow", glow)
+	# Light follow: the shade's hue (the sky fill's, turned as the zenith turns
+	# from its day colour and cooled against a sun warmer than the reference),
+	# and how far the sun's and the shade's hues have moved from the reference
+	# look's (the leans the materials' painted light tones follow).
+	var sun_up := smoothstep(-0.03, 0.05, e) * (0.0 if moon_energy > sun_energy else 1.0)
+	var sun_hue := _hue(Vector3(key_color.r, key_color.g, key_color.b))
+	var fill_hue := _hue(surface_sky)
+	var zenith_turn := _hue(up) / _hue(_temper_sky(DAY_SKY[1] * look.ratio("sky")))
+	var complement := (REF_SUN_HUE / sun_hue).clamp(Vector3.ONE * 0.2, Vector3.ONE * 5.0)
+	var shadow_hue := _hue(fill_hue * _vpow(zenith_turn, SHADOW_SKY * sun_up) * _vpow(complement, SHADOW_COMPLEMENT * sun_up))
+	shadow_hue = fill_hue.lerp(shadow_hue, follow)
+	_publish("zs_sun_hue", sun_hue)
+	_publish("zs_shadow_tint", shadow_hue)
+	# (The paint follows the hour's sun, not golden hour's deepening of it.)
+	var sun_lean := Vector3.ONE.lerp(_lean(sun_hue / deepen / REF_SUN_HUE), sun_up * follow)
+	var shade_lean := Vector3.ONE.lerp(_lean(shadow_hue / REF_FILL_HUE), (1.0 - dark) * follow)
+	_publish("zs_sun_lean", sun_lean)
+	_publish("zs_shade_lean", shade_lean)
+	_publish("zs_light_follow", follow)
+	# The sky fill is the shade's hue at the fill's strength; the rim (a
+	# second fill from the side) leans as the shade does, and both ease off at
+	# golden hour so the low sun leads.
+	_publish("zs_hemi_sky", shadow_hue * _luma(surface_sky) + NIGHT_FILL * fill)
+	_publish("zs_hemi_ground", hemi_ground + Vector3(0.08, 0.1, 0.13) * fill)
+	_rim.light_energy *= 1.0 - RIM_GOLDEN_DIP * golden_f * follow
+	_rim.light_color = _color(_hue_keep(look.rgb("rim"), shade_lean)).linear_to_srgb()
+	var rim_color := _rim.light_color.srgb_to_linear()
+	_publish("zs_rim_irradiance", Vector3(rim_color.r, rim_color.g, rim_color.b) * _rim.light_energy * PI)
 	_publish("zs_sun_direction", sun)
 	_publish("zs_moon_direction", moon)
 	_publish("zs_moon_shadow_direction", (moon - sun * 0.028).normalized())

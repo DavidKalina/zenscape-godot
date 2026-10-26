@@ -17,6 +17,8 @@ render_mode blend_mix, depth_draw_never, cull_back, diffuse_lambert, specular_di
 global uniform vec3 zs_hemi_sky;
 global uniform vec3 zs_hemi_ground;
 global uniform float zs_hemi_energy;
+// The canopy's shade olive turns with the shade's hue (light_leans).
+#include "res://shaders/light_leans.gdshaderinc"
 
 uniform vec4 band = vec4(-1.0, 1.0, 1e6, 1.0);
 uniform vec4 colour : source_color = vec4(0.1, 0.16, 0.08, 1.0);
@@ -94,7 +96,7 @@ void fragment() {
 		// Thin woods thin, and the gaps between crowns let the land through.
 		alpha = mix(alpha, smoothstep(0.05, 0.75, COLOR.a) * mix(0.55, 0.95, mix(0.8, b, far)), crown);
 		vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, bumped.y * 0.5 + 0.5) * zs_hemi_energy / PI;
-		vec3 ol = vec3(1.20, 1.05, 0.22) * dot(top, vec3(0.2126, 0.7152, 0.0722));
+		vec3 ol = zs_cool(vec3(1.20, 1.05, 0.22), 1.0) * dot(top, vec3(0.2126, 0.7152, 0.0722));
 		EMISSION = (mix(top, ol, canopy_light.w) * hemi + mix(top, ol, canopy_light.z) * hemi * canopy_fill) * crown;
 	}
 	ALBEDO = litter;

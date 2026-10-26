@@ -31,6 +31,8 @@ shader_type spatial;
 // The sprays spruce's painted crown (shaders/spruce_paint.gdshaderinc; off at 0).
 #include "res://shaders/endless_patch.gdshaderinc"
 #include "res://shaders/spruce_paint.gdshaderinc"
+// The light's leans: the crown's shade olive and the underglow turn with the light.
+#include "res://shaders/light_leans.gdshaderinc"
 render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 
 uniform bool brush_visible = false;
@@ -1117,7 +1119,7 @@ void fragment() {
 	EMISSION = emissive_color + tint * hemi * contact;
 	vec3 spruce_olive = vec3(0.0);
 	if (spruce_round > 0.0) {
-		spruce_olive = SPRUCE_SHADE_OLIVE * zs_spruce_luma(tint);
+		spruce_olive = zs_cool(SPRUCE_SHADE_OLIVE, 1.0) * zs_spruce_luma(tint);
 		// The plain hemisphere term leans olive too (tone2.w), so the shade is not teal.
 		EMISSION = emissive_color + mix(tint, spruce_olive, spruce_tone2.w) * hemi * contact;
 		EMISSION += mix(tint, spruce_olive, spruce_tone.y) * hemi * contact * spruce_tone.x;
@@ -1125,7 +1127,7 @@ void fragment() {
 	// Look pass: the sunlit cloud sea below lighting the bellies and keels;
 	// its sky fill into the sun's shade is in light() (reference_direct_light).
 	EMISSION += mix(tint, spruce_olive, spruce_round > 0.0 ? spruce_tone2.z : 0.0) * zs_look_bounce_light(light_normal);
-	if (underglow > 0.0 && !grass_blades && !flower_heads) EMISSION += tint * vec3(1.0, 0.88, 0.62) * underglow * grass_along * (0.6 + 0.4 * zs_hemi_energy / PI);
+	if (underglow > 0.0 && !grass_blades && !flower_heads) EMISSION += tint * zs_warm(vec3(1.0, 0.88, 0.62), 1.0) * underglow * grass_along * (0.6 + 0.4 * zs_hemi_energy / PI);
 	// A seed clock holds light through itself: a soft sky glow of its own.
 	if (flower_heads && grass_along > 0.95) EMISSION += tint * mix(zs_hemi_sky, vec3(1.0), 0.5) * zs_hemi_energy / PI * ZS_FLOWER_PUFF_LIGHT;
 	// Toward the base the sides take on the sky's cool mist, never black.

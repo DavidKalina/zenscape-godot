@@ -30,6 +30,8 @@ render_mode blend_mix, depth_draw_always, cull_back, unshaded, shadows_disabled;
 #include "res://shaders/reference_lake_lighting.gdshaderinc"
 #include "res://shaders/reference_lake_glint.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
+// The sun's glint turns with the sun's hue (light_leans).
+#include "res://shaders/light_leans.gdshaderinc"
 global uniform vec3 zs_palette_water;
 uniform sampler2D sea_screen : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D sea_depth : hint_depth_texture, filter_nearest, repeat_disable;
@@ -1256,7 +1258,7 @@ void fragment() {
 	float mirror_weight = fresnel * (1.0 - foamed) * (1.0 - clamp(glow, 0.0, 0.6));
 	vec3 display_color = mix(zs_scene_to_display(lit), reflection, mirror_weight);
 	display_color = mix(display_color, path.rgb, path.a * (1.0 - foamed));
-	vec3 warm = mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, sun.y));
+	vec3 warm = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, sun.y)));
 	display_color = mix(display_color, warm, clamp(spark, 0.0, 1.0));
 	if (debug_view == 1) display_color = water_depth < 5.0 ? vec3(1.0, 0.0, 0.0) : (water_depth < 20.0 ? vec3(0.0, 1.0, 0.0) : (water_depth < 60.0 ? vec3(0.0, 0.0, 1.0) : vec3(1.0))) * (0.5 + 0.5 * known);
 	if (debug_view == 3) display_color = zs_scene_to_display(lit);

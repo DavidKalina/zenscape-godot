@@ -6,7 +6,7 @@ const PRESETS := {
 	"alpine_morning": {"title":"Alpine morning","description":"Clear blue air. Sunlit stone.","palette":"Mountain","phase":0.40,"weather":"fair","clouds":0.18,"mist":0.12,"haze":0.12,"wind":0.65,
 		"strength":0.75,"exposure":1.03,"colors":{"sky":"709ebd","horizon":"64899d","glow":"c5d9dc","water":"438f97"}},
 	"golden_meadow": {"title":"Golden meadow","description":"Honey light and soft green hills.","palette":"Summer","phase":0.36,"weather":"clear","clouds":0.12,"mist":0.18,"haze":0.16,"wind":0.4,
-		"strength":0.65,"ambient_energy":1.3,"exposure":1.07,"colors":{"sky":"7c9daf","horizon":"9b9082","glow":"f2c294","grass":"92a85c","foliage":"758549","water":"6c9c97"}},
+		"strength":0.65,"sun_energy":1.24,"ambient_energy":1.3,"exposure":1.07,"colors":{"sky":"7c9daf","horizon":"9b9082","glow":"f2c294","sun":"ffc480","grass":"92a85c","foliage":"758549","water":"6c9c97"}},
 	"copper_autumn": {"title":"Copper autumn","description":"Copper leaves. Clear, gentle light.","palette":"Autumn","phase":0.40,"weather":"autumn","clouds":0.22,"mist":0.17,"haze":0.19,"wind":0.55,
 		"strength":0.65,"ambient_energy":1.2,"autumn":0.65,"colors":{"sky":"8795ae","horizon":"8e8590","glow":"e4b995","foliage":"9b804b","water":"78959a"}},
 	"rosewater_dusk": {"title":"Rosewater dusk","description":"Blush skies and lavender shadows.","palette":"Dusk","phase":0.69,"weather":"clear","clouds":0.10,"mist":0.2,"haze":0.16,"wind":0.25,
