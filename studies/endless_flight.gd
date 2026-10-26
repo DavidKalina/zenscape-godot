@@ -131,6 +131,8 @@ const FlightSound = preload("res://scripts/endless/flight_sound.gd")
 const NearMiss = preload("res://scripts/endless/near_miss.gd")
 const FlightContact = preload("res://scripts/endless/flight_contact.gd")
 const NearMissHud = preload("res://scripts/endless/near_miss_hud.gd")
+const NearMissHudGlyph = preload("res://scripts/endless/near_miss_hud_glyph.gd")
+const NearMissHudHandoff = preload("res://scripts/endless/near_miss_hud_handoff.gd")
 const FlightDebris = preload("res://scripts/endless/flight_debris.gd")
 ## Spruces flown into are knocked down (weighted presets).
 const TreeKnock = preload("res://scripts/endless/tree_knock.gd")
@@ -623,9 +625,16 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Q E knife edge (twice: roll)  ·  F flaps (stopped: get out)  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  F1 numbers  ·  F2 3D scale"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Q E knife edge (twice: roll)  ·  F flaps (stopped: get out)  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale"
 	layer.add_child(_hint)
-	_near_hud = NearMissHud.new()
+	# The near misses' HUD: the design handoff's (scripts/endless/near_miss_hud_handoff.gd),
+	# in the tag by the plane or at the top as the player keeps it (H switches).
+	# --near-hud=glyph the earlier trial (gilt numbers in a tag), --near-hud=classic
+	# the first plain text.
+	var hud_args := preload("res://scripts/launch_args.gd").user_args()
+	if "--near-hud=glyph" in hud_args: _near_hud = NearMissHudGlyph.new()
+	elif "--near-hud=classic" in hud_args: _near_hud = NearMissHud.new()
+	else: _near_hud = NearMissHudHandoff.new()
 	_near_hud.visible = false
 	layer.add_child(_near_hud)
 	_fade = ColorRect.new()
@@ -982,6 +991,14 @@ func _next_weight() -> void:
 	_weight_note.text = "Weight: %s" % weight
 	_weight_shown = Time.get_ticks_msec()
 
+## H: the near misses' HUD in the tag by the plane or at the top, kept.
+func _next_near_layout() -> void:
+	if not _near_hud.has_method("set_tag"): return
+	var tag := not bool(_near_hud.get("tag"))
+	_near_hud.call("set_tag",tag)
+	_weight_note.text = "Score: %s" % ("by the plane" if tag else "at the top")
+	_weight_shown = Time.get_ticks_msec()
+
 ## The next pace preset (P, the pad's d-pad right), mid-flight, named on
 ## screen with its cruise and Boost.
 func _next_pace() -> void:
@@ -1177,6 +1194,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				if look != null and look.clouds != null: look.clouds.set_enabled(not look.clouds.enabled)
 			KEY_G:
 				if grass != null: grass.set_enabled(not grass.enabled)
+			KEY_H: _next_near_layout()
 			KEY_Q: _lean_tapped(-1.0)
 			KEY_E: _lean_tapped(1.0)
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -1232,6 +1250,7 @@ func _show_region() -> void:
 func _show_hud() -> void:
 	_show_region()
 	_near_hud.key_name = "X" if Pad.using_pad() else "B"
+	if "plane_at" in _near_hud: _near_hud.plane_at = plane_figure.global_position
 	_near_hud.show_state(get_process_delta_time(),near,bool(plane.weighted) and not hand_landing.on_ground(),_events)
 	_fade.color.a = 0.85*smoothstep(0.0,FADE_TIME,_fade_left)
 	var since := Time.get_ticks_msec()-_weight_shown
