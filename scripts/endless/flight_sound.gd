@@ -340,6 +340,9 @@ func _ready() -> void:
 		# a rock crack pitched up for the trunk, a heavy body fall on dirt.
 		"snap":[load(FOLEY+"trees-6.wav")],"crack":_takes(FOLEY+"mesa-break-%d.wav",2),
 		"thud":[load(FOLEY+"pat-4.wav"),load(FOLEY+"pat-6.wav")],
+		# The rival race's beats (scripts/endless/rival_race.gd).
+		"race-count":[load(KIT+"race-count.wav")],"race-go":[load(KIT+"race-go.wav")],
+		"race-win":[load(KIT+"race-win.wav")],"race-lose":[load(KIT+"race-lose.wav")],
 	}
 
 static func _takes(pattern: String, count: int) -> Array:

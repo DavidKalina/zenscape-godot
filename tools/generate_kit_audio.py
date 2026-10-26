@@ -14,7 +14,8 @@ whoosh-N, sail-pop-N, sail-fold-N, grab-N, engine-start. Round 3's beasts
 (docs/design/sound-round3.md): dragon-beat/up/call/slam/inhale/exhale,
 dragon-growl, stone-grind, rock-debris, gale-howl, buffet, wind-slam,
 serpent-scales/hum/breath (`python3 tools/generate_kit_audio.py dragon`
-bakes the dragon_* takes, `serpent` the serpent's).
+bakes the dragon_* takes, `serpent` the serpent's). The rival race's beats:
+race-count, race-go, race-win, race-lose (`race_cues`).
 """
 import math
 import random
@@ -1295,12 +1296,50 @@ def serpent_breaths():
         write('serpent-breath-%d' % (k + 1), lowpass(mul(x, env), 2000), 0.75)
 
 
+def bell(f0, seconds, decay, partials=((1.0, 1.0), (2.0, 0.45), (2.76, 0.3), (5.4, 0.12)), at=0.0):
+    """A struck bell: inharmonic partials, the high ones dying first."""
+    n = int(seconds * RATE)
+    x = [0.0] * n
+    for ratio, g in partials:
+        d = decay * (0.6 + 0.4 * ratio)
+        for i in range(int(at * RATE), n):
+            t = i / RATE - at
+            x[i] += g * math.exp(-t * d) * math.sin(TAU * f0 * ratio * t)
+    return x
+
+
+def race_cues():
+    """The rival race's beats (scripts/endless/rival_race.gd): the count (a
+    small struck bell), GO (a brighter bell over a rising breath), the win (a
+    rising arpeggio that rings) and the loss (two falling, duller notes)."""
+    rng = random.Random('race-count')
+    x = bell(660.0, 0.5, 7.0)
+    add(x, [v * math.exp(-i / RATE * 600.0) for i, v in enumerate(white(rng, len(x)))], 0.25)
+    write('race-count', x, 0.75)
+    rng = random.Random('race-go')
+    x = bell(990.0, 1.3, 3.2)
+    add(x, bell(495.0, 1.3, 2.6), 0.6)
+    air = bandpass(white(rng, len(x)), 1400.0, 1.2)
+    swell = envelope(len(x), 0.18, 3.5, 1.5)
+    add(x, mul(air, swell), 0.5)
+    write('race-go', soft(x, 1.1), 0.85)
+    x = [0.0] * int(2.2 * RATE)
+    for k, f in enumerate((660.0, 831.6, 990.0, 1320.0)):
+        add(x, bell(f, 2.2 - 0.09 * k, 1.8), 0.8 if k < 3 else 1.0, int(0.09 * k * RATE))
+    write('race-win', soft(x, 1.05), 0.85)
+    x = [0.0] * int(1.4 * RATE)
+    add(x, bell(440.0, 1.4, 3.0), 1.0)
+    add(x, bell(330.0, 1.1, 2.6), 1.0, int(0.28 * RATE))
+    write('race-lose', lowpass(x, 1800.0), 0.7)
+
+
 TAKES = [air_rush, air_whistle, air_howl, engine, engine_start, wheel_rumble, skid, flutter,
          wire_sing, thin_wind, cloud_hush, thumps, creaks, ticks, swishes, whooshes,
          sail_pops, sail_folds, grabs,
          chirps, twitters, wings, bird_chorus, insect_hum, fall_roar, fall_spill, rope_creaks, rope_whips, crickets, frog_croaks,
          dragon_wingbeats, dragon_upstrokes, dragon_calls, dragon_growl, stone_grind, rock_debris, dragon_slams, dragon_grip_rumbles,
-         gale_howl, buffets, wind_slams, dragon_breaths, serpent_scales, serpent_hum, serpent_breaths]
+         gale_howl, buffets, wind_slams, dragon_breaths, serpent_scales, serpent_hum, serpent_breaths,
+         race_cues]
 
 if __name__ == '__main__':
     only = sys.argv[1] if len(sys.argv) > 1 else ''

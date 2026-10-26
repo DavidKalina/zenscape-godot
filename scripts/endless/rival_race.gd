@@ -1,7 +1,10 @@
 extends Node
 ## The rival race (docs/design/endless-flight/rival-race-handoff.md): pick
 ## one of the traffic planes (scripts/endless/endless_traffic.gd), challenge
-## it, catch it and pass it.
+## it, catch it and pass it. The polish round
+## (docs/design/endless-flight/rival-race-polish-handoff.md) gave it a
+## start beat, the rival's intent in the world (rival_marks.gd) and a pass
+## that counts from the side or above.
 ##
 ## Picking (ported from the cut lock-on, foot_lock.gd at archive/before-the-cut):
 ## the traffic plane nearest in PICK_RANGE m and within PICK_VIEW of the
@@ -15,19 +18,25 @@ extends Node
 ## up (scripts/endless/rival_line.gd flies it from now on), and the race
 ## begins.
 ##
+## The start: the rival takes its head start through a count of COUNT
+## beats (COUNT_BEAT s each, a bell and a tap of rumble each), then GO (a
+## brighter bell, a firmer rumble); the rule shows RULE_HOLD s from GO. The
+## clock (TIME_LIMIT) runs from GO.
+##
 ## The race: the rival carries PACE times the player's Boost (his pace
 ## preset's), times its skill's pace, eased up over RAMP s, jumping ahead
 ## at JUMP times that till it leads by START_GAP m; a mild catch-up
 ## eases it off by up to CATCH_UP when it is far ahead; and while his near-miss chain runs (scripts/endless/
 ## near_miss.gd, read only) it eases off by up to FLOW_EASE, so the better
 ## he flies the easier it is.
-## - Won: ahead of it along its heading by WIN_LEAD m, within PASS_SIDE m
-##   of its line, held WIN_HOLD s.
+## - Won: ahead of its nose by WIN_LEAD m along its heading, within
+##   PASS_OFF m of its line (aside or above), held WIN_HOLD s. Not holding,
+##   the hold drains at LEAD_DRAIN; why it dropped is said.
 ## - Lost: it is LOSE_GAP m ahead for LOSE_HOLD s, or TIME_LIMIT s run out.
 ## - Called off: the button pressed again, flying away from it (turned more
 ##   than AWAY_ANGLE off it for AWAY_HOLD s, or past AWAY_RANGE m), or on
 ##   the ground GROUND_HOLD s.
-## At the end a short line says how it went; the rival waggles and peels
+## At the end the result shows big, with a bell and a rumble; the rival waggles and peels
 ## off back into the traffic, not offered again for REST s.
 ##
 ## The depth of field (the lock-on's, for flight): the race gives the
@@ -45,6 +54,7 @@ extends Node
 
 const RivalLine = preload("res://scripts/endless/rival_line.gd")
 const RaceHud = preload("res://scripts/endless/rival_race_hud.gd")
+const RivalMarks = preload("res://scripts/endless/rival_marks.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
@@ -81,10 +91,18 @@ const CATCH_SPAN := 300.0
 const FLOW_EASE := 0.07
 const FLOW_LIVE := 0.4
 const FLOW_BLEND := 1.0
-## Won, lost and called off (m, s, rad).
-const WIN_LEAD := 12.0
-const PASS_SIDE := 45.0
-const WIN_HOLD := 2.5
+## The start: the count's beats, each beat (s), and how long the rule
+## shows from GO (s).
+const COUNT := 3
+const COUNT_BEAT := 0.7
+const RULE_HOLD := 4.5
+## Won, lost and called off (m, s, rad). The lead's hold drains LEAD_DRAIN
+## s a second once not held; why it dropped shows DROP_SAY s.
+const WIN_LEAD := 6.0
+const PASS_OFF := 150.0
+const WIN_HOLD := 1.5
+const LEAD_DRAIN := 1.0
+const DROP_SAY := 2.0
 const LOSE_GAP := 550.0
 const LOSE_HOLD := 5.0
 const TIME_LIMIT := 120.0
@@ -95,7 +113,19 @@ const GROUND_HOLD := 2.0
 ## A raced plane is not offered again for REST s; the result is held
 ## NOTE_HOLD s.
 const REST := 20.0
-const NOTE_HOLD := 2.8
+const NOTE_HOLD := 3.5
+## The marks (rival_marks.gd): the trail reaches TRAIL_TIME s of the
+## rival's speed ahead (at least TRAIL_LEAST m), read again every
+## INTENT_EVERY s.
+const TRAIL_TIME := 6.0
+const TRAIL_LEAST := 250.0
+const INTENT_EVERY := 0.1
+## The beats' rumble (weak, strong, seconds).
+const RUMBLE_COUNT := Vector3(0.22,0.0,0.08)
+const RUMBLE_GO := Vector3(0.5,0.6,0.3)
+const RUMBLE_LEAD := Vector3(0.3,0.1,0.1)
+const RUMBLE_WIN := Vector3(0.7,0.85,0.55)
+const RUMBLE_LOSE := Vector3(0.15,0.45,0.45)
 ## The weight's ease (s).
 const BLEND := 0.22
 ## The depth of field: blur amounts aiming and racing (Godot's
@@ -115,6 +145,8 @@ const START_SIDE := 18.0
 const START_UP := 6.0
 ## The bracket frames this many wingspans.
 const FRAME_SPANS := 2.4
+## GO stays up this long past the count (s).
+const GO_SHOW := 0.9
 
 ## "free" (offering), "racing", or "peeling" (the rival turning away).
 var state := "free"
@@ -147,6 +179,13 @@ var _jumping := false
 ## How well he flies, eased (0..1; `_flow_of`).
 var flow := 0.0
 var _peel_left := 0.0
+var _beat := -1
+var _holding := false
+var _drop_at := -INF
+var _drop_text := ""
+var _intent := {}
+var _intent_at := -INF
+var _marks: Node3D
 var _rest := {}
 var _clock := 0.0
 var _dof_before: CameraAttributes = null
@@ -181,6 +220,8 @@ func setup(seed: int) -> void:
 	add_child(layer)
 	_hud = RaceHud.new()
 	layer.add_child(_hud)
+	_marks = RivalMarks.new()
+	add_child(_marks)
 
 ## --race-near-start: a traffic plane ahead of `game`'s plane, in view.
 func place_near_start(game: Node) -> void:
@@ -204,6 +245,7 @@ func step(delta: float, game: Node) -> void:
 	var flying: bool = game.stage == null and game.hand_landing.flying()
 	_hud.offer = {}
 	_hud.mark = {}
+	_hud.tag = {}
 	if state == "peeling":
 		_peel_left -= delta
 		if _peel_left <= 0.0: _release_rival(traffic)
@@ -214,6 +256,13 @@ func step(delta: float, game: Node) -> void:
 		else: _race(delta,game)
 	if state != "racing":
 		_offer(delta,game,flying,pressed)
+	# Where it is going, in the world.
+	if state == "racing" and line != null:
+		if _clock-_intent_at >= INTENT_EVERY:
+			_intent_at = _clock
+			_intent = line.intent(maxf(float(traffic.planes[rival].flight.speed)*TRAIL_TIME,TRAIL_LEAST))
+	else: _intent = {}
+	_marks.step(delta,game.camera,_intent,1.0)
 	_lens(delta,game)
 
 # --- Offering and challenging -----------------------------------------------------------
@@ -299,6 +348,10 @@ func _start(game: Node, n: int) -> void:
 	_since_accept = 0.0
 	_jumping = true
 	flow = 0.0
+	_beat = -1
+	_holding = false
+	_drop_at = -INF
+	_intent_at = -INF
 	state = "racing"
 	print("rival race: challenged plane %d at %.0f m" % [n,(plane.flight.position as Vector3).distance_to(game.plane.position)])
 
@@ -327,36 +380,95 @@ func _race(delta: float, game: Node) -> void:
 	line.speed_ease = JUMP_EASE if _jumping else RivalLine.EASE_SPEED
 	line.pace = lerpf(float(plane.cruise),full,smoothstep(0.0,RAMP,race_t))
 	_focus = r_pos
-	# Won, lost, called off.
-	var side := absf((player-r_pos).dot(r_dir.cross(Vector3.UP)))
-	var passing := lead > WIN_LEAD and side < PASS_SIDE
-	_ahead = _ahead+delta if passing else maxf(_ahead-delta*2.0,0.0)
+	# The start: the count, then GO.
+	var go_t := race_t-go_at()
+	var beat := mini(floori(race_t/COUNT_BEAT),COUNT)
+	if beat > _beat:
+		_beat = beat
+		if beat < COUNT: _cue(game,"race-count",0.6,1.0,RUMBLE_COUNT)
+		else: _cue(game,"race-go",0.85,1.0,RUMBLE_GO)
+	# Won, lost, called off. Off its line: aside and above, square to its
+	# heading.
+	var off := player-r_pos
+	var off_line := (off-r_dir*off.dot(r_dir)).length()
+	var passing := go_t >= 0.0 and lead > WIN_LEAD and off_line < PASS_OFF
+	if passing and not _holding: _cue(game,"race-count",0.35,1.5,RUMBLE_LEAD)
+	if _holding and not passing:
+		_drop_at = race_t
+		_drop_text = "too wide · close on its line" if lead > WIN_LEAD else ("level · get clear of its nose" if lead > 0.0 else "it got back by · pass again")
+	_holding = passing
+	_ahead = _ahead+delta if passing else maxf(_ahead-delta*LEAD_DRAIN,0.0)
 	var to := r_pos-player
 	var fwd: Vector3 = game.plane.velocity
 	var turned := Vector2(fwd.x,fwd.z).length() > 1.0 and absf(Vector2(fwd.x,fwd.z).angle_to(Vector2(to.x,to.z))) > AWAY_ANGLE
-	_away = _away+delta if turned and gap > 0.0 else 0.0
+	_away = _away+delta if turned and gap > 0.0 and go_t >= 0.0 else 0.0
 	# Turned away from it, he is calling it off, not losing.
 	_behind = _behind+delta if gap > LOSE_GAP and not turned else 0.0
 	_grounded = 0.0 if game.hand_landing.flying() else _grounded+delta
 	if _ahead >= WIN_HOLD: _end(game,"won")
 	elif _behind >= LOSE_HOLD: _end(game,"lost")
-	elif race_t >= TIME_LIMIT: _end(game,"time")
+	elif go_t >= TIME_LIMIT: _end(game,"time")
 	elif _away >= AWAY_HOLD or to.length() > AWAY_RANGE or _grounded >= GROUND_HOLD: _end(game,"off")
 	if state != "racing": return
-	# The marker.
+	# The marker over the rival.
 	var camera: Camera3D = game.camera
 	var shown := _screen(camera,r_pos)
-	var text := "ahead" if passing else "%d m" % roundi(maxf(gap,0.0))
-	var left := TIME_LIMIT-race_t
-	if left < 20.0: text += "  ·  0:%02d" % ceili(left)
 	_hud.mark = {"at":shown.at,"on_screen":shown.on_screen,"dir":shown.dir,"far":r_pos.distance_to(player) > RaceHud.FAR,
-		"text":text,"lead":clampf(_ahead/WIN_HOLD,0.0,1.0) if passing or _ahead > 0.0 else -1.0,"alpha":1.0}
+		"text":"" if lead > 0.0 else "%d m" % roundi(maxf(gap,0.0)),"alpha":1.0}
+	# The tag by the plane: the count, then what to do and the gap.
+	var t := {"plane":_plane_screen(camera,player),"alpha":1.0}
+	if go_t < GO_SHOW:
+		t.count = COUNT-beat
+		t.beat = fmod(race_t,COUNT_BEAT)/COUNT_BEAT if beat < COUNT else clampf(go_t/GO_SHOW,0.0,1.0)
+		t.words = "head start" if beat < COUNT else "pass it, then hold the lead"
+	else:
+		t.big = "+%d m" % roundi(lead) if lead > 0.0 else "%d m" % roundi(maxf(gap,0.0))
+		t.gold = lead > 0.0
+		var words := "catch it"
+		var warn := false
+		if passing: words = "ahead · hold it"
+		elif race_t-_drop_at < DROP_SAY:
+			words = _drop_text
+			warn = true
+		elif lead > WIN_LEAD:
+			words = "too wide · close on its line"
+			warn = true
+		elif lead > 0.0: words = "level · get clear of its nose"
+		elif _behind > 0.0:
+			words = "it's getting away"
+			warn = true
+		elif go_t < RULE_HOLD: words = "pass it, then hold the lead"
+		var left := TIME_LIMIT-go_t
+		if left < 20.0: words += "  ·  0:%02d" % ceili(left)
+		t.words = words
+		t.warn = warn
+		t.lead = clampf(_ahead/WIN_HOLD,0.0,1.0) if passing or _ahead > 0.0 else -1.0
+	_hud.tag = t
+
+## The race clock's start: GO, after the count (s into the race).
+static func go_at() -> float:
+	return COUNT*COUNT_BEAT
+
+## A beat: `kind` on the flight sound (scripts/endless/flight_sound.gd)
+## and a knock on the pad's rumble (flight_rumble.gd).
+func _cue(game: Node, kind: String, gain: float, pitch: float, rumble: Vector3) -> void:
+	if game.get("sound") != null: game.sound.shot(kind,gain,pitch)
+	if game.get("rumble") != null: game.rumble.knock(rumble)
+
+## The plane on screen, or null behind the camera.
+func _plane_screen(camera: Camera3D, player: Vector3) -> Variant:
+	if camera.is_position_behind(player): return null
+	return camera.unproject_position(player)
 
 func _end(game: Node, why: String) -> void:
 	var traffic: Node = game.traffic
 	var plane: Dictionary = traffic.planes[rival]
-	var said := {"won":"rival passed  ·  %s" % _clock_text(race_t),"lost":"the rival got away","time":"out of time","off":"race off"}
-	_hud.say(String(said[why]),why == "won",NOTE_HOLD)
+	var clock := _clock_text(maxf(race_t-go_at(),0.0))
+	var said := {"won":["RIVAL BEATEN","passed in %s" % clock],"lost":["IT GOT AWAY","it was %d m clear" % roundi(gap)],
+		"time":["OUT OF TIME","%d m short" % roundi(maxf(gap,0.0))],"off":["RACE OFF",""]}
+	_hud.say(String(said[why][0]),String(said[why][1]),why,NOTE_HOLD)
+	if why == "won": _cue(game,"race-win",0.9,1.0,RUMBLE_WIN)
+	elif why != "off": _cue(game,"race-lose",0.7,1.0,RUMBLE_LOSE)
 	results.append({"why":why,"time":snappedf(race_t,0.01),"gap":roundi(gap),"history":(line.history as Array).duplicate(),"clips":int(line.clips),"clip_log":(line.clip_log as Array).duplicate()})
 	print("rival race: %s after %.1f s, gap %.0f m, %d openings" % [why,race_t,gap,(line.history as Array).size()])
 	line.start_peel(game.plane.position)
