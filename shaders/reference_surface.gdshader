@@ -1168,6 +1168,6 @@ void fragment() {
 #define ZS_SPRUCE_TONE2 spruce_tone2
 // Backlight's gains (shaders/backlight.gdshaderinc): the blade tips, the
 // sprays spruce's silhouette.
-#define ZS_BACKLIGHT_GRASS 8.0
+#define ZS_BACKLIGHT_GRASS 4.0
 #define ZS_BACKLIGHT_SPRUCE 3.0
 #include "res://shaders/reference_direct_light.gdshaderinc"
