@@ -31,6 +31,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/grass_silver.gdshaderinc"
 #include "res://shaders/grass_sheen.gdshaderinc"
 #include "res://shaders/far_clumps.gdshaderinc"
+#include "res://shaders/far_lawn.gdshaderinc"
 
 // Far water: calm from this far (m from the eye), fully by the second, with
 // a broad glint (exponent, strength) in place of the ripples' sparkle.
@@ -895,6 +896,11 @@ void fragment() {
 			if (grass_far_clumps.x > 0.0) {
 				float clump_on = carpet_turf * smoothstep(grass_far_clumps.z, grass_far_clumps.w, sheen_d) * (1.0 - thin * 0.6);
 				if (clump_on > 0.0) grass = zs_far_clumps(grass, gxz, normalize(p - CAMERA_POSITION_WORLD), fp, sheen_s, zs_key_irradiance, ZS_CLEAN_WARM, ZS_CLEAN_COOL, clump_on);
+			}
+			// The far grass as a fine lawn (clean look round 8, far_lawn.gdshaderinc).
+			if (grass_lawn.x > 0.0) {
+				float lawn_on = carpet_turf * smoothstep(grass_lawn.y, grass_lawn.z, sheen_d) * (1.0 - thin * 0.6);
+				if (lawn_on > 0.0) grass = zs_far_lawn(grass, gxz, normalize(p - CAMERA_POSITION_WORLD), fp, sheen_s, zs_key_irradiance, ZS_CLEAN_WARM, ZS_CLEAN_COOL, lawn_on);
 			}
 		}
 	}

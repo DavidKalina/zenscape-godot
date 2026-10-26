@@ -26,10 +26,21 @@ static var blades := _arg("--blades=",BLADES)
 ## The far grass as clumps with depth (shaders/far_clumps.gdshaderinc): strength
 ## (--clumps=X, 0 off), how deep its layers read (--clump-depth=X), the ring
 ## distance it comes in over (m), and the clumps' sizes (m).
-const CLUMPS := 1.0
+const CLUMPS := 0.0
 const CLUMP_DEPTH := 1.0
 const CLUMP_RING := Vector2(150.0,240.0)
 const CLUMP_SIZES := Vector3(1.2,3.0,9.0)
+## The far grass as a fine lawn (shaders/far_lawn.gdshaderinc, round 8):
+## strength (--lawn=X, 0 off), the nap's share (--nap=X), the ring distance
+## it comes in over (m) and the two scales (m one tile of the baked
+## assets/textures/far_turf.png covers). The clumps above are off by default.
+const LAWN := 1.0
+const NAP := 1.0
+const LAWN_RING := Vector2(140.0,230.0)
+const LAWN_TILES := Vector2(64.0,39.0)
+const LAWN_TEXTURE := "res://assets/textures/far_turf.png"
+static var lawn := _arg("--lawn=",LAWN)
+static var nap := _arg("--nap=",NAP)
 static var clumps := _arg("--clumps=",CLUMPS)
 static var clump_depth := _arg("--clump-depth=",CLUMP_DEPTH)
 
@@ -52,6 +63,9 @@ static func apply(m: ShaderMaterial, tufts := false) -> void:
 	if not tufts:
 		m.set_shader_parameter("grass_far_clumps",Vector4(clumps if on > 0.0 else 0.0,clump_depth,CLUMP_RING.x,CLUMP_RING.y))
 		m.set_shader_parameter("grass_far_clump_sizes",CLUMP_SIZES)
+		m.set_shader_parameter("grass_lawn",Vector4(lawn if on > 0.0 else 0.0,LAWN_RING.x,LAWN_RING.y,nap))
+		m.set_shader_parameter("grass_lawn_tiles",LAWN_TILES)
+		m.set_shader_parameter("grass_lawn_tex",load(LAWN_TEXTURE) as Texture2D)
 		m.set_shader_parameter("grass_far_blades",Vector4(blades if on > 0.0 else 0.0,BLADE_WIDTHS.x,BLADE_WIDTHS.y,BLADE_WIDTHS.z))
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--sheen-set="):
