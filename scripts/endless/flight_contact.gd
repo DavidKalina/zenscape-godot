@@ -132,12 +132,13 @@ func _top(game: Node3D, p: Vector3) -> float:
 	if under == null: return NAN
 	return float(under)
 
-## What stands at `p`: a tree, stone (an arch, a hall, a bore's rock) or
-## the land.
+## What stands at `p`: a tree, stone (an arch, a rock shape, a hall, a
+## bore's rock) or the land.
 func _what(game: Node3D, p: Vector3) -> String:
 	var h: float = game.field.height(p.x,p.z)
 	var under: Variant = game.plane_ground(p)
 	var top := float((under as Vector2).x) if under is Vector2 else (float(under) if under != null else h)
 	if game.trees != null and float(game.trees.top_at(p)) > h+0.5 and absf(float(game.trees.top_at(p))-top) < 1.0: return "tree"
 	if top > h+0.5 or bool(game.arches.inside(p)) or bool(game.halls.inside(p)): return "stone"
+	if game.get("rocks") != null and bool(game.rocks.inside(p)): return "stone"
 	return "land"

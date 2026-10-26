@@ -59,6 +59,10 @@ var foam: SeaFoam
 var fft: SeaFFT
 var _fft_wind_set := false
 var _wake_low := 0.0
+## Times the wake's foam laid into the buffer (scripts/endless/water_contact.gd
+## sets 0: its own foam marks take over from the buffer's blocky churn). The
+## shader's V stays.
+var wake_foam := 1.0
 ## False under --wake=old: the wake at any speed, rings and all.
 var _wake_needs_speed := not "--wake=old" in LaunchArgs.user_args()
 
@@ -370,7 +374,7 @@ func step(delta: float, eye: Vector3, plane: Vector3, facing := Vector3.FORWARD,
 	if foam != null:
 		var knobs := {}
 		for k in ["body_wind","foam_flow","body_swell","body_patch","whitecaps","foam_spread","foam_caps","swell_groups","wind_patches","sea_fft","fft_sizes","fft_foam","fft_patch","fft_strength"]: knobs[k] = _knob(k)
-		var strength := _wake_low*float(_knob("wake"))
+		var strength := _wake_low*float(_knob("wake"))*wake_foam
 		foam.step(delta,eye,facing,time if time >= 0.0 else _now,knobs,Vector4(plane.x,plane.z,strength,2.2),view)
 		material.set_shader_parameter("foam_drift",foam.drift)
 		material.set_shader_parameter("foam_side",foam.side)
