@@ -30,6 +30,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 // The underside the wind flips into view, as the tufts show it.
 #include "res://shaders/grass_silver.gdshaderinc"
 #include "res://shaders/grass_sheen.gdshaderinc"
+#include "res://shaders/far_clumps.gdshaderinc"
 
 // Far water: calm from this far (m from the eye), fully by the second, with
 // a broad glint (exponent, strength) in place of the ripples' sparkle.
@@ -889,6 +890,11 @@ void fragment() {
 				vec2 wd = zs_wind_direction;
 				vec2 blade_fp = vec2(abs(dot(dpx, vec2(-wd.y, wd.x))) + abs(dot(dpy, vec2(-wd.y, wd.x))), abs(dot(dpx, wd)) + abs(dot(dpy, wd)));
 				grass = mix(grass, zs_blade_paint(grass, sheen_s, gxz, blade_fp, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance, ZS_CLEAN_WARM, ZS_CLEAN_COOL), sheen_on);
+			}
+			// The far grass as clumps with depth (clean look round 7, far_clumps.gdshaderinc).
+			if (grass_far_clumps.x > 0.0) {
+				float clump_on = carpet_turf * smoothstep(grass_far_clumps.z, grass_far_clumps.w, sheen_d) * (1.0 - thin * 0.6);
+				if (clump_on > 0.0) grass = zs_far_clumps(grass, gxz, normalize(p - CAMERA_POSITION_WORLD), fp, sheen_s, zs_key_irradiance, ZS_CLEAN_WARM, ZS_CLEAN_COOL, clump_on);
 			}
 		}
 	}
