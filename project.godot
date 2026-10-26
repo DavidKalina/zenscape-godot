@@ -701,6 +701,22 @@ zs_storm_flash={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+zs_storm_line={
+"type": "vec4",
+"value": Vector4(0, 0, 1, 0)
+}
+zs_storm_shape={
+"type": "vec4",
+"value": Vector4(10000, 3000, 800, 0)
+}
+zs_storm_here={
+"type": "float",
+"value": 0.0
+}
+zs_lightning={
+"type": "vec4",
+"value": Vector4(0, 0, 10000, 0)
+}
 zs_cloud_drift={
 "type": "vec3",
 "value": Vector3(0, 0, 0)
