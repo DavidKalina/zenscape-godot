@@ -36,6 +36,11 @@ subprocess.run([args.godot, '--headless', '--log-file', str(api_dir/'dump.log'),
 subprocess.run([args.scons, '-C', str(project), f'platform={system}', f'arch={arch}', f'target={args.target}',
                 f'godot_cpp={args.godot_cpp.resolve()}', f'custom_api_file={api_dir / "extension_api.json"}',
                 f'build_profile={project / "build_profile.json"}', f'-j{max(1,args.jobs)}'] + (['use_mingw=yes'] if cross else []), check=True)
+# Stamp what was built with the sources it was built from (tools/native_stamp.py),
+# so a launch can tell when a pull has brought C++ newer than the build.
+import native_stamp
+for library in native_stamp.libraries(system):
+    if f'.{system}.{args.target}.' in library.name: native_stamp.mark(library)
 if cross:
     # The host's descriptor (already listing the Windows libraries) is kept.
     if not (project/'zenscape_kernels.gdextension').exists():

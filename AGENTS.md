@@ -87,7 +87,10 @@ PowerShell from the repo root:
 - Import: `& $env:GODOT --headless --editor --path . --import`.
 - Play: `.\run-endless-flight.cmd` (double-click, or launch flags after it,
   e.g. `.\run-endless-flight.cmd --weight=heavy`). It runs `tools/play.py`,
-  which finds Godot, imports if needed and opens the window. By hand:
+  which pulls main first (in a checkout on main only), warns when the native
+  kernels are older than the C++ (`tools/native_stamp.py`), finds Godot,
+  imports and opens the window. `.\open-godot.cmd` does the same, then opens
+  the editor. By hand:
   `& $env:GODOT --path . --rendering-method forward_plus --windowed --resolution 1440x900 -- --no-title`.
   A study: put its scene after `--path .`, e.g. `studies/flight_study.tscn -- --pack=lines`.
   A `run-*.command` file shows the scene and flags it launches.
