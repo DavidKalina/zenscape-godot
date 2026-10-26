@@ -159,16 +159,20 @@
     float toSun = dot(normalize(dir.xz + 1e-4), normalize(zs_sun_direction.xz + 1e-4)) * 0.5 + 0.5;
     // Haze toward and away from a low sun (zs_haze_sun): the glow gathers
     // further toward the sun's side, and the horizon away from it takes the
-    // zenith's hue at its own brightness, so the air reads warm into the
+    // zenith's hue (part white), so the air reads warm into the
     // sun and blue behind it. scripts/endless/endless_look.gd `horizon`
     // mirrors this at y 0 for the land's haze.
+    // (The cool side keeps the brightness the horizon had before the glow
+    // gathered, so the air behind the sun goes blue, not dark.)
     float gather = mix(zs_dusk_direction, 1.0, zs_haze_sun * ZS_HAZE_GATHER);
-    col += exp(-abs(y) * 3.5) * zs_sky_glow * mix(1.0, toSun * toSun * 1.6 + 0.08, gather);
+    vec3 band = exp(-abs(y) * 3.5) * zs_sky_glow;
+    vec3 was = col + band * mix(1.0, toSun * toSun * 1.6 + 0.08, zs_dusk_direction);
+    col += band * mix(1.0, toSun * toSun * 1.6 + 0.08, gather);
     if (zs_haze_sun > 0.001) {
       float away = 1.0 - toSun;
       vec3 zen = mix(vec3(1.0), zs_sky_up / max(dot(zs_sky_up, vec3(0.2126, 0.7152, 0.0722)), 1e-4), ZS_HAZE_BLUE);
       zen /= dot(zen, vec3(0.2126, 0.7152, 0.0722));
-      col = mix(col, zen * dot(col, vec3(0.2126, 0.7152, 0.0722)), away * away * exp(-abs(y) * 3.5) * zs_haze_sun * ZS_HAZE_COOL);
+      col = mix(col, zen * dot(was, vec3(0.2126, 0.7152, 0.0722)), away * away * exp(-abs(y) * 3.5) * zs_haze_sun * ZS_HAZE_COOL);
     }
     // The Belt of Venus: on the side AWAY from the sun, the earth's
     // shadow stands on the horizon as a blue-grey band, and the air

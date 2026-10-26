@@ -599,12 +599,14 @@ func horizon(facing: Vector3) -> Color:
 	# smoothstep(-0.4, 0.7, 0)
 	var col := down.lerp(up,0.3005)
 	var k := float(st.get("zs_haze_sun",0.0))
-	col += glow*lerpf(1.0,to_sun*to_sun*1.6+0.08,lerpf(float(st.zs_dusk_direction),1.0,k*HAZE_GATHER))
+	var dusk := float(st.zs_dusk_direction)
+	var was := col+glow*lerpf(1.0,to_sun*to_sun*1.6+0.08,dusk)
+	col += glow*lerpf(1.0,to_sun*to_sun*1.6+0.08,lerpf(dusk,1.0,k*HAZE_GATHER))
 	if k > 0.001:
 		var luma := Vector3(0.2126,0.7152,0.0722)
 		var zen := Vector3.ONE.lerp(up/maxf(up.dot(luma),1e-4),HAZE_BLUE)
 		zen /= zen.dot(luma)
-		col = col.lerp(zen*col.dot(luma),(1.0-to_sun)*(1.0-to_sun)*k*HAZE_COOL)
+		col = col.lerp(zen*was.dot(luma),(1.0-to_sun)*(1.0-to_sun)*k*HAZE_COOL)
 	col *= 0.98/maxf(maxf(maxf(col.x,col.y),col.z),0.98)
 	return _scene_linear(col,environment.tonemap_exposure)
 
