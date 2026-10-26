@@ -125,6 +125,11 @@ uniform bool grass_blades = false;
 uniform float grass_round = 0.55;
 uniform float grass_dry = 0.25;
 uniform float grass_tip_glow = 0.55;
+// Clean look round 5: how far the grass is lit and shaded as a mass rather
+// than blade by blade (0: as before): the blades' normals lean to the sky
+// together, each tuft's own shade swings less, the sun and the shadows
+// between blades are softer (reference_direct_light). Blades only.
+uniform float grass_calm : hint_range(0.0, 1.0) = 1.0;
 // The tuft mesh's own root and tip colours (GrassTuft.dress, linear): the
 // vertex colour over these keeps each blade's jitter and any instance tint,
 // while the colour itself is the family's living green (grass_look).
@@ -860,6 +865,7 @@ void fragment() {
 		NORMAL = normalize((VIEW_MATRIX * vec4(light_normal, 0.0)).xyz);
 	}
 	if (grass_blades || flower_heads) {
+		if (grass_blades) face_normal = mix(face_normal, vec3(0.0, 1.0, 0.0), 0.5 * grass_calm);
 		face_normal = normalize(face_normal);
 		NORMAL = normalize((VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 	}
@@ -963,7 +969,7 @@ void fragment() {
 		vec3 ground_under = grass_root_paint.rgb * own;
 		if (grass_root_paint.w < 1.0) ground_under = mix(zs_ground_color(ZS_GROUND_GREEN, vec3(plant_root.x, 0.0, plant_root.y), 0.0, 1.0), ground_under, grass_root_paint.w);
 		living = mix(living, ground_under, grass_ground_pull);
-		float tuft_shade = 1.0 + (fract(sin(dot(plant_root, vec2(37.1, 91.7))) * 43758.5453) - 0.5) * 2.0 * grass_variation;
+		float tuft_shade = 1.0 + (fract(sin(dot(plant_root, vec2(37.1, 91.7))) * 43758.5453) - 0.5) * 2.0 * grass_variation * (1.0 - 0.6 * grass_calm);
 		float dry = zs_grass_dry(plant_root, ZS_GRASS_DRY_SCALE, zs_grass_offset) * grass_dry;
 		tint = zs_grass_paint(living * base_color.rgb * own, grass_along, dry, ZS_GRASS_STRAW, ZS_GRASS_ROOT_SHADE, ZS_GRASS_TIP_LIFT, ZS_GRASS_TIP_CURVE) * tuft_shade;
 		// The root grows out of the ground's own colour (ground_look) and
@@ -1168,6 +1174,12 @@ void fragment() {
 #define ZS_GRASS_TRANSLUCENCY
 #define ZS_GRASS_ALONG grass_along
 #define ZS_GRASS_GLOW (grass_blades ? grass_tip_glow : 0.0)
+// Clean look round 5: how far grass blades are lit as a mass (reference_direct_light).
+#define ZS_GRASS_CALM (grass_blades ? grass_calm : 0.0)
+// (How far each blade's sun goes to the mean, the blade tilt that mean is of, and how far the shadows between blades soften: each times grass_calm.)
+#define ZS_GRASS_PULL 0.75
+#define ZS_GRASS_TILT 0.45
+#define ZS_GRASS_SOFT 0.4
 #define ZS_FLOWER_TRANSLUCENCY
 #define ZS_FLOWER_SHARE grass_along
 #define ZS_FLOWER_GLOW (flower_heads ? flower_glow : 0.0)
