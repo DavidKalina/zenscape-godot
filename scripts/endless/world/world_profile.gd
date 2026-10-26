@@ -30,7 +30,9 @@ extends RefCounted
 ##           the season reset, e.g. zs_palette_grass).
 ##   layers  which dressing layers run: trees, grass, birds, fish (bools),
 ##           arches (density, 0 none), splits (split mountains' density, 0
-##           none), traffic (planes, -1 the engine's count).
+##           none), split_kinds (their mix of kinds, {slot, winding, gorge,
+##           grand: weight}; split_sites.gd TYPES), traffic (planes, -1 the
+##           engine's count).
 ##   spawn   at (Vector2 xz), alt (m over the ground), heading (degrees).
 ##
 ## Regions: the engine asks `at(x, z)` / `weights_at(x, z)` / `layer_at(...)`

@@ -52,9 +52,10 @@ extends Node3D
 ## the ground (45), --numbers opens with F1's numbers shown, --uncapped
 ## turns vsync and the frame cap off (the fps is then the frame's cost).
 ## Split mountains (scripts/endless/split_sites.gd): --split-near-start starts
-## 520 m out of the nearest one's lower mouth, heading in, 28 m up (--alt
-## wins); --splits=X their density, --no-splits none, --split-slot=X the
-## slot's toy width (9: 18 m).
+## 520 m out of the nearest one's lower mouth, heading in, 28 m up or more
+## to clear the land on the way in (--alt wins); --splits=X their density, --no-splits none, --split-kind=K every
+## one of kind K (slot, winding, gorge, grand) where it fits, --split-slot=X
+## the slot kind's toy width (6: 12 m).
 ## The look (scripts/endless/endless_look.gd): --mood=ID one of its
 ## moods (alpine_morning), --hour=H the sun's hour (the mood's), --day the
 ## hour runs, --plain-look round one's plain sky and colours; T steps to the
@@ -404,11 +405,11 @@ func _ready() -> void:
 		var s: PackedFloat32Array = field.split_near(_start)
 		if s.is_empty(): push_warning("--split-near-start: no split mountain near the start")
 		else:
-			var pose: Dictionary = SplitSites.approach(s)
+			var pose: Dictionary = SplitSites.approach(s,field)
 			_start = pose.at
 			_heading = -deg_to_rad(float(pose.heading))
-			if not _alt_given: _alt = SplitSites.START_ALT
-			print("split mountain: %.0f m long, mouth at %s, exit at %s; start %s heading %.0f" % [s[4]*2.0,str(pose.mouth),str(pose.exit),str(_start),float(pose.heading)])
+			if not _alt_given: _alt = float(pose.alt)
+			print("split mountain (%s): %.0f m long, floor %.0f m at its narrowest, mouth at %s, exit at %s; start %s heading %.0f" % [SplitSites.kind_name(s),s[4]*2.0,s[5]*2.0,str(pose.mouth),str(pose.exit),str(_start),float(pose.heading)])
 	# The main menu parks the plane on a meadow near the start; a split
 	# mountain start goes straight into the air, as --no-title does.
 	var spots: Array = [] if _no_title or SplitSites.near_start_wanted() or RivalRace.near_start_wanted() else MenuSpot.find(field,_start,_heading)

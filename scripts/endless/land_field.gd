@@ -486,6 +486,9 @@ var _t_on := false
 ## none). A split keeps out of the halls' and the tunnels' ground.
 const Splits = preload("res://scripts/endless/split_sites.gd")
 var splits := 0.0
+## The mix of their kinds (the world's `split_kinds` layer; empty: the
+## script's MIX).
+var split_mix := {}
 var _split_local := {}
 var _split_key := Vector2i(1 << 30,0)
 var _split_here := PackedFloat32Array()
@@ -513,6 +516,7 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 		_tunnel_sites = [Tunnels.test_site(_impl,land_seed,world)]
 		_tunnel_test = true
 	splits = 0.0 if k.get("old_land",false) else Splits.wanted(float(world.layer("splits",0.0)))
+	split_mix = world.layer("split_kinds",{})
 
 ## A land recipe with the field's floor and the flags over it.
 static func _knobs(land: Dictionary) -> Dictionary:
@@ -780,7 +784,7 @@ func hall_at(x: float, z: float, margin := 0.0) -> PackedFloat32Array:
 ## The split of the square `key` (split_sites.gd), or an empty array: none
 ## where a slot hall's cut or a tunnel's box meets its cut.
 func _split_cell(key: Vector2i) -> PackedFloat32Array:
-	var s := Splits.cell_site(_impl,seed,splits,ponds,key,_split_local)
+	var s := Splits.cell_site(_impl,seed,splits,ponds,key,_split_local,split_mix)
 	if s.is_empty(): return s
 	var r := s[7]+s[8]
 	if tunnels > 0.0 and Tunnels.blocks_hall(tunnels_in(s[0]-r,s[1]-r,s[0]+r,s[1]+r),s): return PackedFloat32Array()

@@ -261,6 +261,10 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout 
 
 	// The painted light: the facet's own sun, in steps from shadow to warm lit.
 	float lit = dot(nf, sun) * 0.5 + 0.5;
+	// Down a deep groove (the carve's, a canyon's: `carved.x`) the sun seldom
+	// reaches: its painted light leans to the shade tone, so a wall in real
+	// shadow is not painted with sunlit facets (they read as pale sheets).
+	if (!rock_flat) lit = mix(lit, min(lit, 0.3), smoothstep(0.6, 1.0, carved.x) * rock_carve_shade);
 	lit += (rnd_b.x - 0.5) * 0.07 * er_keep(38.0, fq) + (rnd_f.y - 0.5) * 0.02 * keep_f;
 	float steps = 3.0;
 	float soft = 0.18 + clamp(fq * 0.02, 0.0, 0.3);
@@ -306,7 +310,11 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout 
 	}
 	// Vertical joints between blocks, each bed's own spacing and offset, some
 	// missing; and long fissures running down the face.
-	vec2 along = normalize(vec2(-n.z, n.x) + vec2(0.0001));
+	// The way along the face snapped to one of 16 (the joints' coordinate is
+	// world-sized, so a face's interpolated normal turning by a hair would
+	// slide them metres and smear them into streaks down long triangles).
+	float az_j = round(atan(n.x, -n.z) / 0.39269908) * 0.39269908;
+	vec2 along = vec2(cos(az_j), sin(az_j));
 	float u = dot(q.xz, along);
 	float joint = 0.0;
 	{
