@@ -10,7 +10,8 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 |---|---|
 | A fresh worktree made runnable (kernels, caches, import) | `python tools/worktree.py setup <path> [--cache toad_tex] [--from DIR]`; `check <path>` |
 | Run any Godot command | `python tools/godot.py <godot args>` |
-| Play the game or a study in a window (for the user; no timeout) | `python tools/play.py [studies/x.tscn] [-- flags]`; the launchers `run-endless-flight.command` (Mac) and `.cmd` (Windows) wrap it; it imports first every launch |
+| Play the game or a study in a window (for the user; no timeout) | `python tools/play.py [studies/x.tscn] [-- flags]`; the launchers `run-endless-flight.command` (Mac) and `.cmd` (Windows) wrap it; it pulls main first (a checkout on main only; `--no-pull`), warns on stale native kernels, and imports every launch; `--editor` (`open-godot.command` / `.cmd`) opens the editor instead |
+| Whether the native kernels were built from the C++ here | `python tools/native_stamp.py` (`--mark` records a build known current); tools/build_native_kernels.py stamps what it builds |
 | Smoke a scene (400 frames, no errors) | `python tools/smoke.py studies/x.tscn [-- scene flags]` |
 | A check through the real play loop | write `scratch/x.gd` extending `tools/harness/drive.gd`, then `python tools/drive.py scratch/x.gd` |
 | Every helper a driver has, with its doc | `python tools/drive.py --api [ray\|shot\|film\|...]` (read from drive.gd; no Godot run) |
