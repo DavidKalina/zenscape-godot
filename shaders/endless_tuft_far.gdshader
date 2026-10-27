@@ -165,6 +165,6 @@ void fragment() {
 	// (x the light's colour and shadow, on the face turned from it).
 	if (zs_backlight > 0.0) {
 		vec3 sun_v = normalize((VIEW_MATRIX * vec4(zs_key_direction, 0.0)).xyz);
-		BACKLIGHT = zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-sun_v, VIEW), pow(along, 6.0), BACKLIGHT_GAIN));
+		BACKLIGHT = zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-sun_v, VIEW), pow(max(along, 1.0e-4), 6.0), BACKLIGHT_GAIN));
 	}
 }

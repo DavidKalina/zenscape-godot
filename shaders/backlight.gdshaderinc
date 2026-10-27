@@ -34,4 +34,20 @@ vec3 zs_backlight_tint(vec3 albedo, float amount) {
 	vec3 hue = mix(vec3(1.0), clamp(a / l, vec3(0.0), vec3(3.0)), ZS_BACKLIGHT_LEAF);
 	return amount * ZS_BACKLIGHT_THROUGH * hue / a;
 }
+
+// The same glow for the spruce's rim under --spruce-look=g: `back` the glow's
+// own strength (zs_backlight, or a floor so a rim shows by day), `warm` how
+// far its hue goes to a saturated yellow-green (the sun's colour times it).
+float zs_backlight_amount_floor(float back, float toward, float thin, float gain) {
+	float t = max(toward, 0.0);
+	return back * gain * thin * (0.6 * pow(t, 8.0) + 0.9 * pow(t, 32.0));
+}
+const vec3 ZS_BACKLIGHT_WARM = vec3(1.30, 1.18, 0.22);
+vec3 zs_backlight_tint_warm(vec3 albedo, float amount, float warm) {
+	vec3 a = max(albedo, vec3(0.02));
+	float l = dot(a, vec3(0.2126, 0.7152, 0.0722));
+	vec3 hue = mix(vec3(1.0), clamp(a / l, vec3(0.0), vec3(3.0)), ZS_BACKLIGHT_LEAF);
+	hue = mix(hue, ZS_BACKLIGHT_WARM, warm);
+	return amount * ZS_BACKLIGHT_THROUGH * hue / a;
+}
 #endif

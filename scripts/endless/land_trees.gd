@@ -383,6 +383,9 @@ func _ring_shader(crown: ShaderMaterial, band: Vector2, fade: Vector2) -> Shader
 	m.set_shader_parameter("sun",light)
 	m.set_shader_parameter("tone",Vector4(tone.x,tone.y,tone2.y,tone2.w))
 	m.set_shader_parameter("olive",tone2.z)
+	# The g look (hero_trees.gd SPRUCE_G).
+	var g := HeroTrees.spruce_g_uniforms(knobs)
+	for k: String in g: m.set_shader_parameter(k,g[k])
 	return m
 
 ## A crown material drawn only for trees `band` m off, dithered `fade` m round each end.
