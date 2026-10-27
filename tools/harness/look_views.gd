@@ -35,6 +35,14 @@ const SUN := {
 	"clouds_away": [720,520,40, 600,-180, 145],
 	"clouds_up": [720,520,15, 300,-220, 60],
 }
+# A lone meadow spruce from close (--spruce-look rounds): name: [tree x,z, how
+# far off (m), the eye above the ground, the look above it, the bearing of the
+# view from the sun's (90: the sun comes from the side)]
+const CLOSE := {
+	"spruce_close": [-704.0,-2705.7, 7.5, 6.0,5.5, 90],
+	# The same tree seen against the sun (its rim).
+	"spruce_rim": [-704.0,-2705.7, 9.0, 3.0,6.0, 0],
+}
 const ALL := "meadow_low,hills,rock,coast,river,cruise,high"
 func drive() -> void:
 	await open("studies/endless_flight.tscn")
@@ -49,7 +57,7 @@ func drive() -> void:
 		await frames(2)
 	finish()
 
-## The study's camera to view `n` (SPOTS or SUN).
+## The study's camera to view `n` (SPOTS, CLOSE or SUN).
 func aim(n: String) -> void:
 	var cam: Camera3D = study.camera
 	var field: RefCounted = study.field
@@ -60,6 +68,14 @@ func aim(n: String) -> void:
 		var e := Vector3(s[0],field.height(s[0],s[1])+s[2],s[1])
 		cam.global_position = e
 		cam.look_at(e+flat*float(s[3])-Vector3(0.0,float(s[4]),0.0),Vector3.UP)
+		return
+	if CLOSE.has(n):
+		var c: Array = CLOSE[n]
+		var sun: Vector3 = study.look.celestial.state.zs_sun_direction
+		var way := Vector3(sun.x,0.0,sun.z).normalized().rotated(Vector3.UP,deg_to_rad(float(c[5])))
+		var foot := Vector3(c[0],field.height(c[0],c[1]),c[1])
+		cam.global_position = Vector3(foot.x-way.x*float(c[2]),maxf(foot.y,field.height(foot.x-way.x*float(c[2]),foot.z-way.z*float(c[2])))+float(c[3]),foot.z-way.z*float(c[2]))
+		cam.look_at(foot+Vector3(0.0,float(c[4]),0.0),Vector3.UP)
 		return
 	var v: Array = SPOTS[n]
 	cam.global_position = Vector3(v[0],field.height(v[0],v[1])+v[2],v[1])
