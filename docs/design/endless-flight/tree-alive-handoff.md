@@ -18,14 +18,14 @@ rigid shape within 200 m, and the sprites past that stood still.
   - **Gust waves** (`zs_tree_wave`). The crests are 90 m apart and roll
     downwind at 2.5 times the air's travel, about 6 m/s. Noise 160 m across
     bends them and breaks them into patches. A tall tree's top lags its foot.
-  - **Boughs** (`zs_tree_bough`). Each bough bobs on its own beat; the
-    phase comes from its turn about the trunk and its height. The motion is
-    biggest at the tip and grows faster and larger when a wave is on the
-    bough. There is also a small shiver. The bob is about 0.2 m at a
-    bough's tip in calm air and about 0.5 m at a crest.
+  - **Boughs** (`zs_tree_bough`). Each bough bobs on its own slow beat;
+    the phase comes from its turn about the trunk and its height. The
+    motion is biggest at the tip and grows larger (not faster) when a wave
+    is on the bough. The bob is about 0.2 m at a bough's tip in calm air
+    and about 0.5 m at a crest.
   - **Sheen** (`zs_tree_sheen`). Where a wave lifts the boughs, the crown
-    turns up to 28 % paler and cooler (the needles' undersides), more on
-    boughs that are bobbing up.
+    turns up to 28 % paler and cooler (the needles' undersides), following
+    the wave alone.
 - `shaders/conifer_wind.gdshaderinc`: `zs_conifer_offset_alive`. A wave adds
   to the tree's lean (0.22 at a full crest, about a metre at a 15 m top)
   and to the boughs' motion. `zs_conifer_offset` is unchanged for the other
@@ -43,6 +43,21 @@ rigid shape within 200 m, and the sprites past that stood still.
 - `tools/harness/look_views.gd`: its held views now step the trees.
   Before, the views drew bare trunks within 200 m of the eye: the crowns'
   detail tiles were never stood round a moved camera.
+
+## Fix: jitter (after the first play)
+
+The user found it jittery. There were two causes:
+
+- **The boughs' beat sped up in a wave.** The phase was the clock times a
+  pace that changed with the wave, so as a wave came or went the phase
+  swept by the clock's whole run. Ten minutes in, that was about 20 Hz of
+  flutter.
+  - Now the beat is fixed at 2.2 rad/s (about 0.35 Hz), and only the bob
+    grows in a wave.
+  - The 13 rad/s shiver is gone.
+  - The phase changes less along a drooping bough (`vertex.y` 5.3 to 2.5).
+- **The sheen flickered.** It followed each bough's bob on the near crowns
+  and a 4 rad/s beat on the sprites. Now it follows the wave alone.
 
 ## Numbers (RTX 4070 Super, 1440x900, 3D at 0.75)
 

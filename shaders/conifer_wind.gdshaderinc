@@ -53,7 +53,7 @@ vec3 zs_conifer_offset_alive(vec3 vertex, mat4 model, bool alive, out float shee
 	if (alive) {
 		float lift;
 		offset += zs_tree_bough(vertex, phase, zs_tree_wave(root, 0.0), lift);
-		sheen = wave * (0.65 + 0.35 * lift);
+		sheen = wave;
 	}
 	return offset;
 }

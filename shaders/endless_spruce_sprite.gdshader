@@ -112,7 +112,7 @@ void vertex() {
 		vec2 dir = zs_wind_direction;
 		vec2 motion = (dir * (1.0 + 0.4 * swing) + vec2(-dir.y, dir.x) * 0.22 * sin(zs_motion_time * pace * 0.71 + phase * 2.3)) * lean * 0.3 * tall * k * k;
 		VERTEX.xz += motion;
-		sprite_sheen = wave * (0.75 + 0.25 * sin(zs_motion_time * 4.0 + phase * 3.1));
+		sprite_sheen = wave;
 	}
 	if (d < band.x - (fade.x > 0.0 ? fade.x + SLACK : 0.0) || d >= band.y + (fade.y > 0.0 ? fade.y + SLACK : 0.0)) VERTEX = foot;
 	NORMAL = toward;

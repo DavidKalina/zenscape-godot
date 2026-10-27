@@ -22,10 +22,13 @@ const float ZS_TREE_WAVE_LEAN = 0.22;
 const float ZS_TREE_SHEEN = 0.28;
 // The boughs: tip bob (model units, at a bough's tip, calm and at a crest;
 // the spruces stand about 3 to 4.5 times their model) and their beat (rad/s,
-// calm and at a crest). ZS_BOUGH_REACH: a crown's reach in model units.
+// about 0.35 Hz). The beat stays the same in a wave: only the bob grows (a
+// pace that changed with the wave swept the phase by the clock's whole run,
+// a jitter that grew the longer the game ran). ZS_BOUGH_REACH: a crown's
+// reach in model units.
 const vec2 ZS_BOUGH_BOB = vec2(0.05, 0.14);
 const float ZS_BOUGH_REACH = 0.65;
-const vec2 ZS_BOUGH_PACE = vec2(3.2, 5.6);
+const float ZS_BOUGH_PACE = 2.2;
 
 float zs_tree_hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -62,8 +65,8 @@ float zs_tree_wave(vec2 root, float lag) {
 
 // A bough's own motion, as an offset in the tree's model space: each bough
 // bobs on its own beat (its phase from its turn about the trunk and its
-// height), most at its tip, faster and further when a wave is on it, and
-// shivers a little. `phase` is the tree's own; `wave` zs_tree_wave there.
+// height), most at its tip, further when a wave is on it. `phase` is the
+// tree's own; `wave` zs_tree_wave there.
 // `lift` out: -1..1, the bough's bob now (up shows its underside).
 vec3 zs_tree_bough(vec3 vertex, float phase, float wave, out float lift) {
 	lift = 0.0;
@@ -74,21 +77,20 @@ vec3 zs_tree_bough(vec3 vertex, float phase, float wave, out float lift) {
 	if (air <= 0.0 || tip <= 0.0) return vec3(0.0);
 	// A whole number of turns, so the beat is continuous across atan's seam.
 	float turn = atan(vertex.z, vertex.x);
-	float own = turn * 3.0 + vertex.y * 5.3 + phase;
+	float own = turn * 3.0 + vertex.y * 2.5 + phase;
 	float t = zs_motion_time;
-	float pace = mix(ZS_BOUGH_PACE.x, ZS_BOUGH_PACE.y, wave);
-	lift = sin(t * pace + own) * 0.75 + sin(t * pace * 1.71 + own * 1.9) * 0.25;
+	float pace = ZS_BOUGH_PACE;
+	lift = sin(t * pace + own) * 0.8 + sin(t * pace * 1.53 + own * 1.9) * 0.2;
 	float bob = mix(ZS_BOUGH_BOB.x, ZS_BOUGH_BOB.y, wave) * min(air, 1.5);
-	float shiver = sin(t * 13.0 + own * 2.7 + reach * 4.0) * (0.25 + wave) * 0.015 * min(air, 1.5);
 	// Up and down at the tip, swinging in and out a little with it.
 	vec2 out_dir = vertex.xz / max(r, 1e-3);
-	float dy = tip * (bob * lift + wave * 0.04 + shiver);
+	float dy = tip * (bob * lift + wave * 0.04);
 	vec2 dxz = out_dir * tip * bob * 0.35 * sin(t * pace * 0.83 + own * 1.3);
 	return vec3(dxz.x, dy, dxz.y);
 }
 
 // The crown's light where a wave lifts its boughs: a little paler and cooler,
-// the needles' undersides. `sheen` 0..1 (a crest, the bough lifting).
+// the needles' undersides. `sheen` 0..1 (how hard the crest is on it).
 vec3 zs_tree_sheen(vec3 albedo, float sheen) {
 	vec3 under = albedo * (1.0 + ZS_TREE_SHEEN * vec3(0.9, 1.2, 1.5)) + vec3(0.006, 0.01, 0.012) * ZS_TREE_SHEEN * 5.0;
 	return mix(albedo, under, clamp(sheen, 0.0, 1.5));
