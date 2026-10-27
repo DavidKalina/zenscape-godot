@@ -21,6 +21,7 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/grass_look.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
+#include "res://shaders/land_horizon.gdshaderinc"
 #include "res://shaders/endless_patch.gdshaderinc"
 #include "res://shaders/endless_rock.gdshaderinc"
 // The grass's ring distance (scripts/endless/endless_grass.gd), for where
@@ -899,17 +900,20 @@ void fragment() {
 	// lights), the sky's fill (the emission below) stays.
 	float shade = zs_cloud_volume_shade(p);
 	float shaded = shade * cloud_shade;
-	ALBEDO = albedo * (1.0 - shaded);
+	// The land's own shade past the sun's map (land_horizon.gdshaderinc, off
+	// unless --terrain-shadows): the sun's share, and the sky's fill below.
+	vec2 horizon = zs_horizon_light(p, distance(p, CAMERA_POSITION_WORLD));
+	ALBEDO = albedo * (1.0 - shaded) * horizon.x;
 	float wet_sand = max(sandy * smoothstep(0.7, 0.0, over) * step(-0.5, over), damp * banked);
 	ROUGHNESS = mix(mix(mix(0.92, 0.82, rocky), 0.6, snowy), 0.35, wet_sand);
-	SPECULAR = mix(mix(0.25, 0.35, rocky), 0.5, max(snowy, wet_sand)) * (1.0 - shaded);
+	SPECULAR = mix(mix(0.25, 0.35, rocky), 0.5, max(snowy, wet_sand)) * (1.0 - shaded) * horizon.x;
 	NORMAL = normalize((VIEW_MATRIX * vec4(lit_n, 0.0)).xyz);
 	// The hemisphere fill, as the isles' surfaces take it (environment
 	// ambient is off under LandscapeLighting).
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float hollow = 0.85 + 0.15 * n.y;
 	// A cloud overhead takes a little of the sky's fill too.
-	EMISSION = albedo * hemi * hollow * (1.0 - 0.2 * shade) + rock_glow * rocky * (1.0 - snowy);
+	EMISSION = albedo * hemi * hollow * horizon.y * (1.0 - 0.2 * shade) + rock_glow * rocky * (1.0 - snowy);
 	if (wet > 0.0) {
 		// The river's water, as the sea draws it (endless_sea.gdshader): its
 		// colour by the depth (faked from the way in from the bank), the bed
