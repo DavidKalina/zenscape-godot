@@ -19,6 +19,9 @@ const SPOTS := {
 	"cruise": [720,520,45, 720,380,10],
 	"high": [720,560,260, 720,400,0],
 	"forest": [330,-150,14, 330,-300,4],
+	# A lone meadow spruce about 25 m off, and a wood 150 to 600 m off from 60 m up.
+	"spruce_near": [-704,-2675,8, -704,-2800,10],
+	"wood": [720,480,60, 680,250,0],
 }
 # name: [eye x,z,above, how far ahead the look is (m), its drop (m), its
 # bearing from the sun's (degrees: 0 toward it, 180 away, 90 across)]
