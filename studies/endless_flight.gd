@@ -120,6 +120,7 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
 const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 const StormFront = preload("res://scripts/endless/storm_front.gd")
+const StormRain = preload("res://scripts/endless/storm_rain.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const EndlessEddies = preload("res://scripts/endless/endless_eddies.gd")
@@ -291,6 +292,8 @@ var _region_debug: Label
 ## no --storm or --storm-start), and --storm-debug's line.
 var storm: RefCounted
 var _storm_debug: Label
+## The storm's rain (scripts/endless/storm_rain.gd), only with a storm.
+var storm_rain: Node3D
 var _region_id := ""
 var _region_shown := -100000
 ## The caption shows for REGION_HOLD ms, then fades over REGION_FADE.
@@ -480,6 +483,10 @@ func _ready() -> void:
 	var wind: Vector2 = look.base_wind() if look != null else Vector2.RIGHT
 	storm = StormFront.from_args(_start,Vector2(-sin(_heading),-cos(_heading)),wind)
 	if storm != null and look != null: look.turn_wind(storm.heading())
+	if storm != null:
+		storm_rain = StormRain.new()
+		add_child(storm_rain)
+		storm_rain.setup(storm)
 	land = LandStream.new()
 	land.name = "Land"
 	add_child(land)
@@ -949,6 +956,7 @@ func tick(delta: float) -> void:
 	if storm != null:
 		storm.step(delta,camera.global_position,look != null and look.cycle.held)
 		if look != null: storm.grade(look.celestial)
+		if storm_rain != null: storm_rain.step(delta,self)
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
 	if storm != null and look != null: storm.shade(look.sun)
 	if react != null: _react(delta)

@@ -40,6 +40,8 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/reference_lake_glint.gdshaderinc"
 // The light's leans: the paint's warm and cool tones turn with the light.
 #include "res://shaders/light_leans.gdshaderinc"
+// Storm lane rain: rings on the rivers and ponds (zs_rain_pocks).
+#include "res://shaders/storm_rain_water.gdshaderinc"
 global uniform vec3 zs_palette_water;
 
 // Rock round: the painted rock (shaders/endless_rock.gdshaderinc); true is
@@ -1042,6 +1044,7 @@ void fragment() {
 			float fall = pow(max(spd - 0.35, 0.0) / 9.0, 2.0);
 			slope -= dir * fall;
 		}
+		slope += zs_rain_pocks(p.xz, r_fp, t); // storm lane rain
 		vec3 wn = normalize(vec3(-slope.x, 1.0, -slope.y));
 		vec3 calm = normalize(vec3(-slope.x * river_calm, 1.0, -slope.y * river_calm));
 		float d_in = max(-r_out, 0.0);
@@ -1218,6 +1221,7 @@ void fragment() {
 		spark *= zs_celestial_clear * smoothstep(-0.03, 0.12, zs_sun_direction.y) * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad);
 		vec3 warm_c = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, zs_sun_direction.y)));
 		disp = mix(disp, warm_c, clamp(spark, 0.0, 1.0));
+		disp = zs_rain_beaten(disp, sky * 0.5 + vec3(0.45), p.xz, r_fp, t); // storm lane rain
 		vec3 water_em = scene_linear_for_display(clamp(disp, vec3(0.0), vec3(1.0)));
 		ALBEDO = mix(ALBEDO, vec3(0.0), wet);
 		SPECULAR = mix(SPECULAR, 0.0, wet);

@@ -1,8 +1,11 @@
 // The storm front on the GPU (scripts/endless/storm_front.gd, its mirror):
 // the globals StormFront publishes each frame and its bands by the signed
 // distance d from the leading edge (positive ahead). Keep the numbers here
-// equal to storm_front.gd's constants. Include once per shader (it declares
-// the globals); the compute cloud march (GLSL) gets them as uniforms instead.
+// equal to storm_front.gd's constants. It declares the globals, guarded, so
+// any include may pull it in; the compute cloud march (GLSL) gets them as
+// uniforms instead.
+#ifndef ZS_STORM_FRONT
+#define ZS_STORM_FRONT
 
 // xy: the leading edge's middle (world xz); zw: the heading (unit xz).
 global uniform vec4 zs_storm_line;
@@ -72,3 +75,5 @@ float zs_storm_gust(vec2 p) {
 	float g = d > 0.0 ? zs_storm_ramp(zs_storm_shape.z, 0.0, d) : zs_storm_ramp(-ZS_STORM_GUST_BEHIND, 0.0, d);
 	return g * zs_storm_ends(p);
 }
+
+#endif
