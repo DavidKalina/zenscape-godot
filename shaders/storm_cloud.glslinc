@@ -221,6 +221,18 @@ const vec2 SE_HANG_CUT = vec2(0.32, 0.62);
 const float SE_BREAK_TILE = 2600.0;
 const vec2 SE_BREAK = vec2(90.0, 0.62);
 const float SE_THIN_LEAST = 90.0;
+// Its edges (where the envelope ramps, ~SE_EDGE_RAMP m wide) bitten into
+// lobes (SE_EDGE_TILE m across) as far as SE_EDGE_CUT of the ramp, their
+// flanks heaped by the underside's hang, so the deck seen from behind or
+// beside ends in lumpy cloud, never a ruler line over the sky.
+const float SE_EDGE_TILE = 1100.0;
+const vec2 SE_EDGE_CUT = vec2(0.04, 0.85);
+const float SE_EDGE_RAMP = 700.0;
+// Behind it, the share of the deck's shade a pushed cell keeps (the march),
+// whole up to SE_TRAIL_TOP.x m over the sea, gone by .y (the heaps up top
+// keep the sun).
+const float SE_TRAIL = 0.85;
+const vec2 SE_TRAIL_TOP = vec2(900.0, 1600.0);
 // Its light (no taps): the sky's through the deck over it, falling off
 // by SE_DEPTH m of deck (so a pouch's belly, under the most deck, is
 // near black, a gap and a break paler), times SE_SKY.x, never past
@@ -390,11 +402,14 @@ float storm_env_cloud(vec3 p, float e, float fl, float t, out float dens, out fl
 		// cells over it, lit white.
 		float top_l = max(base + SE_THICK * (1.0 - SE_BREAK.y * brk), b + SE_THIN_LEAST);
 		ins = min(p.y - b, top_l - p.y);
+		float ne = textureLod(cauliflower, vec3(q.x / SE_EDGE_TILE + 0.47, 0.21, q.z / SE_EDGE_TILE + 0.83), 0.0).r;
+		float cut = mix(SE_EDGE_CUT.x, SE_EDGE_CUT.y, sstep(0.3, 0.7, ne));
+		ins = min(ins, (e - cut) * SE_EDGE_RAMP + 0.6 * hang);
 		// Measured from its surface over this column, not the sample: the
 		// steps land at any depth in it and the shade must not shimmer.
 		g_env_depth = max(top_l - b, 0.0);
 		cave = sstep(0.15, 0.85, hb) * (1.0 - hm);
-		dens = sstep(0.0, 18.0, ins) * sstep(0.0, 0.35, e) * P.spare[18].w;
+		dens = sstep(0.0, 18.0, ins) * sstep(0.0, 0.1, e) * P.spare[18].w;
 		hh = clamp((p.y - b) / SE_THICK, 0.0, 1.0);
 	}
 	// The scud: torn fragments in the band under the deck, racing along.
@@ -410,7 +425,9 @@ float storm_env_cloud(vec3 p, float e, float fl, float t, out float dens, out fl
 		// Thin at the floor and toward the deck's base it joins.
 		float band = sstep(fl, fl + 30.0, p.y);
 		float edge = SE_SCUD_EDGE + t * SE_SCUD_EDGE_FAR;
-		float sd = sstep(gate, gate + edge, v) * band * (1.0 - sstep(SE_SCUD_FAR.x, SE_SCUD_FAR.y, t)) * SE_SCUD_DENS * P.spare[18].z;
+		// (Gone with the envelope's ramp: at its edge a lone fragment hung
+		// as a flat dark lens against the clear sky.)
+		float sd = sstep(gate, gate + edge, v) * band * sstep(0.15, 0.6, e) * (1.0 - sstep(SE_SCUD_FAR.x, SE_SCUD_FAR.y, t)) * SE_SCUD_DENS * P.spare[18].z;
 		if (sd > dens) {
 			dens = sd;
 			g_env_scud = 1.0;

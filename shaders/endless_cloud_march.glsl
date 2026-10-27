@@ -1755,6 +1755,12 @@ void march_pass() {
 		// towers' bases pale flat puffs under the dark deck.)
 		if (e.density > 0.0 && !(g_env && g_env_scud > 0.5)) immersed = sstep(-4.0, 20.0, e.inside);
 	}
+	// Under the storm's envelope the cloud round the eye is its gloom, lit
+	// as the deck lights the cloud under it (dark grey), never the fair
+	// day's white glow: that share of the immersion keeps the cloud's own
+	// light and gives none to the glow.
+	float glow_share = immersed;
+	if (immersed > 0.0 && storm_env_on()) glow_share *= 1.0 - sstep(0.0, 0.5, storm_envelope(ro.xz));
 
 	bool faced = false;
 	float turned = 1.0;
@@ -1849,8 +1855,8 @@ void march_pass() {
 			float sun_e = scud ? SE_SUN.y : SE_SUN.x;
 			float alpha = 1.0 - exp(-s.density * s.sigma * step_s);
 			float w = T * alpha;
-			acc_a += w * (1.0 - immersed) * vec4(SKY * sky_e, sun_e * SUN_SCALE, 0.0, 0.0);
-			glow += w * immersed * 0.3;
+			acc_a += w * (1.0 - glow_share) * vec4(SKY * sky_e, sun_e * SUN_SCALE, 0.0, 0.0);
+			glow += w * glow_share * 0.3;
 			met += w * t;
 			crown += w * s.h * 0.3;
 			T *= 1.0 - alpha;
@@ -1963,8 +1969,17 @@ void march_pass() {
 			float db = P.band.x + mix(SE_DECK.y, SE_DECK.x, e_l);
 			if (e_l > 0.0) {
 				env_shade = sstep(0.0, 0.5, e_l) * sstep(db + SE_THICK, db + SE_THICK * 0.3, p.y);
-				sun_light = mix(sun_light, SE_SUN.x * SUN_SCALE, env_shade);
 			}
+			// Past the deck's back, where the push lets go, a pushed cell
+			// stands in the storm's trail: shaded as the deck is, fading
+			// with the push, so the deck's back runs on into its cells' dark
+			// heaps, never a sunlit khaki lid over a strip of sky.
+			if (sw > 0.0 && storm_env_on()) {
+				float d_s = dot(p.xz - P.spare[3].xy, P.spare[3].zw);
+				float trail = SE_TRAIL * sstep(0.05, 0.5, sw) * sstep(-P.spare[4].y * 0.5, -P.spare[4].y + SE_OUT.x, d_s) * (1.0 - e_l);
+				env_shade = max(env_shade, trail * sstep(P.band.x + SE_TRAIL_TOP.y, P.band.x + SE_TRAIL_TOP.x, p.y));
+			}
+			if (env_shade > 0.0) sun_light = mix(sun_light, SE_SUN.x * SUN_SCALE, env_shade);
 			float powder = 1.0 - exp(-max(s.inside, 0.0) / POWDER_DEPTH);
 			sun_light *= mix(1.0, powder, powder_share);
 			float deep = sstep(0.0, 50.0, s.inside);
@@ -1975,9 +1990,9 @@ void march_pass() {
 			float bounce = BOUNCE * pow(1.0 - s.h, 2.0) * mix(1.0, 0.3, sw) * (1.0 - env_shade);
 			float alpha = 1.0 - exp(-s.density * s.sigma * step);
 			float w = T * alpha;
-			acc_a += w * (1.0 - immersed) * vec4(ambient, sun_light, bounce, 0.0);
+			acc_a += w * (1.0 - glow_share) * vec4(ambient, sun_light, bounce, 0.0);
 			// The whiteout mottled by the wisps streaming past.
-			glow += w * immersed * (0.75 + 0.3 * beer) * (0.75 + 0.5 * s.pocket);
+			glow += w * glow_share * (0.75 + 0.3 * beer) * (0.75 + 0.5 * s.pocket);
 			met += w * t;
 			crown += w * s.h;
 			T *= 1.0 - alpha;

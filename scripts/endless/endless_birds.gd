@@ -212,7 +212,7 @@ var size := 1.0
 var ride := RIDE
 var ambient := 1.0
 ## The storm at the eye (StormFront `here`, set by the host each frame): no
-## far flock is put up to wheel in it past STORM_HUSH.
+## far flock is put up to wheel in it past STORM_HUSH, and ones wheeling leave.
 var storm_hush := 0.0
 const STORM_HUSH := 0.3
 var flocks: Array = []
@@ -645,6 +645,12 @@ func _flock_step(f: Flock, delta: float, eye: Vector3, pp: Vector3, pv: Vector3,
 			f.centre += Vector3(0.6,0.0,0.3)*delta
 			f.spread = lerpf(f.spread,2.3+0.8*sin(f.t*0.35+f.radius),delta*0.5)
 			if (f.a-eye).length() > AMBIENT_GONE: return false
+			# The storm coming on: off away from the plane, low and fast.
+			if storm_hush > STORM_HUSH:
+				var off := Vector3(f.a.x-eye.x,0.0,f.a.z-eye.z)
+				f.heading = off.normalized() if off.length() > 1.0 else f.av.normalized()
+				f.state = LEAVE
+				f.t = 0.0
 		SCATTER:
 			# Round over the tree, then off.
 			var rel := f.a-f.centre
