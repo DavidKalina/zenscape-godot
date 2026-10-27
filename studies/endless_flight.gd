@@ -121,6 +121,7 @@ const Pad = preload("res://scripts/pad.gd")
 const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 const StormFront = preload("res://scripts/endless/storm_front.gd")
 const StormLightning = preload("res://scripts/endless/storm_lightning.gd")
+const StormGustSound = preload("res://scripts/endless/storm_gust_sound.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const EndlessEddies = preload("res://scripts/endless/endless_eddies.gd")
@@ -294,6 +295,8 @@ var storm: RefCounted
 var _storm_debug: Label
 ## The storm's lightning (scripts/endless/storm_lightning.gd), only with a storm.
 var lightning: Node3D
+## The storm's gust roar (scripts/endless/storm_gust_sound.gd), with a storm.
+var storm_sound: RefCounted
 var _region_id := ""
 var _region_shown := -100000
 ## The caption shows for REGION_HOLD ms, then fades over REGION_FADE.
@@ -485,6 +488,7 @@ func _ready() -> void:
 	if storm != null and look != null: look.turn_wind(storm.heading())
 	# Its cloud deck joins the field (scripts/endless/storm_clouds.gd).
 	if storm != null and look != null and look.clouds != null: look.clouds.storm = storm
+	if storm != null: storm_sound = StormGustSound.new(storm,sound)
 	land = LandStream.new()
 	land.name = "Land"
 	add_child(land)
@@ -958,6 +962,7 @@ func tick(delta: float) -> void:
 	if storm != null:
 		storm.step(delta,camera.global_position,look != null and look.cycle.held)
 		if look != null: storm.grade(look.celestial)
+		if storm_sound != null: storm_sound.step(delta,camera.global_position)
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
 	if storm != null and look != null: storm.shade(look.sun)
 	if lightning != null: lightning.step(delta,look != null and look.cycle.held)
@@ -1141,6 +1146,8 @@ func _react(delta: float) -> void:
 		var e := camera.global_position
 		react.part(Vector2(e.x,e.z),span*EYE_PART_SPANS,PART_PUSH,1)
 	if motes != null:
+		# The storm's gust front blows the specks along with it.
+		if storm != null: motes.storm_air = EndlessMotes.STORM_AIR*storm.gust_at(Vector2(camera.global_position.x,camera.global_position.z))
 		# Parked in the menu the idling wash stirs the grass but kicks none up.
 		motes.step(delta,camera.global_position,look.wind_direction,look._gust,{} if stage != null and stage.holding() else react.wash_spot,
 			eddies.ribbons.ribbons if eddies != null else [],Callable(self,"_grass_at"))

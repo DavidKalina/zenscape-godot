@@ -53,7 +53,7 @@ float zs_sheen_field(vec2 p, float fp) {
 	// blades hard downwind.
 	float band = zs_gust_band_at(p, travel);
 	float air = clamp(zs_breeze_air() / 0.53, 0.35, 1.6);
-	float s = w * 3.0 * band * air + zs_front_at(p, 0.0) * 1.2;
+	float s = w * 3.0 * band * air + zs_front_at(p, 0.0) * 1.2 + zs_storm_sheen(p, fp);
 	return clamp(s, -1.0, 1.0);
 }
 

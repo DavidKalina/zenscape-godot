@@ -32,6 +32,8 @@ render_mode blend_mix, depth_draw_always, cull_back, unshaded, shadows_disabled;
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
 // The sun's glint turns with the sun's hue (light_leans).
 #include "res://shaders/light_leans.gdshaderinc"
+// The storm's gust front on the water (lane gust; nothing when it's off).
+#include "res://shaders/storm_sea.gdshaderinc"
 global uniform vec3 zs_palette_water;
 uniform sampler2D sea_screen : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D sea_depth : hint_depth_texture, filter_nearest, repeat_disable;
@@ -952,6 +954,8 @@ void fragment() {
 	float t = zs_flow_time;
 	float paw;
 	float air = zs_sea_air(rest_xz, paw);
+	float storm_sea = zs_storm_sea(rest_xz, footprint);
+	air *= 1.0 + ZS_STORM_SEA_CHOP * storm_sea;
 	vec3 shift;
 	float crest, swell_rough, chop_rough;
 	float jac = 1.0, caps = 0.0;
@@ -1016,6 +1020,7 @@ void fragment() {
 	float fresnel = fresnel_floor + (1.0 - fresnel_floor) * pow(1.0 - max(dot(eye, calm), 0.0), fresnel_power);
 	fresnel *= 1.0 - 0.25 * paw * min(zs_wind_strength, 1.0);
 	fresnel *= 1.0 - 0.2 * stirred;
+	fresnel *= 1.0 - 0.4 * storm_sea;
 
 	// The bed behind this pixel, nudged by the waves.
 	vec2 uv = SCREEN_UV;
@@ -1069,6 +1074,7 @@ void fragment() {
 	if (sea_motion > 0) water *= 1.0 + clamp(dot(normal.xz, normalize(zs_sun_direction.xz + vec2(1e-4))) * 2.0, -0.5, 0.5) * body_shade;
 	// Stirred water behind the plane: lighter with the air churned into it.
 	water = mix(water, mix(tint_mid, tint_deep, 0.5) * zs_palette_water * light, stirred * 0.18);
+	water = zs_storm_sea_tone(water, storm_sea);
 
 	// Light through the crests facing the sun.
 	vec3 sun = zs_sun_direction;
@@ -1124,6 +1130,7 @@ void fragment() {
 		float laced = zs_foam_lace(rest_xz, max(lace_density, wake_laid * 0.9), lace_density >= wake_laid * 0.9 ? lace_youth : wake_youth, footprint);
 		foamed = max(foamed, laced * foam);
 	}
+	foamed = max(foamed, zs_storm_caps(rest_xz, t, storm_sea, footprint, lift * 2.0 - 1.0) * foam * (1.0 - still) * smoothstep(2.0, 8.0, water_depth));
 	foamed = clamp(foamed, 0.0, 1.0) * float(depth > 0.0 || known > 0.0 || waked > 0.0);
 	float lip = (1.0 - smoothstep(0.0, 0.15, bed_depth)) * float(depth > 0.0) * (1.0 - still);
 	vec3 white = vec3(0.9, 0.96, 1.0) * (ambient * 1.1 + key * 0.8);
@@ -1260,6 +1267,7 @@ void fragment() {
 	display_color = mix(display_color, path.rgb, path.a * (1.0 - foamed));
 	vec3 warm = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, sun.y)));
 	display_color = mix(display_color, warm, clamp(spark, 0.0, 1.0));
+	display_color = zs_storm_spray(display_color, rest_xz, t, storm_sea * (1.0 - still), footprint, eye, ambient + key * 0.6);
 	if (debug_view == 1) display_color = water_depth < 5.0 ? vec3(1.0, 0.0, 0.0) : (water_depth < 20.0 ? vec3(0.0, 1.0, 0.0) : (water_depth < 60.0 ? vec3(0.0, 0.0, 1.0) : vec3(1.0))) * (0.5 + 0.5 * known);
 	if (debug_view == 3) display_color = zs_scene_to_display(lit);
 	if (debug_view == 4) display_color = reflection * mirror_weight;
