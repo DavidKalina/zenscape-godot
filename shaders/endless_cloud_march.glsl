@@ -1992,7 +1992,7 @@ void march_pass() {
 			// heaps, never a sunlit khaki lid over a strip of sky.
 			if (sw > 0.0 && storm_env_on()) {
 				float d_s = dot(p.xz - P.spare[3].xy, P.spare[3].zw);
-				float trail = SE_TRAIL * sstep(0.05, 0.5, sw) * sstep(-P.spare[4].y * 0.5, -P.spare[4].y + SE_OUT.x, d_s) * (1.0 - e_l);
+				float trail = SE_TRAIL * sstep(0.0, SE_TRAIL_PUSH, sw) * sstep(-P.spare[4].y * 0.5, -P.spare[4].y + SE_OUT.x, d_s) * (1.0 - e_l);
 				env_shade = max(env_shade, trail * sstep(P.band.x + SE_TRAIL_TOP.y, P.band.x + SE_TRAIL_TOP.x, p.y));
 			}
 			if (env_shade > 0.0) sun_light = mix(sun_light, SE_SUN.x * SUN_SCALE, env_shade);

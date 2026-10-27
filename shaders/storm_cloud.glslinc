@@ -241,6 +241,9 @@ const float SE_EDGE_RAMP = 700.0;
 // keep the sun).
 const float SE_TRAIL = 0.85;
 const vec2 SE_TRAIL_TOP = vec2(900.0, 1600.0);
+// ...whole from this much of the push (at .5 the far let-go's cells stood
+// sunlit, a tan lid with a level edge behind the storm).
+const float SE_TRAIL_PUSH = 0.2;
 // Its light (no taps): the sky's through the deck over it, falling off
 // by SE_DEPTH m of deck (so a pouch's belly, under the most deck, is
 // near black, a gap and a break paler), times SE_SKY.x, never past
