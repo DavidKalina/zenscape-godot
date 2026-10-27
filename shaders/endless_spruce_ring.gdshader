@@ -23,6 +23,8 @@ global uniform vec3 zs_cloud_sun;
 // The shade's olive turns with the shade's hue (light_leans; 0 fixed).
 #include "res://shaders/light_leans.gdshaderinc"
 #include "res://shaders/backlight.gdshaderinc"
+// --spruce-look=g (spruce_variety.gdshaderinc), as the near crowns'.
+#include "res://shaders/spruce_variety.gdshaderinc"
 global uniform vec3 zs_key_direction;
 // Backlight's gain on the crown's silhouette (shaders/backlight.gdshaderinc).
 const float BACKLIGHT_GAIN = 2.0;
@@ -39,6 +41,10 @@ uniform vec4 tone = vec4(2.6, 1.0, 0.85, 0.85);
 // olive of the look fill (tone2.z)
 uniform float olive = 1.0;
 uniform float shade_follow : hint_range(0.0, 2.0) = 1.0;
+// The g look (see endless_spruce_sprite.gdshader): variety, (inner, fresh, haze), rim; all off at 0.
+uniform vec4 spruce_var = vec4(0.0);
+uniform vec4 spruce_g = vec4(0.0);
+uniform vec4 spruce_rim = vec4(0.0);
 
 const vec3 GLAUCOUS = vec3(0.50, 1.08, 1.45);
 const vec3 FROST = vec3(1.10, 1.22, 1.34);
@@ -71,9 +77,17 @@ void fragment() {
 	float rank = fract(sin(dot(ring_foot.xz, vec2(27.17, 63.41))) * 43758.5453);
 	// The blue as the near crowns' at range (spruce_paint: eased 0.45 past 160 m).
 	float blue = paint.y * 0.55;
-	c = mix(c, mix(GLAUCOUS, vec3(1.0), 0.06) * ring_luma(c), clamp(blue * mix(0.62, 1.12, rank), 0.0, 1.0));
-	c *= mix(vec3(1.0), FROST, smoothstep(0.8, 1.0, bake) * blue * 0.7);
+	float k = mix(0.62, 1.12, rank);
+	float frost = 1.0;
+	if (spruce_var.y > 0.0) {
+		k = zs_sv_blue_k(ring_foot.xz, rank, spruce_var);
+		frost = clamp(k, 0.0, 1.0);
+	}
+	c = mix(c, mix(GLAUCOUS, vec3(1.0), 0.06) * ring_luma(c), clamp(blue * k, 0.0, 1.0));
+	c *= mix(vec3(1.0), FROST, smoothstep(0.8, 1.0, bake) * blue * 0.7 * frost);
+	if (spruce_var.y > 0.0) c = zs_sv_needles(c, bake, spruce_g.x, spruce_g.y);
 	c *= paint.x;
+	if (spruce_var.y > 0.0) c = zs_sv_keep(c, d, spruce_g.z);
 	ALBEDO = c;
 	ROUGHNESS = 1.0;
 	// The crown as a volume: out from the trunk and up.
@@ -97,9 +111,13 @@ void light() {
 	float through = pow(max(dot(-LIGHT, VIEW), 0.0), 2.0);
 	DIFFUSE_LIGHT += LIGHT_COLOR * sun.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
 	// Backlight: the crown's silhouette, seen against a low sun, catches it.
-	if (zs_backlight > 0.0 && LIGHT_IS_DIRECTIONAL && dot((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz, zs_key_direction) > 0.999) {
-		float rim = pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 3.0);
-		DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-LIGHT, VIEW), rim, BACKLIGHT_GAIN)) / PI;
+	if (max(zs_backlight, spruce_rim.z) > 0.0 && LIGHT_IS_DIRECTIONAL && dot((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz, zs_key_direction) > 0.999) {
+		float edge_glow = pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 3.0);
+		if (spruce_rim.x > 0.0) {
+			DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * zs_backlight_tint_warm(ALBEDO, zs_backlight_amount_floor(max(zs_backlight, spruce_rim.z), dot(-LIGHT, VIEW), edge_glow, BACKLIGHT_GAIN * spruce_rim.x / 3.0), spruce_rim.y) / PI;
+		} else if (zs_backlight > 0.0) {
+			DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-LIGHT, VIEW), edge_glow, BACKLIGHT_GAIN)) / PI;
+		}
 	}
 	if (zs_look_fill > 0.0 && LIGHT_IS_DIRECTIONAL) {
 		vec3 fill_light = zs_look_fill_light(1.0 - ATTENUATION * smoothstep(0.0, 0.2, max(d, 0.0)));

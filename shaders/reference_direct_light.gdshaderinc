@@ -25,9 +25,16 @@ void light() {
 		DIFFUSE_LIGHT += open_sun * ZS_SPRUCE_LIGHT.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
 #ifdef ZS_BACKLIGHT_SPRUCE
 		// Backlight: the crown's silhouette, seen against a low sun, catches it.
-		if (zs_backlight > 0.0 && dot((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz, zs_key_direction) > 0.999) {
+		// --spruce-look=g (ZS_SPRUCE_RIM): stronger, warm and saturated, the
+		// fresh tips glowing with the silhouette, and a floor so it shows by day.
+		if (max(zs_backlight, ZS_SPRUCE_RIM.z) > 0.0 && dot((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz, zs_key_direction) > 0.999) {
 			float rim = pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 3.0);
-			DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * gate * inversion_transmit * zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-LIGHT, VIEW), rim, ZS_BACKLIGHT_SPRUCE)) / PI;
+			if (ZS_SPRUCE_RIM.x > 0.0) {
+				rim = max(rim, ZS_SPRUCE_TIP * ZS_SPRUCE_RIM.w);
+				DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * gate * inversion_transmit * zs_backlight_tint_warm(ALBEDO, zs_backlight_amount_floor(max(zs_backlight, ZS_SPRUCE_RIM.z), dot(-LIGHT, VIEW), rim, ZS_BACKLIGHT_SPRUCE), ZS_SPRUCE_RIM.y) / PI;
+			} else {
+				DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * gate * inversion_transmit * zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-LIGHT, VIEW), rim, ZS_BACKLIGHT_SPRUCE)) / PI;
+			}
 		}
 #endif
 	} else

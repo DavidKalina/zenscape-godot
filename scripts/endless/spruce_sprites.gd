@@ -33,6 +33,9 @@ const ROW_STEP := PI/6.0
 const PAD := 1.04
 ## The bake stands this far (m) from the main camera, past the crowns' near paint.
 const BAKE_AWAY := 400.0
+## The g look: the atlas is baked at this blue strength (a green tree's and a
+## blue one's blend), and each sprite shifts to its own tree's by the ratio.
+const G_BAKE_BLUE := 0.5
 
 var materials: Array = []      # variant -> ShaderMaterial
 var quad := QuadMesh.new()
@@ -46,6 +49,7 @@ var _round := 0.7
 var _albedo := ImageTexture.new()
 var _normal := ImageTexture.new()
 var soft := true
+var _g := false
 var yaws := SOFT_YAWS
 
 static func soft_wanted() -> bool:
@@ -99,6 +103,13 @@ func setup(parts: Array, tint: Color, knobs: Dictionary, band: Vector2, fade: Ve
 		m.set_shader_parameter("sun",Vector4(knobs.wrap,knobs.glow,knobs.steps,knobs.soft))
 		m.set_shader_parameter("tone",Vector4(knobs.fill,knobs.warm,knobs.floor,knobs.hemiolive))
 		m.set_shader_parameter("olive",knobs.olive)
+		# The g look (hero_trees.gd SPRUCE_G): the blue as the atlas holds it (eased at range).
+		var g: Dictionary = preload("res://scripts/hero_trees.gd").spruce_g_uniforms(knobs)
+		for k: String in g: m.set_shader_parameter(k,g[k])
+		if not g.is_empty():
+			_g = true
+			m.set_shader_parameter("spruce_g",Vector4(knobs.inner,knobs.fresh,knobs.haze,G_BAKE_BLUE))
+			m.set_shader_parameter("blue_far",float(knobs.blue)*(0.55 if float(knobs.hemiolive) > 0.001 else 1.0))
 		materials.append(m)
 
 ## Renders the atlas (a few frames) and hands it to the materials.
@@ -141,6 +152,10 @@ func bake() -> void:
 			if m is ShaderMaterial:
 				(m as ShaderMaterial).set_shader_parameter("sway_enabled",false)
 				(m as ShaderMaterial).set_shader_parameter("conifer_sway",false)
+				if _g and part == 1:
+					# Neutral for the atlas: the mid blue; the haze and the rim are the sprite's.
+					var sg: Vector4 = (m as ShaderMaterial).get_shader_parameter("spruce_g")
+					(m as ShaderMaterial).set_shader_parameter("spruce_g",Vector4(sg.x,sg.y,0.0,G_BAKE_BLUE))
 			pair.append(m)
 		still.append(pair)
 	var normal_crown := ShaderMaterial.new()
@@ -199,9 +214,18 @@ func bake() -> void:
 	vp.queue_free()
 	# The crowns' mean (side row), its colour un-premultiplied by its cover.
 	var side := albedo.get_region(Rect2i(0,0,cols*CELL,CELL))
+	var sum := Color(0,0,0,0)
+	if _g:
+		for y in range(0,CELL,4):
+			for x in range(0,cols*CELL,4): sum += side.get_pixel(x,y)
 	side.resize(1,1,Image.INTERPOLATE_TRILINEAR)
 	var c := side.get_pixel(0,0)
 	if c.a > 0.01: mean = Color(c.r/c.a,c.g/c.a,c.b/c.a).srgb_to_linear()
+	elif _g and sum.a > 0.0:
+		# The 1 x 1 resize comes back empty, so the first look keeps MEAN's fallback;
+		# the g look takes the side row's mean by a strided sum (premultiplied by cover).
+		mean = Color(sum.r/sum.a,sum.g/sum.a,sum.b/sum.a).srgb_to_linear()
+	for m: ShaderMaterial in materials: m.set_shader_parameter("mean_luma",maxf(mean.get_luminance(),0.001))
 	albedo.generate_mipmaps()
 	normal.generate_mipmaps()
 	if "--spruce-sprite-dump" in preload("res://scripts/launch_args.gd").user_args():

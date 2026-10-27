@@ -12,6 +12,9 @@
 //   "painted light"), with a soft forward scatter so a backlit crown glows
 //   instead of going black.
 // Needs shaders/endless_patch.gdshaderinc included first.
+// --spruce-look=g (shaders/spruce_variety.gdshaderinc): most trees green, a
+// share blue by grove, the inner needles olive and the tips fresh.
+#include "res://shaders/spruce_variety.gdshaderinc"
 
 // The glaucous hue (linear, over its own luminance): sRGB about (0.39, 0.55, 0.63).
 const vec3 SPRUCE_GLAUCOUS = vec3(0.50, 1.08, 1.45);
@@ -52,8 +55,12 @@ vec3 zs_spruce_volume_normal(vec3 face, vec2 out_xz, float round) {
 // The crown's colour: hue, frost and the painted patches.
 // `bake` is the generator's grey (0.42 core, 0.55 at the trunk, 1.02 at the
 // tips); `under` 1 where the eye sees a bough's underside.
-vec3 zs_spruce_paint(vec3 tint, vec3 world, vec2 root, float bake, float under, float blue, float paint, vec2 tone, vec4 tone2, float dist) {
+// `gv` and `gt` are the g look's variety (share, grove scale, lean, green's own
+// blue) and needles (inner, fresh, haze, and a blue strength forced for the
+// sprites' atlas, -1 off); gv.y 0 is the round-5 look.
+vec3 zs_spruce_paint(vec3 tint, vec3 world, vec2 root, float bake, float under, float blue, float paint, vec2 tone, vec4 tone2, float dist, vec4 gv, vec4 gt) {
 	float rank = zs_spruce_tree_rank(root);
+	float bake_raw = bake;
 	// Far off the bake's light and dark and the deep blue ease to the crown's mean (tone2.w is 0 in round 3).
 	float away = smoothstep(40.0, 160.0, dist) * step(0.001, tone2.w);
 	bake = mix(bake, 0.85, away);
@@ -64,11 +71,19 @@ vec3 zs_spruce_paint(vec3 tint, vec3 world, vec2 root, float bake, float under, 
 	if (blue > 0.0) {
 		float l = zs_spruce_luma(tint);
 		vec3 glaucous = mix(SPRUCE_GLAUCOUS, vec3(1.0), 0.06) * l;
-		tint = mix(tint, glaucous, clamp(blue * mix(0.62, 1.12, rank), 0.0, 1.0));
-		tint *= mix(vec3(1.0), SPRUCE_FROST, tip * blue * 0.7);
+		float k = mix(0.62, 1.12, rank);
+		float frost = 1.0;
+		if (gv.y > 0.0) {
+			k = gt.w >= 0.0 ? gt.w : zs_sv_blue_k(root, rank, gv);
+			frost = clamp(k, 0.0, 1.0);
+		}
+		tint = mix(tint, glaucous, clamp(blue * k, 0.0, 1.0));
+		tint *= mix(vec3(1.0), SPRUCE_FROST, tip * blue * 0.7 * frost);
 	}
 	// Flatten the bake's light/dark toward its mean (0.7): less contrast.
 	tint *= pow(clamp(bake, 0.25, 1.3) / 0.85, -tone.x * 0.6);
+	// The g look: the older inner needles olive and dark, the fresh tips light, on the whole bake.
+	if (gv.y > 0.0) tint = zs_sv_needles(tint, bake_raw, gt.x, gt.y);
 	if (paint <= 0.0) return tint;
 	float fp = length(fwidth(world));
 	// The world's xz with height folded in, so the dabs differ up the tree.

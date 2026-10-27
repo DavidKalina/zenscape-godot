@@ -109,6 +109,17 @@ uniform float spruce_texture_gain = 1.0;
 // alike); y: b's micro-facets folded into tone where they fade out (40 to
 // 110 m) and on the distance crowns past them.
 uniform vec2 spruce_value = vec2(1.0);
+// --spruce-look=g (shaders/spruce_variety.gdshaderinc; all off at 0): the
+// variety (share of blue trees, grove scale m, grove lean, a green tree's own
+// blue), the needles and the haze (inner olive, fresh tips, mid-distance
+// contrast, and a blue strength forced for the sprites' atlas bake, -1 off),
+// and the rim against the sun (gain over ZS_BACKLIGHT_SPRUCE, how warm, the
+// glow's floor by day, the tips' share of it).
+uniform vec4 spruce_var = vec4(0.0);
+uniform vec4 spruce_g = vec4(0.0, 0.0, 0.0, -1.0);
+uniform vec4 spruce_rim = vec4(0.0);
+// The crown's fresh-tip share at this pixel (the rim's glow reads it in light()).
+varying float spruce_tip;
 uniform bool wet_ground = false;
 uniform float wet_droop = 0.0;
 uniform bool terrain_growth = false;
@@ -1013,13 +1024,17 @@ void fragment() {
 		zs_silver_side(dFdx(world_position), dFdy(world_position), zs_camera_position - world_position, zs_wind_direction));
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
 	if (spruce_blue > 0.0 || spruce_paint > 0.0)
-		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint, spruce_tone.zw, spruce_tone2, distance(world_position, zs_camera_position));
+		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint, spruce_tone.zw, spruce_tone2, distance(world_position, zs_camera_position), spruce_var, spruce_g);
 	if (tree_sheen > 0.0) tint = zs_tree_sheen(tint, tree_sheen);
 	if (spruce_texture == 1 || spruce_texture == 3)
 		tint = zs_spruce_texture(tint, spruce_texture, UV, UV2, spruce_texture_gain, distance(world_position, zs_camera_position));
 	if (spruce_round > 0.0) {
 		tint *= spruce_value.x;
 		if (spruce_texture == 2) tint *= mix(spruce_value.y, 1.0, 1.0 - smoothstep(40.0, 110.0, distance(world_position, zs_camera_position)));
+		if (spruce_var.y > 0.0) {
+			tint = zs_sv_keep(tint, distance(world_position, zs_camera_position), spruce_g.z);
+			spruce_tip = zs_sv_tip(zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3));
+		}
 	}
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
@@ -1183,5 +1198,7 @@ void fragment() {
 // Backlight's gains (shaders/backlight.gdshaderinc): the blade tips, the
 // sprays spruce's silhouette.
 #define ZS_BACKLIGHT_GRASS 4.0
-#define ZS_BACKLIGHT_SPRUCE 3.0
+#define ZS_BACKLIGHT_SPRUCE (spruce_rim.x > 0.0 ? spruce_rim.x : 3.0)
+#define ZS_SPRUCE_RIM spruce_rim
+#define ZS_SPRUCE_TIP spruce_tip
 #include "res://shaders/reference_direct_light.gdshaderinc"
