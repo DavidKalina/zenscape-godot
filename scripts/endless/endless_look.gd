@@ -604,7 +604,7 @@ func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D 
 		# The key light the clouds' shade takes: the sun, the moon by night.
 		var s: Vector3 = Vector3(celestial.state.get("zs_sun_direction",Vector3.UP)).normalized()
 		var m: Vector3 = Vector3(celestial.state.get("zs_moon_direction",Vector3.DOWN)).normalized()
-		land_shade.step(eye,s.lerp(m,smoothstep(0.05,-0.1,s.y)).normalized())
+		land_shade.step(eye,s.lerp(m,smoothstep(0.05,-0.1,s.y)).normalized(),delta)
 
 func _publish(delta: float) -> void:
 	_time += delta

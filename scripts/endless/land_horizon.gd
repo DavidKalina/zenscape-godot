@@ -4,12 +4,16 @@ extends Node
 ## SHADOW_REACH (EndlessLook) and only the near chunks cast into it, so a
 ## range never shades the valley past it. Here a square of the field's heights
 ## round the eye (SIDE m, TEXELS a side, made on a worker) is marched on the
-## GPU (shaders/land_horizon_bake.gdshader, a SubViewport) toward the key
-## light, and in eight ways for how much sky each spot sees. The land reads
-## the result (shaders/land_horizon.gdshaderinc, the zs_horizon globals).
+## GPU (shaders/land_horizon_bake.gdshader, a SubViewport) for the land's
+## horizon toward the key light's bearing, and in eight ways for how much sky
+## each spot sees. The land reads it (shaders/land_horizon.gdshaderinc, the
+## zs_horizon globals) against the light's height each frame, so the shadows
+## slide as the sun sinks.
 ##
 ## The square is made again when the eye has gone MOVE of its side from its
-## middle; the march again when the light has turned TURN degrees.
+## middle; the march again when the light's bearing has turned TURN degrees.
+## Each march goes into the other of two viewports and fades in over the last
+## for FADE s, so neither pops.
 ## --terrain-shadows=1 builds it; K turns it off and on in flight.
 
 const Field = preload("res://scripts/endless/land_field.gd")
@@ -22,9 +26,10 @@ const SIDE := 16384.0
 const TEXELS := 1024
 const TEXELS_SLOW := 192
 const MOVE := 0.125
-const TURN := 0.2
+const TURN := 0.25
+const FADE := 1.0
 ## Occluders nearer a spot than this (m) are left to the sun's own map near
-## the eye (the march's far-only answer, blue).
+## the eye (the march's far-only horizon, blue).
 const NEAR := 220.0
 
 static func wanted() -> bool:
@@ -35,15 +40,28 @@ static func wanted() -> bool:
 var on := true
 var side := SIDE
 var texels := TEXELS
+## Added to the eye (m, xz): a driver moves the square without the camera.
+var eye_shift := Vector2.ZERO
 var _seed := 0
-var _viewport: SubViewport
-var _bake: ShaderMaterial
+var _views: Array[SubViewport] = []
+var _bakes: Array[ShaderMaterial] = []
+## The viewport shown as the newest march, and how far it has faded in.
+var _now := 0
+var _fade := 1.0
 var _task := -1
 var _made: Dictionary = {}
 var _made_lock := Mutex.new()
-## The square drawn now: corner xz, side; and the light it was marched for.
+## The newest heights and their square (corner xz, side), and whether a march
+## of them is still owed.
+var _heights: Texture2D
+var _heights_at := Vector4.ZERO
+var _due := false
+## The squares drawn now (corner xz, side, 1 when drawn) and the light's
+## bearing the newest was marched for.
 var _at := Vector4.ZERO
-var _light := Vector3.ZERO
+var _was_at := Vector4.ZERO
+var _bearing := Vector2.ZERO
+var _key := Vector3.UP
 var _asked_at := Vector2.INF
 
 func setup(land_seed: int) -> void:
@@ -51,26 +69,31 @@ func setup(land_seed: int) -> void:
 	_seed = land_seed
 	side = SIDE*LandStream.view()
 	if not Field.new(land_seed)._native: texels = TEXELS_SLOW
-	_viewport = SubViewport.new()
-	_viewport.size = Vector2i(texels,texels)
-	_viewport.disable_3d = true
-	_viewport.transparent_bg = false
-	_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	add_child(_viewport)
-	var rect := ColorRect.new()
-	rect.size = Vector2(texels,texels)
-	_bake = ShaderMaterial.new()
-	_bake.shader = preload("res://shaders/land_horizon_bake.gdshader")
-	_bake.set_shader_parameter("sea_y",Field.SEA_Y)
-	_bake.set_shader_parameter("near",NEAR)
-	rect.material = _bake
-	_viewport.add_child(rect)
-	RenderingServer.global_shader_parameter_set("zs_horizon",_viewport.get_texture())
-	RenderingServer.global_shader_parameter_set("zs_horizon_at",Vector4.ZERO)
+	for i in 2:
+		var view := SubViewport.new()
+		view.size = Vector2i(texels,texels)
+		view.disable_3d = true
+		view.transparent_bg = false
+		# Half floats: the horizon's tangent runs past 1.
+		view.use_hdr_2d = true
+		view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		add_child(view)
+		var rect := ColorRect.new()
+		rect.size = Vector2(texels,texels)
+		var bake := ShaderMaterial.new()
+		bake.shader = preload("res://shaders/land_horizon_bake.gdshader")
+		bake.set_shader_parameter("sea_y",Field.SEA_Y)
+		bake.set_shader_parameter("near",NEAR)
+		rect.material = bake
+		view.add_child(rect)
+		_views.append(view)
+		_bakes.append(bake)
+	_publish()
 
 func _exit_tree() -> void:
 	if _task >= 0: WorkerThreadPool.wait_for_task_completion(_task)
 	RenderingServer.global_shader_parameter_set("zs_horizon_at",Vector4.ZERO)
+	RenderingServer.global_shader_parameter_set("zs_horizon_was_at",Vector4.ZERO)
 
 func toggle() -> void:
 	on = not on
@@ -78,9 +101,11 @@ func toggle() -> void:
 	_publish()
 
 ## One frame: a new square asked for when the eye has wandered, a finished
-## one taken, the march redone when the light (`key`, sun or moon) has turned.
-func step(eye: Vector3, key: Vector3) -> void:
-	var middle := Vector2(eye.x,eye.z)
+## one taken, the march redone when the light (`key`, sun or moon) has turned
+## (once the last has faded in), the fade carried on.
+func step(eye: Vector3, key: Vector3, delta: float) -> void:
+	_key = key.normalized()
+	var middle := Vector2(eye.x,eye.z)+eye_shift
 	var texel := side/texels
 	if _task < 0 and (_asked_at == Vector2.INF or middle.distance_to(_asked_at) > side*MOVE):
 		_asked_at = middle
@@ -93,26 +118,43 @@ func step(eye: Vector3, key: Vector3) -> void:
 		var made := _made
 		_made = {}
 		_made_lock.unlock()
-		if not made.is_empty(): _take(made,key)
-	if _at.w > 0.0 and key.normalized().dot(_light) < cos(deg_to_rad(TURN)):
-		_march(key)
+		if not made.is_empty():
+			var image := Image.create_from_data(texels,texels,false,Image.FORMAT_RF,(made.heights as PackedFloat32Array).to_byte_array())
+			_heights = ImageTexture.create_from_image(image)
+			var corner: Vector2 = made.corner
+			_heights_at = Vector4(corner.x,corner.y,side,1.0)
+			_due = true
+	var bearing := Vector2(_key.x,_key.z).normalized()
+	if _at.w > 0.0 and bearing.dot(_bearing) < cos(deg_to_rad(TURN)): _due = true
+	_fade = minf(_fade+delta/FADE,1.0)
+	if _due and _fade >= 1.0 and _heights != null:
+		_due = false
+		_march(bearing)
 	_publish()
 
-func _take(made: Dictionary, key: Vector3) -> void:
-	var image := Image.create_from_data(texels,texels,false,Image.FORMAT_RF,(made.heights as PackedFloat32Array).to_byte_array())
-	_bake.set_shader_parameter("heights",ImageTexture.create_from_image(image))
-	_bake.set_shader_parameter("texel",side/texels)
-	var corner: Vector2 = made.corner
-	_at = Vector4(corner.x,corner.y,side,1.0)
-	_march(key)
-
-func _march(key: Vector3) -> void:
-	_light = key.normalized()
-	_bake.set_shader_parameter("light",_light)
-	_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+## The march into the viewport not shown, which becomes the newest; the one
+## shown fades out under it.
+func _march(bearing: Vector2) -> void:
+	var into := 1-_now if _at.w > 0.0 else _now
+	var bake := _bakes[into]
+	bake.set_shader_parameter("heights",_heights)
+	bake.set_shader_parameter("texel",side/texels)
+	bake.set_shader_parameter("light",_key)
+	_views[into].render_target_update_mode = SubViewport.UPDATE_ONCE
+	_bearing = bearing
+	_was_at = _at
+	_at = _heights_at
+	_fade = 0.0 if _was_at.w > 0.0 else 1.0
+	_now = into
+	RenderingServer.global_shader_parameter_set("zs_horizon",_views[_now].get_texture())
+	RenderingServer.global_shader_parameter_set("zs_horizon_was",_views[1-_now].get_texture())
 
 func _publish() -> void:
-	RenderingServer.global_shader_parameter_set("zs_horizon_at",Vector4(_at.x,_at.y,_at.z,_at.w if on else 0.0))
+	var shown := 1.0 if on and _at.w > 0.0 else 0.0
+	var was := (1.0-smoothstep(0.0,1.0,_fade)) if _was_at.w > 0.0 else 0.0
+	RenderingServer.global_shader_parameter_set("zs_horizon_at",Vector4(_at.x,_at.y,_at.z,shown))
+	RenderingServer.global_shader_parameter_set("zs_horizon_was_at",Vector4(_was_at.x,_was_at.y,_was_at.z,was))
+	RenderingServer.global_shader_parameter_set("zs_horizon_key",_key)
 
 # --- On a worker ----------------------------------------------------------------------
 
