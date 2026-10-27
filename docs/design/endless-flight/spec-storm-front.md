@@ -158,6 +158,35 @@ first in step 1:
 - **Sound by ear is unverified** for the rain bed, thunder and gust roar;
   balance their levels against each other by numbers at least.
 
+**The user played the merged build (2026-10-26).** "A great start"; the
+sound effects are great. The storm cloud is the problem: next to the
+normal clouds' rich, textured, volumetric shapes it reads as "a wool
+blanket pulled over the top", flat. The direction, agreed with the user:
+the storm is the field's own cumulus turned menacing, not a separate deck.
+So step 1 now starts with these, in order, before the other seams:
+
+- **1a. The field's own clouds become the storm.** In and ahead of the
+  front, the normal cells get bigger and taller, merge, their bases sink,
+  and they go darker and fuller, keeping all of the field's texture and
+  detail. The push is one storm-intensity input per place, from the front's
+  distance. Replace the lanes' separate deck if it is in the way. Judge
+  against no-flag stills of the normal clouds at the same distances: the
+  storm must have at least their shape and detail, with menacing depth from
+  light and shadow on real shapes, not tint.
+- **1b. They grow over time.** The intensity ramps with time as well as
+  distance, so the player watches the cumulus ahead fill up, expand and
+  darken over a minute or two as the front builds, and boil (faster detail
+  motion inside storm cells).
+- **1c. Cumulonimbus towers.** A few giant towers along the front, far
+  taller than the flight ceiling, visible from 10 km: bring the baked tower
+  back from `scripts/sky_tower.gd` / `scripts/sky_towers.gd` (a heap of
+  lobes baked to a coarse 3D distance texture, rebaked in stages as it
+  rises turret by turret, cauliflower noise on top) into the endless cloud
+  march, scaled up, darkened at the base, rising as the front builds.
+- **1d. Enveloped.** Flying in, the base drops toward the plane, ragged scud
+  whips past at plane height, the distance closes in and it goes dark
+  (`in_cloud` and the screen, sound and light follow).
+
 1. Make it whole: one pass from far, through the gust front, under the
    core, out the back; fix seams between the lanes (timing, light, sound
    levels). Stills at 5 km, 2 km, the gust band, under the core, behind.
