@@ -177,6 +177,14 @@ So step 1 now starts with these, in order, before the other seams:
   distance, so the player watches the cumulus ahead fill up, expand and
   darken over a minute or two as the front builds, and boil (faster detail
   motion inside storm cells).
+- **1b+. Detail up close, before the towers.** The orchestrator's read of
+  1b's stills (`grow_sheet.png`, `g2_sheet.png`): the build-up reads well
+  from afar, but close to and under the storm the grown cells go to huge,
+  smooth, pale faces and a smudged ceiling, losing exactly the texture the
+  user asked for, plus a pale V blotch on a shaded tower face. Fix the
+  detail at 200 m to 1 km (finer lumps that scale with the grown size, the
+  light taps seeing the carve) until a near storm face holds at least the
+  normal clouds' texture at the same range.
 - **1c. Cumulonimbus towers.** A few giant towers along the front, far
   taller than the flight ceiling, visible from 10 km: bring the baked tower
   back from `scripts/sky_tower.gd` / `scripts/sky_towers.gd` (a heap of
