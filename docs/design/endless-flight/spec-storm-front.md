@@ -200,7 +200,13 @@ So step 1 now starts with these, in order, before the other seams:
    levels). Stills at 5 km, 2 km, the gust band, under the core, behind.
 2. Night: the flashes lighting the land; tune.
 3. Behind the storm: wet land glinting, cloud breaking up, if cheap.
-4. Cost: frame time with the storm on vs off on this PC, noted.
+4. Cost: frame time with the storm on vs off on this PC, noted. Cut it
+   too: after d74064cc the towers still add +2.0 ms ahead / +1.1 under
+   and the storm +3.4 / +3.3; aim for towers under 1 ms and the storm
+   under +2 ms, without losing the look. Start from the untried ideas in
+   d74064cc's Notes (footprint test before the bake read, cached bake
+   distance along the ray, no towers in far cell taps, longer leaps in
+   the lumps zone) and the cost view `--cloud-cost-view`.
 5. The handoff.
 
 ## Checks (every step)
