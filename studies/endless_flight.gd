@@ -480,6 +480,8 @@ func _ready() -> void:
 	var wind: Vector2 = look.base_wind() if look != null else Vector2.RIGHT
 	storm = StormFront.from_args(_start,Vector2(-sin(_heading),-cos(_heading)),wind)
 	if storm != null and look != null: look.turn_wind(storm.heading())
+	# Its cloud deck joins the field (scripts/endless/storm_clouds.gd).
+	if storm != null and look != null and look.clouds != null: look.clouds.storm = storm
 	land = LandStream.new()
 	land.name = "Land"
 	add_child(land)

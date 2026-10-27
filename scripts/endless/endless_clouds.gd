@@ -58,6 +58,9 @@ const RENDER_PRIORITY := -6
 ## How far out cloud is marched (m) and the slab's top (m over the sea).
 const REACH := 7800.0
 const TOP := 1250.0
+## The slab's top with a storm's deck in it (scripts/endless/storm_clouds.gd
+## CORE_TOP and its waves).
+const STORM_TOP := 2800.0
 ## The weather map's square round the eye: the reach and this much past it.
 const WEATHER_PAST := 250.0
 ## The shade on the land: its square's side (m).
@@ -189,6 +192,11 @@ var puff_lobes := true
 ## The sea's material (EndlessLook sets it): it reads the shade map with the
 ## square drawn this frame (`shade_square`), not the land's (--sea-shade=old).
 var sea_material: ShaderMaterial
+## The storm front (scripts/endless/storm_front.gd), set by the study when
+## --storm asks for one, or null: its deck joins the field (shaders/
+## storm_cloud.glslinc, scripts/endless/storm_clouds.gd on the CPU).
+var storm: RefCounted
+var _storm_clouds: GDScript
 var sea_shade_sync := true
 ## The field's drift so far (m): a cloud stands at its field point plus this.
 var drift := Vector2.ZERO
@@ -890,7 +898,7 @@ func cloud_depth(p: Vector3) -> float:
 				top = maxf(top,b.x)
 				bottom = minf(bottom,b.y)
 			if top > -1e3: best = maxf(best,minf(Field.SEA_Y+top-p.y,p.y-Field.SEA_Y-bottom))
-		return best
+		return maxf(best,_storm_depth(p))
 	for c: Dictionary in clouds_in(xz,BIG*0.6):
 		var top := -1e9
 		var bottom := 1e9
@@ -901,6 +909,16 @@ func cloud_depth(p: Vector3) -> float:
 			bottom = minf(bottom,float(c.base)+float(b[2])*CURL*u*u*u*u)
 		best = maxf(best,minf(top-p.y,p.y-bottom))
 	return best
+
+## How far `p` is into the storm's deck (scripts/endless/storm_clouds.gd),
+## its base lifted over the ground as the march lifts a low base.
+func _storm_depth(p: Vector3) -> float:
+	if storm == null: return -1e9
+	if _storm_clouds == null: _storm_clouds = load("res://scripts/endless/storm_clouds.gd")
+	var g := _ground_sample(Vector2(p.x,p.z))
+	var m := clampf(g.x,0.0,1.0)
+	var fl := maxf(g.y,Field.SEA_Y)+4.0
+	return _storm_clouds.depth(storm,p,salt,maxf(fl,lerpf(fl,g.y+MEADOW_CLEAR,m)))
 
 ## Whether world point `p` is inside a cloud's body (`cloud_depth` > 0).
 func in_cloud(p: Vector3) -> bool:
@@ -943,7 +961,7 @@ func _fill() -> void:
 	_put4(p,20,Vector4(eye.x,eye.y,eye.z,motion_time))
 	_put4(p,24,Vector4(sun.x,sun.y,sun.z,0.0))
 	_put4(p,28,Vector4(key.x,key.y,key.z,0.0))
-	_put4(p,32,Vector4(Field.SEA_Y,Field.SEA_Y+TOP,REACH*_view,1.0))
+	_put4(p,32,Vector4(Field.SEA_Y,Field.SEA_Y+(STORM_TOP if storm != null else TOP),REACH*_view,1.0))
 	var lifed := life and organic
 	var low_at := drift_lo if lifed else drift
 	_put4(p,36,Vector4(low_at.x,low_at.y,float(salt),cover))
@@ -960,6 +978,12 @@ func _fill() -> void:
 	_put4(p,60,Vector4(fog_density*(1.0-fog_hush),fog_depth,fog_steps,fog_top+fog_depth*1.6+16.0))
 	_put4(p,64,Vector4(drift.x*FOG_DRIFT,drift.y*FOG_DRIFT,FOG_REACH,FOG_FADE))
 	_put4(p,68,fog_look)
+	# The storm's deck (spare[3], spare[4]; shaders/storm_cloud.glslinc).
+	if storm != null:
+		var e: Vector2 = storm.edge()
+		var h: Vector2 = storm.heading()
+		_put4(p,80,Vector4(e.x,e.y,h.x,h.y))
+		_put4(p,84,Vector4(storm.length,storm.CORE_DEPTH,0.0,1.0))
 	var weather_due := _frame%WEATHER_EVERY == 0 or weather_side == 0.0
 	var shade_due := _frame%SHADE_EVERY == 0
 	# Sliced, the square round the eye is asked for every frame; the effect
