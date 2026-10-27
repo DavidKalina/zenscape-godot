@@ -29,6 +29,12 @@ extends RefCounted
 ## (scripts/plane_landing.gd) swings it wider on final and round to a low
 ## side view at the touch, eased over EASE_CINE, on top of the free look.
 ##
+## On the wheels (`ground`) it follows the nose, level, the path coming in
+## only rolling forwards (GROUND_PATH), so stopped or backing up it holds
+## still.
+## Framed with `floor_at`, the eye never sinks into the land or the water:
+## it is lifted to FLOOR_KEEP over what is under it.
+##
 ## Like the glide, it is plain state and maths, so tests can step it.
 
 ## Metres back from the glider and up over it: at a cruise, at the float,
@@ -116,6 +122,16 @@ const PULL_SHARE := Vector2(1.05,1.65)
 ## CLOSE_SHARE.y times the cruise its distance is `close_in` less and its
 ## height `close_down` less (shares; none as it was, endless flight sets them).
 const CLOSE_SHARE := Vector2(1.5,3.0)
+## On the wheels: the path's share of the way (the rest the nose's) comes
+## in from GROUND_PATH.x to GROUND_PATH.y m/s rolling forwards along the
+## nose; stopped, slow or backing up, the way is the nose's alone (half the
+## nose and half a path that runs backwards is no way at all: it swung
+## round through the plane).
+const GROUND_PATH := Vector2(2.0,6.0)
+## The least the eye keeps over the land or the water under it (m), lifted
+## at once when it would be nearer, and let back down over EASE_FLOOR s.
+const FLOOR_KEEP := 0.6
+const EASE_FLOOR := 0.5
 ## The old toy's cruise, the share's base when no cruise is given.
 const TOY_CRUISE: float = preload("res://scripts/sky_plane.gd").CRUISE_SPEED
 
@@ -176,6 +192,13 @@ var clipped := false
 var sight := Callable()
 ## The least it comes in to the glider when rock is in the way (m).
 var near := 0.0
+## On the wheels (the host says): the way follows the nose (GROUND_PATH).
+var ground := false
+## The top of the land or the water under a point: Callable(Vector3) ->
+## float. Framed, the eye keeps FLOOR_KEEP over it (not `tight`: in a bore
+## the tunnel's own sight keeps it). `_floor_lift`: how far it is lifted now.
+var floor_at := Callable()
+var _floor_lift := 0.0
 ## Tight (the game's plane in a bore, scripts/endless/land_tunnels.gd):
 ## the eased way round is checked too, so on its way to a clear way the eye
 ## draws in short of a column or a wall rather than pass through it, and
@@ -218,6 +241,7 @@ func reset(glide: RefCounted, from: Vector3, view := FOV) -> void:
 	_reach = INF
 	_yaw_rate = 0.0
 	_heading = NAN
+	_floor_lift = 0.0
 	eye = from
 	look = glide.position+_way*AHEAD
 
@@ -249,7 +273,14 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	# The way it flies: half where it points, half where it goes.
 	var moving: Vector3 = glide.velocity
 	var way: Vector3 = glide.forward()
-	if moving.length() > 0.5:
+	if ground:
+		# On the wheels: the nose, and the path only rolling forwards; level,
+		# not tipped up by the tail sitting down (that dropped the eye behind
+		# into the ground).
+		var share := path_share*smoothstep(GROUND_PATH.x,GROUND_PATH.y,moving.dot(way))
+		if share > 0.0: way = (way*(1.0-share)+moving.normalized()*share).normalized()
+		if Vector2(way.x,way.z).length() > 0.05: way = Vector3(way.x,0.0,way.z).normalized()
+	elif moving.length() > 0.5:
 		if path_share == 0.5: way = (way+moving.normalized()).normalized()
 		else: way = (way*(1.0-path_share)+moving.normalized()*path_share).normalized()
 	# Nearly the same way, a lerp: slerp's axis is then too short to
@@ -299,6 +330,7 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	clipped = false
 	if framed:
 		if solid.is_valid() or sight.is_valid(): _keep_clear(delta,at,solid)
+		_keep_off_floor(delta)
 		_keep_in_frame(at)
 	elif solid.is_valid(): _stop_short(at,solid)
 
@@ -367,6 +399,19 @@ func _keep_clear(delta: float, at: Vector3, solid: Callable) -> void:
 	else: _reach = minf(lerpf(_reach,allowed,_ease(EASE_OUT,delta)),full)
 	eye = at+dir*_reach
 	clipped = _dodge != Vector2.ZERO or _reach < full-0.01
+
+## Framed: the eye kept FLOOR_KEEP over the land or water under it
+## (`floor_at`), lifted at once, let down over EASE_FLOOR. Drawn in short
+## of a slope it could stand in it (`near` is the least it draws in to):
+## then it rises over it rather than sinking.
+func _keep_off_floor(delta: float) -> void:
+	if not floor_at.is_valid() or tight:
+		_floor_lift = 0.0
+		return
+	var need := maxf(0.0,float(floor_at.call(eye))+FLOOR_KEEP-eye.y)
+	_floor_lift = need if need >= _floor_lift or delta <= 0.0 else lerpf(_floor_lift,need,_ease(EASE_FLOOR,delta))
+	eye.y += _floor_lift
+	if _floor_lift > 0.01: clipped = true
 
 ## The glide's way (not framed): out from the glider towards the eye, it
 ## stops short of the first rock, and the spring starts again from there.
