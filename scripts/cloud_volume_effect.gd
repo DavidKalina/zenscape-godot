@@ -231,8 +231,8 @@ func _target(want: Vector2i, data_format: int) -> RID:
 	format.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT
 	return _rd.texture_create(format,RDTextureView.new())
 
-func _compile(file: RDShaderFile) -> RID:
-	var spirv := file.get_spirv()
+func _compile(file: RDShaderFile, version: StringName = &"") -> RID:
+	var spirv := file.get_spirv(version)
 	if not spirv.compile_error_compute.is_empty():
 		push_error("cloud volume: "+spirv.compile_error_compute)
 		return RID()

@@ -13,6 +13,8 @@ render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, depth_test_dis
 #include "res://shaders/reference_sky_common.gdshaderinc"
 #include "res://shaders/cumulus_light.gdshaderinc"
 #include "res://shaders/reference_display.gdshaderinc"
+#include "res://shaders/storm_front.gdshaderinc"
+#include "res://shaders/storm_cloud_light.gdshaderinc"
 
 uniform sampler2D cloud_light : filter_nearest, repeat_disable;
 uniform sampler2D cloud_shape : filter_nearest, repeat_disable;
@@ -50,6 +52,8 @@ const vec3 UNDER_ROSE = vec3(1.0, 0.42, 0.52);
 const float UNDER_ROSE_SHARE = 0.5;
 // The valley fog's light scaled (1 as the first pass drew it).
 uniform float fog_gain = 1.0;
+// In cloud under the storm: the share of the white glow kept.
+const float ZS_STORM_GLOW = 0.3;
 
 void vertex() {
 	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
@@ -88,9 +92,17 @@ void fragment() {
 	// In the cloud: the white glow of the fog round the eye, warmer toward
 	// the sun.
 	vec3 glow_col = mix(vec3(0.95, 0.97, 1.0), sun_hue, 0.15) * GLOW * mix(1.0, 0.2, zs_night) * mix(0.6, 1.0, zs_daylight);
+	// Under the storm the fog round the eye is its gloom, not a white glow
+	// (the storm's amount at the eye, zs_storm_here).
+	glow_col *= mix(1.0, ZS_STORM_GLOW, zs_storm_here);
 	vec3 col = lit + glow_col * glow * (1.0 + 0.7 * pow(toward_sun, 3.0)) * ZS_CUMULUS_LIT_SHARE * 1.6;
 	vec3 painted = mix(c_shade * 0.55, c_sun * 0.9, bright) * ZS_CUMULUS_LIT_SHARE * 1.6;
 	col = mix(col, painted, NIGHT_TINT * zs_night);
+	// The storm's deck (shaders/storm_cloud_light.gdshaderinc): dark and
+	// cool, green-grey at the base, and lit from inside by the lightning.
+	vec3 storm_at = eye + rd * met;
+	float storm_w = zs_storm_cloud_weight(storm_at.xz);
+	col = zs_storm_cloud_colour(col, storm_w, b.z / cloud_a);
 
 	// The haze between: the land's own by distance, thinner the higher the
 	// air it crosses (exponential air over the sea).
@@ -110,7 +122,8 @@ void fragment() {
 	// At a low sun the scatter grows as the land's does (endless_look.gd
 	// SUN_SCATTER_SUN over SUN_SCATTER, with zs_haze_sun).
 	sky += c_sun * pow(toward_sun, 6.0) * sun_scatter * mix(1.0, 0.45 / 0.18, zs_haze_sun) * mix(1.4, 0.7, high) * zs_celestial_clear;
-	col = mix(col, sky, fog);
+	col = mix(col, zs_storm_haze_colour(sky, storm_w), fog * zs_storm_haze_share(storm_w));
+	col += zs_storm_cloud_flash(storm_at, b.z / cloud_a, storm_w, zs_storm_cloud_lum(col), sea_y);
 	ALBEDO = col;
 	// The march stops once the cloud is all but whole: whole it is, so the
 	// sun's disc never shines through a thick body.

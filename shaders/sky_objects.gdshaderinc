@@ -8,6 +8,8 @@
 #include "res://shaders/sky_ridges.gdshaderinc"
 // The cloud sea's veil (zs_sea_open), with its strength copied like the ridges'.
 #include "res://shaders/sky_cloud_sea.gdshaderinc"
+// The storm front's cloud (zs_storm_sky_open).
+#include "res://shaders/storm_front.gdshaderinc"
 
 // The look pass's ridges, copied from the sky material.
 uniform float horizon_ridges = 0.0;
@@ -36,7 +38,7 @@ vec3 zs_room_from_world(vec3 dir) {
 // The share of light the cloud deck lets through along `rd` from `ro`: the
 // same slab, field and extinction as zs_cloud_march
 // (shaders/reference_cloud_march.gdshaderinc), without the lighting.
-float zs_cloud_transmit(vec3 ro, vec3 rd) {
+float zs_cloud_transmit_field(vec3 ro, vec3 rd) {
   if (abs(rd.y) < 0.002 || zs_cloud.x < 0.001) return 1.0;
   float ta = (zs_cloud.z - ro.y) / rd.y;
   float tb = (zs_cloud.z + zs_cloud.w - ro.y) / rd.y;
@@ -53,6 +55,9 @@ float zs_cloud_transmit(vec3 ro, vec3 rd) {
     t += step_length;
   }
   return 1.0 - (1.0 - trans) * smoothstep(0.0, 0.11, abs(rd.y));
+}
+float zs_cloud_transmit(vec3 ro, vec3 rd) {
+  return zs_cloud_transmit_field(ro, rd) * zs_storm_sky_open(ro, rd);
 }
 
 // 1 where the ridges leave the world direction `dir` open, 0 behind them.

@@ -194,6 +194,9 @@ var skid: Bed
 var breeze: Bed
 var thin: Bed
 var shore: Bed
+## The storm's rain (scripts/endless/storm_rain.gd `rain_to`): made on its
+## first call, so a run with no storm builds none.
+var rain: Bed
 
 # State read each frame (public for probes).
 ## How close stone is round the plane (0 open air, 1 skimming it), how
@@ -219,6 +222,9 @@ var audible := false
 ## Muffled (0 to 1, set from outside: scripts/endless/water_contact.gd when
 ## the screen is doused): the air's low-pass closed down to MUFFLE_CUT of it.
 var muffle := 0.0
+## Muffled by the storm's cloud (0 to 1, set from outside: scripts/endless/
+## storm_rain.gd): the same low-pass, the more muffled of the two.
+var cloud_muffle := 0.0
 const MUFFLE_CUT := 0.12
 
 var _rng := RandomNumberGenerator.new()
@@ -347,6 +353,8 @@ func _ready() -> void:
 		# The rival race's beats (scripts/endless/rival_race.gd).
 		"race-count":[load(KIT+"race-count.wav")],"race-go":[load(KIT+"race-go.wav")],
 		"race-win":[load(KIT+"race-win.wav")],"race-lose":[load(KIT+"race-lose.wav")],
+		# The storm front's thunder (scripts/endless/storm_lightning.gd).
+		"thunder":_takes("res://assets/audio/thunder-%d.mp3",3),
 	}
 
 static func _takes(pattern: String, count: int) -> Array:
@@ -486,7 +494,7 @@ func _flight(delta: float, velocity: Vector3, speed: float, on_wheels: bool) -> 
 func _air(boost: float, flying: bool) -> void:
 	rush.goal = lerpf(RUSH.x,RUSH.y,pow(fast,1.6))*(1.0 if fast > 0.0 or flying else 0.0)+RUSH_NEAR*near+RUSH_DIVE*dive+RUSH_PULL*pull+RUSH_BOOST*boost*fast
 	rush.pitch_goal = 0.85+0.3*fast+0.08*near+0.06*dive+OVER_PITCH*over
-	if _air_lpf != null: _air_lpf.cutoff_hz = clampf((RUSH_CUT.x+(RUSH_CUT.y-RUSH_CUT.x)*pow(fast,1.3)+RUSH_CUT_NEAR*near+RUSH_CUT_DIVE*dive+OVER_CUT*over)*lerpf(1.0,MUFFLE_CUT,clampf(muffle,0.0,1.0)),200.0,18000.0)
+	if _air_lpf != null: _air_lpf.cutoff_hz = clampf((RUSH_CUT.x+(RUSH_CUT.y-RUSH_CUT.x)*pow(fast,1.3)+RUSH_CUT_NEAR*near+RUSH_CUT_DIVE*dive+OVER_CUT*over)*lerpf(1.0,MUFFLE_CUT,clampf(maxf(muffle,cloud_muffle),0.0,1.0)),200.0,18000.0)
 	whistle.goal = WHISTLE*smoothstep(0.4,1.0,fast)+WHISTLE_NEAR*near*fast+WHISTLE_PULL*pull*fast+WHISTLE_DIVE*dive*(0.4+0.6*fast)+WHISTLE_OVER*over
 	whistle.pitch_goal = 0.9+0.25*fast+0.08*dive+OVER_PITCH*over
 	howl.goal = HOWL*enclosed+0.04*near
@@ -657,6 +665,20 @@ func _ambience(on_wheels: bool) -> void:
 	var low := 1.0-smoothstep(SHORE_HEIGHT.x,SHORE_HEIGHT.y,alt)
 	shore.goal = SHORE*low*maxf(coast,SURF*water)
 	shore.pitch_goal = 0.95+0.1*(1.0-low)
+
+## The rain bed (storm lane rain): `amount` the storm's rain at the eye (0
+## to 1), `air` the speed as a share of cruise. Louder and a touch brighter
+## at speed, the drops drumming on the plane. Made on the first call.
+const RAIN := 0.25
+const RAIN_FAST := 0.45
+func rain_to(amount: float, air: float) -> void:
+	if rain == null:
+		if amount <= 0.0: return
+		rain = _bed(OLD+"rain-bed.wav",AMBIENCE)
+		rain.attack = 1.2
+		rain.release = 0.8
+	rain.goal = RAIN*amount*(1.0+RAIN_FAST*clampf(air,0.0,1.5))
+	rain.pitch_goal = 0.95+0.12*clampf(air,0.0,1.5)
 
 ## Every layer's goal, gain and pitch now: {name: [goal, gain, pitch]} (for a
 ## driver or a debug line).

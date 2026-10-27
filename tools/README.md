@@ -39,8 +39,13 @@ It finds Godot from `$GODOT`, then the WinGet install, then `C:\Tools\Godot`,
 then the Mac app (`python tools/godot.py --where`). Runs are headless
 unless you pass `--rendered`, and `--path` is added for you. Before each
 run it checks the import, which is needed when no import has run yet or
-when a `class_name` script is newer than the class cache. If it is needed,
-it runs `--import` under a lock, so agents never import at the same time.
+when a `class_name` script is newer than the class cache, or when a compute
+shader (`.glsl`, or a `.glslinc` it includes) is newer than its import.
+Godot doesn't track a `.glsl`'s includes, so a stale shader's imported
+files are deleted before the import to force it; without that, a rendered
+run after editing only an include measures the old shader. If it is
+needed, it runs `--import` under a lock, so agents never import at the
+same time.
 A missing import is what causes the phantom
 `Could not find type "NativeTerrainData"` parse errors in fresh worktrees.
 The exit-time leak noise is dropped and the output ends in one summary

@@ -50,6 +50,7 @@ const CumulusNoise = preload("res://scripts/cumulus_noise.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const StormTowers = preload("res://scripts/endless/storm_towers.gd")
 
 const OFF_FLAG := "--no-clouds"
 ## Drawn after the sea (EndlessLook SEA_PRIORITY) and before anything else
@@ -58,6 +59,29 @@ const RENDER_PRIORITY := -6
 ## How far out cloud is marched (m) and the slab's top (m over the sea).
 const REACH := 7800.0
 const TOP := 1250.0
+## The slab's top with a storm's towers in it (TOP + STORM_GROW_TOP and
+## their billows).
+const STORM_TOP := 2800.0
+## A cloud the storm pushes (StormFront.push_at; the march's SP_*, shaders/
+## storm_cloud.glslinc, keep equal): wider and taller, its top higher, the
+## share of broad cells turned to towers, more domes, a deeper belly, the
+## most its reach spans (cells), the base it sinks to.
+const STORM_GROW := Vector2(1.9,1.8)
+const STORM_GROW_TOP := 1450.0
+const STORM_TOWERS := 0.75
+const STORM_DOMES := 3.0
+const STORM_BELLY := 1.3
+const STORM_EXT := 1.9
+const STORM_BASE := Vector2(60.0,110.0)
+## Behind the core, where the deck lets go, a pushed cell's base at least
+## this (the march's SP_TRAIL_BASE).
+const STORM_TRAIL_BASE := Vector2(230.0,300.0)
+## A small puff (never pushed) thins away over this much of the push (the
+## march's SP_SMALL_GO).
+const STORM_SMALL_GO := Vector2(0.03,0.3)
+## A cell only the storm stands up grows in from a wisp over this much of
+## its push past its own hash (the march's SP_ADMIT).
+const STORM_ADMIT := 0.12
 ## The weather map's square round the eye: the reach and this much past it.
 const WEATHER_PAST := 250.0
 ## The shade on the land: its square's side (m).
@@ -189,6 +213,19 @@ var puff_lobes := true
 ## The sea's material (EndlessLook sets it): it reads the shade map with the
 ## square drawn this frame (`shade_square`), not the land's (--sea-shade=old).
 var sea_material: ShaderMaterial
+## The storm front (scripts/endless/storm_front.gd), set by the study when
+## --storm asks for one, or null: it pushes the field's own clouds
+## (shaders/storm_cloud.glslinc; `_recipe` here).
+var storm: RefCounted
+## The storm's cumulonimbus (scripts/endless/storm_towers.gd), made with the
+## first frame that has a storm; null without one or with --storm-towers=0.
+var towers: RefCounted
+var _towers_made := false
+var _towers_tick := 0
+## The march's cost view (--cloud-cost-view=N, 0 off): the march shows what a
+## pixel cost as grey instead of the cloud (shaders/endless_cloud_march.glsl
+## cost_view).
+var cost_view := 0.0
 var sea_shade_sync := true
 ## The field's drift so far (m): a cloud stands at its field point plus this.
 var drift := Vector2.ZERO
@@ -291,6 +328,9 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 			clock_start = a.get_slice("=",1).to_float()
 			_clock_pending = clock_start != 0.0
 		elif a == "--sea-shade=old": sea_shade_sync = false
+		elif a.begins_with("--cloud-cost-view="):
+			cost_view = a.get_slice("=",1).to_float()
+			effect.cost_view = cost_view > 0.0
 		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
 		elif a == "--no-valley-fog": fog_on = false
 		elif a == "--fog=old":
@@ -691,13 +731,29 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	var cell: float = BIG if big else SMALL
 	var lf := _cell_life(cx,cy,big)
 	var lifed := _lifed()
-	if lifed and lf.x < 0.01: return {}
 	var s0: int = salt+(101 if big else 211)+int(lf.y)*977
 	var h := hash3(cx,cy,s0)
 	var middle := (Vector2(cx,cy)+Vector2(0.5,0.5)+JIT*(Vector2(h.x,h.y)*2.0-Vector2.ONE))*cell
+	# The storm's push at the cloud's place now (the low layer's drift, as
+	# the march): a pushed broad cloud lives on whole and always stands.
+	# Its kind reads the place alone (place_at): it never changes as the
+	# storm builds.
+	var st: float = storm.push_at(middle+_layer_drift(true)) if storm != null and big else 0.0
+	var kp: float = storm.place_at(middle+_layer_drift(true)) if storm != null and big else 0.0
+	lf.x = lerpf(lf.x,1.0,st)
+	# A small puff where the storm pushes thins away (the march's SP_SMALL_GO).
+	if not big and storm != null:
+		lf.x *= 1.0-smoothstep(STORM_SMALL_GO.x,STORM_SMALL_GO.y,storm.push_at(middle+_layer_drift(true)))
+		if lf.x < 0.01: return {}
+	if lifed and lf.x < 0.01: return {}
 	var gate := _cluster_gate(middle)
 	if not big: gate = lerpf(0.02,1.0,gate*gate)
-	if h.z >= _region(middle)*cover*(BIG_COVER2 if big else SMALL_COVER2)*gate*(LIFE_COVER if lifed else 1.0): return {}
+	var field_here := _region(middle)*cover*(BIG_COVER2 if big else SMALL_COVER2)*gate*(LIFE_COVER if lifed else 1.0)
+	var here := lerpf(field_here,1.0,st)
+	if h.z >= here: return {}
+	# A cell only the storm stands up comes in from a wisp as it builds.
+	if h.z >= field_here: lf.x *= smoothstep(0.0,STORM_ADMIT,here-h.z)
+	if lf.x < 0.01: return {}
 	var s := hash3(cx,cy,s0+1)
 	var m := hash3(cx,cy,s0+2)
 	var rr: Vector2 = BIG_R2 if big else SMALL_R2
@@ -705,25 +761,27 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	var spin := m.x*6.2832
 	var t2 := fposmod(s.z*7.31,1.0)
 	var t3 := fposmod(s.z*3.17+m.y,1.0)
-	var k := {"cell":Vector2i(cx,cy),"salt":s0,"life":lf.x,"middle":middle,"axis":Vector2(cos(spin),sin(spin)),"profile":PROFILE,"low":false}
+	var k := {"cell":Vector2i(cx,cy),"salt":s0,"life":lf.x,"middle":middle,"axis":Vector2(cos(spin),sin(spin)),"profile":PROFILE,"low":false,"storm":st}
+	var towers := kp > 0.0 and fposmod(s.y*13.7+s.x,1.0) < kp*STORM_TOWERS
+	var mids := kp > 0.25 and not towers
 	# [kind, n range, L, W, main_r, br, hs, tall, belly, qb]
 	var p: Array
 	if not big:
 		k.kind = "puff"; k.low = true; k.b0 = lerpf(SMALL_BASE.x,SMALL_BASE.y,s.y)
 		p = [Vector2(2,5),0.45,0.35,0.65,Vector2(0.4,0.62),Vector2(0.7,1.1),Vector2(0.6,1.25),Vector2(0.35,0.55),Vector2(0.5,0.85)]
-	elif s.y < FAIR_SHARE:
+	elif s.y < FAIR_SHARE and not towers and not mids:
 		k.kind = "fair"; k.low = true; k.b0 = lerpf(LOW_BASE.x,LOW_BASE.y,s.z)
 		p = [Vector2(3,6),0.55,0.38,0.62,Vector2(0.35,0.6),Vector2(0.7,1.1),Vector2(0.55,1.0),Vector2(0.3,0.5),Vector2(0.45,0.8)]
-	elif s.y < FAIR_SHARE+TOWER_SHARE2:
+	elif towers or (s.y < FAIR_SHARE+TOWER_SHARE2 and not mids):
 		k.kind = "tower"; k.b0 = lerpf(TOWER_BASE.x,TOWER_BASE.y,s.z)
 		p = [Vector2(5,9),0.5,0.45,0.6,Vector2(0.4,0.6),Vector2(0.6,1.0),Vector2(1.0,1.5),Vector2(0.25,0.4),Vector2(0.45,0.7)]
 		k.profile = 0.4
 		r *= 1.2
-	elif s.y < FAIR_SHARE+TOWER_SHARE2+ROW_SHARE:
+	elif s.y < FAIR_SHARE+TOWER_SHARE2+ROW_SHARE and not mids:
 		k.kind = "row"; k.low = t3 < 0.4
 		k.b0 = lerpf(LOW_BASE.x,LOW_BASE.y+30.0,s.z) if k.low else lerpf(MID_BASE.x,MID_BASE.y,s.z)
 		p = [Vector2(6,9),1.15,0.18,0.5,Vector2(0.36,0.55),Vector2(0.8,1.15),Vector2(0.55,0.95),Vector2(0.32,0.5),Vector2(0.5,0.8)]
-	elif s.y < FAIR_SHARE+TOWER_SHARE2+ROW_SHARE+WISP_SHARE:
+	elif s.y < FAIR_SHARE+TOWER_SHARE2+ROW_SHARE+WISP_SHARE and not mids:
 		k.kind = "wisp"; k.b0 = lerpf(180.0,320.0,s.z)
 		p = [Vector2(2,4),1.0,0.4,0.6,Vector2(0.5,0.8),Vector2(0.9,1.1),Vector2(0.08,0.16),Vector2(0.45,0.5),Vector2(0.6,0.7)]
 		r *= 1.3
@@ -738,13 +796,23 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	k.hs = p[5]
 	k.n = int(nr.x)+mini(int(m.z*(nr.y-nr.x+1.0)),int(nr.y-nr.x))
 	k.ext = Vector2(k.L,k.W).length()+maxf(k.br.y,k.main_r)*(1.0+WOB)
-	r = minf(r,EXT_MAX*cell/k.ext)
+	# Pushed: wider, taller, more domes, a deeper belly, a lower base.
+	r *= lerpf(1.0,STORM_GROW.x,st)
+	k.n = mini(int(k.n)+int(st*STORM_DOMES+0.5),9)
+	k.b0 = lerpf(float(k.b0),minf(float(k.b0),lerpf(STORM_BASE.x,STORM_BASE.y,s.z)),st)
+	# Past the core, where the deck lets go, it rides up to the deck's back
+	# (the march's SP_TRAIL_BASE).
+	if st > 0.0:
+		var d_s: float = storm.edge_distance(middle+_layer_drift(true))
+		var back: float = storm.ramp(-storm.CORE_DEPTH+storm.ENV_OUT.x,-storm.CORE_DEPTH+storm.ENV_OUT.y,d_s)
+		k.b0 = lerpf(float(k.b0),maxf(float(k.b0),lerpf(STORM_TRAIL_BASE.x,STORM_TRAIL_BASE.y,s.z)),smoothstep(0.0,0.3,st)*back)
+	r = minf(r,lerpf(EXT_MAX,STORM_EXT,st)*cell/k.ext)
 	k.r = r
 	var tall: Vector2 = p[6]
-	k.tall = lerpf(tall.x,tall.y,t2)*DOME
+	k.tall = lerpf(tall.x,tall.y,t2)*DOME*lerpf(1.0,STORM_GROW.y,st)
 	var bl: Vector2 = p[7]
 	var qb: Vector2 = p[8]
-	k.belly = lerpf(bl.x,bl.y,fposmod(m.y*5.13+s.x,1.0))
+	k.belly = lerpf(bl.x,bl.y,fposmod(m.y*5.13+s.x,1.0))*lerpf(1.0,STORM_BELLY,st)
 	k.qb = lerpf(qb.x,qb.y,fposmod(m.z*3.71+h.x,1.0))
 	k.big = big
 	if lift: _recipe_lift(k)
@@ -752,7 +820,7 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 
 ## The cloud as its life has it now (the march's `apply_life`).
 func _apply_life(k: Dictionary) -> void:
-	if not _lifed(): return
+	if not _lifed() and float(k.storm) <= 0.0: return
 	var lr := lerpf(0.7,1.0,float(k.life))
 	k.r = float(k.r)*lr
 	k.tall = float(k.tall)*float(k.life)
@@ -766,7 +834,7 @@ func _recipe_lift(k: Dictionary) -> void:
 	var fl := _cloud_floor(Vector2(k.middle)+_layer_drift(bool(k.low)),float(k.r)*float(k.ext),bool(k.low))
 	if fl.x > float(k.b0): k.b0 = fl.x+30.0*fposmod(s.y*13.7+h.x,1.0)
 	if k.low: k.tall = float(k.tall)*lerpf(1.0,0.6,fl.y)
-	k.H = minf(float(k.r)*float(k.main_r)*float(k.tall),TOP-float(k.b0))
+	k.H = minf(float(k.r)*float(k.main_r)*float(k.tall),TOP+STORM_GROW_TOP*float(k.storm)-float(k.b0))
 
 ## Whether cloud `k` (a puff or a wisp) stands one over another of its
 ## layer whose footprint overlaps its own, and is the lesser of the two (the
@@ -781,7 +849,7 @@ func _yields(k: Dictionary) -> bool:
 		var s0: int = salt+(101 if other_big else 211)
 		var mid0: Vector2 = k.middle
 		var g := Vector2i(floori(mid0.x/cell),floori(mid0.y/cell))
-		var most := reach+EXT_MAX*cell
+		var most := reach+(STORM_EXT if other_big and storm != null else EXT_MAX)*cell
 		for y in range(-2,3):
 			for x in range(-2,3):
 				var n := g+Vector2i(x,y)
@@ -878,10 +946,11 @@ func _clouds_in_layer(at: Vector2, reach: float, layer_low: bool, out: Array) ->
 ## to its crown or its base; no billows, before the meadows lift the low
 ## ones), or a negative number outside every cloud.
 func cloud_depth(p: Vector3) -> float:
-	var best := -1e9
+	var best: float = towers.depth(p) if towers != null else -1e9
+	if storm != null: best = maxf(best,envelope_depth(p))
 	var xz := Vector2(p.x,p.z)
 	if organic:
-		for c: Dictionary in clouds_in(xz,BIG*1.6):
+		for c: Dictionary in clouds_in(xz,BIG*(2.6 if storm != null else 1.6)):
 			var top := -1e9
 			var bottom := 1e9
 			for i in int(c.n):
@@ -901,6 +970,30 @@ func cloud_depth(p: Vector3) -> float:
 			bottom = minf(bottom,float(c.base)+float(b[2])*CURL*u*u*u*u)
 		best = maxf(best,minf(top-p.y,p.y-bottom))
 	return best
+
+## How far world point `p` is into the storm's own cloud: its towers and
+## its envelope's deck (cheap enough for every frame; `cloud_depth` adds the
+## field's cells).
+func storm_depth(p: Vector3) -> float:
+	var best: float = towers.depth(p) if towers != null else -1e9
+	return maxf(best,envelope_depth(p))
+
+## How far world point `p` is into the storm's envelope deck (StormFront
+## ENV_*; the march's storm_env_cloud), its smooth base (no lumps, no
+## scud), or a negative number outside it.
+func envelope_depth(p: Vector3) -> float:
+	if storm == null or not storm.envelope or storm.env_scale.z <= 0.0: return -1e9
+	var xz := Vector2(p.x,p.z)
+	var e: float = storm.envelope_at(xz)
+	# The deck stands from a fifth of the envelope (its density rides
+	# smoothstep(0, 0.35, e) in the march).
+	if e < 0.2: return -1e9
+	var g := _ground_sample(xz)
+	var m := clampf(g.x,0.0,1.0)
+	var fl := maxf(g.y,Field.SEA_Y)+float(storm.ENV_GROUND)
+	fl = maxf(fl,lerpf(fl,g.y+MEADOW_CLEAR,m))
+	var base: float = storm.deck_base(e,fl,Field.SEA_Y)
+	return minf(p.y-base,base+float(storm.ENV_THICK)-p.y)
 
 ## Whether world point `p` is inside a cloud's body (`cloud_depth` > 0).
 func in_cloud(p: Vector3) -> bool:
@@ -943,7 +1036,7 @@ func _fill() -> void:
 	_put4(p,20,Vector4(eye.x,eye.y,eye.z,motion_time))
 	_put4(p,24,Vector4(sun.x,sun.y,sun.z,0.0))
 	_put4(p,28,Vector4(key.x,key.y,key.z,0.0))
-	_put4(p,32,Vector4(Field.SEA_Y,Field.SEA_Y+TOP,REACH*_view,1.0))
+	_put4(p,32,Vector4(Field.SEA_Y,Field.SEA_Y+(STORM_TOP if storm != null else TOP),REACH*_view,1.0))
 	var lifed := life and organic
 	var low_at := drift_lo if lifed else drift
 	_put4(p,36,Vector4(low_at.x,low_at.y,float(salt),cover))
@@ -960,6 +1053,26 @@ func _fill() -> void:
 	_put4(p,60,Vector4(fog_density*(1.0-fog_hush),fog_depth,fog_steps,fog_top+fog_depth*1.6+16.0))
 	_put4(p,64,Vector4(drift.x*FOG_DRIFT,drift.y*FOG_DRIFT,FOG_REACH,FOG_FADE))
 	_put4(p,68,fog_look)
+	# The storm's push (spare[3], spare[4]; shaders/storm_cloud.glslinc).
+	if storm != null:
+		var e: Vector2 = storm.edge()
+		var h: Vector2 = storm.heading()
+		_put4(p,80,Vector4(e.x,e.y,h.x,h.y))
+		_put4(p,84,Vector4(storm.length,storm.CORE_DEPTH,storm.intensity,1.0))
+		_put4(p,88,Vector4(storm.churn,0.0,0.0,cost_view))
+		# Its envelope (spare[18]: on, the murk's, scud's, deck's scales).
+		var es: Vector3 = storm.env_scale
+		_put4(p,140,Vector4(1.0 if storm.envelope else 0.0,es.x,es.y,es.z))
+		# Its towers (spare[5].y, spare[6..17]).
+		if not _towers_made:
+			_towers_made = true
+			towers = StormTowers.from_args(storm,LaunchArgs.user_args())
+		if towers != null:
+			var now := Time.get_ticks_usec()
+			towers.advance(0.0 if _towers_tick == 0 else minf((now-_towers_tick)*1e-6,0.25))
+			_towers_tick = now
+			towers.put(p)
+		material.set_shader_parameter("storm_intensity",storm.intensity)
 	var weather_due := _frame%WEATHER_EVERY == 0 or weather_side == 0.0
 	var shade_due := _frame%SHADE_EVERY == 0
 	# Sliced, the square round the eye is asked for every frame; the effect
@@ -983,7 +1096,7 @@ func _fill() -> void:
 	if _shade_drawn != Vector4.ZERO: _publish_shade(true,key,_shade_drawn)
 	if shade_due: _shade_drawn = shade_square
 	_frame = (_frame+1)%4096
-	effect.set_inputs(ground,fog if fog_live else null,noise,[])
+	effect.set_inputs(ground,fog if fog_live else null,noise,towers.textures() if towers != null else [])
 	var r := effect.resolve_params
 	_put_transform(r,0,xf)
 	_put_projection(r,16,_prev_view)

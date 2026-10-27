@@ -11,9 +11,11 @@ run it yourself for any Godot command they don't cover.
   python tools/godot.py --rendered --timeout 90 -s my_capture.gd -- --out=captures/x
 
 Headless unless --rendered. `--path <repo>` is added. Before the run, the
-import is checked: with no import yet, or a `class_name` script newer than
-the class cache, it runs `--import` first (a lock keeps two agents from
-importing at once). A missing import is what gives the phantom
+import is checked: with no import yet, a `class_name` script newer than
+the class cache, or a `.glsl` (or a file it #includes) newer than its
+import, it runs `--import` first (a lock keeps two agents from importing
+at once). Godot never tracks a `.glsl`'s includes, so a stale one's
+imported files are deleted first to force it. A missing import is what gives the phantom
 `Could not find type "NativeTerrainData"` parse errors.
 
 The output is printed with the exit noise dropped (RID / resources leaked at
@@ -113,6 +115,47 @@ def _newest_class_script() -> tuple[float, str]:
     return newest, name
 
 
+def _glsl_newest(path: Path, seen: set) -> float:
+    """The newest mtime of a .glsl and the files it #includes, all the way down."""
+    if path in seen or not path.is_file():
+        return 0.0
+    seen.add(path)
+    newest = path.stat().st_mtime
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return newest
+    for inc in re.findall(r'^\s*#include\s+"([^"]+)"', text, re.M):
+        dep = ROOT / inc[6:] if inc.startswith("res://") else path.parent / inc
+        newest = max(newest, _glsl_newest(dep.resolve(), seen))
+    return newest
+
+
+def _stale_shaders() -> list[tuple[Path, list[Path]]]:
+    """Each .glsl whose import is older than it or an include, with its imported files.
+
+    Godot reimports a .glsl only when its own md5 changes, never for an
+    edited .glslinc, so these are cleared before the import (run_import)."""
+    stale = []
+    for folder, dirs, files in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for f in files:
+            if not f.endswith(".glsl"):
+                continue
+            src = Path(folder) / f
+            meta = src.with_name(f + ".import")
+            if not meta.is_file():
+                continue
+            dest = re.search(r'^path="res://(.+)"', meta.read_text(encoding="utf-8", errors="replace"), re.M)
+            if not dest:
+                continue
+            res = ROOT / dest.group(1)
+            if res.is_file() and _glsl_newest(src.resolve(), set()) <= res.stat().st_mtime:
+                continue
+            stale.append((src, [res, res.with_suffix(".md5")]))
+    return stale
+
+
 def import_needed() -> str:
     """Why an import is needed, or "" if it isn't."""
     if not CLASS_CACHE.is_file():
@@ -120,6 +163,9 @@ def import_needed() -> str:
     newest, name = _newest_class_script()
     if newest > CLASS_CACHE.stat().st_mtime:
         return f"{Path(name).relative_to(ROOT)} is newer than the class cache"
+    stale = _stale_shaders()
+    if stale:
+        return f"{stale[0][0].relative_to(ROOT).as_posix()} (or an include) is newer than its import"
     return ""
 
 
@@ -146,6 +192,9 @@ def run_import(godot: str, quiet: bool = False) -> int:
         LOCK.unlink(missing_ok=True)
         return 0  # another agent's import covered it
     try:
+        for _src, imported in _stale_shaders():
+            for p in imported:
+                p.unlink(missing_ok=True)
         if not quiet:
             print("== importing (headless)...", flush=True)
         t = time.time()

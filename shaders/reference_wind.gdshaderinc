@@ -421,6 +421,9 @@ float zs_ribbon_wake(vec2 p, float lag) {
 		+ zs_ribbon_one(zs_ribbon_6, zs_ribbon_lift_b.z, p, lag) + zs_ribbon_one(zs_ribbon_7, zs_ribbon_lift_b.w, p, lag);
 }
 
+// The storm's gust front (storm_gust: zs_storm_lean; nothing when it's off).
+#include "res://shaders/storm_gust.gdshaderinc"
+
 // The breeze's lean at a plant's root, in zs_blow_at's units, `lag` s
 // behind the air there. `wave` is how much of the meadow's waves it rides
 // (0 trees, 1 grass), crests `crest_length` m apart rolling at `crest_speed`.
@@ -431,7 +434,7 @@ float zs_breeze_lean_wave(vec2 root, float lag, float wave, float crest_length, 
 	float band = zs_gust_band_at(root, travel);
 	float crest_now = wave > 0.0 ? zs_wave_crest_at(root, crest_length, crest_speed, zs_grass_offset, travel) : 0.0;
 	float lean = zs_breeze_air() * (ZS_BREEZE_BASE + ZS_BREEZE_GUST * g * g + ZS_BREEZE_WAVE * crest_now * wave) * band;
-	lean += zs_front_at(root, lag) + zs_ribbon_wake(root, lag);
+	lean += zs_front_at(root, lag) + zs_ribbon_wake(root, lag) + zs_storm_lean(root, lag, 0.0);
 	lean /= sqrt(1.0 + lean * lean / (ZS_BREEZE_MAX * ZS_BREEZE_MAX));
 	bow = smoothstep(0.08, 0.6, lean);
 	return lean;

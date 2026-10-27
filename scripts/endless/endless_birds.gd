@@ -211,6 +211,10 @@ var reach := 1.0
 var size := 1.0
 var ride := RIDE
 var ambient := 1.0
+## The storm at the eye (StormFront `here`, set by the host each frame): no
+## far flock is put up to wheel in it past STORM_HUSH, and ones wheeling leave.
+var storm_hush := 0.0
+const STORM_HUSH := 0.3
 var flocks: Array = []
 ## The numbers (F1) and the harness: flushes so far, and the last step's ms.
 var stats := {"flushed":0,"rode":0,"peeled":0,"dropped":0,"foot_flushed":0,"settled":0,"hops":0,"ms":0.0,"ms_avg":0.0,"draw_ms":0.0}
@@ -529,7 +533,7 @@ func _ground_spot(f: Flock, b: Bird) -> void:
 	b.peck = _rng.randf_range(PECK.x,PECK.y)
 
 func _put_ambient(eye: Vector3) -> void:
-	if ambient <= 0.0: return
+	if ambient <= 0.0 or storm_hush > STORM_HUSH: return
 	var far := 0
 	for f: Flock in flocks:
 		if f.state == WHEEL: far += 1
@@ -641,6 +645,12 @@ func _flock_step(f: Flock, delta: float, eye: Vector3, pp: Vector3, pv: Vector3,
 			f.centre += Vector3(0.6,0.0,0.3)*delta
 			f.spread = lerpf(f.spread,2.3+0.8*sin(f.t*0.35+f.radius),delta*0.5)
 			if (f.a-eye).length() > AMBIENT_GONE: return false
+			# The storm coming on: off away from the plane, low and fast.
+			if storm_hush > STORM_HUSH:
+				var off := Vector3(f.a.x-eye.x,0.0,f.a.z-eye.z)
+				f.heading = off.normalized() if off.length() > 1.0 else f.av.normalized()
+				f.state = LEAVE
+				f.t = 0.0
 		SCATTER:
 			# Round over the tree, then off.
 			var rel := f.a-f.centre

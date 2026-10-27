@@ -150,7 +150,7 @@ var wind_direction := Vector2.RIGHT
 ## and haze); shader globals outlive a scene change. Endless flight never
 ## publishes them, so it puts each back to its project.godot value on start:
 ## a green land, dry, no frost, the plants and sky in no season.
-const SEASON_GLOBALS := ["zs_season","zs_sky_season","zs_autumn","zs_snow","zs_ice","zs_ground_wet","zs_foliage_wet","zs_storm_grade","zs_storm_thin","zs_haze","zs_surface_post",
+const SEASON_GLOBALS := ["zs_season","zs_sky_season","zs_autumn","zs_snow","zs_ice","zs_ground_wet","zs_foliage_wet","zs_storm_grade","zs_storm_thin","zs_storm_line","zs_storm_shape","zs_storm_here","zs_lightning","zs_haze","zs_surface_post",
 		"zs_palette_grass","zs_palette_foliage","zs_palette_rock","zs_palette_earth","zs_palette_water",
 		"zs_look_ao","zs_look_rim","zs_look_shore","zs_look_bounce","zs_look_fill","zs_night_style"]
 
@@ -593,6 +593,17 @@ func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D 
 	sea.position = Vector3(snappedf(eye.x,64.0),Field.SEA_Y,snappedf(eye.z,64.0))
 	if water != null: water.step(delta,eye,plane_at,facing,_time,view)
 	if clouds != null: clouds.step(delta,view,wind_direction,_time)
+
+## Turns the land's wind (the grass, trees and clouds; zs_wind_direction)
+## to blow along `dir` (unit xz), its wander kept. The sea's swell keeps the
+## wind it was built with: the plane skims the swell, and the storm must not
+## move the plane (scripts/endless/storm_front.gd).
+func turn_wind(dir: Vector2) -> void:
+	_wind_angle = atan2(dir.y,dir.x)
+
+## The land's wind heading before its wander (unit xz).
+func base_wind() -> Vector2:
+	return Vector2(cos(_wind_angle),sin(_wind_angle))
 
 func _publish(delta: float) -> void:
 	_time += delta

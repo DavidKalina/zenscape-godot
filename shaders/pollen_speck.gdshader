@@ -5,6 +5,9 @@ render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabl
 // pollen's colour, its alpha the speck's opacity; custom data is its velocity
 // (world m/s). Lit by the scene's light as the haze is, so it dims at night.
 #include "res://shaders/reference_globals.gdshaderinc"
+// Its own little light (1 in clear air; 0 under a storm's core, where
+// nothing should glow like a firefly): scripts/endless/endless_motes.gd.
+uniform float self_light = 1.0;
 varying float opacity;
 varying vec3 tint;
 
@@ -38,8 +41,8 @@ void fragment() {
 	// shines past white, so the cloud reads as motes of light rather than a
 	// grey smudge. A little light of its own keeps it golden at dusk.
 	float bright = dot(light, vec3(0.2126, 0.7152, 0.0722));
-	vec3 lit = tint * (light * 0.9 + vec3(0.3));
-	vec3 glint = mix(tint, vec3(1.0, 0.97, 0.88), 0.55) * (1.3 + 1.6 * bright);
+	vec3 lit = tint * (light * 0.9 + vec3(0.3) * self_light);
+	vec3 glint = mix(tint, vec3(1.0, 0.97, 0.88), 0.55) * (1.3 * self_light + 1.6 * bright);
 	ALBEDO = mix(lit, glint, core);
 	ALPHA = clamp(soft * 0.85 + core * 0.4, 0.0, 1.0) * opacity;
 }

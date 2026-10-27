@@ -1,0 +1,491 @@
+// The storm front in the endless march (included by shaders/
+// endless_cloud_march.glsl before the field's recipes; it uses the march's
+// `P`, `sstep` and `cauliflower`). Mirrored on the CPU in
+// scripts/endless/endless_clouds.gd (`storm_push`, `_recipe`): keep the
+// numbers equal.
+//
+// The storm is the field's own cumulus, pushed: in and ahead of the front
+// each cell's cloud stands surely, grows wider and far taller, its base
+// sinks, the fair ones turn to towers, and the bigger clouds run into each
+// other; their light goes dark low down and stays on the heaps up top. How
+// hard, at a place, is one number: storm_push, from the front's distance
+// (and its ends) times the storm's whole intensity, P.spare[4].z, which
+// rises with the storm's clock (StormFront.GROW), so the cells grow in view.
+// Which kind a pushed cell turns to reads the place alone (storm_place), so
+// a cell never changes kind as the storm builds, it only grows.
+//
+// The front (scripts/endless/storm_front.gd): P.spare[3] its leading edge's
+// middle (xz) and heading (xz), P.spare[4] its length, the core's depth,
+// its intensity (0..1), on (0/1); P.spare[5].x the churn's phase (s, its
+// clock run at its intensity).
+
+// The push builds from SP_AHEAD.x m ahead of the leading edge to whole at
+// SP_AHEAD.y, holds over the core and lets go over the clearing behind it
+// (over SP_BEHIND m, from SP_BEHIND_FROM m past the core's end); along the
+// line it fades over SP_ENDS (m past, m inside the line's ends).
+const vec2 SP_AHEAD = vec2(3800.0, 250.0);
+const float SP_BEHIND_FROM = -200.0;
+const float SP_BEHIND = 1400.0;
+const vec2 SP_ENDS = vec2(1500.0, 900.0);
+// The storm's back torn: the let-go reads the front's distance shifted by
+// storm_rag, three sines along and across the line (at most SP_RAG m), so
+// it lets go in tongues and bays with holes the sun comes through, never
+// one level edge (a tan lid behind the storm). The across terms turn
+// slowly as the front moves on (the back tears as it passes). Mirrored
+// in storm_front.gd (rag) and the composite (zs_storm_rag).
+const float SP_RAG = 750.0;
+// A pushed cloud: how much wider (x) and taller (y) at a whole push, how
+// much higher its top may reach (m), the share of the broad cells turned to
+// towers, how many more domes, its belly deeper, the most its reach may
+// span (cells; the lattice looks two cells round when a storm is on), and
+// the base it sinks to (m over the sea, least, most).
+const vec2 SP_GROW = vec2(1.9, 1.8);
+const float SP_TOP = 1450.0;
+const float SP_TOWERS = 0.75;
+const float SP_DOMES = 3.0;
+const float SP_BELLY = 1.3;
+const float SP_EXT = 1.9;
+const vec2 SP_BASE = vec2(60.0, 110.0);
+// Behind the core, where the envelope's deck lets go (SE_OUT), a pushed
+// cell rides up to the deck's back (its base at least this, m over the
+// sea, least and most) instead of hanging to the ground: low there it lay
+// on the land and water as a near-black smooth lens in the trail's shade,
+// and the plane flew into it as the fair day's white-out.
+const vec2 SP_TRAIL_BASE = vec2(230.0, 300.0);
+// A small puff (never pushed) thins away over this much of the push.
+const vec2 SP_SMALL_GO = vec2(0.03, 0.3);
+// A cell the storm alone stands up grows in from a wisp over this much of
+// the storm's push past its own hash (recipe_shape).
+const float SP_ADMIT = 0.12;
+// The steepest flank a pushed cloud's distance reads (the field's
+// SLOPE_MAX is 5): a tall grown cell's sides are far steeper than that, so
+// at 5 a sample just inside its footprint read a hundred metres or more
+// deep and the lobes could not move the wall: a huge smooth face. The march
+// reads it from the map's slope over one texel (weather_smooth_s), the
+// light taps too, so a wall's inside rises about a metre a metre across.
+const float SP_SLOPE_MAX = 80.0;
+// How much deeper (m) its underside's lumps hang (the march's layer_inside).
+const float SP_UNDER = 110.0;
+// For the light: the heights (m over the sea) the storm's heaps span.
+const float SC_LOW = 120.0;
+const float SC_HIGH = 2100.0;
+
+float storm_rag(float d, float along) {
+	return SP_RAG * (0.5 * sin(along / 1150.0 + 0.7) + 0.3 * sin(along / 470.0 + d / 610.0 + 2.3) + 0.2 * sin(along / 230.0 - d / 290.0 + 5.1));
+}
+
+bool storm_on() {
+	return P.spare[4].w > 0.5;
+}
+
+// How hard the storm whole would push the cloud at world `xz` (0..1), by
+// the front's place alone.
+float storm_place(vec2 xz) {
+	if (P.spare[4].w < 0.5) return 0.0;
+	vec2 hd = P.spare[3].zw;
+	vec2 rel = xz - P.spare[3].xy;
+	float d = dot(rel, hd);
+	float along = dot(rel, vec2(-hd.y, hd.x));
+	float core = P.spare[4].y;
+	float half_len = P.spare[4].x * 0.5;
+	// (The rag only where it can move the let-go: |rag| <= SP_RAG.)
+	float rag = d < -core + SP_BEHIND_FROM + SP_RAG ? storm_rag(d, along) : 0.0;
+	return sstep(SP_AHEAD.x, SP_AHEAD.y, d)
+		* sstep(-core + SP_BEHIND_FROM - SP_BEHIND, -core + SP_BEHIND_FROM, d + rag)
+		* sstep(half_len + SP_ENDS.x, half_len - SP_ENDS.y, abs(along));
+}
+
+// How hard the storm pushes the cloud at world `xz` now (0..1): its place
+// times its intensity.
+float storm_push(vec2 xz) {
+	return storm_place(xz) * clamp(P.spare[4].z, 0.0, 1.0);
+}
+
+// The storm's heaps (m, never more than 0): on a tall cloud (`thick` its
+// map span) the big cauliflower the field's lobes are too small for, two
+// octaves carved into its domes, more up its towers, so a pushed cell reads
+// as heaped knots of cloud at every scale. Only ever carves, so the march's
+// free-space bounds still hold. Read where the field's own lobes are read
+// (`boil` their churn). The heaps boil on their own besides: each octave
+// rises and turns at SC_CHURN_* m per second of the churn's phase
+// (P.spare[5].x, faster as the storm builds), the finer the faster, so the
+// knots roll up the towers.
+const float SC_HEAP = 200.0;
+const float SC_HEAP_FINE = 45.0;
+const vec3 SC_CHURN_BIG = vec3(0.6, -2.2, 0.4);
+const vec3 SC_CHURN_MID = vec3(-0.9, -3.6, 0.7);
+const vec3 SC_CHURN_FINE = vec3(1.3, -5.5, -1.1);
+// Up close (1b+): a fourth, finer octave of knots (SC_NEAR_TILE m, SC_NEAR
+// m deep) the near march adds (`near` its weight, 1 inside SC_NEAR_AT.x m,
+// gone by SC_NEAR_AT.y), so a grown cell's face at a few hundred metres
+// still breaks into small heaps where the field's own fine swell (5 m) is
+// too shallow for a cloud this size.
+const float SC_NEAR = 26.0;
+const float SC_NEAR_TILE = 62.0;
+const vec2 SC_NEAR_AT = vec2(700.0, 1300.0);
+const vec3 SC_CHURN_NEAR = vec3(-1.6, -7.0, 1.2);
+// The two broad octaves alone: what the light taps and the face's normal
+// see of the heaps (storm_carve_broad), so the shade falls in the heaps'
+// own pockets, not across the smooth hull under them.
+float storm_carve_broad(vec3 q, float ch, float thick, float hh) {
+	float big = textureLod(cauliflower, (q + SC_CHURN_BIG * ch) / vec3(760.0, 560.0, 760.0) + 0.29, 0.0).r;
+	float mid = textureLod(cauliflower, (q + SC_CHURN_MID * ch) / vec3(380.0, 300.0, 380.0) + 0.61, 0.0).r;
+	float amp = SC_HEAP * sstep(400.0, 1300.0, thick) * mix(0.45, 1.0, hh);
+	return amp * ((sstep(0.3, 0.72, big) - 1.0) * 0.65 + (sstep(0.3, 0.7, mid) - 1.0) * 0.35);
+}
+
+// The near octave's share of the last storm_carve (m, never more than 0).
+float g_carve_near = 0.0;
+
+// The fine octave alone (m, never more than 0).
+float storm_carve_fine(vec3 q, float ch, float thick) {
+	float fine = textureLod(cauliflower, (q + SC_CHURN_FINE * ch) / vec3(150.0, 120.0, 150.0) + 0.83, 0.0).r;
+	return SC_HEAP_FINE * sstep(150.0, 600.0, thick) * (sstep(0.3, 0.7, fine) - 1.0);
+}
+
+float storm_carve(vec3 p, vec3 boil, float thick, float hh, float near) {
+	vec3 q = p + boil * 0.5;
+	float ch = P.spare[5].x;
+	float c = storm_carve_broad(q, ch, thick, hh) + storm_carve_fine(q, ch, thick);
+	g_carve_near = 0.0;
+	if (near > 0.0) {
+		float n = textureLod(cauliflower, (q + SC_CHURN_NEAR * ch) / vec3(SC_NEAR_TILE, SC_NEAR_TILE * 0.8, SC_NEAR_TILE) + 0.47, 0.0).r;
+		g_carve_near = near * SC_NEAR * sstep(150.0, 600.0, thick) * (sstep(0.28, 0.72, n) - 1.0);
+		c += g_carve_near;
+	}
+	return c;
+}
+
+// How deep in the heaps' pockets a pushed cloud's sample lies (0 on a
+// knob, 1 deep in a crease), from the carve there (`c` all of it, `near`
+// the near knots' share) and the underside's lump (`lump`, 0 where none
+// binds): the march dims the sun and the sky there (SC_CAVE_SUN / _SKY),
+// so a near face front-lit, or the ceiling seen from under, still reads
+// as heaps by their creases where the light alone would leave it flat.
+const vec2 SC_CAVE_AT = vec2(10.0, 150.0);
+const float SC_CAVE_SUN = 0.6;
+const float SC_CAVE_SKY = 0.65;
+float storm_cave(float c, float near, float lump) {
+	float broad = sstep(SC_CAVE_AT.x, SC_CAVE_AT.y, near - c);
+	float knots = sstep(2.0, SC_NEAR * 0.8, -near);
+	return max(broad * 0.7 + knots * 0.55, sstep(0.35, 0.95, lump));
+}
+
+// The light taps' carve at `p` on a cloud `thick` m tall (`hh` its height
+// in it): the broad octaves.
+float storm_carve_cheap(vec3 p, float thick, float hh) {
+	return storm_carve_broad(p + BOIL * P.eye.w * 0.5, P.spare[5].x, thick, hh);
+}
+
+// The face's carve (the normal a ray's first face takes, once a ray):
+// the broad octaves and the fine one, so the light turns across the heaps'
+// own lumps on a grown cell's face, not only across its broad heaps.
+float storm_carve_face(vec3 p, float thick, float hh) {
+	vec3 q = p + BOIL * P.eye.w * 0.5;
+	float ch = P.spare[5].x;
+	return storm_carve_broad(q, ch, thick, hh) + storm_carve_fine(q, ch, thick);
+}
+
+// How high in the storm's heaps world height `y` stands (0 low, 1 top).
+float storm_height(float y) {
+	return clamp((y - P.band.x - SC_LOW) / (SC_HIGH - SC_LOW), 0.0, 1.0);
+}
+
+// The sun's share on a pushed cloud at world height `y`: low down the heaps
+// shade each other and the rain dims it; up top they catch it whole.
+const vec2 SC_SUN = vec2(0.35, 1.0);
+float storm_sun(float y) {
+	return mix(SC_SUN.x, SC_SUN.y, sstep(0.05, 0.55, storm_height(y)));
+}
+
+// The sky's light on a pushed cloud at world height `y`: its underside and
+// lower flanks darker (the rain under it, its own mass over it).
+const float SC_SKY_LOW = 0.5;
+float storm_sky(float y) {
+	return mix(SC_SKY_LOW, 1.0, sstep(0.0, 0.45, storm_height(y)));
+}
+
+// --- Enveloped (1d) ----------------------------------------------------------
+// Deep in the core the storm closes round the plane: its base drops toward
+// the plane as a dark, lumpy deck (SE_DECK), ragged scud races past at the
+// plane's height under it (SE_SCUD), and the air under it greys with rain
+// (the murk, SE_MURK) so the distance closes in. How much, at a place, is
+// one number, storm_envelope: in from SE_IN.x m behind the leading edge to
+// whole at SE_IN.y, let go from SE_OUT.x m before the core's end to none
+// SE_OUT.y past it, faded at the line's ends (as the rain), and waiting for
+// the storm to build (SE_STRENGTH of its intensity). Nothing of it comes
+// nearer the ground than the cloud floor (SE_GROUND over the ground, the
+// field's meadow clearance over the meadows: P.knobs.w), so the meadows
+// stay landable under it. Mirrored in scripts/endless/storm_front.gd
+// (ENV_*, envelope_at, deck_base): keep the numbers equal. P.spare[18]:
+// on (0/1), the murk's, the scud's and the deck's scales.
+const vec2 SE_IN = vec2(-150.0, -1000.0);
+const vec2 SE_OUT = vec2(300.0, -400.0);
+const float SE_TAPER = 1000.0;
+const vec2 SE_STRENGTH = vec2(0.55, 0.95);
+// The deck: its base over the sea where the envelope is whole (.x) and
+// where it begins (.y), how thick it stands.
+const vec2 SE_DECK = vec2(290.0, 460.0);
+const float SE_THICK = 380.0;
+// Its underside, heaped as the field's cells are (the cauliflower in three
+// octaves, SE_HANG_TILE m), hung SE_HANG m (each octave) below the base
+// where a heap binds and lifted between them, so it reads as heavy pouches
+// with creases and paler gaps, never a lid. Broad breaks (SE_BREAK_TILE m
+// across) lift the base by up to SE_BREAK.x m and thin the deck above it
+// by SE_BREAK.y of its thickness: the paler patches far off.
+const vec3 SE_HANG = vec3(110.0, 60.0, 22.0);
+const vec3 SE_HANG_BIG = vec3(720.0, 420.0, 640.0);
+const vec3 SE_HANG_MID = vec3(260.0, 170.0, 240.0);
+const vec3 SE_HANG_FINE = vec3(84.0, 62.0, 84.0);
+// The heaps' cover cut (of the noise): narrow, so a pouch's flanks are steep.
+const vec2 SE_HANG_CUT = vec2(0.32, 0.62);
+const float SE_BREAK_TILE = 2600.0;
+const vec2 SE_BREAK = vec2(90.0, 0.62);
+const float SE_THIN_LEAST = 90.0;
+// Its edges (where the envelope ramps, ~SE_EDGE_RAMP m wide) bitten into
+// lobes (SE_EDGE_TILE m across) as far as SE_EDGE_CUT of the ramp, their
+// flanks heaped by the underside's hang, so the deck seen from behind or
+// beside ends in lumpy cloud, never a ruler line over the sky.
+const float SE_EDGE_TILE = 1100.0;
+const vec2 SE_EDGE_CUT = vec2(0.04, 0.85);
+const float SE_EDGE_RAMP = 700.0;
+// Behind it, the share of the deck's shade a pushed cell keeps (the march),
+// whole up to SE_TRAIL_TOP.x m over the sea, gone by .y (the heaps up top
+// keep the sun).
+const float SE_TRAIL = 0.85;
+const vec2 SE_TRAIL_TOP = vec2(900.0, 1600.0);
+// ...whole from this much of the push (at .5 the far let-go's cells stood
+// sunlit, a tan lid with a level edge behind the storm).
+const float SE_TRAIL_PUSH = 0.2;
+// Its light (no taps): the sky's through the deck over it, falling off
+// by SE_DEPTH m of deck (so a pouch's belly, under the most deck, is
+// near black, a gap and a break paler), times SE_SKY.x, never past
+// SE_DECK_MAX; in a heap's crease (SE_CREASE) darker still.
+const float SE_DEPTH = 95.0;
+const float SE_DECK_MAX = 0.32;
+const float SE_CREASE = 0.6;
+// The light under the deck comes in from the side, out of the clear air
+// past the core (behind the storm, against its heading): a flat underside
+// keeps SE_RIM.x of it, a sheer flank SE_RIM.y more, a flank facing the
+// clear air SE_RIM.z more still (storm_deck_lean: the underside's normal
+// from its hang SE_NORMAL_D m to either side).
+const vec3 SE_RIM = vec3(0.7, 0.8, 0.5);
+const float SE_NORMAL_D = 40.0;
+// The deck's former lump, kept as the depth of the lit band (m).
+const float SE_LUMP = 130.0;
+// The floor: never nearer the ground than this (m).
+const float SE_GROUND = 40.0;
+// The scud: its tile (m: along the storm's heading, up, across), the fine
+// tile, how fast it races along the heading (m/s), its cover where the
+// envelope is whole (the noise's gate), how soft its edge (of the noise:
+// small, so a fragment is torn crisp) and its density.
+const vec3 SE_SCUD_TILE = vec3(460.0, 95.0, 260.0);
+const vec3 SE_SCUD_FINE = vec3(150.0, 48.0, 110.0);
+const float SE_SCUD_SPEED = 24.0;
+const vec2 SE_SCUD_GATE = vec2(0.8, 0.58);
+const float SE_SCUD_EDGE = 0.03;
+const float SE_SCUD_EDGE_FAR = 0.00006;
+// Past SE_SCUD_FAR.x m the scud thins away (gone by .y): the murk hides it
+// there, and a torn fragment that far is a pixel's sparkle.
+const vec2 SE_SCUD_FAR = vec2(500.0, 1500.0);
+const float SE_SCUD_DENS = 1.0;
+// Near the eye's own height the scud is denser (the gate lowered by .x at
+// the eye's height, half gone .y m above or below it), within .z m of the
+// eye (gone by .w), so fragments whip past the plane, not far off.
+const vec4 SE_SCUD_NEAR = vec4(0.07, 28.0, 200.0, 550.0);
+const float SE_SIGMA = 0.05;
+// Their light: no taps: the sky's share, the sun's, in the deck (times its
+// depth's fall-off, above) and in the scud.
+const vec2 SE_SKY = vec2(6.0, 0.11);
+const vec2 SE_SUN = vec2(0.03, 0.02);
+// The deck's sun share follows its sky light's fall-off (sky_e over
+// SE_DECK_MAX, times this), so its pouches and gaps keep their form.
+const float SE_SUN_FORM = 1.0;
+// The murk: extinction per m where the envelope is whole (~630 m to half),
+// full up to SE_MURK_TOP.x m over the sea, gone by .y; its light (the
+// sky's share: in the dark air between the shafts, in a shaft), the sun's;
+// its chunks along the ray and their reach (m).
+const float SE_MURK = 0.0011;
+const vec2 SE_MURK_TOP = vec2(180.0, 480.0);
+const vec2 SE_MURK_SKY = vec2(0.17, 0.46);
+const float SE_MURK_SUN = 0.03;
+const int SE_MURK_CHUNKS = 10;
+const float SE_MURK_REACH = 7000.0;
+// The rain's shafts in it: paler, denser columns (SE_SHAFT_TILE m across,
+// leaning SE_SHAFT_LEAN m along the heading per m up), the murk's density
+// times SE_SHAFT.x between them, .y in them.
+const float SE_SHAFT_TILE = 760.0;
+const float SE_SHAFT_LEAN = 0.35;
+const vec2 SE_SHAFT = vec2(0.55, 1.9);
+
+bool storm_env_on() {
+	return P.spare[4].w > 0.5 && P.spare[18].x > 0.5;
+}
+
+// The envelope at world `xz` (0..1), its ramps widened by `r` m (a bound
+// for the march's leaps: > 0 wherever any of it lies within r).
+float storm_envelope_r(vec2 xz, float r) {
+	if (!storm_env_on()) return 0.0;
+	vec2 hd = P.spare[3].zw;
+	vec2 rel = xz - P.spare[3].xy;
+	float d = dot(rel, hd);
+	float along = dot(rel, vec2(-hd.y, hd.x));
+	float core = P.spare[4].y;
+	float half_len = P.spare[4].x * 0.5;
+	return sstep(SE_IN.x + r, SE_IN.y + r, d)
+		* sstep(-core + SE_OUT.y - r, -core + SE_OUT.x - r, d)
+		* sstep(half_len + r, half_len - SE_TAPER + r, abs(along))
+		* sstep(SE_STRENGTH.x, SE_STRENGTH.y, P.spare[4].z);
+}
+
+float storm_envelope(vec2 xz) {
+	return storm_envelope_r(xz, 0.0);
+}
+
+// How far (m, across the land) world `xz` lies from where the envelope can
+// be at all (0 inside it; 1e9 while the storm is too weak for it): the
+// march leaps up to it.
+float storm_env_reach(vec2 xz) {
+	if (!storm_env_on() || P.spare[4].z <= SE_STRENGTH.x) return 1e9;
+	vec2 hd = P.spare[3].zw;
+	vec2 rel = xz - P.spare[3].xy;
+	float d = dot(rel, hd);
+	float along = abs(dot(rel, vec2(-hd.y, hd.x)));
+	float core = P.spare[4].y;
+	vec2 out_by = vec2(max(max(d - SE_IN.x, (-core + SE_OUT.y) - d), 0.0), max(along - P.spare[4].x * 0.5, 0.0));
+	return length(out_by);
+}
+
+// The highest the envelope's cloud stands (world y; over a mountain's
+// floor the deck rides higher, unbounded here).
+float storm_env_top() {
+	return P.band.x + SE_DECK.y + SE_THICK;
+}
+
+// The floor under the envelope at `xz` (world y): the ground's height and
+// the meadows' clearance (ground_at: meadow, height).
+float storm_env_floor(vec2 xz) {
+	vec2 g = ground_at(xz);
+	float m = clamp(g.x, 0.0, 1.0);
+	float fl = max(g.y, P.band.x) + SE_GROUND;
+	return max(fl, mix(fl, g.y + P.knobs.w, m));
+}
+
+// The deck's smooth base at `xz` (world y) for envelope `e` over floor `fl`.
+float storm_deck_base(float e, float fl) {
+	return max(P.band.x + mix(SE_DECK.y, SE_DECK.x, e), fl);
+}
+
+// The sky's light share in the deck under `depth` m of it (`k` its form's
+// share: the flank's side light, the crease's shade).
+float storm_deck_light(float depth, float k) {
+	return min(SE_SKY.x * exp(-depth / SE_DEPTH) * k, SE_DECK_MAX);
+}
+
+// How far (m) the deck's underside hangs below its base at `q` (its drifted
+// place; less than 0 where it lifts between the heaps): the big and mid
+// heaps' cover (`hb`, `hm`).
+float storm_deck_hang(vec3 q, out float hb, out float hm) {
+	hb = sstep(SE_HANG_CUT.x, SE_HANG_CUT.y, textureLod(cauliflower, q / SE_HANG_BIG + 0.29, 0.0).r);
+	hm = sstep(SE_HANG_CUT.x - 0.02, SE_HANG_CUT.y - 0.02, textureLod(cauliflower, q / SE_HANG_MID + 0.61, 0.0).r);
+	float hf = textureLod(cauliflower, q / SE_HANG_FINE + 0.83, 0.0).r;
+	return SE_HANG.x * (hb - 0.3) + SE_HANG.y * (hm - 0.3) + SE_HANG.z * (hf - 0.5) * 2.0;
+}
+
+// The envelope's cloud at `p` (envelope `e`): how far inside (m), its
+// density (0..1), how high in it (0 base, 1 top), the lump's crease (0..1)
+// and whether the scud binds. `fl` the floor there. `t` the ray's distance
+// (the scud's torn edge widens with it, so far fragments never sparkle).
+float g_env_scud = 0.0;
+// The deck over the last deck sample's surface (m): its light's depth;
+// that sample's drifted place and its hang (for storm_deck_lean).
+float g_env_depth = 0.0;
+vec3 g_env_q = vec3(0.0);
+float g_env_hang = 0.0;
+float storm_env_cloud(vec3 p, float e, float fl, float t, out float dens, out float hh, out float cave) {
+	dens = 0.0;
+	hh = 0.0;
+	cave = 0.0;
+	g_env_scud = 0.0;
+	float base = storm_deck_base(e, fl);
+	float top = base + SE_THICK;
+	if (p.y > top || p.y < fl) return -1e3;
+	vec2 hd = P.spare[3].zw;
+	float clock = P.eye.w;
+	// The deck: its underside heaped into pouches, creases and gaps, lifted
+	// and thinned in the broad breaks (never under the floor), drifting
+	// along the storm's heading and boiling slowly.
+	vec3 q = p + vec3(hd.x, 0.0, hd.y) * (-SE_SCUD_SPEED * 0.45 * clock) + SC_CHURN_MID * P.spare[5].x * 0.3;
+	float ins = -1e3;
+	if (p.y > base - SE_LUMP - 10.0) {
+		float nb = textureLod(cauliflower, vec3(q.x / SE_BREAK_TILE + 0.31, 0.43, q.z / SE_BREAK_TILE + 0.17), 0.0).g;
+		float brk = sstep(0.52, 0.8, nb);
+		float hb, hm;
+		float hang = storm_deck_hang(q, hb, hm);
+		g_env_q = q;
+		g_env_hang = hang;
+		float b = max(base + SE_BREAK.x * brk - hang, fl);
+		// Never thinner than SE_THIN_LEAST: a hole would show the field's
+		// cells over it, lit white.
+		float top_l = max(base + SE_THICK * (1.0 - SE_BREAK.y * brk), b + SE_THIN_LEAST);
+		ins = min(p.y - b, top_l - p.y);
+		float ne = textureLod(cauliflower, vec3(q.x / SE_EDGE_TILE + 0.47, 0.21, q.z / SE_EDGE_TILE + 0.83), 0.0).r;
+		float cut = mix(SE_EDGE_CUT.x, SE_EDGE_CUT.y, sstep(0.3, 0.7, ne));
+		ins = min(ins, (e - cut) * SE_EDGE_RAMP + 0.6 * hang);
+		// Measured from its surface over this column, not the sample: the
+		// steps land at any depth in it and the shade must not shimmer.
+		g_env_depth = max(top_l - b, 0.0);
+		cave = sstep(0.15, 0.85, hb) * (1.0 - hm);
+		dens = sstep(0.0, 18.0, ins) * sstep(0.0, 0.1, e) * P.spare[18].w;
+		hh = clamp((p.y - b) / SE_THICK, 0.0, 1.0);
+	}
+	// The scud: torn fragments in the band under the deck, racing along.
+	if (p.y < base + 20.0 && P.spare[18].z > 0.0) {
+		vec3 s = p - vec3(hd.x, 0.0, hd.y) * (SE_SCUD_SPEED * clock);
+		vec3 l = vec3(dot(s.xz, hd), s.y, dot(s.xz, vec2(-hd.y, hd.x)));
+		float big = textureLod(cauliflower, l / SE_SCUD_TILE + 0.17, 0.0).r;
+		float fine = textureLod(cauliflower, l / SE_SCUD_FINE + 0.53, 0.0).g;
+		float gate = mix(SE_SCUD_GATE.x, SE_SCUD_GATE.y, e);
+		float dy = (p.y - P.eye.y) / SE_SCUD_NEAR.y;
+		gate -= SE_SCUD_NEAR.x * e * exp(-0.693 * dy * dy) * (1.0 - sstep(SE_SCUD_NEAR.z, SE_SCUD_NEAR.w, t));
+		float v = big * 0.62 + fine * 0.38;
+		// Thin at the floor and toward the deck's base it joins.
+		float band = sstep(fl, fl + 30.0, p.y);
+		float edge = SE_SCUD_EDGE + t * SE_SCUD_EDGE_FAR;
+		// (Gone with the envelope's ramp: at its edge a lone fragment hung
+		// as a flat dark lens against the clear sky.)
+		float sd = sstep(gate, gate + edge, v) * band * sstep(0.15, 0.6, e) * (1.0 - sstep(SE_SCUD_FAR.x, SE_SCUD_FAR.y, t)) * SE_SCUD_DENS * P.spare[18].z;
+		if (sd > dens) {
+			dens = sd;
+			g_env_scud = 1.0;
+			hh = 0.0;
+			cave = 0.0;
+			ins = max(ins, (v - gate) * 300.0);
+		}
+	}
+	return ins;
+}
+
+// The deck's underside at the last deck sample (storm_env_cloud): how far
+// its normal leans from straight down (0 flat, 1 sheer) and how much it
+// faces the clear air behind the storm (0..1). Six reads: the march asks
+// only on a ray's first deck samples.
+vec2 storm_deck_lean() {
+	float hb, hm;
+	float hx = storm_deck_hang(g_env_q + vec3(SE_NORMAL_D, 0.0, 0.0), hb, hm);
+	float hz = storm_deck_hang(g_env_q + vec3(0.0, 0.0, SE_NORMAL_D), hb, hm);
+	// The underside's height is base - hang: its outward (down) normal.
+	vec3 n = normalize(vec3(hx - g_env_hang, -SE_NORMAL_D, hz - g_env_hang));
+	return vec2(length(n.xz), max(dot(n.xz, -P.spare[3].zw), 0.0));
+}
+
+// The murk at `p` (envelope `e`): its density (0..1 of SE_MURK) and how
+// much of it is a rain shaft (0..1).
+vec2 storm_murk_at(vec3 p, float e) {
+	vec2 hd = P.spare[3].zw;
+	vec2 sx = p.xz + hd * (SE_SHAFT_LEAN * (p.y - P.band.x) - SE_SCUD_SPEED * 0.3 * P.eye.w);
+	float n = textureLod(cauliflower, vec3(sx.x / SE_SHAFT_TILE + 0.11, 0.77, sx.y / SE_SHAFT_TILE + 0.59), 0.0).g;
+	float shaft = sstep(0.5, 0.74, n);
+	float d = e * (1.0 - sstep(P.band.x + SE_MURK_TOP.x, P.band.x + SE_MURK_TOP.y, p.y));
+	return vec2(d * mix(SE_SHAFT.x, SE_SHAFT.y, shaft), shaft);
+}

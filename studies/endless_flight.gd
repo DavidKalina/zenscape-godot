@@ -103,6 +103,9 @@ extends Node3D
 ## (times the toy's 14 m/s cruise, 2.1; 1.15 the isles'), --plane-turn=X; the
 ## view widens with speed RUSH_FOV times the chase's own (--cam-speed-fov=X
 ## sets it), and past cruise the eye can buffet a little (--rush=X, 0 off by default).
+## A storm front (scripts/endless/storm_front.gd; off by default): --storm,
+## --storm-start[=m], --storm=0, --storm-speed=X, --storm-length=X,
+## --storm-debug.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
@@ -116,6 +119,10 @@ const GlideCamera = preload("res://scripts/glide_camera.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
 const EndlessLook = preload("res://scripts/endless/endless_look.gd")
+const StormFront = preload("res://scripts/endless/storm_front.gd")
+const StormLightning = preload("res://scripts/endless/storm_lightning.gd")
+const StormGustSound = preload("res://scripts/endless/storm_gust_sound.gd")
+const StormRain = preload("res://scripts/endless/storm_rain.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const EndlessEddies = preload("res://scripts/endless/endless_eddies.gd")
@@ -286,6 +293,16 @@ var _stop_cue: Label
 ## eye crosses into, and --region-debug's line (region, cell, weights).
 var _region_caption: Label
 var _region_debug: Label
+## The storm front (scripts/endless/storm_front.gd), or null (the default:
+## no --storm or --storm-start), and --storm-debug's line.
+var storm: RefCounted
+var _storm_debug: Label
+## The storm's lightning (scripts/endless/storm_lightning.gd), only with a storm.
+var lightning: Node3D
+## The storm's gust roar (scripts/endless/storm_gust_sound.gd), with a storm.
+var storm_sound: RefCounted
+## The storm's rain (scripts/endless/storm_rain.gd), only with a storm.
+var storm_rain: Node3D
 var _region_id := ""
 var _region_shown := -100000
 ## The caption shows for REGION_HOLD ms, then fades over REGION_FADE.
@@ -470,6 +487,18 @@ func _ready() -> void:
 	else:
 		_build_light()
 		_build_sea()
+	# The storm front, placed by the start as it now stands; --storm-start
+	# turns the land's wind to blow with it.
+	var wind: Vector2 = look.base_wind() if look != null else Vector2.RIGHT
+	storm = StormFront.from_args(_start,Vector2(-sin(_heading),-cos(_heading)),wind)
+	if storm != null and look != null: look.turn_wind(storm.heading())
+	# It pushes the field's own clouds (shaders/storm_cloud.glslinc).
+	if storm != null and look != null and look.clouds != null: look.clouds.storm = storm
+	if storm != null: storm_sound = StormGustSound.new(storm,sound)
+	if storm != null:
+		storm_rain = StormRain.new()
+		add_child(storm_rain)
+		storm_rain.setup(storm)
 	land = LandStream.new()
 	land.name = "Land"
 	add_child(land)
@@ -553,6 +582,10 @@ func _ready() -> void:
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
+	if storm != null:
+		lightning = StormLightning.new()
+		add_child(lightning)
+		lightning.setup(self,storm)
 	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	else: _park_for_menu(spots)
 	if race != null and RivalRace.near_start_wanted(): race.place_near_start(self)
@@ -743,6 +776,15 @@ func _build_ui() -> void:
 			_region_debug.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 			_region_debug.add_theme_constant_override("outline_size",4)
 			layer.add_child(_region_debug)
+	if storm != null and storm.debug:
+		_storm_debug = Label.new()
+		_storm_debug.anchor_top = 1.0
+		_storm_debug.anchor_bottom = 1.0
+		_storm_debug.offset_top = -100.0
+		_storm_debug.offset_left = 16.0
+		_storm_debug.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
+		_storm_debug.add_theme_constant_override("outline_size",4)
+		layer.add_child(_storm_debug)
 
 # --- The plane ------------------------------------------------------------------------
 
@@ -934,6 +976,7 @@ func tick(delta: float) -> void:
 	tunnels.step(camera.global_position)
 	trees.step(camera.global_position,plane.position)
 	knock.step(delta,self)
+	if storm != null: birds.storm_hush = float(storm.here)
 	birds.step(delta,camera.global_position,plane)
 	if fish != null: fish.step(delta,camera.global_position,plane.position,plane.velocity,false)
 	if traffic != null: traffic.step(delta,camera.global_position,-camera.global_basis.z,plane.position,Vector3(-sin(plane.heading),0.0,-cos(plane.heading)),float(plane.speed))
@@ -947,7 +990,18 @@ func tick(delta: float) -> void:
 	# The day's clock waits while the menu holds the flight: a flight starts
 	# at its opening hour.
 	if look != null: look.cycle.held = stage != null and stage.holding()
+	if storm != null:
+		storm.step(delta,camera.global_position,look != null and look.cycle.held)
+		# How deep in the storm's own cloud the eye is (its deck and towers;
+		# the field's cells cost too much a frame): the light, the lens and
+		# the sound follow it (StormFront.grade/shade, StormRain).
+		if look != null and look.clouds != null and look.clouds.enabled: storm.immerse(look.clouds.storm_depth(camera.global_position),delta)
+		if look != null: storm.grade(look.celestial)
+		if storm_sound != null: storm_sound.step(delta,camera.global_position)
+		if storm_rain != null: storm_rain.step(delta,self)
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
+	if storm != null and look != null: storm.shade(look.sun)
+	if lightning != null: lightning.step(delta,look != null and look.cycle.held)
 	if react != null: _react(delta)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
 	_show_hud()
@@ -1128,6 +1182,9 @@ func _react(delta: float) -> void:
 		var e := camera.global_position
 		react.part(Vector2(e.x,e.z),span*EYE_PART_SPANS,PART_PUSH,1)
 	if motes != null:
+		# The storm's gust front blows the specks along with it.
+		if storm != null: motes.storm_air = EndlessMotes.STORM_AIR*storm.gust_at(Vector2(camera.global_position.x,camera.global_position.z))
+		if storm != null: motes.storm_hush = smoothstep(0.1,0.6,float(storm.here))
 		# Parked in the menu the idling wash stirs the grass but kicks none up.
 		motes.step(delta,camera.global_position,look.wind_direction,look._gust,{} if stage != null and stage.holding() else react.wash_spot,
 			eddies.ribbons.ribbons if eddies != null else [],Callable(self,"_grass_at"))
@@ -1367,6 +1424,8 @@ func _show_hud() -> void:
 	_fade.color.a = 0.85*smoothstep(0.0,FADE_TIME,_fade_left)
 	var since := Time.get_ticks_msec()-_weight_shown
 	_weight_note.modulate.a = clampf(1.0-float(since-WEIGHT_HOLD)/WEIGHT_FADE,0.0,1.0)
+	if _storm_debug != null: _storm_debug.text = storm.note(plane.position)+("
+"+lightning.note() if lightning != null else "")
 	if not _hud.visible or Time.get_ticks_msec()-_hud_at < HUD_EVERY: return
 	_hud_at = Time.get_ticks_msec()
 	var p: Vector3 = plane.position
