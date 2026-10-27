@@ -31,6 +31,10 @@ window/vsync/vsync_mode=0
 window/size/min_width=960
 window/size/min_height=640
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/pull_main/plugin.cfg")
+
 [layer_names]
 
 3d_physics/layer_1="solid"
