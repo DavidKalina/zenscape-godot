@@ -36,7 +36,9 @@ extends Node3D
 ##
 ## It never touches the plane: no forces, and its strikes keep OFF_LINE m
 ## off the plane's line and STRIKE_RANGE.x away. A struck ruin's flight
-## solid (land_arches.gd columns) is left as it was built.
+## solid (land_arches.gd columns) is made again from what stands of it
+## (LandArches `reshape`), and its stones, rubble and their ground are
+## freed when its arch streams out (`_let_go`).
 ##
 ## Flags (for stills and checks):
 ##   --strike-at=F        one strike F frames in (the auto ones off unless
@@ -154,6 +156,10 @@ var _bursts := {}
 var _soft: GradientTexture2D
 var _dress := false
 var _struck_root: Node3D
+## Each struck ruin: {name, root, breaks (its own KitBreaks: its stones and
+## rubble), patch (its stones' ground), gone (root-frame boxes of what
+## broke)}; all freed when its arch's cell streams out (`_let_go`).
+var _ruins: Array[Dictionary] = []
 var _turn := {}
 ## The flags.
 var _strike_at := -1
@@ -200,12 +206,7 @@ func setup(scene: Node3D, front: RefCounted) -> void:
 	hub.set_breaker(&"lightning",true,1.0)
 	hub.sound_hook = _ruin_sound
 	add_child(hub)
-	breaks = KitBreaks.new()
-	breaks.name = "Breaks"
-	breaks.hub = hub
-	breaks.lost_y = Field.SEA_Y-80.0
-	hub.add_child(breaks)
-	hub.others.append(breaks)
+	breaks = _new_breaks()
 	_bursts_made()
 	_wait_flicker = _rng.randf_range(0.3,1.5)
 
@@ -226,14 +227,18 @@ func step(delta: float, held := false) -> void:
 	if _auto and not held: _schedule(dt,eye,camera)
 	if not _pending.is_empty(): _ruin_ready()
 	elif breaks.ready_all and (breaks._deferred as Dictionary).is_empty(): _ready_off()
-	if not (breaks.live as Array).is_empty():
+	_let_go()
+	var falling := false
+	for ruin: Dictionary in _ruins:
+		if not ((ruin.breaks as Node).live as Array).is_empty(): falling = true
+	if falling:
 		_stones_see_ground()
 		if not _dress and is_instance_valid(_struck_root): _stone(_struck_root)
 		_dress = true
 	elif _dress:
 		# The rubble come to rest (merged): in the arches' own stone.
 		_dress = false
-		_stone(breaks)
+		for ruin: Dictionary in _ruins: _stone(ruin.breaks)
 		if is_instance_valid(_struck_root): _stone(_struck_root)
 	for i in range(_thunders.size()-1,-1,-1):
 		if float(_thunders[i][0]) <= _t:
@@ -408,6 +413,9 @@ func _ground(eye: Vector3, camera: Camera3D, range_m: float, bearing: float, rui
 func _aim_ruin(r: Dictionary) -> bool:
 	var root: Node3D = r.node
 	var spec: Dictionary = r.spec
+	# Each ruin its own breaks, freed with it (`_let_go`).
+	if not (breaks.targets as Array).is_empty(): breaks = _new_breaks()
+	_ruins.append({"name":r.name,"root":root,"breaks":breaks,"patch":null,"gone":[]})
 	var first: int = breaks.targets.size()
 	if str(spec.kind) == "gate":
 		for c: Node in root.get_children():
@@ -418,7 +426,9 @@ func _aim_ruin(r: Dictionary) -> bool:
 	else:
 		breaks.adopt(root)
 	_struck[r.name] = true
-	if breaks.targets.size() <= first: return false
+	if breaks.targets.size() <= first:
+		_ruins.pop_back()
+		return false
 	# The tallest of its pieces, struck at its top.
 	var pick := first
 	var top := -INF
@@ -454,7 +464,9 @@ func _ruin_ready() -> void:
 	var eye := camera.global_position
 	_bolt("ground",at,eye,1.0)
 	ground_strikes += 1
-	_ground_patch(at)
+	var patch := _ground_patch(at)
+	for ruin: Dictionary in _ruins:
+		if ruin.root == root: ruin.patch = patch
 	var broke: int = hub.hit(at,3.5,1.0,&"lightning")
 	# A cut not made in time: the hit waits on it (KitBreaks ready mode).
 	if broke == 0 and not (breaks._deferred as Dictionary).is_empty(): broke = 1
@@ -483,10 +495,63 @@ func _ready_off() -> void:
 ## Every falling stone meets the rubble's ground (a burst's parts are
 ## new), in the arches' own stone.
 func _stones_see_ground() -> void:
-	for c: Node in breaks.get_children():
-		if c is RigidBody3D and (c as RigidBody3D).collision_mask & GROUND_LAYER == 0:
-			(c as RigidBody3D).collision_mask |= GROUND_LAYER
-			_stone(c)
+	for ruin: Dictionary in _ruins:
+		for c: Node in (ruin.breaks as Node).get_children():
+			if c is RigidBody3D and (c as RigidBody3D).collision_mask & GROUND_LAYER == 0:
+				(c as RigidBody3D).collision_mask |= GROUND_LAYER
+				_stone(c)
+
+## A KitBreaks for the lightning's hits, on the hub.
+func _new_breaks() -> Node3D:
+	var b: Node3D = KitBreaks.new()
+	b.name = "Breaks"
+	b.hub = hub
+	b.lost_y = Field.SEA_Y-80.0
+	hub.add_child(b,true)
+	hub.others.append(b)
+	b.broke.connect(_on_broke.bind(b))
+	return b
+
+## A piece of a struck ruin broke: its box (the ruin's frame) noted, and
+## the arch's flight solid made again from what is left once what stands
+## of it is in (it comes in right after this signal).
+func _on_broke(node: Node3D, _at: Vector3, from: Node3D) -> void:
+	for ruin: Dictionary in _ruins:
+		var root: Node3D = ruin.root
+		if ruin.breaks != from or not is_instance_valid(root) or not root.is_ancestor_of(node): continue
+		var box := AABB()
+		for t: Dictionary in from.targets:
+			if t.node == node: box = t.box
+		if box.size == Vector3.ZERO: box = from._box_of(node)
+		(ruin.gone as Array).append((root.global_transform.affine_inverse()*node.global_transform)*box)
+		_reshape.call_deferred(ruin)
+
+func _reshape(ruin: Dictionary) -> void:
+	var root: Node3D = ruin.root
+	var arches: Node = study.get("arches")
+	if arches == null or not arches.has_method("reshape") or not is_instance_valid(root): return
+	var t0 := Time.get_ticks_usec()
+	arches.reshape(root,ruin.gone)
+	if _say: print("lightning: %s's flight solid made again from what stands (%.1f ms)" % [ruin.name,(Time.get_ticks_usec()-t0)/1000.0])
+
+## A struck ruin whose arch has streamed out (its cell freed past the
+## arches' reach): its stones, rubble and ground freed with it, and its
+## name free to be struck again when the arch is built anew.
+func _let_go() -> void:
+	for i in range(_ruins.size()-1,-1,-1):
+		var ruin: Dictionary = _ruins[i]
+		var root: Node3D = ruin.root
+		if is_instance_valid(root) and not root.is_queued_for_deletion(): continue
+		if not _pending.is_empty() and _pending.root == root: _pending = {}
+		var b: Node3D = ruin.breaks
+		hub.others.erase(b)
+		if b == breaks:
+			breaks = _new_breaks()
+		b.queue_free()
+		var patch: Variant = ruin.patch
+		if patch != null and is_instance_valid(patch): (patch as Node).queue_free()
+		_struck.erase(ruin.name)
+		_ruins.remove_at(i)
 
 ## The kit's stone under `node` swapped for the endless arches' lit one
 ## (LandArches `_sunlit`), as the arch it broke from wore.
@@ -786,7 +851,7 @@ func _ruin_sound(sound_name: StringName, at: Vector3) -> void:
 # --- What it leaves ---------------------------------------------------------------------
 
 ## A trimesh of the land round `at` for the falling stones (GROUND_LAYER).
-func _ground_patch(at: Vector3) -> void:
+func _ground_patch(at: Vector3) -> StaticBody3D:
 	var field: RefCounted = study.field
 	var n := int(GROUND_HALF*2.0/GROUND_STEP)+1
 	var o := Vector2(snappedf(at.x,GROUND_STEP)-GROUND_HALF,snappedf(at.z,GROUND_STEP)-GROUND_HALF)
@@ -814,6 +879,7 @@ func _ground_patch(at: Vector3) -> void:
 	cs.shape = shape
 	body.add_child(cs)
 	add_child(body)
+	return body
 
 ## The bursts: sparks, dirt and smoke (two of each, taken in turn).
 func _bursts_made() -> void:

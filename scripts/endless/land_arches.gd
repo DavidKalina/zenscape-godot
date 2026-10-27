@@ -228,7 +228,7 @@ func _commit_one(done: Dictionary) -> void:
 		var col: Dictionary = b.columns
 		var reach := maxf(absf(float(col.x0)),absf(float(col.x0)+float(col.n)*Build.BIN))+40.0
 		records.append({"name":name,"kind":String(spec.get("form",spec.kind)),"node":node,"pos":xf.origin,"cos":cos(yaw),"sin":sin(yaw),
-			"x0":float(col.x0),"n":int(col.n),"data":col.data,"y0":float(col.y0),"bands":int(col.bands),"zb":col.zb,"reach":reach,"spec":spec})
+			"x0":float(col.x0),"n":int(col.n),"data":col.data,"y0":float(col.y0),"bands":int(col.bands),"zb":col.zb,"reach":reach,"spec":spec,"boxes":b.boxes})
 		stats.arches += 1
 	_cells[key] = records
 	stats.cells = _cells.size()
@@ -249,6 +249,50 @@ func standing() -> Array:
 	return out
 
 # --- The flight's solid -----------------------------------------------------
+
+## A broken arch's solid made again from what is left of it (the storm's
+## lightning: scripts/endless/storm_lightning.gd): its built boxes but
+## those in `gone` (boxes in its root's frame, the pieces that broke),
+## and the hulls of what stands of them (their own bodies; the stand-in
+## Body is left out). So the plane meets no column where a span fell.
+func reshape(root: Node3D, gone: Array) -> void:
+	var r := {}
+	for key in _cells:
+		for rec: Dictionary in _cells[key]:
+			if rec.node == root: r = rec
+	if r.is_empty() or not root.is_inside_tree(): return
+	var kept: Array = []
+	for b: AABB in r.get("boxes",[]):
+		var hit := false
+		for g: AABB in gone:
+			if g.grow(0.05).has_point(b.get_center()): hit = true
+		if not hit: kept.append(b)
+	r.boxes = kept
+	var boxes := kept.duplicate()
+	var inv := root.global_transform.affine_inverse()
+	for body: Node in root.find_children("*","StaticBody3D",true,false):
+		if body.name == "Body" and body.get_parent() == root: continue
+		for cs: Node in body.get_children():
+			if not cs is CollisionShape3D: continue
+			var xf := inv*(cs as CollisionShape3D).global_transform
+			var shape := (cs as CollisionShape3D).shape
+			var box := AABB()
+			if shape is ConvexPolygonShape3D:
+				var pts := (shape as ConvexPolygonShape3D).points
+				if pts.is_empty(): continue
+				box = AABB(xf*pts[0],Vector3.ZERO)
+				for q: Vector3 in pts: box = box.expand(xf*q)
+			elif shape is BoxShape3D:
+				box = xf*AABB(-(shape as BoxShape3D).size*0.5,(shape as BoxShape3D).size)
+			else: continue
+			boxes.append(box)
+	var col := Build.columns(boxes)
+	r.x0 = float(col.x0)
+	r.n = int(col.n)
+	r.data = col.data
+	r.y0 = float(col.y0)
+	r.bands = int(col.bands)
+	r.zb = col.zb
 
 ## The solid stretches over world XZ `p` (world y, low to high), from every
 ## arch whose columns reach there.
