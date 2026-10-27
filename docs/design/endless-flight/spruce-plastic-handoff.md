@@ -347,3 +347,151 @@ touch. `test_sky_swap.gd` passes.
   warm/cool split could follow `rimwarm`'s pattern.
 - The day cycle runs by default: pass `--hour=` (or `--day=0`) after
   `--scene-args` when two runs must match at any view order.
+
+## Round 2: painterly (`--spruce-look=b`)
+
+Built 2026-10-26. `b` is `g` plus approach B's steps 1 to 4. With no flag
+nothing changes (every new uniform is 0 and every branch is gated on it);
+`g` is unchanged.
+
+**Knobs** (`HeroTrees.SPRUCE_BL` over `SPRUCE_G`; each `--spruce-<knob>=X`,
+only with look b; 0 turns that part off):
+
+| knob | default | what |
+|---|---|---|
+| `tilt` | 1.8 | the light normal tipped by its place on the tier (up on the sheet's lit slope, down in the shade under a skirt and at the skirt's edge); the painted steps then break across each tier |
+| `band` | 1.0 | a cool dark band in the albedo under each skirt (and the tip zone where the face looks down) |
+| `top` | 1.0 | a warm lit top on the sheet's slope, in the albedo |
+| `coolshade` | 0.25 | the shade's hue from round 4's olive (0) to a cool blue-green (1) |
+| `warmlit` | 0.8 | the lit side's warm yellow-green |
+| `fardab` | 2.0 | gain of the distance dabs (below) |
+| `dabpx` | 5 | a dab's width in pixels, whatever the distance |
+| `dabfrom` | 110 | m: the dabs come in from 0.55x to 1.15x of it; eased off past 1.5 km |
+| `steps`, `soft` | 0.7, 0.15 | the sun's three painted steps made crisp (the default look's 0.25 and 0.5) |
+| `texgain` | 0.55 | texture b's facets, so tier shapes lead up close (1.0 by default) |
+| `inner`, `fresh` | 0.6, 0.7 | g's needle terms toned down, since the band and top now carry the bake's value |
+
+**How it is built**
+- `shaders/spruce_tiers.gdshaderinc` (new): `zs_st_zones` cuts the generator's
+  grey bake into `dark` (under 0.8: the core cone and the inner sheet, the
+  shade under the tier above's skirt), `top` (0.8 to 0.93: the lit slope) and
+  `skirt` (over 0.93: the tips), the edges short so a step is a step. The
+  visible bake is only 0.7 to 1.0, not 0.55 to 1.02 (measured with a threshold
+  debug), and carries the tree's own tone (0.86 to 1.04), so the edges move a
+  little tree to tree. `far` (0 near, 1 from 200 m) narrows `dark` to the core:
+  a distance crown is one skirt from the apex, whose inner half is its lit
+  top, not a shade (without it the wood read 0.04 darker in V).
+  Also `zs_st_normal` (tilt), `zs_st_paint` (band, top), `zs_st_shade` (olive
+  to cool) and `zs_st_dabs`.
+- Three copies of the light, kept in step: `reference_direct_light`'s spruce
+  block (lit hue toward `ZS_ST_WARM` by `warmlit * t`, and the fill's shade
+  colour), `endless_spruce_sprite` and `endless_spruce_ring` `light()`. The
+  shade colour also goes through `zs_st_shade` in the surface's emission and
+  both `fragment()`s.
+- Normals: the surface applies `zs_st_normal` to the volume normal before
+  texture b's facets; the ring on its own volume normal; the sprites in the
+  atlas (`endless_spruce_sprite_bake` takes `tilt` and `bake_luma` and reads
+  `COLOR`). Albedo bands reach the sprites through the atlas on their own (it
+  bakes the near material). The ring takes the facing for `under` from the
+  mesh's own normal.
+- Dabs: a pattern in the tree's own frame (foot-relative, height folded in, a
+  per-tree offset), noise at `dabpx` pixels wide, stepped by octaves with the
+  two nearest cross-faded so nothing swims. The pixel size comes from the
+  projection and the viewport. They are in the near and mid crowns (past
+  `dabfrom`), the rings and the sprites; the atlas bake is told to leave them
+  out (`spruce_g.w >= 0`) and the sprite paints its own at its own distance,
+  on the quad's plane in the tree's frame.
+- Uniforms `spruce_tier` (tilt, band, top, coolshade) and `spruce_tier2`
+  (warmlit, fardab, dabpx, dabfrom) on the surface, ring and sprite shaders,
+  from `HeroTrees.spruce_g_uniforms`.
+
+**Findings**
+- Texture b's facets swamp tier shapes up close: tilt and bands alone read as
+  a slight darkening until `texgain` came down to 0.55. `flat` 1.0 and g's
+  needle terms also fight B (the bake is dark inside and bright at the tips; a
+  painted tier wants a lit top and a dark skirt), hence `inner` and `fresh`.
+- Dabs at gain 1 were barely visible at 250 to 600 m; at 2 they mottle the
+  sprites' crowns without reading as noise; at 3 they are plain. Past about
+  1 km they are subpixel.
+- The 200 m hand-over (`wood` with `--spruce-far=` 150 and 250): no seam from
+  the b look. At 250 a few shadowed crowns read darker than the sprites; the
+  same trees do it under `g` (the crown's own shadow, not this round).
+- The dusk views fire the scene's white glow blobs (the default look has them
+  too). The rim, checked on a backlit `spruce_rim` view at `--hour=17.5`
+  against `g` and the default: g's rim (5.0, warm 0.7) holds with B's bands,
+  the golden fringe following each tier's skirt over the cool-shaded body.
+  Left at g's values.
+
+**Measures** (the same crops as round 1, `--time=240`, same view order; the
+last block is `spruce_close`, crop 0.4,0.25,0.6,0.7):
+
+| crop | measure | default | g | b |
+|---|---|---|---|---|
+| close (`spruce_near`) | V p50 | 0.435 | 0.439 | 0.459 |
+| | darkest tenth V | 0.274 | 0.255 | 0.206 |
+| | lit/shaded | 2.46 | 2.79 | 3.45 |
+| | S p50 | 0.372 | 0.532 | 0.522 |
+| | shade hue | 102 | 95 | 105 |
+| dense (`forest`) | V p50 | 0.404 | 0.396 | 0.416 |
+| | darkest tenth V | 0.206 | 0.200 | 0.161 |
+| | lit/shaded | 3.54 | 3.68 | 4.66 |
+| wood (`wood`) | V p50 | 0.510 | 0.518 | 0.510 |
+| | darkest tenth V | 0.249 | 0.251 | 0.252 |
+| | lit/shaded | 3.05 | 3.14 | 3.13 |
+| | S p50 | 0.492 | 0.603 | 0.590 |
+| `spruce_close` tree | V p50 | 0.475 | 0.482 | 0.510 |
+| | darkest tenth V | 0.269 | 0.255 | 0.221 |
+| | lit/shaded | 2.73 | 3.01 | 3.51 |
+| | shade hue | 104 | 97 | 105 |
+
+The mean value is held (close and dense up 0.02, wood level) and lit/shaded
+is well up where the crowns are near. The price is the darkest tenth, 0.05 to
+0.04 lower close and dense: the bands are darker by design (round 3 said "too
+dark" about the whole crown; the band is only its skirts, but watch it).
+`coolshade` 0.25 keeps the shade hue at about g's; 0.4 gave 117 to 123, off the
+world's 66 to 100. Wood's lit/shaded is level with g (3.13 against 3.14): out
+there the sprites and rings dominate and a band is a few pixels.
+
+**Frame time** (`look_views.gd --time=240`, GPU ms, two runs each):
+
+| view | default | b |
+|---|---|---|
+| forest | 8.48, 8.49 | 8.59, 8.52 |
+| wood | 7.32, 7.55 | 7.53, 7.35 |
+| cruise | 7.61, 7.85 | 7.85, 7.64 |
+
+Inside the noise (at most +0.1 ms). The atlas bake is the same size.
+
+**Files:** `shaders/spruce_tiers.gdshaderinc` (+ `.uid`, new),
+`spruce_paint.gdshaderinc`, `reference_surface.gdshader`,
+`reference_direct_light.gdshaderinc`, `endless_spruce_ring.gdshader`,
+`endless_spruce_sprite.gdshader`, `endless_spruce_sprite_bake.gdshader`,
+`scripts/hero_trees.gd` (SPRUCE_BL, uniforms), `scripts/endless/spruce_sprites.gd`
+(tilt and bake luma to the normal bake), `tools/harness/look_views.gd`
+(`spruce_close`: the meadow spruce 7.5 m off, sun across; `spruce_rim`: the
+same against the sun).
+
+**Stills:** `scratch/spruce-look/b/*_b.png`, `close/` (default, g, b), `dusk/`
+(default and b), `seam/`, and the sheet `scratch/spruce-look/sheet.png` (rows
+the six views and a dusk `spruce_close`; columns default, g, b).
+
+**Tests:** none of the committed tests read the changed code. The smoke check
+passes for `--spruce-look=b` and for the default; no shader errors in the
+rendered runs. The full suite was not run.
+
+**Left rough**
+- Tier shapes are cut from the bake, not from true tier geometry, so they
+  follow the generator's value ramps and the edges differ a little tree to
+  tree. A per-vertex tier phase in the glb (a model change) would give exact
+  tops and skirts.
+- The facets still dominate at 10 m and under; `texgain` 0.55 is a compromise
+  with the "detail that shrinks with distance" ask.
+- The sprites bake with `far` = 1 zones and tilt (the atlas is baked at 400 m
+  and more), so a crown at 80 to 200 m eases between the two; no seam seen, but
+  the crown/sprite pair is only checked at 150 and 250.
+- The sprite's dabs live on the billboard plane, so they slide a little as the
+  eye circles a tree (a dab is a few pixels at those distances).
+- The darkest tenth is lower than `g`'s; `band` 0.6 gives it back at some cost
+  to the painted look.
+- The dusk set's white blobs (scene-level) cover part of the frame, so the dusk
+  look is judged mainly on the backlit view.

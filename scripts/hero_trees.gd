@@ -107,6 +107,22 @@ const SPRUCE_R3 := {"blue":0.85, "fill":2.2, "flat":1.0, "farlift":1.45, "steps"
 const SPRUCE_G := {"bshare":0.3, "bgrove":160.0, "blean":0.5, "bgreen":0.1, "inner":0.9, "fresh":0.9, "haze":0.6,
 	"rim":5.0, "rimwarm":0.7, "rimday":0.3, "rimtip":0.5, "flat":1.0}
 
+## `--spruce-look=b` (round 2, painterly): g plus these (each `--spruce-<knob>=X`,
+## only with look b; 0 turns that part off), shaders/spruce_tiers.gdshaderinc:
+## - tilt: the light normal tipped by its place on the tier (up high on it, out
+##   and down at the skirt), so the painted steps break across each tier;
+## - band, top: a dark cool band under each tier's skirt and a lit warm top, in
+##   the albedo (0..1);
+## - coolshade: the shade's hue from round 4's olive (0) to a cool blue-green (1);
+## - warmlit: the lit side's warm yellow-green (0..1);
+## - fardab, dabpx, dabfrom: painted dabs in place of texture b's facets, their gain,
+##   their width in pixels (their size grows with distance) and the distance (m)
+##   they come in from;
+## - steps, soft: the sun's three painted steps made crisper (0.7 and 0.15; the
+##   default look's are 0.25 and 0.5).
+const SPRUCE_BL := {"tilt":1.8, "band":1.0, "top":1.0, "coolshade":0.25, "warmlit":0.8, "fardab":2.0, "dabpx":5.0, "dabfrom":110.0,
+	"steps":0.7, "soft":0.15, "texgain":0.55, "inner":0.6, "fresh":0.7}
+
 ## The painted crown's knobs for the picked look ({} when it has none).
 static func spruce_paint_knobs() -> Dictionary:
 	if spruce_glb() != SPRUCE_LOOKS["sprays"]: return {}
@@ -117,20 +133,28 @@ static func spruce_paint_knobs() -> Dictionary:
 		if a == "--spruce-paint=off": return {}
 		if a == "--spruce-look=r3": knobs.merge(SPRUCE_R3, true)
 		if a == "--spruce-look=g": knobs.merge(SPRUCE_G, true)
+		if a == "--spruce-look=b":
+			knobs.merge(SPRUCE_G, true)
+			knobs.merge(SPRUCE_BL, true)
 		if a == "--spruce-look=r2": knobs.merge({"wrap":0.6, "fill":0.6, "warm":0.0, "flat":0.0, "blue":0.85, "fine":1.0, "farlift":1.0, "steps":0.7, "soft":0.18, "speck":0.0, "floor":0.5, "olive":0.0, "hemiolive":0.0, "farblue":1.0, "farbaked":0.75}, true)
 	for a in args:
 		for k in knobs:
 			if a.begins_with("--spruce-%s=" % k): knobs[k] = float(a.get_slice("=",1))
 	return knobs
 
-## The g look's shader uniforms (spruce_var, spruce_g, spruce_rim in
+## The g and b looks' shader uniforms (spruce_var, spruce_g, spruce_rim, and under b spruce_tier, spruce_tier2 in
 ## reference_surface, the rings and the sprites) from the knobs; {} when the
 ## look is not g (the shaders' zeros are the default look).
 static func spruce_g_uniforms(knobs: Dictionary) -> Dictionary:
 	if not knobs.has("bgrove"): return {}
-	return {"spruce_var":Vector4(knobs.bshare,knobs.bgrove,knobs.blean,knobs.bgreen),
+	var u := {"spruce_var":Vector4(knobs.bshare,knobs.bgrove,knobs.blean,knobs.bgreen),
 		"spruce_g":Vector4(knobs.inner,knobs.fresh,knobs.haze,-1.0),
 		"spruce_rim":Vector4(knobs.rim,knobs.rimwarm,knobs.rimday,knobs.rimtip)}
+	# The b look (SPRUCE_BL).
+	if knobs.has("tilt"):
+		u["spruce_tier"] = Vector4(knobs.tilt,knobs.band,knobs.top,knobs.coolshade)
+		u["spruce_tier2"] = Vector4(knobs.warmlit,knobs.fardab,knobs.dabpx,knobs.dabfrom)
+	return u
 
 ## Puts the painted crown on a crown material; `tint` is the crowns'
 ## instance tint (so the shader can read the grey bake back out of COLOR).

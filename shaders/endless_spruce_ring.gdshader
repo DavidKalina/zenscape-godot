@@ -25,6 +25,8 @@ global uniform vec3 zs_cloud_sun;
 #include "res://shaders/backlight.gdshaderinc"
 // --spruce-look=g (spruce_variety.gdshaderinc), as the near crowns'.
 #include "res://shaders/spruce_variety.gdshaderinc"
+// --spruce-look=b (spruce_tiers.gdshaderinc): the tiers' tones, tilt, the cool shade, the dabs.
+#include "res://shaders/spruce_tiers.gdshaderinc"
 global uniform vec3 zs_key_direction;
 // Backlight's gain on the crown's silhouette (shaders/backlight.gdshaderinc).
 const float BACKLIGHT_GAIN = 2.0;
@@ -45,6 +47,9 @@ uniform float shade_follow : hint_range(0.0, 2.0) = 1.0;
 uniform vec4 spruce_var = vec4(0.0);
 uniform vec4 spruce_g = vec4(0.0);
 uniform vec4 spruce_rim = vec4(0.0);
+// The b look (see reference_surface spruce_tier): all off at 0.
+uniform vec4 spruce_tier = vec4(0.0);
+uniform vec4 spruce_tier2 = vec4(0.0);
 
 const vec3 GLAUCOUS = vec3(0.50, 1.08, 1.45);
 const vec3 FROST = vec3(1.10, 1.22, 1.34);
@@ -86,6 +91,9 @@ void fragment() {
 	c = mix(c, mix(GLAUCOUS, vec3(1.0), 0.06) * ring_luma(c), clamp(blue * k, 0.0, 1.0));
 	c *= mix(vec3(1.0), FROST, smoothstep(0.8, 1.0, bake) * blue * 0.7 * frost);
 	if (spruce_var.y > 0.0) c = zs_sv_needles(c, bake, spruce_g.x, spruce_g.y);
+	// The b look: the tiers' lit top and dark skirt band (the facing from the mesh's own normal), and the dabs.
+	if (spruce_tier.y > 0.0 || spruce_tier.z > 0.0) c = zs_st_paint(c, bake, 1.0 - smoothstep(-0.6, 0.0, (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).y), spruce_tier, 1.0);
+	if (spruce_tier2.y > 0.0) c = zs_st_dabs(c, (ring_world.xz - ring_foot.xz) + vec2(ring_world.y * 0.61, -ring_world.y * 0.37) + vec2(rank * 91.0, rank * 37.0), d, zs_st_pixel(d, PROJECTION_MATRIX[1][1], VIEWPORT_SIZE.y), spruce_tier2);
 	c *= paint.x;
 	if (spruce_var.y > 0.0) c = zs_sv_keep(c, d, spruce_g.z);
 	ALBEDO = c;
@@ -94,9 +102,10 @@ void fragment() {
 	vec2 out_xz = ring_world.xz - ring_foot.xz;
 	float r = length(out_xz);
 	vec3 n = normalize(vec3(out_xz / max(r, 1e-3) * smoothstep(0.0, 0.5, r), 0.62).xzy);
+	if (spruce_tier.x > 0.0) n = zs_st_normal(n, bake, spruce_tier.x, 1.0);
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
-	vec3 ol = zs_cool(OLIVE, shade_follow) * ring_luma(c);
+	vec3 ol = zs_cool(zs_st_shade(spruce_tier.w), shade_follow) * ring_luma(c);
 	EMISSION = mix(c, ol, tone.w) * hemi + mix(c, ol, tone.y) * hemi * tone.x + mix(c, ol, olive) * zs_look_bounce_light(n);
 }
 
@@ -107,7 +116,7 @@ void light() {
 	float tier = lit * 3.0;
 	float t = clamp((floor(tier) + smoothstep(0.5 - sun.w, 0.5 + sun.w, fract(tier))) / 3.0, 0.0, 1.0);
 	t = mix(lit, t, sun.z);
-	DIFFUSE_LIGHT += crown_sun * t * mix(vec3(0.96, 0.99, 1.04), vec3(1.04, 1.02, 0.94), t) / PI;
+	DIFFUSE_LIGHT += crown_sun * t * mix(mix(vec3(0.96, 0.99, 1.04), vec3(1.04, 1.02, 0.94), t), ZS_ST_WARM, spruce_tier2.x * t) / PI;
 	float through = pow(max(dot(-LIGHT, VIEW), 0.0), 2.0);
 	DIFFUSE_LIGHT += LIGHT_COLOR * sun.y * max(-d, 0.0) * (0.3 + 0.7 * through) * vec3(0.9, 1.0, 0.85) / PI;
 	// Backlight: the crown's silhouette, seen against a low sun, catches it.
@@ -122,7 +131,7 @@ void light() {
 	if (zs_look_fill > 0.0 && LIGHT_IS_DIRECTIONAL) {
 		vec3 fill_light = zs_look_fill_light(1.0 - ATTENUATION * smoothstep(0.0, 0.2, max(d, 0.0)));
 		float la = ring_luma(ALBEDO);
-		fill_light *= mix(vec3(1.0), clamp(zs_cool(OLIVE, shade_follow) * la / max(ALBEDO, vec3(0.03)), 0.0, 3.0), olive);
+		fill_light *= mix(vec3(1.0), clamp(zs_cool(zs_st_shade(spruce_tier.w), shade_follow) * la / max(ALBEDO, vec3(0.03)), 0.0, 3.0), olive);
 		DIFFUSE_LIGHT += fill_light;
 	}
 }

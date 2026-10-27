@@ -120,6 +120,11 @@ uniform vec4 spruce_g = vec4(0.0, 0.0, 0.0, -1.0);
 uniform vec4 spruce_rim = vec4(0.0);
 // The crown's fresh-tip share at this pixel (the rim's glow reads it in light()).
 varying float spruce_tip;
+// --spruce-look=b (shaders/spruce_tiers.gdshaderinc; all off at 0): the tiers'
+// tilt, the dark band under a skirt, a lit top, the cool shade; and the sun's
+// warmth, the distance dabs' gain, size (px) and the distance they come in from.
+uniform vec4 spruce_tier = vec4(0.0);
+uniform vec4 spruce_tier2 = vec4(0.0);
 uniform bool wet_ground = false;
 uniform float wet_droop = 0.0;
 uniform bool terrain_growth = false;
@@ -899,6 +904,8 @@ void fragment() {
 	if (spruce_round > 0.0 && !ground) {
 		spruce_under = smoothstep(0.0, -0.6, face_normal.y);
 		light_normal = zs_spruce_volume_normal(face_normal, world_position.xz - look_shift.xz - plant_root, spruce_round);
+		// The b look: the volume normal tipped by its place on the tier (the bake's grey down the bough).
+		if (spruce_tier.x > 0.0) light_normal = zs_st_normal(light_normal, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_tier.x, zs_st_far(distance(world_position, zs_camera_position)));
 		if (spruce_texture == 2) {
 			// b: each small facet's tilt off the smooth sheet, put back over the volume normal.
 			vec3 smooth_n = normalize(world_normal);
@@ -1024,7 +1031,8 @@ void fragment() {
 		zs_silver_side(dFdx(world_position), dFdy(world_position), zs_camera_position - world_position, zs_wind_direction));
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
 	if (spruce_blue > 0.0 || spruce_paint > 0.0)
-		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint, spruce_tone.zw, spruce_tone2, distance(world_position, zs_camera_position), spruce_var, spruce_g);
+		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint, spruce_tone.zw, spruce_tone2, distance(world_position, zs_camera_position), spruce_var, spruce_g,
+			spruce_tier, spruce_tier2, zs_st_pixel(distance(world_position, zs_camera_position), PROJECTION_MATRIX[1][1], VIEWPORT_SIZE.y));
 	if (tree_sheen > 0.0) tint = zs_tree_sheen(tint, tree_sheen);
 	if (spruce_texture == 1 || spruce_texture == 3)
 		tint = zs_spruce_texture(tint, spruce_texture, UV, UV2, spruce_texture_gain, distance(world_position, zs_camera_position));
@@ -1148,7 +1156,7 @@ void fragment() {
 	EMISSION = emissive_color + tint * hemi * contact;
 	vec3 spruce_olive = vec3(0.0);
 	if (spruce_round > 0.0) {
-		spruce_olive = zs_cool(SPRUCE_SHADE_OLIVE, 1.0) * zs_spruce_luma(tint);
+		spruce_olive = zs_cool(zs_st_shade(spruce_tier.w), 1.0) * zs_spruce_luma(tint);
 		// The plain hemisphere term leans olive too (tone2.w), so the shade is not teal.
 		EMISSION = emissive_color + mix(tint, spruce_olive, spruce_tone2.w) * hemi * contact;
 		EMISSION += mix(tint, spruce_olive, spruce_tone.y) * hemi * contact * spruce_tone.x;
@@ -1195,6 +1203,8 @@ void fragment() {
 #define ZS_FLOWER_GLOW (flower_heads ? flower_glow : 0.0)
 #define ZS_SPRUCE_LIGHT spruce_light
 #define ZS_SPRUCE_TONE2 spruce_tone2
+#define ZS_SPRUCE_TIER spruce_tier
+#define ZS_SPRUCE_TIER2 spruce_tier2
 // Backlight's gains (shaders/backlight.gdshaderinc): the blade tips, the
 // sprays spruce's silhouette.
 #define ZS_BACKLIGHT_GRASS 4.0

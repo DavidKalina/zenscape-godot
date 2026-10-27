@@ -46,6 +46,7 @@ var done := false
 var _parts: Array = []
 var _tint := Color.WHITE
 var _round := 0.7
+var _tilt := 0.0
 var _albedo := ImageTexture.new()
 var _normal := ImageTexture.new()
 var soft := true
@@ -62,6 +63,7 @@ func setup(parts: Array, tint: Color, knobs: Dictionary, band: Vector2, fade: Ve
 	_parts = parts
 	_tint = tint
 	_round = float(knobs.get("round",0.7))
+	_tilt = float(knobs.get("tilt",0.0))
 	soft = soft_wanted()
 	yaws = SOFT_YAWS if soft else OLD_YAWS
 	# One centre and size for all: the variants' tops and bottoms.
@@ -161,6 +163,9 @@ func bake() -> void:
 	var normal_crown := ShaderMaterial.new()
 	normal_crown.shader = BAKE_NORMAL
 	normal_crown.set_shader_parameter("round",_round)
+	# The b look's tilt by the crown's grey bake, as reference_surface reads it.
+	normal_crown.set_shader_parameter("tilt",_tilt)
+	normal_crown.set_shader_parameter("bake_luma",maxf(_tint.get_luminance(),0.001))
 	var normal_trunk := ShaderMaterial.new()
 	normal_trunk.shader = BAKE_NORMAL
 	normal_trunk.set_shader_parameter("round",0.0)

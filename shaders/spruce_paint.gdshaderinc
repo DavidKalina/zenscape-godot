@@ -15,6 +15,9 @@
 // --spruce-look=g (shaders/spruce_variety.gdshaderinc): most trees green, a
 // share blue by grove, the inner needles olive and the tips fresh.
 #include "res://shaders/spruce_variety.gdshaderinc"
+// --spruce-look=b (shaders/spruce_tiers.gdshaderinc): the tiers' painted tones,
+// the cool shade and the distance dabs.
+#include "res://shaders/spruce_tiers.gdshaderinc"
 
 // The glaucous hue (linear, over its own luminance): sRGB about (0.39, 0.55, 0.63).
 const vec3 SPRUCE_GLAUCOUS = vec3(0.50, 1.08, 1.45);
@@ -40,6 +43,7 @@ float zs_spruce_tree_rank(vec2 root) {
 // shade sides read soft and lit (the ground's hemisphere, the clouds' lift),
 // a dense crown's would read black.
 // The shaded side's olive (over the crown's own luminance), like the world's shadows (hue 66-100).
+// (--spruce-look=b moves it toward a cool blue-green: zs_st_shade.)
 const vec3 SPRUCE_SHADE_OLIVE = vec3(1.20, 1.05, 0.22);
 
 // The light normal of a crown lit as a volume: out from the trunk and up,
@@ -58,7 +62,10 @@ vec3 zs_spruce_volume_normal(vec3 face, vec2 out_xz, float round) {
 // `gv` and `gt` are the g look's variety (share, grove scale, lean, green's own
 // blue) and needles (inner, fresh, haze, and a blue strength forced for the
 // sprites' atlas, -1 off); gv.y 0 is the round-5 look.
-vec3 zs_spruce_paint(vec3 tint, vec3 world, vec2 root, float bake, float under, float blue, float paint, vec2 tone, vec4 tone2, float dist, vec4 gv, vec4 gt) {
+// `tb` and `tb2` are the b look's (zs_st_*; all 0 off) and `pxm` the metres a
+// pixel spans here; the dabs are not in the sprites' atlas (gt.w >= 0 there):
+// the sprite paints its own, sized for its distance.
+vec3 zs_spruce_paint(vec3 tint, vec3 world, vec2 root, float bake, float under, float blue, float paint, vec2 tone, vec4 tone2, float dist, vec4 gv, vec4 gt, vec4 tb, vec4 tb2, float pxm) {
 	float rank = zs_spruce_tree_rank(root);
 	float bake_raw = bake;
 	// Far off the bake's light and dark and the deep blue ease to the crown's mean (tone2.w is 0 in round 3).
@@ -84,6 +91,9 @@ vec3 zs_spruce_paint(vec3 tint, vec3 world, vec2 root, float bake, float under, 
 	tint *= pow(clamp(bake, 0.25, 1.3) / 0.85, -tone.x * 0.6);
 	// The g look: the older inner needles olive and dark, the fresh tips light, on the whole bake.
 	if (gv.y > 0.0) tint = zs_sv_needles(tint, bake_raw, gt.x, gt.y);
+	// The b look: a lit top and a dark band under each tier's skirt, and the distance dabs.
+	if (tb.y > 0.0 || tb.z > 0.0) tint = zs_st_paint(tint, bake_raw, under, tb, zs_st_far(dist));
+	if (tb2.y > 0.0 && gt.w < 0.0) tint = zs_st_dabs(tint, (world.xz - root) + vec2(world.y * 0.61, -world.y * 0.37) + vec2(rank * 91.0, rank * 37.0), dist, pxm, tb2);
 	if (paint <= 0.0) return tint;
 	float fp = length(fwidth(world));
 	// The world's xz with height folded in, so the dabs differ up the tree.
