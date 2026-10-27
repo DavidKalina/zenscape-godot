@@ -126,20 +126,28 @@ const SPRUCE_G := {"bshare":0.5, "bgrove":160.0, "blean":0.5, "bgreen":0.8, "inn
 const SPRUCE_BL := {"tilt":1.8, "band":1.0, "top":1.0, "coolshade":0.25, "warmlit":0.8, "fardab":2.0, "dabpx":5.0, "dabfrom":110.0,
 	"steps":0.7, "soft":0.15, "texgain":0.55, "inner":0.6, "fresh":0.7}
 
+## The look with no `--spruce-look=` flag: b, painterly (the user's pick,
+## 2026-10-26). `--spruce-look=old` is the look before it (round 5's texture b
+## crown alone), and r2 and r3 the earlier rounds over that.
+const SPRUCE_LOOK := "b"
+
 ## The painted crown's knobs for the picked look ({} when it has none).
 static func spruce_paint_knobs() -> Dictionary:
 	if spruce_glb() != SPRUCE_LOOKS["sprays"]: return {}
 	var knobs := SPRUCE_PAINT.duplicate()
 	if spruce_texture() == 2: knobs.merge(SPRUCE_B, true)
 	var args: PackedStringArray = preload("res://scripts/launch_args.gd").user_args()
+	var look := SPRUCE_LOOK
 	for a in args:
 		if a == "--spruce-paint=off": return {}
-		if a == "--spruce-look=r3": knobs.merge(SPRUCE_R3, true)
-		if a == "--spruce-look=g": knobs.merge(SPRUCE_G, true)
-		if a == "--spruce-look=b":
+		if a.begins_with("--spruce-look="): look = a.get_slice("=",1)
+	match look:
+		"r3": knobs.merge(SPRUCE_R3, true)
+		"g": knobs.merge(SPRUCE_G, true)
+		"b":
 			knobs.merge(SPRUCE_G, true)
 			knobs.merge(SPRUCE_BL, true)
-		if a == "--spruce-look=r2": knobs.merge({"wrap":0.6, "fill":0.6, "warm":0.0, "flat":0.0, "blue":0.85, "fine":1.0, "farlift":1.0, "steps":0.7, "soft":0.18, "speck":0.0, "floor":0.5, "olive":0.0, "hemiolive":0.0, "farblue":1.0, "farbaked":0.75}, true)
+		"r2": knobs.merge({"wrap":0.6, "fill":0.6, "warm":0.0, "flat":0.0, "blue":0.85, "fine":1.0, "farlift":1.0, "steps":0.7, "soft":0.18, "speck":0.0, "floor":0.5, "olive":0.0, "hemiolive":0.0, "farblue":1.0, "farbaked":0.75}, true)
 	for a in args:
 		for k in knobs:
 			if a.begins_with("--spruce-%s=" % k): knobs[k] = float(a.get_slice("=",1))

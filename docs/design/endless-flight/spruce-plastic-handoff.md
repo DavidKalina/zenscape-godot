@@ -508,3 +508,14 @@ rendered runs. The full suite was not run.
 - The dusk white blobs are the grass, not the trees: they go with `--no-grass`
   and stay with `--no-grass-silver`, `--no-flowers`, `--no-pollen`, `--no-motes`.
   Each is one black pixel in a white halo (an inf/NaN in the blades' shading).
+- The dusk blobs are fixed (ef81941d, the grass backlight's `pow` of a value
+  a hair below 0 under MSAA).
+
+## Painterly is the default (2026-10-26)
+
+The user played `b` at native 2560x1440 and picked it. `b` is now the look
+with no flag (`HeroTrees.SPRUCE_LOOK`); `--spruce-look=old` is the look
+before it, and `g`, `r2`, `r3` still pick the others. The knobs
+(`--spruce-<knob>=X`) work on the default now, no flag needed. The user saw
+a blurry quality with `--taa=1 --screen-aa=smaa` over 8x MSAA; whether TAA
+was the cause is not yet confirmed.
