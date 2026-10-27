@@ -181,6 +181,10 @@ bool g_new = false;
 // layer drift at their own speeds, the cloud life's shear) and which layer it
 // is drawing.
 vec2 g_drift = vec2(0.0);
+// The storm's push at the sample cloud_at is reading (0 with no storm), for
+// layer_inside's underside.
+float g_storm = 0.0;
+
 bool g_high = false;
 
 ivec2 zs_block_offset(int frame) {
@@ -418,6 +422,10 @@ float value_noise(vec2 g, uint salt) {
 	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
+// The storm front's push on the field (P.spare[3], P.spare[4]; off unless
+// --storm).
+#include "storm_cloud.glslinc"
+
 float cluster_gate(vec2 f) {
 	uint salt = uint(P.drift.z);
 	float n = 0.65 * value_noise(f / CLUSTER, salt + 17u) + 0.35 * value_noise(f / (CLUSTER * 0.43), salt + 19u);
@@ -465,6 +473,7 @@ struct Cloud {
 	float profile;
 	float ext;
 	bool low;
+	float storm;
 };
 
 // The cloud of cell `c` before it is lifted over the ground (false: none):
@@ -476,12 +485,18 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	uint salt = uint(P.drift.z) + (big ? 101u : 211u) + cyc * 977u;
 	k.salt = salt;
 	bool lifed = P.spare[1].x > 0.5;
-	if (lifed && k.life < 0.01) return false;
 	vec3 h = hash3(c, salt);
 	k.middle = (vec2(c) + 0.5 + JIT * (h.xy * 2.0 - 1.0)) * cell;
+	// The storm's push here (storm_cloud.glslinc), at the cloud's place now
+	// (the low layer's drift for both layers, so a cloud's push never hangs
+	// on its kind). Pushed, a broad cloud lives on whole and always stands.
+	k.storm = big ? storm_push(k.middle + P.drift.xy) : 0.0;
+	k.life = mix(k.life, 1.0, k.storm);
+	if (lifed && k.life < 0.01) return false;
 	float gate = cluster_gate(k.middle);
 	if (!big) gate = mix(0.02, 1.0, gate * gate);
 	float here = region_cover(k.middle) * cover * (big ? BIG_COVER2 : SMALL_COVER2) * gate * (lifed ? LIFE_COVER : 1.0);
+	here = mix(here, 1.0, k.storm);
 	if (h.z >= here) return false;
 	vec3 s = hash3(c, salt + 1u);
 	vec3 m = hash3(c, salt + 2u);
@@ -497,32 +512,35 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	vec2 qb;
 	k.profile = PROFILE;
 	k.low = false;
+	// Pushed, most broad cells heap into towers, the rest into mid cloud.
+	bool towers = k.storm > 0.0 && fract(s.y * 13.7 + s.x) < k.storm * SP_TOWERS;
+	bool mids = k.storm > 0.25 && !towers;
 	if (!big) {
 		k.kind = KIND_PUFF;
 		k.low = true;
 		k.base = mix(SMALL_BASE.x, SMALL_BASE.y, s.y);
 		nr = vec2(2.0, 5.0); k.L = 0.45; k.W = 0.35; k.main_r = 0.65; k.br = vec2(0.4, 0.62); k.hs = vec2(0.7, 1.1);
 		tall = vec2(0.6, 1.25); belly = vec2(0.35, 0.55); qb = vec2(0.5, 0.85);
-	} else if (s.y < FAIR_SHARE) {
+	} else if (s.y < FAIR_SHARE && !towers && !mids) {
 		k.kind = KIND_FAIR;
 		k.low = true;
 		k.base = mix(LOW_BASE.x, LOW_BASE.y, s.z);
 		nr = vec2(3.0, 6.0); k.L = 0.55; k.W = 0.38; k.main_r = 0.62; k.br = vec2(0.35, 0.6); k.hs = vec2(0.7, 1.1);
 		tall = vec2(0.55, 1.0); belly = vec2(0.3, 0.5); qb = vec2(0.45, 0.8);
-	} else if (s.y < FAIR_SHARE + TOWER_SHARE2) {
+	} else if (towers || (s.y < FAIR_SHARE + TOWER_SHARE2 && !mids)) {
 		k.kind = KIND_TOWER;
 		k.base = mix(TOWER_BASE.x, TOWER_BASE.y, s.z);
 		nr = vec2(5.0, 9.0); k.L = 0.5; k.W = 0.45; k.main_r = 0.6; k.br = vec2(0.4, 0.6); k.hs = vec2(0.6, 1.0);
 		tall = vec2(1.0, 1.5); belly = vec2(0.25, 0.4); qb = vec2(0.45, 0.7);
 		k.profile = 0.4;
 		k.r *= 1.2;
-	} else if (s.y < FAIR_SHARE + TOWER_SHARE2 + ROW_SHARE) {
+	} else if (s.y < FAIR_SHARE + TOWER_SHARE2 + ROW_SHARE && !mids) {
 		k.kind = KIND_ROW;
 		k.low = t3 < 0.4;
 		k.base = k.low ? mix(LOW_BASE.x, LOW_BASE.y + 30.0, s.z) : mix(MID_BASE.x, MID_BASE.y, s.z);
 		nr = vec2(6.0, 9.0); k.L = 1.15; k.W = 0.18; k.main_r = 0.5; k.br = vec2(0.36, 0.55); k.hs = vec2(0.8, 1.15);
 		tall = vec2(0.55, 0.95); belly = vec2(0.32, 0.5); qb = vec2(0.5, 0.8);
-	} else if (s.y < FAIR_SHARE + TOWER_SHARE2 + ROW_SHARE + WISP_SHARE) {
+	} else if (s.y < FAIR_SHARE + TOWER_SHARE2 + ROW_SHARE + WISP_SHARE && !mids) {
 		k.kind = KIND_WISP;
 		k.base = mix(180.0, 320.0, s.z);
 		nr = vec2(2.0, 4.0); k.L = 1.0; k.W = 0.4; k.main_r = 0.6; k.br = vec2(0.5, 0.8); k.hs = vec2(0.9, 1.1);
@@ -538,9 +556,14 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	k.L *= mix(0.8, 1.45, m.y);
 	k.n = int(nr.x) + min(int(m.z * (nr.y - nr.x + 1.0)), int(nr.y - nr.x));
 	k.ext = length(vec2(k.L, k.W)) + max(k.br.y, k.main_r) * (1.0 + WOB);
-	k.r = min(k.r, EXT_MAX * cell / k.ext);
-	k.tall = mix(tall.x, tall.y, t2) * DOME;
-	k.belly = mix(belly.x, belly.y, fract(m.y * 5.13 + s.x));
+	// Pushed: wider, taller, more domes, a deeper belly, a lower base.
+	float st = k.storm;
+	k.r *= mix(1.0, SP_GROW.x, st);
+	k.n = min(k.n + int(st * SP_DOMES + 0.5), 9);
+	k.base = mix(k.base, min(k.base, mix(SP_BASE.x, SP_BASE.y, s.z)), st);
+	k.r = min(k.r, mix(EXT_MAX, SP_EXT, st) * cell / k.ext);
+	k.tall = mix(tall.x, tall.y, t2) * DOME * mix(1.0, SP_GROW.y, st);
+	k.belly = mix(belly.x, belly.y, fract(m.y * 5.13 + s.x)) * mix(1.0, SP_BELLY, st);
 	k.qb = mix(qb.x, qb.y, fract(m.z * 3.71 + h.x));
 	return true;
 }
@@ -556,7 +579,7 @@ void recipe_lift(inout Cloud k, ivec2 c, bool big) {
 	vec2 fl = cloud_floor(k.middle + g_drift, k.r * k.ext, k.low);
 	if (fl.x > k.base) k.base = fl.x + 30.0 * fract(s.y * 13.7 + h.x);
 	if (k.low) k.tall *= mix(1.0, 0.6, fl.y);
-	k.H = min(k.r * k.main_r * k.tall, TOP_MAX - k.base);
+	k.H = min(k.r * k.main_r * k.tall, TOP_MAX + SP_TOP * k.storm - k.base);
 }
 
 // The cloud as its own life has it now: grown from a wisp (thin and a little
@@ -603,7 +626,7 @@ float yields(Cloud k, ivec2 c, bool big, float cover) {
 		if (big && !other_big) continue;
 		float cell = other_big ? BIG : SMALL;
 		ivec2 g = ivec2(floor(k.middle / cell));
-		float most = reach + EXT_MAX * cell;
+		float most = reach + (other_big && storm_on() ? SP_EXT : EXT_MAX) * cell;
 		for (int y = -2; y <= 2; y++) {
 			for (int x = -2; x <= 2; x++) {
 				ivec2 n = g + ivec2(x, y);
@@ -678,8 +701,10 @@ vec3 bubble_span(Cloud k, ivec2 c, uint salt, int i, vec2 f) {
 void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout float low_gap, inout vec2 high, inout float high_gap) {
 	float cell = big ? BIG : SMALL;
 	ivec2 g = ivec2(floor(f / cell));
-	for (int y = -1; y <= 1; y++) {
-		for (int x = -1; x <= 1; x++) {
+	// A storm's pushed clouds reach up to SP_EXT cells: look two round.
+	int look = big && storm_on() ? 2 : 1;
+	for (int y = -look; y <= look; y++) {
+		for (int x = -look; x <= look; x++) {
 			ivec2 c = g + ivec2(x, y);
 			Cloud k;
 			if (!recipe_shape(c, big, cover, k)) continue;
@@ -733,8 +758,6 @@ void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout
 	}
 }
 
-// The storm front's deck (P.spare[3], P.spare[4]; off unless --storm).
-#include "storm_cloud.glslinc"
 
 vec4 weather_texel(vec2 xz) {
 	float sea = P.band.x;
@@ -773,7 +796,6 @@ vec4 weather_texel(vec2 xz) {
 		low.y += lift;
 		low.x = low.y + (thick > 0.0 ? thick * mix(1.0, 0.5, meadow) : thick);
 	}
-	storm_merge(xz, sea, max(floor_y, mix(floor_y, g.y + P.knobs.w, meadow)), low);
 	if (high.y < floor_y) {
 		float thick = high.x - high.y;
 		high.y = floor_y;
@@ -833,7 +855,8 @@ float layer_inside(vec3 p, float top, float base, float slope, float slope_b, fl
 		// The underside: the map's rounded belly, carved up into lumps (only
 		// up, so the map's base stays the lowest any cloud reaches).
 		float lump = clamp(0.5 + (0.45 - n_lobe) * 1.2 + (0.45 - n_mid) * 1.6 + (0.5 - n_wisp) * 0.6, 0.0, 1.0);
-		float under = clamp(thick * 0.28, 2.0, 40.0) * lump;
+		// A storm's pushed cloud hangs in deeper lumps (mammatus).
+		float under = clamp(thick * 0.28, 2.0, 40.0 + SP_UNDER * g_storm) * lump;
 		return min(inside, (p.y - base - under) / sqrt(1.0 + slope_b * slope_b) * 1.2 + 1.0);
 	}
 	// A flat base, a little ragged.
@@ -898,15 +921,17 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 		// lobes' and swells' scales, so it drew as a smooth bell with a flat
 		// base: thin low cloud takes its lobes and swells from finer noise
 		// (P.flash.w; --cloud-puffs=old: off).
-		// The storm's deck takes its own billows (shaders/storm_cloud.glslinc).
-		sw = storm_weight(p.xz);
-		if (sw > 0.0) storm_billows(p, boil, sw, n, nm);
+		// The storm's push here (shaders/storm_cloud.glslinc).
+		sw = storm_push(p.xz);
+		g_storm = sw;
 		float small_l = (1.0 - sstep(PUFF_THIN.x, PUFF_THIN.y, w.x - w.y)) * P.flash.w * (1.0 - sw);
 		if (small_l > 0.0) {
 			n.r = mix(n.r, textureLod(cauliflower, (p + boil + 11.0) / PUFF_TILE, 0.0).r, small_l);
 			nm = mix(nm, textureLod(cauliflower, (p + boil * 1.3 + 53.0) / (PUFF_TILE * 0.45), 0.0).r, small_l);
 		}
 		in_l = layer_inside(p, w.x, w.y, slope.x, slope_b.x, n.r, n.g, nm, nf, hh_l);
+		// The storm's big heaps carved into its towers (storm_cloud.glslinc).
+		if (sw > 0.0) in_l += sw * storm_carve(p, boil, w.x - w.y, hh_l);
 		wisp = n.g;
 	}
 	if (high_on) {
@@ -914,12 +939,15 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 		float nm = textureLod(cauliflower, (p + boil * 1.3 + 59.0) / (MID * 1.6), 0.0).r;
 		float nf = fine_w > 0.0 ? fine_w * FINE_SWELL * (textureLod(cauliflower, (p + boil * 1.6 + 23.0) / FINE, 0.0).r - 0.5) : 0.0;
 		in_h = layer_inside(p, w.z, w.w, slope.y, slope_b.y, n.r, n.g, nm * 1.6 - 0.3, nf, hh_h);
+		// The storm's towers stand in the high layer: their heaps too.
+		float sh = storm_push(p.xz);
+		if (sh > 0.0) in_h += sh * storm_carve(p, boil, w.z - w.w, hh_h);
 		if (in_h > in_l) wisp = n.g;
 	}
 	float inside = max(in_l, in_h);
 	float hh = in_h > in_l ? hh_h : hh_l;
 	// The deck's height share by the world's height, not its column's.
-	if (sw > 0.0 && in_l >= in_h) hh = mix(hh, storm_height(p.y), sw);
+	if (sw > 0.0 && in_l >= in_h) hh = mix(hh, storm_height(p.y), sw * 0.5);
 	float soft = mix(SOFT.y, SOFT.x, hh) * mix(0.5, 1.0, sstep(40.0, 300.0, t));
 	float d = sstep(0.0, soft, inside) * mix(0.55, 1.0, sstep(0.3, 0.68, wisp));
 	if (g_new) {
@@ -1370,16 +1398,16 @@ void march_pass() {
 				atten *= MS_A;
 			}
 			sun_light *= SUN_SCALE / (1.0 + MS_B + MS_B * MS_B);
-			// Under the storm's anvil (shaders/storm_cloud.glslinc).
-			float sw = storm_weight(p.xz);
+			// A pushed cloud dark low down (shaders/storm_cloud.glslinc).
+			float sw = storm_push(p.xz);
 			sun_light *= mix(1.0, storm_sun(p.y), sw);
 			float powder = 1.0 - exp(-max(s.inside, 0.0) / POWDER_DEPTH);
 			sun_light *= mix(1.0, powder, powder_share);
 			float deep = sstep(0.0, 50.0, s.inside);
 			float beer = exp(-tau);
 			float ambient = SKY * sky_open * mix(0.32, 1.0, s.h) * mix(1.0, DEEP, deep) * mix(1.0, 0.45, beer);
-			if (sw > 0.0) ambient = mix(ambient, max(ambient, SC_BASE_SKY) * storm_mottle(p, s.h), sw);
-			float bounce = BOUNCE * pow(1.0 - s.h, 2.0);
+			ambient *= mix(1.0, storm_sky(p.y), sw);
+			float bounce = BOUNCE * pow(1.0 - s.h, 2.0) * mix(1.0, 0.3, sw);
 			float alpha = 1.0 - exp(-s.density * s.sigma * step);
 			float w = T * alpha;
 			acc_a += w * (1.0 - immersed) * vec4(ambient, sun_light, bounce, 0.0);

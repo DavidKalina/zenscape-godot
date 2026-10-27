@@ -1,20 +1,29 @@
 // The storm's cloud in the endless clouds' composite (shaders/
 // endless_cloud_composite.gdshader; include after shaders/
-// storm_front.gdshaderinc): the deck (shaders/storm_cloud.glslinc) dark and
-// cool, a slightly green grey that is darkest at the base and lighter up
-// its towers, the haze in front of it thinner and greyer (a storm stands
+// storm_front.gdshaderinc): the field's clouds where the storm pushes them
+// (shaders/storm_cloud.glslinc) cooled toward a slightly green grey, kept
+// darker at the base than up the towers (the march's own light does most
+// of it), the haze in front of it thinner and greyer (a storm stands
 // out dark against the sky from kilometres off), and the lightning
 // (zs_lightning) lighting the cloud from inside round each strike. With the
 // storm off every function here leaves the cloud as it was.
 
-// How far ahead of the leading edge (m) the deck starts darkening, and where
-// it is wholly storm (the shelf's lip wanders round SC_LIP 280 m ahead).
-const vec2 ZS_STORM_CLOUD_AHEAD = vec2(650.0, 150.0);
+// The storm's push on the field's clouds (shaders/storm_cloud.glslinc
+// storm_push, its numbers): built from SP_AHEAD.x m ahead of the edge to
+// whole at .y, let go over the clearing, faded at the line's ends; times
+// the storm's intensity (set by scripts/endless/endless_clouds.gd).
+const vec2 ZS_STORM_PUSH_AHEAD = vec2(3800.0, 250.0);
+const float ZS_STORM_PUSH_BEHIND_FROM = -200.0;
+const float ZS_STORM_PUSH_BEHIND = 1400.0;
+const vec2 ZS_STORM_PUSH_ENDS = vec2(1500.0, 900.0);
+uniform float storm_intensity = 1.0;
 // The deck's hue (the luminance kept, the colour taken from this).
-const vec3 ZS_STORM_CLOUD_HUE = vec3(0.86, 1.0, 0.95);
+const vec3 ZS_STORM_CLOUD_HUE = vec3(0.84, 0.97, 1.0);
 // How much of its own light the deck keeps: at its base, up its towers.
-const float ZS_STORM_CLOUD_BASE = 0.5;
-const float ZS_STORM_CLOUD_TOP = 0.85;
+const float ZS_STORM_CLOUD_BASE = 0.7;
+const float ZS_STORM_CLOUD_TOP = 1.0;
+// How far its colour is greyed toward the hue.
+const float ZS_STORM_CLOUD_GREY = 0.8;
 // The haze over the deck: this share of the land's, its colour greyed and
 // darkened toward the deck's.
 const float ZS_STORM_HAZE_KEEP = 0.35;
@@ -30,22 +39,29 @@ float zs_storm_cloud_lum(vec3 c) {
 	return dot(c, vec3(0.2126, 0.7152, 0.0722));
 }
 
-// How much of the storm's deck the cloud at world `xz` is (0..1).
+// How hard the storm pushes the cloud at world `xz` (0..1).
 float zs_storm_cloud_weight(vec2 xz) {
 	if (!zs_storm_on()) return 0.0;
 	float d = zs_storm_d(xz);
 	float core = zs_storm_shape.y;
-	return zs_storm_ramp(ZS_STORM_CLOUD_AHEAD.x, ZS_STORM_CLOUD_AHEAD.y, d)
-		* zs_storm_ramp(-core - ZS_STORM_CLEAR - 300.0, -core, d) * zs_storm_ends(xz);
+	float half_len = zs_storm_shape.x * 0.5;
+	return zs_storm_ramp(ZS_STORM_PUSH_AHEAD.x, ZS_STORM_PUSH_AHEAD.y, d)
+		* zs_storm_ramp(-core + ZS_STORM_PUSH_BEHIND_FROM - ZS_STORM_PUSH_BEHIND, -core + ZS_STORM_PUSH_BEHIND_FROM, d)
+		* zs_storm_ramp(half_len + ZS_STORM_PUSH_ENDS.x, half_len - ZS_STORM_PUSH_ENDS.y, abs(zs_storm_along(xz)))
+		* clamp(storm_intensity, 0.0, 1.0);
 }
 
-// The cloud's colour `col` as the deck's (`w` its weight, `crown` how high
+// The cloud's colour `col` pushed (`w` the push, `crown` how high
 // in its cloud, 0 at the base).
 vec3 zs_storm_cloud_colour(vec3 col, float w, float crown) {
 	if (w <= 0.0) return col;
 	float lum = zs_storm_cloud_lum(col);
 	float keep = mix(ZS_STORM_CLOUD_BASE, ZS_STORM_CLOUD_TOP, smoothstep(0.05, 0.9, crown));
-	vec3 storm = lum * keep * ZS_STORM_CLOUD_HUE / zs_storm_cloud_lum(ZS_STORM_CLOUD_HUE);
+	// Its own light kept (the sun's warmth on the lit heaps, the sky's blue
+	// in their shade), only cooled toward the storm's grey: the dark comes
+	// from its shadows, never a flat tint.
+	vec3 grey = lum * ZS_STORM_CLOUD_HUE / zs_storm_cloud_lum(ZS_STORM_CLOUD_HUE);
+	vec3 storm = mix(col, grey, ZS_STORM_CLOUD_GREY * mix(1.0, 0.6, smoothstep(0.1, 0.8, crown))) * keep;
 	return mix(col, storm, w);
 }
 

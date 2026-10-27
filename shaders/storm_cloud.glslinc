@@ -1,167 +1,99 @@
-// The storm front's cloud in the endless march (included by shaders/
-// endless_cloud_march.glsl just before `weather_texel`; it uses the march's
-// `P`, `sstep` and `value_noise`). Mirrored on the CPU in scripts/endless/
-// storm_clouds.gd: keep the numbers equal.
+// The storm front in the endless march (included by shaders/
+// endless_cloud_march.glsl before the field's recipes; it uses the march's
+// `P`, `sstep` and `cauliflower`). Mirrored on the CPU in
+// scripts/endless/endless_clouds.gd (`storm_push`, `_recipe`): keep the
+// numbers equal.
+//
+// The storm is the field's own cumulus, pushed: in and ahead of the front
+// each cell's cloud stands surely, grows wider and far taller, its base
+// sinks, the fair ones turn to towers, and the bigger clouds run into each
+// other; their light goes dark low down and stays on the heaps up top. How
+// hard, at a place, is one number: storm_push, from the front's distance
+// (and its ends) times the storm's whole intensity, P.spare[4].z, which a
+// later step can drive over time to grow the storm in view.
 //
 // The front (scripts/endless/storm_front.gd): P.spare[3] its leading edge's
-// middle (xz) and heading (xz), P.spare[4] its length, the core's depth, -,
-// on (0/1). Across the line, by u, the metres behind the shelf's lip (the
-// lip a wandering line a few hundred metres ahead of the edge):
-//   the shelf  a low, dark wedge: its base lowest at the lip, its face
-//              climbing back from it to a flat top;
-//   the core   behind it the deck's top climbs to a towering, lumpy roof
-//              and its base settles a little higher;
-//   the back   past the core's depth the deck thins and breaks into ragged
-//              patches over the clearing, then nothing.
-// Along it the deck's ends fray off over the line's taper. Every noise is
-// read in the front's own frame (along, d), so the cloud moves with it.
+// middle (xz) and heading (xz), P.spare[4] its length, the core's depth,
+// its intensity (0..1), on (0/1).
 
-const float SC_LIP = 280.0;
-const float SC_LIP_WAVE = 150.0;
-const float SC_LIP_SCALE = 1500.0;
-const float SC_SHELF_BASE = 190.0;
-const float SC_CORE_BASE = 240.0;
-const float SC_BASE_BACK = 900.0;
-const float SC_FACE = 0.55;
-const float SC_SHELF_TOP = 450.0;
-const vec2 SC_CORE_RISE = vec2(250.0, 1300.0);
-const float SC_CORE_TOP = 1850.0;
-const float SC_TOP_WAVE = 320.0;
-const float SC_TOP_SCALE = 1300.0;
-const float SC_CLEAR = 1000.0;
-const float SC_TAPER = 1000.0;
-// The deck's ends fray and sink over this (m), a longer taper than the
-// front's own, so the line ends in smaller and smaller cells.
-const float SC_END = 3000.0;
-// How far past the front's own ends (m) the deck's last cells reach.
-const float SC_PAST = 1500.0;
-// The cells along the line: their spacing (m) and how much higher the
-// towering ones stand.
-const float SC_CELL = 2300.0;
-const float SC_CELL_RISE = 700.0;
-const float SC_BREAK = 480.0;
-const uint SC_SALT = 401u;
+// The push builds from SP_AHEAD.x m ahead of the leading edge to whole at
+// SP_AHEAD.y, holds over the core and lets go over the clearing behind it
+// (over SP_BEHIND m, from SP_BEHIND_FROM m past the core's end); along the
+// line it fades over SP_ENDS (m past, m inside the line's ends).
+const vec2 SP_AHEAD = vec2(3800.0, 250.0);
+const float SP_BEHIND_FROM = -200.0;
+const float SP_BEHIND = 1400.0;
+const vec2 SP_ENDS = vec2(1500.0, 900.0);
+// A pushed cloud: how much wider (x) and taller (y) at a whole push, how
+// much higher its top may reach (m), the share of the broad cells turned to
+// towers, how many more domes, its belly deeper, the most its reach may
+// span (cells; the lattice looks two cells round when a storm is on), and
+// the base it sinks to (m over the sea, least, most).
+const vec2 SP_GROW = vec2(1.9, 1.8);
+const float SP_TOP = 1450.0;
+const float SP_TOWERS = 0.75;
+const float SP_DOMES = 3.0;
+const float SP_BELLY = 1.3;
+const float SP_EXT = 1.9;
+const vec2 SP_BASE = vec2(60.0, 110.0);
+// How much deeper (m) its underside's lumps hang (the march's layer_inside).
+const float SP_UNDER = 110.0;
+// For the light: the heights (m over the sea) the storm's heaps span.
+const float SC_LOW = 120.0;
+const float SC_HIGH = 2100.0;
 
-// (top, base) over the sea of the deck at world `xz`; where it has none,
-// top < base, base - top a lower bound on the distance (m) to it.
-vec2 storm_deck(vec2 xz) {
-	vec2 hd = P.spare[3].zw;
-	vec2 rel = xz - P.spare[3].xy;
-	float d = dot(rel, hd);
-	float along = dot(rel, vec2(-hd.y, hd.x));
-	float half_len = P.spare[4].x * 0.5;
-	float core = P.spare[4].y;
-	uint salt = uint(P.drift.z) + SC_SALT;
-	float lip = SC_LIP + SC_LIP_WAVE * (2.0 * value_noise(vec2(along / SC_LIP_SCALE, 0.5), salt) - 1.0)
-		+ 0.4 * SC_LIP_WAVE * (2.0 * value_noise(vec2(along / (SC_LIP_SCALE * 0.29), 3.5), salt + 1u) - 1.0);
-	float u = lip - d;
-	if (u < 0.0) return vec2(SC_SHELF_BASE + 0.7 * u, SC_SHELF_BASE);
-	vec2 q = vec2(along, d);
-	// The ends, frayed.
-	float e = sstep(half_len + SC_PAST, half_len + SC_PAST - SC_END, abs(along) + 900.0 * (value_noise(q / 900.0, salt + 4u) - 0.5));
-	// The back: the deck breaking into patches over the clearing.
-	float keep = sstep(-core - SC_CLEAR - 300.0, -core + 100.0, d);
-	float m = 0.15 + keep + 0.7 * (value_noise(q / SC_BREAK, salt + 5u) - 0.5) + 0.25 * (value_noise(q / (SC_BREAK * 0.37), salt + 6u) - 0.5);
-	if (m < 0.5 || e < 0.15) {
-		float gap = max(m < 0.5 ? (0.5 - m) * 260.0 : 0.0, e < 0.15 ? (0.15 - e) * SC_END * 0.3 : 0.0);
-		gap = max(gap, -(d + core + SC_CLEAR + 600.0));
-		return vec2(SC_CORE_BASE - max(gap, 10.0), SC_CORE_BASE);
-	}
-	float body = sstep(0.5, 0.85, m) * sstep(0.15, 0.4, e);
-	float n_top = value_noise(q / SC_TOP_SCALE, salt + 2u);
-	float n_low = value_noise(q / 600.0, salt + 3u);
-	float base = mix(SC_SHELF_BASE, SC_CORE_BASE, sstep(0.0, SC_BASE_BACK, u)) + 40.0 * (n_low - 0.5) + 90.0 * (1.0 - keep);
-	float shelf = min(base + 25.0 + u * SC_FACE, SC_SHELF_TOP + 70.0 * (n_low - 0.5));
-	float rise = sstep(SC_CORE_RISE.x, SC_CORE_RISE.y, u + 500.0 * (n_top - 0.5));
-	// Cells along the line: some towering, some low.
-	float cells = value_noise(vec2(along / SC_CELL, 7.5), salt + 8u);
-	float roof = SC_CORE_TOP + SC_CELL_RISE * (cells - 0.45) + SC_TOP_WAVE * (2.0 * n_top - 1.0) + 180.0 * (value_noise(q / 760.0, salt + 7u) - 0.5);
-	float top = max(shelf, mix(base, roof, rise));
-	top = base + (top - base) * body * mix(0.3, 1.0, keep) * mix(0.25, 1.0, sstep(0.15, 1.0, e));
-	return vec2(max(top, base + 12.0), base);
+bool storm_on() {
+	return P.spare[4].w > 0.5;
 }
 
-// The deck laid into a weather texel's low layer (after the ground's lift:
-// `clear_y` the lowest a low base may hang there, world y), over and round
-// the clouds there: a cloud reaching into it joins it, one wholly under it
-// gives way (joined, they would hang as a pillar under it).
-void storm_merge(vec2 xz, float sea, float clear_y, inout vec2 low) {
-	if (P.spare[4].w < 0.5) return;
-	vec2 deck = storm_deck(xz);
-	if (deck.x < deck.y) {
-		float gap = deck.y - deck.x;
-		if (low.x < low.y && gap < low.y - low.x) low = vec2(sea + deck.y - gap, sea + deck.y);
-		return;
-	}
-	float base = max(sea + deck.y, clear_y);
-	float top = max(sea + deck.x, base + 12.0);
-	if (low.x > low.y && low.x > base) low = vec2(max(low.x, top), min(low.y, base));
-	else low = vec2(top, base);
-}
-
-// How much of the storm's deck the cloud at world `xz` is (0..1; the
-// composite's zs_storm_cloud_weight, shaders/storm_cloud_light.gdshaderinc).
-float storm_weight(vec2 xz) {
+// How hard the storm pushes the cloud at world `xz` (0..1).
+float storm_push(vec2 xz) {
 	if (P.spare[4].w < 0.5) return 0.0;
 	vec2 hd = P.spare[3].zw;
 	vec2 rel = xz - P.spare[3].xy;
 	float d = dot(rel, hd);
+	float along = dot(rel, vec2(-hd.y, hd.x));
 	float core = P.spare[4].y;
 	float half_len = P.spare[4].x * 0.5;
-	return sstep(650.0, 150.0, d) * sstep(-core - SC_CLEAR - 300.0, -core, d)
-		* sstep(half_len, half_len - SC_TAPER, abs(dot(rel, vec2(-hd.y, hd.x))));
+	return sstep(SP_AHEAD.x, SP_AHEAD.y, d)
+		* sstep(-core + SP_BEHIND_FROM - SP_BEHIND, -core + SP_BEHIND_FROM, d)
+		* sstep(half_len + SP_ENDS.x, half_len - SP_ENDS.y, abs(along))
+		* clamp(P.spare[4].z, 0.0, 1.0);
 }
 
-// The deck's billows (`n` the lobes and wisps, `nm` the swells, as cloud_at
-// reads them for the low layer), blended in by `sw`: broad, smooth, drawn
-// out along the front and banded in height, so the shelf reads as tiers of
-// one long roll and the core as heavy, slow heaps, never a froth of small
-// cumulus lobes. Read in the front's frame, so they travel with it.
-void storm_billows(vec3 p, vec3 boil, float sw, inout vec2 n, inout float nm) {
-	vec2 hd = P.spare[3].zw;
-	vec2 rel = p.xz - P.spare[3].xy;
-	vec3 q = vec3(dot(rel, vec2(-hd.y, hd.x)), p.y, dot(rel, hd)) + boil * 0.6;
-	// Low down, the shelf's tiers: drawn out along the front, banded in
-	// height; up the core, heavy heaps a few hundred metres across.
-	float tiers = 1.0 - sstep(P.band.x + 250.0, P.band.x + 650.0, p.y);
-	vec2 heap = textureLod(cauliflower, q / vec3(620.0, 380.0, 620.0), 0.0).rg;
-	vec2 tier = textureLod(cauliflower, q / vec3(1300.0, 160.0, 520.0) + 0.21, 0.0).rg;
-	vec2 ns = mix(heap, tier, tiers);
-	float nms = textureLod(cauliflower, q / mix(vec3(260.0, 200.0, 260.0), vec3(600.0, 80.0, 260.0), tiers) + 0.37, 0.0).r;
-	n = mix(n, vec2(ns.r, mix(ns.g, 0.75, 0.5)), sw * 0.85);
-	nm = mix(nm, nms, sw * 0.85);
+// The storm's heaps (m, never more than 0): on a tall cloud (`thick` its
+// map span) the big cauliflower the field's lobes are too small for, two
+// octaves carved into its domes, more up its towers, so a pushed cell reads
+// as heaped knots of cloud at every scale. Only ever carves, so the march's
+// free-space bounds still hold. Read where the field's own lobes are read
+// (`boil` their churn).
+const float SC_HEAP = 200.0;
+const float SC_HEAP_FINE = 45.0;
+float storm_carve(vec3 p, vec3 boil, float thick, float hh) {
+	vec3 q = p + boil * 0.5;
+	float big = textureLod(cauliflower, q / vec3(760.0, 560.0, 760.0) + 0.29, 0.0).r;
+	float mid = textureLod(cauliflower, q / vec3(380.0, 300.0, 380.0) + 0.61, 0.0).r;
+	float fine = textureLod(cauliflower, q / vec3(150.0, 120.0, 150.0) + 0.83, 0.0).r;
+	float amp = SC_HEAP * sstep(400.0, 1300.0, thick) * mix(0.45, 1.0, hh);
+	return amp * ((sstep(0.3, 0.72, big) - 1.0) * 0.65 + (sstep(0.3, 0.7, mid) - 1.0) * 0.35)
+		+ SC_HEAP_FINE * sstep(150.0, 600.0, thick) * (sstep(0.3, 0.7, fine) - 1.0);
 }
 
-// How high in the deck world height `y` stands (0 at the core's base, 1
-// at its roof), for its light: by the world's height, so the face of the
-// wall shades evenly across it (by its own column's top, each column's
-// shade followed its roof into vertical streaks).
+// How high in the storm's heaps world height `y` stands (0 low, 1 top).
 float storm_height(float y) {
-	return clamp((y - P.band.x - SC_CORE_BASE) / (SC_CORE_TOP - SC_CORE_BASE), 0.0, 1.0);
+	return clamp((y - P.band.x - SC_LOW) / (SC_HIGH - SC_LOW), 0.0, 1.0);
 }
 
-// The deck's underside mottled (a multiplier on the sky's light at a point
-// `h` up the deck, by the noise in the front's frame): dark rolls and paler
-// gaps, so the ceiling over the plane has form, never a flat lid.
-float storm_mottle(vec3 p, float h) {
-	vec2 hd = P.spare[3].zw;
-	vec2 rel = p.xz - P.spare[3].xy;
-	vec3 q = vec3(dot(rel, vec2(-hd.y, hd.x)), p.y, dot(rel, hd));
-	vec2 n = textureLod(cauliflower, q / vec3(700.0, 90.0, 260.0) + 0.53, 0.0).rg;
-	float m = 0.45 + 1.1 * sstep(0.3, 0.72, n.r * 0.7 + n.g * 0.3);
-	// Up the face, weaker.
-	return mix(m, mix(1.0, m, 0.35), sstep(0.0, 0.3, h));
-}
-
-// The sky's light on the deck's underside at the least: the light coming in
-// from round the storm keeps the ceiling a dark grey with form (mottled),
-// never a black lid.
-const float SC_BASE_SKY = 0.42;
-
-// The sun's share on the deck at world height `y`: the anvil spreading
-// over it shades it, so it stands dark against the sky whichever way the
-// sun is; less so up its towers, whose heaps still catch the sun.
-const vec2 SC_SUN = vec2(0.12, 0.65);
+// The sun's share on a pushed cloud at world height `y`: low down the heaps
+// shade each other and the rain dims it; up top they catch it whole.
+const vec2 SC_SUN = vec2(0.35, 1.0);
 float storm_sun(float y) {
-	return mix(SC_SUN.x, SC_SUN.y, sstep(0.25, 1.0, storm_height(y)));
+	return mix(SC_SUN.x, SC_SUN.y, sstep(0.05, 0.55, storm_height(y)));
+}
+
+// The sky's light on a pushed cloud at world height `y`: its underside and
+// lower flanks darker (the rain under it, its own mass over it).
+const float SC_SKY_LOW = 0.5;
+float storm_sky(float y) {
+	return mix(SC_SKY_LOW, 1.0, sstep(0.0, 0.45, storm_height(y)));
 }

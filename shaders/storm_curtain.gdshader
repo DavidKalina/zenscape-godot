@@ -16,8 +16,9 @@ render_mode unshaded, blend_mix, cull_disabled, shadows_disabled, depth_draw_nev
 
 // The sea's level (world y), the cards' foot (m under it, so under any
 // ground the curtain falls behind) and the cloud base they hang from (m
-// over it, before each card's jitter; the clouds lane's deck sits about
-// 190 m at the shelf to 240 m over the core, scripts/endless/storm_clouds.gd).
+// over it, before each card's jitter; the storm's pushed cumulus have
+// their bases 60-110 m over the sea, lifted over the land: the card's top
+// frays out in them, shaders/storm_cloud.glslinc).
 uniform float sea_y = -40.0;
 uniform float foot = 15.0;
 uniform float base = 235.0;

@@ -7,6 +7,9 @@ extends Node3D
 ## - the curtains (shaders/storm_curtain.gdshader): grey veils hanging from
 ##   the cloud base under the core, cards on the storm's own frame, so they
 ##   ride the front; seen from afar, faded near the eye;
+## - the rain's air (shaders/storm_rain_air.gdshader): a sheet over the
+##   screen that greys whatever is seen through the rain under the deck, so
+##   the distance under it joins the cloud base and the near land softens;
 ## - the lens wetted under rain (the study's `wet`, WaterContact `douse`:
 ##   ScreenWet drops), more at speed;
 ## - the rain bed in the sound (FlightSound `rain_to`).
@@ -16,7 +19,8 @@ extends Node3D
 ## Cost: one draw of COUNT thin quads (all their work in the vertex shader;
 ## the drops outside the rain are folded away) and one draw of the curtain
 ## cards (a few noise reads a pixel, cut where there's no rain or near the
-## eye).
+## eye), and one full-screen pass for the rain's air (TAPS cheap taps a
+## pixel, cut where a ray meets no rain).
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
@@ -32,12 +36,16 @@ const CARD_WIDTH := Vector2(650.0,1300.0)
 ## cruise, less slow), and none while the eye is under cover (unchecked).
 const LENS := 0.8
 const LENS_SPEED := Vector2(0.35,1.0)
+## The rain's air sheet: drawn after the clouds' (-6), before the rain.
+const AIR_PRIORITY := -5
 
 var storm: RefCounted
 var streaks: MeshInstance3D
 var curtains: MeshInstance3D
+var rain_air: MeshInstance3D
 var _streak_mat: ShaderMaterial
 var _curtain_mat: ShaderMaterial
+var _air_mat: ShaderMaterial
 var _clock := 0.0
 var _last_eye := Vector3.INF
 ## The rain at the eye as of the last step (0..1), for probes.
@@ -59,10 +67,23 @@ func setup(storm_front: RefCounted) -> void:
 	_curtain_mat.shader = preload("res://shaders/storm_curtain.gdshader")
 	_curtain_mat.set_shader_parameter("sea_y",Field.SEA_Y)
 	curtains = _instance("Curtains",_curtain_mesh(),_curtain_mat)
+	_air_mat = ShaderMaterial.new()
+	_air_mat.shader = preload("res://shaders/storm_rain_air.gdshader")
+	_air_mat.set_shader_parameter("sea_y",Field.SEA_Y)
+	# Just after the clouds' sheet (EndlessClouds RENDER_PRIORITY -6), so
+	# the deck's base seen through the rain greys with it, and before the
+	# curtains and streaks, which are the rain itself.
+	_air_mat.render_priority = AIR_PRIORITY
+	var quad := QuadMesh.new()
+	quad.size = Vector2(2.0,2.0)
+	rain_air = _instance("Air",quad,_air_mat)
+	rain_air.ignore_occlusion_culling = true
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--rain-opacity="): _streak_mat.set_shader_parameter("opacity",a.get_slice("=",1).to_float())
 		elif a.begins_with("--curtain-opacity="): _curtain_mat.set_shader_parameter("opacity",a.get_slice("=",1).to_float())
 		elif a.begins_with("--curtain-base="): _curtain_mat.set_shader_parameter("base",a.get_slice("=",1).to_float())
+		elif a.begins_with("--rain-air="): _air_mat.set_shader_parameter("opacity",a.get_slice("=",1).to_float())
+		elif a.begins_with("--rain-air-sigma="): _air_mat.set_shader_parameter("sigma",a.get_slice("=",1).to_float())
 
 func _instance(id: String, mesh: Mesh, mat: Material) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
@@ -164,6 +185,7 @@ func step(delta: float, game: Node3D) -> void:
 		_streak_mat.set_shader_parameter("eye_velocity",vel)
 		_streak_mat.set_shader_parameter("clock",fmod(_clock,4096.0))
 	_curtain_mat.set_shader_parameter("clock",fmod(_clock,4096.0))
+	_air_mat.set_shader_parameter("clock",fmod(_clock,4096.0))
 	var look = game.get("look")
 	if look != null and look.environment != null: _curtain_mat.set_shader_parameter("fog_end",look.environment.fog_depth_end)
 	# The lens: drops land as the rain is heavy, more flying into it.

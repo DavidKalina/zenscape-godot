@@ -48,6 +48,16 @@ const RAIN_OUT := Vector2(300.0,-500.0)
 ## all, turn the endless sky near black, and neither dims the sun much.
 const GLOOM := 0.6
 const SUN_LEFT := 0.25
+## The push on the field's clouds (the storm is the field's own cumulus
+## grown: shaders/storm_cloud.glslinc storm_push, the composite's
+## zs_storm_cloud_weight, keep the numbers equal): built from PUSH_AHEAD.x m
+## ahead of the leading edge to whole at .y, held over the core, let go over
+## PUSH_BEHIND m from PUSH_BEHIND_FROM past the core's end, faded over
+## PUSH_ENDS (m past, m inside the line's ends).
+const PUSH_AHEAD := Vector2(3800.0,250.0)
+const PUSH_BEHIND_FROM := -200.0
+const PUSH_BEHIND := 1400.0
+const PUSH_ENDS := Vector2(1500.0,900.0)
 
 var length := LENGTH
 var speed := SPEED
@@ -63,6 +73,9 @@ var debug := false
 ## The grade's two (--storm-gloom=X, --storm-sun=X to try a value).
 var gloom := GLOOM
 var sun_left := SUN_LEFT
+## The storm's whole strength (0..1), on every place's push (`push_at`): 1
+## now; a later step drives it over time to grow the clouds in view.
+var intensity := 1.0
 
 ## The front the flags ask for, or null (nothing built). `start` the
 ## start's xz, `forward` the plane's heading there (unit xz), `wind` the
@@ -121,6 +134,13 @@ func edge_distance(p: Vector2) -> float:
 ## Along the line from its middle (m).
 func along(p: Vector2) -> float:
 	return (p-edge()).dot(_side)
+
+## How hard the storm pushes the field's clouds at `p` (0..1): the one
+## storm-intensity input per place the clouds grow by.
+func push_at(p: Vector2) -> float:
+	var d := edge_distance(p)
+	var half := length*0.5
+	return ramp(PUSH_AHEAD.x,PUSH_AHEAD.y,d) 		*ramp(-CORE_DEPTH+PUSH_BEHIND_FROM-PUSH_BEHIND,-CORE_DEPTH+PUSH_BEHIND_FROM,d) 		*ramp(half+PUSH_ENDS.x,half-PUSH_ENDS.y,absf(along(p)))*clampf(intensity,0.0,1.0)
 
 ## 0 at `a`, 1 at `b` (either way round), smooth.
 static func ramp(a: float, b: float, x: float) -> float:
