@@ -82,6 +82,19 @@ const HIGH_DRIFT := 74
 const HIGH_OWN := 72
 const LIFE_CLOCK := 76
 const DRIFT_SINCE := 156
+## With `layer_phase` (the endless march), where the march reads how far
+## within a texel the high layer's samples stand from the low layer's, in the
+## map read (xy) and in the slice being drawn (zw). The driver snaps the
+## map's corner in the low layer's drifting frame, and the high layer is
+## sampled this far off it in its own, so every map samples each layer's
+## field at the same points: a fresh map is the last one moved by the drift,
+## and the shade on the land no longer jumps as a map swaps in (the grid
+## fixed to the world, the clouds' edges slid between its texels as they
+## drifted and snapped back at each new map, the shade's edges with them).
+const LAYER_PHASE := 152
+var layer_phase := false
+var _front_phase := Vector2.ZERO
+var _back_phase := Vector2.ZERO
 ## The march shader's passes (its push constant).
 enum {PASS_WEATHER, PASS_CEILING, PASS_SHADOW, PASS_MARCH}
 
@@ -272,22 +285,25 @@ func _render_callback(_type: int, data: RenderData) -> void:
 	var params := march_params
 	var sliced := weather_slices > 1
 	var swap := false
+	var want := Vector4(params[WEATHER_SQUARE],params[WEATHER_SQUARE+1],params[WEATHER_SQUARE+2],params[WEATHER_SQUARE+3])
+	var own := params[HIGH_OWN] > 0.5
+	var drift_now := Vector4(params[LOW_DRIFT],params[LOW_DRIFT+1],params[HIGH_DRIFT] if own else params[LOW_DRIFT],params[HIGH_DRIFT+1] if own else params[LOW_DRIFT+1])
+	if layer_phase and not sliced and (_fresh or march_params[WEATHER_DUE] > 0.5): _front_phase = _phase(drift_now,want)
 	if sliced:
 		# The square the driver wants now starts the next cycle; the passes
 		# read the front map's square, and the slice its own.
 		params = march_params.duplicate()
-		var want := Vector4(params[WEATHER_SQUARE],params[WEATHER_SQUARE+1],params[WEATHER_SQUARE+2],params[WEATHER_SQUARE+3])
-		var own := params[HIGH_OWN] > 0.5
-		var drift_now := Vector4(params[LOW_DRIFT],params[LOW_DRIFT+1],params[HIGH_DRIFT] if own else params[LOW_DRIFT],params[HIGH_DRIFT+1] if own else params[LOW_DRIFT+1])
 		if _fresh or _front_square == Vector4.ZERO:
 			_front_square = want
 			_front_drift = drift_now
+			_front_phase = _phase(drift_now,want)
 			_slice = 0
 		else:
 			if _slice == 0:
 				_back_square = want
 				_back_drift = drift_now
 				_back_clock = params[LIFE_CLOCK]
+				_back_phase = _phase(drift_now,want)
 			swap = _slice == weather_slices-1
 			for i in 4:
 				params[SLICE_SQUARE+i] = _back_square[i]
@@ -300,6 +316,7 @@ func _render_callback(_type: int, data: RenderData) -> void:
 			params[LIFE_CLOCK] = _back_clock
 		for i in 4: params[DRIFT_SINCE+i] = drift_now[i]-_front_drift[i]
 		if not _weather_back.is_valid(): sliced = false
+	if layer_phase: _put_phase(params)
 	_rd.buffer_update(_march_buffer,0,MARCH_FLOATS*4,params.to_byte_array())
 	_rd.buffer_update(_resolve_buffer,0,RESOLVE_FLOATS*4,resolve_params.to_byte_array())
 	# The weather map, its ceiling, the shade on the land, then the march:
@@ -320,11 +337,11 @@ func _render_callback(_type: int, data: RenderData) -> void:
 			_weather_back = front
 			_front_square = _back_square
 			_front_drift = _back_drift
-			var drift_now := Vector4(march_params[LOW_DRIFT],march_params[LOW_DRIFT+1],march_params[HIGH_DRIFT],march_params[HIGH_DRIFT+1])
-			if march_params[HIGH_OWN] < 0.5: drift_now = Vector4(drift_now.x,drift_now.y,drift_now.x,drift_now.y)
+			_front_phase = _back_phase
 			for i in 4:
 				params[WEATHER_SQUARE+i] = _front_square[i]
 				params[DRIFT_SINCE+i] = drift_now[i]-_front_drift[i]
+			if layer_phase: _put_phase(params)
 			_rd.buffer_update(_march_buffer,0,MARCH_FLOATS*4,params.to_byte_array())
 			_pass(PASS_CEILING,depth,_scratch,_weather,_scratch,_ceiling,_flat,Vector2i(CEILING_TEXELS,CEILING_TEXELS))
 	_rd.capture_timestamp("Cloud weather done")
@@ -356,6 +373,19 @@ func _render_callback(_type: int, data: RenderData) -> void:
 	_fresh = false
 	history_ok = true
 	runs += 1
+
+## How far within a texel of `square` (corner xz, side, texels) the high
+## layer's samples stand from the low layer's, for a map drawn at `drift`
+## (low xz, high xz).
+static func _phase(drift: Vector4, square: Vector4) -> Vector2:
+	var texel := square.z/maxf(square.w,1.0)
+	return Vector2(fposmod(drift.z-drift.x,texel),fposmod(drift.w-drift.y,texel))
+
+func _put_phase(params: PackedFloat32Array) -> void:
+	params[LAYER_PHASE] = _front_phase.x
+	params[LAYER_PHASE+1] = _front_phase.y
+	params[LAYER_PHASE+2] = _back_phase.x
+	params[LAYER_PHASE+3] = _back_phase.y
 
 ## One run of the march shader: `mode` its pass, the targets it may write
 ## (`weather_out`, `shadow_out`, `ceiling_out`; the scratch texel where a
