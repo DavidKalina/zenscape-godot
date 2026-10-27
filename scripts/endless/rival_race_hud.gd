@@ -8,12 +8,17 @@ extends Control
 ##   bobbing (bone white, a warm ember when it is far), the gap in metres
 ##   under it; off the screen, the wedge sits at the screen's edge pointing
 ##   its way.
+## - before the start, his marks' marker: a gold wedge over the marks laid
+##   beside the stood rival (rival_marks.gd draws them on the turf), "your
+##   marks" under it; off the screen, at the edge, pointing.
 ## - the race tag: hung up and right of the plane on screen, tilted as the
 ##   near-miss tag is (scripts/endless/near_miss_hud_handoff.gd, which hangs
 ##   up and left), in its fonts: the count (3, 2, 1, GO) while the rival
 ##   takes its head start; then a line of words (the rule, what to do now,
 ##   why the lead dropped) over the gap in big gilt numbers, and once ahead
 ##   the lead's hold filling under them.
+## - a gate cleared: gold corner brackets round the screen swell out and
+##   fade (GATE_FLASH s), the gate's own flash being behind the eye by then.
 ## - the result, big, in the tag's place: the word and a line under it,
 ##   popped in, held, then faded.
 ## The tag and the result are sized like the near-miss HUD: in D px of a
@@ -71,6 +76,13 @@ const ROW_GAP := 10.0
 ## The count's pop: from POP times its size to 1 over POP_TIME of a beat.
 const POP := 1.4
 const POP_TIME := 0.18
+## A gate cleared: how long the screen's brackets show (s), how far in
+## from the edges they start (share of the half screen) and swell out,
+## their length (share of the half height) and width (D px).
+const GATE_FLASH := 0.5
+const FLASH_IN := 0.18
+const FLASH_LEN := 0.22
+const FLASH_W := 7.0
 ## The result: the word's size, the line's, how long it pops in (s) and
 ## fades (s).
 const RESULT_PX := 116.0
@@ -81,6 +93,7 @@ const NOTE_FADE := 0.8
 ## What to draw this frame (rival_race.gd fills them).
 var offer := {}   # {at: Vector2 (screen), size: float (px), hold: 0..1, alpha}
 var mark := {}    # {at: Vector2, on_screen: bool, dir: Vector2, far: bool, text: String, alpha}
+var spot := {}    # {at: Vector2, on_screen: bool, dir: Vector2, alpha}
 ## {plane: Vector2 (screen), count: 3..1, 0 GO, -1 none, beat: 0..1 through
 ## the beat, words: String, warn: bool, big: String, gold: bool, lead: 0..1
 ## or -1, alpha}
@@ -91,6 +104,7 @@ var _anchored := false
 var _result := {}   # {big, small, col, px}
 var _result_age := INF
 var _result_hold := 3.5
+var _flash_age := INF
 
 func _init() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -111,9 +125,14 @@ func _result_alpha() -> float:
 	if _result_age >= _result_hold+NOTE_FADE: return 0.0
 	return clampf(1.0-(_result_age-_result_hold)/NOTE_FADE,0.0,1.0)
 
+## A gate cleared: the screen's brackets.
+func gate_flash() -> void:
+	_flash_age = 0.0
+
 func step(delta: float) -> void:
 	_clock += delta
 	_result_age += delta
+	_flash_age += delta
 	queue_redraw()
 
 ## The marker's scale for the window now.
@@ -160,6 +179,20 @@ func _draw() -> void:
 			draw_colored_polygon(PackedVector2Array([tip,tip-d*w.y+side*w.x*0.5,tip-d*w.y-side*w.x*0.5]),col)
 			var inward := at-d*(WEDGE.y+14.0)*k
 			_text(font,String(mark.text),inward+Vector2(0.0,5.0*k),col,k)
+	if _flash_age < GATE_FLASH: _draw_flash()
+	if not spot.is_empty():
+		var col := Color(GOLD.r,GOLD.g,GOLD.b,0.95*float(spot.alpha))
+		var at: Vector2 = spot.at
+		var w := WEDGE*k*1.3
+		if bool(spot.on_screen):
+			var tip := at-Vector2(0.0,(WEDGE_OVER*0.6+sin(_clock*TAU*BOB.y+1.0)*BOB.x)*k)
+			draw_colored_polygon(PackedVector2Array([tip,tip+Vector2(-w.x*0.5,-w.y),tip+Vector2(w.x*0.5,-w.y)]),col)
+			_text(font,"your marks",tip-Vector2(0.0,w.y+6.0*k),col,k)
+		else:
+			var d: Vector2 = spot.dir
+			var side := d.orthogonal()
+			var tip := at+d*w.y*0.5
+			draw_colored_polygon(PackedVector2Array([tip,tip-d*w.y+side*w.x*0.5,tip-d*w.y-side*w.x*0.5]),col)
 	var plane: Variant = tag.get("plane")
 	var showing := _result_alpha() > 0.0 and not _result.is_empty()
 	if not tag.is_empty() or showing:
@@ -169,6 +202,21 @@ func _draw() -> void:
 		elif not tag.is_empty(): _draw_tag()
 		draw_set_transform(Vector2.ZERO,0.0,Vector2.ONE)
 	else: _anchored = false
+
+## The screen's gate brackets: in from the corners, swelling out, fading.
+func _draw_flash() -> void:
+	var size := get_viewport_rect().size
+	var k := _flash_age/GATE_FLASH
+	var half := size*0.5*(1.0-FLASH_IN*(1.0-smoothstep(0.0,1.0,k)))
+	var mid := size*0.5
+	var len := size.y*0.5*FLASH_LEN
+	var col := Color(GOLD.r,GOLD.g,GOLD.b,(1.0-k)*(1.0-k)*0.9)
+	var w := FLASH_W*_k()
+	for sx: float in [-1.0,1.0]:
+		for sy: float in [-1.0,1.0]:
+			var c := mid+Vector2(sx*half.x,sy*half.y)
+			draw_line(c,c-Vector2(sx*len,0.0),col,w,true)
+			draw_line(c,c-Vector2(0.0,sy*len),col,w,true)
 
 ## The tag's corner: off the plane, kept on the screen, eased.
 func _place(plane: Vector2) -> void:

@@ -42,7 +42,7 @@ const RUN_ON := 60.0
 ## His lane: this many wingspans aside; his marks: half their length (m)
 ## and half their width (wingspans).
 const LANE_SPANS := 3.5
-const SPOT_HALF_LEN := 32.0
+const SPOT_HALF_LEN := 22.0
 const SPOT_HALF_SPANS := 1.7
 ## The flats check's measure (land_ponds.gd `_strip`): no rise over
 ## STEP_RISE m between points STEP m apart, nor over SPAN_RISE m across
@@ -77,6 +77,8 @@ const DIST := [500.0,650.0,800.0,950.0,1100.0,1300.0,1550.0,1800.0]
 const IDEAL := 650.0
 const SPREAD := [0.0,0.2,-0.2,0.4,-0.4,0.6,-0.6,0.85,-0.85]
 const TURNS := [0.0,0.3,-0.3,0.55,-0.55]
+## Out to the sides as well (rad), once nothing was found ahead.
+const WIDE := [1.15,-1.15,1.45,-1.45]
 
 ## For checks: why spots failed ({reason: count}).
 static var fails := {}
@@ -90,12 +92,13 @@ static func lane() -> float:
 	return WorldScale.span*LANE_SPANS
 
 ## The spots to try ahead of `pos` heading `dir` (XZ), best first:
-## [[touch, axis, side], ...].
-static func order(pos: Vector3, dir: Vector3) -> Array:
+## [[touch, axis, side], ...]; `wide`, out to the sides too (WIDE).
+static func order(pos: Vector3, dir: Vector3, wide := false) -> Array:
 	dir = Vector3(dir.x,0.0,dir.z).normalized()
 	var ranked: Array = []
+	var spread: Array = SPREAD+WIDE if wide else SPREAD
 	for d: float in DIST:
-		for off: float in SPREAD:
+		for off: float in spread:
 			for turn: float in TURNS:
 				for side: float in [1.0,-1.0]:
 					ranked.append([absf(d-IDEAL)/IDEAL+absf(off)*0.8+absf(turn)*0.5+(0.01 if side < 0.0 else 0.0),d,off,turn,side])
@@ -112,16 +115,18 @@ static func order(pos: Vector3, dir: Vector3) -> Array:
 static func try(line: RefCounted, o: Array, pos: Vector3, dir: Vector3) -> Dictionary:
 	var touch: Vector3 = o[0]
 	var axis: Vector3 = o[1]
-	# The approach must begin ahead of it, not behind.
-	if (touch-axis*FINAL-pos).dot(dir) < 120.0: return _fail("behind")
+	# The approach must begin ahead of it, not behind (out to the side, at
+	# least clear of it).
+	var start := touch-axis*FINAL-pos
+	if start.dot(dir) < 120.0 and Vector2(start.x,start.z).length() < 400.0: return _fail("behind")
 	return check(line.game,line,touch,axis,float(o[2]))
 
 ## A strip ahead of `pos` heading `dir` (XZ) for `line` (rival_line.gd: its
 ## ground reading and the study), or {}; all at once (`order` and `try` a
 ## few a frame is the rival's way). `tries` caps how many are read.
-static func find(line: RefCounted, pos: Vector3, dir: Vector3, tries := 800) -> Dictionary:
+static func find(line: RefCounted, pos: Vector3, dir: Vector3, tries := 800, wide := false) -> Dictionary:
 	var tried := 0
-	for o: Array in order(pos,dir):
+	for o: Array in order(pos,dir,wide):
 		tried += 1
 		if tried > tries: break
 		var s := try(line,o,pos,dir)

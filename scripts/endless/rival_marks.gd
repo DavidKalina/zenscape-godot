@@ -27,11 +27,11 @@ const DARK := Color(0.14,0.07,0.01)
 ## height); how strong past his next gate; how far behind him it fades out
 ## (m); near the eye, gone at the first and whole from the second (m); the
 ## glint's speed (m/s) and spacing (m).
-const LINE_M := 1.0
-const LINE_PX := 4.5
+const LINE_M := 0.4
+const LINE_PX := 6.0
 const LATER := 0.55
 const BEHIND := Vector2(60.0,5.0)
-const NEAR_FADE := Vector2(14.0,60.0)
+const NEAR_FADE := Vector2(8.0,32.0)
 const GLINT := Vector2(70.0,90.0)
 ## The gates: their brackets' share of the shorter side, their half width
 ## (m, and px far), alpha of the next and of later ones; near the eye each
@@ -47,12 +47,14 @@ const FLASH := 0.6
 const SWELL := 0.5
 ## His marks: the ticks' share of each side, their half width (m and px),
 ## how high they ride over the turf (m, and a share of the distance), the
-## posts' height (m), the fill's alpha.
+## posts' height (m, and px far) and half width (px), the fill's alpha.
 const SPOT_TICK := 0.3
 const SPOT_M := 0.3
 const SPOT_PX := 1.8
 const SPOT_LIFT := Vector2(0.12,0.0012)
-const POST := 4.0
+const POST := 8.0
+const POST_PX := 40.0
+const POST_W := 2.2
 const FILL := 0.13
 
 var _line: MeshInstance3D
@@ -267,9 +269,11 @@ func _draw_spot(eye: Vector3, px: float, inside: bool, alpha: float) -> void:
 			_bar(p0+lift-along*w,end+lift,flat*w*1.8,dark)
 			_bar(p0+lift-along*w,end+lift+Vector3.UP*0.02,flat*w,bright)
 		# A post, fading up.
-		var up := Vector3.UP*POST*(1.0+d*0.002)
-		var side := (eye-p0).cross(Vector3.UP).normalized()*w*0.8
-		_quad(p0-side,p0+side,p0+up+side,p0+up-side,bright,Color(bright.r,bright.g,bright.b,0.0))
+		var up := Vector3.UP*maxf(POST,d*px*POST_PX)
+		var side := (eye-p0).cross(Vector3.UP).normalized()*maxf(SPOT_M,d*px*POST_W)
+		var mid := Color(bright.r,bright.g,bright.b,bright.a*0.85)
+		_quad(p0-side,p0+side,p0+up*0.65+side,p0+up*0.65-side,bright,mid)
+		_quad(p0+up*0.65-side,p0+up*0.65+side,p0+up+side,p0+up-side,mid,Color(bright.r,bright.g,bright.b,0.0))
 
 ## A flat bar from `a` to `b`, `half` its half width.
 func _bar(a: Vector3, b: Vector3, half: Vector3, col: Color) -> void:
@@ -323,8 +327,8 @@ void vertex() {
 }
 void fragment() {
 	float x = abs(v_x);
-	float core = 1.0 - smoothstep(0.3, 0.5, x);
-	float edge = 1.0 - smoothstep(0.55, 1.0, x);
+	float core = 1.0 - smoothstep(0.36, 0.56, x);
+	float edge = 1.0 - smoothstep(0.6, 1.0, x);
 	float ahead = smoothstep(behind_s - behind.x, behind_s + behind.y, v_s);
 	float past = mix(1.0, later, smoothstep(next_s, next_s + 30.0, v_s));
 	float near = smoothstep(near_fade.x, near_fade.y, v_d);

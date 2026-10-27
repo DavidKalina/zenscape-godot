@@ -177,7 +177,7 @@ const PEEL_TIME := 3.0
 ## within RECHECK m of the touch.
 const STRIP_EVERY := 1.0
 const STRIP_BUDGET := 40
-const LAND_SPEED := 40.0
+const LAND_SPEED := 44.0
 const APPROACH_SPEED := 23.0
 const TOUCH_SPEED := 13.0
 const RAIL := 90.0
@@ -234,6 +234,7 @@ var _touch_speed := 0.0
 var _rechecked := false
 var _strip_search := 0.0
 var _strip_queue: Array = []
+var _strip_passes := 0
 var _strip_qi := 0
 ## After the takeoff: "course" or "peel".
 var _after := "course"
@@ -424,7 +425,9 @@ func _air(traffic: Node, delta: float) -> void:
 		# while from where it is then.
 		_strip_search -= delta
 		if _strip_queue.is_empty() and _strip_search <= 0.0:
-			_strip_queue = RivalStrip.order(pos,dir)
+			# Ahead first; nothing there, out to the sides too.
+			_strip_queue = RivalStrip.order(pos,dir,_strip_passes > 0)
+			_strip_passes += 1
 			_strip_qi = 0
 		var budget := STRIP_BUDGET
 		while budget > 0 and _strip_qi < _strip_queue.size():
@@ -545,11 +548,13 @@ func _on_course(pos: Vector3, dir: Vector3, speed: float) -> Dictionary:
 	var bore := bool(a.bore) and bool(pts[mini(seg+1,pts.size()-1)].bore)
 	var room := float(pts[mini(seg+1,pts.size()-1)].room) if bool(a.lead) else minf(float(a.room),float(pts[mini(seg+1,pts.size()-1)].room))
 	# Never under LOW_LEAST over what stands just ahead (what was built
-	# after the line was laid: a tree's crown).
+	# after the line was laid: a tree's crown, an arch); on a leg and
+	# through an air gate over the spans too, in an opening under them.
 	if not bore:
 		var guard := -INF
-		for d: float in (GUARD if bool(a.lead) else [0.0,READ_IN]):
-			guard = maxf(guard,_ground_top(pos+dir*d,false)+LOW_LEAST)
+		var open := bool(a.lead) or bool(a.get("air",false))
+		for d: float in (GUARD if open else [0.0,READ_IN]):
+			guard = maxf(guard,_ground_top(pos+dir*d,open)+LOW_LEAST)
 		y = maxf(y,guard)
 	return {"aim":r.aim,"y":y,"room":room,"bore":bore}
 

@@ -44,8 +44,9 @@ const ALIGN := 0.55
 const ALIGN_OUT := 0.2
 ## An air gate: LEG m on (each of CANDIDATES), within LEG_SPREAD (rad) of
 ## the way; half its width and height (wingspans); its bottom AIR_OVER m
-## over the highest of what stands under its frame; its lead-in and run
-## out (m).
+## over the highest of what stands under its frame, and its middle as far
+## over what stands along its way in and out; of the candidates the one
+## lowest over its frame and the leg to it; its lead-in and run out (m).
 const LEG := Vector2(420.0,620.0)
 const LEG_SPREAD := 0.55
 const CANDIDATES := 9
@@ -89,9 +90,11 @@ static func plan(line: RefCounted, start: Vector3, axis: Vector3) -> Dictionary:
 		# The leg to it, then its own points; its run out is the next leg's
 		# start.
 		points.append({"p":cur,"room":INF,"bore":false,"lead":true})
+		# Its points out in the open (a split's or a hall's way in, no room
+		# given) are flown as the legs are.
 		for i in range(pts.size()):
 			var q: Dictionary = (pts[i] as Dictionary).duplicate()
-			q.lead = i == pts.size()-1
+			q.lead = i == pts.size()-1 or float(q.room) == INF
 			points.append(q)
 		var last: Vector3 = pts[pts.size()-1].p
 		var before: Vector3 = pts[pts.size()-2].p
@@ -157,24 +160,39 @@ static func _air_gate(line: RefCounted, cur: Vector3, way: Vector3, n: int) -> D
 		var at := cur+Vector3(-sin(a),0.0,-cos(a))*rng.randf_range(LEG.x,LEG.y)
 		var w := Vector3(at.x-cur.x,0.0,at.z-cur.z).normalized()
 		var across := w.cross(Vector3.UP)
-		# What stands under its frame and just before and after it.
+		# What stands under its frame, and along its way in and out (its
+		# lead-in to its run out, half its width each side).
 		var top := -INF
 		for u: float in [-half_w,-half_w*0.5,0.0,half_w*0.5,half_w]:
 			for v: float in [-12.0,0.0,12.0]:
 				top = maxf(top,float(line._ground_top(at+across*u+w*v,true)))
-		top = maxf(top,SEA_Y_AIR)
-		if top < best_y:
-			best_y = top
+		var way_top := -INF
+		var v2 := -AIR_IN
+		while v2 <= AIR_OUT:
+			for u: float in [-half_w*0.5,0.0,half_w*0.5]:
+				way_top = maxf(way_top,float(line._ground_top(at+across*u+w*v2,true)))
+			v2 += 10.0
+		top = maxf(maxf(top,way_top-half_h),SEA_Y_AIR)
+		# The leg to it: what it crosses on the way counts too (a ridge
+		# between asks a climb over it).
+		var leg_top := -INF
+		var d := 0.0
+		var to := at-cur
+		to.y = 0.0
+		while d <= to.length():
+			leg_top = maxf(leg_top,float(line._ground_top(cur+to.normalized()*d,true)))
+			d += 25.0
+		var score := maxf(top,leg_top-AIR_OVER-half_h)
+		if score < best_y:
+			best_y = score
 			var c := at
 			c.y = top+AIR_OVER+half_h
 			best = {"c":c,"w":w}
 	var c: Vector3 = best.c
 	var w: Vector3 = best.w
 	var pts: Array = [_pt(c-w*AIR_IN,half_w),_pt(c,half_w),_pt(c+w*AIR_OUT,INF)]
-	# The lead-in's height: no lower than the land under it allows.
-	var lead: Vector3 = pts[0].p
-	lead.y = maxf(c.y,float(line._ground_top(lead,true))+AIR_OVER)
-	pts[0].p = lead
+	pts[0].air = true
+	pts[1].air = true
 	return {"id":"air/%d" % n,"kind":"air","points":pts,"through":1,"mouth":1,"half_w":half_w,"lo":c.y-half_h,"hi":c.y+half_h}
 
 const SEA_Y_AIR := -40.0
@@ -270,10 +288,11 @@ static func _line(line: RefCounted, course: Dictionary) -> PackedVector3Array:
 				var line_y := (points[_index_at(lens,lead_end[i])].p as Vector3).y
 				y = lerpf(low,line_y,smoothstep(line.LEAD_SETTLE,line.LEAD_SETTLE*0.25,left))
 			y = maxf(y,lows[k]+line.LOW_LEAST)
-			# Off the start line: the run along the ground, then the climb.
+			# Off the start line: the run along the ground, then the climb;
+			# never under what stands there (spans counted).
 			if s < RUNWAY+400.0:
 				y = minf(y,maxf(lows[k]+RUN_Y,(points[0].p as Vector3).y+maxf(s-RUNWAY,0.0)*CLIMB_OUT))
-				y = maxf(y,lows[k]+RUN_Y)
+				y = maxf(y,maxf(lows[k]+RUN_Y,tops[k]+line.LOW_LEAST))
 			q.y = y
 		elif not bool(a.bore) or not bool(b.bore): q.y = maxf(q.y,lows[k]+line.LOW_LEAST*0.5)
 		out.append(q)

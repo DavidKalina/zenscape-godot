@@ -61,7 +61,8 @@ extends Node
 ## accept), DOF_RACE light through the race so the land ahead reads.
 ##
 ## Flags: --race-near-start puts a traffic plane ahead in view at the start
-## (START_AHEAD m on, START_SIDE m aside) and skips the main menu;
+## (START_AHEAD m on, START_SIDE m aside), finds its strip at once and skips
+## the main menu;
 ## --rival-skill=X scales the rival's skill knobs (rival_line.gd);
 ## --rival-pace=X sets PACE.
 
@@ -150,6 +151,8 @@ const START_SIDE := 18.0
 const START_UP := 6.0
 ## The bracket frames this many wingspans.
 const FRAME_SPANS := 2.4
+## His marks' marker shows till he is down within SPOT_SHOW m of them.
+const SPOT_SHOW := 60.0
 ## GO stays up this long past the count (s).
 const GO_SHOW := 0.9
 
@@ -213,6 +216,8 @@ var _hud: Control
 var _seed := 1
 var _amount := 0.0
 var _past := Vector2.ZERO
+## --race-near-start's strip, found at the start ({} none, or used).
+var _near_strip: Dictionary = {}
 
 ## The flags: --rival-skill=X.
 static func skill_wanted() -> float:
@@ -241,7 +246,9 @@ func setup(seed: int) -> void:
 	_marks = RivalMarks.new()
 	add_child(_marks)
 
-## --race-near-start: a traffic plane ahead of `game`'s plane, in view.
+## --race-near-start: a traffic plane ahead of `game`'s plane, in view,
+## and a strip for it already found ahead (it lands there once challenged,
+## with no looking).
 func place_near_start(game: Node) -> void:
 	if game.traffic == null or (game.traffic.planes as Array).is_empty(): return
 	var p: Vector3 = game.plane.position
@@ -250,6 +257,9 @@ func place_near_start(game: Node) -> void:
 	var at := p+fwd*START_AHEAD+fwd.cross(Vector3.UP)*START_SIDE+Vector3.UP*START_UP
 	at.y = maxf(at.y,maxf(float(game.field.height(at.x,at.z)),-40.0)+RivalLine.LOW*2.0)
 	game.traffic.place(0,at,heading)
+	var probe: RefCounted = RivalLine.new(game,game.traffic.planes[0],skill,_seed,0)
+	_near_strip = RivalStrip.find(probe,at,fwd,1600,true)
+	print("rival race: near start, a strip %s" % ("found %.0f m on" % (_near_strip.touch as Vector3).distance_to(at) if not _near_strip.is_empty() else "not found; it will look"))
 
 ## One frame, after the traffic's step (the camera placed).
 func step(delta: float, game: Node) -> void:
@@ -263,6 +273,7 @@ func step(delta: float, game: Node) -> void:
 	var flying: bool = game.stage == null and game.hand_landing.flying()
 	_hud.offer = {}
 	_hud.mark = {}
+	_hud.spot = {}
 	_hud.tag = {}
 	if state == "peeling" and (line == null or bool(line.peeled())): _release_rival(traffic)
 	if state == "racing":
@@ -347,6 +358,9 @@ func _start(game: Node, n: int) -> void:
 	line = RivalLine.new(game,plane,skill,_seed,races)
 	line.pace = RivalLine.LAND_SPEED
 	line.start_waggle()
+	if n == 0 and not _near_strip.is_empty():
+		line.land_on(_near_strip)
+		_near_strip = {}
 	plane.rival = line
 	plane.goal = {"kind":"race","point":plane.flight.position}
 	rival = n
@@ -477,6 +491,10 @@ func _pre_tag(t: Dictionary, game: Node, ground: bool, in_spot: bool, rolling: f
 		var c: Vector3 = strip.spot.centre
 		var d := Vector2(c.x-player.x,c.z-player.z).length()
 		if d > 25.0 or not ground: t.big = "%d m" % roundi(d)
+		# His marks' marker, till he is down near them.
+		if not ground or d > SPOT_SHOW:
+			var shown := _screen(game.camera,c+Vector3.UP*2.0)
+			_hud.spot = {"at":shown.at,"on_screen":shown.on_screen,"dir":shown.dir,"alpha":1.0}
 
 ## The race from GO: the gates, the progress, won and lost, the tag.
 func _course_race(delta: float, game: Node, r_pos: Vector3, player: Vector3, t: Dictionary) -> void:
@@ -489,6 +507,7 @@ func _course_race(delta: float, game: Node, r_pos: Vector3, player: Vector3, t: 
 		if got == "through":
 			_log("you",next_you,player,gates[next_you])
 			_marks.cleared(next_you)
+			_hud.gate_flash()
 			next_you += 1
 			if next_you < n: _cue(game,"race-count",0.5,1.35,RUMBLE_GATE)
 		elif got == "by": _say("missed gate %d · go back through" % (next_you+1))
