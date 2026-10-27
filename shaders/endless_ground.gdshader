@@ -44,6 +44,25 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 #include "res://shaders/light_leans.gdshaderinc"
 // Storm lane rain: rings on the rivers and ponds (zs_rain_pocks).
 #include "res://shaders/storm_rain_water.gdshaderinc"
+// The land the storm has rained on (zs_storm_soak): its colour times
+// ZS_SOAK_DARK (turf, rock) and RICH of its own saturation kept over the
+// grey; its roughness (turf, rock) and specular; puddles on the flats
+// (ground at least FLAT.x up, whole by .y), where the noise (two tiles, m)
+// passes CUT, darker by PUDDLE_DARK, ROUGH near a mirror, the sky in them
+// at MIRROR. SPEC: turf, rock and puddle.
+const vec2 ZS_SOAK_DARK = vec2(0.68, 0.6);
+const float ZS_SOAK_RICH = 1.15;
+const vec2 ZS_SOAK_ROUGH = vec2(0.72, 0.35);
+const vec2 ZS_SOAK_SPEC = vec2(0.3, 0.5);
+const vec2 ZS_SOAK_PUDDLE_FLAT = vec2(0.975, 0.995);
+const vec2 ZS_SOAK_PUDDLE_TILE = vec2(6.0, 19.0);
+const float ZS_SOAK_PUDDLE_CUT = 0.7;
+const float ZS_SOAK_PUDDLE_DARK = 0.65;
+const float ZS_SOAK_PUDDLE_ROUGH = 0.07;
+const float ZS_SOAK_MIRROR = 0.85;
+// The puddles' fresnel floor: higher than water's own (.04), so a puddle
+// seen from the air reads as a bit of sky in the grass, not a hole.
+const float ZS_SOAK_PUDDLE_FRES = 0.35;
 global uniform vec3 zs_palette_water;
 
 // Rock round: the painted rock (shaders/endless_rock.gdshaderinc); true is
@@ -901,6 +920,22 @@ void fragment() {
 	albedo = mix(albedo, bank_c, banked * (1.0 - rocky * 0.7));
 	albedo = mix(albedo, snow, snowy);
 	albedo = mix(albedo, vec3(luma(albedo)) * night_grade.yzw, night_grade.x);
+	// The land the storm has rained on (zs_storm_soak; nothing when it's
+	// off): darker and a touch richer, puddles standing on the flat
+	// meadows (low patches of a broken noise), drying back behind it.
+	float soak = zs_storm_soak(p.xz) * (1.0 - snowy);
+	float puddle = 0.0;
+	if (soak > 0.0) {
+		float level = smoothstep(ZS_SOAK_PUDDLE_FLAT.x, ZS_SOAK_PUDDLE_FLAT.y, n.y) * (1.0 - rocky) * (1.0 - sandy);
+		float pn = zs_noise(p.xz / ZS_SOAK_PUDDLE_TILE.x) * 0.6 + zs_noise(p.xz / ZS_SOAK_PUDDLE_TILE.y + 4.7) * 0.4;
+		float cut = mix(1.0, ZS_SOAK_PUDDLE_CUT, smoothstep(0.3, 1.0, soak));
+		puddle = smoothstep(cut, cut + 0.04 + fp * 0.02, pn) * level;
+		// Past a pixel the size of a puddle, their mean.
+		puddle = mix(puddle, level * smoothstep(0.3, 1.0, soak) * 0.15, smoothstep(1.5, 6.0, fp));
+		vec3 rich = mix(vec3(luma(albedo)), albedo, ZS_SOAK_RICH);
+		albedo = mix(albedo, rich * mix(ZS_SOAK_DARK.x, ZS_SOAK_DARK.y, rocky), soak);
+		albedo *= 1.0 - puddle * ZS_SOAK_PUDDLE_DARK;
+	}
 	// Under a cloud's shadow the sun's share goes (the albedo the sun
 	// lights), the sky's fill (the emission below) stays.
 	float shade = zs_cloud_volume_shade(p);
@@ -916,6 +951,22 @@ void fragment() {
 	float hollow = 0.85 + 0.15 * n.y;
 	// A cloud overhead takes a little of the sky's fill too.
 	EMISSION = albedo * hemi * hollow * (1.0 - 0.2 * shade) + rock_glow * rocky * (1.0 - snowy);
+	if (soak > 0.0) {
+		// Wet: glossier, so the sun glints off it where it comes through;
+		// a puddle near a mirror, the sky in it by fresnel where the storm
+		// no longer stands over it.
+		ROUGHNESS = mix(ROUGHNESS, mix(ZS_SOAK_ROUGH.x, ZS_SOAK_ROUGH.y, rocky), soak);
+		ROUGHNESS = mix(ROUGHNESS, ZS_SOAK_PUDDLE_ROUGH, puddle);
+		SPECULAR = mix(SPECULAR, mix(ZS_SOAK_SPEC.x, ZS_SOAK_SPEC.y, max(rocky, puddle)) * (1.0 - shaded), max(soak, puddle));
+		float open = puddle * (1.0 - zs_storm_amount(p.xz));
+		if (open > 0.001) {
+			vec3 refl = reflect(-eye, n);
+			refl.y = abs(refl.y);
+			float fres = ZS_SOAK_PUDDLE_FRES + (1.0 - ZS_SOAK_PUDDLE_FRES) * pow(1.0 - max(dot(eye, n), 0.0), 5.0);
+			vec3 sky_m = scene_linear_for_display(clamp(zsSkyGradient(refl), vec3(0.0), vec3(0.98)));
+			EMISSION = mix(EMISSION, sky_m * ZS_SOAK_MIRROR, open * fres);
+		}
+	}
 	if (wet > 0.0) {
 		// The river's water, as the sea draws it (endless_sea.gdshader): its
 		// colour by the depth (faked from the way in from the bank), the bed

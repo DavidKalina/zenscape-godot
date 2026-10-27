@@ -55,20 +55,35 @@ const float ZS_STORM_FLASH_HIGH = 0.25;
 // (storm_lightning.gd) shows the land.
 const float ZS_STORM_FLASH_NIGHT = 0.5;
 const float ZS_STORM_FLASH_NIGHT_REACH = 250.0;
+// The most a flash adds to the cloud's light (linear luminance), eased in
+// (CAP x tanh(lum / CAP)): a faint flash passes whole, a strong one near
+// the eye lights the cloud and the murk without whiting the frame out (a
+// held in-cloud flash 300 m ahead by day read 146 mean, the natural ones
+// there 55).
+const float ZS_STORM_FLASH_CAP = 0.06;
 
 float zs_storm_cloud_lum(vec3 c) {
 	return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+// The storm's back torn (storm_cloud.glslinc storm_rag, its numbers): the
+// let-go's distance shifted by this (m).
+const float ZS_STORM_PUSH_RAG = 750.0;
+float zs_storm_rag(float d, float along) {
+	return ZS_STORM_PUSH_RAG * (0.5 * sin(along / 1150.0 + 0.7) + 0.3 * sin(along / 470.0 + d / 610.0 + 2.3) + 0.2 * sin(along / 230.0 - d / 290.0 + 5.1));
 }
 
 // How hard the storm pushes the cloud at world `xz` (0..1).
 float zs_storm_cloud_weight(vec2 xz) {
 	if (!zs_storm_on()) return 0.0;
 	float d = zs_storm_d(xz);
+	float along = zs_storm_along(xz);
+	float rag = d < -zs_storm_shape.y + ZS_STORM_PUSH_BEHIND_FROM + ZS_STORM_PUSH_RAG ? zs_storm_rag(d, along) : 0.0;
 	float core = zs_storm_shape.y;
 	float half_len = zs_storm_shape.x * 0.5;
 	return zs_storm_ramp(ZS_STORM_PUSH_AHEAD.x, ZS_STORM_PUSH_AHEAD.y, d)
-		* zs_storm_ramp(-core + ZS_STORM_PUSH_BEHIND_FROM - ZS_STORM_PUSH_BEHIND, -core + ZS_STORM_PUSH_BEHIND_FROM, d)
-		* zs_storm_ramp(half_len + ZS_STORM_PUSH_ENDS.x, half_len - ZS_STORM_PUSH_ENDS.y, abs(zs_storm_along(xz)))
+		* zs_storm_ramp(-core + ZS_STORM_PUSH_BEHIND_FROM - ZS_STORM_PUSH_BEHIND, -core + ZS_STORM_PUSH_BEHIND_FROM, d + rag)
+		* zs_storm_ramp(half_len + ZS_STORM_PUSH_ENDS.x, half_len - ZS_STORM_PUSH_ENDS.y, abs(along))
 		* clamp(storm_intensity, 0.0, 1.0);
 }
 
@@ -113,5 +128,7 @@ vec3 zs_storm_cloud_flash(vec3 p, float crown, float w, float lum, float sea) {
 	float form = mix(1.0, 2.0 * lum / (lum + ZS_STORM_FLASH_FORM_REF), w);
 	form *= mix(ZS_STORM_FLASH_HIGH, 1.0, exp(-max(p.y - sea - ZS_STORM_FLASH_LOW.x, 0.0) / ZS_STORM_FLASH_LOW.y));
 	form *= mix(ZS_STORM_FLASH_NIGHT, 1.0, zs_daylight);
-	return ZS_STORM_FLASH_COL * (f * reach * zs_lightning.w * ZS_STORM_FLASH_GAIN * mix(1.0, 0.55, crown) * mix(0.5, 1.0, w) * form);
+	vec3 add = ZS_STORM_FLASH_COL * (f * reach * zs_lightning.w * ZS_STORM_FLASH_GAIN * mix(1.0, 0.55, crown) * mix(0.5, 1.0, w) * form);
+	float a = zs_storm_cloud_lum(add);
+	return a > 1e-5 ? add * (ZS_STORM_FLASH_CAP * tanh(a / ZS_STORM_FLASH_CAP) / a) : add;
 }

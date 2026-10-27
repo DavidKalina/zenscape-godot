@@ -71,6 +71,23 @@ float zs_storm_rain(vec2 p) {
 		* zs_storm_wet;
 }
 
+// How wet the land the rain has crossed is (0..1; the look only, never
+// the ground the plane lands on): wetting as the rain comes over it
+// (ZS_STORM_SOAK_IN m behind the leading edge), held under the core and
+// for ZS_STORM_DRY.x m past where the rain lets go, dried by .y m past it
+// (at the front's 15 m/s, about a minute held, five to dry). The storm
+// has rained as it came, so the trail runs whole behind it (no clock).
+const vec2 ZS_STORM_SOAK_IN = vec2(-150.0, -700.0);
+const vec2 ZS_STORM_DRY = vec2(900.0, 4500.0);
+float zs_storm_soak(vec2 p) {
+	if (!zs_storm_on()) return 0.0;
+	float d = zs_storm_d(p);
+	float past = -zs_storm_shape.y - ZS_STORM_RAIN_OUT.x - d;
+	return zs_storm_ramp(ZS_STORM_SOAK_IN.x, ZS_STORM_SOAK_IN.y, d)
+		* (1.0 - zs_storm_ramp(ZS_STORM_DRY.x, ZS_STORM_DRY.y, past))
+		* zs_storm_ends(p) * zs_storm_wet;
+}
+
 // How much of the sky the storm's cloud leaves showing along `rd` from `ro`
 // (1 clear, 0 hidden), for the sky's own objects (stars, planets), which
 // draw before the cloud composite and showed through the deck's last few

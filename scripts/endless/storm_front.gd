@@ -58,6 +58,9 @@ const PUSH_AHEAD := Vector2(3800.0,250.0)
 const PUSH_BEHIND_FROM := -200.0
 const PUSH_BEHIND := 1400.0
 const PUSH_ENDS := Vector2(1500.0,900.0)
+## The back torn: the let-go reads the edge distance shifted by rag(), at
+## most PUSH_RAG m (storm_cloud.glslinc SP_RAG, storm_rag).
+const PUSH_RAG := 750.0
 ## The storm builds: its whole strength (`intensity`) rises from GROW_FROM
 ## to 1 over its first GROW seconds (eased), so the cumulus ahead fills up,
 ## swells and darkens in view. --storm-grow=S (0: whole from the start),
@@ -202,8 +205,14 @@ func push_at(p: Vector2) -> float:
 ## the storm builds, only grows.
 func place_at(p: Vector2) -> float:
 	var d := edge_distance(p)
+	var a := along(p)
 	var half := length*0.5
-	return ramp(PUSH_AHEAD.x,PUSH_AHEAD.y,d) 		*ramp(-CORE_DEPTH+PUSH_BEHIND_FROM-PUSH_BEHIND,-CORE_DEPTH+PUSH_BEHIND_FROM,d) 		*ramp(half+PUSH_ENDS.x,half-PUSH_ENDS.y,absf(along(p)))
+	return ramp(PUSH_AHEAD.x,PUSH_AHEAD.y,d) 		*ramp(-CORE_DEPTH+PUSH_BEHIND_FROM-PUSH_BEHIND,-CORE_DEPTH+PUSH_BEHIND_FROM,d+rag(d,a)) 		*ramp(half+PUSH_ENDS.x,half-PUSH_ENDS.y,absf(a))
+
+## How far (m) the back's let-go is shifted at edge distance `d`, `a` along
+## the line: tongues and bays, slowly turning as the front moves on.
+static func rag(d: float, a: float) -> float:
+	return PUSH_RAG*(0.5*sin(a/1150.0+0.7)+0.3*sin(a/470.0+d/610.0+2.3)+0.2*sin(a/230.0-d/290.0+5.1))
 
 ## The storm's whole strength at its clock `t` (s).
 func strength_at(t: float) -> float:

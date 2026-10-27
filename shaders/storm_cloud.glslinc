@@ -27,6 +27,13 @@ const vec2 SP_AHEAD = vec2(3800.0, 250.0);
 const float SP_BEHIND_FROM = -200.0;
 const float SP_BEHIND = 1400.0;
 const vec2 SP_ENDS = vec2(1500.0, 900.0);
+// The storm's back torn: the let-go reads the front's distance shifted by
+// storm_rag, three sines along and across the line (at most SP_RAG m), so
+// it lets go in tongues and bays with holes the sun comes through, never
+// one level edge (a tan lid behind the storm). The across terms turn
+// slowly as the front moves on (the back tears as it passes). Mirrored
+// in storm_front.gd (rag) and the composite (zs_storm_rag).
+const float SP_RAG = 750.0;
 // A pushed cloud: how much wider (x) and taller (y) at a whole push, how
 // much higher its top may reach (m), the share of the broad cells turned to
 // towers, how many more domes, its belly deeper, the most its reach may
@@ -63,6 +70,10 @@ const float SP_UNDER = 110.0;
 const float SC_LOW = 120.0;
 const float SC_HIGH = 2100.0;
 
+float storm_rag(float d, float along) {
+	return SP_RAG * (0.5 * sin(along / 1150.0 + 0.7) + 0.3 * sin(along / 470.0 + d / 610.0 + 2.3) + 0.2 * sin(along / 230.0 - d / 290.0 + 5.1));
+}
+
 bool storm_on() {
 	return P.spare[4].w > 0.5;
 }
@@ -77,8 +88,10 @@ float storm_place(vec2 xz) {
 	float along = dot(rel, vec2(-hd.y, hd.x));
 	float core = P.spare[4].y;
 	float half_len = P.spare[4].x * 0.5;
+	// (The rag only where it can move the let-go: |rag| <= SP_RAG.)
+	float rag = d < -core + SP_BEHIND_FROM + SP_RAG ? storm_rag(d, along) : 0.0;
 	return sstep(SP_AHEAD.x, SP_AHEAD.y, d)
-		* sstep(-core + SP_BEHIND_FROM - SP_BEHIND, -core + SP_BEHIND_FROM, d)
+		* sstep(-core + SP_BEHIND_FROM - SP_BEHIND, -core + SP_BEHIND_FROM, d + rag)
 		* sstep(half_len + SP_ENDS.x, half_len - SP_ENDS.y, abs(along));
 }
 
