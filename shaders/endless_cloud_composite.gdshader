@@ -52,6 +52,8 @@ const vec3 UNDER_ROSE = vec3(1.0, 0.42, 0.52);
 const float UNDER_ROSE_SHARE = 0.5;
 // The valley fog's light scaled (1 as the first pass drew it).
 uniform float fog_gain = 1.0;
+// In cloud under the storm: the share of the white glow kept.
+const float ZS_STORM_GLOW = 0.3;
 
 void vertex() {
 	POSITION = vec4(VERTEX.xy, 1.0, 1.0);
@@ -90,6 +92,9 @@ void fragment() {
 	// In the cloud: the white glow of the fog round the eye, warmer toward
 	// the sun.
 	vec3 glow_col = mix(vec3(0.95, 0.97, 1.0), sun_hue, 0.15) * GLOW * mix(1.0, 0.2, zs_night) * mix(0.6, 1.0, zs_daylight);
+	// Under the storm the fog round the eye is its gloom, not a white glow
+	// (the storm's amount at the eye, zs_storm_here).
+	glow_col *= mix(1.0, ZS_STORM_GLOW, zs_storm_here);
 	vec3 col = lit + glow_col * glow * (1.0 + 0.7 * pow(toward_sun, 3.0)) * ZS_CUMULUS_LIT_SHARE * 1.6;
 	vec3 painted = mix(c_shade * 0.55, c_sun * 0.9, bright) * ZS_CUMULUS_LIT_SHARE * 1.6;
 	col = mix(col, painted, NIGHT_TINT * zs_night);

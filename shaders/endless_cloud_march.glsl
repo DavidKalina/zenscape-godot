@@ -1283,8 +1283,9 @@ float st_inside(vec3 p, out float hh, out float thick, out float free) {
 }
 
 // The cloud at `p`: the field's (field_at) and the storm's towers'.
-Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
-	bool field = t <= g_field_out && p.y >= P.band.x - 1.0 && p.y <= P.band.y + OVER;
+bool g_no_field = false;
+Sample cloud_at_core(vec3 p, float t, float immersed, bool fine) {
+	bool field = !g_no_field && t <= g_field_out && p.y >= P.band.x - 1.0 && p.y <= P.band.y + OVER;
 	Sample s = field ? field_at(p, t, immersed, fine) : Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 1e9, 0.0);
 	g_st = false;
 	g_st_c = 0.0;
@@ -1327,6 +1328,56 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 	return s;
 }
 
+// The envelope's (storm_env_cloud) where the storm has closed in: g_env
+// when it binds (lit flat, no taps), g_env_band when the sample lies in its
+// band at all (the march steps it at its own pace), g_env_e the envelope.
+bool g_env = false;
+bool g_env_band = false;
+float g_env_e = 0.0;
+
+// The cloud at `p`: the field's and the towers' (cloud_at_core), and the
+// storm's envelope round the plane.
+Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
+	g_env = false;
+	g_env_band = false;
+	g_env_e = 0.0;
+	float e = storm_env_on() && t <= g_field_out ? storm_envelope(p.xz) : 0.0;
+	float fl = 0.0;
+	if (e > 0.0) {
+		fl = storm_env_floor(p.xz);
+		g_env_band = p.y <= storm_deck_base(e, fl) + SE_THICK && p.y >= fl;
+	}
+	// In its band under every base the field's map holds, the field can't
+	// bind: only the towers are asked.
+	g_no_field = false;
+	vec2 cl = vec2(-1e3, 1e4);
+	if (g_env_band) {
+		cl = ceiling_at(p.xz);
+		g_no_field = p.y < cl.y - 8.0;
+	}
+	Sample s = cloud_at_core(p, t, immersed, fine);
+	if (g_no_field) {
+		s.inside = min(s.inside, -(cl.y - p.y));
+		g_f_inside = min(g_f_inside, -(cl.y - p.y));
+	}
+	g_no_field = false;
+	g_env_e = e;
+	if (!g_env_band) return s;
+	float dens, hh, cave;
+	float ins = storm_env_cloud(p, e, fl, dens, hh, cave);
+	if (dens > s.density) {
+		g_env = true;
+		g_st = false;
+		s.density = dens;
+		s.inside = max(s.inside, ins);
+		s.h = hh;
+		s.cave = cave;
+		s.pocket = 0.5;
+		s.sigma = SE_SIGMA / max(SIGMA, 1e-4) * mix(SIGMA, SIGMA_IN, immersed);
+	}
+	return s;
+}
+
 // The towers' body for the face (`face`: the heaps as the march carves
 // them, st_carve, but the near knots) and for the light taps (the lobed
 // body, st_lobe, shifted in by the march's sample's own carve of the
@@ -1357,10 +1408,24 @@ float clear_ahead(vec3 p, vec3 rd, float level) {
 	float block = P.weather_at.z / P.weather_at.w * CEILING_BLOCK_F;
 	float across = block * 0.9 / level;
 	float over = p.y - (c.x + OVER);
-	if (over > 0.0) return min(rd.y < 0.0 ? over / -rd.y : 1e9, across);
-	float under = (c.y - 8.0) - p.y;
-	if (under > 0.0) return min(rd.y > 0.0 ? under / rd.y : 1e9, across);
-	return 0.0;
+	float gap = 0.0;
+	if (over > 0.0) gap = min(rd.y < 0.0 ? over / -rd.y : 1e9, across);
+	else {
+		float under = (c.y - 8.0) - p.y;
+		if (under > 0.0) gap = min(rd.y > 0.0 ? under / rd.y : 1e9, across);
+	}
+	// The storm's envelope (storm_env_cloud) is in no map: wherever it may
+	// lie within the leap, no leap into its band.
+	if (gap > 0.0 && storm_env_on()) {
+		float env_top = storm_env_top() + 20.0;
+		if (p.y < env_top) {
+			// Up to where it may begin across the land.
+			float r = storm_env_reach(p.xz);
+			if (r < 20.0) return 0.0;
+			gap = min(gap, (r - 10.0) / level);
+		} else if (rd.y < 0.0) gap = min(gap, (p.y - env_top) / -rd.y);
+	}
+	return gap;
 }
 
 // --- The valley fog ------------------------------------------------------------------
@@ -1744,6 +1809,11 @@ void march_pass() {
 		int cs0 = g_c_st;
 		Sample s = cloud_at(p, t, immersed, true);
 		c_samp += g_c_st - cs0;
+		// In the envelope's band, clear of the field's cloud and the
+		// towers, its own pace: its scud and murk are soft and kilometres
+		// wide, so the steps stretch with the distance.
+		float step_s = step;
+		if (g_env_band && g_f_inside < -40.0 && g_st_free > 80.0) step_s = max(step, clamp(6.0 + 0.025 * t, 6.0, 70.0));
 		// Close to the eye the cloud thins away, so the eye never meets a
 		// wall; in the cloud less so, but the plane ahead stays readable.
 		s.density *= mix(sstep(NEAR_FADE.x, NEAR_FADE.y, t), 0.25 + 0.75 * sstep(4.0, 18.0, t), immersed);
@@ -1752,11 +1822,28 @@ void march_pass() {
 			t_first = t;
 			c_pre = c_iters;
 			c_hit_st = g_st ? 1.0 : 0.3;
-			if (step > STEP.x * 2.0) {
+			if (step > STEP.x * 2.0 && !g_env) {
 				t -= step * 0.75;
 				fine_left = 6;
 				continue;
 			}
+		}
+		if (s.density > 0.002 && g_env) {
+			// The envelope's deck and scud: flat and dark under the storm,
+			// no taps (the deck's lumps shade by their creases).
+			c_lit++;
+			bool scud = g_env_scud > 0.5;
+			float sky_e = scud ? SE_SKY.y : SE_SKY.x * (1.0 - 0.7 * s.cave) * mix(0.85, 1.3, s.h);
+			float sun_e = scud ? SE_SUN.y : SE_SUN.x;
+			float alpha = 1.0 - exp(-s.density * s.sigma * step_s);
+			float w = T * alpha;
+			acc_a += w * (1.0 - immersed) * vec4(SKY * sky_e, sun_e * SUN_SCALE, 0.0, 0.0);
+			glow += w * immersed * 0.3;
+			met += w * t;
+			crown += w * s.h * 0.3;
+			T *= 1.0 - alpha;
+			t += step_s;
+			continue;
 		}
 		if (s.density > 0.002) {
 			c_lit++;
@@ -1855,12 +1942,21 @@ void march_pass() {
 			sun_light *= mix(1.0, storm_sun(p.y), sw);
 			// ...and in its heaps' creases (storm_cave).
 			sun_light *= 1.0 - SC_CAVE_SUN * s.cave;
+			// In or under the envelope's deck, in its shade: lit as the deck
+			// is (a tower's base, a cell under it).
+			float env_shade = 0.0;
+			if (g_env_e > 0.0) {
+				float db = P.band.x + mix(SE_DECK.y, SE_DECK.x, g_env_e);
+				env_shade = sstep(0.0, 0.5, g_env_e) * sstep(db + SE_THICK, db + SE_THICK * 0.3, p.y);
+				sun_light = mix(sun_light, SE_SUN.x * SUN_SCALE, env_shade);
+			}
 			float powder = 1.0 - exp(-max(s.inside, 0.0) / POWDER_DEPTH);
 			sun_light *= mix(1.0, powder, powder_share);
 			float deep = sstep(0.0, 50.0, s.inside);
 			float beer = exp(-tau);
 			float ambient = SKY * sky_open * mix(0.32, 1.0, s.h) * mix(1.0, DEEP, deep) * mix(1.0, 0.45, beer);
 			ambient *= mix(1.0, storm_sky(p.y), sw) * (1.0 - SC_CAVE_SKY * s.cave);
+			ambient = mix(ambient, SKY * SE_SKY.x * (1.0 - 0.5 * s.cave), env_shade);
 			float bounce = BOUNCE * pow(1.0 - s.h, 2.0) * mix(1.0, 0.3, sw);
 			float alpha = 1.0 - exp(-s.density * s.sigma * step);
 			float w = T * alpha;
@@ -1877,6 +1973,7 @@ void march_pass() {
 			// to the surface (damped), so rays skimming the domes' billow
 			// margin don't crawl and spend the steps before far cloud.
 			float leap = g_new ? max(s.free, -s.inside * 0.6) : s.free;
+			if (g_env_band) leap = min(leap, step_s);
 			t += clamp(leap, step, 600.0);
 			s.free = leap;
 			// After a leap the next step jittered afresh, so where the steps
@@ -1899,6 +1996,57 @@ void march_pass() {
 			glow *= fog_T;
 		}
 		T *= fog_T;
+	}
+	// The storm's murk (storm_cloud.glslinc SE_MURK): the rain-grey air
+	// under the envelope, in chunks along the ray, laid before and behind
+	// the cloud by its mean distance.
+	if (storm_env_on() && P.spare[18].y > 0.0) {
+		float cover_c = 1.0 - T;
+		float t_c = cover_c > 0.003 ? met / cover_c : 1e9;
+		float top_y = P.band.x + SE_MURK_TOP.y;
+		float ma = 0.0;
+		float mb = min(t_solid, SE_MURK_REACH);
+		if (rd.y > 1e-4) mb = min(mb, max((top_y - ro.y) / rd.y, 0.0));
+		if (ro.y > top_y) ma = rd.y < -1e-4 ? (top_y - ro.y) / rd.y : mb;
+		if (mb > ma) {
+			vec4 mf = vec4(0.0);
+			vec4 mk = vec4(0.0);
+			float tf = 1.0;
+			float tk = 1.0;
+			float metf = 0.0;
+			float metk = 0.0;
+			vec4 L = vec4(SKY * SE_MURK_SKY, SE_MURK_SUN * SUN_SCALE, 0.0, 0.0);
+			float span = mb - ma;
+			float prev = ma;
+			for (int i = 1; i <= SE_MURK_CHUNKS; i++) {
+				float u = float(i) / float(SE_MURK_CHUNKS);
+				float b = ma + span * u * u;
+				for (int h = 0; h < 2; h++) {
+					float a0 = h == 0 ? prev : max(prev, t_c);
+					float b0 = h == 0 ? min(b, t_c) : b;
+					if (b0 <= a0) continue;
+					float tm = 0.5 * (a0 + b0);
+					vec3 pm = ro + rd * tm;
+					float dens = storm_envelope(pm.xz) * (1.0 - sstep(P.band.x + SE_MURK_TOP.x, top_y, pm.y));
+					float alpha = 1.0 - exp(-dens * SE_MURK * P.spare[18].y * (b0 - a0));
+					if (h == 0) {
+						mf += tf * alpha * L;
+						metf += tf * alpha * tm;
+						tf *= 1.0 - alpha;
+					} else {
+						mk += tk * alpha * L;
+						metk += tk * alpha * tm;
+						tk *= 1.0 - alpha;
+					}
+				}
+				prev = b;
+			}
+			acc_a = mf + tf * (acc_a + T * mk);
+			met = metf + tf * (met + T * metk);
+			crown *= tf;
+			glow *= tf;
+			T = tf * T * tk;
+		}
 	}
 	float cover = 1.0 - T;
 	// The cost view: grey by what this pixel cost (1 the loop's turns of

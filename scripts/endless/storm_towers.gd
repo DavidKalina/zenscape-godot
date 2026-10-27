@@ -208,5 +208,10 @@ func depth(p: Vector3) -> float:
 		if absf(g-float(t.lobes_g)) > 0.02:
 			t.lobes = shape.lobes_at(g)
 			t.lobes_g = g
-		best = maxf(best,-float(shape._distance(q,t.lobes))*scale-(1.0-float(t.show))*300.0)
+		# Cut at its foot as the march cuts it (ST_FOOT 60: under = y -
+		# foot - 18 m, at 0.8, lifted by its lumps, ST_UNDER 150 deep: half
+		# that here), so under the flat base is out of it.
+		var foot: float = origin(t).y+box.position.y*scale
+		var body := -float(shape._distance(q,t.lobes))*scale-(1.0-float(t.show))*300.0
+		best = maxf(best,minf(body,(p.y-foot-18.0-75.0)*0.8))
 	return best

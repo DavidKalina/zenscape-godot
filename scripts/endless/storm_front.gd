@@ -67,6 +67,30 @@ const GROW_FROM := 0.1
 ## The rain (and so the lightning, which strikes in it) comes in as the
 ## clouds over it build: none below WET.x of the strength, whole from WET.y.
 const WET := Vector2(0.4,0.85)
+## Enveloped (shaders/storm_cloud.glslinc SE_*, keep the numbers equal):
+## deep in the core the storm closes round the plane. Its base drops as a
+## dark lumpy deck (ENV_DECK: its base over the sea where the envelope is
+## whole, and where it begins; ENV_THICK thick), scud races under it, the
+## air greys with rain. The envelope comes in from ENV_IN.x m behind the
+## edge to whole at .y, lets go from ENV_OUT.x m before the core's end to
+## none .y past it, tapers at the line's ends, and waits for the storm to
+## build (ENV_STRENGTH of its intensity). Nothing of it comes nearer the
+## ground than ENV_GROUND m, nor the meadows than the clouds' meadow
+## clearance. --storm-envelope=0 leaves it out; --storm-murk=X,
+## --storm-scud=X, --storm-deck=X scale its three parts (1).
+const ENV_IN := Vector2(-150.0,-1000.0)
+const ENV_OUT := Vector2(300.0,-400.0)
+const ENV_STRENGTH := Vector2(0.55,0.95)
+const ENV_DECK := Vector2(200.0,700.0)
+const ENV_THICK := 380.0
+const ENV_GROUND := 40.0
+## The light deep in it, on top of the core's grade: more gloom, the sun
+## left at ENV_SUN of what the core leaves; inside its cloud (`immersed`)
+## more again (IMMERSED_GLOOM, IMMERSED_SUN).
+const ENV_GLOOM := 0.2
+const ENV_SUN := 0.45
+const IMMERSED_GLOOM := 0.1
+const IMMERSED_SUN := 0.5
 
 var length := LENGTH
 var speed := SPEED
@@ -93,6 +117,13 @@ var held_strength := NAN
 var churn := 0.0
 ## How fast the churn runs (--storm-churn=X; 0 holds the heaps still).
 var churn_rate := 1.0
+## The envelope (ENV_*): on, its murk's, scud's and deck's scales, its
+## amount at the eye as of the last step, and how deep in cloud the eye is
+## (0..1, smoothed; the study sets it from the clouds' `cloud_depth`).
+var envelope := true
+var env_scale := Vector3.ONE
+var env_here := 0.0
+var immersed := 0.0
 
 ## The front the flags ask for, or null (nothing built). `start` the
 ## start's xz, `forward` the plane's heading there (unit xz), `wind` the
@@ -124,6 +155,10 @@ static func from_args(start: Vector2, forward: Vector2, wind: Vector2) -> RefCou
 		elif a.begins_with("--storm-strength="): s.held_strength = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 		elif a.begins_with("--storm-grow-from="): s.grow_from = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 		elif a.begins_with("--storm-churn="): s.churn_rate = maxf(0.0,a.get_slice("=",1).to_float())
+		elif a.begins_with("--storm-envelope="): s.envelope = a.get_slice("=",1) != "0"
+		elif a.begins_with("--storm-murk="): s.env_scale.x = maxf(0.0,a.get_slice("=",1).to_float())
+		elif a.begins_with("--storm-scud="): s.env_scale.y = maxf(0.0,a.get_slice("=",1).to_float())
+		elif a.begins_with("--storm-deck="): s.env_scale.z = maxf(0.0,a.get_slice("=",1).to_float())
 	s.intensity = s.strength_at(0.0)
 	if not is_nan(ahead):
 		# Ahead of the plane, coming at it.
@@ -191,6 +226,23 @@ func amount_at(p: Vector2) -> float:
 	var d := edge_distance(p)
 	return ramp(SHELF_AHEAD,CORE_FROM,d)*ramp(-CORE_DEPTH-CLEAR,-CORE_DEPTH,d)*_ends(p)
 
+## The envelope (0..1): how far the storm has closed in at `p`.
+func envelope_at(p: Vector2) -> float:
+	if not envelope: return 0.0
+	var d := edge_distance(p)
+	return ramp(ENV_IN.x,ENV_IN.y,d)*ramp(-CORE_DEPTH+ENV_OUT.y,-CORE_DEPTH+ENV_OUT.x,d)*_ends(p)*ramp(ENV_STRENGTH.x,ENV_STRENGTH.y,intensity)
+
+## The deck's smooth base (world y) at envelope `e` over the floor `floor_y`
+## (world y), `sea` the sea's y.
+static func deck_base(e: float, floor_y: float, sea: float) -> float:
+	return maxf(sea+lerpf(ENV_DECK.y,ENV_DECK.x,e),floor_y)
+
+## How deep in cloud the eye is (`depth` m, the clouds' cloud_depth),
+## smoothed over a moment.
+func immerse(depth: float, delta: float) -> void:
+	var goal := ramp(-5.0,40.0,depth)
+	immersed = lerpf(immersed,goal,1.0-exp(-delta/0.35))
+
 ## The rain (0..1): under the core.
 func rain_at(p: Vector2) -> float:
 	var d := edge_distance(p)
@@ -215,6 +267,7 @@ func step(delta: float, eye: Vector3, held := false) -> void:
 		intensity = strength_at(time)
 		churn += delta*intensity*churn_rate
 	here = amount_at(Vector2(eye.x,eye.z))
+	env_here = envelope_at(Vector2(eye.x,eye.z))
 	publish()
 
 func publish() -> void:
@@ -227,14 +280,14 @@ func publish() -> void:
 ## The light's grade under it, on the look's Celestial (each frame,
 ## before it advances).
 func grade(celestial: RefCounted) -> void:
-	celestial.storm = here*gloom
+	celestial.storm = minf(here*gloom+env_here*ENV_GLOOM+immersed*IMMERSED_GLOOM,0.95)
 
 ## The sun dimmed under it (each frame, after the look has set its energy).
 func shade(sun: DirectionalLight3D) -> void:
-	sun.light_energy *= lerpf(1.0,sun_left,here)
+	sun.light_energy *= lerpf(1.0,sun_left,here)*lerpf(1.0,ENV_SUN,env_here)*lerpf(1.0,IMMERSED_SUN,immersed)
 
 ## --storm-debug's line at `p`.
 func note(p: Vector3) -> String:
 	var q := Vector2(p.x,p.z)
-	return "storm  d %.0f m  ·  along %.0f m  ·  amount %.2f  ·  rain %.2f  ·  gust %.2f  ·  here %.2f  ·  t %.0f s  ·  strength %.2f" % [
-		edge_distance(q),along(q),amount_at(q),rain_at(q),gust_at(q),here,time,intensity]
+	return "storm  d %.0f m  ·  along %.0f m  ·  amount %.2f  ·  rain %.2f  ·  gust %.2f  ·  here %.2f  ·  envelope %.2f  ·  in cloud %.2f  ·  t %.0f s  ·  strength %.2f" % [
+		edge_distance(q),along(q),amount_at(q),rain_at(q),gust_at(q),here,env_here,immersed,time,intensity]

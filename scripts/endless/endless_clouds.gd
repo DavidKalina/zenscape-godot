@@ -929,6 +929,7 @@ func _clouds_in_layer(at: Vector2, reach: float, layer_low: bool, out: Array) ->
 ## ones), or a negative number outside every cloud.
 func cloud_depth(p: Vector3) -> float:
 	var best: float = towers.depth(p) if towers != null else -1e9
+	if storm != null: best = maxf(best,envelope_depth(p))
 	var xz := Vector2(p.x,p.z)
 	if organic:
 		for c: Dictionary in clouds_in(xz,BIG*(2.6 if storm != null else 1.6)):
@@ -951,6 +952,30 @@ func cloud_depth(p: Vector3) -> float:
 			bottom = minf(bottom,float(c.base)+float(b[2])*CURL*u*u*u*u)
 		best = maxf(best,minf(top-p.y,p.y-bottom))
 	return best
+
+## How far world point `p` is into the storm's own cloud: its towers and
+## its envelope's deck (cheap enough for every frame; `cloud_depth` adds the
+## field's cells).
+func storm_depth(p: Vector3) -> float:
+	var best: float = towers.depth(p) if towers != null else -1e9
+	return maxf(best,envelope_depth(p))
+
+## How far world point `p` is into the storm's envelope deck (StormFront
+## ENV_*; the march's storm_env_cloud), its smooth base (no lumps, no
+## scud), or a negative number outside it.
+func envelope_depth(p: Vector3) -> float:
+	if storm == null or not storm.envelope or storm.env_scale.z <= 0.0: return -1e9
+	var xz := Vector2(p.x,p.z)
+	var e: float = storm.envelope_at(xz)
+	# The deck stands from a fifth of the envelope (its density rides
+	# smoothstep(0, 0.35, e) in the march).
+	if e < 0.2: return -1e9
+	var g := _ground_sample(xz)
+	var m := clampf(g.x,0.0,1.0)
+	var fl := maxf(g.y,Field.SEA_Y)+float(storm.ENV_GROUND)
+	fl = maxf(fl,lerpf(fl,g.y+MEADOW_CLEAR,m))
+	var base: float = storm.deck_base(e,fl,Field.SEA_Y)
+	return minf(p.y-base,base+float(storm.ENV_THICK)-p.y)
 
 ## Whether world point `p` is inside a cloud's body (`cloud_depth` > 0).
 func in_cloud(p: Vector3) -> bool:
@@ -1017,6 +1042,9 @@ func _fill() -> void:
 		_put4(p,80,Vector4(e.x,e.y,h.x,h.y))
 		_put4(p,84,Vector4(storm.length,storm.CORE_DEPTH,storm.intensity,1.0))
 		_put4(p,88,Vector4(storm.churn,0.0,0.0,cost_view))
+		# Its envelope (spare[18]: on, the murk's, scud's, deck's scales).
+		var es: Vector3 = storm.env_scale
+		_put4(p,140,Vector4(1.0 if storm.envelope else 0.0,es.x,es.y,es.z))
 		# Its towers (spare[5].y, spare[6..17]).
 		if not _towers_made:
 			_towers_made = true

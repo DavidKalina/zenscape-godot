@@ -183,3 +183,158 @@ const float SC_SKY_LOW = 0.5;
 float storm_sky(float y) {
 	return mix(SC_SKY_LOW, 1.0, sstep(0.0, 0.45, storm_height(y)));
 }
+
+// --- Enveloped (1d) ----------------------------------------------------------
+// Deep in the core the storm closes round the plane: its base drops toward
+// the plane as a dark, lumpy deck (SE_DECK), ragged scud races past at the
+// plane's height under it (SE_SCUD), and the air under it greys with rain
+// (the murk, SE_MURK) so the distance closes in. How much, at a place, is
+// one number, storm_envelope: in from SE_IN.x m behind the leading edge to
+// whole at SE_IN.y, let go from SE_OUT.x m before the core's end to none
+// SE_OUT.y past it, faded at the line's ends (as the rain), and waiting for
+// the storm to build (SE_STRENGTH of its intensity). Nothing of it comes
+// nearer the ground than the cloud floor (SE_GROUND over the ground, the
+// field's meadow clearance over the meadows: P.knobs.w), so the meadows
+// stay landable under it. Mirrored in scripts/endless/storm_front.gd
+// (ENV_*, envelope_at, deck_base): keep the numbers equal. P.spare[18]:
+// on (0/1), the murk's, the scud's and the deck's scales.
+const vec2 SE_IN = vec2(-150.0, -1000.0);
+const vec2 SE_OUT = vec2(300.0, -400.0);
+const float SE_TAPER = 1000.0;
+const vec2 SE_STRENGTH = vec2(0.55, 0.95);
+// The deck: its base over the sea where the envelope is whole (.x) and
+// where it begins (.y), how thick it stands, its lumps (m deep, tile).
+const vec2 SE_DECK = vec2(200.0, 420.0);
+const float SE_THICK = 380.0;
+const float SE_LUMP = 55.0;
+const vec3 SE_LUMP_TILE = vec3(300.0, 160.0, 240.0);
+// The floor: never nearer the ground than this (m).
+const float SE_GROUND = 40.0;
+// The scud: its tile (m: along the storm's heading, up, across), the fine
+// tile, how fast it races along the heading (m/s), its cover where the
+// envelope is whole (the noise's gate) and its density.
+const vec3 SE_SCUD_TILE = vec3(520.0, 110.0, 300.0);
+const vec3 SE_SCUD_FINE = vec3(140.0, 46.0, 110.0);
+const float SE_SCUD_SPEED = 24.0;
+const vec2 SE_SCUD_GATE = vec2(0.74, 0.43);
+const float SE_SCUD_DENS = 0.6;
+const float SE_SIGMA = 0.05;
+// Their light: no taps (flat, dark grey under the deck): the sky's share,
+// the sun's, in the deck and in the scud.
+const vec2 SE_SKY = vec2(0.24, 0.34);
+const vec2 SE_SUN = vec2(0.03, 0.07);
+// The murk: extinction per m where the envelope is whole (~630 m to half),
+// full up to SE_MURK_TOP.x m over the sea, gone by .y; its light; its
+// chunks along the ray and their reach (m).
+const float SE_MURK = 0.0011;
+const vec2 SE_MURK_TOP = vec2(320.0, 760.0);
+const float SE_MURK_SKY = 0.3;
+const float SE_MURK_SUN = 0.04;
+const int SE_MURK_CHUNKS = 10;
+const float SE_MURK_REACH = 7000.0;
+
+bool storm_env_on() {
+	return P.spare[4].w > 0.5 && P.spare[18].x > 0.5;
+}
+
+// The envelope at world `xz` (0..1), its ramps widened by `r` m (a bound
+// for the march's leaps: > 0 wherever any of it lies within r).
+float storm_envelope_r(vec2 xz, float r) {
+	if (!storm_env_on()) return 0.0;
+	vec2 hd = P.spare[3].zw;
+	vec2 rel = xz - P.spare[3].xy;
+	float d = dot(rel, hd);
+	float along = dot(rel, vec2(-hd.y, hd.x));
+	float core = P.spare[4].y;
+	float half_len = P.spare[4].x * 0.5;
+	return sstep(SE_IN.x + r, SE_IN.y + r, d)
+		* sstep(-core + SE_OUT.y - r, -core + SE_OUT.x - r, d)
+		* sstep(half_len + r, half_len - SE_TAPER + r, abs(along))
+		* sstep(SE_STRENGTH.x, SE_STRENGTH.y, P.spare[4].z);
+}
+
+float storm_envelope(vec2 xz) {
+	return storm_envelope_r(xz, 0.0);
+}
+
+// How far (m, across the land) world `xz` lies from where the envelope can
+// be at all (0 inside it; 1e9 while the storm is too weak for it): the
+// march leaps up to it.
+float storm_env_reach(vec2 xz) {
+	if (!storm_env_on() || P.spare[4].z <= SE_STRENGTH.x) return 1e9;
+	vec2 hd = P.spare[3].zw;
+	vec2 rel = xz - P.spare[3].xy;
+	float d = dot(rel, hd);
+	float along = abs(dot(rel, vec2(-hd.y, hd.x)));
+	float core = P.spare[4].y;
+	vec2 out_by = vec2(max(max(d - SE_IN.x, (-core + SE_OUT.y) - d), 0.0), max(along - P.spare[4].x * 0.5, 0.0));
+	return length(out_by);
+}
+
+// The highest the envelope's cloud stands (world y; over a mountain's
+// floor the deck rides higher, unbounded here).
+float storm_env_top() {
+	return P.band.x + SE_DECK.y + SE_THICK;
+}
+
+// The floor under the envelope at `xz` (world y): the ground's height and
+// the meadows' clearance (ground_at: meadow, height).
+float storm_env_floor(vec2 xz) {
+	vec2 g = ground_at(xz);
+	float m = clamp(g.x, 0.0, 1.0);
+	float fl = max(g.y, P.band.x) + SE_GROUND;
+	return max(fl, mix(fl, g.y + P.knobs.w, m));
+}
+
+// The deck's smooth base at `xz` (world y) for envelope `e` over floor `fl`.
+float storm_deck_base(float e, float fl) {
+	return max(P.band.x + mix(SE_DECK.y, SE_DECK.x, e), fl);
+}
+
+// The envelope's cloud at `p` (envelope `e`): how far inside (m), its
+// density (0..1), how high in it (0 base, 1 top), the lump's crease (0..1)
+// and whether the scud binds. `fl` the floor there.
+float g_env_scud = 0.0;
+float storm_env_cloud(vec3 p, float e, float fl, out float dens, out float hh, out float cave) {
+	dens = 0.0;
+	hh = 0.0;
+	cave = 0.0;
+	g_env_scud = 0.0;
+	float base = storm_deck_base(e, fl);
+	float top = base + SE_THICK;
+	if (p.y > top || p.y < fl) return -1e3;
+	vec2 hd = P.spare[3].zw;
+	float clock = P.eye.w;
+	// The deck: its base hung with lumps (never under the floor).
+	vec3 q = p + vec3(hd.x, 0.0, hd.y) * (-SE_SCUD_SPEED * 0.45 * clock) + SC_CHURN_MID * P.spare[5].x * 0.3;
+	float ins = -1e3;
+	if (p.y > base - SE_LUMP - 10.0) {
+		vec2 n = textureLod(cauliflower, q / SE_LUMP_TILE + 0.71, 0.0).rg;
+		float lump = clamp(0.5 + (0.48 - n.r) * 1.7 + (0.5 - n.g) * 0.7, 0.0, 1.0);
+		float b = max(base - SE_LUMP * lump, fl);
+		ins = min(p.y - b, top - p.y);
+		cave = sstep(0.6, 0.0, lump) * sstep(60.0, 0.0, p.y - b);
+		dens = sstep(0.0, 22.0, ins) * sstep(0.0, 0.35, e) * P.spare[18].w;
+		hh = clamp((p.y - b) / SE_THICK, 0.0, 1.0);
+	}
+	// The scud: torn fragments in the band under the deck, racing along.
+	if (p.y < base + 20.0 && P.spare[18].z > 0.0) {
+		vec3 s = p - vec3(hd.x, 0.0, hd.y) * (SE_SCUD_SPEED * clock);
+		vec3 l = vec3(dot(s.xz, hd), s.y, dot(s.xz, vec2(-hd.y, hd.x)));
+		float big = textureLod(cauliflower, l / SE_SCUD_TILE + 0.17, 0.0).r;
+		float fine = textureLod(cauliflower, l / SE_SCUD_FINE + 0.53, 0.0).g;
+		float gate = mix(SE_SCUD_GATE.x, SE_SCUD_GATE.y, e);
+		float v = big * 0.72 + fine * 0.28;
+		// Thin at the floor and toward the deck's base it joins.
+		float band = sstep(fl, fl + 30.0, p.y);
+		float sd = sstep(gate, gate + 0.1, v) * band * SE_SCUD_DENS * P.spare[18].z;
+		if (sd > dens) {
+			dens = sd;
+			g_env_scud = 1.0;
+			hh = 0.0;
+			cave = 0.0;
+			ins = max(ins, (v - gate) * 300.0);
+		}
+	}
+	return ins;
+}

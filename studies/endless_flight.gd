@@ -968,6 +968,10 @@ func tick(delta: float) -> void:
 	if look != null: look.cycle.held = stage != null and stage.holding()
 	if storm != null:
 		storm.step(delta,camera.global_position,look != null and look.cycle.held)
+		# How deep in the storm's own cloud the eye is (its deck and towers;
+		# the field's cells cost too much a frame): the light, the lens and
+		# the sound follow it (StormFront.grade/shade, StormRain).
+		if look != null and look.clouds != null and look.clouds.enabled: storm.immerse(look.clouds.storm_depth(camera.global_position),delta)
 		if look != null: storm.grade(look.celestial)
 		if storm_sound != null: storm_sound.step(delta,camera.global_position)
 		if storm_rain != null: storm_rain.step(delta,self)

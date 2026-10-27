@@ -36,6 +36,13 @@ const CARD_WIDTH := Vector2(650.0,1300.0)
 ## cruise, less slow), and none while the eye is under cover (unchecked).
 const LENS := 0.8
 const LENS_SPEED := Vector2(0.35,1.0)
+## Enveloped (StormFront `immersed`, `env_here`): in the storm's cloud the
+## lens mists over (ScreenWet amount a second, whole in cloud) and the air's
+## sound closes in (FlightSound `cloud_muffle`: whole in cloud, ENV_MUFFLE
+## of it deep under the envelope).
+const CLOUD_LENS := 0.5
+const CLOUD_MUFFLE := 0.55
+const ENV_MUFFLE := 0.35
 ## The rain's air sheet: drawn after the clouds' (-6), before the rain.
 const AIR_PRIORITY := -5
 
@@ -174,6 +181,7 @@ func step(delta: float, game: Node3D) -> void:
 	_clock += delta
 	var q := Vector2(eye.x,eye.z)
 	here = storm.rain_at(q)
+	_enveloped(delta,game)
 	if off:
 		_sound(game,0.0)
 		return
@@ -196,6 +204,14 @@ func step(delta: float, game: Node3D) -> void:
 	if here > 0.0 and game.has_method("wet"):
 		game.wet(here*LENS*lerpf(LENS_SPEED.x,LENS_SPEED.y,clampf(air,0.0,1.0))*delta)
 	_sound(game,clampf(air,0.0,1.5))
+
+## In the storm's cloud: the lens and the sound.
+func _enveloped(delta: float, game: Node3D) -> void:
+	var inside: float = storm.immersed
+	if inside > 0.01 and game.has_method("wet"): game.wet(inside*CLOUD_LENS*delta)
+	var sound = game.get("sound")
+	if sound != null and "cloud_muffle" in sound:
+		sound.cloud_muffle = CLOUD_MUFFLE*maxf(inside,float(storm.env_here)*ENV_MUFFLE)
 
 ## The rain's air and curtains seen through the clouds' march (its resolved
 ## shape: cover, distance), so rain behind a cloud never lays over it.
