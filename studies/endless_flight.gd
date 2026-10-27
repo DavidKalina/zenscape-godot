@@ -279,6 +279,9 @@ var _hud: Label
 ## The plane's ceiling over the sea (Field CEILING_OVER; --ceiling=).
 var _ceiling_over := Field.CEILING_OVER
 var _hint: Label
+## Over the hint, on the wheels: stopped, how to roll off and back up;
+## backing up, how to stop (`_stop_note`).
+var _stop_cue: Label
 ## A world of regions (--world=regions): the caption naming the region the
 ## eye crosses into, and --region-debug's line (region, cell, weights).
 var _region_caption: Label
@@ -681,8 +684,18 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge (twice: roll)  ·  F flaps (stopped: get out)  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale"
 	layer.add_child(_hint)
+	_stop_cue = Label.new()
+	_stop_cue.anchor_top = 1.0
+	_stop_cue.anchor_bottom = 1.0
+	_stop_cue.offset_top = -68.0
+	_stop_cue.offset_left = 16.0
+	_stop_cue.add_theme_color_override("font_color",Color(1.0,0.93,0.72))
+	_stop_cue.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
+	_stop_cue.add_theme_constant_override("outline_size",4)
+	_stop_cue.visible = false
+	layer.add_child(_stop_cue)
 	# The near misses' HUD: the design handoff's (scripts/endless/near_miss_hud_handoff.gd),
 	# in the tag by the plane or at the top as the player keeps it (H switches).
 	# --near-hud=glyph the earlier trial (gilt numbers in a tag), --near-hud=classic
@@ -908,6 +921,7 @@ func tick(delta: float) -> void:
 	# takeoff: it comes round behind the plane and stays there.
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() and stage == null else Vector3.ZERO
 	chase.ground = hand_landing.on_ground()
+	_stop_note()
 	_frame(delta)
 	if stage != null:
 		stage.frame(delta,camera,plane.position+ground_scale.lift(),ground_scale.size(),Callable(field,"height"))
@@ -1122,6 +1136,18 @@ func _react(delta: float) -> void:
 func _grass_at(x: float, z: float) -> float:
 	var h: float = field.height(x,z)
 	return h if h > Field.SEA_Y+3.0 and field.last_river > Field.RIVER_CLEAR else NAN
+
+## The stop's cue over the hint: stopped, Boost rolls it off and Brake
+## pressed again backs it up (ManualLanding `_stopped`); backing up,
+## letting go stops it. Not in the menu, nor while a race counts down
+## (its tag says hold still).
+func _stop_note() -> void:
+	var words := ""
+	if hand_landing.phase == ManualLanding.STOPPED: words = "stopped  ·  Space boost to roll  ·  Shift again to back up"
+	elif hand_landing.phase == ManualLanding.ROLL and hand_landing.reversing: words = "backing up  ·  let go of Shift to stop"
+	if race != null and race.phase == "count": words = ""
+	_stop_cue.text = words
+	_stop_cue.visible = words != "" and _hint.visible and stage == null
 
 func _frame(delta: float) -> void:
 	var right := Vector2.ZERO if stage != null and stage.holding() else Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
