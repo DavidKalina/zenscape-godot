@@ -45,8 +45,10 @@ const float SP_ADMIT = 0.12;
 // The steepest flank a pushed cloud's distance reads (the field's
 // SLOPE_MAX is 5): a tall grown cell's sides are far steeper than that, so
 // at 5 a sample just inside its footprint read a hundred metres or more
-// deep and the lobes could not move the wall: a huge smooth face.
-const float SP_SLOPE_MAX = 22.0;
+// deep and the lobes could not move the wall: a huge smooth face. The march
+// reads it from the map's slope over one texel (weather_smooth_s), the
+// light taps too, so a wall's inside rises about a metre a metre across.
+const float SP_SLOPE_MAX = 80.0;
 // How much deeper (m) its underside's lumps hang (the march's layer_inside).
 const float SP_UNDER = 110.0;
 // For the light: the heights (m over the sea) the storm's heaps span.
@@ -114,12 +116,16 @@ float storm_carve_broad(vec3 q, float ch, float thick, float hh) {
 // The near octave's share of the last storm_carve (m, never more than 0).
 float g_carve_near = 0.0;
 
+// The fine octave alone (m, never more than 0).
+float storm_carve_fine(vec3 q, float ch, float thick) {
+	float fine = textureLod(cauliflower, (q + SC_CHURN_FINE * ch) / vec3(150.0, 120.0, 150.0) + 0.83, 0.0).r;
+	return SC_HEAP_FINE * sstep(150.0, 600.0, thick) * (sstep(0.3, 0.7, fine) - 1.0);
+}
+
 float storm_carve(vec3 p, vec3 boil, float thick, float hh, float near) {
 	vec3 q = p + boil * 0.5;
 	float ch = P.spare[5].x;
-	float fine = textureLod(cauliflower, (q + SC_CHURN_FINE * ch) / vec3(150.0, 120.0, 150.0) + 0.83, 0.0).r;
-	float c = storm_carve_broad(q, ch, thick, hh)
-		+ SC_HEAP_FINE * sstep(150.0, 600.0, thick) * (sstep(0.3, 0.7, fine) - 1.0);
+	float c = storm_carve_broad(q, ch, thick, hh) + storm_carve_fine(q, ch, thick);
 	g_carve_near = 0.0;
 	if (near > 0.0) {
 		float n = textureLod(cauliflower, (q + SC_CHURN_NEAR * ch) / vec3(SC_NEAR_TILE, SC_NEAR_TILE * 0.8, SC_NEAR_TILE) + 0.47, 0.0).r;
@@ -148,6 +154,15 @@ float storm_cave(float c, float near, float lump) {
 // in it): the broad octaves.
 float storm_carve_cheap(vec3 p, float thick, float hh) {
 	return storm_carve_broad(p + BOIL * P.eye.w * 0.5, P.spare[5].x, thick, hh);
+}
+
+// The face's carve (the normal a ray's first face takes, once a ray):
+// the broad octaves and the fine one, so the light turns across the heaps'
+// own lumps on a grown cell's face, not only across its broad heaps.
+float storm_carve_face(vec3 p, float thick, float hh) {
+	vec3 q = p + BOIL * P.eye.w * 0.5;
+	float ch = P.spare[5].x;
+	return storm_carve_broad(q, ch, thick, hh) + storm_carve_fine(q, ch, thick);
 }
 
 // How high in the storm's heaps world height `y` stands (0 low, 1 top).

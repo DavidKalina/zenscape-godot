@@ -843,6 +843,22 @@ vec4 weather_smooth(vec2 xz) {
 	return 0.25 * (weather_map(xz + vec2(h, h)) + weather_map(xz + vec2(-h, h)) + weather_map(xz + vec2(h, -h)) + weather_map(xz + vec2(-h, -h)));
 }
 
+// The same, and the map's slope over one texel from its four taps (free):
+// how steep each layer's top is right here (low in .x, high in .z), so a
+// pushed cloud's tall wall, which drops across a texel or two, reads its
+// real steepness and its heaps carve it as deep as they carve its crown.
+vec4 weather_smooth_s(vec2 xz, out vec2 local) {
+	float h = 0.5 * P.weather_at.z / P.weather_at.w;
+	vec4 a = weather_map(xz + vec2(h, h));
+	vec4 b = weather_map(xz + vec2(-h, h));
+	vec4 c = weather_map(xz + vec2(h, -h));
+	vec4 d = weather_map(xz + vec2(-h, -h));
+	vec4 gx = ((a + c) - (b + d)) / (4.0 * h);
+	vec4 gz = ((a + b) - (c + d)) / (4.0 * h);
+	local = vec2(length(vec2(gx.x, gz.x)), length(vec2(gx.z, gz.z)));
+	return 0.25 * (a + b + c + d);
+}
+
 // The highest top and lowest base round `xz`.
 vec2 ceiling_at(vec2 xz) {
 	vec2 uv = (xz - P.weather_at.xy) / P.weather_at.z;
@@ -904,7 +920,8 @@ float layer_free(float y, float top, float base) {
 Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0, 0.0);
 	if (P.band.w <= 0.0 || p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return s;
-	vec4 w = weather_smooth(p.xz);
+	vec2 local;
+	vec4 w = weather_smooth_s(p.xz, local);
 	s.free = min(layer_free(p.y, w.x, w.y), layer_free(p.y, w.z, w.w));
 	bool low_on = p.y > w.y - 6.0 && p.y < w.x + OVER;
 	bool high_on = p.y > w.w - 6.0 && p.y < w.z + OVER;
@@ -917,13 +934,18 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 	// SLOPE_MAX so the texels' facets never show as stripes on a flank.
 	float texel = P.weather_at.z / P.weather_at.w;
 	float span = texel * SLOPE_SPAN;
+	float push = storm_push(p.xz);
 	vec2 at = p.xz;
 	vec4 wx = weather_map(at + vec2(span, 0.0)) - weather_map(at - vec2(span, 0.0));
 	vec4 wz = weather_map(at + vec2(0.0, span)) - weather_map(at - vec2(0.0, span));
 	vec2 slope = vec2(length(vec2(wx.x, wz.x)), length(vec2(wx.z, wz.z))) / (2.0 * span);
-	// A pushed cloud's tall flanks read at their own steepness (SP_SLOPE_MAX).
-	float slope_max = mix(SLOPE_MAX, SP_SLOPE_MAX, storm_push(p.xz));
-	slope = min(slope, vec2(slope_max));
+	// A pushed cloud's tall flanks read at their own steepness right here
+	// (the map's slope over one texel, up to SP_SLOPE_MAX): held to the wide
+	// span's, its wall's inside rose 10-30 m a metre across, so the heaps
+	// (and the light taps, which see the same) moved it only a few metres
+	// and the face stood as one smooth sheet.
+	float slope_max = mix(SLOPE_MAX, SP_SLOPE_MAX, push);
+	slope = min(mix(slope, max(slope, local), push), vec2(slope_max));
 	vec2 slope_b = min(vec2(length(vec2(wx.y, wz.y)), length(vec2(wx.w, wz.w))) / (2.0 * span), vec2(slope_max));
 	vec3 boil = BOIL * P.eye.w;
 	float fine_w = (fine && P.quality.w > 0.5) ? 1.0 - sstep(FINE_NEAR * 0.6, FINE_NEAR, t) : 0.0;
@@ -1011,21 +1033,24 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 // light fall into the heaps' pockets.
 float density_cheap(vec3 p) {
 	if (p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return 0.0;
-	vec4 w = weather_smooth(p.xz);
+	vec2 local;
+	vec4 w = weather_smooth_s(p.xz, local);
 	bool low_on = p.y > w.y - 6.0 && p.y < w.x + OVER;
 	bool high_on = p.y > w.w - 6.0 && p.y < w.z + OVER;
 	if (!low_on && !high_on) return 0.0;
 	vec2 n = textureLod(cauliflower, (p + BOIL * P.eye.w) / TILE_HIGH, 0.0).rg;
 	float sw = storm_push(p.xz);
 	g_storm = sw;
+	// A pushed cloud's wall at its own steepness, as cloud_at reads it.
+	vec2 sl = mix(vec2(0.6), clamp(local, vec2(0.6), vec2(SP_SLOPE_MAX)), sw);
 	float hh;
 	float inside = -1e3;
 	if (low_on) {
-		inside = layer_inside(p, w.x, w.y, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh);
+		inside = layer_inside(p, w.x, w.y, sl.x, 0.6, n.r, n.g, 0.45, 0.0, hh);
 		if (sw > 0.0) inside += sw * storm_carve_cheap(p, w.x - w.y, hh);
 	}
 	if (high_on) {
-		float ih = layer_inside(p, w.z, w.w, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh);
+		float ih = layer_inside(p, w.z, w.w, sl.y, 0.6, n.r, n.g, 0.45, 0.0, hh);
 		if (sw > 0.0) ih += sw * storm_carve_cheap(p, w.z - w.w, hh);
 		inside = max(inside, ih);
 	}
@@ -1033,18 +1058,20 @@ float density_cheap(vec3 p) {
 }
 
 // The coarse form's distance into the cloud, for the face a ray first meets
-// (a pushed cloud's with its broad heaps).
+// (a pushed cloud's with its heaps, the fine octave too).
 float inside_cheap(vec3 p) {
-	vec4 w = weather_smooth(p.xz);
+	vec2 local;
+	vec4 w = weather_smooth_s(p.xz, local);
 	vec2 n = textureLod(cauliflower, (p + BOIL * P.eye.w) / TILE_LOW, 0.0).rg;
 	float sw = storm_push(p.xz);
 	g_storm = sw;
+	vec2 sl = mix(vec2(0.6), clamp(local, vec2(0.6), vec2(SP_SLOPE_MAX)), sw);
 	float hh_l, hh_h;
-	float il = layer_inside(p, w.x, w.y, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh_l);
-	float ih = layer_inside(p, w.z, w.w, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh_h);
+	float il = layer_inside(p, w.x, w.y, sl.x, 0.6, n.r, n.g, 0.45, 0.0, hh_l);
+	float ih = layer_inside(p, w.z, w.w, sl.y, 0.6, n.r, n.g, 0.45, 0.0, hh_h);
 	if (sw > 0.0) {
-		il += sw * storm_carve_cheap(p, w.x - w.y, hh_l);
-		ih += sw * storm_carve_cheap(p, w.z - w.w, hh_h);
+		il += sw * storm_carve_face(p, w.x - w.y, hh_l);
+		ih += sw * storm_carve_face(p, w.z - w.w, hh_h);
 	}
 	return max(il, ih);
 }
