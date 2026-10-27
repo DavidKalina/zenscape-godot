@@ -120,6 +120,7 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
 const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 const StormFront = preload("res://scripts/endless/storm_front.gd")
+const StormLightning = preload("res://scripts/endless/storm_lightning.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const EndlessEddies = preload("res://scripts/endless/endless_eddies.gd")
@@ -291,6 +292,8 @@ var _region_debug: Label
 ## no --storm or --storm-start), and --storm-debug's line.
 var storm: RefCounted
 var _storm_debug: Label
+## The storm's lightning (scripts/endless/storm_lightning.gd), only with a storm.
+var lightning: Node3D
 var _region_id := ""
 var _region_shown := -100000
 ## The caption shows for REGION_HOLD ms, then fades over REGION_FADE.
@@ -565,6 +568,10 @@ func _ready() -> void:
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
+	if storm != null:
+		lightning = StormLightning.new()
+		add_child(lightning)
+		lightning.setup(self,storm)
 	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	else: _park_for_menu(spots)
 	if race != null and RivalRace.near_start_wanted(): race.place_near_start(self)
@@ -953,6 +960,7 @@ func tick(delta: float) -> void:
 		if look != null: storm.grade(look.celestial)
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
 	if storm != null and look != null: storm.shade(look.sun)
+	if lightning != null: lightning.step(delta,look != null and look.cycle.held)
 	if react != null: _react(delta)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
 	_show_hud()
@@ -1360,7 +1368,8 @@ func _show_hud() -> void:
 	_fade.color.a = 0.85*smoothstep(0.0,FADE_TIME,_fade_left)
 	var since := Time.get_ticks_msec()-_weight_shown
 	_weight_note.modulate.a = clampf(1.0-float(since-WEIGHT_HOLD)/WEIGHT_FADE,0.0,1.0)
-	if _storm_debug != null: _storm_debug.text = storm.note(plane.position)
+	if _storm_debug != null: _storm_debug.text = storm.note(plane.position)+("
+"+lightning.note() if lightning != null else "")
 	if not _hud.visible or Time.get_ticks_msec()-_hud_at < HUD_EVERY: return
 	_hud_at = Time.get_ticks_msec()
 	var p: Vector3 = plane.position
