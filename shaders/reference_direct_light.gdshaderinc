@@ -76,7 +76,10 @@ void light() {
 #ifdef ZS_BACKLIGHT_GRASS
 	// Backlight: the blades' thin tips seen against a low sun catch it.
 	if (ZS_GRASS_GLOW > 0.0 && zs_backlight > 0.0 && dot((INV_VIEW_MATRIX * vec4(LIGHT, 0.0)).xyz, zs_key_direction) > 0.999) {
-		float tip = pow(ZS_GRASS_ALONG, 8.0);
+		// pow's base kept off 0: under MSAA the blade's along can come in a
+		// hair below 0 at its root edge, and pow of that is NaN on NVIDIA's
+		// Vulkan driver, which the glow blooms into a white halo.
+		float tip = pow(max(ZS_GRASS_ALONG, 1.0e-4), 8.0);
 		DIFFUSE_LIGHT += energy * zs_backlight_tint(ALBEDO, zs_backlight_amount(dot(-LIGHT, VIEW), tip, ZS_BACKLIGHT_GRASS)) / PI;
 	}
 #endif
