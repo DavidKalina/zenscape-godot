@@ -90,7 +90,9 @@ PowerShell from the repo root:
   which pulls main first (in a checkout on main only), warns when the native
   kernels are older than the C++ (`tools/native_stamp.py`), finds Godot,
   imports and opens the window. `.\open-godot.cmd` does the same, then opens
-  the editor. By hand:
+  the editor. Play in the editor pulls main first too (`addons/pull_main`,
+  in a checkout on main only; after a pull it reimports, then runs the main
+  scene). By hand:
   `& $env:GODOT --path . --rendering-method forward_plus --windowed --resolution 1440x900 -- --no-title`.
   A study: put its scene after `--path .`, e.g. `studies/flight_study.tscn -- --pack=lines`.
   A `run-*.command` file shows the scene and flags it launches.
