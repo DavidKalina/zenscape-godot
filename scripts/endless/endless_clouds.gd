@@ -72,6 +72,9 @@ const STORM_DOMES := 3.0
 const STORM_BELLY := 1.3
 const STORM_EXT := 1.9
 const STORM_BASE := Vector2(60.0,110.0)
+## A cell only the storm stands up grows in from a wisp over this much of
+## its push past its own hash (the march's SP_ADMIT).
+const STORM_ADMIT := 0.12
 ## The weather map's square round the eye: the reach and this much past it.
 const WEATHER_PAST := 250.0
 ## The shade on the land: its square's side (m).
@@ -714,12 +717,20 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	var middle := (Vector2(cx,cy)+Vector2(0.5,0.5)+JIT*(Vector2(h.x,h.y)*2.0-Vector2.ONE))*cell
 	# The storm's push at the cloud's place now (the low layer's drift, as
 	# the march): a pushed broad cloud lives on whole and always stands.
+	# Its kind reads the place alone (place_at): it never changes as the
+	# storm builds.
 	var st: float = storm.push_at(middle+_layer_drift(true)) if storm != null and big else 0.0
+	var kp: float = storm.place_at(middle+_layer_drift(true)) if storm != null and big else 0.0
 	lf.x = lerpf(lf.x,1.0,st)
 	if lifed and lf.x < 0.01: return {}
 	var gate := _cluster_gate(middle)
 	if not big: gate = lerpf(0.02,1.0,gate*gate)
-	if h.z >= lerpf(_region(middle)*cover*(BIG_COVER2 if big else SMALL_COVER2)*gate*(LIFE_COVER if lifed else 1.0),1.0,st): return {}
+	var field_here := _region(middle)*cover*(BIG_COVER2 if big else SMALL_COVER2)*gate*(LIFE_COVER if lifed else 1.0)
+	var here := lerpf(field_here,1.0,st)
+	if h.z >= here: return {}
+	# A cell only the storm stands up comes in from a wisp as it builds.
+	if h.z >= field_here: lf.x *= smoothstep(0.0,STORM_ADMIT,here-h.z)
+	if lf.x < 0.01: return {}
 	var s := hash3(cx,cy,s0+1)
 	var m := hash3(cx,cy,s0+2)
 	var rr: Vector2 = BIG_R2 if big else SMALL_R2
@@ -728,8 +739,8 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	var t2 := fposmod(s.z*7.31,1.0)
 	var t3 := fposmod(s.z*3.17+m.y,1.0)
 	var k := {"cell":Vector2i(cx,cy),"salt":s0,"life":lf.x,"middle":middle,"axis":Vector2(cos(spin),sin(spin)),"profile":PROFILE,"low":false,"storm":st}
-	var towers := st > 0.0 and fposmod(s.y*13.7+s.x,1.0) < st*STORM_TOWERS
-	var mids := st > 0.25 and not towers
+	var towers := kp > 0.0 and fposmod(s.y*13.7+s.x,1.0) < kp*STORM_TOWERS
+	var mids := kp > 0.25 and not towers
 	# [kind, n range, L, W, main_r, br, hs, tall, belly, qb]
 	var p: Array
 	if not big:
@@ -780,7 +791,7 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 
 ## The cloud as its life has it now (the march's `apply_life`).
 func _apply_life(k: Dictionary) -> void:
-	if not _lifed(): return
+	if not _lifed() and float(k.storm) <= 0.0: return
 	var lr := lerpf(0.7,1.0,float(k.life))
 	k.r = float(k.r)*lr
 	k.tall = float(k.tall)*float(k.life)
@@ -994,6 +1005,7 @@ func _fill() -> void:
 		var h: Vector2 = storm.heading()
 		_put4(p,80,Vector4(e.x,e.y,h.x,h.y))
 		_put4(p,84,Vector4(storm.length,storm.CORE_DEPTH,storm.intensity,1.0))
+		_put4(p,88,Vector4(storm.churn,0.0,0.0,0.0))
 		material.set_shader_parameter("storm_intensity",storm.intensity)
 	var weather_due := _frame%WEATHER_EVERY == 0 or weather_side == 0.0
 	var shade_due := _frame%SHADE_EVERY == 0

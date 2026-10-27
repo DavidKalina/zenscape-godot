@@ -9,12 +9,15 @@
 // sinks, the fair ones turn to towers, and the bigger clouds run into each
 // other; their light goes dark low down and stays on the heaps up top. How
 // hard, at a place, is one number: storm_push, from the front's distance
-// (and its ends) times the storm's whole intensity, P.spare[4].z, which a
-// later step can drive over time to grow the storm in view.
+// (and its ends) times the storm's whole intensity, P.spare[4].z, which
+// rises with the storm's clock (StormFront.GROW), so the cells grow in view.
+// Which kind a pushed cell turns to reads the place alone (storm_place), so
+// a cell never changes kind as the storm builds, it only grows.
 //
 // The front (scripts/endless/storm_front.gd): P.spare[3] its leading edge's
 // middle (xz) and heading (xz), P.spare[4] its length, the core's depth,
-// its intensity (0..1), on (0/1).
+// its intensity (0..1), on (0/1); P.spare[5].x the churn's phase (s, its
+// clock run at its intensity).
 
 // The push builds from SP_AHEAD.x m ahead of the leading edge to whole at
 // SP_AHEAD.y, holds over the core and lets go over the clearing behind it
@@ -36,6 +39,9 @@ const float SP_DOMES = 3.0;
 const float SP_BELLY = 1.3;
 const float SP_EXT = 1.9;
 const vec2 SP_BASE = vec2(60.0, 110.0);
+// A cell the storm alone stands up grows in from a wisp over this much of
+// the storm's push past its own hash (recipe_shape).
+const float SP_ADMIT = 0.12;
 // How much deeper (m) its underside's lumps hang (the march's layer_inside).
 const float SP_UNDER = 110.0;
 // For the light: the heights (m over the sea) the storm's heaps span.
@@ -46,8 +52,9 @@ bool storm_on() {
 	return P.spare[4].w > 0.5;
 }
 
-// How hard the storm pushes the cloud at world `xz` (0..1).
-float storm_push(vec2 xz) {
+// How hard the storm whole would push the cloud at world `xz` (0..1), by
+// the front's place alone.
+float storm_place(vec2 xz) {
 	if (P.spare[4].w < 0.5) return 0.0;
 	vec2 hd = P.spare[3].zw;
 	vec2 rel = xz - P.spare[3].xy;
@@ -57,8 +64,13 @@ float storm_push(vec2 xz) {
 	float half_len = P.spare[4].x * 0.5;
 	return sstep(SP_AHEAD.x, SP_AHEAD.y, d)
 		* sstep(-core + SP_BEHIND_FROM - SP_BEHIND, -core + SP_BEHIND_FROM, d)
-		* sstep(half_len + SP_ENDS.x, half_len - SP_ENDS.y, abs(along))
-		* clamp(P.spare[4].z, 0.0, 1.0);
+		* sstep(half_len + SP_ENDS.x, half_len - SP_ENDS.y, abs(along));
+}
+
+// How hard the storm pushes the cloud at world `xz` now (0..1): its place
+// times its intensity.
+float storm_push(vec2 xz) {
+	return storm_place(xz) * clamp(P.spare[4].z, 0.0, 1.0);
 }
 
 // The storm's heaps (m, never more than 0): on a tall cloud (`thick` its
@@ -66,14 +78,21 @@ float storm_push(vec2 xz) {
 // octaves carved into its domes, more up its towers, so a pushed cell reads
 // as heaped knots of cloud at every scale. Only ever carves, so the march's
 // free-space bounds still hold. Read where the field's own lobes are read
-// (`boil` their churn).
+// (`boil` their churn). The heaps boil on their own besides: each octave
+// rises and turns at SC_CHURN_* m per second of the churn's phase
+// (P.spare[5].x, faster as the storm builds), the finer the faster, so the
+// knots roll up the towers.
 const float SC_HEAP = 200.0;
 const float SC_HEAP_FINE = 45.0;
+const vec3 SC_CHURN_BIG = vec3(0.6, -2.2, 0.4);
+const vec3 SC_CHURN_MID = vec3(-0.9, -3.6, 0.7);
+const vec3 SC_CHURN_FINE = vec3(1.3, -5.5, -1.1);
 float storm_carve(vec3 p, vec3 boil, float thick, float hh) {
 	vec3 q = p + boil * 0.5;
-	float big = textureLod(cauliflower, q / vec3(760.0, 560.0, 760.0) + 0.29, 0.0).r;
-	float mid = textureLod(cauliflower, q / vec3(380.0, 300.0, 380.0) + 0.61, 0.0).r;
-	float fine = textureLod(cauliflower, q / vec3(150.0, 120.0, 150.0) + 0.83, 0.0).r;
+	float ch = P.spare[5].x;
+	float big = textureLod(cauliflower, (q + SC_CHURN_BIG * ch) / vec3(760.0, 560.0, 760.0) + 0.29, 0.0).r;
+	float mid = textureLod(cauliflower, (q + SC_CHURN_MID * ch) / vec3(380.0, 300.0, 380.0) + 0.61, 0.0).r;
+	float fine = textureLod(cauliflower, (q + SC_CHURN_FINE * ch) / vec3(150.0, 120.0, 150.0) + 0.83, 0.0).r;
 	float amp = SC_HEAP * sstep(400.0, 1300.0, thick) * mix(0.45, 1.0, hh);
 	return amp * ((sstep(0.3, 0.72, big) - 1.0) * 0.65 + (sstep(0.3, 0.7, mid) - 1.0) * 0.35)
 		+ SC_HEAP_FINE * sstep(150.0, 600.0, thick) * (sstep(0.3, 0.7, fine) - 1.0);

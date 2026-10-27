@@ -13,6 +13,8 @@ global uniform vec4 zs_storm_line;
 global uniform vec4 zs_storm_shape;
 // The amount at the eye (StormFront.amount_at), for screen and light grade.
 global uniform float zs_storm_here;
+// The rain's share of itself as the storm builds (StormFront.wet()).
+global uniform float zs_storm_wet;
 // The latest strike: xy its world xz, z the seconds since it, w its strength
 // (written by the lightning).
 global uniform vec4 zs_lightning;
@@ -65,7 +67,8 @@ float zs_storm_rain(vec2 p) {
 	float d = zs_storm_d(p);
 	float core = zs_storm_shape.y;
 	return zs_storm_ramp(ZS_STORM_RAIN_IN.x, ZS_STORM_RAIN_IN.y, d)
-		* zs_storm_ramp(-core - ZS_STORM_RAIN_OUT.x, -core - ZS_STORM_RAIN_OUT.y, d) * zs_storm_ends(p);
+		* zs_storm_ramp(-core - ZS_STORM_RAIN_OUT.x, -core - ZS_STORM_RAIN_OUT.y, d) * zs_storm_ends(p)
+		* zs_storm_wet;
 }
 
 // The gust front's wind (0..1).

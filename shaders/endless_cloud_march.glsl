@@ -53,7 +53,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 fog_at;        // 56 the valley fog's map: corner xz, side, has one
 	vec4 fog_knobs;     // 60 density scale, depth (m), steps, slab top (world y)
 	vec4 fog_drift;     // 64 the patches' drift xz (m), reach (m), fade (m)
-	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[3], spare[4] the storm front (shaders/storm_cloud.glslinc); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square
+	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[3..5] the storm front (shaders/storm_cloud.glslinc); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square
 	vec4 weather_at;    // 164 corner xz, side, texels a side
 	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
 	vec4 flash;         // 172 grain jitter on, organic field on, stacked clouds yield, puffs' finer lobes on
@@ -490,14 +490,20 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	// The storm's push here (storm_cloud.glslinc), at the cloud's place now
 	// (the low layer's drift for both layers, so a cloud's push never hangs
 	// on its kind). Pushed, a broad cloud lives on whole and always stands.
+	// Its kind reads the place alone (storm_place): it never changes as the
+	// storm builds.
 	k.storm = big ? storm_push(k.middle + P.drift.xy) : 0.0;
+	float kp = big ? storm_place(k.middle + P.drift.xy) : 0.0;
 	k.life = mix(k.life, 1.0, k.storm);
 	if (lifed && k.life < 0.01) return false;
 	float gate = cluster_gate(k.middle);
 	if (!big) gate = mix(0.02, 1.0, gate * gate);
-	float here = region_cover(k.middle) * cover * (big ? BIG_COVER2 : SMALL_COVER2) * gate * (lifed ? LIFE_COVER : 1.0);
-	here = mix(here, 1.0, k.storm);
+	float field_here = region_cover(k.middle) * cover * (big ? BIG_COVER2 : SMALL_COVER2) * gate * (lifed ? LIFE_COVER : 1.0);
+	float here = mix(field_here, 1.0, k.storm);
 	if (h.z >= here) return false;
+	// A cell only the storm stands up comes in from a wisp as it builds.
+	if (h.z >= field_here) k.life *= sstep(0.0, SP_ADMIT, here - h.z);
+	if (k.life < 0.01) return false;
 	vec3 s = hash3(c, salt + 1u);
 	vec3 m = hash3(c, salt + 2u);
 	vec2 rr = big ? BIG_R2 : SMALL_R2;
@@ -513,8 +519,8 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	k.profile = PROFILE;
 	k.low = false;
 	// Pushed, most broad cells heap into towers, the rest into mid cloud.
-	bool towers = k.storm > 0.0 && fract(s.y * 13.7 + s.x) < k.storm * SP_TOWERS;
-	bool mids = k.storm > 0.25 && !towers;
+	bool towers = kp > 0.0 && fract(s.y * 13.7 + s.x) < kp * SP_TOWERS;
+	bool mids = kp > 0.25 && !towers;
 	if (!big) {
 		k.kind = KIND_PUFF;
 		k.low = true;
@@ -724,7 +730,9 @@ void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout
 				if (press >= 0.999) continue;
 				k.life *= 1.0 - press;
 			}
-			if (lifed) {
+			// (A cell the storm stands up grows in by its life even with
+			// the field's life off.)
+			if (lifed || k.storm > 0.0) {
 				if (k.life < 0.01) continue;
 				apply_life(k);
 				out_c = d - k.ext * k.r;

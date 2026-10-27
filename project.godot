@@ -713,6 +713,10 @@ zs_storm_here={
 "type": "float",
 "value": 0.0
 }
+zs_storm_wet={
+"type": "float",
+"value": 1.0
+}
 zs_lightning={
 "type": "vec4",
 "value": Vector4(0, 0, 10000, 0)

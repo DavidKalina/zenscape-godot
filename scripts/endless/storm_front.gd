@@ -58,6 +58,15 @@ const PUSH_AHEAD := Vector2(3800.0,250.0)
 const PUSH_BEHIND_FROM := -200.0
 const PUSH_BEHIND := 1400.0
 const PUSH_ENDS := Vector2(1500.0,900.0)
+## The storm builds: its whole strength (`intensity`) rises from GROW_FROM
+## to 1 over its first GROW seconds (eased), so the cumulus ahead fills up,
+## swells and darkens in view. --storm-grow=S (0: whole from the start),
+## --storm-grow-from=X.
+const GROW := 60.0
+const GROW_FROM := 0.1
+## The rain (and so the lightning, which strikes in it) comes in as the
+## clouds over it build: none below WET.x of the strength, whole from WET.y.
+const WET := Vector2(0.4,0.85)
 
 var length := LENGTH
 var speed := SPEED
@@ -73,9 +82,15 @@ var debug := false
 ## The grade's two (--storm-gloom=X, --storm-sun=X to try a value).
 var gloom := GLOOM
 var sun_left := SUN_LEFT
-## The storm's whole strength (0..1), on every place's push (`push_at`): 1
-## now; a later step drives it over time to grow the clouds in view.
+## The storm's whole strength (0..1), on every place's push (`push_at`),
+## driven by its clock (GROW).
 var intensity := 1.0
+var grow := GROW
+var grow_from := GROW_FROM
+var held_strength := NAN
+## The churn's phase (s): the storm's clock run at its intensity, so its
+## heaps boil faster as it builds (shaders/storm_cloud.glslinc storm_carve).
+var churn := 0.0
 
 ## The front the flags ask for, or null (nothing built). `start` the
 ## start's xz, `forward` the plane's heading there (unit xz), `wind` the
@@ -103,6 +118,10 @@ static func from_args(start: Vector2, forward: Vector2, wind: Vector2) -> RefCou
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--storm-sun="): s.sun_left = a.get_slice("=",1).to_float()
 		elif a.begins_with("--storm-gloom="): s.gloom = a.get_slice("=",1).to_float()
+		elif a.begins_with("--storm-grow="): s.grow = maxf(0.0,a.get_slice("=",1).to_float())
+		elif a.begins_with("--storm-strength="): s.held_strength = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
+		elif a.begins_with("--storm-grow-from="): s.grow_from = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
+	s.intensity = s.strength_at(0.0)
 	if not is_nan(ahead):
 		# Ahead of the plane, coming at it.
 		s.aim(start+forward*ahead,-forward)
@@ -138,9 +157,21 @@ func along(p: Vector2) -> float:
 ## How hard the storm pushes the field's clouds at `p` (0..1): the one
 ## storm-intensity input per place the clouds grow by.
 func push_at(p: Vector2) -> float:
+	return place_at(p)*clampf(intensity,0.0,1.0)
+
+## The push at `p` by the front's place alone (the storm whole): which
+## kind a pushed cell turns to reads this, so a cell never changes kind as
+## the storm builds, only grows.
+func place_at(p: Vector2) -> float:
 	var d := edge_distance(p)
 	var half := length*0.5
-	return ramp(PUSH_AHEAD.x,PUSH_AHEAD.y,d) 		*ramp(-CORE_DEPTH+PUSH_BEHIND_FROM-PUSH_BEHIND,-CORE_DEPTH+PUSH_BEHIND_FROM,d) 		*ramp(half+PUSH_ENDS.x,half-PUSH_ENDS.y,absf(along(p)))*clampf(intensity,0.0,1.0)
+	return ramp(PUSH_AHEAD.x,PUSH_AHEAD.y,d) 		*ramp(-CORE_DEPTH+PUSH_BEHIND_FROM-PUSH_BEHIND,-CORE_DEPTH+PUSH_BEHIND_FROM,d) 		*ramp(half+PUSH_ENDS.x,half-PUSH_ENDS.y,absf(along(p)))
+
+## The storm's whole strength at its clock `t` (s).
+func strength_at(t: float) -> float:
+	if not is_nan(held_strength): return held_strength
+	if grow <= 0.0: return 1.0
+	return lerpf(grow_from,1.0,ramp(0.0,grow,t))
 
 ## 0 at `a`, 1 at `b` (either way round), smooth.
 static func ramp(a: float, b: float, x: float) -> float:
@@ -160,7 +191,11 @@ func amount_at(p: Vector2) -> float:
 ## The rain (0..1): under the core.
 func rain_at(p: Vector2) -> float:
 	var d := edge_distance(p)
-	return ramp(RAIN_IN.x,RAIN_IN.y,d)*ramp(-CORE_DEPTH-RAIN_OUT.x,-CORE_DEPTH-RAIN_OUT.y,d)*_ends(p)
+	return ramp(RAIN_IN.x,RAIN_IN.y,d)*ramp(-CORE_DEPTH-RAIN_OUT.x,-CORE_DEPTH-RAIN_OUT.y,d)*_ends(p)*wet()
+
+## The rain's share of itself as the storm builds (zs_storm_wet).
+func wet() -> float:
+	return ramp(WET.x,WET.y,intensity)
 
 ## The gust front's wind (0..1): rising to its peak at the edge, dying
 ## under the shelf.
@@ -172,7 +207,10 @@ func gust_at(p: Vector2) -> float:
 ## One frame: the clock on (unless `held`), the amount at `eye`, the
 ## globals published.
 func step(delta: float, eye: Vector3, held := false) -> void:
-	if not held: time += delta
+	if not held:
+		time += delta
+		intensity = strength_at(time)
+		churn += delta*intensity
 	here = amount_at(Vector2(eye.x,eye.z))
 	publish()
 
@@ -181,6 +219,7 @@ func publish() -> void:
 	RenderingServer.global_shader_parameter_set("zs_storm_line",Vector4(e.x,e.y,_heading.x,_heading.y))
 	RenderingServer.global_shader_parameter_set("zs_storm_shape",Vector4(length,CORE_DEPTH,GUST_DEPTH,1.0))
 	RenderingServer.global_shader_parameter_set("zs_storm_here",here)
+	RenderingServer.global_shader_parameter_set("zs_storm_wet",wet())
 
 ## The light's grade under it, on the look's Celestial (each frame,
 ## before it advances).
@@ -194,5 +233,5 @@ func shade(sun: DirectionalLight3D) -> void:
 ## --storm-debug's line at `p`.
 func note(p: Vector3) -> String:
 	var q := Vector2(p.x,p.z)
-	return "storm  d %.0f m  ·  along %.0f m  ·  amount %.2f  ·  rain %.2f  ·  gust %.2f  ·  here %.2f  ·  t %.0f s" % [
-		edge_distance(q),along(q),amount_at(q),rain_at(q),gust_at(q),here,time]
+	return "storm  d %.0f m  ·  along %.0f m  ·  amount %.2f  ·  rain %.2f  ·  gust %.2f  ·  here %.2f  ·  t %.0f s  ·  strength %.2f" % [
+		edge_distance(q),along(q),amount_at(q),rain_at(q),gust_at(q),here,time,intensity]
