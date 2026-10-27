@@ -189,14 +189,14 @@ func setup(scene: Node3D, front: RefCounted) -> void:
 	_auto = _strike_at < 0 or "--strike-auto" in LaunchArgs.user_args()
 	_light = DirectionalLight3D.new()
 	_light.name = "Flash"
-	_light.light_color = Color(0.8,0.86,1.0)
+	_light.light_color = Color(0.97,0.97,1.0)
 	_light.shadow_enabled = false
 	_light.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
 	_light.visible = false
 	add_child(_light)
 	_glow = OmniLight3D.new()
 	_glow.name = "Glow"
-	_glow.light_color = Color(0.78,0.84,1.0)
+	_glow.light_color = Color(0.97,0.96,0.98)
 	_glow.shadow_enabled = false
 	_glow.omni_range = GLOW_RANGE
 	_glow.omni_attenuation = 1.2
