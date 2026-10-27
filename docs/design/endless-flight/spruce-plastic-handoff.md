@@ -216,14 +216,14 @@ only with look g; 0 turns that part off):
 
 | knob | default | what |
 |---|---|---|
-| `bshare` | 0.3 | share of blue spruces over the land |
+| `bshare` | 0.5 (was 0.3) | share of blue spruces over the land |
 | `bgrove` | 160 | grove scale (m); a world-space noise, so a patch shares a lean |
 | `blean` | 0.5 | how far a grove moves the share (0 none; 1 about a whole grove one colour) |
-| `bgreen` | 0.1 | the blue a green tree keeps (times the `blue` knob) |
+| `bgreen` | 0.8 (was 0.1) | the blue a green tree keeps (times the `blue` knob) |
 | `inner` | 0.9 | older inner needles darker and olive (from the bake's grey) |
 | `fresh` | 0.9 | fresh outer tips lighter, yellow-green |
 | `flat` | 1.0 | the bake's flattening (the default look's 1.6 cancelled `inner` and `fresh`) |
-| `haze` | 0.6 | a wood keeps its outline: saturation up (to +27 %), 4 % darker, 80 to 300 m, easing past 900 m |
+| `haze` | 0.0 (was 0.6) | a wood keeps its outline: saturation up (to +27 %), 4 % darker, 80 to 300 m, easing past 900 m |
 | `rim` | 5.0 | silhouette glow gain (the default look's is 3.0) |
 | `rimwarm` | 0.7 | share of its hue that is saturated yellow-green (else the sun's) |
 | `rimday` | 0.3 | floor for the glow by day (`zs_backlight` is 0 above sun height 0.42) |
@@ -495,3 +495,16 @@ rendered runs. The full suite was not run.
   to the painted look.
 - The dusk set's white blobs (scene-level) cover part of the frame, so the dusk
   look is judged mainly on the backlit view.
+
+## After the first play (2026-10-26)
+
+- The user flew `b`: in the distance the trees looked "way more green". At
+  `bshare` 0.3, `bgreen` 0.1 and `haze` 0.6 the far woods turned a saturated
+  toy green next to the default's dusty blue-green. `g` and `b` now default to
+  `bshare` 0.5, `bgreen` 0.8 and `haze` 0 (`scripts/hero_trees.gd` SPRUCE_G).
+  The far woods match the default's hue and read a little deeper. Stills:
+  `scratch/spruce-look/r3/` (`--hour=13`), `scratch/spruce-look/far2/` (the
+  knob variants).
+- The dusk white blobs are the grass, not the trees: they go with `--no-grass`
+  and stay with `--no-grass-silver`, `--no-flowers`, `--no-pollen`, `--no-motes`.
+  Each is one black pixel in a white halo (an inf/NaN in the blades' shading).
