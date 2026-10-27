@@ -194,6 +194,9 @@ var skid: Bed
 var breeze: Bed
 var thin: Bed
 var shore: Bed
+## The storm's rain (scripts/endless/storm_rain.gd `rain_to`): made on its
+## first call, so a run with no storm builds none.
+var rain: Bed
 
 # State read each frame (public for probes).
 ## How close stone is round the plane (0 open air, 1 skimming it), how
@@ -659,6 +662,20 @@ func _ambience(on_wheels: bool) -> void:
 	var low := 1.0-smoothstep(SHORE_HEIGHT.x,SHORE_HEIGHT.y,alt)
 	shore.goal = SHORE*low*maxf(coast,SURF*water)
 	shore.pitch_goal = 0.95+0.1*(1.0-low)
+
+## The rain bed (storm lane rain): `amount` the storm's rain at the eye (0
+## to 1), `air` the speed as a share of cruise. Louder and a touch brighter
+## at speed, the drops drumming on the plane. Made on the first call.
+const RAIN := 0.25
+const RAIN_FAST := 0.45
+func rain_to(amount: float, air: float) -> void:
+	if rain == null:
+		if amount <= 0.0: return
+		rain = _bed(OLD+"rain-bed.wav",AMBIENCE)
+		rain.attack = 1.2
+		rain.release = 0.8
+	rain.goal = RAIN*amount*(1.0+RAIN_FAST*clampf(air,0.0,1.5))
+	rain.pitch_goal = 0.95+0.12*clampf(air,0.0,1.5)
 
 ## Every layer's goal, gain and pitch now: {name: [goal, gain, pitch]} (for a
 ## driver or a debug line).

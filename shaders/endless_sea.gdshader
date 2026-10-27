@@ -34,6 +34,8 @@ render_mode blend_mix, depth_draw_always, cull_back, unshaded, shadows_disabled;
 #include "res://shaders/light_leans.gdshaderinc"
 // The storm's gust front on the water (lane gust; nothing when it's off).
 #include "res://shaders/storm_sea.gdshaderinc"
+// Storm lane rain: rings where the storm rains (zs_rain_pocks).
+#include "res://shaders/storm_rain_water.gdshaderinc"
 global uniform vec3 zs_palette_water;
 uniform sampler2D sea_screen : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D sea_depth : hint_depth_texture, filter_nearest, repeat_disable;
@@ -1010,6 +1012,7 @@ void fragment() {
 	vec2 wake_slope;
 	float stirred;
 	float waked = zs_wake(rest_xz, wake_slope, stirred);
+	slope += zs_rain_pocks(rest_xz, footprint, t); // storm lane rain
 	vec3 normal = normalize(vec3(-(slope.x + detail.x + wake_slope.x), 1.0, -(slope.y + detail.y + wake_slope.y)));
 	// A calmer normal for the sky's mirror, so the reflection reads as one
 	// rippled image rather than noise.
@@ -1268,6 +1271,7 @@ void fragment() {
 	vec3 warm = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, sun.y)));
 	display_color = mix(display_color, warm, clamp(spark, 0.0, 1.0));
 	display_color = zs_storm_spray(display_color, rest_xz, t, storm_sea * (1.0 - still), footprint, eye, ambient + key * 0.6);
+	display_color = zs_rain_beaten(display_color, reflection * 0.5 + vec3(0.45), rest_xz, footprint, t); // storm lane rain
 	if (debug_view == 1) display_color = water_depth < 5.0 ? vec3(1.0, 0.0, 0.0) : (water_depth < 20.0 ? vec3(0.0, 1.0, 0.0) : (water_depth < 60.0 ? vec3(0.0, 0.0, 1.0) : vec3(1.0))) * (0.5 + 0.5 * known);
 	if (debug_view == 3) display_color = zs_scene_to_display(lit);
 	if (debug_view == 4) display_color = reflection * mirror_weight;

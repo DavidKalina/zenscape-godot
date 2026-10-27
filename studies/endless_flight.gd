@@ -122,6 +122,7 @@ const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 const StormFront = preload("res://scripts/endless/storm_front.gd")
 const StormLightning = preload("res://scripts/endless/storm_lightning.gd")
 const StormGustSound = preload("res://scripts/endless/storm_gust_sound.gd")
+const StormRain = preload("res://scripts/endless/storm_rain.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const EndlessEddies = preload("res://scripts/endless/endless_eddies.gd")
@@ -297,6 +298,8 @@ var _storm_debug: Label
 var lightning: Node3D
 ## The storm's gust roar (scripts/endless/storm_gust_sound.gd), with a storm.
 var storm_sound: RefCounted
+## The storm's rain (scripts/endless/storm_rain.gd), only with a storm.
+var storm_rain: Node3D
 var _region_id := ""
 var _region_shown := -100000
 ## The caption shows for REGION_HOLD ms, then fades over REGION_FADE.
@@ -489,6 +492,10 @@ func _ready() -> void:
 	# Its cloud deck joins the field (scripts/endless/storm_clouds.gd).
 	if storm != null and look != null and look.clouds != null: look.clouds.storm = storm
 	if storm != null: storm_sound = StormGustSound.new(storm,sound)
+	if storm != null:
+		storm_rain = StormRain.new()
+		add_child(storm_rain)
+		storm_rain.setup(storm)
 	land = LandStream.new()
 	land.name = "Land"
 	add_child(land)
@@ -963,6 +970,7 @@ func tick(delta: float) -> void:
 		storm.step(delta,camera.global_position,look != null and look.cycle.held)
 		if look != null: storm.grade(look.celestial)
 		if storm_sound != null: storm_sound.step(delta,camera.global_position)
+		if storm_rain != null: storm_rain.step(delta,self)
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
 	if storm != null and look != null: storm.shade(look.sun)
 	if lightning != null: lightning.step(delta,look != null and look.cycle.held)
