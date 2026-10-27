@@ -186,11 +186,11 @@ func depth(p: Vector3, grown := 1.0) -> float:
 
 ## The body's distances on a grid over `box`, `grown` through its rising:
 ## {size: Vector3i, data: PackedFloat32Array, x fastest, then y, then z},
-## clamped to ±CLAMP.
-func bake(grown := 1.0) -> Dictionary:
+## clamped to ±CLAMP; `cells` along the widest side.
+func bake(grown := 1.0, cells := CELLS) -> Dictionary:
 	var heap := lobes_at(grown)
 	var longest := maxf(box.size.x,maxf(box.size.y,box.size.z))
-	var cell := longest/CELLS
+	var cell := longest/cells
 	var n := Vector3i(maxi(4,ceili(box.size.x/cell)),maxi(4,ceili(box.size.y/cell)),maxi(4,ceili(box.size.z/cell)))
 	var data := PackedFloat32Array()
 	data.resize(n.x*n.y*n.z)

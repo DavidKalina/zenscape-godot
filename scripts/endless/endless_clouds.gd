@@ -50,6 +50,7 @@ const CumulusNoise = preload("res://scripts/cumulus_noise.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const StormTowers = preload("res://scripts/endless/storm_towers.gd")
 
 const OFF_FLAG := "--no-clouds"
 ## Drawn after the sea (EndlessLook SEA_PRIORITY) and before anything else
@@ -210,6 +211,11 @@ var sea_material: ShaderMaterial
 ## --storm asks for one, or null: it pushes the field's own clouds
 ## (shaders/storm_cloud.glslinc; `_recipe` here).
 var storm: RefCounted
+## The storm's cumulonimbus (scripts/endless/storm_towers.gd), made with the
+## first frame that has a storm; null without one or with --storm-towers=0.
+var towers: RefCounted
+var _towers_made := false
+var _towers_tick := 0
 var sea_shade_sync := true
 ## The field's drift so far (m): a cloud stands at its field point plus this.
 var drift := Vector2.ZERO
@@ -917,7 +923,7 @@ func _clouds_in_layer(at: Vector2, reach: float, layer_low: bool, out: Array) ->
 ## to its crown or its base; no billows, before the meadows lift the low
 ## ones), or a negative number outside every cloud.
 func cloud_depth(p: Vector3) -> float:
-	var best := -1e9
+	var best: float = towers.depth(p) if towers != null else -1e9
 	var xz := Vector2(p.x,p.z)
 	if organic:
 		for c: Dictionary in clouds_in(xz,BIG*(2.6 if storm != null else 1.6)):
@@ -1006,6 +1012,15 @@ func _fill() -> void:
 		_put4(p,80,Vector4(e.x,e.y,h.x,h.y))
 		_put4(p,84,Vector4(storm.length,storm.CORE_DEPTH,storm.intensity,1.0))
 		_put4(p,88,Vector4(storm.churn,0.0,0.0,0.0))
+		# Its towers (spare[5].y, spare[6..17]).
+		if not _towers_made:
+			_towers_made = true
+			towers = StormTowers.from_args(storm,LaunchArgs.user_args())
+		if towers != null:
+			var now := Time.get_ticks_usec()
+			towers.advance(0.0 if _towers_tick == 0 else minf((now-_towers_tick)*1e-6,0.25))
+			_towers_tick = now
+			towers.put(p)
 		material.set_shader_parameter("storm_intensity",storm.intensity)
 	var weather_due := _frame%WEATHER_EVERY == 0 or weather_side == 0.0
 	var shade_due := _frame%SHADE_EVERY == 0
@@ -1030,7 +1045,7 @@ func _fill() -> void:
 	if _shade_drawn != Vector4.ZERO: _publish_shade(true,key,_shade_drawn)
 	if shade_due: _shade_drawn = shade_square
 	_frame = (_frame+1)%4096
-	effect.set_inputs(ground,fog if fog_live else null,noise,[])
+	effect.set_inputs(ground,fog if fog_live else null,noise,towers.textures() if towers != null else [])
 	var r := effect.resolve_params
 	_put_transform(r,0,xf)
 	_put_projection(r,16,_prev_view)
