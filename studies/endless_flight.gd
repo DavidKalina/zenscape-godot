@@ -1349,8 +1349,8 @@ func _show_hud() -> void:
 		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+_rock_note()+_hall_note()+trees.note()+knock.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]
 	_hud.text += "
 weight %s  ·  pace %s (cruise %.1f, Boost %.1f)  ·  %.1f g  ·  nose over path %.0f°  ·  soft %.2f  ·  streaks %.2f, fov %.1f" % [weight,pace,plane.cruise(),plane.boost_speed(),float(plane.g_load),rad_to_deg(float(plane.aoa)),float(plane.soft),_streaks.strength,camera.fov]
-	if plane.weighted: _hud.text += "\nnear: ground %.1f m (%s)  ·  stone %.1f m  ·  low %.2f  ·  chain %d x%.1f  ·  meter %.2f  ·  total %d  ·  scrapes %d, crashes %d" % [
-		near.ground_clear,near.ground_surface,near.stone_clear,float(plane.low),near.chain_count,near.multiplier(),near.meter,roundi(near.total),contact.scrapes,crashes]
+	if plane.weighted: _hud.text += "\nnear: ground %.1f m (%s)  ·  stone %.1f m  ·  gap %.2f m  ·  low %.2f  ·  chain %d x%.1f  ·  meter %.2f  ·  total %d  ·  scrapes %d, crashes %d" % [
+		near.ground_clear,near.ground_surface,near.stone_clear,near.gap,float(plane.low),near.chain_count,near.multiplier(),near.meter,roundi(near.total),contact.scrapes,crashes]
 	if water != null: _hud.text += "
 "+water.note()
 

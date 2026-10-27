@@ -64,6 +64,7 @@ struct V2 {
 	V2(double px, double py) : x(float(px)), y(float(py)) {}
 	static V2 of(float px, float py) { V2 v; v.x = px; v.y = py; return v; }
 	V2 operator+(const V2 &o) const { return of(x + o.x, y + o.y); }
+	V2 operator-(const V2 &o) const { return of(x - o.x, y - o.y); }
 	V2 operator*(double s) const { const float f = float(s); return of(x * f, y * f); }
 	V2 operator/(double s) const { const float f = float(s); return of(x / f, y / f); }
 	float length() const { return std::sqrt(x * x + y * y); }
@@ -164,9 +165,14 @@ public:
 	static constexpr float CARVE_FADE_X = 3.0f, CARVE_FADE_Y = 5.0f;
 	static constexpr double CARVE_DETAIL_OFF = 16.0;
 	static constexpr float RIVER_WIDTH_X = 10.0f, RIVER_WIDTH_Y = 24.0f;
-	static constexpr double RIVER_WIDE = 820.0, RIVER_PINCH = 0.28, RIVER_PINCH_SIZE = 150.0;
+	static constexpr double RIVER_WIDE = 820.0;
+	static constexpr float RIVER_PINCH_X = 0.34f, RIVER_PINCH_Y = 0.16f, RIVER_PINCH_SIZE_X = 150.0f, RIVER_PINCH_SIZE_Y = 48.0f;
+	static constexpr float RIVER_WIND_X = 30.0f, RIVER_WIND_Y = 7.0f, RIVER_WIND_SIZE_X = 260.0f, RIVER_WIND_SIZE_Y = 80.0f;
+	static constexpr float RIVER_WIND_WIDE_X = 0.6f, RIVER_WIND_WIDE_Y = 1.3f;
 	static constexpr float RIVER_DROP_X = 2.0f, RIVER_DROP_Y = 3.0f;
 	static constexpr double RIVER_BANK = 8.0, RIVER_BED = 0.6, RIVER_HUG = 0.9, RIVER_SIDE = 1900.0;
+	static constexpr float RIVER_BANK_SWING_X = 0.35f, RIVER_BANK_SWING_Y = 1.9f;
+	static constexpr double RIVER_BANK_SIZE = 90.0;
 	static constexpr double RIVER_MEANDER = 470.0, RIVER_SWAY = 0.12, RIVER_RAMP = 40.0, RIVER_REACH = 80.0;
 	static constexpr float RIVER_PLAIN_X = 26.0f, RIVER_PLAIN_Y = 40.0f;
 	static constexpr double RIVER_PLAIN_SPREAD = 6.0;
@@ -231,7 +237,7 @@ public:
 		last_ridge = 0.0;
 		const double rr = last_river_r, rw = last_river_w, ry = last_river_y;
 		const V2 rf = last_river_flow;
-		const double rtop = river_top, rk = river_k, rm = river_mouth_s, rb = river_bed;
+		const double rtop = river_top, rk = river_k, rm = river_mouth_s, rb = river_bed, rbk = river_bank;
 		// A mesa's walls are carved as a range's are (`rock_`; 0 without mesas).
 		const double rock = maxf(last_mountain, rock_);
 		if (carve > 0.0 && rock > double(CARVE_MOUNTAIN_X) && detail < CARVE_DETAIL_OFF) {
@@ -254,9 +260,10 @@ public:
 		river_k = rk;
 		river_mouth_s = rm;
 		river_bed = rb;
+		river_bank = rbk;
 		last_river = INF;
 		if (rk > 0.0) {
-			const double reach = rw + RIVER_BANK + RIVER_RAMP + (last_inland < 0.95 ? double(RIVER_PLAIN_Y) * RIVER_PLAIN_SPREAD : 0.0);
+			const double reach = rw + rbk + RIVER_RAMP + (last_inland < 0.95 ? double(RIVER_PLAIN_Y) * RIVER_PLAIN_SPREAD : 0.0);
 			if (absf(rr) < reach) s.x = float(river_at(s.x));
 			else last_river = absf(rr) - rw;
 		}
@@ -317,7 +324,7 @@ private:
 	FNL n_notch, n_terrace, n_mesa, n_mesa_mask;
 	double floor_y_ = -INF;
 	double rock_ = 0.0;
-	double river_top = -INF, river_k = 0.0, river_mouth_s = 0.0, river_bed = RIVER_BED;
+	double river_top = -INF, river_k = 0.0, river_mouth_s = 0.0, river_bed = RIVER_BED, river_bank = RIVER_BANK;
 	// The carve's memos and lattice caches (land_field.gd), kept as GDScript
 	// keeps them: they hold only what a recompute would give, but `last_floor`
 	// after a carved sample is whatever the carve's last broad read left.
@@ -449,6 +456,7 @@ private:
 		river_k = 0.0;
 		river_mouth_s = 0.0;
 		river_bed = RIVER_BED;
+		river_bank = RIVER_BANK;
 		if (inland > 0.0 && valleys > 0.0) {
 			const double vx = x + nz(n_valley_warp, x, z) * VALLEY_WARP_MOVE;
 			const double vz = z + nz(n_valley_warp, x - 4111.0, z + 2027.0) * VALLEY_WARP_MOVE;
@@ -473,11 +481,15 @@ private:
 					fill = smoothstep(0.5, 3.0, base - double(RIVER_DROP_Y) * river_drop) * k;
 					const double reach_r = RIVER_REACH + (inland < 0.95 ? double(RIVER_PLAIN_Y) * RIVER_PLAIN_SPREAD : 0.0);
 					double off = signf(ds) * half * RIVER_HUG;
-					bool far = k <= 0.0 || d > half * (RIVER_HUG + 2.0 * RIVER_SWAY) + reach_r;
+					bool far = k <= 0.0 || d > half * (RIVER_HUG + 2.0 * RIVER_SWAY) + (double(RIVER_WIND_X) + double(RIVER_WIND_Y)) * double(RIVER_WIND_WIDE_Y) + reach_r;
+					double wide = 0.0;
+					double wnd = 0.0;
 					if (!far) {
 						double pick = nz(n_river_side, x, z) * 4.0;
 						pick = pick / std::sqrt(1.0 + pick * pick);
-						off = half * (pick * RIVER_HUG + nz(n_river_meander, x, z) * 2.0 * RIVER_SWAY * absf(pick));
+						wide = clampf(nz(n_river_wide, x, z) * 0.9 + 0.5, 0.0, 1.0);
+						wnd = wind(x, z, wide);
+						off = half * (pick * RIVER_HUG + nz(n_river_meander, x, z) * 2.0 * RIVER_SWAY * absf(pick)) + wnd;
 						far = absf(ds - off) > reach_r;
 					}
 					if (far) {
@@ -486,8 +498,7 @@ private:
 						last_river_w = (double(RIVER_WIDTH_X) + double(RIVER_WIDTH_Y)) * 0.25 * river_width * k * (1.0 + RIVER_FLARE * river_flare * mean_mouth * mean_mouth * minf(river_mouth, 1.0));
 						last_river_y = SEA_Y + mouth_level(base - double(RIVER_DROP_Y) * river_drop);
 					} else {
-						const double wide = clampf(nz(n_river_wide, x, z) * 0.9 + 0.5, 0.0, 1.0);
-						const double pinch = 1.0 + RIVER_PINCH * nz(n_river_wide, x * RIVER_WIDE / RIVER_PINCH_SIZE + 911.0, z * RIVER_WIDE / RIVER_PINCH_SIZE - 377.0);
+						const double pinch = 1.0 + double(RIVER_PINCH_X) * nz(n_river_wide, x * RIVER_WIDE / double(RIVER_PINCH_SIZE_X) + 911.0, z * RIVER_WIDE / double(RIVER_PINCH_SIZE_X) - 377.0) + double(RIVER_PINCH_Y) * nz(n_river_wide, x * RIVER_WIDE / double(RIVER_PINCH_SIZE_Y) - 1531.0, z * RIVER_WIDE / double(RIVER_PINCH_SIZE_Y) + 263.0);
 						double w = lerpf(RIVER_WIDTH_X, RIVER_WIDTH_Y, wide) * river_width * 0.5 * k * pinch;
 						const double drop = lerpf(RIVER_DROP_X, RIVER_DROP_Y, wide) * river_drop;
 						const double mo = mouth(base - drop);
@@ -496,7 +507,8 @@ private:
 						const double gw = maxf(std::sqrt(gx * gx + gz * gz), 0.25 / VALLEYS);
 						double scale = 1.0;
 						V2 along = V2(-gz, gx) / gw;
-						const V2 wg = V2(valley_at(x + 4.0, z) - v, valley_at(x, z + 4.0) - v) * 0.25;
+						// (Its winding tilts the line off the valley's.)
+						const V2 wg = V2(valley_at(x + 4.0, z) - v, valley_at(x, z + 4.0) - v) * 0.25 - V2(wind(x + 4.0, z, wide) - wnd, wind(x, z + 4.0, wide) - wnd) * (0.25 * gw);
 						const double wl = wg.length();
 						if (wl > 1e-7) {
 							scale = clampf(gw / wl, 0.25, 4.0);
@@ -504,9 +516,10 @@ private:
 						}
 						const double r = (ds - off) * scale;
 						const double s = absf(r);
+						const double bank = RIVER_BANK * lerpf(RIVER_BANK_SWING_X, RIVER_BANK_SWING_Y, bank_swing(x, z, r));
 						const double top = maxf(base, MEADOW_ABOVE);
 						const double water = mouth_level(base - drop);
-						const double near = (1.0 - smoothstep(w + RIVER_BANK, w + RIVER_BANK + RIVER_RAMP, s)) * k;
+						const double near = (1.0 - smoothstep(w + bank, w + bank + RIVER_RAMP, s)) * k;
 						floor_y = lerpf(floor_y, top, near);
 						last_river_r = r;
 						last_river_w = w;
@@ -515,6 +528,7 @@ private:
 						river_k = k;
 						river_mouth_s = mo;
 						river_bed = RIVER_BED + RIVER_MOUTH_DEEP * mo * minf(river_mouth, 1.0);
+						river_bank = bank;
 						if (s < w + RIVER_BANK + 16.0 && water > 0.0) {
 							const double ax = along.x, az = along.y;
 							const double fall = (lowland(x - ax * 30.0, z - az * 30.0) - lowland(x + ax * 30.0, z + az * 30.0)) / 60.0;
@@ -548,6 +562,21 @@ private:
 		return V2(SEA_Y + h, meadow);
 	}
 
+	// The river's line wound off the floor's (land_field.gd `_wind`).
+	double wind(double x, double z, double wide) const {
+		const double a = lerpf(RIVER_WIND_WIDE_X, RIVER_WIND_WIDE_Y, wide);
+		const double b = RIVER_MEANDER / double(RIVER_WIND_SIZE_X);
+		const double c = RIVER_MEANDER / double(RIVER_WIND_SIZE_Y);
+		return a * (double(RIVER_WIND_X) * nz(n_river_meander, x * b - 2741.0, z * b + 1187.0) + double(RIVER_WIND_Y) * nz(n_river_meander, x * c + 653.0, z * c - 3119.0));
+	}
+
+	// Where a side's bank run is in its swing (land_field.gd `_bank_swing`).
+	double bank_swing(double x, double z, double r) const {
+		const double b = RIVER_SIDE / RIVER_BANK_SIZE;
+		const double ox = r >= 0.0 ? 417.0 : -2203.0, oz = r >= 0.0 ? 91.0 : 1777.0;
+		return clampf(nz(n_river_side, x * b + ox, z * b + oz) * 0.9 + 0.5, 0.0, 1.0);
+	}
+
 	double mouth(double lv) const {
 		if (river_mouth <= 0.0) return 0.0;
 		return 1.0 - smoothstep(0.0, RIVER_MOUTH_RISE, lv);
@@ -579,7 +608,7 @@ private:
 		const double water = last_river_y;
 		const double top = river_top;
 		const double drop = top - water;
-		double core = w + RIVER_BANK;
+		double core = w + river_bank;
 		if (s > core + RIVER_RAMP + double(RIVER_PLAIN_Y) * RIVER_PLAIN_SPREAD) {
 			last_river = s - w;
 			return h;
@@ -596,13 +625,13 @@ private:
 		last_river_w = w;
 		last_river = s - w;
 		if (w <= 0.0) return h;
-		core = w + RIVER_BANK;
+		core = w + river_bank;
 		double cut;
 		if (s < w) {
 			const double u = s / w;
 			cut = water - river_bed * (1.0 - POW(u, 2.0 + 2.0 * river_mouth_s));
 		} else if (s < core) {
-			const double u = (s - w) / RIVER_BANK;
+			const double u = (s - w) / river_bank;
 			cut = water + drop * u * u * (3.0 - 2.0 * u);
 		} else {
 			const double o = s - core;

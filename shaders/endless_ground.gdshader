@@ -625,10 +625,11 @@ void fragment() {
 	// It takes on the sea's look over twice that, so the colour turns slowly.
 	float r_tint = r_here * river_mouth_blend * (1.0 - smoothstep(0.0, river_mouth_rise * 2.0, river.z - sea_y));
 	// The bank's width swings along the river: a wide bar of sand and stones
-	// here, the turf down to a muddy lip there.
+	// here, the turf down to the water there; mostly at closer scales than the
+	// river is wide, so its two sides seldom match (no kerb down both).
 	// (endless_patch's noise, which the grass mirrors (EndlessPatch.river_bank),
 	// so the tufts stop where the stones start.)
-	float bank_w = river_bank.x * mix(0.2, 1.6, smoothstep(0.32, 0.68, ep_noise(p.xz / 70.0 + 11.0) * 0.75 + ep_noise(p.xz / 17.0 + 5.0) * 0.25));
+	float bank_w = river_bank.x * mix(0.0, 1.8, smoothstep(0.42, 0.62, ep_noise(p.xz / 55.0 + 11.0) * 0.45 + ep_noise(p.xz / 19.0 + 5.0) * 0.55));
 	float banked = r_here * (1.0 - smoothstep(bank_w * 0.55, bank_w + r_aa, r_out + (zs_noise(p.xz / 6.1 + 3.0) - 0.5) * 2.0 * min(bank_w, 2.5) * (1.0 - smoothstep(1.0, 4.0, fp))));
 
 	// --- The grass carpet ---------------------------------------------------

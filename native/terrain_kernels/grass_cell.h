@@ -232,8 +232,8 @@ struct Patch {
 		return lerpf(a, b, fz);
 	}
 	static double river_bank(double x, double z) {
-		const double n = noise(x / 70.0 + 11.0, z / 70.0 + 11.0) * 0.75 + noise(x / 17.0 + 5.0, z / 17.0 + 5.0) * 0.25;
-		return 3.5 * lerpf(0.2, 1.6, smoothstep(0.32, 0.68, n));
+		const double n = noise(x / 55.0 + 11.0, z / 55.0 + 11.0) * 0.45 + noise(x / 19.0 + 5.0, z / 19.0 + 5.0) * 0.55;
+		return 3.5 * lerpf(0.0, 1.8, smoothstep(0.42, 0.62, n));
 	}
 	static double fade(double x, double z, double scale) { return noise(x / scale, z / scale) - 0.5; }
 	static double patch(double x, double z, double scale) { return smoothstep(0.43, 0.57, noise(x / scale, z / scale)) - 0.5; }
