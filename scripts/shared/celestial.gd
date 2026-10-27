@@ -147,6 +147,10 @@ const MOON_TINT := ["8a9ac4", "c4d3f4"]
 ## The night fill's colour per unit of fill: a deep blue leaning teal, so
 ## shaded land goes cool against the moonlit faces.
 const NIGHT_FILL := Vector3(0.11, 0.18, 0.32)
+## The night fill left under a storm (celestial `storm` 1): the storm front's
+## core at night stays dark between its flashes but the land readable enough
+## to fly and land by (0.4 left the forest under it near black).
+const STORM_NIGHT_FILL := 0.6
 ## The night look (`night_grade`): the share of colour lost to rod vision under
 ## a new and a full moon, and the hue left, new and full. Under a new moon it
 ## is deeper and darker; a full moon keeps a little more colour, silver-blue.
@@ -483,7 +487,7 @@ func update_rig() -> void:
 	_publish("zs_cloud_sky", hemi_sky * 0.55)
 	# Native night adaptation: a cool surface fill keeps the miniature readable.
 	# Keep sky/cloud/fog colors independent so stars retain their dark backdrop.
-	var fill := night_full * night_fill * lerpf(1.0, 0.4, storm) * lerpf(MOON_FILL.x, MOON_FILL.y, moon_glow)
+	var fill := night_full * night_fill * lerpf(1.0, STORM_NIGHT_FILL, storm) * lerpf(MOON_FILL.x, MOON_FILL.y, moon_glow)
 	# Dusk's fill (DUSK_FILL): the afterglow sky lighting the land, rose-lavender
 	# under a clear sky, grey under cloud.
 	var dusk_fill := smoothstep(DUSK_FILL_E.x, DUSK_FILL_E.y, e) * smoothstep(DUSK_FILL_E.z, DUSK_FILL_E.w, e) * lerpf(1.0, DUSK_FILL_CLOUD, minf(1.0, cloud * 1.3)) * lerpf(1.0, 0.4, storm)

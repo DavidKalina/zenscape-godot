@@ -47,6 +47,14 @@ const float ZS_STORM_FLASH_FORM_REF = 0.02;
 // white column through it).
 const vec2 ZS_STORM_FLASH_LOW = vec2(450.0, 900.0);
 const float ZS_STORM_FLASH_HIGH = 0.25;
+// At night (zs_daylight 0) the flash on the cloud is this share of the
+// day's, within ZS_STORM_FLASH_NIGHT_REACH m (for the day's
+// ZS_STORM_FLASH_REACH.x): the deck's own light is a flat night fill, so the
+// day's flash lifted the whole deck to a flat pale veil (a white-out); now
+// the cloud glows round the channel and the land's flash light
+// (storm_lightning.gd) shows the land.
+const float ZS_STORM_FLASH_NIGHT = 0.5;
+const float ZS_STORM_FLASH_NIGHT_REACH = 250.0;
 
 float zs_storm_cloud_lum(vec3 c) {
 	return dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -101,8 +109,9 @@ vec3 zs_storm_cloud_flash(vec3 p, float crown, float w, float lum, float sea) {
 	// tail or wide reach left the whole deck lit a flat pale grey.)
 	float f = exp(-since * ZS_STORM_FLASH_DECAY) + 0.55 * exp(-max(since - 0.13, 0.0) * 14.0) * step(0.13, since);
 	float dist = length(p.xz - zs_lightning.xy);
-	float reach = exp(-dist / ZS_STORM_FLASH_REACH.x) + ZS_STORM_FLASH_WIDE * exp(-dist / ZS_STORM_FLASH_REACH.y);
+	float reach = exp(-dist / mix(ZS_STORM_FLASH_NIGHT_REACH, ZS_STORM_FLASH_REACH.x, zs_daylight)) + ZS_STORM_FLASH_WIDE * exp(-dist / ZS_STORM_FLASH_REACH.y);
 	float form = mix(1.0, 2.0 * lum / (lum + ZS_STORM_FLASH_FORM_REF), w);
 	form *= mix(ZS_STORM_FLASH_HIGH, 1.0, exp(-max(p.y - sea - ZS_STORM_FLASH_LOW.x, 0.0) / ZS_STORM_FLASH_LOW.y));
+	form *= mix(ZS_STORM_FLASH_NIGHT, 1.0, zs_daylight);
 	return ZS_STORM_FLASH_COL * (f * reach * zs_lightning.w * ZS_STORM_FLASH_GAIN * mix(1.0, 0.55, crown) * mix(0.5, 1.0, w) * form);
 }

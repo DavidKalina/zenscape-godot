@@ -36,6 +36,10 @@ uniform vec2 near_fade = vec2(0.6, 2.5);
 // The streak's own colour, lit by the sky.
 uniform vec3 tint = vec3(0.78, 0.82, 0.86);
 uniform float brightness = 1.0;
+// The lightning's flash on the streaks (zs_lightning: its light now, by the
+// strike's distance as the land's flash light falls off): a flash shows the
+// rain for a moment, most at night where nothing else lights it.
+uniform float flash_gain = 0.3;
 // The clock the drops fall on (s), set each frame.
 uniform float clock = 0.0;
 
@@ -98,7 +102,12 @@ void vertex() {
 	// the sky's hemisphere and a low sun went warm, and the streaks read
 	// orange-brown; rain is cold grey-white.
 	float lum = dot(sky * 1.4 + sun * 0.12, vec3(0.2126, 0.7152, 0.0722));
-	v_light = tint * (lum + 0.004) * brightness;
+	float flash = 0.0;
+	if (zs_storm_on() && zs_lightning.w > 0.0 && zs_lightning.z < 1.0) {
+		float reach = clamp(700.0 / max(length(cam.xz - zs_lightning.xy), 1.0), 0.25, 1.0);
+		flash = flash_gain * zs_lightning.w * reach * exp(-zs_lightning.z * 6.0);
+	}
+	v_light = tint * (lum + 0.004 + flash) * brightness;
 }
 
 void fragment() {

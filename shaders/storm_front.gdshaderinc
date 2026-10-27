@@ -71,6 +71,30 @@ float zs_storm_rain(vec2 p) {
 		* zs_storm_wet;
 }
 
+// How much of the sky the storm's cloud leaves showing along `rd` from `ro`
+// (1 clear, 0 hidden), for the sky's own objects (stars, planets), which
+// draw before the cloud composite and showed through the deck's last few
+// per cent of cover at night: the storm's clouds (pushed from
+// ZS_STORM_SKY_AHEAD m ahead, let go ZS_STORM_SKY_BEHIND m past the core)
+// where the ray crosses each of ZS_STORM_SKY_HEIGHTS m over the sea (the
+// deck up to about the towers' tops), or all of it under the storm.
+const float ZS_STORM_SKY_AHEAD = 2500.0;
+const float ZS_STORM_SKY_BEHIND = 1400.0;
+const vec4 ZS_STORM_SKY_HEIGHTS = vec4(600.0, 1500.0, 3000.0, 5000.0);
+float zs_storm_sky_open(vec3 ro, vec3 rd) {
+	if (!zs_storm_on()) return 1.0;
+	float core = zs_storm_shape.y;
+	float cover = zs_storm_here;
+	for (int i = 0; i < 4; i++) {
+		float rise = ZS_STORM_SKY_HEIGHTS[i] - ro.y;
+		if (rise <= 0.0) continue;
+		vec2 p = ro.xz + rd.xz / max(rd.y, 0.02) * rise;
+		float d = zs_storm_d(p);
+		cover = max(cover, zs_storm_ramp(ZS_STORM_SKY_AHEAD, 0.0, d) * zs_storm_ramp(-core - ZS_STORM_SKY_BEHIND, -core, d) * zs_storm_ends(p));
+	}
+	return 1.0 - cover;
+}
+
 // The gust front's wind (0..1).
 float zs_storm_gust(vec2 p) {
 	if (!zs_storm_on()) return 0.0;

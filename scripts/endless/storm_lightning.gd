@@ -266,7 +266,7 @@ func _schedule(dt: float, eye: Vector3, camera: Camera3D) -> void:
 func _forced(eye: Vector3, camera: Camera3D) -> void:
 	match _kind:
 		"far": _far(eye,camera,_range,_bearing)
-		"inside": _inside(eye,camera)
+		"inside": _inside(eye,camera,_range,_bearing)
 		_:
 			if not _ground(eye,camera,_range,_bearing,_ruin): print("lightning: no spot for a ground strike")
 
@@ -578,12 +578,14 @@ func _far(eye: Vector3, camera: Camera3D, range_m: float, bearing: float) -> voi
 		return
 
 ## A flash in the cloud over the core; now and then a channel crawling
-## along under its base.
-func _inside(eye: Vector3, camera: Camera3D) -> void:
+## along under its base. A forced one with --strike-range= (and
+## --strike-bearing=) flashes there instead.
+func _inside(eye: Vector3, camera: Camera3D, range_m := -1.0, bearing := NAN) -> void:
 	var e := Vector2(eye.x,eye.z)
 	var p := _in_core(_rng.randf_range(-2900.0,-400.0))
 	# Mostly the nearer stretch of the line.
 	if p.distance_to(e) > 7000.0: p = _in_core(_rng.randf_range(-2900.0,-400.0),e)
+	if range_m > 0.0: p = e+(_ways(camera)[0] as Vector2).rotated(0.0 if is_nan(bearing) else bearing)*range_m
 	var at := Vector3(p.x,CLOUD_BASE+_rng.randf_range(40.0,260.0),p.y)
 	_bolt("inside",at,eye,_rng.randf_range(0.5,1.0))
 	flickers += 1
