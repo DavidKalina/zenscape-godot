@@ -953,6 +953,7 @@ func tick(delta: float) -> void:
 	tunnels.step(camera.global_position)
 	trees.step(camera.global_position,plane.position)
 	knock.step(delta,self)
+	if storm != null: birds.storm_hush = float(storm.here)
 	birds.step(delta,camera.global_position,plane)
 	if fish != null: fish.step(delta,camera.global_position,plane.position,plane.velocity,false)
 	if traffic != null: traffic.step(delta,camera.global_position,-camera.global_basis.z,plane.position,Vector3(-sin(plane.heading),0.0,-cos(plane.heading)),float(plane.speed))
@@ -1160,6 +1161,7 @@ func _react(delta: float) -> void:
 	if motes != null:
 		# The storm's gust front blows the specks along with it.
 		if storm != null: motes.storm_air = EndlessMotes.STORM_AIR*storm.gust_at(Vector2(camera.global_position.x,camera.global_position.z))
+		if storm != null: motes.storm_hush = smoothstep(0.1,0.6,float(storm.here))
 		# Parked in the menu the idling wash stirs the grass but kicks none up.
 		motes.step(delta,camera.global_position,look.wind_direction,look._gust,{} if stage != null and stage.holding() else react.wash_spot,
 			eddies.ribbons.ribbons if eddies != null else [],Callable(self,"_grass_at"))

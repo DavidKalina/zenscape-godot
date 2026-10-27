@@ -44,6 +44,14 @@ const POLLEN_DRIFT := 0.55
 ## (m/s) at its peak; `storm_air` is set each frame from the gust at the eye.
 const STORM_AIR := 16.0
 var storm_air := 0.0
+## The storm's hush (0..1), set each frame from the storm at the eye
+## (StormFront `here`): under the core the rain washes the pollen out
+## (the swarm fades to none) and the specks' and bits' own little light
+## goes, so nothing glows like a firefly under the dark deck.
+var storm_hush := 0.0
+var _hush_shown := -1.0
+var _speck_mat: ShaderMaterial
+var _bit_mat: ShaderMaterial
 
 const KICK := 180
 const KICK_RATE := 120.0
@@ -118,11 +126,13 @@ func setup(land_seed: int, ground: Callable) -> void:
 	var speck := ShaderMaterial.new()
 	speck.shader = SPECK
 	quad.material = speck
+	_speck_mat = speck
 	_pollen_mm = _batch("Pollen",quad,pollen_count,true)
 	_pollen_buf.resize(pollen_count*20)
 	var blade: Mesh = Chaff._chaff_mesh()
 	var m := ShaderMaterial.new()
 	m.shader = BIT
+	_bit_mat = m
 	_kick_mm = _batch("GrassKick",blade,KICK,false,m)
 	_kick_buf.resize(KICK*16)
 
@@ -161,6 +171,10 @@ func step(delta: float, eye: Vector3, wind: Vector2, travel: float, wash: Dictio
 	if not is_nan(_travel): speed = clampf((travel-_travel)/delta,0.0,20.0)
 	_travel = travel
 	_air = wind.normalized()*(speed+storm_air)
+	if absf(storm_hush-_hush_shown) > 0.01:
+		_hush_shown = storm_hush
+		_speck_mat.set_shader_parameter("self_light",1.0-storm_hush)
+		_bit_mat.set_shader_parameter("self_light",1.0-storm_hush)
 	if pollen_on: _pollen(delta,eye,grass)
 	if kick_on: _kick(delta,wash,ribbons)
 
@@ -169,7 +183,7 @@ func step(delta: float, eye: Vector3, wind: Vector2, travel: float, wash: Dictio
 func _pollen(delta: float, eye: Vector3, grass: Callable) -> void:
 	var under := float(grass.call(eye.x,eye.z))
 	var low := not is_nan(under) and eye.y-under < POLLEN_UP
-	_show = move_toward(_show,1.0 if low else 0.0,delta*0.8)
+	_show = move_toward(_show,(1.0-storm_hush) if low else 0.0,delta*0.8)
 	if _show <= 0.0:
 		if not _specks.is_empty(): _specks.clear()
 		_pollen_mm.visible_instance_count = 0

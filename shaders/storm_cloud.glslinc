@@ -253,11 +253,15 @@ const float SE_SCUD_EDGE_FAR = 0.00006;
 // there, and a torn fragment that far is a pixel's sparkle.
 const vec2 SE_SCUD_FAR = vec2(500.0, 1500.0);
 const float SE_SCUD_DENS = 1.0;
+// Near the eye's own height the scud is denser (the gate lowered by .x at
+// the eye's height, half gone .y m above or below it), within .z m of the
+// eye (gone by .w), so fragments whip past the plane, not far off.
+const vec4 SE_SCUD_NEAR = vec4(0.07, 28.0, 200.0, 550.0);
 const float SE_SIGMA = 0.05;
 // Their light: no taps: the sky's share, the sun's, in the deck (times its
 // depth's fall-off, above) and in the scud.
-const vec2 SE_SKY = vec2(6.0, 0.055);
-const vec2 SE_SUN = vec2(0.03, 0.01);
+const vec2 SE_SKY = vec2(6.0, 0.11);
+const vec2 SE_SUN = vec2(0.03, 0.02);
 // The murk: extinction per m where the envelope is whole (~630 m to half),
 // full up to SE_MURK_TOP.x m over the sea, gone by .y; its light (the
 // sky's share: in the dark air between the shafts, in a shaft), the sun's;
@@ -400,6 +404,8 @@ float storm_env_cloud(vec3 p, float e, float fl, float t, out float dens, out fl
 		float big = textureLod(cauliflower, l / SE_SCUD_TILE + 0.17, 0.0).r;
 		float fine = textureLod(cauliflower, l / SE_SCUD_FINE + 0.53, 0.0).g;
 		float gate = mix(SE_SCUD_GATE.x, SE_SCUD_GATE.y, e);
+		float dy = (p.y - P.eye.y) / SE_SCUD_NEAR.y;
+		gate -= SE_SCUD_NEAR.x * e * exp(-0.693 * dy * dy) * (1.0 - sstep(SE_SCUD_NEAR.z, SE_SCUD_NEAR.w, t));
 		float v = big * 0.62 + fine * 0.38;
 		// Thin at the floor and toward the deck's base it joins.
 		float band = sstep(fl, fl + 30.0, p.y);

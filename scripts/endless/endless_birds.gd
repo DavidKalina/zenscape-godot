@@ -211,6 +211,10 @@ var reach := 1.0
 var size := 1.0
 var ride := RIDE
 var ambient := 1.0
+## The storm at the eye (StormFront `here`, set by the host each frame): no
+## far flock is put up to wheel in it past STORM_HUSH.
+var storm_hush := 0.0
+const STORM_HUSH := 0.3
 var flocks: Array = []
 ## The numbers (F1) and the harness: flushes so far, and the last step's ms.
 var stats := {"flushed":0,"rode":0,"peeled":0,"dropped":0,"foot_flushed":0,"settled":0,"hops":0,"ms":0.0,"ms_avg":0.0,"draw_ms":0.0}
@@ -529,7 +533,7 @@ func _ground_spot(f: Flock, b: Bird) -> void:
 	b.peck = _rng.randf_range(PECK.x,PECK.y)
 
 func _put_ambient(eye: Vector3) -> void:
-	if ambient <= 0.0: return
+	if ambient <= 0.0 or storm_hush > STORM_HUSH: return
 	var far := 0
 	for f: Flock in flocks:
 		if f.state == WHEEL: far += 1

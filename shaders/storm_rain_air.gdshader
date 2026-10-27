@@ -133,7 +133,12 @@ void fragment() {
 		vec2 q = vec2(dot(p.xz - zs_storm_line.xy, side) + clock * drift, zs_storm_d(p.xz));
 		float n = ra_noise(q / vec2(520.0, 700.0)) * 0.65 + ra_noise(q / vec2(190.0, 260.0) + 7.3) * 0.35;
 		float heavy = mix(1.0 - shafts, 1.0 + shafts, smoothstep(0.25, 0.75, n));
-		tau += rain * up * heavy * dt * (t > t_cloud ? 1.0 - cover : 1.0);
+		// The cloud's distance is a hard step along the ray: taken as the
+		// share of this tap's own stretch (fixed, not jittered) that lies
+		// before it, or the taps' jitter turns it to a per-pixel grain
+		// (3 or 4 taps before the deck overhead: a 25% flicker in the grey).
+		float before = clamp((t_cloud - (t0 + float(i) * dt)) / dt, 0.0, 1.0);
+		tau += rain * up * heavy * dt * (before + (1.0 - before) * (1.0 - cover));
 	}
 	float a = (1.0 - exp(-tau * sigma)) * opacity;
 	if (a < 0.002) discard;
