@@ -64,6 +64,14 @@ uniform float rock_plane_calm : hint_range(0.0, 1.0) = 0.1;
 uniform float rock_relief_big : hint_range(0.0, 1.0) = 0.45;
 // How far the painted light's tones follow the light's leans (0 fixed).
 uniform float rock_follow : hint_range(0.0, 2.0) = 0.75;
+// Rich round (prototype, 0 off; --rock-look=old): mineral bands, stains running down from the
+// beds, lichen, each bed shaded as a bevelled block, hollows deeper, crests
+// catching light, shade cooler and light warmer, big colour zones for far rock.
+uniform float rock_rich : hint_range(0.0, 1.5) = 1.0;
+// Shape round: the land's own form (er_rock_shaped's `shape`, the land's
+// CUSTOM3) wears its proud edges pale and darkens what lies sunk, at 4, 14
+// and 40 m (0 off). Meshes without it pass vec4(0.0) and are untouched.
+uniform float rock_shape : hint_range(0.0, 2.0) = 1.0;
 
 const vec3 ER_SHADOW1 = vec3(0.105, 0.115, 0.150);
 const vec3 ER_SHADOW = vec3(0.135, 0.130, 0.175);
@@ -224,7 +232,8 @@ vec3 er_relief(vec3 p, vec3 n, float fp, vec3 rnd, out float cav) {
 
 // The rock's albedo at world point `p` on a surface of world normal `n`;
 // `bumped` comes back the normal to light it with. See the file's head.
-vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout vec3 bumped, out vec3 glow) {
+// `shape` is the land's form (see rock_shape), vec4(0.0) for none.
+vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, vec4 shape, inout vec3 bumped, out vec3 glow) {
 	glow = vec3(0.0);
 	float sz = rock_size;
 	vec3 q = p / sz;
@@ -311,7 +320,7 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout 
 		float id = floor(b);
 		float f = b - id;
 		vec3 h = er_hash3(ivec3(int(id), k * 17 + 3, 11));
-		col *= 1.0 + (h.x - 0.5) * 2.0 * amps[k] * kp * (rock_flat ? 1.0 : rock_beds);
+		col *= 1.0 + (h.x - 0.5) * 2.0 * amps[k] * kp * (rock_flat ? 1.0 : rock_beds) * (1.0 - (k == 0 ? 0.2 : 0.6) * rock_rich);
 		if (k < 2) col *= mix(vec3(1.0), mix(vec3(0.90, 0.97, 1.08), vec3(1.10, 1.02, 0.86), h.z), kp * 1.0);
 		// Thin dark seam at a bed's foot, a pale lip at the top of the one below.
 		float w = max(0.045, fq / s * 0.9);
@@ -349,7 +358,7 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout 
 	float fisk = er_keep(2.0, fq);
 	float fissure = (1.0 - smoothstep(0.0, 0.07 + fq / 11.0 * 0.5, abs(fis - 0.5))) * fisk * smoothstep(0.7, 0.4, n.y);
 	crack = max(crack, joint * (rock_flat ? 0.8 : 0.4));
-	col *= 1.0 - fissure * 0.28;
+	col *= 1.0 - fissure * 0.28 * (1.0 - 0.6 * rock_rich);
 	// Cracks down the seams between facets.
 	float seam_f = (1.0 - smoothstep(0.0, 0.035 + fq / 7.5 * 0.5, cell_f.y)) * keep_f * 0.0;
 	float seam_b = (1.0 - smoothstep(0.0, 0.035 + fq / 38.0 * 0.5, cell_b.y)) * er_keep(38.0, fq) * 0.25;
@@ -362,7 +371,7 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout 
 	// Weathering streaks running down the face.
 	float gully = er_vnoise(vec3(q.x / 2.6, q.y / 36.0, q.z / 2.6) + vec3(2.0, 0.0, 5.0));
 	float gk = er_keep(2.6, fq);
-	col *= 1.0 - smoothstep(0.55, 0.8, gully) * 0.5 * gk * (1.0 - nf.y);
+	col *= 1.0 - smoothstep(0.55, 0.8, gully) * 0.5 * gk * (1.0 - nf.y) * (1.0 - 0.75 * rock_rich);
 	// A pale lip along the facet's top and along the lit side of a seam.
 	float shade = rock_pass1 ? 0.0 : 1.0 - smoothstep(0.05, 0.6, dot(nf, sun));
 	// In shade the lips keep a cool glint and the cracks stay violet, not black.
@@ -373,6 +382,91 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout 
 	lip *= 1.0 - 0.4 * calm_k;
 	col = mix(col, glint, lip * (0.35 + 0.6 * t + 0.15 * shade) * 0.9);
 	col = mix(col, crack_col, clamp(crack, 0.0, 1.0) * (0.85 - 0.2 * shade));
+	if (rock_rich > 0.0 && !rock_pass1) {
+		float R = rock_rich;
+		float face = smoothstep(0.7, 0.35, n.y);
+		float sunny = smoothstep(-0.05, 0.45, dot(nf, sun));
+		// Colour zones some 60 m across: rose, ochre and grey rock, so far
+		// faces keep a hue where the small detail has faded.
+		float zone = er_vnoise(p / 64.0 + vec3(4.0, 8.0, 2.0));
+		float zone2 = er_vnoise(p / 150.0 + vec3(9.0, 1.0, 6.0));
+		vec3 zc = mix(vec3(1.08, 0.94, 0.90), vec3(1.10, 1.02, 0.80), smoothstep(0.3, 0.7, zone));
+		zc = mix(zc, vec3(0.94, 0.98, 1.04), smoothstep(0.55, 0.8, zone2));
+		col *= mix(vec3(1.0), zc, R);
+		// Each bed a bevelled block: dark at its foot under the bed above,
+		// lighter toward its top (18 m and 6.4 m beds).
+		for (int k = 0; k < 2; k++) {
+			float s = k == 0 ? 18.0 : 6.4;
+			float kp = er_keep(s, fq) * face;
+			float f = fract(sy / s);
+			float bev = smoothstep(0.0, 0.35, f) * 0.75 + smoothstep(0.55, 0.95, f) * 0.25;
+			col *= 1.0 + (bev - 0.6) * (k == 0 ? 0.30 : 0.38) * kp * R;
+		}
+		// Mineral bands: some beds pale and creamy, some iron-rust.
+		{
+			float bid = floor(sy / 6.4);
+			vec3 hb = er_hash3(ivec3(int(bid), 9, 91));
+			float kp = er_keep(6.4, fq);
+			float pale = step(0.8, hb.x) * kp;
+			float rust = step(hb.x, 0.16) * kp;
+			col = mix(col, col * zs_warm(vec3(1.32, 1.24, 1.08), rock_follow), pale * 0.75 * R);
+			col = mix(col, col * vec3(1.22, 0.90, 0.66), rust * 0.8 * R);
+		}
+		// Stains running down from each bed's lip: dark varnish or rust,
+		// streaked narrow across the face, long down it.
+		{
+			float f = fract(sy / 6.4);
+			float streak = er_vnoise(vec3(q.x / 1.4, q.y / 16.0, q.z / 1.4) + vec3(3.0, 7.0, 1.0));
+			float streak_b = er_vnoise(vec3(q.x / 4.5, q.y / 30.0, q.z / 4.5) + vec3(8.0, 2.0, 5.0));
+			float run = smoothstep(0.15, 0.95, f) * smoothstep(0.5, 0.75, streak * 0.6 + streak_b * 0.6);
+			float sk = er_keep(1.4, fq) * face;
+			float kind = smoothstep(0.4, 0.6, er_vnoise(q / 40.0 + vec3(1.0, 5.0, 3.0)));
+			vec3 stain = mix(vec3(0.58, 0.55, 0.60), vec3(1.15, 0.78, 0.55), kind);
+			col = mix(col, col * stain, run * sk * R);
+		}
+		// Lichen on what faces the sky and the sun: sage and orange flecks.
+		{
+			float lk = er_keep(2.5, fq);
+			float spot = smoothstep(0.62, 0.70, er_vnoise(q / 2.5 + vec3(5.0, 1.0, 7.0)));
+			float patchy = smoothstep(0.5, 0.75, er_vnoise(q / 21.0 + vec3(2.0, 9.0, 4.0)));
+			float where = smoothstep(-0.2, 0.4, nf.y) * (0.4 + 0.6 * sunny);
+			vec3 lc = mix(vec3(1.18, 1.18, 0.78), vec3(1.40, 0.98, 0.55), er_vnoise(q / 7.0));
+			col = mix(col, col * lc, spot * patchy * where * lk * 0.8 * R);
+		}
+		// Hollows deeper and cool, crests lit warm (more toward the sun).
+		float hollow = clamp((0.5 - cav) * 3.0 + clamp(carved.x, 0.0, 1.0) * 0.4, 0.0, 1.0);
+		col = mix(col, col * zs_cool(vec3(0.62, 0.64, 0.80), rock_follow), hollow * 0.6 * R);
+		float crest = clamp((cav - 0.55) * 4.0, 0.0, 1.0) + clamp(carved.y, 0.0, 1.0) * 0.5 + lip * 0.6;
+		col = mix(col, max(col, glint * 0.95), clamp(crest, 0.0, 1.0) * (0.15 + 0.5 * sunny) * 0.6 * R);
+		// Form in the shade: what faces up takes the sky, what faces down
+		// goes dark, so a shaded face keeps its planes.
+		float up = smoothstep(-0.45, 0.65, nf.y);
+		col *= mix(vec3(1.0), mix(vec3(0.62, 0.62, 0.66), zs_cool(vec3(1.14, 1.17, 1.26), rock_follow), up), shade * 0.85 * R);
+		// The shade leans to the sky's blue, the light to the sun's gold.
+		vec3 lean = mix(zs_cool(vec3(0.84, 0.90, 1.14), rock_follow), zs_warm(vec3(1.10, 1.03, 0.90), rock_follow), sunny);
+		col *= mix(vec3(1.0), lean, 0.7 * R);
+	}
+
+	float occl = 0.0;
+	if (rock_shape > 0.0 && shape.a > 0.5 && !rock_pass1) {
+		float S = rock_shape;
+		vec3 c = (shape.rgb - 0.5) * 2.0;
+		float sunny_s = smoothstep(-0.05, 0.45, dot(nf, sun));
+		// Worn edges: the proud rims pale, the sun's gold where it falls on
+		// them, a cool sky pale in the shade.
+		float worn = smoothstep(0.06, 0.4, c.r) + 0.6 * smoothstep(0.08, 0.5, c.g);
+		vec3 rim = mix(zs_cool(vec3(0.46, 0.48, 0.58), rock_follow), glint, sunny_s);
+		col = mix(col, max(col * 1.4, rim), clamp(worn, 0.0, 1.0) * (0.6 - 0.25 * sunny_s) * S);
+		// Sunk: crevices dark and cool, ledges' inner corners and recesses
+		// in their own shade.
+		float crev = smoothstep(0.06, 0.45, -c.r);
+		float groove = smoothstep(0.05, 0.5, -c.g);
+		float recess = smoothstep(0.0, 0.55, -c.b);
+		occl = clamp(crev * 0.55 + groove * 0.4 + recess * 0.3, 0.0, 0.85) * S;
+		col = mix(col, col * zs_cool(vec3(0.55, 0.56, 0.70), rock_follow), clamp(occl, 0.0, 1.0));
+		// Buttresses stand a little lighter.
+		col *= 1.0 + 0.12 * smoothstep(0.0, 0.5, c.b) * S;
+	}
 
 	// Turf and moss settle where the face lies back, ragged by the facets.
 	float lay = nf.y + (er_vnoise(q / 7.0) - 0.5) * 0.2 + (er_vnoise(q / 2.3) - 0.5) * 0.1 * er_keep(2.3, fq);
@@ -403,7 +497,11 @@ vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout 
 		vec3 bounce = zs_cool(ER_SKY_BOUNCE, rock_follow) * (0.35 + 0.65 * up)
 			+ zs_warm(ER_GROUND_BOUNCE, rock_follow) * (1.0 - up) * (0.3 + 0.7 * low) * 0.8;
 		glow = col * bounce * (0.12 + 0.88 * shade) * 0.22 * rock_bounce
-			* (1.0 - 0.5 * clamp(carved.x * rock_carve_shade, 0.0, 1.0));
+			* (1.0 - 0.5 * clamp(carved.x * rock_carve_shade, 0.0, 1.0)) * (1.0 - 0.6 * clamp(occl, 0.0, 1.0));
 	}
 	return col;
+}
+
+vec3 er_rock(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved, inout vec3 bumped, out vec3 glow) {
+	return er_rock_shaped(p, n, fp, sun, mossy, carved, vec4(0.0), bumped, glow);
 }

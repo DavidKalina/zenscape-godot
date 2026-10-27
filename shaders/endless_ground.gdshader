@@ -310,6 +310,9 @@ varying vec3 river;
 varying vec2 river_flow;
 // The channel's frame (CUSTOM2, river_live only).
 varying vec4 river_frame;
+// The land's shape (land_stream _shape, CUSTOM3): how proud (over 0.5) or
+// sunk each vertex stands at 4, 14 and 40 m; a 1 where it was made.
+varying vec4 land_shape;
 
 void vertex() {
 	world_position = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -320,6 +323,7 @@ void vertex() {
 	river = CUSTOM1.xyz;
 	river_flow = (CUSTOM0.zw * 2.0 - 1.0) * 4.0;
 	river_frame = river_live > 0.5 ? CUSTOM2 : vec4(0.0);
+	land_shape = CUSTOM3;
 	// The river's water drawn flat at its level: the grid's bed under it
 	// lifted (the land's own heights, its colliders, keep the bed).
 	float r_over = CUSTOM1.z - sea_y;
@@ -788,7 +792,7 @@ void fragment() {
 	vec3 lit_n = n;
 	vec3 rock_glow = vec3(0.0);
 	if (!old_rock && rocky > 0.002) {
-		rock = er_rock(p, n, fp3, zs_sun_direction, grass * 0.85, land_carve, lit_n, rock_glow);
+		rock = er_rock_shaped(p, n, fp3, zs_sun_direction, grass * 0.85, land_carve, land_shape, lit_n, rock_glow);
 		// Its bounce glow at the sky fill's strength (ER_REF_FILL its luma at
 		// the reference light), so it eases with the fill.
 		float fill_level = clamp(luma(zs_hemi_sky) * zs_hemi_energy / ER_REF_FILL, 0.25, 2.0);
