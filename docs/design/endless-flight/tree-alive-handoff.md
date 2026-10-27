@@ -59,6 +59,33 @@ The user found it jittery. There were two causes:
 - **The sheen flickered.** It followed each bough's bob on the near crowns
   and a 4 rad/s beat on the sprites. Now it follows the wave alone.
 
+## More sway, and the grass's stirring (after the second play)
+
+The user asked for more sway, and for the trees to answer the eddies that
+move the grass, as one shared system.
+
+- **What was shared already.** The crowns leaned with the shared breeze
+  (`zs_breeze_lean_at`): the gust field, gust bands, gust fronts and the
+  8 ribbon heads' wakes.
+- **What wasn't.** The map the endless grass bows by, `zs_react_map`
+  (`scripts/endless/grass_react.gd`). It carries the eddies' swept
+  bands, the gusts landing and the prop's wash.
+- **Now.** The crowns and the sprites read that map at their foot
+  (`zs_tree_react`, `ZS_TREE_REACT` 0.4 of the grass's push, in lean
+  units). A full eddy band bends a 15 m top about 2 m, and the tree springs
+  back with the grass. The stir also grows the boughs' bob and lights the
+  sheen.
+  - The map covers 384 m round the eye, so this reaches the near and far
+    crowns and the first sprites.
+- **More sway.** With alive on, the breeze's lean is times 1.4
+  (`ZS_TREE_SWAY_LEAN`) and the swing round it 0.7 of the lean
+  (`ZS_TREE_SWAY_SWING`, was 0.4). The sprites match.
+- **Proof.** A gust stamp landed on a meadow spruce
+  (`scratch/trees/held.gd --stamp=x,z,strength`) bends its top downwind,
+  and the tree springs back.
+- **Frame time.** Over woods, alive on against off, two runs: 10.14 and
+  9.95 against 9.74 and 9.75 GPU ms, about +0.3 ms.
+
 ## Numbers (RTX 4070 Super, 1440x900, 3D at 0.75)
 
 The frame time was taken in real flight over woods

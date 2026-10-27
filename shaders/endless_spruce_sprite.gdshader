@@ -106,13 +106,16 @@ void vertex() {
 		vec2 root = foot.xz;
 		float phase = dot(root, vec2(0.43, 0.71));
 		float wave = zs_tree_wave(root, ZS_SPRITE_LAG * tall * k);
-		float lean = (ZS_SPRITE_LEAN * clamp(zs_breeze, 0.0, 2.5) + wave * ZS_TREE_WAVE_LEAN) * min(zs_tree_alive, 2.0);
+		float lean = (ZS_SPRITE_LEAN * clamp(zs_breeze, 0.0, 2.5) * ZS_TREE_SWAY_LEAN + wave * ZS_TREE_WAVE_LEAN) * min(zs_tree_alive, 2.0);
 		float pace = 2.6 / sqrt(max(tall, 0.3));
 		float swing = sin(zs_motion_time * pace + phase - k * 0.9) * 0.7 + sin(zs_motion_time * pace * 1.63 + phase * 1.7 - k * 1.3) * 0.3;
 		vec2 dir = zs_wind_direction;
-		vec2 motion = (dir * (1.0 + 0.4 * swing) + vec2(-dir.y, dir.x) * 0.22 * sin(zs_motion_time * pace * 0.71 + phase * 2.3)) * lean * 0.3 * tall * k * k;
+		vec2 motion = (dir * (1.0 + ZS_TREE_SWAY_SWING * swing) + vec2(-dir.y, dir.x) * 0.22 * sin(zs_motion_time * pace * 0.71 + phase * 2.3)) * lean * 0.3 * tall * k * k;
+		// The grass's stirring (eddies, gusts landing, the prop's wash).
+		float stir;
+		motion += zs_tree_react(root, stir) * 0.3 * tall * k * k;
 		VERTEX.xz += motion;
-		sprite_sheen = wave;
+		sprite_sheen = max(wave, stir * 0.8);
 	}
 	if (d < band.x - (fade.x > 0.0 ? fade.x + SLACK : 0.0) || d >= band.y + (fade.y > 0.0 ? fade.y + SLACK : 0.0)) VERTEX = foot;
 	NORMAL = toward;

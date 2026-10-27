@@ -1,6 +1,9 @@
 #ifndef ZS_TREE_WIND
 #define ZS_TREE_WIND
 #include "res://shaders/reference_globals.gdshaderinc"
+// The grass's own stirring (zs_react_map): the eddies' swept bands, the
+// gusts landing and the prop's wash, so the woods bow with the meadows.
+#include "res://shaders/grass_react.gdshaderinc"
 // The woods alive (scripts/endless/land_trees.gd, --tree-alive=X): gust waves
 // rolling through the woods and the boughs moving on their own, at every
 // distance the spruces draw. 0 is the woods as before (each tree swaying as
@@ -29,6 +32,15 @@ const float ZS_TREE_SHEEN = 0.28;
 const vec2 ZS_BOUGH_BOB = vec2(0.05, 0.14);
 const float ZS_BOUGH_REACH = 0.65;
 const float ZS_BOUGH_PACE = 2.2;
+// More sway in the breeze than the woods had before: their lean times
+// ZS_TREE_SWAY_LEAN, their swing round it ZS_TREE_SWAY_SWING of the lean
+// (zs_breeze's ZS_BREEZE_SWING is 0.4).
+const float ZS_TREE_SWAY_LEAN = 1.4;
+const float ZS_TREE_SWAY_SWING = 0.7;
+// The share of the grass's push (zs_react_at, about 1 a full lean) a tree
+// takes, in zs_breeze_lean_at's units: a full eddy band bends a 15 m top
+// about 2 m, springing back as the grass does.
+const float ZS_TREE_REACT = 0.4;
 
 float zs_tree_hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -61,6 +73,17 @@ float zs_tree_wave(vec2 root, float lag) {
 	// Stretches of each front blow harder, others hardly at all.
 	float patch = smoothstep(0.2, 0.6, zs_tree_noise(p * 1.2 + vec2(11.3, 4.7)));
 	return crest * patch * air;
+}
+
+// The grass's push at a tree's foot (world x, z, in lean units), and `stir`
+// 0..1, how hard it is stirred (for the boughs and the sheen).
+vec2 zs_tree_react(vec2 root, out float stir) {
+	stir = 0.0;
+	float alive = min(zs_tree_alive, 2.0);
+	if (alive <= 0.0 || !zs_react_live()) return vec2(0.0);
+	vec3 r = zs_react_at(root);
+	stir = clamp(length(r.xy) * 0.8 + max(r.z, 0.0) * 0.4, 0.0, 1.0) * min(alive, 1.0);
+	return r.xy * ZS_TREE_REACT * alive;
 }
 
 // A bough's own motion, as an offset in the tree's model space: each bough
