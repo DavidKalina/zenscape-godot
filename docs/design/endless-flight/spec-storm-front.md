@@ -132,6 +132,32 @@ merge**: the shared lines it touched.
 
 ## Trunk (after the lanes merge, in order)
 
+The lanes are merged (`ITER(storm-front): merge lane …`). Each was judged
+alone, against a blue sky; these seams were seen in their stills and come
+first in step 1:
+
+- **The deck reads as a flat lid.** From under it the base is a hard,
+  straight line with a bright strip of horizon below it
+  (`storm-lane-clouds` stills `sc_v9_sheet.png`). Make the base ragged and
+  lumpy, hang the rain curtains into it so they join, and let the distance
+  under the deck go grey with rain, so no clean strip of sky shows.
+- **The sea stays bright cyan under the core.** Dim and grey the sea and
+  lakes by `zs_storm_here` / the storm amount at the water.
+- **The flash tints the trees icy blue-white.** Tone it to a bright,
+  neutral flash that doesn't recolour the land.
+- **A struck arch keeps its old flight solid**, so the plane can hit the
+  part that fell; rubble is never freed.
+- **Not yet shot:** a far bolt seen from outside the storm, the flash
+  lighting the cloud from inside (`zs_lightning` in the composite), the
+  view from behind the storm, night, the clouds lane's last tweak (sun
+  share by height), and a no-flag still against the loop's tip.
+- **Determinism low over the sea:** with `--water-near-start` the plane's
+  path hash already varied run to run at the tip; with the storm on it
+  never repeats even with `--water-contact=0`. Find out whether the storm
+  reaches the plane there (it must not).
+- **Sound by ear is unverified** for the rain bed, thunder and gust roar;
+  balance their levels against each other by numbers at least.
+
 1. Make it whole: one pass from far, through the gust front, under the
    core, out the back; fix seams between the lanes (timing, light, sound
    levels). Stills at 5 km, 2 km, the gust band, under the core, behind.
