@@ -1307,6 +1307,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_G:
 				if grass != null: grass.set_enabled(not grass.enabled)
 			KEY_H: _next_near_layout()
+			KEY_K:
+				if look != null and look.land_shade != null: look.land_shade.toggle()
 			KEY_Q: _lean_tapped(-1.0)
 			KEY_E: _lean_tapped(1.0)
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
