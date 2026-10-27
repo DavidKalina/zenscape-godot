@@ -26,7 +26,8 @@ extends "res://scripts/sky_traffic.gd"
 ##
 ## A plane challenged to a race (scripts/endless/rival_race.gd) carries a
 ## `rival` (scripts/endless/rival_line.gd) that flies it in place of `_fly`;
-## it keeps off the player by its own, nearer, SAFE and is not recycled.
+## it keeps off the player by its own, nearer, SAFE (none on the ground),
+## lays no smoke on the ground and is not recycled.
 ##
 ## Flags: --traffic=0 off, --traffic=N planes (DEFAULT_COUNT), --trails=0
 ## no trails.
@@ -196,7 +197,16 @@ func step(delta: float, eye: Vector3, view: Vector3, player: Vector3, player_fwd
 		else: _fly(plane,delta)
 		if plane.figure != plane.body: plane.body.transform = plane.far.transform
 		_keep_off(plane)
-		if plane.trail != null: plane.trail.lay(delta,_tail(plane),eye,true)
+		if plane.trail != null:
+			# A rival on the ground lays no smoke; off again, a fresh trail.
+			if rival != null and not rival.smoking():
+				plane.trail.fade(delta,eye)
+				plane.smoke_off = true
+			else:
+				if plane.get("smoke_off",false):
+					plane.trail.restart()
+					plane.smoke_off = false
+				plane.trail.lay(delta,_tail(plane),eye,true)
 		if rival == null and _recycle(plane,delta): _put_away(plane)
 	if _trail_material != null: _trail_material.set_shader_parameter("tint",_light())
 	stats.up = up
@@ -467,12 +477,14 @@ func _keep_off(plane: Dictionary) -> void:
 	var off := flight.position-_player
 	var d := off.length()
 	plane.near = minf(float(plane.near),d)
-	# A rival races close: its own, nearer, keep-off.
-	var safe := SAFE if plane.get("rival") == null else float(plane.rival.safe_r())
+	# A rival races close: its own, nearer, keep-off (none on the ground,
+	# nor on the way down or up again).
+	var rival: RefCounted = plane.get("rival")
+	var safe := SAFE if rival == null else float(rival.keep_r())
 	if d >= safe: return
 	var away := off.normalized() if d > 0.01 else Vector3.UP
 	flight.position = _player+away*safe
-	var under := float(ground.call(flight.position))+KEEP_CLEAR*0.5
+	var under: float = float(ground.call(flight.position))+(KEEP_CLEAR*0.5 if rival == null else float(rival.LOW_LEAST)*0.5)
 	if flight.position.y < under: flight.position.y = under
 	plane.body.update(0.0,flight,0.0,Callable(),false,_pull,flight.bank)
 	PlaneGroundScale.grow(plane.body,_size)

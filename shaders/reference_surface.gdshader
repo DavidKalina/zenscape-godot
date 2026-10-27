@@ -77,6 +77,15 @@ uniform vec2 lod_band = vec2(0.0, 1e9);
 // levels; the vertex keeps the instance LOD_SLACK m wider so none is cut early.
 uniform vec2 lod_fade = vec2(0.0);
 const float LOD_SLACK = 25.0;
+// Each tree's hand-over moved by up to half this (m), its own way (the
+// sprites' `spread` the same: scripts/endless/land_trees.gd LOD_SPREAD), so
+// the trees swap one by one across it rather than all dithering at once.
+uniform float lod_spread = 0.0;
+float zs_lod_hash(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
 // The sprays spruce's painted crown (shaders/spruce_paint.gdshaderinc,
 // scripts/hero_trees.gd `spruce_paint`), all off at 0: how far the light
 // normal bends to the crown's volume, the blue, the painted patches, the
@@ -100,6 +109,22 @@ uniform float spruce_texture_gain = 1.0;
 // alike); y: b's micro-facets folded into tone where they fade out (40 to
 // 110 m) and on the distance crowns past them.
 uniform vec2 spruce_value = vec2(1.0);
+// --spruce-look=g (shaders/spruce_variety.gdshaderinc; all off at 0): the
+// variety (share of blue trees, grove scale m, grove lean, a green tree's own
+// blue), the needles and the haze (inner olive, fresh tips, mid-distance
+// contrast, and a blue strength forced for the sprites' atlas bake, -1 off),
+// and the rim against the sun (gain over ZS_BACKLIGHT_SPRUCE, how warm, the
+// glow's floor by day, the tips' share of it).
+uniform vec4 spruce_var = vec4(0.0);
+uniform vec4 spruce_g = vec4(0.0, 0.0, 0.0, -1.0);
+uniform vec4 spruce_rim = vec4(0.0);
+// The crown's fresh-tip share at this pixel (the rim's glow reads it in light()).
+varying float spruce_tip;
+// --spruce-look=b (shaders/spruce_tiers.gdshaderinc; all off at 0): the tiers'
+// tilt, the dark band under a skirt, a lit top, the cool shade; and the sun's
+// warmth, the distance dabs' gain, size (px) and the distance they come in from.
+uniform vec4 spruce_tier = vec4(0.0);
+uniform vec4 spruce_tier2 = vec4(0.0);
 uniform bool wet_ground = false;
 uniform float wet_droop = 0.0;
 uniform bool terrain_growth = false;
@@ -237,6 +262,8 @@ uniform float autumn_yellow = 0.0;
 varying vec3 leaf_local;
 varying vec2 plant_root;
 varying float foliage_gust;
+// How far a gust wave lifts a spruce's boughs here (tree_wind.gdshaderinc).
+varying float tree_sheen;
 varying float grass_along;
 // Soft light from under a mushroom cap (scripts/mushroom_mesh.gd): the gills
 // carry their share in UV2.x and glow warmly in their own colour, faintly.
@@ -423,6 +450,7 @@ vec3 zs_strata(vec3 p, float surface) {
 }
 
 void vertex() {
+	tree_sheen = 0.0;
 	if (lod_band_on) {
 		float lod_d = distance(MODEL_MATRIX[3].xyz, CAMERA_POSITION_WORLD);
 		vec2 lod_slack = vec2(lod_fade.x > 0.0 ? lod_fade.x + LOD_SLACK : 0.0, lod_fade.y > 0.0 ? lod_fade.y + LOD_SLACK : 0.0);
@@ -594,7 +622,7 @@ void vertex() {
 			VERTEX.x += sin(zs_motion_time * 9.0 + phase + VERTEX.z * fish_wave.w) * whip * fish_wave.z;
 		}
 		if (conifer_sway) {
-			VERTEX += zs_conifer_offset(VERTEX, MODEL_MATRIX);
+			VERTEX += zs_conifer_offset_alive(VERTEX, MODEL_MATRIX, zs_tree_alive > 0.0, tree_sheen);
 		}
 		if (blow_enabled && !sway_enabled && !conifer_sway) {
 			// A trunk under a swaying crown takes the crown's breeze too, over
@@ -824,6 +852,7 @@ void fragment() {
 	if (lod_band_on && (lod_fade.x > 0.0 || lod_fade.y > 0.0)) {
 		vec2 lod_foot = zs_camera_position.xz - (plant_root + look_shift.xz);
 		float lod_d = length(vec3(lod_foot.x, zs_camera_position.y - world_position.y, lod_foot.y));
+		if (lod_spread > 0.0) lod_d += (zs_lod_hash(plant_root + look_shift.xz) - 0.5) * lod_spread;
 		// Interleaved gradient noise: one threshold a pixel, the same for both levels.
 		float lod_h = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
 		float lod_in = lod_fade.x > 0.0 ? smoothstep(lod_band.x - lod_fade.x, lod_band.x + lod_fade.x, lod_d) : 1.0;
@@ -875,6 +904,8 @@ void fragment() {
 	if (spruce_round > 0.0 && !ground) {
 		spruce_under = smoothstep(0.0, -0.6, face_normal.y);
 		light_normal = zs_spruce_volume_normal(face_normal, world_position.xz - look_shift.xz - plant_root, spruce_round);
+		// The b look: the volume normal tipped by its place on the tier (the bake's grey down the bough).
+		if (spruce_tier.x > 0.0) light_normal = zs_st_normal(light_normal, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_tier.x, zs_st_far(distance(world_position, zs_camera_position)));
 		if (spruce_texture == 2) {
 			// b: each small facet's tilt off the smooth sheet, put back over the volume normal.
 			vec3 smooth_n = normalize(world_normal);
@@ -1000,12 +1031,18 @@ void fragment() {
 		zs_silver_side(dFdx(world_position), dFdy(world_position), zs_camera_position - world_position, zs_wind_direction));
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
 	if (spruce_blue > 0.0 || spruce_paint > 0.0)
-		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint, spruce_tone.zw, spruce_tone2, distance(world_position, zs_camera_position));
+		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint, spruce_tone.zw, spruce_tone2, distance(world_position, zs_camera_position), spruce_var, spruce_g,
+			spruce_tier, spruce_tier2, zs_st_pixel(distance(world_position, zs_camera_position), PROJECTION_MATRIX[1][1], VIEWPORT_SIZE.y));
+	if (tree_sheen > 0.0) tint = zs_tree_sheen(tint, tree_sheen);
 	if (spruce_texture == 1 || spruce_texture == 3)
 		tint = zs_spruce_texture(tint, spruce_texture, UV, UV2, spruce_texture_gain, distance(world_position, zs_camera_position));
 	if (spruce_round > 0.0) {
 		tint *= spruce_value.x;
 		if (spruce_texture == 2) tint *= mix(spruce_value.y, 1.0, 1.0 - smoothstep(40.0, 110.0, distance(world_position, zs_camera_position)));
+		if (spruce_var.y > 0.0) {
+			tint = zs_sv_keep(tint, distance(world_position, zs_camera_position), spruce_g.z);
+			spruce_tip = zs_sv_tip(zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3));
+		}
 	}
 	// Order is palette -> autumn -> season -> char -> wet -> snow: rain still darkens a
 	// charred crown and snow still settles on it.
@@ -1119,7 +1156,7 @@ void fragment() {
 	EMISSION = emissive_color + tint * hemi * contact;
 	vec3 spruce_olive = vec3(0.0);
 	if (spruce_round > 0.0) {
-		spruce_olive = zs_cool(SPRUCE_SHADE_OLIVE, 1.0) * zs_spruce_luma(tint);
+		spruce_olive = zs_cool(zs_st_shade(spruce_tier.w), 1.0) * zs_spruce_luma(tint);
 		// The plain hemisphere term leans olive too (tone2.w), so the shade is not teal.
 		EMISSION = emissive_color + mix(tint, spruce_olive, spruce_tone2.w) * hemi * contact;
 		EMISSION += mix(tint, spruce_olive, spruce_tone.y) * hemi * contact * spruce_tone.x;
@@ -1166,8 +1203,12 @@ void fragment() {
 #define ZS_FLOWER_GLOW (flower_heads ? flower_glow : 0.0)
 #define ZS_SPRUCE_LIGHT spruce_light
 #define ZS_SPRUCE_TONE2 spruce_tone2
+#define ZS_SPRUCE_TIER spruce_tier
+#define ZS_SPRUCE_TIER2 spruce_tier2
 // Backlight's gains (shaders/backlight.gdshaderinc): the blade tips, the
 // sprays spruce's silhouette.
 #define ZS_BACKLIGHT_GRASS 4.0
-#define ZS_BACKLIGHT_SPRUCE 3.0
+#define ZS_BACKLIGHT_SPRUCE (spruce_rim.x > 0.0 ? spruce_rim.x : 3.0)
+#define ZS_SPRUCE_RIM spruce_rim
+#define ZS_SPRUCE_TIP spruce_tip
 #include "res://shaders/reference_direct_light.gdshaderinc"

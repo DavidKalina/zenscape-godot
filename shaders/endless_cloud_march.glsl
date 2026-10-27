@@ -61,7 +61,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 fog_at;        // 56 the valley fog's map: corner xz, side, has one
 	vec4 fog_knobs;     // 60 density scale, depth (m), steps, slab top (world y)
 	vec4 fog_drift;     // 64 the patches' drift xz (m), reach (m), fade (m)
-	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[3..5] the storm front (shaders/storm_cloud.glslinc); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square
+	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[3..5] the storm front (shaders/storm_cloud.glslinc); spare[20].x the shade pass stepped as before (--cloud-shade=old); spare[21] the high layer's samples off the low layer's within a texel (the map read xz, a slice's xz); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square
 	vec4 weather_at;    // 164 corner xz, side, texels a side
 	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
 	vec4 flash;         // 172 grain jitter on, organic field on, stacked clouds yield, puffs' finer lobes on
@@ -146,6 +146,8 @@ const float SIGMA = 0.22;
 const float SIGMA_IN = 0.06;
 // How far billows may stand over a top or under a base.
 const float OVER = 70.0;
+// The shade pass's heights apart (m; shadow_pass).
+const float SHADE_PLANE = 10.0;
 const float SLOPE_MAX = 5.0;
 // How far past a rim (m) the billows may still reach.
 const float RIM_MARGIN = 50.0;
@@ -194,6 +196,10 @@ vec2 g_drift = vec2(0.0);
 float g_storm = 0.0;
 
 bool g_high = false;
+// How far the high layer's samples stand from the low layer's in the map
+// this weather pass draws (spare[21] xy the map read, zw a slice's;
+// scripts/cloud_volume_effect.gd LAYER_PHASE).
+vec2 g_phase = vec2(0.0);
 
 ivec2 zs_block_offset(int frame) {
 	int k = frame & 3;
@@ -808,7 +814,7 @@ vec4 weather_texel(vec2 xz) {
 			// The high layer on its own, faster wind.
 			g_high = true;
 			g_drift = P.spare[1].zw;
-			f = xz - g_drift;
+			f = xz + g_phase - g_drift;
 			lattice_new(f, true, sea, cover, low, low_gap, high, high_gap);
 			lattice_new(f, false, sea, cover, low, low_gap, high, high_gap);
 		}
@@ -851,11 +857,13 @@ vec4 weather_layers(vec2 xz) {
 
 // The map drawn a slice a frame (scripts/cloud_volume_effect.gd
 // weather_slices) is one moment, up to two cycles old: each layer is read
-// where its cloud stood then, spare[22] (low xz, high xz) the drift since.
+// where its cloud stood then, spare[22] (low xz, high xz) the drift since,
+// the high layer's samples spare[21].xy off the low layer's.
 vec4 weather_map(vec2 xz) {
 	vec4 since = P.spare[22];
 	vec4 w = weather_layers(xz - since.xy);
-	if (since.zw != since.xy) w.zw = weather_layers(xz - since.zw).zw;
+	vec2 high = since.zw + P.spare[21].xy;
+	if (high != since.xy) w.zw = weather_layers(xz - high).zw;
 	return w;
 }
 
@@ -1552,9 +1560,11 @@ void weather_pass() {
 	// A slice (PASS.pad0 1): rows from PASS.pad1, round the square in
 	// spare[23] (scripts/cloud_volume_effect.gd weather_slices).
 	vec4 square = P.weather_at;
+	g_phase = P.spare[21].xy;
 	if (PASS.pad0 == 1) {
 		texel.y += PASS.pad1;
 		square = P.spare[23];
+		g_phase = P.spare[21].zw;
 	}
 	if (any(greaterThanEqual(texel, size))) return;
 	vec2 xz = square.xy + (vec2(texel) + 0.5) / vec2(size) * square.z;
@@ -1597,24 +1607,47 @@ void shadow_pass() {
 	}
 	vec2 xz = P.shade_sq.xy + (vec2(texel) + 0.5) / vec2(size) * P.shade_sq.z;
 	vec3 p = vec3(xz.x, P.band.x, xz.y);
-	float t_end = (P.band.y + OVER - p.y) / key.y;
 	float thick = 0.0;
 	float at_y = 0.0;
-	float t = 4.0;
-	float step = 8.0;
-	for (int i = 0; i < 48; i++) {
-		if (t > t_end) break;
-		vec3 q = p + key * t;
-		float gap = clear_ahead(q, key, max(length(key.xz), 1e-3));
-		if (gap > 0.0) {
-			t += max(gap, step);
-			continue;
+	// Up the light's line through the slab, one sample at each of a fixed
+	// stack of heights SHADE_PLANE m apart, the ones the ceiling says no
+	// cloud reaches skipped. Each sample slides smoothly as the light turns
+	// and the eye moves, and a skipped one moves no other: stepped along the
+	// line with leaps, a leap's length (from the ceiling, and whether a step
+	// fell just over a block's top) moved every sample after it, so a small
+	// puff's one or two samples jumped and its shade on the land flickered.
+	// spare[20].x 1 (--cloud-shade=old): the stepped march, as before.
+	if (P.spare[20].x > 0.5) {
+		float t_end = (P.band.y + OVER - p.y) / key.y;
+		float t = 4.0;
+		float step = 8.0;
+		for (int i = 0; i < 48; i++) {
+			if (t > t_end) break;
+			vec3 q = p + key * t;
+			float gap = clear_ahead(q, key, max(length(key.xz), 1e-3));
+			if (gap > 0.0) {
+				t += max(gap, step);
+				continue;
+			}
+			float d = density_cheap(q) * step;
+			thick += d;
+			at_y += d * q.y;
+			t += step;
+			step = min(step * 1.15, 50.0);
 		}
-		float d = density_cheap(q) * step;
-		thick += d;
-		at_y += d * q.y;
-		t += step;
-		step = min(step * 1.15, 50.0);
+	} else {
+		float run = SHADE_PLANE / key.y;
+		vec2 across = key.xz / key.y;
+		int planes = int(ceil((P.band.y + OVER - P.band.x) / SHADE_PLANE));
+		for (int i = 0; i < planes; i++) {
+			float y = P.band.x + (float(i) + 0.5) * SHADE_PLANE;
+			vec3 q = vec3(p.xz + across * (y - p.y), y).xzy;
+			vec2 c = ceiling_at(q.xz);
+			if (y > c.x + OVER || y < c.y - 8.0) continue;
+			float d = density_cheap(q) * run;
+			thick += d;
+			at_y += d * y;
+		}
 	}
 	float keep = exp(-thick * SUN_SIGMA * 0.6);
 	imageStore(out_shadow, texel, vec4(keep, 1.0, thick > 0.01 ? at_y / thick : P.band.x, 0.0));

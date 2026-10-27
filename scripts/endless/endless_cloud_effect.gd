@@ -16,6 +16,11 @@ const ENDLESS_RESOLVE := preload("res://shaders/endless_cloud_resolve.glsl")
 ## doesn't (the counters cost ~.25 ms with the storm's towers).
 var cost_view := false
 
+func _init() -> void:
+	super()
+	# Each layer sampled at its own field's points (LAYER_PHASE).
+	layer_phase = true
+
 func _compile(file: RDShaderFile, version: StringName = &"") -> RID:
 	if file == RESOLVE: return super._compile(ENDLESS_RESOLVE, version)
 	if file == MARCH: return super._compile(ENDLESS_MARCH, &"cost" if cost_view else &"play")

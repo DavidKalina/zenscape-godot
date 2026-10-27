@@ -1,50 +1,66 @@
 extends RefCounted
 ## A challenged rival's flying (scripts/endless/rival_race.gd): one traffic
-## plane (scripts/endless/endless_traffic.gd) taken off its shy cruise and
-## flown low and fast through the land's openings, one after another.
+## plane (scripts/endless/endless_traffic.gd) taken off its shy cruise. It
+## lands on a flat to start the race (rival_strip.gd), stands, takes off at
+## GO and flies the race's course (rival_course.gd) gate to gate, low and
+## fast.
 ##
-## The line (`_plan`, every SEARCH_EVERY s while it has none): the nearest
-## threadable opening ahead, within REACH m and CONE of its heading and
-## faced roughly its way (ALIGN): an arch's opening (LandArches `standing`,
-## the opening read off its solid columns, `_arch_opening`), a split
-## mountain's slot (LandField `splits_in`, split_sites.gd's centre line), a
-## slot hall's nave (`halls_in`) or a tunnel's bore (`tunnels_in`). The route
-## is a polyline: from where it is, to a lead-in APPROACH m before the
-## opening, through it on its centre line, and EXIT m out. It is flown by
-## pursuit: the aim LOOK_TIME s of speed ahead along the line, swung across
-## by the wobble (never past the opening's room), the heading turned toward
-## it at a capped rate and late by LATE s. In an opening the height is the
-## line's; on the way in and in the open it reads the ground ahead (trees'
-## crowns too, and in the open the arches' spans) and keeps LOW m over it.
-## With no opening in reach it flies low down the valleys ahead (`_leg`),
-## never far off its course.
+## Its modes (`mode`):
+## - "air": no strip yet; on down the valleys ahead (`_open_aim`), looking
+##   for one every STRIP_EVERY s.
+## - "land": to its strip and down. It flies to the start of the final
+##   approach on pursuit, at LAND_SPEED, and down the strip's glide
+##   (RivalStrip `glide_y`, the same the approach was checked clear under);
+##   RAIL m short of the touch it is on rails: onto the strip's line, its
+##   speed easing to TOUCH_SPEED, the flare (the glide's last FLARE m) easing
+##   its sink to nothing and lifting its nose to sit on its wheels; then it
+##   rolls out to a stop on its lane, ROLL m on (RivalStrip ROLL).
+## - "rest": stood on its wheels, the engine at IDLE, no smoke.
+## - "takeoff": from rest at GO: TAKEOFF_ACCEL down the lane, its tail up
+##   from TAIL_UP m/s, off at LIFT_SPEED, climbing CLIMB_RATE till CLIMB_DONE
+##   m up, then the course (or, after a race that never began, the peel).
+## - "course": the fixed course flown by pursuit (`_follow`): the aim
+##   LOOK_TIME s of speed ahead along it, swung across by the wobble (never
+##   past the opening's room), the heading turned toward it at a capped rate
+##   and late by LATE s; its height the course's line (the ribbon), never
+##   under LOW_LEAST over what stands just ahead. A gate it went by outside
+##   (pushed off, say) it comes round to (`come_round`): out to the side, back
+##   past it and in again.
+## - "peel": the end; a waggle, a turn away from the player, climbing.
 ##
-## Ducking: some threads (DUCK, rolled from the seed and the opening's
-## name) it lines up for and then, DUCK_AT s short, goes over or round.
+## Checked gates (DUCK, rolled from the seed and the gate's name): it lifts
+## off harder for them (CHECK of its carry), so it loses time, not the gate.
 ##
 ## Skill (`skill`, --rival-skill=X): WOBBLE and LATE shrink with it, DUCK
-## falls, what it gives up of CARRY and TURN_BLEED shrinks, and PACE (times the player's Boost, rival_race.gd) rises by
-## PACE_PER_SKILL a step.
+## falls, what it gives up of CARRY and TURN_BLEED shrinks, and PACE (times
+## the player's Boost, rival_race.gd) rises by PACE_PER_SKILL a step.
 ##
-## Never into the player: within SAFE_R m it is pushed off (the traffic's
-## `_keep_off`), and when its line would pass within MISS_R m of him in the
-## next MISS_LOOK s it steers off, up or aside.
+## Never into the player: in the air within SAFE_SPANS wingspans it is
+## pushed off (the traffic's `_keep_off`), and when its line would close to
+## within MISS_SPANS of him in the next MISS_LOOK s it steers off, up or
+## aside. On the ground and on the way down and up again neither: his lane
+## is beside it.
 ##
-## `history` keeps what it did: each opening threaded or ducked, with when and
-## where, for drivers and the handoff.
+## `history` keeps what it did (the race notes each gate threaded or gone
+## by); `clips` counts the frames it spent inside something solid.
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 const SplitSites = preload("res://scripts/endless/split_sites.gd")
 const Build = preload("res://scripts/endless/arch_build.gd")
 const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
+const RivalStrip = preload("res://scripts/endless/rival_strip.gd")
+const RivalCourse = preload("res://scripts/endless/rival_course.gd")
+const PlaneStrip = preload("res://scripts/plane_strip.gd")
 
 ## The skill knobs at skill 1 ("good, not expert").
 ## How far its line swings across (m, each way) and how late its heading
 ## follows the aim (s).
 const WOBBLE := 3.0
 const LATE := 0.22
-## The chance it ducks a thread and goes over or round.
+## The chance it checks a gate (lifts off harder for it), and how much of
+## its carry it keeps then.
 const DUCK := 0.25
+const CHECK := 0.85
 ## The speed it carries through an opening (share of its pace): it lifts
 ## off from CARRY_FROM m short of the opening's middle and is back on
 ## the pace CARRY_BACK m past it; and the share of its speed a full-rate
@@ -59,7 +75,8 @@ const PACE_PER_SKILL := 0.06
 ## Its flying: the most it turns (rad/s), radians a second per radian off
 ## the aim, bank per radian a second of turn and the most it banks; the
 ## most it climbs or dives (rad), metres off its height per radian, how
-## quickly its pitch and speed follow (s).
+## quickly its pitch and speed follow (s), and the most it gains a second
+## (m/s²).
 const TURN_MAX := 1.35
 const TURN_GAIN := 2.6
 const BANK := 0.85
@@ -68,9 +85,10 @@ const PITCH_MAX := 0.55
 const PITCH_PER := 14.0
 const EASE_PITCH := 0.22
 const EASE_SPEED := 1.4
+const ACCEL_MOST := 7.0
 ## Low and fast: the height it keeps over the ground (m, trees' crowns
 ## and in the open the arches' spans counted), the least over the ground
-## right under it (m), the ground read ahead (m) and to each side (m), and
+## just ahead (m), the ground read ahead (m) and to each side (m), and
 ## how much less is asked per metre further out.
 const LOW := 13.0
 const LOW_LEAST := 4.0
@@ -78,8 +96,9 @@ const READ := [0.0,20.0,45.0,75.0,110.0,150.0,200.0]
 const READ_SIDE := 9.0
 const CLIMB_SLOPE := 0.14
 const FLOOR_EVERY := 0.1
-## On the way in it keeps low over the land till this far (m) from the
-## lead-in's end, then settles onto the opening's height.
+## The least over what stands is read this far ahead on the course (m).
+const GUARD := [0.0,15.0,35.0,60.0]
+## A leg settles onto the next opening's height over its last this many m.
 const LEAD_SETTLE := 260.0
 ## In an opening only the ground this near ahead is read (m).
 const READ_IN := 8.0
@@ -92,24 +111,14 @@ const LEVEL_AT := [-70.0,-45.0,-25.0,25.0,45.0]
 ## its middle, all of it from WOBBLE_FAR m.
 const WOBBLE_NEAR := 40.0
 const WOBBLE_FAR := 220.0
-## The route: an opening looked for every SEARCH_EVERY s, from NEAR to
-## REACH m off, within CONE of its heading, its way within ALIGN (cos) of
-## the heading; the lead-in before it and the run out after it (m); the
-## pursuit's look ahead (s of speed, at least LOOK_LEAST m).
-const SEARCH_EVERY := 1.2
-const NEAR := 160.0
+## An opening's candidates are gathered within REACH m (and a margin); the
+## lead-in before an opening and the run out after it (m); the pursuit's
+## look ahead (s of speed, at least LOOK_LEAST m).
 const REACH := 1100.0
-const CONE := 0.95
-const ALIGN := 0.45
 const APPROACH := 120.0
 const EXIT := 80.0
 const LOOK_TIME := 0.5
 const LOOK_LEAST := 18.0
-## A duck: decided this many s of speed short of the opening; round a
-## ridge it veers this far (rad) for VEER_TIME s.
-const DUCK_AT := 2.0
-const DUCK_TURN := 0.75
-const VEER_TIME := 4.0
 
 ## An opening is threadable with this much room (m, at plane scale 1:
 ## wingspans), across and under the span.
@@ -124,6 +133,9 @@ const SPLIT_FLY := 9.0
 const HALL_FLY := 6.0
 const TUNNEL_FLY := 7.0
 const SPLIT_STEP := 30.0
+## A split's gate stands this far in from its foot (m), past the mouth's
+## flare (split_sites.gd TYPES), or at its middle when shorter.
+const SPLIT_GATE_IN := 110.0
 ## A hall's nave read every HALL_PROBE m along its middle; what
 ## stands within HALL_STEP m of the floor (or of what stands on it) is
 ## stood on, not flown under; re-read every HALL_EVERY s within
@@ -140,11 +152,13 @@ const LEG_SPREAD := 0.5
 const CANDIDATES := 5
 const LEG_ARRIVE := 160.0
 
-## The player: pushed off within SAFE_R wingspans; steered off when its
-## line passes within MISS_R wingspans in MISS_LOOK s.
+## The player: pushed off within SAFE_SPANS wingspans; steered off when its
+## line closes within MISS_SPANS wingspans in MISS_LOOK s, at CLOSING m/s
+## or more (flying alongside it lets be).
 const SAFE_SPANS := 3.0
 const MISS_SPANS := 7.0
 const MISS_LOOK := 1.5
+const CLOSING := 3.0
 
 ## The waggle (accepting, and at the end): seconds, rate (Hz), bank (rad).
 const WAGGLE_TIME := 1.5
@@ -152,46 +166,91 @@ const WAGGLE_HZ := 1.5
 const WAGGLE_BANK := 0.6
 ## The peel off at the end: the turn away (rad) and its seconds.
 const PEEL_TURN := 1.1
-## The marks (`intent`): the trail's point spacing (m), the share of the
-## asked length it shows down an open valley, the gate's share of the
-## opening's room and its most half width (m).
-const TRAIL_STEP := 6.0
-const OPEN_TRAIL := 0.6
-const GATE_FILL := 0.8
-const GATE_MOST := 40.0
-## A split's gate stands this far in from its foot (m), past the mouth's
-## flare (split_sites.gd TYPES), or at its middle when shorter.
-const SPLIT_GATE_IN := 110.0
 const PEEL_TIME := 3.0
+
+## Landing: a strip looked for every STRIP_EVERY s while it has none,
+## STRIP_BUDGET spots tried a frame; its
+## speed to the final approach and down it (m/s), at the touch (m/s), the
+## rails' length before the touch (m) and how quickly it settles onto the
+## lane's line on them (s); its nose over the glide's slope on the
+## approach (rad); the strip checked again for what has been built since,
+## within RECHECK m of the touch.
+const STRIP_EVERY := 1.0
+const STRIP_BUDGET := 40
+const LAND_SPEED := 44.0
+const APPROACH_SPEED := 23.0
+const TOUCH_SPEED := 13.0
+const RAIL := 90.0
+const RAIL_EASE := 0.7
+const NOSE_UP := 0.06
+const RECHECK := 380.0
+## A go-round: when on the rails it is more than this far off the lane's
+## line (m) or turned off it (rad), it climbs away and comes in again.
+const RAIL_SIDE := 25.0
+const RAIL_TURN := 0.6
+## Stood: the engine's idle (0..1).
+const IDLE := 0.3
+## The takeoff: its push (m/s²), its tail up from TAIL_UP m/s, off at
+## LIFT_SPEED m/s; its climb (m up a metre; steeper, to CLIMB_MOST, where
+## what stands ahead asks it), its nose then (rad), and the height it hands
+## over to the course at (m).
+const TAKEOFF_ACCEL := 6.0
+const TAIL_UP := 6.0
+const TAIL_PITCH := 0.03
+const LIFT_SPEED := 14.0
+const CLIMB_RATE := 0.16
+const CLIMB_MOST := 0.5
+const CLIMB_PITCH := 0.2
+const CLIMB_DONE := 7.0
+## Coming round to a gate it went by: out this far to the side (m) and
+## back this far before it (m).
+const ROUND_SIDE := 170.0
+const ROUND_BACK := 380.0
 
 var game: Node
 var plane: Dictionary
 var skill := 1.0
-## The speed it's asked to carry (m/s; rival_race.gd sets it each frame).
+## The speed it's asked to carry (m/s; rival_race.gd sets it while racing).
 var pace := 0.0
-## How quickly its speed follows the pace (s; rival_race.gd quickens it
-## for the jump off the line).
 var speed_ease := EASE_SPEED
-## What it did: [{t, id, kind, what ("threaded", "ducked", "missed"), at}].
+## "air", "land", "rest", "takeoff", "course" or "peel" (the header).
+var mode := "air"
+## Its strip (rival_strip.gd) and the race's course (rival_course.gd), {}
+## none yet.
+var strip: Dictionary = {}
+var course: Dictionary = {}
+## The gate it is to go through next (the race keeps it, by its crossings).
+var gate_next := 0
+## What it did: [{t, id, kind, what, at, ...}].
 var history: Array = []
-## The route ([{p, room, bore}]) and the opening it is for ({} none).
-var route: Array = []
-var feature: Dictionary = {}
 var waggle := 0.0
 var peel := 0.0
+## The landing's stage: "to" (to the final), "rail", "roll"; the rails'
+## sideways and height offsets eased out; the touch's speed.
+var land_stage := "to"
+var _rail_side := 0.0
+var _rail_dy := 0.0
+var _touch_speed := 0.0
+var _rechecked := false
+var _strip_search := 0.0
+var _strip_queue: Array = []
+var _strip_passes := 0
+var _strip_qi := 0
+## After the takeoff: "course" or "peel".
+var _after := "course"
+var _airborne := 0.0
+var _climb := CLIMB_RATE
 var _peel_side := 1.0
 var _clock := 0.0
-var _search := 0.0
+## Along the course (m), and the detour ({pts, lens, s, rejoin}) when
+## coming round.
 var _s := 0.0
-var _lens := PackedFloat32Array()
-var _used := {}
+var _detour: Dictionary = {}
 var _openings := {}
 var _turn := 0.0
 var _floor := 0.0
 var _floor_at := -1.0
-var _veer := 0.0
-var _veer_left := 0.0
-var _course := 0.0
+var _course_h := 0.0
 var _leg := Vector3.INF
 var _rng := RandomNumberGenerator.new()
 var _salt := 0
@@ -199,11 +258,14 @@ var _salt := 0
 ## tree), for checks; visual only, nothing stops it.
 var clips := 0
 var clip_log: Array = []
+## The lowest it stood over the land under its wheels on the ground (m,
+## for checks: its wheels' contact over the ground).
+var ground_gap := INF
 var _to_through := INF
-## Metres to the opening's middle along the route (< 0: past it; INF: none).
+## Metres to the next opening's middle along the course (< 0: past it).
 var _to_go := INF
 
-## `race_salt`: the race's own number, so each race rolls its own ducks
+## `race_salt`: the race's own number, so each race rolls its own checks
 ## and legs from the seed.
 func _init(host: Node, traffic_plane: Dictionary, rival_skill: float, seed: int, race_salt: int) -> void:
 	game = host
@@ -212,10 +274,14 @@ func _init(host: Node, traffic_plane: Dictionary, rival_skill: float, seed: int,
 	_salt = hash([seed,race_salt,"rival"])
 	_rng.seed = _salt
 	var flight: RefCounted = plane.flight
-	_course = float(flight.heading)
+	_course_h = float(flight.heading)
 
 static func safe_r() -> float:
 	return WorldScale.span*SAFE_SPANS
+
+## The keep-off's reach now: none on the ground and on the way down or up.
+func keep_r() -> float:
+	return safe_r() if mode in ["air","course","peel"] else 0.0
 
 func wobble() -> float:
 	return WOBBLE/skill
@@ -233,111 +299,504 @@ func carry() -> float:
 func pace_scale() -> float:
 	return 1.0+PACE_PER_SKILL*(skill-1.0)
 
+## True while its wheels are on the ground.
+func on_ground() -> bool:
+	return mode == "rest" or (mode == "land" and land_stage == "roll") or (mode == "takeoff" and _airborne <= 0.0)
+
+## Whether it lays smoke: not on the ground nor on the rails down to it.
+func smoking() -> bool:
+	return not on_ground() and not (mode == "land" and land_stage == "rail")
+
 ## The waggle: starts now (accepting the challenge, or at the end).
 func start_waggle() -> void:
 	waggle = WAGGLE_TIME
 
-## The end: a waggle, then a turn away from the player.
+## To its strip and down (`s` rival_strip.gd's).
+func land_on(s: Dictionary) -> void:
+	strip = s
+	mode = "land"
+	land_stage = "to"
+	_rechecked = false
+
+## The course laid; stood, it waits for `go`.
+func set_course(c: Dictionary) -> void:
+	course = c
+	_s = 0.0
+	gate_next = 0
+	_detour = {}
+	var gates: Array = c.gates
+	for g: Dictionary in gates: g.checked = _roll(String(g.id)) < duck_chance()
+
+## GO: off the ground and onto the course.
+func go() -> void:
+	if mode != "rest": return
+	mode = "takeoff"
+	_after = "course"
+	_airborne = 0.0
+	_climb = _climb_needed()
+
+## The climb off the strip: CLIMB_RATE, or steeper (at most CLIMB_MOST)
+## where what stands ahead now (built since the strip was picked) asks it.
+func _climb_needed() -> float:
+	var flight: RefCounted = plane.flight
+	var heading := float(flight.heading)
+	var fwd := Vector3(-sin(heading),0.0,-cos(heading))
+	var y0 := float(flight.position.y)
+	var lift := LIFT_SPEED*LIFT_SPEED/(2.0*TAKEOFF_ACCEL)
+	var rate := CLIMB_RATE
+	var side := fwd.cross(Vector3.UP)*WorldScale.span*0.6
+	var d := lift+4.0
+	while d <= RivalStrip.CLIMB_OUT:
+		for k: float in [-1.0,0.0,1.0]:
+			var top := _ground_top(Vector3(flight.position)+fwd*d+side*k,false)+RivalStrip.CLEAR
+			rate = maxf(rate,(top-y0)/(d-lift))
+		d += 4.0
+	return minf(rate,CLIMB_MOST)
+
+## The end: a waggle, then a turn away from the player (off the ground
+## first if it stands).
 func start_peel(player: Vector3) -> void:
 	start_waggle()
-	peel = PEEL_TIME
 	var flight: RefCounted = plane.flight
 	var right := Vector3(cos(float(flight.heading)),0.0,-sin(float(flight.heading)))
 	_peel_side = -1.0 if (player-flight.position).dot(right) > 0.0 else 1.0
-	route.clear()
-	feature = {}
+	_detour = {}
+	if on_ground():
+		mode = "takeoff"
+		_after = "peel"
+		_airborne = 0.0
+		_climb = _climb_needed()
+		return
+	mode = "peel"
+	peel = PEEL_TIME
+
+## Whether the peel is done (it may be released to the traffic).
+func peeled() -> bool:
+	return mode == "peel" and peel <= 0.0
 
 ## One frame of the rival's flying (the traffic's step calls it in place
 ## of its `_fly`).
 func fly(traffic: Node, delta: float) -> void:
 	_clock += delta
 	var flight: RefCounted = plane.flight
+	if mode == "land" and land_stage != "to": _land_rails(delta)
+	elif mode == "rest": _rest()
+	elif mode == "takeoff": _takeoff(delta)
+	else: _air(traffic,delta)
+	var bank := float(flight.bank)
+	if waggle > 0.0:
+		waggle -= delta
+		var w := sin((WAGGLE_TIME-waggle)*TAU*WAGGLE_HZ)*WAGGLE_BANK*smoothstep(0.0,0.3,waggle)
+		if on_ground(): w *= 0.25
+		bank = clampf(bank+w,-BANK_MAX,BANK_MAX)
+	var bore := not course.is_empty() and mode == "course" and _bore_here()
+	var inside := _in_solid(flight.position,bore)
+	if inside != "":
+		clips += 1
+		if clip_log.size() < 12: clip_log.append({"what":inside,"at":flight.position.round(),"mode":mode,"stage":land_stage,"t":snappedf(_clock,0.1)})
+	if on_ground():
+		var under := float(game.field.height(flight.position.x,flight.position.z))
+		ground_gap = minf(ground_gap,float(flight.position.y)-PlaneStrip.contact(float(flight.pitch))-under)
+	var mist := float(traffic.cloud_depth.call(flight.position)) if traffic.cloud_depth.is_valid() else 0.0
+	plane.figure.update(delta,flight,0.0,Callable(),false,mist,bank)
+	PlaneGroundScale.grow(plane.figure,traffic._size)
+
+static func _ease(seconds: float, delta: float) -> float:
+	return 1.0-exp(-delta/maxf(seconds,0.001))
+
+# --- In the air ---------------------------------------------------------------------
+
+## The air's flying: on the course, to the strip's final, or down the
+## valleys; peeling off.
+func _air(traffic: Node, delta: float) -> void:
+	var flight: RefCounted = plane.flight
 	var pos: Vector3 = flight.position
 	var dir := Vector3(-sin(float(flight.heading)),0.0,-cos(float(flight.heading)))
-	if peel <= 0.0 and route.is_empty():
-		_search -= delta
-		if _search <= 0.0:
-			_search = SEARCH_EVERY
-			_plan(pos,dir)
 	var aim := Vector3.ZERO
 	var want_y := 0.0
 	var room := INF
 	var bore := false
-	var in_open := true
-	if not route.is_empty():
-		var r := _pursue(pos,float(flight.speed))
-		if not route.is_empty():
-			aim = r.aim
-			room = float(r.room)
-			bore = bool(r.bore)
-			in_open = bool(r.lead)
-			want_y = float(r.y)
-			if in_open:
-				# Low over the land on the way in, onto the line's height
-				# over its last LEAD_SETTLE m.
-				var low := _ground_ahead(pos,dir,false,float(r.left))
-				want_y = maxf(lerpf(low,want_y,1.0-smoothstep(LEAD_SETTLE*0.25,LEAD_SETTLE,float(r.left))),_ground_near(pos,dir)+LOW_LEAST)
-			else: want_y = maxf(want_y,_ground_near(pos,dir)+LOW_LEAST) if not bore else want_y
-	if route.is_empty():
-		_to_through = INF
-		_to_go = INF
+	var speed := pace if pace > 0.0 else float(plane.cruise)
+	_to_through = INF
+	_to_go = INF
+	var keep := true
+	if mode == "air" and strip.is_empty():
+		# A few spots a frame (RivalStrip `order`, `try`); none, again in a
+		# while from where it is then.
+		_strip_search -= delta
+		if _strip_queue.is_empty() and _strip_search <= 0.0:
+			# Ahead first; nothing there, out to the sides too.
+			_strip_queue = RivalStrip.order(pos,dir,_strip_passes > 0)
+			_strip_passes += 1
+			_strip_qi = 0
+		var budget := STRIP_BUDGET
+		while budget > 0 and _strip_qi < _strip_queue.size():
+			budget -= 1
+			var s := RivalStrip.try(self,_strip_queue[_strip_qi],pos,dir)
+			_strip_qi += 1
+			if not s.is_empty():
+				s.tried = _strip_qi
+				_strip_queue = []
+				land_on(s)
+				break
+		if not _strip_queue.is_empty() and _strip_qi >= _strip_queue.size():
+			_strip_queue = []
+			_strip_search = STRIP_EVERY
+	if mode == "land":
+		var r := _to_strip(pos,dir)
+		aim = r.aim
+		want_y = float(r.y)
+		speed = float(r.speed)
+		keep = false
+		if mode == "land" and land_stage == "rail": return
+	elif mode == "course" and not _detour.is_empty():
+		var r := _follow(_detour.pts,_detour.lens,float(_detour.s),pos,float(flight.speed))
+		_detour.s = r.s
+		aim = r.aim
+		want_y = _ground_ahead(pos,dir,true,INF)
+		if float(r.s) >= (_detour.lens as PackedFloat32Array)[(_detour.lens as PackedFloat32Array).size()-1]-LOOK_LEAST:
+			_s = float(_detour.rejoin)
+			_detour = {}
+	elif mode == "course":
+		var r := _on_course(pos,dir,float(flight.speed))
+		aim = r.aim
+		want_y = float(r.y)
+		room = float(r.room)
+		bore = bool(r.bore)
+	else:
 		aim = _open_aim(pos,dir)
 		want_y = _ground_ahead(pos,dir,true,INF)
 	# The wobble: a slow swing across the line, inside the room.
 	var t := _clock*TAU+float(plane.phase)
 	var swing := (sin(t*0.21)+0.5*sin(t*0.57+1.3))/1.5*wobble()*smoothstep(WOBBLE_NEAR,WOBBLE_FAR,_to_through)
+	if mode == "land": swing = 0.0
 	if room < INF: swing = clampf(swing,-maxf(room-WorldScale.span*1.2,0.0),maxf(room-WorldScale.span*1.2,0.0))
 	var to := aim-pos
 	var flat := Vector3(to.x,0.0,to.z)
 	if flat.length() > 0.5:
 		var across := flat.normalized().cross(Vector3.UP)
 		aim += across*swing
-	aim = _keep_clear(traffic,aim,pos,float(flight.speed))
+	if keep: aim = _keep_clear(traffic,aim,pos,float(flight.speed))
 	to = aim-pos
 	var want := atan2(-to.x,-to.z)
-	if peel > 0.0:
+	if mode == "peel":
 		peel -= delta
 		want = float(flight.heading)+_peel_side*PEEL_TURN*0.5
 		want_y = maxf(want_y,_ground_ahead(pos,dir,true,INF)+10.0)
-	elif _veer_left > 0.0:
-		_veer_left -= delta
-		want += _veer
 	var rate := clampf(angle_difference(float(flight.heading),want)*TURN_GAIN,-TURN_MAX,TURN_MAX)
 	_turn = lerpf(_turn,rate,_ease(late(),delta))
 	flight.heading = wrapf(float(flight.heading)+_turn*delta,-PI,PI)
 	var bank := clampf(-_turn*BANK,-BANK_MAX,BANK_MAX)
-	if waggle > 0.0:
-		waggle -= delta
-		var w := sin((WAGGLE_TIME-waggle)*TAU*WAGGLE_HZ)*WAGGLE_BANK*smoothstep(0.0,0.3,waggle)
-		bank = clampf(bank+w,-BANK_MAX,BANK_MAX)
 	flight.bank = lerpf(float(flight.bank),bank,_ease(0.15,delta))
 	var pitch := clampf((want_y-pos.y)/PITCH_PER,-PITCH_MAX,PITCH_MAX)
 	flight.pitch = lerpf(float(flight.pitch),pitch,_ease(EASE_PITCH,delta))
 	flight.spin = 0.0
-	var speed := pace if pace > 0.0 else float(plane.cruise)
+	flight.engine = 1.0
 	# Lifting off for an opening, and the turn's bleed.
-	if peel <= 0.0:
+	if mode == "course":
 		var near := 1.0-smoothstep(0.0,CARRY_FROM,_to_go) if _to_go >= 0.0 else 1.0-smoothstep(0.0,CARRY_BACK,-_to_go)
-		speed *= lerpf(1.0,carry(),near)
+		var keep_share := carry()*(CHECK if _gate_checked() else 1.0)
+		speed *= lerpf(1.0,keep_share,near)
 		speed *= 1.0-TURN_BLEED/skill*clampf(absf(_turn)/TURN_MAX,0.0,1.0)
-	flight.speed = lerpf(float(flight.speed),speed,_ease(speed_ease,delta))
+	var eased := lerpf(float(flight.speed),speed,_ease(speed_ease,delta))
+	flight.speed = clampf(eased,float(flight.speed)-ACCEL_MOST*2.0*delta,float(flight.speed)+ACCEL_MOST*delta)
 	flight.velocity = flight.forward()*float(flight.speed)
 	flight.position += flight.velocity*delta
 	# Never sunk into the ground under it (in a bore, the bore's floor is
 	# the line's own).
 	if not bore:
-		var under := _ground_top(flight.position,in_open and route.is_empty())
-		flight.position.y = maxf(flight.position.y,under+LOW_LEAST*0.5)
-	var inside := _in_solid(flight.position,bore)
-	if inside != "":
-		clips += 1
-		if clip_log.size() < 12: clip_log.append({"what":inside,"at":flight.position.round(),"route":String(feature.get("id","open")),"t":snappedf(_clock,0.1)})
-	var mist := float(traffic.cloud_depth.call(flight.position)) if traffic.cloud_depth.is_valid() else 0.0
-	plane.figure.update(delta,flight,0.0,Callable(),false,mist,float(flight.bank))
-	PlaneGroundScale.grow(plane.figure,traffic._size)
+		var under := _ground_top(flight.position,mode == "air" or mode == "peel")
+		flight.position.y = maxf(flight.position.y,under+(LOW_LEAST*0.5 if mode != "land" else 1.5))
+	if mode == "land" and land_stage == "to": _maybe_rails()
 
-static func _ease(seconds: float, delta: float) -> float:
-	return 1.0-exp(-delta/maxf(seconds,0.001))
+## The course's next gate is a checked one.
+func _gate_checked() -> bool:
+	var gates: Array = course.get("gates",[])
+	if gate_next < 0 or gate_next >= gates.size(): return false
+	return bool(gates[gate_next].get("checked",false))
+
+## On the course: {aim, y, room, bore}; where it is along it (`_s`), the
+## next opening's middle (`_to_go`, `_to_through`).
+func _on_course(pos: Vector3, dir: Vector3, speed: float) -> Dictionary:
+	var pts: Array = course.points
+	var lens: PackedFloat32Array = course.lens
+	var r := _follow(pts,lens,_s,pos,speed)
+	_s = maxf(_s,float(r.s))
+	var gates: Array = course.gates
+	# The next opening's middle along, the gate it is to take first.
+	var through := INF
+	for i in range(gates.size()):
+		if i < gate_next: continue
+		through = float(gates[i].through)
+		break
+	if through < INF:
+		_to_go = through-_s
+		_to_through = absf(_to_go)
+	# A hall is built near the eye, a piece at a time: its height read
+	# again from HALL_NEAR m out, never lower (the route only; the ribbon
+	# was laid once).
+	if gate_next < gates.size():
+		var g: Dictionary = gates[gate_next]
+		if String(g.kind) == "hall" and through-_s < HALL_NEAR and through-_s > 0.0 and _clock-float(g.get("read_at",-INF)) > HALL_EVERY:
+			g.read_at = _clock
+			_hall_reread(g)
+	var look := maxf(speed*LOOK_TIME,LOOK_LEAST)
+	var end := lens[lens.size()-1]
+	var seg := int(r.seg)
+	var a: Dictionary = pts[seg]
+	var y := RivalCourse.at(course,minf(_s+look*0.4,end)).y
+	var bore := bool(a.bore) and bool(pts[mini(seg+1,pts.size()-1)].bore)
+	var room := float(pts[mini(seg+1,pts.size()-1)].room) if bool(a.lead) else minf(float(a.room),float(pts[mini(seg+1,pts.size()-1)].room))
+	# Never under LOW_LEAST over what stands just ahead (what was built
+	# after the line was laid: a tree's crown, an arch); on a leg and
+	# through an air gate over the spans too, in an opening under them.
+	if not bore:
+		var guard := -INF
+		var open := bool(a.lead) or bool(a.get("air",false))
+		for d: float in (GUARD if open else [0.0,READ_IN]):
+			guard = maxf(guard,_ground_top(pos+dir*d,open)+LOW_LEAST)
+		y = maxf(y,guard)
+	return {"aim":r.aim,"y":y,"room":room,"bore":bore}
+
+func _bore_here() -> bool:
+	var pts: Array = course.points
+	var lens: PackedFloat32Array = course.lens
+	for i in range(pts.size()-1):
+		if lens[i+1] >= _s: return bool(pts[i].bore) and bool(pts[i+1].bore)
+	return false
+
+## The hall's height read again (rival_course.gd laid it from what was
+## built then): the route's points through it raised, never lowered.
+func _hall_reread(g: Dictionary) -> void:
+	var pts: Array = course.points
+	var at := int(g.get("at",-1))
+	if at < 0 or not g.has("hall"): return
+	var h: Array = g.hall
+	var c: Vector3 = h[0]
+	var fly := _hall_fly(c,h[1],float(h[2]))
+	if fly < 0.0: return
+	for i in range(at,mini(at+4,pts.size())):
+		var p: Vector3 = pts[i].p
+		p.y = maxf(p.y,c.y+fly)
+		pts[i].p = p
+
+## Pursuit along a polyline: projected onto it near `s0`, the aim LOOK
+## ahead. {aim, s, seg}.
+func _follow(pts: Array, lens: PackedFloat32Array, s0: float, pos: Vector3, speed: float) -> Dictionary:
+	var best_s := s0
+	var best_d := INF
+	var seg := 0
+	for i in range(pts.size()-1):
+		if lens[i+1] < s0-40.0: continue
+		if lens[i] > s0+400.0: break
+		var a: Vector3 = pts[i].p
+		var b: Vector3 = pts[i+1].p
+		var ab := Vector2(b.x-a.x,b.z-a.z)
+		var l2 := ab.length_squared()
+		var u := clampf(Vector2(pos.x-a.x,pos.z-a.z).dot(ab)/l2,0.0,1.0) if l2 > 0.0001 else 0.0
+		var d := (Vector2(a.x,a.z)+ab*u).distance_to(Vector2(pos.x,pos.z))
+		if d < best_d:
+			best_d = d
+			best_s = lens[i]+u*(lens[i+1]-lens[i])
+			seg = i
+	var s := maxf(s0,best_s)
+	var look := maxf(speed*LOOK_TIME,LOOK_LEAST)
+	return {"aim":_point_on(pts,lens,minf(s+look,lens[lens.size()-1])),"s":s,"seg":seg}
+
+static func _point_on(pts: Array, lens: PackedFloat32Array, s: float) -> Vector3:
+	for i in range(pts.size()-1):
+		if s <= lens[i+1] or i == pts.size()-2:
+			var u := clampf((s-lens[i])/maxf(lens[i+1]-lens[i],0.001),0.0,1.0)
+			return (pts[i].p as Vector3).lerp(pts[i+1].p,u)
+	return pts[pts.size()-1].p
+
+## Gone by gate `i` outside it: out to the side, back past it and in again
+## (a loop), then on along the course from before it.
+func come_round(i: int) -> void:
+	var gates: Array = course.gates
+	if i < 0 or i >= gates.size() or not _detour.is_empty(): return
+	var g: Dictionary = gates[i]
+	var flight: RefCounted = plane.flight
+	var pos: Vector3 = flight.position
+	var dir: Vector3 = g.dir
+	var across := dir.cross(Vector3.UP)
+	var gp: Vector3 = g.p
+	# Round on the lower side.
+	var side := 1.0
+	if _ground_top(gp+across*ROUND_SIDE,true) > _ground_top(gp-across*ROUND_SIDE,true): side = -1.0
+	var fwd := Vector3(-sin(float(flight.heading)),0.0,-cos(float(flight.heading)))
+	var pts: Array = [{"p":pos},{"p":pos+fwd*90.0+across*side*ROUND_SIDE*0.6},{"p":gp+across*side*ROUND_SIDE},
+		{"p":gp-dir*ROUND_BACK*0.6+across*side*ROUND_SIDE*0.7},{"p":gp-dir*ROUND_BACK},{"p":gp-dir*(APPROACH*0.5)}]
+	var lens := PackedFloat32Array([0.0])
+	for k in range(1,pts.size()):
+		var a: Vector3 = pts[k-1].p
+		var b: Vector3 = pts[k].p
+		lens.append(lens[k-1]+Vector2(b.x-a.x,b.z-a.z).length())
+	_detour = {"pts":pts,"lens":lens,"s":0.0,"rejoin":maxf(float(g.s)-APPROACH*0.5,0.0)}
+	_s = minf(_s,float(_detour.rejoin))
+	history.append({"t":snappedf(_clock,0.01),"id":String(g.id),"kind":String(g.kind),"what":"came round","at":pos.round()})
+
+# --- Down to the strip --------------------------------------------------------------
+
+## To the start of the final and down its glide: {aim, y, speed}.
+func _to_strip(pos: Vector3, dir: Vector3) -> Dictionary:
+	var axis: Vector3 = strip.axis
+	var touch: Vector3 = strip.touch
+	var final := touch-axis*RivalStrip.FINAL
+	# How far it has to go to the touch: to the final's start, then down it.
+	var along := (pos-touch).dot(axis)
+	var side := absf((pos-touch).dot(axis.cross(Vector3.UP)))
+	var on_final := along > -RivalStrip.FINAL*1.15 and side < 60.0 and dir.dot(axis) > 0.8
+	var d := -along if on_final else Vector2(final.x-pos.x,final.z-pos.z).length()+RivalStrip.FINAL
+	var aim := touch+axis*maxf(along+maxf(float(plane.flight.speed)*LOOK_TIME*2.0,LOOK_LEAST*2.0),-RivalStrip.FINAL) if on_final else final
+	if not on_final and Vector2(final.x-pos.x,final.z-pos.z).length() < 90.0: aim = touch
+	# The glide's height, or low over the land while far.
+	var glide := float(touch.y)+PlaneStrip.contact(NOSE_UP)+RivalStrip.glide_y(d)
+	var y := glide
+	if d > RivalStrip.FINAL: y = maxf(glide,_ground_ahead(pos,dir,true,INF))
+	else: y = maxf(glide,_ground_near(pos,dir)+1.5)
+	var speed := lerpf(APPROACH_SPEED,LAND_SPEED,smoothstep(RivalStrip.FINAL*0.5,RivalStrip.FINAL*1.3,d))
+	# Near the touch, what is built since is read again.
+	if not _rechecked and d < RECHECK:
+		_rechecked = true
+		if not RivalStrip.still_clear(game,strip):
+			history.append({"t":snappedf(_clock,0.01),"id":"strip","kind":"strip","what":"blocked","at":touch.round()})
+			strip = {}
+			mode = "air"
+			_strip_search = 0.0
+	return {"aim":aim,"y":y,"speed":speed}
+
+## On to the rails: close in, lined up, low enough.
+func _maybe_rails() -> void:
+	var flight: RefCounted = plane.flight
+	var axis: Vector3 = strip.axis
+	var touch: Vector3 = strip.touch
+	var o: Vector3 = flight.position-touch
+	var along := o.dot(axis)
+	if along < -RAIL or along > 0.0: return
+	var across := axis.cross(Vector3.UP)
+	var heading_axis := atan2(-axis.x,-axis.z)
+	if absf(o.dot(across)) > RAIL_SIDE or absf(angle_difference(float(flight.heading),heading_axis)) > RAIL_TURN:
+		_go_round()
+		return
+	land_stage = "rail"
+	_rail_side = o.dot(across)
+	var d := -along
+	_rail_dy = float(flight.position.y)-(_ground_at(flight.position)+PlaneStrip.contact(NOSE_UP)+RivalStrip.glide_y(d))
+	_rail_dy = clampf(_rail_dy,-1.0,12.0)
+
+## Not lined up for the touch: on past it and round to look again.
+func _go_round() -> void:
+	var flight: RefCounted = plane.flight
+	history.append({"t":snappedf(_clock,0.01),"id":"strip","kind":"strip","what":"went round","at":(flight.position as Vector3).round()})
+	strip = {}
+	mode = "air"
+	_leg = Vector3(flight.position)+Vector3(-sin(float(flight.heading)),0.0,-cos(float(flight.heading)))*600.0
+	_strip_search = 4.0
+
+func _ground_at(p: Vector3) -> float:
+	return float(game.field.height(p.x,p.z))
+
+## On the rails: onto the lane's line, slowing, the flare, the touch; then
+## the roll out to its stop.
+func _land_rails(delta: float) -> void:
+	var flight: RefCounted = plane.flight
+	var axis: Vector3 = strip.axis
+	var touch: Vector3 = strip.touch
+	var across := axis.cross(Vector3.UP)
+	var heading_axis := atan2(-axis.x,-axis.z)
+	var along := (Vector3(flight.position)-touch).dot(axis)
+	var speed := float(flight.speed)
+	_rail_side *= 1.0-_ease(RAIL_EASE,delta)
+	_rail_dy *= 1.0-_ease(RAIL_EASE,delta)
+	flight.heading = lerp_angle(float(flight.heading),heading_axis,_ease(RAIL_EASE*0.6,delta))
+	flight.engine = lerpf(float(flight.engine),IDLE,_ease(1.0,delta))
+	if land_stage == "rail":
+		var d := maxf(-along,0.0)
+		speed = lerpf(speed,lerpf(TOUCH_SPEED,APPROACH_SPEED,clampf(d/RAIL,0.0,1.0)),_ease(0.3,delta))
+		along += speed*delta
+		d = maxf(-along,0.0)
+		var flare := 1.0-clampf(d/RivalStrip.FLARE,0.0,1.0)
+		var slope := RivalStrip.GLIDE*clampf(d/RivalStrip.FLARE,0.0,1.0)
+		var rest := RivalStrip.rest(game,touch+axis*along+across*_rail_side,heading_axis)
+		var pitch := lerpf(-atan(slope)+NOSE_UP,rest.y,smoothstep(0.0,1.0,flare))
+		flight.pitch = lerpf(float(flight.pitch),pitch,_ease(0.15,delta))
+		flight.bank = lerpf(float(flight.bank),clampf(_rail_side*0.02,-0.2,0.2),_ease(0.3,delta))
+		var at := touch+axis*along+across*_rail_side
+		at.y = rest.w+PlaneStrip.contact(float(flight.pitch))+RivalStrip.glide_y(d)+_rail_dy
+		_place(at,speed,axis)
+		if along >= 0.0:
+			land_stage = "roll"
+			_touch_speed = maxf(speed,1.0)
+			history.append({"t":snappedf(_clock,0.01),"id":"strip","kind":"strip","what":"touched","at":at.round(),"speed":snappedf(speed,0.1)})
+		return
+	# The roll out: slowing to a stop at its stop.
+	var left := maxf(RivalStrip.ROLL-along,0.5)
+	var decel := speed*speed/(2.0*left)
+	speed = maxf(speed-decel*delta,0.0)
+	along += speed*delta
+	var at := touch+axis*along+across*_rail_side
+	var rest := RivalStrip.rest(game,at,heading_axis)
+	flight.pitch = lerpf(float(flight.pitch),rest.y,_ease(0.25,delta))
+	flight.bank = lerpf(float(flight.bank),rest.z,_ease(0.25,delta))
+	at.y = rest.w+PlaneStrip.contact(float(flight.pitch))
+	_place(at,speed,axis)
+	if speed <= 0.15 or along >= RivalStrip.ROLL:
+		mode = "rest"
+		flight.speed = 0.0
+		flight.velocity = Vector3.ZERO
+		history.append({"t":snappedf(_clock,0.01),"id":"strip","kind":"strip","what":"stopped","at":at.round()})
+
+func _place(at: Vector3, speed: float, axis: Vector3) -> void:
+	var flight: RefCounted = plane.flight
+	flight.velocity = axis*speed
+	flight.position = at
+	flight.speed = speed
+	flight.spin = 0.0
+
+## Stood: on its wheels, idling.
+func _rest() -> void:
+	var flight: RefCounted = plane.flight
+	var r := RivalStrip.rest(game,flight.position,float(flight.heading))
+	flight.position.y = r.x
+	flight.pitch = r.y
+	flight.bank = r.z
+	flight.speed = 0.0
+	flight.velocity = Vector3.ZERO
+	flight.engine = IDLE
+
+## From rest: down the lane, tail up, off, climbing; then the course or the
+## peel.
+func _takeoff(delta: float) -> void:
+	var flight: RefCounted = plane.flight
+	flight.engine = 1.0
+	var heading := float(flight.heading)
+	var fwd := Vector3(-sin(heading),0.0,-cos(heading))
+	var speed := float(flight.speed)+TAKEOFF_ACCEL*delta
+	var at: Vector3 = flight.position+fwd*speed*delta
+	var r := RivalStrip.rest(game,at,heading)
+	if _airborne <= 0.0 and speed < LIFT_SPEED:
+		var tail := smoothstep(TAIL_UP,LIFT_SPEED,speed)
+		flight.pitch = lerpf(r.y,TAIL_PITCH+(r.y-PlaneStrip.REST_PITCH),tail)
+		flight.bank = r.z
+		at.y = r.w+PlaneStrip.contact(float(flight.pitch))
+	else:
+		_airborne += delta
+		flight.pitch = lerpf(float(flight.pitch),CLIMB_PITCH+atan(_climb-CLIMB_RATE),_ease(0.5,delta))
+		flight.bank = lerpf(float(flight.bank),0.0,_ease(0.3,delta))
+		var climb := speed*_climb*smoothstep(0.0,1.0,_airborne)
+		at.y = maxf(float(flight.position.y)+climb*delta,r.w+PlaneStrip.contact(float(flight.pitch)))
+	flight.position = at
+	flight.speed = speed
+	flight.velocity = fwd*speed+Vector3.UP*(at.y-float(flight.position.y))
+	if _airborne > 0.0 and at.y-_ground_top(at,false) >= CLIMB_DONE:
+		_turn = 0.0
+		if _after == "peel":
+			mode = "peel"
+			peel = PEEL_TIME
+		else:
+			mode = "course"
+			history.append({"t":snappedf(_clock,0.01),"id":"strip","kind":"strip","what":"off","at":at.round()})
 
 # --- The ground ---------------------------------------------------------------------
 
@@ -386,144 +845,17 @@ func _ground_ahead(pos: Vector3, dir: Vector3, spans: bool, most: float) -> floa
 func _ground_near(pos: Vector3, dir: Vector3) -> float:
 	return maxf(_ground_top(pos,false),_ground_top(pos+dir*READ_IN,false))
 
-# --- The route ----------------------------------------------------------------------
-
-## Looks for the nearest opening ahead and lays the route through it.
-func _plan(pos: Vector3, dir: Vector3) -> void:
-	var best: Dictionary = {}
-	var best_score := INF
-	for c: Dictionary in _candidates(pos):
-		if _used.has(c.id): continue
-		var pts: Array = c.points
-		var entry: Vector3 = pts[0].p
-		var to := Vector3(entry.x-pos.x,0.0,entry.z-pos.z)
-		var d := to.length()
-		if d < NEAR or d > REACH: continue
-		var off := absf(Vector2(dir.x,dir.z).angle_to(Vector2(to.x,to.z)))
-		if off > CONE: continue
-		var nxt: Vector3 = pts[1].p
-		var way := Vector3(nxt.x-entry.x,0.0,nxt.z-entry.z).normalized()
-		if way.dot(dir) < ALIGN: continue
-		var score := d*(1.0+off/CONE)
-		if score < best_score:
-			best_score = score
-			best = c
-	if best.is_empty(): return
-	feature = best
-	feature["duck"] = _roll(String(best.id)) < duck_chance()
-	feature["decided"] = false
-	route = [{"p":pos,"room":INF,"bore":false,"lead":true}]
-	route.append_array(best.points)
-	_lens = PackedFloat32Array([0.0])
-	for i in range(1,route.size()):
-		var a: Vector3 = route[i-1].p
-		var b: Vector3 = route[i].p
-		_lens.append(_lens[i-1]+Vector2(b.x-a.x,b.z-a.z).length())
-	feature["s_through"] = _lens[int(best.through)+1]
-	_s = 0.0
-
 ## A roll in [0, 1) from the seed, the race and `id`.
 func _roll(id: String) -> float:
 	return float(hash([_salt,id])%100000)/100000.0
 
-## Where it is on the route and where it aims: {aim, y, room, bore, lead
-## (still on the lead-in), left (m of lead-in left)}. Ends the route past
-## its last point; logs the opening threaded as it passes it, or drops the
-## route when it ducks.
-func _pursue(pos: Vector3, speed: float) -> Dictionary:
-	# Project onto the polyline, near where it was.
-	var best_s := _s
-	var best_d := INF
-	for i in range(route.size()-1):
-		if _lens[i+1] < _s-40.0: continue
-		var a: Vector3 = route[i].p
-		var b: Vector3 = route[i+1].p
-		var ab := Vector2(b.x-a.x,b.z-a.z)
-		var l2 := ab.length_squared()
-		var u := clampf(Vector2(pos.x-a.x,pos.z-a.z).dot(ab)/l2,0.0,1.0) if l2 > 0.0001 else 0.0
-		var q := Vector2(a.x,a.z)+ab*u
-		var d := q.distance_to(Vector2(pos.x,pos.z))
-		if d < best_d:
-			best_d = d
-			best_s = _lens[i]+u*(_lens[i+1]-_lens[i])
-	_s = maxf(_s,best_s)
-	var through := float(feature.s_through)
-	# A hall is built near the eye, a piece at a time: its height read
-	# again every HALL_EVERY s from HALL_NEAR m out till it is through,
-	# never lower than read before.
-	if String(feature.kind) == "hall" and through-_s < HALL_NEAR and through-_s > 0.0 and _clock-float(feature.get("read_at",-INF)) > HALL_EVERY:
-		feature.read_at = _clock
-		var h: Array = feature.hall
-		var fly := _hall_fly(h[0],h[1],h[2])
-		if fly > float(feature.get("fly",-1.0)):
-			feature.fly = fly
-			var pts := _hall_points(h[0],h[1],h[2],h[3],fly)
-			for i in range(pts.size()): route[i+1].p = pts[i].p
-	_to_through = absf(through-_s)
-	_to_go = through-_s
-	# The duck, decided once, DUCK_AT s short of the opening.
-	if not bool(feature.decided) and _s > through-speed*DUCK_AT-APPROACH*0.5:
-		feature.decided = true
-		if bool(feature.duck):
-			_note("ducked")
-			if String(feature.kind) != "arch":
-				_veer = DUCK_TURN*(-1.0 if _roll(String(feature.id)+"side") < 0.5 else 1.0)
-				_veer_left = VEER_TIME
-			_end_route()
-			return {}
-	if not feature.has("passed") and _s >= through:
-		feature["passed"] = true
-		var flight: RefCounted = plane.flight
-		var c: Vector3 = _at(through).p
-		var off := Vector2(flight.position.x-c.x,flight.position.z-c.z).length()
-		_note("threaded" if off < _room_at(through)+WorldScale.span else "missed",{"off":snappedf(off,0.1),"room":snappedf(_room_at(through),0.1),"dy":snappedf(float(flight.position.y)-c.y,0.1)})
-	if _s >= _lens[_lens.size()-1]-1.0:
-		_end_route()
-		_search = 0.0
-		return {}
-	var look := maxf(speed*LOOK_TIME,LOOK_LEAST)
-	var here := _at(_s)
-	var ahead := _at(minf(_s+look,_lens[_lens.size()-1]))
-	var lead := _s < _lens[1]
-	# The height: the line's, a little ahead of where it is.
-	var y := float(_at(minf(_s+look*0.4,_lens[_lens.size()-1])).y)
-	return {"aim":ahead.p,"y":y,"room":minf(float(here.room),float(ahead.room)),"bore":bool(here.bore),"lead":lead,"left":_lens[1]-_s}
-
-func _room_at(s: float) -> float:
-	return float(_at(s).room)
-
-## The route's point at `s` along: {p, y, room, bore}.
-func _at(s: float) -> Dictionary:
-	for i in range(route.size()-1):
-		if s <= _lens[i+1] or i == route.size()-2:
-			var span := maxf(_lens[i+1]-_lens[i],0.001)
-			var u := clampf((s-_lens[i])/span,0.0,1.0)
-			var a: Dictionary = route[i]
-			var b: Dictionary = route[i+1]
-			var p: Vector3 = (a.p as Vector3).lerp(b.p,u)
-			# The lead-in's room is the opening's, from where it begins.
-			return {"p":p,"y":p.y,"room":float(b.room) if i == 0 else minf(float(a.room),float(b.room)),"bore":bool(a.bore) and bool(b.bore)}
-	var last: Dictionary = route[route.size()-1]
-	return {"p":last.p,"y":(last.p as Vector3).y,"room":float(last.room),"bore":bool(last.bore)}
-
-func _end_route() -> void:
-	if not feature.is_empty(): _used[feature.id] = true
-	route.clear()
-	feature = {}
-
-func _note(what: String, more := {}) -> void:
-	var flight: RefCounted = plane.flight
-	var h := {"t":snappedf(_clock,0.01),"id":String(feature.id),"kind":String(feature.kind),"what":what,"at":flight.position.round()}
-	h.merge(more)
-	history.append(h)
-
 ## In the open: down the valleys ahead, near its course.
 func _open_aim(pos: Vector3, dir: Vector3) -> Vector3:
 	if _leg == Vector3.INF or Vector2(_leg.x-pos.x,_leg.z-pos.z).length() < LEG_ARRIVE or Vector3(_leg.x-pos.x,0.0,_leg.z-pos.z).dot(dir) < 0.0:
-		_course = lerp_angle(_course,atan2(-dir.x,-dir.z),0.3)
+		_course_h = lerp_angle(_course_h,atan2(-dir.x,-dir.z),0.3)
 		var low := INF
 		for i in range(CANDIDATES):
-			var a := _course+_rng.randf_range(-LEG_SPREAD,LEG_SPREAD)
+			var a := _course_h+_rng.randf_range(-LEG_SPREAD,LEG_SPREAD)
 			var p := pos+Vector3(-sin(a),0.0,-cos(a))*_rng.randf_range(LEG.x,LEG.y)
 			var h := maxf(float(game.field.height(p.x,p.z)),-40.0)
 			if h < low:
@@ -531,8 +863,9 @@ func _open_aim(pos: Vector3, dir: Vector3) -> Vector3:
 				_leg = Vector3(p.x,h,p.z)
 	return _leg
 
-## Off the player: when its line would pass within MISS_R of him in the
-## next MISS_LOOK s, the aim moves off (up or aside).
+## Off the player: when its line would close within MISS_R of him in the
+## next MISS_LOOK s, the aim moves off (up or aside). Alongside him (closing
+## slower than CLOSING) it lets be.
 func _keep_clear(traffic: Node, aim: Vector3, pos: Vector3, speed: float) -> Vector3:
 	var player: Vector3 = traffic._player
 	var off := pos-player
@@ -540,6 +873,7 @@ func _keep_clear(traffic: Node, aim: Vector3, pos: Vector3, speed: float) -> Vec
 	if off.length() > reach+speed*MISS_LOOK*2.0: return aim
 	var flight: RefCounted = plane.flight
 	var rel: Vector3 = flight.velocity-traffic._player_fwd*float(traffic._player_speed)
+	if -off.dot(rel)/maxf(off.length(),0.01) < CLOSING and off.length() > safe_r(): return aim
 	var closest := off
 	if rel.length_squared() > 0.01:
 		var t := clampf(-off.dot(rel)/rel.length_squared(),0.0,MISS_LOOK)
@@ -548,49 +882,6 @@ func _keep_clear(traffic: Node, aim: Vector3, pos: Vector3, speed: float) -> Vec
 	if miss >= reach: return aim
 	var away := closest/maxf(miss,0.01) if miss > 0.5 else Vector3.UP
 	return aim+away.normalized()*(reach-miss)*3.0
-
-# --- Its intent, for the race's marks ---------------------------------------------------
-
-## Where it is going, for the marks (scripts/endless/rival_marks.gd): {trail
-## (points every TRAIL_STEP m along where it will fly, from where it is, up
-## to `ahead` m on), open (true: down a valley, no opening), gate ({} or the
-## opening's mouth: {p, dir, half_w, half_h, kind, left (m to it)})}; {} while
-## it peels off.
-func intent(ahead: float) -> Dictionary:
-	if peel > 0.0: return {}
-	var flight: RefCounted = plane.flight
-	var pos: Vector3 = flight.position
-	var trail := PackedVector3Array()
-	if route.is_empty() or _lens.size() < 2:
-		if _leg == Vector3.INF: return {}
-		var to := Vector3(_leg.x-pos.x,0.0,_leg.z-pos.z)
-		var most := minf(to.length(),ahead*OPEN_TRAIL)
-		var way := to.normalized()
-		var d := 0.0
-		while d <= most:
-			var q := pos+way*d
-			q.y = maxf(lerpf(pos.y,_ground_top(q,true)+LOW,smoothstep(0.0,120.0,d)),_ground_top(q,true)+LOW_LEAST)
-			trail.append(q)
-			d += TRAIL_STEP
-		return {"trail":trail,"open":true,"gate":{}}
-	var end := _lens[_lens.size()-1]
-	var s := _s
-	while s <= minf(_s+ahead,end):
-		var q: Vector3 = _at(s).p
-		# On the lead-in it flies low over the land, not the straight line.
-		if s < _lens[1]: q.y = maxf(q.y,_ground_top(q,false)+LOW_LEAST*2.0)
-		trail.append(q)
-		s += TRAIL_STEP
-	var gate := {}
-	var m := int(feature.get("mouth",-1))+1
-	if m >= 1 and m < route.size() and _s < _lens[m]:
-		var a: Vector3 = route[maxi(m-1,0)].p
-		var b: Vector3 = route[mini(m+1,route.size()-1)].p
-		var dir := Vector3(b.x-a.x,0.0,b.z-a.z).normalized()
-		var room := float(route[m].room)
-		var half_w := clampf(room*GATE_FILL if room < INF else WorldScale.span*3.0,WorldScale.span*1.2,GATE_MOST)
-		gate = {"p":route[m].p,"dir":dir,"half_w":half_w,"half_h":clampf(half_w*0.6,WorldScale.span*0.9,GATE_MOST*0.6),"kind":String(feature.kind),"left":_lens[m]-_s}
-	return {"trail":trail,"open":false,"gate":gate}
 
 # --- The openings -------------------------------------------------------------------
 
@@ -613,7 +904,7 @@ func _candidates(pos: Vector3) -> Array:
 				var w := z*sgn
 				if not _level_way(c,w): continue
 				var pts: Array = [_pt(c-w*APPROACH,o.room,false),_pt(c-w*20.0,o.room,false),_pt(c,o.room,false),_pt(c+w*EXIT,INF,false)]
-				out.append({"id":String(a.name),"kind":"arch","points":pts,"through":2,"mouth":2})
+				out.append({"id":String(a.name),"kind":"arch","points":pts,"through":2,"mouth":2,"half_w":float(o.room),"lo":float(o.floor)-1.0,"hi":float(o.top)})
 	for s: PackedFloat32Array in field.splits_in(pos.x-r,pos.z-r,pos.x+r,pos.z+r):
 		var id := "split/%d_%d" % [roundi(s[0]),roundi(s[1])]
 		var hl := s[4]
@@ -719,7 +1010,7 @@ func _hall_fly(c: Vector3, way: Vector3, half: float) -> float:
 ## An arch's widest opening (its solid's columns, LandArches `stretches`,
 ## read across its span at three depths): {centre (world, at its flying
 ## height), room (half its width, m)}, or {} if none is wide and tall
-## enough.
+## enough; and its floor and the span's underside (world y): `floor`, `top`.
 func _arch_opening(a: Dictionary) -> Dictionary:
 	var name := String(a.name)
 	if _openings.has(name): return _openings[name]
@@ -778,6 +1069,6 @@ func _arch_opening(a: Dictionary) -> Dictionary:
 		if score > best_score:
 			best_score = score
 			var y := fl+clampf(gap*GAP_SHARE,WorldScale.span,gap-WorldScale.span*1.5)
-			best = {"centre":Vector3(o.x,0.0,o.z)+x*mid+Vector3.UP*y,"room":wide*0.5}
+			best = {"centre":Vector3(o.x,0.0,o.z)+x*mid+Vector3.UP*y,"room":wide*0.5,"floor":fl,"top":fl+gap}
 	_openings[name] = best
 	return best

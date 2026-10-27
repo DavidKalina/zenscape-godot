@@ -117,6 +117,10 @@ zs_breeze={
 "type": "float",
 "value": 0.53
 }
+zs_tree_alive={
+"type": "float",
+"value": 1.0
+}
 zs_front_0_a={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
@@ -544,6 +548,26 @@ zs_region_rect={
 zs_cloud_shadow_at={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
+}
+zs_horizon={
+"type": "sampler2D",
+"value": ""
+}
+zs_horizon_at={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_horizon_was={
+"type": "sampler2D",
+"value": ""
+}
+zs_horizon_was_at={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+zs_horizon_key={
+"type": "vec3",
+"value": Vector3(0, 1, 0)
 }
 zs_cloud_shadow_light={
 "type": "vec4",

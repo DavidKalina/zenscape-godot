@@ -49,6 +49,7 @@ const LandStream = preload("res://scripts/endless/land_stream.gd")
 const EndlessPost = preload("res://scripts/endless/endless_post.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const DayCycle = preload("res://scripts/endless/day_cycle.gd")
+const LandHorizon = preload("res://scripts/endless/land_horizon.gd")
 
 ## The moods L steps through (no winter: the season stays off it), and the
 ## one it opens on.
@@ -132,6 +133,8 @@ var world_paint := true
 ## The clouds (scripts/endless/endless_clouds.gd), or null (--no-clouds, no
 ## RenderingDevice).
 var clouds: Node3D
+## The land's shadows past the sun's map (--terrain-shadows=1, LandHorizon).
+var land_shade: LandHorizon
 ## The light pass (scripts/endless/endless_post.gd), or null (the default; --post=1 puts it in).
 var post: CompositorEffect
 ## The mood's key and fill scales on the sun and the sky's fill
@@ -315,6 +318,10 @@ func setup(land_seed: int) -> void:
 		if sea != null and sea.material_override is ShaderMaterial and (sea.material_override as ShaderMaterial).shader == preload("res://shaders/endless_sea.gdshader"):
 			clouds.sea_material = sea.material_override
 	_light_on = not "--light=0" in LaunchArgs.user_args()
+	if LandHorizon.wanted():
+		land_shade = LandHorizon.new()
+		add_child(land_shade)
+		land_shade.setup(land_seed)
 	if EndlessPost.wanted():
 		post = EndlessPost.new()
 		post.setup(self,Vector3(FOG_BEGIN,FOG_END*LandStream.view(),FOG_CURVE))
@@ -593,6 +600,11 @@ func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D 
 	sea.position = Vector3(snappedf(eye.x,64.0),Field.SEA_Y,snappedf(eye.z,64.0))
 	if water != null: water.step(delta,eye,plane_at,facing,_time,view)
 	if clouds != null: clouds.step(delta,view,wind_direction,_time)
+	if land_shade != null:
+		# The key light the clouds' shade takes: the sun, the moon by night.
+		var s: Vector3 = Vector3(celestial.state.get("zs_sun_direction",Vector3.UP)).normalized()
+		var m: Vector3 = Vector3(celestial.state.get("zs_moon_direction",Vector3.DOWN)).normalized()
+		land_shade.step(eye,s.lerp(m,smoothstep(0.05,-0.1,s.y)).normalized(),delta)
 
 ## Turns the land's wind (the grass, trees and clouds; zs_wind_direction)
 ## to blow along `dir` (unit xz), its wander kept. The sea's swell keeps the

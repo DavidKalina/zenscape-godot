@@ -227,6 +227,11 @@ var _towers_tick := 0
 ## cost_view).
 var cost_view := 0.0
 var sea_shade_sync := true
+## The shade pass samples a fixed stack of heights up the light's line, so
+## the shade on the land slides as the sun turns and the eye moves instead of
+## flickering at the small clouds (shaders/endless_cloud_march.glsl
+## shadow_pass; --cloud-shade=old: the stepped march with leaps).
+var shade_planes := true
 ## The field's drift so far (m): a cloud stands at its field point plus this.
 var drift := Vector2.ZERO
 var motion_time := 0.0
@@ -314,6 +319,7 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 	effect.weather_slices = WEATHER_SLICES
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--cloud-weather-slices="): effect.weather_slices = clampi(int(a.get_slice("=",1)),0,64)
+		if a == "--cloud-phase=old": effect.layer_phase = false
 		if a.begins_with("--cloud-cover="): cover = clampf(a.get_slice("=",1).to_float(),0.0,3.0)
 		elif a == "--cloud-full-res": quality[2] = 1
 		elif a == "--cloud-half-res": quality[2] = 2
@@ -331,6 +337,7 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 		elif a.begins_with("--cloud-cost-view="):
 			cost_view = a.get_slice("=",1).to_float()
 			effect.cost_view = cost_view > 0.0
+		elif a == "--cloud-shade=old": shade_planes = false
 		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
 		elif a == "--no-valley-fog": fog_on = false
 		elif a == "--fog=old":
@@ -1080,7 +1087,11 @@ func _fill() -> void:
 	if weather_due or effect.weather_slices > 1:
 		weather_side = (REACH*_view+WEATHER_PAST)*2.0
 		var texel := weather_side/Effect.WEATHER_TEXELS
-		weather_corner = ((Vector2(eye.x,eye.z)-Vector2.ONE*weather_side*0.5)/texel).floor()*texel
+		# Snapped in the low layer's drifting frame, so the map samples its
+		# field at the same points whenever it is drawn (Effect LAYER_PHASE).
+		# --cloud-phase=old: on the world's grid, as before.
+		var frame := low_at if effect.layer_phase else Vector2.ZERO
+		weather_corner = ((Vector2(eye.x,eye.z)-Vector2.ONE*weather_side*0.5-frame)/texel).floor()*texel+frame
 	var shade_square := Vector4(shade_corner.x,shade_corner.y,SHADE_SIDE,1.0)
 	if shade_due: _put4(p,44,shade_square)
 	else: _put4(p,44,Vector4(_shade_drawn.x,_shade_drawn.y,SHADE_SIDE,1.0) if _shade_drawn != Vector4.ZERO else shade_square)
@@ -1088,6 +1099,7 @@ func _fill() -> void:
 	_put4(p,168,Vector4(quality[0],quality[1],quality[2],quality[3]))
 	_put4(p,172,Vector4(1.0 if grain else 0.0,1.0 if organic else 0.0,1.0 if stack_yield else 0.0,1.0 if puff_lobes else 0.0))
 	_put4(p,176,Vector4(0.0,Effect.SHADOW_TEXELS,1.0 if weather_due else 0.0,1.0 if shade_due else 0.0))
+	_put4(p,148,Vector4(0.0 if shade_planes else 1.0,0.0,0.0,0.0))
 	# The sea draws after this frame's passes: the square they leave in the map.
 	if sea_material != null:
 		var now := shade_square if shade_due or _shade_drawn == Vector4.ZERO else _shade_drawn

@@ -14,9 +14,9 @@ shader_type spatial;
 // the woods' weight eased up so a dense wood is near solid and a thin one thin.
 render_mode blend_mix, depth_draw_never, cull_back, diffuse_lambert, specular_disabled;
 
-global uniform vec3 zs_hemi_sky;
-global uniform vec3 zs_hemi_ground;
-global uniform float zs_hemi_energy;
+// The sky's hemisphere (reference_globals), and the woods' gust waves
+// (tree_wind.gdshaderinc) running on over the painted canopy.
+#include "res://shaders/tree_wind.gdshaderinc"
 // The canopy's shade olive turns with the shade's hue (light_leans).
 #include "res://shaders/light_leans.gdshaderinc"
 
@@ -92,6 +92,7 @@ void fragment() {
 		NORMAL = normalize((VIEW_MATRIX * vec4(mix(wn, bumped, crown), 0.0)).xyz);
 		float patch = noise(world.xz / 90.0);
 		vec3 top = canopy_colour * mix(0.55, 1.0, mix(0.7, b, far)) * mix(0.85, 1.12, patch);
+		top = zs_tree_sheen(top, zs_tree_wave(world.xz, 0.0) * 0.8);
 		litter = mix(litter, top, crown);
 		// Thin woods thin, and the gaps between crowns let the land through.
 		alpha = mix(alpha, smoothstep(0.05, 0.75, COLOR.a) * mix(0.55, 0.95, mix(0.8, b, far)), crown);

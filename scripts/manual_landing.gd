@@ -269,7 +269,9 @@ const LEAN_BEND := 0.4
 ## it the nose holds DRIFT_COUNTER of its angle (the air drift's).
 const LINE_STEER := 0.3
 const DRIFT_COUNTER := SkyPlane.DRIFT_COUNTER
-## Backing up: Brake held stopped this long (s) backs it up, to at most
+## Backing up: Brake pressed afresh once stopped (let go since the stop:
+## held on from the roll it stays stopped, however long) and held this long
+## (s) backs it up, to at most
 ## REVERSE_SPEED (m/s, under SLIDE_MIN so it never slides), gaining it at
 ## REVERSE_PUSH and losing it with the brake let go at REVERSE_STOP (m/s²);
 ## the stick turns it at up to REVERSE_TURN (rad/s, at REVERSE_SPEED; a
@@ -380,9 +382,11 @@ var _way := Vector2(0.0,-1.0)
 ## count).
 var _low := false
 var _in_power := false
-## Stopped: seconds Brake has been held (to back up); backing up, stopped
-## at the land's edge behind (said once).
+## Stopped: seconds Brake has been held (to back up), and whether it was
+## let go since the stop (only a fresh press backs it up); backing up,
+## stopped at the land's edge behind (said once).
 var _brake_held := 0.0
+var _brake_fresh := true
 var _at_edge := false
 ## The run-up on the brakes: how hard it strains (0 to 1, for the caller's
 ## rumble and shake), and the let-go's lunge left (0 to 1, easing off).
@@ -457,6 +461,7 @@ func begin(on_plane: RefCounted, on_ground := false) -> void:
 	dive_sink = 0.0
 	sink_seen = 0.0
 	_brake_held = 0.0
+	_brake_fresh = true
 	_low = false
 	stats = {"touches":[],"bounces":0,"go_arounds":0,"touch_and_gos":0,"off_edge":0,"early_exits":0,
 		"rollout":NAN,"time_to_stop":NAN,"stopped":false,"bounce_reasons":{},"greasers":0,
@@ -563,8 +568,8 @@ func _enter(next: int) -> void:
 	time = 0.0
 
 ## Stood still: Boost (no brake) rolls it off; Brake, Boost and the stick
-## pivot it where it stands; Brake held a moment backs it up; Exit gets
-## out.
+## pivot it where it stands; Brake let go and pressed again, held a moment,
+## backs it up (held on from the stop, it stays put); Exit gets out.
 func _stopped(delta: float, input: Dictionary, floor_at: Callable, out: Dictionary) -> void:
 	engine = 1.0
 	throttle = -0.3
@@ -574,7 +579,8 @@ func _stopped(delta: float, input: Dictionary, floor_at: Callable, out: Dictiona
 	var brake := clampf(float(input.get("brake",0.0)),0.0,1.0)
 	var turn := clampf(float(input.get("turn",0.0)),-1.0,1.0)
 	if boost <= 0.0 or absf(turn) > DRIFT_ONSET: strain = maxf(0.0,strain-delta*2.0)
-	_brake_held = _brake_held+delta if brake > 0.3 and boost <= 0.0 else 0.0
+	if brake <= 0.3: _brake_fresh = true
+	_brake_held = _brake_held+delta if brake > 0.3 and boost <= 0.0 and _brake_fresh else 0.0
 	_at_edge = false
 	if boost > 0.0 and brake <= 0.3:
 		if strain > 0.0:
@@ -974,6 +980,7 @@ func _roll(delta: float, input: Dictionary, floor_at: Callable, blocked: Callabl
 		reversing = false
 		drift_side = 0.0
 		_brake_held = 0.0
+		_brake_fresh = brake <= 0.3
 		_enter(STOPPED)
 		out["stopped"] = {"margin":margin}
 
