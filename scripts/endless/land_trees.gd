@@ -126,6 +126,16 @@ const FAR_TILE := 128.0
 ## MID_CROWN_END (MID_START, its fade and slack, and a block's half diagonal).
 const MID_START := 400.0
 const FADE := Vector3(12.0,15.0,30.0)
+## The soft hand-overs (with the soft sprites, SpruceSprites.soft_wanted; off
+## under --spruce-sprites=old): each tree swaps at its own distance, spread
+## LOD_SPREAD m round a band's ends (the same per-tree offset on both
+## levels), dithered only LOD_SOFT_FADE m either side, in place of FADE's x
+## and y: before, every tree within 12 to 15 m of 80 m and of 200 m was
+## mid-dither at once, a ring of grain.
+const LOD_SPREAD := 30.0
+const LOD_SOFT_FADE := 2.0
+static var _spread := 0.0
+var _fade := FADE
 const LOD_SLACK := 25.0
 const MID_CROWN_END := 670.0
 ## The sprites (scripts/endless/spruce_sprites.gd, the default with the sprays
@@ -229,6 +239,12 @@ func setup(land_seed: int) -> void:
 			regional.append({"share":rf.share if rf.on else 0.0,"meadows":rf.meadows,"weights":Plan.weights_of(p),"native":null})
 		enabled = any and not ("--no-trees" in LaunchArgs.user_args())
 	if not enabled: return
+	# The woods alive (shaders/tree_wind.gdshaderinc): gust waves and the boughs'
+	# own motion; --tree-alive=0 the woods as before, more for a windier look.
+	var alive := 1.0
+	for a in LaunchArgs.user_args():
+		if a.begins_with("--tree-alive="): alive = maxf(0.0,float(a.get_slice("=",1)))
+	RenderingServer.global_shader_parameter_set(&"zs_tree_alive",alive)
 	var view := preload("res://scripts/endless/land_stream.gd").view()
 	far_ring = Vector4(FAR.x,FAR.y,FAR.z*view,FAR.w*view)
 	var SkyIslets: GDScript = load("res://scripts/sky_islets.gd")
@@ -247,6 +263,10 @@ func setup(land_seed: int) -> void:
 			elif a.begins_with("--spruce-mid="): _mid_start = float(a.get_slice("=",1))
 		_far_cut = maxf(_far_cut,_detail)
 		_mid_start = maxf(_mid_start,_far_cut)
+	_spread = 0.0
+	if SpruceSprites.soft_wanted():
+		_spread = LOD_SPREAD
+		_fade = Vector3(LOD_SOFT_FADE,LOD_SOFT_FADE,FADE.z)
 	if _detail >= 0.0:
 		for v in HeroTrees.SPRUCE.size():
 			var base: Material = (_parts[v][1] as Mesh).surface_get_material(0)
@@ -254,9 +274,9 @@ func setup(land_seed: int) -> void:
 			var far_m: Material = base.duplicate()
 			var family_m: Material = base.duplicate()
 			# Full crown, far crown, mid crown, each dithered into the next.
-			_band(near_m,Vector2(0.0,_detail),Vector2(0.0,FADE.x))
-			_band(far_m,Vector2(_detail,_far_cut),Vector2(FADE.x,FADE.y))
-			_band(family_m,Vector2(_far_cut,_mid_start),Vector2(FADE.y,FADE.z))
+			_band(near_m,Vector2(0.0,_detail),Vector2(0.0,_fade.x))
+			_band(far_m,Vector2(_detail,_far_cut),Vector2(_fade.x,_fade.y))
+			_band(family_m,Vector2(_far_cut,_mid_start),Vector2(_fade.y,_fade.z))
 			_lift(family_m,"midlift")
 			_detail_material.append(near_m)
 			_far_material_v.append(far_m)
@@ -304,14 +324,14 @@ func setup(land_seed: int) -> void:
 	if not knobs.is_empty() and not ("--spruce-sprites=0" in LaunchArgs.user_args()):
 		sprites = SpruceSprites.new()
 		sprites.name = "Sprites"
-		sprites.setup(_parts.map(func(p: Array) -> Array: return [p[0],p[1]]),_tint,knobs,Vector2(_far_cut,SPRITE_END),Vector2(FADE.y,SPRITE_FADE))
+		sprites.setup(_parts.map(func(p: Array) -> Array: return [p[0],p[1]]),_tint,knobs,Vector2(_far_cut,SPRITE_END),Vector2(_fade.y,SPRITE_FADE),_spread)
 		add_child(sprites)
 		sprites.baked.connect(_sprites_baked)
 		sprites.bake.call_deferred()
 		for v in _parts.size():
 			for part in 2:
 				var m: Material = (_parts[v][part] as Mesh).surface_get_material(0).duplicate()
-				_band(m,Vector2(0.0,_far_cut),Vector2(0.0,FADE.y))
+				_band(m,Vector2(0.0,_far_cut),Vector2(0.0,_fade.y))
 				(_crown_band if part == 1 else _trunk_band).append(m)
 	_near_floor = _floor_shader(Vector4(-1.0,1.0,MID.z,MID.w))
 	_far_floor = _floor_shader(Vector4(MID.z-MID.w,MID.w,far_ring.z,far_ring.w))
@@ -371,6 +391,7 @@ static func _band(m: Material, band: Vector2, fade: Vector2) -> void:
 	(m as ShaderMaterial).set_shader_parameter("lod_band_on",true)
 	(m as ShaderMaterial).set_shader_parameter("lod_band",band)
 	(m as ShaderMaterial).set_shader_parameter("lod_fade",fade)
+	(m as ShaderMaterial).set_shader_parameter("lod_spread",_spread)
 
 func _floor_shader(band: Vector4) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
