@@ -36,6 +36,11 @@ const float ZS_STORM_FLASH_GAIN = 2.2;
 const vec2 ZS_STORM_FLASH_REACH = vec2(500.0, 2600.0);
 const float ZS_STORM_FLASH_WIDE = 0.04;
 const float ZS_STORM_FLASH_DECAY = 10.0;
+// The flash on the deck follows the deck's own light (its pouches dark,
+// its gaps and breaks pale): times lum / (lum + REF) x 2 under the push,
+// so a deck lit as REF takes the flash whole. Laid flat, the core's
+// frequent flickers washed the deck to a flat pale grey looking up.
+const float ZS_STORM_FLASH_FORM_REF = 0.02;
 
 float zs_storm_cloud_lum(vec3 c) {
 	return dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -81,7 +86,7 @@ vec3 zs_storm_haze_colour(vec3 sky, float w) {
 
 // The lightning's light on the cloud at world `p` (`crown` how high in its
 // cloud; lit from inside and below, the base and heart glow most).
-vec3 zs_storm_cloud_flash(vec3 p, float crown, float w) {
+vec3 zs_storm_cloud_flash(vec3 p, float crown, float w, float lum) {
 	if (!zs_storm_on() || zs_lightning.w <= 0.0) return vec3(0.0);
 	float since = zs_lightning.z;
 	if (since < 0.0 || since > 1.5) return vec3(0.0);
@@ -91,5 +96,6 @@ vec3 zs_storm_cloud_flash(vec3 p, float crown, float w) {
 	float f = exp(-since * ZS_STORM_FLASH_DECAY) + 0.55 * exp(-max(since - 0.13, 0.0) * 14.0) * step(0.13, since);
 	float dist = length(p.xz - zs_lightning.xy);
 	float reach = exp(-dist / ZS_STORM_FLASH_REACH.x) + ZS_STORM_FLASH_WIDE * exp(-dist / ZS_STORM_FLASH_REACH.y);
-	return ZS_STORM_FLASH_COL * (f * reach * zs_lightning.w * ZS_STORM_FLASH_GAIN * mix(1.0, 0.55, crown) * mix(0.5, 1.0, w));
+	float form = mix(1.0, 2.0 * lum / (lum + ZS_STORM_FLASH_FORM_REF), w);
+	return ZS_STORM_FLASH_COL * (f * reach * zs_lightning.w * ZS_STORM_FLASH_GAIN * mix(1.0, 0.55, crown) * mix(0.5, 1.0, w) * form);
 }

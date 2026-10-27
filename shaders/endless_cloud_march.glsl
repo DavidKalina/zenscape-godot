@@ -1868,7 +1868,9 @@ void march_pass() {
 				vec2 lean = T > 0.3 ? storm_deck_lean() : vec2(0.35, 0.15);
 				sky_e = storm_deck_light(g_env_depth, (1.0 - SE_CREASE * s.cave) * (SE_RIM.x + SE_RIM.y * lean.x + SE_RIM.z * lean.y));
 			}
-			float sun_e = scud ? SE_SUN.y : SE_SUN.x;
+			// The sun's share in the deck by the same fall-off: a flat share
+			// laid over the sky's form swamped it (a flat grey looking up).
+			float sun_e = scud ? SE_SUN.y : SE_SUN.x * SE_SUN_FORM * sky_e / SE_DECK_MAX;
 			float alpha = 1.0 - exp(-s.density * s.sigma * step_s);
 			float w = T * alpha;
 			acc_a += w * (1.0 - glow_share) * vec4(SKY * sky_e, sun_e * SUN_SCALE, 0.0, 0.0);

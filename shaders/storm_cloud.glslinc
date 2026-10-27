@@ -285,6 +285,9 @@ const float SE_SIGMA = 0.05;
 // depth's fall-off, above) and in the scud.
 const vec2 SE_SKY = vec2(6.0, 0.11);
 const vec2 SE_SUN = vec2(0.03, 0.02);
+// The deck's sun share follows its sky light's fall-off (sky_e over
+// SE_DECK_MAX, times this), so its pouches and gaps keep their form.
+const float SE_SUN_FORM = 1.0;
 // The murk: extinction per m where the envelope is whole (~630 m to half),
 // full up to SE_MURK_TOP.x m over the sea, gone by .y; its light (the
 // sky's share: in the dark air between the shafts, in a shaft), the sun's;
