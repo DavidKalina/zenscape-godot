@@ -97,6 +97,7 @@ func _hold(n: int) -> void:
 		study.land.step(eye)
 		study.arches.step(eye)
 		if study.grass != null: study.grass.step(eye,fwd)
+		if study.trees != null: study.trees.step(eye,eye)
 		if study.look != null: study.look.step(1.0/60.0,eye,fwd,cam)
 		if study.react == null: study.sea.position = Vector3(snappedf(eye.x,64.0),Field.SEA_Y,snappedf(eye.z,64.0))
 		await frames(1)

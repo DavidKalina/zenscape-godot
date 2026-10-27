@@ -117,6 +117,10 @@ zs_breeze={
 "type": "float",
 "value": 0.53
 }
+zs_tree_alive={
+"type": "float",
+"value": 1.0
+}
 zs_front_0_a={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)

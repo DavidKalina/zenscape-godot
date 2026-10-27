@@ -1,7 +1,12 @@
+#include "res://shaders/tree_wind.gdshaderinc"
 uniform float conifer_height = 4.3;
 // Shared by trunk and crown so their overlapping geometry stays connected.
 // Delayed spatial samples soften a traveling gust without per-tree CPU state.
-vec3 zs_conifer_offset(vec3 vertex, mat4 model) {
+// `alive` adds the woods' gust waves and the boughs' own motion
+// (tree_wind.gdshaderinc); `sheen` out: 0..1, how far a wave lifts the
+// boughs here, for the crown's light.
+vec3 zs_conifer_offset_alive(vec3 vertex, mat4 model, bool alive, out float sheen) {
+	sheen = 0.0;
 	vec2 root = model[3].xz;
 	float height = max(vertex.y, 0.0);
 	float bend = pow(clamp(height / conifer_height, 0.0, 1.0), 2.4);
@@ -13,6 +18,8 @@ vec3 zs_conifer_offset(vec3 vertex, mat4 model) {
 	float tall = conifer_height * length(model[1].xyz);
 	float bow;
 	float lean = zs_breeze_lean_at(root, ZS_BREEZE_LAG * tall * k, 0.0, bow);
+	float wave = alive ? zs_tree_wave(root, ZS_BREEZE_LAG * tall * k) : 0.0;
+	lean += wave * ZS_TREE_WAVE_LEAN;
 	float gust = clamp(lean / 0.6, 0.0, 1.0);
 	float pace = zs_breeze_pace(tall);
 	float t = zs_motion_time;
@@ -42,5 +49,16 @@ vec3 zs_conifer_offset(vec3 vertex, mat4 model) {
 	// Trailing the block's dip (zs_heave, scripts/pull_feel.gd), trunk and
 	// crown together.
 	float heave = zs_heave * conifer_height * bend;
-	return inverse(mat3(model)) * vec3(motion.x, heave - droop, motion.y) * length(model[1].xyz);
+	vec3 offset = inverse(mat3(model)) * vec3(motion.x, heave - droop, motion.y) * length(model[1].xyz);
+	if (alive) {
+		float lift;
+		offset += zs_tree_bough(vertex, phase, zs_tree_wave(root, 0.0), lift);
+		sheen = wave * (0.65 + 0.35 * lift);
+	}
+	return offset;
+}
+
+vec3 zs_conifer_offset(vec3 vertex, mat4 model) {
+	float sheen;
+	return zs_conifer_offset_alive(vertex, model, false, sheen);
 }

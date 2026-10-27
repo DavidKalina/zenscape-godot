@@ -229,6 +229,12 @@ func setup(land_seed: int) -> void:
 			regional.append({"share":rf.share if rf.on else 0.0,"meadows":rf.meadows,"weights":Plan.weights_of(p),"native":null})
 		enabled = any and not ("--no-trees" in LaunchArgs.user_args())
 	if not enabled: return
+	# The woods alive (shaders/tree_wind.gdshaderinc): gust waves and the boughs'
+	# own motion; --tree-alive=0 the woods as before, more for a windier look.
+	var alive := 1.0
+	for a in LaunchArgs.user_args():
+		if a.begins_with("--tree-alive="): alive = maxf(0.0,float(a.get_slice("=",1)))
+	RenderingServer.global_shader_parameter_set(&"zs_tree_alive",alive)
 	var view := preload("res://scripts/endless/land_stream.gd").view()
 	far_ring = Vector4(FAR.x,FAR.y,FAR.z*view,FAR.w*view)
 	var SkyIslets: GDScript = load("res://scripts/sky_islets.gd")

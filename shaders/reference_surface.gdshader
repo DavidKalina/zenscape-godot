@@ -237,6 +237,8 @@ uniform float autumn_yellow = 0.0;
 varying vec3 leaf_local;
 varying vec2 plant_root;
 varying float foliage_gust;
+// How far a gust wave lifts a spruce's boughs here (tree_wind.gdshaderinc).
+varying float tree_sheen;
 varying float grass_along;
 // Soft light from under a mushroom cap (scripts/mushroom_mesh.gd): the gills
 // carry their share in UV2.x and glow warmly in their own colour, faintly.
@@ -423,6 +425,7 @@ vec3 zs_strata(vec3 p, float surface) {
 }
 
 void vertex() {
+	tree_sheen = 0.0;
 	if (lod_band_on) {
 		float lod_d = distance(MODEL_MATRIX[3].xyz, CAMERA_POSITION_WORLD);
 		vec2 lod_slack = vec2(lod_fade.x > 0.0 ? lod_fade.x + LOD_SLACK : 0.0, lod_fade.y > 0.0 ? lod_fade.y + LOD_SLACK : 0.0);
@@ -594,7 +597,7 @@ void vertex() {
 			VERTEX.x += sin(zs_motion_time * 9.0 + phase + VERTEX.z * fish_wave.w) * whip * fish_wave.z;
 		}
 		if (conifer_sway) {
-			VERTEX += zs_conifer_offset(VERTEX, MODEL_MATRIX);
+			VERTEX += zs_conifer_offset_alive(VERTEX, MODEL_MATRIX, zs_tree_alive > 0.0, tree_sheen);
 		}
 		if (blow_enabled && !sway_enabled && !conifer_sway) {
 			// A trunk under a swaying crown takes the crown's breeze too, over
@@ -1001,6 +1004,7 @@ void fragment() {
 	if (plant_growth) tint *= mix(1.0, 0.62, zs_foliage_wet) * (1.0 + 0.16 * foliage_gust);
 	if (spruce_blue > 0.0 || spruce_paint > 0.0)
 		tint = zs_spruce_paint(tint, world_position - look_shift, plant_root, zs_spruce_luma(COLOR.rgb) / max(spruce_bake_luma, 1e-3), spruce_under, spruce_blue, spruce_paint, spruce_tone.zw, spruce_tone2, distance(world_position, zs_camera_position));
+	if (tree_sheen > 0.0) tint = zs_tree_sheen(tint, tree_sheen);
 	if (spruce_texture == 1 || spruce_texture == 3)
 		tint = zs_spruce_texture(tint, spruce_texture, UV, UV2, spruce_texture_gain, distance(world_position, zs_camera_position));
 	if (spruce_round > 0.0) {
