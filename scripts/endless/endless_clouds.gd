@@ -216,6 +216,10 @@ var storm: RefCounted
 var towers: RefCounted
 var _towers_made := false
 var _towers_tick := 0
+## The march's cost view (--cloud-cost-view=N, 0 off): the march shows what a
+## pixel cost as grey instead of the cloud (shaders/endless_cloud_march.glsl
+## cost_view).
+var cost_view := 0.0
 var sea_shade_sync := true
 ## The field's drift so far (m): a cloud stands at its field point plus this.
 var drift := Vector2.ZERO
@@ -318,6 +322,7 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 			clock_start = a.get_slice("=",1).to_float()
 			_clock_pending = clock_start != 0.0
 		elif a == "--sea-shade=old": sea_shade_sync = false
+		elif a.begins_with("--cloud-cost-view="): cost_view = a.get_slice("=",1).to_float()
 		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
 		elif a == "--no-valley-fog": fog_on = false
 		elif a == "--fog=old":
@@ -1011,7 +1016,7 @@ func _fill() -> void:
 		var h: Vector2 = storm.heading()
 		_put4(p,80,Vector4(e.x,e.y,h.x,h.y))
 		_put4(p,84,Vector4(storm.length,storm.CORE_DEPTH,storm.intensity,1.0))
-		_put4(p,88,Vector4(storm.churn,0.0,0.0,0.0))
+		_put4(p,88,Vector4(storm.churn,0.0,0.0,cost_view))
 		# Its towers (spare[5].y, spare[6..17]).
 		if not _towers_made:
 			_towers_made = true
