@@ -328,7 +328,9 @@ func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) 
 			clock_start = a.get_slice("=",1).to_float()
 			_clock_pending = clock_start != 0.0
 		elif a == "--sea-shade=old": sea_shade_sync = false
-		elif a.begins_with("--cloud-cost-view="): cost_view = a.get_slice("=",1).to_float()
+		elif a.begins_with("--cloud-cost-view="):
+			cost_view = a.get_slice("=",1).to_float()
+			effect.cost_view = cost_view > 0.0
 		elif a.begins_with("--cloud-steps="): quality[0] = clampi(int(a.get_slice("=",1)),16,160)
 		elif a == "--no-valley-fog": fog_on = false
 		elif a == "--fog=old":

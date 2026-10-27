@@ -11,6 +11,12 @@ const ENDLESS_MARCH := preload("res://shaders/endless_cloud_march.glsl")
 const RESOLVE := preload("res://shaders/cloud_volume_resolve.glsl")
 const ENDLESS_RESOLVE := preload("res://shaders/endless_cloud_resolve.glsl")
 
-func _compile(file: RDShaderFile) -> RID:
-	if file == RESOLVE: return super._compile(ENDLESS_RESOLVE)
-	return super._compile(ENDLESS_MARCH if file == MARCH else file)
+## The march's cost view (endless_clouds.gd --cloud-cost-view): its own
+## version of the march, which counts what each pixel costs; play's
+## doesn't (the counters cost ~.25 ms with the storm's towers).
+var cost_view := false
+
+func _compile(file: RDShaderFile, version: StringName = &"") -> RID:
+	if file == RESOLVE: return super._compile(ENDLESS_RESOLVE, version)
+	if file == MARCH: return super._compile(ENDLESS_MARCH, &"cost" if cost_view else &"play")
+	return super._compile(file, version)

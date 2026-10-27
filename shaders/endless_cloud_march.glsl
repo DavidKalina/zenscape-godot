@@ -1,5 +1,13 @@
+#[versions]
+
+play = "";
+cost = "#define COST_VIEW";
+
 #[compute]
 #version 450
+
+VERSION_DEFINES
+
 // The endless flight's clouds (scripts/endless/endless_clouds.gd), marched
 // as the isles' cloud volume marches its sea and towers (shaders/
 // cloud_volume_march.glsl, whose passes, bindings and outputs this keeps,
@@ -937,11 +945,18 @@ float layer_free(float y, float top, float base) {
 // the towers' reads (bake and their noise) and the field's evaluations.
 int g_c_st = 0;
 int g_c_f = 0;
+// Off in play (they cost registers and stores in the hot paths, ~.25 ms
+// with the storm's towers): only the "cost" version counts.
+#ifdef COST_VIEW
+#define COST(x) x
+#else
+#define COST(x)
+#endif
 
 Sample field_at(vec3 p, float t, float immersed, bool fine) {
 	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0, 0.0);
 	if (P.band.w <= 0.0 || p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return s;
-	g_c_f += 4;
+	COST(g_c_f += 4);
 	vec2 local;
 	vec4 w = weather_smooth_s(p.xz, local);
 	s.free = min(layer_free(p.y, w.x, w.y), layer_free(p.y, w.z, w.w));
@@ -1055,7 +1070,7 @@ Sample field_at(vec3 p, float t, float immersed, bool fine) {
 // light fall into the heaps' pockets.
 float field_density_cheap(vec3 p) {
 	if (p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return 0.0;
-	g_c_f += 1;
+	COST(g_c_f += 1);
 	vec2 local;
 	vec4 w = weather_smooth_s(p.xz, local);
 	bool low_on = p.y > w.y - 6.0 && p.y < w.x + OVER;
@@ -1083,7 +1098,7 @@ float field_density_cheap(vec3 p) {
 // The coarse form's distance into the cloud, for the face a ray first meets
 // (a pushed cloud's with its heaps, the fine octave too).
 float field_inside_cheap(vec3 p) {
-	g_c_f += 2;
+	COST(g_c_f += 2);
 	vec2 local;
 	vec4 w = weather_smooth_s(p.xz, local);
 	vec2 n = textureLod(cauliflower, (p + BOIL * P.eye.w) / TILE_LOW, 0.0).rg;
@@ -1168,7 +1183,7 @@ const float ST_TAPS = 0.35;
 // own octaves (storm_carve_broad, _fine) and, `near` > 0, its near knots;
 // `cave` how deep in a crease (storm_cave).
 float st_lobe(vec3 p, float hh) {
-	g_c_st += 1;
+	COST(g_c_st += 1);
 	vec3 q = p + BOIL * P.eye.w * 0.5;
 	float lobe = textureLod(cauliflower, (q + SC_CHURN_BIG * P.spare[5].x * 0.6) / ST_LOBE_TILE + 0.13, 0.0).r;
 	return ST_LOBE * mix(0.5, 1.0, hh) * (sstep(0.3, 0.75, lobe) - 1.0);
@@ -1180,10 +1195,10 @@ float st_carve(vec3 p, float thick, float hh, float near, out float cave, out fl
 	float cl = st_lobe(p, hh);
 	lobe_c = cl;
 	float c = storm_carve_broad(q, ch, thick, hh) + g_st_fine * storm_carve_fine(q, ch, thick);
-	g_c_st += 3;
+	COST(g_c_st += 3);
 	g_carve_near = 0.0;
 	if (near > 0.0) {
-		g_c_st += 1;
+		COST(g_c_st += 1);
 		float n = textureLod(cauliflower, (q + SC_CHURN_NEAR * ch) / vec3(SC_NEAR_TILE, SC_NEAR_TILE * 0.8, SC_NEAR_TILE) + 0.47, 0.0).r;
 		g_carve_near = near * SC_NEAR * (sstep(0.28, 0.72, n) - 1.0);
 		c += g_carve_near;
@@ -1197,7 +1212,7 @@ int st_count() {
 }
 
 float st_read(int i, vec3 uvw) {
-	g_c_st += 1;
+	COST(g_c_st += 1);
 	vec2 rg = i == 0 ? textureLod(body0, uvw, 0.0).rg : (i == 1 ? textureLod(body1, uvw, 0.0).rg : textureLod(body2, uvw, 0.0).rg);
 	return mix(rg.r, rg.g, P.spare[7 + i * 4].w);
 }
@@ -1276,7 +1291,7 @@ float st_inside(vec3 p, out float hh, out float thick, out float free) {
 			// (Lumps only lower the base: read them only where it binds.)
 			if (under < ST_UNDER + 60.0 && under * 0.8 < -dist) {
 				if (lumps < 0.0) {
-					g_c_st += 1;
+					COST(g_c_st += 1);
 					vec3 q2 = p + BOIL * P.eye.w * 0.5 + SC_CHURN_MID * P.spare[5].x * 0.4;
 					vec2 n = textureLod(cauliflower, q2 / ST_UNDER_TILE + 0.37, 0.0).rg;
 					lumps = clamp(0.5 + (0.45 - n.r) * 1.6 + (0.5 - n.g) * 0.8, 0.0, 1.0);
@@ -1791,6 +1806,7 @@ void march_pass() {
 	bool started = false;
 	bool hit = false;
 	int fine_left = 0;
+	float fine_k = 0.25;
 	float t_first = 1e9;
 	int c_iters = 0;
 	int c_lit = 0;
@@ -1801,7 +1817,7 @@ void march_pass() {
 	float c_hit_st = 0.0;
 	for (int i = 0; i < STEPS_MAX; i++) {
 		if (t_out <= t_in || i >= steps || t >= t_out || T < 0.03) break;
-		c_iters++;
+		COST(c_iters++);
 		vec3 p = ro + rd * t;
 		float gap = t <= g_field_out ? clear_ahead(p, rd, level) : 1e9;
 		g_st_known = -1.0;
@@ -1822,7 +1838,7 @@ void march_pass() {
 		// Just past where the ray first met cloud, finer steps, so the
 		// surface's place never shows the steps as contours.
 		if (fine_left > 0) {
-			step = max(step * 0.25, STEP.x);
+			step = max(step * fine_k, STEP.x);
 			fine_left--;
 		}
 		if (!started) {
@@ -1834,9 +1850,9 @@ void march_pass() {
 			g_st_known_ray -= step * jitter;
 		}
 		g_st_fine = 1.0 - sstep(ST_FINE_AT.x, ST_FINE_AT.y, t);
-		int cs0 = g_c_st;
+		COST(int cs0 = g_c_st);
 		Sample s = cloud_at(p, t, immersed, true);
-		c_samp += g_c_st - cs0;
+		COST(c_samp += g_c_st - cs0);
 		// In the envelope's band, clear of the field's cloud and the
 		// towers, its own pace: its scud and murk are soft and kilometres
 		// wide, so the steps stretch with the distance.
@@ -1848,18 +1864,21 @@ void march_pass() {
 		if (s.density > 0.002 && !hit) {
 			hit = true;
 			t_first = t;
-			c_pre = c_iters;
-			c_hit_st = g_st ? 1.0 : 0.3;
+			COST(c_pre = c_iters);
+			COST(c_hit_st = g_st ? 1.0 : 0.3);
 			if (step > STEP.x * 2.0 && !g_env) {
 				t -= step * 0.75;
-				fine_left = 6;
+				// (A tower's soft km-wide face: half as many, twice as long:
+				// the same stretch, ~.15 ms less ahead.)
+				fine_left = g_st ? 3 : 6;
+				fine_k = g_st ? 0.5 : 0.25;
 				continue;
 			}
 		}
 		if (s.density > 0.002 && g_env) {
 			// The envelope's deck and scud: flat and dark under the storm,
 			// no taps (the deck's lumps shade by their creases).
-			c_lit++;
+			COST(c_lit++);
 			bool scud = g_env_scud > 0.5;
 			float sky_e = SE_SKY.y;
 			if (!scud) {
@@ -1882,7 +1901,7 @@ void march_pass() {
 			continue;
 		}
 		if (s.density > 0.002) {
-			c_lit++;
+			COST(c_lit++);
 			float od = 0.0;
 			// Far off, fewer taps over a longer cone, so a far cloud still
 			// shades itself.
@@ -1902,14 +1921,14 @@ void march_pass() {
 				od += sstep(-4.0, 12.0, st_inside_cheap(p + key * TAP_AT[4] * reach, false)) * (TAP_LEN[3] + TAP_LEN[4] + TAP_LEN[5]) * reach;
 				if (long_taps) od += sstep(-4.0, 12.0, st_inside_cheap(p + key * LONG_AT[1], false)) * LONG_LEN * float(LONG_TAPS);
 			}
-			int c0 = g_c_st;
+			COST(int c0 = g_c_st);
 			for (int k = 0; k < TAPS_MAX; k++) {
 				if (k >= taps) break;
 				od += density_cheap(p + key * TAP_AT[k] * reach) * TAP_LEN[k] * reach;
 			}
-			c_tap0 += g_c_st - c0;
+			COST(c_tap0 += g_c_st - c0);
 			if (!faced) {
-				c0 = g_c_st;
+				COST(c0 = g_c_st);
 				faced = true;
 				float e = mix(10.0, 28.0, sstep(60.0, 1500.0, t));
 				// The face looks only at what can bind within its reach: a
@@ -1942,7 +1961,7 @@ void march_pass() {
 				}
 				g_face_st = true;
 				g_face_f = true;
-				c_face += g_c_st - c0;
+				COST(c_face += g_c_st - c0);
 				turned = 0.5;
 				if (here > -500.0 && dot(grad, grad) > 1e-6 && dot(grad, grad) < 4e5 * e * e) turned = sstep(-0.6, 0.9, dot(-normalize(grad), key));
 			}
@@ -2103,6 +2122,7 @@ void march_pass() {
 	// 160, 2 the towers' reads of 400, 3 the field's of 600, 4 lit samples
 	// of 40).
 	float cv = P.spare[5].w;
+#ifdef COST_VIEW
 	if (cv > 0.0) {
 		int m = int(cv);
 		float v = float(c_iters) / 160.0;
@@ -2120,6 +2140,7 @@ void march_pass() {
 		imageStore(out_b, pixel, vec4(1.0, 50.0, 0.5, 0.0));
 		return;
 	}
+#endif
 	imageStore(out_a, pixel, acc_a);
 	imageStore(out_b, pixel, vec4(cover, met, crown, glow));
 }
