@@ -303,66 +303,84 @@ func _near(p: Vector3) -> Array:
 
 # --- The flight's solid -----------------------------------------------------
 
-## Whether pillar `s`'s band `i` (between rings i and i+1; the last ring
-## for its cap) holds local XZ `q`, grown by `pad`.
-static func _band(s: Dictionary, i: int, q: Vector2, pad: float) -> bool:
+## How far inside pillar `s`'s ring `k`, grown by `pad`, local XZ `q` is
+## (m; under 0 outside): the ring's reach that way less q's distance.
+static func _in_ring(s: Dictionary, k: int, q: Vector2, pad: float) -> float:
 	var c: PackedVector2Array = s.c
 	var r: PackedFloat32Array = s.r
+	var off := q-c[k]
+	var sec := clampi(int(floor((off.angle()+PI)/TAU*Build.SECTORS)),0,Build.SECTORS-1)
+	return r[k*Build.SECTORS+sec]+pad-off.length()
+
+## Over the top ring at `q` (`g` inside it, `_in_ring`): its cap's height
+## there over the ring, the dome less toward the rim.
+static func _dome(s: Dictionary, q: Vector2, g: float) -> float:
 	var last := int(s.rings)-1
-	for k: int in [mini(i,last),mini(i+1,last)]:
-		var off := q-c[k]
-		var d := off.length()
-		var sec := clampi(int(floor((off.angle()+PI)/TAU*Build.SECTORS)),0,Build.SECTORS-1)
-		if d <= r[k*Build.SECTORS+sec]+pad: return true
-	return false
+	var dome := maxf(0.0,float(s.top)-(float(s.y0)+last*float(s.dy)))
+	var c: PackedVector2Array = s.c
+	return dome*clampf(g/maxf(0.01,g+q.distance_to(c[last])),0.0,1.0)
 
 ## The solid stretches over world XZ `p` (world y, low to high), from every
-## pillar there, grown by the plane's wingtip.
-func stretches(p: Vector3) -> Array:
+## pillar there, grown by `pad` m round (the wingtip's reach when not
+## given; 0 for a point on the plane's own edge). The skin runs straight
+## from ring to ring, as it is lofted, so a side's edge is where the
+## distance inside crosses 0 between two rings.
+func stretches(p: Vector3, pad := -1.0) -> Array:
 	var out: Array = []
+	if pad < 0.0: pad = _pad
 	for e: Array in _near(p):
 		var rec: Dictionary = e[0]
 		var s: Dictionary = (rec.solid as Array)[int(e[1])]
 		var l: Vector3 = (rec.inv as Transform3D)*p
 		var q := Vector2(l.x,l.z)
-		if q.distance_to(s.mid) > float(s.reach)+_pad: continue
+		if q.distance_to(s.mid) > float(s.reach)+pad: continue
 		var oy := (rec.xf as Transform3D).origin.y
 		var y0 := float(s.y0)
 		var dy := float(s.dy)
-		var bands := int(s.rings)
-		var from := -INF
-		for i in range(bands):
-			var lo := y0+i*dy
-			var hi := float(s.top) if i == bands-1 else lo+dy
-			if _band(s,i,q,_pad):
-				if from == -INF: from = lo
-				if i == bands-1: out.append(Vector2(from+oy,hi+oy))
-			elif from != -INF:
-				out.append(Vector2(from+oy,lo+oy))
-				from = -INF
+		var rings := int(s.rings)
+		var g0 := _in_ring(s,0,q,pad)
+		var from := y0 if g0 > 0.0 else -INF
+		for k in range(1,rings):
+			var g1 := _in_ring(s,k,q,pad)
+			if (g0 > 0.0) != (g1 > 0.0):
+				var y := y0+(k-1+g0/(g0-g1))*dy
+				if g1 > 0.0: from = y
+				else:
+					out.append(Vector2(from+oy,y+oy))
+					from = -INF
+			g0 = g1
+		if from != -INF: out.append(Vector2(from+oy,y0+(rings-1)*dy+_dome(s,q,g0)+oy))
 	if out.size() > 1: out.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
 	return out
 
 ## SkyGlide's `ground` at `p` over the land `h` (LandHalls `over`): a
 ## pillar raises it, an overhang over the plane is Vector2(top, underside).
-func ground(p: Vector3, h: Variant) -> Variant:
+## Grown by `pad` (as `stretches`).
+func ground(p: Vector3, h: Variant, pad := -1.0) -> Variant:
 	if not h is float: return h
-	var list := stretches(p)
+	var list := stretches(p,pad)
 	if list.is_empty(): return h
 	return LandHalls.over(p,h,list)
 
-## True inside a pillar's solid (grown by the wingtip): the camera keeps
-## out, the wheels stop.
-func inside(p: Vector3) -> bool:
+## True inside a pillar's solid, grown by `pad` (as `stretches`; the camera
+## keeps out, the wheels stop).
+func inside(p: Vector3, pad := -1.0) -> bool:
+	if pad < 0.0: pad = _pad
 	for e: Array in _near(p):
 		var rec: Dictionary = e[0]
 		var s: Dictionary = (rec.solid as Array)[int(e[1])]
 		var l: Vector3 = (rec.inv as Transform3D)*p
 		if l.y < float(s.y0) or l.y > float(s.top): continue
 		var q := Vector2(l.x,l.z)
-		if q.distance_to(s.mid) > float(s.reach)+_pad: continue
-		var i := mini(int(floor((l.y-float(s.y0))/float(s.dy))),int(s.rings)-1)
-		if _band(s,i,q,_pad): return true
+		if q.distance_to(s.mid) > float(s.reach)+pad: continue
+		var last := int(s.rings)-1
+		var f := (l.y-float(s.y0))/float(s.dy)
+		if f >= float(last):
+			var g := _in_ring(s,last,q,pad)
+			if g > 0.0 and l.y <= float(s.y0)+last*float(s.dy)+_dome(s,q,g): return true
+			continue
+		var k := int(floor(f))
+		if lerpf(_in_ring(s,k,q,pad),_in_ring(s,k+1,q,pad),f-k) > 0.0: return true
 	return false
 
 ## The highest top (world y) of any pillar within `r` m of world XZ `p`

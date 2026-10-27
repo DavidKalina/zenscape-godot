@@ -37,6 +37,9 @@ const WANDERER := 1.0
 ## the wing).
 const TOY_SPAN := 1.4
 const TOY_TALL := 0.74
+## The toy's reach from its middle down to the wheels' bottom (the most of
+## its body off the middle across the span's way; the roof is less).
+const TOY_KEEL := 0.45
 ## The walker (his model, assets/models/pilot.glb) over the cockpit pilot (plane_pilot.gd in
 ## the toy rig): 0.44 m shoulders to cap top over 0.185, 2.38. A plane PLANE
 ## times the toy seats a pilot this over PLANE times the walker's size.
@@ -88,6 +91,12 @@ static func ground_factor() -> float:
 ## floor under `opening` (a knife-edge slot is sized on its own, `knife`).
 const ROOM := 2.0
 const SNUG := 2.4/TOY_SPAN
+
+## How far the plane reaches sideways off its middle, rolled `roll`
+## radians: half its span wings level, its keel on its side (m). The
+## flight's solids are grown by this round its middle.
+static func reach_rolled(roll: float) -> float:
+	return maxf(span*0.5*absf(cos(roll)),TOY_KEEL*plane*absf(sin(roll)))
 
 ## A gap the plane flies through sized by steering room, not by a toy
 ## width: its span and `room` toy spans of room (both sides together),

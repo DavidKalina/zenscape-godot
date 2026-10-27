@@ -843,15 +843,16 @@ static func _cap(t: Tunnels.Site, m: int, a: float, d: float) -> float:
 ## (LandHalls `over`: the floor or a column's top, or Vector2(top,
 ## underside) for a roof the plane is nearer, which it slides under); in
 ## the rock round it, the cover (a wall).
-func ground(p: Vector3, h: Variant) -> Variant:
+func ground(p: Vector3, h: Variant, pad := -1.0) -> Variant:
 	if not h is float: return h
+	var grow := _grow if pad < 0.0 else pad
 	for t: Tunnels.Site in _sites:
 		if not t.box.has_point(Vector2(p.x,p.z)): continue
 		# Up a shaft, under its top: open to the bore's floor.
-		var sh := Tunnels.shaft_at(t,p.x,p.z,_grow)
+		var sh := Tunnels.shaft_at(t,p.x,p.z,grow)
 		if sh >= 0 and p.y < float(t.shafts[sh].top): return t.floor_y
 		var cover := _cover(t,p.x,p.z,h)
-		var b := Tunnels.bore_at(t,p.x,p.z,_grow)
+		var b := Tunnels.bore_at(t,p.x,p.z,grow)
 		if not is_nan(b.x) and cover > b.y:
 			if p.y >= b.y: return cover
 			# An open nave's column rows are one smooth wall to the glide
@@ -859,7 +860,7 @@ func ground(p: Vector3, h: Variant) -> Variant:
 			# along them; found in play, it slipped between two columns into
 			# the aisle behind, where every way out was a column or the wall.
 			if _open_nave and _in_nave(t,p): return cover
-			var list: Array = halls.stretches(p)
+			var list: Array = halls.stretches(p,pad)
 			list.append(Vector2(b.y,cover))
 			return LandHalls.over(p,b.x,list)
 		if cover > h: return cover

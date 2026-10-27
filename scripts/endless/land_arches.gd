@@ -7,7 +7,7 @@ extends Node3D
 ## ms a frame, and freed past REACH+CELL.
 ##
 ## The flight's solid: the land is a heightfield, so the arches give theirs
-## as columns, and `ground(p, h)` answers SkyGlide's `ground` with them: the
+## as their boxes (scripts/endless/box_solid.gd), and `ground(p, h)` answers SkyGlide's `ground` with them: the
 ## land's height `h`, raised by a leg or pier standing on it, or a span's
 ## Vector2(top, underside) when the plane is nearer the span than the land
 ## under it, so it slides under the span and is turned aside by a leg.
@@ -15,9 +15,10 @@ extends Node3D
 ##
 ## Each arch is named `endless/arch/<cx>_<cz>/<i>` and placed through
 ## scripts/layout_overrides.gd (a move in the layout file wins; only its
-## yaw and place are kept, the flight's columns follow it).
+## yaw and place are kept, the flight's solid follows it).
 
 const Field = preload("res://scripts/endless/land_field.gd")
+const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const Plan = preload("res://scripts/endless/arch_plan.gd")
 const Build = preload("res://scripts/endless/arch_build.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
@@ -170,7 +171,8 @@ func _build_cell(key: Vector2i, field: RefCounted) -> Dictionary:
 	var built: Array = []
 	for spec: Dictionary in Plan.plan(field,key.x,key.y,density,rock,ruin):
 		var b := Build.build(spec,field)
-		b["columns"] = Build.columns(b.boxes)
+		# A rock arch's solid follows its skin; a ruin's, its stones.
+		b["solid"] = BoxSolid.build(BoxSolid.from_faces(b.faces) if b.kind == "rock" else b.boxes)
 		if b.kind == "rock":
 			var shape := ConcavePolygonShape3D.new()
 			shape.set_faces(b.faces)
@@ -225,10 +227,11 @@ func _commit_one(done: Dictionary) -> void:
 		node.transform = xf
 		add_child(node)
 		LayoutOverrides.track(name,node,"piece",coded)
-		var col: Dictionary = b.columns
-		var reach := maxf(absf(float(col.x0)),absf(float(col.x0)+float(col.n)*Build.BIN))+40.0
+		var solid: Dictionary = b.solid
+		var sx := BoxSolid.span_x(solid)
+		var reach := maxf(maxf(absf(sx.x),absf(sx.y)),absf(float(solid.z0))+int(solid.nz)*BoxSolid.CELL)+40.0
 		records.append({"name":name,"kind":String(spec.get("form",spec.kind)),"node":node,"pos":xf.origin,"cos":cos(yaw),"sin":sin(yaw),
-			"x0":float(col.x0),"n":int(col.n),"data":col.data,"y0":float(col.y0),"bands":int(col.bands),"zb":col.zb,"reach":reach,"spec":spec})
+			"solid":solid,"reach":reach,"spec":spec})
 		stats.arches += 1
 	_cells[key] = records
 	stats.cells = _cells.size()
@@ -251,10 +254,12 @@ func standing() -> Array:
 # --- The flight's solid -----------------------------------------------------
 
 ## The solid stretches over world XZ `p` (world y, low to high), from every
-## arch whose columns reach there.
-func stretches(p: Vector3) -> Array:
+## arch there, each box grown by `pad` m round (the wingtip's reach when
+## not given; 0 for a point on the plane's own edge).
+func stretches(p: Vector3, pad := -1.0) -> Array:
 	var out: Array = []
 	if _cells.is_empty(): return out
+	if pad < 0.0: pad = Build.wingtip()
 	var c := Plan.cell_of(p.x,p.z)
 	for dz in range(-1,2):
 		for dx in range(-1,2):
@@ -267,27 +272,14 @@ func stretches(p: Vector3) -> Array:
 				if absf(ox) > float(r.reach) or absf(oz) > float(r.reach): continue
 				var lx := ox*float(r.cos)-oz*float(r.sin)
 				var lz := ox*float(r.sin)+oz*float(r.cos)
-				var j := int(floor((lx-float(r.x0))/Build.BIN))
-				if j < 0 or j >= int(r.n): continue
-				var data: PackedFloat32Array = r.data
-				var at := j*Build.STRIDE
-				var count := int(data[at])
-				if count == 0 or lz < data[at+1] or lz > data[at+2]: continue
-				# Its depth at the plane's height (within the column's own).
-				var bands := int(r.bands)
-				var band := clampi(int(floor((p.y-o.y-float(r.y0))/Build.BAND)),0,bands-1)
-				var zb: PackedFloat32Array = r.zb
-				var zat := (j*bands+band)*2
-				if zb[zat] < zb[zat+1] and (lz < zb[zat] or lz > zb[zat+1]): continue
-				for k in range(count): out.append(Vector2(data[at+3+k*2]+o.y,data[at+4+k*2]+o.y))
-	if out.size() > 1: out.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
-	return out
+				BoxSolid.stretches(r.solid,lx,lz,pad,o.y,out)
+	return BoxSolid.joined(out,Build.JOIN)
 
 ## SkyGlide's `ground` at `p` over land of height `h`: a float (the land,
 ## raised by what stands on it) or Vector2(top, underside) for a span the
 ## plane is nearer than the ground under it.
-func ground(p: Vector3, h: float) -> Variant:
-	var list := stretches(p)
+func ground(p: Vector3, h: float, pad := -1.0) -> Variant:
+	var list := stretches(p,pad)
 	if list.is_empty(): return h
 	var top := h
 	var under := -INF
@@ -306,8 +298,9 @@ func ground(p: Vector3, h: float) -> Variant:
 		break
 	return top if under == -INF else Vector2(top,under)
 
-## True inside an arch's solid (the camera keeps out).
-func inside(p: Vector3) -> bool:
-	for s: Vector2 in stretches(p):
+## True inside an arch's solid, grown by `pad` (as `stretches`; the camera
+## keeps out).
+func inside(p: Vector3, pad := -1.0) -> bool:
+	for s: Vector2 in stretches(p,pad):
 		if p.y >= s.x and p.y <= s.y: return true
 	return false
