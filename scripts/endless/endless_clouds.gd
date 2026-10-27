@@ -73,6 +73,12 @@ const STORM_DOMES := 3.0
 const STORM_BELLY := 1.3
 const STORM_EXT := 1.9
 const STORM_BASE := Vector2(60.0,110.0)
+## Behind the core, where the deck lets go, a pushed cell's base at least
+## this (the march's SP_TRAIL_BASE).
+const STORM_TRAIL_BASE := Vector2(230.0,300.0)
+## A small puff (never pushed) thins away over this much of the push (the
+## march's SP_SMALL_GO).
+const STORM_SMALL_GO := Vector2(0.03,0.3)
 ## A cell only the storm stands up grows in from a wisp over this much of
 ## its push past its own hash (the march's SP_ADMIT).
 const STORM_ADMIT := 0.12
@@ -733,6 +739,10 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	var st: float = storm.push_at(middle+_layer_drift(true)) if storm != null and big else 0.0
 	var kp: float = storm.place_at(middle+_layer_drift(true)) if storm != null and big else 0.0
 	lf.x = lerpf(lf.x,1.0,st)
+	# A small puff where the storm pushes thins away (the march's SP_SMALL_GO).
+	if not big and storm != null:
+		lf.x *= 1.0-smoothstep(STORM_SMALL_GO.x,STORM_SMALL_GO.y,storm.push_at(middle+_layer_drift(true)))
+		if lf.x < 0.01: return {}
 	if lifed and lf.x < 0.01: return {}
 	var gate := _cluster_gate(middle)
 	if not big: gate = lerpf(0.02,1.0,gate*gate)
@@ -788,6 +798,12 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	r *= lerpf(1.0,STORM_GROW.x,st)
 	k.n = mini(int(k.n)+int(st*STORM_DOMES+0.5),9)
 	k.b0 = lerpf(float(k.b0),minf(float(k.b0),lerpf(STORM_BASE.x,STORM_BASE.y,s.z)),st)
+	# Past the core, where the deck lets go, it rides up to the deck's back
+	# (the march's SP_TRAIL_BASE).
+	if st > 0.0:
+		var d_s: float = storm.edge_distance(middle+_layer_drift(true))
+		var back: float = storm.ramp(-storm.CORE_DEPTH+storm.ENV_OUT.x,-storm.CORE_DEPTH+storm.ENV_OUT.y,d_s)
+		k.b0 = lerpf(float(k.b0),maxf(float(k.b0),lerpf(STORM_TRAIL_BASE.x,STORM_TRAIL_BASE.y,s.z)),smoothstep(0.0,0.3,st)*back)
 	r = minf(r,lerpf(EXT_MAX,STORM_EXT,st)*cell/k.ext)
 	k.r = r
 	var tall: Vector2 = p[6]

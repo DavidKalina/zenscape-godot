@@ -496,6 +496,14 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	float kp = big ? storm_place(k.middle + P.drift.xy) : 0.0;
 	k.life = mix(k.life, 1.0, k.storm);
 	if (lifed && k.life < 0.01) return false;
+	// A small puff where the storm pushes thins away (SP_SMALL_GO of the
+	// push): it is never pushed, so under the storm it lay low on the land
+	// and water, its fine lobes off, lit as the storm's low cloud: a smooth
+	// near-black lens (and the khaki lid's sunlit puffs behind the core).
+	if (!big && storm_on()) {
+		k.life *= 1.0 - sstep(SP_SMALL_GO.x, SP_SMALL_GO.y, storm_push(k.middle + P.drift.xy));
+		if (k.life < 0.01) return false;
+	}
 	float gate = cluster_gate(k.middle);
 	if (!big) gate = mix(0.02, 1.0, gate * gate);
 	float field_here = region_cover(k.middle) * cover * (big ? BIG_COVER2 : SMALL_COVER2) * gate * (lifed ? LIFE_COVER : 1.0);
@@ -567,6 +575,14 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	k.r *= mix(1.0, SP_GROW.x, st);
 	k.n = min(k.n + int(st * SP_DOMES + 0.5), 9);
 	k.base = mix(k.base, min(k.base, mix(SP_BASE.x, SP_BASE.y, s.z)), st);
+	// Past the core, where the deck lets go, it rides up to the deck's back
+	// (SP_TRAIL_BASE): whole by a third of the push, so only a cell the
+	// push has all but let go of comes back down to its own base.
+	if (st > 0.0) {
+		float d_s = dot(k.middle + P.drift.xy - P.spare[3].xy, P.spare[3].zw);
+		float back = sstep(-P.spare[4].y + SE_OUT.x, -P.spare[4].y + SE_OUT.y, d_s);
+		k.base = mix(k.base, max(k.base, mix(SP_TRAIL_BASE.x, SP_TRAIL_BASE.y, s.z)), sstep(0.0, 0.3, st) * back);
+	}
 	k.r = min(k.r, mix(EXT_MAX, SP_EXT, st) * cell / k.ext);
 	k.tall = mix(tall.x, tall.y, t2) * DOME * mix(1.0, SP_GROW.y, st);
 	k.belly = mix(belly.x, belly.y, fract(m.y * 5.13 + s.x)) * mix(1.0, SP_BELLY, st);
@@ -732,7 +748,7 @@ void lattice_new(vec2 f, bool big, float sea, float cover, inout vec2 low, inout
 			}
 			// (A cell the storm stands up grows in by its life even with
 			// the field's life off.)
-			if (lifed || k.storm > 0.0) {
+			if (lifed || k.storm > 0.0 || (!big && storm_on())) {
 				if (k.life < 0.01) continue;
 				apply_life(k);
 				out_c = d - k.ext * k.r;
