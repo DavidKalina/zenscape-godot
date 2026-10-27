@@ -123,7 +123,7 @@ void fragment() {
 	// SUN_SCATTER_SUN over SUN_SCATTER, with zs_haze_sun).
 	sky += c_sun * pow(toward_sun, 6.0) * sun_scatter * mix(1.0, 0.45 / 0.18, zs_haze_sun) * mix(1.4, 0.7, high) * zs_celestial_clear;
 	col = mix(col, zs_storm_haze_colour(sky, storm_w), fog * zs_storm_haze_share(storm_w));
-	col += zs_storm_cloud_flash(storm_at, b.z / cloud_a, storm_w, zs_storm_cloud_lum(col));
+	col += zs_storm_cloud_flash(storm_at, b.z / cloud_a, storm_w, zs_storm_cloud_lum(col), sea_y);
 	ALBEDO = col;
 	// The march stops once the cloud is all but whole: whole it is, so the
 	// sun's disc never shines through a thick body.
