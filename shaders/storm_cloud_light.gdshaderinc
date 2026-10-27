@@ -33,7 +33,9 @@ const float ZS_STORM_HAZE_DARK = 0.72;
 // and a faint wide one).
 const vec3 ZS_STORM_FLASH_COL = vec3(0.82, 0.88, 1.0);
 const float ZS_STORM_FLASH_GAIN = 2.2;
-const vec2 ZS_STORM_FLASH_REACH = vec2(650.0, 2600.0);
+const vec2 ZS_STORM_FLASH_REACH = vec2(500.0, 2600.0);
+const float ZS_STORM_FLASH_WIDE = 0.04;
+const float ZS_STORM_FLASH_DECAY = 10.0;
 
 float zs_storm_cloud_lum(vec3 c) {
 	return dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -84,8 +86,10 @@ vec3 zs_storm_cloud_flash(vec3 p, float crown, float w) {
 	float since = zs_lightning.z;
 	if (since < 0.0 || since > 1.5) return vec3(0.0);
 	// The stroke and a return stroke a beat after it.
-	float f = exp(-since * 7.0) + 0.55 * exp(-max(since - 0.13, 0.0) * 11.0) * step(0.13, since);
+	// (Brief and near: the core flickers every second or two, and a long
+	// tail or wide reach left the whole deck lit a flat pale grey.)
+	float f = exp(-since * ZS_STORM_FLASH_DECAY) + 0.55 * exp(-max(since - 0.13, 0.0) * 14.0) * step(0.13, since);
 	float dist = length(p.xz - zs_lightning.xy);
-	float reach = exp(-dist / ZS_STORM_FLASH_REACH.x) + 0.15 * exp(-dist / ZS_STORM_FLASH_REACH.y);
+	float reach = exp(-dist / ZS_STORM_FLASH_REACH.x) + ZS_STORM_FLASH_WIDE * exp(-dist / ZS_STORM_FLASH_REACH.y);
 	return ZS_STORM_FLASH_COL * (f * reach * zs_lightning.w * ZS_STORM_FLASH_GAIN * mix(1.0, 0.55, crown) * mix(0.5, 1.0, w));
 }

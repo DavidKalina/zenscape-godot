@@ -1365,7 +1365,10 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 	if (!g_env_band) return s;
 	float dens, hh, cave;
 	float ins = storm_env_cloud(p, e, fl, t, dens, hh, cave);
-	if (dens > s.density) {
+	// In its deck the deck wins over a tower or cell it holds (a tower's
+	// lumps in its band are lit by their depth under its top, paler than
+	// the deck round them); its scud only where denser.
+	if (dens > s.density || (dens > 0.002 && g_env_scud < 0.5)) {
 		g_env = true;
 		g_st = false;
 		s.density = dens;
@@ -1747,7 +1750,10 @@ void march_pass() {
 	float immersed = 0.0;
 	{
 		Sample e = cloud_at(ro, 60.0, 0.0, false);
-		if (e.density > 0.0) immersed = sstep(-4.0, 20.0, e.inside);
+		// (Not in a scud fragment: it is faded round the eye, and the eye
+		// in one turned the whole view to the fog's glow, the cells and the
+		// towers' bases pale flat puffs under the dark deck.)
+		if (e.density > 0.0 && !(g_env && g_env_scud > 0.5)) immersed = sstep(-4.0, 20.0, e.inside);
 	}
 
 	bool faced = false;
@@ -1951,9 +1957,12 @@ void march_pass() {
 			// In or under the envelope's deck, in its shade: lit as the deck
 			// is (a tower's base, a cell under it).
 			float env_shade = 0.0;
-			float db = P.band.x + mix(SE_DECK.y, SE_DECK.x, g_env_e);
-			if (g_env_e > 0.0) {
-				env_shade = sstep(0.0, 0.5, g_env_e) * sstep(db + SE_THICK, db + SE_THICK * 0.3, p.y);
+			// (Past the field's reach the march asks no envelope, but a
+			// tower's base there stands under the deck all the same.)
+			float e_l = t <= g_field_out ? g_env_e : storm_envelope(p.xz);
+			float db = P.band.x + mix(SE_DECK.y, SE_DECK.x, e_l);
+			if (e_l > 0.0) {
+				env_shade = sstep(0.0, 0.5, e_l) * sstep(db + SE_THICK, db + SE_THICK * 0.3, p.y);
 				sun_light = mix(sun_light, SE_SUN.x * SUN_SCALE, env_shade);
 			}
 			float powder = 1.0 - exp(-max(s.inside, 0.0) / POWDER_DEPTH);
