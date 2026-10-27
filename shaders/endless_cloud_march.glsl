@@ -1364,7 +1364,7 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 	g_env_e = e;
 	if (!g_env_band) return s;
 	float dens, hh, cave;
-	float ins = storm_env_cloud(p, e, fl, dens, hh, cave);
+	float ins = storm_env_cloud(p, e, fl, t, dens, hh, cave);
 	if (dens > s.density) {
 		g_env = true;
 		g_st = false;
@@ -1833,7 +1833,13 @@ void march_pass() {
 			// no taps (the deck's lumps shade by their creases).
 			c_lit++;
 			bool scud = g_env_scud > 0.5;
-			float sky_e = scud ? SE_SKY.y : SE_SKY.x * (1.0 - 0.7 * s.cave) * mix(0.85, 1.3, s.h);
+			float sky_e = SE_SKY.y;
+			if (!scud) {
+				// Its form: the side light on its flanks (only where the
+				// sample shows: a ray's first deck samples).
+				vec2 lean = T > 0.3 ? storm_deck_lean() : vec2(0.35, 0.15);
+				sky_e = storm_deck_light(g_env_depth, (1.0 - SE_CREASE * s.cave) * (SE_RIM.x + SE_RIM.y * lean.x + SE_RIM.z * lean.y));
+			}
 			float sun_e = scud ? SE_SUN.y : SE_SUN.x;
 			float alpha = 1.0 - exp(-s.density * s.sigma * step_s);
 			float w = T * alpha;
@@ -1945,8 +1951,8 @@ void march_pass() {
 			// In or under the envelope's deck, in its shade: lit as the deck
 			// is (a tower's base, a cell under it).
 			float env_shade = 0.0;
+			float db = P.band.x + mix(SE_DECK.y, SE_DECK.x, g_env_e);
 			if (g_env_e > 0.0) {
-				float db = P.band.x + mix(SE_DECK.y, SE_DECK.x, g_env_e);
 				env_shade = sstep(0.0, 0.5, g_env_e) * sstep(db + SE_THICK, db + SE_THICK * 0.3, p.y);
 				sun_light = mix(sun_light, SE_SUN.x * SUN_SCALE, env_shade);
 			}
@@ -1956,8 +1962,8 @@ void march_pass() {
 			float beer = exp(-tau);
 			float ambient = SKY * sky_open * mix(0.32, 1.0, s.h) * mix(1.0, DEEP, deep) * mix(1.0, 0.45, beer);
 			ambient *= mix(1.0, storm_sky(p.y), sw) * (1.0 - SC_CAVE_SKY * s.cave);
-			ambient = mix(ambient, SKY * SE_SKY.x * (1.0 - 0.5 * s.cave), env_shade);
-			float bounce = BOUNCE * pow(1.0 - s.h, 2.0) * mix(1.0, 0.3, sw);
+			ambient = mix(ambient, SKY * storm_deck_light(max(db + SE_THICK - p.y, 0.0), 1.0 - 0.5 * s.cave), env_shade);
+			float bounce = BOUNCE * pow(1.0 - s.h, 2.0) * mix(1.0, 0.3, sw) * (1.0 - env_shade);
 			float alpha = 1.0 - exp(-s.density * s.sigma * step);
 			float w = T * alpha;
 			acc_a += w * (1.0 - immersed) * vec4(ambient, sun_light, bounce, 0.0);
@@ -2015,7 +2021,6 @@ void march_pass() {
 			float tk = 1.0;
 			float metf = 0.0;
 			float metk = 0.0;
-			vec4 L = vec4(SKY * SE_MURK_SKY, SE_MURK_SUN * SUN_SCALE, 0.0, 0.0);
 			float span = mb - ma;
 			float prev = ma;
 			for (int i = 1; i <= SE_MURK_CHUNKS; i++) {
@@ -2027,8 +2032,11 @@ void march_pass() {
 					if (b0 <= a0) continue;
 					float tm = 0.5 * (a0 + b0);
 					vec3 pm = ro + rd * tm;
-					float dens = storm_envelope(pm.xz) * (1.0 - sstep(P.band.x + SE_MURK_TOP.x, top_y, pm.y));
-					float alpha = 1.0 - exp(-dens * SE_MURK * P.spare[18].y * (b0 - a0));
+					float e_m = storm_envelope(pm.xz);
+					if (e_m <= 0.0) continue;
+					vec2 mm = storm_murk_at(pm, e_m);
+					vec4 L = vec4(SKY * mix(SE_MURK_SKY.x, SE_MURK_SKY.y, mm.y), SE_MURK_SUN * SUN_SCALE, 0.0, 0.0);
+					float alpha = 1.0 - exp(-mm.x * SE_MURK * P.spare[18].y * (b0 - a0));
 					if (h == 0) {
 						mf += tf * alpha * L;
 						metf += tf * alpha * tm;

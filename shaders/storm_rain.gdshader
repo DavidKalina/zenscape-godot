@@ -94,7 +94,11 @@ void vertex() {
 	}
 	vec3 sky = zs_hemi_sky * zs_hemi_energy / PI;
 	vec3 sun = zs_key_irradiance / PI * zs_daylight;
-	v_light = tint * (sky * 1.4 + sun * 0.12 + vec3(0.004)) * brightness;
+	// Lit by the light's brightness alone, not its colour: under the storm
+	// the sky's hemisphere and a low sun went warm, and the streaks read
+	// orange-brown; rain is cold grey-white.
+	float lum = dot(sky * 1.4 + sun * 0.12, vec3(0.2126, 0.7152, 0.0722));
+	v_light = tint * (lum + 0.004) * brightness;
 }
 
 void fragment() {

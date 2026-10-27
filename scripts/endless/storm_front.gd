@@ -81,7 +81,7 @@ const WET := Vector2(0.4,0.85)
 const ENV_IN := Vector2(-150.0,-1000.0)
 const ENV_OUT := Vector2(300.0,-400.0)
 const ENV_STRENGTH := Vector2(0.55,0.95)
-const ENV_DECK := Vector2(200.0,700.0)
+const ENV_DECK := Vector2(290.0,460.0)
 const ENV_THICK := 380.0
 const ENV_GROUND := 40.0
 ## The light deep in it, on top of the core's grade: more gloom, the sun
