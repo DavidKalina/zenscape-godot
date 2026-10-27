@@ -46,6 +46,7 @@ var rain_air: MeshInstance3D
 var _streak_mat: ShaderMaterial
 var _curtain_mat: ShaderMaterial
 var _air_mat: ShaderMaterial
+var _clouds_seen: Node
 var _clock := 0.0
 var _last_eye := Vector3.INF
 ## The rain at the eye as of the last step (0..1), for probes.
@@ -188,12 +189,24 @@ func step(delta: float, game: Node3D) -> void:
 	_air_mat.set_shader_parameter("clock",fmod(_clock,4096.0))
 	var look = game.get("look")
 	if look != null and look.environment != null: _curtain_mat.set_shader_parameter("fog_end",look.environment.fog_depth_end)
+	_see_clouds(look.clouds if look != null else null)
 	# The lens: drops land as the rain is heavy, more flying into it.
 	var air := 0.0
 	if game.plane != null: air = (game.plane.velocity as Vector3).length()/maxf(float(game.plane.cruise()),1.0)
 	if here > 0.0 and game.has_method("wet"):
 		game.wet(here*LENS*lerpf(LENS_SPEED.x,LENS_SPEED.y,clampf(air,0.0,1.0))*delta)
 	_sound(game,clampf(air,0.0,1.5))
+
+## The rain's air and curtains seen through the clouds' march (its resolved
+## shape: cover, distance), so rain behind a cloud never lays over it.
+func _see_clouds(clouds: Node) -> void:
+	var on: bool = clouds != null and bool(clouds.enabled) and bool(clouds.sheet.visible)
+	if on and _clouds_seen != clouds:
+		_clouds_seen = clouds
+		_air_mat.set_shader_parameter("cloud_shape",clouds.effect.resolved_b)
+		_curtain_mat.set_shader_parameter("cloud_shape",clouds.effect.resolved_b)
+	_air_mat.set_shader_parameter("clouds_on",1.0 if on else 0.0)
+	_curtain_mat.set_shader_parameter("clouds_on",1.0 if on else 0.0)
 
 func _sound(game: Node3D, air: float) -> void:
 	var sound = game.get("sound")

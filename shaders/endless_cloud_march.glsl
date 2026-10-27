@@ -850,6 +850,10 @@ vec2 ceiling_at(vec2 xz) {
 	return textureLod(ceiling, uv, 0.0).rg;
 }
 
+// The underside's lump where it binds in the last layer_inside (0..1, 1 in
+// a recess; 0 where the top or sides bind): storm_cave reads it.
+float g_lump = 0.0;
+
 // How far into one layer's cloud a point is (m); `hh` its height in it.
 float layer_inside(vec3 p, float top, float base, float slope, float slope_b, float n_lobe, float n_wisp, float n_mid, float n_fine, out float hh) {
 	float thick = top - base;
@@ -865,8 +869,11 @@ float layer_inside(vec3 p, float top, float base, float slope, float slope_b, fl
 		float lump = clamp(0.5 + (0.45 - n_lobe) * 1.2 + (0.45 - n_mid) * 1.6 + (0.5 - n_wisp) * 0.6, 0.0, 1.0);
 		// A storm's pushed cloud hangs in deeper lumps (mammatus).
 		float under = clamp(thick * 0.28, 2.0, 40.0 + SP_UNDER * g_storm) * lump;
-		return min(inside, (p.y - base - under) / sqrt(1.0 + slope_b * slope_b) * 1.2 + 1.0);
+		float below = (p.y - base - under) / sqrt(1.0 + slope_b * slope_b) * 1.2 + 1.0;
+		g_lump = below < inside ? lump : 0.0;
+		return min(inside, below);
 	}
+	g_lump = 0.0;
 	// A flat base, a little ragged.
 	return min(inside, (p.y - base + (n_wisp - 0.5) * 10.0 + (n_lobe - 0.45) * 8.0) * 1.2 + 1.0);
 }
@@ -881,6 +888,7 @@ struct Sample {
 	float h;
 	float pocket;
 	float free;
+	float cave;
 };
 
 // How far `p` stands clear of one layer's cloud (m, a lower bound) from its
@@ -894,7 +902,7 @@ float layer_free(float y, float top, float base) {
 }
 
 Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
-	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0);
+	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0, 0.0);
 	if (P.band.w <= 0.0 || p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return s;
 	vec4 w = weather_smooth(p.xz);
 	s.free = min(layer_free(p.y, w.x, w.y), layer_free(p.y, w.z, w.w));
@@ -913,14 +921,19 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 	vec4 wx = weather_map(at + vec2(span, 0.0)) - weather_map(at - vec2(span, 0.0));
 	vec4 wz = weather_map(at + vec2(0.0, span)) - weather_map(at - vec2(0.0, span));
 	vec2 slope = vec2(length(vec2(wx.x, wz.x)), length(vec2(wx.z, wz.z))) / (2.0 * span);
-	slope = min(slope, vec2(SLOPE_MAX));
-	vec2 slope_b = min(vec2(length(vec2(wx.y, wz.y)), length(vec2(wx.w, wz.w))) / (2.0 * span), vec2(SLOPE_MAX));
+	// A pushed cloud's tall flanks read at their own steepness (SP_SLOPE_MAX).
+	float slope_max = mix(SLOPE_MAX, SP_SLOPE_MAX, storm_push(p.xz));
+	slope = min(slope, vec2(slope_max));
+	vec2 slope_b = min(vec2(length(vec2(wx.y, wz.y)), length(vec2(wx.w, wz.w))) / (2.0 * span), vec2(slope_max));
 	vec3 boil = BOIL * P.eye.w;
 	float fine_w = (fine && P.quality.w > 0.5) ? 1.0 - sstep(FINE_NEAR * 0.6, FINE_NEAR, t) : 0.0;
+	// The storm's near knots (storm_cloud.glslinc).
+	float near_w = fine ? 1.0 - sstep(SC_NEAR_AT.x, SC_NEAR_AT.y, t) : 0.0;
 	float hh_l = 0.0, hh_h = 0.0;
 	float in_l = -1e3, in_h = -1e3;
 	float wisp = 0.5;
 	float sw = 0.0;
+	float cave_l = 0.0, cave_h = 0.0;
 	if (low_on) {
 		vec2 n = textureLod(cauliflower, (p + boil) / TILE_LOW, 0.0).rg;
 		float nm = textureLod(cauliflower, (p + boil * 1.3 + 37.0) / MID, 0.0).r;
@@ -939,7 +952,12 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 		}
 		in_l = layer_inside(p, w.x, w.y, slope.x, slope_b.x, n.r, n.g, nm, nf, hh_l);
 		// The storm's big heaps carved into its towers (storm_cloud.glslinc).
-		if (sw > 0.0) in_l += sw * storm_carve(p, boil, w.x - w.y, hh_l);
+		if (sw > 0.0) {
+			float lump = g_lump;
+			float c = storm_carve(p, boil, w.x - w.y, hh_l, near_w);
+			in_l += sw * c;
+			cave_l = sw * storm_cave(c, g_carve_near, lump);
+		}
 		wisp = n.g;
 	}
 	if (high_on) {
@@ -949,7 +967,12 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 		in_h = layer_inside(p, w.z, w.w, slope.y, slope_b.y, n.r, n.g, nm * 1.6 - 0.3, nf, hh_h);
 		// The storm's towers stand in the high layer: their heaps too.
 		float sh = storm_push(p.xz);
-		if (sh > 0.0) in_h += sh * storm_carve(p, boil, w.z - w.w, hh_h);
+		if (sh > 0.0) {
+			float lump = g_lump;
+			float c = storm_carve(p, boil, w.z - w.w, hh_h, near_w);
+			in_h += sh * c;
+			cave_h = sh * storm_cave(c, g_carve_near, lump);
+		}
 		if (in_h > in_l) wisp = n.g;
 	}
 	float inside = max(in_l, in_h);
@@ -974,6 +997,7 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 	d *= mix(1.0, 0.35 + 0.65 * sstep(0.38, 0.64, wisp), immersed);
 	s.inside = inside;
 	if (d > 0.0) {
+		s.cave = in_h > in_l ? cave_h : cave_l;
 		s.density = d;
 		s.h = hh;
 		s.pocket = wisp;
@@ -982,7 +1006,9 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 	return s;
 }
 
-// The light taps' form: the density, one noise octave.
+// The light taps' form: the density, one noise octave; on a pushed cloud
+// its broad heaps too (storm_carve_cheap), so the shade and the sky's
+// light fall into the heaps' pockets.
 float density_cheap(vec3 p) {
 	if (p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return 0.0;
 	vec4 w = weather_smooth(p.xz);
@@ -990,19 +1016,37 @@ float density_cheap(vec3 p) {
 	bool high_on = p.y > w.w - 6.0 && p.y < w.z + OVER;
 	if (!low_on && !high_on) return 0.0;
 	vec2 n = textureLod(cauliflower, (p + BOIL * P.eye.w) / TILE_HIGH, 0.0).rg;
+	float sw = storm_push(p.xz);
+	g_storm = sw;
 	float hh;
 	float inside = -1e3;
-	if (low_on) inside = layer_inside(p, w.x, w.y, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh);
-	if (high_on) inside = max(inside, layer_inside(p, w.z, w.w, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh));
+	if (low_on) {
+		inside = layer_inside(p, w.x, w.y, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh);
+		if (sw > 0.0) inside += sw * storm_carve_cheap(p, w.x - w.y, hh);
+	}
+	if (high_on) {
+		float ih = layer_inside(p, w.z, w.w, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh);
+		if (sw > 0.0) ih += sw * storm_carve_cheap(p, w.z - w.w, hh);
+		inside = max(inside, ih);
+	}
 	return sstep(-4.0, 12.0, inside);
 }
 
-// The coarse form's distance into the cloud, for the face a ray first meets.
+// The coarse form's distance into the cloud, for the face a ray first meets
+// (a pushed cloud's with its broad heaps).
 float inside_cheap(vec3 p) {
 	vec4 w = weather_smooth(p.xz);
 	vec2 n = textureLod(cauliflower, (p + BOIL * P.eye.w) / TILE_LOW, 0.0).rg;
-	float hh;
-	return max(layer_inside(p, w.x, w.y, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh), layer_inside(p, w.z, w.w, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh));
+	float sw = storm_push(p.xz);
+	g_storm = sw;
+	float hh_l, hh_h;
+	float il = layer_inside(p, w.x, w.y, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh_l);
+	float ih = layer_inside(p, w.z, w.w, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh_h);
+	if (sw > 0.0) {
+		il += sw * storm_carve_cheap(p, w.x - w.y, hh_l);
+		ih += sw * storm_carve_cheap(p, w.z - w.w, hh_h);
+	}
+	return max(il, ih);
 }
 
 // How far a ray may leap from `p` before it can meet cloud (0: step here).
@@ -1409,12 +1453,14 @@ void march_pass() {
 			// A pushed cloud dark low down (shaders/storm_cloud.glslinc).
 			float sw = storm_push(p.xz);
 			sun_light *= mix(1.0, storm_sun(p.y), sw);
+			// ...and in its heaps' creases (storm_cave).
+			sun_light *= 1.0 - SC_CAVE_SUN * s.cave;
 			float powder = 1.0 - exp(-max(s.inside, 0.0) / POWDER_DEPTH);
 			sun_light *= mix(1.0, powder, powder_share);
 			float deep = sstep(0.0, 50.0, s.inside);
 			float beer = exp(-tau);
 			float ambient = SKY * sky_open * mix(0.32, 1.0, s.h) * mix(1.0, DEEP, deep) * mix(1.0, 0.45, beer);
-			ambient *= mix(1.0, storm_sky(p.y), sw);
+			ambient *= mix(1.0, storm_sky(p.y), sw) * (1.0 - SC_CAVE_SKY * s.cave);
 			float bounce = BOUNCE * pow(1.0 - s.h, 2.0) * mix(1.0, 0.3, sw);
 			float alpha = 1.0 - exp(-s.density * s.sigma * step);
 			float w = T * alpha;

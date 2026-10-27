@@ -91,6 +91,8 @@ var held_strength := NAN
 ## The churn's phase (s): the storm's clock run at its intensity, so its
 ## heaps boil faster as it builds (shaders/storm_cloud.glslinc storm_carve).
 var churn := 0.0
+## How fast the churn runs (--storm-churn=X; 0 holds the heaps still).
+var churn_rate := 1.0
 
 ## The front the flags ask for, or null (nothing built). `start` the
 ## start's xz, `forward` the plane's heading there (unit xz), `wind` the
@@ -121,6 +123,7 @@ static func from_args(start: Vector2, forward: Vector2, wind: Vector2) -> RefCou
 		elif a.begins_with("--storm-grow="): s.grow = maxf(0.0,a.get_slice("=",1).to_float())
 		elif a.begins_with("--storm-strength="): s.held_strength = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
 		elif a.begins_with("--storm-grow-from="): s.grow_from = clampf(a.get_slice("=",1).to_float(),0.0,1.0)
+		elif a.begins_with("--storm-churn="): s.churn_rate = maxf(0.0,a.get_slice("=",1).to_float())
 	s.intensity = s.strength_at(0.0)
 	if not is_nan(ahead):
 		# Ahead of the plane, coming at it.
@@ -210,7 +213,7 @@ func step(delta: float, eye: Vector3, held := false) -> void:
 	if not held:
 		time += delta
 		intensity = strength_at(time)
-		churn += delta*intensity
+		churn += delta*intensity*churn_rate
 	here = amount_at(Vector2(eye.x,eye.z))
 	publish()
 

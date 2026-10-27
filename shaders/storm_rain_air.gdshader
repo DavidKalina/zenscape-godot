@@ -35,6 +35,12 @@ uniform float brightness = 1.0;
 uniform float clock = 0.0;
 // The shafts' drift across the storm (m/s).
 uniform float drift = 6.0;
+// The clouds' march (EndlessClouds' resolved shape: x its cover, y its
+// cover-weighted distance), so rain behind a cloud is seen only through it:
+// without it the rain far behind a near tower greyed its face (a pale
+// blotch on a dark tower, a dark slab with a straight edge on a lit one).
+uniform sampler2D cloud_shape : filter_nearest, repeat_disable;
+uniform float clouds_on = 0.0;
 
 const int TAPS = 12;
 
@@ -107,6 +113,14 @@ void fragment() {
 	float dt = (t1 - t0) / float(TAPS);
 	float jit = ra_hash(FRAGCOORD.xy);
 	vec2 side = vec2(-zs_storm_line.w, zs_storm_line.z);
+	// The cloud on this pixel: rain past its distance only through its gaps.
+	float cover = 0.0;
+	float t_cloud = 1e9;
+	if (clouds_on > 0.5) {
+		vec4 cb = texelFetch(cloud_shape, min(ivec2(FRAGCOORD.xy), textureSize(cloud_shape, 0) - 1), 0);
+		cover = clamp(cb.x, 0.0, 1.0);
+		if (cover > 0.003) t_cloud = cb.y / cover;
+	}
 	float tau = 0.0;
 	for (int i = 0; i < TAPS; i++) {
 		float t = t0 + (float(i) + jit) * dt;
@@ -119,7 +133,7 @@ void fragment() {
 		vec2 q = vec2(dot(p.xz - zs_storm_line.xy, side) + clock * drift, zs_storm_d(p.xz));
 		float n = ra_noise(q / vec2(520.0, 700.0)) * 0.65 + ra_noise(q / vec2(190.0, 260.0) + 7.3) * 0.35;
 		float heavy = mix(1.0 - shafts, 1.0 + shafts, smoothstep(0.25, 0.75, n));
-		tau += rain * up * heavy * dt;
+		tau += rain * up * heavy * dt * (t > t_cloud ? 1.0 - cover : 1.0);
 	}
 	float a = (1.0 - exp(-tau * sigma)) * opacity;
 	if (a < 0.002) discard;

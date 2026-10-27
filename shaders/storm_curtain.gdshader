@@ -40,6 +40,11 @@ uniform float brightness = 1.0;
 uniform float fall = 22.0;
 uniform float drift = 6.0;
 uniform float clock = 0.0;
+// The clouds' march (EndlessClouds' resolved shape: x its cover, y its
+// cover-weighted distance): a curtain behind a cloud only through it (the
+// cloud sheet writes no depth).
+uniform sampler2D cloud_shape : filter_nearest, repeat_disable;
+uniform float clouds_on = 0.0;
 
 varying vec3 v_world;
 varying float v_u;
@@ -121,6 +126,12 @@ void fragment() {
 	float sides = smoothstep(0.0, 0.35, v_u) * smoothstep(1.0, 0.65, v_u);
 	// Thickest low down, where the curtain meets the ground.
 	float low = mix(1.0, 0.7, smoothstep(0.0, 1.0, h));
+	float behind = 1.0;
+	if (clouds_on > 0.5) {
+		vec4 cb = texelFetch(cloud_shape, min(ivec2(FRAGCOORD.xy), textureSize(cloud_shape, 0) - 1), 0);
+		float cover = clamp(cb.x, 0.0, 1.0);
+		if (cover > 0.003 && length(v_world - CAMERA_POSITION_WORLD) > cb.y / cover) behind = 1.0 - cover;
+	}
 	ALBEDO = v_light;
-	ALPHA = clamp(opacity * rain * shown * shafts * streak * top * sides * low, 0.0, 1.0);
+	ALPHA = clamp(behind * opacity * rain * shown * shafts * streak * top * sides * low, 0.0, 1.0);
 }
