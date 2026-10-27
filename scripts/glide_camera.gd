@@ -129,8 +129,9 @@ const CLOSE_SHARE := Vector2(1.5,3.0)
 ## round through the plane).
 const GROUND_PATH := Vector2(2.0,6.0)
 ## The least the eye keeps over the land or the water under it (m), lifted
-## at once when it would be nearer, and let back down over EASE_FLOOR s.
-const FLOOR_KEEP := 0.6
+## at once when it would be nearer, and let back down over EASE_FLOOR s; over
+## most of the meadow grass's tufts (EndlessGrass TALL), not down among them.
+const FLOOR_KEEP := 1.5
 const EASE_FLOOR := 0.5
 ## The old toy's cruise, the share's base when no cruise is given.
 const TOY_CRUISE: float = preload("res://scripts/sky_plane.gd").CRUISE_SPEED
