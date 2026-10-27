@@ -61,7 +61,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 fog_at;        // 56 the valley fog's map: corner xz, side, has one
 	vec4 fog_knobs;     // 60 density scale, depth (m), steps, slab top (world y)
 	vec4 fog_drift;     // 64 the patches' drift xz (m), reach (m), fade (m)
-	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[3..5] the storm front (shaders/storm_cloud.glslinc); spare[20].x the shade pass stepped as before (--cloud-shade=old); spare[21] the high layer's samples off the low layer's within a texel (the map read xz, a slice's xz); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square
+	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[3..5] the storm front (shaders/storm_cloud.glslinc); spare[19] the last weather map's texel offsets for the ceiling (low xy, high zw), spare[20].x the shade pass stepped as before (--cloud-shade=old), .y the ceiling bounds the last map too (weather_blend); spare[21] the high layer's samples off the low layer's within a texel (the map read xz, a slice's xz); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square
 	vec4 weather_at;    // 164 corner xz, side, texels a side
 	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
 	vec4 flash;         // 172 grain jitter on, organic field on, stacked clouds yield, puffs' finer lobes on
@@ -488,6 +488,7 @@ struct Cloud {
 	float ext;
 	bool low;
 	float storm;
+	float last;
 };
 
 // The cloud of cell `c` before it is lifted over the ground (false: none):
@@ -587,7 +588,16 @@ bool recipe_shape(ivec2 c, bool big, float cover, out Cloud k) {
 	// Pushed: wider, taller, more domes, a deeper belly, a lower base.
 	float st = k.storm;
 	k.r *= mix(1.0, SP_GROW.x, st);
-	k.n = min(k.n + int(st * SP_DOMES + 0.5), 9);
+	// Its domes come in one by one as the push grows, the newest growing
+	// from nothing (`last`, its share; bubble_span), never popping in.
+	float add = st * SP_DOMES;
+	int full = int(add);
+	k.n = min(k.n + full, 9);
+	k.last = 1.0;
+	if (add > float(full) && k.n < 9) {
+		k.n += 1;
+		k.last = add - float(full);
+	}
 	k.base = mix(k.base, min(k.base, mix(SP_BASE.x, SP_BASE.y, s.z)), st);
 	// Past the core, where the deck lets go, it rides up to the deck's back
 	// (SP_TRAIL_BASE): whole by a third of the push, so only a cell the
@@ -709,9 +719,9 @@ vec3 bubble_span(Cloud k, ivec2 c, uint salt, int i, vec2 f) {
 	float hs = 1.0;
 	float lift = 0.0;
 	if (i > 0) {
-		float along = k.kind == KIND_ROW ? (2.0 * (float(i - 1) + q.x) / float(max(k.n - 1, 1)) - 1.0) * k.L : (q.x * 2.0 - 1.0) * k.L;
+		float along = k.kind == KIND_ROW ? (2.0 * (float(i - 1) + q.x) / max(float(k.n) - 2.0 + k.last, 1.0) - 1.0) * k.L : (q.x * 2.0 - 1.0) * k.L;
 		off = vec2(along, (q.y * 2.0 - 1.0) * k.W);
-		br = mix(k.br.x, k.br.y, q.z);
+		br = mix(k.br.x, k.br.y, q.z) * (i == k.n - 1 ? k.last : 1.0);
 		hs = mix(k.hs.x, k.hs.y, fract(q.z * 5.3)) * (1.0 - 0.25 * min(length(off) / max(k.L, 0.05), 1.0));
 		lift = LIFT * fract(q.z * 9.17);
 	} else {
@@ -1578,10 +1588,23 @@ void ceiling_pass() {
 	ivec2 texels = textureSize(weather, 0);
 	float top = -1e3;
 	float bottom = 1e4;
+	// Eased (scripts/cloud_volume_effect.gd weather_blend, spare[20].y 1):
+	// the map the passes read runs from the last whole map (bound as
+	// `ceiling` here) into this one through the cycle, so the ceiling bounds
+	// both, the last map's texel at the same field point (spare[19], texel
+	// offsets low xy, high zw); a layer with body in either counts both.
+	bool with_prev = P.spare[20].y > 0.5;
+	ivec4 po = ivec4(P.spare[19]);
 	for (int y = -CEILING_BLOCK; y < 2 * CEILING_BLOCK; y += 2) {
 		for (int x = -CEILING_BLOCK; x < 2 * CEILING_BLOCK; x += 2) {
 			ivec2 t = clamp(block * CEILING_BLOCK + ivec2(x, y), ivec2(0), texels - 1);
 			vec4 w = texelFetch(weather, t, 0);
+			if (with_prev) {
+				vec2 al = texelFetch(ceiling, clamp(t + po.xy, ivec2(0), texels - 1), 0).xy;
+				vec2 ah = texelFetch(ceiling, clamp(t + po.zw, ivec2(0), texels - 1), 0).zw;
+				if (w.x > w.y || al.x > al.y) w.xy = vec2(max(w.x, al.x), min(w.y, al.y));
+				if (w.z > w.w || ah.x > ah.y) w.zw = vec2(max(w.z, ah.x), min(w.w, ah.y));
+			}
 			// Only a layer with any body counts.
 			if (w.x > w.y) {
 				top = max(top, w.x);

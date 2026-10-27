@@ -221,6 +221,12 @@ var storm: RefCounted
 ## first frame that has a storm; null without one or with --storm-towers=0.
 var towers: RefCounted
 var _towers_made := false
+## The weather map eased between its swaps (Effect weather_blend): on with a
+## storm, which bakes its building and its march across the land into the
+## map (without the ease its cells grew in jerks at each swap, 7.5 a second);
+## --cloud-ease=1 on without one, --cloud-ease=0 off. Decided at the first
+## draw, before the maps are made.
+var _ease_set := false
 var _towers_tick := 0
 ## The march's cost view (--cloud-cost-view=N, 0 off): the march shows what a
 ## pixel cost as grey instead of the cloud (shaders/endless_cloud_march.glsl
@@ -382,6 +388,9 @@ func _exit_tree() -> void:
 	if _ground_task >= 0:
 		WorkerThreadPool.wait_for_task_completion(_ground_task)
 		_ground_task = -1
+	# The towers' bake in flight (one is nearly always: the next is baked
+	# ahead).
+	if towers != null: towers.settle()
 	if _fog_task >= 0:
 		WorkerThreadPool.wait_for_task_completion(_fog_task)
 		_fog_task = -1
@@ -805,7 +814,14 @@ func _recipe(cx: int, cy: int, big: bool, lift := true) -> Dictionary:
 	k.ext = Vector2(k.L,k.W).length()+maxf(k.br.y,k.main_r)*(1.0+WOB)
 	# Pushed: wider, taller, more domes, a deeper belly, a lower base.
 	r *= lerpf(1.0,STORM_GROW.x,st)
-	k.n = mini(int(k.n)+int(st*STORM_DOMES+0.5),9)
+	# The newest dome grows from nothing (the march's `last`).
+	var add := st*STORM_DOMES
+	var full := int(add)
+	k.n = mini(int(k.n)+full,9)
+	k.last = 1.0
+	if add > float(full) and int(k.n) < 9:
+		k.n = int(k.n)+1
+		k.last = add-float(full)
 	k.b0 = lerpf(float(k.b0),minf(float(k.b0),lerpf(STORM_BASE.x,STORM_BASE.y,s.z)),st)
 	# Past the core, where the deck lets go, it rides up to the deck's back
 	# (the march's SP_TRAIL_BASE).
@@ -898,9 +914,10 @@ static func _bubble_span(k: Dictionary, i: int, f: Vector2) -> Vector2:
 	var lift := 0.0
 	var L: float = k.L
 	if i > 0:
-		var along := (2.0*(float(i-1)+q.x)/float(maxi(int(k.n)-1,1))-1.0)*L if k.kind == "row" else (q.x*2.0-1.0)*L
+		var last: float = k.get("last",1.0)
+		var along := (2.0*(float(i-1)+q.x)/maxf(float(k.n)-2.0+last,1.0)-1.0)*L if k.kind == "row" else (q.x*2.0-1.0)*L
 		off = Vector2(along,(q.y*2.0-1.0)*float(k.W))
-		br = lerpf(k.br.x,k.br.y,q.z)
+		br = lerpf(k.br.x,k.br.y,q.z)*(last if i == int(k.n)-1 else 1.0)
 		hs = lerpf(k.hs.x,k.hs.y,fposmod(q.z*5.3,1.0))*(1.0-0.25*minf(off.length()/maxf(L,0.05),1.0))
 		lift = LIFT*fposmod(q.z*9.17,1.0)
 	else:
@@ -1014,6 +1031,11 @@ func _before_draw() -> void:
 	var viewport := camera.get_viewport()
 	var physical := Vector2(window.size) if window != null else Vector2(1280,720)
 	var scale := viewport.scaling_3d_scale if viewport != null else 1.0
+	if not _ease_set:
+		_ease_set = true
+		effect.weather_blend = storm != null
+		for a: String in LaunchArgs.user_args():
+			if a.begins_with("--cloud-ease="): effect.weather_blend = a.get_slice("=",1) != "0"
 	effect.resize(Vector2i((physical*scale).round()),int(quality[2]))
 	_fill()
 

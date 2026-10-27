@@ -65,7 +65,7 @@ const PUSH_RAG := 750.0
 ## to 1 over its first GROW seconds (eased), so the cumulus ahead fills up,
 ## swells and darkens in view. --storm-grow=S (0: whole from the start),
 ## --storm-grow-from=X.
-const GROW := 60.0
+const GROW := 150.0
 const GROW_FROM := 0.1
 ## The rain (and so the lightning, which strikes in it) comes in as the
 ## clouds over it build: none below WET.x of the strength, whole from WET.y.

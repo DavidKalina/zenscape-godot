@@ -13,7 +13,7 @@ extends RefCounted
 ## It rises as the front builds: each tower's `grown` follows
 ## StormFront.intensity through its own window (RISE, staggered), baked in
 ## STAGES stages on a worker, two stages a texture (red, green) so the march
-## morphs between them; a stage not baked yet holds the last one.
+## morphs between them, the next pair baked ahead so the rise never steps.
 ##
 ## Knobs: --storm-towers=0 (none), --storm-tower-scale=X.
 
@@ -46,6 +46,9 @@ const RISE := Vector2(0.12, 0.88)
 const STAGGER := [0.0, 0.1, 0.05]
 ## A tower's first bake fades in over this long (s).
 const FADE_IN := 3.0
+## Behind its rise (a bake late), the shown stage catches up at most this
+## many times the rise's own pace (x) plus this many stages a second (y).
+const CATCH := Vector2(2.0,0.15)
 
 var storm: RefCounted
 var scale := SCALE
@@ -77,7 +80,7 @@ static func from_args(front: RefCounted, args: PackedStringArray) -> RefCounted:
 			"window": Vector2(RISE.x+float(STAGGER[i]),minf(RISE.y+float(STAGGER[i]),0.99)),
 			"bakes": {}, "pair": -1, "texture": null, "box": AABB(),
 			"job": -1, "job_k": -1, "result": {},
-			"show": 0.0, "morph": 0.0, "grown": 0.0, "lobes": PackedVector4Array(), "lobes_g": -1.0,
+			"show": 0.0, "morph": 0.0, "grown": 0.0, "shown": 0.0, "goal": -1.0, "next": null, "lobes": PackedVector4Array(), "lobes_g": -1.0,
 		})
 	return t
 
@@ -110,30 +113,58 @@ func _grown(t: Dictionary) -> float:
 	return x*x*(3.0-2.0*x)
 
 ## Each frame: start and take bakes, set each tower's morph and fade.
-func advance(delta: float) -> void:
+## The stage shown (`shown`, stages) follows the rise; the pair after the
+## one shown is baked ahead (`next`), so when the rise reaches the pair's
+## end the next takes over at once (its first stage is the last one's
+## second) and the tower never holds and jumps. Should a bake fall behind,
+## the shown stage holds at the pair's end and then catches up over a
+## moment (CATCH) instead of jumping. `snap` (stills): straight to the rise.
+func advance(delta: float, snap := false) -> void:
 	for t in towers:
 		var g := _grown(t)
+		var goal := g*STAGES
+		var rate := maxf(goal-float(t.goal),0.0)/delta if delta > 0.0 and float(t.goal) >= 0.0 else 0.0
+		t.goal = goal
 		t.grown = g
-		var k := clampi(floori(g*STAGES),0,STAGES-1)
-		# A finished job: its pair becomes the texture.
+		var k := clampi(floori(goal),0,STAGES-1)
+		# A finished job: its pair becomes the texture, or waits as the next.
 		if int(t.job) >= 0 and WorkerThreadPool.is_task_completed(int(t.job)):
 			WorkerThreadPool.wait_for_task_completion(int(t.job))
 			t.job = -1
 			var r: Dictionary = t.result
 			if not r.is_empty():
-				t.texture = SkyTower.pair_texture(r.a,r.slices)
-				t.pair = int(t.job_k)
+				var tex := SkyTower.pair_texture(r.a,r.slices)
 				var shape: RefCounted = t.shape
 				t.box = shape.box
-		if int(t.job) < 0 and int(t.pair) != k:
-			_start(t,k)
+				if int(t.pair) >= 0 and int(t.job_k) == int(t.pair)+1:
+					t.next = tex
+				else:
+					t.texture = tex
+					t.pair = int(t.job_k)
+					t.next = null
+					t.shown = clampf(goal,float(t.pair),float(t.pair)+1.0)
 		var pair := int(t.pair)
+		# The next pair takes over at the shown pair's end.
+		if pair >= 0 and t.next != null and float(t.shown) >= pair+1.0-1e-4 and goal >= pair+1.0:
+			t.texture = t.next
+			t.next = null
+			pair += 1
+			t.pair = pair
+		if int(t.job) < 0:
+			if pair < 0 or k < pair or (k > pair+1 and t.next == null and snap):
+				# None yet, or the rise went back (a held strength): bake
+				# where it stands.
+				if pair != k: _start(t,k)
+			elif t.next == null and pair+1 <= STAGES-1:
+				_start(t,pair+1)
 		if pair < 0:
 			t.show = 0.0
 			continue
 		t.show = minf(float(t.show)+delta/FADE_IN,1.0)
-		var f := g*STAGES-pair
-		t.morph = clampf(f,0.0,1.0)
+		var top := minf(goal,pair+1.0)
+		if snap: t.shown = top
+		else: t.shown = move_toward(float(t.shown),top,delta*(rate*CATCH.x+CATCH.y))
+		t.morph = clampf(float(t.shown)-pair,0.0,1.0)
 
 func _start(t: Dictionary, k: int) -> void:
 	t.job_k = k
@@ -149,11 +180,22 @@ func _start(t: Dictionary, k: int) -> void:
 		bakes[k] = a
 		bakes[k+1] = b)
 
+## Waits for the bakes in flight (leaving the scene).
+func settle() -> void:
+	for t in towers:
+		if int(t.job) >= 0:
+			WorkerThreadPool.wait_for_task_completion(int(t.job))
+			t.job = -1
+
 ## Waits for every bake (stills, tests).
 func flush() -> void:
 	for t in towers:
 		if int(t.job) >= 0: WorkerThreadPool.wait_for_task_completion(int(t.job))
-	advance(0.0)
+	advance(0.0,true)
+	# The pair the rise stands in (not only the one baked ahead).
+	for t in towers:
+		if int(t.job) >= 0: WorkerThreadPool.wait_for_task_completion(int(t.job))
+	advance(0.0,true)
 
 ## Where tower `t`'s frame origin stands in the world now.
 func origin(t: Dictionary) -> Vector3:
