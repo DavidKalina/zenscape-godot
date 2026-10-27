@@ -15,7 +15,11 @@ shader_type spatial;
 // Each tree draws while its foot is band.x..band.y m off, dithered `fade` m
 // round each end with the near crowns' noise and distance (reference_surface
 // `lod_fade`), so it takes over from them with no pop.
-render_mode world_vertex_coords, cull_disabled, diffuse_lambert, specular_disabled;
+// Soft (scripts/endless/spruce_sprites.gd `soft`, the default): the nearest
+// views blended by the eye's turn and height, not dithered between (the
+// grain), and the crown's outline smoothed by alpha to coverage over the
+// screen's MSAA (the hard cut-out stepped and crawled); off, the first look.
+render_mode world_vertex_coords, cull_disabled, diffuse_lambert, specular_disabled, alpha_to_coverage_and_one;
 
 // The woods alive (reference_globals' hemisphere, cloud sun and key with it):
 // each sprite leans and sways in the breeze as its near crown does, and gust
@@ -36,12 +40,16 @@ uniform sampler2D normal_atlas : filter_linear_mipmap, repeat_disable;
 uniform vec2 cells = vec2(24.0, 3.0);
 uniform int variant = 0;
 uniform int yaws = 4;
+uniform bool soft = false;
 uniform float row_step = 0.5235988;
 uniform float cell_px = 192.0;
 // x the cell's centre up the trunk, y its size, z how far the quad stands toward the eye (m at scale 1)
 uniform vec3 fit = vec3(2.2, 5.0, 0.6);
 uniform vec2 band = vec2(0.0, 1e9);
 uniform vec2 fade = vec2(0.0);
+// Each tree's ends moved by up to half this (m), its own way, as the crowns'
+// lod_spread (reference_surface, the same hash of the foot).
+uniform float spread = 0.0;
 // The crowns' tint the atlas was baked in (each tree's own over it is its shade).
 uniform vec3 tint = vec3(1.0);
 // wrap, glow, steps, soft (spruce_light)
@@ -121,32 +129,87 @@ void vertex() {
 	NORMAL = toward;
 }
 
+// The atlas's albedo and light normal for column `col` (a turn) and `row`.
+void sprite_sample(float col, float row, vec2 uv_in, vec2 gx, vec2 gy, out vec4 a, out vec4 nb) {
+	vec2 cell = vec2(float(variant * yaws) + col, row);
+	vec2 uv = (cell + uv_in) / cells;
+	a = textureGrad(albedo_atlas, uv, gx, gy);
+	nb = textureGrad(normal_atlas, uv, gx, gy);
+}
+
+float sprite_lod_hash(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
+
 void fragment() {
 	vec3 to_eye = CAMERA_POSITION_WORLD - sprite_foot;
 	float d = length(to_eye);
+	if (spread > 0.0) d += (sprite_lod_hash(sprite_foot.xz) - 0.5) * spread;
 	float h = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
 	float fin = fade.x > 0.0 ? smoothstep(band.x - fade.x, band.x + fade.x, d) : 1.0;
 	float fout = fade.y > 0.0 ? 1.0 - smoothstep(band.y - fade.y, band.y + fade.y, d) : 1.0;
 	if (1.0 - h > fin || h >= fout) discard;
-	// The cell: the nearest two heights and turns, dithered by their fractions.
-	float h2 = fract(52.9829189 * fract(dot(FRAGCOORD.xy + vec2(23.0, 7.0), vec2(0.00583715, 0.06711056))));
-	float h3 = fract(h2 * 7.31 + h * 0.61);
-	float row = floor(sprite_view.x) + (h2 < fract(sprite_view.x) ? 1.0 : 0.0);
-	row = min(row, cells.y - 1.0);
-	float col = mod(floor(sprite_view.y) + (h3 < fract(sprite_view.y) ? 1.0 : 0.0), float(yaws));
-	vec2 cell = vec2(float(variant * yaws) + col, row);
-	vec2 uv = (cell + clamp(UV, vec2(0.002), vec2(0.998))) / cells;
+	vec2 uv_in = clamp(UV, vec2(0.002), vec2(0.998));
 	vec2 gx = dFdx(UV) / cells;
 	vec2 gy = dFdy(UV) / cells;
-	vec4 a = textureGrad(albedo_atlas, uv, gx, gy);
+	vec4 a;
+	vec4 nb;
+	if (soft) {
+		// The nearest two heights and turns, blended (premultiplied), each
+		// view alone over the middle of its span and eased into the next.
+		float r0 = min(floor(sprite_view.x), cells.y - 1.0);
+		float r1 = min(r0 + 1.0, cells.y - 1.0);
+		float wr = smoothstep(0.25, 0.75, fract(sprite_view.x));
+		float c0 = mod(floor(sprite_view.y), float(yaws));
+		float c1 = mod(c0 + 1.0, float(yaws));
+		float wc = smoothstep(0.25, 0.75, fract(sprite_view.y));
+		sprite_sample(c0, r0, uv_in, gx, gy, a, nb);
+		a *= (1.0 - wc) * (1.0 - wr);
+		nb *= (1.0 - wc) * (1.0 - wr);
+		vec4 a2;
+		vec4 n2;
+		if (wc > 0.0) {
+			sprite_sample(c1, r0, uv_in, gx, gy, a2, n2);
+			a += a2 * wc * (1.0 - wr);
+			nb += n2 * wc * (1.0 - wr);
+		}
+		if (wr > 0.0) {
+			sprite_sample(c0, r1, uv_in, gx, gy, a2, n2);
+			a += a2 * (1.0 - wc) * wr;
+			nb += n2 * (1.0 - wc) * wr;
+			if (wc > 0.0) {
+				sprite_sample(c1, r1, uv_in, gx, gy, a2, n2);
+				a += a2 * wc * wr;
+				nb += n2 * wc * wr;
+			}
+		}
+	} else {
+		// The cell: the nearest two heights and turns, dithered by their fractions.
+		float h2 = fract(52.9829189 * fract(dot(FRAGCOORD.xy + vec2(23.0, 7.0), vec2(0.00583715, 0.06711056))));
+		float h3 = fract(h2 * 7.31 + h * 0.61);
+		float row = floor(sprite_view.x) + (h2 < fract(sprite_view.x) ? 1.0 : 0.0);
+		row = min(row, cells.y - 1.0);
+		float col = mod(floor(sprite_view.y) + (h3 < fract(sprite_view.y) ? 1.0 : 0.0), float(yaws));
+		sprite_sample(col, row, uv_in, gx, gy, a, nb);
+	}
 	// The mips thin the cover: lift it with the mip so a far crown keeps its mass.
 	float lod = log2(max(max(length(dFdx(UV)), length(dFdy(UV))) * cell_px, 1.0));
 	float cover = a.a * (1.0 + 0.32 * lod);
-	if (cover < 0.5) discard;
+	if (soft) {
+		ALPHA = clamp(cover, 0.0, 1.0);
+		ALPHA_SCISSOR_THRESHOLD = 0.5;
+		ALPHA_ANTIALIASING_EDGE = 0.3;
+		ALPHA_TEXTURE_COORDINATE = UV * cell_px;
+	} else {
+		if (cover < 0.5) discard;
+		ALPHA = 1.0;
+		ALPHA_SCISSOR_THRESHOLD = 0.5;
+	}
 	edge = 1.0 - smoothstep(0.5, 0.95, cover);
 	vec3 c = sprite_linear(clamp(a.rgb / max(a.a, 1e-3), 0.0, 1.0));
 	c *= COLOR.rgb / max(tint, vec3(1e-3));
-	vec4 nb = textureGrad(normal_atlas, uv, gx, gy);
 	vec3 nv = sprite_linear(clamp(nb.rgb / max(nb.a, 1e-3), 0.0, 1.0)) * 2.0 - 1.0;
 	vec3 n = normalize(nv.x * sprite_right + nv.y * sprite_up + nv.z * sprite_toward);
 	if (sprite_sheen > 0.0) c = zs_tree_sheen(c, sprite_sheen);

@@ -119,3 +119,75 @@ The first run after the change hitched while the shaders compiled.
 - The rings (`--spruce-sprites=0` only) don't take the waves.
 - No committed test. No existing test touches these shaders.
 - The low-res and plastic passes are still to come.
+
+# The far trees, low-res pass
+
+The ask: the far trees looked low-res. Fix it with soft edges, more baked
+sides and no grain, behind a flag to compare.
+
+## Launch
+
+- Default: the soft sprites. `--spruce-sprites=old` gives the first look.
+- Try `--spruce-far=150`: the sprites from 150 m instead of 200 (see
+  below).
+
+## What was built
+
+- **8 baked sides** (`scripts/endless/spruce_sprites.gd`, `SOFT_YAWS`;
+  `OLD_YAWS` 4). The cells stay 192 px: a tree at 200 m is about 36 px tall
+  at 0.75 scale, so they were never short of pixels.
+  - The atlas is 9216 x 576, twice the width, about +28 MB of video memory
+    for the two atlases with their mips.
+- **No grain between views** (`shaders/endless_spruce_sprite.gdshader`
+  `soft`). The nearest two turns and heights are blended (premultiplied),
+  each view alone over the middle half of its span. Before, they were
+  dithered pixel by pixel.
+- **Soft outline.** Alpha to coverage over the screen's MSAA
+  (`alpha_to_coverage_and_one`), with the scissor at 0.5 and an
+  anti-aliasing edge of 0.3 over the cell's texels. Before, it was a hard
+  `discard`.
+- **No grain ring at the hand-overs** (`scripts/endless/land_trees.gd`
+  `LOD_SPREAD`, `LOD_SOFT_FADE`; `reference_surface` `lod_spread`, the
+  sprites' `spread`).
+  - Each tree swaps level at its own distance, spread 30 m round 80 m and
+    200 m, with the same per-tree hash of the foot on both levels.
+  - The dither is 2 m either side. It was 12 m at 80 m and 15 m at 200 m,
+    so a whole ring of trees was mid-dither at once.
+- **Tried and dropped:** baking the atlas at MSAA 4x. The resolve mixes an
+  edge's colour in linear light, and the shader's un-premultiplying (right
+  for the byte-averaged mips) reads that back as a pale rim.
+
+## Proof
+
+Held stills from 60 m over a wood at 150 to 600 m
+(`scratch/trees/held.gd --eye=720,480,60 --look=680,250,0 --hold=600`),
+`scratch/trees/soft/abc.png`, three crops stacked:
+
+- **old:** the grainy, crawling trees;
+- **soft:** clean outlines and no grain, except a few 3D far crowns at 100
+  to 200 m whose fine needle teeth shimmer at that size;
+- **soft with `--spruce-far=150`:** those go too.
+
+The smoke check passes, and there are no shader errors in the rendered runs.
+
+## Frame time (RTX 4070 Super, held view above, GPU ms)
+
+| setup | GPU ms |
+|---|---|
+| old | 7.57 / 7.54 |
+| soft | 7.69 / 7.57 |
+| soft, `--spruce-far=150` | 7.53 |
+
+That is about +0.1 ms for the soft sprites (four atlas reads where a view
+blends, two before). `--spruce-far=150` is 0.16 ms cheaper than soft at
+200 m.
+
+## Not done
+
+- **The 3D far crowns' shimmer at 80 to 200 m.** Moving the sprites in to
+  150 m (`--spruce-far=150`) hides most of it. The question is whether the
+  sprites read flat that close when you bank past them, which needs play.
+- **The sprite and the 3D crown measure distance slightly differently.**
+  The sprite measures 3D to the foot; the crown measures across from the
+  foot, then up by the pixel's height. This is old; the 2 m dither shows it
+  less than 15 m did.

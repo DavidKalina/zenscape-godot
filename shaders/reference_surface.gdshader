@@ -77,6 +77,15 @@ uniform vec2 lod_band = vec2(0.0, 1e9);
 // levels; the vertex keeps the instance LOD_SLACK m wider so none is cut early.
 uniform vec2 lod_fade = vec2(0.0);
 const float LOD_SLACK = 25.0;
+// Each tree's hand-over moved by up to half this (m), its own way (the
+// sprites' `spread` the same: scripts/endless/land_trees.gd LOD_SPREAD), so
+// the trees swap one by one across it rather than all dithering at once.
+uniform float lod_spread = 0.0;
+float zs_lod_hash(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
 // The sprays spruce's painted crown (shaders/spruce_paint.gdshaderinc,
 // scripts/hero_trees.gd `spruce_paint`), all off at 0: how far the light
 // normal bends to the crown's volume, the blue, the painted patches, the
@@ -827,6 +836,7 @@ void fragment() {
 	if (lod_band_on && (lod_fade.x > 0.0 || lod_fade.y > 0.0)) {
 		vec2 lod_foot = zs_camera_position.xz - (plant_root + look_shift.xz);
 		float lod_d = length(vec3(lod_foot.x, zs_camera_position.y - world_position.y, lod_foot.y));
+		if (lod_spread > 0.0) lod_d += (zs_lod_hash(plant_root + look_shift.xz) - 0.5) * lod_spread;
 		// Interleaved gradient noise: one threshold a pixel, the same for both levels.
 		float lod_h = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
 		float lod_in = lod_fade.x > 0.0 ? smoothstep(lod_band.x - lod_fade.x, lod_band.x + lod_fade.x, lod_d) : 1.0;
