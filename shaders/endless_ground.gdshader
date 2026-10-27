@@ -18,6 +18,8 @@ shader_type spatial;
 // waves rolling over it bright. Lit as the isles' surfaces are: the sun by
 // Godot, the hemisphere fill (zs_hemi_*) as emission.
 render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
+// The storm's gust front: zs_storm_ground alone (storm_gust), not in the sheen and silver too.
+#define ZS_STORM_GROUND_OWN
 #include "res://shaders/reference_wind.gdshaderinc"
 #include "res://shaders/grass_look.gdshaderinc"
 #include "res://shaders/cloud_volume_shadow.gdshaderinc"
@@ -863,6 +865,8 @@ void fragment() {
 		float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up);
 		if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(zs_sheen_field(gxz, fp), gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
 	}
+	// The storm's gust front laying the grass down (storm_gust; nothing when it's off).
+	grass = mix(grass, zs_storm_ground(grass, gxz, fp), carpet_turf * (1.0 - thin * 0.6));
 	// The flower drifts past the drawn flowers: heads of their colour dotted
 	// over the turf (two lattices, more of them at a drift's heart), which
 	// average to a wash of it as a pixel grows past a head; a light wash

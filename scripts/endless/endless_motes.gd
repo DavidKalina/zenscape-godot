@@ -40,6 +40,11 @@ const POLLEN_LEAD := 0.6
 const POLLEN_WANDER := 0.45
 const POLLEN_DRIFT := 0.55
 
+## The storm's gust front (lane gust): the most it adds to the specks' drift
+## (m/s) at its peak; `storm_air` is set each frame from the gust at the eye.
+const STORM_AIR := 16.0
+var storm_air := 0.0
+
 const KICK := 180
 const KICK_RATE := 120.0
 ## A bit's length (m: the endless grass is about four times the isles'),
@@ -155,7 +160,7 @@ func step(delta: float, eye: Vector3, wind: Vector2, travel: float, wash: Dictio
 	var speed := 0.0
 	if not is_nan(_travel): speed = clampf((travel-_travel)/delta,0.0,20.0)
 	_travel = travel
-	_air = wind.normalized()*speed
+	_air = wind.normalized()*(speed+storm_air)
 	if pollen_on: _pollen(delta,eye,grass)
 	if kick_on: _kick(delta,wash,ribbons)
 

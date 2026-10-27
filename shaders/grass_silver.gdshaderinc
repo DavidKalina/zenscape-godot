@@ -46,7 +46,7 @@ float zs_silver_drive(vec2 p, float fp) {
 	crest = mix(vec3(0.4), crest, keep);
 	float band = zs_gust_band_at(p, travel);
 	float w = dot(crest, grass_silver_share) * band * zs_breeze_air() / 0.53;
-	w += zs_front_at(p, 0.0) * 1.5;
+	w += zs_front_at(p, 0.0) * 1.5 + zs_storm_silver(p, fp);
 	return smoothstep(grass_silver.y, grass_silver.z, w);
 }
 
