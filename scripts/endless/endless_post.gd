@@ -30,6 +30,7 @@ const MOODS := {
 	"meadow_morning": {"rays":1.1,"shade":Vector3(0.86,0.92,1.08),"light":Vector3(1.12,1.04,0.88),"key":1.1,"fill":0.9,"lift":0.5},
 	"after_the_rain": {"rays":1.4,"split":0.6,"air":0.6,"fill":1.05,"lift":0.75,"shade":Vector3(0.88,0.94,1.08),"light":Vector3(1.12,1.04,0.9),"sat":1.1,"contrast":1.1},
 	"desert_afternoon": {"rays":0.9,"shade":Vector3(0.86,0.8,1.06),"light":Vector3(1.2,1.02,0.82),"key":1.15,"fill":0.85,"lift":0.6,"hot":1.0,"relief":1.5},
+	"amber_hour": {"rays":1.2,"split":0.75,"air":0.68,"sat":1.04,"shade":Vector3(0.98,0.86,0.84),"light":Vector3(1.24,1.02,0.76),"key":1.12,"fill":0.9,"lift":0.7,"hot":0.9,"relief":1.3},
 	"moonlit_stillness": {"rays":0.0,"split":0.0,"air":0.2},
 }
 

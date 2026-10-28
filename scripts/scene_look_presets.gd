@@ -40,6 +40,10 @@ const PRESETS := {
 		"strength":1.0,"colors":{}},
 	"moonlit_stillness": {"title":"Moonlit stillness","description":"Blue night, the aurora overhead.","palette":"Moonlit","phase":0.02,"weather":"clear","clouds":0.05,"mist":0.18,"haze":0.08,"wind":0.2,
 		"strength":1.0,"aurora":0.65,"colors":{}},
+	# The amberlands' (scripts/endless/world/amberlands/look.gd): a low gold
+	# sun through warm dust, the distance going to dusty peach, soft warm shade.
+	"amber_hour": {"title":"Amber hour","description":"Low gold sun through warm dust.","palette":"Amber","phase":0.675,"weather":"clear","clouds":0.08,"mist":0.08,"haze":0.24,"wind":0.45,
+		"strength":1.0,"ambient_energy":1.25,"exposure":1.06,"colors":{"ambient":"dcb48e","bounce":"8a6440","rim":"f0c890","fog":"f6eee6"}},
 	"storm_gathering": {"title":"Storm gathering","description":"Slate skies and a rising wind.","palette":"Storm","phase":0.46,"weather":"storm","clouds":0.8,"mist":0.42,"haze":0.58,"wind":2.5,
 		"strength":1.0,"wet":0.5,"humidity":0.8,"colors":{}},
 }

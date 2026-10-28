@@ -91,6 +91,8 @@ uniform vec2 carpet_near = vec2(0.0);
 // How much of the turf's own fine grain (the tuft-sized light and dark the
 // paint draws near the eye) stays under the near carpet, between its tufts.
 uniform float carpet_near_grain : hint_range(0.0, 1.0) = 0.6;
+// A world's tone over the land's rock (its walls, ledges and crags; 1: none).
+uniform vec3 rock_tint = vec3(1.0);
 uniform vec3 carpet_tone_top = vec3(1.0);
 uniform vec3 carpet_tone_low = vec3(1.0);
 // A world's tone over the turf's own colour wherever tufts stand (the carpet's tone takes over past them; 1: none).
@@ -886,6 +888,7 @@ void fragment() {
 		rock_glow *= mix(1.0, fill_level, clamp(rock_follow * zs_light_follow, 0.0, 1.0));
 		lit_n = normalize(mix(n, lit_n, rocky));
 	}
+	rock *= rock_tint;
 
 	vec3 sand = SAND * (1.0 + fine * 0.25 + mid * 0.2);
 	sand = mix(sand, SAND_WET, smoothstep(0.7, -0.1, over));

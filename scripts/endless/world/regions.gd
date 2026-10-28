@@ -10,11 +10,11 @@ extends RefCounted
 ##          normalised)
 ##   start  whether the start may lie in it (at least one entry needs it)
 ## --regions=id:share[:start],... replaces the list for a run (e.g.
-## --regions=wilderness:2:start,overgrown:1).
+## --regions=wilderness:2:start,amberlands:1; overgrown, out of the mix, still plays alone or by --regions=).
 
 const REGISTRY := [
 	{"id":"wilderness","share":1.0,"start":true},
-	{"id":"overgrown","share":1.0,"start":false},
+	{"id":"amberlands","share":1.0,"start":false},
 ]
 
 ## A region's mean width (m; --region-size=): the cells' spacing. About two

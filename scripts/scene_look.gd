@@ -22,6 +22,9 @@ const FAMILIES := {
 	"Storm":["3c4659","343f4b","899292","d3dbe1","798369","777c82","587678","526850","63656a"],
 	"Dawn":["697aab","665b81","efbcb0","ffe6c0","759d71","9c919b","77999e","5f8069","83706a"],
 	"Ocean":["559bbc","39798f","b3d7d4","fff2d0","7ba779","96a6a3","35a6b4","4d897c","ab9677"],
+	# The amber hour: a pale gold sky going to warm peach at the horizon, a
+	# low gold sun, ochre grass, sandstone, a warm jade water.
+	"Amber":["f2cc96","e4c0a8","f5c884","ffd6a0","b39a52","c09a70","4a8a80","9a8446","a8784e"],
 }
 # Palette, hour, weather, fog, haze, wind. Moods are explicit editor actions.
 const MOODS := {
