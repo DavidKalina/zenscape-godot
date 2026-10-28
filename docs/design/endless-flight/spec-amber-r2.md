@@ -76,6 +76,27 @@ the details):
   the lane's last commit). Amberlands loads ~1.6 s slower (bridge cells
   planned on the main thread at prime). Most bridges come out two-tier.
 
+## Spec change: the bridges become great road bridges (2026-10-28)
+
+The user saw the bridge stills: "looks a bit weird, just like a double
+stacked aqueduct". They want a great old stone **road bridge**, not an
+aqueduct. A third lane, `lane/amber-bridge-look`, reworks how a bridge is
+built; the placer (`bridge_plan.gd`: which rims, chains, broken) stays.
+
+- A **wide flat deck** (a road, ~12–16 m across) with **parapet walls**
+  along both edges, paving, worn and broken in places.
+- Carried on **few, massive arches**: big round or segmental spans on
+  thick tapered piers with cutwaters and buttressed footings, not rows of
+  small arches; tall drops get taller piers, not a second tier.
+- **Gate arches over the deck**: a gatehouse or great arch at each end
+  and, on long spans, one midway, so you can fly *along* the deck and
+  thread them. Also flown: under the big arches, between pier and gorge.
+- **Broken bridges**: a span gone from the middle, the deck snapped off
+  with its paving and parapet ragged, rubble below.
+- Readable from a kilometre off as one heavy structure.
+
+The trunk's flyability step checks the deck lane and gate arches too.
+
 ## Trunk (the loop, after the merge, in order)
 
 1. **Set piece placer**: a placer for standalone structures (own file) that
