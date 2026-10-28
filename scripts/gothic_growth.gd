@@ -600,6 +600,30 @@ static func stone() -> ShaderMaterial:
 		_stone_key = key
 	return _stone
 
+## `stone()` lifted for a land that lifts its ruins' stone (scripts/endless/
+## land_arches.gd `_sunlit`: albedo `lift` sRGB, `fill`, `rim`): the stone
+## takes that lift in place of its own `stone_lift`, so it stands as bright
+## as the land's other ruins; the moss is lifted by the lift's brightness
+## over the yard's (linear, `MOSS_LIFT` of it, one ratio for all three
+## channels, so it keeps its olive and grey and reads a shade darker than
+## the warmed stone); no `shade_lift` (the land's fill already lifts the
+## shade about as much). A new copy: the caller keeps it.
+const MOSS_LIFT := 0.45
+static func lifted(lift: Color, fill: float, rim: float) -> ShaderMaterial:
+	var s := stone().duplicate() as ShaderMaterial
+	var own := float(STONE_MOSS.stone_lift)
+	var gain := lift.srgb_to_linear().get_luminance()/own*MOSS_LIFT
+	var ratio := Vector3.ONE*gain
+	s.set_shader_parameter("albedo",lift)
+	s.set_shader_parameter("stone_lift",1.0)
+	s.set_shader_parameter("shade_lift",0.0)
+	s.set_shader_parameter("fill",fill)
+	s.set_shader_parameter("rim",rim)
+	for k: String in ["moss_olive","moss_grey","moss_ochre","moss_rust","moss_deep"]:
+		var c: Color = (STONE_MOSS[k] as Color).srgb_to_linear()
+		s.set_shader_parameter(k,Color(c.r*ratio.x,c.g*ratio.y,c.b*ratio.z).linear_to_srgb())
+	return s
+
 # --- The colour -----------------------------------------------------------------------
 
 ## The Build's `growth_tint`: the growth's faces (RuinGrowth.Faces `g`, linear

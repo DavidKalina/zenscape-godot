@@ -26,6 +26,7 @@ const Sets = preload("res://scripts/endless/set_plan.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const STONE_LIFT := Color(3.0, 2.55, 1.95)
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const GothicGrowth = preload("res://scripts/gothic_growth.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const RockShape = preload("res://scripts/endless/rock_shape.gd")
 
@@ -87,6 +88,11 @@ func setup(land_seed: int, ground: Material = null) -> void:
 ## the land's rock does. `--old-ruin-stone` leaves the kit's dark stone.
 var _old_stone := "--old-ruin-stone" in LaunchArgs.user_args()
 var _stone: ShaderMaterial
+## The gothic set pieces' mossed stone (scripts/gothic_growth.gd `stone`),
+## lifted the same way (`GothicGrowth.lifted`); `--no-stone-moss` gives them
+## the plain sunlit stone instead, to compare (look, frame time).
+var _gothic_stone: ShaderMaterial
+var _moss_off := "--no-stone-moss" in LaunchArgs.user_args()
 
 func _sunlit(node: Node) -> void:
 	var kit: Material = RuinKit.materials().stone
@@ -95,11 +101,16 @@ func _sunlit(node: Node) -> void:
 		_stone.set_shader_parameter("albedo",STONE_LIFT)
 		_stone.set_shader_parameter("fill",3.6)
 		_stone.set_shader_parameter("rim",0.1)
+	var gothic: Material = GothicGrowth.stone()
 	for mi in node.find_children("*","MeshInstance3D",true,false):
 		var m := mi as MeshInstance3D
 		if m.mesh == null: continue
 		for i in m.mesh.get_surface_count():
-			if m.mesh.surface_get_material(i) == kit: m.set_surface_override_material(i,_stone)
+			var own := m.mesh.surface_get_material(i)
+			if own == kit: m.set_surface_override_material(i,_stone)
+			elif own == gothic:
+				if _gothic_stone == null: _gothic_stone = _stone if _moss_off else GothicGrowth.lifted(STONE_LIFT,3.6,0.1)
+				m.set_surface_override_material(i,_gothic_stone)
 
 func _exit_tree() -> void:
 	_quit = true
