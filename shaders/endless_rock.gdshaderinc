@@ -454,18 +454,20 @@ vec3 er_rock_shaped(vec3 p, vec3 n, float fp, vec3 sun, vec3 mossy, vec2 carved,
 		float sunny_s = smoothstep(-0.05, 0.45, dot(nf, sun));
 		// Worn edges: the proud rims pale, the sun's gold where it falls on
 		// them, a cool sky pale in the shade.
-		float worn = smoothstep(0.06, 0.4, c.r) + 0.6 * smoothstep(0.08, 0.5, c.g);
+		// (In the sun only the small edges: a whole stack stands proud at
+		// the larger sizes, and lit faces are pale enough.)
+		float worn = smoothstep(0.06, 0.4, c.r) + (0.6 - 0.4 * sunny_s) * smoothstep(0.08, 0.5, c.g);
 		vec3 rim = mix(zs_cool(vec3(0.46, 0.48, 0.58), rock_follow), glint, sunny_s);
-		col = mix(col, max(col * 1.4, rim), clamp(worn, 0.0, 1.0) * (0.6 - 0.25 * sunny_s) * S);
+		col = mix(col, max(col * 1.4, rim), clamp(worn, 0.0, 1.0) * (0.6 - 0.3 * sunny_s) * S);
 		// Sunk: crevices dark and cool, ledges' inner corners and recesses
 		// in their own shade.
 		float crev = smoothstep(0.06, 0.45, -c.r);
 		float groove = smoothstep(0.05, 0.5, -c.g);
 		float recess = smoothstep(0.0, 0.55, -c.b);
-		occl = clamp(crev * 0.55 + groove * 0.4 + recess * 0.3, 0.0, 0.85) * S;
+		occl = clamp(crev * (0.6 + 0.35 * sunny_s) + groove * (0.4 + 0.2 * sunny_s) + recess * 0.3, 0.0, 0.85) * S;
 		col = mix(col, col * zs_cool(vec3(0.55, 0.56, 0.70), rock_follow), clamp(occl, 0.0, 1.0));
-		// Buttresses stand a little lighter.
-		col *= 1.0 + 0.12 * smoothstep(0.0, 0.5, c.b) * S;
+		// Buttresses stand a little lighter in the shade.
+		col *= 1.0 + 0.12 * smoothstep(0.0, 0.5, c.b) * (1.0 - sunny_s) * S;
 	}
 
 	// Turf and moss settle where the face lies back, ragged by the facets.

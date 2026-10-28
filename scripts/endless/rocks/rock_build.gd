@@ -23,6 +23,7 @@ extends RefCounted
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const RockShape = preload("res://scripts/endless/rock_shape.gd")
 
 ## Points a ring (a multiple of 4; a pillar's `segments` sets its own), the
 ## solid's sectors a ring, the levels.
@@ -62,6 +63,7 @@ static func build(spec: Dictionary) -> Dictionary:
 	arrays[Mesh.ARRAY_NORMAL] = n
 	arrays[Mesh.ARRAY_COLOR] = c
 	arrays[Mesh.ARRAY_INDEX] = levels[0]
+	RockShape.bake(arrays)
 	radii.sort()
 	var typical := radii[radii.size()/2] if not radii.is_empty() else 4.0
 	var lods := {}

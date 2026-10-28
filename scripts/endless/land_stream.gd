@@ -23,6 +23,7 @@ extends Node3D
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
+const RockShape = preload("res://scripts/endless/rock_shape.gd")
 
 ## Quads along a chunk's side, the finest chunk's size (m, so 1 m quads),
 ## the coarsest level and how many root chunks reach out each way.
@@ -269,8 +270,9 @@ func _build(key: Vector3i, land_seed: int) -> void:
 	# else the same loops in GDScript).
 	var made: Dictionary = f.build_chunk(x0,z0,step,CELLS,step*SKIRT+SKIRT_MIN,RIVER_FLOW_MAX)
 	if river_live: made.frame = _river_frame(f,made,x0,z0,step)
-	if shape_wanted:
-		var shape := _shape(f,made,x0,z0,step)
+	if RockShape.wanted:
+		# The rock's shape (RockShape, CUSTOM3), where the chunk has rock.
+		var shape := RockShape.grid(f,made,x0,z0,step,CELLS)
 		if not shape.is_empty(): made.shape = shape
 	_portal_holes(f,made,key,x0,z0,step)
 	made.key = key
@@ -347,101 +349,6 @@ static func _river_frame(f: RefCounted, made: Dictionary, x0: float, z0: float, 
 			var v := n*n+e*n+t
 			for c in 4: frame[v*4+c] = frame[from*4+c]
 	return frame
-
-## The land's shape for CUSTOM3 (RGBA8): how far each vertex stands proud of
-## (over 0.5) or sunk below (under) the ring round it, SHAPE_RADII m out
-## (r a worn edge, g a ledge or groove, b a buttress or recess). Each radius
-## is read off its own grid, SHAPE_STEPS of its nodes to the radius (never
-## finer than the chunk's), with a ring past the chunk so the edges match
-## the neighbouring chunks'; a grid that is the chunk's own reuses its
-## heights and samples only the ring. a is 1 where it was made; a chunk with
-## no ground steeper than SHAPE_UP (no rock) gets none (empty).
-const SHAPE_RADII := [4.0,14.0,40.0]
-const SHAPE_STEPS := [2,3,3]
-const SHAPE_UP := 0.9
-## Each radius's sunk or proud height (m per m of radius) that fills its range.
-const SHAPE_GAIN := [1.6,1.0,0.7]
-static var shape_wanted := "--rock-shape=0" not in preload("res://scripts/launch_args.gd").user_args()
-
-static func _shape(f: RefCounted, made: Dictionary, x0: float, z0: float, step: float) -> PackedByteArray:
-	var n := CELLS+1
-	var normals: PackedVector3Array = made.normals
-	var steep := false
-	for v in n*n:
-		if normals[v].y < SHAPE_UP:
-			steep = true
-			break
-	if not steep: return PackedByteArray()
-	var shape := PackedByteArray()
-	shape.resize((n*n+4*n)*4)
-	for v in n*n: shape[v*4+3] = 255
-	for c in 3:
-		var r: float = SHAPE_RADII[c]
-		var k: int = SHAPE_STEPS[c]
-		# The grid: a power of two of the chunk's steps, about k nodes to the radius.
-		var per := 1 << clampi(roundi(log(r/k/step)/log(2.0)),0,4)
-		var g := per*step
-		k = maxi(1,roundi(r/g))
-		var d := roundi(k*0.7071)
-		var gn := CELLS/per+1
-		var m := gn+2*k
-		var hs := _padded(f,made,x0,z0,step,per,gn,k)
-		var a: float = SHAPE_GAIN[c]/(k*g)*0.0625
-		var lay := PackedFloat32Array()
-		lay.resize(gn*gn)
-		for j in gn:
-			var row := (j+k)*m+k
-			for i in gn:
-				var q := row+i
-				lay[j*gn+i] = clampf(0.5+(hs[q]*8.0-hs[q-k]-hs[q+k]-hs[q-k*m]-hs[q+k*m]-hs[q-d-d*m]-hs[q+d-d*m]-hs[q-d+d*m]-hs[q+d+d*m])*a,0.0,1.0)
-		if per == 1:
-			for v in n*n: shape[v*4+c] = int(lay[v]*255.0)
-			continue
-		# Coarser than the chunk: eased between the grid's nodes.
-		var inv := 1.0/per
-		for j in n:
-			var iz := mini(j/per,gn-2)
-			var fz := (j-iz*per)*inv
-			for i in n:
-				var ix := mini(i/per,gn-2)
-				var fx := (i-ix*per)*inv
-				var q := iz*gn+ix
-				shape[(j*n+i)*4+c] = int(lerpf(lerpf(lay[q],lay[q+1],fx),lerpf(lay[q+gn],lay[q+gn+1],fx),fz)*255.0)
-	var edges := _edges()
-	for e in 4:
-		for t in n:
-			var from: int = edges[e][t]
-			var v := n*n+e*n+t
-			for c in 4: shape[v*4+c] = shape[from*4+c]
-	return shape
-
-## The field's heights on a grid of every `per`th chunk node (gn a side)
-## with `pad` nodes more each way, row by row: the chunk's own heights inside
-## (made.heights), the field sampled for the ring.
-static func _padded(f: RefCounted, made: Dictionary, x0: float, z0: float, step: float, per: int, gn: int, pad: int) -> PackedFloat32Array:
-	var n := CELLS+1
-	var g := per*step
-	var m := gn+2*pad
-	var out := PackedFloat32Array()
-	out.resize(m*m)
-	var own: PackedFloat32Array = made.heights
-	for j in gn:
-		for i in gn:
-			out[(j+pad)*m+i+pad] = own[j*per*n+i*per]
-	# The ring: full rows above and below, then the sides between.
-	var top: PackedFloat32Array = f.grid(x0,z0,g,m,pad,pad).heights
-	var low: PackedFloat32Array = f.grid(x0,z0+(gn+pad)*g,g,m,pad,pad).heights
-	var left: PackedFloat32Array = f.grid(x0,z0+pad*g,g,pad,gn,pad).heights
-	var right: PackedFloat32Array = f.grid(x0+gn*g,z0,g,pad,gn,0).heights
-	for j in pad:
-		for i in m:
-			out[j*m+i] = top[j*m+i]
-			out[(j+pad+gn)*m+i] = low[j*m+i]
-	for j in gn:
-		for i in pad:
-			out[(j+pad)*m+i] = left[j*pad+i]
-			out[(j+pad)*m+pad+gn+i] = right[j*pad+i]
-	return out
 
 ## The grid's vertex index along each edge, in order: -z, +x, +z, -x.
 static func _edges() -> Array:
