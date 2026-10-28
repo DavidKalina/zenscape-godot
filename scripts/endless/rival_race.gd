@@ -270,7 +270,7 @@ func step(delta: float, game: Node) -> void:
 	var pressed := Input.is_action_pressed(ACTION)
 	if not pressed: _armed = true
 	var tapped := pressed and _armed
-	var flying: bool = game.stage == null and game.hand_landing.flying()
+	var flying: bool = game.stage == null and game.hand_landing.flying() and not (game.get("beats") != null and game.beats.running())
 	_hud.offer = {}
 	_hud.mark = {}
 	_hud.spot = {}

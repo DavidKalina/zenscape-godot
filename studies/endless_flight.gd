@@ -134,6 +134,7 @@ const EndlessFish = preload("res://scripts/endless/endless_fish.gd")
 const EndlessTraffic = preload("res://scripts/endless/endless_traffic.gd")
 ## The rival race against one of them (Tab / R3 held on a bracketed plane).
 const RivalRace = preload("res://scripts/endless/rival_race.gd")
+const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
@@ -264,6 +265,8 @@ var fish: Node3D
 var traffic: Node
 ## The rival race (scripts/endless/rival_race.gd), or null with no traffic.
 var race: Node
+## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
+var beats: Node
 var flown := 0.0
 var _start := Vector2.ZERO
 var _no_title := false
@@ -569,6 +572,9 @@ func _ready() -> void:
 		water.name = "Water"
 		add_child(water)
 		water.setup(self)
+	beats = BeatRoutes.new()
+	add_child(beats)
+	beats.setup(seed,self)
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
@@ -931,7 +937,9 @@ func tick(delta: float) -> void:
 	# In a forgiving knife slot: the reach fitted, a jamb glanced off.
 	solid_shift = Vector3.ZERO
 	_glanced = glance.before(delta,self)
-	var events := hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
+	# A beat route's preview pan holds the flight (beat_routes.gd).
+	var held: bool = beats != null and beats.holding()
+	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
 	if events.has("lifted"): book.new_flight()
 	book.flight.t = float(book.flight.t)+delta
 	book.step(delta)
@@ -960,6 +968,7 @@ func tick(delta: float) -> void:
 	if stage != null:
 		stage.frame(delta,camera,plane.position+ground_scale.lift(),ground_scale.size(),Callable(field,"height"))
 		if not stage.running(): _menu_done()
+	if beats != null: beats.step(delta,self)
 	land.lead_with(plane.velocity)
 	land.step(camera.global_position)
 	arches.step(camera.global_position)
