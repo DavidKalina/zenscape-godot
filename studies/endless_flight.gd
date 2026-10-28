@@ -382,6 +382,11 @@ var book: PilotBook
 ## The overlay that holds the keys while it is up (the shop, the logbook,
 ## photo mode; null: none). One at a time: open one only when this is null.
 var overlay: Object = null
+## The book's counting hooks (scripts/endless/pilot_tallies.gd), stepped in
+## `tick`; the landing summary and the logbook (J) over the HUD.
+var tallies := PilotTallies.new()
+var summary: Control
+var logbook: Control
 ## This frame's events (the landing's and the near misses'), for the HUD.
 var _events := {}
 ## The flight path's way last frame, for the vapour's pull, and the pull.
@@ -943,6 +948,7 @@ func tick(delta: float) -> void:
 	_pull = _pull_of(delta)
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")),_pull,float(plane.bank))
 	_events = events
+	tallies.step(delta,self,events)
 	_feel_sink(events)
 	_rumble(delta,events,float(input.get("boost",0.0)))
 	sound.step(delta,self,events,float(input.get("boost",0.0)))
