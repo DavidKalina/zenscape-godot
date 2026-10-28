@@ -2563,6 +2563,11 @@ class Build extends RefCounted:
 	## Lean stone's ivy strands at most (IVY_LEAN; more on a piece whose
 	## growth is coarse).
 	var ivy_cap := IVY_LEAN
+	## How much more ivy its tops ask (1, as ever): strands a square metre
+	## (IVY_STRANDS) and their length (IVY_LENGTH) this many times, for a
+	## piece grown big (the aqueduct's bridge spans), whose ivy would read
+	## sparse and short at the kit's.
+	var ivy_gain := 1.0
 	## The ground the piece stands on: a Callable(x, z) -> y in the piece's
 	## frame, or none (flat, y 0). Feet, footings and walls reach down to it
 	## and below; drifts and rubble lie on it.
@@ -3175,6 +3180,9 @@ class Build extends RefCounted:
 			build.lean_scale = RuinGrowth.LEAN_SCALE*growth_coarse
 			build.ivy_leaf = IVY_LEAF*growth_coarse
 		build.ivy_lean = ivy_cap
+		if ivy_gain != 1.0:
+			build.ivy_strands = IVY_STRANDS*ivy_gain
+			build.ivy_length = IVY_LENGTH*ivy_gain
 		build.ground = ground
 		build.lean = lean
 		build.vines = RuinGrowth.vines
@@ -3777,8 +3785,8 @@ class Build extends RefCounted:
 			area += float(t[1])
 		# As many strands as the tops' area asks, capped (lean stone, fewer),
 		# then thinned by the detail (so a big ruin thins too).
-		var count := int(mini(ivy_cap if lean else IVY_MOST,int(area*lerpf(IVY_STRANDS.x,IVY_STRANDS.y,weathered)+rng.randf()))*level)
-		var longest := lerpf(IVY_LENGTH.x,IVY_LENGTH.y,weathered)
+		var count := int(mini(ivy_cap if lean else IVY_MOST,int(area*lerpf(IVY_STRANDS.x,IVY_STRANDS.y,weathered)*ivy_gain+rng.randf()))*level)
+		var longest := lerpf(IVY_LENGTH.x,IVY_LENGTH.y,weathered)*ivy_gain
 		for i in range(count):
 			if high.is_empty(): break
 			for attempt in range(8):

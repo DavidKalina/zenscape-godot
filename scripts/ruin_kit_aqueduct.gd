@@ -127,12 +127,20 @@ const STUMP := Vector2(1.1,2.3)
 ## stone chipped and worn as ever; their growth lean (Build `lean`: fewer
 ## strands, one leaf a node), BRIDGE_COARSE_GROWTH coarser (Build
 ## `growth_coarse`: bigger leaves, further apart), at BRIDGE_GROWTH of a
-## ruin's (its `level`), grown by the native finish.
+## ruin's (its `level`: its curtains and cushions all kept), grown by the
+## native finish. Lean ivy reads sparse on a span this big, so its tops ask
+## more and longer strands (BRIDGE_IVY_GAIN), BRIDGE_IVY at most a span:
+## about as overgrown as the fine (kit) build at under a third of its
+## growth (a 411 m two-tier 643k -> 192k).
 const BRIDGE_COURSE := 2.2
-const BRIDGE_COARSE_GROWTH := 1.8
-const BRIDGE_GROWTH := 0.6
+const BRIDGE_COARSE_GROWTH := 1.2
+const BRIDGE_GROWTH := 1.0
 ## Its ivy strands at most a span (Build `ivy_cap`; lean stone's are 8).
-const BRIDGE_IVY := 16
+const BRIDGE_IVY := 24
+## Its tops ask this much more ivy, and grow it this much longer (Build
+## `ivy_gain`): the land grows a span 1.3-3.6x, and the kit's strands read
+## sparse and short on it.
+const BRIDGE_IVY_GAIN := 1.6
 
 # --- The pieces -----------------------------------------------------------------
 
@@ -520,6 +528,7 @@ static func _build(seed_value: int, weathered: float, label: String, ground: Cal
 		b.course = BRIDGE_COURSE
 		b.growth_coarse = BRIDGE_COARSE_GROWTH
 		b.ivy_cap = BRIDGE_IVY
+		b.ivy_gain = BRIDGE_IVY_GAIN
 		b.level *= BRIDGE_GROWTH
 	return b
 
