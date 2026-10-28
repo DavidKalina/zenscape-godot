@@ -32,24 +32,32 @@ const Sundered = preload("res://scripts/sundered_growth.gd")
 
 ## The keep-out round an opening's box: across and up (m), and in depth for
 ## an opening through a wall (a lane keeps its own length).
-const CORE_MARGIN := 1.0
-const CORE_DEPTH := 1.4
+const CORE_MARGIN := 1.6
+const CORE_DEPTH := 2.0
+
+## The kit's own growth's detail on these pieces (Build `level`, set once
+## ours is laid): its fine ivy and cushions are mostly the shader's now.
+const KIT_LEVEL := 0.3
 
 ## Leaf sizes (RuinGrowth `strand` coarse) of what is seen near (the
 ## vault's curtains) and far (the piers, the tower's faces).
-const COARSE_NEAR := 2.8
-const COARSE_MID := 3.2
-const COARSE_FAR := 3.8
+const COARSE_NEAR := 4.2
+const COARSE_MID := 5.0
+const COARSE_FAR := 5.6
 
-## The amberlands' growth colours (sRGB), dark to light: dry olive and,
-## in patches, autumn rust. The kit's greens map onto them by brightness.
-const OLIVE := [Color("1c1d10"),Color("2f2e18"),Color("46431f"),Color("605a2a"),Color("77703a")]
-const RUST := [Color("2a190f"),Color("452816"),Color("5f3a1f"),Color("7a5029"),Color("906634")]
-## The brightness (linear luminance) the kit's greens run over, and how
-## far a patch of rust is: a noise's scale (m) and its share of the growth.
-const LUM := Vector2(0.03,0.2)
-const RUST_SCALE := 28.0
-const RUST_SHARE := 0.3
+## The amberlands' growth colours (sRGB), dark to light: muted dry olive,
+## dusty green-grey and ochre in broad patches, a rare dull rust. The kit's
+## greens map onto them by brightness (so a leaf's light and dark stay).
+const OLIVE := [Color("222419"),Color("363923"),Color("4b4f2f"),Color("5f643b"),Color("727846")]
+const GREY := [Color("24271f"),Color("373b30"),Color("4c5244"),Color("616856"),Color("757d69")]
+const OCHRE := [Color("292416"),Color("413921"),Color("5a4e2d"),Color("706239"),Color("847545")]
+const RUST := [Color("281d16"),Color("3e2f22"),Color("56412e"),Color("6b523a"),Color("7f6346")]
+## The brightness (linear luminance) the kit's greens run over, and the
+## patches: a noise's scale (m); ochre's share, rust's (rare).
+const LUM := Vector2(0.03,0.28)
+const PATCH_SCALE := 26.0
+const OCHRE_SHARE := 0.25
+const RUST_SHARE := 0.06
 
 static var _gothic = null
 
@@ -111,6 +119,10 @@ class Dress extends RefCounted:
 		section("")
 		b.rng = keep_rng
 		b.grow = PackedFloat32Array()
+		# The kit's own growth, drawn in finish (its ivy, fringes, moss
+		# cushions and curtains), thinned: the stone's shader carries the
+		# moss now, and ours the silhouette.
+		b.level = minf(b.level,KIT_LEVEL)
 
 # --- The openings' clear cores ----------------------------------------------
 
@@ -240,9 +252,16 @@ static func mat(x: Dress, at: Vector3, count: int, reach: float, scale := 2.4) -
 	b.grow = RuinGrowth.attrs(0.0,0.0,Vector3.ZERO,0.0,0.35,fposmod(at.x*3.17+at.z*5.31,1.0),false,0.6)
 	for j in range(count):
 		var on := at+Vector3(rng.randf_range(-reach,reach),0.02,rng.randf_range(-reach,reach)*0.6)
-		if x.probe.kept_clear(on): continue
-		b._leaf(on,Vector3.UP,rng.randf_range(RuinKit.IVY_LEAF.x,RuinKit.IVY_LEAF.y)*scale,0.0)
+		var size := rng.randf_range(RuinKit.IVY_LEAF.x,RuinKit.IVY_LEAF.y)*scale
+		if _near_clear(x,on,size*0.6): continue
+		b._leaf(on,Vector3.UP,size,0.0)
 	b.grow = PackedFloat32Array()
+
+## Whether a kept-clear box is within `r` of `p` (a clump's reach).
+static func _near_clear(x: Dress, p: Vector3, r: float) -> bool:
+	for o: Vector3 in [Vector3.ZERO,Vector3(r,0,0),Vector3(-r,0,0),Vector3(0,r,0),Vector3(0,0,r),Vector3(0,0,-r)]:
+		if x.probe.kept_clear(p+o): return true
+	return false
 
 ## A random point on the top `top`.
 static func _on(x: Dress, top: Array) -> Vector3:
@@ -364,10 +383,10 @@ static func nave(b, p: Dictionary) -> void:
 				var n := keep.x if s < 0.0 else keep.y
 				if n <= 0: continue
 				var reach := nave_half*(1.0-float(n)/9.0*0.85) if n < 9 else nave_half
-				var spots := int(round(rng.randf_range(3.0,6.0)*d))
+				var spots := int(round(rng.randf_range(2.5,4.5)*d))
 				for j in range(spots):
 					var px := s*lerpf(nave_half-1.0,nave_half-reach+1.0,rng.randf())
-					curtain(x,Vector3(px,0.0,z+rng.randf_range(-0.3,0.3)),spring-1.0,spring+22.0,rng.randf_range(3.0,8.0),9,COARSE_NEAR,true)
+					curtain(x,Vector3(px,0.0,z+rng.randf_range(-0.3,0.3)),spring-1.0,spring+22.0,rng.randf_range(3.5,9.0),7,COARSE_NEAR,true)
 				if n < 9:
 					# The snapped end: the furthest stone along the rib, its trails.
 					var tip := -1.0
@@ -379,7 +398,7 @@ static func nave(b, p: Dictionary) -> void:
 						tx -= 0.5
 					if tip > 0.0:
 						var ty := _find_under(x,s*tip,z,spring-1.0,spring+22.0)
-						trail(x,Vector3(s*tip,ty,z),int(round(rng.randf_range(5.0,8.0)*d)),rng.randf_range(7.0,14.0),COARSE_NEAR,Vector3(1.0,0.0,0.0))
+						trail(x,Vector3(s*tip,ty,z),int(round(rng.randf_range(3.0,4.0)*d)),rng.randf_range(7.0,14.0),COARSE_NEAR,Vector3(1.0,0.0,0.0))
 		x.section("webs")
 		# The webbing and its holes: curtains under the barrel, thicker at the
 		# edges of a hole (the vault broken).
@@ -387,8 +406,8 @@ static func nave(b, p: Dictionary) -> void:
 		for i in range(bays):
 			if not bool(web[i]): continue
 			var z0 := half_len-(i+0.5)*bay
-			var plain := int(round(rng.randf_range(3.0,6.0)*d))
-			var edges := int(round(rng.randf_range(3.0,5.0)*d))
+			var plain := int(round(rng.randf_range(2.0,3.5)*d))
+			var edges := int(round(rng.randf_range(2.0,3.0)*d))
 			for attempt in range(60):
 				if plain <= 0 and edges <= 0: break
 				var px := rng.randf_range(-nave_half+1.5,nave_half-1.5)
@@ -401,9 +420,9 @@ static func nave(b, p: Dictionary) -> void:
 						edge = true
 						break
 				if edge and edges > 0:
-					if curtain(x,Vector3(px,0.0,pz),under-1.0,under+1.5,rng.randf_range(5.0,10.0),12,COARSE_NEAR,true): edges -= 1
+					if curtain(x,Vector3(px,0.0,pz),under-1.0,under+1.5,rng.randf_range(5.0,10.0),7,COARSE_NEAR,true): edges -= 1
 				elif plain > 0 and not edge:
-					if curtain(x,Vector3(px,0.0,pz),under-1.0,under+1.5,rng.randf_range(2.5,6.0),8,COARSE_NEAR): plain -= 1
+					if curtain(x,Vector3(px,0.0,pz),under-1.0,under+1.5,rng.randf_range(2.5,6.0),5,COARSE_NEAR): plain -= 1
 		x.section("flyers")
 		# The flyers: curtains under the standing ones' soffits.
 		var flyers: Dictionary = p["flyers"]
@@ -411,30 +430,30 @@ static func nave(b, p: Dictionary) -> void:
 			for k in range(1,bays):
 				if not bool(flyers["%d/%d" % [s,k]]): continue
 				var z := half_len-k*bay
-				for j in range(int(round(rng.randf_range(1.0,3.0)*d))):
+				for j in range(int(round(rng.randf_range(1.0,2.0)*d))):
 					var px := s*rng.randf_range(pier_x+2.0,buttress_x-1.5)
-					curtain(x,Vector3(px,0.0,z+rng.randf_range(-0.6,0.6)),12.0,26.0,rng.randf_range(2.0,5.0),6,COARSE_NEAR)
+					curtain(x,Vector3(px,0.0,z+rng.randf_range(-0.6,0.6)),12.0,26.0,rng.randf_range(2.0,5.0),4,COARSE_NEAR)
 	x.section("piers")
 	# Ivy down the piers (the tall ones' shafts) from under their capitals.
 	for k in range(bays+1):
 		for s: float in [-1.0,1.0]:
-			if rng.randf() > 0.85*d: continue
-			pier(x,Vector3(s*pier_x,0.0,half_len-k*bay),spring-1.7-0.3,pier_r*1.55+0.2,rng.randi_range(2,4),Vector2(7.0,22.0),COARSE_MID)
+			if rng.randf() > 0.4*d: continue
+			pier(x,Vector3(s*pier_x,0.0,half_len-k*bay),spring-1.7-0.3,pier_r*1.55+0.2,rng.randi_range(1,2),Vector2(7.0,22.0),COARSE_MID)
 	if vines:
 		x.section("cascades")
 		# Wall heads, the gables, the buttresses' stages and the flyers' backs:
 		# ivy cascading down their faces, mats on them.
-		cascades(x,12.0,50.0,110,Vector2(5.0,17.0),9,COARSE_MID,0.7,0.5,false)
+		cascades(x,12.0,50.0,30,Vector2(6.0,17.0),5,COARSE_MID,0.5,0.5,false)
 		x.section("long")
 		# The long ones off the highest broken heads.
-		cascades(x,22.0,50.0,26,Vector2(9.0,22.0),8,COARSE_FAR,0.5,0.4,true)
+		cascades(x,22.0,50.0,12,Vector2(10.0,22.0),5,COARSE_FAR,0.4,0.4,true)
 		x.section("stages")
 		# The stages and set-offs down the buttresses: shorter.
-		cascades(x,3.0,12.0,30,Vector2(2.5,8.0),7,COARSE_MID,0.8,0.3,false)
+		cascades(x,3.0,12.0,6,Vector2(3.0,8.0),4,COARSE_MID,0.5,0.3,false)
 	x.section("mats")
-	mats(x,3.0,48.0,60)
+	mats(x,3.0,48.0,24,0.4,Vector2i(1,3),3.4)
 	x.section("low")
-	low(x,60)
+	low(x,16)
 	x.done()
 
 # --- The belfry ---------------------------------------------------------------------
@@ -447,18 +466,18 @@ static func belfry(b, p: Dictionary) -> void:
 	if RuinGrowth.vines:
 		x.section("head")
 		# The ragged head: long trails down every face.
-		cascades(x,66.0,100.0,34,Vector2(10.0,28.0),10,COARSE_FAR,0.6,0.3,true)
+		cascades(x,66.0,100.0,16,Vector2(14.0,32.0),5,COARSE_FAR,0.4,0.3,true)
 		x.section("upper")
 		# The upper stage and the belfry's sills and string courses.
-		cascades(x,46.0,66.0,30,Vector2(5.0,16.0),9,COARSE_FAR,0.7,0.3,false)
+		cascades(x,46.0,66.0,8,Vector2(8.0,18.0),5,COARSE_FAR,0.5,0.3,false)
 		x.section("lower")
 		# The lower stages' set-offs, tracery sill, courses.
-		cascades(x,14.0,46.0,60,Vector2(5.0,17.0),9,COARSE_FAR,0.8,0.3,false)
-		cascades(x,2.0,14.0,16,Vector2(2.5,9.0),8,COARSE_MID,0.8,0.3,false)
+		cascades(x,14.0,46.0,16,Vector2(8.0,20.0),5,COARSE_FAR,0.5,0.3,false)
+		cascades(x,2.0,14.0,4,Vector2(3.0,9.0),4,COARSE_MID,0.5,0.3,false)
 	x.section("mats")
-	mats(x,2.0,98.0,60,0.3)
+	mats(x,2.0,98.0,18,0.3,Vector2i(1,3),3.4)
 	x.section("low")
-	low(x,50)
+	low(x,12)
 	x.done()
 
 # --- The rose gate ----------------------------------------------------------------------
@@ -471,17 +490,35 @@ static func gate(b, p: Dictionary) -> void:
 	if RuinGrowth.vines:
 		x.section("gable")
 		# The gable's edges, draped.
-		cascades(x,22.0,50.0,32,Vector2(6.0,18.0),10,COARSE_MID,0.7,0.3,true)
+		cascades(x,22.0,50.0,12,Vector2(7.0,18.0),5,COARSE_MID,0.4,0.3,true)
 		x.section("ring")
 		# The rose's ring, the buttresses' stages and the slots' heads.
-		cascades(x,6.0,22.0,30,Vector2(3.0,12.0),9,COARSE_MID,0.8,0.3,false)
+		cascades(x,6.0,22.0,6,Vector2(3.0,12.0),4,COARSE_MID,0.5,0.3,false)
 	x.section("mats")
-	mats(x,3.0,40.0,30,0.3)
+	mats(x,3.0,40.0,10,0.3,Vector2i(1,3),3.4)
 	x.section("low")
-	low(x,30)
+	low(x,8)
 	x.done()
 
 # --- Far ------------------------------------------------------------------------------
+
+const RuinLod = preload("res://scripts/ruin_lod.gd")
+## Past this (m) a piece's growth isn't drawn (its strands are under a pixel
+## by then; the stone's shader carries the moss), faded over the margin.
+const FAR_GROWTH := 800.0
+const FAR_MARGIN := 80.0
+
+## A built piece's levels (scripts/ruin_lod.gd: the stone simplified, the
+## growth lifted into its own "Growth" instance thinning with distance) and
+## that growth dropped past FAR_GROWTH. Nothing if its mesh isn't made yet
+## (a build handing its meshes to the main thread).
+static func far_off(node: Node3D) -> void:
+	RuinLod.add(node)
+	for g: MeshInstance3D in node.find_children("Growth","MeshInstance3D",true,false):
+		g.visibility_range_end = FAR_GROWTH
+		g.visibility_range_end_margin = FAR_MARGIN
+		g.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+
 
 ## A far copy's hint (its far Build `b`, no stone to probe): a few hanging
 ## strips down the faces and mats on the heads, from the piece's plan;
@@ -534,6 +571,35 @@ static func _far_mat(b, at: Vector3, rng: RandomNumberGenerator) -> void:
 	b.growth_face(PackedVector3Array([at+Vector3(-r,0.05,-r*0.7),at+Vector3(r,0.05,-r*0.7),at+Vector3(r*1.1,0.05,r*0.7),at+Vector3(-r*1.1,0.05,r*0.7)]),Vector3.UP,Sundered._green(rng,0.3))
 	b.grow = PackedFloat32Array()
 
+# --- The stone's own moss ---------------------------------------------------------------
+
+## The gothic pieces' stone: the kit's stone (its shared material's look,
+## RuinKit `materials`) with the moss painted over it and its shade lifted
+## (shaders/gothic_stone.gdshader, shaders/stone_moss.gdshaderinc). One
+## material for all three; every other ruin keeps the shared one. Its
+## knobs (`STONE_MOSS`) are the stone's: how much, the colours, the lifts.
+const GOTHIC_STONE = preload("res://shaders/gothic_stone.gdshader")
+const STONE_MOSS := {"moss":1.0,"moss_low":11.0,"moss_tongue":0.46,"stone_lift":1.35,"shade_lift":6.5,
+	"moss_olive":Color("434b2c"),"moss_grey":Color("50584a"),"moss_ochre":Color("66603a"),
+	"moss_rust":Color("57412f"),"moss_deep":Color("24291a")}
+static var _stone: ShaderMaterial = null
+static var _stone_key := ""
+
+static func stone() -> ShaderMaterial:
+	var shared: ShaderMaterial = RuinKit.materials().stone
+	if _stone == null:
+		var s := ShaderMaterial.new()
+		s.shader = GOTHIC_STONE
+		for k: String in STONE_MOSS: s.set_shader_parameter(k,STONE_MOSS[k])
+		_stone = s
+	# The shared look's knobs, again when the look changed.
+	var keys := ["fill","rim","roughness_value","stone_weather"]
+	var key := str(keys.map(func(k: String) -> Variant: return shared.get_shader_parameter(k)))
+	if key != _stone_key:
+		for k: String in keys: _stone.set_shader_parameter(k,shared.get_shader_parameter(k))
+		_stone_key = key
+	return _stone
+
 # --- The colour -----------------------------------------------------------------------
 
 ## The Build's `growth_tint`: the growth's faces (RuinGrowth.Faces `g`, linear
@@ -542,7 +608,7 @@ static func _far_mat(b, at: Vector3, rng: RandomNumberGenerator) -> void:
 static func tint(g) -> void:
 	var noise := FastNoiseLite.new()
 	noise.seed = 7141
-	noise.frequency = 1.0/RUST_SCALE
+	noise.frequency = 1.0/PATCH_SCALE
 	noise.fractal_octaves = 2
 	var cs: PackedColorArray = g.c
 	var vs: PackedVector3Array = g.v
@@ -550,14 +616,20 @@ static func tint(g) -> void:
 		var c := cs[i]
 		var t := clampf((c.get_luminance()-LUM.x)/(LUM.y-LUM.x),0.0,1.0)
 		var v := vs[i]
-		var patch := smoothstep(0.56,0.82,noise.get_noise_3d(v.x,v.y*0.6,v.z)*0.5+0.5+(0.5-RUST_SHARE)*0.0)
+		var grey := smoothstep(0.35,0.65,noise.get_noise_3d(v.x,v.y*0.6,v.z)*0.5+0.5)
+		var ochre := smoothstep(1.0-OCHRE_SHARE-0.08,1.0-OCHRE_SHARE+0.08,noise.get_noise_3d(v.x+311.0,v.y*0.6,v.z-97.0)*0.5+0.5)
+		var rust := smoothstep(1.0-RUST_SHARE-0.03,1.0-RUST_SHARE+0.03,noise.get_noise_3d(v.x-517.0,v.y*0.5+40.0,v.z+233.0)*0.5+0.5)
 		var k := t*float(OLIVE.size()-1)
 		var lo := int(floor(k))
 		var hi := mini(lo+1,OLIVE.size()-1)
 		var f := k-lo
-		var a: Color = (OLIVE[lo] as Color).lerp(OLIVE[hi],f)
-		var r: Color = (RUST[lo] as Color).lerp(RUST[hi],f)
-		var out := a.lerp(r,patch).srgb_to_linear()
+		var out := _ramp(OLIVE,lo,hi,f).lerp(_ramp(GREY,lo,hi,f),grey)
+		out = out.lerp(_ramp(OCHRE,lo,hi,f),ochre*0.8)
+		out = out.lerp(_ramp(RUST,lo,hi,f),rust*0.7)
+		out = out.srgb_to_linear()
 		out.a = c.a
 		cs[i] = out
 	g.c = cs
+
+static func _ramp(ramp: Array, lo: int, hi: int, f: float) -> Color:
+	return (ramp[lo] as Color).lerp(ramp[hi],f)

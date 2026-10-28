@@ -347,6 +347,7 @@ static func _build(seed_value: int, weathered: float, label: String) -> Build:
 	b.cull = true
 	b.settle = 0.4
 	b.growth_tint = Callable(GothicGrowth.tint)
+	b.stone_look = GothicGrowth.stone()
 	return b
 
 ## A wall run along the pose's X from `x0` to `x1`, `d` half thick, from
@@ -528,6 +529,7 @@ static func _meta(node: Node3D, id: String, p: Dictionary) -> void:
 			box = m if first else box.merge(m)
 			first = false
 	node.set_meta("bounds",box)
+	GothicGrowth.far_off(node)
 
 # --- 1. The ruined nave ----------------------------------------------------------
 
