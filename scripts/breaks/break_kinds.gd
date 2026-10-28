@@ -72,6 +72,7 @@ const KIND_OF := {
 	"hall_beam":"lintel",
 	"stairs":"stair","grand_stair":"stair",
 	"floor":"slab","hall_slab":"slab","tomb_chest":"slab","fallen_pier":"slab","stone_circle":"slab",
+	"gothic_nave":"wall","belfry_tower":"wall","rose_gate":"wall",
 }
 
 static var _cuts := {}
