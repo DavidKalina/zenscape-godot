@@ -29,6 +29,7 @@ const RuinKit = preload("res://scripts/ruin_kit.gd")
 const GothicGrowth = preload("res://scripts/gothic_growth.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const RockShape = preload("res://scripts/endless/rock_shape.gd")
+const Colosseum = preload("res://scripts/ruin_kit_colosseum.gd")
 
 ## The cells built round the eye (m to the cell's middle), and those kept
 ## until past REACH+CELL.
@@ -111,6 +112,13 @@ func _sunlit(node: Node) -> void:
 			elif own == gothic:
 				if _gothic_stone == null: _gothic_stone = _stone if _moss_off else GothicGrowth.lifted(STONE_LIFT,3.6,0.1)
 				m.set_surface_override_material(i,_gothic_stone)
+	# The colosseum's bays, drawn as MultiMeshes (scripts/ruin_kit_colosseum.gd).
+	for mmi in node.find_children("*","MultiMeshInstance3D",true,false):
+		var mm := (mmi as MultiMeshInstance3D).multimesh
+		if mm == null or mm.mesh == null or mm.mesh.get_surface_count() == 0: continue
+		if mm.mesh.surface_get_material(0) != gothic: continue
+		if _gothic_stone == null: _gothic_stone = _stone if _moss_off else GothicGrowth.lifted(STONE_LIFT,3.6,0.1)
+		(mmi as MultiMeshInstance3D).material_override = _gothic_stone
 
 func _exit_tree() -> void:
 	_quit = true
@@ -239,6 +247,7 @@ func _commit_one(done: Dictionary) -> void:
 			stats.tris += int(b.tris)
 		else:
 			node = b.node
+			if spec.get("kind","") == "colosseum": Colosseum.realize(node)
 			if not _old_stone: _sunlit(node)
 		for body in node.find_children("*","StaticBody3D",true,false):
 			(body as StaticBody3D).collision_layer = LAYER

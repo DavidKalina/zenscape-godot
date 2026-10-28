@@ -606,9 +606,26 @@ static func colosseum(seed_value: int, weathered := 0.6) -> Node3D:
 	var reach := STEP*STEPS
 	root.set_meta("bounds",AABB(Vector3(-RX-reach-RUBBLE,-FOUND,-RZ-reach),Vector3((RX+reach+RUBBLE)*2.0,P+ATTIC+FOUND,(RZ+reach)*2.0)))
 	GothicGrowth.far_off(root)
+	if OS.get_thread_caller_id() == OS.get_main_thread_id(): realize(root)
 	stats["build_ms"] = (Time.get_ticks_usec()-t0)/1000.0
 	root.set_meta("stats",stats)
 	return root
+
+## Makes the bays' MultiMeshes under `node` from what `_instances` left
+## (on the main thread: land_arches.gd calls it as it adds the piece).
+static func realize(node: Node) -> void:
+	for n in node.find_children("*","MultiMeshInstance3D",true,false):
+		var inst := n as MultiMeshInstance3D
+		if inst.multimesh != null or not inst.has_meta("mm_buffer"): continue
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = inst.get_meta("mm_mesh")
+		mm.instance_count = int(inst.get_meta("mm_count"))
+		mm.buffer = inst.get_meta("mm_buffer")
+		inst.multimesh = mm
+		inst.remove_meta("mm_buffer")
+		inst.remove_meta("mm_mesh")
+		inst.remove_meta("mm_count")
 
 ## A bay's stone and growth as MultiMeshes under `parent`, an instance a
 ## transform of `xfs`. Answers one bay's (stone, growth) triangles.
@@ -626,10 +643,6 @@ static func _instances(parent: Node3D, key: String, node: Node3D, xfs: Array) ->
 	var meshes := [[stone,"Stone"]]
 	if stone.has_meta("growth_mesh"): meshes.append([stone.get_meta("growth_mesh"),"Growth"])
 	for pair: Array in meshes:
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = pair[0]
-		mm.instance_count = xfs.size()
 		var buf := PackedFloat32Array()
 		buf.resize(xfs.size()*12)
 		for i in range(xfs.size()):
@@ -648,10 +661,13 @@ static func _instances(parent: Node3D, key: String, node: Node3D, xfs: Array) ->
 			buf[o+9] = bs.y.z
 			buf[o+10] = bs.z.z
 			buf[o+11] = f.origin.z
-		mm.buffer = buf
+		# The MultiMesh itself is made on the main thread (`realize`): a
+		# worker thread's MultiMesh RID can come out wrong.
 		var inst := MultiMeshInstance3D.new()
 		inst.name = "%s_%s" % [key.replace(":","_"),pair[1]]
-		inst.multimesh = mm
+		inst.set_meta("mm_mesh",pair[0])
+		inst.set_meta("mm_buffer",buf)
+		inst.set_meta("mm_count",xfs.size())
 		if pair[1] == "Growth":
 			inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			inst.visibility_range_end = GothicGrowth.FAR_GROWTH
