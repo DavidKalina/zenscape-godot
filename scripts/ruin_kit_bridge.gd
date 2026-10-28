@@ -848,14 +848,25 @@ static func _rubble(b: Build, p: Dictionary, ground: Callable) -> void:
 ## file's head.
 static func _growth(b: Build, p: Dictionary, ground: Callable, ctx: Dictionary) -> void:
 	var d := SunderedGrowth.amount
+	var probe := Probe.new(b)
+	probe.land = ground
+	probe.label = "road bridge"
+	# The kit's own moss and ivy grow from tops in the open only: a course's
+	# top under the next one's stone is let go (what grew there was buried).
+	var open_tops: Array = []
+	for t: Array in b.tops:
+		var poly: PackedVector3Array = t[0]
+		var c := Vector3.ZERO
+		for q: Vector3 in poly: c += q
+		c /= poly.size()
+		if not probe._inside(c+Vector3(0.0,0.3,0.0)): open_tops.append(t)
+	b.tops = open_tops
 	if d <= 0.0: return
 	var keep_rng := b.rng
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([int(p.seed),"road bridge growth"])
 	b.rng = rng
-	var probe := Probe.new(b)
-	probe.land = ground
-	probe.label = "road bridge"
+	probe.rng = rng
 	var w := float(p.weathered)
 	var half := float(p.half)
 	var lost := int(p.lost)
