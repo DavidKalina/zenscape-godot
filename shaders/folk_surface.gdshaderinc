@@ -53,6 +53,10 @@ global uniform vec3 zs_cloud_sun;
 global uniform vec3 zs_key_direction;
 #include "res://shaders/look_fill.gdshaderinc"
 #endif
+#ifdef ZS_STONE_MOSS
+// The gothic set pieces' moss (shaders/stone_moss.gdshaderinc).
+#include "res://shaders/stone_moss.gdshaderinc"
+#endif
 #ifdef ZS_CRAFT_GRIME
 // The flying craft's grime (shaders/craft_grime.gdshaderinc).
 #include "res://shaders/craft_grime.gdshaderinc"
@@ -142,6 +146,13 @@ void fragment() {
 		NORMAL = bumped;
 	}
 #endif
+#ifdef ZS_STONE_MOSS
+	{
+		vec3 mn = NORMAL;
+		rough_add += stone_moss(base, mn, normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz), local, VERTEX, 1.0 - clamp(COLOR.a, 0.0, 1.0), COLOR.rgb, zs_key_direction);
+		NORMAL = mn;
+	}
+#endif
 #ifdef ZS_CRAFT_GRIME
 	rough_add += craft_grime(base, local, normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz));
 #ifdef ZS_CRAFT_DETAIL
@@ -170,6 +181,9 @@ void fragment() {
 	// the sky fill, the rest a little of it. Both out underground.
 	float sunward = clamp(dot(normal, zs_key_direction), 0.0, 1.0);
 	EMISSION += diffuse * (zs_look_bounce_light(normal) + zs_look_fill_light(1.0 - 0.75 * sunward)) * (1.0 - zs_under);
+#ifdef ZS_STONE_MOSS
+	EMISSION += diffuse * hemi * shade_lift * (1.0 - 0.5 * sunward) * (1.0 - zs_under);
+#endif
 #endif
 	if (gleam > 0.0) {
 		float band = 1.0 - smoothstep(0.0, gleam_width, abs(dot(gleam_world, gleam_dir) - gleam_at));

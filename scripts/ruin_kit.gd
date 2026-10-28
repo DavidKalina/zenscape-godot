@@ -2583,6 +2583,13 @@ class Build extends RefCounted:
 	## the growth's own surface (`growth`), not the stone's.
 	var grow := PackedFloat32Array()
 	var growth := RuinGrowth.Faces.new()
+	## A look for this piece's growth only (the amberlands' gothic set pieces):
+	## a Callable(growth Faces) that recolours the growth's vertices once it is
+	## drawn, before its mesh is made. Empty: the growth's own greens.
+	var growth_tint := Callable()
+	## This piece's own stone material (the gothic set pieces' mossed stone,
+	## scripts/gothic_growth.gd `stone`), or null: the shared `materials().stone`.
+	var stone_look: Material = null
 	## A clean look's (Style): the worn arrises `_box` cut (left out of
 	## the drawn and solid block), and the piece's own stone.
 	var bevels := {}
@@ -3062,6 +3069,7 @@ class Build extends RefCounted:
 			RuinGrowth.fringes(self)
 			_cushions()
 			_draw()
+		if growth_tint.is_valid(): growth_tint.call(growth)
 		if hand.is_valid(): hand.call(_nodes)
 		else: _nodes()
 		_body()
@@ -3074,7 +3082,7 @@ class Build extends RefCounted:
 	func _nodes() -> void:
 		var mesh := ArrayMesh.new()
 		var m := materials()
-		for part: Array in [[faces,m.stone]]:
+		for part: Array in [[faces,stone_look if stone_look != null else m.stone]]:
 			var f: Faces = part[0]
 			if f.v.is_empty(): continue
 			var surface := []
