@@ -45,8 +45,9 @@ above, and the wall up close at `--at=-760,-420 --heading=40 --alt=45`.
 - **`shaders/endless_rock.gdshaderinc`.** Every rock surface uses this
   one include, so the palette (the `ER_*` constants and the strengths)
   changes all rock at once.
-  - `er_rock_shaped` takes the shape, and `er_rock` passes none, so arches,
-    stacks and other rock meshes are untouched.
+  - `er_rock_shaped` takes the shape. `er_rock` passes none, for a shader
+    that includes the rock without a baked mesh. The ground shader, which
+    the land, stacks, hoodoos and arches all use, passes CUSTOM3.
   - `rock_shape`: proud edges are worn pale, in the sun's gold where it hits
     and a cool sky tone in shade. In the sun only the small edges wear
     pale, since a whole stack stands proud at the larger sizes. Crevices,
