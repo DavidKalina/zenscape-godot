@@ -115,6 +115,7 @@ const ManualLanding = preload("res://scripts/manual_landing.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
+const PhotoMode = preload("res://scripts/endless/photo_mode.gd")
 const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
@@ -382,6 +383,8 @@ var book: PilotBook
 ## The overlay that holds the keys while it is up (the shop, the logbook,
 ## photo mode; null: none). One at a time: open one only when this is null.
 var overlay: Object = null
+## Photo mode (scripts/endless/photo_mode.gd): O; the flight held while up.
+var photo: PhotoMode
 ## This frame's events (the landing's and the near misses'), for the HUD.
 var _events := {}
 ## The flight path's way last frame, for the vapour's pull, and the pull.
@@ -404,6 +407,7 @@ func _ready() -> void:
 	# rumble and the prompts follow it.
 	get_tree().root.window_input.connect(Pad.note)
 	book = PilotBook.open()
+	photo = PhotoMode.new(self)
 	add_child(sound)
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = NATIVE_3D
@@ -909,6 +913,9 @@ func _sight(from: Vector3, to: Vector3) -> float:
 
 func _process(delta: float) -> void:
 	if not walk_ready: return
+	if photo.active:
+		photo.step(minf(delta,1.0/20.0))
+		return
 	tick(minf(delta,1.0/20.0))
 
 ## One frame: the plane flown, drawn and followed, the land streamed round
@@ -1310,6 +1317,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not walk_ready: return
 	# The menu holds the flight: none of its keys while it is up.
 	if stage != null and stage.holding(): return
+	# Photo mode: O opens it while no overlay is up, and it takes them all.
+	if photo.handle(event): return
 	# An overlay (the shop, the logbook, photo mode) takes the keys while up.
 	if overlay != null: return
 	if event is InputEventMouseMotion:
