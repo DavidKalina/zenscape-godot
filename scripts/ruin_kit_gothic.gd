@@ -52,8 +52,11 @@ const TOY_PORTAL := 5.0
 ## A side lancet, its mullion gone: toy 3.0 (6 m, 1.6 m past each tip).
 const TOY_LANCET := 3.0
 ## The flank's corridor between the piers and the buttresses, under the
-## flyers: toy 3.0 (6 m).
-const TOY_FLANK := 3.0
+## flyers: toy 3.75 (7.5 m). Wider than a lancet's 3.0: it is held for its
+## whole 115 m, at the near misses' surge; at 6 m a pass with a wobble on
+## the stick (trunk flyability, 2026-10-28) clipped a pier or buttress one
+## time in five.
+const TOY_FLANK := 3.75
 ## The choir screen's arch: toy 3.4 (6.8 m).
 const TOY_SCREEN := 3.4
 ## The east end's great lancet: toy 3.2 (6.4 m).
@@ -531,7 +534,7 @@ static func _meta(node: Node3D, id: String, p: Dictionary) -> void:
 
 ## The ruined nave (`gothic_nave`): see the file's head. Runs along Z, the
 ## west portal its front (+Z), BAYS*BAY long (112 m) between its ends, 2 *
-## BUTTRESS_X wide to the buttresses' faces (55 m, 66 over them), its ribs'
+## BUTTRESS_X wide to the buttresses' inner faces (48 m, 59 over them), its ribs'
 ## crowns about 46 m up, the gables to 40.
 static func nave(seed_value: int, weathered := 0.6) -> Node3D:
 	var p := plan("gothic_nave",seed_value,weathered)

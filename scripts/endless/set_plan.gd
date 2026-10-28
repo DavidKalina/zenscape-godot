@@ -48,7 +48,7 @@ const TRIES := 56
 ## the built bounds and their drifts) and the most the ground under it may
 ## vary (m).
 const PIECES := {
-	"gothic_nave":{"w":0.5,"half":Vector2(29.0,60.0),"spread":6.0},
+	"gothic_nave":{"w":0.5,"half":Vector2(30.5,60.0),"spread":6.0},
 	"belfry_tower":{"w":0.3,"half":Vector2(17.0,15.0),"spread":4.0},
 	"rose_gate":{"w":0.2,"half":Vector2(17.0,8.0),"spread":3.5},
 }
