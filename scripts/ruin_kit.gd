@@ -1976,7 +1976,7 @@ static func _spire(b: Build, pose: Transform3D, r: float, h: float, snapped: boo
 ## orders and a hood: `lost` voussoirs fallen from the crown on side
 ## `lost_side`; stones whose middle stands over `top` (a ruin line) gone.
 static func _arch_ring(b: Build, pose: Transform3D, cx: float, spring: float, h: float, radius: float, d: float, hood: bool, lost := 0, lost_side := 1.0, top := Callable()) -> void:
-	var n := maxi(5,int(round(radius*1.6)))
+	var n := maxi(5,int(round(radius*1.6/b.course)))
 	_ring_order(b,pose,cx,spring,h,radius,0.0,ORDER,d-RECESS,n,99,lost_side,_stone(b,1.03),lost,top,true)
 	var outer := _ring_order(b,pose,cx,spring,h,radius,ORDER,ORDER,d,n-1,99,lost_side,_stone(b,1.0),lost+int(b.rng.randf()*2.0*b.weathered),top)
 	if hood:
@@ -2227,7 +2227,7 @@ static func _courses(b: Build, pose: Transform3D, x0: float, x1: float, y0: floa
 		while x < x1-0.02:
 			var xa := maxf(x,x0)
 			var pick := b.rng.randf()
-			var xb := minf(x+(b.rng.randf_range(0.35,0.6) if pick < 0.22 else (b.rng.randf_range(1.45,2.0) if pick > 0.8 else b.rng.randf_range(0.7,1.3)))*(2.2 if b.lean else 1.0),x1)
+			var xb := minf(x+(b.rng.randf_range(0.35,0.6) if pick < 0.22 else (b.rng.randf_range(1.45,2.0) if pick > 0.8 else b.rng.randf_range(0.7,1.3)))*(2.2 if b.lean else 1.0)*b.course,x1)
 			if x1-xb < 0.3: xb = x1
 			x = xb
 			var mid := (xa+xb)*0.5
@@ -2549,6 +2549,20 @@ class Build extends RefCounted:
 	## of the abbey's (1): a heavy arcade or a hall's walls settle less, so
 	## a ruin of them reads settled, not shaken.
 	var settle := 1.0
+	## How much bigger it lays its stones (1, the kit's own): an arch
+	## ring's voussoirs (`_arch_ring`) and a piece's own courses and slabs,
+	## where it reads it (a bridge's aqueduct spans, scripts/ruin_kit_
+	## aqueduct.gd, which the land grows big and lays by the dozen).
+	var course := 1.0
+	## How much coarser its growth is on lean stone (1, as ever): the vine
+	## strands' leaves and the steps between them, the curtains' and
+	## fringes' spacing (RuinGrowth LEAN_SCALE) and the ivy's leaves this much
+	## bigger, so fewer cover as much. The native finish reads it; the
+	## GDScript one does not (it grows them as ever).
+	var growth_coarse := 1.0
+	## Lean stone's ivy strands at most (IVY_LEAN; more on a piece whose
+	## growth is coarse).
+	var ivy_cap := IVY_LEAN
 	## The ground the piece stands on: a Callable(x, z) -> y in the piece's
 	## frame, or none (flat, y 0). Feet, footings and walls reach down to it
 	## and below; drifts and rubble lie on it.
@@ -3157,6 +3171,10 @@ class Build extends RefCounted:
 		build.weathered = weathered
 		build.age = age
 		build.detail = level
+		if growth_coarse != 1.0:
+			build.lean_scale = RuinGrowth.LEAN_SCALE*growth_coarse
+			build.ivy_leaf = IVY_LEAF*growth_coarse
+		build.ivy_lean = ivy_cap
 		build.ground = ground
 		build.lean = lean
 		build.vines = RuinGrowth.vines
@@ -3759,7 +3777,7 @@ class Build extends RefCounted:
 			area += float(t[1])
 		# As many strands as the tops' area asks, capped (lean stone, fewer),
 		# then thinned by the detail (so a big ruin thins too).
-		var count := int(mini(IVY_LEAN if lean else IVY_MOST,int(area*lerpf(IVY_STRANDS.x,IVY_STRANDS.y,weathered)+rng.randf()))*level)
+		var count := int(mini(ivy_cap if lean else IVY_MOST,int(area*lerpf(IVY_STRANDS.x,IVY_STRANDS.y,weathered)+rng.randf()))*level)
 		var longest := lerpf(IVY_LENGTH.x,IVY_LENGTH.y,weathered)
 		for i in range(count):
 			if high.is_empty(): break

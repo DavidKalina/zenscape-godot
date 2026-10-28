@@ -120,6 +120,19 @@ const SETTLE := 0.35
 const FOOTING := 0.6
 ## The pier stump: its height range (m), stepping stones in the sea.
 const STUMP := Vector2(1.1,2.3)
+## A bridge's spans (scripts/endless/bridge_build.gd: the land grows them
+## 1.3-3.6x and lays a dozen or more a bridge) are laid coarse (`coarse` on
+## `span`, `two_tier`, `broken`): their courses, slabs, parapet stones,
+## corbels and voussoirs BRIDGE_COURSE x the kit's (Build `course`), the
+## stone chipped and worn as ever; their growth lean (Build `lean`: fewer
+## strands, one leaf a node), BRIDGE_COARSE_GROWTH coarser (Build
+## `growth_coarse`: bigger leaves, further apart), at BRIDGE_GROWTH of a
+## ruin's (its `level`), grown by the native finish.
+const BRIDGE_COURSE := 2.2
+const BRIDGE_COARSE_GROWTH := 1.8
+const BRIDGE_GROWTH := 0.6
+## Its ivy strands at most a span (Build `ivy_cap`; lean stone's are 8).
+const BRIDGE_IVY := 16
 
 # --- The pieces -----------------------------------------------------------------
 
@@ -138,10 +151,8 @@ static func piece(id: String, seed_value: int, weathered := 0.0) -> Node3D:
 ## Weathered: the parapets broken and gone in runs, the hood mould and the
 ## outer order gapped, cutwater caps and corbels broken, moss over the deck,
 ## ivy hanging off it and from the arch; the channel still whole.
-static func span(seed_value: int, weathered := 0.0, piers := 3, wet := true, ground := Callable()) -> Node3D:
-	var b := Build.new(seed_value,weathered,"AqueductSpan")
-	b.settle = SETTLE
-	b.terrain = ground
+static func span(seed_value: int, weathered := 0.0, piers := 3, wet := true, ground := Callable(), coarse := false) -> Node3D:
+	var b := _build(seed_value,weathered,"AqueductSpan",ground,coarse)
 	_arcade(b,0.0,SPRING,DECK-FLOOR,PIER,CLEAR*0.5,1.0,piers,CUTWATER.y,true,true)
 	_deck(b,-SPAN*0.5,SPAN*0.5,DECK,Callable())
 	if wet: _water(b.root,-SPAN*0.5,SPAN*0.5,DECK+WATER)
@@ -157,15 +168,13 @@ static func span(seed_value: int, weathered := 0.0, piers := 3, wet := true, gro
 ## gallery course over it (a ledge to walk along), and an upper arcade of
 ## lighter piers and drop arches carrying the channel. Weathered as a span,
 ## the gallery course broken in places.
-static func two_tier(seed_value: int, weathered := 0.0, piers := 3, wet := true, ground := Callable()) -> Node3D:
-	var b := Build.new(seed_value,weathered,"AqueductTwoTier")
-	b.settle = SETTLE
-	b.terrain = ground
+static func two_tier(seed_value: int, weathered := 0.0, piers := 3, wet := true, ground := Callable(), coarse := false) -> Node3D:
+	var b := _build(seed_value,weathered,"AqueductTwoTier",ground,coarse)
 	_arcade(b,0.0,LOWER_SPRING,MID-FLOOR,PIER,CLEAR*0.5,1.0,piers,CUTWATER.y,true,true)
 	# The gallery course: long slabs standing out either side, a ledge.
 	var x := -SPAN*0.5
 	while x < SPAN*0.5-0.05:
-		var x1 := minf(x+b.rng.randf_range(1.0,1.6),SPAN*0.5)
+		var x1 := minf(x+b.rng.randf_range(1.0,1.6)*b.course,SPAN*0.5)
 		if SPAN*0.5-x1 < 0.5: x1 = SPAN*0.5
 		if weathered < 0.3 or b.rng.randf() > 0.3*weathered:
 			var half := Vector3((x1-x)*0.5-0.008,FLOOR*0.5,DECK_WIDTH*0.5+0.22)
@@ -195,10 +204,8 @@ static func two_tier(seed_value: int, weathered := 0.0, piers := 3, wet := true,
 ## run); "gone", fallen with nothing of it here (another piece stands its
 ## stump: a bridge's broken halves meeting over one). Weathered, the stub is
 ## shorter and the rubble deeper.
-static func broken(seed_value: int, weathered := 0.0, left := true, right := "stump", wet := true, ground := Callable()) -> Node3D:
-	var b := Build.new(seed_value,weathered,"AqueductBroken")
-	b.settle = SETTLE
-	b.terrain = ground
+static func broken(seed_value: int, weathered := 0.0, left := true, right := "stump", wet := true, ground := Callable(), coarse := false) -> Node3D:
+	var b := _build(seed_value,weathered,"AqueductBroken",ground,coarse)
 	var hx := PIER.x*0.5
 	var deck_foot := DECK-FLOOR
 	var h := CLEAR*0.5
@@ -234,7 +241,7 @@ static func broken(seed_value: int, weathered := 0.0, left := true, right := "st
 	var hole := func(y: float) -> Vector2:
 		if y < SPRING: return Vector2(0.0,99.0)
 		return Vector2(0.0,RuinKit._arc_half(h,radius,outer-radius,y-SPRING))
-	RuinKit._courses(b,Transform3D.IDENTITY,-SPAN*0.5,SPAN*0.5,SPRING,top,d-0.04,hole,0.55)
+	RuinKit._courses(b,Transform3D.IDENTITY,-SPAN*0.5,SPAN*0.5,SPRING,top,d-0.04,hole,0.55*b.course)
 	# The channel: whole over the standing walling, snapped past it.
 	_deck(b,-SPAN*0.5,snap,DECK,Callable(),true)
 	if right_side:
@@ -477,18 +484,18 @@ static func _arcade(b: Build, y0: float, spring: float, wall_top: float, size: V
 		if y < spring: return Vector2(0.0,99.0)
 		return Vector2(0.0,RuinKit._arc_half(h,radius,outer-radius,y-spring))
 	var top := func(_x: float) -> float: return wall_top
-	RuinKit._courses(b,Transform3D.IDENTITY,-SPAN*0.5,SPAN*0.5,spring,top,d-0.04,hole,0.55)
+	RuinKit._courses(b,Transform3D.IDENTITY,-SPAN*0.5,SPAN*0.5,spring,top,d-0.04,hole,0.55*b.course)
 	# The corbel table under the deck's overhang, along both faces.
 	for s: float in [-1.0,1.0]:
 		var x := -SPAN*0.5+0.4
 		while x < SPAN*0.5-0.3:
 			var near_pier := absf(absf(x)-SPAN*0.5) < STRIP*0.5+0.12
 			if not near_pier and b.rng.randf() > 0.3*b.weathered:
-				var planes := RuinKit._box(b,Vector3(0.1,0.13,0.11),0.015)
+				var planes := RuinKit._box(b,Vector3(0.1*b.course,0.13,0.11),0.015)
 				var n := Vector3(0.0,-0.9,s).normalized()
 				planes.append(Plane(n,n.dot(Vector3(0.0,-0.13,s*0.0))))
 				b.solid(planes,RuinKit._settle(b,Vector3(x,wall_top-0.15,s*(d+0.07)),0.5),RuinKit._stone(b,1.04),false,true)
-			x += 0.62
+			x += 0.62*b.course
 
 ## Where a pier at `x` stands its foot: FOOTING under the ground's lowest
 ## under it (on terrain), or y 0.
@@ -504,11 +511,34 @@ static func _pier_foot(b: Build, x: float) -> float:
 static func _sunk(b: Build) -> float:
 	return FOOTING if b.terrain.is_valid() else 0.0
 
+## A span's build: the kit's, or with `coarse` a bridge's (BRIDGE_COURSE).
+static func _build(seed_value: int, weathered: float, label: String, ground: Callable, coarse: bool) -> Build:
+	var b := Build.new(seed_value,weathered,label)
+	b.settle = SETTLE
+	b.terrain = ground
+	if coarse:
+		b.course = BRIDGE_COURSE
+		b.growth_coarse = BRIDGE_COARSE_GROWTH
+		b.ivy_cap = BRIDGE_IVY
+		b.level *= BRIDGE_GROWTH
+	return b
+
 ## A piece's finish: the build and its metadata (see the header): its deck
 ## at `deck`, its piers (`piers` mask) for its feet, `arches` [half clear
 ## span, springing] for its corridors.
 static func _finish(b: Build, deck: float, piers: int, arches: Array) -> Node3D:
+	# A bridge's span grows lean (fewer, bigger leaves and strands), its
+	# stone laid as ever (chipped, chamfered).
+	# Finished without its ground, so the native finish grows it (it reads no
+	# ground callable; the ground only stops a strand short, and the growth
+	# never reaches down there: tops under 0.75 grow none). Not culled: with
+	# no ground the finish takes y 0 for it, and the piers reach far under.
+	var land := b.terrain
+	if b.course > 1.0:
+		b.lean = true
+		b.terrain = Callable()
 	var node := b.finish()
+	b.terrain = land
 	node.set_meta("bounds",(node.get_node("Mesh") as MeshInstance3D).mesh.get_aabb())
 	var feet: Array = []
 	for side: float in [-1.0,1.0]:
@@ -554,12 +584,14 @@ static func _pier(b: Build, x: float, y0: float, spring: float, wall_top: float,
 	var shaft_top := minf(spring-IMPOST.x,broken)
 	var k := 0
 	while y < shaft_top-0.05:
-		var y1 := minf(shaft_top,y+b.rng.randf_range(0.46,0.62))
+		var y1 := minf(shaft_top,y+b.rng.randf_range(0.46,0.62)*b.course)
 		if shaft_top-y1 < 0.25: y1 = shaft_top
 		var last := y1 >= broken-0.01
 		var split := b.rng.randf_range(-0.25,0.25)
 		var cuts: Array[float] = [-hz,split,hz]
-		if k%2 == 0: cuts = [-hz,split-0.45*hz,split+0.45*hz,hz]
+		# Coarse (a bridge's): two stones a course, the joint staggered.
+		if b.course > 1.0: cuts = [-hz,split+(0.3 if k%2 == 0 else -0.3)*hz,hz]
+		elif k%2 == 0: cuts = [-hz,split-0.45*hz,split+0.45*hz,hz]
 		for c in range(cuts.size()-1):
 			var z0 := cuts[c]
 			var z1 := cuts[c+1]
@@ -578,7 +610,7 @@ static func _pier(b: Build, x: float, y0: float, spring: float, wall_top: float,
 			var cy := y0+(foot if footing else 0.0)
 			var nose := CUTWATER.x
 			while cy < cut_top-0.05:
-				var y1 := minf(cut_top,cy+b.rng.randf_range(0.46,0.62))
+				var y1 := minf(cut_top,cy+b.rng.randf_range(0.46,0.62)*b.course)
 				if cut_top-y1 < 0.25: y1 = cut_top
 				var planes: Array[Plane] = [Plane(Vector3(0.0,0.0,-s),-(hz-0.05)),Plane(Vector3.DOWN,-cy),Plane(Vector3.UP,y1)]
 				for e: float in [-1.0,1.0]:
@@ -615,7 +647,7 @@ static func _strips(b: Build, x: float, spring: float, wall_top: float, size: Ve
 	for s: float in [-1.0,1.0]:
 		var y := spring
 		while y < wall_top-0.05:
-			var y1 := minf(wall_top,y+b.rng.randf_range(0.5,0.7))
+			var y1 := minf(wall_top,y+b.rng.randf_range(0.5,0.7)*b.course)
 			if wall_top-y1 < 0.3: y1 = wall_top
 			var half := Vector3(STRIP*0.5-0.005,(y1-y)*0.5-0.005,(hz-d)*0.5)
 			var planes := RuinKit._box(b,half)
@@ -634,7 +666,7 @@ static func _deck(b: Build, x0: float, x1: float, top: float, open: Callable, sn
 	var hz := (DECK_WIDTH*0.5+0.1) if half_width < 0.0 else half_width
 	var x := x0
 	while x < x1-0.05:
-		var xb := minf(x+b.rng.randf_range(0.8,1.4),x1)
+		var xb := minf(x+b.rng.randf_range(0.8,1.4)*b.course,x1)
 		if x1-xb < 0.45: xb = x1
 		var half := Vector3((xb-x)*0.5-0.006,FLOOR*0.5,hz)
 		var planes := RuinKit._box(b,half)
@@ -665,7 +697,7 @@ static func _parapet_run(b: Build, x0: float, x1: float, z: float, top: float, h
 	var x := x0
 	var gone := 0
 	while x < x1-0.05:
-		var xb := minf(x+b.rng.randf_range(0.7,1.3),x1)
+		var xb := minf(x+b.rng.randf_range(0.7,1.3)*b.course,x1)
 		if x1-xb < 0.35: xb = x1
 		var mid := (x+xb)*0.5
 		if gone > 0: gone -= 1
