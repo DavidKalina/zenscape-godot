@@ -27,6 +27,7 @@ const Field = preload("res://scripts/endless/land_field.gd")
 const Plan = preload("res://scripts/endless/rocks/rock_plan.gd")
 const Build = preload("res://scripts/endless/rocks/rock_build.gd")
 const LandHalls = preload("res://scripts/endless/land_halls.gd")
+const RockShape = preload("res://scripts/endless/rock_shape.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
@@ -224,7 +225,7 @@ func _commit_one(done: Dictionary) -> void:
 		xf = Transform3D(Basis(Vector3.UP,yaw),xf.origin)
 		var node := Node3D.new()
 		var mesh := ArrayMesh.new()
-		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,b.arrays,[],b.lods if lod else {})
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,b.arrays,[],b.lods if lod else {},RockShape.format(b.arrays))
 		mesh.surface_set_material(0,bare if bool(spec.get("bare",false)) else material)
 		var mi := MeshInstance3D.new()
 		mi.name = "Mesh"

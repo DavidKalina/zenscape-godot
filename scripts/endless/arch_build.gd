@@ -24,6 +24,7 @@ const RuinLod = preload("res://scripts/ruin_lod.gd")
 ## Ruins get their levels of detail (off: --no-arch-lod, to compare).
 static var lod: bool = not "--no-arch-lod" in preload("res://scripts/launch_args.gd").user_args()
 const WorldScale = preload("res://scripts/world_scale.gd")
+const RockShape = preload("res://scripts/endless/rock_shape.gd")
 
 ## Column width (m), the gap under which two stretches count as one, the
 ## most stretches a column keeps, and how far round the solid the plane's
@@ -95,6 +96,7 @@ static func _rock(spec: Dictionary, field: RefCounted) -> Dictionary:
 	arrays[Mesh.ARRAY_NORMAL] = n
 	arrays[Mesh.ARRAY_COLOR] = c
 	arrays[Mesh.ARRAY_INDEX] = idx
+	RockShape.bake(arrays)
 	var faces := PackedVector3Array()
 	faces.resize(idx.size())
 	for i in range(idx.size()): faces[i] = v[idx[i]]

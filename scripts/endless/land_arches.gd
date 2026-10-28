@@ -25,6 +25,7 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const STONE_LIFT := Color(3.0, 2.55, 1.95)
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
+const RockShape = preload("res://scripts/endless/rock_shape.gd")
 
 ## The cells built round the eye (m to the cell's middle), and those kept
 ## until past REACH+CELL.
@@ -204,7 +205,7 @@ func _commit_one(done: Dictionary) -> void:
 		if b.kind == "rock":
 			node = Node3D.new()
 			var mesh := ArrayMesh.new()
-			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,b.arrays)
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,b.arrays,[],{},RockShape.format(b.arrays))
 			mesh.surface_set_material(0,material)
 			var mi := MeshInstance3D.new()
 			mi.name = "Mesh"
