@@ -530,6 +530,8 @@ static func _build(seed_value: int, weathered: float, label: String, ground: Cal
 		b.ivy_cap = BRIDGE_IVY
 		b.ivy_gain = BRIDGE_IVY_GAIN
 		b.level *= BRIDGE_GROWTH
+		# Its leaves the amberlands' muted gold-olive, as the set pieces'.
+		b.growth_tint = Callable(load("res://scripts/gothic_growth.gd").tint)
 	return b
 
 ## A piece's finish: the build and its metadata (see the header): its deck

@@ -95,7 +95,9 @@ var _stone: ShaderMaterial
 var _gothic_stone: ShaderMaterial
 var _moss_off := "--no-stone-moss" in LaunchArgs.user_args()
 
-func _sunlit(node: Node) -> void:
+## `mossed` (a plateau bridge, amberlands only): its kit stone takes the
+## gothic pieces' mossed stone too (the look pass: the ruins overgrown).
+func _sunlit(node: Node, mossed := false) -> void:
 	var kit: Material = RuinKit.materials().stone
 	if _stone == null:
 		_stone = (kit as ShaderMaterial).duplicate() as ShaderMaterial
@@ -108,8 +110,8 @@ func _sunlit(node: Node) -> void:
 		if m.mesh == null: continue
 		for i in m.mesh.get_surface_count():
 			var own := m.mesh.surface_get_material(i)
-			if own == kit: m.set_surface_override_material(i,_stone)
-			elif own == gothic:
+			if own == kit and not (mossed and not _moss_off): m.set_surface_override_material(i,_stone)
+			elif own == gothic or own == kit:
 				if _gothic_stone == null: _gothic_stone = _stone if _moss_off else GothicGrowth.lifted(STONE_LIFT,3.6,0.1)
 				m.set_surface_override_material(i,_gothic_stone)
 	# The colosseum's bays, drawn as MultiMeshes (scripts/ruin_kit_colosseum.gd).
@@ -256,7 +258,7 @@ func _commit_one(done: Dictionary) -> void:
 		else:
 			node = b.node
 			if spec.get("kind","") == "colosseum": Colosseum.realize(node)
-			if not _old_stone: _sunlit(node)
+			if not _old_stone: _sunlit(node,spec.has("bridge"))
 		for body in node.find_children("*","StaticBody3D",true,false):
 			(body as StaticBody3D).collision_layer = LAYER
 			(body as StaticBody3D).collision_mask = 0

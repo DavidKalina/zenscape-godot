@@ -154,18 +154,22 @@ const HALF_LEN := BAYS*BAY*0.5
 # --- The belfry tower ----------------------------------------------------------
 
 ## The tower: outer half side, wall thickness, the head's height, course.
-const TOWER_HALF := 8.0
+## RAISE: the look pass's added height under the belfry (it read small
+## from a kilometre off at 80 m): the shaft, the belfry and the stages
+## stand this much taller, the tracery half as much; no opening's size moves.
+const RAISE := 26.0
+const TOWER_HALF := 9.0
 const TOWER_WALL := 2.2
-const TOWER_H := 80.0
+const TOWER_H := 80.0+RAISE
 const TOWER_COURSE := 1.9
 ## The belfry's lights: sill, springing (the slits' on the sides the same).
-const BELFRY := Vector2(55.0,64.0)
+const BELFRY := Vector2(55.0+RAISE,64.0+RAISE)
 ## The tracery window on the front (its plain lancet behind): sill,
 ## springing.
-const TRACERY := Vector2(33.0,44.0)
+const TRACERY := Vector2(33.0+RAISE*0.5,44.0+RAISE*0.5)
 ## The angle buttresses' stages [top, depth out], width.
-const TOWER_STAGES := [[18.0,4.2],[34.0,3.2],[50.0,2.2]]
-const TOWER_BUTTRESS_W := 3.0
+const TOWER_STAGES := [[24.0,4.8],[45.0,3.7],[66.0,2.6]]
+const TOWER_BUTTRESS_W := 3.4
 static var BELFRY_W: float = WorldScale.opening(TOY_BELFRY)
 static var TRACERY_W: float = WorldScale.opening(TOY_TRACERY)
 
@@ -683,9 +687,9 @@ static func nave(seed_value: int, weathered := 0.6) -> Node3D:
 
 # --- 2. The belfry tower ----------------------------------------------------------
 
-## The belfry tower (`belfry_tower`): see the file's head. TOWER_HALF*2 (16
-## m) square over its walls, 24 over its angle buttresses, its head
-## TOWER_H (80 m) where it stands whole, a pinnacle on one corner to 96.
+## The belfry tower (`belfry_tower`): see the file's head. TOWER_HALF*2 (18
+## m) square over its walls, ~27 over its angle buttresses, its head
+## TOWER_H (106 m) where it stands whole, a pinnacle on one corner to ~122.
 static func belfry(seed_value: int, weathered := 0.6) -> Node3D:
 	var p := plan("belfry_tower",seed_value,weathered)
 	var b := _build(seed_value,weathered,"BelfryTower")
