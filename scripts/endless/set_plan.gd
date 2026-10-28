@@ -235,6 +235,9 @@ static func _plan(field: RefCounted, sx: int, sz: int, density: float, rock: flo
 			var clear := _clear(field,id,s,density,rock,ruin)
 			_count("clear_us",Time.get_ticks_usec()-c0)
 			if not clear: continue
+			if not _flats_kept(field,id,s):
+				_count("flat_taken_"+id)
+				continue
 			out.append(_spec(field,id,s,sx,sz,rng))
 			_count("placed_"+id)
 			return out
@@ -377,13 +380,32 @@ static func _colosseum(field: RefCounted, x0: float, z0: float, rng: RandomNumbe
 	if best.is_empty(): _count("no_spot_colosseum")
 	return {}
 
-## Whether a STRIP m landable run lies past the colosseum's footprint at
+## Whether piece `id` at spot `s` leaves the flats round it: no STRIP m
+## level run passes through its footprint (on any of 4 headings, by its
+## middle or 0.7 of its half width to a side), or one still lies along a
+## side of it (`_strip_by`), as land_ponds.gd keeps a strip by a pond.
+static func _flats_kept(field: RefCounted, id: String, s: Dictionary) -> bool:
+	var c: Vector2 = s.c
+	var half: Vector2 = _info(id).half
+	var side := minf(half.x,half.y)*0.7
+	var through := false
+	for k in 4:
+		var d := Vector2.from_angle(PI*0.25*k)
+		var across := Vector2(-d.y,d.x)
+		for off: float in [0.0,side,-side]:
+			if _level(field,c+across*off,d):
+				through = true
+				break
+		if through: break
+	return not through or _strip_by(field,s,id)
+
+## Whether a STRIP m landable run lies past piece `id`'s footprint at
 ## spot `s`: along either of its axes, clear of it, on one of its 4 sides.
-static func _strip_by(field: RefCounted, s: Dictionary) -> bool:
+static func _strip_by(field: RefCounted, s: Dictionary, id := "colosseum") -> bool:
 	var c: Vector2 = s.c
 	var z: Vector2 = s.z
 	var x := Vector2(z.y,-z.x)
-	var half: Vector2 = COLOSSEUM.half
+	var half: Vector2 = _info(id).half
 	for side: Array in [[x,half.x],[-x,half.x],[z,half.y],[-z,half.y]]:
 		var out: Vector2 = side[0]
 		var along := Vector2(-out.y,out.x)
@@ -391,17 +413,31 @@ static func _strip_by(field: RefCounted, s: Dictionary) -> bool:
 			if _level(field,c+out*(float(side[1])+off),along): return true
 	return false
 
-## The flats check's level run (land_ponds.gd `_strip`): dry, no rise over
-## 1.92 m between points 16 m apart nor 3.84 m across 64 m.
+## The flats check's level run, as strict as the check counts one
+## (scratch flats.gd, the earlier rounds'): dry, no rise over 1.92 m between
+## points 16 m apart nor 3.84 m across 64 m, along it or across it (0.06,
+## the check's flat cell), and its heights within STRIP_SPREAD m of each other.
+## (land_ponds.gd `_strip` has the first two only, which pass a run
+## rising some 12 m over its length.)
+const STRIP_SPREAD := 3.0
 static func _level(field: RefCounted, c: Vector2, d: Vector2) -> bool:
 	var n := int(STRIP/16.0)
 	var prev := PackedFloat32Array()
+	var across := Vector2(-d.y,d.x)*32.0
+	var lo := INF
+	var hi := -INF
 	for t in n+1:
 		var p := c+d*(t*16.0-STRIP*0.5)
 		var h := float(field.height(p.x,p.y))
 		if h-Field.SEA_Y < 2.0: return false
 		if t > 0 and absf(h-prev[t-1]) > 1.92: return false
 		if t > 3 and absf(h-prev[t-4]) > 3.84: return false
+		lo = minf(lo,h)
+		hi = maxf(hi,h)
+		if hi-lo > STRIP_SPREAD: return false
+		var a := p+across
+		var b := p-across
+		if absf(float(field.height(a.x,a.y))-float(field.height(b.x,b.y))) > 3.84: return false
 		prev.append(h)
 	return true
 
