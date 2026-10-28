@@ -41,5 +41,9 @@ static func layers() -> Dictionary:
 		# aqueduct across a canyon or between two shelves spans from rim to rim.
 		"arches":1.8,"rock_arches":0.35,"ruin_arches":1.6,"ruin_near":700.0,"aqueduct_span":0.8,
 		"halls":1.3,"tunnels":1.0,
+		# Bridges and aqueducts rim to rim between the plateaus, massif shoulders
+		# and terrace shelves (scripts/endless/bridge_plan.gd): the chance a
+		# bridge cell tries.
+		"bridges":1.0,
 		# No split mountains, sea stacks or hoodoos: wilderness's.
 		"splits":0.0,"stacks":0.0,"hoodoos":0.0,"traffic":-1}

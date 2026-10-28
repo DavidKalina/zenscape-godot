@@ -20,6 +20,7 @@ const Field = preload("res://scripts/endless/land_field.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const RuinLod = preload("res://scripts/ruin_lod.gd")
+const BridgeBuild = preload("res://scripts/endless/bridge_build.gd")
 
 ## Ruins get their levels of detail (off: --no-arch-lod, to compare).
 static var lod: bool = not "--no-arch-lod" in preload("res://scripts/launch_args.gd").user_args()
@@ -223,7 +224,9 @@ static func _ruin(spec: Dictionary, field: RefCounted) -> Dictionary:
 		var ground := func(x: float, z: float) -> float:
 			var w := pos+basis*(Vector3(x+shift,0.0,z)*grow)
 			return (float(field.height(w.x,w.z))-pos.y)/grow
-		piece = Aqueduct.run(int(spec.seed),float(spec.weathered),count,int(spec.break_at),bool(spec.head),ground)
+		# A bridge (bridge_plan.gd) lays its own run of the kit's spans.
+		if spec.has("bridge"): piece = BridgeBuild.piece(spec,ground)
+		else: piece = Aqueduct.run(int(spec.seed),float(spec.weathered),count,int(spec.break_at),bool(spec.head),ground)
 	else:
 		piece = RuinKit.arch(int(spec.seed),float(spec.weathered))
 	var root := Node3D.new()
