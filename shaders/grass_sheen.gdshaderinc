@@ -22,17 +22,43 @@ uniform vec3 grass_sheen_share = vec3(0.1, 0.3, 0.45);
 // The long swell for high flight (m between crests) and its share.
 uniform vec2 grass_sheen_long = vec2(170.0, 0.5);
 
+// The three bends' amplitudes (radians of a band's phase).
+const vec3 ZS_SHEEN_BEND = vec3(0.9, 0.7, 0.5);
+
 // 0..1: a swell's crest at `p`: a long-crested band across the wind, rolling
 // downwind on the air's travel at `speed`, its line bent by slow noise so the
 // bands wander and swell like a wheat field's (zs_wave_crest_at's skewed
 // second train makes diamonds from far off, so this one has none).
+// The bend is three slow plane waves across the wind at unrelated angles and
+// scales, not lattice noise: noise on a grid aligned to the wind shifted a band
+// by most of a wavelength over one cell, which showed as straight seams (see
+// docs/design/endless-flight/sheen-seam-handoff.md). Together they bend a band
+// by at most ~30 degrees and shift it by well under half a wavelength.
 float zs_sheen_crest(vec2 p, float crest_length, float speed, vec2 offset, float travel) {
 	vec2 dir = zs_wind_direction;
 	float along = dot(p, dir);
 	float side = dot(p, vec2(-dir.y, dir.x));
-	float wander = (zs_noise(vec2(side, along * 0.35) / (crest_length * 1.6) + offset) - 0.5) * 7.0;
+	vec2 q = vec2(side, along) * (TAU / crest_length);
+	float wander = ZS_SHEEN_BEND.x * sin(dot(q, vec2(0.80, 0.60)) * 0.31 + offset.x * 5.1)
+		+ ZS_SHEEN_BEND.y * sin(dot(q, vec2(-0.55, 0.84)) * 0.45 + offset.y * 3.7 + 1.3)
+		+ ZS_SHEEN_BEND.z * sin(dot(q, vec2(0.30, -0.95)) * 0.22 + (offset.x + offset.y) * 2.3 + 4.0);
 	float a = 0.5 + 0.5 * sin((along - travel * speed) * TAU / crest_length + wander);
 	return smoothstep(0.2, 0.9, a);
+}
+
+// 0.6..1.5: zs_gust_band_at's slow bands, for the sheen. That one thresholds
+// lattice noise, and the sheen's swells ride it, so its cell edges showed as
+// straight seams where the swells changed strength. This one is the same size
+// and range, rolling downwind with the air, from three plane waves at unrelated
+// angles, so no line in it is straight.
+float zs_sheen_band(vec2 position, float travel) {
+	vec2 dir = zs_wind_direction;
+	vec2 q = position - dir * travel;
+	vec2 f = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x)));
+	float v = 0.45 * sin(dot(f, vec2(0.105, 0.052)) + 1.7)
+		+ 0.35 * sin(dot(f, vec2(-0.071, 0.094)) + 4.2)
+		+ 0.20 * sin(dot(f, vec2(0.041, -0.118)) + 0.6);
+	return 0.6 + 0.9 * smoothstep(-0.2, 0.5, v);
 }
 
 // -1..1: how far the blades at `p` lean downwind of their mean, a pixel there
@@ -51,7 +77,7 @@ float zs_sheen_field(vec2 p, float fp) {
 	float w = dot(crest - vec4(0.42), share) / dot(share, vec4(1.0));
 	// The gust bands swell and calm it with the breeze; a gust front lays the
 	// blades hard downwind.
-	float band = zs_gust_band_at(p, travel);
+	float band = zs_sheen_band(p, travel);
 	float air = clamp(zs_breeze_air() / 0.53, 0.35, 1.6);
 	float s = w * 3.0 * band * air + zs_front_at(p, 0.0) * 1.2;
 	return clamp(s, -1.0, 1.0);
