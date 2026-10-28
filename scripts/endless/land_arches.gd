@@ -123,6 +123,14 @@ func _sunlit(node: Node) -> void:
 func _exit_tree() -> void:
 	_quit = true
 	for id: int in _pending.values(): WorkerThreadPool.wait_for_task_completion(id)
+	# Built but not yet committed (a set piece's build ending as the game
+	# quits): out of the tree, so freed here, or its bodies leak at exit.
+	_lock.lock()
+	for done: Dictionary in _done:
+		for b: Dictionary in done.arches:
+			if b.has("node") and is_instance_valid(b.node): (b.node as Node).free()
+	_done.clear()
+	_lock.unlock()
 
 ## Builds the cells within NEAR of `at` now, on this thread.
 func prime(at: Vector3) -> void:

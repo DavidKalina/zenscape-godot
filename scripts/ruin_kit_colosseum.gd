@@ -13,10 +13,11 @@ extends RefCounted
 ##   a few are tighter on purpose (TOY_TIGHT), some have lost their attic;
 ## - the ambulatory: a ring corridor AMB wide and ROOF.x tall inside the
 ##   outer wall, roofed by the top walkway in most bays, flown as a lap;
-## - the inner wall: blind arcading, pierced at every eighth bay by a
-##   passage on the first tier (a tunnel under the seats to the arena) and
-##   four bays on by one on the second (a vomitorium cut through the upper
-##   seats to the bowl), and by the great gates' inner arches;
+## - the inner wall: blind arcading; at every eighth bay a first-tier
+##   passage's arch walled up (its tunnel to the arena was the bay's width,
+##   too long and tight to thread: closed, not flown), four bays on a
+##   second-tier one open (a vomitorium cut through the upper seats to the
+##   bowl), and the great gates' inner arches;
 ## - the seating bowl: TREADS rings stepping down from the walkway to the
 ##   arena wall; the arena: a flat oval floor at P, fallen in along its long
 ##   axis over the hypogeum: a trench TRENCH wide flown along its length
@@ -302,7 +303,8 @@ static func plan(id: String, seed_value: int, weathered := 0.6) -> Dictionary:
 		elif f > 0.45: i = "low"
 		elif k%8 == 4: i = "pass2"
 		elif k%8 == 0: i = "pass1"
-		# A passage's line wants its outer arch open on its tier.
+		# A passage's line wants its outer arch open on its tier (a walled
+		# first-tier one keeps it so: the arcade line through it stays).
 		if i == "pass1" and o == "blocked": o = "whole"
 		if i == "pass2" and o == "cut3" and f <= 0.0: o = "whole"
 		outer.append(o)
@@ -411,7 +413,8 @@ static func bands(p: Dictionary) -> Array:
 	var inner: Array = p["inner"]
 	for k in range(SLOTS):
 		var ik := String(inner[k])
-		if not ik in ["gate","pass1","pass2"]: continue
+		# (A first-tier passage is walled up: no way through the seats.)
+		if not ik in ["gate","pass2"]: continue
 		var mid := slot_mid(k)
 		var o := point(mid,INNER_IN-0.3)
 		var dir := -normal_at(phi_of(mid))
@@ -455,8 +458,7 @@ static func _cut_treads() -> int:
 ## tight, roofed). Kinds:
 ##   arcade      an outer arch, `tier` 1..3, through the wall (o<slot>_<tier>)
 ##   vomitorium  a second-tier passage's arch in the inner wall (i<slot>)
-##   passage     an inner first-tier arch, into its tunnel (i<slot>)
-##   tunnel      the tunnel or cut behind an inner arch, a lane (i<slot>_way)
+##   tunnel      the cut behind a vomitorium, a lane (i<slot>_way)
 ##   gate        a great gate's outer and inner arches (gate_n, gate_n_in)
 ##   gate_way    the passage on from a gate to the arena, a lane
 ##   ambulatory  the ring corridor a bay at a time, along the ring (amb<slot>)
@@ -811,6 +813,13 @@ static func _inner_bay(kind: String, seed_value: int, weathered: float) -> Dicti
 	for a: Array in arches:
 		_jambs(b,float(a[0]),float(a[1]),float(a[2]),INNER_D,top)
 		_round_head(b,Transform3D.IDENTITY,float(a[0]),float(a[2]),INNER_D,top)
+	if kind == "pass1":
+		# Walled up to its crown, set back from both faces, its ring and
+		# jambs standing round the walling.
+		var r := aw*0.5
+		var spring := P+(TIERS[0] as Vector3).y
+		var fill := func(x: float) -> float: return spring+sqrt(maxf(r*r-x*x,0.0))+0.3
+		RuinKit._courses(b,Transform3D.IDENTITY,-r-0.2,r+0.2,P-1.0,fill,INNER_D*0.6,Callable(),COURSE)
 	# Blind arcading on the ambulatory's face: rings proud of the wall on
 	# the tiers no passage pierces, a pilaster at the bay's edge.
 	for t in range(2):
@@ -1130,7 +1139,6 @@ static func column(p: Dictionary, tops: Dictionary, bs: Array, x: float, z: floa
 		var aw := _pass_hole()
 		match kind:
 			"gate": holes.append([GATE,P,P+GATE_SPRING])
-			"pass1": holes.append([aw,P,P+(TIERS[0] as Vector3).y])
 			"pass2": holes.append([aw,P+(TIERS[1] as Vector3).x,P+(TIERS[1] as Vector3).y])
 		# The world's arch is the nominal one scaled: cut at the unscaled x.
 		return _cut_holes(-FOUND,_q(top),lx,holes)
