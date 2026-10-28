@@ -324,3 +324,20 @@ func inside(p: Vector3, pad := -1.0) -> bool:
 	for s: Vector2 in stretches(p,pad):
 		if p.y >= s.x and p.y <= s.y: return true
 	return false
+
+## The set pieces (set_plan.gd) standing within their reach of world `p`:
+## their records ({name, node, pos, spec, ...}).
+func sets_near(p: Vector3) -> Array:
+	var out: Array = []
+	if _cells.is_empty(): return out
+	var c := Plan.cell_of(p.x,p.z)
+	for dz in range(-1,2):
+		for dx in range(-1,2):
+			var list: Variant = _cells.get(c+Vector2i(dx,dz))
+			if list == null: continue
+			for r: Dictionary in list:
+				if not (r.spec as Dictionary).has("set"): continue
+				var o: Vector3 = r.pos
+				if absf(p.x-o.x) > float(r.reach) or absf(p.z-o.z) > float(r.reach): continue
+				out.append(r)
+	return out

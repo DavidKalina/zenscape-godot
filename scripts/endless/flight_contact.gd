@@ -15,6 +15,13 @@ extends RefCounted
 ##   plus KICK.y per m/s into it (SkyPlane `scrape`). For GRACE s after one
 ##   another touch only crashes.
 ##
+## In a forgiving knife slot (scripts/endless/knife_glance.gd, the study's
+## `glance` `zone`) a touch of a jamb's side never crashes: it is glanced off
+## (`glance`), the path turned along the slot, a shove of GLANCE_KICK m/s
+## toward its middle (not a scrape's KICK, which throws it into the other
+## jamb); so is a wingtip's or the nose's touch there (NearMiss `touching`).
+## The middle's own touch of its sill or head is graded as anywhere.
+##
 ## A spruce is neither: the plane knocks it down (scripts/endless/
 ## tree_knock.gd, before the move; a tree touch that still gets here is
 ## handed to TreeKnock `at_hit` and comes back as "knock").
@@ -39,6 +46,10 @@ const SCRAPE_COST := 0.012
 const SCRAPE_LEAST := 0.6
 const KICK := Vector2(2.2,0.35)
 const GRACE := 0.45
+const GLANCE_KICK := 0.4
+## The middle's touch whose normal's up part is under this is a jamb's side
+## (a glance); over it, a sill's or a head's, graded as anywhere.
+const GLANCE_SIDE := 0.5
 const NORMAL_STEP := 0.6
 ## A brushed face is the land's slope where that is steeper than this (its
 ## normal's up part).
@@ -65,8 +76,10 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	var c: Dictionary = plane.contact
 	var hit := {}
 	if not c.is_empty(): hit = _from_contact(c,game)
+	var touched := false
 	if hit.is_empty() and not touching.is_empty():
 		hit = {"at":touching.at,"normal":touching.normal,"what":touching.what,"velocity":plane.velocity}
+		touched = true
 	if hit.is_empty(): return {}
 	# A tree (weighted) is knocked down, not grazed or crashed into
 	# (scripts/endless/tree_knock.gd; this is a touch its own tries missed).
@@ -80,6 +93,12 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	var into := -v.dot(n)
 	var angle := asin(clampf(into/speed,-1.0,1.0))
 	var out := {"at":hit.at,"normal":n,"what":hit.what,"into":into,"angle":angle,"speed":speed}
+	# A forgiving knife slot's jamb (a side touch of its stone, not its sill
+	# or head): glanced off toward its middle, never kicked across the slot.
+	var slot: Dictionary = game.glance.zone if game.get("glance") != null else {}
+	if not slot.is_empty() and str(hit.what) == "stone" and (touched or absf(n.y) < GLANCE_SIDE):
+		var side := ((slot.inv as Transform3D)*(game.plane.position as Vector3)).x
+		return glance(game,-(slot.across as Vector3) if side > 0.0 else (slot.across as Vector3),hit.at)
 	if into > CRASH_INTO and angle > CRASH_ANGLE:
 		crashes += 1
 		return {"crash":out}
@@ -90,6 +109,25 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	scrapes += 1
 	out["keep"] = keep
 	return {"scrape":out}
+
+## A forgiving knife slot's jamb glanced off (KnifeGlance), `normal` across
+## toward the slot's middle, at `at`: a scrape (its speed kept as a scrape's
+## for how fast it went into the jamb), the path turned along the slot (none
+## of it left going into the jamb) and a small shove toward the middle; in
+## the GRACE after a scrape, only the path turned. Returns {} or {"scrape"}.
+func glance(game: Node3D, normal: Vector3, at: Vector3) -> Dictionary:
+	var plane = game.plane
+	var v: Vector3 = plane.velocity
+	var speed := v.length()
+	var into := maxf(-v.dot(normal),0.0)
+	if _grace > 0.0:
+		plane.scrape(normal,1.0,0.0,0.0)
+		return {}
+	var keep := clampf(SCRAPE_KEEP-SCRAPE_COST*into,SCRAPE_LEAST,1.0)
+	plane.scrape(normal,keep,GLANCE_KICK,0.0)
+	_grace = GRACE
+	scrapes += 1
+	return {"scrape":{"at":at,"normal":normal,"what":"stone","into":into,"angle":asin(clampf(into/maxf(speed,0.1),-1.0,1.0)),"speed":speed,"keep":keep,"glance":true}}
 
 ## The contact the plane's move made, as a hit, or {} where it is the
 ## landing's (a slow touch of the land, slow on the water).

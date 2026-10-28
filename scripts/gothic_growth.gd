@@ -34,6 +34,9 @@ const Sundered = preload("res://scripts/sundered_growth.gd")
 ## an opening through a wall (a lane keeps its own length).
 const CORE_MARGIN := 1.6
 const CORE_DEPTH := 2.0
+## A strict knife slot's (Gothic `openings`, `forgive` false) core is kept
+## this much wider again, so its jambs show clean stone, few strands.
+const STRICT_MARGIN := 1.4
 
 ## The kit's own growth's detail on these pieces (Build `level`, set once
 ## ours is laid): its fine ivy and cushions are mostly the shader's now.
@@ -144,7 +147,8 @@ static func keep_clear(b, id: String, p: Dictionary) -> void:
 				var slab := Vector3(w,(y1-y0)*0.5,half.z+depth)
 				b.clear.append(box_of(f*Transform3D(Basis.IDENTITY,Vector3(0.0,(y0+y1)*0.5,0.0)),slab))
 			continue
-		half += Vector3(CORE_MARGIN,CORE_MARGIN,depth)
+		var margin := CORE_MARGIN+(STRICT_MARGIN if bool(o["knife"]) and not bool(o.get("forgive",false)) else 0.0)
+		half += Vector3(margin,CORE_MARGIN,depth)
 		b.clear.append(box_of(f,half))
 
 ## The AABB of the oriented box `half` big at frame `f`.

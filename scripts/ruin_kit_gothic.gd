@@ -263,6 +263,12 @@ static func plan(id: String, seed_value: int, weathered := 0.6) -> Dictionary:
 ##   round    true for a round opening (the rose): size.x its diameter
 ##   lane     true for a lane flown along its whole depth (the nave's,
 ##            a flank's, the slots' line), not a gate passed through
+##   forgive  a knife slot's kind (false for every other opening): true for
+##            a forgiving one (the nave's buttress slots, the rose gate's
+##            slots), where the plane's true side shape is fitted and a
+##            glance off a jamb is a scrape (scripts/endless/knife_glance.gd);
+##            false for a strict one (the belfry's slits, the nave's east
+##            slits and wall lights), for a steady hand
 static func openings(id: String, seed_value: int, weathered := 0.6) -> Array:
 	var p := plan(id,seed_value,weathered)
 	var out: Array = []
@@ -272,10 +278,10 @@ static func openings(id: String, seed_value: int, weathered := 0.6) -> Array:
 		"rose_gate": _gate_openings(p,out)
 	return out
 
-static func _opening(out: Array, name: String, kind: String, centre: Vector3, way: Vector3, size: Vector3, head := 0.0, knife := false, round := false, lane := false) -> void:
+static func _opening(out: Array, name: String, kind: String, centre: Vector3, way: Vector3, size: Vector3, head := 0.0, knife := false, round := false, lane := false, forgive := false) -> void:
 	var z := way.normalized()
 	var x := Vector3.UP.cross(z).normalized()
-	out.append({"name":name,"kind":kind,"frame":Transform3D(Basis(x,Vector3.UP,z),centre),"size":size,"head":head,"knife":knife,"round":round,"lane":lane})
+	out.append({"name":name,"kind":kind,"frame":Transform3D(Basis(x,Vector3.UP,z),centre),"size":size,"head":head,"knife":knife,"round":round,"lane":lane,"forgive":forgive})
 
 static func _nave_openings(p: Dictionary, out: Array) -> void:
 	_opening(out,"gothic_nave/portal","portal",Vector3(0.0,PORTAL_SPRING*0.5+0.5,HALF_LEN+PIER_R*0.4),Vector3.BACK,Vector3(PORTAL,PORTAL_SPRING-1.0,END_D*2.0),RuinKit._rise(PORTAL*0.5,PORTAL))
@@ -319,7 +325,7 @@ static func _nave_openings(p: Dictionary, out: Array) -> void:
 			if not bool(flyers["%d/%d" % [s,k]]): continue
 			_opening(out,"gothic_nave/flyer_%s%d" % [side,k],"flyer",Vector3(cx,(1.0+top)*0.5,HALF_LEN-k*BAY),Vector3.BACK,Vector3(FLANK,top-1.0,BUTTRESS_W))
 		if s == int(p["pierced"]):
-			_opening(out,"gothic_nave/slots_%s" % side,"knife",Vector3(s*(BUTTRESS_X+_slot_in()),(SLOT_Y.x+SLOT_Y.y)*0.5,0.0),Vector3.BACK,Vector3(KNIFE,SLOT_Y.y-SLOT_Y.x,BAYS*BAY+BUTTRESS_W),RuinKit._rise(KNIFE*0.5,KNIFE),true,false,true)
+			_opening(out,"gothic_nave/slots_%s" % side,"knife",Vector3(s*(BUTTRESS_X+_slot_in()),(SLOT_Y.x+SLOT_Y.y)*0.5,0.0),Vector3.BACK,Vector3(KNIFE,SLOT_Y.y-SLOT_Y.x,BAYS*BAY+BUTTRESS_W),RuinKit._rise(KNIFE*0.5,KNIFE),true,false,true,true)
 
 ## How far into a buttress (from its inner face) the knife slot's middle is.
 static func _slot_in() -> float:
@@ -348,7 +354,7 @@ static func _belfry_openings(p: Dictionary, out: Array) -> void:
 static func _gate_openings(_p: Dictionary, out: Array) -> void:
 	_opening(out,"rose_gate/rose","rose",Vector3(0.0,ROSE_Y,0.0),Vector3.BACK,Vector3(ROSE,ROSE,GATE.w*2.0),0.0,false,true)
 	for s: float in [-1.0,1.0]:
-		_opening(out,"rose_gate/slot_%s" % ("w" if s < 0.0 else "e"),"knife",Vector3(s*_gate_slot_x(),(GATE_SLOT.x+GATE_SLOT.y)*0.5,0.0),Vector3.BACK,Vector3(KNIFE,GATE_SLOT.y-GATE_SLOT.x,GATE.w*2.0),RuinKit._rise(KNIFE*0.5,KNIFE),true)
+		_opening(out,"rose_gate/slot_%s" % ("w" if s < 0.0 else "e"),"knife",Vector3(s*_gate_slot_x(),(GATE_SLOT.x+GATE_SLOT.y)*0.5,0.0),Vector3.BACK,Vector3(KNIFE,GATE_SLOT.y-GATE_SLOT.x,GATE.w*2.0),RuinKit._rise(KNIFE*0.5,KNIFE),true,false,false,true)
 
 static func _gate_slot_x() -> float:
 	return ROSE*0.5+ROSE_RING+5.0
@@ -392,7 +398,10 @@ static func _head(b: Build, pose: Transform3D, cx: float, w: float, spring: floa
 
 ## Jambs: long and short stones up both sides of an opening (middle `cx`,
 ## clear width `w`) from `sill` to `spring`, `d` half thick, `ring` out.
-static func _jambs(b: Build, pose: Transform3D, cx: float, w: float, sill: float, spring: float, d: float, ring: float) -> void:
+## `sharp`: a strict knife slot's (its `forgive` false), each stone settled
+## only SHARP_SETTLE of the others' so the jambs run clean and straight.
+const SHARP_SETTLE := 0.2
+static func _jambs(b: Build, pose: Transform3D, cx: float, w: float, sill: float, spring: float, d: float, ring: float, sharp := false) -> void:
 	for s: float in [-1.0,1.0]:
 		var y := sill
 		var k := 0
@@ -401,7 +410,7 @@ static func _jambs(b: Build, pose: Transform3D, cx: float, w: float, sill: float
 			if spring-(y+hgt) < 0.6: hgt = spring-y
 			var wide := ring*(1.0 if k%2 == 0 else 0.7)
 			var at := Vector3(cx+s*(w*0.5+wide*0.5),y+hgt*0.5,0.0)
-			b.solid(RuinKit._box(b,Vector3(wide*0.5,hgt*0.5-0.01,d)),pose*RuinKit._settle(b,at,0.2),RuinKit._stone(b,1.02))
+			b.solid(RuinKit._box(b,Vector3(wide*0.5,hgt*0.5-0.01,d)),pose*RuinKit._settle(b,at,0.2*(SHARP_SETTLE if sharp else 1.0)),RuinKit._stone(b,1.02))
 			y += hgt
 			k += 1
 
@@ -590,7 +599,7 @@ static func nave(seed_value: int, weathered := 0.6) -> Node3D:
 			var w := LANCET if kind == "lancet" else KNIFE*2.0+MULLION*2.0
 			_wall(b,pose,-half,half,top,WALL_D,_lancet_hole(0.0,w,LANCET_SILL,LANCET_SPRING,ring))
 			_sill(b,pose,0.0,w,LANCET_SILL,WALL_D)
-			_jambs(b,pose,0.0,w,LANCET_SILL,LANCET_SPRING,WALL_D,ring)
+			_jambs(b,pose,0.0,w,LANCET_SILL,LANCET_SPRING,WALL_D,ring,kind == "slit")
 			if kind == "slit":
 				# Its mullion stands: two knife lights, a head over each.
 				var mh := LANCET_SPRING-LANCET_SILL
@@ -659,7 +668,7 @@ static func nave(seed_value: int, weathered := 0.6) -> Node3D:
 	_jambs(b,epose,0.0,EAST_W,EAST.x,EAST.y,END_D,ring)
 	_head(b,epose,0.0,EAST_W,EAST.y,ring,END_D,9,0,etop)
 	for s: float in [-1.0,1.0]:
-		_jambs(b,epose,s*slit_x,KNIFE,EAST_SLIT.x,EAST_SLIT.y,END_D,0.8)
+		_jambs(b,epose,s*slit_x,KNIFE,EAST_SLIT.x,EAST_SLIT.y,END_D,0.8,true)
 		_head(b,epose,s*slit_x,KNIFE,EAST_SLIT.y,0.8,END_D,4,0,etop)
 	# Growth: from the heads, down the walls' tops.
 	_grow(b,hangs,8.0)
@@ -740,7 +749,7 @@ static func belfry(seed_value: int, weathered := 0.6) -> Node3D:
 				var cx := float(hl[0])
 				var w := float(hl[1])
 				_sill(b,pose,cx,w,float(hl[2]),d)
-				_jambs(b,pose,cx,w,float(hl[2]),float(hl[3]),d,ring)
+				_jambs(b,pose,cx,w,float(hl[2]),float(hl[3]),d,ring,is_equal_approx(w,KNIFE))
 				_head(b,pose,cx,w,float(hl[3]),ring,d,7 if w > 3.0 else 4,0,top)
 		if face == 0:
 			# The tracery's remains: a broken ring high in the window's point.

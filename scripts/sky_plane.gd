@@ -640,12 +640,13 @@ func path_now() -> Vector3:
 ## Scraped along a surface (`normal` out of it; scripts/endless/
 ## flight_contact.gd): `keep` of the speed kept, the path turned off the
 ## surface (SCRAPE_OUT of the way out), the nose with it where it pointed in,
-## and a shove of `kick` m/s out of it dying away (`bump`).
-func scrape(normal: Vector3, keep: float, kick: float) -> void:
+## and a shove of `kick` m/s out of it dying away (`bump`). `out` in place of
+## SCRAPE_OUT: a knife slot's glance (KnifeGlance) turns it only along.
+func scrape(normal: Vector3, keep: float, kick: float, out := SCRAPE_OUT) -> void:
 	speed = maxf(SLOW,speed*keep)
 	var path := path_now()
 	var into := path.dot(normal)
-	if into < SCRAPE_OUT: path = (path+normal*(SCRAPE_OUT-into)).normalized()
+	if into < out: path = (path+normal*(out-into)).normalized()
 	if Vector2(path.x,path.z).length() > 0.01: _path_h = atan2(-path.x,-path.z)
 	else: _path_h = heading+slip
 	_path_p = asin(clampf(path.y,-1.0,1.0))
