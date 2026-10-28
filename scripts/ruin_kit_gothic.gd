@@ -29,7 +29,7 @@ extends RefCounted
 ## piece's frame, drawn from the same plan as the stone (`plan`), so a
 ## placer or a flyability check reads them without building it. Their
 ## widths come from toy widths named here through `WorldScale.opening`, the
-## knife slots from `WorldScale.knife()`.
+## knife slots from `WorldScale.knife(KNIFE_ROOM)`.
 ##
 ## Every piece, as the kit's: a Node3D, its foot on y 0 round the origin,
 ## its front toward +Z, "Mesh" (stone and growth, one surface) and "Body"
@@ -60,8 +60,9 @@ const TOY_LANCET := 3.0
 const TOY_FLANK := 3.75
 ## The choir screen's arch: toy 3.4 (6.8 m).
 const TOY_SCREEN := 3.4
-## The east end's great lancet: toy 3.2 (6.4 m).
-const TOY_EAST := 3.2
+## The east end's great lancet: toy 3.4 (6.8 m; was 3.2, 6.4 m: flown down
+## the nave by hand at A 0.2 it took 2 crashes in 30 passes, 6.8 none).
+const TOY_EAST := 3.4
 ## The belfry's lights, front and back: toy 2.8 (5.6 m, 1.4 m past a tip).
 const TOY_BELFRY := 2.8
 ## The tower's tracery light (its tracery broken out): toy 2.9 (5.8 m).
@@ -109,9 +110,11 @@ const SLOT_Y := Vector2(3.0,15.0)
 ## head at FLYER.y; its depth over the soffit at the crown.
 const FLYER := Vector3(17.0,24.5,1.5)
 ## The choir screen: its pier line; its height, the arch's springing, its
-## half thickness; its sill.
+## half thickness; its sill. The springing 10.5 (was 9): flown down the nave
+## by hand its springing corners were the line's knife edge (trunk 3); its
+## height raised with it (was 18), so the wall still stands over the head.
 const SCREEN_LINE := 6
-const SCREEN := Vector3(18.0,9.0,1.5)
+const SCREEN := Vector3(19.5,10.5,1.5)
 const SCREEN_SILL := 1.5
 ## The west front and east end: half thickness, the portal's springing,
 ## the east lancet's sill and springing, the slits' either side of it.
@@ -132,7 +135,16 @@ static var LANCET: float = WorldScale.opening(TOY_LANCET)
 static var FLANK: float = WorldScale.opening(TOY_FLANK)
 static var SCREEN_W: float = WorldScale.opening(TOY_SCREEN)
 static var EAST_W: float = WorldScale.opening(TOY_EAST)
-static var KNIFE: float = WorldScale.knife()
+## The knife slots: WorldScale.knife with KNIFE_ROOM. The flight pads a
+## plane on its side by its keel's reach both ways (WorldScale.reach_rolled,
+## 0.9 m a side at plane 2), so knife()'s own room (1.9 m) left its middle
+## 5 cm a side and only an exact line got through: flown by hand (trunk 3,
+## scratch/sets/thread.gd) a pilot centred to within a few cm passed 1 in
+## 10. KNIFE_ROOM 0.66 toy spans makes 2.4 m: 0.3 m a side on the knife edge,
+## and still under the span, so wings level it shuts (it wants ~30 deg of
+## roll or more; a knife edge to fly it with room).
+const KNIFE_ROOM := 0.66
+static var KNIFE: float = WorldScale.knife(KNIFE_ROOM)
 ## The buttresses' inner face (x): the flank corridor runs from the
 ## piers' shafts to it.
 static var BUTTRESS_X: float = PIER_X+PIER_REACH+FLANK
