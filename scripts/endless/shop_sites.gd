@@ -2,7 +2,7 @@ extends Node
 ## The shops (docs/design/endless-flight/spec-wild-loop.md, lane `shop`):
 ## one per CELL m square by the seed, beside a flat landing strip (never on
 ## it: "Meadows and flats", AGENTS.md), read from far off by a tall mast with
-## a lamp and a windsock, a small open hangar and the strip's edge cones.
+## a lamp and a windsock, a small open hangar and the strip's edge posts.
 ## Stopping on its strip opens the shop (shop_view.gd) as the game's
 ## overlay; Esc leaves, and taking off leaves too.
 ##
@@ -25,6 +25,7 @@ extends Node
 ## --shops=0 none.
 
 const ShopStock = preload("res://scripts/endless/shop_stock.gd")
+const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const ShopView = preload("res://scripts/endless/shop_view.gd")
 const RivalStrip = preload("res://scripts/endless/rival_strip.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
@@ -77,10 +78,11 @@ const SHED_DEEP := 8.0
 const SHED_TALL := 4.6
 const SHED_LEVEL := 2.2
 ## The mast: by the hangar, MAST m tall, its lamp LAMP m across.
-const MAST := 20.0
-const LAMP := 1.1
-## Edge cones every CONE_EVERY m down both sides.
-const CONE_EVERY := 26.0
+const MAST := 28.0
+const LAMP := 2.4
+## Edge posts every POST_EVERY m down both sides, POST m tall.
+const POST_EVERY := 26.0
+const POST := 2.2
 
 var game: Node
 var seed := 1
@@ -372,7 +374,7 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 	shed.name = "Hangar"
 	shed.transform = Transform3D(Basis(axis*float(site.side),Vector3.UP,across),shed_at)
 	root.add_child(shed)
-	var wood := _mat(Color("8a6a4a"),0.9)
+	var wood := _mat(Color("a8865e"),0.9)
 	var plank := _mat(Color("6b4f36"),0.9)
 	var roof := _mat(Color("7a3d2c"),0.8)
 	var cream := _mat(Color("ece2c8"),0.8)
@@ -415,8 +417,8 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 	var steel := _mat(Color("d8d2c4"),0.6)
 	var pole := MeshInstance3D.new()
 	var cm := CylinderMesh.new()
-	cm.top_radius = 0.16
-	cm.bottom_radius = 0.28
+	cm.top_radius = 0.22
+	cm.bottom_radius = 0.4
 	cm.height = MAST+1.0
 	cm.radial_segments = 8
 	cm.rings = 1
@@ -426,17 +428,17 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 	mast.add_child(pole)
 	# Red and white bands up it, to read against the sky.
 	var red := _mat(Color("b8342a"),0.7)
-	for b in 3:
+	for b in 4:
 		var band := MeshInstance3D.new()
 		var bc := CylinderMesh.new()
-		bc.top_radius = 0.24
-		bc.bottom_radius = 0.26
-		bc.height = 1.6
+		bc.top_radius = 0.3
+		bc.bottom_radius = 0.33
+		bc.height = 2.2
 		bc.radial_segments = 8
 		bc.rings = 1
 		band.mesh = bc
 		band.material_override = red
-		band.position = Vector3(0,MAST-2.0-b*3.6,0)
+		band.position = Vector3(0,MAST-2.6-b*4.8,0)
 		mast.add_child(band)
 	var lamp := MeshInstance3D.new()
 	var sm := SphereMesh.new()
@@ -452,23 +454,43 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 	glow.emission_energy_multiplier = 4.0
 	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	lamp.material_override = glow
-	lamp.position = Vector3(0,MAST+0.6,0)
+	lamp.position = Vector3(0,MAST+LAMP*0.4,0)
 	lamp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mast.add_child(lamp)
+	# The lamp's glint far off: the same few pixels at any distance, fading
+	# in past GLINT_FROM m, so the shop is found from far.
+	var glint := MeshInstance3D.new()
+	glint.name = "Glint"
+	var gq := QuadMesh.new()
+	gq.size = Vector2(GLINT,GLINT)
+	glint.mesh = gq
+	glint.material_override = _glint_material()
+	glint.position = Vector3(0,MAST+LAMP*0.4,0)
+	glint.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mast.add_child(glint)
+	# A long gilt pennant off the top, red at the hoist, to read from far.
+	var flag := MeshInstance3D.new()
+	flag.name = "Pennant"
+	flag.mesh = _pennant()
+	flag.material_override = _pennant_material()
+	flag.position = Vector3(0,MAST-0.2,0)
+	flag.basis = Basis.looking_at(-axis*float(site.ends[0]),Vector3.UP)*Basis(Vector3.UP,PI*0.5)
+	flag.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mast.add_child(flag)
 	# The sock on its arm: a cone in orange and white bands, along the strip.
 	var sock := Node3D.new()
 	sock.name = "Sock"
-	sock.position = Vector3(0,MAST-0.6,0)
+	sock.position = Vector3(0,MAST-1.0,0)
 	sock.basis = Basis.looking_at(axis*float(site.ends[0]),Vector3.UP)
 	mast.add_child(sock)
 	var orange := _mat(Color("e0702a"),0.85)
 	var white := _mat(Color("f2ece0"),0.85)
-	var long := 4.2
+	var long := 6.0
 	for b in 4:
 		var seg := MeshInstance3D.new()
 		var fm := CylinderMesh.new()
-		var r0 := lerpf(0.75,0.35,float(b)/4.0)
-		var r1 := lerpf(0.75,0.35,float(b+1)/4.0)
+		var r0 := lerpf(1.0,0.45,float(b)/4.0)
+		var r1 := lerpf(1.0,0.45,float(b+1)/4.0)
 		fm.top_radius = r0
 		fm.bottom_radius = r1
 		fm.height = long/4.0
@@ -481,26 +503,115 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 		# Along local -Z (Basis.looking_at's forward), from the arm out.
 		seg.transform = Transform3D(Basis(Vector3.RIGHT,-PI*0.5),Vector3(0,0,-(b+0.5)*long/4.0-0.2))
 		sock.add_child(seg)
-	# The strip's edge cones, cream, both sides, and a gilt pair at each end.
-	var cone := CylinderMesh.new()
-	cone.top_radius = 0.0
-	cone.bottom_radius = 0.45
-	cone.height = 1.1
-	cone.radial_segments = 6
-	cone.rings = 1
+	# The strip's edge posts, cream with gilt caps, both sides; the ends'
+	# all gilt.
+	var post := BoxMesh.new()
+	post.size = Vector3(0.35,POST,0.35)
+	var cap := BoxMesh.new()
+	cap.size = Vector3(0.5,0.35,0.5)
 	var u := -STRIP*0.5
 	var edge := site.across as Vector3
 	while u <= STRIP*0.5+0.1:
-		for v: float in [-LANE_HALF-2.0,LANE_HALF+2.0]:
+		var end := absf(absf(u)-STRIP*0.5) < 1.0
+		for v: float in [-LANE_HALF-3.0,LANE_HALF+3.0]:
 			var q := c+axis*u+edge*v
-			q.y = float(field.height(q.x,q.z))+0.45
+			q.y = float(field.height(q.x,q.z))
 			var m := MeshInstance3D.new()
-			m.mesh = cone
-			m.material_override = gilt if absf(absf(u)-STRIP*0.5) < 1.0 else cream
-			m.position = q
-			m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			m.mesh = post
+			m.material_override = gilt if end else cream
+			m.position = q+Vector3.UP*(POST*0.5-0.3)
 			root.add_child(m)
-		u += CONE_EVERY
+			var top := MeshInstance3D.new()
+			top.mesh = cap
+			top.material_override = gilt
+			top.position = q+Vector3.UP*(POST-0.15)
+			top.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			root.add_child(top)
+		u += POST_EVERY
+
+## The glint: its size on screen (as seen 1 m off), fading in from
+## GLINT_FROM to GLINT_FULL m.
+const GLINT := 0.026
+const GLINT_FROM := 220.0
+const GLINT_FULL := 420.0
+static var _glint_mat: StandardMaterial3D
+
+static func _glint_material() -> StandardMaterial3D:
+	if _glint_mat != null: return _glint_mat
+	var g := Gradient.new()
+	g.set_color(0,Color(1.0,0.86,0.5,1.0))
+	g.set_color(1,Color(1.0,0.78,0.35,0.0))
+	g.add_point(0.35,Color(1.0,0.84,0.45,0.85))
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5,0.5)
+	tex.fill_to = Vector2(0.5,0.0)
+	tex.width = 64
+	tex.height = 64
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = tex
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m.fixed_size = true
+	m.no_depth_test = false
+	m.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+	m.distance_fade_min_distance = GLINT_FROM
+	m.distance_fade_max_distance = GLINT_FULL
+	_glint_mat = m
+	return m
+
+## The pennant: PENNANT m long (+X), tapering from PENNANT_DEEP at the
+## hoist to a point, hanging down from y 0.
+const PENNANT := 10.0
+const PENNANT_DEEP := 3.4
+static var _pennant_mesh: ArrayMesh
+static var _pennant_shader: Shader
+const PENNANT_SHADER := """
+shader_type spatial;
+render_mode cull_disabled, specular_disabled;
+uniform vec4 hoist : source_color = vec4(0.72,0.2,0.16,1.0);
+uniform vec4 fly : source_color = vec4(1.0,0.83,0.42,1.0);
+varying float u;
+void vertex() {
+	u = UV.x;
+	VERTEX.z += sin(TIME*3.1-u*5.0)*0.45*u+sin(TIME*5.3-u*9.0)*0.12*u;
+	VERTEX.y -= u*u*0.6;
+}
+void fragment() {
+	ALBEDO = u < 0.22 ? hoist.rgb : fly.rgb;
+	ROUGHNESS = 0.85;
+	EMISSION = ALBEDO*0.18;
+}
+"""
+
+static func _pennant() -> ArrayMesh:
+	if _pennant_mesh != null: return _pennant_mesh
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var n := 10
+	for i in n:
+		var u0 := float(i)/n
+		var u1 := float(i+1)/n
+		var d0 := PENNANT_DEEP*(1.0-u0)
+		var d1 := PENNANT_DEEP*(1.0-u1)
+		var a := Vector3(u0*PENNANT,0,0)
+		var b := Vector3(u1*PENNANT,0,0)
+		for v: Array in [[a,u0],[b,u1],[b+Vector3(0,-d1,0),u1],[a,u0],[b+Vector3(0,-d1,0),u1],[a+Vector3(0,-d0,0),u0]]:
+			st.set_normal(Vector3.BACK)
+			st.set_uv(Vector2(v[1],0.0))
+			st.add_vertex(v[0])
+	_pennant_mesh = st.commit()
+	return _pennant_mesh
+
+static func _pennant_material() -> ShaderMaterial:
+	if _pennant_shader == null:
+		_pennant_shader = Shader.new()
+		_pennant_shader.code = PENNANT_SHADER
+	var m := ShaderMaterial.new()
+	m.shader = _pennant_shader
+	return m
 
 ## The lowest land over a square of half-side `r` at `p` (so nothing floats).
 static func _ground(field: RefCounted, p: Vector3, r: float) -> float:
@@ -520,11 +631,10 @@ func _box(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> MeshInst
 	parent.add_child(m)
 	return m
 
-static func _mat(col: Color, rough: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = col
-	m.roughness = rough
-	return m
+## Paint lit as the plane's and the ruins' are (PlaneFigure `_paint`: the
+## sky's hemisphere as fill, so the shade side is not black).
+static func _mat(col: Color, _rough: float) -> Material:
+	return PlaneFigure._paint(col)
 
 ## The windsock's lazy swing in the still air.
 func _sway(root: Node3D) -> void:

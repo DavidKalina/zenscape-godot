@@ -36,7 +36,8 @@ func setup(b: RefCounted, f: Node3D, leave: Callable) -> void:
 
 func _ready() -> void:
 	name = "ShopView"
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	size = get_viewport_rect().size
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var panel := PanelContainer.new()
 	var box := StyleBoxFlat.new()
@@ -161,6 +162,11 @@ func _word(px: float, track: float) -> FontVariation:
 	return f
 
 func _process(delta: float) -> void:
+	# Over a CanvasLayer the anchors alone leave it no size: the screen's.
+	var screen := get_viewport_rect().size
+	if size != screen:
+		position = Vector2.ZERO
+		size = screen
 	if _note_left > 0.0:
 		_note_left -= delta
 		if _note_left <= 0.0: _note.text = ""
