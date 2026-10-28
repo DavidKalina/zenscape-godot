@@ -21,6 +21,7 @@ const Field = preload("res://scripts/endless/land_field.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const Plan = preload("res://scripts/endless/arch_plan.gd")
 const Build = preload("res://scripts/endless/arch_build.gd")
+const Bridges = preload("res://scripts/endless/bridge_plan.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const STONE_LIFT := Color(3.0, 2.55, 1.95)
 const RuinKit = preload("res://scripts/ruin_kit.gd")
@@ -170,7 +171,10 @@ func _task(key: Vector2i) -> void:
 func _build_cell(key: Vector2i, field: RefCounted) -> Dictionary:
 	var began := Time.get_ticks_usec()
 	var built: Array = []
-	for spec: Dictionary in Plan.plan(field,key.x,key.y,density,rock,ruin):
+	# The cell's arches (less those under a bridge) and the bridges whose middle
+	# stands in it (bridge_plan.gd; only a world whose layers set `bridges`).
+	var specs: Array = Bridges.with_arches(field,key.x,key.y,Plan.plan(field,key.x,key.y,density,rock,ruin),density,rock,ruin)
+	for spec: Dictionary in specs:
 		var b := Build.build(spec,field)
 		# A rock arch's solid follows its skin; a ruin's, its stones.
 		b["solid"] = BoxSolid.build(BoxSolid.from_faces(b.faces) if b.kind == "rock" else b.boxes)

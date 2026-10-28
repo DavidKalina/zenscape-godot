@@ -1,0 +1,65 @@
+extends RefCounted
+## Lays a bridge's run (scripts/endless/bridge_plan.gd) from the ruin kit's
+## aqueduct pieces (scripts/ruin_kit_aqueduct.gd), in the run's frame as
+## `Aqueduct.run` lays one: `count` spans SPAN apart along +X from x 0, each
+## pier grown down to `ground` (Callable(x, z) -> y, the run's frame), merged
+## into one mesh and one body. arch_build.gd grows it and gives its solid.
+##   whole        single spans, each standing its right pier (the first its
+##                left too).
+##   tier         two-tier spans (`Aqueduct.two_tier`).
+##   broken       the A half `cut` spans from x 0, its last snapped off over a
+##                stump; `miss` spans fallen; the B half the rest, laid from
+##                the far end back toward the middle (turned half round), its
+##                last snapped off too, so both halves end in mid-air facing
+##                each other over the gap.
+
+const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
+const RuinKit = preload("res://scripts/ruin_kit.gd")
+
+static func piece(spec: Dictionary, ground: Callable) -> Node3D:
+	var b: Dictionary = spec.bridge
+	var seed_value := int(spec.seed)
+	var weathered := float(spec.weathered)
+	var count := int(spec.count)
+	var wet := bool(b.wet)
+	var tier := bool(b.tier)
+	var cut := int(b.cut)
+	var miss := int(b.miss)
+	var root := Node3D.new()
+	root.name = "BridgeRun"
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([seed_value,"bridge run"])
+	var shift := func(dx: float) -> Callable:
+		return func(x: float, z: float) -> float: return float(ground.call(x+dx,z))
+	# A piece turned half round about its middle at dx: its (x, z) is the
+	# run's (dx-x, -z).
+	var mirror := func(dx: float) -> Callable:
+		return func(x: float, z: float) -> float: return float(ground.call(dx-x,-z))
+	var span: float = Aqueduct.SPAN
+	for i in range(count):
+		var w := clampf(weathered+rng.randf_range(-0.15,0.15),0.0,1.0)
+		var x := span*(0.5+i)
+		var node: Node3D
+		if cut < 0:
+			var piers := 2|(1 if i == 0 else 0)
+			if tier: node = Aqueduct.two_tier(seed_value+i,w,piers,wet,shift.call(x))
+			else: node = Aqueduct.span(seed_value+i,w,piers,wet,shift.call(x))
+			node.position = Vector3(x,0.0,0.0)
+		elif i < cut:
+			# The A half, out from x 0.
+			if i == cut-1: node = Aqueduct.broken(seed_value+i,w,i == 0,"stump",wet,shift.call(x))
+			else: node = Aqueduct.span(seed_value+i,w,2|(1 if i == 0 else 0),wet,shift.call(x))
+			node.position = Vector3(x,0.0,0.0)
+		elif i < cut+miss:
+			continue
+		else:
+			# The B half, turned: each span stands its pier toward the gap
+			# (the far end's both).
+			var j := i
+			var first := j == count-1
+			if j == cut+miss: node = Aqueduct.broken(seed_value+j,w,first,"none" if miss == 0 else "stump",wet,mirror.call(x))
+			else: node = Aqueduct.span(seed_value+j,w,2|(1 if first else 0),wet,mirror.call(x))
+			node.transform = Transform3D(Basis(Vector3.UP,PI),Vector3(x,0.0,0.0))
+		root.add_child(node)
+	RuinKit.merge(root)
+	return root
