@@ -114,6 +114,19 @@ and parapets, long trails off broken ends. Flown openings keep a clear
 core (thin strands at their edges are fine: the plane parts them). Growth
 colour suits the amber palette (muted, not saturated green).
 
+## Found by the bridge-look lane: the aqueduct bridges are too heavy
+
+On seed 1's same chains, a 411 m two-tier aqueduct bridge is 143k stone +
+643k growth tris and takes 20.7 s to build; the road bridge over a like
+span is ~43k + ~36k and 0.7 s. Its growth comes from the native finish
+(`native/terrain_kernels/isle_finish.h`). A trunk task (before the look
+pass) brings the aqueduct form near the road form's cost: coarser and
+fewer growth strands (in the native finish too, or a GDScript-side
+setting it reads), bigger stone courses, the LOD levels measured, while it
+still reads as an overgrown aqueduct. Also open from that lane: 4 Jolt
+"Hull building failed" errors in the road bridge's sweep (blocks with no
+collider).
+
 ## Trunk (the loop, after the merge, in order)
 
 1. **Set piece placer**: a placer for standalone structures (own file) that
