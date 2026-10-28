@@ -67,6 +67,8 @@ const CORNICE := Vector2(0.85,0.9)
 ## The spandrels' set-back from the deck's outer face (the rings stand
 ## proud of them).
 const SPANDREL_IN := 0.35
+## The ring's backing reaches this far past the voussoirs' backs (m).
+const BACKING := 1.6
 ## Pier middle to pier middle: the span sought from the drop
 ## (SPAN_BASE + drop x SPAN_DROP), between SPAN.x and SPAN.y.
 const SPAN := Vector2(40.0,74.0)
@@ -689,6 +691,34 @@ static func _arch(b: Build, p: Dictionary, i: int, lost: bool) -> void:
 			if j == 0: pts.append(Vector3(mid+foot_x,spring,z))
 			if j == count-1: pts.append(Vector3(mid-foot_x,spring,z))
 		b.solid(RuinKit._planes_round(pts),RuinKit._jiggle(b,Transform3D.IDENTITY,0.03),RuinKit._stone(b,1.0+b.rng.randf_range(-0.03,0.03)))
+	# The backing: a ring of rough stone behind the voussoirs' backs, at the
+	# fill's face, from a little inside the ring's back to BACKING past it
+	# (under the road): the coursed fill's straight cuts never leave a dark
+	# notch between the ring and the spandrel over it.
+	var backs := maxi(5,count/2)
+	var fill := half-SPANDREL_IN-0.05
+	for j in range(backs):
+		var a0 := ts+(PI-2.0*ts)*j/backs
+		var a1 := ts+(PI-2.0*ts)*(j+1)/backs
+		var pts := PackedVector3Array()
+		var ok := true
+		for a: float in [a0,(a0+a1)*0.5,a1]:
+			var c := Vector2(cos(a),sin(a))
+			var inner := Vector3(mid+c.x*(ro-0.4),yc+c.y*(ro-0.4),0.0)
+			if inner.y > float(top.call(inner.x))-0.1:
+				ok = false
+				break
+			# The outer edge held under the road (or the torn fill's face).
+			var out := ro+BACKING
+			for k in range(6):
+				var q := Vector2(mid+c.x*out,yc+c.y*out)
+				if q.y <= float(top.call(q.x))-0.1: break
+				out = lerpf(ro-0.3,out,0.6)
+			for z: float in [-fill,fill]:
+				pts.append(Vector3(inner.x,inner.y,z))
+				pts.append(Vector3(mid+c.x*out,yc+c.y*out,z))
+		if not ok: continue
+		b.solid(RuinKit._planes_round(pts),Transform3D.IDENTITY,RuinKit._stone(b,0.97),true,true,[],-1,1.0,false)
 
 ## An approach: the deck's fill on the rim from x0 to x1, down to the ground.
 static func _approach(b: Build, p: Dictionary, x0: float, x1: float, ground: Callable) -> void:
