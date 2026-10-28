@@ -97,9 +97,9 @@ const FOOT := 3.0
 const STEPS := 3
 const STEP_OUT := 1.1
 ## Courses: the piers', the spandrels', the gates'.
-const PIER_COURSE := 3.3
-const SPANDREL_COURSE := 2.8
-const GATE_COURSE := 2.2
+const PIER_COURSE := 4.0
+const SPANDREL_COURSE := 3.6
+const GATE_COURSE := 2.8
 ## A gate: its thickness along the road, how far its wall reaches past the
 ## deck's sides, its springing over the road, its ring, its wall's top over
 ## the road, its towers' (across, along: half sizes) and their top.
@@ -142,6 +142,11 @@ const LANE_LEAST := 12.0
 ## olive for the amber land.
 const GROWTH_TINT := Color("5a5a33")
 const GROWTH_PULL := 0.45
+## The bridge's own strands this much coarser than SunderedGrowth's.
+const COARSE_GROWTH := 2.4
+## The kit's own growth (ivy, fringes, cushions on the open tops) as a share
+## of a ruin's.
+const KIT_GROWTH := 0.4
 ## The kit takes the ground as y 0 where a piece gives none (its faces under
 ## it culled, native and GDScript alike), and a terrain would cost the
 ## native finish: so the bridge is built LIFT up (every block through
@@ -490,6 +495,9 @@ static func piece(seed_value: int, weathered: float, length: float, gap: float, 
 	b.lean = true
 	b.cull = true
 	b.settle = 0.35
+	# The kit's own ivy, fringes and cushions thinner than a ruin's: the
+	# bridge's own strands carry its growth.
+	b.level *= KIT_GROWTH
 	var ctx := {"tops":[]}
 	var n := int(p.n)
 	var lost := int(p.lost)
@@ -873,7 +881,9 @@ static func _growth(b: Build, p: Dictionary, ground: Callable, ctx: Dictionary) 
 	var piers: Array = p.piers
 	var span := float(p.span)
 	var spring := float(p.spring)
-	var coarse := SunderedGrowth.COARSE_OUT
+	# The bridge's own strands coarser than the kit's (fewer, bigger leaves:
+	# a bridge is seen from tens of metres off).
+	var coarse := SunderedGrowth.COARSE_OUT*COARSE_GROWTH
 	# Curtains under the arch soffits, rows across the barrel.
 	probe.label = "curtains"
 	for i in range(int(p.n)):
@@ -888,8 +898,8 @@ static func _growth(b: Build, p: Dictionary, ground: Callable, ctx: Dictionary) 
 				if from > -PAVE-0.5: continue
 				at.y = from-0.3
 				var hang := from-maxf(_ground(ground,at.x,at.z),-1.0e3)
-				RuinGrowth.curtain(probe,_up(at),minf(rng.randf_range(3.0,8.0)*(0.6+w),hang*0.4),from+LIFT,6,14.0,false)
-			x += rng.randf_range(6.0,10.0)/maxf(d,0.3)
+				RuinGrowth.curtain(probe,_up(at),minf(rng.randf_range(3.0,8.0)*(0.6+w),hang*0.4),from+LIFT,6,14.0,false,COARSE_GROWTH)
+			x += rng.randf_range(8.0,13.0)/maxf(d,0.3)
 	# Fringes from under the cornice down the spandrels.
 	probe.label = "fringes"
 	for side: float in [-1.0,1.0]:
@@ -897,10 +907,10 @@ static func _growth(b: Build, p: Dictionary, ground: Callable, ctx: Dictionary) 
 		for s: Vector2 in _deck_spans(p):
 			var x := s.x+rng.randf_range(2.0,8.0)
 			while x < s.y-2.0:
-				var count := rng.randi_range(3,6)
+				var count := rng.randi_range(4,6)
 				var longest := rng.randf_range(4.0,16.0)*(0.6+w)
 				for j in range(count):
-					var fx := x+(j-count*0.5)*0.35
+					var fx := x+(j-count*0.5)*0.5
 					var start := _up(Vector3(fx,road_y(p,fx)-PAVE-CORNICE.y-0.08,zf))
 					for nudge in range(10):
 						if not probe._inside(start): break
@@ -908,7 +918,7 @@ static func _growth(b: Build, p: Dictionary, ground: Callable, ctx: Dictionary) 
 					if probe._inside(start): continue
 					var l := longest*(0.45+0.55*sin(PI*(j+0.5)/count))*rng.randf_range(0.75,1.1)
 					RuinGrowth.strand(probe,start,l,Vector3(0.0,0.0,side),false,coarse,true)
-				x += rng.randf_range(14.0,30.0)/maxf(d,0.3)
+				x += rng.randf_range(18.0,34.0)/maxf(d,0.3)
 	# Ivy down the piers: into the arches, and down their faces under the
 	probe.label = "piers"
 	# cornice.
@@ -918,12 +928,12 @@ static func _growth(b: Build, p: Dictionary, ground: Callable, ctx: Dictionary) 
 		var tall := spring-float(pr.high)
 		for s: float in [-1.0,1.0]:
 			var face := float(p.pier_w)*0.5+BATTER*2.0+0.15
-			for j in range(int(rng.randi_range(2,5)*d)):
+			for j in range(int(rng.randi_range(2,3)*d)):
 				var start := _up(Vector3(px+s*face,spring-rng.randf_range(0.5,4.0),rng.randf_range(-half,half)))
 				if probe._inside(start): continue
 				RuinGrowth.strand(probe,start,minf(rng.randf_range(0.3,0.75)*tall,24.0),Vector3(s,0.0,0.0),false,coarse*1.3,true)
 		for s: float in [-1.0,1.0]:
-			for j in range(int(rng.randi_range(3,6)*d)):
+			for j in range(int(rng.randi_range(2,3)*d)):
 				var start := _up(Vector3(px+rng.randf_range(-1.0,1.0)*float(p.pier_w)*0.4,-PAVE-CORNICE.y-0.1,s*(half+PIER_PROUD+0.12)))
 				if probe._inside(start): continue
 				RuinGrowth.strand(probe,start,minf(rng.randf_range(0.3,0.75)*(tall-spring),28.0),Vector3(0.0,0.0,s),false,coarse*1.3,true)
