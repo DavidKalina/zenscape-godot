@@ -63,18 +63,21 @@ const TOY_TIGHT := 2.7
 const TOY_GATE := 5.0
 const TOY_AMB := 7.0
 const TOY_TRENCH := 4.5
+## The inner wall's passages (to the arena, up to the bowl).
+const TOY_PASS := 2.9
 static var ARCH: float = WorldScale.opening(TOY_ARCH)
 static var TIGHT: float = WorldScale.opening(TOY_TIGHT)
 static var GATE: float = WorldScale.opening(TOY_GATE)
 static var AMB: float = WorldScale.opening(TOY_AMB)
 static var TRENCH: float = WorldScale.opening(TOY_TRENCH)
+static var PASS: float = WorldScale.opening(TOY_PASS)
 
 ## The outer ellipse's semi-axes (m): across (x) and along (z).
 const RX := 80.0
 const RZ := 95.0
 ## Bays round the ring; the gate bays' width along the ring (m).
 const SLOTS := 64
-const GATE_SLOT := 14.5
+const GATE_SLOT := 17.0
 ## The podium: the arena's and the ambulatory's floor over the foot (m),
 ## and how far below the foot the plinth reaches (uneven ground).
 const P := 8.0
@@ -103,9 +106,9 @@ const STEPS := 3
 ## The arena's floor squares (m), the fallen region's half length (z),
 ## where the trench's ramps start along it, its flown lane's half length.
 const SQUARE := 3.5
-const FALL_Z := 38.5
+const FALL_Z := 42.0
 const RAMP_AT := 26.0
-const TRENCH_LANE := 22.0
+const TRENCH_LANE := 12.0
 ## The broken side: bays either way of its middle that fall, the rubble
 ## slope's reach outside the wall at its deepest (m).
 const BREAK_HALF := 7.5
@@ -251,6 +254,14 @@ static func inner_scale(k: int) -> float:
 
 static func _inner_nominal() -> float:
 	return 1.0-INNER_MID/77.0
+
+## The inner bays' arches are built at the nominal shrink and scaled to
+## their slot (`inner_scale`), so a hole drawn W wide is W x that scale in
+## the world. The gate's is drawn GATE (GATE x its scale in the world, as
+## `openings` says); a passage's drawn so its narrowest slot (the long
+## axis's ends, the ring's tightest) still opens PASS.
+static func _pass_hole() -> float:
+	return PASS/((1.0-RZ/(RX*RX)*INNER_MID)/_inner_nominal())
 
 # --- The plan --------------------------------------------------------------------
 
@@ -402,7 +413,7 @@ static func bands(p: Dictionary) -> Array:
 		var mid := slot_mid(k)
 		var o := point(mid,INNER_IN-0.3)
 		var dir := -normal_at(phi_of(mid))
-		var w := (GATE if ik == "gate" else ARCH)*inner_scale(k)
+		var w := (GATE if ik == "gate" else _pass_hole())*inner_scale(k)
 		var l := ARENA_D-INNER_IN+1.0 if ik != "pass2" else _cut_treads()*TREAD+0.6
 		out.append({"k":k,"kind":ik,"o":o,"dir":dir,"half":w*0.5,"len":l})
 	return out
@@ -500,7 +511,10 @@ static func openings(id: String, seed_value: int, weathered := 0.6) -> Array:
 	# The arena along the long axis, skimmed; the trench and its two ends.
 	var az := RZ-ARENA_D
 	_opening(out,"colosseum/arena","arena",Vector3(0.0,P+6.0,0.0),Vector3.BACK,Vector3(TRENCH*2.0,10.0,az*2.0-8.0),0.0,false,false,true)
-	var ty := Vector2(1.0,P-0.8)
+	# The trench is open overhead: flown with the wings under the arena's
+	# floor, kept up off its own floor (low over the ground the flight
+	# rides it, and a stepped floor is a crash).
+	var ty := Vector2(4.0,P+1.0)
 	_opening(out,"colosseum/trench","trench",Vector3(0.0,(ty.x+ty.y)*0.5,0.0),Vector3.BACK,Vector3(TRENCH,ty.y-ty.x,TRENCH_LANE*2.0),0.0,false,false,true)
 	for sgn: float in [1.0,-1.0]:
 		_opening(out,"colosseum/trench_%s" % ("n" if sgn > 0.0 else "s"),"trench",Vector3(0.0,(ty.x+ty.y)*0.5,sgn*(TRENCH_LANE-1.0)),Vector3.BACK,Vector3(TRENCH,ty.y-ty.x,2.0))
@@ -786,9 +800,9 @@ static func _inner_bay(kind: String, seed_value: int, weathered: float) -> Dicti
 	var top: Callable = RuinKit._ruin_line(b,-hw,hw,high-0.8,high,0.3)
 	if kind == "low": top = RuinKit._ruin_line(b,-hw,hw,P+7.0,P+15.0,1.0)
 	var arches: Array = []
-	var aw := ARCH*nom
+	var aw := _pass_hole()
 	match kind:
-		"gate": arches.append([GATE*nom,P,P+GATE_SPRING])
+		"gate": arches.append([GATE,P,P+GATE_SPRING])
 		"pass1": arches.append([aw,P,P+(TIERS[0] as Vector3).y])
 		"pass2": arches.append([aw,P+(TIERS[1] as Vector3).x,P+(TIERS[1] as Vector3).y])
 	RuinKit._courses(b,Transform3D.IDENTITY,-hw,hw,P-1.0,top,INNER_D,_holes(arches),COURSE)
@@ -833,13 +847,15 @@ static func _dress_bay(b: Build, label: String, low_y: float, d: float) -> void:
 ## A convex block over the quad `q` (XZ corners, in order round) from `y0`
 ## to `y1` (the piece's frame), drawn, not solid (the solid comes from the
 ## plan).
-static func _quad(b: Build, q: Array, y0: float, y1: float, tone := 1.0, wear := true) -> void:
+static func _quad(b: Build, q: Array, y0: float, y1: float, tone := 1.0, wear := true, slope := 0.0) -> void:
 	var c := Vector3.ZERO
 	for v: Vector3 in q: c += v
 	c /= q.size()
 	c.y = 0.0
 	var mid := (y0+y1)*0.5
-	var planes: Array[Plane] = [Plane(Vector3.UP,y1-mid),Plane(Vector3.DOWN,mid-y0)]
+	# `slope`: the top rising dy/dz through y1 at the middle.
+	var up := Vector3(0.0,1.0,-slope)
+	var planes: Array[Plane] = [Plane(up.normalized(),(y1-mid)/up.length()),Plane(Vector3.DOWN,mid-y0)]
 	for i in range(q.size()):
 		var a: Vector3 = q[i]
 		var e: Vector3 = q[(i+1)%q.size()]
@@ -952,9 +968,13 @@ static func _arena(b: Build, p: Dictionary, extra: Array) -> void:
 			var az := absf(c.z)
 			if az+SQUARE*0.5 <= RAMP_AT: _quad(b,q,-1.0,0.4,0.9,false)
 			else:
+				# A sloped slab (a stepped one's risers are walls to a low pass).
 				var y := _trench_floor(az)
-				_quad(b,q,-1.0,y,0.86)
-				if b.rng.randf() < 0.5: extra.append(_boulder(b,Vector3(c.x+b.rng.randf_range(-1.0,1.0),y,c.z),b.rng.randf_range(0.7,1.3)))
+				var sz := signf(c.z)
+				var g := sz*(_trench_floor(az+SQUARE*0.5)-_trench_floor(maxf(az-SQUARE*0.5,0.0)))/SQUARE
+				_quad(b,q,-1.0,y,0.86,true,g)
+				# (Its boulders only off the flown middle.)
+				if absf(c.x) > 3.0 and b.rng.randf() < 0.5: extra.append(_boulder(b,Vector3(c.x+b.rng.randf_range(-1.0,1.0),y,c.z),b.rng.randf_range(0.7,1.3)))
 			continue
 		# A side cell: its floor, a cross wall over its middle, the trench's
 		# low wall along its inner edge.
@@ -1081,9 +1101,9 @@ static func column(p: Dictionary, tops: Dictionary, bs: Array, x: float, z: floa
 		var hw := (GATE_SLOT if kind == "gate" else pitch())*nom*0.5
 		var top := float((tops["i:"+kind] as Callable).call(clampf(lx,-hw,hw)))
 		var holes: Array = []
-		var aw := ARCH*nom
+		var aw := _pass_hole()
 		match kind:
-			"gate": holes.append([GATE*nom,P,P+GATE_SPRING])
+			"gate": holes.append([GATE,P,P+GATE_SPRING])
 			"pass1": holes.append([aw,P,P+(TIERS[0] as Vector3).y])
 			"pass2": holes.append([aw,P+(TIERS[1] as Vector3).x,P+(TIERS[1] as Vector3).y])
 		# The world's arch is the nominal one scaled: cut at the unscaled x.
@@ -1111,7 +1131,7 @@ static func column(p: Dictionary, tops: Dictionary, bs: Array, x: float, z: floa
 	var box := _square_box(key)
 	var c := box.get_center()
 	if absf(c.x) < TRENCH*0.5:
-		out.append_array([-FOUND,_q(0.4 if absf(c.z)+SQUARE*0.5 <= RAMP_AT else _trench_floor(absf(c.z)))])
+		out.append_array([-FOUND,_q(0.4 if absf(c.z)+SQUARE*0.5 <= RAMP_AT else _trench_floor(absf(z)))])
 		return out
 	var wt: float = (p["wall_top"] as Dictionary)[key]
 	if (key.x == 1 or key.x == -2) and absf(x) < TRENCH*0.5+1.2: out.append_array([-FOUND,_q(wt)])
