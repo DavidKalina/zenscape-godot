@@ -5,8 +5,8 @@ extends RefCounted
 ## bridge_plan.gd) it may take as a race's gate.
 ##
 ## A piece's openings in the world (`openings`): a set piece's from its kit
-## (RuinKitGothic `openings`, the record's node placing them, so a layout
-## move carries them), a road bridge's as its built run keeps them
+## (RuinKitGothic `openings`, or RuinKitColosseum's for the colosseum, the
+## record's node placing them, so a layout move carries them), a road bridge's as its built run keeps them
 ## (RuinKitBridge `piece`'s "openings"), an aqueduct bridge's derived from
 ## its spec as bridge_build.gd lays the run (each standing arch of the
 ## under-arcade, over the land's highest under it, and a broken run's gap).
@@ -29,6 +29,7 @@ extends RefCounted
 ## least half width)}.
 
 const Gothic = preload("res://scripts/ruin_kit_gothic.gd")
+const Colosseum = preload("res://scripts/ruin_kit_colosseum.gd")
 const Road = preload("res://scripts/ruin_kit_bridge.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
@@ -67,7 +68,12 @@ static func openings(game: Node, r: Dictionary) -> Array:
 	var node: Node3D = r.node
 	var out: Array = []
 	if spec.has("set"):
-		for o: Dictionary in Gothic.openings(String(spec.kind),int(spec.seed),float(spec.weathered)):
+		var kind := String(spec.kind)
+		if kind == "colosseum":
+			for o: Dictionary in Colosseum.openings(kind,int(spec.seed),float(spec.weathered)):
+				out.append(_colosseum_world(o,node.global_transform*(o.frame as Transform3D)))
+			return out
+		for o: Dictionary in Gothic.openings(kind,int(spec.seed),float(spec.weathered)):
 			out.append(_world(o,node.global_transform*(o.frame as Transform3D)))
 	elif spec.has("bridge"):
 		var b: Dictionary = spec.bridge
@@ -98,6 +104,16 @@ static func _with_openings(node: Node) -> Node3D:
 static func _world(o: Dictionary, f: Transform3D) -> Dictionary:
 	return {"name":String(o.name),"kind":String(o.kind),"f":f,"size":o.size,"head":float(o.get("head",0.0)),
 		"knife":bool(o.get("knife",false)),"lane":bool(o.get("lane",false)),"forgive":bool(o.get("forgive",false))}
+
+## A colosseum opening (RuinKitColosseum `openings`) as the rival reads it:
+## the ambulatory's bays are a lane (a curving lap, no straight line
+## through them); the trench's two ends are open overhead (the plane's
+## wings ride under the arena's floor), so their box's height is no bar.
+static func _colosseum_world(o: Dictionary, f: Transform3D) -> Dictionary:
+	var w := _world(o,f)
+	if String(o.kind) == "ambulatory": w.lane = true
+	if String(o.kind) == "trench" and not bool(o.lane): w["open_top"] = true
+	return w
 
 ## The run's ground (bridge_build.gd `run_ground`), from the placed node.
 static func _run_ground(game: Node, spec: Dictionary, xf: Transform3D, shift: float) -> Callable:
@@ -184,7 +200,7 @@ static func lines(game: Node, r: Dictionary) -> Array:
 		var s: Vector3 = o.size
 		if bool(o.knife): knives.append(o)
 		elif bool(o.lane): continue
-		elif s.x >= span*WIDE and s.y >= span*TALL: gates.append(o)
+		elif s.x >= span*WIDE and (s.y >= span*TALL or bool(o.get("open_top",false))): gates.append(o)
 	var out: Array = []
 	var seen := {}
 	for g: Dictionary in gates:
@@ -194,27 +210,41 @@ static func lines(game: Node, r: Dictionary) -> Array:
 		for q: Dictionary in gates:
 			if q == g or _on_line(g,way,q): on.append(q)
 		on.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return (a.f as Transform3D).origin.dot(way) < (b.f as Transform3D).origin.dot(way))
-		var names: Array = on.map(func(q: Dictionary) -> String: return String(q.name))
-		names.sort()
-		var key := ",".join(names)
-		if seen.has(key): continue
-		seen[key] = true
-		var row := _heights(on)
-		if not _steady(row,way): continue
-		# A knife slot on the way (its way along the line's, the line inside
-		# its box) puts it out; one crossed side on (the buttress slots' lane
-		# down a flank, crossed in a bay) is left to the clear check.
-		var through := true
-		for k: Dictionary in knives:
-			if absf(_way(k).dot(way)) >= 0.7 and _crosses(row,way,k): through = false
-		if not through: continue
-		var room := INF
-		for q: Dictionary in row: room = minf(room,(q.half as Vector3).x)
-		var line := {"id":"%s/%s" % [String(r.name),String(row[0].name).get_file()],"kind":"set" if (r.spec as Dictionary).has("set") else "bridge",
-			"gates":row,"way":way,"room":room}
-		if not _clear(game,line): continue
-		out.append(line)
+		# A line through gates open overhead (the colosseum's trench) is also
+		# flown without them, level over them (the arena skimmed).
+		var ways: Array = [on]
+		var open: Array = on.filter(func(q: Dictionary) -> bool: return bool(q.get("open_top",false)))
+		if not open.is_empty() and open.size() < on.size():
+			ways.append(on.filter(func(q: Dictionary) -> bool: return not bool(q.get("open_top",false))))
+		for these: Array in ways:
+			var line := _line(game,r,these,way,knives,seen)
+			if not line.is_empty(): out.append(line)
 	return out
+
+## The line through gates `on` (sorted along `way`), or {} when it is one
+## already `seen`, unsteady, through a knife slot or not clear (`lines`).
+static func _line(game: Node, r: Dictionary, on: Array, way: Vector3, knives: Array, seen: Dictionary) -> Dictionary:
+	var names: Array = on.map(func(q: Dictionary) -> String: return String(q.name))
+	names.sort()
+	var key := ",".join(names)
+	if seen.has(key): return {}
+	seen[key] = true
+	var row := _heights(on)
+	if not _steady(row,way): return {}
+	# A knife slot on the way (its way along the line's, the line inside
+	# its box) puts it out; one crossed side on (the buttress slots' lane
+	# down a flank, crossed in a bay) is left to the clear check.
+	for k: Dictionary in knives:
+		if absf(_way(k).dot(way)) >= 0.7 and _crosses(row,way,k): return {}
+	var room := INF
+	var by := ""
+	for q: Dictionary in on:
+		room = minf(room,(q.size as Vector3).x*0.5)
+		if by == "" and bool(q.get("open_top",false)): by = "_by_"+String(q.name).get_file()
+	var line := {"id":"%s/%s%s" % [String(r.name),String(row[0].name).get_file(),by],"kind":"set" if (r.spec as Dictionary).has("set") else "bridge",
+		"gates":row,"way":way,"room":room}
+	if not _clear(game,line): return {}
+	return line
 
 ## Gates `on` as a line's rows (the header), each flown at one height
 ## where it can be: the gates' middles' mean, kept MARGIN wingspans inside
