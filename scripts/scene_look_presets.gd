@@ -43,8 +43,8 @@ const PRESETS := {
 	# The amberlands' (scripts/endless/world/amberlands/look.gd): a low, soft
 	# gold sun through a warm haze that greys the distance, a grey-blue upper
 	# sky, muted shade.
-	"amber_hour": {"title":"Amber hour","description":"Soft late gold through a warm haze.","palette":"Amber","phase":0.696,"weather":"clear","clouds":0.08,"mist":0.12,"haze":0.32,"wind":0.45,
-		"strength":1.0,"ambient_energy":1.0,"exposure":1.04,"colors":{"ambient":"a8acb4","bounce":"6e665a","rim":"e8d4b0","fog":"e6e2dc"}},
+	"amber_hour": {"title":"Amber hour","description":"Soft late gold through a warm haze.","palette":"Amber","phase":0.696,"weather":"clear","clouds":0.08,"mist":0.1,"haze":0.3,"wind":0.45,
+		"strength":1.0,"ambient_energy":1.0,"exposure":1.04,"colors":{"ambient":"b0adb2","bounce":"7a6a52","rim":"f0d098","fog":"e4dccf"}},
 	"storm_gathering": {"title":"Storm gathering","description":"Slate skies and a rising wind.","palette":"Storm","phase":0.46,"weather":"storm","clouds":0.8,"mist":0.42,"haze":0.58,"wind":2.5,
 		"strength":1.0,"wet":0.5,"humidity":0.8,"colors":{}},
 }

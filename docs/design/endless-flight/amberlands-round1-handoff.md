@@ -302,3 +302,37 @@ round 1's eye points:
 - Frame cost of the two `hued()` calls is unmeasured. Each is one luma and
   one mix per grass or rock pixel.
 - Collision through the dry spans, and landing by hand, are not flown.
+
+## Round 1c: warmed back up, halfway
+
+The user found round 1b too grey and overcast and asked to "warm it up a
+bit". This is halfway between round 1 and 1b, leaning to 1b. Only amberlands
+changes (palette family `Amber`, mood `amber_hour`, the profile's paint).
+
+- **Sky** (`scene_look.gd` `Amber`): a pale, slightly cool upper sky
+  (`ead8ca`), a honey-peach horizon (`d2c0a8`), a broad gold glow (`ecca9a`)
+  and a warm gold sun (`fbd9a2`).
+- **Light** (`scene_look_presets.gd`): haze 0.3, mist 0.1, ambient `b0adb2`
+  (shade still a soft cool), bounce `7a6a52`, rim `f0d098`, fog `e4dccf`.
+  Post grade (`endless_post.gd`): sat 0.92, light (1.17, 1.03, 0.85).
+  The clock is still held at 16.7 h.
+- **Grass** (`look.gd`): `carpet_hue` (0.72, 0.62, 0.30), a touch more gold
+  and less green than 1b's (0.67, 0.63, 0.32); far tip (0.34, 0.44, 0.30);
+  `zs_palette_grass` (0.95, 1.0, 0.86); `zs_autumn` stays 0.
+  A first try with `zs_autumn` 0.15 and a straw-gold far tip put orange
+  patches in the near and far tufts (desert again), so both were pulled back.
+- **Stone**: `rock_hue` (0.88, 0.80, 0.68), `rock_tint` (0.76, 0.75, 0.72),
+  `rock_follow` 0.65: the same grey-beige, the sunlit faces a little warmer.
+- **Water** unchanged (muted grey-green).
+
+Stills: `captures/amberlands/ab_sheet_r3.png` (round 1 | 1b | now, five
+rows) and `*_r3.png` singles. Driver: `scratch/amberlands/r2/run.sh` (tag c3).
+
+Proof: smoke `--world=amberlands` and `--world=regions` pass, 0 errors; the
+rendered runs had 0 script errors. No tests touched.
+
+Unverified: judged in held stills only, not in flight. The from-high view
+reads a little peachy and flat in the haze; the far tufts' colour changes
+between runs as the ring streams in (seen again: orange fields come and go
+with the view). The regions world's blend through the border was not
+re-rendered.

@@ -21,18 +21,18 @@ static func paint() -> Dictionary:
 			"carpet_under_tone":Vector3(1.0,0.88,0.84),
 			# Most of the paint's own green gives way to straw at its own light,
 			# the rest left as an olive undertone.
-			"carpet_hue":Vector3(0.67,0.63,0.32),"rock_moss":0.6,
+			"carpet_hue":Vector3(0.72,0.62,0.30),"rock_moss":0.6,
 			# The rock weathered grey-beige: its hue mostly a grey one, its
 			# warmth the sun's, not its own.
-			"rock_hue":Vector3(0.85,0.80,0.72),"rock_tint":Vector3(0.72,0.72,0.72),"rock_rich":0.7,"rock_follow":0.5},
-		"far":{"root_colour":Vector3(0.13,0.16,0.12),"tip_colour":Vector3(0.32,0.47,0.36)},
+			"rock_hue":Vector3(0.88,0.80,0.68),"rock_tint":Vector3(0.76,0.75,0.72),"rock_rich":0.7,"rock_follow":0.65},
+		"far":{"root_colour":Vector3(0.13,0.16,0.12),"tip_colour":Vector3(0.34,0.44,0.30)},
 		# The undersides the wind bows into view: pale dry straw.
 		"silver_colour":Vector3(0.66,0.62,0.48),
 		# The water: a muted grey-green, never the alpine turquoise.
 		"sea":{"tint_shallow":Color(0.46,0.60,0.50),"tint_mid":Color(0.17,0.32,0.29),"tint_deep":Color(0.08,0.17,0.19),"tint_abyss":Color(0.04,0.10,0.12)},
 		# The near tufts gone dry to straw (the season's ripening), with none of
 		# autumn's turn (it reads orange) and their green a little less red.
-		"globals":{"zs_autumn":0.0,"zs_season":Vector4(0.0,0.0,0.8,0.5),"zs_palette_grass":Vector3(0.92,1.0,0.88)}}
+		"globals":{"zs_autumn":0.0,"zs_season":Vector4(0.0,0.0,0.8,0.5),"zs_palette_grass":Vector3(0.95,1.0,0.86)}}
 
 static func layers() -> Dictionary:
 	return {"trees":false,"grass":true,"birds":true,"fish":true,
