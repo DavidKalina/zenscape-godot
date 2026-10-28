@@ -16,8 +16,24 @@ const IN := Vector2(28.0, 85.0)
 ## How much more it reads at 400 m than near (aerial haze takes contrast).
 const FAR := 0.25
 
+## The far grass as a fine lawn (shaders/far_lawn.gdshaderinc, ported from the
+## clean look's round 8; docs/design/endless-flight/far-lawn-handoff.md):
+## strength (--lawn=X, 0 off), the nap's share (--nap=X), the ring distance
+## it comes in over (m) and the two scales (m one tile of the baked
+## assets/textures/far_turf.png covers, tools/bake_turf.gd).
+const LAWN := 1.0
+const NAP := 1.0
+const LAWN_RING := Vector2(140.0,230.0)
+const LAWN_TILES := Vector2(64.0,39.0)
+const LAWN_TEXTURE := "res://assets/textures/far_turf.png"
+
 static var strength := _arg("--sheen=",STRENGTH)
 static var far := _arg("--sheen-far=",FAR)
+static var lawn := _arg("--lawn=",LAWN)
+static var nap := _arg("--nap=",NAP)
+## --high-paint=old: the high-up streaks and washes as they were (lattice
+## noise, hard-edged), for A/B against the smooth ones.
+static var high_paint_old := 1.0 if _text("--high-paint=") == "old" else 0.0
 
 static func _text(key: String) -> String:
 	for a: String in LaunchArgs.user_args():
@@ -35,6 +51,11 @@ static func apply(m: ShaderMaterial, tufts := false) -> void:
 	var only := _text("--sheen-tier=")
 	var on := strength if only == "" or (only == "tufts") == tufts else 0.0
 	m.set_shader_parameter("grass_sheen",Vector4(on,IN.x,IN.y,far))
+	if not tufts:
+		m.set_shader_parameter("grass_lawn",Vector4(lawn if on > 0.0 else 0.0,LAWN_RING.x,LAWN_RING.y,nap))
+		m.set_shader_parameter("grass_lawn_tiles",LAWN_TILES)
+		m.set_shader_parameter("grass_lawn_tex",load(LAWN_TEXTURE) as Texture2D)
+		m.set_shader_parameter("high_paint_old",high_paint_old)
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--sheen-set="):
 			var kv := a.substr(12).split("=")
