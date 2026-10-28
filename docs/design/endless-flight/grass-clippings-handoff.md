@@ -44,3 +44,18 @@ All the changes are in `scripts/endless/endless_motes.gd` (the kick) and `shader
 - **The chase view.** In the green the blades are much quieter than the pale chips were. Up close they read clearly as blades. From the chase camera, about 25 m back, they show as a few yellow-green slivers over the grass, and many are lost in the grass tops. If the user wants more of them in play, the knobs are `KICK_TIP` (lighter), `KICK_WIDTH`, `KICK_RATE` and `KICK_UP`. A pale or silvery underside, the grass's own silver, would also stand out more.
 - **Not filmed.** Rolling, take-off and landing were not filmed, and golden-hour light was not looked at.
 - **Model budget.** The strip is already minimal (24 triangles, at most about 4.3k for the batch). Of `docs/art/model-budget.md`'s tricks, only fewer rows would apply: 4 rows would save 8 triangles a blade, a negligible frame-time saving.
+
+## Round 2: readable again (2026-10-27)
+
+Played: the blades were the right shape but lost in the grass from the chase
+view; the old pale chips read better. Kept the blade shape and motion, and
+brought back what made the chips read:
+- `KICK_PALE` (0.75) of the blades take a pale face from `KICK_PALES`
+  (sunlit tip, silvery underside, straw, light green: the old chips' tones in
+  linear), only 0.2 toward the ground's tint; the rest keep the grass greens.
+- Wider: `KICK_WIDTH` 0.12-0.2 m (was 0.06-0.1).
+- More: `KICK_RATE` 150 (was 110), `KICK` cap 240 (was 180).
+- `grass_bit.gdshader`: more light through the blade (`THROUGH` 0.45) and
+  more sky fill (emission x1.35), so a turning blade's back stays pale.
+Film: `scratch/clip/pale2/` (chase and near), `scratch/clip/chase_v2.png`
+against the old chips (git-ignored).

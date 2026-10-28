@@ -23,7 +23,7 @@ const float BOW = 0.07;
 const float FLUTTER_RATE = 17.0;
 const float FLUTTER_RISE = 0.09;
 // The light through the blade, and the cut end's shade against the tip.
-const float THROUGH = 0.3;
+const float THROUGH = 0.45;
 const float CUT_SHADE = 0.78;
 
 varying float along;
@@ -71,5 +71,5 @@ void fragment() {
 	// leaning to the sky so an underside stays green rather than going brown.
 	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.35 + 0.65) * zs_hemi_energy / PI;
-	EMISSION = c * hemi * 0.8;
+	EMISSION = c * hemi * 1.35;
 }

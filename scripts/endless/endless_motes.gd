@@ -44,14 +44,14 @@ const POLLEN_LEAD := 0.6
 const POLLEN_WANDER := 0.45
 const POLLEN_DRIFT := 0.55
 
-const KICK := 180
-const KICK_RATE := 110.0
+const KICK := 240
+const KICK_RATE := 150.0
 ## A clipped blade's length and width (m: the endless grass stands about
 ## four times the isles', its blades a few centimetres wide), its fling out
 ## and up (m/s, at full wash), the share blown back along the plane's way,
 ## its drag (1/s), its fall (m/s^2) and its life (s).
 const KICK_LEN := Vector2(0.5,1.1)
-const KICK_WIDTH := Vector2(0.06,0.1)
+const KICK_WIDTH := Vector2(0.12,0.2)
 const KICK_OUT := Vector2(2.5,6.5)
 const KICK_UP := Vector2(4.5,9.0)
 const KICK_BACK := 3.0
@@ -92,6 +92,11 @@ const KICK_TIP := Vector2(0.65,1.25)
 const KICK_GREEN := Color(0.366,0.604,0.122)
 const KICK_STRAW := Color(0.50,0.46,0.20)
 const KICK_DRY := 0.25
+## Most bits show a pale face against the standing grass, so they read from
+## the chase view (KICK_PALE of them): sunlit tips, the silvery underside and
+## dry straw (linear; the old chips' tones), touched by the ground's tint.
+const KICK_PALE := 0.75
+const KICK_PALES := [Color(0.58,0.72,0.25),Color(0.72,0.79,0.53),Color(0.75,0.72,0.37),Color(0.64,0.58,0.27)]
 
 var pollen_on := true
 var kick_on := true
@@ -450,6 +455,9 @@ func _throw(at: Vector2, vel: Vector3, tint: Color) -> void:
 	var colour := KICK_ROOT.lerp(KICK_GREEN,_rng.randf_range(KICK_TIP.x,KICK_TIP.y))
 	if _rng.randf() < KICK_DRY: colour = colour.lerp(KICK_STRAW,_rng.randf_range(0.25,0.5))
 	colour = Color(colour.r*tint.r,colour.g*tint.g,colour.b*tint.b)*_rng.randf_range(0.85,1.12)
+	if _rng.randf() < KICK_PALE:
+		var pale: Color = KICK_PALES[_rng.randi() % KICK_PALES.size()]
+		colour = pale.lerp(Color(pale.r*tint.r,pale.g*tint.g,pale.b*tint.b),0.2)*_rng.randf_range(0.92,1.08)
 	_bits.append({"pos": Vector3(at.x,g+_rng.randf_range(KICK_FROM.x,KICK_FROM.y),at.y), "vel": vel, "ground": g,
 		"age": 0.0, "life": _rng.randf_range(KICK_LIFE.x,KICK_LIFE.y),
 		"length": _rng.randf_range(KICK_LEN.x,KICK_LEN.y), "width": _rng.randf_range(KICK_WIDTH.x,KICK_WIDTH.y),
