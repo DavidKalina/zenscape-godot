@@ -184,7 +184,7 @@ static func curtains(b) -> void:
 ## underside runs, longest in its middle, its tips ragged, hanging
 ## LENGTH_GAIN x `length` (at most `longest`). `most`: its strands at most
 ## (-1: STRANDS, or STRANDS_LEAN on lean stone); `full`: as `strand`.
-static func curtain(b, at: Vector3, length: float, from := -1.0, most := -1, longest := LONGEST, full := false) -> void:
+static func curtain(b, at: Vector3, length: float, from := -1.0, most := -1, longest := LONGEST, full := false, coarse := 1.0) -> void:
 	if from < 0.0:
 		from = _underside(b,at,0.5,14.0)
 		if from < 0.0: return
@@ -205,7 +205,7 @@ static func curtain(b, at: Vector3, length: float, from := -1.0, most := -1, lon
 		var room: float = top-b.floor_at(p.x,p.z)-0.35
 		var l := minf(long*envelope*b.rng.randf_range(0.6,1.1),room)
 		if l < 0.3: continue
-		strand(b,Vector3(p.x,top,p.z),l,facing,true,1.0,full)
+		strand(b,Vector3(p.x,top,p.z),l,facing,true,coarse,full)
 
 ## The rows draped down from wall heads: a few of the high tops' edges whose
 ## face falls away under them, each a row of strands hugging the face (out

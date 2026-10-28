@@ -616,11 +616,15 @@ static func _dark_materials() -> Dictionary:
 	return {kit.stone:stone,kit.growth:growth}
 
 ## Builds, on this thread, the streamed tunnels within PRIME_REACH of `at`
-## (waiting out a task first; the rest stream) and the hall stretches' far
-## detail now, and the near detail round `at`.
+## (a task still running is left to finish; the rest stream) and the hall
+## stretches' far detail now, and the near detail round `at`. Never waits
+## on the task: its build reads meshes back from the renderer
+## (`surface_get_arrays`, `get_faces`), which answers only when this thread
+## runs, so a wait here never ends (the title's parking spot primed it). A
+## tunnel the task builds too is dropped as stood already (`_stand_one`).
 func prime(at: Vector3) -> void:
 	if _streams():
-		if _task >= 0:
+		if _task >= 0 and WorkerThreadPool.is_task_completed(_task):
 			WorkerThreadPool.wait_for_task_completion(_task)
 			_task = -1
 		while not _done.is_empty(): _stand_one(at)

@@ -21,9 +21,12 @@ const Field = preload("res://scripts/endless/land_field.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const Plan = preload("res://scripts/endless/arch_plan.gd")
 const Build = preload("res://scripts/endless/arch_build.gd")
+const Bridges = preload("res://scripts/endless/bridge_plan.gd")
+const Sets = preload("res://scripts/endless/set_plan.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const STONE_LIFT := Color(3.0, 2.55, 1.95)
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const GothicGrowth = preload("res://scripts/gothic_growth.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const RockShape = preload("res://scripts/endless/rock_shape.gd")
 
@@ -85,6 +88,11 @@ func setup(land_seed: int, ground: Material = null) -> void:
 ## the land's rock does. `--old-ruin-stone` leaves the kit's dark stone.
 var _old_stone := "--old-ruin-stone" in LaunchArgs.user_args()
 var _stone: ShaderMaterial
+## The gothic set pieces' mossed stone (scripts/gothic_growth.gd `stone`),
+## lifted the same way (`GothicGrowth.lifted`); `--no-stone-moss` gives them
+## the plain sunlit stone instead, to compare (look, frame time).
+var _gothic_stone: ShaderMaterial
+var _moss_off := "--no-stone-moss" in LaunchArgs.user_args()
 
 func _sunlit(node: Node) -> void:
 	var kit: Material = RuinKit.materials().stone
@@ -93,11 +101,16 @@ func _sunlit(node: Node) -> void:
 		_stone.set_shader_parameter("albedo",STONE_LIFT)
 		_stone.set_shader_parameter("fill",3.6)
 		_stone.set_shader_parameter("rim",0.1)
+	var gothic: Material = GothicGrowth.stone()
 	for mi in node.find_children("*","MeshInstance3D",true,false):
 		var m := mi as MeshInstance3D
 		if m.mesh == null: continue
 		for i in m.mesh.get_surface_count():
-			if m.mesh.surface_get_material(i) == kit: m.set_surface_override_material(i,_stone)
+			var own := m.mesh.surface_get_material(i)
+			if own == kit: m.set_surface_override_material(i,_stone)
+			elif own == gothic:
+				if _gothic_stone == null: _gothic_stone = _stone if _moss_off else GothicGrowth.lifted(STONE_LIFT,3.6,0.1)
+				m.set_surface_override_material(i,_gothic_stone)
 
 func _exit_tree() -> void:
 	_quit = true
@@ -170,7 +183,13 @@ func _task(key: Vector2i) -> void:
 func _build_cell(key: Vector2i, field: RefCounted) -> Dictionary:
 	var began := Time.get_ticks_usec()
 	var built: Array = []
-	for spec: Dictionary in Plan.plan(field,key.x,key.y,density,rock,ruin):
+	# The cell's arches (less those under a bridge) and the bridges whose middle
+	# stands in it (bridge_plan.gd; only a world whose layers set `bridges`).
+	var specs: Array = Bridges.with_arches(field,key.x,key.y,Plan.plan(field,key.x,key.y,density,rock,ruin),density,rock,ruin)
+	# And the set pieces whose middle stands in it (set_plan.gd; only a world
+	# whose layers set `sets`), the arches by them given way.
+	specs = Sets.with_arches(field,key.x,key.y,specs,density,rock,ruin)
+	for spec: Dictionary in specs:
 		var b := Build.build(spec,field)
 		# A rock arch's solid follows its skin; a ruin's, its stones.
 		b["solid"] = BoxSolid.build(BoxSolid.from_faces(b.faces) if b.kind == "rock" else b.boxes)

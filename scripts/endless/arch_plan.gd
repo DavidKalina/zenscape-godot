@@ -16,6 +16,18 @@ extends RefCounted
 ##            through the hills, its arches flown along the valley.
 ##   gate     a RuinKit arch, or a short broken run, at a lowland
 ##            meadow's edge (not on the meadow's flat).
+## A world's layers can steer them, per spot (world_profile.gd `layers`; each
+## absent in wilderness, which keeps every arch where it was):
+##   rock_arches, ruin_arches  x the chance a fitting spot takes a rock or a
+##            ruin (aqueduct, gate) arch, over --rock-arches= / --ruin-arches=.
+##   ruin_near  a ruin only within this many m of high ground (RUIN_RISE over
+##            the spot: a massif or a plateau's rim); 0 anywhere.
+##   aqueduct_span  the chance an aqueduct whose valley climbs to a shelf on
+##            both sides (a canyon through a plateau, a terraced valley) spans
+##            it rim to rim instead (`_span`): its deck level with the lower
+##            rim, its piers down to the floor, its arches grown to the drop;
+##            where only one side climbs, a run strides out from that rim
+##            over the floor and ends snapped off in mid-air.
 ## Every opening is sized from a toy width (WorldScale.opening). Each spec
 ## names its arch `endless/arch/<cx>_<cz>/<i>` (scripts/layout_overrides.gd).
 ##
@@ -57,6 +69,24 @@ const RUIN_GROW := 2.4
 ## The rise a narrows' legs climb to (m over the floor), the most it spans.
 const NARROW_RISE := Vector2(12.0,28.0)
 const NARROW_MOST := 340.0
+## ruin_near's high ground: this much over the spot (m), read on rings at a
+## half and the whole of the reach, RUIN_RING spots each.
+const RUIN_RISE := 30.0
+const RUIN_RING := 8
+## A rim-to-rim span: the drop from the lower rim to the floor it spans (m),
+## the most it reaches across (m), its most arches, and the most and least
+## its arches grow (their deck takes SPAN_DECK of the drop; the piers grow
+## down the rest). How far a rim is read past where the walk reaches it (m),
+## and how far the run reaches into each rim (in spans).
+const SPAN_DROP := Vector2(20.0,80.0)
+const SPAN_MOST := 520.0
+const SPAN_ARCHES := 18
+const SPAN_GROW := Vector2(1.6,4.2)
+const SPAN_DECK := 0.62
+const SPAN_RIM := 48.0
+const SPAN_INTO := 0.6
+## A one-rim run's reach past the floor's middle (share of its half width).
+const REACH_PAST := 0.6
 
 ## The cell's key for a world XZ point.
 static func cell_of(x: float, z: float) -> Vector2i:
@@ -99,14 +129,21 @@ static func plan(field: RefCounted, cx: int, cz: int, density := 1.0, rock := 1.
 		var spec := {}
 		var sub := RandomNumberGenerator.new()
 		sub.seed = pick
+		# The world's steer at this spot (none in wilderness).
+		var lay: Dictionary = world.at(x,z).layers if world != null else {}
+		var rock_k := rock*float(lay.get("rock_arches",1.0))
+		var ruin_k := ruin*float(lay.get("ruin_arches",1.0))
+		var near_r := float(lay.get("ruin_near",0.0))
 		if v < half*0.6 and m > 0.15 and half < WorldScale.opening(50.0)*0.5*1.3:
-			if roll < TAKE.narrows*rock: spec = _narrows(field,x,z,s,sub)
+			if roll < TAKE.narrows*rock_k: spec = _narrows(field,x,z,s,sub)
 		elif m > 0.22 and m < 0.95 and v > half+float(s.side)*0.35:
-			if roll < TAKE.rock*rock: spec = _rock(field,x,z,sub)
+			if roll < TAKE.rock*rock_k: spec = _rock(field,x,z,sub)
 		elif v < half*0.5 and m < 0.15 and float(s.inland) > 0.9:
-			if roll < TAKE.aqueduct*ruin: spec = _aqueduct(field,x,z,s,sub)
+			if roll < TAKE.aqueduct*ruin_k and (near_r <= 0.0 or _near_high(field,x,z,float(s.height),near_r)):
+				if sub.randf() < float(lay.get("aqueduct_span",0.0)): spec = _span(field,x,z,s,sub)
+				if spec.is_empty(): spec = _aqueduct(field,x,z,s,sub)
 		elif float(s.meadow) > 0.06 and float(s.meadow) < 0.7 and m < 0.1 and v > half+30.0 and float(s.inland) > 0.8:
-			if roll < TAKE.gate*ruin: spec = _gate(field,x,z,sub)
+			if roll < TAKE.gate*ruin_k and (near_r <= 0.0 or _near_high(field,x,z,float(s.height),near_r)): spec = _gate(field,x,z,sub)
 		if spec.is_empty(): continue
 		if spec.kind != "aqueduct" and _in_river(field,spec): continue
 		spec["name"] = "endless/arch/%d_%d/%d" % [cx,cz,out.size()]
@@ -286,6 +323,92 @@ static func _aqueduct(field: RefCounted, x: float, z: float, s: Dictionary, rng:
 		"weathered":rng.randf_range(0.2,0.6),"yaw":_yaw(across),"length":length}
 	spec["pos"] = _level(field,x,z,across,length*0.5,2.8*grow)
 	spec["foot"] = [[Vector2(x,z),Vector2(length*0.5+6.0*grow,3.0*grow+4.0),float(spec.yaw)]]
+	return spec
+
+## Whether ground RUIN_RISE m over `y` stands within `reach` m of (x, z).
+static func _near_high(field: RefCounted, x: float, z: float, y: float, reach: float) -> bool:
+	for ring: float in [0.5,1.0]:
+		for k in RUIN_RING:
+			var a := TAU*(k+0.5*ring)/RUIN_RING
+			if float(field.height(x+cos(a)*reach*ring,z+sin(a)*reach*ring)) >= y+RUIN_RISE: return true
+	return false
+
+## An aqueduct spanning a valley rim to rim (a canyon through a plateau, a
+## terraced valley's shelves): the walk out both ways across the valley to
+## where the ground has climbed SPAN_DROP.x over the floor, each rim's top
+## the highest ground SPAN_RIM past that; the deck level with the lower rim,
+## the run reaching SPAN_INTO of a span past where each rim's ground meets
+## the deck, its arches grown to the drop. None where a rim is out of reach or the drop out of SPAN_DROP.
+static func _span(field: RefCounted, x: float, z: float, s: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
+	var across: Vector2 = s.across
+	var floor_y := float(s.height)
+	var reach := [-1.0,-1.0]
+	var rim := [INF,INF]
+	for side in range(2):
+		var sgn := -1.0 if side == 0 else 1.0
+		var d := 8.0
+		while d < SPAN_MOST*0.5:
+			if float(field.height(x+across.x*d*sgn,z+across.y*d*sgn)) >= floor_y+SPAN_DROP.x: break
+			d += 6.0
+		if d >= SPAN_MOST*0.5: continue
+		var top := -INF
+		var t := d
+		while t <= d+SPAN_RIM:
+			top = maxf(top,float(field.height(x+across.x*t*sgn,z+across.y*t*sgn)))
+			t += 6.0
+		reach[side] = d
+		rim[side] = top
+	# One rim only: the run strides out from it, past the floor's middle, and
+	# its last span is snapped off.
+	var one := -1
+	if float(reach[0]) < 0.0 and float(reach[1]) < 0.0: return {}
+	var deck_y := minf(float(rim[0]),float(rim[1]))
+	var drop := deck_y-floor_y
+	if drop < SPAN_DROP.x or drop > SPAN_DROP.y: return {}
+	# Each rim's reach out to where its ground meets the deck.
+	for side in range(2):
+		if float(reach[side]) < 0.0: continue
+		var sgn := -1.0 if side == 0 else 1.0
+		var t := float(reach[side])
+		while t < float(reach[side])+SPAN_RIM and float(field.height(x+across.x*t*sgn,z+across.y*t*sgn)) < deck_y-1.0: t += 3.0
+		reach[side] = t
+	if float(reach[0]) < 0.0 or float(reach[1]) < 0.0:
+		one = 1 if float(reach[0]) < 0.0 else 0
+		reach[1-one] = float(s.half)*REACH_PAST
+	var grow := clampf(drop*SPAN_DECK/Aqueduct.DECK,SPAN_GROW.x,SPAN_GROW.y)
+	var span: float = Aqueduct.SPAN*grow
+	var gap := float(reach[0])+float(reach[1])
+	var count := clampi(ceili(gap/span+SPAN_INTO*(1.0 if one >= 0 else 2.0)),2,SPAN_ARCHES)
+	if gap > span*SPAN_ARCHES: return {}
+	var length := span*count
+	# The middle of the gap (a one-rim run: from SPAN_INTO into its rim), then
+	# slid so a river on the floor runs through an opening (as `_aqueduct`).
+	var mid := (float(reach[1])-float(reach[0]))*0.5
+	if one >= 0:
+		var sgn := -1.0 if one == 0 else 1.0
+		mid = sgn*(float(reach[one])+span*SPAN_INTO-length*0.5)
+	var cx := x+across.x*mid
+	var cz := z+across.y*mid
+	var river_w := float(s.get("river_w",0.0))
+	if river_w > 0.0:
+		if Aqueduct.CLEAR*grow < river_w*2.0+Field.RIVER_CLEAR: return {}
+		var o := -float(s.river_r)-mid
+		if absf(o) < length*0.5+river_w+Field.RIVER_CLEAR:
+			var m := clampi(roundi((o+length*0.5)/span-0.5),0,count-1)
+			var slide := o+length*0.5-(m+0.5)*span
+			cx += across.x*slide
+			cz += across.y*slide
+	# The run's +x end: the snapped one of a one-rim run, away from its rim.
+	var dir := -across if one == 1 else across
+	var brk := rng.randi_range(1,count-2) if count > 2 and rng.randf() < 0.4 else -1
+	if one >= 0: brk = count-1
+	var spec := {"kind":"aqueduct","form":"span" if one < 0 else "reach","grow":grow,"count":count,"head":false,
+		"break_at":brk,
+		"weathered":rng.randf_range(0.35,0.75),"yaw":_yaw(dir),"length":length}
+	# The deck (DECK x grow over the run's ground) level with the lower rim,
+	# a little under it so its ends meet the rims with no step.
+	spec["pos"] = Vector3(cx,deck_y-Aqueduct.DECK*grow-0.4,cz)
+	spec["foot"] = [[Vector2(cx,cz),Vector2(length*0.5+6.0*grow,3.0*grow+4.0),float(spec.yaw)]]
 	return spec
 
 ## A RuinKit arch (or a short broken run) at a meadow's edge.

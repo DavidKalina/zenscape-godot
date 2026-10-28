@@ -53,7 +53,7 @@ const LandHorizon = preload("res://scripts/endless/land_horizon.gd")
 
 ## The moods L steps through (no winter: the season stays off it), and the
 ## one it opens on.
-const MOODS := ["alpine_morning","golden_meadow","ocean_light","meadow_morning","after_the_rain","desert_afternoon","rosewater_dusk","rose_dusk","moonlit_stillness"]
+const MOODS := ["alpine_morning","golden_meadow","ocean_light","meadow_morning","after_the_rain","desert_afternoon","amber_hour","rosewater_dusk","rose_dusk","moonlit_stillness"]
 const MOOD := "alpine_morning"
 ## The hour it opens on with no --mood or --hour: the mood's own, as the
 ## aqueduct isle opens on it. (Round one's 7.6, a low sun raking every
@@ -271,7 +271,10 @@ func setup(land_seed: int) -> void:
 	if not full_night: celestial.night_floor = DayCycle.FLOOR
 	if hour >= 0.0: celestial.set_phase(hour/24.0)
 	cycle = DayCycle.new(day_length)
-	cycle.running = day == 1 or (day == -1 and not still)
+	# A one-profile world whose paint says `still` holds its hour (the
+	# amberlands' low sun) unless --day runs the clock.
+	var world_still := bool(world.paint.get("still",false)) and bool(world.uniform)
+	cycle.running = day == 1 or (day == -1 and not still and not world_still)
 	cycle.set_phase(celestial.phase)
 	if day_at != "":
 		if cycle.go_to(day_at): celestial.set_phase(cycle.phase())
