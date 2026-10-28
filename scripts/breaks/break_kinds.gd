@@ -68,7 +68,7 @@ const KIND_OF := {
 	"wind_horn":"post",
 	"lancet_wall":"wall","wall":"wall","rose_gable":"wall","hall_bay":"wall","tower_shell":"wall",
 	"arch":"arch","vault":"arch","aqueduct_span":"arch","aqueduct_two_tier":"arch",
-	"aqueduct_broken":"arch","aqueduct_end":"arch",
+	"aqueduct_broken":"arch","aqueduct_end":"arch","road_bridge":"arch",
 	"hall_beam":"lintel",
 	"stairs":"stair","grand_stair":"stair",
 	"floor":"slab","hall_slab":"slab","tomb_chest":"slab","fallen_pier":"slab","stone_circle":"slab",

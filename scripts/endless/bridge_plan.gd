@@ -42,6 +42,8 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const ArchPlan = preload("res://scripts/endless/arch_plan.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
+const Road = preload("res://scripts/ruin_kit_bridge.gd")
+const BridgeBuild = preload("res://scripts/endless/bridge_build.gd")
 
 ## The bridge cell (m), the rim search's grid (m), the rims tried a cell (x
 ## the layer), the most bridges (a chain counts once) a cell.
@@ -96,6 +98,10 @@ const CHAIN_LINKS := 4
 const CHAIN_TURN := 0.5
 const CHAIN_TOP := 420.0
 const CHAIN_REACH := 1700.0
+## A chain's runs end within this past CHAIN_REACH of its first rim (each
+## far rim's top is within CHAIN_REACH; a run reaches at most its approach,
+## INTO a grown span and the rounding to whole spans past it, under 70 m).
+const REACH_PAD := 100.0
 ## Clearances (m): from arches' feet, halls, splits and tunnels; between
 ## bridges.
 const KEEP := 50.0
@@ -104,11 +110,28 @@ const APART := 160.0
 const TUNNEL_WAY := 300.0
 ## The chance a bridge cell tries at all, at layer 1.
 const TAKE := 0.85
+## The road form (scripts/ruin_kit_bridge.gd), the second a chain may take
+## (picked per chain on its own stream, so the aqueduct chains are as they
+## were): its share of the chains (x --bridge-road=, 0 none, 1 all), the
+## chance one is broken, and its weathering.
+const ROAD := 0.5
+const ROAD_BROKEN := 0.45
+const ROAD_WEATHERED := Vector2(0.4,0.8)
 
 ## What the planner tried and turned down (for a census; not thread-exact).
 static var stats := {}
 static var _cache := {}
+static var _kept := {}
 static var _lock := Mutex.new()
+## Bridge cells being planned now, by key: each a Mutex its planner holds,
+## so a second thread asking for the same cell waits for it rather than
+## planning it again (_plan reads no other cell's plan: no cycle).
+static var _pending := {}
+## The caches hold this many cells; past it the oldest half goes.
+const CACHE_MOST := 4000
+## A chain matters to an arch cell when its links' box comes within this of
+## the cell (its arches' feet reach out of it; KEEP and a deck's half).
+const NEAR_CELL := 400.0
 
 ## The flags: --bridges=X (x the layer), --no-bridges.
 static var _flag := -1.0
@@ -120,6 +143,16 @@ static func flag() -> float:
 			elif a.begins_with("--bridges="): k = maxf(0.0,float(a.get_slice("=",1)))
 		_flag = k
 	return _flag
+
+## The road form's share: --bridge-road=X (0..1), else ROAD.
+static var _road := -1.0
+static func road_share() -> float:
+	if _road < 0.0:
+		var k := ROAD
+		for a: String in preload("res://scripts/launch_args.gd").user_args():
+			if a.begins_with("--bridge-road="): k = clampf(float(a.get_slice("=",1)),0.0,1.0)
+		_road = k
+	return _road
 
 static func cell_of(x: float, z: float) -> Vector2i:
 	return Vector2i(floori(x/CELL),floori(z/CELL))
@@ -133,12 +166,32 @@ static func with_arches(field: RefCounted, cx: int, cz: int, arches: Array, dens
 	var near: Array = []
 	var x0 := cx*ArchPlan.CELL
 	var z0 := cz*ArchPlan.CELL
-	var r := CHAIN_REACH+GAP.y
+	var r := CHAIN_REACH+REACH_PAD
 	var lo := cell_of(x0-r,z0-r)
 	var hi := cell_of(x0+ArchPlan.CELL+r,z0+ArchPlan.CELL+r)
+	var box := Rect2(x0-NEAR_CELL,z0-NEAR_CELL,ArchPlan.CELL+NEAR_CELL*2.0,ArchPlan.CELL+NEAR_CELL*2.0)
+	# Cells another thread is planning now are left for a second pass, so
+	# threads streaming neighbouring arch cells plan different cells at once
+	# rather than queueing on the same one.
+	var cells: Array = []
 	for bz in range(lo.y,hi.y+1):
-		for bx in range(lo.x,hi.x+1):
-			for chain: Dictionary in kept(field,bx,bz,density,rock,ruin): near.append_array(chain.links)
+		for bx in range(lo.x,hi.x+1): cells.append(Vector2i(bx,bz))
+	var got := {}
+	for wait: bool in [false,true]:
+		for c: Vector2i in cells:
+			if got.has(c): continue
+			var mine: Variant = raw(field,c.x,c.y,density,rock,ruin,wait)
+			if mine == null: continue
+			# Only a cell with a chain near this one pays for `kept` (which
+			# reads the cells round it): the rest cannot touch it.
+			var links: Array = []
+			for chain: Dictionary in mine:
+				if not _chain_in(chain,box): continue
+				for k: Dictionary in kept(field,c.x,c.y,density,rock,ruin):
+					if _chain_in(k,box): links.append_array(k.links)
+				break
+			got[c] = links
+	for c: Vector2i in cells: near.append_array(got[c])
 	var out: Array = []
 	for a: Dictionary in arches:
 		if not _off_bridges(a,near): continue
@@ -154,6 +207,14 @@ static func for_cell(field: RefCounted, cx: int, cz: int, density := 1.0, rock :
 	for s: Dictionary in with_arches(field,cx,cz,[],density,rock,ruin):
 		if s.has("bridge"): out.append(s)
 	return out
+
+## Whether a chain's segments' box overlaps `box`.
+static func _chain_in(chain: Dictionary, box: Rect2) -> bool:
+	for sg: Array in chain.segs:
+		var a: Vector2 = sg[0]
+		var b: Vector2 = sg[1]
+		if Rect2(a.min(b),(a-b).abs()).grow(1.0).intersects(box): return true
+	return false
 
 ## Whether an arch's feet keep KEEP clear of every bridge in `links`.
 static func _off_bridges(arch: Dictionary, links: Array) -> bool:
@@ -187,9 +248,21 @@ static func _region_id(field: RefCounted, x: float, z: float) -> String:
 ## The chains bridge cell (bx, bz) keeps: its own, less those that come
 ## within APART of a better-ranked chain of a cell round it.
 static func kept(field: RefCounted, bx: int, bz: int, density := 1.0, rock := 1.0, ruin := 1.0) -> Array:
-	var mine := raw(field,bx,bz,density,rock,ruin)
+	var mine: Array = raw(field,bx,bz,density,rock,ruin)
 	if mine.is_empty(): return mine
-	var reach := int(ceil((CHAIN_REACH+GAP.y+APART)*2.0/CELL))
+	var key := _key(field,bx,bz,density,rock,ruin)
+	_lock.lock()
+	var got: Variant = _kept.get(key)
+	_lock.unlock()
+	if got != null: return got
+	var out := _kept_of(field,bx,bz,mine,density,rock,ruin)
+	_lock.lock()
+	_store(_kept,key,out)
+	_lock.unlock()
+	return out
+
+static func _kept_of(field: RefCounted, bx: int, bz: int, mine: Array, density: float, rock: float, ruin: float) -> Array:
+	var reach := int(ceil((CHAIN_REACH+REACH_PAD+APART)*2.0/CELL))
 	var out: Array = []
 	for chain: Dictionary in mine:
 		var links: Array = chain.links
@@ -226,9 +299,9 @@ static func _near_segs(s: Array, segs: Array, d: float) -> bool:
 	return false
 
 ## Whether a chain could reach any chain of bridge cell (bx, bz) (whose own
-## reach out of its cell is at most CHAIN_REACH+GAP.y).
+## reach out of its cell is at most CHAIN_REACH+REACH_PAD).
 static func _boxes_near(chain: Dictionary, bx: int, bz: int) -> bool:
-	var r := CHAIN_REACH+GAP.y+APART
+	var r := CHAIN_REACH+REACH_PAD+APART
 	var lo := Vector2(bx*CELL-r,bz*CELL-r)
 	var hi := Vector2((bx+1)*CELL+r,(bz+1)*CELL+r)
 	for s: Array in chain.segs:
@@ -244,19 +317,53 @@ static func _chains_near(a: Dictionary, b: Dictionary, d: float) -> bool:
 
 ## Bridge cell (bx, bz)'s chains, each {rank, segs: [[a, b] XZ], links:
 ## [spec...]}, cached (a pure function of the seed and the cell).
-static func raw(field: RefCounted, bx: int, bz: int, density := 1.0, rock := 1.0, ruin := 1.0) -> Array:
-	var world: Variant = field.get("world")
-	var key := "%d|%d|%d|%s|%.3f|%.3f|%.3f|%.3f" % [int(field.seed),bx,bz,String(world.id) if world != null else "",density,rock,ruin,flag()]
+## `wait` false: null at once if another thread is planning it now.
+static func raw(field: RefCounted, bx: int, bz: int, density := 1.0, rock := 1.0, ruin := 1.0, wait := true) -> Variant:
+	var key := _key(field,bx,bz,density,rock,ruin)
 	_lock.lock()
 	var got: Variant = _cache.get(key)
+	if got != null:
+		_lock.unlock()
+		return got
+	var busy: Mutex = _pending.get(key)
+	if busy != null:
+		_lock.unlock()
+		if not wait: return null
+		# Another thread plans it: wait for it, then read its plan.
+		busy.lock()
+		busy.unlock()
+		_lock.lock()
+		got = _cache.get(key)
+		_lock.unlock()
+		if got != null: return got
+		return raw(field,bx,bz,density,rock,ruin)
+	var mine := Mutex.new()
+	mine.lock()
+	_pending[key] = mine
 	_lock.unlock()
-	if got != null: return got
+	var t0 := Time.get_ticks_usec()
 	var made := _plan(field,bx,bz)
+	var ms := (Time.get_ticks_usec()-t0)/1000.0
 	_lock.lock()
-	if _cache.size() > 600: _cache.clear()
-	_cache[key] = made
+	_count("raw_cells")
+	stats["raw_ms"] = float(stats.get("raw_ms",0.0))+ms
+	stats["raw_worst"] = maxf(float(stats.get("raw_worst",0.0)),ms)
+	_store(_cache,key,made)
+	_pending.erase(key)
 	_lock.unlock()
+	mine.unlock()
 	return made
+
+static func _key(field: RefCounted, bx: int, bz: int, density: float, rock: float, ruin: float) -> String:
+	var world: Variant = field.get("world")
+	return "%d|%d|%d|%s|%.3f|%.3f|%.3f|%.3f" % [int(field.seed),bx,bz,String(world.id) if world != null else "",density,rock,ruin,flag()]
+
+## Into a cache (under `_lock`), the oldest half let go past CACHE_MOST.
+static func _store(cache: Dictionary, key: String, value: Variant) -> void:
+	if cache.size() >= CACHE_MOST:
+		var keys := cache.keys()
+		for i in range(keys.size()/2): cache.erase(keys[i])
+	cache[key] = value
 
 static func _plan(field: RefCounted, bx: int, bz: int) -> Array:
 	var out: Array = []
@@ -327,15 +434,22 @@ static func _plan(field: RefCounted, bx: int, bz: int) -> Array:
 				if line.size() > links.size(): links = line
 		var specs: Array = []
 		var ok: Array = []
+		# The chain's form, on its own stream (the aqueduct's draws untouched).
+		var style := RandomNumberGenerator.new()
+		style.seed = hash([int(field.seed),bx,bz,t,"bridge style"])
+		var road := style.randf() < road_share()
 		for li in range(links.size()):
 			var l: Dictionary = links[li]
-			var spec := _spec(field,l,sub)
+			var spec := _road_spec(l,style) if road else _spec(field,l,sub)
 			var stands := not spec.is_empty()
 			if not stands: _count("too_long")
 			# The far rim is in a region that takes bridges too.
 			elif _layer(field,(l.far_top as Vector2).x,(l.far_top as Vector2).y) <= 0.0: stands = false
 			elif not _clear(field,spec,out):
 				_count("not_clear")
+				stands = false
+			elif road and BridgeBuild.road_through(spec,field):
+				_count("road_through")
 				stands = false
 			if stands:
 				spec["name"] = "%s/bridge_%d_%d_%d_%d" % [_region_id(field,a.x,a.y),bx,bz,out.size(),li]
@@ -391,6 +505,62 @@ static func _chain(field: RefCounted, a: Vector2, y: float, first: Dictionary) -
 			from_y = float(field.height(from.x,from.y))
 	return behind+ahead
 
+## A way's walk out of the rim at `a` (height `y`) along `dir`, as one read
+## every STEP would: across the top (up to `top_most`) to its edge (the first
+## read under y-EDGE), then on to where the ground climbs back to y-MATCH,
+## reading the floor's lowest. Read every second STEP, the step before a
+## change read too, and the floor's skipped reads filled in once a far rim
+## is met (only a spike or notch under 2 STEP wide reads otherwise).
+## Early outs: a floor under the sea's margin, or deeper than any deck (at
+## least y-MATCH-2) could take. Vector3(edge, far, low); edge -1 no edge,
+## far -1 no far rim.
+static func _walk(field: RefCounted, a: Vector2, dir: Vector2, y: float, top_most: float) -> Vector3:
+	var h := func(d: float) -> float: return float(field.height(a.x+dir.x*d,a.y+dir.y*d))
+	var edge := -1.0
+	var d := STEP*2.0
+	while d <= top_most:
+		if float(h.call(d)) < y-EDGE:
+			edge = d-STEP if float(h.call(d-STEP)) < y-EDGE else d
+			break
+		d += STEP*2.0
+	if edge < 0.0 and d-STEP <= top_most and float(h.call(d-STEP)) < y-EDGE: edge = d-STEP
+	if edge < 0.0: return Vector3(-1.0,-1.0,INF)
+	var low := INF
+	var deepest := y-MATCH-2.0-DROP_MOST
+	var stop := -1.0
+	d = edge
+	var last := edge+GAP.y
+	while d <= last:
+		var hd := float(h.call(d))
+		if hd >= y-MATCH:
+			stop = d
+			if d > edge:
+				var hb := float(h.call(d-STEP))
+				if hb >= y-MATCH: stop = d-STEP
+				else: low = minf(low,hb)
+			if stop == d: low = minf(low,hd)
+			break
+		low = minf(low,hd)
+		if low < Field.SEA_Y+2.0 or low < deepest: return Vector3(edge,-1.0,low)
+		var next := d+STEP*2.0
+		if next > last and d+STEP <= last:
+			# The tail read the fine walk would make.
+			var ht := float(h.call(d+STEP))
+			if ht >= y-MATCH:
+				stop = d+STEP
+				low = minf(low,ht)
+				break
+			low = minf(low,ht)
+		d = next
+	if stop < 0.0: return Vector3(edge,-1.0,low)
+	# The floor's reads skipped (odd STEPs short of the one before the stop).
+	var k := edge+STEP
+	while k < stop-STEP-0.01:
+		low = minf(low,float(h.call(k)))
+		k += STEP*2.0
+	if stop == edge: low = minf(low,float(h.call(edge)))
+	return Vector3(edge,stop if y-low >= DROP else -1.0,low)
+
 ## The best of `_links`, or {}.
 static func _link(field: RefCounted, a: Vector2, y: float, dirs: Array, level: bool) -> Dictionary:
 	var all := _links(field,a,y,dirs,level)
@@ -400,28 +570,13 @@ static func _links(field: RefCounted, a: Vector2, y: float, dirs: Array, level: 
 	var found: Array = []
 	var top_most := CHAIN_TOP if level else TOP_MOST
 	for dir: Vector2 in dirs:
-		# Across the top to its edge.
-		var edge := -1.0
-		var d := STEP
-		while d <= top_most:
-			var p := a+dir*d
-			if float(field.height(p.x,p.y)) < y-EDGE:
-				edge = d
-				break
-			d += STEP
-		if edge < 0.0: continue
-		# Across the gap to where the ground climbs back near the rim.
-		var low := INF
-		var far := -1.0
-		d = edge
-		while d <= edge+GAP.y:
-			var p := a+dir*d
-			var h := float(field.height(p.x,p.y))
-			low = minf(low,h)
-			if h >= y-MATCH:
-				if y-low >= DROP: far = d
-				break
-			d += STEP
+		# Across the top to its edge, then the gap: `_walk`, every STEP read
+		# at half the cost.
+		var got := _walk(field,a,dir,y,top_most)
+		if got.x < 0.0: continue
+		var edge := got.x
+		var far := got.y
+		var low := got.z
 		if far < 0.0 or far-edge < GAP.x: continue
 		if low < Field.SEA_Y+2.0: continue
 		# The far rim's top: near the rim's height, not a wall or a fin.
@@ -484,6 +639,32 @@ static func _spec(_field: RefCounted, l: Dictionary, rng: RandomNumberGenerator)
 		"bridge":{"tier":tier,"cut":cut,"miss":miss,"wet":rng.randf() < 0.35}}
 	spec["pos"] = Vector3(c.x,deck-deck_h*grow-0.4,c.y)
 	spec["foot"] = [[c,Vector2(length*0.5+6.0*grow,3.0*grow+4.0),float(spec.yaw)]]
+	spec["seed"] = rng.randi()
+	return spec
+
+## A road bridge's run (scripts/ruin_kit_bridge.gd) spanning link `l`:
+## built at grow 1 (its own sizes, metres), its road's top at the deck, the
+## run reaching Road.APPROACH onto each rim past where the ground meets the
+## deck, in whole Aqueduct.SPAN modules (arch_build.gd middles a run by its
+## count). `bridge`: {style "road", gap, broken; tier, cut, miss, wet as the
+## aqueduct's, unused}.
+static func _road_spec(l: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
+	var deck := float(l.deck)
+	var drop := deck-float(l.low)
+	var broken := rng.randf() < ROAD_BROKEN
+	var gap := float(l.tb)-float(l.ta)
+	var span: float = Aqueduct.SPAN
+	var count := ceili((gap+Road.APPROACH*2.0)/span)
+	var length := span*count
+	if length*0.5 > ArchPlan.CELL*0.9: return {}
+	var dir: Vector2 = l.dir
+	var c: Vector2 = (l.a as Vector2)+dir*(float(l.ta)+float(l.tb))*0.5
+	var spec := {"kind":"aqueduct","form":"bridge_broken" if broken else "bridge","style":"road",
+		"grow":1.0,"count":count,"head":false,"break_at":-1,"weathered":rng.randf_range(ROAD_WEATHERED.x,ROAD_WEATHERED.y),
+		"yaw":ArchPlan._yaw(dir),"length":length,"deck":deck,"drop":drop,"toy":Road.TOY_ARCH,
+		"bridge":{"style":"road","gap":gap,"broken":broken,"tier":false,"cut":0 if broken else -1,"miss":0,"wet":false}}
+	spec["pos"] = Vector3(c.x,deck,c.y)
+	spec["foot"] = [[c,Vector2(length*0.5+6.0,Road.WIDTH.y*0.5+12.0),float(spec.yaw)]]
 	spec["seed"] = rng.randi()
 	return spec
 
