@@ -121,6 +121,7 @@ const APPROACH := 26.0
 const RAMP := 0.2
 const RAMP_CLEAR := 0.4
 const ROAD_STEP := 1.0
+const COARSE_STEP := 4.0
 ## A whole span this long (rim edge to edge) with at least MID_ARCHES
 ## arches gets a gate midway, over its middle pier.
 const MID_GAP := 200.0
@@ -153,7 +154,10 @@ const LIFT := 600.0
 ## Everything about a bridge but its stones. `length`: the run (x 0 to it);
 ## `gap`: rim edge to rim edge (middled in the run); `drop`: the deck over
 ## the floor's lowest; `broken`; `ground` as the file's head.
-static func plan(seed_value: int, weathered: float, length: float, gap: float, drop: float, broken: bool, ground: Callable = Callable()) -> Dictionary:
+## `coarse`: the land under the road read every COARSE_STEP along and a
+## quarter of the deck across, each metre taking the higher of the reads
+## either side (a placer's quick look; the build reads it all).
+static func plan(seed_value: int, weathered: float, length: float, gap: float, drop: float, broken: bool, ground: Callable = Callable(), coarse := false) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([seed_value,"road bridge plan"])
 	var gate_w := WorldScale.opening(TOY_GATE)
@@ -210,14 +214,20 @@ static func plan(seed_value: int, weathered: float, length: float, gap: float, d
 	var count := int(ceil(length/ROAD_STEP))+1
 	var raw := PackedFloat32Array()
 	raw.resize(count)
-	for i in range(count):
+	var every := int(COARSE_STEP/ROAD_STEP) if coarse else 1
+	var reads := PackedFloat32Array()
+	reads.resize(int(ceil(float(count)/every))+1)
+	for k in range(reads.size()):
 		var hi := -1.0e4
 		if ground.is_valid():
 			var z := -width*0.5
 			while z <= width*0.5+0.01:
-				hi = maxf(hi,_ground(ground,i*ROAD_STEP,z))
-				z += width/8.0
-		raw[i] = hi+RAMP_CLEAR
+				hi = maxf(hi,_ground(ground,minf(k*every*ROAD_STEP,length),z))
+				z += width/(4.0 if coarse else 8.0)
+		reads[k] = hi+RAMP_CLEAR
+	for i in range(count):
+		var k := i/every
+		raw[i] = reads[k] if i%every == 0 else maxf(reads[k],reads[mini(k+1,reads.size()-1)])
 	# The gates: one each end on the rim, one midway on a long whole span.
 	var cap := maxf(pw*0.5-GATE_T*0.5,0.0)
 	# An end gate the rim's land would bury moves out over the first pier

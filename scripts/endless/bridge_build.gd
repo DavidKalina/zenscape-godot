@@ -84,7 +84,7 @@ static func run_ground(spec: Dictionary, field: RefCounted) -> Callable:
 ## ramps and cuttings: Road.through): the placer leaves it out.
 static func road_through(spec: Dictionary, field: RefCounted) -> bool:
 	var b: Dictionary = spec.bridge
-	var p := Road.plan(int(spec.seed),float(spec.weathered),float(spec.length),float(b.gap),float(spec.drop),bool(b.broken),run_ground(spec,field))
+	var p := Road.plan(int(spec.seed),float(spec.weathered),float(spec.length),float(b.gap),float(spec.drop),bool(b.broken),run_ground(spec,field),true)
 	return Road.through(p) > 0.3
 
 ## A road bridge's flown openings in the world (Road.openings, placed as
