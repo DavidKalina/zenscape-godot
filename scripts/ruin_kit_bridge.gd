@@ -114,6 +114,13 @@ const TOWER_TOP := 29.0
 const GATE_BACK := 9.0
 ## The run past each rim's edge (m): the approach the end gate stands on.
 const APPROACH := 26.0
+## Onto a rim higher than the deck the road climbs outside the end gates, at
+## most RAMP (m up a metre along), its top RAMP_CLEAR over the land under it
+## across the deck; where the land climbs faster the road ends in it (a
+## cutting), built no further. The profile is sampled every ROAD_STEP.
+const RAMP := 0.2
+const RAMP_CLEAR := 0.4
+const ROAD_STEP := 1.0
 ## A whole span this long (rim edge to edge) with at least MID_ARCHES
 ## arches gets a gate midway, over its middle pier.
 const MID_GAP := 200.0
@@ -199,12 +206,38 @@ static func plan(seed_value: int, weathered: float, length: float, gap: float, d
 		p["stub_a"] = rng.randf_range(minf(STUB.x,most),most)
 		p["stub_b"] = rng.randf_range(minf(STUB.x,most),most)
 	p["lost"] = lost
+	# The land under the road, across the deck (its highest, plus the clear).
+	var count := int(ceil(length/ROAD_STEP))+1
+	var raw := PackedFloat32Array()
+	raw.resize(count)
+	for i in range(count):
+		var hi := -1.0e4
+		if ground.is_valid():
+			var z := -width*0.5
+			while z <= width*0.5+0.01:
+				hi = maxf(hi,_ground(ground,i*ROAD_STEP,z))
+				z += width/8.0
+		raw[i] = hi+RAMP_CLEAR
 	# The gates: one each end on the rim, one midway on a long whole span.
+	var cap := maxf(pw*0.5-GATE_T*0.5,0.0)
+	# An end gate the rim's land would bury moves out over the first pier
+	# (never past the lost arch, nor the other end's).
+	var most_a := (lost if lost >= 0 else n/2)
+	var most_b := (n-1-lost if lost >= 0 else (n-1)/2)
+	var ga := _gate_x(raw,xa,1.0,cap,span,mini(1,most_a))
+	var gb := _gate_x(raw,xb,-1.0,cap,span,mini(1,most_b))
+	# One the land would bury wherever it stood is left out: the road's flat
+	# then starts where the land first stands under it.
 	var gates: Array = []
-	gates.append({"name":"gate_a","x":_gate_x(ground,xa,1.0,span,gate_w),"end":true})
-	if not broken and gap >= MID_GAP and n >= MID_ARCHES:
-		gates.append({"name":"gate_mid","x":xa+span*(n/2),"end":false,"pier":n/2})
-	gates.append({"name":"gate_b","x":_gate_x(ground,xb,-1.0,span,gate_w),"end":true})
+	if not ga.has("buried"): gates.append(ga.merged({"name":"gate_a","end":true}))
+	var mid := xa+span*(n/2)
+	if not broken and gap >= MID_GAP and n >= MID_ARCHES and mid-float(ga.x) > span*0.6 and float(gb.x)-mid > span*0.6:
+		gates.append({"name":"gate_mid","x":mid,"end":false,"pier":n/2})
+	if not gb.has("buried"): gates.append(gb.merged({"name":"gate_b","end":true}))
+	var fa := float(ga.x)-GATE_T*0.5-1.0 if not ga.has("buried") else _clear_from(raw,float(ga.x),1.0,xb)
+	var fb := float(gb.x)+GATE_T*0.5+1.0 if not gb.has("buried") else _clear_from(raw,float(gb.x),-1.0,xa)
+	p["lane"] = Vector2(float(ga.x) if not ga.has("buried") else fa+1.0,float(gb.x) if not gb.has("buried") else fb-1.0)
+	_road_profile(p,raw,fa,fb)
 	for g: Dictionary in gates:
 		var lo := INF
 		for sx: float in [-1.0,1.0]:
@@ -215,18 +248,101 @@ static func plan(seed_value: int, weathered: float, length: float, gap: float, d
 	return p
 
 ## An end gate's x: GATE_BACK onto the rim from its edge `edge`, or nearer
-## the gorge (`way` +1 the gorge's side) until the ground under its arch
-## stands under the road (the rim higher than the deck buries it).
-static func _gate_x(ground: Callable, edge: float, way: float, span: float, gate_w: float) -> float:
+## the gorge (`way` +1 the gorge's side) until the land (`raw`, the road
+## profile's) under its road and a metre each side stands under the road;
+## at most `cap` past the edge (over the abutment's pier, never an arch).
+## Failing that, over the first `piers` piers out from the edge (the first
+## whose road clears; the last if none): {x, pier (if over one)}.
+static func _gate_x(raw: PackedFloat32Array, edge: float, way: float, cap: float, span: float, piers: int) -> Dictionary:
 	var x := edge-way*GATE_BACK
-	while way*(x-edge) < span*0.3:
-		var hi := -INF
-		for sx: float in [-1.0,0.0,1.0]:
-			for sz: float in [-1.0,0.0,1.0]:
-				hi = maxf(hi,_ground(ground,x+sx*GATE_T*0.6,sz*gate_w*0.5))
-		if hi < -1.0: break
-		x += way*2.0
+	while true:
+		if _gate_clear(raw,x): return {"x":x}
+		if way*(x-edge) >= cap-0.01: break
+		x = edge+way*minf(way*(x-edge)+1.0,cap)
+	for k in range(1,piers+1):
+		var got := {"x":edge+way*span*k,"pier":k}
+		if _gate_clear(raw,float(got.x)): return got
+	return {"x":x,"buried":true}
+
+## The first x from `x` along `way` (short of `stop`) where the land under
+## the road stands under it.
+static func _clear_from(raw: PackedFloat32Array, x: float, way: float, stop: float) -> float:
+	while way*(stop-x) > 0.0:
+		var i := clampi(int(round(x/ROAD_STEP)),0,raw.size()-1)
+		if raw[i] <= 0.0: return x
+		x += way*ROAD_STEP
 	return x
+
+## The land under a gate at x and a metre each side stands under the road.
+static func _gate_clear(raw: PackedFloat32Array, x: float) -> bool:
+	var a := int(floor((x-GATE_T*0.5-1.0)/ROAD_STEP))
+	var b := int(ceil((x+GATE_T*0.5+1.0)/ROAD_STEP))
+	for i in range(maxi(a,0),mini(b,raw.size()-1)+1):
+		if raw[i] > 0.0: return false
+	return true
+
+## The road's profile (p.road_y, p.cut_a, p.cut_b) from the land under it:
+## flat (0) from fa to fb (the end gates and a metre past them); outside,
+## the least climb that keeps its top over `raw` (the one-sided upper
+## envelope at RAMP, held to RAMP from the flat), never under 0; where the
+## land still stands over it the road is cut (cut_a, cut_b: its built ends).
+static func _road_profile(p: Dictionary, raw: PackedFloat32Array, fa: float, fb: float) -> void:
+	var count := raw.size()
+	var ys := PackedFloat32Array()
+	ys.resize(count)
+	var env := PackedFloat32Array()
+	env.resize(count)
+	# Side a: the envelope from x 0 inward.
+	var e := -1.0e4
+	for i in range(count):
+		e = maxf(raw[i],e-RAMP*ROAD_STEP)
+		env[i] = e
+	for i in range(count):
+		var x := i*ROAD_STEP
+		if x < fa: ys[i] = maxf(0.0,minf(env[i],RAMP*(fa-x)))
+	# Side b: from the far end back.
+	e = -1.0e4
+	for i in range(count-1,-1,-1):
+		e = maxf(raw[i],e-RAMP*ROAD_STEP)
+		var x := i*ROAD_STEP
+		if x > fb: ys[i] = maxf(0.0,minf(e,RAMP*(x-fb)))
+	var cut_a := 0.0
+	var i := int(floor(fa/ROAD_STEP))
+	while i >= 0:
+		if ys[i] < raw[i]-RAMP_CLEAR:
+			cut_a = (i+1)*ROAD_STEP
+			break
+		i -= 1
+	var cut_b := float(p.length)
+	i = int(ceil(fb/ROAD_STEP))
+	while i < count:
+		if ys[i] < raw[i]-RAMP_CLEAR:
+			cut_b = (i-1)*ROAD_STEP
+			break
+		i += 1
+	p["road_y"] = ys
+	p["raw"] = raw
+	p["cut_a"] = minf(cut_a,fa)
+	p["cut_b"] = maxf(cut_b,fb)
+
+## The most the land stands over the built road's top (m; under 0: clear
+## all along). A placer leaves out a bridge the land breaks through.
+static func through(p: Dictionary) -> float:
+	var raw: PackedFloat32Array = p.raw
+	var ys: PackedFloat32Array = p.road_y
+	var most := -INF
+	for i in range(int(ceil(float(p.cut_a)/ROAD_STEP)),mini(int(floor(float(p.cut_b)/ROAD_STEP)),raw.size()-1)+1):
+		most = maxf(most,raw[i]-RAMP_CLEAR-ys[i])
+	return most
+
+## The road's top at x (the run's frame): 0 between the end gates, climbing
+## onto a rim higher than the deck (the plan's `road_y`, every ROAD_STEP).
+static func road_y(p: Dictionary, x: float) -> float:
+	var ys: PackedFloat32Array = p.get("road_y",PackedFloat32Array())
+	if ys.is_empty(): return 0.0
+	var f := clampf(x/ROAD_STEP,0.0,ys.size()-1.0)
+	var i := mini(int(f),ys.size()-2)
+	return lerpf(ys[i],ys[i+1],f-i)
 
 static func _ground(ground: Callable, x: float, z: float) -> float:
 	return float(ground.call(x,z)) if ground.is_valid() else -1.0e4
@@ -271,8 +387,9 @@ static func openings(p: Dictionary) -> Array:
 	for g: Dictionary in gates:
 		out.append(_opening(str(g.name),"gate",Vector3(float(g.x),(1.0+GATE_SPRING)*0.5,0.0),Vector3.RIGHT,Vector3(gw,GATE_SPRING-1.0,GATE_T),gw*0.5,true))
 	var y := (1.0+GATE_SPRING)*0.5
-	var x0 := float((gates[0] as Dictionary).x)
-	var x1 := float((gates[-1] as Dictionary).x)
+	var lane_x: Vector2 = p.lane
+	var x0 := lane_x.x
+	var x1 := lane_x.y
 	if lost < 0:
 		out.append(_opening("deck","deck",Vector3((x0+x1)*0.5,y,0.0),Vector3.RIGHT,Vector3(gw,GATE_SPRING-1.0,x1-x0),0.0,false,true))
 	else:
@@ -375,8 +492,8 @@ static func piece(seed_value: int, weathered: float, length: float, gap: float, 
 	for i in range(n):
 		_arch(b,p,i,i == lost)
 	# The approaches: solid fill from the ground to the deck past each rim.
-	_approach(b,p,0.0,float(p.xa),ground)
-	_approach(b,p,float(p.xb),float(p.length),ground)
+	_approach(b,p,float(p.cut_a),float(p.xa),ground)
+	_approach(b,p,float(p.xb),float(p.cut_b),ground)
 	# The deck: paving, cornice, parapets, broken where the lost arch was.
 	var gates: Array = p.gates
 	var spans := _deck_spans(p)
@@ -416,12 +533,23 @@ static func piece(seed_value: int, weathered: float, length: float, gap: float, 
 static func _up(v: Vector3) -> Vector3:
 	return v+Vector3(0.0,LIFT,0.0)
 
+## A pose on the deck (y 0 the road's top) set onto the road's profile:
+## raised to it and tipped to its climb.
+static func _on_road(p: Dictionary, pose: Transform3D) -> Transform3D:
+	var x := pose.origin.x
+	var y := road_y(p,x)
+	if y <= 0.0 and road_y(p,x-2.0) <= 0.0 and road_y(p,x+2.0) <= 0.0: return pose
+	var slope := (road_y(p,x+1.0)-road_y(p,x-1.0))*0.5
+	return Transform3D(Basis(Vector3.BACK,atan(slope))*pose.basis,pose.origin+Vector3(0.0,y,0.0))
+
 ## The deck's standing stretches (x0, x1): the whole run, or the two halves
 ## either side of a broken bridge's gap.
 static func _deck_spans(p: Dictionary) -> Array:
-	if int(p.lost) < 0: return [Vector2(0.0,float(p.length))]
+	var a := float(p.get("cut_a",0.0))
+	var z := float(p.get("cut_b",float(p.length)))
+	if int(p.lost) < 0: return [Vector2(a,z)]
 	var e := gap_ends(p)
-	return [Vector2(0.0,e.x),Vector2(e.y,float(p.length))]
+	return [Vector2(a,e.x),Vector2(e.y,z)]
 
 ## A pier: stepped footing, coursed tapered body, a cutwater each face.
 static func _pier(b: Build, p: Dictionary, pr: Dictionary) -> void:
@@ -502,7 +630,7 @@ static func _arch(b: Build, p: Dictionary, i: int, lost: bool) -> void:
 	var clear := float(p.clear)
 	var face_a := x0+float(p.pier_w)*0.5
 	var face_b := x1-float(p.pier_w)*0.5
-	var top := func(_x: float) -> float: return -PAVE
+	var top := func(x: float) -> float: return road_y(p,x)-PAVE
 	if lost:
 		var stub_a := float(p.stub_a)
 		var stub_b := float(p.stub_b)
@@ -553,8 +681,8 @@ static func _approach(b: Build, p: Dictionary, x0: float, x1: float, ground: Cal
 		for z: float in [-float(p.half),0.0,float(p.half)]: lo = minf(lo,_ground(ground,x,z))
 		x += 4.0
 	var y0 := maxf(lo-1.5,float(p.spring))
-	if y0 > -PAVE-0.3: return
-	var top := func(_x: float) -> float: return -PAVE
+	if y0 > maxf(road_y(p,x0),road_y(p,x1))-PAVE-0.3: return
+	var top := func(x: float) -> float: return road_y(p,x)-PAVE
 	RuinKit._courses(b,Transform3D.IDENTITY,x0,x1,y0,top,float(p.half)-SPANDREL_IN,Callable(),SPANDREL_COURSE)
 
 ## The paving from x0 to x1: slabs in rows across the road, some sunk or
@@ -563,8 +691,8 @@ static func _paving(b: Build, p: Dictionary, x0: float, x1: float) -> void:
 	var half := float(p.half)-PARAPET.x*2.0
 	var rows := 3
 	var w := float(p.weathered)
-	var ragged_a := x0 > 0.5
-	var ragged_b := x1 < float(p.length)-0.5
+	var ragged_a := x0 > float(p.xa)
+	var ragged_b := x1 < float(p.xb)
 	for row in range(rows):
 		var z0 := -half+half*2.0*row/rows
 		var z1 := -half+half*2.0*(row+1)/rows
@@ -580,20 +708,20 @@ static func _paving(b: Build, p: Dictionary, x0: float, x1: float) -> void:
 				# The road grows no moss of the kit's (its mats are laid on
 				# the parapets instead): the deck's whole top would double
 				# the growth.
-				b.solid(RuinKit._box(b,half_v),RuinKit._settle(b,Vector3(x+l*0.5,-PAVE*0.5-sink,(z0+z1)*0.5),0.06),RuinKit._stone(b,1.06),true,true,[],-1,1.0,false)
+				b.solid(RuinKit._box(b,half_v),_on_road(p,RuinKit._settle(b,Vector3(x+l*0.5,-PAVE*0.5-sink,(z0+z1)*0.5),0.06)),RuinKit._stone(b,1.06),true,true,[],-1,1.0,false)
 			x += l
 
 ## The cornice under one side's parapet, from x0 to x1 (lost in places).
 static func _cornice(b: Build, p: Dictionary, x0: float, x1: float, side: float) -> void:
 	var zo := float(p.half)-SPANDREL_IN+CORNICE.x
 	var zi := float(p.half)-PARAPET.x*2.0
-	var x := x0+(b.rng.randf_range(0.0,2.0) if x0 > 0.5 else 0.0)
-	var end := x1-(b.rng.randf_range(0.0,2.0) if x1 < float(p.length)-0.5 else 0.0)
+	var x := x0+(b.rng.randf_range(0.0,2.0) if x0 > float(p.xa) else 0.0)
+	var end := x1-(b.rng.randf_range(0.0,2.0) if x1 < float(p.xb) else 0.0)
 	while x < end-0.3:
 		var l := minf(b.rng.randf_range(3.0,4.6),end-x)
 		if b.rng.randf() > 0.08*float(p.weathered):
 			var half_v := Vector3(l*0.5-0.03,CORNICE.y*0.5,(zo-zi)*0.5)
-			b.solid(RuinKit._box(b,half_v),RuinKit._settle(b,Vector3(x+l*0.5,-PAVE-CORNICE.y*0.5,side*(zo+zi)*0.5),0.08),RuinKit._stone(b,1.08))
+			b.solid(RuinKit._box(b,half_v),_on_road(p,RuinKit._settle(b,Vector3(x+l*0.5,-PAVE-CORNICE.y*0.5,side*(zo+zi)*0.5),0.08)),RuinKit._stone(b,1.08))
 		x += l
 
 ## The parapet's runs: the deck's stretches less the gates' feet.
@@ -622,15 +750,16 @@ static func _parapet(b: Build, p: Dictionary, x0: float, x1: float, side: float,
 	var w := float(p.weathered)
 	var z := side*(float(p.half)-PARAPET.x)
 	var pose := Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,z))
-	var ragged_a := x0 > 0.5 and not _at_gate(p,x0)
-	var ragged_b := x1 < float(p.length)-0.5 and not _at_gate(p,x1)
+	var ragged_a := x0 > float(p.xa) and not _at_gate(p,x0)
+	var ragged_b := x1 < float(p.xb) and not _at_gate(p,x1)
 	var a := x0+(b.rng.randf_range(0.5,4.0) if ragged_a else 0.0)
 	var e := x1-(b.rng.randf_range(0.5,4.0) if ragged_b else 0.0)
 	var x := a
 	while x < e-1.0:
 		var run := minf(b.rng.randf_range(18.0,46.0),e-x)
 		if e-(x+run) < 4.0: run = e-x
-		var top: Callable = RuinKit._ruin_line(b,x,x+run,PARAPET.y*lerpf(0.75,0.35,w),PARAPET.y,w*0.6)
+		var line: Callable = RuinKit._ruin_line(b,x,x+run,PARAPET.y*lerpf(0.75,0.35,w),PARAPET.y,w*0.6)
+		var top := func(t: float) -> float: return float(line.call(t))+road_y(p,t)
 		RuinKit._courses(b,pose,x,x+run,-PAVE,top,PARAPET.x-0.02,Callable(),(PARAPET.y+PAVE)*0.5)
 		var m := x+run*b.rng.randf_range(0.2,0.8)
 		(ctx.tops as Array).append(Vector3(m,float(top.call(m)),z))
@@ -653,7 +782,7 @@ static func _gate(b: Build, p: Dictionary, g: Dictionary, ctx: Dictionary) -> vo
 	var r := gw*0.5
 	var deck := float(p.deck_depth)
 	var y0 := -deck-2.0
-	if bool(g.end): y0 = clampf(float(g.low)-1.5,float(p.spring),-deck)
+	if bool(g.end) and not g.has("pier"): y0 = clampf(float(g.low)-1.5,float(p.spring),-deck)
 	var w := float(p.weathered)
 	# The wall: its X along the bridge's -Z, its thickness along X.
 	var pose := Transform3D(Basis(Vector3.UP,PI*0.5),Vector3(x,0.0,0.0))
@@ -750,7 +879,8 @@ static func _growth(b: Build, p: Dictionary, ground: Callable, ctx: Dictionary) 
 				var count := rng.randi_range(3,6)
 				var longest := rng.randf_range(4.0,16.0)*(0.6+w)
 				for j in range(count):
-					var start := _up(Vector3(x+(j-count*0.5)*0.35,-PAVE-CORNICE.y-0.08,zf))
+					var fx := x+(j-count*0.5)*0.35
+					var start := _up(Vector3(fx,road_y(p,fx)-PAVE-CORNICE.y-0.08,zf))
 					for nudge in range(10):
 						if not probe._inside(start): break
 						start.z += side*0.12

@@ -70,17 +70,29 @@ static func piece(spec: Dictionary, ground: Callable) -> Node3D:
 	RuinKit.merge(root)
 	return root
 
+## The land under a run in its frame (as arch_build.gd places it: its middle
+## at spec.pos, turned by its yaw): Callable(x, z) -> y over the deck.
+static func run_ground(spec: Dictionary, field: RefCounted) -> Callable:
+	var shift := -float(Aqueduct.SPAN)*int(spec.count)*0.5
+	var pos: Vector3 = spec.pos
+	var basis := Basis(Vector3.UP,float(spec.yaw))
+	return func(x: float, z: float) -> float:
+		var w := pos+basis*Vector3(x+shift,0.0,z)
+		return float(field.height(w.x,w.z))-pos.y
+
+## A road bridge the land breaks through (over its road's top, past its
+## ramps and cuttings: Road.through): the placer leaves it out.
+static func road_through(spec: Dictionary, field: RefCounted) -> bool:
+	var b: Dictionary = spec.bridge
+	var p := Road.plan(int(spec.seed),float(spec.weathered),float(spec.length),float(b.gap),float(spec.drop),bool(b.broken),run_ground(spec,field))
+	return Road.through(p) > 0.3
+
 ## A road bridge's flown openings in the world (Road.openings, placed as
 ## arch_build.gd places the run: its middle at spec.pos, turned by its yaw).
 static func road_openings(spec: Dictionary, field: RefCounted) -> Array:
-	var count := int(spec.count)
-	var shift := -float(Aqueduct.SPAN)*count*0.5
-	var pos: Vector3 = spec.pos
-	var basis := Basis(Vector3.UP,float(spec.yaw))
-	var place := Transform3D(basis,pos)*Transform3D(Basis.IDENTITY,Vector3(shift,0.0,0.0))
-	var ground := func(x: float, z: float) -> float:
-		var w := pos+basis*Vector3(x+shift,0.0,z)
-		return float(field.height(w.x,w.z))-pos.y
+	var shift := -float(Aqueduct.SPAN)*int(spec.count)*0.5
+	var place := Transform3D(Basis(Vector3.UP,float(spec.yaw)),spec.pos)*Transform3D(Basis.IDENTITY,Vector3(shift,0.0,0.0))
+	var ground := run_ground(spec,field)
 	var b: Dictionary = spec.bridge
 	var p := Road.full_plan(int(spec.seed),float(spec.weathered),float(spec.length),float(b.gap),float(spec.drop),bool(b.broken),ground)
 	var out: Array = []

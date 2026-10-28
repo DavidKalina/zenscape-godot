@@ -43,6 +43,7 @@ const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const ArchPlan = preload("res://scripts/endless/arch_plan.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const Road = preload("res://scripts/ruin_kit_bridge.gd")
+const BridgeBuild = preload("res://scripts/endless/bridge_build.gd")
 
 ## The bridge cell (m), the rim search's grid (m), the rims tried a cell (x
 ## the layer), the most bridges (a chain counts once) a cell.
@@ -269,7 +270,12 @@ static func raw(field: RefCounted, bx: int, bz: int, density := 1.0, rock := 1.0
 	var got: Variant = _cache.get(key)
 	_lock.unlock()
 	if got != null: return got
+	var t0 := Time.get_ticks_usec()
 	var made := _plan(field,bx,bz)
+	var ms := (Time.get_ticks_usec()-t0)/1000.0
+	_count("raw_cells")
+	stats["raw_ms"] = float(stats.get("raw_ms",0.0))+ms
+	stats["raw_worst"] = maxf(float(stats.get("raw_worst",0.0)),ms)
 	_lock.lock()
 	if _cache.size() > 600: _cache.clear()
 	_cache[key] = made
@@ -358,6 +364,9 @@ static func _plan(field: RefCounted, bx: int, bz: int) -> Array:
 			elif _layer(field,(l.far_top as Vector2).x,(l.far_top as Vector2).y) <= 0.0: stands = false
 			elif not _clear(field,spec,out):
 				_count("not_clear")
+				stands = false
+			elif road and BridgeBuild.road_through(spec,field):
+				_count("road_through")
 				stands = false
 			if stands:
 				spec["name"] = "%s/bridge_%d_%d_%d_%d" % [_region_id(field,a.x,a.y),bx,bz,out.size(),li]
