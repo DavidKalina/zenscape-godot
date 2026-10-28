@@ -45,5 +45,9 @@ static func layers() -> Dictionary:
 		# and terrace shelves (scripts/endless/bridge_plan.gd): the chance a
 		# bridge cell tries.
 		"bridges":1.0,
+		# The gothic set pieces (a nave, a belfry, a rose gate) against the
+		# massifs and on the terrace shelves (scripts/endless/set_plan.gd): the
+		# chance a set cell takes one.
+		"sets":1.0,
 		# No split mountains, sea stacks or hoodoos: wilderness's.
 		"splits":0.0,"stacks":0.0,"hoodoos":0.0,"traffic":-1}

@@ -227,6 +227,9 @@ static func _ruin(spec: Dictionary, field: RefCounted) -> Dictionary:
 		# A bridge (bridge_plan.gd) lays its own run of the kit's spans.
 		if spec.has("bridge"): piece = BridgeBuild.piece(spec,ground)
 		else: piece = Aqueduct.run(int(spec.seed),float(spec.weathered),count,int(spec.break_at),bool(spec.head),ground)
+	elif spec.has("set"):
+		# A set piece (scripts/endless/set_plan.gd): a kit piece as it is.
+		piece = RuinKit.piece(String(spec.kind),int(spec.seed),float(spec.weathered))
 	else:
 		piece = RuinKit.arch(int(spec.seed),float(spec.weathered))
 	var root := Node3D.new()
@@ -259,8 +262,10 @@ static func _ruin(spec: Dictionary, field: RefCounted) -> Dictionary:
 		old.free()
 	# Its colliders: the kit's hulls (one a block, over a thousand on a
 	# run) are too many to add in a frame's budget, so boxes from its
-	# columns stand in, merged along x where they match.
-	for box: AABB in collider_boxes(columns(boxes,0.0)):
+	# columns stand in, merged along x where they match. A set piece is
+	# hollow (a nave, a belfry): its columns would fill it, so its own
+	# blocks' boxes stand in, merged where they meet.
+	for box: AABB in (merged(boxes) if spec.has("set") else collider_boxes(columns(boxes,0.0))):
 		var cs := CollisionShape3D.new()
 		var shape := BoxShape3D.new()
 		shape.size = box.size
@@ -272,6 +277,34 @@ static func _ruin(spec: Dictionary, field: RefCounted) -> Dictionary:
 	var lods := {}
 	if lod: lods = RuinLod.add(root)
 	return {"spec":spec,"kind":spec.kind,"node":root,"boxes":boxes}
+
+## `boxes` (AABBs) with those that meet face to face, the same on the
+## other two axes, joined into one: along x, then z, then y.
+static func merged(boxes: Array) -> Array:
+	var out := boxes.duplicate()
+	for axis in [0,2,1]:
+		var keyed := {}
+		for b: AABB in out:
+			var k: Array = []
+			for a in [0,1,2]:
+				if a == axis: continue
+				k.append(roundi(b.position[a]*8.0))
+				k.append(roundi(b.end[a]*8.0))
+			var list: Array = keyed.get(k,[])
+			list.append(b)
+			keyed[k] = list
+		out = []
+		for list: Array in keyed.values():
+			list.sort_custom(func(p: AABB, q: AABB) -> bool: return p.position[axis] < q.position[axis])
+			var run: AABB = list[0]
+			for i in range(1,list.size()):
+				var b: AABB = list[i]
+				if b.position[axis] <= run.end[axis]+0.15: run = run.merge(b)
+				else:
+					out.append(run)
+					run = b
+			out.append(run)
+	return out
 
 # --- Columns --------------------------------------------------------------
 
