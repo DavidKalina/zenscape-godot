@@ -97,6 +97,10 @@ built; the placer (`bridge_plan.gd`: which rims, chains, broken) stays.
 
 The trunk's flyability step checks the deck lane and gate arches too.
 
+Then the user clarified: keep the aqueduct-style bridges too; "we also
+need a bridge proper". The road bridge is an added form beside the
+aqueduct one, the placer choosing per bridge (a seeded mix with a knob).
+
 ## Spec change: the ruins overgrown (2026-10-28)
 
 The user: "the ruins need more of the overgrowth". The kit's growth
