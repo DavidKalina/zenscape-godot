@@ -201,3 +201,104 @@ Fly it:
     world X" driver with arch priming would have saved time.
   - The flats check has been copied from worktree to worktree for three
     rounds. It belongs in `tools/`.
+
+## Round 1b: muted gold, no rivers
+
+The user played round 1 and found it too orange: it read as a desert, with a
+flat khaki-orange sky, grass like sand from afar and white-and-red massifs.
+They asked for a soft, hazy late-gold light over an old land, warm but muted,
+and for no rivers.
+
+### What changed
+
+- **No rivers** (`amberlands/land.gd` `rivers` 0.0). Only amberlands is
+  affected; the lakes (`ponds` 0.6), coast and sea stay.
+  - The valley floors are dry. Nothing needed a river to be there:
+    - `ArchPlan` reads `river_w` only to slide a run, or to turn a site down
+      when its openings can't clear the water.
+    - Halls, tunnels and ponds only keep away from rivers.
+    - In the border band, `LandBlend` weights the river reads like any other
+      read, so a wilderness river thins out as it crosses into amberlands.
+    - `EndlessLook._river_water` takes its on/off from the start region, so
+      `--world=regions` still draws wilderness's rivers.
+  - With no river turning sites down, the arch mix moves. Seed 1, 8 km square
+    (`scratch/amberlands/census.gd`), before and after:
+    - Aqueduct runs 59 to 50, gates 32 to 34, rim-to-rim spans 1 to 0, reaches
+      9 to 24.
+    - Over 12 km, spans run 4 to 8 a seed (seeds 1, 3, 7, 42).
+    - Round 1's 18-arch span at (-2227, 2712) is now a plain run.
+    - Seed 1 has a broken 16-arch span over a dry floor at (-2227, -4063)
+      (`span_dry_r2.png`).
+- **Two new ground uniforms** (`endless_ground.gdshader`). Both default to 0,
+  which changes nothing, so wilderness and overgrown paint as before.
+  - `carpet_hue` (vec3): the grass paint takes this colour's hue at its own
+    light, after the tones. The colour's luma sets how much of the paint's own
+    hue gives way.
+    - A tone can only multiply, so on green paint it gives orange or mauve.
+      This can mute the paint.
+    - It has a per-spot `carpet_hue_r[4]`, so in a regions world each
+      region's grass keeps its own hue (`regions.gd` picks the array up by
+      name).
+  - `rock_hue`: the same for the land's rock, before `rock_tint`. It is
+    blended at the eye, like `rock_tint`.
+- **Paint** (`amberlands/look.gd`):
+  - Grass: `carpet_hue` (0.67, 0.63, 0.32), about 62% of the paint's own hue
+    turned to straw, the rest left as an olive undertone. The tones are now
+    near 1 and only darken it a little.
+  - Rock: `rock_hue` (0.85, 0.80, 0.72), mostly grey-beige. `rock_tint` 0.72
+    darkens it, `rock_rich` 0.7 and `rock_follow` 0.5 calm the rust beds and
+    the lean toward the sun's hue, and `rock_moss` is 0.6.
+  - Far tufts: an olive-straw root and tip. Their own instance colour already
+    carries warmth, so a straw tip shows orange.
+  - Near tufts: `zs_autumn` 0 (it was the red-orange), `zs_season.z` 0.8 and
+    `zs_palette_grass` (0.92, 1, 0.88).
+  - Sea: muted grey-green shallow, mid, deep and abyss.
+- **Mood** `amber_hour`:
+  - The clock is held at **16.7 h**, not 16.2. The lower sun gathers the haze
+    glow toward itself (golden-hour light follow) and casts longer shadows.
+  - Sky (palette `Amber`): a dusty grey-blue to lilac upper sky, a near-grey
+    horizon and a pale, low glow, so distance greys rather than oranges.
+  - Light: a soft pale-gold sun, a cool grey fill (`ambient` a8acb4), ambient
+    energy 1.0 for deeper shade, haze 0.32, mist 0.12.
+  - The post grade numbers are less saturated too (they apply only with
+    `--post=1`).
+  - The palette's grass, rock and water entries don't reach the endless
+    flight. It resets the `zs_palette_*` globals to 1, so a profile's
+    `globals` are the lever there.
+
+### Stills
+
+`captures/amberlands/` (git-ignored), rendered Forward+ on the RTX PC from
+round 1's eye points:
+
+- `ab_sheet_r2.png`: round 1 on the left, now on the right, five rows
+  (terraces, massif skim, span, tunnel, from high).
+- `*_r2.png`: the single stills, plus:
+  - `span_dry_r2.png`: a broken rim-to-rim span over a dry floor.
+  - `reach_dry_r2.png`: an 18-arch reach seen across a dry valley.
+- `spans_sheet_r2.png`: round 1's reach and span against the dry ones (not
+  the same spots).
+- `regions_sheet_r2.png`: the border band's middle and 1.8 km past it,
+  round 1 against now.
+  - The middle no longer goes through the bright violet. It passes from
+    alpine blue to grey-lilac.
+  - Past the border, the regions world keeps wilderness's clock, so the light
+    is earlier and paler there than in `--world=amberlands`.
+
+### Proof
+
+- Headless import: 0 errors.
+- Smoke: `--world=amberlands`, `--world=regions`,
+  `--world=regions --region-border` and the default world all pass, 0 errors.
+- Every rendered driver run had 0 script errors.
+- No committed tests, and the full suite not run. A grep of `tests/` finds
+  nothing on the palette, the mood or the ground uniforms.
+
+### Unverified
+
+- Judged in held stills only, not in flight.
+- The tuft colour moves with the view (straw-gold with the sun behind,
+  paler and greyer against it) and between runs as the far ring streams in.
+- Frame cost of the two `hued()` calls is unmeasured. Each is one luma and
+  one mix per grass or rock pixel.
+- Collision through the dry spans, and landing by hand, are not flown.

@@ -3,8 +3,9 @@ extends RefCounted
 ## an old, worn land. Broad terraced shelves and shallow valleys over most of
 ## it, broken by a few bulky mountain massifs and by tiered plateau chunks
 ## (mesas) standing out of the lowland; the valleys cut through the plateaus
-## as canyons, where the aqueducts can span from rim to rim. Rivers, coast and
-## sea as wilderness's. Every key here is an existing recipe key
+## as canyons, where the aqueducts can span from rim to rim. No rivers: the
+## valley floors lie dry under the aqueducts (lakes, coast and sea as
+## wilderness's). Every key here is an existing recipe key
 ## (LandField.recipe_defaults, V3_KEYS): no native change.
 ## (docs/design/endless-flight/amberlands-round1-handoff.md)
 
@@ -13,7 +14,7 @@ const Field = preload("res://scripts/endless/land_field.gd")
 static func recipe() -> Dictionary:
 	var land := Field.recipe_defaults()
 	land.merge({"mountains":1.0,"peaks":1.0,"valleys":1.0,"carve":1.0,"carve_blocks":1.0,"carve_ledges":1.0,"carve_gullies":1.0,
-		"rivers":1.0,"river_width":1.0,"river_drop":1.0,"river_cut":1.0,"river_fill":1.0,"river_mouth":1.0,"river_flare":1.0,"ponds":0.6},true)
+		"rivers":0.0,"river_width":1.0,"river_drop":1.0,"river_cut":1.0,"river_fill":1.0,"river_mouth":1.0,"river_flare":1.0,"ponds":0.6},true)
 	land.merge({
 		# A broad interior: the continents lifted, so less of it is sea.
 		"continent_lift":28.0,

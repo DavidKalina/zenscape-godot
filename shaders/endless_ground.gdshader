@@ -93,14 +93,22 @@ uniform vec2 carpet_near = vec2(0.0);
 uniform float carpet_near_grain : hint_range(0.0, 1.0) = 0.6;
 // A world's tone over the land's rock (its walls, ledges and crags; 1: none).
 uniform vec3 rock_tint = vec3(1.0);
+// A world's hue over the rock, taken at the rock's own light: its direction
+// the hue, its luma how much of the rock's own hue gives way (0: none).
+uniform vec3 rock_hue = vec3(0.0);
 uniform vec3 carpet_tone_top = vec3(1.0);
 uniform vec3 carpet_tone_low = vec3(1.0);
 // A world's tone over the turf's own colour wherever tufts stand (the carpet's tone takes over past them; 1: none).
 uniform vec3 carpet_under_tone = vec3(1.0);
+// A world's hue over the grass's paint (after its tones), at the paint's own
+// light: its direction the hue, its luma how much of the paint's own hue
+// gives way (0: none). Unlike a tone it can mute the paint, not only tint it.
+uniform vec3 carpet_hue = vec3(0.0);
 // Each region's carpet tones (region_paint.gdshaderinc), read where region_paint_on.
 uniform vec3 carpet_tone_top_r[4];
 uniform vec3 carpet_tone_low_r[4];
 uniform vec3 carpet_under_tone_r[4];
+uniform vec3 carpet_hue_r[4];
 uniform vec2 turf_beach = vec2(2.55, 2.9);
 uniform vec2 turf_slope = vec2(0.905, 0.95);
 uniform vec2 turf_high = vec2(36.0, 58.0);
@@ -575,18 +583,28 @@ float luma(vec3 c) {
 	return dot(c, vec3(0.2126, 0.7152, 0.0722));
 }
 
+// `c` toward `hue`'s direction at its own light, by `hue`'s luma
+// (carpet_hue, rock_hue; 0: `c` as it is).
+vec3 hued(vec3 c, vec3 hue) {
+	float amount = clamp(luma(hue), 0.0, 1.0);
+	if (amount <= 0.0001) return c;
+	return mix(c, hue / amount * luma(c), amount);
+}
+
 void fragment() {
 	vec3 p = world_position;
 	// The paint's tones: this spot's regions' in a world of regions, else the material's.
 	vec3 rp_tone_top = carpet_tone_top;
 	vec3 rp_tone_low = carpet_tone_low;
 	vec3 rp_under_tone = carpet_under_tone;
+	vec3 rp_hue = carpet_hue;
 	vec3 rp_silver = grass_silver_colour;
 	if (zs_region_paints()) {
 		vec4 rw = zs_region_at(p.xz);
 		rp_tone_top = zs_region_mix3(rw, carpet_tone_top_r);
 		rp_tone_low = zs_region_mix3(rw, carpet_tone_low_r);
 		rp_under_tone = zs_region_mix3(rw, carpet_under_tone_r);
+		rp_hue = zs_region_mix3(rw, carpet_hue_r);
 		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
 	}
 	vec3 n = normalize(world_normal);
@@ -802,6 +820,7 @@ void fragment() {
 			// A river's bank and the water's edge: pigment collected along it.
 			grass *= 1.0 - 0.22 * r_here * (1.0 - smoothstep(2.0, 22.0, max(r_out, 0.0))) * wk;
 		}
+		grass = hued(grass, rp_hue);
 		moss_grass = grass;
 
 		// The turf's grain near the eye: tufts and blades too fine to draw,
@@ -828,6 +847,7 @@ void fragment() {
 				coarse = mix(coarse, OLIVE, thin * 0.7);
 				coarse *= 1.0 + (grain_near + fine * 0.6 + tuft * 0.8) * carpet_near_grain;
 				coarse *= rp_under_tone;
+				coarse = hued(coarse, rp_hue);
 				grass = mix(grass, coarse, under);
 			}
 		}
@@ -888,7 +908,7 @@ void fragment() {
 		rock_glow *= mix(1.0, fill_level, clamp(rock_follow * zs_light_follow, 0.0, 1.0));
 		lit_n = normalize(mix(n, lit_n, rocky));
 	}
-	rock *= rock_tint;
+	rock = hued(rock, rock_hue) * rock_tint;
 
 	vec3 sand = SAND * (1.0 + fine * 0.25 + mid * 0.2);
 	sand = mix(sand, SAND_WET, smoothstep(0.7, -0.1, over));
