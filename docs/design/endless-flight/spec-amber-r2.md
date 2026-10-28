@@ -161,6 +161,24 @@ beside the trunk and is merged before the trunk's look pass:
 - Hand-flyable by the same wobble check as the gothic pieces
   (`scratch/sets/thread.gd`, A 0.2 over 10 trials, no crashes).
 
+## Spec change: knife slots, some forgiving and some strict (2026-10-28)
+
+Flyability B found the 2.4 m knife slots pass a steady hand at wobble A 0
+and mostly at A 0.1, but fail the A 0.2 bar (0.3 m of room against the
+pilot's 0.4–1.2 m sideways wobble). The user: "some forgiving some not".
+A trunk task (after the bridges half of flyability B) makes two kinds:
+
+- **Forgiving** knife slots: the same width, but contact fitted to the
+  plane's real side shape (roof ~0.72 m, keel ~0.9 m from the centre line)
+  and a glance off a jamb counts as a scrape, not a crash. The nave's flank
+  slots are forgiving. Bar: no crash at A 0.2 over 10 trials.
+- **Strict** knife slots: as they are now, for a steady hand. The belfry's
+  slits are strict. Bar: a steady hand at A 0.1 gets through most trials.
+- Each opening's `openings()` entry says which (e.g. `forgive: true`), so
+  the rival's course and later scoring can tell them apart. Strict ones
+  should read as the harder line where you can see it (cleaner, sharper
+  jambs, fewer strands), without a sign or marker.
+
 ## Trunk (the loop, after the merge, in order)
 
 1. **Set piece placer**: a placer for standalone structures (own file) that
