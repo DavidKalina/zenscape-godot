@@ -97,6 +97,19 @@ built; the placer (`bridge_plan.gd`: which rims, chains, broken) stays.
 
 The trunk's flyability step checks the deck lane and gate arches too.
 
+## Spec change: the ruins overgrown (2026-10-28)
+
+The user: "the ruins need more of the overgrowth". The kit's growth
+(`scripts/ruin_growth.gd`: ivy, vine curtains, leaf mats, moss; swaying,
+parting round the plane, never collided) is laid on lightly by default;
+`scripts/sundered_growth.gd` shows it laid on thick over a flown hall. The
+gothic pieces (lane `lane/amber-growth`) and the new bridges (lane
+`lane/amber-bridge-look`) get it thick: curtains from ribs, vaults, arch
+soffits and deck undersides, ivy down piers and walls, mats on wall heads
+and parapets, long trails off broken ends. Flown openings keep a clear
+core (thin strands at their edges are fine: the plane parts them). Growth
+colour suits the amber palette (muted, not saturated green).
+
 ## Trunk (the loop, after the merge, in order)
 
 1. **Set piece placer**: a placer for standalone structures (own file) that
