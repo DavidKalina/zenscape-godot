@@ -376,6 +376,12 @@ var _shake := 0.0
 var _shake_scale := SHAKE
 var _shake_t := 0.0
 var crashes := 0
+## The pilot's book (scripts/endless/pilot_book.gd): money, tallies, records,
+## what was bought, kept between runs; its `flight` is this flight's own.
+var book: PilotBook
+## The overlay that holds the keys while it is up (the shop, the logbook,
+## photo mode; null: none). One at a time: open one only when this is null.
+var overlay: Object = null
 ## This frame's events (the landing's and the near misses'), for the HUD.
 var _events := {}
 ## The flight path's way last frame, for the vapour's pull, and the pull.
@@ -397,6 +403,7 @@ func _ready() -> void:
 	# Which hands are on it, the pad's or the keyboard's (Pad `note`): the
 	# rumble and the prompts follow it.
 	get_tree().root.window_input.connect(Pad.note)
+	book = PilotBook.open()
 	add_child(sound)
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = NATIVE_3D
@@ -925,6 +932,9 @@ func tick(delta: float) -> void:
 	solid_shift = Vector3.ZERO
 	_glanced = glance.before(delta,self)
 	var events := hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
+	if events.has("lifted"): book.new_flight()
+	book.flight.t = float(book.flight.t)+delta
+	book.step(delta)
 	if not knocked.is_empty(): _knocked(events,knocked)
 	plane.engine = hand_landing.engine*float(plane.sputter)*(float(stage.engine) if stage != null else 1.0)
 	_near_misses(delta,events)
@@ -1300,6 +1310,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not walk_ready: return
 	# The menu holds the flight: none of its keys while it is up.
 	if stage != null and stage.holding(): return
+	# An overlay (the shop, the logbook, photo mode) takes the keys while up.
+	if overlay != null: return
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: return
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): chase.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK)
@@ -1340,6 +1352,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _exit_tree() -> void:
+	if book != null: book.save()
 	if get_tree().root.window_input.is_connected(Pad.note): get_tree().root.window_input.disconnect(Pad.note)
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = 1.0
