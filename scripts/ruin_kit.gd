@@ -2583,6 +2583,10 @@ class Build extends RefCounted:
 	## the growth's own surface (`growth`), not the stone's.
 	var grow := PackedFloat32Array()
 	var growth := RuinGrowth.Faces.new()
+	## A look for this piece's growth only (the amberlands' gothic set pieces):
+	## a Callable(growth Faces) that recolours the growth's vertices once it is
+	## drawn, before its mesh is made. Empty: the growth's own greens.
+	var growth_tint := Callable()
 	## A clean look's (Style): the worn arrises `_box` cut (left out of
 	## the drawn and solid block), and the piece's own stone.
 	var bevels := {}
@@ -3062,6 +3066,7 @@ class Build extends RefCounted:
 			RuinGrowth.fringes(self)
 			_cushions()
 			_draw()
+		if growth_tint.is_valid(): growth_tint.call(growth)
 		if hand.is_valid(): hand.call(_nodes)
 		else: _nodes()
 		_body()

@@ -41,6 +41,7 @@ extends RefCounted
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Build = RuinKit.Build
+const GothicGrowth = preload("res://scripts/gothic_growth.gd")
 
 ## The pieces built by id here (RuinKit GOTHIC_SET_PIECES), ids stable.
 const PIECES := ["gothic_nave","belfry_tower","rose_gate"]
@@ -345,6 +346,7 @@ static func _build(seed_value: int, weathered: float, label: String) -> Build:
 	b.lean = true
 	b.cull = true
 	b.settle = 0.4
+	b.growth_tint = Callable(GothicGrowth.tint)
 	return b
 
 ## A wall run along the pose's X from `x0` to `x1`, `d` half thick, from
@@ -648,6 +650,7 @@ static func nave(seed_value: int, weathered := 0.6) -> Node3D:
 		var s := -1.0 if b.rng.randf() < 0.5 else 1.0
 		var face := WALL_D+0.2 if b.rng.randf() < 0.5 else -WALL_D-0.2
 		b.hang(Vector3(s*(PIER_X+face),WALL_H-6.0*weathered-1.0,b.rng.randf_range(-HALF_LEN+3.0,HALF_LEN-3.0)),b.rng.randf_range(3.0,10.0)*weathered,true)
+	GothicGrowth.nave(b,p)
 	var node := b.finish()
 	_meta(node,"gothic_nave",p)
 	return node
@@ -745,6 +748,7 @@ static func belfry(seed_value: int, weathered := 0.6) -> Node3D:
 	for i in range(int(6+10.0*weathered)):
 		var turn := Basis(Vector3.UP,PI*0.5*b.rng.randi_range(0,3))
 		b.hang(turn*Vector3(b.rng.randf_range(-half+3.0,half-3.0),b.rng.randf_range(24.0,TOWER_H-6.0),half+0.3),b.rng.randf_range(4.0,12.0)*weathered,true)
+	GothicGrowth.belfry(b,p)
 	var node := b.finish()
 	_meta(node,"belfry_tower",p)
 	return node
@@ -789,6 +793,7 @@ static func rose_gate(seed_value: int, weathered := 0.6) -> Node3D:
 	for f: float in [-1.0,1.0]:
 		_heap(b,Vector3(b.rng.randf_range(-8.0,8.0),0.0,f*(d+4.0)),Vector2(5.0,2.0),2.5,7)
 	_grow(b,[Vector3(0.0,ROSE_Y+outer,d),Vector3(0.0,ROSE_Y+outer,-d),Vector3(slot_x,22.0,d),Vector3(-slot_x,22.0,-d)],9.0)
+	GothicGrowth.gate(b,p)
 	var node := b.finish()
 	_meta(node,"rose_gate",p)
 	return node
