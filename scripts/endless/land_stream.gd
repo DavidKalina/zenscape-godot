@@ -23,6 +23,7 @@ extends Node3D
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
+const RockShape = preload("res://scripts/endless/rock_shape.gd")
 
 ## Quads along a chunk's side, the finest chunk's size (m, so 1 m quads),
 ## the coarsest level and how many root chunks reach out each way.
@@ -269,6 +270,10 @@ func _build(key: Vector3i, land_seed: int) -> void:
 	# else the same loops in GDScript).
 	var made: Dictionary = f.build_chunk(x0,z0,step,CELLS,step*SKIRT+SKIRT_MIN,RIVER_FLOW_MAX)
 	if river_live: made.frame = _river_frame(f,made,x0,z0,step)
+	if RockShape.wanted:
+		# The rock's shape (RockShape, CUSTOM3), where the chunk has rock.
+		var shape := RockShape.grid(f,made,x0,z0,step,CELLS)
+		if not shape.is_empty(): made.shape = shape
 	_portal_holes(f,made,key,x0,z0,step)
 	made.key = key
 	made.ms = (Time.get_ticks_usec()-began)/1000.0
@@ -432,6 +437,9 @@ func _commit() -> bool:
 		if r.has("frame"):
 			arrays[Mesh.ARRAY_CUSTOM2] = r.frame
 			format |= Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM2_SHIFT
+		if r.has("shape"):
+			arrays[Mesh.ARRAY_CUSTOM3] = r.shape
+			format |= Mesh.ARRAY_CUSTOM_RGBA8_UNORM << Mesh.ARRAY_FORMAT_CUSTOM3_SHIFT
 		var mesh := ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays,[],{},format)
 		mesh.surface_set_material(0,material)

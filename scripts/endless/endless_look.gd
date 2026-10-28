@@ -304,6 +304,11 @@ func setup(land_seed: int) -> void:
 	for a in LaunchArgs.user_args():
 		if a.begins_with("--land-skip="): ground.set_shader_parameter("grass_skip",2 if a.get_slice("=",1) == "show" else clampi(int(a.get_slice("=",1)),0,1))
 	ground.set_shader_parameter("rock_erosion_tex",load("res://assets/textures/endless_rock_erosion.png"))
+	# --rock-look=old: the rock before the rich and shape rounds
+	# (rock-polish-handoff.md); the land still bakes its shape unless --rock-shape=0.
+	if "--rock-look=old" in LaunchArgs.user_args():
+		ground.set_shader_parameter("rock_rich",0.0)
+		ground.set_shader_parameter("rock_shape",0.0)
 	world.apply_ground(ground)
 	# --rock-knob=name=value (repeatable): any rock_* float uniform, to try a
 	# value without editing the shader (rock-carve-handoff.md).
