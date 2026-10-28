@@ -42,6 +42,7 @@ const STONE_SHADER = preload("res://shaders/ruin_stone.gdshader")
 const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 ## The stone's look (classic, or a clean one: docs/scenic/ruin-stone.md).
 const Style = preload("res://scripts/ruin_stone_style.gd")
+const RuinAO = preload("res://scripts/ruin_ao.gd")
 const NativeIsleKernels = preload("res://scripts/native_isle_kernels.gd")
 
 ## The pieces, in the kit's order: the gothic abbey's, here.
@@ -3092,6 +3093,8 @@ class Build extends RefCounted:
 			_cushions()
 			_draw()
 		if growth_tint.is_valid(): growth_tint.call(growth)
+		faces.c = RuinAO.bake(faces.v,faces.n,faces.c,ground)
+		faces.n = RuinAO.soften(faces.v,faces.n)
 		if hand.is_valid(): hand.call(_nodes)
 		else: _nodes()
 		_body()

@@ -52,6 +52,12 @@ varying vec3 local;
 global uniform vec3 zs_cloud_sun;
 global uniform vec3 zs_key_direction;
 #include "res://shaders/look_fill.gdshaderinc"
+// The stone's brightness eased off past `stone_knee` (linear luminance)
+// toward `stone_cap`: a lifted stone (the amberlands' sRGB 3.0, about 13x
+// linear) times the pale wear went past white, and the bare stone between
+// the moss read as blown-out blotches. 0 off.
+uniform float stone_knee = 0.3;
+uniform float stone_cap = 0.48;
 #endif
 #ifdef ZS_STONE_MOSS
 // The gothic set pieces' moss (shaders/stone_moss.gdshaderinc).
@@ -160,6 +166,16 @@ void fragment() {
 	rough_add += craft_detail(base, detailed, local, VERTEX);
 	NORMAL = detailed;
 #endif
+#endif
+#ifdef ZS_STONE_WEATHER
+	if (stone_knee > 0.0) {
+		float lum = dot(base, vec3(0.2126, 0.7152, 0.0722));
+		if (lum > stone_knee) {
+			float over = lum - stone_knee;
+			float room = stone_cap - stone_knee;
+			base *= (stone_knee + over / (1.0 + over / room)) / lum;
+		}
+	}
 #endif
 	ALBEDO = base;
 	ROUGHNESS = clamp(mix(roughness_value, 1.0, dull * 0.6) + rough_add, 0.0, 1.0);
