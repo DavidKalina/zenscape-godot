@@ -71,8 +71,10 @@ const TORANA_PIECES := ["relic_torana"]
 ## The gothic set pieces (scripts/ruin_kit_gothic.gd): giants standing on
 ## their own in the land, with tight openings to thread (their `openings`).
 const GOTHIC_SET_PIECES := ["gothic_nave","belfry_tower","rose_gate"]
-const FAMILIES := {"gothic":PIECES,"aqueduct":AQUEDUCT_PIECES,"hall":HALL_PIECES,"tower":TOWER_PIECES,"horn":HORN_PIECES,"cloister":CLOISTER_PIECES,"relic":RELIC_PIECES+TORANA_PIECES,"keel":KEEL_PIECES,"set_piece":GOTHIC_SET_PIECES}
-const ALL_PIECES := PIECES+AQUEDUCT_PIECES+HALL_PIECES+TOWER_PIECES+HORN_PIECES+CLOISTER_PIECES+RELIC_PIECES+TORANA_PIECES+KEEL_PIECES+GOTHIC_SET_PIECES
+## The abandoned colosseum (scripts/ruin_kit_colosseum.gd): a set piece too.
+const COLOSSEUM_PIECES := ["colosseum"]
+const FAMILIES := {"gothic":PIECES,"aqueduct":AQUEDUCT_PIECES,"hall":HALL_PIECES,"tower":TOWER_PIECES,"horn":HORN_PIECES,"cloister":CLOISTER_PIECES,"relic":RELIC_PIECES+TORANA_PIECES,"keel":KEEL_PIECES,"set_piece":GOTHIC_SET_PIECES+COLOSSEUM_PIECES}
+const ALL_PIECES := PIECES+AQUEDUCT_PIECES+HALL_PIECES+TOWER_PIECES+HORN_PIECES+CLOISTER_PIECES+RELIC_PIECES+TORANA_PIECES+KEEL_PIECES+GOTHIC_SET_PIECES+COLOSSEUM_PIECES
 const NAMES := {"pier":"Clustered pier","arch":"Pointed arch","lancet_wall":"Lancet window wall",
 	"rose_gable":"Rose window gable","buttress":"Buttress","wall":"Wall","stairs":"Stair flight",
 	"turret":"Stair turret","vault":"Vault ribs","fallen_pier":"Fallen pier","tomb_chest":"Carved chest",
@@ -82,7 +84,7 @@ const NAMES := {"pier":"Clustered pier","arch":"Pointed arch","lancet_wall":"Lan
 	"hall_column":"Colossus column","hall_beam":"Architrave beam","hall_slab":"Roof slabs",
 	"hall_bay":"Hall bay","tower_shell":"Tower shell","wind_horn":"Wind-horn",
 	"pent_hood":"Pent hood","relic_nimbus":"Broken nimbus","keel_hung_stair":"Hung stair","relic_torana":"Prayer lintel",
-	"gothic_nave":"Ruined nave","belfry_tower":"Belfry tower","rose_gate":"Rose gable gate"}
+	"gothic_nave":"Ruined nave","belfry_tower":"Belfry tower","rose_gate":"Rose gable gate","colosseum":"Abandoned colosseum"}
 
 # --- Scale: what the pilot on foot and the plane can do drives these ---------
 # (the walker's frozen numbers below, scripts/plane_figure.gd, scripts/sky_glide.gd)
@@ -420,6 +422,7 @@ static func _piece_of(id: String, seed_value: int, weathered: float) -> Node3D:
 	if id in KEEL_PIECES: return load("res://scripts/ruin_kit_keel.gd").piece(id,seed_value,weathered)
 	if id in TORANA_PIECES: return load("res://scripts/ruin_kit_torana.gd").piece(id,seed_value,weathered)
 	if id in GOTHIC_SET_PIECES: return load("res://scripts/ruin_kit_gothic.gd").piece(id,seed_value,weathered)
+	if id in COLOSSEUM_PIECES: return load("res://scripts/ruin_kit_colosseum.gd").piece(id,seed_value,weathered)
 	return null
 
 ## How thick a hull's points stand at their thinnest (m): their spread

@@ -268,18 +268,78 @@ static func _ruin(spec: Dictionary, field: RefCounted) -> Dictionary:
 	# would fill it, so its own blocks' boxes stand in, merged where they
 	# meet.
 	var hollow := spec.has("set") or str((spec.get("bridge",{}) as Dictionary).get("style","")) == "road"
-	for box: AABB in (merged(boxes) if hollow else collider_boxes(columns(boxes,0.0))):
-		var cs := CollisionShape3D.new()
-		var shape := BoxShape3D.new()
-		shape.size = box.size
-		cs.shape = shape
-		cs.position = box.get_center()
-		body.add_child(cs)
-	root.add_child(body)
+	var solid: Array = merged(boxes) if hollow else collider_boxes(columns(boxes,0.0))
+	if spec.has("set") and solid.size() > FEED_CHUNK:
+		# Too many for one frame (the colosseum's thousands): bodies of
+		# FEED_CHUNK boxes each, their shapes on the server (no node a box),
+		# added one a frame by a Feed once the piece is in the tree.
+		root.add_child(_feed(solid))
+	else:
+		for box: AABB in solid:
+			var cs := CollisionShape3D.new()
+			var shape := BoxShape3D.new()
+			shape.size = box.size
+			cs.shape = shape
+			cs.position = box.get_center()
+			body.add_child(cs)
+		root.add_child(body)
 	# Its levels of detail (scripts/ruin_lod.gd), so far off it draws less.
 	var lods := {}
 	if lod: lods = RuinLod.add(root)
 	return {"spec":spec,"kind":spec.kind,"node":root,"boxes":boxes}
+
+## A set piece's boxes past this many are fed into the tree over frames
+## (`Feed`), this many a body and a frame.
+const FEED_CHUNK := 2500
+
+## Adds its bodies (StaticBody3D, out of the tree till then) to its parent
+## one a frame, each body's boxes put on it through the physics server
+## first (BoxShape3D shared by size): a body joining the space with all
+## its shapes builds them once. Bodies not yet added go with the Feed.
+class Feed extends Node:
+	var bodies: Array = []
+	func _process(_delta: float) -> void:
+		if bodies.is_empty():
+			queue_free()
+			return
+		var bd: StaticBody3D = bodies.pop_front()
+		var rid := bd.get_rid()
+		for e: Array in bd.get_meta("shapes"):
+			PhysicsServer3D.body_add_shape(rid,(e[0] as Shape3D).get_rid(),Transform3D(Basis.IDENTITY,e[1]))
+		get_parent().add_child(bd)
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_PREDELETE:
+			for bd: StaticBody3D in bodies: bd.free()
+			bodies.clear()
+
+## A Feed of `solid` (AABBs, the root's frame): bodies of FEED_CHUNK boxes,
+## sorted round the middle so each body is a sector. On layer 1, no mask.
+static func _feed(solid: Array) -> Node:
+	var feed := Feed.new()
+	feed.name = "Feed"
+	var list := solid.duplicate()
+	list.sort_custom(func(p: AABB, q: AABB) -> bool:
+		var cp := p.get_center()
+		var cq := q.get_center()
+		return atan2(cp.z,cp.x) < atan2(cq.z,cq.x))
+	var shapes := {}
+	for i in range(0,list.size(),FEED_CHUNK):
+		var bd := StaticBody3D.new()
+		bd.name = "Body" if i == 0 else "Body%d" % (i/FEED_CHUNK+1)
+		bd.collision_layer = 1
+		bd.collision_mask = 0
+		var pairs: Array = []
+		for j in range(i,mini(i+FEED_CHUNK,list.size())):
+			var a: AABB = list[j]
+			var k := Vector3i((a.size*1000.0).round())
+			if not shapes.has(k):
+				var bs := BoxShape3D.new()
+				bs.size = a.size
+				shapes[k] = bs
+			pairs.append([shapes[k],a.get_center()])
+		bd.set_meta("shapes",pairs)
+		feed.bodies.append(bd)
+	return feed
 
 ## `boxes` (AABBs) with those that meet face to face, the same on the
 ## other two axes, joined into one: along x, then z, then y.

@@ -483,8 +483,13 @@ func _about(collider: Variant, shape: int) -> Dictionary:
 				var srid := PhysicsServer3D.area_get_shape(rid,shape) if co is Area3D else PhysicsServer3D.body_get_shape(rid,shape)
 				var t := PhysicsServer3D.shape_get_type(srid)
 				out.shape_type = _SHAPE_TYPES[t] if t < _SHAPE_TYPES.size() else str(t)
-				var holder: Object = co.shape_owner_get_owner(co.shape_find_owner(shape))
-				if holder is Node: out.shape_node = str((holder as Node).name)
+				# (Shapes put on the body through the server, as a set piece's
+				# Feed does, have no owner node.)
+				var owned := 0
+				for o: int in co.get_shape_owners(): owned += co.shape_owner_get_shape_count(o)
+				if shape < owned:
+					var holder: Object = co.shape_owner_get_owner(co.shape_find_owner(shape))
+					if holder is Node: out.shape_node = str((holder as Node).name)
 	return out
 
 ## Layer bits as their numbers, "1+16"; "-" for none.
