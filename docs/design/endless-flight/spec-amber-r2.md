@@ -179,6 +179,13 @@ A trunk task (after the bridges half of flyability B) makes two kinds:
   should read as the harder line where you can see it (cleaner, sharper
   jambs, fewer strands), without a sign or marker.
 
+## Spec change: the look pass kept (2026-10-28)
+
+The user saw the look pass's before/after stills (716aeba2: muted gold
+growth, more of it, the nave's shade lifted, the belfry raised): "Let's
+just keep it for now". No second look pass on the set pieces this round;
+the road bridge's thin growth and the belfry's low siting stay open notes.
+
 ## Trunk (the loop, after the merge, in order)
 
 1. **Set piece placer**: a placer for standalone structures (own file) that
