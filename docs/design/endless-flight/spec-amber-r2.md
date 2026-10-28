@@ -127,6 +127,40 @@ still reads as an overgrown aqueduct. Also open from that lane: 4 Jolt
 "Hull building failed" errors in the road bridge's sweep (blocks with no
 collider).
 
+## Spec change: an abandoned colosseum (2026-10-28)
+
+The user: "Can we also get a colosseum somewhere? Like an ancient
+colosseum that's abandoned." A fourth lane, `lane/amber-colosseum`, runs
+beside the trunk and is merged before the trunk's look pass:
+
+- **A RuinKit piece**, id `colosseum`, in its own file
+  (`scripts/ruin_kit_colosseum.gd`, scaffolded with `tools/kit_piece.py`),
+  with collision, the gothic pieces' mossed stone and thick growth,
+  `KIND_OF` entries and an `openings(...)` / `plan(...)` like
+  `ruin_kit_gothic.gd`'s.
+- **The form**: a huge elliptical amphitheatre, on the order of 190 x 160 m
+  outside and 45–50 m tall: an outer wall of stacked arcades (three arched
+  tiers and a solid attic), a ring corridor (the ambulatory) inside the
+  outer wall, the seating bowl stepping down in rings to a flat oval arena.
+  **Abandoned**: one long side has fallen to its lower tiers in a ragged
+  stepped break, with a rubble slope outside it; the arena floor is partly
+  fallen in, opening the corridors under it.
+- **Flown**: through the outer arcade arches (each tier; sized with
+  `WorldScale.opening()`), a curving lap along the ambulatory, dropping in
+  over the broken side, skimming the arena, the trench of the opened
+  corridors under the floor, and out the great gates at the ends of the
+  long axis. Some arches are partly blocked or fallen; a few are tighter
+  on purpose.
+- **Placed** by the set piece placer (`scripts/endless/set_plan.gd`) as a
+  rarer kind than the others, on a broad terrace (it wants flat ground, not
+  a rising side), named `amberlands/colosseum_<sx>_<sz>`, clear of the other
+  pieces, bridges, halls, tunnels and landing flats. It keeps the meadows
+  and flats rule: it must not take the flats round it.
+- **Cost**: its repeated bays built once and repeated (`docs/art/model-budget.md`),
+  with a far level so it reads from a kilometre off at a cost near the nave's.
+- Hand-flyable by the same wobble check as the gothic pieces
+  (`scratch/sets/thread.gd`, A 0.2 over 10 trials, no crashes).
+
 ## Trunk (the loop, after the merge, in order)
 
 1. **Set piece placer**: a placer for standalone structures (own file) that
