@@ -12,12 +12,18 @@ extends RefCounted
 ##                the far end back toward the middle (turned half round), its
 ##                last snapped off too, so both halves end in mid-air facing
 ##                each other over the gap.
+##   road         (bridge.style "road", bridge_plan.gd `_road_spec`) a great
+##                road bridge, scripts/ruin_kit_bridge.gd, the run's length.
 
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const RuinKit = preload("res://scripts/ruin_kit.gd")
+const Road = preload("res://scripts/ruin_kit_bridge.gd")
 
 static func piece(spec: Dictionary, ground: Callable) -> Node3D:
 	var b: Dictionary = spec.bridge
+	# The road form: one piece, the run's length, at grow 1.
+	if str(b.get("style","")) == "road":
+		return Road.piece(int(spec.seed),float(spec.weathered),float(spec.length),float(b.gap),float(spec.drop),bool(b.broken),ground)
 	var seed_value := int(spec.seed)
 	var weathered := float(spec.weathered)
 	var count := int(spec.count)
@@ -63,3 +69,23 @@ static func piece(spec: Dictionary, ground: Callable) -> Node3D:
 		root.add_child(node)
 	RuinKit.merge(root)
 	return root
+
+## A road bridge's flown openings in the world (Road.openings, placed as
+## arch_build.gd places the run: its middle at spec.pos, turned by its yaw).
+static func road_openings(spec: Dictionary, field: RefCounted) -> Array:
+	var count := int(spec.count)
+	var shift := -float(Aqueduct.SPAN)*count*0.5
+	var pos: Vector3 = spec.pos
+	var basis := Basis(Vector3.UP,float(spec.yaw))
+	var place := Transform3D(basis,pos)*Transform3D(Basis.IDENTITY,Vector3(shift,0.0,0.0))
+	var ground := func(x: float, z: float) -> float:
+		var w := pos+basis*Vector3(x+shift,0.0,z)
+		return float(field.height(w.x,w.z))-pos.y
+	var b: Dictionary = spec.bridge
+	var p := Road.full_plan(int(spec.seed),float(spec.weathered),float(spec.length),float(b.gap),float(spec.drop),bool(b.broken),ground)
+	var out: Array = []
+	for o: Dictionary in Road.openings(p):
+		var w := o.duplicate()
+		w["frame"] = place*(o.frame as Transform3D)
+		out.append(w)
+	return out

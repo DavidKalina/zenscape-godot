@@ -42,6 +42,7 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const Aqueduct = preload("res://scripts/ruin_kit_aqueduct.gd")
 const ArchPlan = preload("res://scripts/endless/arch_plan.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
+const Road = preload("res://scripts/ruin_kit_bridge.gd")
 
 ## The bridge cell (m), the rim search's grid (m), the rims tried a cell (x
 ## the layer), the most bridges (a chain counts once) a cell.
@@ -104,6 +105,13 @@ const APART := 160.0
 const TUNNEL_WAY := 300.0
 ## The chance a bridge cell tries at all, at layer 1.
 const TAKE := 0.85
+## The road form (scripts/ruin_kit_bridge.gd), the second a chain may take
+## (picked per chain on its own stream, so the aqueduct chains are as they
+## were): its share of the chains (x --bridge-road=, 0 none, 1 all), the
+## chance one is broken, and its weathering.
+const ROAD := 0.5
+const ROAD_BROKEN := 0.45
+const ROAD_WEATHERED := Vector2(0.4,0.8)
 
 ## What the planner tried and turned down (for a census; not thread-exact).
 static var stats := {}
@@ -120,6 +128,16 @@ static func flag() -> float:
 			elif a.begins_with("--bridges="): k = maxf(0.0,float(a.get_slice("=",1)))
 		_flag = k
 	return _flag
+
+## The road form's share: --bridge-road=X (0..1), else ROAD.
+static var _road := -1.0
+static func road_share() -> float:
+	if _road < 0.0:
+		var k := ROAD
+		for a: String in preload("res://scripts/launch_args.gd").user_args():
+			if a.begins_with("--bridge-road="): k = clampf(float(a.get_slice("=",1)),0.0,1.0)
+		_road = k
+	return _road
 
 static func cell_of(x: float, z: float) -> Vector2i:
 	return Vector2i(floori(x/CELL),floori(z/CELL))
@@ -327,9 +345,13 @@ static func _plan(field: RefCounted, bx: int, bz: int) -> Array:
 				if line.size() > links.size(): links = line
 		var specs: Array = []
 		var ok: Array = []
+		# The chain's form, on its own stream (the aqueduct's draws untouched).
+		var style := RandomNumberGenerator.new()
+		style.seed = hash([int(field.seed),bx,bz,t,"bridge style"])
+		var road := style.randf() < road_share()
 		for li in range(links.size()):
 			var l: Dictionary = links[li]
-			var spec := _spec(field,l,sub)
+			var spec := _road_spec(l,style) if road else _spec(field,l,sub)
 			var stands := not spec.is_empty()
 			if not stands: _count("too_long")
 			# The far rim is in a region that takes bridges too.
@@ -484,6 +506,32 @@ static func _spec(_field: RefCounted, l: Dictionary, rng: RandomNumberGenerator)
 		"bridge":{"tier":tier,"cut":cut,"miss":miss,"wet":rng.randf() < 0.35}}
 	spec["pos"] = Vector3(c.x,deck-deck_h*grow-0.4,c.y)
 	spec["foot"] = [[c,Vector2(length*0.5+6.0*grow,3.0*grow+4.0),float(spec.yaw)]]
+	spec["seed"] = rng.randi()
+	return spec
+
+## A road bridge's run (scripts/ruin_kit_bridge.gd) spanning link `l`:
+## built at grow 1 (its own sizes, metres), its road's top at the deck, the
+## run reaching Road.APPROACH onto each rim past where the ground meets the
+## deck, in whole Aqueduct.SPAN modules (arch_build.gd middles a run by its
+## count). `bridge`: {style "road", gap, broken; tier, cut, miss, wet as the
+## aqueduct's, unused}.
+static func _road_spec(l: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
+	var deck := float(l.deck)
+	var drop := deck-float(l.low)
+	var broken := rng.randf() < ROAD_BROKEN
+	var gap := float(l.tb)-float(l.ta)
+	var span: float = Aqueduct.SPAN
+	var count := ceili((gap+Road.APPROACH*2.0)/span)
+	var length := span*count
+	if length*0.5 > ArchPlan.CELL*0.9: return {}
+	var dir: Vector2 = l.dir
+	var c: Vector2 = (l.a as Vector2)+dir*(float(l.ta)+float(l.tb))*0.5
+	var spec := {"kind":"aqueduct","form":"bridge_broken" if broken else "bridge","style":"road",
+		"grow":1.0,"count":count,"head":false,"break_at":-1,"weathered":rng.randf_range(ROAD_WEATHERED.x,ROAD_WEATHERED.y),
+		"yaw":ArchPlan._yaw(dir),"length":length,"deck":deck,"drop":drop,"toy":Road.TOY_ARCH,
+		"bridge":{"style":"road","gap":gap,"broken":broken,"tier":false,"cut":0 if broken else -1,"miss":0,"wet":false}}
+	spec["pos"] = Vector3(c.x,deck,c.y)
+	spec["foot"] = [[c,Vector2(length*0.5+6.0,Road.WIDTH.y*0.5+12.0),float(spec.yaw)]]
 	spec["seed"] = rng.randi()
 	return spec
 
