@@ -63,7 +63,10 @@ static func piece(spec: Dictionary, ground: Callable) -> Node3D:
 			# (the far end's both).
 			var j := i
 			var first := j == count-1
-			if j == cut+miss: node = Aqueduct.broken(seed_value+j,w,first,"none" if miss == 0 else "stump",wet,mirror.call(x))
+			# With none fallen, the A half's last stands the stump between them:
+			# this one has nothing over it (its springers there would hang
+			# in mid-air over the stump).
+			if j == cut+miss: node = Aqueduct.broken(seed_value+j,w,first,"gone" if miss == 0 else "stump",wet,mirror.call(x))
 			else: node = Aqueduct.span(seed_value+j,w,2|(1 if first else 0),wet,mirror.call(x))
 			node.transform = Transform3D(Basis(Vector3.UP,PI),Vector3(x,0.0,0.0))
 		root.add_child(node)

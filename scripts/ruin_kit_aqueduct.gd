@@ -192,7 +192,9 @@ static func two_tier(seed_value: int, weathered := 0.0, piers := 3, wet := true,
 ## rubble; the arch's right springers and a ragged stub over the next pier.
 ## `right`: "stump", the right pier fallen to a broken stump (a piece on its
 ## own); "pier", standing; "none", another span's pier stands there (in a
-## run). Weathered, the stub is shorter and the rubble deeper.
+## run); "gone", fallen with nothing of it here (another piece stands its
+## stump: a bridge's broken halves meeting over one). Weathered, the stub is
+## shorter and the rubble deeper.
 static func broken(seed_value: int, weathered := 0.0, left := true, right := "stump", wet := true, ground := Callable()) -> Node3D:
 	var b := Build.new(seed_value,weathered,"AqueductBroken")
 	b.settle = SETTLE
@@ -205,7 +207,7 @@ static func broken(seed_value: int, weathered := 0.0, left := true, right := "st
 	# Where the walling stands full height to, and the channel's snapped end.
 	var full := -SPAN*0.5+hx+lerpf(1.3,0.6,weathered)+b.rng.randf_range(-0.2,0.2)
 	var snap := full+b.rng.randf_range(0.55,0.9)
-	var right_side := right != "stump"
+	var right_side := right == "pier" or right == "none"
 	var right_from := SPAN*0.5-hx-b.rng.randf_range(0.2,0.5)
 	var right_high := deck_foot-b.rng.randf_range(1.6,2.6)
 	var ragged := RuinKit._ruin_line(b,-SPAN*0.5,SPAN*0.5,0.0,1.0,1.0)
@@ -263,7 +265,7 @@ static func broken(seed_value: int, weathered := 0.0, left := true, right := "st
 	_hang(b,DECK,full)
 	RuinKit._rubble(b,SPAN*0.5,4+int(round(weathered*b.rng.randf_range(3.0,6.0))))
 	b.root.set_meta("span",SPAN)
-	var node := _finish(b,DECK,(1 if left else 0)|(2 if right != "none" else 0),[])
+	var node := _finish(b,DECK,(1 if left else 0)|(2 if right == "pier" or right == "stump" else 0),[])
 	# The channel breaks off at `snap`: its far end is no connection.
 	node.set_meta("ends",[(node.get_meta("ends") as Array)[0]])
 	node.set_meta("walk",[{"from":Vector3(-SPAN*0.5,DECK,0.0),"to":Vector3(snap,DECK,0.0),"width":CHANNEL}])

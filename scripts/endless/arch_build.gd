@@ -263,9 +263,12 @@ static func _ruin(spec: Dictionary, field: RefCounted) -> Dictionary:
 	# Its colliders: the kit's hulls (one a block, over a thousand on a
 	# run) are too many to add in a frame's budget, so boxes from its
 	# columns stand in, merged along x where they match. A set piece is
-	# hollow (a nave, a belfry): its columns would fill it, so its own
-	# blocks' boxes stand in, merged where they meet.
-	for box: AABB in (merged(boxes) if spec.has("set") else collider_boxes(columns(boxes,0.0))):
+	# hollow (a nave, a belfry), and a road bridge is flown along x (its
+	# gates, its deck between the parapets): a column (one z range a bin)
+	# would fill it, so its own blocks' boxes stand in, merged where they
+	# meet.
+	var hollow := spec.has("set") or str((spec.get("bridge",{}) as Dictionary).get("style","")) == "road"
+	for box: AABB in (merged(boxes) if hollow else collider_boxes(columns(boxes,0.0))):
 		var cs := CollisionShape3D.new()
 		var shape := BoxShape3D.new()
 		shape.size = box.size
