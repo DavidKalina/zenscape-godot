@@ -10,18 +10,22 @@ extends Node3D
 ##           m) is led ahead along the eye's travel, and a speck that falls
 ##           out of it comes back on its far side, so a passing plane flies
 ##           through them rather than past an empty patch.
-##   kick    bits of grass blade (WindGrassChaff's blade mesh) thrown up
+##   kick    clipped grass blades (shaders/grass_bit.gdshader: long thin
+##           slivers in the grass's own greens, lit by the scene) thrown up
 ##           where the prop's wash comes down (GrassReact `wash_spot`), up
 ##           to KICK_RATE a second at full wash, flung out from its middle
-##           and back along the plane's way, tumbling, slowed by the air and
-##           falling back; and a few off any eddy (EndlessEddies' ribbons)
-##           skimming within EDDY_SKIM m of the grass.
+##           and back along the plane's way. Each turns lazily end over end
+##           or about its length, slowed by the air, then rocks toward lying
+##           flat as it falls, fluttering and sliding side to side; and a
+##           few off any eddy (EndlessEddies' ribbons) skimming within
+##           EDDY_SKIM m of the grass.
 ##
 ## Flags: --no-motes (none), --no-pollen, --no-grass-kick, --pollen=X (the
 ## specks' count, a share of POLLEN), --grass-kick=X (the kick's rate).
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
-const Chaff = preload("res://scripts/wind_grass_chaff.gd")
+const Patch = preload("res://scripts/endless/endless_patch.gd")
+const Field = preload("res://scripts/endless/land_field.gd")
 const SPECK = preload("res://shaders/pollen_speck.gdshader")
 const BIT = preload("res://shaders/grass_bit.gdshader")
 
@@ -40,35 +44,59 @@ const POLLEN_LEAD := 0.6
 const POLLEN_WANDER := 0.45
 const POLLEN_DRIFT := 0.55
 
-const KICK := 180
-const KICK_RATE := 120.0
-## A bit's length (m: the endless grass is about four times the isles'),
-## its fling out and up (m/s, at full wash), the share blown back along the
-## plane's way, its drag (1/s) and fall (m/s^2), and its life (s).
-const KICK_SIZE := Vector2(0.45,0.9)
-## How much wider than WindGrassChaff's blade (0.07 a metre of length) the
-## bits are: the endless grass's blades are broad.
-const KICK_WIDE := 3.0
+const KICK := 240
+const KICK_RATE := 150.0
+## A clipped blade's length and width (m: the endless grass stands about
+## four times the isles', its blades a few centimetres wide), its fling out
+## and up (m/s, at full wash), the share blown back along the plane's way,
+## its drag (1/s), its fall (m/s^2) and its life (s).
+const KICK_LEN := Vector2(0.5,1.1)
+const KICK_WIDTH := Vector2(0.12,0.2)
 const KICK_OUT := Vector2(2.5,6.5)
-const KICK_UP := Vector2(3.5,8.0)
+const KICK_UP := Vector2(4.5,9.0)
 const KICK_BACK := 3.0
 ## The share of the eye's travel the bits are carried on with at first (the
 ## plane's wake drags them along), so they stream back past the chase view
 ## rather than being left at once behind it.
 const KICK_CARRY := 0.8
 const KICK_DRAG := 0.9
-const KICK_FALL := 5.0
-const KICK_LIFE := Vector2(1.4,2.8)
+const KICK_FALL := 4.8
+const KICK_LIFE := Vector2(2.6,4.4)
+## How a blade falls: lying flat it catches the air (KICK_FLAT_DRAG more drag
+## on its fall, 1/s, times how flat it lies), so it falls slowly flat and
+## faster edge on, and slides toward its low side (KICK_GLIDE of its fall).
+const KICK_FLAT_DRAG := 2.8
+const KICK_GLIDE := 0.7
+## How it turns: thrown with KICK_SPIN rad/s end over end or about its
+## length, slowed by the air (KICK_SPIN_DRAG, 1/s), then, from KICK_SETTLE s
+## on, the air rocks it toward lying flat (KICK_LEVEL, a spring: it swings
+## about flat, a slow flutter, rather than spinning), stirred by KICK_STIR.
+const KICK_SPIN := Vector2(2.5,6.0)
+const KICK_SPIN_DRAG := 1.3
+const KICK_SETTLE := Vector2(0.25,1.1)
+const KICK_LEVEL := 16.0
+const KICK_STIR := 3.5
 ## Where a bit starts (m over the ground: the tall grass's upper blades) and
 ## the height under which it is back in the grass and goes.
-const KICK_FROM := Vector2(0.7,1.3)
+const KICK_FROM := Vector2(0.9,1.6)
 const KICK_SINK := 0.6
 ## A skimming eddy's bits a second, and how low it skims (m over the ground).
-const EDDY_RATE := 14.0
+const EDDY_RATE := 10.0
 const EDDY_SKIM := 1.2
-## The bits' colours (sRGB): sunlit tips, pale undersides and dry straw,
-## lighter than the standing grass so they read against it.
-const KICK_COLOURS := ["c8dc8a","b5cf76","e0dca4","d2c98e"]
+## The bits' colours: the grass's own root and tip (linear; the near tufts'
+## defaults, endless_grass.gd `_fine`) under the ground's grass tint where
+## they were thrown (EndlessPatch.tint), a bit from the upper blade
+## (KICK_TIP of the way to the tip), and KICK_DRY of them gone a little dry.
+const KICK_ROOT := Color(0.0395,0.133,0.0423)
+const KICK_TIP := Vector2(0.65,1.25)
+const KICK_GREEN := Color(0.366,0.604,0.122)
+const KICK_STRAW := Color(0.50,0.46,0.20)
+const KICK_DRY := 0.25
+## Most bits show a pale face against the standing grass, so they read from
+## the chase view (KICK_PALE of them): sunlit tips, the silvery underside and
+## dry straw (linear; the old chips' tones), touched by the ground's tint.
+const KICK_PALE := 0.75
+const KICK_PALES := [Color(0.58,0.72,0.25),Color(0.72,0.79,0.53),Color(0.75,0.72,0.37),Color(0.64,0.58,0.27)]
 
 var pollen_on := true
 var kick_on := true
@@ -115,11 +143,10 @@ func setup(land_seed: int, ground: Callable) -> void:
 	quad.material = speck
 	_pollen_mm = _batch("Pollen",quad,pollen_count,true)
 	_pollen_buf.resize(pollen_count*20)
-	var blade: Mesh = Chaff._chaff_mesh()
 	var m := ShaderMaterial.new()
 	m.shader = BIT
-	_kick_mm = _batch("GrassKick",blade,KICK,false,m)
-	_kick_buf.resize(KICK*16)
+	_kick_mm = _batch("GrassKick",_blade_strip(),KICK,true,m)
+	_kick_buf.resize(KICK*20)
 
 func _batch(label: String, mesh: Mesh, count: int, custom: bool, look: Material = null) -> MultiMesh:
 	var mm := MultiMesh.new()
@@ -256,6 +283,28 @@ func _spawn_speck(s: Dictionary, centre: Vector2, grass: Callable, anywhere: boo
 
 # --- The kick -------------------------------------------------------------------------
 
+## The blade's strip: KICK_ROWS rows along it (UV.y 0 at the cut end, 1 at
+## the tip), three across (UV.x 0, 0.5, 1: the edges and the midrib). Its
+## shape is the shader's (shaders/grass_bit.gdshader), from the instance's
+## width and length; the vertices here are a 1 m stand-in.
+const KICK_ROWS := 6
+static func _blade_strip() -> Mesh:
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for r in KICK_ROWS+1:
+		var v := float(r)/KICK_ROWS
+		for c in 3:
+			var u := c*0.5
+			surface.set_uv(Vector2(u,v))
+			surface.set_normal(Vector3.UP)
+			surface.add_vertex(Vector3((u-0.5)*0.05,0.0,v-0.5))
+	for r in KICK_ROWS:
+		for c in 2:
+			var a := r*3+c
+			var b := a+3
+			for i: int in [a,b,a+1,a+1,b,b+1]: surface.add_index(i)
+	return surface.commit()
+
 func _kick(delta: float, wash: Dictionary, ribbons: Array) -> void:
 	if not wash.is_empty():
 		var k := float(wash.k)
@@ -263,6 +312,7 @@ func _kick(delta: float, wash: Dictionary, ribbons: Array) -> void:
 		var at: Vector2 = wash.at
 		var reach := float(wash.reach)
 		var back: Vector2 = wash.back
+		var tint := _grass_tint(at) if _kick_owed >= 1.0 else Color.WHITE
 		while _kick_owed >= 1.0:
 			_kick_owed -= 1.0
 			var r := sqrt(_rng.randf())*reach*0.7
@@ -270,7 +320,7 @@ func _kick(delta: float, wash: Dictionary, ribbons: Array) -> void:
 			var p := at+out*r
 			var fling := out*_rng.randf_range(KICK_OUT.x,KICK_OUT.y)*k+back*KICK_BACK*k*_rng.randf_range(0.4,1.2)
 			var carry := _eye_vel*KICK_CARRY*_rng.randf_range(0.6,1.2)
-			_throw(p,Vector3(fling.x+carry.x,_rng.randf_range(KICK_UP.x,KICK_UP.y)*sqrt(k),fling.y+carry.z))
+			_throw(p,Vector3(fling.x+carry.x,_rng.randf_range(KICK_UP.x,KICK_UP.y)*sqrt(k),fling.y+carry.z),tint)
 	else:
 		_kick_owed = 0.0
 	var alive := {}
@@ -283,15 +333,17 @@ func _kick(delta: float, wash: Dictionary, ribbons: Array) -> void:
 		if w <= 0.05: continue
 		var owed := float(_eddy_owed.get(id,0.0))+EDDY_RATE*kick_scale*w*delta
 		var rv: Vector3 = rb.vel
+		var tint := _grass_tint(Vector2(pos.x,pos.z)) if owed >= 1.0 else Color.WHITE
 		while owed >= 1.0:
 			owed -= 1.0
 			var p := Vector2(pos.x,pos.z)+Vector2.from_angle(_rng.randf()*TAU)*_rng.randf_range(0.0,1.5)
-			_throw(p,Vector3(rv.x*0.7,_rng.randf_range(1.5,3.5),rv.z*0.7)+Vector3(_rng.randf_range(-1,1),0,_rng.randf_range(-1,1)))
+			_throw(p,Vector3(rv.x*0.7,_rng.randf_range(1.5,3.5),rv.z*0.7)+Vector3(_rng.randf_range(-1,1),0,_rng.randf_range(-1,1)),tint)
 		_eddy_owed[id] = owed
 	for id: int in _eddy_owed.keys():
 		if not alive.has(id): _eddy_owed.erase(id)
 	var n := 0
 	var i := 0
+	var air := Vector3(_air.x,0.0,_air.y)
 	while i < _bits.size():
 		var b: Dictionary = _bits[i]
 		var age := float(b.age)+delta
@@ -299,59 +351,116 @@ func _kick(delta: float, wash: Dictionary, ribbons: Array) -> void:
 			_bits.remove_at(i)
 			continue
 		b.age = age
+		var turn: Basis = b.basis
+		var face := turn.y
+		var flat := absf(face.y)
 		var v: Vector3 = b.vel
-		var air := Vector3(_air.x,0.0,_air.y)
-		v += (air-v)*clampf(KICK_DRAG*delta,0.0,1.0)
-		v.y -= KICK_FALL*delta
+		var w: Vector3 = b.spin
+		var landed := bool(b.landed)
+		if not landed:
+			v += (air-v)*clampf(KICK_DRAG*delta,0.0,1.0)
+			v.y -= KICK_FALL*delta
+			if v.y < 0.0:
+				# Falling: flat it catches the air, and slides toward its low side.
+				v.y *= maxf(1.0-KICK_FLAT_DRAG*flat*delta,0.0)
+				var low := Vector3(face.x,0.0,face.z)*signf(face.y)
+				v += low*KICK_GLIDE*(-v.y)*delta*4.0
+			w *= maxf(1.0-KICK_SPIN_DRAG*delta,0.0)
+			# The air rocks it toward lying flat (either face up), stirred.
+			var settle := smoothstep(float(b.settle),float(b.settle)+0.6,age)
+			var up := Vector3.UP*(1.0 if face.y >= 0.0 else -1.0)
+			w += face.cross(up)*KICK_LEVEL*settle*delta
+			var ph := float(b.phase)*TAU
+			w += Vector3(sin(_time*2.3+ph),0.4*sin(_time*1.7+ph*1.9),cos(_time*2.9+ph*2.7))*KICK_STIR*settle*delta
 		var p: Vector3 = b.pos+v*delta
-		var floor_y := float(b.ground)+KICK_SINK
-		var spin := float(b.spin)
-		if p.y < floor_y:
-			# Back down in the grass: it settles there and goes.
+		var floor_y := float(b.ground)+float(b.rest)
+		if not landed and p.y < floor_y:
+			# Back down on the grass: it lies there a moment and goes.
 			p.y = floor_y
 			v = Vector3.ZERO
-			spin = 0.0
-			b.life = minf(float(b.life),age+0.3)
+			w = Vector3.ZERO
+			landed = true
+			b.landed = true
+			b.life = minf(float(b.life),age+0.6)
 		b.vel = v
 		b.pos = p
-		var turn: Basis = Basis(b.axis as Vector3,spin*delta)*(b.basis as Basis)
+		var rate := w.length()
+		if rate > 1.0e-4:
+			turn = (Basis(w/rate,rate*delta)*turn).orthonormalized()
 		b.basis = turn
-		b.spin = spin
+		b.spin = w
 		var u := age/float(b.life)
-		var size := float(b.size)*(1.0-smoothstep(0.8,1.0,u))*smoothstep(0.0,0.06,age)
-		var bs := turn*Basis.from_scale(Vector3(KICK_WIDE,1.0,1.0)*size)
+		var size := (1.0-smoothstep(0.82,1.0,u))*smoothstep(0.0,0.06,age)
+		# It flutters while the air pulls at it (its speed through the air),
+		# and a little while it rocks.
+		var through := (v-air).length()
+		var flutter := 0.0 if landed else clampf(through/6.0,0.0,1.0)*0.85+clampf(rate/4.0,0.0,1.0)*0.15
 		var c: Color = b.colour
-		var o := n*16
-		_kick_buf[o] = bs.x.x
-		_kick_buf[o+1] = bs.y.x
-		_kick_buf[o+2] = bs.z.x
+		var o := n*20
+		_kick_buf[o] = turn.x.x
+		_kick_buf[o+1] = turn.y.x
+		_kick_buf[o+2] = turn.z.x
 		_kick_buf[o+3] = p.x
-		_kick_buf[o+4] = bs.x.y
-		_kick_buf[o+5] = bs.y.y
-		_kick_buf[o+6] = bs.z.y
+		_kick_buf[o+4] = turn.x.y
+		_kick_buf[o+5] = turn.y.y
+		_kick_buf[o+6] = turn.z.y
 		_kick_buf[o+7] = p.y
-		_kick_buf[o+8] = bs.x.z
-		_kick_buf[o+9] = bs.y.z
-		_kick_buf[o+10] = bs.z.z
+		_kick_buf[o+8] = turn.x.z
+		_kick_buf[o+9] = turn.y.z
+		_kick_buf[o+10] = turn.z.z
 		_kick_buf[o+11] = p.z
 		_kick_buf[o+12] = c.r
 		_kick_buf[o+13] = c.g
 		_kick_buf[o+14] = c.b
 		_kick_buf[o+15] = 1.0
+		_kick_buf[o+16] = float(b.width)*size
+		_kick_buf[o+17] = float(b.length)*size
+		_kick_buf[o+18] = float(b.phase)
+		_kick_buf[o+19] = flutter
 		n += 1
 		i += 1
 	_kick_mm.buffer = _kick_buf
 	_kick_mm.visible_instance_count = n
 	stats.kick = n
 
-## A bit of blade thrown from `at` (xz, on the ground there) at `vel`.
-func _throw(at: Vector2, vel: Vector3) -> void:
+## The ground's grass tint at `at` (EndlessPatch.tint: its patches and
+## region over the plain grass), as the near tufts take it.
+func _grass_tint(at: Vector2) -> Color:
+	var g := float(_ground.call(at.x,at.y))
+	if is_nan(g): return Color.WHITE
+	var t := Patch.tint(at.x,at.y,0.5,g-Field.SEA_Y,1.0)
+	return Color(clampf(t.r,0.5,1.8),clampf(t.g,0.5,1.8),clampf(t.b,0.5,1.8))
+
+## A clipped blade thrown from `at` (xz, on the ground there) at `vel`, in
+## the grass's colour there (`tint`).
+func _throw(at: Vector2, vel: Vector3, tint: Color) -> void:
 	if _bits.size() >= KICK: _bits.pop_front()
 	var g := float(_ground.call(at.x,at.y))
-	var axis := Vector3(_rng.randf_range(-1,1),_rng.randf_range(-1,1),_rng.randf_range(-1,1))
-	if axis.length() < 0.1: axis = Vector3.RIGHT
+	# It stood in the grass: its length near upright, leaning the way it is
+	# flung, turned any way about it.
+	var way := Vector3(vel.x,0.0,vel.z)
+	way = way.normalized() if way.length() > 0.1 else Vector3.FORWARD
+	var lean := _rng.randf_range(0.15,0.9)
+	var along := (Vector3.UP*cos(lean)+way*sin(lean)).normalized()
+	var across := along.cross(way)
+	if across.length() < 0.01: across = Vector3.RIGHT
+	across = across.normalized().rotated(along,_rng.randf()*TAU)
+	var turn := Basis(across,along.cross(across),along).orthonormalized()
+	# Its spin: end over end about the level line across its way, or rolling
+	# about its own length, either a little off.
+	var spin := _rng.randf_range(KICK_SPIN.x,KICK_SPIN.y)*(1.0 if _rng.randf() < 0.5 else -1.0)
+	var axis := way.cross(Vector3.UP).normalized()
+	if _rng.randf() < 0.35: axis = along
+	axis = (axis+Vector3(_rng.randf_range(-0.3,0.3),_rng.randf_range(-0.3,0.3),_rng.randf_range(-0.3,0.3))).normalized()
+	var colour := KICK_ROOT.lerp(KICK_GREEN,_rng.randf_range(KICK_TIP.x,KICK_TIP.y))
+	if _rng.randf() < KICK_DRY: colour = colour.lerp(KICK_STRAW,_rng.randf_range(0.25,0.5))
+	colour = Color(colour.r*tint.r,colour.g*tint.g,colour.b*tint.b)*_rng.randf_range(0.85,1.12)
+	if _rng.randf() < KICK_PALE:
+		var pale: Color = KICK_PALES[_rng.randi() % KICK_PALES.size()]
+		colour = pale.lerp(Color(pale.r*tint.r,pale.g*tint.g,pale.b*tint.b),0.2)*_rng.randf_range(0.92,1.08)
 	_bits.append({"pos": Vector3(at.x,g+_rng.randf_range(KICK_FROM.x,KICK_FROM.y),at.y), "vel": vel, "ground": g,
-		"age": 0.0, "life": _rng.randf_range(KICK_LIFE.x,KICK_LIFE.y), "size": _rng.randf_range(KICK_SIZE.x,KICK_SIZE.y),
-		"basis": Basis.from_euler(Vector3(_rng.randf()*TAU,_rng.randf()*TAU,_rng.randf()*TAU)),
-		"axis": axis.normalized(), "spin": _rng.randf_range(6.0,16.0)*(1.0 if _rng.randf() < 0.5 else -1.0),
-		"colour": Color(KICK_COLOURS[_rng.randi()%KICK_COLOURS.size()]).srgb_to_linear()})
+		"age": 0.0, "life": _rng.randf_range(KICK_LIFE.x,KICK_LIFE.y),
+		"length": _rng.randf_range(KICK_LEN.x,KICK_LEN.y), "width": _rng.randf_range(KICK_WIDTH.x,KICK_WIDTH.y),
+		"basis": turn, "spin": axis*spin, "phase": _rng.randf(), "landed": false,
+		"settle": _rng.randf_range(KICK_SETTLE.x,KICK_SETTLE.y), "rest": _rng.randf_range(KICK_SINK,KICK_FROM.y),
+		"colour": colour})

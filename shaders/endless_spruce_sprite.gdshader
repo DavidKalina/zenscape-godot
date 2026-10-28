@@ -78,6 +78,17 @@ uniform float mean_luma = 0.1;
 uniform vec4 spruce_tier = vec4(0.0);
 uniform vec4 spruce_tier2 = vec4(0.0);
 
+// The far trees' look (scripts/endless/spruce_sprites.gd `far_look`, land_trees.gd
+// far_trees_wanted; --far-trees=old leaves it off): past the near crowns a tree
+// keeps their weight, not one flat pale cone. x the value (the atlas's pale
+// mint taken down to the crowns' tone), y the share of the crown's lower part
+// in its own shade (a wood's dark understorey), z the shade side's depth
+// (against the sun), w the contrast about the crowns' mean. far_size is the
+// per-tree size spread, far_tone the per-tree value and hue spread.
+uniform float far_look = 0.0;
+uniform vec4 far_shape = vec4(0.88, 0.32, 0.30, 0.35);
+uniform vec2 far_vary = vec2(0.14, 0.2);
+
 const vec3 OLIVE = vec3(1.20, 1.05, 0.22);
 const float SLACK = 25.0;
 // The breeze's lean on a sprite (as zs_breeze_lean_at's base share and its
@@ -89,12 +100,21 @@ varying flat vec3 sprite_foot;
 varying flat vec3 sprite_right;
 varying flat vec3 sprite_up;
 varying flat vec3 sprite_toward;
+// How far up the tree this point of the quad is (0 the foot, 1 the top), and how steeply the eye looks down on it.
+varying float sprite_up_tree;
+varying flat float sprite_look_down;
 // x the height's row (fraction), y the turn's column (fraction)
 varying flat vec2 sprite_view;
 // How far a gust wave lifts the tree's boughs (tree_wind.gdshaderinc).
 varying float sprite_sheen;
 // How much of a fresh tip this pixel is (the atlas's light against the crown's mean), for the rim.
 varying float sprite_tip;
+
+float sprite_lod_hash(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
 
 float sprite_luma(vec3 c) {
 	return dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -111,6 +131,11 @@ void vertex() {
 	vec3 x_axis = MODEL_MATRIX[0].xyz;
 	float sc = length(MODEL_MATRIX[1].xyz);
 	float wide = length(x_axis) / max(sc, 1e-4);
+	if (far_look > 0.0) {
+		// Each tree its own size, from where the near crowns end: the plan's
+		// scales read as one at range.
+		sc *= 1.0 + (sprite_lod_hash(foot.xz + vec2(3.7, 19.1)) - 0.5) * far_vary.x * smoothstep(120.0, 300.0, d);
+	}
 	vec3 centre = foot + vec3(0.0, fit.x * sc, 0.0);
 	vec3 toward = normalize(CAMERA_POSITION_WORLD - centre);
 	vec3 right = cross(vec3(0.0, 1.0, 0.0), toward);
@@ -124,6 +149,8 @@ void vertex() {
 	float elev = asin(clamp(toward.y, -1.0, 1.0));
 	sprite_view = vec2(clamp(elev / row_step, 0.0, cells.y - 1.0), -(az - yaw) / (TAU / float(yaws)));
 	vec2 q = UV - 0.5;
+	sprite_up_tree = (fit.x - q.y * fit.y) / max(fit.x * 2.0, 0.1);
+	sprite_look_down = clamp(toward.y, 0.0, 1.0);
 	VERTEX = centre + right * q.x * fit.y * sc * wide - up * q.y * fit.y * sc + toward * fit.z * sc;
 	// The breeze's lean and sway, as conifer_wind bends the near crown: the
 	// quad's top corners go with the tree's upper crown, its foot stays.
@@ -156,12 +183,6 @@ void sprite_sample(float col, float row, vec2 uv_in, vec2 gx, vec2 gy, out vec4 
 	vec2 uv = (cell + uv_in) / cells;
 	a = textureGrad(albedo_atlas, uv, gx, gy);
 	nb = textureGrad(normal_atlas, uv, gx, gy);
-}
-
-float sprite_lod_hash(vec2 p) {
-	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-	p3 += dot(p3, p3.yzx + 33.33);
-	return fract((p3.x + p3.y) * p3.z);
 }
 
 void fragment() {
@@ -252,6 +273,21 @@ void fragment() {
 	vec3 nv = sprite_linear(clamp(nb.rgb / max(nb.a, 1e-3), 0.0, 1.0)) * 2.0 - 1.0;
 	vec3 n = normalize(nv.x * sprite_right + nv.y * sprite_up + nv.z * sprite_toward);
 	if (sprite_sheen > 0.0) c = zs_tree_sheen(c, sprite_sheen);
+	if (far_look > 0.0) {
+		// Weight and depth: the tone of the near crowns, the understorey dark,
+		// the side away from the sun in its shade, each tree its own.
+		float r1 = sprite_lod_hash(sprite_foot.xz + vec2(7.3, 2.9));
+		float r2 = sprite_lod_hash(sprite_foot.xz + vec2(41.7, 13.3));
+		float l = sprite_luma(c);
+		c *= pow(clamp(l / max(mean_luma, 1e-3), 0.3, 3.0), far_shape.w);
+		c *= far_shape.x;
+		float low = 1.0 - smoothstep(0.0, 0.7, sprite_up_tree);
+		c *= 1.0 - far_shape.y * low * (1.0 - 0.7 * sprite_look_down);
+		float s = dot(n, zs_key_direction);
+		c *= mix(1.0 - far_shape.z, 1.0, smoothstep(-0.55, 0.4, s));
+		c *= 1.0 + (r1 - 0.5) * 2.0 * far_vary.y;
+		c *= mix(vec3(1.05, 1.0, 0.9), vec3(0.93, 1.0, 1.08), r2);
+	}
 	ALBEDO = c;
 	ROUGHNESS = 1.0;
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);

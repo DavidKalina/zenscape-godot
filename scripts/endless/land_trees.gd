@@ -63,6 +63,12 @@ const RING_GAIN := Vector3(1.11,1.08,0.98)
 const BLOCK := 256.0
 const NEAR_END := 430.0
 const NEAR_MARGIN := 40.0
+## The far trees (the sprites; scripts/endless/spruce_sprites.gd far_look,
+## --far-trees=old for the look before): the near trees' shade proxies cast the
+## sun's shadow out to SHADE_END m (the sun's map reaches EndlessLook.SHADOW_REACH,
+## 900, fading from 85 % of it), so the woods past NEAR_END stand on the ground
+## with shadows as the near ones do. --far-shadow=M moves it.
+const SHADE_END := 860.0
 const MID := Vector4(190.0,30.0,1500.0,120.0)
 const FAR := Vector4(1380.0,120.0,6200.0,900.0)
 ## The mid ring's crowns stand this much smaller than their tree, inside it.
@@ -147,6 +153,8 @@ const MID_CROWN_END := 670.0
 const SPRITE_END := 1440.0
 const SPRITE_FADE := 60.0
 const CANOPY := Vector2(1250.0,250.0)
+## The painted canopy's colour over the sprites' mean with the far trees' look (about the sprites' mean after its value, understorey and shade side).
+const CANOPY_DARK := 0.78
 
 var seed := 1
 var share := 1.0
@@ -169,6 +177,7 @@ var _far_material: ShaderMaterial
 var _arch_flags := {}
 var _floor := true
 var _shadows := not ("--no-tree-shadows" in LaunchArgs.user_args())
+var _shade_end := SHADE_END
 var _near_floor: ShaderMaterial
 var _detail := -1.0           # DETAIL in force, or < 0: one crown for every near tree
 var _far_crowns: Array = []   # variant -> far crown mesh (with _detail)
@@ -263,6 +272,9 @@ func setup(land_seed: int) -> void:
 			elif a.begins_with("--spruce-mid="): _mid_start = float(a.get_slice("=",1))
 		_far_cut = maxf(_far_cut,_detail)
 		_mid_start = maxf(_mid_start,_far_cut)
+	if not SpruceSprites.far_look_wanted(): _shade_end = NEAR_END
+	for a in LaunchArgs.user_args():
+		if a.begins_with("--far-shadow="): _shade_end = float(a.get_slice("=",1))
 	_spread = 0.0
 	if SpruceSprites.soft_wanted():
 		_spread = LOD_SPREAD
@@ -413,7 +425,9 @@ func _floor_shader(band: Vector4) -> ShaderMaterial:
 ## The painted canopy in the sprites' mean colour once they are baked.
 func _sprites_baked() -> void:
 	for m: ShaderMaterial in [_near_floor,_far_floor]:
-		m.set_shader_parameter("canopy_colour",sprites.mean)
+		# The far trees' sprites stand darker than the atlas's mean (their value, understorey and shade side), the canopy with them.
+		var k := CANOPY_DARK if sprites.far_look else 1.0
+		m.set_shader_parameter("canopy_colour",Color(sprites.mean.r*k,sprites.mean.g*k,sprites.mean.b*k))
 
 func _far_shader(band: Vector4) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
@@ -1083,7 +1097,7 @@ func _commit(done: Dictionary) -> void:
 			var shade := _batch(_shadow_crown,done.mid,int(done.n),_shade_material)
 			shade.name = "Shade"
 			shade.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
-			shade.visibility_range_end = NEAR_END
+			shade.visibility_range_end = _shade_end
 			shade.visibility_range_end_margin = NEAR_MARGIN
 			holder.add_child(shade)
 	if not (done.floor as Dictionary).is_empty(): holder.add_child(_floor_node(done.floor,_near_floor))
