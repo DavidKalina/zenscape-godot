@@ -2,7 +2,8 @@ extends RefCounted
 ## A rival race's course (scripts/endless/rival_race.gd), planned once from
 ## the start line and never again: GATES_LEAST to GATES_MOST gates in a
 ## row, the openings the rival can thread (rival_line.gd `_candidates`:
-## arches, split mountains, slot halls, tunnels), chained so each next one
+## arches, split mountains, slot halls, tunnels, and the amberlands' set
+## pieces' and bridges' lines, rival_pieces.gd), chained so each next one
 ## is ahead of the last one's way out: its lead-in GATE_NEAR to GATE_REACH m
 ## on, within CONE of the way out, and gone into the way it is come at
 ## (ALIGN). Where no opening is in reach an air gate stands down the

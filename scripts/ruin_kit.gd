@@ -71,8 +71,10 @@ const TORANA_PIECES := ["relic_torana"]
 ## The gothic set pieces (scripts/ruin_kit_gothic.gd): giants standing on
 ## their own in the land, with tight openings to thread (their `openings`).
 const GOTHIC_SET_PIECES := ["gothic_nave","belfry_tower","rose_gate"]
-const FAMILIES := {"gothic":PIECES,"aqueduct":AQUEDUCT_PIECES,"hall":HALL_PIECES,"tower":TOWER_PIECES,"horn":HORN_PIECES,"cloister":CLOISTER_PIECES,"relic":RELIC_PIECES+TORANA_PIECES,"keel":KEEL_PIECES,"set_piece":GOTHIC_SET_PIECES}
-const ALL_PIECES := PIECES+AQUEDUCT_PIECES+HALL_PIECES+TOWER_PIECES+HORN_PIECES+CLOISTER_PIECES+RELIC_PIECES+TORANA_PIECES+KEEL_PIECES+GOTHIC_SET_PIECES
+## The abandoned colosseum (scripts/ruin_kit_colosseum.gd): a set piece too.
+const COLOSSEUM_PIECES := ["colosseum"]
+const FAMILIES := {"gothic":PIECES,"aqueduct":AQUEDUCT_PIECES,"hall":HALL_PIECES,"tower":TOWER_PIECES,"horn":HORN_PIECES,"cloister":CLOISTER_PIECES,"relic":RELIC_PIECES+TORANA_PIECES,"keel":KEEL_PIECES,"set_piece":GOTHIC_SET_PIECES+COLOSSEUM_PIECES}
+const ALL_PIECES := PIECES+AQUEDUCT_PIECES+HALL_PIECES+TOWER_PIECES+HORN_PIECES+CLOISTER_PIECES+RELIC_PIECES+TORANA_PIECES+KEEL_PIECES+GOTHIC_SET_PIECES+COLOSSEUM_PIECES
 const NAMES := {"pier":"Clustered pier","arch":"Pointed arch","lancet_wall":"Lancet window wall",
 	"rose_gable":"Rose window gable","buttress":"Buttress","wall":"Wall","stairs":"Stair flight",
 	"turret":"Stair turret","vault":"Vault ribs","fallen_pier":"Fallen pier","tomb_chest":"Carved chest",
@@ -82,7 +84,7 @@ const NAMES := {"pier":"Clustered pier","arch":"Pointed arch","lancet_wall":"Lan
 	"hall_column":"Colossus column","hall_beam":"Architrave beam","hall_slab":"Roof slabs",
 	"hall_bay":"Hall bay","tower_shell":"Tower shell","wind_horn":"Wind-horn",
 	"pent_hood":"Pent hood","relic_nimbus":"Broken nimbus","keel_hung_stair":"Hung stair","relic_torana":"Prayer lintel",
-	"gothic_nave":"Ruined nave","belfry_tower":"Belfry tower","rose_gate":"Rose gable gate"}
+	"gothic_nave":"Ruined nave","belfry_tower":"Belfry tower","rose_gate":"Rose gable gate","colosseum":"Abandoned colosseum"}
 
 # --- Scale: what the pilot on foot and the plane can do drives these ---------
 # (the walker's frozen numbers below, scripts/plane_figure.gd, scripts/sky_glide.gd)
@@ -420,6 +422,7 @@ static func _piece_of(id: String, seed_value: int, weathered: float) -> Node3D:
 	if id in KEEL_PIECES: return load("res://scripts/ruin_kit_keel.gd").piece(id,seed_value,weathered)
 	if id in TORANA_PIECES: return load("res://scripts/ruin_kit_torana.gd").piece(id,seed_value,weathered)
 	if id in GOTHIC_SET_PIECES: return load("res://scripts/ruin_kit_gothic.gd").piece(id,seed_value,weathered)
+	if id in COLOSSEUM_PIECES: return load("res://scripts/ruin_kit_colosseum.gd").piece(id,seed_value,weathered)
 	return null
 
 ## How thick a hull's points stand at their thinnest (m): their spread
@@ -1976,7 +1979,7 @@ static func _spire(b: Build, pose: Transform3D, r: float, h: float, snapped: boo
 ## orders and a hood: `lost` voussoirs fallen from the crown on side
 ## `lost_side`; stones whose middle stands over `top` (a ruin line) gone.
 static func _arch_ring(b: Build, pose: Transform3D, cx: float, spring: float, h: float, radius: float, d: float, hood: bool, lost := 0, lost_side := 1.0, top := Callable()) -> void:
-	var n := maxi(5,int(round(radius*1.6)))
+	var n := maxi(5,int(round(radius*1.6/b.course)))
 	_ring_order(b,pose,cx,spring,h,radius,0.0,ORDER,d-RECESS,n,99,lost_side,_stone(b,1.03),lost,top,true)
 	var outer := _ring_order(b,pose,cx,spring,h,radius,ORDER,ORDER,d,n-1,99,lost_side,_stone(b,1.0),lost+int(b.rng.randf()*2.0*b.weathered),top)
 	if hood:
@@ -2227,7 +2230,7 @@ static func _courses(b: Build, pose: Transform3D, x0: float, x1: float, y0: floa
 		while x < x1-0.02:
 			var xa := maxf(x,x0)
 			var pick := b.rng.randf()
-			var xb := minf(x+(b.rng.randf_range(0.35,0.6) if pick < 0.22 else (b.rng.randf_range(1.45,2.0) if pick > 0.8 else b.rng.randf_range(0.7,1.3)))*(2.2 if b.lean else 1.0),x1)
+			var xb := minf(x+(b.rng.randf_range(0.35,0.6) if pick < 0.22 else (b.rng.randf_range(1.45,2.0) if pick > 0.8 else b.rng.randf_range(0.7,1.3)))*(2.2 if b.lean else 1.0)*b.course,x1)
 			if x1-xb < 0.3: xb = x1
 			x = xb
 			var mid := (xa+xb)*0.5
@@ -2549,6 +2552,25 @@ class Build extends RefCounted:
 	## of the abbey's (1): a heavy arcade or a hall's walls settle less, so
 	## a ruin of them reads settled, not shaken.
 	var settle := 1.0
+	## How much bigger it lays its stones (1, the kit's own): an arch
+	## ring's voussoirs (`_arch_ring`) and a piece's own courses and slabs,
+	## where it reads it (a bridge's aqueduct spans, scripts/ruin_kit_
+	## aqueduct.gd, which the land grows big and lays by the dozen).
+	var course := 1.0
+	## How much coarser its growth is on lean stone (1, as ever): the vine
+	## strands' leaves and the steps between them, the curtains' and
+	## fringes' spacing (RuinGrowth LEAN_SCALE) and the ivy's leaves this much
+	## bigger, so fewer cover as much. The native finish reads it; the
+	## GDScript one does not (it grows them as ever).
+	var growth_coarse := 1.0
+	## Lean stone's ivy strands at most (IVY_LEAN; more on a piece whose
+	## growth is coarse).
+	var ivy_cap := IVY_LEAN
+	## How much more ivy its tops ask (1, as ever): strands a square metre
+	## (IVY_STRANDS) and their length (IVY_LENGTH) this many times, for a
+	## piece grown big (the aqueduct's bridge spans), whose ivy would read
+	## sparse and short at the kit's.
+	var ivy_gain := 1.0
 	## The ground the piece stands on: a Callable(x, z) -> y in the piece's
 	## frame, or none (flat, y 0). Feet, footings and walls reach down to it
 	## and below; drifts and rubble lie on it.
@@ -3157,6 +3179,13 @@ class Build extends RefCounted:
 		build.weathered = weathered
 		build.age = age
 		build.detail = level
+		if growth_coarse != 1.0:
+			build.lean_scale = RuinGrowth.LEAN_SCALE*growth_coarse
+			build.ivy_leaf = IVY_LEAF*growth_coarse
+		build.ivy_lean = ivy_cap
+		if ivy_gain != 1.0:
+			build.ivy_strands = IVY_STRANDS*ivy_gain
+			build.ivy_length = IVY_LENGTH*ivy_gain
 		build.ground = ground
 		build.lean = lean
 		build.vines = RuinGrowth.vines
@@ -3759,8 +3788,8 @@ class Build extends RefCounted:
 			area += float(t[1])
 		# As many strands as the tops' area asks, capped (lean stone, fewer),
 		# then thinned by the detail (so a big ruin thins too).
-		var count := int(mini(IVY_LEAN if lean else IVY_MOST,int(area*lerpf(IVY_STRANDS.x,IVY_STRANDS.y,weathered)+rng.randf()))*level)
-		var longest := lerpf(IVY_LENGTH.x,IVY_LENGTH.y,weathered)
+		var count := int(mini(ivy_cap if lean else IVY_MOST,int(area*lerpf(IVY_STRANDS.x,IVY_STRANDS.y,weathered)*ivy_gain+rng.randf()))*level)
+		var longest := lerpf(IVY_LENGTH.x,IVY_LENGTH.y,weathered)*ivy_gain
 		for i in range(count):
 			if high.is_empty(): break
 			for attempt in range(8):

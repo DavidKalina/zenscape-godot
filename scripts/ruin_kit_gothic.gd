@@ -29,7 +29,7 @@ extends RefCounted
 ## piece's frame, drawn from the same plan as the stone (`plan`), so a
 ## placer or a flyability check reads them without building it. Their
 ## widths come from toy widths named here through `WorldScale.opening`, the
-## knife slots from `WorldScale.knife()`.
+## knife slots from `WorldScale.knife(KNIFE_ROOM)`.
 ##
 ## Every piece, as the kit's: a Node3D, its foot on y 0 round the origin,
 ## its front toward +Z, "Mesh" (stone and growth, one surface) and "Body"
@@ -60,8 +60,9 @@ const TOY_LANCET := 3.0
 const TOY_FLANK := 3.75
 ## The choir screen's arch: toy 3.4 (6.8 m).
 const TOY_SCREEN := 3.4
-## The east end's great lancet: toy 3.2 (6.4 m).
-const TOY_EAST := 3.2
+## The east end's great lancet: toy 3.4 (6.8 m; was 3.2, 6.4 m: flown down
+## the nave by hand at A 0.2 it took 2 crashes in 30 passes, 6.8 none).
+const TOY_EAST := 3.4
 ## The belfry's lights, front and back: toy 2.8 (5.6 m, 1.4 m past a tip).
 const TOY_BELFRY := 2.8
 ## The tower's tracery light (its tracery broken out): toy 2.9 (5.8 m).
@@ -109,9 +110,11 @@ const SLOT_Y := Vector2(3.0,15.0)
 ## head at FLYER.y; its depth over the soffit at the crown.
 const FLYER := Vector3(17.0,24.5,1.5)
 ## The choir screen: its pier line; its height, the arch's springing, its
-## half thickness; its sill.
+## half thickness; its sill. The springing 10.5 (was 9): flown down the nave
+## by hand its springing corners were the line's knife edge (trunk 3); its
+## height raised with it (was 18), so the wall still stands over the head.
 const SCREEN_LINE := 6
-const SCREEN := Vector3(18.0,9.0,1.5)
+const SCREEN := Vector3(19.5,10.5,1.5)
 const SCREEN_SILL := 1.5
 ## The west front and east end: half thickness, the portal's springing,
 ## the east lancet's sill and springing, the slits' either side of it.
@@ -132,7 +135,16 @@ static var LANCET: float = WorldScale.opening(TOY_LANCET)
 static var FLANK: float = WorldScale.opening(TOY_FLANK)
 static var SCREEN_W: float = WorldScale.opening(TOY_SCREEN)
 static var EAST_W: float = WorldScale.opening(TOY_EAST)
-static var KNIFE: float = WorldScale.knife()
+## The knife slots: WorldScale.knife with KNIFE_ROOM. The flight pads a
+## plane on its side by its keel's reach both ways (WorldScale.reach_rolled,
+## 0.9 m a side at plane 2), so knife()'s own room (1.9 m) left its middle
+## 5 cm a side and only an exact line got through: flown by hand (trunk 3,
+## scratch/sets/thread.gd) a pilot centred to within a few cm passed 1 in
+## 10. KNIFE_ROOM 0.66 toy spans makes 2.4 m: 0.3 m a side on the knife edge,
+## and still under the span, so wings level it shuts (it wants ~30 deg of
+## roll or more; a knife edge to fly it with room).
+const KNIFE_ROOM := 0.66
+static var KNIFE: float = WorldScale.knife(KNIFE_ROOM)
 ## The buttresses' inner face (x): the flank corridor runs from the
 ## piers' shafts to it.
 static var BUTTRESS_X: float = PIER_X+PIER_REACH+FLANK
@@ -142,18 +154,22 @@ const HALF_LEN := BAYS*BAY*0.5
 # --- The belfry tower ----------------------------------------------------------
 
 ## The tower: outer half side, wall thickness, the head's height, course.
-const TOWER_HALF := 8.0
+## RAISE: the look pass's added height under the belfry (it read small
+## from a kilometre off at 80 m): the shaft, the belfry and the stages
+## stand this much taller, the tracery half as much; no opening's size moves.
+const RAISE := 26.0
+const TOWER_HALF := 9.0
 const TOWER_WALL := 2.2
-const TOWER_H := 80.0
+const TOWER_H := 80.0+RAISE
 const TOWER_COURSE := 1.9
 ## The belfry's lights: sill, springing (the slits' on the sides the same).
-const BELFRY := Vector2(55.0,64.0)
+const BELFRY := Vector2(55.0+RAISE,64.0+RAISE)
 ## The tracery window on the front (its plain lancet behind): sill,
 ## springing.
-const TRACERY := Vector2(33.0,44.0)
+const TRACERY := Vector2(33.0+RAISE*0.5,44.0+RAISE*0.5)
 ## The angle buttresses' stages [top, depth out], width.
-const TOWER_STAGES := [[18.0,4.2],[34.0,3.2],[50.0,2.2]]
-const TOWER_BUTTRESS_W := 3.0
+const TOWER_STAGES := [[24.0,4.8],[45.0,3.7],[66.0,2.6]]
+const TOWER_BUTTRESS_W := 3.4
 static var BELFRY_W: float = WorldScale.opening(TOY_BELFRY)
 static var TRACERY_W: float = WorldScale.opening(TOY_TRACERY)
 
@@ -251,6 +267,12 @@ static func plan(id: String, seed_value: int, weathered := 0.6) -> Dictionary:
 ##   round    true for a round opening (the rose): size.x its diameter
 ##   lane     true for a lane flown along its whole depth (the nave's,
 ##            a flank's, the slots' line), not a gate passed through
+##   forgive  a knife slot's kind (false for every other opening): true for
+##            a forgiving one (the nave's buttress slots, the rose gate's
+##            slots), where the plane's true side shape is fitted and a
+##            glance off a jamb is a scrape (scripts/endless/knife_glance.gd);
+##            false for a strict one (the belfry's slits, the nave's east
+##            slits and wall lights), for a steady hand
 static func openings(id: String, seed_value: int, weathered := 0.6) -> Array:
 	var p := plan(id,seed_value,weathered)
 	var out: Array = []
@@ -260,10 +282,10 @@ static func openings(id: String, seed_value: int, weathered := 0.6) -> Array:
 		"rose_gate": _gate_openings(p,out)
 	return out
 
-static func _opening(out: Array, name: String, kind: String, centre: Vector3, way: Vector3, size: Vector3, head := 0.0, knife := false, round := false, lane := false) -> void:
+static func _opening(out: Array, name: String, kind: String, centre: Vector3, way: Vector3, size: Vector3, head := 0.0, knife := false, round := false, lane := false, forgive := false) -> void:
 	var z := way.normalized()
 	var x := Vector3.UP.cross(z).normalized()
-	out.append({"name":name,"kind":kind,"frame":Transform3D(Basis(x,Vector3.UP,z),centre),"size":size,"head":head,"knife":knife,"round":round,"lane":lane})
+	out.append({"name":name,"kind":kind,"frame":Transform3D(Basis(x,Vector3.UP,z),centre),"size":size,"head":head,"knife":knife,"round":round,"lane":lane,"forgive":forgive})
 
 static func _nave_openings(p: Dictionary, out: Array) -> void:
 	_opening(out,"gothic_nave/portal","portal",Vector3(0.0,PORTAL_SPRING*0.5+0.5,HALF_LEN+PIER_R*0.4),Vector3.BACK,Vector3(PORTAL,PORTAL_SPRING-1.0,END_D*2.0),RuinKit._rise(PORTAL*0.5,PORTAL))
@@ -307,7 +329,7 @@ static func _nave_openings(p: Dictionary, out: Array) -> void:
 			if not bool(flyers["%d/%d" % [s,k]]): continue
 			_opening(out,"gothic_nave/flyer_%s%d" % [side,k],"flyer",Vector3(cx,(1.0+top)*0.5,HALF_LEN-k*BAY),Vector3.BACK,Vector3(FLANK,top-1.0,BUTTRESS_W))
 		if s == int(p["pierced"]):
-			_opening(out,"gothic_nave/slots_%s" % side,"knife",Vector3(s*(BUTTRESS_X+_slot_in()),(SLOT_Y.x+SLOT_Y.y)*0.5,0.0),Vector3.BACK,Vector3(KNIFE,SLOT_Y.y-SLOT_Y.x,BAYS*BAY+BUTTRESS_W),RuinKit._rise(KNIFE*0.5,KNIFE),true,false,true)
+			_opening(out,"gothic_nave/slots_%s" % side,"knife",Vector3(s*(BUTTRESS_X+_slot_in()),(SLOT_Y.x+SLOT_Y.y)*0.5,0.0),Vector3.BACK,Vector3(KNIFE,SLOT_Y.y-SLOT_Y.x,BAYS*BAY+BUTTRESS_W),RuinKit._rise(KNIFE*0.5,KNIFE),true,false,true,true)
 
 ## How far into a buttress (from its inner face) the knife slot's middle is.
 static func _slot_in() -> float:
@@ -336,7 +358,7 @@ static func _belfry_openings(p: Dictionary, out: Array) -> void:
 static func _gate_openings(_p: Dictionary, out: Array) -> void:
 	_opening(out,"rose_gate/rose","rose",Vector3(0.0,ROSE_Y,0.0),Vector3.BACK,Vector3(ROSE,ROSE,GATE.w*2.0),0.0,false,true)
 	for s: float in [-1.0,1.0]:
-		_opening(out,"rose_gate/slot_%s" % ("w" if s < 0.0 else "e"),"knife",Vector3(s*_gate_slot_x(),(GATE_SLOT.x+GATE_SLOT.y)*0.5,0.0),Vector3.BACK,Vector3(KNIFE,GATE_SLOT.y-GATE_SLOT.x,GATE.w*2.0),RuinKit._rise(KNIFE*0.5,KNIFE),true)
+		_opening(out,"rose_gate/slot_%s" % ("w" if s < 0.0 else "e"),"knife",Vector3(s*_gate_slot_x(),(GATE_SLOT.x+GATE_SLOT.y)*0.5,0.0),Vector3.BACK,Vector3(KNIFE,GATE_SLOT.y-GATE_SLOT.x,GATE.w*2.0),RuinKit._rise(KNIFE*0.5,KNIFE),true,false,false,true)
 
 static func _gate_slot_x() -> float:
 	return ROSE*0.5+ROSE_RING+5.0
@@ -380,7 +402,10 @@ static func _head(b: Build, pose: Transform3D, cx: float, w: float, spring: floa
 
 ## Jambs: long and short stones up both sides of an opening (middle `cx`,
 ## clear width `w`) from `sill` to `spring`, `d` half thick, `ring` out.
-static func _jambs(b: Build, pose: Transform3D, cx: float, w: float, sill: float, spring: float, d: float, ring: float) -> void:
+## `sharp`: a strict knife slot's (its `forgive` false), each stone settled
+## only SHARP_SETTLE of the others' so the jambs run clean and straight.
+const SHARP_SETTLE := 0.2
+static func _jambs(b: Build, pose: Transform3D, cx: float, w: float, sill: float, spring: float, d: float, ring: float, sharp := false) -> void:
 	for s: float in [-1.0,1.0]:
 		var y := sill
 		var k := 0
@@ -389,7 +414,7 @@ static func _jambs(b: Build, pose: Transform3D, cx: float, w: float, sill: float
 			if spring-(y+hgt) < 0.6: hgt = spring-y
 			var wide := ring*(1.0 if k%2 == 0 else 0.7)
 			var at := Vector3(cx+s*(w*0.5+wide*0.5),y+hgt*0.5,0.0)
-			b.solid(RuinKit._box(b,Vector3(wide*0.5,hgt*0.5-0.01,d)),pose*RuinKit._settle(b,at,0.2),RuinKit._stone(b,1.02))
+			b.solid(RuinKit._box(b,Vector3(wide*0.5,hgt*0.5-0.01,d)),pose*RuinKit._settle(b,at,0.2*(SHARP_SETTLE if sharp else 1.0)),RuinKit._stone(b,1.02))
 			y += hgt
 			k += 1
 
@@ -578,7 +603,7 @@ static func nave(seed_value: int, weathered := 0.6) -> Node3D:
 			var w := LANCET if kind == "lancet" else KNIFE*2.0+MULLION*2.0
 			_wall(b,pose,-half,half,top,WALL_D,_lancet_hole(0.0,w,LANCET_SILL,LANCET_SPRING,ring))
 			_sill(b,pose,0.0,w,LANCET_SILL,WALL_D)
-			_jambs(b,pose,0.0,w,LANCET_SILL,LANCET_SPRING,WALL_D,ring)
+			_jambs(b,pose,0.0,w,LANCET_SILL,LANCET_SPRING,WALL_D,ring,kind == "slit")
 			if kind == "slit":
 				# Its mullion stands: two knife lights, a head over each.
 				var mh := LANCET_SPRING-LANCET_SILL
@@ -647,7 +672,7 @@ static func nave(seed_value: int, weathered := 0.6) -> Node3D:
 	_jambs(b,epose,0.0,EAST_W,EAST.x,EAST.y,END_D,ring)
 	_head(b,epose,0.0,EAST_W,EAST.y,ring,END_D,9,0,etop)
 	for s: float in [-1.0,1.0]:
-		_jambs(b,epose,s*slit_x,KNIFE,EAST_SLIT.x,EAST_SLIT.y,END_D,0.8)
+		_jambs(b,epose,s*slit_x,KNIFE,EAST_SLIT.x,EAST_SLIT.y,END_D,0.8,true)
 		_head(b,epose,s*slit_x,KNIFE,EAST_SLIT.y,0.8,END_D,4,0,etop)
 	# Growth: from the heads, down the walls' tops.
 	_grow(b,hangs,8.0)
@@ -662,9 +687,9 @@ static func nave(seed_value: int, weathered := 0.6) -> Node3D:
 
 # --- 2. The belfry tower ----------------------------------------------------------
 
-## The belfry tower (`belfry_tower`): see the file's head. TOWER_HALF*2 (16
-## m) square over its walls, 24 over its angle buttresses, its head
-## TOWER_H (80 m) where it stands whole, a pinnacle on one corner to 96.
+## The belfry tower (`belfry_tower`): see the file's head. TOWER_HALF*2 (18
+## m) square over its walls, ~27 over its angle buttresses, its head
+## TOWER_H (106 m) where it stands whole, a pinnacle on one corner to ~122.
 static func belfry(seed_value: int, weathered := 0.6) -> Node3D:
 	var p := plan("belfry_tower",seed_value,weathered)
 	var b := _build(seed_value,weathered,"BelfryTower")
@@ -728,7 +753,7 @@ static func belfry(seed_value: int, weathered := 0.6) -> Node3D:
 				var cx := float(hl[0])
 				var w := float(hl[1])
 				_sill(b,pose,cx,w,float(hl[2]),d)
-				_jambs(b,pose,cx,w,float(hl[2]),float(hl[3]),d,ring)
+				_jambs(b,pose,cx,w,float(hl[2]),float(hl[3]),d,ring,is_equal_approx(w,KNIFE))
 				_head(b,pose,cx,w,float(hl[3]),ring,d,7 if w > 3.0 else 4,0,top)
 		if face == 0:
 			# The tracery's remains: a broken ring high in the window's point.

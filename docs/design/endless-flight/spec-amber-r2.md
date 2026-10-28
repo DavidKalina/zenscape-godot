@@ -127,6 +127,65 @@ still reads as an overgrown aqueduct. Also open from that lane: 4 Jolt
 "Hull building failed" errors in the road bridge's sweep (blocks with no
 collider).
 
+## Spec change: an abandoned colosseum (2026-10-28)
+
+The user: "Can we also get a colosseum somewhere? Like an ancient
+colosseum that's abandoned." A fourth lane, `lane/amber-colosseum`, runs
+beside the trunk and is merged before the trunk's look pass:
+
+- **A RuinKit piece**, id `colosseum`, in its own file
+  (`scripts/ruin_kit_colosseum.gd`, scaffolded with `tools/kit_piece.py`),
+  with collision, the gothic pieces' mossed stone and thick growth,
+  `KIND_OF` entries and an `openings(...)` / `plan(...)` like
+  `ruin_kit_gothic.gd`'s.
+- **The form**: a huge elliptical amphitheatre, on the order of 190 x 160 m
+  outside and 45–50 m tall: an outer wall of stacked arcades (three arched
+  tiers and a solid attic), a ring corridor (the ambulatory) inside the
+  outer wall, the seating bowl stepping down in rings to a flat oval arena.
+  **Abandoned**: one long side has fallen to its lower tiers in a ragged
+  stepped break, with a rubble slope outside it; the arena floor is partly
+  fallen in, opening the corridors under it.
+- **Flown**: through the outer arcade arches (each tier; sized with
+  `WorldScale.opening()`), a curving lap along the ambulatory, dropping in
+  over the broken side, skimming the arena, the trench of the opened
+  corridors under the floor, and out the great gates at the ends of the
+  long axis. Some arches are partly blocked or fallen; a few are tighter
+  on purpose.
+- **Placed** by the set piece placer (`scripts/endless/set_plan.gd`) as a
+  rarer kind than the others, on a broad terrace (it wants flat ground, not
+  a rising side), named `amberlands/colosseum_<sx>_<sz>`, clear of the other
+  pieces, bridges, halls, tunnels and landing flats. It keeps the meadows
+  and flats rule: it must not take the flats round it.
+- **Cost**: its repeated bays built once and repeated (`docs/art/model-budget.md`),
+  with a far level so it reads from a kilometre off at a cost near the nave's.
+- Hand-flyable by the same wobble check as the gothic pieces
+  (`scratch/sets/thread.gd`, A 0.2 over 10 trials, no crashes).
+
+## Spec change: knife slots, some forgiving and some strict (2026-10-28)
+
+Flyability B found the 2.4 m knife slots pass a steady hand at wobble A 0
+and mostly at A 0.1, but fail the A 0.2 bar (0.3 m of room against the
+pilot's 0.4–1.2 m sideways wobble). The user: "some forgiving some not".
+A trunk task (after the bridges half of flyability B) makes two kinds:
+
+- **Forgiving** knife slots: the same width, but contact fitted to the
+  plane's real side shape (roof ~0.72 m, keel ~0.9 m from the centre line)
+  and a glance off a jamb counts as a scrape, not a crash. The nave's flank
+  slots are forgiving. Bar: no crash at A 0.2 over 10 trials.
+- **Strict** knife slots: as they are now, for a steady hand. The belfry's
+  slits are strict. Bar: a steady hand at A 0.1 gets through most trials.
+- Each opening's `openings()` entry says which (e.g. `forgive: true`), so
+  the rival's course and later scoring can tell them apart. Strict ones
+  should read as the harder line where you can see it (cleaner, sharper
+  jambs, fewer strands), without a sign or marker.
+
+## Spec change: the look pass kept (2026-10-28)
+
+The user saw the look pass's before/after stills (716aeba2: muted gold
+growth, more of it, the nave's shade lifted, the belfry raised): "Let's
+just keep it for now". No second look pass on the set pieces this round;
+the road bridge's thin growth and the belfry's low siting stay open notes.
+
 ## Trunk (the loop, after the merge, in order)
 
 1. **Set piece placer**: a placer for standalone structures (own file) that

@@ -52,6 +52,15 @@ const PIECES := {
 	"belfry_tower":{"w":0.3,"half":Vector2(17.0,15.0),"spread":4.0},
 	"rose_gate":{"w":0.2,"half":Vector2(17.0,8.0),"spread":3.5},
 }
+## The colosseum (scripts/ruin_kit_colosseum.gd), rarer, apart from the
+## pieces' roll: its chance a set cell (its own draw, so a cell it skips
+## plans as before), footprint (the podium's steps and the rubble past the
+## broken side) and spread. It wants a broad flat terrace, no rise: its foot
+## at the highest ground under its core (its footings reach FOUND 8 m down),
+## the ground within SPREAD under it, and a STRIP m landable run kept past
+## its footprint (the land's flats rule, land_ponds.gd `_strip`).
+const COLOSSEUM := {"w":0.12,"half":Vector2(118.0,104.0),"spread":7.0}
+const STRIP := 208.0
 ## The backdrop: the rise beside the spot (m) and the distances it is read
 ## at (m), out of DIRS ways.
 const RISE := 22.0
@@ -76,15 +85,23 @@ static var _cache := {}
 static var _lock := Mutex.new()
 
 ## The flags: --sets=X (x the layer), --no-sets.
+## --sets=colosseum: every set cell that can tries the colosseum first.
 static var _flag := -1.0
+static var _force := ""
 static func flag() -> float:
 	if _flag < 0.0:
 		var k := 1.0
 		for a: String in preload("res://scripts/launch_args.gd").user_args():
 			if a == "--no-sets": k = 0.0
-			elif a.begins_with("--sets="): k = maxf(0.0,float(a.get_slice("=",1)))
+			elif a.begins_with("--sets="):
+				var v := a.get_slice("=",1)
+				if v.is_valid_float(): k = maxf(0.0,float(v))
+				else: _force = v
 		_flag = k
 	return _flag
+
+static func _info(id: String) -> Dictionary:
+	return COLOSSEUM if id == "colosseum" else PIECES[id]
 
 static func cell_of(x: float, z: float) -> Vector2i:
 	return Vector2i(floori(x/CELL),floori(z/CELL))
@@ -156,7 +173,7 @@ static func _off_pieces(arch: Dictionary, pieces: Array) -> bool:
 ## seed and the cell).
 static func plan(field: RefCounted, sx: int, sz: int, density := 1.0, rock := 1.0, ruin := 1.0) -> Array:
 	var world: Variant = field.get("world")
-	var key := "%d|%d|%d|%s|%.3f|%.3f|%.3f|%.3f" % [int(field.seed),sx,sz,String(world.id) if world != null else "",density,rock,ruin,flag()]
+	var key := "%d|%d|%d|%s|%.3f|%.3f|%.3f|%.3f|%s" % [int(field.seed),sx,sz,String(world.id) if world != null else "",density,rock,ruin,flag(),_force]
 	_lock.lock()
 	var got: Variant = _cache.get(key)
 	_lock.unlock()
@@ -178,6 +195,15 @@ static func _plan(field: RefCounted, sx: int, sz: int, density: float, rock: flo
 	for q: Vector2 in [Vector2(0.5,0.5),Vector2(0.2,0.2),Vector2(0.8,0.2),Vector2(0.2,0.8),Vector2(0.8,0.8)]:
 		most = maxf(most,_layer(field,x0+q.x*CELL,z0+q.y*CELL))
 	if most <= 0.0: return out
+	# The colosseum first, on its own draw.
+	var crng := RandomNumberGenerator.new()
+	crng.seed = hash([int(field.seed),sx,sz,"endless colosseum"])
+	if crng.randf() < float(COLOSSEUM.w)*minf(most,1.0) or _force == "colosseum":
+		var got := _colosseum(field,x0,z0,crng,density,rock,ruin)
+		if not got.is_empty():
+			out.append(_spec(field,"colosseum",got,sx,sz,crng))
+			_count("placed_colosseum")
+			return out
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([int(field.seed),sx,sz,"endless set pieces"])
 	if rng.randf() >= TAKE*minf(most,1.0): return out
@@ -209,6 +235,9 @@ static func _plan(field: RefCounted, sx: int, sz: int, density: float, rock: flo
 			var clear := _clear(field,id,s,density,rock,ruin)
 			_count("clear_us",Time.get_ticks_usec()-c0)
 			if not clear: continue
+			if not _flats_kept(field,id,s):
+				_count("flat_taken_"+id)
+				continue
 			out.append(_spec(field,id,s,sx,sz,rng))
 			_count("placed_"+id)
 			return out
@@ -217,7 +246,7 @@ static func _plan(field: RefCounted, sx: int, sz: int, density: float, rock: flo
 ## A spot for piece `id` at `a`: {c, z (its long way, XZ), lo (its
 ## footprint's lowest ground), spread, rise, score}, or {}.
 static func _spot(field: RefCounted, id: String, a: Vector2, start: float) -> Dictionary:
-	var info: Dictionary = PIECES[id]
+	var info: Dictionary = _info(id)
 	var half: Vector2 = info.half
 	var h0 := float(field.height(a.x,a.y))
 	if h0 < Field.SEA_Y+DRY: return _none("wet")
@@ -262,7 +291,7 @@ static func _spot(field: RefCounted, id: String, a: Vector2, start: float) -> Di
 ## and bridges.
 static func _clear(field: RefCounted, id: String, s: Dictionary, density: float, rock: float, ruin: float) -> bool:
 	var c: Vector2 = s.c
-	var r := (PIECES[id].half as Vector2).length()+KEEP
+	var r := (_info(id).half as Vector2).length()+KEEP
 	if field.has_method("hall_at") and not (field.hall_at(c.x,c.y,r) as PackedFloat32Array).is_empty(): return _no("by_hall")
 	if field.has_method("split_at") and not (field.split_at(c.x,c.y,r,0.0) as PackedFloat32Array).is_empty(): return _no("by_split")
 	if field.has_method("tunnels_in"):
@@ -291,16 +320,126 @@ static func _clear(field: RefCounted, id: String, s: Dictionary, density: float,
 static func _spec(field: RefCounted, id: String, s: Dictionary, sx: int, sz: int, rng: RandomNumberGenerator) -> Dictionary:
 	var c: Vector2 = s.c
 	var z: Vector2 = s.z
-	var half: Vector2 = PIECES[id].half
+	var half: Vector2 = _info(id).half
 	# Basis(UP, yaw) takes the piece's z to (sin yaw, cos yaw).
 	var yaw := atan2(z.x,z.y)
 	# Its foot a little over the lowest ground (its footings reach 2 m down).
 	var y := float(s.lo)+minf(float(s.spread)*0.4,1.6)
+	if id == "colosseum": y = float(s.top)
 	return {"kind":id,"set":true,"form":id,"pos":Vector3(c.x,y,c.y),"yaw":yaw,"grow":1.0,
 		"seed":rng.randi() & 0xffffff,"weathered":rng.randf_range(0.45,0.8),
 		"reach":half.length(),"w":half.x*2.0,"depth":half.y*2.0,
 		"foot":[[c,Vector2(half.y,half.x),yaw-PI*0.5]],"rise":float(s.rise),
 		"name":"%s/%s_%d_%d" % [_region_id(field,c.x,c.y),id,sx,sz]}
+
+## The colosseum's spot in the set cell at (x0, z0): of TRIES spots and 4
+## ways each, the flattest that is dry, in the region, has a STRIP run kept
+## past its footprint and keeps clear (`_clear`); {} if none.
+static func _colosseum(field: RefCounted, x0: float, z0: float, rng: RandomNumberGenerator, density: float, rock: float, ruin: float) -> Dictionary:
+	var half: Vector2 = COLOSSEUM.half
+	var margin := maxf(MARGIN,half.length())
+	var start := rng.randf()*TAU
+	var best: Array = []
+	for t in TRIES:
+		var a := Vector2(x0+rng.randf_range(margin,CELL-margin),z0+rng.randf_range(margin,CELL-margin))
+		if _layer(field,a.x,a.y) <= 0.0:
+			_count("col_region")
+			continue
+		for k in 4:
+			var z := Vector2.from_angle(start+PI*0.5*k)
+			var x := Vector2(z.y,-z.x)
+			var lo := INF
+			var hi := -INF
+			var top := -INF
+			var ok := true
+			for j in range(-6,7):
+				for i in range(-6,7):
+					var q := a+x*(half.x*i/6.0)+z*(half.y*j/6.0)
+					var h := float(field.height(q.x,q.y))
+					lo = minf(lo,h)
+					hi = maxf(hi,h)
+					if absi(i) <= 4 and absi(j) <= 4: top = maxf(top,h)
+					if hi-lo > float(COLOSSEUM.spread):
+						ok = false
+						break
+				if not ok: break
+			if not ok:
+				_count("col_not_flat")
+				continue
+			if lo < Field.SEA_Y+DRY:
+				_count("col_wet")
+				continue
+			best.append({"c":a,"z":z,"lo":lo,"top":top,"spread":hi-lo,"rise":0.0,"score":-(hi-lo)})
+	best.sort_custom(func(p: Dictionary, q: Dictionary) -> bool: return float(p.score) > float(q.score))
+	for s: Dictionary in best.slice(0,8):
+		if not _strip_by(field,s):
+			_count("col_no_strip")
+			continue
+		if not _clear(field,"colosseum",s,density,rock,ruin): continue
+		return s
+	if best.is_empty(): _count("no_spot_colosseum")
+	return {}
+
+## Whether piece `id` at spot `s` leaves the flats round it: no STRIP m
+## level run passes through its footprint (on any of 4 headings, by its
+## middle or 0.7 of its half width to a side), or one still lies along a
+## side of it (`_strip_by`), as land_ponds.gd keeps a strip by a pond.
+static func _flats_kept(field: RefCounted, id: String, s: Dictionary) -> bool:
+	var c: Vector2 = s.c
+	var half: Vector2 = _info(id).half
+	var side := minf(half.x,half.y)*0.7
+	var through := false
+	for k in 4:
+		var d := Vector2.from_angle(PI*0.25*k)
+		var across := Vector2(-d.y,d.x)
+		for off: float in [0.0,side,-side]:
+			if _level(field,c+across*off,d):
+				through = true
+				break
+		if through: break
+	return not through or _strip_by(field,s,id)
+
+## Whether a STRIP m landable run lies past piece `id`'s footprint at
+## spot `s`: along either of its axes, clear of it, on one of its 4 sides.
+static func _strip_by(field: RefCounted, s: Dictionary, id := "colosseum") -> bool:
+	var c: Vector2 = s.c
+	var z: Vector2 = s.z
+	var x := Vector2(z.y,-z.x)
+	var half: Vector2 = _info(id).half
+	for side: Array in [[x,half.x],[-x,half.x],[z,half.y],[-z,half.y]]:
+		var out: Vector2 = side[0]
+		var along := Vector2(-out.y,out.x)
+		for off: float in [40.0,90.0,150.0]:
+			if _level(field,c+out*(float(side[1])+off),along): return true
+	return false
+
+## The flats check's level run, as strict as the check counts one
+## (scratch flats.gd, the earlier rounds'): dry, no rise over 1.92 m between
+## points 16 m apart nor 3.84 m across 64 m, along it or across it (0.06,
+## the check's flat cell), and its heights within STRIP_SPREAD m of each other.
+## (land_ponds.gd `_strip` has the first two only, which pass a run
+## rising some 12 m over its length.)
+const STRIP_SPREAD := 3.0
+static func _level(field: RefCounted, c: Vector2, d: Vector2) -> bool:
+	var n := int(STRIP/16.0)
+	var prev := PackedFloat32Array()
+	var across := Vector2(-d.y,d.x)*32.0
+	var lo := INF
+	var hi := -INF
+	for t in n+1:
+		var p := c+d*(t*16.0-STRIP*0.5)
+		var h := float(field.height(p.x,p.y))
+		if h-Field.SEA_Y < 2.0: return false
+		if t > 0 and absf(h-prev[t-1]) > 1.92: return false
+		if t > 3 and absf(h-prev[t-4]) > 3.84: return false
+		lo = minf(lo,h)
+		hi = maxf(hi,h)
+		if hi-lo > STRIP_SPREAD: return false
+		var a := p+across
+		var b := p-across
+		if absf(float(field.height(a.x,a.y))-float(field.height(b.x,b.y))) > 3.84: return false
+		prev.append(h)
+	return true
 
 static func _none(why: String) -> Dictionary:
 	_count(why)

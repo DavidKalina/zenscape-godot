@@ -4,6 +4,8 @@ extends RefCounted
 ## `Aqueduct.run` lays one: `count` spans SPAN apart along +X from x 0, each
 ## pier grown down to `ground` (Callable(x, z) -> y, the run's frame), merged
 ## into one mesh and one body. arch_build.gd grows it and gives its solid.
+## The spans are laid coarse (the kit's `coarse`: bigger stones, lean,
+## leaner growth): a bridge is a dozen or more of them, grown big.
 ##   whole        single spans, each standing its right pier (the first its
 ##                left too).
 ##   tier         two-tier spans (`Aqueduct.two_tier`).
@@ -42,19 +44,20 @@ static func piece(spec: Dictionary, ground: Callable) -> Node3D:
 	var mirror := func(dx: float) -> Callable:
 		return func(x: float, z: float) -> float: return float(ground.call(dx-x,-z))
 	var span: float = Aqueduct.SPAN
+	var coarse := not fine()
 	for i in range(count):
 		var w := clampf(weathered+rng.randf_range(-0.15,0.15),0.0,1.0)
 		var x := span*(0.5+i)
 		var node: Node3D
 		if cut < 0:
 			var piers := 2|(1 if i == 0 else 0)
-			if tier: node = Aqueduct.two_tier(seed_value+i,w,piers,wet,shift.call(x))
-			else: node = Aqueduct.span(seed_value+i,w,piers,wet,shift.call(x))
+			if tier: node = Aqueduct.two_tier(seed_value+i,w,piers,wet,shift.call(x),coarse)
+			else: node = Aqueduct.span(seed_value+i,w,piers,wet,shift.call(x),coarse)
 			node.position = Vector3(x,0.0,0.0)
 		elif i < cut:
 			# The A half, out from x 0.
-			if i == cut-1: node = Aqueduct.broken(seed_value+i,w,i == 0,"stump",wet,shift.call(x))
-			else: node = Aqueduct.span(seed_value+i,w,2|(1 if i == 0 else 0),wet,shift.call(x))
+			if i == cut-1: node = Aqueduct.broken(seed_value+i,w,i == 0,"stump",wet,shift.call(x),coarse)
+			else: node = Aqueduct.span(seed_value+i,w,2|(1 if i == 0 else 0),wet,shift.call(x),coarse)
 			node.position = Vector3(x,0.0,0.0)
 		elif i < cut+miss:
 			continue
@@ -63,12 +66,23 @@ static func piece(spec: Dictionary, ground: Callable) -> Node3D:
 			# (the far end's both).
 			var j := i
 			var first := j == count-1
-			if j == cut+miss: node = Aqueduct.broken(seed_value+j,w,first,"none" if miss == 0 else "stump",wet,mirror.call(x))
-			else: node = Aqueduct.span(seed_value+j,w,2|(1 if first else 0),wet,mirror.call(x))
+			# With none fallen, the A half's last stands the stump between them:
+			# this one has nothing over it (its springers there would hang
+			# in mid-air over the stump).
+			if j == cut+miss: node = Aqueduct.broken(seed_value+j,w,first,"gone" if miss == 0 else "stump",wet,mirror.call(x),coarse)
+			else: node = Aqueduct.span(seed_value+j,w,2|(1 if first else 0),wet,mirror.call(x),coarse)
 			node.transform = Transform3D(Basis(Vector3.UP,PI),Vector3(x,0.0,0.0))
 		root.add_child(node)
 	RuinKit.merge(root)
 	return root
+
+## Whether the aqueduct form's spans are laid as the kit's own (a ruin's
+## stone and growth) rather than coarse (Aqueduct BRIDGE_COURSE, the
+## default): --aqueduct-fine, to compare.
+static var _fine := -1
+static func fine() -> bool:
+	if _fine < 0: _fine = 1 if OS.get_cmdline_user_args().has("--aqueduct-fine") else 0
+	return _fine == 1
 
 ## The land under a run in its frame (as arch_build.gd places it: its middle
 ## at spec.pos, turned by its yaw): Callable(x, z) -> y over the deck.

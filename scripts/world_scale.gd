@@ -98,6 +98,23 @@ const SNUG := 2.4/TOY_SPAN
 static func reach_rolled(roll: float) -> float:
 	return maxf(span*0.5*absf(cos(roll)),TOY_KEEL*plane*absf(sin(roll)))
 
+## The toy's reach from its middle up to its roof (the upper wing's top and
+## the pilot's cap): the side a plane on its side shows less of than its
+## keel. Only the forgiving knife slots fit to it (KnifeGlance).
+const TOY_ROOF := 0.36
+
+## The plane's reach fitted to its true side shape, `up` its up vector:
+## Vector2(pad, shift), the pad round a middle moved `shift` m toward the
+## keel's side (across, level), so on its side it reaches TOY_KEEL one way
+## and TOY_ROOF the other (0.9 / 0.72 m at plane 2), wings level its half
+## span both ways.
+static func reach_fitted(up: Vector3) -> Vector2:
+	var side := Vector2(up.x,up.z).length()
+	var wings := span*0.5*absf(up.y)
+	var body := (TOY_KEEL+TOY_ROOF)*0.5*plane*side
+	if wings >= body: return Vector2(wings,0.0)
+	return Vector2(body,(TOY_KEEL-TOY_ROOF)*0.5*plane*side)
+
 ## A gap the plane flies through sized by steering room, not by a toy
 ## width: its span and `room` toy spans of room (both sides together),
 ## ROOM by default. gap(SNUG) is 5.2 m at plane 2, 3.8 for the toy.

@@ -34,10 +34,13 @@ const Sundered = preload("res://scripts/sundered_growth.gd")
 ## an opening through a wall (a lane keeps its own length).
 const CORE_MARGIN := 1.6
 const CORE_DEPTH := 2.0
+## A strict knife slot's (Gothic `openings`, `forgive` false) core is kept
+## this much wider again, so its jambs show clean stone, few strands.
+const STRICT_MARGIN := 1.4
 
 ## The kit's own growth's detail on these pieces (Build `level`, set once
 ## ours is laid): its fine ivy and cushions are mostly the shader's now.
-const KIT_LEVEL := 0.3
+const KIT_LEVEL := 0.6
 
 ## Leaf sizes (RuinGrowth `strand` coarse) of what is seen near (the
 ## vault's curtains) and far (the piers, the tower's faces).
@@ -45,19 +48,20 @@ const COARSE_NEAR := 4.2
 const COARSE_MID := 5.0
 const COARSE_FAR := 5.6
 
-## The amberlands' growth colours (sRGB), dark to light: muted dry olive,
-## dusty green-grey and ochre in broad patches, a rare dull rust. The kit's
+## The amberlands' growth colours (sRGB), dark to light: muted gold-olive,
+## dusty khaki and dry gold in broad patches, a rare dull rust (the look
+## pass: the warm muted gold of the land, not green, not orange). The kit's
 ## greens map onto them by brightness (so a leaf's light and dark stay).
-const OLIVE := [Color("222419"),Color("363923"),Color("4b4f2f"),Color("5f643b"),Color("727846")]
-const GREY := [Color("24271f"),Color("373b30"),Color("4c5244"),Color("616856"),Color("757d69")]
-const OCHRE := [Color("292416"),Color("413921"),Color("5a4e2d"),Color("706239"),Color("847545")]
-const RUST := [Color("281d16"),Color("3e2f22"),Color("56412e"),Color("6b523a"),Color("7f6346")]
+const OLIVE := [Color("27251a"),Color("3d3a24"),Color("555130"),Color("6d683d"),Color("858049")]
+const GREY := [Color("28261f"),Color("3d3b31"),Color("545143"),Color("6b6855"),Color("827e67")]
+const OCHRE := [Color("2e2819"),Color("473e24"),Color("625530"),Color("7c6b3b"),Color("948046")]
+const RUST := [Color("2a2018"),Color("413224"),Color("594430"),Color("6e563c"),Color("826848")]
 ## The brightness (linear luminance) the kit's greens run over, and the
 ## patches: a noise's scale (m); ochre's share, rust's (rare).
 const LUM := Vector2(0.03,0.28)
 const PATCH_SCALE := 26.0
-const OCHRE_SHARE := 0.25
-const RUST_SHARE := 0.06
+const OCHRE_SHARE := 0.4
+const RUST_SHARE := 0.03
 
 static var _gothic = null
 
@@ -66,9 +70,11 @@ static func _g():
 	return _gothic
 
 ## How much to grow: the game's --overgrowth= (shared with the sundered
-## hall), the build's detail, a little more on a more weathered piece.
+## hall), the build's detail, a little more on a more weathered piece;
+## AMOUNT over the sundered hall's (the look pass: heavily overgrown).
+const AMOUNT := 1.6
 static func density(b) -> float:
-	return Sundered.amount*clampf(b.level,0.0,1.0)*lerpf(0.8,1.15,b.weathered)
+	return AMOUNT*Sundered.amount*clampf(b.level,0.0,1.0)*lerpf(0.8,1.15,b.weathered)
 
 # --- The dressing's state -----------------------------------------------------
 
@@ -144,7 +150,8 @@ static func keep_clear(b, id: String, p: Dictionary) -> void:
 				var slab := Vector3(w,(y1-y0)*0.5,half.z+depth)
 				b.clear.append(box_of(f*Transform3D(Basis.IDENTITY,Vector3(0.0,(y0+y1)*0.5,0.0)),slab))
 			continue
-		half += Vector3(CORE_MARGIN,CORE_MARGIN,depth)
+		var margin := CORE_MARGIN+(STRICT_MARGIN if bool(o["knife"]) and not bool(o.get("forgive",false)) else 0.0)
+		half += Vector3(margin,CORE_MARGIN,depth)
 		b.clear.append(box_of(f,half))
 
 ## The AABB of the oriented box `half` big at frame `f`.
@@ -463,19 +470,21 @@ static func belfry(b, p: Dictionary) -> void:
 	var d := density(b)
 	if d <= 0.0: return
 	var x := Dress.new(b,"belfry",d)
+	# The tower's added height (Gothic RAISE) under its belfry.
+	var r: float = _g().RAISE
 	if RuinGrowth.vines:
 		x.section("head")
 		# The ragged head: long trails down every face.
-		cascades(x,66.0,100.0,16,Vector2(14.0,32.0),5,COARSE_FAR,0.4,0.3,true)
+		cascades(x,66.0+r,100.0+r,16,Vector2(14.0,32.0),5,COARSE_FAR,0.4,0.3,true)
 		x.section("upper")
 		# The upper stage and the belfry's sills and string courses.
-		cascades(x,46.0,66.0,8,Vector2(8.0,18.0),5,COARSE_FAR,0.5,0.3,false)
+		cascades(x,46.0+r,66.0+r,8,Vector2(8.0,18.0),5,COARSE_FAR,0.5,0.3,false)
 		x.section("lower")
 		# The lower stages' set-offs, tracery sill, courses.
-		cascades(x,14.0,46.0,16,Vector2(8.0,20.0),5,COARSE_FAR,0.5,0.3,false)
+		cascades(x,14.0,46.0+r,20,Vector2(8.0,20.0),5,COARSE_FAR,0.5,0.3,false)
 		cascades(x,2.0,14.0,4,Vector2(3.0,9.0),4,COARSE_MID,0.5,0.3,false)
 	x.section("mats")
-	mats(x,2.0,98.0,18,0.3,Vector2i(1,3),3.4)
+	mats(x,2.0,98.0+r,18,0.3,Vector2i(1,3),3.4)
 	x.section("low")
 	low(x,12)
 	x.done()
@@ -549,7 +558,8 @@ static func far(id: String, b, rng: RandomNumberGenerator) -> void:
 				for i in range(5):
 					var at: Vector3 = turn*Vector3(rng.randf_range(-6.0,6.0),h-rng.randf_range(0.0,5.0),hf)
 					_far_strip(b,at,turn*Vector3.BACK,rng.randf_range(1.5,3.0),rng.randf_range(14.0,30.0),rng)
-				for sy: float in [18.0,34.0,50.0]:
+				for st: Array in g.TOWER_STAGES:
+					var sy: float = st[0]
 					var at: Vector3 = turn*Vector3(rng.randf_range(-6.0,6.0),sy,hf+0.5)
 					_far_strip(b,at,turn*Vector3.BACK,rng.randf_range(1.2,2.4),rng.randf_range(8.0,15.0),rng)
 		"rose_gate":
@@ -579,9 +589,9 @@ static func _far_mat(b, at: Vector3, rng: RandomNumberGenerator) -> void:
 ## material for all three; every other ruin keeps the shared one. Its
 ## knobs (`STONE_MOSS`) are the stone's: how much, the colours, the lifts.
 const GOTHIC_STONE = preload("res://shaders/gothic_stone.gdshader")
-const STONE_MOSS := {"moss":1.0,"moss_low":11.0,"moss_tongue":0.46,"stone_lift":1.35,"shade_lift":6.5,
-	"moss_olive":Color("434b2c"),"moss_grey":Color("50584a"),"moss_ochre":Color("66603a"),
-	"moss_rust":Color("57412f"),"moss_deep":Color("24291a")}
+const STONE_MOSS := {"moss":1.25,"moss_low":22.0,"moss_tongue":0.32,"stone_lift":1.35,"shade_lift":6.5,
+	"moss_olive":Color("37381f"),"moss_grey":Color("413f34"),"moss_ochre":Color("574d29"),
+	"moss_rust":Color("473624"),"moss_deep":Color("1d1d12")}
 static var _stone: ShaderMaterial = null
 static var _stone_key := ""
 
@@ -609,6 +619,10 @@ static func stone() -> ShaderMaterial:
 ## the warmed stone); no `shade_lift` (the land's fill already lifts the
 ## shade about as much). A new copy: the caller keeps it.
 const MOSS_LIFT := 0.45
+## The shade's own lift in the land (faces turned from the sun: a nave's
+## inside, a tower's shaded side), over the land's fill: the look pass found
+## the nave's inside near-black in shade with none.
+const SHADE_LIFT := 8.0
 static func lifted(lift: Color, fill: float, rim: float) -> ShaderMaterial:
 	var s := stone().duplicate() as ShaderMaterial
 	var own := float(STONE_MOSS.stone_lift)
@@ -616,7 +630,7 @@ static func lifted(lift: Color, fill: float, rim: float) -> ShaderMaterial:
 	var ratio := Vector3.ONE*gain
 	s.set_shader_parameter("albedo",lift)
 	s.set_shader_parameter("stone_lift",1.0)
-	s.set_shader_parameter("shade_lift",0.0)
+	s.set_shader_parameter("shade_lift",SHADE_LIFT)
 	s.set_shader_parameter("fill",fill)
 	s.set_shader_parameter("rim",rim)
 	for k: String in ["moss_olive","moss_grey","moss_ochre","moss_rust","moss_deep"]:

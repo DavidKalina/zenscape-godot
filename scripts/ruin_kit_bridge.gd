@@ -447,15 +447,19 @@ static func _arch_lane(p: Dictionary, i: int) -> Vector3:
 	if lo < step_top: w = minf(w,float(p.clear)-2.0*(BATTER*(float(p.spring)-lo)+STEP_OUT*STEPS))
 	return Vector3(lo,hi,w-1.0)
 
-## The ground's height under each arch's middle (its highest), for `_arch_lane`.
+## The ground's height under each arch's middle (its highest), for `_arch_lane`:
+## read through the opening's whole depth (the cutwaters' and a metre past),
+## so land standing up just off the faces (a terrace's cliff along the
+## bridge) shuts the arch rather than ending its flown lane in a wall.
 static func _floors(p: Dictionary, ground: Callable) -> void:
 	var floors := {}
+	var depth := float(p.half)+PIER_PROUD+float(p.cutwater)+1.0
 	for i in range(int(p.n)):
 		var mid := float(p.xa)+float(p.span)*(i+0.5)
 		var hi := -INF
 		for sx: float in [-0.35,-0.15,0.0,0.15,0.35]:
-			for sz: float in [-1.0,0.0,1.0]:
-				hi = maxf(hi,_ground(ground,mid+sx*float(p.clear),sz*(float(p.half)+4.0)))
+			for sz: float in [-1.0,-0.5,0.0,0.5,1.0]:
+				hi = maxf(hi,_ground(ground,mid+sx*float(p.clear),sz*depth))
 		floors[i] = hi
 	p["floors"] = floors
 

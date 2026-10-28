@@ -51,6 +51,8 @@ const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
 const RivalStrip = preload("res://scripts/endless/rival_strip.gd")
 const RivalCourse = preload("res://scripts/endless/rival_course.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
+const RivalPieces = preload("res://scripts/endless/rival_pieces.gd")
+const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 
 ## The skill knobs at skill 1 ("good, not expert").
 ## How far its line swings across (m, each way) and how late its heading
@@ -887,7 +889,9 @@ func _keep_clear(traffic: Node, aim: Vector3, pos: Vector3, speed: float) -> Vec
 
 ## Every opening near `pos`, each both ways: {id, kind, points: [{p, room,
 ## bore}], through (the index of the point in the opening's middle), mouth
-## (the index of the point where it goes in)}.
+## (the index of the point where it goes in)}. Kinds: "arch", "split",
+## "hall", "tunnel", and a set piece's or a bridge's line ("set", "bridge":
+## rival_pieces.gd; no knife slot, it never rolls to fit).
 func _candidates(pos: Vector3) -> Array:
 	var out: Array = []
 	var r := REACH+200.0
@@ -896,6 +900,10 @@ func _candidates(pos: Vector3) -> Array:
 		for a: Dictionary in game.arches.standing():
 			var at: Vector3 = a.pos
 			if Vector2(at.x-pos.x,at.z-pos.z).length() > r: continue
+			var spec: Dictionary = a.spec
+			if spec.has("set") or spec.has("bridge"):
+				_piece_candidates(a,out)
+				continue
 			var o := _arch_opening(a)
 			if o.is_empty(): continue
 			var z := Vector3(float(a.sin),0.0,float(a.cos))
@@ -961,6 +969,28 @@ func _candidates(pos: Vector3) -> Array:
 				out.append({"id":id,"kind":"tunnel","points":pts,"through":pts.size()/2,"mouth":1})
 	return out
 
+## A set piece's or a bridge's lines (RivalPieces), each both ways, onto
+## `out`: its lead-in (RivalPieces IN), each gate's middle, the run out
+## (OUT); the race's gate its first one's (kind "set" or "bridge"; `line`
+## its gates' names).
+func _piece_candidates(a: Dictionary, out: Array) -> void:
+	for l: Dictionary in RivalPieces.lines_of(game,a):
+		var way: Vector3 = l.way
+		for sgn: float in [1.0,-1.0]:
+			var w := way*sgn
+			var gates: Array = (l.gates as Array).duplicate()
+			if sgn < 0.0: gates.reverse()
+			var g0: Dictionary = gates[0]
+			var g1: Dictionary = gates[gates.size()-1]
+			var c0: Vector3 = g0.c
+			if not _level_way(c0,w): continue
+			var room := float(l.room)
+			var pts: Array = [_pt(c0-w*((g0.half as Vector3).z+RivalPieces.IN),room,false),_pt(c0-w*((g0.half as Vector3).z+20.0),room,false)]
+			for g: Dictionary in gates: pts.append(_pt(g.c,room,false))
+			pts.append(_pt((g1.c as Vector3)+w*((g1.half as Vector3).z+RivalPieces.OUT),INF,false))
+			out.append({"id":String(l.id),"kind":String(l.kind),"points":pts,"through":2+(gates.size()-1)/2,"mouth":2,
+				"half_w":(g0.half as Vector3).x,"lo":float(g0.lo)-1.0,"hi":float(g0.hi),"line":gates.map(func(g: Dictionary) -> String: return String(g.name))})
+
 ## Whether the way `w` through an opening at `c` is level enough: the
 ## ground along it (LEVEL_AT) under the opening's height.
 func _level_way(c: Vector3, w: Vector3) -> bool:
@@ -1023,8 +1053,10 @@ func _arch_opening(a: Dictionary) -> Dictionary:
 	var need_wide := WorldScale.span*NEED_WIDE
 	var runs: Array = []
 	var run := []
-	var x0 := float(a.x0)
-	var n := int(a.n)
+	# Across its solid's x (BoxSolid; its columns' x0 and n before it).
+	var sx := BoxSolid.span_x(a.solid)
+	var x0 := sx.x
+	var n := int(ceil((sx.y-sx.x)/Build.BIN))
 	for j in range(n+1):
 		var ok := false
 		var gap := INF

@@ -29,6 +29,7 @@ const RuinKit = preload("res://scripts/ruin_kit.gd")
 const GothicGrowth = preload("res://scripts/gothic_growth.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const RockShape = preload("res://scripts/endless/rock_shape.gd")
+const Colosseum = preload("res://scripts/ruin_kit_colosseum.gd")
 
 ## The cells built round the eye (m to the cell's middle), and those kept
 ## until past REACH+CELL.
@@ -94,7 +95,9 @@ var _stone: ShaderMaterial
 var _gothic_stone: ShaderMaterial
 var _moss_off := "--no-stone-moss" in LaunchArgs.user_args()
 
-func _sunlit(node: Node) -> void:
+## `mossed` (a plateau bridge, amberlands only): its kit stone takes the
+## gothic pieces' mossed stone too (the look pass: the ruins overgrown).
+func _sunlit(node: Node, mossed := false) -> void:
 	var kit: Material = RuinKit.materials().stone
 	if _stone == null:
 		_stone = (kit as ShaderMaterial).duplicate() as ShaderMaterial
@@ -107,14 +110,29 @@ func _sunlit(node: Node) -> void:
 		if m.mesh == null: continue
 		for i in m.mesh.get_surface_count():
 			var own := m.mesh.surface_get_material(i)
-			if own == kit: m.set_surface_override_material(i,_stone)
-			elif own == gothic:
+			if own == kit and not (mossed and not _moss_off): m.set_surface_override_material(i,_stone)
+			elif own == gothic or own == kit:
 				if _gothic_stone == null: _gothic_stone = _stone if _moss_off else GothicGrowth.lifted(STONE_LIFT,3.6,0.1)
 				m.set_surface_override_material(i,_gothic_stone)
+	# The colosseum's bays, drawn as MultiMeshes (scripts/ruin_kit_colosseum.gd).
+	for mmi in node.find_children("*","MultiMeshInstance3D",true,false):
+		var mm := (mmi as MultiMeshInstance3D).multimesh
+		if mm == null or mm.mesh == null or mm.mesh.get_surface_count() == 0: continue
+		if mm.mesh.surface_get_material(0) != gothic: continue
+		if _gothic_stone == null: _gothic_stone = _stone if _moss_off else GothicGrowth.lifted(STONE_LIFT,3.6,0.1)
+		(mmi as MultiMeshInstance3D).material_override = _gothic_stone
 
 func _exit_tree() -> void:
 	_quit = true
 	for id: int in _pending.values(): WorkerThreadPool.wait_for_task_completion(id)
+	# Built but not yet committed (a set piece's build ending as the game
+	# quits): out of the tree, so freed here, or its bodies leak at exit.
+	_lock.lock()
+	for done: Dictionary in _done:
+		for b: Dictionary in done.arches:
+			if b.has("node") and is_instance_valid(b.node): (b.node as Node).free()
+	_done.clear()
+	_lock.unlock()
 
 ## Builds the cells within NEAR of `at` now, on this thread.
 func prime(at: Vector3) -> void:
@@ -239,7 +257,8 @@ func _commit_one(done: Dictionary) -> void:
 			stats.tris += int(b.tris)
 		else:
 			node = b.node
-			if not _old_stone: _sunlit(node)
+			if spec.get("kind","") == "colosseum": Colosseum.realize(node)
+			if not _old_stone: _sunlit(node,spec.has("bridge"))
 		for body in node.find_children("*","StaticBody3D",true,false):
 			(body as StaticBody3D).collision_layer = LAYER
 			(body as StaticBody3D).collision_mask = 0
@@ -324,3 +343,20 @@ func inside(p: Vector3, pad := -1.0) -> bool:
 	for s: Vector2 in stretches(p,pad):
 		if p.y >= s.x and p.y <= s.y: return true
 	return false
+
+## The set pieces (set_plan.gd) standing within their reach of world `p`:
+## their records ({name, node, pos, spec, ...}).
+func sets_near(p: Vector3) -> Array:
+	var out: Array = []
+	if _cells.is_empty(): return out
+	var c := Plan.cell_of(p.x,p.z)
+	for dz in range(-1,2):
+		for dx in range(-1,2):
+			var list: Variant = _cells.get(c+Vector2i(dx,dz))
+			if list == null: continue
+			for r: Dictionary in list:
+				if not (r.spec as Dictionary).has("set"): continue
+				var o: Vector3 = r.pos
+				if absf(p.x-o.x) > float(r.reach) or absf(p.z-o.z) > float(r.reach): continue
+				out.append(r)
+	return out

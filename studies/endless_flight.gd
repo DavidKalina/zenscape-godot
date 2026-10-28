@@ -145,6 +145,7 @@ const FlightSound = preload("res://scripts/endless/flight_sound.gd")
 ## Near misses, the land's contact, their HUD and debris (weighted presets).
 const NearMiss = preload("res://scripts/endless/near_miss.gd")
 const FlightContact = preload("res://scripts/endless/flight_contact.gd")
+const KnifeGlance = preload("res://scripts/endless/knife_glance.gd")
 const NearMissHud = preload("res://scripts/endless/near_miss_hud.gd")
 const NearMissHudGlyph = preload("res://scripts/endless/near_miss_hud_glyph.gd")
 const NearMissHudHandoff = preload("res://scripts/endless/near_miss_hud_handoff.gd")
@@ -354,6 +355,14 @@ var contact := FlightContact.new()
 ## How far the stone is grown round the plane's middle this frame
 ## (`plane_ground`).
 var solid_pad := WorldScale.span*0.5
+## Where the padded middle is moved off the plane's own (level, m): only in a
+## forgiving knife slot, toward its keel (KnifeGlance; WorldScale
+## `reach_fitted`).
+var solid_shift := Vector3.ZERO
+## The forgiving knife slots' glances (scripts/endless/knife_glance.gd), and
+## this frame's glance (a scrape) for the contact's events.
+var glance := KnifeGlance.new()
+var _glanced := {}
 var debris: Node3D
 var water: Node3D
 ## The trees knocked down and falling (scripts/endless/tree_knock.gd).
@@ -827,7 +836,9 @@ func _size_chase() -> void:
 ## now (WorldScale `reach_rolled`); 0 for a point on the plane's own edge
 ## (NearMiss's body points), which is in the stone only where it truly is.
 func plane_ground(p: Vector3, pad := -1.0) -> Variant:
-	if pad < 0.0: pad = solid_pad
+	if pad < 0.0:
+		pad = solid_pad
+		p += solid_shift
 	return tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad)
 
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
@@ -910,6 +921,9 @@ func tick(delta: float) -> void:
 	# The trees the coming move meets are knocked down first, so it flies on through.
 	var knocked: Dictionary = knock.before(delta,self)
 	solid_pad = WorldScale.reach_rolled(float(plane.bank)+float(plane.spin))
+	# In a forgiving knife slot: the reach fitted, a jamb glanced off.
+	solid_shift = Vector3.ZERO
+	_glanced = glance.before(delta,self)
 	var events := hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
 	if not knocked.is_empty(): _knocked(events,knocked)
 	plane.engine = hand_landing.engine*float(plane.sputter)*(float(stage.engine) if stage != null else 1.0)
@@ -1005,6 +1019,8 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 		return
 	near.measure(delta,self)
 	var hit := contact.step(delta,self,near.touching)
+	if hit.is_empty() and not _glanced.is_empty(): hit = _glanced
+	_glanced = {}
 	if hit.has("knock"): _knocked(events,hit.knock)
 	if hit.has("crash"):
 		var c: Dictionary = hit.crash
