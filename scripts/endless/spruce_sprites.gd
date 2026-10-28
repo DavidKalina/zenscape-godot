@@ -36,6 +36,9 @@ const BAKE_AWAY := 400.0
 ## The g look: the atlas is baked at this blue strength (a green tree's and a
 ## blue one's blend), and each sprite shifts to its own tree's by the ratio.
 const G_BAKE_BLUE := 0.5
+## The far trees' look (endless_spruce_sprite.gdshader far_shape, far_vary).
+const FAR_SHAPE := Vector4(0.88,0.32,0.30,0.35)
+const FAR_VARY := Vector2(0.14,0.2)
 
 var materials: Array = []      # variant -> ShaderMaterial
 var quad := QuadMesh.new()
@@ -52,6 +55,21 @@ var _normal := ImageTexture.new()
 var soft := true
 var _g := false
 var yaws := SOFT_YAWS
+## The far trees' look (the sprite shader's far_look); --far-trees=old turns it off.
+var far_look := true
+
+static func far_look_wanted() -> bool:
+	return not ("--far-trees=old" in preload("res://scripts/launch_args.gd").user_args())
+
+## --far-trees-shape=value,under,shade,contrast and --far-trees-vary=size,tone (the shader's far_shape and far_vary).
+static func _far_arg(flag: String, fallback: Vector4) -> Vector4:
+	for a in preload("res://scripts/launch_args.gd").user_args():
+		if a.begins_with(flag):
+			var p := a.get_slice("=",1).split(",")
+			var v := fallback
+			for i in mini(p.size(),4): v[i] = float(p[i])
+			return v
+	return fallback
 
 static func soft_wanted() -> bool:
 	return not ("--spruce-sprites=old" in preload("res://scripts/launch_args.gd").user_args())
@@ -65,6 +83,7 @@ func setup(parts: Array, tint: Color, knobs: Dictionary, band: Vector2, fade: Ve
 	_round = float(knobs.get("round",0.7))
 	_tilt = float(knobs.get("tilt",0.0))
 	soft = soft_wanted()
+	far_look = far_look_wanted()
 	yaws = SOFT_YAWS if soft else OLD_YAWS
 	# One centre and size for all: the variants' tops and bottoms.
 	var lo := INF
@@ -95,6 +114,9 @@ func setup(parts: Array, tint: Color, knobs: Dictionary, band: Vector2, fade: Ve
 		m.set_shader_parameter("variant",v)
 		m.set_shader_parameter("yaws",yaws)
 		m.set_shader_parameter("soft",soft)
+		m.set_shader_parameter("far_look",1.0 if far_look else 0.0)
+		m.set_shader_parameter("far_shape",_far_arg("--far-trees-shape=",FAR_SHAPE))
+		m.set_shader_parameter("far_vary",Vector2(_far_arg("--far-trees-vary=",Vector4(FAR_VARY.x,FAR_VARY.y,0,0)).x,_far_arg("--far-trees-vary=",Vector4(FAR_VARY.x,FAR_VARY.y,0,0)).y))
 		m.set_shader_parameter("row_step",ROW_STEP)
 		m.set_shader_parameter("cell_px",float(CELL))
 		m.set_shader_parameter("fit",Vector3(centre,size,reach*0.35))

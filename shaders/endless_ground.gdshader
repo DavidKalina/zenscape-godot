@@ -30,6 +30,44 @@ render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 // The underside the wind flips into view, as the tufts show it.
 #include "res://shaders/grass_silver.gdshaderinc"
 #include "res://shaders/grass_sheen.gdshaderinc"
+#include "res://shaders/far_lawn.gdshaderinc"
+#include "res://shaders/smooth_wave_field.gdshaderinc"
+
+// zs_silver_drive for the painted ground from high up: the same three trains,
+// share, gust band and front, but with the sheen's lattice-free crest and band
+// (zs_sheen_crest, zs_sheen_band). The tufts' zs_wave_crest_at bends its crests by
+// lattice noise up to 3.6 rad and zs_gust_band_at thresholds lattice noise, and
+// painted over the meadow from above their cell edges showed as small blocks
+// (the sheen's seams, docs/design/endless-flight/sheen-seam-handoff.md).
+// (zs_wave_crest_at's shape, two trains 24 degrees apart under one smoothstep,
+// with its lattice-noise wander swapped for three plane waves as the sheen's.)
+float zs_wave_crest_smooth(vec2 root, float crest_length, float crest_speed, vec2 offset, float travel) {
+	vec2 dir = zs_wind_direction;
+	float along = dot(root, dir);
+	float side = dot(root, vec2(-dir.y, dir.x));
+	vec2 q = vec2(side, along) * (TAU / crest_length);
+	float wander = 1.2 * sin(dot(q, vec2(0.80, 0.60)) * 0.31 + offset.x * 5.1)
+		+ 0.9 * sin(dot(q, vec2(-0.55, 0.84)) * 0.45 + offset.y * 3.7 + 1.3)
+		+ 0.6 * sin(dot(q, vec2(0.30, -0.95)) * 0.22 + (offset.x + offset.y) * 2.3 + 4.0);
+	wander += 1.8;
+	float a = 0.5 + 0.5 * sin((along - travel * crest_speed) * TAU / crest_length + wander);
+	vec2 skew = vec2(dir.x * 0.9135 - dir.y * 0.4067, dir.x * 0.4067 + dir.y * 0.9135);
+	float b = 0.5 + 0.5 * sin((dot(root, skew) - travel * crest_speed * 0.92) * TAU / (crest_length * 1.7) + wander * 0.6 + 1.3);
+	return smoothstep(0.25, 0.95, a * 0.68 + b * 0.32);
+}
+
+float zs_silver_drive_smooth(vec2 p, float fp) {
+	float travel = zs_gust_distance;
+	vec3 crest = vec3(
+		zs_wave_crest_smooth(p, grass_silver_waves.x, ZS_BREEZE_WAVE_SPEED, zs_grass_offset, travel),
+		zs_wave_crest_smooth(p, grass_silver_waves.y, ZS_BREEZE_WAVE_SPEED, zs_grass_offset, travel),
+		zs_wave_crest_smooth(p * 0.97 + 50.0, grass_silver_waves.z, ZS_BREEZE_WAVE_SPEED * 1.3, zs_grass_offset + 7.0, travel));
+	vec3 keep = vec3(1.0) - smoothstep(grass_silver_waves * 0.08, grass_silver_waves * 0.3, vec3(fp));
+	crest = mix(vec3(0.4), crest, keep);
+	float w = dot(crest, grass_silver_share) * zs_sheen_band(p, travel) * zs_breeze_air() / 0.53;
+	w += zs_front_at(p, 0.0) * 1.5;
+	return smoothstep(grass_silver.y, grass_silver.z, w);
+}
 #include "res://shaders/grass_react.gdshaderinc"
 // A world of regions: its paint per spot.
 #include "res://shaders/region_paint.gdshaderinc"
@@ -124,6 +162,9 @@ uniform vec2 carpet_grain_sizes = vec2(0.75, 1.5);
 // soft streaks along the wind and darker hollows in the creases, by this much.
 uniform float high_paint : hint_range(0.0, 2.0) = 1.0;
 uniform vec2 high_paint_alt = vec2(20.0, 75.0);
+// 1 (--high-paint=old, scripts/endless/grass_sheen.gd): the streaks and washes
+// of lattice noise as they were, for A/B against the smooth plane-wave ones.
+uniform float high_paint_old = 0.0;
 // Watercolour meadow (docs/design/endless-flight/watercolour-meadow-handoff.md):
 // from the same height up, the turf is a few big washes of colour that bleed
 // into one another (domain-warped), darker pigment pooled on their edges and
@@ -775,8 +816,22 @@ void fragment() {
 			// Soft streaks, long along the wind, as if combed.
 			vec2 sdir = normalize(zs_sun_direction.xz + vec2(0.6, 0.3));
 			vec2 sperp = vec2(-sdir.y, sdir.x);
-			float streak = zs_noise(vec2(dot(gxz, sdir) / 190.0, dot(gxz, sperp) / 16.0) + 7.0) - 0.5;
-			streak += (zs_noise(vec2(dot(gxz, sdir) / 90.0, dot(gxz, sperp) / 7.0) + 19.0) - 0.5) * 0.5;
+			float streak;
+			if (high_paint_old > 0.5) {
+				streak = zs_noise(vec2(dot(gxz, sdir) / 190.0, dot(gxz, sperp) / 16.0) + 7.0) - 0.5;
+				streak += (zs_noise(vec2(dot(gxz, sdir) / 90.0, dot(gxz, sperp) / 7.0) + 19.0) - 0.5) * 0.5;
+			} else {
+				// (smooth_wave_field.gdshaderinc: plane waves, long and a little
+				// tilted along the wind, their lines bent by slow swings, so no
+				// lattice cell shows as a block or a stripe.)
+				float along = dot(gxz, sdir);
+				float across = dot(gxz, sperp) + 7.0 * sin(along / 75.0 + 1.3) + 4.0 * sin(along / 41.0 + 4.1);
+				streak = 0.12 * (sin(across * TAU / 16.0 + along * TAU / 260.0 + 0.7)
+					+ sin(across * TAU / 12.5 - along * TAU / 310.0 + 2.9)
+					+ sin(across * TAU / 21.0 + along * TAU / 180.0 + 5.1))
+					+ 0.08 * (sin(across * TAU / 7.7 - along * TAU / 140.0 + 1.9)
+					+ sin(across * TAU / 6.1 + along * TAU / 230.0 + 4.4));
+			}
 			grass *= 1.0 + streak * 0.30 * hp * (1.0 - smoothstep(3.0, 14.0, fp));
 			// Hollows and creases darker, as shade settles in them.
 			float hollow = max(-wide, 0.0) * 0.16 + max(-mid, 0.0) * 0.08 + smoothstep(0.97, 0.86, n.y) * 0.22;
@@ -797,10 +852,24 @@ void fragment() {
 			grass = mix(grass, gw, wk * 0.8);
 			// Washes: warped fields, so their edges wander and bleed.
 			vec2 wq = gxz / wc_scale;
-			vec2 warp = vec2(zs_noise(wq * 0.8 + vec2(3.1, 8.7)), zs_noise(wq * 0.8 + vec2(9.4, 1.3))) - 0.5;
-			wq += warp * 2.6 + (vec2(zs_noise(wq * 2.3 + vec2(14.0, 4.0)), zs_noise(wq * 2.3 + vec2(2.0, 27.0))) - 0.5) * 0.9;
-			float f1 = zs_noise(wq + vec2(21.0, 5.0)) * 0.72 + zs_noise(wq * 2.7 + vec2(4.0, 33.0)) * 0.28;
-			float f2 = zs_noise(wq * 1.7 + vec2(60.0, 17.0)) * 0.7 + zs_noise(wq * 4.1 + vec2(8.0, 2.0)) * 0.3;
+			float f1;
+			float f2;
+			float wet_w = 0.05;
+			if (high_paint_old > 0.5) {
+				vec2 warp = vec2(zs_noise(wq * 0.8 + vec2(3.1, 8.7)), zs_noise(wq * 0.8 + vec2(9.4, 1.3))) - 0.5;
+				wq += warp * 2.6 + (vec2(zs_noise(wq * 2.3 + vec2(14.0, 4.0)), zs_noise(wq * 2.3 + vec2(2.0, 27.0))) - 0.5) * 0.9;
+				f1 = zs_noise(wq + vec2(21.0, 5.0)) * 0.72 + zs_noise(wq * 2.7 + vec2(4.0, 33.0)) * 0.28;
+				f2 = zs_noise(wq * 1.7 + vec2(60.0, 17.0)) * 0.7 + zs_noise(wq * 4.1 + vec2(8.0, 2.0)) * 0.3;
+			} else {
+				// Smooth fields (plane waves, no lattice) under a gentle warp
+				// that bends and never folds them, so the washes bleed into one
+				// another with soft edges and no blocks.
+				vec2 warp = vec2(zs_wave_field(wq * 0.7, 1.0, 0.3), zs_wave_field(wq * 0.7, 2.0, 1.7));
+				wq += warp * 1.2;
+				f1 = zs_wave_fbm(wq, 3.0, 0.2);
+				f2 = zs_wave_fbm(wq * 1.7, 7.0, 1.1);
+				wet_w = 0.09;
+			}
 			// Three pigments laid in washes: yellow-green, cool blue-green, olive.
 			float wa = smoothstep(0.32, 0.68, f1);
 			float wb = smoothstep(0.42, 0.78, f2);
@@ -808,7 +877,7 @@ void fragment() {
 			pig = mix(pig, vec3(1.12, 0.92, 0.62), wb * 0.6);
 			grass *= mix(vec3(1.0), pig, wk * 0.9);
 			// Wet edges: pigment pools darker and a touch richer where two washes meet.
-			float edge = exp(-pow((f1 - 0.51) / 0.05, 2.0)) * 0.7 + exp(-pow((f2 - 0.61) / 0.045, 2.0)) * 0.5;
+			float edge = exp(-pow((f1 - 0.51) / wet_w, 2.0)) * 0.7 + exp(-pow((f2 - 0.61) / (wet_w * 0.9), 2.0)) * 0.5;
 			grass *= mix(vec3(1.0), vec3(0.66, 0.76, 0.70), clamp(edge, 0.0, 1.0) * wc_edge * wk);
 			// Paper light: the pale crowns of the washes, where the water dried thin.
 			float crown = smoothstep(0.52, 0.80, f2 * 0.6 + f1 * 0.4 + broad * 0.4 + max(facing, 0.0) * 0.1);
@@ -853,12 +922,24 @@ void fragment() {
 		}
 		// The grass's silvery underside where the breeze bows it (grass_silver,
 		// off by default): the tufts' own bands, carried on over the paint.
-		if (grass_silver.x > 0.0) grass = zs_silver_paint_hue(grass, zs_silver_drive(gxz, fp), 1.0 - thin * 0.6, 0.8, rp_silver);
+		if (grass_silver.x > 0.0) {
+			// (From high up the lattice-free drive; near, the tufts' own, so the two meet.)
+			float silver_flip = zs_silver_drive(gxz, fp);
+			if (high_paint_old < 0.5 && wc_up > 0.0) silver_flip = mix(silver_flip, zs_silver_drive_smooth(gxz, fp), wc_up);
+			grass = zs_silver_paint_hue(grass, silver_flip, 1.0 - thin * 0.6, 0.8, rp_silver);
+		}
 		// The wind's sheen: light and dark swells rolling over the far meadow (grass_sheen).
 		if (grass_sheen.x > 0.0) {
 			float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);
 			float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up);
-			if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(zs_sheen_field(gxz, fp), gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
+			float sheen_s = 0.0;
+			if (sheen_on > 0.0 || grass_lawn.x > 0.0) sheen_s = zs_sheen_field(gxz, fp);
+			if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(sheen_s, gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
+			// The far grass as a fine lawn (far_lawn.gdshaderinc), from past the tufts.
+			if (grass_lawn.x > 0.0) {
+				float lawn_on = carpet_turf * smoothstep(grass_lawn.y, grass_lawn.z, sheen_d) * (1.0 - thin * 0.6);
+				if (lawn_on > 0.0) grass = zs_far_lawn(grass, gxz, normalize(p - CAMERA_POSITION_WORLD), fp, sheen_s, zs_key_irradiance, zs_cool(vec3(0.93, 0.90, 1.02), paint_follow), lawn_on);
+			}
 		}
 		// The flower drifts past the drawn flowers: heads of their colour dotted
 		// over the turf (two lattices, more of them at a drift's heart), which
