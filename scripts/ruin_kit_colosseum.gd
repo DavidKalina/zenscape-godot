@@ -624,6 +624,15 @@ static func colosseum(seed_value: int, weathered := 0.6) -> Node3D:
 	var reach := STEP*STEPS
 	root.set_meta("bounds",AABB(Vector3(-RX-reach-RUBBLE,-FOUND,-RZ-reach),Vector3((RX+reach+RUBBLE)*2.0,P+ATTIC+FOUND,(RZ+reach)*2.0)))
 	GothicGrowth.far_off(root)
+	# The far level (its mesh made on the main thread, `realize`).
+	var far := MeshInstance3D.new()
+	far.name = "Far"
+	var shell := _far_shell(p,tops,seed_value,weathered)
+	far.set_meta("far_arrays",shell)
+	root.add_child(far)
+	_levels(root,far)
+	stats["tris_far"] = shell[2]
+	stats["far_levels"] = (shell[1] as Dictionary).values().map(func(ix: PackedInt32Array) -> int: return ix.size()/3)
 	if OS.get_thread_caller_id() == OS.get_main_thread_id(): realize(root)
 	stats["build_ms"] = (Time.get_ticks_usec()-t0)/1000.0
 	root.set_meta("stats",stats)
@@ -632,6 +641,15 @@ static func colosseum(seed_value: int, weathered := 0.6) -> Node3D:
 ## Makes the bays' MultiMeshes under `node` from what `_instances` left
 ## (on the main thread: land_arches.gd calls it as it adds the piece).
 static func realize(node: Node) -> void:
+	for n in node.find_children("Far","MeshInstance3D",true,false):
+		var far := n as MeshInstance3D
+		if far.mesh != null or not far.has_meta("far_arrays"): continue
+		var shell: Array = far.get_meta("far_arrays")
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,shell[0],[],shell[1])
+		mesh.surface_set_material(0,GothicGrowth.stone())
+		far.mesh = mesh
+		far.remove_meta("far_arrays")
 	for n in node.find_children("*","MultiMeshInstance3D",true,false):
 		var inst := n as MultiMeshInstance3D
 		if inst.multimesh != null or not inst.has_meta("mm_buffer"): continue
@@ -694,6 +712,328 @@ static func _instances(parent: Node3D, key: String, node: Node3D, xfs: Array) ->
 		parent.add_child(inst)
 	node.free()
 	return tris
+
+# --- The far level -----------------------------------------------------------------
+
+## Past FAR_AT (m from the piece's middle) the bays, the rings and their
+## growth give way to one coarse shell ("Far", `_far_shell`), crossfaded
+## over FAR_FADE: the outer wall a band round the ring with its arches cut
+## through (heads in four chords) and its cornices, the broken side's
+## ragged line sampled from the bays' own wall heads, the inner wall, the
+## walkway, the seats a block a tread, the arena's floor with its trench
+## and cells, the plinth's steps and the rubble slope. Drawn only: the
+## solid and the flown openings are the near level's.
+const FAR_AT := 600.0
+const FAR_FADE := 60.0
+## The shell's stone against the near level's mean block (its growth and
+## crevices darken it at a distance), and its dark faces'.
+const FAR_TONE := 0.74
+const FAR_DARK := 0.45
+
+class FarFaces extends RefCounted:
+	var v := PackedVector3Array()
+	var n := PackedVector3Array()
+	var c := PackedColorArray()
+	var base := Color()
+	var rng := RandomNumberGenerator.new()
+
+	## A colour near the stone's middle (the near level's block tones, as
+	## they average at a distance), `t` over it.
+	func tone(t: float) -> Color:
+		var col := base*(t*(1.0+rng.randf_range(-0.5,0.5)*0.12))
+		col.a = 1.0
+		return col
+
+	## A quad a, b, cc, d (in order round), facing away from `inside`.
+	func quad(a: Vector3, b: Vector3, cc: Vector3, d: Vector3, inside: Vector3, col: Color) -> void:
+		var nrm := (cc-a).cross(d-b)
+		if nrm.length_squared() < 1e-6: return
+		nrm = nrm.normalized()
+		var mid := (a+b+cc+d)*0.25
+		if nrm.dot(mid-inside) < 0.0: nrm = -nrm
+		for t: Array in [[a,b,cc],[a,cc,d]]:
+			var p0: Vector3 = t[0]
+			var p1: Vector3 = t[1]
+			var p2: Vector3 = t[2]
+			if (p1-p0).cross(p2-p0).length_squared() < 1e-8: continue
+			# Front faces are clockwise.
+			if (p1-p0).cross(p2-p0).dot(nrm) > 0.0:
+				var s := p1
+				p1 = p2
+				p2 = s
+			for q: Vector3 in [p0,p1,p2]:
+				v.append(q)
+				n.append(nrm)
+				c.append(col)
+
+## A far block's faces (bits of a mask).
+const F_OUT := 1
+const F_IN := 2
+const F_TOP := 4
+const F_BOT := 8
+const F_S0 := 16
+const F_S1 := 32
+const F_ALL := 63
+
+## A block on the ring from arc `s0` to `s1`, `d0` to `d1` inward, its
+## foot and head `ya` (y0, y1) at s0 and `yb` at s1 (the piece's frame).
+## `shade` the vertex alpha of its faces but its top (1 open air); the
+## faces in `dim` in the dark (under a roof, in an arch's reveal: the near
+## level's shadowed depths, which a coarse face would light).
+static func _fbox(f: FarFaces, s0: float, s1: float, d0: float, d1: float, ya: Vector2, yb: Vector2, col: Color, mask := F_ALL, shade := 1.0, dim := 0) -> void:
+	if ya.y-ya.x < 0.05 and yb.y-yb.x < 0.05: return
+	var p00 := point(s0,d0)
+	var p10 := point(s1,d0)
+	var p01 := point(s0,d1)
+	var p11 := point(s1,d1)
+	var up := Vector3.UP
+	var a0 := p00+up*ya.x
+	var a1 := p00+up*ya.y
+	var b0 := p10+up*yb.x
+	var b1 := p10+up*yb.y
+	var c0 := p01+up*ya.x
+	var c1 := p01+up*ya.y
+	var e0 := p11+up*yb.x
+	var e1 := p11+up*yb.y
+	var mid := (a0+a1+b0+b1+c0+c1+e0+e1)*0.125
+	var lit := col
+	lit.a = shade
+	var dark := col*FAR_DARK
+	dark.a = 0.25
+	if mask & F_OUT: f.quad(a0,b0,b1,a1,mid,dark if dim & F_OUT else lit)
+	if mask & F_IN: f.quad(c0,e0,e1,c1,mid,dark if dim & F_IN else lit)
+	if mask & F_TOP: f.quad(a1,b1,e1,c1,mid,dark if dim & F_TOP else col)
+	if mask & F_BOT: f.quad(a0,b0,e0,c0,mid,dark if dim & F_BOT else lit)
+	if mask & F_S0: f.quad(a0,c0,c1,a1,mid,dark if dim & F_S0 else lit)
+	if mask & F_S1: f.quad(b0,e0,e1,b1,mid,dark if dim & F_S1 else lit)
+
+## A bay's wall from `d0` to `d1` inward round slot middle `mid`, its
+## local x `u` (-hw..hw) at arc mid+u*su, from `base` up to `top`(u),
+## pierced by `arches` [[w, sill, spring]] (round heads in four chords);
+## `ragged`: its head sampled finer (a fallen bay); `side` its face on
+## the ambulatory (F_IN or F_OUT), dark as the arches' reveals.
+static func _fwall(f: FarFaces, mid: float, su: float, hw: float, d0: float, d1: float, base: float, top: Callable, arches: Array, ragged: bool, side: int) -> void:
+	var us := [-hw,hw]
+	for a: Array in arches:
+		var r := float(a[0])*0.5
+		for t: float in [-1.0,-0.5,0.0,0.5,1.0]:
+			if absf(t*r) < hw-0.05: us.append(t*r)
+	var steps := 6 if ragged else 2
+	for i in range(1,steps): us.append(lerpf(-hw,hw,float(i)/steps))
+	us.sort()
+	var cuts: Array = []
+	for u: float in us:
+		if cuts.is_empty() or u-float(cuts[-1]) > 0.2: cuts.append(u)
+	if hw-float(cuts[-1]) > 0.01: cuts[-1] = hw
+	var ops := arches.duplicate()
+	ops.sort_custom(func(x: Array, y: Array) -> bool: return float(x[1]) < float(y[1]))
+	var col := f.tone(1.0)
+	# Each strip's solid segments [foot at ua, foot at ub, head at ua, head
+	# at ub, dark faces], then drawn, a side face left out where the next
+	# strip's stone covers it.
+	var strips: Array = []
+	for i in range(cuts.size()-1):
+		var ua: float = cuts[i]
+		var ub: float = cuts[i+1]
+		var um := (ua+ub)*0.5
+		var ta := float(top.call(ua))
+		var tb := float(top.call(ub))
+		var lo := Vector2(base,base)
+		var segs: Array = []
+		for a: Array in ops:
+			var r := float(a[0])*0.5
+			if absf(um) >= r: continue
+			var sill := float(a[1])
+			var spring := float(a[2])
+			segs.append([lo,Vector2(minf(sill,ta),minf(sill,tb)),side|F_S0|F_S1|F_BOT])
+			lo = Vector2(maxf(lo.x,spring+sqrt(maxf(r*r-ua*ua,0.0))),maxf(lo.y,spring+sqrt(maxf(r*r-ub*ub,0.0))))
+		segs.append([lo,Vector2(maxf(ta,lo.x),maxf(tb,lo.y)),side|F_BOT|(F_S0|F_S1 if lo.x > base+0.01 else 0)])
+		strips.append(segs)
+	var covered := func(segs: Array, end: int, y0: float, y1: float) -> bool:
+		for sg: Array in segs:
+			if (sg[0] as Vector2)[end] <= y0+0.05 and (sg[1] as Vector2)[end] >= y1-0.05: return true
+		return false
+	for i in range(strips.size()):
+		for sg: Array in strips[i]:
+			var foot: Vector2 = sg[0]
+			var head: Vector2 = sg[1]
+			var mask := F_OUT|F_IN|F_TOP|(F_BOT if foot.x > base+0.01 else 0)
+			# The strip's ends: at the bay's edges only its wall head (a
+			# neighbour's head may stand lower), inside where uncovered.
+			if i > 0: mask |= 0 if covered.call(strips[i-1],1,foot.x,head.x) else F_S0
+			elif foot.x > base+0.01 or head.x > foot.x: mask |= F_S0 if foot.x > base+0.01 or (strips[i] as Array).size() == 1 else 0
+			if i < strips.size()-1: mask |= 0 if covered.call(strips[i+1],0,foot.y,head.y) else F_S1
+			elif (strips[i] as Array).size() == 1 or foot.y > base+0.01: mask |= F_S1
+			_fbox(f,mid+float(cuts[i])*su,mid+float(cuts[i+1])*su,d0,d1,Vector2(foot.x,head.x),Vector2(foot.y,head.y),col,mask,1.0,int(sg[2]))
+
+## The far shell: [its arrays (indexed), its levels, its triangles], from
+## the plan and the bays' wall heads (`tops`, as `colosseum` made them).
+static func _far_shell(p: Dictionary, tops: Dictionary, seed_value: int, weathered: float) -> Array:
+	var f := FarFaces.new()
+	f.rng.seed = hash([seed_value,"colosseum_far"])
+	var cb := Gothic._build(seed_value,weathered,"ColosseumFar")
+	var mean := Color(0,0,0,0)
+	for i in range(24): mean += RuinKit._stone(cb,1.0)
+	cb.root.free()
+	f.base = mean/24.0*FAR_TONE
+	var outer: Array = p["outer"]
+	var inner: Array = p["inner"]
+	var roof: Array = p["roof"]
+	var cap: Array = p["cap"]
+	var fall: Array = p["fall"]
+	var nom := _inner_nominal()
+	var down := Vector3(0.0,-50.0,0.0)
+	for k in range(SLOTS):
+		var e := slot_edges(k)
+		var mid := slot_mid(k)
+		var ok := String(outer[k])
+		var ik := String(inner[k])
+		var gate := ok == "gate"
+		# The outer wall, its arches through.
+		var hw := (GATE_SLOT if gate else pitch())*0.5
+		var arches: Array = []
+		var aw := _arch_w(ok)
+		if gate:
+			arches.append([GATE,P,P+GATE_SPRING])
+			arches.append([ARCH,P+(TIERS[2] as Vector3).x,P+(TIERS[2] as Vector3).y])
+		else:
+			for t in range(3):
+				if ok == "blocked" and t == 0: continue
+				var tier: Vector3 = TIERS[t]
+				arches.append([aw,P+tier.x,P+tier.y])
+		var otop: Callable = tops["o:"+ok]
+		_fwall(f,mid,1.0,hw,0.0,OUT_IN,P-1.0,otop,arches,not ok in ["whole","tight","blocked","gate"],F_IN)
+		# Its cornices, proud of the face, where the wall stands to them.
+		for t in range(3):
+			var y := P+(TIERS[t] as Vector3).z-0.6
+			if minf(float(otop.call(-hw)),float(otop.call(hw))) < y+0.4: continue
+			_fbox(f,e.x,e.y,-0.45,0.05,Vector2(y-0.35,y+0.05),Vector2(y-0.35,y+0.05),f.tone(1.06),F_OUT|F_TOP|F_BOT)
+		# The inner wall: its gate and vomitorium open, the rest blind.
+		var ihw := (GATE_SLOT if gate else pitch())*nom*0.5
+		var iarch: Array = []
+		match ik:
+			"gate": iarch.append([GATE,P,P+GATE_SPRING])
+			"pass2": iarch.append([_pass_hole(),P+(TIERS[1] as Vector3).x,P+(TIERS[1] as Vector3).y])
+		_fwall(f,mid,1.0/nom,ihw,INNER_MID-INNER_D,INNER_IN,P-1.0,tops["i:"+ik],iarch,ik == "low",F_OUT)
+		# The ambulatory's floor and the walkway over it.
+		_fbox(f,e.x,e.y,OUT_IN-0.3,INNER_MID,Vector2(P-1.2,P),Vector2(P-1.2,P),f.tone(0.9),F_TOP,1.0,F_TOP if bool(roof[k]) else 0)
+		if bool(roof[k]):
+			var sides := (0 if bool(roof[(k+SLOTS-1)%SLOTS]) else F_S0)|(0 if bool(roof[(k+1)%SLOTS]) else F_S1)
+			_fbox(f,e.x,e.y,OUT_IN-0.4,INNER_MID,Vector2(P+ROOF.x,P+ROOF.y),Vector2(P+ROOF.x,P+ROOF.y),f.tone(1.0),F_TOP|F_BOT|sides,1.0,F_BOT)
+		# The seats, a block a tread, cut to the bay's fall; over a great
+		# gate's passage from its soffit up.
+		var lost := float(cap[k])+P
+		var broke := float(fall[k]) > 0.0 or float(fall[(k+SLOTS-1)%SLOTS]) > 0.0 or float(fall[(k+1)%SLOTS]) > 0.0
+		var soffit := P+GATE_SPRING+GATE*0.5
+		for i in range(TREADS):
+			var d0 := INNER_IN+TREAD*i-0.15
+			var d1 := INNER_IN+TREAD*(i+1)
+			var y1 := minf(tread_top(i),lost)
+			var y0 := tread_top(i)-2.6 if i < TREADS-1 else P-1.0
+			if gate:
+				if y1 < soffit+1.5: continue
+				y0 = soffit
+			if y1 < y0+0.3: continue
+			var mask := F_TOP|F_IN|(F_S0|F_S1 if broke else 0)|(F_BOT if gate else 0)
+			_fbox(f,e.x,e.y,d0,d1,Vector2(y0,y1),Vector2(y0,y1),f.tone(1.0+0.04*(i%2)),mask)
+		if gate:
+			# The passage's floor: the trench's ramp on to the podium.
+			var qs: Array = [point(e.x,INNER_IN),point(e.y,INNER_IN),point(e.y,ARENA_D),point(e.x,ARENA_D)]
+			for qi in range(4):
+				var q: Vector3 = qs[qi]
+				q.y = _trench_floor(absf(q.z))
+				qs[qi] = q
+			f.quad(qs[0],qs[1],qs[2],qs[3],down,f.tone(0.88))
+		# The plinth's steps.
+		for st in range(STEPS):
+			var y := P*(STEPS-st)/float(STEPS)
+			_fbox(f,e.x,e.y,-STEP*(st+1),-STEP*st+0.3,Vector2(-FOUND,y),Vector2(-FOUND,y),f.tone(0.95),F_OUT|F_TOP)
+		# The rubble slope where the wall fell, its edges shared with its
+		# neighbours'.
+		var fa := (float(fall[k])+float(fall[(k+SLOTS-1)%SLOTS]))*0.5
+		var fb := (float(fall[k])+float(fall[(k+1)%SLOTS]))*0.5
+		if maxf(fa,fb) >= 0.1:
+			var top0 := point(e.x,0.8)+Vector3.UP*(P+6.0*fa)
+			var top1 := point(e.y,0.8)+Vector3.UP*(P+6.0*fb)
+			var toe1 := point(e.y,-RUBBLE*fb)+Vector3.UP*-1.0
+			var toe0 := point(e.x,-RUBBLE*fa)+Vector3.UP*-1.0
+			f.quad(top0,top1,toe1,toe0,down,f.tone(0.88))
+	# The arena: its floor in runs, the trench and side cells sunk, the
+	# hypogeum's walls where the floor fell.
+	var fallen: Dictionary = p["fallen"]
+	var rows := {}
+	for key: Vector2i in _arena_squares():
+		if not rows.has(key.y): rows[key.y] = []
+		(rows[key.y] as Array).append(key.x)
+	var h := TRENCH*0.5
+	for j: int in rows:
+		var xs: Array = rows[j]
+		xs.sort()
+		var run_at := -1
+		for idx in range(xs.size()+1):
+			var here := idx < xs.size() and not fallen.has(Vector2i(int(xs[mini(idx,xs.size()-1)]),j))
+			var joined := here and run_at >= 0 and int(xs[idx])-int(xs[idx-1]) == 1
+			if run_at >= 0 and not joined:
+				var a := _square_box(Vector2i(int(xs[run_at]),j))
+				var b := _square_box(Vector2i(int(xs[idx-1]),j))
+				f.quad(Vector3(a.position.x,P,a.position.z),Vector3(b.end.x,P,a.position.z),Vector3(b.end.x,P,a.end.z),Vector3(a.position.x,P,a.end.z),down,f.tone(0.96))
+				run_at = -1
+			if here and run_at < 0: run_at = idx
+		for x: int in xs:
+			var key := Vector2i(x,j)
+			var box := _square_box(key)
+			var c := box.get_center()
+			if fallen.has(key):
+				var z0 := box.position.z
+				var z1 := box.end.z
+				var ya := _trench_floor(absf(z0)) if absf(c.x) < h else 0.4
+				var yb := _trench_floor(absf(z1)) if absf(c.x) < h else 0.4
+				f.quad(Vector3(box.position.x,ya,z0),Vector3(box.end.x,ya,z0),Vector3(box.end.x,yb,z1),Vector3(box.position.x,yb,z1),down,f.tone(0.88))
+				continue
+			for nb: Vector2i in [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1)]:
+				if not fallen.has(key+nb): continue
+				var e0: Vector3
+				var e1: Vector3
+				if nb.x != 0:
+					var x0 := box.end.x if nb.x > 0 else box.position.x
+					e0 = Vector3(x0,0.0,box.position.z)
+					e1 = Vector3(x0,0.0,box.end.z)
+				else:
+					var zz := box.end.z if nb.y > 0 else box.position.z
+					e0 = Vector3(box.position.x,0.0,zz)
+					e1 = Vector3(box.end.x,0.0,zz)
+				f.quad(e0+Vector3.UP*0.4,e1+Vector3.UP*0.4,e1+Vector3.UP*P,e0+Vector3.UP*P,Vector3(c.x,P*0.5,c.z),f.tone(0.9))
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = f.v
+	arrays[Mesh.ARRAY_NORMAL] = f.n
+	arrays[Mesh.ARRAY_COLOR] = f.c
+	# Welded and given Godot's levels here (on the build's thread), as
+	# RuinLod's stone; the mesh is made of them on the main thread.
+	var weld := SurfaceTool.new()
+	weld.create_from_arrays(arrays)
+	weld.index()
+	var importer := ImporterMesh.new()
+	importer.add_surface(Mesh.PRIMITIVE_TRIANGLES,weld.commit_to_arrays())
+	importer.generate_lods(RuinLod.STONE_MERGE_ANGLE,60.0,[])
+	var lods := {}
+	for l in range(importer.get_surface_lod_count(0)):
+		lods[importer.get_surface_lod_size(0,l)] = importer.get_surface_lod_indices(0,l)
+	return [importer.get_surface_arrays(0),lods,f.v.size()/3]
+
+## The near level (every drawn instance but the far shell and the shadow
+## chunks, which stop far nearer) ended at FAR_AT, the shell begun there,
+## faded across FAR_FADE.
+static func _levels(root: Node3D, far: GeometryInstance3D) -> void:
+	for n in root.find_children("*","GeometryInstance3D",true,false):
+		var g := n as GeometryInstance3D
+		if g == far or String(g.name).begins_with("Shade"): continue
+		g.visibility_range_end = FAR_AT if g.visibility_range_end <= 0.0 else minf(g.visibility_range_end,FAR_AT)
+		g.visibility_range_end_margin = FAR_FADE
+		g.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	far.visibility_range_begin = FAR_AT
+	far.visibility_range_begin_margin = FAR_FADE
+	far.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 
 # --- The bays ---------------------------------------------------------------------
 
