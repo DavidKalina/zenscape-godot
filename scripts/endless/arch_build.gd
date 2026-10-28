@@ -274,6 +274,7 @@ static func _ruin(spec: Dictionary, field: RefCounted) -> Dictionary:
 		# FEED_CHUNK boxes each, their shapes on the server (no node a box),
 		# added one a frame by a Feed once the piece is in the tree.
 		root.add_child(_feed(solid))
+		body.free()
 	else:
 		for box: AABB in solid:
 			var cs := CollisionShape3D.new()
