@@ -59,6 +59,23 @@ You fly amberlands and the ruins are the level:
 Lanes keep shared-file edits small and additive and end their commits with
 **Notes for merge**. Lane commits: `ITER(amber-r2): lane <part>: <task>`.
 
+## Lanes landed (2026-10-28)
+
+Both lanes are merged into the loop's branch (their commits' Notes carry
+the details):
+
+- Pieces: `scripts/ruin_kit_gothic.gd`, ids `gothic_nave`, `belfry_tower`,
+  `rose_gate`; `openings(id, seed, weathered)` and `plan(...)` give every
+  opening's frame, size and kind without building the piece. Open points:
+  the nave's inside reads near-black in shade (lighter stone or more
+  bounce); a far LOD for the nave (~71k tris) is not built;
+  `tests/test_ruin_kit.gd`'s 30 m size cap fails on them (lock-in round).
+- Bridges: `scripts/endless/bridge_plan.gd` / `bridge_build.gd`, the
+  `bridges` layer, `--no-bridges`. Not done: the flown pass under an arcade
+  and through a broken gap (trunk step 2 covers it; candidates on seed 1 in
+  the lane's last commit). Amberlands loads ~1.6 s slower (bridge cells
+  planned on the main thread at prime). Most bridges come out two-tier.
+
 ## Trunk (the loop, after the merge, in order)
 
 1. **Set piece placer**: a placer for standalone structures (own file) that
