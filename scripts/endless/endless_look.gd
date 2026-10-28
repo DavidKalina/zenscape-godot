@@ -299,6 +299,10 @@ func setup(land_seed: int) -> void:
 	ground.set_shader_parameter("old_rock","--old-rock" in LaunchArgs.user_args())
 	ground.set_shader_parameter("rock_pass1","--rock-pass1" in LaunchArgs.user_args())
 	ground.set_shader_parameter("rock_flat","--rock-flat" in LaunchArgs.user_args())
+	# The grass's paint skipped where it can't show (--land-skip=0 off, =show
+	# tints what it skips).
+	for a in LaunchArgs.user_args():
+		if a.begins_with("--land-skip="): ground.set_shader_parameter("grass_skip",2 if a.get_slice("=",1) == "show" else clampi(int(a.get_slice("=",1)),0,1))
 	ground.set_shader_parameter("rock_erosion_tex",load("res://assets/textures/endless_rock_erosion.png"))
 	world.apply_ground(ground)
 	# --rock-knob=name=value (repeatable): any rock_* float uniform, to try a

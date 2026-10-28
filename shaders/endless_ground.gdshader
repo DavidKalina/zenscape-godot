@@ -46,6 +46,10 @@ global uniform vec3 zs_palette_water;
 // Rock round: the painted rock (shaders/endless_rock.gdshaderinc); true is
 // the earlier smooth banded rock.
 uniform bool old_rock = false;
+// The grass's paint skipped where none of it shows (all sand, bank or snow):
+// 1 on, 0 painted everywhere as before (--land-skip=0), 2 the skipped pixels
+// magenta (--land-skip=show).
+uniform int grass_skip = 1;
 // How far the grass's painted warm and cool tones (the drift, the slopes to
 // and from the sun, the sheen, the paper light) follow the light's leans
 // (shaders/light_leans.gdshaderinc; 0 fixed as before).
@@ -638,135 +642,13 @@ void fragment() {
 	// metres, then light and deep patches down to tufts a metre across.
 	// The scales from 8 m up on the patch noise the tufts read too
 	// (scripts/endless/endless_patch.gd mirrors this).
-	float vast = ep_fade(gxz + vec2(311.0, 97.0), 900.0, fp);
 	float broad = ep_fade(gxz + vec2(71.0, 13.0), 260.0, fp);
 	float wide = ep_fade(gxz + vec2(5.0, 211.0), 70.0, fp);
 	float mid = ep_fade(gxz + vec2(133.0, 41.0), 19.0, fp);
 	float fine = zs_fade(gxz + vec2(17.0, 3.0), 5.5, fp);
-	float tuft = zs_fade(gxz + vec2(9.0, 29.0), 1.4, fp);
-	// Patches with an edge: clover and lush hollows among the lighter grass.
-	float clump = ep_patch(gxz + vec2(57.0, 19.0), 34.0, fp) * 0.7 + ep_patch(gxz + vec2(3.0, 77.0), 8.0, fp) * 0.5;
-	float sunny = clamp((broad * 1.3 + wide * 1.5 + mid * 0.9 + fine * 0.6 + tuft * 0.8 + clump * 0.9) * patch_strength, -1.0, 1.0);
-	vec3 grass = mix(GREEN, sunny > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny));
-	// The meadows lusher and brighter.
-	grass = mix(grass, MEADOW * (1.0 + mid * 0.5), meadow * 0.75);
-	// Warm and cool drift, mostly with the broad light.
-	float warm = clamp(broad * 2.4 + vast * 1.8, -1.0, 1.0) * patch_strength;
-	grass *= mix(vec3(1.0), warm > 0.0 ? zs_warm(vec3(1.32, 1.05, 0.62), paint_follow) : zs_cool(vec3(0.80, 0.97, 1.16), paint_follow), abs(warm) * 0.5);
-	// The broad regions' hue (endless_patch ep_region): lush, lime, sage,
-	// straw, heather on high ground.
-	vec3 region = ep_region(gxz, over, region_amount, region_offset);
-	grass *= region;
-	// The land's own tint (the vertex colour's hue at the grass's light).
-	vec3 vc = land_colour.rgb;
-	grass = mix(grass, vc / max(luma(vc), 0.01) * luma(grass), vertex_hue * 0.6);
-	// The isles' dry patches (grass_look) and broader dry ground, fading to
-	// their means far off (the noise mean is about 0.5, dry from 0.5).
-	float dry_near = zs_grass_dry(gxz, ZS_GRASS_DRY_SCALE, zs_grass_offset);
-	dry_near = mix(0.18, dry_near, 1.0 - smoothstep(1.0, 3.5, fp));
-	float dry_far = smoothstep(0.05, 0.32, broad + wide * 0.6 + 0.1);
-	float dry = clamp(dry_near * 0.6 + dry_far * 0.55, 0.0, 1.0) * (1.0 - meadow * 0.6);
-	grass = mix(grass, DRY * (1.0 + fine * 0.4), dry * 0.4);
 	// High ground goes to a tundra's browner turf.
 	float alpine = smoothstep(42.0, 78.0, over + broad * 30.0);
-	grass = mix(grass, TUNDRA * (1.0 + mid * 0.6), alpine * 0.8);
-	// Steep turf thins to a dry olive.
-	float thin = smoothstep(thin_up, rock_up, n.y);
-	grass = mix(grass, OLIVE * (1.0 + fine), thin * 0.7);
-	// Slopes turned to the sun warmer and lighter, turned away deeper.
-	vec2 to_sun = zs_sun_direction.xz / max(length(zs_sun_direction.xz), 0.001);
-	float facing = clamp(dot(n.xz, to_sun) * 2.5, -1.0, 1.0) * smoothstep(-0.05, 0.2, zs_sun_direction.y);
-	grass *= mix(vec3(1.0), facing > 0.0 ? zs_warm(vec3(1.10, 1.05, 0.86), paint_follow) : zs_cool(vec3(0.90, 0.95, 1.02), paint_follow), abs(facing) * 0.5);
-
-	// The wind: two trains of crests rolling downwind on the air's travel
-	// (grass_look's crest), the grass bowed there showing its paler side;
-	// far off the crests fade to their mean, a faint sheen.
-	float crest_near = zs_grass_crest(gxz, wave_lengths.x, ZS_GRASS_WAVE_SPEED, zs_grass_offset);
-	float crest_far = zs_grass_crest(gxz * 0.97 + 50.0, wave_lengths.y, ZS_GRASS_WAVE_SPEED * 1.3, zs_grass_offset + 7.0);
-	crest_near = mix(0.35, crest_near, 1.0 - smoothstep(wave_lengths.x * 0.08, wave_lengths.x * 0.3, fp));
-	crest_far = mix(0.35, crest_far, 1.0 - smoothstep(wave_lengths.y * 0.08, wave_lengths.y * 0.3, fp));
-	float air = clamp(zs_wind_strength, 0.0, 2.0);
-	float crest = (crest_near * 0.35 + crest_far * 0.65) * air * wind_sheen;
-	// Velvet: turf seen low catches the light along its blades.
-	float grazing = pow(1.0 - clamp(dot(n, eye), 0.0, 1.0), 2.0);
-	// (The carpet's tufts catch no velvet: past them its paint keeps less.)
-	float carpet_high = turf_alpine.y > 0.0 ? smoothstep(turf_alpine.x, turf_alpine.y, alpine) : smoothstep(turf_high.x, turf_high.y, over);
-	float carpet_turf = smoothstep(turf_slope.x, turf_slope.y, n.y) * (1.0 - carpet_high)
-		* smoothstep(turf_beach.x, turf_beach.y, over);
-	// No carpet on a river's bank or in its water.
-	carpet_turf *= 1.0 - max(banked, wet);
-	float sheen = crest * (0.35 + 0.65 * grazing) + velvet * grazing * 0.6 * (1.0 - carpet_velvet_cut * carpet_turf);
-	vec3 sheen_colour = mix(grass, vec3(luma(grass)) * zs_warm(vec3(1.25, 1.22, 0.85), paint_follow), 0.55) * 1.55;
-	grass = mix(grass, sheen_colour, clamp(sheen * 0.42, 0.0, 0.8) * (1.0 - thin * 0.6));
-	// The carpet's tone past its tufts, and wherever none grow.
-	float turf = carpet_turf;
-	float beyond = carpet_reach.y > 0.0 ? clamp((endless_ring_d(CAMERA_POSITION_WORLD, p) - carpet_reach.x) / max(carpet_reach.y - carpet_reach.x, 1.0), 0.0, 1.0) : 1.0;
-	float toned = mix(1.0, beyond, turf);
-	grass *= mix(vec3(1.0), mix(rp_tone_low, rp_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
-	grass *= mix(vec3(1.0), rp_under_tone, turf * (1.0 - toned));
-	float speck_a = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 0) / carpet_grain_sizes.x)) - 0.5;
-	float speck_b = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 1) / carpet_grain_sizes.y)) - 0.5;
-	float speck = speck_a * (1.0 - smoothstep(carpet_grain_sizes.x * 0.5, carpet_grain_sizes.x * 1.2, fp))
-		+ speck_b * 0.7 * (1.0 - smoothstep(carpet_grain_sizes.y * 0.5, carpet_grain_sizes.y * 1.2, fp));
-	// Only off where tufts would be pixels: near, the paint's own grain.
-	float high_up = smoothstep(high_paint_alt.x, high_paint_alt.y, CAMERA_POSITION_WORLD.y - p.y) * high_paint;
-	grass *= 1.0 + speck * carpet_grain * turf * beyond * smoothstep(40.0, 110.0, length(CAMERA_POSITION_WORLD - p)) * (1.0 - clamp(high_up, 0.0, 1.0));
-	float wc_up = clamp(high_up, 0.0, 1.0) * wc_paint;
-	if (high_up > 0.0) {
-		// Broad patches of lighter and deeper, warmer and cooler meadow.
-		float hp = turf * high_up * (1.0 - smoothstep(200.0, 900.0, fp));
-		grass *= 1.0 + (broad * 0.30 + wide * 0.34 + mid * 0.16) * hp;
-		grass *= mix(vec3(1.0), wide > 0.0 ? zs_warm(vec3(1.07, 1.03, 0.86), paint_follow) : zs_cool(vec3(0.88, 0.98, 1.06), paint_follow), clamp(abs(wide) * 0.6, 0.0, 1.0) * hp);
-		// Soft streaks, long along the wind, as if combed.
-		vec2 sdir = normalize(zs_sun_direction.xz + vec2(0.6, 0.3));
-		vec2 sperp = vec2(-sdir.y, sdir.x);
-		float streak = zs_noise(vec2(dot(gxz, sdir) / 190.0, dot(gxz, sperp) / 16.0) + 7.0) - 0.5;
-		streak += (zs_noise(vec2(dot(gxz, sdir) / 90.0, dot(gxz, sperp) / 7.0) + 19.0) - 0.5) * 0.5;
-		grass *= 1.0 + streak * 0.30 * hp * (1.0 - smoothstep(3.0, 14.0, fp));
-		// Hollows and creases darker, as shade settles in them.
-		float hollow = max(-wide, 0.0) * 0.16 + max(-mid, 0.0) * 0.08 + smoothstep(0.97, 0.86, n.y) * 0.22;
-		grass *= 1.0 - hollow * hp;
-	}
-	if (wc_up > 0.0) {
-		float wk = turf * (1.0 - thin) * (1.0 - alpine) * wc_up * (1.0 - smoothstep(300.0, 1200.0, fp));
-		// The small patches (tuft, fine, mid, clump) melted out: the same
-		// colour from the broad scales alone.
-		float sunny_w = clamp((broad * 1.3 + wide * 1.5) * patch_strength, -1.0, 1.0);
-		vec3 gw = mix(GREEN, sunny_w > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny_w));
-		gw = mix(gw, MEADOW, meadow * 0.75);
-		gw *= mix(vec3(1.0), warm > 0.0 ? zs_warm(vec3(1.32, 1.05, 0.62), paint_follow) : zs_cool(vec3(0.80, 0.97, 1.16), paint_follow), abs(warm) * 0.5);
-		gw *= region;
-		gw = mix(gw, vc / max(luma(vc), 0.01) * luma(gw), vertex_hue * 0.6);
-		gw *= mix(vec3(1.0), mix(rp_tone_low, rp_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
-		gw *= mix(vec3(1.0), rp_under_tone, turf * (1.0 - toned));
-		grass = mix(grass, gw, wk * 0.8);
-		// Washes: warped fields, so their edges wander and bleed.
-		vec2 wq = gxz / wc_scale;
-		vec2 warp = vec2(zs_noise(wq * 0.8 + vec2(3.1, 8.7)), zs_noise(wq * 0.8 + vec2(9.4, 1.3))) - 0.5;
-		wq += warp * 2.6 + (vec2(zs_noise(wq * 2.3 + vec2(14.0, 4.0)), zs_noise(wq * 2.3 + vec2(2.0, 27.0))) - 0.5) * 0.9;
-		float f1 = zs_noise(wq + vec2(21.0, 5.0)) * 0.72 + zs_noise(wq * 2.7 + vec2(4.0, 33.0)) * 0.28;
-		float f2 = zs_noise(wq * 1.7 + vec2(60.0, 17.0)) * 0.7 + zs_noise(wq * 4.1 + vec2(8.0, 2.0)) * 0.3;
-		// Three pigments laid in washes: yellow-green, cool blue-green, olive.
-		float wa = smoothstep(0.32, 0.68, f1);
-		float wb = smoothstep(0.42, 0.78, f2);
-		vec3 pig = mix(vec3(0.72, 0.96, 1.02), vec3(1.30, 1.14, 0.58), wa);
-		pig = mix(pig, vec3(1.12, 0.92, 0.62), wb * 0.6);
-		grass *= mix(vec3(1.0), pig, wk * 0.9);
-		// Wet edges: pigment pools darker and a touch richer where two washes meet.
-		float edge = exp(-pow((f1 - 0.51) / 0.05, 2.0)) * 0.7 + exp(-pow((f2 - 0.61) / 0.045, 2.0)) * 0.5;
-		grass *= mix(vec3(1.0), vec3(0.66, 0.76, 0.70), clamp(edge, 0.0, 1.0) * wc_edge * wk);
-		// Paper light: the pale crowns of the washes, where the water dried thin.
-		float crown = smoothstep(0.52, 0.80, f2 * 0.6 + f1 * 0.4 + broad * 0.4 + max(facing, 0.0) * 0.1);
-		vec3 paper = vec3(luma(grass)) * zs_warm(vec3(1.18, 1.16, 0.98), paint_follow) * 1.18;
-		grass = mix(grass, paper, crown * 0.4 * wc_paper * wk);
-		// Pooled pigment in the low washes: deeper and cooler.
-		float pool = smoothstep(0.42, 0.22, f2 * 0.6 + f1 * 0.4 + wide * 0.3);
-		grass *= mix(vec3(1.0), vec3(0.62, 0.80, 0.78), pool * 0.7 * wk);
-		// A river's bank and the water's edge: pigment collected along it.
-		grass *= 1.0 - 0.22 * r_here * (1.0 - smoothstep(2.0, 22.0, max(r_out, 0.0))) * wk;
-	}
-
-	// --- Rock, sand, snow -----------------------------------------------------
+	// Where the rock, the beach, a bank and snow lie (their paint below).
 	float rock_edge = (zs_noise(gxz / 9.0) - 0.5) * 0.10 + mid * 0.08;
 	float rocky = smoothstep(rock_up + 0.04, rock_up - 0.05, n.y + rock_edge);
 	if (!old_rock) {
@@ -777,6 +659,211 @@ void fragment() {
 	}
 	// More rock breaking through the high ground.
 	rocky = max(rocky, smoothstep(0.88, 0.80, n.y + rock_edge) * alpine * (old_rock ? 1.0 : 0.6));
+	// The beach: a strip at the water, wider in bays (the meadows' flats
+	// stand MEADOW_ABOVE over the sea, and stay turf).
+	float sand_edge = (zs_noise(gxz / 7.0) - 0.5) * 0.7 + wide * 0.8 + fine * 0.3;
+	float sand_soft = 0.08 + min(fp * 0.2, 0.4);
+	float sandy = 1.0 - smoothstep(beach * 0.7 - sand_soft, beach * 0.7 + sand_soft, over + sand_edge);
+	float snow_edge = (zs_noise(gxz / 23.0) - 0.5) * 16.0 + mid * 10.0;
+	float snowy = smoothstep(snow_line - 14.0, snow_line + 2.0, over + snow_edge)
+		* smoothstep(0.55, 0.72, n.y + rock_edge);
+	// None of the grass shows where sand, a bank or snow covers the ground
+	// whole and no rock (whose ledges and moss take its colour), so its paint
+	// is skipped there: the same pixels (grass_skip; --land-skip=0 paints it).
+	bool skip_grass = grass_skip > 0 && (snowy >= 1.0 || (rocky <= 0.0 && (sandy >= 1.0 || banked >= 1.0)));
+	vec3 grass = vec3(0.0);
+	// The grass as the rock's ledges and moss take it (before the near grain).
+	vec3 moss_grass = vec3(0.0);
+	if (!skip_grass) {
+		float vast = ep_fade(gxz + vec2(311.0, 97.0), 900.0, fp);
+		float tuft = zs_fade(gxz + vec2(9.0, 29.0), 1.4, fp);
+		// Patches with an edge: clover and lush hollows among the lighter grass.
+		float clump = ep_patch(gxz + vec2(57.0, 19.0), 34.0, fp) * 0.7 + ep_patch(gxz + vec2(3.0, 77.0), 8.0, fp) * 0.5;
+		float sunny = clamp((broad * 1.3 + wide * 1.5 + mid * 0.9 + fine * 0.6 + tuft * 0.8 + clump * 0.9) * patch_strength, -1.0, 1.0);
+		grass = mix(GREEN, sunny > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny));
+		// The meadows lusher and brighter.
+		grass = mix(grass, MEADOW * (1.0 + mid * 0.5), meadow * 0.75);
+		// Warm and cool drift, mostly with the broad light.
+		float warm = clamp(broad * 2.4 + vast * 1.8, -1.0, 1.0) * patch_strength;
+		grass *= mix(vec3(1.0), warm > 0.0 ? zs_warm(vec3(1.32, 1.05, 0.62), paint_follow) : zs_cool(vec3(0.80, 0.97, 1.16), paint_follow), abs(warm) * 0.5);
+		// The broad regions' hue (endless_patch ep_region): lush, lime, sage,
+		// straw, heather on high ground.
+		vec3 region = ep_region(gxz, over, region_amount, region_offset);
+		grass *= region;
+		// The land's own tint (the vertex colour's hue at the grass's light).
+		vec3 vc = land_colour.rgb;
+		grass = mix(grass, vc / max(luma(vc), 0.01) * luma(grass), vertex_hue * 0.6);
+		// The isles' dry patches (grass_look) and broader dry ground, fading to
+		// their means far off (the noise mean is about 0.5, dry from 0.5).
+		float dry_near = zs_grass_dry(gxz, ZS_GRASS_DRY_SCALE, zs_grass_offset);
+		dry_near = mix(0.18, dry_near, 1.0 - smoothstep(1.0, 3.5, fp));
+		float dry_far = smoothstep(0.05, 0.32, broad + wide * 0.6 + 0.1);
+		float dry = clamp(dry_near * 0.6 + dry_far * 0.55, 0.0, 1.0) * (1.0 - meadow * 0.6);
+		grass = mix(grass, DRY * (1.0 + fine * 0.4), dry * 0.4);
+		grass = mix(grass, TUNDRA * (1.0 + mid * 0.6), alpine * 0.8);
+		// Steep turf thins to a dry olive.
+		float thin = smoothstep(thin_up, rock_up, n.y);
+		grass = mix(grass, OLIVE * (1.0 + fine), thin * 0.7);
+		// Slopes turned to the sun warmer and lighter, turned away deeper.
+		vec2 to_sun = zs_sun_direction.xz / max(length(zs_sun_direction.xz), 0.001);
+		float facing = clamp(dot(n.xz, to_sun) * 2.5, -1.0, 1.0) * smoothstep(-0.05, 0.2, zs_sun_direction.y);
+		grass *= mix(vec3(1.0), facing > 0.0 ? zs_warm(vec3(1.10, 1.05, 0.86), paint_follow) : zs_cool(vec3(0.90, 0.95, 1.02), paint_follow), abs(facing) * 0.5);
+
+		// The wind: two trains of crests rolling downwind on the air's travel
+		// (grass_look's crest), the grass bowed there showing its paler side;
+		// far off the crests fade to their mean, a faint sheen.
+		float crest_near = zs_grass_crest(gxz, wave_lengths.x, ZS_GRASS_WAVE_SPEED, zs_grass_offset);
+		float crest_far = zs_grass_crest(gxz * 0.97 + 50.0, wave_lengths.y, ZS_GRASS_WAVE_SPEED * 1.3, zs_grass_offset + 7.0);
+		crest_near = mix(0.35, crest_near, 1.0 - smoothstep(wave_lengths.x * 0.08, wave_lengths.x * 0.3, fp));
+		crest_far = mix(0.35, crest_far, 1.0 - smoothstep(wave_lengths.y * 0.08, wave_lengths.y * 0.3, fp));
+		float air = clamp(zs_wind_strength, 0.0, 2.0);
+		float crest = (crest_near * 0.35 + crest_far * 0.65) * air * wind_sheen;
+		// Velvet: turf seen low catches the light along its blades.
+		float grazing = pow(1.0 - clamp(dot(n, eye), 0.0, 1.0), 2.0);
+		// (The carpet's tufts catch no velvet: past them its paint keeps less.)
+		float carpet_high = turf_alpine.y > 0.0 ? smoothstep(turf_alpine.x, turf_alpine.y, alpine) : smoothstep(turf_high.x, turf_high.y, over);
+		float carpet_turf = smoothstep(turf_slope.x, turf_slope.y, n.y) * (1.0 - carpet_high)
+			* smoothstep(turf_beach.x, turf_beach.y, over);
+		// No carpet on a river's bank or in its water.
+		carpet_turf *= 1.0 - max(banked, wet);
+		float sheen = crest * (0.35 + 0.65 * grazing) + velvet * grazing * 0.6 * (1.0 - carpet_velvet_cut * carpet_turf);
+		vec3 sheen_colour = mix(grass, vec3(luma(grass)) * zs_warm(vec3(1.25, 1.22, 0.85), paint_follow), 0.55) * 1.55;
+		grass = mix(grass, sheen_colour, clamp(sheen * 0.42, 0.0, 0.8) * (1.0 - thin * 0.6));
+		// The carpet's tone past its tufts, and wherever none grow.
+		float turf = carpet_turf;
+		float beyond = carpet_reach.y > 0.0 ? clamp((endless_ring_d(CAMERA_POSITION_WORLD, p) - carpet_reach.x) / max(carpet_reach.y - carpet_reach.x, 1.0), 0.0, 1.0) : 1.0;
+		float toned = mix(1.0, beyond, turf);
+		grass *= mix(vec3(1.0), mix(rp_tone_low, rp_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
+		grass *= mix(vec3(1.0), rp_under_tone, turf * (1.0 - toned));
+		float speck_a = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 0) / carpet_grain_sizes.x)) - 0.5;
+		float speck_b = smoothstep(0.3, 0.7, zs_noise(turned_speck(gxz, 1) / carpet_grain_sizes.y)) - 0.5;
+		float speck = speck_a * (1.0 - smoothstep(carpet_grain_sizes.x * 0.5, carpet_grain_sizes.x * 1.2, fp))
+			+ speck_b * 0.7 * (1.0 - smoothstep(carpet_grain_sizes.y * 0.5, carpet_grain_sizes.y * 1.2, fp));
+		// Only off where tufts would be pixels: near, the paint's own grain.
+		float high_up = smoothstep(high_paint_alt.x, high_paint_alt.y, CAMERA_POSITION_WORLD.y - p.y) * high_paint;
+		grass *= 1.0 + speck * carpet_grain * turf * beyond * smoothstep(40.0, 110.0, length(CAMERA_POSITION_WORLD - p)) * (1.0 - clamp(high_up, 0.0, 1.0));
+		float wc_up = clamp(high_up, 0.0, 1.0) * wc_paint;
+		if (high_up > 0.0) {
+			// Broad patches of lighter and deeper, warmer and cooler meadow.
+			float hp = turf * high_up * (1.0 - smoothstep(200.0, 900.0, fp));
+			grass *= 1.0 + (broad * 0.30 + wide * 0.34 + mid * 0.16) * hp;
+			grass *= mix(vec3(1.0), wide > 0.0 ? zs_warm(vec3(1.07, 1.03, 0.86), paint_follow) : zs_cool(vec3(0.88, 0.98, 1.06), paint_follow), clamp(abs(wide) * 0.6, 0.0, 1.0) * hp);
+			// Soft streaks, long along the wind, as if combed.
+			vec2 sdir = normalize(zs_sun_direction.xz + vec2(0.6, 0.3));
+			vec2 sperp = vec2(-sdir.y, sdir.x);
+			float streak = zs_noise(vec2(dot(gxz, sdir) / 190.0, dot(gxz, sperp) / 16.0) + 7.0) - 0.5;
+			streak += (zs_noise(vec2(dot(gxz, sdir) / 90.0, dot(gxz, sperp) / 7.0) + 19.0) - 0.5) * 0.5;
+			grass *= 1.0 + streak * 0.30 * hp * (1.0 - smoothstep(3.0, 14.0, fp));
+			// Hollows and creases darker, as shade settles in them.
+			float hollow = max(-wide, 0.0) * 0.16 + max(-mid, 0.0) * 0.08 + smoothstep(0.97, 0.86, n.y) * 0.22;
+			grass *= 1.0 - hollow * hp;
+		}
+		if (wc_up > 0.0) {
+			float wk = turf * (1.0 - thin) * (1.0 - alpine) * wc_up * (1.0 - smoothstep(300.0, 1200.0, fp));
+			// The small patches (tuft, fine, mid, clump) melted out: the same
+			// colour from the broad scales alone.
+			float sunny_w = clamp((broad * 1.3 + wide * 1.5) * patch_strength, -1.0, 1.0);
+			vec3 gw = mix(GREEN, sunny_w > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny_w));
+			gw = mix(gw, MEADOW, meadow * 0.75);
+			gw *= mix(vec3(1.0), warm > 0.0 ? zs_warm(vec3(1.32, 1.05, 0.62), paint_follow) : zs_cool(vec3(0.80, 0.97, 1.16), paint_follow), abs(warm) * 0.5);
+			gw *= region;
+			gw = mix(gw, vc / max(luma(vc), 0.01) * luma(gw), vertex_hue * 0.6);
+			gw *= mix(vec3(1.0), mix(rp_tone_low, rp_tone_top, smoothstep(0.12, 0.6, eye.y)), toned);
+			gw *= mix(vec3(1.0), rp_under_tone, turf * (1.0 - toned));
+			grass = mix(grass, gw, wk * 0.8);
+			// Washes: warped fields, so their edges wander and bleed.
+			vec2 wq = gxz / wc_scale;
+			vec2 warp = vec2(zs_noise(wq * 0.8 + vec2(3.1, 8.7)), zs_noise(wq * 0.8 + vec2(9.4, 1.3))) - 0.5;
+			wq += warp * 2.6 + (vec2(zs_noise(wq * 2.3 + vec2(14.0, 4.0)), zs_noise(wq * 2.3 + vec2(2.0, 27.0))) - 0.5) * 0.9;
+			float f1 = zs_noise(wq + vec2(21.0, 5.0)) * 0.72 + zs_noise(wq * 2.7 + vec2(4.0, 33.0)) * 0.28;
+			float f2 = zs_noise(wq * 1.7 + vec2(60.0, 17.0)) * 0.7 + zs_noise(wq * 4.1 + vec2(8.0, 2.0)) * 0.3;
+			// Three pigments laid in washes: yellow-green, cool blue-green, olive.
+			float wa = smoothstep(0.32, 0.68, f1);
+			float wb = smoothstep(0.42, 0.78, f2);
+			vec3 pig = mix(vec3(0.72, 0.96, 1.02), vec3(1.30, 1.14, 0.58), wa);
+			pig = mix(pig, vec3(1.12, 0.92, 0.62), wb * 0.6);
+			grass *= mix(vec3(1.0), pig, wk * 0.9);
+			// Wet edges: pigment pools darker and a touch richer where two washes meet.
+			float edge = exp(-pow((f1 - 0.51) / 0.05, 2.0)) * 0.7 + exp(-pow((f2 - 0.61) / 0.045, 2.0)) * 0.5;
+			grass *= mix(vec3(1.0), vec3(0.66, 0.76, 0.70), clamp(edge, 0.0, 1.0) * wc_edge * wk);
+			// Paper light: the pale crowns of the washes, where the water dried thin.
+			float crown = smoothstep(0.52, 0.80, f2 * 0.6 + f1 * 0.4 + broad * 0.4 + max(facing, 0.0) * 0.1);
+			vec3 paper = vec3(luma(grass)) * zs_warm(vec3(1.18, 1.16, 0.98), paint_follow) * 1.18;
+			grass = mix(grass, paper, crown * 0.4 * wc_paper * wk);
+			// Pooled pigment in the low washes: deeper and cooler.
+			float pool = smoothstep(0.42, 0.22, f2 * 0.6 + f1 * 0.4 + wide * 0.3);
+			grass *= mix(vec3(1.0), vec3(0.62, 0.80, 0.78), pool * 0.7 * wk);
+			// A river's bank and the water's edge: pigment collected along it.
+			grass *= 1.0 - 0.22 * r_here * (1.0 - smoothstep(2.0, 22.0, max(r_out, 0.0))) * wk;
+		}
+		moss_grass = grass;
+
+		// The turf's grain near the eye: tufts and blades too fine to draw,
+		// as a speckle of light and dark that fades to nothing with the pixel.
+		// Two lattices turned against each other, so no grid shows.
+		vec2 turned = mat2(vec2(0.866, 0.5), vec2(-0.5, 0.866)) * gxz;
+		vec2 turned2 = mat2(vec2(0.342, -0.94), vec2(0.94, 0.342)) * gxz;
+		float grain_near = zs_fade(turned + vec2(3.3, 1.1), 0.3, fp) * 0.8 + zs_fade(turned2 + vec2(41.0, 7.0), 0.55, fp) * 0.7
+			+ zs_fade(gxz + vec2(9.0, 2.0), 1.3, fp) * 0.5;
+		grass *= 1.0 + grain_near * (1.0 - thin * 0.4);
+		// Under the near carpet: the tufts' own ground (endless_patch.gd `grass`).
+		if (carpet_near.y > 0.0) {
+			float under = carpet_turf * (1.0 - smoothstep(carpet_near.x, carpet_near.y, endless_ring_d(CAMERA_POSITION_WORLD, p))) * (1.0 - wc_up);
+			if (under > 0.0) {
+				float sunny_c = clamp((broad * 1.3 + wide * 1.5 + mid * 0.9 + clump * 0.9) * patch_strength, -1.0, 1.0);
+				vec3 coarse = mix(GREEN, sunny_c > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny_c));
+				coarse = mix(coarse, MEADOW * (1.0 + mid * 0.5), meadow * 0.75);
+				coarse *= mix(vec3(1.0), warm > 0.0 ? zs_warm(vec3(1.32, 1.05, 0.62), paint_follow) : zs_cool(vec3(0.80, 0.97, 1.16), paint_follow), abs(warm) * 0.5);
+				coarse *= region;
+				coarse = mix(coarse, vc / max(luma(vc), 0.01) * luma(coarse), vertex_hue * 0.6);
+				float dry_c = clamp(0.18 * 0.6 + dry_far * 0.55, 0.0, 1.0) * (1.0 - meadow * 0.6);
+				coarse = mix(coarse, DRY, dry_c * 0.4);
+				coarse = mix(coarse, TUNDRA * (1.0 + mid * 0.6), alpine * 0.8);
+				coarse = mix(coarse, OLIVE, thin * 0.7);
+				coarse *= 1.0 + (grain_near + fine * 0.6 + tuft * 0.8) * carpet_near_grain;
+				coarse *= rp_under_tone;
+				grass = mix(grass, coarse, under);
+			}
+		}
+		// The grass's silvery underside where the breeze bows it (grass_silver,
+		// off by default): the tufts' own bands, carried on over the paint.
+		if (grass_silver.x > 0.0) grass = zs_silver_paint_hue(grass, zs_silver_drive(gxz, fp), 1.0 - thin * 0.6, 0.8, rp_silver);
+		// The wind's sheen: light and dark swells rolling over the far meadow (grass_sheen).
+		if (grass_sheen.x > 0.0) {
+			float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);
+			float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up);
+			if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(zs_sheen_field(gxz, fp), gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
+		}
+		// The flower drifts past the drawn flowers: heads of their colour dotted
+		// over the turf (two lattices, more of them at a drift's heart), which
+		// average to a wash of it as a pixel grows past a head; a light wash
+		// under the drawn flowers. On open turf only.
+		// Gone where a pixel is wider than a small patch's share (the horizon),
+		// so it doesn't shimmer.
+		float bloom_on = carpet_turf * (1.0 - smoothstep(4.0, 12.0, fp));
+		if (bloom_amount > 0.0 && bloom_on > 0.0) {
+			vec2 bloom = ep_bloom(gxz, bloom_amount, region_offset);
+			float bloom_w = bloom.x * bloom_on;
+			if (bloom_w > 0.0) {
+				float d = endless_ring_d(CAMERA_POSITION_WORLD, p);
+				float past = mix(smoothstep(bloom_fade.x, bloom_fade.y, d), 1.0, wc_up);
+				float cut = 0.78 - 0.3 * bloom_w;
+				float dot_a = smoothstep(cut, cut + 0.06, zs_noise(turned_speck(gxz, 0) / bloom_dots.x));
+				float dot_b = smoothstep(cut, cut + 0.06, zs_noise(turned_speck(gxz + 7.3, 1) / bloom_dots.y));
+				float dots = max(dot_a, dot_b);
+				// Their mean as the pixel outgrows a head.
+				dots = mix(dots, bloom_w * 0.42, smoothstep(bloom_dots.x * 0.4, bloom_dots.y * 1.2, fp));
+				// From high up the dots melt into soft blooms of colour.
+				dots = mix(dots, bloom_w * smoothstep(0.30, 0.85, zs_noise(gxz / 38.0 + 3.0)) * 0.34, wc_up);
+				float wash = mix(bloom_wash.x * bloom_w, bloom_wash.y * dots, past);
+				grass = mix(grass, ep_wash(int(bloom.y + 0.5)), clamp(wash, 0.0, 1.0));
+			}
+		}
+		// Stirred by the wash, the walker or a gust (grass_react).
+		grass = zs_react_paint(grass, p.xz, CAMERA_POSITION_WORLD.xz - p.xz, carpet_turf * (grass_silver.x > 0.0 ? ZS_SILVER_REACT_PALE : 1.0));
+	}
+
+	// --- Rock, sand, snow -----------------------------------------------------
 	// Its beds: bands by height, waved, hard pale ones among dark.
 	float bed_y = p.y + sin(p.x * 0.013 + p.z * 0.008) * 6.0 + (zs_noise(gxz / 40.0) - 0.5) * 8.0;
 	float bed = zs_noise(vec2(bed_y / 3.5, 0.5));
@@ -784,11 +871,11 @@ void fragment() {
 	vec3 rock = mix(ROCK, ROCK_PALE, smoothstep(0.35, 0.75, bed) * 0.8) * (1.0 + grain * 0.5);
 	rock *= mix(vec3(1.0), zs_warm(vec3(1.10, 1.0, 0.86), paint_follow), clamp(broad * 2.0 + 0.5, 0.0, 1.0) * 0.6);
 	// Ledges lying back hold a little turf.
-	rock = mix(rock, grass * 0.8, smoothstep(0.62, 0.74, n.y) * 0.35);
+	rock = mix(rock, moss_grass * 0.8, smoothstep(0.62, 0.74, n.y) * 0.35);
 	vec3 lit_n = n;
 	vec3 rock_glow = vec3(0.0);
 	if (!old_rock && rocky > 0.002) {
-		rock = er_rock(p, n, fp3, zs_sun_direction, grass * 0.85, land_carve, lit_n, rock_glow);
+		rock = er_rock(p, n, fp3, zs_sun_direction, moss_grass * 0.85, land_carve, lit_n, rock_glow);
 		// Its bounce glow at the sky fill's strength (ER_REF_FILL its luma at
 		// the reference light), so it eases with the fill.
 		float fill_level = clamp(luma(zs_hemi_sky) * zs_hemi_energy / ER_REF_FILL, 0.25, 2.0);
@@ -796,11 +883,6 @@ void fragment() {
 		lit_n = normalize(mix(n, lit_n, rocky));
 	}
 
-	// The beach: a strip at the water, wider in bays (the meadows' flats
-	// stand MEADOW_ABOVE over the sea, and stay turf).
-	float sand_edge = (zs_noise(gxz / 7.0) - 0.5) * 0.7 + wide * 0.8 + fine * 0.3;
-	float sand_soft = 0.08 + min(fp * 0.2, 0.4);
-	float sandy = 1.0 - smoothstep(beach * 0.7 - sand_soft, beach * 0.7 + sand_soft, over + sand_edge);
 	vec3 sand = SAND * (1.0 + fine * 0.25 + mid * 0.2);
 	sand = mix(sand, SAND_WET, smoothstep(0.7, -0.1, over));
 	// The seabed: the sand darkening and greying with depth.
@@ -823,78 +905,13 @@ void fragment() {
 		bank_c = mix(bank_c, SAND_WET * 0.85, damp * 0.85);
 	}
 
-	float snow_edge = (zs_noise(gxz / 23.0) - 0.5) * 16.0 + mid * 10.0;
-	float snowy = smoothstep(snow_line - 14.0, snow_line + 2.0, over + snow_edge)
-		* smoothstep(0.55, 0.72, n.y + rock_edge);
 	vec3 snow = SNOW * (1.0 + fine * 0.06);
 
-	// The turf's grain near the eye: tufts and blades too fine to draw,
-	// as a speckle of light and dark that fades to nothing with the pixel.
-	// Two lattices turned against each other, so no grid shows.
-	vec2 turned = mat2(vec2(0.866, 0.5), vec2(-0.5, 0.866)) * gxz;
-	vec2 turned2 = mat2(vec2(0.342, -0.94), vec2(0.94, 0.342)) * gxz;
-	float grain_near = zs_fade(turned + vec2(3.3, 1.1), 0.3, fp) * 0.8 + zs_fade(turned2 + vec2(41.0, 7.0), 0.55, fp) * 0.7
-		+ zs_fade(gxz + vec2(9.0, 2.0), 1.3, fp) * 0.5;
-	grass *= 1.0 + grain_near * (1.0 - thin * 0.4);
-	// Under the near carpet: the tufts' own ground (endless_patch.gd `grass`).
-	if (carpet_near.y > 0.0) {
-		float under = carpet_turf * (1.0 - smoothstep(carpet_near.x, carpet_near.y, endless_ring_d(CAMERA_POSITION_WORLD, p))) * (1.0 - wc_up);
-		if (under > 0.0) {
-			float sunny_c = clamp((broad * 1.3 + wide * 1.5 + mid * 0.9 + clump * 0.9) * patch_strength, -1.0, 1.0);
-			vec3 coarse = mix(GREEN, sunny_c > 0.0 ? SUNLIT : DEEP * 0.82, abs(sunny_c));
-			coarse = mix(coarse, MEADOW * (1.0 + mid * 0.5), meadow * 0.75);
-			coarse *= mix(vec3(1.0), warm > 0.0 ? zs_warm(vec3(1.32, 1.05, 0.62), paint_follow) : zs_cool(vec3(0.80, 0.97, 1.16), paint_follow), abs(warm) * 0.5);
-			coarse *= region;
-			coarse = mix(coarse, vc / max(luma(vc), 0.01) * luma(coarse), vertex_hue * 0.6);
-			float dry_c = clamp(0.18 * 0.6 + dry_far * 0.55, 0.0, 1.0) * (1.0 - meadow * 0.6);
-			coarse = mix(coarse, DRY, dry_c * 0.4);
-			coarse = mix(coarse, TUNDRA * (1.0 + mid * 0.6), alpine * 0.8);
-			coarse = mix(coarse, OLIVE, thin * 0.7);
-			coarse *= 1.0 + (grain_near + fine * 0.6 + tuft * 0.8) * carpet_near_grain;
-			coarse *= rp_under_tone;
-			grass = mix(grass, coarse, under);
-		}
-	}
-	// The grass's silvery underside where the breeze bows it (grass_silver,
-	// off by default): the tufts' own bands, carried on over the paint.
-	if (grass_silver.x > 0.0) grass = zs_silver_paint_hue(grass, zs_silver_drive(gxz, fp), 1.0 - thin * 0.6, 0.8, rp_silver);
-	// The wind's sheen: light and dark swells rolling over the far meadow (grass_sheen).
-	if (grass_sheen.x > 0.0) {
-		float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);
-		float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up);
-		if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(zs_sheen_field(gxz, fp), gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
-	}
-	// The flower drifts past the drawn flowers: heads of their colour dotted
-	// over the turf (two lattices, more of them at a drift's heart), which
-	// average to a wash of it as a pixel grows past a head; a light wash
-	// under the drawn flowers. On open turf only.
-	// Gone where a pixel is wider than a small patch's share (the horizon),
-	// so it doesn't shimmer.
-	float bloom_on = carpet_turf * (1.0 - smoothstep(4.0, 12.0, fp));
-	if (bloom_amount > 0.0 && bloom_on > 0.0) {
-		vec2 bloom = ep_bloom(gxz, bloom_amount, region_offset);
-		float bloom_w = bloom.x * bloom_on;
-		if (bloom_w > 0.0) {
-			float d = endless_ring_d(CAMERA_POSITION_WORLD, p);
-			float past = mix(smoothstep(bloom_fade.x, bloom_fade.y, d), 1.0, wc_up);
-			float cut = 0.78 - 0.3 * bloom_w;
-			float dot_a = smoothstep(cut, cut + 0.06, zs_noise(turned_speck(gxz, 0) / bloom_dots.x));
-			float dot_b = smoothstep(cut, cut + 0.06, zs_noise(turned_speck(gxz + 7.3, 1) / bloom_dots.y));
-			float dots = max(dot_a, dot_b);
-			// Their mean as the pixel outgrows a head.
-			dots = mix(dots, bloom_w * 0.42, smoothstep(bloom_dots.x * 0.4, bloom_dots.y * 1.2, fp));
-			// From high up the dots melt into soft blooms of colour.
-			dots = mix(dots, bloom_w * smoothstep(0.30, 0.85, zs_noise(gxz / 38.0 + 3.0)) * 0.34, wc_up);
-			float wash = mix(bloom_wash.x * bloom_w, bloom_wash.y * dots, past);
-			grass = mix(grass, ep_wash(int(bloom.y + 0.5)), clamp(wash, 0.0, 1.0));
-		}
-	}
-	// Stirred by the wash, the walker or a gust (grass_react).
-	grass = zs_react_paint(grass, p.xz, CAMERA_POSITION_WORLD.xz - p.xz, carpet_turf * (grass_silver.x > 0.0 ? ZS_SILVER_REACT_PALE : 1.0));
 	vec3 albedo = mix(grass, rock, rocky);
 	albedo = mix(albedo, sand, sandy * (1.0 - rocky * 0.5));
 	albedo = mix(albedo, bank_c, banked * (1.0 - rocky * 0.7));
 	albedo = mix(albedo, snow, snowy);
+	if (grass_skip == 2 && skip_grass) albedo = vec3(1.0, 0.0, 1.0);
 	albedo = mix(albedo, vec3(luma(albedo)) * night_grade.yzw, night_grade.x);
 	// Under a cloud's shadow the sun's share goes (the albedo the sun
 	// lights), the sky's fill (the emission below) stays.
