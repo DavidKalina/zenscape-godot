@@ -135,6 +135,8 @@ const EndlessFish = preload("res://scripts/endless/endless_fish.gd")
 const EndlessTraffic = preload("res://scripts/endless/endless_traffic.gd")
 ## The rival race against one of them (Tab / R3 held on a bracketed plane).
 const RivalRace = preload("res://scripts/endless/rival_race.gd")
+## The shops beside their strips (scripts/endless/shop_sites.gd; --shops=0 none).
+const ShopSites = preload("res://scripts/endless/shop_sites.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
@@ -265,6 +267,8 @@ var fish: Node3D
 var traffic: Node
 ## The rival race (scripts/endless/rival_race.gd), or null with no traffic.
 var race: Node
+## The shops (scripts/endless/shop_sites.gd).
+var shops: Node
 var flown := 0.0
 var _start := Vector2.ZERO
 var _no_title := false
@@ -579,6 +583,10 @@ func _ready() -> void:
 	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	else: _park_for_menu(spots)
 	if race != null and RivalRace.near_start_wanted(): race.place_near_start(self)
+	shops = ShopSites.new()
+	shops.name = "Shops"
+	add_child(shops)
+	shops.setup(self)
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.DEFAULT else ", world "+str(world.id)])
@@ -979,6 +987,7 @@ func tick(delta: float) -> void:
 	if fish != null: fish.step(delta,camera.global_position,plane.position,plane.velocity,false)
 	if traffic != null: traffic.step(delta,camera.global_position,-camera.global_basis.z,plane.position,Vector3(-sin(plane.heading),0.0,-cos(plane.heading)),float(plane.speed))
 	if race != null: race.step(delta,self)
+	if shops != null: shops.step(delta,self)
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera

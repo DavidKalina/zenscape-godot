@@ -40,7 +40,8 @@ var _since := 0.0
 ## The book for this run, from the command line.
 static func open() -> PilotBook:
 	var b := PilotBook.new()
-	for arg: String in OS.get_cmdline_user_args():
+	# The launch args (a driver's `open` and the scene picker give theirs).
+	for arg: String in preload("res://scripts/launch_args.gd").user_args():
 		if arg == "--pilot=fresh": b.path = ""
 		elif arg.begins_with("--pilot-file="): b.path = arg.substr(13)
 	b.load_book()
