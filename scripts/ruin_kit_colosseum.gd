@@ -62,7 +62,7 @@ const TOY_ARCH := 3.2
 const TOY_TIGHT := 2.7
 const TOY_GATE := 5.0
 const TOY_AMB := 7.0
-const TOY_TRENCH := 4.5
+const TOY_TRENCH := 5.5
 ## The inner wall's passages (to the arena, up to the bowl).
 const TOY_PASS := 2.9
 static var ARCH: float = WorldScale.opening(TOY_ARCH)
@@ -105,6 +105,8 @@ const STEP := 2.7
 const STEPS := 3
 ## The arena's floor squares (m), the fallen region's half length (z),
 ## where the trench's ramps start along it, its flown lane's half length.
+## The ramps run on under the great gates' passages to the podium at the
+## inner wall (`_trench_floor`), so the climb out has no floor edge.
 const SQUARE := 3.5
 const FALL_Z := 42.0
 const RAMP_AT := 26.0
@@ -914,6 +916,7 @@ static func _rings(b: Build, p: Dictionary, bs: Array, extra: Array) -> void:
 			for pc: Vector2 in _pieces(k,(d0+d1)*0.5,1.4 if near else 9.0):
 				var q := _ring_quad(pc.x,pc.y,d0,d1)
 				var top := minf(y1,lost)
+				var lo := y0
 				if near:
 					var m := point((pc.x+pc.y)*0.5,(d0+d1)*0.5)
 					var bd := band_at(bs,m.x,m.z)
@@ -921,14 +924,18 @@ static func _rings(b: Build, p: Dictionary, bs: Array, extra: Array) -> void:
 						var lv := band_level(bd)
 						if String(bd.kind) == "pass2": _quad(b,q,minf(y0,lv-2.0),minf(lv,top),0.92)
 						elif top > lv+1.5: _quad(b,q,lv,top,0.97)
+						# A great gate's passage: the trench's ramp its floor.
+						if String(bd.kind) == "gate": _quad(b,q,-1.0,_trench_floor(absf(m.z)),0.88,true,_ramp_slope(m.z))
 						continue
+					# Beside a gate's passage the seats are walls to the ramp.
+					if _by_gate_way(bs,m.x,m.z): lo = -1.0
 				if y1 > lost:
 					# Fallen: a rough fill to the bay's line, stones on it.
-					if lost > y0+0.5:
-						_quad(b,q,y0,lost,0.88)
+					if lost > lo+0.5:
+						_quad(b,q,lo,lost,0.88)
 						if b.rng.randf() < 0.35: extra.append(_boulder(b,(q[0]+q[2])*0.5+Vector3.UP*lost,b.rng.randf_range(0.8,1.6)))
 					continue
-				_quad(b,q,y0,y1,1.0+0.04*(i%2))
+				_quad(b,q,lo,y1,1.0+0.04*(i%2))
 
 ## A tumbled boulder on `at` (y its ground): drawn, its box (the piece's
 ## frame) for the solid.
@@ -989,10 +996,29 @@ static func _arena(b: Build, p: Dictionary, extra: Array) -> void:
 static func _box_quad(a: AABB) -> Array:
 	return [Vector3(a.position.x,0,a.position.z),Vector3(a.end.x,0,a.position.z),Vector3(a.end.x,0,a.end.z),Vector3(a.position.x,0,a.end.z)]
 
-## The trench floor's height `az` from the arena's middle along it.
+## The trench floor's height `az` from the arena's middle along it: flat,
+## then a ramp of fallen floor from RAMP_AT on through the arena's end and
+## under a great gate's passage to the podium at the inner wall's face.
 static func _trench_floor(az: float) -> float:
 	if az <= RAMP_AT: return 0.4
-	return lerpf(0.4,P-1.0,clampf((az-RAMP_AT)/(FALL_Z-RAMP_AT),0.0,1.0))
+	return lerpf(0.4,P,clampf((az-RAMP_AT)/(RZ-INNER_IN-RAMP_AT),0.0,1.0))
+
+## The ramp's rise along z (dy/dz) at `z`, for a sloped slab.
+static func _ramp_slope(z: float) -> float:
+	if absf(z) <= RAMP_AT or absf(z) >= RZ-INNER_IN: return 0.0
+	return signf(z)*(P-0.4)/(RZ-INNER_IN-RAMP_AT)
+
+## Whether (x, z) is under the seats beside a great gate's passage, where
+## the seats are drawn solid down to the ramp's foot (its side walls).
+static func _by_gate_way(bs: Array, x: float, z: float) -> bool:
+	for bd: Dictionary in bs:
+		if String(bd.kind) != "gate": continue
+		var o: Vector3 = bd.o
+		var dir: Vector3 = bd.dir
+		var along := (x-o.x)*dir.x+(z-o.z)*dir.z
+		if along < -1.0 or along > float(bd.len)+1.0: continue
+		if absf((x-o.x)*dir.z-(z-o.z)*dir.x) < float(bd.half)+3.0: return true
+	return false
 
 # --- The rubble ----------------------------------------------------------------------
 
@@ -1117,7 +1143,7 @@ static func column(p: Dictionary, tops: Dictionary, bs: Array, x: float, z: floa
 			if String(bd.kind) == "pass2":
 				out.append_array([-FOUND,_q(minf(h,lv))])
 				return out
-			out.append_array([-FOUND,P])
+			out.append_array([-FOUND,_q(_trench_floor(absf(z))) if String(bd.kind) == "gate" else P])
 			if h > lv+1.5: out.append_array([_q(lv),_q(h)])
 			return out
 		out.append_array([-FOUND,_q(h)])
