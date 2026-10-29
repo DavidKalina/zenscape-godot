@@ -43,9 +43,13 @@ extends RefCounted
 ## one cuts it by FARM_EACH more, and the same tree, ruin or patch of land
 ## again by FARM_SAME.
 ##
-## The chain: each moment adds its points and a step of CHAIN_STEP to the
-## multiplier (to CHAIN_TOP). BANK_AFTER s with no new moment banks it,
-## points x multiplier, into the meter (METER_FULL points fill it); a scrape
+## The chain: each move adds its points and its difficulty (LineMoves
+## `difficulty`) to the multiplier, cut by the farming cut and by its
+## repeats in the line (a move's nth repeat adds 1/(n+1) of it); a kind new
+## to a line already under way adds NEW_KIND more. The multiplier starts at
+## x1 and stops at CHAIN_TOP. BANK_AFTER s with no new moment banks it,
+## points x multiplier, into the meter (METER_FULL points fill it), reads the
+## line back (`_line`, the frame's "line", paid by `game.book`); a scrape
 ## or crash (`lose`) drops what is unbanked. Each moment kicks the speed a
 ## little (KICK m/s by closeness). The surge (`fly_surge` held) spends the
 ## meter over SURGE_TIME s full, driving the plane past Boost (SkyPlane
@@ -57,6 +61,8 @@ extends RefCounted
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
+const LineMoves = preload("res://scripts/endless/line_moves.gd")
+const Glyphs = preload("res://scripts/endless/near_glyphs.gd")
 
 ## The body's points (toy metres, the plane's frame: x right, y up, -z
 ## ahead; times WorldScale.plane): the spinner, the tail, the lower
@@ -100,8 +106,10 @@ const FARM_EACH := 0.6
 const FARM_SAME := 0.35
 ## The patch of land a ground moment's surface is known by (m).
 const FARM_CELL := 30.0
-const CHAIN_STEP := 0.5
-const CHAIN_TOP := 5.0
+const CHAIN_TOP := 12.0
+const NEW_KIND := 0.5
+## A move's difficulty when it has none.
+const DIFF_PLAIN := 0.3
 const BANK_AFTER := 3.0
 const METER_FULL := 4000.0
 const SURGE_TIME := 2.5
@@ -134,6 +142,10 @@ var touching := {}
 ## left before it banks, and the meter (0 to 1) it banks into.
 var chain_points := 0.0
 var chain_count := 0
+## The multiplier as the line has built it (`multiplier` caps it), and how
+## many of each kind of move the line holds.
+var chain_mult := 1.0
+var _kinds := {}
 var bank_left := 0.0
 var meter := 0.0
 ## How hard the surge drives now (0 to 1; SkyPlane `surge`).
@@ -149,6 +161,10 @@ var total := 0.0
 ## surface; and every moment scored (for the drivers).
 var last := {}
 var moments: Array[Dictionary] = []
+## The moves (line_moves.gd: what each moment was, the held moves) and the
+## unbanked line's moments in order.
+var moves := LineMoves.new()
+var line_moments: Array[Dictionary] = []
 ## Seconds flown, for the farming memory.
 var clock := 0.0
 
@@ -180,12 +196,18 @@ class Tracker:
 	var closing := 0.0
 	var sides := 0
 	var over := false
+	## The roll at the least (radians), and each wing's least (a gap's sides).
+	var roll := 0.0
+	var wl := INF
+	var wr := INF
 	func start(clear: float) -> void:
 		active = true
 		least = INF
 		closing = 0.0
 		sides = 0
 		over = false
+		wl = INF
+		wr = INF
 		least = clear
 	func cancel() -> void:
 		active = false
@@ -193,7 +215,15 @@ class Tracker:
 
 ## The multiplier the chain has now.
 func multiplier() -> float:
-	return minf(1.0+CHAIN_STEP*maxf(chain_count-1,0),CHAIN_TOP)
+	return minf(chain_mult,CHAIN_TOP)
+
+## The unbanked line back to nothing.
+func _clear_line() -> void:
+	chain_points = 0.0
+	chain_count = 0
+	chain_mult = 1.0
+	_kinds.clear()
+	line_moments.clear()
 
 ## Everything back to nothing but the meter (a respawn).
 func reset() -> void:
@@ -203,13 +233,13 @@ func reset() -> void:
 	_stone.armed = true
 	_pass.cancel()
 	_pass.armed = true
-	chain_points = 0.0
-	chain_count = 0
+	_clear_line()
 	bank_left = 0.0
 	surge = 0.0
 	closing = 0.0
 	touching = {}
 	_last_ground = INF
+	moves.drop()
 
 ## A scrape or a crash: the moments under way and the unbanked chain go.
 ## Returns the points lost (before the multiplier, times it).
@@ -219,9 +249,9 @@ func lose() -> float:
 	_stone.cancel()
 	_pass.cancel()
 	_pass.armed = true
-	chain_points = 0.0
-	chain_count = 0
+	_clear_line()
 	bank_left = 0.0
+	moves.drop()
 	return lost
 
 # --- Measuring -------------------------------------------------------------------
@@ -338,8 +368,9 @@ func _standing(game: Node3D, p: Vector3, top: float) -> String:
 ## turning points scored, the skim's trickle, the chain banked, the surge
 ## spent (`surge_held`: the key or button held). Returns the frame's
 ## events: "near" {kind, band, points, k, clear, at, surface, under (a
-## passage's thread, not a gap's)}, "banked"
-## {points}, "surge" {start}.
+## passage's thread, not a gap's), plus LineMoves's kind, glyph, terrain,
+## diff and `step` (what it added to the multiplier)}, "banked" {points,
+## line} and "line" (the same line, see `_line`), "surge" {start}.
 func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	clock += delta
 	var out := {}
@@ -366,6 +397,8 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	if _stone.active:
 		if left_clear < stone_reach: _stone.sides |= 1
 		if right_clear < stone_reach: _stone.sides |= 2
+		_stone.wl = minf(_stone.wl,left_clear)
+		_stone.wr = minf(_stone.wr,right_clear)
 		if overhead: _stone.over = true
 		if stone_clear <= _stone.least:
 			_stone.at = plane.position
@@ -389,6 +422,13 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		if _out_for >= PASS_GAP:
 			_pass.active = false
 			_moment("thread",_pass,reach,cruise,out,game)
+	# The held moves; one done a frame is chained when nothing else was.
+	moves.step(delta,game,self)
+	if not out.has("near") and not moves.pending.is_empty():
+		var held: Dictionary = moves.pending.pop_front()
+		held.farm = _farm(held.at,int(held.id))
+		held.points = float(held.points)*float(held.farm)
+		_chain(held,out,game)
 	# The skim's trickle.
 	var band := SKIM_BAND*WorldScale.span
 	skimming = fast and ground_clear < band and ground_surface in ["land","water"] and bool(game.hand_landing.flying())
@@ -404,14 +444,15 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		if ground_clear < reach: gap = maxf(ground_clear,0.0)
 		if stone_clear < stone_reach: gap = minf(gap,maxf(stone_clear,0.0))
 	# The bank.
-	if chain_points > 0.0 and not skimming:
+	if chain_points > 0.0 and not skimming and not moves.holding:
 		bank_left -= delta
 		if bank_left <= 0.0:
 			var banked := chain_points*multiplier()
 			meter = minf(1.0,meter+banked/METER_FULL)
-			out["banked"] = {"points":banked}
-			chain_points = 0.0
-			chain_count = 0
+			var line := _line(banked,game)
+			out["banked"] = {"points":banked,"line":line}
+			out["line"] = line
+			_clear_line()
 	# The surge.
 	var want := 1.0 if surge_held and meter > 0.0 else 0.0
 	if want > 0.0 and surge <= 0.0: out["surge"] = {"start":true}
@@ -433,10 +474,12 @@ func _track(t: Tracker, clear: float, reach: float, speed: float, game: Node3D) 
 		if clear < reach:
 			t.start(clear)
 			t.speed = speed
+			t.roll = LineMoves.roll_of(game.plane)
 		return false
 	if clear < t.least:
 		t.least = clear
 		t.speed = speed
+		t.roll = LineMoves.roll_of(game.plane)
 		return false
 	var back := maxf(HYST*WorldScale.span,HYST_SHARE*t.least)
 	if clear > t.least+back or clear >= reach:
@@ -444,25 +487,75 @@ func _track(t: Tracker, clear: float, reach: float, speed: float, game: Node3D) 
 		return true
 	return false
 
-## A moment of `kind` scored from tracker `t`, chained, the speed kicked.
+## A moment of `kind` scored from tracker `t`, named for how it was flown
+## (LineMoves `dress`), chained, the speed kicked.
 func _moment(kind: String, t: Tracker, reach: float, cruise: float, out: Dictionary, game: Node3D) -> void:
 	if t.speed < FAST_FROM*cruise: return
 	var k := clampf(1.0-maxf(t.least,0.0)/reach,0.0,1.0)
 	var points := float(BASE[kind])*(1.0+CLOSE_GAIN*k*k)*edge(t.least)*clampf(t.speed/cruise,0.5,2.0)
 	if kind == "pull-out": points *= minf(1.0+pow(maxf(t.closing,0.0)/(CLOSING_REF*_pace(game)),1.5),CLOSING_TOP)
-	var farm := _farm(t.at,t.id)
-	points *= farm
 	var band := "razor" if t.least < RAZOR*WorldScale.span else ("close" if t.least < CLOSE*WorldScale.span else "near")
-	chain_points += points
+	var m := {"kind":kind,"band":band,"points":points,"k":k,"clear":t.least,"at":t.at,"surface":t.surface,
+		"closing":t.closing,"speed":t.speed,"under":t == _pass,"roll":t.roll,"id":t.id}
+	# A gap measured on both sides: its opening, wall to wall.
+	if t == _stone and t.sides == 3 and t.wl < INF and t.wr < INF: m.width = t.wl+t.wr+WorldScale.span
+	moves.dress(m,game,cruise)
+	var farm := _farm(t.at,t.id)
+	m.points = float(m.points)*farm
+	m.farm = farm
+	_chain(m,out,game)
+	game.plane.speed = float(game.plane.speed)+lerpf(KICK.x,KICK.y,k)
+
+## A move into the chain: its points, its difficulty into the multiplier
+## (cut by the farming cut and its repeats, a new kind's NEW_KIND on top), the
+## bank put off; the frame's "near" (with `step`, what it added).
+func _chain(m: Dictionary, out: Dictionary, _game: Node3D) -> void:
+	m.t = clock
+	var kind := str(m.kind)
+	var n := int(_kinds.get(kind,0))
+	var step := float(m.get("diff",DIFF_PLAIN))*float(m.get("farm",1.0))/(1.0+n)
+	if n == 0 and chain_count > 0: step += NEW_KIND
+	_kinds[kind] = n+1
+	m.step = step
+	chain_mult += step
+	chain_points += float(m.points)
 	chain_count += 1
 	bank_left = BANK_AFTER
-	total += points
-	game.plane.speed = float(game.plane.speed)+lerpf(KICK.x,KICK.y,k)
-	last = {"kind":kind,"band":band,"points":points,"k":k,"clear":t.least,"at":t.at,"surface":t.surface,
-		"closing":t.closing,"speed":t.speed,"farm":farm,"t":clock,"under":t == _pass}
-	moments.append(last)
-	_recent.append({"at":t.at,"t":clock,"id":t.id})
-	out["near"] = last
+	total += float(m.points)
+	last = m
+	moments.append(m)
+	line_moments.append(m)
+	_recent.append({"at":m.at,"t":clock,"id":int(m.get("id",0))})
+	out["near"] = m
+
+## The line banked for `points` (after the multiplier): {points, mult,
+## moves (kinds in order), glyphs and bands (near_glyphs.gd ids, for the
+## badges), terrain (the land crossed, repeats run together), t (first
+## move to last, s), kinds, name (LineMoves `name_for`), money}. Paid by
+## `game.book` (PilotBook `line_banked`), which also tries each thread's
+## clearance as the tightest gap.
+func _line(points: float, game: Node3D) -> Dictionary:
+	var mult := multiplier()
+	var kinds: Array = []
+	var glyphs: Array = []
+	var bands: Array = []
+	var land: Array = []
+	for m: Dictionary in line_moments:
+		kinds.append(str(m.kind))
+		glyphs.append(Glyphs.for_moment(m))
+		bands.append(str(m.band))
+		var here := str(m.get("terrain",""))
+		if here != "" and (land.is_empty() or land[-1] != here): land.append(here)
+	var t := 0.0
+	if line_moments.size() > 1: t = float(line_moments[-1].t)-float(line_moments[0].t)
+	var line := {"points":points,"mult":mult,"moves":kinds,"glyphs":glyphs,"bands":bands,"terrain":land,
+		"t":t,"kinds":_kinds.size(),"name":LineMoves.name_for(_kinds.size(),mult),"money":0}
+	var book = game.get("book")
+	if book != null:
+		book.line_banked(line)
+		for m: Dictionary in line_moments:
+			if str(m.get("of",m.kind)) == "thread": book.best("tightest_gap",maxf(float(m.clear),0.0))
+	return line
 
 ## The edge's gain for a least clearance of `least` m (see the header).
 static func edge(least: float) -> float:
