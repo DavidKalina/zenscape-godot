@@ -389,6 +389,11 @@ var book: PilotBook
 var overlay: Object = null
 ## Photo mode (scripts/endless/photo_mode.gd): O; the flight held while up.
 var photo: PhotoMode
+## The book's counting hooks (scripts/endless/pilot_tallies.gd), stepped in
+## `tick`; the landing summary and the logbook (J) over the HUD.
+var tallies := PilotTallies.new()
+var summary: Control
+var logbook: Control
 ## This frame's events (the landing's and the near misses'), for the HUD.
 var _events := {}
 ## The flight path's way last frame, for the vapour's pull, and the pull.
@@ -737,6 +742,11 @@ func _build_ui() -> void:
 	else: _near_hud = NearMissHudHandoff.new()
 	_near_hud.visible = false
 	layer.add_child(_near_hud)
+	# The landing summary and the logbook (lane logbook, spec-wild-loop.md).
+	summary = preload("res://scripts/endless/landing_summary.gd").new(self)
+	layer.add_child(summary)
+	logbook = preload("res://scripts/endless/logbook_view.gd").new(self)
+	layer.add_child(logbook)
 	_fade = ColorRect.new()
 	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -958,6 +968,8 @@ func tick(delta: float) -> void:
 	_pull = _pull_of(delta)
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")),_pull,float(plane.bank))
 	_events = events
+	tallies.step(delta,self,events)
+	summary.step(delta)
 	_feel_sink(events)
 	_rumble(delta,events,float(input.get("boost",0.0)))
 	sound.step(delta,self,events,float(input.get("boost",0.0)))
@@ -1363,6 +1375,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_G:
 				if grass != null: grass.set_enabled(not grass.enabled)
 			KEY_H: _next_near_layout()
+			KEY_J: logbook.open_book()
 			KEY_K:
 				if look != null and look.land_shade != null: look.land_shade.toggle()
 			KEY_Q: _lean_tapped(-1.0)
