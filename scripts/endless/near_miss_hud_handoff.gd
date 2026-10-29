@@ -85,10 +85,10 @@ const BANK_TIERS := [[2000.0,68.0,30.0,0.4,0.0],[10000.0,112.0,36.0,0.8,3.0],[IN
 const READ_IN := 0.35
 const READ_TIME := 2.6
 const READ_FADE := 0.35
-const READ_BADGES := [262.0,64.0]
+const READ_BADGES := [272.0,84.0]
 const READ_MOST := 9
-const READ_LAND := [336.0,34.0]
-const READ_NAME := [404.0,46.0]
+const READ_LAND := [372.0,44.0]
+const READ_NAME := [458.0,58.0]
 
 const CREAM := Color("f6f3ea")
 const NEAR_C := Color("b9c6d2")
@@ -794,7 +794,7 @@ func _draw_readback(s: float) -> void:
 		var lpx := float(READ_LAND[1])*s
 		var lf := _word_font(lpx,0.14)
 		var lw := _width(lf,ltext,lpx)
-		_txt(_block,lf,ltext,Vector2(_row_left(lw)+lw*0.5,float(READ_LAND[0])*s),lpx,Color(NEAR_C,alpha*smoothstep(0.1,0.3,a)),6.0*s)
+		_txt(_block,lf,ltext,Vector2(_row_left(lw)+lw*0.5,float(READ_LAND[0])*s),lpx,Color(CREAM,0.9*alpha*smoothstep(0.1,0.3,a)),8.0*s)
 	# The name and the money.
 	var title := str(line.get("name","")).to_upper()
 	var money := "+%d" % int(line.get("money",0))

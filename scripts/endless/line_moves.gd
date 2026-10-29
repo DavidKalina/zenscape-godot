@@ -434,9 +434,7 @@ func dress(m: Dictionary, game: Node3D, cruise: float) -> void:
 		m.kind = "late pull"
 		m.dive = _dive_drop
 		m.points = float(m.points)*(1.0+clampf(_dive_drop/DIVE_REF,0.0,1.0))
-	if kind == "pull-out":
-		m.dive_seen = Vector3(_dive_t,_dive_drop,_dive_since)
-		_dive_since = INF
+	if kind == "pull-out": _dive_since = INF
 	m.glyph = str(GLYPH.get(m.kind,""))
 	m.terrain = terrain_at(game,m.at,str(m.surface))
 	m.diff = difficulty(m)
