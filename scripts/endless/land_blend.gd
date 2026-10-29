@@ -446,11 +446,15 @@ func colour(x: float, z: float, y: float, up: float, meadow: float) -> Color:
 ## river there); the normals of the blended surface (each region's slope by
 ## weight, plus each height times the weight's slope); the colour each
 ## region gives the blended height, slope and meadow, by weight. The same
-## land as `sample` (to the float32 rounding of the regions' heights).
+## land as `sample` (to the float32 rounding of the regions' heights). In
+## one native call (ZenScapeLandField `blend_chunk`) where the library has it.
 func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: float, flow_max: float) -> Dictionary:
 	var n := cells+1
 	var w := n+2
 	var lk := lattice_k(step)
+	if _native_band() and _slots[0].has_method(&"blend_chunk"):
+		var bx := _box(x0-step,z0-step,x0+n*step,z0+n*step,lk)
+		return _slots[0].blend_chunk(_slots,_slot_r,_slot_part,_n,bx[0],bx[1],bx[2],bx[3],bx[4],LATTICE*(1 << lk),x0,z0,step,cells,skirt_drop,flow_max)
 	# The weights over the chunk and a one-sample rim (for their slope).
 	var ns := _ns
 	var ws := PackedFloat32Array()
@@ -670,23 +674,30 @@ func colours(xs: PackedFloat64Array, zs: PackedFloat64Array, ys: PackedFloat32Ar
 ## Whether the band's grids and colours go native in one call: every field
 ## native and the library new enough to blend them (`blend_grid`).
 func _native_band() -> bool:
-	return all_native() and _slots[0].has_method(&"blend_grid")
+	return not blend_in_gdscript and all_native() and _slots[0].has_method(&"blend_grid")
 
-## The weights a native blend reads for the box (x0, z0)..(x1, z1):
-## [corners (the map's weights at each lattice corner round it, row by row,
-## _n a corner), cells (each lattice cell's one region or -1), ci0, cj0, cw
-## (the first corner and corners a row)].
-func _box(x0: float, z0: float, x1: float, z1: float) -> Array:
-	var ci0 := floori(x0/LATTICE)
-	var cj0 := floori(z0/LATTICE)
-	var cw := floori(x1/LATTICE)-ci0+2
-	var ch := floori(z1/LATTICE)-cj0+2
+## The band blended in GDScript even where the library could (a check
+## comparing the two sets it).
+static var blend_in_gdscript := false
+
+## The weights a native blend reads for the box (x0, z0)..(x1, z1) on the
+## lattice `k` (LATTICE*2^k m, as `_at`): [corners (the map's weights at
+## each lattice corner round it, row by row, _n a corner), cells (each
+## lattice cell's one region or -1), ci0, cj0, cw (the first corner, in
+## lattice-k units, and corners a row)].
+func _box(x0: float, z0: float, x1: float, z1: float, k := 0) -> Array:
+	var size := LATTICE*(1 << k)
+	var u := 1 << k
+	var ci0 := floori(x0/size)
+	var cj0 := floori(z0/size)
+	var cw := floori(x1/size)-ci0+2
+	var ch := floori(z1/size)-cj0+2
 	var corners := PackedFloat32Array()
 	for j in ch:
-		for i in cw: corners.append_array(_corner(ci0+i,cj0+j))
+		for i in cw: corners.append_array(_corner((ci0+i)*u,(cj0+j)*u))
 	var cells := PackedInt32Array()
 	for j in ch-1:
-		for i in cw-1: cells.append(_cell(ci0+i,cj0+j))
+		for i in cw-1: cells.append(_cell(ci0+i,cj0+j,k))
 	return [corners,cells,ci0,cj0,cw]
 
 ## Whether every region's field is native (the band's chunks blend their

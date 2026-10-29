@@ -61,6 +61,7 @@ protected:
 		ClassDB::bind_method(D_METHOD("build_chunk", "x0", "z0", "step", "cells", "skirt_drop", "flow_max"), &ZenScapeLandField::build_chunk);
 		ClassDB::bind_method(D_METHOD("grid", "x0", "z0", "step", "nx", "nz", "pad"), &ZenScapeLandField::grid);
 		ClassDB::bind_method(D_METHOD("blend_grid", "fields", "slot_r", "slot_part", "regions", "corners", "cells", "ci0", "cj0", "cw", "lattice", "x0", "z0", "step", "nx", "nz", "pad"), &ZenScapeLandField::blend_grid);
+		ClassDB::bind_method(D_METHOD("blend_chunk", "fields", "slot_r", "slot_part", "regions", "corners", "cells", "ci0", "cj0", "cw", "lattice", "x0", "z0", "step", "cells_n", "skirt_drop", "flow_max"), &ZenScapeLandField::blend_chunk);
 		ClassDB::bind_method(D_METHOD("blend_colours", "fields", "slot_r", "slot_part", "regions", "corners", "cells", "ci0", "cj0", "cw", "lattice", "xs", "zs", "ys", "ups", "meadows"), &ZenScapeLandField::blend_colours);
 		ClassDB::bind_method(D_METHOD("get_seed"), &ZenScapeLandField::get_seed);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "seed"), "", "get_seed");
@@ -389,7 +390,160 @@ public:
 			}
 			return -1;
 		}
+		// The slot weights wholly in region `one` (its whole weight, or its
+		// sharp share 1 and its twin's rest 0), as `_slot_weights` of a one-hot.
+		void slots_of(int one, float *w) const {
+			for (size_t s = 0; s < fields.size(); ++s) w[s] = (slot_r[s] == one && slot_part[s] != 2) ? 1.0f : 0.0f;
+		}
 	};
+
+	// LandBlend `build_chunk` (a chunk in the band) in one call: each slot with
+	// weight over the chunk (or its one-sample rim) builds it natively, then
+	// the per-vertex blend (heights, the normals of the blended surface, meadow,
+	// the carve's bytes, the river's floats, each slot's colour of the blended
+	// point by weight) and the skirt, as the GDScript line for line. The
+	// lattice is the chunk's (LATTICE*2^k, `lattice_k`).
+	Dictionary blend_chunk(const Array &fs, const PackedInt32Array &sr, const PackedByteArray &sp, int64_t regions, const PackedFloat32Array &cs, const PackedInt32Array &cl,
+			int64_t ci0, int64_t cj0, int64_t cw, double lattice, double x0, double z0, double step, int64_t cells, double skirt_drop, double flow_max) {
+		Dictionary out;
+		Band band;
+		if (!band.read(fs, sr, sp, regions, cs, cl, ci0, cj0, cw, lattice)) return out;
+		const int ns = int(band.fields.size());
+		const int n = int(cells) + 1;
+		const int w = n + 2;
+		std::vector<float> ws(size_t(w) * w * ns);
+		std::vector<uint8_t> used(size_t(ns), 0);
+		for (int j = 0; j < w; ++j) {
+			for (int i = 0; i < w; ++i) {
+				float *q = ws.data() + size_t((j * w + i) * ns);
+				const int one = band.slots_at(x0 + double(i - 1) * step, z0 + double(j - 1) * step, q);
+				if (one >= 0) band.slots_of(one, q);
+				for (int r = 0; r < ns; ++r)
+					if (q[r] > 0.0f) used[size_t(r)] = 1;
+			}
+		}
+		// Each slot's build, held (the arrays) and read through raw pointers
+		// (godot-cpp's packed-array [] is an engine call a read).
+		struct Made {
+			PackedFloat32Array heights, river;
+			PackedVector3Array normals;
+			PackedColorArray colours;
+			PackedByteArray carved;
+			const float *h = nullptr, *rv = nullptr;
+			const Vector3 *nm = nullptr;
+			const Color *col = nullptr;
+			const uint8_t *cb = nullptr;
+		};
+		std::vector<Made> made(static_cast<size_t>(ns));
+		for (int r = 0; r < ns; ++r) {
+			if (!used[size_t(r)]) continue;
+			const Dictionary m = band.fields[size_t(r)]->build_chunk(x0, z0, step, cells, skirt_drop, flow_max);
+			made[size_t(r)].heights = m["heights"];
+			made[size_t(r)].river = m["river"];
+			made[size_t(r)].normals = m["normals"];
+			made[size_t(r)].colours = m["colours"];
+			made[size_t(r)].carved = m["carved"];
+			Made &k = made[size_t(r)];
+			k.h = k.heights.ptr();
+			k.rv = k.river.ptr();
+			k.nm = k.normals.ptr();
+			k.col = k.colours.ptr();
+			k.cb = k.carved.ptr();
+		}
+		const int total = n * n + 4 * n;
+		PackedVector3Array verts, normals;
+		PackedColorArray colours;
+		PackedByteArray carved;
+		PackedFloat32Array river, heights;
+		verts.resize(total);
+		normals.resize(total);
+		colours.resize(total);
+		carved.resize(total * 4);
+		river.resize(total * 3);
+		heights.resize(n * n);
+		Vector3 *vp = verts.ptrw();
+		Vector3 *np = normals.ptrw();
+		Color *cp = colours.ptrw();
+		uint8_t *bp = carved.ptrw();
+		float *rp = river.ptrw();
+		float *hp = heights.ptrw();
+		const double inv = 1.0 / (2.0 * step);
+		const double sea = -40.0;
+		for (int j = 0; j < n; ++j) {
+			for (int i = 0; i < n; ++i) {
+				const int v = j * n + i;
+				const float *q = ws.data() + size_t(((j + 1) * w + i + 1) * ns);
+				double y = 0.0, gx = 0.0, gz = 0.0, meadow = 0.0, c0 = 0.0, c1 = 0.0, c2 = 0.0, c3 = 0.0, rr = 0.0, rw = 0.0, ry = 0.0, wet = 0.0;
+				for (int r = 0; r < ns; ++r) {
+					if (!used[size_t(r)]) continue;
+					const double wt = q[r];
+					const Made &m = made[size_t(r)];
+					const double h = m.h[v];
+					// The weight's slope (zero where the rim is wholly one region).
+					gx += h * (double(q[ns + r]) - double(q[-ns + r])) * inv;
+					gz += h * (double(q[w * ns + r]) - double(q[-w * ns + r])) * inv;
+					if (wt <= 0.0) continue;
+					const Vector3 nm = m.nm[v];
+					y += wt * h;
+					gx -= wt * double(nm.x) / double(nm.y);
+					gz -= wt * double(nm.z) / double(nm.y);
+					meadow += wt * double(m.col[v].a);
+					c0 += wt * double(m.cb[v * 4]);
+					c1 += wt * double(m.cb[v * 4 + 1]);
+					c2 += wt * double(m.cb[v * 4 + 2]);
+					c3 += wt * double(m.cb[v * 4 + 3]);
+					rr += wt * double(m.rv[v * 3]);
+					rw += wt * double(m.rv[v * 3 + 1]);
+					const double level = m.rv[v * 3 + 2];
+					if (level > sea - 99.0) {
+						ry += wt * level;
+						wet += wt;
+					}
+				}
+				const Vector3 normal = Vector3(float(-gx), 1.0f, float(-gz)).normalized();
+				vp[v] = Vector3(float(i * step), float(y), float(j * step));
+				np[v] = normal;
+				hp[v] = float(y);
+				Color c(0, 0, 0, 0);
+				for (int r = 0; r < ns; ++r) {
+					const float wt = q[r];
+					if (wt <= 0.0f) continue;
+					const zsland::C4 k = band.fields[size_t(r)]->f.colour(x0 + i * step, z0 + j * step, y, double(normal.y), meadow);
+					c += Color(k.r, k.g, k.b, k.a) * wt;
+				}
+				c.a = float(meadow);
+				cp[v] = c;
+				bp[v * 4] = uint8_t(int64_t(std::round(c0)));
+				bp[v * 4 + 1] = uint8_t(int64_t(std::round(c1)));
+				bp[v * 4 + 2] = uint8_t(int64_t(std::round(c2)));
+				bp[v * 4 + 3] = uint8_t(int64_t(std::round(c3)));
+				rp[v * 3] = float(rr);
+				rp[v * 3 + 1] = float(rw);
+				rp[v * 3 + 2] = float(wet > 0.0 ? ry / wet : sea - 100.0);
+			}
+		}
+		// The skirt: each edge's vertices again, dropped.
+		for (int e = 0; e < 4; ++e) {
+			for (int t = 0; t < n; ++t) {
+				const int from = e == 0 ? t : (e == 1 ? t * n + int(cells) : (e == 2 ? int(cells) * n + t : t * n));
+				const int v = n * n + e * n + t;
+				vp[v] = vp[from] - Vector3(0.0f, float(skirt_drop), 0.0f);
+				np[v] = np[from];
+				cp[v] = cp[from];
+				for (int b = 0; b < 4; ++b) bp[v * 4 + b] = bp[from * 4 + b];
+				rp[v * 3] = rp[from * 3];
+				rp[v * 3 + 1] = -rp[from * 3 + 1];
+				rp[v * 3 + 2] = rp[from * 3 + 2];
+			}
+		}
+		out["verts"] = verts;
+		out["normals"] = normals;
+		out["colours"] = colours;
+		out["carved"] = carved;
+		out["river"] = river;
+		out["heights"] = heights;
+		return out;
+	}
 
 	// LandBlend `grid` (land_field.gd `_grid` for a box reaching the band) in
 	// one call: each point the one region's sample where it lies wholly in
@@ -453,8 +607,10 @@ public:
 		out.resize(n);
 		Color *op = out.ptrw();
 		std::vector<float> w(band.fields.size());
+		const double *xp = xs.ptr(), *zp = zs.ptr();
+		const float *yp = ys.ptr(), *upp = ups.ptr(), *mp = meadows.ptr();
 		for (int64_t p = 0; p < n; ++p) {
-			const double x = xs[p], z = zs[p], y = ys[p], up = ups[p], meadow = meadows[p];
+			const double x = xp[p], z = zp[p], y = yp[p], up = upp[p], meadow = mp[p];
 			const int one = band.slots_at(x, z, w.data());
 			if (one >= 0) {
 				const zsland::C4 c = band.fields[size_t(one)]->f.colour(x, z, y, up, meadow);
