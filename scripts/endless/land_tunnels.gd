@@ -393,6 +393,7 @@ func setup(land_field: RefCounted) -> void:
 	halls.name = "Stretches"
 	halls.squares = false
 	halls.swap = _dark_materials()
+	halls.swap_of = _dark_materials
 	halls.swap_layers = UNDER_LAYER
 	add_child(halls)
 	halls.setup(int(field.seed))
@@ -595,15 +596,16 @@ func _cut_sky() -> void:
 
 ## The hall stretches' own materials for the kit's (LandHalls `swap`): the
 ## stone and the growth with their sky fill dimmed, the stone weathered
-## harder.
-static func _dark_materials() -> Dictionary:
+## harder. `tone`: the ruin tone's name (LandArches TONES; "": the world's).
+static func _dark_materials(tone_of := "") -> Dictionary:
 	var kit: Dictionary = RuinKit.materials()
 	var stone := (kit.stone as ShaderMaterial).duplicate() as ShaderMaterial
 	stone.shader = TUNNEL_STONE
 	# The land's ruin tone (LandArches TONES), lifted less by the same share
 	# as STONE_LIFT is under the amber one.
-	var tone: Color = preload("res://scripts/endless/land_arches.gd").tone_lift()
-	var amber: Color = preload("res://scripts/endless/land_arches.gd").STONE_LIFT
+	const Arches = preload("res://scripts/endless/land_arches.gd")
+	var tone: Color = Arches.TONES.get(tone_of,Arches.tone_lift())
+	var amber: Color = Arches.STONE_LIFT
 	stone.set_shader_parameter("albedo",Color(tone.r*STONE_LIFT.r/amber.r,tone.g*STONE_LIFT.g/amber.g,tone.b*STONE_LIFT.b/amber.b))
 	stone.set_shader_parameter("rim",0.0)
 	stone.set_shader_parameter("dim_fill",STONE_DIM)

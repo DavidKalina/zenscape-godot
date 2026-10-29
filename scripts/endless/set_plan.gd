@@ -58,8 +58,11 @@ const PIECES := {
 ## broken side) and spread. It wants a broad flat terrace, no rise: its foot
 ## at the highest ground under its core (its footings reach FOUND 16 m down),
 ## the ground within SPREAD under it, and a STRIP m landable run kept past
-## its footprint (the land's flats rule, land_ponds.gd `_strip`).
-const COLOSSEUM := {"w":0.22,"half":Vector2(236.0,208.0),"spread":12.0}
+## its footprint (the land's flats rule, land_ponds.gd `_strip`). Flat
+## terraces that broad are rare, so every set cell tries for one and the
+## ground may fall the footings' full depth under it: some 14 stand within
+## 12 km of the start in the regions world, seed 1 (0.22 and 12 m stood none).
+const COLOSSEUM := {"w":1.0,"half":Vector2(236.0,208.0),"spread":16.0}
 const STRIP := 208.0
 ## The backdrop: the rise beside the spot (m) and the distances it is read
 ## at (m), out of DIRS ways.
@@ -99,6 +102,17 @@ static func flag() -> float:
 				else: _force = v
 		_flag = k
 	return _flag
+
+## The colosseum's chance a set cell and its spread (COLOSSEUM.w, .spread),
+## --colosseum-chance=P and --colosseum-spread=M over them.
+static var _col := Vector2(-1.0,-1.0)
+static func _col_knobs() -> Vector2:
+	if _col.x < 0.0:
+		_col = Vector2(float(COLOSSEUM.w),float(COLOSSEUM.spread))
+		for a: String in preload("res://scripts/launch_args.gd").user_args():
+			if a.begins_with("--colosseum-chance="): _col.x = maxf(0.0,a.get_slice("=",1).to_float())
+			elif a.begins_with("--colosseum-spread="): _col.y = maxf(0.0,a.get_slice("=",1).to_float())
+	return _col
 
 static func _info(id: String) -> Dictionary:
 	return COLOSSEUM if id == "colosseum" else PIECES[id]
@@ -198,7 +212,7 @@ static func _plan(field: RefCounted, sx: int, sz: int, density: float, rock: flo
 	# The colosseum first, on its own draw.
 	var crng := RandomNumberGenerator.new()
 	crng.seed = hash([int(field.seed),sx,sz,"endless colosseum"])
-	if crng.randf() < float(COLOSSEUM.w)*minf(most,1.0) or _force == "colosseum":
+	if crng.randf() < _col_knobs().x*minf(most,1.0) or _force == "colosseum":
 		var got := _colosseum(field,x0,z0,crng,density,rock,ruin)
 		if not got.is_empty():
 			out.append(_spec(field,"colosseum",got,sx,sz,crng))
@@ -337,6 +351,7 @@ static func _spec(field: RefCounted, id: String, s: Dictionary, sx: int, sz: int
 ## past its footprint and keeps clear (`_clear`); {} if none.
 static func _colosseum(field: RefCounted, x0: float, z0: float, rng: RandomNumberGenerator, density: float, rock: float, ruin: float) -> Dictionary:
 	var half: Vector2 = COLOSSEUM.half
+	var spread := _col_knobs().y
 	var margin := maxf(MARGIN,half.length())
 	var start := rng.randf()*TAU
 	var best: Array = []
@@ -359,7 +374,7 @@ static func _colosseum(field: RefCounted, x0: float, z0: float, rng: RandomNumbe
 					lo = minf(lo,h)
 					hi = maxf(hi,h)
 					if absi(i) <= 4 and absi(j) <= 4: top = maxf(top,h)
-					if hi-lo > float(COLOSSEUM.spread):
+					if hi-lo > spread:
 						ok = false
 						break
 				if not ok: break
