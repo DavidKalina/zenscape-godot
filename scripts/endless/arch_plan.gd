@@ -47,7 +47,8 @@ const TRIES := 6
 const HALL_CLEAR := 60.0
 ## And this much further past a split mountain's ends (m: its way in and out).
 const SPLIT_LANE := 200.0
-## At most this many arches a cell, and at least this far apart (m).
+## At most this many arches a cell (a world's `arch_most` layer over it),
+## and at least this far apart (m).
 const MOST := 2
 const APART := 200.0
 ## Kept this far inside the cell (m), so a cell's arches stay its own.
@@ -107,12 +108,13 @@ static func plan(field: RefCounted, cx: int, cz: int, density := 1.0, rock := 1.
 	# A world of regions: each spot keeps to its region's arches (`_masked`).
 	var world: Variant = field.get("world")
 	var masked := world != null and not bool(world.uniform) and _masked()
+	var most := MOST if world == null else int(world.at((cx+0.5)*CELL,(cz+0.5)*CELL).layers.get("arch_most",MOST))
 	for t in range(tries):
 		var x := (cx+0.0)*CELL+rng.randf_range(MARGIN,CELL-MARGIN)
 		var z := (cz+0.0)*CELL+rng.randf_range(MARGIN,CELL-MARGIN)
 		var roll := rng.randf()
 		var pick := rng.randi()
-		if taken.size() >= MOST: break
+		if taken.size() >= most: break
 		var near := false
 		for p: Vector2 in taken:
 			if p.distance_to(Vector2(x,z)) < APART: near = true

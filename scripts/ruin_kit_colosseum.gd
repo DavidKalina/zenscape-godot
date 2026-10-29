@@ -4,20 +4,24 @@ extends RefCounted
 ## kit's Build and the gothic pieces' mossed stone and thick growth
 ## (scripts/ruin_kit_gothic.gd, scripts/gothic_growth.gd).
 ##
-## An elliptical amphitheatre RX*2 by RZ*2 m (160 x 190) over its outer
+## An elliptical amphitheatre RX*2 by RZ*2 m (320 x 380) over its outer
 ## wall, its long axis along Z, on a podium P m high (stepped down outside):
 ## - the outer wall: SLOTS bays round the ellipse, each three arched tiers
 ##   (an engaged column and a cornice a tier on the outer face) and a solid
-##   attic, to ATTIC over the podium (50 m over the foot). The two bays on
+##   attic, to ATTIC over the podium (100 m over the foot). The two bays on
 ##   the long axis are the great gates. Some bays' lower arch is walled up,
 ##   a few are tighter on purpose (TOY_TIGHT), some have lost their attic;
 ## - the ambulatory: a ring corridor AMB wide and ROOF.x tall inside the
 ##   outer wall, roofed by the top walkway in most bays, flown as a lap;
 ## - the inner wall: blind arcading; at every eighth bay a first-tier
-##   passage's arch walled up (its tunnel to the arena was the bay's width,
-##   too long and tight to thread: closed, not flown), four bays on a
-##   second-tier one open (a vomitorium cut through the upper seats to the
-##   bowl), and the great gates' inner arches;
+##   passage open (a tunnel under the seats to the arena, flown since the
+##   colosseum grew to K: walled up at its first size, too tight), four
+##   bays on a second-tier one (a vomitorium cut through the upper seats to
+##   the bowl), and the great gates' inner arches;
+## - in the arena (`_arena_works`): a row of free-standing arches over the
+##   trench along the long axis (the spina), and an aqueduct striding
+##   across the bowl on the short axis, its arches flown under, one end
+##   fallen;
 ## - the seating bowl: TREADS rings stepping down from the walkway to the
 ##   arena wall; the arena: a flat oval floor at P, fallen in along its long
 ##   axis over the hypogeum: a trench TRENCH wide flown along its length
@@ -57,6 +61,11 @@ const RuinLod = preload("res://scripts/ruin_lod.gd")
 
 const PIECES := ["colosseum"]
 
+## The scale: every length here against the first colosseum's (160 x 190 m,
+## 50 m tall, 2026-10-27), its openings' toy widths and its blocks too, so
+## it stands K times as large and its arches open K times as wide.
+const K := 2.0
+
 ## Toy widths (the flown openings, scripts/world_scale.gd): the arcade's
 ## arches, the tight ones, the great gates, the ambulatory and the trench.
 const TOY_ARCH := 3.2
@@ -66,59 +75,82 @@ const TOY_AMB := 7.0
 const TOY_TRENCH := 5.5
 ## The inner wall's passages (to the arena, up to the bowl).
 const TOY_PASS := 2.9
-static var ARCH: float = WorldScale.opening(TOY_ARCH)
-static var TIGHT: float = WorldScale.opening(TOY_TIGHT)
-static var GATE: float = WorldScale.opening(TOY_GATE)
-static var AMB: float = WorldScale.opening(TOY_AMB)
-static var TRENCH: float = WorldScale.opening(TOY_TRENCH)
-static var PASS: float = WorldScale.opening(TOY_PASS)
+static var ARCH: float = WorldScale.opening(TOY_ARCH*K)
+static var TIGHT: float = WorldScale.opening(TOY_TIGHT*K)
+static var GATE: float = WorldScale.opening(TOY_GATE*K)
+static var AMB: float = WorldScale.opening(TOY_AMB*K)
+static var TRENCH: float = WorldScale.opening(TOY_TRENCH*K)
+static var PASS: float = WorldScale.opening(TOY_PASS*K)
 
 ## The outer ellipse's semi-axes (m): across (x) and along (z).
-const RX := 80.0
-const RZ := 95.0
+const RX := 80.0*K
+const RZ := 95.0*K
 ## Bays round the ring; the gate bays' width along the ring (m).
 const SLOTS := 64
-const GATE_SLOT := 17.0
+const GATE_SLOT := 17.0*K
 ## The podium: the arena's and the ambulatory's floor over the foot (m),
 ## and how far below the foot the plinth reaches (uneven ground).
-const P := 8.0
-const FOUND := 8.0
+const P := 8.0*K
+const FOUND := 8.0*K
 ## The outer wall's and the inner wall's half thickness (m).
-const WALL_D := 1.3
-const INNER_D := 1.2
+const WALL_D := 1.3*K
+const INNER_D := 1.2*K
 ## The tiers over the podium: (sill, springing, top) each (m).
-const TIERS := [Vector3(0.0,6.6,11.5),Vector3(12.3,18.2,23.0),Vector3(23.8,29.4,34.0)]
-const ATTIC := 42.0
+const TIERS := [Vector3(0.0,6.6,11.5)*K,Vector3(12.3,18.2,23.0)*K,Vector3(23.8,29.4,34.0)*K]
+const ATTIC := 42.0*K
 ## The ambulatory's roof (the walkway): underside, top, over the podium.
-const ROOF := Vector2(22.0,23.5)
+const ROOF := Vector2(22.0,23.5)*K
 ## The great gates' springing over the podium.
-const GATE_SPRING := 11.0
+const GATE_SPRING := 11.0*K
 ## The voussoir ring's depth (m), the walling's course (m).
-const RING := 1.0
-const COURSE := 2.0
+const RING := 1.0*K
+const COURSE := 2.0*K
 ## The seats: rings stepping down from the walkway, each TREAD deep and
 ## RISE lower than the last.
 const TREADS := 10
-const TREAD := 3.4
-const RISE := 1.9
+const TREAD := 3.4*K
+const RISE := 1.9*K
 ## The plinth's steps outside the wall: their depth (m) and count.
-const STEP := 2.7
+const STEP := 2.7*K
 const STEPS := 3
 ## The arena's floor squares (m), the fallen region's half length (z),
 ## where the trench's ramps start along it, its flown lane's half length.
 ## The ramps run on under the great gates' passages to the podium at the
 ## inner wall (`_trench_floor`), so the climb out has no floor edge.
-const SQUARE := 3.5
-const FALL_Z := 42.0
-const RAMP_AT := 26.0
-const TRENCH_LANE := 12.0
+const SQUARE := 3.5*K
+const FALL_Z := 42.0*K
+const RAMP_AT := 26.0*K
+const TRENCH_LANE := 12.0*K
 ## The broken side: bays either way of its middle that fall, the rubble
 ## slope's reach outside the wall at its deepest (m).
 const BREAK_HALF := 7.5
-const RUBBLE := 30.0
+const RUBBLE := 30.0*K
+## The arena's works (`works`). The spina: arches standing over the trench
+## along the long axis at SPINA_Z (m from the middle), each SPINA clear
+## (from its toy width), its piers SPINA_PIER wide, SPINA_D half thick,
+## springing SPINA_SPRING over the podium, its head between SPINA_TOP.
+const TOY_SPINA := 6.5
+static var SPINA: float = WorldScale.opening(TOY_SPINA*K)
+const SPINA_Z := [-30.0*K,-12.0*K,30.0*K]
+const SPINA_PIER := 3.0*K
+const SPINA_D := 1.6*K
+const SPINA_SPRING := 9.0*K
+const SPINA_TOP := Vector2(17.0,20.0)*K
+## The aqueduct across the bowl along x at AQ_Z, its ends on the inner
+## wall: its arches out from the long axis (mirrored), each (middle x,
+## toy width, springing over the podium; x K), AQ_PIER between the two
+## middle ones, AQ_D half thick, its deck's top AQ_TOP over the podium;
+## those within AQ_FLOWN of the middle stand over the arena and are flown.
+const AQ_Z := 12.0*K
+const AQ := [Vector3(0.0,7.5,12.0),Vector3(17.0,6.5,13.0),Vector3(33.0,6.5,13.0),Vector3(47.0,4.5,18.0)]
+const AQ_PIER := 3.0*K
+const AQ_D := 1.5*K
+const AQ_TOP := 27.0*K
+const AQ_FLOWN := 25.0*K
+
 ## The solid's grid (m) and, near the walls, its finer cells.
-const CELL := 1.0
-const FINE := 0.5
+const CELL := 1.0*K
+const FINE := 0.5*K
 
 ## Radial distances inward of the outer face (m).
 const OUT_IN := WALL_D*2.0
@@ -256,7 +288,7 @@ static func inner_scale(k: int) -> float:
 	return (1.0-kappa(phi_of(slot_mid(k)))*INNER_MID)/_inner_nominal()
 
 static func _inner_nominal() -> float:
-	return 1.0-INNER_MID/77.0
+	return 1.0-INNER_MID/(77.0*K)
 
 ## The inner bays' arches are built at the nominal shrink and scaled to
 ## their slot (`inner_scale`), so a hole drawn W wide is W x that scale in
@@ -295,9 +327,9 @@ static func plan(id: String, seed_value: int, weathered := 0.6) -> Dictionary:
 		elif f > 0.06: o = "cut3"
 		else:
 			var roll := r.randf()
-			if roll < 0.13: o = "blocked"
-			elif roll < 0.24: o = "tight"
-			elif roll < 0.24+0.14*weathered: o = "cut3"
+			if roll < 0.06: o = "blocked"
+			elif roll < 0.13: o = "tight"
+			elif roll < 0.13+0.14*weathered: o = "cut3"
 		var i := "blind"
 		if o == "gate": i = "gate"
 		elif f > 0.45: i = "low"
@@ -311,7 +343,7 @@ static func plan(id: String, seed_value: int, weathered := 0.6) -> Dictionary:
 		inner.append(i)
 		roof.append(f < 0.15 and r.randf() > 0.16)
 		# The seats behind a fallen bay: the treads over this lost.
-		cap.append(lerpf(ROOF.y+1.0,4.5,f)+r.randf_range(-1.0,1.0)*f)
+		cap.append(lerpf(ROOF.y+1.0*K,4.5*K,f)+r.randf_range(-1.0,1.0)*f*K)
 	p["outer"] = outer
 	p["inner"] = inner
 	p["roof"] = roof
@@ -327,13 +359,20 @@ static func plan(id: String, seed_value: int, weathered := 0.6) -> Dictionary:
 		var az := absf(c.z)
 		var gone := false
 		if ax < TRENCH*0.5: gone = az < FALL_Z
-		elif ax < TRENCH*0.5+SQUARE: gone = az < FALL_Z-8.0 and r.randf() < 0.78
-		elif ax < TRENCH*0.5+SQUARE*2.0: gone = az < FALL_Z-15.0 and r.randf() < 0.4
+		elif ax < TRENCH*0.5+SQUARE: gone = az < FALL_Z-8.0*K and r.randf() < 0.78
+		elif ax < TRENCH*0.5+SQUARE*2.0: gone = az < FALL_Z-15.0*K and r.randf() < 0.4
 		if gone:
 			fallen[key] = true
-			walls[key] = P-r.randf_range(0.8,2.2)
+			walls[key] = P-r.randf_range(0.8,2.2)*K
 	p["fallen"] = fallen
 	p["wall_top"] = walls
+	# The arena's works: the spina arch that lost its crown; the side (+x 1,
+	# -x -1) whose aqueduct end fell, the broken side's.
+	var spina: Array = []
+	var lost := r.randi_range(0,SPINA_Z.size()-1)
+	for i in range(SPINA_Z.size()): spina.append("crown" if i == lost else "whole")
+	p["spina"] = spina
+	p["aq_fall"] = 1.0 if broken == SLOTS/4 else -1.0
 	return p
 
 ## The arena's floor squares (grid keys) whose middle is in the arena.
@@ -367,7 +406,7 @@ static func _square_box(key: Vector2i) -> AABB:
 		x1 = -h-SQUARE*(-key.x-2)
 		x0 = x1-SQUARE
 	var z0 := key.y*SQUARE
-	return AABB(Vector3(x0,P-0.8,z0),Vector3(x1-x0,0.8,SQUARE))
+	return AABB(Vector3(x0,P-0.8*K,z0),Vector3(x1-x0,0.8*K,SQUARE))
 
 static func _square_of(x: float, z: float) -> Vector2i:
 	var h := TRENCH*0.5
@@ -384,18 +423,18 @@ static func _arch_w(kind: String) -> float:
 ## The lowest and highest an outer bay of `kind` stands to (over the foot).
 static func _outer_low(kind: String) -> float:
 	match kind:
-		"stump": return P+2.5
-		"cut1": return P+8.5
-		"cut2": return P+17.0
-		"cut3": return P+30.0
-	return P+40.0
+		"stump": return P+2.5*K
+		"cut1": return P+8.5*K
+		"cut2": return P+17.0*K
+		"cut3": return P+30.0*K
+	return P+40.0*K
 
 static func _outer_high(kind: String) -> float:
 	match kind:
-		"stump": return P+7.0
-		"cut1": return P+14.0
-		"cut2": return P+25.0
-		"cut3": return P+37.0
+		"stump": return P+7.0*K
+		"cut1": return P+14.0*K
+		"cut2": return P+25.0*K
+		"cut3": return P+37.0*K
 	return P+ATTIC
 
 ## Whether tier `t` (0..2) of an outer bay of `kind` is a whole arch.
@@ -403,7 +442,7 @@ static func _tier_open(kind: String, t: int) -> bool:
 	if kind == "gate": return t == 2
 	if kind == "blocked" and t == 0: return false
 	var tier: Vector3 = TIERS[t]
-	return P+tier.y+_arch_w(kind)*0.5+RING+0.6 < _outer_low(kind)
+	return P+tier.y+_arch_w(kind)*0.5+RING+0.6*K < _outer_low(kind)
 
 ## The passages through the seats, each a straight band from the inner
 ## wall's inner face along its slot's inward normal: {k, kind ("gate",
@@ -413,13 +452,12 @@ static func bands(p: Dictionary) -> Array:
 	var inner: Array = p["inner"]
 	for k in range(SLOTS):
 		var ik := String(inner[k])
-		# (A first-tier passage is walled up: no way through the seats.)
-		if not ik in ["gate","pass2"]: continue
+		if not ik in ["gate","pass1","pass2"]: continue
 		var mid := slot_mid(k)
-		var o := point(mid,INNER_IN-0.3)
+		var o := point(mid,INNER_IN-0.3*K)
 		var dir := -normal_at(phi_of(mid))
 		var w := (GATE if ik == "gate" else _pass_hole())*inner_scale(k)
-		var l := ARENA_D-INNER_IN+1.0 if ik != "pass2" else _cut_treads()*TREAD+0.6
+		var l := ARENA_D-INNER_IN+1.0*K if ik != "pass2" else _cut_treads()*TREAD+0.6*K
 		out.append({"k":k,"kind":ik,"o":o,"dir":dir,"half":w*0.5,"len":l})
 	return out
 
@@ -490,13 +528,13 @@ static func openings(id: String, seed_value: int, weathered := 0.6) -> Array:
 		var mid := slot_mid(k)
 		var o: Vector3 = bd.o
 		var dir: Vector3 = bd.dir
-		var l := float(bd.len)-1.0
+		var l := float(bd.len)-1.0*K
 		var w := float(bd.half)*2.0
 		var kind := String(bd.kind)
 		var at := o+dir*l*0.5
 		if kind == "gate":
 			var nm := "colosseum/gate_n" if k == 0 else "colosseum/gate_s"
-			_opening(out,nm+"_way","gate_way",at+Vector3.UP*(P+(band_level(bd)-P)*0.5),-dir,Vector3(w,band_level(bd)-P-0.4,l),0.0,false,false,true,{"slot":k})
+			_opening(out,nm+"_way","gate_way",at+Vector3.UP*(P+(band_level(bd)-P)*0.5),-dir,Vector3(w,band_level(bd)-P-0.4*K,l),0.0,false,false,true,{"slot":k})
 			continue
 		var t := 0 if kind == "pass1" else 1
 		var tier: Vector3 = TIERS[t]
@@ -504,30 +542,38 @@ static func openings(id: String, seed_value: int, weathered := 0.6) -> Array:
 		_opening(out,"colosseum/i%d" % k,"passage" if t == 0 else "vomitorium",fi*Vector3(0.0,P+(tier.x+tier.y)*0.5,0.0),fi.basis.z,Vector3(w,tier.y-tier.x,INNER_D*2.0),w*0.5,false,false,false,{"tier":t+1,"slot":k})
 		var lo := P+tier.x
 		var hi := band_level(bd) if t == 0 else P+tier.y+w*0.5
-		_opening(out,"colosseum/i%d_way" % k,"tunnel",at+Vector3.UP*((lo+hi)*0.5),-dir,Vector3(w,hi-lo-0.4,l),0.0,false,false,true,{"slot":k})
+		_opening(out,"colosseum/i%d_way" % k,"tunnel",at+Vector3.UP*((lo+hi)*0.5),-dir,Vector3(w,hi-lo-0.4*K,l),0.0,false,false,true,{"slot":k})
 	# The ambulatory, a bay at a time along the ring (s growing).
 	var roof: Array = p["roof"]
 	for k in range(SLOTS):
 		var f := frame(slot_mid(k),OUT_IN+AMB*0.5)
-		var lo := 3.0
-		var hi := ROOF.x-1.5
-		_opening(out,"colosseum/amb%d" % k,"ambulatory",f*Vector3(0.0,P+(lo+hi)*0.5,0.0),f.basis.x,Vector3(AMB-1.0,hi-lo,2.0),0.0,false,false,false,{"slot":k,"roofed":bool(roof[k])})
+		var lo := 3.0*K
+		var hi := ROOF.x-1.5*K
+		_opening(out,"colosseum/amb%d" % k,"ambulatory",f*Vector3(0.0,P+(lo+hi)*0.5,0.0),f.basis.x,Vector3(AMB-1.0*K,hi-lo,2.0*K),0.0,false,false,false,{"slot":k,"roofed":bool(roof[k])})
 	# The arena along the long axis, skimmed; the trench and its two ends.
 	var az := RZ-ARENA_D
-	_opening(out,"colosseum/arena","arena",Vector3(0.0,P+6.0,0.0),Vector3.BACK,Vector3(TRENCH*2.0,10.0,az*2.0-8.0),0.0,false,false,true)
+	_opening(out,"colosseum/arena","arena",Vector3(0.0,P+6.0*K,0.0),Vector3.BACK,Vector3(TRENCH,10.0*K,az*2.0-8.0*K),0.0,false,false,true)
 	# The trench is open overhead: flown with the wings under the arena's
 	# floor, kept up off its own floor (low over the ground the flight
 	# rides it, and a stepped floor is a crash).
-	var ty := Vector2(4.0,P+1.0)
+	var ty := Vector2(4.0*K,P+1.0*K)
 	_opening(out,"colosseum/trench","trench",Vector3(0.0,(ty.x+ty.y)*0.5,0.0),Vector3.BACK,Vector3(TRENCH,ty.y-ty.x,TRENCH_LANE*2.0),0.0,false,false,true)
 	for sgn: float in [1.0,-1.0]:
-		_opening(out,"colosseum/trench_%s" % ("n" if sgn > 0.0 else "s"),"trench",Vector3(0.0,(ty.x+ty.y)*0.5,sgn*(TRENCH_LANE-1.0)),Vector3.BACK,Vector3(TRENCH,ty.y-ty.x,2.0))
+		_opening(out,"colosseum/trench_%s" % ("n" if sgn > 0.0 else "s"),"trench",Vector3(0.0,(ty.x+ty.y)*0.5,sgn*(TRENCH_LANE-1.0*K)),Vector3.BACK,Vector3(TRENCH,ty.y-ty.x,2.0*K))
 	# The broken side: over its lowest bays, inward; then the bowl.
 	var bk := int(p["broken"])
 	var bf := frame(slot_mid(bk),WALL_D)
-	var low := _outer_high("stump")+2.0
-	_opening(out,"colosseum/break","break",bf*Vector3(0.0,(low+P+30.0)*0.5,0.0),-bf.basis.z,Vector3(pitch()*3.0,P+30.0-low,WALL_D*2.0))
-	_opening(out,"colosseum/bowl","bowl",Vector3(0.0,P+7.0,0.0),-bf.basis.z,Vector3(TRENCH*3.0,10.0,4.0))
+	var low := _outer_high("stump")+2.0*K
+	_opening(out,"colosseum/break","break",bf*Vector3(0.0,(low+P+30.0*K)*0.5,0.0),-bf.basis.z,Vector3(pitch()*3.0,P+30.0*K-low,WALL_D*2.0))
+	_opening(out,"colosseum/bowl","bowl",Vector3(0.0,P+7.0*K,0.0),-bf.basis.z,Vector3(TRENCH*1.5,10.0*K,4.0*K))
+	# The arena's works' arches: the spina's and the aqueduct's over the
+	# arena, from the podium to their springing.
+	for w: Dictionary in works(p):
+		if not bool(w.flown): continue
+		var hole: Array = w.hole
+		var hw := float(hole[0])
+		var spring := float(hole[2])
+		_opening(out,String(w.name),"arch",Vector3(float(w.cx),(P+spring)*0.5,float(w.z)),Vector3.BACK,Vector3(hw,spring-P,float(w.d)*2.0),hw*0.5)
 	return out
 
 static func _opening(out: Array, name: String, kind: String, centre: Vector3, way: Vector3, size: Vector3, head := 0.0, knife := false, round := false, lane := false, extra := {}) -> void:
@@ -538,6 +584,13 @@ static func _opening(out: Array, name: String, kind: String, centre: Vector3, wa
 	out.append(o)
 
 # --- The piece ------------------------------------------------------------------
+
+## The gothic pieces' Build (its mossed stone, its growth), its blocks K
+## times as long as theirs (its courses are COURSE high).
+static func _kbuild(seed_value: int, weathered: float, label: String) -> Build:
+	var b := Gothic._build(seed_value,weathered,label)
+	b.course *= K
+	return b
 
 static func piece(id: String, seed_value: int, weathered := 0.6) -> Node3D:
 	if id == "colosseum": return colosseum(seed_value,weathered)
@@ -585,11 +638,12 @@ static func colosseum(seed_value: int, weathered := 0.6) -> Node3D:
 		stats.tris_bay_growth += n.y*slots.size()
 	stats["bays_ms"] = (Time.get_ticks_usec()-t0)/1000.0
 	# The rest, laid on the ring.
-	var b := Gothic._build(seed_value,weathered,"Colosseum")
+	var b := _kbuild(seed_value,weathered,"Colosseum")
 	var extra: Array = []
 	var bs := bands(p)
 	_rings(b,p,bs,extra)
 	_arena(b,p,extra)
+	_arena_works(b,p,extra)
 	_rubble(b,p,extra)
 	_dress_rings(b,p)
 	var built := b.finish()
@@ -723,8 +777,8 @@ static func _instances(parent: Node3D, key: String, node: Node3D, xfs: Array) ->
 ## walkway, the seats a block a tread, the arena's floor with its trench
 ## and cells, the plinth's steps and the rubble slope. Drawn only: the
 ## solid and the flown openings are the near level's.
-const FAR_AT := 600.0
-const FAR_FADE := 60.0
+const FAR_AT := 850.0
+const FAR_FADE := 80.0
 ## The shell's stone against the near level's mean block (its growth and
 ## crevices darken it at a distance), and its dark faces'.
 const FAR_TONE := 0.74
@@ -871,7 +925,7 @@ static func _fwall(f: FarFaces, mid: float, su: float, hw: float, d0: float, d1:
 static func _far_shell(p: Dictionary, tops: Dictionary, seed_value: int, weathered: float) -> Array:
 	var f := FarFaces.new()
 	f.rng.seed = hash([seed_value,"colosseum_far"])
-	var cb := Gothic._build(seed_value,weathered,"ColosseumFar")
+	var cb := _kbuild(seed_value,weathered,"ColosseumFar")
 	var mean := Color(0,0,0,0)
 	for i in range(24): mean += RuinKit._stone(cb,1.0)
 	cb.root.free()
@@ -882,7 +936,7 @@ static func _far_shell(p: Dictionary, tops: Dictionary, seed_value: int, weather
 	var cap: Array = p["cap"]
 	var fall: Array = p["fall"]
 	var nom := _inner_nominal()
-	var down := Vector3(0.0,-50.0,0.0)
+	var down := Vector3(0.0,-50.0*K,0.0)
 	for k in range(SLOTS):
 		var e := slot_edges(k)
 		var mid := slot_mid(k)
@@ -902,38 +956,39 @@ static func _far_shell(p: Dictionary, tops: Dictionary, seed_value: int, weather
 				var tier: Vector3 = TIERS[t]
 				arches.append([aw,P+tier.x,P+tier.y])
 		var otop: Callable = tops["o:"+ok]
-		_fwall(f,mid,1.0,hw,0.0,OUT_IN,P-1.0,otop,arches,not ok in ["whole","tight","blocked","gate"],F_IN)
+		_fwall(f,mid,1.0,hw,0.0,OUT_IN,P-1.0*K,otop,arches,not ok in ["whole","tight","blocked","gate"],F_IN)
 		# Its cornices, proud of the face, where the wall stands to them.
 		for t in range(3):
-			var y := P+(TIERS[t] as Vector3).z-0.6
-			if minf(float(otop.call(-hw)),float(otop.call(hw))) < y+0.4: continue
-			_fbox(f,e.x,e.y,-0.45,0.05,Vector2(y-0.35,y+0.05),Vector2(y-0.35,y+0.05),f.tone(1.06),F_OUT|F_TOP|F_BOT)
+			var y := P+(TIERS[t] as Vector3).z-0.6*K
+			if minf(float(otop.call(-hw)),float(otop.call(hw))) < y+0.4*K: continue
+			_fbox(f,e.x,e.y,-0.45*K,0.05,Vector2(y-0.35*K,y+0.05*K),Vector2(y-0.35*K,y+0.05*K),f.tone(1.06),F_OUT|F_TOP|F_BOT)
 		# The inner wall: its gate and vomitorium open, the rest blind.
 		var ihw := (GATE_SLOT if gate else pitch())*nom*0.5
 		var iarch: Array = []
 		match ik:
 			"gate": iarch.append([GATE,P,P+GATE_SPRING])
+			"pass1": iarch.append([_pass_hole(),P,P+(TIERS[0] as Vector3).y])
 			"pass2": iarch.append([_pass_hole(),P+(TIERS[1] as Vector3).x,P+(TIERS[1] as Vector3).y])
-		_fwall(f,mid,1.0/nom,ihw,INNER_MID-INNER_D,INNER_IN,P-1.0,tops["i:"+ik],iarch,ik == "low",F_OUT)
+		_fwall(f,mid,1.0/nom,ihw,INNER_MID-INNER_D,INNER_IN,P-1.0*K,tops["i:"+ik],iarch,ik == "low",F_OUT)
 		# The ambulatory's floor and the walkway over it.
-		_fbox(f,e.x,e.y,OUT_IN-0.3,INNER_MID,Vector2(P-1.2,P),Vector2(P-1.2,P),f.tone(0.9),F_TOP,1.0,F_TOP if bool(roof[k]) else 0)
+		_fbox(f,e.x,e.y,OUT_IN-0.3*K,INNER_MID,Vector2(P-1.2*K,P),Vector2(P-1.2*K,P),f.tone(0.9),F_TOP,1.0,F_TOP if bool(roof[k]) else 0)
 		if bool(roof[k]):
 			var sides := (0 if bool(roof[(k+SLOTS-1)%SLOTS]) else F_S0)|(0 if bool(roof[(k+1)%SLOTS]) else F_S1)
-			_fbox(f,e.x,e.y,OUT_IN-0.4,INNER_MID,Vector2(P+ROOF.x,P+ROOF.y),Vector2(P+ROOF.x,P+ROOF.y),f.tone(1.0),F_TOP|F_BOT|sides,1.0,F_BOT)
+			_fbox(f,e.x,e.y,OUT_IN-0.4*K,INNER_MID,Vector2(P+ROOF.x,P+ROOF.y),Vector2(P+ROOF.x,P+ROOF.y),f.tone(1.0),F_TOP|F_BOT|sides,1.0,F_BOT)
 		# The seats, a block a tread, cut to the bay's fall; over a great
 		# gate's passage from its soffit up.
 		var lost := float(cap[k])+P
 		var broke := float(fall[k]) > 0.0 or float(fall[(k+SLOTS-1)%SLOTS]) > 0.0 or float(fall[(k+1)%SLOTS]) > 0.0
 		var soffit := P+GATE_SPRING+GATE*0.5
 		for i in range(TREADS):
-			var d0 := INNER_IN+TREAD*i-0.15
+			var d0 := INNER_IN+TREAD*i-0.15*K
 			var d1 := INNER_IN+TREAD*(i+1)
 			var y1 := minf(tread_top(i),lost)
-			var y0 := tread_top(i)-2.6 if i < TREADS-1 else P-1.0
+			var y0 := tread_top(i)-2.6*K if i < TREADS-1 else P-1.0*K
 			if gate:
-				if y1 < soffit+1.5: continue
+				if y1 < soffit+1.5*K: continue
 				y0 = soffit
-			if y1 < y0+0.3: continue
+			if y1 < y0+0.3*K: continue
 			var mask := F_TOP|F_IN|(F_S0|F_S1 if broke else 0)|(F_BOT if gate else 0)
 			_fbox(f,e.x,e.y,d0,d1,Vector2(y0,y1),Vector2(y0,y1),f.tone(1.0+0.04*(i%2)),mask)
 		if gate:
@@ -953,10 +1008,10 @@ static func _far_shell(p: Dictionary, tops: Dictionary, seed_value: int, weather
 		var fa := (float(fall[k])+float(fall[(k+SLOTS-1)%SLOTS]))*0.5
 		var fb := (float(fall[k])+float(fall[(k+1)%SLOTS]))*0.5
 		if maxf(fa,fb) >= 0.1:
-			var top0 := point(e.x,0.8)+Vector3.UP*(P+6.0*fa)
-			var top1 := point(e.y,0.8)+Vector3.UP*(P+6.0*fb)
-			var toe1 := point(e.y,-RUBBLE*fb)+Vector3.UP*-1.0
-			var toe0 := point(e.x,-RUBBLE*fa)+Vector3.UP*-1.0
+			var top0 := point(e.x,0.8*K)+Vector3.UP*(P+6.0*K*fa)
+			var top1 := point(e.y,0.8*K)+Vector3.UP*(P+6.0*K*fb)
+			var toe1 := point(e.y,-RUBBLE*fb)+Vector3.UP*-K
+			var toe0 := point(e.x,-RUBBLE*fa)+Vector3.UP*-K
 			f.quad(top0,top1,toe1,toe0,down,f.tone(0.88))
 	# The arena: its floor in runs, the trench and side cells sunk, the
 	# hypogeum's walls where the floor fell.
@@ -986,8 +1041,8 @@ static func _far_shell(p: Dictionary, tops: Dictionary, seed_value: int, weather
 			if fallen.has(key):
 				var z0 := box.position.z
 				var z1 := box.end.z
-				var ya := _trench_floor(absf(z0)) if absf(c.x) < h else 0.4
-				var yb := _trench_floor(absf(z1)) if absf(c.x) < h else 0.4
+				var ya := _trench_floor(absf(z0)) if absf(c.x) < h else 0.4*K
+				var yb := _trench_floor(absf(z1)) if absf(c.x) < h else 0.4*K
 				f.quad(Vector3(box.position.x,ya,z0),Vector3(box.end.x,ya,z0),Vector3(box.end.x,yb,z1),Vector3(box.position.x,yb,z1),down,f.tone(0.88))
 				continue
 			for nb: Vector2i in [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1)]:
@@ -1002,7 +1057,8 @@ static func _far_shell(p: Dictionary, tops: Dictionary, seed_value: int, weather
 					var zz := box.end.z if nb.y > 0 else box.position.z
 					e0 = Vector3(box.position.x,0.0,zz)
 					e1 = Vector3(box.end.x,0.0,zz)
-				f.quad(e0+Vector3.UP*0.4,e1+Vector3.UP*0.4,e1+Vector3.UP*P,e0+Vector3.UP*P,Vector3(c.x,P*0.5,c.z),f.tone(0.9))
+				f.quad(e0+Vector3.UP*0.4*K,e1+Vector3.UP*0.4*K,e1+Vector3.UP*P,e0+Vector3.UP*P,Vector3(c.x,P*0.5,c.z),f.tone(0.9))
+	_far_works(f,p)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = f.v
@@ -1054,13 +1110,13 @@ static func _jambs(b: Build, w: float, sill: float, spring: float, d: float, top
 	for s: float in [-1.0,1.0]:
 		var y := sill
 		var k := 0
-		while y < spring-0.2:
+		while y < spring-0.2*K:
 			var hgt := minf(COURSE*b.rng.randf_range(0.8,1.2),spring-y)
-			if spring-(y+hgt) < 0.6: hgt = spring-y
+			if spring-(y+hgt) < 0.6*K: hgt = spring-y
 			var wide := RING*(1.0 if k%2 == 0 else 0.75)
 			var x := s*(w*0.5+wide*0.5)
-			if y+hgt > float(top.call(x))+0.2: break
-			b.solid(RuinKit._box(b,Vector3(wide*0.5,hgt*0.5-0.01,d)),RuinKit._settle(b,Vector3(x,y+hgt*0.5,0.0),0.2),RuinKit._stone(b,1.03),false)
+			if y+hgt > float(top.call(x))+0.2*K: break
+			b.solid(RuinKit._box(b,Vector3(wide*0.5,hgt*0.5-0.01,d)),RuinKit._settle(b,Vector3(x,y+hgt*0.5,0.0),0.2*K),RuinKit._stone(b,1.03),false)
 			y += hgt
 			k += 1
 
@@ -1080,7 +1136,7 @@ static func _clear(b: Build, arches: Array, d: float) -> void:
 ## An outer bay of `kind`, built in its own frame (x along the ring, the
 ## wall's middle on z 0, +z out): {node, top (Callable(x) -> its line)}.
 static func _outer_bay(kind: String, seed_value: int, weathered: float) -> Dictionary:
-	var b := Gothic._build(seed_value,weathered,"ColosseumBay_"+kind)
+	var b := _kbuild(seed_value,weathered,"ColosseumBay_"+kind)
 	var w := GATE_SLOT if kind == "gate" else pitch()
 	var hw := w*0.5
 	var whole := kind in ["whole","tight","blocked","gate"]
@@ -1096,16 +1152,16 @@ static func _outer_bay(kind: String, seed_value: int, weathered: float) -> Dicti
 			var tier: Vector3 = TIERS[t]
 			if kind == "blocked" and t == 0: continue
 			arches.append([aw,P+tier.x,P+tier.y])
-	RuinKit._courses(b,Transform3D.IDENTITY,-hw,hw,P-1.0,top,WALL_D,_holes(arches),COURSE)
+	RuinKit._courses(b,Transform3D.IDENTITY,-hw,hw,P-1.0*K,top,WALL_D,_holes(arches),COURSE)
 	for a: Array in arches:
 		_jambs(b,float(a[0]),float(a[1]),float(a[2]),WALL_D,top)
-		_round_head(b,Transform3D.IDENTITY,float(a[0]),float(a[2]),WALL_D,top,11 if float(a[0]) > 8.0 else 9)
+		_round_head(b,Transform3D.IDENTITY,float(a[0]),float(a[2]),WALL_D,top,11 if float(a[0]) > 8.0*K else 9)
 	if kind == "blocked":
 		# Its first arch walled up to about its springing, set back, its
 		# ring standing over the walling.
 		var t1: Vector3 = TIERS[0]
-		var fill := RuinKit._ruin_line(b,-aw*0.5-RING,aw*0.5+RING,P+t1.y-1.2,P+t1.y,0.8)
-		RuinKit._courses(b,Transform3D.IDENTITY,-aw*0.5-RING*0.5,aw*0.5+RING*0.5,P-1.0,fill,WALL_D*0.55,Callable(),COURSE)
+		var fill := RuinKit._ruin_line(b,-aw*0.5-RING,aw*0.5+RING,P+t1.y-1.2*K,P+t1.y,0.8)
+		RuinKit._courses(b,Transform3D.IDENTITY,-aw*0.5-RING*0.5,aw*0.5+RING*0.5,P-1.0*K,fill,WALL_D*0.55,Callable(),COURSE)
 		_round_head(b,Transform3D.IDENTITY,aw,P+t1.y,WALL_D,top)
 	# The outer face: an engaged column at the bay's edge each tier and a
 	# cornice over each tier.
@@ -1113,64 +1169,57 @@ static func _outer_bay(kind: String, seed_value: int, weathered: float) -> Dicti
 	for t in range(3):
 		var tier: Vector3 = TIERS[t]
 		var y0: float = floors[t]
-		var y1 := P+tier.z-1.0
-		var yt := minf(y1,float(top.call(hw-0.4))-0.3)
-		if yt > y0+1.0:
-			b.solid(RuinKit._prism(8,0.72,0.64,y0,yt,PI/8.0),Transform3D(Basis.IDENTITY,Vector3(hw,0.0,WALL_D+0.15)),RuinKit._stone(b,0.97),false)
-			if yt >= y1-0.01: b.solid(RuinKit._box(b,Vector3(0.85,0.3,0.55)),Transform3D(Basis.IDENTITY,Vector3(hw,y1-0.3,WALL_D+0.3)),RuinKit._stone(b,1.0),false)
+		var y1 := P+tier.z-1.0*K
+		var yt := minf(y1,float(top.call(hw-0.4*K))-0.3*K)
+		if yt > y0+1.0*K:
+			b.solid(RuinKit._prism(8,0.72*K,0.64*K,y0,yt,PI/8.0),Transform3D(Basis.IDENTITY,Vector3(hw,0.0,WALL_D+0.15*K)),RuinKit._stone(b,0.97),false)
+			if yt >= y1-0.01: b.solid(RuinKit._box(b,Vector3(0.85,0.3,0.55)*K),Transform3D(Basis.IDENTITY,Vector3(hw,y1-0.3*K,WALL_D+0.3*K)),RuinKit._stone(b,1.0),false)
 		for half: float in [-1.0,1.0]:
 			var mx := half*hw*0.5
-			if float(top.call(mx)) < P+tier.z+0.1: continue
-			b.solid(RuinKit._box(b,Vector3(hw*0.5+0.02,0.4,0.42)),RuinKit._settle(b,Vector3(mx,P+tier.z-0.6,WALL_D+0.2),0.2),RuinKit._stone(b,1.05),false)
+			if float(top.call(mx)) < P+tier.z+0.1*K: continue
+			b.solid(RuinKit._box(b,Vector3(hw*0.5+0.02,0.4*K,0.42*K)),RuinKit._settle(b,Vector3(mx,P+tier.z-0.6*K,WALL_D+0.2*K),0.2*K),RuinKit._stone(b,1.05),false)
 	# The attic's crown and its flat pilaster.
 	if whole:
 		for half: float in [-1.0,1.0]:
 			var mx := half*hw*0.5
-			if float(top.call(mx)) >= P+ATTIC-0.6:
-				b.solid(RuinKit._box(b,Vector3(hw*0.5+0.02,0.35,0.5)),RuinKit._settle(b,Vector3(mx,P+ATTIC-1.3,WALL_D+0.2),0.2),RuinKit._stone(b,1.06),false)
-		b.solid(RuinKit._box(b,Vector3(0.7,3.6,0.22)),Transform3D(Basis.IDENTITY,Vector3(hw,P+(TIERS[2] as Vector3).z+4.0,WALL_D+0.15)),RuinKit._stone(b,0.98),false)
+			if float(top.call(mx)) >= P+ATTIC-0.6*K:
+				b.solid(RuinKit._box(b,Vector3(hw*0.5+0.02,0.35*K,0.5*K)),RuinKit._settle(b,Vector3(mx,P+ATTIC-1.3*K,WALL_D+0.2*K),0.2*K),RuinKit._stone(b,1.06),false)
+		b.solid(RuinKit._box(b,Vector3(0.7,3.6,0.22)*K),Transform3D(Basis.IDENTITY,Vector3(hw,P+(TIERS[2] as Vector3).z+4.0*K,WALL_D+0.15*K)),RuinKit._stone(b,0.98),false)
 	_clear(b,arches,WALL_D)
-	_dress_bay(b,"outer",P+6.0,WALL_D)
+	_dress_bay(b,"outer",P+6.0*K,WALL_D)
 	return {"node":b.finish(),"top":top}
 
 ## An inner bay of `kind` (its frame as the outer's, the ambulatory on its
 ## +z side), built at the ring's nominal shrink.
 static func _inner_bay(kind: String, seed_value: int, weathered: float) -> Dictionary:
-	var b := Gothic._build(seed_value,weathered,"ColosseumInner_"+kind)
+	var b := _kbuild(seed_value,weathered,"ColosseumInner_"+kind)
 	var nom := _inner_nominal()
 	var w := (GATE_SLOT if kind == "gate" else pitch())*nom
 	var hw := w*0.5
-	var high := P+ROOF.y+1.0
-	var top: Callable = RuinKit._ruin_line(b,-hw,hw,high-0.8,high,0.3)
-	if kind == "low": top = RuinKit._ruin_line(b,-hw,hw,P+7.0,P+15.0,1.0)
+	var high := P+ROOF.y+1.0*K
+	var top: Callable = RuinKit._ruin_line(b,-hw,hw,high-0.8*K,high,0.3)
+	if kind == "low": top = RuinKit._ruin_line(b,-hw,hw,P+7.0*K,P+15.0*K,1.0)
 	var arches: Array = []
 	var aw := _pass_hole()
 	match kind:
 		"gate": arches.append([GATE,P,P+GATE_SPRING])
 		"pass1": arches.append([aw,P,P+(TIERS[0] as Vector3).y])
 		"pass2": arches.append([aw,P+(TIERS[1] as Vector3).x,P+(TIERS[1] as Vector3).y])
-	RuinKit._courses(b,Transform3D.IDENTITY,-hw,hw,P-1.0,top,INNER_D,_holes(arches),COURSE)
+	RuinKit._courses(b,Transform3D.IDENTITY,-hw,hw,P-1.0*K,top,INNER_D,_holes(arches),COURSE)
 	for a: Array in arches:
 		_jambs(b,float(a[0]),float(a[1]),float(a[2]),INNER_D,top)
 		_round_head(b,Transform3D.IDENTITY,float(a[0]),float(a[2]),INNER_D,top)
-	if kind == "pass1":
-		# Walled up to its crown, set back from both faces, its ring and
-		# jambs standing round the walling.
-		var r := aw*0.5
-		var spring := P+(TIERS[0] as Vector3).y
-		var fill := func(x: float) -> float: return spring+sqrt(maxf(r*r-x*x,0.0))+0.3
-		RuinKit._courses(b,Transform3D.IDENTITY,-r-0.2,r+0.2,P-1.0,fill,INNER_D*0.6,Callable(),COURSE)
 	# Blind arcading on the ambulatory's face: rings proud of the wall on
 	# the tiers no passage pierces, a pilaster at the bay's edge.
 	for t in range(2):
 		var tier: Vector3 = TIERS[t]
 		var pierced := (kind == "pass1" and t == 0) or (kind == "pass2" and t == 1) or kind == "gate"
 		if pierced or P+tier.y+aw*0.5 > float(top.call(0.0)): continue
-		RuinKit._ring_order(b,Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,INNER_D+0.12)),0.0,P+tier.y,aw*0.5,aw*0.5,0.0,0.7,0.16,7,99,1.0,RuinKit._stone(b,1.04),0,top)
-	var pil := minf(P+ROOF.x-0.8,float(top.call(hw))-0.3)
-	if pil > P+2.0: b.solid(RuinKit._box(b,Vector3(0.55,(pil-P+1.0)*0.5,0.18)),Transform3D(Basis.IDENTITY,Vector3(hw,(pil+P-1.0)*0.5,INNER_D+0.12)),RuinKit._stone(b,0.98),false)
+		RuinKit._ring_order(b,Transform3D(Basis.IDENTITY,Vector3(0.0,0.0,INNER_D+0.12*K)),0.0,P+tier.y,aw*0.5,aw*0.5,0.0,0.7*K,0.16*K,7,99,1.0,RuinKit._stone(b,1.04),0,top)
+	var pil := minf(P+ROOF.x-0.8*K,float(top.call(hw))-0.3*K)
+	if pil > P+2.0*K: b.solid(RuinKit._box(b,Vector3(0.55*K,(pil-P+1.0*K)*0.5,0.18*K)),Transform3D(Basis.IDENTITY,Vector3(hw,(pil+P-1.0*K)*0.5,INNER_D+0.12*K)),RuinKit._stone(b,0.98),false)
 	_clear(b,arches,INNER_D)
-	_dress_bay(b,"inner",P+4.0,INNER_D)
+	_dress_bay(b,"inner",P+4.0*K,INNER_D)
 	return {"node":b.finish(),"top":top}
 
 ## A bay's growth: ivy off its cornices and wall head, curtains under its
@@ -1181,14 +1230,14 @@ static func _dress_bay(b: Build, label: String, low_y: float, d: float) -> void:
 	var x := GothicGrowth.Dress.new(b,"colosseum_"+label,dens)
 	if RuinGrowth.vines:
 		x.section("cascades")
-		GothicGrowth.cascades(x,P+8.0,P+ATTIC+2.0,3,Vector2(4.0,13.0),5,GothicGrowth.COARSE_MID,0.5,0.3,true)
+		GothicGrowth.cascades(x,P+8.0*K,P+ATTIC+2.0*K,3,Vector2(4.0,13.0)*1.4,5,GothicGrowth.COARSE_MID,0.5,0.3,true)
 		x.section("curtains")
 		for i in range(2):
-			var at := Vector3(b.rng.randf_range(-3.0,3.0),0.0,d+0.45)
+			var at := Vector3(b.rng.randf_range(-3.0,3.0)*K,0.0,d+0.45*K)
 			var tier: Vector3 = TIERS[b.rng.randi_range(0,2)]
-			GothicGrowth.curtain(x,at,P+tier.z-2.0,P+tier.z+0.5,b.rng.randf_range(3.0,7.0),5,GothicGrowth.COARSE_MID,true)
+			GothicGrowth.curtain(x,at,P+tier.z-2.0*K,P+tier.z+0.5*K,b.rng.randf_range(3.0,7.0)*K,5,GothicGrowth.COARSE_MID,true)
 	x.section("mats")
-	GothicGrowth.mats(x,P+8.0,P+ATTIC+2.0,3,0.3,Vector2i(1,3),3.0)
+	GothicGrowth.mats(x,P+8.0*K,P+ATTIC+2.0*K,3,0.3,Vector2i(1,3),3.0)
 	x.section("low")
 	GothicGrowth.low(x,2,low_y)
 	x.done()
@@ -1223,7 +1272,7 @@ static func _ring_quad(s0: float, s1: float, d0: float, d1: float) -> Array:
 
 ## Slot `k`'s pieces along the ring (s ranges, none over ~`most` m at
 ## depth `d`).
-static func _pieces(k: int, d: float, most := 9.0) -> Array:
+static func _pieces(k: int, d: float, most := 9.0*K) -> Array:
 	var e := slot_edges(k)
 	var shrink := maxf(1.0-kappa(phi_of((e.x+e.y)*0.5))*d,0.15)
 	var n := maxi(1,int(ceil((e.y-e.x)*shrink/most)))
@@ -1242,27 +1291,27 @@ static func _rings(b: Build, p: Dictionary, bs: Array, extra: Array) -> void:
 		# The plinth's steps (under the rubble slope where the wall fell).
 		for st in range(STEPS):
 			var d0 := -STEP*(st+1)
-			var d1 := -STEP*st+0.3
+			var d1 := -STEP*st+0.3*K
 			var y1 := P*(STEPS-st)/float(STEPS)
 			for pc: Vector2 in _pieces(k,d0): _quad(b,_ring_quad(pc.x,pc.y,d0,d1),-FOUND,y1,0.95)
 		# The ambulatory's floor and, where it stands, the walkway over it.
 		for pc: Vector2 in _pieces(k,OUT_IN):
-			_quad(b,_ring_quad(pc.x,pc.y,OUT_IN-0.3,INNER_MID),P-1.2,P,0.9,false)
-			if bool(roof[k]): _quad(b,_ring_quad(pc.x,pc.y,OUT_IN-0.4,INNER_MID),P+ROOF.x,P+ROOF.y,1.0)
+			_quad(b,_ring_quad(pc.x,pc.y,OUT_IN-0.3*K,INNER_MID),P-1.2*K,P,0.9,false)
+			if bool(roof[k]): _quad(b,_ring_quad(pc.x,pc.y,OUT_IN-0.4*K,INNER_MID),P+ROOF.x,P+ROOF.y,1.0)
 		# The seats, tread by tread: over the bay's fall a rough fill to its
 		# line, through a passage its cut or vault. Near a passage, in short
 		# pieces, each judged by its middle.
 		var near := false
 		var at := point(slot_mid(k),INNER_IN)
 		for bd: Dictionary in bs:
-			if (bd.o as Vector3).distance_to(at) < 55.0: near = true
+			if (bd.o as Vector3).distance_to(at) < 55.0*K: near = true
 		var lost := float(cap[k])+P
 		for i in range(TREADS):
-			var d0 := INNER_IN+TREAD*i-0.15
+			var d0 := INNER_IN+TREAD*i-0.15*K
 			var d1 := INNER_IN+TREAD*(i+1)
 			var y1 := tread_top(i)
-			var y0 := y1-2.6 if i < TREADS-1 else P-1.0
-			for pc: Vector2 in _pieces(k,(d0+d1)*0.5,1.4 if near else 9.0):
+			var y0 := y1-2.6*K if i < TREADS-1 else P-1.0*K
+			for pc: Vector2 in _pieces(k,(d0+d1)*0.5,1.4*K if near else 9.0*K):
 				var q := _ring_quad(pc.x,pc.y,d0,d1)
 				var top := minf(y1,lost)
 				var lo := y0
@@ -1271,18 +1320,21 @@ static func _rings(b: Build, p: Dictionary, bs: Array, extra: Array) -> void:
 					var bd := band_at(bs,m.x,m.z)
 					if not bd.is_empty():
 						var lv := band_level(bd)
-						if String(bd.kind) == "pass2": _quad(b,q,minf(y0,lv-2.0),minf(lv,top),0.92)
-						elif top > lv+1.5: _quad(b,q,lv,top,0.97)
-						# A great gate's passage: the trench's ramp its floor.
-						if String(bd.kind) == "gate": _quad(b,q,-1.0,_trench_floor(absf(m.z)),0.88,true,_ramp_slope(m.z))
+						if String(bd.kind) == "pass2": _quad(b,q,minf(y0,lv-2.0*K),minf(lv,top),0.92)
+						elif top > lv+1.5*K: _quad(b,q,lv,top,0.97)
+						# A great gate's passage: the trench's ramp its floor; a
+						# first-tier one's, the podium's.
+						if String(bd.kind) == "gate": _quad(b,q,-K,_trench_floor(absf(m.z)),0.88,true,_ramp_slope(m.z))
+						elif String(bd.kind) == "pass1": _quad(b,q,P-1.2*K,P,0.9,false)
 						continue
-					# Beside a gate's passage the seats are walls to the ramp.
-					if _by_gate_way(bs,m.x,m.z): lo = -1.0
+					# Beside a gate's or a first-tier passage the seats are walls to
+					# its floor.
+					if _by_gate_way(bs,m.x,m.z): lo = -K
 				if y1 > lost:
 					# Fallen: a rough fill to the bay's line, stones on it.
-					if lost > lo+0.5:
+					if lost > lo+0.5*K:
 						_quad(b,q,lo,lost,0.88)
-						if b.rng.randf() < 0.35: extra.append(_boulder(b,(q[0]+q[2])*0.5+Vector3.UP*lost,b.rng.randf_range(0.8,1.6)))
+						if b.rng.randf() < 0.35: extra.append(_boulder(b,(q[0]+q[2])*0.5+Vector3.UP*lost,b.rng.randf_range(0.8,1.6)*K))
 					continue
 				_quad(b,q,lo,y1,1.0+0.04*(i%2))
 
@@ -1306,40 +1358,40 @@ static func _arena(b: Build, p: Dictionary, extra: Array) -> void:
 		var c := box.get_center()
 		var q := _box_quad(box)
 		if not fallen.has(key):
-			_quad(b,q,P-0.8,P,0.96)
+			_quad(b,q,P-0.8*K,P,0.96)
 			# Its faces onto a fallen neighbour: the hypogeum's walls.
 			for nb: Vector2i in [Vector2i(1,0),Vector2i(-1,0),Vector2i(0,1),Vector2i(0,-1)]:
 				if not fallen.has(key+nb): continue
 				var face: AABB
 				if nb.x != 0:
-					var x := box.end.x-0.6 if nb.x > 0 else box.position.x
-					face = AABB(Vector3(x,-1.0,box.position.z),Vector3(0.6,P-0.8+1.0,SQUARE))
+					var x := box.end.x-0.6*K if nb.x > 0 else box.position.x
+					face = AABB(Vector3(x,-K,box.position.z),Vector3(0.6*K,P-0.8*K+K,SQUARE))
 				else:
-					var z := box.end.z-0.6 if nb.y > 0 else box.position.z
-					face = AABB(Vector3(box.position.x,-1.0,z),Vector3(box.size.x,P-0.8+1.0,0.6))
+					var z := box.end.z-0.6*K if nb.y > 0 else box.position.z
+					face = AABB(Vector3(box.position.x,-K,z),Vector3(box.size.x,P-0.8*K+K,0.6*K))
 				_quad(b,_box_quad(face),face.position.y,face.end.y,0.9)
 			continue
 		if absf(c.x) < h:
 			# The trench: its floor, rising at its ends in a ramp of fallen floor.
 			var az := absf(c.z)
-			if az+SQUARE*0.5 <= RAMP_AT: _quad(b,q,-1.0,0.4,0.9,false)
+			if az+SQUARE*0.5 <= RAMP_AT: _quad(b,q,-K,0.4*K,0.9,false)
 			else:
 				# A sloped slab (a stepped one's risers are walls to a low pass).
 				var y := _trench_floor(az)
 				var sz := signf(c.z)
 				var g := sz*(_trench_floor(az+SQUARE*0.5)-_trench_floor(maxf(az-SQUARE*0.5,0.0)))/SQUARE
-				_quad(b,q,-1.0,y,0.86,true,g)
+				_quad(b,q,-K,y,0.86,true,g)
 				# (Its boulders only off the flown middle.)
-				if absf(c.x) > 3.0 and b.rng.randf() < 0.5: extra.append(_boulder(b,Vector3(c.x+b.rng.randf_range(-1.0,1.0),y,c.z),b.rng.randf_range(0.7,1.3)))
+				if absf(c.x) > 3.0*K and b.rng.randf() < 0.5: extra.append(_boulder(b,Vector3(c.x+b.rng.randf_range(-1.0,1.0)*K,y,c.z),b.rng.randf_range(0.7,1.3)*K))
 			continue
 		# A side cell: its floor, a cross wall over its middle, the trench's
 		# low wall along its inner edge.
-		_quad(b,q,-1.0,0.4,0.9,false)
+		_quad(b,q,-K,0.4*K,0.9,false)
 		var wt: float = walls[key]
-		var cw := AABB(Vector3(box.position.x,-1.0,c.z-0.5),Vector3(box.size.x,wt-0.6+1.0,1.0))
+		var cw := AABB(Vector3(box.position.x,-K,c.z-0.5*K),Vector3(box.size.x,wt-0.6*K+K,K))
 		_quad(b,_box_quad(cw),cw.position.y,cw.end.y,0.94)
 		if key.x == 1 or key.x == -2:
-			var lw := AABB(Vector3(h if c.x > 0.0 else -h-1.2,-1.0,box.position.z),Vector3(1.2,wt+1.0,SQUARE))
+			var lw := AABB(Vector3(h if c.x > 0.0 else -h-1.2*K,-K,box.position.z),Vector3(1.2*K,wt+K,SQUARE))
 			_quad(b,_box_quad(lw),lw.position.y,lw.end.y,0.92)
 
 static func _box_quad(a: AABB) -> Array:
@@ -1349,25 +1401,173 @@ static func _box_quad(a: AABB) -> Array:
 ## then a ramp of fallen floor from RAMP_AT on through the arena's end and
 ## under a great gate's passage to the podium at the inner wall's face.
 static func _trench_floor(az: float) -> float:
-	if az <= RAMP_AT: return 0.4
-	return lerpf(0.4,P,clampf((az-RAMP_AT)/(RZ-INNER_IN-RAMP_AT),0.0,1.0))
+	if az <= RAMP_AT: return 0.4*K
+	return lerpf(0.4*K,P,clampf((az-RAMP_AT)/(RZ-INNER_IN-RAMP_AT),0.0,1.0))
 
 ## The ramp's rise along z (dy/dz) at `z`, for a sloped slab.
 static func _ramp_slope(z: float) -> float:
 	if absf(z) <= RAMP_AT or absf(z) >= RZ-INNER_IN: return 0.0
-	return signf(z)*(P-0.4)/(RZ-INNER_IN-RAMP_AT)
+	return signf(z)*(P-0.4*K)/(RZ-INNER_IN-RAMP_AT)
 
-## Whether (x, z) is under the seats beside a great gate's passage, where
-## the seats are drawn solid down to the ramp's foot (its side walls).
+## Whether (x, z) is under the seats beside a great gate's passage or a
+## first-tier one, where the seats are drawn solid down to its floor (its
+## side walls).
 static func _by_gate_way(bs: Array, x: float, z: float) -> bool:
 	for bd: Dictionary in bs:
-		if String(bd.kind) != "gate": continue
+		if not String(bd.kind) in ["gate","pass1"]: continue
 		var o: Vector3 = bd.o
 		var dir: Vector3 = bd.dir
 		var along := (x-o.x)*dir.x+(z-o.z)*dir.z
-		if along < -1.0 or along > float(bd.len)+1.0: continue
-		if absf((x-o.x)*dir.z-(z-o.z)*dir.x) < float(bd.half)+3.0: return true
+		if along < -K or along > float(bd.len)+K: continue
+		if absf((x-o.x)*dir.z-(z-o.z)*dir.x) < float(bd.half)+3.0*K: return true
 	return false
+
+# --- The arena's works ----------------------------------------------------------------
+
+## The arena's works as straight walls along x, each a segment centred on
+## (cx, z) from cx-hw to cx+hw, d half thick: {name, cx, z, hw, d, hole
+## ([w, sill, spring] centred, [] none), low, high (its head between),
+## form, flown}. Forms: "whole"; "crown" (its arch's crown fallen, its
+## piers standing); "falls" (its head falling away outward, toward
+## `out`, the aqueduct's broken end); "stump" (a pier's foot, no arch).
+static func works(p: Dictionary) -> Array:
+	var out: Array = []
+	var spina: Array = p["spina"]
+	for i in range(SPINA_Z.size()):
+		out.append({"name":"colosseum/spina%d" % i,"cx":0.0,"z":float(SPINA_Z[i]),"hw":SPINA*0.5+RING+SPINA_PIER,"d":SPINA_D,
+			"hole":[SPINA,-K,P+SPINA_SPRING],"low":P+SPINA_TOP.x,"high":P+SPINA_TOP.y,"form":String(spina[i]),"flown":true,"out":0.0})
+	var fall := float(p["aq_fall"])
+	var end := RX*sqrt(1.0-AQ_Z*AQ_Z/(RZ*RZ))-INNER_MID
+	for sgn: float in [1.0,-1.0]:
+		var at := 0.0
+		for i in range(AQ.size()):
+			var a: Vector3 = AQ[i]
+			if i == 0 and sgn < 0.0:
+				at = (WorldScale.opening(a.y*K)+AQ_PIER)*0.5
+				continue
+			var w := WorldScale.opening(a.y*K)
+			var cx := a.x*K
+			var hw := (w+AQ_PIER)*0.5 if i == 0 else cx-at
+			at = cx+hw
+			var broke := sgn == fall and i > 0
+			var form := "whole"
+			if broke: form = "falls" if i == 1 else "gone"
+			var nm := "colosseum/aq0" if i == 0 else "colosseum/aq_%s%d" % ["e" if sgn > 0.0 else "w",i]
+			if form != "gone": out.append({"name":nm,"cx":cx*sgn,"z":AQ_Z,"hw":hw,"d":AQ_D,"hole":[w,-K,P+a.z*K],"low":P+AQ_TOP-0.6*K,"high":P+AQ_TOP,
+				"form":form,"flown":cx < AQ_FLOWN,"out":sgn})
+			# The fallen end: the piers' feet standing on the seats.
+			elif i < AQ.size()-1: out.append({"name":nm+"_stump","cx":at*sgn,"z":AQ_Z,"hw":AQ_PIER*0.5,"d":AQ_D,"hole":[],
+				"low":P+16.0*K,"high":P+22.0*K,"form":"stump","flown":false,"out":sgn})
+		if sgn != fall: out.append({"name":"colosseum/aq_%s_end" % ("e" if sgn > 0.0 else "w"),"cx":(at+end)*0.5*sgn,"z":AQ_Z,"hw":(end-at)*0.5,"d":AQ_D,"hole":[],
+			"low":P+AQ_TOP-0.6*K,"high":P+AQ_TOP,"form":"whole","flown":false,"out":sgn})
+	return out
+
+## Work `w`'s head line over its local x (-hw..hw), drawn with `b`'s rng.
+static func _work_top(b: Build, w: Dictionary) -> Callable:
+	var hw := float(w.hw)
+	var low := float(w.low)
+	var high := float(w.high)
+	var form := String(w.form)
+	var line: Callable = RuinKit._ruin_line(b,-hw,hw,low,high,1.0 if form == "stump" else 0.3)
+	if form == "crown":
+		var hole: Array = w.hole
+		var r := float(hole[0])*0.5+RING
+		var cut := float(hole[2])+float(hole[0])*0.12
+		return func(x: float) -> float: return minf(float(line.call(x)),cut) if absf(x) < r else float(line.call(x))
+	if form == "falls":
+		var sgn := signf(float(w.cx))
+		var foot := P+10.0*K
+		return func(x: float) -> float:
+			var t := clampf((x*sgn+hw)/(hw*2.0),0.0,1.0)
+			return minf(float(line.call(x)),lerpf(high+1.0,foot,smoothstep(0.25,1.0,t)))
+	return line
+
+static func _arena_works(b: Build, p: Dictionary, extra: Array) -> void:
+	for w: Dictionary in works(p):
+		var cx := float(w.cx)
+		var z := float(w.z)
+		var hw := float(w.hw)
+		var d := float(w.d)
+		var hole: Array = w.hole
+		var top := _work_top(b,w)
+		var keep := b.frame
+		b.frame = Transform3D(Basis.IDENTITY,Vector3(cx,0.0,z))
+		RuinKit._courses(b,Transform3D.IDENTITY,-hw,hw,-K,top,d,_holes([hole]) if not hole.is_empty() else Callable(),COURSE)
+		if not hole.is_empty():
+			_jambs(b,float(hole[0]),float(hole[1]),float(hole[2]),d,top)
+			_round_head(b,Transform3D.IDENTITY,float(hole[0]),float(hole[2]),d,top,11)
+		b.frame = keep
+		_wall_boxes(cx,z,-hw,hw,d,-K,top,[hole] if not hole.is_empty() else [],extra)
+		if not hole.is_empty():
+			var h := float(hole[0])*0.5+GothicGrowth.CORE_MARGIN
+			var y1 := float(hole[2])+float(hole[0])*0.5+GothicGrowth.CORE_MARGIN
+			b.clear.append(AABB(Vector3(cx-h,-K,z-d-GothicGrowth.CORE_DEPTH),Vector3(h*2.0,y1+K,(d+GothicGrowth.CORE_DEPTH)*2.0)))
+		# Under the aqueduct's fallen end, its stone tumbled on the seats.
+		if String(w.form) in ["falls","stump"]:
+			for i in range(6):
+				var x := cx+b.rng.randf_range(-1.0,1.0)*hw*1.6
+				var zz := z+b.rng.randf_range(-1.0,1.0)*d*3.0
+				var sd := nearest(x,zz)
+				if sd.y < INNER_IN or sd.y > ARENA_D: continue
+				var ti := clampi(int((sd.y-INNER_IN)/TREAD),0,TREADS-1)
+				extra.append(_boulder(b,Vector3(x,tread_top(ti),zz),b.rng.randf_range(1.2,2.4)*K))
+
+## A straight wall's solid (the piece's frame) at (cx, z), d half thick,
+## along x from x0 to x1 (local), from y0 up to `top` less `holes`
+## (`_cut_holes`): columns FINE wide, merged where they match.
+static func _wall_boxes(cx: float, z: float, x0: float, x1: float, d: float, y0: float, top: Callable, holes: Array, out: Array) -> void:
+	var n := maxi(1,int(ceil((x1-x0)/FINE)))
+	var last := PackedFloat32Array()
+	var from := x0
+	for i in range(n+1):
+		var col := PackedFloat32Array()
+		if i < n:
+			var lx := lerpf(x0,x1,(i+0.5)/n)
+			col = _cut_holes(y0,_q(float(top.call(lx))),lx,holes)
+		if i == 0:
+			last = col
+			continue
+		if col == last: continue
+		var at := lerpf(x0,x1,float(i)/n)
+		for m in range(0,last.size(),2): out.append(AABB(Vector3(cx+from,last[m],z-d),Vector3(at-from,last[m+1]-last[m],d*2.0)))
+		from = at
+		last = col
+
+## The works in the far shell: each pier and the walling over its arch's
+## crown a block, its head at the middle of its line.
+static func _far_works(f: FarFaces, p: Dictionary) -> void:
+	for w: Dictionary in works(p):
+		var cx := float(w.cx)
+		var z := float(w.z)
+		var hw := float(w.hw)
+		var d := float(w.d)
+		var top := (float(w.low)+float(w.high))*0.5
+		var hole: Array = w.hole
+		var col := f.tone(1.0)
+		if hole.is_empty():
+			_fslab(f,cx-hw,cx+hw,z-d,z+d,-K,top,col)
+			continue
+		var r := float(hole[0])*0.5
+		var form := String(w.form)
+		# A falling head low on its outer side.
+		var lo := top
+		var hi := top
+		if form == "falls":
+			if cx > 0.0: hi = P+12.0*K
+			else: lo = P+12.0*K
+		_fslab(f,cx-hw,cx-r,z-d,z+d,-K,lo,col)
+		_fslab(f,cx+r,cx+hw,z-d,z+d,-K,hi,col)
+		if form == "whole": _fslab(f,cx-r,cx+r,z-d,z+d,float(hole[2])+r*0.7,top,col)
+
+## An upright block from (x0, y0, z0) to (x1, y1, z1) in the far shell
+## (its foot left out).
+static func _fslab(f: FarFaces, x0: float, x1: float, z0: float, z1: float, y0: float, y1: float, col: Color) -> void:
+	if y1-y0 < 0.05 or x1-x0 < 0.05: return
+	var c := Vector3((x0+x1)*0.5,(y0+y1)*0.5,(z0+z1)*0.5)
+	var a: Array = [Vector3(x0,y0,z0),Vector3(x1,y0,z0),Vector3(x1,y0,z1),Vector3(x0,y0,z1)]
+	var t: Array = [Vector3(x0,y1,z0),Vector3(x1,y1,z0),Vector3(x1,y1,z1),Vector3(x0,y1,z1)]
+	f.quad(t[0],t[1],t[2],t[3],c,col)
+	for i in range(4): f.quad(a[i],a[(i+1)%4],t[(i+1)%4],t[i],c,col)
 
 # --- The rubble ----------------------------------------------------------------------
 
@@ -1377,8 +1577,8 @@ static func rubble_top(p: Dictionary, k: int, d: float) -> float:
 	if f < 0.1: return -INF
 	var reach := RUBBLE*f
 	if d < -reach: return -INF
-	var high := P+6.0*f
-	return high-(high+1.0)*(-d/reach)
+	var high := P+6.0*K*f
+	return high-(high+K)*(-d/reach)
 
 static func _rubble(b: Build, p: Dictionary, extra: Array) -> void:
 	var fall: Array = p["fall"]
@@ -1389,25 +1589,25 @@ static func _rubble(b: Build, p: Dictionary, extra: Array) -> void:
 		var n := 4
 		for j in range(n):
 			var d0 := -reach*(j+1)/n
-			var d1 := -reach*j/n+(0.8 if j == 0 else 0.0)
+			var d1 := -reach*j/n+(0.8*K if j == 0 else 0.0)
 			var y := rubble_top(p,k,(d0+d1)*0.5)
-			if y <= -FOUND+0.5: continue
+			if y <= -FOUND+0.5*K: continue
 			for pc: Vector2 in _pieces(k,d0): _quad(b,_ring_quad(pc.x,pc.y,d0,d1),-FOUND,y,0.88)
-		for i in range(int(4+8*f)):
+		for i in range(int(5+10*f)):
 			var s := slot_mid(k)+b.rng.randf_range(-0.5,0.5)*pitch()
 			var d := -b.rng.randf()*reach*0.9
 			var at := point(s,d)
-			extra.append(_boulder(b,Vector3(at.x,rubble_top(p,k,d)-0.3,at.z),b.rng.randf_range(1.2,2.6)))
+			extra.append(_boulder(b,Vector3(at.x,rubble_top(p,k,d)-0.3*K,at.z),b.rng.randf_range(1.2,2.6)*K))
 		# Drifts in the ambulatory behind it, kept low.
 		for i in range(int(3*f)):
-			var at := point(slot_mid(k)+b.rng.randf_range(-0.4,0.4)*pitch(),OUT_IN+b.rng.randf_range(1.0,3.0))
-			extra.append(_boulder(b,Vector3(at.x,P,at.z),b.rng.randf_range(0.8,1.4)))
+			var at := point(slot_mid(k)+b.rng.randf_range(-0.4,0.4)*pitch(),OUT_IN+b.rng.randf_range(1.0,3.0)*K)
+			extra.append(_boulder(b,Vector3(at.x,P,at.z),b.rng.randf_range(0.8,1.4)*K))
 
 ## The rings' growth: ivy down the risers, curtains under the walkway's
 ## edge, mats on the treads and rubble, low tufts; the flown ways kept clear.
 static func _dress_rings(b: Build, p: Dictionary) -> void:
 	for o: Dictionary in openings("colosseum",int(p["seed"]),float(p["weathered"])):
-		if not String(o.kind) in ["ambulatory","trench","tunnel","gate_way","gate","arena"]: continue
+		if not String(o.kind) in ["ambulatory","trench","tunnel","gate_way","gate","arena","arch"]: continue
 		var half: Vector3 = (o.size as Vector3)*0.5+Vector3(GothicGrowth.CORE_MARGIN*0.6,GothicGrowth.CORE_MARGIN*0.6,0.3)
 		b.clear.append(GothicGrowth.box_of(o.frame,half))
 	var d := GothicGrowth.density(b)
@@ -1415,17 +1615,17 @@ static func _dress_rings(b: Build, p: Dictionary) -> void:
 	var x := GothicGrowth.Dress.new(b,"colosseum_rings",d)
 	if RuinGrowth.vines:
 		x.section("risers")
-		GothicGrowth.cascades(x,P+4.0,P+ROOF.y+1.5,60,Vector2(1.5,3.5),4,GothicGrowth.COARSE_FAR,0.5,1.0,false)
+		GothicGrowth.cascades(x,P+4.0*K,P+ROOF.y+1.5*K,60,Vector2(1.5,3.5),4,GothicGrowth.COARSE_FAR,0.5,1.0,false)
 		x.section("walkway")
 		for i in range(26):
 			var k := b.rng.randi_range(0,SLOTS-1)
 			if not bool((p["roof"] as Array)[k]): continue
-			var at := point(slot_mid(k)+b.rng.randf_range(-3.0,3.0),INNER_MID-0.8)
-			GothicGrowth.curtain(x,Vector3(at.x,0.0,at.z),P+ROOF.x-1.0,P+ROOF.y,b.rng.randf_range(2.0,5.0),5,GothicGrowth.COARSE_MID,true)
+			var at := point(slot_mid(k)+b.rng.randf_range(-3.0,3.0)*K,INNER_MID-0.8*K)
+			GothicGrowth.curtain(x,Vector3(at.x,0.0,at.z),P+ROOF.x-1.0*K,P+ROOF.y,b.rng.randf_range(2.0,5.0)*K,5,GothicGrowth.COARSE_MID,true)
 	x.section("mats")
-	GothicGrowth.mats(x,P+1.0,P+ROOF.y+1.5,50,0.5,Vector2i(2,4),3.4)
+	GothicGrowth.mats(x,P+1.0*K,P+ROOF.y+1.5*K,50,0.5,Vector2i(2,4),3.4)
 	x.section("low")
-	GothicGrowth.low(x,30,P+7.0)
+	GothicGrowth.low(x,30,P+7.0*K)
 	x.done()
 
 # --- The solid ---------------------------------------------------------------------
@@ -1438,7 +1638,7 @@ static func column(p: Dictionary, tops: Dictionary, bs: Array, x: float, z: floa
 	var s := sd.x
 	var d := sd.y
 	var out := PackedFloat32Array()
-	if d < -RUBBLE-1.0: return out
+	if d < -RUBBLE-K: return out
 	var k := slot_of(s)
 	if d < 0.0:
 		var top := -INF
@@ -1479,6 +1679,7 @@ static func column(p: Dictionary, tops: Dictionary, bs: Array, x: float, z: floa
 		var aw := _pass_hole()
 		match kind:
 			"gate": holes.append([GATE,P,P+GATE_SPRING])
+			"pass1": holes.append([aw,P,P+(TIERS[0] as Vector3).y])
 			"pass2": holes.append([aw,P+(TIERS[1] as Vector3).x,P+(TIERS[1] as Vector3).y])
 		# The world's arch is the nominal one scaled: cut at the unscaled x.
 		return _cut_holes(-FOUND,_q(top),lx,holes)
@@ -1492,7 +1693,7 @@ static func column(p: Dictionary, tops: Dictionary, bs: Array, x: float, z: floa
 				out.append_array([-FOUND,_q(minf(h,lv))])
 				return out
 			out.append_array([-FOUND,_q(_trench_floor(absf(z))) if String(bd.kind) == "gate" else P])
-			if h > lv+1.5: out.append_array([_q(lv),_q(h)])
+			if h > lv+1.5*K: out.append_array([_q(lv),_q(h)])
 			return out
 		out.append_array([-FOUND,_q(h)])
 		return out
@@ -1505,17 +1706,17 @@ static func column(p: Dictionary, tops: Dictionary, bs: Array, x: float, z: floa
 	var box := _square_box(key)
 	var c := box.get_center()
 	if absf(c.x) < TRENCH*0.5:
-		out.append_array([-FOUND,_q(0.4 if absf(c.z)+SQUARE*0.5 <= RAMP_AT else _trench_floor(absf(z)))])
+		out.append_array([-FOUND,_q(0.4*K if absf(c.z)+SQUARE*0.5 <= RAMP_AT else _trench_floor(absf(z)))])
 		return out
 	var wt: float = (p["wall_top"] as Dictionary)[key]
-	if (key.x == 1 or key.x == -2) and absf(x) < TRENCH*0.5+1.2: out.append_array([-FOUND,_q(wt)])
-	elif absf(z-c.z) < 0.5: out.append_array([-FOUND,_q(wt-0.6)])
-	else: out.append_array([-FOUND,0.4])
+	if (key.x == 1 or key.x == -2) and absf(x) < TRENCH*0.5+1.2*K: out.append_array([-FOUND,_q(wt)])
+	elif absf(z-c.z) < 0.5*K: out.append_array([-FOUND,_q(wt-0.6*K)])
+	else: out.append_array([-FOUND,0.4*K])
 	return out
 
 ## A height for the solid, stepped so neighbouring columns merge.
 static func _q(y: float) -> float:
-	return snappedf(y,0.25)
+	return snappedf(y,0.25*K)
 
 ## The stretch [y0, y1] less the holes [[w, sill, spring]] (round heads) at
 ## `lx` across the bay.
@@ -1525,7 +1726,7 @@ static func _cut_holes(y0: float, y1: float, lx: float, holes: Array) -> PackedF
 		var r: float = float(hl[0])*0.5
 		if absf(lx) >= r: continue
 		var lo: float = float(hl[1])
-		var hi: float = _q(float(hl[2])+sqrt(maxf(r*r-lx*lx,0.0))-0.12)
+		var hi: float = _q(float(hl[2])+sqrt(maxf(r*r-lx*lx,0.0))-0.12*K)
 		if hi <= lo: continue
 		var next: Array = []
 		for sp: Vector2 in spans:
@@ -1547,10 +1748,10 @@ static var _grid_lock := Mutex.new()
 static func _sd_grid() -> Dictionary:
 	_grid_lock.lock()
 	if _grid.is_empty():
-		var reach := STEP*STEPS+2.0
-		var x0 := -RX-RUBBLE-2.0
+		var reach := STEP*STEPS+2.0*K
+		var x0 := -RX-RUBBLE-2.0*K
 		var z0 := -RZ-reach
-		var nx := int(ceil((RX+RUBBLE+2.0)*2.0/CELL))
+		var nx := int(ceil((RX+RUBBLE+2.0*K)*2.0/CELL))
 		var nz := int(ceil((RZ+reach)*2.0/CELL))
 		var sd := PackedVector2Array()
 		sd.resize(nx*nz)
@@ -1570,7 +1771,7 @@ static func _sd_grid() -> Dictionary:
 
 ## Whether a cell at depth `d` is by a wall, so wants the finer cells.
 static func _walls_near(d: float) -> bool:
-	return (d > -1.2 and d < OUT_IN+1.2) or (d > INNER_MID-INNER_D-1.2 and d < INNER_IN+1.2)
+	return (d > -1.2*K and d < OUT_IN+1.2*K) or (d > INNER_MID-INNER_D-1.2*K and d < INNER_IN+1.2*K)
 
 ## The solid as boxes (the piece's frame): columns on the grid merged along
 ## x, then along z, and `extra` (the boulders) with them.

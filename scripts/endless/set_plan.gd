@@ -40,8 +40,8 @@ const Field = preload("res://scripts/endless/land_field.gd")
 
 ## The set cell (m), how far inside it a piece's middle keeps (m), the
 ## chance a cell takes one at layer 1, the spots tried.
-const CELL := 1400.0
-const MARGIN := 280.0
+const CELL := 1000.0
+const MARGIN := 200.0
 const TAKE := 0.8
 const TRIES := 56
 ## The pieces: their chance, footprint (half across x, half along z: m,
@@ -56,10 +56,10 @@ const PIECES := {
 ## pieces' roll: its chance a set cell (its own draw, so a cell it skips
 ## plans as before), footprint (the podium's steps and the rubble past the
 ## broken side) and spread. It wants a broad flat terrace, no rise: its foot
-## at the highest ground under its core (its footings reach FOUND 8 m down),
+## at the highest ground under its core (its footings reach FOUND 16 m down),
 ## the ground within SPREAD under it, and a STRIP m landable run kept past
 ## its footprint (the land's flats rule, land_ponds.gd `_strip`).
-const COLOSSEUM := {"w":0.12,"half":Vector2(118.0,104.0),"spread":7.0}
+const COLOSSEUM := {"w":0.22,"half":Vector2(236.0,208.0),"spread":12.0}
 const STRIP := 208.0
 ## The backdrop: the rise beside the spot (m) and the distances it is read
 ## at (m), out of DIRS ways.

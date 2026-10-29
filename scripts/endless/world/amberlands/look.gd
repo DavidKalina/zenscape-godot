@@ -39,7 +39,7 @@ static func layers() -> Dictionary:
 		# Ruins: more tries per cell, the ruin kinds taken more often than the
 		# natural rock arches, kept near the massifs and plateaus, and an
 		# aqueduct across a canyon or between two shelves spans from rim to rim.
-		"arches":1.8,"rock_arches":0.35,"ruin_arches":1.6,"ruin_near":700.0,"aqueduct_span":0.8,
+		"arches":2.6,"rock_arches":0.35,"ruin_arches":2.2,"ruin_near":1000.0,"aqueduct_span":0.8,"arch_most":3,
 		"halls":1.3,"tunnels":1.0,
 		# The ruins' stone a dark basalt that stands out from the gold land
 		# (scripts/endless/land_arches.gd TONES), every set piece mossed on its
