@@ -1093,6 +1093,7 @@ func _grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dic
 		if one >= 0:
 			g = _impl.kids[one]
 			if _impl.kid_native[one]: return g.grid(x0,z0,step,nx,nz,pad)
+		elif _impl.all_native(): return _impl.grid(x0,z0,step,nx,nz,pad)
 	var hs := PackedFloat32Array()
 	var ms := PackedFloat32Array()
 	var rs := PackedFloat32Array()

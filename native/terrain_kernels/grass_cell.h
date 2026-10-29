@@ -71,6 +71,8 @@ constexpr double DINF = std::numeric_limits<double>::infinity();
 inline int64_t floori(double v) { return int64_t(std::floor(v)); }
 inline int64_t roundi(double v) { return int64_t(std::round(v)); }
 inline int64_t clampi(int64_t v, int64_t lo, int64_t hi) { return v < lo ? lo : (v > hi ? hi : v); }
+inline double clampd(double v, double lo, double hi) { return v < lo ? lo : (v > hi ? hi : v); }
+inline double lerpd(double a, double b, double t) { return a + (b - a) * t; }
 inline double fposmod(double x, double y) {
 	double value = std::fmod(x, y);
 	if ((value < 0 && y > 0) || (value > 0 && y < 0)) value += y;
@@ -439,6 +441,36 @@ public:
 	std::vector<Vector2> blooms;
 	Vector2 box_pos, box_end;
 	double area = 0.0;
+	// A band cell's dither (endless_grass `_dither`): the groups' weights on a
+	// dither_grid x dither_grid grid over the cell (node-major, dither_count a
+	// node); a candidate is grown only where a hash at its root picks
+	// dither_group by the weights there. None: every candidate.
+	const float *dither_w = nullptr;
+	int dither_grid = 0, dither_count = 0, dither_group = 0;
+
+	bool dithered_out(const Vector2 &p) const {
+		if (dither_w == nullptr) return false;
+		const double step = 64.0 / double(dither_grid - 1);
+		const double u = clampd((double(p.x) - x0) / step, 0.0, dither_grid - 1.001);
+		const double v = clampd((double(p.y) - z0) / step, 0.0, dither_grid - 1.001);
+		const int i = int(u), j = int(v);
+		const double fu = u - i, fv = v - j;
+		const int c = dither_count;
+		const float *a = dither_w + (j * dither_grid + i) * c, *b = a + c, *e = a + dither_grid * c, *f = e + c;
+		double total = 0.0;
+		for (int q = 0; q < c; ++q) total += lerpd(lerpd(a[q], b[q], fu), lerpd(e[q], f[q], fu), fv);
+		const double d = hash_unit(p.x, p.y, 79.0) * total;
+		double acc = 0.0;
+		int pick = c - 1;
+		for (int q = 0; q < c; ++q) {
+			acc += lerpd(lerpd(a[q], b[q], fu), lerpd(e[q], f[q], fu), fv);
+			if (d < acc) {
+				pick = q;
+				break;
+			}
+		}
+		return pick != dither_group;
+	}
 
 	Cell(const Config &c, double px0, double pz0, int pn, int ppad, const float *h, const float *r, const float *m) :
 			cfg(c), x0(px0), z0(pz0), n(pn), pad(ppad), hs(h), rs(r), ms(m) {}
@@ -685,6 +717,7 @@ public:
 			const float px = rng.randf_range(box_pos.x, box_end.x); // (in order: C++ leaves argument order open)
 			const float pz = rng.randf_range(box_pos.y, box_end.y);
 			const Vector2 p(px, pz);
+			if (dithered_out(p)) continue;
 			double thick = 1.0;
 			const double roll = cfg.height_field > 0.0 ? rolling(p) : 0.0;
 			if (cfg.height_field > 0.0) thick *= 1.0 - HEIGHT_THICK * 0.5 * (1.0 - roll);
@@ -706,6 +739,7 @@ public:
 			const float px = rng.randf_range(box_pos.x, box_end.x); // (in order: C++ leaves argument order open)
 			const float pz = rng.randf_range(box_pos.y, box_end.y);
 			const Vector2 p(px, pz);
+			if (dithered_out(p)) continue;
 			const double pres = presence(p);
 			int kind = kind_at(p, rng.randf());
 			double var = -1.0;
@@ -773,7 +807,8 @@ protected:
 	}
 
 public:
-	int64_t version() const { return 1; }
+	// 2: grow_cell takes a band cell's dither.
+	int64_t version() const { return 2; }
 
 	// The flower assets a cell's records index (the config's `assets`).
 	PackedStringArray assets() const { return cfg.assets; }
@@ -897,7 +932,8 @@ public:
 
 	// One cell: {x0, z0, n, pad, seed (KitFlora's), heights, river, meadows,
 	// field (the native land field, for the ground's colour) or colours (its
-	// colour on the TINT_STEP grid)} -> {parts: grow_cell's grass parts,
+	// colour on the TINT_STEP grid), dither, dither_grid, dither_count,
+	// dither_group (a band cell's, Cell `dither_w`; optional)} -> {parts: grow_cell's grass parts,
 	// records: the flowers' and seed heads' (stride 18: asset, x, z, angle,
 	// scale, h, tinted, r, g, b, posed, basis columns x9)}.
 	Dictionary grow_cell(const Dictionary &d) const {
@@ -923,6 +959,13 @@ public:
 		}
 		if (!any) return out;
 		Cell cell(cfg, x0, z0, n, pad, hs, rs, ms);
+		const PackedFloat32Array dither_a = d.get("dither", PackedFloat32Array());
+		if (!dither_a.is_empty()) {
+			cell.dither_grid = int(d.get("dither_grid", 3));
+			cell.dither_count = int(d.get("dither_count", 1));
+			cell.dither_group = int(d.get("dither_group", 0));
+			if (dither_a.size() >= cell.dither_grid * cell.dither_grid * cell.dither_count) cell.dither_w = dither_a.ptr();
+		}
 		cell.b00 = Patch::broad(x0, z0);
 		cell.b10 = Patch::broad(x0 + 64.0, z0);
 		cell.b01 = Patch::broad(x0, z0 + 64.0);

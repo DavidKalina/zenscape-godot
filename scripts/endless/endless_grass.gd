@@ -600,6 +600,11 @@ static func _dither(parts: Array, key: Vector2i, ws: PackedFloat32Array, count: 
 		out.append(p)
 	return out
 
+## Whether the native placement takes a band cell's dither (ZenScapeGrass
+## version 2; an older library is dithered here, `_dither`).
+static func _native_dithers(native: Object) -> bool:
+	return int(native.version()) >= 2
+
 ## Parts of the same batch (key, tile, sub-tile, ring) joined into one.
 static func _join(parts: Array) -> Array:
 	var by := {}
@@ -623,14 +628,16 @@ static func _join(parts: Array) -> Array:
 ## `grow_cell` in GDScript, when the library is built and current
 ## (--grass-native=0 or --gdscript-kernels: GDScript).
 const NATIVE_CLASS := &"ZenScapeGrass"
-const NATIVE_VERSION := 1
+## The newest library this script knows (2: grow_cell takes a band cell's
+## dither); any from 1 places the tufts.
+const NATIVE_VERSION := 2
 static func native_wanted() -> bool:
 	var args := LaunchArgs.user_args()
 	if "--grass-native=0" in args or "--gdscript-kernels" in args: return false
 	Field.native_available()
 	if not ClassDB.class_exists(NATIVE_CLASS): return false
 	var probe: Object = ClassDB.instantiate(NATIVE_CLASS)
-	return probe.has_method("version") and probe.has_method("assets") and int(probe.version()) == NATIVE_VERSION
+	return probe.has_method("version") and probe.has_method("assets") and int(probe.version()) >= 1 and int(probe.version()) <= NATIVE_VERSION
 
 ## The native placement's settings for a layer: its site (`site_values`),
 ## its far share and rings, and every table grow_cell's Grow reads (the
@@ -1285,10 +1292,18 @@ func _grow(layer: Layer, key: Vector2i, land_seed: int, mix: Dictionary, rings: 
 	if groups.size() == 1:
 		if groups[0][2]: parts = grow_cell(land_seed,key,groups[0][0],rings,layer.share,groups[0][1])
 	else:
+		# One grid (and one ground colour) for every group's grow; a native
+		# grow that takes the dither skips the other groups' tufts itself.
+		var got := {}
 		for g in groups.size():
 			if _quit: return
 			if not groups[g][2]: continue
-			var grown := grow_cell(land_seed,key,groups[g][0],rings,layer.share,groups[g][1])
+			var native: Object = groups[g][1]
+			if native != null and _native_dithers(native):
+				got.dither = {"dither":mix.w,"dither_grid":DITHER_GRID,"dither_count":groups.size(),"dither_group":g}
+				parts.append_array(grow_cell(land_seed,key,groups[g][0],rings,layer.share,native,got))
+				continue
+			var grown := grow_cell(land_seed,key,groups[g][0],rings,layer.share,native,got)
 			parts.append_array(_dither(grown,key,mix.w,groups.size(),g))
 		parts = _join(parts)
 	var took := (Time.get_ticks_usec()-began)/1000.0
@@ -1302,8 +1317,9 @@ func _grow(layer: Layer, key: Vector2i, land_seed: int, mix: Dictionary, rings: 
 ## with `far_share` of the tufts in the far one (0: all near, with the
 ## flowers; 1: all far, the grass alone), its probe the cell's own height
 ## grid. Worker-safe. `native` (ZenScapeGrass, set up by native_config for
-## these settings): the same cell placed natively (_grow_native).
-static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, rings: Vector4, far_share := 0.0, native: Object = null) -> Array:
+## these settings): the same cell placed natively (_grow_native). `got`: the
+## cell's grid kept between calls for the same cell (filled by the first).
+static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, rings: Vector4, far_share := 0.0, native: Object = null, got := {}) -> Array:
 	var f: RefCounted = Field.new(land_seed)
 	var sl: Vector2 = site_values.get("slope",SLOPE)
 	var alp: Vector2 = site_values.get("alpine",ALPINE)
@@ -1314,7 +1330,7 @@ static func grow_cell(land_seed: int, key: Vector2i, site_values: Dictionary, ri
 	# The cell's 1 m grid in one call (LandField.grid; native when built):
 	# heights, meadows and how far outside a river's water each node is
 	# (land_field `last_river`): no tuft or flower on its bank.
-	var got: Dictionary = f.grid(x0,z0,1.0,n,n,PAD)
+	if not got.has("heights"): got.merge(f.grid(x0,z0,1.0,n,n,PAD))
 	var hs: PackedFloat32Array = got.heights
 	var ms: PackedFloat32Array = got.meadows
 	var rs: PackedFloat32Array = got.river
@@ -1494,10 +1510,12 @@ static func _grow_native(native: Object, f: RefCounted, land_seed: int, key: Vec
 	var n := int(CELL)+1+PAD*2
 	var cell := {"x0":x0,"z0":z0,"n":n,"pad":PAD,"seed":hash([land_seed,"endless_grass",far_share,key]) & 0xffffff,
 		"heights":got.heights,"river":got.river,"meadows":got.meadows}
+	cell.merge(got.get("dither",{}))
 	# The native field (in the regions world, the region's own where the cell
 	# lies wholly in one; in the band the blend's colours, below).
 	var nf: Object = f.native_impl_in(x0-PAD,z0-PAD,x0+CELL+PAD,z0+CELL+PAD)
 	if nf != null: cell.field = nf
+	elif got.has("colours"): cell.colours = got.colours
 	else:
 		# The ground's colour on the tint grid (the native field reads it itself).
 		var hs: PackedFloat32Array = got.heights
@@ -1511,6 +1529,7 @@ static func _grow_native(native: Object, f: RefCounted, land_seed: int, key: Vec
 				var normal := Vector3(hs[c-1]-hs[c+1],2.0,hs[c-n]-hs[c+n]).normalized()
 				cols[tj*tg+ti] = f.colour(x0+ti*TINT_STEP,z0+tj*TINT_STEP,hs[c],normal.y,ms[c])
 		cell.colours = cols
+		got.colours = cols
 	var r: Dictionary = native.grow_cell(cell)
 	var out: Array = r.parts
 	var recs: PackedFloat64Array = r.records

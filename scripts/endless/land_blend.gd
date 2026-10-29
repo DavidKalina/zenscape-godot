@@ -557,6 +557,92 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 			river[v*3+2] = river[from*3+2]
 	return {"verts":verts,"normals":normals,"colours":colours,"carved":carved,"river":river,"heights":heights}
 
+## LandField.grid's arrays (before its ponds, halls, tunnels and splits) for
+## a box that reaches the band, from each region's own native grid of it,
+## blended per node: heights and meadow by weight, the river's distance by
+## weight (clamped as `_mix` clamps it); a node wholly in one region is that
+## region's own. The same numbers as sampling it point by point, in one
+## native call per field there.
+func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:
+	var ns := _ns
+	var nn := nx*nz
+	var ws := PackedFloat32Array()
+	ws.resize(nn*ns)
+	var pure := PackedInt32Array()
+	pure.resize(nn)
+	var used := PackedByteArray()
+	used.resize(ns)
+	var reg := PackedFloat32Array()
+	reg.resize(_n)
+	# The weights node by node, the lattice cell's corners read once per cell.
+	var ci := 1 << 30
+	var cj := 1 << 30
+	var one := -1
+	var a := PackedFloat32Array()
+	var b := PackedFloat32Array()
+	var c := PackedFloat32Array()
+	var d := PackedFloat32Array()
+	for j in nz:
+		var fz := (z0+(j-pad)*step)/LATTICE
+		var jj := floori(fz)
+		var tz := fz-jj
+		for i in nx:
+			var fx := (x0+(i-pad)*step)/LATTICE
+			var ii := floori(fx)
+			var tx := fx-ii
+			if ii != ci or jj != cj:
+				ci = ii
+				cj = jj
+				one = _cell(ii,jj)
+				if one < 0:
+					a = _corner(ii,jj)
+					b = _corner(ii+1,jj)
+					c = _corner(ii,jj+1)
+					d = _corner(ii+1,jj+1)
+			var v := j*nx+i
+			pure[v] = one
+			if one >= 0:
+				used[one] = 1
+				continue
+			for r in _n: reg[r] = lerpf(lerpf(a[r],b[r],tx),lerpf(c[r],d[r],tx),tz)
+			_slot_weights(reg,0,ws,v*ns)
+			for r in ns:
+				if ws[v*ns+r] > 0.0: used[r] = 1
+	var hs_of: Array = []
+	var ms_of: Array = []
+	var rs_of: Array = []
+	for r in ns:
+		var g: Dictionary = _slots[r].grid(x0,z0,step,nx,nz,pad) if used[r] == 1 else {}
+		hs_of.append(g.get("heights",PackedFloat32Array()))
+		ms_of.append(g.get("meadows",PackedFloat32Array()))
+		rs_of.append(g.get("river",PackedFloat32Array()))
+	var hs := PackedFloat32Array()
+	var ms := PackedFloat32Array()
+	var rs := PackedFloat32Array()
+	hs.resize(nn)
+	ms.resize(nn)
+	rs.resize(nn)
+	for v in nn:
+		var p := pure[v]
+		if p >= 0:
+			hs[v] = (hs_of[p] as PackedFloat32Array)[v]
+			ms[v] = (ms_of[p] as PackedFloat32Array)[v]
+			rs[v] = (rs_of[p] as PackedFloat32Array)[v]
+			continue
+		var h := 0.0
+		var m := 0.0
+		var rv := 0.0
+		for r in ns:
+			var wt := ws[v*ns+r]
+			if wt <= 0.0: continue
+			h += wt*(hs_of[r] as PackedFloat32Array)[v]
+			m += wt*(ms_of[r] as PackedFloat32Array)[v]
+			rv += wt*minf((rs_of[r] as PackedFloat32Array)[v],1000.0)
+		hs[v] = h
+		ms[v] = m
+		rs[v] = rv
+	return {"heights":hs,"meadows":ms,"river":rs}
+
 ## Whether every region's field is native (the band's chunks blend their
 ## native builds; else they are sampled point by point).
 func all_native() -> bool:
