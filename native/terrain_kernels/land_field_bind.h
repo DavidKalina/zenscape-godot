@@ -13,9 +13,14 @@
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/packed_color_array.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
+#include <godot_cpp/variant/packed_float64_array.hpp>
+#include <godot_cpp/variant/packed_int32_array.hpp>
+#include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 #include <godot_cpp/variant/vector2.hpp>
 #include <godot_cpp/variant/vector3.hpp>
+#include <algorithm>
+#include <vector>
 #include "land_field.h"
 
 using namespace godot;
@@ -55,6 +60,8 @@ protected:
 		ClassDB::bind_method(D_METHOD("colour", "x", "z", "y", "up", "meadow"), &ZenScapeLandField::colour);
 		ClassDB::bind_method(D_METHOD("build_chunk", "x0", "z0", "step", "cells", "skirt_drop", "flow_max"), &ZenScapeLandField::build_chunk);
 		ClassDB::bind_method(D_METHOD("grid", "x0", "z0", "step", "nx", "nz", "pad"), &ZenScapeLandField::grid);
+		ClassDB::bind_method(D_METHOD("blend_grid", "fields", "slot_r", "slot_part", "regions", "corners", "cells", "ci0", "cj0", "cw", "lattice", "x0", "z0", "step", "nx", "nz", "pad"), &ZenScapeLandField::blend_grid);
+		ClassDB::bind_method(D_METHOD("blend_colours", "fields", "slot_r", "slot_part", "regions", "corners", "cells", "ci0", "cj0", "cw", "lattice", "xs", "zs", "ys", "ups", "meadows"), &ZenScapeLandField::blend_colours);
 		ClassDB::bind_method(D_METHOD("get_seed"), &ZenScapeLandField::get_seed);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "seed"), "", "get_seed");
 		ClassDB::bind_method(D_METHOD("get_old_land"), &ZenScapeLandField::get_old_land);
@@ -326,6 +333,142 @@ public:
 		out["heights"] = hs;
 		out["meadows"] = ms;
 		out["river"] = rs;
+		return out;
+	}
+
+	// The regions world's band (land_blend.gd): `fields` the blend's slots
+	// (each region's field, then the soft twins), `slot_r` each one's region,
+	// `slot_part` its part (0 the whole weight, 1 the sharp share w*w of it, 2
+	// the soft rest); the map's weights at the lattice corners round the box
+	// (`corners`, cw corners a row from corner (ci0, cj0), `regions` a corner)
+	// and each lattice cell's one region or -1 (`cells`, cw-1 a row), the
+	// lattice `lattice` m. LandBlend `_at` and `_slot_weights` per point:
+	// `slots_at` fills `w` (float32, as the GDScript's arrays) and returns the
+	// point's one region, or -1 in the band.
+	struct Band {
+		std::vector<ZenScapeLandField *> fields;
+		std::vector<int> slot_r, slot_part;
+		const float *corners = nullptr;
+		const int32_t *cells = nullptr;
+		int regions = 0, ci0 = 0, cj0 = 0, cw = 0;
+		double lattice = 64.0;
+
+		bool read(const Array &fs, const PackedInt32Array &sr, const PackedByteArray &sp, int64_t n, const PackedFloat32Array &cs, const PackedInt32Array &cl, int64_t i0, int64_t j0, int64_t w, double size) {
+			for (int64_t s = 0; s < fs.size(); ++s) {
+				ZenScapeLandField *k = Object::cast_to<ZenScapeLandField>(fs[s]);
+				if (k == nullptr || s >= sr.size() || s >= sp.size()) return false;
+				fields.push_back(k);
+				slot_r.push_back(sr[s]);
+				slot_part.push_back(sp[s]);
+			}
+			regions = int(n);
+			ci0 = int(i0);
+			cj0 = int(j0);
+			cw = int(w);
+			lattice = size;
+			corners = cs.ptr();
+			cells = cl.ptr();
+			return !fields.empty() && cw >= 2;
+		}
+		int slots_at(double x, double z, float *w) const {
+			const double fx = x / lattice, fz = z / lattice;
+			const int64_t i = int64_t(std::floor(fx)), j = int64_t(std::floor(fz));
+			const int li = int(i) - ci0, lj = int(j) - cj0;
+			const int one = cells[lj * (cw - 1) + li];
+			if (one >= 0) return one;
+			const double tx = fx - double(i), tz = fz - double(j);
+			const float *a = corners + (lj * cw + li) * regions, *b = a + regions, *c = a + cw * regions, *d = c + regions;
+			for (size_t s = 0; s < fields.size(); ++s) {
+				const int r = slot_r[s];
+				const double ab = double(a[r]) + (double(b[r]) - double(a[r])) * tx;
+				const double cd = double(c[r]) + (double(d[r]) - double(c[r])) * tx;
+				double v = double(float(ab + (cd - ab) * tz));
+				if (slot_part[s] == 1) v *= v * v;
+				else if (slot_part[s] == 2) v *= 1.0 - v * v;
+				w[s] = float(v);
+			}
+			return -1;
+		}
+	};
+
+	// LandBlend `grid` (land_field.gd `_grid` for a box reaching the band) in
+	// one call: each point the one region's sample where it lies wholly in
+	// one, else every slot with weight there sampled and blended (heights,
+	// meadow, the river's distance clamped at 1000 m), as LandBlend `_mix`.
+	Dictionary blend_grid(const Array &fs, const PackedInt32Array &sr, const PackedByteArray &sp, int64_t regions, const PackedFloat32Array &cs, const PackedInt32Array &cl,
+			int64_t ci0, int64_t cj0, int64_t cw, double lattice, double x0, double z0, double step, int64_t nx, int64_t nz, int64_t pad) {
+		Dictionary out;
+		Band band;
+		if (!band.read(fs, sr, sp, regions, cs, cl, ci0, cj0, cw, lattice)) return out;
+		PackedFloat32Array hs, ms, rs;
+		hs.resize(nx * nz);
+		ms.resize(nx * nz);
+		rs.resize(nx * nz);
+		float *hp = hs.ptrw();
+		float *mp = ms.ptrw();
+		float *rp = rs.ptrw();
+		std::vector<float> w(band.fields.size());
+		for (int64_t j = 0; j < nz; ++j) {
+			for (int64_t i = 0; i < nx; ++i) {
+				const double x = x0 + double(i - pad) * step, z = z0 + double(j - pad) * step;
+				const int64_t v = j * nx + i;
+				const int one = band.slots_at(x, z, w.data());
+				if (one >= 0) {
+					zsland::LandField &k = band.fields[size_t(one)]->f;
+					const zsland::V2 got = k.sample(x, z);
+					hp[v] = got.x;
+					mp[v] = got.y;
+					rp[v] = float(k.last_river);
+					continue;
+				}
+				double h = 0.0, m = 0.0, river = 0.0;
+				for (size_t s = 0; s < band.fields.size(); ++s) {
+					const double wt = w[s];
+					if (wt <= 0.0) continue;
+					zsland::LandField &k = band.fields[s]->f;
+					const zsland::V2 got = k.sample(x, z);
+					h += wt * double(got.x);
+					m += wt * double(got.y);
+					river += wt * std::min(double(k.last_river), 1000.0);
+				}
+				hp[v] = float(h);
+				mp[v] = float(m);
+				rp[v] = float(river);
+			}
+		}
+		out["heights"] = hs;
+		out["meadows"] = ms;
+		out["river"] = rs;
+		return out;
+	}
+
+	// LandBlend `colour` at many points in one call (xs, zs, ys, ups, meadows
+	// alike long): the one region's colour, else each slot's by weight.
+	PackedColorArray blend_colours(const Array &fs, const PackedInt32Array &sr, const PackedByteArray &sp, int64_t regions, const PackedFloat32Array &cs, const PackedInt32Array &cl,
+			int64_t ci0, int64_t cj0, int64_t cw, double lattice, const PackedFloat64Array &xs, const PackedFloat64Array &zs, const PackedFloat32Array &ys, const PackedFloat32Array &ups, const PackedFloat32Array &meadows) {
+		PackedColorArray out;
+		Band band;
+		if (!band.read(fs, sr, sp, regions, cs, cl, ci0, cj0, cw, lattice)) return out;
+		const int64_t n = xs.size();
+		out.resize(n);
+		Color *op = out.ptrw();
+		std::vector<float> w(band.fields.size());
+		for (int64_t p = 0; p < n; ++p) {
+			const double x = xs[p], z = zs[p], y = ys[p], up = ups[p], meadow = meadows[p];
+			const int one = band.slots_at(x, z, w.data());
+			if (one >= 0) {
+				const zsland::C4 c = band.fields[size_t(one)]->f.colour(x, z, y, up, meadow);
+				op[p] = Color(c.r, c.g, c.b, c.a);
+				continue;
+			}
+			Color c(0, 0, 0, 0);
+			for (size_t s = 0; s < band.fields.size(); ++s) {
+				if (w[s] <= 0.0f) continue;
+				const zsland::C4 k = band.fields[s]->f.colour(x, z, y, up, meadow);
+				c += Color(k.r, k.g, k.b, k.a) * w[s];
+			}
+			op[p] = c;
+		}
 		return out;
 	}
 

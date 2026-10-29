@@ -1521,13 +1521,27 @@ static func _grow_native(native: Object, f: RefCounted, land_seed: int, key: Vec
 		var hs: PackedFloat32Array = got.heights
 		var ms: PackedFloat32Array = got.meadows
 		var tg := int(CELL/TINT_STEP)+1
-		var cols := PackedColorArray()
-		cols.resize(tg*tg)
+		var xs := PackedFloat64Array()
+		var zs := PackedFloat64Array()
+		var ys := PackedFloat32Array()
+		var ups := PackedFloat32Array()
+		var mds := PackedFloat32Array()
+		xs.resize(tg*tg)
+		zs.resize(tg*tg)
+		ys.resize(tg*tg)
+		ups.resize(tg*tg)
+		mds.resize(tg*tg)
 		for tj in tg:
 			for ti in tg:
 				var c := (int(tj*TINT_STEP)+PAD)*n+int(ti*TINT_STEP)+PAD
 				var normal := Vector3(hs[c-1]-hs[c+1],2.0,hs[c-n]-hs[c+n]).normalized()
-				cols[tj*tg+ti] = f.colour(x0+ti*TINT_STEP,z0+tj*TINT_STEP,hs[c],normal.y,ms[c])
+				var t := tj*tg+ti
+				xs[t] = x0+ti*TINT_STEP
+				zs[t] = z0+tj*TINT_STEP
+				ys[t] = hs[c]
+				ups[t] = normal.y
+				mds[t] = ms[c]
+		var cols: PackedColorArray = f.colours(xs,zs,ys,ups,mds)
 		cell.colours = cols
 		got.colours = cols
 	var r: Dictionary = native.grow_cell(cell)

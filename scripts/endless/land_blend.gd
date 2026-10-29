@@ -562,8 +562,12 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 ## blended per node: heights and meadow by weight, the river's distance by
 ## weight (clamped as `_mix` clamps it); a node wholly in one region is that
 ## region's own. The same numbers as sampling it point by point, in one
-## native call per field there.
+## native call (ZenScapeLandField `blend_grid`) where the library has it,
+## else one native grid per field there, blended here.
 func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:
+	if _native_band():
+		var bx := _box(x0-pad*step,z0-pad*step,x0+(nx-1-pad)*step,z0+(nz-1-pad)*step)
+		return _slots[0].blend_grid(_slots,_slot_r,_slot_part,_n,bx[0],bx[1],bx[2],bx[3],bx[4],LATTICE,x0,z0,step,nx,nz,pad)
 	var ns := _ns
 	var nn := nx*nz
 	var ws := PackedFloat32Array()
@@ -642,6 +646,48 @@ func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dict
 		ms[v] = m
 		rs[v] = rv
 	return {"heights":hs,"meadows":ms,"river":rs}
+
+## `colour` at many points (xs, zs, ys, ups, meadows alike long) in one
+## native call (ZenScapeLandField `blend_colours`) where the library has it.
+func colours(xs: PackedFloat64Array, zs: PackedFloat64Array, ys: PackedFloat32Array, ups: PackedFloat32Array, meadows: PackedFloat32Array) -> PackedColorArray:
+	if _native_band() and not xs.is_empty():
+		var x0 := xs[0]
+		var x1 := xs[0]
+		var z0 := zs[0]
+		var z1 := zs[0]
+		for p in xs.size():
+			x0 = minf(x0,xs[p])
+			x1 = maxf(x1,xs[p])
+			z0 = minf(z0,zs[p])
+			z1 = maxf(z1,zs[p])
+		var bx := _box(x0,z0,x1,z1)
+		return _slots[0].blend_colours(_slots,_slot_r,_slot_part,_n,bx[0],bx[1],bx[2],bx[3],bx[4],LATTICE,xs,zs,ys,ups,meadows)
+	var out := PackedColorArray()
+	out.resize(xs.size())
+	for p in xs.size(): out[p] = colour(xs[p],zs[p],ys[p],ups[p],meadows[p])
+	return out
+
+## Whether the band's grids and colours go native in one call: every field
+## native and the library new enough to blend them (`blend_grid`).
+func _native_band() -> bool:
+	return all_native() and _slots[0].has_method(&"blend_grid")
+
+## The weights a native blend reads for the box (x0, z0)..(x1, z1):
+## [corners (the map's weights at each lattice corner round it, row by row,
+## _n a corner), cells (each lattice cell's one region or -1), ci0, cj0, cw
+## (the first corner and corners a row)].
+func _box(x0: float, z0: float, x1: float, z1: float) -> Array:
+	var ci0 := floori(x0/LATTICE)
+	var cj0 := floori(z0/LATTICE)
+	var cw := floori(x1/LATTICE)-ci0+2
+	var ch := floori(z1/LATTICE)-cj0+2
+	var corners := PackedFloat32Array()
+	for j in ch:
+		for i in cw: corners.append_array(_corner(ci0+i,cj0+j))
+	var cells := PackedInt32Array()
+	for j in ch-1:
+		for i in cw-1: cells.append(_cell(ci0+i,cj0+j))
+	return [corners,cells,ci0,cj0,cw]
 
 ## Whether every region's field is native (the band's chunks blend their
 ## native builds; else they are sampled point by point).

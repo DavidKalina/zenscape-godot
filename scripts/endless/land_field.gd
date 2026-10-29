@@ -952,6 +952,15 @@ func snow_line() -> float:
 func colour(x: float, z: float, y: float, up: float, meadow: float) -> Color:
 	return _impl.colour(x,z,y,up,meadow)
 
+## `colour` at many points in one call (alike long arrays): in the regions
+## world's band, natively where the library has it (LandBlend `colours`).
+func colours(xs: PackedFloat64Array, zs: PackedFloat64Array, ys: PackedFloat32Array, ups: PackedFloat32Array, meadows: PackedFloat32Array) -> PackedColorArray:
+	if _blend: return _impl.colours(xs,zs,ys,ups,meadows)
+	var out := PackedColorArray()
+	out.resize(xs.size())
+	for p in xs.size(): out[p] = _impl.colour(xs[p],zs[p],ys[p],ups[p],meadows[p])
+	return out
+
 ## land_stream `_build`'s arrays in one call (native, or the same loops in
 ## GDScript): {verts, normals, colours, carved, river, heights} for
 ## the chunk at (x0, z0), `cells` quads of `step` m a side, its skirt dropped
