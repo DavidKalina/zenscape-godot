@@ -51,21 +51,19 @@ var _skim_for := 0.0
 var _skimmed := false
 var _flushed := -1
 var _try := 0.0
-var _aloft_now := 0.0
 
 func step(delta: float, game: Node, events: Dictionary) -> void:
 	landed = false
 	lifted = events.has("lifted")
 	var book: PilotBook = game.book
 	if book == null: return
-	if lifted: _aloft_now = 0.0
 	var hl: ManualLanding = game.hand_landing
 	var held: bool = game.stage != null and game.stage.holding()
 	var flying := hl.flying() and not held
 	var stopped := hl.phase == ManualLanding.STOPPED
 	if stopped and not _stopped and _aloft:
 		book.count("landings")
-		book.best("longest_flight",_aloft_now)
+		book.best("longest_flight",_aloft_of(book))
 		_aloft = false
 		landed = true
 	_stopped = stopped
@@ -84,7 +82,6 @@ func step(delta: float, game: Node, events: Dictionary) -> void:
 	var way := float((plane.velocity as Vector3).length())*delta
 	book.count("metres",way)
 	book.count("aloft",delta)
-	_aloft_now += delta
 	_grass(game,book,p,way)
 	_clouds(delta,game,book,p)
 	_skim(delta,game,book)
@@ -93,11 +90,12 @@ func step(delta: float, game: Node, events: Dictionary) -> void:
 	if _try <= 0.0:
 		_try = TRY_EVERY
 		book.best("highest",p.y-Field.SEA_Y)
-		book.best("longest_flight",_aloft_now)
+		book.best("longest_flight",_aloft_of(book))
 
-## Seconds aloft this flight so far.
-func aloft_now() -> float:
-	return _aloft_now
+## Seconds aloft this flight so far: the flight's own "aloft" tally, the
+## one the summary reads, so the record and the card always agree.
+static func _aloft_of(book: PilotBook) -> float:
+	return float((book.flight.get("tally",{}) as Dictionary).get("aloft",0.0))
 
 ## The way cut through the grass: the wash's strength at the plane's height
 ## over the land (as the main scene's `_react` reckons it).
