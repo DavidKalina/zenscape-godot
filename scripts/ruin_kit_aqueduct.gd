@@ -540,9 +540,8 @@ static func _build(seed_value: int, weathered: float, label: String, ground: Cal
 static func _finish(b: Build, deck: float, piers: int, arches: Array) -> Node3D:
 	# A bridge's span grows lean (fewer, bigger leaves and strands), its
 	# stone laid as ever (chipped, chamfered).
-	# Finished without its ground, so the native finish grows it (it reads no
-	# ground callable; the ground only stops a strand short, and the growth
-	# never reaches down there: tops under 0.75 grow none). Not culled: with
+	# Finished without its ground (the ground only stops a strand short, and
+	# the growth never reaches down there: tops under 0.75 grow none). Not culled: with
 	# no ground the finish takes y 0 for it, and the piers reach far under.
 	var land := b.terrain
 	if b.course > 1.0:

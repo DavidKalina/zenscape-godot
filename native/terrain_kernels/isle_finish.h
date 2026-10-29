@@ -9,6 +9,7 @@
 
 #include "isle_math.h"
 #include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/variant/callable.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/packed_color_array.hpp>
@@ -132,7 +133,10 @@ struct Finish {
 	std::unordered_map<GridKey, std::vector<int>, GridHash> grid;
 	bool gridded = false;
 
-	double floor_at(double, double) const { return 0.0; }
+	// The Build's `terrain` (the ground under the piece, in its frame), or
+	// none (flat, y 0): Build `floor_at`.
+	Callable terrain;
+	double floor_at(double x, double z) const { return terrain.is_valid() ? double(terrain.call(x, z)) : 0.0; }
 
 	// --- Reading GDScript's state ---------------------------------------------------
 	static bool is_string(const Variant &v) { return v.get_type() == Variant::STRING || v.get_type() == Variant::STRING_NAME; }
@@ -154,6 +158,7 @@ struct Finish {
 		age = in["age"];
 		detail = in["detail"];
 		ground = in["ground"];
+		terrain = in.get("terrain", Callable());
 		lean = in["lean"];
 		vines = in["vines"];
 		cull = in["cull"];

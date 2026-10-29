@@ -3210,7 +3210,7 @@ class Build extends RefCounted:
 	## false (nothing done) without it, or for what it does not draw (a ground
 	## callable, shelter, a bend, a carved look), which `finish` then does here.
 	func _finish_native() -> bool:
-		if terrain.is_valid() or shelter.is_valid() or path != null: return false
+		if shelter.is_valid() or path != null: return false
 		var kernel: Object = NativeIsleKernels.get_kernel()
 		if kernel == null: return false
 		var build := _native_constants().duplicate()
@@ -3226,6 +3226,7 @@ class Build extends RefCounted:
 			build.ivy_strands = IVY_STRANDS*ivy_gain
 			build.ivy_length = IVY_LENGTH*ivy_gain
 		build.ground = ground
+		build.terrain = terrain
 		build.lean = lean
 		build.vines = RuinGrowth.vines
 		build.cull = cull
