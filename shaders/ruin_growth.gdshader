@@ -13,6 +13,9 @@ render_mode cull_disabled, diffuse_lambert, specular_disabled;
 //               it, negative, for an upright tuft; 0 pinned), y: the strand's
 //               length (m), 0 for what does not sway
 //   UV2      x: its clump's phase (0..1), y: how much it flutters (0..1)
+//   CUSTOM1  a leaf card's place on its card (scripts/ruin_growth.gd
+//               `_leaf_card`): x u + 2 + 2 * its atlas cell, y v down from
+//               the stalk; 0 off a card
 //   CUSTOM0  xy: the face its strand lies on (x, z in the mesh's frame; 0
 //               for a strand hanging free), z: how free it hangs (0 pressed
 //               to stone, 1 in the air), w: its share of the root-to-tip
@@ -56,7 +59,18 @@ uniform float soft = 0.6;
 uniform float shelter_fill = 4.5;
 uniform vec3 shelter_tint : source_color = vec3(1.0, 0.82, 0.6);
 
+// The leaf cards' atlas (art/blender/ivy_cards/): R the light (0.5 the
+// mean), B 1 on a leaf, 0 on a stem, A coverage; four clusters, 2x2.
+uniform sampler2D ivy_cards : filter_linear_mipmap_anisotropic, repeat_disable;
+uniform float card_cut = 0.45;
+uniform vec3 card_stem = vec3(0.42, 0.36, 0.3);
+uniform float card_floor = 0.4;
+// A card's sky fill over a leaf's: a clump passes the light round inside it,
+// so one in shade reads as leaves, not a dark lump.
+uniform float card_fill = 1.9;
+
 varying vec3 mass_normal;
+varying vec2 card;
 varying float along;
 varying float sheen;
 
@@ -68,6 +82,7 @@ void vertex() {
 	vec2 out_face = (MODEL_MATRIX * vec4(CUSTOM0.x, 0.0, CUSTOM0.y, 0.0)).xz;
 	float free_share = CUSTOM0.z;
 	along = CUSTOM0.w;
+	card = CUSTOM1.xy;
 	sheen = 0.0;
 	vec3 moved = vec3(0.0);
 	if (span > 0.01 && motion > 0.0) {
@@ -157,14 +172,32 @@ void vertex() {
 
 void fragment() {
 	vec3 base = COLOR.rgb * mix(root_shade, tip_lift, pow(clamp(along, 0.0, 1.0), 0.8));
+	float fill_here = card.x >= 1.5 ? fill * card_fill : fill;
 	// Bowed by a gust, its leaves turn their pale backs.
 	base *= 1.0 + 0.22 * sheen;
+	ALPHA = 1.0;
+	ALPHA_SCISSOR_THRESHOLD = card_cut;
+	if (card.x >= 1.5) {
+		float k = card.x - 2.0;
+		float cell = floor(clamp(k, 0.0, 7.99) * 0.5);
+		vec2 uv = clamp(vec2(k - cell * 2.0, card.y), 0.004, 0.996);
+		vec2 at = (vec2(mod(cell, 2.0), floor(cell * 0.5)) + uv) * 0.5;
+		vec4 t = texture(ivy_cards, at);
+		// The coverage held up as the mips blur it, so a far card keeps its
+		// leaves instead of thinning to nothing.
+		vec2 px = at * vec2(textureSize(ivy_cards, 0));
+		float lod = max(0.0, 0.5 * log2(max(dot(dFdx(px), dFdx(px)), dot(dFdy(px), dFdy(px)))));
+		ALPHA = clamp(t.a * (1.0 + 0.3 * lod), 0.0, 1.0);
+		// The leaves' own light (the bake's), its spread narrowed so a card in
+		// shade keeps its leaves instead of a dark lump.
+		base *= mix(card_stem, vec3(card_floor + (2.0 - 2.0 * card_floor) * t.r), t.b);
+	}
 	ALBEDO = base;
 	ROUGHNESS = 0.9;
 	NORMAL = normalize((VIEW_MATRIX * vec4(mass_normal, 0.0)).xyz);
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, mass_normal.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float edge = pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 3.0);
-	EMISSION = base * hemi * fill + base * zs_hemi_sky * zs_hemi_energy * edge * rim;
+	EMISSION = base * hemi * fill_here + base * zs_hemi_sky * zs_hemi_energy * edge * rim;
 	float shelter = 1.0 - COLOR.a;
 	EMISSION += base * mix(zs_hemi_sky, shelter_tint, 0.65) * zs_hemi_energy / PI * shelter_fill * shelter;
 }
