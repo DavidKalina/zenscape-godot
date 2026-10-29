@@ -184,17 +184,84 @@ struct CandOrder {
 	bool operator()(const Cand &a, const Cand &b) const { return a.rank > b.rank; }
 };
 
+// The land a plan reads (LandField `sample` and `shape`): one native field,
+// or the regions' band (ZenScapeLandBand) as LandBlend reads it: the one
+// region's field in a pure lattice cell, else each slot sampled and blended
+// by weight, the valley's from the heaviest. `h`, `m`: the last sample's
+// height and meadow unrounded (the blend's are doubles).
+struct Land {
+	zsland::LandField *one = nullptr;
+	const ZenScapeLandField::Band *band = nullptr;
+	std::vector<float> w;
+	double h = 0.0, m = 0.0;
+	double last_valley = DINF, last_half = 0.0, last_side = 0.0, last_river = DINF;
+
+	// `shape`: as LandField.shape (a field's own reset first; the blend's
+	// slots are sampled as they stand).
+	zsland::V2 sample(double x, double z, bool shape) {
+		zsland::LandField *k = one;
+		if (band != nullptr) {
+			if (!band->covers(x, z)) {
+				const double lo = band->lattice * 0.5;
+				const double hix = (double(band->ci0 + band->cw - 1) - 0.5) * band->lattice, hiz = (double(band->cj0 + band->ch - 1) - 0.5) * band->lattice;
+				const double cx = std::min(std::max(x, double(band->ci0) * band->lattice + lo), hix);
+				const double cz = std::min(std::max(z, double(band->cj0) * band->lattice + lo), hiz);
+				const int r = band->slots_at(cx, cz, w.data());
+				if (r >= 0) k = &band->fields[size_t(r)]->land();
+			} else {
+				const int r = band->slots_at(x, z, w.data());
+				if (r >= 0) k = &band->fields[size_t(r)]->land();
+			}
+		}
+		if (k != nullptr) {
+			if (shape) k->shape_reset();
+			const zsland::V2 s = k->sample(x, z);
+			h = double(s.x);
+			m = double(s.y);
+			last_valley = k->last_valley;
+			last_half = k->last_half;
+			last_side = k->last_side;
+			last_river = k->last_river;
+			return s;
+		}
+		double hh = 0.0, mm = 0.0, river = 0.0, best = -1.0;
+		zsland::LandField *kid = nullptr;
+		for (size_t s = 0; s < band->fields.size(); ++s) {
+			const double wt = double(w[s]);
+			if (wt <= 0.0) continue;
+			zsland::LandField &f = band->fields[s]->land();
+			const zsland::V2 got = f.sample(x, z);
+			if (wt > best) {
+				best = wt;
+				kid = &f;
+			}
+			hh += wt * double(got.x);
+			mm += wt * double(got.y);
+			river += wt * std::min(f.last_river, 1000.0);
+		}
+		h = hh;
+		m = mm;
+		last_river = river;
+		if (kid != nullptr) {
+			last_valley = kid->last_valley;
+			last_half = kid->last_half;
+			last_side = kid->last_side;
+		}
+		return zsland::V2(hh, mm);
+	}
+};
+
 // One plan's work (a TreePlan made for one task): the field, the ponds, the
 // flats' caches and `last_wild`.
 struct Planner {
 	const Config &cfg;
-	zsland::LandField &f;
+	Land &f;
 	std::vector<Pond> ponds;
 	std::unordered_map<int64_t, bool> flats;
 	std::unordered_map<int64_t, double> heights;
 	double last_wild = 0.0;
 
-	Planner(const Config &c, zsland::LandField &field) :
+	Planner(const Config &c, Land &field) :
 			cfg(c), f(field) {}
 
 	static int64_t key2(int64_t i, int64_t j) { return (i << 32) ^ (j & 0xffffffffLL); }
@@ -209,7 +276,7 @@ struct Planner {
 
 	// LandField.height: the native field's, or its sample with the pond cut in.
 	double height(double x, double z) {
-		const zsland::V2 s = f.sample(x, z);
+		const zsland::V2 s = f.sample(x, z, false);
 		float h = s.x;
 		const Pond *p = pond_for(x, z);
 		if (p != nullptr) {
@@ -221,11 +288,10 @@ struct Planner {
 
 	// LandField.shape
 	Shape shape(double x, double z) {
-		f.shape_reset();
-		const zsland::V2 s = f.sample(x, z);
+		f.sample(x, z, true);
 		Shape out;
-		out.height = double(s.x);
-		out.meadow = double(s.y);
+		out.height = f.h;
+		out.meadow = f.m;
 		out.valley = f.last_valley;
 		out.half = f.last_half;
 		out.side = f.last_side;
@@ -694,9 +760,19 @@ class ZenScapeTrees : public RefCounted {
 		return out;
 	}
 
-	static zsland::LandField *land_of(Object *o) {
+	// The land `o` is: a native field (ZenScapeLandField) or a band of them
+	// (ZenScapeLandBand); false for neither.
+	static bool land_of(Object *o, zstrees::Land &out) {
 		ZenScapeLandField *f = Object::cast_to<ZenScapeLandField>(o);
-		return f != nullptr ? &f->land() : nullptr;
+		if (f != nullptr) {
+			out.one = &f->land();
+			return true;
+		}
+		ZenScapeLandBand *b = Object::cast_to<ZenScapeLandBand>(o);
+		if (b == nullptr || b->band() == nullptr) return false;
+		out.band = b->band();
+		out.w.assign(out.band->fields.size(), 0.0f);
+		return true;
 	}
 
 protected:
@@ -735,25 +811,25 @@ public:
 	}
 
 	PackedFloat32Array area(Object *field, double x0, double z0, double size, const PackedFloat64Array &arches, const Array &ponds) {
-		zsland::LandField *f = land_of(field);
-		ERR_FAIL_NULL_V(f, PackedFloat32Array());
-		zstrees::Planner p(cfg, *f);
+		zstrees::Land f;
+		ERR_FAIL_COND_V(!land_of(field, f), PackedFloat32Array());
+		zstrees::Planner p(cfg, f);
 		p.ponds = ponds_of(ponds);
 		return p.area(x0, z0, size, arches.ptr(), arches.size() / 6);
 	}
 
 	Dictionary far_cell(Object *field, int64_t cx, int64_t cz, const PackedFloat64Array &arches, const Array &ponds) {
-		zsland::LandField *f = land_of(field);
-		ERR_FAIL_NULL_V(f, Dictionary());
-		zstrees::Planner p(cfg, *f);
+		zstrees::Land f;
+		ERR_FAIL_COND_V(!land_of(field, f), Dictionary());
+		zstrees::Planner p(cfg, f);
 		p.ponds = ponds_of(ponds);
 		return p.far_cell(cx, cz, arches.ptr(), arches.size() / 6);
 	}
 
 	Dictionary floor_grid(Object *field, double x0, double z0, double size, double step, const Array &ponds) {
-		zsland::LandField *f = land_of(field);
-		ERR_FAIL_NULL_V(f, Dictionary());
-		zstrees::Planner p(cfg, *f);
+		zstrees::Land f;
+		ERR_FAIL_COND_V(!land_of(field, f), Dictionary());
+		zstrees::Planner p(cfg, f);
 		p.ponds = ponds_of(ponds);
 		return p.floor_grid(x0, z0, size, step);
 	}
@@ -762,9 +838,9 @@ public:
 	// trees), near (variant -> [trunks, crowns, count]), mid, tiles, floor}.
 	Dictionary block(Object *field, const Vector2i &key, const PackedFloat64Array &arches, const Array &ponds, int64_t rng_seed, bool with_floor) {
 		using namespace zstrees;
-		zsland::LandField *f = land_of(field);
-		ERR_FAIL_NULL_V(f, Dictionary());
-		Planner p(cfg, *f);
+		zstrees::Land f;
+		ERR_FAIL_COND_V(!land_of(field, f), Dictionary());
+		Planner p(cfg, f);
 		p.ponds = ponds_of(ponds);
 		const PackedFloat32Array all = p.area(double(key.x) * BLOCK, double(key.y) * BLOCK, BLOCK, arches.ptr(), arches.size() / 6);
 		const int64_t n = all.size() / STRIDE;
@@ -840,9 +916,9 @@ public:
 	// land_trees.gd `_build_far`: {buf, n, floor}.
 	Dictionary far(Object *field, const Vector2i &key, const PackedFloat64Array &arches, const Array &ponds, bool with_floor) {
 		using namespace zstrees;
-		zsland::LandField *f = land_of(field);
-		ERR_FAIL_NULL_V(f, Dictionary());
-		Planner p(cfg, *f);
+		zstrees::Land f;
+		ERR_FAIL_COND_V(!land_of(field, f), Dictionary());
+		Planner p(cfg, f);
 		p.ponds = ponds_of(ponds);
 		const Dictionary got = p.far_cell(key.x, key.y, arches.ptr(), arches.size() / 6);
 		const PackedFloat32Array trees = got["trees"];

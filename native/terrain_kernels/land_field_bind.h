@@ -62,6 +62,7 @@ protected:
 		ClassDB::bind_method(D_METHOD("grid", "x0", "z0", "step", "nx", "nz", "pad"), &ZenScapeLandField::grid);
 		ClassDB::bind_method(D_METHOD("blend_grid", "fields", "slot_r", "slot_part", "regions", "corners", "cells", "ci0", "cj0", "cw", "lattice", "x0", "z0", "step", "nx", "nz", "pad"), &ZenScapeLandField::blend_grid);
 		ClassDB::bind_method(D_METHOD("blend_chunk", "fields", "slot_r", "slot_part", "regions", "corners", "cells", "ci0", "cj0", "cw", "lattice", "x0", "z0", "step", "cells_n", "skirt_drop", "flow_max"), &ZenScapeLandField::blend_chunk);
+		ClassDB::bind_method(D_METHOD("blend_mix", "fields", "slot_r", "slot_part", "weights", "x", "z"), &ZenScapeLandField::blend_mix);
 		ClassDB::bind_method(D_METHOD("blend_colours", "fields", "slot_r", "slot_part", "regions", "corners", "cells", "ci0", "cj0", "cw", "lattice", "xs", "zs", "ys", "ups", "meadows"), &ZenScapeLandField::blend_colours);
 		ClassDB::bind_method(D_METHOD("get_seed"), &ZenScapeLandField::get_seed);
 		ADD_PROPERTY(PropertyInfo(Variant::INT, "seed"), "", "get_seed");
@@ -351,7 +352,7 @@ public:
 		std::vector<int> slot_r, slot_part;
 		const float *corners = nullptr;
 		const int32_t *cells = nullptr;
-		int regions = 0, ci0 = 0, cj0 = 0, cw = 0;
+		int regions = 0, ci0 = 0, cj0 = 0, cw = 0, ch = 0;
 		double lattice = 64.0;
 
 		bool read(const Array &fs, const PackedInt32Array &sr, const PackedByteArray &sp, int64_t n, const PackedFloat32Array &cs, const PackedInt32Array &cl, int64_t i0, int64_t j0, int64_t w, double size) {
@@ -369,6 +370,7 @@ public:
 			lattice = size;
 			corners = cs.ptr();
 			cells = cl.ptr();
+			if (cw >= 2) ch = int(cl.size() / (cw - 1)) + 1;
 			return !fields.empty() && cw >= 2;
 		}
 		int slots_at(double x, double z, float *w) const {
@@ -389,6 +391,11 @@ public:
 				w[s] = float(v);
 			}
 			return -1;
+		}
+		// Whether (x, z) lies in the box the corners cover.
+		bool covers(double x, double z) const {
+			const int li = int(int64_t(std::floor(x / lattice))) - ci0, lj = int(int64_t(std::floor(z / lattice))) - cj0;
+			return li >= 0 && lj >= 0 && li < cw - 1 && lj < ch - 1;
 		}
 		// The slot weights wholly in region `one` (its whole weight, or its
 		// sharp share 1 and its twin's rest 0), as `_slot_weights` of a one-hot.
@@ -596,6 +603,75 @@ public:
 		return out;
 	}
 
+	// LandBlend `_mix` at one point in one call: each slot with weight there
+	// (the slot weights from the regions' `weights`, as `_slot_weights`)
+	// sampled and blended, as the GDScript line for line. Out: [height,
+	// meadow, cavity, ridge, mountain, inland, river, river_r, river_w, flow x,
+	// flow y, calm, river_y, drawn, the heaviest slot].
+	PackedFloat64Array blend_mix(const Array &fs, const PackedInt32Array &sr, const PackedByteArray &sp, const PackedFloat32Array &weights, double x, double z) {
+		PackedFloat64Array out;
+		out.resize(15);
+		double *o = out.ptrw();
+		const int64_t ns = fs.size();
+		const int32_t *srp = sr.ptr();
+		const uint8_t *spp = sp.ptr();
+		const float *wp = weights.ptr();
+		double h = 0.0, m = 0.0, cavity = 0.0, ridge = 0.0, mountain = 0.0, inland = 0.0;
+		double river = 0.0, river_r = 0.0, river_w = 0.0, calm = 0.0, ry = 0.0, dr = 0.0, wet = 0.0, best = -1.0;
+		float flx = 0.0f, flz = 0.0f;
+		int64_t kid = 0;
+		for (int64_t s = 0; s < ns; ++s) {
+			double v = double(wp[srp[s]]);
+			if (spp[s] == 1) v *= v * v;
+			else if (spp[s] == 2) v *= 1.0 - v * v;
+			const float wf = float(v);
+			const double wt = double(wf);
+			if (wt <= 0.0) continue;
+			ZenScapeLandField *kf = Object::cast_to<ZenScapeLandField>(fs[s]);
+			if (kf == nullptr) continue;
+			zsland::LandField &k = kf->f;
+			const zsland::V2 got = k.sample(x, z);
+			if (wt > best) {
+				best = wt;
+				kid = s;
+			}
+			h += wt * double(got.x);
+			m += wt * double(got.y);
+			cavity += wt * k.last_cavity;
+			ridge += wt * k.last_ridge;
+			mountain += wt * k.last_mountain;
+			inland += wt * k.last_inland;
+			river += wt * std::min(k.last_river, 1000.0);
+			river_r += wt * zsland::clampf(k.last_river_r, -1000.0, 1000.0);
+			river_w += wt * k.last_river_w;
+			flx += wf * k.last_river_flow.x;
+			flz += wf * k.last_river_flow.y;
+			calm += wt * k.calm_here();
+			const double y = k.last_river_y;
+			if (y > -INFINITY) {
+				ry += wt * y;
+				dr += wt * k.river_drawn();
+				wet += wt;
+			}
+		}
+		o[0] = h;
+		o[1] = m;
+		o[2] = cavity;
+		o[3] = ridge;
+		o[4] = mountain;
+		o[5] = inland;
+		o[6] = river;
+		o[7] = river_r;
+		o[8] = river_w;
+		o[9] = double(flx);
+		o[10] = double(flz);
+		o[11] = calm;
+		o[12] = wet > 0.0 ? ry / wet : -INFINITY;
+		o[13] = wet > 0.0 ? dr / wet : -INFINITY;
+		o[14] = double(kid);
+		return out;
+	}
+
 	// LandBlend `colour` at many points in one call (xs, zs, ys, ups, meadows
 	// alike long): the one region's colour, else each slot's by weight.
 	PackedColorArray blend_colours(const Array &fs, const PackedInt32Array &sr, const PackedByteArray &sp, int64_t regions, const PackedFloat32Array &cs, const PackedInt32Array &cl,
@@ -662,4 +738,37 @@ public:
 	ZSL_OUT(last_river_r)
 	ZSL_OUT(last_river_w)
 	ZSL_OUT(last_river_y)
+};
+
+// The regions world's band over a box (LandBlend `band_in`), held for the
+// kernels that read the land point by point (ZenScapeTrees): the slots and
+// the lattice round the box, as `Band`. Points outside the box read the
+// nearest lattice cell inside it.
+class ZenScapeLandBand : public RefCounted {
+	GDCLASS(ZenScapeLandBand, RefCounted)
+
+	Array fields;
+	PackedInt32Array slot_r, cells;
+	PackedByteArray slot_part;
+	PackedFloat32Array corners;
+	ZenScapeLandField::Band b;
+	bool ok = false;
+
+protected:
+	static void _bind_methods() {
+		ClassDB::bind_method(D_METHOD("setup", "fields", "slot_r", "slot_part", "regions", "corners", "cells", "ci0", "cj0", "cw", "lattice"), &ZenScapeLandBand::setup);
+	}
+
+public:
+	bool setup(const Array &fs, const PackedInt32Array &sr, const PackedByteArray &sp, int64_t regions, const PackedFloat32Array &cs, const PackedInt32Array &cl, int64_t ci0, int64_t cj0, int64_t cw, double lattice) {
+		fields = fs;
+		slot_r = sr;
+		slot_part = sp;
+		corners = cs;
+		cells = cl;
+		b = ZenScapeLandField::Band();
+		ok = b.read(fields, slot_r, slot_part, regions, corners, cells, ci0, cj0, cw, lattice);
+		return ok;
+	}
+	const ZenScapeLandField::Band *band() const { return ok ? &b : nullptr; }
 };

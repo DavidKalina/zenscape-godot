@@ -868,12 +868,29 @@ func _build_mixed(kind: String, key: Vector2i, field: RefCounted) -> Dictionary:
 	var all := PackedFloat32Array()
 	var grid := {}
 	var far := {}
+	# Each region's plan natively over the band (ZenScapeLandBand) where the
+	# library has it, else in GDScript over the blend.
+	var pad := 0.0
+	for r: int in meet: pad = maxf(pad,float(_plan_for(r).sample_pad()))
+	var band: Object = field.native_band_in(x0-pad-BAND_MARGIN,z0-pad-BAND_MARGIN,x0+size+pad+BAND_MARGIN,z0+size+pad+BAND_MARGIN) if not mixed_in_gdscript else null
+	var arches := PackedFloat64Array()
+	var ponds: Array = []
+	if band != null: ponds = field.ponds_in(x0-pad,z0-pad,x0+size+pad,z0+size+pad)
 	for r: int in meet:
 		if float(regional[r].share) <= 0.0: continue
 		var plan := _plan_for(r)
 		var trees: PackedFloat32Array
 		var g: Dictionary
-		if kind == "b":
+		var nat: Object = regional[r].native if band != null else null
+		if nat != null:
+			arches = plan.arches_flat(field,x0,z0,x0+size,z0+size)
+			if kind == "b":
+				trees = nat.area(band,x0,z0,BLOCK,arches,ponds)
+				g = nat.floor_grid(band,x0,z0,BLOCK,FLOOR_STEP,ponds) if _floor else {}
+			else:
+				g = nat.far_cell(band,key.x,key.y,arches,ponds)
+				trees = g.trees
+		elif kind == "b":
 			trees = plan.area(field,x0,z0,BLOCK)
 			g = plan.floor_grid(field,x0,z0,BLOCK,FLOOR_STEP) if _floor else {}
 		else:
@@ -893,6 +910,13 @@ func _build_mixed(kind: String, key: Vector2i, field: RefCounted) -> Dictionary:
 		far.w = grid.w
 	far.trees = all
 	return _far_from(key,far,began)
+
+## How far past a band block's sampled box its lattice reaches (m): the
+## plan reads a little past its pad.
+const BAND_MARGIN := 64.0
+## The band's blocks planned in GDScript even where the library could (a
+## check comparing the two sets it).
+static var mixed_in_gdscript := false
 
 ## The region the dither picks for a band tree at (x, z).
 func _dither_pick(field: RefCounted, x: float, z: float) -> int:

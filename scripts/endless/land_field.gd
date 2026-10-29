@@ -678,6 +678,12 @@ func region_weights(x: float, z: float) -> PackedFloat32Array:
 func region_in(x0: float, z0: float, x1: float, z1: float) -> int:
 	return _impl.one_in(x0,z0,x1,z1) if _blend else 0
 
+## The native band over the box (x0, z0)..(x1, z1) (ZenScapeLandBand, which
+## ZenScapeTrees reads as it would a field), or null: a one-region world, or
+## the band blended in GDScript.
+func native_band_in(x0: float, z0: float, x1: float, z1: float) -> Object:
+	return _impl.band_in(x0,z0,x1,z1) if _blend else null
+
 ## Region `r`'s own native field (ZenScapeLandField), or null (GDScript).
 func region_impl(r: int) -> Object:
 	if not _blend: return native_impl()

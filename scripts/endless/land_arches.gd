@@ -189,16 +189,22 @@ func _exit_tree() -> void:
 	_done.clear()
 	_lock.unlock()
 
-## Builds the cells within NEAR of `at` now, on this thread.
+## Builds the cells within NEAR of `at` now, each on a worker (a long
+## aqueduct's cell takes seconds), waiting for them all.
 func prime(at: Vector3) -> void:
 	if density <= 0.0: return
 	_eye = at
-	var field := Field.new(seed)
+	var ids: Array = []
 	for key: Vector2i in _wanted(at,NEAR):
-		if _cells.has(key): continue
-		_done.append(_build_cell(key,field))
+		if _cells.has(key) or _pending.has(key): continue
+		ids.append(WorkerThreadPool.add_task(_task.bind(key),true))
+	for id: int in ids: WorkerThreadPool.wait_for_task_completion(id)
 	_planned_at = Vector3.INF
-	while not _done.is_empty(): _commit_one(_done.pop_back())
+	_lock.lock()
+	var done := _done.duplicate()
+	_done.clear()
+	_lock.unlock()
+	while not done.is_empty(): _commit_one(done.pop_back())
 
 func step(at: Vector3) -> void:
 	if density <= 0.0: return

@@ -337,8 +337,29 @@ func site_ok(layer: StringName, x0: float, z0: float, x1: float, z1: float) -> b
 
 # --- The field ----------------------------------------------------------------------
 
+## Whether `_mix` blends in the library (`blend_mix`), once known (-1 not yet).
+var _mix_on := -1
+
 ## Every region in the band at (x, z) sampled and blended by `_w`.
 func _mix(x: float, z: float) -> void:
+	if _mix_on < 0: _mix_on = 1 if _native_band() and _slots[0].has_method(&"blend_mix") else 0
+	if _mix_on == 1:
+		var o: PackedFloat64Array = _slots[0].blend_mix(_slots,_slot_r,_slot_part,_w,x,z)
+		_h = o[0]
+		_m = o[1]
+		_cavity = o[2]
+		_ridge = o[3]
+		_mountain = o[4]
+		_inland = o[5]
+		_river = o[6]
+		_river_r = o[7]
+		_river_w = o[8]
+		_flow = Vector2(o[9],o[10])
+		_calm = o[11]
+		_river_y = o[12]
+		_drawn = o[13]
+		_kid = _slots[int(o[14])]
+		return
 	_h = 0.0
 	_m = 0.0
 	_cavity = 0.0
@@ -699,6 +720,15 @@ func _box(x0: float, z0: float, x1: float, z1: float, k := 0) -> Array:
 	for j in ch-1:
 		for i in cw-1: cells.append(_cell(ci0+i,cj0+j,k))
 	return [corners,cells,ci0,cj0,cw]
+
+## The band over the box (x0, z0)..(x1, z1) for the native kernels that read
+## the land point by point (ZenScapeLandBand: the slots and the lattice round
+## it, as `_box`), or null where the band blends in GDScript.
+func band_in(x0: float, z0: float, x1: float, z1: float) -> Object:
+	if not _native_band() or not ClassDB.class_exists(&"ZenScapeLandBand"): return null
+	var bx := _box(x0,z0,x1,z1)
+	var band: Object = ClassDB.instantiate(&"ZenScapeLandBand")
+	return band if band.setup(_slots,_slot_r,_slot_part,_n,bx[0],bx[1],bx[2],bx[3],bx[4],LATTICE) else null
 
 ## Whether every region's field is native (the band's chunks blend their
 ## native builds; else they are sampled point by point).
