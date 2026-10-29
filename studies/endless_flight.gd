@@ -1393,6 +1393,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _exit_tree() -> void:
+	tallies.finish()
 	if book != null: book.save()
 	if get_tree().root.window_input.is_connected(Pad.note): get_tree().root.window_input.disconnect(Pad.note)
 	var rr := preload("res://scripts/render_resolution.gd")

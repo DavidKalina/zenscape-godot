@@ -38,6 +38,13 @@ const CLOUD_OUT := 1.5
 const SKIM_HOLD := 0.4
 ## A record's try at most this often (s) where it grows by the frame.
 const TRY_EVERY := 0.5
+## The clouds near the plane: a list rebuilt at most every CLOUDS_EVERY s on a
+## worker thread (EndlessClouds `clouds_near`, 15-25 ms a build), reaching
+## CLOUDS_MARGIN m past what a depth test needs; the plane tested against
+## it every CLOUD_TEST s. Asked whole every frame it cost the frame rate.
+const CLOUDS_EVERY := 1.0
+const CLOUDS_MARGIN := 250.0
+const CLOUD_TEST := 0.1
 
 ## True the frame the plane came to rest from the air (the summary's cue).
 var landed := false
@@ -51,6 +58,11 @@ var _skim_for := 0.0
 var _skimmed := false
 var _flushed := -1
 var _try := 0.0
+var _near_clouds: Variant = null
+var _next_clouds: Array = []
+var _clouds_task := -1
+var _clouds_age := 99.0
+var _cloud_test := 0.0
 
 func step(delta: float, game: Node, events: Dictionary) -> void:
 	landed = false
@@ -108,10 +120,30 @@ func _grass(game: Node, book: PilotBook, p: Vector3, way: float) -> void:
 
 func _clouds(delta: float, game: Node, book: PilotBook, p: Vector3) -> void:
 	var clouds: Variant = game.look.clouds if game.look != null else null
-	var inside: bool = clouds != null and bool(clouds.enabled) and bool(clouds.in_cloud(p))
+	if clouds == null or not bool(clouds.enabled): return
+	_clouds_age += delta
+	if _clouds_task >= 0 and WorkerThreadPool.is_task_completed(_clouds_task):
+		WorkerThreadPool.wait_for_task_completion(_clouds_task)
+		_clouds_task = -1
+		_near_clouds = _next_clouds
+	if _clouds_task < 0 and _clouds_age >= CLOUDS_EVERY:
+		_clouds_age = 0.0
+		var at := Vector2(p.x,p.z)
+		_clouds_task = WorkerThreadPool.add_task(func() -> void: _next_clouds = clouds.clouds_near(at,CLOUDS_MARGIN))
+	_cloud_test -= delta
+	if _near_clouds == null or _cloud_test > 0.0: return
+	var since := CLOUD_TEST-_cloud_test
+	_cloud_test = CLOUD_TEST
+	var inside := float(clouds.cloud_depth(p,_near_clouds)) > 0.0
 	if inside and not _in_cloud and _out_for >= CLOUD_OUT: book.count("clouds")
-	_out_for = 0.0 if inside else _out_for+delta
+	_out_for = 0.0 if inside else _out_for+since
 	_in_cloud = inside
+
+## Waits out a cloud list being built (before the clouds go: the game's
+## `_exit_tree`).
+func finish() -> void:
+	if _clouds_task >= 0: WorkerThreadPool.wait_for_task_completion(_clouds_task)
+	_clouds_task = -1
 
 ## Low and fast over the sea or a river: the near misses' spray test.
 func _skim(delta: float, game: Node, book: PilotBook) -> void:

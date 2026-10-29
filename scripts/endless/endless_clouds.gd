@@ -881,14 +881,22 @@ func _clouds_in_layer(at: Vector2, reach: float, layer_low: bool, out: Array) ->
 				k["top"] = Field.SEA_Y+float(k.b0)+float(k.H)*(1.2+LIFT)
 				out.append(k)
 
+## The clouds `cloud_depth` weighs at `xz`, with `margin` m more reach (a
+## list kept a while as the plane moves). Slow (15-25 ms): pure reads, so
+## a worker thread may build it (PilotTallies does).
+func clouds_near(xz: Vector2, margin := 0.0) -> Array:
+	return clouds_in(xz,(BIG*1.6 if organic else BIG*0.6)+margin)
+
 ## How far world point `p` is into a cloud's smooth body (m, up or down
 ## to its crown or its base; no billows, before the meadows lift the low
-## ones), or a negative number outside every cloud.
-func cloud_depth(p: Vector3) -> float:
+## ones), or a negative number outside every cloud. `near`: a list from
+## `clouds_near` to weigh instead of building one (cheap).
+func cloud_depth(p: Vector3, near: Variant = null) -> float:
 	var best := -1e9
 	var xz := Vector2(p.x,p.z)
+	var list: Array = clouds_near(xz) if near == null else near
 	if organic:
-		for c: Dictionary in clouds_in(xz,BIG*1.6):
+		for c: Dictionary in list:
 			var top := -1e9
 			var bottom := 1e9
 			for i in int(c.n):
@@ -898,7 +906,7 @@ func cloud_depth(p: Vector3) -> float:
 				bottom = minf(bottom,b.y)
 			if top > -1e3: best = maxf(best,minf(Field.SEA_Y+top-p.y,p.y-Field.SEA_Y-bottom))
 		return best
-	for c: Dictionary in clouds_in(xz,BIG*0.6):
+	for c: Dictionary in list:
 		var top := -1e9
 		var bottom := 1e9
 		for b: Array in c.bubbles:
