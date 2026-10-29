@@ -16,6 +16,8 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 // The weathered basalt, the Olmec's (shaders/kit_weather.gdshaderinc; off
 // at `stone_weather` 0, the kit's old smooth stone: --kit-stone=smooth).
 #define ZS_STONE_WEATHER
+// The cut stone baked in Blender (shaders/stone_tile.gdshaderinc).
+#define ZS_STONE_TILE
 uniform float shelter_fill = 4.5;
 uniform vec3 shelter_tint : source_color = vec3(1.0, 0.82, 0.6);
 #include "res://shaders/folk_surface.gdshaderinc"

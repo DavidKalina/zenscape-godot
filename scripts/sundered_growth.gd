@@ -528,6 +528,10 @@ class Probe extends RefCounted:
 		build.growth_face(corners,normal,colour)
 		if measuring: tally[label] = int(tally.get(label,0))+corners.size()-2
 
+	func card_face(corners: PackedVector3Array, uvs: PackedVector2Array, normal: Vector3, colour: Color, cell: int) -> void:
+		build.card_face(corners,uvs,normal,colour,cell)
+		if measuring: tally[label] = int(tally.get(label,0))+corners.size()-2
+
 	## The top of the stone over (x, z) looking down from `from` (to 4 cm),
 	## or -1 if none above the floor.
 	func top_at(x: float, z: float, from: float) -> float:

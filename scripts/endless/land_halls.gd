@@ -430,7 +430,7 @@ func _sunlit(node: Node) -> void:
 	var kit: Material = RuinKit.materials().stone
 	if _stone == null:
 		_stone = (kit as ShaderMaterial).duplicate() as ShaderMaterial
-		_stone.set_shader_parameter("albedo",STONE_LIFT)
+		_stone.set_shader_parameter("albedo",preload("res://scripts/endless/land_arches.gd").tone_lift())
 		_stone.set_shader_parameter("fill",3.6)
 		_stone.set_shader_parameter("rim",0.1)
 	var list: Array = node.find_children("*","MeshInstance3D",true,false)

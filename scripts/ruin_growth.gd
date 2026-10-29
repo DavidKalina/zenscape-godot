@@ -19,6 +19,19 @@ extends RefCounted
 ## tips that glow when backlit; moss stays low cushions.
 
 const SHADER = preload("res://shaders/ruin_growth.gdshader")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+
+## The ivy's leaves as cards: a cluster of leaves modelled and rendered in
+## Blender (art/blender/ivy_cards/, assets/textures/ivy_cards.png: four
+## clusters in a 2x2 atlas), cut out by the shader, in place of two-triangle
+## leaves. A card hangs from a stem's node, CARD times the leaf's size long,
+## at CARD_ODDS of the nodes (each card a whole cluster). --ivy-cards=0 the
+## old leaves. Each card vertex carries its place on the card in CUSTOM1
+## (x: u + 2 + 2 * the cell, y: v down from the stalk; 0 off a card).
+static var cards := not "--ivy-cards=0" in LaunchArgs.user_args()
+const CARD := 2.1
+const CARD_ODDS := 0.42
+const CARD_ATLAS = preload("res://assets/textures/ivy_cards.png")
 
 ## One growth face's attrs (PackedFloat32Array): its anchor's height, the
 ## strand's length (0: does not sway), the face its strand lies on (x, z;
@@ -68,6 +81,7 @@ static func material() -> ShaderMaterial:
 	if _material == null:
 		_material = ShaderMaterial.new()
 		_material.shader = SHADER
+		_material.set_shader_parameter("ivy_cards",CARD_ATLAS)
 	return _material
 
 static func attrs(anchor_y: float, span: float, out: Vector3, free: float, flutter: float, phase: float, upright := false, along := -1.0) -> PackedFloat32Array:
@@ -97,6 +111,9 @@ class Faces extends RefCounted:
 	var uv := PackedVector2Array()
 	var uv2 := PackedVector2Array()
 	var cu := PackedFloat32Array()
+	## The cards' places (CUSTOM1, two a vertex), padded with 0 for the
+	## vertices before a card's; empty with no card.
+	var cd := PackedFloat32Array()
 
 	func is_empty() -> bool:
 		return v.is_empty()
@@ -111,10 +128,13 @@ class Faces extends RefCounted:
 		s[Mesh.ARRAY_TEX_UV] = uv
 		s[Mesh.ARRAY_TEX_UV2] = uv2
 		s[Mesh.ARRAY_CUSTOM0] = cu
+		if not cd.is_empty():
+			cd.resize(v.size()*2)
+			s[Mesh.ARRAY_CUSTOM1] = cd
 		return s
 
 ## The surface format the growth's CUSTOM0 needs.
-const FORMAT := Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+const FORMAT := Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT | Mesh.ARRAY_CUSTOM_RG_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT
 
 ## Adds the growth surface `f` to `mesh` (nothing if empty).
 static func add_surface(mesh: ArrayMesh, f: Faces) -> void:
@@ -136,6 +156,10 @@ static func append(f: Faces, s: Array, xf: Transform3D) -> void:
 	var mv: PackedVector3Array = s[Mesh.ARRAY_VERTEX]
 	var mn: PackedVector3Array = s[Mesh.ARRAY_NORMAL]
 	var mcu: PackedFloat32Array = s[Mesh.ARRAY_CUSTOM0]
+	var mcd: Variant = s[Mesh.ARRAY_CUSTOM1] if s.size() > Mesh.ARRAY_CUSTOM1 else null
+	if mcd != null:
+		f.cd.resize(f.v.size()*2)
+		f.cd.append_array(mcd as PackedFloat32Array)
 	for i in range(mv.size()):
 		f.v.append(xf*mv[i])
 		f.n.append((xf.basis*mn[i]).normalized())
@@ -165,6 +189,28 @@ static func emit(f: Faces, corners: PackedVector3Array, normal: Vector3, colour:
 			f.uv2.append(Vector2(a[A_PHASE],a[A_FLUTTER]))
 			var along := a[A_ALONG] if a[A_ALONG] >= 0.0 else (clampf(reach/span,0.0,1.0) if span > 0.0 else 0.5)
 			f.cu.append_array([o.x,o.z,a[A_FREE],along])
+
+## One card's quad (its corners as drawn, a fan of two triangles) into `f`,
+## each corner its place on the card (`uvs`) in atlas cell `cell`; the rest
+## as `emit`.
+static func emit_card(f: Faces, corners: PackedVector3Array, uvs: PackedVector2Array, cell: int, normal: Vector3, colour: Color, a: PackedFloat32Array, turn := Basis.IDENTITY) -> void:
+	f.cd.resize(f.v.size()*2)
+	var o := turn*Vector3(a[A_OX],0.0,a[A_OZ])
+	var span := a[A_SPAN]
+	for k in range(1,corners.size()-1):
+		var tri := [0,k,k+1]
+		if (corners[k]-corners[0]).cross(corners[k+1]-corners[0]).dot(normal) > 0.0: tri = [0,k+1,k]
+		for i: int in tri:
+			var p := corners[i]
+			var reach := clampf(a[A_Y]-p.y,0.0,span*1.2) if span > 0.0 else 0.0
+			f.v.append(p)
+			f.n.append(normal)
+			f.c.append(colour)
+			f.uv.append(Vector2(reach,span))
+			f.uv2.append(Vector2(a[A_PHASE],a[A_FLUTTER]))
+			var along := a[A_ALONG] if a[A_ALONG] >= 0.0 else (clampf(reach/span,0.0,1.0) if span > 0.0 else 0.5)
+			f.cu.append_array([o.x,o.z,a[A_FREE],along])
+			f.cd.append_array([uvs[i].x+2.0+2.0*cell,uvs[i].y])
 
 # --- Curtains -------------------------------------------------------------------
 
@@ -330,6 +376,9 @@ static func strand(b, start: Vector3, length: float, out: Vector3, free: bool, c
 ## blade tipped down and out, folded along its midrib, facing `out` (or
 ## lying on the face when it `hug`s it).
 static func _vine_leaf(b, at: Vector3, out: Vector3, side: Vector3, size: float, t: float, hug: float) -> void:
+	if cards and b.has_method("card_face"):
+		_leaf_card(b,at,out,side,size,t,hug)
+		return
 	var rng: RandomNumberGenerator = b.rng
 	var down := Vector3.DOWN*lerpf(0.55,0.85,hug)
 	var axis := (down+out*lerpf(0.6,0.15,hug)+side*rng.randf_range(0.2,0.7)+Vector3(rng.randf_range(-0.2,0.2),rng.randf_range(-0.1,0.25),rng.randf_range(-0.2,0.2))).normalized()
@@ -348,6 +397,38 @@ static func _vine_leaf(b, at: Vector3, out: Vector3, side: Vector3, size: float,
 	colour.a = 1.0
 	b.growth_face(PackedVector3Array([base,left,tip]),(left-base).cross(tip-base).normalized()*_sign_to((left-base).cross(tip-base),face),colour)
 	b.growth_face(PackedVector3Array([base,tip,right]),(tip-base).cross(right-base).normalized()*_sign_to((tip-base).cross(right-base),face),colour)
+
+## A card of leaves (CARD_ODDS of the time) hanging from the stem at `at`:
+## CARD times `size` long, as wide, down and a little out from the stone (or
+## lying on it when it `hug`s it), folded down its middle toward `out`; a
+## random cluster of the atlas, mirrored half the time.
+static func _leaf_card(b, at: Vector3, out: Vector3, side: Vector3, size: float, t: float, hug: float) -> void:
+	var rng: RandomNumberGenerator = b.rng
+	if rng.randf() > CARD_ODDS: return
+	var length := size*CARD*rng.randf_range(0.85,1.15)
+	var axis := (Vector3.DOWN+out*lerpf(0.4,0.1,hug)+side*rng.randf_range(-0.3,0.3)).normalized()
+	var face := (out-axis*axis.dot(out)).normalized()
+	if face.length() < 0.5: face = side.cross(axis).normalized()
+	var across := axis.cross(face).normalized()
+	var top := at+face*0.02
+	var w := length*0.5
+	var fold := face*length*rng.randf_range(0.06,0.16)
+	var bl := top-across*w
+	var br := top+across*w
+	var bm := top+fold*0.4
+	var tl := bl+axis*length
+	var tr := br+axis*length
+	var tm := top+axis*length+fold
+	var cell := rng.randi_range(0,3)
+	var u0 := 1.0 if rng.randf() < 0.5 else 0.0
+	var u1 := 1.0-u0
+	var shade := clampf(0.35+0.5*t+rng.randf_range(-0.3,0.3),0.0,0.999)
+	var colour: Color = (VINE[int(shade*VINE.size())] as Color).srgb_to_linear()*rng.randf_range(0.9,1.08)
+	colour.a = 1.0
+	var nl := (tl-bl).cross(bm-bl).normalized()
+	var nr := (tm-bm).cross(br-bm).normalized()
+	b.card_face(PackedVector3Array([bl,tl,tm,bm]),PackedVector2Array([Vector2(u0,0.0),Vector2(u0,1.0),Vector2(0.5,1.0),Vector2(0.5,0.0)]),nl*_sign_to(nl,face),colour,cell)
+	b.card_face(PackedVector3Array([bm,tm,tr,br]),PackedVector2Array([Vector2(0.5,0.0),Vector2(0.5,1.0),Vector2(u1,1.0),Vector2(u1,0.0)]),nr*_sign_to(nr,face),colour,cell)
 
 static func _sign_to(n: Vector3, face: Vector3) -> float:
 	return 1.0 if n.dot(face) >= 0.0 else -1.0

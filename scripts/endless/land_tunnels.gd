@@ -600,7 +600,11 @@ static func _dark_materials() -> Dictionary:
 	var kit: Dictionary = RuinKit.materials()
 	var stone := (kit.stone as ShaderMaterial).duplicate() as ShaderMaterial
 	stone.shader = TUNNEL_STONE
-	stone.set_shader_parameter("albedo",STONE_LIFT)
+	# The land's ruin tone (LandArches TONES), lifted less by the same share
+	# as STONE_LIFT is under the amber one.
+	var tone: Color = preload("res://scripts/endless/land_arches.gd").tone_lift()
+	var amber: Color = preload("res://scripts/endless/land_arches.gd").STONE_LIFT
+	stone.set_shader_parameter("albedo",Color(tone.r*STONE_LIFT.r/amber.r,tone.g*STONE_LIFT.g/amber.g,tone.b*STONE_LIFT.b/amber.b))
 	stone.set_shader_parameter("rim",0.0)
 	stone.set_shader_parameter("dim_fill",STONE_DIM)
 	# --kit-stone=smooth keeps the smooth stone here too.

@@ -603,7 +603,7 @@ static func stone() -> ShaderMaterial:
 		for k: String in STONE_MOSS: s.set_shader_parameter(k,STONE_MOSS[k])
 		_stone = s
 	# The shared look's knobs, again when the look changed.
-	var keys := ["fill","rim","roughness_value","stone_weather"]
+	var keys := ["fill","rim","roughness_value","stone_weather","stone_tile","stone_tile_normal","stone_tile_mask"]
 	var key := str(keys.map(func(k: String) -> Variant: return shared.get_shader_parameter(k)))
 	if key != _stone_key:
 		for k: String in keys: _stone.set_shader_parameter(k,shared.get_shader_parameter(k))
