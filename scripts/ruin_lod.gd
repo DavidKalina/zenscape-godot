@@ -203,7 +203,9 @@ static func leveled_mesh(mesh: ArrayMesh) -> ArrayMesh:
 ## the surface's own arrays, in the growth's format.
 static func shade_chunks(arrays: Array) -> Array:
 	# The native kernel splits the arrays as below (isle_kernels.h `growth_chunks`).
-	var kernel: Object = NativeIsleKernels.get_kernel()
+	# (Not with leaf cards: the kernel doesn't carry their CUSTOM1, and a card
+	# without it would cast a square.)
+	var kernel: Object = NativeIsleKernels.get_kernel() if arrays[Mesh.ARRAY_CUSTOM1] == null else null
 	if kernel != null:
 		var meshes: Array = []
 		for part: Array in kernel.growth_chunks(arrays,GROWTH_CELL):
@@ -234,8 +236,8 @@ static func shade_chunks(arrays: Array) -> Array:
 		# The chunk's arrays: each per-vertex array's rows for its groups.
 		var part := []
 		part.resize(Mesh.ARRAY_MAX)
-		for slot in [Mesh.ARRAY_VERTEX,Mesh.ARRAY_NORMAL,Mesh.ARRAY_COLOR,Mesh.ARRAY_TEX_UV,Mesh.ARRAY_TEX_UV2,Mesh.ARRAY_CUSTOM0]:
-			if arrays[slot] != null: part[slot] = arrays[slot].duplicate() if one else _rows(arrays[slot],picked,starts,4 if slot == Mesh.ARRAY_CUSTOM0 else 1)
+		for slot in [Mesh.ARRAY_VERTEX,Mesh.ARRAY_NORMAL,Mesh.ARRAY_COLOR,Mesh.ARRAY_TEX_UV,Mesh.ARRAY_TEX_UV2,Mesh.ARRAY_CUSTOM0,Mesh.ARRAY_CUSTOM1]:
+			if arrays[slot] != null: part[slot] = arrays[slot].duplicate() if one else _rows(arrays[slot],picked,starts,4 if slot == Mesh.ARRAY_CUSTOM0 else (2 if slot == Mesh.ARRAY_CUSTOM1 else 1))
 		var mesh := ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,part,[],{},RuinGrowth.FORMAT)
 		mesh.surface_set_material(0,RuinGrowth.material())

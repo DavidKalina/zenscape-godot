@@ -42,6 +42,8 @@ const STONE_SHADER = preload("res://shaders/ruin_stone.gdshader")
 const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 ## The stone's look (classic, or a clean one: docs/scenic/ruin-stone.md).
 const Style = preload("res://scripts/ruin_stone_style.gd")
+const RuinAO = preload("res://scripts/ruin_ao.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 const NativeIsleKernels = preload("res://scripts/native_isle_kernels.gd")
 
 ## The pieces, in the kit's order: the gothic abbey's, here.
@@ -2598,6 +2600,8 @@ class Build extends RefCounted:
 	## colour, occluder (its block's index in `solids`, or -1), anchor (a
 	## rigid block's middle x, or NAN)].
 	var pending: Array = []
+	## The leaf cards to draw (`card_face`).
+	var cards: Array = []
 	## Each hull's anchor (as `pending`'s), side by side with `hulls`.
 	var hull_anchors: PackedFloat32Array = []
 	## The growth being built (RuinGrowth `attrs`: where it hangs from, how
@@ -2708,6 +2712,10 @@ class Build extends RefCounted:
 			s.set_shader_parameter("fill",1.2)
 			s.set_shader_parameter("rim",0.14)
 			s.set_shader_parameter("roughness_value",0.95)
+			# The cut stone baked in Blender (shaders/stone_tile.gdshaderinc).
+			s.set_shader_parameter("stone_tile_normal",load("res://assets/textures/ruin_stone_normal.png"))
+			s.set_shader_parameter("stone_tile_mask",load("res://assets/textures/ruin_stone_mask.png"))
+			s.set_shader_parameter("stone_tile",0.0 if "--ruin-stone=old" in LaunchArgs.user_args() else 1.0)
 			_materials = {"stone":s,"growth":RuinGrowth.material()}
 		# Dressed when the look changes (the same values every time else):
 		# isles built side by side on workers call this at once.
@@ -3075,6 +3083,34 @@ class Build extends RefCounted:
 	func growth_face(corners: PackedVector3Array, normal: Vector3, colour: Color) -> void:
 		pending.append([corners,normal,colour,-1,NAN,grow.duplicate()])
 
+	## A card of leaves (RuinGrowth `_leaf_card`): its corners, their places on
+	## the card, the atlas cell; drawn in finish after the rest of the growth
+	## (`_draw_cards`), by GDScript whether the kernel drew the rest or not.
+	func card_face(corners: PackedVector3Array, uvs: PackedVector2Array, normal: Vector3, colour: Color, cell: int) -> void:
+		cards.append([corners,uvs,normal,colour,cell,grow.duplicate()])
+
+	func _draw_cards() -> void:
+		for card: Array in cards:
+			var corners: PackedVector3Array = card[0]
+			var normal: Vector3 = card[2]
+			var shade: Color = card[3]
+			if shelter.is_valid():
+				var mid := Vector3.ZERO
+				for q in corners: mid += q
+				shade.a = 1.0-clampf(float(shelter.call(mid/corners.size(),normal)),0.0,1.0)
+			var turn := Basis.IDENTITY
+			if path != null:
+				var middle := Vector3.ZERO
+				for q in corners: middle += q
+				middle /= corners.size()
+				turn = (path.xform(middle.x) as Transform3D).basis
+				normal = (turn*normal).normalized()
+				var bent := PackedVector3Array()
+				for q in corners: bent.append(bend(q,NAN))
+				corners = bent
+			RuinGrowth.emit_card(growth,corners,card[1],int(card[4]),normal,shade,card[5],turn)
+		cards.clear()
+
 	## The piece: ivy and moss grown on it, then the mesh and the body.
 	func finish() -> Node3D:
 		frame = Transform3D.IDENTITY
@@ -3091,7 +3127,10 @@ class Build extends RefCounted:
 			RuinGrowth.fringes(self)
 			_cushions()
 			_draw()
+		_draw_cards()
 		if growth_tint.is_valid(): growth_tint.call(growth)
+		faces.c = RuinAO.bake(faces.v,faces.n,faces.c,ground)
+		faces.n = RuinAO.soften(faces.v,faces.n)
 		if hand.is_valid(): hand.call(_nodes)
 		else: _nodes()
 		_body()

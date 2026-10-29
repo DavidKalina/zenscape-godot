@@ -52,6 +52,15 @@ varying vec3 local;
 global uniform vec3 zs_cloud_sun;
 global uniform vec3 zs_key_direction;
 #include "res://shaders/look_fill.gdshaderinc"
+// The stone's brightness eased off past `stone_knee` (linear luminance)
+// toward `stone_cap`: a lifted stone (the amberlands' sRGB 3.0, about 13x
+// linear) times the pale wear went past white, and the bare stone between
+// the moss read as blown-out blotches. 0 off.
+uniform float stone_knee = 0.3;
+uniform float stone_cap = 0.48;
+#endif
+#ifdef ZS_STONE_TILE
+#include "res://shaders/stone_tile.gdshaderinc"
 #endif
 #ifdef ZS_STONE_MOSS
 // The gothic set pieces' moss (shaders/stone_moss.gdshaderinc).
@@ -84,6 +93,9 @@ uniform float flex = 0.0;
 #endif
 void vertex() {
 	local = VERTEX;
+#ifdef ZS_STONE_TILE
+	stone_tile_n = NORMAL;
+#endif
 	gleam_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 #ifdef ZS_PLANE_FLEX
 	// The wings flexing under strain (scripts/carry/plane_strain.gd): the
@@ -136,11 +148,22 @@ void fragment() {
 #ifdef ZS_FOLK_VERTEX_COLOR
 	base *= COLOR.rgb;
 #endif
+	vec3 face_normal = NORMAL;
+#ifdef ZS_STONE_TILE
+	// The cut stone's tile (shaders/stone_tile.gdshaderinc): its normal laid
+	// on the face's, before the weathering bumps it further.
+	if (stone_tile > 0.0) {
+		vec3 tile_off = stone_tile_apply(base, local, stone_tile_n);
+		NORMAL = normalize(NORMAL + (VIEW_MATRIX * vec4(MODEL_NORMAL_MATRIX * tile_off, 0.0)).xyz);
+	}
+#endif
 	float rough_add = 0.0;
 #ifdef ZS_STONE_WEATHER
 	// The kit's weathered basalt (shaders/kit_weather.gdshaderinc).
 	if (stone_weather > 0.0) {
-		vec3 wn = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+		// The face's own way (not the cut stone's), so a chip's slope isn't read
+		// as a worn top.
+		vec3 wn = normalize((INV_VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 		vec3 bumped = NORMAL;
 		rough_add = kit_weather(base, bumped, wn, local, VERTEX, 1.0 - clamp(COLOR.a, 0.0, 1.0), stone_weather);
 		NORMAL = bumped;
@@ -149,7 +172,7 @@ void fragment() {
 #ifdef ZS_STONE_MOSS
 	{
 		vec3 mn = NORMAL;
-		rough_add += stone_moss(base, mn, normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz), local, VERTEX, 1.0 - clamp(COLOR.a, 0.0, 1.0), COLOR.rgb, zs_key_direction);
+		rough_add += stone_moss(base, mn, normalize((INV_VIEW_MATRIX * vec4(face_normal, 0.0)).xyz), local, VERTEX, 1.0 - clamp(COLOR.a, 0.0, 1.0), COLOR.rgb, zs_key_direction);
 		NORMAL = mn;
 	}
 #endif
@@ -160,6 +183,16 @@ void fragment() {
 	rough_add += craft_detail(base, detailed, local, VERTEX);
 	NORMAL = detailed;
 #endif
+#endif
+#ifdef ZS_STONE_WEATHER
+	if (stone_knee > 0.0) {
+		float lum = dot(base, vec3(0.2126, 0.7152, 0.0722));
+		if (lum > stone_knee) {
+			float over = lum - stone_knee;
+			float room = stone_cap - stone_knee;
+			base *= (stone_knee + over / (1.0 + over / room)) / lum;
+		}
+	}
 #endif
 	ALBEDO = base;
 	ROUGHNESS = clamp(mix(roughness_value, 1.0, dull * 0.6) + rough_add, 0.0, 1.0);

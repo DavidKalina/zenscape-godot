@@ -486,6 +486,12 @@ class Stone extends Build:
 		c.a = colour.a
 		super.growth_face(corners,normal,c)
 
+	func card_face(corners: PackedVector3Array, uvs: PackedVector2Array, normal: Vector3, colour: Color, cell: int) -> void:
+		var tint := GROWTH_TINT.srgb_to_linear()
+		var c := colour.lerp(tint,GROWTH_PULL)
+		c.a = colour.a
+		super.card_face(corners,uvs,normal,c,cell)
+
 ## A probe over the bridge's blocks (SunderedGrowth's grid) whose floor is
 ## the land's, so strands under the deck reach down to the gorge.
 class Probe extends SunderedGrowth.Probe:
