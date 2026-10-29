@@ -43,6 +43,7 @@ const RuinGrowth = preload("res://scripts/ruin_growth.gd")
 ## The stone's look (classic, or a clean one: docs/scenic/ruin-stone.md).
 const Style = preload("res://scripts/ruin_stone_style.gd")
 const RuinAO = preload("res://scripts/ruin_ao.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 const NativeIsleKernels = preload("res://scripts/native_isle_kernels.gd")
 
 ## The pieces, in the kit's order: the gothic abbey's, here.
@@ -2709,6 +2710,10 @@ class Build extends RefCounted:
 			s.set_shader_parameter("fill",1.2)
 			s.set_shader_parameter("rim",0.14)
 			s.set_shader_parameter("roughness_value",0.95)
+			# The cut stone baked in Blender (shaders/stone_tile.gdshaderinc).
+			s.set_shader_parameter("stone_tile_normal",load("res://assets/textures/ruin_stone_normal.png"))
+			s.set_shader_parameter("stone_tile_mask",load("res://assets/textures/ruin_stone_mask.png"))
+			s.set_shader_parameter("stone_tile",0.0 if "--ruin-stone=old" in LaunchArgs.user_args() else 1.0)
 			_materials = {"stone":s,"growth":RuinGrowth.material()}
 		# Dressed when the look changes (the same values every time else):
 		# isles built side by side on workers call this at once.

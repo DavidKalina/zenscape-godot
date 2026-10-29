@@ -8,6 +8,8 @@ render_mode diffuse_lambert, specular_schlick_ggx;
 #define ZS_SHELTER_BOUNCE
 #define ZS_NIGHT_STONE
 #define ZS_STONE_WEATHER
+// The cut stone baked in Blender (shaders/stone_tile.gdshaderinc).
+#define ZS_STONE_TILE
 #define ZS_STONE_MOSS
 uniform float shelter_fill = 4.5;
 uniform vec3 shelter_tint : source_color = vec3(1.0, 0.82, 0.6);

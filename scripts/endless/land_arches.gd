@@ -94,16 +94,29 @@ var _stone: ShaderMaterial
 ## the plain sunlit stone instead, to compare (look, frame time).
 var _gothic_stone: ShaderMaterial
 var _moss_off := "--no-stone-moss" in LaunchArgs.user_args()
+## The colosseum's stone: the mossed stone with the moss on its tops only (no
+## tongues down the faces, no band at the foot), so the cut stone reads from
+## afar instead of a camouflage of moss and bare patches. `--colosseum-moss=full`
+## gives it the gothic pieces' moss as before.
+var _tops_stone: ShaderMaterial
+var _tops_only := not "--colosseum-moss=full" in LaunchArgs.user_args()
 
 ## `mossed` (a plateau bridge, amberlands only): its kit stone takes the
 ## gothic pieces' mossed stone too (the look pass: the ruins overgrown).
-func _sunlit(node: Node, mossed := false) -> void:
+func _sunlit(node: Node, mossed := false, tops := false) -> void:
 	var kit: Material = RuinKit.materials().stone
 	if _stone == null:
 		_stone = (kit as ShaderMaterial).duplicate() as ShaderMaterial
 		_stone.set_shader_parameter("albedo",STONE_LIFT)
 		_stone.set_shader_parameter("fill",3.6)
 		_stone.set_shader_parameter("rim",0.1)
+	if tops and _tops_only and not _moss_off:
+		if _tops_stone == null:
+			_tops_stone = GothicGrowth.lifted(STONE_LIFT,3.6,0.1)
+			_tops_stone.set_shader_parameter("moss_tongue",2.0)
+			_tops_stone.set_shader_parameter("moss_low",0.0)
+		_override(node,_tops_stone)
+		return
 	var gothic: Material = GothicGrowth.stone()
 	for mi in node.find_children("*","MeshInstance3D",true,false):
 		var m := mi as MeshInstance3D
@@ -121,6 +134,23 @@ func _sunlit(node: Node, mossed := false) -> void:
 		if mm.mesh.surface_get_material(0) != gothic: continue
 		if _gothic_stone == null: _gothic_stone = _stone if _moss_off else GothicGrowth.lifted(STONE_LIFT,3.6,0.1)
 		(mmi as MultiMeshInstance3D).material_override = _gothic_stone
+
+## Every stone surface under `node` (the kit's or the gothic pieces') and its
+## MultiMeshes drawn with `stone`.
+func _override(node: Node, stone: Material) -> void:
+	var kit: Material = RuinKit.materials().stone
+	var gothic: Material = GothicGrowth.stone()
+	for mi in node.find_children("*","MeshInstance3D",true,false):
+		var m := mi as MeshInstance3D
+		if m.mesh == null: continue
+		for i in m.mesh.get_surface_count():
+			var own := m.mesh.surface_get_material(i)
+			if own == kit or own == gothic: m.set_surface_override_material(i,stone)
+	for mmi in node.find_children("*","MultiMeshInstance3D",true,false):
+		var mm := (mmi as MultiMeshInstance3D).multimesh
+		if mm == null or mm.mesh == null or mm.mesh.get_surface_count() == 0: continue
+		var own := mm.mesh.surface_get_material(0)
+		if own == kit or own == gothic: (mmi as MultiMeshInstance3D).material_override = stone
 
 func _exit_tree() -> void:
 	_quit = true
@@ -258,7 +288,7 @@ func _commit_one(done: Dictionary) -> void:
 		else:
 			node = b.node
 			if spec.get("kind","") == "colosseum": Colosseum.realize(node)
-			if not _old_stone: _sunlit(node,spec.has("bridge"))
+			if not _old_stone: _sunlit(node,spec.has("bridge"),spec.get("kind","") == "colosseum")
 		for body in node.find_children("*","StaticBody3D",true,false):
 			(body as StaticBody3D).collision_layer = LAYER
 			(body as StaticBody3D).collision_mask = 0
