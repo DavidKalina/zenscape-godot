@@ -154,6 +154,7 @@ const KnifeGlance = preload("res://scripts/endless/knife_glance.gd")
 const NearMissHud = preload("res://scripts/endless/near_miss_hud.gd")
 const NearMissHudGlyph = preload("res://scripts/endless/near_miss_hud_glyph.gd")
 const NearMissHudHandoff = preload("res://scripts/endless/near_miss_hud_handoff.gd")
+const NearMissHudRing = preload("res://scripts/endless/near_miss_hud_ring.gd")
 const FlightDebris = preload("res://scripts/endless/flight_debris.gd")
 ## Low over water: the cushion, the spray, the wake's marks, the wet screen.
 const WaterContact = preload("res://scripts/endless/water_contact.gd")
@@ -740,14 +741,16 @@ func _build_ui() -> void:
 	_stop_cue.add_theme_constant_override("outline_size",4)
 	_stop_cue.visible = false
 	layer.add_child(_stop_cue)
-	# The near misses' HUD: the design handoff's (scripts/endless/near_miss_hud_handoff.gd),
-	# in the tag by the plane or at the top as the player keeps it (H switches).
-	# --near-hud=glyph the earlier trial (gilt numbers in a tag), --near-hud=classic
-	# the first plain text.
+	# The near misses' HUD: the ring by the plane (scripts/endless/near_miss_hud_ring.gd,
+	# the Line HUD canvas's C2). --near-hud=tag (or handoff, handoff-tag) the design
+	# handoff's tag before it (scripts/endless/near_miss_hud_handoff.gd, in the tag
+	# or at the top as the player keeps it, H switches); --near-hud=glyph the earlier
+	# trial (gilt numbers in a tag), --near-hud=classic the first plain text.
 	var hud_args := preload("res://scripts/launch_args.gd").user_args()
 	if "--near-hud=glyph" in hud_args: _near_hud = NearMissHudGlyph.new()
 	elif "--near-hud=classic" in hud_args: _near_hud = NearMissHud.new()
-	else: _near_hud = NearMissHudHandoff.new()
+	elif "--near-hud=tag" in hud_args or "--near-hud=handoff" in hud_args or "--near-hud=handoff-tag" in hud_args: _near_hud = NearMissHudHandoff.new()
+	else: _near_hud = NearMissHudRing.new()
 	_near_hud.visible = false
 	layer.add_child(_near_hud)
 	# The landing summary and the logbook (lane logbook, spec-wild-loop.md).
