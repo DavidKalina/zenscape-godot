@@ -55,6 +55,10 @@ const SLICE_US := 4000
 ## The ring's height over the land (m); flown through within THROUGH_R m.
 const RING_UP := 40.0
 const THROUGH_R := 14.0
+## Within SETTLE_R m the ring is raised to RING_CLEAR m over what stands
+## under it (trees, rocks, spans are built near the eye).
+const SETTLE_R := 600.0
+const RING_CLEAR := 16.0
 ## Open land for a starter: no rise past LEVEL m within LEVEL_R m round,
 ## DRY m over the sea, RIVER_OFF m off a river.
 const LEVEL := 18.0
@@ -80,16 +84,17 @@ const TAKE_R := 9.0
 const TAKE_TALL := 1.4
 ## The safe line: its pace (share of cruise), the climb's cost (m of line
 ## a metre up), its turns' radius (m), what is flown over (m over the land:
-## the trees), the slack (s).
+## the trees), the way down's cost (m a metre down), the slack (s).
 const SAFE_PACE := 0.9
 const CLIMB_COST := 2.5
+const SINK_COST := 2.0
 const TURN_R := 130.0
 const OVER := 16.0
-const SLACK := 3.0
+const SLACK := 4.0
 ## The landing: its pace over the final and the roll, the time to set down
 ## and stop (s).
 const LAND_PACE := 0.75
-const LAND_EXTRA := 26.0
+const LAND_EXTRA := 18.0
 ## Points: a beat, the finish, a spare second; money likewise (placeholders:
 ## the trunk tunes them).
 const BEAT_POINTS := 100
@@ -471,10 +476,12 @@ func _safe_len(field: RefCounted, a: Vector3, b: Vector3, way: Vector3) -> float
 		var p := a.lerp(b,float(i)/12.0)
 		top = maxf(top,maxf(float(field.height(p.x,p.z)),SEA_Y)+OVER)
 	var up := maxf(top-a.y,0.0)+maxf(b.y-maxf(top,a.y),0.0)
+	# And a long way down to it is eased into, not dived straight.
+	var down := maxf(maxf(top,a.y)-b.y,0.0)
 	var flat := Vector3(b.x-a.x,0.0,b.z-a.z)
 	var turn := 0.0
 	if flat.length() > 1.0 and way.length() > 0.1: turn = way.angle_to(flat.normalized())
-	return a.distance_to(b)+up*CLIMB_COST+turn*TURN_R
+	return a.distance_to(b)+up*CLIMB_COST+down*SINK_COST+turn*TURN_R
 
 ## Starters shown near, hidden while the rival races; flown through: the run.
 func _free(game: Node) -> void:
@@ -486,6 +493,16 @@ func _free(game: Node) -> void:
 		var d := s.global_position.distance_to(p)
 		var resting := _rest.has(id) and _t < float(_rest[id])
 		s.visible = not racing and not resting and d < SHOW_REACH
+		# Near, what stands there is built: the ring kept over a crown or a rock.
+		if d < SETTLE_R and not s.has_meta("settled"):
+			s.set_meta("settled",true)
+			var top := float(_reader._ground_top(s.global_position,true))+RING_CLEAR
+			if top > s.global_position.y:
+				var r := _route_of(id)
+				var at: Vector3 = r.starter.at
+				at.y = top
+				r.starter.at = at
+				s.global_position = at
 		if s.visible and flying and d < THROUGH_R: _begin(game,id)
 
 func _route_of(id: String) -> Dictionary:
