@@ -93,10 +93,13 @@ const CATCH_FROM := 150.0
 const CATCH_SPAN := 300.0
 ## Flying well eases it too: while his near-miss chain is live it gives up
 ## to FLOW_EASE of its pace (a share for the chain being live, FLOW_LIVE,
-## the rest by its multiplier; all of it while he surges), eased over
-## FLOW_BLEND s.
+## the rest by its multiplier up to FLOW_FULL; all of it while he surges),
+## eased over FLOW_BLEND s. FLOW_FULL is a good line (a mixed one, a "Fine
+## Line"), the old chain's top, not NearMiss's CHAIN_TOP (x12, a wild
+## line's): a race eases as it did before the multiplier became how hard.
 const FLOW_EASE := 0.07
 const FLOW_LIVE := 0.4
+const FLOW_FULL := 5.0
 const FLOW_BLEND := 1.0
 ## The start: stopped is under STILL m/s; the count's beats, each beat (s);
 ## how long the rule shows from GO (s).
@@ -270,7 +273,7 @@ func step(delta: float, game: Node) -> void:
 	var pressed := Input.is_action_pressed(ACTION)
 	if not pressed: _armed = true
 	var tapped := pressed and _armed
-	var flying: bool = game.stage == null and game.hand_landing.flying()
+	var flying: bool = game.stage == null and game.hand_landing.flying() and not (game.get("beats") != null and game.beats.running())
 	_hud.offer = {}
 	_hud.mark = {}
 	_hud.spot = {}
@@ -644,7 +647,7 @@ func _flow_of(delta: float, near: RefCounted) -> float:
 	var k := 0.0
 	if near != null:
 		if float(near.surge) > 0.0: k = 1.0
-		elif float(near.chain_points) > 0.0: k = FLOW_LIVE+(1.0-FLOW_LIVE)*clampf((float(near.multiplier())-1.0)/(near.CHAIN_TOP-1.0),0.0,1.0)
+		elif float(near.chain_points) > 0.0: k = FLOW_LIVE+(1.0-FLOW_LIVE)*clampf((float(near.multiplier())-1.0)/(FLOW_FULL-1.0),0.0,1.0)
 	flow = lerpf(flow,k,1.0-exp(-delta/FLOW_BLEND))
 	return flow
 

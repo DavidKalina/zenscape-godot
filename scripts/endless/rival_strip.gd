@@ -137,7 +137,12 @@ static func find(line: RefCounted, pos: Vector3, dir: Vector3, tries := 800, wid
 
 ## The strip with the rival touching at `touch`, both facing `axis`, his
 ## lane `side` (1 right, -1 left) of its, or {} if it fails a test.
-static func check(game: Node, line: RefCounted, touch: Vector3, axis: Vector3, side: float) -> Dictionary:
+## `heights`, if given, keeps the land's heights on the trees' flats grid
+## between checks (a search trying many strips near one spot reads each
+## node once). With `stands` false the dearest reads (what stands on the
+## approaches and the lanes) are left to the caller, one at a time
+## (`late_count`, `late_read`; the strip keeps them as "late" till then).
+static func check(game: Node, line: RefCounted, touch: Vector3, axis: Vector3, side: float, heights: Variant = null, stands := true) -> Dictionary:
 	var field: RefCounted = game.field
 	var across := axis.cross(Vector3.UP).normalized()*side
 	var gap := lane()
@@ -169,45 +174,80 @@ static func check(game: Node, line: RefCounted, touch: Vector3, axis: Vector3, s
 	for i in range(a.size()):
 		if absf(a[i]-b[i]) > STEP_RISE*maxf(gap/STEP,0.5): return _fail("across")
 	# Flat as the trees keep it open: no tree is planted near either lane.
-	if not _tree_free(field,stop,axis,across,gap,from,to): return _fail("trees")
-	# Nothing standing on the lanes or under the wings.
-	var half := WorldScale.span*0.6
-	for l: Vector3 in lanes:
-		var u := from
-		while u <= to+0.1:
-			for w: float in [-half,0.0,half]:
-				var p := stop+l+axis*u+across*w
-				var h := float(field.height(p.x,p.z))
-				for over: float in WING_AT:
-					if bool(game._blocked(Vector3(p.x,h+float(over),p.z))): return _fail("blocked")
-				var g: Variant = game.plane_ground(Vector3(p.x,h+60.0,p.z))
-				if g is Vector2: return _fail("over")
-				if g != null and float(g) > h+0.5: return _fail("stands")
-			u += WING_EVERY
-	# The approaches (each lane's, from its touch back) and the climb out.
+	if not _tree_free(field,stop,axis,across,gap,from,to,heights): return _fail("trees")
+	# The approaches (each lane's, from its touch back) and the climb out,
+	# as [point, the line over it, why]: read on the bare land first (cheap;
+	# what stands only adds to it), with all that stands at the end.
 	var touch_y := float(field.height(touch.x,touch.z))
+	var late: Array = []
 	for l: Vector3 in lanes:
 		var at := touch+l if l == Vector3.ZERO else stop+l-axis*SPOT_HALF_LEN
 		# Read from where the lane's level run ends (that is checked above).
 		var d := (at-(stop+l+axis*from)).dot(axis)+20.0
 		while d <= FINAL:
-			var p := at-axis*d
-			if _top(game,line,p)+CLEAR > touch_y+glide_y(d): return _fail("approach")
+			late.append([at-axis*d,touch_y+glide_y(d),"approach"])
 			d += 20.0
 		d = 20.0
 		while d <= CLIMB_OUT:
-			var p := stop+l+axis*(RUN_ON*0.5+d)
-			if _top(game,line,p)+CLEAR > touch_y+CLIMB*d: return _fail("climb")
+			late.append([stop+l+axis*(RUN_ON*0.5+d),touch_y+CLIMB*d,"climb"])
 			d += 20.0
+	for e: Array in late:
+		var p: Vector3 = e[0]
+		if maxf(float(field.height(p.x,p.z)),SEA_Y)+CLEAR > float(e[1]): return _fail(e[2])
 	var spot_c := stop+across*gap
 	spot_c.y = float(field.height(spot_c.x,spot_c.z))
 	stop.y = float(field.height(stop.x,stop.z))
 	touch.y = touch_y
 	var start := stop+across*gap*0.5
 	start.y = float(field.height(start.x,start.z))
-	return {"touch":touch,"stop":stop,"axis":axis,"across":across,"lane":gap,"side":side,"start":start,
+	var strip := {"touch":touch,"stop":stop,"axis":axis,"across":across,"lane":gap,"side":side,"start":start,
 		"spot":{"centre":spot_c,"half_len":SPOT_HALF_LEN,"half_wide":WorldScale.span*SPOT_HALF_SPANS},
 		"approach":touch-axis*FINAL+Vector3.UP*glide_y(FINAL)}
+	strip["late"] = late
+	if not stands: return strip
+	for k in late_count(strip):
+		var why := late_read(game,line,strip,k)
+		if why != "": return _fail(why)
+	strip.erase("late")
+	return strip
+
+## How many reads `check` without its stands leaves (`late_read`, any
+## order): the approaches with what stands on them, then the lanes' rows.
+static func late_count(strip: Dictionary) -> int:
+	return (strip.late as Array).size()+stand_rows()
+
+## `check`'s late read `k` of `strip`: "" if clear, else why not.
+static func late_read(game: Node, line: RefCounted, strip: Dictionary, k: int) -> String:
+	var late: Array = strip.late
+	if k >= late.size(): return stand_row(game,strip,k-late.size())
+	var e: Array = late[k]
+	if _top(game,line,e[0])+CLEAR > float(e[1]): return e[2]
+	return ""
+
+## How many rows `stand_row` reads: down the lanes from the touch zones to
+## the run on, WING_EVERY m apart.
+static func stand_rows() -> int:
+	return int((RUN_ON+ROLL+maxf(TOUCH_ZONE,HIS_ZONE)+0.1)/WING_EVERY)+1
+
+## Nothing standing on row `k` of both of `strip`'s lanes or under the
+## wings: "" if clear, else why not.
+static func stand_row(game: Node, strip: Dictionary, k: int) -> String:
+	var field: RefCounted = game.field
+	var stop: Vector3 = strip.stop
+	var axis: Vector3 = strip.axis
+	var across: Vector3 = strip.across
+	var u := -ROLL-maxf(TOUCH_ZONE,HIS_ZONE)+float(k)*WING_EVERY
+	var half := WorldScale.span*0.6
+	for l: Vector3 in [Vector3.ZERO,across*float(strip.lane)]:
+		for w: float in [-half,0.0,half]:
+			var p := stop+l+axis*u+across*w
+			var h := float(field.height(p.x,p.z))
+			for over: float in WING_AT:
+				if bool(game._blocked(Vector3(p.x,h+float(over),p.z))): return "blocked"
+			var g: Variant = game.plane_ground(Vector3(p.x,h+60.0,p.z))
+			if g is Vector2: return "over"
+			if g != null and float(g) > h+0.5: return "stands"
+	return ""
 
 ## The glide's height over the touch `d` m short of it: GLIDE a metre,
 ## its slope eased to level over the last FLARE m (no sink at the touch).
@@ -223,7 +263,7 @@ static func _top(game: Node, line: RefCounted, p: Vector3) -> float:
 ## of the trees' flats grid (TreePlan FLAT_STEP m) near enough to hold one
 ## is flat as TreePlan `_flat` reads it (FLAT_SLOPE across FLAT_REACH m
 ## either way), and the plan keeps every flat open.
-static func _tree_free(field: RefCounted, stop: Vector3, axis: Vector3, across: Vector3, gap: float, from: float, to: float) -> bool:
+static func _tree_free(field: RefCounted, stop: Vector3, axis: Vector3, across: Vector3, gap: float, from: float, to: float, heights: Variant = null) -> bool:
 	var step := TreePlan.FLAT_STEP
 	var r := roundi(TreePlan.FLAT_REACH/step)
 	var most := TreePlan.FLAT_SLOPE*r*step*2.0
@@ -238,11 +278,11 @@ static func _tree_free(field: RefCounted, stop: Vector3, axis: Vector3, across: 
 		for v: float in [v0,v1]:
 			var c := stop+axis*u+across*v
 			box = box.expand(Vector2(c.x,c.z))
-	var heights := {}
+	var hs: Dictionary = heights if heights is Dictionary else {}
 	var h := func(i: int, j: int) -> float:
 		var k := Vector2i(i,j)
-		if not heights.has(k): heights[k] = float(field.height(i*step,j*step))
-		return heights[k]
+		if not hs.has(k): hs[k] = float(field.height(i*step,j*step))
+		return hs[k]
 	for j in range(floori(box.position.y/step),ceili(box.end.y/step)+1):
 		for i in range(floori(box.position.x/step),ceili(box.end.x/step)+1):
 			var o := Vector3(i*step-stop.x,0.0,j*step-stop.z)

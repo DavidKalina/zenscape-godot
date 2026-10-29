@@ -115,6 +115,7 @@ const ManualLanding = preload("res://scripts/manual_landing.gd")
 const GlideCamera = preload("res://scripts/glide_camera.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Pad = preload("res://scripts/pad.gd")
+const PhotoMode = preload("res://scripts/endless/photo_mode.gd")
 const EndlessLook = preload("res://scripts/endless/endless_look.gd")
 const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
@@ -134,6 +135,9 @@ const EndlessFish = preload("res://scripts/endless/endless_fish.gd")
 const EndlessTraffic = preload("res://scripts/endless/endless_traffic.gd")
 ## The rival race against one of them (Tab / R3 held on a bracketed plane).
 const RivalRace = preload("res://scripts/endless/rival_race.gd")
+## The shops beside their strips (scripts/endless/shop_sites.gd; --shops=0 none).
+const ShopSites = preload("res://scripts/endless/shop_sites.gd")
+const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
@@ -264,6 +268,10 @@ var fish: Node3D
 var traffic: Node
 ## The rival race (scripts/endless/rival_race.gd), or null with no traffic.
 var race: Node
+## The shops (scripts/endless/shop_sites.gd).
+var shops: Node
+## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
+var beats: Node
 var flown := 0.0
 var _start := Vector2.ZERO
 var _no_title := false
@@ -376,6 +384,19 @@ var _shake := 0.0
 var _shake_scale := SHAKE
 var _shake_t := 0.0
 var crashes := 0
+## The pilot's book (scripts/endless/pilot_book.gd): money, tallies, records,
+## what was bought, kept between runs; its `flight` is this flight's own.
+var book: PilotBook
+## The overlay that holds the keys while it is up (the shop, the logbook,
+## photo mode; null: none). One at a time: open one only when this is null.
+var overlay: Object = null
+## Photo mode (scripts/endless/photo_mode.gd): O; the flight held while up.
+var photo: PhotoMode
+## The book's counting hooks (scripts/endless/pilot_tallies.gd), stepped in
+## `tick`; the landing summary and the logbook (J) over the HUD.
+var tallies := PilotTallies.new()
+var summary: Control
+var logbook: Control
 ## This frame's events (the landing's and the near misses'), for the HUD.
 var _events := {}
 ## The flight path's way last frame, for the vapour's pull, and the pull.
@@ -397,6 +418,8 @@ func _ready() -> void:
 	# Which hands are on it, the pad's or the keyboard's (Pad `note`): the
 	# rumble and the prompts follow it.
 	get_tree().root.window_input.connect(Pad.note)
+	book = PilotBook.open()
+	photo = PhotoMode.new(self)
 	add_child(sound)
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = NATIVE_3D
@@ -562,12 +585,20 @@ func _ready() -> void:
 		water.name = "Water"
 		add_child(water)
 		water.setup(self)
+	if BeatRoutes.wanted():
+		beats = BeatRoutes.new()
+		add_child(beats)
+		beats.setup(seed,self)
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
 	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	else: _park_for_menu(spots)
 	if race != null and RivalRace.near_start_wanted(): race.place_near_start(self)
+	shops = ShopSites.new()
+	shops.name = "Shops"
+	add_child(shops)
+	shops.setup(self)
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.DEFAULT else ", world "+str(world.id)])
@@ -696,7 +727,7 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  J logbook  ·  O photo  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale"
 	layer.add_child(_hint)
 	_stop_cue = Label.new()
 	_stop_cue.anchor_top = 1.0
@@ -718,6 +749,11 @@ func _build_ui() -> void:
 	else: _near_hud = NearMissHudHandoff.new()
 	_near_hud.visible = false
 	layer.add_child(_near_hud)
+	# The landing summary and the logbook (lane logbook, spec-wild-loop.md).
+	summary = preload("res://scripts/endless/landing_summary.gd").new(self)
+	layer.add_child(summary)
+	logbook = preload("res://scripts/endless/logbook_view.gd").new(self)
+	layer.add_child(logbook)
 	_fade = ColorRect.new()
 	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -902,6 +938,9 @@ func _sight(from: Vector3, to: Vector3) -> float:
 
 func _process(delta: float) -> void:
 	if not walk_ready: return
+	if photo.active:
+		photo.step(minf(delta,1.0/20.0))
+		return
 	tick(minf(delta,1.0/20.0))
 
 ## One frame: the plane flown, drawn and followed, the land streamed round
@@ -924,7 +963,12 @@ func tick(delta: float) -> void:
 	# In a forgiving knife slot: the reach fitted, a jamb glanced off.
 	solid_shift = Vector3.ZERO
 	_glanced = glance.before(delta,self)
-	var events := hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
+	# A beat route's preview pan holds the flight (beat_routes.gd).
+	var held: bool = beats != null and beats.holding()
+	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
+	if events.has("lifted"): book.new_flight()
+	book.flight.t = float(book.flight.t)+delta
+	book.step(delta)
 	if not knocked.is_empty(): _knocked(events,knocked)
 	plane.engine = hand_landing.engine*float(plane.sputter)*(float(stage.engine) if stage != null else 1.0)
 	_near_misses(delta,events)
@@ -933,6 +977,8 @@ func tick(delta: float) -> void:
 	_pull = _pull_of(delta)
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")),_pull,float(plane.bank))
 	_events = events
+	tallies.step(delta,self,events)
+	summary.step(delta)
 	_feel_sink(events)
 	_rumble(delta,events,float(input.get("boost",0.0)))
 	sound.step(delta,self,events,float(input.get("boost",0.0)))
@@ -950,6 +996,7 @@ func tick(delta: float) -> void:
 	if stage != null:
 		stage.frame(delta,camera,plane.position+ground_scale.lift(),ground_scale.size(),Callable(field,"height"))
 		if not stage.running(): _menu_done()
+	if beats != null: beats.step(delta,self)
 	land.lead_with(plane.velocity)
 	land.step(camera.global_position)
 	arches.step(camera.global_position)
@@ -962,6 +1009,7 @@ func tick(delta: float) -> void:
 	if fish != null: fish.step(delta,camera.global_position,plane.position,plane.velocity,false)
 	if traffic != null: traffic.step(delta,camera.global_position,-camera.global_basis.z,plane.position,Vector3(-sin(plane.heading),0.0,-cos(plane.heading)),float(plane.speed))
 	if race != null: race.step(delta,self)
+	if shops != null: shops.step(delta,self)
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera
@@ -1300,6 +1348,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not walk_ready: return
 	# The menu holds the flight: none of its keys while it is up.
 	if stage != null and stage.holding(): return
+	# Photo mode: O opens it while no overlay is up, and it takes them all.
+	if photo.handle(event): return
+	# An overlay (the shop, the logbook, photo mode) takes the keys while up.
+	if overlay != null: return
 	if event is InputEventMouseMotion:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: return
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT): chase.turn(Vector2(-event.relative.x,-event.relative.y)*FLY_LOOK)
@@ -1333,6 +1385,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_G:
 				if grass != null: grass.set_enabled(not grass.enabled)
 			KEY_H: _next_near_layout()
+			KEY_J: logbook.open_book()
 			KEY_K:
 				if look != null and look.land_shade != null: look.land_shade.toggle()
 			KEY_Q: _lean_tapped(-1.0)
@@ -1340,6 +1393,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _exit_tree() -> void:
+	tallies.finish()
+	if book != null: book.save()
 	if get_tree().root.window_input.is_connected(Pad.note): get_tree().root.window_input.disconnect(Pad.note)
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = 1.0
