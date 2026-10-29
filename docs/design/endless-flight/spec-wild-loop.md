@@ -279,6 +279,35 @@ Files: new `scripts/endless/photo_mode.gd`.
   caches). The smoke's 400 frames: 4.5 s at `cdc6961c`, 16-19 s now.
   Probes: scratch/frame_cost.gd, scratch/step_cost.gd (not committed).
 
+### After trunk 2 (2026-10-28)
+
+- The planner's frame cost: fixed (da0a9f3e). It was RivalStrip.check
+  (11.6 ms a call, its lanes' stands loop most of it) run whole inside
+  one slice. Amberlands frames while planning 25-36 ms -> 5.3-7.4 ms
+  (`--beats=0`: 3.4-4.8 ms); smoke 400 frames 16-19 s -> 6.1 s. Same
+  routes planned. A square still costs ~0.5 s of CPU in the Amberlands.
+- The whole loop flew headless through one driver (scratch/loop_drive.gd,
+  seed 1, a fresh book): three lines banked over the sea (+217 money),
+  the first shop landed on and opened, Night Mail (180) bought and worn
+  with earned money, take-off, the nearest starter (0_0) flown in along
+  its axis, 6 of 6 beats (6.1-25.5 s spare), landed at the finish, the
+  summary read. 24 checks, 0 failures, 0 errors, 0 crashes.
+- Found, not fixed (calls for the user):
+  - **Flaps stay down after a take-off.** Land with flaps (as the hint
+    says), take off, and the plane crawls at FLAP_SPEED 5.5 m/s until F.
+    The driver presses F; a new player may not.
+  - **One razor late pull out of a 50 m dive scored 19,795 points**, so its
+    line (x5.4) paid 178, nearly the dearest paint, in the first 75 s.
+    The pay curve doesn't bound such outliers (a cap per line, or a log).
+  - **Rendered runs are slow and big**: the rendered loop ran at ~3-20
+    fps; one run (shop part only) ended without a result after 33 min, at
+    the shop's final, while the coordinator saw its Godot at 8.5-12.5 GB.
+    Not measured whether that memory climbs over a flight (a possible
+    leak: photo mode, beat marks, the summary or the shop view). Measure
+    the memory over a long headless and a rendered flight next.
+  - The summary after a route reads "flight 2": a shop landing ends the
+    flight, so the lines flown before it are not on the route's card.
+
 ## Smoke checks
 
 `python tools/smoke.py studies/endless_flight.tscn -- --pilot=fresh` and
