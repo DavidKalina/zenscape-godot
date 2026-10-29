@@ -7,7 +7,8 @@ extends RefCounted
 ##
 ## A profile is a script in scripts/endless/world/profiles/<id>.gd that
 ## extends this one and sets its tables in `_init`. Endless flight plays
-## `wilderness` unless `--world=<id>` names another. Every existing flag still
+## `regions` (wilderness with the amberlands in the mix, PLAYS) unless
+## `--world=<id>` names another; `--world=wilderness` is wilderness alone. Every existing flag still
 ## works and wins over the profile: the profile only sets the defaults the
 ## flags start from.
 ##
@@ -46,7 +47,10 @@ extends RefCounted
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const PROFILES := "res://scripts/endless/world/profiles/"
+## The base tables' world, and the fallback for an unknown id.
 const DEFAULT := "wilderness"
+## The world endless flight plays with no --world=: the patchwork of regions.
+const PLAYS := "regions"
 
 var id := DEFAULT
 var title := "Wilderness"
@@ -119,7 +123,7 @@ static var _current: RefCounted
 static var _current_key := ""
 static var _lock := Mutex.new()
 
-## The profile `--world=` names (wilderness by default), made once per name
+## The profile `--world=` names (PLAYS by default), made once per name
 ## and shared (every worker's LandField reads it; it is never written after
 ## it is made).
 static func current() -> RefCounted:
@@ -138,7 +142,7 @@ static func current() -> RefCounted:
 static func wanted_id() -> String:
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--world="): return a.get_slice("=",1)
-	return DEFAULT
+	return PLAYS
 
 ## A fresh profile by id (or a res:// path to a profile script, for a
 ## throwaway one in scratch/); an unknown id warns and plays wilderness.
