@@ -329,6 +329,12 @@ func _open_or_close() -> void:
 		return
 	if _left_on_stop or game.overlay != null or game.stage != null: return
 	if game.race != null and String(game.race.state) == "racing": return
+	# A beat route's stop is the route's: not while one runs, nor on the stop
+	# that ended it (its result shows), and not again until the next stop.
+	var beats: Node = game.get("beats")
+	if beats != null and (beats.running() or String(beats.state) == "end"):
+		_left_on_stop = true
+		return
 	for key: Vector2i in built:
 		var site: Dictionary = cells[key].site
 		if on_strip(site,game.plane.position):
