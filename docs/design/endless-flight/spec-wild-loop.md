@@ -229,6 +229,31 @@ Files: new `scripts/endless/photo_mode.gd`.
    `-- --world=amberlands`) with `--pilot=fresh`. Stills of each step.
 3. Done: `<promise>COMPLETE</promise>`.
 
+### Found at the merge (trunk 1 and 2 fix these as they go)
+
+- **Money is far too generous**: one mixed line paid 221, and the dearest
+  paint is 180. Re-tune `PilotBook.MONEY_PER_POINT`, the beat pay and the
+  prices together (trunk 1).
+- **The read-back is hard to read** over busy land (trees, grass): the
+  land-crossed row and the name are small and pale (`line_read_a.png` in
+  the line lane). Give it a backing or weight, and keep it small.
+- **"longest flight" record** showed 0:02 for a 1:38 flight
+  (`pilot_tallies.gd`).
+- **The shop opens during a beat route**: it must not, just as it doesn't
+  during a race. A route's landing on a shop strip goes to the route.
+- **The hint line** (the bottom key list) lacks J logbook and O photo.
+- **Beats**: seed 5's route had a beat missed by the safe driver (look at
+  why: the time, or the line). The beats are small dots in the pan, the
+  starter is only a thin shaft from 800 m, and the strip's posts don't read
+  from 420 m.
+- **Triangulation errors**: `near_miss_hud_handoff.gd` `_bar` still threw
+  "Invalid polygon data" in the beats lane's runs. Check after the merge,
+  as the line lane fixed some of them.
+- **Amberlands smoke**: one run in about six leaks a JoltBody3D RID at exit.
+  Find whether it is new (try it at `cdc6961c`) and fix it if it is ours.
+- **The rival** is slowed less now (full flow at x12, not x5). Check that a
+  race still feels like a race, and re-map if not.
+
 ## Smoke checks
 
 `python tools/smoke.py studies/endless_flight.tscn -- --pilot=fresh` and
