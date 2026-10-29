@@ -2,7 +2,10 @@ extends RefCounted
 ## What the shop sells (docs/design/endless-flight/spec-wild-loop.md, lane
 ## `shop`), and putting what is worn on the plane. A first stock, kept easy
 ## to change: an item is one row of ITEMS, its slot one of SLOTS. Prices are
-## placeholders (the loop's trunk tunes them).
+## set against the pay (PilotBook `line_pay`, BeatRoutes' money; trunk 1):
+## decent flying earns about 5-7 a minute, a wild line 30 or more, so the
+## first paint (60) comes in about ten minutes, a ribbon (40-70) in five to
+## ten, and the dearest paint (180) in about half an hour.
 ##
 ## Slots, each with its free first item (had by everyone, worn when the
 ## book names none):
