@@ -42,7 +42,8 @@ extends Node3D
 ## streaming, the look, the dressing machinery, the HUD and harness hooks);
 ## what makes the world this world is its profile
 ## (scripts/endless/world/world_profile.gd, profiles/<id>.gd): --world=ID
-## (wilderness; test_dry is a test profile). The profile sets the defaults;
+## (regions, wilderness with the amberlands; wilderness, amberlands and
+## overgrown alone; test_dry is a test profile). The profile sets the defaults;
 ## every flag below still wins (docs/design/endless-flight/world-profiles-handoff.md).
 ##
 ## Flags: --seed=N the land (1), --at=x,z where it starts (0,0), the land's shape
@@ -601,7 +602,7 @@ func _ready() -> void:
 	shops.setup(self)
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
-	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.DEFAULT else ", world "+str(world.id)])
+	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.PLAYS else ", world "+str(world.id)])
 	if stage == null and get_tree().current_scene == self and DisplayServer.get_name() != "headless": Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 ## The grass parted round the parked plane in the menu: out to PART_SPANS
