@@ -41,6 +41,10 @@ static func layers() -> Dictionary:
 		# aqueduct across a canyon or between two shelves spans from rim to rim.
 		"arches":1.8,"rock_arches":0.35,"ruin_arches":1.6,"ruin_near":700.0,"aqueduct_span":0.8,
 		"halls":1.3,"tunnels":1.0,
+		# The ruins' stone a dark basalt that stands out from the gold land
+		# (scripts/endless/land_arches.gd TONES), every set piece mossed on its
+		# tops only, so the moss doesn't take the grass's colour over it.
+		"ruin_tone":"basalt","set_moss":"tops",
 		# Bridges and aqueducts rim to rim between the plateaus, massif shoulders
 		# and terrace shelves (scripts/endless/bridge_plan.gd): the chance a
 		# bridge cell tries.

@@ -25,6 +25,22 @@ const Bridges = preload("res://scripts/endless/bridge_plan.gd")
 const Sets = preload("res://scripts/endless/set_plan.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const STONE_LIFT := Color(3.0, 2.55, 1.95)
+## The ruins' stone colour in the land, by name: the albedo lift (sRGB) over
+## the kit's dark stone. "amber" the warm gold it had (it matches the
+## amberlands' grass); the others stand apart from the land. The world
+## profile's "ruin_tone" layer picks one, --ruin-tone=NAME overrides.
+const TONES := {
+	"amber": Color(3.0, 2.55, 1.95),
+	"basalt": Color(1.3, 1.32, 1.42),
+	"slate": Color(1.85, 2.0, 2.4),
+	"limestone": Color(2.85, 2.85, 2.95),
+	"sandstone": Color(2.95, 1.95, 1.5),
+}
+static func tone_lift() -> Color:
+	var name := str(preload("res://scripts/endless/world/world_profile.gd").current().layer("ruin_tone","amber"))
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--ruin-tone="): name = a.get_slice("=",1)
+	return TONES.get(name,STONE_LIFT)
 const RuinKit = preload("res://scripts/ruin_kit.gd")
 const GothicGrowth = preload("res://scripts/gothic_growth.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
@@ -100,6 +116,15 @@ var _moss_off := "--no-stone-moss" in LaunchArgs.user_args()
 ## gives it the gothic pieces' moss as before.
 var _tops_stone: ShaderMaterial
 var _tops_only := not "--colosseum-moss=full" in LaunchArgs.user_args()
+## Every set piece (the gothic ones too) mossed on its tops only: the world
+## profile's "set_moss" layer ("tops"; else the gothic pieces' full moss),
+## --set-moss=tops|full overrides.
+var _all_tops := _set_moss() == "tops"
+static func _set_moss() -> String:
+	var how := str(preload("res://scripts/endless/world/world_profile.gd").current().layer("set_moss","full"))
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--set-moss="): how = a.get_slice("=",1)
+	return how
 
 ## `mossed` (a plateau bridge, amberlands only): its kit stone takes the
 ## gothic pieces' mossed stone too (the look pass: the ruins overgrown).
@@ -107,12 +132,12 @@ func _sunlit(node: Node, mossed := false, tops := false) -> void:
 	var kit: Material = RuinKit.materials().stone
 	if _stone == null:
 		_stone = (kit as ShaderMaterial).duplicate() as ShaderMaterial
-		_stone.set_shader_parameter("albedo",STONE_LIFT)
+		_stone.set_shader_parameter("albedo",tone_lift())
 		_stone.set_shader_parameter("fill",3.6)
 		_stone.set_shader_parameter("rim",0.1)
 	if tops and _tops_only and not _moss_off:
 		if _tops_stone == null:
-			_tops_stone = GothicGrowth.lifted(STONE_LIFT,3.6,0.1)
+			_tops_stone = GothicGrowth.lifted(tone_lift(),3.6,0.1)
 			_tops_stone.set_shader_parameter("moss_tongue",2.0)
 			_tops_stone.set_shader_parameter("moss_low",0.0)
 		_override(node,_tops_stone)
@@ -125,14 +150,14 @@ func _sunlit(node: Node, mossed := false, tops := false) -> void:
 			var own := m.mesh.surface_get_material(i)
 			if own == kit and not (mossed and not _moss_off): m.set_surface_override_material(i,_stone)
 			elif own == gothic or own == kit:
-				if _gothic_stone == null: _gothic_stone = _stone if _moss_off else GothicGrowth.lifted(STONE_LIFT,3.6,0.1)
+				if _gothic_stone == null: _gothic_stone = _stone if _moss_off else GothicGrowth.lifted(tone_lift(),3.6,0.1)
 				m.set_surface_override_material(i,_gothic_stone)
 	# The colosseum's bays, drawn as MultiMeshes (scripts/ruin_kit_colosseum.gd).
 	for mmi in node.find_children("*","MultiMeshInstance3D",true,false):
 		var mm := (mmi as MultiMeshInstance3D).multimesh
 		if mm == null or mm.mesh == null or mm.mesh.get_surface_count() == 0: continue
 		if mm.mesh.surface_get_material(0) != gothic: continue
-		if _gothic_stone == null: _gothic_stone = _stone if _moss_off else GothicGrowth.lifted(STONE_LIFT,3.6,0.1)
+		if _gothic_stone == null: _gothic_stone = _stone if _moss_off else GothicGrowth.lifted(tone_lift(),3.6,0.1)
 		(mmi as MultiMeshInstance3D).material_override = _gothic_stone
 
 ## Every stone surface under `node` (the kit's or the gothic pieces') and its
@@ -288,7 +313,7 @@ func _commit_one(done: Dictionary) -> void:
 		else:
 			node = b.node
 			if spec.get("kind","") == "colosseum": Colosseum.realize(node)
-			if not _old_stone: _sunlit(node,spec.has("bridge"),spec.get("kind","") == "colosseum")
+			if not _old_stone: _sunlit(node,spec.has("bridge"),spec.get("kind","") == "colosseum" or (_all_tops and not spec.has("bridge")))
 		for body in node.find_children("*","StaticBody3D",true,false):
 			(body as StaticBody3D).collision_layer = LAYER
 			(body as StaticBody3D).collision_mask = 0
