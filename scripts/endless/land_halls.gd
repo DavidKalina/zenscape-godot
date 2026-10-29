@@ -74,11 +74,16 @@ var _near_tasks := 0
 var _planned_at := Vector3.INF
 var _quit := false
 var _eye := Vector3.ZERO
-var _stone: ShaderMaterial
+## The sunlit stone, per ruin tone (LandArches TONES: the region's at the
+## piece, in a world of regions).
+var _stone := {}
 ## Materials of its own for the kit's (kit material -> its own), worn in
 ## place of the sunlit stone: the tunnels' stretches under rock
-## (land_tunnels.gd, the dark inside). Empty: the sunlit stone.
+## (land_tunnels.gd, the dark inside). Empty: the sunlit stone. `swap_of`
+## (a tone's name -> such a table) makes the table for each region's tone.
 var swap: Dictionary = {}
+var swap_of := Callable()
+var _swaps := {}
 ## With `swap`, the render layers its pieces stand on (0: as built).
 var swap_layers := 0
 var _old_stone := "--old-ruin-stone" in LaunchArgs.user_args()
@@ -422,25 +427,33 @@ func _stand_body(sec: Dictionary) -> bool:
 	(sec.near as Node3D).add_child(chunk)
 	return true
 
+## `node` stands in the tree (its place picks its region's tone).
 func _sunlit(node: Node) -> void:
+	const Arches = preload("res://scripts/endless/land_arches.gd")
+	var tone := Arches.tone_name((node as Node3D).global_position)
 	if not swap.is_empty():
-		_swap(node)
+		if swap_of.is_valid():
+			if not _swaps.has(tone): _swaps[tone] = swap_of.call(tone)
+			_swap(node,_swaps[tone])
+		else: _swap(node,swap)
 		return
 	if _old_stone: return
 	var kit: Material = RuinKit.materials().stone
-	if _stone == null:
-		_stone = (kit as ShaderMaterial).duplicate() as ShaderMaterial
-		_stone.set_shader_parameter("albedo",preload("res://scripts/endless/land_arches.gd").tone_lift())
-		_stone.set_shader_parameter("fill",3.6)
-		_stone.set_shader_parameter("rim",0.1)
+	if not _stone.has(tone):
+		var lit := (kit as ShaderMaterial).duplicate() as ShaderMaterial
+		lit.set_shader_parameter("albedo",Arches.TONES[tone])
+		lit.set_shader_parameter("fill",3.6)
+		lit.set_shader_parameter("rim",0.1)
+		_stone[tone] = lit
+	var stone: ShaderMaterial = _stone[tone]
 	var list: Array = node.find_children("*","MeshInstance3D",true,false)
 	if node is MeshInstance3D: list.append(node)
 	for mi: MeshInstance3D in list:
 		if mi.mesh == null: continue
 		for i in mi.mesh.get_surface_count():
-			if mi.mesh.surface_get_material(i) == kit: mi.set_surface_override_material(i,_stone)
+			if mi.mesh.surface_get_material(i) == kit: mi.set_surface_override_material(i,stone)
 
-func _swap(node: Node) -> void:
+func _swap(node: Node, table: Dictionary) -> void:
 	var list: Array = node.find_children("*","GeometryInstance3D",true,false)
 	if node is GeometryInstance3D: list.append(node)
 	for gi: GeometryInstance3D in list:
@@ -449,13 +462,13 @@ func _swap(node: Node) -> void:
 			var mi: MeshInstance3D = gi
 			if mi.mesh == null: continue
 			for i in mi.mesh.get_surface_count():
-				var own: Variant = swap.get(mi.mesh.surface_get_material(i))
+				var own: Variant = table.get(mi.mesh.surface_get_material(i))
 				if own != null: mi.set_surface_override_material(i,own)
 		elif gi is MultiMeshInstance3D:
 			var mm: MultiMesh = (gi as MultiMeshInstance3D).multimesh
 			if mm == null or mm.mesh == null: continue
 			for i in mm.mesh.get_surface_count():
-				var own: Variant = swap.get(mm.mesh.surface_get_material(i))
+				var own: Variant = table.get(mm.mesh.surface_get_material(i))
 				if own != null: gi.material_override = own
 
 ## Every hall standing now: [{name, info, node, sections...}].
