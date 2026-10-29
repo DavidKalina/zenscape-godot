@@ -21,6 +21,12 @@ const RING_R := 11.0
 const RING_TUBE := 0.9
 const SHAFT_TALL := 260.0
 const SHAFT_R := 2.2
+## The starter's shaft is wider than the finish's base (it is found from
+## ~800 m, where 2.2 m is a hair), and a crown glow stands up it at
+## CROWN_UP of its height, over the shoulders that hide the ring.
+const STARTER_SHAFT_R := 4.5
+const CROWN_UP := 0.85
+const GLOW_CROWN := 0.065
 ## The beat's orb radius (m), its shaft's width.
 const ORB_R := 2.2
 const BEAT_SHAFT_R := 0.35
@@ -28,9 +34,16 @@ const BEAT_SHAFT_R := 0.35
 const GLOW_STARTER := 0.07
 const GLOW_BEAT := 0.06
 const GLOW_FINISH := 0.08
-## Posts down the strip: every POST_EVERY m, POST_TALL m tall.
+## In the preview pan each beat's glow is PAN_GLOW times its size, so the
+## route reads from high over it.
+const PAN_GLOW := 2.6
+## Posts down the strip: every POST_EVERY m, POST_TALL m tall, POST_R
+## wide at the foot; a glow (GLOW_POST) on each end post, so the strip's
+## ends read from the final (~400 m).
 const POST_EVERY := 30.0
-const POST_TALL := 3.0
+const POST_TALL := 6.0
+const POST_R := 0.4
+const GLOW_POST := 0.022
 
 var _glow_tex: Texture2D
 
@@ -39,6 +52,7 @@ class Starter extends Node3D:
 	var ring: MeshInstance3D
 	var shaft: MeshInstance3D
 	var glow: MeshInstance3D
+	var crown: MeshInstance3D
 
 ## A beat or the finish: the orb (none for the finish), the shaft, the glow,
 ## and the finish's posts.
@@ -126,11 +140,14 @@ func starter(at: Vector3, axis: Vector3, ground: float) -> Starter:
 	if a.length() < 0.5: a = Vector3.FORWARD
 	s.ring.basis = Basis.looking_at(a,Vector3.UP)*Basis(Vector3.RIGHT,PI*0.5)
 	# The shaft rises out of the land under it, through the ring.
-	s.shaft = _shaft(STARTER,SHAFT_R,SHAFT_TALL,0.16)
+	s.shaft = _shaft(STARTER,STARTER_SHAFT_R,SHAFT_TALL,0.26)
 	s.add_child(s.shaft)
 	s.shaft.position.y = ground-at.y+SHAFT_TALL*0.5
 	s.glow = _glow(Color(STARTER.r,STARTER.g,STARTER.b,0.9),GLOW_STARTER)
 	s.add_child(s.glow)
+	s.crown = _glow(Color(STARTER.r,STARTER.g,STARTER.b,0.95),GLOW_CROWN)
+	s.add_child(s.crown)
+	s.crown.position.y = ground-at.y+SHAFT_TALL*CROWN_UP
 	return s
 
 ## A beat at `at` over the land at `ground`.
@@ -176,8 +193,8 @@ func finish(at: Vector3, from: Vector3, to: Vector3, across: Vector3, wide: floa
 	b.add_child(b.posts)
 	var post_m := _mat(Color(FINISH.r,FINISH.g,FINISH.b,0.9),false)
 	var post := CylinderMesh.new()
-	post.top_radius = 0.18
-	post.bottom_radius = 0.25
+	post.top_radius = POST_R*0.7
+	post.bottom_radius = POST_R
 	post.height = POST_TALL
 	post.radial_segments = 6
 	post.rings = 1
@@ -193,6 +210,10 @@ func finish(at: Vector3, from: Vector3, to: Vector3, across: Vector3, wide: floa
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			b.posts.add_child(mi)
 			mi.global_position = Vector3(p.x,float(height.call(p.x,p.z))+POST_TALL*0.5,p.z)
+			if i == 0 or i == n:
+				var g := _glow(Color(FINISH.r,FINISH.g,FINISH.b,0.95),GLOW_POST)
+				mi.add_child(g)
+				g.position.y = POST_TALL*0.5
 	b.posts.visible = false
 	return b
 
@@ -207,6 +228,11 @@ static func flash(b: Beat, left: float, clock: float, fade := 1.0) -> void:
 	_alpha(b,(1.0-depth*pulse)*fade)
 	if b.orb != null: b.orb.scale = Vector3.ONE*lerpf(0.9,1.2,pulse)*maxf(fade,0.05)
 	b.visible = fade > 0.01
+
+## `b`'s glow at its pan size (`on`) or its own.
+static func pan_size(b: Beat, on: bool) -> void:
+	if b == null or b.glow == null: return
+	(b.glow.mesh as QuadMesh).size = Vector2.ONE*GLOW_BEAT*(PAN_GLOW if on else 1.0)
 
 ## All of `b`'s marks at alpha `a` (the shaft fainter); hidden at 0.
 static func dim(b: Beat, a: float) -> void:

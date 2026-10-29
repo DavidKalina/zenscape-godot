@@ -531,7 +531,9 @@ func _begin(game: Node, id: String) -> void:
 	for b: Dictionary in route.beats: _live.append(_marks.beat(b.at,float(b.ground)))
 	var s: Dictionary = route.strip
 	_finish = _marks.finish(route.finish,route.land_from,route.land_to,s.across,float(route.land_wide),Callable(game.field,"height"))
-	for m: Node3D in _live: BeatMarks.dim(m,0.8)
+	for m: Node3D in _live:
+		BeatMarks.dim(m,0.8)
+		BeatMarks.pan_size(m,true)
 	var targets: Array = [route.starter.at]
 	for b: Dictionary in route.beats: targets.append(b.at)
 	targets.append(route.finish)
@@ -568,7 +570,9 @@ func _start_beat(i: int) -> void:
 	beat_i = i
 	left = float(times[i])+maxf(spare,0.0)
 	_per_beat = left
-	for k in _live.size(): BeatMarks.dim(_live[k],0.0)
+	for k in _live.size():
+		BeatMarks.dim(_live[k],0.0)
+		BeatMarks.pan_size(_live[k],false)
 	if i < _live.size():
 		_settle(i)
 		BeatMarks.dim(_live[i],1.0)
