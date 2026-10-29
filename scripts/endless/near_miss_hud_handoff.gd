@@ -21,7 +21,10 @@ extends Control
 ##   then burning with embers at the cap.
 ## - the bank: total and multiplier slide together and slam into one gold
 ##   number sized to the run (a nod, big, huge), counting up, then pouring
-##   into the meter; a scrape freezes 60 ms, cracks the total in coral,
+##   into the meter; under it the line reads back (READ_TIME s from the
+##   bank, cut short by the next move): its moves' badges in order, the land
+##   it crossed, its name if it earned one and the money paid; a scrape
+##   freezes 60 ms, cracks the total in coral,
 ##   splits it and lets it fall, the loss in a coral line.
 ## - the gap: at the cluster's foot, the closest the plane has come this
 ##   pass (NearMiss `gap`), counting down live as it closes, heating from
@@ -67,7 +70,8 @@ const GAP_CLOSING := 0.6
 ## The tag's meter: in from the lower right corner (D) and its size.
 const TAG_METER_AT := Vector2(72.0,90.0)
 const TAG_METER := Vector2(300.0,14.0)
-## The multiplier's size (D) and colour at x1 to x5, and its glow there.
+## The multiplier's size (D) and colour from x1 to the cap (NearMiss.CHAIN_TOP)
+## in four even steps, and its glow there.
 const MULT_PX := [88.0,96.0,108.0,120.0,136.0]
 const HEAT := [Color("f6f3ea"),Color("f7dc8a"),Color("f2c14e"),Color("f7922e"),Color("ff6a2b")]
 const GLOW := [Color(0,0,0,0),Color(0.969,0.863,0.541,0.55),Color(0.949,0.757,0.306,0.7),Color(0.969,0.573,0.180,0.8),Color(1.0,0.353,0.118,0.9)]
@@ -75,6 +79,16 @@ const GLOW_PX := [0.0,10.0,14.0,18.0,22.0]
 ## The bank by size: under 2,000 a nod, to 10,000 big, past it huge: the
 ## number's size, the word's, the count's time (s), the shake (D).
 const BANK_TIERS := [[2000.0,68.0,30.0,0.4,0.0],[10000.0,112.0,36.0,0.8,3.0],[INF,152.0,40.0,1.2,8.0]]
+## The read-back (D): from READ_IN s after the bank to READ_TIME, its last
+## READ_FADE fading; the badges' row (their middle y, size, at most
+## READ_MOST), the land's and the name's rows (middle y, size).
+const READ_IN := 0.35
+const READ_TIME := 2.6
+const READ_FADE := 0.35
+const READ_BADGES := [262.0,64.0]
+const READ_MOST := 9
+const READ_LAND := [336.0,34.0]
+const READ_NAME := [404.0,46.0]
 
 const CREAM := Color("f6f3ea")
 const NEAR_C := Color("b9c6d2")
@@ -202,6 +216,8 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 		var m: Dictionary = events.near
 		var band := str(m.band)
 		if band == "razor": _hold(0.25,50)
+		# A new move cuts the last line's read-back short.
+		if not _bank.is_empty(): _bank.cut = true
 		_feed.push_front({"id":Glyphs.for_moment(m),"kind":str(m.kind).to_upper(),"band":band,
 			"points":float(m.points),"clear":float(m.clear),"age":0.0,"slot":0.0,"landed":false,"fade":-1.0})
 		_gap_lock = maxf(float(m.clear),0.0)
@@ -216,7 +232,8 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 			if pts < float(t[0]):
 				tier = t
 				break
-		_bank = {"age":0.0,"points":pts,"chain":_prev_chain,"mult":_prev_mult,"tier":tier}
+		var line: Dictionary = events.banked.get("line",{})
+		_bank = {"age":0.0,"points":pts,"chain":_prev_chain,"mult":float(line.get("mult",_prev_mult)),"tier":tier,"line":line,"cut":false}
 		_end_feed()
 	var crash := events.has("crash")
 	if crash or events.has("scrape"):
@@ -257,7 +274,7 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 	if mult > _last_mult+0.01: _mult_kick = 0.0
 	_last_mult = mult
 	_mult_kick += delta
-	var heat := clampf((mult-1.0)/4.0,0.0,1.0)
+	var heat := _mult_heat(mult)
 	# (The bank's slide keeps the heat it banked.)
 	if _bank.is_empty() or float(_bank.age) > 0.15: _heat = lerpf(_heat,heat,minf(1.0,delta*10.0))
 	if not _bank.is_empty():
@@ -389,7 +406,9 @@ func _place_block() -> void:
 
 func _bank_time() -> float:
 	var tier: Array = _bank.tier
-	return 0.15+float(tier[3])+0.25+0.3
+	var slam := 0.15+float(tier[3])+0.25+0.3
+	if bool(_bank.get("cut",false)) or (_bank.get("line",{}).get("moves",[]) as Array).is_empty(): return slam
+	return maxf(slam,READ_TIME)
 
 # --- Text --------------------------------------------------------------------
 
@@ -485,13 +504,20 @@ func _draw_gap(s: float) -> void:
 	var r := chev*0.5*grow
 	var tri := PackedVector2Array([c+Vector2(-r,-r*0.55),c+Vector2(r,-r*0.55),c+Vector2(0.0,r*0.75)])
 	var key := PackedVector2Array([tri[0]+Vector2(-3.0,-2.0)*s,tri[1]+Vector2(3.0,-2.0)*s,tri[2]+Vector2(0.0,4.0)*s])
-	_block.draw_colored_polygon(key,Color(KEY,a))
-	_block.draw_colored_polygon(tri,Color(col,a))
+	# (Too small to triangulate, as in a window of no size, it is left out.)
+	if r >= 0.5:
+		_block.draw_colored_polygon(key,Color(KEY,a))
+		_block.draw_colored_polygon(tri,Color(col,a))
 	_txt(_block,_nums,text,(Vector2(left+chev+gap+tw*0.5,y)-Vector2(mid,y))*grow+Vector2(mid,y),px,Color(col,a),14.0*s,grow,0.0,Color(glow,glow.a*a),glow_px)
 	_txt(_block,unit,"m",(Vector2(left+whole-uw*0.5,y+px*0.12)-Vector2(mid,y))*grow+Vector2(mid,y),unit_px,Color(col,a),8.0*s,grow)
 
+## The multiplier's heat, 0 at x1 to 1 at NearMiss.CHAIN_TOP.
+static func _mult_heat(mult: float) -> float:
+	return clampf((mult-1.0)/(NearMiss.CHAIN_TOP-1.0),0.0,1.0)
+
+## The multiplier's size: MULT_PX spread from x1 to the cap.
 func _mult_px(mult: float) -> float:
-	var x := clampf(mult-1.0,0.0,4.0)
+	var x := _mult_heat(mult)*4.0
 	var i := mini(int(x),3)
 	return lerpf(MULT_PX[i],MULT_PX[i+1],x-i)
 
@@ -634,8 +660,8 @@ func _bar(ci: CanvasItem, r: Rect2, share: float, key: float, cols: Array, from_
 		box.shadow_color = Color(1.0,0.84,0.42,0.8*glow)
 		box.shadow_size = roundi(14.0*_k()*glow)
 	ci.draw_style_box(box,r)
-	if share <= 0.0: return
 	var w := r.size.x*share
+	if w < 0.5: return
 	var x0 := r.position.x+(r.size.x-w if from_right else 0.0)
 	var y0 := r.position.y
 	var h := r.size.y
@@ -699,6 +725,8 @@ func _draw_bank(s: float) -> void:
 		grow *= lerpf(1.0,0.3,k)
 		alpha = 1.0-k*k
 		if k >= 1.0: _flare = 0.4
+	_draw_readback(s)
+	if alpha <= 0.0: return
 	var shake := float(tier[4])*s
 	var rot := 0.0
 	if shake > 0.0 and pour <= 0.0:
@@ -722,6 +750,68 @@ func _draw_bank(s: float) -> void:
 				var r0 := w*0.5+lerpf(20.0,90.0,k)*s
 				var p0 := at+Vector2(d.x*r0,d.y*r0*0.6)
 				_block.draw_line(p0,p0+d*lerpf(48.0,16.0,k)*s,Color(SPARK,0.8*(1.0-k)),6.0*s,true)
+
+## The banked line read back under the bank: its moves' badges in order
+## (each popping in, a "+n" past READ_MOST), the land it crossed, and its
+## name (if any) with the money paid.
+func _draw_readback(s: float) -> void:
+	var line: Dictionary = _bank.get("line",{})
+	var kinds: Array = line.get("moves",[])
+	if kinds.is_empty(): return
+	var a := float(_bank.age)-READ_IN
+	if a <= 0.0: return
+	var end := _bank_time()-READ_IN
+	var alpha := smoothstep(0.0,0.15,a)*(1.0-smoothstep(end-READ_FADE,end,a))
+	if alpha <= 0.01: return
+	# The badges.
+	var glyphs: Array = line.get("glyphs",[])
+	var bands: Array = line.get("bands",[])
+	var n := mini(glyphs.size(),READ_MOST)
+	var bpx := float(READ_BADGES[1])*s
+	var step := bpx*1.08
+	var more := "+%d" % (glyphs.size()-n) if glyphs.size() > n else ""
+	var more_px := bpx*0.55
+	var mw := _width(_nums,more,more_px)+(10.0*s if more != "" else 0.0)
+	var whole := step*(n-1)+bpx+mw
+	var left := _row_left(whole)
+	var y := float(READ_BADGES[0])*s
+	for i in n:
+		var t := clampf((a-0.06*i)/0.18,0.0,1.0)
+		if t <= 0.0: continue
+		var pop := lerpf(0.6,1.0,1.0-pow(1.0-t,3.0))
+		var band := str(bands[i]) if i < bands.size() else "close"
+		var tex := Badges.texture(str(glyphs[i]),band,bpx*pop)
+		if tex == null: continue
+		var c := Vector2(left+bpx*0.5+step*i,y)
+		_block.draw_texture_rect(tex,Rect2(c-Vector2.ONE*bpx*pop*0.5,Vector2.ONE*bpx*pop),false,Color(1,1,1,alpha*t))
+	if more != "": _txt(_block,_nums,more,Vector2(left+whole-mw*0.5+5.0*s,y),more_px,Color(CREAM,alpha),6.0*s)
+	# The land crossed.
+	var land: Array = line.get("terrain",[])
+	if not land.is_empty():
+		var words := PackedStringArray()
+		for w: Variant in land: words.append(str(w).to_upper())
+		var ltext := "  ·  ".join(words)
+		var lpx := float(READ_LAND[1])*s
+		var lf := _word_font(lpx,0.14)
+		var lw := _width(lf,ltext,lpx)
+		_txt(_block,lf,ltext,Vector2(_row_left(lw)+lw*0.5,float(READ_LAND[0])*s),lpx,Color(NEAR_C,alpha*smoothstep(0.1,0.3,a)),6.0*s)
+	# The name and the money.
+	var title := str(line.get("name","")).to_upper()
+	var money := "+%d" % int(line.get("money",0))
+	var npx := float(READ_NAME[1])*s
+	var nf := _word_font(npx,0.18)
+	var nw := _width(nf,title,npx) if title != "" else 0.0
+	var gap := 22.0*s if title != "" else 0.0
+	var cw := _width(_nums,money,npx*1.05)
+	var coin := npx*0.9
+	var row := nw+gap+coin+8.0*s+cw
+	var rl := _row_left(row)
+	var ny := float(READ_NAME[0])*s
+	var na := alpha*smoothstep(0.2,0.4,a)
+	if title != "": _txt(_block,nf,title,Vector2(rl+nw*0.5,ny),npx,Color(GOLD,na),8.0*s,1.0,0.0,Color(1.0,0.75,0.27,0.6),12.0*s)
+	var tex := Badges.texture("bank","razor",coin)
+	if tex != null: _block.draw_texture_rect(tex,Rect2(Vector2(rl+nw+gap,ny-coin*0.5),Vector2.ONE*coin),false,Color(1,1,1,na))
+	_txt(_block,_nums,money,Vector2(rl+row-cw*0.5,ny),npx*1.05,Color(GOLD,na),8.0*s)
 
 func _meter_mid_in_block() -> Vector2:
 	if not tag: return Vector2(0.0,METER_Y*_s()+METER.y*_s()*0.5)
