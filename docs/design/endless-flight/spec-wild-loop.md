@@ -254,6 +254,31 @@ Files: new `scripts/endless/photo_mode.gd`.
 - **The rival** is slowed less now (full flow at x12, not x5). Check that a
   race still feels like a race, and re-map if not.
 
+### After trunk 1 (2026-10-28)
+
+- Done: the money (lines pay points/1600 x sqrt(mult), at least 1; beats 2
+  a beat, 6 the finish, 1 per 15 s spare; prices kept), the read-back's
+  plate, "longest flight" (it read a faked tally; now one source), the shop
+  shut during a route, J and O on the hint line, the beats' look (pan
+  glows, the starter's crown, lit strip ends), the rival's flow (full at
+  x5 again).
+- Seed 5's miss was the driver's: it flew into a crest at 9 m and kept
+  steering by the crashed SkyPlane (a crash launches a new one); re-read,
+  it took beats 1-5 (7.7-19.5 s spare), then touched down 56 m short of the
+  strip with 25 s left. No route change.
+- Triangulation errors: none in any run of trunk 1.
+- Amberlands smoke: 8 of 8 PASS at `cdc6961c` and 8 of 8 at the trunk, run
+  alone; one FAIL ("Initializing already initialized RID", "unimplemented
+  base type ... scene cull") came with two smokes at once. Not traced.
+- Left for trunk 2: **the beat planner's frame cost**. While squares are
+  planned (the first ~10-20 s, and as new ones come in reach) headless
+  frames in the Amberlands go from ~4 ms to ~25 ms (spikes 40-60 ms; the
+  wilderness ~14 ms in the first 5 s). A 1 ms slice changes nothing and no
+  stretch between the planner's own checks passes 12 ms, so the cost is
+  outside its slices: suspect work its far sampling sets off (the field's
+  caches). The smoke's 400 frames: 4.5 s at `cdc6961c`, 16-19 s now.
+  Probes: scratch/frame_cost.gd, scratch/step_cost.gd (not committed).
+
 ## Smoke checks
 
 `python tools/smoke.py studies/endless_flight.tscn -- --pilot=fresh` and
