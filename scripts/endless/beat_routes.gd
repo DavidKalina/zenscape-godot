@@ -51,7 +51,7 @@ const STRIP_TRIES := 120
 ## The flats read for it: a grid this far apart (m), this far out (m).
 const STRIP_GRID := 100.0
 const STRIP_REACH := 1300.0
-const SLICE_US := 4000
+const SLICE_US := 2000
 ## The ring's height over the land (m); flown through within THROUGH_R m.
 const RING_UP := 40.0
 const THROUGH_R := 14.0
@@ -148,6 +148,7 @@ var _hud: Control
 var _per_beat := 0.0
 var _busy := false
 var _slice := 0
+var _piece := 0
 
 ## What RivalStrip reads the land with (rival_line.gd's `_ground_top`).
 class Reader extends RefCounted:
@@ -166,6 +167,13 @@ class Reader extends RefCounted:
 			var t: Variant = game.trees.ground(Vector3(p.x,h+400.0,p.z),h)
 			if not t is Vector2 and t != null: h = maxf(h,float(t))
 		return h
+
+## Off under `--beats=0` (no starters, no routes: to compare frame cost).
+static func wanted() -> bool:
+	return not OS.get_cmdline_user_args().has("--beats=0")
+
+## The planner's own time (us) since start, its slices summed (for checks).
+static var plan_us := 0
 
 func setup(seed: int, game: Node) -> void:
 	name = "BeatRoutes"
@@ -244,7 +252,9 @@ func _plan_cell(key: Vector2i) -> Dictionary:
 	_busy = true
 	_cells[key] = {"planning":true}
 	_slice = Time.get_ticks_usec()
+	_piece = _slice
 	var r: Dictionary = await plan(key)
+	plan_us += Time.get_ticks_usec()-_slice
 	_busy = false
 	_cells[key] = r
 	if not r.is_empty():
@@ -262,6 +272,7 @@ func plan(key: Vector2i) -> Dictionary:
 	for k in TRIES:
 		var x := float(key.x)*CELL+MARGIN+_hash01(key.x,key.y,10+k)*(CELL-2.0*MARGIN)
 		var z := float(key.y)*CELL+MARGIN+_hash01(key.x,key.y,40+k)*(CELL-2.0*MARGIN)
+		await _breathe()
 		if not _open(field,x,z):
 			_fail("open")
 			continue
@@ -289,6 +300,19 @@ func _open(field: RefCounted, x: float, z: float) -> bool:
 		var d := Vector2(cos(a*TAU/6.0),sin(a*TAU/6.0))*LEVEL_R
 		if absf(float(field.height(x+d.x,z+d.y))-h) > LEVEL: return _no("open_level")
 	return true
+
+## A coroutine's breath between two pieces of the planner's work: when the
+## next piece (guessed as long as the last) would end past SLICE_US since
+## this frame's slice began, wait a frame.
+func _breathe() -> void:
+	var now := Time.get_ticks_usec()
+	var piece := now-_piece
+	_piece = now
+	if now-_slice+piece <= SLICE_US: return
+	plan_us += now-_slice
+	await get_tree().process_frame
+	_slice = Time.get_ticks_usec()
+	_piece = _slice
 
 static func _no(why: String) -> bool:
 	_fail(why)
@@ -356,6 +380,7 @@ func _route(key: Vector2i, at: Vector3, axis: Vector3, ground: float) -> Diction
 					best_score = score
 					best = r
 					best_off = off
+			await _breathe()
 		if best.is_empty():
 			_fail("beat")
 			return {}
@@ -411,8 +436,10 @@ func _strip_near(field: RefCounted, from: Vector3, dir: Vector3) -> Dictionary:
 			if rise > 4.0: continue
 			var ahead := o.normalized().dot(dir)
 			spots.append([rise*0.5-s.y*2.0-ahead*1.0+d/STRIP_REACH,c])
+		await _breathe()
 	spots.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
 	var tried := 0
+	var heights := {}
 	for sp: Array in spots:
 		if tried >= STRIP_TRIES: break
 		var c: Vector3 = sp[1]
@@ -425,11 +452,19 @@ func _strip_near(field: RefCounted, from: Vector3, dir: Vector3) -> Dictionary:
 				tried += 1
 				var touch := c-axis*RivalStrip.ROLL*0.5-axis.cross(Vector3.UP)*side*RivalStrip.lane()*0.5
 				touch.y = float(field.height(touch.x,touch.z))
-				var st := RivalStrip.check(_game,_reader,touch,axis,side)
-				if not st.is_empty(): return st
-				if Time.get_ticks_usec()-_slice > SLICE_US:
-					await get_tree().process_frame
-					_slice = Time.get_ticks_usec()
+				await _breathe()
+				var st := RivalStrip.check(_game,_reader,touch,axis,side,heights,false)
+				if st.is_empty(): continue
+				# What stands on its approaches and lanes, a read at a time.
+				var clear := true
+				for k in RivalStrip.late_count(st):
+					await _breathe()
+					if RivalStrip.late_read(_game,_reader,st,k) != "":
+						clear = false
+						break
+				if clear:
+					st.erase("late")
+					return st
 	return {}
 
 ## The landing's box and the finish's beacon, from the strip.

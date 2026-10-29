@@ -585,9 +585,10 @@ func _ready() -> void:
 		water.name = "Water"
 		add_child(water)
 		water.setup(self)
-	beats = BeatRoutes.new()
-	add_child(beats)
-	beats.setup(seed,self)
+	if BeatRoutes.wanted():
+		beats = BeatRoutes.new()
+		add_child(beats)
+		beats.setup(seed,self)
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
