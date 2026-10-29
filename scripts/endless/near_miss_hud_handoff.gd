@@ -89,6 +89,8 @@ const READ_BADGES := [272.0,84.0]
 const READ_MOST := 9
 const READ_LAND := [372.0,44.0]
 const READ_NAME := [458.0,58.0]
+## The plate under the land and the name: its padding (D) and its darkness.
+const READ_PLATE := [22.0,0.62]
 
 const CREAM := Color("f6f3ea")
 const NEAR_C := Color("b9c6d2")
@@ -785,17 +787,17 @@ func _draw_readback(s: float) -> void:
 		var c := Vector2(left+bpx*0.5+step*i,y)
 		_block.draw_texture_rect(tex,Rect2(c-Vector2.ONE*bpx*pop*0.5,Vector2.ONE*bpx*pop),false,Color(1,1,1,alpha*t))
 	if more != "": _txt(_block,_nums,more,Vector2(left+whole-mw*0.5+5.0*s,y),more_px,Color(CREAM,alpha),6.0*s)
-	# The land crossed.
+	# The land crossed, and the name and the money, measured first for
+	# their plate.
 	var land: Array = line.get("terrain",[])
-	if not land.is_empty():
-		var words := PackedStringArray()
-		for w: Variant in land: words.append(str(w).to_upper())
-		var ltext := "  ·  ".join(words)
-		var lpx := float(READ_LAND[1])*s
-		var lf := _word_font(lpx,0.14)
-		var lw := _width(lf,ltext,lpx)
-		_txt(_block,lf,ltext,Vector2(_row_left(lw)+lw*0.5,float(READ_LAND[0])*s),lpx,Color(CREAM,0.9*alpha*smoothstep(0.1,0.3,a)),8.0*s)
-	# The name and the money.
+	var words := PackedStringArray()
+	for w: Variant in land: words.append(str(w).to_upper())
+	var ltext := "  ·  ".join(words)
+	var lpx := float(READ_LAND[1])*s
+	var lf := _word_font(lpx,0.14)
+	var lw := _width(lf,ltext,lpx) if ltext != "" else 0.0
+	var ly := float(READ_LAND[0])*s
+	var la := alpha*smoothstep(0.1,0.3,a)
 	var title := str(line.get("name","")).to_upper()
 	var money := "+%d" % int(line.get("money",0))
 	var npx := float(READ_NAME[1])*s
@@ -808,6 +810,18 @@ func _draw_readback(s: float) -> void:
 	var rl := _row_left(row)
 	var ny := float(READ_NAME[0])*s
 	var na := alpha*smoothstep(0.2,0.4,a)
+	# The plate: a dark band under both rows with a gilt rule on top, so the
+	# words hold over trees and grass (READ_PLATE).
+	var pad := float(READ_PLATE[0])*s
+	var wide := maxf(lw,row)+2.0*pad
+	var top := (ly-lpx*0.62 if ltext != "" else ny-npx*0.7)-pad*0.5
+	var bottom := ny+npx*0.62+pad*0.5
+	var pl := _row_left(wide)
+	if wide > 1.0 and bottom-top > 1.0 and la > 0.01:
+		_block.draw_rect(Rect2(pl,top,wide,bottom-top),Color(KEY,float(READ_PLATE[1])*la))
+		_block.draw_rect(Rect2(pl,top,wide,maxf(2.0*s,1.0)),Color(GOLD,0.55*la))
+	if ltext != "":
+		_txt(_block,lf,ltext,Vector2(_row_left(lw)+lw*0.5,ly),lpx,Color(CREAM,la),8.0*s)
 	if title != "": _txt(_block,nf,title,Vector2(rl+nw*0.5,ny),npx,Color(GOLD,na),8.0*s,1.0,0.0,Color(1.0,0.75,0.27,0.6),12.0*s)
 	var tex := Badges.texture("bank","razor",coin)
 	if tex != null: _block.draw_texture_rect(tex,Rect2(Vector2(rl+nw+gap,ny-coin*0.5),Vector2.ONE*coin),false,Color(1,1,1,na))
