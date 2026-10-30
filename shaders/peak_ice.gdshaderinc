@@ -179,10 +179,18 @@ float peak_ice_margin(vec3 p, float ny, vec4 frame, vec2 more) {
 // axes and bent, or a noise cut this hard shows its squares.)
 float peak_ice_gravel(vec2 q, float k_1, float k_h) {
 	vec2 r = vec2(q.x * 0.80 + q.y * 0.60, q.y * 0.80 - q.x * 0.60);
-	r += (vec2(peak_noise(q / 0.77 + 1.3), peak_noise(q / 0.71 + 6.1)) - 0.5) * 0.7;
-	float big = peak_noise(r / 0.95 + 2.8);
-	float tone = mix(1.0, 0.76 + 0.48 * smoothstep(0.30, 0.70, big), k_1);
-	if (k_h > 0.0) tone *= mix(1.0, 0.56 + 0.88 * peak_cells(r / 0.42 + 9.0).z, k_h);
+	r += (vec2(peak_noise(q / 0.77 + 1.3), peak_noise(q / 0.71 + 6.1)) - 0.5) * 0.5;
+	float big = peak_noise(r / 0.61 + 2.8);
+	if (k_h > 0.0) big = mix(big, big * 0.6 + peak_noise(r / 0.23 + 7.1) * 0.4, k_h);
+	float tone = mix(1.0, 0.70 + 0.60 * smoothstep(0.30, 0.70, big), k_1);
+	if (k_h > 0.0) {
+		// Dark in the cracks between stones, each stone its own tone, a size of grit
+		// under that.
+		vec3 c = peak_cells(r / 0.17 + 9.0);
+		float gaps = smoothstep(0.02, 0.16, c.y);
+		tone *= mix(1.0, (0.55 + 0.90 * c.z) * mix(0.45, 1.0, gaps), k_h);
+		tone *= mix(1.0, 0.72 + 0.56 * peak_noise(r / 0.055 + 4.4), k_h);
+	}
 	return tone;
 }
 
@@ -196,7 +204,7 @@ vec3 peak_ice_stones(vec2 q, float fp) {
 	vec3 c = mix(ICE_GRIT * 1.5, ICE_GRIT_PALE * 1.35, smoothstep(0.26, 0.74, t));
 	c *= 0.86 + 0.28 * peak_noise(q / 83.0 + 5.2);
 	// Close to, stones in two sizes.
-	float k_h = 1.0 - smoothstep(0.08, 0.32, fp);
+	float k_h = 1.0 - smoothstep(0.03, 0.14, fp);
 	c *= peak_ice_gravel(q, k_1, k_h);
 	return c;
 }
@@ -336,7 +344,7 @@ float peak_ice_floor(vec3 p, vec3 eye, vec4 frame, vec2 flow, vec2 more, float f
 	float v_s = dot(eye.xz, flow) / max(eye.y, 0.04);
 	float band = smoothstep(0.34, 0.58, peak_noise(vec2(s / 150.0, 2.3)));
 	float ds;
-	float wide_a = peak_ice_crevasse(s, t, half_w, 41.0, 1.5, 1.7, k_3, ds) * band;
+	float wide_a = peak_ice_crevasse(s, t, half_w, 41.0, 0.85, 1.7, k_3, ds) * band;
 	// (The rough of the lips, by the crevasse's own width, so one pinching out runs
 	// smooth and thin and doesn't bead.)
 	float rough_s = (peak_noise(q / 1.7 + 0.7) - 0.5) * 1.1 + (peak_noise(q / 0.6 + 2.9) - 0.5) * 0.5 * k_1;
@@ -347,7 +355,7 @@ float peak_ice_floor(vec3 p, vec3 eye, vec4 frame, vec2 flow, vec2 more, float f
 	// (A lip only where its crevasse is open; a pinched-out one left a groove no
 	// wider than a pixel, whose bump broke into lines of dots.)
 	float lip_a = (1.0 - smoothstep(wide_a, wide_a * 2.6 + 0.7, abs(ds))) * smoothstep(0.0, 0.5, wide_a);
-	float wide_b = peak_ice_crevasse(s + 11.0, t, half_w, 13.0, 0.75, 6.1, k_1, ds) * (0.35 + 0.65 * band);
+	float wide_b = peak_ice_crevasse(s + 11.0, t, half_w, 13.0, 0.5, 6.1, k_1, ds) * (0.35 + 0.65 * band);
 	ds += rough_s * min(wide_b, 0.4) * k_1;
 	float down_b;
 	float b_on = peak_ice_slit(ds, wide_b, v_s, fl, down_b) * smoothstep(0.3, 1.0, wide_b / fl);
@@ -382,7 +390,7 @@ float peak_ice_floor(vec3 p, vec3 eye, vec4 frame, vec2 flow, vec2 more, float f
 	float grit = smoothstep(mix(0.34, 0.45, k_1), mix(0.60, 0.51, k_1), dirt + (peak_noise(q / 6.1 + 2.7) - 0.5) * 0.46 * k_21 + (peak_noise(q / 1.9) - 0.5) * 0.62 * k_3 + (peak_noise(q / 0.6) - 0.5) * 0.3 * k_1);
 	vec3 stone = mix(ICE_GRIT, ICE_GRIT_PALE, smoothstep(0.3, 0.72, mix(0.5, peak_noise(q / 2.9 + 2.0), k_3)));
 	// (Close to, stones in two sizes.)
-	stone *= peak_ice_gravel(q, k_1, k_h);
+	stone *= peak_ice_gravel(q, k_1, 1.0 - smoothstep(0.03, 0.14, fp));
 	col = mix(col, stone, grit * (1.0 - slit));
 	gloss = (1.0 - old) * (1.0 - grit) * (1.0 - slit * 0.8);
 	// Bump: melt hummocks and scallops, lips falling into the slits, grit raised.
@@ -440,6 +448,8 @@ float peak_ice_wall(vec3 p, vec3 n, vec3 eye, vec2 flow, float fp, float tone, f
 	float band = mix(0.5, b_1, k_16) * 0.52 + mix(0.5, b_2, k_7) * 0.32 + mix(0.5, b_3, k_2) * 0.16;
 	float strata = smoothstep(0.34, 0.66, band);
 	float dust = smoothstep(0.30, 0.20, b_2) * k_7 + smoothstep(0.24, 0.16, b_1) * 0.7 * k_16;
+	// (A serac's bands read as a marble's veins at any strength: faint there.)
+	float vein = mix(1.0, 0.28, solid);
 	// Fractures up the face: straight sheets (the walls of tall cells, some of
 	// them), not a noise's level lines. The ground's walls have none.
 	float crack_a = 0.0;
@@ -450,9 +460,12 @@ float peak_ice_wall(vec3 p, vec3 n, vec3 eye, vec2 flow, float fp, float tone, f
 		vec3 r_b;
 		vec2 c_a = er_cells(vec3(p.x + p.y * 0.12, p.y * 0.30, p.z - p.y * 0.08) / 8.5 + 3.0, r_a);
 		vec2 c_b = er_cells(vec3(p.x, p.y * 0.42, p.z) / 3.1 + 11.0, r_b);
-		float on_a = step(0.42, r_a.x);
-		crack_a = peak_ice_thin(c_a.y, fwidth(c_a.y), 0.03 + 0.07 * r_a.y, fp) * on_a;
-		crack_b = peak_ice_thin(c_b.y, fwidth(c_b.y), 0.03, fp) * step(0.6, r_b.x) * k_2;
+		float on_a = step(0.72, r_a.x);
+		// (A line's width by the pixel alone: its slope jumps across the fan's triangles,
+		// and the line came out in dashes.)
+		float w_a = 0.04 + 0.06 * r_a.y;
+		crack_a = (1.0 - smoothstep(w_a * 0.5, w_a + fp * 1.5, c_a.y)) * min(1.0, w_a * 3.0 / fp) * on_a;
+		crack_b = (1.0 - smoothstep(0.015, 0.03 + fp * 1.5, c_b.y)) * step(0.8, r_b.x) * k_2 * k_h;
 		// (The blue seeping out round a fracture.)
 		near_a = (1.0 - smoothstep(0.0, 0.14, c_a.y)) * on_a * k_7;
 	}
@@ -462,22 +475,24 @@ float peak_ice_wall(vec3 p, vec3 n, vec3 eye, vec2 flow, float fp, float tone, f
 	float under = clamp(-n.y * 2.5, 0.0, 1.0);
 	float cloud = er_vnoise(p / 11.0 + 7.0) - 0.5;
 	float depth = (1.0 - open) * 0.62 + (1.0 - lit) * 0.24 + under * 0.55 + (tone - 0.5) * 0.36
-		+ (0.5 - strata) * 0.32 + cloud * 0.40 * mix(0.5, 1.0, solid) + (1.0 - solid) * 0.30;
+		+ (0.5 - strata) * 0.32 * vein + cloud * 0.46 * mix(0.5, 1.0, solid) + (1.0 - solid) * 0.30;
 	depth = clamp(depth, 0.0, 1.0);
 	col = mix(ICE_SUNLIT, ICE_SHADE, smoothstep(0.04, 0.54, depth));
 	col = mix(col, ICE_BLUE, smoothstep(0.50, 0.92, depth));
 	col = mix(col, ICE_DEEP * 1.6, smoothstep(0.86, 1.0, depth) * 0.6);
 	// Bright clear bands against the dull ones, dust grey along the beds.
-	col *= 0.90 + 0.20 * strata;
-	col = mix(col, ICE_GRIT_PALE * vec3(0.95, 1.0, 1.1), clamp(dust, 0.0, 1.0) * 0.30);
+	col *= 1.0 + 0.20 * (strata - 0.5) * vein;
+	col = mix(col, ICE_GRIT_PALE * vec3(0.95, 1.0, 1.1), clamp(dust, 0.0, 1.0) * 0.30 * vein);
 	// Under the surface, as on the floor, read off the face.
 	vec3 q1 = p - eye * 1.5;
 	float v1 = smoothstep(0.52, 0.78, er_vnoise(vec3(q1.x, q1.y * 0.3, q1.z) / 3.4 + 2.0));
 	col = mix(col, ICE_SHADE, v1 * 0.34 * k_2 * (1.0 - depth * 0.5));
 	col = mix(col, ICE_BLUE, near_a * 0.5);
-	col = mix(col, ICE_DEEP * 1.5, max(crack_a, crack_b * 0.85) * 0.9);
+	col = mix(col, ICE_DEEP * 1.5, max(crack_a, crack_b * 0.85) * 0.62);
 	gloss = 0.15 + 0.35 * depth;
-	float h = (-near_a * 0.3 * k_2 + (strata - 0.5) * 0.22 * k_2
+	// (A soft melted hump over each flat face, or it lights like a cut one.)
+	float h = (-near_a * 0.3 * k_2 + (strata - 0.5) * 0.22 * k_2 * vein
+		+ (er_vnoise(p / 3.1 + 2.0) - 0.5) * 0.55 * k_7 * solid
 		+ (er_vnoise(p / 1.1 + 4.0) - 0.5) * 0.12 * k_h) * mix(0.4, 1.0, solid);
 	return h;
 }
@@ -530,17 +545,18 @@ void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, 
 		float to_edge = (1.0 - rim) / max(fwidth(rim), 0.00001) * fp;
 		// (Wider and narrower along an edge, stronger on what lies up to the light.)
 		float worn = smoothstep(0.30, 0.70, peak_noise(p.xz / 5.3 + p.y / 4.1));
-		float edge_w = max(0.07 + 0.16 * worn, fp * 1.1);
-		edge = (1.0 - smoothstep(edge_w * 0.5, edge_w, to_edge)) * (0.25 + 0.75 * open) * (0.55 + 0.45 * clamp(n.y * 2.0 + dot(n, sun), 0.0, 1.0));
-		col = mix(col, ICE_SNOW * 1.1, edge * 0.92);
+		float edge_w = max(0.05 + 0.10 * worn, fp * 1.1);
+		edge = (1.0 - smoothstep(edge_w * 0.5, edge_w, to_edge)) * (0.25 + 0.75 * open) * (0.55 + 0.45 * clamp(n.y * 2.0 + dot(n, sun), 0.0, 1.0)) * worn * smoothstep(0.0, 0.5, dot(n, sun));
+		col = mix(col, ICE_SNOW * 1.1, edge * 0.42);
 		gloss *= 1.0 - edge;
 	}
 	// The ground's triangles under the ice lie level to the light: its own bump
 	// shapes it, or it reads as flat plates.
 	vec3 base_n = solid > 0.5 ? n : normalize(mix(n, vec3(0.0, 1.0, 0.0), (1.0 - steep) * mix(0.90, 1.0, tongue)));
 	lit_n = peak_ice_bump(normalize(base_n - vec3(slope.x, 0.0, slope.y) * (1.0 - steep)), p, h);
-	rough = mix(0.66, solid > 0.5 ? 0.34 : 0.46, gloss);
-	spec = mix(0.30, 0.54, gloss);
+	// (A serac's soft normals sweep the sun's glint across whole faces: duller there.)
+	rough = solid > 0.5 ? 0.82 : mix(0.66, 0.46, gloss);
+	spec = solid > 0.5 ? 0.12 : mix(0.30, 0.54, gloss);
 	// The sky's sheen across the ice at a glance, and the blue scatter: most
 	// where it is blue, none on grit.
 	float ndv = clamp(dot(lit_n, eye), 0.0, 1.0);

@@ -1,20 +1,21 @@
 extends RefCounted
-## The Peak's seracs: towers of broken ice, built from hard-edged blocks.
+## The Peak's seracs: towers of broken ice.
 ##
-## A tower is a stack of convex blocks (a box cut by planes, every face flat):
-## a narrow trunk undercut on its downstream side, a wider shoulder leaning out
-## over it, a broken crown, slabs split off its faces with a real crack behind
-## them, chips on its edges and tumbled blocks round its foot. The blocks cut
-## through each other, so the creases between them are sharp.
+## A tower is a bundle of convex shards (a box tapered and cut by planes off its
+## axes, each turned and leaning its own way), some thin as fins, with a hood
+## hung out over the downstream side, slabs split off its faces with a real crack
+## behind them and tumbled blocks round its foot. The shards
+## cut through each other, so the creases between them are sharp, and each face's
+## normals fan out a little, so it shades as if melted.
 ##
-## RockBuild's lofted rings can't hold a flat face or an overhanging shelf, so
+## RockBuild's lofted rings can't hold a shard or an overhanging shelf, so
 ## a spec with `mesher` (this script) comes here: `build` returns what
 ## RockBuild.build returns (arrays, lods, a level-1 trimesh a pillar, the
 ## ring-and-sector solid), and the kit's collider, flight solid, streaming and
 ## near misses take it unchanged.
 ##
-## Levels: each block belongs to level 0 only (chips), 0-1 (slabs, tumbled
-## blocks) or all three (trunk, shoulder, crown). Vertex colour: r the block's
+## Levels: each block belongs to 0-1 (slabs, tumbled blocks, lesser shards) or
+## all three (the first shards, the hood). Vertex colour: r the block's
 ## tone of ice, g how exposed (0 buried or under an overhang), b 1 on a face's
 ## edge and 0 at its middle (a fan from there, so the shader knows its way to
 ## the edge, for the bright rims), read by shaders/peak_ice.gdshaderinc.
@@ -36,6 +37,9 @@ const LOD_ERROR := [0.10,0.34]
 const SAMPLE := 0.8
 ## No tower stands taller than this over its ground (m).
 const TALLEST := 46.0
+## How far a face's corners' normals turn out from its own: the faces shade
+## as if melted, for no triangle more.
+const SOFT := 0.3
 
 ## One heap's members: [[Vector2(along, across) off its middle, radius (along
 ## the flow), height, length (across over along)]...], the biggest first.
@@ -109,80 +113,84 @@ static func pillar(field: RefCounted, pos: Vector3, q: Vector2, r: float, up: fl
 
 ## A tower's blocks in its own frame (x across the flow, z down it, y up, 0 at
 ## its ground): half-widths `rs` across, `rf` along, `tall` high, buried to
-## `foot`.
+## `foot`. A bundle of shards, each turned its own way and leaning, the first
+## the tallest; fins among them; a hood hung out over the downstream side; slabs
+## split off with a crack behind them; tumbled blocks round the foot.
 static func _tower(rng: RandomNumberGenerator, rs: float, rf: float, tall: float, foot: float) -> Array:
 	var out: Array = []
-	var tone := rng.randf_range(0.2,0.8)
-	var lean := rng.randf_range(0.05,0.17)
+	var tone := rng.randf_range(0.3,0.7)
+	var lean := rng.randf_range(0.06,0.2)
 	var t := func(d: float) -> float: return clampf(tone+rng.randf_range(-d,d),0.0,1.0)
+	var count := clampi(2+int(tall/9.0),2,6)
+	var ang := rng.randf()*TAU
+	for i in count:
+		var share := float(i)/count
+		var high := tall if i == 0 else tall*rng.randf_range(0.42,0.86)
+		var wide := lerpf(0.66,0.34,share)*rng.randf_range(0.85,1.15)
+		var out_by := 0.0 if i == 0 else rng.randf_range(0.42,0.72)
+		ang += rng.randf_range(1.2,2.6)
+		var hy := (high-foot)*0.5
+		# A third of them fins, thin across their own width.
+		var thin := rng.randf_range(0.28,0.42) if rng.randf() < 0.34 else rng.randf_range(0.7,1.05)
+		var half := Vector3(rs*wide,hy,rf*wide*thin)
+		var turn := Basis(Vector3.UP,rng.randf_range(-0.7,0.7))*Basis(Vector3.RIGHT,lean*rng.randf_range(0.5,1.3))*Basis(Vector3.BACK,rng.randf_range(-0.1,0.1))
+		var at := Vector3(cos(ang)*rs*out_by,foot+hy,sin(ang)*rf*out_by)
+		# A tall one is two, the upper knocked askew on the lower: no long prisms.
+		if high > 16.0 and thin > 0.5:
+			var cut_at := foot+(high-foot)*rng.randf_range(0.52,0.68)
+			var ly := (cut_at-foot)*0.56
+			out.append(_shard(rng,Vector3(half.x,ly,half.z),Vector3(at.x,foot+ly,at.z),turn,t.call(0.1),2 if i < 3 else 1))
+			var uy := (high-cut_at)*0.62
+			var off := Vector3(rng.randf_range(-0.34,0.34)*half.x,0.0,rng.randf_range(-0.3,0.3)*half.z)
+			var askew := Basis(Vector3.UP,rng.randf_range(-0.8,0.8))*turn*Basis(Vector3.BACK,rng.randf_range(-0.16,0.16))
+			out.append(_shard(rng,Vector3(half.x*rng.randf_range(0.7,0.95),uy,half.z*rng.randf_range(0.7,0.95)),Vector3(at.x,high-uy,at.z)+off,askew,t.call(0.14),2 if i < 2 else 1))
+		else:
+			out.append(_shard(rng,half,at,turn,t.call(0.1),2 if i < 3 else 1))
 	if tall < 13.0:
-		# A stump: a block and a broken top.
-		var top := tall*rng.randf_range(0.72,0.9)
-		var hy := (top-foot)*0.5
-		out.append(_block(rng,Vector3(rs*0.82,hy,rf*0.8),Vector3(0.0,foot+hy,0.0),Basis(Vector3.RIGHT,lean),3,t.call(0.1),2))
-		var cap := Vector3(rs*0.62,(tall-top)*0.8+0.5,rf*0.6)
-		out.append(_block(rng,cap,Vector3(rng.randf_range(-0.2,0.2)*rs,top+cap.y*0.3,rf*0.1),_tilt(rng,0.25,0.5),3,t.call(0.15),2))
 		_tumbled(out,rng,rs,rf,rng.randi_range(0,1),t)
 		return out
-	# The trunk, undercut down the flow: its face leans out as it climbs.
-	var trunk_top := tall*rng.randf_range(0.56,0.66)
-	var hy := (trunk_top-foot)*0.5
-	var under := rf*rng.randf_range(0.34,0.5)/hy
-	var norm := sqrt(1.0+under*under)
-	var cuts: Array = [[Vector3(0.0,-under,1.0)/norm,rf*0.62/norm]]
-	out.append(_block(rng,Vector3(rs*0.74,hy,rf*0.72),Vector3(rs*rng.randf_range(-0.08,0.08),foot+hy,-rf*0.12),Basis(Vector3.RIGHT,lean*0.4),3,t.call(0.12),2,cuts))
-	# The shoulder: wider, leaning out over the trunk.
-	var sh_mid := tall*rng.randf_range(0.56,0.62)
-	var sh_y := tall*rng.randf_range(0.2,0.25)
-	out.append(_block(rng,Vector3(rs*1.0,sh_y,rf*0.98),Vector3(rs*rng.randf_range(-0.1,0.1),sh_mid,rf*0.12),Basis(Vector3.RIGHT,lean),4,t.call(0.2),2))
-	# Its second lobe: a tower split down its length.
-	if rng.randf() < 0.6:
-		var side := -1.0 if rng.randf() < 0.5 else 1.0
-		var ly := tall*rng.randf_range(0.28,0.38)
-		var lt := Basis(Vector3.BACK,side*rng.randf_range(-0.08,0.12))*Basis(Vector3.RIGHT,lean*0.8)
-		out.append(_block(rng,Vector3(rs*0.46,ly,rf*0.7),Vector3(side*rs*0.72,tall*0.4+ly*0.2,-rf*0.08),lt,3,t.call(0.25),2))
-	# The crown: a fin, or a slab fallen askew on the shoulder.
-	var crown_y := sh_mid+sh_y
-	var rest := maxf(tall-crown_y,1.0)
-	if rng.randf() < 0.55:
-		var s := -1.0 if rng.randf() < 0.5 else 1.0
-		var half := Vector3(rs*rng.randf_range(0.5,0.72),rest*0.72+sh_y*0.25,rf*rng.randf_range(0.42,0.6))
-		var fin := [[Vector3(s*0.72,0.69,0.0).normalized(),half.y*0.34]]
-		out.append(_block(rng,half,Vector3(-s*rs*0.2,crown_y+rest*0.28,rf*0.1),Basis(Vector3.RIGHT,lean*1.6),2,t.call(0.2),2,fin))
-	else:
-		var half := Vector3(rs*rng.randf_range(0.62,0.86),maxf(rest*0.46,0.8),rf*rng.randf_range(0.55,0.8))
-		out.append(_block(rng,half,Vector3(rs*rng.randf_range(-0.16,0.16),crown_y+rest*0.34,rf*0.08),_tilt(rng,0.2,0.46),3,t.call(0.25),2))
-	if tall > 20.0:
-		var half := Vector3(rs*rng.randf_range(0.2,0.34),rest*0.4+1.0,rf*rng.randf_range(0.2,0.3))
-		out.append(_block(rng,half,Vector3(rs*rng.randf_range(-0.5,0.5),crown_y+rest*0.1,rf*rng.randf_range(-0.4,0.4)),_tilt(rng,0.1,0.4),2,t.call(0.2),2))
+	# The hood: a wedge hung out over the downstream side, its belly in shade.
+	var hood_y := tall*rng.randf_range(0.14,0.2)
+	var hood := Vector3(rs*rng.randf_range(0.5,0.72),hood_y,rf*rng.randf_range(0.42,0.6))
+	var hung := Basis(Vector3.UP,rng.randf_range(-0.5,0.5))*Basis(Vector3.RIGHT,rng.randf_range(0.18,0.42))
+	out.append(_shard(rng,hood,Vector3(rs*rng.randf_range(-0.3,0.3),tall*rng.randf_range(0.5,0.62),rf*rng.randf_range(0.22,0.4)),hung,t.call(0.14),2))
 	# Slabs split off its faces: a real crack behind each.
-	for i in rng.randi_range(2,4):
-		var along_z := rng.randf() < 0.5
-		var s := -1.0 if rng.randf() < 0.5 else 1.0
-		var th := clampf(rf*0.1,0.45,1.5)
-		var h := tall*rng.randf_range(0.16,0.3)
-		var y := tall*rng.randf_range(0.46,0.72)
-		var gap := rng.randf_range(0.3,0.8)
-		var at: Vector3
-		var half: Vector3
-		if along_z:
-			at = Vector3(rs*rng.randf_range(-0.45,0.45),y,rf*(1.08 if s > 0.0 else -0.92)+s*(th+gap)+rf*0.1)
-			half = Vector3(rs*rng.randf_range(0.26,0.5),h,th)
-		else:
-			at = Vector3(s*(rs*1.0+th+gap),y,rf*rng.randf_range(-0.4,0.5))
-			half = Vector3(th,h,rf*rng.randf_range(0.28,0.55))
-		var tip := Basis(Vector3.RIGHT if along_z else Vector3.BACK,s*rng.randf_range(0.03,0.12)*(1.0 if along_z else -1.0))
-		out.append(_block(rng,half,at,tip,2,t.call(0.3),1))
-	# Chips on the shoulder's edges, breaking the outline.
-	for i in rng.randi_range(4,7):
-		var ang := rng.randf()*TAU
-		var y := tall*rng.randf_range(0.5,0.92)
-		var sz := minf(rf,rs)*rng.randf_range(0.1,0.24)
-		var half := Vector3(sz*rng.randf_range(0.7,1.5),sz*rng.randf_range(1.0,2.2),sz*rng.randf_range(0.7,1.3))
-		var at := Vector3(cos(ang)*rs*0.9,y,sin(ang)*rf*0.9+rf*0.1)
-		out.append(_block(rng,half,at,_tilt(rng,0.1,0.6),2,t.call(0.3),0))
-	_tumbled(out,rng,rs,rf,rng.randi_range(1,3),t)
+	for i in rng.randi_range(1,3):
+		var a2 := rng.randf()*TAU
+		var th := clampf(rf*0.1,0.45,1.4)
+		var to := Vector3(cos(a2),0.0,sin(a2))
+		var turned := Basis(Vector3.UP,atan2(to.x,to.z)+rng.randf_range(-0.2,0.2))*Basis(Vector3.RIGHT,rng.randf_range(0.02,0.14))
+		var half := Vector3(minf(rs,rf)*rng.randf_range(0.3,0.5),tall*rng.randf_range(0.14,0.26),th)
+		var at := Vector3(to.x*rs*0.86,tall*rng.randf_range(0.34,0.62),to.z*rf*0.86)
+		out.append(_shard(rng,half,at,turned,t.call(0.2),1))
+	_tumbled(out,rng,rs,rf,rng.randi_range(2,3),t)
 	return out
+
+## A shard: a block tapered up all four sides, broken across its top by a slant
+## or two, its edges chopped. Nothing of the box's own faces is left whole.
+static func _shard(rng: RandomNumberGenerator, half: Vector3, at: Vector3, turn: Basis, tone: float, level: int) -> Dictionary:
+	var polys := _box(half)
+	var taper := rng.randf_range(0.14,0.3)
+	for side: Vector3 in [Vector3.RIGHT,Vector3.LEFT,Vector3.FORWARD,Vector3.BACK]:
+		var w := absf(side.dot(half))
+		var n := (side*half.y+Vector3.UP*w*taper*rng.randf_range(0.7,1.3)+Vector3(side.z,0.0,side.x)*half.y*rng.randf_range(-0.28,0.28)).normalized()
+		polys = _cut(polys,n,n.dot(side*w*rng.randf_range(0.82,1.0)-Vector3.UP*half.y))
+	# The broken top: down one way, then a nick the other.
+	var way := rng.randf()*TAU
+	var slant := Vector3(cos(way)*rng.randf_range(0.5,1.15),1.0,sin(way)*rng.randf_range(0.5,1.15)).normalized()
+	polys = _cut(polys,slant,slant.dot(Vector3(0.0,half.y*rng.randf_range(0.62,0.86),0.0)))
+	way += rng.randf_range(2.2,4.0)
+	var nick := Vector3(cos(way)*1.2,0.8,sin(way)*1.2).normalized()
+	polys = _cut(polys,nick,nick.dot(Vector3(cos(way)*0.3*half.x,half.y*0.8,sin(way)*0.3*half.z)))
+	for i in 3:
+		var dir := Vector3(rng.randf_range(-1.0,1.0),rng.randf_range(-0.5,0.8),rng.randf_range(-1.0,1.0)).normalized()
+		var reach := absf(dir.x)*half.x+absf(dir.y)*half.y+absf(dir.z)*half.z
+		polys = _cut(polys,dir,reach*rng.randf_range(0.5,0.72))
+	for i in polys.size():
+		var f: PackedVector3Array = polys[i]
+		for j in f.size(): f[j] = turn*f[j]+at
+		polys[i] = f
+	return {"polys":polys,"tone":tone,"level":level}
 
 ## Blocks fallen round a tower's foot, half sunk, tilted hard.
 static func _tumbled(out: Array, rng: RandomNumberGenerator, rs: float, rf: float, n: int, t: Callable) -> void:
@@ -285,7 +293,9 @@ static func build(spec: Dictionary) -> Dictionary:
 	var lods := {}
 	var tris: Array = [(levels[0] as PackedInt32Array).size()/3]
 	for l in range(1,3):
-		lods[float(LOD_ERROR[l-1])*typical] = levels[l]
+		# (A level no smaller than the one before is no level: the server refuses it.)
+		if (levels[l] as PackedInt32Array).size() < (levels[l-1] as PackedInt32Array).size():
+			lods[float(LOD_ERROR[l-1])*typical] = levels[l]
 		tris.append((levels[l] as PackedInt32Array).size()/3)
 	var coarse: PackedInt32Array = levels[1]
 	var faces: Array = []
@@ -326,14 +336,15 @@ static func _emit(v: PackedVector3Array, n: PackedVector3Array, c: PackedColorAr
 		var flip := nrm.dot(centre-mid) < 0.0
 		if flip: nrm = -nrm
 		var hollow := 0.3 if nrm.y < -0.12 else 1.0
-		var shade := clampf(tone+rng.randf_range(-0.09,0.09),0.0,1.0)
+		var shade := clampf(tone+rng.randf_range(-0.04,0.04),0.0,1.0)
 		var first := v.size()
 		v.append(at+centre)
 		n.append(nrm)
 		c.append(Color(shade,clampf((centre.y-foot)/maxf(tall*0.42,1.0),0.0,1.0)*hollow,0.0,0.0))
 		for q: Vector3 in f:
 			v.append(at+q)
-			n.append(nrm)
+			# (Corners turned out from the face's middle: a block melted soft, not cut.)
+			n.append((nrm+(q-centre).normalized()*SOFT).normalized())
 			var open := clampf((q.y-foot)/maxf(tall*0.42,1.0),0.0,1.0)*hollow
 			c.append(Color(shade,open,1.0,0.0))
 		for l in range(level+1):

@@ -1,95 +1,63 @@
 extends "res://scripts/endless/rocks/rock_kind.gd"
-## The Peak's approach valley (a rock kind, scripts/endless/rocks/rock_plan.gd):
-## house-sized granite blocks over the boulder field (PeakMassif BOULDERS)
-## and ice seracs on the icefall's steps (PeakMassif ICEFALL).
+## The ice gorge's seracs (a rock kind, scripts/endless/rocks/rock_plan.gd):
+## broken towers of ice (peak_serac.gd) heaped in the gorge's bowls, none in its
+## narrows, and ranks of them across the mouth's spill (PeakSplit SPILL_*), the
+## icefall that comes out of the gorge onto the valley.
 ##
-## One line runs up the valley's floor through both (`line`): a slalom
-## weaving across the boulder field's middle (FIELD_WEAVE), then a thread
-## weaving through the seracs (ICE_WEAVE), ending at the icefall's head where
-## the stair begins. Nothing stands within LANE (an opening) of it, and a
-## pole stands on the inside of each of its bends. Off it, the blocks and
-## seracs fill the floor from a jittered lattice (in the massif's frame),
-## kept by a cluster noise so they fall in groups; two of them either lean on
-## each other (one rock to the flight) or stand at least an opening apart
-## (WorldScale.opening(TOY_GAP)). Kept off the stair (whose path runs from
-## the icefall's head toward smaller a) and the lift's tube.
+## A lane stays open down the gorge's line and out over the spill (`kept`): it
+## widens with the floor, since a plane drifts further in a bowl. Heaps stand
+## between its edge and the walls' feet, so the line runs between them. Two
+## towers either lean on each other (one mass to the flight) or stand an opening
+## apart (WorldScale.opening(TOY_GAP)).
 ##
-## A boulder: as the cirque's (peak_boulders.gd `_block`). A serac: a
-## squared slab, long across the flow, tapering a little, leaning
-## downstream, with a flat top; the most and tallest along the steps' lips.
-## Both bare; the ground's paint gives them the floor's colour (scree on the
-## boulder field, ice on the icefall).
+## --peak-ice=0 stands none, so it is the ice's whole A/B. --valley=0 too.
 
 const WorldScale = preload("res://scripts/world_scale.gd")
-## Off while the ground it stood on is gone: the boulder field and the icefall
-## lie under the prow since the split (spec-crown.md, step 2). The next step
-## stands the seracs in the ice gorge and comes back to this.
-const PLACED := false
-const PeakMassif = preload("res://scripts/endless/peak_massif.gd")
-const PeakRoutes = preload("res://scripts/endless/peak_routes.gd")
-const Boulders = preload("res://scripts/endless/rocks/peak_boulders.gd")
 const PeakIce = preload("res://scripts/endless/peak_ice.gd")
+const Split = preload("res://scripts/endless/peak_split.gd")
 const Serac = preload("res://scripts/endless/rocks/peak_serac.gd")
 
-## The box (the massif's a, v) the valley's pieces stand in.
-const BOX := Rect2(880.0,-440.0,1180.0,880.0)
-## The line: its half-width kept clear (toy width, WorldScale.opening, so the
-## clear lane is opening(TOY_LANE) wide), and its weaves: across the boulder
-## field, [amplitude (m) off the valley's middle, half waves over the
-## field]; across the icefall the same.
-const TOY_LANE := 10.0
-const FIELD_WEAVE := Vector2(45.0,3.0)
-const ICE_WEAVE := Vector2(32.0,2.0)
-## The line runs on past the field onto the glacier this far (m), and stops
-## at the icefall's head (a), short of the stair's first flight.
-const LINE_OUT := 200.0
-const LINE_END := 870.0
-## Each zone: [lattice step (m), chance a point holds a piece, least and most
-## radius (m), height over radius least and most, kept this far inside the
-## floor's edge (m)].
-const FIELD := [24.0,0.38,4.0,9.0,1.0,1.7,18.0]
-const SERACS := [19.0,0.5,4.5,8.5,1.3,2.6,16.0]
-## The seracs' stretch along a: from past the stair's foot to the icefall's
-## foot. STAIR_KEEP: m kept between a serac and the stair's first flight
-## (along a).
-const SERACS_A := Vector2(880.0,1245.0)
-const STAIR_KEEP := 20.0
-## Along a step's lip (the riser's top) the chance and height swell: within
-## LIP m upstream of it, by LIP_MORE.
-const LIP := 26.0
-const LIP_MORE := Vector2(1.8,1.35)
-## The boulder field's stretch (a), short of the icefall's foot.
-const FIELD_A := Vector2(1275.0,2030.0)
-## The gap kept between pieces that do not lean on each other (toy width).
+## The box (the massif's a, v) that holds them.
+const BOX := Rect2(340.0,-760.0,1880.0,1090.0)
+## How far (share of the way from the mouth to the saddle) the heaps go: the ice
+## tapers out over the last of it.
+const UP_TO := 0.87
+## The floor's half-width (m) over which a stretch becomes a bowl.
+const BOWL := Vector2(56.0,76.0)
+## A heap every this far (m) along each side, and the chance one stands.
+const HEAP_STEP := 30.0
+const HEAP_CHANCE := 0.92
+## The lane's half-width over the floor's: DRIFT m per m of the floor past
+## DRIFT_FROM, plus LANE_PAD (m).
+const DRIFT := 0.6
+const DRIFT_FROM := 14.0
+const LANE_PAD := 6.0
+## The heaps may stand this far past the floor's edge, up the wall's foot (m).
+const WALL_FOOT := 6.0
+## A tower's foot may not span more than this much of the ground's fall per m of
+## its reach, or it is on the wall.
+const FOOT_FALL := 0.8
+## The gap kept between towers that do not lean on each other (toy width).
 const TOY_GAP := 6.0
-## How far a piece reaches past its radius (corners, lumps, a serac's
-## length across the flow).
-const WIDEST := 1.3
-const SERAC_LONG := 1.5
-## The ice's heaps (--peak-ice=0: the older slabs): a lattice of this step (m)
-## over the icefall, the chance a point holds a heap, kept this far inside the
-## floor's edge (m).
-const HEAP_STEP := 44.0
-const HEAP_CHANCE := 0.85
-const HEAP_EDGE := 26.0
-## No piece stands taller than this over its ground (m).
-const TALLEST := 28.0
-## Within LINE_NEAR m past the lane the chance swells by LINE_MORE, so the
-## line runs between pieces.
-const LINE_NEAR := 30.0
-const LINE_MORE := 1.8
 ## The cluster noise's scale (m).
-const CLUSTER := 70.0
-## The poles on the line's bends: radius and height over radius.
-const POLE := Vector2(8.5,1.9)
-const SERAC_POLE := Vector2(7.0,2.8)
-## --rock-start=valley: this far down the line from its start, this high.
+const CLUSTER := 90.0
+## The mouth's ranks: their first and last a, how many, their spacing across
+## (m), the lane there (half-width, m), how far the last rank's middle bows down
+## the flow.
+const RANKS_A := Vector2(2052.0,2150.0)
+const RANKS := 7
+const RANK_STEP := 15.0
+const MOUTH_LANE := 36.0
+const RANK_BOW := 26.0
+## The lane's way out past the mouth (a, v), the tongue's middle.
+const OUT := [[2075.0,160.0],[2170.0,142.0],[2300.0,128.0]]
+## --rock-start=valley: this far along the line, this high.
 const START_ALT := 30.0
 
 static var _cache := {}
 static var _lock := Mutex.new()
 
-## The cells (RockPlan.CELL) the valley's box covers: {Vector2i: true}.
+## The cells (RockPlan.CELL) the box covers: {Vector2i: true}.
 static func cells(peak: RefCounted) -> Dictionary:
 	var out := {}
 	if peak == null: return out
@@ -105,7 +73,7 @@ static func cells(peak: RefCounted) -> Dictionary:
 	return out
 
 static func plan_cell(field: RefCounted, cx: int, cz: int, _density: float, _rng: RandomNumberGenerator) -> Array:
-	if not PLACED or not field.has_method("peak"): return []
+	if not PeakIce.wanted or not field.has_method("peak"): return []
 	var peak: RefCounted = field.peak()
 	if peak == null or not cells(peak).has(Vector2i(cx,cz)): return []
 	var cell: float = preload("res://scripts/endless/rocks/rock_plan.gd").CELL
@@ -114,57 +82,47 @@ static func plan_cell(field: RefCounted, cx: int, cz: int, _density: float, _rng
 		var q: Vector2 = b[0]
 		if floori(q.x/cell) == cx and floori(q.y/cell) == cz: mine.append(b)
 	if mine.is_empty(): return []
-	if not PeakIce.wanted: return [_group(field,peak,mine,cx,cz)]
-	# Boulders and ice draw with different materials.
-	var out: Array = []
-	for zone in 2:
-		var some := mine.filter(func(b: Array) -> bool: return int(b[3]) == zone)
-		if not some.is_empty(): out.append(_group(field,peak,some,cx,cz))
+	return [_group(field,peak,mine,cx,cz)]
+
+## The lane's half-width over a floor of half-width `half`.
+static func lane_half(half: float) -> float:
+	return LANE_PAD+DRIFT*maxf(half-DRIFT_FROM,0.0)
+
+## The lane's points, the way out first: [Vector3(a, v, half kept)...], up the
+## gorge to UP_TO.
+static func kept() -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for k in range(OUT.size()-1,-1,-1):
+		var p: Array = OUT[k]
+		out.append(Vector3(float(p[0]),float(p[1]),MOUTH_LANE))
+	var pts: PackedVector3Array = Split.line(Split.ICE)
+	var hs: PackedFloat32Array = Split.halves(Split.ICE)
+	for i in int(Split.saddle(Split.ICE)*UP_TO)+1:
+		out.append(Vector3(pts[i].x,pts[i].y,maxf(lane_half(hs[i]),MOUTH_LANE) if i < 6 else lane_half(hs[i])))
 	return out
 
-## The line's v at `a` (the massif's frame).
-static func lane_v(a: float) -> float:
-	var v := PeakMassif._valley_mid(a)
-	if a >= PeakMassif.BOULDERS.x:
-		var t := clampf((a-PeakMassif.BOULDERS.x)/(PeakMassif.BOULDERS.y-PeakMassif.BOULDERS.x),0.0,1.0)
-		return v+FIELD_WEAVE.x*sin(PI*FIELD_WEAVE.y*t)
-	var t := clampf((a-PeakMassif.ICEFALL.x)/(PeakMassif.ICEFALL.y-PeakMassif.ICEFALL.x),0.0,1.0)
-	return v-ICE_WEAVE.x*sin(PI*ICE_WEAVE.y*t)
-
-## The line's points (a, v), every `step` m along a, from the glacier down to
-## the icefall's head (the way it is flown).
-static func line_av(step := 10.0) -> PackedVector2Array:
-	var out := PackedVector2Array()
-	var a := PeakMassif.BOULDERS.y+LINE_OUT
-	while a > LINE_END:
-		out.append(Vector2(a,lane_v(a)))
-		a -= step
-	out.append(Vector2(LINE_END,lane_v(LINE_END)))
-	return out
-
-## The line in world XZ.
-static func line(peak: RefCounted, step := 10.0) -> PackedVector2Array:
-	var out := PackedVector2Array()
-	for p: Vector2 in line_av(step): out.append(peak.world(p.x,p.y))
-	return out
-
-## The clear lane's half-width (m).
-static func lane_half() -> float:
-	return WorldScale.opening(TOY_LANE)*0.5
-
-## How far (a, v) lies from the line (m, the massif's frame is metric).
-static func off_line(a: float, v: float) -> float:
+## How far (a, v) lies outside the lane (m; under 0 inside it).
+static func off_lane(a: float, v: float, lane: PackedVector3Array) -> float:
 	var best := INF
-	var s := -60.0
-	while s <= 60.0:
-		var b := a+s
-		best = minf(best,Vector2(s,v-lane_v(b)).length())
-		s += 3.0
+	var q := Vector2(a,v)
+	for i in lane.size()-1:
+		var p0 := lane[i]
+		var p1 := lane[i+1]
+		var d := Vector2(p1.x-p0.x,p1.y-p0.y)
+		var u := clampf((q-Vector2(p0.x,p0.y)).dot(d)/maxf(d.length_squared(),0.01),0.0,1.0)
+		best = minf(best,q.distance_to(Vector2(p0.x,p0.y)+d*u)-lerpf(p0.z,p1.z,u))
 	return best
 
-## Every piece: [[XZ, radius, height over its ground, zone, long]...] (zone
-## 0 boulder, 1 serac; `long` how far a serac reaches across the flow over
-## its radius), the same for every cell (cached by seed).
+## The line in world XZ, every `step` m or so, the mouth upward.
+static func line(peak: RefCounted, step := 20.0) -> PackedVector2Array:
+	var pts: PackedVector3Array = Split.line(Split.ICE)
+	var out := PackedVector2Array()
+	for i in range(0,Split.saddle(Split.ICE),maxi(int(step/Split.STRIDE),1)): out.append(peak.world(pts[i].x,pts[i].y))
+	return out
+
+## Every tower: [[XZ, radius, height over its ground, flow (XZ), long]...]
+## (`long` how far it reaches across the flow over its radius), the same for
+## every cell (cached by seed).
 static func pieces(field: RefCounted, peak: RefCounted) -> Array:
 	var key := [int(field.seed),peak.centre,peak.facing]
 	_lock.lock()
@@ -177,201 +135,120 @@ static func pieces(field: RefCounted, peak: RefCounted) -> Array:
 	_lock.unlock()
 	return out
 
-## How far a piece reaches past its centre (m), the widest way.
+## How far a tower reaches past its centre (m), the widest way.
 static func widest(b: Array) -> float:
-	return float(b[1])*WIDEST*float(b[4])
+	return float(b[1])*Serac.WIDEST*float(b[4])
 
 static func _place(field: RefCounted, peak: RefCounted) -> Array:
 	var out: Array = []
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([int(field.seed),"peak valley"])
+	rng.seed = hash([int(field.seed),"peak seracs"])
 	var noise := FastNoiseLite.new()
-	noise.seed = int(hash([int(field.seed),"peak valley groups"]))
+	noise.seed = int(hash([int(field.seed),"peak serac groups"]))
 	noise.frequency = 1.0/CLUSTER
-	var lift: Array = PeakRoutes.lift(peak,Callable(field,"height")).points
-	var keep := lane_half()
-	# The poles first, on the inside of each bend (toward the valley's middle).
-	for k in int(FIELD_WEAVE.y):
-		var t := (k+0.5)/FIELD_WEAVE.y
-		var a := lerpf(PeakMassif.BOULDERS.x,PeakMassif.BOULDERS.y,t)
-		_try(out,peak,lift,a,lane_v(a),POLE.x,POLE.x*POLE.y,0,1.0,keep,true)
-	for k in int(ICE_WEAVE.y):
-		var t := (k+0.5)/ICE_WEAVE.y
-		var a := lerpf(PeakMassif.ICEFALL.x,PeakMassif.ICEFALL.y,t)
-		_try(out,peak,lift,a,lane_v(a),SERAC_POLE.x,SERAC_POLE.y*SERAC_POLE.x,1,SERAC_LONG,keep,true)
-	for zone in 2:
-		if zone == 1 and PeakIce.wanted:
-			_heaps(out,peak,lift,rng,noise,keep)
-			continue
-		var z: Array = FIELD if zone == 0 else SERACS
-		var span: Vector2 = FIELD_A if zone == 0 else SERACS_A
-		var step := float(z[0])
-		var na := int((span.y-span.x)/step)
-		var nv := int(BOX.size.y/step)
-		for i in range(na):
-			for j in range(nv):
-				var a := span.x+(i+rng.randf_range(0.1,0.9))*step
-				var v := BOX.position.y+(j+rng.randf_range(0.1,0.9))*step
-				var roll := rng.randf()
-				var size := rng.randf()
-				var tall := rng.randf()
-				var long := rng.randf_range(1.15,SERAC_LONG) if zone == 1 else 1.0
-				var half := _floor_half(a)
-				if absf(v-PeakMassif._valley_mid(a)) > half-float(z[6]): continue
-				var heap := clampf(noise.get_noise_2d(a,v)*1.2+0.5,0.0,1.0)
-				var chance := float(z[1])*lerpf(0.2,1.7,heap)
-				# Lining the line: more of them just off its lane.
-				chance *= lerpf(LINE_MORE,1.0,smoothstep(0.0,LINE_NEAR,off_line(a,v)-keep-float(z[3])*WIDEST))
-				var up_k := 1.0
-				if zone == 1:
-					var lip := _lip(a)
-					chance *= lerpf(1.0,LIP_MORE.x,lip)
-					up_k = lerpf(1.0,LIP_MORE.y,lip)
-				if roll > chance: continue
-				var r := lerpf(float(z[2]),float(z[3]),size*size)
-				var up := minf(r*lerpf(float(z[4]),float(z[5]),tall)*up_k,TALLEST)
-				_try(out,peak,lift,a,v,r,up,zone,long,keep,false)
+	var lane := kept()
+	_ranks(out,field,peak,lane,rng)
+	_bowls(out,field,peak,lane,rng,noise)
 	return out
 
-## The ice's heaps over the icefall, thickest along the steps' lips and where
-## the cluster noise gathers them, the biggest there: each heap's towers lean
-## on one another; between heaps stands an opening.
-static func _heaps(out: Array, peak: RefCounted, lift: Array, rng: RandomNumberGenerator, noise: FastNoiseLite, keep: float) -> void:
-	var na := int((SERACS_A.y-SERACS_A.x)/HEAP_STEP)
-	var nv := int(BOX.size.y/HEAP_STEP)
-	for i in range(na):
-		for j in range(nv):
-			var a := SERACS_A.x+(i+rng.randf_range(0.1,0.9))*HEAP_STEP
-			var v := BOX.position.y+(j+rng.randf_range(0.1,0.9))*HEAP_STEP
+## The heaps in the bowls: each side of the line, heap by heap, the biggest
+## where the band between the lane and the wall has room.
+static func _bowls(out: Array, field: RefCounted, peak: RefCounted, lane: PackedVector3Array, rng: RandomNumberGenerator, noise: FastNoiseLite) -> void:
+	var pts: PackedVector3Array = Split.line(Split.ICE)
+	var hs: PackedFloat32Array = Split.halves(Split.ICE)
+	var last := int(Split.saddle(Split.ICE)*UP_TO)
+	for sg: float in [-1.0,1.0]:
+		var s := rng.randf_range(0.0,HEAP_STEP)
+		while s < last*Split.STRIDE:
+			var at := s/Split.STRIDE
+			s += HEAP_STEP*rng.randf_range(0.75,1.25)
+			var i := int(at)
+			var half := lerpf(hs[i],hs[i+1],at-i)
+			var p := pts[i].lerp(pts[i+1],at-i)
 			var roll := rng.randf()
-			var pick := rng.randf()
-			var members := Serac.cluster(rng,clampf(pick*0.65+clampf(noise.get_noise_2d(a,v)*1.2+0.5,0.0,1.0)*0.3+_lip(a)*0.25,0.0,1.0))
-			if absf(v-PeakMassif._valley_mid(a)) > _floor_half(a)-HEAP_EDGE or roll > HEAP_CHANCE: continue
+			var heap := clampf(noise.get_noise_2d(p.x,p.y)*1.3+0.6,0.0,1.0)
+			if roll > HEAP_CHANCE*smoothstep(BOWL.x,BOWL.y,half)*lerpf(0.5,1.0,heap): continue
+			var way := Vector2(pts[i].x-pts[i+1].x,pts[i].y-pts[i+1].y).normalized()
+			var across := Vector2(-way.y,way.x)*sg
+			var keep := lane_half(half)
+			var band := half+WALL_FOOT-keep
+			# As big as the band holds: a giant's court takes all of it.
+			var big := clampf(heap*0.6+rng.randf()*0.5,0.0,1.0)*smoothstep(14.0,44.0,band)
+			var members: Array = Serac.cluster(rng,big)
+			var reach := 0.0
+			for m: Array in members: reach = maxf(reach,(m[0] as Vector2).length()+float(m[1])*Serac.WIDEST*float(m[3]))
+			var off := keep+minf(reach,band*0.5)+rng.randf()*maxf(band-reach*2.0,0.0)
+			var mid := Vector2(p.x,p.y)+across*off
+			var flow := _world_way(peak,way)
 			for k in members.size():
 				var m: Array = members[k]
 				var o: Vector2 = m[0]
-				var at := a+o.x
-				var av := v+o.y
-				if absf(av-PeakMassif._valley_mid(at)) > _floor_half(at)-6.0: continue
-				if not _try(out,peak,lift,at,av,float(m[1]),float(m[2]),1,float(m[3]),keep,false) and k == 0: break
+				var q := mid+way*o.x+across*o.y
+				# (A heap's own towers stand as close as they like: nothing flies between.)
+				var stood := _try(out,field,peak,lane,q.x,q.y,float(m[1]),float(m[2]),float(m[3]),flow,WorldScale.opening(TOY_GAP) if k == 0 else 0.0)
+				if not stood and k == 0: break
 
-## Place a piece at (a, v) unless it meets the line, the stair, the lift or a
-## neighbour (leaning on one is allowed). `pole`: on a bend, pushed off the
-## line toward the valley's middle until clear.
-static func _try(out: Array, peak: RefCounted, lift: Array, a: float, v: float, r: float, up: float, zone: int, long: float, keep: float, pole: bool) -> bool:
-	var wr := r*WIDEST*long
-	if pole:
-		var toward := signf(PeakMassif._valley_mid(a)-v)
-		if toward == 0.0: toward = 1.0
-		var n := 0
-		while off_line(a,v) < keep+wr+1.0 and n < 40:
-			v += toward*2.0
-			n += 1
-	elif off_line(a,v) < keep+wr: return false
-	if zone == 1 and a-wr < _stair_from()+STAIR_KEEP: return false
+## The mouth's icefall: ranks across the spill, bowed down the flow, tall at its
+## head and small at its foot, with the lane through them.
+static func _ranks(out: Array, field: RefCounted, peak: RefCounted, lane: PackedVector3Array, rng: RandomNumberGenerator) -> void:
+	for k in RANKS:
+		var t := float(k)/(RANKS-1)
+		var a0 := lerpf(RANKS_A.x,RANKS_A.y,t)
+		var wide := lerpf(Split.SPILL_HALF.x,Split.SPILL_HALF.y,t*t)
+		var v := -wide+rng.randf_range(0.0,RANK_STEP)
+		while v < wide:
+			var u := v/wide
+			var a := a0+lerpf(8.0,RANK_BOW,t)*(1.0-u*u)+rng.randf_range(-7.0,7.0)
+			var at := Split.SPILL_V+v
+			v += RANK_STEP*rng.randf_range(0.8,1.25)
+			var r := lerpf(rng.randf_range(5.5,9.0),rng.randf_range(3.0,5.0),t)
+			var up := r*lerpf(rng.randf_range(2.0,3.2),rng.randf_range(1.2,2.2),t)
+			# Down the spill and a little out from its middle.
+			var flow := _world_way(peak,Vector2(1.0,u*0.5).normalized())
+			_try(out,field,peak,lane,a,at,r,up,rng.randf_range(1.05,1.4),flow,0.0)
+
+## A way in the massif's frame (along a, along v) as a world XZ direction.
+static func _world_way(peak: RefCounted, way: Vector2) -> Vector2:
+	return (peak.world(way.x,way.y)-peak.world(0.0,0.0)).normalized()
+
+## Stand a tower at (a, v) unless it meets the lane, a wall's foot or a
+## neighbour: it leans on it, or stands `gap` m off.
+static func _try(out: Array, field: RefCounted, peak: RefCounted, lane: PackedVector3Array, a: float, v: float, r: float, up: float, long: float, flow: Vector2, gap: float) -> bool:
+	var wr := r*Serac.WIDEST*long
+	if off_lane(a,v,lane) < wr: return false
 	var w: Vector2 = peak.world(a,v)
-	if not Boulders._off_lift(w,wr,lift): return false
-	var gap := WorldScale.opening(TOY_GAP)
+	var low := INF
+	var high := -INF
+	for k in 8:
+		var d := Vector2.from_angle(TAU*k/8.0)*wr
+		var g := float(field.height(w.x+d.x,w.y+d.y))
+		low = minf(low,g)
+		high = maxf(high,g)
+	if high-low > FOOT_FALL*wr*2.0: return false
 	for o: Array in out:
 		var d := (o[0] as Vector2).distance_to(w)
-		var ow := widest(o)
-		var g := d-wr-ow
+		var g := d-wr-widest(o)
 		if g >= gap: continue
-		if pole or g > 0.0 or d < 0.7*maxf(r,float(o[1])): return false
-	out.append([w,r,up,zone,long])
+		if g > 0.0 or d < 0.7*maxf(r,float(o[1])): return false
+	out.append([w,r,up,flow,long])
 	return true
 
-## Where the stair's approach begins (along a).
-static func _stair_from() -> float:
-	return 880.0
-
-## The floor's half-width at `a` (PeakMassif `_valley`).
-static func _floor_half(a: float) -> float:
-	if a < PeakMassif.BOULDERS.x: return PeakMassif.FLOOR_HALF.x
-	var t := (a-PeakMassif.BOULDERS.x)/(PeakMassif.BOULDERS.y-PeakMassif.BOULDERS.x)
-	return lerpf(PeakMassif.FLOOR_HALF.x,PeakMassif.FLOOR_HALF.y,smoothstep(0.0,0.3,t))
-
-## 1 just upstream of an icefall step's lip (the riser's top, PeakMassif
-## `_valley`: each step's riser starts at its lip and falls toward larger a),
-## easing to 0 LIP m upstream and over the riser.
-static func _lip(a: float) -> float:
-	var span := (PeakMassif.ICEFALL.y-PeakMassif.ICEFALL.x)/PeakMassif.ICEFALL_STEPS
-	var best := 0.0
-	for k in PeakMassif.ICEFALL_STEPS:
-		var lip := PeakMassif.ICEFALL.x+k*span
-		var d := a-lip
-		best = maxf(best,1.0-smoothstep(0.0,LIP,absf(d)) if d < 0.0 else 1.0-smoothstep(0.0,span*PeakMassif.ICEFALL_RISER*0.6,d))
-	return best
-
-## Cell (cx, cz)'s pieces as one group, anchored at their middle.
+## Cell (cx, cz)'s towers as one group, anchored at their middle.
 static func _group(field: RefCounted, peak: RefCounted, mine: Array, cx: int, cz: int) -> Dictionary:
 	var mid := Vector2.ZERO
 	for b: Array in mine: mid += b[0]
 	mid /= float(mine.size())
 	var pos := Vector3(mid.x,float(field.height(mid.x,mid.y)),mid.y)
 	var rng := RandomNumberGenerator.new()
-	rng.seed = hash([int(field.seed),cx,cz,"peak valley shape"])
+	rng.seed = hash([int(field.seed),cx,cz,"peak serac shape"])
 	var pillars: Array = []
 	var reach := 0.0
 	for b: Array in mine:
 		var q: Vector2 = b[0]
-		if int(b[3]) == 0: pillars.append(Boulders._block(field,pos,q,float(b[1]),float(b[2]),rng))
-		elif PeakIce.wanted: pillars.append(Serac.pillar(field,pos,q,float(b[1]),float(b[2]),float(b[4]),peak.facing,rng))
-		else: pillars.append(_serac(field,peak,pos,q,float(b[1]),float(b[2]),float(b[4]),rng))
+		pillars.append(Serac.pillar(field,pos,q,float(b[1]),float(b[2]),float(b[4]),b[3],rng))
 		reach = maxf(reach,q.distance_to(mid)+widest(b)*1.3)
-	var pts := line(peak,50.0)
+	var pts := line(peak,40.0)
 	var start: Vector2 = pts[0]
 	var to: Vector2 = pts[2]-start
-	var spec := {"pos":pos,"reach":reach,"pillars":pillars,"foot":[],"by_arches":false,"bare":true,"on_peak":true,
-		"approach":{"at":start,"heading":rad_to_deg(atan2(to.x,-to.y)),"alt":START_ALT},"form":"valley"}
-	if PeakIce.wanted and int(mine[0][3]) == 1:
-		spec["mesher"] = Serac
-		spec["ice"] = true
-	return spec
-
-## One serac at world XZ `q`: radius `r` along the flow, `long` times it
-## across, standing `up` m over the high side of its ground.
-static func _serac(field: RefCounted, peak: RefCounted, pos: Vector3, q: Vector2, r: float, up: float, long: float, rng: RandomNumberGenerator) -> Dictionary:
-	var low := INF
-	var high := -INF
-	var side: Vector2 = peak.side
-	var fwd: Vector2 = peak.facing
-	for k in range(9):
-		var ang := TAU*k/8.0
-		var d := Vector2.ZERO if k == 0 else fwd*cos(ang)*r+side*sin(ang)*r*long
-		var g := float(field.height(q.x+d.x,q.y+d.y))
-		low = minf(low,g)
-		high = maxf(high,g)
-	var ground := float(field.height(q.x,q.y))
-	var over := maxf(high-ground,0.0)
-	var tall := over+up
-	var rf := r*rng.randf_range(0.9,1.1)
-	var rs := r*long
-	var profile: Array = []
-	var ring := func(y: float, k: float) -> void:
-		if not profile.is_empty() and y < float(profile.back()[0])+0.3: return
-		profile.append([y,rs*k,rf*k,0.0,0.0])
-	ring.call(low-ground-1.5,1.0)
-	ring.call(over,1.0)
-	ring.call(over+up*0.45,rng.randf_range(0.94,1.02))
-	# Half of them broken at the top: a shelf a fifth down, a block on it.
-	if rng.randf() < 0.5:
-		ring.call(tall-up*0.24,rng.randf_range(0.88,0.95))
-		ring.call(tall-up*0.2,rng.randf_range(0.6,0.7))
-		ring.call(tall-up*0.04,rng.randf_range(0.55,0.65))
-		ring.call(tall,rng.randf_range(0.42,0.52))
-	else:
-		ring.call(tall-up*0.08,rng.randf_range(0.82,0.92))
-		ring.call(tall,rng.randf_range(0.7,0.8))
-	# Leaning downstream (toward the meadow, +a), as seracs topple.
-	var lean := fwd*rng.randf_range(0.05,0.3)*r+side*rng.randf_range(-0.1,0.1)*r
-	for c: Array in profile:
-		var u := clampf((float(c[0])-over)/maxf(up,0.1),0.0,1.0)
-		c[3] = lean.x*u*u
-		c[4] = lean.y*u*u
-	# Long across the flow: the ring's x along the side, turned a little.
-	var yaw := atan2(side.y,side.x)+rng.randf_range(-0.25,0.25)
-	return {"at":Vector3(q.x-pos.x,ground-pos.y,q.y-pos.z),"profile":profile,"yaw":yaw,"dome":rng.randf_range(0.2,0.9),
-		"square":rng.randf_range(0.3,0.5),"lump":clampf(r*0.8,1.5,5.0),"lumps":0.08,"grain":0.07,"ledges":0.07,"flutes":0.14,
-		"bed":rng.randf_range(1.6,3.0),"ring_every":clampf(tall/8.0,0.8,1.6),"segments":16,"seed":rng.randi(),
-		"tint":Color(0.9,1.0,1.12)}
+	return {"pos":pos,"reach":reach,"pillars":pillars,"foot":[],"by_arches":false,"bare":true,"on_peak":true,
+		"approach":{"at":start,"heading":rad_to_deg(atan2(to.x,-to.y)),"alt":START_ALT},"form":"seracs","mesher":Serac,"ice":true}

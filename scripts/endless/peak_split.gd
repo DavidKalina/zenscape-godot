@@ -57,6 +57,17 @@ const ROCK_KNOTS := [
 	[1290.0,520.0,95.0],[1130.0,500.0,30.0],[980.0,520.0,80.0],[830.0,470.0,27.0],[700.0,340.0,70.0],
 	[570.0,230.0,30.0],[470.0,130.0,65.0],[345.0,0.0,85.0]]
 const TAIL_KNOTS := [[262.0,0.0,95.0],[170.0,0.0,110.0]]
+## The ice's spill out of its mouth: past the nose the shelf ended in a straight
+## step to the valley, its riser a wall. A lobe of ice runs down over that step
+## instead, from SPILL_Y at SPILL_A.x at SPILL_GRADE, narrowing from SPILL_HALF.x
+## to SPILL_HALF.y at SPILL_A.y, its sides falling at SPILL_SIDE. It only fills,
+## and the flown floor stops short of it.
+const SPILL_A := Vector2(2050.0,2185.0)
+const SPILL_V := 160.0
+const SPILL_Y := 306.0
+const SPILL_GRADE := 0.27
+const SPILL_HALF := Vector2(122.0,64.0)
+const SPILL_SIDE := 0.5
 ## Each floor's height by the share of the way from nose to saddle. The ice's
 ## grade stays near 0.17: the plane holds about 0.19 at a flying speed, and the
 ## next step stands seracs on it to weave. The rock's comes in pitches of up to
@@ -381,6 +392,13 @@ static func _ridge(f: float) -> float:
 static func _edge(f: float) -> float:
 	return RIDGE_UP*(1.0-RIDGE_LOWS*smoothstep(RIDGE_LOW.x,RIDGE_LOW.y,f))*(1.0-smoothstep(RIDGE_OUT.x,RIDGE_OUT.y,f))
 
+## The ground of the ice's spill at (a, v): a lobe, its sides wandering by `spur`.
+static func _spill(a: float, v: float, spur: float) -> float:
+	var d := maxf(a-SPILL_A.x,0.0)
+	var t := clampf(d/(SPILL_A.y-SPILL_A.x),0.0,1.0)
+	var half := lerpf(SPILL_HALF.x,SPILL_HALF.y,t*t)+spur*30.0
+	return SPILL_Y-SPILL_GRADE*d-SPILL_SIDE*maxf(absf(v-SPILL_V)-half,0.0)
+
 ## The massif's height `h` at (a, v) with the split on it. `n` the rock noise
 ## here, `rough` its height (m), `noise` the massif's noise.
 static func carve(a: float, v: float, h: float, n: float, rough: float, noise: FastNoiseLite) -> float:
@@ -448,6 +466,7 @@ static func carve(a: float, v: float, h: float, n: float, rough: float, noise: F
 	var y0 := fi+_rise(ei+wander,tier,ease)+low if ei < FAR-1.0 else INF
 	var y1 := fr+_rise(er+wander,tier,ease)+low if er < FAR-1.0 else INF
 	var cut := minf(mass,minf(y0,y1))
+	if a > SPILL_A.x-30.0: cut = maxf(cut,_spill(a,v,spur))
 	# The ramp and the apron stand on whatever lay lower under them.
 	var fill := smoothstep(350.0,310.0,a)*(1.0-smoothstep(0.0,30.0,near))
 	return lerpf(cut,maxf(cut,minf(y0,y1)),fill)
