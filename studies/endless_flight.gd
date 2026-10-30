@@ -813,9 +813,10 @@ func _launch(at: Vector3, heading: float, parked := false) -> void:
 	_sink_felt = false
 	plane.floor_y = Field.SEA_Y-15.0
 	plane.water = Field.SEA_Y
-	# The ranges' tallest peaks stand into the cloud roof: the ceiling
-	# rises over the isles' (Field CEILING_OVER, --ceiling=m over the sea).
+	# The air thins over the old ceiling (Field THIN_OVER) and the climb is
+	# slow work up to the top (Field CEILING_OVER, --ceiling=m over the sea).
 	plane.ceiling_y = Field.SEA_Y+_ceiling_over
+	if _ceiling_over > Field.THIN_OVER: plane.use_thin(Field.SEA_Y+Field.THIN_OVER,plane.ceiling_y)
 	# The land is a heightfield: it rides up what is no cliff, and a
 	# cliff's face turns it aside (SkyGlide `stone`).
 	plane.stone = func(_p: Vector3) -> bool: return true

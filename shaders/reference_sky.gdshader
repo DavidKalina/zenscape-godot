@@ -50,6 +50,12 @@ render_mode use_half_res_pass;
         // Under the cloud sea (scripts/sky_below.gd, `--below`) the whole
         // sky is its overcast (zsBelowAir): 0 leaves the sky as it was.
         uniform float below_world = 0.0;
+        // Land all round under the eye (the endless flight): on screen the
+        // dome under the horizon keeps the horizon's colour, the colour the
+        // land's haze fades to, so seen from high up the far land's edge
+        // meets sky of its own colour rather than the darker sky under the
+        // horizon. The radiance map keeps the dome as it was.
+        uniform float ground_horizon = 0.0;
         // Star colour by temperature, t in 0..1: hot blue-white through white
         // and yellow to orange and a rare ember red. Weighted toward white.
         vec3 star_tint(float t) {
@@ -183,7 +189,7 @@ render_mode use_half_res_pass;
           // The gradient itself is zsSkyGradient (above): the dome is a caller
           // of it like anything else that has to know what colour the sky is.
           // The bow is laid on after the horizon hills, so it crosses them.
-          vec3 col = zsSkyBase(dir);
+          vec3 col = zsSkyBase(ground_horizon > 0.0 && !AT_CUBEMAP_PASS && dir.y < 0.0 ? normalize(vec3(dir.x, dir.y * (1.0 - ground_horizon), dir.z)) : dir);
 
           // Stars: candidates on 3D lattices the dome slices through — round
           // dots, per-star brightness and a slow twinkle. Two lattices: a

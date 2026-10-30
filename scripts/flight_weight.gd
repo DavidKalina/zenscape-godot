@@ -29,6 +29,9 @@ extends RefCounted
 ##   low line takes small steady corrections. A buffet of `buffet` m/s
 ##   shakes it up and down there, by the depth and the speed. Slow (a hand
 ##   landing's approach, a braked pass) none of this acts.
+## - ceiling: in thin air (SkyPlane `use_thin`) the share of the thin band
+##   it climbs through: its top is `ceiling` of the way from where the air
+##   thins to the flight's top.
 ##
 ## `--weight=<off|light|medium|heavy>` picks one at launch; endless flight
 ## starts on DEFAULT and cycles them with V or the pad's d-pad up.
@@ -39,16 +42,16 @@ const DEFAULT := "medium"
 const PRESETS := {
 	"off":{"roll_hz":0.0,"turn_lag":0.0,"yaw_lag":0.0,"pitch_lag":0.0,"pitch_build":0.0,
 		"bleed":0.0,"soft_keep":1.0,"mush":0.0,"sag":0.0,"cam_lag":1.0,"cam_path":0.5,"fov_ease":0.3,
-		"low_spans":0.0,"settle":0.0,"settle_pitch":0.0,"buffet":0.0},
+		"low_spans":0.0,"settle":0.0,"settle_pitch":0.0,"buffet":0.0,"ceiling":1.0},
 	"light":{"roll_hz":13.0,"turn_lag":0.04,"yaw_lag":0.05,"pitch_lag":0.18,"pitch_build":0.06,
 		"bleed":0.3,"soft_keep":0.75,"mush":0.8,"sag":0.6,"cam_lag":1.25,"cam_path":0.56,"fov_ease":0.4,
-		"low_spans":1.6,"settle":1.0,"settle_pitch":-0.06,"buffet":0.35},
+		"low_spans":1.6,"settle":1.0,"settle_pitch":-0.06,"buffet":0.35,"ceiling":1.0},
 	"medium":{"roll_hz":11.0,"turn_lag":0.06,"yaw_lag":0.08,"pitch_lag":0.3,"pitch_build":0.09,
 		"bleed":0.6,"soft_keep":0.6,"mush":1.4,"sag":1.0,"cam_lag":1.5,"cam_path":0.62,"fov_ease":0.55,
-		"low_spans":1.8,"settle":1.4,"settle_pitch":-0.09,"buffet":0.5},
+		"low_spans":1.8,"settle":1.4,"settle_pitch":-0.09,"buffet":0.5,"ceiling":0.94},
 	"heavy":{"roll_hz":7.0,"turn_lag":0.12,"yaw_lag":0.13,"pitch_lag":0.48,"pitch_build":0.15,
 		"bleed":1.0,"soft_keep":0.45,"mush":2.2,"sag":1.8,"cam_lag":2.0,"cam_path":0.7,"fov_ease":0.8,
-		"low_spans":2.0,"settle":1.8,"settle_pitch":-0.11,"buffet":0.65},
+		"low_spans":2.0,"settle":1.8,"settle_pitch":-0.11,"buffet":0.65,"ceiling":0.85},
 }
 
 ## The path's lag at a speed: times cruise over speed, within these.
