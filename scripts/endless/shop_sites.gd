@@ -30,6 +30,7 @@ const ShopView = preload("res://scripts/endless/shop_view.gd")
 const RivalStrip = preload("res://scripts/endless/rival_strip.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const Field = preload("res://scripts/endless/land_field.gd")
 
 const SEA_Y := -40.0
 const CELL := 3200.0
@@ -101,6 +102,14 @@ var view_cell := Vector2i.ZERO
 var _left_on_stop := false
 var _layer: CanvasLayer
 var _sock_t := 0.0
+## The squares' tries run on a worker, a square at a time, each on its own
+## Field (its tries cost up to tens of ms a frame over terraced land, even
+## within the budget: the budget is looked at only between tries);
+## --shop-look=main tries on this thread, BUDGET_MS a frame, as before.
+var _look_main := "--shop-look=main" in preload("res://scripts/launch_args.gd").user_args()
+var _look_task := -1
+var _look_key := Vector2i.ZERO
+var _look_out := {}
 
 static func wanted() -> bool:
 	for a: String in preload("res://scripts/launch_args.gd").user_args():
@@ -124,6 +133,7 @@ func setup(g: Node) -> void:
 	_layer = CanvasLayer.new()
 	_layer.layer = 5
 	add_child(_layer)
+	if on: _warm()
 
 ## The cells' sites found so far: [{name, cell, frame, axis, across, side,
 ## centre, half_len, ...}].
@@ -161,8 +171,10 @@ func step(delta: float, g: Node) -> void:
 			if near > SEARCH: continue
 			var c := _cell(key)
 			if c.state == "looking":
-				var left := BUDGET_MS*1000.0-float(Time.get_ticks_usec()-spent_from)
-				if left > 0.0: _look(key,c,left)
+				if not _look_main: _look_off(key,c)
+				else:
+					var left := BUDGET_MS*1000.0-float(Time.get_ticks_usec()-spent_from)
+					if left > 0.0: _look(key,c,left)
 	for key: Vector2i in cells:
 		var c: Dictionary = cells[key]
 		var site: Dictionary = c.site
@@ -194,12 +206,20 @@ static func _box_distance(box: Rect2, p: Vector2) -> float:
 
 ## Tries on in `key`'s square for up to `budget_us` µs.
 func _look(key: Vector2i, c: Dictionary, budget_us: float) -> void:
+	var r := _tries(game.field,key,int(c.k),budget_us)
+	c.k = r.k
+	_looked(key,c,r)
+
+## `key`'s square's tries from `k` on `field` for up to `budget_us` µs (any
+## thread: nothing but the field): {k (the next try), done, site (raw, {}
+## for none), try}.
+func _tries(field: RefCounted, key: Vector2i, k_from: int, budget_us: float) -> Dictionary:
 	var from := Time.get_ticks_usec()
-	var field: RefCounted = game.field
 	var is_start := key == cell_of(start.x,start.y)
-	while int(c.k) < TRIES:
-		var k := int(c.k)
-		c.k = k+1
+	var k_now := k_from
+	while k_now < TRIES:
+		var k := k_now
+		k_now = k+1
 		var p: Vector2
 		if is_start:
 			# Out from the start, nearest first, round by the golden angle.
@@ -212,13 +232,42 @@ func _look(key: Vector2i, c: Dictionary, budget_us: float) -> void:
 		for h in HEADINGS:
 			var yaw := turn+PI*h/HEADINGS
 			var site := _try(field,p,Vector2(cos(yaw),sin(yaw)))
-			if not site.is_empty():
-				c.site = _named(key,site)
-				c.state = "found" if not c.site.is_empty() else "none"
-				if not c.site.is_empty(): print("shop %s: a strip %.0f m from the start (try %d)" % [c.site.name,start.distance_to(Vector2(c.site.centre.x,c.site.centre.z)),k])
-				return
-		if float(Time.get_ticks_usec()-from) > budget_us: return
-	c.state = "none"
+			if not site.is_empty(): return {"k":k_now,"done":true,"site":site,"try":k}
+		if float(Time.get_ticks_usec()-from) > budget_us: return {"k":k_now,"done":false,"site":{},"try":k}
+	return {"k":k_now,"done":true,"site":{},"try":-1}
+
+## `_tries`' answer `r` taken into `key`'s cell `c` (this thread: the
+## layout file names it).
+func _looked(key: Vector2i, c: Dictionary, r: Dictionary) -> void:
+	if not r.done: return
+	if (r.site as Dictionary).is_empty():
+		c.state = "none"
+		return
+	c.site = _named(key,r.site)
+	c.state = "found" if not c.site.is_empty() else "none"
+	if not c.site.is_empty(): print("shop %s: a strip %.0f m from the start (try %d)" % [c.site.name,start.distance_to(Vector2(c.site.centre.x,c.site.centre.z)),int(r.try)])
+
+## `key`'s square's tries on a worker, one square at a time: started, or
+## its answer taken once done.
+func _look_off(key: Vector2i, c: Dictionary) -> void:
+	if _look_task != -1:
+		if not WorkerThreadPool.is_task_completed(_look_task): return
+		WorkerThreadPool.wait_for_task_completion(_look_task)
+		_look_task = -1
+		var done: Dictionary = cells[_look_key]
+		done.k = _look_out.k
+		_looked(_look_key,done,_look_out)
+		if c.state != "looking": return
+	_look_key = key
+	_look_out = {}
+	var out := _look_out
+	var k_from := int(c.k)
+	var world: RefCounted = game.field.world
+	_look_task = WorkerThreadPool.add_task(func() -> void:
+		out.merge(_tries(Field.new(seed,world),key,k_from,INF)),false,"Shop strip search")
+
+func _exit_tree() -> void:
+	if _look_task != -1: WorkerThreadPool.wait_for_task_completion(_look_task)
 
 ## The site for a strip centred on `p` along `d` (XZ), or {}.
 ## Why tries failed, by reason (for checks).
@@ -453,13 +502,7 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 	sm.radial_segments = 10
 	sm.rings = 5
 	lamp.mesh = sm
-	var glow := StandardMaterial3D.new()
-	glow.albedo_color = Color("ffd36b")
-	glow.emission_enabled = true
-	glow.emission = Color("ffc65a")
-	glow.emission_energy_multiplier = 4.0
-	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	lamp.material_override = glow
+	lamp.material_override = _glow_material()
 	lamp.position = Vector3(0,MAST+LAMP*0.4,0)
 	lamp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mast.add_child(lamp)
@@ -534,6 +577,41 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 			top.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			root.add_child(top)
 		u += POST_EVERY
+	if _merge: _merged(root)
+
+## The shop's still meshes joined into one a material and shadow setting
+## (the hangar, the mast's pole and bands, the edge posts): ~30 nodes a shop
+## to about ten. What moves or draws its own way stays as it is: the sock
+## (it sways), the pennant (its shader waves it), the glint and the lamp.
+## --shop-merge=0 keeps a node a part, as before.
+var _merge := not "--shop-merge=0" in preload("res://scripts/launch_args.gd").user_args()
+func _merged(root: Node3D) -> void:
+	var to_root := root.global_transform.affine_inverse()
+	var tools := {}
+	var parts: Array = []
+	for n in root.find_children("*","MeshInstance3D",true,false):
+		var mi := n as MeshInstance3D
+		var m := mi.material_override
+		if mi.mesh == null or m == null or m == _glow_mat or m == _glint_mat: continue
+		if m is ShaderMaterial and (m as ShaderMaterial).shader == _pennant_shader: continue
+		if mi.get_parent().name == "Sock": continue
+		var key := [m,mi.cast_shadow]
+		if not tools.has(key):
+			var st := SurfaceTool.new()
+			st.begin(Mesh.PRIMITIVE_TRIANGLES)
+			tools[key] = st
+		for i in mi.mesh.get_surface_count(): (tools[key] as SurfaceTool).append_from(mi.mesh,i,to_root*mi.global_transform)
+		parts.append(mi)
+	for mi: MeshInstance3D in parts: mi.free()
+	var k := 0
+	for key: Array in tools:
+		var joined := MeshInstance3D.new()
+		joined.name = "Joined%d" % k
+		k += 1
+		joined.mesh = (tools[key] as SurfaceTool).commit()
+		joined.material_override = key[0]
+		joined.cast_shadow = key[1]
+		root.add_child(joined)
 
 ## The glint: its size on screen (as seen 1 m off), fading in from
 ## GLINT_FROM to GLINT_FULL m.
@@ -541,6 +619,34 @@ const GLINT := 0.026
 const GLINT_FROM := 220.0
 const GLINT_FULL := 420.0
 static var _glint_mat: StandardMaterial3D
+static var _glow_mat: StandardMaterial3D
+
+## The lamp's glow (one for every shop).
+static func _glow_material() -> StandardMaterial3D:
+	if _glow_mat != null: return _glow_mat
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = Color("ffd36b")
+	glow.emission_enabled = true
+	glow.emission = Color("ffc65a")
+	glow.emission_energy_multiplier = 4.0
+	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_glow_mat = glow
+	return glow
+
+## The lamp's, the glint's and the pennant's materials made, their shaders
+## compiled, at setup: the first shop built in flight cost ~27 ms on them
+## (--shop-warm=0 leaves them to the first build, as before).
+## Each put on a mesh in the tree for a moment, as a build does (where the
+## cost fell).
+func _warm() -> void:
+	if "--shop-warm=0" in preload("res://scripts/launch_args.gd").user_args(): return
+	for m: Material in [_glow_material(),_glint_material(),_pennant_material(),_mat(Color.WHITE,0.9)]:
+		var mi := MeshInstance3D.new()
+		mi.mesh = _pennant() if m is ShaderMaterial else QuadMesh.new()
+		mi.position = Vector3(0.0,-10000.0,0.0)
+		add_child(mi)
+		mi.material_override = m
+		mi.queue_free()
 
 static func _glint_material() -> StandardMaterial3D:
 	if _glint_mat != null: return _glint_mat

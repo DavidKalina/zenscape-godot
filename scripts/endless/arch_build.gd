@@ -24,6 +24,9 @@ const BridgeBuild = preload("res://scripts/endless/bridge_build.gd")
 
 ## Ruins get their levels of detail (off: --no-arch-lod, to compare).
 static var lod: bool = not "--no-arch-lod" in preload("res://scripts/launch_args.gd").user_args()
+## A ruin's collider boxes are one CollisionShape3D node each, as before
+## (--ruin-shape-nodes); else shapes on its body through the physics server.
+static var shape_nodes: bool = "--ruin-shape-nodes" in preload("res://scripts/launch_args.gd").user_args()
 const WorldScale = preload("res://scripts/world_scale.gd")
 const RockShape = preload("res://scripts/endless/rock_shape.gd")
 
@@ -275,7 +278,7 @@ static func _ruin(spec: Dictionary, field: RefCounted) -> Dictionary:
 		# added one a frame by a Feed once the piece is in the tree.
 		root.add_child(_feed(solid))
 		body.free()
-	else:
+	elif shape_nodes:
 		for box: AABB in solid:
 			var cs := CollisionShape3D.new()
 			var shape := BoxShape3D.new()
@@ -284,10 +287,37 @@ static func _ruin(spec: Dictionary, field: RefCounted) -> Dictionary:
 			cs.position = box.get_center()
 			body.add_child(cs)
 		root.add_child(body)
+	else:
+		# Its boxes put on the body through the physics server when it is
+		# committed (`add_shapes`), a BoxShape3D shared by size: no node a
+		# box (a bridge's hundreds of nodes cost the frame they join the tree
+		# and every walk of the tree after).
+		var shapes := {}
+		var pairs: Array = []
+		for box: AABB in solid:
+			var k := Vector3i((box.size*1000.0).round())
+			if not shapes.has(k):
+				var bs := BoxShape3D.new()
+				bs.size = box.size
+				shapes[k] = bs
+			pairs.append([shapes[k],box.get_center()])
+		body.set_meta("shapes",pairs)
+		root.add_child(body)
 	# Its levels of detail (scripts/ruin_lod.gd), so far off it draws less.
 	var lods := {}
 	if lod: lods = RuinLod.add(root)
 	return {"spec":spec,"kind":spec.kind,"node":root,"boxes":boxes}
+
+## The boxes waiting on `root`'s body (`_ruin`) put on it through the
+## physics server, before it joins the tree (main thread). The meta stays:
+## it holds the shapes (a shape freed leaves the body).
+static func add_shapes(root: Node) -> void:
+	var body := root.get_node_or_null("Body") as StaticBody3D
+	if body == null or not body.has_meta("shapes") or body.has_meta("shapes_on"): return
+	var rid := body.get_rid()
+	for e: Array in body.get_meta("shapes"):
+		PhysicsServer3D.body_add_shape(rid,(e[0] as Shape3D).get_rid(),Transform3D(Basis.IDENTITY,e[1]))
+	body.set_meta("shapes_on",true)
 
 ## A set piece's boxes past this many are fed into the tree over frames
 ## (`Feed`), this many a body and a frame.

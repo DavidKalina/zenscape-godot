@@ -51,7 +51,10 @@ extends Node3D
 ## --old-land (round one's land and ceiling), --ceiling=m over the sea (215),
 ## --heading=deg clockwise from -z (0; `sun` toward the sun), --alt=m over
 ## the ground (45), --numbers opens with F1's numbers shown, --uncapped
-## turns vsync and the frame cap off (the fps is then the frame's cost).
+## turns vsync and the frame cap off (the fps is then the frame's cost),
+## --max-fps=N caps the frame rate at N (0 none; vsync stays on), a rate the
+## machine holds every frame so it never jumps between the screen's rate and
+## half of it (77 or 120 on a 154 Hz screen).
 ## Split mountains (scripts/endless/split_sites.gd): --split-near-start starts
 ## 520 m out of the nearest one's lower mouth, heading in, 28 m up or more
 ## to clear the land on the way in (--alt wins); --splits=X their density, --no-splits none, --split-kind=K every
@@ -155,6 +158,7 @@ const KnifeGlance = preload("res://scripts/endless/knife_glance.gd")
 const NearMissHud = preload("res://scripts/endless/near_miss_hud.gd")
 const NearMissHudGlyph = preload("res://scripts/endless/near_miss_hud_glyph.gd")
 const NearMissHudHandoff = preload("res://scripts/endless/near_miss_hud_handoff.gd")
+const NearMissHudRing = preload("res://scripts/endless/near_miss_hud_ring.gd")
 const FlightDebris = preload("res://scripts/endless/flight_debris.gd")
 ## Low over water: the cushion, the spray, the wake's marks, the wet screen.
 const WaterContact = preload("res://scripts/endless/water_contact.gd")
@@ -458,6 +462,10 @@ func _ready() -> void:
 			# No vsync and no cap, so the numbers' fps is the frame's cost.
 			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 			Engine.max_fps = 0
+		elif arg.begins_with("--max-fps="):
+			# A cap the machine holds every frame, under the screen's rate:
+			# vsync stays on, so a frame waits for the screen's next refresh.
+			Engine.max_fps = maxi(0,int(arg.get_slice("=",1)))
 	# The layout file first: the slot halls' sites read its moves when
 	# the land is first looked at (scripts/endless/hall_sites.gd).
 	LayoutOverrides.begin("endless_flight")
@@ -747,14 +755,16 @@ func _build_ui() -> void:
 	_stop_cue.add_theme_constant_override("outline_size",4)
 	_stop_cue.visible = false
 	layer.add_child(_stop_cue)
-	# The near misses' HUD: the design handoff's (scripts/endless/near_miss_hud_handoff.gd),
-	# in the tag by the plane or at the top as the player keeps it (H switches).
-	# --near-hud=glyph the earlier trial (gilt numbers in a tag), --near-hud=classic
-	# the first plain text.
+	# The near misses' HUD: the ring by the plane (scripts/endless/near_miss_hud_ring.gd,
+	# the Line HUD canvas's C2). --near-hud=tag (or handoff, handoff-tag) the design
+	# handoff's tag before it (scripts/endless/near_miss_hud_handoff.gd, in the tag
+	# or at the top as the player keeps it, H switches); --near-hud=glyph the earlier
+	# trial (gilt numbers in a tag), --near-hud=classic the first plain text.
 	var hud_args := preload("res://scripts/launch_args.gd").user_args()
 	if "--near-hud=glyph" in hud_args: _near_hud = NearMissHudGlyph.new()
 	elif "--near-hud=classic" in hud_args: _near_hud = NearMissHud.new()
-	else: _near_hud = NearMissHudHandoff.new()
+	elif "--near-hud=tag" in hud_args or "--near-hud=handoff" in hud_args or "--near-hud=handoff-tag" in hud_args: _near_hud = NearMissHudHandoff.new()
+	else: _near_hud = NearMissHudRing.new()
 	_near_hud.visible = false
 	layer.add_child(_near_hud)
 	# The landing summary and the logbook (lane logbook, spec-wild-loop.md).
