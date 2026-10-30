@@ -123,6 +123,11 @@ var sweep_gain := 1.0
 var _mesh: ArrayMesh
 var _view: MeshInstance3D
 var _material: ShaderMaterial
+## The strips laid in C++ (ZenScapeRibbons, native/terrain_kernels/
+## flight_fx.h: the same arrays as `_draw` here) when the library is built;
+## null under --native-react=0 or --gdscript-kernels.
+var native: Object = null
+const NATIVE_CLASS := &"ZenScapeRibbons"
 
 func setup(probe: Callable) -> void:
 	ground_height = probe
@@ -144,6 +149,12 @@ func setup(probe: Callable) -> void:
 		if arg.begins_with("--wake="): wake_gain = float(arg.get_slice("=", 1))
 		if arg.begins_with("--sweeps="): sweep_gain = float(arg.get_slice("=", 1))
 		if arg == "--ribbon-debug": _material.set_shader_parameter("debug_view", 1)
+	var args := preload("res://scripts/launch_args.gd").user_args()
+	if not "--native-react=0" in args and not "--gdscript-kernels" in args:
+		preload("res://scripts/endless/land_field.gd").native_available()
+		if ClassDB.class_exists(NATIVE_CLASS):
+			var made: Object = ClassDB.instantiate(NATIVE_CLASS)
+			if made.has_method("version") and int(made.version()) == 1: native = made
 
 func _process(_delta: float) -> void:
 	if _material != null: _material.set_shader_parameter("glow", glow)
@@ -503,6 +514,13 @@ func _draw() -> void:
 			any = true
 			break
 	if not any: return
+	var arrays := strip_arrays(native)
+	if not arrays.is_empty(): _mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+
+## The strips' surface arrays (Mesh.ARRAY_MAX of them), or [] for none:
+## laid here, or by `kernel` (ZenScapeRibbons) when given.
+func strip_arrays(kernel: Object = null) -> Array:
+	if kernel != null: return _strip_arrays_native(kernel)
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
@@ -544,7 +562,7 @@ func _draw() -> void:
 				for k in range(6): uv2s.append(size)
 				colors.append_array([c0, c1, c1, c0, c1, c0])
 			prev_l = tangent
-	if verts.is_empty(): return
+	if verts.is_empty(): return []
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -552,7 +570,26 @@ func _draw() -> void:
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 	arrays[Mesh.ARRAY_COLOR] = colors
-	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return arrays
+
+## The strips laid by ZenScapeRibbons `strips`: the same arrays.
+func _strip_arrays_native(kernel: Object) -> Array:
+	var paths := []
+	var records := PackedFloat64Array()
+	for r in ribbons:
+		paths.append(r.path)
+		var v: Vector3 = r.vel
+		records.append_array([v.x, v.y, v.z, float(r.age), float(r.fade), float(r.weight), float(r.width), float(r.seed)])
+	var made: Array = kernel.strips(paths, records, OPACITY * opacity_scale, width_scale)
+	if made.is_empty(): return []
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = made[0]
+	arrays[Mesh.ARRAY_NORMAL] = made[1]
+	arrays[Mesh.ARRAY_TEX_UV] = made[2]
+	arrays[Mesh.ARRAY_TEX_UV2] = made[3]
+	arrays[Mesh.ARRAY_COLOR] = made[4]
+	return arrays
 
 ## The shaders' value noise (zs_noise).
 func _noise(p: Vector2) -> float:

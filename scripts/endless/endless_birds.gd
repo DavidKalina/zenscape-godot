@@ -32,6 +32,13 @@ extends Node3D
 ## --bird-range=X the flush reach over its default (1), --bird-size=X (1),
 ## --bird-ride=S seconds alongside (6), --ambient-birds=X the far flocks
 ## (1; 0 none).
+##
+## Native: with the library built, a flock whose birds all fly (wheeling,
+## alongside, peeling off or leaving) is flown in C++ (ZenScapeBirds,
+## native/terrain_kernels/flight_fx.h: `_fly_birds` and `_pose_air` for it,
+## the same numbers), and every bird's parts are laid out there (`_draw`).
+## The flocks, the perched life and every random draw stay here.
+## --native-birds=0 (or --gdscript-kernels) runs it all here.
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
@@ -204,6 +211,7 @@ class Flock:
 	var spin := 1.0
 	var until := 0.0
 	var calm := 0.0
+	var nid := -1                # flown natively (ZenScapeBirds), or -1
 
 var enabled := true
 var density := 1.0
@@ -235,6 +243,18 @@ var _clock := 0.0
 ## Each part's place on the body (songbird units).
 var _wing_at := [Vector3.ZERO,Vector3.ZERO]
 var _head_at := Vector3.ZERO
+## The C++ flying and drawing (ZenScapeBirds), or null for the GDScript.
+var native: Object = null
+
+const NATIVE_CLASS := &"ZenScapeBirds"
+const NATIVE_VERSION := 1
+static func native_wanted() -> bool:
+	var args := LaunchArgs.user_args()
+	if "--native-birds=0" in args or "--gdscript-kernels" in args: return false
+	Field.native_available()
+	if not ClassDB.class_exists(NATIVE_CLASS): return false
+	var probe: Object = ClassDB.instantiate(NATIVE_CLASS)
+	return probe.has_method("version") and int(probe.version()) == NATIVE_VERSION
 
 static func flags() -> Dictionary:
 	# The world's birds layer, the flags over it.
@@ -289,6 +309,10 @@ func setup(land_seed: int, field: RefCounted, trees: Node3D) -> void:
 			_mmi.append(node)
 	_n.resize(_mm.size())
 	_data.resize(_mm.size()*MAX_BIRDS*12)
+	if native_wanted():
+		native = ClassDB.instantiate(NATIVE_CLASS)
+		native.configure({"span": _span, "avoid": WorldScale.span*1.5, "response": RESPONSE, "crouch": CROUCH, "beat": BEAT,
+			"bound": BOUND, "max_birds": MAX_BIRDS, "parts": _mm.size(), "head_at": _head_at, "wing_l": _wing_at[0], "wing_r": _wing_at[1]})
 
 ## The parts, from the songbird's own meshes: sitting (body and folded
 ## wings), the head, the flying body with its wings tucked (the bounds) and
@@ -347,6 +371,7 @@ func step(delta: float, eye: Vector3, plane: RefCounted) -> void:
 	for i in range(flocks.size()-1,-1,-1):
 		var f: Flock = flocks[i]
 		if not _flock_step(f,delta,eye,pp,pv,cruise,feet):
+			if f.nid >= 0: native.drop(f.nid)
 			flocks.remove_at(i)
 			stats.dropped += 1
 	var t_draw := Time.get_ticks_usec()
@@ -867,6 +892,7 @@ func _place_off(f: Flock, b: Bird) -> Vector3:
 	return rx*w.x*keep+Vector3.UP*w.y*keep*0.6-fx*w.z*keep
 
 func _fly_birds(f: Flock, delta: float, pp: Vector3) -> void:
+	if native != null and _fly_native(f,delta,pp): return
 	var avoid := WorldScale.span*1.5
 	var damp := 1.0-exp(-delta*RESPONSE)
 	for b: Bird in f.birds:
@@ -912,6 +938,51 @@ func _fly_birds(f: Flock, delta: float, pp: Vector3) -> void:
 			b.p.y = f.ground+0.5
 			b.v.y = maxf(b.v.y,0.0)
 		_pose_air(b,delta,true,f.state == BURST or f.state == SCATTER and f.t < 1.0)
+
+## A flock all in flight, not settling, bursting or scattering, flown by
+## ZenScapeBirds `fly` (its birds handed over the first time); true if so.
+## Any other state hands them back to `_fly_birds` here.
+func _fly_native(f: Flock, delta: float, pp: Vector3) -> bool:
+	if f.state != WHEEL and f.state != RIDING and f.state != PEEL and f.state != LEAVE:
+		if f.nid >= 0: _hand_back(f)
+		return false
+	if f.nid < 0:
+		var rec := PackedFloat64Array()
+		for b: Bird in f.birds:
+			if b.mode != FLYING: return false
+			rec.append_array([b.p.x,b.p.y,b.p.z,b.v.x,b.v.y,b.v.z,b.off.x,b.off.y,b.off.z,b.face.x,b.face.y,b.face.z,
+				b.pitch,b.roll,b.t,b.beat,b.bound,b.squash,b.seed])
+		f.nid = native.adopt(rec)
+	native.fly(f.nid,delta,_clock,f.a,f.av,f.heading,f.size,f.spread,f.ground,pp)
+	return true
+
+## A natively flown flock's birds written back into its Birds (flight_fx.h
+## BIRD_REC). `keep` leaves it flown natively (for drivers and checks).
+func _hand_back(f: Flock, keep := false) -> void:
+	var r: PackedFloat64Array = native.records(f.nid)
+	for i in f.birds.size():
+		var b: Bird = f.birds[i]
+		var o := i*19
+		b.p = Vector3(r[o],r[o+1],r[o+2])
+		b.v = Vector3(r[o+3],r[o+4],r[o+5])
+		b.off = Vector3(r[o+6],r[o+7],r[o+8])
+		b.face = Vector3(r[o+9],r[o+10],r[o+11])
+		b.pitch = r[o+12]
+		b.roll = r[o+13]
+		b.t = r[o+14]
+		b.beat = r[o+15]
+		b.bound = r[o+16]
+		b.squash = r[o+17]
+		b.look = 0.0
+	if keep: return
+	native.drop(f.nid)
+	f.nid = -1
+
+## Every natively flown flock's birds written back (they keep flying
+## natively): for drivers that read the birds.
+func sync_native() -> void:
+	for f: Flock in flocks:
+		if f.nid >= 0: _hand_back(f,true)
 
 ## Settling: in to its perch, slowing for the last stretch (the isles'
 ## approach, from its open side), then down.
@@ -970,6 +1041,9 @@ static func _turn(a: Vector3, b: Vector3, t: float) -> Vector3:
 # --- Drawing -------------------------------------------------------------------------
 
 func _draw() -> void:
+	if native != null:
+		_draw_native()
+		return
 	_n.fill(0)
 	var lo := Vector3.INF
 	var hi := -Vector3.INF
@@ -1021,6 +1095,59 @@ func _draw() -> void:
 		if n == 0: continue
 		var at := k*MAX_BIRDS*12
 		RenderingServer.multimesh_set_buffer(_mm[k].get_rid(),_data.slice(at,at+MAX_BIRDS*12))
+		_mmi[k].custom_aabb = box
+
+## `_draw` laid out by ZenScapeBirds: a natively flown flock from its own
+## birds, the others from their records (flight_fx.h DRAW_REC), in order.
+func _draw_native() -> void:
+	var dt := get_process_delta_time()
+	native.draw_begin()
+	for f: Flock in flocks:
+		var k0 := maxi(_kinds.find(f.species),0)*PARTS
+		var sz := _scale*f.size
+		if f.nid >= 0:
+			native.draw_flock(f.nid,k0,sz,f.state == SETTLE)
+			continue
+		var rec := PackedFloat64Array()
+		rec.resize(f.birds.size()*16)
+		var o := 0
+		for b: Bird in f.birds:
+			if b.mode == SAT or b.mode == GROUND:
+				b.look = lerpf(b.look,b.look_goal,1.0-exp(-dt*14.0))
+				b.flick = maxf(b.flick-dt*5.0,0.0)
+			else: b.look = 0.0
+			rec[o] = b.mode
+			rec[o+1] = b.p.x
+			rec[o+2] = b.p.y
+			rec[o+3] = b.p.z
+			rec[o+4] = b.face.x
+			rec[o+5] = b.face.z
+			rec[o+6] = b.pitch
+			rec[o+7] = b.roll
+			rec[o+8] = b.squash
+			rec[o+9] = b.flick
+			rec[o+10] = b.peck
+			rec[o+11] = b.hop_t
+			rec[o+12] = b.look
+			rec[o+13] = b.bound
+			rec[o+14] = b.beat
+			rec[o+15] = b.v.y
+			o += 16
+		native.draw_records(rec,k0,sz,f.state == SETTLE)
+	var counts: PackedInt32Array = native.draw_counts()
+	var drawn: int = native.drawn()
+	var span_box: Array = native.draw_box()
+	var lo: Vector3 = span_box[0]
+	var hi: Vector3 = span_box[1]
+	var pad := Vector3.ONE*(_span*AMBIENT_SIZE+1.0)
+	var box := AABB(lo-pad,hi-lo+pad*2.0) if drawn > 0 else AABB()
+	for k in _mm.size():
+		var n := counts[k]
+		_n[k] = n
+		_mm[k].visible_instance_count = n
+		_mmi[k].visible = n > 0
+		if n == 0: continue
+		RenderingServer.multimesh_set_buffer(_mm[k].get_rid(),native.part(k))
 		_mmi[k].custom_aabb = box
 
 func _put(k: int, t: Transform3D) -> void:

@@ -19,6 +19,7 @@
 #include "land_field_bind.h"
 #include "grass_cell.h"
 #include "tree_cell.h"
+#include "flight_fx.h"
 
 using namespace godot;
 
@@ -326,6 +327,9 @@ static void initialize(ModuleInitializationLevel level) {
     ClassDB::register_class<ZenScapeLandBand>();
     ClassDB::register_class<ZenScapeGrass>();
     ClassDB::register_class<ZenScapeTrees>();
+    ClassDB::register_class<ZenScapeMotes>();
+    ClassDB::register_class<ZenScapeRibbons>();
+    ClassDB::register_class<ZenScapeBirds>();
 }
 extern "C" GDExtensionBool GDE_EXPORT zenscape_kernels_init(GDExtensionInterfaceGetProcAddress get_proc,
         GDExtensionClassLibraryPtr library, GDExtensionInitialization *initialization) {
