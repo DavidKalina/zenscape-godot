@@ -23,6 +23,8 @@ const HAND: Array[float] = [1.0, -1.0, 1.0]
 const TURNS := 3.4
 ## How fast the cloud runs up its ribbon, m/s (it churns as it turns).
 const FLOW := 9.0
+## The flow wraps here: whole tiles of the shader's noise (430 m a tile).
+const FLOW_WRAP := 6450.0
 ## Over the cloud sheet (EndlessClouds.RENDER_PRIORITY), which draws first.
 const PRIORITY := 8
 ## The box's reach past the ribbon's own, as a share of the radius.
@@ -103,7 +105,7 @@ func set_axes(axes: Array) -> void:
 
 
 func _process(delta: float) -> void:
-	_flow = fmod(_flow+FLOW*delta,6400.0)
+	_flow = fmod(_flow+FLOW*delta,FLOW_WRAP)
 	for r: Dictionary in _ribbons:
 		r.spin = fmod(float(r.spin)+float(r.rate)*delta,TAU)
 		var mat: ShaderMaterial = r.material

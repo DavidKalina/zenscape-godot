@@ -98,7 +98,8 @@ Here here_at(vec3 p) {
 	o.fade = smoothstep(0.0, 0.16, along / turns) * (1.0 - smoothstep(0.86, 0.985, along / turns));
 	// The line wanders and swells a little so it never reads as machined.
 	float w1 = sin(along * 2.1 + seed * 3.0);
-	float w2 = sin(along * 4.7 + seed * 5.0 + flow * 0.002);
+	// Two whole cycles over the flow's period (PeakSpirals.FLOW_WRAP).
+	float w2 = sin(along * 4.7 + seed * 5.0 + flow * 0.00194828);
 	float w3 = sin(along * 1.3 + seed * 1.7);
 	float swell = 1.0 + 0.2 * w3 + 0.16 * sin(along * 7.3 + seed * 4.0) + 0.1 * sin(along * 13.1 + seed);
 	float centre = radius * mix(1.0, TAPER, pow(hc, 0.85)) * (1.0 + 0.09 * w1 + 0.05 * w2);
@@ -127,12 +128,13 @@ float density_at(Here o, float t, out float lump) {
 	lump = big.g - 0.5;
 	float keep_mid = 1.0 - smoothstep(MIDDLE.x, MIDDLE.y, t);
 	if (keep_mid > 0.0) {
-		vec2 mid = textureLod(noise, c * vec3(2.1, 2.7, 2.7) + 0.31, 0.0).rg;
+		// Whole multiples along the ribbon, so the flow's wrap never shows.
+		vec2 mid = textureLod(noise, c * vec3(2.0, 2.7, 2.7) + 0.31, 0.0).rg;
 		shape += ((mid.r - 0.55) * 0.75 + (mid.g - 0.5) * 0.5 * smoothstep(0.35, 1.0, o.e)) * keep_mid;
 		lump += (mid.r - 0.55) * 0.8 * keep_mid;
 		float keep_fine = 1.0 - smoothstep(FINE.x, FINE.y, t);
 		if (keep_fine > 0.0) {
-			vec2 fine = textureLod(noise, c * vec3(5.3, 7.1, 7.1) + 0.67, 0.0).rg;
+			vec2 fine = textureLod(noise, c * vec3(5.0, 7.1, 7.1) + 0.67, 0.0).rg;
 			shape += (fine.g - 0.5) * 0.38 * keep_fine;
 			lump += (fine.r - 0.55) * 0.3 * keep_fine;
 		}
@@ -231,13 +233,13 @@ void fragment() {
 			sun_light *= 1.0 - 0.72 * hid;
 			float up_face = ng.y * 0.5 + 0.5;
 			// The sky's share falls with the sun, so a low sun's colour shows.
-			float ambient = mix(0.6, 0.85, up_face) * (1.0 + lump * 0.5) * mix(0.55, 1.0, high);
+			float ambient = mix(0.6, 0.85, up_face) * (1.0 + lump * 0.5) * mix(0.3, 1.0, high);
 			float under = (1.0 - up_face) * (1.0 - up_face);
 			vec3 lit = ambient * c_shade + (sun_light * 1.55 + lining * sun_light) * c_sun + under * 0.22 * c_sun * BOUNCE_TINT;
 			if (zs_cloud_under > 0.0) {
 				float sun_side = dot(normalize(rd.xz + 1e-4), sun_flat) * 0.5 + 0.5;
 				vec3 under_col = mix(c_sun, UNDER_ROSE * max(c_sun.r, max(c_sun.g, c_sun.b)), 0.5);
-				lit += under * under_col * 3.0 * zs_cloud_under * mix(0.55, 1.0, sun_side);
+				lit += under * under * under_col * 1.6 * zs_cloud_under * mix(0.55, 1.0, sun_side);
 			}
 			lit *= ZS_CUMULUS_LIT_SHARE * day;
 			// Flown through: the white of being in cloud, warmer toward the sun.
