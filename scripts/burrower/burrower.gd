@@ -138,6 +138,8 @@ const GRASS_HOLD := 0.45
 ## Clods: at most CLODS alive, kicked at CLOD_RATE a second at full speed.
 const CLODS := 360
 const CLOD_FLOATS := 16
+const CLOD_FLY_EVERY := 2
+const CLOD_LIE_EVERY := 4
 const CLOD_RATE := 34.0
 ## The spout: earth flung high off the head (so it shows over the grass from
 ## a skimming chase camera), SPOUT_RATE a second at full speed, up SPOUT_UP
@@ -232,6 +234,7 @@ var _clod_mm := MultiMesh.new()
 ## What _clod_mm draws (CLOD_FLOATS a clod), so a clod lying still isn't rewritten.
 var _clod_buf := PackedFloat32Array()
 var _clod_shown := -1
+var _clod_tick := 0
 ## The bow's rows and when they last read the land (`_slide_bow` between).
 var _bow: Array = []
 var _bow_read := -INF
@@ -1139,10 +1142,21 @@ func puff(at: Vector3, n: int, water := false) -> void:
 func _step_clods(delta: float) -> void:
 	var i := 0
 	var wrote := false
+	_clod_tick += 1
+	var flight := delta*CLOD_FLY_EVERY
+	var lying := delta*CLOD_LIE_EVERY
 	while i < _clods.size():
 		var c: Dictionary = _clods[i]
+		# Each its turn: a clod in the air every other frame, one lying every
+		# fourth, each by the time it missed.
+		var airborne := float(c.rest) < 0.0
+		if (i+_clod_tick) % (CLOD_FLY_EVERY if airborne else CLOD_LIE_EVERY) != 0 and c.has("drawn"):
+			i += 1
+			continue
+		c.drawn = true
+		var dt := flight if airborne else lying
 		var p: Vector3 = c.p
-		if float(c.rest) < 0.0:
+		if airborne:
 			# The land only when it's coming down (a clod's flight is all a
 			# frame's work).
 			var ground := float(c.get("g",-INF))
@@ -1151,10 +1165,10 @@ func _step_clods(delta: float) -> void:
 				ground = land.height(p.x,p.z)
 				c.g = ground
 			var v: Vector3 = c.v
-			v.y -= GRAVITY*delta
-			v *= 1.0-0.3*delta
-			p += v*delta
-			c.turn = float(c.turn)+float(c.rate)*delta
+			v.y -= GRAVITY*dt
+			v *= 1.0-0.3*dt
+			p += v*dt
+			c.turn = float(c.turn)+float(c.rate)*dt
 			if p.y < ground+float(c.size)*0.3 and v.y < 0.0:
 				p.y = ground+float(c.size)*0.3
 				if not c.bounced and v.y < -2.0:
@@ -1166,7 +1180,7 @@ func _step_clods(delta: float) -> void:
 					v = Vector3.ZERO
 			c.v = v
 		else:
-			var r := float(c.rest)+delta
+			var r := float(c.rest)+dt
 			c.rest = r
 			# Lying a moment, then sinking into the grass.
 			if r <= 1.6 and c.has("laid"):
@@ -1175,7 +1189,7 @@ func _step_clods(delta: float) -> void:
 			if r > 3.2:
 				_drop_clod(i)
 				continue
-			if r > 1.6: p.y -= delta*0.35
+			if r > 1.6: p.y -= dt*0.35
 			if c.has("laid"):
 				c.p = p
 				_clod_buf[i*CLOD_FLOATS+7] = p.y
@@ -1220,6 +1234,7 @@ func _drop_clod(i: int) -> void:
 	var last: Dictionary = _clods.pop_back()
 	if i < _clods.size():
 		last.erase("laid")
+		last.erase("drawn")
 		_clods[i] = last
 
 # --- Dust ------------------------------------------------------------------------
