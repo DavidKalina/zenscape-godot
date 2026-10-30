@@ -38,10 +38,14 @@ static var scale_override := -1.0
 ## its 3D drawn under the window's resolution even at the player's Native
 ## sets it while it runs (endless flight, NATIVE_3D) and puts it back.
 static var native_scale := 1.0
+## A graphics preset's height (scripts/graphics_preset.gd), over the kept cap
+## while above 0; a scale (F2, --render-scale) still wins over it.
+static var preset_lines := 0
 
 static func apply(viewport: Viewport, cap: int) -> void:
 	# In pixels: a Retina window's visible rect is in points, half its pixels.
 	var height := float((viewport as Window).size.y if viewport is Window else (viewport as SubViewport).size.y)
+	if preset_lines > 0: cap = preset_lines
 	var scale := native_scale if cap <= 0 else (1.0 if height <= cap else cap/height)
 	var mode := Viewport.SCALING_3D_MODE_METALFX_SPATIAL if RenderingServer.get_current_rendering_driver_name() == "metal" else Viewport.SCALING_3D_MODE_FSR
 	for a: String in OS.get_cmdline_user_args():

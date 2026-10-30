@@ -112,6 +112,7 @@ const Field = preload("res://scripts/endless/land_field.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
+const GraphicsPreset = preload("res://scripts/graphics_preset.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
@@ -426,6 +427,10 @@ func _ready() -> void:
 	book = PilotBook.open()
 	photo = PhotoMode.new(self)
 	add_child(sound)
+	# The graphics preset first: its flags lie under the command line's for
+	# everything below, its height under the render resolution.
+	GraphicsPreset.begin()
+	Engine.max_fps = GraphicsPreset.fps()
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = NATIVE_3D
 	rr.apply(get_tree().root,rr.load_cap())
@@ -736,7 +741,7 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  J logbook  ·  O photo  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  J logbook  ·  O photo  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale  ·  F3 graphics"
 	layer.add_child(_hint)
 	_stop_cue = Label.new()
 	_stop_cue.anchor_top = 1.0
@@ -1380,6 +1385,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F: _land_key()
 			KEY_F1: _hud.visible = not _hud.visible
 			KEY_F2: _next_scale()
+			KEY_F3: _next_preset()
 			KEY_R: respawn()
 			KEY_V: _next_weight()
 			KEY_P: _next_pace()
@@ -1424,6 +1430,11 @@ func _next_scale() -> void:
 	rr.scale_override = SCALES[(i+1)%SCALES.size()]
 	rr.apply(get_tree().root,rr.load_cap())
 	_hint.text = _hint.text.get_slice("  ·  3D at",0)+"  ·  3D at %d%%" % roundi(rr.scale_override*100.0)
+
+## F3: the next graphics preset, kept, and the flight again on it.
+func _next_preset() -> void:
+	_hint.text = "graphics: %s ..." % GraphicsPreset.PRESETS[GraphicsPreset.step()].title
+	GraphicsPreset.restart(get_tree(),scene_file_path)
 
 func _cloud_note() -> String:
 	if look.clouds == null: return "  ·  no clouds"
@@ -1472,7 +1483,7 @@ func _show_hud() -> void:
 		seed,ManualLanding.NAMES[hand_landing.phase],float(plane.speed),p.y-maxf(field.height(p.x,p.z),Field.SEA_Y),"down" if flaps else "up",
 		p.x,p.z,Engine.get_frames_per_second(),1000.0/maxf(Engine.get_frames_per_second(),1.0),
 		("  ·  gpu %.2f ms" % gpu) if gpu > 0.0 else "",
-		"  ·  3D at %d%%" % roundi(get_viewport().scaling_3d_scale*100.0),
+		"  ·  3D at %d%%  ·  %s (F3)" % [roundi(get_viewport().scaling_3d_scale*100.0),GraphicsPreset.title()],
 		("  ·  %s, %05.2f h (%s)%s" % [look.mood_title(),look.hour(),look.time_note(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
 		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+_rock_note()+_hall_note()+trees.note()+knock.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]
