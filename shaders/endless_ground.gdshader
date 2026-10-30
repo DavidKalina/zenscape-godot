@@ -69,6 +69,7 @@ float zs_silver_drive_smooth(vec2 p, float fp) {
 	return smoothstep(grass_silver.y, grass_silver.z, w);
 }
 #include "res://shaders/grass_react.gdshaderinc"
+#include "res://shaders/peak_snow.gdshaderinc"
 // A world of regions: its paint per spot.
 #include "res://shaders/region_paint.gdshaderinc"
 // The rivers' water (scripts/endless/land_field.gd `_river`): drawn as the
@@ -1122,6 +1123,11 @@ void fragment() {
 		rock = mix(rock, granite, pk_rock * 0.85);
 		snow = mix(snow, snow * mix(vec3(0.92, 0.96, 1.04), vec3(0.84, 0.90, 1.0), clamp((0.25 - dot(n, zs_sun_direction)) * 2.0, 0.0, 1.0)), pk.x);
 	}
+	// The Peak's snow has its own surface and light (peak_snow.gdshaderinc).
+	float ps_on = psnow_on * pk.x * step(0.001, snowy);
+	vec3 ps_n = n;
+	float ps_glit = 0.0;
+	if (ps_on > 0.0) snow = mix(snow, psnow_surface(p, gxz, n, eye, fp, snowy, ps_n, ps_glit), ps_on);
 
 	vec3 albedo = mix(grass, rock, rocky);
 	albedo = mix(albedo, sand, sandy * (1.0 - rocky * 0.5));
@@ -1147,6 +1153,7 @@ void fragment() {
 		albedo = mix(albedo, ice, pk.y);
 	}
 	albedo = mix(albedo, snow, snowy);
+	if (ps_on > 0.0) lit_n = normalize(mix(lit_n, ps_n, snowy * ps_on));
 	if (grass_skip == 2 && skip_grass) albedo = vec3(1.0, 0.0, 1.0);
 	albedo = mix(albedo, vec3(luma(albedo)) * night_grade.yzw, night_grade.x);
 	// Under a cloud's shadow the sun's share goes (the albedo the sun
@@ -1156,7 +1163,7 @@ void fragment() {
 	// The land's own shade past the sun's map (land_horizon.gdshaderinc, off
 	// unless --terrain-shadows): the sun's share, and the sky's fill below.
 	vec2 horizon = zs_horizon_light(p, distance(p, CAMERA_POSITION_WORLD));
-	ALBEDO = albedo * (1.0 - shaded) * horizon.x;
+	ALBEDO = (albedo + ps_glit * snowy * ps_on) * (1.0 - shaded) * horizon.x;
 	float wet_sand = max(sandy * smoothstep(0.7, 0.0, over) * step(-0.5, over), damp * banked);
 	ROUGHNESS = mix(mix(mix(mix(0.92, 0.82, rocky), 0.6, snowy), 0.35, wet_sand), 0.4, pk.y);
 	SPECULAR = mix(mix(0.25, 0.35, rocky), 0.5, max(max(snowy, wet_sand), pk.y)) * (1.0 - shaded) * horizon.x;
@@ -1167,6 +1174,7 @@ void fragment() {
 	float hollow = 0.85 + 0.15 * n.y;
 	// A cloud overhead takes a little of the sky's fill too.
 	EMISSION = albedo * hemi * hollow * horizon.y * (1.0 - 0.2 * shade) + rock_glow * rocky * (1.0 - snowy) * (1.0 - pk.y) * (1.0 - pk_rock * 0.6);
+	if (ps_on > 0.0) EMISSION = psnow_emission(EMISSION, snowy * ps_on);
 	if (wet > 0.0) {
 		// The river's water, as the sea draws it (endless_sea.gdshader): its
 		// colour by the depth (faked from the way in from the bank), the bed

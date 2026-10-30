@@ -150,6 +150,7 @@ const AirLift = preload("res://scripts/endless/air_lift.gd")
 ## The Peak's ways up: the couloir's lift.
 const PeakRoutes = preload("res://scripts/endless/peak_routes.gd")
 const PeakStair = preload("res://scripts/endless/peak_stair.gd")
+const PeakSnow = preload("res://scripts/endless/peak_snow.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
 const FlightWeight = preload("res://scripts/flight_weight.gd")
@@ -266,6 +267,7 @@ var react: Node
 var eddies: Node3D
 ## The pollen and the grass the wash kicks up (scripts/endless/endless_motes.gd).
 var motes: Node3D
+var snow: Node
 ## The arches over the land (scripts/endless/land_arches.gd).
 var arches: Node3D
 ## The free-standing rock shapes, every kind (scripts/endless/land_rocks.gd).
@@ -567,6 +569,7 @@ func _ready() -> void:
 		if peak != null and look.ground != null and not ("--peak-paint=0" in preload("res://scripts/launch_args.gd").user_args()):
 			var paint: Dictionary = peak.paint()
 			for k: String in paint: look.ground.set_shader_parameter(k,paint[k])
+			if PeakSnow.wanted(): PeakSnow.paint(look.ground,peak)
 		_build_camera()
 		if _face_sun:
 			var s: Vector3 = look.celestial.state.zs_sun_direction
@@ -636,6 +639,10 @@ func _ready() -> void:
 				motes = EndlessMotes.new()
 				add_child(motes)
 				motes.setup(seed,Callable(field,"height"))
+			if peak != null and PeakSnow.wanted() and not ("--peak-paint=0" in preload("res://scripts/launch_args.gd").user_args()):
+				snow = PeakSnow.new()
+				add_child(snow)
+				snow.setup(seed,look.ground,peak,field)
 	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(),true)
 	_build_ui()
 	_hud.visible = _numbers
@@ -1310,9 +1317,12 @@ func _react(delta: float) -> void:
 		react.part(Vector2(p.x,p.z),span*PART_SPANS,PART_PUSH)
 		var e := camera.global_position
 		react.part(Vector2(e.x,e.z),span*EYE_PART_SPANS,PART_PUSH,1)
+	# Parked in the menu the idling wash stirs the grass but kicks none up.
+	var wash: Dictionary = {} if stage != null and stage.holding() else react.wash_spot
+	# On the Peak's snow the wash throws powder and cuts a furrow, not grass.
+	if snow != null: wash = snow.step(delta,p,wash,look.wind_direction,camera.global_position)
 	if motes != null:
-		# Parked in the menu the idling wash stirs the grass but kicks none up.
-		motes.step(delta,camera.global_position,look.wind_direction,look._gust,{} if stage != null and stage.holding() else react.wash_spot,
+		motes.step(delta,camera.global_position,look.wind_direction,look._gust,wash,
 			eddies.ribbons.ribbons if eddies != null else [],Callable(self,"_grass_at"))
 
 ## The land's height where grass grows (open turf over the beach), else NAN.
