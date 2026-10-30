@@ -15,8 +15,9 @@ extends RefCounted
 ##
 ## Levels: each block belongs to level 0 only (chips), 0-1 (slabs, tumbled
 ## blocks) or all three (trunk, shoulder, crown). Vertex colour: r the block's
-## tone of ice, g how exposed (0 buried or under an overhang), read by
-## shaders/peak_ice.gdshaderinc.
+## tone of ice, g how exposed (0 buried or under an overhang), b 1 on a face's
+## edge and 0 at its middle (a fan from there, so the shader knows its way to
+## the edge, for the bright rims), read by shaders/peak_ice.gdshaderinc.
 ##
 ## API: `cluster(rng, big)` the members of one heap (offsets along and across
 ## the flow, sizes), `pillar(field, pos, q, r, up, long, flow, rng)` one tower
@@ -327,19 +328,25 @@ static func _emit(v: PackedVector3Array, n: PackedVector3Array, c: PackedColorAr
 		var hollow := 0.3 if nrm.y < -0.12 else 1.0
 		var shade := clampf(tone+rng.randf_range(-0.09,0.09),0.0,1.0)
 		var first := v.size()
+		v.append(at+centre)
+		n.append(nrm)
+		c.append(Color(shade,clampf((centre.y-foot)/maxf(tall*0.42,1.0),0.0,1.0)*hollow,0.0,0.0))
 		for q: Vector3 in f:
 			v.append(at+q)
 			n.append(nrm)
 			var open := clampf((q.y-foot)/maxf(tall*0.42,1.0),0.0,1.0)*hollow
-			c.append(Color(shade,open,0.0,0.0))
+			c.append(Color(shade,open,1.0,0.0))
 		for l in range(level+1):
 			var idx: PackedInt32Array = levels[l]
-			for i in range(1,m-1):
-				if flip: idx.append_array([first,first+i+1,first+i])
-				else: idx.append_array([first,first+i,first+i+1])
+			for i in m:
+				var i0 := first+1+i
+				var i1 := first+1+(i+1)%m
+				if flip: idx.append_array([first,i0,i1])
+				else: idx.append_array([first,i1,i0])
 			levels[l] = idx
-	# (Godot's front faces wind clockwise from outside: the fan above runs the
-	# way `flip` found the polygon to, then RockBuild's order.)
+	# (Godot's front faces wind clockwise from outside, and `f` runs anticlockwise
+	# from outside unless `flip`. The ground shader turns a back face's normal
+	# round, so a face wound the other way is lit from inside: dark in the sun.)
 
 ## The ring-and-sector solid (RockBuild `_pillar`'s): the outline of every
 ## block at each ring's height, its sectors' most, local to the group.

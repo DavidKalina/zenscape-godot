@@ -1151,7 +1151,8 @@ void fragment() {
 	if (pk.y > 0.0 && peak_ice_on > 0.5) {
 		vec3 ice_col;
 		vec3 ice_n = lit_n;
-		peak_ice_paint(p, n, eye, ice_frame, ice_flow, ice_more, fp, pow(land_colour.r, 0.45), peak_ice_solid > 0.5 ? pow(land_colour.g, 0.45) : 1.0, ice_col, ice_n, ice_glow, ice_rough, ice_spec);
+		bool ice_solid = peak_ice_solid > 0.5;
+		peak_ice_paint(p, n, eye, ice_frame, ice_flow, ice_more, fp, distance(p, CAMERA_POSITION_WORLD) * 0.0016, ice_solid ? pow(land_colour.r, 0.45) : 0.5, ice_solid ? pow(land_colour.g, 0.45) : 1.0, ice_solid ? land_colour.b : 0.0, ice_col, ice_n, ice_glow, ice_rough, ice_spec);
 		albedo = mix(albedo, ice_col, pk.y);
 		lit_n = normalize(mix(lit_n, ice_n, pk.y));
 		ice_glow *= pk.y;
