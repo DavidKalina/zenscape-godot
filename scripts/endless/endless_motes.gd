@@ -22,6 +22,12 @@ extends Node3D
 ##
 ## Flags: --no-motes (none), --no-pollen, --no-grass-kick, --pollen=X (the
 ## specks' count, a share of POLLEN), --grass-kick=X (the kick's rate).
+##
+## Native: the specks' drift and the bits' flight each frame run in C++
+## (ZenScapeMotes, native/terrain_kernels/flight_fx.h) when the library is
+## built, the same numbers as the loops here; the spawning stays here (its
+## random draws and land probes) and hands each new speck or bit over.
+## --native-react=0 (or --gdscript-kernels) runs the loops here.
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Patch = preload("res://scripts/endless/endless_patch.gd")
@@ -121,6 +127,18 @@ var _kick_owed := 0.0
 var _eddy_owed := {}
 var _time := 0.0
 var _show := 0.0
+## The C++ loops (ZenScapeMotes), or null for the GDScript ones.
+var native: Object = null
+
+const NATIVE_CLASS := &"ZenScapeMotes"
+const NATIVE_VERSION := 1
+static func native_wanted() -> bool:
+	var args := LaunchArgs.user_args()
+	if "--native-react=0" in args or "--gdscript-kernels" in args: return false
+	Field.native_available()
+	if not ClassDB.class_exists(NATIVE_CLASS): return false
+	var probe: Object = ClassDB.instantiate(NATIVE_CLASS)
+	return probe.has_method("version") and int(probe.version()) == NATIVE_VERSION
 
 static func wanted() -> bool:
 	return not "--no-motes" in LaunchArgs.user_args()
@@ -147,6 +165,12 @@ func setup(land_seed: int, ground: Callable) -> void:
 	m.shader = BIT
 	_kick_mm = _batch("GrassKick",_blade_strip(),KICK,true,m)
 	_kick_buf.resize(KICK*20)
+	if native_wanted():
+		native = ClassDB.instantiate(NATIVE_CLASS)
+		native.configure({"pollen_count": pollen_count, "pollen_reach": POLLEN_REACH, "pollen_wander": POLLEN_WANDER,
+			"pollen_drift": POLLEN_DRIFT, "pollen_opacity": POLLEN_OPACITY, "pollen_high": POLLEN_HIGH, "pollen_colour": POLLEN_COLOUR,
+			"kick": KICK, "kick_drag": KICK_DRAG, "kick_fall": KICK_FALL, "kick_flat_drag": KICK_FLAT_DRAG, "kick_glide": KICK_GLIDE,
+			"kick_spin_drag": KICK_SPIN_DRAG, "kick_level": KICK_LEVEL, "kick_stir": KICK_STIR})
 
 func _batch(label: String, mesh: Mesh, count: int, custom: bool, look: Material = null) -> MultiMesh:
 	var mm := MultiMesh.new()
@@ -194,12 +218,16 @@ func _pollen(delta: float, eye: Vector3, grass: Callable) -> void:
 	_show = move_toward(_show,1.0 if low else 0.0,delta*0.8)
 	if _show <= 0.0:
 		if not _specks.is_empty(): _specks.clear()
+		if native != null: native.pollen_clear()
 		_pollen_mm.visible_instance_count = 0
 		stats.pollen = 0
 		return
 	var lead := Vector2(_eye_vel.x,_eye_vel.z)*POLLEN_LEAD
 	if lead.length() > POLLEN_REACH*0.8: lead = lead.normalized()*POLLEN_REACH*0.8
 	var centre := Vector2(eye.x,eye.z)+lead
+	if native != null:
+		_pollen_native(delta,centre,grass)
+		return
 	while _specks.size() < pollen_count:
 		var s := {}
 		_spawn_speck(s,centre,grass,true)
@@ -249,6 +277,27 @@ func _pollen(delta: float, eye: Vector3, grass: Callable) -> void:
 	_pollen_mm.buffer = _pollen_buf
 	_pollen_mm.visible_instance_count = n
 	stats.pollen = n
+
+## `_pollen`'s loop in C++ (ZenScapeMotes): the same specks, spawned here.
+func _pollen_native(delta: float, centre: Vector2, grass: Callable) -> void:
+	while native.pollen_count() < pollen_count:
+		var s := {}
+		_spawn_speck(s,centre,grass,true)
+		native.pollen_put(native.pollen_count(),_speck_record(s))
+	var away := Vector2(_eye_vel.x,_eye_vel.z)-_air*POLLEN_DRIFT
+	for i: int in native.pollen_age(delta,centre):
+		var s := {}
+		_spawn_speck(s,centre,grass,false,away)
+		native.pollen_put(i,_speck_record(s))
+	_pollen_buf = native.pollen_move(delta,_time,_air,_show)
+	_pollen_mm.buffer = _pollen_buf
+	var n: int = native.pollen_count()
+	_pollen_mm.visible_instance_count = n
+	stats.pollen = n
+
+static func _speck_record(s: Dictionary) -> PackedFloat64Array:
+	var p: Vector3 = s.pos
+	return PackedFloat64Array([p.x,p.y,p.z,float(s.age),float(s.life),float(s.ground),float(s.size),float(s.phase),float(s.drift)])
 
 ## A speck anew: anywhere in the disc at the start, else on the side it is
 ## coming from (`away`: the eye's travel over the specks'), part way into its
@@ -341,6 +390,13 @@ func _kick(delta: float, wash: Dictionary, ribbons: Array) -> void:
 		_eddy_owed[id] = owed
 	for id: int in _eddy_owed.keys():
 		if not alive.has(id): _eddy_owed.erase(id)
+	if native != null:
+		_kick_buf = native.kick_step(delta,_time,_air)
+		_kick_mm.buffer = _kick_buf
+		var k: int = native.kick_count()
+		_kick_mm.visible_instance_count = k
+		stats.kick = k
+		return
 	var n := 0
 	var i := 0
 	var air := Vector3(_air.x,0.0,_air.y)
@@ -434,7 +490,7 @@ func _grass_tint(at: Vector2) -> Color:
 ## A clipped blade thrown from `at` (xz, on the ground there) at `vel`, in
 ## the grass's colour there (`tint`).
 func _throw(at: Vector2, vel: Vector3, tint: Color) -> void:
-	if _bits.size() >= KICK: _bits.pop_front()
+	if native == null and _bits.size() >= KICK: _bits.pop_front()
 	var g := float(_ground.call(at.x,at.y))
 	# It stood in the grass: its length near upright, leaning the way it is
 	# flung, turned any way about it.
@@ -458,9 +514,24 @@ func _throw(at: Vector2, vel: Vector3, tint: Color) -> void:
 	if _rng.randf() < KICK_PALE:
 		var pale: Color = KICK_PALES[_rng.randi() % KICK_PALES.size()]
 		colour = pale.lerp(Color(pale.r*tint.r,pale.g*tint.g,pale.b*tint.b),0.2)*_rng.randf_range(0.92,1.08)
-	_bits.append({"pos": Vector3(at.x,g+_rng.randf_range(KICK_FROM.x,KICK_FROM.y),at.y), "vel": vel, "ground": g,
+	var bit := {"pos": Vector3(at.x,g+_rng.randf_range(KICK_FROM.x,KICK_FROM.y),at.y), "vel": vel, "ground": g,
 		"age": 0.0, "life": _rng.randf_range(KICK_LIFE.x,KICK_LIFE.y),
 		"length": _rng.randf_range(KICK_LEN.x,KICK_LEN.y), "width": _rng.randf_range(KICK_WIDTH.x,KICK_WIDTH.y),
 		"basis": turn, "spin": axis*spin, "phase": _rng.randf(), "landed": false,
 		"settle": _rng.randf_range(KICK_SETTLE.x,KICK_SETTLE.y), "rest": _rng.randf_range(KICK_SINK,KICK_FROM.y),
-		"colour": colour})
+		"colour": colour}
+	if native != null: native.kick_add(_bit_record(bit))
+	else: _bits.append(bit)
+
+## A bit as ZenScapeMotes takes it (flight_fx.h BIT_REC): pos, vel, ground,
+## age, life, length, width, the basis's rows, spin, phase, settle, rest,
+## colour (thrown, so not landed).
+static func _bit_record(b: Dictionary) -> PackedFloat64Array:
+	var p: Vector3 = b.pos
+	var v: Vector3 = b.vel
+	var t: Basis = b.basis
+	var w: Vector3 = b.spin
+	var c: Color = b.colour
+	return PackedFloat64Array([p.x,p.y,p.z,v.x,v.y,v.z,float(b.ground),float(b.age),float(b.life),float(b.length),float(b.width),
+		t.x.x,t.y.x,t.z.x,t.x.y,t.y.y,t.z.y,t.x.z,t.y.z,t.z.z,w.x,w.y,w.z,float(b.phase),float(b.settle),float(b.rest),
+		c.r,c.g,c.b,c.a])
