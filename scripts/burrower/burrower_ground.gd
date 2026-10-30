@@ -8,6 +8,19 @@ var trees: Array = []
 ## The water's shader to feed the wake (null: no pond to draw it on).
 var pond_material: ShaderMaterial
 
+## The wake as the head leaves it, for a land that draws it itself (the
+## study's pond takes it through `pond_material` alone): a point at `at`, on
+## the head's clock, of strength `k`; one frame with the head at `at` going `way`, in the water
+## by `wet` 0..1; and whether any of it is still showing.
+func wake_point(_at: Vector2, _now: float, _k: float) -> void:
+	pass
+
+func wake_tick(_now: float, _at: Vector2, _way: Vector2, _wet: float) -> void:
+	pass
+
+func wake_busy() -> bool:
+	return false
+
 ## The land's height at (x, z) (a lake's or the sea's bed, not its water).
 func height(_x: float, _z: float) -> float:
 	return 0.0
@@ -51,6 +64,9 @@ func open(_at: Vector2) -> bool:
 
 ## A wall at (x, z) it can't run on through (a cliff, a ruin wall, stone),
 ## where it sounds rather than steer (a land that `probes`).
+func stands(_at: Vector2) -> bool:
+	return false
+
 func wall(_at: Vector2) -> bool:
 	return false
 

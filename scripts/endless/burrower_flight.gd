@@ -30,12 +30,12 @@ const CANOPY_PLANE := 24.0
 const ROOF_HOLD := 3.0
 const RUN := 40.0
 const REST := 6.0
-## Open ground ahead: these distances along the heading (m) all dry land,
-## sloping less than OPEN_UP (the normal's up) and rising at most OPEN_RISE
-## m over the ground under the plane; nothing standing (the land's
-## `blocked`: rocks, ruins, halls, tunnels) there or OPEN_SIDE m to each
-## side. A forest ahead is open: the run goes through it (with FOREST_OPEN
-## false, FOREST_N trees in the strip shut it). (Water doesn't do yet.)
+## Open ahead: at these distances along the heading (m), water, or land
+## sloping less than OPEN_UP (the normal's up), rising at most OPEN_RISE m
+## over the land or water under the plane; nothing standing (the land's
+## `blocked`: rocks, sea stacks, ruins, halls, tunnels) there or OPEN_SIDE m
+## to each side. A forest ahead is open: the run goes through it (with
+## FOREST_OPEN false, FOREST_N trees in the strip shut it).
 const OPEN_AT := [0.0,20.0,40.0,60.0,80.0,100.0,120.0,140.0,160.0]
 const OPEN_SIDE := 12.0
 const OPEN_UP := 0.93
@@ -95,12 +95,13 @@ func open_ahead(game: Node3D) -> String:
 
 ## As `open_ahead`, from `at` along `fwd` (unit).
 func open_from(at0: Vector2, fwd: Vector2) -> String:
-	var here := land.height(at0.x,at0.y)
+	var here := maxf(land.height(at0.x,at0.y),land.water_y(at0.x,at0.y))
 	for d: float in OPEN_AT:
 		var at := at0+fwd*d
-		var h := land.height(at.x,at.y)
-		if h < land.water_y(at.x,at.y)+0.3: return "water"
-		if land.normal(at.x,at.y).y < OPEN_UP: return "steep"
+		var ground := land.height(at.x,at.y)
+		var w := land.water_y(at.x,at.y)
+		var h := maxf(ground,w)
+		if ground >= w and land.normal(at.x,at.y).y < OPEN_UP: return "steep"
 		if h-here > OPEN_RISE: return "rise"
 		for s: float in [0.0,-1.0,1.0]:
 			var off := at+fwd.orthogonal()*s*OPEN_SIDE

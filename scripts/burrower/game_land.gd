@@ -11,9 +11,12 @@ extends "res://scripts/burrower/burrower_ground.gd"
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const TreePlan = preload("res://scripts/endless/tree_plan.gd")
+const WakeSheet = preload("res://scripts/burrower/wake_sheet.gd")
 
 ## The game (studies/endless_flight.gd): its `field` and `water_at`.
 var game: Node3D
+## The wake, laid on the game's water.
+var sheet: WakeSheet
 
 ## Ground it runs up: the normal's up at least RUN_UP (~28 deg); water
 ## counts at any bed. Things are felt for PROBE_UP m over the ground or water.
@@ -33,6 +36,29 @@ func _init() -> void:
 
 func setup(the_game: Node3D) -> void:
 	game = the_game
+	sheet = WakeSheet.new()
+	add_child(sheet)
+	sheet.setup(self)
+	pond_material = sheet.wake_material()
+
+func wake_point(at: Vector2, now: float, k: float) -> void:
+	sheet.point(at,now,k)
+
+func wake_tick(now: float, at: Vector2, way: Vector2, wet: float) -> void:
+	sheet.tick(now,at,way,wet)
+
+func wake_busy() -> bool:
+	return sheet.busy()
+
+## On the sea's water, not a river's or a lake's.
+func on_sea(at: Vector2) -> bool:
+	return is_nan(game.field.river_y(at.x,at.y))
+
+## The track to the sea's own wake (the sea drawn by EndlessSea only).
+func sea_track(points: Array[Vector4], head: Vector2) -> void:
+	var look: Variant = game.look
+	if look == null or look.water == null or not look.water.has_method("other_track"): return
+	look.water.other_track(points,head)
 
 func height(x: float, z: float) -> float:
 	return game.field.height(x,z)
@@ -58,6 +84,10 @@ func wall(at: Vector2) -> bool:
 	var w := water_y(at.x,at.y)
 	if h >= w and normal(at.x,at.y).y < WALL_UP: return true
 	return blocked(at,maxf(h,w))
+
+## Something standing there, at any slope (a wall, less the steep ground).
+func stands(at: Vector2) -> bool:
+	return blocked(at,maxf(height(at.x,at.y),water_y(at.x,at.y)))
 
 ## Something standing at (x, z) a little over `y` (the ground or water
 ## there): a rock or sea stack, an arch's leg, a hall, a tunnel's mouth (as

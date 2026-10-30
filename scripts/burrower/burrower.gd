@@ -405,7 +405,9 @@ func _feel(look: float, delta: float) -> Vector2:
 	var fw := forward()
 	var lead := mode == &"lead" and _plane != null
 	_grace -= delta
-	if lead and phase != &"enter" and _grace <= 0.0 and land.wall(pos+fw*FEEL_HEAD):
+	# Just up, only what stands sounds it (steep ground alone would hop it along
+	# a cliff).
+	if lead and phase != &"enter" and (land.stands(pos+fw*FEEL_HEAD) if _grace > 0.0 else land.wall(pos+fw*FEEL_HEAD)):
 		_sound("edge")
 		return Vector2.ZERO
 	if land.open(pos+fw*look*0.5) and land.open(pos+fw*look): return Vector2.ZERO
@@ -582,7 +584,7 @@ func tick(delta: float) -> void:
 
 ## Asleep with nothing left of it to move or fade (a host may skip `tick`).
 func settled() -> bool:
-	return not active and _samples.is_empty() and _chunks.is_empty() and _clods.is_empty() 		and _dusts.is_empty() and _sprays.is_empty() and wet_k <= 0.0 and shudder.settled()
+	return not active and _samples.is_empty() and _chunks.is_empty() and _clods.is_empty() 		and _dusts.is_empty() and _sprays.is_empty() and wet_k <= 0.0 and shudder.settled() and not land.wake_busy()
 
 func _move(delta: float) -> void:
 	_run += delta
@@ -1011,7 +1013,7 @@ func throw_water(at: Vector3, n: int, out: float, up: float, ring := 0.0) -> voi
 		var dir := Vector2(cos(a),sin(a))
 		var h := dir*out*_rng.randf_range(0.3,1.0)
 		_sprays.append({"p": at+Vector3(dir.x,0.0,dir.y)*_rng.randf_range(0.1,0.9), "v": Vector3(h.x,up*_rng.randf_range(0.4,1.0),h.y),
-			"size": _rng.randf_range(0.05,0.13)})
+			"sea": land.water_y(at.x,at.z), "size": _rng.randf_range(0.05,0.13)})
 
 ## A puff of dust (or mist over water) at a point.
 func puff(at: Vector3, n: int, water := false) -> void:
@@ -1109,6 +1111,7 @@ func _drop_wake(at: Vector2, k: float) -> void:
 	_wake[_wake_i] = Vector4(at.x,at.y,time,k)
 	_wake_i = (_wake_i+1) % WAKES
 	stats.wakes = int(stats.wakes)+1
+	land.wake_point(at,time,k)
 
 ## Going in or coming out: a ring and a burst of spray.
 func _splash(n: int) -> void:
@@ -1117,8 +1120,10 @@ func _splash(n: int) -> void:
 	for i in n: _spawn_drop(true)
 
 func _feed_pond() -> void:
+	land.wake_tick(time,pos,forward(),wet_k)
 	var m := land.pond_material
-	if m == null: return
+	# On the game's land, nothing to send while no wake shows.
+	if m == null or (land.probes and not land.wake_busy()): return
 	m.set_shader_parameter("now",time)
 	m.set_shader_parameter("wake",_wake)
 	m.set_shader_parameter("head",Vector4(pos.x,pos.y,strength*wet_k,speed))
