@@ -493,6 +493,8 @@ func _due(delta: float, plane: Object) -> void:
 		burrower.want_ahead = float(k.beat)*vp+8.0
 		if short > float(k.ahead): return _skip("beat")
 		if short > 0.0: at = head+way*short
+		# Cutting across a turn its way isn't the plane's: still a beat off?
+		if (at-Vector2(p.x,p.z)).length() < float(k.beat)*vp*0.95: return _skip("beat")
 		face = Vector2(p.x,p.z)-at
 	# Not under a crown or into a rock.
 	for tree: Node3D in land.trees:

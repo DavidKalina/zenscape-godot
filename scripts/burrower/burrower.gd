@@ -54,6 +54,16 @@ const LIFT := 0.03
 const ROAM_SPEED := 17.0
 const MAX_TURN := 1.1
 const TURN_EASE := 2.2
+## Leading the plane it turns harder and quicker, to keep ahead through the
+## plane's turns.
+const LEAD_TURN := 2.4
+const LEAD_TURN_EASE := 7.0
+## Still lost after all that (the head behind the plane, or LOST_FAR m from
+## its slot, for LOST_S s) it sounds: sinks in SOUND_S s and comes up in its
+## slot ahead.
+const LOST_FAR := 75.0
+const LOST_S := 0.45
+const SOUND_S := 0.3
 const ACCEL := 14.0
 const LOOK_S := 0.9
 const LOOK_M := 10.0
@@ -119,7 +129,7 @@ var heading := 0.0
 var speed := 0.0
 var mode := &"roam"
 var stats := {"samples": 0, "chunks": 0, "clods": 0, "dust": 0, "stamps": 0, "nearest": INF,
-	"wakes": 0, "spray": 0, "splashes": 0, "wet_time": 0.0}
+	"wakes": 0, "spray": 0, "splashes": 0, "wet_time": 0.0, "soundings": 0}
 ## In the water now, and the wake's ease in (0 on land, 1 in the water).
 var wet := false
 var wet_k := 0.0
@@ -132,6 +142,10 @@ var _turn := 0.0
 var _goal := Vector2.ZERO
 var _side := 1.0
 var _diving := false
+## Lost the plane (fell behind it through a turn): sinking to come up again
+## in its slot ahead (not a dive: it stays active and leading).
+var _sounding := false
+var _lost := 0.0
 var _run := 0.0
 var _noise := FastNoiseLite.new()
 var _rng := RandomNumberGenerator.new()
@@ -252,6 +266,8 @@ func wake(at: Vector2, way: float, plane: Object = null) -> void:
 	strength = 0.0
 	active = true
 	_diving = false
+	_sounding = false
+	_lost = 0.0
 	_run = 0.0
 	_goal = _roam_goal()
 	_since_sample = SAMPLE
@@ -277,6 +293,29 @@ func roam() -> void:
 ## Sinks away: the head eases down, the trail settles on.
 func dive() -> void:
 	if active: _diving = true
+
+## Sunk after losing the plane: up again in its slot ahead of it, heading
+## its way (the ridge starts afresh; strength rises from 0 as at a wake).
+func _resurface() -> void:
+	_sounding = false
+	_lost = 0.0
+	_finish_live()
+	var p: Vector3 = _plane.position
+	var f: Vector3 = _plane.forward()
+	var fwd := Vector2(f.x,f.z).normalized()
+	if fwd == Vector2.ZERO: fwd = Vector2(0,-1)
+	var at := Vector2(p.x,p.z)+fwd*maxf(32.0,want_ahead)+Vector2(-fwd.y,fwd.x)*_side*9.0
+	var rim := Land.MEADOW_R-30.0
+	if at.length() > rim: at = at.normalized()*rim
+	for o: Dictionary in _obstacles:
+		var r := float(o.reach)+float(o.get("margin",MARGIN))
+		if at.distance_to(o.at) < r: at = (o.at as Vector2)+(at-(o.at as Vector2)).normalized()*r
+	pos = at
+	heading = fwd.angle()
+	_turn = 0.0
+	speed = _plane_speed()
+	_since_sample = SAMPLE
+	wet = _wet_at(pos)
 
 ## Sinking away (dive() called, not yet down).
 func diving() -> bool:
@@ -337,12 +376,14 @@ func tick(delta: float) -> void:
 
 func _move(delta: float) -> void:
 	_run += delta
-	var target := 0.0 if _diving else 1.0
-	strength = move_toward(strength,target,delta/(1.1 if _diving else 0.5))
+	var target := 0.0 if _diving or _sounding else 1.0
+	strength = move_toward(strength,target,delta/(1.1 if _diving else SOUND_S if _sounding else 0.5))
 	if _diving and strength <= 0.0:
 		active = false
 		_finish_live()
 		return
+	if _sounding and strength <= 0.0:
+		_resurface()
 	var surge := 1.0+SURGE*_noise.get_noise_1d(time)
 	# A burst now and then: the noise's peaks pushed harder.
 	surge += 0.35*maxf(_noise.get_noise_1d(time*0.6+300.0)-0.25,0.0)/0.75
@@ -359,10 +400,24 @@ func _move(delta: float) -> void:
 		# along the plane's way from there (else it would turn back for a
 		# slot it had overrun).
 		var slot := Vector2(p.x,p.z)+fwd*ahead+side*_side*off
-		var behind := (slot-pos).dot(fwd)
+		var to_slot := slot-pos
+		var behind := to_slot.dot(fwd)
+		# Off to the side counts as behind too (after the plane turns, the
+		# slot swings away across its way).
+		var gap := behind+0.6*absf(to_slot.dot(side))
 		var vp := _plane_speed()
-		want_speed = clampf(vp*surge+behind*1.1,vp*0.5,vp*1.8)
-		_goal = slot+fwd*maxf(speed*0.9,20.0)
+		want_speed = clampf(vp*surge+gap*1.1,vp*0.5,vp*1.8)
+		# Near its slot it runs on along the plane's way; far from it (the
+		# plane turned) it cuts across for the slot itself, so it swings
+		# round inside the turn and comes out ahead, not wide and behind.
+		var cut := clampf((to_slot.length()-15.0)/30.0,0.0,1.0)
+		_goal = slot+fwd*lerpf(maxf(speed*0.9,20.0),8.0,cut)
+		# Lost all the same (a hard turn by the rim or a rock): it sounds.
+		var lost := (pos-Vector2(p.x,p.z)).dot(fwd) < 0.0 or to_slot.length() > LOST_FAR
+		_lost = _lost+delta if lost and not _diving else 0.0
+		if _lost > LOST_S and not _sounding:
+			_sounding = true
+			stats.soundings = int(stats.soundings)+1
 	elif pos.distance_to(_goal) < 18.0:
 		_goal = _roam_goal()
 	var dir := (_goal-pos).normalized()
@@ -378,17 +433,23 @@ func _move(delta: float) -> void:
 			nearest = minf(nearest,pos.distance_to(o.at)-float(o.reach))
 			if d < r+ramp:
 				var away := (probe-(o.at as Vector2)).normalized()
-				# Round the side it is already going.
+				# Round the side it is already going (leading: the side its
+				# slot lies, so a rock doesn't carry it off the plane's way).
 				var tang := Vector2(-away.y,away.x)
-				if tang.dot(forward()) < 0.0: tang = -tang
+				var lean := (_goal-pos).normalized() if mode == &"lead" and _plane != null else forward()
+				if tang.dot(lean) < 0.0: tang = -tang
 				var w := clampf(1.0-(d-r)/ramp,0.0,1.6)
 				dir += (away*0.9+tang*0.6)*w*1.8
 	stats.nearest = minf(float(stats.nearest),nearest)
 	var rim := Land.MEADOW_R-28.0
 	if pos.length() > rim: dir += -pos.normalized()*clampf((pos.length()-rim)/12.0,0.0,2.0)*2.0
 	var want := angle_difference(heading,dir.angle())
-	var rate := clampf(want*2.4,-MAX_TURN,MAX_TURN)
-	_turn = move_toward(_turn,rate,TURN_EASE*delta)
+	# Leading, it turns as hard as the plane can (a banked plane comes round
+	# at ~1 rad/s; the slot ahead swings wider and faster than that).
+	var leading := mode == &"lead" and _plane != null
+	var most := LEAD_TURN if leading else MAX_TURN
+	var rate := clampf(want*2.4,-most,most)
+	_turn = move_toward(_turn,rate,(LEAD_TURN_EASE if leading else TURN_EASE)*delta)
 	heading = wrapf(heading+_turn*delta,-PI,PI)
 	speed = move_toward(speed,want_speed,ACCEL*delta)
 	var step := speed*delta
