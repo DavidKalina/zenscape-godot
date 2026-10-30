@@ -149,6 +149,7 @@ const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const AirLift = preload("res://scripts/endless/air_lift.gd")
 ## The Peak's ways up: the couloir's lift.
 const PeakRoutes = preload("res://scripts/endless/peak_routes.gd")
+const PeakStair = preload("res://scripts/endless/peak_stair.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
 const FlightWeight = preload("res://scripts/flight_weight.gd")
@@ -290,6 +291,9 @@ var shops: Node
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
 var lines: Node
+## The Peak's ruined stair up the couloir (scripts/endless/peak_stair.gd), or
+## null with no Peak or --stair=0.
+var stair: Node3D
 var flown := 0.0
 var _start := Vector2.ZERO
 ## The Peak's collar round its summit: its radius and band (m over the sea).
@@ -643,6 +647,11 @@ func _ready() -> void:
 	if peak != null and air_lift != null:
 		var lift := PeakRoutes.couloir(peak,Callable(field,"height"))
 		air_lift.add(str(lift.name),lift.points,float(lift.radius),float(lift.strength),bool(lift.one_way))
+	# Its ruined stair (scripts/endless/peak_stair.gd), the couloir's tell.
+	if peak != null and not ("--stair=0" in preload("res://scripts/launch_args.gd").user_args()):
+		stair = PeakStair.new()
+		add_child(stair)
+		stair.setup(peak,Callable(field,"height"),seed)
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
@@ -947,7 +956,9 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	if pad < 0.0:
 		pad = solid_pad
 		p += solid_shift
-	return tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad)
+	var g: Variant = tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad)
+	# The Peak's stair raises it over its flights (PeakStair `ground`).
+	return g if stair == null else stair.ground(p,g,pad)
 
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
