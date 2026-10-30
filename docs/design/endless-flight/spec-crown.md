@@ -179,8 +179,9 @@ shader with 0 errors. These stayed open and belong to the trunk:
    its spiral. This is likely two or three iterations.
 2. **Split.** The prow, both gorges, the saddle. The stair and lift in the
    rock gorge. Hand-flyable by margin and wobble, both ways, every weight.
-   **The loop stops here for the user to fly it,** before anything is built
-   on the shape. Don't go on without their word.
+   The loop stopped here for the user to fly it. **Their word, 2026-10-30:
+   the shape holds, go on.** Keep the prow, gorges, saddle and apron as they
+   are; steps 3 on change surfaces, not where the walls and floors stand.
 3. **Ice in place.** The tongue down the ice gorge, seracs, dark moraine
    stripes; the ice and boulder rectangles go. Seracs less boxy.
 3b. **Snow finished.** The lane's open list above, on the new ground.
