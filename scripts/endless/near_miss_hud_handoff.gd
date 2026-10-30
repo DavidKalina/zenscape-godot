@@ -221,8 +221,8 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 		# A new move cuts the last line's read-back short.
 		if not _bank.is_empty(): _bank.cut = true
 		_feed.push_front({"id":Glyphs.for_moment(m),"kind":str(m.kind).to_upper(),"band":band,
-			"points":float(m.points),"clear":float(m.clear),"age":0.0,"slot":0.0,"landed":false,"fade":-1.0})
-		_gap_lock = maxf(float(m.clear),0.0)
+			"points":float(m.points),"clear":float(m.clear),"age":0.0,"slot":0.0,"landed":false,"fade":-1.0,"chime":bool(m.get("chime",false))})
+		if not bool(m.get("chime",false)): _gap_lock = maxf(float(m.clear),0.0)
 		_gap_lock_t = 0.0
 		_gap_min = INF
 		_gap_rising = true
@@ -589,17 +589,18 @@ func _draw_line(f: Dictionary, total_c: Vector2, s: float) -> void:
 	var font := _word_font(kind_px,0.12)
 	var kw := _width(font,kind,kind_px)
 	var pw := _width(_nums,pts,pts_px)
-	var clear := "%s m" % _metres(float(f.clear))
+	# A push-up has no clearance to show.
+	var clear := "" if bool(f.get("chime",false)) else "%s m" % _metres(float(f.clear))
 	var clear_px := pts_px*0.8
 	var cw := _width(_nums,clear,clear_px)
 	var gap := lerpf(20.0,16.0,clampf(slot,0.0,1.0))*s
-	var whole := badge+gap+kw+gap+cw+gap+pw
+	var whole := badge+gap+kw+(gap+cw if clear != "" else 0.0)+gap+pw
 	var left := _row_left(whole)
 	var pop := lerpf(0.7,1.0,1.0-pow(1.0-clampf(age/0.12,0.0,1.0),3.0))
 	var stroke := (12.0 if slot < 0.5 else 8.0)*s
 	var row_mid := left+whole*0.5
 	_txt(_block,font,kind,Vector2(left+badge+gap+kw*0.5-row_mid,0.0)*pop+Vector2(row_mid,y),kind_px,Color(col,alpha),stroke,pop)
-	_txt(_block,_nums,clear,Vector2(left+badge+gap+kw+gap+cw*0.5-row_mid,0.0)*pop+Vector2(row_mid,y),clear_px,Color(_gap_col(float(f.clear)),alpha),stroke*0.8,pop)
+	if clear != "": _txt(_block,_nums,clear,Vector2(left+badge+gap+kw+gap+cw*0.5-row_mid,0.0)*pop+Vector2(row_mid,y),clear_px,Color(_gap_col(float(f.clear)),alpha),stroke*0.8,pop)
 	var pts_at := Vector2(left+whole-pw*0.5-row_mid,0.0)*pop+Vector2(row_mid,y)
 	_txt(_block,_nums,pts,pts_at,pts_px,Color(col,alpha),stroke,pop)
 	# The badge: 0.6x to 1.18x to 1x over 0.3 s, one gleam (none on near).

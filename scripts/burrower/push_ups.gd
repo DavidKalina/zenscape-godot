@@ -35,6 +35,14 @@ extends Node3D
 const Land = preload("res://scripts/burrower/burrower_land.gd")
 const Ground = preload("res://scripts/burrower/burrower_ground.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
+const PlaneFigure = preload("res://scripts/plane_figure.gd")
+## The gong's bodies on their own layer too: in endless flight the game's halls
+## stand on RuinBump's, and only a gong may stop the plane (`bump`).
+const BUMP_LAYER := 1 << 12
+## Flown into in endless flight: the way off the face, out of it and toward the
+## rim (`bump`).
+const BUMP_OUT := 0.3
+const BUMP_LEAST := 0.6
 const HALO_SHADER = preload("res://shaders/burrower_halo.gdshader")
 const SOIL_SHADER = preload("res://shaders/burrower_soil.gdshader")
 
@@ -160,6 +168,7 @@ var _now_p := Vector3.INF
 var _heading := NAN
 var _yaw := 0.0
 ## When the plane last rolled: a gong crossed just after a roll still strikes.
+var _bump_q: PhysicsShapeQueryParameters3D
 var _rolled := -INF
 var _core_mesh := SphereMesh.new()
 var _core_mat := StandardMaterial3D.new()
@@ -254,6 +263,49 @@ func setup(the_land: Ground, the_burrower: Node) -> void:
 ## burrower is settled too).
 func settled() -> bool:
 	return orbs.is_empty() and _motes.is_empty()
+
+## The game's plane against the gongs (the study's plane has RuinBump, which
+## would meet the game's halls; and a weighted plane flies its path, which
+## `glance` leaves alone). In a gong's disc or frame it is put back on the face
+## it came to and turned off along it, toward the rim, losing RuinBump's share
+## of its speed once a second; nothing else, so the chain stands. True if
+## bumped: tick then glances. Only asks the physics while a gong is up.
+func bump(space: PhysicsDirectSpaceState3D, plane: Object) -> bool:
+	var p: Vector3 = plane.position
+	var hit := {}
+	var near := INF
+	for o: Dictionary in orbs:
+		if o.kind != &"gong" or o.phase == &"swell" or o.phase == &"sink": continue
+		var d := Vector2(o.at.x-p.x,o.at.y-p.z).length_squared()
+		if d < near:
+			near = d
+			hit = o
+	if hit.is_empty() or near > 400.0: return false
+	if _bump_q == null:
+		_bump_q = PhysicsShapeQueryParameters3D.new()
+		var box := BoxShape3D.new()
+		box.size = RuinBump.BODY
+		_bump_q.shape = box
+		_bump_q.collision_mask = BUMP_LAYER
+	_bump_q.transform = Transform3D(PlaneFigure.pose(Vector3.ZERO,float(plane.heading),float(plane.pitch),float(plane.bank)+float(plane.spin)).basis,p)
+	if space.get_rest_info(_bump_q).is_empty(): return false
+	var at: Vector2 = hit.at
+	var c := Vector3(at.x,float(hit.y)+GONG_Y,at.y)
+	var n: Vector3 = hit.n
+	var s := (p-c).dot(n)
+	# The side it came from, even if this frame took it past the middle.
+	var was := float(hit.side)
+	var face: Vector3 = n*(signf(was) if was != 0.0 else signf(s) if s != 0.0 else 1.0)
+	var side: Vector3 = (hit.turn as Basis).x
+	side = side*(signf((p-c).dot(side)) if absf((p-c).dot(side)) > 0.01 else 1.0)
+	var path: Vector3 = plane.path_now()
+	var way := (side*maxf(path.dot(side),BUMP_LEAST)+Vector3.UP*path.y+face*BUMP_OUT).normalized()
+	var off := (way-path).normalized()
+	var keep: float = RuinBump.KEEP if time-float(hit.glanced) > 1.0 else 1.0
+	plane.position = p+face*(1.0-face.dot(p-c))
+	# SkyPlane `scrape` turns the path to `way` when asked for way's own lean.
+	plane.scrape(off,keep,0.0,way.dot(off))
+	return true
 
 func tick(delta: float, plane: Object, half_span: float, bumped := false) -> void:
 	time += delta
@@ -425,7 +477,7 @@ func _make_gong(o: Dictionary) -> void:
 	rig.visible = false
 	add_child(rig)
 	var frame := StaticBody3D.new()
-	frame.collision_layer = RuinBump.LAYER
+	frame.collision_layer = RuinBump.LAYER | BUMP_LAYER
 	frame.collision_mask = 0
 	rig.add_child(frame)
 	for side: float in [-1.0,1.0]:
@@ -486,7 +538,7 @@ func _make_gong(o: Dictionary) -> void:
 	for side: float in [-1.0,1.0]:
 		_part(disc_at,boss,_patina,Transform3D(face,Vector3(0.0,0.0,side*0.04)))
 	var body := StaticBody3D.new()
-	body.collision_layer = RuinBump.LAYER
+	body.collision_layer = RuinBump.LAYER | BUMP_LAYER
 	body.collision_mask = 0
 	var cyl := CylinderShape3D.new()
 	cyl.radius = GONG_R
@@ -859,7 +911,7 @@ func _gong(o: Dictionary, delta: float, plane: Object, half_span: float, bumped:
 	(o.disc as Node3D).basis = Basis(Vector3.UP,0.03*tremble)*Basis.from_scale(Vector3(1.0+0.02*tremble,1.0+0.02*tremble,1.0))
 	var body: StaticBody3D = o.disc_body
 	var rolling := plane != null and (bool(plane.rolling) or time-_rolled < ROLL_LATE)
-	body.collision_layer = 0 if rolling or since < 0.6 else RuinBump.LAYER
+	body.collision_layer = 0 if rolling or since < 0.6 else RuinBump.LAYER | BUMP_LAYER
 	if plane == null or o.phase == &"swell" or o.phase == &"sink": return
 	var c := Vector3(at.x,float(o.y)+GONG_Y,at.y)
 	var p: Vector3 = plane.position

@@ -73,6 +73,24 @@ func water_y(x: float, z: float) -> float:
 
 ## Not steep (or water) and clear of what stands on the land.
 func open(at: Vector2) -> bool:
+	var key := Vector3i(floori(at.x/MEMO_CELL),floori(at.y/MEMO_CELL),0)
+	if _memo.has(key): return _memo[key]
+	var got := _open(at)
+	_keep(key,got)
+	return got
+
+## The creature asks these several times a frame and each costs a few height
+## reads and four `inside`s; 2 m is finer than it steers. Kept a short while (the
+## land stands and goes).
+const MEMO_CELL := 2.0
+const MEMO_MOST := 400
+var _memo := {}
+
+func _keep(key: Vector3i, got: bool) -> void:
+	if _memo.size() >= MEMO_MOST: _memo.clear()
+	_memo[key] = got
+
+func _open(at: Vector2) -> bool:
 	var h := height(at.x,at.y)
 	var w := water_y(at.x,at.y)
 	if h >= w and normal(at.x,at.y).y < RUN_UP: return false
@@ -80,6 +98,13 @@ func open(at: Vector2) -> bool:
 
 ## Too steep to run on through, or something standing (not over water).
 func wall(at: Vector2) -> bool:
+	var key := Vector3i(floori(at.x/MEMO_CELL),floori(at.y/MEMO_CELL),1)
+	if _memo.has(key): return _memo[key]
+	var got := _wall(at)
+	_keep(key,got)
+	return got
+
+func _wall(at: Vector2) -> bool:
 	var h := height(at.x,at.y)
 	var w := water_y(at.x,at.y)
 	if h >= w and normal(at.x,at.y).y < WALL_UP: return true

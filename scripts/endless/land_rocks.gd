@@ -151,7 +151,7 @@ func step(at: Vector3) -> void:
 func _add_bodies(began: int) -> bool:
 	while not _bodies.is_empty():
 		var e: Array = _bodies[0]
-		var body: StaticBody3D = e[0]
+		var body: Variant = e[0]  # untyped: a typed var errors on a freed cell, and the head of the queue sticks
 		var shapes: Array = e[1]
 		var i := int(e[2])
 		if not is_instance_valid(body) or body.is_queued_for_deletion() or i >= shapes.size():

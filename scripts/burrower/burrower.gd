@@ -46,6 +46,10 @@ const ACROSS := 11
 const HALF_W := 2.3
 const CHUNK := 32
 const NOSE := 6
+## The bow's rows ask the land at every BOW_EVERYth point across: they're
+## redone each frame, and the land's the dear part (spec item 6).
+const BOW_EVERY := 5
+const BOW_ROWS := 3
 const BOW := 0.24
 const SCAR_LIFE := 12.0
 ## Lies this far over the ground mesh (no z-fight at its rest).
@@ -213,6 +217,8 @@ var _wood_ask := 0.0
 var _wood_at := Vector2(NAN,NAN)
 var shudder: TreeShudder
 var _samples: Array = []
+var _live_mesh: ArrayMesh
+var _strip_index := {}
 var _since_sample := 0.0
 var _since_stamp := 0.0
 var _chunks: Array = []
@@ -809,39 +815,97 @@ func _add_sample(at: Vector2, k: float) -> void:
 		stats.chunks = _chunks.size()
 		_samples = [_samples.back()]
 
-func _sample(at: Vector2, way: Vector2, born: float, k: float) -> Dictionary:
+## One row of the ridge, ready to draw: the land asked at every `every`th point
+## across (the bow's rows, redone each frame, ask less), lerped between; its
+## arrays laid out once so `_strip` only joins them.
+func _sample(at: Vector2, way: Vector2, born: float, k: float, every := 1) -> Dictionary:
 	var side := Vector2(-way.y,way.x)
 	var hw := HALF_W*(0.85+0.3*k)
-	var ys := PackedFloat32Array()
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
 	var cols := PackedColorArray()
-	var nms := PackedVector3Array()
-	for c in ACROSS:
-		var u := -1.0+2.0*c/(ACROSS-1)
-		var p := at+side*u*hw
-		var nm := land.normal(p.x,p.y)
-		var y := land.mesh_height(p.x,p.y)
-		ys.append(y+LIFT)
-		nms.append(nm)
-		cols.append(land.colour(p.x,p.y,land.height(p.x,p.y),nm))
-	return {"at": at, "side": side, "born": born, "k": k, "hw": hw, "ys": ys, "cols": cols, "nms": nms}
+	var uv := PackedVector2Array()
+	var uv2 := PackedVector2Array()
+	var tangents := PackedFloat32Array()
+	verts.resize(ACROSS)
+	normals.resize(ACROSS)
+	cols.resize(ACROSS)
+	uv.resize(ACROSS)
+	uv2.resize(ACROSS)
+	tangents.resize(ACROSS*4)
+	var lo := INF
+	var hi := -INF
+	# A bow row has one slope and colour, from its middle.
+	var one := every > 1
+	var nm0 := land.normal(at.x,at.y) if one else Vector3.UP
+	var col0 := land.colour(at.x,at.y,land.height(at.x,at.y),nm0) if one else Color.BLACK
+	var c := 0
+	while c < ACROSS:
+		var p := at+side*(-1.0+2.0*c/(ACROSS-1))*hw
+		var nm := nm0 if one else land.normal(p.x,p.y)
+		var y := land.mesh_height(p.x,p.y)+LIFT
+		lo = minf(lo,y)
+		hi = maxf(hi,y)
+		verts[c] = Vector3(p.x,y,p.y)
+		normals[c] = nm
+		cols[c] = col0 if one else land.colour(p.x,p.y,land.height(p.x,p.y),nm)
+		if c > 0:
+			for m in range(1,every):
+				var i := c-every+m
+				var t := float(m)/every
+				var q := at+side*(-1.0+2.0*i/(ACROSS-1))*hw
+				verts[i] = Vector3(q.x,lerpf(verts[c-every].y,y,t),q.y)
+				normals[i] = normals[c-every].lerp(nm,t).normalized()
+				cols[i] = cols[c-every].lerp(cols[c],t)
+		c += every
+	for i in ACROSS:
+		uv[i] = Vector2(-1.0+2.0*i/(ACROSS-1),hw)
+		uv2[i] = Vector2(born,k)
+		tangents[i*4] = side.x
+		tangents[i*4+2] = side.y
+		tangents[i*4+3] = 1.0
+	var flat := side*hw
+	var box := AABB(Vector3(at.x,lo,at.y),Vector3.ZERO).expand(Vector3(at.x+flat.x,hi,at.y+flat.y)).expand(Vector3(at.x-flat.x,hi,at.y-flat.y))
+	return {"verts": verts, "normals": normals, "cols": cols, "uv": uv, "uv2": uv2, "tangents": tangents, "box": box}
+
+## A bow row between two read from the land.
+func _between(a: Dictionary, b: Dictionary, t: float) -> Dictionary:
+	var verts: PackedVector3Array = a.verts
+	var to: PackedVector3Array = b.verts
+	var uv2: PackedVector2Array = a.uv2
+	var uv2b: PackedVector2Array = b.uv2
+	var v := PackedVector3Array()
+	var w := PackedVector2Array()
+	v.resize(ACROSS)
+	w.resize(ACROSS)
+	for i in ACROSS:
+		v[i] = verts[i].lerp(to[i],t)
+		w[i] = uv2[i].lerp(uv2b[i],t)
+	return {"verts": v, "normals": a.normals, "cols": a.cols, "uv": a.uv, "uv2": w, "tangents": a.tangents, "box": a.box.merge(b.box)}
 
 ## The live chunk: the samples since the last whole chunk, the head and the
 ## bow ahead of it (born in the future, rising).
 func _rebuild_live() -> void:
 	var extra: Array = []
 	if active and strength > 0.0 and not wet:
-		extra.append(_sample(pos,forward(),time,strength))
+		var last := _sample(pos,forward(),time,strength,BOW_EVERY)
+		extra.append(last)
 		var bow_len := BOW*maxf(speed,4.0)
-		for i in range(1,NOSE+1):
+		# Every BOW_ROWS-th row reads the land, the rows between are lerped.
+		for i in range(BOW_ROWS,NOSE+1,BOW_ROWS):
 			var d := bow_len*float(i)/NOSE
 			var at := pos+forward()*d
 			# The bow stops at the water's edge.
 			if _wet_at(at): break
-			extra.append(_sample(at,forward(),time+d/maxf(speed,4.0),strength))
+			var row := _sample(at,forward(),time+d/maxf(speed,4.0),strength,BOW_EVERY)
+			for m in range(1,BOW_ROWS): extra.append(_between(last,row,float(m)/BOW_ROWS))
+			extra.append(row)
+			last = row
 	if _samples.size()+extra.size() < 2:
 		_live.mesh = null
 		return
-	_live.mesh = _strip(_samples,extra)
+	if _live_mesh == null: _live_mesh = ArrayMesh.new()
+	_live.mesh = _strip(_samples,extra,_live_mesh)
 
 func _finish_live() -> void:
 	if _samples.size() >= 2:
@@ -859,7 +923,7 @@ func _drop_old_chunks() -> void:
 		(_chunks.pop_front() as Node).queue_free()
 	stats.chunks = _chunks.size()
 
-func _strip(a: Array, b: Array) -> ArrayMesh:
+func _strip(a: Array, b: Array, into: ArrayMesh = null) -> ArrayMesh:
 	var rows: Array = a+b
 	var n := rows.size()
 	var verts := PackedVector3Array()
@@ -868,27 +932,15 @@ func _strip(a: Array, b: Array) -> ArrayMesh:
 	var colours := PackedColorArray()
 	var uv := PackedVector2Array()
 	var uv2 := PackedVector2Array()
+	var box: AABB = rows[0].box
 	for s: Dictionary in rows:
-		var at: Vector2 = s.at
-		var side: Vector2 = s.side
-		var hw: float = s.hw
-		var ys: PackedFloat32Array = s.ys
-		for c in ACROSS:
-			var u := -1.0+2.0*c/(ACROSS-1)
-			var p := at+side*u*hw
-			verts.append(Vector3(p.x,ys[c],p.y))
-			normals.append(s.nms[c])
-			tangents.append_array([side.x,0.0,side.y,1.0])
-			colours.append(s.cols[c])
-			uv.append(Vector2(u,hw))
-			uv2.append(Vector2(float(s.born),float(s.k)))
-	var index := PackedInt32Array()
-	for r in n-1:
-		for c in ACROSS-1:
-			var i0 := r*ACROSS+c
-			var i1 := i0+ACROSS
-			# Clockwise from above (Godot's front face, as the ground's).
-			index.append_array([i0,i1,i0+1,i0+1,i1,i1+1])
+		verts.append_array(s.verts)
+		normals.append_array(s.normals)
+		tangents.append_array(s.tangents)
+		colours.append_array(s.cols)
+		uv.append_array(s.uv)
+		uv2.append_array(s.uv2)
+		box = box.merge(s.box)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -897,17 +949,34 @@ func _strip(a: Array, b: Array) -> ArrayMesh:
 	arrays[Mesh.ARRAY_COLOR] = colours
 	arrays[Mesh.ARRAY_TEX_UV] = uv
 	arrays[Mesh.ARRAY_TEX_UV2] = uv2
-	arrays[Mesh.ARRAY_INDEX] = index
-	var mesh := ArrayMesh.new()
+	arrays[Mesh.ARRAY_INDEX] = _indices(n)
+	var mesh := into if into != null else ArrayMesh.new()
+	mesh.clear_surfaces()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	# The heave lifts it past the ground's box: room for it.
-	mesh.custom_aabb = _box(verts).grow(5.0)
+	mesh.custom_aabb = box.grow(5.0)
 	return mesh
 
-func _box(verts: PackedVector3Array) -> AABB:
-	var box := AABB(verts[0],Vector3.ZERO)
-	for v in verts: box = box.expand(v)
-	return box
+## The strip's triangles for `n` rows, kept (the live strip asks each frame).
+func _indices(n: int) -> PackedInt32Array:
+	if _strip_index.has(n): return _strip_index[n]
+	var index := PackedInt32Array()
+	index.resize((n-1)*(ACROSS-1)*6)
+	var k := 0
+	for r in n-1:
+		for c in ACROSS-1:
+			var i0 := r*ACROSS+c
+			var i1 := i0+ACROSS
+			# Clockwise from above (Godot's front face, as the ground's).
+			index[k] = i0
+			index[k+1] = i1
+			index[k+2] = i0+1
+			index[k+3] = i0+1
+			index[k+4] = i1
+			index[k+5] = i1+1
+			k += 6
+	_strip_index[n] = index
+	return index
 
 # --- The grass -------------------------------------------------------------------
 
@@ -1030,8 +1099,14 @@ func _step_clods(delta: float) -> void:
 	while i < _clods.size():
 		var c: Dictionary = _clods[i]
 		var p: Vector3 = c.p
-		var ground := land.height(p.x,p.z)
 		if float(c.rest) < 0.0:
+			# The land only when it's coming down (a clod's flight is all a
+			# frame's work).
+			var ground := float(c.get("g",-INF))
+			var v0: Vector3 = c.v
+			if v0.y < 0.0 and p.y < ground+3.0 or ground == -INF:
+				ground = land.height(p.x,p.z)
+				c.g = ground
 			var v: Vector3 = c.v
 			v.y -= GRAVITY*delta
 			v *= 1.0-0.3*delta

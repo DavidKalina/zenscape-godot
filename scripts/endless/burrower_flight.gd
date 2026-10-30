@@ -52,6 +52,7 @@ var _idle := 0
 ## Time to the gate's next look at the land, once shut (s).
 const ASK := 0.2
 var _ask := 0.0
+var _look_i := 0
 var _roof := -INF
 var _roof_at := -INF
 var rouse := {"skim": 0.0, "rest": 0.0, "high": 0.0, "why": "", "wakes": 0, "dives": 0, "blocked": "", "canopy": 0.0}
@@ -84,7 +85,8 @@ func step(delta: float, game: Node3D) -> void:
 	if _idle > 2: return
 	var span: float = WorldScale.TOY_SPAN*game.ground_scale.size()
 	burrower.tick(delta)
-	push_ups.tick(delta,game.plane,span*0.5,false)
+	var bumped: bool = game.hand_landing.flying() and push_ups.bump(game.get_world_3d().direct_space_state,game.plane)
+	push_ups.tick(delta,game.plane,span*0.5,bumped)
 
 ## A push-up taken: a move in the chain (LineMoves `push_up`), when the chain
 ## is running (NearMiss is stepped only then).
@@ -103,17 +105,22 @@ func open_ahead(game: Node3D) -> String:
 func open_from(at0: Vector2, fwd: Vector2) -> String:
 	var here := maxf(land.height(at0.x,at0.y),land.water_y(at0.x,at0.y))
 	for d: float in OPEN_AT:
-		var at := at0+fwd*d
-		var ground := land.height(at.x,at.y)
-		var w := land.water_y(at.x,at.y)
-		var h := maxf(ground,w)
-		if ground >= w and land.normal(at.x,at.y).y < OPEN_UP: return "steep"
-		if h-here > OPEN_RISE: return "rise"
-		for s: float in [0.0,-1.0,1.0]:
-			var off := at+fwd.orthogonal()*s*OPEN_SIDE
-			var oh := h if s == 0.0 else land.height(off.x,off.y)
-			if land.blocked(off,oh): return "blocked"
+		var why := _open_at(at0+fwd*d,fwd,here)
+		if why != "": return why
 	if not FOREST_OPEN and land.trees_along(at0,fwd,OPEN_AT.back(),OPEN_SIDE) >= FOREST_N: return "forest"
+	return ""
+
+## One of the gate's looks: why `at` won't do, `here` the level under the plane.
+func _open_at(at: Vector2, fwd: Vector2, here: float) -> String:
+	var ground := land.height(at.x,at.y)
+	var w := land.water_y(at.x,at.y)
+	var h := maxf(ground,w)
+	if ground >= w and land.normal(at.x,at.y).y < OPEN_UP: return "steep"
+	if h-here > OPEN_RISE: return "rise"
+	for s: float in [0.0,-1.0,1.0]:
+		var off := at+fwd.orthogonal()*s*OPEN_SIDE
+		var oh := h if s == 0.0 else land.height(off.x,off.y)
+		if land.blocked(off,oh): return "blocked"
 	return ""
 
 func _rouse(delta: float, game: Node3D) -> void:
@@ -136,17 +143,31 @@ func _rouse(delta: float, game: Node3D) -> void:
 	if burrower.active: return
 	var skimming: bool = flying and game.near.skimming
 	rouse.skim = clampf(float(rouse.skim)+(delta if skimming else -2.0*delta),0.0,WAKE_SKIM)
-	if not skimming or float(rouse.skim) < WAKE_SKIM or float(rouse.rest) > 0.0: return
-	# The last two checks only when it would wake (they sample the land),
-	# and shut, again only every ASK s.
+	if not skimming or float(rouse.skim) < WAKE_SKIM or float(rouse.rest) > 0.0:
+		_look_i = 0
+		return
+	# The last two checks only when it would wake (they sample the land): one
+	# of OPEN_AT's distances a frame, and shut, again only after ASK s.
 	_ask -= delta
 	if _ask > 0.0: return
-	_ask = ASK
 	var blocked := ""
 	if absf(float(game.chase.free.x)) > LOOK_FREE: blocked = "look"
-	else: blocked = open_ahead(game)
-	rouse.blocked = blocked
-	if blocked != "": return
+	else:
+		var p: Vector3 = game.plane.position
+		var f: Vector3 = game.plane.forward()
+		var fwd := Vector2(f.x,f.z).normalized()
+		var at := Vector2(p.x,p.z)
+		if fwd == Vector2.ZERO: blocked = "heading"
+		else: blocked = _open_at(at+fwd*float(OPEN_AT[_look_i]),fwd,maxf(land.height(at.x,at.y),land.water_y(at.x,at.y)))
+	if blocked != "":
+		rouse.blocked = blocked
+		_look_i = 0
+		_ask = ASK
+		return
+	_look_i += 1
+	if _look_i < OPEN_AT.size(): return
+	_look_i = 0
+	rouse.blocked = ""
 	wake(game)
 
 ## The plane's height for the climb-off: over the ground, or in a wood, in
