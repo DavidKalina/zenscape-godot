@@ -58,9 +58,20 @@ const HEADINGS := 24
 ## ceiling (Field CEILING_OVER) leaves room to fly in.
 const LOW_GROUND := 60.0
 ## With the Peak (LandField `peak`): the wall stands off to one side of the
-## line to its summit, best PEAK_SIDE degrees off it, and its ends too over
-## low ground, so it never stands on the massif nor hides it.
-const PEAK_SIDE := 32.0
+## line to its summit, best PEAK_SIDE degrees off it (the massif's flanks
+## fill about 45 degrees either side of that line from the meadow), and its
+## ends too over low ground, so it never stands on the massif nor hides it.
+## That side counts for more than the sea (SIDE_WORTH against the sea's 1.5),
+## so the summit and the wall stand in one view.
+const PEAK_SIDE := 55.0
+const SIDE_WORTH := 3.0
+## With the Peak the wall is no taller than puts its billows' top PEAK_UNDER
+## of the summit's angle up from the meadow's eye (BILLOW m over its
+## columns), nor under HEIGHT_LEAST: from the meadow the summit stands
+## clearly over it.
+const PEAK_UNDER := 0.6
+const BILLOW := 100.0
+const HEIGHT_LEAST := 300.0
 ## --door-near: the wall this far ahead of the start (m).
 const DOOR_NEAR := 900.0
 ## The core that carries (shares of the box's half sizes; height whole).
@@ -116,6 +127,8 @@ var hold_most := HOLD_MOST
 ## The land's commits pumped per frame through the hold (ms).
 const PUMP_MS := 40.0
 var _hold_began := 0
+## The walls' height over their base (m): HEIGHT, or less with the Peak.
+var height := HEIGHT
 
 ## Whether the doors run: the world has them, and not --doors=0.
 static func wanted(world: RefCounted) -> bool:
@@ -134,6 +147,7 @@ func setup(host: Node3D, start: Vector2, heading: float, seed: int) -> void:
 		if a.begins_with("--door-hold="): hold_most = maxf(HOLD,a.get_slice("=",1).to_float())
 	_hint_wait = _rng.randf_range(HINT_FIRST.x,HINT_FIRST.y)
 	var spot := _wild_spot(start,heading)
+	height = _height_for(start,spot.at)
 	var off: Vector2 = _world.offset
 	var wild := _frame_at(spot.at,spot.yaw)
 	var amber := _frame_at(spot.at+off,spot.yaw)
@@ -192,7 +206,7 @@ func _wild_spot(start: Vector2, heading: float) -> Dictionary:
 			var seen := _sight(start,eye_y,at,maxf(h,Field.SEA_Y)+HEIGHT*0.3)
 			score += 4.0*seen
 			if h < Field.SEA_Y-2.0: score += 1.5
-			if peak != null: score += 1.5-3.0*absf(off_peak-PEAK_SIDE)/90.0
+			if peak != null: score += SIDE_WORTH*(1.0-2.0*absf(off_peak-PEAK_SIDE)/90.0)
 			else: score += 1.5*dir.dot(ahead)
 			score -= (d-REACH[0])/1200.0*0.6
 			# The far side's arrival over low ground too.
@@ -205,6 +219,17 @@ func _wild_spot(start: Vector2, heading: float) -> Dictionary:
 		var at := start+ahead*REACH[0]
 		best = {"at":at,"yaw":_yaw_of(ahead),"why":"no low ground; ahead"}
 	return best
+
+## The walls' height for a wall at `at` seen from the meadow `start` (see
+## PEAK_UNDER).
+func _height_for(start: Vector2, at: Vector2) -> float:
+	var peak: RefCounted = _field.peak() if _field.has_method("peak") else null
+	if peak == null or "--door-near" in LaunchArgs.user_args(): return HEIGHT
+	var eye_y := _ground(start)+3.0
+	var s: Vector3 = peak.summit()
+	var up := (s.y-eye_y)/maxf(Vector2(s.x,s.z).distance_to(start),1.0)
+	var top := eye_y+up*PEAK_UNDER*at.distance_to(start)
+	return clampf((top-(_ground(at)-SINK)-BILLOW)/0.94,HEIGHT_LEAST,HEIGHT)
 
 ## How much of the line from the meadow's eye to (at, top) is clear of the
 ## land (1: all of it).
@@ -285,9 +310,9 @@ func _build_wall(w: Dictionary) -> Node3D:
 	return root
 
 ## The wall's top over its base at `x` across (m): billowing, lower to the ends.
-static func _top(x: float, phase_x: float) -> float:
+func _top(x: float, phase_x: float) -> float:
 	var u := absf(x)/(WIDTH*0.5)
-	return HEIGHT*(0.82+0.12*sin(x*0.013+phase_x)+0.06*sin(x*0.031+phase_x*2.0))*(1.0-0.35*pow(u,3.0))
+	return height*(0.82+0.12*sin(x*0.013+phase_x)+0.06*sin(x*0.031+phase_x*2.0))*(1.0-0.35*pow(u,3.0))
 
 func _build_overlay() -> void:
 	_overlay_layer = CanvasLayer.new()
@@ -318,12 +343,12 @@ func local_of(i: int, p: Vector3) -> Vector3:
 ## Whether `p` is in wall `i`'s core (the carry starts there).
 func in_core(i: int, p: Vector3) -> bool:
 	var q := local_of(i,p)
-	return absf(q.x) < WIDTH*0.5*CORE.x and q.y > 0.0 and q.y < HEIGHT*CORE.y and absf(q.z) < DEPTH*0.5*CORE.z
+	return absf(q.x) < WIDTH*0.5*CORE.x and q.y > 0.0 and q.y < height*CORE.y and absf(q.z) < DEPTH*0.5*CORE.z
 
 ## Whether `p` is within `margin` m of wall `i`'s box.
 func near_box(i: int, p: Vector3, margin: float) -> bool:
 	var q := local_of(i,p)
-	return absf(q.x) < WIDTH*0.5+margin and q.y > -margin and q.y < HEIGHT+margin and absf(q.z) < DEPTH*0.5+margin
+	return absf(q.x) < WIDTH*0.5+margin and q.y > -margin and q.y < height+margin and absf(q.z) < DEPTH*0.5+margin
 
 ## How deep `p` is in wall `i` (0 at EXIT m outside its face, 1 at the core).
 func depth_in(i: int, p: Vector3) -> float:
@@ -332,14 +357,14 @@ func depth_in(i: int, p: Vector3) -> float:
 	var core_z := face*CORE.z
 	var through := 1.0-clampf((absf(q.z)-core_z)/(face-core_z+EXIT),0.0,1.0)
 	var across := 1.0-clampf((absf(q.x)-WIDTH*0.5*CORE.x)/(WIDTH*0.5*(1.0-CORE.x)+EXIT),0.0,1.0)
-	var up := 1.0-clampf((q.y-HEIGHT*0.85)/(HEIGHT*0.15+EXIT),0.0,1.0)
+	var up := 1.0-clampf((q.y-height*0.85)/(height*0.15+EXIT),0.0,1.0)
 	return through*across*up
 
 ## What a traffic plane flies into (EndlessTraffic `door_run`): the
 ## wilderness wall's frame, its core's half sizes and the point aimed at.
 func door_for_traffic() -> Dictionary:
 	var xf: Transform3D = walls[0].xform
-	return {"xform":xf,"half":Vector3(WIDTH*0.5*CORE.x,HEIGHT,DEPTH*0.5*CORE.z),"aim":xf*Vector3(0.0,SINK+150.0,0.0)}
+	return {"xform":xf,"half":Vector3(WIDTH*0.5*CORE.x,height,DEPTH*0.5*CORE.z),"aim":xf*Vector3(0.0,SINK+150.0,0.0)}
 
 ## One frame, after the flight's step and before the camera follows.
 func step(delta: float) -> void:

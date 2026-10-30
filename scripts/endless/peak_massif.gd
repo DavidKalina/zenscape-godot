@@ -14,16 +14,16 @@
 ## (`c`: inside the horseshoe, the valley, the plateau), where the massif's
 ## height stands alone. Along the axis, from the opening in:
 ##
-##   glacier valley  a 4750..2250  100..250 m, a flat floor between side ridges
-##   boulder field   a 2250..1250  250..330 m, lumpy floor
-##   icefall         a 1250..750   330..420 m, three steps
-##   the wall        a 750..250    420..735 m: talus, then a cliff; the
+##   glacier valley  a 4050..2050  100..300 m, a flat floor between side ridges
+##   boulder field   a 2050..1250  300..400 m, lumpy floor
+##   icefall         a 1250..850   400..520 m, three steps
+##   the wall        a 850..250    520..1060 m: talus, then a cliff; the
 ##                                 couloir a slot cut into it, a 600..240,
-##                                 455..700 m
-##   crest, towers   th 0..40      735..750 m, tower bases on it
-##   plateau, tarn   a 150..-150   752 m flat, the tarn's bowl in it
-##   summit block    beside the plateau, to 805 m
-##   back face       a -150..-2200 770 m down to the sea
+##                                 610..1025 m
+##   crest, towers   th 0..40      1060..1100 m, tower bases on it
+##   plateau, tarn   a 150..-150   1145 m flat, the tarn's bowl in it
+##   summit block    beside the plateau, to 1200 m
+##   back face       a -150..-2200 1160 m down to the sea
 ##
 ## Everything outside a circle of BOUND round O pays one distance check
 ## (`reaches`, `meets`). Placed through LayoutOverrides "peak/massif": the
@@ -40,14 +40,14 @@ const HANDLE := "peak/massif"
 ## The coded spot: the plateau's centre AWAY m from the origin, facing it
 ## (the horseshoe open toward the start). The worlds spawn at the origin and
 ## the start meadow is found within 900 m of it (MenuSpot REACH), so the
-## glacier's toe (a 5300) ends about 500 m short of the origin and the
-## bounding circle about 150 m short. Which way from the origin: of YAWS
+## glacier's toe (a 4500) ends at about the origin, and the bounding circle
+## takes in the start (the start's chunks pay the massif's pass). Which way from the origin: of YAWS
 ## ways round, the one with the land's own ground lowest in the eye from
 ## the origin out to SIGHT m (its steepest angle, degrees) and the most sea
 ## behind the plateau (BEHIND m past it, ACROSS m either side), scored
 ## sea share x SEA_WORTH less the angle. `--peak-at=x,z` and `--peak-yaw=deg`
 ## (0 faces +z) set it by hand.
-const AWAY := 5800.0
+const AWAY := 4500.0
 const YAWS := 36
 const SIGHT := 2000.0
 const SIGHT_STEP := 25.0
@@ -62,14 +62,14 @@ const SEA_WORTH := 4.0
 const O_ALONG := 1600.0
 const RING_R := 1350.0
 ## The crest's height over the sea by `th` (degrees from the back), pairs.
-const CREST := [0.0,735.0, 14.0,748.0, 38.0,742.0, 60.0,660.0, 100.0,520.0, 140.0,330.0, 168.0,40.0]
+const CREST := [0.0,1060.0, 14.0,1100.0, 38.0,1090.0, 60.0,960.0, 100.0,740.0, 140.0,450.0, 168.0,40.0]
 ## Where the arms end (degrees); past it the ring sinks under the land.
 const ARM_END := 168.0
 ## The wall at the back (th under 30, gone by 60): its foot's height, its
 ## run from the crest inward, the talus's fall past the foot (m per m).
-const WALL_FOOT := 420.0
-const WALL_RUN := 500.0
-const TALUS_FALL := 0.2
+const WALL_FOOT := 520.0
+const WALL_RUN := 600.0
+const TALUS_FALL := 0.4
 ## The wall's rise from foot to crest: a talus share up to TALUS_TOP of the
 ## run, the rest a cliff from CLIFF.x to CLIFF.y (shares of the run from the
 ## foot).
@@ -82,9 +82,9 @@ const ARM_IN := Vector2(0.85,0.6)
 ## the plateau (th under 5, gone by 16): from the crest up to PLATEAU_Y over
 ## SHOULDER.x m, flat to SHOULDER.y, up to LIP_Y by SHOULDER.z, then the back
 ## face; elsewhere a knife ridge straight into the face.
-const SHOULDER := Vector3(120.0,400.0,460.0)
-const PLATEAU_Y := 752.0
-const LIP_Y := 770.0
+const SHOULDER := Vector3(160.0,400.0,460.0)
+const PLATEAU_Y := 1145.0
+const LIP_Y := 1160.0
 const BACK_RUN := 2000.0
 const BACK_BOW := 1.8
 const KNIFE_BOW := 2.6
@@ -100,15 +100,15 @@ const PAST_END := 1.0
 # --- The approach valley ------------------------------------------------------------
 
 ## The floor's stretches along `a`: icefall, boulders, glacier, toe.
-const ICEFALL := Vector2(750.0,1250.0)
-const ICEFALL_Y := Vector2(420.0,330.0)
+const ICEFALL := Vector2(850.0,1250.0)
+const ICEFALL_Y := Vector2(520.0,400.0)
 const ICEFALL_STEPS := 3
 const ICEFALL_RISER := 0.35
-const BOULDERS := Vector2(1250.0,2250.0)
-const BOULDERS_Y := Vector2(330.0,250.0)
-const GLACIER := Vector2(2250.0,4750.0)
-const GLACIER_Y := Vector2(250.0,100.0)
-const TOE := Vector2(4750.0,5300.0)
+const BOULDERS := Vector2(1250.0,2050.0)
+const BOULDERS_Y := Vector2(400.0,300.0)
+const GLACIER := Vector2(2050.0,4050.0)
+const GLACIER_Y := Vector2(300.0,100.0)
+const TOE := Vector2(4050.0,4500.0)
 ## The floor's half-width: icefall, boulders, glacier's head and mouth.
 const FLOOR_HALF := Vector4(200.0,240.0,260.0,330.0)
 ## The side ridges: their rise over the floor, the run to their top, their
@@ -117,7 +117,7 @@ const SIDE_UP := 75.0
 const SIDE_RUN := 170.0
 const SIDE_FALL := 0.4
 const SIDE_DIP := 15.0
-const SIDE_DIP_TO := 2400.0
+const SIDE_DIP_TO := 2200.0
 ## Boulder-field lumps (m, and their scale against the rock noise's).
 const LUMPS := 2.5
 const LUMP_SCALE := 3.7
@@ -127,8 +127,8 @@ const LUMP_SCALE := 3.7
 ## The couloir's toy width (WorldScale.opening), its floor's ramp from the
 ## mouth (a, height) to the crest's notch, its walls' softness (m).
 const TOY_COULOIR := 40.0
-const COULOIR_FOOT := Vector2(600.0,455.0)
-const COULOIR_TOP := Vector2(240.0,700.0)
+const COULOIR_FOOT := Vector2(600.0,610.0)
+const COULOIR_TOP := Vector2(240.0,1025.0)
 const COULOIR_SOFT := 6.0
 const COULOIR_BACK := 50.0
 ## The plateau: flat out to PLATEAU_FLAT from its centre, blended out by
@@ -141,11 +141,11 @@ const PLATEAU_BLEND := 220.0
 const TARN_BACK := 40.0
 const TARN_BOWL := 60.0
 const TARN_DEEP := 8.0
-const TARN_LEVEL := 751.0
+const TARN_LEVEL := 1144.0
 ## The summit block: its centre (a, v), half sizes, top over the sea.
 const SUMMIT_AT := Vector2(-30.0,240.0)
 const SUMMIT_HALF := Vector2(85.0,65.0)
-const SUMMIT_Y := 805.0
+const SUMMIT_Y := 1200.0
 ## Tower bases on the crest: their angles each side (degrees), a flat top
 ## TOWER_UP over the crest of TOWER_R, falling TOWER_FALL m per m.
 const TOWER_TH := [13.0,21.0,29.0,37.0]
@@ -154,7 +154,7 @@ const TOWER_UP := 22.0
 const TOWER_FALL := 2.5
 
 ## The rock's noise: its height (m) and scale (m).
-const ROUGH := 9.0
+const ROUGH := 12.0
 const ROUGH_SCALE := 90.0
 ## The bounding circle round O: everything outside is the land's own.
 const BOUND := 4050.0
@@ -162,12 +162,12 @@ const BOUND := 4050.0
 ## The stretches along the axis, for drivers and the trunk: name, a from,
 ## a to, height over the sea from, to.
 const STRETCHES := [
-	["glacier",4750.0,2250.0,100.0,250.0],
-	["boulders",2250.0,1250.0,250.0,330.0],
-	["icefall",1250.0,750.0,330.0,420.0],
-	["wall",750.0,250.0,420.0,735.0],
-	["plateau",150.0,-150.0,752.0,752.0],
-	["back",-150.0,-2200.0,770.0,FALL_END],
+	["glacier",4050.0,2050.0,100.0,300.0],
+	["boulders",2050.0,1250.0,300.0,400.0],
+	["icefall",1250.0,850.0,400.0,520.0],
+	["wall",850.0,250.0,520.0,1060.0],
+	["plateau",150.0,-150.0,1145.0,1145.0],
+	["back",-150.0,-2200.0,1160.0,FALL_END],
 ]
 
 var centre := Vector2.ZERO

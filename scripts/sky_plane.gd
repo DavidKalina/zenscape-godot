@@ -162,7 +162,9 @@ const CEILING_NOSE := -0.05
 ## steep low in the band, a few degrees at the top, eased over THIN_NOSE_EASE
 ## s), so full back is the best climb, at about half the speed. Over the
 ## band's last TOP_FALL the climb fades from TOP_CLIMB m/s to nothing at the
-## top. The dive is as ever. Under `thin_from` nothing changes.
+## top; the flown climb (lift aside) fades the same way short of the top,
+## by the preset's `reach` (FlightWeight). The dive is as ever. Under
+## `thin_from` nothing changes.
 const THIN_SWING := 12.0
 const THIN_PULL := 0.6
 const THIN_MUSH := 3.0
@@ -643,8 +645,10 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		shake = float(weight.buffet)*low*clampf(speed/cruise(),0.5,1.6)*(sin(bt*5.3)*0.6+sin(bt*8.9+1.3)*0.4)
 	var along := path*speed
 	if climb_share*power < 1.0 and along.y > 0.0: along.y *= climb_share*power
-	# Near the top the climb fades to nothing.
-	if thin > 1.0-TOP_FALL and along.y > 0.0: along.y = minf(along.y,TOP_CLIMB*(1.0-thin)/TOP_FALL)
+	# Near the top the climb fades to nothing; the flown climb (lift aside)
+	# by the preset's `reach` of the way up (FlightWeight).
+	var flown := thin/maxf(float(weight.get("reach",1.0)),0.01)
+	if flown > 1.0-TOP_FALL and along.y > 0.0: along.y = minf(along.y,TOP_CLIMB*maxf(1.0-flown,0.0)/TOP_FALL)
 	# The guard in a tight place (SkyGlide `guide`).
 	var push := _guard(delta)
 	velocity = along+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag-DEAD_SINK*(1.0-power)+shake+cushion)+wind+push

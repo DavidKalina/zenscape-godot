@@ -292,7 +292,7 @@ var flown := 0.0
 var _start := Vector2.ZERO
 ## The Peak's collar round its summit: its radius and band (m over the sea).
 const COLLAR_R := 900.0
-const COLLAR_BAND := Vector2(550.0,700.0)
+const COLLAR_BAND := Vector2(850.0,1050.0)
 var _no_title := false
 var _heading := 0.0
 ## A heading named by the world's spawn or --heading=: the start does not
