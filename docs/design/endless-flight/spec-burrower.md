@@ -138,6 +138,18 @@ Replace the placeholder tones. Done after the gritty dirt, its own task.
   place of the orb tone, climbing the same way the orb tune climbs now.
   The line-complete flourish is optional.
 
+## The entrance (the user, after playing iteration 15)
+
+It should enter from off screen, "stage left or stage right": while the
+plane skims, the trail comes in from out of view at one side, cuts in
+across ahead of the plane, then runs on away from it, so the player turns
+to chase. The chase can last a while; all the while it runs it keeps
+pushing things up (the cadence fix's steady stream, on the plane's line
+ahead). It stays ahead and a little out of reach, so it reads as being
+chased, not escorting. Pick the side that has room (open meadow, away
+from the edge). After this the user wants to see it in endless flight
+before more changes.
+
 ## Out of scope this loop
 
 Anything in endless flight (the gate on camera, skim time and open space,
