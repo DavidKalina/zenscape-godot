@@ -28,6 +28,9 @@ const POND := Vector2(85.0,-55.0)
 const POND_R := 34.0
 const POND_DEEP := 3.8
 const WATER_Y := -0.45
+const POND_SHADER = preload("res://shaders/burrower_pond.gdshader")
+## The pond's water (shaders/burrower_pond.gdshader): the burrower sets its wake.
+var pond_material: ShaderMaterial
 ## The steep knoll: its middle, its foot's radius, its height.
 const KNOLL := Vector2(-95.0,-85.0)
 const KNOLL_R := 30.0
@@ -178,15 +181,17 @@ func _build_ground() -> void:
 func _build_water() -> void:
 	var quad := PlaneMesh.new()
 	quad.size = Vector2.ONE*POND_R*3.0
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.16,0.27,0.30,0.82)
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.roughness = 0.08
-	m.metallic = 0.2
+	# Fine enough for the wake's bulge and rings to lift it (0.7 m cells).
+	quad.subdivide_width = 145
+	quad.subdivide_depth = 145
+	pond_material = ShaderMaterial.new()
+	pond_material.shader = POND_SHADER
 	var node := MeshInstance3D.new()
 	node.name = "Pond"
 	node.mesh = quad
-	node.material_override = m
+	node.material_override = pond_material
+	# The wake lifts it: room for it.
+	node.custom_aabb = AABB(Vector3(-POND_R*1.5,-1.0,-POND_R*1.5),Vector3(POND_R*3.0,2.5,POND_R*3.0))
 	node.position = Vector3(POND.x,WATER_Y,POND.y)
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(node)

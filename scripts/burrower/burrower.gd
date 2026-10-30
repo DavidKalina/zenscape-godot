@@ -14,9 +14,15 @@ extends Node3D
 ##          bouncing once, lying a moment and sinking (a MultiMesh).
 ##   dust   soft puffs that hang behind the head and thin out.
 ##
+## On the pond the same thing is a wake with no boat (shaders/
+## burrower_pond.gdshader): a bulge over the head, rings dropped from it
+## every WAKE_DT s that add up to a V, froth on its track, spray thrown off
+## the bulge and a mist; the ridge ends at the water's edge and starts again
+## where it comes out.
+##
 ## It moves with intent: a heading that turns smoothly (turn rate eased),
 ## a speed that surges and slows (SURGE), steering round the land's rocks,
-## ruins, knoll and pond (looked for ahead) and keeping to the meadow,
+## ruins and knoll (looked for ahead; the pond it crosses) and keeping to the meadow,
 ## passing beside trees (their trunks a small reach; roaming, it often makes
 ## for a tree's side) and shuddering them (scripts/burrower/tree_shudder.gd).
 ## Two ways to move: `lead(plane)` runs ahead of the plane to one side,
@@ -82,6 +88,19 @@ const SOD := Color("4c5a2c")
 const SOIL := Color("4a3826")
 const PEBBLE := Color("8e877a")
 const DUST := Color(0.36,0.31,0.24)
+## Water: wet where the bed lies WET_DEEP m under the water; a wake point
+## every WAKE_DT s (the shader holds WAKES); spray, at most SPRAYS drops,
+## SPRAY_RATE a second at full speed, a burst of SPLASH going in.
+const WET_DEEP := 0.15
+const WAKES := 64
+const WAKE_DT := 0.07
+const SPRAYS := 420
+const SPRAY_RATE := 90.0
+const SPLASH := 70
+const SPRAY := Color(0.86,0.92,0.95,0.85)
+const MIST := Color(0.80,0.85,0.87)
+## How often a roam goal is the pond's far side.
+const POND_GOAL := 0.3
 
 var land: Land
 var react: GrassReact
@@ -93,7 +112,11 @@ var pos := Vector2.ZERO
 var heading := 0.0
 var speed := 0.0
 var mode := &"roam"
-var stats := {"samples": 0, "chunks": 0, "clods": 0, "dust": 0, "stamps": 0, "nearest": INF}
+var stats := {"samples": 0, "chunks": 0, "clods": 0, "dust": 0, "stamps": 0, "nearest": INF,
+	"wakes": 0, "spray": 0, "splashes": 0, "wet_time": 0.0}
+## In the water now, and the wake's ease in (0 on land, 1 in the water).
+var wet := false
+var wet_k := 0.0
 
 var _plane: Object
 var _turn := 0.0
@@ -117,6 +140,12 @@ var _clod_carry := 0.0
 var _dusts: Array = []
 var _dust_mm := MultiMesh.new()
 var _dust_carry := 0.0
+var _wake := PackedVector4Array()
+var _wake_i := 0
+var _since_wake := 0.0
+var _sprays: Array = []
+var _spray_mm := MultiMesh.new()
+var _spray_carry := 0.0
 
 func _init() -> void:
 	name = "Burrower"
@@ -130,8 +159,6 @@ func setup(the_land: Land, the_react: GrassReact) -> void:
 	for r: Dictionary in land.rocks + land.ruins:
 		_obstacles.append({"at": r.at, "reach": float(r.reach)})
 	_obstacles.append({"at": Land.KNOLL, "reach": Land.KNOLL_R*0.85})
-	# The pond is steered round for now (its wake is a later round).
-	_obstacles.append({"at": Land.POND, "reach": Land.POND_R+3.0})
 	for tree: Node3D in land.trees:
 		_obstacles.append({"at": Vector2(tree.position.x,tree.position.z), "reach": TRUNK, "margin": TRUNK_MARGIN, "ramp": TRUNK_RAMP, "tree": true})
 	shudder = TreeShudder.new()
@@ -177,6 +204,28 @@ func setup(the_land: Land, the_react: GrassReact) -> void:
 	dusts.multimesh = _dust_mm
 	dusts.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(dusts)
+	var drop := SphereMesh.new()
+	drop.radius = 0.5
+	drop.height = 1.0
+	drop.radial_segments = 6
+	drop.rings = 3
+	var drop_m := StandardMaterial3D.new()
+	drop_m.vertex_color_use_as_albedo = true
+	drop_m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	drop_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	drop.material = drop_m
+	_spray_mm.transform_format = MultiMesh.TRANSFORM_3D
+	_spray_mm.use_colors = true
+	_spray_mm.mesh = drop
+	_spray_mm.instance_count = SPRAYS
+	_spray_mm.visible_instance_count = 0
+	var sprays := MultiMeshInstance3D.new()
+	sprays.name = "Spray"
+	sprays.multimesh = _spray_mm
+	sprays.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(sprays)
+	_wake.resize(WAKES)
+	_wake.fill(Vector4.ZERO)
 
 ## Up under the turf at `at` heading `way` (rad, 0 along +x), leading `plane`
 ## (null: roaming the meadow).
@@ -195,6 +244,7 @@ func wake(at: Vector2, way: float, plane: Object = null) -> void:
 	_run = 0.0
 	_goal = _roam_goal()
 	_since_sample = SAMPLE
+	wet = _wet_at(pos)
 
 ## Up a little ahead of `plane` to one side, leading it.
 func lead(plane: Object) -> void:
@@ -229,7 +279,16 @@ func _plane_speed() -> float:
 	var v: Vector3 = _plane.velocity
 	return maxf(Vector2(v.x,v.z).length(),8.0)
 
+func _wet_at(p: Vector2) -> bool:
+	return land.height(p.x,p.y) < Land.WATER_Y-WET_DEEP
+
 func _roam_goal() -> Vector2:
+	# Now and then across the pond: a point past its far side, in the meadow.
+	if _rng.randf() < POND_GOAL and pos.distance_to(Land.POND) > Land.POND_R+15.0:
+		var across := (Land.POND-pos).normalized()
+		for i in 6:
+			var g := Land.POND+across.rotated(_rng.randf_range(-0.7,0.7))*(Land.POND_R+_rng.randf_range(12.0,24.0))
+			if g.length() < Land.MEADOW_R-35.0: return g
 	# Often past a tree's side: a point beside it, so the way runs by it.
 	if not land.trees.is_empty() and _rng.randf() < TREE_GOAL:
 		for i in 8:
@@ -254,7 +313,10 @@ func tick(delta: float) -> void:
 	if active: _move(delta)
 	_step_clods(delta)
 	_step_dust(delta)
-	shudder.tick(delta,pos,strength if active else 0.0)
+	_step_spray(delta)
+	shudder.tick(delta,pos,strength if active and not wet else 0.0)
+	wet_k = move_toward(wet_k,1.0 if active and wet else 0.0,delta/0.25)
+	_feed_pond()
 	_drop_old_chunks()
 	if active or not _samples.is_empty(): _rebuild_live()
 
@@ -315,15 +377,29 @@ func _move(delta: float) -> void:
 	speed = move_toward(speed,want_speed,ACCEL*delta)
 	var step := speed*delta
 	pos += forward()*step
+	var now_wet := _wet_at(pos)
+	if now_wet != wet:
+		wet = now_wet
+		# The ridge ends at the water and starts again where it comes out.
+		_finish_live()
+		_since_sample = SAMPLE
+		_splash(SPLASH if wet else SPLASH/2)
 	_since_sample += step
 	_since_stamp += step
-	if _since_sample >= SAMPLE:
-		_since_sample = 0.0
-		# A surge heaves harder.
-		_add_sample(pos,strength*clampf(1.0+0.7*(surge-1.0),0.7,1.35))
-	if _since_stamp >= GRASS_STEP:
-		_since_stamp = 0.0
-		_stamp_grass()
+	if wet:
+		stats.wet_time = float(stats.wet_time)+delta
+		_since_wake += delta
+		if _since_wake >= WAKE_DT:
+			_since_wake = 0.0
+			_drop_wake(pos,strength*clampf(speed/ROAM_SPEED,0.7,1.4))
+	else:
+		if _since_sample >= SAMPLE:
+			_since_sample = 0.0
+			# A surge heaves harder.
+			_add_sample(pos,strength*clampf(1.0+0.7*(surge-1.0),0.7,1.35))
+		if _since_stamp >= GRASS_STEP:
+			_since_stamp = 0.0
+			_stamp_grass()
 	_kick(delta)
 
 # --- The ridge -------------------------------------------------------------------
@@ -362,12 +438,15 @@ func _sample(at: Vector2, way: Vector2, born: float, k: float) -> Dictionary:
 ## bow ahead of it (born in the future, rising).
 func _rebuild_live() -> void:
 	var extra: Array = []
-	if active and strength > 0.0:
+	if active and strength > 0.0 and not wet:
 		extra.append(_sample(pos,forward(),time,strength))
 		var bow_len := BOW*maxf(speed,4.0)
 		for i in range(1,NOSE+1):
 			var d := bow_len*float(i)/NOSE
-			extra.append(_sample(pos+forward()*d,forward(),time+d/maxf(speed,4.0),strength))
+			var at := pos+forward()*d
+			# The bow stops at the water's edge.
+			if _wet_at(at): break
+			extra.append(_sample(at,forward(),time+d/maxf(speed,4.0),strength))
 	if _samples.size()+extra.size() < 2:
 		_live.mesh = null
 		return
@@ -451,12 +530,18 @@ func _stamp_grass() -> void:
 # --- Clods and pebbles -----------------------------------------------------------
 
 func _kick(delta: float) -> void:
-	var rate := CLOD_RATE*strength*clampf(speed/ROAM_SPEED,0.4,1.6)
-	_clod_carry += rate*delta
-	while _clod_carry >= 1.0:
-		_clod_carry -= 1.0
-		_spawn_clod()
-	_dust_carry += DUST_RATE*strength*clampf(speed/ROAM_SPEED,0.5,1.4)*delta
+	var pace := clampf(speed/ROAM_SPEED,0.4,1.6)
+	if wet:
+		_spray_carry += SPRAY_RATE*strength*pace*delta
+		while _spray_carry >= 1.0:
+			_spray_carry -= 1.0
+			_spawn_drop(false)
+	else:
+		_clod_carry += CLOD_RATE*strength*pace*delta
+		while _clod_carry >= 1.0:
+			_clod_carry -= 1.0
+			_spawn_clod()
+	_dust_carry += DUST_RATE*strength*clampf(speed/ROAM_SPEED,0.5,1.4)*delta*(1.6 if wet else 1.0)
 	while _dust_carry >= 1.0:
 		_dust_carry -= 1.0
 		_spawn_dust()
@@ -525,9 +610,10 @@ func _spawn_dust() -> void:
 	var side := Vector2(-forward().y,forward().x)
 	var at := pos-forward()*_rng.randf_range(0.5,3.0)+side*_rng.randf_range(-1.0,1.0)
 	var drift := forward()*speed*0.12+side*_rng.randf_range(-1.2,1.2)
-	_dusts.append({"p": Vector3(at.x,land.height(at.x,at.y)+0.4,at.y), "v": Vector3(drift.x,_rng.randf_range(0.6,1.4),drift.y),
-		"age": 0.0, "life": DUST_LIFE*_rng.randf_range(0.7,1.3), "size": _rng.randf_range(0.6,1.1),
-		"shade": _rng.randf_range(0.85,1.1)})
+	var y := Land.WATER_Y+0.5 if wet else land.height(at.x,at.y)+0.4
+	_dusts.append({"p": Vector3(at.x,y,at.y), "v": Vector3(drift.x,_rng.randf_range(0.6,1.4)*(1.5 if wet else 1.0),drift.y),
+		"age": 0.0, "life": DUST_LIFE*_rng.randf_range(0.7,1.3)*(0.7 if wet else 1.0), "size": _rng.randf_range(0.6,1.1)*(1.3 if wet else 1.0),
+		"shade": _rng.randf_range(0.85,1.1), "colour": MIST if wet else DUST, "most": 0.22 if wet else 0.2})
 
 func _step_dust(delta: float) -> void:
 	var i := 0
@@ -550,7 +636,83 @@ func _step_dust(delta: float) -> void:
 		var t := float(d.age)/float(d.life)
 		var s := float(d.size)*(1.0+2.6*sqrt(t))
 		_dust_mm.set_instance_transform(k,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*s),d.p))
-		var a := smoothstep(0.0,0.08,t)*(1.0-smoothstep(0.2,1.0,t))*0.2
-		var c := DUST*float(d.shade)
+		var a := smoothstep(0.0,0.08,t)*(1.0-smoothstep(0.2,1.0,t))*float(d.most)
+		var c: Color = (d.colour as Color)*float(d.shade)
 		_dust_mm.set_instance_custom_data(k,Color(c.r,c.g,c.b,a))
 	stats.dust = n
+
+# --- The wake --------------------------------------------------------------------
+
+func _drop_wake(at: Vector2, k: float) -> void:
+	_wake[_wake_i] = Vector4(at.x,at.y,time,k)
+	_wake_i = (_wake_i+1) % WAKES
+	stats.wakes = int(stats.wakes)+1
+
+## Going in or coming out: a ring and a burst of spray.
+func _splash(n: int) -> void:
+	stats.splashes = int(stats.splashes)+1
+	_drop_wake(pos,1.6*maxf(strength,0.5))
+	for i in n: _spawn_drop(true)
+
+func _feed_pond() -> void:
+	var m := land.pond_material
+	if m == null: return
+	m.set_shader_parameter("now",time)
+	m.set_shader_parameter("wake",_wake)
+	m.set_shader_parameter("head",Vector4(pos.x,pos.y,strength*wet_k,speed))
+	m.set_shader_parameter("head_way",forward())
+
+## A drop thrown off the bulge: most out to the sides and up, some in a
+## plume left behind the head; `burst` a splash's, flung every way.
+func _spawn_drop(burst: bool) -> void:
+	if _sprays.size() >= SPRAYS: _sprays.pop_front()
+	var fwd := forward()
+	var side := Vector2(-fwd.y,fwd.x)
+	var at: Vector2
+	var v: Vector3
+	if burst:
+		var a := _rng.randf()*TAU
+		var out := Vector2(cos(a),sin(a))
+		at = pos+out*_rng.randf_range(0.3,2.0)
+		var h := out*_rng.randf_range(1.0,5.0)+fwd*speed*0.25
+		v = Vector3(h.x,_rng.randf_range(4.0,10.0),h.y)
+	elif _rng.randf() < 0.3:
+		at = pos-fwd*_rng.randf_range(1.5,4.5)+side*_rng.randf_range(-0.6,0.6)
+		var h := fwd*speed*_rng.randf_range(0.1,0.3)+side*_rng.randf_range(-0.8,0.8)
+		v = Vector3(h.x,_rng.randf_range(5.0,10.0)*strength,h.y)
+	else:
+		var u := _rng.randf_range(-1.0,1.0)
+		var sgn := signf(u) if u != 0.0 else 1.0
+		at = pos+fwd*_rng.randf_range(-1.5,1.5)+side*(sgn*1.2+u)
+		var h := side*sgn*_rng.randf_range(2.0,6.0)+fwd*speed*_rng.randf_range(0.2,0.55)
+		v = Vector3(h.x,_rng.randf_range(2.5,7.0)*strength,h.y)
+	_sprays.append({"p": Vector3(at.x,Land.WATER_Y+0.3,at.y), "v": v, "size": _rng.randf_range(0.05,0.14)})
+
+func _step_spray(delta: float) -> void:
+	var i := 0
+	while i < _sprays.size():
+		var d: Dictionary = _sprays[i]
+		var v: Vector3 = d.v
+		v.y -= GRAVITY*delta
+		v *= 1.0-0.9*delta
+		var p: Vector3 = (d.p as Vector3)+v*delta
+		if p.y < Land.WATER_Y and v.y < 0.0:
+			_sprays.remove_at(i)
+			continue
+		d.v = v
+		d.p = p
+		i += 1
+	var n := _sprays.size()
+	_spray_mm.visible_instance_count = n
+	for k in n:
+		var d: Dictionary = _sprays[k]
+		var v: Vector3 = d.v
+		var size := float(d.size)
+		# Drawn as a streak along its flight.
+		var up := v.normalized() if v.length() > 0.1 else Vector3.UP
+		var x := up.cross(Vector3.FORWARD if absf(up.z) < 0.9 else Vector3.RIGHT).normalized()
+		var z := x.cross(up)
+		var stretch := 1.0+v.length()*0.12
+		_spray_mm.set_instance_transform(k,Transform3D(Basis(x*size,up*size*stretch,z*size),d.p))
+		_spray_mm.set_instance_color(k,SPRAY)
+	stats.spray = n
