@@ -144,6 +144,7 @@ const ShopSites = preload("res://scripts/endless/shop_sites.gd")
 const RegionDoors = preload("res://scripts/endless/region_doors.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
+const AirLift = preload("res://scripts/endless/air_lift.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
 const FlightWeight = preload("res://scripts/flight_weight.gd")
@@ -240,6 +241,11 @@ var plane: RefCounted
 var plane_figure: Node3D
 var chase: RefCounted
 var hand_landing := ManualLanding.new()
+## Lift (scripts/endless/air_lift.gd): rising air along the paths places
+## add to it, still air elsewhere; `air` is the plane's air callable.
+## `--lift=0`: none, and the plane gets no air callable, as before.
+var air_lift: AirLift = AirLift.new() if AirLift.flag() else null
+var air: Callable = Callable(air_lift,"air_at") if air_lift != null else Callable()
 var ground_scale := PlaneGroundScale.new()
 var flaps := false
 var sea: MeshInstance3D
@@ -985,7 +991,7 @@ func tick(delta: float) -> void:
 	_glanced = glance.before(delta,self)
 	# A beat route's preview pan holds the flight (beat_routes.gd).
 	var held: bool = beats != null and beats.holding()
-	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
+	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),air,Callable(self,"_blocked"))
 	if events.has("lifted"): book.new_flight()
 	book.flight.t = float(book.flight.t)+delta
 	book.step(delta)
