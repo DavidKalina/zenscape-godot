@@ -267,6 +267,10 @@ func roam() -> void:
 func dive() -> void:
 	if active: _diving = true
 
+## Sinking away (dive() called, not yet down).
+func diving() -> bool:
+	return active and _diving
+
 func forward() -> Vector2:
 	return Vector2(cos(heading),sin(heading))
 

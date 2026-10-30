@@ -10,6 +10,10 @@ extends Node3D
 ## Keys: as endless flight (A D bank, W S pitch, mouse steers, Space boost,
 ## Shift brake, Q E knife edge, twice to roll); R up again over the meadow;
 ## B calls the burrower up ahead of the plane (scripts/burrower/burrower.gd);
+## it also wakes on its own when the plane skims the meadow or the pond
+## (under one span, at speed, for WAKE_SKIM s), leads, and dives away when
+## the plane climbs off (over CLIMB_OFF spans for CLIMB_HOLD s), leaves the
+## meadow, or after RUN s (`_rouse`; B's call ignores the climb and the run);
 ## C toggles the watch camera, a slow orbit on its trail, the plane held
 ## still meanwhile (it roams the meadow on its own).
 ## Flags: --grass=X (the carpet's share, 1; 0 none), --at=x,z --alt=m
@@ -35,6 +39,19 @@ const WATCH_R := 26.0
 const WATCH_UP := 7.0
 const WATCH_TURN := 0.14
 const WATCH_FOLLOW := 1.6
+## Waking: skimming means the plane's middle under SKIM_SPANS spans over the
+## meadow's ground or the pond, at FAST_SHARE of cruise or more; WAKE_SKIM s
+## of it (built up, bled at twice the rate when not) wakes it. It dives away
+## after CLIMB_HOLD s over CLIMB_OFF spans, out past the meadow's rim by
+## OUT_M, or after RUN s; then rests REST s before a new skim can wake it.
+const SKIM_SPANS := 1.0
+const FAST_SHARE := 0.6
+const WAKE_SKIM := 1.2
+const CLIMB_OFF := 5.0
+const CLIMB_HOLD := 1.4
+const OUT_M := 15.0
+const RUN := 24.0
+const REST := 6.0
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -70,6 +87,10 @@ var watching := false
 var _watch_at := Vector3.ZERO
 var _watch_angle := 0.0
 var _burrow_at_start := false
+## The waking's state: skim time built up, how long climbed off, the rest
+## left, and whether this run was B's call (not dived by the climb or RUN).
+var rouse := {"skim": 0.0, "high": 0.0, "rest": 0.0, "called": false, "skimming": false,
+	"wakes": 0, "dives": 0, "why": ""}
 
 func _ready() -> void:
 	Pad.ensure()
@@ -147,7 +168,7 @@ func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	_hint = Label.new()
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  R up again  ·  B the burrower  ·  C watch it"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  R up again  ·  skim low to wake it  ·  B call it  ·  C watch it"
 	_hint.position = Vector2(16.0,12.0)
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.7))
 	_hint.add_theme_constant_override("outline_size",4)
@@ -205,9 +226,51 @@ func tick(delta: float, input: Dictionary) -> void:
 	plane.step(delta,input,Callable(land,"ground"))
 	if _space != null: RuinBump.bump(_space,plane,was)
 	figure.update(delta,plane,0.0,Callable(land,"ground"),false)
+	_rouse(delta)
 	burrower.tick(delta)
 	_frame(delta)
 	if react != null: _react(delta)
+
+## The plane's middle over the ground or the pond's water (m).
+func clearance() -> float:
+	var p: Vector3 = plane.position
+	return p.y-maxf(land.height(p.x,p.z),Land.WATER_Y)
+
+## Wakes the burrower when the plane skims the meadow or the pond; dives it
+## away when the plane climbs off, flies out of the meadow, or the run ends.
+func _rouse(delta: float) -> void:
+	var span := WorldScale.TOY_SPAN*ground_scale.size()
+	var p: Vector3 = plane.position
+	var at := Vector2(p.x,p.z)
+	var v: Vector3 = plane.velocity
+	var clear := clearance()
+	var fast := Vector2(v.x,v.z).length() >= FAST_SHARE*plane.cruise()
+	var skimming := fast and clear < span*SKIM_SPANS and at.length() < Land.MEADOW_R
+	rouse.skimming = skimming
+	rouse.rest = maxf(float(rouse.rest)-delta,0.0)
+	if burrower.active and not burrower.diving():
+		rouse.skim = 0.0
+		if burrower.mode != &"lead": return
+		rouse.high = float(rouse.high)+delta if clear > span*CLIMB_OFF else 0.0
+		var why := ""
+		if at.length() > Land.MEADOW_R+OUT_M: why = "out"
+		elif not bool(rouse.called):
+			if float(rouse.high) > CLIMB_HOLD: why = "climb"
+			elif burrower._run > RUN: why = "run"
+		if why != "":
+			burrower.dive()
+			rouse.why = why
+			rouse.dives = int(rouse.dives)+1
+			rouse.rest = REST
+		return
+	if burrower.active: return
+	rouse.skim = clampf(float(rouse.skim)+(delta if skimming else -2.0*delta),0.0,WAKE_SKIM)
+	if skimming and float(rouse.skim) >= WAKE_SKIM and float(rouse.rest) <= 0.0:
+		rouse.skim = 0.0
+		rouse.high = 0.0
+		rouse.called = false
+		rouse.wakes = int(rouse.wakes)+1
+		burrower.lead(plane)
 
 ## B: the burrower up ahead of the plane, leading it (watching: roaming
 ## near the camera's middle).
@@ -217,6 +280,8 @@ func summon() -> void:
 			burrower.wake(Vector2(_watch_at.x,_watch_at.z),randf()*TAU)
 	else:
 		burrower.lead(plane)
+		rouse.called = true
+		rouse.high = 0.0
 
 ## C: the watch camera on or off. On, the plane holds still and the
 ## burrower roams (woken if it was down).
