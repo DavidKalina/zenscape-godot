@@ -17,10 +17,13 @@ own frame (a along the axis from the plateau toward the start, v across).
 A horseshoe open toward the start: glacier valley (a 4050..2050, 100..300
 m over the sea) between curving moraines with crevasse bands, boulder
 field (2050..1250, 300..400 m), icefall (1250..850, 400..520 m), the wall
-(to the crest at ~1000..1100 m) with irregular buttresses and gullies
+(to the crest at ~870..1040 m) with irregular buttresses and gullies
 (`_lay_ribs`: per-rib width, strength, gully and wander, laid at load),
-a crest that dips to cols between eight tower bases, a ridged head on the
-axis (summit 1200 m), the plateau (1145) behind it and the back face
+a crest that dips to cols between eight tower bases (the -v side the long
+shoulder rising to the couloir's notch, the +v side lower), a horn on the
+axis (summit 1400 m: faces near-vertical up high, four knife ridges, the
+meadow round: `_head`, `HEAD_FACE`, `HEAD_RIDGE`, `HEAD_BEND`,
+`HEAD_KNIFE`), the plateau (1145) behind it and the back face
 falling ~2 km to the sea. The couloir is a tapering, bending gully 280 m
 off the axis on the -v side (mouth 610 m, notch 1025 m). Placed 4.5 km
 from the start along the way `_way` scores best (sea behind, clear sight
@@ -34,14 +37,16 @@ in `_tops`), not from the sea, so the wall, the slot and the plateau get
 level-0 chunks and colliders when the plane is near. Level-0 chunks go to
 the worker pool as high-priority tasks, at most four in flight.
 
-**Placement and ceiling.** The start meadow faces the summit (the menu's
+**Placement and ceiling.** The start meadow keeps no valley fog within
+700..1300 m (`EndlessClouds.FOG_CLEAR`, `clear_fog_at`). The start meadow faces the summit (the menu's
 meadow search prefers a take-off run toward it); the door
 (`doors/amber-wall`) is placed off to one side over low ground, its height
 capped so its top stands under the summit's angle from the meadow. Other
 placers (arches, set pieces, rocks, shops, beat routes, trees) keep off
 the massif (`LandField.off_peak`, the `peak` shape flag). The ceiling
-rose (`CEILING_OVER` 1400); `FlightWeight.reach` gives each preset its
-own flown top without lift.
+rose (`CEILING_OVER` 1520, 120 m over the summit; medium's and heavy's
+`ceiling` shares scaled so their tops stay 1329 and 1222);
+`FlightWeight.reach` gives each preset its own flown top without lift.
 
 **The tarn and the cirque.** The tarn is a pond entry the massif lays
 itself, level forced at 1144 m, lobed outline shared by the water, the
@@ -86,8 +91,13 @@ the cirque's rim. Outside the zone the land paints as before.
 **The collar and its sky** (`endless_collar.gd`, `endless_clouds.gd`,
 `shaders/endless_cloud_march.glsl`, `endless_look.gd`,
 `shaders/endless_height_haze.gdshaderinc`). A standing, slowly turning
-ring of dense cloud round the summit, 500 m radius, band 850..1050 m,
-immune to `--cloud-cover`, lit paler from below than the field clouds.
+disc of dense cloud round the horn's neck, centred 40 m along the axis
+(between the summit at 290 and the plateau's centre at 0; `COLLAR_AT` in
+`studies/endless_flight.gd`), radius 520 m, band 1020..1120 m (over the
+crest round the horn, under the plateau and the tarn), immune to
+`--cloud-cover`, lit paler from below than the field clouds. From above and
+from 1 km out it reads as a ring round the neck and a floor round the
+plateau; from 2 km and the meadow its front is not drawn (Open).
 Above the band, near the Peak, the sky shows its own hour (the ring sun
 at 0.3, 16.45 h) blended in by eye height through the band; the land's
 clock, the HUD hour and saved clocks stay the land's. A height term in
@@ -108,7 +118,8 @@ rim; land across the plateau between the tarn and the head. Flags:
 |---|---|
 | `--peak=0` | no massif (and none of the below) |
 | `--peak-at=x,z`, `--peak-yaw=deg` | put the plateau's centre there / face that way |
-| `--ceiling=m` | the ceiling over the sea (default 1400) |
+| `--ceiling=m` | the ceiling over the sea (default 1520) |
+| `--no-valley-fog` | no valley fog (the start meadow's clearing is on by default) |
 | `--lift=0` | no couloir lift |
 | `--stair=0` | no stair |
 | `--spires=0`, `--boulders=0`, `--valley=0` | each rock kind off (`--no-rocks` takes all) |
@@ -121,11 +132,22 @@ rim; land across the plateau between the tarn and the head. Flags:
 
 ## Numbers
 
-- Ceiling over the sea: off/light 1400, medium 1329, heavy 1222.
+- Ceiling over the sea: off/light 1520 (was 1400), medium 1329, heavy
+  1222. Light's thin band is longer since the meadow round, so light
+  climbs a little easier over 215 m (not measured).
+- The horn (meadow round): summit 1400, crest +v 1000 at the back to
+  870 at 42 deg, -v 900 at 42 rising to the notch's 1035; the horn ~365..
+  435 m over the crest round it, ~255 m over the plateau. From (149, -38)
+  the summit is 4351 m off, 17.5 deg up.
+- Collar: centre a 40, radius 520, band 1020..1120.
 - Straight up, full back + Boost from 400 m, no lift (final pass): light
   1376 m at 150 s, the tarn's 1145 at 89 s; medium 1174 m, 1145 at 99 s
   (29 m over, barely); heavy 1100 m at 150 s, never.
-- Couloir by the stick (final pass): medium up 141.3 s, slot ridden
+- Couloir by the stick (meadow round, headless): medium up 143.0 s,
+  slot ridden 26.0 m/s, rim 1088, carried to 1188; down FAILS (not out
+  of the mouth in 66.7 s, no crash). Heavy up FAILS (rim not reached in
+  150 s, slot ridden 12.9 m/s), carried check 1186, down FAILS.
+- Couloir by the stick (final pass, before the horn): medium up 141.3 s, slot ridden
   26.0 m/s, rim 1096 over the sea, carried to 1188, down 39.7 s, ridden
   0; heavy up 144.7 s, rim 1092, carried to 1175.5, down 43.3 s.
 - From the start meadow (149, -38): summit 4210 m off, 15.7 degrees up;
@@ -167,14 +189,15 @@ stick then: medium 136 s, boosted 87 s, heavy 139 / 90. Its driver is
 
 ## Against "What done looks like" (final pass)
 
-1. From the meadow: **partial.** Holds: the Peak stands well above every
-   other hill, 15.7 degrees up; the door's gold cloud is off to one side,
-   nearer and clearly lower. Not yet: the massif reads as a long snowy
-   wall with spires and a darker head in its middle, the head only a
-   little over the crest; the collar shows as a few clumps in front of
-   the head, not a ring; and the middle distance (2 to 4 km, the arms and
-   the glacier's foot) reads as a tan haze bank (`place/meadow.png`).
-   Iteration 8 could not reproduce that bank; this pass's stills show it.
+1. From the meadow (meadow round): **partial.** Holds: one horn owns the
+   skyline, 17.5 degrees up, the crest dropping away from it, the -v
+   shoulder with its spires rising toward it (`meadow2/try1/meadow.png`,
+   `head_on_2k.png`); the tan bank is gone, the distance clear with the
+   land haze's depth (`meadow2/fogclear/meadow.png` against
+   `meadow2/before/meadow.png`; it was the valley fog lying on the start
+   meadow itself). Not yet: the collar shows only as two clumps either
+   side of the horn, its front not drawn from this far (Open). The door
+   was not re-checked against the new summit.
 2. Flying at it: **holds** by eye (glacier, boulder field, icefall, the
    wall with towers on its crest, the head in cloud). The glacier's ice
    streaks show as long rectangular facets up close (`glacier.png`).
@@ -182,10 +205,13 @@ stick then: medium 136 s, boosted 87 s, heavy 139 / 90. Its driver is
    flown line; the lift carries medium and heavy to the rim; flying back
    down rides 0 m/s. The stair is a stand-in (above).
 4. Through the collar: **partial.** Holds: the sky above shows its own
-   hour (16.45 h above, the land's 8.6 h below, by the numbers and by eye:
-   low warm light above); the tarn lies in its bowl with a landable
-   strip. Not met: from above, the collar reads as a cloud band hugging
-   the head's front, not a floor (`sky/final/above.png`). The visibility
+   hour (not re-checked this round); the tarn lies in its bowl over the
+   band; from 300 m over the plateau the collar is a floor all round it
+   (`meadow2/try1/over_plateau_back.png`) and from above a ring round the
+   horn's neck (`meadow2/try1/above.png`). Not met: the floor is one solid
+   sheet with straight stepped edges, no gaps to the land below; the
+   strip's own still (`plateau_out.png`) looks at the cirque's rim, not
+   over it. The visibility
    drop inside it was judged in iteration 6 (a white-out in the slot's
    upper half), not looked at again here.
 5. Landing card and logbook: **holds** for the Peak (landed by hand,
@@ -213,6 +239,20 @@ stick then: medium 136 s, boosted 87 s, heavy 139 / 90. Its driver is
     this pass.
 
 ## Open
+
+- (Meadow round) The collar's part in front of the horn is not drawn
+  from 2 km or the meadow (diff against `--collar=0` empty there), while
+  from 1 km (`meadow2/ring_s330/head_on_near.png`) and above it is a full
+  ring. A ring 700 m round the summit does show in front. So the march
+  loses collar cloud standing within ~200 m in front of terrain at 2+ km.
+  Not the step budget (`--cloud-steps=160` same) nor the resolve's hold
+  (30 frames same). Look at the march's leaps (`clear_ahead`,
+  `ceiling_at`'s margin) and `t_out`/`t_solid` next, with a debug colour.
+- (Meadow round) The couloir driver's down leg (medium and heavy) and
+  heavy's climb now fail; medium's climb and the carry hold. Bisect
+  against `58a113a5`: the ceiling shares, the crest tables, the horn.
+- (Meadow round) Light's longer thin band (ceiling 1520) changes its climb
+  everywhere over 215 m; straight-up numbers not re-measured.
 
 - `scratch/peak_check.gd --part=agree`: collision against `height()` is
   red at its 0.05 m threshold: the rays read the 1 m mesh's linear fill,
