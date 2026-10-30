@@ -75,6 +75,10 @@ furrow; the polish task fixes both (a livelier, taller head that throws
 earth up above the grass, a shorter and broken tail, the wake's froth
 shorter too), and its stills are judged from the chase camera first.
 
+**Orbs spring higher** (the user, for the polish task): an orb springs up
+out of the ground to hang a little above skim height, so taking it means
+easing up off the grass for it, not just holding the skim line.
+
 Judge by eye in rendered stills and short frame sequences (several stills
 across one pass of the trail, `tools/shot.py`), from the chase camera and
 the watch camera. Motion is the point: surge and settle, the earth's
