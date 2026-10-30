@@ -20,19 +20,26 @@ const LOOK_FREE := deg_to_rad(10.0)
 const WAKE_SKIM := 1.2
 const CLIMB_OFF := 5.0
 const CLIMB_HOLD := 1.4
+## In a wood the plane can't skim under the crowns, so high over the ground
+## it stays on the run while within CANOPY_OFF spans over the tallest crown
+## round the head (CANOPY_HEAD m) or the plane (CANOPY_PLANE m), and over a
+## clearing the roof it last had for ROOF_HOLD s (time to drop back in).
+const CANOPY_OFF := 4.0
+const CANOPY_HEAD := 16.0
+const CANOPY_PLANE := 24.0
+const ROOF_HOLD := 3.0
 const RUN := 40.0
 const REST := 6.0
 ## Open ground ahead: these distances along the heading (m) all dry land,
 ## sloping less than OPEN_UP (the normal's up) and rising at most OPEN_RISE
 ## m over the ground under the plane; nothing standing (the land's
 ## `blocked`: rocks, ruins, halls, tunnels) there or OPEN_SIDE m to each
-## side; and fewer than FOREST_N trees in that strip, unless FOREST_OPEN
-## (the forest run, its own task, turns it on). (Water doesn't do yet:
-## task 4.)
+## side. A forest ahead is open: the run goes through it (with FOREST_OPEN
+## false, FOREST_N trees in the strip shut it). (Water doesn't do yet.)
 const OPEN_AT := [0.0,20.0,40.0,60.0,80.0,100.0,120.0,140.0,160.0]
 const OPEN_SIDE := 12.0
 const OPEN_UP := 0.93
-const FOREST_OPEN := false
+const FOREST_OPEN := true
 const FOREST_N := 4
 const OPEN_RISE := 10.0
 
@@ -45,7 +52,9 @@ var _idle := 0
 ## Time to the gate's next look at the land, once shut (s).
 const ASK := 0.2
 var _ask := 0.0
-var rouse := {"skim": 0.0, "rest": 0.0, "high": 0.0, "why": "", "wakes": 0, "dives": 0, "blocked": ""}
+var _roof := -INF
+var _roof_at := -INF
+var rouse := {"skim": 0.0, "rest": 0.0, "high": 0.0, "why": "", "wakes": 0, "dives": 0, "blocked": "", "canopy": 0.0}
 
 static func wanted() -> bool:
 	return not "--no-burrower" in OS.get_cmdline_user_args()
@@ -106,7 +115,7 @@ func _rouse(delta: float, game: Node3D) -> void:
 	if burrower.active and not burrower.diving():
 		rouse.skim = 0.0
 		var span: float = WorldScale.TOY_SPAN*game.ground_scale.size()
-		rouse.high = float(rouse.high)+delta if float(game.near.ground_clear) > span*CLIMB_OFF else 0.0
+		rouse.high = float(rouse.high)+delta if _clear(game) > span*CLIMB_OFF else 0.0
 		var why := ""
 		if not flying: why = "down"
 		elif float(rouse.high) > CLIMB_HOLD: why = "climb"
@@ -132,6 +141,23 @@ func _rouse(delta: float, game: Node3D) -> void:
 	rouse.blocked = blocked
 	if blocked != "": return
 	wake(game)
+
+## The plane's height for the climb-off: over the ground, or in a wood, in
+## the same terms, over the crowns (only asked once high).
+func _clear(game: Node3D) -> float:
+	var clear := float(game.near.ground_clear)
+	var span: float = WorldScale.TOY_SPAN*game.ground_scale.size()
+	if clear <= span*CLIMB_OFF: return clear
+	var p: Vector3 = game.plane.position
+	var top := maxf(land.canopy_top(burrower.pos,CANOPY_HEAD),land.canopy_top(Vector2(p.x,p.z),CANOPY_PLANE))
+	var now := Time.get_ticks_msec()*0.001
+	if top > -INF:
+		_roof = top
+		_roof_at = now
+	elif now-_roof_at < ROOF_HOLD: top = _roof
+	if top == -INF: return clear
+	rouse.canopy = float(rouse.canopy)+1.0
+	return minf(clear,(p.y-top)*CLIMB_OFF/CANOPY_OFF)
 
 ## Up now, leading the plane (a driver's, or the gate's).
 func wake(game: Node3D) -> void:

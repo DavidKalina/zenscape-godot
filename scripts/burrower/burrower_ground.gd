@@ -54,6 +54,21 @@ func open(_at: Vector2) -> bool:
 func wall(_at: Vector2) -> bool:
 	return false
 
+## The stood trees within `r` m of `at`, 4 floats each (x, z, foot y, height),
+## for a land with no tree nodes (`probes`): to weave and to shudder.
+func trees_near(_at: Vector2, _r: float) -> PackedFloat32Array:
+	return PackedFloat32Array()
+
+## The top (world y) of the tallest tree within `r` m of `at`, or -INF: a
+## forest's roof, for a plane skimming it and a push-up rising through it.
+func canopy_top(_at: Vector2, _r: float) -> float:
+	return -INF
+
+## The middle of the thickest stand of trees ahead of `at` along `fwd`
+## (unit), within `most` m (NAN when none).
+func stand_ahead(_at: Vector2, _fwd: Vector2, _most: float) -> Vector2:
+	return Vector2(NAN,NAN)
+
 ## The pond for the dust to fade into (x, z, radius, water y; radius < 0: none).
 func pond_rect() -> Vector4:
 	return Vector4(0.0,0.0,-1.0,0.0)

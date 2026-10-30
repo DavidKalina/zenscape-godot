@@ -80,6 +80,16 @@ const TREE_GOAL := 0.55
 ## A trunk is pushed off only close in: within TRUNK_MARGIN+TRUNK_RAMP m.
 const TRUNK_MARGIN := 2.5
 const TRUNK_RAMP := 4.0
+## A land that `probes` has no list of trees: the trunks in the corridor
+## ahead of the head (TRUNK_SIDE m each side), at most TRUNK_MOST, asked every
+## TRUNK_EVERY s. A stand of trees within WOOD_LOOK m ahead of the plane
+## draws a free run into it (WOOD_TURN rad/s), asked every WOOD_EVERY s.
+const TRUNK_SIDE := 9.0
+const TRUNK_MOST := 14
+const TRUNK_EVERY := 0.12
+const WOOD_LOOK := 260.0
+const WOOD_TURN := 0.7
+const WOOD_EVERY := 0.5
 ## Its surge: speed times 1 + SURGE * a slow noise, and now and then a burst.
 const SURGE := 0.28
 ## Leading the plane: how far ahead (m, a slow noise between) and to the side.
@@ -197,6 +207,10 @@ var _run := 0.0
 var _noise := FastNoiseLite.new()
 var _rng := RandomNumberGenerator.new()
 var _obstacles: Array = []
+var _trunks: Array = []
+var _trunk_ask := 0.0
+var _wood_ask := 0.0
+var _wood_at := Vector2(NAN,NAN)
 var shudder: TreeShudder
 var _samples: Array = []
 var _since_sample := 0.0
@@ -233,6 +247,7 @@ func setup(the_land: Ground, the_react: GrassReact) -> void:
 		_obstacles.append({"at": Vector2(tree.position.x,tree.position.z), "reach": TRUNK, "margin": TRUNK_MARGIN, "ramp": TRUNK_RAMP, "tree": true})
 	shudder = TreeShudder.new()
 	shudder.setup(land)
+	shudder.react = react
 	add_child(shudder)
 	_ridge_mat.shader = RIDGE_SHADER
 	_ridge_mat.set_shader_parameter("life",SCAR_LIFE)
@@ -405,6 +420,37 @@ func _feel(look: float, delta: float) -> Vector2:
 	# Shut every way (a long slope): on as it goes; a wall still sounds it.
 	return Vector2.ZERO
 
+## The trunks it will weave next (a land that `probes`), nearest first.
+func _ask_trunks(look: float, delta: float) -> void:
+	if not land.probes: return
+	_trunk_ask -= delta
+	if _trunk_ask > 0.0: return
+	_trunk_ask = TRUNK_EVERY
+	_trunks.clear()
+	var fw := forward()
+	var t: PackedFloat32Array = land.trees_near(pos+fw*look*0.5,look*0.5+TRUNK_SIDE)
+	var found: Array = []
+	for q in range(0,t.size(),4):
+		var rel := Vector2(t[q],t[q+1])-pos
+		var along := rel.dot(fw)
+		if along < -2.0 or absf(rel.dot(fw.orthogonal())) > TRUNK_SIDE: continue
+		found.append([along,Vector2(t[q],t[q+1])])
+	found.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	for f: Array in found.slice(0,TRUNK_MOST):
+		_trunks.append({"at": f[1], "reach": TRUNK, "margin": TRUNK_MARGIN, "ramp": TRUNK_RAMP, "tree": true})
+	stats.trunks = int(stats.get("trunks",0))+_trunks.size()
+
+## A free run's course bent into a stand of trees ahead of the plane.
+func _into_woods(fwd: Vector2, delta: float) -> void:
+	if not land.probes: return
+	_wood_ask -= delta
+	if _wood_ask <= 0.0:
+		_wood_ask = WOOD_EVERY
+		_wood_at = land.stand_ahead(pos,fwd,WOOD_LOOK)
+	if is_nan(_wood_at.x) or not _trunks.is_empty(): return
+	_course = rotate_toward(_course,(_wood_at-pos).angle(),WOOD_TURN*delta)
+	stats.wood_pull = float(stats.get("wood_pull",0.0))+delta
+
 func _sound(why: String) -> void:
 	_sounding = true
 	stats.soundings = int(stats.soundings)+1
@@ -536,7 +582,7 @@ func tick(delta: float) -> void:
 
 ## Asleep with nothing left of it to move or fade (a host may skip `tick`).
 func settled() -> bool:
-	return not active and _samples.is_empty() and _chunks.is_empty() and _clods.is_empty() 		and _dusts.is_empty() and _sprays.is_empty() and wet_k <= 0.0
+	return not active and _samples.is_empty() and _chunks.is_empty() and _clods.is_empty() 		and _dusts.is_empty() and _sprays.is_empty() and wet_k <= 0.0 and shudder.settled()
 
 func _move(delta: float) -> void:
 	_run += delta
@@ -599,21 +645,23 @@ func _move(delta: float) -> void:
 	var look := maxf(LOOK_M,speed*LOOK_S)
 	var ahead_at := pos+forward()*look
 	var nearest := INF
-	for o: Dictionary in _obstacles:
-		var r := float(o.reach)+float(o.get("margin",MARGIN))
-		var ramp := float(o.get("ramp",12.0))
-		for probe: Vector2 in [pos,pos+forward()*look*0.5,ahead_at]:
-			var d := probe.distance_to(o.at)
-			nearest = minf(nearest,pos.distance_to(o.at)-float(o.reach))
-			if d < r+ramp:
-				var away := (probe-(o.at as Vector2)).normalized()
-				# Round the side it is already going (leading: the side its
-				# slot lies, so a rock doesn't carry it off the plane's way).
-				var tang := Vector2(-away.y,away.x)
-				var lean := (_goal-pos).normalized() if mode == &"lead" and _plane != null else forward()
-				if tang.dot(lean) < 0.0: tang = -tang
-				var w := clampf(1.0-(d-r)/ramp,0.0,1.6)
-				dir += (away*0.9+tang*0.6)*w*1.8
+	_ask_trunks(look,delta)
+	for list: Array in [_obstacles,_trunks]:
+		for o: Dictionary in list:
+			var r := float(o.reach)+float(o.get("margin",MARGIN))
+			var ramp := float(o.get("ramp",12.0))
+			for probe: Vector2 in [pos,pos+forward()*look*0.5,ahead_at]:
+				var d := probe.distance_to(o.at)
+				nearest = minf(nearest,pos.distance_to(o.at)-float(o.reach))
+				if d < r+ramp:
+					var away := (probe-(o.at as Vector2)).normalized()
+					# Round the side it is already going (leading: the side its
+					# slot lies, so a rock doesn't carry it off the plane's way).
+					var tang := Vector2(-away.y,away.x)
+					var lean := (_goal-pos).normalized() if mode == &"lead" and _plane != null else forward()
+					if tang.dot(lean) < 0.0: tang = -tang
+					var w := clampf(1.0-(d-r)/ramp,0.0,1.6)
+					dir += (away*0.9+tang*0.6)*w*1.8
 	stats.nearest = minf(float(stats.nearest),nearest)
 	dir += _feel(look,delta)
 	# (Coming in it keeps its intercept unless right at the edge.)
@@ -713,6 +761,7 @@ func _run_on(delta: float, surge: float) -> float:
 	else:
 		# Its own way: a slow wander...
 		_course += WANDER*clampf(2.0*_noise.get_noise_1d(time*0.25+400.0),-1.0,1.0)*delta
+		_into_woods(fwd,delta)
 		var cv := Vector2.from_angle(_course)
 		var out: Vector2 = -land.inward(pos)
 		var room: float = land.room(pos)

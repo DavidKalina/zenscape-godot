@@ -5,7 +5,9 @@ extends "res://scripts/burrower/burrower_ground.gd"
 ## ahead with `open` (steep ground, and the game's rocks, sea stacks, arches,
 ## ruins, halls and tunnels; not trees, it runs through a forest), and `room` is
 ## 0 where it can't run (so a start, a resurfacing or a push-up there is
-## passed over) and ROOM elsewhere.
+## passed over) and ROOM elsewhere. Trees are asked of the game's own stand
+## near the head (`trees_near`, `canopy_top`, `stand_ahead`): it has no nodes
+## for them, so `trees` stays empty.
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const TreePlan = preload("res://scripts/endless/tree_plan.gd")
@@ -20,6 +22,10 @@ const RUN_UP := 0.88
 const WALL_UP := 0.76
 const PROBE_UP := 1.5
 const ROOM := 1000.0
+## A stand worth running for: a plan cell with at least STAND_N trees, within
+## acos(STAND_COS) of the way it looks.
+const STAND_N := 12
+const STAND_COS := 0.6
 
 func _init() -> void:
 	name = "BurrowerGround"
@@ -55,19 +61,18 @@ func wall(at: Vector2) -> bool:
 
 ## Something standing at (x, z) a little over `y` (the ground or water
 ## there): a rock or sea stack, an arch's leg, a hall, a tunnel's mouth (as
-## the game's `_blocked`, less trees: a run goes through a forest, spec
-## "Through the forest"; weaving its trunks is that task's).
+## the game's `_blocked`, less trees: a run goes through a forest).
 func blocked(at: Vector2, y: float) -> bool:
 	var p := Vector3(at.x,y+PROBE_UP,at.y)
 	return game.arches.inside(p) or game.rocks.inside(p) or game.halls.inside(p) or game.tunnels.inside(p)
 
-## Under a tree's crown at (x, z) (the wake gate's forest test).
+## Under a tree's crown at (x, z).
 func wooded(at: Vector2, y: float) -> bool:
 	return game.trees.inside(Vector3(at.x,y+PROBE_UP,at.y))
 
 ## How many standing trees lie in the strip `half` m to each side of the
 ## line from `at` along `fwd` (unit) for `length` m (the wake gate's forest
-## test: the trees the game has stood, near the plane).
+## test, when it counts them: the trees the game has stood, near the plane).
 func trees_along(at: Vector2, fwd: Vector2, length: float, half: float) -> int:
 	var end := at+fwd*length
 	var lo := TreePlan.cell_of(minf(at.x,end.x)-half,minf(at.y,end.y)-half)
@@ -83,6 +88,63 @@ func trees_along(at: Vector2, fwd: Vector2, length: float, half: float) -> int:
 				if along < 0.0 or along > length: continue
 				if absf(rel.dot(fwd.orthogonal())) <= half+t[q+6]: n += 1
 	return n
+
+## The stood cells' arrays over the square `r` m round `at`.
+func _cells_round(at: Vector2, r: float) -> Array:
+	var lo := TreePlan.cell_of(at.x-r,at.y-r)
+	var hi := TreePlan.cell_of(at.x+r,at.y+r)
+	var out := []
+	for cz in range(lo.y,hi.y+1):
+		for cx in range(lo.x,hi.x+1):
+			var t: PackedFloat32Array = game.trees.cell_trees(Vector2i(cx,cz))
+			if not t.is_empty(): out.append(t)
+	return out
+
+func trees_near(at: Vector2, r: float) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	var r2 := r*r
+	for t: PackedFloat32Array in _cells_round(at,r):
+		for q in range(0,t.size(),8):
+			if t[q+3] <= 0.0: continue
+			var ox := t[q]-at.x
+			var oz := t[q+1]-at.y
+			if ox*ox+oz*oz > r2: continue
+			out.append(t[q])
+			out.append(t[q+1])
+			out.append(t[q+2])
+			out.append(t[q+3])
+	return out
+
+func canopy_top(at: Vector2, r: float) -> float:
+	var top := -INF
+	var r2 := r*r
+	for t: PackedFloat32Array in _cells_round(at,r):
+		for q in range(0,t.size(),8):
+			if t[q+3] <= 0.0: continue
+			var ox := t[q]-at.x
+			var oz := t[q+1]-at.y
+			if ox*ox+oz*oz <= r2: top = maxf(top,t[q+2]+t[q+3])
+	return top
+
+func stand_ahead(at: Vector2, fwd: Vector2, most: float) -> Vector2:
+	var best := Vector2(NAN,NAN)
+	var score := 0.0
+	var lo := TreePlan.cell_of(at.x-most,at.y-most)
+	var hi := TreePlan.cell_of(at.x+most,at.y+most)
+	for cz in range(lo.y,hi.y+1):
+		for cx in range(lo.x,hi.x+1):
+			var t: PackedFloat32Array = game.trees.cell_trees(Vector2i(cx,cz))
+			var n := t.size()/8
+			if n < STAND_N: continue
+			var mid := (Vector2(cx,cz)+Vector2(0.5,0.5))*TreePlan.CELL
+			var to := mid-at
+			var d := to.length()
+			if d > most or to.dot(fwd) < d*STAND_COS: continue
+			var s := float(n)*(1.0-0.5*d/most)
+			if s > score and open(mid):
+				score = s
+				best = mid
+	return best
 
 func room(at: Vector2) -> float:
 	return ROOM if open(at) else 0.0

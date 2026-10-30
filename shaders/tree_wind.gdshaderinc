@@ -41,6 +41,10 @@ const float ZS_TREE_SWAY_SWING = 0.7;
 // takes, in zs_breeze_lean_at's units: a full eddy band bends a 15 m top
 // about 2 m, springing back as the grass does.
 const float ZS_TREE_REACT = 0.4;
+// The fast shake of a crown stirred full (a share of the model's height).
+const float ZS_TREE_SHIVER = 0.03;
+// How much further a crown goes for a hard shove (a push over about 1).
+const float ZS_TREE_HARD = 0.9;
 
 float zs_tree_hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -83,7 +87,9 @@ vec2 zs_tree_react(vec2 root, out float stir) {
 	if (alive <= 0.0 || !zs_react_live()) return vec2(0.0);
 	vec3 r = zs_react_at(root);
 	stir = clamp(length(r.xy) * 0.8 + max(r.z, 0.0) * 0.4, 0.0, 1.0) * min(alive, 1.0);
-	return r.xy * ZS_TREE_REACT * alive;
+	// Shoved hard (more than the wind's bands do) it goes over further.
+	float hard = 1.0 + ZS_TREE_HARD * smoothstep(0.7, 1.2, length(r.xy));
+	return r.xy * ZS_TREE_REACT * alive * hard;
 }
 
 // A bough's own motion, as an offset in the tree's model space: each bough

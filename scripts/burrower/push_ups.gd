@@ -40,6 +40,8 @@ const SOIL_SHADER = preload("res://shaders/burrower_soil.gdshader")
 
 ## Timing (s): between push-ups (random in GAP).
 const GAP := Vector2(1.5,2.8)
+## A tree within ROOF_R m of a push-up's spot lifts it to the crowns' top.
+const ROOF_R := 8.0
 ## The kinds: their hang height over the ground (the orb's middle, the bell's
 ## pivot, the gong frame's foot: 0), where the push starts under it, the
 ## push's speed (m/s), spring and damping, the dome (across, along the
@@ -284,6 +286,13 @@ func push(at: Vector2, kind := &"orb", face := Vector2(0.0,1.0)) -> Dictionary:
 	var sea: float = land.water_y(at.x,at.y)
 	var wet := ground < sea-0.15
 	var base := maxf(ground,sea)
+	# In a wood it comes up through the crowns: over their top, nothing on
+	# the ground to see, the crowns round it shaken.
+	var roof: float = land.canopy_top(at,ROOF_R)
+	var crowned := roof > base
+	if crowned:
+		base = roof
+		burrower.shudder.shove(at,ROOF_R*2.0)
 	var n := Vector3(face.x,0.0,face.y).normalized() if face.length() > 0.01 else Vector3.BACK
 	var turn := Basis(Vector3.UP.cross(n),Vector3.UP,n)
 	var o := {"kind": kind, "k": k, "at": at, "base": base, "wet": wet, "phase": &"swell", "t": 0.0,
@@ -308,6 +317,7 @@ func push(at: Vector2, kind := &"orb", face := Vector2(0.0,1.0)) -> Dictionary:
 		sm.set_shader_parameter("dry",0.35)
 		m = sm
 	dome.material_override = m
+	dome.visible = not crowned
 	add_child(dome)
 	o.dome = dome
 	o.dome_mat = m
@@ -613,8 +623,6 @@ func _room(at: Vector2, k: Dictionary) -> String:
 		var r := float(k.room)*0.7
 		for off: Vector2 in [Vector2(r,0.0),Vector2(-r,0.0),Vector2(0.0,r),Vector2(0.0,-r)]:
 			if not land.open(at+off): return "rock"
-		# (A crown over it: the forest run, its own task, lifts these over.)
-		if land.has_method("wooded") and land.wooded(at,land.height(at.x,at.y)): return "tree"
 	return ""
 
 func _skip(why: String) -> void:
