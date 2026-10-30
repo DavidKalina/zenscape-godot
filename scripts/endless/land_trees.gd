@@ -1075,7 +1075,12 @@ func _commit(done: Dictionary) -> void:
 			batch.visibility_range_end_margin = NEAR_MARGIN
 			batch.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED if family and _rings else GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 			holder.add_child(batch)
-	if int(done.n) > 0 and sprites != null:
+	var grouped := {}
+	if int(done.n) > 0 and sprites != null and _sprite_groups:
+		for v in done.near.size():
+			var slot: Array = done.near[v]
+			if int(slot[2]) > 0: grouped[v] = [slot[1],int(slot[2])]
+	elif int(done.n) > 0 and sprites != null:
 		for v in done.near.size():
 			var slot: Array = done.near[v]
 			if int(slot[2]) == 0: continue
@@ -1102,7 +1107,8 @@ func _commit(done: Dictionary) -> void:
 			holder.add_child(shade)
 	if not (done.floor as Dictionary).is_empty(): holder.add_child(_floor_node(done.floor,_near_floor))
 	add_child(holder)
-	_blocks[key] = {"node":holder,"cells":done.cells,"n":int(done.n),"tiles":done.get("tiles",{})}
+	_blocks[key] = {"node":holder,"cells":done.cells,"n":int(done.n),"tiles":done.get("tiles",{}),"sprites":grouped,"sprite_at":{}}
+	if not grouped.is_empty(): _regroup(_group_of(key))
 	if not knocked.is_empty():
 		var here := _knocked_in(key.x*BLOCK,key.y*BLOCK,BLOCK)
 		if not here.is_empty(): _hide_block(key,here,{})
@@ -1140,8 +1146,76 @@ func _free_block(key: Vector2i) -> void:
 			(_bodies[ck] as Node).queue_free()
 			_bodies.erase(ck)
 			_filling.erase(ck)
+	var regroup := not (b.get("sprites",{}) as Dictionary).is_empty()
 	_blocks.erase(key)
 	stats.blocks = _blocks.size()
+	if regroup: _regroup(_group_of(key))
+
+## The near trees' sprites drawn a batch a variant for SPRITE_GROUP x
+## SPRITE_GROUP blocks, not one a block: they draw opaque (alpha scissor)
+## with no distance range, so a bigger batch draws the same; a quarter of
+## the nodes. --tree-sprite-groups=0 keeps a batch a block, as before.
+const SPRITE_GROUP := 2
+var _sprite_groups := not "--tree-sprite-groups=0" in LaunchArgs.user_args()
+var _groups := {}               # Vector3i (group x, z, variant) -> MultiMeshInstance3D
+
+func _group_of(key: Vector2i) -> Vector2i:
+	return Vector2i(floori(float(key.x)/SPRITE_GROUP),floori(float(key.y)/SPRITE_GROUP))
+
+## Group `g`'s sprite batches made again from its blocks' buffers (each
+## block's offset in them kept in its `sprite_at`, for knocking down).
+func _regroup(g: Vector2i) -> void:
+	var by_v := {}
+	for dz in SPRITE_GROUP:
+		for dx in SPRITE_GROUP:
+			var bkey := g*SPRITE_GROUP+Vector2i(dx,dz)
+			if not _blocks.has(bkey): continue
+			var b: Dictionary = _blocks[bkey]
+			var own: Dictionary = b.get("sprites",{})
+			for v: int in own:
+				if not by_v.has(v): by_v[v] = [PackedFloat32Array(),0]
+				var e: Array = by_v[v]
+				(b.sprite_at as Dictionary)[v] = int(e[1])
+				e[0].append_array(own[v][0])
+				e[1] = int(e[1])+int(own[v][1])
+	for v in sprites.materials.size():
+		var gk := Vector3i(g.x,g.y,v)
+		var had: MultiMeshInstance3D = _groups.get(gk)
+		if not by_v.has(v):
+			if had != null:
+				had.queue_free()
+				_groups.erase(gk)
+			continue
+		var e: Array = by_v[v]
+		if had == null:
+			had = _batch(sprites.quad,e[0],int(e[1]),sprites.materials[v])
+			had.name = "Sprites_%d_%d_%d" % [g.x,g.y,v]
+			had.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			# The quads stand up from each foot (the batch's bounds are the feet).
+			had.extra_cull_margin = sprites.size*3.0
+			add_child(had)
+			_groups[gk] = had
+		else:
+			had.multimesh.instance_count = int(e[1])
+			had.multimesh.buffer = e[0]
+
+## Block `bkey`'s variant `v` sprite `i` shrunk to nothing at `at`: in its
+## group's batch and in the block's own buffer (the group is made again from it).
+func _shrink_sprite(bkey: Vector2i, v: int, i: int, at: Vector3) -> void:
+	var b: Dictionary = _blocks[bkey]
+	var own: Dictionary = b.get("sprites",{})
+	if not own.has(v) or i < 0 or i >= int(own[v][1]): return
+	var buf: PackedFloat32Array = own[v][0]
+	var stride := buf.size()/int(own[v][1])
+	var q := i*stride
+	for k: int in [0,1,2,4,5,6,8,9,10]: buf[q+k] = 0.0
+	buf[q+3] = at.x
+	buf[q+7] = at.y
+	buf[q+11] = at.z
+	own[v][0] = buf
+	var g := _group_of(bkey)
+	var batch: Variant = _groups.get(Vector3i(g.x,g.y,v))
+	if batch != null: _shrink(batch,int((b.sprite_at as Dictionary).get(v,0))+i,at,"Sprite")
 
 # --- The solid -----------------------------------------------------------------
 
@@ -1265,13 +1339,29 @@ func _fill(body: StaticBody3D, cell: Dictionary, from: int, began: int) -> int:
 		points.append(Vector3(0.0,top,0.0))
 		var shape := ConvexPolygonShape3D.new()
 		shape.points = points
-		var cs := CollisionShape3D.new()
-		cs.shape = shape
-		cs.position = Vector3(solid[q],solid[q+2],solid[q+1])
-		cs.name = "T%d" % t
-		body.add_child(cs)
+		if _shape_nodes:
+			var cs := CollisionShape3D.new()
+			cs.shape = shape
+			cs.position = Vector3(solid[q],solid[q+2],solid[q+1])
+			cs.name = "T%d" % t
+			body.add_child(cs)
+		else:
+			# On the body through the physics server, no node a tree: the
+			# shape kept in the body's meta (a shape freed leaves the body),
+			# its index by the tree's (`_hide_block` disables it).
+			var shapes: Array = body.get_meta("shapes",[])
+			var index: Dictionary = body.get_meta("index",{})
+			index[t] = shapes.size()
+			shapes.append(shape)
+			body.set_meta("shapes",shapes)
+			body.set_meta("index",index)
+			PhysicsServer3D.body_add_shape(body.get_rid(),shape.get_rid(),Transform3D(Basis.IDENTITY,Vector3(solid[q],solid[q+2],solid[q+1])))
 		t += 1
 	return t
+
+## A tree's collider is a CollisionShape3D node ("T<tree>"), as before
+## (--tree-shape-nodes); else a shape on its cell's body through the server.
+var _shape_nodes := "--tree-shape-nodes" in LaunchArgs.user_args()
 
 # --- Knocked down (scripts/endless/tree_knock.gd) ---------------------------------
 
@@ -1383,17 +1473,21 @@ func _hide_block(bkey: Vector2i, keys: Dictionary, out: Dictionary) -> void:
 			solid[q+7] = 1.0
 			changed = true
 			if _bodies.has(ck):
-				var cs := (_bodies[ck] as Node).get_node_or_null("T%d" % t)
+				var body := _bodies[ck] as StaticBody3D
+				var cs := body.get_node_or_null("T%d" % t)
 				if cs != null:
 					# Out of the physics space now, not at the frame's end.
 					cs.get_parent().remove_child(cs)
 					cs.queue_free()
+				var index: Dictionary = body.get_meta("index",{})
+				if index.has(t): PhysicsServer3D.body_set_shape_disabled(body.get_rid(),int(index[t]),true)
 			if slots.size() < (t+1)*3: continue
 			var v := slots[t*3]
 			var vi := slots[t*3+1]
 			var bi := slots[t*3+2]
 			for part: String in ["Trunk","Crown","Sprite"]:
 				_shrink(holder.get_node_or_null("Spruce%d%s" % [v,part]),vi,foot,part)
+			if not (b.get("sprites",{}) as Dictionary).is_empty(): _shrink_sprite(bkey,v,vi,foot)
 			for part: String in ["Mid","Shade"]:
 				_shrink(holder.get_node_or_null(part),bi,foot,part)
 			if out.has("variant") and int(out.variant) < 0:
