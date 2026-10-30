@@ -30,7 +30,6 @@ const LandHalls = preload("res://scripts/endless/land_halls.gd")
 const RockShape = preload("res://scripts/endless/rock_shape.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
-const Spires = preload("res://scripts/endless/rocks/peak_spires.gd")
 
 const REACH := 2600.0
 ## The Peak's cells (its spires, RockPlan ON_PEAK) stream within PEAK_REACH:
@@ -81,7 +80,9 @@ func setup(land_seed: int, ground: Material = null, peak: RefCounted = null) -> 
 	for k: String in Plan.ON_PEAK:
 		if peak == null: densities[k] = 0.0
 		elif float(densities.get(k,0.0)) > 0.0: peaked = true
-	if peaked: peak_cells = Spires.cells(peak)
+	if peaked:
+		for k: String in Plan.ON_PEAK:
+			if float(densities.get(k,0.0)) > 0.0: peak_cells.merge((Plan.KINDS[k] as Script).call("cells",peak))
 	on = Plan.any(densities)
 	_peak_only = peaked
 	for k: String in Plan.KINDS:

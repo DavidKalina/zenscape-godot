@@ -611,7 +611,9 @@ func world(a: float, v := 0.0) -> Vector2:
 func paint() -> Dictionary:
 	return {"peak_frame":Vector4(centre.x,centre.y,facing.x,facing.y),"peak_zone":Vector4(_o.x,_o.y,BOUND,1.0),
 		"peak_snow":SNOW_LINE,"peak_stretch":Vector4(ICEFALL.x,ICEFALL.y,GLACIER.x,GLACIER.y),"peak_half":FLOOR_HALF,
-		"peak_bend":Vector4(GL_BEND,GL_TURNS,BOULDERS.x,TOE.y)}
+		"peak_bend":Vector4(GL_BEND,GL_TURNS,BOULDERS.x,TOE.y),
+		"peak_cirque":Vector4(CIRQUE_R,_cq_ph.x,_cq_ph.y,_cq_ph.z),"peak_cirque_lobes":Vector4(CIRQUE_LOBES.x,CIRQUE_LOBES.y,CIRQUE_LOBES.z,RIM.z),
+		"peak_cirque_strip":Vector4(STRIP.x,STRIP.z+10.0,STRIP.z+40.0,1.0 if _cirque else 0.0)}
 
 ## The tarn's bowl: {centre (world, at the water level), level (world y),
 ## wet (the water's radius at that level), bowl (the bowl's radius), shore
@@ -632,6 +634,17 @@ func tarn() -> Dictionary:
 func tarn_meets(x0: float, z0: float, x1: float, z1: float) -> bool:
 	var far := _tarn_wet+Ponds.REACH
 	return pond[0]+far >= x0 and pond[0]-far <= x1 and pond[1]+far >= z0 and pond[1]-far <= z1
+
+## Where world XZ (x, z) lies on the cirque: Vector4(s, tn, a, v): its
+## distance over the cirque's lobed outline (1 on the rim's line), over the
+## tarn's bowl's (1 at the bowl's edge), and its (a, v) in the massif's
+## frame. --cirque=0: s and tn are INF (no cirque to dress).
+func cirque_at(x: float, z: float) -> Vector4:
+	var rel := Vector2(x,z)-centre
+	var a := rel.dot(facing)
+	var v := rel.dot(side)
+	if not _cirque: return Vector4(INF,INF,a,v)
+	return Vector4(sqrt(a*a+v*v)/_cq_r(atan2(v,a)),_tarn_n(a,v),a,v)
 
 ## Whether a world point stands on the summit plateau (inside its blend, no
 ## lower than PLATEAU_UNDER m under its flat): where a landing is on the Peak.
@@ -839,8 +852,7 @@ func _h(a: float, v: float) -> Vector3:
 func _cirq(a: float, v: float, h: float) -> Vector2:
 	var rho := sqrt(a*a+v*v)
 	var phi := atan2(v,a)
-	var rr := CIRQUE_R*(1.0+CIRQUE_LOBES.x*sin(2.0*phi+_cq_ph.x)+CIRQUE_LOBES.y*sin(3.0*phi+_cq_ph.y)+CIRQUE_LOBES.z*sin(5.0*phi+_cq_ph.z))
-	var s := rho/rr
+	var s := rho/_cq_r(phi)
 	# The head's side: 1 on the axis toward the head, 0 square across.
 	var hd := smoothstep(0.25,0.75,a/maxf(rho,1.0))
 	var wf := 1.0-smoothstep(CIRQUE_OUT.x,CIRQUE_OUT.y,s)
@@ -848,11 +860,7 @@ func _cirq(a: float, v: float, h: float) -> Vector2:
 	var w := maxf(wf,wh)
 	if w <= 0.0: return Vector2(h,0.0)
 	# The tarn's bowl, on the water's lobed outline.
-	var ta := a-_tarn_c.x
-	var tv := v-_tarn_c.y
-	var rt := sqrt(ta*ta+tv*tv)
-	var tw := facing*ta+side*tv
-	var tn := rt/(TARN_BOWL*Ponds.edge_at(pond,atan2(tw.y,tw.x))/pond[2])
+	var tn := _tarn_n(a,v)
 	# The strip: its distance from the strip's line, and its runout lane.
 	var sd := Vector2(a-STRIP.x,maxf(absf(v)-STRIP.y,0.0)).length()
 	var flat := 1.0-smoothstep(STRIP.z,STRIP.z+STRIP.w,sd)
@@ -876,6 +884,19 @@ func _cirq(a: float, v: float, h: float) -> Vector2:
 	# Never under the head (or the land) on its side, past the strip.
 	if wh > 0.0: out = lerpf(out,maxf(h,lerpf(h,hp,w)),hd*smoothstep(0.0,40.0,up))
 	return Vector2(out,w)
+
+## The cirque's lobed outline's radius at angle `phi` round the plateau's
+## centre (atan2(v, a)).
+func _cq_r(phi: float) -> float:
+	return CIRQUE_R*(1.0+CIRQUE_LOBES.x*sin(2.0*phi+_cq_ph.x)+CIRQUE_LOBES.y*sin(3.0*phi+_cq_ph.y)+CIRQUE_LOBES.z*sin(5.0*phi+_cq_ph.z))
+
+## (a, v)'s distance from the tarn's centre over its bowl's lobed outline
+## (1 at the bowl's edge).
+func _tarn_n(a: float, v: float) -> float:
+	var ta := a-_tarn_c.x
+	var tv := v-_tarn_c.y
+	var tw := facing*ta+side*tv
+	return sqrt(ta*ta+tv*tv)/(TARN_BOWL*Ponds.edge_at(pond,atan2(tw.y,tw.x))/pond[2])
 
 ## The approach valley at (a, v): Vector2(height over the sea, cut).
 func _valley(a: float, v: float, n: float) -> Vector2:

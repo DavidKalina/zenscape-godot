@@ -18,7 +18,8 @@ extends RefCounted
 ## `kind:X` for X, `all`), --stacks=X, --hoodoos=X, --no-rocks. In a world
 ## of regions each group keeps to its region's layer (`_region_takes`),
 ## unless a flag set that kind for the whole world. The Peak's kinds
-## (ON_PEAK) are on at 1 in every world (--spires=0 takes them off).
+## (ON_PEAK) are on at 1 in every world (--spires=0, --boulders=0 take them
+## off).
 
 const ArchPlan = preload("res://scripts/endless/arch_plan.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
@@ -29,11 +30,12 @@ const KINDS := {
 	"stacks":preload("res://scripts/endless/rocks/sea_stacks.gd"),
 	"hoodoos":preload("res://scripts/endless/rocks/hoodoos.gd"),
 	"spires":preload("res://scripts/endless/rocks/peak_spires.gd"),
+	"boulders":preload("res://scripts/endless/rocks/peak_boulders.gd"),
 }
 ## Kinds that stand on the Peak's massif only (planned on its cells alone,
-## kept off nothing else, on in every world while the Peak is: --spires=0
-## or --no-rocks takes them off).
-const ON_PEAK := ["spires"]
+## kept off nothing else, on in every world while the Peak is: --spires=0,
+## --boulders=0 or --no-rocks takes them off).
+const ON_PEAK := ["spires","boulders"]
 ## The world cell (m): the arches' own, so the trees' planner reads both
 ## with one cache.
 const CELL := ArchPlan.CELL

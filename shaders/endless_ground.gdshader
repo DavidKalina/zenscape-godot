@@ -150,6 +150,12 @@ uniform float peak_snow = 500.0;
 uniform vec4 peak_stretch = vec4(850.0, 1250.0, 2050.0, 4050.0);
 uniform vec4 peak_half = vec4(200.0, 240.0, 260.0, 330.0);
 uniform vec4 peak_bend = vec4(170.0, 2.2, 1250.0, 4500.0);
+// The cirque on the plateau (PeakMassif CIRQUE_R, its lobes' phases; the
+// lobes' shares and the rim's half-width in `s`; the strip's a, the rim's
+// gap round it (from, to) and w 0: no cirque): `peak_rim`.
+uniform vec4 peak_cirque = vec4(165.0, 0.0, 0.0, 0.0);
+uniform vec4 peak_cirque_lobes = vec4(0.07, 0.09, 0.04, 0.16);
+uniform vec4 peak_cirque_strip = vec4(80.0, 32.0, 62.0, 0.0);
 uniform vec3 carpet_tone_top = vec3(1.0);
 uniform vec3 carpet_tone_low = vec3(1.0);
 // A world's tone over the turf's own colour wherever tufts stand (the carpet's tone takes over past them; 1: none).
@@ -680,6 +686,29 @@ vec4 peak_paint(vec3 p) {
 	return vec4(zone, (icefall + glacier) * floor_on * zone, scree * floor_on * zone, across);
 }
 
+// How much of the cirque's rim (PeakMassif._cirq) stands at `p`: 1 on the
+// rim's line, 0 past its half-width inside and past its crest outside, none on the head's side or in the gap
+// the strip runs out through.
+float peak_rim(vec3 p) {
+	if (peak_zone.w < 0.5 || peak_cirque_strip.w < 0.5) return 0.0;
+	vec2 rel = p.xz - peak_frame.xy;
+	vec2 f = peak_frame.zw;
+	float a = dot(rel, f);
+	float v = dot(rel, vec2(-f.y, f.x));
+	float rho = length(vec2(a, v));
+	if (rho > peak_cirque.x * 1.6) return 0.0;
+	float phi = atan(v, a);
+	float rr = peak_cirque.x * (1.0 + peak_cirque_lobes.x * sin(2.0 * phi + peak_cirque.y)
+		+ peak_cirque_lobes.y * sin(3.0 * phi + peak_cirque.z) + peak_cirque_lobes.z * sin(5.0 * phi + peak_cirque.w));
+	float s = rho / rr;
+	float hd = smoothstep(0.25, 0.75, a / max(rho, 1.0));
+	float lane = 1.0 - smoothstep(peak_cirque_strip.y, peak_cirque_strip.z, abs(a - peak_cirque_strip.x));
+	// Inside, out to the rim's foot; outside, only its crest (the cirque
+	// blends out to the falls from 1.08, which keep the massif's paint).
+	float bump = s < 1.0 ? max(1.0 - (1.0 - s) / (peak_cirque_lobes.w * 1.3), 0.0) : 1.0 - smoothstep(1.02, 1.09, s);
+	return smoothstep(0.0, 0.5, bump) * (1.0 - hd) * (1.0 - lane);
+}
+
 void fragment() {
 	vec3 p = world_position;
 	// The paint's tones: this spot's regions' in a world of regions, else the material's.
@@ -793,6 +822,15 @@ void fragment() {
 		float pk_snowy = smoothstep(pk_line - 20.0, pk_line + 4.0, over + pk_edge)
 			* smoothstep(mix(0.58, 0.40, high), mix(0.68, 0.52, high), n.y + rock_edge);
 		snowy = mix(snowy, pk_snowy, pk.x) * (1.0 - max(pk.y, pk.z));
+		// The cirque's rim: granite on its slopes, snow on its flatter
+		// tops and in its hollows, ragged.
+		float rim = peak_rim(p);
+		if (rim > 0.0) {
+			float bare = rim * (1.0 - smoothstep(0.86, 0.95, n.y + rock_edge + (zs_noise(gxz / 13.0) - 0.5) * 0.14));
+			rocky = max(rocky, bare);
+			snowy *= 1.0 - bare;
+			pk_rock = max(pk_rock, rim);
+		}
 	}
 	// None of the grass shows where sand, a bank or snow covers the ground
 	// whole and no rock (whose ledges and moss take its colour), so its paint
