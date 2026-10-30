@@ -12,10 +12,20 @@ extends RefCounted
 ##               its shoulder sloping, a fin of two big planes.
 ##   gullies     a corner pulled in over a span of height: a V cut.
 ## On those planes: the beds (`strata`, one geology for the whole crown, tilted,
-## the same bed at the same height on each tower), blocks along each bed, joints
-## drawn out up the wall and a little warp. The arêtes chip, bed by bed. The
-## top is a cap of rings closing on a broken surface (`_top`: snapped at a
-## tilt, stepped, a cleft through it), never flat.
+## the same bed at the same height on each tower). They are uneven on purpose:
+## massive cliffs, sets of thin ribbons, long dull stretches where they barely
+## show. Each bed pinches out along the wall, each of the 12 panels stands a few
+## metres off its neighbour (a fault at each corner) and joints cut up through
+## them, so no line runs round a tower. A setback's ledge breaks the same way:
+## along the wall it wanders and goes from a shelf to a steep ramp (`_ledge`).
+## The arêtes chip, bed by bed. The top is a cap of rings closing on a broken
+## surface (`_top`: snapped at a tilt, stepped, a cleft through it), never flat.
+##
+## What it gives the paint, past the shape: the land's paint lays snow by the
+## vertex normal's height (endless_ground, `snowy`), so `_hold_snow` writes it:
+## where the snow won't hold, a shelf's normal lies down to a wall's, and in the
+## gullies' streaks a wall's stands up to a shelf's. The geometry stays true;
+## only the paint reads these. CUSTOM3's g and b take the beds (`_paint_beds`).
 ##
 ## Levels: the skin is rows x columns, rows and columns multiples of EDGE with
 ## every corner on a multiple of EDGE columns, so strides 1, 2, 4, 8 and 16
@@ -64,17 +74,39 @@ const BUTTRESS_END := Vector2(0.28,0.72)
 const GULLY := Vector2i(2,4)
 const GULLY_IN := Vector2(0.14,0.3)
 ## The detail, m at a girth of 100 m.
-const BED_AMP := 4.5
-const BLOCK_AMP := 2.2
-const CHIP_AMP := 7.0
+const BED_AMP := 6.0
+const BLOCK_AMP := 2.6
+const CHIP_AMP := 6.0
 const JOINT_AMP := 1.2
 const WARP_AMP := 2.4
-## The small blocks (m, whatever the girth): their height, width and push,
-## and how far the cracks round them sink.
-const STONE := Vector3(7.0,11.0,0.6)
-const CRACK := 0.45
-## The top: its share of the height and how far down the walls it reaches.
+## A bed's pinch along the wall: the span of its noise (m), least and most.
+const PINCH_SPAN := Vector2(70.0,190.0)
+## The beds' fold across the crown (m, span m) and each panel's fault (m).
+const FOLD := Vector2(16.0,420.0)
+const FAULT := 22.0
+## The joints: the columns over JOINT_ODDS (a hash, -1..1), this deep (m at a
+## girth of 100 m) over spans of this height (m).
+const JOINT_CUT := 4.0
+const JOINT_ODDS := 0.72
+const JOINT_SPAN := 120.0
+## A ledge's break: how far a block stands off it (share of the height), the
+## blocks' length along the wall (m, about), the hash a block goes steep over
+## and the steep ramp's height (share of the height).
+const LEDGE_WANDER := 0.014
+const LEDGE_SPAN := 52.0
+const LEDGE_ODDS := -0.25
+const LEDGE_RAMP := 0.13
+## The snow's hold: the normals' height a shelf lies down to where it won't
+## hold, and a gully's streak stands up to.
+const SNOW_OFF := 0.3
+const SNOW_ON := 0.66
+## How far the beds push the paint's shape, g and b (of 255).
+const BAND_G := 36.0
+const BAND_B := 80.0
+## The top: its share of the height, the least of it (share of the girth, so a
+## shorter tower's top still reads broken) and how far down the walls it reaches.
 const CAP := Vector2(0.07,0.11)
+const CAP_GIRTH := Vector2(0.8,1.2)
 const CAP_REACH := 1.6
 ## The flight's solid: slices this far apart, directions a slice, read
 ## off every SOLID_STRIDE-th column.
@@ -86,7 +118,9 @@ const STRATA_LOW := -100.0
 const STRATA_SPAN := 2400
 
 ## The crown's one geology: {hard (per m, -1 soft .. 1 hard), bed (per m,
-## its bed's number), dip (Vector2, the beds' fall per m of world XZ)}.
+## its bed's number), power (per bed, 0 nearly gone .. 1 strong), dip (Vector2,
+## the beds' fall per m of world XZ)}. Uneven by packets: a massive cliff with a
+## soft slot under it, a set of thin ribbons, a long dull stretch.
 static func strata(land_seed: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = land_seed*7919+13
@@ -94,25 +128,32 @@ static func strata(land_seed: int) -> Dictionary:
 	raw.resize(STRATA_SPAN)
 	var bed := PackedInt32Array()
 	bed.resize(STRATA_SPAN)
-	var y := 0
-	var n := 0
-	while y < STRATA_SPAN:
-		var massive := rng.randf() < 0.18
-		var th := rng.randi_range(36,64) if massive else rng.randi_range(9,30)
-		var h := rng.randf_range(0.6,1.0) if massive else rng.randf_range(-1.0,0.5)
-		for k in range(y,mini(y+th,STRATA_SPAN)):
+	var power := PackedFloat32Array()
+	var y := [0]
+	var lay := func(th: int, h: float, strong: float) -> void:
+		for k in range(y[0],mini(y[0]+th,STRATA_SPAN)):
 			raw[k] = h
-			bed[k] = n
-		y += th
-		n += 1
+			bed[k] = power.size()
+		power.append(strong)
+		y[0] += th
+	while y[0] < STRATA_SPAN:
+		var roll := rng.randf()
+		if roll < 0.32:
+			lay.call(rng.randi_range(10,20),-1.0,rng.randf_range(0.5,1.0))
+			lay.call(rng.randi_range(55,150),rng.randf_range(0.6,1.0),rng.randf_range(0.55,1.0))
+		elif roll < 0.58:
+			for m in rng.randi_range(3,6):
+				lay.call(rng.randi_range(9,20),1.0 if m%2 == 0 else -0.9,rng.randf_range(0.35,1.0))
+		else:
+			lay.call(rng.randi_range(30,110),rng.randf_range(-0.5,0.4),rng.randf_range(0.0,0.22))
 	# Eased over a few metres, so a ledge has a face.
 	var hard := PackedFloat32Array()
 	hard.resize(STRATA_SPAN)
 	for k in STRATA_SPAN:
 		var s := 0.0
-		for o in range(-2,3): s += raw[clampi(k+o,0,STRATA_SPAN-1)]
-		hard[k] = s/5.0
-	return {"hard":hard,"bed":bed,"dip":Vector2.from_angle(rng.randf()*TAU)*rng.randf_range(0.08,0.16)}
+		for o in range(-3,4): s += raw[clampi(k+o,0,STRATA_SPAN-1)]
+		hard[k] = s/7.0
+	return {"hard":hard,"bed":bed,"power":power,"dip":Vector2.from_angle(rng.randf()*TAU)*rng.randf_range(0.08,0.16)}
 
 ## The tower's plan from its entry: pure in its seed.
 static func _plan(t: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
@@ -146,7 +187,7 @@ static func _plan(t: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 			var u := (n+rng.randf_range(0.2,0.9))/count*0.86+0.07
 			var drop := rng.randf_range(DROP.x,DROP.y)
 			if u > 0.45 and rng.randf() < ROOF: drop = -rng.randf_range(ROOF_OUT.x,ROOF_OUT.y)
-			list.append([u,drop,rng.randf_range(-0.05,0.05),rng.randf_range(LEDGE.x,LEDGE.y)])
+			list.append([u,drop,rng.randf_range(-0.05,0.05),rng.randf_range(LEDGE.x,LEDGE.y),rng.randi_range(1,4000)])
 		steps.append(list)
 	# Corners for the buttresses first, gullies from the mids left.
 	var order: Array = []
@@ -170,9 +211,11 @@ static func _plan(t: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 		var u0 := rng.randf_range(0.04,0.5)
 		cuts[k] = [rng.randf_range(GULLY_IN.x,GULLY_IN.y),u0,u0+rng.randf_range(0.2,0.45)]
 		left -= 1
+	var faults := PackedFloat32Array()
+	for k in k_all: faults.append(rng.randf_range(-FAULT,FAULT))
 	var lean: Vector2 = t.lean
 	var bow_way := Vector2(-lean.y,lean.x).normalized() if lean.length() > 0.01 else Vector2.from_angle(rng.randf()*TAU)
-	return {"corners":corners,"kind":kind,"steps":steps,"outs":outs,"cuts":cuts,"lean":lean,
+	return {"corners":corners,"kind":kind,"steps":steps,"outs":outs,"cuts":cuts,"lean":lean,"faults":faults,
 		"bow":bow_way*rng.randf_range(-0.09,0.09)*(float(t.tip)-float(t.base)),"knee":rng.randf_range(0.45,0.8)}
 
 ## A side's share of the width at `u`, `at` of the way along it.
@@ -183,6 +226,26 @@ static func _side(steps: Array, u: float, at: float) -> float:
 		var d := clampf((u-from)/float(s[3]),0.0,1.0)
 		w *= 1.0-float(s[1])*d*d*(3.0-2.0*d)
 	return w
+
+## Where this column's ledges stand off the side's straight ones (share of the
+## width, plus is out). Each ledge is broken into blocks along the wall: a
+## block's shelf stands a little higher or lower, and some go to a steep ramp
+## that holds no snow. `along` is the column's way round, m.
+static func _ledge(steps: Array, u: float, at: float, along: float) -> float:
+	var out := 0.0
+	for s: Array in steps:
+		var from := float(s[0])+float(s[2])*(at-0.5)
+		var rise := float(s[3])
+		if u < from-LEDGE_WANDER or u > from+LEDGE_RAMP+LEDGE_WANDER: continue
+		var id := int(s[4])
+		var cell := int(floor((along+float(id))/(LEDGE_SPAN*(0.7+fposmod(float(id)*0.37,0.8)))))
+		var ramp := _hash(cell,id+7)
+		var from2 := from+_hash(cell,id)*LEDGE_WANDER
+		var rise2 := rise if ramp < LEDGE_ODDS else lerpf(LEDGE_RAMP*0.4,LEDGE_RAMP,(ramp-LEDGE_ODDS)/(1.0-LEDGE_ODDS))
+		var a := clampf((u-from)/rise,0.0,1.0)
+		var b := clampf((u-from2)/rise2,0.0,1.0)
+		out += float(s[1])*(a*a*(3.0-2.0*a)-b*b*(3.0-2.0*b))
+	return out
 
 ## The width of everything at `u`.
 static func _width(u: float, sink_u: float) -> float:
@@ -252,7 +315,7 @@ static func build(t: Dictionary, beds: Dictionary) -> Dictionary:
 	var gs := g/100.0
 	var sink := maxf(tall*SINK,SINK_LEAST)
 	var sink_u := sink/tall
-	var cap := tall*rng.randf_range(CAP.x,CAP.y)
+	var cap := minf(maxf(tall*rng.randf_range(CAP.x,CAP.y),g*rng.randf_range(CAP_GIRTH.x,CAP_GIRTH.y)),tall*0.3)
 	var rim_y := tall-cap
 	var body_rows := maxi(EDGE,int(ceil((rim_y+sink)/ROW/EDGE))*EDGE)
 	var dy := (rim_y+sink)/body_rows
@@ -286,7 +349,10 @@ static func build(t: Dictionary, beds: Dictionary) -> Dictionary:
 		round_at[j+1] = round_at[j]+e.length()*g/EDGE
 	var hard: PackedFloat32Array = beds.hard
 	var bed: PackedInt32Array = beds.bed
+	var power: PackedFloat32Array = beds.power
 	var dip: Vector2 = beds.dip
+	var faults: PackedFloat32Array = pl.faults
+	var steps: Array = pl.steps
 	var base_w := Vector3((t.at as Vector2).x,over+Field.SEA_Y,(t.at as Vector2).y)
 	var rock := Field.ROCK
 	var v := PackedVector3Array()
@@ -297,6 +363,14 @@ static func build(t: Dictionary, beds: Dictionary) -> Dictionary:
 	rim.resize(cols)
 	var rim_o := PackedVector2Array()
 	rim_o.resize(cols)
+	# Each vertex's snow (0 it won't hold, 1 it holds), its gully streak (1 the
+	# snow runs down a wall) and band (-1 sunk .. 1 proud: the paint's beds).
+	var hold := PackedFloat32Array()
+	hold.resize((rows+1)*cols+1)
+	var streaks := PackedFloat32Array()
+	streaks.resize((rows+1)*cols+1)
+	var band := PackedFloat32Array()
+	band.resize((rows+1)*cols+1)
 	var rim_axis := Vector2.ZERO
 	var at := 0
 	var warp_from := rim_y-cap*CAP_REACH
@@ -318,37 +392,48 @@ static func build(t: Dictionary, beds: Dictionary) -> Dictionary:
 				var e0 := a-section[(k+k_all-1)%k_all]
 				nrm = (nrm+Vector2(e0.y,-e0.x).normalized()).normalized()
 			var o := a.lerp(b,tt)
-			# The bed here, tilted across the crown.
+			# The bed here: tilted across the crown, folded, faulted at the corners.
 			var wx := base_w.x+axis.x+o.x
 			var wz := base_w.z+axis.y+o.y
 			var wy := base_w.y+y
-			var sy := int(wy-Field.SEA_Y+dip.x*wx+dip.y*wz-STRATA_LOW)
+			var fold := noise.get_noise_2d(wx/FOLD.y,wz/FOLD.y)*FOLD.x
+			var sy := int(wy-Field.SEA_Y+dip.x*wx+dip.y*wz-STRATA_LOW+fold+faults[k])
 			sy = clampi(sy,0,STRATA_SPAN-1)
 			var bn := bed[sy]
-			var d := hard[sy]*BED_AMP
+			# It pinches out along the wall, each bed at its own span.
+			var span := lerpf(PINCH_SPAN.x,PINCH_SPAN.y,fposmod(float(bn)*0.618,1.0))
+			var pinch := smoothstep(-0.3,0.2,noise.get_noise_2d(round_at[j]/span,float(bn)*9.7))
+			var strong := power[bn]*pinch
+			var d := hard[sy]*strong*BED_AMP
 			var sa: float = round_at[j]+float(bn)*37.0
-			var bw := 26.0+fposmod(float(bn)*11.0,24.0)
-			d += _hash(bn,int(floor(sa/bw)))*BLOCK_AMP
+			var bw := 24.0+fposmod(float(bn)*31.0,56.0)
+			d += _hash(bn,int(floor(sa/bw)))*BLOCK_AMP*(0.3+0.7*strong)
 			var near_corner := 1.0-minf(tt,1.0-tt)*2.0
-			d -= maxf(0.0,_hash(bn+91,k))*CHIP_AMP*near_corner*near_corner
+			d -= maxf(0.0,_hash(bn+91,k))*CHIP_AMP*near_corner*near_corner*(0.35+0.65*strong)
 			d += noise.get_noise_3d(round_at[j]/26.0+57.0,wy/140.0,float(k))*JOINT_AMP
 			d += noise.get_noise_3d(wx/70.0,wy/70.0,wz/70.0)*WARP_AMP
+			# A joint: a crack up the wall, here and there along its height.
+			var jh := _hash(j,int(t.seed))
+			if jh > JOINT_ODDS: d -= (jh-JOINT_ODDS)/(1.0-JOINT_ODDS)*JOINT_CUT*smoothstep(-0.1,0.25,noise.get_noise_2d(float(j)*3.1,wy/JOINT_SPAN))
 			d *= gs
-			# The small blocks and the cracks round them.
-			var row := int(float(sy)/STONE.x)
-			var sb: float = round_at[j]+float(row)*5.3
-			var cell := floorf(sb/STONE.y)
-			var fine := _hash(row+7,int(cell))*STONE.z
-			var fx := sb/STONE.y-cell
-			var fy := fposmod(float(sy),STONE.x)/STONE.x
-			fine -= CRACK*maxf(1.0-minf(fx,1.0-fx)*STONE.y/1.8,1.0-minf(fy,1.0-fy)*STONE.x/1.4)
-			d += fine
+			var side := k/(MIDS+1)
+			var side_at := (float(k%(MIDS+1))+tt)/(MIDS+1)
+			d += _ledge(steps[side],u,side_at,round_at[j])*o.length()
+			band[at] = hard[sy]*strong
+			# The snow: dashes along the beds, broken down the fall line, thicker
+			# on the hard beds' tops; streaks of it down a gully.
+			var dash := noise.get_noise_2d(round_at[j]/85.0,float(sy)/15.0)+noise.get_noise_2d(round_at[j]/27.0+31.0,float(sy)/7.0)*0.5
+			var fall := noise.get_noise_2d(round_at[j]/15.0,wy/60.0)
+			hold[at] = smoothstep(0.12,0.46,dash+fall*0.35+maxf(band[at],0.0)*0.12)
+			var cut: Variant = pl.cuts.get(k)
+			if cut == null: cut = pl.cuts.get((k+1)%k_all)
+			if cut != null and near_corner > 0.7 and u > float(cut[1]) and u < float(cut[2]) and fall > 0.18: streaks[at] = 1.0
 			var q := o+nrm*d
 			var lift := 0.0
 			if warp > 0.0:
 				lift = _top(o/rim_r,way,cross,cleft,gap)/top_most*cap*warp
 			v[at] = Vector3(axis.x+q.x,y+lift,axis.y+q.y)
-			var shade := 0.82+d*0.02
+			var shade := 0.82+d*0.01
 			c[at] = Color(rock.r*shade,rock.g*shade,rock.b*shade*0.97,0.0)
 			at += 1
 			if i == body_rows:
@@ -360,6 +445,7 @@ static func build(t: Dictionary, beds: Dictionary) -> Dictionary:
 			var q := rim[j]*keep
 			var lift := _top(rim_o[j]*keep/rim_r,way,cross,cleft,gap)/top_most*cap
 			v[at] = Vector3(rim_axis.x+q.x,rim_y+lift,rim_axis.y+q.y)
+			hold[at] = smoothstep(-0.1,0.15,noise.get_noise_3d(q.x/30.0+base_w.x,lift/16.0,q.y/30.0+base_w.z))
 			c[at] = Color(rock.r*0.8,rock.g*0.8,rock.b*0.8,0.0)
 			at += 1
 	var last := _top(Vector2.ZERO,way,cross,cleft,gap)/top_most*cap
@@ -399,6 +485,8 @@ static func build(t: Dictionary, beds: Dictionary) -> Dictionary:
 	arrays[Mesh.ARRAY_COLOR] = c
 	arrays[Mesh.ARRAY_INDEX] = levels[0]
 	RockShape.bake(arrays)
+	_paint_beds(arrays,band)
+	arrays[Mesh.ARRAY_NORMAL] = _hold_snow(n,_blur(hold,rows,cols),_blur(streaks,rows,cols))
 	var lods := {}
 	var tris: Array = [(levels[0] as PackedInt32Array).size()/3]
 	for l in range(1,LEVELS):
@@ -409,12 +497,58 @@ static func build(t: Dictionary, beds: Dictionary) -> Dictionary:
 	faces.resize(coarse.size())
 	for i in range(coarse.size()): faces[i] = v[coarse[i]]
 	return {"arrays":arrays,"lods":lods,"faces":faces,"tris":tris,"height":tall,"foot":-sink,
-		"solid":_solid(v,rows,body_rows,cols,pl,tall),"far":_far(v,levels[FAR_LEVEL])}
+		"solid":_solid(v,rows,body_rows,cols,pl,tall),"far":_far(v,levels[FAR_LEVEL],band)}
 
-## The far level as arrays of its own: {v, n, i}, its vertices only.
-static func _far(v: PackedVector3Array, idx: PackedInt32Array) -> Dictionary:
+## Lays the beds into the baked shape, as the paint reads it: a soft bed's
+## groove dark and its recess in shade, a hard one's edge worn pale.
+static func _paint_beds(arrays: Array, band: PackedFloat32Array) -> void:
+	var shape: Variant = arrays[Mesh.ARRAY_CUSTOM3]
+	if shape == null: return
+	var bytes: PackedByteArray = shape
+	for i in band.size():
+		var b := band[i]
+		bytes[i*4+1] = clampi(bytes[i*4+1]+int(b*BAND_G),0,255)
+		bytes[i*4+2] = clampi(bytes[i*4+2]+int(b*BAND_B),0,255)
+	arrays[Mesh.ARRAY_CUSTOM3] = bytes
+
+## A skin's per-vertex value, eased twice over its neighbours, so what the paint
+## cuts at it crosses several vertices and its ragged edge has room to work.
+static func _blur(a: PackedFloat32Array, rows: int, cols: int) -> PackedFloat32Array:
+	var src := a
+	for pass_n in 2:
+		var out := src.duplicate()
+		for i in range(rows+1):
+			var up := maxi(i-1,0)*cols
+			var dn := mini(i+1,rows)*cols
+			var row := i*cols
+			for j in cols:
+				var l := row+(j+cols-1)%cols
+				var r := row+(j+1)%cols
+				out[row+j] = (src[row+j]*2.0+src[l]+src[r]+src[up+j]+src[dn+j])/6.0
+		src = out
+	return src
+
+## The normals the paint lays snow by: where `hold` is 0 a shelf lies down to a
+## wall's height, at 1 it stays; `streaks` stand a wall up to a shelf's.
+static func _hold_snow(n: PackedVector3Array, hold: PackedFloat32Array, streaks: PackedFloat32Array) -> PackedVector3Array:
+	var out := n.duplicate()
+	for i in n.size():
+		var m := n[i]
+		var ny := m.y
+		if ny > SNOW_OFF: ny = lerpf(SNOW_OFF,ny,hold[i])
+		ny = lerpf(ny,maxf(ny,SNOW_ON),streaks[i])
+		if ny == m.y: continue
+		var flat := Vector2(m.x,m.z)
+		if flat.length() < 0.001: flat = Vector2.RIGHT
+		flat = flat.normalized()*sqrt(1.0-ny*ny)
+		out[i] = Vector3(flat.x,ny,flat.y)
+	return out
+
+## The far level as arrays of its own: {v, n, b (its band), i}, its vertices only.
+static func _far(v: PackedVector3Array, idx: PackedInt32Array, band: PackedFloat32Array) -> Dictionary:
 	var map := {}
 	var fv := PackedVector3Array()
+	var fb := PackedFloat32Array()
 	var fi := PackedInt32Array()
 	fi.resize(idx.size())
 	for i in range(idx.size()):
@@ -424,8 +558,9 @@ static func _far(v: PackedVector3Array, idx: PackedInt32Array) -> Dictionary:
 			got = fv.size()
 			map[o] = got
 			fv.append(v[o])
+			fb.append(band[o])
 		fi[i] = int(got)
-	return {"v":fv,"n":Build._normals(fv,fi),"i":fi}
+	return {"v":fv,"n":Build._normals(fv,fi),"b":fb,"i":fi}
 
 ## The flight's solid, read off the skin itself: {c (slice centres, off the
 ## base), r (slices x SOLID_WAYS radii), y0, dy, slices, top, mid, reach}.

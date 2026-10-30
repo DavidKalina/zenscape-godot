@@ -598,6 +598,7 @@ func _ready() -> void:
 		towers.setup(PeakTowers.test_table(peak,field),seed,rocks.bare,Field.new(seed,world),peak.centre)
 		rocks.extra = towers
 		if look != null: look.ground_copies.append(towers.far_material)
+		if look != null and towers.rock_material is ShaderMaterial: look.ground_copies.append(towers.rock_material)
 	halls = LandHalls.new()
 	halls.name = "Halls"
 	add_child(halls)

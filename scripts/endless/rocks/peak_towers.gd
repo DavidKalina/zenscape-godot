@@ -16,6 +16,7 @@ extends Node3D
 ##     seed   its shape
 ##   towers.setup(table, land_seed, bare_material, field)
 ##   towers.prime(eye), towers.step(eye)
+##   look.ground_copies gets towers.far_material and towers.rock_material
 ##   rocks.extra = towers      the flight, camera and rivals' solid goes
 ##                             through LandRocks from then on
 ##   `axes()` gives each tower's base, tip and radius for the spirals.
@@ -41,20 +42,31 @@ const LAYER := 1
 ## The solid's scan up a tower: every SCAN slices, then bisected.
 const SCAN := 4
 ## The massif's body in the far mesh: a grid this wide round the peak (m),
-## this fine, of the ground this far over the sea (under it the haze has it).
-const BODY_REACH := 5200.0
+## this fine. It melts away (vertex alpha) over BODY_FOOT m over the sea and out
+## over BODY_EDGE m from the peak, so it has no edge and no plate under it.
+const BODY_REACH := 3400.0
 const BODY_STEP := 150.0
-const BODY_OVER := 220.0
+const BODY_FOOT := Vector2(300.0,560.0)
+const BODY_EDGE := Vector2(2000.0,3200.0)
 ## Far on when some of it could be past the far plane, less this (m).
 const FAR_MARGIN := 600.0
 ## Its colours (linear): rock, and the snow that holds to gentle high ground.
 const FAR_ROCK := Color(0.105,0.098,0.092)
-const FAR_SNOW := Color(0.62,0.66,0.72)
+const FAR_SNOW := Color(0.5,0.54,0.6)
 const FAR_SNOW_FROM := 620.0
+## The towers' own copy of the rock paint: its bands, facets and blocks this
+## many times the land's, for a face hundreds of metres tall, its even seams and
+## beds turned down (the beds that show are the shape's), and the height haze
+## cut this far over them and the far mesh, so they stand dark on the sky.
+const PAINT := {"rock_size":2.4,"rock_seams":0.03,"rock_beds":0.38,"rock_bump":0.75,"rock_relief":1.5}
+const HAZE_CUT := 0.86
+const HAZE_RISE := 260.0
 
 ## {name, built, ...}: entries, moved by the layout file, in table order.
 var table: Array = []
 var far_material: ShaderMaterial
+## The towers' rock paint: join the look's ground_copies.
+var rock_material: Material
 var stats := {"towers":0,"tris":0,"build_ms":0.0,"body_ms":0.0,"commit_ms":0.0}
 
 var _material: Material
@@ -81,12 +93,12 @@ static func entry(at: Vector2, base: float, tip: float, lean: Vector2, girth: fl
 
 ## The test crown on today's massif, behind the horn: three towers on the
 ## cirque's back rim, uneven, leaning in, the tallest off centre. The trunk
-## replaces this with its own table. Tall past the ceiling, to clear the horn
-## from the meadow.
+## replaces this with its own table. All under the flight's ceiling (1520 m),
+## the tallest near 1400 m, so today's horn still shows; the trunk removes it.
 static func test_table(peak: RefCounted, field: RefCounted) -> Array:
 	var out: Array = []
 	var inward: Vector2 = peak.world(-60.0,0.0)
-	for s: Array in [[-250.0,-250.0,1770.0,105.0,120.0,71],[-340.0,170.0,1640.0,85.0,105.0,23],[30.0,350.0,1560.0,70.0,95.0,58]]:
+	for s: Array in [[-250.0,-250.0,1400.0,75.0,78.0,71],[-340.0,170.0,1310.0,60.0,68.0,23],[30.0,350.0,1250.0,50.0,62.0,58]]:
 		var at: Vector2 = peak.world(float(s[0]),float(s[1]))
 		var base := float(field.height(at.x,at.y))-Field.SEA_Y
 		out.append(entry(at,base,float(s[2]),(inward-at).normalized()*float(s[3]),float(s[4]),int(s[5])))
@@ -95,9 +107,18 @@ static func test_table(peak: RefCounted, field: RefCounted) -> Array:
 ## `field`: a land field of the tower's own (a worker reads it for the far
 ## mesh's body), or null for no body. Starts the builds; `prime` waits for them.
 func setup(entries: Array, land_seed: int, bare: Material, field: RefCounted = null, peak_at := Vector2.ZERO) -> void:
-	_material = bare
 	far_material = ShaderMaterial.new()
 	far_material.shader = preload("res://shaders/peak_tower_far.gdshader")
+	var haze := Vector4(HAZE_RISE,300.0,HAZE_CUT,0.0)
+	rock_material = bare
+	if bare is ShaderMaterial:
+		rock_material = (bare as ShaderMaterial).duplicate()
+		for k: String in PAINT: (rock_material as ShaderMaterial).set_shader_parameter(k,PAINT[k])
+		var land: Variant = (bare as ShaderMaterial).get_shader_parameter("haze_height")
+		if land is Vector4: haze = Vector4(HAZE_RISE,(land as Vector4).y,HAZE_CUT,(land as Vector4).w)
+		(rock_material as ShaderMaterial).set_shader_parameter("haze_height",haze)
+	far_material.set_shader_parameter("haze_height",haze)
+	_material = rock_material
 	_strata = Shape.strata(land_seed)
 	for k in entries.size():
 		var t: Dictionary = (entries[k] as Dictionary).duplicate()
@@ -149,22 +170,28 @@ func _build_body(field: RefCounted, at: Vector2) -> void:
 	for j in side:
 		for i in side:
 			hs[j*side+i] = float(field.height(x0+i*BODY_STEP,z0+j*BODY_STEP))
-	var low := Field.SEA_Y+BODY_OVER
+	var alpha := PackedFloat32Array()
+	alpha.resize(side*side)
+	for q in side*side:
+		var off := Vector2(x0+(q%side)*BODY_STEP,z0+(q/side)*BODY_STEP)-at
+		alpha[q] = smoothstep(BODY_FOOT.x,BODY_FOOT.y,hs[q]-Field.SEA_Y)*(1.0-smoothstep(BODY_EDGE.x,BODY_EDGE.y,off.length()))
 	var map := PackedInt32Array()
 	map.resize(side*side)
 	map.fill(-1)
 	var v := PackedVector3Array()
 	var idx := PackedInt32Array()
+	var melt := PackedFloat32Array()
 	var add := func(q: int) -> int:
 		if map[q] < 0:
 			map[q] = v.size()
 			v.append(Vector3(x0+(q%side)*BODY_STEP,hs[q],z0+(q/side)*BODY_STEP))
+			melt.append(alpha[q])
 		return map[q]
 	for j in cells:
 		for i in cells:
 			var a := j*side+i
 			var c := a+side
-			if maxf(maxf(hs[a],hs[a+1]),maxf(hs[c],hs[c+1])) < low: continue
+			if maxf(maxf(alpha[a],alpha[a+1]),maxf(alpha[c],alpha[c+1])) <= 0.0: continue
 			var p: int = add.call(a)
 			var q: int = add.call(a+1)
 			var r: int = add.call(c)
@@ -177,6 +204,7 @@ func _build_body(field: RefCounted, at: Vector2) -> void:
 		var over := v[k].y-Field.SEA_Y
 		var snow := smoothstep(FAR_SNOW_FROM,FAR_SNOW_FROM+200.0,over)*smoothstep(0.62,0.82,n[k].y)
 		c[k] = FAR_ROCK.lerp(FAR_SNOW,snow)
+		c[k].a = melt[k]
 	_lock.lock()
 	_body = {"v":v,"n":n,"c":c,"i":idx}
 	stats.body_ms = (Time.get_ticks_usec()-t0)/1000.0
@@ -264,12 +292,18 @@ func _far_mesh() -> void:
 		for k in fv.size():
 			v.append(fv[k]+at)
 			n.append(fn[k])
-			c.append(fc[k] if not fc.is_empty() else FAR_ROCK)
+			c.append(fc[k])
 		for k in fi.size(): idx.append(fi[k]+first)
 	for k in table.size():
 		var t: Dictionary = table[k]
 		var f: Dictionary = _far_parts[k]
-		add.call(f.v,f.n,PackedColorArray(),f.i,Vector3((t.at as Vector2).x,float(t.base)+Field.SEA_Y,(t.at as Vector2).y)-_centre)
+		var fb: PackedFloat32Array = f.b
+		var fc := PackedColorArray()
+		fc.resize(fb.size())
+		for q in fb.size():
+			fc[q] = FAR_ROCK*(1.0+fb[q]*0.4)
+			fc[q].a = 1.0
+		add.call(f.v,f.n,fc,f.i,Vector3((t.at as Vector2).x,float(t.base)+Field.SEA_Y,(t.at as Vector2).y)-_centre)
 	if not _body.is_empty():
 		add.call(_body.v,_body.n,_body.c,_body.i,-_centre)
 	var arrays := []
