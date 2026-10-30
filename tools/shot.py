@@ -19,13 +19,26 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import subprocess
 import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import godot  # noqa: E402
 
-LOCK = godot.ROOT / ".godot" / "harness-window.lock"
+
+def _lock_dir() -> Path:
+    """The repo's common git dir: one place for every worktree, so parallel
+    lanes share the one-window lock."""
+    try:
+        out = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=godot.ROOT,
+                             capture_output=True, text=True, check=True).stdout.strip()
+        return (godot.ROOT / out).resolve()
+    except (OSError, subprocess.CalledProcessError):
+        return godot.ROOT / ".godot"
+
+
+LOCK = _lock_dir() / "harness-window.lock"
 
 
 def window_lock() -> None:
@@ -38,11 +51,11 @@ def window_lock() -> None:
             os.close(fd)
             return
         except FileExistsError:
-            if time.time() - LOCK.stat().st_mtime > 300:
+            if time.time() - LOCK.stat().st_mtime > 900:
                 LOCK.unlink(missing_ok=True)
                 continue
-            if time.time() - began > 600:
-                sys.exit("another agent's window has held the lock for 10 minutes")
+            if time.time() - began > 2400:
+                sys.exit("waited 40 minutes for other agents' windows")
             if time.time() - began < 1:
                 print("== waiting for another agent's window to close", flush=True)
             time.sleep(1)
