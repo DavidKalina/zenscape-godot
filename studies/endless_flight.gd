@@ -142,6 +142,8 @@ const RivalRace = preload("res://scripts/endless/rival_race.gd")
 ## The shops beside their strips (scripts/endless/shop_sites.gd; --shops=0 none).
 const ShopSites = preload("res://scripts/endless/shop_sites.gd")
 const RegionDoors = preload("res://scripts/endless/region_doors.gd")
+## The crown's spirals of cloud (scripts/endless/peak_spirals.gd; --spirals=0 none).
+const PeakSpirals = preload("res://scripts/endless/peak_spirals.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 ## Place lines: standing routes with a timed record (--lines=0 none).
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
@@ -294,6 +296,7 @@ var lines: Node
 ## The Peak's ruined stair up the couloir (scripts/endless/peak_stair.gd), or
 ## null with no Peak or --stair=0.
 var stair: Node3D
+var spirals: Node3D
 var flown := 0.0
 var _start := Vector2.ZERO
 ## The Peak's collar: a disc of cloud round the horn's neck, its middle
@@ -694,6 +697,12 @@ func _ready() -> void:
 		doors = RegionDoors.new()
 		add_child(doors)
 		doors.setup(self,_start,_heading,seed)
+	if peak != null and PeakSpirals.wanted():
+		spirals = PeakSpirals.new()
+		spirals.name = "PeakSpirals"
+		add_child(spirals)
+		spirals.setup(self)
+		spirals.set_axes(PeakSpirals.test_axes(peak))
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.PLAYS else ", world "+str(world.id)])
