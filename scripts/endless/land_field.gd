@@ -442,9 +442,9 @@ var last_ridge: float:
 	get: return _impl.last_ridge
 ## (By a pond, the pond's: it reads as a still river; land_ponds.gd.)
 var last_river: float:
-	get: return 1000.0 if _t_on or _m_on else (_p_out if _p_on else _impl.last_river)
+	get: return 1000.0 if _t_on or (_m_on and not _p_on) else (_p_out if _p_on else _impl.last_river)
 var last_river_r: float:
-	get: return 1000.0 if _t_on or _m_on else (_p_r if _p_on else _impl.last_river_r)
+	get: return 1000.0 if _t_on or (_m_on and not _p_on) else (_p_r if _p_on else _impl.last_river_r)
 var last_river_w: float:
 	get: return _p_w if _p_on else _impl.last_river_w
 var last_river_y: float:
@@ -748,6 +748,16 @@ func _peak(got: Vector2, x: float, z: float) -> Vector2:
 	if absf(float(_massif.last_lift)) > 1.0:
 		_m_on = true
 		_p_on = false
+	# The tarn: a pond over the massif (its reads, its lip).
+	var tp: PackedFloat32Array = _massif.pond
+	var e := Ponds.at(tp,x,z)
+	if e.x < Ponds.REACH:
+		_p_on = true
+		_p_out = e.x
+		_p_r = e.y
+		_p_w = e.z
+		_p_y = tp[3]
+		if e.x < Ponds.LIP.y: got.x = Ponds.carve(tp,got.x,e)
 	return got
 
 ## The Peak's massif (peak_massif.gd: its tarn, couloir, tower bases,
@@ -986,8 +996,15 @@ func _peak_shape(s: Dictionary, x: float, z: float) -> Dictionary:
 	s.height = got.x
 	s.meadow = got.y
 	if _m_on:
-		s.river = 1000.0
-		s.river_r = 1000.0
+		if _p_on:
+			# By the tarn, the tarn's.
+			s.river = _p_out
+			s.river_r = _p_r
+			s.river_w = _p_w
+			s.river_y = _p_y
+		else:
+			s.river = 1000.0
+			s.river_r = 1000.0
 		s.peak = true
 		s.mountain = maxf(float(s.mountain),smoothstep(0.0,80.0,float(_massif.last_lift)))
 	return s
@@ -997,7 +1014,7 @@ func _peak_shape(s: Dictionary, x: float, z: float) -> Dictionary:
 func river_y(x: float, z: float) -> float:
 	if _massif != null and _massif.reaches(x,z):
 		sample(x,z)
-		if _m_on: return NAN
+		if _m_on: return (_p_y if _p_out < 0.0 else NAN) if _p_on else NAN
 	if tunnels > 0.0:
 		sample(x,z)
 		if _t_on: return NAN
@@ -1008,7 +1025,7 @@ func river_y(x: float, z: float) -> float:
 
 ## The river's water as the ground shader draws it, from the last `sample`.
 func river_drawn() -> float:
-	if _m_on: return -INF
+	if _m_on and not _p_on: return -INF
 	return _p_y if _p_on else _impl.river_drawn()
 
 ## How still the sea's swell lies at the point the last `sample` read.
@@ -1058,7 +1075,10 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 	if not ts.is_empty(): Tunnels.apply_chunk(self,_impl,made,ts,x0,z0,step,cells,skirt_drop)
 	if not hs.is_empty(): Sites.apply_chunk(self,_impl,made,hs,x0,z0,step,cells,skirt_drop)
 	if not sps.is_empty(): Splits.apply_chunk(self,_impl,made,sps,x0,z0,step,cells,skirt_drop)
-	if _massif != null and _massif.meets(x0,z0,x0+cells*step,z0+cells*step): _massif.apply_chunk(self,_impl,made,x0,z0,step,cells,skirt_drop)
+	if _massif != null and _massif.meets(x0,z0,x0+cells*step,z0+cells*step):
+		_massif.apply_chunk(self,_impl,made,x0,z0,step,cells,skirt_drop)
+		# The tarn after it, as a pond.
+		if _massif.tarn_meets(x0,z0,x0+cells*step,z0+cells*step): Ponds.apply_chunk(self,_impl,made,[_massif.pond],x0,z0,step,cells,skirt_drop)
 	return made
 
 func _build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: float, flow_max: float) -> Dictionary:
@@ -1182,6 +1202,8 @@ func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dict
 func peak_grid(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> void:
 	if _massif != null and _massif.meets(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step):
 		_massif.apply_grid(got,x0,z0,step,nx,nz,pad)
+		if _massif.tarn_meets(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step) and not (got.get("river",PackedFloat32Array()) as PackedFloat32Array).is_empty():
+			Ponds.apply_grid(got,[_massif.pond],x0,z0,step,nx,nz,pad)
 
 func _grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:
 	if _native: return _impl.grid(x0,z0,step,nx,nz,pad)

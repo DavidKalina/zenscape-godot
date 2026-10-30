@@ -15,6 +15,9 @@ extends Control
 
 const Tag = preload("res://scripts/endless/near_miss_hud_handoff.gd")
 const Tallies = preload("res://scripts/endless/pilot_tallies.gd")
+## The places' names (place_lines.gd; loaded when wanted: it preloads this
+## card through its HUD).
+const PLACE_LINES := "res://scripts/endless/place_lines.gd"
 
 const KEY := Tag.KEY
 const CREAM := Tag.CREAM
@@ -80,6 +83,8 @@ static func rows(book: PilotBook) -> Array:
 	var ft: Dictionary = f.get("tally",{})
 	var out := []
 	out.append({"kind":"title","label":"LANDED","value":"flight %d" % int(f.get("n",0))})
+	# Where, when it is a place (pilot_tallies.gd `_place`).
+	if f.has("place"): out.append({"kind":"sub","label":"on %s" % load(PLACE_LINES).place_name(str(f.place)),"col":GOLD})
 	out.append({"kind":"big","label":"earned","value":Tallies.big(float(f.get("earned",0))),"col":GOLD})
 	out.append({"kind":"row","label":"aloft","value":"%s  ·  %s" % [Tallies.say("aloft",float(ft.get("aloft",0.0))),Tallies.say("metres",float(ft.get("metres",0.0)))]})
 	# The best line, read back.

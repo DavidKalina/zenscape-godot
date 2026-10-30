@@ -42,8 +42,12 @@ const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Sites = preload("res://scripts/endless/hall_sites.gd")
+const Ponds = preload("res://scripts/endless/land_ponds.gd")
 
 const HANDLE := "peak/massif"
+## The tarn's water (its centre, at its level): origin moves it on the
+## plateau and lifts or drops its level within the bowl; the bowl follows.
+const TARN_HANDLE := "peak/tarn"
 ## The coded spot: the plateau's centre AWAY m from the origin, facing it
 ## (the horseshoe open toward the start). The worlds spawn at the origin and
 ## the start meadow is found within 900 m of it (MenuSpot REACH), so the
@@ -202,11 +206,14 @@ const COULOIR_LINE := 9
 const PLATEAU_FLAT := 150.0
 const PLATEAU_BLEND := 220.0
 ## The tarn's bowl: its centre TARN_BACK m behind the plateau's, its radius
-## and depth, and the water level the bowl is cut for (over the sea): the
-## water's edge lies at TARN_WET m from its centre.
+## and depth under the plateau, and the water level the bowl is cut for
+## (over the sea). The water's edge lies where the bowl meets the level
+## (`tarn().wet`, about 49 m). The water is TARN_DEEP-1 m deep in the middle:
+## the ground shader lifts its grid to a water's level only up to 6.6 m, so
+## a deeper bowl would show a hole in the drawn water.
 const TARN_BACK := 40.0
 const TARN_BOWL := 60.0
-const TARN_DEEP := 8.0
+const TARN_DEEP := 5.0
 const TARN_LEVEL := 1144.0
 ## The head: a pyramid standing on the crest's back point, on the axis in
 ## front of the plateau (so from the opening it hides the plateau), its top
@@ -265,6 +272,15 @@ var _towers := PackedVector2Array()
 var _tower_tops := PackedFloat32Array()
 ## The last `apply`'s change to the land's height (m).
 var last_lift := 0.0
+## The tarn's centre in the frame (a, v), its level over the sea (both from
+## TARN_HANDLE), its water's radius, and the water as a pond (land_ponds.gd's
+## array: a round one, no bed of its own, the bowl is the massif's), which
+## LandField lays over the massif after its pass, so it reads and draws as
+## a pond does.
+var _tarn_c := Vector2(-TARN_BACK,0.0)
+var _tarn_level := TARN_LEVEL
+var _tarn_wet := 0.0
+var pond := PackedFloat32Array()
 
 ## The massif for this land, or null: `--peak=0` turns it off. `ground`:
 ## the land's own height (world y) at (x, z), for its way from the origin.
@@ -329,6 +345,16 @@ func _init(land_seed: int, frame: Transform3D) -> void:
 			_towers.append(Vector2(O_ALONG-RING_R*cos(r),s*RING_R*sin(r)))
 			# Each its own height over the crest.
 			_tower_tops.append(_crest(t,s)+TOWER_UP*TOWER_UPS[_towers.size()%TOWER_UPS.size()])
+	# The tarn, through its handle (its centre on the plateau, its level kept
+	# inside the bowl).
+	var tw := world(_tarn_c.x,_tarn_c.y)
+	var tt := LayoutOverrides.xform(TARN_HANDLE,Transform3D(frame.basis,Vector3(tw.x,TARN_LEVEL+SEA_Y,tw.y)))
+	var tq := Vector2(tt.origin.x,tt.origin.z)-centre
+	_tarn_c = Vector2(tq.dot(facing),tq.dot(side))
+	_tarn_level = clampf(tt.origin.y-SEA_Y,PLATEAU_Y-TARN_DEEP+0.5,PLATEAU_Y-0.25)
+	_tarn_wet = TARN_BOWL*sqrt(1.0-pow((PLATEAU_Y-_tarn_level)/TARN_DEEP,2.0/3.0))
+	var tc := world(_tarn_c.x,_tarn_c.y)
+	pond = PackedFloat32Array([tc.x,tc.y,_tarn_wet,_tarn_level+SEA_Y,0.0,0.0,0.0,0.0,0.0,0.0,0.0,_tarn_wet])
 
 # --- Asked by the land field ----------------------------------------------------------
 
@@ -545,10 +571,21 @@ func world(a: float, v := 0.0) -> Vector2:
 ## wet (the water's radius at that level), bowl (the bowl's radius), shore
 ## (the flat shore's reach from the plateau's centre), plateau (world XZ)}.
 func tarn() -> Dictionary:
-	var c := world(-TARN_BACK)
-	var wet := TARN_BOWL*sqrt(1.0-pow((PLATEAU_Y-TARN_LEVEL)/TARN_DEEP,2.0/3.0))
-	return {"centre":Vector3(c.x,TARN_LEVEL+SEA_Y,c.y),"level":TARN_LEVEL+SEA_Y,"wet":wet,"bowl":TARN_BOWL,
+	var c := world(_tarn_c.x,_tarn_c.y)
+	return {"centre":Vector3(c.x,_tarn_level+SEA_Y,c.y),"level":_tarn_level+SEA_Y,"wet":_tarn_wet,"bowl":TARN_BOWL,
 		"shore":PLATEAU_FLAT,"plateau":centre}
+
+## Whether the box (x0, z0)..(x1, z1) meets the tarn's reach (its water and
+## the REACH round it that its reads carry).
+func tarn_meets(x0: float, z0: float, x1: float, z1: float) -> bool:
+	var far := _tarn_wet+Ponds.REACH
+	return pond[0]+far >= x0 and pond[0]-far <= x1 and pond[1]+far >= z0 and pond[1]-far <= z1
+
+## Whether a world point stands on the summit plateau (inside its blend, no
+## lower than PLATEAU_UNDER m under its flat): where a landing is on the Peak.
+const PLATEAU_UNDER := 25.0
+func on_plateau(p: Vector3) -> bool:
+	return Vector2(p.x,p.z).distance_to(centre) < PLATEAU_BLEND and p.y-SEA_Y > PLATEAU_Y-PLATEAU_UNDER
 
 ## The couloir: {mouth, top (world, on its floor), half_width (its
 ## narrowest floor, at the top), line (world points on its floor's middle,
@@ -723,14 +760,14 @@ func _h(a: float, v: float) -> Vector3:
 	var rho2 := a*a+v*v
 	if rho2 < PLATEAU_BLEND*PLATEAU_BLEND:
 		var wf := 1.0-smoothstep(PLATEAU_FLAT,PLATEAU_BLEND,sqrt(rho2))
-		var ta := a+TARN_BACK
-		var rt := sqrt(ta*ta+v*v)
+		var ta := a-_tarn_c.x
+		var tv := v-_tarn_c.y
+		var rt := sqrt(ta*ta+tv*tv)
 		var hp := PLATEAU_Y
 		if rt < TARN_BOWL: hp -= TARN_DEEP*pow(1.0-(rt/TARN_BOWL)*(rt/TARN_BOWL),1.5)
 		h = lerpf(h,hp,wf)
 		c = maxf(c,wf)
-		var wet := TARN_BOWL*sqrt(1.0-pow((PLATEAU_Y-TARN_LEVEL)/TARN_DEEP,2.0/3.0))
-		meadow = wf*smoothstep(wet,wet+6.0,rt)
+		meadow = wf*smoothstep(_tarn_wet,_tarn_wet+6.0,rt)
 	# The tower bases on the crest.
 	if th < 42.0 and absf(r-RING_R) < 70.0:
 		for k in _towers.size():

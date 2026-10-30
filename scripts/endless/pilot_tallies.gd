@@ -78,6 +78,7 @@ func step(delta: float, game: Node, events: Dictionary) -> void:
 		book.best("longest_flight",_aloft_of(book))
 		_aloft = false
 		landed = true
+		_place(game,book)
 	_stopped = stopped
 	if events.has("crash"): book.count("crashes")
 	if events.has("scrape"): book.count("scrapes")
@@ -103,6 +104,17 @@ func step(delta: float, game: Node, events: Dictionary) -> void:
 		_try = TRY_EVERY
 		book.best("highest",p.y-Field.SEA_Y)
 		book.best("longest_flight",_aloft_of(book))
+
+## Where the plane came to rest, when that is a place: on the Peak's plateau
+## (peak_massif.gd `on_plateau`) the book finds `place/peak` and the flight
+## keeps `place` "peak" for the landing card.
+func _place(game: Node, book: PilotBook) -> void:
+	var f: Variant = game.get("field")
+	if f == null or not (f as Object).has_method("peak"): return
+	var pk: RefCounted = f.peak()
+	if pk == null or not pk.on_plateau(game.plane.position): return
+	book.find("place/peak")
+	book.flight["place"] = "peak"
 
 ## Seconds aloft this flight so far: the flight's own "aloft" tally, the
 ## one the summary reads, so the record and the card always agree.
