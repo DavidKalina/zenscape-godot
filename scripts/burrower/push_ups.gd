@@ -529,6 +529,11 @@ func _due(delta: float, plane: Object) -> void:
 		_wait = maxf(_wait,0.6)
 		return
 	_wait -= delta
+	# Coming in across the plane's way: nothing yet (the run starts them).
+	if burrower.entering():
+		burrower.want_ahead = 0.0
+		burrower.want_at = Vector2(NAN,NAN)
+		return
 	if burrower.mode == &"lead": _starved += delta
 	if _wait > 0.0 or orbs.size() >= MOST: return
 	if _kind == &"" or (next_kind != &"" and next_kind != _kind): _kind = _pick()

@@ -25,9 +25,10 @@ extends Node3D
 ## ruins and knoll (looked for ahead; the pond it crosses) and keeping to the meadow,
 ## passing beside trees (their trunks a small reach; roaming, it often makes
 ## for a tree's side) and shuddering them (scripts/burrower/tree_shudder.gd).
-## Two ways to move: `lead(plane)` runs ahead of the plane to one side,
-## sometimes drawing level as if racing; `roam()` wanders the meadow alone
-## (the watch camera's). `dive()` sinks it away.
+## Two ways to move: `lead(plane)` comes in from out of the chase camera's
+## view at one side, cuts across ahead of the plane and runs on away from it
+## to be chased (the entrance, then the run); `roam()` wanders the meadow
+## alone (the watch camera's). `dive()` sinks it away.
 
 const Land = preload("res://scripts/burrower/burrower_land.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
@@ -83,6 +84,33 @@ const SURGE := 0.28
 ## Leading the plane: how far ahead (m, a slow noise between) and to the side.
 const LEAD_AHEAD := Vector2(22.0,46.0)
 const LEAD_SIDE := Vector2(6.0,13.0)
+## The entrance (lead()): it comes up ENTER_FWD m along the plane's way
+## (behind abeam), out at the side with the most open meadow, ENTER_OUT s of
+## the plane's flight out (at least ENTER_SIDE.x m) and further until the
+## chase camera (`view`) can't see it (at most ENTER_SIDE.y); then at
+## ENTER_SPEED times the plane's speed it closes on its line on an intercept,
+## to cross it CROSS_AHEAD s ahead of the plane (out of view the first second
+## or so); across (or after ENTER_MOST s) it breaks away BREAK rad off the
+## plane's heading on the far side.
+const ENTER_FWD := -5.0
+const ENTER_OUT := 1.4
+const ENTER_SIDE := Vector2(30.0,90.0)
+const ENTER_SPEED := 1.5
+const CROSS_AHEAD := 1.6
+const ENTER_MOST := 6.0
+const BREAK := 0.5
+## The run: a course of its own that the plane chases, RUN_AHEAD m ahead
+## along the plane's nose (a slow noise between), wandering at up to WANDER
+## rad/s; strayed past RUN_OFF rad off the plane's nose it bends back
+## (OFF_TURN rad/s); past RUN_RIM m from the middle it bends along the
+## meadow's edge (RIM_TURN rad/s) rather than run out. Lost past RUN_LOST m.
+const RUN_AHEAD := Vector2(30.0,48.0)
+const WANDER := 0.45
+const RUN_OFF := 0.6
+const OFF_TURN := 1.2
+const RUN_RIM := 180.0
+const RIM_TURN := 1.0
+const RUN_LOST := 120.0
 ## Grass: a stamp every GRASS_STEP m, its reach (m), push and hold (s).
 const GRASS_STEP := 1.5
 const GRASS_REACH := 3.4
@@ -143,6 +171,13 @@ var want_ahead := 0.0
 ## While a push-up is due, the spot it runs for (x, z: on the plane's line, a
 ## little past where the push-up will be; NAN: its own slot).
 var want_at := Vector2(NAN,NAN)
+## The chase camera, to come up out of its view (null: ENTER_SIDE.x out).
+var view: Camera3D
+## Leading: &"enter" (coming in across the plane's way), &"run" (away, chased).
+var phase := &"run"
+var _phase_t := 0.0
+## Its own course on the run (rad, as heading).
+var _course := 0.0
 var _plane: Object
 var _turn := 0.0
 var _goal := Vector2.ZERO
@@ -266,6 +301,9 @@ func wake(at: Vector2, way: float, plane: Object = null) -> void:
 	_plane = plane
 	mode = &"lead" if plane != null else &"roam"
 	_side = -1.0 if _rng.randf() < 0.5 else 1.0
+	phase = &"run"
+	_phase_t = 0.0
+	_course = way
 	speed = _plane_speed() if plane != null else ROAM_SPEED
 	strength = 0.0
 	active = true
@@ -277,16 +315,60 @@ func wake(at: Vector2, way: float, plane: Object = null) -> void:
 	_since_sample = SAMPLE
 	wet = _wet_at(pos)
 
-## Up a little ahead of `plane` to one side, leading it.
+## Up out of the chase camera's view abeam of `plane`, at the side with
+## the more open meadow, heading in to cross ahead of it (the entrance).
 func lead(plane: Object) -> void:
 	var p: Vector3 = plane.position
 	var f: Vector3 = plane.forward()
 	var fwd := Vector2(f.x,f.z).normalized()
 	if fwd == Vector2.ZERO: fwd = Vector2(0,-1)
-	var side := Vector2(-fwd.y,fwd.x)*(-1.0 if _rng.randf() < 0.5 else 1.0)
-	var at := Vector2(p.x,p.z)+fwd*32.0+side*9.0
-	wake(at,fwd.angle(),plane)
-	_side = signf(side.dot(Vector2(-fwd.y,fwd.x)))
+	var left := Vector2(-fwd.y,fwd.x)
+	var p2 := Vector2(p.x,p.z)
+	var v: Vector3 = plane.velocity
+	var vp := maxf(Vector2(v.x,v.z).length(),8.0)
+	var cross := p2+fwd*vp*(CROSS_AHEAD+2.5)
+	var best := {}
+	for s: float in ([1.0,-1.0] if _rng.randf() < 0.5 else [-1.0,1.0]):
+		var out := clampf(vp*ENTER_OUT,ENTER_SIDE.x,ENTER_SIDE.y)
+		var at := p2+fwd*ENTER_FWD+left*s*out
+		while out < ENTER_SIDE.y and _seen(at):
+			out += 4.0
+			at = p2+fwd*ENTER_FWD+left*s*out
+		at = _clear_of_stone(at)
+		# Room: the start, the crossing and the way it breaks off, all well
+		# inside the meadow (the pond is fine: it comes in as a wake).
+		var away := cross+fwd.rotated(-s*BREAK)*60.0
+		var room := Land.MEADOW_R-maxf(maxf(at.length(),cross.length()),away.length())
+		if _seen(at): room -= 100.0
+		if best.is_empty() or room > float(best.room)+0.5: best = {"at": at, "s": s, "room": room}
+	var start: Vector2 = best.at
+	wake(start,fwd.angle(),plane)
+	_side = -float(best.s)
+	phase = &"enter"
+	_phase_t = 0.0
+	speed = vp*ENTER_SPEED
+	heading = _intercept(p2,fwd,vp).angle()
+	stats.enter_side = float(best.s)
+	stats.enter_out = (start-p2).dot(left)*float(best.s)
+	stats.enter_seen = _seen(start)
+
+## Whether the chase camera sees a point on the ground here (1 m up).
+func _seen(at: Vector2) -> bool:
+	if view == null or not is_instance_valid(view) or not view.is_inside_tree(): return false
+	var h := Vector3(at.x,land.height(at.x,at.y)+1.0,at.y)
+	return view.is_position_in_frustum(h)
+
+## `at` pushed out of the rocks', ruins' and knoll's reach.
+func _clear_of_stone(at: Vector2) -> Vector2:
+	for o: Dictionary in _obstacles:
+		if o.has("tree"): continue
+		var r := float(o.reach)+float(o.get("margin",MARGIN))
+		if at.distance_to(o.at) < r: at = (o.at as Vector2)+(at-(o.at as Vector2)).normalized()*r
+	return at
+
+## Coming in across the plane's way (the entrance), not yet running.
+func entering() -> bool:
+	return active and mode == &"lead" and phase == &"enter"
 
 ## On its own from here: wandering the meadow, the plane left be.
 func roam() -> void:
@@ -316,6 +398,8 @@ func _resurface() -> void:
 		if at.distance_to(o.at) < r: at = (o.at as Vector2)+(at-(o.at as Vector2)).normalized()*r
 	pos = at
 	heading = fwd.angle()
+	_course = heading
+	phase = &"run"
 	_turn = 0.0
 	speed = _plane_speed()
 	_since_sample = SAMPLE
@@ -406,7 +490,11 @@ func _move(delta: float) -> void:
 	# A burst now and then: the noise's peaks pushed harder.
 	surge += 0.35*maxf(_noise.get_noise_1d(time*0.6+300.0)-0.25,0.0)/0.75
 	var want_speed := ROAM_SPEED*surge
-	if mode == &"lead" and _plane != null:
+	if mode == &"lead" and _plane != null and phase == &"enter":
+		want_speed = _enter(delta)
+	elif mode == &"lead" and _plane != null and phase == &"run":
+		want_speed = _run_on(delta,surge)
+	elif mode == &"lead" and _plane != null:
 		var p: Vector3 = _plane.position
 		var f: Vector3 = _plane.forward()
 		var fwd := Vector2(f.x,f.z).normalized()
@@ -465,7 +553,8 @@ func _move(delta: float) -> void:
 				var w := clampf(1.0-(d-r)/ramp,0.0,1.6)
 				dir += (away*0.9+tang*0.6)*w*1.8
 	stats.nearest = minf(float(stats.nearest),nearest)
-	var rim := Land.MEADOW_R-28.0
+	# (Coming in it keeps its intercept unless right at the edge.)
+	var rim := Land.MEADOW_R-(8.0 if mode == &"lead" and phase == &"enter" else 28.0)
 	if pos.length() > rim: dir += -pos.normalized()*clampf((pos.length()-rim)/12.0,0.0,2.0)*2.0
 	var want := angle_difference(heading,dir.angle())
 	# Leading, it turns as hard as the plane can (a banked plane comes round
@@ -502,6 +591,91 @@ func _move(delta: float) -> void:
 			_since_stamp = 0.0
 			_stamp_grass()
 	_kick(delta)
+
+## The entrance's step: for the point CROSS_AHEAD s ahead on the plane's
+## line; across it (or out of time) it breaks away and runs. Its speed.
+func _enter(delta: float) -> float:
+	_phase_t += delta
+	var p: Vector3 = _plane.position
+	var f: Vector3 = _plane.forward()
+	var fwd := Vector2(f.x,f.z).normalized()
+	var left := Vector2(-fwd.y,fwd.x)
+	var vp := _plane_speed()
+	var p2 := Vector2(p.x,p.z)
+	_goal = pos+_intercept(p2,fwd,vp)*30.0
+	# _side is the far side (where it runs off to); across once it is there.
+	var across := (pos-p2).dot(left)*_side > 1.0
+	if across or _phase_t > ENTER_MOST:
+		phase = &"run"
+		_phase_t = 0.0
+		_course = fwd.angle()+_side*BREAK
+		stats.crossed_at = snappedf((pos-p2).dot(fwd),0.1)
+		stats.crossed_t = snappedf(_run,0.01)
+	return vp*ENTER_SPEED
+
+## The way (unit) that brings it, at ENTER_SPEED times the plane's speed
+## `vp`, onto the plane's line CROSS_AHEAD s ahead of it (the plane flying on
+## straight): its velocity is the plane's plus a part along the line from it
+## to that spot, in the plane's frame.
+func _intercept(p2: Vector2, fwd: Vector2, vp: float) -> Vector2:
+	var rel := pos-p2
+	var to := fwd*(vp*CROSS_AHEAD-rel.dot(fwd))-fwd.orthogonal()*rel.dot(fwd.orthogonal())
+	if to.dot(fwd) < 4.0: to += fwd*(4.0-to.dot(fwd))
+	var u := to.normalized()
+	var fu := fwd.dot(u)
+	var k := ENTER_SPEED
+	var lam := vp*(-fu+sqrt(fu*fu+k*k-1.0))
+	return (fwd*vp+u*lam).normalized()
+
+## The run's step: its own course, chased by the plane. Its speed.
+func _run_on(delta: float, surge: float) -> float:
+	_phase_t += delta
+	var p: Vector3 = _plane.position
+	var f: Vector3 = _plane.forward()
+	var fwd := Vector2(f.x,f.z).normalized()
+	var p2 := Vector2(p.x,p.z)
+	var rel := pos-p2
+	var along := rel.dot(fwd)
+	var vp := _plane_speed()
+	var ahead := lerpf(RUN_AHEAD.x,RUN_AHEAD.y,clampf(0.5+1.1*_noise.get_noise_1d(time*0.45+100.0),0.0,1.0))
+	ahead = maxf(ahead,want_ahead)
+	if not is_nan(want_at.x):
+		# A push-up due: it runs for the spot on the plane's line (as it led),
+		# its course following the way it goes.
+		var to := want_at-pos
+		var cut := clampf((to.length()-15.0)/30.0,0.0,1.0)
+		_goal = want_at+fwd*lerpf(maxf(speed*0.9,20.0),8.0,cut)
+		_course = heading
+	else:
+		# Its own way: a slow wander...
+		_course += WANDER*clampf(2.0*_noise.get_noise_1d(time*0.25+400.0),-1.0,1.0)*delta
+		var cv := Vector2.from_angle(_course)
+		var out := pos.normalized()
+		if pos.length() > RUN_RIM and cv.dot(out) > -0.3:
+			# ...bent along the meadow's edge, the way nearer its course...
+			var tang := out.orthogonal()
+			if tang.dot(cv) < 0.0: tang = -tang
+			var k := clampf((pos.length()-RUN_RIM)/30.0,0.3,1.5)
+			_course = rotate_toward(_course,(tang-out*0.35).angle(),RIM_TURN*k*delta)
+			stats.rim_bends = float(stats.get("rim_bends",0.0))+delta
+		else:
+			# ...and back toward the plane's nose when strayed wide of it.
+			var off := fwd.angle_to(rel)
+			if absf(off) > RUN_OFF or along < 8.0:
+				_course = rotate_toward(_course,fwd.angle(),OFF_TURN*delta*clampf(absf(off)/RUN_OFF,0.5,2.0))
+		_goal = pos+Vector2.from_angle(_course)*30.0
+	# Kept ahead along the plane's nose (it surges and slows for that).
+	var gap := ahead-along
+	var want := clampf(vp*surge+gap*1.1,vp*0.5,vp*1.8)
+	# Lost all the same (the plane turned away hard, or behind it): it sounds.
+	var lost := along < 0.0 or rel.length() > RUN_LOST
+	_lost = _lost+delta if lost and not _diving else 0.0
+	if _lost > LOST_S and not _sounding:
+		_sounding = true
+		stats.soundings = int(stats.soundings)+1
+		var lw := "behind" if along < 0.0 else "far"
+		stats.lost_why[lw] = int(stats.lost_why.get(lw,0))+1
+	return want
 
 # --- The ridge -------------------------------------------------------------------
 

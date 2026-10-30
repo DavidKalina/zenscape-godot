@@ -50,14 +50,16 @@ const WATCH_FOLLOW := 1.6
 ## meadow's ground or the pond, at FAST_SHARE of cruise or more; WAKE_SKIM s
 ## of it (built up, bled at twice the rate when not) wakes it. It dives away
 ## after CLIMB_HOLD s over CLIMB_OFF spans, out past the meadow's rim by
-## OUT_M, or after RUN s; then rests REST s before a new skim can wake it.
+## OUT_M, or after RUN s (--run=); then rests REST s before a new skim can
+## wake it. (Leaving the meadow is the plane's doing: on the run the burrower
+## itself bends along the meadow's edge.)
 const SKIM_SPANS := 1.0
 const FAST_SHARE := 0.6
 const WAKE_SKIM := 1.2
 const CLIMB_OFF := 5.0
 const CLIMB_HOLD := 1.4
 const OUT_M := 15.0
-const RUN := 24.0
+const RUN := 40.0
 const REST := 6.0
 
 const FLY_LOOK := 0.0025
@@ -94,6 +96,8 @@ var _hint_text := ""
 var _bell_take := 0
 var _gong_take := 0
 var burrower: Burrower
+## The run's length before it dives (s; RUN, or --run=).
+var run_s := RUN
 ## What it pushes up ahead of the plane (scripts/burrower/push_ups.gd).
 var push_ups: PushUps
 ## The watch camera on (the plane held still).
@@ -120,6 +124,7 @@ func _ready() -> void:
 		elif a == "--gong=2": _gong_take = 1
 		elif a == "--burrow": _burrow_at_start = true
 		elif a == "--watch": watching = true
+		elif a.begins_with("--run="): run_s = maxf(a.get_slice("=",1).to_float(),1.0)
 	_build_light()
 	land = Land.new()
 	add_child(land)
@@ -135,6 +140,7 @@ func _ready() -> void:
 	burrower = Burrower.new()
 	add_child(burrower)
 	burrower.setup(land,react)
+	burrower.view = camera
 	push_ups = PushUps.new()
 	push_ups.bell_take = _bell_take
 	push_ups.gong_take = _gong_take
@@ -280,7 +286,7 @@ func _rouse(delta: float) -> void:
 		if at.length() > Land.MEADOW_R+OUT_M: why = "out"
 		elif not bool(rouse.called):
 			if float(rouse.high) > CLIMB_HOLD: why = "climb"
-			elif burrower._run > RUN: why = "run"
+			elif burrower._run > run_s: why = "run"
 		if why != "":
 			burrower.dive()
 			rouse.why = why
