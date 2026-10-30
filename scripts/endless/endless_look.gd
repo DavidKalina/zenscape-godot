@@ -284,7 +284,11 @@ func setup(land_seed: int) -> void:
 	_exposure()
 	# The sky's own cloud deck off; the cloud volume comes later as a pass.
 	RenderingServer.global_shader_parameter_set("zs_cloud",Vector4(0.0,0.0,20.0,12.0))
-	# The haze.
+	# The haze; under the horizon the dome on screen keeps the horizon's
+	# colour, so from high up the far land's haze meets sky of its colour
+	# (shaders/reference_sky.gdshader ground_horizon).
+	if environment.sky != null and environment.sky.sky_material is ShaderMaterial:
+		(environment.sky.sky_material as ShaderMaterial).set_shader_parameter("ground_horizon",1.0)
 	environment.fog_enabled = true
 	environment.fog_mode = Environment.FOG_MODE_DEPTH
 	# Depth fog's density scales its curve: 1 runs it to all sky.
