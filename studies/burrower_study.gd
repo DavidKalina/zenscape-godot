@@ -7,8 +7,11 @@ extends Node3D
 ## parting the grass (GrassReact). Here the burrowing trail's look and
 ## animation are worked out before any of it goes into endless flight.
 ##
-## Keys: as endless flight (A D bank, W S pitch, mouse steers, Space boost,
-## Shift brake, Q E knife edge, twice to roll); R up again over the meadow;
+## Keys: as endless flight (A D bank, W S pitch, mouse steers, Shift brake,
+## Q E knife edge, twice to roll) but Space (the pad's south face) rolls on
+## one press, toward the side leant to or else the way banked (`roll_button`),
+## and boost moves to F (the pad's right trigger keeps it); R up again;
+## 1 2 3 make the next push-up an orb, a bell or a gong;
 ## B calls the burrower up ahead of the plane (scripts/burrower/burrower.gd);
 ## it also wakes on its own when the plane skims the meadow or the pond
 ## (under one span, at speed, for WAKE_SKIM s), leads, and dives away when
@@ -79,6 +82,8 @@ var flight_ready := false
 var _space: PhysicsDirectSpaceState3D
 var _fly_look := Vector2.ZERO
 var _roll_asked := 0.0
+## Rolls asked for by the roll button (for drivers).
+var rolls_asked := 0
 var _tap_dir := 0.0
 var _tap_at := 0
 var _start := Vector3(0.0,14.0,150.0)
@@ -176,7 +181,7 @@ func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	_hint = Label.new()
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  R up again  ·  skim low to wake it  ·  B call it  ·  C watch it"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space roll  ·  F boost  ·  Shift brake  ·  Q E knife edge  ·  R up again  ·  skim low to wake it  ·  B call it  ·  C watch it  ·  1 2 3 next: orb bell gong"
 	_hint.position = Vector2(16.0,12.0)
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.7))
 	_hint.add_theme_constant_override("outline_size",4)
@@ -233,11 +238,11 @@ func tick(delta: float, input: Dictionary) -> void:
 		return
 	var was: Vector3 = plane.position
 	plane.step(delta,input,Callable(land,"ground"))
-	if _space != null: RuinBump.bump(_space,plane,was)
+	var bumped := _space != null and RuinBump.bump(_space,plane,was)
 	figure.update(delta,plane,0.0,Callable(land,"ground"),false)
 	_rouse(delta)
 	burrower.tick(delta)
-	push_ups.tick(delta,plane,WorldScale.TOY_SPAN*ground_scale.size()*0.5)
+	push_ups.tick(delta,plane,WorldScale.TOY_SPAN*ground_scale.size()*0.5,bumped)
 	_frame(delta)
 	if react != null: _react(delta)
 
@@ -360,10 +365,30 @@ func _fly_input() -> Dictionary:
 	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
 	var lean := clampf(keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left"),-1.0,1.0)
 	var input := {"turn":stick.x,"pitch":stick.y,"look":_fly_look,"lean":lean,
-		"boost":Input.get_action_strength(&"fly_boost"),"brake":Input.get_action_strength(&"fly_brake"),"roll":_roll_asked}
+		"boost":_boost(),"brake":Input.get_action_strength(&"fly_brake"),"roll":_roll_asked}
 	_fly_look = Vector2.ZERO
 	_roll_asked = 0.0
 	return input
+
+## Boost here: F or the pad's right trigger (Space and the south face roll).
+func _boost() -> float:
+	var b := 1.0 if Input.is_key_pressed(KEY_F) else 0.0
+	for pad: int in Input.get_connected_joypads():
+		b = maxf(b,Input.get_joy_axis(pad,JOY_AXIS_TRIGGER_RIGHT))
+	return clampf(b,0.0,1.0)
+
+## Space / the pad's south face: a roll toward the side leant to (Q E, the
+## shoulders), else the way banked, else the way the stick turns, else right.
+func roll_button() -> void:
+	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
+	var lean := keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left")
+	var turn := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back").x
+	var bank := float(plane.bank)
+	if absf(lean) > 0.2: _roll_asked = signf(lean)
+	elif absf(bank) > 0.05: _roll_asked = signf(bank)
+	elif absf(turn) > 0.2: _roll_asked = signf(turn)
+	else: _roll_asked = 1.0
+	rolls_asked += 1
 
 func _lean_tapped(dir: float) -> void:
 	var now := Time.get_ticks_msec()
@@ -390,6 +415,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED: Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		else: _roll_asked = -1.0 if float(plane.bank) < -0.05 else 1.0
+	elif event is InputEventJoypadButton and event.pressed and (event as InputEventJoypadButton).button_index == JOY_BUTTON_A:
+		if not watching: roll_button()
 	elif Pad.pressed(event,&"fly_lean_left"): _lean_tapped(-1.0)
 	elif Pad.pressed(event,&"fly_lean_right"): _lean_tapped(1.0)
 	elif event is InputEventKey and event.pressed and not event.echo:
@@ -397,4 +424,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_R: respawn()
 			KEY_B: summon()
 			KEY_C: toggle_watch()
+			KEY_SPACE:
+				if not watching: roll_button()
+			KEY_1: push_ups.next_kind = &"orb"
+			KEY_2: push_ups.next_kind = &"bell"
+			KEY_3: push_ups.next_kind = &"gong"
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
