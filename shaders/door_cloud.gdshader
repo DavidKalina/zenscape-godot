@@ -1,9 +1,10 @@
 // One puff of a door's wall of cloud (scripts/endless/region_doors.gd): a
 // camera-facing disc drawn as a lit ball, its rim eaten by noise on the
-// ball's surface, soft where it meets the land and near the eye. Fogged by
-// the environment like the land.
+// ball's surface, soft where it meets the land and near the eye. Its own
+// haze (the environment's fog colour, set by the doors, at HAZE_SHARE of
+// the land's) so its hue still reads from a few km.
 shader_type spatial;
-render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabled;
+render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 
 global uniform vec3 zs_sun_direction;
 
@@ -19,6 +20,10 @@ uniform float near_fade = 30.0;
 // The noise's size (m) and drift (m/s).
 uniform float grain = 95.0;
 uniform float drift = 1.2;
+uniform vec3 haze_colour : source_color = vec3(0.75, 0.82, 0.9);
+// The haze's share at far distance and the distance (m) it comes in over.
+uniform float haze_share = 0.25;
+uniform float haze_reach = 4000.0;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 
 instance uniform float puff_seed = 0.0;
@@ -78,6 +83,7 @@ void fragment() {
 	float my_z = -VERTEX.z;
 	a *= clamp((scene_z - my_z) / soft_depth, 0.0, 1.0);
 	a *= smoothstep(near_fade * 0.3, near_fade * 1.5, my_z);
-	ALBEDO = col * bright;
+	col = mix(col * bright, haze_colour, haze_share * (1.0 - exp(-my_z / haze_reach)));
+	ALBEDO = col;
 	ALPHA = clamp(a, 0.0, 1.0);
 }

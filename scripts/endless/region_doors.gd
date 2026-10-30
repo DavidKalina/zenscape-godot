@@ -18,7 +18,10 @@ extends Node3D
 ##                plane is moved to the same spot in the other wall and out
 ##                past its far face, at the same heading, speed and height
 ##                over the ground, and held there while the land round it
-##                stands (HOLD s, at most HOLD_MOST), then the white clears
+##                stands (HOLD s at least, HOLD_MOST at most; each side has
+##                its own land stream, the far one prewarmed while the plane
+##                is within PREWARM m of a wall) and the near dressing is
+##                primed, then the white clears
 ##                into the far side's light (WHITE_OUT s). The paint, sky and
 ##                hour follow the eye's region on their own (regions.gd
 ##                `paint_eye`, EndlessLook `blend_moods`).
@@ -33,7 +36,8 @@ extends Node3D
 ##   the logbook  each wall's first pass is a find (`door/<wall>`).
 ##
 ## Flags: --doors=0 leaves them out; --door-near puts the wilderness wall
-## DOOR_NEAR m ahead of the start (for drivers and stills).
+## DOOR_NEAR m ahead of the start (for drivers and stills); --door-hold=S
+## the longest hold (HOLD_MOST).
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
@@ -100,7 +104,6 @@ var _overlay: ColorRect
 var _overlay_layer: CanvasLayer
 var _hint_wait := 0.0
 var _rng := RandomNumberGenerator.new()
-var _material_cache: Array[ShaderMaterial] = []
 var _last_tick := 0
 ## Each side's sun phase as it was left (-1: not yet visited).
 var _clock: Array[float] = [-1.0,-1.0]
@@ -132,8 +135,8 @@ func setup(host: Node3D, start: Vector2, heading: float, seed: int) -> void:
 	var amber := _frame_at(spot.at+off,spot.yaw)
 	walls = [
 		{"name":"doors/amber-wall","find":"door/amber-wall","coded":wild,
-			"lit":Color(1.0,0.83,0.6),"shade":Color(0.78,0.6,0.52),"glow":Color(1.0,0.66,0.36),
-			"white":Color(1.0,0.92,0.78),"arrive":Color(1.0,0.8,0.52)},
+			"lit":Color(1.0,0.82,0.42),"shade":Color(0.88,0.58,0.36),"glow":Color(1.0,0.62,0.2),
+			"white":Color(1.0,0.9,0.72),"arrive":Color(1.0,0.78,0.5)},
 		{"name":"doors/morning-wall","find":"door/morning-wall","coded":amber,
 			"lit":Color(0.86,0.93,1.0),"shade":Color(0.55,0.64,0.78),"glow":Color(0.66,0.82,1.0),
 			"white":Color(0.92,0.96,1.0),"arrive":Color(0.84,0.92,1.0)},
@@ -221,7 +224,7 @@ func _build_wall(w: Dictionary) -> Node3D:
 	mat.set_shader_parameter("lit_colour",w.lit)
 	mat.set_shader_parameter("shade_colour",w.shade)
 	mat.set_shader_parameter("glow_colour",w.glow)
-	_material_cache.append(mat)
+	mat.set_shader_parameter("glow",0.45)
 	w.material = mat
 	var quad := QuadMesh.new()
 	quad.size = Vector2(2.0,2.0)
@@ -363,8 +366,9 @@ func step(delta: float) -> void:
 			# Held where it came out while the land round it stands (most
 			# of it already, prewarmed on the way in): what is missing
 			# committed PUMP_MS a frame (the white hides the frame's cost),
-			# then the near dressing primed there at once (the trees stream
-			# on their own: their prime is seconds on a fresh side).
+			# then the near dressing primed there at once (one long white
+			# frame on a side's first visit; the trees stream on their own:
+			# their prime is seconds on a fresh side).
 			plane.carry(_arrive,plane.velocity,float(plane.speed))
 			var eye_now: Vector3 = h.chase.eye
 			var began := Time.get_ticks_usec()
@@ -398,11 +402,27 @@ func step(delta: float) -> void:
 		_last_tick = now
 		if phase == "": _watch -= delta
 	if phase == "": _prewarm(p)
+	_haze(delta)
 	_overlay.visible = white > 0.002
 	_overlay.color = Color(hue.r,hue.g,hue.b,white)
 	_hint(delta,p,flying,racing)
 
 var _t_from := 0.0
+var _haze_wait := 0.0
+
+
+## The walls' haze colour from the environment's fog, now and then.
+func _haze(delta: float) -> void:
+	_haze_wait -= delta
+	if _haze_wait > 0.0: return
+	_haze_wait = 0.5
+	var look: Node = _host.look
+	if look == null: return
+	var env: Environment = look.get("environment")
+	if env == null: return
+	var c := env.fog_light_color
+	for w: Dictionary in walls:
+		(w.material as ShaderMaterial).set_shader_parameter("haze_colour",c)
 ## Seconds left watching the frames after a carry.
 var _watch := 0.0
 const WATCH := 3.0
