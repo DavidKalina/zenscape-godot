@@ -102,7 +102,7 @@ var material: Material
 var root_reach := ROOT_REACH
 ## Whether chunks carry the channel frame (river_live_wanted()).
 var river_live := false
-var _chunks := {}          # key -> {node, heights, level, ix, iz}
+var _chunks := {}          # key -> {node, heights, faces, tops}
 var _pending := {}         # key -> true (a task is making it)
 var _queue: Array = []     # keys wanted, not yet asked
 var _done: Array = []      # finished task results
@@ -227,7 +227,9 @@ func _split(level: int, ix: int, iz: int) -> void:
 		_wanted[key] = true
 
 ## The planned point's distance to a chunk (the eye's, led ahead): across
-## to its square, and up from the sea's height plus a little.
+## to its square, and up from its ground (`_top`), never from below the
+## sea's height plus a little, so high land (a plateau, a wall) gets full
+## detail and colliders when the eye is near it.
 func _distance(key: Vector3i) -> float:
 	var at := _planned_at if _planned_at != Vector3.INF else centre()
 	var s := size_of(key.x)
@@ -235,8 +237,84 @@ func _distance(key: Vector3i) -> float:
 	var z0 := key.z*s
 	var dx := maxf(maxf(x0-at.x,at.x-(x0+s)),0.0)
 	var dz := maxf(maxf(z0-at.z,at.z-(z0+s)),0.0)
-	var dy := maxf(at.y-(Field.SEA_Y+20.0),0.0)
+	var dy := maxf(at.y-maxf(Field.SEA_Y+20.0,_top(key)),0.0)
 	return sqrt(dx*dx+dy*dy+dz*dz)
+
+## A chunk's ground for `_distance`: the highest of its heights once it has
+## been built; else read off a built ancestor's heights at that ancestor's
+## spacing (`_tops_of`, TOPS_DEPTH levels down) or raised to the highest of
+## the built chunks under it; else that of its nearest known ancestor (an
+## upper bound, so never less detail than the eye's height asks); else none
+## (-INF: the sea's). Kept after the chunks are freed; past TOPS_MOST keys
+## it starts again from the chunks standing.
+const TOPS_DEPTH := 2
+const TOPS_MOST := 32768
+var _tops := {}            # key -> highest ground (m)
+var _tops_own := {}        # keys whose top came from their own build
+func _top(key: Vector3i) -> float:
+	var k := key
+	while k.x <= TOP_LEVEL:
+		var got: Variant = _tops.get(k)
+		if got != null: return got
+		k = Vector3i(k.x+1,k.y>>1,k.z>>1)
+	return -INF
+
+func _keep_tops(key: Vector3i, tops: Dictionary) -> void:
+	if _tops.size() > TOPS_MOST:
+		_tops.clear()
+		_tops_own.clear()
+		for k: Vector3i in _chunks.keys(): _add_tops(k,_chunks[k].tops)
+	_add_tops(key,tops)
+
+func _add_tops(key: Vector3i, tops: Dictionary) -> void:
+	if not tops.has(key): return
+	for k: Vector3i in tops.keys():
+		if k == key or not _tops_own.has(k): _tops[k] = tops[k]
+	_tops_own[key] = true
+	var top: float = tops[key]
+	var a := Vector3i(key.x+1,key.y>>1,key.z>>1)
+	while a.x <= TOP_LEVEL:
+		if not _tops_own.has(a) and float(_tops.get(a,-INF)) < top: _tops[a] = top
+		a = Vector3i(a.x+1,a.y>>1,a.z>>1)
+
+## On the worker: the highest height of a chunk and of its descendants down
+## to TOPS_DEPTH levels (each block's samples, edges included), as
+## {key: top}.
+static func _tops_of(key: Vector3i, heights: PackedFloat32Array) -> Dictionary:
+	var out := {}
+	var n := CELLS+1
+	if heights.size() < n*n: return out
+	var depth := mini(TOPS_DEPTH,key.x)
+	var parts := 1 << depth
+	var cell := CELLS >> depth
+	# The finest blocks first, from the samples.
+	var fine := PackedFloat32Array()
+	fine.resize(parts*parts)
+	for bj in parts:
+		for bi in parts:
+			var top := -INF
+			for j in range(bj*cell,bj*cell+cell+1):
+				for i in range(bi*cell,bi*cell+cell+1): top = maxf(top,heights[j*n+i])
+			fine[bj*parts+bi] = top
+	# Then up, a level at a time, each block the highest of its four.
+	var level := key.x-depth
+	var size := parts
+	var tops := fine
+	while true:
+		for bj in size:
+			for bi in size:
+				out[Vector3i(level,key.y*size+bi,key.z*size+bj)] = tops[bj*size+bi]
+		if size == 1: break
+		var up := PackedFloat32Array()
+		var half := size >> 1
+		up.resize(half*half)
+		for bj in half:
+			for bi in half:
+				up[bj*half+bi] = maxf(maxf(tops[2*bj*size+2*bi],tops[2*bj*size+2*bi+1]),maxf(tops[(2*bj+1)*size+2*bi],tops[(2*bj+1)*size+2*bi+1]))
+		tops = up
+		size = half
+		level += 1
+	return out
 
 func _ask() -> void:
 	var most := MAX_TASKS if MAX_TASKS > 0 else maxi(OS.get_processor_count()-2,1)
@@ -275,6 +353,7 @@ func _build(key: Vector3i, land_seed: int) -> void:
 		var shape := RockShape.grid(f,made,x0,z0,step,CELLS)
 		if not shape.is_empty(): made.shape = shape
 	_portal_holes(f,made,key,x0,z0,step)
+	made.tops = _tops_of(key,made.get("heights",PackedFloat32Array()))
 	made.key = key
 	made.ms = (Time.get_ticks_usec()-began)/1000.0
 	_done_lock.lock()
@@ -421,6 +500,8 @@ func _commit() -> bool:
 		var r: Dictionary = ready.pop_front()
 		var key: Vector3i = r.key
 		_pending.erase(key)
+		var tops: Dictionary = r.get("tops",{})
+		_keep_tops(key,tops)
 		stats.built += 1
 		stats.build_ms += float(r.ms)
 		stats.slowest_build_ms = maxf(stats.slowest_build_ms,float(r.ms))
@@ -451,7 +532,7 @@ func _commit() -> bool:
 		var s := size_of(key.x)
 		node.position = Vector3(key.y*s,0.0,key.z*s)
 		add_child(node)
-		_chunks[key] = {"node":node,"heights":r.heights if key.x == 0 else PackedFloat32Array(),"faces":r.get("faces",PackedVector3Array())}
+		_chunks[key] = {"node":node,"heights":r.heights if key.x == 0 else PackedFloat32Array(),"faces":r.get("faces",PackedVector3Array()),"tops":tops}
 		stats.committed += 1
 		stats.slowest_commit_ms = maxf(stats.slowest_commit_ms,(Time.get_ticks_usec()-t0)/1000.0)
 		made += 1
