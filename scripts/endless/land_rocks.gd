@@ -55,6 +55,8 @@ var material: Material
 ## The ground material with no turf (a spec's `bare`: the hoodoos' caps are
 ## stone, not lawn): rock_up past 1, so every face is the land's rock.
 var bare: Material
+## The seracs' ground material (a spec's `ice`): all glacier ice, wherever it stands.
+var ice: Material
 ## Levels of detail (off: --no-rock-lod, to compare).
 var lod: bool = not "--no-rock-lod" in LaunchArgs.user_args()
 var stats := {"cells":0,"groups":0,"pillars":0,"tris":0,"slowest_build_ms":0.0,"slowest_commit_ms":0.0,"slowest_body_ms":0.0}
@@ -99,6 +101,9 @@ func setup(land_seed: int, ground: Material = null, peak: RefCounted = null) -> 
 		bare = (material as ShaderMaterial).duplicate()
 		(bare as ShaderMaterial).set_shader_parameter("rock_up",1.2)
 		(bare as ShaderMaterial).set_shader_parameter("thin_up",1.3)
+		ice = bare.duplicate()
+		(ice as ShaderMaterial).set_shader_parameter("peak_ice_solid",1.0)
+		(bare as ShaderMaterial).set_shader_parameter("peak_ice_solid",-1.0)
 
 ## Where --rock-start=<kind> puts the plane: {at, heading (deg), alt, spec},
 ## by the nearest group of that kind to `at`, or {}.
@@ -259,7 +264,7 @@ func _commit_one(done: Dictionary) -> void:
 		var node := Node3D.new()
 		var mesh := ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,b.arrays,[],b.lods if lod else {},RockShape.format(b.arrays))
-		mesh.surface_set_material(0,bare if bool(spec.get("bare",false)) else material)
+		mesh.surface_set_material(0,ice if spec.has("ice") and ice != null else (bare if bool(spec.get("bare",false)) else material))
 		var mi := MeshInstance3D.new()
 		mi.name = "Mesh"
 		mi.mesh = mesh

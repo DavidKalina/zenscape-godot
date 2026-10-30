@@ -38,6 +38,7 @@
 extends RefCounted
 
 const SEA_Y := -40.0
+const PeakIce = preload("res://scripts/endless/peak_ice.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
@@ -766,7 +767,7 @@ func paint() -> Dictionary:
 		"peak_snow":SNOW_LINE,"peak_stretch":Vector4(ICEFALL.x,ICEFALL.y,GLACIER.x,GLACIER.y),"peak_half":FLOOR_HALF,
 		"peak_bend":Vector4(GL_BEND,GL_TURNS,BOULDERS.x,TOE.y),
 		"peak_cirque":Vector4(CIRQUE_R,_cq_ph.x,_cq_ph.y,_cq_ph.z),"peak_cirque_lobes":Vector4(CIRQUE_LOBES.x,CIRQUE_LOBES.y,CIRQUE_LOBES.z,RIM.z),
-		"peak_cirque_strip":Vector4(STRIP.x,STRIP.z+10.0,STRIP.z+40.0,1.0 if _cirque else 0.0)}
+		"peak_cirque_strip":Vector4(STRIP.x,STRIP.z+10.0,STRIP.z+40.0,1.0 if _cirque else 0.0)}.merged(PeakIce.uniforms(PeakIce.today(self)))
 
 ## The tarn's bowl: {centre (world, at the water level), level (world y),
 ## wet (the water's radius at that level), bowl (the bowl's radius), shore

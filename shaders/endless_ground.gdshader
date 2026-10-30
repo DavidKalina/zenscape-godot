@@ -711,6 +711,8 @@ float peak_rim(vec3 p) {
 	return smoothstep(0.0, 0.5, bump) * (1.0 - hd) * (1.0 - lane);
 }
 
+#include "res://shaders/peak_ice.gdshaderinc"
+
 void fragment() {
 	vec3 p = world_position;
 	// The paint's tones: this spot's regions' in a world of regions, else the material's.
@@ -816,6 +818,14 @@ void fragment() {
 	// climbs; its granite above the land's own tops; ice and scree on the
 	// approach valley's floor (peak_paint).
 	vec4 pk = peak_paint(p);
+	// (Glacier ice, shaders/peak_ice.gdshaderinc: its mask on the ice's own line.)
+	vec4 ice_frame = vec4(0.0);
+	vec2 ice_flow = vec2(1.0, 0.0);
+	vec2 ice_more = vec2(0.0);
+	if (peak_ice_on > 0.5) {
+		pk.y = peak_ice_mask(p, pk.x, ice_frame, ice_flow, ice_more);
+		rocky *= 1.0 - pk.y;
+	}
 	float pk_rock = pk.x * smoothstep(240.0, 420.0, over);
 	if (pk.x > 0.0) {
 		float pk_edge = (zs_noise(gxz / 160.0) - 0.5) * 120.0 + (zs_noise(gxz / 41.0) - 0.5) * 50.0 + snow_edge;
@@ -837,7 +847,7 @@ void fragment() {
 	// None of the grass shows where sand, a bank or snow covers the ground
 	// whole and no rock (whose ledges and moss take its colour), so its paint
 	// is skipped there: the same pixels (grass_skip; --land-skip=0 paints it).
-	bool skip_grass = grass_skip > 0 && (snowy >= 1.0 || (rocky <= 0.0 && (sandy >= 1.0 || banked >= 1.0)));
+	bool skip_grass = grass_skip > 0 && (snowy >= 1.0 || pk.y >= 1.0 || (rocky <= 0.0 && (sandy >= 1.0 || banked >= 1.0)));
 	vec3 grass = vec3(0.0);
 	// The grass as the rock's ledges and moss take it (before the near grain).
 	vec3 moss_grass = vec3(0.0);
@@ -1137,7 +1147,18 @@ void fragment() {
 		vec3 scree = mix(ROCK_PALE, ROCK, smoothstep(0.2, 0.8, zs_noise(gxz / 13.0))) * vec3(0.95, 0.98, 1.02) * (1.05 + stones * 0.5);
 		albedo = mix(albedo, scree, pk.z * 0.9);
 	}
-	if (pk.y > 0.0) {
+	vec3 ice_glow = vec3(0.0);
+	float ice_rough = 0.4;
+	float ice_spec = 0.5;
+	if (pk.y > 0.0 && peak_ice_on > 0.5) {
+		vec3 ice_col;
+		vec3 ice_n = lit_n;
+		bool ice_solid = peak_ice_solid > 0.5;
+		peak_ice_paint(p, n, eye, ice_frame, ice_flow, ice_more, fp, distance(p, CAMERA_POSITION_WORLD) * 0.0016, ice_solid ? pow(land_colour.r, 0.45) : 0.5, ice_solid ? pow(land_colour.g, 0.45) : 1.0, ice_solid ? land_colour.b : 0.0, ice_col, ice_n, ice_glow, ice_rough, ice_spec);
+		albedo = mix(albedo, ice_col, pk.y);
+		lit_n = normalize(mix(lit_n, ice_n, pk.y));
+		ice_glow *= pk.y;
+	} else if (pk.y > 0.0) {
 		vec2 f = peak_frame.zw;
 		vec2 flow = vec2(dot(p.xz, f), dot(p.xz, vec2(-f.y, f.x)));
 		// (Each scale eases to its mean as the pixel outgrows it across the flow.)
@@ -1172,6 +1193,11 @@ void fragment() {
 	float hollow = 0.85 + 0.15 * n.y;
 	// A cloud overhead takes a little of the sky's fill too.
 	EMISSION = albedo * hemi * hollow * horizon.y * (1.0 - 0.2 * shade) + rock_glow * rocky * (1.0 - snowy) * (1.0 - pk.y) * (1.0 - pk_rock * 0.6);
+	if (ice_glow != vec3(0.0)) {
+		ROUGHNESS = mix(ROUGHNESS, ice_rough, pk.y);
+		SPECULAR = mix(SPECULAR, ice_spec * (1.0 - shaded) * horizon.x, pk.y);
+		EMISSION += ice_glow * horizon.y * (1.0 - 0.2 * shade);
+	}
 	if (wet > 0.0) {
 		// The river's water, as the sea draws it (endless_sea.gdshader): its
 		// colour by the depth (faked from the way in from the bank), the bed

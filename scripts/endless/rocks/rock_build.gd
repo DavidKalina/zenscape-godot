@@ -41,6 +41,7 @@ static func wingtip() -> float:
 ## faces (the collider's, a PackedVector3Array a pillar), solid ([pillar
 ## solid...]), tris ([per level])}.
 static func build(spec: Dictionary) -> Dictionary:
+	if spec.has("mesher"): return (spec.mesher as Script).call("build",spec)
 	var pos: Vector3 = spec.pos
 	var v := PackedVector3Array()
 	var c := PackedColorArray()

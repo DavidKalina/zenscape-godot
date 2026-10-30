@@ -25,6 +25,8 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const PeakMassif = preload("res://scripts/endless/peak_massif.gd")
 const PeakRoutes = preload("res://scripts/endless/peak_routes.gd")
 const Boulders = preload("res://scripts/endless/rocks/peak_boulders.gd")
+const PeakIce = preload("res://scripts/endless/peak_ice.gd")
+const Serac = preload("res://scripts/endless/rocks/peak_serac.gd")
 
 ## The box (the massif's a, v) the valley's pieces stand in.
 const BOX := Rect2(880.0,-440.0,1180.0,880.0)
@@ -61,6 +63,12 @@ const TOY_GAP := 6.0
 ## length across the flow).
 const WIDEST := 1.3
 const SERAC_LONG := 1.5
+## The ice's heaps (--peak-ice=0: the older slabs): a lattice of this step (m)
+## over the icefall, the chance a point holds a heap, kept this far inside the
+## floor's edge (m).
+const HEAP_STEP := 44.0
+const HEAP_CHANCE := 0.85
+const HEAP_EDGE := 26.0
 ## No piece stands taller than this over its ground (m).
 const TALLEST := 28.0
 ## Within LINE_NEAR m past the lane the chance swells by LINE_MORE, so the
@@ -103,7 +111,13 @@ static func plan_cell(field: RefCounted, cx: int, cz: int, _density: float, _rng
 		var q: Vector2 = b[0]
 		if floori(q.x/cell) == cx and floori(q.y/cell) == cz: mine.append(b)
 	if mine.is_empty(): return []
-	return [_group(field,peak,mine,cx,cz)]
+	if not PeakIce.wanted: return [_group(field,peak,mine,cx,cz)]
+	# Boulders and ice draw with different materials.
+	var out: Array = []
+	for zone in 2:
+		var some := mine.filter(func(b: Array) -> bool: return int(b[3]) == zone)
+		if not some.is_empty(): out.append(_group(field,peak,some,cx,cz))
+	return out
 
 ## The line's v at `a` (the massif's frame).
 static func lane_v(a: float) -> float:
@@ -183,6 +197,9 @@ static func _place(field: RefCounted, peak: RefCounted) -> Array:
 		var a := lerpf(PeakMassif.ICEFALL.x,PeakMassif.ICEFALL.y,t)
 		_try(out,peak,lift,a,lane_v(a),SERAC_POLE.x,SERAC_POLE.y*SERAC_POLE.x,1,SERAC_LONG,keep,true)
 	for zone in 2:
+		if zone == 1 and PeakIce.wanted:
+			_heaps(out,peak,lift,rng,noise,keep)
+			continue
 		var z: Array = FIELD if zone == 0 else SERACS
 		var span: Vector2 = FIELD_A if zone == 0 else SERACS_A
 		var step := float(z[0])
@@ -212,6 +229,28 @@ static func _place(field: RefCounted, peak: RefCounted) -> Array:
 				var up := minf(r*lerpf(float(z[4]),float(z[5]),tall)*up_k,TALLEST)
 				_try(out,peak,lift,a,v,r,up,zone,long,keep,false)
 	return out
+
+## The ice's heaps over the icefall, thickest along the steps' lips and where
+## the cluster noise gathers them, the biggest there: each heap's towers lean
+## on one another; between heaps stands an opening.
+static func _heaps(out: Array, peak: RefCounted, lift: Array, rng: RandomNumberGenerator, noise: FastNoiseLite, keep: float) -> void:
+	var na := int((SERACS_A.y-SERACS_A.x)/HEAP_STEP)
+	var nv := int(BOX.size.y/HEAP_STEP)
+	for i in range(na):
+		for j in range(nv):
+			var a := SERACS_A.x+(i+rng.randf_range(0.1,0.9))*HEAP_STEP
+			var v := BOX.position.y+(j+rng.randf_range(0.1,0.9))*HEAP_STEP
+			var roll := rng.randf()
+			var pick := rng.randf()
+			var members := Serac.cluster(rng,clampf(pick*0.65+clampf(noise.get_noise_2d(a,v)*1.2+0.5,0.0,1.0)*0.3+_lip(a)*0.25,0.0,1.0))
+			if absf(v-PeakMassif._valley_mid(a)) > _floor_half(a)-HEAP_EDGE or roll > HEAP_CHANCE: continue
+			for k in members.size():
+				var m: Array = members[k]
+				var o: Vector2 = m[0]
+				var at := a+o.x
+				var av := v+o.y
+				if absf(av-PeakMassif._valley_mid(at)) > _floor_half(at)-6.0: continue
+				if not _try(out,peak,lift,at,av,float(m[1]),float(m[2]),1,float(m[3]),keep,false) and k == 0: break
 
 ## Place a piece at (a, v) unless it meets the line, the stair, the lift or a
 ## neighbour (leaning on one is allowed). `pole`: on a bend, pushed off the
@@ -274,13 +313,18 @@ static func _group(field: RefCounted, peak: RefCounted, mine: Array, cx: int, cz
 	for b: Array in mine:
 		var q: Vector2 = b[0]
 		if int(b[3]) == 0: pillars.append(Boulders._block(field,pos,q,float(b[1]),float(b[2]),rng))
+		elif PeakIce.wanted: pillars.append(Serac.pillar(field,pos,q,float(b[1]),float(b[2]),float(b[4]),peak.facing,rng))
 		else: pillars.append(_serac(field,peak,pos,q,float(b[1]),float(b[2]),float(b[4]),rng))
 		reach = maxf(reach,q.distance_to(mid)+widest(b)*1.3)
 	var pts := line(peak,50.0)
 	var start: Vector2 = pts[0]
 	var to: Vector2 = pts[2]-start
-	return {"pos":pos,"reach":reach,"pillars":pillars,"foot":[],"by_arches":false,"bare":true,"on_peak":true,
+	var spec := {"pos":pos,"reach":reach,"pillars":pillars,"foot":[],"by_arches":false,"bare":true,"on_peak":true,
 		"approach":{"at":start,"heading":rad_to_deg(atan2(to.x,-to.y)),"alt":START_ALT},"form":"valley"}
+	if PeakIce.wanted and int(mine[0][3]) == 1:
+		spec["mesher"] = Serac
+		spec["ice"] = true
+	return spec
 
 ## One serac at world XZ `q`: radius `r` along the flow, `long` times it
 ## across, standing `up` m over the high side of its ground.
