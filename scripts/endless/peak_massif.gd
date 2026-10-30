@@ -247,6 +247,10 @@ const ROUGH := 12.0
 const ROUGH_SCALE := 90.0
 ## The bounding circle round O: everything outside is the land's own.
 const BOUND := 4050.0
+## The snow line on the massif, over the sea (the ground shader's
+## `peak_snow`, ragged by about 100 m either way): the glacier's ice and
+## the valley's sides below it, snow and granite above.
+const SNOW_LINE := 500.0
 
 ## The stretches along the axis, for drivers and the trunk: name, a from,
 ## a to, height over the sea from, to. The wall's are the wall's own, as
@@ -566,6 +570,13 @@ func apply_grid(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz:
 ## A world XZ point at (a, v) in the massif's frame.
 func world(a: float, v := 0.0) -> Vector2:
 	return centre+facing*a+side*v
+
+## The ground shader's Peak uniforms (shaders/endless_ground.gdshader
+## `peak_paint`): the frame, the zone, the snow line and the valley.
+func paint() -> Dictionary:
+	return {"peak_frame":Vector4(centre.x,centre.y,facing.x,facing.y),"peak_zone":Vector4(_o.x,_o.y,BOUND,1.0),
+		"peak_snow":SNOW_LINE,"peak_stretch":Vector4(ICEFALL.x,ICEFALL.y,GLACIER.x,GLACIER.y),"peak_half":FLOOR_HALF,
+		"peak_bend":Vector4(GL_BEND,GL_TURNS,BOULDERS.x,TOE.y)}
 
 ## The tarn's bowl: {centre (world, at the water level), level (world y),
 ## wet (the water's radius at that level), bowl (the bowl's radius), shore
