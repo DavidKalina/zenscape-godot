@@ -52,10 +52,31 @@ launch grows the grass (~20 s), later ones load it from a cache.
     glances off; rolled through, a deep strike, sparks, the disc swings.
   - Notes are generated placeholder tones.
 
+## After the first play (iterations 12-15)
+
+- **Feel pass** (ff98b486): push-ups come up on the plane's own line a
+  beat ahead (offset 0-2 m; none while turning harder than 0.8 rad/s), the
+  orb is bigger (1.9 m) with a ~5.5 m hit reach, hits are swept along the
+  plane's path, and the meadow is wider (radius 255 m). A natural-line bot
+  went from ~11% to 60-80% hits.
+- **Gritty dirt** (90b7052e, f8fee513): faceted crumbly clods, a lumpy
+  soil dome, grain, crumbs and root bits; clods lighter and larger so the
+  head reads from the chase camera.
+- **Grass cache** (f8fee513): a headless run grows the study's grass dark;
+  headless runs now keep their own cache file. First window launch after
+  a `GRASS_VERSION` bump takes ~40 s.
+- **Sounds** (369bb1af): Freesound CC0 bell and gong (two takes each in
+  `assets/audio/burrower/`, credited in ATTRIBUTION.md; keys **4** and
+  **5** switch takes, `--bell=2` / `--gong=2`), pitched to the run's
+  notes (`BELL_PITCH`, `GONG_PITCH` in push_ups.gd are guesses to tune by
+  ear). Orbs play the archived red-plummet pickup blip, climbing the run.
+  Untested by ear: headless audio is a dummy driver.
+
 ## Stood in
 
-Greybox trees, rocks, ruin and frame; placeholder tones; the trail is the
-whole creature (no body).
+Greybox trees, rocks, ruin and frame; the trail is the whole creature (no
+body). Sound files are Freesound previews; fetch the originals (a free
+account) before ship.
 
 ## Open
 
@@ -64,6 +85,12 @@ whole creature (no body).
 - The pressed tail just ahead of the plane can still read as a band on
   long straight runs; shorter and more broken than before.
 - Up close the clods read a bit chunky.
+- The user finds the wake trigger strict (you must skim under one span)
+  but likes that it feels intentional: kept for now, revisit in endless
+  flight.
+- Pick the winning bell and gong takes and drop the others and keys 4/5.
+- `scratch/burrower_feel.gd`'s "most hit" check fails on run-to-run spread
+  (~57% in its last runs); the measured gain over before is clear.
 - Queued by the user: the burrower climbing landforms (along canyon walls,
   bursting out of a canyon side or a mountaintop). The study needs a steep
   slope or peak for it.
