@@ -82,22 +82,42 @@ const CREST_POS := [0.0,1090.0, 5.0,1072.0, 9.0,1040.0, 13.0,1060.0, 16.5,1012.0
 const CREST_NEG := [0.0,1090.0, 5.0,1068.0, 9.0,1048.0, 12.0,1035.0, 14.5,1030.0, 17.0,1052.0, 20.0,1004.0,
 	23.0,1038.0, 26.0,990.0, 29.0,1018.0, 32.0,978.0, 35.0,998.0, 42.0,945.0, 60.0,850.0, 80.0,715.0,
 	100.0,575.0, 120.0,440.0, 140.0,300.0, 155.0,170.0, 168.0,40.0]
-## Spurs and gullies down every flank: a rib pattern round the ring every
-## RIB_P degrees (inner, outer), its spacing jittered by RIB_JIT, pushing
-## the flank out (a spur, sharp) or in (a gully, round) by up to RIB_IN m on
-## the wall, RIB_ARM m on the arms' inner flank, RIB_OUT m on the outer
-## falls (grown over RIB_GROW m down from the crest).
+## Spurs and gullies down every flank, each one its own: laid round the
+## ring from the back at load (`_ribs`), one rib every RIB_P degrees or so
+## (inner, outer), pushing the flank out (a spur line, at RIB_SPUR) or in
+## (a gully, up to 1) by up to RIB_IN m on the wall, RIB_ARM m on the arms'
+## inner flank, RIB_OUT m on the outer falls (grown over RIB_GROW m down
+## from the crest). Each rib draws its width (RIB_P x RIB_WIDTH, low end
+## likelier), strength (RIB_AMP; RIB_FAINT of them barely show), where its
+## gully runs across it (RIB_SKEW of its width off the middle), its
+## gully's shape (RIB_SHARP: low a V, high a round trough between sharp
+## spurs), and where it starts and dies down the flank (RIB_START,
+## RIB_END inner, RIB_END_OUT outer, m from the crest). The lines wander
+## sideways by up to RIB_WANDER degrees down the flank, so they bend.
 const RIB_P := Vector2(5.5,8.5)
-const RIB_JIT := 0.8
+const RIB_WIDTH := Vector2(0.4,2.0)
+const RIB_AMP := Vector2(0.2,1.0)
+const RIB_FAINT := 0.18
+const RIB_SPUR := -0.7
+const RIB_SKEW := 0.28
+const RIB_SHARP := Vector2(1.2,3.5)
+const RIB_START := 220.0
+const RIB_END := Vector2(260.0,700.0)
+const RIB_END_OUT := Vector2(350.0,1500.0)
+const RIB_WANDER := 3.0
 const RIB_IN := 55.0
 const RIB_ARM := 60.0
 const RIB_OUT := 115.0
 const RIB_GROW := 380.0
-## The wider ribs: their period (times the fine one's) and share. The inner
-## ribs fade out over RIB_FOOT m (from the crest) toward the flank's foot.
+## The wider ribs over the fine ones: their width (times the fine one's
+## period, times RIB_WIDTH) and share. The inner ribs fade out over
+## RIB_FOOT m (from the crest) toward the flank's foot.
 const RIB_WIDE := 2.7
 const RIB_WIDE_SHARE := 0.45
 const RIB_FOOT := Vector2(300.0,560.0)
+## A rib's entry in `_ribs`: start (deg), width (deg), strength, gully at
+## (share of the width), gully power, start and end down the flank (m).
+const RIB_STRIDE := 7
 ## Where the arms end (degrees); past it the ring sinks under the land.
 const ARM_END := 168.0
 ## The wall at the back (th under 30, gone by 60): its foot's height, its
@@ -297,6 +317,9 @@ var side := Vector2(1.0,0.0)
 var _o := Vector2.ZERO
 var _cw := 0.0
 var _noise := FastNoiseLite.new()
+## The ribs (see RIB_STRIDE), per side and flank: [fine, wide] for the
+## -v inner, -v outer, +v inner, +v outer flanks.
+var _ribs: Array[PackedFloat32Array] = []
 ## Tower bases, local (a, v), and their tops over the sea.
 var _towers := PackedVector2Array()
 var _tower_tops := PackedFloat32Array()
@@ -393,6 +416,7 @@ func _init(land_seed: int, frame: Transform3D) -> void:
 	var lb := TARN_LOBES if _cirque else Vector3.ZERO
 	var ph := Vector3(rng.randf()*TAU,rng.randf()*TAU,rng.randf()*TAU)
 	_cq_ph = Vector3(rng.randf()*TAU,rng.randf()*TAU,rng.randf()*TAU)
+	_lay_ribs(land_seed)
 	pond = PackedFloat32Array([tc.x,tc.y,_tarn_wet,_tarn_level+SEA_Y,0.0,lb.x,ph.x,lb.y,ph.y,lb.z,ph.z,_tarn_wet*(1.0+lb.x+lb.y+lb.z)])
 
 # --- Asked by the land field ----------------------------------------------------------
@@ -690,19 +714,54 @@ static func _crest(th: float, s: float) -> float:
 	var t1: float = cr[k+2]
 	return lerpf(float(cr[k+1]),float(cr[k+3]),clampf((th-t0)/(t1-t0),0.0,1.0))
 
-## The rib pattern at `th` on side `s`, period `p` degrees: -1 on a spur's
-## sharp line, 1 in a gully's round bottom.
-func _rib(th: float, s: float, p: float) -> float:
-	var j := _noise.get_noise_2d(th*14.0,s*3100.0+p*97.0)
-	var u := th/p+RIB_JIT*j+(0.37 if s > 0.0 else 0.0)
-	var g := absf(u-floorf(u)-0.5)*2.0
-	# A wider rib every RIB_WIDE ribs or so over the fine ones, so the
-	# flutes are not all alike.
-	var u2 := th/(p*RIB_WIDE)+RIB_JIT*0.6*j+(0.71 if s > 0.0 else 0.2)
-	var g2 := absf(u2-floorf(u2)-0.5)*2.0
-	# Each rib its own strength: some spurs stand bold, some barely show.
-	var amp := clampf(0.65+1.1*_noise.get_noise_2d(u*45.0,s*1700.0+p*13.0),0.15,1.0)
-	return (1.0-2.0*g*g)*amp*(1.0-RIB_WIDE_SHARE)+(1.0-2.0*g2*g2)*RIB_WIDE_SHARE
+## Lays the ribs round the ring (see RIB_P), from a little behind the back
+## to past the arms' ends, for each side and flank.
+func _lay_ribs(land_seed: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([land_seed,"ribs"])
+	_ribs.clear()
+	for k in 4:
+		var outer := k%2 == 1
+		var p := RIB_P.y if outer else RIB_P.x
+		for wide: bool in [false,true]:
+			var t := PackedFloat32Array()
+			var unit := p*(RIB_WIDE if wide else 1.0)
+			var th := -rng.randf()*unit*RIB_WIDTH.y
+			while th < ARM_END+20.0:
+				var w := unit*lerpf(RIB_WIDTH.x,RIB_WIDTH.y,pow(rng.randf(),1.6))
+				var amp := lerpf(RIB_AMP.x,RIB_AMP.y,rng.randf())
+				if rng.randf() < RIB_FAINT: amp *= 0.25
+				var end := RIB_END_OUT if outer else RIB_END
+				t.append_array(PackedFloat32Array([th,w,amp,0.5+RIB_SKEW*rng.randf_range(-1.0,1.0),
+					lerpf(RIB_SHARP.x,RIB_SHARP.y,rng.randf()),RIB_START*rng.randf()*rng.randf(),
+					lerpf(end.x,end.y,rng.randf())]))
+				th += w
+			_ribs.append(t)
+
+## The rib pattern at `th` on side `s` (outer flank or inner), `e` m down
+## the flank from the crest: RIB_SPUR on a spur's line and where no rib
+## runs, up to 1 in a gully's bottom; 0 at the back (th 0).
+func _rib(th: float, s: float, outer: bool, e: float) -> float:
+	var k := (2 if s > 0.0 else 0)+(1 if outer else 0)
+	var tw := th+RIB_WANDER*_noise.get_noise_2d(th*2.5+600.0*k,e*0.35+3000.0)*smoothstep(0.0,300.0,e)
+	var r := _rib_in(_ribs[k*2],tw,e)*(1.0-RIB_WIDE_SHARE)+_rib_in(_ribs[k*2+1],tw,e)*RIB_WIDE_SHARE
+	# Both sides meet at the back with no ribs, so they agree there.
+	return lerpf(0.0,r,smoothstep(0.0,3.0,th))
+
+## One table's rib at `th`, `e` m down the flank (see _rib).
+static func _rib_in(t: PackedFloat32Array, th: float, e: float) -> float:
+	var lo := 0
+	var hi := t.size()/RIB_STRIDE-1
+	while lo < hi:
+		var mid := (lo+hi+1) >> 1
+		if t[mid*RIB_STRIDE] <= th: lo = mid
+		else: hi = mid-1
+	var i := lo*RIB_STRIDE
+	var f := clampf((th-t[i])/t[i+1],0.0,1.0)
+	var c := t[i+3]
+	var g := (c-f)/c if f < c else (f-c)/(1.0-c)
+	var amp := t[i+2]*smoothstep(t[i+5],t[i+5]+90.0,e)*(1.0-smoothstep(t[i+6]-150.0,t[i+6],e))
+	return RIB_SPUR+(1.0-RIB_SPUR)*amp*(1.0-pow(g,t[i+4]))
 
 ## The couloir's middle (v) at `a`: bent away from the head halfway up.
 static func _couloir_mid(a: float) -> float:
@@ -776,7 +835,7 @@ func _h(a: float, v: float) -> Vector3:
 		if d < 0.0:
 			var e := -d
 			# Buttresses and gullies down the wall and the arms' inner flank.
-			var rib := _rib(th,sg,RIB_P.x)
+			var rib := _rib(th,sg,false,e)
 			var foot := 1.0-smoothstep(RIB_FOOT.x,RIB_FOOT.y,e)
 			var hw := _wall(e+RIB_IN*rib*smoothstep(0.0,120.0,e)*foot,hc)
 			var ea := e+RIB_ARM*rib*smoothstep(0.0,150.0,e)*foot
@@ -784,7 +843,7 @@ func _h(a: float, v: float) -> Vector3:
 			hr = lerpf(ha,hw,1.0-smoothstep(30.0,60.0,th))
 		else:
 			# Spurs and gullies down the outer falls.
-			var rib := RIB_OUT*_rib(th,sg,RIB_P.y)
+			var rib := RIB_OUT*_rib(th,sg,true,d)
 			var dr := d+rib*smoothstep(20.0,RIB_GROW,d)
 			var ws := 1.0-smoothstep(5.0,16.0,th)
 			var hs: float
