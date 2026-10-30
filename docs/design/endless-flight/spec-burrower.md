@@ -66,6 +66,15 @@ exception: the trail is judged by how it parts the grass, so use the
 game's grass (or something that reads like it) if at all possible.
 Objects (orb, bell, gong) can be simple shapes with good motion.
 
+**It must read from the skimming chase camera.** That is the view it is
+played from: the plane under one span, the burrower 25-45 m ahead. The
+head (the heave, what it throws up) has to stand clear of the grass
+there, not only from the watch camera or above. Trail stills so far show
+it hidden at skim height, and the tail reading as a long even brown
+furrow; the polish task fixes both (a livelier, taller head that throws
+earth up above the grass, a shorter and broken tail, the wake's froth
+shorter too), and its stills are judged from the chase camera first.
+
 Judge by eye in rendered stills and short frame sequences (several stills
 across one pass of the trail, `tools/shot.py`), from the chase camera and
 the watch camera. Motion is the point: surge and settle, the earth's
