@@ -196,7 +196,9 @@ func _exit_tree() -> void:
 	# quits): out of the tree, so freed here, or its bodies leak at exit.
 	_lock.lock()
 	for done: Dictionary in _done:
-		for b: Dictionary in done.arches:
+		var arches: Array = done.arches
+		for i in range(int(done.get("at",0)),arches.size()):
+			var b: Dictionary = arches[i]
 			if b.has("node") and is_instance_valid(b.node): (b.node as Node).free()
 	_done.clear()
 	_lock.unlock()
@@ -236,10 +238,14 @@ func step(at: Vector3) -> void:
 	var began := Time.get_ticks_usec()
 	while true:
 		_lock.lock()
-		var next: Variant = _done.pop_front() if not _done.is_empty() else null
+		var next: Variant = _done.front() if not _done.is_empty() else null
 		_lock.unlock()
 		if next == null: break
-		_commit_one(next)
+		# A cell part done (its budget spent) stays first, for the next frame.
+		if _commit_one(next,not _whole_cells,began):
+			_lock.lock()
+			_done.pop_front()
+			_lock.unlock()
 		if (Time.get_ticks_usec()-began)/1000.0 > COMMIT_BUDGET: break
 
 func _wanted(at: Vector3, reach: float) -> Array:
@@ -291,17 +297,42 @@ func _build_cell(key: Vector2i, field: RefCounted) -> Dictionary:
 		built.append(b)
 	return {"key":key,"arches":built,"ms":(Time.get_ticks_usec()-began)/1000.0}
 
-func _commit_one(done: Dictionary) -> void:
+## A cell's arches all committed in the frame its build is taken
+## (--arch-commit=cell, as before); else one arch at a time, the frame's
+## budget looked at after each, so a cell of bridges and set pieces spreads
+## over frames.
+var _whole_cells := "--arch-commit=cell" in LaunchArgs.user_args()
+
+## Commits `done`'s arches from where it stopped: all of them, or with
+## `sliced` until the budget from `began` (µs) is spent. True once the cell
+## is done (or dropped); the cell's records stand in `_cells` from its
+## first arch on.
+func _commit_one(done: Dictionary, sliced := false, began := 0) -> bool:
 	var key: Vector2i = done.key
 	var t0 := Time.get_ticks_usec()
-	stats.built_ms += float(done.ms)
-	stats.slowest_build_ms = maxf(stats.slowest_build_ms,float(done.ms))
-	if _cells.has(key) or _cell_distance(key,_eye) > REACH+Plan.CELL*2.0:
-		for b: Dictionary in done.arches:
-			if b.has("node"): (b.node as Node).free()
-		return
-	var records: Array = []
-	for b: Dictionary in done.arches:
+	var arches: Array = done.arches
+	if not done.has("at"):
+		stats.built_ms += float(done.ms)
+		stats.slowest_build_ms = maxf(stats.slowest_build_ms,float(done.ms))
+		if _cells.has(key) or _cell_distance(key,_eye) > REACH+Plan.CELL*2.0:
+			for b: Dictionary in arches:
+				if b.has("node"): (b.node as Node).free()
+			return true
+		done.at = 0
+		done.records = []
+		_cells[key] = done.records
+	var records: Array = done.records
+	if not is_same(_cells.get(key),records):
+		# Freed (out of reach) part done: the rest never joins the tree.
+		for i in range(int(done.at),arches.size()):
+			if (arches[i] as Dictionary).has("node"): (arches[i].node as Node).free()
+		return true
+	while int(done.at) < arches.size():
+		if sliced and int(done.at) > 0 and (Time.get_ticks_usec()-began)/1000.0 > COMMIT_BUDGET:
+			stats.slowest_commit_ms = maxf(stats.slowest_commit_ms,(Time.get_ticks_usec()-t0)/1000.0)
+			return false
+		var b: Dictionary = arches[int(done.at)]
+		done.at = int(done.at)+1
 		var spec: Dictionary = b.spec
 		var name := String(spec.name)
 		if LayoutOverrides.deleted(name):
@@ -337,6 +368,7 @@ func _commit_one(done: Dictionary) -> void:
 			(body as StaticBody3D).collision_mask = 0
 		node.name = name.replace("/","_")
 		node.transform = xf
+		Build.add_shapes(node)
 		add_child(node)
 		LayoutOverrides.track(name,node,"piece",coded)
 		var solid: Dictionary = b.solid
@@ -345,9 +377,9 @@ func _commit_one(done: Dictionary) -> void:
 		records.append({"name":name,"kind":String(spec.get("form",spec.kind)),"node":node,"pos":xf.origin,"cos":cos(yaw),"sin":sin(yaw),
 			"solid":solid,"reach":reach,"spec":spec})
 		stats.arches += 1
-	_cells[key] = records
 	stats.cells = _cells.size()
 	stats.slowest_commit_ms = maxf(stats.slowest_commit_ms,(Time.get_ticks_usec()-t0)/1000.0)
+	return true
 
 func _free_cell(key: Vector2i) -> void:
 	for r: Dictionary in _cells[key]:
