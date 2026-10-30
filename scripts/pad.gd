@@ -95,7 +95,12 @@ const ACTIONS := {
 	# On foot on the ground, held: the telescope up (scripts/telescope.gd).
 	"telescope":[["mouse",MOUSE_BUTTON_RIGHT],["button",JOY_BUTTON_LEFT_SHOULDER]],
 	"eye_leave":[["button",JOY_BUTTON_B],["button",JOY_BUTTON_BACK]],
-	"fly_boost":[["key",KEY_SPACE],["button",JOY_BUTTON_A],["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],
+	# Boost: Space, or the pad's right trigger (the south face rolls).
+	"fly_boost":[["key",KEY_SPACE],["axis",JOY_AXIS_TRIGGER_RIGHT,1.0]],
+	# In flight, pressed: a barrel roll on one press, toward the side leant
+	# to, else the bank (endless flight's `roll_button`). Space stays boost,
+	# so the keyboard's is Z (the burrower study's own Space is its own).
+	"fly_roll":[["key",KEY_Z],["button",JOY_BUTTON_A]],
 	"fly_brake":[["key",KEY_SHIFT],["axis",JOY_AXIS_TRIGGER_LEFT,1.0]],
 	"fly_lean_left":[["button",JOY_BUTTON_LEFT_SHOULDER]],
 	"fly_lean_right":[["button",JOY_BUTTON_RIGHT_SHOULDER]],

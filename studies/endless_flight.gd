@@ -13,7 +13,7 @@ extends Node3D
 ##
 ## Keys: WASD or the left stick bank and pitch (W nose down), the mouse
 ## steers, Space boost, Shift brake, Q E held knife edge (twice quick a
-## barrel roll, or click), F flaps in the air (pad Y), hold right mouse to
+## barrel roll, or click, or Z / the pad's south face on one press), F flaps in the air (pad Y), hold right mouse to
 ## look round, F1 the numbers, R back up into the air over where it is, Esc
 ## lets the mouse go. B (pad X) spends the near misses' meter on a surge.
 ##
@@ -736,7 +736,7 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  J logbook  ·  O photo  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge  ·  Z roll  ·  F flaps  ·  J logbook  ·  O photo  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale"
 	layer.add_child(_hint)
 	_stop_cue = Label.new()
 	_stop_cue.anchor_top = 1.0
@@ -1331,6 +1331,23 @@ func _fly_input(_delta: float) -> Dictionary:
 	_roll_asked = 0.0
 	return input
 
+## Rolls asked for by the roll button (for drivers).
+var rolls_asked := 0
+
+## Z / the pad's south face (`fly_roll`): a barrel roll on one press, toward
+## the side leant to (Q E, the shoulders), else the way banked, else the way
+## the stick turns, else right (as the burrower study's Space).
+func roll_button() -> void:
+	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
+	var lean := keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left")
+	var turn := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back").x
+	var bank := float(plane.bank)
+	if absf(lean) > 0.2: _roll_asked = signf(lean)
+	elif absf(bank) > 0.05: _roll_asked = signf(bank)
+	elif absf(turn) > 0.2: _roll_asked = signf(turn)
+	else: _roll_asked = 1.0
+	rolls_asked += 1
+
 func _lean_tapped(dir: float) -> void:
 	var now := Time.get_ticks_msec()
 	if dir == _tap_dir and now-_tap_at <= int(DOUBLE_TAP*1000.0):
@@ -1375,6 +1392,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif Pad.pressed(event,&"fly_pace"): _next_pace()
 	elif Pad.pressed(event,&"fly_lean_left"): _lean_tapped(-1.0)
 	elif Pad.pressed(event,&"fly_lean_right"): _lean_tapped(1.0)
+	elif event.is_action_pressed(&"fly_roll") and not event.is_echo(): roll_button()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match (event as InputEventKey).keycode:
 			KEY_F: _land_key()
