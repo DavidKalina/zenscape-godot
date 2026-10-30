@@ -136,13 +136,43 @@ merge**. Lane commits: `ITER(peak): lane <part>: <task>`.
 
 ## Trunk
 
-In order, one task per iteration, after the lanes are merged:
+The four lanes are merged (stamp `077fcc2d`, lift `3773003c`, lines
+`803fe1b8`, collar `e2ed0e02`; merged at `d99d9ab6`, smoke passes with
+all four on and with `--peak=0 --lift=0 --lines=0 --collar=0`). Each
+lane's commit message ends with **Notes for merge** that say how the
+trunk uses it: `PeakMassif` helpers (`tarn()`, `couloir()`,
+`tower_bases()`, `summit()`, `world(a, v)`, `STRETCHES`, placement
+`peak/massif`, test spot `TEST_AT` to replace); `air_lift.add(name,
+points, radius, strength)`; `PlaceLines` `PLACES`/`LINES` (delete the
+"trial" line); `look.clouds.set_collar(centre, radius, lo, hi)`.
 
-1. Merge the lanes, join the shared lines, smoke, commit the merge.
+What the stamp lane left open, and the trunk must close: no stills were
+taken of the massif; the plateau landing failed because above about
+186 m over the sea `LandStream` builds no level-0 chunks and so no
+colliders (the plane never touched the plateau); chunk builds near the
+Peak cost 30 to 40 ms each in GDScript; the massif is on in every world
+profile; rivers stop where it lifts the land; other placers (arches,
+rocks, trees) may stand things on it.
+
+In order, one task per iteration:
+
+1. Detail at height, first because nothing above 186 m can be landed on
+   or skimmed until it is done: `LandStream._distance` measured from the
+   chunk's own ground (a cached min height per chunk, or one field sample
+   at the chunk's nearest point), not from the sea, so the plateau and
+   the wall get level-0 chunks and colliders when the plane is near them.
+   Keep the edit in `land_stream.gd` minimal; a rendering session may
+   land changes there, so check `git log main -- scripts/endless/
+   land_stream.gd` and rebase if needed. Prove: the plateau landing the
+   stamp lane could not make (by real input, graded), rays on the wall
+   and the crest agree with `height()`, and the chunk-cost table again.
+   Stills of the massif from the foot and from the air, judged against
+   the Shape section.
 2. Place the massif from the start meadow (about 5 km, horseshoe open to
    the meadow) and turn the start so it faces the summit, with the gold
-   door tower off to one side. Raise the ceiling. Still from the meadow:
-   the Peak and the door both read.
+   door tower off to one side; replace `TEST_AT`. Raise the ceiling. Keep
+   other placers off the massif. Still from the meadow: the Peak and the
+   door both read.
 3. The tarn: a pond entry with a forced level in the plateau bowl, skipping
    the pond site rules; the shore meadow landable; `place/peak` on
    landing; the landing card at the summit.
@@ -154,12 +184,12 @@ In order, one task per iteration, after the lanes are merged:
 6. Dressing: boulder field from the rock kit, seracs on the icefall, ice
    on the glacier and a snow line above about 500 m in the ground shader.
 7. The sky above the collar: the land's hour below, the collar's own hour
-   above, blended by eye height through the band.
-8. Detail at height: `LandStream._distance` measured from the chunk's
-   own ground, not the sea; the straight-up check per preset; the
-   chunk-cost numbers again. Keep this edit minimal and do it last; a
-   rendering session may land changes in `land_stream.gd` meanwhile, so
-   rebase on the loop's branch first.
+   above, blended by eye height through the band. Brighten the collar
+   from below if it still reads tan against the field clouds.
+8. Cost: the chunk-build numbers near the Peak against far from it, the
+   straight-up check per preset, and if streaming shows holes near the
+   Peak, the massif's profile ported into the C++ field with the
+   GDScript mirror kept.
 9. Final: smoke checks, a driver through each route, stills from the
    meadow, the glacier, the couloir, above the collar and the tarn; then
    the handoff.
