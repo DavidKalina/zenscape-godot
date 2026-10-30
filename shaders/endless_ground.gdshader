@@ -822,6 +822,7 @@ void fragment() {
 		float high = smoothstep(peak_snow, peak_snow + 500.0, over);
 		float pk_snowy = smoothstep(pk_line - 20.0, pk_line + 4.0, over + pk_edge)
 			* smoothstep(mix(0.58, 0.40, high), mix(0.68, 0.52, high), n.y + rock_edge);
+		if (psnow_on > 0.5) pk_snowy = psnow_mask(psnow_point(p, over), over, n.y, pk_line, high);
 		snowy = mix(snowy, pk_snowy, pk.x) * (1.0 - max(pk.y, pk.z));
 		// The cirque's rim: granite on its slopes, snow on its flatter
 		// tops and in its hollows, ragged.
@@ -1126,8 +1127,8 @@ void fragment() {
 	// The Peak's snow has its own surface and light (peak_snow.gdshaderinc).
 	float ps_on = psnow_on * pk.x * step(0.001, snowy);
 	vec3 ps_n = n;
-	float ps_glit = 0.0;
-	if (ps_on > 0.0) snow = mix(snow, psnow_surface(p, gxz, n, eye, fp, snowy, ps_n, ps_glit), ps_on);
+	vec3 ps_glit = vec3(0.0);
+	if (ps_on > 0.0) snow = mix(snow, psnow_surface(p, psnow_point(p, over), n, eye, distance(p, CAMERA_POSITION_WORLD), 2.0 / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y), snowy, ps_n, ps_glit), ps_on);
 
 	vec3 albedo = mix(grass, rock, rocky);
 	albedo = mix(albedo, sand, sandy * (1.0 - rocky * 0.5));

@@ -76,8 +76,11 @@ void fragment() {
 	// The sun's share falls off away from it across the puff, the sky's stays.
 	vec2 to_sun = vec2(dot(zs_sun_direction, INV_VIEW_MATRIX[0].xyz), dot(zs_sun_direction, INV_VIEW_MATRIX[1].xyz));
 	float side = clamp(0.62 + dot(vec2(q.x, -q.y), to_sun) * 0.42 + (billow - 0.5) * 0.3, 0.0, 1.0);
-	vec3 sun = zs_key_irradiance / PI * zs_celestial_clear * zs_daylight;
-	vec3 sky = zs_hemi_sky * zs_hemi_energy / PI;
-	ALBEDO = vec3(0.92, 0.95, 1.0) * (sun * side + sky * vec3(0.8, 0.9, 1.15));
+	// Unshaded: this is the light it ends up with. The sky's fill as snow takes it
+	// (PSNOW_FILL), and the sun's as white with a warm edge, not the sun's colour.
+	vec3 sun = zs_key_irradiance / PI * zs_celestial_clear * zs_daylight * 0.52;
+	sun = mix(sun, vec3(dot(sun, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.02, 1.0, 0.96), 0.85);
+	vec3 sky = zs_hemi_sky * zs_hemi_energy / PI * vec3(5.2, 5.0, 4.6);
+	ALBEDO = sky + sun * side;
 	ALPHA = clamp(body * opacity, 0.0, 1.0);
 }

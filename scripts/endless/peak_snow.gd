@@ -112,7 +112,6 @@ func setup(land_seed: int, look: ShaderMaterial, massif: RefCounted, land: RefCo
 	add_child(_viewport)
 	_stamps = MultiMesh.new()
 	_stamps.transform_format = MultiMesh.TRANSFORM_2D
-	_stamps.use_colors = true
 	_stamps.use_custom_data = true
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE
@@ -240,8 +239,7 @@ func _furrow(hit: Vector2, wash: Dictionary) -> void:
 	var long := gone*2.0
 	var xf := Transform2D(way*long*per_m,Vector2(-way.y,way.x)*side*2.0*per_m,_last_hit*per_m)
 	_stamps.set_instance_transform_2d(i,xf)
-	_stamps.set_instance_color(i,Color(_time,strength,0.0,0.0))
-	_stamps.set_instance_custom_data(i,Color(half_wide,half_wide/side,0.0,0.0))
+	_stamps.set_instance_custom_data(i,Color(_time,strength,half_wide/side,0.0))
 	_stamps.visible_instance_count = maxi(_stamps.visible_instance_count,i+1)
 	_last_hit = hit
 	_last_way = way
