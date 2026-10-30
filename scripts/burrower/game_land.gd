@@ -68,7 +68,7 @@ func colour(x: float, z: float, y: float, nm: Vector3) -> Color:
 
 ## The sea's swell or a river's or lake's level (Field.SEA_Y and under on
 ## dry land, which is far over it). Land well over the sea skips the swell:
-## `water_at` marches the sea's waves (0.15 ms a call), and a run asks every frame.
+## `water_at` marches the sea's waves, and a run asks several times a frame.
 func water_y(x: float, z: float) -> float:
 	if float(game.field.height(x,z)) > Field.SEA_Y+SWELL_ROOM:
 		var river: float = game.field.river_y(x,z)
