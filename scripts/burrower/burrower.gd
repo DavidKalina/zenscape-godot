@@ -49,6 +49,8 @@ const NOSE := 6
 ## The bow's rows ask the land at every BOW_EVERYth point across: they're
 ## redone each frame, and the land's the dear part (spec item 6).
 const BOW_EVERY := 5
+## The bow reads the land this often; between, the rows go along with the head.
+const BOW_READ := 1.0/30.0
 const BOW_ROWS := 3
 const BOW := 0.24
 const SCAR_LIFE := 12.0
@@ -135,6 +137,7 @@ const GRASS_PUSH := 2.6
 const GRASS_HOLD := 0.45
 ## Clods: at most CLODS alive, kicked at CLOD_RATE a second at full speed.
 const CLODS := 360
+const CLOD_FLOATS := 16
 const CLOD_RATE := 34.0
 ## The spout: earth flung high off the head (so it shows over the grass from
 ## a skimming chase camera), SPOUT_RATE a second at full speed, up SPOUT_UP
@@ -226,6 +229,14 @@ var _live: MeshInstance3D
 var _ridge_mat := ShaderMaterial.new()
 var _clods: Array = []
 var _clod_mm := MultiMesh.new()
+## What _clod_mm draws (CLOD_FLOATS a clod), so a clod lying still isn't rewritten.
+var _clod_buf := PackedFloat32Array()
+var _clod_shown := -1
+## The bow's rows and when they last read the land (`_slide_bow` between).
+var _bow: Array = []
+var _bow_read := -INF
+var _bow_pos := Vector2.ZERO
+var _bow_time := 0.0
 var _clod_carry := 0.0
 var _spout_carry := 0.0
 var _dusts: Array = []
@@ -274,6 +285,7 @@ func setup(the_land: Ground, the_react: GrassReact) -> void:
 	_clod_mm.use_colors = true
 	_clod_mm.mesh = lump
 	_clod_mm.instance_count = CLODS
+	_clod_buf.resize(CLODS*CLOD_FLOATS)
 	_clod_mm.visible_instance_count = 0
 	var clods := MultiMeshInstance3D.new()
 	clods.name = "Clods"
@@ -886,8 +898,19 @@ func _between(a: Dictionary, b: Dictionary, t: float) -> Dictionary:
 ## The live chunk: the samples since the last whole chunk, the head and the
 ## bow ahead of it (born in the future, rising).
 func _rebuild_live() -> void:
-	var extra: Array = []
-	if active and strength > 0.0 and not wet:
+	var extra := _bow
+	if not active or strength <= 0.0 or wet:
+		extra = []
+		_bow = extra
+		_bow_read = -INF
+	elif time-_bow_read < BOW_READ:
+		_slide_bow()
+	else:
+		extra = []
+		_bow = extra
+		_bow_read = time
+		_bow_pos = pos
+		_bow_time = time
 		var last := _sample(pos,forward(),time,strength,BOW_EVERY)
 		extra.append(last)
 		var bow_len := BOW*maxf(speed,4.0)
@@ -906,6 +929,25 @@ func _rebuild_live() -> void:
 		return
 	if _live_mesh == null: _live_mesh = ArrayMesh.new()
 	_live.mesh = _strip(_samples,extra,_live_mesh)
+
+## The bow as last read from the land, carried along with the head.
+func _slide_bow() -> void:
+	var d := pos-_bow_pos
+	var m := Vector3(d.x,0.0,d.y)
+	var age := Vector2(time-_bow_time,0.0)
+	_bow_pos = pos
+	_bow_time = time
+	for row: Dictionary in _bow:
+		var v: PackedVector3Array = row.verts
+		var w: PackedVector2Array = row.uv2
+		for i in v.size():
+			v[i] += m
+			w[i] += age
+		row.verts = v
+		row.uv2 = w
+		var box: AABB = row.box
+		box.position += m
+		row.box = box
 
 func _finish_live() -> void:
 	if _samples.size() >= 2:
@@ -1018,7 +1060,7 @@ func _kick(delta: float) -> void:
 		_spawn_dust()
 
 func _spawn_clod() -> void:
-	if _clods.size() >= CLODS: _clods.pop_front()
+	if _clods.size() >= CLODS: _drop_clod(0)
 	var side := Vector2(-forward().y,forward().x)
 	var u := _rng.randf_range(-1.0,1.0)
 	var at := pos-forward()*_rng.randf_range(0.0,2.5)+side*u*1.2
@@ -1036,7 +1078,7 @@ func _spawn_clod() -> void:
 
 ## A clod flung high off the head, arcing on over it.
 func _spawn_spout() -> void:
-	if _clods.size() >= CLODS: _clods.pop_front()
+	if _clods.size() >= CLODS: _drop_clod(0)
 	var side := Vector2(-forward().y,forward().x)
 	var at := pos+forward()*_rng.randf_range(-0.5,0.8)+side*_rng.randf_range(-0.5,0.5)
 	var kind := _rng.randf()
@@ -1056,7 +1098,7 @@ func _spawn_spout() -> void:
 ## `n` clods from `at` (world, y their start), out `out` m/s, up `up` m/s.
 func throw_earth(at: Vector3, n: int, out: float, up: float, spread := 1.0) -> void:
 	for i in n:
-		if _clods.size() >= CLODS: _clods.pop_front()
+		if _clods.size() >= CLODS: _drop_clod(0)
 		var a := _rng.randf()*TAU
 		var dir := Vector2(cos(a),sin(a))
 		var p := at+Vector3(dir.x,0.0,dir.y)*_rng.randf_range(0.2,spread)
@@ -1096,6 +1138,7 @@ func puff(at: Vector3, n: int, water := false) -> void:
 
 func _step_clods(delta: float) -> void:
 	var i := 0
+	var wrote := false
 	while i < _clods.size():
 		var c: Dictionary = _clods[i]
 		var p: Vector3 = c.p
@@ -1123,24 +1166,61 @@ func _step_clods(delta: float) -> void:
 					v = Vector3.ZERO
 			c.v = v
 		else:
-			c.rest = float(c.rest)+delta
+			var r := float(c.rest)+delta
+			c.rest = r
 			# Lying a moment, then sinking into the grass.
-			if float(c.rest) > 1.6: p.y -= delta*0.35
-			if float(c.rest) > 3.2:
-				_clods.remove_at(i)
+			if r <= 1.6 and c.has("laid"):
+				i += 1
+				continue
+			if r > 3.2:
+				_drop_clod(i)
+				continue
+			if r > 1.6: p.y -= delta*0.35
+			if c.has("laid"):
+				c.p = p
+				_clod_buf[i*CLOD_FLOATS+7] = p.y
+				wrote = true
+				i += 1
 				continue
 		c.p = p
-		i += 1
-	var n := _clods.size()
-	_clod_mm.visible_instance_count = n
-	for k in n:
-		var c: Dictionary = _clods[k]
+		if float(c.rest) >= 0.0: c.laid = true
 		# 2.3: the ragged lump (GritMesh.lump) is some 15% smaller than the
 		# round clod it replaced; at 2.0 the spout thinned from the chase cam.
-		var b := Basis(c.spin,float(c.turn)).scaled(Vector3(c.squash)*float(c.size)*2.3)
-		_clod_mm.set_instance_transform(k,Transform3D(b,c.p))
-		_clod_mm.set_instance_color(k,c.colour)
+		var s: Vector3 = Vector3(c.squash)*float(c.size)*2.3
+		var b := Basis(c.spin,float(c.turn))
+		var o := i*CLOD_FLOATS
+		var col: Color = c.colour
+		_clod_buf[o] = b.x.x*s.x
+		_clod_buf[o+1] = b.y.x*s.x
+		_clod_buf[o+2] = b.z.x*s.x
+		_clod_buf[o+3] = p.x
+		_clod_buf[o+4] = b.x.y*s.y
+		_clod_buf[o+5] = b.y.y*s.y
+		_clod_buf[o+6] = b.z.y*s.y
+		_clod_buf[o+7] = p.y
+		_clod_buf[o+8] = b.x.z*s.z
+		_clod_buf[o+9] = b.y.z*s.z
+		_clod_buf[o+10] = b.z.z*s.z
+		_clod_buf[o+11] = p.z
+		_clod_buf[o+12] = col.r
+		_clod_buf[o+13] = col.g
+		_clod_buf[o+14] = col.b
+		_clod_buf[o+15] = col.a
+		wrote = true
+		i += 1
+	var n := _clods.size()
+	if n != _clod_shown:
+		_clod_shown = n
+		_clod_mm.visible_instance_count = n
+	if wrote: _clod_mm.buffer = _clod_buf
 	stats.clods = n
+
+## Clod `i` gone, the last in its place (written again by the next step).
+func _drop_clod(i: int) -> void:
+	var last: Dictionary = _clods.pop_back()
+	if i < _clods.size():
+		last.erase("laid")
+		_clods[i] = last
 
 # --- Dust ------------------------------------------------------------------------
 

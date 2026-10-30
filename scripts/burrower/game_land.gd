@@ -67,8 +67,12 @@ func colour(x: float, z: float, y: float, nm: Vector3) -> Color:
 	return game.field.colour(x,z,y,nm.y,1.0)
 
 ## The sea's swell or a river's or lake's level (Field.SEA_Y and under on
-## dry land, which is far over it).
+## dry land, which is far over it). Land well over the sea skips the swell:
+## `water_at` marches the sea's waves (0.15 ms a call), and a run asks every frame.
 func water_y(x: float, z: float) -> float:
+	if float(game.field.height(x,z)) > Field.SEA_Y+SWELL_ROOM:
+		var river: float = game.field.river_y(x,z)
+		return Field.SEA_Y if is_nan(river) else maxf(Field.SEA_Y,river)
 	return game.water_at(Vector3(x,Field.SEA_Y,z))
 
 ## Not steep (or water) and clear of what stands on the land.
@@ -83,6 +87,8 @@ func open(at: Vector2) -> bool:
 ## reads and four `inside`s; 2 m is finer than it steers. Kept a short while (the
 ## land stands and goes).
 const MEMO_CELL := 2.0
+## Land this far over the sea has no swell to ask about (`water_y`).
+const SWELL_ROOM := 8.0
 const MEMO_MOST := 400
 var _memo := {}
 
