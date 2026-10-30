@@ -307,8 +307,15 @@ static func _serac(field: RefCounted, peak: RefCounted, pos: Vector3, q: Vector2
 	ring.call(low-ground-1.5,1.0)
 	ring.call(over,1.0)
 	ring.call(over+up*0.45,rng.randf_range(0.94,1.02))
-	ring.call(tall-up*0.08,rng.randf_range(0.82,0.92))
-	ring.call(tall,rng.randf_range(0.7,0.8))
+	# Half of them broken at the top: a shelf a fifth down, a block on it.
+	if rng.randf() < 0.5:
+		ring.call(tall-up*0.24,rng.randf_range(0.88,0.95))
+		ring.call(tall-up*0.2,rng.randf_range(0.6,0.7))
+		ring.call(tall-up*0.04,rng.randf_range(0.55,0.65))
+		ring.call(tall,rng.randf_range(0.42,0.52))
+	else:
+		ring.call(tall-up*0.08,rng.randf_range(0.82,0.92))
+		ring.call(tall,rng.randf_range(0.7,0.8))
 	# Leaning downstream (toward the meadow, +a), as seracs topple.
 	var lean := fwd*rng.randf_range(0.05,0.3)*r+side*rng.randf_range(-0.1,0.1)*r
 	for c: Array in profile:
@@ -318,6 +325,6 @@ static func _serac(field: RefCounted, peak: RefCounted, pos: Vector3, q: Vector2
 	# Long across the flow: the ring's x along the side, turned a little.
 	var yaw := atan2(side.y,side.x)+rng.randf_range(-0.25,0.25)
 	return {"at":Vector3(q.x-pos.x,ground-pos.y,q.y-pos.z),"profile":profile,"yaw":yaw,"dome":rng.randf_range(0.2,0.9),
-		"square":rng.randf_range(0.3,0.5),"lump":clampf(r*0.8,1.5,5.0),"lumps":0.06,"grain":0.02,"ledges":0.03,"flutes":0.08,
-		"bed":rng.randf_range(2.5,4.5),"ring_every":clampf(tall/8.0,0.8,1.6),"segments":16,"seed":rng.randi(),
+		"square":rng.randf_range(0.3,0.5),"lump":clampf(r*0.8,1.5,5.0),"lumps":0.08,"grain":0.07,"ledges":0.07,"flutes":0.14,
+		"bed":rng.randf_range(1.6,3.0),"ring_every":clampf(tall/8.0,0.8,1.6),"segments":16,"seed":rng.randi(),
 		"tint":Color(0.9,1.0,1.12)}
