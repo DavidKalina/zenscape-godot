@@ -1,4 +1,5 @@
 shader_type spatial;
+#include "res://shaders/burrower_grit.gdshaderinc"
 // The burrower's ridge (scripts/burrower/burrower.gd): a strip laid on the
 // ground along its path, heaved up from each sample's age. UV.x is across
 // (-1..1), UV.y the half width (m), UV2 (born, strength), TANGENT the strip's
@@ -31,6 +32,7 @@ uniform vec3 earth_dry : source_color = vec3(0.52, 0.43, 0.30);
 varying float v_torn;
 varying float v_age;
 varying float v_head;
+varying vec3 v_pos;
 
 float hash1(float x) {
 	return fract(sin(x * 91.7) * 43758.5453);
@@ -82,7 +84,11 @@ void vertex() {
 	float rag = 0.1 * (hash1(born * 3.1 + u * 5.0) - 0.5);
 	float crack = 1.0 - smoothstep(0.0, 0.3 + rag, abs(u));
 	float lift = heave * r * lump * b - crack * open * 0.06 * min(r * 4.0, 1.0);
+	// Ragged, crumbly: the torn earth and the head's mound heaved unevenly.
+	float rough = hash1(born * 11.3 + u * 7.7) - 0.4;
+	lift += (v_head + 0.5 * open) * 0.1 * rough * b;
 	VERTEX.y += lift;
+	v_pos = VERTEX;
 	// The slope across from d(lift)/du.
 	float slope = heave * r * lump * (-4.0 * uu * max(1.0 - uu * uu, 0.0)) * mix(1.0, 1.35, hk) / max(hw, 0.1);
 	NORMAL = normalize(NORMAL - TANGENT * slope);
@@ -99,6 +105,21 @@ void fragment() {
 	vec3 turf = to_linear(COLOR.rgb);
 	// Fresh earth dark and moist, drying paler as the scar settles.
 	vec3 soil = mix(earth, earth_dry, smoothstep(2.0, 18.0, v_age));
-	ALBEDO = mix(turf, soil, v_torn);
-	ROUGHNESS = 0.95;
+	// Gritty where torn: dry crumbs on damp dark earth, grains, root bits.
+	float dry = smoothstep(2.0, 18.0, v_age);
+	vec3 grit = grit_albedo(v_pos * 1.3, soil * 1.15, 0.2 + 0.6 * dry, 0.0);
+	// A little grain in the turf too.
+	vec3 grass = turf * (0.88 + 0.24 * g_noise(v_pos * 14.0));
+	ALBEDO = mix(grass, grit, v_torn);
+	ROUGHNESS = 0.97;
+	if (v_torn > 0.05) {
+		float h = grit_height(v_pos * 1.3, 0.0);
+		vec3 dpdx = dFdx(VERTEX);
+		vec3 dpdy = dFdy(VERTEX);
+		vec3 r1 = cross(dpdy, NORMAL);
+		vec3 r2 = cross(NORMAL, dpdx);
+		float det = dot(dpdx, r1);
+		vec3 gr = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
+		NORMAL = normalize(abs(det) * NORMAL - v_torn * 0.02 * gr);
+	}
 }

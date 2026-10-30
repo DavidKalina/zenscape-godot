@@ -33,6 +33,7 @@ const Land = preload("res://scripts/burrower/burrower_land.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const RIDGE_SHADER = preload("res://shaders/burrower_ridge.gdshader")
 const DUST_SHADER = preload("res://shaders/burrower_dust.gdshader")
+const SOIL_SHADER = preload("res://shaders/burrower_soil.gdshader")
 const TreeShudder = preload("res://scripts/burrower/tree_shudder.gd")
 
 ## The ridge: a sample every SAMPLE m, ACROSS vertices across HALF_W m each
@@ -200,16 +201,14 @@ func setup(the_land: Land, the_react: GrassReact) -> void:
 	_live.name = "RidgeLive"
 	_live.material_override = _ridge_mat
 	add_child(_live)
-	var lump := SphereMesh.new()
-	lump.radius = 0.5
-	lump.height = 0.8
-	lump.radial_segments = 6
-	lump.rings = 3
-	var clod_m := StandardMaterial3D.new()
-	clod_m.vertex_color_use_as_albedo = true
-	clod_m.vertex_color_is_srgb = true
-	clod_m.roughness = 1.0
-	lump.material = clod_m
+	# Crumbs and clods: a few ragged faceted lumps of mixed roughness (the
+	# multimesh has one mesh, so one merged mesh holds them as a pile; each
+	# instance is one fixed lump, shaded gritty by shaders/burrower_soil).
+	var lump := GritMesh.lump(7,0.45,1)
+	var clod_m := ShaderMaterial.new()
+	clod_m.shader = SOIL_SHADER
+	clod_m.set_shader_parameter("use_instance",true)
+	lump.surface_set_material(0,clod_m)
 	_clod_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_clod_mm.use_colors = true
 	_clod_mm.mesh = lump

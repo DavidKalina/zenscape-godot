@@ -35,6 +35,7 @@ extends Node3D
 const Land = preload("res://scripts/burrower/burrower_land.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const HALO_SHADER = preload("res://shaders/burrower_halo.gdshader")
+const SOIL_SHADER = preload("res://shaders/burrower_soil.gdshader")
 
 ## Timing (s): between push-ups (random in GAP).
 const GAP := Vector2(1.5,2.8)
@@ -147,7 +148,7 @@ var _yaw := 0.0
 var _rolled := -INF
 var _core_mesh := SphereMesh.new()
 var _core_mat := StandardMaterial3D.new()
-var _dome_mesh := SphereMesh.new()
+var _dome_mesh: ArrayMesh
 var _halo_mm := MultiMesh.new()
 var _motes: Array = []
 var _mote_mm := MultiMesh.new()
@@ -177,11 +178,7 @@ func setup(the_land: Land, the_burrower: Node) -> void:
 	_core_mat.emission_energy_multiplier = 3.2
 	_core_mat.roughness = 0.35
 	_core_mesh.material = _core_mat
-	_dome_mesh.radius = 1.0
-	_dome_mesh.height = 1.0
-	_dome_mesh.is_hemisphere = true
-	_dome_mesh.radial_segments = 14
-	_dome_mesh.rings = 5
+	_dome_mesh = GritMesh.dome(11,0.22,16,5)
 	_bronze.albedo_color = BRONZE
 	_bronze.metallic = 0.85
 	_bronze.roughness = 0.36
@@ -278,14 +275,22 @@ func push(at: Vector2, kind := &"orb", face := Vector2(0.0,1.0)) -> Dictionary:
 		"glow": 0.0, "shed": 0.0, "turn": turn, "n": n, "dome_s": Vector3(0.6,0.01,0.6), "hold": 0.0}
 	var dome := MeshInstance3D.new()
 	dome.mesh = _dome_mesh
-	var m := StandardMaterial3D.new()
-	m.roughness = 1.0
+	var m: Material
 	if wet:
-		m.albedo_color = Color(0.32,0.42,0.42)
-		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		m.albedo_color.a = 0.75
+		var wm := StandardMaterial3D.new()
+		wm.roughness = 1.0
+		wm.albedo_color = Color(0.32,0.42,0.42)
+		wm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		wm.albedo_color.a = 0.75
+		m = wm
 	else:
-		m.albedo_color = land.colour(at.x,at.y,ground,land.normal(at.x,at.y)).lerp(Color("4a3826"),0.15)
+		var sm := ShaderMaterial.new()
+		sm.shader = SOIL_SHADER
+		var tint := land.colour(at.x,at.y,ground,land.normal(at.x,at.y)).lerp(Color("4a3826"),0.8)
+		sm.set_shader_parameter("tint",Vector3(tint.srgb_to_linear().r,tint.srgb_to_linear().g,tint.srgb_to_linear().b))
+		sm.set_shader_parameter("seed",fposmod(at.x*0.37+at.y*0.71,20.0))
+		sm.set_shader_parameter("dry",0.35)
+		m = sm
 	dome.material_override = m
 	add_child(dome)
 	o.dome = dome
@@ -649,7 +654,11 @@ func _step(o: Dictionary, delta: float, plane: Object, half_span: float, bumped:
 			var fall := clampf(t/0.3,0.0,1.0)
 			o.dome_s = Vector3(1.0+0.15*fall,lerpf(float(k.dome_up),0.22 if not wet else 0.01,fall),1.0+0.15*fall)
 			if wet: (o.dome as Node3D).visible = fall < 1.0
-			if not wet: (o.dome_mat as StandardMaterial3D).albedo_color = (o.dome_mat as StandardMaterial3D).albedo_color.lerp(Color("3d2e20"),delta*3.0)
+			if not wet:
+				var dm := o.dome_mat as ShaderMaterial
+				var tc: Vector3 = dm.get_shader_parameter("tint")
+				var tl := Color(tc.x,tc.y,tc.z).lerp(Color("3d2e20").srgb_to_linear(),delta*3.0)
+				dm.set_shader_parameter("tint",Vector3(tl.r,tl.g,tl.b))
 			# Earth (or water) shed off it on the way up.
 			if o.phase == &"push" and t < 0.45+(0.4 if kind != &"orb" else 0.0):
 				o.shed = float(o.shed)+delta*22.0
