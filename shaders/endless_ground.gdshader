@@ -69,6 +69,7 @@ float zs_silver_drive_smooth(vec2 p, float fp) {
 	return smoothstep(grass_silver.y, grass_silver.z, w);
 }
 #include "res://shaders/grass_react.gdshaderinc"
+#include "res://shaders/peak_snow.gdshaderinc"
 // A world of regions: its paint per spot.
 #include "res://shaders/region_paint.gdshaderinc"
 // The rivers' water (scripts/endless/land_field.gd `_river`): drawn as the
@@ -833,6 +834,7 @@ void fragment() {
 		float high = smoothstep(peak_snow, peak_snow + 500.0, over);
 		float pk_snowy = smoothstep(pk_line - 20.0, pk_line + 4.0, over + pk_edge)
 			* smoothstep(mix(0.58, 0.40, high), mix(0.68, 0.52, high), n.y + rock_edge);
+		if (psnow_on > 0.5) pk_snowy = psnow_mask(psnow_point(p, over), over, n.y, pk_line, high);
 		snowy = mix(snowy, pk_snowy, pk.x) * (1.0 - max(pk.y, pk.z));
 		// The cirque's rim: granite on its slopes, snow on its flatter
 		// tops and in its hollows, ragged.
@@ -1134,6 +1136,11 @@ void fragment() {
 		rock = mix(rock, granite, pk_rock * 0.85);
 		snow = mix(snow, snow * mix(vec3(0.92, 0.96, 1.04), vec3(0.84, 0.90, 1.0), clamp((0.25 - dot(n, zs_sun_direction)) * 2.0, 0.0, 1.0)), pk.x);
 	}
+	// The Peak's snow has its own surface and light (peak_snow.gdshaderinc).
+	float ps_on = psnow_on * pk.x * step(0.001, snowy);
+	vec3 ps_n = n;
+	vec3 ps_glit = vec3(0.0);
+	if (ps_on > 0.0) snow = mix(snow, psnow_surface(p, psnow_point(p, over), n, eye, distance(p, CAMERA_POSITION_WORLD), 2.0 / (PROJECTION_MATRIX[1][1] * VIEWPORT_SIZE.y), snowy, ps_n, ps_glit), ps_on);
 
 	vec3 albedo = mix(grass, rock, rocky);
 	albedo = mix(albedo, sand, sandy * (1.0 - rocky * 0.5));
@@ -1170,6 +1177,7 @@ void fragment() {
 		albedo = mix(albedo, ice, pk.y);
 	}
 	albedo = mix(albedo, snow, snowy);
+	if (ps_on > 0.0) lit_n = normalize(mix(lit_n, ps_n, snowy * ps_on));
 	vec2 pt_rw = vec2(0.0);
 	if (peak_tarn.w > 0.5) albedo = peak_tarn_shore(albedo, p, fp, pt_rw);
 	if (grass_skip == 2 && skip_grass) albedo = vec3(1.0, 0.0, 1.0);
@@ -1181,7 +1189,7 @@ void fragment() {
 	// The land's own shade past the sun's map (land_horizon.gdshaderinc, off
 	// unless --terrain-shadows): the sun's share, and the sky's fill below.
 	vec2 horizon = zs_horizon_light(p, distance(p, CAMERA_POSITION_WORLD));
-	ALBEDO = albedo * (1.0 - shaded) * horizon.x;
+	ALBEDO = (albedo + ps_glit * snowy * ps_on) * (1.0 - shaded) * horizon.x;
 	float wet_sand = max(sandy * smoothstep(0.7, 0.0, over) * step(-0.5, over), damp * banked);
 	ROUGHNESS = mix(mix(mix(mix(0.92, 0.82, rocky), 0.6, snowy), 0.35, wet_sand), 0.4, pk.y);
 	ROUGHNESS = mix(ROUGHNESS, pt_rw.x, pt_rw.y);
@@ -1198,6 +1206,7 @@ void fragment() {
 		SPECULAR = mix(SPECULAR, ice_spec * (1.0 - shaded) * horizon.x, pk.y);
 		EMISSION += ice_glow * horizon.y * (1.0 - 0.2 * shade);
 	}
+	if (ps_on > 0.0) EMISSION = psnow_emission(EMISSION, snowy * ps_on);
 	if (wet > 0.0) {
 		// The river's water, as the sea draws it (endless_sea.gdshader): its
 		// colour by the depth (faked from the way in from the bank), the bed
