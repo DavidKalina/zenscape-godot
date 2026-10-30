@@ -46,7 +46,7 @@ const GAP := Vector2(1.5,2.8)
 ## its flight), how far ahead of the head it may come up (m), the room kept
 ## from trunks and stone (m), the swell's glow.
 const KINDS := {
-	&"orb": {"up": 2.1, "start": -0.6, "rise": 14.0, "spring": 55.0, "damp": 5.5, "dome": Vector2(1.7,1.7),
+	&"orb": {"up": 3.6, "start": -0.6, "rise": 16.0, "spring": 55.0, "damp": 7.0, "dome": Vector2(1.7,1.7),
 		"dome_up": 0.75, "swell": 0.5, "hang": 4.5, "sink": 0.75, "deep": 1.5, "beat": 1.3, "ahead": 24.0, "room": 5.0,
 		"glow": 0.55},
 	&"bell": {"up": 4.3, "start": -0.3, "rise": 10.0, "spring": 26.0, "damp": 6.0, "dome": Vector2(2.1,2.1),
@@ -62,7 +62,7 @@ const BELL_SHARE := 0.2
 const GONG_SHARE := 0.1
 const GONG_GAP := 20.0
 ## The orb's hang height and swell (KINDS.orb's, for the orb-era drivers).
-const UP := 2.1
+const UP := 3.6
 const SWELL := 0.5
 ## Sizes (m): the orb's radius, the glow's size.
 const ORB_R := 1.0
@@ -85,7 +85,7 @@ const POST_X := 3.6
 const BAR_Y := 6.0
 const GONG_W2 := 3.6
 const GONG_DAMP := 0.55
-const GONG_KICK := 1.5
+const GONG_KICK := 0.9
 ## At most this many up at once.
 const MOST := 6
 const MOTES := 360
@@ -99,7 +99,7 @@ const WOOD := Color(0.3,0.21,0.14)
 ## The chimes: C6 pentatonic up two octaves; a run lapses after RUN_GAP s.
 ## The bell rings two octaves under the run's note, the gong four.
 const NOTES := [1046.5,1174.7,1318.5,1568.0,1760.0,2093.0,2349.3,2637.0,3136.0,3520.0]
-const RUN_GAP := 5.0
+const RUN_GAP := 7.0
 
 var land: Land
 var burrower: Node
@@ -300,17 +300,27 @@ func _make_bell(o: Dictionary) -> void:
 	loop.outer_radius = 0.3
 	_part(swing,loop,_patina,Transform3D(Basis(Vector3.RIGHT,PI*0.5),Vector3(0.0,-0.12,0.0)))
 	var shoulder := SphereMesh.new()
-	shoulder.radius = 0.58
-	shoulder.height = 0.7
+	shoulder.radius = 0.54
+	shoulder.height = 0.66
 	shoulder.is_hemisphere = true
 	_part(swing,shoulder,_bronze,Transform3D(Basis.IDENTITY,Vector3(0.0,-0.6,0.0)))
+	# A slim waist, then the sound bow flaring out hard to the lip.
 	var waist := CylinderMesh.new()
-	waist.top_radius = 0.58
-	waist.bottom_radius = BELL_R
-	waist.height = 1.05
+	waist.top_radius = 0.54
+	waist.bottom_radius = 0.64
+	waist.height = 0.72
 	waist.radial_segments = 20
+	waist.cap_top = false
 	waist.cap_bottom = false
-	_part(swing,waist,_bronze,Transform3D(Basis.IDENTITY,Vector3(0.0,-0.6-0.525,0.0)))
+	_part(swing,waist,_bronze,Transform3D(Basis.IDENTITY,Vector3(0.0,-0.6-0.36,0.0)))
+	var flare := CylinderMesh.new()
+	flare.top_radius = 0.64
+	flare.bottom_radius = BELL_R
+	flare.height = 0.33
+	flare.radial_segments = 24
+	flare.cap_top = false
+	flare.cap_bottom = false
+	_part(swing,flare,_bronze,Transform3D(Basis.IDENTITY,Vector3(0.0,-1.32-0.165,0.0)))
 	var lip := TorusMesh.new()
 	lip.inner_radius = BELL_R-0.09
 	lip.outer_radius = BELL_R+0.07
@@ -738,7 +748,7 @@ func _gong(o: Dictionary, delta: float, plane: Object, half_span: float, bumped:
 			o.shake = 1.0
 			o.hold = float(o.t)+3.5
 			stats.strikes = int(stats.strikes)+1
-			_burst(c,plane.velocity*0.2,90,SPARK,GLOW)
+			_burst(c,Vector3.ZERO,110,SPARK,GLOW,n,0.45,GONG_R*0.75/ORB_R)
 			for e: float in [-1.0,1.0]:
 				burrower.puff(Vector3(at.x,float(o.y)+BAR_Y,at.y)+turn.x*POST_X*0.6*e,2)
 			var react: Object = burrower.react
@@ -786,12 +796,18 @@ func _hit(kind: StringName, db: float) -> void:
 	_sound(kind,note_i,db)
 	note_i = mini(note_i+1,NOTES.size()-1)
 
-func _burst(at: Vector3, carry: Vector3, count: int, from: Color, to: Color) -> void:
+## `face` (when given) keeps the burst flat in that face's plane, flung
+## out from `at` across it (the gong's sparks off its rim, not at the
+## camera following the plane through); `size` scales the motes.
+func _burst(at: Vector3, carry: Vector3, count: int, from: Color, to: Color, face := Vector3.ZERO, size := 1.0, out := 0.6) -> void:
 	for i in count:
 		if _motes.size() >= MOTES: _motes.pop_front()
 		var d := Vector3(_rng.randf_range(-1,1),_rng.randf_range(-0.6,1),_rng.randf_range(-1,1)).normalized()
-		_motes.append({"p": at+d*ORB_R*0.6, "v": d*_rng.randf_range(4.0,13.0)+carry*_rng.randf_range(0.2,0.55),
-			"age": 0.0, "life": _rng.randf_range(0.7,1.7), "size": _rng.randf_range(0.08,0.2), "from": from, "to": to})
+		if face != Vector3.ZERO:
+			d = (d-face*d.dot(face)*0.9).normalized()
+		_motes.append({"p": at+d*ORB_R*out, "v": d*_rng.randf_range(4.0,13.0)+carry*_rng.randf_range(0.2,0.55),
+			"age": 0.0, "life": _rng.randf_range(0.7,1.7)*(0.6 if face != Vector3.ZERO else 1.0),
+			"size": _rng.randf_range(0.08,0.2)*size, "from": from, "to": to})
 
 func _step_motes(delta: float) -> void:
 	var i := 0

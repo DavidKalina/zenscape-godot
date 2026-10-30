@@ -203,6 +203,7 @@ func setup(the_land: Land, the_react: GrassReact) -> void:
 	var quad := QuadMesh.new()
 	var dust_m := ShaderMaterial.new()
 	dust_m.shader = DUST_SHADER
+	dust_m.set_shader_parameter("pond",Vector4(Land.POND.x,Land.POND.y,Land.POND_R*1.1,Land.WATER_Y))
 	quad.material = dust_m
 	_dust_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_dust_mm.use_custom_data = true
