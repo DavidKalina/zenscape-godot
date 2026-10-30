@@ -228,6 +228,12 @@ In order, one task per iteration:
    against it and fix the cause, which may be the ground's own haze. And
    the wall's and arms' buttresses read as evenly pleated flutes from the
    air; vary their spacing, width and strength so they read as rock.
+   Also from iteration 5's stills: the plateau is a flat pale disc with a
+   perfectly round tarn in it and reads as an oasis. Make it a cirque:
+   a lobed tarn whose bowl follows the same outline, a rock rim round
+   the bowl with scree and boulders, the flat shore only as long as a
+   hand landing needs (AGENTS.md Meadows and flats), and the rest of the
+   plateau broken ground, snow and rock, rising to the head.
 9. The sky above the collar: the land's hour below, the collar's own hour
    above, blended by eye height through the band. Brighten the collar
    from below if it still reads tan against the field clouds.
