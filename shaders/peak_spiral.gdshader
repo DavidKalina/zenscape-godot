@@ -43,10 +43,10 @@ const float TAU_ = 6.28318530718;
 // The ribbon's radius at the tip as a share of the root's.
 const float TAPER = 0.26;
 // How much tighter the coils get: 0 even, 1 a tip pitch a third of the root's.
-const float TIGHTEN = 0.8;
+const float TIGHTEN = 0.45;
 // The ribbon's half width and half height as shares of the radius and pitch.
-const float WIDE = 0.36;
-const float THICK = 0.25;
+const float WIDE = 0.3;
+const float THICK = 0.24;
 // Density reaches past the ellipse by this much at most (the noise's bite).
 const float REACH = 1.7;
 // How thick a crossing of the middle is (optical depth).

@@ -4,8 +4,9 @@ extends Node3D
 ## (LandRocks' bare material). Not a rock kind: a tower is taller and wider
 ## than the rock plan's 480 m cell can hold, and it is always there.
 ##
-## The trunk's calls (studies/endless_flight.gd has them all today):
+## The trunk's calls (studies/endless_flight.gd has them all):
 ##   var t := PeakTowers.entry(at, base, tip, lean, girth, seed)
+##     (the crown's table is PeakMassif.CROWN, through `peak.crown`)
 ##     at     world XZ of the base point
 ##     base   height of the base point, m over the sea (it stands buried
 ##            under this: `PeakTowerShape.SINK`, so any slope takes it)
@@ -62,7 +63,7 @@ const FAR_SNOW_FROM := 620.0
 ## many times the land's, for a face hundreds of metres tall, its even seams and
 ## beds turned down (the beds that show are the shape's), and the height haze
 ## cut this far over them and the far mesh, so they stand dark on the sky.
-const PAINT := {"rock_size":2.4,"rock_seams":0.03,"rock_beds":0.38,"rock_bump":0.75,"rock_relief":1.5}
+const PAINT := {"rock_size":2.4,"rock_seams":0.03,"rock_beds":0.38,"rock_bump":0.75,"rock_relief":1.5,"rock_tint":Vector3(0.6,0.58,0.6)}
 const HAZE_CUT := 0.86
 const HAZE_RISE := 260.0
 
@@ -95,19 +96,6 @@ static func wanted() -> bool:
 ## An entry of the table (see the header).
 static func entry(at: Vector2, base: float, tip: float, lean: Vector2, girth: float, shape_seed: int) -> Dictionary:
 	return {"at":at,"base":base,"tip":tip,"lean":lean,"girth":girth,"seed":shape_seed}
-
-## The test crown on today's massif, behind the horn: three towers on the
-## cirque's back rim, uneven, leaning in, the tallest off centre. The trunk
-## replaces this with its own table. All under the flight's ceiling (1520 m),
-## the tallest near 1400 m, so today's horn still shows; the trunk removes it.
-static func test_table(peak: RefCounted, field: RefCounted) -> Array:
-	var out: Array = []
-	var inward: Vector2 = peak.world(-60.0,0.0)
-	for s: Array in [[-250.0,-250.0,1400.0,75.0,78.0,71],[-340.0,170.0,1310.0,60.0,68.0,23],[30.0,350.0,1250.0,50.0,62.0,58]]:
-		var at: Vector2 = peak.world(float(s[0]),float(s[1]))
-		var base := float(field.height(at.x,at.y))-Field.SEA_Y
-		out.append(entry(at,base,float(s[2]),(inward-at).normalized()*float(s[3]),float(s[4]),int(s[5])))
-	return out
 
 ## `field`: a land field of the tower's own (a worker reads it for the far
 ## mesh's body), or null for no body. Starts the builds; `prime` waits for them.

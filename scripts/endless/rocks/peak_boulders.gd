@@ -34,6 +34,7 @@ const FLOOR_S := Vector2(0.4,0.82)
 const FLOOR := [0.1,1.0,2.6,0.6,1.0]
 ## The headwall (the head's side past the strip, to HEADWALL_A): talus.
 const HEADWALL_A := 250.0
+const HEADWALL_V := 170.0
 const TALUS := [0.28,1.4,4.2,0.6,1.1]
 ## Keep-offs: past the strip's half-width and ease (PeakMassif STRIP) by
 ## STRIP_PAD m either side of its line, all along it (its runout through the
@@ -135,7 +136,7 @@ static func _place(field: RefCounted, peak: RefCounted) -> Array:
 			if hd < 0.5 and absf(s-1.0) < RIM_BAND:
 				zone = 0
 				z = RIM
-			elif hd > 0.5 and a > head_from and a < HEADWALL_A and absf(v) < PeakMassif.HEADWALL.z:
+			elif hd > 0.5 and a > head_from and a < HEADWALL_A and absf(v) < HEADWALL_V:
 				zone = 2
 				z = TALUS
 			elif s > FLOOR_S.x and s < FLOOR_S.y:

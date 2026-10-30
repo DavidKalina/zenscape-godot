@@ -308,14 +308,13 @@ var stair: Node3D
 var spirals: Node3D
 var flown := 0.0
 var _start := Vector2.ZERO
-## The Peak's collar: a disc of cloud round the horn's neck, its middle
-## COLLAR_AT m along the massif's axis (between the summit, at 290, and the
-## plateau's centre, at 0, so it reaches only a little way in front of the
-## horn and well out round the plateau), its radius and band (m over the
-## sea: over the crest round the horn, under the plateau and the tarn).
+## The Peak's sky of its own hour stands over this band (m over the sea: up
+## the wall, under the plateau and the lake), round a point COLLAR_AT m along
+## the massif's axis, out to COLLAR_R. The collar, a disc of cloud on the same
+## band, stands only with --collar=1 (the spirals took its place).
 const COLLAR_AT := 40.0
 const COLLAR_R := 520.0
-const COLLAR_BAND := Vector2(1020.0,1120.0)
+const COLLAR_BAND := Vector2(755.0,855.0)
 var _no_title := false
 var _heading := 0.0
 ## A heading named by the world's spawn or --heading=: the start does not
@@ -562,15 +561,13 @@ func _ready() -> void:
 		add_child(look)
 		look.setup(seed)
 		sea = look.sea
-		# The Peak's collar: a standing ring of cloud round its summit
-		# (scripts/endless/endless_collar.gd), between COLLAR_BAND m over the sea.
 		# The start meadow clear of valley fog (EndlessClouds FOG_CLEAR).
 		if look.clouds != null: look.clouds.clear_fog_at(_start)
 		var collar_at := Vector3.ZERO
 		if peak != null:
 			var cw: Vector2 = peak.world(COLLAR_AT,0.0)
 			collar_at = Vector3(cw.x,0.0,cw.y)
-		if peak != null and look.clouds != null: look.clouds.set_collar(collar_at,COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y,0.0)
+		if peak != null and look.clouds != null and "--collar=1" in preload("res://scripts/launch_args.gd").user_args(): look.clouds.set_collar(collar_at,COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y,0.0)
 		# The sky over it keeps its own hour (EndlessLook.set_collar_sky).
 		if peak != null: look.set_collar_sky(collar_at,COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y)
 		# Its paint in the ground shader (snow line, granite, ice), set before
@@ -607,7 +604,7 @@ func _ready() -> void:
 		towers = PeakTowers.new()
 		towers.name = "Towers"
 		add_child(towers)
-		towers.setup(PeakTowers.test_table(peak,field),seed,rocks.bare,Field.new(seed,world),peak.centre)
+		towers.setup(peak.crown(Callable(field,"height"),PeakTowers.entry),seed,rocks.bare,Field.new(seed,world),peak.centre)
 		rocks.extra = towers
 		if look != null: look.ground_copies.append(towers.far_material)
 		if look != null and towers.rock_material is ShaderMaterial: look.ground_copies.append(towers.rock_material)
@@ -725,7 +722,7 @@ func _ready() -> void:
 		spirals.name = "PeakSpirals"
 		add_child(spirals)
 		spirals.setup(self)
-		spirals.set_axes(PeakSpirals.test_axes(peak))
+		spirals.set_axes(PeakSpirals.on_towers(towers.axes() if towers != null else [],peak.PLATEAU_Y+Field.SEA_Y+60.0))
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.PLAYS else ", world "+str(world.id)])

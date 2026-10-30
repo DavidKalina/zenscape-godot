@@ -10,7 +10,7 @@ extends Node3D
 ## ribbon's radius at the root in m. An axis may also name `period` (seconds a
 ## turn), `hand` (+1 or -1, the way round), `turns` (root to tip) and `seed`;
 ## left out they come from PERIOD, HAND, TURNS and the axis's place in the
-## list. `test_axes(peak)` is the three on today's massif.
+## list. `on_towers(towers.axes())` gives the axes for the crown.
 
 const SHADER := preload("res://shaders/peak_spiral.gdshader")
 const CumulusNoise := preload("res://scripts/cumulus_noise.gd")
@@ -20,13 +20,18 @@ const LaunchArgs := preload("res://scripts/launch_args.gd")
 const PERIOD: Array[float] = [34.0, 54.0, 23.0]
 const HAND: Array[float] = [1.0, -1.0, 1.0]
 ## Turns from the root to the tip.
-const TURNS := 3.4
+const TURNS := 2.8
 ## How fast the cloud runs up its ribbon, m/s (it churns as it turns).
 const FLOW := 9.0
 ## The flow wraps here: whole tiles of the shader's noise (430 m a tile).
 const FLOW_WRAP := 6450.0
 ## Over the cloud sheet (EndlessClouds.RENDER_PRIORITY), which draws first.
 const PRIORITY := 8
+## On a tower: the root and the end of the ribbon past the tower's foot and
+## tip, as shares of its height, and its radius in the tower's girths.
+const ROOT := 0.1
+const OVER := 0.1
+const GIRTHS := 1.9
 ## The box's reach past the ribbon's own, as a share of the radius.
 const BOX := 1.75
 ## How often the sky's haze is read (s).
@@ -43,24 +48,19 @@ static func wanted() -> bool:
 	return not "--spirals=0" in LaunchArgs.user_args()
 
 
-## Three test axes in a crown over today's massif: spread 350-450 m, 400 m and
-## more tall, uneven, the tips leaning in. The trunk's towers replace them.
-static func test_axes(peak: RefCounted) -> Array[Dictionary]:
-	var table := [
-		# a, v along the massif's frame; root and tip world heights; radius.
-		[270.0, 40.0, 1000.0, 1520.0, 175.0],
-		[-30.0, 235.0, 1080.0, 1490.0, 140.0],
-		[30.0, -215.0, 1070.0, 1450.0, 150.0],
-	]
-	var mid := Vector2.ZERO
-	for row: Array in table: mid += peak.world(row[0],row[1])
-	mid /= float(table.size())
-	var axes: Array[Dictionary] = []
-	for row: Array in table:
-		var at: Vector2 = peak.world(row[0],row[1])
-		var top := at.lerp(mid,0.16)
-		axes.append({"base": Vector3(at.x,row[2],at.y), "tip": Vector3(top.x,row[3],top.y), "radius": row[4]})
-	return axes
+## The ribbons' axes for the towers' `axes()`: from a little over each tower's
+## foot (`floor_y`, world, the ground it rises from) to over its tip, the radius
+## out past its walls.
+static func on_towers(towers: Array, floor_y: float) -> Array:
+	var out: Array = []
+	for t: Dictionary in towers:
+		var base: Vector3 = t.base
+		var tip: Vector3 = t.tip
+		var root := maxf(base.y,floor_y)
+		var rise := tip.y-root
+		var at := base.lerp(tip,(root-base.y)/(tip.y-base.y))
+		out.append({"base":Vector3(at.x,root+rise*ROOT,at.z),"tip":tip+Vector3.UP*rise*OVER,"radius":float(t.radius)*GIRTHS})
+	return out
 
 
 ## `host` is the study (its look gives the haze).

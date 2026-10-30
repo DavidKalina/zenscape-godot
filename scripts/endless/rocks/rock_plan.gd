@@ -34,8 +34,9 @@ const KINDS := {
 	"valley":preload("res://scripts/endless/rocks/peak_valley.gd"),
 }
 ## Kinds that stand on the Peak's massif only (planned on its cells alone,
-## kept off nothing else, on in every world while the Peak is: --spires=0,
-## --boulders=0, --valley=0 or --no-rocks takes them off).
+## kept off nothing else, on in every world while the Peak is: --boulders=0,
+## --valley=0 or --no-rocks takes them off). The crest's spires are off for now:
+## --spires=1 stands them.
 const ON_PEAK := ["spires","boulders","valley"]
 ## The world cell (m): the arches' own, so the trees' planner reads both
 ## with one cache.
@@ -55,7 +56,7 @@ static func flags() -> Dictionary:
 	for k: String in KINDS: out[k] = float(world.layer(k,0.0))
 	var forced := {}
 	for k: String in ON_PEAK:
-		out[k] = 1.0
+		out[k] = 0.0 if k == "spires" else 1.0
 		forced[k] = true
 	for a: String in LaunchArgs.user_args():
 		if a == "--no-rocks":
