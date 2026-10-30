@@ -9,7 +9,7 @@ extends "res://scripts/endless/rocks/rock_kind.gd"
 ## in and a cluster noise), then each cell (`cells`) takes the blocks that
 ## stand in it as one group. Kept off the landing strip and the lane it runs
 ## out through (PeakMassif STRIP, the rim's gap), the tarn and its shore
-## (the bowl's lobed outline, `tn`), and the couloir's lift tube. Two blocks
+## (the bowl's lobed outline, `tn`), and the lift's tube. Two blocks
 ## either lean on each other (a heap, one rock to the flight) or stand at
 ## least an opening apart (WorldScale.opening(TOY_GAP)), so no slot narrower
 ## than the plane stands between them.
@@ -111,7 +111,7 @@ static func _place(field: RefCounted, peak: RefCounted) -> Array:
 	var noise := FastNoiseLite.new()
 	noise.seed = int(hash([int(field.seed),"peak boulder heaps"]))
 	noise.frequency = 1.0/CLUSTER
-	var lift: Array = PeakRoutes.couloir(peak,Callable(field,"height")).points
+	var lift: Array = PeakRoutes.lift(peak,Callable(field,"height")).points
 	var strip_keep := PeakMassif.STRIP.z+PeakMassif.STRIP.w+STRIP_PAD
 	var head_from := PeakMassif.STRIP.x+PeakMassif.STRIP.z+PeakMassif.STRIP.w+STRIP_PAD
 	var gap := WorldScale.opening(TOY_GAP)

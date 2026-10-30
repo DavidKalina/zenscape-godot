@@ -1,12 +1,10 @@
-## The Peak's ruined stair (docs/design/endless-flight/spec-peak.md, task
-## 6): flights of the ruin kit's stair (RuinKit `_flight`) from the
-## icefall's head across the wall's foot to the couloir's mouth and up the
-## slot to its notch, the slot's visible tell from the glacier and inside it.
+## The Peak's ruined stair (docs/design/endless-flight/spec-crown.md):
+## flights of the ruin kit's stair (RuinKit `_flight`) up the rock gorge to the
+## saddle, the gorge's visible tell from its mouth and inside it.
 ##
-## The path runs in the massif's (a, v): the approach straight from the
-## icefall's head to the mouth, then up the couloir off its middle by
-## `_side(a)` (on its flat floor, to the side away from the head), so the
-## middle of the slot and the lift's core (PeakRoutes) stay clear of stone.
+## The path follows the gorge's line (PeakMassif `gorge`) off its middle by
+## `_off`, on its floor, so the middle of the gorge and the lift's core
+## (PeakRoutes) stay clear of stone.
 ## It is cut into flights of RUN m along the ground; each one a kit flight
 ## laid on the chord from its foot to its head, its steps fitted to the
 ## ground's rise there (about STEP m each), scaled SCALE times, its steps
@@ -20,7 +18,7 @@
 extends Node3D
 
 const RuinKit = preload("res://scripts/ruin_kit.gd")
-const PeakMassif = preload("res://scripts/endless/peak_massif.gd")
+const Split = preload("res://scripts/endless/peak_split.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 
 ## The kit's stair this many times its walker size: a flight 2 m wide in
@@ -39,8 +37,12 @@ const MOST_STEPS := 32
 const SINK := 1.5
 ## A flight lower than this (m of rise) is not laid: level ground.
 const LEAST_RISE := 2.0
-## The approach: from the icefall's head (along a) to the mouth.
-const APPROACH_FROM := 880.0
+## Where it starts up the gorge (share of the way from nose to saddle), which
+## side of the floor it keeps (of the line's normal), and how far inside the
+## floor's edge it stays (m).
+const FROM_SHARE := 0.24
+const SIDE := -1.0
+const WALL_KEEP := 9.0
 ## A flight gone, one in this many (never two running).
 const GONE := 4
 const WEATHERED := 0.65
@@ -87,34 +89,25 @@ func setup(peak: RefCounted, ground: Callable, seed_value: int) -> void:
 
 ## The stair's path on the ground: world points, about 2 m apart.
 func _path(peak: RefCounted, ground: Callable) -> Array:
+	var g: Dictionary = peak.gorge(Split.ROCK)
+	var line: Array = g.line
+	var half: PackedFloat32Array = g.half
+	var normal: Array = g.side
+	var last: int = g.saddle
 	var out: Array = []
-	var a0 := APPROACH_FROM
-	var v0 := PeakMassif._valley_mid(a0)
-	var a1 := PeakMassif.COULOIR_FOOT.x
-	var v1 := PeakMassif._couloir_mid(a1)-_side(peak,a1)
-	var w0: Vector2 = peak.world(a0,v0)
-	var w1: Vector2 = peak.world(a1,v1)
-	var steps := int(ceil(w0.distance_to(w1)/2.0))
-	for k in steps:
-		var t := float(k)/steps
-		var w: Vector2 = peak.world(lerpf(a0,a1,t),lerpf(v0,v1,t))
-		out.append(Vector3(w.x,float(ground.call(w.x,w.y)),w.y))
-	var a2 := PeakMassif.COULOIR_TOP.x
-	steps = int(ceil(absf(a1-a2)/1.5))
-	for k in steps+1:
-		var a := lerpf(a1,a2,float(k)/steps)
-		var w: Vector2 = peak.world(a,PeakMassif._couloir_mid(a)-_side(peak,a))
-		out.append(Vector3(w.x,float(ground.call(w.x,w.y)),w.y))
+	var stair_half := WIDTH*0.5*SCALE+RuinKit.CHEEK.x*SCALE
+	for k in range(int(FROM_SHARE*last),last):
+		var p0 := _off(line[k],normal[k],half[k],stair_half)
+		var p1 := _off(line[k+1],normal[k+1],half[k+1],stair_half)
+		var steps := int(ceil(p0.distance_to(p1)/2.0))
+		for q in steps:
+			var w := p0.lerp(p1,float(q)/steps)
+			out.append(Vector3(w.x,float(ground.call(w.x,w.y)),w.y))
 	return out
 
-## How far off the couloir's middle (toward -v, away from the head) the
-## stair runs at `a`: on the slot's flat floor, its far cheek short of where
-## the walls begin to rise.
-func _side(peak: RefCounted, a: float) -> float:
-	var half: float = float(peak.couloir().half_width)*lerpf(PeakMassif.COULOIR_WIDE,1.0,PeakMassif._couloir_t(a))
-	var soft := maxf(PeakMassif.COULOIR_SOFT,half*PeakMassif.COULOIR_SLANT)
-	var stair_half := WIDTH*0.5*SCALE+RuinKit.CHEEK.x*SCALE
-	return maxf(0.0,(half-soft-stair_half)*0.8)
+## The gorge's point `p` moved off its middle: to SIDE, short of the wall's foot.
+func _off(p: Vector3, normal: Vector2, half: float, stair_half: float) -> Vector2:
+	return Vector2(p.x,p.z)+normal*SIDE*maxf(0.0,half-WALL_KEEP-stair_half)
 
 ## The path's point `d` m along it.
 static func _at(path: Array, lens: PackedFloat32Array, d: float) -> Vector3:

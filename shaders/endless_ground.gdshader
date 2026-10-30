@@ -150,6 +150,11 @@ uniform vec3 rock_hue = vec3(0.0);
 uniform vec4 peak_frame = vec4(0.0);
 uniform vec4 peak_zone = vec4(0.0);
 uniform float peak_snow = 500.0;
+// The rock gorge's floor (scripts/endless/peak_ice.gd `rock_uniforms`): x, z,
+// half-width of each point, bare of snow and ice, and the line's box.
+uniform int peak_rock_count = 0;
+uniform vec3 peak_rock_line[24];
+uniform vec4 peak_rock_box = vec4(0.0);
 // The Peak's granite's darkest (the towers' copy of the paint takes its own).
 uniform float peak_granite = 0.07;
 uniform vec4 peak_stretch = vec4(850.0, 1250.0, 2050.0, 4050.0);
@@ -687,8 +692,20 @@ vec4 peak_paint(vec3 p) {
 	// field between them is scree.
 	float icefall = smoothstep(peak_stretch.x - 60.0, peak_stretch.x + 20.0, a) * (1.0 - smoothstep(peak_stretch.y - 20.0, peak_stretch.y + 60.0, a));
 	float glacier = smoothstep(peak_stretch.z - 80.0, peak_stretch.z + 160.0, a) * (1.0 - smoothstep(peak_stretch.w - 200.0, peak_stretch.w + 60.0, a));
-	float scree = smoothstep(peak_stretch.y - 40.0, peak_stretch.y + 80.0, a) * (1.0 - smoothstep(peak_stretch.z - 80.0, peak_stretch.z + 160.0, a));
-	return vec4(zone, (icefall + glacier) * floor_on * zone, scree * floor_on * zone, across);
+	// The rock gorge's floor is bare: scree by its line, with the same rag.
+	float scree = 0.0;
+	if (peak_rock_count > 1 && p.x > peak_rock_box.x && p.z > peak_rock_box.y && p.x < peak_rock_box.z && p.z < peak_rock_box.w) {
+		float best = 1e9;
+		for (int i = 0; i < peak_rock_count - 1; i++) {
+			vec2 s0 = peak_rock_line[i].xy;
+			vec2 e = peak_rock_line[i + 1].xy - s0;
+			float h = clamp(dot(p.xz - s0, e) / max(dot(e, e), 0.001), 0.0, 1.0);
+			float d = distance(p.xz, s0 + e * h) / mix(peak_rock_line[i].z, peak_rock_line[i + 1].z, h);
+			best = min(best, d);
+		}
+		scree = 1.0 - smoothstep(0.95, 1.2, best + rag * 2.0);
+	}
+	return vec4(zone, (icefall + glacier) * floor_on * zone, scree * zone, across);
 }
 
 // How much of the cirque's rim (PeakMassif._cirq) stands at `p`: 1 on the

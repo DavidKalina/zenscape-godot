@@ -12,8 +12,7 @@ extends "res://scripts/endless/rocks/rock_kind.gd"
 ## kept by a cluster noise so they fall in groups; two of them either lean on
 ## each other (one rock to the flight) or stand at least an opening apart
 ## (WorldScale.opening(TOY_GAP)). Kept off the stair (whose path runs from
-## the icefall's head, PeakStair.APPROACH_FROM, toward the couloir: smaller
-## a) and the couloir's lift tube.
+## the icefall's head toward smaller a) and the lift's tube.
 ##
 ## A boulder: as the cirque's (peak_boulders.gd `_block`). A serac: a
 ## squared slab, long across the flow, tapering a little, leaning
@@ -22,6 +21,10 @@ extends "res://scripts/endless/rocks/rock_kind.gd"
 ## boulder field, ice on the icefall).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
+## Off while the ground it stood on is gone: the boulder field and the icefall
+## lie under the prow since the split (spec-crown.md, step 2). The next step
+## stands the seracs in the ice gorge and comes back to this.
+const PLACED := false
 const PeakMassif = preload("res://scripts/endless/peak_massif.gd")
 const PeakRoutes = preload("res://scripts/endless/peak_routes.gd")
 const Boulders = preload("res://scripts/endless/rocks/peak_boulders.gd")
@@ -48,7 +51,7 @@ const FIELD := [24.0,0.38,4.0,9.0,1.0,1.7,18.0]
 const SERACS := [19.0,0.5,4.5,8.5,1.3,2.6,16.0]
 ## The seracs' stretch along a: from past the stair's foot to the icefall's
 ## foot. STAIR_KEEP: m kept between a serac and the stair's first flight
-## (along a: the stair runs from APPROACH_FROM toward smaller a).
+## (along a).
 const SERACS_A := Vector2(880.0,1245.0)
 const STAIR_KEEP := 20.0
 ## Along a step's lip (the riser's top) the chance and height swell: within
@@ -102,7 +105,7 @@ static func cells(peak: RefCounted) -> Dictionary:
 	return out
 
 static func plan_cell(field: RefCounted, cx: int, cz: int, _density: float, _rng: RandomNumberGenerator) -> Array:
-	if not field.has_method("peak"): return []
+	if not PLACED or not field.has_method("peak"): return []
 	var peak: RefCounted = field.peak()
 	if peak == null or not cells(peak).has(Vector2i(cx,cz)): return []
 	var cell: float = preload("res://scripts/endless/rocks/rock_plan.gd").CELL
@@ -185,7 +188,7 @@ static func _place(field: RefCounted, peak: RefCounted) -> Array:
 	var noise := FastNoiseLite.new()
 	noise.seed = int(hash([int(field.seed),"peak valley groups"]))
 	noise.frequency = 1.0/CLUSTER
-	var lift: Array = PeakRoutes.couloir(peak,Callable(field,"height")).points
+	var lift: Array = PeakRoutes.lift(peak,Callable(field,"height")).points
 	var keep := lane_half()
 	# The poles first, on the inside of each bend (toward the valley's middle).
 	for k in int(FIELD_WEAVE.y):
@@ -280,7 +283,7 @@ static func _try(out: Array, peak: RefCounted, lift: Array, a: float, v: float, 
 
 ## Where the stair's approach begins (along a).
 static func _stair_from() -> float:
-	return preload("res://scripts/endless/peak_stair.gd").APPROACH_FROM
+	return 880.0
 
 ## The floor's half-width at `a` (PeakMassif `_valley`).
 static func _floor_half(a: float) -> float:

@@ -54,7 +54,53 @@ static func _thin(line: Array) -> Array:
 	for i in POINTS: out.append(line[int(round(float(i)/(POINTS-1)*(line.size()-1)))])
 	return out
 
-## Today's valley as a line, head to toe: the icefall and the glacier as the
+## The ice gorge and the glacier below it as a line, head to toe (GORGE_POINTS
+## of the gorge, the rest of POINTS on the glacier). A plain mask: its head fades
+## in below the saddle, and it spreads to the valley's floor past the mouth.
+const GORGE_POINTS := 22
+const HEAD_FADE := 0.86
+const WET_OVER := 6.0
+static func gorge(peak: RefCounted) -> Array:
+	var Split: GDScript = peak.Split
+	var pts: PackedVector3Array = Split.line(Split.ICE)
+	var hs: PackedFloat32Array = Split.halves(Split.ICE)
+	var head: int = Split.saddle(Split.ICE)
+	var out: Array = []
+	for k in GORGE_POINTS:
+		var i := int(round(lerpf(head,0.0,float(k)/(GORGE_POINTS-1))))
+		var share := float(i)/head
+		out.append({"at":peak.world(pts[i].x,pts[i].y),"half":hs[i]+WET_OVER,"cover":1.0-smoothstep(HEAD_FADE,1.0,share),"debris":0.15})
+	var gl: Vector2 = peak.GLACIER
+	var spare := POINTS-GORGE_POINTS
+	for k in spare:
+		var t := float(k)/(spare-1)
+		var a := lerpf(gl.x+30.0,gl.y+60.0,t)
+		var half := _half(peak,a)
+		var u := clampf((a-gl.x)/(gl.y-gl.x),0.0,1.0)
+		out.append({"at":peak.world(a,peak._valley_mid(a)),"half":half,"cover":1.0-smoothstep(gl.y-200.0,gl.y+60.0,a),"debris":lerpf(0.2,0.85,u*u)})
+	return out
+
+## The rock gorge's floor for the ground's paint: its line (world x, z, half) as
+## the shader's `peak_rock_line`, up to ROCK_POINTS points, the saddle to the nose.
+const ROCK_POINTS := 24
+static func rock_uniforms(peak: RefCounted) -> Dictionary:
+	var Split: GDScript = peak.Split
+	var pts: PackedVector3Array = Split.line(Split.ROCK)
+	var hs: PackedFloat32Array = Split.halves(Split.ROCK)
+	var head: int = Split.saddle(Split.ROCK)
+	var line := PackedVector3Array()
+	line.resize(ROCK_POINTS)
+	var lo := Vector2(INF,INF)
+	var hi := Vector2(-INF,-INF)
+	for k in ROCK_POINTS:
+		var i := int(round(lerpf(head,0.0,float(k)/(ROCK_POINTS-1))))
+		var at: Vector2 = peak.world(pts[i].x,pts[i].y)
+		line[k] = Vector3(at.x,at.y,hs[i])
+		lo = lo.min(at)
+		hi = hi.max(at)
+	return {"peak_rock_count":ROCK_POINTS,"peak_rock_line":line,"peak_rock_box":Vector4(lo.x-140.0,lo.y-140.0,hi.x+140.0,hi.y+140.0)}
+
+## The old valley as a line, head to toe: the icefall and the glacier as the
 ## old bands had them, the boulder field between with no ice. Close together
 ## where the cover changes.
 static func today(peak: RefCounted) -> Array:

@@ -13,7 +13,7 @@ extends "res://scripts/endless/rocks/rock_kind.gd"
 ## TOY_SAT) the plane threads. Between the bases the crest's cols stay open
 ## (the bases stand about 165 m apart round the ring).
 ##
-## Kept off the couloir's lift tube (PeakRoutes LIFT_R round its path, plus
+## Kept off the lift's tube (PeakRoutes LIFT_R round its path, plus
 ## an opening) and off the plateau's landing flat (PLATEAU_BLEND round its
 ## centre): a pillar that would stand in either is left out.
 ##
@@ -82,7 +82,7 @@ static func plan_cell(field: RefCounted, cx: int, cz: int, _density: float, _rng
 	for k in bases.size():
 		var b := bases[k]
 		if Vector2i(floori(b.x/cell),floori(b.z/cell)) != Vector2i(cx,cz): continue
-		if lift.is_empty(): lift = PeakRoutes.couloir(peak,Callable(field,"height")).points
+		if lift.is_empty(): lift = PeakRoutes.lift(peak,Callable(field,"height")).points
 		var spec := _group(field,peak,k,b,lift)
 		if not spec.is_empty(): out.append(spec)
 	return out

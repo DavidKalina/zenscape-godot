@@ -18,7 +18,7 @@
 ## The main scene (studies/endless_flight.gd `air_lift`) owns one and passes
 ## `air_at` as the plane's air; `--lift=0` turns it off (no air callable, as
 ## before). Places add their paths by a stable name:
-##   air_lift.add("peak/couloir", points, radius, strength)
+##   air_lift.add("peak/rock_gorge", points, radius, strength)
 extends RefCounted
 
 ## The share of a tube's radius over which its rise fades out.

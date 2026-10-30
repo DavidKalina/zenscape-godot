@@ -400,7 +400,7 @@ func _slab(c: Vector3, size: Vector3, yaw: float, rng: RandomNumberGenerator) ->
 # --- The proof strings (the trunk places the real ones) ----------------------
 
 ## Strings up the stair, post to post along its flank, and one across the
-## couloir over it.
+## gorge over it.
 func _proof_stair(peak: RefCounted, ground: Callable, stair: Node3D) -> void:
 	if stair == null: return
 	var flights: Array = stair.get("flights")
@@ -419,12 +419,14 @@ func _proof_stair(peak: RefCounted, ground: Callable, stair: Node3D) -> void:
 		k += 5
 		strings += 1
 		side = -side
-	# One high across the slot, wall to wall.
-	var a_at := lerpf(PeakMassif.COULOIR_FOOT.x,PeakMassif.COULOIR_TOP.x,0.45)
-	var half: float = float(peak.couloir().half_width)*1.05
-	var mid := PeakMassif._couloir_mid(a_at)
-	var w0: Vector2 = peak.world(a_at,mid-half)
-	var w1: Vector2 = peak.world(a_at,mid+half)
+	# One high across the gorge, wall to wall, over the stair.
+	var g: Dictionary = peak.gorge(PeakMassif.Split.ROCK)
+	var k_at := int(0.6*int(g.saddle))
+	var mid: Vector3 = g.line[k_at]
+	var across: Vector2 = g.side[k_at]
+	var half: float = g.half[k_at]*1.05
+	var w0 := Vector2(mid.x,mid.z)-across*half
+	var w1 := Vector2(mid.x,mid.z)+across*half
 	var p0 := Vector3(w0.x,float(ground.call(w0.x,w0.y))+4.0,w0.y)
 	var p1 := Vector3(w1.x,float(ground.call(w1.x,w1.y))+4.0,w1.y)
 	add_string(p0,p1,-1.0,{"wear":0.7,"tails":false,"width":4.4,"length":6.0})
