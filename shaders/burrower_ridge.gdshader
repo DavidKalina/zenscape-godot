@@ -8,31 +8,52 @@ shader_type spatial;
 uniform float now = 0.0;
 // Peak heave (m), what it slumps to, the scar it settles to, the scar's life (s).
 uniform float heave = 1.05;
-uniform float settle = 0.5;
-uniform float scar = 0.2;
+uniform float settle = 0.16;
+uniform float scar = 0.05;
 uniform float life = 26.0;
 // The bow's lead (s) and the heave's ring (decay per s, rad per s).
 uniform float bow = 0.24;
-uniform float ring_decay = 1.9;
+uniform float ring_decay = 3.4;
 uniform float ring_rate = 7.0;
-uniform vec3 earth : source_color = vec3(0.27, 0.19, 0.12);
-uniform vec3 earth_dry : source_color = vec3(0.42, 0.33, 0.22);
+// The head: an extra heave at the head itself (times heave), how fast it
+// falls off behind (per s), its churn (fraction, rad per s).
+uniform float head = 1.1;
+uniform float head_fall = 7.0;
+uniform float churn = 0.3;
+uniform float churn_rate = 13.0;
+// The tail breaks up: stretches of BREAK_LEN s of travel, this share of them
+// sinking almost flat soon after the head is past.
+uniform float break_len = 0.3;
+uniform float break_share = 0.45;
+uniform vec3 earth : source_color = vec3(0.40, 0.29, 0.19);
+uniform vec3 earth_dry : source_color = vec3(0.52, 0.43, 0.30);
 
 varying float v_torn;
 varying float v_age;
+varying float v_head;
 
-float rise(float a) {
+float hash1(float x) {
+	return fract(sin(x * 91.7) * 43758.5453);
+}
+
+// The head's share of the heave at age a: 1 at the head, gone behind it.
+float head_k(float a) {
+	if (a < 0.0) return smoothstep(-bow, 0.0, a);
+	return exp(-head_fall * a);
+}
+
+float rise(float a, float born) {
 	if (a < 0.0) {
 		float s = smoothstep(-bow, 0.0, a);
 		return s * s;
 	}
-	float rest = mix(settle, scar, smoothstep(2.5, 16.0, a)) * (1.0 - smoothstep(life * 0.6, life, a));
-	float r = rest + (1.0 - rest) * exp(-ring_decay * a) * cos(ring_rate * a);
+	// Broken stretches slump nearly flat a moment after the head is past.
+	float brk = step(hash1(floor(born / break_len) + 17.0), break_share);
+	float rest = mix(settle, scar, smoothstep(1.0, 6.0, a)) * (1.0 - smoothstep(life * 0.5, life, a));
+	rest *= mix(1.0, 0.1, brk * smoothstep(0.12, 0.5, a));
+	float fade = mix(1.0, 0.25, brk * smoothstep(0.12, 0.5, a));
+	float r = rest + (1.0 - rest) * fade * exp(-ring_decay * a) * cos(ring_rate * a);
 	return max(r, rest * 0.35);
-}
-
-float hash1(float x) {
-	return fract(sin(x * 91.7) * 43758.5453);
 }
 
 vec3 to_linear(vec3 c) {
@@ -46,9 +67,15 @@ void vertex() {
 	float k = UV2.y;
 	float a = now - born;
 	v_age = a;
-	float r = rise(a) * k;
+	float hk = head_k(a);
+	v_head = hk * k;
+	// The head churns: its height kicks with time and from lump to lump.
+	float ch = 1.0 + churn * (sin(now * churn_rate + born * 3.0) * 0.6 + sin(now * churn_rate * 1.7 + 1.3) * 0.4);
+	float r = (rise(a, born) + head * hk * ch) * k;
 	float lump = 0.8 + 0.4 * hash1(floor(born * 7.0));
-	float b = 1.0 - u * u;
+	// Narrower and rounder at the head (a tall mound), the furrow's own shape behind.
+	float uu = u * mix(1.0, 1.35, hk);
+	float b = max(1.0 - uu * uu, 0.0);
 	b *= b;
 	// The crest cracks open once the head is past: a narrow dip, torn earth.
 	float open = smoothstep(0.03, 0.3, a) * k * (1.0 - smoothstep(life * 0.55, life, a));
@@ -57,9 +84,15 @@ void vertex() {
 	float lift = heave * r * lump * b - crack * open * 0.06 * min(r * 4.0, 1.0);
 	VERTEX.y += lift;
 	// The slope across from d(lift)/du.
-	float slope = heave * r * lump * (-4.0 * u * (1.0 - u * u)) / max(hw, 0.1);
+	float slope = heave * r * lump * (-4.0 * uu * max(1.0 - uu * uu, 0.0)) * mix(1.0, 1.35, hk) / max(hw, 0.1);
 	NORMAL = normalize(NORMAL - TANGENT * slope);
-	v_torn = clamp(open * (1.0 - smoothstep(0.1 + rag, 0.34 + rag, abs(u))) * 1.3, 0.0, 1.0);
+	// Torn in patches (not an even band), and the head's crest bare earth.
+	float ph = hash1(floor(born * 5.0) + 3.0);
+	float brk = step(hash1(floor(born / break_len) + 17.0), break_share);
+	float patchy = step(0.3, ph) * (0.5 + 0.7 * ph) * (1.0 - brk);
+	float torn = open * patchy * (1.0 - smoothstep(0.1 + rag, 0.34 + rag, abs(u))) * 1.3;
+	float crest = v_head * (1.0 - smoothstep(0.25 + rag, 0.7 + rag, abs(u)));
+	v_torn = clamp(max(torn, crest * 0.95), 0.0, 1.0);
 }
 
 void fragment() {

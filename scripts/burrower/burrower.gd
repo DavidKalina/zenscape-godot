@@ -44,7 +44,7 @@ const HALF_W := 2.3
 const CHUNK := 32
 const NOSE := 6
 const BOW := 0.24
-const SCAR_LIFE := 26.0
+const SCAR_LIFE := 12.0
 ## Lies this far over the ground mesh (no z-fight at its rest).
 const LIFT := 0.03
 ## Moving: base speeds (m/s) roaming, the most it turns (rad/s) and how fast
@@ -68,16 +68,22 @@ const TRUNK_RAMP := 4.0
 ## Its surge: speed times 1 + SURGE * a slow noise, and now and then a burst.
 const SURGE := 0.28
 ## Leading the plane: how far ahead (m, a slow noise between) and to the side.
-const LEAD_AHEAD := Vector2(10.0,62.0)
-const LEAD_SIDE := Vector2(7.0,16.0)
+const LEAD_AHEAD := Vector2(22.0,46.0)
+const LEAD_SIDE := Vector2(6.0,13.0)
 ## Grass: a stamp every GRASS_STEP m, its reach (m), push and hold (s).
 const GRASS_STEP := 1.5
 const GRASS_REACH := 3.4
 const GRASS_PUSH := 2.6
-const GRASS_HOLD := 2.2
+const GRASS_HOLD := 0.7
 ## Clods: at most CLODS alive, kicked at CLOD_RATE a second at full speed.
 const CLODS := 360
 const CLOD_RATE := 34.0
+## The spout: earth flung high off the head (so it shows over the grass from
+## a skimming chase camera), SPOUT_RATE a second at full speed, up SPOUT_UP
+## m/s, keeping SPOUT_KEEP of the head's speed so it arcs over the head.
+const SPOUT_RATE := 16.0
+const SPOUT_UP := Vector2(7.5,12.5)
+const SPOUT_KEEP := Vector2(0.55,0.95)
 const GRAVITY := 14.0
 ## Dust: at most DUSTS puffs, DUST_RATE a second, living DUST_LIFE s.
 const DUSTS := 160
@@ -140,6 +146,7 @@ var _ridge_mat := ShaderMaterial.new()
 var _clods: Array = []
 var _clod_mm := MultiMesh.new()
 var _clod_carry := 0.0
+var _spout_carry := 0.0
 var _dusts: Array = []
 var _dust_mm := MultiMesh.new()
 var _dust_carry := 0.0
@@ -256,7 +263,7 @@ func lead(plane: Object) -> void:
 	var fwd := Vector2(f.x,f.z).normalized()
 	if fwd == Vector2.ZERO: fwd = Vector2(0,-1)
 	var side := Vector2(-fwd.y,fwd.x)*(-1.0 if _rng.randf() < 0.5 else 1.0)
-	var at := Vector2(p.x,p.z)+fwd*42.0+side*11.0
+	var at := Vector2(p.x,p.z)+fwd*32.0+side*9.0
 	wake(at,fwd.angle(),plane)
 	_side = signf(side.dot(Vector2(-fwd.y,fwd.x)))
 
@@ -518,7 +525,7 @@ func _strip(a: Array, b: Array) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	# The heave lifts it past the ground's box: room for it.
-	mesh.custom_aabb = _box(verts).grow(1.5)
+	mesh.custom_aabb = _box(verts).grow(5.0)
 	return mesh
 
 func _box(verts: PackedVector3Array) -> AABB:
@@ -532,8 +539,13 @@ func _stamp_grass() -> void:
 	if react == null or strength <= 0.05: return
 	var overlap := maxf(2.0*GRASS_REACH/GRASS_STEP,1.0)
 	stats.stamps = int(stats.stamps)+1
-	react._add({"at": pos, "way": forward()*0.25, "strength": GRASS_PUSH*strength*2.2/overlap*3.0,
-		"swirl": 0.0, "reach": GRASS_REACH*(0.85+0.3*strength), "front": 0.0, "hold": GRASS_HOLD, "press": 1.0})
+	# Parted and pressed in stretches, barely stirred between: the tail
+	# breaks up, the grass standing back over the furrow.
+	var held := _noise.get_noise_1d(time*1.7+300.0) > 0.0
+	react._add({"at": pos, "way": forward()*0.25, "strength": GRASS_PUSH*strength*2.2/overlap*3.0*(0.7 if held else 0.2),
+		"swirl": 0.0, "reach": GRASS_REACH*(0.85+0.3*strength), "front": 0.0, "hold": GRASS_HOLD*_rng.randf_range(0.6,1.4),
+		# Pressed flat in stretches, only parted between: the tail breaks up.
+		"press": 0.6 if held else 0.1})
 
 # --- Clods and pebbles -----------------------------------------------------------
 
@@ -549,6 +561,12 @@ func _kick(delta: float) -> void:
 		while _clod_carry >= 1.0:
 			_clod_carry -= 1.0
 			_spawn_clod()
+		# The spout comes in gouts: a slow noise gates it.
+		var gout := clampf(0.55+0.9*_noise.get_noise_1d(time*2.3+50.0),0.15,1.3)
+		_spout_carry += SPOUT_RATE*strength*strength*pace*gout*delta
+		while _spout_carry >= 1.0:
+			_spout_carry -= 1.0
+			_spawn_spout()
 	_dust_carry += DUST_RATE*strength*clampf(speed/ROAM_SPEED,0.5,1.4)*delta*(1.6 if wet else 1.0)
 	while _dust_carry >= 1.0:
 		_dust_carry -= 1.0
@@ -570,6 +588,24 @@ func _spawn_clod() -> void:
 		"spin": Vector3(_rng.randf_range(-1,1),_rng.randf_range(-1,1),_rng.randf_range(-1,1)).normalized(),
 		"rate": _rng.randf_range(4.0,14.0), "turn": 0.0, "size": size, "colour": colour,
 		"bounced": false, "rest": -1.0, "squash": Vector3(_rng.randf_range(0.8,1.3),_rng.randf_range(0.6,1.0),_rng.randf_range(0.8,1.2))})
+
+## A clod flung high off the head, arcing on over it.
+func _spawn_spout() -> void:
+	if _clods.size() >= CLODS: _clods.pop_front()
+	var side := Vector2(-forward().y,forward().x)
+	var at := pos+forward()*_rng.randf_range(-0.5,0.8)+side*_rng.randf_range(-0.5,0.5)
+	var kind := _rng.randf()
+	var colour := SOD if kind < 0.35 else (SOIL if kind < 0.9 else PEBBLE)
+	colour = colour.lerp(Color.BLACK,_rng.randf()*0.15).lightened(0.12)
+	var size := _rng.randf_range(0.18,0.5)*(0.6 if kind >= 0.9 else 1.0)
+	var fwd := forward()*speed*_rng.randf_range(SPOUT_KEEP.x,SPOUT_KEEP.y)
+	var out := side*_rng.randf_range(-2.2,2.2)
+	var v := Vector3(fwd.x+out.x,_rng.randf_range(SPOUT_UP.x,SPOUT_UP.y)*strength,fwd.y+out.y)
+	_clods.append({"p": Vector3(at.x,land.height(at.x,at.y)+1.2,at.y), "v": v,
+		"spin": Vector3(_rng.randf_range(-1,1),_rng.randf_range(-1,1),_rng.randf_range(-1,1)).normalized(),
+		"rate": _rng.randf_range(4.0,14.0), "turn": 0.0, "size": size, "colour": colour,
+		"bounced": false, "rest": -1.0, "squash": Vector3(_rng.randf_range(0.8,1.3),_rng.randf_range(0.6,1.0),_rng.randf_range(0.8,1.2))})
+	stats.spout = int(stats.get("spout",0))+1
 
 ## Earth thrown off a point (a push-up cracking out, or falling off it):
 ## `n` clods from `at` (world, y their start), out `out` m/s, up `up` m/s.

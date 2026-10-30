@@ -67,10 +67,10 @@ float froth(vec2 p) {
 		vec4 w = wake[i];
 		if (w.w <= 0.0) continue;
 		float a = now - w.z;
-		if (a <= 0.0 || a > 5.0) continue;
-		float s = 1.0 + 0.9 * a;
+		if (a <= 0.0 || a > 2.0) continue;
+		float s = 1.0 + 1.2 * a;
 		float d = distance(p, w.xy);
-		f = max(f, w.w * exp(-d * d / (s * s)) * (1.0 - a / 5.0));
+		f = max(f, w.w * exp(-d * d / (s * s)) * (1.0 - a / 2.0));
 	}
 	return f;
 }

@@ -3,6 +3,8 @@ shader_type spatial;
 // MultiMesh, each instance's custom data its colour (rgb) and opacity (a).
 render_mode unshaded, depth_draw_never, cull_disabled, shadows_disabled;
 
+uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
+
 varying vec4 v_col;
 
 void vertex() {
@@ -17,6 +19,11 @@ void fragment() {
 	vec2 d = UV * 2.0 - 1.0;
 	float r = dot(d, d);
 	float a = (1.0 - smoothstep(0.15, 1.0, r)) * v_col.a;
+	// Soft where it meets the ground (no hard edge cut across the puff).
+	float z = textureLod(depth_tex, SCREEN_UV, 0.0).r;
+	vec4 wp = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, z, 1.0);
+	float behind = -wp.z / wp.w - (-VERTEX.z);
+	a *= clamp(behind / 1.2, 0.0, 1.0);
 	ALBEDO = v_col.rgb;
 	ALPHA = a;
 }
