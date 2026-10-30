@@ -173,24 +173,44 @@ In order, one task per iteration:
    door tower off to one side; replace `TEST_AT`. Raise the ceiling. Keep
    other placers off the massif. Still from the meadow: the Peak and the
    door both read.
-3. The tarn: a pond entry with a forced level in the plateau bowl, skipping
+3. Sculpt. The first stills (`scratch/peak/detail/`, iteration 1) show a
+   massif that stands and has detail everywhere but reads as a crater:
+   a flat-topped rim of even height, a plain box for the summit block, a
+   square-cut trench for the couloir, a flat white floor between two
+   straight parallel ridges for the glacier, mesa-like arms from the
+   back. Rework the profile in `peak_massif.gd` until, judged from the
+   start meadow and from the air, it reads as the Shape section says: one
+   head that stands clearly above the rim, a crest that rises and falls
+   between the tower bases so it reads as a ridge and not a wall top,
+   buttresses and gullies on the wall, the couloir a gully that tapers
+   and bends rather than a slot with square walls, the glacier a valley
+   between moraine ridges that curve with it, with crevasse bands across
+   it, and arms that fall away as ridges, not mesas. Noise on top of the
+   profile is fine where it stays inside the profile's envelope; the
+   helpers (`tarn()`, `couloir()`, `tower_bases()`, `summit()`,
+   `STRETCHES`) must keep returning the right spots afterwards, and the
+   chunk-against-`height()` agreement and the plateau landing must still
+   pass. Stills before and after from the same spots. Colour is not this
+   step: the white above the glacier is the ground shader's and the snow
+   line is dressing work.
+4. The tarn: a pond entry with a forced level in the plateau bowl, skipping
    the pond site rules; the shore meadow landable; `place/peak` on
    landing; the landing card at the summit.
-4. The couloir route: lift in the slot, its gates, its record, the stair
+5. The couloir route: lift in the slot, its gates, its record, the stair
    from the ruin kit along the approach and up the slot, the traffic plane
    flying it.
-5. The towers traverse and the seaward face: spires on the crest from the
+6. The towers traverse and the seaward face: spires on the crest from the
    sea-stack kit, gates and records for both routes.
-6. Dressing: boulder field from the rock kit, seracs on the icefall, ice
+7. Dressing: boulder field from the rock kit, seracs on the icefall, ice
    on the glacier and a snow line above about 500 m in the ground shader.
-7. The sky above the collar: the land's hour below, the collar's own hour
+8. The sky above the collar: the land's hour below, the collar's own hour
    above, blended by eye height through the band. Brighten the collar
    from below if it still reads tan against the field clouds.
-8. Cost: the chunk-build numbers near the Peak against far from it, the
+9. Cost: the chunk-build numbers near the Peak against far from it, the
    straight-up check per preset, and if streaming shows holes near the
    Peak, the massif's profile ported into the C++ field with the
    GDScript mirror kept.
-9. Final: smoke checks, a driver through each route, stills from the
+10. Final: smoke checks, a driver through each route, stills from the
    meadow, the glacier, the couloir, above the collar and the tarn; then
    the handoff.
 
