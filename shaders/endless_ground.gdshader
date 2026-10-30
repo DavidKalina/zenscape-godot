@@ -94,6 +94,8 @@ uniform int grass_skip = 1;
 uniform float paint_follow : hint_range(0.0, 2.0) = 0.5;
 uniform float sea_y = -40.0;
 #include "res://shaders/endless_height_haze.gdshaderinc"
+// The Peak's tarn: its water, ice and shore (scripts/endless/peak_tarn.gd).
+#include "res://shaders/peak_tarn.gdshaderinc"
 uniform float beach = 2.2;
 uniform float snow_line = 95.0;
 // The normal's up below which the grass gives way to rock (with a ragged
@@ -1147,6 +1149,8 @@ void fragment() {
 		albedo = mix(albedo, ice, pk.y);
 	}
 	albedo = mix(albedo, snow, snowy);
+	vec2 pt_rw = vec2(0.0);
+	if (peak_tarn.w > 0.5) albedo = peak_tarn_shore(albedo, p, fp, pt_rw);
 	if (grass_skip == 2 && skip_grass) albedo = vec3(1.0, 0.0, 1.0);
 	albedo = mix(albedo, vec3(luma(albedo)) * night_grade.yzw, night_grade.x);
 	// Under a cloud's shadow the sun's share goes (the albedo the sun
@@ -1159,6 +1163,7 @@ void fragment() {
 	ALBEDO = albedo * (1.0 - shaded) * horizon.x;
 	float wet_sand = max(sandy * smoothstep(0.7, 0.0, over) * step(-0.5, over), damp * banked);
 	ROUGHNESS = mix(mix(mix(mix(0.92, 0.82, rocky), 0.6, snowy), 0.35, wet_sand), 0.4, pk.y);
+	ROUGHNESS = mix(ROUGHNESS, pt_rw.x, pt_rw.y);
 	SPECULAR = mix(mix(0.25, 0.35, rocky), 0.5, max(max(snowy, wet_sand), pk.y)) * (1.0 - shaded) * horizon.x;
 	NORMAL = normalize((VIEW_MATRIX * vec4(lit_n, 0.0)).xyz);
 	// The hemisphere fill, as the isles' surfaces take it (environment
@@ -1475,6 +1480,7 @@ void fragment() {
 		spark *= zs_celestial_clear * smoothstep(-0.03, 0.12, zs_sun_direction.y) * (1.0 - shaded) * (1.0 - skin) * (1.0 - pad);
 		vec3 warm_c = zs_glint(mix(vec3(1.0, 0.62, 0.35), vec3(1.0, 0.98, 0.9), smoothstep(0.02, 0.5, zs_sun_direction.y)));
 		disp = mix(disp, warm_c, clamp(spark, 0.0, 1.0));
+		if (peak_tarn.w > 0.5) disp = mix(disp, peak_tarn_water(p, eye, r_fp, t, ambient, key, shaded), peak_tarn_in(p.xz));
 		vec3 water_em = scene_linear_for_display(clamp(disp, vec3(0.0), vec3(1.0)));
 		ALBEDO = mix(ALBEDO, vec3(0.0), wet);
 		SPECULAR = mix(SPECULAR, 0.0, wet);

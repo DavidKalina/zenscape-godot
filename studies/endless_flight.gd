@@ -567,6 +567,8 @@ func _ready() -> void:
 		if peak != null and look.ground != null and not ("--peak-paint=0" in preload("res://scripts/launch_args.gd").user_args()):
 			var paint: Dictionary = peak.paint()
 			for k: String in paint: look.ground.set_shader_parameter(k,paint[k])
+		# The tarn's look (shaders/peak_tarn.gdshaderinc; --peak-tarn=0 off).
+		if peak != null and look.ground != null: PeakTarn.apply(peak,look.ground)
 		_build_camera()
 		if _face_sun:
 			var s: Vector3 = look.celestial.state.zs_sun_direction
