@@ -114,6 +114,30 @@ Prove 1 and 2 through the real play loop: a driver flying a natural
 skim line (gentle steering toward a push-up only once it is up) should
 hit most orbs; report the hit rate before and after.
 
+## Sounds (the user's picks, after the feel pass)
+
+Replace the placeholder tones. Done after the gritty dirt, its own task.
+
+- **Bell and gong: CC0 recordings from Freesound**, already fetched as HQ
+  previews into `scratch/sfx/<kind>/<id>.mp3` with `sources.tsv` (id,
+  author, title, page). The user is between two of each:
+  bell **417300** and **531031**, gong **369428** and **711881**. Copy
+  those four to `assets/audio/burrower/` (Godot plays MP3; there is no
+  ffmpeg on this PC, so trim with a start offset and fades in code if
+  needed), credit them in `assets/audio/ATTRIBUTION.md` in the style of
+  the Freesound foley lines, wire both of each with a study key (and a
+  flag) to switch between them, and pitch them to the run's notes as
+  the tones were (bell two octaves under the run's note, gong four;
+  keep shifts small, pick the octave that sounds natural).
+- **Orb: the archived pickup blip.** The red stone plummet's pickup sound
+  at tag `archive/before-the-cut`, `scripts/collectibles_hud.gd`
+  (`_blip`, `BLIP_NOTES`, `STEPS`, built with `scripts/genesis_audio.gd`
+  there): a quick grace note leaping a fourth into a shimmering ring,
+  pitched up the pentatonic steps as hits chain. Port it into the
+  burrower's push-ups (`git show archive/before-the-cut:<path>`), in
+  place of the orb tone, climbing the same way the orb tune climbs now.
+  The line-complete flourish is optional.
+
 ## Out of scope this loop
 
 Anything in endless flight (the gate on camera, skim time and open space,
