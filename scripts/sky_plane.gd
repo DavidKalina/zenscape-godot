@@ -205,6 +205,10 @@ var _thin_nose := PITCH_LIMIT.y
 ## TOP_FALL and over the ceiling's fade, so it adds to a flown climb and
 ## carries neither a stalled plane nor one past its top.
 var rising := 0.0
+## A one-way lift (air_lift.gd `add` one_way) is ridden by how the heading
+## faces up its way: all of it from WAY_ACROSS (the cosine) toward it, half
+## square across, none from WAY_ACROSS back down it.
+const WAY_ACROSS := 0.3
 ## The engine's pull, 1 to 0 (scripts/carry/plane_strain.gd: a part torn
 ## off in flight kills it): at 0 Boost does nothing, it settles to
 ## DEAD_GLIDE of cruise, can't climb and sinks DEAD_SINK m/s, so it must
@@ -499,6 +503,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	in_jet = float(here.get("jet",0.0))
 	in_thermal = float(here.get("thermal",0.0))
 	var rise := float(here.get("rise",0.0))
+	var rise_way: Vector3 = here.get("way",Vector3.ZERO)
 	# A gust's shove on the airframe (rad/s; the dragon's blast, scripts/
 	# dragon_gale.gd `plane_gust`): it swings the nose and tips the wings
 	# and pitch, and the plane's own easing brings it back.
@@ -657,6 +662,9 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	if rise > 0.0:
 		rising = rise*smoothstep(slow,slow+FlightWeight.SOFT_SPAN,speed)*(1.0-clampf((position.y-ceiling_y)/CEILING_FADE,0.0,1.0))
 		if thin > 1.0-TOP_FALL: rising *= (1.0-thin)/TOP_FALL
+		# A one-way path (air_lift.gd): ridden flying up it, none flying back
+		# down it, half across.
+		if rise_way != Vector3.ZERO: rising *= smoothstep(-WAY_ACROSS,WAY_ACROSS,Vector3(-sin(heading),0.0,-cos(heading)).dot(rise_way))
 		velocity.y += rising
 	if bump != Vector3.ZERO:
 		velocity += bump

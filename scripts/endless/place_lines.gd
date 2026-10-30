@@ -43,17 +43,10 @@ const PLACES := {
 	"peak": "the Peak",
 }
 
-## The fixed lines. The trial line is the lane's test: in the air ahead of
-## seed 1's start, a gentle S of five gates over the hills (the trunk
-## replaces it with the Peak's routes).
-const LINES := [
-	{"name":"trial","place":"meadow","title":"trial line","seed":1,"gates":[
-		Vector3(0.0,120.0,-350.0),
-		Vector3(60.0,130.0,-650.0),
-		Vector3(180.0,125.0,-950.0),
-		Vector3(120.0,115.0,-1250.0),
-		Vector3(0.0,110.0,-1550.0)]},
-]
+## The declared lines with their gates, built at setup (also listed in the
+## logbook under their place with their best, or "-"). None stand yet; the
+## main scene can hand one to `add_line` once it knows the spots.
+const LINES := []
 
 ## A gate's mouth by default, in wingspans each way (the rival's air gates').
 const AIR_HALF := RivalCourse.AIR_HALF

@@ -39,12 +39,16 @@ static func flag(args: Variant = null) -> bool:
 
 ## Add (or replace) the path `name`: `points` world, at least one (one
 ## point is a ball), `radius` m, `strength` m/s of rise at its core.
-func add(name: String, points: PackedVector3Array, radius: float, strength: float) -> void:
+## `one_way`: the air also says which way is up the path (`way`, the
+## nearest segment's direction across the ground, first point to last), and
+## the plane rides the rise only flying that way (sky_plane.gd), so the
+## path can be flown back down in still air.
+func add(name: String, points: PackedVector3Array, radius: float, strength: float, one_way := false) -> void:
 	if points.is_empty() or radius <= 0.0: return
 	var box := AABB(points[0],Vector3.ZERO)
 	for p in points: box = box.expand(p)
 	box = box.grow(radius)
-	paths[name] = {"points": points, "radius": radius, "strength": strength, "box": box}
+	paths[name] = {"points": points, "radius": radius, "strength": strength, "box": box, "one_way": one_way}
 	_rebox()
 
 func remove(name: String) -> void:
@@ -64,11 +68,13 @@ func _rebox() -> void:
 		first = false
 
 ## The air at `p` for the plane's step: {"rise": m/s, "thermal": 0 to 1,
-## the share of the strongest tube's core} inside a tube, {} outside.
+## the share of the strongest tube's core, and for a one-way path "way" (a
+## unit Vector3 across the ground, up the path)} inside a tube, {} outside.
 func air_at(p: Vector3) -> Dictionary:
 	if not _any or not _box.has_point(p): return {}
 	var rise := 0.0
 	var share := 0.0
+	var way := Vector3.ZERO
 	for k in paths:
 		var path: Dictionary = paths[k]
 		var box: AABB = path.box
@@ -81,8 +87,27 @@ func air_at(p: Vector3) -> Dictionary:
 		if r > rise:
 			rise = r
 			share = s
+			way = way_at(path.points,p) if bool(path.get("one_way",false)) else Vector3.ZERO
 	if rise <= 0.0: return {}
+	if way != Vector3.ZERO: return {"rise": rise, "thermal": share, "way": way}
 	return {"rise": rise, "thermal": share}
+
+## The direction across the ground (unit, y 0) of the polyline's segment
+## nearest `p`, first point to last; ZERO for a single point or a
+## vertical segment.
+static func way_at(points: PackedVector3Array, p: Vector3) -> Vector3:
+	var best := INF
+	var out := Vector3.ZERO
+	for i in points.size()-1:
+		var a := points[i]
+		var ab := points[i+1]-a
+		var len2 := ab.length_squared()
+		var t := clampf((p-a).dot(ab)/len2,0.0,1.0) if len2 > 0.0 else 0.0
+		var d := p.distance_to(a+ab*t)
+		if d < best:
+			best = d
+			out = Vector3(ab.x,0.0,ab.z)
+	return out.normalized() if out.length() > 0.001 else Vector3.ZERO
 
 ## The distance from `p` to the polyline `points` (its nearest segment).
 static func distance_to(points: PackedVector3Array, p: Vector3) -> float:

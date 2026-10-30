@@ -147,6 +147,8 @@ const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const AirLift = preload("res://scripts/endless/air_lift.gd")
+## The Peak's ways up: the couloir's lift.
+const PeakRoutes = preload("res://scripts/endless/peak_routes.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
 const FlightWeight = preload("res://scripts/flight_weight.gd")
@@ -637,6 +639,10 @@ func _ready() -> void:
 		lines = PlaceLines.new()
 		add_child(lines)
 		lines.setup(seed,self)
+	# The Peak's couloir (scripts/endless/peak_routes.gd): the lift up its slot.
+	if peak != null and air_lift != null:
+		var lift := PeakRoutes.couloir(peak,Callable(field,"height"))
+		air_lift.add(str(lift.name),lift.points,float(lift.radius),float(lift.strength),bool(lift.one_way))
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
