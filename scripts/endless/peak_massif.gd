@@ -215,6 +215,32 @@ const TARN_BACK := 40.0
 const TARN_BOWL := 60.0
 const TARN_DEEP := 5.0
 const TARN_LEVEL := 1144.0
+## The tarn's outline (and its bowl's, which follows it): lobes 2, 3 and 5
+## as shares of its radius, their phases from the land's seed.
+const TARN_LOBES := Vector3(0.2,0.1,0.05)
+## The cirque, the plateau's floor (`--cirque=0`: the flat disc it was): an
+## outline lobed round the plateau's centre (CIRQUE_R, lobes 2, 3 and 5 as
+## shares, phases from the seed), `s` a point's distance over the outline's
+## radius that way. The floor at PLATEAU_Y, rising FLOOR_RISE toward the
+## outline away from the tarn, broken by KNOBS (rise, scale m, the noise from
+## which they stand; fewer toward the tarn), and a rock rim on it (RIM: least and most rise, its
+## half-width in `s`) whose height wanders round it, none on the head's side
+## and a gap where the strip runs out through it. Blended out to the land
+## over CIRQUE_OUT (in `s`). On the head's side the floor climbs HEADWALL.x
+## m per m past the strip, out to HEADWALL.y along the axis and HEADWALL.z
+## across it, and never buries the head (the higher of it and the land).
+const CIRQUE_R := 165.0
+const CIRQUE_LOBES := Vector3(0.07,0.09,0.04)
+const CIRQUE_OUT := Vector2(1.08,1.3)
+const FLOOR_RISE := 3.0
+const KNOBS := Vector3(5.5,42.0,0.1)
+const RIM := Vector3(8.0,22.0,0.16)
+const HEADWALL := Vector3(0.16,265.0,170.0)
+## The flat shore: one strip across the plateau, between the tarn and the
+## head, as long as a hand landing needs (land_ponds.gd STRIP is 208):
+## Vector4(its a, half its length along v, half its width, the ease to the
+## broken ground round it), flat at PLATEAU_Y, no knob or rim on it.
+const STRIP := Vector4(80.0,118.0,22.0,16.0)
 ## The head: a pyramid standing on the crest's back point, on the axis in
 ## front of the plateau (so from the opening it hides the plateau), its top
 ## SUMMIT_Y over the sea. Its faces fall HEAD_FACE m per m, its ridges (HEAD_RIDGES, degrees
@@ -285,6 +311,9 @@ var _tarn_c := Vector2(-TARN_BACK,0.0)
 var _tarn_level := TARN_LEVEL
 var _tarn_wet := 0.0
 var pond := PackedFloat32Array()
+## The cirque's outline phases (lobes 2, 3, 5) and whether it is on.
+var _cq_ph := Vector3.ZERO
+var _cirque := true
 
 ## The massif for this land, or null: `--peak=0` turns it off. `ground`:
 ## the land's own height (world y) at (x, z), for its way from the origin.
@@ -358,7 +387,13 @@ func _init(land_seed: int, frame: Transform3D) -> void:
 	_tarn_level = clampf(tt.origin.y-SEA_Y,PLATEAU_Y-TARN_DEEP+0.5,PLATEAU_Y-0.25)
 	_tarn_wet = TARN_BOWL*sqrt(1.0-pow((PLATEAU_Y-_tarn_level)/TARN_DEEP,2.0/3.0))
 	var tc := world(_tarn_c.x,_tarn_c.y)
-	pond = PackedFloat32Array([tc.x,tc.y,_tarn_wet,_tarn_level+SEA_Y,0.0,0.0,0.0,0.0,0.0,0.0,0.0,_tarn_wet])
+	_cirque = not LaunchArgs.user_args().has("--cirque=0")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([land_seed,"cirque"])
+	var lb := TARN_LOBES if _cirque else Vector3.ZERO
+	var ph := Vector3(rng.randf()*TAU,rng.randf()*TAU,rng.randf()*TAU)
+	_cq_ph = Vector3(rng.randf()*TAU,rng.randf()*TAU,rng.randf()*TAU)
+	pond = PackedFloat32Array([tc.x,tc.y,_tarn_wet,_tarn_level+SEA_Y,0.0,lb.x,ph.x,lb.y,ph.y,lb.z,ph.z,_tarn_wet*(1.0+lb.x+lb.y+lb.z)])
 
 # --- Asked by the land field ----------------------------------------------------------
 
@@ -580,11 +615,17 @@ func paint() -> Dictionary:
 
 ## The tarn's bowl: {centre (world, at the water level), level (world y),
 ## wet (the water's radius at that level), bowl (the bowl's radius), shore
-## (the flat shore's reach from the plateau's centre), plateau (world XZ)}.
+## (the flat shore's reach from the plateau's centre, the old flat disc's),
+## plateau (world XZ), widest (the lobed water's), strip (the flat shore's
+## two ends, world, at PLATEAU_Y), strip_half (its half-width)}.
 func tarn() -> Dictionary:
 	var c := world(_tarn_c.x,_tarn_c.y)
+	var s0 := world(STRIP.x,-STRIP.y)
+	var s1 := world(STRIP.x,STRIP.y)
+	var ly := PLATEAU_Y+SEA_Y
 	return {"centre":Vector3(c.x,_tarn_level+SEA_Y,c.y),"level":_tarn_level+SEA_Y,"wet":_tarn_wet,"bowl":TARN_BOWL,
-		"shore":PLATEAU_FLAT,"plateau":centre}
+		"shore":PLATEAU_FLAT,"plateau":centre,"widest":float(pond[11]),
+		"strip":[Vector3(s0.x,ly,s0.y),Vector3(s1.x,ly,s1.y)],"strip_half":STRIP.z}
 
 ## Whether the box (x0, z0)..(x1, z1) meets the tarn's reach (its water and
 ## the REACH round it that its reads carry).
@@ -767,9 +808,14 @@ func _h(a: float, v: float) -> Vector3:
 			# ramp from the mouth to the crest's notch.
 			var fc := _couloir_floor(a)+n*ROUGH*0.25
 			if fc < h: h = lerpf(h,fc,k)
-	# The plateau and the tarn's bowl.
+	# The plateau: the cirque, the tarn's bowl in it.
 	var rho2 := a*a+v*v
-	if rho2 < PLATEAU_BLEND*PLATEAU_BLEND:
+	if _cirque:
+		if rho2 < 129600.0:
+			var cq := _cirq(a,v,h)
+			h = cq.x
+			c = maxf(c,cq.y)
+	elif rho2 < PLATEAU_BLEND*PLATEAU_BLEND:
 		var wf := 1.0-smoothstep(PLATEAU_FLAT,PLATEAU_BLEND,sqrt(rho2))
 		var ta := a-_tarn_c.x
 		var tv := v-_tarn_c.y
@@ -787,6 +833,49 @@ func _h(a: float, v: float) -> Vector3:
 			var ht := _tower_tops[k]-maxf(dt-TOWER_R,0.0)*TOWER_FALL+n*ROUGH*0.2
 			if ht > h: h = ht
 	return Vector3(h,c,meadow)
+
+## The cirque at (a, v) over the land's `h` there (see CIRQUE_R):
+## Vector2(height over the sea, cut). No meadow on it: it is over the snow.
+func _cirq(a: float, v: float, h: float) -> Vector2:
+	var rho := sqrt(a*a+v*v)
+	var phi := atan2(v,a)
+	var rr := CIRQUE_R*(1.0+CIRQUE_LOBES.x*sin(2.0*phi+_cq_ph.x)+CIRQUE_LOBES.y*sin(3.0*phi+_cq_ph.y)+CIRQUE_LOBES.z*sin(5.0*phi+_cq_ph.z))
+	var s := rho/rr
+	# The head's side: 1 on the axis toward the head, 0 square across.
+	var hd := smoothstep(0.25,0.75,a/maxf(rho,1.0))
+	var wf := 1.0-smoothstep(CIRQUE_OUT.x,CIRQUE_OUT.y,s)
+	var wh := hd*(1.0-smoothstep(HEADWALL.y-30.0,HEADWALL.y+20.0,a))*(1.0-smoothstep(HEADWALL.z-60.0,HEADWALL.z,absf(v)))
+	var w := maxf(wf,wh)
+	if w <= 0.0: return Vector2(h,0.0)
+	# The tarn's bowl, on the water's lobed outline.
+	var ta := a-_tarn_c.x
+	var tv := v-_tarn_c.y
+	var rt := sqrt(ta*ta+tv*tv)
+	var tw := facing*ta+side*tv
+	var tn := rt/(TARN_BOWL*Ponds.edge_at(pond,atan2(tw.y,tw.x))/pond[2])
+	# The strip: its distance from the strip's line, and its runout lane.
+	var sd := Vector2(a-STRIP.x,maxf(absf(v)-STRIP.y,0.0)).length()
+	var flat := 1.0-smoothstep(STRIP.z,STRIP.z+STRIP.w,sd)
+	var lane := 1.0-smoothstep(STRIP.z+10.0,STRIP.z+40.0,absf(a-STRIP.x))
+	var quiet := smoothstep(1.15,1.6,tn)
+	# The floor, broken.
+	var kn := _noise.get_noise_2d(a*ROUGH_SCALE/KNOBS.y+7000.0,v*ROUGH_SCALE/KNOBS.y)
+	var broken := smoothstep(KNOBS.z,KNOBS.z+0.4,kn)*lerpf(0.45,1.0,smoothstep(0.3,0.9,s))
+	var hp := PLATEAU_Y+FLOOR_RISE*smoothstep(0.5,1.0,s)*quiet+KNOBS.x*broken*quiet
+	# The headwall, climbing to the head past the strip.
+	var up := maxf(a-STRIP.x-STRIP.z-STRIP.w,0.0)
+	hp += hd*(HEADWALL.x*up+KNOBS.x*1.5*broken*smoothstep(0.0,60.0,up))
+	# The rim, its height wandering round it, broken.
+	var rn := _noise.get_noise_2d(cos(phi)*CIRQUE_R*0.7+3000.0,sin(phi)*CIRQUE_R*0.7)*0.5+0.5
+	var rim := lerpf(RIM.x,RIM.y,smoothstep(0.15,0.85,rn))*(1.0+0.2*kn)
+	var bump := maxf(1.0-absf(s-1.0)/RIM.z,0.0)
+	hp += rim*bump*bump*(3.0-2.0*bump)*(1.0-hd)*(1.0-lane)
+	if tn < 1.0: hp -= TARN_DEEP*pow(1.0-tn*tn,1.5)
+	hp = lerpf(hp,PLATEAU_Y,flat)
+	var out := lerpf(h,hp,wf)
+	# Never under the head (or the land) on its side, past the strip.
+	if wh > 0.0: out = lerpf(out,maxf(h,lerpf(h,hp,w)),hd*smoothstep(0.0,40.0,up))
+	return Vector2(out,w)
 
 ## The approach valley at (a, v): Vector2(height over the sea, cut).
 func _valley(a: float, v: float, n: float) -> Vector2:
