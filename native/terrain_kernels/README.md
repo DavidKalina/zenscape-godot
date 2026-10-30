@@ -64,6 +64,17 @@ the double result rounded, as the official build's runtime gives them):
 any change to one must be made to the other, checked with the handoff's
 comparison (docs/design/endless-flight/native-grass-handoff.md).
 
+## The air and the birds
+
+`flight_fx.h` holds the endless flight's per-frame loops: `ZenScapeMotes`
+(endless_motes.gd's pollen drift and kicked grass bits), `ZenScapeRibbons`
+(breeze_ribbons.gd's strips) and `ZenScapeBirds` (endless_birds.gd's
+flocks in flight and every bird's parts). The GDScript keeps the spawning,
+the random draws and the flocks, and stays the reference; on Windows the
+loops match it bit for bit. `--native-react=0`, `--native-birds=0` (or
+`--gdscript-kernels`) run them in GDScript
+(docs/design/endless-flight/native-react-birds-handoff.md).
+
 ## Build and run
 
 Prerequisites: Godot 4.7 editor, a C++17 compiler, Python 3, SCons 4.x, and the
