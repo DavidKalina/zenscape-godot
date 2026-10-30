@@ -1239,8 +1239,11 @@ void fragment() {
 	NORMAL = normalize((VIEW_MATRIX * vec4(lit_n, 0.0)).xyz);
 	// The hemisphere fill, as the isles' surfaces take it (environment
 	// ambient is off under LandscapeLighting).
-	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
-	float hollow = 0.85 + 0.15 * n.y;
+	// (On the ground's ice by its own normal: its triangles' tilts aren't its shape,
+	// and showed from the air as plates of grey and blue.)
+	float fill_y = mix(n.y, lit_n.y, pk.y * peak_ice_on * (1.0 - step(0.5, abs(peak_ice_solid))));
+	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, fill_y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	float hollow = 0.85 + 0.15 * fill_y;
 	// A cloud overhead takes a little of the sky's fill too.
 	EMISSION = albedo * hemi * hollow * horizon.y * (1.0 - 0.2 * shade) + rock_glow * rocky * (1.0 - snowy) * (1.0 - pk.y) * (1.0 - pk_rock * 0.6);
 	if (ice_glow != vec3(0.0)) {
