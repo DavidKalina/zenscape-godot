@@ -221,6 +221,13 @@ In order, one task per iteration:
    sea-stack kit, gates and records for both routes.
 8. Dressing: boulder field from the rock kit, seracs on the icefall, ice
    on the glacier and a snow line above about 500 m in the ground shader.
+   Two things iteration 4's stills showed, to take in this step: from
+   the meadow the whole middle distance (2 to 4 km, the arms and the
+   glacier) reads as a washed tan haze bank, which the doors round's
+   meadow still (before the collar lane's ground haze) did not; compare
+   against it and fix the cause, which may be the ground's own haze. And
+   the wall's and arms' buttresses read as evenly pleated flutes from the
+   air; vary their spacing, width and strength so they read as rock.
 9. The sky above the collar: the land's hour below, the collar's own hour
    above, blended by eye height through the band. Brighten the collar
    from below if it still reads tan against the field clouds.
