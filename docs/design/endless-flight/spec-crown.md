@@ -126,19 +126,64 @@ crown's ground doesn't exist yet, and leaves its API for the trunk.
   draw, no colliders. API: a string from A to B with a sag. Proves on the
   stair today.
 
+## Lanes merged (2026-10-30): what they left open
+
+All six are merged on the branch; each lane's last commit carries its API
+and notes. Smoke passes on both worlds and a rendered run compiles every
+shader with 0 errors. These stayed open and belong to the trunk:
+
+- **Black dashes on the land** (seen from the start meadow,
+  `scratch/crown_merge/meadow.png`): dotted black lines across the green land
+  and the glacier along the Peak zone's edge. Lane ice found the painted
+  normal carries them, not albedo, geometry or shadow; many run straight with
+  right-angle corners, and a skirt test was unproved. It shows from the first
+  second of the game: fix it in step 1.
+- **Towers:** a few rays hit the collider and never meet the flight's solid
+  (worst 398 m, mean 10.7 m; the check failed). After a scrape the plane
+  stood 150-170 m up 0.5 s later, unexplained. 55 "previously freed instance"
+  errors at `land_rocks.gd:176` in one `--towers=0` windowed run. A pale
+  arch-shaped slot on tower 1 in `z\m500.png`: snow or a hole? A pale veil
+  with a thin white line round the massif at 8-14 km, also with `--towers=0
+  --collar=0`, maybe `land_horizon`. Rendered frame time not measured.
+- **Spirals:** on test axes today. Move them to `towers.axes()`. On thin
+  stand-in cones they look a little like Christmas-tree garland: tune against
+  the real towers. A hitch of 28-32 ms in the first spirals-on pass near the
+  crown was not attributed. Never flown through by the plane.
+- **Snow:** the furrow is in the map but never seen on the snow, its fill-in
+  unproven; no plume film (one still only); `--part=perf`, `--peak-snow=0`
+  and `--native-react=0` not run; glitter unseen; fresh A/B not shot; the
+  mesh's 32 m teeth show on the snow/rock edge; eddies can still kick grass
+  bits over snow. `covers()` must track any new floor mask (`_on_floor`), and
+  `field.height` knows no rock meshes, so tower ledges get no wash.
+- **Ice:** seracs are lit right now (the faces were wound backwards) but read
+  boxy, like cut marble; the dashes above; a white bloom on a serac face; the
+  weave never passed clean (the plane sustains about 0.19 climb, the icefall
+  rises 0.30); no A/B, no `--peak-ice=0` run, no frame time.
+- **Lake:** the dark shore smudges read a little scorched, judge them against
+  the new snow. From the strip a snow bank hides most of the water: step 1's
+  ground should let you see the lake from where you land. Frame cost unknown.
+- **Flags:** motion never watched in real time. Rope twist reads as dashes at
+  60 m.
+
 ## Trunk (in order, Opus, one task an iteration)
 
-1. **Crown.** Lower and break the crest, drop one side away, take the horn
-   off, place the three towers (`peak/tower/<n>`), the lake between them,
-   the summit strip. Tallest tip ~1400 m; lower the lake and plateau as far
-   as it takes the towers to stand 400 m or more over them. Today's 14 spires
-   stay only where they help.
+1. **Crown.** First the black dashes on the land, and the towers' solid holes
+   and scrape jump (above): the plane has to be safe round the towers before
+   anything is shaped around them. Then lower and break the crest, drop one
+   side away, take the horn off, place the three towers (`peak/tower/<n>`),
+   the lake between them where you can see it as you land, the summit strip.
+   Tallest tip ~1400 m; lower the lake and plateau as far as it takes the
+   towers to stand 400 m or more over them. Today's 14 spires stay only where
+   they help. The spirals move to the towers' axes and the collar goes off by
+   default. From the meadow: the crown, dark against the sky, each tower in
+   its spiral. This is likely two or three iterations.
 2. **Split.** The prow, both gorges, the saddle. The stair and lift in the
    rock gorge. Hand-flyable by margin and wobble, both ways, every weight.
    **The loop stops here for the user to fly it,** before anything is built
    on the shape. Don't go on without their word.
 3. **Ice in place.** The tongue down the ice gorge, seracs, dark moraine
-   stripes; the ice and boulder rectangles go.
+   stripes; the ice and boulder rectangles go. Seracs less boxy.
+3b. **Snow finished.** The lane's open list above, on the new ground.
 4. **Rock detail.** Ridged, eroded height on the Peak only, at the scales the
    plane flies past. A/B. Watch chunk cost (40-76 ms near the Peak today).
 5. **Light.** Side light on the approach at the default hour, by the massif's
