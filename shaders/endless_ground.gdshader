@@ -1169,6 +1169,9 @@ void fragment() {
 		float l = luma(rock);
 		vec3 granite = vec3(peak_granite + l * 0.42) * vec3(0.88, 0.95, 1.08) * (1.0 + zs_fade(gxz * 1.7 + p.y, 1.3, fp) * 0.35);
 		rock = mix(rock, granite, pk_rock * 0.85);
+		// The prow's bow, and the mouth's walls with it, darkest (peak_split.gd
+		// BOW_A), off the gorges' floors.
+		rock *= 1.0 - 0.55 * pk_rock * smoothstep(1500.0, 1780.0, dot(p.xz - peak_frame.xy, peak_frame.zw)) * smoothstep(350.0, 430.0, over);
 		snow = mix(snow, snow * mix(vec3(0.92, 0.96, 1.04), vec3(0.84, 0.90, 1.0), clamp((0.25 - dot(n, zs_sun_direction)) * 2.0, 0.0, 1.0)), pk.x);
 	}
 	// The Peak's snow has its own surface and light (peak_snow.gdshaderinc).
