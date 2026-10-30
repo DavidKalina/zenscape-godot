@@ -48,7 +48,7 @@ const SCAR_LIFE := 12.0
 ## Lies this far over the ground mesh (no z-fight at its rest).
 const LIFT := 0.03
 ## Moving: base speeds (m/s) roaming, the most it turns (rad/s) and how fast
-## its turning changes (rad/sÂ²), its speed's ease (m/sÂ²), how far ahead it
+## its turning changes (rad/sÃ‚Â²), its speed's ease (m/sÃ‚Â²), how far ahead it
 ## looks for things to steer round (s of travel, at least m), the margin it
 ## keeps from them (m).
 const ROAM_SPEED := 17.0
@@ -64,6 +64,8 @@ const LEAD_TURN_EASE := 7.0
 const LOST_FAR := 75.0
 const LOST_S := 0.45
 const SOUND_S := 0.3
+## Clods thrown up where it breaks the turf again after a sounding.
+const BREACH_CLODS := 22
 const ACCEL := 14.0
 const LOOK_S := 0.9
 const LOOK_M := 10.0
@@ -84,7 +86,7 @@ const LEAD_SIDE := Vector2(6.0,13.0)
 const GRASS_STEP := 1.5
 const GRASS_REACH := 3.4
 const GRASS_PUSH := 2.6
-const GRASS_HOLD := 0.7
+const GRASS_HOLD := 0.45
 ## Clods: at most CLODS alive, kicked at CLOD_RATE a second at full speed.
 const CLODS := 360
 const CLOD_RATE := 34.0
@@ -316,6 +318,20 @@ func _resurface() -> void:
 	speed = _plane_speed()
 	_since_sample = SAMPLE
 	wet = _wet_at(pos)
+	_breach()
+
+## Coming up ahead after a sounding: earth bursts up where the head breaks
+## the turf (water off the pond), so the eye finds it before the mound grows.
+func _breach() -> void:
+	var at := Vector3(pos.x,land.height(pos.x,pos.y),pos.y)
+	if wet:
+		var water := Vector3(pos.x,Land.WATER_Y,pos.y)
+		throw_water(water,40,4.0,8.0,2.5)
+		puff(water,6,true)
+	else:
+		throw_earth(at+Vector3(0.0,0.4,0.0),BREACH_CLODS,4.5,10.0,1.2)
+		puff(at,7)
+	stats.breaches = int(stats.get("breaches",0))+1
 
 ## Sinking away (dive() called, not yet down).
 func diving() -> bool:
@@ -603,11 +619,11 @@ func _stamp_grass() -> void:
 	stats.stamps = int(stats.stamps)+1
 	# Parted and pressed in stretches, barely stirred between: the tail
 	# breaks up, the grass standing back over the furrow.
-	var held := _noise.get_noise_1d(time*1.7+300.0) > 0.0
+	var held := _noise.get_noise_1d(time*2.6+300.0) > 0.1
 	react._add({"at": pos, "way": forward()*0.25, "strength": GRASS_PUSH*strength*2.2/overlap*3.0*(0.7 if held else 0.2),
 		"swirl": 0.0, "reach": GRASS_REACH*(0.85+0.3*strength), "front": 0.0, "hold": GRASS_HOLD*_rng.randf_range(0.6,1.4),
 		# Pressed flat in stretches, only parted between: the tail breaks up.
-		"press": 0.6 if held else 0.1})
+		"press": 0.45 if held else 0.1})
 
 # --- Clods and pebbles -----------------------------------------------------------
 
