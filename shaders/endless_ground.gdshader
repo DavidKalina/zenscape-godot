@@ -823,9 +823,17 @@ void fragment() {
 	vec4 ice_frame = vec4(0.0);
 	vec2 ice_flow = vec2(1.0, 0.0);
 	vec2 ice_more = vec2(0.0);
+	float ice_gate = 0.0;
 	if (peak_ice_on > 0.5) {
 		pk.y = peak_ice_mask(p, pk.x, ice_frame, ice_flow, ice_more);
 		rocky *= 1.0 - pk.y;
+		// (The ice's bump takes the screen slope of a height only its paint
+		// writes, so all four pixels of a quad must paint or none: on the mask's
+		// edge a pixel read its neighbour's unwritten height, and the NaN it got
+		// lit black dashes along the edge. Fine derivatives twice, so a quad with
+		// one pixel on the ice opens to its diagonal.)
+		ice_gate = pk.y + fwidthFine(pk.y);
+		ice_gate += fwidthFine(ice_gate);
 	}
 	float pk_rock = pk.x * smoothstep(240.0, 420.0, over);
 	if (pk.x > 0.0) {
@@ -1157,7 +1165,7 @@ void fragment() {
 	vec3 ice_glow = vec3(0.0);
 	float ice_rough = 0.4;
 	float ice_spec = 0.5;
-	if (pk.y > 0.0 && peak_ice_on > 0.5) {
+	if (ice_gate > 0.0) {
 		vec3 ice_col;
 		vec3 ice_n = lit_n;
 		bool ice_solid = peak_ice_solid > 0.5;

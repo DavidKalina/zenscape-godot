@@ -121,11 +121,12 @@ vec3 peak_ice_bump(vec3 n, vec3 p, float h) {
 	vec3 r2 = cross(n, dx);
 	float det = dot(dx, r1);
 	// (Where the normal stands nearly in the face's own plane there is no bump to
-	// take: a land chunk's skirt, plumb with the ground's normal, showing through
-	// the seam between two levels. It gave dotted dark lines along the seams.)
+	// take.)
 	if (abs(det) < 0.2 * length(cross(dx, dy))) return n;
 	vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
-	return normalize(abs(det) * n - grad);
+	vec3 bent = abs(det) * n - grad;
+	float l = length(bent);
+	return l > 0.0 ? bent / l : n;
 }
 
 // The ice's face on the ground: flow stripes, ogives, crevasses, veins, debris.
