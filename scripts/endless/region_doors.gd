@@ -57,6 +57,10 @@ const HEADINGS := 24
 ## The ground under it no higher than this over the sea (m): the flight's
 ## ceiling (Field CEILING_OVER) leaves room to fly in.
 const LOW_GROUND := 60.0
+## With the Peak (LandField `peak`): the wall stands off to one side of the
+## line to its summit, best PEAK_SIDE degrees off it, and its ends too over
+## low ground, so it never stands on the massif nor hides it.
+const PEAK_SIDE := 32.0
 ## --door-near: the wall this far ahead of the start (m).
 const DOOR_NEAR := 900.0
 ## The core that carries (shares of the box's half sizes; height whole).
@@ -160,20 +164,36 @@ func _wild_spot(start: Vector2, heading: float) -> Dictionary:
 		var at := start+ahead*DOOR_NEAR
 		return {"at":at,"yaw":_yaw_of(ahead),"why":"--door-near"}
 	var eye_y := _ground(start)+3.0
+	var peak: RefCounted = _field.peak() if _field.has_method("peak") else null
+	var to_peak := Vector2.ZERO
+	if peak != null:
+		var s: Vector3 = peak.summit()
+		to_peak = (Vector2(s.x,s.z)-start).normalized()
 	var best := {}
 	var best_score := -INF
-	for k in HEADINGS:
-		var a := TAU*k/HEADINGS
+	# With the Peak, twice the headings: the side it wants is narrow.
+	var ways := HEADINGS*(2 if peak != null else 1)
+	for k in ways:
+		var a := TAU*k/ways
 		var dir := Vector2(cos(a),sin(a))
 		for d: float in REACH:
 			var at := start+dir*d
 			var h := float(_field.height(at.x,at.y))
 			if h > Field.SEA_Y+LOW_GROUND: continue
+			var off_peak := 0.0
+			if peak != null:
+				var across := Vector2(-dir.y,dir.x)*WIDTH*0.5
+				var ends_low := true
+				for e: Vector2 in [at+across,at-across]:
+					if float(_field.height(e.x,e.y)) > Field.SEA_Y+LOW_GROUND: ends_low = false
+				if not ends_low: continue
+				off_peak = rad_to_deg(acos(clampf(dir.dot(to_peak),-1.0,1.0)))
 			var score := 0.0
 			var seen := _sight(start,eye_y,at,maxf(h,Field.SEA_Y)+HEIGHT*0.3)
 			score += 4.0*seen
 			if h < Field.SEA_Y-2.0: score += 1.5
-			score += 1.5*dir.dot(ahead)
+			if peak != null: score += 1.5-3.0*absf(off_peak-PEAK_SIDE)/90.0
+			else: score += 1.5*dir.dot(ahead)
 			score -= (d-REACH[0])/1200.0*0.6
 			# The far side's arrival over low ground too.
 			var far := at+(_world.offset as Vector2)

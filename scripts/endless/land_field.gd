@@ -60,7 +60,7 @@ const SEA_Y := -40.0
 ## Over it the nose is held level (SkyGlide `ceiling_y`). The isles' fixed
 ## CEILING (95 world) is 135 over this sea.
 const THIN_OVER := 215.0
-const CEILING_OVER := 760.0
+const CEILING_OVER := 1000.0
 ## Continents: their scale (m), the height they swing (m) and the lift that
 ## sets how much is land (more is more land).
 const CONTINENT := 3600.0
@@ -541,7 +541,7 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 		_tunnel_test = true
 	splits = 0.0 if k.get("old_land",false) else Splits.wanted(float(world.layer("splits",0.0)))
 	split_mix = world.layer("split_kinds",{})
-	_massif = null if k.get("old_land",false) else PeakMassif.make(land_seed)
+	_massif = null if k.get("old_land",false) else PeakMassif.make(land_seed,Callable(_impl,"height"))
 
 ## A land recipe with the field's floor and the flags over it.
 static func _knobs(land: Dictionary) -> Dictionary:
@@ -757,6 +757,10 @@ func peak() -> RefCounted:
 
 ## Whether a site of reach `r` at (x, z) keeps clear of the Peak's massif.
 func _peak_clear(x: float, z: float, r: float) -> bool:
+	return _massif == null or _massif.clear(x,z,r)
+
+## The same for placers outside the field (PeakMassif `off`).
+func off_peak(x: float, z: float, r := 0.0) -> bool:
 	return _massif == null or _massif.clear(x,z,r)
 
 ## Vector2(height, meadow) `got` with the tunnels' massifs and trenches at
@@ -984,6 +988,7 @@ func _peak_shape(s: Dictionary, x: float, z: float) -> Dictionary:
 	if _m_on:
 		s.river = 1000.0
 		s.river_r = 1000.0
+		s.peak = true
 		s.mountain = maxf(float(s.mountain),smoothstep(0.0,80.0,float(_massif.last_lift)))
 	return s
 

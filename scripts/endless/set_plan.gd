@@ -131,6 +131,8 @@ static func on(field: RefCounted) -> bool:
 static func _layer(field: RefCounted, x: float, z: float) -> float:
 	var world: Variant = field.get("world")
 	if world == null: return 0.0
+	# None on the Peak's massif (LandField `off_peak`).
+	if field.has_method("off_peak") and not field.off_peak(x,z,MARGIN): return 0.0
 	return float(world.at(x,z).layers.get("sets",0.0))*flag()
 
 static func _region_id(field: RefCounted, x: float, z: float) -> String:

@@ -119,6 +119,8 @@ static func plan(field: RefCounted, cx: int, cz: int, density := 1.0, rock := 1.
 		for p: Vector2 in taken:
 			if p.distance_to(Vector2(x,z)) < APART: near = true
 		if near: continue
+		# Off the Peak's massif (LandField `off_peak`).
+		if field.has_method("off_peak") and not field.off_peak(x,z,APART): continue
 		if masked and not _region_takes(world,x,z,density,hash([int(field.seed),cx,cz,t,"arch region"])): continue
 		var s: Dictionary = field.shape(x,z)
 		if float(s.height) < -38.0: continue

@@ -290,8 +290,14 @@ var beats: Node
 var lines: Node
 var flown := 0.0
 var _start := Vector2.ZERO
+## The Peak's collar round its summit: its radius and band (m over the sea).
+const COLLAR_R := 900.0
+const COLLAR_BAND := Vector2(550.0,700.0)
 var _no_title := false
 var _heading := 0.0
+## A heading named by the world's spawn or --heading=: the start does not
+## turn to face the Peak.
+var _heading_given := false
 var _face_sun := false
 var _numbers := false
 var _alt := START_ALT
@@ -449,7 +455,9 @@ func _ready() -> void:
 	_start = world.spawn.get("at",_start)
 	_alt = float(world.spawn.get("alt",_alt))
 	var spawn_heading := float(world.spawn.get("heading",0.0))
-	if spawn_heading != 0.0: _heading = -deg_to_rad(spawn_heading)
+	if spawn_heading != 0.0:
+		_heading = -deg_to_rad(spawn_heading)
+		_heading_given = true
 	Pad.ensure()
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--seed="): seed = int(arg.get_slice("=",1))
@@ -457,7 +465,9 @@ func _ready() -> void:
 			var p := arg.get_slice("=",1).split(",")
 			if p.size() >= 2: _start = Vector2(float(p[0]),float(p[1]))
 		elif arg == "--heading=sun": _face_sun = true
-		elif arg.begins_with("--heading="): _heading = -deg_to_rad(float(arg.get_slice("=",1)))
+		elif arg.begins_with("--heading="):
+			_heading = -deg_to_rad(float(arg.get_slice("=",1)))
+			_heading_given = true
 		elif arg.begins_with("--alt="):
 			_alt = float(arg.get_slice("=",1))
 			_alt_given = true
@@ -511,7 +521,16 @@ func _ready() -> void:
 		if not _alt_given: _alt = float(rock_pose.alt)
 		var rs: Dictionary = rock_pose.spec
 		print("rock start: %s (%s, %d pillars) at %s; start %s heading %.0f" % [rs.name,str(rs.get("form","")),(rs.pillars as Array).size(),str((rs.pos as Vector3).round()),str(_start.round()),float(rock_pose.heading)])
-	var spots: Array = [] if _no_title or SplitSites.near_start_wanted() or RivalRace.near_start_wanted() or WaterContact.near_start_wanted() or not rock_pose.is_empty() else MenuSpot.find(field,_start,_heading)
+	# The Peak (scripts/endless/peak_massif.gd): the start faces its summit,
+	# unless a heading was named or a start flag set its own; the menu's
+	# meadow takes the clear heading nearest that.
+	var own_start := SplitSites.near_start_wanted() or RivalRace.near_start_wanted() or WaterContact.near_start_wanted() or not rock_pose.is_empty()
+	var peak: RefCounted = field.peak()
+	var face_peak := peak != null and not _heading_given and not own_start
+	if face_peak:
+		var to: Vector3 = peak.summit()
+		_heading = atan2(-(to.x-_start.x),-(to.z-_start.y))
+	var spots: Array = [] if _no_title or own_start else _menu_spots(face_peak)
 	if not spots.is_empty():
 		_start = spots[0].at
 		_heading = float(spots[0].heading)
@@ -520,6 +539,9 @@ func _ready() -> void:
 		add_child(look)
 		look.setup(seed)
 		sea = look.sea
+		# The Peak's collar: a standing ring of cloud round its summit
+		# (scripts/endless/endless_collar.gd), between COLLAR_BAND m over the sea.
+		if peak != null and look.clouds != null: look.clouds.set_collar(peak.summit(),COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y,0.0)
 		_build_camera()
 		if _face_sun:
 			var s: Vector3 = look.celestial.state.zs_sun_direction
@@ -639,6 +661,17 @@ func _ready() -> void:
 const PART_SPANS := 0.8
 const PART_PUSH := 1.6
 const EYE_PART_SPANS := 1.3
+
+## The main menu's meadows (MenuSpot `find`) round the start; facing the
+## Peak (`peaked`), the nearest whose run heads within PEAK_SPREADS of
+## MenuSpot's HEADINGS (tried in turn) of its summit, else the nearest at all.
+const PEAK_SPREADS := [3,5]
+func _menu_spots(peaked: bool) -> Array:
+	if peaked:
+		for n: int in PEAK_SPREADS:
+			var got: Array = MenuSpot.find(field,_start,_heading,8,n)
+			if not got.is_empty(): return got
+	return MenuSpot.find(field,_start,_heading)
 
 ## The main menu: parked on the first of `spots` (MenuSpot `find`) that
 ## nothing standing on the land is in the way of (trees, arches, halls,

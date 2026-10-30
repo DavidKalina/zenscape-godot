@@ -464,6 +464,8 @@ func area(field: RefCounted, x0: float, z0: float, size: float) -> PackedFloat32
 			var gz := (hs[(j+1)*n+i]-hs[(j-1)*n+i])/(SLOT*2.0)
 			var up := 1.0/sqrt(1.0+gx*gx+gz*gz)
 			var s: Dictionary = shapes[j*n+i]
+			# None where the Peak's massif lifts or cuts the land (LandField shape).
+			if s.has("peak"): continue
 			var px := (si+_hash01(si,sj,2))*SLOT
 			var pz := (sj+_hash01(si,sj,3))*SLOT
 			var m := mask(field,px,pz,s,up)

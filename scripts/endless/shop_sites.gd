@@ -277,6 +277,8 @@ static func _no(k: String) -> Dictionary:
 	return {}
 
 static func _try(field: RefCounted, p: Vector2, d: Vector2) -> Dictionary:
+	# Off the Peak's massif (LandField `off_peak`).
+	if field.has_method("off_peak") and not field.off_peak(p.x,p.y,STRIP): return {}
 	var axis := Vector3(d.x,0.0,d.y)
 	var across := axis.cross(Vector3.UP).normalized()
 	var n := int(STRIP/READ)

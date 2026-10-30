@@ -37,11 +37,23 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const Sites = preload("res://scripts/endless/hall_sites.gd")
 
 const HANDLE := "peak/massif"
-## The coded spot until the trunk places it (lane stamp's test spot): the
-## plateau's centre (world XZ) and the facing's yaw (degrees; 0 faces +z,
-## toward the start at the origin).
-const TEST_AT := Vector2(0.0,-8500.0)
-const TEST_YAW := 0.0
+## The coded spot: the plateau's centre AWAY m from the origin, facing it
+## (the horseshoe open toward the start). The worlds spawn at the origin and
+## the start meadow is found within 900 m of it (MenuSpot REACH), so the
+## glacier's toe (a 5300) ends about 500 m short of the origin and the
+## bounding circle about 150 m short. Which way from the origin: of YAWS
+## ways round, the one with the land's own ground lowest in the eye from
+## the origin out to SIGHT m (its steepest angle, degrees) and the most sea
+## behind the plateau (BEHIND m past it, ACROSS m either side), scored
+## sea share x SEA_WORTH less the angle. `--peak-at=x,z` and `--peak-yaw=deg`
+## (0 faces +z) set it by hand.
+const AWAY := 5800.0
+const YAWS := 36
+const SIGHT := 2000.0
+const SIGHT_STEP := 25.0
+const BEHIND := [2200.0,2600.0,3000.0,3400.0]
+const ACROSS := 600.0
+const SEA_WORTH := 4.0
 
 # --- The ring: crest, wall, flanks -------------------------------------------------
 
@@ -170,18 +182,50 @@ var _tower_tops := PackedFloat32Array()
 ## The last `apply`'s change to the land's height (m).
 var last_lift := 0.0
 
-## The massif for this land, or null: `--peak=0` turns it off.
-static func make(land_seed: int) -> RefCounted:
-	var at := Vector2(TEST_AT)
-	var yaw := TEST_YAW
+## The massif for this land, or null: `--peak=0` turns it off. `ground`:
+## the land's own height (world y) at (x, z), for its way from the origin.
+static func make(land_seed: int, ground := Callable()) -> RefCounted:
+	var at := Vector2.INF
+	var yaw := INF
 	for a: String in LaunchArgs.user_args():
 		if a == "--peak=0" or a == "--no-peak": return null
 		if a.begins_with("--peak-at="):
 			var xz := a.get_slice("=",1).split(",")
 			if xz.size() == 2: at = Vector2(float(xz[0]),float(xz[1]))
 		elif a.begins_with("--peak-yaw="): yaw = float(a.get_slice("=",1))
+	if not at.is_finite():
+		var way := _way(ground) if ground.is_valid() else 0.0
+		at = Vector2(sin(way),-cos(way))*AWAY
+	# Unless given, it faces the origin.
+	if not is_finite(yaw): yaw = rad_to_deg(atan2(-at.x,-at.y))
 	var coded := Transform3D(Basis(Vector3.UP,deg_to_rad(yaw)),Vector3(at.x,0.0,at.y))
 	return new(land_seed,LayoutOverrides.xform(HANDLE,coded))
+
+## The way from the origin (radians: 0 toward -z, PI/2 toward +x) the
+## plateau stands (see AWAY).
+static func _way(ground: Callable) -> float:
+	var eye := maxf(float(ground.call(0.0,0.0)),SEA_Y)+3.0
+	var best := 0.0
+	var best_score := -INF
+	for k in YAWS:
+		var way := TAU*k/YAWS
+		var dir := Vector2(sin(way),-cos(way))
+		var steep := -90.0
+		var d := SIGHT_STEP*2.0
+		while d <= SIGHT:
+			var p := dir*d
+			steep = maxf(steep,rad_to_deg(atan2(maxf(float(ground.call(p.x,p.y)),SEA_Y)-eye,d)))
+			d += SIGHT_STEP
+		var sea := 0
+		for b: float in BEHIND:
+			for v: float in [-ACROSS,0.0,ACROSS]:
+				var q := dir*(AWAY+b)+Vector2(-dir.y,dir.x)*v
+				if float(ground.call(q.x,q.y)) < SEA_Y: sea += 1
+		var score := SEA_WORTH*float(sea)/(BEHIND.size()*3)-steep
+		if score > best_score+0.001:
+			best_score = score
+			best = way
+	return best
 
 func _init(land_seed: int, frame: Transform3D) -> void:
 	centre = Vector2(frame.origin.x,frame.origin.z)
@@ -216,9 +260,15 @@ func meets(x0: float, z0: float, x1: float, z1: float) -> bool:
 	return dx*dx+dz*dz < BOUND*BOUND
 
 ## Whether a site of reach `r` at (x, z) stays clear of the massif (the
-## ponds, tunnels, halls and splits keep out of it).
+## ponds, tunnels, halls and splits keep out of it, and through LandField
+## `off_peak` the arches, set pieces, rocks and shops).
 func clear(x: float, z: float, r: float) -> bool:
 	return Vector2(x,z).distance_to(_o) > BOUND+r
+
+## Whether a site of reach `r` at (x, z) stays clear of `field`'s massif
+## (any field: one without `off_peak` has none).
+static func off(field: RefCounted, x: float, z: float, r := 0.0) -> bool:
+	return not field.has_method("off_peak") or bool(field.off_peak(x,z,r))
 
 ## The land's Vector2(world height, meadow) `base` at (x, z) with the massif
 ## on it (the caller checked `reaches`). Sets `last_lift`.
