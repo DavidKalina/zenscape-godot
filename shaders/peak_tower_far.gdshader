@@ -1,0 +1,42 @@
+shader_type spatial;
+// The crown past the camera's far plane (scripts/endless/rocks/peak_towers.gd):
+// the towers' far level and the massif's coarse body, drawn where they truly
+// stand but written to the depth buffer just inside the far plane, nearest
+// nearest, so all the real land and rock stands in front of them and the
+// proxy shows only where the real thing has been clipped. The land's own haze,
+// its height term included, then a little more out past the haze's end, so
+// the crown fades with distance and never quite goes.
+render_mode cull_back, diffuse_lambert, specular_disabled, shadows_disabled;
+
+#include "res://shaders/reference_sky_common.gdshaderinc"
+#include "res://shaders/reference_display.gdshaderinc"
+uniform float sea_y = -40.0;
+#include "res://shaders/endless_height_haze.gdshaderinc"
+
+// The camera's far plane (m), set each frame.
+uniform float far_m = 7904.0;
+// How far (m) the depth's small range is spread over.
+uniform float far_span = 200000.0;
+// Past the haze's end: the amount it thickens to, and the distance that takes.
+uniform vec2 far_fade = vec2(0.86, 42000.0);
+
+varying float world_y;
+
+void vertex() {
+	vec4 view = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+	vec4 clip = PROJECTION_MATRIX * view;
+	world_y = (MODEL_MATRIX * vec4(VERTEX, 1.0)).y;
+	vec4 edge = PROJECTION_MATRIX * vec4(0.0, 0.0, -far_m * 0.998, 1.0);
+	float z = edge.z / edge.w * (1.0 - 0.8 * clamp(length(view.xyz) / far_span, 0.0, 1.0));
+	POSITION = vec4(clip.xy, z * clip.w, clip.w);
+}
+
+void fragment() {
+	ALBEDO = COLOR.rgb;
+	ROUGHNESS = 1.0;
+	vec4 haze = zs_land_haze(VERTEX, world_y, INV_VIEW_MATRIX);
+	float d = length(VERTEX);
+	float past = smoothstep(haze_depth.y, far_fade.y, d);
+	haze.a = mix(haze.a, max(haze.a, far_fade.x), past);
+	FOG = haze;
+}

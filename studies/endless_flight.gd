@@ -127,6 +127,7 @@ const EndlessEddies = preload("res://scripts/endless/endless_eddies.gd")
 const EndlessMotes = preload("res://scripts/endless/endless_motes.gd")
 const LandArches = preload("res://scripts/endless/land_arches.gd")
 const LandRocks = preload("res://scripts/endless/land_rocks.gd")
+const PeakTowers = preload("res://scripts/endless/rocks/peak_towers.gd")
 const LandHalls = preload("res://scripts/endless/land_halls.gd")
 const SplitSites = preload("res://scripts/endless/split_sites.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
@@ -270,6 +271,8 @@ var motes: Node3D
 var arches: Node3D
 ## The free-standing rock shapes, every kind (scripts/endless/land_rocks.gd).
 var rocks: Node3D
+## The Peak's hero towers (scripts/endless/rocks/peak_towers.gd; --towers=0 off).
+var towers: Node3D
 ## --rock-start's pose and group ({at, heading, alt, spec}), or {}.
 var rock_start := {}
 ## The slot halls in the ridges' cuts (scripts/endless/land_halls.gd).
@@ -588,6 +591,13 @@ func _ready() -> void:
 	rocks.setup(seed,look.ground if look != null else null,field.peak())
 	# The rocks' bare copy of the ground takes the haze each frame as it does.
 	if look != null and rocks.bare is ShaderMaterial and rocks.bare != look.ground: look.ground_copies.append(rocks.bare)
+	if peak != null and PeakTowers.wanted():
+		towers = PeakTowers.new()
+		towers.name = "Towers"
+		add_child(towers)
+		towers.setup(PeakTowers.test_table(peak,field),seed,rocks.bare,Field.new(seed,world),peak.centre)
+		rocks.extra = towers
+		if look != null: look.ground_copies.append(towers.far_material)
 	halls = LandHalls.new()
 	halls.name = "Halls"
 	add_child(halls)
@@ -645,6 +655,7 @@ func _ready() -> void:
 	var took: float = land.prime(eye)
 	arches.prime(eye)
 	rocks.prime(eye)
+	if towers != null: towers.prime(eye)
 	halls.prime(eye)
 	tunnels.prime(eye)
 	trees.prime(eye)
@@ -1110,6 +1121,7 @@ func tick(delta: float) -> void:
 	land.step(camera.global_position)
 	arches.step(camera.global_position)
 	rocks.step(camera.global_position)
+	if towers != null: towers.step(camera.global_position)
 	halls.step(camera.global_position)
 	tunnels.step(camera.global_position)
 	trees.step(camera.global_position,plane.position)

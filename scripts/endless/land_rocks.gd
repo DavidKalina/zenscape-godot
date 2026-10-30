@@ -51,6 +51,9 @@ var on := false
 ## they are the only cells wanted (no other kind on).
 var peak_cells := {}
 var _peak_only := false
+## The Peak's hero towers (scripts/endless/rocks/peak_towers.gd), or null:
+## their solid answers through these same calls.
+var extra: Node3D
 var material: Material
 ## The ground material with no turf (a spec's `bare`: the hoodoos' caps are
 ## stone, not lawn): rock_up past 1, so every face is the land's rock.
@@ -384,6 +387,7 @@ func stretches(p: Vector3, pad := -1.0) -> Array:
 					from = -INF
 			g0 = g1
 		if from != -INF: out.append(Vector2(from+oy,y0+(rings-1)*dy+_dome(s,q,g0)+oy))
+	if extra != null: out.append_array(extra.stretches(p,pad))
 	if out.size() > 1: out.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.x < b.x)
 	return out
 
@@ -415,12 +419,12 @@ func inside(p: Vector3, pad := -1.0) -> bool:
 			continue
 		var k := int(floor(f))
 		if lerpf(_in_ring(s,k,q,pad),_in_ring(s,k+1,q,pad),f-k) > 0.0: return true
-	return false
+	return extra != null and extra.inside(p,pad)
 
 ## The highest top (world y) of any pillar within `r` m of world XZ `p`
 ## (its reach grown by the wingtip), or -INF.
 func top_near(p: Vector3, r: float) -> float:
-	var best := -INF
+	var best: float = -INF if extra == null else extra.top_near(p,r)
 	if _grid.is_empty(): return best
 	var a := Vector2i(floori((p.x-r)/GRID),floori((p.z-r)/GRID))
 	var b := Vector2i(floori((p.x+r)/GRID),floori((p.z+r)/GRID))
