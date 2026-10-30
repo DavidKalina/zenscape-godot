@@ -43,17 +43,17 @@ const GAP := Vector2(1.5,2.8)
 ## push's speed (m/s), spring and damping, the dome (across, along the
 ## approach, m) and its swell (m), the swell's time, the most it hangs, the
 ## sink's time and how deep it goes, the beat the plane gets at least (s of
-## its flight), how far ahead of the head it may come up (m), the room kept
+## its flight), the most it comes up off the plane's line (m), the room kept
 ## from trunks and stone (m), the swell's glow.
 const KINDS := {
-	&"orb": {"up": 3.6, "start": -0.6, "rise": 16.0, "spring": 55.0, "damp": 7.0, "dome": Vector2(1.7,1.7),
-		"dome_up": 0.75, "swell": 0.5, "hang": 4.5, "sink": 0.75, "deep": 1.5, "beat": 1.3, "ahead": 24.0, "room": 5.0,
+	&"orb": {"up": 3.6, "start": -0.6, "rise": 16.0, "spring": 55.0, "damp": 7.0, "dome": Vector2(2.3,2.3),
+		"dome_up": 0.9, "swell": 0.5, "hang": 4.5, "sink": 0.75, "deep": 1.5, "beat": 1.8, "off": 2.0, "room": 5.0,
 		"glow": 0.55},
 	&"bell": {"up": 4.3, "start": -0.3, "rise": 10.0, "spring": 26.0, "damp": 6.0, "dome": Vector2(2.1,2.1),
-		"dome_up": 0.95, "swell": 0.7, "hang": 6.5, "sink": 1.1, "deep": 0.4, "beat": 1.6, "ahead": 32.0, "room": 6.0,
+		"dome_up": 0.95, "swell": 0.7, "hang": 6.5, "sink": 1.1, "deep": 0.4, "beat": 2.4, "off": 1.5, "room": 6.0,
 		"glow": 0.35},
 	&"gong": {"up": 0.0, "start": -6.4, "rise": 6.0, "spring": 14.0, "damp": 4.6, "dome": Vector2(4.6,1.5),
-		"dome_up": 1.0, "swell": 0.9, "hang": 7.0, "sink": 1.6, "deep": 6.6, "beat": 2.0, "ahead": 60.0, "room": 9.0,
+		"dome_up": 1.0, "swell": 0.9, "hang": 7.0, "sink": 1.6, "deep": 6.6, "beat": 2.8, "off": 0.5, "room": 9.0,
 		"glow": 0.45},
 }
 ## The share of push-ups that are bells and gongs (the rest orbs); a gong
@@ -64,15 +64,18 @@ const GONG_GAP := 20.0
 ## The orb's hang height and swell (KINDS.orb's, for the orb-era drivers).
 const UP := 3.6
 const SWELL := 0.5
-## Sizes (m): the orb's radius, the glow's size.
-const ORB_R := 1.0
-const HALO := 7.5
+## Sizes (m): the orb's radius, the glow's size, and the graze: how far past
+## the plane's wingtip still counts as a hit (orbs and bells: generous, a
+## near clip counts).
+const ORB_R := 1.9
+const HALO := 10.5
+const GRAZE := 2.2
 ## The bell: its lip's radius, its height under the pivot, the reach of a
 ## clip; its pendulum (w^2, damping /s); a clip's kick (rad/s along the
 ## plane's way); it tolls again at each end of a swing wider than TOLL rad.
 const BELL_R := 1.0
 const BELL_H := 1.75
-const BELL_REACH := 1.15
+const BELL_REACH := 1.3
 const BELL_W2 := 8.5
 const BELL_DAMP := 0.32
 const BELL_KICK := 2.4
@@ -86,6 +89,8 @@ const BAR_Y := 6.0
 const GONG_W2 := 3.6
 const GONG_DAMP := 0.55
 const GONG_KICK := 0.9
+## A crossing this long (s) after a roll ended still strikes.
+const ROLL_LATE := 0.45
 ## At most this many up at once.
 const MOST := 6
 const MOTES := 360
@@ -100,6 +105,18 @@ const WOOD := Color(0.3,0.21,0.14)
 ## The bell rings two octaves under the run's note, the gong four.
 const NOTES := [1046.5,1174.7,1318.5,1568.0,1760.0,2093.0,2349.3,2637.0,3136.0,3520.0]
 const RUN_GAP := 7.0
+## Placing one on the plane's line: the extra lead past the beat (s, the
+## first tried and the one the head surges for), the head's side offset
+## while one is due (m), the share of the plane's turn carried forward and
+## the most (rad/s; players straighten out), and how far the head may be
+## from the spot (m) for it to have pushed it.
+const LEAD_T := Vector2(0.25,0.6)
+const NEAR_SIDE := 3.0
+## Turning harder than TURNING rad/s, none comes up (its line is a guess).
+const TURNING := 0.8
+const YAW_KEEP := 0.6
+const MOST_YAW := 1.2
+const FAR := 45.0
 
 var land: Land
 var burrower: Node
@@ -120,6 +137,14 @@ var _kind := &""
 var _rng := RandomNumberGenerator.new()
 ## The kinds' own dice, so picking them leaves the push-ups' timing as it was.
 var _pick_rng := RandomNumberGenerator.new()
+## The plane last tick (hits test the way it flew, not one point) and its
+## turn (rad/s, eased): where it will be in a beat comes from these.
+var _prev_p := Vector3.INF
+var _now_p := Vector3.INF
+var _heading := NAN
+var _yaw := 0.0
+## When the plane last rolled: a gong crossed just after a roll still strikes.
+var _rolled := -INF
 var _core_mesh := SphereMesh.new()
 var _core_mat := StandardMaterial3D.new()
 var _dome_mesh := SphereMesh.new()
@@ -216,6 +241,16 @@ func setup(the_land: Land, the_burrower: Node) -> void:
 func tick(delta: float, plane: Object, half_span: float, bumped := false) -> void:
 	time += delta
 	if time-_last_hit > RUN_GAP: note_i = 0
+	if plane != null:
+		var v: Vector3 = plane.velocity
+		if Vector2(v.x,v.z).length() > 1.0:
+			var h := atan2(v.x,v.z)
+			if not is_nan(_heading) and delta > 0.0:
+				_yaw = lerpf(_yaw,wrapf(h-_heading,-PI,PI)/delta,minf(1.0,delta*6.0))
+			_heading = h
+		if bool(plane.rolling): _rolled = time
+		_now_p = plane.position
+		if _prev_p == Vector3.INF: _prev_p = _now_p
 	_due(delta,plane)
 	var i := 0
 	while i < orbs.size():
@@ -227,6 +262,7 @@ func tick(delta: float, plane: Object, half_span: float, bumped := false) -> voi
 		i += 1
 	_draw_halos()
 	_step_motes(delta)
+	_prev_p = _now_p
 
 ## A push-up of `kind` at `at` (x, z) now; a gong's disc faces `face` (x, z:
 ## toward where the plane comes from).
@@ -467,11 +503,15 @@ func _pick() -> StringName:
 	if r < GONG_SHARE+BELL_SHARE and not up.has(&"bell"): return &"bell"
 	return &"orb"
 
-## Whether a push-up is due, and where: at the head (or a little ahead of it)
-## when that gives the plane its beat.
+## Whether a push-up is due, and where. Leading the plane: on its own line
+## ahead, where it will be in a beat or a little more at its heading and
+## turn, a small step to the head's side (taking one is a nudge, not a
+## chase); while it is due the head swings in toward that line and surges
+## to it. Roaming (the watch camera's): at the head.
 func _due(delta: float, plane: Object) -> void:
 	if not burrower.active or burrower.diving() or float(burrower.strength) < 0.8:
 		burrower.want_ahead = 0.0
+		burrower.want_at = Vector2(NAN,NAN)
 		_wait = maxf(_wait,0.6)
 		return
 	_wait -= delta
@@ -479,33 +519,63 @@ func _due(delta: float, plane: Object) -> void:
 	if _kind == &"" or (next_kind != &"" and next_kind != _kind): _kind = _pick()
 	var k: Dictionary = KINDS[_kind]
 	var head: Vector2 = burrower.pos
-	var way: Vector2 = burrower.forward()
 	var at := head
-	var face := -way
+	var face := -burrower.forward() as Vector2
+	var why := ""
 	if plane != null and burrower.mode == &"lead":
 		var p: Vector3 = plane.position
 		var v: Vector3 = plane.velocity
 		var vp := maxf(Vector2(v.x,v.z).length(),8.0)
-		var fw := Vector2(v.x,v.z).normalized()
-		var ahead := (head-Vector2(p.x,p.z)).dot(fw)
-		var short := float(k.beat)*vp-ahead
-		# Due: it surges ahead to give the plane its beat.
-		burrower.want_ahead = float(k.beat)*vp+8.0
-		if short > float(k.ahead): return _skip("beat")
-		if short > 0.0: at = head+way*short
-		# Cutting across a turn its way isn't the plane's: still a beat off?
-		if (at-Vector2(p.x,p.z)).length() < float(k.beat)*vp*0.95: return _skip("beat")
+		var beat := float(k.beat)
+		burrower.want_ahead = (beat+LEAD_T.y)*vp
+		var run := _on_line(Vector2(p.x,p.z),vp,beat+LEAD_T.y)
+		burrower.want_at = Vector2(run.x,run.y)+Vector2(-run.w,run.z)*burrower._side*NEAR_SIDE
+		# Mid-turn its line is a guess: wait for it to roll out.
+		if absf(_yaw) > TURNING: return _skip("turning")
+		# A few beats out along its line; the first spot clear of stone.
+		why = "rim"
+		for lead: float in [LEAD_T.x,LEAD_T.y,0.0,LEAD_T.y*2.0]:
+			var on := _on_line(Vector2(p.x,p.z),vp,beat+lead)
+			var side := Vector2(-on.w,on.z)
+			var s := signf((head-Vector2(on.x,on.y)).dot(side))
+			var spot := Vector2(on.x,on.y)+side*(s if s != 0.0 else 1.0)*_rng.randf_range(0.0,float(k.off))
+			why = _room(spot,k)
+			if why == "":
+				at = spot
+				break
+		if why == "" and head.distance_to(at) > FAR: why = "far"
 		face = Vector2(p.x,p.z)-at
-	# Not under a crown or into a rock.
-	for tree: Node3D in land.trees:
-		if at.distance_to(Vector2(tree.position.x,tree.position.z)) < float(k.room): return _skip("tree")
-	for r: Dictionary in land.rocks+land.ruins:
-		if at.distance_to(r.at) < float(r.reach)+float(k.room)-3.0: return _skip("rock")
-	if at.length() > Land.MEADOW_R-10.0: return _skip("rim")
+	else:
+		why = _room(at,k)
+	if why != "": return _skip(why)
 	push(at,_kind,face)
 	_wait = _rng.randf_range(GAP.x,GAP.y)*(1.4 if _kind == &"gong" else 1.0)
 	_kind = &""
 	burrower.want_ahead = 0.0
+	burrower.want_at = Vector2(NAN,NAN)
+
+## Where the plane will be in `t` s (x, z) and its way then (z, w), flying
+## on at `vp` m/s and turning as it turns now (eased, held to a bank's).
+func _on_line(p: Vector2, vp: float, t: float) -> Vector4:
+	var h := _heading if not is_nan(_heading) else 0.0
+	var w := clampf(_yaw*YAW_KEEP,-MOST_YAW,MOST_YAW)
+	var n := 12
+	var dt := t/n
+	for i in n:
+		h += w*dt*0.5
+		p += Vector2(sin(h),cos(h))*vp*dt
+		h += w*dt*0.5
+	return Vector4(p.x,p.y,sin(h),cos(h))
+
+## Why `at` won't do for kind `k` (under a crown, into a rock, by the
+## rim), or "" when it will.
+func _room(at: Vector2, k: Dictionary) -> String:
+	for tree: Node3D in land.trees:
+		if at.distance_to(Vector2(tree.position.x,tree.position.z)) < float(k.room): return "tree"
+	for r: Dictionary in land.rocks+land.ruins:
+		if at.distance_to(r.at) < float(r.reach)+float(k.room)-3.0: return "rock"
+	if at.length() > Land.MEADOW_R-10.0: return "rim"
+	return ""
 
 func _skip(why: String) -> void:
 	stats.skipped = int(stats.skipped)+1
@@ -666,8 +736,7 @@ func _orb(o: Dictionary, delta: float, stretch: float, plane: Object, half_span:
 		light.light_energy = 1.6*float(o.glow)
 		# Flown into: motes and a chime.
 		if plane != null and o.phase != &"swell" and float(o.y) > float(o.base):
-			var p: Vector3 = plane.position
-			if p.distance_to(c) < ORB_R+half_span:
+			if _near(c,ORB_R+half_span+GRAZE):
 				_burst(c,plane.velocity,70,MOTE,GLOW)
 				_hit(&"orb",0.0)
 				return true
@@ -703,7 +772,7 @@ func _bell(o: Dictionary, delta: float, plane: Object, half_span: float) -> void
 	var mid := pivot+b*Vector3(0.0,-BELL_H*0.6,0.0)
 	if plane == null or o.phase == &"swell" or float(o.y)-BELL_H < float(o.base): return
 	var p: Vector3 = plane.position
-	if p.distance_to(mid) < BELL_REACH+half_span and time-float(o.get("clip",-INF)) > 0.8:
+	if _near(mid,BELL_REACH+half_span+GRAZE) and time-float(o.get("clip",-INF)) > 0.8:
 		o.clip = time
 		var v: Vector3 = plane.velocity
 		var way := Vector2(v.x,v.z).normalized()
@@ -734,7 +803,7 @@ func _gong(o: Dictionary, delta: float, plane: Object, half_span: float, bumped:
 	var tremble := sh*sin(time*TAU*13.0)
 	(o.disc as Node3D).basis = Basis(Vector3.UP,0.03*tremble)*Basis.from_scale(Vector3(1.0+0.02*tremble,1.0+0.02*tremble,1.0))
 	var body: StaticBody3D = o.disc_body
-	var rolling := plane != null and bool(plane.rolling)
+	var rolling := plane != null and (bool(plane.rolling) or time-_rolled < ROLL_LATE)
 	body.collision_layer = 0 if rolling or since < 0.6 else RuinBump.LAYER
 	if plane == null or o.phase == &"swell" or o.phase == &"sink": return
 	var c := Vector3(at.x,float(o.y)+GONG_Y,at.y)
@@ -743,7 +812,7 @@ func _gong(o: Dictionary, delta: float, plane: Object, half_span: float, bumped:
 	var lat := ((p-c)-n*s).length()
 	var was: float = o.side
 	o.side = s
-	if was != 0.0 and signf(was) != signf(s) and lat < GONG_R+0.5 and since > 1.0:
+	if was != 0.0 and signf(was) != signf(s) and lat < GONG_R+half_span+0.8 and since > 1.0:
 		if rolling:
 			o.struck = time
 			o.swing_v = float(o.swing_v)-signf(was)*GONG_KICK
@@ -766,6 +835,15 @@ func _gong(o: Dictionary, delta: float, plane: Object, half_span: float, bumped:
 		o.shake = maxf(float(o.shake),0.3)
 		stats.glances = int(stats.glances)+1
 		_sound(&"clank",0,-6.0)
+
+## Whether the plane passed within `reach` of `c` since last tick (the way
+## it flew, so a fast pass can't skip over it).
+func _near(c: Vector3, reach: float) -> bool:
+	if _now_p == Vector3.INF: return false
+	var ab := _now_p-_prev_p
+	var l := ab.length_squared()
+	var t := 0.0 if l < 0.0001 else clampf((c-_prev_p).dot(ab)/l,0.0,1.0)
+	return c.distance_to(_prev_p+ab*t) < reach
 
 func _free(o: Dictionary) -> void:
 	for key: String in ["dome","core","light","rig"]:

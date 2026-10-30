@@ -16,12 +16,12 @@ const EndlessGrass = preload("res://scripts/endless/endless_grass.gd")
 const SkyIslets = preload("res://scripts/sky_islets.gd")
 
 ## The land's square (m a side, centred on the origin) and its grid step.
-const SIZE := 640.0
+const SIZE := 840.0
 const STEP := 2.0
 ## The meadow's flat middle (m from the centre) and where the hills begin
 ## to rise round it to HILLS m.
-const MEADOW_R := 185.0
-const HILLS_R := 300.0
+const MEADOW_R := 255.0
+const HILLS_R := 380.0
 const HILLS := 34.0
 ## The pond: its middle, its radius at the water's edge, its depth.
 const POND := Vector2(85.0,-55.0)
@@ -46,7 +46,7 @@ const STONE := Color("a39a88")
 ## The grass grows in squares this big, at once on the workers.
 const GRASS_CELL := 48.0
 ## Bumped when the land or the grow changes, so the kept grass is grown again.
-const GRASS_VERSION := 4
+const GRASS_VERSION := 5
 ## The grass thins out over the meadow's last this many m.
 const RIM_SOFT := 35.0
 

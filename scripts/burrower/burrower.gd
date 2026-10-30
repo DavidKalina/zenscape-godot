@@ -139,6 +139,9 @@ var wet_k := 0.0
 ## Set by what it pushes up (push_ups.gd): the least it runs ahead of the
 ## plane while leading (m), so a push-up comes a beat ahead; 0 none.
 var want_ahead := 0.0
+## While a push-up is due, the spot it runs for (x, z: on the plane's line, a
+## little past where the push-up will be; NAN: its own slot).
+var want_at := Vector2(NAN,NAN)
 var _plane: Object
 var _turn := 0.0
 var _goal := Vector2.ZERO
@@ -416,6 +419,7 @@ func _move(delta: float) -> void:
 		# along the plane's way from there (else it would turn back for a
 		# slot it had overrun).
 		var slot := Vector2(p.x,p.z)+fwd*ahead+side*_side*off
+		if not is_nan(want_at.x): slot = want_at
 		var to_slot := slot-pos
 		var behind := to_slot.dot(fwd)
 		# Off to the side counts as behind too (after the plane turns, the
