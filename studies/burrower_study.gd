@@ -8,9 +8,13 @@ extends Node3D
 ## animation are worked out before any of it goes into endless flight.
 ##
 ## Keys: as endless flight (A D bank, W S pitch, mouse steers, Space boost,
-## Shift brake, Q E knife edge, twice to roll); R up again over the meadow.
+## Shift brake, Q E knife edge, twice to roll); R up again over the meadow;
+## B calls the burrower up ahead of the plane (scripts/burrower/burrower.gd);
+## C toggles the watch camera, a slow orbit on its trail, the plane held
+## still meanwhile (it roams the meadow on its own).
 ## Flags: --grass=X (the carpet's share, 1; 0 none), --at=x,z --alt=m
-## --heading=deg (the launch).
+## --heading=deg (the launch), --burrow (called up at once), --watch (the
+## watch camera from the start, the burrower roaming).
 
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
@@ -24,6 +28,13 @@ const Pad = preload("res://scripts/pad.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Land = preload("res://scripts/burrower/burrower_land.gd")
+const Burrower = preload("res://scripts/burrower/burrower.gd")
+## The watch camera: its orbit's radius and height (m), turn (rad/s), and
+## how fast it follows the head.
+const WATCH_R := 26.0
+const WATCH_UP := 7.0
+const WATCH_TURN := 0.14
+const WATCH_FOLLOW := 1.6
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
@@ -53,6 +64,12 @@ var _tap_at := 0
 var _start := Vector3(0.0,14.0,150.0)
 var _heading := 0.0
 var _hint: Label
+var burrower: Burrower
+## The watch camera on (the plane held still).
+var watching := false
+var _watch_at := Vector3.ZERO
+var _watch_angle := 0.0
+var _burrow_at_start := false
 
 func _ready() -> void:
 	Pad.ensure()
@@ -64,6 +81,8 @@ func _ready() -> void:
 			if p.size() >= 2: _start = Vector3(float(p[0]),_start.y,float(p[1]))
 		elif a.begins_with("--alt="): _start.y = a.get_slice("=",1).to_float()
 		elif a.begins_with("--heading="): _heading = deg_to_rad(a.get_slice("=",1).to_float())
+		elif a == "--burrow": _burrow_at_start = true
+		elif a == "--watch": watching = true
 	_build_light()
 	land = Land.new()
 	add_child(land)
@@ -76,11 +95,18 @@ func _ready() -> void:
 		react.setup(1)
 		# No gust rings (endless flight's default breeze is its eddies, not here).
 		react.rings_on = false
+	burrower = Burrower.new()
+	add_child(burrower)
+	burrower.setup(land,react)
 	_build_ui()
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	_space = get_world_3d().direct_space_state
 	launch(Vector3(_start.x,land.height(_start.x,_start.z)+_start.y,_start.z),_heading)
+	if watching:
+		watching = false
+		toggle_watch()
+	elif _burrow_at_start: summon()
 	flight_ready = true
 	if not scripted and get_tree().current_scene == self and DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -121,7 +147,7 @@ func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	_hint = Label.new()
-	_hint.text = "A D bank  Ã‚Â·  W S pitch  Ã‚Â·  mouse steers  Ã‚Â·  Space boost  Ã‚Â·  Shift brake  Ã‚Â·  Q E knife edge (twice: roll)  Ã‚Â·  R up again"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Q E knife edge (twice: roll)  ·  R up again  ·  B the burrower  ·  C watch it"
 	_hint.position = Vector2(16.0,12.0)
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.7))
 	_hint.add_theme_constant_override("outline_size",4)
@@ -170,12 +196,56 @@ func _physics_process(delta: float) -> void:
 
 ## One tick with `input` (the keys', or a driver's).
 func tick(delta: float, input: Dictionary) -> void:
+	if watching:
+		burrower.tick(delta)
+		_watch(delta)
+		if react != null: _react(delta)
+		return
 	var was: Vector3 = plane.position
 	plane.step(delta,input,Callable(land,"ground"))
 	if _space != null: RuinBump.bump(_space,plane,was)
 	figure.update(delta,plane,0.0,Callable(land,"ground"),false)
+	burrower.tick(delta)
 	_frame(delta)
 	if react != null: _react(delta)
+
+## B: the burrower up ahead of the plane, leading it (watching: roaming
+## near the camera's middle).
+func summon() -> void:
+	if watching:
+		if not burrower.active:
+			burrower.wake(Vector2(_watch_at.x,_watch_at.z),randf()*TAU)
+	else:
+		burrower.lead(plane)
+
+## C: the watch camera on or off. On, the plane holds still and the
+## burrower roams (woken if it was down).
+func toggle_watch() -> void:
+	watching = not watching
+	if not watching:
+		_frame(0.0)
+		return
+	if not burrower.active:
+		var p: Vector3 = plane.position
+		var at := Vector2(p.x,p.z)
+		if at.length() > 120.0: at = at.normalized()*120.0
+		burrower.wake(at,Vector2(-at.x,-at.y).angle() if at.length() > 1.0 else 0.0)
+	else:
+		burrower.roam()
+	_watch_at = burrower.head()
+	_watch_angle = burrower.heading+PI*0.5
+	_watch(0.0)
+
+## The watch camera's orbit round the head (or where the trail last was).
+func _watch(delta: float) -> void:
+	if burrower.active:
+		var h := burrower.head()+Vector3(burrower.forward().x,0.0,burrower.forward().y)*-6.0
+		_watch_at = _watch_at.lerp(h,1.0-exp(-WATCH_FOLLOW*delta)) if delta > 0.0 else h
+	_watch_angle += WATCH_TURN*delta
+	var eye := _watch_at+Vector3(cos(_watch_angle),0.0,sin(_watch_angle))*WATCH_R+Vector3.UP*WATCH_UP
+	eye.y = maxf(eye.y,land.height(eye.x,eye.z)+3.0)
+	camera.global_transform = Transform3D(Basis.looking_at(_watch_at-eye,Vector3.UP),eye)
+	camera.fov = GlideCamera.FOV
 
 func _frame(delta: float) -> void:
 	if not scripted:
@@ -247,4 +317,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match (event as InputEventKey).keycode:
 			KEY_R: respawn()
+			KEY_B: summon()
+			KEY_C: toggle_watch()
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

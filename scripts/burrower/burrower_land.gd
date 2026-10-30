@@ -85,6 +85,34 @@ func normal(x: float, z: float) -> Vector3:
 	var e := 0.75
 	return Vector3(height(x-e,z)-height(x+e,z),2.0*e,height(x,z-e)-height(x,z+e)).normalized()
 
+## The ground's colour (sRGB, as its vertices have it) at (x, z), of height
+## `y` and normal `nm` there.
+func colour(x: float, z: float, y: float, nm: Vector3) -> Color:
+	var c := GROUND_LOW.lerp(GROUND_HIGH,clampf(y/HILLS,0.0,1.0))
+	c = c.lerp(ROCK,smoothstep(0.82,0.68,nm.y))
+	c = c.lerp(MUD,smoothstep(WATER_Y+0.4,WATER_Y-0.2,y))
+	return c.lerp(c*0.85,0.5+0.5*_roll.get_noise_2d(x*3.0,z*3.0))
+
+## The ground mesh's own height at (x, z): its STEP grid's triangles, as
+## drawn (not the noise between them), for things laid on it.
+func mesh_height(x: float, z: float) -> float:
+	var half := SIZE*0.5
+	var u := clampf((x+half)/STEP,0.0,SIZE/STEP-0.001)
+	var v := clampf((z+half)/STEP,0.0,SIZE/STEP-0.001)
+	var i := floorf(u)
+	var j := floorf(v)
+	var fu := u-i
+	var fv := v-j
+	var x0 := -half+i*STEP
+	var z0 := -half+j*STEP
+	var h10 := height(x0+STEP,z0)
+	var h01 := height(x0,z0+STEP)
+	if fu+fv <= 1.0:
+		var h00 := height(x0,z0)
+		return h00+fu*(h10-h00)+fv*(h01-h00)
+	var h11 := height(x0+STEP,z0+STEP)
+	return h11+(1.0-fu)*(h01-h11)+(1.0-fv)*(h10-h11)
+
 ## The plane's ground (SkyGlide `step`): the land's height under it.
 func ground(p: Vector3) -> Variant:
 	return height(p.x,p.z)
@@ -119,11 +147,7 @@ func _build_ground() -> void:
 			var k := j*n+i
 			verts[k] = Vector3(x,y,z)
 			normals[k] = nm
-			var c := GROUND_LOW.lerp(GROUND_HIGH,clampf(y/HILLS,0.0,1.0))
-			c = c.lerp(ROCK,smoothstep(0.82,0.68,nm.y))
-			c = c.lerp(MUD,smoothstep(WATER_Y+0.4,WATER_Y-0.2,y))
-			c = c.lerp(c*0.85,0.5+0.5*_roll.get_noise_2d(x*3.0,z*3.0))
-			colours[k] = c
+			colours[k] = colour(x,z,y,nm)
 	var index := PackedInt32Array()
 	index.resize((n-1)*(n-1)*6)
 	var o := 0
