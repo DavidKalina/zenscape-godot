@@ -196,6 +196,13 @@ var thin_from := INF
 var thin_top := INF
 var thin := 0.0
 var _thin_nose := PITCH_LIMIT.y
+## Lift (the air's "rise", scripts/endless/air_lift.gd): the rising air it
+## rode this step (m/s, 0 outside lift). Its own term, not wind: the air's
+## rise times the airspeed's share (none at the slowest, all of it from
+## FlightWeight.SOFT_SPAN m/s faster), faded over the thin band's last
+## TOP_FALL and over the ceiling's fade, so it adds to a flown climb and
+## carries neither a stalled plane nor one past its top.
+var rising := 0.0
 ## The engine's pull, 1 to 0 (scripts/carry/plane_strain.gd: a part torn
 ## off in flight kills it): at 0 Boost does nothing, it settles to
 ## DEAD_GLIDE of cruise, can't climb and sinks DEAD_SINK m/s, so it must
@@ -489,6 +496,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	wind = here.get("wind",Vector3.ZERO)
 	in_jet = float(here.get("jet",0.0))
 	in_thermal = float(here.get("thermal",0.0))
+	var rise := float(here.get("rise",0.0))
 	# A gust's shove on the airframe (rad/s; the dragon's blast, scripts/
 	# dragon_gale.gd `plane_gust`): it swings the nose and tips the wings
 	# and pitch, and the plane's own easing brings it back.
@@ -640,6 +648,12 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	# The guard in a tight place (SkyGlide `guide`).
 	var push := _guard(delta)
 	velocity = along+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag-DEAD_SINK*(1.0-power)+shake+cushion)+wind+push
+	# Lift: rising air, by the airspeed's share, faded at the top.
+	rising = 0.0
+	if rise > 0.0:
+		rising = rise*smoothstep(slow,slow+FlightWeight.SOFT_SPAN,speed)*(1.0-clampf((position.y-ceiling_y)/CEILING_FADE,0.0,1.0))
+		if thin > 1.0-TOP_FALL: rising *= (1.0-thin)/TOP_FALL
+		velocity.y += rising
 	if bump != Vector3.ZERO:
 		velocity += bump
 		bump *= exp(-delta/BUMP_FADE)
