@@ -30,8 +30,8 @@ const PRIORITY := 8
 ## On a tower: the root and the end of the ribbon past the tower's foot and
 ## tip, as shares of its height, and its radius in the tower's girths.
 const ROOT := 0.1
-const OVER := 0.1
-const GIRTHS := 1.9
+const OVER := -0.1
+const GIRTHS := 2.4
 ## The box's reach past the ribbon's own, as a share of the radius.
 const BOX := 1.75
 ## How often the sky's haze is read (s).

@@ -63,7 +63,7 @@ const FAR_SNOW_FROM := 620.0
 ## many times the land's, for a face hundreds of metres tall, its even seams and
 ## beds turned down (the beds that show are the shape's), and the height haze
 ## cut this far over them and the far mesh, so they stand dark on the sky.
-const PAINT := {"rock_size":2.4,"rock_seams":0.03,"rock_beds":0.38,"rock_bump":0.75,"rock_relief":1.5,"rock_tint":Vector3(0.6,0.58,0.6)}
+const PAINT := {"rock_size":2.4,"rock_seams":0.03,"rock_beds":0.38,"rock_bump":0.75,"rock_relief":1.5,"rock_tint":Vector3(0.2,0.2,0.24),"peak_granite":0.012}
 const HAZE_CUT := 0.86
 const HAZE_RISE := 260.0
 

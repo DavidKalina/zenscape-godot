@@ -14,7 +14,7 @@
 ## (`c`: inside the horseshoe, the valley, the plateau), where the massif's
 ## height stands alone. Along the axis, from the opening in:
 ##
-##   glacier valley  a 4050..2050  100..300 m, bulged ice crossed by crevasse
+##   glacier valley  a 3100..2050  100..300 m, bulged ice crossed by crevasse
 ##                                 bands, between lateral moraines and side
 ##                                 ridges; the valley bends (GL_BEND)
 ##   boulder field   a 2050..1250  300..400 m, lumpy floor
@@ -22,14 +22,14 @@
 ##   the wall        a 850..250    520..1040 m: talus, then a cliff, with
 ##                                 buttresses and gullies; the couloir a
 ##                                 tapering, bending gully cut into it,
-##                                 a 600..265, 610..1025 m, 280 m to the -v
+##                                 a 600..265, 610..845 m, 280 m to the -v
 ##                                 side of the axis, its notch at th 12
-##   crest           th 0..40      1010 m at most, broken into teeth and cols,
+##   crest           th 0..40      925 m at most, broken into teeth and cols,
 ##                                 falling away far faster on the +v side
-##   plateau, tarn   a 160..-270   880 m, a broken floor, the lake's basin in it
+##   plateau, tarn   a 160..-270   880 m, a broken floor falling to the lake
 ##   the crown       three towers (scripts/endless/rocks/peak_towers.gd) round
 ##                                 the lake, each on its own plinth of rock, the
-##                                 back ones joined by aretes; tips to 1400 m
+##                                 back ones joined by aretes; tips to 1480 m
 ##   back face       a -350..-2200 895 m down to the sea, spurs down it
 ##
 ## Everything outside a circle of BOUND round O pays one distance check
@@ -52,14 +52,17 @@ const TARN_HANDLE := "peak/tarn"
 ## The coded spot: the plateau's centre AWAY m from the origin, facing it
 ## (the horseshoe open toward the start). The worlds spawn at the origin and
 ## the start meadow is found within 900 m of it (MenuSpot REACH), so the
-## glacier's toe (a 4500) ends at about the origin, and the bounding circle
+## glacier's toe (TOE.y) ends at about the origin, and the bounding circle
 ## takes in the start (the start's chunks pay the massif's pass). Which way from the origin: of YAWS
 ## ways round, the one with the land's own ground lowest in the eye from
 ## the origin out to SIGHT m (its steepest angle, degrees) and the most sea
 ## behind the plateau (BEHIND m past it, ACROSS m either side), scored
 ## sea share x SEA_WORTH less the angle. `--peak-at=x,z` and `--peak-yaw=deg`
 ## (0 faces +z) set it by hand.
-const AWAY := 4500.0
+const AWAY := 3500.0
+## The distance `_way` scores the sea behind at: its own, so bringing the massif
+## nearer doesn't turn it round the start.
+const WAY_AWAY := 4500.0
 const YAWS := 36
 const SIGHT := 2000.0
 const SIGHT_STEP := 25.0
@@ -78,13 +81,14 @@ const RING_R := 1350.0
 ## on the highs (the tower bases, TOWER_POS, TOWER_NEG) and cols between, so it
 ## is broken, never a level line. The -v side is the long shoulder, the +v side
 ## the one that falls away: down to 600 m by th 32, where the -v side still
-## stands at 830. Both stay 400 m and more under the crown's tips, which own
-## the skyline.
-const CREST_POS := [0.0,930.0, 3.0,905.0, 6.0,955.0, 9.0,885.0, 12.0,905.0, 15.0,795.0, 19.0,815.0,
-	23.0,700.0, 27.0,715.0, 32.0,600.0, 38.0,570.0, 46.0,510.0, 60.0,440.0, 80.0,380.0, 100.0,340.0,
+## stands at 800. The front is held to the plateau's height and under, so the
+## towers' bodies show over it from the meadow and the glacier; the crown's tips
+## stand 400 m and more over all of it.
+const CREST_POS := [0.0,880.0, 3.0,862.0, 6.0,900.0, 9.0,835.0, 12.0,866.0, 15.0,770.0, 19.0,790.0,
+	23.0,690.0, 27.0,705.0, 32.0,600.0, 38.0,570.0, 46.0,510.0, 60.0,440.0, 80.0,380.0, 100.0,340.0,
 	120.0,285.0, 140.0,215.0, 155.0,135.0, 168.0,40.0]
-const CREST_NEG := [0.0,930.0, 4.0,975.0, 7.0,1010.0, 10.0,960.0, 12.0,905.0, 14.0,925.0, 16.0,955.0,
-	19.0,890.0, 23.0,915.0, 27.0,810.0, 31.0,835.0, 36.0,730.0, 42.0,690.0, 60.0,590.0, 80.0,500.0,
+const CREST_NEG := [0.0,880.0, 4.0,902.0, 7.0,925.0, 10.0,868.0, 12.0,840.0, 14.0,862.0, 16.0,890.0,
+	19.0,835.0, 23.0,862.0, 27.0,780.0, 31.0,800.0, 36.0,720.0, 42.0,680.0, 60.0,590.0, 80.0,500.0,
 	100.0,430.0, 120.0,350.0, 140.0,270.0, 155.0,170.0, 168.0,40.0]
 ## Spurs and gullies down every flank, each one its own: laid round the
 ## ring from the back at load (`_ribs`), one rib every RIB_P degrees or so
@@ -166,16 +170,16 @@ const ICEFALL_STEPS := 3
 const ICEFALL_RISER := 0.35
 const BOULDERS := Vector2(1250.0,2050.0)
 const BOULDERS_Y := Vector2(400.0,300.0)
-const GLACIER := Vector2(2050.0,4050.0)
+const GLACIER := Vector2(2050.0,3100.0)
 const GLACIER_Y := Vector2(300.0,100.0)
-const TOE := Vector2(4050.0,4500.0)
+const TOE := Vector2(3100.0,3500.0)
 ## The floor's half-width: icefall, boulders, glacier's head and mouth.
 const FLOOR_HALF := Vector4(200.0,240.0,260.0,330.0)
 ## The valley bends: its middle swings GL_BEND m across, from the boulders'
 ## head (a 1250) to the toe, in GL_TURNS half waves; the icefall and the
 ## couloir stay on the axis. The axis (v 0) stays on the floor.
 const GL_BEND := 170.0
-const GL_TURNS := 2.2
+const GL_TURNS := 1.6
 ## The ice bulges ICE_BULGE m up in its middle.
 const ICE_BULGE := 6.0
 ## The side ridges: their rise over the floor, the run to their top (from
@@ -212,7 +216,7 @@ const LUMP_SCALE := 3.7
 ## mouth (a, height) to the crest's notch, its walls' softness (m).
 const TOY_COULOIR := 40.0
 const COULOIR_FOOT := Vector2(600.0,610.0)
-const COULOIR_TOP := Vector2(265.0,905.0)
+const COULOIR_TOP := Vector2(265.0,845.0)
 ## The couloir runs along the facing COULOIR_V m to the side of the axis,
 ## its notch on the crest about 12 degrees round on the -v side.
 const COULOIR_V := -280.0
@@ -241,8 +245,13 @@ const PLATEAU_BLEND := 300.0
 const TARN_BACK := 90.0
 const TARN_BOWL := 130.0
 const TARN_DEEP := 5.0
-const SHORE_DROP := 7.0
+const SHORE_DROP := 18.0
 const SHORE_RUN := 1.55
+## The strip's side of the lake falls to the shore whole, between these a, so
+## no swell of the outline's lobes stands between the strip and the water;
+## ACROSS the |v| it fades out over.
+const SHORE_FALL := Vector2(30.0,90.0)
+const SHORE_ACROSS := Vector2(130.0,200.0)
 const SHORE_Y := PLATEAU_Y-SHORE_DROP
 const TARN_LEVEL := SHORE_Y-1.0
 ## The tarn's outline (and its bowl's, which follows it): lobes 2, 3 and 5
@@ -278,12 +287,12 @@ const STRIP := Vector4(120.0,118.0,22.0,16.0)
 ## sea), how far the tip leans in toward CROWN_MID, half the width at the base
 ## (m), seed. Uneven, the tallest off centre. Their places go through
 ## `peak/tower/<n>` (scripts/layout_overrides.gd).
-const CROWN := [[-260.0,-400.0,1400.0,120.0,105.0,71],[-440.0,90.0,1325.0,95.0,92.0,23],[-70.0,460.0,1285.0,80.0,80.0,58]]
+const CROWN := [[-260.0,-400.0,1480.0,110.0,82.0,71],[-440.0,90.0,1395.0,90.0,70.0,23],[-70.0,460.0,1335.0,70.0,60.0,58]]
 const CROWN_MID := Vector2(-200.0,60.0)
 ## Each tower's plinth, the rock it grows from: its top over the sea, flat
 ## out to PLINTH_R of the girth, falling PLINTH_FALL m per m, more along its
 ## gullies than its ribs (the lobes share PLINTH_LOBE either way).
-const PLINTH_TOPS := [1020.0,985.0,950.0]
+const PLINTH_TOPS := [985.0,955.0,930.0]
 const PLINTH_R := 1.5
 const PLINTH_FALL := 1.25
 const PLINTH_LOBE := 0.45
@@ -319,16 +328,17 @@ const ROUGH := 12.0
 const ROUGH_SCALE := 90.0
 ## The bounding circle round O: everything outside is the land's own.
 const BOUND := 4050.0
+const CLEAR_PAST := 1150.0
 ## The snow line on the massif, over the sea (the ground shader's
 ## `peak_snow`, ragged by about 100 m either way): the glacier's ice and
 ## the valley's sides below it, snow and granite above.
-const SNOW_LINE := 500.0
+const SNOW_LINE := 580.0
 
 ## The stretches along the axis, for drivers and the trunk: name, a from,
 ## a to, height over the sea from, to. The wall's are the wall's own, as
 ## beside the couloir.
 const STRETCHES := [
-	["glacier",4050.0,2050.0,100.0,300.0],
+	["glacier",3100.0,2050.0,100.0,300.0],
 	["boulders",2050.0,1250.0,300.0,400.0],
 	["icefall",1250.0,850.0,400.0,520.0],
 	["wall",850.0,250.0,520.0,930.0],
@@ -509,7 +519,7 @@ static func _way(ground: Callable) -> float:
 		var sea := 0
 		for b: float in BEHIND:
 			for v: float in [-ACROSS,0.0,ACROSS]:
-				var q := dir*(AWAY+b)+Vector2(-dir.y,dir.x)*v
+				var q := dir*(WAY_AWAY+b)+Vector2(-dir.y,dir.x)*v
 				if float(ground.call(q.x,q.y)) < SEA_Y: sea += 1
 		var score := SEA_WORTH*float(sea)/(BEHIND.size()*3)-steep
 		if score > best_score+0.001:
@@ -585,8 +595,11 @@ func meets(x0: float, z0: float, x1: float, z1: float) -> bool:
 
 ## Whether a site of reach `r` at (x, z) stays clear of the massif (the
 ## ponds, tunnels, halls and splits keep out of it, and through LandField
-## `off_peak` the arches, set pieces, rocks and shops).
+## `off_peak` the arches, set pieces, rocks and shops). The bounding circle
+## runs well past the toe, over the land behind the start, where the massif
+## changes nothing: past CLEAR_PAST m beyond the toe a site is clear.
 func clear(x: float, z: float, r: float) -> bool:
+	if (Vector2(x,z)-centre).dot(facing)-r > TOE.y+CLEAR_PAST: return true
 	return Vector2(x,z).distance_to(_o) > BOUND+r
 
 ## Whether a site of reach `r` at (x, z) stays clear of `field`'s massif
@@ -1108,15 +1121,17 @@ func _cirq(a: float, v: float, h: float) -> Vector2:
 	var tn := _tarn_n(a,v)
 	# The strip: its distance from the strip's line, and its runout lane.
 	var sd := Vector2(a-STRIP.x,maxf(absf(v)-STRIP.y,0.0)).length()
-	var flat := 1.0-smoothstep(STRIP.z,STRIP.z+STRIP.w,sd)
+	var flat := 1.0-smoothstep(STRIP.z,STRIP.z+(STRIP.w if a > STRIP.x else STRIP.w*0.5),sd)
 	var lane := 1.0-smoothstep(STRIP.z+10.0,STRIP.z+40.0,absf(a-STRIP.x))
 	var quiet := smoothstep(QUIET.x,QUIET.y,tn)
 	# The floor, broken, and down to the lake's shore.
 	var kn := _noise.get_noise_2d(a*ROUGH_SCALE/KNOBS.y+7000.0,v*ROUGH_SCALE/KNOBS.y)
 	var broken := smoothstep(KNOBS.z,KNOBS.z+0.4,kn)*lerpf(0.45,1.0,smoothstep(0.3,0.9,s))
 	var swell := _noise.get_noise_2d(a*ROUGH_SCALE/SWELL.y-4000.0,v*ROUGH_SCALE/SWELL.y)
-	var hp := PLATEAU_Y+(FLOOR_RISE*smoothstep(0.5,1.0,s)+KNOBS.x*broken+SWELL.x*swell)*quiet
-	hp -= SHORE_DROP*(1.0-smoothstep(1.0,SHORE_RUN,tn))
+	var fall := sqrt(1.0-smoothstep(SHORE_FALL.x,SHORE_FALL.y,a))*(1.0-smoothstep(SHORE_ACROSS.x,SHORE_ACROSS.y,absf(v)))*smoothstep(_tarn_c.x-40.0,_tarn_c.x+40.0,a)
+	var calm := (1.0-smoothstep(SHORE_FALL.y,STRIP.x,a))*(1.0-smoothstep(SHORE_ACROSS.x,SHORE_ACROSS.y,absf(v)))
+	var hp := PLATEAU_Y+(FLOOR_RISE*smoothstep(0.5,1.0,s)+KNOBS.x*broken+SWELL.x*swell)*quiet*(1.0-calm)
+	hp -= SHORE_DROP*maxf(1.0-smoothstep(1.0,SHORE_RUN,tn),fall)
 	# The rim, its height wandering round it, broken.
 	var rn := _noise.get_noise_2d(cos(phi)*CIRQUE_R*0.7+3000.0,sin(phi)*CIRQUE_R*0.7)*0.5+0.5
 	var rim := lerpf(RIM.x,RIM.y,smoothstep(0.15,0.85,rn))*(1.0+0.2*kn)

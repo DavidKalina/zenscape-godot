@@ -150,6 +150,8 @@ uniform vec3 rock_hue = vec3(0.0);
 uniform vec4 peak_frame = vec4(0.0);
 uniform vec4 peak_zone = vec4(0.0);
 uniform float peak_snow = 500.0;
+// The Peak's granite's darkest (the towers' copy of the paint takes its own).
+uniform float peak_granite = 0.07;
 uniform vec4 peak_stretch = vec4(850.0, 1250.0, 2050.0, 4050.0);
 uniform vec4 peak_half = vec4(200.0, 240.0, 260.0, 330.0);
 uniform vec4 peak_bend = vec4(170.0, 2.2, 1250.0, 4500.0);
@@ -841,7 +843,7 @@ void fragment() {
 		float pk_line = mix(snow_line, peak_snow, pk.x);
 		float high = smoothstep(peak_snow, peak_snow + 500.0, over);
 		float pk_snowy = smoothstep(pk_line - 20.0, pk_line + 4.0, over + pk_edge)
-			* smoothstep(mix(0.58, 0.40, high), mix(0.68, 0.52, high), n.y + rock_edge);
+			* smoothstep(0.56, 0.70, n.y + rock_edge);
 		if (psnow_on > 0.5) pk_snowy = psnow_mask(psnow_point(p, over), over, n.y, pk_line, high);
 		snowy = mix(snowy, pk_snowy, pk.x) * (1.0 - max(pk.y, pk.z));
 		// The cirque's rim: granite on its slopes, snow on its flatter
@@ -1140,7 +1142,7 @@ void fragment() {
 	// pale beds softened; a colder snow, blue where it lies back from the sun.
 	if (pk_rock > 0.0) {
 		float l = luma(rock);
-		vec3 granite = vec3(0.10 + l * 0.55) * vec3(0.88, 0.95, 1.08) * (1.0 + zs_fade(gxz * 1.7 + p.y, 1.3, fp) * 0.35);
+		vec3 granite = vec3(peak_granite + l * 0.55) * vec3(0.88, 0.95, 1.08) * (1.0 + zs_fade(gxz * 1.7 + p.y, 1.3, fp) * 0.35);
 		rock = mix(rock, granite, pk_rock * 0.85);
 		snow = mix(snow, snow * mix(vec3(0.92, 0.96, 1.04), vec3(0.84, 0.90, 1.0), clamp((0.25 - dot(n, zs_sun_direction)) * 2.0, 0.0, 1.0)), pk.x);
 	}

@@ -58,7 +58,7 @@ const FLARE := 0.5
 ## The apron: the foot's flare over the first APRON.y of the height.
 const APRON := Vector2(0.24,0.14)
 ## Width left at the top before the setbacks.
-const TOP_WIDTH := 0.74
+const TOP_WIDTH := 0.5
 ## The setbacks a side, the drop of each (share of the width) and the
 ## height of a ledge (share of the height).
 const STEPS := Vector2i(3,5)

@@ -41,7 +41,7 @@ uniform float haze_share = 0.45;
 
 const float TAU_ = 6.28318530718;
 // The ribbon's radius at the tip as a share of the root's.
-const float TAPER = 0.26;
+const float TAPER = 0.42;
 // How much tighter the coils get: 0 even, 1 a tip pitch a third of the root's.
 const float TIGHTEN = 0.45;
 // The ribbon's half width and half height as shares of the radius and pitch.

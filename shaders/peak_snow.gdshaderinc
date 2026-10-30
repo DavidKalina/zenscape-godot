@@ -71,7 +71,7 @@ float psnow_mask(vec2 q, float over, float ny, float line, float high) {
 	// a clean limit on them draws the mesh's teeth along the snow's edge.)
 	float rock_e = (zs_noise(q / 9.0) - 0.5) * 0.10 + mid * 0.08 + (zs_noise(q / 33.0 + 57.0) - 0.5) * 0.20;
 	return smoothstep(line - 20.0, line + 4.0, over + edge)
-		* smoothstep(mix(0.58, 0.40, high), mix(0.68, 0.52, high), ny + rock_e);
+		* smoothstep(0.56, 0.70, ny + rock_e);
 }
 
 // Value noise with its gradient: x the value (0..1), yz d/dp.
