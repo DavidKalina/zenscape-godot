@@ -87,6 +87,33 @@ across one pass of the trail, `tools/shot.py`), from the chase camera and
 the watch camera. Motion is the point: surge and settle, the earth's
 follow-through, the rise's anticipation and overshoot.
 
+## Feel pass (the user, after playing iteration 11)
+
+"Looks great", but the push-ups are too hard to hit. One more polish task,
+before climbing and before endless flight:
+
+1. **Easier to hit.** The orb is too small and its hit too tight. Grow
+   its hit reach a lot (generous: grazing it counts) and its look to
+   match, so it reads as a target you can steer for. Bell and gong the
+   same in spirit: a clip that's near enough counts.
+2. **In front of you.** Push-ups come up too far out of the way. Place
+   them on or near the plane's own line ahead (where it will be in a
+   beat or two at its current heading and turn), with only a small
+   offset, so taking one is a nudge, not a chase. The burrower can lead
+   off to one side, but what it pushes up lands in the plane's path.
+3. **Gritty dirt, not clay.** The earth (head, clods, crest, scar) reads
+   like smooth clay. Make it read as real, gritty soil: broken crumbly
+   clods of mixed sizes, grain and speckle, dry lighter crumbs against
+   damp dark earth, root and grass bits in it, not smooth blobs. This is
+   the burrower's own material and goes into the game with it.
+4. **The arena.** If the meadow's size is what cramps the line (orbs
+   against the edge, too little straight run), widen the meadow. Say in
+   the commit whether it was the arena or the placement.
+
+Prove 1 and 2 through the real play loop: a driver flying a natural
+skim line (gentle steering toward a push-up only once it is up) should
+hit most orbs; report the hit rate before and after.
+
 ## Out of scope this loop
 
 Anything in endless flight (the gate on camera, skim time and open space,
