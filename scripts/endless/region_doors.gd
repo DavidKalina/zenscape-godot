@@ -590,7 +590,7 @@ func _set_hour(from: int, to: int) -> void:
 	var look: Node = _host.look
 	if look == null or look.get("cycle") == null or look.get("celestial") == null: return
 	if not bool(look.cycle.running) or bool(look.get("_hour_taken")): return
-	_clock[from] = float(look.celestial.phase)
+	_clock[from] = float(look.land_phase())
 	var p := _clock[to]
 	if p < 0.0:
 		var regions: Array = _world.get("regions")

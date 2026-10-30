@@ -857,6 +857,13 @@ const float COLLAR_SWELL = 48.0;
 // otherwise shade its own far side black.
 const float COLLAR_LIGHT = 0.5;
 const float COLLAR_SWELL_TILE = 1100.0;
+// Its underside lit more than a field cloud's: the sky's light at its base
+// floored at this share (a field cloud's 0.32), its deep shade this much
+// shallower, and all its sky light this many times a field cloud's, so
+// from below it reads pale against the field's clouds, not tan.
+const float COLLAR_UNDER = 1.0;
+const float COLLAR_DEEP_CUT = 1.0;
+const float COLLAR_SKY = 1.6;
 
 bool collar_on() {
 	return P.spare[4].w > 0.5;
@@ -930,6 +937,7 @@ struct Sample {
 	float h;
 	float pocket;
 	float free;
+	float collar;
 };
 
 // How far `p` stands clear of one layer's cloud (m, a lower bound) from its
@@ -943,7 +951,7 @@ float layer_free(float y, float top, float base) {
 }
 
 Sample cloud_at_layers(vec3 p, float t, float immersed, bool fine) {
-	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0);
+	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0, 0.0);
 	if (P.band.w <= 0.0 || p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return s;
 	vec4 w = weather_smooth(p.xz);
 	s.free = min(layer_free(p.y, w.x, w.y), layer_free(p.y, w.z, w.w));
@@ -1037,6 +1045,7 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 		s.h = hh;
 		s.pocket = wisp;
 		s.sigma = mix(SIGMA, COLLAR_SIGMA_IN, immersed);
+		s.collar = 1.0;
 	}
 	return s;
 }
@@ -1505,7 +1514,7 @@ void march_pass() {
 			sun_light *= mix(1.0, powder, powder_share);
 			float deep = sstep(0.0, 50.0, s.inside);
 			float beer = exp(-tau);
-			float ambient = SKY * sky_open * mix(0.32, 1.0, s.h) * mix(1.0, DEEP, deep) * mix(1.0, 0.45, beer);
+			float ambient = SKY * sky_open * mix(mix(0.32, COLLAR_UNDER, s.collar), 1.0, s.h) * mix(1.0, DEEP, deep * (1.0 - COLLAR_DEEP_CUT * s.collar)) * mix(1.0, 0.45, beer) * mix(1.0, COLLAR_SKY, s.collar);
 			float bounce = BOUNCE * pow(1.0 - s.h, 2.0);
 			float alpha = 1.0 - exp(-s.density * s.sigma * step);
 			float w = T * alpha;

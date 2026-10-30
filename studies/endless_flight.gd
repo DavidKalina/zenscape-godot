@@ -548,6 +548,8 @@ func _ready() -> void:
 		# The Peak's collar: a standing ring of cloud round its summit
 		# (scripts/endless/endless_collar.gd), between COLLAR_BAND m over the sea.
 		if peak != null and look.clouds != null: look.clouds.set_collar(peak.summit(),COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y,0.0)
+		# The sky over it keeps its own hour (EndlessLook.set_collar_sky).
+		if peak != null: look.set_collar_sky(peak.summit(),COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y)
 		# Its paint in the ground shader (snow line, granite, ice), set before
 		# the rocks take their bare copy of the ground; --peak-paint=0 leaves
 		# the land's own paint on it.
