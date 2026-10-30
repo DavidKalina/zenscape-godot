@@ -60,7 +60,7 @@ const SEA_Y := -40.0
 ## Over it the nose is held level (SkyGlide `ceiling_y`). The isles' fixed
 ## CEILING (95 world) is 135 over this sea.
 const THIN_OVER := 215.0
-const CEILING_OVER := 1400.0
+const CEILING_OVER := 1520.0
 ## Continents: their scale (m), the height they swing (m) and the lift that
 ## sets how much is land (more is more land).
 const CONTINENT := 3600.0

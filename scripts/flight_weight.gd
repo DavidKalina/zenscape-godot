@@ -54,10 +54,10 @@ const PRESETS := {
 		"low_spans":1.6,"settle":1.0,"settle_pitch":-0.06,"buffet":0.35,"ceiling":1.0,"reach":1.0},
 	"medium":{"roll_hz":11.0,"turn_lag":0.06,"yaw_lag":0.08,"pitch_lag":0.3,"pitch_build":0.09,
 		"bleed":0.6,"soft_keep":0.6,"mush":1.4,"sag":1.0,"cam_lag":1.5,"cam_path":0.62,"fov_ease":0.55,
-		"low_spans":1.8,"settle":1.4,"settle_pitch":-0.09,"buffet":0.5,"ceiling":0.94,"reach":0.862},
+		"low_spans":1.8,"settle":1.4,"settle_pitch":-0.09,"buffet":0.5,"ceiling":0.8536,"reach":0.862},
 	"heavy":{"roll_hz":7.0,"turn_lag":0.12,"yaw_lag":0.13,"pitch_lag":0.48,"pitch_build":0.15,
 		"bleed":1.0,"soft_keep":0.45,"mush":2.2,"sag":1.8,"cam_lag":2.0,"cam_path":0.7,"fov_ease":0.8,
-		"low_spans":2.0,"settle":1.8,"settle_pitch":-0.11,"buffet":0.65,"ceiling":0.85,"reach":0.879},
+		"low_spans":2.0,"settle":1.8,"settle_pitch":-0.11,"buffet":0.65,"ceiling":0.7716,"reach":0.879},
 }
 
 ## The path's lag at a speed: times cruise over speed, within these.

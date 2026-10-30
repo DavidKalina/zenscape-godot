@@ -76,11 +76,14 @@ const RING_R := 1350.0
 ## on the +v side and the -v side (the couloir's notch at about 12). Both
 ## start under the head; between the tower bases (TOWER_POS,
 ## TOWER_NEG) the crest dips to cols, so it reads as a ridge.
-const CREST_POS := [0.0,1090.0, 5.0,1072.0, 9.0,1040.0, 13.0,1060.0, 16.5,1012.0, 20.0,1045.0, 23.5,996.0,
-	27.0,1028.0, 30.5,984.0, 34.0,1008.0, 42.0,955.0, 60.0,895.0, 80.0,785.0,
-	100.0,645.0, 120.0,505.0, 140.0,360.0, 155.0,240.0, 168.0,40.0]
-const CREST_NEG := [0.0,1090.0, 5.0,1068.0, 9.0,1048.0, 12.0,1035.0, 14.5,1030.0, 17.0,1052.0, 20.0,1004.0,
-	23.0,1038.0, 26.0,990.0, 29.0,1018.0, 32.0,978.0, 35.0,998.0, 42.0,945.0, 60.0,850.0, 80.0,715.0,
+## The -v side is the long shoulder: it climbs from the arm to the notch
+## and the horn's ridge rises out of it; the +v side stays lower. Both stay
+## 350..450 m under the horn's top so the horn owns the skyline.
+const CREST_POS := [0.0,1000.0, 5.0,985.0, 9.0,965.0, 13.0,985.0, 16.5,945.0, 20.0,965.0, 23.5,925.0,
+	27.0,945.0, 30.5,905.0, 34.0,920.0, 42.0,870.0, 60.0,800.0, 80.0,715.0,
+	100.0,610.0, 120.0,490.0, 140.0,360.0, 155.0,240.0, 168.0,40.0]
+const CREST_NEG := [0.0,1000.0, 5.0,1010.0, 9.0,1035.0, 12.0,1035.0, 14.5,1028.0, 17.0,1040.0, 20.0,995.0,
+	23.0,1015.0, 26.0,970.0, 29.0,985.0, 32.0,945.0, 35.0,955.0, 42.0,900.0, 60.0,820.0, 80.0,700.0,
 	100.0,575.0, 120.0,440.0, 140.0,300.0, 155.0,170.0, 168.0,40.0]
 ## Spurs and gullies down every flank, each one its own: laid round the
 ## ring from the back at load (`_ribs`), one rib every RIB_P degrees or so
@@ -261,17 +264,24 @@ const HEADWALL := Vector3(0.16,265.0,170.0)
 ## Vector4(its a, half its length along v, half its width, the ease to the
 ## broken ground round it), flat at PLATEAU_Y, no knob or rim on it.
 const STRIP := Vector4(80.0,118.0,22.0,16.0)
-## The head: a pyramid standing on the crest's back point, on the axis in
+## The head: a horn standing on the crest's back point, on the axis in
 ## front of the plateau (so from the opening it hides the plateau), its top
-## SUMMIT_Y over the sea. Its faces fall HEAD_FACE m per m, its ridges (HEAD_RIDGES, degrees
-## round its top in the frame, 0 toward the opening, 90 toward +v) HEAD_RIDGE;
-## the tip rounded over HEAD_TIP m; it reaches out HEAD_REACH m.
+## SUMMIT_Y over the sea. Its faces fall HEAD_FACE.x m per m at the top,
+## easing toward HEAD_FACE.y over HEAD_BEND m (near-vertical up high, wider
+## at the foot); its knife ridges (HEAD_RIDGES, degrees round its top in
+## the frame, 0 toward the opening, 90 toward +v; HEAD_KNIFE their
+## sharpness) HEAD_RIDGE the same way. The -v ridge (about -100) rises out
+## of the shoulder by the couloir's notch, the two front ones frame the face
+## the start looks at. The tip rounded over HEAD_TIP m; it reaches out
+## HEAD_REACH m.
 const SUMMIT_AT := Vector2(290.0,0.0)
-const SUMMIT_Y := 1200.0
-const HEAD_FACE := 1.15
-const HEAD_RIDGE := 0.72
-const HEAD_RIDGES := [4.0,88.0,-95.0,176.0]
-const HEAD_TIP := 12.0
+const SUMMIT_Y := 1400.0
+const HEAD_FACE := Vector2(3.4,1.0)
+const HEAD_RIDGE := Vector2(2.6,0.75)
+const HEAD_BEND := 130.0
+const HEAD_RIDGES := [40.0,-45.0,140.0,-100.0]
+const HEAD_KNIFE := 16.0
+const HEAD_TIP := 5.0
 const HEAD_REACH := 900.0
 ## Past HEAD_KNEE m from its top the head falls HEAD_SINK m per m more, so
 ## its ridges end on the wall and do not run out over the icefall.
@@ -917,10 +927,13 @@ func _head(a: float, v: float, n: float) -> float:
 	var phi := rad_to_deg(atan2(pv,pa))
 	var w := 0.0
 	for r: float in HEAD_RIDGES:
-		w = maxf(w,pow(maxf(cos(deg_to_rad(phi-r)),0.0),12.0))
-	var s := lerpf(HEAD_FACE,HEAD_RIDGE,w)
+		w = maxf(w,pow(maxf(cos(deg_to_rad(phi-r)),0.0),HEAD_KNIFE))
+	var dt := sqrt(d*d+HEAD_TIP*HEAD_TIP)-HEAD_TIP
+	var bend := HEAD_BEND*(1.0-exp(-dt/HEAD_BEND))
+	var face := HEAD_FACE.y*dt+(HEAD_FACE.x-HEAD_FACE.y)*bend
+	var ridge := HEAD_RIDGE.y*dt+(HEAD_RIDGE.x-HEAD_RIDGE.y)*bend
 	var k := maxf(d-HEAD_KNEE,0.0)
-	return SUMMIT_Y-s*(sqrt(d*d+HEAD_TIP*HEAD_TIP)-HEAD_TIP)-HEAD_SINK*k*k/(k+100.0)+n*ROUGH*0.8*smoothstep(0.0,80.0,d)
+	return SUMMIT_Y-lerpf(face,ridge,w)-HEAD_SINK*k*k/(k+100.0)+n*ROUGH*0.8*smoothstep(0.0,80.0,d)
 
 ## The wall `e` m in from a crest at `hc`: talus, then a cliff.
 static func _wall(e: float, hc: float) -> float:

@@ -112,6 +112,11 @@ const FOG_FADE := 1100.0
 const FOG_DEPTH := 40.0
 const FOG_STEPS := 32
 const FOG_DRIFT := 0.3
+## The start meadow's clearing (`clear_fog_at`): no valley fog within
+## FOG_CLEAR.x m of it, back to full by FOG_CLEAR.y m, so the first look at
+## the land from the meadow is through clear air, not through a pocket of
+## fog lying on the meadow itself.
+const FOG_CLEAR := Vector2(700.0,1300.0)
 const MARCHED_BLEND := 0.5
 const UPSAMPLED_BLEND := 0.08
 ## Less grain: the new jitter, the resolve's 3x3 filter and sigma clip
@@ -235,6 +240,8 @@ var fog_density := 1.0
 ## scripts/endless/land_tunnels.gd); 0 leaves it as it is.
 var fog_hush := 0.0
 var fog_depth := FOG_DEPTH
+## The start meadow's clearing (x, z, on): see FOG_CLEAR.
+var fog_clear := Vector3.ZERO
 var fog_steps := FOG_STEPS
 var fog := ImageTexture.new()
 var fog_at := Vector4.ZERO
@@ -383,6 +390,12 @@ func step(delta: float, view: Camera3D, wind: Vector2, time: float) -> void:
 func set_collar(centre: Variant, radius: float, lo: float, hi: float, hole := -1.0) -> void:
 	collar.set_ring(centre,radius,lo,hi,hole)
 
+## Keeps the valley fog off the meadow at `at` (xz; see FOG_CLEAR); the map
+## is baked again with the clearing in it.
+func clear_fog_at(at: Vector2) -> void:
+	fog_clear = Vector3(at.x,at.y,1.0)
+	if _fog_task < 0: fog_at.w = 0.0
+
 func clear_collar() -> void:
 	collar.clear()
 
@@ -463,10 +476,11 @@ func _fog(eye: Vector3) -> void:
 	var corner := ((Vector2(eye.x,eye.z)-Vector2.ONE*FOG_SIDE*0.5)/texel).floor()*texel
 	_fog_next = Vector4(corner.x,corner.y,FOG_SIDE,1.0)
 	if fog_at.w < 0.5:
-		_fog_image = fog_image(land_seed,corner)
+		_fog_image = fog_image(land_seed,corner,fog_clear)
 		_take_fog()
 	else:
-		_fog_task = WorkerThreadPool.add_task(func() -> void: _fog_image = fog_image(land_seed,corner),false,"Valley fog map")
+		var clear := fog_clear
+		_fog_task = WorkerThreadPool.add_task(func() -> void: _fog_image = fog_image(land_seed,corner,clear),false,"Valley fog map")
 
 func _take_fog() -> void:
 	if _fog_image == null: return
@@ -486,8 +500,9 @@ func _take_fog() -> void:
 ## per texel the ground (world y), the nearest valley's floor (world y), how
 ## much fog the valley holds there (0..1: its middle and up its sides, more
 ## through the ranges and where the floor widens into a pocket), and how
-## much of a range stands round it (0..1, deepening the fog).
-static func fog_image(seed_value: int, corner: Vector2) -> Image:
+## much of a range stands round it (0..1, deepening the fog). `clear` (x, z,
+## on): the start meadow's clearing (FOG_CLEAR).
+static func fog_image(seed_value: int, corner: Vector2, clear := Vector3.ZERO) -> Image:
 	var field := Field.new(seed_value)
 	var n := FOG_TEXELS
 	var texel := FOG_SIDE/n
@@ -510,6 +525,8 @@ static func fog_image(seed_value: int, corner: Vector2) -> Image:
 				var ranged := smoothstep(0.0,0.45,field.last_mountain)
 				var pocket := clampf((half/floor_half-0.75)/0.95,0.0,1.0)
 				amount = near*smoothstep(0.2,0.8,field.last_inland)*lerpf(0.3,1.0,ranged)*lerpf(0.7,1.15,pocket)
+				if clear.z > 0.5:
+					amount *= smoothstep(FOG_CLEAR.x,FOG_CLEAR.y,Vector2(clear.x,clear.y).distance_to(Vector2(corner.x+(i+0.5)*texel,corner.y+(j+0.5)*texel)))
 				data[k+3] = ranged
 			data[k+1] = fl
 			data[k+2] = clampf(amount,0.0,1.0)

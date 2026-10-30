@@ -296,9 +296,14 @@ var lines: Node
 var stair: Node3D
 var flown := 0.0
 var _start := Vector2.ZERO
-## The Peak's collar round its summit: its radius and band (m over the sea).
-const COLLAR_R := 500.0
-const COLLAR_BAND := Vector2(850.0,1050.0)
+## The Peak's collar: a disc of cloud round the horn's neck, its middle
+## COLLAR_AT m along the massif's axis (between the summit, at 290, and the
+## plateau's centre, at 0, so it reaches only a little way in front of the
+## horn and well out round the plateau), its radius and band (m over the
+## sea: over the crest round the horn, under the plateau and the tarn).
+const COLLAR_AT := 40.0
+const COLLAR_R := 520.0
+const COLLAR_BAND := Vector2(1020.0,1120.0)
 var _no_title := false
 var _heading := 0.0
 ## A heading named by the world's spawn or --heading=: the start does not
@@ -547,9 +552,15 @@ func _ready() -> void:
 		sea = look.sea
 		# The Peak's collar: a standing ring of cloud round its summit
 		# (scripts/endless/endless_collar.gd), between COLLAR_BAND m over the sea.
-		if peak != null and look.clouds != null: look.clouds.set_collar(peak.summit(),COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y,0.0)
+		# The start meadow clear of valley fog (EndlessClouds FOG_CLEAR).
+		if look.clouds != null: look.clouds.clear_fog_at(_start)
+		var collar_at := Vector3.ZERO
+		if peak != null:
+			var cw: Vector2 = peak.world(COLLAR_AT,0.0)
+			collar_at = Vector3(cw.x,0.0,cw.y)
+		if peak != null and look.clouds != null: look.clouds.set_collar(collar_at,COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y,0.0)
 		# The sky over it keeps its own hour (EndlessLook.set_collar_sky).
-		if peak != null: look.set_collar_sky(peak.summit(),COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y)
+		if peak != null: look.set_collar_sky(collar_at,COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y)
 		# Its paint in the ground shader (snow line, granite, ice), set before
 		# the rocks take their bare copy of the ground; --peak-paint=0 leaves
 		# the land's own paint on it.
@@ -712,6 +723,7 @@ func _park_for_menu(spots: Array) -> void:
 			break
 	_start = spot.at
 	_heading = float(spot.heading)
+	if look != null and look.clouds != null and spot != spots[0]: look.clouds.clear_fog_at(_start)
 	_launch(Vector3(_start.x,field.height(_start.x,_start.y),_start.y),_heading,true)
 	menu = MainMenu.new()
 	menu.name = "MainMenu"
