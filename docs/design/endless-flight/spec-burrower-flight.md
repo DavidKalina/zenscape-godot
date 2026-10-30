@@ -60,6 +60,30 @@ The study stays as it is and keeps working (its smoke check passes);
 shared burrower scripts may change for the game, but the study is the
 place to judge the creature on its own.
 
+## Through the forest (the user, during iteration 3)
+
+The user wants the run to go through forests so the trees shudder as it
+passes: "such a cool moment". Forest is ground it **can** run, not an
+obstacle to dive at:
+
+- A run may lead into a forest and through it, weaving between trunks
+  (as it bobs round trees in the study), every tree it passes near
+  shuddering (sway that rings out, leaf burst), so its line reads from
+  above as a wave of shaking crowns moving through the wood.
+- The plane can't skim under the canopy, so the chase goes on over the
+  treetops: while it's under trees, the run doesn't end for the plane
+  being high above the ground, as long as it's skimming the canopy
+  (about a span or two over the crowns). Push-ups in a forest rise above
+  the crowns on the plane's line, or wait for a clearing.
+- The wake gate's open-space check can count a forest ahead as open (the
+  wake itself still needs the skim over open ground or water to start).
+  Cliffs, ruins and steep ground stay things it routes round or dives at.
+- Cost: shudder only the trees near its head, from a pool, so a dense
+  wood costs no more than a meadow's few. Measure it in the frame-time
+  read.
+
+Its own task, after steering and edges, before water and grass.
+
 ## Proof
 
 - Smoke: `studies/endless_flight.tscn` and `studies/burrower_study.tscn`.
