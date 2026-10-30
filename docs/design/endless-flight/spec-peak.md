@@ -5,8 +5,11 @@ Budget: the skill's default. Model: Opus for the trunk and every lane but
 the collar lane (Sonnet).
 
 The wilderness gets one landmark out of scale with everything around it:
-a massif about 5 km from the start meadow, rising to a summit lake at
-about 800 m over the sea where the land today tops out near 300 m. The
+a massif about 4.5 km from the start meadow, rising to a summit lake at
+about 1,200 m over the sea where the land today tops out near 300 m.
+(Decided 2026-10-29 after iteration 2's still: at 800 m and 5.8 km the
+summit was 8 degrees up from the meadow and read as a low mesa; taller
+and nearer puts it near 15 degrees.) The
 start meadow faces it. It is climbed by flying, by several named routes,
 each a standing line with a recorded best, and it is never gated: the
 plane may climb straight up from anywhere, slowly, with nothing to chain.
@@ -22,7 +25,9 @@ Playing `studies/endless_flight.tscn` on seed 1 with no flags:
 1. From the start meadow, the Peak owns the horizon: one high head wearing
    a cloud collar, a long shoulder leading up to it, standing well above
    every other mountain. The gold door tower (`doors/amber-wall`) is off to
-   one side, nearer and lower. Both read at once, through the haze.
+   one side, nearer and lower: from the meadow the door's cloud must
+   read clearly lower than the summit. Both read at once, through the
+   haze. The summit stands about 15 degrees up from the meadow.
 2. Flying at it, the ground rises slowly for about 4 km: a glacier valley,
    then a boulder field, then an icefall. Then a wall rises faster than
    anything the land has, with granite towers standing on its crest and the
@@ -49,7 +54,8 @@ Playing `studies/endless_flight.tscn` on seed 1 with no flags:
    The near-miss chain runs as usual on all of them; nothing new is scored.
 8. Straight up, from anywhere, with no lift: a light plane reaches the
    tarn with margin, medium barely, heavy not at all. Heavy reaches it by
-   the couloir.
+   the couloir. The straight climb is slow work, minutes, with nothing
+   to chain.
 9. A traffic plane now and then flies the couloir route and vanishes over
    the rim.
 10. The meadows-and-flats guarantee holds everywhere round the foot and on
@@ -60,20 +66,21 @@ Playing `studies/endless_flight.tscn` on seed 1 with no flags:
 ## Shape
 
 A shallow horseshoe open toward the start meadow, about 4 to 5 km across,
-its summit at the back of the curve with the sea behind it.
+its summit at the back of the curve with the sea behind it, the plateau
+about 4.5 km from the start.
 
 | Stretch | Height over the sea | Length | Flying |
 |---|---|---|---|
-| Glacier valley | 100 to 250 m | about 2.5 km | skim ice, crevasses as near misses |
-| Boulder field | 250 to 330 m | about 1 km | slalom between house-sized blocks |
-| Icefall | 330 to 420 m | about 0.5 km | thread seracs |
-| The wall and couloir | 420 to 700 m | under 1 km of ground | climb the slot with lift |
-| Crest and towers | 650 to 750 m | about 1.5 km round | knife ridge, spires to thread |
-| Summit block | to 800 m | | into the collar and out |
-| Plateau and tarn | 740 to 770 m | 300 m across | land by the tarn |
-| Back face | 770 m to the sea | about 2 km | the dive |
+| Glacier valley | 100 to 300 m | about 2 km | skim ice, crevasses as near misses |
+| Boulder field | 300 to 400 m | about 0.8 km | slalom between house-sized blocks |
+| Icefall | 400 to 520 m | about 0.4 km | thread seracs |
+| The wall and couloir | 520 to 1,050 m | under 1 km of ground | climb the slot with lift |
+| Crest and towers | 1,000 to 1,120 m | about 1.5 km round | knife ridge, spires to thread |
+| Summit block | to 1,200 m | | into the collar and out |
+| Plateau and tarn | 1,130 to 1,160 m | 300 m across | land by the tarn |
+| Back face | 1,160 m to the sea | about 2 km | the dive |
 
-The collar is a band from about 550 to 700 m round the summit block only.
+The collar is a band from about 850 to 1,050 m round the summit block only.
 It never lifts, and it turns slowly. The sky above it keeps its own hour
 (gold hour by default) whatever the land's clock says.
 
@@ -85,7 +92,10 @@ hidden door that goes in it later is not this loop's work.
 
 `CEILING_OVER` (`scripts/sky_plane.gd`) and the presets' `ceiling`
 (`scripts/flight_weight.gd`) rise so that: off and light reach about
-1,000 m, medium about 950, heavy about 880. The thin-air band above the
+1,400 m, medium about 1,330, heavy about 1,230. Straight up with no
+lift, light reaches the tarn with margin, medium barely, heavy not at
+all; if the thin-air band needs its shape tuned for that, tune it, but
+flight below 215 m stays unchanged to the digit. The thin-air band above the
 old 215 m ceiling keeps its shape; flight below it stays unchanged to the
 digit, as the ceiling round proved (its driver is the reference).
 
@@ -173,7 +183,15 @@ In order, one task per iteration:
    door tower off to one side; replace `TEST_AT`. Raise the ceiling. Keep
    other placers off the massif. Still from the meadow: the Peak and the
    door both read.
-3. Sculpt. The first stills (`scratch/peak/detail/`, iteration 1) show a
+3. Taller and nearer. Rescale the profile to the Shape table (summit
+   1,200 m, plateau about 4.5 km from the start) and move the plateau in;
+   raise the ceiling per the Ceiling section; cap the door cloud's height
+   so it reads lower than the summit from the meadow; re-place the collar
+   band. Prove: the still from the meadow with both in frame, the summit
+   about 15 degrees up; the plateau landing; the straight-up climb per
+   preset (light makes it, heavy does not). The helpers keep returning
+   the right spots.
+4. Sculpt. The first stills (`scratch/peak/detail/`, iteration 1) show a
    massif that stands and has detail everywhere but reads as a crater:
    a flat-topped rim of even height, a plain box for the summit block, a
    square-cut trench for the couloir, a flat white floor between two
@@ -193,24 +211,24 @@ In order, one task per iteration:
    pass. Stills before and after from the same spots. Colour is not this
    step: the white above the glacier is the ground shader's and the snow
    line is dressing work.
-4. The tarn: a pond entry with a forced level in the plateau bowl, skipping
+5. The tarn: a pond entry with a forced level in the plateau bowl, skipping
    the pond site rules; the shore meadow landable; `place/peak` on
    landing; the landing card at the summit.
-5. The couloir route: lift in the slot, its gates, its record, the stair
+6. The couloir route: lift in the slot, its gates, its record, the stair
    from the ruin kit along the approach and up the slot, the traffic plane
    flying it.
-6. The towers traverse and the seaward face: spires on the crest from the
+7. The towers traverse and the seaward face: spires on the crest from the
    sea-stack kit, gates and records for both routes.
-7. Dressing: boulder field from the rock kit, seracs on the icefall, ice
+8. Dressing: boulder field from the rock kit, seracs on the icefall, ice
    on the glacier and a snow line above about 500 m in the ground shader.
-8. The sky above the collar: the land's hour below, the collar's own hour
+9. The sky above the collar: the land's hour below, the collar's own hour
    above, blended by eye height through the band. Brighten the collar
    from below if it still reads tan against the field clouds.
-9. Cost: the chunk-build numbers near the Peak against far from it, the
+10. Cost: the chunk-build numbers near the Peak against far from it, the
    straight-up check per preset, and if streaming shows holes near the
    Peak, the massif's profile ported into the C++ field with the
    GDScript mirror kept.
-10. Final: smoke checks, a driver through each route, stills from the
+11. Final: smoke checks, a driver through each route, stills from the
    meadow, the glacier, the couloir, above the collar and the tarn; then
    the handoff.
 
