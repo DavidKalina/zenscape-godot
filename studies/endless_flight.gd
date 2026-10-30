@@ -143,6 +143,8 @@ const RivalRace = preload("res://scripts/endless/rival_race.gd")
 const ShopSites = preload("res://scripts/endless/shop_sites.gd")
 const RegionDoors = preload("res://scripts/endless/region_doors.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
+## Place lines: standing routes with a timed record (--lines=0 none).
+const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
@@ -278,6 +280,8 @@ var race: Node
 var shops: Node
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
+## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
+var lines: Node
 var flown := 0.0
 var _start := Vector2.ZERO
 var _no_title := false
@@ -601,6 +605,10 @@ func _ready() -> void:
 		beats = BeatRoutes.new()
 		add_child(beats)
 		beats.setup(seed,self)
+	if PlaceLines.wanted():
+		lines = PlaceLines.new()
+		add_child(lines)
+		lines.setup(seed,self)
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
@@ -1019,6 +1027,7 @@ func tick(delta: float) -> void:
 		stage.frame(delta,camera,plane.position+ground_scale.lift(),ground_scale.size(),Callable(field,"height"))
 		if not stage.running(): _menu_done()
 	if beats != null: beats.step(delta,self)
+	if lines != null: lines.step(delta,self)
 	land.lead_with(plane.velocity)
 	land.step(camera.global_position)
 	arches.step(camera.global_position)
