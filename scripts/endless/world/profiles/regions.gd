@@ -41,7 +41,7 @@ func _init() -> void:
 	var band := Registry.BLEND
 	var layout_seed := 1
 	var seed_given := false
-	var list: Array = Registry.REGISTRY.duplicate(true)
+	var list: Array = _region_list()
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--region-size="): size = a.get_slice("=",1).to_float()
 		elif a.begins_with("--region-blend="): band = a.get_slice("=",1).to_float()
@@ -69,7 +69,7 @@ func _init() -> void:
 		startable.append(true)
 		shares.append(1.0)
 	if not startable.has(true): startable[0] = true
-	map = RegionMap.new(size,band,layout_seed,shares)
+	map = _make_map(size,band,layout_seed,shares)
 	_place_start()
 	eye_weights = map.weights(spawn.at.x,spawn.at.y)
 	# The tables where no per-spot answer reaches: the start region's.
@@ -87,6 +87,15 @@ func _init() -> void:
 		var most := 0.0
 		for p: RefCounted in regions: most = maxf(most,float(p.layers.get(key,1.0 if key == "arches" else 0.0)))
 		layers[key] = most
+
+## The regions this world stitches (before --regions=): the registry's.
+func _region_list() -> Array:
+	return Registry.REGISTRY.duplicate(true)
+
+## The region map (region_map.gd's answers: weights, dominant, cell_at,
+## region_of, site, warp, count, size, blend): the warped patchwork.
+func _make_map(size: float, band: float, layout_seed: int, shares: PackedFloat32Array) -> RefCounted:
+	return RegionMap.new(size,band,layout_seed,shares)
 
 ## --regions=wilderness:2:start,overgrown:1 into registry entries.
 static func _parse_list(text: String) -> Array:

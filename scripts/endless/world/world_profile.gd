@@ -7,8 +7,9 @@ extends RefCounted
 ##
 ## A profile is a script in scripts/endless/world/profiles/<id>.gd that
 ## extends this one and sets its tables in `_init`. Endless flight plays
-## `regions` (wilderness with the amberlands in the mix, PLAYS) unless
-## `--world=<id>` names another; `--world=wilderness` is wilderness alone. Every existing flag still
+## `doors` (wilderness, and amberlands through a door of cloud, PLAYS) unless
+## `--world=<id>` names another; `--world=regions` is the patchwork of both,
+## `--world=wilderness` is wilderness alone. Every existing flag still
 ## works and wins over the profile: the profile only sets the defaults the
 ## flags start from.
 ##
@@ -49,8 +50,9 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const PROFILES := "res://scripts/endless/world/profiles/"
 ## The base tables' world, and the fallback for an unknown id.
 const DEFAULT := "wilderness"
-## The world endless flight plays with no --world=: the patchwork of regions.
-const PLAYS := "regions"
+## The world endless flight plays with no --world=: one region at a time,
+## joined by doors (profiles/doors.gd).
+const PLAYS := "doors"
 
 var id := DEFAULT
 var title := "Wilderness"
