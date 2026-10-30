@@ -921,24 +921,90 @@ func _step_motes(delta: float) -> void:
 		_mote_mm.set_instance_transform(k,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*maxf(s,0.001)),m.p))
 		_mote_mm.set_instance_color(k,(m.from as Color).lerp(m.to,t))
 
-# --- Tones (placeholders) --------------------------------------------------------
+# --- Sounds ----------------------------------------------------------------------
 
-## Plays `kind`'s tone for note `i` of the run, `db` up or down.
+## The bell's and gong's recordings (CC0, Freesound; assets/audio/ATTRIBUTION.md),
+## two of each: the study's 4 and 5 keys, or --bell=1|2 / --gong=1|2, pick
+## one. PITCH: the playback pitch of note 0 (the recordings are pitched by
+## ear, the run's notes then climb it by NOTES[i]/NOTES[0]); DB: a level trim.
+const BELLS := ["res://assets/audio/burrower/bell-417300.mp3","res://assets/audio/burrower/bell-531031.mp3"]
+const GONGS := ["res://assets/audio/burrower/gong-369428.mp3","res://assets/audio/burrower/gong-711881.mp3"]
+const BELL_PITCH := 0.7
+const GONG_PITCH := 0.6
+const BLIP_NOTES := [1046.5,1396.9]
+const BLIP_RATE := 32000
+const BLIP_DB := -9.0
+
+## Which recording each kind plays now (0 or 1).
+var bell_take := 0
+var gong_take := 0
+
+## Switches `kind` (bell or gong) to its other recording and plays it, so
+## the key shows what it chose; returns the file's name.
+func cycle_take(kind: StringName) -> String:
+	var path := ""
+	if kind == &"gong":
+		gong_take = 1-gong_take
+		path = GONGS[gong_take]
+	else:
+		bell_take = 1-bell_take
+		path = BELLS[bell_take]
+	_sound(kind,0,0.0)
+	return path.get_file()
+
+## The recording or blip for `kind`, loaded once.
+func _stream(kind: StringName) -> AudioStream:
+	var key := "%s%d" % [kind,bell_take if kind == &"bell" else gong_take if kind == &"gong" else 0]
+	if not _sounds.has(key):
+		match kind:
+			&"bell": _sounds[key] = load(BELLS[bell_take])
+			&"gong": _sounds[key] = load(GONGS[gong_take])
+			&"clank": _sounds[key] = _tone(130.0,[[1.0,1.0,7.0],[2.3,0.5,11.0],[3.9,0.3,16.0]],0.6,22050)
+			_: _sounds[key] = _blip()
+	return _sounds[key]
+
+## Plays `kind`'s sound for note `i` of the run, `db` up or down: the orb's
+## blip and the bell and gong recordings are pitched up the run's tune.
 func _sound(kind: StringName, i: int, db: float) -> void:
 	var p: AudioStreamPlayer = _players[_player_i]
 	_player_i = (_player_i+1) % _players.size()
 	i = clampi(i,0,NOTES.size()-1)
-	var key := "%s%d" % [kind,i]
-	if not _sounds.has(key):
-		var hz: float = NOTES[i]
-		match kind:
-			&"bell": _sounds[key] = _tone(hz*0.25,[[0.5,0.5,0.9],[1.0,1.0,1.4],[1.183,0.7,1.9],[1.506,0.4,2.6],[2.0,0.5,2.2],[2.74,0.2,4.0]],3.5,22050)
-			&"gong": _sounds[key] = _tone(hz/16.0,[[1.0,1.0,0.5],[1.52,0.6,0.7],[2.14,0.45,0.9],[2.71,0.35,1.1],[3.33,0.3,1.4],[4.6,0.2,2.0]],5.0,22050,0.6)
-			&"clank": _sounds[key] = _tone(130.0,[[1.0,1.0,7.0],[2.3,0.5,11.0],[3.9,0.3,16.0]],0.6,22050)
-			_: _sounds[key] = _tone(hz,[[1.0,1.0,3.2],[2.76,0.35,6.0],[5.4,0.15,11.0]],1.4,44100)
-	p.stream = _sounds[key]
-	p.volume_db = -8.0+db
+	var up: float = NOTES[i]/NOTES[0]
+	p.stream = _stream(kind)
+	match kind:
+		&"bell": p.pitch_scale = BELL_PITCH*up
+		&"gong": p.pitch_scale = GONG_PITCH*up
+		&"clank": p.pitch_scale = 1.0
+		_: p.pitch_scale = up
+	p.volume_db = -8.0+db+(BLIP_DB if kind == &"orb" else 0.0)
 	p.play()
+
+## The archived pickup blip (the red stone plummet's): a 45 ms grace note
+## leaping a fourth into a note that rings out and shimmers away.
+static func _blip() -> AudioStreamWAV:
+	var n := int(0.45*BLIP_RATE)
+	var data := PackedByteArray()
+	data.resize(n*2)
+	for i in n:
+		var t := float(i)/BLIP_RATE
+		var grace := _blip_note(BLIP_NOTES[0],t,9.0)*clampf((0.05-t)/0.008,0.0,1.0)
+		var v := (grace+_blip_note(BLIP_NOTES[1],t-0.045,7.5))*0.5
+		data.encode_s16(i*2,int(clampf(v,-1.0,1.0)*32767.0))
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = BLIP_RATE
+	w.stereo = false
+	w.data = data
+	return w
+
+## One shiny note at `f` Hz from `s` s into it (the archive's _note).
+static func _blip_note(f: float, s: float, decay: float) -> float:
+	if s < 0.0: return 0.0
+	var env := minf(s/0.003,1.0)*exp(-s*decay)
+	var v := 0.5*(sin(TAU*f*s)+sin(TAU*(f+2.5)*s))
+	v += (0.22*sin(TAU*f*3.0*s)+0.1*sin(TAU*f*5.0*s))*exp(-s*14.0)
+	v += 0.3*sin(TAU*f*2.76*s)*exp(-s*40.0)
+	return env*v
 
 ## A struck tone at `hz`: partials [ratio, loudness, decay /s], a fast
 ## strike, `long` s; `bloom` s for the upper partials to swell in (a gong's).

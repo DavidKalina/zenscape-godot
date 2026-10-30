@@ -22,6 +22,7 @@ extends Node3D
 ## C toggles the watch camera, a slow orbit on its trail, the plane held
 ## still meanwhile (it roams the meadow on its own).
 ## Flags: --grass=X (the carpet's share, 1; 0 none), --at=x,z --alt=m
+## --bell=2 / --gong=2 (the other recording),
 ## --heading=deg (the launch), --burrow (called up at once), --watch (the
 ## watch camera from the start, the burrower roaming).
 
@@ -89,6 +90,9 @@ var _tap_at := 0
 var _start := Vector3(0.0,14.0,150.0)
 var _heading := 0.0
 var _hint: Label
+var _hint_text := ""
+var _bell_take := 0
+var _gong_take := 0
 var burrower: Burrower
 ## What it pushes up ahead of the plane (scripts/burrower/push_ups.gd).
 var push_ups: PushUps
@@ -112,6 +116,8 @@ func _ready() -> void:
 			if p.size() >= 2: _start = Vector3(float(p[0]),_start.y,float(p[1]))
 		elif a.begins_with("--alt="): _start.y = a.get_slice("=",1).to_float()
 		elif a.begins_with("--heading="): _heading = deg_to_rad(a.get_slice("=",1).to_float())
+		elif a == "--bell=2": _bell_take = 1
+		elif a == "--gong=2": _gong_take = 1
 		elif a == "--burrow": _burrow_at_start = true
 		elif a == "--watch": watching = true
 	_build_light()
@@ -130,6 +136,8 @@ func _ready() -> void:
 	add_child(burrower)
 	burrower.setup(land,react)
 	push_ups = PushUps.new()
+	push_ups.bell_take = _bell_take
+	push_ups.gong_take = _gong_take
 	add_child(push_ups)
 	push_ups.setup(land,burrower)
 	_build_ui()
@@ -181,7 +189,8 @@ func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	_hint = Label.new()
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space roll  ·  F boost  ·  Shift brake  ·  Q E knife edge  ·  R up again  ·  skim low to wake it  ·  B call it  ·  C watch it  ·  1 2 3 next: orb bell gong"
+	_hint_text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space roll  ·  F boost  ·  Shift brake  ·  Q E knife edge  ·  R up again  ·  skim low to wake it  ·  B call it  ·  C watch it  ·  1 2 3 next: orb bell gong  ·  4 other bell  ·  5 other gong"
+	_hint.text = _hint_text
 	_hint.position = Vector2(16.0,12.0)
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.7))
 	_hint.add_theme_constant_override("outline_size",4)
@@ -406,6 +415,12 @@ func respawn() -> void:
 	rouse.rest = 0.0
 	launch(Vector3(_start.x,land.height(_start.x,_start.z)+_start.y,_start.z),_heading)
 
+## Shows which recording a key chose, under the hint.
+func _say(text: String) -> void:
+	print("burrower study: ",text)
+	if _hint != null: _hint.text = _hint_text+"
+"+text
+
 func _unhandled_input(event: InputEvent) -> void:
 	if not flight_ready: return
 	if event is InputEventMouseMotion:
@@ -429,4 +444,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_1: push_ups.next_kind = &"orb"
 			KEY_2: push_ups.next_kind = &"bell"
 			KEY_3: push_ups.next_kind = &"gong"
+			KEY_4: _say("bell: "+push_ups.cycle_take(&"bell"))
+			KEY_5: _say("gong: "+push_ups.cycle_take(&"gong"))
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
