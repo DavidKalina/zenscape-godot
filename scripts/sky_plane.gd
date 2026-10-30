@@ -153,6 +153,24 @@ const ROLL_TIME := 0.7
 const JINK := 3.0
 ## Over CEILING the nose is held down to level by CEILING_FADE metres more.
 const CEILING_NOSE := -0.05
+## Thin air (`use_thin`): over `thin_from` the climb is work. By `thin`, 0
+## there to 1 at the preset's top (`top_y`), climbing costs up to
+## THIN_SWING times more speed (by the square root of `thin`, so it is
+## soon felt), the engine pulls back to its speed THIN_PULL less, and slow (under SOFT_SPAN over the floor) it sinks THIN_MUSH m/s
+## more. The nose comes up no further than the climb the engine holds best
+## there (the path's rise of target speed x pull / (2 x the climb's cost):
+## steep low in the band, a few degrees at the top, eased over THIN_NOSE_EASE
+## s), so full back is the best climb, at about half the speed. Over the
+## band's last TOP_FALL the climb fades from TOP_CLIMB m/s to nothing at the
+## top; the flown climb (lift aside) fades the same way short of the top,
+## by the preset's `reach` (FlightWeight). The dive is as ever. Under
+## `thin_from` nothing changes.
+const THIN_SWING := 12.0
+const THIN_PULL := 0.6
+const THIN_MUSH := 3.0
+const TOP_FALL := 0.15
+const TOP_CLIMB := 10.0
+const THIN_NOSE_EASE := 0.4
 
 ## The barrel roll's own angle (radians, right positive like the bank),
 ## whether one is under way, and which way.
@@ -174,6 +192,23 @@ var heavy := heavy_flag(preload("res://scripts/launch_args.gd").user_args())
 ## lowers it from outside, scripts/carry/carry_weights.gd LOAD): only the
 ## climb, so level flight and the dive are as they were.
 var climb_share := 1.0
+## Where the air starts to thin and the top of the thin band (world y; INF:
+## no thin air, as on the isles), and how far into it the plane is (0 to 1).
+var thin_from := INF
+var thin_top := INF
+var thin := 0.0
+var _thin_nose := PITCH_LIMIT.y
+## Lift (the air's "rise", scripts/endless/air_lift.gd): the rising air it
+## rode this step (m/s, 0 outside lift). Its own term, not wind: the air's
+## rise times the airspeed's share (none at the slowest, all of it from
+## FlightWeight.SOFT_SPAN m/s faster), faded over the thin band's last
+## TOP_FALL and over the ceiling's fade, so it adds to a flown climb and
+## carries neither a stalled plane nor one past its top.
+var rising := 0.0
+## A one-way lift (air_lift.gd `add` one_way) is ridden by how the heading
+## faces up its way: all of it from WAY_ACROSS (the cosine) toward it, half
+## square across, none from WAY_ACROSS back down it.
+const WAY_ACROSS := 0.3
 ## The engine's pull, 1 to 0 (scripts/carry/plane_strain.gd: a part torn
 ## off in flight kills it): at 0 Boost does nothing, it settles to
 ## DEAD_GLIDE of cruise, can't climb and sinks DEAD_SINK m/s, so it must
@@ -355,6 +390,18 @@ func use_weight(preset: String) -> void:
 	aoa = 0.0
 	soft = 0.0
 
+## Thin air from `from_y` up to `top_y_at` (world y): the preset's top is its
+## FlightWeight `ceiling` share of the way up (`top_y()`).
+func use_thin(from_y: float, top_y_at: float) -> void:
+	thin_from = from_y
+	thin_top = top_y_at
+
+## The highest the plane climbs to in this preset (world y; INF without
+## thin air).
+func top_y() -> float:
+	if not is_finite(thin_from) or not is_finite(thin_top): return INF
+	return thin_from+(thin_top-thin_from)*float(weight.get("ceiling",1.0))
+
 func _weight_reset() -> void:
 	low = 0.0
 	low_clear = INF
@@ -455,6 +502,8 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	wind = here.get("wind",Vector3.ZERO)
 	in_jet = float(here.get("jet",0.0))
 	in_thermal = float(here.get("thermal",0.0))
+	var rise := float(here.get("rise",0.0))
+	var rise_way: Vector3 = here.get("way",Vector3.ZERO)
 	# A gust's shove on the airframe (rad/s; the dragon's blast, scripts/
 	# dragon_gale.gd `plane_gust`): it swings the nose and tips the wings
 	# and pitch, and the plane's own easing brings it back.
@@ -538,8 +587,20 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		pitch = lerpf(pitch,rest,_ease(EASE_LEVEL,delta))
 	pitch += shove.x*delta
 	if deep > 0.0: pitch = lerpf(pitch,CUSHION_PITCH,_ease(0.5,delta)*deep)
-	var over := clampf((position.y-ceiling_y)/CEILING_FADE,0.0,1.0)
-	pitch = clampf(pitch,PITCH_LIMIT.x,lerpf(PITCH_LIMIT.y,CEILING_NOSE,over))
+	# Thin air: the climb costs more speed and the engine pulls back weaker;
+	# the nose comes up only as far as the best climb there.
+	var tops := top_y()
+	thin = clampf((position.y-thin_from)/maxf(tops-thin_from,1.0),0.0,1.0) if is_finite(tops) else 0.0
+	var pull := THROTTLE*(1.0-THIN_PULL*thin)
+	var nose_top := lerpf(PITCH_LIMIT.y,CEILING_NOSE,clampf((position.y-ceiling_y)/CEILING_FADE,0.0,1.0))
+	if thin > 0.0:
+		var cost := SWING*(1.0+THIN_SWING*sqrt(thin))*(1.0 if weighted else 1.0+HEAVY_SWING*heavy)
+		var pulls := pull*(1.0+SURGE_PULL*surge if weighted else 1.0-HEAVY_THROTTLE*heavy)
+		var best := (cruise()+boost*(boost_speed()-cruise()))*pulls/(2.0*cost)
+		_thin_nose = lerpf(_thin_nose,asin(minf(best,1.0)),_ease(THIN_NOSE_EASE,delta))
+		nose_top = minf(nose_top,_thin_nose)
+	else: _thin_nose = PITCH_LIMIT.y
+	pitch = clampf(pitch,PITCH_LIMIT.x,nose_top)
 	# Speed: the engine pulls it to the throttle's speed; the climb and the
 	# dive swing it either side.
 	var target := cruise()+boost*(boost_speed()-cruise())-brake*(cruise()-brake_speed())
@@ -560,11 +621,13 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		climb = path.y
 		# Pulling and turning bleed it: a g past one costs `bleed` m/s².
 		bleed = float(weight.bleed)*(g_load-1.0)
-		speed += (-SWING*climb-THROTTLE*(1.0+SURGE_PULL*surge)*(speed-target)-DRIFT_BLEED*drift_strength*drift-bleed)*delta+boost_out
+		var swing := SWING*(1.0+THIN_SWING*sqrt(thin)) if climb > 0.0 else SWING
+		speed += (-swing*climb-pull*(1.0+SURGE_PULL*surge)*(speed-target)-DRIFT_BLEED*drift_strength*drift-bleed)*delta+boost_out
 	else:
 		path = _heavy_path(delta) if heavy > 0.0 else travel()
 		climb = path.y if heavy > 0.0 else sin(pitch)
-		speed += (-SWING*(1.0+HEAVY_SWING*heavy)*climb-THROTTLE*(1.0-HEAVY_THROTTLE*heavy)*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
+		var swing := SWING*(1.0+THIN_SWING*sqrt(thin)) if climb > 0.0 else SWING
+		speed += (-swing*(1.0+HEAVY_SWING*heavy)*climb-pull*(1.0-HEAVY_THROTTLE*heavy)*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
 	if surge > 0.0: _cap = maxf(_cap,boost_speed()*SURGE_OVER)
 	_cap = maxf(top_speed(),_cap-CAP_FALL*delta)
 	speed = clampf(speed-cushion_drag*delta,slow,_cap)
@@ -575,6 +638,8 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var sag := HEAVY_SAG*heavy*(1.0-cos(_free_bank))
 	# Weighted: the bank's sag, and slow it mushes down.
 	if weighted: sag = float(weight.sag)*(1.0-cos(_free_bank))+float(weight.mush)*soft
+	# Thin air: slow, it mushes down more.
+	if thin > 0.0: sag += THIN_MUSH*thin*(1.0-smoothstep(slow,slow+FlightWeight.SOFT_SPAN,speed))
 	# Low and fast (weighted): it settles toward the land, and the air there
 	# buffets it.
 	var shake := 0.0
@@ -585,9 +650,22 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		shake = float(weight.buffet)*low*clampf(speed/cruise(),0.5,1.6)*(sin(bt*5.3)*0.6+sin(bt*8.9+1.3)*0.4)
 	var along := path*speed
 	if climb_share*power < 1.0 and along.y > 0.0: along.y *= climb_share*power
+	# Near the top the climb fades to nothing; the flown climb (lift aside)
+	# by the preset's `reach` of the way up (FlightWeight).
+	var flown := thin/maxf(float(weight.get("reach",1.0)),0.01)
+	if flown > 1.0-TOP_FALL and along.y > 0.0: along.y = minf(along.y,TOP_CLIMB*maxf(1.0-flown,0.0)/TOP_FALL)
 	# The guard in a tight place (SkyGlide `guide`).
 	var push := _guard(delta)
 	velocity = along+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag-DEAD_SINK*(1.0-power)+shake+cushion)+wind+push
+	# Lift: rising air, by the airspeed's share, faded at the top.
+	rising = 0.0
+	if rise > 0.0:
+		rising = rise*smoothstep(slow,slow+FlightWeight.SOFT_SPAN,speed)*(1.0-clampf((position.y-ceiling_y)/CEILING_FADE,0.0,1.0))
+		if thin > 1.0-TOP_FALL: rising *= (1.0-thin)/TOP_FALL
+		# A one-way path (air_lift.gd): ridden flying up it, none flying back
+		# down it, half across.
+		if rise_way != Vector3.ZERO: rising *= smoothstep(-WAY_ACROSS,WAY_ACROSS,Vector3(-sin(heading),0.0,-cos(heading)).dot(rise_way))
+		velocity.y += rising
 	if bump != Vector3.ZERO:
 		velocity += bump
 		bump *= exp(-delta/BUMP_FADE)

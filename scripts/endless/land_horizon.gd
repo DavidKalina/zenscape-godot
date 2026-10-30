@@ -160,12 +160,15 @@ func _publish() -> void:
 
 ## The field's heights over the square from `corner`, texel by texel at
 ## their middles, row by row from its -z edge. Ponds, halls, tunnels and
-## splits are left out: too small to shade the land from far.
+## splits are left out: too small to shade the land from far (the Peak's
+## massif is not).
 func _make(corner: Vector2, texel: float) -> void:
 	var began := Time.get_ticks_msec()
 	var f: RefCounted = Field.new(_seed)
 	f.detail = texel
 	var got: Dictionary = f._grid(corner.x+texel*0.5,corner.y+texel*0.5,texel,texels,texels,0)
+	# The Peak's massif does shade the land (LandField.peak_grid).
+	f.peak_grid(got,corner.x+texel*0.5,corner.y+texel*0.5,texel,texels,texels,0)
 	print("terrain shadows: %d^2 heights in %d ms" % [texels,Time.get_ticks_msec()-began])
 	_made_lock.lock()
 	_made = {"heights":got.heights,"corner":corner}

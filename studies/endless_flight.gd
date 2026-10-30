@@ -141,8 +141,15 @@ const EndlessTraffic = preload("res://scripts/endless/endless_traffic.gd")
 const RivalRace = preload("res://scripts/endless/rival_race.gd")
 ## The shops beside their strips (scripts/endless/shop_sites.gd; --shops=0 none).
 const ShopSites = preload("res://scripts/endless/shop_sites.gd")
+const RegionDoors = preload("res://scripts/endless/region_doors.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
+## Place lines: standing routes with a timed record (--lines=0 none).
+const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
+const AirLift = preload("res://scripts/endless/air_lift.gd")
+## The Peak's ways up: the couloir's lift.
+const PeakRoutes = preload("res://scripts/endless/peak_routes.gd")
+const PeakStair = preload("res://scripts/endless/peak_stair.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
 const FlightWeight = preload("res://scripts/flight_weight.gd")
@@ -239,6 +246,11 @@ var plane: RefCounted
 var plane_figure: Node3D
 var chase: RefCounted
 var hand_landing := ManualLanding.new()
+## Lift (scripts/endless/air_lift.gd): rising air along the paths places
+## add to it, still air elsewhere; `air` is the plane's air callable.
+## `--lift=0`: none, and the plane gets no air callable, as before.
+var air_lift: AirLift = AirLift.new() if AirLift.flag() else null
+var air: Callable = Callable(air_lift,"air_at") if air_lift != null else Callable()
 var ground_scale := PlaneGroundScale.new()
 var flaps := false
 var sea: MeshInstance3D
@@ -277,10 +289,26 @@ var race: Node
 var shops: Node
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
+## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
+var lines: Node
+## The Peak's ruined stair up the couloir (scripts/endless/peak_stair.gd), or
+## null with no Peak or --stair=0.
+var stair: Node3D
 var flown := 0.0
 var _start := Vector2.ZERO
+## The Peak's collar: a disc of cloud round the horn's neck, its middle
+## COLLAR_AT m along the massif's axis (between the summit, at 290, and the
+## plateau's centre, at 0, so it reaches only a little way in front of the
+## horn and well out round the plateau), its radius and band (m over the
+## sea: over the crest round the horn, under the plateau and the tarn).
+const COLLAR_AT := 40.0
+const COLLAR_R := 520.0
+const COLLAR_BAND := Vector2(1020.0,1120.0)
 var _no_title := false
 var _heading := 0.0
+## A heading named by the world's spawn or --heading=: the start does not
+## turn to face the Peak.
+var _heading_given := false
 var _face_sun := false
 var _numbers := false
 var _alt := START_ALT
@@ -410,6 +438,8 @@ var _pull := 0.0
 ## The main menu's stage (scripts/endless/menu_stage.gd) until the takeoff
 ## is the player's, else null (`--no-title`); its overlay.
 var stage: RefCounted
+## The doors between the regions (--world=doors; scripts/endless/region_doors.gd).
+var doors: Node3D
 var menu: Control
 
 ## The 3D at a Native draw (the player's render resolution, and the default
@@ -436,7 +466,9 @@ func _ready() -> void:
 	_start = world.spawn.get("at",_start)
 	_alt = float(world.spawn.get("alt",_alt))
 	var spawn_heading := float(world.spawn.get("heading",0.0))
-	if spawn_heading != 0.0: _heading = -deg_to_rad(spawn_heading)
+	if spawn_heading != 0.0:
+		_heading = -deg_to_rad(spawn_heading)
+		_heading_given = true
 	Pad.ensure()
 	for arg in preload("res://scripts/launch_args.gd").user_args():
 		if arg.begins_with("--seed="): seed = int(arg.get_slice("=",1))
@@ -444,7 +476,9 @@ func _ready() -> void:
 			var p := arg.get_slice("=",1).split(",")
 			if p.size() >= 2: _start = Vector2(float(p[0]),float(p[1]))
 		elif arg == "--heading=sun": _face_sun = true
-		elif arg.begins_with("--heading="): _heading = -deg_to_rad(float(arg.get_slice("=",1)))
+		elif arg.begins_with("--heading="):
+			_heading = -deg_to_rad(float(arg.get_slice("=",1)))
+			_heading_given = true
 		elif arg.begins_with("--alt="):
 			_alt = float(arg.get_slice("=",1))
 			_alt_given = true
@@ -498,7 +532,16 @@ func _ready() -> void:
 		if not _alt_given: _alt = float(rock_pose.alt)
 		var rs: Dictionary = rock_pose.spec
 		print("rock start: %s (%s, %d pillars) at %s; start %s heading %.0f" % [rs.name,str(rs.get("form","")),(rs.pillars as Array).size(),str((rs.pos as Vector3).round()),str(_start.round()),float(rock_pose.heading)])
-	var spots: Array = [] if _no_title or SplitSites.near_start_wanted() or RivalRace.near_start_wanted() or WaterContact.near_start_wanted() or not rock_pose.is_empty() else MenuSpot.find(field,_start,_heading)
+	# The Peak (scripts/endless/peak_massif.gd): the start faces its summit,
+	# unless a heading was named or a start flag set its own; the menu's
+	# meadow takes the clear heading nearest that.
+	var own_start := SplitSites.near_start_wanted() or RivalRace.near_start_wanted() or WaterContact.near_start_wanted() or not rock_pose.is_empty()
+	var peak: RefCounted = field.peak()
+	var face_peak := peak != null and not _heading_given and not own_start
+	if face_peak:
+		var to: Vector3 = peak.summit()
+		_heading = atan2(-(to.x-_start.x),-(to.z-_start.y))
+	var spots: Array = [] if _no_title or own_start else _menu_spots(face_peak)
 	if not spots.is_empty():
 		_start = spots[0].at
 		_heading = float(spots[0].heading)
@@ -507,6 +550,23 @@ func _ready() -> void:
 		add_child(look)
 		look.setup(seed)
 		sea = look.sea
+		# The Peak's collar: a standing ring of cloud round its summit
+		# (scripts/endless/endless_collar.gd), between COLLAR_BAND m over the sea.
+		# The start meadow clear of valley fog (EndlessClouds FOG_CLEAR).
+		if look.clouds != null: look.clouds.clear_fog_at(_start)
+		var collar_at := Vector3.ZERO
+		if peak != null:
+			var cw: Vector2 = peak.world(COLLAR_AT,0.0)
+			collar_at = Vector3(cw.x,0.0,cw.y)
+		if peak != null and look.clouds != null: look.clouds.set_collar(collar_at,COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y,0.0)
+		# The sky over it keeps its own hour (EndlessLook.set_collar_sky).
+		if peak != null: look.set_collar_sky(collar_at,COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y)
+		# Its paint in the ground shader (snow line, granite, ice), set before
+		# the rocks take their bare copy of the ground; --peak-paint=0 leaves
+		# the land's own paint on it.
+		if peak != null and look.ground != null and not ("--peak-paint=0" in preload("res://scripts/launch_args.gd").user_args()):
+			var paint: Dictionary = peak.paint()
+			for k: String in paint: look.ground.set_shader_parameter(k,paint[k])
 		_build_camera()
 		if _face_sun:
 			var s: Vector3 = look.celestial.state.zs_sun_direction
@@ -525,7 +585,9 @@ func _ready() -> void:
 	rocks = LandRocks.new()
 	rocks.name = "Rocks"
 	add_child(rocks)
-	rocks.setup(seed,look.ground if look != null else null)
+	rocks.setup(seed,look.ground if look != null else null,field.peak())
+	# The rocks' bare copy of the ground takes the haze each frame as it does.
+	if look != null and rocks.bare is ShaderMaterial and rocks.bare != look.ground: look.ground_copies.append(rocks.bare)
 	halls = LandHalls.new()
 	halls.name = "Halls"
 	add_child(halls)
@@ -598,6 +660,19 @@ func _ready() -> void:
 		beats = BeatRoutes.new()
 		add_child(beats)
 		beats.setup(seed,self)
+	if PlaceLines.wanted():
+		lines = PlaceLines.new()
+		add_child(lines)
+		lines.setup(seed,self)
+	# The Peak's couloir (scripts/endless/peak_routes.gd): the lift up its slot.
+	if peak != null and air_lift != null:
+		var lift := PeakRoutes.couloir(peak,Callable(field,"height"))
+		air_lift.add(str(lift.name),lift.points,float(lift.radius),float(lift.strength),bool(lift.one_way))
+	# Its ruined stair (scripts/endless/peak_stair.gd), the couloir's tell.
+	if peak != null and not ("--stair=0" in preload("res://scripts/launch_args.gd").user_args()):
+		stair = PeakStair.new()
+		add_child(stair)
+		stair.setup(peak,Callable(field,"height"),seed)
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
@@ -608,6 +683,10 @@ func _ready() -> void:
 	shops.name = "Shops"
 	add_child(shops)
 	shops.setup(self)
+	if RegionDoors.wanted(world):
+		doors = RegionDoors.new()
+		add_child(doors)
+		doors.setup(self,_start,_heading,seed)
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.PLAYS else ", world "+str(world.id)])
@@ -618,6 +697,17 @@ func _ready() -> void:
 const PART_SPANS := 0.8
 const PART_PUSH := 1.6
 const EYE_PART_SPANS := 1.3
+
+## The main menu's meadows (MenuSpot `find`) round the start; facing the
+## Peak (`peaked`), the nearest whose run heads within PEAK_SPREADS of
+## MenuSpot's HEADINGS (tried in turn) of its summit, else the nearest at all.
+const PEAK_SPREADS := [3,5]
+func _menu_spots(peaked: bool) -> Array:
+	if peaked:
+		for n: int in PEAK_SPREADS:
+			var got: Array = MenuSpot.find(field,_start,_heading,8,n)
+			if not got.is_empty(): return got
+	return MenuSpot.find(field,_start,_heading)
 
 ## The main menu: parked on the first of `spots` (MenuSpot `find`) that
 ## nothing standing on the land is in the way of (trees, arches, halls,
@@ -633,6 +723,7 @@ func _park_for_menu(spots: Array) -> void:
 			break
 	_start = spot.at
 	_heading = float(spot.heading)
+	if look != null and look.clouds != null and spot != spots[0]: look.clouds.clear_fog_at(_start)
 	_launch(Vector3(_start.x,field.height(_start.x,_start.y),_start.y),_heading,true)
 	menu = MainMenu.new()
 	menu.name = "MainMenu"
@@ -816,9 +907,10 @@ func _launch(at: Vector3, heading: float, parked := false) -> void:
 	_sink_felt = false
 	plane.floor_y = Field.SEA_Y-15.0
 	plane.water = Field.SEA_Y
-	# The ranges' tallest peaks stand into the cloud roof: the ceiling
-	# rises over the isles' (Field CEILING_OVER, --ceiling=m over the sea).
+	# The air thins over the old ceiling (Field THIN_OVER) and the climb is
+	# slow work up to the top (Field CEILING_OVER, --ceiling=m over the sea).
 	plane.ceiling_y = Field.SEA_Y+_ceiling_over
+	if _ceiling_over > Field.THIN_OVER: plane.use_thin(Field.SEA_Y+Field.THIN_OVER,plane.ceiling_y)
 	# The land is a heightfield: it rides up what is no cliff, and a
 	# cliff's face turns it aside (SkyGlide `stone`).
 	plane.stone = func(_p: Vector3) -> bool: return true
@@ -886,7 +978,9 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	if pad < 0.0:
 		pad = solid_pad
 		p += solid_shift
-	return tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad)
+	var g: Variant = tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad)
+	# The Peak's stair raises it over its flights (PeakStair `ground`).
+	return g if stair == null else stair.ground(p,g,pad)
 
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
@@ -960,6 +1054,7 @@ func tick(delta: float) -> void:
 	flown += delta
 	var input := _fly_input(delta)
 	if stage != null: input = stage.input(delta,input,hand_landing,plane_figure)
+	if doors != null: input = doors.input(input)
 	# The plane skims the swell as drawn, not the sea's rest level, and a
 	# river's water as it skims the sea.
 	plane.water = water_at(plane.position)
@@ -976,7 +1071,7 @@ func tick(delta: float) -> void:
 	_glanced = glance.before(delta,self)
 	# A beat route's preview pan holds the flight (beat_routes.gd).
 	var held: bool = beats != null and beats.holding()
-	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),Callable(),Callable(self,"_blocked"))
+	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),air,Callable(self,"_blocked"))
 	if events.has("lifted"): book.new_flight()
 	book.flight.t = float(book.flight.t)+delta
 	book.step(delta)
@@ -1003,11 +1098,14 @@ func tick(delta: float) -> void:
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() and stage == null else Vector3.ZERO
 	chase.ground = hand_landing.on_ground()
 	_stop_note()
+	# A door flown into carries the plane to the other side (region_doors.gd).
+	if doors != null: doors.step(delta)
 	_frame(delta)
 	if stage != null:
 		stage.frame(delta,camera,plane.position+ground_scale.lift(),ground_scale.size(),Callable(field,"height"))
 		if not stage.running(): _menu_done()
 	if beats != null: beats.step(delta,self)
+	if lines != null: lines.step(delta,self)
 	land.lead_with(plane.velocity)
 	land.step(camera.global_position)
 	arches.step(camera.global_position)

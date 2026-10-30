@@ -66,6 +66,14 @@ const HOUR := 8.6
 const FOG_BEGIN := 120.0
 const FOG_END := 7600.0
 const FOG_CURVE := 0.75
+## The haze thins on high ground (shaders/endless_height_haze.gdshaderinc):
+## from HAZE_RISE m over the sea, over the next HAZE_SPAN m, down to this
+## share of the haze less. --haze-height=X scales it (0: the distance-only
+## haze as before, drawn by the ground itself); --haze-height-bias=M counts
+## ground M m higher in it, to try it on low hills.
+const HAZE_RISE := 350.0
+const HAZE_SPAN := 300.0
+const HAZE_CUT := 0.6
 ## The sun's glow in the haze looking toward it.
 const SUN_SCATTER := 0.18
 ## The haze's colour is the sky's own at the horizon the eye faces
@@ -104,6 +112,14 @@ const SEA_PRIORITY := -8
 ## The share of the land's haze the cloud takes (shaders/
 ## endless_cloud_composite.gdshader `haze`.w).
 const CLOUD_HAZE := 0.6
+## The sky over the Peak's collar keeps its own hour (set_collar_sky): its
+## golden hour, the sun this high on the day's ring (DayCycle ring_height),
+## setting; --collar-hour=H gives another, --collar-sky=0 keeps the land's.
+const COLLAR_SUN := 0.3
+## Round the collar the lift is whole out to its radius plus COLLAR_NEAR,
+## and gone COLLAR_FADE further out (m, level from its centre).
+const COLLAR_NEAR := 1000.0
+const COLLAR_FADE := 1500.0
 
 var plain := false
 var lighting: Node3D
@@ -118,6 +134,8 @@ var water: EndlessSea
 var plane_at := Vector3(0.0,1.0e4,0.0)
 var _land_seed := 0
 var ground: ShaderMaterial
+## Copies of `ground` (the rocks' bare one) that take its haze each frame too.
+var ground_copies: Array[ShaderMaterial] = []
 var _time := 0.0
 var _gust := 0.0
 var _wind_angle := 0.0
@@ -130,6 +148,17 @@ var _hour_taken := false
 ## A world of regions paints the mood and hour by the eye (blend_moods)
 ## until --mood=, --hour=, --day, L or T takes them over.
 var world_paint := true
+## The collar's sky: {centre (xz), radius, lo, hi (world y)}, empty with no
+## Peak or --collar-sky=0.
+var _collar_sky := {}
+## The collar's own phase (0..1).
+var _collar_phase := 0.0
+## How far the sky has gone from the land's hour to the collar's (0..1).
+var collar_lift := 0.0
+## The land's phase this frame, and the lifted one celestial was given
+## (-1: none), so the next frame puts the land's back.
+var _land_phase := 0.0
+var _sky_phase := -1.0
 ## The clouds (scripts/endless/endless_clouds.gd), or null (--no-clouds, no
 ## RenderingDevice).
 var clouds: Node3D
@@ -284,7 +313,11 @@ func setup(land_seed: int) -> void:
 	_exposure()
 	# The sky's own cloud deck off; the cloud volume comes later as a pass.
 	RenderingServer.global_shader_parameter_set("zs_cloud",Vector4(0.0,0.0,20.0,12.0))
-	# The haze.
+	# The haze; under the horizon the dome on screen keeps the horizon's
+	# colour, so from high up the far land's haze meets sky of its colour
+	# (shaders/reference_sky.gdshader ground_horizon).
+	if environment.sky != null and environment.sky.sky_material is ShaderMaterial:
+		(environment.sky.sky_material as ShaderMaterial).set_shader_parameter("ground_horizon",1.0)
 	environment.fog_enabled = true
 	environment.fog_mode = Environment.FOG_MODE_DEPTH
 	# Depth fog's density scales its curve: 1 runs it to all sky.
@@ -319,6 +352,12 @@ func setup(land_seed: int) -> void:
 		if arg.begins_with("--rock-knob=") and arg.get_slice("=",1).begins_with("rock_"):
 			ground.set_shader_parameter(arg.get_slice("=",1),float(arg.get_slice("=",2)))
 	ground.set_shader_parameter("sea_y",Field.SEA_Y)
+	var haze_cut := HAZE_CUT
+	var haze_bias := 0.0
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--haze-height="): haze_cut = HAZE_CUT*a.get_slice("=",1).to_float()
+		elif a.begins_with("--haze-height-bias="): haze_bias = a.get_slice("=",1).to_float()
+	ground.set_shader_parameter("haze_height",Vector4(HAZE_RISE,HAZE_SPAN,haze_cut,haze_bias))
 	ground.set_shader_parameter("beach",Field.BEACH)
 	ground.set_shader_parameter("snow_line",Field.new(land_seed).snow_line())
 	_build_sea()
@@ -596,10 +635,15 @@ func _build_old_sea() -> void:
 ## One frame: the hour, the wind and the clocks the shaders read, the sea
 ## under the eye, then the clouds round `view` (the camera that draws).
 func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D = null) -> void:
+	# Last frame's collar sky off again, unless the phase was set since.
+	if _sky_phase >= 0.0 and is_equal_approx(float(celestial.phase),_sky_phase): celestial.phase = _land_phase
+	_sky_phase = -1.0
 	if cycle.moving():
 		cycle.advance(delta)
 		celestial.phase = cycle.phase()
 	else: cycle.follow(celestial.phase)
+	_land_phase = float(celestial.phase)
+	_collar_hour(eye)
 	celestial.advance(delta,false)
 	if _light_on:
 		sun.light_energy *= _key
@@ -632,6 +676,36 @@ func _publish(delta: float) -> void:
 	RenderingServer.global_shader_parameter_set("zs_gust_distance",_gust)
 	RenderingServer.global_shader_parameter_set("zs_gust_speed",AIR_SPEED)
 
+## The Peak's collar keeps its own sky: the land's hour below the band
+## (`lo`..`hi`, m over the sea, as EndlessClouds.set_collar), the collar's
+## above it (`hour`, or its golden hour with -1), blended by the eye's
+## height through the band, near the collar only.
+func set_collar_sky(centre: Vector3, radius: float, lo: float, hi: float, hour := -1.0) -> void:
+	var h := hour
+	for a: String in LaunchArgs.user_args():
+		if a == "--collar-sky=0": return
+		if a.begins_with("--collar-hour="): h = clampf(a.get_slice("=",1).to_float(),0.0,24.0)
+	_collar_phase = h/24.0 if h >= 0.0 else DayCycle.ring_phase(COLLAR_SUN,false)
+	_collar_sky = {"centre":Vector2(centre.x,centre.z),"radius":radius,"lo":lo+Field.SEA_Y,"hi":hi+Field.SEA_Y}
+
+## The phase the sky shows at `eye`: the land's, turned the short way round
+## toward the collar's by the lift.
+func _collar_hour(eye: Vector3) -> void:
+	collar_lift = 0.0
+	if _collar_sky.is_empty(): return
+	var d := Vector2(eye.x,eye.z).distance_to(_collar_sky.centre)-float(_collar_sky.radius)-COLLAR_NEAR
+	collar_lift = smoothstep(float(_collar_sky.lo),float(_collar_sky.hi),eye.y)*(1.0-smoothstep(0.0,COLLAR_FADE,d))
+	if collar_lift <= 0.0: return
+	var turn := wrapf(_collar_phase-_land_phase,-0.5,0.5)
+	_sky_phase = fposmod(_land_phase+turn*collar_lift,1.0)
+	celestial.phase = _sky_phase
+	_sky_phase = float(celestial.phase)
+
+## The land's phase (0..1): the clock's, whatever the collar's sky shows.
+func land_phase() -> float:
+	if _sky_phase >= 0.0 and is_equal_approx(float(celestial.phase),_sky_phase): return _land_phase
+	return float(celestial.phase)
+
 ## The haze's colour: the sky's at the horizon toward `facing` (the
 ## dome's zsSkyBase, shaders/reference_sky_common.gdshaderinc, at y 0 and
 ## taken from display to scene light as the dome takes it).
@@ -643,6 +717,18 @@ func _haze(facing: Vector3) -> void:
 	var k := float(celestial.state.get("zs_haze_sun",0.0))
 	environment.fog_aerial_perspective = lerpf(AERIAL,AERIAL_SUN,k)
 	environment.fog_sun_scatter = lerpf(SUN_SCATTER,SUN_SCATTER_SUN,k)
+	_haze_ground(c,k)
+
+## The haze the ground lays itself (so its height term can thin it): the
+## engine's own numbers, colour and sun, for shaders/endless_height_haze.gdshaderinc.
+func _haze_ground(c: Color, k: float) -> void:
+	if ground == null: return
+	var lc := sun.light_color.srgb_to_linear()*sun.light_energy
+	for g: ShaderMaterial in [ground]+ground_copies:
+		g.set_shader_parameter("haze_depth",Vector4(environment.fog_depth_begin,environment.fog_depth_end,environment.fog_depth_curve,environment.fog_density))
+		g.set_shader_parameter("haze_light",Vector3(c.r,c.g,c.b))
+		g.set_shader_parameter("haze_mix",Vector2(environment.fog_aerial_perspective,environment.fog_sun_scatter))
+		g.set_shader_parameter("haze_sun",Vector3(lc.r,lc.g,lc.b))
 
 ## The sky's colour (scene linear) at the horizon toward `facing`.
 func horizon(facing: Vector3) -> Color:
@@ -692,7 +778,7 @@ static func _scene_linear(display: Vector3, exposure: float) -> Color:
 ## through the hours between.
 func next_hour() -> void:
 	_hour_taken = true
-	cycle.follow(celestial.phase)
+	cycle.follow(land_phase())
 	cycle.next_stop()
 
 ## Time faster or slower (DayCycle SPEEDS: 1, 8, 30, 120 times).
@@ -709,7 +795,7 @@ func time_note() -> String:
 
 ## The hour now (0..24).
 func hour() -> float:
-	return fposmod(float(celestial.phase),1.0)*24.0
+	return fposmod(land_phase(),1.0)*24.0
 
 func _exit_tree() -> void:
 	if post != null: post.free_buffers()

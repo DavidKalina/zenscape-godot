@@ -78,6 +78,7 @@ func step(delta: float, game: Node, events: Dictionary) -> void:
 		book.best("longest_flight",_aloft_of(book))
 		_aloft = false
 		landed = true
+		_place(game,book)
 	_stopped = stopped
 	if events.has("crash"): book.count("crashes")
 	if events.has("scrape"): book.count("scrapes")
@@ -103,6 +104,17 @@ func step(delta: float, game: Node, events: Dictionary) -> void:
 		_try = TRY_EVERY
 		book.best("highest",p.y-Field.SEA_Y)
 		book.best("longest_flight",_aloft_of(book))
+
+## Where the plane came to rest, when that is a place: on the Peak's plateau
+## (peak_massif.gd `on_plateau`) the book finds `place/peak` and the flight
+## keeps `place` "peak" for the landing card.
+func _place(game: Node, book: PilotBook) -> void:
+	var f: Variant = game.get("field")
+	if f == null or not (f as Object).has_method("peak"): return
+	var pk: RefCounted = f.peak()
+	if pk == null or not pk.on_plateau(game.plane.position): return
+	book.find("place/peak")
+	book.flight["place"] = "peak"
 
 ## Seconds aloft this flight so far: the flight's own "aloft" tally, the
 ## one the summary reads, so the record and the card always agree.
@@ -174,12 +186,14 @@ const TALLIES := [["metres","flown"],["aloft","aloft"],["landings","landings"],[
 const RECORDS := [["best_line","best line"],["best_mult","best multiplier"],["longest_line","longest line"],
 	["tightest_gap","tightest gap"],["top_speed","top speed"],["highest","highest flown"],["longest_flight","longest flight"]]
 ## The finds by the start of their ids ("gap/..."), each [prefix, label].
-const FINDS := [["gap","gaps"],["starter","starters"],["shop","shops"]]
+const FINDS := [["gap","gaps"],["starter","starters"],["shop","shops"],["place","places"]]
 
 ## The label for `key` (a tally's or a record's), else its own name spaced.
 static func label(key: String) -> String:
 	for row: Array in TALLIES+RECORDS:
 		if row[0] == key: return row[1]
+	# A place line's time (place_lines.gd): its name.
+	if key.begins_with("line/"): return key.get_slice("/",2).replace("_"," ")
 	return key.replace("_"," ")
 
 ## `value` of `key` as it reads.
@@ -192,6 +206,9 @@ static func say(key: String, value: float) -> String:
 		"highest": return "%d m" % roundi(value)
 		"tightest_gap": return "%.2f m" % value
 		"best_mult": return "x%.1f" % value
+	if key.begins_with("line/"):
+		var d := roundi(maxf(value,0.0)*10.0)
+		return "%d:%02d.%d" % [d/600,(d/10)%60,d%10]
 	return big(value)
 
 ## Seconds as 0:42 or 1:02:05.

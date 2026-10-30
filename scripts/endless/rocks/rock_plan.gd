@@ -17,7 +17,9 @@ extends RefCounted
 ## wilderness), then the flags over it: --rocks=stacks,hoodoos (each at 1;
 ## `kind:X` for X, `all`), --stacks=X, --hoodoos=X, --no-rocks. In a world
 ## of regions each group keeps to its region's layer (`_region_takes`),
-## unless a flag set that kind for the whole world.
+## unless a flag set that kind for the whole world. The Peak's kinds
+## (ON_PEAK) are on at 1 in every world (--spires=0, --boulders=0, --valley=0 take them
+## off).
 
 const ArchPlan = preload("res://scripts/endless/arch_plan.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
@@ -27,7 +29,14 @@ const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const KINDS := {
 	"stacks":preload("res://scripts/endless/rocks/sea_stacks.gd"),
 	"hoodoos":preload("res://scripts/endless/rocks/hoodoos.gd"),
+	"spires":preload("res://scripts/endless/rocks/peak_spires.gd"),
+	"boulders":preload("res://scripts/endless/rocks/peak_boulders.gd"),
+	"valley":preload("res://scripts/endless/rocks/peak_valley.gd"),
 }
+## Kinds that stand on the Peak's massif only (planned on its cells alone,
+## kept off nothing else, on in every world while the Peak is: --spires=0,
+## --boulders=0, --valley=0 or --no-rocks takes them off).
+const ON_PEAK := ["spires","boulders","valley"]
 ## The world cell (m): the arches' own, so the trees' planner reads both
 ## with one cache.
 const CELL := ArchPlan.CELL
@@ -45,6 +54,9 @@ static func flags() -> Dictionary:
 	var out := {}
 	for k: String in KINDS: out[k] = float(world.layer(k,0.0))
 	var forced := {}
+	for k: String in ON_PEAK:
+		out[k] = 1.0
+		forced[k] = true
 	for a: String in LaunchArgs.user_args():
 		if a == "--no-rocks":
 			for k: String in KINDS:
@@ -72,9 +84,11 @@ static func flags() -> Dictionary:
 	out["forced"] = forced
 	return out
 
-## Whether any kind is on.
-static func any(densities: Dictionary) -> bool:
+## Whether any kind is on (`peak` false: any but the Peak's, which keep no
+## trees out).
+static func any(densities: Dictionary, peak := true) -> bool:
 	for k: String in KINDS:
+		if not peak and k in ON_PEAK: continue
 		if float(densities.get(k,0.0)) > 0.0: return true
 	return false
 
@@ -113,6 +127,7 @@ static func plan(field: RefCounted, cx: int, cz: int, densities: Dictionary) -> 
 ## Two groups closer than APART past their reaches.
 const APART := 80.0
 static func _overlap(a: Dictionary, b: Dictionary) -> bool:
+	if bool(a.get("on_peak",false)) and bool(b.get("on_peak",false)): return false
 	var p: Vector3 = a.pos
 	var q: Vector3 = b.pos
 	return Vector2(p.x-q.x,p.z-q.z).length() < float(a.reach)+float(b.reach)+APART
@@ -158,11 +173,13 @@ static func _raw(field: RefCounted, cx: int, cz: int, densities: Dictionary) -> 
 	_raw_lock.unlock()
 	return out
 
-## Whether a group would stand in or by a slot hall's or split mountain's
-## cut, a tunnel's site or an arch (arch_plan.gd's, for this land).
+## Whether a group would stand on the Peak's massif, in or by a slot hall's
+## or split mountain's cut, a tunnel's site or an arch (arch_plan.gd's, for this land).
 static func _crowded(field: RefCounted, spec: Dictionary) -> bool:
 	var pos: Vector3 = spec.pos
 	var reach := float(spec.reach)+CLEAR
+	if bool(spec.get("on_peak",false)): return false
+	if field.has_method("off_peak") and not field.off_peak(pos.x,pos.z,reach): return true
 	if field.has_method("hall_at") and not (field.hall_at(pos.x,pos.z,reach) as PackedFloat32Array).is_empty(): return true
 	if field.has_method("split_at") and not (field.split_at(pos.x,pos.z,reach,ArchPlan.SPLIT_LANE) as PackedFloat32Array).is_empty(): return true
 	if field.has_method("tunnels_in") and float(field.get("tunnels")) > 0.0 and not (field.tunnels_in(pos.x-reach,pos.z-reach,pos.x+reach,pos.z+reach) as Array).is_empty(): return true

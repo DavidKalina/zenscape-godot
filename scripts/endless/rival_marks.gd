@@ -59,6 +59,8 @@ const FILL := 0.13
 
 var _line: MeshInstance3D
 var _line_mat: ShaderMaterial
+## Vertices added to this step's surface.
+var _added := 0
 var _mesh := ImmediateMesh.new()
 var _clock := 0.0
 var _course: Dictionary = {}
@@ -177,6 +179,7 @@ func step(delta: float, camera: Camera3D, show: Dictionary) -> void:
 	# Metres a pixel is, a metre out.
 	var px := 2.0*tan(deg_to_rad(camera.fov)*0.5)/view_h
 	var began := false
+	_added = 0
 	if not _course.is_empty():
 		var next := int(show.get("next",0))
 		var gates: Array = _course.gates
@@ -210,7 +213,11 @@ func step(delta: float, camera: Camera3D, show: Dictionary) -> void:
 			began = true
 		_draw_spot(eye,px,bool(show.get("in_spot",false)),alpha)
 		spot_shown = true
-	if began: _mesh.surface_end()
+	if began:
+		# Every bracket faded out (far, high or flown through): one empty
+		# triangle, as a surface with no vertices is an error.
+		if _added == 0: _tri(Vector3.ZERO,Vector3.ZERO,Vector3.ZERO,Color(0.0,0.0,0.0,0.0))
+		_mesh.surface_end()
 
 ## A gate's four corner brackets in its mouth's plane, each over a dark
 ## edge, `swell` times its size.
@@ -284,8 +291,10 @@ func _quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, low: Color, high: Col
 	for v: Array in [[a,low],[b,low],[c,high],[c,high],[d,high],[a,low]]:
 		_mesh.surface_set_color(v[1])
 		_mesh.surface_add_vertex(v[0])
+		_added += 1
 
 func _tri(a: Vector3, b: Vector3, c: Vector3, col: Color) -> void:
+	_added += 3
 	for v: Vector3 in [a,b,c]:
 		_mesh.surface_set_color(col)
 		_mesh.surface_add_vertex(v)

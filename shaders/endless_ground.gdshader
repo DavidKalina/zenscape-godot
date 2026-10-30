@@ -93,6 +93,7 @@ uniform int grass_skip = 1;
 // (shaders/light_leans.gdshaderinc; 0 fixed as before).
 uniform float paint_follow : hint_range(0.0, 2.0) = 0.5;
 uniform float sea_y = -40.0;
+#include "res://shaders/endless_height_haze.gdshaderinc"
 uniform float beach = 2.2;
 uniform float snow_line = 95.0;
 // The normal's up below which the grass gives way to rock (with a ragged
@@ -134,6 +135,27 @@ uniform vec3 rock_tint = vec3(1.0);
 // A world's hue over the rock, taken at the rock's own light: its direction
 // the hue, its luma how much of the rock's own hue gives way (0: none).
 uniform vec3 rock_hue = vec3(0.0);
+// The Peak's massif (scripts/endless/peak_massif.gd `paint()`; w 0: none):
+// its frame (plateau centre xz, facing xz), its zone (the bounding circle's
+// middle xz, radius, on), its snow line over the sea, and its approach
+// valley along the axis: a where the icefall, the boulders, the glacier
+// and the toe start (x..w), the floor's half-width (FLOOR_HALF) and the
+// valley's bend (GL_BEND, GL_TURNS, from a, to a). Inside the zone the
+// snow line rises to `peak_snow`, the rock turns granite grey above the
+// land's own tops, the valley's floor is ice on the icefall and the
+// glacier and scree on the boulder field.
+uniform vec4 peak_frame = vec4(0.0);
+uniform vec4 peak_zone = vec4(0.0);
+uniform float peak_snow = 500.0;
+uniform vec4 peak_stretch = vec4(850.0, 1250.0, 2050.0, 4050.0);
+uniform vec4 peak_half = vec4(200.0, 240.0, 260.0, 330.0);
+uniform vec4 peak_bend = vec4(170.0, 2.2, 1250.0, 4500.0);
+// The cirque on the plateau (PeakMassif CIRQUE_R, its lobes' phases; the
+// lobes' shares and the rim's half-width in `s`; the strip's a, the rim's
+// gap round it (from, to) and w 0: no cirque): `peak_rim`.
+uniform vec4 peak_cirque = vec4(165.0, 0.0, 0.0, 0.0);
+uniform vec4 peak_cirque_lobes = vec4(0.07, 0.09, 0.04, 0.16);
+uniform vec4 peak_cirque_strip = vec4(80.0, 32.0, 62.0, 0.0);
 uniform vec3 carpet_tone_top = vec3(1.0);
 uniform vec3 carpet_tone_low = vec3(1.0);
 // A world's tone over the turf's own colour wherever tufts stand (the carpet's tone takes over past them; 1: none).
@@ -632,6 +654,61 @@ vec3 hued(vec3 c, vec3 hue) {
 	return mix(c, hue / amount * luma(c), amount);
 }
 
+// The Peak's paint at `p`: x the zone (1 inside the bounding circle, easing
+// to 0 over its last 600 m), y the valley floor's ice, z its scree, w how
+// far across the floor (0 the middle, 1 its edge). All 0 with no Peak.
+vec4 peak_paint(vec3 p) {
+	if (peak_zone.w < 0.5) return vec4(0.0);
+	float zone = 1.0 - smoothstep(peak_zone.z - 600.0, peak_zone.z, distance(p.xz, peak_zone.xy));
+	if (zone <= 0.0) return vec4(0.0);
+	vec2 rel = p.xz - peak_frame.xy;
+	vec2 f = peak_frame.zw;
+	float a = dot(rel, f);
+	float v = dot(rel, vec2(-f.y, f.x));
+	// The valley's middle and the floor's half-width (PeakMassif._valley).
+	float t = clamp((a - peak_bend.z) / (peak_bend.w - peak_bend.z), 0.0, 1.0);
+	float mid = peak_bend.x * sin(PI * peak_bend.y * t) * smoothstep(0.0, 0.25, t);
+	float half_w = peak_half.x;
+	if (a > peak_stretch.y && a < peak_stretch.z) {
+		half_w = mix(peak_half.x, peak_half.y, smoothstep(0.0, 0.3, (a - peak_stretch.y) / (peak_stretch.z - peak_stretch.y)));
+	} else if (a >= peak_stretch.z) {
+		half_w = mix(peak_half.z, peak_half.w, clamp((a - peak_stretch.z) / (peak_stretch.w - peak_stretch.z), 0.0, 1.0));
+	}
+	float across = abs(v - mid) / half_w;
+	// The floor, with a ragged edge up the valley's sides.
+	float rag = (zs_noise(p.xz / 37.0) - 0.5) * 0.16 + (zs_noise(p.xz / 9.0) - 0.5) * 0.06;
+	float floor_on = 1.0 - smoothstep(0.92, 1.06, across + rag);
+	// The icefall and the glacier hold ice, down to the toe; the boulder
+	// field between them is scree.
+	float icefall = smoothstep(peak_stretch.x - 60.0, peak_stretch.x + 20.0, a) * (1.0 - smoothstep(peak_stretch.y - 20.0, peak_stretch.y + 60.0, a));
+	float glacier = smoothstep(peak_stretch.z - 80.0, peak_stretch.z + 160.0, a) * (1.0 - smoothstep(peak_stretch.w - 200.0, peak_stretch.w + 60.0, a));
+	float scree = smoothstep(peak_stretch.y - 40.0, peak_stretch.y + 80.0, a) * (1.0 - smoothstep(peak_stretch.z - 80.0, peak_stretch.z + 160.0, a));
+	return vec4(zone, (icefall + glacier) * floor_on * zone, scree * floor_on * zone, across);
+}
+
+// How much of the cirque's rim (PeakMassif._cirq) stands at `p`: 1 on the
+// rim's line, 0 past its half-width inside and past its crest outside, none on the head's side or in the gap
+// the strip runs out through.
+float peak_rim(vec3 p) {
+	if (peak_zone.w < 0.5 || peak_cirque_strip.w < 0.5) return 0.0;
+	vec2 rel = p.xz - peak_frame.xy;
+	vec2 f = peak_frame.zw;
+	float a = dot(rel, f);
+	float v = dot(rel, vec2(-f.y, f.x));
+	float rho = length(vec2(a, v));
+	if (rho > peak_cirque.x * 1.6) return 0.0;
+	float phi = atan(v, a);
+	float rr = peak_cirque.x * (1.0 + peak_cirque_lobes.x * sin(2.0 * phi + peak_cirque.y)
+		+ peak_cirque_lobes.y * sin(3.0 * phi + peak_cirque.z) + peak_cirque_lobes.z * sin(5.0 * phi + peak_cirque.w));
+	float s = rho / rr;
+	float hd = smoothstep(0.25, 0.75, a / max(rho, 1.0));
+	float lane = 1.0 - smoothstep(peak_cirque_strip.y, peak_cirque_strip.z, abs(a - peak_cirque_strip.x));
+	// Inside, out to the rim's foot; outside, only its crest (the cirque
+	// blends out to the falls from 1.08, which keep the massif's paint).
+	float bump = s < 1.0 ? max(1.0 - (1.0 - s) / (peak_cirque_lobes.w * 1.3), 0.0) : 1.0 - smoothstep(1.02, 1.09, s);
+	return smoothstep(0.0, 0.5, bump) * (1.0 - hd) * (1.0 - lane);
+}
+
 void fragment() {
 	vec3 p = world_position;
 	// The paint's tones: this spot's regions' in a world of regions, else the material's.
@@ -732,6 +809,29 @@ void fragment() {
 	float snow_edge = (zs_noise(gxz / 23.0) - 0.5) * 16.0 + mid * 10.0;
 	float snowy = smoothstep(snow_line - 14.0, snow_line + 2.0, over + snow_edge)
 		* smoothstep(0.55, 0.72, n.y + rock_edge);
+	// The Peak: its own snow line, ragged over tens of metres (tongues down
+	// the gullies, bare spurs up), the snow holding to steeper ground as it
+	// climbs; its granite above the land's own tops; ice and scree on the
+	// approach valley's floor (peak_paint).
+	vec4 pk = peak_paint(p);
+	float pk_rock = pk.x * smoothstep(240.0, 420.0, over);
+	if (pk.x > 0.0) {
+		float pk_edge = (zs_noise(gxz / 160.0) - 0.5) * 120.0 + (zs_noise(gxz / 41.0) - 0.5) * 50.0 + snow_edge;
+		float pk_line = mix(snow_line, peak_snow, pk.x);
+		float high = smoothstep(peak_snow, peak_snow + 500.0, over);
+		float pk_snowy = smoothstep(pk_line - 20.0, pk_line + 4.0, over + pk_edge)
+			* smoothstep(mix(0.58, 0.40, high), mix(0.68, 0.52, high), n.y + rock_edge);
+		snowy = mix(snowy, pk_snowy, pk.x) * (1.0 - max(pk.y, pk.z));
+		// The cirque's rim: granite on its slopes, snow on its flatter
+		// tops and in its hollows, ragged.
+		float rim = peak_rim(p);
+		if (rim > 0.0) {
+			float bare = rim * (1.0 - smoothstep(0.86, 0.95, n.y + rock_edge + (zs_noise(gxz / 13.0) - 0.5) * 0.14));
+			rocky = max(rocky, bare);
+			snowy *= 1.0 - bare;
+			pk_rock = max(pk_rock, rim);
+		}
+	}
 	// None of the grass shows where sand, a bank or snow covers the ground
 	// whole and no rock (whose ledges and moss take its colour), so its paint
 	// is skipped there: the same pixels (grass_skip; --land-skip=0 paints it).
@@ -1014,10 +1114,38 @@ void fragment() {
 	}
 
 	vec3 snow = SNOW * (1.0 + fine * 0.06);
+	// The Peak's granite: the rock's own light, grey and a little cool, its
+	// pale beds softened; a colder snow, blue where it lies back from the sun.
+	if (pk_rock > 0.0) {
+		float l = luma(rock);
+		vec3 granite = vec3(0.10 + l * 0.55) * vec3(0.88, 0.95, 1.08) * (1.0 + zs_fade(gxz * 1.7 + p.y, 1.3, fp) * 0.35);
+		rock = mix(rock, granite, pk_rock * 0.85);
+		snow = mix(snow, snow * mix(vec3(0.92, 0.96, 1.04), vec3(0.84, 0.90, 1.0), clamp((0.25 - dot(n, zs_sun_direction)) * 2.0, 0.0, 1.0)), pk.x);
+	}
 
 	vec3 albedo = mix(grass, rock, rocky);
 	albedo = mix(albedo, sand, sandy * (1.0 - rocky * 0.5));
 	albedo = mix(albedo, bank_c, banked * (1.0 - rocky * 0.7));
+	// The Peak's valley floor: scree of granite on the boulder field; ice
+	// down the icefall and the glacier, streaked along its flow and dirtied
+	// toward its edges, its steep faces (crevasse walls, the icefall's
+	// risers) a deep blue.
+	if (pk.z > 0.0) {
+		float stones = zs_fade(gxz + 3.1, 1.6, fp) + zs_fade(gxz * 0.7 + 9.0, 6.0, fp);
+		vec3 scree = mix(ROCK_PALE, ROCK, smoothstep(0.2, 0.8, zs_noise(gxz / 13.0))) * vec3(0.95, 0.98, 1.02) * (1.05 + stones * 0.5);
+		albedo = mix(albedo, scree, pk.z * 0.9);
+	}
+	if (pk.y > 0.0) {
+		vec2 f = peak_frame.zw;
+		vec2 flow = vec2(dot(p.xz, f), dot(p.xz, vec2(-f.y, f.x)));
+		// (Each scale eases to its mean as the pixel outgrows it across the flow.)
+		float streak = mix(zs_noise(vec2(flow.x / 140.0, flow.y / 11.0)), 0.5, smoothstep(3.0, 9.0, fp)) * 0.6
+			+ mix(zs_noise(vec2(flow.x / 45.0, flow.y / 4.0)), 0.5, smoothstep(1.0, 3.5, fp)) * 0.4;
+		vec3 ice = mix(vec3(0.36, 0.52, 0.62), vec3(0.58, 0.70, 0.78), smoothstep(0.3, 0.7, streak));
+		ice = mix(ice, vec3(0.36, 0.35, 0.34), smoothstep(0.78, 1.0, pk.w) * 0.6 * (0.6 + 0.4 * zs_noise(gxz / 17.0)));
+		ice = mix(ice, vec3(0.20, 0.38, 0.50), rocky);
+		albedo = mix(albedo, ice, pk.y);
+	}
 	albedo = mix(albedo, snow, snowy);
 	if (grass_skip == 2 && skip_grass) albedo = vec3(1.0, 0.0, 1.0);
 	albedo = mix(albedo, vec3(luma(albedo)) * night_grade.yzw, night_grade.x);
@@ -1030,15 +1158,15 @@ void fragment() {
 	vec2 horizon = zs_horizon_light(p, distance(p, CAMERA_POSITION_WORLD));
 	ALBEDO = albedo * (1.0 - shaded) * horizon.x;
 	float wet_sand = max(sandy * smoothstep(0.7, 0.0, over) * step(-0.5, over), damp * banked);
-	ROUGHNESS = mix(mix(mix(0.92, 0.82, rocky), 0.6, snowy), 0.35, wet_sand);
-	SPECULAR = mix(mix(0.25, 0.35, rocky), 0.5, max(snowy, wet_sand)) * (1.0 - shaded) * horizon.x;
+	ROUGHNESS = mix(mix(mix(mix(0.92, 0.82, rocky), 0.6, snowy), 0.35, wet_sand), 0.4, pk.y);
+	SPECULAR = mix(mix(0.25, 0.35, rocky), 0.5, max(max(snowy, wet_sand), pk.y)) * (1.0 - shaded) * horizon.x;
 	NORMAL = normalize((VIEW_MATRIX * vec4(lit_n, 0.0)).xyz);
 	// The hemisphere fill, as the isles' surfaces take it (environment
 	// ambient is off under LandscapeLighting).
 	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
 	float hollow = 0.85 + 0.15 * n.y;
 	// A cloud overhead takes a little of the sky's fill too.
-	EMISSION = albedo * hemi * hollow * horizon.y * (1.0 - 0.2 * shade) + rock_glow * rocky * (1.0 - snowy);
+	EMISSION = albedo * hemi * hollow * horizon.y * (1.0 - 0.2 * shade) + rock_glow * rocky * (1.0 - snowy) * (1.0 - pk.y) * (1.0 - pk_rock * 0.6);
 	if (wet > 0.0) {
 		// The river's water, as the sea draws it (endless_sea.gdshader): its
 		// colour by the depth (faked from the way in from the bank), the bed
@@ -1353,4 +1481,6 @@ void fragment() {
 		EMISSION = mix(EMISSION, water_em, wet);
 		if (live_dbg.x >= 0.0) EMISSION = mix(EMISSION, live_dbg, wet);
 	}
+	// The haze, with its height term (shaders/endless_height_haze.gdshaderinc).
+	FOG = zs_land_haze(VERTEX, world_position.y, INV_VIEW_MATRIX);
 }

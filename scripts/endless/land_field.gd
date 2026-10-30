@@ -51,13 +51,16 @@ extends RefCounted
 const WorldScale = preload("res://scripts/world_scale.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 
-## The sea's height in the world. The endless flight raises the plane's
-## ceiling to CEILING_OVER over the sea (SkyGlide `ceiling_y`), so the
-## tallest peaks stand over it and into the cloud roof.
+## The sea's height in the world.
 const SEA_Y := -40.0
-## The plane's ceiling over the sea in the endless flight (m); the isles'
-## fixed CEILING (95 world) is 135 over this sea.
-const CEILING_OVER := 215.0
+## The endless flight's air (m over the sea): it flies as ever up to
+## THIN_OVER (the ceiling it had before, 215), then the air thins (SkyPlane
+## `use_thin`) and the climb is slow work up to CEILING_OVER, the top of the
+## lightest preset (the heavier ones top out lower: FlightWeight `ceiling`).
+## Over it the nose is held level (SkyGlide `ceiling_y`). The isles' fixed
+## CEILING (95 world) is 135 over this sea.
+const THIN_OVER := 215.0
+const CEILING_OVER := 1520.0
 ## Continents: their scale (m), the height they swing (m) and the lift that
 ## sets how much is land (more is more land).
 const CONTINENT := 3600.0
@@ -439,9 +442,9 @@ var last_ridge: float:
 	get: return _impl.last_ridge
 ## (By a pond, the pond's: it reads as a still river; land_ponds.gd.)
 var last_river: float:
-	get: return 1000.0 if _t_on else (_p_out if _p_on else _impl.last_river)
+	get: return 1000.0 if _t_on or (_m_on and not _p_on) else (_p_out if _p_on else _impl.last_river)
 var last_river_r: float:
-	get: return 1000.0 if _t_on else (_p_r if _p_on else _impl.last_river_r)
+	get: return 1000.0 if _t_on or (_m_on and not _p_on) else (_p_r if _p_on else _impl.last_river_r)
 var last_river_w: float:
 	get: return _p_w if _p_on else _impl.last_river_w
 var last_river_y: float:
@@ -506,6 +509,14 @@ var _split_local := {}
 var _split_key := Vector2i(1 << 30,0)
 var _split_here := PackedFloat32Array()
 
+## The Peak's massif (scripts/endless/peak_massif.gd): a stamp over either
+## field, applied last; null when off (--peak=0, --old-land). The ponds,
+## tunnels, halls and splits keep out of its bounding circle. `_m_on`: the
+## last sample's land was lifted or cut by it (no river there).
+const PeakMassif = preload("res://scripts/endless/peak_massif.gd")
+var _massif: RefCounted = null
+var _m_on := false
+
 func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	seed = land_seed
 	# The world's recipe and knobs first (the profile `--world=` names unless
@@ -530,6 +541,7 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 		_tunnel_test = true
 	splits = 0.0 if k.get("old_land",false) else Splits.wanted(float(world.layer("splits",0.0)))
 	split_mix = world.layer("split_kinds",{})
+	_massif = null if k.get("old_land",false) else PeakMassif.make(land_seed,Callable(_impl,"height"))
 
 ## A land recipe with the field's floor and the flags over it.
 static func _knobs(land: Dictionary) -> Dictionary:
@@ -664,6 +676,8 @@ func native_impl() -> Object:
 ## The native field that grows the box (x0, z0)..(x1, z1), or null: in the
 ## regions world, the region's own where the box lies wholly in one.
 func native_impl_in(x0: float, z0: float, x1: float, z1: float) -> Object:
+	# The native kernels read the field without the Peak's massif.
+	if _massif != null and _massif.meets(x0,z0,x1,z1): return null
 	if not _blend: return native_impl()
 	var one: int = _impl.one_in(x0,z0,x1,z1)
 	return _impl.kids[one] if one >= 0 and _impl.kid_native[one] else null
@@ -682,6 +696,7 @@ func region_in(x0: float, z0: float, x1: float, z1: float) -> int:
 ## ZenScapeTrees reads as it would a field), or null: a one-region world, or
 ## the band blended in GDScript.
 func native_band_in(x0: float, z0: float, x1: float, z1: float) -> Object:
+	if _massif != null and _massif.meets(x0,z0,x1,z1): return null
 	return _impl.band_in(x0,z0,x1,z1) if _blend else null
 
 ## Region `r`'s own native field (ZenScapeLandField), or null (GDScript).
@@ -708,7 +723,9 @@ func region_pick(x: float, z: float, u: float) -> int:
 func sample(x: float, z: float) -> Vector2:
 	_p_on = false
 	_t_on = false
-	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0: return _impl.sample(x,z)
+	_m_on = false
+	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0:
+		return _impl.sample(x,z) if _massif == null else _peak(_impl.sample(x,z),x,z)
 	# (The square's pond, tunnel, hall and split first: finding them samples
 	# the field.)
 	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
@@ -720,7 +737,41 @@ func sample(x: float, z: float) -> Vector2:
 	if not ts.is_empty(): got = _tunnel(ts,got,x,z)
 	if not s.is_empty(): got.x = Sites.carve(s,got.x,x,z)
 	if not sp.is_empty(): got.x = Splits.carve(sp,got.x,x,z)
+	if _massif != null: got = _peak(got,x,z)
 	return got
+
+## Vector2(height, meadow) `got` with the Peak's massif on it at (x, z);
+## `_m_on` where it moved the land.
+func _peak(got: Vector2, x: float, z: float) -> Vector2:
+	if not _massif.reaches(x,z): return got
+	got = _massif.apply(got,x,z)
+	if absf(float(_massif.last_lift)) > 1.0:
+		_m_on = true
+		_p_on = false
+	# The tarn: a pond over the massif (its reads, its lip).
+	var tp: PackedFloat32Array = _massif.pond
+	var e := Ponds.at(tp,x,z)
+	if e.x < Ponds.REACH:
+		_p_on = true
+		_p_out = e.x
+		_p_r = e.y
+		_p_w = e.z
+		_p_y = tp[3]
+		if e.x < Ponds.LIP.y: got.x = Ponds.carve(tp,got.x,e)
+	return got
+
+## The Peak's massif (peak_massif.gd: its tarn, couloir, tower bases,
+## stretches), or null.
+func peak() -> RefCounted:
+	return _massif
+
+## Whether a site of reach `r` at (x, z) keeps clear of the Peak's massif.
+func _peak_clear(x: float, z: float, r: float) -> bool:
+	return _massif == null or _massif.clear(x,z,r)
+
+## The same for placers outside the field (PeakMassif `off`).
+func off_peak(x: float, z: float, r := 0.0) -> bool:
+	return _massif == null or _massif.clear(x,z,r)
 
 ## Vector2(height, meadow) `got` with the tunnels' massifs and trenches at
 ## (x, z): the meadow fades with the lift; `_t_on` where it was lifted.
@@ -743,8 +794,15 @@ func tunnels_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 	var all: Array = []
 	for cj in range(floori(z0/Tunnels.CELL),floori(z1/Tunnels.CELL)+1):
 		for ci in range(floori(x0/Tunnels.CELL),floori(x1/Tunnels.CELL)+1):
-			all.append_array(Tunnels.cell_sites(_impl,seed,tunnels,Vector2i(ci,cj),_tunnel_local))
+			all.append_array(_peak_tunnels(Tunnels.cell_sites(_impl,seed,tunnels,Vector2i(ci,cj),_tunnel_local)))
 	return Tunnels.sites_in(all,x0,z0,x1,z1)
+
+## Tunnel sites `ts` without those whose box meets the Peak's massif.
+func _peak_tunnels(ts: Array) -> Array:
+	if _massif == null or ts.is_empty(): return ts
+	return ts.filter(func(t: RefCounted) -> bool:
+		var b: Rect2 = t.box
+		return _peak_clear(b.get_center().x,b.get_center().y,b.size.length()*0.5))
 
 ## The tunnels that may touch (x, z): its square's (the last square's
 ## kept), or the test tunnel.
@@ -752,7 +810,7 @@ func _tunnels_for(x: float, z: float) -> Array:
 	if _tunnel_test: return _tunnel_sites
 	var key := Tunnels.cell_of(x,z)
 	if key != _tunnel_cell:
-		_tunnel_here = Tunnels.cell_sites(_impl,seed,tunnels,key,_tunnel_local)
+		_tunnel_here = _peak_tunnels(Tunnels.cell_sites(_impl,seed,tunnels,key,_tunnel_local))
 		_tunnel_cell = key
 	return _tunnel_here
 
@@ -774,6 +832,7 @@ func _hall_for(x: float, z: float) -> PackedFloat32Array:
 	if cx != _hall_cell.x or cz != _hall_cell.y:
 		_hall_here = Sites.cell_site(_impl,seed,halls,ponds,x,z,_hall_local)
 		if tunnels > 0.0 and Tunnels.blocks_hall(_tunnels_for(x,z),_hall_here): _hall_here = PackedFloat32Array()
+		if not _hall_here.is_empty() and not _peak_clear(_hall_here[0],_hall_here[1],_hall_here[7]+_hall_here[8]): _hall_here = PackedFloat32Array()
 		_hall_cell = Vector2i(cx,cz)
 	return _hall_here
 
@@ -782,6 +841,7 @@ func _hall_for(x: float, z: float) -> PackedFloat32Array:
 func halls_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 	if halls <= 0.0: return []
 	var got := Sites.sites_in(_impl,seed,halls,ponds,x0,z0,x1,z1,_hall_local)
+	if _massif != null: got = got.filter(func(s: PackedFloat32Array) -> bool: return _peak_clear(s[0],s[1],s[7]+s[8]))
 	if tunnels <= 0.0: return got
 	return got.filter(func(s: PackedFloat32Array) -> bool: return not Tunnels.blocks_hall(_tunnels_for(s[0],s[1]),s))
 
@@ -789,6 +849,7 @@ func halls_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 func hall_info(key: Vector2i) -> Dictionary:
 	if halls <= 0.0: return {}
 	var got := Sites.site_info(_impl,seed,halls,ponds,key)
+	if not got.is_empty() and not _peak_clear(got.site[0],got.site[1],got.site[7]+got.site[8]): return {}
 	if not got.is_empty() and tunnels > 0.0 and Tunnels.blocks_hall(_tunnels_for(got.site[0],got.site[1]),got.site): return {}
 	return got
 
@@ -806,6 +867,7 @@ func _split_cell(key: Vector2i) -> PackedFloat32Array:
 	var s := Splits.cell_site(_impl,seed,splits,ponds,key,_split_local,split_mix)
 	if s.is_empty(): return s
 	var r := s[7]+s[8]
+	if not _peak_clear(s[0],s[1],r): return PackedFloat32Array()
 	if tunnels > 0.0 and Tunnels.blocks_hall(tunnels_in(s[0]-r,s[1]-r,s[0]+r,s[1]+r),s): return PackedFloat32Array()
 	if halls > 0.0:
 		for h: PackedFloat32Array in Sites.sites_in(_impl,seed,halls,ponds,s[0]-r,s[1]-r,s[0]+r,s[1]+r,_hall_local):
@@ -870,6 +932,7 @@ func _pond_for(x: float, z: float) -> PackedFloat32Array:
 	var cz := floori(z/Ponds.CELL)
 	if cx != _pond_cell.x or cz != _pond_cell.y:
 		_pond_here = Ponds.cell_pond(_impl,seed,ponds,x,z,_pond_local)
+		if not _pond_here.is_empty() and not _peak_clear(_pond_here[0],_pond_here[1],_pond_here[11]+Ponds.REACH): _pond_here = PackedFloat32Array()
 		_pond_cell = Vector2i(cx,cz)
 	return _pond_here
 
@@ -890,14 +953,18 @@ func _pond(p: PackedFloat32Array, x: float, z: float, base: float, river: float)
 ## arrays), for the fish (EndlessFish).
 func ponds_in(x0: float, z0: float, x1: float, z1: float) -> Array:
 	if ponds <= 0.0: return []
-	return Ponds.ponds_in(_impl,seed,ponds,x0,z0,x1,z1,_pond_local)
+	var got: Array = Ponds.ponds_in(_impl,seed,ponds,x0,z0,x1,z1,_pond_local)
+	if _massif == null: return got
+	return got.filter(func(p: PackedFloat32Array) -> bool: return _peak_clear(p[0],p[1],p[11]+Ponds.REACH))
 
 ## The land's shape at a world XZ point: {height, meadow, mountain, inland,
 ## valley, half, side, across, river, river_r, river_w, river_y}.
 func shape(x: float, z: float) -> Dictionary:
 	_p_on = false
 	_t_on = false
-	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0: return _impl.shape(x,z)
+	_m_on = false
+	if ponds <= 0.0 and halls <= 0.0 and tunnels <= 0.0 and splits <= 0.0:
+		return _impl.shape(x,z) if _massif == null else _peak_shape(_impl.shape(x,z),x,z)
 	var p := _pond_for(x,z) if ponds > 0.0 else PackedFloat32Array()
 	var ts := _tunnels_for(x,z) if tunnels > 0.0 else _NONE
 	var h := _hall_for(x,z) if halls > 0.0 else PackedFloat32Array()
@@ -919,11 +986,35 @@ func shape(x: float, z: float) -> Dictionary:
 			s.river_r = 1000.0
 	if not h.is_empty(): s.height = Sites.carve(h,float(s.height),x,z)
 	if not sp.is_empty(): s.height = Splits.carve(sp,float(s.height),x,z)
+	if _massif != null: s = _peak_shape(s,x,z)
+	return s
+
+## `shape`'s dictionary `s` with the Peak's massif on it at (x, z): no river
+## where it moved the land, which reads as mountain as far as it was lifted.
+func _peak_shape(s: Dictionary, x: float, z: float) -> Dictionary:
+	var got := _peak(Vector2(float(s.height),float(s.meadow)),x,z)
+	s.height = got.x
+	s.meadow = got.y
+	if _m_on:
+		if _p_on:
+			# By the tarn, the tarn's.
+			s.river = _p_out
+			s.river_r = _p_r
+			s.river_w = _p_w
+			s.river_y = _p_y
+		else:
+			s.river = 1000.0
+			s.river_r = 1000.0
+		s.peak = true
+		s.mountain = maxf(float(s.mountain),smoothstep(0.0,80.0,float(_massif.last_lift)))
 	return s
 
 ## The river's water level (world y) where a point is on a river's water,
 ## else NAN.
 func river_y(x: float, z: float) -> float:
+	if _massif != null and _massif.reaches(x,z):
+		sample(x,z)
+		if _m_on: return (_p_y if _p_out < 0.0 else NAN) if _p_on else NAN
 	if tunnels > 0.0:
 		sample(x,z)
 		if _t_on: return NAN
@@ -934,6 +1025,7 @@ func river_y(x: float, z: float) -> float:
 
 ## The river's water as the ground shader draws it, from the last `sample`.
 func river_drawn() -> float:
+	if _m_on and not _p_on: return -INF
 	return _p_y if _p_on else _impl.river_drawn()
 
 ## How still the sea's swell lies at the point the last `sample` read.
@@ -947,6 +1039,7 @@ func sea_calm(x: float, z: float) -> float:
 ## The world height at a world XZ point.
 func height(x: float, z: float) -> float:
 	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0 or splits > 0.0: return sample(x,z).x
+	if _massif != null and _massif.reaches(x,z): return sample(x,z).x
 	return _impl.height(x,z)
 
 ## The snow line over the sea for this land (round one's under --old-land).
@@ -982,6 +1075,10 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 	if not ts.is_empty(): Tunnels.apply_chunk(self,_impl,made,ts,x0,z0,step,cells,skirt_drop)
 	if not hs.is_empty(): Sites.apply_chunk(self,_impl,made,hs,x0,z0,step,cells,skirt_drop)
 	if not sps.is_empty(): Splits.apply_chunk(self,_impl,made,sps,x0,z0,step,cells,skirt_drop)
+	if _massif != null and _massif.meets(x0,z0,x0+cells*step,z0+cells*step):
+		_massif.apply_chunk(self,_impl,made,x0,z0,step,cells,skirt_drop)
+		# The tarn after it, as a pond.
+		if _massif.tarn_meets(x0,z0,x0+cells*step,z0+cells*step): Ponds.apply_chunk(self,_impl,made,[_massif.pond],x0,z0,step,cells,skirt_drop)
 	return made
 
 func _build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: float, flow_max: float) -> Dictionary:
@@ -1098,7 +1195,15 @@ func grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dict
 	if not ts.is_empty(): Tunnels.apply_grid(got,ts,x0,z0,step,nx,nz,pad)
 	if not hs.is_empty(): Sites.apply_grid(got,hs,x0,z0,step,nx,nz,pad)
 	if not sps.is_empty(): Splits.apply_grid(got,sps,x0,z0,step,nx,nz,pad)
+	peak_grid(got,x0,z0,step,nx,nz,pad)
 	return got
+
+## The Peak's massif over `grid`'s (or `_grid`'s: the horizon's) arrays.
+func peak_grid(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> void:
+	if _massif != null and _massif.meets(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step):
+		_massif.apply_grid(got,x0,z0,step,nx,nz,pad)
+		if _massif.tarn_meets(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step) and not (got.get("river",PackedFloat32Array()) as PackedFloat32Array).is_empty():
+			Ponds.apply_grid(got,[_massif.pond],x0,z0,step,nx,nz,pad)
 
 func _grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:
 	if _native: return _impl.grid(x0,z0,step,nx,nz,pad)

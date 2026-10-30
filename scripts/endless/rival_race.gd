@@ -506,7 +506,7 @@ func _course_race(delta: float, game: Node, r_pos: Vector3, player: Vector3, t: 
 	var n := gates.size()
 	# The gates, his and its.
 	if _prev_you != Vector3.INF and next_you < n:
-		var got := _through(gates[next_you],_prev_you,player)
+		var got := through(gates[next_you],_prev_you,player)
 		if got == "through":
 			_log("you",next_you,player,gates[next_you])
 			_marks.cleared(next_you)
@@ -515,7 +515,7 @@ func _course_race(delta: float, game: Node, r_pos: Vector3, player: Vector3, t: 
 			if next_you < n: _cue(game,"race-count",0.5,1.35,RUMBLE_GATE)
 		elif got == "by": _say("missed gate %d · go back through" % (next_you+1))
 	if _prev_it != Vector3.INF and next_it < n:
-		var got := _through(gates[next_it],_prev_it,r_pos)
+		var got := through(gates[next_it],_prev_it,r_pos)
 		if got == "through":
 			_log("it",next_it,r_pos,gates[next_it])
 			line.history.append({"t":snappedf(go_t,0.01),"id":String(gates[next_it].id),"kind":String(gates[next_it].kind),"what":"threaded"})
@@ -574,8 +574,9 @@ func _course_race(delta: float, game: Node, r_pos: Vector3, player: Vector3, t: 
 	t.lead = float(next_you)/float(n)
 
 ## Whether the way from `a` to `b` went through gate `g`'s mouth
-## ("through"), by it outside ("by"), or neither ("").
-func _through(g: Dictionary, a: Vector3, b: Vector3) -> String:
+## ("through"), by it outside ("by"), or neither (""). Static: the place
+## lines (place_lines.gd) pass their gates by the same test.
+static func through(g: Dictionary, a: Vector3, b: Vector3) -> String:
 	var p: Vector3 = g.p
 	var dir: Vector3 = g.dir
 	var da := (a-p).dot(dir)

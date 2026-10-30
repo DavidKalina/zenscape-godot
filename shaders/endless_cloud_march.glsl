@@ -53,7 +53,7 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Params {
 	vec4 fog_at;        // 56 the valley fog's map: corner xz, side, has one
 	vec4 fog_knobs;     // 60 density scale, depth (m), steps, slab top (world y)
 	vec4 fog_drift;     // 64 the patches' drift xz (m), reach (m), fade (m)
-	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[20].x the shade pass stepped as before (--cloud-shade=old); spare[21] the high layer's samples off the low layer's within a texel (the map read xz, a slice's xz); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square
+	vec4 spare[24];     // 68..163; spare[0] the valley fog's look: floor share, density scale, top thinning, -; spare[20].x the shade pass stepped as before (--cloud-shade=old); spare[21] the high layer's samples off the low layer's within a texel (the map read xz, a slice's xz); spare[22] the drift since the weather map was drawn (low xz, high xz), spare[23] a weather slice's square; spare[3] the collar's centre xz, outer radius, inner radius; spare[4] its base y, top y (world), turn (rad), on
 	vec4 weather_at;    // 164 corner xz, side, texels a side
 	vec4 quality;       // 168 steps, light taps, march scale, fine octaves on
 	vec4 flash;         // 172 grain jitter on, organic field on, stacked clouds yield, puffs' finer lobes on
@@ -818,7 +818,7 @@ vec4 weather_smooth(vec2 xz) {
 }
 
 // The highest top and lowest base round `xz`.
-vec2 ceiling_at(vec2 xz) {
+vec2 ceiling_layers(vec2 xz) {
 	vec2 uv = (xz - P.weather_at.xy) / P.weather_at.z;
 	if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec2(-1e3, 1e4);
 	return textureLod(ceiling, uv, 0.0).rg;
@@ -844,6 +844,89 @@ float layer_inside(vec3 p, float top, float base, float slope, float slope_b, fl
 	return min(inside, (p.y - base + (n_wisp - 0.5) * 10.0 + (n_lobe - 0.45) * 8.0) * 1.2 + 1.0);
 }
 
+// --- The collar (scripts/endless/endless_collar.gd) ---------------------------------
+// One standing ring of dense cloud, apart from the field: a flat slab, its
+// base and top the world heights in spare[4].xy, between an inner and an
+// outer radius round a centre (spare[3]), its noise turning slowly about
+// that centre (spare[4].z). Nothing in the weather map: the map drifts with
+// the wind and the collar stands still, so it is its own term, folded into
+// the sample, the light taps, the face and the leaps below.
+const float COLLAR_SIGMA_IN = 0.1;
+const float COLLAR_SWELL = 48.0;
+// The share of its density the light's taps see: a ring this broad would
+// otherwise shade its own far side black.
+const float COLLAR_LIGHT = 0.5;
+const float COLLAR_SWELL_TILE = 1100.0;
+// Its underside lit more than a field cloud's: the sky's light at its base
+// floored at this share (a field cloud's 0.32), its deep shade this much
+// shallower, and all its sky light this many times a field cloud's, so
+// from below it reads pale against the field's clouds, not tan.
+const float COLLAR_UNDER = 1.0;
+const float COLLAR_DEEP_CUT = 1.0;
+const float COLLAR_SKY = 1.6;
+
+bool collar_on() {
+	return P.spare[4].w > 0.5;
+}
+
+// A lower bound on how far `p` stands clear of the collar (m; 0 in or near it).
+float collar_free(vec3 p) {
+	float r = length(p.xz - P.spare[3].xy);
+	float dr = max(max(P.spare[3].w - r, r - P.spare[3].z), 0.0);
+	float dy = max(max(P.spare[4].x - p.y, p.y - P.spare[4].y), 0.0);
+	return max(length(vec2(dr, dy)) - OVER - COLLAR_SWELL, 0.0);
+}
+
+// How far `p` is into the collar (m; negative outside), `hh` its height in it
+// and `wisp` the noise's wisp.
+float collar_inside(vec3 p, bool fine, out float hh, out float wisp) {
+	hh = 0.0;
+	wisp = 0.5;
+	vec2 c = P.spare[3].xy;
+	vec2 rel = p.xz - c;
+	float r = length(rel);
+	float outer = P.spare[3].z;
+	float inner = P.spare[3].w;
+	float lo = P.spare[4].x;
+	float hi = P.spare[4].y;
+	if (r > outer + OVER || r < inner - OVER || p.y < lo - OVER || p.y > hi + OVER + COLLAR_SWELL) return -1e3;
+	float ca = cos(P.spare[4].z);
+	float sa = sin(P.spare[4].z);
+	vec3 q = vec3(c.x + ca * rel.x - sa * rel.y, p.y, c.y + sa * rel.x + ca * rel.y);
+	vec3 boil = BOIL * P.eye.w;
+	vec2 n = textureLod(cauliflower, (q + boil) / TILE_HIGH, 0.0).rg;
+	float nm = textureLod(cauliflower, (q + boil * 1.3 + 37.0) / MID, 0.0).r;
+	float nf = fine && P.quality.w > 0.5 ? FINE_SWELL * (textureLod(cauliflower, (q + boil * 1.6 + 71.0) / FINE, 0.0).r - 0.5) : 0.0;
+	float swell = textureLod(cauliflower, (q + boil * 0.4 + 17.0) / COLLAR_SWELL_TILE, 0.0).r;
+	float top = hi + COLLAR_SWELL * (swell - 0.5) * 2.0;
+	float inside = layer_inside(q, top, lo, 0.0, 0.0, n.r, n.g, nm, nf, hh);
+	// The ring's walls, billowed as the top is.
+	float thick = hi - lo;
+	float billow = clamp(thick / 110.0, 0.45, 2.6) * LOBE * (n.r - 0.45) + MID_SWELL * (nm - 0.45);
+	float walls = min(outer - r, r - inner) + billow;
+	wisp = n.g;
+	return min(inside, walls);
+}
+
+float collar_cheap(vec3 p) {
+	if (!collar_on()) return 0.0;
+	float hh, wisp;
+	return COLLAR_LIGHT * sstep(-4.0, 12.0, collar_inside(p, false, hh, wisp));
+}
+
+// The highest top and lowest base round `xz`, the collar's with them.
+vec2 ceiling_at(vec2 xz) {
+	vec2 c = ceiling_layers(xz);
+	if (!collar_on()) return c;
+	float r = length(xz - P.spare[3].xy);
+	float m = P.weather_at.z / P.weather_at.w * CEILING_BLOCK_F * 1.5 + OVER;
+	if (r < P.spare[3].z + m && r > P.spare[3].w - m) {
+		c.x = max(c.x, P.spare[4].y + COLLAR_SWELL + 4.0);
+		c.y = min(c.y, P.spare[4].x - 12.0);
+	}
+	return c;
+}
+
 // This pixel's jitter this frame (0..1; the march's), for the stencils.
 float g_jitter = 0.5;
 
@@ -854,6 +937,7 @@ struct Sample {
 	float h;
 	float pocket;
 	float free;
+	float collar;
 };
 
 // How far `p` stands clear of one layer's cloud (m, a lower bound) from its
@@ -866,8 +950,8 @@ float layer_free(float y, float top, float base) {
 	return max(max(y - top - OVER, under), 0.0);
 }
 
-Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
-	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0);
+Sample cloud_at_layers(vec3 p, float t, float immersed, bool fine) {
+	Sample s = Sample(0.0, SIGMA, -1e3, 0.0, 0.5, 0.0, 0.0);
 	if (P.band.w <= 0.0 || p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return s;
 	vec4 w = weather_smooth(p.xz);
 	s.free = min(layer_free(p.y, w.x, w.y), layer_free(p.y, w.z, w.w));
@@ -944,8 +1028,30 @@ Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
 	return s;
 }
 
+// The field's sample, the collar over it: its cloud wherever it is denser,
+// and thick: no pockets of clear air, and a whiteout in a few tens of metres.
+Sample cloud_at(vec3 p, float t, float immersed, bool fine) {
+	Sample s = cloud_at_layers(p, t, immersed, fine);
+	if (!collar_on()) return s;
+	s.free = min(s.free, collar_free(p));
+	float hh, wisp;
+	float inside = collar_inside(p, fine, hh, wisp);
+	if (inside <= -999.0) return s;
+	float soft = mix(SOFT.y, SOFT.x, hh) * mix(0.5, 1.0, sstep(40.0, 300.0, t));
+	float d = sstep(0.0, soft, inside) * mix(0.8, 1.0, sstep(0.3, 0.68, wisp));
+	s.inside = max(s.inside, inside);
+	if (d > s.density) {
+		s.density = d;
+		s.h = hh;
+		s.pocket = wisp;
+		s.sigma = mix(SIGMA, COLLAR_SIGMA_IN, immersed);
+		s.collar = 1.0;
+	}
+	return s;
+}
+
 // The light taps' form: the density, one noise octave.
-float density_cheap(vec3 p) {
+float density_cheap_layers(vec3 p) {
 	if (p.y < P.band.x - 1.0 || p.y > P.band.y + OVER) return 0.0;
 	vec4 w = weather_smooth(p.xz);
 	bool low_on = p.y > w.y - 6.0 && p.y < w.x + OVER;
@@ -959,12 +1065,23 @@ float density_cheap(vec3 p) {
 	return sstep(-4.0, 12.0, inside);
 }
 
+float density_cheap(vec3 p) {
+	return max(density_cheap_layers(p), collar_cheap(p));
+}
+
 // The coarse form's distance into the cloud, for the face a ray first meets.
-float inside_cheap(vec3 p) {
+float inside_cheap_layers(vec3 p) {
 	vec4 w = weather_smooth(p.xz);
 	vec2 n = textureLod(cauliflower, (p + BOIL * P.eye.w) / TILE_LOW, 0.0).rg;
 	float hh;
 	return max(layer_inside(p, w.x, w.y, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh), layer_inside(p, w.z, w.w, 0.6, 0.6, n.r, n.g, 0.45, 0.0, hh));
+}
+
+float inside_cheap(vec3 p) {
+	float here = inside_cheap_layers(p);
+	if (!collar_on()) return here;
+	float hh, wisp;
+	return max(here, collar_inside(p, false, hh, wisp));
 }
 
 // How far a ray may leap from `p` before it can meet cloud (0: step here).
@@ -1397,7 +1514,7 @@ void march_pass() {
 			sun_light *= mix(1.0, powder, powder_share);
 			float deep = sstep(0.0, 50.0, s.inside);
 			float beer = exp(-tau);
-			float ambient = SKY * sky_open * mix(0.32, 1.0, s.h) * mix(1.0, DEEP, deep) * mix(1.0, 0.45, beer);
+			float ambient = SKY * sky_open * mix(mix(0.32, COLLAR_UNDER, s.collar), 1.0, s.h) * mix(1.0, DEEP, deep * (1.0 - COLLAR_DEEP_CUT * s.collar)) * mix(1.0, 0.45, beer) * mix(1.0, COLLAR_SKY, s.collar);
 			float bounce = BOUNCE * pow(1.0 - s.h, 2.0);
 			float alpha = 1.0 - exp(-s.density * s.sigma * step);
 			float w = T * alpha;

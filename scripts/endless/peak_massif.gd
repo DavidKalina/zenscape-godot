@@ -1,0 +1,1157 @@
+## The Peak's massif (docs/design/endless-flight/spec-peak.md, Shape): one
+## stamp over the land, applied by the land-field wrapper (LandField
+## `sample`, `shape`, `height`, `build_chunk` and `grid`) after the ponds,
+## tunnels, halls and splits, so chunk meshes, `height()` and collision
+## agree.
+##
+## The profile is built in the massif's own frame from its centre (the
+## plateau's middle) and its facing (the way out of the horseshoe's
+## opening): `a` metres along the facing, `v` across it. The horseshoe's
+## crest is a ring of RING_R round a point O_ALONG ahead of the plateau;
+## `th` is the angle round it from the back (0, the couloir) toward the arms'
+## tips (ARM_END). Each piece is a height over the sea (SEA_Y), and the land
+## gets the higher of its own and the massif's, except where the massif cuts
+## (`c`: inside the horseshoe, the valley, the plateau), where the massif's
+## height stands alone. Along the axis, from the opening in:
+##
+##   glacier valley  a 4050..2050  100..300 m, bulged ice crossed by crevasse
+##                                 bands, between lateral moraines and side
+##                                 ridges; the valley bends (GL_BEND)
+##   boulder field   a 2050..1250  300..400 m, lumpy floor
+##   icefall         a 1250..850   400..520 m, three steps
+##   the wall        a 850..250    520..1040 m: talus, then a cliff, with
+##                                 buttresses and gullies; the couloir a
+##                                 tapering, bending gully cut into it,
+##                                 a 600..265, 610..1025 m, 280 m to the -v
+##                                 side of the axis, its notch at th 12
+##   crest, towers   th 0..40      980..1090 m, rising and falling between
+##                                 the tower bases
+##   the head        on the axis at the crest's back point, a ridged
+##                                 pyramid to 1200 m, hiding the plateau
+##                                 from the opening
+##   plateau, tarn   a 150..-150   1145 m flat, the tarn's bowl in it
+##   back face       a -150..-2200 1160 m down to the sea, spurs down it
+##
+## Everything outside a circle of BOUND round O pays one distance check
+## (`reaches`, `meets`). Placed through LayoutOverrides "peak/massif": the
+## transform's origin the plateau's centre, its +z the facing.
+extends RefCounted
+
+const SEA_Y := -40.0
+const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+const WorldScale = preload("res://scripts/world_scale.gd")
+const Sites = preload("res://scripts/endless/hall_sites.gd")
+const Ponds = preload("res://scripts/endless/land_ponds.gd")
+
+const HANDLE := "peak/massif"
+## The tarn's water (its centre, at its level): origin moves it on the
+## plateau and lifts or drops its level within the bowl; the bowl follows.
+const TARN_HANDLE := "peak/tarn"
+## The coded spot: the plateau's centre AWAY m from the origin, facing it
+## (the horseshoe open toward the start). The worlds spawn at the origin and
+## the start meadow is found within 900 m of it (MenuSpot REACH), so the
+## glacier's toe (a 4500) ends at about the origin, and the bounding circle
+## takes in the start (the start's chunks pay the massif's pass). Which way from the origin: of YAWS
+## ways round, the one with the land's own ground lowest in the eye from
+## the origin out to SIGHT m (its steepest angle, degrees) and the most sea
+## behind the plateau (BEHIND m past it, ACROSS m either side), scored
+## sea share x SEA_WORTH less the angle. `--peak-at=x,z` and `--peak-yaw=deg`
+## (0 faces +z) set it by hand.
+const AWAY := 4500.0
+const YAWS := 36
+const SIGHT := 2000.0
+const SIGHT_STEP := 25.0
+const BEHIND := [2200.0,2600.0,3000.0,3400.0]
+const ACROSS := 600.0
+const SEA_WORTH := 4.0
+
+# --- The ring: crest, wall, flanks -------------------------------------------------
+
+## The horseshoe's middle, ahead of the plateau along the facing, and the
+## crest's radius round it.
+const O_ALONG := 1600.0
+const RING_R := 1350.0
+## The crest's height over the sea by `th` (degrees from the back), pairs,
+## on the +v side and the -v side (the couloir's notch at about 12). Both
+## start under the head; between the tower bases (TOWER_POS,
+## TOWER_NEG) the crest dips to cols, so it reads as a ridge.
+## The -v side is the long shoulder: it climbs from the arm to the notch
+## and the horn's ridge rises out of it; the +v side stays lower. Both stay
+## 350..450 m under the horn's top so the horn owns the skyline.
+const CREST_POS := [0.0,1000.0, 5.0,985.0, 9.0,965.0, 13.0,985.0, 16.5,945.0, 20.0,965.0, 23.5,925.0,
+	27.0,945.0, 30.5,905.0, 34.0,920.0, 42.0,870.0, 60.0,800.0, 80.0,715.0,
+	100.0,610.0, 120.0,490.0, 140.0,360.0, 155.0,240.0, 168.0,40.0]
+const CREST_NEG := [0.0,1000.0, 5.0,1010.0, 9.0,1035.0, 12.0,1035.0, 14.5,1028.0, 17.0,1040.0, 20.0,995.0,
+	23.0,1015.0, 26.0,970.0, 29.0,985.0, 32.0,945.0, 35.0,955.0, 42.0,900.0, 60.0,820.0, 80.0,700.0,
+	100.0,575.0, 120.0,440.0, 140.0,300.0, 155.0,170.0, 168.0,40.0]
+## Spurs and gullies down every flank, each one its own: laid round the
+## ring from the back at load (`_ribs`), one rib every RIB_P degrees or so
+## (inner, outer), pushing the flank out (a spur line, at RIB_SPUR) or in
+## (a gully, up to 1) by up to RIB_IN m on the wall, RIB_ARM m on the arms'
+## inner flank, RIB_OUT m on the outer falls (grown over RIB_GROW m down
+## from the crest). Each rib draws its width (RIB_P x RIB_WIDTH, low end
+## likelier), strength (RIB_AMP; RIB_FAINT of them barely show), where its
+## gully runs across it (RIB_SKEW of its width off the middle), its
+## gully's shape (RIB_SHARP: low a V, high a round trough between sharp
+## spurs), and where it starts and dies down the flank (RIB_START,
+## RIB_END inner, RIB_END_OUT outer, m from the crest). The lines wander
+## sideways by up to RIB_WANDER degrees down the flank, so they bend.
+const RIB_P := Vector2(5.5,8.5)
+const RIB_WIDTH := Vector2(0.4,2.0)
+const RIB_AMP := Vector2(0.2,1.0)
+const RIB_FAINT := 0.18
+const RIB_SPUR := -0.7
+const RIB_SKEW := 0.28
+const RIB_SHARP := Vector2(1.2,3.5)
+const RIB_START := 220.0
+const RIB_END := Vector2(260.0,700.0)
+const RIB_END_OUT := Vector2(350.0,1500.0)
+const RIB_WANDER := 3.0
+const RIB_IN := 55.0
+const RIB_ARM := 60.0
+const RIB_OUT := 115.0
+const RIB_GROW := 380.0
+## The wider ribs over the fine ones: their width (times the fine one's
+## period, times RIB_WIDTH) and share. The inner ribs fade out over
+## RIB_FOOT m (from the crest) toward the flank's foot.
+const RIB_WIDE := 2.7
+const RIB_WIDE_SHARE := 0.45
+const RIB_FOOT := Vector2(300.0,560.0)
+## A rib's entry in `_ribs`: start (deg), width (deg), strength, gully at
+## (share of the width), gully power, start and end down the flank (m).
+const RIB_STRIDE := 7
+## Where the arms end (degrees); past it the ring sinks under the land.
+const ARM_END := 168.0
+## The wall at the back (th under 30, gone by 60): its foot's height, its
+## run from the crest inward, the talus's fall past the foot (m per m).
+const WALL_FOOT := 520.0
+const WALL_RUN := 600.0
+const TALUS_FALL := 0.4
+## The wall's rise from foot to crest: a talus share up to TALUS_TOP of the
+## run, the rest a cliff from CLIFF.x to CLIFF.y (shares of the run from the
+## foot).
+const TALUS_SHARE := 0.22
+const TALUS_TOP := 0.6
+const CLIFF := Vector2(0.45,0.97)
+## The arms' inner flank: its fall per metre at the crest and 500 m in.
+const ARM_IN := Vector2(0.8,0.42)
+## The back's outer side (th under 35, gone by 70): the shoulder that holds
+## the plateau (th under 5, gone by 16): from the crest up to PLATEAU_Y over
+## SHOULDER.x m, flat to SHOULDER.y, up to LIP_Y by SHOULDER.z, then the back
+## face; elsewhere a knife ridge straight into the face.
+const SHOULDER := Vector3(160.0,400.0,460.0)
+const PLATEAU_Y := 1145.0
+const LIP_Y := 1160.0
+const BACK_RUN := 2000.0
+const BACK_BOW := 1.8
+const KNIFE_BOW := 2.6
+## The arms' outer flank.
+const ARM_OUT_RUN := 1100.0
+const ARM_OUT_BOW := 1.5
+## Where every fall ends (over the sea, below the sea's face) and how fast
+## it drops past its run, so the massif always sinks under the land before
+## BOUND.
+const FALL_END := -60.0
+const PAST_END := 1.0
+
+# --- The approach valley ------------------------------------------------------------
+
+## The floor's stretches along `a`: icefall, boulders, glacier, toe.
+const ICEFALL := Vector2(850.0,1250.0)
+const ICEFALL_Y := Vector2(520.0,400.0)
+const ICEFALL_STEPS := 3
+const ICEFALL_RISER := 0.35
+const BOULDERS := Vector2(1250.0,2050.0)
+const BOULDERS_Y := Vector2(400.0,300.0)
+const GLACIER := Vector2(2050.0,4050.0)
+const GLACIER_Y := Vector2(300.0,100.0)
+const TOE := Vector2(4050.0,4500.0)
+## The floor's half-width: icefall, boulders, glacier's head and mouth.
+const FLOOR_HALF := Vector4(200.0,240.0,260.0,330.0)
+## The valley bends: its middle swings GL_BEND m across, from the boulders'
+## head (a 1250) to the toe, in GL_TURNS half waves; the icefall and the
+## couloir stay on the axis. The axis (v 0) stays on the floor.
+const GL_BEND := 170.0
+const GL_TURNS := 2.2
+## The ice bulges ICE_BULGE m up in its middle.
+const ICE_BULGE := 6.0
+## The side ridges: their rise over the floor, the run to their top (from
+## SIDE_GAP m past the floor's edge), their outer fall (m per m).
+const SIDE_UP := 80.0
+const SIDE_RUN := 170.0
+const SIDE_GAP := 70.0
+const SIDE_FALL := 0.4
+const SIDE_DIP := 15.0
+const SIDE_DIP_TO := 2200.0
+## The lateral moraines along the boulders and the glacier: a sharp-crested
+## bank MOR_UP m over the floor, its crest MOR_AT m past the floor's edge,
+## MOR_W m each side of it, a trough between it and the side ridge.
+const MOR_UP := 30.0
+const MOR_AT := 30.0
+const MOR_W := 48.0
+## Crevasse bands across the glacier: a band every CREV_BAND m along the ice
+## over CREV_SHARE of it, crevasses CREV_SP m apart in a band, CREV_W wide,
+## CREV_DEEP deep, bowed CREV_ARC m downstream in the middle.
+const CREV_BAND := 430.0
+const CREV_SHARE := 0.35
+const CREV_SP := 26.0
+const CREV_W := 9.0
+const CREV_DEEP := 5.0
+const CREV_ARC := 60.0
+## Boulder-field lumps (m, and their scale against the rock noise's).
+const LUMPS := 2.5
+const LUMP_SCALE := 3.7
+
+# --- Couloir, plateau, tarn, summit, towers ----------------------------------------------
+
+## The couloir's toy width (WorldScale.opening), its floor's ramp from the
+## mouth (a, height) to the crest's notch, its walls' softness (m).
+const TOY_COULOIR := 40.0
+const COULOIR_FOOT := Vector2(600.0,610.0)
+const COULOIR_TOP := Vector2(265.0,1025.0)
+## The couloir runs along the facing COULOIR_V m to the side of the axis
+## (the head stands on the axis), its notch on the crest about 12 degrees
+## round on the -v side.
+const COULOIR_V := -280.0
+const COULOIR_SOFT := 6.0
+const COULOIR_BACK := 50.0
+## The couloir tapers: its floor COULOIR_WIDE times its top's half-width at
+## the mouth, the walls' slope round it COULOIR_SLANT of the half-width (a V
+## more than a slot), and it bends COULOIR_BEND m away from the head halfway
+## up (mouth and top stay on the axis).
+const COULOIR_WIDE := 2.2
+const COULOIR_SLANT := 0.55
+const COULOIR_BEND := 38.0
+const COULOIR_LINE := 9
+## The plateau: flat out to PLATEAU_FLAT from its centre, blended out by
+## PLATEAU_BLEND.
+const PLATEAU_FLAT := 150.0
+const PLATEAU_BLEND := 220.0
+## The tarn's bowl: its centre TARN_BACK m behind the plateau's, its radius
+## and depth under the plateau, and the water level the bowl is cut for
+## (over the sea). The water's edge lies where the bowl meets the level
+## (`tarn().wet`, about 49 m). The water is TARN_DEEP-1 m deep in the middle:
+## the ground shader lifts its grid to a water's level only up to 6.6 m, so
+## a deeper bowl would show a hole in the drawn water.
+const TARN_BACK := 40.0
+const TARN_BOWL := 60.0
+const TARN_DEEP := 5.0
+const TARN_LEVEL := 1144.0
+## The tarn's outline (and its bowl's, which follows it): lobes 2, 3 and 5
+## as shares of its radius, their phases from the land's seed.
+const TARN_LOBES := Vector3(0.2,0.1,0.05)
+## The cirque, the plateau's floor (`--cirque=0`: the flat disc it was): an
+## outline lobed round the plateau's centre (CIRQUE_R, lobes 2, 3 and 5 as
+## shares, phases from the seed), `s` a point's distance over the outline's
+## radius that way. The floor at PLATEAU_Y, rising FLOOR_RISE toward the
+## outline away from the tarn, broken by KNOBS (rise, scale m, the noise from
+## which they stand; fewer toward the tarn), and a rock rim on it (RIM: least and most rise, its
+## half-width in `s`) whose height wanders round it, none on the head's side
+## and a gap where the strip runs out through it. Blended out to the land
+## over CIRQUE_OUT (in `s`). On the head's side the floor climbs HEADWALL.x
+## m per m past the strip, out to HEADWALL.y along the axis and HEADWALL.z
+## across it, and never buries the head (the higher of it and the land).
+const CIRQUE_R := 165.0
+const CIRQUE_LOBES := Vector3(0.07,0.09,0.04)
+const CIRQUE_OUT := Vector2(1.08,1.3)
+const FLOOR_RISE := 3.0
+const KNOBS := Vector3(5.5,42.0,0.1)
+const RIM := Vector3(8.0,22.0,0.16)
+const HEADWALL := Vector3(0.16,265.0,170.0)
+## The flat shore: one strip across the plateau, between the tarn and the
+## head, as long as a hand landing needs (land_ponds.gd STRIP is 208):
+## Vector4(its a, half its length along v, half its width, the ease to the
+## broken ground round it), flat at PLATEAU_Y, no knob or rim on it.
+const STRIP := Vector4(80.0,118.0,22.0,16.0)
+## The head: a horn standing on the crest's back point, on the axis in
+## front of the plateau (so from the opening it hides the plateau), its top
+## SUMMIT_Y over the sea. Its faces fall HEAD_FACE.x m per m at the top,
+## easing toward HEAD_FACE.y over HEAD_BEND m (near-vertical up high, wider
+## at the foot); its knife ridges (HEAD_RIDGES, degrees round its top in
+## the frame, 0 toward the opening, 90 toward +v; HEAD_KNIFE their
+## sharpness) HEAD_RIDGE the same way. The -v ridge (about -100) rises out
+## of the shoulder by the couloir's notch, the two front ones frame the face
+## the start looks at. The tip rounded over HEAD_TIP m; it reaches out
+## HEAD_REACH m.
+const SUMMIT_AT := Vector2(290.0,0.0)
+const SUMMIT_Y := 1400.0
+const HEAD_FACE := Vector2(3.4,1.0)
+const HEAD_RIDGE := Vector2(2.6,0.75)
+const HEAD_BEND := 130.0
+const HEAD_RIDGES := [40.0,-45.0,140.0,-100.0]
+const HEAD_KNIFE := 16.0
+const HEAD_TIP := 5.0
+const HEAD_REACH := 900.0
+## Past HEAD_KNEE m from its top the head falls HEAD_SINK m per m more, so
+## its ridges end on the wall and do not run out over the icefall.
+const HEAD_KNEE := 260.0
+const HEAD_SINK := 1.5
+## Tower bases on the crest: their angles on the +v side and the -v side
+## (degrees; on the CREST tables' highs), a flat top TOWER_UP over the crest
+## of TOWER_R, falling TOWER_FALL m per m.
+const TOWER_POS := [13.0,20.0,27.0,34.0]
+const TOWER_NEG := [17.0,23.0,29.0,35.0]
+const TOWER_R := 18.0
+const TOWER_UP := 22.0
+## Each tower base's share of TOWER_UP, in turn.
+const TOWER_UPS := [1.0,0.55,1.3,0.7,1.15,0.6,0.9,1.25]
+const TOWER_FALL := 2.5
+
+## The rock's noise: its height (m) and scale (m).
+const ROUGH := 12.0
+const ROUGH_SCALE := 90.0
+## The bounding circle round O: everything outside is the land's own.
+const BOUND := 4050.0
+## The snow line on the massif, over the sea (the ground shader's
+## `peak_snow`, ragged by about 100 m either way): the glacier's ice and
+## the valley's sides below it, snow and granite above.
+const SNOW_LINE := 500.0
+
+## The stretches along the axis, for drivers and the trunk: name, a from,
+## a to, height over the sea from, to. The wall's are the wall's own, as
+## beside the couloir; on the axis the head's prow stands over its upper
+## half (about 780 at a 700, 1180 at a 250).
+const STRETCHES := [
+	["glacier",4050.0,2050.0,100.0,300.0],
+	["boulders",2050.0,1250.0,300.0,400.0],
+	["icefall",1250.0,850.0,400.0,520.0],
+	["wall",850.0,250.0,520.0,1040.0],
+	["plateau",150.0,-150.0,1145.0,1145.0],
+	["back",-150.0,-2200.0,1160.0,FALL_END],
+]
+
+var centre := Vector2.ZERO
+var facing := Vector2(0.0,1.0)
+var side := Vector2(1.0,0.0)
+var _o := Vector2.ZERO
+var _cw := 0.0
+var _noise := FastNoiseLite.new()
+## The ribs (see RIB_STRIDE), per side and flank: [fine, wide] for the
+## -v inner, -v outer, +v inner, +v outer flanks.
+var _ribs: Array[PackedFloat32Array] = []
+## Tower bases, local (a, v), and their tops over the sea.
+var _towers := PackedVector2Array()
+var _tower_tops := PackedFloat32Array()
+## The last `apply`'s change to the land's height (m).
+var last_lift := 0.0
+## The tarn's centre in the frame (a, v), its level over the sea (both from
+## TARN_HANDLE), its water's radius, and the water as a pond (land_ponds.gd's
+## array: a round one, no bed of its own, the bowl is the massif's), which
+## LandField lays over the massif after its pass, so it reads and draws as
+## a pond does.
+var _tarn_c := Vector2(-TARN_BACK,0.0)
+var _tarn_level := TARN_LEVEL
+var _tarn_wet := 0.0
+var pond := PackedFloat32Array()
+## The cirque's outline phases (lobes 2, 3, 5) and whether it is on.
+var _cq_ph := Vector3.ZERO
+var _cirque := true
+
+## The massif for this land, or null: `--peak=0` turns it off. `ground`:
+## the land's own height (world y) at (x, z), for its way from the origin.
+static func make(land_seed: int, ground := Callable()) -> RefCounted:
+	var at := Vector2.INF
+	var yaw := INF
+	for a: String in LaunchArgs.user_args():
+		if a == "--peak=0" or a == "--no-peak": return null
+		if a.begins_with("--peak-at="):
+			var xz := a.get_slice("=",1).split(",")
+			if xz.size() == 2: at = Vector2(float(xz[0]),float(xz[1]))
+		elif a.begins_with("--peak-yaw="): yaw = float(a.get_slice("=",1))
+	if not at.is_finite():
+		var way := _way_cached(land_seed,ground) if ground.is_valid() else 0.0
+		at = Vector2(sin(way),-cos(way))*AWAY
+	# Unless given, it faces the origin.
+	if not is_finite(yaw): yaw = rad_to_deg(atan2(-at.x,-at.y))
+	var coded := Transform3D(Basis(Vector3.UP,deg_to_rad(yaw)),Vector3(at.x,0.0,at.y))
+	var m: RefCounted = new(land_seed,LayoutOverrides.xform(HANDLE,coded))
+	if ground.is_valid() and not LaunchArgs.user_args().has("--peak-mask=0"): m._mask(land_seed,ground)
+	return m
+
+# --- Cost: the way and the live cells, once per land --------------------------------
+#
+# Every chunk build on a worker makes its own LandField, and with it its own
+# massif; what doesn't change between them is worked out once per land (its
+# seed and a few of its heights, so another world's land gets its own) and
+# shared: the way it faces (`_way`, thousands of height samples) and which
+# cells of the bounding circle the massif can change at all (`_mask`).
+
+## The live grid's cell (m), and how far under the land the massif's height
+## may come at every corner of a cell and its neighbours before the cell is
+## dead (the land and the massif move less than this between corners).
+const MASK_CELL := 64.0
+const MASK_MARGIN := 80.0
+static var _shared := {}
+static var _shared_lock := Mutex.new()
+
+## `ground`'s land told apart from another's: its seed and a few heights.
+static func _land_key(land_seed: int, ground: Callable) -> Array:
+	var key: Array = [land_seed]
+	for p: Vector2 in [Vector2(0.0,0.0),Vector2(1730.0,-2210.0),Vector2(-3170.0,1290.0),Vector2(4410.0,3030.0),Vector2(-2050.0,-4470.0)]:
+		key.append(snappedf(float(ground.call(p.x,p.y)),0.001))
+	return key
+
+static func _way_cached(land_seed: int, ground: Callable) -> float:
+	var key := ["way"]+_land_key(land_seed,ground)
+	_shared_lock.lock()
+	var got: Variant = _shared.get(key)
+	if got == null:
+		got = _way(ground)
+		_shared[key] = got
+	_shared_lock.unlock()
+	return float(got)
+
+## The live cells: a grid of MASK_CELL over the bounding square round O,
+## 1 where the massif may change the land (its cut or meadow above 0, or
+## its height within MASK_MARGIN of the land's at a corner of the cell or of
+## a neighbour), 0 where it changes nothing. `reaches` and `meets` read it,
+## so the land's samples, the chunks and the native readers there are the
+## land's own. Baked once per land and frame (about 16k samples).
+var _live := PackedByteArray()
+var _live_n := 0
+var _live_at := Vector2.ZERO
+
+func _mask(land_seed: int, ground: Callable) -> void:
+	var key := ["mask",centre,facing]+_land_key(land_seed,ground)
+	_shared_lock.lock()
+	var got: Variant = _shared.get(key)
+	if got == null:
+		got = _bake_mask(ground)
+		_shared[key] = got
+	_shared_lock.unlock()
+	_live = got[0]
+	_live_n = got[1]
+	_live_at = got[2]
+
+func _bake_mask(ground: Callable) -> Array:
+	var n := int(ceil(2.0*BOUND/MASK_CELL))
+	var at := _o-Vector2.ONE*(n*MASK_CELL*0.5)
+	var pts := PackedByteArray()
+	pts.resize((n+1)*(n+1))
+	var r2 := (BOUND+MASK_CELL*1.5)*(BOUND+MASK_CELL*1.5)
+	for j in n+1:
+		for i in n+1:
+			var x := at.x+i*MASK_CELL
+			var z := at.y+j*MASK_CELL
+			if (x-_o.x)*(x-_o.x)+(z-_o.y)*(z-_o.y) >= r2: continue
+			var q := Vector2(x,z)-centre
+			var hm := _h(q.dot(facing),q.dot(side))
+			if hm.y > 0.0 or hm.z > 0.0 or not is_finite(hm.x) or hm.x+SEA_Y > float(ground.call(x,z))-MASK_MARGIN: pts[j*(n+1)+i] = 1
+	var cells := PackedByteArray()
+	cells.resize(n*n)
+	for j in n:
+		for i in n:
+			# A cell's corners and its neighbours' (so a point in it is never
+			# farther than a cell from a corner that saw the massif).
+			var live := 0
+			for jj in range(maxi(j-1,0),mini(j+2,n)+1):
+				for ii in range(maxi(i-1,0),mini(i+2,n)+1):
+					live |= pts[jj*(n+1)+ii]
+			cells[j*n+i] = live
+	return [cells,n,at]
+
+## Whether the live cell under world (x, z) is live (true off the grid).
+func _live_cell(x: float, z: float) -> bool:
+	if _live_n == 0: return true
+	var i := floori((x-_live_at.x)/MASK_CELL)
+	var j := floori((z-_live_at.y)/MASK_CELL)
+	if i < 0 or j < 0 or i >= _live_n or j >= _live_n: return false
+	return _live[j*_live_n+i] == 1
+
+## The share of the bounding circle's cells that are live (for the cost
+## drivers).
+func live_share() -> float:
+	if _live_n == 0: return 1.0
+	var live := 0
+	var inside := 0
+	for j in _live_n:
+		for i in _live_n:
+			var c := _live_at+Vector2(i+0.5,j+0.5)*MASK_CELL
+			if c.distance_to(_o) < BOUND:
+				inside += 1
+				live += _live[j*_live_n+i]
+	return float(live)/maxf(float(inside),1.0)
+
+## The way from the origin (radians: 0 toward -z, PI/2 toward +x) the
+## plateau stands (see AWAY).
+static func _way(ground: Callable) -> float:
+	var eye := maxf(float(ground.call(0.0,0.0)),SEA_Y)+3.0
+	var best := 0.0
+	var best_score := -INF
+	for k in YAWS:
+		var way := TAU*k/YAWS
+		var dir := Vector2(sin(way),-cos(way))
+		var steep := -90.0
+		var d := SIGHT_STEP*2.0
+		while d <= SIGHT:
+			var p := dir*d
+			steep = maxf(steep,rad_to_deg(atan2(maxf(float(ground.call(p.x,p.y)),SEA_Y)-eye,d)))
+			d += SIGHT_STEP
+		var sea := 0
+		for b: float in BEHIND:
+			for v: float in [-ACROSS,0.0,ACROSS]:
+				var q := dir*(AWAY+b)+Vector2(-dir.y,dir.x)*v
+				if float(ground.call(q.x,q.y)) < SEA_Y: sea += 1
+		var score := SEA_WORTH*float(sea)/(BEHIND.size()*3)-steep
+		if score > best_score+0.001:
+			best_score = score
+			best = way
+	return best
+
+func _init(land_seed: int, frame: Transform3D) -> void:
+	centre = Vector2(frame.origin.x,frame.origin.z)
+	var f := frame.basis.z
+	facing = Vector2(f.x,f.z).normalized()
+	side = Vector2(-facing.y,facing.x)
+	_o = centre+facing*O_ALONG
+	_cw = WorldScale.opening(TOY_COULOIR)*0.5
+	_noise.seed = hash([land_seed,"peak"]) & 0x7fffffff
+	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	_noise.frequency = 1.0/ROUGH_SCALE
+	_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	_noise.fractal_octaves = 4
+	for s: float in [-1.0,1.0]:
+		for t: float in (TOWER_POS if s > 0.0 else TOWER_NEG):
+			var r := deg_to_rad(t)
+			_towers.append(Vector2(O_ALONG-RING_R*cos(r),s*RING_R*sin(r)))
+			# Each its own height over the crest.
+			_tower_tops.append(_crest(t,s)+TOWER_UP*TOWER_UPS[_towers.size()%TOWER_UPS.size()])
+	# The tarn, through its handle (its centre on the plateau, its level kept
+	# inside the bowl).
+	var tw := world(_tarn_c.x,_tarn_c.y)
+	var tt := LayoutOverrides.xform(TARN_HANDLE,Transform3D(frame.basis,Vector3(tw.x,TARN_LEVEL+SEA_Y,tw.y)))
+	var tq := Vector2(tt.origin.x,tt.origin.z)-centre
+	_tarn_c = Vector2(tq.dot(facing),tq.dot(side))
+	_tarn_level = clampf(tt.origin.y-SEA_Y,PLATEAU_Y-TARN_DEEP+0.5,PLATEAU_Y-0.25)
+	_tarn_wet = TARN_BOWL*sqrt(1.0-pow((PLATEAU_Y-_tarn_level)/TARN_DEEP,2.0/3.0))
+	var tc := world(_tarn_c.x,_tarn_c.y)
+	_cirque = not LaunchArgs.user_args().has("--cirque=0")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([land_seed,"cirque"])
+	var lb := TARN_LOBES if _cirque else Vector3.ZERO
+	var ph := Vector3(rng.randf()*TAU,rng.randf()*TAU,rng.randf()*TAU)
+	_cq_ph = Vector3(rng.randf()*TAU,rng.randf()*TAU,rng.randf()*TAU)
+	_lay_ribs(land_seed)
+	pond = PackedFloat32Array([tc.x,tc.y,_tarn_wet,_tarn_level+SEA_Y,0.0,lb.x,ph.x,lb.y,ph.y,lb.z,ph.z,_tarn_wet*(1.0+lb.x+lb.y+lb.z)])
+
+# --- Asked by the land field ----------------------------------------------------------
+
+## Whether (x, z) lies inside the bounding circle (one distance check).
+func reaches(x: float, z: float) -> bool:
+	var dx := x-_o.x
+	var dz := z-_o.y
+	return dx*dx+dz*dz < BOUND*BOUND and _live_cell(x,z)
+
+## Whether the box (x0, z0)..(x1, z1) meets the bounding circle.
+func meets(x0: float, z0: float, x1: float, z1: float) -> bool:
+	var dx := _o.x-clampf(_o.x,x0,x1)
+	var dz := _o.y-clampf(_o.y,z0,z1)
+	if dx*dx+dz*dz >= BOUND*BOUND: return false
+	if _live_n == 0: return true
+	var i0 := maxi(floori((x0-_live_at.x)/MASK_CELL),0)
+	var i1 := mini(floori((x1-_live_at.x)/MASK_CELL),_live_n-1)
+	var j0 := maxi(floori((z0-_live_at.y)/MASK_CELL),0)
+	var j1 := mini(floori((z1-_live_at.y)/MASK_CELL),_live_n-1)
+	for j in range(j0,j1+1):
+		for i in range(i0,i1+1):
+			if _live[j*_live_n+i] == 1: return true
+	return false
+
+## Whether a site of reach `r` at (x, z) stays clear of the massif (the
+## ponds, tunnels, halls and splits keep out of it, and through LandField
+## `off_peak` the arches, set pieces, rocks and shops).
+func clear(x: float, z: float, r: float) -> bool:
+	return Vector2(x,z).distance_to(_o) > BOUND+r
+
+## Whether a site of reach `r` at (x, z) stays clear of `field`'s massif
+## (any field: one without `off_peak` has none).
+static func off(field: RefCounted, x: float, z: float, r := 0.0) -> bool:
+	return not field.has_method("off_peak") or bool(field.off_peak(x,z,r))
+
+## The land's Vector2(world height, meadow) `base` at (x, z) with the massif
+## on it (the caller checked `reaches`). Sets `last_lift`.
+func apply(base: Vector2, x: float, z: float) -> Vector2:
+	var q := Vector2(x,z)-centre
+	var hm := _h(q.dot(facing),q.dot(side))
+	var by := base.x-SEA_Y
+	var y := lerpf(maxf(by,hm.x),hm.x,hm.y)
+	last_lift = y-by
+	var m := maxf(base.y*(1.0-smoothstep(0.5,6.0,absf(last_lift))),hm.z)
+	return Vector2(y+SEA_Y,m)
+
+## The massif's pass over a chunk's arrays (LandField.build_chunk; its
+## args), after every other layer's: heights, then the normals (central
+## differences, as the field's) and colours round what moved, the skirt's
+## copies of the edges. The land's heights one step outside the chunk come
+## back from its edge normals (each is (left-right, 2 step, down-up)), so
+## the edges' normals need no field sample. `field` the LandField (its
+## `colours`).
+func apply_chunk(field: Object, _impl: Object, made: Dictionary, x0: float, z0: float, step: float, cells: int, skirt_drop: float) -> void:
+	var n := cells+1
+	var w := n+2
+	var heights: PackedFloat32Array = made.heights
+	var verts: PackedVector3Array = made.verts
+	var normals: PackedVector3Array = made.normals
+	var colours: PackedColorArray = made.colours
+	var carved: PackedByteArray = made.carved
+	var river: PackedFloat32Array = made.river
+	# The padded grid's heights (a ring of one step round the chunk, its
+	# corners unused) and which moved; which vertices the massif lifted.
+	var hs := PackedFloat32Array()
+	hs.resize(w*w)
+	var mv := PackedByteArray()
+	mv.resize(w*w)
+	var lifted := PackedByteArray()
+	lifted.resize(n*n)
+	var any := false
+	var r2 := BOUND*BOUND
+	var fx := facing.x
+	var fz := facing.y
+	var sx := side.x
+	var sz := side.y
+	for jj in w:
+		var j := jj-1
+		var j_out := j < 0 or j > cells
+		for ii in w:
+			var i := ii-1
+			var i_out := i < 0 or i > cells
+			if i_out and j_out: continue
+			var base: float
+			var v := j*n+i
+			if not i_out and not j_out: base = heights[v]
+			elif i < 0:
+				v = j*n
+				base = heights[v+1]+2.0*step*normals[v].x/normals[v].y
+			elif i_out:
+				v = j*n+cells
+				base = heights[v-1]-2.0*step*normals[v].x/normals[v].y
+			elif j < 0:
+				v = i
+				base = heights[v+n]+2.0*step*normals[v].z/normals[v].y
+			else:
+				v = cells*n+i
+				base = heights[v-n]-2.0*step*normals[v].z/normals[v].y
+			var k := jj*w+ii
+			hs[k] = base
+			var x := x0+i*step
+			var z := z0+j*step
+			var dx := x-_o.x
+			var dz := z-_o.y
+			if dx*dx+dz*dz >= r2: continue
+			if _live_n > 0:
+				var ci := floori((x-_live_at.x)/MASK_CELL)
+				var cj := floori((z-_live_at.y)/MASK_CELL)
+				if ci < 0 or cj < 0 or ci >= _live_n or cj >= _live_n or _live[cj*_live_n+ci] == 0: continue
+			var qx := x-centre.x
+			var qz := z-centre.y
+			var hm := _h(qx*fx+qz*fz,qx*sx+qz*sz)
+			var by := base-SEA_Y
+			var y := lerpf(maxf(by,hm.x),hm.x,hm.y)
+			var lift := y-by
+			if not i_out and not j_out:
+				var c := colours[v]
+				var m := maxf(c.a*(1.0-smoothstep(0.5,6.0,absf(lift))),hm.z)
+				if absf(lift) <= 0.0005 and absf(m-c.a) <= 0.002: continue
+				c.a = m
+				colours[v] = c
+				if absf(lift) > 1.0: lifted[v] = 1
+			elif absf(lift) <= 0.0005: continue
+			hs[k] = y+SEA_Y
+			mv[k] = 1
+			any = true
+	if not any: return
+	# Normals and colours wherever a height round them moved.
+	var redo := PackedInt32Array()
+	for j in n:
+		for i in n:
+			var k := (j+1)*w+i+1
+			if mv[k]+mv[k-1]+mv[k+1]+mv[k-w]+mv[k+w] > 0: redo.append(j*n+i)
+	var xs := PackedFloat64Array()
+	var zs := PackedFloat64Array()
+	var ys := PackedFloat32Array()
+	var ups := PackedFloat32Array()
+	var ms := PackedFloat32Array()
+	xs.resize(redo.size())
+	zs.resize(redo.size())
+	ys.resize(redo.size())
+	ups.resize(redo.size())
+	ms.resize(redo.size())
+	for t in redo.size():
+		var v := redo[t]
+		var i := v%n
+		var j := v/n
+		var k := (j+1)*w+i+1
+		var normal := Vector3(hs[k-1]-hs[k+1],2.0*step,hs[k-w]-hs[k+w]).normalized()
+		normals[v] = normal
+		heights[v] = hs[k]
+		verts[v] = Vector3(verts[v].x,hs[k],verts[v].z)
+		xs[t] = x0+i*step
+		zs[t] = z0+j*step
+		ys[t] = hs[k]
+		ups[t] = normal.y
+		ms[t] = colours[v].a
+		if mv[k] != 0:
+			# Off the carve's marks (the field's groove and crest).
+			carved[v*4] = 0
+			carved[v*4+1] = 0
+		if lifted[v] != 0:
+			# No river on the massif: far from any, its flow still.
+			carved[v*4+2] = 128
+			carved[v*4+3] = 128
+			river[v*3] = 1000.0
+			river[v*3+1] = 0.0
+			river[v*3+2] = SEA_Y-100.0
+	var cs: PackedColorArray = field.colours(xs,zs,ys,ups,ms)
+	for t in redo.size():
+		var c := cs[t]
+		c.a = ms[t]
+		colours[redo[t]] = c
+	# The skirt's copies of the edges.
+	for e in 4:
+		for t in n:
+			var from: int = t if e == 0 else (t*n+cells if e == 1 else (cells*n+t if e == 2 else t*n))
+			var k := ((from/n)+1)*w+(from%n)+1
+			if mv[k]+mv[k-1]+mv[k+1]+mv[k-w]+mv[k+w] == 0: continue
+			var sv := n*n+e*n+t
+			verts[sv] = verts[from]-Vector3(0.0,skirt_drop,0.0)
+			normals[sv] = normals[from]
+			colours[sv] = colours[from]
+			for q in 4: carved[sv*4+q] = carved[from*4+q]
+			river[sv*3] = river[from*3]
+			river[sv*3+1] = -river[from*3+1]
+			river[sv*3+2] = river[from*3+2]
+	made.heights = heights
+	made.verts = verts
+	made.normals = normals
+	made.colours = colours
+	made.carved = carved
+	made.river = river
+
+## The massif's pass over LandField.grid's arrays (the grass's, the
+## horizon's): heights, meadows, and no river where it lifts the land.
+func apply_grid(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz: int, pad: int) -> void:
+	var hs: PackedFloat32Array = got.heights
+	var ms: PackedFloat32Array = got.meadows
+	var rs: PackedFloat32Array = got.river
+	var i0 := clampi(floori((_o.x-BOUND-x0)/step)+pad,0,nx-1)
+	var i1 := clampi(ceili((_o.x+BOUND-x0)/step)+pad,0,nx-1)
+	var j0 := clampi(floori((_o.y-BOUND-z0)/step)+pad,0,nz-1)
+	var j1 := clampi(ceili((_o.y+BOUND-z0)/step)+pad,0,nz-1)
+	for j in range(j0,j1+1):
+		for i in range(i0,i1+1):
+			var x := x0+(i-pad)*step
+			var z := z0+(j-pad)*step
+			if not reaches(x,z): continue
+			var k := j*nx+i
+			var m := ms[k] if not ms.is_empty() else 0.0
+			var y := apply(Vector2(hs[k],m),x,z)
+			hs[k] = y.x
+			if not ms.is_empty(): ms[k] = y.y
+			if absf(last_lift) > 1.0 and not rs.is_empty(): rs[k] = 1000.0
+	got.heights = hs
+	if not ms.is_empty(): got.meadows = ms
+	if not rs.is_empty(): got.river = rs
+
+# --- For the trunk and the lanes -----------------------------------------------------
+
+## A world XZ point at (a, v) in the massif's frame.
+func world(a: float, v := 0.0) -> Vector2:
+	return centre+facing*a+side*v
+
+## The ground shader's Peak uniforms (shaders/endless_ground.gdshader
+## `peak_paint`): the frame, the zone, the snow line and the valley.
+func paint() -> Dictionary:
+	return {"peak_frame":Vector4(centre.x,centre.y,facing.x,facing.y),"peak_zone":Vector4(_o.x,_o.y,BOUND,1.0),
+		"peak_snow":SNOW_LINE,"peak_stretch":Vector4(ICEFALL.x,ICEFALL.y,GLACIER.x,GLACIER.y),"peak_half":FLOOR_HALF,
+		"peak_bend":Vector4(GL_BEND,GL_TURNS,BOULDERS.x,TOE.y),
+		"peak_cirque":Vector4(CIRQUE_R,_cq_ph.x,_cq_ph.y,_cq_ph.z),"peak_cirque_lobes":Vector4(CIRQUE_LOBES.x,CIRQUE_LOBES.y,CIRQUE_LOBES.z,RIM.z),
+		"peak_cirque_strip":Vector4(STRIP.x,STRIP.z+10.0,STRIP.z+40.0,1.0 if _cirque else 0.0)}
+
+## The tarn's bowl: {centre (world, at the water level), level (world y),
+## wet (the water's radius at that level), bowl (the bowl's radius), shore
+## (the flat shore's reach from the plateau's centre, the old flat disc's),
+## plateau (world XZ), widest (the lobed water's), strip (the flat shore's
+## two ends, world, at PLATEAU_Y), strip_half (its half-width)}.
+func tarn() -> Dictionary:
+	var c := world(_tarn_c.x,_tarn_c.y)
+	var s0 := world(STRIP.x,-STRIP.y)
+	var s1 := world(STRIP.x,STRIP.y)
+	var ly := PLATEAU_Y+SEA_Y
+	return {"centre":Vector3(c.x,_tarn_level+SEA_Y,c.y),"level":_tarn_level+SEA_Y,"wet":_tarn_wet,"bowl":TARN_BOWL,
+		"shore":PLATEAU_FLAT,"plateau":centre,"widest":float(pond[11]),
+		"strip":[Vector3(s0.x,ly,s0.y),Vector3(s1.x,ly,s1.y)],"strip_half":STRIP.z}
+
+## Whether the box (x0, z0)..(x1, z1) meets the tarn's reach (its water and
+## the REACH round it that its reads carry).
+func tarn_meets(x0: float, z0: float, x1: float, z1: float) -> bool:
+	var far := _tarn_wet+Ponds.REACH
+	return pond[0]+far >= x0 and pond[0]-far <= x1 and pond[1]+far >= z0 and pond[1]-far <= z1
+
+## Where world XZ (x, z) lies on the cirque: Vector4(s, tn, a, v): its
+## distance over the cirque's lobed outline (1 on the rim's line), over the
+## tarn's bowl's (1 at the bowl's edge), and its (a, v) in the massif's
+## frame. --cirque=0: s and tn are INF (no cirque to dress).
+func cirque_at(x: float, z: float) -> Vector4:
+	var rel := Vector2(x,z)-centre
+	var a := rel.dot(facing)
+	var v := rel.dot(side)
+	if not _cirque: return Vector4(INF,INF,a,v)
+	return Vector4(sqrt(a*a+v*v)/_cq_r(atan2(v,a)),_tarn_n(a,v),a,v)
+
+## Whether a world point stands on the summit plateau (inside its blend, no
+## lower than PLATEAU_UNDER m under its flat): where a landing is on the Peak.
+const PLATEAU_UNDER := 25.0
+func on_plateau(p: Vector3) -> bool:
+	return Vector2(p.x,p.z).distance_to(centre) < PLATEAU_BLEND and p.y-SEA_Y > PLATEAU_Y-PLATEAU_UNDER
+
+## The couloir: {mouth, top (world, on its floor), half_width (its
+## narrowest floor, at the top), line (world points on its floor's middle,
+## mouth to top, COULOIR_LINE of them: it bends)}.
+func couloir() -> Dictionary:
+	var m := world(COULOIR_FOOT.x,COULOIR_V)
+	var t := world(COULOIR_TOP.x,COULOIR_V)
+	var line: Array[Vector3] = []
+	for k in COULOIR_LINE:
+		var a := lerpf(COULOIR_FOOT.x,COULOIR_TOP.x,float(k)/(COULOIR_LINE-1))
+		var p := world(a,_couloir_mid(a))
+		line.append(Vector3(p.x,_couloir_floor(a)+SEA_Y,p.y))
+	return {"mouth":Vector3(m.x,COULOIR_FOOT.y+SEA_Y,m.y),"top":Vector3(t.x,COULOIR_TOP.y+SEA_Y,t.y),"half_width":_cw,"line":line}
+
+## The tower bases' tops (world), for the spires.
+func tower_bases() -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for k in _towers.size():
+		var p := world(_towers[k].x,_towers[k].y)
+		out.append(Vector3(p.x,_tower_tops[k]+SEA_Y,p.y))
+	return out
+
+## The summit block's top (world).
+func summit() -> Vector3:
+	var p := world(SUMMIT_AT.x,SUMMIT_AT.y)
+	return Vector3(p.x,SUMMIT_Y+SEA_Y,p.y)
+
+# --- The profile -------------------------------------------------------------------
+
+## The crest's height over the sea at `th` degrees from the back, on the
+## +v side (s > 0) or the -v side.
+static func _crest(th: float, s: float) -> float:
+	var cr: Array = CREST_POS if s > 0.0 else CREST_NEG
+	var k := 0
+	while k+4 < cr.size() and th > float(cr[k+2]): k += 2
+	var t0: float = cr[k]
+	var t1: float = cr[k+2]
+	return lerpf(float(cr[k+1]),float(cr[k+3]),clampf((th-t0)/(t1-t0),0.0,1.0))
+
+## Lays the ribs round the ring (see RIB_P), from a little behind the back
+## to past the arms' ends, for each side and flank.
+func _lay_ribs(land_seed: int) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([land_seed,"ribs"])
+	_ribs.clear()
+	for k in 4:
+		var outer := k%2 == 1
+		var p := RIB_P.y if outer else RIB_P.x
+		for wide: bool in [false,true]:
+			var t := PackedFloat32Array()
+			var unit := p*(RIB_WIDE if wide else 1.0)
+			var th := -rng.randf()*unit*RIB_WIDTH.y
+			while th < ARM_END+20.0:
+				var w := unit*lerpf(RIB_WIDTH.x,RIB_WIDTH.y,pow(rng.randf(),1.6))
+				var amp := lerpf(RIB_AMP.x,RIB_AMP.y,rng.randf())
+				if rng.randf() < RIB_FAINT: amp *= 0.25
+				var end := RIB_END_OUT if outer else RIB_END
+				t.append_array(PackedFloat32Array([th,w,amp,0.5+RIB_SKEW*rng.randf_range(-1.0,1.0),
+					lerpf(RIB_SHARP.x,RIB_SHARP.y,rng.randf()),RIB_START*rng.randf()*rng.randf(),
+					lerpf(end.x,end.y,rng.randf())]))
+				th += w
+			_ribs.append(t)
+
+## The rib pattern at `th` on side `s` (outer flank or inner), `e` m down
+## the flank from the crest: RIB_SPUR on a spur's line and where no rib
+## runs, up to 1 in a gully's bottom; 0 at the back (th 0).
+func _rib(th: float, s: float, outer: bool, e: float) -> float:
+	var k := (2 if s > 0.0 else 0)+(1 if outer else 0)
+	var tw := th+RIB_WANDER*_noise.get_noise_2d(th*2.5+600.0*k,e*0.35+3000.0)*smoothstep(0.0,300.0,e)
+	var r := _rib_in(_ribs[k*2],tw,e)*(1.0-RIB_WIDE_SHARE)+_rib_in(_ribs[k*2+1],tw,e)*RIB_WIDE_SHARE
+	# Both sides meet at the back with no ribs, so they agree there.
+	return lerpf(0.0,r,smoothstep(0.0,3.0,th))
+
+## One table's rib at `th`, `e` m down the flank (see _rib).
+static func _rib_in(t: PackedFloat32Array, th: float, e: float) -> float:
+	var lo := 0
+	var hi := t.size()/RIB_STRIDE-1
+	while lo < hi:
+		var mid := (lo+hi+1) >> 1
+		if t[mid*RIB_STRIDE] <= th: lo = mid
+		else: hi = mid-1
+	var i := lo*RIB_STRIDE
+	var f := clampf((th-t[i])/t[i+1],0.0,1.0)
+	var c := t[i+3]
+	var g := (c-f)/c if f < c else (f-c)/(1.0-c)
+	var amp := t[i+2]*smoothstep(t[i+5],t[i+5]+90.0,e)*(1.0-smoothstep(t[i+6]-150.0,t[i+6],e))
+	return RIB_SPUR+(1.0-RIB_SPUR)*amp*(1.0-pow(g,t[i+4]))
+
+## The couloir's middle (v) at `a`: bent away from the head halfway up.
+static func _couloir_mid(a: float) -> float:
+	return COULOIR_V-COULOIR_BEND*sin(PI*_couloir_t(a))
+
+## How far up the couloir `a` is: 0 at the mouth, 1 at the top and past it.
+static func _couloir_t(a: float) -> float:
+	return clampf((COULOIR_FOOT.x-a)/(COULOIR_FOOT.x-COULOIR_TOP.x),0.0,1.0)
+
+## The couloir floor's ramp at `a` (over the sea; no rock noise), before
+## the wall's cap.
+static func _couloir_ramp(a: float) -> float:
+	if a >= COULOIR_TOP.x:
+		return COULOIR_FOOT.y+(COULOIR_FOOT.x-a)*(COULOIR_TOP.y-COULOIR_FOOT.y)/(COULOIR_FOOT.x-COULOIR_TOP.x)
+	return COULOIR_TOP.y+(COULOIR_TOP.x-a)*1.5
+
+## The couloir's floor at `a` (over the sea, no noise).
+static func _couloir_floor(a: float) -> float:
+	var oa := a-O_ALONG
+	var e := RING_R-sqrt(oa*oa+COULOIR_V*COULOIR_V)
+	return minf(_couloir_ramp(a),_wall(e+COULOIR_BACK,_crest(rad_to_deg(atan2(absf(COULOIR_V),-oa)),COULOIR_V)))
+
+## The valley's middle (v) at `a`.
+static func _valley_mid(a: float) -> float:
+	var t := clampf((a-BOULDERS.x)/(TOE.y-BOULDERS.x),0.0,1.0)
+	return GL_BEND*sin(PI*GL_TURNS*t)*smoothstep(0.0,0.25,t)
+
+## The head at (a, v): height over the sea, with its rock noise `n`.
+func _head(a: float, v: float, n: float) -> float:
+	var pa := a-SUMMIT_AT.x
+	var pv := v-SUMMIT_AT.y
+	var d := sqrt(pa*pa+pv*pv)
+	if d > HEAD_REACH: return -INF
+	var phi := rad_to_deg(atan2(pv,pa))
+	var w := 0.0
+	for r: float in HEAD_RIDGES:
+		w = maxf(w,pow(maxf(cos(deg_to_rad(phi-r)),0.0),HEAD_KNIFE))
+	var dt := sqrt(d*d+HEAD_TIP*HEAD_TIP)-HEAD_TIP
+	var bend := HEAD_BEND*(1.0-exp(-dt/HEAD_BEND))
+	var face := HEAD_FACE.y*dt+(HEAD_FACE.x-HEAD_FACE.y)*bend
+	var ridge := HEAD_RIDGE.y*dt+(HEAD_RIDGE.x-HEAD_RIDGE.y)*bend
+	var k := maxf(d-HEAD_KNEE,0.0)
+	return SUMMIT_Y-lerpf(face,ridge,w)-HEAD_SINK*k*k/(k+100.0)+n*ROUGH*0.8*smoothstep(0.0,80.0,d)
+
+## The wall `e` m in from a crest at `hc`: talus, then a cliff.
+static func _wall(e: float, hc: float) -> float:
+	if e >= WALL_RUN: return WALL_FOOT-(e-WALL_RUN)*TALUS_FALL
+	var t := 1.0-maxf(e,0.0)/WALL_RUN
+	return WALL_FOOT+(hc-WALL_FOOT)*(TALUS_SHARE*smoothstep(0.0,TALUS_TOP,t)+(1.0-TALUS_SHARE)*smoothstep(CLIFF.x,CLIFF.y,t))
+
+## A fall from `top` over `run` m to FALL_END, steep first (`bow` > 1), on
+## past its run at PAST_END.
+static func _fall(top: float, d: float, run: float, bow: float) -> float:
+	if d >= run: return FALL_END-(d-run)*PAST_END
+	return top-(top-FALL_END)*(1.0-pow(1.0-d/run,bow))
+
+## Vector3(height over the sea, cut 0..1, meadow) at (a, v) in the frame.
+func _h(a: float, v: float) -> Vector3:
+	var n := _noise.get_noise_2d(a,v)
+	var av := absf(v)
+	var sg := 1.0 if v >= 0.0 else -1.0
+	var oa := a-O_ALONG
+	var r := sqrt(oa*oa+v*v)
+	var th := rad_to_deg(atan2(av,-oa))
+	var h := -INF
+	var c := 0.0
+	var meadow := 0.0
+	# The ring.
+	if th < ARM_END+10.0:
+		var hc := _crest(th,sg)
+		var d := r-RING_R
+		var rough := 1.0
+		var hr: float
+		if d < 0.0:
+			var e := -d
+			# Buttresses and gullies down the wall and the arms' inner flank.
+			var rib := _rib(th,sg,false,e)
+			var foot := 1.0-smoothstep(RIB_FOOT.x,RIB_FOOT.y,e)
+			var hw := _wall(e+RIB_IN*rib*smoothstep(0.0,120.0,e)*foot,hc)
+			var ea := e+RIB_ARM*rib*smoothstep(0.0,150.0,e)*foot
+			var ha := hc-ea*lerpf(ARM_IN.x,ARM_IN.y,smoothstep(0.0,500.0,ea))
+			hr = lerpf(ha,hw,1.0-smoothstep(30.0,60.0,th))
+		else:
+			# Spurs and gullies down the outer falls.
+			var rib := RIB_OUT*_rib(th,sg,true,d)
+			var dr := d+rib*smoothstep(20.0,RIB_GROW,d)
+			var ws := 1.0-smoothstep(5.0,16.0,th)
+			var hs: float
+			if d < SHOULDER.x: hs = lerpf(hc,PLATEAU_Y,smoothstep(0.0,SHOULDER.x,d))
+			elif d < SHOULDER.y: hs = PLATEAU_Y
+			elif d < SHOULDER.z: hs = lerpf(PLATEAU_Y,LIP_Y,smoothstep(SHOULDER.y,SHOULDER.z,d))
+			else:
+				var db := d-SHOULDER.z
+				hs = _fall(LIP_Y,db+rib*smoothstep(20.0,RIB_GROW,db),BACK_RUN,BACK_BOW)
+			var hb := lerpf(_fall(hc,dr,BACK_RUN,KNIFE_BOW),hs,ws)
+			hr = lerpf(_fall(hc,dr,ARM_OUT_RUN,ARM_OUT_BOW),hb,1.0-smoothstep(35.0,70.0,th))
+			rough = lerpf(1.0,0.15,ws*smoothstep(40.0,SHOULDER.x,d)*(1.0-smoothstep(SHOULDER.y+20.0,SHOULDER.z+60.0,d)))
+		# The arms' tips sink under the land.
+		hr -= 400.0*smoothstep(160.0,ARM_END+8.0,th)
+		h = hr+n*ROUGH*rough
+		c = (1.0-smoothstep(RING_R,RING_R+150.0,r))*(1.0-smoothstep(130.0,160.0,th))
+	# The head, on the crest's back point.
+	var hh := _head(a,v,n)
+	if hh > h: h = hh
+	# The approach valley.
+	var vl := _valley(a,v,n)
+	if vl.x > h: h = vl.x
+	c = maxf(c,vl.y)
+	# The couloir, cut into the wall: wide at the mouth, tapering to the
+	# notch, bent away from the head halfway up, its walls a V round a floor.
+	if a > 150.0 and a < COULOIR_FOOT.x+40.0:
+		var ct := _couloir_t(a)
+		var half := _cw*lerpf(COULOIR_WIDE,1.0,ct)
+		var soft := maxf(COULOIR_SOFT,half*COULOIR_SLANT)
+		var cv := absf(v-_couloir_mid(a))
+		if cv < half+soft:
+			var k := (1.0-smoothstep(half-soft,half+soft,cv))*(1.0-smoothstep(COULOIR_FOOT.x-40.0,COULOIR_FOOT.x+40.0,a))
+			# Its floor the wall set back COULOIR_BACK m, no higher than the
+			# ramp from the mouth to the crest's notch.
+			var fc := _couloir_floor(a)+n*ROUGH*0.25
+			if fc < h: h = lerpf(h,fc,k)
+	# The plateau: the cirque, the tarn's bowl in it.
+	var rho2 := a*a+v*v
+	if _cirque:
+		if rho2 < 129600.0:
+			var cq := _cirq(a,v,h)
+			h = cq.x
+			c = maxf(c,cq.y)
+	elif rho2 < PLATEAU_BLEND*PLATEAU_BLEND:
+		var wf := 1.0-smoothstep(PLATEAU_FLAT,PLATEAU_BLEND,sqrt(rho2))
+		var ta := a-_tarn_c.x
+		var tv := v-_tarn_c.y
+		var rt := sqrt(ta*ta+tv*tv)
+		var hp := PLATEAU_Y
+		if rt < TARN_BOWL: hp -= TARN_DEEP*pow(1.0-(rt/TARN_BOWL)*(rt/TARN_BOWL),1.5)
+		h = lerpf(h,hp,wf)
+		c = maxf(c,wf)
+		meadow = wf*smoothstep(_tarn_wet,_tarn_wet+6.0,rt)
+	# The tower bases on the crest.
+	if th < 42.0 and absf(r-RING_R) < 70.0:
+		for k in _towers.size():
+			var dt := Vector2(a,v).distance_to(_towers[k])
+			if dt > TOWER_R+60.0: continue
+			var ht := _tower_tops[k]-maxf(dt-TOWER_R,0.0)*TOWER_FALL+n*ROUGH*0.2
+			if ht > h: h = ht
+	return Vector3(h,c,meadow)
+
+## The cirque at (a, v) over the land's `h` there (see CIRQUE_R):
+## Vector2(height over the sea, cut). No meadow on it: it is over the snow.
+func _cirq(a: float, v: float, h: float) -> Vector2:
+	var rho := sqrt(a*a+v*v)
+	var phi := atan2(v,a)
+	var s := rho/_cq_r(phi)
+	# The head's side: 1 on the axis toward the head, 0 square across.
+	var hd := smoothstep(0.25,0.75,a/maxf(rho,1.0))
+	var wf := 1.0-smoothstep(CIRQUE_OUT.x,CIRQUE_OUT.y,s)
+	var wh := hd*(1.0-smoothstep(HEADWALL.y-30.0,HEADWALL.y+20.0,a))*(1.0-smoothstep(HEADWALL.z-60.0,HEADWALL.z,absf(v)))
+	var w := maxf(wf,wh)
+	if w <= 0.0: return Vector2(h,0.0)
+	# The tarn's bowl, on the water's lobed outline.
+	var tn := _tarn_n(a,v)
+	# The strip: its distance from the strip's line, and its runout lane.
+	var sd := Vector2(a-STRIP.x,maxf(absf(v)-STRIP.y,0.0)).length()
+	var flat := 1.0-smoothstep(STRIP.z,STRIP.z+STRIP.w,sd)
+	var lane := 1.0-smoothstep(STRIP.z+10.0,STRIP.z+40.0,absf(a-STRIP.x))
+	var quiet := smoothstep(1.15,1.6,tn)
+	# The floor, broken.
+	var kn := _noise.get_noise_2d(a*ROUGH_SCALE/KNOBS.y+7000.0,v*ROUGH_SCALE/KNOBS.y)
+	var broken := smoothstep(KNOBS.z,KNOBS.z+0.4,kn)*lerpf(0.45,1.0,smoothstep(0.3,0.9,s))
+	var hp := PLATEAU_Y+FLOOR_RISE*smoothstep(0.5,1.0,s)*quiet+KNOBS.x*broken*quiet
+	# The headwall, climbing to the head past the strip.
+	var up := maxf(a-STRIP.x-STRIP.z-STRIP.w,0.0)
+	hp += hd*(HEADWALL.x*up+KNOBS.x*1.5*broken*smoothstep(0.0,60.0,up))
+	# The rim, its height wandering round it, broken.
+	var rn := _noise.get_noise_2d(cos(phi)*CIRQUE_R*0.7+3000.0,sin(phi)*CIRQUE_R*0.7)*0.5+0.5
+	var rim := lerpf(RIM.x,RIM.y,smoothstep(0.15,0.85,rn))*(1.0+0.2*kn)
+	var bump := maxf(1.0-absf(s-1.0)/RIM.z,0.0)
+	hp += rim*bump*bump*(3.0-2.0*bump)*(1.0-hd)*(1.0-lane)
+	if tn < 1.0: hp -= TARN_DEEP*pow(1.0-tn*tn,1.5)
+	hp = lerpf(hp,PLATEAU_Y,flat)
+	var out := lerpf(h,hp,wf)
+	# Never under the head (or the land) on its side, past the strip.
+	if wh > 0.0: out = lerpf(out,maxf(h,lerpf(h,hp,w)),hd*smoothstep(0.0,40.0,up))
+	return Vector2(out,w)
+
+## The cirque's lobed outline's radius at angle `phi` round the plateau's
+## centre (atan2(v, a)).
+func _cq_r(phi: float) -> float:
+	return CIRQUE_R*(1.0+CIRQUE_LOBES.x*sin(2.0*phi+_cq_ph.x)+CIRQUE_LOBES.y*sin(3.0*phi+_cq_ph.y)+CIRQUE_LOBES.z*sin(5.0*phi+_cq_ph.z))
+
+## (a, v)'s distance from the tarn's centre over its bowl's lobed outline
+## (1 at the bowl's edge).
+func _tarn_n(a: float, v: float) -> float:
+	var ta := a-_tarn_c.x
+	var tv := v-_tarn_c.y
+	var tw := facing*ta+side*tv
+	return sqrt(ta*ta+tv*tv)/(TARN_BOWL*Ponds.edge_at(pond,atan2(tw.y,tw.x))/pond[2])
+
+## The approach valley at (a, v): Vector2(height over the sea, cut).
+func _valley(a: float, v: float, n: float) -> Vector2:
+	var vr := v-_valley_mid(a)
+	var av := absf(vr)
+	var fl: float
+	var half: float
+	var rough := 0.0
+	if a < ICEFALL.x:
+		fl = ICEFALL_Y.x-(ICEFALL.x-a)
+		half = FLOOR_HALF.x
+		rough = 0.6
+	elif a < ICEFALL.y:
+		var s := (a-ICEFALL.x)/(ICEFALL.y-ICEFALL.x)*ICEFALL_STEPS
+		var k := floorf(s)
+		var g := (k+smoothstep(0.0,ICEFALL_RISER,s-k))/ICEFALL_STEPS
+		fl = lerpf(ICEFALL_Y.x,ICEFALL_Y.y,g)
+		half = FLOOR_HALF.x
+		rough = 0.5
+	elif a < BOULDERS.y:
+		var t := (a-BOULDERS.x)/(BOULDERS.y-BOULDERS.x)
+		fl = lerpf(BOULDERS_Y.x,BOULDERS_Y.y,t)+_noise.get_noise_2d(a*LUMP_SCALE,av*LUMP_SCALE)*LUMPS
+		half = lerpf(FLOOR_HALF.x,FLOOR_HALF.y,smoothstep(0.0,0.3,t))
+		rough = 0.35
+	elif a < GLACIER.y:
+		var t := (a-GLACIER.x)/(GLACIER.y-GLACIER.x)
+		fl = lerpf(GLACIER_Y.x,GLACIER_Y.y,pow(t,0.9))
+		half = lerpf(FLOOR_HALF.z,FLOOR_HALF.w,t)
+		# The boulders' lumps fade out onto the ice.
+		fl += _noise.get_noise_2d(a*LUMP_SCALE,av*LUMP_SCALE)*LUMPS*(1.0-smoothstep(0.0,0.06,t))
+		rough = 0.35*(1.0-smoothstep(0.0,0.06,t))
+	else:
+		fl = _fall(GLACIER_Y.y,a-TOE.x,TOE.y-TOE.x,1.0)
+		half = FLOOR_HALF.w
+		rough = 0.2
+	var e := av-half
+	var q := av/half
+	# The ice: bulged in the middle, crossed by bands of crevasses bowed
+	# downstream, on the glacier stretch only.
+	var ice := smoothstep(GLACIER.x,GLACIER.x+200.0,a)*(1.0-smoothstep(GLACIER.y-250.0,GLACIER.y,a))
+	if ice > 0.0 and e < 0.0:
+		fl += ICE_BULGE*(1.0-q*q)*ice
+		var ac := a-GLACIER.x+CREV_ARC*(1.0-q*q)
+		var band := ac/CREV_BAND-floorf(ac/CREV_BAND)
+		var on := smoothstep(0.0,0.06,band)*(1.0-smoothstep(CREV_SHARE-0.06,CREV_SHARE,band))
+		if on > 0.0:
+			var dc := absf(ac/CREV_SP-floorf(ac/CREV_SP)-0.5)*CREV_SP
+			fl -= CREV_DEEP*(1.0-smoothstep(0.0,CREV_W*0.5,dc))*on*ice*(1.0-smoothstep(0.7,0.95,q))
+	# The lateral moraines, along the boulders and the glacier.
+	var mor := smoothstep(BOULDERS.x+100.0,BOULDERS.x+400.0,a)*(1.0-smoothstep(TOE.x,TOE.x+300.0,a))
+	var h: float
+	if e <= 0.0:
+		h = fl+MOR_UP*mor*pow(maxf(1.0-absf(e-MOR_AT)/MOR_W,0.0),1.6)
+	else:
+		var es := e-SIDE_GAP*mor
+		var hm := MOR_UP*mor*pow(maxf(1.0-absf(e-MOR_AT)/MOR_W,0.0),1.6)
+		if es <= SIDE_RUN:
+			h = fl+maxf(SIDE_UP*smoothstep(0.0,SIDE_RUN,es),hm)
+			rough = lerpf(rough,0.6,smoothstep(0.0,60.0,e))
+		else:
+			# Inside the horseshoe the side ridges' outer fall stops a little
+			# under the floor; out on the glacier it falls to the land.
+			h = maxf(fl+SIDE_UP-(es-SIDE_RUN)*SIDE_FALL,fl-SIDE_DIP-maxf(0.0,a-SIDE_DIP_TO)*0.5)
+			rough = 0.6
+	var cut_e := e-SIDE_GAP*mor
+	var c := (1.0-smoothstep(SIDE_RUN,SIDE_RUN+90.0,cut_e))*(1.0-smoothstep(TOE.x,TOE.x+400.0,a))
+	return Vector2(h+n*ROUGH*rough,c)

@@ -34,8 +34,10 @@ const CLIMB_OUT := 0.12
 
 ## The candidates in order, nearest the start first: each {at: Vector2,
 ## heading: float (radians, as SkyPlane's: 0 toward -z, positive to the
-## left)}, at most `most` of them. Empty if none is within REACH.
-static func find(field: RefCounted, start: Vector2, heading := 0.0, most := 8) -> Array:
+## left)}, at most `most` of them. Empty if none is within REACH. `spread`:
+## how many of the HEADINGS a candidate tries, nearest the asked one first
+## (3: the asked one and one step either side).
+static func find(field: RefCounted, start: Vector2, heading := 0.0, most := 8, spread := HEADINGS) -> Array:
 	var out: Array = []
 	var r := 0.0
 	while r <= REACH and out.size() < most:
@@ -46,14 +48,14 @@ static func find(field: RefCounted, start: Vector2, heading := 0.0, most := 8) -
 		for i in count:
 			var a := turn+TAU*i/count
 			var p := start+Vector2(sin(a),cos(a))*r
-			var way: float = _spot(field,p,heading)
+			var way: float = _spot(field,p,heading,spread)
 			if not is_nan(way): out.append({"at":p,"heading":way})
 			if out.size() >= most: break
 		r += RING
 	return out
 
 ## The heading the plane can take off along from `p`, or NAN.
-static func _spot(field: RefCounted, p: Vector2, heading: float) -> float:
+static func _spot(field: RefCounted, p: Vector2, heading: float, spread := HEADINGS) -> float:
 	var h0 := _turf(field,p)
 	if is_nan(h0): return NAN
 	var s: Vector2 = field.sample(p.x,p.y)
@@ -63,7 +65,7 @@ static func _spot(field: RefCounted, p: Vector2, heading: float) -> float:
 		var h := _turf(field,p+Vector2(sin(a),cos(a))*PAD)
 		if is_nan(h) or absf(h-h0) > LEVEL: return NAN
 	# The headings nearest the asked one first, alternating either side.
-	for n in HEADINGS:
+	for n in mini(spread,HEADINGS):
 		var k := int((n+1)*0.5)*(1 if n%2 == 1 else -1)
 		var way := heading+TAU*k/HEADINGS
 		if _run_clear(field,p,h0,way): return wrapf(way,-PI,PI)
