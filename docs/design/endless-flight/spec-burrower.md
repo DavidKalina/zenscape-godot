@@ -74,6 +74,9 @@ it hidden at skim height, and the tail reading as a long even brown
 furrow; the polish task fixes both (a livelier, taller head that throws
 earth up above the grass, a shorter and broken tail, the wake's froth
 shorter too), and its stills are judged from the chase camera first.
+**Order (the user):** this chase-camera fix is its own task, done next
+after the orbs (task 6) and before the bell, gong and roll. The rest of
+the polish task stays last.
 
 **Orbs spring higher** (the user, for the polish task): an orb springs up
 out of the ground to hang a little above skim height, so taking it means
