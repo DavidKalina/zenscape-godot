@@ -51,13 +51,16 @@ extends RefCounted
 const WorldScale = preload("res://scripts/world_scale.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 
-## The sea's height in the world. The endless flight raises the plane's
-## ceiling to CEILING_OVER over the sea (SkyGlide `ceiling_y`), so the
-## tallest peaks stand over it and into the cloud roof.
+## The sea's height in the world.
 const SEA_Y := -40.0
-## The plane's ceiling over the sea in the endless flight (m); the isles'
-## fixed CEILING (95 world) is 135 over this sea.
-const CEILING_OVER := 215.0
+## The endless flight's air (m over the sea): it flies as ever up to
+## THIN_OVER (the ceiling it had before, 215), then the air thins (SkyPlane
+## `use_thin`) and the climb is slow work up to CEILING_OVER, the top of the
+## lightest preset (the heavier ones top out lower: FlightWeight `ceiling`).
+## Over it the nose is held level (SkyGlide `ceiling_y`). The isles' fixed
+## CEILING (95 world) is 135 over this sea.
+const THIN_OVER := 215.0
+const CEILING_OVER := 760.0
 ## Continents: their scale (m), the height they swing (m) and the lift that
 ## sets how much is land (more is more land).
 const CONTINENT := 3600.0
