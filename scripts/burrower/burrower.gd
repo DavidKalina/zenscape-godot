@@ -132,7 +132,7 @@ var heading := 0.0
 var speed := 0.0
 var mode := &"roam"
 var stats := {"samples": 0, "chunks": 0, "clods": 0, "dust": 0, "stamps": 0, "nearest": INF,
-	"wakes": 0, "spray": 0, "splashes": 0, "wet_time": 0.0, "soundings": 0}
+	"wakes": 0, "spray": 0, "splashes": 0, "wet_time": 0.0, "soundings": 0, "lost_why": {}}
 ## In the water now, and the wake's ease in (0 on land, 1 in the water).
 var wet := false
 var wet_k := 0.0
@@ -418,6 +418,9 @@ func _move(delta: float) -> void:
 		# along the plane's way from there (else it would turn back for a
 		# slot it had overrun).
 		var slot := Vector2(p.x,p.z)+fwd*ahead+side*_side*off
+		# Lost is judged by its own slot: a push-up's spot far out on the
+		# plane's arc is run for, not a reason to sound.
+		var home := slot
 		if not is_nan(want_at.x): slot = want_at
 		var to_slot := slot-pos
 		var behind := to_slot.dot(fwd)
@@ -432,11 +435,13 @@ func _move(delta: float) -> void:
 		var cut := clampf((to_slot.length()-15.0)/30.0,0.0,1.0)
 		_goal = slot+fwd*lerpf(maxf(speed*0.9,20.0),8.0,cut)
 		# Lost all the same (a hard turn by the rim or a rock): it sounds.
-		var lost := (pos-Vector2(p.x,p.z)).dot(fwd) < 0.0 or to_slot.length() > LOST_FAR
+		var lost := (pos-Vector2(p.x,p.z)).dot(fwd) < 0.0 or (home-pos).length() > LOST_FAR
 		_lost = _lost+delta if lost and not _diving else 0.0
 		if _lost > LOST_S and not _sounding:
 			_sounding = true
 			stats.soundings = int(stats.soundings)+1
+			var lw := "behind" if (pos-Vector2(p.x,p.z)).dot(fwd) < 0.0 else ("far (due)" if not is_nan(want_at.x) else "far")
+			stats.lost_why[lw] = int(stats.lost_why.get(lw,0))+1
 	elif pos.distance_to(_goal) < 18.0:
 		_goal = _roam_goal()
 	var dir := (_goal-pos).normalized()

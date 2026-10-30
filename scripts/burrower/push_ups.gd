@@ -113,11 +113,17 @@ const RUN_GAP := 7.0
 ## from the spot (m) for it to have pushed it.
 const LEAD_T := Vector2(0.25,0.6)
 const NEAR_SIDE := 3.0
-## Turning harder than TURNING rad/s, none comes up (its line is a guess).
+## Turning harder than TURNING rad/s its line is a guess, but it still comes
+## up on that arc (waiting for a player who follows the head to roll out
+## starved the run: 1-5 a minute).
 const TURNING := 0.8
 const YAW_KEEP := 0.6
 const MOST_YAW := 1.2
 const FAR := 45.0
+## None up for STARVE s while it leads: one straight ahead on the plane's
+## heading now (on its arc while it turns hard), wherever the head is (it
+## surges for it).
+const STARVE := 3.0
 
 var land: Land
 var burrower: Node
@@ -134,6 +140,8 @@ var note_i := 0
 var _last_hit := -INF
 var _last_gong := -INF
 var _wait := 1.0
+## Leading time since the last push-up (s), for STARVE.
+var _starved := 0.0
 var _kind := &""
 var _rng := RandomNumberGenerator.new()
 ## The kinds' own dice, so picking them leaves the push-ups' timing as it was.
@@ -515,11 +523,13 @@ func _pick() -> StringName:
 ## to it. Roaming (the watch camera's): at the head.
 func _due(delta: float, plane: Object) -> void:
 	if not burrower.active or burrower.diving() or float(burrower.strength) < 0.8:
+		if not burrower.active or burrower.diving(): _starved = 0.0
 		burrower.want_ahead = 0.0
 		burrower.want_at = Vector2(NAN,NAN)
 		_wait = maxf(_wait,0.6)
 		return
 	_wait -= delta
+	if burrower.mode == &"lead": _starved += delta
 	if _wait > 0.0 or orbs.size() >= MOST: return
 	if _kind == &"" or (next_kind != &"" and next_kind != _kind): _kind = _pick()
 	var k: Dictionary = KINDS[_kind]
@@ -533,14 +543,16 @@ func _due(delta: float, plane: Object) -> void:
 		var vp := maxf(Vector2(v.x,v.z).length(),8.0)
 		var beat := float(k.beat)
 		burrower.want_ahead = (beat+LEAD_T.y)*vp
-		var run := _on_line(Vector2(p.x,p.z),vp,beat+LEAD_T.y)
+		# Starved: straight on (on the arc mid-turn), the head never too far.
+		var straight := _starved > STARVE
+		var w := clampf(_yaw*YAW_KEEP,-MOST_YAW,MOST_YAW)
+		if straight and absf(_yaw) <= TURNING: w = 0.0
+		var run := _on_line(Vector2(p.x,p.z),vp,beat+LEAD_T.y,w)
 		burrower.want_at = Vector2(run.x,run.y)+Vector2(-run.w,run.z)*burrower._side*NEAR_SIDE
-		# Mid-turn its line is a guess: wait for it to roll out.
-		if absf(_yaw) > TURNING: return _skip("turning")
 		# A few beats out along its line; the first spot clear of stone.
 		why = "rim"
 		for lead: float in [LEAD_T.x,LEAD_T.y,0.0,LEAD_T.y*2.0]:
-			var on := _on_line(Vector2(p.x,p.z),vp,beat+lead)
+			var on := _on_line(Vector2(p.x,p.z),vp,beat+lead,w)
 			var side := Vector2(-on.w,on.z)
 			var s := signf((head-Vector2(on.x,on.y)).dot(side))
 			var spot := Vector2(on.x,on.y)+side*(s if s != 0.0 else 1.0)*_rng.randf_range(0.0,float(k.off))
@@ -548,22 +560,25 @@ func _due(delta: float, plane: Object) -> void:
 			if why == "":
 				at = spot
 				break
-		if why == "" and head.distance_to(at) > FAR: why = "far"
+		if why == "" and head.distance_to(at) > FAR and not straight: why = "far"
+		if why != "" and straight: why += " (straight)"
 		face = Vector2(p.x,p.z)-at
+		if why == "" and straight: stats.straight = int(stats.get("straight",0))+1
+		elif why == "" and absf(_yaw) > TURNING: stats.turning = int(stats.get("gentle",0))+1
 	else:
 		why = _room(at,k)
 	if why != "": return _skip(why)
 	push(at,_kind,face)
+	_starved = 0.0
 	_wait = _rng.randf_range(GAP.x,GAP.y)*(1.4 if _kind == &"gong" else 1.0)
 	_kind = &""
 	burrower.want_ahead = 0.0
 	burrower.want_at = Vector2(NAN,NAN)
 
 ## Where the plane will be in `t` s (x, z) and its way then (z, w), flying
-## on at `vp` m/s and turning as it turns now (eased, held to a bank's).
-func _on_line(p: Vector2, vp: float, t: float) -> Vector4:
+## on at `vp` m/s and turning at `w` rad/s.
+func _on_line(p: Vector2, vp: float, t: float, w: float) -> Vector4:
 	var h := _heading if not is_nan(_heading) else 0.0
-	var w := clampf(_yaw*YAW_KEEP,-MOST_YAW,MOST_YAW)
 	var n := 12
 	var dt := t/n
 	for i in n:
