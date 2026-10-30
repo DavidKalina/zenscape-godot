@@ -844,9 +844,12 @@ void fragment() {
 	vec2 ice_flow = vec2(1.0, 0.0);
 	vec2 ice_more = vec2(0.0);
 	float ice_gate = 0.0;
+	float ice_rubble = 0.0;
 	if (peak_ice_on > 0.5) {
-		pk.y = peak_ice_mask(p, pk.x, ice_frame, ice_flow, ice_more);
-		rocky *= 1.0 - pk.y;
+		pk.y = peak_ice_mask(p, pk.x, n.y, ice_frame, ice_flow, ice_more);
+		ice_rubble = peak_ice_margin(p, n.y, ice_frame, ice_more) * pk.x;
+		pk.z = max(pk.z, ice_rubble);
+		rocky *= (1.0 - pk.y) * (1.0 - ice_rubble);
 		// (The ice's bump takes the screen slope of a height only its paint
 		// writes, so all four pixels of a quad must paint or none: on the mask's
 		// edge a pixel read its neighbour's unwritten height, and the NaN it got
@@ -1191,6 +1194,7 @@ void fragment() {
 		float stones = zs_fade(gxz + 3.1, 1.6, fp) + zs_fade(gxz * 0.7 + 9.0, 6.0, fp);
 		vec3 scree = mix(ROCK_PALE, ROCK, smoothstep(0.2, 0.8, zs_noise(gxz / 13.0))) * vec3(0.95, 0.98, 1.02) * (1.05 + stones * 0.5);
 		albedo = mix(albedo, scree, pk.z * 0.9);
+		if (ice_rubble > 0.0) albedo = mix(albedo, peak_ice_stones(gxz, fp), ice_rubble);
 	}
 	vec3 ice_glow = vec3(0.0);
 	float ice_rough = 0.4;

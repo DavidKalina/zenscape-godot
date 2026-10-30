@@ -25,17 +25,17 @@ uniform vec2 peak_ice_more[32];
 // The line's reach in xz (min x, min z, max x, max z), past its widest.
 uniform vec4 peak_ice_box = vec4(0.0);
 
-const vec3 ICE_MILK = vec3(0.56, 0.66, 0.73);
-const vec3 ICE_CRUST = vec3(0.72, 0.80, 0.86);
+const vec3 ICE_MILK = vec3(0.50, 0.62, 0.75);
+const vec3 ICE_CRUST = vec3(0.62, 0.73, 0.87);
 // A wall in the sun, pale and milky; turned from it, a pale clear blue. ICE_BLUE
 // and ICE_DEEP only down cracks and under overhangs.
 const vec3 ICE_SUNLIT = vec3(0.80, 0.87, 0.92);
 const vec3 ICE_SHADE = vec3(0.40, 0.62, 0.78);
-const vec3 ICE_BLUE = vec3(0.14, 0.40, 0.62);
+const vec3 ICE_BLUE = vec3(0.12, 0.35, 0.66);
 const vec3 ICE_DEEP = vec3(0.012, 0.075, 0.20);
 const vec3 ICE_PALE = vec3(0.30, 0.60, 0.78);
-const vec3 ICE_GRIT = vec3(0.050, 0.053, 0.060);
-const vec3 ICE_GRIT_PALE = vec3(0.150, 0.155, 0.168);
+const vec3 ICE_GRIT = vec3(0.052, 0.058, 0.072);
+const vec3 ICE_GRIT_PALE = vec3(0.150, 0.158, 0.182);
 const vec3 ICE_SNOW = vec3(0.86, 0.89, 0.93);
 
 // The nearest place on the line: returns (s, t, half-width, on the line's
@@ -75,14 +75,50 @@ vec4 peak_ice_frame(vec2 q, out vec2 flow, out vec2 more) {
 	return vec4(mix(a.w, b.w, at_h), sqrt(best) * (side < 0.0 ? -1.0 : 1.0), mix(a.z, b.z, at_h), 1.0);
 }
 
-// The ice at `p`, 0..1, with its ragged edge up the sides; `frame` and `flow`
-// as peak_ice_frame.
-float peak_ice_mask(vec3 p, float zone, out vec4 frame, out vec2 flow, out vec2 more) {
+// How far across the ice `q` lies: 1 at its edge, by its half-width. Each
+// point's cover moves the edge in, so the ice's head and toe have a shape and
+// no fade; `tongue` 1 past the gorge's mouth (its debris is over the gorge's),
+// where the edge wanders in lobes as wide as the valley's. The gorge's edge
+// keeps to its floor.
+float peak_ice_edge(vec2 q, vec4 frame, vec2 more, out float tongue) {
+	tongue = smoothstep(0.16, 0.24, more.y);
+	float rag = (zs_noise(q / 37.0) - 0.5) * 0.16 + (zs_noise(q / 9.0) - 0.5) * 0.06;
+	rag *= mix(1.0, 0.55, tongue);
+	rag += ((zs_noise(q / 210.0 + 4.3) - 0.5) * 0.46 + (zs_noise(q / 71.0 + 1.9) - 0.5) * 0.17) * tongue;
+	return abs(frame.y) / frame.z + rag + (1.0 - more.x) * 1.3;
+}
+
+// The ice at `p`, 0..1, with its ragged edge; `ny` the ground's normal's height,
+// so it lies on floors and never climbs a wall. `frame` and `flow` as
+// peak_ice_frame.
+float peak_ice_mask(vec3 p, float zone, float ny, out vec4 frame, out vec2 flow, out vec2 more) {
 	frame = peak_ice_frame(p.xz, flow, more);
 	if (peak_ice_solid > 0.5) return 1.0;
 	if (peak_ice_solid < -0.5 || frame.w < 0.5) return 0.0;
-	float rag = (zs_noise(p.xz / 37.0) - 0.5) * 0.16 + (zs_noise(p.xz / 9.0) - 0.5) * 0.06;
-	return (1.0 - smoothstep(0.92, 1.06, abs(frame.y) / frame.z + rag)) * more.x * zone;
+	float tongue;
+	float e = peak_ice_edge(p.xz, frame, more, tongue);
+	float flat_on = smoothstep(0.70, 0.80, ny + (zs_noise(p.xz / 13.0 + p.y / 9.0) - 0.5) * 0.10);
+	// (The tongue fills its crevasses, walls and all.)
+	return (1.0 - smoothstep(0.95, 1.01, e)) * max(flat_on, tongue) * zone;
+}
+
+// The rubble the ice has shoved up round it, 0..1: a band past its edge, wide on
+// the tongue and round the toe, a thin strip on the gorge's floor.
+float peak_ice_margin(vec3 p, float ny, vec4 frame, vec2 more) {
+	if (peak_ice_solid != 0.0 || frame.w < 0.5) return 0.0;
+	float tongue;
+	float past = (peak_ice_edge(p.xz, frame, more, tongue) - 1.0) * frame.z;
+	float wide = mix(11.0, 80.0, tongue);
+	float rag = zs_noise(p.xz / 64.0 + 2.2) * 0.7 + zs_noise(p.xz / 19.0 + 8.1) * 0.3;
+	return (1.0 - smoothstep(0.20, 1.25, past / wide + (rag - 0.5) * 0.8)) * max(smoothstep(0.74, 0.90, ny), tongue);
+}
+
+// That rubble's colour: dark grey stones in three sizes, each to its mean.
+vec3 peak_ice_stones(vec2 q, float fp) {
+	float k_3 = 1.0 - smoothstep(1.0, 4.0, fp);
+	float k_1 = 1.0 - smoothstep(0.25, 1.1, fp);
+	float t = zs_noise(q / 8.0 + 3.1) * 0.5 + mix(0.5, zs_noise(q / 2.4 + 6.3), k_3) * 0.3 + mix(0.5, zs_noise(q / 0.7 + 1.2), k_1) * 0.2;
+	return mix(ICE_GRIT * 1.2, ICE_GRIT_PALE * 1.5, smoothstep(0.34, 0.68, t));
 }
 
 // A slit of half-width `w` at `ds` off its middle: returns how much of the
@@ -120,9 +156,11 @@ vec3 peak_ice_bump(vec3 n, vec3 p, float h) {
 	vec3 r1 = cross(dy, n);
 	vec3 r2 = cross(n, dx);
 	float det = dot(dx, r1);
-	// (Where the normal stands nearly in the face's own plane there is no bump to
-	// take.)
-	if (abs(det) < 0.2 * length(cross(dx, dy))) return n;
+	// (Where the normal stands near the face's own plane there is no bump to take:
+	// the chunks' skirts, seen through the cracks between them, carry the ground's
+	// upright normal on a standing face, and took the bump in dashes along the
+	// chunks' edges.)
+	if (abs(det) < 0.55 * length(cross(dx, dy))) return n;
 	vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
 	vec3 bent = abs(det) * n - grad;
 	float l = length(bent);
@@ -137,31 +175,40 @@ float peak_ice_floor(vec3 p, vec3 eye, vec4 frame, vec2 flow, vec2 more, float f
 	float half_w = frame.z;
 	vec2 perp = vec2(-flow.y, flow.x);
 	vec2 q = p.xz;
-	// The lines wander, as ice sheared round a bend does.
-	float tw = t + (zs_noise(vec2(s / 260.0, t / 95.0) + 3.1) - 0.5) * 34.0
-		+ (zs_noise(vec2(s / 80.0, t / 28.0) + 7.7) - 0.5) * 9.0;
+	// The lines wander, as ice sheared round a bend does. (By the world's noise:
+	// a noise stretched down the flow showed its lattice as long rectangles.)
+	float tw = t + ((zs_noise(q / 240.0 + 3.1) - 0.5) * 34.0 + (zs_noise(q / 75.0 + 7.7) - 0.5) * 9.0) * clamp(half_w / 90.0, 0.35, 1.0);
+	// Across by the ice's width, so the lines crowd through a narrows and fan out
+	// in a bowl, as the ice does.
+	float tf = tw / half_w * 100.0;
+	float tongue = smoothstep(0.16, 0.30, more.y);
 	float k_21 = 1.0 - smoothstep(10.0, 40.0, fp);
 	float k_8 = 1.0 - smoothstep(3.0, 13.0, fp);
 	float k_3 = 1.0 - smoothstep(1.0, 4.0, fp);
 	float k_1 = 1.0 - smoothstep(0.25, 1.1, fp);
-	// Flow stripes: bands of blue bubble-free ice in the milky, long down the flow.
-	float fol = mix(0.5, zs_noise(vec2(s / 300.0, tw / 21.0)), k_21) * 0.5
-		+ mix(0.5, zs_noise(vec2(s / 190.0, tw / 8.0) + 5.0), k_8) * 0.32
-		+ mix(0.5, zs_noise(vec2(s / 70.0, tw / 2.6) + 9.0), k_3) * 0.18;
-	float blue = smoothstep(0.42, 0.58, fol);
-	// Ogives: arcs bowed down the flow, the year's bands below a fall.
-	float arc = sin((s - (t * t / half_w) * 0.55 + (zs_noise(vec2(s / 130.0, t / 70.0)) - 0.5) * 50.0) * TAU / 104.0);
+	// Flow stripes: bands of blue bubble-free ice in the milky, one long line each
+	// (a slice of the noise, across only), coming and going down the flow.
+	float fol = mix(0.5, zs_noise(vec2(tf / 23.0, 0.37)), k_21) * 0.5
+		+ mix(0.5, zs_noise(vec2(tf / 8.0 + 5.0, 0.73)), k_8) * 0.32
+		+ mix(0.5, zs_noise(vec2(tf / 2.6 + 9.0, 0.19)), k_3) * 0.18;
+	float blue = smoothstep(0.42, 0.58, fol) * (0.30 + 0.70 * smoothstep(0.30, 0.62, zs_noise(q / 170.0 + 1.7)));
+	// Ogives: arcs bowed down the flow, the year's bands, plain on the open tongue.
+	float arc = sin((s - (t * t / half_w) * 0.55 + (zs_noise(q / 130.0) - 0.5) * 50.0) * TAU / 118.0);
 	// Old ice: milky crust in patches, its bubbles and frost.
 	float w = (zs_noise(q / 46.0) - 0.5) * mix(0.0, 1.2, 1.0 - smoothstep(14.0, 60.0, fp))
 		+ (zs_noise(q / 13.0 + 3.0) - 0.5) * 0.7 * k_8 + (zs_noise(q / 3.7 + 8.0) - 0.5) * 0.35 * k_3 + arc * 0.14;
 	float old = smoothstep(-0.12, 0.34, w);
 	col = mix(mix(ICE_MILK, ICE_BLUE, 0.20), mix(ICE_MILK, ICE_BLUE, 0.72), blue);
-	col = mix(col, ICE_CRUST, old * 0.72);
+	col = mix(col, ICE_CRUST, old * 0.66);
+	col *= 1.0 - smoothstep(-0.1, 0.6, arc) * 0.26 * tongue;
 	// Under the surface, seen through it: veins that shift against the crust.
 	vec2 under = eye.xz / max(eye.y, 0.3) * 0.62;
 	vec2 shift = vec2(dot(under, flow), dot(under, perp));
-	vec2 q1 = vec2(s, t) - shift * 2.4;
-	vec2 q2 = vec2(s, t) - shift * 7.0;
+	// (Their lattice wandered off its lines, or a noise this stretched shows as
+	// rectangles.)
+	vec2 wob = vec2(zs_noise(q / 27.0 + 4.1), zs_noise(q / 19.0 + 9.3)) - 0.5;
+	vec2 q1 = vec2(s, t) - shift * 2.4 + wob * vec2(28.0, 5.0);
+	vec2 q2 = vec2(s, t) - shift * 7.0 + wob * vec2(70.0, 14.0);
 	float v1 = smoothstep(0.56, 0.78, zs_noise(vec2(q1.x / 15.0, q1.y / 2.3) + 4.0));
 	float v2 = smoothstep(0.50, 0.80, zs_noise(vec2(q2.x / 34.0, q2.y / 7.0) + 11.0));
 	col = mix(col, ICE_BLUE * 0.8, (v1 * 0.34 * k_1 + v2 * 0.42 * k_3) * (1.0 - old * 0.7));
@@ -171,17 +218,17 @@ float peak_ice_floor(vec3 p, vec3 eye, vec4 frame, vec2 flow, vec2 more, float f
 	float ds;
 	float wide_a = peak_ice_crevasse(s, t, half_w, 41.0, 3.1, 1.7, k_3, ds) * band;
 	float down_a;
-	float a_on = peak_ice_slit(ds, wide_a, v_s, fp, down_a);
+	float a_on = peak_ice_slit(ds, wide_a, v_s, fp, down_a) * smoothstep(0.5, 1.3, wide_a / fp);
 	// (A lip only where its crevasse is open; a pinched-out one left a groove no
 	// wider than a pixel, whose bump broke into lines of dots.)
 	float lip_a = (1.0 - smoothstep(wide_a, wide_a * 2.6 + 0.7, abs(ds))) * smoothstep(0.0, 0.5, wide_a);
 	float wide_b = peak_ice_crevasse(s + 11.0, t, half_w, 13.0, 0.75, 6.1, k_1, ds) * (0.35 + 0.65 * band);
 	float down_b;
-	float b_on = peak_ice_slit(ds, wide_b, v_s, fp, down_b);
+	float b_on = peak_ice_slit(ds, wide_b, v_s, fp, down_b) * smoothstep(0.5, 1.3, wide_b / fp);
 	float lip_b = (1.0 - smoothstep(wide_b, wide_b * 2.6 + 0.2, abs(ds))) * smoothstep(0.0, 0.15, wide_b);
 	float wide_c = peak_ice_crevasse(s - 5.0, t + 17.0, half_w, 4.3, 0.09, 3.3, k_1, ds);
 	float down_c;
-	float c_on = peak_ice_slit(ds, wide_c, v_s, fp, down_c);
+	float c_on = peak_ice_slit(ds, wide_c, v_s, fp, down_c) * smoothstep(0.5, 1.3, wide_c / fp);
 	vec3 slit_a = mix(ICE_DEEP, ICE_PALE, exp(-down_a / 5.0));
 	vec3 slit_b = mix(ICE_DEEP, ICE_PALE, exp(-down_b / 2.0));
 	col = mix(col, col * vec3(0.72, 0.84, 0.96), max(lip_a, lip_b) * 0.5);
@@ -189,21 +236,21 @@ float peak_ice_floor(vec3 p, vec3 eye, vec4 frame, vec2 flow, vec2 more, float f
 	col = mix(col, slit_b, b_on);
 	col = mix(col, slit_a, a_on);
 	float slit = max(a_on, b_on);
-	// Debris: dark stripes down the flow, the margins, dust in patches, more
-	// toward the toe.
-	// (Narrow: a few metres of stones, swelling and pinching down the flow, their
-	// edges broken, so near the eye a stripe is scattered rock and not a road.)
-	float tn = tw / half_w + ((zs_noise(q / 17.0 + 1.3) - 0.5) * 0.030 + (zs_noise(q / 5.3 + 6.7) - 0.5) * 0.016 * k_8) * (1.0 - smoothstep(30.0, 90.0, fp));
-	float pinch = 0.55 + 0.9 * zs_noise(vec2(s / 95.0, 4.4));
-	float mid_a = 1.0 - smoothstep(0.004, 0.022 * pinch, abs(tn + 0.50 + 0.05 * sin(s / 210.0)));
-	float mid_b = 1.0 - smoothstep(0.005, 0.028 * pinch, abs(tn - 0.08 + 0.06 * sin(s / 170.0 + 2.0)));
-	float mid_c = 1.0 - smoothstep(0.003, 0.018 * pinch, abs(tn - 0.57 + 0.04 * sin(s / 240.0 + 4.0)));
+	// Debris: dark stripes of rock down the flow, each a wandering line of stones,
+	// a few metres wide in the gorge and tens on the tongue, swelling and pinching
+	// and broken at the edge; the margins; dust in patches, burying the toe.
+	float tn = tw / half_w;
+	float s_w = mix(2.4, 17.0, smoothstep(0.15, 0.85, more.y)) * (0.5 + zs_noise(q / 120.0 + 4.4));
+	float s_rag = (zs_noise(q / 13.0 + 1.3) - 0.5) * s_w * 1.5 + (zs_noise(q / 4.1 + 6.7) - 0.5) * min(s_w, 5.0) * 1.1 * k_8;
+	float mid_a = 1.0 - smoothstep(s_w * 0.35, s_w * 1.1 + fp, abs(tn + 0.50 + 0.05 * sin(s / 210.0)) * half_w + s_rag);
+	float mid_b = 1.0 - smoothstep(s_w * 0.35, s_w * 1.1 + fp, abs(tn - 0.08 + 0.06 * sin(s / 170.0 + 2.0)) * half_w + s_rag);
+	float mid_c = 1.0 - smoothstep(s_w * 0.25, s_w * 0.8 + fp, abs(tn - 0.57 + 0.04 * sin(s / 240.0 + 4.0)) * half_w + s_rag);
 	float stripes = max(mid_a, max(mid_b, mid_c));
 	float edge = smoothstep(0.74, 1.0, abs(t) / half_w);
 	float patches = zs_noise(q / 31.0) * 0.6 + mix(0.5, zs_noise(q / 8.0 + 5.0), k_8) * 0.4;
-	float dirt = max(stripes * (0.62 + 0.45 * zs_noise(vec2(s / 40.0, 1.0))), edge);
+	float dirt = max(stripes * (0.42 + 0.75 * zs_noise(q / 21.0 + 1.0)), edge);
 	dirt = max(dirt, smoothstep(0.66 - more.y * 0.34, 0.86 - more.y * 0.2, patches) * (0.32 + more.y * 0.5));
-	float grit = smoothstep(0.34, 0.60, dirt + (zs_noise(q / 1.9) - 0.5) * 0.62 * k_3 + (zs_noise(q / 0.6) - 0.5) * 0.3 * k_1);
+	float grit = smoothstep(0.34, 0.60, dirt + (zs_noise(q / 6.1 + 2.7) - 0.5) * 0.46 * k_21 + (zs_noise(q / 1.9) - 0.5) * 0.62 * k_3 + (zs_noise(q / 0.6) - 0.5) * 0.3 * k_1);
 	vec3 stone = mix(ICE_GRIT, ICE_GRIT_PALE, smoothstep(0.3, 0.72, mix(0.5, zs_noise(q / 2.9 + 2.0), k_3)));
 	col = mix(col, stone, grit * (1.0 - slit));
 	gloss = (1.0 - old) * (1.0 - grit) * (1.0 - slit * 0.8);
@@ -220,7 +267,8 @@ float peak_ice_floor(vec3 p, vec3 eye, vec4 frame, vec2 flow, vec2 more, float f
 	// with `flow` is no length: `flow` turns along a bend, and at a few km from the
 	// origin the smallest turn runs that dot through a whole noise cell in a metre.
 	// That was the ripple across the ice.)
-	float h = (zs_noise(vec2(s / 8.0, t / 4.6)) - 0.5) * 0.9 * (1.0 - smoothstep(1.2, 6.0, fb))
+	float h = (zs_noise(q / 41.0 + 2.0) - 0.5) * 1.7 * (1.0 - smoothstep(6.0, 24.0, fb))
+		+ (zs_noise(vec2(s / 8.0, t / 4.6)) - 0.5) * 0.9 * (1.0 - smoothstep(1.2, 6.0, fb))
 		+ (zs_noise(q / 2.1 + 6.0) - 0.5) * 0.28 * (1.0 - smoothstep(0.35, 1.4, fb))
 		+ (zs_noise(q / 0.55 + 3.0) - 0.5) * 0.05 * (1.0 - smoothstep(0.08, 0.3, fb));
 	h -= lip_a * 0.8 * (1.0 - smoothstep(0.25, 1.0, fb)) + lip_b * 0.25 * (1.0 - smoothstep(0.05, 0.2, fb));
@@ -321,7 +369,9 @@ void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, 
 			g_floor = 0.2;
 			h = (zs_noise(p.xz / 1.7) - 0.5) * 0.14 * (1.0 - smoothstep(0.3, 1.5, fp));
 		} else {
-			h = peak_ice_floor(p, eye, frame, flow, more, fp, fp_far, c_floor, g_floor);
+			// (A pixel's size by distance and glance, which runs smooth across the
+			// ground's triangles: `fp` jumps, and each scale's ease showed it in plates.)
+			h = peak_ice_floor(p, eye, frame, flow, more, fp_far * (0.6 + 0.4 / max(eye.y, 0.03)), fp_far, c_floor, g_floor);
 		}
 	}
 	if (steep > 0.0) {
@@ -342,9 +392,12 @@ void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, 
 		col = mix(col, ICE_SNOW * 1.1, edge * 0.92);
 		gloss *= 1.0 - edge;
 	}
-	lit_n = peak_ice_bump(n, p, h);
-	rough = mix(0.62, 0.26, gloss);
-	spec = mix(0.32, 0.62, gloss);
+	// The ground's triangles under the ice lie level to the light: its own bump
+	// shapes it, or it reads as flat plates.
+	vec3 base_n = solid > 0.5 ? n : normalize(mix(n, vec3(0.0, 1.0, 0.0), (1.0 - steep) * 0.85));
+	lit_n = peak_ice_bump(base_n, p, h);
+	rough = mix(0.66, 0.34, gloss);
+	spec = mix(0.30, 0.54, gloss);
 	// The sky's sheen across the ice at a glance, and the blue scatter: most
 	// where it is blue, none on grit.
 	float ndv = clamp(dot(lit_n, eye), 0.0, 1.0);

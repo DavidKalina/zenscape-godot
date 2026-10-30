@@ -54,12 +54,18 @@ static func _thin(line: Array) -> Array:
 	for i in POINTS: out.append(line[int(round(float(i)/(POINTS-1)*(line.size()-1)))])
 	return out
 
-## The ice gorge and the glacier below it as a line, head to toe (GORGE_POINTS
-## of the gorge, the rest of POINTS on the glacier). A plain mask: its head fades
-## in below the saddle, and it spreads to the valley's floor past the mouth.
-const GORGE_POINTS := 22
+## The ice gorge and the tongue below it as a line, head to toe (GORGE_POINTS of
+## the gorge, then TONGUE): its head tapers out below the saddle, it comes out of
+## the gorge's mouth, swells and swings down the valley's floor and ends in a
+## rounded snout short of the fall.
+const GORGE_POINTS := 20
 const HEAD_FADE := 0.86
 const WET_OVER := 6.0
+## The tongue: a, v (the massif's frame), half-width (m), with its debris rising
+## to bury the snout.
+const TONGUE := [[2075.0,150.0,95.0],[2170.0,118.0,150.0],[2290.0,148.0,195.0],[2430.0,118.0,225.0],
+	[2570.0,28.0,215.0],[2710.0,-24.0,190.0],[2830.0,-92.0,172.0],[2925.0,-102.0,148.0],
+	[2990.0,-92.0,118.0],[3034.0,-82.0,84.0],[3060.0,-76.0,46.0],[3072.0,-73.0,10.0]]
 static func gorge(peak: RefCounted) -> Array:
 	var Split: GDScript = peak.Split
 	var pts: PackedVector3Array = Split.line(Split.ICE)
@@ -70,14 +76,10 @@ static func gorge(peak: RefCounted) -> Array:
 		var i := int(round(lerpf(head,0.0,float(k)/(GORGE_POINTS-1))))
 		var share := float(i)/head
 		out.append({"at":peak.world(pts[i].x,pts[i].y),"half":hs[i]+WET_OVER,"cover":1.0-smoothstep(HEAD_FADE,1.0,share),"debris":0.15})
-	var gl: Vector2 = peak.GLACIER
-	var spare := POINTS-GORGE_POINTS
-	for k in spare:
-		var t := float(k)/(spare-1)
-		var a := lerpf(gl.x+30.0,gl.y+60.0,t)
-		var half := _half(peak,a)
-		var u := clampf((a-gl.x)/(gl.y-gl.x),0.0,1.0)
-		out.append({"at":peak.world(a,peak._valley_mid(a)),"half":half,"cover":1.0-smoothstep(gl.y-200.0,gl.y+60.0,a),"debris":lerpf(0.2,0.85,u*u)})
+	for k in TONGUE.size():
+		var r: Array = TONGUE[k]
+		var u := float(k)/(TONGUE.size()-1)
+		out.append({"at":peak.world(float(r[0]),float(r[1])),"half":float(r[2]),"cover":1.0,"debris":lerpf(0.25,0.95,u*u)})
 	return out
 
 ## The rock gorge's floor for the ground's paint: its line (world x, z, half) as
