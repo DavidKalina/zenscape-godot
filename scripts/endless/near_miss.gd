@@ -426,7 +426,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	moves.step(delta,game,self)
 	if not out.has("near") and not moves.pending.is_empty():
 		var held: Dictionary = moves.pending.pop_front()
-		held.farm = _farm(held.at,int(held.id))
+		held.farm = float(held.get("farm",_farm(held.at,int(held.id))))
 		held.points = float(held.points)*float(held.farm)
 		_chain(held,out,game)
 	# The skim's trickle.

@@ -135,6 +135,9 @@ var time := 0.0
 ## Everything up (named orbs for the orb-era drivers): each a Dictionary
 ## with its `kind`.
 var orbs: Array = []
+## An orb flown into, a bell rung or a gong struck (the game's chain listens).
+signal taken(kind: StringName, at: Vector3)
+
 var stats := {"pushed": 0, "hits": 0, "sunk": 0, "skipped": 0, "why": {}, "notes": [], "kinds": {},
 	"bell_rings": 0, "tolls": 0, "strikes": 0, "glances": 0, "through": 0}
 ## The next push-up's kind, when set (the study's 1 2 3 keys); else picked.
@@ -790,7 +793,7 @@ func _orb(o: Dictionary, delta: float, stretch: float, plane: Object, half_span:
 		if plane != null and o.phase != &"swell" and float(o.y) > float(o.base):
 			if _near(c,ORB_R+half_span+GRAZE):
 				_burst(c,plane.velocity,70,MOTE,GLOW)
-				_hit(&"orb",0.0)
+				_hit(&"orb",0.0,c)
 				return true
 	return false
 
@@ -834,7 +837,7 @@ func _bell(o: Dictionary, delta: float, plane: Object, half_span: float) -> void
 		stats.bell_rings = int(stats.bell_rings)+1
 		o.note = note_i
 		_burst(mid,v*0.3,24,SPARK,VERDIGRIS)
-		_hit(&"bell",0.0)
+		_hit(&"bell",0.0,mid)
 
 ## The gong: the disc let through only while the plane rolls; crossing it
 ## rolling strikes it, flown into otherwise the plane glances off.
@@ -878,7 +881,7 @@ func _gong(o: Dictionary, delta: float, plane: Object, half_span: float, bumped:
 			if react != null and not bool(o.wet):
 				react._add({"at": at, "way": Vector2.ZERO, "strength": 4.0, "swirl": 0.0, "reach": 11.0,
 					"front": 0.0, "hold": 0.9, "press": 0.8})
-			_hit(&"gong",0.0)
+			_hit(&"gong",0.0,c)
 		else:
 			stats.through = int(stats.through)+1
 	elif bumped and absf(s) < 3.0 and lat < GONG_R+half_span+1.0 and time-float(o.glanced) > 1.0:
@@ -920,13 +923,14 @@ func _draw_halos() -> void:
 
 # --- Hits ------------------------------------------------------------------------
 
-## A hit of `kind`: its note in the run, the run climbing.
-func _hit(kind: StringName, db: float) -> void:
+## A hit of `kind` at `at`: its note in the run, the run climbing.
+func _hit(kind: StringName, db: float, at: Vector3) -> void:
 	stats.hits = int(stats.hits)+1
 	_last_hit = time
 	(stats.notes as Array).append(note_i)
 	_sound(kind,note_i,db)
 	note_i = mini(note_i+1,NOTES.size()-1)
+	taken.emit(kind,at)
 
 ## `face` (when given) keeps the burst flat in that face's plane, flung
 ## out from `at` across it (the gong's sparks off its rim, not at the

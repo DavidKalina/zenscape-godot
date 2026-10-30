@@ -73,6 +73,7 @@ func setup(game: Node3D) -> void:
 	push_ups = PushUps.new()
 	add_child(push_ups)
 	push_ups.setup(land,burrower)
+	push_ups.taken.connect(_taken.bind(game))
 
 ## One frame: the gate (asleep, only that), the creature and its push-ups.
 func step(delta: float, game: Node3D) -> void:
@@ -84,6 +85,11 @@ func step(delta: float, game: Node3D) -> void:
 	var span: float = WorldScale.TOY_SPAN*game.ground_scale.size()
 	burrower.tick(delta)
 	push_ups.tick(delta,game.plane,span*0.5,false)
+
+## A push-up taken: a move in the chain (LineMoves `push_up`), when the chain
+## is running (NearMiss is stepped only then).
+func _taken(kind: StringName, at: Vector3, game: Node3D) -> void:
+	if game.plane.weighted and game.hand_landing.flying(): game.near.moves.push_up(str(kind),at,game)
 
 ## Why the land ahead of the plane won't do for a run ("" when open).
 func open_ahead(game: Node3D) -> String:
