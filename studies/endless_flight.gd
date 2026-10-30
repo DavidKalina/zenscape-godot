@@ -693,6 +693,9 @@ func _ready() -> void:
 	if peak != null and air_lift != null:
 		var lift := PeakRoutes.lift(peak,Callable(field,"height"))
 		air_lift.add(str(lift.name),lift.points,float(lift.radius),float(lift.strength),bool(lift.one_way))
+		var wisps: MultiMeshInstance3D = preload("res://scripts/endless/peak_lift_wisps.gd").new()
+		add_child(wisps)
+		wisps.setup(lift.points,float(lift.radius),seed)
 	# Its ruined stair (scripts/endless/peak_stair.gd), the rock gorge's tell.
 	if peak != null and not ("--stair=0" in preload("res://scripts/launch_args.gd").user_args()):
 		stair = PeakStair.new()

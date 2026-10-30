@@ -38,8 +38,12 @@ const FAR := 400.0
 ## Both lines start at the prow's nose, on the valley's floor, and meet at the
 ## saddle; from there one wide ramp, TAIL, runs up to the plateau's edge.
 const NOSE_Y := 308.0
-const SADDLE_Y := 832.0
+const SADDLE_Y := 840.0
 const PLATEAU_EDGE_Y := 880.0
+## The ramp from the saddle tops out here (a): from here on to the strip the
+## tail's floor is the flat apron (peak_massif.gd APRON), so a plane out of
+## either gorge lands straight on, with no turn.
+const APRON_BACK := 240.0
 
 ## The lines: a, v, toy width of the floor at that knot (WorldScale.opening). The
 ## tight places are knots of 34..42, the wide bowls 90..100.
@@ -57,8 +61,8 @@ const TAIL_KNOTS := [[262.0,0.0,95.0],[170.0,0.0,110.0]]
 ## grade stays near 0.17: the plane holds about 0.19 at a flying speed, and the
 ## next step stands seracs on it to weave. The rock's comes in pitches of up to
 ## about 0.37, which the lift carries.
-const ICE_FLOOR := [[0.0,NOSE_Y],[0.3,462.0],[0.55,590.0],[0.8,724.0],[1.0,SADDLE_Y]]
-const ROCK_FLOOR := [[0.0,NOSE_Y],[0.18,372.0],[0.36,452.0],[0.5,530.0],[0.62,610.0],[0.72,680.0],[0.84,765.0],[0.93,810.0],[1.0,SADDLE_Y]]
+const ICE_FLOOR := [[0.0,NOSE_Y],[0.3,462.0],[0.55,590.0],[0.8,728.0],[1.0,SADDLE_Y]]
+const ROCK_FLOOR := [[0.0,NOSE_Y],[0.18,372.0],[0.36,452.0],[0.5,530.0],[0.62,610.0],[0.72,680.0],[0.84,768.0],[0.93,815.0],[1.0,SADDLE_Y]]
 
 ## The wall's profile, from the floor's edge: SLOPE m up per m out after a foot
 ## of FOOT m, to ELBOW m out, then EASE m per m on up.
@@ -66,6 +70,10 @@ const SLOPE := 2.6
 const FOOT := 10.0
 const ELBOW := 70.0
 const EASE := 1.15
+## Toward the nose the walls keep climbing at BOW_EASE to the top, by BOW_A (a),
+## so the prow's stem stands up as a blade off a narrow base.
+const BOW_EASE := 2.4
+const BOW_A := Vector2(1500.0,1780.0)
 ## The wall's line wanders by up to BUTTRESS m, on noise SPUR_SCALE times the
 ## rock noise's scale. Tiers across the wall: BAND.x m of swing, one every
 ## TAU/BAND.y m of height, their level wandering with the buttresses.
@@ -83,13 +91,19 @@ const RIDGE := 62.0
 const OUT_FALL := 2.0
 const RIDGE_IN := Vector2(330.0,480.0)
 const RIDGE_LOW := Vector2(640.0,830.0)
-const RIDGE_LOWS := 0.5
+const RIDGE_LOWS := 0.25
 const RIDGE_OUT := Vector2(835.0,872.0)
 ## The prow's back, by a: the highest it stands (over the sea), before the sight
 ## line (below) takes its due.
-const TOPS := [[1985.0,500.0],[1900.0,690.0],[1800.0,720.0],[1600.0,690.0],[1300.0,720.0],[1000.0,790.0],[700.0,850.0],[450.0,880.0],[345.0,890.0]]
+const TOPS := [[1985.0,500.0],[1900.0,740.0],[1800.0,800.0],[1600.0,740.0],[1300.0,790.0],[1000.0,830.0],[700.0,870.0],[450.0,880.0],[345.0,890.0]]
 const TOP_BREAK := 40.0
 const ROOF_RISE := 0.42
+## The prow's spine: its line (a, v), running between the sight rays of towers 1
+## and 2, the height falling away from it FLANK m per m (x on the back, y at the
+## bow), so the top is a blade and no table. It wanders SPINE_WANDER m.
+const SPINE := [[1985.0,165.0],[1850.0,140.0],[1650.0,140.0],[1300.0,165.0],[960.0,195.0],[700.0,130.0],[345.0,0.0]]
+const FLANK := Vector2(0.9,1.5)
+const SPINE_WANDER := 34.0
 ## The sight line from the start meadow, an eye SIGHT_EYE m up at a SIGHT_A on the
 ## axis: everything the split raises stands under the line from that eye to
 ## SIGHT_Y m at the towers, within SIGHT_W m of the ray to each (SIGHT_RAYS, the
@@ -104,7 +118,7 @@ const SIGHT_Y := 1000.0
 const SIGHT_TO := -260.0
 const SIGHT_RAYS := [[-260.0,-400.0],[-440.0,90.0],[-70.0,460.0]]
 const SIGHT_W := Vector2(30.0,75.0)
-const SIGHT_OVER := Vector2(250.0,130.0)
+const SIGHT_OVER := Vector2(300.0,190.0)
 const SIGHT_OVER_A := Vector2(1820.0,1450.0)
 const OUTER_UNDER := 40.0
 const OUTER_FREE := Vector2(1650.0,1250.0)
@@ -127,6 +141,7 @@ static var _gap := PackedFloat32Array()
 static var _na := 0
 static var _nv := 0
 static var _tops := PackedFloat32Array()
+static var _spine := PackedFloat32Array()
 static var _baked := false
 static var _lock := Mutex.new()
 ## How long the bake took (ms), for the cost drivers.
@@ -209,7 +224,7 @@ static func _lay(g: int, knots: Array, floors: Array) -> void:
 	ys.resize(pts.size())
 	for k in pts.size():
 		if k <= i_saddle: ys[k] = _at(floors,float(k)/i_saddle)
-		else: ys[k] = lerpf(SADDLE_Y,PLATEAU_EDGE_Y,float(k-i_saddle)/(pts.size()-1-i_saddle))
+		else: ys[k] = lerpf(SADDLE_Y,PLATEAU_EDGE_Y,clampf((pts[i_saddle].x-pts[k].x)/(pts[i_saddle].x-APRON_BACK),0.0,1.0))
 	for pass_n in 3:
 		var was := ys.duplicate()
 		for k in range(1,ys.size()-1): ys[k] = (was[k-1]+was[k]+was[k+1])/3.0
@@ -236,6 +251,10 @@ static func _stamp() -> void:
 		e.resize(_na*_nv)
 		e.fill(FAR)
 		var f := far_f.duplicate()
+		# The floor comes from the nearest sample, not the widest one that reaches.
+		var d_near := PackedFloat32Array()
+		d_near.resize(_na*_nv)
+		d_near.fill(INF)
 		var pts: PackedVector3Array = _lines[g]
 		var hs: PackedFloat32Array = _halves[g]
 		var half_stride := STRIDE*0.5
@@ -261,9 +280,10 @@ static func _stamp() -> void:
 					var along := absf(da*tan_a.x+dv*tan_a.y)
 					var perp := absf(da*tan_a.y-dv*tan_a.x)
 					var over := maxf(along-half_stride,0.0)
-					var ee := sqrt(perp*perp+over*over)-half
-					if ee < e[row+i]:
-						e[row+i] = ee
+					var dd := sqrt(perp*perp+over*over)
+					if dd-half < e[row+i]: e[row+i] = dd-half
+					if dd < d_near[row+i]:
+						d_near[row+i] = dd
 						f[row+i] = p.z
 		_e.append(e)
 		_f.append(f)
@@ -318,12 +338,21 @@ static func _stamp_gap() -> void:
 static func _sight(a: float) -> float:
 	return SIGHT_EYE+(SIGHT_Y-SIGHT_EYE)*(SIGHT_A-a)/(SIGHT_A-SIGHT_TO)
 
-## The prow's tops, one every 50 m along a from A_SPAN.x.
+## The prow's tops and spine, one every 50 m along a from A_SPAN.x.
 static func _lay_tops() -> void:
 	var n := int((A_SPAN.y-A_SPAN.x)/50.0)+2
 	_tops.resize(n)
+	_spine.resize(n)
 	for k in n:
 		var a := A_SPAN.x+k*50.0
+		var sv := float(SPINE[SPINE.size()-1][1]) if a < float(SPINE[0][0]) else float(SPINE[0][1])
+		for r in SPINE.size()-1:
+			var s0: Array = SPINE[r]
+			var s1: Array = SPINE[r+1]
+			if a <= float(s0[0]) and a >= float(s1[0]):
+				sv = lerpf(float(s0[1]),float(s1[1]),(float(s0[0])-a)/(float(s0[0])-float(s1[0])))
+				break
+		_spine[k] = sv
 		var y := float(TOPS[TOPS.size()-1][1])
 		if a >= float(TOPS[0][0]): y = float(TOPS[0][1])
 		else:
@@ -336,12 +365,12 @@ static func _lay_tops() -> void:
 		_tops[k] = y
 
 ## The wall's rise `ee` m past the floor's edge; `tier` shifts the tiers' level.
-static func _rise(ee: float, tier: float) -> float:
+static func _rise(ee: float, tier: float, ease: float) -> float:
 	if ee <= 0.0: return 0.0
 	var r: float
 	if ee < FOOT: r = SLOPE*ee*ee/(2.0*FOOT)
 	elif ee < ELBOW: r = SLOPE*(ee-FOOT*0.5)
-	else: r = SLOPE*(ELBOW-FOOT*0.5)+EASE*(ee-ELBOW)
+	else: r = SLOPE*(ELBOW-FOOT*0.5)+ease*(ee-ELBOW)
 	return r+BAND.x*sin(r*BAND.y+tier)*minf(ee/FOOT,1.0)
 
 ## A gorge's ridge's height over its floor where the floor stands at `f`.
@@ -390,7 +419,7 @@ static func carve(a: float, v: float, h: float, n: float, rough: float, noise: F
 	# each under the sight line.
 	var mass := h
 	var near := minf(ei,er)
-	var fn := fi if ei < er else fr
+	var bow := smoothstep(BOW_A.x,BOW_A.y,a)
 	var line := _sight(a)
 	var out := rough*n
 	var inner := clampf(hull*2.0-0.5,0.0,1.0)
@@ -398,9 +427,15 @@ static func carve(a: float, v: float, h: float, n: float, rough: float, noise: F
 		var t := (a-A_SPAN.x)/50.0
 		var ti := clampi(int(t),0,_tops.size()-2)
 		var top := lerpf(_tops[ti],_tops[ti+1],t-ti)-TOP_BREAK*maxf(noise.get_noise_2d(a*0.45-2100.0,v*0.45+800.0)*2.0+0.3,0.0)
+		var off := absf(v-lerpf(_spine[ti],_spine[ti+1],t-ti)+SPINE_WANDER*spur*2.0)
 		var over := lerpf(SIGHT_OVER.y,SIGHT_OVER.x,smoothstep(SIGHT_OVER_A.y,SIGHT_OVER_A.x,a))
 		top = minf(top,line+over*gap)-notch*smoothstep(1850.0,1650.0,a)
-		var roof := minf(top,fn+_edge(fn)+ROOF_RISE*maxf(near-RIDGE,0.0))+out
+		# Up from each gorge's wall, under the line falling off the spine; the
+		# floors met in the middle, and the plain slope past the gorges' reach.
+		var fb := lerpf(lerpf(fr,fi,smoothstep(-80.0,80.0,er-ei)),_far(a),smoothstep(120.0,225.0,near))
+		var bench := fb+_edge(fb)
+		var wall := bench+lerpf(ROOF_RISE,BOW_EASE,bow)*clampf(near-RIDGE,0.0,165.0)
+		var roof := minf(top,minf(wall,maxf(top-lerpf(FLANK.x,FLANK.y,bow)*off,bench)))+out
 		mass = maxf(mass,roof)
 	if inner < 1.0:
 		var free := smoothstep(OUTER_FREE.x,OUTER_FREE.y,a)*gap
@@ -408,7 +443,11 @@ static func carve(a: float, v: float, h: float, n: float, rough: float, noise: F
 		if ei < REACH: mass = maxf(mass,minf(fi+_ridge(fi)-notch-maxf(ei-RIDGE,0.0)*OUT_FALL,cap)+out)
 		if er < REACH: mass = maxf(mass,minf(fr+_ridge(fr)-notch-maxf(er-RIDGE,0.0)*OUT_FALL,cap)+out)
 	# The gorges, cut out of it.
-	var low := n*rough*FLOOR_ROUGH
-	var y0 := fi+_rise(ei+wander,tier)+low if ei < FAR-1.0 else INF
-	var y1 := fr+_rise(er+wander,tier)+low if er < FAR-1.0 else INF
-	return minf(mass,minf(y0,y1))
+	var low := n*rough*FLOOR_ROUGH*smoothstep(APRON_BACK,APRON_BACK+50.0,a)
+	var ease := lerpf(EASE,BOW_EASE,bow)
+	var y0 := fi+_rise(ei+wander,tier,ease)+low if ei < FAR-1.0 else INF
+	var y1 := fr+_rise(er+wander,tier,ease)+low if er < FAR-1.0 else INF
+	var cut := minf(mass,minf(y0,y1))
+	# The ramp and the apron stand on whatever lay lower under them.
+	var fill := smoothstep(350.0,310.0,a)*(1.0-smoothstep(0.0,30.0,near))
+	return lerpf(cut,maxf(cut,minf(y0,y1)),fill)

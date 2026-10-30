@@ -154,6 +154,8 @@ static func _place(field: RefCounted, peak: RefCounted) -> Array:
 			var wr := r*WIDEST
 			# Off the strip's flat (its ease included), whatever the lattice.
 			if absf(a-PeakMassif.STRIP.x) < strip_keep+wr: continue
+			# Off the apron and the ramp up to it: a plane out of the gorges lands here.
+			if a < 360.0 and absf(v) < PeakMassif.APRON.x+PeakMassif.APRON.y+STRIP_PAD+wr: continue
 			if not _off_lift(w,wr,lift): continue
 			# Lean on a neighbour or stand an opening off it.
 			var ok := true

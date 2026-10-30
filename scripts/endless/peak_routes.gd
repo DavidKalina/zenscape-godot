@@ -16,14 +16,14 @@ const Split = preload("res://scripts/endless/peak_split.gd")
 const LIFT := "peak/rock_gorge"
 ## The lift: LIFT_OVER m over the gorge's floor, LIFT_R m round, LIFT_RISE m/s
 ## at its core. It starts LIFT_FROM m up the gorge. It ends LIFT_END m over the
-## plateau's flat and no nearer its centre than LIFT_SHORT (the flat's radius
-## plus most of the tube's).
+## plateau's flat and no nearer its centre than LIFT_SHORT (the apron's back,
+## Split.APRON_BACK, plus the tube's radius).
 const LIFT_OVER := 40.0
 const LIFT_R := 60.0
 const LIFT_RISE := 12.0
 const LIFT_FROM := 120.0
 const LIFT_END := 40.0
-const LIFT_SHORT := 230.0
+const LIFT_SHORT := 300.0
 ## One point of the tube every this many of the line's samples.
 const EVERY := 3
 

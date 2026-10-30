@@ -264,6 +264,11 @@ const QUIET := Vector2(1.5,2.3)
 ## Vector4(its a, half its length along v, half its width, the ease to the
 ## broken ground round it), flat at PLATEAU_Y, no knob or rim on it.
 const STRIP := Vector4(120.0,118.0,22.0,16.0)
+## The apron: the flat from the ramp's top (Split.APRON_BACK) down to the strip,
+## APRON.x m to each side of the axis, eased out over APRON.y, flat at PLATEAU_Y.
+## A plane out of either gorge lands on it straight on: it flies along a, and the
+## strip runs across its way.
+const APRON := Vector2(88.0,16.0)
 ## The crown: three towers round the lake, a, v in the frame, tip (m over the
 ## sea), how far the tip leans in toward CROWN_MID, half the width at the base
 ## (m), seed. Uneven, the tallest off centre. Their places go through
@@ -1071,6 +1076,7 @@ func _cirq(a: float, v: float, h: float) -> Vector2:
 	# The strip: its distance from the strip's line, and its runout lane.
 	var sd := Vector2(a-STRIP.x,maxf(absf(v)-STRIP.y,0.0)).length()
 	var flat := 1.0-smoothstep(STRIP.z,STRIP.z+(STRIP.w if a > STRIP.x else STRIP.w*0.5),sd)
+	flat = maxf(flat,1.0-smoothstep(0.0,APRON.y,Vector2(maxf(STRIP.x-a,0.0),maxf(absf(v)-APRON.x,0.0)).length()))
 	var lane := 1.0-smoothstep(STRIP.z+10.0,STRIP.z+40.0,absf(a-STRIP.x))
 	var quiet := smoothstep(QUIET.x,QUIET.y,tn)
 	# The floor, broken, and down to the lake's shore.
