@@ -371,6 +371,57 @@ func _clear_of_stone(at: Vector2) -> Vector2:
 		if at.distance_to(o.at) < r: at = (o.at as Vector2)+(at-(o.at as Vector2)).normalized()*r
 	return at
 
+## A land with no lists (the game's): the angles (rad off its heading, each
+## side) it feels ahead along when straight on is shut, nearest first; the head's own probe FEEL_HEAD m on.
+const FEEL_TURN := [0.45,0.9,1.35]
+const FEEL_HEAD := 4.0
+const FEEL_PULL := 3.0
+## Up from a sounding, it runs FEEL_GRACE s before a wall can sound it again.
+const FEEL_GRACE := 0.8
+var _grace := 0.0
+
+## The pull round what the land holds ahead (a land that `probes`): none
+## while the way straight on is open; else toward the nearest open feeler,
+## the side its goal lies first; nothing open, on as it goes. A wall right
+## at the head (a cliff, a ruin wall, stone) and leading it sounds, to come
+## up ahead past it.
+func _feel(look: float, delta: float) -> Vector2:
+	if not land.probes or _diving or _sounding: return Vector2.ZERO
+	var fw := forward()
+	var lead := mode == &"lead" and _plane != null
+	_grace -= delta
+	if lead and phase != &"enter" and _grace <= 0.0 and land.wall(pos+fw*FEEL_HEAD):
+		_sound("edge")
+		return Vector2.ZERO
+	if land.open(pos+fw*look*0.5) and land.open(pos+fw*look): return Vector2.ZERO
+	var to_goal := _goal-pos
+	for a: float in FEEL_TURN:
+		var l := fw.rotated(a)
+		var r := fw.rotated(-a)
+		for way: Vector2 in ([l,r] if l.dot(to_goal) >= r.dot(to_goal) else [r,l]):
+			if land.open(pos+way*look*0.5) and land.open(pos+way*look):
+				stats.feels = int(stats.get("feels",0))+1
+				return way*FEEL_PULL
+	# Shut every way (a long slope): on as it goes; a wall still sounds it.
+	return Vector2.ZERO
+
+func _sound(why: String) -> void:
+	_sounding = true
+	stats.soundings = int(stats.soundings)+1
+	stats.lost_why[why] = int(stats.lost_why.get(why,0))+1
+
+## `at`, or the nearest open spot on along `fwd` and to its sides with no
+## wall just on (a land that `probes`; else `at`). A grace starts.
+func _open_spot(at: Vector2, fwd: Vector2) -> Vector2:
+	if not land.probes: return at
+	_grace = FEEL_GRACE
+	var side := fwd.orthogonal()
+	for k in range(0,9):
+		for off: Vector2 in ([Vector2.ZERO] if k == 0 else [fwd*k*12.0,fwd*k*12.0+side*k*8.0,fwd*k*12.0-side*k*8.0,side*k*10.0,-side*k*10.0]):
+			var q := at+off
+			if land.open(q) and not land.wall(q+fwd*FEEL_HEAD*3.0): return q
+	return at
+
 ## Coming in across the plane's way (the entrance), not yet running.
 func entering() -> bool:
 	return active and mode == &"lead" and phase == &"enter"
@@ -401,6 +452,7 @@ func _resurface() -> void:
 	for o: Dictionary in _obstacles:
 		var r := float(o.reach)+float(o.get("margin",MARGIN))
 		if at.distance_to(o.at) < r: at = (o.at as Vector2)+(at-(o.at as Vector2)).normalized()*r
+	at = _open_spot(at,fwd)
 	pos = at
 	heading = fwd.angle()
 	_course = heading
@@ -563,6 +615,7 @@ func _move(delta: float) -> void:
 				var w := clampf(1.0-(d-r)/ramp,0.0,1.6)
 				dir += (away*0.9+tang*0.6)*w*1.8
 	stats.nearest = minf(float(stats.nearest),nearest)
+	dir += _feel(look,delta)
 	# (Coming in it keeps its intercept unless right at the edge.)
 	var keep := 8.0 if mode == &"lead" and phase == &"enter" else 28.0
 	var room: float = land.room(pos)

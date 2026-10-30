@@ -23,11 +23,17 @@ const CLIMB_HOLD := 1.4
 const RUN := 40.0
 const REST := 6.0
 ## Open ground ahead: these distances along the heading (m) all dry land,
-## sloping less than OPEN_UP (the normal's up) and rising at most OPEN_RISE m
-## over the ground under the plane. (First light: rocks, ruins, trees and
-## water come in later.)
-const OPEN_AT := [0.0,35.0,70.0,105.0,140.0]
+## sloping less than OPEN_UP (the normal's up) and rising at most OPEN_RISE
+## m over the ground under the plane; nothing standing (the land's
+## `blocked`: rocks, ruins, halls, tunnels) there or OPEN_SIDE m to each
+## side; and fewer than FOREST_N trees in that strip, unless FOREST_OPEN
+## (the forest run, its own task, turns it on). (Water doesn't do yet:
+## task 4.)
+const OPEN_AT := [0.0,20.0,40.0,60.0,80.0,100.0,120.0,140.0,160.0]
+const OPEN_SIDE := 12.0
 const OPEN_UP := 0.93
+const FOREST_OPEN := false
+const FOREST_N := 4
 const OPEN_RISE := 10.0
 
 var land: GameLand
@@ -36,6 +42,9 @@ var push_ups: PushUps
 ## The rouse: skim built (s), rest left (s), time over CLIMB_OFF (s), the
 ## last reasons, and counts (for drivers).
 var _idle := 0
+## Time to the gate's next look at the land, once shut (s).
+const ASK := 0.2
+var _ask := 0.0
 var rouse := {"skim": 0.0, "rest": 0.0, "high": 0.0, "why": "", "wakes": 0, "dives": 0, "blocked": ""}
 
 static func wanted() -> bool:
@@ -73,13 +82,22 @@ func open_ahead(game: Node3D) -> String:
 	var f: Vector3 = game.plane.forward()
 	var fwd := Vector2(f.x,f.z).normalized()
 	if fwd == Vector2.ZERO: return "heading"
-	var here := land.height(p.x,p.z)
+	return open_from(Vector2(p.x,p.z),fwd)
+
+## As `open_ahead`, from `at` along `fwd` (unit).
+func open_from(at0: Vector2, fwd: Vector2) -> String:
+	var here := land.height(at0.x,at0.y)
 	for d: float in OPEN_AT:
-		var at := Vector2(p.x,p.z)+fwd*d
+		var at := at0+fwd*d
 		var h := land.height(at.x,at.y)
 		if h < land.water_y(at.x,at.y)+0.3: return "water"
 		if land.normal(at.x,at.y).y < OPEN_UP: return "steep"
 		if h-here > OPEN_RISE: return "rise"
+		for s: float in [0.0,-1.0,1.0]:
+			var off := at+fwd.orthogonal()*s*OPEN_SIDE
+			var oh := h if s == 0.0 else land.height(off.x,off.y)
+			if land.blocked(off,oh): return "blocked"
+	if not FOREST_OPEN and land.trees_along(at0,fwd,OPEN_AT.back(),OPEN_SIDE) >= FOREST_N: return "forest"
 	return ""
 
 func _rouse(delta: float, game: Node3D) -> void:
@@ -103,7 +121,11 @@ func _rouse(delta: float, game: Node3D) -> void:
 	var skimming: bool = flying and game.near.skimming
 	rouse.skim = clampf(float(rouse.skim)+(delta if skimming else -2.0*delta),0.0,WAKE_SKIM)
 	if not skimming or float(rouse.skim) < WAKE_SKIM or float(rouse.rest) > 0.0: return
-	# The last two checks only when it would wake (they sample the land).
+	# The last two checks only when it would wake (they sample the land),
+	# and shut, again only every ASK s.
+	_ask -= delta
+	if _ask > 0.0: return
+	_ask = ASK
 	var blocked := ""
 	if absf(float(game.chase.free.x)) > LOOK_FREE: blocked = "look"
 	else: blocked = open_ahead(game)

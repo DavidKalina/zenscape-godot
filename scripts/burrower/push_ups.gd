@@ -608,6 +608,13 @@ func _room(at: Vector2, k: Dictionary) -> String:
 	for r: Dictionary in land.stone():
 		if at.distance_to(r.at) < float(r.reach)+float(k.room)-3.0: return "rock"
 	if land.room(at) < 10.0: return "rim"
+	# A land with no lists (the game's): its own feel, round the spot too.
+	if land.probes:
+		var r := float(k.room)*0.7
+		for off: Vector2 in [Vector2(r,0.0),Vector2(-r,0.0),Vector2(0.0,r),Vector2(0.0,-r)]:
+			if not land.open(at+off): return "rock"
+		# (A crown over it: the forest run, its own task, lifts these over.)
+		if land.has_method("wooded") and land.wooded(at,land.height(at.x,at.y)): return "tree"
 	return ""
 
 func _skip(why: String) -> void:

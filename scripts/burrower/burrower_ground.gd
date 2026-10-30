@@ -41,6 +41,19 @@ func inward(_at: Vector2) -> Vector2:
 func stone() -> Array:
 	return []
 
+## Whether it can run through (x, z) (`at`). The study lists its stone and
+## trees and keeps it in by the rim, so it says yes; a land with no such
+## lists (the game's) answers here, and sets `probes` so the creature feels
+## ahead with it.
+var probes := false
+func open(_at: Vector2) -> bool:
+	return true
+
+## A wall at (x, z) it can't run on through (a cliff, a ruin wall, stone),
+## where it sounds rather than steer (a land that `probes`).
+func wall(_at: Vector2) -> bool:
+	return false
+
 ## The pond for the dust to fade into (x, z, radius, water y; radius < 0: none).
 func pond_rect() -> Vector4:
 	return Vector4(0.0,0.0,-1.0,0.0)
