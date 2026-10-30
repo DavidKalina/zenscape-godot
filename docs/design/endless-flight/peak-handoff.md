@@ -187,6 +187,30 @@ the ground, half 6 x 4.5 wingspans), mouth 70 m in front of the slot at
 stick then: medium 136 s, boosted 87 s, heavy 139 / 90. Its driver is
 `scratch/peak_couloir.gd`.
 
+## Queued by the user (2026-10-30)
+
+- **Climbers' flags**: flags planted up the mountain by the people who
+  climbed it, waving in the wind (strings or pennants on poles at the
+  stair, the cols, the rim, the summit). Not in the spec; a round of its
+  own after the mountain is right.
+- The horn's look from the meadow is approved (`scratch/peak/meadow2/
+  try1/meadow.png`); keep the summit, the crest tables and the head's
+  shape unless the couloir fix leaves no other way.
+
+## Next rounds, in order
+
+1. The couloir regression (Open, first item below the collar): up and
+   down on medium and heavy by `scratch/peak_couloir2.gd`, the horn kept.
+   Then re-run what the horn invalidated: the plateau strip landing, the
+   door's top against the new summit angle (17.5 degrees), straight up.
+2. The collar from afar: the ring's front not drawn from 2 km and the
+   meadow; the slab look and stepped edges from the side; gaps in the
+   floor to the land below.
+3. The back face: fly the dive lip to sea; make it the gentlest way up.
+4. The climbers' flags.
+5. Up-close polish and cost (the rest of Open).
+6. Lock-in: the tests below, the native kernels, merge to main.
+
 ## Against "What done looks like" (final pass)
 
 1. From the meadow (meadow round): **partial.** Holds: one horn owns the
@@ -249,8 +273,32 @@ stick then: medium 136 s, boosted 87 s, heavy 139 / 90. Its driver is
   (30 frames same). Look at the march's leaps (`clear_ahead`,
   `ceiling_at`'s margin) and `t_out`/`t_solid` next, with a debug colour.
 - (Meadow round) The couloir driver's down leg (medium and heavy) and
-  heavy's climb now fail; medium's climb and the carry hold. Bisect
-  against `58a113a5`: the ceiling shares, the crest tables, the horn.
+  heavy's climb now fail; medium's climb and the carry hold. A stopped
+  bisect round (2026-10-30, no commit) found: the down leg flies the slot
+  fine (ridden 0, no crash) and reaches waypoint 9 (`mo`, 70 m out from
+  the mouth, ground + 28), then circles in place for the rest of the run
+  (medium between about (-3803, 634, -955) and (-3823, 642, -965) every
+  2 s) and never crosses `mo`'s half-plane, so `follow()` never moves on
+  to the icefall point; check where `mo` lies against that circle and the
+  ground under it (`mo.y` comes from `field.height` at the mouth), and
+  whether `_guard` ("tight place") or `keep` holds it there. Heavy's
+  climb enters the lift tube normally (rising 26.0 at ~646 m, f7800) but
+  by f8160 is 9.2 m over the floor at 16.3 m/s, the driver skipping
+  waypoints 7 to 11, then scrapes the slot floor (0.9 m) at ~7.6..8.4
+  m/s near ~887..931 m over the sea with the rise falling to 0.8: the
+  lift's push scales with airspeed, so the ride collapses once heavy
+  slows on the floor. Ruled out by reading the code: the ceiling shares
+  (`thin`, the climb cost, the nose limit, `reach` and the lift's fade are
+  the same functions of height as before; only `ceiling_y` moved up,
+  which can only loosen them), the lift line (built from the couloir
+  constants, not the ground) and the placement (`_way` reads neither
+  summit nor crest). Untested lead: the horn's new -45 degree knife
+  ridge points straight down the lower and middle slot (the couloir runs
+  from about -95 degrees at the notch to -42 at the mouth, seen from the
+  summit; the old head's ridges were 4, 88, -95, 176, and only the -100
+  ridge was tried). Sample `PeakMassif` height along `couloir().line`
+  with and without the horn before touching the crest tables. Logs:
+  `scratch/bis/head_med.txt`, `head_heavy.txt`.
 - (Meadow round) Light's longer thin band (ceiling 1520) changes its climb
   everywhere over 215 m; straight-up numbers not re-measured.
 
