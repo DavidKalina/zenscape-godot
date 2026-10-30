@@ -178,12 +178,16 @@ func step(at: Vector3) -> void:
 func _add_bodies(began: int) -> bool:
 	while not _bodies.is_empty():
 		var e: Array = _bodies[0]
-		var body: StaticBody3D = e[0]
+		# Checked untyped: a freed body can't be held in a typed variable, and
+		# the error would leave it first in the queue, stopping every collider
+		# behind it.
+		var held: Variant = e[0]
 		var shapes: Array = e[1]
 		var i := int(e[2])
-		if not is_instance_valid(body) or body.is_queued_for_deletion() or i >= shapes.size():
+		if not is_instance_valid(held) or (held as StaticBody3D).is_queued_for_deletion() or i >= shapes.size():
 			_bodies.pop_front()
 			continue
+		var body: StaticBody3D = held
 		var t0 := Time.get_ticks_usec()
 		var cs := CollisionShape3D.new()
 		cs.shape = shapes[i]

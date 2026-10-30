@@ -41,6 +41,10 @@ const LaunchArgs = preload("res://scripts/launch_args.gd")
 const LAYER := 1
 ## The solid's scan up a tower: every SCAN slices, then bisected.
 const SCAN := 4
+## `face`'s ball: its two shells, m past the reach it was asked for, and the
+## ways on each.
+const FACE_SHELLS := Vector2(2.0,8.0)
+const FACE_WAYS := 24
 ## The massif's body in the far mesh: a grid this wide round the peak (m),
 ## this fine. It melts away (vertex alpha) over BODY_FOOT m over the sea and out
 ## over BODY_EDGE m from the peak, so it has no edge and no plate under it.
@@ -83,6 +87,7 @@ var _far_reach := 0.0
 var _quit := false
 var _strata: Dictionary
 var _pad := Build.wingtip()
+var _ball := PackedVector3Array()
 
 static func wanted() -> bool:
 	return not "--towers=0" in LaunchArgs.user_args()
@@ -429,6 +434,43 @@ func inside(p: Vector3, pad := -1.0) -> bool:
 		var k := int(f)
 		if lerpf(_gap(s,k,q,pad),_gap(s,k+1,q,pad),f-k) > 0.0: return true
 	return false
+
+## The way out of the rock at world `p`, a unit vector, or ZERO with no tower
+## within `reach` m of it. The flight grades a touch by this: its solid is a
+## step, so a finite difference across a wall can only say one of eight ways
+## (FlightContact `_slope`), and over the rim a wall is the top's height field,
+## where no gradient means much. So: which side of a ball round `p` is rock, on
+## shells FACE_SHELLS m past `reach`, which reads the wall at a wing's scale.
+func face(p: Vector3, reach: float) -> Vector3:
+	var q := Vector2(p.x,p.z)
+	var far := reach+FACE_SHELLS.y
+	var near := false
+	for s: Dictionary in _solids:
+		if q.distance_to(s.mid) <= float(s.reach)+far: near = true
+	if not near: return Vector3.ZERO
+	if _ball.is_empty(): _ball = _ball_ways()
+	var rock := Vector3.ZERO
+	var hits := 0
+	var half := _ball.size()/2
+	for k in _ball.size():
+		var off: Vector3 = _ball[k]*(reach+(FACE_SHELLS.x if k < half else FACE_SHELLS.y))
+		if inside(p+off,0.0):
+			rock += off
+			hits += 1
+	if hits == 0 or rock.length() < 0.001: return Vector3.ZERO
+	return -rock.normalized()
+
+## FACE_WAYS ways round a ball, even, twice over: the second shell turned off
+## the first so the two together see more ways.
+static func _ball_ways() -> PackedVector3Array:
+	var out := PackedVector3Array()
+	var golden := PI*(3.0-sqrt(5.0))
+	for shell in 2:
+		for k in FACE_WAYS:
+			var y := 1.0-2.0*(k+0.5)/FACE_WAYS
+			var a := golden*k+shell*1.1
+			out.append(Vector3(cos(a)*sqrt(1.0-y*y),y,sin(a)*sqrt(1.0-y*y)))
+	return out
 
 ## The highest solid (world y) within `r` m of world XZ `p`, or -INF.
 func top_near(p: Vector3, r: float) -> float:

@@ -34,7 +34,8 @@ extends RefCounted
 ## The surface's normal: the ground's own slope (from the study's
 ## `plane_ground` either side, NORMAL_STEP m apart) for a ride; a brushed
 ## face's way out, or the land's slope where that is steep (a cliff); down
-## under an underside; up on the water.
+## under an underside; up on the water. On a Peak tower, any touch: the rock's
+## own way out (PeakTowers `face`), and the hit says "tower".
 
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 
@@ -54,11 +55,14 @@ const NORMAL_STEP := 0.6
 ## A brushed face is the land's slope where that is steeper than this (its
 ## normal's up part).
 const CLIFF := 0.7
+## How far past the plane's own reach a touch still counts as on a tower.
+const FACE_ROOM := 2.0
 
 var _grace := 0.0
 ## Counted for the drivers and the numbers.
 var scrapes := 0
 var crashes := 0
+var last_hit := {}
 
 ## Ready for a fresh flight.
 func reset() -> void:
@@ -86,6 +90,11 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	if str(hit.what) == "tree" and game.get("knock") != null:
 		var k: Dictionary = game.knock.at_hit(game,hit.at)
 		if not k.is_empty(): return {"knock":k}
+	# A Peak tower's rock has a real normal (PeakTowers `face`): off the towers
+	# this is ZERO and nothing here changes.
+	var face := Vector3.ZERO
+	if str(hit.what) == "stone" and game.get("towers") != null: face = game.towers.face(hit.at,float(game.solid_pad)+FACE_ROOM)
+	if face != Vector3.ZERO: hit.normal = face
 	var v: Vector3 = hit.velocity
 	var n: Vector3 = hit.normal
 	var speed := v.length()
@@ -99,6 +108,8 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	if not slot.is_empty() and str(hit.what) == "stone" and (touched or absf(n.y) < GLANCE_SIDE):
 		var side := ((slot.inv as Transform3D)*(game.plane.position as Vector3)).x
 		return glance(game,-(slot.across as Vector3) if side > 0.0 else (slot.across as Vector3),hit.at)
+	if face != Vector3.ZERO: out["tower"] = true
+	last_hit = out
 	if into > CRASH_INTO and angle > CRASH_ANGLE:
 		crashes += 1
 		return {"crash":out}

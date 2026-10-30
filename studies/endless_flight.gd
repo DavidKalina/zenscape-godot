@@ -235,6 +235,10 @@ const SPRAY_FAST := 0.7
 const CRASH_BACK := 45.0
 const CRASH_UP := 14.0
 const CRASH_LOOK := 140.0
+## Into a tower's wall (`_off_tower`): how far out from the face it flies on,
+## and the level part of the face's normal that makes it a wall, not its top.
+const CRASH_OFF := 40.0
+const CRASH_WALL := 0.6
 const FADE_TIME := 0.7
 
 ## True once the land under the start stands and it flies (the harness
@@ -1221,7 +1225,7 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 		events["lost"] = {"points":near.lose()}
 		if water != null and str(c.what) == "water": water.splash(c.at,1.5,events)
 		else: debris.hit(str(c.what),c.at,c.normal,true)
-		crash()
+		crash(c)
 		return
 	if hit.has("scrape"):
 		var s: Dictionary = hit.scrape
@@ -1266,12 +1270,20 @@ func wet(amount: float) -> void:
 
 ## Crashed: flying on from a little behind and above where it was, on the
 ## way it was going, at cruise (CRASH_BACK, CRASH_UP over what stands to
-## CRASH_LOOK on), the screen dipped dark and lifting.
-func crash() -> void:
+## CRASH_LOOK on), the screen dipped dark and lifting. `hit` is what it hit
+## (FlightContact): against a tower's wall it stays at its height, off the face
+## (`_off_tower`), since what stands ahead there is 400 m of rock.
+func crash(hit := {}) -> void:
 	var p: Vector3 = plane.position
 	var way := Vector2(plane.velocity.x,plane.velocity.z)
 	if way.length() < 0.5: way = Vector2(-sin(float(plane.heading)),-cos(float(plane.heading)))
 	way = way.normalized()
+	var off := _off_tower(hit,way)
+	if not off.is_empty():
+		crashes += 1
+		_launch(off.at,off.heading)
+		_fade_left = FADE_TIME
+		return
 	var back := Vector2(p.x,p.z)-way*CRASH_BACK
 	var top := Field.SEA_Y
 	for i in range(9):
@@ -1282,6 +1294,35 @@ func crash() -> void:
 	crashes += 1
 	_launch(Vector3(back.x,top+CRASH_UP,back.y),atan2(-way.x,-way.y))
 	_fade_left = FADE_TIME
+
+## Where a crash into a tower's wall flies on from: {at, heading}, CRASH_OFF m
+## or more out from the face at the plane's height (over the land, if that rises),
+## turned along the face the way it was nearer going, with CRASH_LOOK m clear
+## ahead. {} for any other hit, on a tower's top, or with nowhere clear.
+func _off_tower(hit: Dictionary, way: Vector2) -> Dictionary:
+	if not bool(hit.get("tower",false)): return {}
+	var n: Vector3 = hit.normal
+	var out := Vector2(n.x,n.z)
+	if out.length() < CRASH_WALL: return {}
+	out = out.normalized()
+	var along := out.orthogonal()
+	if along.dot(way) < 0.0: along = -along
+	var p: Vector3 = plane.position
+	for d: float in [CRASH_OFF,CRASH_OFF*2.0,CRASH_OFF*4.0]:
+		for side: Vector2 in [along,-along]:
+			var from := Vector2(p.x,p.z)+out*d
+			var y := p.y
+			for i in range(9):
+				var q := from+side*CRASH_LOOK*i/8.0
+				y = maxf(y,float(field.height(q.x,q.y))+CRASH_UP)
+			var clear := true
+			for i in range(9):
+				var q := from+side*CRASH_LOOK*i/8.0
+				var under: Variant = plane_ground(Vector3(q.x,y,q.y),CRASH_UP)
+				var top := (under as Vector2).x if under is Vector2 else (float(under) if under != null else -INF)
+				if y < top: clear = false
+			if clear: return {"at":Vector3(from.x,y,from.y),"heading":atan2(-side.x,-side.y)}
+	return {}
 
 ## A hard pull-out sinking through (the weight's path under the nose):
 ## `events` gets a "sink" knock for the rumble, once per pull-out.
