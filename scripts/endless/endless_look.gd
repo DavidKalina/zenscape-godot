@@ -66,6 +66,14 @@ const HOUR := 8.6
 const FOG_BEGIN := 120.0
 const FOG_END := 7600.0
 const FOG_CURVE := 0.75
+## The haze thins on high ground (shaders/endless_height_haze.gdshaderinc):
+## from HAZE_RISE m over the sea, over the next HAZE_SPAN m, down to this
+## share of the haze less. --haze-height=X scales it (0: the distance-only
+## haze as before, drawn by the ground itself); --haze-height-bias=M counts
+## ground M m higher in it, to try it on low hills.
+const HAZE_RISE := 350.0
+const HAZE_SPAN := 300.0
+const HAZE_CUT := 0.6
 ## The sun's glow in the haze looking toward it.
 const SUN_SCATTER := 0.18
 ## The haze's colour is the sky's own at the horizon the eye faces
@@ -323,6 +331,12 @@ func setup(land_seed: int) -> void:
 		if arg.begins_with("--rock-knob=") and arg.get_slice("=",1).begins_with("rock_"):
 			ground.set_shader_parameter(arg.get_slice("=",1),float(arg.get_slice("=",2)))
 	ground.set_shader_parameter("sea_y",Field.SEA_Y)
+	var haze_cut := HAZE_CUT
+	var haze_bias := 0.0
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with("--haze-height="): haze_cut = HAZE_CUT*a.get_slice("=",1).to_float()
+		elif a.begins_with("--haze-height-bias="): haze_bias = a.get_slice("=",1).to_float()
+	ground.set_shader_parameter("haze_height",Vector4(HAZE_RISE,HAZE_SPAN,haze_cut,haze_bias))
 	ground.set_shader_parameter("beach",Field.BEACH)
 	ground.set_shader_parameter("snow_line",Field.new(land_seed).snow_line())
 	_build_sea()
@@ -647,6 +661,17 @@ func _haze(facing: Vector3) -> void:
 	var k := float(celestial.state.get("zs_haze_sun",0.0))
 	environment.fog_aerial_perspective = lerpf(AERIAL,AERIAL_SUN,k)
 	environment.fog_sun_scatter = lerpf(SUN_SCATTER,SUN_SCATTER_SUN,k)
+	_haze_ground(c,k)
+
+## The haze the ground lays itself (so its height term can thin it): the
+## engine's own numbers, colour and sun, for shaders/endless_height_haze.gdshaderinc.
+func _haze_ground(c: Color, k: float) -> void:
+	if ground == null: return
+	ground.set_shader_parameter("haze_depth",Vector4(environment.fog_depth_begin,environment.fog_depth_end,environment.fog_depth_curve,environment.fog_density))
+	ground.set_shader_parameter("haze_light",Vector3(c.r,c.g,c.b))
+	ground.set_shader_parameter("haze_mix",Vector2(environment.fog_aerial_perspective,environment.fog_sun_scatter))
+	var lc := sun.light_color.srgb_to_linear()*sun.light_energy
+	ground.set_shader_parameter("haze_sun",Vector3(lc.r,lc.g,lc.b))
 
 ## The sky's colour (scene linear) at the horizon toward `facing`.
 func horizon(facing: Vector3) -> Color:

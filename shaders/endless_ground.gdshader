@@ -93,6 +93,7 @@ uniform int grass_skip = 1;
 // (shaders/light_leans.gdshaderinc; 0 fixed as before).
 uniform float paint_follow : hint_range(0.0, 2.0) = 0.5;
 uniform float sea_y = -40.0;
+#include "res://shaders/endless_height_haze.gdshaderinc"
 uniform float beach = 2.2;
 uniform float snow_line = 95.0;
 // The normal's up below which the grass gives way to rock (with a ragged
@@ -1353,4 +1354,6 @@ void fragment() {
 		EMISSION = mix(EMISSION, water_em, wet);
 		if (live_dbg.x >= 0.0) EMISSION = mix(EMISSION, live_dbg, wet);
 	}
+	// The haze, with its height term (shaders/endless_height_haze.gdshaderinc).
+	FOG = zs_land_haze(VERTEX, world_position.y, INV_VIEW_MATRIX);
 }
