@@ -46,6 +46,7 @@ extends Node3D
 ## (FOG_DEPTH); --valley-fog-steps=N its march's steps (FOG_STEPS).
 
 const Effect = preload("res://scripts/endless/endless_cloud_effect.gd")
+const Collar = preload("res://scripts/endless/endless_collar.gd")
 const CumulusNoise = preload("res://scripts/cumulus_noise.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
@@ -162,6 +163,8 @@ const DOME := 1.6
 ## The march's YIELD_LEVEL (`clash`).
 const YIELD_LEVEL := 0.5
 
+## The collar (endless_collar.gd): a ring of dense cloud the trunk stands with `set_collar`.
+var collar := Collar.new()
 var effect := Effect.new()
 var material := ShaderMaterial.new()
 var sheet := MeshInstance3D.new()
@@ -272,6 +275,7 @@ func _init() -> void:
 func setup(seed_value: int, sky: RefCounted, haze: Vector4, sun_scatter: float) -> void:
 	land_seed = seed_value
 	salt = (absi(hash(seed_value*7919+13))%100000)
+	collar.read_flags()
 	celestial = sky
 	# On a Mac the half-res march is the default (endless_look.gd mac_trades).
 	if OS.get_name() == "macOS" and not "--mac-trades=0" in LaunchArgs.user_args(): quality[2] = 2
@@ -370,6 +374,17 @@ func step(delta: float, view: Camera3D, wind: Vector2, time: float) -> void:
 		_ground(camera.global_position)
 		if fog_on: _fog(camera.global_position)
 	sheet.visible = enabled and camera != null and ground_at.w > 0.5
+
+## Stands the collar: a ring of dense cloud round `centre` (xz, or a Vector3's
+## x and z), `radius` m out, its base `lo` and top `hi` m over the sea, the
+## hole `hole` m across (default 0.9 of the radius; 0 a whole disc). It stands
+## still, turns slowly, and takes no part in `--cloud-cover`. `--collar=0`
+## keeps it out. See endless_collar.gd.
+func set_collar(centre: Variant, radius: float, lo: float, hi: float, hole := -1.0) -> void:
+	collar.set_ring(centre,radius,lo,hi,hole)
+
+func clear_collar() -> void:
+	collar.clear()
 
 ## On or off (C): off, nothing is marched and the land takes no shade.
 func set_enabled(on: bool) -> void:
@@ -892,7 +907,7 @@ func clouds_near(xz: Vector2, margin := 0.0) -> Array:
 ## ones), or a negative number outside every cloud. `near`: a list from
 ## `clouds_near` to weigh instead of building one (cheap).
 func cloud_depth(p: Vector3, near: Variant = null) -> float:
-	var best := -1e9
+	var best := collar.depth(p)
 	var xz := Vector2(p.x,p.z)
 	var list: Array = clouds_near(xz) if near == null else near
 	if organic:
@@ -964,6 +979,7 @@ func _fill() -> void:
 	_put4(p,36,Vector4(low_at.x,low_at.y,float(salt),cover))
 	_put4(p,72,Vector4(1.0 if lifed else 0.0,LIFE_PERIOD*life_scale,drift_hi.x,drift_hi.y))
 	_put4(p,76,Vector4(motion_time+clock_start,0.0,0.0,0.0))
+	collar.put(p,motion_time+clock_start)
 	_put4(p,40,ground_at)
 	var noise: Texture = CumulusNoise.request()
 	var shade_texel := SHADE_SIDE/Effect.SHADOW_TEXELS
