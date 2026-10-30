@@ -30,8 +30,12 @@ const LandHalls = preload("res://scripts/endless/land_halls.gd")
 const RockShape = preload("res://scripts/endless/rock_shape.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
+const Spires = preload("res://scripts/endless/rocks/peak_spires.gd")
 
 const REACH := 2600.0
+## The Peak's cells (its spires, RockPlan ON_PEAK) stream within PEAK_REACH:
+## the towers on its crest show from the start meadow, 4.5 km off.
+const PEAK_REACH := 8000.0
 const NEAR := 900.0
 const REPLAN := 40.0
 const TASKS := 2
@@ -44,6 +48,10 @@ var seed := 1
 ## Each kind's density and the forced ones (RockPlan `flags`).
 var densities := {}
 var on := false
+## The cells that hold the Peak's spires ({Vector2i: true}), and whether
+## they are the only cells wanted (no other kind on).
+var peak_cells := {}
+var _peak_only := false
 var material: Material
 ## The ground material with no turf (a spec's `bare`: the hoodoos' caps are
 ## stone, not lawn): rock_up past 1, so every face is the land's rock.
@@ -64,10 +72,20 @@ var _grid := {}         # Vector2i -> Array of [record, pillar index]
 var _bodies: Array = []  # [node, shape] waiting for their collider
 var _pad := Build.wingtip()
 
-func setup(land_seed: int, ground: Material = null) -> void:
+## `peak`: the land's massif (LandField `peak`), or null: the Peak's kinds
+## are off without one.
+func setup(land_seed: int, ground: Material = null, peak: RefCounted = null) -> void:
 	seed = land_seed
 	densities = Plan.flags()
+	var peaked := false
+	for k: String in Plan.ON_PEAK:
+		if peak == null: densities[k] = 0.0
+		elif float(densities.get(k,0.0)) > 0.0: peaked = true
+	if peaked: peak_cells = Spires.cells(peak)
 	on = Plan.any(densities)
+	_peak_only = peaked
+	for k: String in Plan.KINDS:
+		if not k in Plan.ON_PEAK and float(densities.get(k,0.0)) > 0.0: _peak_only = false
 	material = ground
 	if material == null:
 		var plain := StandardMaterial3D.new()
@@ -166,16 +184,30 @@ func _add_bodies(began: int) -> bool:
 		if (Time.get_ticks_usec()-began)/1000.0 > COMMIT_BUDGET*0.5: return true
 	return false
 
+## The cells within `reach` of `at` (the Peak's within PEAK_REACH when
+## `reach` is REACH), the Peak's first, then nearest first.
 func _wanted(at: Vector3, reach: float) -> Array:
 	var out: Array = []
-	var c := Plan.cell_of(at.x,at.z)
-	var r := int(ceil(reach/Plan.CELL))+1
-	for dz in range(-r,r+1):
-		for dx in range(-r,r+1):
-			var key := c+Vector2i(dx,dz)
-			if _cell_distance(key,at) <= reach: out.append(key)
-	out.sort_custom(func(p: Vector2i, q: Vector2i) -> bool: return _cell_distance(p,at) < _cell_distance(q,at))
+	if not _peak_only:
+		var c := Plan.cell_of(at.x,at.z)
+		var r := int(ceil(reach/Plan.CELL))+1
+		for dz in range(-r,r+1):
+			for dx in range(-r,r+1):
+				var key := c+Vector2i(dx,dz)
+				if _cell_distance(key,at) <= reach: out.append(key)
+	var far := PEAK_REACH if reach >= REACH else reach
+	for key: Vector2i in peak_cells:
+		if not key in out and _cell_distance(key,at) <= far: out.append(key)
+	# The Peak's few cells first (its towers show from far off), then by
+	# distance.
+	out.sort_custom(func(p: Vector2i, q: Vector2i) -> bool:
+		var pp := peak_cells.has(p)
+		if pp != peak_cells.has(q): return pp
+		return _cell_distance(p,at) < _cell_distance(q,at))
 	return out
+
+func _reach_of(key: Vector2i) -> float:
+	return PEAK_REACH if peak_cells.has(key) else REACH
 
 func _cell_distance(key: Vector2i, at: Vector3) -> float:
 	return Vector2((key.x+0.5)*Plan.CELL-at.x,(key.y+0.5)*Plan.CELL-at.z).length()
@@ -185,7 +217,7 @@ func _plan(at: Vector3) -> void:
 	for key: Vector2i in _wanted(at,REACH):
 		if not _cells.has(key) and not _pending.has(key): _queue.append(key)
 	for key: Vector2i in _cells.keys():
-		if _cell_distance(key,at) > REACH+Plan.CELL: _free_cell(key)
+		if _cell_distance(key,at) > _reach_of(key)+Plan.CELL: _free_cell(key)
 
 func _task(key: Vector2i) -> void:
 	if _quit: return
@@ -213,7 +245,7 @@ func _commit_one(done: Dictionary) -> void:
 	var key: Vector2i = done.key
 	var t0 := Time.get_ticks_usec()
 	stats.slowest_build_ms = maxf(stats.slowest_build_ms,float(done.ms))
-	if _cells.has(key) or _cell_distance(key,_eye) > REACH+Plan.CELL*2.0: return
+	if _cells.has(key) or _cell_distance(key,_eye) > _reach_of(key)+Plan.CELL*2.0: return
 	var records: Array = []
 	for b: Dictionary in done.groups:
 		var spec: Dictionary = b.spec

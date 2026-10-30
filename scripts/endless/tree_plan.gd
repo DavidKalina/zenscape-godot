@@ -310,7 +310,7 @@ func _arches_near(field: RefCounted, x0: float, z0: float, x1: float, z1: float)
 		for t: RefCounted in field.tunnels_in(x0-pad,z0-pad,x1+pad,z1+pad):
 			out.append_array(preload("res://scripts/endless/tunnel_sites.gd").tree_keepouts(t))
 	var rocks := _rock_flags()
-	var any_rocks: bool = RockPlan.any(rocks)
+	var any_rocks: bool = RockPlan.any(rocks,false)
 	if float(arches.density) <= 0.0 and not any_rocks: return out
 	var a := ArchPlan.cell_of(x0-pad,z0-pad)
 	var b := ArchPlan.cell_of(x1+pad,z1+pad)

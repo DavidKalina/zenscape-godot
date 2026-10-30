@@ -566,7 +566,7 @@ func _ready() -> void:
 	rocks = LandRocks.new()
 	rocks.name = "Rocks"
 	add_child(rocks)
-	rocks.setup(seed,look.ground if look != null else null)
+	rocks.setup(seed,look.ground if look != null else null,field.peak())
 	halls = LandHalls.new()
 	halls.name = "Halls"
 	add_child(halls)
