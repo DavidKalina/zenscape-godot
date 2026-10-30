@@ -27,8 +27,10 @@ const SAVE_EVERY := 5.0
 ## move in it pays at least 1.
 const MONEY_PER_POINT := 1.0/1600.0
 const MULT_POW := 0.5
-## Records where the least is the best.
+## Records where the least is the best, and the starts of names that are
+## so (the place lines' times, place_lines.gd: `line/<place>/<name>`).
 const LOWER_WINS := ["tightest_gap"]
+const LOWER_WINS_PREFIX := ["line/"]
 
 var money := 0
 var tally := {}
@@ -97,7 +99,7 @@ func count(what: String, n: float = 1.0) -> void:
 ## `value` tried as the record `what`; true when it is a new best (and then
 ## noted in this flight's records).
 func best(what: String, value: float) -> bool:
-	var lower := what in LOWER_WINS
+	var lower := lower_wins(what)
 	if records.has(what):
 		var was := float(records[what])
 		if (lower and value >= was) or (not lower and value <= was): return false
@@ -105,6 +107,13 @@ func best(what: String, value: float) -> bool:
 	if not what in flight.records: flight.records.append(what)
 	_dirty = true
 	return true
+
+## Whether the least `what` is the best.
+static func lower_wins(what: String) -> bool:
+	if what in LOWER_WINS: return true
+	for pre: String in LOWER_WINS_PREFIX:
+		if what.begins_with(pre): return true
+	return false
 
 ## `id` met; true the first time ever.
 func find(id: String) -> bool:

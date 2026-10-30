@@ -10,6 +10,7 @@ extends Control
 
 const Card = preload("res://scripts/endless/landing_summary.gd")
 const Tallies = preload("res://scripts/endless/pilot_tallies.gd")
+const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 
 ## The page's width at a 900 px tall window, at most the window less MARGIN.
 const WIDTH := 1060.0
@@ -85,6 +86,8 @@ static func columns(book: PilotBook) -> Array:
 		var has := book.records.has(row[0])
 		records.append({"label":row[1],"value":Tallies.say(row[0],float(book.records[row[0]])) if has else "-","col":Card.GOLD if has else Card.GREY})
 	for key: String in book.records:
+		# The place lines' times read under their place.
+		if key.begins_with("line/"): continue
 		if not key in known: records.append({"label":Tallies.label(key),"value":Tallies.say(key,float(book.records[key])),"col":Card.GOLD})
 	var finds := []
 	for kn: Array in Tallies.finds(book.found.keys()):
@@ -92,14 +95,18 @@ static func columns(book: PilotBook) -> Array:
 	finds.append({"label":"items owned","value":str(book.owned.size())})
 	for slot: String in book.worn:
 		finds.append({"label":"worn: "+slot.replace("_"," "),"value":str(book.worn[slot]).get_slice("/",1) if "/" in str(book.worn[slot]) else str(book.worn[slot])})
-	return [["tallies",tallies],["records",records],["finds",finds]]
+	var out := [["tallies",tallies],["records",records],["finds",finds]]
+	# The places, each its lines with their best times (place_lines.gd).
+	var places := PlaceLines.logbook_rows(book)
+	if not places.is_empty(): out.append(["places",places])
+	return out
 
 ## The page as text lines (for drivers and checks).
 func lines() -> Array:
 	var out := ["money | %d" % int(game.book.money),"flights | %d" % int(game.book.flights)]
 	for col: Array in (_cols if not _cols.is_empty() else columns(game.book)):
 		out.append("[%s]" % col[0])
-		for r: Dictionary in col[1]: out.append("  %s | %s" % [r.label,r.value])
+		for r: Dictionary in col[1]: out.append(("  %s:" % r.label) if r.get("kind","") == "place" else ("  %s%s | %s" % ["  " if r.get("indent",false) else "",r.label,r.value]))
 	return out
 
 func _draw() -> void:
@@ -112,8 +119,9 @@ func _draw() -> void:
 	# A long page (more tallies than these) shrinks to fit.
 	s = minf(s,(size.y-MARGIN)/(150.0+rows*30.0+70.0))
 	var h := (150.0+rows*30.0+70.0)*s
-	var w := minf(WIDTH*s,size.x-MARGIN*2.0)
-	var col_w := (w-64.0*s)/3.0
+	var n := maxi(_cols.size(),3)
+	var w := minf(WIDTH*s*n/3.0,size.x-MARGIN*2.0)
+	var col_w := (w-64.0*s-(n-3)*16.0*s)/float(n)
 	var r := Rect2((size.x-w)*0.5,(size.y-h)*0.5,w,h)
 	Card.plate(self,r,s,a)
 	var left := r.position.x+32.0*s
@@ -132,7 +140,13 @@ func _draw() -> void:
 		Card.draw_row(self,{"kind":"head","label":str(_cols[i][0])},cx,cr,top,s,a)
 		var cy := top+34.0*s
 		for row: Dictionary in _cols[i][1]:
-			Card.ink(self,Card.words(15.0*s,0.02),str(row.label),Vector2(cx,cy),15.0*s,Color(Card.CREAM,0.85*a),4.0*s,0.0)
+			if row.get("kind","") == "place":
+				# A place's name over its lines.
+				Card.ink(self,Card.words(15.0*s,0.06),str(row.label),Vector2(cx,cy),15.0*s,Color(Card.GOLD,0.9*a),4.0*s,0.0)
+				cy += 30.0*s
+				continue
+			var ix := cx+(14.0*s if row.get("indent",false) else 0.0)
+			Card.ink(self,Card.words(15.0*s,0.02),str(row.label),Vector2(ix,cy),15.0*s,Color(Card.CREAM,0.85*a),4.0*s,0.0)
 			Card.ink(self,Card.nums(),str(row.value),Vector2(cr,cy),19.0*s,Color(row.get("col",Card.CREAM),a),5.0*s,1.0)
 			cy += 30.0*s
 	Card.ink(self,Card.words(14.0*s,0.08),"J or Esc to close",Vector2(r.position.x+r.size.x*0.5,r.end.y-26.0*s),14.0*s,Color(Card.GREY,a),4.0*s,0.5)
