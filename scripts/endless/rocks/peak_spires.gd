@@ -230,7 +230,7 @@ static func _tower(field: RefCounted, pos: Vector3, q: Vector2, r: float, top: f
 		ring.call(0.6,(PeakMassif.TOWER_R-1.0)/r,1.0)
 		ring.call(FLARE.y*0.35,lerpf((PeakMassif.TOWER_R-1.0)/r,SKIRT,0.6),0.5)
 		ring.call(FLARE.y,SKIRT)
-		y = FLARE.y+1.0
+		y = FLARE.y+3.5
 	else:
 		ring.call(y_foot,1.3)
 		ring.call(maxf(high-ground,0.0)-1.0,SKIRT)
@@ -241,8 +241,10 @@ static func _tower(field: RefCounted, pos: Vector3, q: Vector2, r: float, top: f
 		ring.call(y,(1.0-taper*u)*tier)
 		var step := rng.randf_range(6.0,16.0)
 		var next := minf(y+step,tall-6.0)
-		ring.call(next-0.8,(1.0-taper*next/tall)*tier)
-		tier = rng.randf_range(0.9,SHAPE_MOST)
+		# Each bed a little in or out of the last, over a bevel, so a ledge
+		# is a sloped step and not a flat slab.
+		ring.call(next-2.5,(1.0-taper*next/tall)*tier)
+		tier = clampf(tier+rng.randf_range(-0.07,0.07),0.9,SHAPE_MOST)
 		y = next
 	# A blunt top: the last bed steps in twice.
 	var k_top := (1.0-taper)*tier
