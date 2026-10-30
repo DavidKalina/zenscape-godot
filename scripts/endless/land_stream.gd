@@ -69,6 +69,8 @@ const LEAD_TIME := 0.9
 const LEAD_MOST := 48.0
 ## Level-0 chunks nearer the eye than this (m, to the chunk) collide.
 const COLLIDE := 70.0
+## How many level-0 chunks may be in flight as high priority tasks (`_ask`).
+const NEAR_TASKS := 4
 const LAYER := 1
 ## The skirt's depth: SKIRT quads of the chunk's own, plus SKIRT_MIN m.
 const SKIRT := 6.0
@@ -108,6 +110,7 @@ var _queue: Array = []     # keys wanted, not yet asked
 var _done: Array = []      # finished task results
 var _done_lock := Mutex.new()
 var _tasks := {}           # task id -> key
+var _high := {}            # task ids asked as high priority
 var _wanted := {}          # the leaves wanted now
 var _shown := {}           # keys drawn now
 var _planned_at := Vector3.INF
@@ -318,18 +321,32 @@ static func _tops_of(key: Vector3i, heights: PackedFloat32Array) -> Dictionary:
 
 func _ask() -> void:
 	var most := MAX_TASKS if MAX_TASKS > 0 else maxi(OS.get_processor_count()-2,1)
+	# The colliders' chunks (level 0) go as high priority tasks, at most
+	# NEAR_TASKS at once, and wait in the queue for a slot: low priority
+	# tasks share a few of the pool's threads (threading/worker_pool/
+	# low_priority_thread_ratio) with the grass, rocks and trees, and a level-0
+	# chunk asked there waited seconds near the Peak; more high ones at once
+	# keep the engine's own tasks waiting (frames stall).
+	var held: Array = []
 	while _tasks.size() < most and not _queue.is_empty():
 		var key: Vector3i = _queue.pop_front()
 		if _chunks.has(key) or _pending.has(key) or not _wanted.has(key): continue
+		var high := key.x == 0
+		if high and _high.size() >= NEAR_TASKS:
+			held.append(key)
+			continue
 		_pending[key] = true
 		stats.asked += 1
-		var id := WorkerThreadPool.add_task(_build.bind(key,seed))
+		var id := WorkerThreadPool.add_task(_build.bind(key,seed),high)
 		_tasks[id] = key
+		if high: _high[id] = true
+	if not held.is_empty(): _queue = held+_queue
 	# Tasks done: their ids let go.
 	for id: int in _tasks.keys():
 		if WorkerThreadPool.is_task_completed(id):
 			WorkerThreadPool.wait_for_task_completion(id)
 			_tasks.erase(id)
+			_high.erase(id)
 
 # --- On a worker ----------------------------------------------------------------------
 

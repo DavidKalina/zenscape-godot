@@ -350,12 +350,118 @@ static func make(land_seed: int, ground := Callable()) -> RefCounted:
 			if xz.size() == 2: at = Vector2(float(xz[0]),float(xz[1]))
 		elif a.begins_with("--peak-yaw="): yaw = float(a.get_slice("=",1))
 	if not at.is_finite():
-		var way := _way(ground) if ground.is_valid() else 0.0
+		var way := _way_cached(land_seed,ground) if ground.is_valid() else 0.0
 		at = Vector2(sin(way),-cos(way))*AWAY
 	# Unless given, it faces the origin.
 	if not is_finite(yaw): yaw = rad_to_deg(atan2(-at.x,-at.y))
 	var coded := Transform3D(Basis(Vector3.UP,deg_to_rad(yaw)),Vector3(at.x,0.0,at.y))
-	return new(land_seed,LayoutOverrides.xform(HANDLE,coded))
+	var m: RefCounted = new(land_seed,LayoutOverrides.xform(HANDLE,coded))
+	if ground.is_valid() and not LaunchArgs.user_args().has("--peak-mask=0"): m._mask(land_seed,ground)
+	return m
+
+# --- Cost: the way and the live cells, once per land --------------------------------
+#
+# Every chunk build on a worker makes its own LandField, and with it its own
+# massif; what doesn't change between them is worked out once per land (its
+# seed and a few of its heights, so another world's land gets its own) and
+# shared: the way it faces (`_way`, thousands of height samples) and which
+# cells of the bounding circle the massif can change at all (`_mask`).
+
+## The live grid's cell (m), and how far under the land the massif's height
+## may come at every corner of a cell and its neighbours before the cell is
+## dead (the land and the massif move less than this between corners).
+const MASK_CELL := 64.0
+const MASK_MARGIN := 80.0
+static var _shared := {}
+static var _shared_lock := Mutex.new()
+
+## `ground`'s land told apart from another's: its seed and a few heights.
+static func _land_key(land_seed: int, ground: Callable) -> Array:
+	var key: Array = [land_seed]
+	for p: Vector2 in [Vector2(0.0,0.0),Vector2(1730.0,-2210.0),Vector2(-3170.0,1290.0),Vector2(4410.0,3030.0),Vector2(-2050.0,-4470.0)]:
+		key.append(snappedf(float(ground.call(p.x,p.y)),0.001))
+	return key
+
+static func _way_cached(land_seed: int, ground: Callable) -> float:
+	var key := ["way"]+_land_key(land_seed,ground)
+	_shared_lock.lock()
+	var got: Variant = _shared.get(key)
+	if got == null:
+		got = _way(ground)
+		_shared[key] = got
+	_shared_lock.unlock()
+	return float(got)
+
+## The live cells: a grid of MASK_CELL over the bounding square round O,
+## 1 where the massif may change the land (its cut or meadow above 0, or
+## its height within MASK_MARGIN of the land's at a corner of the cell or of
+## a neighbour), 0 where it changes nothing. `reaches` and `meets` read it,
+## so the land's samples, the chunks and the native readers there are the
+## land's own. Baked once per land and frame (about 16k samples).
+var _live := PackedByteArray()
+var _live_n := 0
+var _live_at := Vector2.ZERO
+
+func _mask(land_seed: int, ground: Callable) -> void:
+	var key := ["mask",centre,facing]+_land_key(land_seed,ground)
+	_shared_lock.lock()
+	var got: Variant = _shared.get(key)
+	if got == null:
+		got = _bake_mask(ground)
+		_shared[key] = got
+	_shared_lock.unlock()
+	_live = got[0]
+	_live_n = got[1]
+	_live_at = got[2]
+
+func _bake_mask(ground: Callable) -> Array:
+	var n := int(ceil(2.0*BOUND/MASK_CELL))
+	var at := _o-Vector2.ONE*(n*MASK_CELL*0.5)
+	var pts := PackedByteArray()
+	pts.resize((n+1)*(n+1))
+	var r2 := (BOUND+MASK_CELL*1.5)*(BOUND+MASK_CELL*1.5)
+	for j in n+1:
+		for i in n+1:
+			var x := at.x+i*MASK_CELL
+			var z := at.y+j*MASK_CELL
+			if (x-_o.x)*(x-_o.x)+(z-_o.y)*(z-_o.y) >= r2: continue
+			var q := Vector2(x,z)-centre
+			var hm := _h(q.dot(facing),q.dot(side))
+			if hm.y > 0.0 or hm.z > 0.0 or not is_finite(hm.x) or hm.x+SEA_Y > float(ground.call(x,z))-MASK_MARGIN: pts[j*(n+1)+i] = 1
+	var cells := PackedByteArray()
+	cells.resize(n*n)
+	for j in n:
+		for i in n:
+			# A cell's corners and its neighbours' (so a point in it is never
+			# farther than a cell from a corner that saw the massif).
+			var live := 0
+			for jj in range(maxi(j-1,0),mini(j+2,n)+1):
+				for ii in range(maxi(i-1,0),mini(i+2,n)+1):
+					live |= pts[jj*(n+1)+ii]
+			cells[j*n+i] = live
+	return [cells,n,at]
+
+## Whether the live cell under world (x, z) is live (true off the grid).
+func _live_cell(x: float, z: float) -> bool:
+	if _live_n == 0: return true
+	var i := floori((x-_live_at.x)/MASK_CELL)
+	var j := floori((z-_live_at.y)/MASK_CELL)
+	if i < 0 or j < 0 or i >= _live_n or j >= _live_n: return false
+	return _live[j*_live_n+i] == 1
+
+## The share of the bounding circle's cells that are live (for the cost
+## drivers).
+func live_share() -> float:
+	if _live_n == 0: return 1.0
+	var live := 0
+	var inside := 0
+	for j in _live_n:
+		for i in _live_n:
+			var c := _live_at+Vector2(i+0.5,j+0.5)*MASK_CELL
+			if c.distance_to(_o) < BOUND:
+				inside += 1
+				live += _live[j*_live_n+i]
+	return float(live)/maxf(float(inside),1.0)
 
 ## The way from the origin (radians: 0 toward -z, PI/2 toward +x) the
 ## plateau stands (see AWAY).
@@ -425,13 +531,22 @@ func _init(land_seed: int, frame: Transform3D) -> void:
 func reaches(x: float, z: float) -> bool:
 	var dx := x-_o.x
 	var dz := z-_o.y
-	return dx*dx+dz*dz < BOUND*BOUND
+	return dx*dx+dz*dz < BOUND*BOUND and _live_cell(x,z)
 
 ## Whether the box (x0, z0)..(x1, z1) meets the bounding circle.
 func meets(x0: float, z0: float, x1: float, z1: float) -> bool:
 	var dx := _o.x-clampf(_o.x,x0,x1)
 	var dz := _o.y-clampf(_o.y,z0,z1)
-	return dx*dx+dz*dz < BOUND*BOUND
+	if dx*dx+dz*dz >= BOUND*BOUND: return false
+	if _live_n == 0: return true
+	var i0 := maxi(floori((x0-_live_at.x)/MASK_CELL),0)
+	var i1 := mini(floori((x1-_live_at.x)/MASK_CELL),_live_n-1)
+	var j0 := maxi(floori((z0-_live_at.y)/MASK_CELL),0)
+	var j1 := mini(floori((z1-_live_at.y)/MASK_CELL),_live_n-1)
+	for j in range(j0,j1+1):
+		for i in range(i0,i1+1):
+			if _live[j*_live_n+i] == 1: return true
+	return false
 
 ## Whether a site of reach `r` at (x, z) stays clear of the massif (the
 ## ponds, tunnels, halls and splits keep out of it, and through LandField
@@ -514,6 +629,10 @@ func apply_chunk(field: Object, _impl: Object, made: Dictionary, x0: float, z0: 
 			var dx := x-_o.x
 			var dz := z-_o.y
 			if dx*dx+dz*dz >= r2: continue
+			if _live_n > 0:
+				var ci := floori((x-_live_at.x)/MASK_CELL)
+				var cj := floori((z-_live_at.y)/MASK_CELL)
+				if ci < 0 or cj < 0 or ci >= _live_n or cj >= _live_n or _live[cj*_live_n+ci] == 0: continue
 			var qx := x-centre.x
 			var qz := z-centre.y
 			var hm := _h(qx*fx+qz*fz,qx*sx+qz*sz)

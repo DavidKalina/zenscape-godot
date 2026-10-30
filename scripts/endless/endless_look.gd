@@ -134,6 +134,8 @@ var water: EndlessSea
 var plane_at := Vector3(0.0,1.0e4,0.0)
 var _land_seed := 0
 var ground: ShaderMaterial
+## Copies of `ground` (the rocks' bare one) that take its haze each frame too.
+var ground_copies: Array[ShaderMaterial] = []
 var _time := 0.0
 var _gust := 0.0
 var _wind_angle := 0.0
@@ -721,11 +723,12 @@ func _haze(facing: Vector3) -> void:
 ## engine's own numbers, colour and sun, for shaders/endless_height_haze.gdshaderinc.
 func _haze_ground(c: Color, k: float) -> void:
 	if ground == null: return
-	ground.set_shader_parameter("haze_depth",Vector4(environment.fog_depth_begin,environment.fog_depth_end,environment.fog_depth_curve,environment.fog_density))
-	ground.set_shader_parameter("haze_light",Vector3(c.r,c.g,c.b))
-	ground.set_shader_parameter("haze_mix",Vector2(environment.fog_aerial_perspective,environment.fog_sun_scatter))
 	var lc := sun.light_color.srgb_to_linear()*sun.light_energy
-	ground.set_shader_parameter("haze_sun",Vector3(lc.r,lc.g,lc.b))
+	for g: ShaderMaterial in [ground]+ground_copies:
+		g.set_shader_parameter("haze_depth",Vector4(environment.fog_depth_begin,environment.fog_depth_end,environment.fog_depth_curve,environment.fog_density))
+		g.set_shader_parameter("haze_light",Vector3(c.r,c.g,c.b))
+		g.set_shader_parameter("haze_mix",Vector2(environment.fog_aerial_perspective,environment.fog_sun_scatter))
+		g.set_shader_parameter("haze_sun",Vector3(lc.r,lc.g,lc.b))
 
 ## The sky's colour (scene linear) at the horizon toward `facing`.
 func horizon(facing: Vector3) -> Color:
