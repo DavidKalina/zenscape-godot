@@ -279,8 +279,13 @@ static func _world_solid(s: Dictionary, at: Vector3) -> Dictionary:
 	var c: PackedVector2Array = (s.c as PackedVector2Array).duplicate()
 	var xz := Vector2(at.x,at.z)
 	for k in c.size(): c[k] += xz
+	var field: Dictionary = s.field
+	var h: PackedFloat32Array = (field.h as PackedFloat32Array).duplicate()
+	for k in h.size():
+		if h[k] != Shape.NO_TOP: h[k] += at.y
 	return {"c":c,"r":s.r,"y0":float(s.y0)+at.y,"dy":float(s.dy),"slices":int(s.slices),"top":float(s.top)+at.y,
-		"mid":(s.mid as Vector2)+xz,"reach":float(s.reach)}
+		"mid":(s.mid as Vector2)+xz,"reach":float(s.reach),"rim_y":float(s.rim_y)+at.y,
+		"field":{"h":h,"at":(field.at as Vector2)+xz,"w":field.w,"d":field.d}}
 
 func _far_mesh() -> void:
 	var v := PackedVector3Array()
@@ -352,6 +357,20 @@ static func _gap(s: Dictionary, k: int, q: Vector2, pad: float) -> float:
 	var at := k*Shape.SOLID_WAYS
 	return lerpf(r[at+b%Shape.SOLID_WAYS],r[at+(b+1)%Shape.SOLID_WAYS],f-b)+pad-off.length()
 
+## The highest rock of the top within `pad` of world XZ `q`, or NO_TOP.
+static func _top_at(s: Dictionary, q: Vector2, pad: float) -> float:
+	var f: Dictionary = s.field
+	var h: PackedFloat32Array = f.h
+	var w := int(f.w)
+	var d := int(f.d)
+	var rel := (q-(f.at as Vector2))/Shape.TOP_CELL
+	var spread := pad/Shape.TOP_CELL
+	var best := Shape.NO_TOP
+	for z in range(maxi(int(floor(rel.y-spread)),0),mini(int(floor(rel.y+spread)),d-1)+1):
+		for x in range(maxi(int(floor(rel.x-spread)),0),mini(int(floor(rel.x+spread)),w-1)+1):
+			best = maxf(best,h[x+z*w])
+	return best
+
 ## The solid stretches over world XZ `p` (world y, low to high).
 func stretches(p: Vector3, pad := -1.0) -> Array:
 	var out: Array = []
@@ -389,7 +408,10 @@ func stretches(p: Vector3, pad := -1.0) -> Array:
 					from = -INF
 			g0 = g1
 			k = next
-		if from != -INF: out.append(Vector2(from,y0+(n-1)*dy))
+		var rim := float(s.rim_y)
+		var top := _top_at(s,q,pad)
+		if from != -INF: out.append(Vector2(from,maxf(rim,top)))
+		elif top > rim: out.append(Vector2(rim,top))
 	return out
 
 ## True inside a tower's solid, grown by `pad`.
@@ -398,6 +420,9 @@ func inside(p: Vector3, pad := -1.0) -> bool:
 	var q := Vector2(p.x,p.z)
 	for s: Dictionary in _solids:
 		if q.distance_to(s.mid) > float(s.reach)+pad: continue
+		if p.y >= float(s.rim_y):
+			if _top_at(s,q,pad) > p.y: return true
+			continue
 		var f := (p.y-float(s.y0))/float(s.dy)
 		var last := int(s.slices)-1
 		if f < 0.0 or f >= last: continue
@@ -411,6 +436,10 @@ func top_near(p: Vector3, r: float) -> float:
 	var q := Vector2(p.x,p.z)
 	for s: Dictionary in _solids:
 		if q.distance_to(s.mid) > float(s.reach)+_pad+r: continue
+		var top := _top_at(s,q,_pad+r)
+		if top > float(s.rim_y):
+			best = maxf(best,top)
+			continue
 		var k := int(s.slices)-1
 		while k >= 0:
 			if _gap(s,k,q,_pad+r) > 0.0:

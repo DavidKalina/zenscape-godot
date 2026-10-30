@@ -113,6 +113,9 @@ const CAP_REACH := 1.6
 const SOLID_DY := 10.0
 const SOLID_WAYS := 72
 const SOLID_STRIDE := 4
+## The top's height field: its cell (m) and an empty cell's value.
+const TOP_CELL := 6.0
+const NO_TOP := -1e9
 ## The strata's height range (m over the sea).
 const STRATA_LOW := -100.0
 const STRATA_SPAN := 2400
@@ -563,7 +566,8 @@ static func _far(v: PackedVector3Array, idx: PackedInt32Array, band: PackedFloat
 	return {"v":fv,"n":Build._normals(fv,fi),"b":fb,"i":fi}
 
 ## The flight's solid, read off the skin itself: {c (slice centres, off the
-## base), r (slices x SOLID_WAYS radii), y0, dy, slices, top, mid, reach}.
+## base), r (slices x SOLID_WAYS radii), y0, dy, slices, then from rim_y up the
+## top's height field `field`; top, mid, reach}.
 static func _solid(v: PackedVector3Array, rows: int, body_rows: int, cols: int, pl: Dictionary, tall: float) -> Dictionary:
 	var y0 := v[0].y
 	for j in cols: y0 = minf(y0,v[j].y)
@@ -579,10 +583,12 @@ static func _solid(v: PackedVector3Array, rows: int, body_rows: int, cols: int, 
 	hints.resize(count)
 	var pts := PackedVector2Array()
 	pts.resize(count)
+	var rim_low := INF
+	for j in cols: rim_low = minf(rim_low,v[body_rows*cols+j].y)
 	for s in slices:
 		var y := y0+s*SOLID_DY
-		var axis := _axis(pl,y/tall)
-		c[s] = axis
+		var round_at := Vector2.ZERO
+		var hits := 0
 		for e in count:
 			var j := e*SOLID_STRIDE
 			var i := hints[e]
@@ -608,15 +614,69 @@ static func _solid(v: PackedVector3Array, rows: int, body_rows: int, cols: int, 
 						q = Vector2(f.x,f.z)
 						hit = true
 						break
-			pts[e] = q-axis if hit else Vector2.ZERO
+			pts[e] = q if hit else Vector2.ZERO
+			if hit:
+				round_at += q
+				hits += 1
+		# (Round its own outline, not the axis: the rock can stand off the axis. Past
+		# the top's lowest edge the outline opens, and the top field takes over.)
+		if hits < count and y >= rim_low:
+			slices = s
+			break
+		var axis := round_at/hits if hits > 0 else _axis(pl,y/tall)
+		c[s] = axis
+		for e in count:
+			if pts[e] != Vector2.ZERO: pts[e] -= axis
 		_ways(pts,r,s*SOLID_WAYS)
+	r.resize(slices*SOLID_WAYS)
+	c.resize(slices)
 	var mid := Vector2.ZERO
 	for s in slices: mid += c[s]
 	mid /= slices
 	var reach := 0.0
 	for s in slices:
 		for k in SOLID_WAYS: reach = maxf(reach,r[s*SOLID_WAYS+k]+c[s].distance_to(mid))
-	return {"c":c,"r":r,"y0":y0,"dy":SOLID_DY,"slices":slices,"top":top,"mid":mid,"reach":reach}
+	var rim_y := y0+(slices-1)*SOLID_DY
+	var field := _top_field(v,rim_y)
+	var fat := field.at as Vector2
+	var fsize := Vector2(int(field.w),int(field.d))*TOP_CELL
+	for corner: Vector2 in [fat,fat+fsize,fat+Vector2(fsize.x,0.0),fat+Vector2(0.0,fsize.y)]:
+		reach = maxf(reach,corner.distance_to(mid))
+	return {"c":c,"r":r,"y0":y0,"dy":SOLID_DY,"slices":slices,"rim_y":rim_y,"field":field,"top":top,"mid":mid,"reach":reach}
+
+## The top as a height field, from `rim_y` up: {h (highest rock in each cell, or
+## NO_TOP), at (the grid's corner), w, d}. Over the rim the skin is one surface
+## over the ground plan, clefts and all, which no outline round a middle can
+## hold. Read by `PeakTowers._top_at`.
+static func _top_field(v: PackedVector3Array, rim_y: float) -> Dictionary:
+	var lo := Vector2(INF,INF)
+	var hi := Vector2(-INF,-INF)
+	for p in v:
+		if p.y < rim_y: continue
+		lo = lo.min(Vector2(p.x,p.z))
+		hi = hi.max(Vector2(p.x,p.z))
+	var w := int((hi.x-lo.x)/TOP_CELL)+2
+	var d := int((hi.y-lo.y)/TOP_CELL)+2
+	var h := PackedFloat32Array()
+	h.resize(w*d)
+	h.fill(NO_TOP)
+	for p in v:
+		if p.y < rim_y: continue
+		var at := int((p.x-lo.x)/TOP_CELL)+int((p.z-lo.y)/TOP_CELL)*w
+		h[at] = maxf(h[at],p.y)
+	# A cell the skin's vertices stepped over, inside the top, takes its neighbours'.
+	var filled := h.duplicate()
+	for z in range(1,d-1):
+		for x in range(1,w-1):
+			if h[x+z*w] != NO_TOP: continue
+			var sum := 0.0
+			var n := 0
+			for o: int in [-1,1,-w,w]:
+				if h[x+z*w+o] != NO_TOP:
+					sum += h[x+z*w+o]
+					n += 1
+			if n >= 3: filled[x+z*w] = sum/n
+	return {"h":filled,"at":lo,"w":w,"d":d}
 
 ## A slice's outline (`pts`, in turn round its centre; a zero is no skin at
 ## that column) into `r` from `at`: its radius at each of SOLID_WAYS ways.
