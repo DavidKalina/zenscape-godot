@@ -14,6 +14,8 @@ extends Node3D
 ## (under one span, at speed, for WAKE_SKIM s), leads, and dives away when
 ## the plane climbs off (over CLIMB_OFF spans for CLIMB_HOLD s), leaves the
 ## meadow, or after RUN s (`_rouse`; B's call ignores the climb and the run);
+## while it leads it pushes up glowing orbs a beat ahead of the plane (fly
+## into one: motes and a chime; hits close together climb a scale);
 ## C toggles the watch camera, a slow orbit on its trail, the plane held
 ## still meanwhile (it roams the meadow on its own).
 ## Flags: --grass=X (the carpet's share, 1; 0 none), --at=x,z --alt=m
@@ -33,6 +35,7 @@ const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Land = preload("res://scripts/burrower/burrower_land.gd")
 const Burrower = preload("res://scripts/burrower/burrower.gd")
+const PushUps = preload("res://scripts/burrower/push_ups.gd")
 ## The watch camera: its orbit's radius and height (m), turn (rad/s), and
 ## how fast it follows the head.
 const WATCH_R := 26.0
@@ -82,6 +85,8 @@ var _start := Vector3(0.0,14.0,150.0)
 var _heading := 0.0
 var _hint: Label
 var burrower: Burrower
+## What it pushes up ahead of the plane (scripts/burrower/push_ups.gd).
+var push_ups: PushUps
 ## The watch camera on (the plane held still).
 var watching := false
 var _watch_at := Vector3.ZERO
@@ -119,6 +124,9 @@ func _ready() -> void:
 	burrower = Burrower.new()
 	add_child(burrower)
 	burrower.setup(land,react)
+	push_ups = PushUps.new()
+	add_child(push_ups)
+	push_ups.setup(land,burrower)
 	_build_ui()
 	await get_tree().physics_frame
 	await get_tree().physics_frame
@@ -219,6 +227,7 @@ func _physics_process(delta: float) -> void:
 func tick(delta: float, input: Dictionary) -> void:
 	if watching:
 		burrower.tick(delta)
+		push_ups.tick(delta,null,0.0)
 		_watch(delta)
 		if react != null: _react(delta)
 		return
@@ -228,6 +237,7 @@ func tick(delta: float, input: Dictionary) -> void:
 	figure.update(delta,plane,0.0,Callable(land,"ground"),false)
 	_rouse(delta)
 	burrower.tick(delta)
+	push_ups.tick(delta,plane,WorldScale.TOY_SPAN*ground_scale.size()*0.5)
 	_frame(delta)
 	if react != null: _react(delta)
 
@@ -366,6 +376,9 @@ func _lean_tapped(dir: float) -> void:
 
 ## Back up over the meadow's south end, heading north.
 func respawn() -> void:
+	# A run left behind sinks away; a new skim can wake it at once.
+	if burrower.active and burrower.mode == &"lead": burrower.dive()
+	rouse.rest = 0.0
 	launch(Vector3(_start.x,land.height(_start.x,_start.z)+_start.y,_start.z),_heading)
 
 func _unhandled_input(event: InputEvent) -> void:

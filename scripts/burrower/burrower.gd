@@ -118,6 +118,9 @@ var stats := {"samples": 0, "chunks": 0, "clods": 0, "dust": 0, "stamps": 0, "ne
 var wet := false
 var wet_k := 0.0
 
+## Set by what it pushes up (push_ups.gd): the least it runs ahead of the
+## plane while leading (m), so a push-up comes a beat ahead; 0 none.
+var want_ahead := 0.0
 var _plane: Object
 var _turn := 0.0
 var _goal := Vector2.ZERO
@@ -342,6 +345,7 @@ func _move(delta: float) -> void:
 		var fwd := Vector2(f.x,f.z).normalized()
 		var side := Vector2(-fwd.y,fwd.x)
 		var ahead := lerpf(LEAD_AHEAD.x,LEAD_AHEAD.y,clampf(0.5+1.1*_noise.get_noise_1d(time*0.45+100.0),0.0,1.0))
+		ahead = maxf(ahead,want_ahead)
 		var off := lerpf(LEAD_SIDE.x,LEAD_SIDE.y,clampf(0.5+1.0*_noise.get_noise_1d(time*0.3+200.0),0.0,1.0))
 		# Its slot by the plane sets the speed; it steers for a point on
 		# along the plane's way from there (else it would turn back for a
@@ -566,6 +570,48 @@ func _spawn_clod() -> void:
 		"spin": Vector3(_rng.randf_range(-1,1),_rng.randf_range(-1,1),_rng.randf_range(-1,1)).normalized(),
 		"rate": _rng.randf_range(4.0,14.0), "turn": 0.0, "size": size, "colour": colour,
 		"bounced": false, "rest": -1.0, "squash": Vector3(_rng.randf_range(0.8,1.3),_rng.randf_range(0.6,1.0),_rng.randf_range(0.8,1.2))})
+
+## Earth thrown off a point (a push-up cracking out, or falling off it):
+## `n` clods from `at` (world, y their start), out `out` m/s, up `up` m/s.
+func throw_earth(at: Vector3, n: int, out: float, up: float, spread := 1.0) -> void:
+	for i in n:
+		if _clods.size() >= CLODS: _clods.pop_front()
+		var a := _rng.randf()*TAU
+		var dir := Vector2(cos(a),sin(a))
+		var p := at+Vector3(dir.x,0.0,dir.y)*_rng.randf_range(0.2,spread)
+		var kind := _rng.randf()
+		var colour := SOD if kind < 0.4 else (SOIL if kind < 0.85 else PEBBLE)
+		colour = colour.lerp(Color.BLACK,_rng.randf()*0.25)
+		var size := _rng.randf_range(0.12,0.38)*(0.6 if kind >= 0.85 else 1.0)
+		var h := dir*out*_rng.randf_range(0.4,1.0)
+		_clods.append({"p": p, "v": Vector3(h.x,up*_rng.randf_range(0.5,1.0),h.y),
+			"spin": Vector3(_rng.randf_range(-1,1),_rng.randf_range(-1,1),_rng.randf_range(-1,1)).normalized(),
+			"rate": _rng.randf_range(4.0,14.0), "turn": 0.0, "size": size, "colour": colour,
+			"bounced": false, "rest": -1.0, "squash": Vector3(_rng.randf_range(0.8,1.3),_rng.randf_range(0.6,1.0),_rng.randf_range(0.8,1.2))})
+
+## Water thrown off a point: `n` drops from `at` (world), out and up (m/s),
+## and a ring on the pond when `ring` > 0.
+func throw_water(at: Vector3, n: int, out: float, up: float, ring := 0.0) -> void:
+	if ring > 0.0:
+		_wake[_wake_i] = Vector4(at.x,at.z,time,ring)
+		_wake_i = (_wake_i+1) % WAKES
+	for i in n:
+		if _sprays.size() >= SPRAYS: _sprays.pop_front()
+		var a := _rng.randf()*TAU
+		var dir := Vector2(cos(a),sin(a))
+		var h := dir*out*_rng.randf_range(0.3,1.0)
+		_sprays.append({"p": at+Vector3(dir.x,0.0,dir.y)*_rng.randf_range(0.1,0.9), "v": Vector3(h.x,up*_rng.randf_range(0.4,1.0),h.y),
+			"size": _rng.randf_range(0.05,0.13)})
+
+## A puff of dust (or mist over water) at a point.
+func puff(at: Vector3, n: int, water := false) -> void:
+	for i in n:
+		if _dusts.size() >= DUSTS: _dusts.pop_front()
+		var a := _rng.randf()*TAU
+		var d := Vector2(cos(a),sin(a))*_rng.randf_range(0.6,2.0)
+		_dusts.append({"p": at+Vector3(d.x*0.5,0.3,d.y*0.5), "v": Vector3(d.x,_rng.randf_range(0.6,1.4),d.y),
+			"age": 0.0, "life": DUST_LIFE*_rng.randf_range(0.6,1.0), "size": _rng.randf_range(0.7,1.2),
+			"shade": _rng.randf_range(0.85,1.1), "colour": MIST if water else DUST, "most": 0.24})
 
 func _step_clods(delta: float) -> void:
 	var i := 0
