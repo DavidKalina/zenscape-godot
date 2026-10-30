@@ -31,6 +31,7 @@ extends Node3D
 ## alone (the watch camera's). `dive()` sinks it away.
 
 const Land = preload("res://scripts/burrower/burrower_land.gd")
+const Ground = preload("res://scripts/burrower/burrower_ground.gd")
 const GrassReact = preload("res://scripts/endless/grass_react.gd")
 const RIDGE_SHADER = preload("res://shaders/burrower_ridge.gdshader")
 const DUST_SHADER = preload("res://shaders/burrower_dust.gdshader")
@@ -109,6 +110,8 @@ const WANDER := 0.45
 const RUN_OFF := 0.6
 const OFF_TURN := 1.2
 const RUN_RIM := 180.0
+## RUN_RIM as room left inside the land's rim (m; the study's meadow: 75).
+const RUN_ROOM := 255.0-RUN_RIM
 const RIM_TURN := 1.0
 const RUN_LOST := 120.0
 ## Grass: a stamp every GRASS_STEP m, its reach (m), push and hold (s).
@@ -149,7 +152,10 @@ const MIST := Color(0.80,0.85,0.87)
 ## How often a roam goal is the pond's far side.
 const POND_GOAL := 0.3
 
-var land: Land
+## The ground it runs in: the study's land (burrower_land.gd) or the game's
+## (game_land.gd); both answer height, normal, mesh_height, colour, water_y,
+## room, inward, stone, trees, pond_rect and pond_material.
+var land: Ground
 var react: GrassReact
 var time := 0.0
 ## Under way (moving and heaving), and how hard: 0 sunk, 1 at the turf.
@@ -215,15 +221,14 @@ var _spray_carry := 0.0
 func _init() -> void:
 	name = "Burrower"
 
-func setup(the_land: Land, the_react: GrassReact) -> void:
+func setup(the_land: Ground, the_react: GrassReact) -> void:
 	land = the_land
 	react = the_react
 	_noise.seed = 5
 	_noise.frequency = 0.35
 	_rng.seed = 41
-	for r: Dictionary in land.rocks + land.ruins:
+	for r: Dictionary in land.stone():
 		_obstacles.append({"at": r.at, "reach": float(r.reach)})
-	_obstacles.append({"at": Land.KNOLL, "reach": Land.KNOLL_R*0.85})
 	for tree: Node3D in land.trees:
 		_obstacles.append({"at": Vector2(tree.position.x,tree.position.z), "reach": TRUNK, "margin": TRUNK_MARGIN, "ramp": TRUNK_RAMP, "tree": true})
 	shudder = TreeShudder.new()
@@ -256,7 +261,7 @@ func setup(the_land: Land, the_react: GrassReact) -> void:
 	var quad := QuadMesh.new()
 	var dust_m := ShaderMaterial.new()
 	dust_m.shader = DUST_SHADER
-	dust_m.set_shader_parameter("pond",Vector4(Land.POND.x,Land.POND.y,Land.POND_R*1.1,Land.WATER_Y))
+	dust_m.set_shader_parameter("pond",land.pond_rect())
 	quad.material = dust_m
 	_dust_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_dust_mm.use_custom_data = true
@@ -338,7 +343,7 @@ func lead(plane: Object) -> void:
 		# Room: the start, the crossing and the way it breaks off, all well
 		# inside the meadow (the pond is fine: it comes in as a wake).
 		var away := cross+fwd.rotated(-s*BREAK)*60.0
-		var room := Land.MEADOW_R-maxf(maxf(at.length(),cross.length()),away.length())
+		var room := minf(minf(land.room(at),land.room(cross)),land.room(away))
 		if _seen(at): room -= 100.0
 		if best.is_empty() or room > float(best.room)+0.5: best = {"at": at, "s": s, "room": room}
 	var start: Vector2 = best.at
@@ -391,8 +396,8 @@ func _resurface() -> void:
 	var fwd := Vector2(f.x,f.z).normalized()
 	if fwd == Vector2.ZERO: fwd = Vector2(0,-1)
 	var at := Vector2(p.x,p.z)+fwd*maxf(32.0,want_ahead)+Vector2(-fwd.y,fwd.x)*_side*9.0
-	var rim := Land.MEADOW_R-30.0
-	if at.length() > rim: at = at.normalized()*rim
+	var room: float = land.room(at)
+	if room < 30.0: at += land.inward(at)*(30.0-room)
 	for o: Dictionary in _obstacles:
 		var r := float(o.reach)+float(o.get("margin",MARGIN))
 		if at.distance_to(o.at) < r: at = (o.at as Vector2)+(at-(o.at as Vector2)).normalized()*r
@@ -411,7 +416,7 @@ func _resurface() -> void:
 func _breach() -> void:
 	var at := Vector3(pos.x,land.height(pos.x,pos.y),pos.y)
 	if wet:
-		var water := Vector3(pos.x,Land.WATER_Y,pos.y)
+		var water := Vector3(pos.x,land.water_y(pos.x,pos.y),pos.y)
 		throw_water(water,40,4.0,8.0,2.5)
 		puff(water,6,true)
 	else:
@@ -436,8 +441,9 @@ func _plane_speed() -> float:
 	return maxf(Vector2(v.x,v.z).length(),8.0)
 
 func _wet_at(p: Vector2) -> bool:
-	return land.height(p.x,p.y) < Land.WATER_Y-WET_DEEP
+	return land.height(p.x,p.y) < land.water_y(p.x,p.y)-WET_DEEP
 
+## (Roaming is the study's alone: its goals are its meadow's pond and trees.)
 func _roam_goal() -> Vector2:
 	# Now and then across the pond: a point past its far side, in the meadow.
 	if _rng.randf() < POND_GOAL and pos.distance_to(Land.POND) > Land.POND_R+15.0:
@@ -475,6 +481,10 @@ func tick(delta: float) -> void:
 	_feed_pond()
 	_drop_old_chunks()
 	if active or not _samples.is_empty(): _rebuild_live()
+
+## Asleep with nothing left of it to move or fade (a host may skip `tick`).
+func settled() -> bool:
+	return not active and _samples.is_empty() and _chunks.is_empty() and _clods.is_empty() 		and _dusts.is_empty() and _sprays.is_empty() and wet_k <= 0.0
 
 func _move(delta: float) -> void:
 	_run += delta
@@ -554,8 +564,9 @@ func _move(delta: float) -> void:
 				dir += (away*0.9+tang*0.6)*w*1.8
 	stats.nearest = minf(float(stats.nearest),nearest)
 	# (Coming in it keeps its intercept unless right at the edge.)
-	var rim := Land.MEADOW_R-(8.0 if mode == &"lead" and phase == &"enter" else 28.0)
-	if pos.length() > rim: dir += -pos.normalized()*clampf((pos.length()-rim)/12.0,0.0,2.0)*2.0
+	var keep := 8.0 if mode == &"lead" and phase == &"enter" else 28.0
+	var room: float = land.room(pos)
+	if room < keep: dir += land.inward(pos)*clampf((keep-room)/12.0,0.0,2.0)*2.0
 	var want := angle_difference(heading,dir.angle())
 	# Leading, it turns as hard as the plane can (a banked plane comes round
 	# at ~1 rad/s; the slot ahead swings wider and faster than that).
@@ -650,12 +661,13 @@ func _run_on(delta: float, surge: float) -> float:
 		# Its own way: a slow wander...
 		_course += WANDER*clampf(2.0*_noise.get_noise_1d(time*0.25+400.0),-1.0,1.0)*delta
 		var cv := Vector2.from_angle(_course)
-		var out := pos.normalized()
-		if pos.length() > RUN_RIM and cv.dot(out) > -0.3:
+		var out: Vector2 = -land.inward(pos)
+		var room: float = land.room(pos)
+		if room < RUN_ROOM and out != Vector2.ZERO and cv.dot(out) > -0.3:
 			# ...bent along the meadow's edge, the way nearer its course...
 			var tang := out.orthogonal()
 			if tang.dot(cv) < 0.0: tang = -tang
-			var k := clampf((pos.length()-RUN_RIM)/30.0,0.3,1.5)
+			var k := clampf((RUN_ROOM-room)/30.0,0.3,1.5)
 			_course = rotate_toward(_course,(tang-out*0.35).angle(),RIM_TURN*k*delta)
 			stats.rim_bends = float(stats.get("rim_bends",0.0))+delta
 		else:
@@ -958,7 +970,7 @@ func _spawn_dust() -> void:
 	var side := Vector2(-forward().y,forward().x)
 	var at := pos-forward()*_rng.randf_range(0.5,3.0)+side*_rng.randf_range(-1.0,1.0)
 	var drift := forward()*speed*0.12+side*_rng.randf_range(-1.2,1.2)
-	var y := Land.WATER_Y+0.5 if wet else land.height(at.x,at.y)+0.4
+	var y: float = land.water_y(at.x,at.y)+0.5 if wet else land.height(at.x,at.y)+0.4
 	_dusts.append({"p": Vector3(at.x,y,at.y), "v": Vector3(drift.x,_rng.randf_range(0.6,1.4)*(1.5 if wet else 1.0),drift.y),
 		"age": 0.0, "life": DUST_LIFE*_rng.randf_range(0.7,1.3)*(0.7 if wet else 1.0), "size": _rng.randf_range(0.6,1.1)*(1.3 if wet else 1.0),
 		"shade": _rng.randf_range(0.85,1.1), "colour": MIST if wet else DUST, "most": 0.22 if wet else 0.2})
@@ -1034,7 +1046,8 @@ func _spawn_drop(burst: bool) -> void:
 		at = pos+fwd*_rng.randf_range(-1.5,1.5)+side*(sgn*1.2+u)
 		var h := side*sgn*_rng.randf_range(2.0,6.0)+fwd*speed*_rng.randf_range(0.2,0.55)
 		v = Vector3(h.x,_rng.randf_range(2.5,7.0)*strength,h.y)
-	_sprays.append({"p": Vector3(at.x,Land.WATER_Y+0.3,at.y), "v": v, "size": _rng.randf_range(0.05,0.14)})
+	var sea: float = land.water_y(at.x,at.y)
+	_sprays.append({"p": Vector3(at.x,sea+0.3,at.y), "sea": sea, "v": v, "size": _rng.randf_range(0.05,0.14)})
 
 func _step_spray(delta: float) -> void:
 	var i := 0
@@ -1044,7 +1057,7 @@ func _step_spray(delta: float) -> void:
 		v.y -= GRAVITY*delta
 		v *= 1.0-0.9*delta
 		var p: Vector3 = (d.p as Vector3)+v*delta
-		if p.y < Land.WATER_Y and v.y < 0.0:
+		if p.y < float(d.get("sea",-INF)) and v.y < 0.0:
 			_sprays.remove_at(i)
 			continue
 		d.v = v

@@ -1,4 +1,4 @@
-extends Node3D
+extends "res://scripts/burrower/burrower_ground.gd"
 ## The burrower study's slice of land (docs/design/endless-flight/spec-burrower.md):
 ## a meadow some 360 m across in a bowl of low hills, the game's carpet
 ## grass on it (KitFlora's tufts as the endless land grows them), a pond,
@@ -30,7 +30,6 @@ const POND_DEEP := 3.8
 const WATER_Y := -0.45
 const POND_SHADER = preload("res://shaders/burrower_pond.gdshader")
 ## The pond's water (shaders/burrower_pond.gdshader): the burrower sets its wake.
-var pond_material: ShaderMaterial
 ## The steep knoll: its middle, its foot's radius, its height.
 const KNOLL := Vector2(-95.0,-85.0)
 const KNOLL_R := 30.0
@@ -52,7 +51,6 @@ const RIM_SOFT := 35.0
 
 var rocks: Array = []
 var ruins: Array = []
-var trees: Array = []
 var _roll := FastNoiseLite.new()
 var _hill := FastNoiseLite.new()
 var _rng := RandomNumberGenerator.new()
@@ -115,6 +113,25 @@ func mesh_height(x: float, z: float) -> float:
 		return h00+fu*(h10-h00)+fv*(h01-h00)
 	var h11 := height(x0+STEP,z0+STEP)
 	return h11+(1.0-fu)*(h01-h11)+(1.0-fv)*(h10-h11)
+
+## The pond's level (one water: WATER_Y everywhere).
+func water_y(_x: float, _z: float) -> float:
+	return WATER_Y
+
+## Inside the meadow's rim (m; its round edge MEADOW_R from the middle).
+func room(at: Vector2) -> float:
+	return MEADOW_R-at.length()
+
+## Back toward the meadow's middle.
+func inward(at: Vector2) -> Vector2:
+	return -at.normalized()
+
+## The rocks, the ruin and the knoll.
+func stone() -> Array:
+	return rocks+ruins+[{"at": KNOLL, "reach": KNOLL_R*0.85}]
+
+func pond_rect() -> Vector4:
+	return Vector4(POND.x,POND.y,POND_R*1.1,WATER_Y)
 
 ## The plane's ground (SkyGlide `step`): the land's height under it.
 func ground(p: Vector3) -> Variant:

@@ -33,6 +33,7 @@ extends Node3D
 ##         pressed out in a ring.
 
 const Land = preload("res://scripts/burrower/burrower_land.gd")
+const Ground = preload("res://scripts/burrower/burrower_ground.gd")
 const RuinBump = preload("res://scripts/ruin_bump.gd")
 const HALO_SHADER = preload("res://shaders/burrower_halo.gdshader")
 const SOIL_SHADER = preload("res://shaders/burrower_soil.gdshader")
@@ -125,7 +126,8 @@ const FAR := 45.0
 ## surges for it).
 const STARVE := 3.0
 
-var land: Land
+## The ground (the study's land or the game's; see burrower.gd `land`).
+var land: Ground
 var burrower: Node
 var time := 0.0
 ## Everything up (named orbs for the orb-era drivers): each a Dictionary
@@ -171,7 +173,7 @@ var _gong_mat := StandardMaterial3D.new()
 func _init() -> void:
 	name = "PushUps"
 
-func setup(the_land: Land, the_burrower: Node) -> void:
+func setup(the_land: Ground, the_burrower: Node) -> void:
 	land = the_land
 	burrower = the_burrower
 	_rng.seed = 77
@@ -243,6 +245,11 @@ func setup(the_land: Land, the_burrower: Node) -> void:
 ## with `plane` null: the watch camera's), their motion, the plane's hits
 ## (its middle and half its span, m; `bumped`: RuinBump put it back out of
 ## something this tick).
+## Nothing up and nothing bursting (a host may skip `tick` while the
+## burrower is settled too).
+func settled() -> bool:
+	return orbs.is_empty() and _motes.is_empty()
+
 func tick(delta: float, plane: Object, half_span: float, bumped := false) -> void:
 	time += delta
 	if time-_last_hit > RUN_GAP: note_i = 0
@@ -274,8 +281,9 @@ func tick(delta: float, plane: Object, half_span: float, bumped := false) -> voi
 func push(at: Vector2, kind := &"orb", face := Vector2(0.0,1.0)) -> Dictionary:
 	var k: Dictionary = KINDS[kind]
 	var ground := land.height(at.x,at.y)
-	var wet := ground < Land.WATER_Y-0.15
-	var base := maxf(ground,Land.WATER_Y)
+	var sea: float = land.water_y(at.x,at.y)
+	var wet := ground < sea-0.15
+	var base := maxf(ground,sea)
 	var n := Vector3(face.x,0.0,face.y).normalized() if face.length() > 0.01 else Vector3.BACK
 	var turn := Basis(Vector3.UP.cross(n),Vector3.UP,n)
 	var o := {"kind": kind, "k": k, "at": at, "base": base, "wet": wet, "phase": &"swell", "t": 0.0,
@@ -597,9 +605,9 @@ func _on_line(p: Vector2, vp: float, t: float, w: float) -> Vector4:
 func _room(at: Vector2, k: Dictionary) -> String:
 	for tree: Node3D in land.trees:
 		if at.distance_to(Vector2(tree.position.x,tree.position.z)) < float(k.room): return "tree"
-	for r: Dictionary in land.rocks+land.ruins:
+	for r: Dictionary in land.stone():
 		if at.distance_to(r.at) < float(r.reach)+float(k.room)-3.0: return "rock"
-	if at.length() > Land.MEADOW_R-10.0: return "rim"
+	if land.room(at) < 10.0: return "rim"
 	return ""
 
 func _skip(why: String) -> void:

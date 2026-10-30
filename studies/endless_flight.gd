@@ -142,6 +142,7 @@ const RivalRace = preload("res://scripts/endless/rival_race.gd")
 ## The shops beside their strips (scripts/endless/shop_sites.gd; --shops=0 none).
 const ShopSites = preload("res://scripts/endless/shop_sites.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
+const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
 const FlightRumble = preload("res://scripts/endless/flight_rumble.gd")
@@ -277,6 +278,9 @@ var race: Node
 var shops: Node
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
+## The burrower, woken by a chosen skim (scripts/endless/burrower_flight.gd;
+## --no-burrower: none).
+var burrower: Node
 var flown := 0.0
 var _start := Vector2.ZERO
 var _no_title := false
@@ -598,6 +602,10 @@ func _ready() -> void:
 		beats = BeatRoutes.new()
 		add_child(beats)
 		beats.setup(seed,self)
+	if BurrowerFlight.wanted():
+		burrower = BurrowerFlight.new()
+		add_child(burrower)
+		burrower.setup(self)
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
@@ -1008,6 +1016,7 @@ func tick(delta: float) -> void:
 		stage.frame(delta,camera,plane.position+ground_scale.lift(),ground_scale.size(),Callable(field,"height"))
 		if not stage.running(): _menu_done()
 	if beats != null: beats.step(delta,self)
+	if burrower != null: burrower.step(delta,self)
 	land.lead_with(plane.velocity)
 	land.step(camera.global_position)
 	arches.step(camera.global_position)
