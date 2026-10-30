@@ -29,6 +29,10 @@ extends "res://scripts/sky_traffic.gd"
 ## it keeps off the player by its own, nearer, SAFE (none on the ground),
 ## lays no smoke on the ground and is not recycled.
 ##
+## A "door" plan (`door_run`, scripts/endless/region_doors.gd) comes in
+## between the player and a door's wall of cloud and flies into it, put
+## away once inside: no tricks on the way, not recycled for distance.
+##
 ## Flags: --traffic=0 off, --traffic=N planes (DEFAULT_COUNT), --trails=0
 ## no trails.
 
@@ -113,6 +117,14 @@ var _player_speed := 0.0
 var _eye := Vector3.ZERO
 var _view := Vector3.FORWARD
 var _pull := 0.0
+## The door the last door plan flies into (`door_run`).
+var _door := {}
+## A door plan is recycled only further than this from the eye (m).
+const DOOR_RECYCLE := 7000.0
+## How far from the door a door plan comes in (m; a share of the player's
+## distance from it, held to this range) and how far off to the side.
+const DOOR_LEAD := Vector2(500.0,1100.0)
+const DOOR_SIDE := Vector2(180.0,380.0)
 
 ## How many planes the flags ask for (0: off).
 static func wanted() -> int:
@@ -196,6 +208,11 @@ func step(delta: float, eye: Vector3, view: Vector3, player: Vector3, player_fwd
 		if rival != null: rival.fly(self,delta)
 		else: _fly(plane,delta)
 		if plane.figure != plane.body: plane.body.transform = plane.far.transform
+		# A door plan inside its wall: gone.
+		if plane.plan == "door" and _in_door(plane):
+			if plane.trail != null: plane.trail.lay(delta,_tail(plane),eye,true)
+			_put_away(plane)
+			continue
 		_keep_off(plane)
 		if plane.trail != null:
 			# A rival on the ground lays no smoke; off again, a fresh trail.
@@ -223,6 +240,35 @@ func note() -> String:
 func force(n: int, plan: String) -> void:
 	if n < 0 or n >= planes.size(): return
 	_spawn(planes[n],plan)
+
+## A plane flown into a door (`door`: {xform, the wall's frame with z its
+## through way; half, the core's half sizes in that frame; aim, the point
+## flown at}): a plane not up (else the furthest up, not racing) comes in
+## between the player and the door. True when one was sent.
+func door_run(door: Dictionary) -> bool:
+	var pick := {}
+	var far := -1.0
+	for plane: Dictionary in planes:
+		if plane.get("rival") != null: continue
+		if not plane.up:
+			pick = plane
+			break
+		var d := (plane.flight as Flight).position.distance_to(_eye)
+		if d > far:
+			far = d
+			pick = plane
+	if pick.is_empty(): return false
+	_door = door
+	_spawn(pick,"door")
+	return true
+
+## Whether a door plan is inside its door's core.
+func _in_door(plane: Dictionary) -> bool:
+	var door: Dictionary = plane.goal.get("door",{})
+	if door.is_empty(): return false
+	var q: Vector3 = (door.xform as Transform3D).affine_inverse()*(plane.flight as Flight).position
+	var half: Vector3 = door.half
+	return absf(q.x) < half.x and q.y > 0.0 and q.y < half.y and absf(q.z) < half.z
 
 ## Plane `n` put at `at` on `heading` now, cruising on ahead
 ## (--race-near-start: a rival to challenge in view).
@@ -267,7 +313,21 @@ func _spawn(plane: Dictionary, plan := "") -> void:
 		goal = {"kind":"pass","off":off,"hand":hand,"lift":rng.randf_range(OVER_PLAYER.x,OVER_PLAYER.y)}
 		goal.point = _player-_player_fwd*400.0+side*off*hand+Vector3.UP*float(goal.lift)
 		at.y = _player.y+float(goal.lift)
+	elif kind == "door" and not _door.is_empty():
+		# In between the player and the door, off to one side, flying in.
+		var xf: Transform3D = _door.xform
+		var aim: Vector3 = _door.aim
+		var back := -Vector3(xf.basis.z.x,0.0,xf.basis.z.z).normalized()
+		var to_player := _player-aim
+		to_player.y = 0.0
+		if to_player.dot(back) < 0.0: back = -back
+		var lead := clampf(to_player.length()*0.55,DOOR_LEAD.x,DOOR_LEAD.y)
+		var across := back.cross(Vector3.UP).normalized()
+		at = aim+back*lead+across*hand*rng.randf_range(DOOR_SIDE.x,DOOR_SIDE.y)
+		at.y = maxf(aim.y,float(ground.call(at))+OVER_GROUND.x)
+		goal = {"kind":"door","point":aim,"door":_door}
 	else:
+		if kind == "door": kind = "cruise"
 		# Somewhere out in the haze, off the view, flying across it.
 		var a := atan2(_view.x,_view.z)+hand*rng.randf_range(0.6,2.4)
 		at = _eye+Vector3(sin(a),0.0,cos(a))*rng.randf_range(SPAWN.x,SPAWN.y)
@@ -291,6 +351,9 @@ func _spawn(plane: Dictionary, plan := "") -> void:
 	plane.behind = 0.0
 	plane.near = INF
 	plane.plan = kind
+	# A door plan flies straight in; the others get their tricks back.
+	if kind == "door": plane.next = 1e6
+	elif float(plane.next) > 1e5: plane.next = rng.randf_range(TRICK_EVERY.x,TRICK_EVERY.y)
 	plane.life = 0.0
 	plane.up = true
 	plane.figure = plane.body
@@ -405,9 +468,11 @@ func _reaim(plane: Dictionary) -> void:
 	else:
 		goal.point = _player-_player_fwd*400.0+side*float(goal.off)*float(goal.hand)+Vector3.UP*float(goal.lift)
 
-## Done when its point is reached or passed (the base's rule).
+## Done when its point is reached or passed (the base's rule); a door
+## plan never (it is put away inside the wall).
 func _done(plane: Dictionary) -> bool:
 	var goal: Dictionary = plane.goal
+	if goal.kind == "door": return false
 	if goal.kind == "cross" and goal.get("held",false):
 		# Over his line: on across and away.
 		var flight: Flight = plane.flight
@@ -493,6 +558,7 @@ func _recycle(plane: Dictionary, delta: float) -> bool:
 	var flight: Flight = plane.flight
 	var off := flight.position-_eye
 	var d := Vector2(off.x,off.z).length()
+	if plane.plan == "door": return d > DOOR_RECYCLE
 	if d > RECYCLE: return true
 	# Behind the view and going away (one still closing in may yet cross).
 	var behind := Vector3(off.x,0.0,off.z).dot(_view) < -0.3*d and flight.velocity.dot(off) > 0.0

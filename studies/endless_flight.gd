@@ -138,6 +138,7 @@ const EndlessTraffic = preload("res://scripts/endless/endless_traffic.gd")
 const RivalRace = preload("res://scripts/endless/rival_race.gd")
 ## The shops beside their strips (scripts/endless/shop_sites.gd; --shops=0 none).
 const ShopSites = preload("res://scripts/endless/shop_sites.gd")
+const RegionDoors = preload("res://scripts/endless/region_doors.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 ## The pad's rumble (scripts/endless/flight_rumble.gd).
@@ -406,6 +407,8 @@ var _pull := 0.0
 ## The main menu's stage (scripts/endless/menu_stage.gd) until the takeoff
 ## is the player's, else null (`--no-title`); its overlay.
 var stage: RefCounted
+## The doors between the regions (--world=doors; scripts/endless/region_doors.gd).
+var doors: Node3D
 var menu: Control
 
 ## The 3D at a Native draw (the player's render resolution, and the default
@@ -600,6 +603,10 @@ func _ready() -> void:
 	shops.name = "Shops"
 	add_child(shops)
 	shops.setup(self)
+	if RegionDoors.wanted(world):
+		doors = RegionDoors.new()
+		add_child(doors)
+		doors.setup(self,_start,_heading,seed)
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.PLAYS else ", world "+str(world.id)])
@@ -950,6 +957,7 @@ func tick(delta: float) -> void:
 	flown += delta
 	var input := _fly_input(delta)
 	if stage != null: input = stage.input(delta,input,hand_landing,plane_figure)
+	if doors != null: input = doors.input(input)
 	# The plane skims the swell as drawn, not the sea's rest level, and a
 	# river's water as it skims the sea.
 	plane.water = water_at(plane.position)
@@ -993,6 +1001,8 @@ func tick(delta: float) -> void:
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() and stage == null else Vector3.ZERO
 	chase.ground = hand_landing.on_ground()
 	_stop_note()
+	# A door flown into carries the plane to the other side (region_doors.gd).
+	if doors != null: doors.step(delta)
 	_frame(delta)
 	if stage != null:
 		stage.frame(delta,camera,plane.position+ground_scale.lift(),ground_scale.size(),Callable(field,"height"))
