@@ -159,10 +159,11 @@ float peak_ice_floor(vec3 p, vec3 eye, vec4 frame, vec2 flow, vec2 more, float f
 	col = mix(col, ICE_CRUST, old * 0.72);
 	// Under the surface, seen through it: veins that shift against the crust.
 	vec2 under = eye.xz / max(eye.y, 0.3) * 0.62;
-	vec2 q1 = q - under * 2.4;
-	vec2 q2 = q - under * 7.0;
-	float v1 = smoothstep(0.56, 0.78, zs_noise(vec2(dot(q1, flow) / 15.0, dot(q1, perp) / 2.3) + 4.0));
-	float v2 = smoothstep(0.50, 0.80, zs_noise(vec2(dot(q2, flow) / 34.0, dot(q2, perp) / 7.0) + 11.0));
+	vec2 shift = vec2(dot(under, flow), dot(under, perp));
+	vec2 q1 = vec2(s, t) - shift * 2.4;
+	vec2 q2 = vec2(s, t) - shift * 7.0;
+	float v1 = smoothstep(0.56, 0.78, zs_noise(vec2(q1.x / 15.0, q1.y / 2.3) + 4.0));
+	float v2 = smoothstep(0.50, 0.80, zs_noise(vec2(q2.x / 34.0, q2.y / 7.0) + 11.0));
 	col = mix(col, ICE_BLUE * 0.8, (v1 * 0.34 * k_1 + v2 * 0.42 * k_3) * (1.0 - old * 0.7));
 	// Crevasses: the eye looks down the slit, pale near its lip, dark deep.
 	float v_s = dot(eye.xz, flow) / max(eye.y, 0.04);
@@ -210,11 +211,16 @@ float peak_ice_floor(vec3 p, vec3 eye, vec4 frame, vec2 flow, vec2 more, float f
 	// (Faded by distance alone, each by its own width: `fp` jumps across triangles,
 	// and the bump's derivative turned any jump or sub-pixel step in the height
 	// into a pair of dark and pale pixels, so a bump must end before its feature
-	// reaches a pixel.)
-	float fb = fp_far * 2.5;
-	float along = dot(q, flow);
-	float across = dot(q, perp);
-	float h = (zs_noise(vec2(along / 8.0, across / 4.6)) - 0.5) * 0.9 * (1.0 - smoothstep(1.2, 6.0, fb))
+	// reaches a pixel. `eye.y`: seen at a glance a pixel runs long along the view,
+	// so the bump must go by that length, or the hummocks beat against the rows of
+	// pixels in lines across the view, loudest in the shade where sky sheen is all
+	// the light. It runs smooth across the triangles, as fp_far does.)
+	float fb = fp_far * 2.5 / max(eye.y, 0.05);
+	// (Down the flow by `s` and `t`, the line's own measure. A world point dotted
+	// with `flow` is no length: `flow` turns along a bend, and at a few km from the
+	// origin the smallest turn runs that dot through a whole noise cell in a metre.
+	// That was the ripple across the ice.)
+	float h = (zs_noise(vec2(s / 8.0, t / 4.6)) - 0.5) * 0.9 * (1.0 - smoothstep(1.2, 6.0, fb))
 		+ (zs_noise(q / 2.1 + 6.0) - 0.5) * 0.28 * (1.0 - smoothstep(0.35, 1.4, fb))
 		+ (zs_noise(q / 0.55 + 3.0) - 0.5) * 0.05 * (1.0 - smoothstep(0.08, 0.3, fb));
 	h -= lip_a * 0.8 * (1.0 - smoothstep(0.25, 1.0, fb)) + lip_b * 0.25 * (1.0 - smoothstep(0.05, 0.2, fb));

@@ -157,6 +157,7 @@ uniform vec3 peak_rock_line[24];
 uniform vec4 peak_rock_box = vec4(0.0);
 // The Peak's granite's darkest (the towers' copy of the paint takes its own).
 uniform float peak_granite = 0.07;
+const float PEAK_BEDS = 3.0;
 uniform vec4 peak_stretch = vec4(850.0, 1250.0, 2050.0, 4050.0);
 uniform vec4 peak_half = vec4(200.0, 240.0, 260.0, 330.0);
 uniform vec4 peak_bend = vec4(170.0, 2.2, 1250.0, 4500.0);
@@ -854,7 +855,7 @@ void fragment() {
 		ice_gate = pk.y + fwidthFine(pk.y);
 		ice_gate += fwidthFine(ice_gate);
 	}
-	float pk_rock = pk.x * smoothstep(240.0, 420.0, over);
+	float pk_rock = pk.x * smoothstep(170.0, 320.0, over);
 	if (pk.x > 0.0) {
 		float pk_edge = (zs_noise(gxz / 160.0) - 0.5) * 120.0 + (zs_noise(gxz / 41.0) - 0.5) * 50.0 + snow_edge;
 		float pk_line = mix(snow_line, peak_snow, pk.x);
@@ -1123,7 +1124,14 @@ void fragment() {
 	vec3 lit_n = n;
 	vec3 rock_glow = vec3(0.0);
 	if (!old_rock && rocky > 0.002) {
-		rock = er_rock_shaped(p, n, fp3, zs_sun_direction, moss_grass * 0.85, land_carve, land_shape, lit_n, rock_glow);
+		// (The Peak's beds: the same paint on a coordinate stretched up and folded,
+		// so a smooth face wears big tilted bands, not a stack of even plates.)
+		vec3 bed_p = p;
+		if (pk.x > 0.0) {
+			float fold = 46.0 * sin(dot(p.xz, vec2(0.0041, 0.0029))) + 20.0 * sin(dot(p.xz, vec2(-0.011, 0.007)) + 1.3) + dot(p.xz, vec2(0.11, 0.14));
+			bed_p.y = mix(p.y, (p.y + fold) / PEAK_BEDS, pk.x);
+		}
+		rock = er_rock_shaped(bed_p, n, fp3, zs_sun_direction, moss_grass * 0.85, land_carve, land_shape, lit_n, rock_glow);
 		// Its bounce glow at the sky fill's strength (ER_REF_FILL its luma at
 		// the reference light), so it eases with the fill.
 		float fill_level = clamp(luma(zs_hemi_sky) * zs_hemi_energy / ER_REF_FILL, 0.25, 2.0);
@@ -1159,7 +1167,7 @@ void fragment() {
 	// pale beds softened; a colder snow, blue where it lies back from the sun.
 	if (pk_rock > 0.0) {
 		float l = luma(rock);
-		vec3 granite = vec3(peak_granite + l * 0.55) * vec3(0.88, 0.95, 1.08) * (1.0 + zs_fade(gxz * 1.7 + p.y, 1.3, fp) * 0.35);
+		vec3 granite = vec3(peak_granite + l * 0.42) * vec3(0.88, 0.95, 1.08) * (1.0 + zs_fade(gxz * 1.7 + p.y, 1.3, fp) * 0.35);
 		rock = mix(rock, granite, pk_rock * 0.85);
 		snow = mix(snow, snow * mix(vec3(0.92, 0.96, 1.04), vec3(0.84, 0.90, 1.0), clamp((0.25 - dot(n, zs_sun_direction)) * 2.0, 0.0, 1.0)), pk.x);
 	}
