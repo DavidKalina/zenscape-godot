@@ -765,7 +765,9 @@ func _step_clods(delta: float) -> void:
 	_clod_mm.visible_instance_count = n
 	for k in n:
 		var c: Dictionary = _clods[k]
-		var b := Basis(c.spin,float(c.turn)).scaled(Vector3(c.squash)*float(c.size)*2.0)
+		# 2.3: the ragged lump (GritMesh.lump) is some 15% smaller than the
+		# round clod it replaced; at 2.0 the spout thinned from the chase cam.
+		var b := Basis(c.spin,float(c.turn)).scaled(Vector3(c.squash)*float(c.size)*2.3)
 		_clod_mm.set_instance_transform(k,Transform3D(b,c.p))
 		_clod_mm.set_instance_color(k,c.colour)
 	stats.clods = n

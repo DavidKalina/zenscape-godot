@@ -107,7 +107,9 @@ void fragment() {
 	vec3 soil = mix(earth, earth_dry, smoothstep(2.0, 18.0, v_age));
 	// Gritty where torn: dry crumbs on damp dark earth, grains, root bits.
 	float dry = smoothstep(2.0, 18.0, v_age);
-	vec3 grit = grit_albedo(v_pos * 1.3, soil * 1.15, 0.2 + 0.6 * dry, 0.0);
+	// Lifted 1.45 so the grit's mean (damp earth 0.62 of it) stays near the
+	// earth colour the head read with from the chase camera.
+	vec3 grit = grit_albedo(v_pos * 1.3, soil * 1.45, 0.2 + 0.6 * dry, 0.0);
 	// A little grain in the turf too.
 	vec3 grass = turf * (0.88 + 0.24 * g_noise(v_pos * 14.0));
 	ALBEDO = mix(grass, grit, v_torn);

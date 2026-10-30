@@ -46,7 +46,7 @@ const STONE := Color("a39a88")
 ## The grass grows in squares this big, at once on the workers.
 const GRASS_CELL := 48.0
 ## Bumped when the land or the grow changes, so the kept grass is grown again.
-const GRASS_VERSION := 5
+const GRASS_VERSION := 6
 ## The grass thins out over the meadow's last this many m.
 const RIM_SOFT := 35.0
 
@@ -415,7 +415,12 @@ func _build_grass(share: float) -> void:
 		if job.node != null: job.node.free()
 		grown[i] = job.parts
 	# Kept on disk once grown (the land is fixed): a grow takes 10-20 s.
-	var cache := "user://burrower_grass_%d.bin" % (hash([GRASS_VERSION,share,reach,GRASS_CELL,site.tufts,rocks.size()]) & 0x7fffffff)
+	# Headless grows keep their own file: grown headless the tufts' colours
+	# come out different (6.2 MB of the buffer differs; drawn, it reads
+	# near black), and a headless check growing it first darkened the
+	# carpet in every window after.
+	var headless := DisplayServer.get_name() == "headless"
+	var cache := "user://burrower_grass_%s%d.bin" % ["headless_" if headless else "",hash([GRASS_VERSION,share,reach,GRASS_CELL,site.tufts,rocks.size()]) & 0x7fffffff]
 	var kept: Variant = null
 	if FileAccess.file_exists(cache):
 		var f := FileAccess.open(cache,FileAccess.READ)

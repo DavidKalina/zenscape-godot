@@ -10,6 +10,10 @@ uniform vec3 tint : source_color = vec3(0.29, 0.22, 0.15);
 uniform float seed = 0.0;
 uniform float dry = 0.4;
 uniform float bump = 0.9;
+// The clods' base lifted under the grit (its damp earth is 0.62 of the
+// base), so they read from the chase camera as the plain clods did; the
+// dome keeps 1.15.
+uniform float lift = 1.75;
 
 varying vec3 v_p;
 varying vec3 v_base;
@@ -34,7 +38,7 @@ void fragment() {
 	// Dome-sized objects are scaled up, so grain stays the same size in the world
 	// only roughly; fine for earth.
 	vec3 p = v_p * (use_instance ? 2.6 : 1.4);
-	vec3 c = grit_albedo(p, v_base * 1.15, dry, v_seed);
+	vec3 c = grit_albedo(p, v_base * (use_instance ? lift : 1.15), dry, v_seed);
 	ALBEDO = c;
 	ROUGHNESS = 1.0;
 	float h = grit_height(p, v_seed);
