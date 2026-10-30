@@ -43,7 +43,9 @@ Playing `studies/endless_flight.tscn` on seed 1 with no flags:
    logbook. The logbook lists the Peak and each route with its best time.
 6. Over the lip on the far side, the back face falls to the sea: one dive
    from summit to water.
-7. Three routes to the tarn, each a line with gates and a timed record:
+7. Three routes to the tarn, each flyable ground (their gates and timed
+   records are parked by the user, 2026-10-29, until the mountain itself
+   is right; the place-lines layer stays merged for then):
    - **The couloir**: foot gate at the start of the glacier, gates at the
      boulders, the icefall, the couloir's mouth and the rim. Lift in the
      couloir. Fastest.
@@ -56,8 +58,8 @@ Playing `studies/endless_flight.tscn` on seed 1 with no flags:
    tarn with margin, medium barely, heavy not at all. Heavy reaches it by
    the couloir. The straight climb is slow work, minutes, with nothing
    to chain.
-9. A traffic plane now and then flies the couloir route and vanishes over
-   the rim.
+9. (Parked, 2026-10-29.) A traffic plane now and then flies the couloir
+   route and vanishes over the rim.
 10. The meadows-and-flats guarantee holds everywhere round the foot and on
     the plateau. Chunks far from the Peak cost nothing extra to build.
 11. No script errors in a smoke check; the transition through the collar
@@ -214,11 +216,17 @@ In order, one task per iteration:
 5. The tarn: a pond entry with a forced level in the plateau bowl, skipping
    the pond site rules; the shore meadow landable; `place/peak` on
    landing; the landing card at the summit.
-6. The couloir route: lift in the slot, its gates, its record, the stair
-   from the ruin kit along the approach and up the slot, the traffic plane
-   flying it.
+6. The couloir: the lift tube in the slot along `couloir().line`, and
+   the ruined stair from the ruin kit along the approach and up the slot
+   as its visible tell. Delete the "trial" place line. Proof: fly the
+   couloir by the stick on medium and heavy from the glacier to the rim
+   with the lift carrying the climb, and back down; heavy reaches the
+   rim. (Parked by the user on 2026-10-29: the route's gates and timed
+   record, and the traffic plane flying it. The place-lines layer stays
+   merged and unused with no Peak route declared.)
 7. The towers traverse and the seaward face: spires on the crest from the
-   sea-stack kit, gates and records for both routes.
+   sea-stack kit, so both ways up exist as flyable ground. (Parked: their
+   gates and records.)
 8. Dressing: boulder field from the rock kit, seracs on the icefall, ice
    on the glacier and a snow line above about 500 m in the ground shader.
    Two things iteration 4's stills showed, to take in this step: from
