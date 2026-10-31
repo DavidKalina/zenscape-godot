@@ -163,6 +163,18 @@ const HEAD_OFF := 0.6
 ## over that (waiting past HEAD_WAIT, one comes up all the same).
 const HEAD_UP := 14.0
 const HEAD_HIGH := 7.0
+## `off_line` set (the game): the orb comes up as he's off the line by that much
+## instead, never past what the plane can reach in the `t` s it has (`_can_reach`).
+## TURN_W is the plane's yaw at half stick (rad/s, measured at its 36 m/s; full stick
+## is 2.08), TURN_LAG a pilot's half second to see it plus 0.25 s of rolling in.
+const TURN_W := 0.86
+const TURN_LAG := 0.75
+## While one is due he stays this far ahead of the plane (s of its flight), not the
+## kind's beat: far enough for the band's orbs to be reachable, near enough to see.
+const OFF_BEAT := 1.8
+## Crowns within WOOD_R m of the spot: HEAD_UP is WOOD_UP.
+const WOOD_R := 30.0
+const WOOD_UP := 26.0
 ## The third is out this long before he dives (`run_done`).
 const RUN_AFTER := 1.2
 
@@ -182,6 +194,9 @@ var stats := {"pushed": 0, "hits": 0, "sunk": 0, "skipped": 0, "why": {}, "notes
 var at_head := false
 ## How much past GRAZE an orb can be flown by and still count (m).
 var reach_more := 0.0
+## How far off the plane's line he must be for an orb to come up (m, least, most);
+## zero: as he crosses it, and he runs for the line while one is due.
+var off_line := Vector2.ZERO
 var run_most := 0
 var run_pushed := 0
 var _pushed_at := -INF
@@ -729,10 +744,17 @@ func _due_head(delta: float, plane: Object) -> void:
 	var out := Vector2(sin(_heading),cos(_heading)) if not is_nan(_heading) else Vector2.UP
 	var nose := absf(out.angle_to(head-p2))
 	var late := _due_t > HEAD_WAIT and nose < HEAD_OFF
+	if off_line.y > 0.0:
+		var can := _can_reach(t,vp)
+		over = absf(lat) >= off_line.x and absf(lat) <= minf(off_line.y,can)
+		late = late and absf(lat) <= can
 	if t >= HEAD_T.x and t <= HEAD_T.y and (over or late):
 		var at: Vector2 = head-burrower.forward()*HEAD_BACK
 		var low := maxf(maxf(land.height(at.x,at.y),land.water_y(at.x,at.y)),land.canopy_top(at,ROOF_R))
-		var up := clampf(p.y+v.y*t-low,float(k.up),HEAD_UP)
+		# (In a wood the plane is up over the crowns, a clearing's orb too: it comes up to it.)
+		var most_up := HEAD_UP
+		if off_line.y > 0.0 and land.canopy_top(at,WOOD_R) > low: most_up = WOOD_UP
+		var up := clampf(p.y+v.y*t-low,float(k.up),most_up)
 		if not late and p.y+v.y*t-low-up > HEAD_HIGH: return
 		var why := _room(at,k)
 		if why == "":
@@ -743,11 +765,20 @@ func _due_head(delta: float, plane: Object) -> void:
 			_wait = _rng.randf_range(GAP.x,GAP.y)
 			return
 		return _skip(why)
-	# Across, for a spot on the line a beat ahead of the plane.
+	# Across, for a spot on the line a beat ahead of the plane (off_line: he stays on
+	# his own swing, a beat ahead).
+	if off_line.y > 0.0:
+		burrower.want_ahead = OFF_BEAT*vp
+		return
 	burrower.want_ahead = beat*vp
 	var ahead := _on_line(p2,vp,beat,w)
 	var side := Vector2(-ahead.w,ahead.z)
 	burrower.want_at = Vector2(ahead.x,ahead.y)-side*(signf(lat) if lat != 0.0 else 1.0)*CROSS_PAST
+
+## How far off its line (m) the plane gets in `t` s on a half-stick turn. An orb
+## there is on the plane's arc with the turn to spare; its reach is more on top.
+func _can_reach(t: float, vp: float) -> float:
+	return vp/TURN_W*(1.0-cos(minf(TURN_W*maxf(t-TURN_LAG,0.0),PI*0.5)))
 
 ## Where the plane will be in `t` s (x, z) and its way then (z, w), flying
 ## on at `vp` m/s and turning at `w` rad/s.

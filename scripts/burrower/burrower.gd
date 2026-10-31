@@ -133,6 +133,20 @@ const RUN_RIM := 180.0
 const RUN_ROOM := 255.0-RUN_RIM
 const RIM_TURN := 1.0
 const RUN_LOST := 120.0
+## The game's run (`swing_m` over 0; the study's stays as above): a slow swing on
+## its course, at most SWING_MOST rad off it, each swing's time slipping by up to
+## SWING_SLIP so it doesn't keep a beat. Its course is drawn home to the plane's line
+## (a spot SWING_HOME_M m past him on it) at SWING_HOME rad/s, at SWING_BACK rad/s
+## once strayed past SWING_OFF rad off the nose. It turns at most SWING_TURN rad/s,
+## easing by SWING_EASE rad/s^2: long arcs, nothing nervous.
+const SWING_MOST := 0.8
+const SWING_SLIP := 0.35
+const SWING_HOME_M := 120.0
+const SWING_HOME := 0.2
+const SWING_OFF := 0.95
+const SWING_BACK := 0.5
+const SWING_TURN := 1.3
+const SWING_EASE := 3.0
 ## Grass: a stamp every GRASS_STEP m, its reach (m), push and hold (s).
 const GRASS_STEP := 1.5
 const GRASS_REACH := 3.4
@@ -241,6 +255,11 @@ var phase := &"run"
 var _phase_t := 0.0
 ## Its own course on the run (rad, as heading).
 var _course := 0.0
+## The swing on the run's course: m each side, s there and back (0 m: none), and
+## where in it he is (rad). The game's; see SWING_MOST.
+var swing_m := 0.0
+var swing_s := 7.0
+var _swing := 0.0
 var _plane: Object
 var _turn := 0.0
 var _goal := Vector2.ZERO
@@ -406,6 +425,7 @@ func notice(plane: Object) -> void:
 	phase = &"run"
 	_phase_t = 0.0
 	_course = heading
+	_swing = fmod(time*3.7,TAU)
 	_lost = 0.0
 	_run = 0.0
 	plume = false
@@ -752,7 +772,8 @@ func _move(delta: float) -> void:
 					var w := clampf(1.0-(d-r)/ramp,0.0,1.6)
 					dir += (away*0.9+tang*0.6)*w*1.8
 	stats.nearest = minf(float(stats.nearest),nearest)
-	dir += _feel(look,delta)
+	var felt := _feel(look,delta)
+	dir += felt
 	# (Coming in it keeps its intercept unless right at the edge.)
 	var keep := 8.0 if mode == &"lead" and phase == &"enter" else 28.0
 	var room: float = land.room(pos)
@@ -762,8 +783,13 @@ func _move(delta: float) -> void:
 	# at ~1 rad/s; the slot ahead swings wider and faster than that).
 	var leading := mode == &"lead" and _plane != null
 	var most := LEAD_TURN if leading else MAX_TURN
+	var quick := LEAD_TURN_EASE if leading else TURN_EASE
+	# (Land shut ahead, it turns as hard as it needs to.)
+	if leading and phase == &"run" and swing_m > 0.0 and felt == Vector2.ZERO:
+		most = SWING_TURN
+		quick = SWING_EASE
 	var rate := clampf(want*2.4,-most,most)
-	_turn = move_toward(_turn,rate,(LEAD_TURN_EASE if leading else TURN_EASE)*delta)
+	_turn = move_toward(_turn,rate,quick*delta)
 	heading = wrapf(heading+_turn*delta,-PI,PI)
 	speed = move_toward(speed,want_speed,ACCEL*delta)
 	var step := speed*delta
@@ -829,6 +855,14 @@ func _intercept(p2: Vector2, fwd: Vector2, vp: float) -> Vector2:
 	var lam := vp*(-fu+sqrt(fu*fu+k*k-1.0))
 	return (fwd*vp+u*lam).normalized()
 
+## How far the swing has him off his course now (rad): swing_m m each side at the
+## pace he's going.
+func _swing_on(delta: float, vp: float) -> float:
+	if swing_m <= 0.0: return 0.0
+	var w := TAU/swing_s
+	_swing = fmod(_swing+w*(1.0+SWING_SLIP*clampf(2.0*_noise.get_noise_1d(time*0.2+700.0),-1.0,1.0))*delta,TAU)
+	return minf(swing_m*w/maxf(speed,vp),SWING_MOST)*sin(_swing)
+
 ## The run's step: its own course, chased by the plane. Its speed.
 func _run_on(delta: float, surge: float) -> float:
 	_phase_t += delta
@@ -865,9 +899,13 @@ func _run_on(delta: float, surge: float) -> float:
 		else:
 			# ...and back toward the plane's nose when strayed wide of it.
 			var off := fwd.angle_to(rel)
-			if absf(off) > RUN_OFF or along < 8.0:
+			if swing_m > 0.0:
+				var strayed := absf(off) > SWING_OFF or along < 8.0
+				var home := p2+fwd*(maxf(along,0.0)+SWING_HOME_M)
+				_course = rotate_toward(_course,(home-pos).angle(),(SWING_BACK if strayed else SWING_HOME)*delta)
+			elif absf(off) > RUN_OFF or along < 8.0:
 				_course = rotate_toward(_course,fwd.angle(),OFF_TURN*delta*clampf(absf(off)/RUN_OFF,0.5,2.0))
-		_goal = pos+Vector2.from_angle(_course)*30.0
+		_goal = pos+Vector2.from_angle(_course+_swing_on(delta,vp))*30.0
 	# Kept ahead along the plane's nose (it surges and slows for that).
 	var gap := ahead-along
 	var want := clampf(vp*surge+gap*1.1,vp*0.5,vp*1.8)
