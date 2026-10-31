@@ -9,6 +9,7 @@ extends RefCounted
 ##   records   bests: higher wins, except the names in LOWER_WINS
 ##   found     ids met once (gaps, starters, shops), each with its flight
 ##   owned     shop items bought; worn: the item worn in each slot
+##   opened    what the plane broke open and stays open (cracked walls' handles)
 ## and `flight`, this flight's own (lift-off to the next lift-off), never
 ## kept: its tallies, its money, its lines, its challenges, the records it
 ## set. The landing summary reads it.
@@ -40,6 +41,7 @@ var records := {}
 var found := {}
 var owned := {}
 var worn := {}
+var opened := {}
 var flights := 0
 var flight := {}
 ## Where it is kept ("" never writes).
@@ -88,13 +90,14 @@ func load_book() -> void:
 	found = data.get("found",{})
 	owned = data.get("owned",{})
 	worn = data.get("worn",{})
+	opened = data.get("opened",{})
 	flights = int(data.get("flights",0))
 
 func save() -> void:
 	_dirty = false
 	_since = 0.0
 	if path == "": return
-	var data := {"money":money,"tally":tally,"records":records,"found":found,"owned":owned,"worn":worn,"flights":flights}
+	var data := {"money":money,"tally":tally,"records":records,"found":found,"owned":owned,"worn":worn,"opened":opened,"flights":flights}
 	var tmp := path+".tmp"
 	var f := FileAccess.open(tmp,FileAccess.WRITE)
 	if f == null: return
@@ -146,6 +149,11 @@ func find(id: String) -> bool:
 	flight.found.append(id)
 	_dirty = true
 	return true
+
+## `name` is broken open for good, kept at once.
+func open_up(name: String) -> void:
+	opened[name] = flights
+	save()
 
 func earn(amount: int) -> void:
 	if amount <= 0: return

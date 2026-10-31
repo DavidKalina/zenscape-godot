@@ -162,7 +162,8 @@ func cleared(i: int) -> void:
 	_flash[i] = 0.0
 
 ## One frame. `show`: {next (his next gate, -1 none), progress (m along, his),
-## in_spot (he is in his marks), spot (show them), alpha}.
+## in_spot (he is in his marks), spot (show them), alpha, line (false: no
+## ribbon, its gates alone)}.
 func step(delta: float, camera: Camera3D, show: Dictionary) -> void:
 	_clock += delta
 	_mesh.clear_surfaces()
@@ -183,7 +184,7 @@ func step(delta: float, camera: Camera3D, show: Dictionary) -> void:
 	if not _course.is_empty():
 		var next := int(show.get("next",0))
 		var gates: Array = _course.gates
-		_line.visible = alpha > 0.0
+		_line.visible = alpha > 0.0 and bool(show.get("line",true))
 		line_shown = _line.visible
 		_line_mat.set_shader_parameter("width_m",LINE_M)
 		_line_mat.set_shader_parameter("px_k",px*LINE_PX)

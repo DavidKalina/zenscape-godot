@@ -12,7 +12,8 @@ extends Node3D
 ##                          front faces local +Z, the chamber runs back to -Z
 ##   signal broken(name)    once, the first time either of its walls breaks
 ##   is_broken(name)        whether it's been broken
-##   mark_broken(name)      open already, no signal (a saved book's)
+##   mark_broken(name)      open already, no signal (a saved book's: the book's
+##                          `opened` holds each one broken, and `place` reads it)
 ##   chamber_at(name)       the middle of the room (world), for a thing inside it
 ##
 ## Each stands from REACH m, built on a worker (RuinKit pieces of its own: the
@@ -64,6 +65,7 @@ func place(handle: String, at: Vector2, yaw: float) -> void:
 	sites[handle] = {"name":handle,"xf":LayoutOverrides.xform(handle,coded),"coded":coded,
 		"wide":WorldScale.opening(TOY_WIDE),"high":WorldScale.opening(TOY_HIGH),"long":WorldScale.opening(TOY_LONG),
 		"seed":absi(hash(handle))%100000,"state":"away","open":false,"records":[],"walls":{},"task":-1}
+	if game.book.opened.has(handle): mark_broken(handle)
 
 func is_broken(handle: String) -> bool:
 	return bool((sites.get(handle,{}) as Dictionary).get("open",false))
@@ -105,6 +107,7 @@ func strike(r: Dictionary, q: Vector3) -> void:
 	smash.keep_hot(float(site.long)/speed+0.5)
 	if bool(site.open): return
 	site.open = true
+	game.book.open_up(str(site.name))
 	broken.emit(str(site.name))
 
 # --- Building ----------------------------------------------------------------

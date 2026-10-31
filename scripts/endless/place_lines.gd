@@ -232,7 +232,7 @@ func _end(_game: Node, why: String) -> void:
 	print("place lines: %s ended (%s at gate %d)" % [line.key,why,int(last_end.gate)])
 
 ## The marks: the line under way (its next gate gold, the ribbon fading
-## behind), else each line near enough, its start gate gold.
+## behind), else each line near enough, its start gate gold, no ribbon.
 func _show(delta: float, game: Node, p: Vector3) -> void:
 	var camera: Camera3D = game.camera
 	for i in lines.size():
@@ -251,6 +251,8 @@ func _show(delta: float, game: Node, p: Vector3) -> void:
 			var near := INF
 			for g: Dictionary in line.gates: near = minf(near,p.distance_to(g.p))
 			show.alpha = 1.0-smoothstep(SHOW_NEAR,SHOW_FAR,near)
+			# A line not being flown marks its gates; a ribbon ruled across the view reads as a glitch.
+			show.line = false
 		if game.overlay != null: show.alpha = 0.0
 		marks.step(delta,camera,show)
 
