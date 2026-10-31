@@ -94,7 +94,7 @@ void fragment() {
 	float white = smoothstep(0.35, 0.75, fr * (0.55 + 0.9 * fleck));
 	float lip = exp(-pow((along - len * 0.9) / 1.1, 2.0) - pow(across / 2.6, 2.0)) * head.z;
 	white = max(white, smoothstep(0.3, 0.8, lip * (0.6 + 0.8 * fleck)));
-	white = max(white, smoothstep(0.45, 0.9, m * (0.5 + 1.0 * fleck)) * 0.8);
+	white = max(white, smoothstep(0.4, 0.8, m * (0.85 + 0.6 * fleck)) * 0.85);
 	float near = exp(-length(d) / 7.0) * head.z;
 	white = max(white, smoothstep(0.1, 0.2, ring) * near * 0.8);
 	vec3 n = normalize(vec3(-slope.x, 1.0, -slope.y));
@@ -107,6 +107,8 @@ void fragment() {
 	c = mix(c, murk, m * 0.85);
 	c = mix(c, foam, white);
 	ALBEDO = c;
+	// Froth glows white of its own: lit by a low warm sun alone it read tan.
+	EMISSION = vec3(0.8, 0.86, 0.9) * smoothstep(0.15, 0.7, white);
 	float edge = (1.0 - smoothstep(0.7, 1.0, abs(UV.x))) * smoothstep(0.0, 0.5, UV.y);
 	vec4 scene = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, textureLod(scene_depth, SCREEN_UV, 0.0).x, 1.0);
 	scene /= scene.w;
