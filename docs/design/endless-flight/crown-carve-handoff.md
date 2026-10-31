@@ -71,8 +71,8 @@ the 9 crossing lines once each, with and without Boost):
 | | Through | Notes |
 |---|---|---|
 | No Boost, bot leads the climb 0.5 s | 15/15 | 0 scrapes. Slot 86 s, Bench 77 s. Least room past a wingtip at any opening 6.5 m |
-| Boost, bot leads the climb 0.5 s | 6/15 | Scrapes on 5 of the 6, and it failed at the Bench gate near a 1390, the Slot root and upper Sill, and at x0, x1, x5, s4 |
-| Boost, bot leads 0 or 0.2 s (rerun of 8 failing lines plus 2 more) | 12/12 | Slot, Bench on 3 seeds at lead 0, x0, x1, x5, s4 at lead 0, Slot and Bench at 0.2. 0 scrapes. Least room at an opening 4.5 m on the Bench, 12.3 m on the Slot |
+| Boost, bot leads the climb 0.5 s | 6/15 | Scrapes on 3 of the 6, and it failed at the Bench gate near a 1390, the Slot root and upper Sill, and at x0, x1, x5, s4 |
+| Boost, bot leads 0 or 0.2 s (rerun of all 9 failing lines, plus Slot seed 3 and two repeats) | 12/12 | Slot, Bench on 3 seeds at lead 0, x0, x1, x5, s4 at lead 0, Slot and Bench at 0.2. 0 scrapes. Least room at an opening 4.5 m on the Bench, 12.3 m on the Slot |
 
 **Read the Boost row with care.** The 12/12 came from changing the bot, not the place. A lead of
 0.5 s fails 9 of 15 at the same spots across seeds, so a pilot who pulls early may well clip these
