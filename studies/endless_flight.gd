@@ -1392,8 +1392,9 @@ func _react(delta: float) -> void:
 	# On the Peak's snow the wash throws powder and cuts a furrow, not grass.
 	if snow != null: wash = snow.step(delta,p,wash,look.wind_direction,camera.global_position)
 	if motes != null:
-		motes.step(delta,camera.global_position,look.wind_direction,look._gust,wash,
-			eddies.ribbons.ribbons if eddies != null else [],Callable(self,"_grass_at"))
+		var skims: Array = eddies.ribbons.ribbons if eddies != null else []
+		if snow != null: skims = snow.off_snow(skims)
+		motes.step(delta,camera.global_position,look.wind_direction,look._gust,wash,skims,Callable(self,"_grass_at"))
 
 ## The land's height where grass grows (open turf over the beach), else NAN.
 func _grass_at(x: float, z: float) -> float:

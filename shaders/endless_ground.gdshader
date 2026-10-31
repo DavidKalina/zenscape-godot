@@ -69,7 +69,6 @@ float zs_silver_drive_smooth(vec2 p, float fp) {
 	return smoothstep(grass_silver.y, grass_silver.z, w);
 }
 #include "res://shaders/grass_react.gdshaderinc"
-#include "res://shaders/peak_snow.gdshaderinc"
 // A world of regions: its paint per spot.
 #include "res://shaders/region_paint.gdshaderinc"
 // The rivers' water (scripts/endless/land_field.gd `_river`): drawn as the
@@ -733,6 +732,7 @@ float peak_rim(vec3 p) {
 }
 
 #include "res://shaders/peak_ice.gdshaderinc"
+#include "res://shaders/peak_snow.gdshaderinc"
 
 void fragment() {
 	vec3 p = world_position;
@@ -865,7 +865,11 @@ void fragment() {
 		float high = smoothstep(peak_snow, peak_snow + 500.0, over);
 		float pk_snowy = smoothstep(pk_line - 20.0, pk_line + 4.0, over + pk_edge)
 			* smoothstep(0.56, 0.70, n.y + rock_edge);
-		if (psnow_on > 0.5) pk_snowy = psnow_mask(psnow_point(p, over), over, n.y, pk_line, high);
+		if (psnow_on > 0.5) {
+			float pk_bare;
+			pk_snowy = psnow_mask(psnow_point(p, over), p.xz, over, n.y, pk_line, pk_bare);
+			rocky = max(rocky, pk_bare * pk.x);
+		}
 		snowy = mix(snowy, pk_snowy, pk.x) * (1.0 - max(pk.y, pk.z));
 		// The cirque's rim: granite on its slopes, snow on its flatter
 		// tops and in its hollows, ragged.

@@ -7,9 +7,8 @@ extends RefCounted
 ## from the head to the toe, each {at (world XZ), half (m, the ice's half-width
 ## there), cover (0 no ice, 1 ice), debris (0 clean, 1 buried)}.
 ## `uniforms(line)` turns one into the shader's values (up to POINTS points;
-## a longer line is thinned). `today(peak)` is today's valley as such a line
-## (its bend, its floor's width, its bands). To lay the ice down a gorge, give
-## `uniforms` that gorge's line instead: PeakMassif.paint() merges the result.
+## a longer line is thinned). `gorge(peak)` is the crown's: the ice gorge and
+## the tongue below it. PeakMassif.paint() merges the result.
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
@@ -84,7 +83,10 @@ static func gorge(peak: RefCounted) -> Array:
 
 ## The rock gorge's floor for the ground's paint: its line (world x, z, half) as
 ## the shader's `peak_rock_line`, up to ROCK_POINTS points, the saddle to the nose.
+## Bare only below ROCK_SNOWED of the way down: over it the floor tapers out and
+## the saddle's snow runs down into the gorge.
 const ROCK_POINTS := 24
+const ROCK_SNOWED := 0.2
 static func rock_uniforms(peak: RefCounted) -> Dictionary:
 	var Split: GDScript = peak.Split
 	var pts: PackedVector3Array = Split.line(Split.ROCK)
@@ -97,39 +99,7 @@ static func rock_uniforms(peak: RefCounted) -> Dictionary:
 	for k in ROCK_POINTS:
 		var i := int(round(lerpf(head,0.0,float(k)/(ROCK_POINTS-1))))
 		var at: Vector2 = peak.world(pts[i].x,pts[i].y)
-		line[k] = Vector3(at.x,at.y,hs[i])
+		line[k] = Vector3(at.x,at.y,hs[i]*maxf(smoothstep(0.0,ROCK_SNOWED,float(k)/(ROCK_POINTS-1)),0.02))
 		lo = lo.min(at)
 		hi = hi.max(at)
 	return {"peak_rock_count":ROCK_POINTS,"peak_rock_line":line,"peak_rock_box":Vector4(lo.x-140.0,lo.y-140.0,hi.x+140.0,hi.y+140.0)}
-
-## The old valley as a line, head to toe: the icefall and the glacier as the
-## old bands had them, the boulder field between with no ice. Close together
-## where the cover changes.
-static func today(peak: RefCounted) -> Array:
-	var ice: Vector2 = peak.ICEFALL
-	var gl: Vector2 = peak.GLACIER
-	var out: Array = []
-	var marks := PackedFloat32Array()
-	for k in 7: marks.append(lerpf(ice.x-70.0,ice.x+30.0,k/6.0)-0.0)
-	marks.resize(6)
-	for k in 4: marks.append(lerpf(ice.x+90.0,ice.y-40.0,k/3.0))
-	for k in 4: marks.append(lerpf(ice.y-10.0,ice.y+70.0,k/3.0))
-	marks.append((ice.y+gl.x)*0.5)
-	for k in 4: marks.append(lerpf(gl.x-80.0,gl.x+170.0,k/3.0))
-	for k in 12: marks.append(lerpf(gl.x+340.0,gl.y-220.0,k/11.0))
-	marks.append(gl.y-90.0)
-	marks.append(gl.y+70.0)
-	for a in marks:
-		var icefall := smoothstep(ice.x-60.0,ice.x+20.0,a)*(1.0-smoothstep(ice.y-20.0,ice.y+60.0,a))
-		var glacier := smoothstep(gl.x-80.0,gl.x+160.0,a)*(1.0-smoothstep(gl.y-200.0,gl.y+60.0,a))
-		var t := clampf((a-gl.x)/(gl.y-gl.x),0.0,1.0)
-		out.append({"at":peak.world(a,peak._valley_mid(a)),"half":_half(peak,a),"cover":icefall+glacier,"debris":lerpf(0.2,0.85,t*t)})
-	return out
-
-## The valley floor's half-width at `a` (as the old paint's).
-static func _half(peak: RefCounted, a: float) -> float:
-	var h: Vector4 = peak.FLOOR_HALF
-	var b: Vector2 = peak.BOULDERS
-	if a >= peak.ICEFALL.y and a < b.y: return lerpf(h.x,h.y,smoothstep(0.0,0.3,(a-peak.ICEFALL.y)/(b.y-peak.ICEFALL.y)))
-	if a >= b.y: return lerpf(h.z,h.w,clampf((a-b.y)/(peak.GLACIER.y-b.y),0.0,1.0))
-	return h.x

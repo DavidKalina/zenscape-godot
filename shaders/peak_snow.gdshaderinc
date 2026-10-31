@@ -3,7 +3,8 @@
 // The Peak's snow (scripts/endless/peak_snow.gd): a surface of its own,
 // outside the rock shader's direction buckets and tones. Included by
 // shaders/endless_ground.gdshader after grass_react (zs_react_at) and
-// reference_wind (zs_noise). Only the Peak's zone reads it (`psnow_on` and
+// peak_ice (peak_noise: a whole-number hash, so unlike zs_noise it agrees with
+// itself at its cells' borders). Only the Peak's zone reads it (`psnow_on` and
 // peak_paint's zone); the land's other snowcaps never get here.
 //
 // It paints from `psnow_point`, not the ground's sheared gxz. gxz moves by the
@@ -38,6 +39,17 @@ uniform sampler2D psnow_furrow : filter_linear, repeat_disable;
 // The furrow map's min x, min z, size (m), and 1 while it holds anything.
 uniform vec4 psnow_furrow_rect = vec4(0.0);
 
+// The land's lie (peak_snow.gd `_bake`) and the rect it covers: min x, min z, size.
+uniform sampler2D psnow_broad : filter_linear, repeat_disable;
+uniform vec4 psnow_broad_rect = vec4(0.0);
+
+// The broad flatness under which ground counts as a wall, and over which as
+// wide ground.
+const vec2 PSNOW_WALL = vec2(0.60, 0.90);
+// The steepest ground snow lies on, and the share of the slope the broad lie gives
+// (peak_snow.gd `covers` has both).
+const float PSNOW_HOLD = 0.63;
+const float PSNOW_BROAD = 0.5;
 // The groove's depth (m) at full strength, for its slopes.
 const float PSNOW_DEPTH = 1.1;
 // The tones. Sunlit: a neutral warm white. Shaded: all but white, for the blue
@@ -60,33 +72,39 @@ vec2 psnow_point(vec3 p, float over) {
 	return p.xz + vec2(0.8, 0.55) * over * PSNOW_SHEAR;
 }
 
+// The land's lie round xz: x how flat it is over a hundred metres or so, y its
+// hollows (over 0.5) and crowns.
+vec2 psnow_broad_at(vec2 xz) {
+	if (psnow_broad_rect.z <= 0.0) return vec2(1.0, 0.5);
+	return textureLod(psnow_broad, (xz - psnow_broad_rect.xy) / psnow_broad_rect.z, 0.0).rg;
+}
+
 // The snow's mask over the ground's: peak_paint's snow line and its steep limit,
-// from the same noises, at the stable point. `line` the snow line, `high` how
-// far above it.
-float psnow_mask(vec2 q, float over, float ny, float line, float high) {
-	float mid = zs_noise(q / 19.0 + 41.0) - 0.5;
-	float edge = (zs_noise(q / 160.0) - 0.5) * 120.0 + (zs_noise(q / 41.0) - 0.5) * 50.0
-		+ (zs_noise(q / 23.0) - 0.5) * 16.0 + mid * 10.0;
-	// (A wider rag than the ground's: its normals are per vertex, 32 m apart, and
-	// a clean limit on them draws the mesh's teeth along the snow's edge.)
-	float rock_e = (zs_noise(q / 9.0) - 0.5) * 0.10 + mid * 0.08 + (zs_noise(q / 33.0 + 57.0) - 0.5) * 0.20;
-	return smoothstep(line - 20.0, line + 4.0, over + edge)
-		* smoothstep(0.56, 0.70, ny + rock_e);
+// from the same noises, at the stable point. `line` the snow line; `bare` 1 where
+// the height would hold snow and the slope doesn't (rock, never turf).
+// A ledge in a wall is as flat as a plateau where it stands, so the slope is
+// read half by the land's broad lie, which is smooth where the ground's normals
+// draw the mesh's teeth. The steeper the land round it, the patchier what holds:
+// a bench in a wall carries lenses of snow thinning to their ends, not a line
+// along its contour.
+float psnow_mask(vec2 q, vec2 xz, float over, float ny, float line, out float bare) {
+	float mid = peak_noise(q / 19.0 + 41.0) - 0.5;
+	float edge = (peak_noise(q / 160.0) - 0.5) * 120.0 + (peak_noise(q / 41.0) - 0.5) * 50.0
+		+ (peak_noise(q / 23.0) - 0.5) * 16.0 + mid * 10.0;
+	float rock_e = (peak_noise(q / 9.0) - 0.5) * 0.10 + mid * 0.08 + (peak_noise(q / 33.0 + 57.0) - 0.5) * 0.20;
+	vec2 broad = psnow_broad_at(xz);
+	float wide = smoothstep(PSNOW_WALL.x, PSNOW_WALL.y, broad.x + (broad.y - 0.5) * 0.5);
+	float patches = peak_noise(q / 71.0 + 13.0) * 0.5 + peak_noise(q / 27.0 + 29.0) * 0.32 + peak_noise(q / 9.0 + 3.0) * 0.18;
+	float hold = mix(max(PSNOW_HOLD, PSNOW_HOLD + 0.08 + (0.56 - patches) * 3.2), PSNOW_HOLD, wide);
+	float high = smoothstep(line - 20.0, line + 4.0, over + edge);
+	float lies = smoothstep(hold - 0.07, hold + 0.07, mix(ny, broad.x, PSNOW_BROAD) + rock_e);
+	bare = high * (1.0 - lies);
+	return high * lies;
 }
 
 // Value noise with its gradient: x the value (0..1), yz d/dp.
 vec3 psnow_nd(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = p - i;
-	vec2 u = f * f * (3.0 - 2.0 * f);
-	vec2 du = 6.0 * f * (1.0 - f);
-	float a = zs_noise_hash(i);
-	float b = zs_noise_hash(i + vec2(1.0, 0.0));
-	float c = zs_noise_hash(i + vec2(0.0, 1.0));
-	float d = zs_noise_hash(i + vec2(1.0, 1.0));
-	float k = a - b - c + d;
-	return vec3(a + (b - a) * u.x + (c - a) * u.y + k * u.x * u.y,
-		du.x * (b - a + k * u.y), du.y * (c - a + k * u.x));
+	return peak_noise_d(p);
 }
 
 // How much of a band `scale` m long survives a pixel `fp` m wide.
@@ -104,16 +122,16 @@ float psnow_streaks(float u, float v, float len, float wide, float seed, out vec
 	float rv = v / wide + seed;
 	float row = floor(rv);
 	float f = rv - row;
-	float h0 = zs_noise_hash(vec2(row, seed));
-	float h1 = zs_noise_hash(vec2(row + 3.7, seed + 5.1));
+	float h0 = peak_noise_hash(vec2(row, seed));
+	float h1 = peak_noise_hash(vec2(row + 3.0, seed + 5.0));
 	float carry = smoothstep(0.5, 0.82, h0);
 	if (carry <= 0.0) return 0.0;
 	float l = len * mix(0.7, 2.3, h1);
 	float ru = u / l + h0 * 91.0;
 	float i = floor(ru);
 	float t = ru - i;
-	float a = zs_noise_hash(vec2(i, row * 1.3 + seed));
-	float b = zs_noise_hash(vec2(i + 1.0, row * 1.3 + seed));
+	float a = peak_noise_hash(vec2(i, row * 7.0 + seed));
+	float b = peak_noise_hash(vec2(i + 1.0, row * 7.0 + seed));
 	float st = t * t * (3.0 - 2.0 * t);
 	float n = mix(a, b, st);
 	float dn = (b - a) * 6.0 * t * (1.0 - t) / l;
@@ -145,7 +163,7 @@ float psnow_glitter(vec2 q, vec3 n, vec3 eye, float fp) {
 	if (fp > 0.6) return 0.0;
 	float size = max(0.04, fp * 1.4);
 	vec2 c = floor(q / size);
-	vec3 r = vec3(zs_noise_hash(c), zs_noise_hash(c + 17.3), zs_noise_hash(c + 41.7)) * 2.0 - 1.0;
+	vec3 r = vec3(peak_noise_hash(c), peak_noise_hash(c + 17.0), peak_noise_hash(c + 41.0)) * 2.0 - 1.0;
 	vec3 facet = normalize(n + r * 0.55);
 	vec3 h = normalize(zs_sun_direction + eye);
 	float flash = smoothstep(0.9975, 0.9995, dot(facet, h));
@@ -171,8 +189,8 @@ vec3 psnow_surface(vec3 p, vec2 q, vec3 n, vec3 eye, float dist, float px, inout
 	float flat_on = 1.0 - steep;
 	// The flow: the wind's lines wander at three lengths, and the land's height
 	// bends them, so they lean round a rise instead of running over it.
-	float bend = (zs_noise(q / 240.0) - 0.5) * 130.0 + (zs_noise(q / 70.0 + 7.0) - 0.5) * 42.0 + (zs_noise(q / 19.0 + 2.0) - 0.5) * 7.0;
-	float along = dot(q, w) + (zs_noise(q / 95.0 + 23.0) - 0.5) * 60.0;
+	float bend = (peak_noise(q / 240.0) - 0.5) * 130.0 + (peak_noise(q / 70.0 + 7.0) - 0.5) * 42.0 + (peak_noise(q / 19.0 + 2.0) - 0.5) * 7.0;
+	float along = dot(q, w) + (peak_noise(q / 95.0 + 23.0) - 0.5) * 60.0;
 	float across = dot(q, c) + bend + p.y * 0.6;
 	float wave = along + bend * 0.5;
 
@@ -201,7 +219,7 @@ vec3 psnow_surface(vec3 p, vec2 q, vec3 n, vec3 eye, float dist, float px, inout
 		vec3 s1 = psnow_nd(vec2(along / 130.0 + 31.0, across / 72.0 + 12.0));
 		vec3 s2 = psnow_nd(vec2(along / 41.0 + 11.0, across / 24.0 + 4.0));
 		float sv = s1.x * 0.68 + s2.x * 0.32;
-		float crisp = smoothstep(0.38, 0.68, zs_noise(q / 63.0 + 51.0));
+		float crisp = smoothstep(0.38, 0.68, peak_noise(q / 63.0 + 51.0));
 		float half_w = mix(0.13, 0.026, crisp);
 		float t = clamp((sv - 0.53 + half_w) / (2.0 * half_w), 0.0, 1.0);
 		scour = t * t * (3.0 - 2.0 * t);
@@ -212,9 +230,9 @@ vec3 psnow_surface(vec3 p, vec2 q, vec3 n, vec3 eye, float dist, float px, inout
 	// little off the last, fading in and out as a whole.
 	float k_sast = psnow_keep(4.4, fp) * flat_on * scour;
 	if (k_sast > 0.0) {
-		float fade = smoothstep(0.30, 0.62, zs_noise(q / 17.0 + 5.0) * 0.7 + zs_noise(q / 6.1 + 15.0) * 0.3);
+		float fade = smoothstep(0.30, 0.62, peak_noise(q / 17.0 + 5.0) * 0.7 + peak_noise(q / 6.1 + 15.0) * 0.3);
 		// (Rows don't run ruler-straight: a small wander across them.)
-		float wand = (zs_noise(q / 7.3 + 61.0) - 0.5) * 3.2;
+		float wand = (peak_noise(q / 7.3 + 61.0) - 0.5) * 3.2;
 		vec2 dv;
 		float h1 = psnow_streaks(along + across * 0.15, across + wand - along * 0.15, 14.0, 3.4, 1.0, dv);
 		g += (w * dv.x + c * dv.y) * 0.5 * k_sast * fade;
@@ -235,7 +253,7 @@ vec3 psnow_surface(vec3 p, vec2 q, vec3 n, vec3 eye, float dist, float px, inout
 	// The furrow and the wash: they flatten what's under them.
 	float churn = 0.0;
 	if (psnow_furrow_rect.w > 0.5) {
-		vec2 rag = vec2(zs_noise(q / 3.1), zs_noise(q / 3.1 + 19.0)) - 0.5;
+		vec2 rag = vec2(peak_noise(q / 3.1), peak_noise(q / 3.1 + 19.0)) - 0.5;
 		vec2 fq = p.xz + rag * 1.6;
 		vec2 f0 = psnow_furrow_at(fq);
 		churn = clamp(f0.y, 0.0, 1.0);
@@ -259,8 +277,8 @@ vec3 psnow_surface(vec3 p, vec2 q, vec3 n, vec3 eye, float dist, float px, inout
 	// Ripples: crests across the wind, in patches, a smaller train over them.
 	float k_rip = psnow_keep(1.4, fp) * flat_on * smooth_out * (1.0 - scour);
 	if (k_rip > 0.0) {
-		float patch = smoothstep(0.56, 0.74, zs_noise(q / 17.0 + 13.0) * 0.6 + zs_noise(q / 5.3 + 31.0) * 0.4);
-		float warp = zs_noise(q / 6.3) * 5.4 + zs_noise(q / 2.3 + 9.0) * 1.2;
+		float patch = smoothstep(0.56, 0.74, peak_noise(q / 17.0 + 13.0) * 0.6 + peak_noise(q / 5.3 + 31.0) * 0.4);
+		float warp = peak_noise(q / 6.3) * 5.4 + peak_noise(q / 2.3 + 9.0) * 1.2;
 		float th = (wave + warp) * TAU / 1.4;
 		float sk = 1.0 + 0.7 * cos(th);
 		float rip = cos(th + 0.7 * sin(th)) * sk * TAU / 1.4;
@@ -310,7 +328,7 @@ vec3 psnow_surface(vec3 p, vec2 q, vec3 n, vec3 eye, float dist, float px, inout
 
 	// The edge against the rock, bitten by the drifts and the ridges, and
 	// ragged under the eye: snow ends in a line, not a fade.
-	float rag = (zs_noise(q / 3.1 + 71.0) - 0.5) * 0.30 * psnow_keep(3.1, fp) + (zs_noise(q / 0.8 + 73.0) - 0.5) * 0.14 * psnow_keep(0.8, fp);
+	float rag = (peak_noise(q / 3.1 + 71.0) - 0.5) * 0.30 * psnow_keep(3.1, fp) + (peak_noise(q / 0.8 + 73.0) - 0.5) * 0.14 * psnow_keep(0.8, fp);
 	float soft_edge = clamp(0.015 + fp * 0.012, 0.015, 0.12);
 	snowy = smoothstep(0.42 - soft_edge, 0.42 + soft_edge, snowy + (clamp(hh, -1.0, 1.0) * 0.2 + rag) * (1.0 - snowy));
 
