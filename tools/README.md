@@ -31,6 +31,7 @@ with `python` on Windows (there is no `py` there) and `python3` on the Mac.
 | Frame time at the look views | `python tools/drive.py tools/harness/look_views.gd --rendered --log L.txt -- --views=high,cruise --time=240 --scene-args --no-title` (a ROW per view: median ms from frame to frame, vsync off) |
 | The endless land's hash for a seed, to compare machines (co-op) | `python tools/land_hash.py --seed 1 [-- --land-native=0]`; `--compare a.txt b.txt` |
 | What a scene or folder reaches (scripts, scenes, shaders, assets), or why a file is reached, before cutting or moving files | `python tools/reach.py studies/x.tscn scripts/endless [--out F]`; in Python `reach.why(starts, file)`. It reads res:// strings, class_name words, uid:// ids and #includes; a compressed binary scene's dependencies come from Godot (`ResourceLoader.get_dependencies`) |
+| A top-down map of a box of the land, every site and find named | `python tools/site_map.py --box=x0,z0,x1,z1 --out scratch/m.png` (also `m.sites.json`; `--kinds arch,find`; `--from-json` redraws) |
 | Find an existing tool | `python tools/index.py <word>` |
 
 ## godot.py: the base
