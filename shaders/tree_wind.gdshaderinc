@@ -52,9 +52,6 @@ global uniform vec4 zs_gust_rect;
 const float ZS_TREE_GUST = 1.5;
 const float ZS_TREE_GUST_SWAY = 0.5;
 const float ZS_TREE_GUST_SPREAD = 0.2;
-// A gust bows the whole tree: its bend up the height (the wind's is 2.4), or the
-// top hooks over as it goes further than the wind takes it.
-const float ZS_TREE_GUST_BOW = 1.7;
 
 float zs_tree_hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
