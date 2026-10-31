@@ -33,9 +33,26 @@ varying float v_torn;
 varying float v_age;
 varying float v_head;
 varying vec3 v_pos;
+varying float v_u;
+varying float v_born;
 
 float hash1(float x) {
 	return fract(sin(x * 91.7) * 43758.5453);
+}
+
+// Smooth 1D value noise, 0..1.
+float vn1(float x) {
+	float i = floor(x);
+	float f = fract(x);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(hash1(i), hash1(i + 1.0), f);
+}
+
+// How broken the tail is at this travel: smooth and uneven in length (no regular
+// dashes), 0 whole .. 1 slumped.
+float broken(float born) {
+	float n = vn1(born * 1.9 + 4.0) * 0.6 + vn1(born * 5.3 + 11.0) * 0.4;
+	return smoothstep(0.5, 0.72, n);
 }
 
 // The head's share of the heave at age a: 1 at the head, gone behind it.
@@ -50,7 +67,7 @@ float rise(float a, float born) {
 		return s * s;
 	}
 	// Broken stretches slump nearly flat a moment after the head is past.
-	float brk = step(hash1(floor(born / break_len) + 17.0), break_share);
+	float brk = broken(born);
 	float rest = mix(settle, scar, smoothstep(1.0, 6.0, a)) * (1.0 - smoothstep(life * 0.5, life, a));
 	rest *= mix(1.0, 0.1, brk * smoothstep(0.12, 0.5, a));
 	float fade = mix(1.0, 0.25, brk * smoothstep(0.12, 0.5, a));
@@ -93,10 +110,12 @@ void vertex() {
 	float slope = heave * r * lump * (-4.0 * uu * max(1.0 - uu * uu, 0.0)) * mix(1.0, 1.35, hk) / max(hw, 0.1);
 	NORMAL = normalize(NORMAL - TANGENT * slope);
 	// Torn in patches (not an even band), and the head's crest bare earth.
-	float ph = hash1(floor(born * 5.0) + 3.0);
-	float brk = step(hash1(floor(born / break_len) + 17.0), break_share);
-	float patchy = step(0.3, ph) * (0.5 + 0.7 * ph) * (1.0 - brk);
+	float ph = vn1(born * 3.3 + 3.0) * 0.65 + vn1(born * 9.1 + u * 2.0) * 0.35;
+	float brk = broken(born);
+	float patchy = smoothstep(0.3, 0.55, ph) * (0.6 + 0.7 * ph) * (1.0 - brk);
 	float torn = open * patchy * (1.0 - smoothstep(0.1 + rag, 0.34 + rag, abs(u))) * 1.3;
+	v_u = u;
+	v_born = born;
 	float crest = v_head * (1.0 - smoothstep(0.25 + rag, 0.7 + rag, abs(u)));
 	v_torn = clamp(max(torn, crest * 0.95), 0.0, 1.0);
 }
@@ -111,9 +130,24 @@ void fragment() {
 	// earth colour the head read with from the chase camera.
 	vec3 grit = grit_albedo(v_pos * 1.3, soil * 1.45, 0.2 + 0.6 * dry, 0.0);
 	// A little grain in the turf too.
-	vec3 grass = turf * (0.88 + 0.24 * g_noise(v_pos * 14.0));
+	// Dry patches and a mottle, as the drawn ground has, so the strip belongs to it.
+	float patch_n = g_noise(vec3(v_pos.x, 0.0, v_pos.z) * 0.11);
+	// Dry ground (low meadow in COLOR.a) leans straw, as the drawn turf does.
+	float lum = dot(turf, vec3(0.3, 0.55, 0.15));
+	turf = mix(turf, lum * vec3(1.35, 1.1, 0.55), (1.0 - COLOR.a) * 0.9);
+	vec3 dry_tint = vec3(0.30, 0.25, 0.12);
+	turf = mix(turf, dry_tint * (0.85 + 0.3 * patch_n), smoothstep(0.45, 0.7, patch_n) * 0.35);
+	vec3 grass = turf * (0.86 + 0.28 * g_noise(v_pos * 9.0));
 	ALBEDO = mix(grass, grit, v_torn);
 	ROUGHNESS = 0.97;
+	// A torn, ragged outline instead of a hard strip: the rim and the far ends
+	// (the lived-out tail, the bow's start) break up in grit-sized bites.
+	float rim = 1.0 - smoothstep(0.55, 0.98, abs(v_u));
+	float tail = 1.0 - smoothstep(life * 0.8, life * 0.98, v_age);
+	float bite = g_noise(v_pos * 4.0) * 0.6 + g_noise(v_pos * 13.0) * 0.4;
+	float edge = rim * tail * mix(0.5, 1.0, max(v_torn, 0.0));
+	ALPHA_SCISSOR_THRESHOLD = 0.5;
+	ALPHA = clamp(edge * 1.25 - bite * 0.55 + 0.1, 0.0, 1.0);
 	if (v_torn > 0.05) {
 		float h = grit_height(v_pos * 1.3, 0.0);
 		vec3 dpdx = dFdx(VERTEX);

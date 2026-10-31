@@ -71,7 +71,9 @@ func height(x: float, z: float) -> float:
 	return game.field.height(x,z)
 
 func colour(x: float, z: float, y: float, nm: Vector3) -> Color:
-	return game.field.colour(x,z,y,nm.y,1.0)
+	# The ground's own meadow share, so dry ground reads dry (not a green rug).
+	var meadow: float = clampf(float(game.field.sample(x,z).y),0.0,1.0)
+	return game.field.colour(x,z,y,nm.y,meadow)
 
 ## The sea's swell or a river's or lake's level (Field.SEA_Y and under on
 ## dry land, which is far over it). Land well over the sea skips the swell:
