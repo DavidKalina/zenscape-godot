@@ -37,6 +37,7 @@ const Build = preload("res://scripts/endless/rocks/rock_build.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const RockShape = preload("res://scripts/endless/rock_shape.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
+const PeakMassif = preload("res://scripts/endless/peak_massif.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const LAYER := 1
@@ -51,7 +52,9 @@ const FACE_WAYS := 24
 ## over BODY_EDGE m from the peak, so it has no edge and no plate under it.
 const BODY_REACH := 3400.0
 const BODY_STEP := 150.0
-const BODY_FOOT := Vector2(300.0,560.0)
+const BODY_FOOT := Vector2(90.0,640.0)
+## The foot's melt with the old rock (--spire-rock=0).
+const BODY_FOOT_OLD := Vector2(300.0,560.0)
 const BODY_EDGE := Vector2(2000.0,3200.0)
 ## Far on when some of it could be past the far plane, less this (m).
 const FAR_MARGIN := 600.0
@@ -63,7 +66,7 @@ const FAR_SNOW_FROM := 620.0
 ## many times the land's, for a face hundreds of metres tall, its even seams and
 ## beds turned down (the beds that show are the shape's), and the height haze
 ## cut this far over them and the far mesh, so they stand dark on the sky.
-const PAINT := {"rock_size":2.4,"rock_seams":0.03,"rock_beds":0.38,"rock_bump":0.75,"rock_relief":1.5,"rock_tint":Vector3(0.2,0.2,0.24),"peak_granite":0.012}
+const PAINT := {"rock_size":2.4,"rock_seams":0.03,"rock_beds":0.38,"rock_bump":0.75,"rock_relief":1.5,"rock_tint":Vector3(0.2,0.2,0.24),"peak_granite":0.012,"peak_basalt":0.0}
 const HAZE_CUT := 0.86
 const HAZE_RISE := 260.0
 
@@ -165,9 +168,10 @@ func _build_body(field: RefCounted, at: Vector2) -> void:
 			hs[j*side+i] = float(field.height(x0+i*BODY_STEP,z0+j*BODY_STEP))
 	var alpha := PackedFloat32Array()
 	alpha.resize(side*side)
+	var foot := BODY_FOOT if PeakMassif.dark_wanted() else BODY_FOOT_OLD
 	for q in side*side:
 		var off := Vector2(x0+(q%side)*BODY_STEP,z0+(q/side)*BODY_STEP)-at
-		alpha[q] = smoothstep(BODY_FOOT.x,BODY_FOOT.y,hs[q]-Field.SEA_Y)*(1.0-smoothstep(BODY_EDGE.x,BODY_EDGE.y,off.length()))
+		alpha[q] = smoothstep(foot.x,foot.y,hs[q]-Field.SEA_Y)*(1.0-smoothstep(BODY_EDGE.x,BODY_EDGE.y,off.length()))
 	var map := PackedInt32Array()
 	map.resize(side*side)
 	map.fill(-1)

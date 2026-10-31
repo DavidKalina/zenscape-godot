@@ -59,6 +59,13 @@ const FLARE := 0.5
 const APRON := Vector2(0.24,0.14)
 ## Width left at the top before the setbacks.
 const TOP_WIDTH := 0.5
+## With the massif climbing into it (the entry's `spire`, PeakMassif ROOTS), a
+## tower's width is one long curve from SPIRE.x at the foot to SPIRE.y at the tip,
+## narrowing fast low down and slowly high up (SPIRE.z the power), so the rock's
+## profile goes on up out of the root and no post stands on it.
+const SPIRE := Vector3(1.5,0.26,1.9)
+## How much of the lean runs straight up the spire, not late in it.
+const SPIRE_STRAIGHT := 0.7
 ## The setbacks a side, the drop of each (share of the width) and the
 ## height of a ledge (share of the height).
 const STEPS := Vector2i(3,5)
@@ -219,7 +226,8 @@ static func _plan(t: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 	var lean: Vector2 = t.lean
 	var bow_way := Vector2(-lean.y,lean.x).normalized() if lean.length() > 0.01 else Vector2.from_angle(rng.randf()*TAU)
 	return {"corners":corners,"kind":kind,"steps":steps,"outs":outs,"cuts":cuts,"lean":lean,"faults":faults,
-		"bow":bow_way*rng.randf_range(-0.09,0.09)*(float(t.tip)-float(t.base)),"knee":rng.randf_range(0.45,0.8)}
+		"bow":bow_way*rng.randf_range(-0.09,0.09)*(float(t.tip)-float(t.base)),"knee":rng.randf_range(0.45,0.8),
+		"spire":bool(t.get("spire",false))}
 
 ## A side's share of the width at `u`, `at` of the way along it.
 static func _side(steps: Array, u: float, at: float) -> float:
@@ -251,7 +259,10 @@ static func _ledge(steps: Array, u: float, at: float, along: float) -> float:
 	return out
 
 ## The width of everything at `u`.
-static func _width(u: float, sink_u: float) -> float:
+static func _width(u: float, sink_u: float, spire := false) -> float:
+	if spire:
+		if u <= 0.0: return SPIRE.x*(1.0+FLARE*clampf(-u/sink_u,0.0,1.0))
+		return SPIRE.y+(SPIRE.x-SPIRE.y)*pow(1.0-minf(u,1.0),SPIRE.z)
 	if u <= 0.0: return (1.0+APRON.x)*(1.0+FLARE*clampf(-u/sink_u,0.0,1.0))
 	var w := lerpf(1.0,TOP_WIDTH,pow(u,0.9))
 	return w*(1.0+APRON.x*(1.0-smoothstep(0.0,APRON.y,u)))
@@ -263,7 +274,7 @@ static func _section(pl: Dictionary, u: float, g: float, sink_u: float) -> Packe
 	var n := corners.size()
 	var out := PackedVector2Array()
 	out.resize(n)
-	var w := _width(u,sink_u)
+	var w := _width(u,sink_u,bool(pl.spire))
 	for k in n:
 		var side := k/(MIDS+1)
 		var at := float(k%(MIDS+1))/(MIDS+1)
@@ -285,6 +296,7 @@ static func _axis(pl: Dictionary, u: float) -> Vector2:
 	if u <= 0.0: return Vector2.ZERO
 	var knee := float(pl.knee)
 	var eased := u*u*(1.0+knee)-u*u*u*knee
+	if bool(pl.spire): eased = lerpf(eased,minf(u,1.0),SPIRE_STRAIGHT)
 	return (pl.lean as Vector2)*eased+(pl.bow as Vector2)*sin(PI*minf(u,1.0))
 
 ## The broken top's height (share of the cap's) at `p` (-1..1 across the

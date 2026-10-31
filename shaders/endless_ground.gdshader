@@ -156,6 +156,17 @@ uniform vec3 peak_rock_line[24];
 uniform vec4 peak_rock_box = vec4(0.0);
 // The Peak's granite's darkest (the towers' copy of the paint takes its own).
 uniform float peak_granite = 0.07;
+// The upper mountain is the towers' own rock (scripts/endless/rocks/peak_towers.gd
+// PAINT): from `PEAK_BASALT.x` m over the sea, ragged, whole by `.y`, the massif
+// takes the towers' tint, granite and height haze. 0: off (--spire-rock=0; the
+// towers' own copy, which has those numbers already).
+uniform float peak_basalt = 0.0;
+const vec2 PEAK_BASALT = vec2(60.0, 680.0);
+const vec3 PEAK_BASALT_TINT = vec3(0.2, 0.2, 0.24);
+const float PEAK_BASALT_GRANITE = 0.012;
+// The towers' height haze, cut this far (.z) over a long climb (.x to .y m over
+// the sea): over the land's short span it stood as a band round the massif.
+const vec3 PEAK_BASALT_HAZE = vec3(120.0, 760.0, 0.86);
 const float PEAK_BEDS = 3.0;
 const float PEAK_SHEAR = 200.0;
 const float PEAK_FLOOR_STONES = 0.7;
@@ -880,6 +891,8 @@ void fragment() {
 		ice_gate += fwidthFine(ice_gate);
 	}
 	float pk_rock = pk.x * smoothstep(170.0, 320.0, over);
+	float pk_dark = 0.0;
+	if (peak_basalt > 0.0 && pk.x > 0.0) pk_dark = peak_basalt * pk.x * smoothstep(PEAK_BASALT.x, PEAK_BASALT.y, over + (peak_noise(p.xz / 340.0) - 0.5) * 170.0 + (peak_noise(p.xz / 90.0) - 0.5) * 70.0);
 	if (pk.x > 0.0) {
 		float pk_edge = (zs_noise(gxz / 160.0) - 0.5) * 120.0 + (zs_noise(gxz / 41.0) - 0.5) * 50.0 + snow_edge;
 		float pk_line = mix(snow_line, peak_snow, pk.x);
@@ -1169,7 +1182,7 @@ void fragment() {
 		rock_glow *= mix(1.0, fill_level, clamp(rock_follow * zs_light_follow, 0.0, 1.0));
 		lit_n = normalize(mix(n, lit_n, rocky * (1.0 - pk_scree)));
 	}
-	rock = hued(rock, rock_hue) * rock_tint;
+	rock = hued(rock, rock_hue) * rock_tint * pow(PEAK_BASALT_TINT, vec3(pk_dark));
 
 	vec3 sand = SAND * (1.0 + fine * 0.25 + mid * 0.2);
 	sand = mix(sand, SAND_WET, smoothstep(0.7, -0.1, over));
@@ -1198,7 +1211,7 @@ void fragment() {
 	// pale beds softened; a colder snow, blue where it lies back from the sun.
 	if (pk_rock > 0.0) {
 		float l = luma(rock);
-		vec3 granite = vec3(peak_granite + l * 0.42) * vec3(0.88, 0.95, 1.08) * (1.0 + peak_fade(gxz * 1.7 + p.y, 1.3, fp) * 0.35);
+		vec3 granite = vec3(mix(peak_granite, PEAK_BASALT_GRANITE, pk_dark) + l * 0.42) * vec3(0.88, 0.95, 1.08) * (1.0 + peak_fade(gxz * 1.7 + p.y, 1.3, fp) * 0.35);
 		rock = mix(rock, granite, pk_rock * 0.85);
 		// The prow's bow, and the mouth's walls with it, darkest (peak_split.gd
 		// BOW_A), off the gorges' floors.
@@ -1614,5 +1627,12 @@ void fragment() {
 		if (live_dbg.x >= 0.0) EMISSION = mix(EMISSION, live_dbg, wet);
 	}
 	// The haze, with its height term (shaders/endless_height_haze.gdshaderinc).
-	FOG = zs_land_haze(VERTEX, world_position.y, INV_VIEW_MATRIX);
+	vec4 land_haze = zs_land_haze(VERTEX, world_position.y, INV_VIEW_MATRIX);
+	// The basalt stands in the towers' own haze (their PAINT's haze_height).
+	if (pk_dark > 0.0) {
+		float land_up = smoothstep(haze_height.x, haze_height.x + haze_height.y, over + haze_height.w);
+		float dark_up = smoothstep(PEAK_BASALT_HAZE.x, PEAK_BASALT_HAZE.y, over + haze_height.w);
+		land_haze.a *= mix(1.0, (1.0 - dark_up * PEAK_BASALT_HAZE.z) / max(1.0 - land_up * haze_height.z, 0.01), pk_dark);
+	}
+	FOG = land_haze;
 }

@@ -25,8 +25,9 @@
 ##                                 falling away far faster on the +v side
 ##   plateau, tarn   a 160..-270   880 m, a broken floor falling to the lake
 ##   the crown       three towers (scripts/endless/rocks/peak_towers.gd) round
-##                                 the lake, each on its own plinth of rock, the
-##                                 back ones joined by aretes; tips to 1480 m
+##                                 the lake, the massif climbing into each by a
+##                                 root and shoulders (ROOTS), the back ones
+##                                 joined by aretes; tips to 1480 m
 ##   back face       a -350..-2200 895 m down to the sea, spurs down it
 ##
 ## Everything outside a circle of BOUND round O pays one distance check
@@ -294,6 +295,43 @@ const ARETE_FALL := 1.6
 const ARETE_BREAK := 34.0
 ## Past this far from the plateau's centre nothing of the crown stands.
 const CROWN_REACH := 1140.0
+## The massif climbing into the towers (`--spire-form=0`: the plinths above, a
+## dome with a post on it). Each tower has a root: a long even fall ROOT_FALL m
+## per m out of a top ROOTS.x high at its axis, steepening over ROOT_TOP m round
+## it by ROOTS.y more, so the mountain's profile only ever gets steeper on the way
+## up and hands over to the spire's own curve. ROOT_RIDGE: how much farther along a
+## gully the same height lies than along a ridge, so ridges run down from each
+## tower (grown over ROOT_GROW m, none where the rock is inside the spire). Past
+## ROOT_END m a root sinks ROOT_SINK m per m squared, so it is under the massif
+## before CROWN_REACH. ROOT_BLEND: the meeting with the massif rounded over this.
+const ROOTS := [[1060.0,230.0],[1010.0,215.0],[975.0,195.0]]
+const ROOT_FALL := 0.75
+const ROOT_TOP := 120.0
+const ROOT_RIDGE := 0.35
+const ROOT_GROW := Vector2(60.0,300.0)
+const ROOT_END := 420.0
+const ROOT_SINK := 0.0012
+const ROOT_BLEND := 60.0
+const ROOT_ROUGH := 19.0
+## The towers' bases with the roots on: the old massif's numbers, held, since a
+## tower's height, and so the spirals round it, must not follow the rock that now
+## buries its foot.
+const ROOT_BASES := [902.0,916.0,857.0]
+## With the roots on the towers lean this many times their table's lean.
+const ROOT_LEAN := 1.7
+## The root's top leans with its spire: its middle stands this share of the lean
+## off the tower's base at the top, easing back to the base over ROOT_SHIFT.y m
+## out, so no second tip stands beside the spire.
+const ROOT_SHIFT := Vector2(0.55,220.0)
+## The shoulders: long ridges from a tower's root down the massif's outer flanks,
+## so the outline climbs into the spires from either side and the block between
+## the gorges doesn't stand square. Tower, the far end (a, v), its height over the
+## sea, the height at the tower. Their side fall is ROOT_FALL's over these (m per
+## m), their crest broken by ARETE_BREAK, bowed down by SHOULDER_BOW so the climb
+## steepens toward the tower.
+const SHOULDERS := [[0,520.0,-790.0,770.0,1040.0],[2,470.0,770.0,740.0,985.0]]
+const SHOULDER_FALL := 1.15
+const SHOULDER_BOW := 1.7
 ## A tower's base: the lowest ground this many girths round it, so its feet
 ## are buried on every side however the plinth falls.
 const FOOT_RING := 1.8
@@ -373,6 +411,18 @@ var _cirque := true
 ## The crown's towers, (a, v), moved by their handles; their phases.
 var _crown := PackedVector2Array()
 var _crown_ph := PackedFloat32Array()
+## Each root's top's way off its base (a, v, m).
+var _root_way := PackedVector2Array()
+## The roots on (`--spire-form=0` off).
+var _form := true
+
+## Whether the massif climbs into the towers (`--spire-form=0` the dome and post).
+static func form_wanted() -> bool:
+	return not "--spire-form=0" in LaunchArgs.user_args()
+
+## Whether the upper mountain is the towers' basalt (`--spire-rock=0` the old rock).
+static func dark_wanted() -> bool:
+	return not "--spire-rock=0" in LaunchArgs.user_args()
 
 ## The massif for this land, or null: `--peak=0` turns it off. `ground`:
 ## the land's own height (world y) at (x, z), for its way from the origin.
@@ -616,6 +666,7 @@ func _init(land_seed: int, frame: Transform3D) -> void:
 	_tarn_wet = TARN_BOWL*sqrt(1.0-pow((SHORE_Y-_tarn_level)/TARN_DEEP,2.0/3.0))
 	var tc := world(_tarn_c.x,_tarn_c.y)
 	_cirque = not LaunchArgs.user_args().has("--cirque=0")
+	_form = form_wanted()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([land_seed,"cirque"])
 	var lb := TARN_LOBES if _cirque else Vector3.ZERO
@@ -628,6 +679,7 @@ func _init(land_seed: int, frame: Transform3D) -> void:
 		var cq := Vector2(moved.x,moved.z)-centre
 		_crown.append(Vector2(cq.dot(facing),cq.dot(side)))
 		_crown_ph.append(rng.randf()*TAU)
+		_root_way.append((CROWN_MID-_crown[k]).normalized()*float(row[3])*ROOT_LEAN*ROOT_SHIFT.x)
 	_lay_ribs(land_seed)
 	pond = PackedFloat32Array([tc.x,tc.y,_tarn_wet,_tarn_level+SEA_Y,0.0,lb.x,ph.x,lb.y,ph.y,lb.z,ph.z,_tarn_wet*(1.0+lb.x+lb.y+lb.z)])
 
@@ -867,7 +919,7 @@ func world(a: float, v := 0.0) -> Vector2:
 ## `peak_paint`): the frame, the zone, the snow line and the valley.
 func paint() -> Dictionary:
 	return {"peak_frame":Vector4(centre.x,centre.y,facing.x,facing.y),"peak_zone":Vector4(_o.x,_o.y,BOUND,1.0),
-		"peak_snow":SNOW_LINE,"peak_stretch":Vector4(ICEFALL.x,ICEFALL.y,GLACIER.x,GLACIER.y),"peak_half":FLOOR_HALF,
+		"peak_snow":SNOW_LINE,"peak_basalt":1.0 if dark_wanted() else 0.0,"peak_stretch":Vector4(ICEFALL.x,ICEFALL.y,GLACIER.x,GLACIER.y),"peak_half":FLOOR_HALF,
 		"peak_bend":Vector4(GL_BEND,GL_TURNS,BOULDERS.x,TOE.y),
 		"peak_cirque":Vector4(CIRQUE_R,_cq_ph.x,_cq_ph.y,_cq_ph.z),"peak_cirque_lobes":Vector4(CIRQUE_LOBES.x,CIRQUE_LOBES.y,CIRQUE_LOBES.z,RIM.z),
 		"peak_cirque_strip":Vector4(STRIP.x,STRIP.z+10.0,STRIP.z+40.0,1.0 if _cirque else 0.0)}.merged(PeakIce.uniforms(PeakIce.gorge(self))).merged(PeakIce.rock_uniforms(self))
@@ -944,7 +996,7 @@ func summit() -> Vector3:
 ## Tower `k`'s lean: world XZ, the way its tip stands off its base.
 func _lean(k: int) -> Vector2:
 	var a := _crown[k]
-	return (world(CROWN_MID.x,CROWN_MID.y)-world(a.x,a.y)).normalized()*float(CROWN[k][3])
+	return (world(CROWN_MID.x,CROWN_MID.y)-world(a.x,a.y)).normalized()*float(CROWN[k][3])*(ROOT_LEAN if _form else 1.0)
 
 ## The crown's table for PeakTowers.setup: `entry`'s entry for each tower at its
 ## coded place, on the land's own height (`height`: world y at (x, z)).
@@ -957,7 +1009,10 @@ func crown(height: Callable, entry: Callable) -> Array:
 		for q in 16:
 			var p := at+Vector2.from_angle(TAU*q/16.0)*float(row[4])*FOOT_RING
 			low = minf(low,float(height.call(p.x,p.y)))
-		out.append(entry.call(at,low-SEA_Y,float(row[2]),_lean(k),float(row[4]),int(row[5])))
+		var base := float(ROOT_BASES[k]) if _form else low-SEA_Y
+		var e: Dictionary = entry.call(at,base,float(row[2]),_lean(k),float(row[4]),int(row[5]))
+		e["spire"] = _form
+		out.append(e)
 	return out
 
 # --- The profile -------------------------------------------------------------------
@@ -1031,13 +1086,14 @@ static func _valley_mid(a: float) -> float:
 func _crown_rock(a: float, v: float, n: float) -> float:
 	var h := -INF
 	var at := Vector2(a,v)
-	for k in _crown.size():
-		var d := at-_crown[k]
-		var phi := atan2(d.y,d.x)+_crown_ph[k]
-		var lobe := 1.0+PLINTH_LOBE*(0.6*sin(3.0*phi)+0.4*sin(5.0*phi+1.3))
-		var out := maxf(d.length()-PLINTH_R*float(CROWN[k][4]),0.0)
-		var top := float(PLINTH_TOPS[k])-out*PLINTH_FALL*lobe-out*out*PLINTH_SINK+n*ROUGH*1.6
-		if top > h: h = top
+	if not _form:
+		for k in _crown.size():
+			var d := at-_crown[k]
+			var phi := atan2(d.y,d.x)+_crown_ph[k]
+			var lobe := 1.0+PLINTH_LOBE*(0.6*sin(3.0*phi)+0.4*sin(5.0*phi+1.3))
+			var out := maxf(d.length()-PLINTH_R*float(CROWN[k][4]),0.0)
+			var top := float(PLINTH_TOPS[k])-out*PLINTH_FALL*lobe-out*out*PLINTH_SINK+n*ROUGH*1.6
+			if top > h: h = top
 	for e: Array in ARETES:
 		var p := _crown[int(e[0])]
 		var pq := _crown[int(e[1])]-p
@@ -1050,6 +1106,38 @@ func _crown_rock(a: float, v: float, n: float) -> float:
 		var top := y-off*ARETE_FALL+n*ROUGH*1.2
 		if top > h: h = top
 	return h
+
+## `h` with the towers' roots risen through it (see ROOTS).
+func _roots(a: float, v: float, n: float, h: float) -> float:
+	var top := -INF
+	for k in _crown.size():
+		var dx := a-_crown[k].x
+		var dv := v-_crown[k].y
+		var r := sqrt(dx*dx+dv*dv)
+		var moved := exp(-r/ROOT_SHIFT.y)
+		dx -= _root_way[k].x*moved
+		dv -= _root_way[k].y*moved
+		r = sqrt(dx*dx+dv*dv)
+		var phi := atan2(dv,dx)+_crown_ph[k]
+		var gully := 0.65*absf(sin(1.5*phi))+0.35*absf(sin(2.5*phi+1.3))
+		var e := r*(1.0+ROOT_RIDGE*gully*smoothstep(ROOT_GROW.x,ROOT_GROW.y,r))
+		var row: Array = ROOTS[k]
+		var past := maxf(e-ROOT_END,0.0)
+		var y := float(row[0])-ROOT_FALL*e+float(row[1])*exp(-e/ROOT_TOP)-past*past*ROOT_SINK+n*ROOT_ROUGH
+		if y > top: top = y
+	for s: Array in SHOULDERS:
+		var p := _crown[int(s[0])]
+		var pq := Vector2(float(s[1]),float(s[2]))-p
+		var at := Vector2(a,v)
+		var t := clampf((at-p).dot(pq)/pq.length_squared(),0.0,1.0)
+		var off := (at-(p+pq*t)).length()
+		if off > 320.0: continue
+		var y := float(s[3])+(float(s[4])-float(s[3]))*pow(1.0-t,SHOULDER_BOW)
+		y += ARETE_BREAK*1.4*_noise.get_noise_2d(t*pq.length()*2.5+float(s[0])*700.0,7000.0)-off*SHOULDER_FALL+n*ROOT_ROUGH
+		y -= 500.0*smoothstep(0.82,1.0,t)
+		if y > top: top = y
+	var gap := maxf(ROOT_BLEND-absf(h-top),0.0)/ROOT_BLEND
+	return maxf(h,top)+gap*gap*ROOT_BLEND*0.25
 
 ## The wall `e` m in from a crest at `hc`: talus, then a cliff.
 static func _wall(e: float, hc: float) -> float:
@@ -1168,6 +1256,7 @@ func _h0(a: float, v: float) -> Vector3:
 	if rho2 < CROWN_REACH*CROWN_REACH:
 		var cr := _crown_rock(a,v,n)
 		if cr > h: h = cr
+		if _form: h = _roots(a,v,n,h)
 	return Vector3(h,c,meadow)
 
 ## The cirque at (a, v) over the land's `h` there (see CIRQUE_R):
