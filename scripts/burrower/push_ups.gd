@@ -44,6 +44,7 @@ const BUMP_LAYER := 1 << 12
 const BUMP_OUT := 0.3
 const BUMP_LEAST := 0.6
 const HALO_SHADER = preload("res://shaders/burrower_halo.gdshader")
+const ORB_SHADER = preload("res://shaders/burrower_orb.gdshader")
 const SOIL_SHADER = preload("res://shaders/burrower_soil.gdshader")
 
 ## Timing (s): between push-ups (random in GAP).
@@ -82,6 +83,15 @@ const SWELL := 0.5
 const ORB_R := 1.9
 const HALO := 10.5
 const GRAZE := 2.2
+## On the move an orb stays a ball: at most this share longer, at speed (m/s; the
+## spring throws it up at 40), and the speed is carried by its glow, up to
+## TRAIL times as tall and drawn back from its way by TRAIL_BACK of its size;
+## between `MOVING` m/s it goes from hanging to moving (`_orb`, burrower_orb.gdshader).
+const STRETCH := 0.13
+const STRETCH_VY := 18.0
+const TRAIL := 1.7
+const TRAIL_BACK := 0.2
+const MOVING := Vector2(3.0,16.0)
 ## The bell: its lip's radius, its height under the pivot, the reach of a
 ## clip; its pendulum (w^2, damping /s); a clip's kick (rad/s along the
 ## plane's way); it tolls again at each end of a swing wider than TOLL rad.
@@ -200,7 +210,7 @@ var _yaw := 0.0
 var _bump_q: PhysicsShapeQueryParameters3D
 var _rolled := -INF
 var _core_mesh := SphereMesh.new()
-var _core_mat := StandardMaterial3D.new()
+var _core_mat := ShaderMaterial.new()
 var _dome_mesh: ArrayMesh
 var _halo_mm := MultiMesh.new()
 var _motes: Array = []
@@ -225,11 +235,9 @@ func setup(the_land: Ground, the_burrower: Node) -> void:
 	_core_mesh.height = ORB_R*2.0
 	_core_mesh.radial_segments = 20
 	_core_mesh.rings = 10
-	_core_mat.albedo_color = ORB
-	_core_mat.emission_enabled = true
-	_core_mat.emission = GLOW
-	_core_mat.emission_energy_multiplier = 3.2
-	_core_mat.roughness = 0.35
+	_core_mat.shader = ORB_SHADER
+	_core_mat.set_shader_parameter("albedo",ORB)
+	_core_mat.set_shader_parameter("glow",GLOW)
 	_core_mesh.material = _core_mat
 	_dome_mesh = GritMesh.dome(11,0.22,16,5)
 	_bronze.albedo_color = BRONZE
@@ -830,7 +838,7 @@ func _step(o: Dictionary, delta: float, plane: Object, half_span: float, bumped:
 			o.y = y
 			o.vy = vy
 			if kind == &"orb":
-				stretch = clampf(1.0+absf(vy)*0.035,1.0,1.5)
+				stretch = 1.0+STRETCH*(1.0-exp(-absf(vy)/STRETCH_VY))
 				# Squash as it turns at the top of its overshoot.
 				if absf(vy) < 2.5 and y > hang: stretch = 1.0-0.18*(1.0-absf(vy)/2.5)*clampf((y-hang)*3.0,0.0,1.0)
 				o.glow = minf(float(o.glow)+delta*3.0,1.0)
@@ -871,7 +879,7 @@ func _step(o: Dictionary, delta: float, plane: Object, half_span: float, bumped:
 				y = top+lift-(top+lift-down)*f*f
 			o.vy = (y-float(o.y))/maxf(delta,0.001)
 			o.y = y
-			if kind == &"orb": stretch = clampf(1.0+absf(float(o.vy))*0.03,1.0,1.6)
+			if kind == &"orb": stretch = 1.0+STRETCH*(1.0-exp(-absf(float(o.vy))/STRETCH_VY))
 			o.glow = minf(float(o.glow),clampf(1.0-t/sink,0.0,1.0))
 			o.dome_s = Vector3(o.dome_s.x,maxf(float(o.dome_s.y)-delta*0.3,0.01),o.dome_s.z)
 			var low := y+BAR_Y if kind == &"gong" else y
@@ -927,6 +935,8 @@ func _orb(o: Dictionary, delta: float, stretch: float, plane: Object, half_span:
 		var sx := 1.0/sqrt(stretch)
 		o.spin = float(o.spin)+delta*1.4
 		core.global_transform = Transform3D(Basis(Vector3.UP,float(o.spin)).scaled(Vector3(sx,stretch,sx)),c)
+		o.moving = smoothstep(MOVING.x,MOVING.y,absf(float(o.vy)))
+		core.set_instance_shader_parameter(&"moving",o.moving)
 		light.position = c
 		light.light_energy = 1.6*float(o.glow)
 		# Flown into: motes and a chime.
@@ -1055,8 +1065,12 @@ func _draw_halos() -> void:
 		var y := maxf(float(o.y),float(o.base)+0.6) if o.phase == &"swell" or o.kind != &"orb" else float(o.y)
 		if o.kind != &"orb" and o.phase != &"swell": y = float(o.base)+0.6
 		var c := Vector3((o.at as Vector2).x,y,(o.at as Vector2).y)
-		var size := HALO*(1.0 if o.kind == &"orb" else 1.4)
-		_halo_mm.set_instance_transform(n,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*size*(0.6+0.4*g)),c))
+		var size := HALO*(1.0 if o.kind == &"orb" else 1.4)*(0.6+0.4*g)
+		# On the move the glow draws out behind the ball.
+		var moving := float(o.get("moving",0.0))
+		var tall := lerpf(1.0,TRAIL,moving)
+		c.y -= size*TRAIL_BACK*moving*signf(float(o.vy))
+		_halo_mm.set_instance_transform(n,Transform3D(Basis.IDENTITY.scaled(Vector3(size,size*tall,size)),c))
 		_halo_mm.set_instance_custom_data(n,Color(GLOW.r,GLOW.g,GLOW.b,g*pulse))
 		n += 1
 	_halo_mm.visible_instance_count = n
