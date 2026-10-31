@@ -23,9 +23,10 @@ extends "res://scripts/endless/region_doors.gd"
 ##                hold. The far land was prewarmed since the plane came near
 ##                the mouth; what dresses it streams in behind the hall's
 ##                last stretch.
-##   the way out  a mouth seen from inside is a card of daylight in the land's
-##                own haze (the tell, growing); it fades to the real land over
-##                the last of the hall (WORLD_OFF to CLEAR_AT m from it).
+##   the way out  where the hall meets the ruin stands a card of daylight in
+##                the land's own haze, the size of the hall (the tell, growing);
+##                the world comes back behind it, and it fades to the real ruin
+##                and the land past it (WORLD_OFF to CLEAR_AT m from it).
 ##   both ways    the plane goes either way along the hall; turned back past
 ##                the swap, it swaps back (SWAP_SLACK of hysteresis).
 ##   the logbook  each way's first pass is a find (`door/amber-hall`,
@@ -45,7 +46,7 @@ const UNDER := LandTunnels_.UNDER_LAYER
 const KEPT := 1 << 15
 ## The wilderness ruin's mouth and its inward way on seed 1 (XZ), and the
 ## amberlands ruin's, on its side (home offset added).
-const WILD_AT := Vector2(-995.0,2402.0)
+const WILD_AT := Vector2(-1353.0,-1187.0)
 const AMBER_AT := Vector2(-117.0,-892.0)
 ## The nave across (m, toy era; WorldScale `opening`): the kit bay scaled so
 ## its outer rows stand this wide. The whole hall is that bay's size times
@@ -72,8 +73,8 @@ const FOOT_OVER := 2.0
 const SWAP_SLACK := 4.0
 ## How far from a mouth (m, the eye's) the world goes out, and where its
 ## daylight card is clear.
-const WORLD_OFF := 62.0
-const CLEAR_AT := 16.0
+const WORLD_OFF := 130.0
+const CLEAR_AT := 34.0
 ## The torches: every so many bays, how many lights, how many with shadows.
 const TORCH_EVERY := 2
 const TORCH_Y := 6.0
@@ -82,6 +83,8 @@ const LIGHT_SHADOWS := 2
 const LIGHT_RANGE := 40.0
 const LIGHT_ENERGY := 16.0
 const SECTION := 8
+## The plinth's depth under the floor (m).
+const PLINTH := 44.0
 const GUARD_MARGIN := 6.0
 const GUARD_PUSH := 14.0
 const GUARD_LIFT := 6.0
@@ -125,6 +128,7 @@ var _swap_watch := 0
 var _swap_worst := 0.0
 var _last_usec := 0
 var swaps := 0
+var _day := Color(1.0,0.95,0.86)
 
 ## Whether the ruin door runs (the cloud walls with --door=cloud).
 static func wanted_hall() -> bool:
@@ -356,6 +360,7 @@ func _build_hall(parts: Dictionary) -> void:
 	for k in LIGHTS:
 		var l := OmniLight3D.new()
 		l.light_cull_mask = UNDER
+		l.layers = UNDER
 		l.omni_range = LIGHT_RANGE
 		l.omni_attenuation = 1.4
 		l.light_color = Color(1.0,0.66,0.34)
@@ -479,11 +484,13 @@ func _build_ruin(i: int, parts: Dictionary) -> Node3D:
 	var plinth := MeshInstance3D.new()
 	plinth.name = "Plinth"
 	var box := BoxMesh.new()
-	box.size = Vector3(2.0*_foot+6.0,16.0,_out+8.0)
+	box.size = Vector3(2.0*_foot+6.0,PLINTH,_out+8.0)
 	plinth.mesh = box
-	plinth.material_override = lit
+	var base := lit.duplicate() as ShaderMaterial
+	base.set_shader_parameter("albedo",(Arches_.TONES[tone] as Color)*0.42)
+	plinth.material_override = base
 	plinth.layers = layers
-	plinth.position = Vector3(0.0,-8.05,_out*0.5-2.0)
+	plinth.position = Vector3(0.0,-PLINTH*0.5-0.05,_out*0.5-2.0)
 	root.add_child(plinth)
 	for s: float in [-1.0,1.0]:
 		var tower := RuinKit_.piece("belfry_tower",4300+i*3+int(s),0.55)
@@ -525,10 +532,10 @@ func _build_ruin(i: int, parts: Dictionary) -> Node3D:
 	var card := MeshInstance3D.new()
 	card.name = "Daylight"
 	var cq := QuadMesh.new()
-	cq.size = Vector2(120.0,70.0)
+	cq.size = Vector2(wb.size.x,wb.size.y)
 	card.mesh = cq
 	card.material_override = _daylight()
-	card.position = Vector3(0.0,30.0,-1.5)
+	card.position = Vector3(0.0,wb.size.y*0.5,_out+0.2)
 	card.layers = KEPT
 	card.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	card.visible = false
@@ -536,10 +543,11 @@ func _build_ruin(i: int, parts: Dictionary) -> Node3D:
 	_cards.append(card)
 	var spill := OmniLight3D.new()
 	spill.name = "Spill"
-	spill.light_cull_mask = UNDER
-	spill.omni_range = 110.0
-	spill.omni_attenuation = 1.1
-	spill.position = Vector3(0.0,9.0,_out+6.0)
+	spill.light_cull_mask = UNDER | KEPT
+	spill.layers = UNDER | 1
+	spill.omni_range = 130.0
+	spill.omni_attenuation = 0.9
+	spill.position = Vector3(0.0,9.0,_out*0.6)
 	spill.light_energy = 0.0
 	root.add_child(spill)
 	_spills.append(spill)
@@ -584,7 +592,7 @@ func ground(p: Vector3, h: Variant, pad := -1.0) -> Variant:
 		var fl: float = _frames[i].origin.y
 		for s: float in [-1.0,1.0]:
 			if absf(l.x-s*TOWER_X) < TOWER_SOLID+grow and absf(l.z-TOWER_Z) < TOWER_SOLID+grow: return fl+TOWER_TOP
-		if absf(l.x) < _foot+grow and l.z > 0.0:
+		if absf(l.x) < _foot+grow and l.z > -4.0:
 			if _open() and absf(l.x)+grow < _room and l.y < _roof and l.z < _out+1.0:
 				return LandHalls_.over(p,fl,[Vector2(fl+_roof,fl+SHELL_TOP*_big)])
 			return fl+SHELL_TOP*_big
@@ -651,7 +659,7 @@ func step(delta: float) -> void:
 	if not inside_hall:
 		for i in 2:
 			var l := _frames[i].affine_inverse()*p
-			if _open() and l.z > 0.0 and l.z < 14.0 and absf(l.x) < _room and l.y < _roof+2.0:
+			if _open() and l.z > 0.0 and l.z < 14.0 and absf(l.x) < _room and l.y > -1.0 and l.y < _roof+2.0:
 				_side = i
 				_enter()
 				break
@@ -701,8 +709,12 @@ func _swap(to: int) -> void:
 	h.plane_figure.shift(by)
 	_swap_land(to)
 	_side = to
+	var t1 := Time.get_ticks_usec()
 	_wash()
+	var t2 := Time.get_ticks_usec()
 	_set_hour(from,to)
+	var t3 := Time.get_ticks_usec()
+	print("doors: swap parts ms: move %.1f wash %.1f hour %.1f" % [(t1-t0)/1000.0,(t2-t1)/1000.0,(t3-t2)/1000.0])
 	swaps += 1
 	passes += 1
 	if h.book != null and h.book.find(String(walls[from].find)): print("doors: first pass of %s" % walls[from].name)
@@ -736,35 +748,43 @@ func late(eye: Vector3) -> void:
 	if not _sky_cut: _cut_sky()
 	var cam: Camera3D = h.camera
 	if _mask_all == 0: _mask_all = cam.cull_mask
+	_spilled(eye)
 	if not inside_hall:
 		if not _world_on: _set_world(true)
 		for c: MeshInstance3D in _cards: c.visible = false
-		for s: OmniLight3D in _spills: s.visible = false
 		return
 	var q := _q(eye)
-	var from_mouth := minf(q.x,_len()-q.x)
+	var from_mouth := minf(q.x,_len()-q.x)-_out
 	var inner := q.x > 0.0 and q.x < _len() and from_mouth > WORLD_OFF
 	if _world_on == inner: _set_world(not inner)
 	if h.look != null and h.look.get("clouds") != null and "fog_hush" in h.look.clouds:
-		h.look.clouds.fog_hush = smoothstep(0.0,WORLD_OFF,from_mouth)
+		h.look.clouds.fog_hush = smoothstep(-_out,0.0,from_mouth)
 	var show := smoothstep(CLEAR_AT,WORLD_OFF,from_mouth)
-	var c := Color(1.0,0.95,0.86)
-	var strength := 1.6
-	var env: Environment = h.look.get("environment") if h.look != null else null
-	if env != null: c = env.fog_light_color
+	var c := _day
 	for i in 2:
-		var on := i == _side and q.x > -2.0 and q.x < _len()+2.0
+		# Seen from inside only: the eye still in the hall proper.
+		var at_end := q.x > _len()*0.5 if i == 1 else q.x < _len()*0.5
+		var on := i == _side and at_end and from_mouth > 1.0
 		var card := _cards[i]
 		card.visible = on and show > 0.002
 		var mat := card.material_override as ShaderMaterial
-		mat.set_shader_parameter("colour",Vector3(c.r,c.g,c.b).lerp(Vector3.ONE,0.25))
-		mat.set_shader_parameter("strength",strength)
+		mat.set_shader_parameter("colour",Vector3(c.r,c.g,c.b))
+		mat.set_shader_parameter("strength",1.5)
 		mat.set_shader_parameter("show",show)
-		var sp := _spills[i]
-		sp.visible = on
-		sp.light_color = c
-		sp.light_energy = 6.0
 	_light_torches(q.x)
+
+## Each ruin's daylight into its stone, near it only, in the land's haze.
+func _spilled(eye: Vector3) -> void:
+	var look: Node = _host.look
+	var env: Environment = look.get("environment") if look != null else null
+	if env != null: _day = env.fog_light_color
+	for i in 2:
+		var sp := _spills[i]
+		var near := i == (_side if inside_hall else side_at(eye)) and (_frames[i].origin+(Vector3.ZERO)).distance_to(eye) < 700.0
+		sp.visible = near
+		if near:
+			sp.light_color = _day
+			sp.light_energy = 7.0
 
 func _set_world(on: bool) -> void:
 	_world_on = on
