@@ -306,6 +306,8 @@ var traffic: Node
 var race: Node
 ## The shops (scripts/endless/shop_sites.gd).
 var shops: Node
+## The lighthouse and the boat on the coast's isles (scripts/endless/coast_sites.gd).
+var coast: Node3D
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
@@ -746,6 +748,10 @@ func _ready() -> void:
 	shops.name = "Shops"
 	add_child(shops)
 	shops.setup(self)
+	coast = preload("res://scripts/endless/coast_sites.gd").new()
+	coast.name = "Coast"
+	add_child(coast)
+	coast.setup(self)
 	if RegionDoors.wanted(world):
 		doors = HallDoors.new() if HallDoors.wanted_hall() else RegionDoors.new()
 		add_child(doors)
@@ -1063,6 +1069,7 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 		pad = solid_pad
 		p += solid_shift
 	var g: Variant = tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad)
+	if coast != null: g = coast.ground(p,g,pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
 	if stair != null: g = stair.ground(p,g,pad)
 	return g if doors == null else doors.ground(p,g,pad)
@@ -1070,12 +1077,16 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
 	if doors != null and doors.holds(p): return false
-	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p)
+	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.inside(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
 func floor_at(p: Vector2) -> float:
 	if doors != null and plane != null and doors.holds(Vector3(p.x,plane.position.y,p.y)): return doors.hall_floor()
+	# The boat's deck, over the sea (CoastSites `deck_at`).
+	if coast != null:
+		var deck: float = coast.deck_at(p)
+		if not is_nan(deck) and (plane == null or plane.position.y >= deck-1.0): return deck
 	var h: float = field.height(p.x,p.y)
 	if h < Field.SEA_Y+0.2 or _on_river(): return NAN
 	# In a tunnel's bore, its floor (read at the plane's height).
@@ -1217,6 +1228,7 @@ func tick(delta: float) -> void:
 	if race != null: race.step(delta,self)
 	if shops != null: shops.step(delta,self)
 	if finds != null: finds.step(delta,self)
+	if coast != null: coast.step(delta,self)
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera
