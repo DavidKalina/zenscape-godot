@@ -104,6 +104,8 @@ var material: Material
 var root_reach := ROOT_REACH
 ## Whether chunks carry the channel frame (river_live_wanted()).
 var river_live := false
+## --crest-cut=0: the Peak's chunks keep the grid's one diagonal (_crest_cut).
+var crest_cut := not "--crest-cut=0" in preload("res://scripts/launch_args.gd").user_args()
 var _chunks := {}          # key -> {node, heights, faces, tops}
 var _pending := {}         # key -> true (a task is making it)
 var _queue: Array = []     # keys wanted, not yet asked
@@ -370,7 +372,8 @@ func _build(key: Vector3i, land_seed: int) -> void:
 		var shape := RockShape.grid(f,made,x0,z0,step,CELLS)
 		if not shape.is_empty(): made.shape = shape
 	_portal_holes(f,made,key,x0,z0,step)
-	made.tops = _tops_of(key,made.get("heights",PackedFloat32Array()))
+	_crest_cut(f,made,key,x0,z0,s)
+	made.tops =_tops_of(key,made.get("heights",PackedFloat32Array()))
 	made.key = key
 	made.ms = (Time.get_ticks_usec()-began)/1000.0
 	_done_lock.lock()
@@ -483,6 +486,30 @@ static func _portal_holes(f: RefCounted, made: Dictionary, key: Vector3i, x0: fl
 	out.append_array(grid.slice(CELLS*CELLS*6))
 	made.indices = out
 	if key.x == 0: made.faces = faces
+
+## Over the Peak the shadow-casting chunks past the first (levels 1, 2) cut
+## each quad along its nearer heights, not the grid's one diagonal: a crest
+## running against that diagonal stood as a row of teeth, and the sun's shadow
+## drew them long over the ice. The same vertices; the draw only (a chunk's
+## collider keeps the field). --crest-cut=0 off.
+func _crest_cut(f: RefCounted, made: Dictionary, key: Vector3i, x0: float, z0: float, s: float) -> void:
+	if key.x < 1 or key.x > 2 or made.has("indices") or not crest_cut: return
+	var pk: RefCounted = f.peak()
+	if pk == null or not pk.meets(x0,z0,x0+s,z0+s): return
+	var v: PackedVector3Array = made.verts
+	var n := CELLS+1
+	var out := _indices.duplicate()
+	var w := 0
+	for j in CELLS:
+		for i in CELLS:
+			var a := j*n+i
+			if absf(v[a].y-v[a+n+1].y) < absf(v[a+1].y-v[a+n].y):
+				out[w+2] = a+n+1
+				out[w+3] = a
+				out[w+4] = a+n+1
+				out[w+5] = a+n
+			w += 6
+	made.indices = out
 
 ## The triangles every chunk shares: the grid's, then the skirt's.
 static func _grid_indices() -> PackedInt32Array:
