@@ -102,6 +102,17 @@ func apply(figure: Node3D, at_size := NAN) -> void:
 	if s == 1.0: return
 	figure.transform = figure.transform*Transform3D(Basis.from_scale(Vector3.ONE*s),PIVOT*(1.0-s))
 
+## After `apply`: turns the barrel roll about the propeller's shaft, not the
+## line under the wheels that scaling leaves it on, so the plane spins in
+## place. The bank keeps its old axis (landing reads the wheels there).
+func hold_spin(figure: Node3D, glide: RefCounted) -> void:
+	var spin := float(glide.spin)
+	if spin == 0.0: return
+	var bank := float(glide.bank)
+	var shaft := PIVOT*(1.0-size())
+	var level := Basis.from_euler(Vector3(float(glide.pitch),float(glide.heading),0.0))
+	figure.transform.origin += level*(shaft.rotated(Vector3.BACK,-bank)-shaft.rotated(Vector3.BACK,-bank-spin))
+
 ## Where a point on the flight-size plane (global) is on the plane drawn
 ## at `at_size`: scaled about the wheels of `figure` (posed now, scaled or not).
 func point(figure: Node3D, at: Vector3, at_size := NAN) -> Vector3:

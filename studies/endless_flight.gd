@@ -1195,6 +1195,7 @@ func tick(delta: float) -> void:
 	sound.step(delta,self,events,float(input.get("boost",0.0)))
 	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane)
 	ground_scale.apply(plane_figure)
+	ground_scale.hold_spin(plane_figure,plane)
 	if water != null: water.shake_figure(plane_figure)
 	plane_figure._mark.visible = false
 	_size_chase()
