@@ -84,6 +84,30 @@ obstacle to dive at:
 
 Its own task, after steering and edges, before water and grass.
 
+## Sightings (the user, after playing it)
+
+He doesn't need a skim to appear. "You're flying up around and you see
+these trees wake, or something skid in the water, so you dive down and
+check it out." Replaces the skim wake and the camera-forward gate.
+
+- **A sighting:** every so often, at any height, he's already out there, a
+  few hundred metres off and where the plane can see him, moving at his own
+  pace, not reacting to it. Mostly in woods (the gust, crowns going over and
+  springing back) and on water (the wake), where he reads from altitude. Rare:
+  a rest between sightings, and he never comes up on the plane's nose as a
+  surprise. Ignored for 20-30 s, he sinks away.
+- **Noticed:** when the plane comes down near him, he notices and the run
+  starts from there. The study's entrance from off screen goes in the game:
+  you came to him.
+- **The run is short:** up to 3 orbs, then he dives. No bell, no gong in the
+  game (their code stays; the study keeps them).
+- **Orbs come from him:** at his head or just behind it in his trail, not on
+  the plane's predicted line, so what he throws up reads as his. He crosses
+  the plane's line before one so it stays takeable.
+
+Later, not this round: his speed and catching him (orbs as bursts that
+close the gap), the reward for a catch, his body, the calmer turns.
+
 ## Proof
 
 - Smoke: `studies/endless_flight.tscn` and `studies/burrower_study.tscn`.
