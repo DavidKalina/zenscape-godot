@@ -11,6 +11,7 @@ extends Control
 const Card = preload("res://scripts/endless/landing_summary.gd")
 const Tallies = preload("res://scripts/endless/pilot_tallies.gd")
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
+const Ledger = preload("res://scripts/endless/finds_ledger.gd")
 
 ## The page's width at a 900 px tall window, at most the window less MARGIN.
 const WIDTH := 1060.0
@@ -21,6 +22,8 @@ var game: Node
 var _a := 0.0
 var _cols: Array = []
 var _was_paused := false
+## On the Wilderness page (finds_ledger.gd); Tab or left/right turns it.
+var ledger := true
 
 func _init(host: Node = null) -> void:
 	game = host
@@ -63,6 +66,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	if key != null and key.pressed and not key.echo and key.keycode in [KEY_J,KEY_ESCAPE]: close_book()
 	elif event.is_action_pressed(&"ui_cancel"): close_book()
+	elif _has_ledger() and (event.is_action_pressed(&"ui_left") or event.is_action_pressed(&"ui_right") or event.is_action_pressed(&"ui_focus_next")):
+		ledger = not ledger
+		queue_redraw()
 	else: return
 	get_viewport().set_input_as_handled()
 
@@ -107,11 +113,19 @@ func lines() -> Array:
 	for col: Array in (_cols if not _cols.is_empty() else columns(game.book)):
 		out.append("[%s]" % col[0])
 		for r: Dictionary in col[1]: out.append(("  %s:" % r.label) if r.get("kind","") == "place" else ("  %s%s | %s" % ["  " if r.get("indent",false) else "",r.label,r.value]))
+	if _has_ledger(): out.append_array(Ledger.lines(game.finds.ledger()))
 	return out
+
+func _has_ledger() -> bool:
+	return game != null and game.get("finds") != null and int(game.finds.rows.size()) > 0
 
 func _draw() -> void:
 	if _cols.is_empty(): return
 	var a := _a
+	if ledger and _has_ledger():
+		draw_rect(Rect2(Vector2.ZERO,size),Color(Card.KEY,0.5*a))
+		Ledger.draw(self,game.finds,a)
+		return
 	var s := size.y/900.0
 	draw_rect(Rect2(Vector2.ZERO,size),Color(Card.KEY,0.5*a))
 	var rows := 0
@@ -149,4 +163,4 @@ func _draw() -> void:
 			Card.ink(self,Card.words(15.0*s,0.02),str(row.label),Vector2(ix,cy),15.0*s,Color(Card.CREAM,0.85*a),4.0*s,0.0)
 			Card.ink(self,Card.nums(),str(row.value),Vector2(cr,cy),19.0*s,Color(row.get("col",Card.CREAM),a),5.0*s,1.0)
 			cy += 30.0*s
-	Card.ink(self,Card.words(14.0*s,0.08),"J or Esc to close",Vector2(r.position.x+r.size.x*0.5,r.end.y-26.0*s),14.0*s,Color(Card.GREY,a),4.0*s,0.5)
+	Card.ink(self,Card.words(14.0*s,0.08),"Tab for the Wilderness.  J or Esc to close" if _has_ledger() else "J or Esc to close",Vector2(r.position.x+r.size.x*0.5,r.end.y-26.0*s),14.0*s,Color(Card.GREY,a),4.0*s,0.5)
