@@ -75,6 +75,10 @@ they would notice without being told.
   Vector3, so find out before changing it.
 - Kicked bits: big cream shards on dry ground (`meadow_18_run`). Source not
   traced. Find it, then size and tint them to the ground.
+- Trail leftovers from Trunk 1: on dry ground the strip's fringe and the head
+  mound still read greener than the straw ground (`shaders/burrower_ridge.gdshader`;
+  the field's vertex colour is greener than the terrain's carpet paint). Also drop
+  the unused `break_len` and `break_share` uniforms.
 
 ### Lane `trees` (Sonnet): trunk spikes
 
@@ -124,6 +128,8 @@ writes `burrower-polish-handoff.md`.
 - No `git stash` (the stash list is shared and holds the user's work).
 - Keep edits to shared files small. End a lane's commit with **Notes for merge**.
 - macOS has no `timeout` and the machine has `python3`, not `python`.
+- For a big still, pass `--win=2560x1440` after the driver's `--` (`tools/drive.py`,
+  The window). Don't fork the tools.
 
 ## Proof
 
