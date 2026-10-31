@@ -469,4 +469,5 @@ static func carve(a: float, v: float, h: float, n: float, rough: float, noise: F
 	if a > SPILL_A.x-30.0: cut = maxf(cut,_spill(a,v,spur))
 	# The ramp and the apron stand on whatever lay lower under them.
 	var fill := smoothstep(350.0,310.0,a)*(1.0-smoothstep(0.0,30.0,near))
+	if fill <= 0.0: return cut # past both gorges y0 and y1 are INF, and INF*0 is NaN
 	return lerpf(cut,maxf(cut,minf(y0,y1)),fill)
