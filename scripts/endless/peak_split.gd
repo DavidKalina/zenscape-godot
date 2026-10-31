@@ -399,6 +399,25 @@ static func _spill(a: float, v: float, spur: float) -> float:
 	var half := lerpf(SPILL_HALF.x,SPILL_HALF.y,t*t)+spur*30.0
 	return SPILL_Y-SPILL_GRADE*d-SPILL_SIDE*maxf(absf(v-SPILL_V)-half,0.0)
 
+## How far (a, v) lies past the nearest gorge's floor's edge (m), FAR off them.
+static func near(a: float, v: float) -> float:
+	var x := (a-A_SPAN.x)/CELL
+	var y := (v-V_SPAN.x)/CELL
+	if x < 0.0 or y < 0.0: return FAR
+	var i := int(x)
+	var j := int(y)
+	if i >= _na-1 or j >= _nv-1: return FAR
+	var k := j*_na+i
+	var fx := x-i
+	var fy := y-j
+	var e0: PackedFloat32Array = _e[0]
+	var e1: PackedFloat32Array = _e[1]
+	var w00 := (1.0-fx)*(1.0-fy)
+	var w10 := fx*(1.0-fy)
+	var w01 := (1.0-fx)*fy
+	var w11 := fx*fy
+	return minf(e0[k]*w00+e0[k+1]*w10+e0[k+_na]*w01+e0[k+_na+1]*w11,e1[k]*w00+e1[k+1]*w10+e1[k+_na]*w01+e1[k+_na+1]*w11)
+
 ## The massif's height `h` at (a, v) with the split on it. `n` the rock noise
 ## here, `rough` its height (m), `noise` the massif's noise.
 static func carve(a: float, v: float, h: float, n: float, rough: float, noise: FastNoiseLite) -> float:

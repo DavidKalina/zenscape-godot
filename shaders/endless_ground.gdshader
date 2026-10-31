@@ -157,6 +157,7 @@ uniform vec4 peak_rock_box = vec4(0.0);
 // The Peak's granite's darkest (the towers' copy of the paint takes its own).
 uniform float peak_granite = 0.07;
 const float PEAK_BEDS = 3.0;
+const float PEAK_SHEAR = 200.0;
 uniform vec4 peak_stretch = vec4(850.0, 1250.0, 2050.0, 4050.0);
 uniform vec4 peak_half = vec4(200.0, 240.0, 260.0, 330.0);
 uniform vec4 peak_bend = vec4(170.0, 2.2, 1250.0, 4500.0);
@@ -734,6 +735,13 @@ float peak_rim(vec3 p) {
 #include "res://shaders/peak_ice.gdshaderinc"
 #include "res://shaders/peak_snow.gdshaderinc"
 
+// zs_fade on a noise whose cells agree at their borders (peak_noise).
+float peak_fade(vec2 p, float scale, float fp) {
+	float keep = 1.0 - smoothstep(scale * 0.18, scale * 0.6, fp);
+	if (keep <= 0.0) return 0.0;
+	return (peak_noise(p / scale) - 0.5) * keep;
+}
+
 void fragment() {
 	vec3 p = world_position;
 	// The paint's tones: this spot's regions' in a world of regions, else the material's.
@@ -767,6 +775,13 @@ void fragment() {
 	// moves by that change times the height, so at y -37 the noise raced past
 	// in zigzag stripes along the triangles. The sea is the low land's level.
 	float sheared_y = p.y - sea_y;
+	// On the Peak that level is hundreds of metres down: ground lying back, its
+	// normal turning by a hair, moved the paint's noise metres at a time, in
+	// swirling contours. There the shear folds to a height in PEAK_SHEAR's reach.
+	if (peak_zone.w > 0.5) {
+		float pk_near = 1.0 - smoothstep(peak_zone.z - 600.0, peak_zone.z, distance(p.xz, peak_zone.xy));
+		sheared_y = mix(sheared_y, abs(fract(sheared_y / PEAK_SHEAR) - 0.5) * PEAK_SHEAR, pk_near);
+	}
 	vec2 gxz = p.xz + shear * vec2(sheared_y * 0.8, sheared_y * 0.55);
 	fp = max(fp, fp3 * shear);
 	float over = p.y - sea_y;
@@ -1174,7 +1189,7 @@ void fragment() {
 	// pale beds softened; a colder snow, blue where it lies back from the sun.
 	if (pk_rock > 0.0) {
 		float l = luma(rock);
-		vec3 granite = vec3(peak_granite + l * 0.42) * vec3(0.88, 0.95, 1.08) * (1.0 + zs_fade(gxz * 1.7 + p.y, 1.3, fp) * 0.35);
+		vec3 granite = vec3(peak_granite + l * 0.42) * vec3(0.88, 0.95, 1.08) * (1.0 + peak_fade(gxz * 1.7 + p.y, 1.3, fp) * 0.35);
 		rock = mix(rock, granite, pk_rock * 0.85);
 		// The prow's bow, and the mouth's walls with it, darkest (peak_split.gd
 		// BOW_A), off the gorges' floors.
@@ -1195,8 +1210,8 @@ void fragment() {
 	// toward its edges, its steep faces (crevasse walls, the icefall's
 	// risers) a deep blue.
 	if (pk.z > 0.0) {
-		float stones = zs_fade(gxz + 3.1, 1.6, fp) + zs_fade(gxz * 0.7 + 9.0, 6.0, fp);
-		vec3 scree = mix(ROCK_PALE, ROCK, smoothstep(0.2, 0.8, zs_noise(gxz / 13.0))) * vec3(0.95, 0.98, 1.02) * (1.05 + stones * 0.5);
+		float stones = peak_fade(gxz + 3.1, 1.6, fp) + peak_fade(gxz * 0.7 + 9.0, 6.0, fp);
+		vec3 scree = mix(ROCK_PALE, ROCK, smoothstep(0.2, 0.8, peak_noise(gxz / 13.0))) * vec3(0.95, 0.98, 1.02) * (1.05 + stones * 0.5);
 		albedo = mix(albedo, scree, pk.z * 0.9);
 		if (ice_rubble > 0.0) albedo = mix(albedo, peak_ice_stones(gxz, fp), ice_rubble);
 	}
