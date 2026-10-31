@@ -1,8 +1,12 @@
 shader_type spatial;
 // The burrower's dust (scripts/burrower/burrower.gd): soft billboards in a
 // MultiMesh, each instance's custom data its colour (rgb) and opacity (a).
-// Each puff is ragged and wispy (lobes and value noise seeded per instance),
-// so a row of them over the pond doesn't read as round blobs from above.
+// Each puff is ragged and wispy (lobes and value noise seeded per puff), so a
+// row of them over the pond doesn't read as round blobs from above. The seed
+// comes from the puff's colour, which its shade fixes for life. INSTANCE_ID
+// won't do: the script keeps the live puffs packed, so one dying renumbers every
+// younger puff, and the whole cloud changed shape at once, some ten times a
+// second with holds between, like a low frame rate GIF.
 render_mode unshaded, depth_draw_never, cull_disabled, shadows_disabled;
 
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
@@ -32,7 +36,7 @@ void vertex() {
 	vec3 w = c + (INV_VIEW_MATRIX[0].xyz * VERTEX.x + INV_VIEW_MATRIX[1].xyz * VERTEX.y) * s;
 	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(w, 1.0);
 	v_col = INSTANCE_CUSTOM;
-	v_seed = float(INSTANCE_ID) * 1.618;
+	v_seed = fract(INSTANCE_CUSTOM.r * 431.0) * 256.0;
 	v_world = w;
 }
 
