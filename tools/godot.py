@@ -185,7 +185,7 @@ def run(godot_args: list[str], *, rendered: bool = False, timeout: float | None 
     timed_out = False
     proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, encoding="utf-8", errors="replace", cwd=ROOT,
-                            env={**os.environ, **(env or {})})
+                            env={**os.environ, "ZENSCAPE_NO_BOOK": "1", **(env or {})})
     try:
         output, _ = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:

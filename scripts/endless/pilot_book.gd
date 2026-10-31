@@ -48,6 +48,8 @@ var _since := 0.0
 ## The book for this run, from the command line.
 static func open() -> PilotBook:
 	var b := PilotBook.new()
+	# Harness runs fly bots: their tallies stay out of the player's book.
+	if OS.has_environment("ZENSCAPE_NO_BOOK"): b.path = ""
 	# The launch args (a driver's `open` and the scene picker give theirs).
 	for arg: String in preload("res://scripts/launch_args.gd").user_args():
 		if arg == "--pilot=fresh": b.path = ""
