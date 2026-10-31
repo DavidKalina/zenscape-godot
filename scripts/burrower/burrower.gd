@@ -401,6 +401,8 @@ func setup(the_land: Ground, the_react: GrassReact) -> void:
 ## (null: roaming the meadow).
 func wake(at: Vector2, way: float, plane: Object = null) -> void:
 	_finish_live()
+	shut = false
+	_edges.clear()
 	pos = at
 	heading = way
 	_turn = 0.0
@@ -500,6 +502,13 @@ const FEEL_PULL := 3.0
 ## Up from a sounding, it runs FEEL_GRACE s before a wall can sound it again.
 const FEEL_GRACE := 0.8
 var _grace := 0.0
+## The land shut: SHUT_EDGES walls at the head in SHUT_S s, or nowhere open to come
+## up. On a flight's run he goes under for good (`shut`, BurrowerFlight `_running`).
+const SHUT_EDGES := 4
+const SHUT_S := 5.0
+var shut := false
+var _edges: Array[float] = []
+var _spot_found := true
 
 ## The pull round what the land holds ahead (a land that `probes`): none
 ## while the way straight on is open; else toward the nearest open feeler,
@@ -566,10 +575,15 @@ func _sound(why: String) -> void:
 	_sounding = true
 	stats.soundings = int(stats.soundings)+1
 	stats.lost_why[why] = int(stats.lost_why.get(why,0))+1
+	if why != "edge": return
+	_edges.append(time)
+	while time-float(_edges[0]) > SHUT_S: _edges.pop_front()
+	if _edges.size() >= SHUT_EDGES: shut = true
 
 ## `at`, or the nearest open spot on along `fwd` and to its sides with no
 ## wall just on (a land that `probes`; else `at`). A grace starts.
 func _open_spot(at: Vector2, fwd: Vector2) -> Vector2:
+	_spot_found = true
 	if not land.probes: return at
 	_grace = FEEL_GRACE
 	var side := fwd.orthogonal()
@@ -577,6 +591,7 @@ func _open_spot(at: Vector2, fwd: Vector2) -> Vector2:
 		for off: Vector2 in ([Vector2.ZERO] if k == 0 else [fwd*k*12.0,fwd*k*12.0+side*k*8.0,fwd*k*12.0-side*k*8.0,side*k*10.0,-side*k*10.0]):
 			var q := at+off
 			if land.open(q) and not land.wall(q+fwd*FEEL_HEAD*3.0): return q
+	_spot_found = false
 	return at
 
 ## Coming in across the plane's way (the entrance), not yet running.
@@ -610,6 +625,11 @@ func _resurface() -> void:
 		var r := float(o.reach)+float(o.get("margin",MARGIN))
 		if at.distance_to(o.at) < r: at = (o.at as Vector2)+(at-(o.at as Vector2)).normalized()*r
 	at = _open_spot(at,fwd)
+	# Nowhere to come up: he stays under (`shut`).
+	if not _spot_found:
+		_sounding = true
+		shut = true
+		return
 	pos = at
 	heading = fwd.angle()
 	_course = heading

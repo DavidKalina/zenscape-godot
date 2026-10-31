@@ -11,7 +11,8 @@ extends Node
 ## comes down near him (`_near_him`) starts the run from where he is. It has
 ## RUN_ORBS orbs, each from him, then he dives; or he dives after CLIMB_HOLD s over
 ## CLIMB_OFF spans (climbed: flying level off an edge isn't, `_clear`), after RUN s,
-## or when the plane lands or crashes.
+## when the land shuts (`Burrower.shut`: the Peak's rock, a cliff country), or when
+## the plane lands or crashes.
 ## `--no-burrower` leaves him out; `--burrower-every=S` makes the rest S s.
 ## The run's tuning: `--burrower-orb-off=M` (least m off the plane's line an orb comes
 ## up, the band ORB_OFF's width; 0: on the line as he crosses it), `--burrower-reach=M`
@@ -187,6 +188,7 @@ func _running(delta: float, game: Node3D, flying: bool) -> void:
 	rouse.high = float(rouse.high)+delta if clear > span*CLIMB_OFF and _drop_in <= 0.0 else 0.0
 	var why := ""
 	if not flying: why = "down"
+	elif burrower.shut: why = "shut"
 	elif float(rouse.high) > CLIMB_HOLD: why = "climb"
 	elif burrower._run > RUN: why = "run"
 	elif push_ups.run_done(): why = "orbs"

@@ -213,6 +213,8 @@ func _exit_tree() -> void:
 			if b.has("node") and is_instance_valid(b.node): (b.node as Node).free()
 	_done.clear()
 	_lock.unlock()
+	for next: Array in _feed: (next[1] as Node).free()
+	_feed.clear()
 
 ## Builds the cells within NEAR of `at` now, each on a worker (a long
 ## aqueduct's cell takes seconds), waiting for them all.
@@ -258,6 +260,19 @@ func step(at: Vector3) -> void:
 			_done.pop_front()
 			_lock.unlock()
 		if (Time.get_ticks_usec()-began)/1000.0 > COMMIT_BUDGET: break
+	_feed_bodies(began)
+
+## Each body joining the space has Jolt build its shape there and then, so a big
+## rock's go in over frames: at least one a frame, then while the budget from
+## `began` (µs) lasts. A rock freed meanwhile takes its waiting bodies with it.
+func _feed_bodies(began: int) -> void:
+	var first := true
+	while not _feed.is_empty() and (first or (Time.get_ticks_usec()-began)/1000.0 <= COMMIT_BUDGET):
+		var next: Array = _feed.pop_front()
+		if is_instance_valid(next[0]):
+			(next[0] as Node).add_child(next[1])
+			first = false
+		else: (next[1] as Node).free()
 
 func _wanted(at: Vector3, reach: float) -> Array:
 	var out: Array = []
@@ -311,9 +326,7 @@ func _build_cell(key: Vector2i, field: RefCounted) -> Dictionary:
 		if spec.has("carve"): b["solid"] = BoxSolid.build(b.solid_boxes)
 		else: b["solid"] = BoxSolid.build(BoxSolid.from_faces(b.faces) if b.kind == "rock" else b.boxes)
 		if b.kind == "rock":
-			var shape := ConcavePolygonShape3D.new()
-			shape.set_faces(b.faces)
-			b["shape"] = shape
+			b["shapes"] = Build.split_faces(b.faces)
 		built.append(b)
 	return {"key":key,"arches":built,"ms":(Time.get_ticks_usec()-began)/1000.0}
 
@@ -322,6 +335,8 @@ func _build_cell(key: Vector2i, field: RefCounted) -> Dictionary:
 ## budget looked at after each, so a cell of bridges and set pieces spreads
 ## over frames.
 var _whole_cells := "--arch-commit=cell" in LaunchArgs.user_args()
+## Bodies of a committed rock not yet in the tree: [rock, body], oldest first.
+var _feed: Array = []
 
 ## Commits `done`'s arches from where it stopped: all of them, or with
 ## `sliced` until the budget from `began` (µs) is spent. True once the cell
@@ -374,12 +389,18 @@ func _commit_one(done: Dictionary, sliced := false, began := 0) -> bool:
 			mi.name = "Mesh"
 			mi.mesh = mesh
 			node.add_child(mi)
-			var body := StaticBody3D.new()
-			body.name = "Body"
-			var cs := CollisionShape3D.new()
-			cs.shape = b.shape
-			body.add_child(cs)
-			node.add_child(body)
+			var shapes: Array = b.shapes
+			for i in shapes.size():
+				var body := StaticBody3D.new()
+				body.name = "Body" if i == 0 else "Body%d" % (i+1)
+				body.collision_layer = LAYER
+				body.collision_mask = 0
+				var cs := CollisionShape3D.new()
+				cs.shape = shapes[i]
+				body.add_child(cs)
+				# The rest of a big rock's solid joins over frames (`_feed_bodies`).
+				if i > 0 and sliced: _feed.append([node,body])
+				else: node.add_child(body)
 			stats.tris += int(b.tris)
 		else:
 			node = b.node

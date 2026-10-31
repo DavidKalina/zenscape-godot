@@ -321,6 +321,54 @@ static func add_shapes(root: Node) -> void:
 		PhysicsServer3D.body_add_shape(rid,(e[0] as Shape3D).get_rid(),Transform3D(Basis.IDENTITY,e[1]))
 	body.set_meta("shapes_on",true)
 
+## A rock's collision faces in concave shapes of at most FACE_CHUNK triangles, each a
+## patch of the rock (cut across its longest side, half each way): a body joining the
+## space builds its shape on the spot, about 0.7 ms a thousand triangles.
+const FACE_CHUNK := 3000
+
+static func split_faces(faces: PackedVector3Array) -> Array:
+	var ids := PackedInt32Array()
+	ids.resize(faces.size()/3)
+	for i in ids.size(): ids[i] = i*3
+	var out: Array = []
+	_split_faces(faces,ids,out)
+	return out
+
+static func _split_faces(faces: PackedVector3Array, ids: PackedInt32Array, out: Array) -> void:
+	var n := ids.size()
+	if n <= FACE_CHUNK:
+		var part := PackedVector3Array()
+		part.resize(n*3)
+		for i in n:
+			for c in 3: part[i*3+c] = faces[ids[i]+c]
+		var shape := ConcavePolygonShape3D.new()
+		shape.set_faces(part)
+		out.append(shape)
+		return
+	var low := Vector3.INF
+	var high := -Vector3.INF
+	for i in n:
+		low = low.min(faces[ids[i]])
+		high = high.max(faces[ids[i]])
+	var axis := (high-low).max_axis_index()
+	var keys := PackedFloat32Array()
+	keys.resize(n)
+	for i in n: keys[i] = faces[ids[i]][axis]+faces[ids[i]+1][axis]+faces[ids[i]+2][axis]
+	var sorted := keys.duplicate()
+	sorted.sort()
+	var mid := sorted[n/2]
+	var under := PackedInt32Array()
+	var over := PackedInt32Array()
+	for i in n:
+		if keys[i] < mid: under.append(ids[i])
+		else: over.append(ids[i])
+	# (All on one side: many faces at the middle's value.)
+	if under.is_empty() or over.is_empty():
+		under = ids.slice(0,n/2)
+		over = ids.slice(n/2)
+	_split_faces(faces,under,out)
+	_split_faces(faces,over,out)
+
 ## A set piece's boxes past this many are fed into the tree over frames
 ## (`Feed`), this many a body and a frame.
 const FEED_CHUNK := 2500
