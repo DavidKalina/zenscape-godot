@@ -901,6 +901,8 @@ func _candidates(pos: Vector3) -> Array:
 			var at: Vector3 = a.pos
 			if Vector2(at.x-pos.x,at.z-pos.z).length() > r: continue
 			var spec: Dictionary = a.spec
+			# The Peak's carve is hand-sited for a pilot, not a rival's pieces.
+			if spec.has("tone") or spec.has("carve"): continue
 			if spec.has("set") or spec.has("bridge"):
 				_piece_candidates(a,out)
 				continue

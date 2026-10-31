@@ -174,8 +174,11 @@ var _pass := Tracker.new()
 ## An opening of the Peak's carve went through, and last frame's place.
 var _gate := Tracker.new()
 var _gate_last := Vector3.INF
+var _gate_t := -INF
 ## Out from under for this long (s) ends a passage.
 const PASS_GAP := 0.12
+## A passage under an opening's own lintel doesn't pay again this soon after it (s).
+const GATE_QUIET := 0.6
 var _out_for := 0.0
 var _recent: Array[Dictionary] = []
 var _ray: PhysicsRayQueryParameters3D
@@ -424,7 +427,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		_out_for += delta
 		if _out_for >= PASS_GAP:
 			_pass.active = false
-			_moment("thread",_pass,reach,cruise,out,game)
+			if clock-_gate_t > GATE_QUIET: _moment("thread",_pass,reach,cruise,out,game)
 	# An opening of the Peak's carve (LandArches `gate_crossed`): a thread by where
 	# it went through. A passage under it ends here too, so it isn't paid twice.
 	var p_now: Vector3 = plane.position
@@ -438,6 +441,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 			_gate.surface = "stone"
 			_gate.id = hash(str(hit.name))
 			_pass.active = false
+			_gate_t = clock
 			_moment("thread",_gate,float(hit.half),cruise,out,game)
 			_gate.active = false
 	_gate_last = p_now

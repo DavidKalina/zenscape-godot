@@ -66,8 +66,6 @@ const COMMIT_BUDGET := 1.5
 const LAYER := 1
 ## The Peak's carve (peak_carve.gd) stands from this far: its walls show up the valley.
 const CARVE_REACH := 6500.0
-## Its solid's upright lines (m): its skin is meshed at 2.5 m.
-const CARVE_SAMPLE := 1.0
 
 var seed := 1
 var density := 1.0
@@ -312,7 +310,8 @@ func _build_cell(key: Vector2i, field: RefCounted) -> Dictionary:
 		var b := Build.build(spec,field)
 		spec["ms"] = (Time.get_ticks_usec()-t0)/1000.0
 		# A rock arch's solid follows its skin; a ruin's, its stones.
-		b["solid"] = BoxSolid.build(BoxSolid.from_faces(b.faces,CARVE_SAMPLE if spec.has("carve") else BoxSolid.SAMPLE) if b.kind == "rock" else b.boxes)
+		if spec.has("carve"): b["solid"] = BoxSolid.build(b.solid_boxes)
+		else: b["solid"] = BoxSolid.build(BoxSolid.from_faces(b.faces) if b.kind == "rock" else b.boxes)
 		if b.kind == "rock":
 			var shape := ConcavePolygonShape3D.new()
 			shape.set_faces(b.faces)

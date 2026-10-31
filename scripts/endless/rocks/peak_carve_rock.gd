@@ -41,6 +41,8 @@ const JOINT := 3.0
 const JOINT_SPAN := Vector2(13.0,48.0)
 const LUMP := 3.2
 const LUMP_SPAN := 34.0
+## Two neighbouring upright lines' stretches this near run on as one box (m).
+const BOX_SAME := 0.4
 ## A hole's corners: 2 round, more squarer.
 const HOLE_POWER := 2.8
 ## How far a hole's wall strays off its section (m, about).
@@ -118,7 +120,7 @@ class Sdf extends RefCounted:
 			var pz := z-at.y-lean.y*u*u
 			var s := px*float(b[1])+pz*float(b[9])
 			var q := -px*float(b[9])+pz*float(b[1])
-			var narrow := 1.0-0.72*pow(u,1.6)
+			var narrow := 1.0-0.6*u*u
 			var long := float(b[2])*narrow
 			var thin := float(b[3])*narrow
 			var diamond := (absf(s)/long+absf(q)/thin*0.8-1.0)*thin
@@ -146,7 +148,7 @@ class Sdf extends RefCounted:
 			if r < 1.8:
 				var ang := atan2(sv,su)
 				var ph := float(h[7])
-				var wander := 0.13*sin(ang*2.0+ph)+0.11*sin(ang*3.0+ph*1.7)+0.07*sin(ang*5.0+ph*2.3)
+				var wander := 0.1*sin(ang*2.0+ph)+0.07*sin(ang*3.0+ph*1.7)+0.04*sin(ang*5.0+ph*2.3)
 				r *= 1.0-wander*smoothstep(-0.7,0.2,sv)
 			var e := maxf((r-1.0)*minf(float(h[4]),float(h[5])),absf(along)-float(h[6]))
 			# Its wall is the same broken rock, not a bored tube.
@@ -281,7 +283,74 @@ static func build(spec: Dictionary, field: RefCounted) -> Dictionary:
 						var row := (k*n.y+j)*n.x
 						for i in range(bx*BLOCK,i1+1):
 							if vals[row+i] == 1000.0: vals[row+i] = -1000.0
-	return _mesh(spec,vals,n,lo,cell)
+	var built := _mesh(spec,vals,n,lo,cell)
+	built["solid_boxes"] = _solid_boxes(vals,n,lo,cell)
+	return built
+
+## The flight's solid, read off the field itself (a skin's crossings can miss an
+## edge, and one missed crossing fills an opening): upright lines every half cell,
+## each one's stretches a box, run on along x and z where they match. Local AABBs.
+static func _solid_boxes(vals: PackedFloat32Array, n: Vector3i, lo: Vector3, cell: float) -> Array:
+	var any := PackedByteArray()
+	any.resize(n.x*n.z)
+	for k in n.z:
+		for j in n.y:
+			var row := (k*n.y+j)*n.x
+			for i in n.x:
+				if vals[row+i] < 0.0: any[k*n.x+i] = 1
+	var step := cell*0.5
+	var half := step*0.5
+	var out: Array = []
+	var nx2 := (n.x-1)*2+1
+	var nz2 := (n.z-1)*2+1
+	var col := PackedFloat32Array()
+	col.resize(n.y)
+	for z2 in nz2:
+		var k0 := z2/2
+		var k1 := mini(k0+z2%2,n.z-1)
+		var open: Array = []
+		for x2 in nx2+1:
+			var now: Array = []
+			if x2 < nx2:
+				var i0 := x2/2
+				var i1 := mini(i0+x2%2,n.x-1)
+				if any[k0*n.x+i0]+any[k0*n.x+i1]+any[k1*n.x+i0]+any[k1*n.x+i1] > 0:
+					for j in n.y:
+						var r0 := (k0*n.y+j)*n.x
+						var r1 := (k1*n.y+j)*n.x
+						col[j] = (clampf(vals[r0+i0],-8.0,8.0)+clampf(vals[r0+i1],-8.0,8.0)+clampf(vals[r1+i0],-8.0,8.0)+clampf(vals[r1+i1],-8.0,8.0))*0.25
+					var from := INF
+					var was := col[0] < 0.0
+					if was: from = lo.y
+					for j in range(1,n.y):
+						var inside := col[j] < 0.0
+						if inside == was: continue
+						var y := lo.y+(j-1+col[j-1]/(col[j-1]-col[j]))*cell
+						if inside: from = y
+						else: now.append(Vector2(from,y))
+						was = inside
+					if was: now.append(Vector2(from,lo.y+(n.y-1)*cell))
+			var still: Array = []
+			for box: AABB in open:
+				var m := -1
+				for q in now.size():
+					var e: Vector2 = now[q]
+					if absf(e.x-box.position.y) < BOX_SAME and absf(e.y-box.end.y) < BOX_SAME:
+						m = q
+						break
+				if m < 0:
+					out.append(box)
+					continue
+				var e: Vector2 = now[m]
+				now.remove_at(m)
+				var y0 := minf(box.position.y,e.x)
+				var y1 := maxf(box.end.y,e.y)
+				still.append(AABB(Vector3(box.position.x,y0,box.position.z),Vector3(box.size.x+step,y1-y0,box.size.z)))
+			var x := lo.x+x2*step
+			var z := lo.z+z2*step
+			for e: Vector2 in now: still.append(AABB(Vector3(x-half,e.x,z-half),Vector3(step,e.y-e.x,step)))
+			open = still
+	return out
 
 ## The surface net of `vals` (`n` nodes, `cell` m from `lo`), in local space.
 static func _mesh(spec: Dictionary, vals: PackedFloat32Array, n: Vector3i, lo: Vector3, cell: float) -> Dictionary:
