@@ -233,8 +233,8 @@ func _frame_trades() -> void:
 	(Engine.get_main_loop() as SceneTree).root.msaa_3d = MSAA_3D
 	if mac_trades():
 		RenderingServer.directional_shadow_atlas_set_size(MAC_SHADOW,true)
-	if LandStream.high_end():
-		(Engine.get_main_loop() as SceneTree).root.screen_space_aa = Viewport.SCREEN_SPACE_AA_SMAA
+	# Set either way: the root window keeps the last flight's (F3's restart).
+	(Engine.get_main_loop() as SceneTree).root.screen_space_aa = Viewport.SCREEN_SPACE_AA_SMAA if LandStream.high_end() else Viewport.SCREEN_SPACE_AA_DISABLED
 	for a: String in LaunchArgs.user_args():
 		if a.begins_with("--ssao="): environment.ssao_enabled = a.get_slice("=",1) != "0"
 		elif a.begins_with("--shadow-size="):

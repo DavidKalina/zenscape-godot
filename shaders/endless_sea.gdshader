@@ -249,6 +249,13 @@ uniform float wake = 1.0;
 uniform float wake_tail = 1.0;
 // How fast the V's arms ride out (m/s, from the plane's speed).
 uniform float wake_spread = 6.0;
+// A second track on the same terms, the burrower's (scripts/burrower/
+// wake_sheet.gd): its points, how many, its head (xz, unused, reach m) and
+// how much wider it lies than the plane's.
+uniform vec4 other_points[40];
+uniform int other_count = 0;
+uniform vec4 other_head = vec4(0.0);
+uniform float other_wide = 1.8;
 // 1: the water's depth (red 0..10 m, green 10..60 m), 2: foam cover,
 // 6 (sea_foam 1): the lace's density, youth, buffer reach and churn, 7: the
 // foam worked out per crest everywhere (no buffer).
@@ -779,34 +786,37 @@ float zs_river_calm(vec2 p) {
 	return clamp(textureLod(depth_map, uv, 0.0).g, 0.0, 1.0) * river_calm;
 }
 
-// The plane's wake at `p`: its foam (returned), the stirred water round it
+// A wake at `p` (track 0 the plane's, 1 the burrower's): its foam (returned), the stirred water round it
 // (`stirred`, 0..1) and the slope its ripples add. Only the nearest point of
 // the track counts, so the arms are one V and not a ring per point.
-float zs_wake(vec2 p, out vec2 slope, out float stirred) {
+float zs_wake_track(vec2 p, int track, out vec2 slope, out float stirred) {
 	slope = vec2(0.0);
 	stirred = 0.0;
-	if (wake_count < 2 || wake <= 0.0) return 0.0;
-	if (distance(p, wake_head.xy) > wake_head.w) return 0.0;
+	if (wake <= 0.0) return 0.0;
+	int count = track == 0 ? wake_count : other_count;
+	vec4 at = track == 0 ? wake_head : other_head;
+	if (count < 2 || distance(p, at.xy) > at.w) return 0.0;
 	float best = 1e9;
 	vec2 best_across = vec2(0.0);
 	float best_age = 0.0, best_strength = 0.0;
 	for (int i = 0; i < WAKE_POINTS - 1; i++) {
-		if (i + 1 >= wake_count) break;
-		vec4 a = wake_points[i];
-		vec4 b = wake_points[i + 1];
+		if (i + 1 >= count) break;
+		vec4 a = track == 0 ? wake_points[i] : other_points[i];
+		vec4 b = track == 0 ? wake_points[i + 1] : other_points[i + 1];
 		if (a.w <= 0.0 && b.w <= 0.0) continue;
 		vec2 ab = b.xy - a.xy;
 		float len2 = max(dot(ab, ab), 1e-4);
 		float t_raw = dot(p - a.xy, ab) / len2;
 		// Past the oldest point there is no track: the nearest point of it
 		// would be that end, and its arm a ring round it.
-		if (wake_tail > 0.5 && t_raw > 1.0 && i + 2 >= wake_count) continue;
+		if (wake_tail > 0.5 && t_raw > 1.0 && i + 2 >= count) continue;
 		float t = clamp(t_raw, 0.0, 1.0);
 		vec2 near = a.xy + ab * t;
 		float d = distance(p, near);
+		if (track == 1) d /= other_wide;
 		if (d < best) {
 			best = d;
-			best_across = (p - near) / max(d, 1e-3);
+			best_across = (p - near) / max(distance(p, near), 1e-3);
 			best_age = max(wake_now - mix(a.z, b.z, t), 0.0);
 			best_strength = mix(a.w, b.w, t);
 		}
@@ -829,6 +839,20 @@ float zs_wake(vec2 p, out vec2 slope, out float stirred) {
 	float ripple = sin((d - r) * 3.1) * (1.0 - smoothstep(r * 0.4, r + 0.3, d)) * smoothstep(0.0, 0.4, d) * exp(-age / 3.5);
 	slope = best_across * ripple * 0.18 * best_strength * gone * wake;
 	return clamp(foamed * wake, 0.0, 1.0);
+}
+
+// Both tracks: the plane's and the burrower's. Its stirred water is the lesser
+// (it would pale a broad patch).
+// `burrow` is the burrower's own track's foam (0 while none runs).
+float zs_wake(vec2 p, out vec2 slope, out float stirred, out float burrow) {
+	float own = zs_wake_track(p, 0, slope, stirred);
+	vec2 other_slope;
+	float other_stirred;
+	float other = zs_wake_track(p, 1, other_slope, other_stirred);
+	burrow = other;
+	slope += other_slope;
+	stirred = max(stirred, other_stirred * 0.4);
+	return max(own, other);
 }
 
 // Broken foam: `cover` 0..1 turned into a soft, cellular pattern.
@@ -1005,7 +1029,8 @@ void fragment() {
 	}
 	vec2 wake_slope;
 	float stirred;
-	float waked = zs_wake(rest_xz, wake_slope, stirred);
+	float zs_burrow_foam;
+	float waked = zs_wake(rest_xz, wake_slope, stirred, zs_burrow_foam);
 	vec3 normal = normalize(vec3(-(slope.x + detail.x + wake_slope.x), 1.0, -(slope.y + detail.y + wake_slope.y)));
 	// A calmer normal for the sky's mirror, so the reflection reads as one
 	// rippled image rather than noise.
@@ -1130,6 +1155,11 @@ void fragment() {
 	// Fresh foam stands up a little: brighter, and lit by its own slope.
 	if (sea_foam > 0) white *= 1.0 + 0.1 * lace_youth + 0.18 * clamp(dot(normal, zs_key_direction), -0.5, 1.0) * float(lace_density > 0.0);
 	water = mix(water, white, foamed * 0.92);
+	// The burrower's wake: its foam as clear white, not the sand the dim lit foam let through.
+	if (zs_burrow_foam > 0.0) {
+		float bf = smoothstep(0.1, 0.5, zs_burrow_foam * (0.4 + 1.4 * fleck));
+		water = mix(water, vec3(0.97, 0.99, 1.0) * max(light * 1.0, vec3(0.85)), bf * 0.9);
+	}
 	water += tint_shallow * (ambient + key) * lip * 0.4;
 
 	// The mirror: the sky, the cloud field, and what stands on screen.

@@ -91,7 +91,7 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 		if not _bank.is_empty() and not _bank.has("cut"): _bank.cut = float(_bank.age)
 		if not _loss.is_empty(): _loss.age = maxf(float(_loss.age),LOSS_TIME-0.2)
 		_moves.push_front({"id":Glyphs.for_moment(m),"kind":str(m.kind).to_upper(),"band":band,
-			"points":float(m.points),"clear":float(m.clear),"age":0.0})
+			"points":float(m.points),"clear":float(m.clear),"age":0.0,"chime":bool(m.get("chime",false))})
 		if _moves.size() > 64: _moves.resize(64)
 		_jolt = 0.0
 	if events.has("banked"):
@@ -292,9 +292,11 @@ func _draw_live(s: float) -> void:
 	var kind := str(m.kind)
 	_glint_word(name_f,kind,Vector2(x,my),mpx,Color(CREAM,a),3.0*s,(age-0.12)/0.3)
 	var cx := x+_width(name_f,kind,mpx)+8.0*s
-	var clear := "%s m" % _metres(float(m.clear))
-	_txt(_block,_nums,clear,Vector2(cx,my),mpx,Color(_band_col(band),a),3.0*s,1.0,0.0,Color(0,0,0,0),0.0,0.0)
-	cx += _width(_nums,clear,mpx)+8.0*s
+	# A push-up has no clearance to show.
+	if not bool(m.get("chime",false)):
+		var clear := "%s m" % _metres(float(m.clear))
+		_txt(_block,_nums,clear,Vector2(cx,my),mpx,Color(_band_col(band),a),3.0*s,1.0,0.0,Color(0,0,0,0),0.0,0.0)
+		cx += _width(_nums,clear,mpx)+8.0*s
 	var pts := "+"+_grouped(float(m.points))
 	_txt(_block,_nums,pts,Vector2(cx,my),mpx,Color(CREAM,a),3.0*s,1.0,0.0,Color(0,0,0,0),0.0,0.0)
 	if band == "razor":

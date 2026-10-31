@@ -149,6 +149,9 @@ var _per_beat := 0.0
 var _busy := false
 var _slice := 0
 var _piece := 0
+## Never sent: a plan whose scene is going (F3's restart) waits on it, and
+## goes with the node.
+signal _halt
 
 ## What RivalStrip reads the land with (rival_line.gd's `_ground_top`).
 class Reader extends RefCounted:
@@ -168,9 +171,11 @@ class Reader extends RefCounted:
 			if not t is Vector2 and t != null: h = maxf(h,float(t))
 		return h
 
-## Off under `--beats=0` (no starters, no routes: to compare frame cost).
+## Off by default since the burrower took their place in endless flight
+## (spec-burrower-flight.md); `--beats=1` brings the starters and routes
+## back.
 static func wanted() -> bool:
-	return not OS.get_cmdline_user_args().has("--beats=0")
+	return OS.get_cmdline_user_args().has("--beats=1")
 
 ## The planner's own time (us) since start, its slices summed (for checks).
 static var plan_us := 0
@@ -314,6 +319,9 @@ func _breathe() -> void:
 	_piece = now
 	if now-_slice+piece <= SLICE_US: return
 	plan_us += now-_slice
+	if not is_inside_tree():
+		await _halt
+		return
 	await get_tree().process_frame
 	_slice = Time.get_ticks_usec()
 	_piece = _slice

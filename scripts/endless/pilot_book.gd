@@ -63,8 +63,13 @@ func load_book() -> void:
 	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not data is Dictionary: return
 	money = int(data.get("money",0))
-	tally = data.get("tally",{})
-	records = data.get("records",{})
+	tally = {}
+	# A value JSON couldn't hold (an inf or NaN once saved) reads back null: drop it.
+	for k: String in (data.get("tally",{}) as Dictionary):
+		if data.tally[k] is float or data.tally[k] is int: tally[k] = float(data.tally[k])
+	records = {}
+	for k: String in (data.get("records",{}) as Dictionary):
+		if data.records[k] is float or data.records[k] is int: records[k] = data.records[k]
 	found = data.get("found",{})
 	owned = data.get("owned",{})
 	worn = data.get("worn",{})
@@ -94,6 +99,7 @@ func new_flight() -> void:
 
 ## `n` more of `what`, in the book and this flight.
 func count(what: String, n: float = 1.0) -> void:
+	if not is_finite(n): return
 	tally[what] = float(tally.get(what,0.0))+n
 	flight.tally[what] = float(flight.tally.get(what,0.0))+n
 	_dirty = true

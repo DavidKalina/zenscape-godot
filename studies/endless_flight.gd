@@ -13,7 +13,7 @@ extends Node3D
 ##
 ## Keys: WASD or the left stick bank and pitch (W nose down), the mouse
 ## steers, Space boost, Shift brake, Q E held knife edge (twice quick a
-## barrel roll, or click), F flaps in the air (pad Y), hold right mouse to
+## barrel roll, or click, or Z / the pad's south face on one press), F flaps in the air (pad Y), hold right mouse to
 ## look round, F1 the numbers, R back up into the air over where it is, Esc
 ## lets the mouse go. B (pad X) spends the near misses' meter on a surge.
 ##
@@ -114,6 +114,7 @@ const Field = preload("res://scripts/endless/land_field.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
+const GraphicsPreset = preload("res://scripts/graphics_preset.gd")
 const PlaneFigure = preload("res://scripts/plane_figure.gd")
 const PlaneGroundScale = preload("res://scripts/plane_ground_scale.gd")
 const PlaneStrip = preload("res://scripts/plane_strip.gd")
@@ -151,6 +152,7 @@ const PeakSpindrift = preload("res://scripts/endless/peak_spindrift.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 ## Place lines: standing routes with a timed record (--lines=0 none).
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
+const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const AirLift = preload("res://scripts/endless/air_lift.gd")
 ## The Peak's ways up: the couloir's lift.
@@ -310,6 +312,9 @@ var lines: Node
 var stair: Node3D
 var spirals: Node3D
 var spindrift: Node3D
+## The burrower, woken by a chosen skim (scripts/endless/burrower_flight.gd;
+## --no-burrower: none).
+var burrower: Node
 var flown := 0.0
 var _start := Vector2.ZERO
 ## The Peak's sky of its own hour stands over this band (m over the sea: up
@@ -473,6 +478,10 @@ func _ready() -> void:
 	book = PilotBook.open()
 	photo = PhotoMode.new(self)
 	add_child(sound)
+	# The graphics preset first: its flags lie under the command line's for
+	# everything below, its height under the render resolution.
+	GraphicsPreset.begin()
+	Engine.max_fps = GraphicsPreset.fps()
 	var rr := preload("res://scripts/render_resolution.gd")
 	rr.native_scale = NATIVE_3D
 	rr.apply(get_tree().root,rr.load_cap())
@@ -716,6 +725,10 @@ func _ready() -> void:
 		var flags: Node3D = preload("res://scripts/endless/peak_flags.gd").new()
 		add_child(flags)
 		flags.setup(peak,Callable(field,"height"),seed,stair,towers)
+	if BurrowerFlight.wanted():
+		burrower = BurrowerFlight.new()
+		add_child(burrower)
+		burrower.setup(self)
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
@@ -881,7 +894,7 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge (twice: roll)  ·  F flaps  ·  J logbook  ·  O photo  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge  ·  Z roll  ·  F flaps  ·  J logbook  ·  O photo  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale  ·  F3 graphics"
 	layer.add_child(_hint)
 	_stop_cue = Label.new()
 	_stop_cue.anchor_top = 1.0
@@ -1164,6 +1177,7 @@ func tick(delta: float) -> void:
 		if not stage.running(): _menu_done()
 	if beats != null: beats.step(delta,self)
 	if lines != null: lines.step(delta,self)
+	if burrower != null: burrower.step(delta,self)
 	land.lead_with(plane.velocity)
 	land.step(camera.global_position)
 	arches.step(camera.global_position)
@@ -1529,6 +1543,23 @@ func _fly_input(_delta: float) -> Dictionary:
 	_roll_asked = 0.0
 	return input
 
+## Rolls asked for by the roll button (for drivers).
+var rolls_asked := 0
+
+## Z / the pad's south face (`fly_roll`): a barrel roll on one press, toward
+## the side leant to (Q E, the shoulders), else the way banked, else the way
+## the stick turns, else right (as the burrower study's Space).
+func roll_button() -> void:
+	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
+	var lean := keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left")
+	var turn := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back").x
+	var bank := float(plane.bank)
+	if absf(lean) > 0.2: _roll_asked = signf(lean)
+	elif absf(bank) > 0.05: _roll_asked = signf(bank)
+	elif absf(turn) > 0.2: _roll_asked = signf(turn)
+	else: _roll_asked = 1.0
+	rolls_asked += 1
+
 func _lean_tapped(dir: float) -> void:
 	var now := Time.get_ticks_msec()
 	if dir == _tap_dir and now-_tap_at <= int(DOUBLE_TAP*1000.0):
@@ -1573,11 +1604,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif Pad.pressed(event,&"fly_pace"): _next_pace()
 	elif Pad.pressed(event,&"fly_lean_left"): _lean_tapped(-1.0)
 	elif Pad.pressed(event,&"fly_lean_right"): _lean_tapped(1.0)
+	elif event.is_action_pressed(&"fly_roll") and not event.is_echo(): roll_button()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match (event as InputEventKey).keycode:
 			KEY_F: _land_key()
 			KEY_F1: _hud.visible = not _hud.visible
 			KEY_F2: _next_scale()
+			KEY_F3: _next_preset()
 			KEY_R: respawn()
 			KEY_V: _next_weight()
 			KEY_P: _next_pace()
@@ -1622,6 +1655,11 @@ func _next_scale() -> void:
 	rr.scale_override = SCALES[(i+1)%SCALES.size()]
 	rr.apply(get_tree().root,rr.load_cap())
 	_hint.text = _hint.text.get_slice("  ·  3D at",0)+"  ·  3D at %d%%" % roundi(rr.scale_override*100.0)
+
+## F3: the next graphics preset, kept, and the flight again on it.
+func _next_preset() -> void:
+	_hint.text = "graphics: %s ..." % GraphicsPreset.PRESETS[GraphicsPreset.step()].title
+	GraphicsPreset.restart(get_tree(),scene_file_path)
 
 func _cloud_note() -> String:
 	if look.clouds == null: return "  ·  no clouds"
@@ -1670,7 +1708,7 @@ func _show_hud() -> void:
 		seed,ManualLanding.NAMES[hand_landing.phase],float(plane.speed),p.y-maxf(field.height(p.x,p.z),Field.SEA_Y),"down" if flaps else "up",
 		p.x,p.z,Engine.get_frames_per_second(),1000.0/maxf(Engine.get_frames_per_second(),1.0),
 		("  ·  gpu %.2f ms" % gpu) if gpu > 0.0 else "",
-		"  ·  3D at %d%%" % roundi(get_viewport().scaling_3d_scale*100.0),
+		"  ·  3D at %d%%  ·  %s (F3)" % [roundi(get_viewport().scaling_3d_scale*100.0),GraphicsPreset.title()],
 		("  ·  %s, %05.2f h (%s)%s" % [look.mood_title(),look.hour(),look.time_note(),_cloud_note()]) if look != null else "",
 		int(c.drawn),int(c.standing),int(c.wanted),int(c.in_flight),int(c.queued),int(c.colliders),
 		int(s.built),float(s.build_ms)/maxf(float(s.built),1.0),float(s.slowest_commit_ms),_grass_note()+_react_note()+_arch_note()+_rock_note()+_hall_note()+trees.note()+knock.note()+birds.note()+(fish.note() if fish != null else "")+(traffic.note() if traffic != null else "")]

@@ -59,3 +59,12 @@ cloud hush, thumps, creaks, ticks, swishes, whooshes, sail pops and folds,
 grabs) are synthesised from noise, filters and sines by
 `tools/generate_kit_audio.py`. They use no recordings and carry no licence
 beyond the project's own.
+
+## Burrower study (`burrower/`)
+
+The bell and gong are CC0 recordings from Freesound, previews used as
+downloaded (`bell-417300.mp3` puppyhead "BELL.WAV", `bell-531031.mp3`
+creeeeak "bell8.wav", `gong-369428.mp3` cabled_mess "Small Gong_Soft Hit_RAW",
+`gong-711881.mp3` robin.kaf "Street Sign Gong - 03"); pages at
+https://freesound.org/people/<author>/sounds/<id>/. CC0 asks for no credit.
+The orb's blip is synthesised in `scripts/burrower/push_ups.gd`.

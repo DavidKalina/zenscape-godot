@@ -513,10 +513,11 @@ func _throw(at: Vector2, vel: Vector3, tint: Color) -> void:
 	colour = Color(colour.r*tint.r,colour.g*tint.g,colour.b*tint.b)*_rng.randf_range(0.85,1.12)
 	if _rng.randf() < KICK_PALE:
 		var pale: Color = KICK_PALES[_rng.randi() % KICK_PALES.size()]
-		colour = pale.lerp(Color(pale.r*tint.r,pale.g*tint.g,pale.b*tint.b),0.2)*_rng.randf_range(0.92,1.08)
+		# Mostly the ground's own tint (dry ground: straw, not cream), a little paler than the green tips.
+		colour = pale.lerp(Color(pale.r*tint.r,pale.g*tint.g,pale.b*tint.b),0.65)*_rng.randf_range(0.8,0.95)
 	var bit := {"pos": Vector3(at.x,g+_rng.randf_range(KICK_FROM.x,KICK_FROM.y),at.y), "vel": vel, "ground": g,
 		"age": 0.0, "life": _rng.randf_range(KICK_LIFE.x,KICK_LIFE.y),
-		"length": _rng.randf_range(KICK_LEN.x,KICK_LEN.y), "width": _rng.randf_range(KICK_WIDTH.x,KICK_WIDTH.y),
+		"length": _rng.randf_range(KICK_LEN.x,KICK_LEN.y)*0.65, "width": _rng.randf_range(KICK_WIDTH.x,KICK_WIDTH.y)*0.8,
 		"basis": turn, "spin": axis*spin, "phase": _rng.randf(), "landed": false,
 		"settle": _rng.randf_range(KICK_SETTLE.x,KICK_SETTLE.y), "rest": _rng.randf_range(KICK_SINK,KICK_FROM.y),
 		"colour": colour}

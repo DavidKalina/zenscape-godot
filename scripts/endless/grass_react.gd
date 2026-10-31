@@ -32,6 +32,13 @@ extends Node
 ##          landing that fans the grass out (GUST_REACH, GUST_FRONT), then a
 ##          band of lean riding downwind with the parcel (GUST_ROLL).
 ##
+##   wake   the burrower's gust through a wood (`gust_strip`, `gust_disc`,
+##          from scripts/burrower/tree_shudder.gd): not a push on this map but
+##          a second one, the trees' alone (zs_gust_map, WAKE_*, shaders/
+##          wake_gust_stamp.gdshader), so it can go further and last longer than
+##          anything here without touching how the wash or the wind's bands
+##          move a tree. It draws only while a stamp lives.
+##
 ## Flags: --no-grass-react (none of it), --no-prop-wash, --no-grass-gusts,
 ## --no-grass-part (the walker's), --prop-wash=X (its strength, 1),
 ## --grass-gusts=X (their strength, 1), --gust-every=S (GUST_EVERY),
@@ -41,6 +48,7 @@ extends Node
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const STAMP_SHADER = preload("res://shaders/grass_react_stamp.gdshader")
+const WAKE_SHADER = preload("res://shaders/wake_gust_stamp.gdshader")
 
 ## The map: texels a side and metres a side, centred on the eye (snapped
 ## to SNAP texels so it doesn't swim).
@@ -101,6 +109,14 @@ const GUST_ROLL := Vector4(0.35, 7.0, 12.0, 0.5)
 const PARCEL := 0.9
 const SLOTS := 6
 
+## The wake's map: texels a side (same ground as the push map) and its ring of
+## stamps, the most alive. WAKE_LIFE: the longest a stamp lives, past its
+## reach's arrival (wake_gust_stamp.gdshader RISE, HOLD, GONE; WAKE_FRONT FRONT).
+const WAKE_PX := 256
+const WAKE_RING := 220
+const WAKE_FRONT := 30.0
+const WAKE_LIFE := 0.7+0.5+6.0
+
 var enabled := true
 var wash_on := true
 var gusts_on := true
@@ -134,6 +150,11 @@ var rings_on := true
 var _gust_next := 3.0
 var _gusts: Array[Dictionary] = []
 var _parcels: Array = []
+var _wake_view: SubViewport
+var _wake_mesh: MultiMesh
+var _wake_mat: ShaderMaterial
+var _wake_i := 0
+var _wake_until := -INF
 
 static func wanted() -> bool:
 	return not "--no-grass-react" in LaunchArgs.user_args()
@@ -180,10 +201,40 @@ func setup(land_seed: int) -> void:
 	_viewport.add_child(drawn)
 	RenderingServer.global_shader_parameter_set("zs_react_map",_viewport.get_texture())
 	_publish_rect()
+	_wake_view = SubViewport.new()
+	_wake_view.name = "WakeMap"
+	_wake_view.size = Vector2i(WAKE_PX,WAKE_PX)
+	_wake_view.use_hdr_2d = true
+	_wake_view.transparent_bg = true
+	_wake_view.disable_3d = true
+	_wake_view.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+	_wake_view.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	add_child(_wake_view)
+	_wake_mesh = MultiMesh.new()
+	_wake_mesh.use_colors = true
+	_wake_mesh.use_custom_data = true
+	var wake_quad := QuadMesh.new()
+	wake_quad.size = Vector2.ONE
+	_wake_mesh.mesh = wake_quad
+	_wake_mesh.instance_count = WAKE_RING
+	# Each draws where its custom data says; the transform only keeps the whole
+	# map in the batch's bounds.
+	for i in WAKE_RING:
+		_wake_mesh.set_instance_transform_2d(i,Transform2D(0.0,Vector2.ONE*WAKE_PX,0.0,Vector2.ONE*WAKE_PX*0.5))
+	var wake_drawn := MultiMeshInstance2D.new()
+	wake_drawn.multimesh = _wake_mesh
+	_wake_mat = ShaderMaterial.new()
+	_wake_mat.shader = WAKE_SHADER
+	_wake_mat.set_shader_parameter("px_per_m",WAKE_PX/MAP_M)
+	wake_drawn.material = _wake_mat
+	_wake_view.add_child(wake_drawn)
+	RenderingServer.global_shader_parameter_set("zs_gust_map",_wake_view.get_texture())
 
 func set_enabled(on: bool) -> void:
 	enabled = on
 	if not on:
+		_wake_until = -INF
+		_wake_step(Vector2.ZERO)
 		_stamps.clear()
 		_gusts.clear()
 		for i in SLOTS: _free_parcel(i)
@@ -214,6 +265,7 @@ func step(delta: float, eye: Vector3, plane: Dictionary, air: Dictionary, land: 
 	if gusts_on and rings_on and not air.is_empty(): _gust_step(delta,eye,air,land)
 	_draw()
 	_publish_rect()
+	_wake_step(c if gust_eye == Vector2.INF else gust_eye)
 
 func _publish_rect() -> void:
 	var on := enabled and bend > 0.0
@@ -367,6 +419,45 @@ func eddy(at: Vector2, way: Vector2, strength: float, reach: float) -> void:
 	# showed the tufts' roots).
 	_add({"at": at, "way": way*0.9, "strength": strength*gust_scale*0.55, "swirl": 0.0,
 		"reach": reach, "front": 0.0, "hold": 0.25, "press": eddy_press})
+
+# --- The wake (the burrower's gust) ------------------------------------------------
+
+## What the gust's map centres on: the burrower's head (he alone writes it, and
+## he can be far from the eye), or the eye (INF).
+var gust_eye := Vector2.INF
+## The lean's gain, in `zs_gust_rect.w` (a sighting, far from the eye: more).
+var gust_gain := 1.0
+
+## A stretch of the gust along his way: centred on `at`, `half` m each way
+## along `way` (unit), out to `reach` m each side, `strength` 0..1.
+func gust_strip(at: Vector2, way: Vector2, half: float, reach: float, strength: float) -> void:
+	_wake_add(Color(at.x,at.y,way.x,way.y),Color(half,reach,time,strength),reach)
+
+## The gust straight out from `at`, to `reach` m (a push-up through the crowns).
+func gust_disc(at: Vector2, reach: float, strength: float) -> void:
+	_wake_add(Color(at.x,at.y,0.0,0.0),Color(0.0,reach,time,strength),reach)
+
+func _wake_add(where: Color, shape: Color, reach: float) -> void:
+	if not enabled or _wake_mesh == null: return
+	_wake_mesh.set_instance_color(_wake_i,where)
+	_wake_mesh.set_instance_custom_data(_wake_i,shape)
+	_wake_i = (_wake_i+1)%WAKE_RING
+	_wake_until = maxf(_wake_until,time+reach/WAKE_FRONT+WAKE_LIFE)
+
+## The stamps never change once written: only the clock and the map's corner.
+func _wake_step(eye: Vector2) -> void:
+	if _wake_view == null: return
+	var live := time < _wake_until
+	var mode := SubViewport.UPDATE_ALWAYS if live else SubViewport.UPDATE_DISABLED
+	if _wake_view.render_target_update_mode != mode:
+		_wake_view.render_target_update_mode = mode
+		if not live: RenderingServer.global_shader_parameter_set("zs_gust_rect",Vector4.ZERO)
+	if not live: return
+	var snap := MAP_M/WAKE_PX*2.0
+	var low := Vector2(snappedf(eye.x,snap),snappedf(eye.y,snap))-Vector2.ONE*MAP_M*0.5
+	_wake_mat.set_shader_parameter("map_min",low)
+	_wake_mat.set_shader_parameter("now",time)
+	RenderingServer.global_shader_parameter_set("zs_gust_rect",Vector4(low.x,low.y,MAP_M,gust_gain))
 
 # --- The map --------------------------------------------------------------------------
 
