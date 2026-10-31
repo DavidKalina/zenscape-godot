@@ -705,7 +705,7 @@ func _ready() -> void:
 	if peak != null and not ("--peak-flags=0" in preload("res://scripts/launch_args.gd").user_args()):
 		var flags: Node3D = preload("res://scripts/endless/peak_flags.gd").new()
 		add_child(flags)
-		flags.setup(peak,Callable(field,"height"),seed,stair)
+		flags.setup(peak,Callable(field,"height"),seed,stair,towers)
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
