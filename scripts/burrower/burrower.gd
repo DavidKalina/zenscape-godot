@@ -663,7 +663,7 @@ func tick(delta: float) -> void:
 	_step_clods(delta)
 	_step_dust(delta)
 	_step_spray(delta)
-	shudder.tick(delta,pos,strength if active and not wet else 0.0)
+	shudder.tick(delta,pos,strength if active and not wet else 0.0,heading,_turn/maxf(speed,1.0))
 	wet_k = move_toward(wet_k,1.0 if active and wet else 0.0,delta/0.25)
 	_feed_pond()
 	_drop_old_chunks()

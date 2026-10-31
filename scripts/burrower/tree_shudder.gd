@@ -45,26 +45,26 @@ const LEAF_LIE := 2.2
 
 ## The stood trees (a land that `probes`): how far from the head one sheds
 ## needles, how often that is asked, the most a look does; the gust's reach
-## each side of his line and the length of a stamp; the needles a burst and how
-## much bigger than a leaf a card is (read from the chase camera, over the crowns).
-const STOOD_REACH := 19.0
+## each side of his line (he is 5-6 m wide: only what he could touch goes over,
+## a run and a sighting alike) and the length of a stamp; the needles a burst and
+## how much bigger than a leaf a card is (read from the chase camera, over the crowns).
+const STOOD_REACH := 10.0
 const STOOD_EVERY := 0.09
 const STOOD_MOST := 7
-const STOOD_GUST := 30.0
+const STOOD_GUST := 10.0
 const STOOD_STRIP := 7.0
-## The gust runs this far ahead of the head, or the wood would go over behind
-## the plane: he leads it by about this.
-const STOOD_LEAD := 30.0
-## A sighting's gust (`sight`), wider and harder, to read from a few hundred
-## metres.
-const SIGHT_GUST := 110.0
+## The gust runs this far ahead of the head, round the turn he's in, so a tree is
+## over as he reaches it. It's a guess at his way, and a band this narrow can't miss
+## by much: at 30 m the guess was 3-9 m off his real line, half the time.
+const STOOD_LEAD := 15.0
+## A sighting's gust (`sight`) blows harder, to read from a few hundred metres.
 const SIGHT_K := 1.6
 const STOOD_BURST := Vector2(14.0,5.0)
 const STOOD_CARD := 1.3
 const STOOD_NEEDLE := Color("3f5a2c")
 
 var land: Node
-## His pass is a sighting: seen from far off (`SIGHT_GUST`).
+## His pass is a sighting: seen from far off (`SIGHT_K`).
 var sight := false
 ## Too far for needles to show: only the gust.
 var distant := false
@@ -125,12 +125,12 @@ func setup(the_land: Node) -> void:
 	add_child(mmi)
 
 ## A shove from the head at `head` (xz) with heave `k` (0..1; 0 when the
-## burrower is down).
-func tick(delta: float, head: Vector2, k: float) -> void:
+## burrower is down). He runs along `heading` (rad), turning `bend` rad a metre.
+func tick(delta: float, head: Vector2, k: float, heading := 0.0, bend := 0.0) -> void:
 	_time += delta
 	for t: Dictionary in _trees:
 		_step_tree(t,delta,head,k)
-	if land.probes: _shake_stood(delta,head,k)
+	if land.probes: _shake_stood(delta,head,k,heading,bend)
 	_step_leaves(delta)
 
 ## No leaves in the air.
@@ -139,7 +139,7 @@ func settled() -> bool:
 
 ## The stood trees round the head: each shakes once as it goes by, when the
 ## head stops closing on it (or right up to it).
-func _shake_stood(delta: float, head: Vector2, k: float) -> void:
+func _shake_stood(delta: float, head: Vector2, k: float, heading: float, bend: float) -> void:
 	_ask -= delta
 	if _ask > 0.0: return
 	_ask = STOOD_EVERY
@@ -150,7 +150,7 @@ func _shake_stood(delta: float, head: Vector2, k: float) -> void:
 	# The map follows him: it is 384 m a side, and a sighting is farther than
 	# that from the eye. Only he writes it.
 	if react != null: react.gust_eye = head
-	_lay_gust(head,k)
+	_lay_gust(head,k,heading,bend)
 	if distant: return
 	var t: PackedFloat32Array = land.trees_near(head,STOOD_REACH)
 	var shook := 0
@@ -172,23 +172,23 @@ func _shake_stood(delta: float, head: Vector2, k: float) -> void:
 
 ## A stamp of the gust each STOOD_STRIP m of his way, only with trees in its
 ## reach (the map draws nothing, and costs nothing, on open ground).
-func _lay_gust(head: Vector2, k: float) -> void:
+func _lay_gust(head: Vector2, k: float, heading: float, bend: float) -> void:
 	if _trail == Vector2.INF:
 		_trail = head
 		return
 	var moved := head.distance_to(_trail)
 	if moved < STOOD_STRIP: return
-	var way := (head-_trail)/moved
-	var at := head+way*STOOD_LEAD
-	var reach := SIGHT_GUST if sight else STOOD_GUST
-	if react != null and moved < STOOD_STRIP*6.0 and land.trees_near(at,reach).size() > 0:
-		react.gust_strip(at,way,moved,reach,k*SIGHT_K if sight else clampf(k*1.3,0.0,1.0))
+	var turned := clampf(bend*STOOD_LEAD,-PI*0.5,PI*0.5)
+	var at := head+Vector2.from_angle(heading+turned*0.5)*STOOD_LEAD
+	var way := Vector2.from_angle(heading+turned)
+	if react != null and moved < STOOD_STRIP*6.0 and land.trees_near(at,STOOD_GUST).size() > 0:
+		react.gust_strip(at,way,moved,STOOD_GUST,k*SIGHT_K if sight else clampf(k*1.3,0.0,1.0))
 	_trail = head
 
 ## Every stood tree within `r` m of `at` shaken at once (a push-up through
 ## the crowns).
 func shove(at: Vector2, r: float) -> void:
-	if react != null: react.gust_disc(at,r*1.5,1.0)
+	if react != null: react.gust_disc(at,r,1.0)
 	var t: PackedFloat32Array = land.trees_near(at,r)
 	for q in range(0,mini(t.size(),4*STOOD_MOST),4):
 		_shake_one(Vector2(t[q],t[q+1]),t[q+2],t[q+3],at,at.distance_to(Vector2(t[q],t[q+1])),1.0)
