@@ -148,9 +148,11 @@ const EASE_DRIFT := 0.15
 const DRIFT_BOOST := 2.5
 const DRIFT_MIN := 0.4
 const DRIFT_CHARGE := 1.2
-## The barrel roll: seconds round, and the sideways hop (m/s at its middle).
-const ROLL_TIME := 0.7
-const JINK := 3.0
+## The barrel roll: seconds round, on its line (the sideways hop read badly),
+## quick off the mark and settling: ROLL_SNAP of its ease a fast start, the
+## rest a smoothstep.
+const ROLL_TIME := 0.55
+const ROLL_SNAP := 0.6
 ## Over CEILING the nose is held down to level by CEILING_FADE metres more.
 const CEILING_NOSE := -0.05
 ## Thin air (`use_thin`): over `thin_from` the climb is work. By `thin`, 0
@@ -178,6 +180,9 @@ const THIN_NOSE_EASE := 0.4
 var spin := 0.0
 var rolling := false
 var roll_dir := 0.0
+## The roll under way: seconds and turns (`surge_roll`).
+var roll_time := ROLL_TIME
+var roll_turns := 1.0
 ## How far it is tipped up on a wingtip, -1 left to 1 right.
 var knife := 0.0
 ## The drift's strength (`--drift=<x>`, 0 off), how far into one it is now
@@ -527,16 +532,11 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	if approach and (boost > 0.0 or asked != 0.0 or float(input.get("lean",0.0)) != 0.0): approach = false
 	# The barrel roll: once round, eased in and out, then level again.
 	if asked != 0.0 and not rolling:
-		rolling = true
-		roll_dir = asked
-		_roll_time = 0.0
-		flaps += 1
-	var hop := 0.0
+		surge_roll(asked,1.0,ROLL_TIME)
 	if rolling:
 		_roll_time += delta
-		var t := clampf(_roll_time/ROLL_TIME,0.0,1.0)
-		spin = roll_dir*TAU*smoothstep(0.0,1.0,t)
-		hop = roll_dir*JINK*sin(PI*t)
+		var t := clampf(_roll_time/roll_time,0.0,1.0)
+		spin = roll_dir*TAU*roll_turns*lerpf(smoothstep(0.0,1.0,t),1.0-pow(1.0-t,3.0),ROLL_SNAP)
 		if t >= 1.0:
 			rolling = false
 			spin = 0.0
@@ -664,7 +664,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	if flown > 1.0-TOP_FALL and along.y > 0.0: along.y = minf(along.y,TOP_CLIMB*maxf(1.0-flown,0.0)/TOP_FALL)
 	# The guard in a tight place (SkyGlide `guide`).
 	var push := _guard(delta)
-	velocity = along+side*hop+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag-DEAD_SINK*(1.0-power)+shake+cushion)+wind+push
+	velocity = along+Vector3.UP*(lift-fall-drop-FLAP_SINK*flap-sag-DEAD_SINK*(1.0-power)+shake+cushion)+wind+push
 	# Lift: rising air, by the airspeed's share, faded at the top.
 	rising = 0.0
 	if rise > 0.0:
@@ -754,6 +754,23 @@ func knock(keep: float, shove: Vector3, yaw: float) -> void:
 	bump = shove
 	velocity = path_now()*speed+bump
 	_left = velocity
+
+## A roll of `turns` whole turns over `seconds`, `dir` the way (-1 left, 1
+## right), over any roll under way: the roll button's (one, ROLL_TIME) and the
+## surge roll's (scripts/endless/surge_smash.gd). Each counts as a flap.
+func surge_roll(dir: float, turns: float, seconds: float) -> void:
+	rolling = true
+	roll_dir = dir
+	roll_time = seconds
+	roll_turns = turns
+	_roll_time = 0.0
+	flaps += 1
+
+## `kick` m/s on the speed at once, the cap lifted to let it (the surge roll's
+## lunge); the throttle's pull brings it back to the surge's speed.
+func lunge(kick: float) -> void:
+	speed += kick
+	_cap = maxf(_cap,speed)
 
 ## The lean on its spring (critically damped, `roll_hz`), towards `goal`
 ## radians: the roll's rate builds and settles. Stepped finer than a frame.

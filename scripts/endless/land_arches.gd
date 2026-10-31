@@ -77,6 +77,9 @@ var carve_rock: Material
 ## The cells holding the carve (they stand from CARVE_REACH).
 var carve_cells := {}
 var _gates := {}
+## Records standing outside the cells, the flight's solid all the same: the
+## cracked walls' (scripts/endless/cracked_walls.gd), each as `_cells`' are.
+var loose: Array = []
 var stats := {"cells":0,"arches":0,"built_ms":0.0,"slowest_build_ms":0.0,"slowest_commit_ms":0.0,"tris":0}
 
 var _cells := {}        # Vector2i -> Array of records (committed)
@@ -445,8 +448,14 @@ func standing() -> Array:
 ## not given; 0 for a point on the plane's own edge).
 func stretches(p: Vector3, pad := -1.0) -> Array:
 	var out: Array = []
-	if _cells.is_empty(): return out
+	if _cells.is_empty() and loose.is_empty(): return out
 	if pad < 0.0: pad = Build.wingtip()
+	for r: Dictionary in loose:
+		var o: Vector3 = r.pos
+		var ox := p.x-o.x
+		var oz := p.z-o.z
+		if absf(ox) > float(r.reach) or absf(oz) > float(r.reach): continue
+		BoxSolid.stretches(r.solid,ox*float(r.cos)-oz*float(r.sin),ox*float(r.sin)+oz*float(r.cos),pad,o.y,out)
 	var c := Plan.cell_of(p.x,p.z)
 	for dz in range(-1,2):
 		for dx in range(-1,2):
@@ -461,6 +470,22 @@ func stretches(p: Vector3, pad := -1.0) -> Array:
 				var lz := ox*float(r.sin)+oz*float(r.cos)
 				BoxSolid.stretches(r.solid,lx,lz,pad,o.y,out)
 	return BoxSolid.joined(out,Build.JOIN)
+
+## The record (a loose one first) whose solid `p` is within `pad` m of, or {}.
+func record_at(p: Vector3, pad: float) -> Dictionary:
+	var list: Array = loose.duplicate()
+	var c := Plan.cell_of(p.x,p.z)
+	for dz in range(-1,2):
+		for dx in range(-1,2):
+			var cell: Variant = _cells.get(c+Vector2i(dx,dz))
+			if cell != null: list.append_array(cell)
+	for r: Dictionary in list:
+		var o: Vector3 = r.pos
+		var ox := p.x-o.x
+		var oz := p.z-o.z
+		if absf(ox) > float(r.reach) or absf(oz) > float(r.reach): continue
+		if BoxSolid.inside(r.solid,Vector3(ox*float(r.cos)-oz*float(r.sin),p.y-o.y,ox*float(r.sin)+oz*float(r.cos)),pad): return r
+	return {}
 
 ## SkyGlide's `ground` at `p` over land of height `h`: a float (the land,
 ## raised by what stands on it) or Vector2(top, underside) for a span the

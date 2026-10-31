@@ -15,7 +15,8 @@ extends Node3D
 ## steers, Space boost, Shift brake, Q E held knife edge (twice quick a
 ## barrel roll, or click, or Z / the pad's south face on one press), F flaps in the air (pad Y), hold right mouse to
 ## look round, F1 the numbers, R back up into the air over where it is, Esc
-## lets the mouse go. B (pad X) spends the near misses' meter on a surge.
+## lets the mouse go. B (pad X) spends the near misses' meter on a surge; on a
+## full meter the roll button (or B) is the surge roll (scripts/endless/surge_smash.gd).
 ##
 ## Near misses (the weighted presets; docs/design/endless-flight/
 ## near-miss-handoff.md): low and fast the plane settles toward the land
@@ -153,6 +154,7 @@ const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 ## Place lines: standing routes with a timed record (--lines=0 none).
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
+const SurgeSmash = preload("res://scripts/endless/surge_smash.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const AirLift = preload("res://scripts/endless/air_lift.gd")
 ## The Peak's ways up: the couloir's lift.
@@ -186,7 +188,6 @@ const MainMenu = preload("res://scripts/endless/main_menu.gd")
 
 const FLY_LOOK := 0.0025
 const STICK_LOOK := 2.4
-const DOUBLE_TAP := 0.3
 const LOOK_LINGER := 2.5
 ## The sky and the haze: the fog thickens from FOG_BEGIN m to FOG_END m,
 ## inside the land's far edge (LandStream ROOT_REACH root chunks out).
@@ -315,6 +316,8 @@ var spindrift: Node3D
 ## The burrower, woken by a chosen skim (scripts/endless/burrower_flight.gd;
 ## --no-burrower: none).
 var burrower: Node
+## The surge roll, the breaks and the cracked walls (scripts/endless/surge_smash.gd).
+var smash: Node3D
 var flown := 0.0
 var _start := Vector2.ZERO
 ## The Peak's sky of its own hour stands over this band (m over the sea: up
@@ -335,8 +338,6 @@ var _alt := START_ALT
 var _alt_given := false
 var _fly_look := Vector2.ZERO
 var _roll_asked := 0.0
-var _tap_dir := 0.0
-var _tap_at := -100000
 var _hud: Label
 ## The plane's ceiling over the sea (Field CEILING_OVER; --ceiling=).
 var _ceiling_over := Field.CEILING_OVER
@@ -732,6 +733,9 @@ func _ready() -> void:
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
+	smash = SurgeSmash.new()
+	add_child(smash)
+	smash.setup(self)
 	if spots.is_empty(): _launch(Vector3(_start.x,_start_height(),_start.y),_heading)
 	else: _park_for_menu(spots)
 	if race != null and RivalRace.near_start_wanted(): race.place_near_start(self)
@@ -894,7 +898,7 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge  ·  Z roll  ·  F flaps  ·  J logbook  ·  O photo  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale  ·  F3 graphics"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge  ·  Z roll (full meter: surge roll)  ·  F flaps  ·  J logbook  ·  O photo  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale  ·  F3 graphics"
 	layer.add_child(_hint)
 	_stop_cue = Label.new()
 	_stop_cue.anchor_top = 1.0
@@ -1126,6 +1130,8 @@ func tick(delta: float) -> void:
 	var input := _fly_input(delta)
 	if stage != null: input = stage.input(delta,input,hand_landing,plane_figure)
 	if doors != null: input = doors.input(input)
+	# The roll button on a full meter is the surge roll (scripts/endless/surge_smash.gd).
+	if smash != null: smash.before(delta,input)
 	# The plane skims the swell as drawn, not the sea's rest level, and a
 	# river's water as it skims the sea.
 	plane.water = water_at(plane.position)
@@ -1152,6 +1158,7 @@ func tick(delta: float) -> void:
 	if water != null: water.step(delta,events)
 	var ground := Callable(self,"plane_ground")
 	_pull = _pull_of(delta)
+	if smash != null: _pull = maxf(_pull,smash.vapour)
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")),_pull,float(plane.bank))
 	_events = events
 	tallies.step(delta,self,events)
@@ -1248,6 +1255,7 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 		debris.spray(false,Vector3.ZERO,Vector3.ZERO)
 		return
 	near.measure(delta,self)
+	if smash != null: smash.touch(near)
 	var hit := contact.step(delta,self,near.touching)
 	if hit.is_empty() and not _glanced.is_empty(): hit = _glanced
 	_glanced = {}
@@ -1268,7 +1276,7 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 		if water != null and str(s.what) == "water": water.splash(s.at,0.5+clampf(float(s.get("into",0.0))/7.0,0.0,1.0)*0.5,events)
 		else: debris.hit(str(s.what),s.at,s.normal)
 		_shake = maxf(_shake,SCRAPE_SHAKE*_shake_scale)
-	events.merge(near.score(delta,self,Input.is_action_pressed(&"fly_surge")))
+	events.merge(near.score(delta,self,Input.is_action_pressed(&"fly_surge") or (smash != null and smash.hot)))
 	if events.has("near"):
 		var m: Dictionary = events.near
 		var k := float(m.k)
@@ -1295,6 +1303,12 @@ func _knocked(events: Dictionary, k: Dictionary) -> void:
 		var lost := near.lose()
 		if lost > 0.0: events["lost"] = {"points":lost}
 	_shake = maxf(_shake,SCRAPE_SHAKE*_shake_scale)
+
+## A hit felt: the view's shake raised to `shake` (rad) and its punch to
+## `punch` degrees, whatever `--shake=` says (the surge roll's).
+func feel_hit(shake: float, punch: float) -> void:
+	_shake = maxf(_shake,shake)
+	_punch_want = maxf(_punch_want,punch)
 
 ## Water on the screen (0 to 1; WaterContact `douse`): a splash in the
 ## sound and the air muffled a moment. For anything that douses the eye.
@@ -1550,24 +1564,19 @@ var rolls_asked := 0
 ## the side leant to (Q E, the shoulders), else the way banked, else the way
 ## the stick turns, else right (as the burrower study's Space).
 func roll_button() -> void:
+	_roll_asked = roll_side()
+	rolls_asked += 1
+
+## The way a roll goes now: see `roll_button` (the surge roll's too).
+func roll_side() -> float:
 	var keys := (1.0 if Input.is_key_pressed(KEY_E) else 0.0)-(1.0 if Input.is_key_pressed(KEY_Q) else 0.0)
 	var lean := keys+Input.get_action_strength(&"fly_lean_right")-Input.get_action_strength(&"fly_lean_left")
 	var turn := Input.get_vector(&"move_left",&"move_right",&"move_forward",&"move_back").x
 	var bank := float(plane.bank)
-	if absf(lean) > 0.2: _roll_asked = signf(lean)
-	elif absf(bank) > 0.05: _roll_asked = signf(bank)
-	elif absf(turn) > 0.2: _roll_asked = signf(turn)
-	else: _roll_asked = 1.0
-	rolls_asked += 1
-
-func _lean_tapped(dir: float) -> void:
-	var now := Time.get_ticks_msec()
-	if dir == _tap_dir and now-_tap_at <= int(DOUBLE_TAP*1000.0):
-		_roll_asked = dir
-		_tap_dir = 0.0
-	else:
-		_tap_dir = dir
-		_tap_at = now
+	if absf(lean) > 0.2: return signf(lean)
+	if absf(bank) > 0.05: return signf(bank)
+	if absf(turn) > 0.2: return signf(turn)
+	return 1.0
 
 ## The takeoff is the player's: the stage gone, the mouse taken, the hints
 ## back.
@@ -1602,8 +1611,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif Pad.pressed(event,&"fly_land"): _land_key()
 	elif Pad.pressed(event,&"fly_weight"): _next_weight()
 	elif Pad.pressed(event,&"fly_pace"): _next_pace()
-	elif Pad.pressed(event,&"fly_lean_left"): _lean_tapped(-1.0)
-	elif Pad.pressed(event,&"fly_lean_right"): _lean_tapped(1.0)
 	elif event.is_action_pressed(&"fly_roll") and not event.is_echo(): roll_button()
 	elif event is InputEventKey and event.pressed and not event.echo:
 		match (event as InputEventKey).keycode:
@@ -1630,8 +1637,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_J: logbook.open_book()
 			KEY_K:
 				if look != null and look.land_shade != null: look.land_shade.toggle()
-			KEY_Q: _lean_tapped(-1.0)
-			KEY_E: _lean_tapped(1.0)
 			KEY_ESCAPE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _exit_tree() -> void:

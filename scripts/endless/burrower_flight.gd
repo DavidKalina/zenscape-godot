@@ -19,6 +19,11 @@ extends Node
 ## (ORB_MORE), `--burrower-swing=M` (his swing each side; 0: none) and
 ## `--burrower-swing-s=S` (there and back).
 
+## A surge roll into his ridge on a run (`try_catch`, scripts/endless/
+## surge_smash.gd): the ground bursts at `at` (world), a prize comes up ahead, he
+## dives. Once a run. The `finds` lane's `event` binds to this.
+signal caught(at: Vector3)
+
 const Burrower = preload("res://scripts/burrower/burrower.gd")
 const PushUps = preload("res://scripts/burrower/push_ups.gd")
 const GameLand = preload("res://scripts/burrower/game_land.gd")
@@ -37,6 +42,16 @@ const CANOPY_PLANE := 24.0
 const ROOF_HOLD := 3.0
 const RUN := 40.0
 const RUN_ORBS := 3
+## A surge roll runs him down: his pace under it; caught within CATCH_M m of his
+## head or the CATCH_TRAIL m of ridge behind it, within CATCH_UP m over the ground
+## or the crowns. The prize comes up PRIZE_AHEAD s of flight on.
+const RUN_DOWN := 0.55
+const CATCH_M := 14.0
+const CATCH_TRAIL := 26.0
+const CATCH_UP := 16.0
+const CATCH_CLODS := 40
+const PRIZE_AHEAD := 1.3
+const CATCH_PRIZE := &"gong"
 ## An orb's reach past the study's (m).
 const ORB_MORE := 2.0
 ## How far off the plane's line an orb comes up (m): flying straight misses it, a
@@ -197,6 +212,46 @@ func _running(delta: float, game: Node3D, flying: bool) -> void:
 		rouse.why = why
 		rouse.dives = int(rouse.dives)+1
 		_rest()
+
+## On a run, up and running: he can be caught.
+func on_run() -> bool:
+	return burrower.active and not _sighted and not burrower.diving() and not burrower._sounding and burrower.phase == &"run"
+
+## A surge roll under way (`on`): he can't keep ahead of it, so the plane runs
+## him down.
+func chased(on: bool) -> void:
+	burrower.run_pace = RUN_DOWN if on else 1.0
+
+## Each frame of a surge roll: the plane low over his head or the ridge just
+## behind it is a catch. True when he's caught now.
+func try_catch(game: Node3D) -> bool:
+	if not on_run(): return false
+	var p: Vector3 = game.plane.position
+	var at: Vector2 = burrower.pos
+	var top := maxf(land.height(at.x,at.y),land.canopy_top(at,CANOPY_HEAD))
+	if p.y-top > CATCH_UP: return false
+	var q := Vector2(p.x,p.z)
+	var line := Geometry2D.get_closest_point_to_segment(q,at,at-burrower.forward()*CATCH_TRAIL)
+	if q.distance_to(line) > CATCH_M: return false
+	catch(game)
+	return true
+
+## Caught: the burst at his head, the prize ahead of the plane, he dives.
+func catch(game: Node3D) -> void:
+	var head: Vector3 = burrower.head()
+	burrower.throw_earth(head+Vector3.UP*0.4,CATCH_CLODS,9.0,17.0,2.5)
+	burrower.puff(head,14)
+	var v: Vector3 = game.plane.velocity
+	var flat := Vector2(v.x,v.z)
+	var spot := Vector2(game.plane.position.x,game.plane.position.z)+flat*PRIZE_AHEAD
+	push_ups.push(spot if land.open(spot) else burrower.pos,CATCH_PRIZE,-flat.normalized())
+	burrower.run_pace = 1.0
+	burrower.dive()
+	rouse.why = "caught"
+	rouse.dives = int(rouse.dives)+1
+	rouse.caught = int(rouse.get("caught",0))+1
+	_rest()
+	caught.emit(head)
 
 ## The next rest, the flag's if it's set.
 func _rest() -> void:
