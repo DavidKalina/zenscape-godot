@@ -2,21 +2,22 @@ extends Node3D
 ## The trees the burrower passes near shudder (spec-burrower.md, 2): the
 ## heave under the roots shoves each tree away from the head, and it sways
 ## back and forth, ringing out (a damped spring per tree, slower for taller
-## trees); the crown lags and overshoots the trunk, and shivers fast while
-## the shove lasts. A burst of leaves comes off the crown once the shove bites
-## and a trickle while it shivers; the leaves flutter down, lie a moment and
-## sink (a MultiMesh of small cards).
+## trees); the crown lags and overshoots the trunk. A burst of leaves comes off
+## the crown once the shove bites and a trickle after it; the leaves flutter
+## down, lie a moment and sink (a MultiMesh of small cards).
 ##
 ## Trees are the land's nodes (`Crown` child, meta `tall`), rooted at the
 ## ground, so tilting the node leans the whole tree from its foot.
 ##
 ## A land that `probes` (the game's) has no tree nodes: its spruces are
-## MultiMesh instances that read the grass's push map at their foot and bow,
-## ring back and pale with it (shaders/tree_wind.gdshaderinc zs_tree_react,
-## conifer_wind). So a tree there gets one stamp in that map away from the
-## head as the head goes by it (nearest), and its burst of needles; nothing is
-## kept per tree but a line in `_felt`, and only the trees round the head are
-## asked after, every STOOD_EVERY s.
+## MultiMesh instances. He drags a gust through them like the wind's, only
+## more: a stamp every STOOD_STRIP m of his way, in a map only the trees read
+## (scripts/endless/grass_react.gd `gust_strip`, shaders/wake_gust_stamp.gdshader,
+## tree_wind.gdshaderinc zs_tree_gust). Each stamp spreads out from his line as
+## it ages, so trees go over one after another, hold, and ease back into the wind's
+## own sway, all from the stamp's age: nothing per tree. A tree gets a burst of
+## needles as the head goes by it (nearest); only a line in `_felt` is kept, and
+## only the trees round the head are asked after, every STOOD_EVERY s.
 
 ## The head shoves a tree within REACH m of its trunk, hardest at the trunk.
 const REACH := 15.0
@@ -30,8 +31,7 @@ const MOST := 0.16
 const CROWN_FREQ := 1.15
 const CROWN_DAMP := 0.12
 const CROWN_GAIN := 1.5
-## The shiver: fast small shake of the crown while it is shoved.
-const SHIVER_HZ := 9.0
+## How long a shove keeps a tree dropping leaves.
 const SHIVER_DECAY := 1.4
 ## Leaves: the most at once, a burst's count at full, the trickle's rate
 ## while shivering, a tree's wait before it bursts again.
@@ -43,17 +43,18 @@ const BURST_AT := 0.12
 const LEAF_FALL := 1.3
 const LEAF_LIE := 2.2
 
-## The stood trees (a land that `probes`): how far from the head one shakes,
-## how often that is asked, the most a look shoves (a dense wood's cost: a
-## stamp each, for a stamp's life), the stamp (strength close by and at the
-## reach's edge, its size and hold), the needles a burst and how much bigger
-## than a leaf a card is (read from the chase camera, over the crowns).
+## The stood trees (a land that `probes`): how far from the head one sheds
+## needles, how often that is asked, the most a look does; the gust's reach
+## each side of his line and the length of a stamp; the needles a burst and how
+## much bigger than a leaf a card is (read from the chase camera, over the crowns).
 const STOOD_REACH := 19.0
 const STOOD_EVERY := 0.09
 const STOOD_MOST := 7
-const STOOD_PUSH := Vector2(1.5,0.55)
-const STOOD_STAMP := 3.2
-const STOOD_HOLD := 0.3
+const STOOD_GUST := 30.0
+const STOOD_STRIP := 7.0
+## The gust runs this far ahead of the head, or the wood would go over behind
+## the plane: he leads it by about this.
+const STOOD_LEAD := 30.0
 const STOOD_BURST := Vector2(14.0,5.0)
 const STOOD_CARD := 1.3
 const STOOD_NEEDLE := Color("3f5a2c")
@@ -72,6 +73,8 @@ var _ask := 0.0
 ## A stood tree under the head's reach (its foot in cm): Vector2(its last
 ## distance, the time it shook; -1 not yet).
 var _felt := {}
+## Where the gust's last stamp went down (INF: none yet).
+var _trail := Vector2.INF
 
 func _init() -> void:
 	name = "TreeShudder"
@@ -134,7 +137,9 @@ func _shake_stood(delta: float, head: Vector2, k: float) -> void:
 	_ask = STOOD_EVERY
 	if k <= 0.02:
 		_felt.clear()
+		_trail = Vector2.INF
 		return
+	_lay_gust(head,k)
 	var t: PackedFloat32Array = land.trees_near(head,STOOD_REACH)
 	var shook := 0
 	for q in range(0,t.size(),4):
@@ -153,9 +158,24 @@ func _shake_stood(delta: float, head: Vector2, k: float) -> void:
 		for key: Vector2i in _felt.keys():
 			if _time-(_felt[key] as Vector2).y > COOL: _felt.erase(key)
 
+## A stamp of the gust each STOOD_STRIP m of his way, only with trees in its
+## reach (the map draws nothing, and costs nothing, on open ground).
+func _lay_gust(head: Vector2, k: float) -> void:
+	if _trail == Vector2.INF:
+		_trail = head
+		return
+	var moved := head.distance_to(_trail)
+	if moved < STOOD_STRIP: return
+	var way := (head-_trail)/moved
+	var at := head+way*STOOD_LEAD
+	if react != null and moved < STOOD_STRIP*6.0 and land.trees_near(at,STOOD_GUST).size() > 0:
+		react.gust_strip(at,way,moved,STOOD_GUST,clampf(k*1.3,0.0,1.0))
+	_trail = head
+
 ## Every stood tree within `r` m of `at` shaken at once (a push-up through
 ## the crowns).
 func shove(at: Vector2, r: float) -> void:
+	if react != null: react.gust_disc(at,r*1.5,1.0)
 	var t: PackedFloat32Array = land.trees_near(at,r)
 	for q in range(0,mini(t.size(),4*STOOD_MOST),4):
 		_shake_one(Vector2(t[q],t[q+1]),t[q+2],t[q+3],at,at.distance_to(Vector2(t[q],t[q+1])),1.0)
@@ -164,9 +184,6 @@ func _shake_one(at: Vector2, foot: float, tall: float, head: Vector2, d: float, 
 	stats.shoved = int(stats.shoved)+1
 	var near := pow(clampf(1.0-d/STOOD_REACH,0.0,1.0),0.7)*clampf(k*1.3,0.0,1.0)
 	var away := (at-head).normalized() if d > 0.01 else Vector2.RIGHT
-	if react != null:
-		react._add({"at": at, "way": away, "strength": lerpf(STOOD_PUSH.y,STOOD_PUSH.x,near),
-			"swirl": 0.0, "reach": STOOD_STAMP, "front": 0.0, "hold": STOOD_HOLD, "press": 0.0})
 	_burst_at(Vector3(at.x,foot+tall*0.72,at.y),tall,STOOD_NEEDLE,int(lerpf(STOOD_BURST.y,STOOD_BURST.x,near)),away,foot)
 
 func _step_tree(t: Dictionary, delta: float, head: Vector2, k: float) -> void:
@@ -223,14 +240,11 @@ func _step_tree(t: Dictionary, delta: float, head: Vector2, k: float) -> void:
 	node.basis = _lean_basis(lean)*Basis(t.base)
 	var crown: Node3D = t.crown
 	if crown != null:
-		# The crown's own lean past the trunk's, in the tree's frame, plus
-		# the shiver: a fast twitch about two axes.
+		# The crown's own lean past the trunk's, in the tree's frame.
 		var extra := clean-lean
-		var shake := Vector2(sin(_time*TAU*SHIVER_HZ+float(t.w)*7.0),sin(_time*TAU*SHIVER_HZ*1.31+1.7))*0.045*sh
 		var base: Basis = t.base
-		var world := _lean_basis(extra+shake)
+		var world := _lean_basis(extra)
 		crown.basis = base.inverse()*world*base*Basis(t.crown_base)
-		crown.rotate_object_local(Vector3.UP,0.06*sh*sin(_time*TAU*SHIVER_HZ*0.77))
 
 ## A lean toward `lean`'s direction by its length (rad), about the foot.
 func _lean_basis(lean: Vector2) -> Basis:

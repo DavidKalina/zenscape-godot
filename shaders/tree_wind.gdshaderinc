@@ -41,10 +41,19 @@ const float ZS_TREE_SWAY_SWING = 0.7;
 // takes, in zs_breeze_lean_at's units: a full eddy band bends a 15 m top
 // about 2 m, springing back as the grass does.
 const float ZS_TREE_REACT = 0.4;
-// The fast shake of a crown stirred full (a share of the model's height).
-const float ZS_TREE_SHIVER = 0.03;
-// How much further a crown goes for a hard shove (a push over about 1).
-const float ZS_TREE_HARD = 0.9;
+// The burrower's gust, from the map only he writes (zs_gust_map, scripts/endless/
+// grass_react.gd `gust_strip`; rect as zs_react_rect, w 0 while nothing is in it):
+// what a full gust adds to a tree's lean, in zs_breeze_lean_at's units, past
+// anything the wind does; how far it sways round that as it lets go (a share of
+// the lean), and the spread of strength between one tree and the next.
+global uniform sampler2D zs_gust_map : filter_linear, repeat_disable;
+global uniform vec4 zs_gust_rect;
+const float ZS_TREE_GUST = 1.5;
+const float ZS_TREE_GUST_SWAY = 0.5;
+const float ZS_TREE_GUST_SPREAD = 0.2;
+// A gust bows the whole tree: its bend up the height (the wind's is 2.4), or the
+// top hooks over as it goes further than the wind takes it.
+const float ZS_TREE_GUST_BOW = 1.7;
 
 float zs_tree_hash(vec2 p) {
 	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -87,9 +96,34 @@ vec2 zs_tree_react(vec2 root, out float stir) {
 	if (alive <= 0.0 || !zs_react_live()) return vec2(0.0);
 	vec3 r = zs_react_at(root);
 	stir = clamp(length(r.xy) * 0.8 + max(r.z, 0.0) * 0.4, 0.0, 1.0) * min(alive, 1.0);
-	// Shoved hard (more than the wind's bands do) it goes over further.
-	float hard = 1.0 + ZS_TREE_HARD * smoothstep(0.7, 1.2, length(r.xy));
-	return r.xy * ZS_TREE_REACT * alive * hard;
+	return r.xy * ZS_TREE_REACT * alive;
+}
+
+// The gust at a world xz point: xy the lean (1 full), z how loose the crown is.
+vec3 zs_gust_at(vec2 xz) {
+	if (zs_gust_rect.w <= 0.0) return vec3(0.0);
+	vec2 uv = (xz - zs_gust_rect.xy) / zs_gust_rect.z;
+	if (uv.x <= 0.0 || uv.y <= 0.0 || uv.x >= 1.0 || uv.y >= 1.0) return vec3(0.0);
+	vec2 rim = min(uv, 1.0 - uv);
+	return textureLod(zs_gust_map, uv, 0.0).rgb * smoothstep(0.0, 0.06, min(rim.x, rim.y));
+}
+
+// The burrower's gust on the tree at `root`, in lean units: over, away from him,
+// with the wind's own `swing` (-1..1, this tree's) growing as he lets it go. Where
+// it blows it takes the crown from `react` (his furrow's stamps ring at the
+// grass's spring; the prop's wash anywhere else is left alone), and `stir` from it
+// for the boughs and the sheen.
+vec2 zs_tree_gust(vec2 root, float swing, float phase, inout vec2 react, inout float stir) {
+	vec3 g = zs_gust_at(root);
+	float m = length(g.xy);
+	if (m <= 0.001 && g.z <= 0.001) return vec2(0.0);
+	float over = min(m, 1.15);
+	float took = 1.0 - smoothstep(0.02, 0.2, max(m, g.z));
+	react *= took;
+	stir = max(stir * took, over);
+	vec2 way = m > 0.001 ? g.xy / m : vec2(0.0);
+	float own = 1.0 + ZS_TREE_GUST_SPREAD * (fract(phase * 1.37) * 2.0 - 1.0);
+	return way * ZS_TREE_GUST * own * (over + g.z * ZS_TREE_GUST_SWAY * swing);
 }
 
 // A bough's own motion, as an offset in the tree's model space: each bough

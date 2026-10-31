@@ -35,10 +35,11 @@ vec3 zs_conifer_offset_alive(vec3 vertex, mat4 model, bool alive, out float shee
 		* lean * give * conifer_height * bend;
 	float stir = 0.0;
 	if (alive) {
-		motion += zs_tree_react(root, stir) * give * conifer_height * bend;
-		// Shaken hard (the burrower going by, stir near 1), the whole crown shivers.
-		float shiver = stir * stir * ZS_TREE_SHIVER * conifer_height * bend;
-		if (shiver > 0.0) motion += vec2(sin(t * 53.0 + phase * 7.0), sin(t * 67.0 + phase * 3.0)) * shiver;
+		// The grass's stirring, and the burrower's gust: all the wind's lean, only
+		// more, swaying round it at this tree's pace as it lets go (zs_tree_gust).
+		vec2 react = zs_tree_react(root, stir);
+		vec2 over = zs_tree_gust(root, swing, phase, react, stir);
+		motion += (react * bend + over * pow(k, ZS_TREE_GUST_BOW)) * give * conifer_height;
 	}
 	vec3 local = zs_local_wind(vec3(root.x, model[3].y + height, root.y));
 	motion += local.xz / (10.0 + length(local)) * bend * 0.32;

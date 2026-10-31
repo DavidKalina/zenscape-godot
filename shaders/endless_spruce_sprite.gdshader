@@ -169,7 +169,8 @@ void vertex() {
 		vec2 motion = (dir * (1.0 + ZS_TREE_SWAY_SWING * swing) + vec2(-dir.y, dir.x) * 0.22 * sin(zs_motion_time * pace * 0.71 + phase * 2.3)) * lean * 0.3 * tall * k * k;
 		// The grass's stirring (eddies, gusts landing, the prop's wash).
 		float stir;
-		motion += zs_tree_react(root, stir) * 0.3 * tall * k * k;
+		vec2 react = zs_tree_react(root, stir);
+		motion += (zs_tree_gust(root, swing, phase, react, stir) + react) * 0.3 * tall * k * k;
 		VERTEX.xz += motion;
 		sprite_sheen = max(wave, stir * 0.8);
 	}
