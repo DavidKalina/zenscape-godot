@@ -39,7 +39,10 @@ vec3 zs_conifer_offset_alive(vec3 vertex, mat4 model, bool alive, out float shee
 		// more, swaying round it at this tree's pace as it lets go (zs_tree_gust).
 		vec2 react = zs_tree_react(root, stir);
 		vec2 over = zs_tree_gust(root, swing, phase, react, stir);
-		motion += (react * bend + over * pow(k, ZS_TREE_GUST_BOW)) * give * conifer_height;
+		// `over` shears, straight up the whole height (height / conifer_height, not
+		// `k`): the trunk has a handful of rings and the crown many, so any curve or
+		// clamp here parts them, more the harder it blows, and the trunk stands out.
+		motion += (react * bend + over * (height / conifer_height)) * give * conifer_height;
 	}
 	vec3 local = zs_local_wind(vec3(root.x, model[3].y + height, root.y));
 	motion += local.xz / (10.0 + length(local)) * bend * 0.32;
