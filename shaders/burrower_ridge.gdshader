@@ -22,10 +22,7 @@ uniform float head = 1.1;
 uniform float head_fall = 7.0;
 uniform float churn = 0.3;
 uniform float churn_rate = 13.0;
-// The tail breaks up: stretches of BREAK_LEN s of travel, this share of them
-// sinking almost flat soon after the head is past.
-uniform float break_len = 0.3;
-uniform float break_share = 0.45;
+// The tail breaks up in uneven stretches (broken()).
 uniform vec3 earth : source_color = vec3(0.40, 0.29, 0.19);
 uniform vec3 earth_dry : source_color = vec3(0.52, 0.43, 0.30);
 
@@ -134,7 +131,7 @@ void fragment() {
 	float patch_n = g_noise(vec3(v_pos.x, 0.0, v_pos.z) * 0.11);
 	// Dry ground (low meadow in COLOR.a) leans straw, as the drawn turf does.
 	float lum = dot(turf, vec3(0.3, 0.55, 0.15));
-	turf = mix(turf, lum * vec3(1.35, 1.1, 0.55), (1.0 - COLOR.a) * 0.9);
+	turf = mix(turf, lum * vec3(1.45, 1.15, 0.5), clamp((1.0 - COLOR.a) * 1.5 + 0.5, 0.0, 1.0));
 	vec3 dry_tint = vec3(0.30, 0.25, 0.12);
 	turf = mix(turf, dry_tint * (0.85 + 0.3 * patch_n), smoothstep(0.45, 0.7, patch_n) * 0.35);
 	vec3 grass = turf * (0.86 + 0.28 * g_noise(v_pos * 9.0));

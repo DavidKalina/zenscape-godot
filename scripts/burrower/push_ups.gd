@@ -395,7 +395,7 @@ func push(at: Vector2, kind := &"orb", face := Vector2(0.0,1.0)) -> Dictionary:
 	else:
 		var sm := ShaderMaterial.new()
 		sm.shader = SOIL_SHADER
-		var tint := land.colour(at.x,at.y,ground,land.normal(at.x,at.y)).lerp(Color("4a3826"),0.8)
+		var tint := land.colour(at.x,at.y,ground,land.normal(at.x,at.y)).lerp(Color("4a3826"),0.4)
 		sm.set_shader_parameter("tint",Vector3(tint.srgb_to_linear().r,tint.srgb_to_linear().g,tint.srgb_to_linear().b))
 		sm.set_shader_parameter("seed",fposmod(at.x*0.37+at.y*0.71,20.0))
 		sm.set_shader_parameter("dry",0.35)
