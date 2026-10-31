@@ -194,8 +194,8 @@ func _standing_bodies() -> Array[RID]:
 	var olmec := float(hub.strength_of(&"olmec")) if hub != null else 1.0
 	for t: Dictionary in targets:
 		if not t.alive or float(t.tough) > olmec or str(t.kind) in ["slab","stair"]: continue
+		if not is_instance_valid(t.node): continue
 		var node: Node3D = t.node
-		if not is_instance_valid(node): continue
 		for b: Node in node.find_children("*","CollisionObject3D",true,false): out.append((b as CollisionObject3D).get_rid())
 	return out
 

@@ -48,8 +48,10 @@ const UNDER := LandTunnels_.UNDER_LAYER
 const KEPT := 1 << 15
 ## The wilderness ruin's mouth and its inward way on seed 1 (XZ), and the
 ## amberlands ruin's, on its side (home offset added).
-const WILD_AT := Vector2(-1353.0,-1187.0)
+const WILD_AT := Vector2(-736.0,-663.0)
 const AMBER_AT := Vector2(-117.0,-892.0)
+## The spot the wilderness mouth faces: the true start, on the title's meadow.
+const FACES := Vector2(164.8,-32.4)
 ## The nave across (m, toy era; WorldScale `opening`): the kit bay scaled so
 ## its outer rows stand this wide. The whole hall is that bay's size times
 ## `_big`.
@@ -156,7 +158,7 @@ func setup(host: Node3D, start: Vector2, heading: float, seed: int) -> void:
 	var wild_at := WILD_AT
 	var amber_at := AMBER_AT+off
 	# Faces the start; the far one looks home over its land.
-	var wild_in := (wild_at-start).normalized()
+	var wild_in := (wild_at-FACES).normalized()
 	var amber_in := (amber_at-(off+start)).normalized()
 	var coded: Array[Transform3D] = [_frame_on(wild_at,wild_in),_frame_on(amber_at,amber_in)]
 	walls = [
@@ -505,6 +507,7 @@ func _build_ruin(i: int, parts: Dictionary) -> Node3D:
 		root.add_child(tower)
 		for mi: Node in tower.find_children("*","MeshInstance3D",true,false):
 			(mi as MeshInstance3D).layers = layers
+			(mi as MeshInstance3D).material_override = lit
 		var body := tower.find_children("*","StaticBody3D",true,false)
 		for b: Node in body: b.queue_free()
 	# Shuts the hall off from outside: stone without, black within.
