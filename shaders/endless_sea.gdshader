@@ -843,11 +843,13 @@ float zs_wake_track(vec2 p, int track, out vec2 slope, out float stirred) {
 
 // Both tracks: the plane's and the burrower's. Its stirred water is the lesser
 // (it would pale a broad patch).
-float zs_wake(vec2 p, out vec2 slope, out float stirred) {
+// `burrow` is the burrower's own track's foam (0 while none runs).
+float zs_wake(vec2 p, out vec2 slope, out float stirred, out float burrow) {
 	float own = zs_wake_track(p, 0, slope, stirred);
 	vec2 other_slope;
 	float other_stirred;
 	float other = zs_wake_track(p, 1, other_slope, other_stirred);
+	burrow = other;
 	slope += other_slope;
 	stirred = max(stirred, other_stirred * 0.4);
 	return max(own, other);
@@ -1027,7 +1029,8 @@ void fragment() {
 	}
 	vec2 wake_slope;
 	float stirred;
-	float waked = zs_wake(rest_xz, wake_slope, stirred);
+	float zs_burrow_foam;
+	float waked = zs_wake(rest_xz, wake_slope, stirred, zs_burrow_foam);
 	vec3 normal = normalize(vec3(-(slope.x + detail.x + wake_slope.x), 1.0, -(slope.y + detail.y + wake_slope.y)));
 	// A calmer normal for the sky's mirror, so the reflection reads as one
 	// rippled image rather than noise.
@@ -1152,6 +1155,11 @@ void fragment() {
 	// Fresh foam stands up a little: brighter, and lit by its own slope.
 	if (sea_foam > 0) white *= 1.0 + 0.1 * lace_youth + 0.18 * clamp(dot(normal, zs_key_direction), -0.5, 1.0) * float(lace_density > 0.0);
 	water = mix(water, white, foamed * 0.92);
+	// The burrower's wake: its foam as clear white, not the sand the dim lit foam let through.
+	if (zs_burrow_foam > 0.0) {
+		float bf = smoothstep(0.1, 0.5, zs_burrow_foam * (0.4 + 1.4 * fleck));
+		water = mix(water, vec3(0.97, 0.99, 1.0) * max(light * 1.0, vec3(0.85)), bf * 0.9);
+	}
 	water += tint_shallow * (ambient + key) * lip * 0.4;
 
 	// The mirror: the sky, the cloud field, and what stands on screen.
