@@ -886,6 +886,10 @@ func _swing_on(delta: float, vp: float) -> float:
 	_swing = fmod(_swing+w*(1.0+SWING_SLIP*clampf(2.0*_noise.get_noise_1d(time*0.2+700.0),-1.0,1.0))*delta,TAU)
 	return minf(swing_m*w/maxf(speed,vp),SWING_MOST)*sin(_swing)
 
+## His run's speed over what keeping ahead asks: under 1 a surge roll runs him
+## down (scripts/endless/burrower_flight.gd `chased`).
+var run_pace := 1.0
+
 ## The run's step: its own course, chased by the plane. Its speed.
 func _run_on(delta: float, surge: float) -> float:
 	_phase_t += delta
@@ -940,7 +944,7 @@ func _run_on(delta: float, surge: float) -> float:
 		stats.soundings = int(stats.soundings)+1
 		var lw := "behind" if along < 0.0 else "far"
 		stats.lost_why[lw] = int(stats.lost_why.get(lw,0))+1
-	return want
+	return want*run_pace
 
 # --- The ridge -------------------------------------------------------------------
 

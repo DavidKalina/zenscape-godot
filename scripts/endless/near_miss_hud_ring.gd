@@ -53,6 +53,13 @@ const CLOSE_C := Color("f7dc8a")
 
 var _moves: Array = []
 var _barlow := {}
+## The surge roll's ready mark (`_draw_ready`): where (block px), how big, its
+## word's size and how long it shows (s).
+const READY_AT := Vector2(-44.0,6.0)
+const READY_PX := 34.0
+const READY_TEXT := 15.0
+const READY_WORD := 2.0
+var _ready_age := 0.0
 
 func _ready() -> void:
 	tag = true
@@ -181,6 +188,20 @@ func _draw_block() -> void:
 	if not _bank.is_empty(): _draw_bank_c(s)
 	elif not _loss.is_empty(): _draw_loss_c(s)
 	elif _near.chain_points >= 1.0 and not _moves.is_empty(): _draw_live(s)
+	_draw_ready(s)
+
+## The surge roll ready (a full meter, not being spent): a small gilt ring
+## breathing by the tag, its word only for READY_WORD s after it fills.
+func _draw_ready(s: float) -> void:
+	if _near.meter < 0.999 or _near.surge > 0.0:
+		_ready_age = 0.0
+		return
+	_ready_age += get_process_delta_time()
+	var breath := 0.5+0.5*sin(_clock*TAU*0.55)
+	var c := READY_AT*s
+	_ring(c,READY_PX*s,1.0,Color(GLINT,0.55+0.3*breath),Color(GLINT,0.15),Color(GLINT,0.5),5.0*s*breath,0.8)
+	var a := 1.0-smoothstep(READY_WORD-0.5,READY_WORD,_ready_age)
+	if a > 0.0: _txt(_block,_bw(READY_TEXT,0.14),"ROLL",c+Vector2(0.0,READY_PX*0.82)*s,READY_TEXT*s,Color(GLINT_TEXT,a),6.0*s)
 
 ## The ring centred `c`, `px` across (screen px): a disc, its track, the arc
 ## `share` full from the top clockwise in `col`, glowing `glow`.

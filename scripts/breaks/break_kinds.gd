@@ -60,6 +60,9 @@ const SHAPES := {
 	"lintel":{"stump":-1.0,"reach":0.0,"chunk":Vector2(2.2,9.0),"fall":"slab","tough":0.4},
 	"stair":{"stump":0.5,"reach":2.5,"chunk":Vector2(2.0,1.5),"fall":"chunk","tough":0.9},
 	"slab":{"stump":-1.0,"reach":2.0,"chunk":Vector2(1.6,9.0),"fall":"slab","tough":1.6},
+	## A cracked wall (scripts/endless/cracked_walls.gd): all of it goes at a
+	## surge roll, bar a low stump.
+	"cracked":{"stump":0.12,"reach":0.0,"chunk":Vector2(3.0,3.0),"fall":"chunk","tough":0.9,"topple":true},
 }
 
 ## A RuinKit piece's kind, by its id (RuinKit ALL_PIECES).
