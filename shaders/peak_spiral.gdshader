@@ -27,8 +27,6 @@ uniform float hand = 1.0;
 uniform float spin = 0.0;
 uniform float flow = 0.0;
 uniform float seed = 0.0;
-// 1 idle; under 1 the tip is drawn in down the ribbon (PeakSpirals `rouse`).
-uniform float tip_left = 1.0;
 uniform sampler3D noise : repeat_enable, filter_linear;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 // The cloud sheet's coverage and distance: field cloud nearer than the ribbon
@@ -97,7 +95,7 @@ Here here_at(vec3 p) {
 	// Both ends dissolve rather than come to a point.
 	float grown = mix(0.5, 1.0, smoothstep(0.0, 0.13, along / turns));
 	float thin = grown * pow(1.0 - share, 0.55);
-	o.fade = smoothstep(0.0, 0.16, along / turns) * (1.0 - smoothstep(0.86 * tip_left, 0.985 * tip_left, along / turns));
+	o.fade = smoothstep(0.0, 0.16, along / turns) * (1.0 - smoothstep(0.86, 0.985, along / turns));
 	// The line wanders and swells a little so it never reads as machined.
 	float w1 = sin(along * 2.1 + seed * 3.0);
 	// Two whole cycles over the flow's period (PeakSpirals.FLOW_WRAP).

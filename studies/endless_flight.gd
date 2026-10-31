@@ -148,7 +148,6 @@ const RegionDoors = preload("res://scripts/endless/region_doors.gd")
 ## The crown's spirals of cloud (scripts/endless/peak_spirals.gd; --spirals=0 none).
 const PeakSpirals = preload("res://scripts/endless/peak_spirals.gd")
 const PeakSpindrift = preload("res://scripts/endless/peak_spindrift.gd")
-const PeakStrike = preload("res://scripts/endless/peak_strike.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 ## Place lines: standing routes with a timed record (--lines=0 none).
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
@@ -311,8 +310,6 @@ var lines: Node
 var stair: Node3D
 var spirals: Node3D
 var spindrift: Node3D
-## A spiral's strike at a climbing plane (scripts/endless/peak_strike.gd), or null.
-var strike: Node3D
 var flown := 0.0
 var _start := Vector2.ZERO
 ## The Peak's sky of its own hour stands over this band (m over the sea: up
@@ -739,13 +736,6 @@ func _ready() -> void:
 		add_child(spirals)
 		spirals.setup(self)
 		spirals.set_axes(PeakSpirals.on_towers(towers.axes() if towers != null else [],peak.PLATEAU_Y+Field.SEA_Y+60.0))
-	# The spirals strike at a plane climbing the mountain (scripts/endless/peak_strike.gd).
-	if spirals != null and PeakStrike.wanted():
-		strike = PeakStrike.new()
-		strike.name = "PeakStrike"
-		add_child(strike)
-		strike.setup(self,peak,spirals,towers,Callable(field,"height"),seed,air)
-		air = Callable(strike,"air_at")
 	# Snow blowing off the crown's tips and high ridges (scripts/endless/peak_spindrift.gd).
 	if peak != null and PeakSpindrift.wanted():
 		spindrift = PeakSpindrift.new()
@@ -1179,7 +1169,6 @@ func tick(delta: float) -> void:
 	arches.step(camera.global_position)
 	rocks.step(camera.global_position)
 	if towers != null: towers.step(camera.global_position)
-	if strike != null: strike.step(delta)
 	halls.step(camera.global_position)
 	tunnels.step(camera.global_position)
 	trees.step(camera.global_position,plane.position)
