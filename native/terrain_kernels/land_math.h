@@ -1,4 +1,4 @@
-// The endless land's own exp, log, pow, sin and cos (land_field.h), so a seed
+// The endless land's own exp, log, pow, sin, cos and atan2 (land_field.h), so a seed
 // grows the same land on every machine: the C runtimes' versions (macOS
 // libSystem, Windows UCRT, MinGW) may differ in the last bit, and a land that
 // is to match across machines (co-op sends only the seed) can't lean on
@@ -158,6 +158,88 @@ inline double det_cos(double x) {
 		case 1: return -det_ksin(y0, y1);
 		case 2: return -det_kcos(y0, y1);
 		default: return det_ksin(y0, y1);
+	}
+}
+
+// fdlibm's atan and atan2, as the rest of this file (the Peak's angles,
+// peak_massif.h, which the C runtime's atan2 would leave machine-dependent).
+inline double det_atan(double x) {
+	static const double hi[4] = {4.63647609000806093515e-01, 7.85398163397448278999e-01, 9.82793723247329054082e-01, 1.57079632679489655800e+00};
+	static const double lo[4] = {2.26987774529616870924e-17, 3.06161699786838301793e-17, 1.39033110312309984516e-17, 6.12323399573676603587e-17};
+	static const double aT[11] = {3.33333333333329318027e-01, -1.99999999998764832476e-01, 1.42857142725034663711e-01, -1.11111104054623557880e-01,
+		9.09088713343650656196e-02, -7.69187620504482999495e-02, 6.66107313738753120669e-02, -5.83357013379057348645e-02,
+		4.97687799461593236017e-02, -3.65315727442169155270e-02, 1.62858201153657823623e-02};
+	if (x != x) return x;
+	const bool neg = std::signbit(x);
+	const double ax = neg ? -x : x;
+	if (ax >= 7.378697629483820641e+19) return neg ? -(hi[3] + lo[3]) : hi[3] + lo[3]; // 2^66
+	int id = -1;
+	double t = x;
+	if (ax < 0.4375) {
+		if (ax < 7.450580596923828125e-09) return x; // 2^-27
+	} else if (ax < 1.1875) {
+		if (ax < 0.6875) {
+			id = 0;
+			t = (2.0*ax - 1.0)/(2.0 + ax);
+		} else {
+			id = 1;
+			t = (ax - 1.0)/(ax + 1.0);
+		}
+	} else if (ax < 2.4375) {
+		id = 2;
+		t = (ax - 1.5)/(1.0 + 1.5*ax);
+	} else {
+		id = 3;
+		t = -1.0/ax;
+	}
+	const double z = t*t;
+	const double w = z*z;
+	const double s1 = z*(aT[0] + w*(aT[2] + w*(aT[4] + w*(aT[6] + w*(aT[8] + w*aT[10])))));
+	const double s2 = w*(aT[1] + w*(aT[3] + w*(aT[5] + w*(aT[7] + w*aT[9]))));
+	if (id < 0) return t - t*(s1 + s2);
+	const double r = hi[id] - ((t*(s1 + s2) - lo[id]) - t);
+	return neg ? -r : r;
+}
+
+inline double det_atan2(double y, double x) {
+	const double pi = 3.1415926535897931160e+00;
+	const double pi_lo = 1.2246467991473531772e-16;
+	const double pi_o_2 = 1.5707963267948965580e+00;
+	const double pi_o_4 = 7.8539816339744827900e-01;
+	if (x != x || y != y) return std::numeric_limits<double>::quiet_NaN();
+	if (x == 1.0) return det_atan(y);
+	const bool yneg = std::signbit(y), xneg = std::signbit(x);
+	const int m = (yneg ? 1 : 0) | (xneg ? 2 : 0);
+	if (y == 0.0) {
+		if (m < 2) return y;
+		return m == 2 ? pi : -pi;
+	}
+	if (x == 0.0) return yneg ? -pi_o_2 : pi_o_2;
+	if (std::isinf(x)) {
+		if (std::isinf(y)) {
+			const double a = xneg ? 3.0*pi_o_4 : pi_o_4;
+			return yneg ? -a : a;
+		}
+		const double a = xneg ? pi : 0.0;
+		return yneg ? -a : a;
+	}
+	if (std::isinf(y)) return yneg ? -pi_o_2 : pi_o_2;
+	int ey = 0, ex = 0;
+	std::frexp(y, &ey);
+	std::frexp(x, &ex);
+	const int k = ey - ex;
+	double z;
+	if (k > 60) {
+		const double r = pi_o_2 + 0.5*pi_lo;
+		return yneg ? -r : r;
+	}
+	if (xneg && k < -60) z = 0.0;
+	else z = det_atan(std::fabs(y/x));
+	switch (m) {
+		case 0: return z;
+		case 1: return -z;
+		case 2: return pi - (z - pi_lo);
+		default: return (z - pi_lo) - pi;
 	}
 }
 

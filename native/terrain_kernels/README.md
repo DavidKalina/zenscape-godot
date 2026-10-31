@@ -75,6 +75,13 @@ loops match it bit for bit. `--native-react=0`, `--native-birds=0` (or
 `--gdscript-kernels`) run them in GDScript
 (docs/design/endless-flight/native-react-birds-handoff.md).
 
+`ZenScapePeak` (`peak_massif.h`, `peak_massif_bind.h`) is the Peak's massif: its
+profile and its chunk and grid passes (`peak_massif.gd`, `peak_rock.gd`,
+`peak_split.gd`'s readers). One per land, read by every worker at once. On
+Windows it matches the GDScript bit for bit; `--native-peak=0` (or
+`--gdscript-kernels`) runs the GDScript, and a library without it falls back by
+itself (docs/design/endless-flight/crown-native-handoff.md).
+
 ## Build and run
 
 Prerequisites: Godot 4.7 editor, a C++17 compiler, Python 3, SCons 4.x, and the

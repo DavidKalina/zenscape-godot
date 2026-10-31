@@ -173,6 +173,10 @@ static func bake() -> void:
 		bake_ms = (Time.get_ticks_usec()-t0)/1000.0
 	_lock.unlock()
 
+## The baked grid, for the native massif (ZenScapePeak `setup`).
+static func native_data() -> Dictionary:
+	return {"s_e":_e,"s_f":_f,"s_hull":_hull,"s_gap":_gap,"s_tops":_tops,"s_spine":_spine,"s_na":_na,"s_nv":_nv}
+
 ## Gorge `g`'s line: (a, v, floor) every STRIDE m from the nose, through the
 ## saddle, to the plateau's edge.
 static func line(g: int) -> PackedVector3Array:

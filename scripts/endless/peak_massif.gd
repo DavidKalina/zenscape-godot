@@ -33,6 +33,13 @@
 ## Everything outside a circle of BOUND round O pays one distance check
 ## (`reaches`, `meets`). Placed through LayoutOverrides "peak/massif": the
 ## transform's origin the plateau's centre, its +z the facing.
+##
+## The per-vertex work (`_h_rock`, `apply_chunk`, `apply_grid` and all they call)
+## has a native twin, native/terrain_kernels/peak_massif.h (ZenScapePeak), which
+## runs when the library has it: built once per land and shared by every worker's
+## massif (`_go_native`). This GDScript stays the fallback and the reference; a
+## change to the maths or constants here must be made there too.
+## --native-peak=0 (or --gdscript-kernels) runs the GDScript.
 extends RefCounted
 
 const SEA_Y := -40.0
@@ -452,7 +459,59 @@ static func make(land_seed: int, ground := Callable()) -> RefCounted:
 	var coded := Transform3D(Basis(Vector3.UP,deg_to_rad(yaw)),Vector3(at.x,0.0,at.y))
 	var m: RefCounted = new(land_seed,LayoutOverrides.xform(HANDLE,coded))
 	if ground.is_valid() and not LaunchArgs.user_args().has("--peak-mask=0"): m._mask(land_seed,ground)
+	m._go_native(land_seed,ground)
 	return m
+
+# --- The native twin ------------------------------------------------------------------
+
+## ZenScapePeak's `version` this script calls: any other library, or none (a
+## checkout not rebuilt yet), runs the GDScript.
+const NATIVE_VERSION := 1
+const NATIVE_CLASS := &"ZenScapePeak"
+## The native twin of this massif, shared by every worker's (read only), or null.
+var _native: RefCounted = null
+static var _native_state := -1
+
+## Whether the flags and the library allow the native massif. `--cirque=0` and
+## `--spire-form=0`, debug shapes, stay in GDScript.
+static func native_wanted() -> bool:
+	if _native_state >= 0: return _native_state == 1
+	_shared_lock.lock()
+	if _native_state < 0:
+		var ok := true
+		for a: String in LaunchArgs.user_args():
+			if a == "--native-peak=0" or a == "--gdscript-kernels" or a == "--cirque=0" or a == "--spire-form=0": ok = false
+		if ok:
+			var path := "res://native/terrain_kernels/zenscape_kernels.gdextension"
+			if not ClassDB.class_exists(NATIVE_CLASS) and FileAccess.file_exists(path):
+				GDExtensionManager.load_extension(path)
+			ok = ClassDB.class_exists(NATIVE_CLASS)
+			if ok:
+				var probe: Object = ClassDB.instantiate(NATIVE_CLASS)
+				ok = int(probe.version()) == NATIVE_VERSION
+		_native_state = 1 if ok else 0
+	_shared_lock.unlock()
+	return _native_state == 1
+
+## Takes the land's native twin, making it once: everything it reads is passed
+## here and never again.
+func _go_native(land_seed: int, ground: Callable) -> void:
+	if not native_wanted(): return
+	var key := ["native",centre,facing,_live_n]+(_land_key(land_seed,ground) if ground.is_valid() else [land_seed])
+	_shared_lock.lock()
+	var got: Variant = _shared.get(key)
+	if got == null:
+		got = ClassDB.instantiate(NATIVE_CLASS)
+		got.setup(_native_data())
+		_shared[key] = got
+	_shared_lock.unlock()
+	_native = got
+
+func _native_data() -> Dictionary:
+	return {"libm":LaunchArgs.user_args().has("--land-libm"),"rock":Rock.wanted,"centre":centre,"facing":facing,"side":side,"o":_o,
+		"noise_seed":_noise.seed,"rock_seed":_rock.noise_seed(),"ribs":_ribs,"towers":_towers,"tower_tops":_tower_tops,
+		"crown":_crown,"crown_ph":_crown_ph,"root_way":_root_way,"tarn_c":_tarn_c,"tarn_wet":_tarn_wet,"pond":pond,"cq_ph":_cq_ph,
+		"live":_live,"live_n":_live_n,"live_at":_live_at,"fall_map":_fall_map}.merged(Split.native_data())
 
 # --- Cost: the way and the live cells, once per land --------------------------------
 #
@@ -748,6 +807,9 @@ func apply(base: Vector2, x: float, z: float, step := 0.0) -> Vector2:
 ## the edges' normals need no field sample. `field` the LandField (its
 ## `colours`).
 func apply_chunk(field: Object, _impl: Object, made: Dictionary, x0: float, z0: float, step: float, cells: int, skirt_drop: float) -> void:
+	if _native != null:
+		_native.apply_chunk(field,_impl,made,x0,z0,step,cells,skirt_drop)
+		return
 	var n := cells+1
 	var w := n+2
 	var heights: PackedFloat32Array = made.heights
@@ -896,6 +958,9 @@ func apply_chunk(field: Object, _impl: Object, made: Dictionary, x0: float, z0: 
 ## The massif's pass over LandField.grid's arrays (the grass's, the
 ## horizon's): heights, meadows, and no river where it lifts the land.
 func apply_grid(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz: int, pad: int) -> void:
+	if _native != null:
+		_native.apply_grid(got,x0,z0,step,nx,nz,pad)
+		return
 	var hs: PackedFloat32Array = got.heights
 	var ms: PackedFloat32Array = got.meadows
 	var rs: PackedFloat32Array = got.river
@@ -1175,6 +1240,7 @@ func _h(a: float, v: float, step := 0.0) -> Vector3:
 ## floor only the hollows move: back from the flown air, down to the floor's edge
 ## and never past it, so the floor stands and no wall comes nearer the plane.
 func _h_rock(a: float, v: float, step: float) -> Vector4:
+	if _native != null: return _native.h_rock(a,v,step)
 	var hm: Vector3
 	var f := _falls(a,v) if Rock.wanted else Vector3.ZERO
 	var keep := _rock_keep(a,v,f.x) if f.x > ROCK_STEEP.x else 0.0

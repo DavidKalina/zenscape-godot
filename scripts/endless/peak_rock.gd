@@ -18,6 +18,8 @@ extends RefCounted
 ## (CUSTOM0), the land's groove and crest, so a wall facing the sun keeps its ribs
 ## where its normals alone stay in one tone. Being a vertex's, it shrinks too.
 ##
+## native/terrain_kernels/peak_massif.h mirrors this file: change both.
+##
 ## --peak-rock=0: none of it, the massif as it was.
 
 static var wanted := "--peak-rock=0" not in preload("res://scripts/launch_args.gd").user_args()
@@ -59,6 +61,10 @@ func _init(land_seed: int) -> void:
 	_n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_n.frequency = 1.0
 	_n.fractal_type = FastNoiseLite.FRACTAL_NONE
+
+## The noise's seed, for the native massif (ZenScapePeak `setup`).
+func noise_seed() -> int:
+	return _n.seed
 
 ## Sharp along its crests, -1 to 1.
 func _ridged(x: float, y: float) -> float:
