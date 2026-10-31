@@ -313,6 +313,10 @@ const ROOT_END := 420.0
 const ROOT_SINK := 0.0012
 const ROOT_BLEND := 60.0
 const ROOT_ROUGH := 19.0
+## `_roots`' bound: past ROOT_NEAR m a root stands no higher than its long fall from
+## ROOT_SLACK m nearer (its gullies only lower it; its shift is under this).
+const ROOT_NEAR := 300.0
+const ROOT_SLACK := 110.0
 ## The towers' bases with the roots on: the old massif's numbers, held, since a
 ## tower's height, and so the spirals round it, must not follow the rock that now
 ## buries its foot.
@@ -332,6 +336,11 @@ const ROOT_SHIFT := Vector2(0.55,220.0)
 const SHOULDERS := [[0,520.0,-790.0,770.0,1040.0],[2,470.0,770.0,740.0,985.0]]
 const SHOULDER_FALL := 1.15
 const SHOULDER_BOW := 1.7
+## The strip's lane stays open: within LANE.x of the strip's line, gone by LANE.y,
+## no root or shoulder stands over LANE_TOP, a col, from LANE_FROM.x to .y |v| out.
+const LANE := Vector2(60.0,120.0)
+const LANE_FROM := Vector2(150.0,230.0)
+const LANE_TOP := 872.0
 ## A tower's base: the lowest ground this many girths round it, so its feet
 ## are buried on every side however the plinth falls.
 const FOOT_RING := 1.8
@@ -1114,6 +1123,9 @@ func _roots(a: float, v: float, n: float, h: float) -> float:
 		var dx := a-_crown[k].x
 		var dv := v-_crown[k].y
 		var r := sqrt(dx*dx+dv*dv)
+		var row: Array = ROOTS[k]
+		# Past the top's reach, the root can't stand over the rock: no need of its angle.
+		if r > ROOT_NEAR and float(row[0])-ROOT_FALL*(r-ROOT_SLACK)+ROOT_ROUGH < minf(top,h-ROOT_BLEND): continue
 		var moved := exp(-r/ROOT_SHIFT.y)
 		dx -= _root_way[k].x*moved
 		dv -= _root_way[k].y*moved
@@ -1121,7 +1133,6 @@ func _roots(a: float, v: float, n: float, h: float) -> float:
 		var phi := atan2(dv,dx)+_crown_ph[k]
 		var gully := 0.65*absf(sin(1.5*phi))+0.35*absf(sin(2.5*phi+1.3))
 		var e := r*(1.0+ROOT_RIDGE*gully*smoothstep(ROOT_GROW.x,ROOT_GROW.y,r))
-		var row: Array = ROOTS[k]
 		var past := maxf(e-ROOT_END,0.0)
 		var y := float(row[0])-ROOT_FALL*e+float(row[1])*exp(-e/ROOT_TOP)-past*past*ROOT_SINK+n*ROOT_ROUGH
 		if y > top: top = y
@@ -1132,10 +1143,12 @@ func _roots(a: float, v: float, n: float, h: float) -> float:
 		var t := clampf((at-p).dot(pq)/pq.length_squared(),0.0,1.0)
 		var off := (at-(p+pq*t)).length()
 		if off > 320.0: continue
-		var y := float(s[3])+(float(s[4])-float(s[3]))*pow(1.0-t,SHOULDER_BOW)
-		y += ARETE_BREAK*1.4*_noise.get_noise_2d(t*pq.length()*2.5+float(s[0])*700.0,7000.0)-off*SHOULDER_FALL+n*ROOT_ROUGH
-		y -= 500.0*smoothstep(0.82,1.0,t)
+		var y := float(s[3])+(float(s[4])-float(s[3]))*pow(1.0-t,SHOULDER_BOW)-off*SHOULDER_FALL+n*ROOT_ROUGH-500.0*smoothstep(0.82,1.0,t)
+		if y+ARETE_BREAK*1.4 < minf(top,h-ROOT_BLEND): continue
+		y += ARETE_BREAK*1.4*_noise.get_noise_2d(t*pq.length()*2.5+float(s[0])*700.0,7000.0)
 		if y > top: top = y
+	var lane := (1.0-smoothstep(LANE.x,LANE.y,absf(a-STRIP.x)))*smoothstep(LANE_FROM.x,LANE_FROM.y,absf(v))
+	if lane > 0.0 and top > LANE_TOP: top = lerpf(top,LANE_TOP,lane)
 	var gap := maxf(ROOT_BLEND-absf(h-top),0.0)/ROOT_BLEND
 	return maxf(h,top)+gap*gap*ROOT_BLEND*0.25
 
