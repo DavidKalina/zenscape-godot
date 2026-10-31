@@ -16,6 +16,11 @@ render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabl
 uniform float now = 0.0;
 // The air it drifts off on (m/s, xz).
 uniform vec2 air = vec2(0.0);
+uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
+
+// A puff thins out over this far (m) in front of whatever is behind it, so the
+// ground doesn't cut its quad in a straight line.
+const float SOFT = 2.6;
 
 varying float opacity;
 varying float seed;
@@ -54,14 +59,25 @@ void vertex() {
 	// (spatial wants VERTEX untouched for its own passes; POSITION rules here.)
 }
 
+// (peak_noise_hash, shaders/peak_ice.gdshaderinc: no fract(sin), so a cell's corner
+// is the same number from either side.)
+float puff_hash(vec2 c) {
+	uvec2 u = uvec2(ivec2(c) + ivec2(32768));
+	uint x = u.x * 1597334677u ^ u.y * 3812015801u;
+	x *= 1597334677u;
+	x ^= x >> 16u;
+	x *= 3812015801u;
+	return float(x >> 8u) / 16777215.0;
+}
+
 float lump(vec2 p) {
 	vec2 i = floor(p);
 	vec2 f = p - i;
 	f = f * f * (3.0 - 2.0 * f);
-	float a = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5453);
-	float b = fract(sin(dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7))) * 43758.5453);
-	float c = fract(sin(dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7))) * 43758.5453);
-	float d = fract(sin(dot(i + vec2(1.0, 1.0), vec2(127.1, 311.7))) * 43758.5453);
+	float a = puff_hash(i);
+	float b = puff_hash(i + vec2(1.0, 0.0));
+	float c = puff_hash(i + vec2(0.0, 1.0));
+	float d = puff_hash(i + vec2(1.0, 1.0));
 	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
@@ -82,5 +98,10 @@ void fragment() {
 	sun = mix(sun, vec3(dot(sun, vec3(0.2126, 0.7152, 0.0722))) * vec3(1.02, 1.0, 0.96), 0.85);
 	vec3 sky = zs_hemi_sky * zs_hemi_energy / PI * vec3(5.2, 5.0, 4.6);
 	ALBEDO = sky + sun * side;
-	ALPHA = clamp(body * opacity, 0.0, 1.0);
+	// (Both depths through the same matrix; VERTEX is no use here, POSITION ruled.)
+	vec2 ndc = SCREEN_UV * 2.0 - 1.0;
+	vec4 back = INV_PROJECTION_MATRIX * vec4(ndc, textureLod(depth_tex, SCREEN_UV, 0.0).r, 1.0);
+	vec4 here = INV_PROJECTION_MATRIX * vec4(ndc, FRAGCOORD.z, 1.0);
+	float soft = smoothstep(0.0, SOFT, here.z / here.w - back.z / back.w);
+	ALPHA = clamp(body * opacity * soft, 0.0, 1.0);
 }
