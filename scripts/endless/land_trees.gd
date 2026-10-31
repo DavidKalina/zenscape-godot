@@ -462,18 +462,25 @@ func prime(at: Vector3) -> void:
 	_eye = at
 	var began := Time.get_ticks_usec()
 	if native != null:
-		var ids: Array = []
+		var jobs: Array = []
 		# A world of regions: the band's far cells past PRIME_BAND_FAR are
 		# left to stream (their GDScript blend builds are ~10x a native one's
 		# and scale badly over threads, so priming them held the start ~25 s).
 		var probe: RefCounted = Field.new(seed) if not regional.is_empty() else null
 		for key: Vector2i in _wanted_blocks(at,MID.z):
 			if _blocks.has(key): continue
-			ids.append(WorkerThreadPool.add_task(_task.bind("b",key),true))
+			jobs.append(["b",key])
 		for key: Vector2i in _wanted_far(at,far_ring.z):
 			if _far.has(key): continue
 			if probe != null and _rect_distance(key.x*Plan.FAR_CELL,key.y*Plan.FAR_CELL,Plan.FAR_CELL,at) > PRIME_BAND_FAR and _in_band(probe,"f",key): continue
-			ids.append(WorkerThreadPool.add_task(_task.bind("f",key),true))
+			jobs.append(["f",key])
+		# A few at a time: blocks by the Peak take the GDScript path, and past
+		# one thread a core they finish slower than half as many would.
+		var ids: Array = []
+		var most := maxi(OS.get_processor_count()/2,2)
+		for j: Array in jobs:
+			ids.append(WorkerThreadPool.add_task(_task.bind(j[0],j[1]),true))
+			if ids.size() >= most: WorkerThreadPool.wait_for_task_completion(ids.pop_front())
 		for id: int in ids: WorkerThreadPool.wait_for_task_completion(id)
 		_lock.lock()
 		var done := _done.duplicate()
