@@ -754,6 +754,8 @@ func _ready() -> void:
 		finds = Finds.new()
 		add_child(finds)
 		finds.setup(self)
+		if smash != null: finds.listen(smash.walls.broken,"broken")
+		if burrower != null: finds.listen(burrower.caught,"caught")
 	if peak != null and PeakSpirals.wanted():
 		spirals = PeakSpirals.new()
 		spirals.name = "PeakSpirals"

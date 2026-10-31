@@ -116,16 +116,27 @@ lines it touched. Each leaves one still or launch line to judge it by.
 ## The trunk (in order, once the lanes are merged)
 
 Iterations run one at a time on the loop's branch, Opus, the skill's default
-cap and budget.
+cap and budget. The lanes left these open; they come first:
+
+0. **Finish what the lanes left.** Take rendered stills, and judge and fix: the
+   surge roll, a wall breaking, how a crack reads from the air, the relic, the
+   tally, the ledger. Make landing finds work on a real stop, and find out why
+   the bot hovered 3.8 m above the Peak strip. Run `--fresh` and `--fresh=keep`
+   through the title flow and check `user://pilot.json` stays untouched. A
+   found cracked wall stays open after a reload (`mark_broken`). Trace the
+   worst frame just after the hall's swap (193 ms). Check the door ruin reads
+   from the start meadow, moving the belfries if it doesn't. The true start is
+   (164.8, -32.4), facing the Peak.
 
 1. **Place the finds.** Use the map to fill the table to about 30, tied to
-   named sites: thread an arch or tunnel, a relic deep in a hall, on top of a
-   sea stack, landings (an island, the boat, the Peak's ice lake, a flat that
-   looks impossible), cracked walls with relics behind, the burrower catch.
-   Mix easy ones for wanderers with ones that take skill. Add cracked walls
-   where the land wants them.
+   named sites: thread an arch, a relic deep in the door hall (seed 1's default
+   land has no other halls or tunnels), on top of a sea stack, landings (an
+   island, the boat, the Peak's ice lake, a flat that looks impossible),
+   cracked walls with relics behind, the burrower catch. Mix easy ones for
+   wanderers with ones that take skill. Add cracked walls where the land wants
+   them. Rerun `tools/site_map.py` so the map shows them.
 2. **Three standing lines** (`place_lines.gd` `LINES`): a gorge run, round the
-   sea stacks, a tunnel or hall run. Each with a best time.
+   sea stacks, and a run over the land's arches. Each with a best time.
 3. **The pull.** Fly the start through the real play loop. Fix spacing so a
    next thing is always in view. Add a landmark or a sightline where it goes
    dead. Make sure the door ruin and the first find read from the start.
