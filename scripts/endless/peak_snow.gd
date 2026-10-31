@@ -55,6 +55,8 @@ const POWDER_DRAG := Vector2(1.1,1.9)
 const POWDER_RISE := Vector2(0.1,0.7)
 const JET_EVERY := 4
 const JET_UP := Vector2(12.0,24.0)
+## The speeds (m/s) between which a wash starts to throw powder.
+const POWDER_GOING := Vector2(4.0,14.0)
 ## How often the ground under the wash is asked whether it is snow (s).
 const COVER_EVERY := 0.08
 ## The land's lie, baked once for the zone: texels a side, the half span of the
@@ -383,7 +385,11 @@ func _map(eye: Vector3) -> void:
 # --- The powder ------------------------------------------------------------------------
 
 func _powder(delta: float, hit: Vector2, wash: Dictionary) -> void:
-	var k := float(wash.k)
+	# (A plane sitting on the snow idles its wash there, and that blows nothing up.)
+	var k := float(wash.k)*smoothstep(POWDER_GOING.x,POWDER_GOING.y,_plane_vel.length())
+	if k <= 0.0:
+		_owed = 0.0
+		return
 	_owed += POWDER_RATE*k*delta
 	if _owed < 1.0: return
 	var g: float = field.height(hit.x,hit.y)

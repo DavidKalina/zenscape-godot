@@ -145,6 +145,7 @@ const ShopSites = preload("res://scripts/endless/shop_sites.gd")
 const RegionDoors = preload("res://scripts/endless/region_doors.gd")
 ## The crown's spirals of cloud (scripts/endless/peak_spirals.gd; --spirals=0 none).
 const PeakSpirals = preload("res://scripts/endless/peak_spirals.gd")
+const PeakSpindrift = preload("res://scripts/endless/peak_spindrift.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 ## Place lines: standing routes with a timed record (--lines=0 none).
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
@@ -306,6 +307,7 @@ var lines: Node
 ## null with no Peak or --stair=0.
 var stair: Node3D
 var spirals: Node3D
+var spindrift: Node3D
 var flown := 0.0
 var _start := Vector2.ZERO
 ## The Peak's sky of its own hour stands over this band (m over the sea: up
@@ -728,6 +730,11 @@ func _ready() -> void:
 		add_child(spirals)
 		spirals.setup(self)
 		spirals.set_axes(PeakSpirals.on_towers(towers.axes() if towers != null else [],peak.PLATEAU_Y+Field.SEA_Y+60.0))
+	# Snow blowing off the crown's tips and high ridges (scripts/endless/peak_spindrift.gd).
+	if peak != null and PeakSpindrift.wanted():
+		spindrift = PeakSpindrift.new()
+		add_child(spindrift)
+		spindrift.setup(self,peak,Callable(field,"height"),towers,seed,Field.SEA_Y)
 	if grass != null and grass.enabled: grass.prime(camera.global_position,-camera.global_basis.z)
 	walk_ready = true
 	print("endless flight: seed %d, the land stood in %.2f s (%d chunks)%s" % [seed,took,int(land.counts().standing),"" if world.id == WorldProfile.PLAYS else ", world "+str(world.id)])

@@ -16,10 +16,6 @@ render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabl
 //   CUSTOM0  length, half width at the root, at the tail (m), seed
 //   CUSTOM1  the way across its ridge (x, z; zero at a tip), climb per metre, power
 
-global uniform float zs_motion_time;
-global uniform float zs_wind_strength;
-global uniform vec2 zs_wind_direction;
-
 uniform sampler3D noise : repeat_enable, filter_linear;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 uniform sampler2D cloud_shape : hint_default_black, filter_nearest, repeat_disable;
@@ -29,7 +25,7 @@ uniform float sea_y = -40.0;
 uniform float sun_scatter = 0.18;
 uniform float haze_share = 0.45;
 // How thick a veil is at its fullest.
-uniform float opacity = 0.62;
+uniform float opacity = 0.54;
 
 // The snow's speed down the ribbon (m/s) and the noise's tile (m).
 const float RUN = 26.0;
@@ -115,7 +111,7 @@ void fragment() {
 	float edge = 1.0 - v_v * v_v;
 	float shape = edge * 1.25 - 0.62 + (big - 0.5) * 1.5 + (mid - 0.5) * 0.9 * keep - s * 0.5;
 	float along = smoothstep(0.0, 0.035, s) * (1.0 - smoothstep(0.45, 1.0, s));
-	float a = smoothstep(0.0, 0.55, shape) * along * v_show * opacity;
+	float a = smoothstep(0.0, 0.72, shape) * along * v_show * opacity;
 	a *= soft * smoothstep(NEAR.x, NEAR.y, t);
 	if (a < 0.003) discard;
 
