@@ -157,6 +157,13 @@ uniform vec4 peak_rock_box = vec4(0.0);
 // The Peak's granite's darkest (the towers' copy of the paint takes its own).
 uniform float peak_granite = 0.07;
 const float PEAK_BEDS = 3.0;
+const float PEAK_SHEAR = 200.0;
+const float PEAK_FLOOR_STONES = 0.7;
+const float PEAK_FLOOR_PALE = 1.5;
+const float PEAK_BOW_DARK = 0.3;
+const vec3 PEAK_GULLY = vec3(0.34, 0.35, 0.43);
+const float PEAK_RIB = 0.4;
+const float PEAK_CAST_FILL = 2.2;
 uniform vec4 peak_stretch = vec4(850.0, 1250.0, 2050.0, 4050.0);
 uniform vec4 peak_half = vec4(200.0, 240.0, 260.0, 330.0);
 uniform vec4 peak_bend = vec4(170.0, 2.2, 1250.0, 4500.0);
@@ -734,6 +741,13 @@ float peak_rim(vec3 p) {
 #include "res://shaders/peak_ice.gdshaderinc"
 #include "res://shaders/peak_snow.gdshaderinc"
 
+// zs_fade on a noise whose cells agree at their borders (peak_noise).
+float peak_fade(vec2 p, float scale, float fp) {
+	float keep = 1.0 - smoothstep(scale * 0.18, scale * 0.6, fp);
+	if (keep <= 0.0) return 0.0;
+	return (peak_noise(p / scale) - 0.5) * keep;
+}
+
 void fragment() {
 	vec3 p = world_position;
 	// The paint's tones: this spot's regions' in a world of regions, else the material's.
@@ -767,6 +781,13 @@ void fragment() {
 	// moves by that change times the height, so at y -37 the noise raced past
 	// in zigzag stripes along the triangles. The sea is the low land's level.
 	float sheared_y = p.y - sea_y;
+	// On the Peak that level is hundreds of metres down: ground lying back, its
+	// normal turning by a hair, moved the paint's noise metres at a time, in
+	// swirling contours. There the shear folds to a height in PEAK_SHEAR's reach.
+	if (peak_zone.w > 0.5) {
+		float pk_near = 1.0 - smoothstep(peak_zone.z - 600.0, peak_zone.z, distance(p.xz, peak_zone.xy));
+		sheared_y = mix(sheared_y, abs(fract(sheared_y / PEAK_SHEAR) - 0.5) * PEAK_SHEAR, pk_near);
+	}
 	vec2 gxz = p.xz + shear * vec2(sheared_y * 0.8, sheared_y * 0.55);
 	fp = max(fp, fp3 * shear);
 	float over = p.y - sea_y;
@@ -881,6 +902,9 @@ void fragment() {
 			pk_rock = max(pk_rock, rim);
 		}
 	}
+	// Bare rock lying flat on the Peak is scree: the walls' beds over a floor lie
+	// as rings round every bump, like wood grain.
+	float pk_scree = pk.x * rocky * smoothstep(0.64, 0.82, n.y + rock_edge);
 	// None of the grass shows where sand, a bank or snow covers the ground
 	// whole and no rock (whose ledges and moss take its colour), so its paint
 	// is skipped there: the same pixels (grass_skip; --land-skip=0 paints it).
@@ -1143,7 +1167,7 @@ void fragment() {
 		// the reference light), so it eases with the fill.
 		float fill_level = clamp(luma(zs_hemi_sky) * zs_hemi_energy / ER_REF_FILL, 0.25, 2.0);
 		rock_glow *= mix(1.0, fill_level, clamp(rock_follow * zs_light_follow, 0.0, 1.0));
-		lit_n = normalize(mix(n, lit_n, rocky));
+		lit_n = normalize(mix(n, lit_n, rocky * (1.0 - pk_scree)));
 	}
 	rock = hued(rock, rock_hue) * rock_tint;
 
@@ -1174,12 +1198,19 @@ void fragment() {
 	// pale beds softened; a colder snow, blue where it lies back from the sun.
 	if (pk_rock > 0.0) {
 		float l = luma(rock);
-		vec3 granite = vec3(peak_granite + l * 0.42) * vec3(0.88, 0.95, 1.08) * (1.0 + zs_fade(gxz * 1.7 + p.y, 1.3, fp) * 0.35);
+		vec3 granite = vec3(peak_granite + l * 0.42) * vec3(0.88, 0.95, 1.08) * (1.0 + peak_fade(gxz * 1.7 + p.y, 1.3, fp) * 0.35);
 		rock = mix(rock, granite, pk_rock * 0.85);
 		// The prow's bow, and the mouth's walls with it, darkest (peak_split.gd
 		// BOW_A), off the gorges' floors.
-		rock *= 1.0 - 0.55 * pk_rock * smoothstep(1500.0, 1780.0, dot(p.xz - peak_frame.xy, peak_frame.zw)) * smoothstep(350.0, 430.0, over);
+		rock *= 1.0 - PEAK_BOW_DARK * pk_rock * smoothstep(1500.0, 1780.0, dot(p.xz - peak_frame.xy, peak_frame.zw)) * smoothstep(350.0, 430.0, over);
 		snow = mix(snow, snow * mix(vec3(0.92, 0.96, 1.04), vec3(0.84, 0.90, 1.0), clamp((0.25 - dot(n, zs_sun_direction)) * 2.0, 0.0, 1.0)), pk.x);
+	}
+	// The Peak's relief in its paint (PeakRock, through the carve's marks): a wall
+	// square to the sun has all its normals in one tone, so its ribs show here.
+	if (pk.x > 0.0) {
+		float pk_sun = 0.5 + 0.5 * smoothstep(0.0, 0.5, dot(n, zs_sun_direction));
+		rock *= mix(vec3(1.0), PEAK_GULLY, clamp(land_carve.x, 0.0, 1.0) * pk.x * pk_sun);
+		rock *= 1.0 + PEAK_RIB * clamp(land_carve.y, 0.0, 1.0) * pk.x * pk_sun;
 	}
 	// The Peak's snow has its own surface and light (peak_snow.gdshaderinc).
 	float ps_on = psnow_on * pk.x * step(0.001, snowy);
@@ -1194,11 +1225,16 @@ void fragment() {
 	// down the icefall and the glacier, streaked along its flow and dirtied
 	// toward its edges, its steep faces (crevasse walls, the icefall's
 	// risers) a deep blue.
-	if (pk.z > 0.0) {
-		float stones = zs_fade(gxz + 3.1, 1.6, fp) + zs_fade(gxz * 0.7 + 9.0, 6.0, fp);
-		vec3 scree = mix(ROCK_PALE, ROCK, smoothstep(0.2, 0.8, zs_noise(gxz / 13.0))) * vec3(0.95, 0.98, 1.02) * (1.05 + stones * 0.5);
-		albedo = mix(albedo, scree, pk.z * 0.9);
-		if (ice_rubble > 0.0) albedo = mix(albedo, peak_ice_stones(gxz, fp), ice_rubble);
+	if (max(pk.z, pk_scree) > 0.0) {
+		// (On the ground's plan, not the sheared gxz: on a floor's ripples the shear
+		// comes and goes, and it dragged this noise into rings.)
+		vec2 sc = p.xz;
+		float stones = peak_fade(sc + 3.1, 1.6, fp) + peak_fade(sc * 0.7 + 9.0, 6.0, fp);
+		vec3 scree = mix(ROCK_PALE, ROCK, smoothstep(0.2, 0.8, peak_noise(sc / 13.0))) * vec3(0.95, 0.98, 1.02) * (1.05 + stones * 0.5);
+		float sc_on = max(pk.z, pk_scree);
+		albedo = mix(albedo, scree, max(pk.z * 0.9, pk_scree));
+		if (ice_rubble > 0.0) albedo = mix(albedo, peak_ice_stones(sc, fp), ice_rubble);
+		else albedo = mix(albedo, peak_ice_stones(sc, fp) * PEAK_FLOOR_PALE, sc_on * PEAK_FLOOR_STONES);
 	}
 	vec3 ice_glow = vec3(0.0);
 	float ice_rough = 0.4;
@@ -1253,6 +1289,9 @@ void fragment() {
 	float hollow = 0.85 + 0.15 * fill_y;
 	// A cloud overhead takes a little of the sky's fill too.
 	EMISSION = albedo * hemi * hollow * horizon.y * (1.0 - 0.2 * shade) + rock_glow * rocky * (1.0 - snowy) * (1.0 - pk.y) * (1.0 - pk_rock * 0.6);
+	// The rock's glow goes by its own face's turn from the sun, and knows nothing of
+	// another wall's shadow: a Peak wall facing the sun in one fell to black.
+	EMISSION += albedo * hemi * PEAK_CAST_FILL * rocky * pk_rock * (1.0 - snowy) * (1.0 - pk.y) * smoothstep(-0.05, 0.45, dot(lit_n, zs_sun_direction));
 	if (ice_glow != vec3(0.0)) {
 		ROUGHNESS = mix(ROUGHNESS, ice_rough, pk.y);
 		SPECULAR = mix(SPECULAR, ice_spec * (1.0 - shaded) * horizon.x, pk.y);

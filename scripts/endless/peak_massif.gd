@@ -37,6 +37,7 @@ extends RefCounted
 const SEA_Y := -40.0
 const PeakIce = preload("res://scripts/endless/peak_ice.gd")
 const Split = preload("res://scripts/endless/peak_split.gd")
+const Rock = preload("res://scripts/endless/peak_rock.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const Sites = preload("res://scripts/endless/hall_sites.gd")
@@ -313,6 +314,20 @@ const TOWER_FALL := 2.5
 const ROUGH := 12.0
 const ROUGH_SCALE := 90.0
 ## The bounding circle round O: everything outside is the land's own.
+## The rock's relief (PeakRock, `_rock_keep`): the steepness (off the fall map)
+## it starts and is whole at; how far past a gorge's floor's edge the hollows
+## start and the ribs start and are whole, the plane's air (m); the cirque's radius
+## it starts and is whole at (m); a tower's foot's radii it starts and is whole
+## at; the paint's whole depth (m).
+const ROCK_STEEP := Vector2(0.14,0.45)
+const ROCK_FOOT := Vector2(6.0,44.0)
+const ROCK_CIRQUE := Vector2(190.0,260.0)
+const ROCK_TOWER := Vector2(0.9,1.5)
+const ROCK_PAINT := 5.0
+## How much of the small relief also lifts the ground straight: a shoulder lies
+## too far back for a walk along its fall line to move it.
+const ROCK_LIFT := 0.8
+
 const BOUND := 4050.0
 const CLEAR_PAST := 1150.0
 ## The snow line on the massif, over the sea (the ground shader's
@@ -334,6 +349,7 @@ var facing := Vector2(0.0,1.0)
 var side := Vector2(1.0,0.0)
 var _o := Vector2.ZERO
 var _noise := FastNoiseLite.new()
+var _rock: RefCounted
 ## The ribs (see RIB_STRIDE), per side and flank: [fine, wide] for the
 ## -v inner, -v outer, +v inner, +v outer flanks.
 var _ribs: Array[PackedFloat32Array] = []
@@ -421,6 +437,7 @@ static func _way_cached(land_seed: int, ground: Callable) -> float:
 var _live := PackedByteArray()
 var _live_n := 0
 var _live_at := Vector2.ZERO
+var _fall_map := PackedFloat32Array()
 
 func _mask(land_seed: int, ground: Callable) -> void:
 	var key := ["mask",centre,facing]+_land_key(land_seed,ground)
@@ -433,12 +450,15 @@ func _mask(land_seed: int, ground: Callable) -> void:
 	_live = got[0]
 	_live_n = got[1]
 	_live_at = got[2]
+	_fall_map = got[3]
 
 func _bake_mask(ground: Callable) -> Array:
 	var n := int(ceil(2.0*BOUND/MASK_CELL))
 	var at := _o-Vector2.ONE*(n*MASK_CELL*0.5)
 	var pts := PackedByteArray()
 	pts.resize((n+1)*(n+1))
+	var tall := PackedFloat32Array()
+	tall.resize((n+1)*(n+1))
 	var r2 := (BOUND+MASK_CELL*1.5)*(BOUND+MASK_CELL*1.5)
 	for j in n+1:
 		for i in n+1:
@@ -446,7 +466,8 @@ func _bake_mask(ground: Callable) -> Array:
 			var z := at.y+j*MASK_CELL
 			if (x-_o.x)*(x-_o.x)+(z-_o.y)*(z-_o.y) >= r2: continue
 			var q := Vector2(x,z)-centre
-			var hm := _h(q.dot(facing),q.dot(side))
+			var hm := _h0(q.dot(facing),q.dot(side))
+			if is_finite(hm.x): tall[j*(n+1)+i] = hm.x
 			if hm.y > 0.0 or hm.z > 0.0 or not is_finite(hm.x) or hm.x+SEA_Y > float(ground.call(x,z))-MASK_MARGIN: pts[j*(n+1)+i] = 1
 	var cells := PackedByteArray()
 	cells.resize(n*n)
@@ -459,7 +480,64 @@ func _bake_mask(ground: Callable) -> Array:
 				for ii in range(maxi(i-1,0),mini(i+2,n)+1):
 					live |= pts[jj*(n+1)+ii]
 			cells[j*n+i] = live
-	return [cells,n,at]
+	return [cells,n,at,_lay_falls(tall,n)]
+
+## The fall map: at each corner of the mask's grid, three floats: how steep the
+## massif is over two cells, and which way is up (a, v, unit). Rock.move walks
+## along it; a smooth 128 m read, so it says "wall here", not what the wall does.
+func _lay_falls(tall: PackedFloat32Array, n: int) -> PackedFloat32Array:
+	var m := n+1
+	var out := PackedFloat32Array()
+	out.resize(m*m*3)
+	for j in range(1,n):
+		for i in range(1,n):
+			var k := j*m+i
+			var gx := (tall[k+1]-tall[k-1])/(2.0*MASK_CELL)
+			var gz := (tall[k+m]-tall[k-m])/(2.0*MASK_CELL)
+			var g := Vector2(gx,gz)
+			var s := g.length()
+			if s < 0.001: continue
+			g /= s
+			out[k*3] = s
+			out[k*3+1] = g.dot(facing)
+			out[k*3+2] = g.dot(side)
+	return out
+
+## Vector3(steepness, up along a, up along v) at (a, v) off the fall map.
+func _falls(a: float, v: float) -> Vector3:
+	if _fall_map.is_empty(): return Vector3.ZERO
+	var fi := (centre.x+facing.x*a+side.x*v-_live_at.x)/MASK_CELL
+	var fj := (centre.y+facing.y*a+side.y*v-_live_at.y)/MASK_CELL
+	var i := int(fi)
+	var j := int(fj)
+	if fi < 0.0 or fj < 0.0 or i >= _live_n or j >= _live_n: return Vector3.ZERO
+	fi -= i
+	fj -= j
+	var m := _live_n+1
+	var k0 := (j*m+i)*3
+	var k1 := k0+3
+	var k2 := k0+m*3
+	var k3 := k2+3
+	var w0 := (1.0-fi)*(1.0-fj)
+	var w1 := fi*(1.0-fj)
+	var w2 := (1.0-fi)*fj
+	var w3 := fi*fj
+	var t := _fall_map
+	return Vector3(t[k0]*w0+t[k1]*w1+t[k2]*w2+t[k3]*w3,t[k0+1]*w0+t[k1+1]*w1+t[k2+1]*w2+t[k3+1]*w3,t[k0+2]*w0+t[k1+2]*w1+t[k2+2]*w2+t[k3+2]*w3)
+
+## How much of the rock's relief (PeakRock) stands at (a, v), steepness `s`:
+## only on walls; none on the cirque's floor or the strip, little where a tower
+## stands on its plinth. (A gorge's floor and foot: see _h_rock.)
+func _rock_keep(a: float, v: float, s: float) -> float:
+	var k := smoothstep(ROCK_STEEP.x,ROCK_STEEP.y,s)
+	if k <= 0.0: return 0.0
+	var rho2 := a*a+v*v
+	if rho2 < CIRQUE_REACH2: k *= smoothstep(ROCK_CIRQUE.x,ROCK_CIRQUE.y,sqrt(rho2))
+	if rho2 < CROWN_REACH*CROWN_REACH:
+		for t in _crown.size():
+			var row: Array = CROWN[t]
+			k *= smoothstep(float(row[4])*ROCK_TOWER.x,float(row[4])*ROCK_TOWER.y,Vector2(a,v).distance_to(_crown[t]))
+	return k
 
 ## Whether the live cell under world (x, z) is live (true off the grid).
 func _live_cell(x: float, z: float) -> bool:
@@ -517,6 +595,7 @@ func _init(land_seed: int, frame: Transform3D) -> void:
 	_o = centre+facing*O_ALONG
 	Split.bake()
 	_noise.seed = hash([land_seed,"peak"]) & 0x7fffffff
+	_rock = Rock.new(land_seed)
 	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_noise.frequency = 1.0/ROUGH_SCALE
 	_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
@@ -591,9 +670,9 @@ static func off(field: RefCounted, x: float, z: float, r := 0.0) -> bool:
 
 ## The land's Vector2(world height, meadow) `base` at (x, z) with the massif
 ## on it (the caller checked `reaches`). Sets `last_lift`.
-func apply(base: Vector2, x: float, z: float) -> Vector2:
+func apply(base: Vector2, x: float, z: float, step := 0.0) -> Vector2:
 	var q := Vector2(x,z)-centre
-	var hm := _h(q.dot(facing),q.dot(side))
+	var hm := _h(q.dot(facing),q.dot(side),step)
 	var by := base.x-SEA_Y
 	var y := lerpf(maxf(by,hm.x),hm.x,hm.y)
 	last_lift = y-by
@@ -624,6 +703,9 @@ func apply_chunk(field: Object, _impl: Object, made: Dictionary, x0: float, z0: 
 	mv.resize(w*w)
 	var lifted := PackedByteArray()
 	lifted.resize(n*n)
+	# The rock's paint, -1 down a gully to 1 up a rib (PeakRock).
+	var relief := PackedFloat32Array()
+	relief.resize(n*n)
 	var any := false
 	var r2 := BOUND*BOUND
 	var fx := facing.x
@@ -665,11 +747,12 @@ func apply_chunk(field: Object, _impl: Object, made: Dictionary, x0: float, z0: 
 				if ci < 0 or cj < 0 or ci >= _live_n or cj >= _live_n or _live[cj*_live_n+ci] == 0: continue
 			var qx := x-centre.x
 			var qz := z-centre.y
-			var hm := _h(qx*fx+qz*fz,qx*sx+qz*sz)
+			var hm := _h_rock(qx*fx+qz*fz,qx*sx+qz*sz,step)
 			var by := base-SEA_Y
 			var y := lerpf(maxf(by,hm.x),hm.x,hm.y)
 			var lift := y-by
 			if not i_out and not j_out:
+				relief[v] = hm.w
 				var c := colours[v]
 				var m := maxf(c.a*(1.0-smoothstep(0.5,6.0,absf(lift))),hm.z)
 				if absf(lift) <= 0.0005 and absf(m-c.a) <= 0.002: continue
@@ -712,9 +795,10 @@ func apply_chunk(field: Object, _impl: Object, made: Dictionary, x0: float, z0: 
 		ups[t] = normal.y
 		ms[t] = colours[v].a
 		if mv[k] != 0:
-			# Off the carve's marks (the field's groove and crest).
-			carved[v*4] = 0
-			carved[v*4+1] = 0
+			# Off the carve's marks (the field's groove and crest): on the
+			# massif they're its rock's relief.
+			carved[v*4] = int(clampf(-relief[v],0.0,1.0)*255.0)
+			carved[v*4+1] = int(clampf(relief[v],0.0,1.0)*255.0)
 		if lifted[v] != 0:
 			# No river on the massif: far from any, its flow still.
 			carved[v*4+2] = 128
@@ -765,7 +849,7 @@ func apply_grid(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz:
 			if not reaches(x,z): continue
 			var k := j*nx+i
 			var m := ms[k] if not ms.is_empty() else 0.0
-			var y := apply(Vector2(hs[k],m),x,z)
+			var y := apply(Vector2(hs[k],m),x,z,step)
 			hs[k] = y.x
 			if not ms.is_empty(): ms[k] = y.y
 			if absf(last_lift) > 1.0 and not rs.is_empty(): rs[k] = 1000.0
@@ -980,7 +1064,32 @@ static func _fall(top: float, d: float, run: float, bow: float) -> float:
 	return top-(top-FALL_END)*(1.0-pow(1.0-d/run,bow))
 
 ## Vector3(height over the sea, cut 0..1, meadow) at (a, v) in the frame.
-func _h(a: float, v: float) -> Vector3:
+## The massif at (a, v) with its rock's relief on the walls: Vector3(height, cut,
+## meadow). `step` the asker's quad (0: every scale; see PeakRock).
+func _h(a: float, v: float, step := 0.0) -> Vector3:
+	var hm := _h_rock(a,v,step)
+	return Vector3(hm.x,hm.y,hm.z)
+
+## `_h` with the rock's paint in w, -1 down a gully to 1 up a rib. Near a gorge's
+## floor only the hollows move: back from the flown air, down to the floor's edge
+## and never past it, so the floor stands and no wall comes nearer the plane.
+func _h_rock(a: float, v: float, step: float) -> Vector4:
+	var hm: Vector3
+	var f := _falls(a,v) if Rock.wanted else Vector3.ZERO
+	var keep := _rock_keep(a,v,f.x) if f.x > ROCK_STEEP.x else 0.0
+	if keep <= 0.0:
+		hm = _h0(a,v)
+		return Vector4(hm.x,hm.y,hm.z,0.0)
+	var m: Vector2 = _rock.move(a,v,step)
+	var e: float = Split.near(a,v)
+	var air := smoothstep(ROCK_FOOT.x,ROCK_FOOT.y,e)
+	var w := lerpf(minf(m.x,0.0)*smoothstep(0.0,ROCK_FOOT.x,e),m.x,air)*keep
+	hm = _h0(a+f.y*w,v+f.z*w)
+	hm.x = _rock.ledge(hm.x,centre.x+facing.x*a+side.x*v,centre.y+facing.y*a+side.y*v,a,v,keep*air,step)+m.y*ROCK_LIFT*keep*air
+	return Vector4(hm.x,hm.y,hm.z,clampf(m.y/ROCK_PAINT,-1.0,1.0)*keep*smoothstep(0.0,ROCK_FOOT.x,e))
+
+## The massif's own shapes at (a, v).
+func _h0(a: float, v: float) -> Vector3:
 	var n := _noise.get_noise_2d(a,v)
 	var av := absf(v)
 	var sg := 1.0 if v >= 0.0 else -1.0
