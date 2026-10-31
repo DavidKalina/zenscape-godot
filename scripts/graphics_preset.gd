@@ -1,0 +1,81 @@
+extends RefCounted
+## Endless flight's graphics presets: each a render height, a frame cap and
+## launch flags laid under the command line's (LaunchArgs `defaults`), so a
+## flag typed at launch still wins. Kept in user://look.cfg [graphics] preset;
+## --preset=NAME wins for one run; F3 in flight steps to the next and starts
+## the flight again (the grass and trees read their flags when they're made).
+## Until the player picks, a Mac runs Performance and anything else Full;
+## headless and harness (-s) runs run Full unless they pass --preset=.
+## The Mac's numbers: docs/design/endless-flight/mac-presets-handoff.md.
+
+const LaunchArgs = preload("res://scripts/launch_args.gd")
+const SETTINGS_PATH := "user://look.cfg"
+const NAMES := ["performance","quality","full"]
+## lines: the 3D's most lines high (0: the player's render resolution cap);
+## fps: the frame cap (0: the project's); args: the flags. The numbers are the
+## M5 Pro's at 3024x1964 (the handoff): MSAA cost about 8 ms in flight there,
+## the trees' far crowns about 5 and their shadows about 3.
+const PRESETS := {
+	"performance": {"title":"Performance (60)","lines":900,"fps":60,"args":[
+		"--msaa=0","--screen-aa=fxaa",
+		"--grass=0.5","--grass-range=150",
+		"--spruce-detail=40","--spruce-far=120","--spruce-mid=250","--no-tree-shadows",
+		"--cloud-steps=72","--valley-fog-steps=16"]},
+	"quality": {"title":"Quality (45)","lines":1080,"fps":45,"args":[
+		"--msaa=0","--screen-aa=fxaa",
+		"--grass-range=150","--spruce-far=120"]},
+	"full": {"title":"Full","lines":0,"fps":0,"args":[]},
+}
+
+## The preset in force this run.
+static var current := ""
+## The frame cap the game booted with (the project's), for a preset with none.
+static var _boot_fps := -1
+
+## The preset for this run (the flag, else the saved one, else the
+## machine's), its flags laid under the command line's and its height given
+## to the render resolution. Call before anything reads the flags.
+static func begin() -> void:
+	current = chosen()
+	var p: Dictionary = PRESETS[current]
+	LaunchArgs.defaults = PackedStringArray(p.args)
+	preload("res://scripts/render_resolution.gd").preset_lines = int(p.lines)
+
+static func chosen() -> String:
+	for a: String in LaunchArgs.own_args():
+		if a.begins_with("--preset=") and a.get_slice("=",1) in PRESETS: return a.get_slice("=",1)
+	# Tests and harness runs (headless, or a -s script) keep the full look
+	# unless they name a preset.
+	var script_run := "-s" in OS.get_cmdline_args() or "--script" in OS.get_cmdline_args()
+	if DisplayServer.get_name() == "headless" or script_run: return "full"
+	var file := ConfigFile.new()
+	if file.load(SETTINGS_PATH) == OK:
+		var saved := str(file.get_value("graphics","preset",""))
+		if saved in PRESETS: return saved
+	return "performance" if OS.get_name() == "macOS" else "full"
+
+static func title() -> String:
+	return str(PRESETS[current].title) if current in PRESETS else ""
+
+## The frame cap for this run: the preset's, else the project's.
+static func fps() -> int:
+	if _boot_fps < 0: _boot_fps = Engine.max_fps
+	var own := int(PRESETS[current].fps) if current in PRESETS else 0
+	return own if own > 0 else _boot_fps
+
+## The next preset, kept for the next run; its name.
+static func step() -> String:
+	var next: String = NAMES[(NAMES.find(current)+1)%NAMES.size()]
+	var file := ConfigFile.new()
+	file.load(SETTINGS_PATH)
+	file.set_value("graphics","preset",next)
+	file.save(SETTINGS_PATH)
+	return next
+
+## The flight again on the next preset, straight into the air: the run's own
+## flags without a --preset= (the saved choice is the new one).
+static func restart(tree: SceneTree, scene: String) -> void:
+	var args := PackedStringArray()
+	for a: String in LaunchArgs.own_args():
+		if not a.begins_with("--preset="): args.append(a)
+	LaunchArgs.open_scene(tree,scene,args)

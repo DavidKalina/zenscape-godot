@@ -149,6 +149,9 @@ var _per_beat := 0.0
 var _busy := false
 var _slice := 0
 var _piece := 0
+## Never sent: a plan whose scene is going (F3's restart) waits on it, and
+## goes with the node.
+signal _halt
 
 ## What RivalStrip reads the land with (rival_line.gd's `_ground_top`).
 class Reader extends RefCounted:
@@ -312,6 +315,9 @@ func _breathe() -> void:
 	_piece = now
 	if now-_slice+piece <= SLICE_US: return
 	plan_us += now-_slice
+	if not is_inside_tree():
+		await _halt
+		return
 	await get_tree().process_frame
 	_slice = Time.get_ticks_usec()
 	_piece = _slice

@@ -11,9 +11,17 @@ extends RefCounted
 ## entries pass such a flag; an entry that needs one wants that read moved.
 
 static var override: Variant = null
+## Flags laid under the user args (a graphics preset: scripts/graphics_preset.gd),
+## so the same flag given at launch, later in the list, wins.
+static var defaults := PackedStringArray()
 
-## The user args in force: the override if one is set, else the command line's.
+## The user args in force: the defaults, then the override if one is set,
+## else the command line's.
 static func user_args() -> PackedStringArray:
+	return defaults+own_args()
+
+## The override if one is set, else the command line's, without the defaults.
+static func own_args() -> PackedStringArray:
 	if override != null: return override
 	return OS.get_cmdline_user_args()
 
