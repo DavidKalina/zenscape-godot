@@ -186,7 +186,7 @@ const TALLIES := [["metres","flown"],["aloft","aloft"],["landings","landings"],[
 const RECORDS := [["best_line","best line"],["best_mult","best multiplier"],["longest_line","longest line"],
 	["tightest_gap","tightest gap"],["top_speed","top speed"],["highest","highest flown"],["longest_flight","longest flight"]]
 ## The finds by the start of their ids ("gap/..."), each [prefix, label].
-const FINDS := [["gap","gaps"],["starter","starters"],["shop","shops"],["place","places"]]
+const FINDS := [["gap","gaps"],["starter","starters"],["shop","shops"],["place","places"],["find","wilderness finds"]]
 
 ## The label for `key` (a tally's or a record's), else its own name spaced.
 static func label(key: String) -> String:

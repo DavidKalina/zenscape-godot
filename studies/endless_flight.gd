@@ -152,6 +152,7 @@ const PeakSpindrift = preload("res://scripts/endless/peak_spindrift.gd")
 const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 ## Place lines: standing routes with a timed record (--lines=0 none).
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
+const Finds = preload("res://scripts/endless/finds.gd")
 const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const AirLift = preload("res://scripts/endless/air_lift.gd")
@@ -462,6 +463,7 @@ var _pull := 0.0
 var stage: RefCounted
 ## The doors between the regions (--world=doors; scripts/endless/region_doors.gd).
 var doors: Node3D
+var finds: Node
 var menu: Control
 
 ## The 3D at a Native draw (the player's render resolution, and the default
@@ -743,6 +745,10 @@ func _ready() -> void:
 		doors = RegionDoors.new()
 		add_child(doors)
 		doors.setup(self,_start,_heading,seed)
+	if Finds.wanted(seed):
+		finds = Finds.new()
+		add_child(finds)
+		finds.setup(self)
 	if peak != null and PeakSpirals.wanted():
 		spirals = PeakSpirals.new()
 		spirals.name = "PeakSpirals"
@@ -1192,6 +1198,7 @@ func tick(delta: float) -> void:
 	if traffic != null: traffic.step(delta,camera.global_position,-camera.global_basis.z,plane.position,Vector3(-sin(plane.heading),0.0,-cos(plane.heading)),float(plane.speed))
 	if race != null: race.step(delta,self)
 	if shops != null: shops.step(delta,self)
+	if finds != null: finds.step(delta,self)
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera

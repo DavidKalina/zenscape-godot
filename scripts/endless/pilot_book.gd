@@ -18,6 +18,8 @@ extends RefCounted
 ## way out.
 
 const PATH := "user://pilot.json"
+## Where a --fresh run keeps its book, apart from PATH.
+const FRESH_PATH := "user://pilot_fresh.json"
 const SAVE_EVERY := 5.0
 ## Money for a banked line: its points (already times its multiplier) at
 ## MONEY_PER_POINT, times the multiplier again to MULT_POW, so a line's pay
@@ -44,6 +46,7 @@ var flight := {}
 var path := PATH
 var _dirty := false
 var _since := 0.0
+static var _fresh_wiped := false
 
 ## The book for this run, from the command line.
 static func open() -> PilotBook:
@@ -54,9 +57,21 @@ static func open() -> PilotBook:
 	for arg: String in preload("res://scripts/launch_args.gd").user_args():
 		if arg == "--pilot=fresh": b.path = ""
 		elif arg.begins_with("--pilot-file="): b.path = arg.substr(13)
+		elif arg == "--fresh" or arg == "--fresh=keep": b._go_fresh(arg == "--fresh=keep")
 	b.load_book()
 	b.new_flight()
 	return b
+
+## --fresh: a clean book in its own file, the saved book never touched. Wiped
+## once a run, so going back to the title and on again keeps what this run
+## found; --fresh=keep carries on from the last --fresh run. A harness run
+## (no book, or its own file by a flag before this one) stays as it was.
+func _go_fresh(keep: bool) -> void:
+	if path != PATH: return
+	path = FRESH_PATH
+	if keep or _fresh_wiped: return
+	_fresh_wiped = true
+	if FileAccess.file_exists(path): DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 func load_book() -> void:
 	if path == "" or not FileAccess.file_exists(path): return
