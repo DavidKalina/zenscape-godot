@@ -22,7 +22,7 @@ extends RefCounted
 ##             "endless/arch/3_-2/0", "endless/rock/stacks/4_-2/0",
 ##             "endless/split/1_-3", "pond/1405_935"
 ##             a Peak part: "peak/summit", "peak/tarn", "peak/plateau",
-##             "peak/strip/0", "peak/strip/1", "peak/tower/2"
+##             "peak/strip/0", "peak/strip/1", "peak/strip/mid", "peak/tower/2"
 ##           or anything lanes hand to `finds.anchor(name, position)`.
 ##           An anchor not there yet is tried again as the flight goes on.
 ## and, with either:
@@ -64,7 +64,7 @@ const WORLDS := {
 			"title":"The ring under the sea arch","hint":"An arch stands in the shallows, east"},
 		{"id":"first-cairn","area":"meadow","kind":"landing","at":Vector2(600.0,-60.0),"radius":60.0,
 			"title":"Set down by the cairn","hint":"Put the wheels down inside the stones"},
-		{"id":"tarn-shore","area":"peak","kind":"landing","anchor":"peak/plateau","radius":160.0,
+		{"id":"tarn-shore","area":"peak","kind":"landing","anchor":"peak/strip/mid","offset":Vector3(15.0,0.0,2.6),"radius":130.0,
 			"title":"Set down by the tarn","hint":"A lake high up, with a shore to stop on"},
 		{"id":"the-wall","area":"coast","kind":"event","book":["door/amber-wall","door/amber-hall"],
 			"title":"The way to the Amberlands","hint":"There is a way out of here"},

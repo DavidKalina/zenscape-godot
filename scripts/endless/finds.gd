@@ -51,6 +51,8 @@ var _cell := Vector2i(1 << 30,0)
 var _live := {}
 var _pool: Array = []
 var _prev := Vector3.INF
+## The wheels at rest last frame (true at first: the start is no landing).
+var _stopped := true
 var _poll := 0.0
 var _retry := 0.0
 var _game: Node
@@ -208,7 +210,9 @@ func _peak(parts: PackedStringArray) -> Vector3:
 		"plateau":
 			var v: Vector2 = t.plateau
 			return Vector3(v.x,_ground(v.x,v.y),v.y)
-		"strip": return (t.strip as Array)[int(parts[2])]
+		"strip":
+			if parts[2] == "mid": return ((t.strip as Array)[0]+(t.strip as Array)[1])*0.5
+			return (t.strip as Array)[int(parts[2])]
 		"tower":
 			var bases: Array = pk.tower_bases()
 			if int(parts[2]) < bases.size(): return bases[int(parts[2])]
@@ -307,7 +311,11 @@ func step(delta: float, game: Node) -> void:
 			node.position = e.at
 		node.tick(delta,p,eye)
 		if e.kind == "relic" and flying and a != Vector3.INF and not is_found(e) and _segment_near(a,p,e.at,r): complete(i)
-	if bool(game.tallies.landed): _landed(game,p)
+	# Any stop counts, a taxi in as well as a landing: wheels at rest inside the
+	# stones is what the row asks for, and a rollout can run past them.
+	var stopped: bool = game.hand_landing.can_exit()
+	if stopped and not _stopped: _landed(game,p)
+	_stopped = stopped
 	beat.tick(delta)
 
 func _world_at(p: Vector3, game: Node) -> String:
