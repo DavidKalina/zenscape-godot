@@ -306,9 +306,7 @@ func _build_cell(key: Vector2i, field: RefCounted) -> Dictionary:
 	# And the Peak's carve (peak_carve.gd).
 	specs = Carve.with_arches(field,key.x,key.y,specs)
 	for spec: Dictionary in specs:
-		var t0 := Time.get_ticks_usec()
 		var b := Build.build(spec,field)
-		spec["ms"] = (Time.get_ticks_usec()-t0)/1000.0
 		# A rock arch's solid follows its skin; a ruin's, its stones.
 		if spec.has("carve"): b["solid"] = BoxSolid.build(b.solid_boxes)
 		else: b["solid"] = BoxSolid.build(BoxSolid.from_faces(b.faces) if b.kind == "rock" else b.boxes)
