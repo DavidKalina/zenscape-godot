@@ -10,15 +10,16 @@
 ##   flags.add_string(a, b, sag, {opts})      a string from A to B
 ##   flags.add_pole(p, {opts})                a pole at P; returns its top
 ##   flags.commit()                           builds the mesh (once, after the adds)
-## `setup` hangs the lane's proof strings on today's stair and cirque.
+## `setup` hangs the crown's own (scripts/endless/peak_flag_sites.gd).
+## --peak-flags=0 none. The plane passes through all of this: no colliders.
 extends Node3D
 
-const PeakMassif = preload("res://scripts/endless/peak_massif.gd")
+const FlagSites = preload("res://scripts/endless/peak_flag_sites.gd")
 const FlagShader = preload("res://shaders/peak_flags.gdshader")
 
 ## A cloth's rows (attached to free; the shader's ROWS) and columns.
 const ROWS := 10
-const COLS := 4
+const COLS := 5
 ## Metres between a rope's points.
 const ROPE_STEP := 4.0
 ## The climbers' dye, each a linear albedo, in the order a string repeats: a
@@ -62,12 +63,11 @@ func _init() -> void:
 	name = "PeakFlags"
 	_rng.seed = hash("peak/flags")
 
-## Hangs the proof strings (the trunk replaces this with its own adds).
-func setup(peak: RefCounted, ground: Callable, seed_value: int, stair: Node3D = null) -> void:
+## Hangs the crown's flags (`stair`, `towers`: null when off).
+func setup(peak: RefCounted, ground: Callable, seed_value: int, stair: Node3D = null, towers: Node3D = null) -> void:
 	_rng.seed = hash([seed_value,"peak/flags"])
 	var t0 := Time.get_ticks_usec()
-	_proof_stair(peak,ground,stair)
-	_proof_rim(peak,ground)
+	FlagSites.hang(self,peak,ground,stair,towers)
 	commit()
 	stats.build_ms = (Time.get_ticks_usec()-t0)/1000.0
 
@@ -303,7 +303,7 @@ static func _gust_texture(seed_value: int) -> Dictionary:
 				lift += lift_v*dt
 				rope_v += ((g-rope)*2.4-rope_v*1.1)*dt
 				rope += rope_v*dt
-				phase += (0.55+2.2*clampf(lift,0.0,1.1))*dt
+				phase += (0.8+2.3*clampf(lift,0.0,1.1))*dt
 			since += GUST_DT
 	var cycles := roundf(phase)
 	var scale_to := cycles/phase
@@ -396,56 +396,3 @@ func _slab(c: Vector3, size: Vector3, yaw: float, rng: RandomNumberGenerator) ->
 		for q: int in f:
 			_vert(corners[q],n,Vector2.ZERO,Vector2(4.0,0.0),tint,0.0,0.0,0.0,0.0,[0.0,0.0,0.0,0.0])
 		_quad(first,first+1,first+2,first+3)
-
-# --- The proof strings (the trunk places the real ones) ----------------------
-
-## Strings up the stair, post to post along its flank, and one across the
-## gorge over it.
-func _proof_stair(peak: RefCounted, ground: Callable, stair: Node3D) -> void:
-	if stair == null: return
-	var flights: Array = stair.get("flights")
-	if flights.size() < 8: return
-	var side := 1.0
-	var k := 2
-	var strings := 0
-	while k+4 < flights.size() and strings < 4:
-		var f0: Dictionary = flights[k]
-		var f1: Dictionary = flights[k+3]
-		var a := _flank(f0,side,ground)
-		var b := _flank(f1,side,ground)
-		var ta := add_pole(a,{"height":15.0,"lean":4.0})
-		var tb := add_pole(b,{"height":15.0,"lean":4.0})
-		add_string(ta,tb,-1.0,{"wear":0.45+0.15*strings})
-		k += 5
-		strings += 1
-		side = -side
-	# One high across the gorge, wall to wall, over the stair.
-	var g: Dictionary = peak.gorge(PeakMassif.Split.ROCK)
-	var k_at := int(0.6*int(g.saddle))
-	var mid: Vector3 = g.line[k_at]
-	var across: Vector2 = g.side[k_at]
-	var half: float = g.half[k_at]*1.05
-	var w0 := Vector2(mid.x,mid.z)-across*half
-	var w1 := Vector2(mid.x,mid.z)+across*half
-	var p0 := Vector3(w0.x,float(ground.call(w0.x,w0.y))+4.0,w0.y)
-	var p1 := Vector3(w1.x,float(ground.call(w1.x,w1.y))+4.0,w1.y)
-	add_string(p0,p1,-1.0,{"wear":0.7,"tails":false,"width":4.4,"length":6.0})
-
-## A flight's flank at `side` (+1, -1), on the ground.
-func _flank(f: Dictionary, side: float, ground: Callable) -> Vector3:
-	var xf: Transform3D = f.xf
-	var p := xf.origin+xf.basis.x.normalized()*side*(float(f.half)*8.0+2.5)
-	return Vector3(p.x,float(ground.call(p.x,p.z)),p.z)
-
-## Strings along the cirque's rim, away from the head, and a pole between
-## each, with one pennant on its own.
-func _proof_rim(peak: RefCounted, ground: Callable) -> void:
-	var angles: Array = [1.9,2.3,2.75,3.25,3.75,4.2]
-	var rim: Array[Vector3] = []
-	for phi: float in angles:
-		var rho: float = peak._cq_r(phi)
-		var w: Vector2 = peak.world(rho*cos(phi),rho*sin(phi))
-		var p := Vector3(w.x,float(ground.call(w.x,w.y)),w.y)
-		rim.append(add_pole(p,{"height":18.0,"pennant":rim.size()%2 == 0}))
-	for i in rim.size()-1:
-		add_string(rim[i],rim[i+1],-1.0,{"wear":0.35+0.1*i})

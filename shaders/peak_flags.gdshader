@@ -10,7 +10,10 @@ render_mode cull_disabled, diffuse_lambert, specular_schlick_ggx;
 // and throws it out again, which a displacement off a flat plane can't do.
 // The angle is a steep-fronted wave running from the attached edge to the free
 // edge, growing on the way, with two faster ones on top near the free edge and
-// a crack: a kink thrown down the cloth when a gust arrives.
+// a crack: a kink thrown down the cloth when a gust arrives. The crests run
+// slantwise and bend across the width, and the columns drift along the rope
+// (`drift`), so the outline changes: seen from downwind a wave off the plane
+// alone only looks like a stiff wobble.
 //
 // The gusts come baked (gust_tex, PeakFlags._gust_texture), one texel every
 // gust_dt seconds round a loop, read at (time - this place's delay) so a gust
@@ -69,13 +72,15 @@ vec4 gust_at(float t) {
 
 // The leeward swing of a rope and everything tied to it.
 vec3 sway(float swing, float along, vec4 g, vec3 wind, float air) {
-	float ripple = sin(along * 0.19 - g.g * 0.31) * 0.05 + sin(along * 0.47 - g.g * 0.53) * 0.02;
+	float ripple = sin(along * 0.19 - g.g * 0.31) * 0.08 + sin(along * 0.47 - g.g * 0.53) * 0.035;
 	return (wind * (g.a * air + ripple) + vec3(0.0, 0.22 * g.a * air + ripple * 0.7, 0.0)) * swing;
 }
 
 // The angle (rad) a cloth turns by at s (0 attached .. 1 free), u across.
 float flap(float s, float u, float phase, float lift, float age, float seed, float ripples, float skew) {
-	float x = s * ripples * TAU + skew * (u - 0.5);
+	// The crest bends across the width, and slowly wanders.
+	float bend = sin(2.9 * u + seed * 9.0 + phase * 0.11) * 1.5 * s;
+	float x = s * ripples * TAU + skew * (u - 0.5) + bend;
 	float q = x - phase;
 	float main = sin(q + 0.85 * sin(q));
 	float second = sin(1.71 * x - 1.37 * phase + seed * 17.0) * s;
@@ -84,13 +89,21 @@ float flap(float s, float u, float phase, float lift, float age, float seed, flo
 	float env = (0.22 + 0.78 * pow(s, 1.1)) * (1.0 + 0.7 * corner * corner * s);
 	float kink = (s - age * 3.4) / 0.17;
 	float crack = 1.5 * lift * exp(-kink * kink) * exp(-age * 2.2) * (0.35 + s);
-	return env * (mix(0.34, 0.68, lift) * main + 0.3 * second + 0.24 * third) + crack * (seed < 0.5 ? -1.0 : 1.0);
+	return env * (mix(0.5, 0.8, lift) * main + 0.38 * second + 0.26 * third) + crack * (seed < 0.5 ? -1.0 : 1.0);
+}
+
+// How far a cloth's run slips along its rope (or pole) at s: the free edge
+// swings side to side, its corners out of step, more the more air there is.
+float drift(float s, float u, float phase, float lift, float seed) {
+	float slow = sin(phase * 0.43 + seed * 11.0) + 0.6 * sin(phase * 0.71 + seed * 23.0);
+	float quick = sin(phase * 1.27 - s * 4.0 + (u - 0.5) * 5.0 + seed * 31.0);
+	return s * (0.2 * slow + (0.16 + 0.2 * lift) * quick);
 }
 
 // The way a cloth runs at s, before it is normalized.
-vec3 way(float s, float angle, float droop, float tilt, vec3 b0, vec3 b1, vec3 t) {
+vec3 way(float s, float angle, float droop, float tilt, float slip, vec3 b0, vec3 b1, vec3 t) {
 	float a = angle * (1.0 - droop * s);
-	return cos(a) * b0 + sin(a) * b1 + t * tilt * (0.35 + 0.65 * s);
+	return cos(a) * b0 + sin(a) * b1 + t * (tilt * (0.35 + 0.65 * s) + slip);
 }
 
 // The column at u walked to `row` rows from the attached edge; `tip` the way
@@ -102,11 +115,11 @@ vec3 walk(float u, int row, float h, float stream, float droop, float tilt, vec3
 	for (int k = 0; k < row; k++) {
 		float s = (float(k) + 0.5) / float(ROWS);
 		float a = stream + flap(s, u, phase, lift, age, seed, ripples, skew);
-		p += normalize(way(s, a, droop, tilt, b0, b1, t)) * step_len;
+		p += normalize(way(s, a, droop, tilt, drift(s, u, phase, lift, seed), b0, b1, t)) * step_len;
 	}
 	float s = float(row) / float(ROWS);
 	float a = stream + flap(s, u, phase, lift, age, seed, ripples, skew);
-	tip = normalize(way(s, a, droop, tilt, b0, b1, t));
+	tip = normalize(way(s, a, droop, tilt, drift(s, u, phase, lift, seed), b0, b1, t));
 	return p;
 }
 
@@ -164,7 +177,7 @@ void vertex() {
 				float across = clamp(dot(w3, b1) * 1.4, -1.0, 1.0);
 				// Near linear in the push: a lull lets it fall, a gust heaves it up.
 				stream = 1.5 * pow(clamp(push / 1.5, 0.0, 1.0), 1.15) * across;
-				stream += 0.16 * sin(g.g * 0.9 + seed * 20.0) * (1.0 - abs(across) * 0.5);
+				stream += 0.3 * sin(TAU * g.g * 0.17 + seed * 20.0) * (1.0 - abs(across) * 0.5);
 				droop = 0.55 * (1.0 - clamp(push, 0.0, 1.0));
 				tilt = dot(w3, t) * clamp(push, 0.0, 1.0) * 0.7;
 			} else {
@@ -178,7 +191,9 @@ void vertex() {
 				tilt = -1.15 * (1.0 - clamp(push * 1.2, 0.0, 1.0)) - 0.08;
 			}
 			float ripples = mix(1.2, 2.3, clamp(lift, 0.0, 1.0)) * clamp(h / 3.5, 0.8, 1.5);
-			float skew = 1.8 * (fract(seed * 5.3) - 0.5) * max(w, 1.0);
+			// Slantwise, one way or the other, never straight across.
+			float lean = fract(seed * 5.3) - 0.5;
+			float skew = (lean < 0.0 ? -1.0 : 1.0) * (0.5 + 1.6 * abs(lean)) * max(w, 1.0);
 			vec3 tip;
 			vec3 c = walk(u, row, h, stream, droop, tilt, b0, b1, t, phase, lift, g.b, seed, ripples, skew, tip);
 			vec3 tip2;
