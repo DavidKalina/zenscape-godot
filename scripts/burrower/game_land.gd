@@ -29,6 +29,13 @@ const ROOM := 1000.0
 ## acos(STAND_COS) of the way it looks.
 const STAND_N := 12
 const STAND_COS := 0.6
+## His goals when roaming (`roam_goal`): how far on, the ways tried (rad off his
+## own, straight first, so a tie goes on), the strip counted either side (m).
+const ROAM_ON := 110.0
+const ROAM_FAN := [0.0,0.4,-0.4,0.8,-0.8,1.2,-1.2]
+const ROAM_STRIP := 30.0
+## As burrower.gd's WET_DEEP.
+const WET_DEEP := 0.15
 
 func _init() -> void:
 	name = "BurrowerGround"
@@ -209,3 +216,42 @@ func stand_ahead(at: Vector2, fwd: Vector2, most: float) -> Vector2:
 
 func room(at: Vector2) -> float:
 	return ROOM if open(at) else 0.0
+
+## Water over the bed here.
+func wet(at: Vector2) -> bool:
+	return height(at.x,at.y) < water_y(at.x,at.y)-WET_DEEP
+
+## Water all the way `length` m from `at` along `way` (unit).
+func wet_along(at: Vector2, way: Vector2, length: float) -> bool:
+	for i in range(1,5):
+		if not wet(at+way*length*i/4.0): return false
+	return true
+
+## The middles of the stood plan cells with STAND_N trees or more within `r` m of
+## `at`, thickest first (only cells that have loaded: there's no planning here).
+func stands_round(at: Vector2, r: float) -> Array:
+	var lo := TreePlan.cell_of(at.x-r,at.y-r)
+	var hi := TreePlan.cell_of(at.x+r,at.y+r)
+	var found: Array = []
+	for cz in range(lo.y,hi.y+1):
+		for cx in range(lo.x,hi.x+1):
+			var n: int = game.trees.cell_trees(Vector2i(cx,cz)).size()/8
+			if n >= STAND_N: found.append([n,(Vector2(cx,cz)+Vector2(0.5,0.5))*TreePlan.CELL])
+	found.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]))
+	return found.map(func(f: Array) -> Vector2: return f[1])
+
+## Where he roams next from `at` going `fwd`, ROAM_ON m on: on water, on along the
+## water; else the way with the most trees; nothing better, straight on.
+func roam_goal(at: Vector2, fwd: Vector2, rng: RandomNumberGenerator) -> Vector2:
+	var on_water := wet(at)
+	var best := at+fwd*ROAM_ON
+	var most := 0
+	for a: float in ROAM_FAN:
+		var way := fwd.rotated(a+rng.randf_range(-0.12,0.12))
+		var end := at+way*ROAM_ON
+		if not open(end): continue
+		var n := (2 if wet(end) and wet(at+way*ROAM_ON*0.5) else 0) if on_water else trees_along(at,way,ROAM_ON,ROAM_STRIP)
+		if n > most:
+			most = n
+			best = end
+	return best

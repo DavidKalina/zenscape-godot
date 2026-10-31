@@ -55,11 +55,19 @@ const STOOD_STRIP := 7.0
 ## The gust runs this far ahead of the head, or the wood would go over behind
 ## the plane: he leads it by about this.
 const STOOD_LEAD := 30.0
+## A sighting's gust (`sight`), wider and harder, to read from a few hundred
+## metres.
+const SIGHT_GUST := 55.0
+const SIGHT_K := 1.6
 const STOOD_BURST := Vector2(14.0,5.0)
 const STOOD_CARD := 1.3
 const STOOD_NEEDLE := Color("3f5a2c")
 
 var land: Node
+## His pass is a sighting: seen from far off (`SIGHT_GUST`).
+var sight := false
+## Too far for needles to show: only the gust.
+var distant := false
 ## The grass's push map (scripts/endless/grass_react.gd), or null.
 var react: Node
 var stats := {"shoved": 0, "bursts": 0, "leaves": 0, "most_lean": 0.0}
@@ -139,7 +147,11 @@ func _shake_stood(delta: float, head: Vector2, k: float) -> void:
 		_felt.clear()
 		_trail = Vector2.INF
 		return
+	# The map follows him: it is 384 m a side, and a sighting is farther than
+	# that from the eye. Only he writes it.
+	if react != null: react.gust_eye = head
 	_lay_gust(head,k)
+	if distant: return
 	var t: PackedFloat32Array = land.trees_near(head,STOOD_REACH)
 	var shook := 0
 	for q in range(0,t.size(),4):
@@ -168,8 +180,9 @@ func _lay_gust(head: Vector2, k: float) -> void:
 	if moved < STOOD_STRIP: return
 	var way := (head-_trail)/moved
 	var at := head+way*STOOD_LEAD
-	if react != null and moved < STOOD_STRIP*6.0 and land.trees_near(at,STOOD_GUST).size() > 0:
-		react.gust_strip(at,way,moved,STOOD_GUST,clampf(k*1.3,0.0,1.0))
+	var reach := SIGHT_GUST if sight else STOOD_GUST
+	if react != null and moved < STOOD_STRIP*6.0 and land.trees_near(at,reach).size() > 0:
+		react.gust_strip(at,way,moved,reach,k*SIGHT_K if sight else clampf(k*1.3,0.0,1.0))
 	_trail = head
 
 ## Every stood tree within `r` m of `at` shaken at once (a push-up through

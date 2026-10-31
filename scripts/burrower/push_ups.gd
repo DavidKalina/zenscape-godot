@@ -136,6 +136,24 @@ const FAR := 45.0
 ## surges for it).
 const STARVE := 3.0
 
+## From him (`at_head`, the game): he runs for the plane's line and across it,
+## and an orb comes up HEAD_BACK m behind his head as he crosses, HEAD_T s of the
+## plane's flight off (it needs the swell, and the hang to last). He crosses when
+## within HEAD_CROSS m of the line, or past it; CROSS_PAST m past is what he runs
+## for. After HEAD_WAIT s of waiting one comes up anyway if he's within HEAD_OFF
+## rad of the nose: the plane can turn for it. Roaming, none.
+const HEAD_BACK := 2.5
+const HEAD_T := Vector2(1.2,4.0)
+const HEAD_CROSS := 3.5
+const CROSS_PAST := 9.0
+const HEAD_WAIT := 3.5
+const HEAD_OFF := 0.6
+## The plane must be coming in at most HEAD_HIGH m over the orb's hang, or it
+## would pass over it (waiting past HEAD_WAIT, one comes up all the same).
+const HEAD_HIGH := 7.0
+## The third is out this long before he dives (`run_done`).
+const RUN_AFTER := 1.2
+
 ## The ground (the study's land or the game's; see burrower.gd `land`).
 var land: Ground
 var burrower: Node
@@ -148,6 +166,15 @@ signal taken(kind: StringName, at: Vector3)
 
 var stats := {"pushed": 0, "hits": 0, "sunk": 0, "skipped": 0, "why": {}, "notes": [], "kinds": {},
 	"bell_rings": 0, "tolls": 0, "strikes": 0, "glances": 0, "through": 0}
+## The game's rules: orbs only, from him (`at_head`), `run_most` a run (0: no end).
+var at_head := false
+## How much past GRAZE an orb can be flown by and still count (m).
+var reach_more := 0.0
+var run_most := 0
+var run_pushed := 0
+var _pushed_at := -INF
+var _due_t := 0.0
+var _lat := 0.0
 ## The next push-up's kind, when set (the study's 1 2 3 keys); else picked.
 var next_kind := &""
 ## The next note in the run, and when the last hit was.
@@ -602,6 +629,7 @@ func _due(delta: float, plane: Object) -> void:
 		_wait = maxf(_wait,0.6)
 		return
 	_wait -= delta
+	if at_head: return _due_head(delta,plane)
 	# Coming in across the plane's way: nothing yet (the run starts them).
 	if burrower.entering():
 		burrower.want_ahead = 0.0
@@ -652,6 +680,63 @@ func _due(delta: float, plane: Object) -> void:
 	_kind = &""
 	burrower.want_ahead = 0.0
 	burrower.want_at = Vector2(NAN,NAN)
+
+## A run starts: its orbs from nothing, the first after a moment.
+func begin_run() -> void:
+	run_pushed = 0
+	_pushed_at = -INF
+	_wait = maxf(_wait,GAP.x)
+	_due_t = 0.0
+	_lat = 0.0
+
+## The run's orbs are out, and a moment has gone.
+func run_done() -> bool:
+	return run_most > 0 and run_pushed >= run_most and time-_pushed_at > RUN_AFTER
+
+## Orbs from him (see HEAD_BACK): while one is due he runs across the plane's
+## line, a beat ahead of it, and it comes up behind his head as he goes over.
+func _due_head(delta: float, plane: Object) -> void:
+	burrower.want_ahead = 0.0
+	burrower.want_at = Vector2(NAN,NAN)
+	if plane == null or burrower.mode != &"lead": return
+	if run_most > 0 and run_pushed >= run_most: return
+	if _wait > 0.0 or orbs.size() >= MOST: return
+	_due_t += delta
+	var k: Dictionary = KINDS[&"orb"]
+	var p: Vector3 = plane.position
+	var p2 := Vector2(p.x,p.z)
+	var v: Vector3 = plane.velocity
+	var vp := maxf(Vector2(v.x,v.z).length(),8.0)
+	var head: Vector2 = burrower.pos
+	var beat := float(k.beat)+LEAD_T.y
+	var w := clampf(_yaw*YAW_KEEP,-MOST_YAW,MOST_YAW)
+	# The line abeam of him: how far off it he is, and when the plane gets there.
+	var t := head.distance_to(p2)/vp
+	var on := _on_line(p2,vp,minf(t,beat*2.0),w)
+	var lat := (head-Vector2(on.x,on.y)).dot(Vector2(-on.w,on.z))
+	var over := absf(lat) < HEAD_CROSS or (_lat*lat < 0.0 and absf(lat) < HEAD_CROSS*2.5)
+	_lat = lat
+	var out := Vector2(sin(_heading),cos(_heading)) if not is_nan(_heading) else Vector2.UP
+	var nose := absf(out.angle_to(head-p2))
+	var late := _due_t > HEAD_WAIT and nose < HEAD_OFF
+	if t >= HEAD_T.x and t <= HEAD_T.y and (over or late):
+		var at: Vector2 = head-burrower.forward()*HEAD_BACK
+		var hang := maxf(maxf(land.height(at.x,at.y),land.water_y(at.x,at.y)),land.canopy_top(at,ROOF_R))+float(k.up)
+		if not late and p.y+v.y*t-hang > HEAD_HIGH: return
+		var why := _room(at,k)
+		if why == "":
+			push(at,&"orb",p2-at)
+			run_pushed += 1
+			_pushed_at = time
+			_due_t = 0.0
+			_wait = _rng.randf_range(GAP.x,GAP.y)
+			return
+		return _skip(why)
+	# Across, for a spot on the line a beat ahead of the plane.
+	burrower.want_ahead = beat*vp
+	var ahead := _on_line(p2,vp,beat,w)
+	var side := Vector2(-ahead.w,ahead.z)
+	burrower.want_at = Vector2(ahead.x,ahead.y)-side*(signf(lat) if lat != 0.0 else 1.0)*CROSS_PAST
 
 ## Where the plane will be in `t` s (x, z) and its way then (z, w), flying
 ## on at `vp` m/s and turning at `w` rad/s.
@@ -843,7 +928,7 @@ func _orb(o: Dictionary, delta: float, stretch: float, plane: Object, half_span:
 		light.light_energy = 1.6*float(o.glow)
 		# Flown into: motes and a chime.
 		if plane != null and o.phase != &"swell" and float(o.y) > float(o.base):
-			if _near(c,ORB_R+half_span+GRAZE):
+			if _near(c,ORB_R+half_span+GRAZE+reach_more):
 				_burst(c,plane.velocity,70,MOTE,GLOW)
 				_hit(&"orb",0.0,c)
 				return true

@@ -42,7 +42,8 @@ const float ZS_TREE_SWAY_SWING = 0.7;
 // about 2 m, springing back as the grass does.
 const float ZS_TREE_REACT = 0.4;
 // The burrower's gust, from the map only he writes (zs_gust_map, scripts/endless/
-// grass_react.gd `gust_strip`; rect as zs_react_rect, w 0 while nothing is in it):
+// grass_react.gd `gust_strip`; rect as zs_react_rect, w 0 while nothing is in it,
+// else the gain on the lean: above 1 for a sighting, seen from far off):
 // what a full gust adds to a tree's lean, in zs_breeze_lean_at's units, past
 // anything the wind does; how far it sways round that as it lets go (a share of
 // the lean), and the spread of strength between one tree and the next.
@@ -123,7 +124,7 @@ vec2 zs_tree_gust(vec2 root, float swing, float phase, inout vec2 react, inout f
 	stir = max(stir * took, max(over, g.z));
 	vec2 way = m > 0.001 ? g.xy / m : vec2(0.0);
 	float own = 1.0 + ZS_TREE_GUST_SPREAD * (fract(phase * 1.37) * 2.0 - 1.0);
-	return way * ZS_TREE_GUST * own * (over + g.z * ZS_TREE_GUST_SWAY * swing);
+	return way * ZS_TREE_GUST * zs_gust_rect.w * own * (over + g.z * ZS_TREE_GUST_SWAY * swing);
 }
 
 // A bough's own motion, as an offset in the tree's model space: each bough

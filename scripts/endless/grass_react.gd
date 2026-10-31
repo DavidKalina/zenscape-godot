@@ -265,7 +265,7 @@ func step(delta: float, eye: Vector3, plane: Dictionary, air: Dictionary, land: 
 	if gusts_on and rings_on and not air.is_empty(): _gust_step(delta,eye,air,land)
 	_draw()
 	_publish_rect()
-	_wake_step(c)
+	_wake_step(c if gust_eye == Vector2.INF else gust_eye)
 
 func _publish_rect() -> void:
 	var on := enabled and bend > 0.0
@@ -422,6 +422,12 @@ func eddy(at: Vector2, way: Vector2, strength: float, reach: float) -> void:
 
 # --- The wake (the burrower's gust) ------------------------------------------------
 
+## What the gust's map centres on: the burrower's head (he alone writes it, and
+## he can be far from the eye), or the eye (INF).
+var gust_eye := Vector2.INF
+## The lean's gain, in `zs_gust_rect.w` (a sighting, far from the eye: more).
+var gust_gain := 1.0
+
 ## A stretch of the gust along his way: centred on `at`, `half` m each way
 ## along `way` (unit), out to `reach` m each side, `strength` 0..1.
 func gust_strip(at: Vector2, way: Vector2, half: float, reach: float, strength: float) -> void:
@@ -451,7 +457,7 @@ func _wake_step(eye: Vector2) -> void:
 	var low := Vector2(snappedf(eye.x,snap),snappedf(eye.y,snap))-Vector2.ONE*MAP_M*0.5
 	_wake_mat.set_shader_parameter("map_min",low)
 	_wake_mat.set_shader_parameter("now",time)
-	RenderingServer.global_shader_parameter_set("zs_gust_rect",Vector4(low.x,low.y,MAP_M,1.0))
+	RenderingServer.global_shader_parameter_set("zs_gust_rect",Vector4(low.x,low.y,MAP_M,gust_gain))
 
 # --- The map --------------------------------------------------------------------------
 

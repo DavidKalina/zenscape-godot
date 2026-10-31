@@ -28,7 +28,10 @@ extends Node3D
 ## Two ways to move: `lead(plane)` comes in from out of the chase camera's
 ## view at one side, cuts across ahead of the plane and runs on away from it
 ## to be chased (the entrance, then the run); `roam()` wanders the meadow
-## alone (the watch camera's). `dive()` sinks it away.
+## alone (the watch camera's). `dive()` sinks it away. In endless flight there is
+## no entrance: he roams on his own (`wake` with no plane, `_roam_goal` asks the
+## game's land) and `notice(plane)` starts the run from where he is. `distant`:
+## too far off to see the ridge, clods or dust, so none of that is made.
 
 const Land = preload("res://scripts/burrower/burrower_land.gd")
 const Ground = preload("res://scripts/burrower/burrower_ground.gd")
@@ -170,6 +173,10 @@ const SPRAY := Color(0.86,0.92,0.95,0.85)
 const MIST := Color(0.80,0.85,0.87)
 ## How often a roam goal is the pond's far side.
 const POND_GOAL := 0.3
+## The plume (`plume`): drops a second, their rise (m/s) and size (m).
+const PLUME_RATE := 34.0
+const PLUME_UP := Vector2(7.0,14.0)
+const PLUME_SIZE := Vector2(0.7,1.5)
 
 ## The ground it runs in: the study's land (burrower_land.gd) or the game's
 ## (game_land.gd); both answer height, normal, mesh_height, colour, water_y,
@@ -198,6 +205,11 @@ var want_ahead := 0.0
 var want_at := Vector2(NAN,NAN)
 ## The chase camera, to come up out of its view (null: ENTER_SIDE.x out).
 var view: Camera3D
+## Too far from the eye for the ridge, clods, dust and needles: only his way, the
+## gust and the wake (`set_distant`).
+var distant := false
+## On water, a tall plume off him as well as the spray, to read from altitude.
+var plume := false
 ## Leading: &"enter" (coming in across the plane's way), &"run" (away, chased).
 var phase := &"run"
 var _phase_t := 0.0
@@ -251,6 +263,7 @@ var _since_wake := 0.0
 var _sprays: Array = []
 var _spray_mm := MultiMesh.new()
 var _spray_carry := 0.0
+var _plume_carry := 0.0
 
 func _init() -> void:
 	name = "Burrower"
@@ -356,6 +369,25 @@ func wake(at: Vector2, way: float, plane: Object = null) -> void:
 	_since_sample = SAMPLE
 	wet = _wet_at(pos)
 
+## Roaming, he has noticed `plane`: the run, from where he is, on the way he goes.
+func notice(plane: Object) -> void:
+	_plane = plane
+	mode = &"lead"
+	phase = &"run"
+	_phase_t = 0.0
+	_course = heading
+	_lost = 0.0
+	_run = 0.0
+	plume = false
+	set_distant(false)
+
+## Near or far off (see `distant`). Going far, what ridge there is stops growing.
+func set_distant(on: bool) -> void:
+	if on == distant: return
+	distant = on
+	shudder.distant = on
+	if on: _finish_live()
+
 ## Up out of the chase camera's view abeam of `plane`, at the side with
 ## the more open meadow, heading in to cross ahead of it (the entrance).
 func lead(plane: Object) -> void:
@@ -446,6 +478,9 @@ func _feel(look: float, delta: float) -> Vector2:
 ## The trunks it will weave next (a land that `probes`), nearest first.
 func _ask_trunks(look: float, delta: float) -> void:
 	if not land.probes: return
+	if distant:
+		_trunks.clear()
+		return
 	_trunk_ask -= delta
 	if _trunk_ask > 0.0: return
 	_trunk_ask = TRUNK_EVERY
@@ -566,6 +601,7 @@ func _wet_at(p: Vector2) -> bool:
 
 ## (Roaming is the study's alone: its goals are its meadow's pond and trees.)
 func _roam_goal() -> Vector2:
+	if land.probes: return land.roam_goal(pos,forward(),_rng)
 	# Now and then across the pond: a point past its far side, in the meadow.
 	if _rng.randf() < POND_GOAL and pos.distance_to(Land.POND) > Land.POND_R+15.0:
 		var across := (Land.POND-pos).normalized()
@@ -717,7 +753,7 @@ func _move(delta: float) -> void:
 		if _since_wake >= WAKE_DT:
 			_since_wake = 0.0
 			_drop_wake(pos,strength*clampf(speed/ROAM_SPEED,0.7,1.4))
-	else:
+	elif not distant:
 		if _since_sample >= SAMPLE:
 			_since_sample = 0.0
 			# A surge heaves harder.
@@ -725,7 +761,8 @@ func _move(delta: float) -> void:
 		if _since_stamp >= GRASS_STEP:
 			_since_stamp = 0.0
 			_stamp_grass()
-	_kick(delta)
+	if plume and wet: _plume(delta)
+	if not distant: _kick(delta)
 
 ## The entrance's step: for the point CROSS_AHEAD s ahead on the plane's
 ## line; across it (or out of time) it breaks away and runs. Its speed.
@@ -1298,6 +1335,19 @@ func _feed_pond() -> void:
 	m.set_shader_parameter("wake",_wake)
 	m.set_shader_parameter("head",Vector4(pos.x,pos.y,strength*wet_k,speed))
 	m.set_shader_parameter("head_way",forward())
+
+## From altitude: fat drops thrown high off him, a white smudge moving on the water.
+func _plume(delta: float) -> void:
+	_plume_carry += PLUME_RATE*strength*delta
+	while _plume_carry >= 1.0:
+		_plume_carry -= 1.0
+		if _sprays.size() >= SPRAYS: _sprays.pop_front()
+		var fwd := forward()
+		var at := pos-fwd*_rng.randf_range(0.0,5.0)+fwd.orthogonal()*_rng.randf_range(-2.0,2.0)
+		var h := fwd*speed*_rng.randf_range(0.2,0.6)+fwd.orthogonal()*_rng.randf_range(-3.0,3.0)
+		var sea: float = land.water_y(at.x,at.y)
+		_sprays.append({"p": Vector3(at.x,sea+0.3,at.y), "sea": sea, "v": Vector3(h.x,_rng.randf_range(PLUME_UP.x,PLUME_UP.y),h.y),
+			"size": _rng.randf_range(PLUME_SIZE.x,PLUME_SIZE.y)})
 
 ## A drop thrown off the bulge: most out to the sides and up, some in a
 ## plume left behind the head; `burst` a splash's, flung every way.
