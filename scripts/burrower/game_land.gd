@@ -34,6 +34,13 @@ const STAND_COS := 0.6
 const ROAM_ON := 110.0
 const ROAM_FAN := [0.0,0.4,-0.4,0.8,-0.8,1.2,-1.2]
 const ROAM_STRIP := 30.0
+## On water: the ways tried (all round, a shore can shut every way ahead), the water
+## wanted past a goal (m), how far apart that's sounded (m), and how deep it's wanted
+## (m), over shallows that the swell uncovers.
+const WATER_FAN := [0.0,0.35,-0.35,0.7,-0.7,1.1,-1.1,1.6,-1.6,2.2,-2.2,2.8,-2.8]
+const ROAM_SHORE := 24.0
+const WATER_STEP := 16.0
+const ROAM_DEEP := 0.8
 ## As burrower.gd's WET_DEEP.
 const WET_DEEP := 0.15
 
@@ -242,17 +249,43 @@ func stands_round(at: Vector2, r: float) -> Array:
 	found.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]))
 	return found.map(func(f: Array) -> Vector2: return f[1])
 
+## How far (m, at most `most`) water `deep` m over the bed runs from `at` along `way` (unit).
+func wet_run(at: Vector2, way: Vector2, most: float, deep: float) -> float:
+	var d := WATER_STEP
+	while d < most:
+		if height(at.x+way.x*d,at.y+way.y*d) >= water_y(at.x+way.x*d,at.y+way.y*d)-deep: return d-WATER_STEP
+		d += WATER_STEP
+	return most
+
+## On water he stays on it: the first way (straight on first) with deep water all along
+## it and past its end; shut in, as far as the most water goes; no deep water, the same
+## over any.
+func water_goal(at: Vector2, fwd: Vector2, rng: RandomNumberGenerator) -> Vector2:
+	var far := ROAM_ON+ROAM_SHORE
+	for deep: float in [ROAM_DEEP,WET_DEEP]:
+		var best := at
+		var most := 0.0
+		for a: float in WATER_FAN:
+			var way := fwd.rotated(a+rng.randf_range(-0.12,0.12))
+			var run := wet_run(at,way,far,deep)
+			if run >= far and open(at+way*ROAM_ON): return at+way*ROAM_ON
+			if run > most:
+				most = run
+				best = at+way*maxf(run-ROAM_SHORE,run*0.5)
+		if most > 0.0: return best
+	return at-fwd*ROAM_SHORE
+
 ## Where he roams next from `at` going `fwd`, ROAM_ON m on: on water, on along the
 ## water; else the way with the most trees; nothing better, straight on.
 func roam_goal(at: Vector2, fwd: Vector2, rng: RandomNumberGenerator) -> Vector2:
-	var on_water := wet(at)
+	if wet(at): return water_goal(at,fwd,rng)
 	var best := at+fwd*ROAM_ON
 	var most := 0
 	for a: float in ROAM_FAN:
 		var way := fwd.rotated(a+rng.randf_range(-0.12,0.12))
 		var end := at+way*ROAM_ON
 		if not open(end): continue
-		var n := (2 if wet(end) and wet(at+way*ROAM_ON*0.5) else 0) if on_water else trees_along(at,way,ROAM_ON,ROAM_STRIP)
+		var n := trees_along(at,way,ROAM_ON,ROAM_STRIP)
 		if n > most:
 			most = n
 			best = end
