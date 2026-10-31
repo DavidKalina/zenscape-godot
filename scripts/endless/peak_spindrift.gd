@@ -34,8 +34,8 @@ const RIDGE_SPREAD := 34.0
 ## A ribbon: length, and its half width at the root and at the tail (m).
 const TIP_LONG := Vector2(520.0,900.0)
 const TIP_WIDE := Vector2(5.0,44.0)
-const RIDGE_LONG := Vector2(240.0,520.0)
-const RIDGE_WIDE := Vector2(4.0,30.0)
+const RIDGE_LONG := Vector2(300.0,620.0)
+const RIDGE_WIDE := Vector2(5.0,38.0)
 ## Ribbons at a tip.
 const TIP_RIBBONS := 3
 ## Segments of a ribbon.
@@ -142,7 +142,7 @@ func _ridge(r: Dictionary) -> void:
 	for i in RIDGE_RIBBONS:
 		var along := (i-(RIDGE_RIBBONS-1)*0.5)*RIDGE_SPREAD+_rng.randf_range(-9.0,9.0)
 		var p := at+Vector3(run.x*along,_rng.randf_range(-4.0,5.0),run.y*along)
-		_ribbon(p,_rng.randf_range(RIDGE_LONG.x,RIDGE_LONG.y),RIDGE_WIDE*_rng.randf_range(0.7,1.25),r.ridge,_rng.randf_range(0.02,0.1),_rng.randf_range(0.6,1.0))
+		_ribbon(p,_rng.randf_range(RIDGE_LONG.x,RIDGE_LONG.y),RIDGE_WIDE*_rng.randf_range(0.7,1.25),r.ridge,_rng.randf_range(0.02,0.1),_rng.randf_range(1.0,1.35))
 
 ## One ribbon from `root`: `wide` its half widths, `ridge` the way across its
 ## ridge (ZERO: none), `rise` its climb per metre downwind.
