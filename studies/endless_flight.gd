@@ -570,6 +570,8 @@ func _ready() -> void:
 		if peak != null and look.clouds != null and "--collar=1" in preload("res://scripts/launch_args.gd").user_args(): look.clouds.set_collar(collar_at,COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y,0.0)
 		# The sky over it keeps its own hour (EndlessLook.set_collar_sky).
 		if peak != null: look.set_collar_sky(collar_at,COLLAR_R,COLLAR_BAND.x,COLLAR_BAND.y)
+		# The day's ring stands so the sun rakes the way in (EndlessLook.turn_ring_to).
+		if peak != null: look.turn_ring_to((peak.world(0.0,0.0)-peak.world(1000.0,0.0)).normalized())
 		# Its paint in the ground shader (snow line, granite, ice), set before
 		# the rocks take their bare copy of the ground; --peak-paint=0 leaves
 		# the land's own paint on it.

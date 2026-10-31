@@ -643,6 +643,14 @@ func floored(sun: Vector3) -> Vector3:
 	var flat := Vector2(sun.x, sun.z).normalized() * sqrt(1.0 - y * y)
 	return Vector3(flat.x, y, flat.y)
 
+## The sun's direction at a phase, with the room's yaw left out.
+func ring_at(at_phase: float) -> Vector3:
+	var was := room_yaw
+	room_yaw = 0.0
+	var d := _ring_direction((at_phase - 0.25) * TAU, _tilt)
+	room_yaw = was
+	return d
+
 ## A body's direction on its ring, turned by the room.
 func _ring_direction(theta: float, tilt: float) -> Vector3:
 	var x := cos(theta)

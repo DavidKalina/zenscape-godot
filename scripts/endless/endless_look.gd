@@ -120,6 +120,12 @@ const COLLAR_SUN := 0.3
 ## and gone COLLAR_FADE further out (m, level from its centre).
 const COLLAR_NEAR := 1000.0
 const COLLAR_FADE := 1500.0
+## The sun's bearing at the opening hour, degrees clockwise from the way in to
+## the Peak (turn_ring_to). Ahead and to the left, so the towers' near faces
+## stand in shade, and the day walks it on over the crown rather than behind
+## the eye (bearing from the way: left at the opening, ahead at noon, right
+## by evening).
+const PEAK_SUN := -80.0
 
 var plain := false
 var lighting: Node3D
@@ -687,6 +693,24 @@ func set_collar_sky(centre: Vector3, radius: float, lo: float, hi: float, hour :
 		if a.begins_with("--collar-hour="): h = clampf(a.get_slice("=",1).to_float(),0.0,24.0)
 	_collar_phase = h/24.0 if h >= 0.0 else DayCycle.ring_phase(COLLAR_SUN,false)
 	_collar_sky = {"centre":Vector2(centre.x,centre.z),"radius":radius,"lo":lo+Field.SEA_Y,"hi":hi+Field.SEA_Y}
+
+## The Peak's side light: the day's ring turned about the vertical (the room's
+## yaw, sun, moon, rim, stars and sky together) so that at the world's opening
+## hour the sun stands `PEAK_SUN` degrees clockwise of `way` (the way in, flat,
+## world x and z). The hour, the sun's height and the day's length stay the
+## land's: only where the compass stands moves. --peak-sun=DEG another bearing,
+## --peak-sun=off leaves the ring as it was.
+func turn_ring_to(way: Vector2) -> void:
+	var off := PEAK_SUN
+	for a: String in LaunchArgs.user_args():
+		if a == "--peak-sun=off": return
+		if a.begins_with("--peak-sun="): off = a.get_slice("=",1).to_float()
+	var hour := float(WorldProfile.current().paint.get("hour",HOUR))
+	if hour < 0.0: hour = HOUR
+	var at: Vector3 = celestial.floored(celestial.ring_at(hour/24.0))
+	var want := atan2(way.x,-way.y)+deg_to_rad(off)
+	celestial.room_yaw = wrapf(atan2(at.x,-at.z)-want,-PI,PI)
+	celestial.update_rig()
 
 ## The phase the sky shows at `eye`: the land's, turned the short way round
 ## toward the collar's by the lift.
