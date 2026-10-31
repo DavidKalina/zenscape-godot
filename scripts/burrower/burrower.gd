@@ -1099,14 +1099,30 @@ func _kick(delta: float) -> void:
 		_dust_carry -= 1.0
 		_spawn_dust()
 
+## The earth a clod is made of, from the ground it was torn from: sod keeps the
+## ground's own hue a little darker, soil leans brown, a pebble is paler. The
+## ground is asked a few times a second, not per clod.
+var _earth_at := Color(0.5,0.42,0.28)
+var _earth_t := -9.0
+func _earth_of(kind: float, at: Vector2, tone: Vector3) -> Color:
+	if time-_earth_t > 0.3 or _earth_t > time:
+		_earth_t = time
+		var y := land.height(at.x,at.y)
+		_earth_at = land.colour(at.x,at.y,y,land.normal(at.x,at.y))
+	# Earth, not turf: green ground leans to brown, and none of it goes near black.
+	var g := _earth_at.lerp(Color("8a6e44"),clampf((_earth_at.g-_earth_at.r)*2.5,0.0,0.6)).lightened(0.12)
+	if kind < tone.x: return g.darkened(0.15)
+	if kind < tone.y: return g.lerp(SOIL,0.3)
+	return g.lerp(PEBBLE,0.55).lightened(0.1)
+
 func _spawn_clod() -> void:
 	if _clods.size() >= CLODS: _drop_clod(0)
 	var side := Vector2(-forward().y,forward().x)
 	var u := _rng.randf_range(-1.0,1.0)
 	var at := pos-forward()*_rng.randf_range(0.0,2.5)+side*u*1.2
 	var kind := _rng.randf()
-	var colour := SOD if kind < 0.45 else (SOIL if kind < 0.8 else PEBBLE)
-	colour = colour.lerp(Color.BLACK,_rng.randf()*0.25)
+	var colour := _earth_of(kind,at,Vector3(0.45,0.8,0.0))
+	colour = colour.lerp(Color.BLACK,_rng.randf()*0.08)
 	var size := _rng.randf_range(0.14,0.42)*(0.6 if kind >= 0.8 else 1.0)*(0.7+0.5*strength)
 	var out := side*signf(u if u != 0.0 else 1.0)*_rng.randf_range(1.5,4.5)
 	var fwd := forward()*speed*_rng.randf_range(0.05,0.3)
@@ -1122,8 +1138,8 @@ func _spawn_spout() -> void:
 	var side := Vector2(-forward().y,forward().x)
 	var at := pos+forward()*_rng.randf_range(-0.5,0.8)+side*_rng.randf_range(-0.5,0.5)
 	var kind := _rng.randf()
-	var colour := SOD if kind < 0.35 else (SOIL if kind < 0.9 else PEBBLE)
-	colour = colour.lerp(Color.BLACK,_rng.randf()*0.15).lightened(0.12)
+	var colour := _earth_of(kind,at,Vector3(0.35,0.9,0.0))
+	colour = colour.lerp(Color.BLACK,_rng.randf()*0.06).lightened(0.08)
 	var size := _rng.randf_range(0.18,0.5)*(0.6 if kind >= 0.9 else 1.0)
 	var fwd := forward()*speed*_rng.randf_range(SPOUT_KEEP.x,SPOUT_KEEP.y)
 	var out := side*_rng.randf_range(-2.2,2.2)
@@ -1143,8 +1159,8 @@ func throw_earth(at: Vector3, n: int, out: float, up: float, spread := 1.0) -> v
 		var dir := Vector2(cos(a),sin(a))
 		var p := at+Vector3(dir.x,0.0,dir.y)*_rng.randf_range(0.2,spread)
 		var kind := _rng.randf()
-		var colour := SOD if kind < 0.4 else (SOIL if kind < 0.85 else PEBBLE)
-		colour = colour.lerp(Color.BLACK,_rng.randf()*0.25)
+		var colour := _earth_of(kind,Vector2(at.x,at.z),Vector3(0.4,0.85,0.0))
+		colour = colour.lerp(Color.BLACK,_rng.randf()*0.08)
 		var size := _rng.randf_range(0.12,0.38)*(0.6 if kind >= 0.85 else 1.0)
 		var h := dir*out*_rng.randf_range(0.4,1.0)
 		_clods.append({"p": p, "v": Vector3(h.x,up*_rng.randf_range(0.5,1.0),h.y),
