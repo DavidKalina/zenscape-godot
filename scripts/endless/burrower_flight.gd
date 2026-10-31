@@ -10,7 +10,8 @@ extends Node
 ## there: no sighting that time. Ignored, he sinks after SIGHT_S s. A plane that
 ## comes down near him (`_near_him`) starts the run from where he is. It has
 ## RUN_ORBS orbs, each from him, then he dives; or he dives after CLIMB_HOLD s over
-## CLIMB_OFF spans, after RUN s, or when the plane lands or crashes.
+## CLIMB_OFF spans (climbed: flying level off an edge isn't, `_clear`), after RUN s,
+## or when the plane lands or crashes.
 ## `--no-burrower` leaves him out; `--burrower-every=S` makes the rest S s.
 
 const Burrower = preload("res://scripts/burrower/burrower.gd")
@@ -83,6 +84,10 @@ var _sighted := false
 var _sight_left := 0.0
 var _look_left := -1.0
 var _drop_in := 0.0
+## How high the plane has flown itself off the ground (m), and its height last
+## frame (`_clear`).
+var _flown := 0.0
+var _flown_y := 0.0
 var _try := 0
 ## Rest left (s), time over CLIMB_OFF (s), the last reason a run or sighting
 ## ended, and counts (for drivers).
@@ -206,6 +211,8 @@ func notice(game: Node3D) -> void:
 	rouse.high = 0.0
 	rouse.noticed = int(rouse.noticed)+1
 	_drop_in = DROP_IN
+	_flown = float(game.near.ground_clear)
+	_flown_y = game.plane.position.y
 	burrower.shudder.sight = false
 	game.react.gust_gain = 1.0
 	burrower.notice(game.plane)
@@ -313,9 +320,14 @@ func _spot_water(game: Node3D) -> Dictionary:
 	return {}
 
 ## The plane's height for the climb-off: over the ground, or in a wood, in
-## the same terms, over the crowns (only asked once high).
+## the same terms, over the crowns (only asked once high). Over the ground it
+## counts what the plane has flown up, never more than the real clearance: ground
+## falling away under it (a cliff's edge, a long slope) adds nothing.
 func _clear(game: Node3D) -> float:
-	var clear := float(game.near.ground_clear)
+	var y: float = game.plane.position.y
+	_flown = clampf(_flown+y-_flown_y,0.0,float(game.near.ground_clear))
+	_flown_y = y
+	var clear := _flown
 	var span: float = WorldScale.TOY_SPAN*game.ground_scale.size()
 	if clear <= span*CLIMB_OFF: return clear
 	var p: Vector3 = game.plane.position
