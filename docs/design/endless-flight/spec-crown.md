@@ -184,14 +184,21 @@ shader with 0 errors. These stayed open and belong to the trunk:
    are; steps 3 on change surfaces, not where the walls and floors stand.
 3. **Ice in place.** The tongue down the ice gorge, seracs, dark moraine
    stripes; the ice and boulder rectangles go. Seracs less boxy.
-3b. **Snow finished.** The lane's open list above, on the new ground.
-4. **Rock detail.** Ridged, eroded height on the Peak only, at the scales the
+
+Changed 2026-10-30 at the user's word: steps 3b to 6 run as parallel lanes from
+the ice's close, each in its own worktree, `ITER(crown): lane <part>: <task>`.
+The lanes don't wait on each other; the lead merges them, then step 7 runs.
+
+3b. **Lane snow.** The lane's open list above, on the new ground.
+4. **Lane rock.** Ridged, eroded height on the Peak only, at the scales the
    plane flies past. A/B. Watch chunk cost (40-76 ms near the Peak today).
-5. **Light.** Side light on the approach at the default hour, by the massif's
-   facing or the Peak's own hour, whichever keeps the land's clock honest.
-6. **Flags and spindrift.** Place the strings. Spindrift off ridges and tips.
-7. **Far and cost.** The crown from every distance and side; collar off by
-   default; rendered frame times along the flight against today; load time.
+5. **Lane light.** Side light on the approach at the default hour, by the
+   massif's facing or the Peak's own hour, whichever keeps the land's clock
+   honest.
+6. **Lane flags.** Place the strings. Spindrift off ridges and tips.
+7. **Far and cost** (trunk, after the merge). The crown from every distance
+   and side; collar off by default; rendered frame times along the flight
+   against today; load time.
 
 ## Checks
 
