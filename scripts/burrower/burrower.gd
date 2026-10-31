@@ -189,6 +189,9 @@ const PLUME_DROP_UP := Vector2(6.0,15.0)
 const PLUME_DROP_SIZE := Vector2(0.09,0.26)
 const PLUME_DROP_LIFE := 1.6
 const CHAFF_PUFFS := 15.0
+## More of it past FAR (`distant`): up close it's already a big cloud, and from far
+## off the chaff is most of what shows of a sighting in a wood.
+const CHAFF_FAR := 2.0
 const CHAFF_UP := Vector2(3.0,9.0)
 const CHAFF_SIZE := Vector2(2.6,5.0)
 const CHAFF_MOST := 0.58
@@ -663,7 +666,7 @@ func tick(delta: float) -> void:
 	_step_clods(delta)
 	_step_dust(delta)
 	_step_spray(delta)
-	shudder.tick(delta,pos,strength if active and not wet else 0.0)
+	shudder.tick(delta,pos,strength if active and not wet else 0.0,heading,_turn/maxf(speed,1.0))
 	wet_k = move_toward(wet_k,1.0 if active and wet else 0.0,delta/0.25)
 	_feed_pond()
 	_drop_old_chunks()
@@ -1399,7 +1402,7 @@ func _plume(delta: float) -> void:
 		while _drop_carry >= 1.0:
 			_drop_carry -= 1.0
 			_plume_drop()
-	_plume_carry += (PLUME_PUFFS if plume_water else CHAFF_PUFFS)*strength*gout*delta
+	_plume_carry += (PLUME_PUFFS if plume_water else CHAFF_PUFFS*(CHAFF_FAR if distant else 1.0))*strength*gout*delta
 	if not plume_water:
 		_crown_ask -= delta
 		if _crown_ask <= 0.0:

@@ -384,7 +384,7 @@ func push(at: Vector2, kind := &"orb", face := Vector2(0.0,1.0)) -> Dictionary:
 	var crowned := roof > base
 	if crowned:
 		base = roof
-		burrower.shudder.shove(at,ROOF_R*2.0)
+		burrower.shudder.shove(at,ROOF_R*1.25)
 	var n := Vector3(face.x,0.0,face.y).normalized() if face.length() > 0.01 else Vector3.BACK
 	var turn := Basis(Vector3.UP.cross(n),Vector3.UP,n)
 	var o := {"kind": kind, "k": k, "at": at, "base": base, "wet": wet, "phase": &"swell", "t": 0.0,
