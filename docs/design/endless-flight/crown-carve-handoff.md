@@ -18,9 +18,9 @@ y over the sea). The rock is `scripts/endless/rocks/peak_carve_rock.gd`.
   higher gaps over the crests, so it's a choice of gaps: 3 in the first, 2 in the second.
 - **The Slot** (`LINE_SLOT`): the hanging valley between the prow's two crests, then over to tower
   0's root. Rock: fins and 8 eyes (a short wall with one hole on the line).
-- **The Bench** (`LINE_BENCH`): the broken shelf the far side of the Dike, then up tower 2's root.
-  Ruins: 15 pilgrims' pieces and 2 eyes. A gate stands on the ground if it's near the line, and
-  becomes an arcade with long piers if the ground is more than 16 m under it.
+- **The Bench** (`LINE_BENCH`): the broken shelf the far side of the Dike, then up tower 2's root,
+  with 2 eyes. The user played it and had the 15 ruin pieces removed: they floated and didn't fit.
+  The section stays, so figures below that name the ruins, gates or arcades predate that.
 
 ## Finding it from the start
 
