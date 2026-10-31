@@ -120,7 +120,7 @@ vec2 zs_tree_gust(vec2 root, float swing, float phase, inout vec2 react, inout f
 	float over = min(m, 1.15);
 	float took = 1.0 - smoothstep(0.02, 0.2, max(m, g.z));
 	react *= took;
-	stir = max(stir * took, over);
+	stir = max(stir * took, max(over, g.z));
 	vec2 way = m > 0.001 ? g.xy / m : vec2(0.0);
 	float own = 1.0 + ZS_TREE_GUST_SPREAD * (fract(phase * 1.37) * 2.0 - 1.0);
 	return way * ZS_TREE_GUST * own * (over + g.z * ZS_TREE_GUST_SWAY * swing);

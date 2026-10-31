@@ -115,7 +115,7 @@ const SLOTS := 6
 const WAKE_PX := 256
 const WAKE_RING := 220
 const WAKE_FRONT := 30.0
-const WAKE_LIFE := 0.7+1.3+11.0
+const WAKE_LIFE := 0.7+0.5+6.0
 
 var enabled := true
 var wash_on := true
