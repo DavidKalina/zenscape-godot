@@ -61,6 +61,9 @@ const NOTICE_UP := 60.0
 const NOTICE_EVERY := 0.1
 ## It came down from high: this long (s) to get low before climbing counts.
 const DROP_IN := 5.0
+## A water sighting out of the water this long (s), past the swell's flicker in the
+## shallows: he goes under.
+const ASHORE_S := 0.7
 ## Past this he's `distant`, with some slip either side.
 const FAR_M := 220.0
 const FAR_SLIP := 20.0
@@ -82,6 +85,7 @@ var _rng := RandomNumberGenerator.new()
 var _every := -1.0
 var _sighted := false
 var _sight_left := 0.0
+var _dry := 0.0
 var _look_left := -1.0
 var _drop_in := 0.0
 ## How high the plane has flown itself off the ground (m), and its height last
@@ -183,10 +187,13 @@ func _roaming(delta: float, game: Node3D, flying: bool) -> void:
 	var d := burrower.pos.distance_to(Vector2(p.x,p.z))
 	burrower.set_distant(d > FAR_M+(-FAR_SLIP if burrower.distant else FAR_SLIP))
 	game.react.gust_gain = remap(clampf(d,GUST_NEAR_M,GUST_FAR_M),GUST_NEAR_M,GUST_FAR_M,1.0,GUST_FAR)
-	if _sight_left <= 0.0:
+	# A water sighting stays on the water: run out of it, he goes under at the shore.
+	_dry = 0.0 if burrower.wet or str(rouse.kind) != "water" else _dry+delta
+	var ashore := _dry > ASHORE_S
+	if _sight_left <= 0.0 or ashore:
 		_sighted = false
 		burrower.dive()
-		rouse.why = "ignored"
+		rouse.why = "ashore" if ashore else "ignored"
 		rouse.ignored = int(rouse.ignored)+1
 		_rest()
 		return
@@ -244,6 +251,8 @@ func sight(game: Node3D, spot: Dictionary) -> void:
 	burrower.wake(spot.at,float(spot.way))
 	burrower.shudder.sight = true
 	burrower.plume = true
+	burrower.plume_water = spot.kind == "water"
+	_dry = 0.0
 	var p: Vector3 = game.plane.position
 	var d: float = (spot.at as Vector2).distance_to(Vector2(p.x,p.z))
 	burrower.set_distant(d > FAR_M)

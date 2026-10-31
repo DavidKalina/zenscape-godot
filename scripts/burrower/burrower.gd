@@ -173,10 +173,33 @@ const SPRAY := Color(0.86,0.92,0.95,0.85)
 const MIST := Color(0.80,0.85,0.87)
 ## How often a roam goal is the pond's far side.
 const POND_GOAL := 0.3
-## The plume (`plume`): drops a second, their rise (m/s) and size (m).
-const PLUME_RATE := 34.0
-const PLUME_UP := Vector2(7.0,14.0)
-const PLUME_SIZE := Vector2(0.7,1.5)
+## The plume (`plume`), to read from a few hundred metres: soft puffs in gouts, these
+## many a second at most, thrown up this fast (m/s), this wide (m, and they grow), this
+## thick and this long (s). On water mist and fine drops (drops a second, m/s, m, s);
+## in a wood chaff off the crowns he shakes (the crowns' top asked every CROWN_EVERY s
+## within CROWN_R m), else dust off the ground.
+const PLUME_PUFFS := 15.0
+const PLUME_UP := Vector2(9.0,19.0)
+const PLUME_SIZE := Vector2(2.4,4.4)
+const PLUME_MOST := 0.5
+const PLUME_LIFE := 3.2
+const PLUME_MIST := Color(0.93,0.96,0.97)
+const PLUME_DROPS := 70.0
+const PLUME_DROP_UP := Vector2(6.0,15.0)
+const PLUME_DROP_SIZE := Vector2(0.09,0.26)
+const PLUME_DROP_LIFE := 1.6
+const CHAFF_PUFFS := 15.0
+const CHAFF_UP := Vector2(3.0,9.0)
+const CHAFF_SIZE := Vector2(2.6,5.0)
+const CHAFF_MOST := 0.58
+const CHAFF_LIFE := 4.4
+const CHAFF := Color(0.74,0.63,0.30)
+const CROWN_R := 14.0
+const CROWN_EVERY := 0.4
+## Roaming water, the way ahead this far (m) is asked after every SHORE_EVERY s:
+## room to turn at MAX_TURN before the shore.
+const SHORE_LOOK := 36.0
+const SHORE_EVERY := 0.3
 
 ## The ground it runs in: the study's land (burrower_land.gd) or the game's
 ## (game_land.gd); both answer height, normal, mesh_height, colour, water_y,
@@ -208,8 +231,11 @@ var view: Camera3D
 ## Too far from the eye for the ridge, clods, dust and needles: only his way, the
 ## gust and the wake (`set_distant`).
 var distant := false
-## On water, a tall plume off him as well as the spray, to read from altitude.
+## A sighting: a plume off him, to read from altitude: mist on water (`plume_water`:
+## the sighting's, not `wet`, which flickers with the swell in the shallows), chaff in a
+## wood.
 var plume := false
+var plume_water := false
 ## Leading: &"enter" (coming in across the plane's way), &"run" (away, chased).
 var phase := &"run"
 var _phase_t := 0.0
@@ -264,6 +290,10 @@ var _sprays: Array = []
 var _spray_mm := MultiMesh.new()
 var _spray_carry := 0.0
 var _plume_carry := 0.0
+var _drop_carry := 0.0
+var _crown := -INF
+var _crown_ask := 0.0
+var _shore_ask := 0.0
 
 func _init() -> void:
 	name = "Burrower"
@@ -697,7 +727,7 @@ func _move(delta: float) -> void:
 			stats.soundings = int(stats.soundings)+1
 			var lw := "behind" if (pos-Vector2(p.x,p.z)).dot(fwd) < 0.0 else ("far (due)" if not is_nan(want_at.x) else "far")
 			stats.lost_why[lw] = int(stats.lost_why.get(lw,0))+1
-	elif pos.distance_to(_goal) < 18.0:
+	elif pos.distance_to(_goal) < 18.0 or _shore_ahead(delta):
 		_goal = _roam_goal()
 	var dir := (_goal-pos).normalized()
 	# Steering round what lies ahead and keeping to the meadow.
@@ -761,7 +791,7 @@ func _move(delta: float) -> void:
 		if _since_stamp >= GRASS_STEP:
 			_since_stamp = 0.0
 			_stamp_grass()
-	if plume and wet: _plume(delta)
+	if plume: _plume(delta)
 	if not distant: _kick(delta)
 
 ## The entrance's step: for the point CROSS_AHEAD s ahead on the plane's
@@ -1352,18 +1382,57 @@ func _feed_pond() -> void:
 	m.set_shader_parameter("head",Vector4(pos.x,pos.y,strength*wet_k,speed))
 	m.set_shader_parameter("head_way",forward())
 
-## From altitude: fat drops thrown high off him, a white smudge moving on the water.
+## A sighting on water, the shore coming up on his way: time for a new goal.
+func _shore_ahead(delta: float) -> bool:
+	if not plume or not wet: return false
+	_shore_ask -= delta
+	if _shore_ask > 0.0: return false
+	_shore_ask = SHORE_EVERY
+	return not _wet_at(pos+forward()*SHORE_LOOK)
+
+## From altitude: a smudge moving on the water or through the wood, in gouts.
 func _plume(delta: float) -> void:
-	_plume_carry += PLUME_RATE*strength*delta
+	if plume_water and not wet: return
+	var gout := clampf(0.5+1.1*_noise.get_noise_1d(time*0.9+80.0),0.2,1.0)
+	if plume_water:
+		_drop_carry += PLUME_DROPS*strength*delta
+		while _drop_carry >= 1.0:
+			_drop_carry -= 1.0
+			_plume_drop()
+	_plume_carry += (PLUME_PUFFS if plume_water else CHAFF_PUFFS)*strength*gout*delta
+	if not plume_water:
+		_crown_ask -= delta
+		if _crown_ask <= 0.0:
+			_crown_ask = CROWN_EVERY
+			_crown = land.canopy_top(pos,CROWN_R)
 	while _plume_carry >= 1.0:
 		_plume_carry -= 1.0
-		if _sprays.size() >= SPRAYS: _sprays.pop_front()
+		if _dusts.size() >= DUSTS: _dusts.pop_front()
 		var fwd := forward()
-		var at := pos-fwd*_rng.randf_range(0.0,5.0)+fwd.orthogonal()*_rng.randf_range(-2.0,2.0)
-		var h := fwd*speed*_rng.randf_range(0.2,0.6)+fwd.orthogonal()*_rng.randf_range(-3.0,3.0)
-		var sea: float = land.water_y(at.x,at.y)
-		_sprays.append({"p": Vector3(at.x,sea+0.3,at.y), "sea": sea, "v": Vector3(h.x,_rng.randf_range(PLUME_UP.x,PLUME_UP.y),h.y),
-			"size": _rng.randf_range(PLUME_SIZE.x,PLUME_SIZE.y)})
+		var side := fwd.orthogonal()
+		var wide := 3.0 if plume_water else 8.0
+		var at := pos-fwd*_rng.randf_range(0.0,7.0)+side*_rng.randf_range(-wide,wide)
+		var h := fwd*speed*_rng.randf_range(0.2,0.6)+side*_rng.randf_range(-2.0,2.0)
+		if plume_water:
+			_dusts.append({"p": Vector3(at.x,land.water_y(at.x,at.y)+0.4,at.y), "v": Vector3(h.x,_rng.randf_range(PLUME_UP.x,PLUME_UP.y),h.y),
+				"age": 0.0, "life": PLUME_LIFE*_rng.randf_range(0.75,1.2), "size": _rng.randf_range(PLUME_SIZE.x,PLUME_SIZE.y),
+				"shade": _rng.randf_range(0.96,1.04), "colour": PLUME_MIST, "most": PLUME_MOST})
+		else:
+			var ground: float = land.height(at.x,at.y)
+			var y := _crown-_rng.randf_range(0.0,5.0) if _crown > ground else ground+1.0
+			_dusts.append({"p": Vector3(at.x,y,at.y), "v": Vector3(h.x,_rng.randf_range(CHAFF_UP.x,CHAFF_UP.y),h.y),
+				"age": 0.0, "life": CHAFF_LIFE*_rng.randf_range(0.75,1.2), "size": _rng.randf_range(CHAFF_SIZE.x,CHAFF_SIZE.y),
+				"shade": _rng.randf_range(0.9,1.08), "colour": CHAFF, "most": CHAFF_MOST})
+
+## One fine drop of the plume: flung up and thinning out as it falls.
+func _plume_drop() -> void:
+	if _sprays.size() >= SPRAYS: _sprays.pop_front()
+	var fwd := forward()
+	var at := pos-fwd*_rng.randf_range(0.0,6.0)+fwd.orthogonal()*_rng.randf_range(-2.5,2.5)
+	var h := fwd*speed*_rng.randf_range(0.2,0.6)+fwd.orthogonal()*_rng.randf_range(-4.0,4.0)
+	var sea: float = land.water_y(at.x,at.y)
+	_sprays.append({"p": Vector3(at.x,sea+0.3,at.y), "sea": sea, "v": Vector3(h.x,_rng.randf_range(PLUME_DROP_UP.x,PLUME_DROP_UP.y),h.y),
+		"size": _rng.randf_range(PLUME_DROP_SIZE.x,PLUME_DROP_SIZE.y), "age": 0.0, "life": PLUME_DROP_LIFE*_rng.randf_range(0.7,1.3)})
 
 ## A drop thrown off the bulge: most out to the sides and up, some in a
 ## plume left behind the head; `burst` a splash's, flung every way.
@@ -1400,11 +1469,13 @@ func _step_spray(delta: float) -> void:
 		v.y -= GRAVITY*delta
 		v *= 1.0-0.9*delta
 		var p: Vector3 = (d.p as Vector3)+v*delta
-		if p.y < float(d.get("sea",-INF)) and v.y < 0.0:
+		var age := float(d.get("age",0.0))+delta
+		if (p.y < float(d.get("sea",-INF)) and v.y < 0.0) or age >= float(d.get("life",INF)):
 			_sprays.remove_at(i)
 			continue
 		d.v = v
 		d.p = p
+		d.age = age
 		i += 1
 	var n := _sprays.size()
 	_spray_mm.visible_instance_count = n
@@ -1418,5 +1489,6 @@ func _step_spray(delta: float) -> void:
 		var z := x.cross(up)
 		var stretch := 1.0+v.length()*0.12
 		_spray_mm.set_instance_transform(k,Transform3D(Basis(x*size,up*size*stretch,z*size),d.p))
-		_spray_mm.set_instance_color(k,SPRAY)
+		var thin := 1.0-smoothstep(0.45,1.0,float(d.get("age",0.0))/float(d.get("life",INF)))
+		_spray_mm.set_instance_color(k,Color(SPRAY,SPRAY.a*thin))
 	stats.spray = n
