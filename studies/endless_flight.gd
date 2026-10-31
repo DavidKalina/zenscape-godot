@@ -147,6 +147,7 @@ const RivalRace = preload("res://scripts/endless/rival_race.gd")
 ## The shops beside their strips (scripts/endless/shop_sites.gd; --shops=0 none).
 const ShopSites = preload("res://scripts/endless/shop_sites.gd")
 const RegionDoors = preload("res://scripts/endless/region_doors.gd")
+const HallDoors = preload("res://scripts/endless/hall_doors.gd")
 ## The crown's spirals of cloud (scripts/endless/peak_spirals.gd; --spirals=0 none).
 const PeakSpirals = preload("res://scripts/endless/peak_spirals.gd")
 const PeakSpindrift = preload("res://scripts/endless/peak_spindrift.gd")
@@ -746,7 +747,7 @@ func _ready() -> void:
 	add_child(shops)
 	shops.setup(self)
 	if RegionDoors.wanted(world):
-		doors = RegionDoors.new()
+		doors = HallDoors.new() if HallDoors.wanted_hall() else RegionDoors.new()
 		add_child(doors)
 		doors.setup(self,_start,_heading,seed)
 	if Finds.wanted(seed):
@@ -1061,15 +1062,18 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 		p += solid_shift
 	var g: Variant = tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
-	return g if stair == null else stair.ground(p,g,pad)
+	if stair != null: g = stair.ground(p,g,pad)
+	return g if doors == null else doors.ground(p,g,pad)
 
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
+	if doors != null and doors.holds(p): return false
 	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p)
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
 func floor_at(p: Vector2) -> float:
+	if doors != null and plane != null and doors.holds(Vector3(p.x,plane.position.y,p.y)): return doors.hall_floor()
 	var h: float = field.height(p.x,p.y)
 	if h < Field.SEA_Y+0.2 or _on_river(): return NAN
 	# In a tunnel's bore, its floor (read at the plane's height).
@@ -1090,6 +1094,7 @@ func water_at(p: Vector3) -> float:
 ## bore's floor in its tube), for the camera to keep over (GlideCamera
 ## `floor_at`).
 func eye_floor(p: Vector3) -> float:
+	if doors != null and doors.holds(p): return doors.hall_floor()
 	var h: float = field.height(p.x,p.z)
 	if _on_river(): h = maxf(h,field.river_drawn())
 	h = tunnels.land_y(p,h)
@@ -1097,6 +1102,7 @@ func eye_floor(p: Vector3) -> float:
 
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
+	if doors != null and doors.holds(p): return p.y < doors.hall_floor()+EYE_CLEAR*0.5
 	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p)
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
@@ -1111,6 +1117,7 @@ func sea_height(p: Vector3) -> float:
 ## field; in a bore, finer (LandTunnels `sight`).
 func _sight(from: Vector3, to: Vector3) -> float:
 	const STEPS := 10
+	if doors != null and doors.holds(from): return 1.0
 	var bore: float = tunnels.sight(from,to)
 	if tunnels.sight_whole: return bore
 	for i in range(1,STEPS+1):
@@ -1141,10 +1148,11 @@ func tick(delta: float) -> void:
 	# The plane skims the swell as drawn, not the sea's rest level, and a
 	# river's water as it skims the sea.
 	plane.water = water_at(plane.position)
+	if doors != null and doors.holds(plane.position): plane.water = -INF
 	if water != null: water.feel(delta)
 	input["flaps"] = 1.0 if flaps else 0.0
 	# In a bore's tube the low zone lets be (SkyPlane `roofed`).
-	plane.roofed = tunnels != null and int(tunnels.tube(plane.position)) == 0
+	plane.roofed = (tunnels != null and int(tunnels.tube(plane.position)) == 0) or (doors != null and doors.holds(plane.position))
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	# The trees the coming move meets are knocked down first, so it flies on through.
 	var knocked: Dictionary = knock.before(delta,self)
@@ -1198,6 +1206,7 @@ func tick(delta: float) -> void:
 	if towers != null: towers.step(camera.global_position)
 	halls.step(camera.global_position)
 	tunnels.step(camera.global_position)
+	if doors != null: doors.late(camera.global_position)
 	trees.step(camera.global_position,plane.position)
 	knock.step(delta,self)
 	birds.step(delta,camera.global_position,plane)
@@ -1471,7 +1480,7 @@ func _frame(delta: float) -> void:
 	var right := Vector2.ZERO if stage != null and stage.holding() else Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
 	if right != Vector2.ZERO: chase.turn(Vector2(-right.x,-right.y)*STICK_LOOK*delta)
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
-	chase.tight = tunnels.near(plane.position)
+	chase.tight = tunnels.near(plane.position) or (doors != null and doors.holds(plane.position))
 	chase.step(delta,plane,0.0,_solid)
 	camera.global_position = chase.eye
 	var way: Vector3 = chase.look-chase.eye

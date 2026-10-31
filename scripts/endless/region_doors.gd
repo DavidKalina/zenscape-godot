@@ -167,6 +167,20 @@ func setup(host: Node3D, start: Vector2, heading: float, seed: int) -> void:
 	_make_lands()
 	print("doors: %s at %s (%.0f m from the start, %s), %s at %s" % [walls[0].name,str(_xz(0).round()),_xz(0).distance_to(start),spot.why,walls[1].name,str(_xz(1).round())])
 
+# --- What the hall door answers (hall_doors.gd); a wall stands in nothing ---------------
+
+func ground(_p: Vector3, h: Variant, _pad := -1.0) -> Variant:
+	return h
+
+func holds(_p: Vector3) -> bool:
+	return false
+
+func hall_floor() -> float:
+	return 0.0
+
+func late(_eye: Vector3) -> void:
+	pass
+
 # --- The walls' places ----------------------------------------------------------------
 
 ## The wilderness wall's spot: {at (XZ), yaw (its through way's), why}. The
@@ -559,10 +573,17 @@ func _carry() -> void:
 	var by := at-p
 	armed[to_i] = false
 	passes += 1
-	# What kept last frame's place: the vapour, the chase, the near misses'
-	# clearance, the sea's wake, the clouds' history, the grass's stamps.
 	h.plane_figure.reset(plane)
 	h.chase.reset(plane,(h.chase.eye as Vector3)+by,h.camera.fov)
+	_wash()
+	_set_hour(passing,to_i)
+	if h.book != null and h.book.find(String(walls[passing].find)): print("doors: first pass of %s" % walls[passing].name)
+	print("doors: through %s to %s, at %s, %.0f m over the ground" % [walls[passing].name,walls[to_i].name,str(at.round()),over])
+
+## What kept last frame's place after the plane moved: the near misses'
+## clearance, the sea's wake, the clouds' history, the grass's stamps.
+func _wash() -> void:
+	var h := _host
 	if "_last_ground" in h.near: h.near._last_ground = INF
 	var look: Node = h.look
 	if look != null:
@@ -580,9 +601,6 @@ func _carry() -> void:
 		h.react.set_enabled(true)
 		if "wash_spot" in h.react: h.react.wash_spot = {}
 	if h.eddies != null and "_last" in h.eddies: h.eddies._last.clear()
-	_set_hour(passing,to_i)
-	if h.book != null and h.book.find(String(walls[passing].find)): print("doors: first pass of %s" % walls[passing].name)
-	print("doors: through %s to %s, at %s, %.0f m over the ground" % [walls[passing].name,walls[to_i].name,str(at.round()),over])
 
 ## The day cycle (when it runs, and no --hour= took it) from side `from`'s
 ## hour to side `to`'s.
