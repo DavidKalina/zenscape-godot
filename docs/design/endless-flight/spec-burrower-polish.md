@@ -105,6 +105,55 @@ camera may misdraw sprites: judge in the play view.
 The loop's owner merges the lanes, smokes both scenes, looks at the stills and
 writes `burrower-polish-handoff.md`.
 
+## Round 2 (the user, after playing it)
+
+Three lanes, branched from the merge of round 1. The user queued all three.
+
+### Lane `dust` (Opus): the dust cloud reads like a GIF
+
+The user: from up above, the dust cloud he leaves "reads like a GIF. It's at a low
+frame rate, it pauses and then it repeats." Find which effect that is first: it may
+be the run's dust (`shaders/burrower_dust.gdshader`, `_step_dust` in
+`scripts/burrower/burrower.gd`), the sighting's chaff, thrown in gouts from the same
+quads (lane `sight`), or a stepped update from the frame-rate cuts. A film at play speed
+from about 100-200 m over him, compared frame to frame, should show it. What done looks
+like: it moves smoothly at the game's frame rate, with no visible loop or hold.
+
+### Lane `gust` (Opus): only the trees he's actually touching
+
+The user: "the trees waking is great", but he isn't that wide, and trees far enough
+off that he couldn't touch them wake too. "Tighten the radius of the trees that
+actually wake in its path", so the ground he's working on is what moves them. His
+trail is about 5-6 m wide. Today the gust is wide (a sighting's reaches 110 m each side,
+with a gain from distance, `scripts/burrower/tree_shudder.gd`, `gust_strip` and
+`gust_disc` in `scripts/endless/grass_react.gd`, `burrower_flight.gd`). The run's and the
+sighting's both tighten, to a narrow band along his path: start from trees within about
+8-10 m of his line and judge by eye.
+
+That width was what made sightings read from altitude, so re-check them with
+`scratch/pr33_see.gd`. The chaff and plume carry the sighting now: strengthen them if the
+narrow line stops reading, rather than widening the gust. The lean and spring-back
+themselves are good. Don't change them.
+
+### Lane `move` (Opus): keep the player on their toes
+
+This lifts the spec's "his speed and turning" out of scope, for this lane only. Flying
+close behind him in a straight line takes the orbs without trying. The user wants him
+to curve more, not fully erratic. In the game only: `at_head` runs, not the study.
+
+1. **Orbs off the line.** `push_ups.gd` `_due_head` releases when he's within
+   `HEAD_CROSS` (3.5 m) of the plane's line. Release as he's run on past it, about 8-15 m
+   to the side, so reaching it takes a turn.
+2. **Catch radius.** Cut or drop `ORB_MORE` (2.5 m), `burrower_flight.gd`.
+3. **S-curves.** A slow left-right swing on his course in `_run_on`
+   (`scripts/burrower/burrower.gd`), with more room before the pull back to the nose
+   (`RUN_OFF`, `OFF_TURN`, `WANDER`). Long smooth arcs, not twitchy jinks.
+
+An orb must stay reachable: never where the plane can't turn to in time at its speed.
+Proof, through the stick: a bot flying straight takes 0-1 of 3; a bot chasing him takes
+most. Add launch flags for the three numbers so the user can tune them while playing, and
+list them in Look at. Feel is the user's call.
+
 ## Working rules, every agent
 
 - **Look through the real thing.** `scratch/pr33_look.gd` and `scratch/pr33_see.gd`
