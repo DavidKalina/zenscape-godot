@@ -544,7 +544,8 @@ func _landing(events: Dictionary) -> void:
 ## grind and what it hit, a crash.
 func _near(events: Dictionary) -> void:
 	var m: Variant = events.get("near")
-	if m is Dictionary:
+	# A push-up (`chime`) sounds its own note (push_ups.gd).
+	if m is Dictionary and not (m as Dictionary).has("chime"):
 		var k := clampf(float((m as Dictionary).get("k",0.0)),0.0,1.0)
 		shot("swish",lerpf(NEAR.x,NEAR.y,k),lerpf(NEAR_PITCH.x,NEAR_PITCH.y,k),Vector3.INF,AIR)
 		shot("whoosh",lerpf(NEAR.x,NEAR.y,k)*0.8,lerpf(NEAR_PITCH.x,NEAR_PITCH.y,k)+0.1,Vector3.INF,AIR)

@@ -168,9 +168,11 @@ class Reader extends RefCounted:
 			if not t is Vector2 and t != null: h = maxf(h,float(t))
 		return h
 
-## Off under `--beats=0` (no starters, no routes: to compare frame cost).
+## Off by default since the burrower took their place in endless flight
+## (spec-burrower-flight.md); `--beats=1` brings the starters and routes
+## back.
 static func wanted() -> bool:
-	return not OS.get_cmdline_user_args().has("--beats=0")
+	return OS.get_cmdline_user_args().has("--beats=1")
 
 ## The planner's own time (us) since start, its slices summed (for checks).
 static var plan_us := 0

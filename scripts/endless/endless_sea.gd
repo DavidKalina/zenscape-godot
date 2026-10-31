@@ -40,9 +40,12 @@ const WAKE_SPEED := Vector2(3.0,9.0)
 ## The wake starts under WAKE_HIGH m over the water and is full by WAKE_LOW.
 const WAKE_HIGH := 7.0
 const WAKE_LOW := 1.6
+## How much wider `other_track` lies (the shader's other_wide).
+const OTHER_WIDE := 1.8
 
 var material: ShaderMaterial
 var land_seed := 0
+var _other_on := false
 var depth := ImageTexture.new()
 var depth_at := Vector4.ZERO
 var _task := -1
@@ -461,6 +464,25 @@ func _wake(plane: Vector3) -> void:
 	var reach := 0.0
 	for i in count: reach = maxf(reach,at.distance_to(Vector2(_trail[i].x,_trail[i].y))+6.0+spread*1.3*(_now-_trail[i].z))
 	material.set_shader_parameter("wake_head",Vector4(at.x,at.y,low,reach))
+
+## A second track on the sea, the burrower's (scripts/burrower/wake_sheet.gd):
+## its points as `(x, z, age s, strength)`, newest first, at most WAKE_POINTS,
+## the head at `head`. An empty list takes it off.
+func other_track(points: Array[Vector4], head: Vector2) -> void:
+	var count := mini(points.size(),WAKE_POINTS)
+	if count == 0 and not _other_on: return
+	_other_on = count > 0
+	var sent := PackedVector4Array()
+	sent.resize(WAKE_POINTS)
+	var reach := 0.0
+	var spread := clampf(_speed*WAKE_SPREAD,1.5,12.0)
+	for i in count:
+		var q := points[i]
+		sent[i] = Vector4(q.x,q.y,_now-q.z,q.w)
+		reach = maxf(reach,head.distance_to(Vector2(q.x,q.y))+(6.0+spread*1.3*q.z)*OTHER_WIDE)
+	material.set_shader_parameter("other_points",sent)
+	material.set_shader_parameter("other_count",count)
+	material.set_shader_parameter("other_head",Vector4(head.x,head.y,1.0,reach))
 
 ## Waits for a worker still baking (before the sea is freed).
 func finish() -> void:

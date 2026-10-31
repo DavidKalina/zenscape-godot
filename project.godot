@@ -541,6 +541,14 @@ zs_react_rect={
 "type": "vec4",
 "value": Vector4(0, 0, 0, 0)
 }
+zs_gust_map={
+"type": "sampler2D",
+"value": ""
+}
+zs_gust_rect={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
 zs_region_map={
 "type": "sampler2D",
 "value": ""

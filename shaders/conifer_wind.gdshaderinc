@@ -34,7 +34,16 @@ vec3 zs_conifer_offset_alive(vec3 vertex, mat4 model, bool alive, out float shee
 	vec2 motion = (zs_wind_direction * (1.0 + sway * swing) + crosswind * (0.22 * sin(t * pace * 0.71 + phase * 2.3 - k * 0.6)))
 		* lean * give * conifer_height * bend;
 	float stir = 0.0;
-	if (alive) motion += zs_tree_react(root, stir) * give * conifer_height * bend;
+	if (alive) {
+		// The grass's stirring, and the burrower's gust: all the wind's lean, only
+		// more, swaying round it at this tree's pace as it lets go (zs_tree_gust).
+		vec2 react = zs_tree_react(root, stir);
+		vec2 over = zs_tree_gust(root, swing, phase, react, stir);
+		// `over` shears, straight up the whole height (height / conifer_height, not
+		// `k`): the trunk has a handful of rings and the crown many, so any curve or
+		// clamp here parts them, more the harder it blows, and the trunk stands out.
+		motion += (react * bend + over * (height / conifer_height)) * give * conifer_height;
+	}
 	vec3 local = zs_local_wind(vec3(root.x, model[3].y + height, root.y));
 	motion += local.xz / (10.0 + length(local)) * bend * 0.32;
 	// Wide cone rims flutter; the narrow trunk receives no tip flutter.
