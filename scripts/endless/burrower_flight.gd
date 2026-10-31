@@ -239,7 +239,6 @@ func sight(game: Node3D, spot: Dictionary) -> void:
 	burrower.plume = true
 	var p: Vector3 = game.plane.position
 	var d: float = (spot.at as Vector2).distance_to(Vector2(p.x,p.z))
-	burrower.distant = false
 	burrower.set_distant(d > FAR_M)
 	rouse.sightings = int(rouse.sightings)+1
 	rouse.kind = spot.kind

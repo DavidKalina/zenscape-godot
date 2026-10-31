@@ -148,8 +148,10 @@ const HEAD_CROSS := 3.5
 const CROSS_PAST := 9.0
 const HEAD_WAIT := 3.5
 const HEAD_OFF := 0.6
-## The plane must be coming in at most HEAD_HIGH m over the orb's hang, or it
-## would pass over it (waiting past HEAD_WAIT, one comes up all the same).
+## It goes up to meet a plane coming in high, at most HEAD_UP m over the ground, so
+## a low-ish pass still gets it. The plane must be coming in at most HEAD_HIGH m
+## over that (waiting past HEAD_WAIT, one comes up all the same).
+const HEAD_UP := 14.0
 const HEAD_HIGH := 7.0
 ## The third is out this long before he dives (`run_done`).
 const RUN_AFTER := 1.2
@@ -721,11 +723,12 @@ func _due_head(delta: float, plane: Object) -> void:
 	var late := _due_t > HEAD_WAIT and nose < HEAD_OFF
 	if t >= HEAD_T.x and t <= HEAD_T.y and (over or late):
 		var at: Vector2 = head-burrower.forward()*HEAD_BACK
-		var hang := maxf(maxf(land.height(at.x,at.y),land.water_y(at.x,at.y)),land.canopy_top(at,ROOF_R))+float(k.up)
-		if not late and p.y+v.y*t-hang > HEAD_HIGH: return
+		var low := maxf(maxf(land.height(at.x,at.y),land.water_y(at.x,at.y)),land.canopy_top(at,ROOF_R))
+		var up := clampf(p.y+v.y*t-low,float(k.up),HEAD_UP)
+		if not late and p.y+v.y*t-low-up > HEAD_HIGH: return
 		var why := _room(at,k)
 		if why == "":
-			push(at,&"orb",p2-at)
+			push(at,&"orb",p2-at).up = up
 			run_pushed += 1
 			_pushed_at = time
 			_due_t = 0.0
@@ -816,7 +819,7 @@ func _step(o: Dictionary, delta: float, plane: Object, half_span: float, bumped:
 						burrower.throw_earth(top,bits,5.5,8.0+(2.0 if kind != &"orb" else 0.0),dr.y*0.8)
 						burrower.puff(top,5)
 		&"push", &"hang":
-			var hang := base+float(k.up)
+			var hang := base+float(o.get("up",k.up))
 			if o.phase == &"hang":
 				if kind == &"orb": hang += 0.12*sin(time*2.2+float(o.bob))
 				elif kind == &"bell": hang += 0.06*sin(time*1.4+float(o.bob))

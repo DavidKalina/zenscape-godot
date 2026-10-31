@@ -57,7 +57,7 @@ const STOOD_STRIP := 7.0
 const STOOD_LEAD := 30.0
 ## A sighting's gust (`sight`), wider and harder, to read from a few hundred
 ## metres.
-const SIGHT_GUST := 55.0
+const SIGHT_GUST := 110.0
 const SIGHT_K := 1.6
 const STOOD_BURST := Vector2(14.0,5.0)
 const STOOD_CARD := 1.3

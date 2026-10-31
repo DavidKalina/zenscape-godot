@@ -7,21 +7,38 @@ Loop `burrower-flight` (spec: `spec-burrower-flight.md`), branch
 
 ## Play it
 
-`.\run-endless-flight.cmd`, no flags. Skim low over open ground or water with
-the camera forward for about a second and a half. It comes in from the side,
-crosses ahead and runs for up to 40 s. Climb off (over 5 spans for 1.4 s) and it
-dives; it rests 6 s. **Z** or the pad's south face rolls: roll through a gong.
+`.\run-endless-flight.cmd --burrower-every=5`: a sighting about 5 s after he last
+went (with no flag, the first at about a minute of flight, then every 2-3 minutes).
+Fly at 100-200 m and look ahead and to the sides, 280-420 m off: a patch of wood
+going over and paling, or a white plume with a V on water. Ignored, he sinks after
+20-30 s. Come down within 110 m, under 60 m over him, with him ahead, and the run
+starts from where he is. He crosses your line and throws up to 3 orbs from behind
+his head, then dives. Climb off (over 5 spans for 1.4 s, after 5 s to get low) and
+he dives. **Z** or the pad's south face rolls.
 
-- `--no-burrower`: none of it. `--beats=1`: the timed challenges back.
+The study keeps the off-screen entrance, the skim, bells and gongs; the game doesn't
+use them.
+
+- `--no-burrower`: none of it. `--burrower-every=S`: the rest between sightings.
+  `--beats=1`: the timed challenges back.
 - `--near-hud=glyph`: the tilted tag instead of the ring.
 - Study, for the creature alone: `.\run-burrower-study.cmd`.
 
 ## What's built
 
 - Beat routes off by default; code kept.
-- The wake gate (`scripts/endless/burrower_flight.gd`): camera within 10 deg,
-  1.2 s of NearMiss's skim, 6 s rest, open ground or water for 160 m. A forest
-  counts as open; cliffs, stone and steep ground shut it.
+- Sightings (`scripts/endless/burrower_flight.gd`), see Play it. The rest: a thing
+  you come across, not a schedule; 2-3 minutes is about 4-6 km of flight at 34 m/s,
+  and the first comes at a minute so a new player meets him. Nothing suits: 12 s of
+  looks, then 30 s. Only loaded plan cells of 12+ trees with 14+ on his way, or water
+  160 m on.
+- Far off (over 220 m) `distant` drops ridge, clods, dust, needles and trunks; his
+  way, the gust and the wake stay. The gust's map (384 m a side) follows his head, not
+  the eye: only he writes it. A sighting's gust is 110 m each side, gains up to 1.6
+  with distance (`zs_gust_rect.w`) and pales sprites more; on water he throws a plume.
+- Orbs (`push_ups.gd` `_due_head`): he runs across the plane's line and one comes up
+  2.5 m behind his head, 1.2-4 s of flight off, rising up to 14 m over the ground to
+  meet a plane coming in high. Reach 2.5 m past the study's.
 - The game's land (`scripts/burrower/game_land.gd`): trail and scar on the
   terrain, grass parted by the shared react stamps. It steers round what stands,
   dives at an edge, resurfaces ahead.

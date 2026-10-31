@@ -172,7 +172,7 @@ void vertex() {
 		vec2 react = zs_tree_react(root, stir);
 		motion += (zs_tree_gust(root, swing, phase, react, stir) + react) * 0.3 * tall * k * k;
 		VERTEX.xz += motion;
-		sprite_sheen = max(wave, stir * 0.8);
+		sprite_sheen = max(wave, stir * 0.8 * max(zs_gust_rect.w, 1.0));
 	}
 	if (d < band.x - (fade.x > 0.0 ? fade.x + SLACK : 0.0) || d >= band.y + (fade.y > 0.0 ? fade.y + SLACK : 0.0)) VERTEX = foot;
 	NORMAL = toward;
