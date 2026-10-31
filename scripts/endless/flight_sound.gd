@@ -81,6 +81,8 @@ const WHISTLE_NEAR := 0.06
 const WHISTLE_PULL := 0.05
 const WHISTLE_DIVE := 0.05
 const HOWL := 0.17
+## The strike's roar at a full `strike`.
+const STRIKE_ROAR := 0.5
 ## The wingtip vapour's own turn rate (rad/s) where a pull starts and is full.
 const PULL_TURN := Vector2(0.7,1.5)
 ## The nose-down share of the speed where a dive starts and is full.
@@ -187,6 +189,10 @@ class Bed extends RefCounted:
 var rush: Bed
 var whistle: Bed
 var howl: Bed
+## The Peak's strike coming (scripts/endless/peak_strike.gd sets `strike`,
+## 0 to 1): a roar under the air.
+var roar: Bed
+var strike := 0.0
 var engine: Bed
 var wires: Bed
 var rumble: Bed
@@ -311,6 +317,9 @@ func _ready() -> void:
 	rush = _bed(KIT+"air-rush-loop.wav",AIR)
 	whistle = _bed(KIT+"air-whistle-loop.wav",AIR)
 	howl = _bed(KIT+"air-howl-loop.wav",AIR)
+	roar = _bed(KIT+"fall-roar-loop.wav",SFX)
+	roar.attack = 2.0
+	roar.release = 1.2
 	engine = _bed(KIT+"engine-loop.wav",SFX)
 	engine.attack = 3.0
 	engine.release = 1.2
@@ -347,6 +356,8 @@ func _ready() -> void:
 		# The rival race's beats (scripts/endless/rival_race.gd).
 		"race-count":[load(KIT+"race-count.wav")],"race-go":[load(KIT+"race-go.wav")],
 		"race-win":[load(KIT+"race-win.wav")],"race-lose":[load(KIT+"race-lose.wav")],
+		# The Peak's strike landing (scripts/endless/peak_strike.gd).
+		"slam":_takes(KIT+"wind-slam-%d.wav",2),
 	}
 
 static func _takes(pattern: String, count: int) -> Array:
@@ -491,6 +502,8 @@ func _air(boost: float, flying: bool) -> void:
 	whistle.pitch_goal = 0.9+0.25*fast+0.08*dive+OVER_PITCH*over
 	howl.goal = HOWL*enclosed+0.04*near
 	howl.pitch_goal = 0.8+0.4*fast
+	roar.goal = STRIKE_ROAR*strike
+	roar.pitch_goal = 0.75+0.35*strike
 
 ## The engine: the throttle and the speed; wires on the knife edge, a drift
 ## and a hard pull.

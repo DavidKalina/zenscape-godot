@@ -36,6 +36,13 @@ const GIRTHS := 2.4
 const BOX := 1.75
 ## How often the sky's haze is read (s).
 const HAZE_EVERY := 0.5
+## The ribbon's shape, as shaders/peak_spiral.gdshader has it, for `ribbon_at`.
+const TAPER := 0.42
+const TIGHTEN := 0.45
+## Roused (`rouse`): the turn's speed at a full 1, and how far down the ribbon
+## its tip is drawn in (a share of it).
+const ROUSE_SPIN := 3.5
+const ROUSE_TIP := 0.2
 
 var _host: Node
 var _ribbons: Array[Dictionary] = []
@@ -98,7 +105,7 @@ func set_axes(axes: Array) -> void:
 		box.position = (lo+hi)*0.5
 		box.scale = hi-lo
 		add_child(box)
-		_ribbons.append({"box": box, "material": mat, "rate": TAU/float(axis.get("period",PERIOD[i%PERIOD.size()])), "spin": float(i)*2.1})
+		_ribbons.append({"box": box, "material": mat, "rate": TAU/float(axis.get("period",PERIOD[i%PERIOD.size()])), "spin": float(i)*2.1, "base": base, "tip": tip, "radius": radius, "turns": float(axis.get("turns",TURNS)), "hand": float(axis.get("hand",HAND[i%HAND.size()])), "rouse": 0.0})
 	_haze_wait = 0.0
 	_read_look()
 	set_process(not _ribbons.is_empty())
@@ -107,7 +114,7 @@ func set_axes(axes: Array) -> void:
 func _process(delta: float) -> void:
 	_flow = fmod(_flow+FLOW*delta,FLOW_WRAP)
 	for r: Dictionary in _ribbons:
-		r.spin = fmod(float(r.spin)+float(r.rate)*delta,TAU)
+		r.spin = fmod(float(r.spin)+float(r.rate)*delta*(1.0+(ROUSE_SPIN-1.0)*float(r.rouse)),TAU)
 		var mat: ShaderMaterial = r.material
 		mat.set_shader_parameter("spin",r.spin)
 		mat.set_shader_parameter("flow",_flow)
@@ -115,6 +122,52 @@ func _process(delta: float) -> void:
 	if _haze_wait <= 0.0:
 		_haze_wait = HAZE_EVERY
 		_read_look()
+
+
+## Spiral `i` roused, 0 to 1 (scripts/endless/peak_strike.gd): it turns faster
+## and its tip draws in as the strike takes it. At 0 it is as it always is.
+func rouse(i: int, k: float) -> void:
+	if i < 0 or i >= _ribbons.size(): return
+	var r: Dictionary = _ribbons[i]
+	if is_equal_approx(float(r.rouse),k): return
+	r.rouse = k
+	(r.material as ShaderMaterial).set_shader_parameter("tip_left",1.0-ROUSE_TIP*k)
+
+
+## How many ribbons stand.
+func count() -> int:
+	return _ribbons.size()
+
+
+## The ribbon's centre line at `share` of its length, root to tip: where
+## the shader has it now, its small wander left out. World.
+func ribbon_at(i: int, share: float) -> Vector3:
+	var r: Dictionary = _ribbons[i]
+	var base: Vector3 = r.base
+	var tip: Vector3 = r.tip
+	var turns := float(r.turns)
+	var k := share*(1.0+TIGHTEN)
+	var h := (sqrt(1.0+4.0*TIGHTEN*k)-1.0)/(2.0*TIGHTEN)
+	var ang := float(r.hand)*TAU*share*turns-float(r.spin)
+	var out := Vector2.from_angle(ang)*float(r.radius)*lerpf(1.0,TAPER,pow(clampf(h,0.0,1.0),0.85))
+	var at := base.lerp(tip,h)
+	return at+Vector3(out.x,0.0,out.y)
+
+
+## Spiral `i`'s way round, its turn so far (radians) and the cloud's flow.
+func coil(i: int) -> Vector3:
+	var r: Dictionary = _ribbons[i]
+	return Vector3(float(r.hand),float(r.spin),_flow)
+
+
+## Sets `mat`'s noise, cloud sheet and haze to the ribbons', for what is drawn
+## in their look.
+func lend_look(mat: ShaderMaterial) -> void:
+	if _ribbons.is_empty(): return
+	var from: ShaderMaterial = _ribbons[0].material
+	for k: String in ["noise","cloud_shape","haze","haze_height","sea_y","sun_scatter"]:
+		var v: Variant = from.get_shader_parameter(k)
+		if v != null: mat.set_shader_parameter(k,v)
 
 
 ## The noise, once made, and the haze the cloud sheet draws with, for the
