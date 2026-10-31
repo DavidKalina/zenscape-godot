@@ -25,8 +25,10 @@ extends "res://scripts/endless/region_doors.gd"
 ##                last stretch.
 ##   the way out  where the hall meets the ruin stands a card of daylight in
 ##                the land's own haze, the size of the hall (the tell, growing);
-##                the world comes back behind it, and it fades to the real ruin
-##                and the land past it (WORLD_OFF to CLEAR_AT m from it).
+##                the world stays out until the eye is through it (land can
+##                stand where the hall runs), and the eye adjusts: the view
+##                fills with that daylight over GLARE_AT m and clears over
+##                GLARE_TIME s onto the real ruin and the land past it.
 ##   both ways    the plane goes either way along the hall; turned back past
 ##                the swap, it swaps back (SWAP_SLACK of hysteresis).
 ##   the logbook  each way's first pass is a find (`door/amber-hall`,
@@ -73,8 +75,9 @@ const FOOT_OVER := 2.0
 const SWAP_SLACK := 4.0
 ## How far from a mouth (m, the eye's) the world goes out, and where its
 ## daylight card is clear.
-const WORLD_OFF := 130.0
-const CLEAR_AT := 34.0
+const WORLD_OFF := 2.0
+const GLARE_AT := 45.0
+const GLARE_TIME := 0.6
 ## The torches: every so many bays, how many lights, how many with shadows.
 const TORCH_EVERY := 2
 const TORCH_Y := 6.0
@@ -129,6 +132,8 @@ var _swap_worst := 0.0
 var _last_usec := 0
 var swaps := 0
 var _day := Color(1.0,0.95,0.86)
+var _glare := 0.0
+var _from_last := INF
 
 ## Whether the ruin door runs (the cloud walls with --door=cloud).
 static func wanted_hall() -> bool:
@@ -170,6 +175,7 @@ func setup(host: Node3D, start: Vector2, heading: float, seed: int) -> void:
 		walls[i].node = _build_ruin(i,parts)
 		LayoutOverrides.track(String(walls[i].name),walls[i].node,"door",coded[i])
 	_build_hall(parts)
+	_build_overlay()
 	_make_lands()
 	print("doors: %s at %s (%.0f m from the start), %s at %s, the hall %.0f m, %d bays x %.2f" % [walls[0].name,str(_xz(0).round()),_xz(0).distance_to(start),walls[1].name,str(_xz(1).round()),_len(),roundi(_len()/_bay),_big])
 
@@ -378,9 +384,9 @@ func _case() -> MeshInstance3D:
 	var w := (Hall.WALL_Z+1.0)*_big
 	var h := (Hall.ROOF_TOP+1.0)*_big
 	var ring: Array[Vector2] = [Vector2(-w,-0.6),Vector2(w,-0.6),Vector2(w,h),Vector2(-w,h),Vector2(-w,-0.6)]
-	var s := _out-_bay
+	var s := _out
 	var step := _bay*0.5
-	while s < _len()-_out+_bay:
+	while s < _len()-_out-0.1:
 		var a := _on(s)
 		var b := _on(s+step)
 		var na := Vector2(cos(a.z),-sin(a.z))
@@ -749,9 +755,11 @@ func late(eye: Vector3) -> void:
 	var cam: Camera3D = h.camera
 	if _mask_all == 0: _mask_all = cam.cull_mask
 	_spilled(eye)
+	_glare = maxf(_glare-dt/GLARE_TIME,0.0)
 	if not inside_hall:
 		if not _world_on: _set_world(true)
 		for c: MeshInstance3D in _cards: c.visible = false
+		_show_glare()
 		return
 	var q := _q(eye)
 	var from_mouth := minf(q.x,_len()-q.x)-_out
@@ -759,7 +767,11 @@ func late(eye: Vector3) -> void:
 	if _world_on == inner: _set_world(not inner)
 	if h.look != null and h.look.get("clouds") != null and "fog_hush" in h.look.clouds:
 		h.look.clouds.fog_hush = smoothstep(-_out,0.0,from_mouth)
-	var show := smoothstep(CLEAR_AT,WORLD_OFF,from_mouth)
+	if from_mouth < _from_last and from_mouth > 0.0 and from_mouth < GLARE_AT:
+		_glare = maxf(_glare,1.0-smoothstep(WORLD_OFF,GLARE_AT,from_mouth))
+	_from_last = from_mouth
+	_show_glare()
+	var show := 1.0
 	var c := _day
 	for i in 2:
 		# Seen from inside only: the eye still in the hall proper.
@@ -772,6 +784,10 @@ func late(eye: Vector3) -> void:
 		mat.set_shader_parameter("strength",1.5)
 		mat.set_shader_parameter("show",show)
 	_light_torches(q.x)
+
+func _show_glare() -> void:
+	_overlay.visible = _glare > 0.002
+	_overlay.color = Color(_day.r,_day.g,_day.b,_glare)
 
 ## Each ruin's daylight into its stone, near it only, in the land's haze.
 func _spilled(eye: Vector3) -> void:
