@@ -39,9 +39,7 @@ const HAZE_EVERY := 0.5
 ## The ribbon's shape, as shaders/peak_spiral.gdshader has it, for `ribbon_at`.
 const TAPER := 0.42
 const TIGHTEN := 0.45
-## Roused (`rouse`): the turn's speed at a full 1, and how far down the ribbon
-## its tip is drawn in (a share of it).
-const ROUSE_SPIN := 3.5
+## Roused (`rouse`): how far down the ribbon its tip is drawn in (a share of it).
 const ROUSE_TIP := 0.2
 
 var _host: Node
@@ -114,7 +112,7 @@ func set_axes(axes: Array) -> void:
 func _process(delta: float) -> void:
 	_flow = fmod(_flow+FLOW*delta,FLOW_WRAP)
 	for r: Dictionary in _ribbons:
-		r.spin = fmod(float(r.spin)+float(r.rate)*delta*(1.0+(ROUSE_SPIN-1.0)*float(r.rouse)),TAU)
+		r.spin = fmod(float(r.spin)+float(r.rate)*delta,TAU)
 		var mat: ShaderMaterial = r.material
 		mat.set_shader_parameter("spin",r.spin)
 		mat.set_shader_parameter("flow",_flow)
@@ -124,8 +122,8 @@ func _process(delta: float) -> void:
 		_read_look()
 
 
-## Spiral `i` roused, 0 to 1 (scripts/endless/peak_strike.gd): it turns faster
-## and its tip draws in as the strike takes it. At 0 it is as it always is.
+## Spiral `i` roused, 0 to 1 (scripts/endless/peak_strike.gd): its tip draws in
+## as the strike takes it. At 0 it is as it always is.
 func rouse(i: int, k: float) -> void:
 	if i < 0 or i >= _ribbons.size(): return
 	var r: Dictionary = _ribbons[i]
@@ -152,12 +150,6 @@ func ribbon_at(i: int, share: float) -> Vector3:
 	var out := Vector2.from_angle(ang)*float(r.radius)*lerpf(1.0,TAPER,pow(clampf(h,0.0,1.0),0.85))
 	var at := base.lerp(tip,h)
 	return at+Vector3(out.x,0.0,out.y)
-
-
-## Spiral `i`'s way round, its turn so far (radians) and the cloud's flow.
-func coil(i: int) -> Vector3:
-	var r: Dictionary = _ribbons[i]
-	return Vector3(float(r.hand),float(r.spin),_flow)
 
 
 ## Sets `mat`'s noise, cloud sheet and haze to the ribbons', for what is drawn

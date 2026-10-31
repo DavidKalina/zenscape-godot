@@ -1,10 +1,9 @@
 shader_type spatial;
 render_mode unshaded, blend_mix, depth_draw_never, depth_test_disabled, cull_front, shadows_disabled, fog_disabled;
-// A spiral's strike (scripts/endless/peak_strike.gd): the ribbon of
-// shaders/peak_spiral.gdshader drawn out along a bent line. The same helix, the
-// same noise bite and the same light, with the tower's axis swapped for a
-// polyline: a rope of cloud twisted round the line, fat at its head, thin back
-// at the tip it left.
+// A spiral's strike (scripts/endless/peak_strike.gd): the ribbon's cloud drawn
+// out along a bent line. The same noise and the same light as
+// shaders/peak_spiral.gdshader, the shape one solid body round the line, its grain
+// stretched along it and running toward the head, which comes to a point.
 //
 // A box round the line, its back faces drawn, as the spiral does. Each pixel
 // first tests a few spheres (one per GROUP segments), then those segments, and
@@ -19,23 +18,20 @@ render_mode unshaded, blend_mix, depth_draw_never, depth_test_disabled, cull_fro
 global uniform float zs_cloud_under;
 
 // PeakStrike.POINTS, and segments a group (PeakStrike.GROUP).
-const int POINTS = 33;
+const int POINTS = 65;
 const int GROUP = 8;
-const int GROUPS = 4;
+const int GROUPS = 8;
 
-// The line: xyz world, w metres along from the tail. `normals` is a frame turned
-// along the line without twisting, so the coil's bearing carries round bends.
-uniform vec4 pts[33];
-uniform vec3 normals[33];
-uniform vec4 groups[4];
+// The line: xyz world, w metres along from the tail. `normals` is the body's up,
+// so its grain stays put round it.
+uniform vec4 pts[65];
+uniform vec3 normals[65];
+uniform vec4 groups[8];
 uniform int count = 0;
-// Metres along of the head and of where the tail has been eaten to.
+// Metres along of the head.
 uniform float head_s = 0.0;
-uniform float tail_s = 0.0;
-// The rope's size (m) at the head, along the body and at the tail.
-uniform vec3 girth = vec3(30.0, 16.0, 7.0);
-uniform float hand = 1.0;
-uniform float spin = 0.0;
+// The body's radius (m) at the head, along the body and at the tail.
+uniform vec3 girth = vec3(52.0, 27.0, 10.0);
 uniform float flow = 0.0;
 uniform float seed = 0.0;
 uniform sampler3D noise : repeat_enable, filter_linear;
@@ -47,17 +43,23 @@ uniform float sea_y = -40.0;
 uniform float sun_scatter = 0.18;
 uniform float haze_share = 0.45;
 
-const float TAU_ = 6.28318530718;
-// One turn of the coil along the line (m).
-const float PITCH = 210.0;
-// The coil's radius, half width and half height, as shares of the rope's girth
-// (radius, width) and the pitch (height).
-const float COIL = 0.52;
-const float WIDE = 0.8;
-const float THICK = 0.27;
-// How far back the head's swell reaches, and how far the tail takes to fill out (m).
-const float HEAD_LEN = 130.0;
-const float TAIL_LEN = 520.0;
+// One tile of the noise along the body (m) and round it (shares of the girth):
+// long streaks, drawn in to the head's point because they scale with the girth.
+const float ALONG = 645.0;
+const float ROUND_ = 1.6;
+// The head: its point to its widest (m), back from there to the body (m). Across
+// the point the section is a diamond, wider than it's tall (HEAD_WIDE, HEAD_FLAT),
+// with its noise bite cut to HEAD_CRISP.
+const float HEAD_LEN = 120.0;
+const float NECK_LEN = 260.0;
+const float HEAD_WIDE = 1.2;
+const float HEAD_FLAT = 0.72;
+const float HEAD_CRISP = 0.35;
+// The head's grain drawn harder in the light, and the body a shade under it, so
+// head-on the point stands off the body behind it.
+const float HEAD_GRAIN = 2.2;
+const float BODY_SHADE = 0.74;
+const float TAIL_LEN = 320.0;
 const float REACH = 1.7;
 const float OPTICAL = 5.0;
 // Past REACH_OUT girths nothing is drawn: what the bounds test keeps.
@@ -72,45 +74,48 @@ const vec3 BOUNCE_TINT = vec3(0.78, 0.9, 0.82);
 const vec3 UNDER_ROSE = vec3(1.0, 0.42, 0.52);
 
 struct Here {
-	float e;       // 0 on the coil's centre line, 1 at its ellipse.
-	float dr;      // Out from the coil (m).
-	float dh;      // Along the line from the coil (m).
-	float a;       // Half width (m).
-	float b;       // Half height (m).
+	float e;       // 0 on the line, 1 at the body's edge.
+	float r;       // The body's radius here (m).
+	float rho;     // Out from the line (m).
 	float s;       // Metres along the line.
-	float fade;    // 0 off either end, 1 along its length.
+	float m;       // 1 in the head, 0 in the body.
+	float side;    // Across the body, in girths: along `normals`' right.
+	float rise;    // And up it.
 	vec3 out_dir;  // Out from the line, unit.
 	vec3 along;    // Along the line, unit.
 };
 
 float rope(float s) {
 	float back = max(head_s - s, 0.0);
-	float g = girth.y + (girth.x - girth.y) * exp(-back / HEAD_LEN);
-	return mix(girth.z, g, smoothstep(0.0, TAIL_LEN, s - tail_s));
+	float k = back / HEAD_LEN;
+	float g = k < 1.0 ? girth.x * pow(k, 0.8) : girth.y + (girth.x - girth.y) * (1.0 - smoothstep(0.0, 1.0, (back - HEAD_LEN) / NECK_LEN));
+	return mix(girth.z, g, smoothstep(0.0, TAIL_LEN, s));
 }
 
-Here here_at(vec3 p, uint mask) {
+Here here_at(vec3 p, uvec2 mask) {
 	Here o;
 	float best = 1e12;
 	int bi = 0;
 	float bu = 0.0;
 	vec3 bv = vec3(0.0);
 	vec3 bt = vec3(0.0, 1.0, 0.0);
-	uint m = mask;
-	while (m != 0u) {
-		int i = int(findLSB(m));
-		m &= m - 1u;
-		vec3 a = pts[i].xyz;
-		vec3 ab = pts[i + 1].xyz - a;
-		float u = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-3), 0.0, 1.0);
-		vec3 v = p - a - ab * u;
-		float d = dot(v, v);
-		if (d < best) {
-			best = d;
-			bi = i;
-			bu = u;
-			bv = v;
-			bt = ab;
+	for (int word = 0; word < 2; word++) {
+		uint m = word == 0 ? mask.x : mask.y;
+		while (m != 0u) {
+			int i = int(findLSB(m)) + word * 32;
+			m &= m - 1u;
+			vec3 a = pts[i].xyz;
+			vec3 ab = pts[i + 1].xyz - a;
+			float u = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-3), 0.0, 1.0);
+			vec3 v = p - a - ab * u;
+			float d = dot(v, v);
+			if (d < best) {
+				best = d;
+				bi = i;
+				bu = u;
+				bv = v;
+				bt = ab;
+			}
 		}
 	}
 	float rho = sqrt(best);
@@ -119,49 +124,47 @@ Here here_at(vec3 p, uint mask) {
 	vec3 n = mix(normals[bi], normals[bi + 1], bu);
 	n = normalize(n - t * dot(n, t) + vec3(1e-4, 0.0, 0.0));
 	vec3 w = cross(t, n);
-	vec3 v = bv / max(rho, 1e-3);
-	float bearing = atan(dot(v, w), dot(v, n));
-	float g = rope(s);
-	float u = s / PITCH - hand * (bearing + spin) / TAU_;
-	float du = u - round(u);
-	// The line wanders and swells a little, as the ribbon does.
-	float swell = 1.0 + 0.22 * sin(s * 0.0071 + seed * 3.0) + 0.14 * sin(s * 0.0193 + seed * 4.0 - flow * 0.003);
-	float centre = g * COIL;
-	o.a = max(WIDE * g * swell, 0.5);
-	o.b = max(THICK * PITCH * mix(0.45, 1.0, g / girth.x) * swell, 0.5);
-	o.dr = rho - centre;
-	// Round the line's own middle the coil has no bearing: it closes up.
-	o.dh = du * PITCH * smoothstep(0.0, centre, rho);
-	o.e = length(vec2(o.dr / o.a, o.dh / o.b));
+	float g = max(rope(s), 0.5);
+	float x = dot(bv, w);
+	float y = dot(bv, n);
+	float back = head_s - s;
+	o.m = 1.0 - smoothstep(HEAD_LEN * 0.9, HEAD_LEN + NECK_LEN * 0.6, back);
+	float round_e = rho / g;
+	float diamond = abs(x) / (g * HEAD_WIDE) + abs(y) / (g * HEAD_FLAT);
+	o.e = mix(round_e, diamond, o.m);
+	o.r = g;
+	o.rho = rho;
 	o.s = s;
-	o.fade = smoothstep(0.0, 70.0, s - tail_s) * (1.0 - smoothstep(-60.0, 0.0, s - head_s));
-	o.out_dir = v;
+	o.side = x / g;
+	o.rise = y / g;
+	o.out_dir = bv / max(rho, 1e-3);
 	o.along = t;
 	return o;
 }
 
 float density_at(Here o, float t, out float lump) {
 	lump = 0.0;
-	if (o.e >= REACH || o.fade <= 0.0) return 0.0;
-	float metres = o.s - flow;
-	vec3 c = vec3(metres / 430.0, o.dr / 90.0, o.dh / 110.0) + seed * 0.37;
+	if (o.e >= REACH) return 0.0;
+	// Past the head's point there is no body.
+	if (o.s >= head_s - 1.0) return 0.0;
+	vec3 c = vec3((o.s - flow) / ALONG, o.side / ROUND_, o.rise / ROUND_) + seed * 0.37;
 	vec2 big = textureLod(noise, c, 0.0).rg;
-	float outer = smoothstep(-1.0, 1.0, o.dr / o.a);
-	float shape = 1.0 - o.e + (big.g - 0.5) * mix(1.0, 1.7, outer);
-	lump = big.g - 0.5;
+	float bite = mix(1.0, HEAD_CRISP, o.m);
+	float shape = 1.0 - o.e + (big.g - 0.5) * 1.2 * bite;
+	lump = (big.g - 0.5) * mix(1.0, HEAD_GRAIN, o.m);
 	float keep_mid = 1.0 - smoothstep(MIDDLE.x, MIDDLE.y, t);
 	if (keep_mid > 0.0) {
 		vec2 mid = textureLod(noise, c * vec3(2.0, 2.7, 2.7) + 0.31, 0.0).rg;
-		shape += ((mid.r - 0.55) * 0.75 + (mid.g - 0.5) * 0.5 * smoothstep(0.35, 1.0, o.e)) * keep_mid;
+		shape += ((mid.r - 0.55) * 0.6 + (mid.g - 0.5) * 0.4 * smoothstep(0.35, 1.0, o.e)) * keep_mid * bite;
 		lump += (mid.r - 0.55) * 0.8 * keep_mid;
 		float keep_fine = 1.0 - smoothstep(FINE.x, FINE.y, t);
 		if (keep_fine > 0.0) {
-			vec2 fine = textureLod(noise, c * vec3(5.0, 7.1, 7.1) + 0.67, 0.0).rg;
-			shape += (fine.g - 0.5) * 0.38 * keep_fine;
+			vec2 fine = textureLod(noise, c * vec3(3.0, 7.1, 7.1) + 0.67, 0.0).rg;
+			shape += (fine.g - 0.5) * 0.3 * keep_fine * bite;
 			lump += (fine.r - 0.55) * 0.3 * keep_fine;
 		}
 	}
-	return smoothstep(0.0, 0.34, shape) * o.fade;
+	return smoothstep(0.0, 0.22, shape);
 }
 
 void fragment() {
@@ -171,7 +174,7 @@ void fragment() {
 	vec3 rd = normalize(mat3(INV_VIEW_MATRIX) * (view.xyz / view.w));
 
 	// Which segments the ray passes near, and the stretch of it they cover.
-	uint mask = 0u;
+	uvec2 mask = uvec2(0u);
 	float t0 = 1e9;
 	float t1 = -1e9;
 	for (int g = 0; g < GROUPS; g++) {
@@ -194,7 +197,9 @@ void fragment() {
 			float u = clamp((ee - bb * dd) / max(cc - bb * bb, 1e-3), 0.0, 1.0);
 			vec3 q = a + ab * u - eye;
 			float tq = dot(q, rd);
-			float r = rope(pts[i + 1].w) * REACH_OUT;
+			// All the head or none: a fat segment read without the thin ones
+				// ahead of it would swell out round its end.
+				float r = pts[i + 1].w > head_s - HEAD_LEN - NECK_LEN ? girth.x * REACH_OUT * HEAD_WIDE : max(rope(pts[i].w), rope(pts[i + 1].w)) * REACH_OUT;
 			if (dot(q, q) - tq * tq > r * r) continue;
 			mask |= 1u << uint(i);
 			float ta = dot(a - eye, rd);
@@ -203,7 +208,7 @@ void fragment() {
 			t1 = max(t1, max(ta, tb) + r);
 		}
 	}
-	if (mask == 0u) discard;
+	if (mask.x == 0u && mask.y == 0u) discard;
 	float depth = textureLod(depth_tex, SCREEN_UV, 0.0).r;
 	if (depth > 1e-6) {
 		vec4 up = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, depth, 1.0);
@@ -233,10 +238,11 @@ void fragment() {
 		vec3 p = eye + rd * t;
 		Here o = here_at(p, mask);
 		if (o.e >= REACH) {
-			t += clamp((o.e - REACH) * min(o.a, o.b) * 0.7, 2.0 + t * 0.003, 60.0);
+			// Over the head's taper the body swells faster than a ray nears it.
+			t += clamp((o.rho - REACH * HEAD_WIDE * o.r) * 0.45, 2.0 + t * 0.003, 60.0);
 			continue;
 		}
-		float thin_way = min(o.a, o.b);
+		float thin_way = o.r;
 		float ds = min(max(thin_way * 0.2, 2.5 + t * 0.002), t1 - t + 0.01);
 		float lump;
 		float d = density_at(o, t, lump);
@@ -244,7 +250,8 @@ void fragment() {
 			float veil = smoothstep(NEAR.x, NEAR.y, t);
 			float sigma = OPTICAL / max(thin_way * 2.0, 8.0);
 			float alpha = 1.0 - exp(-d * sigma * ds * veil);
-			vec3 ng = o.out_dir * o.dr / o.a + o.along * o.dh / o.b;
+			// A cone's face, leaning forward in the head.
+			vec3 ng = o.out_dir * min(o.e, 1.0) + o.along * o.m * 0.55;
 			float deep = clamp(length(ng), 0.0, 1.0);
 			ng = normalize(ng + vec3(0.0, 1e-3, 0.0));
 			float toward = dot(ng, sun) * deep + lump * 1.1;
@@ -265,7 +272,7 @@ void fragment() {
 				vec3 under_col = mix(c_sun, UNDER_ROSE * max(c_sun.r, max(c_sun.g, c_sun.b)), 0.5);
 				lit += under * under * under_col * 1.6 * zs_cloud_under * mix(0.55, 1.0, sun_side);
 			}
-			lit *= ZS_CUMULUS_LIT_SHARE * day;
+			lit *= ZS_CUMULUS_LIT_SHARE * day * mix(BODY_SHADE, 1.0, o.m);
 			float round_eye = 1.0 - smoothstep(GLOW.x, GLOW.y, t);
 			vec3 glow = mix(vec3(0.95, 0.97, 1.0), sun_hue, 0.2) * mix(0.72, 1.0, toward_sun) * mix(1.0, 0.2, zs_night);
 			lit = mix(lit, glow, round_eye * 0.8);
