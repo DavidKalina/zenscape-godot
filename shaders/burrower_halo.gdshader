@@ -1,7 +1,8 @@
 shader_type spatial;
 // A push-up orb's glow (scripts/burrower/push_ups.gd): a soft additive
 // billboard round the orb, its colour and strength the instance's custom
-// data (rgb, a), its size the instance's scale. No fog: fog added over an
+// data (rgb, a), its size the instance's scale (y its height: an orb on the
+// move draws its glow out). No fog: fog added over an
 // additive quad lit its whole square (a faint square over the pond).
 render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 
@@ -12,7 +13,8 @@ varying vec4 v_col;
 void vertex() {
 	float s = length(MODEL_MATRIX[0].xyz);
 	vec3 c = MODEL_MATRIX[3].xyz;
-	vec3 w = c + (INV_VIEW_MATRIX[0].xyz * VERTEX.x + INV_VIEW_MATRIX[1].xyz * VERTEX.y) * s;
+	float tall = length(MODEL_MATRIX[1].xyz);
+	vec3 w = c + INV_VIEW_MATRIX[0].xyz * VERTEX.x * s + INV_VIEW_MATRIX[1].xyz * VERTEX.y * tall;
 	POSITION = PROJECTION_MATRIX * VIEW_MATRIX * vec4(w, 1.0);
 	v_col = INSTANCE_CUSTOM;
 }
