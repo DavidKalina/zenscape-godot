@@ -138,9 +138,16 @@ class Sdf extends RefCounted:
 			if absf(along) > float(h[6])+8.0: continue
 			var right: Vector3 = h[2]
 			var up: Vector3 = h[3]
-			var u := absf(ox*right.x+oy*right.y+oz*right.z)/float(h[4])
-			var v := absf(ox*up.x+oy*up.y+oz*up.z)/float(h[5])
-			var r := pow(pow(u,HOLE_POWER)+pow(v,HOLE_POWER),1.0/HOLE_POWER)
+			var su := (ox*right.x+oy*right.y+oz*right.z)/float(h[4])
+			var sv := (ox*up.x+oy*up.y+oz*up.z)/float(h[5])
+			var r := pow(pow(absf(su),HOLE_POWER)+pow(absf(sv),HOLE_POWER),1.0/HOLE_POWER)
+			# Never a clean ring: the section wanders with the way round, more up
+			# top and in the shoulders, the floor flatter.
+			if r < 1.8:
+				var ang := atan2(sv,su)
+				var ph := float(h[7])
+				var wander := 0.13*sin(ang*2.0+ph)+0.11*sin(ang*3.0+ph*1.7)+0.07*sin(ang*5.0+ph*2.3)
+				r *= 1.0-wander*smoothstep(-0.7,0.2,sv)
 			var e := maxf((r-1.0)*minf(float(h[4]),float(h[5])),absf(along)-float(h[6]))
 			# Its wall is the same broken rock, not a bored tube.
 			if absf(e) < HOLE_ROUGH*2.0+1.0: e -= push(x,y,z)*HOLE_ROUGH/PUSH_MOST
@@ -206,7 +213,7 @@ static func build(spec: Dictionary, field: RefCounted) -> Dictionary:
 			var right := Vector3.UP.cross(way).normalized()
 			if right.length_squared() < 0.5: right = Vector3.RIGHT
 			var up := way.cross(right).normalized()
-			f.holes.append([p.hole,way,right,up,float(p.w),float(p.h),float(p.deep)])
+			f.holes.append([p.hole,way,right,up,float(p.w),float(p.h),float(p.deep),(p.hole as Vector3).dot(Vector3(0.13,0.07,0.11))])
 	# The land under it, and the box's floor: no deeper than it needs.
 	var nx0 := Vector2(floorf(lo.x/GROUND_STEP)*GROUND_STEP,floorf(lo.z/GROUND_STEP)*GROUND_STEP)
 	f.g0 = nx0
