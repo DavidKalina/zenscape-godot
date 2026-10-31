@@ -11,7 +11,7 @@ const Glyphs = preload("res://scripts/endless/near_glyphs.gd")
 const GILT := preload("res://shaders/near_gilt.gdshader")
 
 const MARGIN := Vector2(30.0,26.0)
-const GLYPH := "arch"
+const GLYPH := "relic"
 const HOLD := 3.4
 const FADE_IN := 0.16
 const FADE_OUT := 0.7

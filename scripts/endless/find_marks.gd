@@ -18,8 +18,12 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const NORMAL := "res://assets/textures/ruin_stone_normal.png"
 
 const BLOCKS := 11
-const STONE := Color(0.27,0.255,0.235)
-const GILT := Color(0.74,0.54,0.21)
+## The face a pilot flying at the Peak sees is the shaded one (the sun stands
+## behind it), so both carry a fill, or the stone goes black as a tyre.
+const STONE := Color(0.55,0.5,0.43)
+const GILT := Color(0.95,0.68,0.26)
+const STONE_FILL := 0.24
+const GILT_FILL := 0.5
 ## The ring's turn (rad/s), and how fast its face comes round to the plane.
 const SPIN := 0.3
 const FACE := 0.8
@@ -35,18 +39,17 @@ static var _flare: Texture2D
 static func stone_material(col: Color, gilt := false) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = col
-	m.roughness = 0.42 if gilt else 0.95
-	m.metallic = 0.75 if gilt else 0.0
+	m.roughness = 0.5 if gilt else 0.95
+	m.metallic = 0.3 if gilt else 0.0
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3.ONE*0.35
 	if ResourceLoader.exists(NORMAL):
 		m.normal_enabled = true
 		m.normal_texture = load(NORMAL)
-		m.normal_scale = 1.2
-	if gilt:
-		m.emission_enabled = true
-		m.emission = col
-		m.emission_energy_multiplier = 0.12
+		m.normal_scale = 0.5 if gilt else 1.0
+	m.emission_enabled = true
+	m.emission = col
+	m.emission_energy_multiplier = GILT_FILL if gilt else STONE_FILL
 	return m
 
 ## A hewn lump between the two rims at u = 0..1, with caps.
@@ -195,7 +198,7 @@ static func flare() -> Texture2D:
 			var dx := absf(x-c)/c
 			var dy := absf(y-c)/c
 			var d := sqrt(dx*dx+dy*dy)
-			var core := pow(maxf(1.0-d*3.2,0.0),2.0)
+			var core := pow(maxf(1.0-d*2.2,0.0),2.0)
 			var arm := pow(maxf(1.0-dx,0.0),3.0)*pow(maxf(1.0-dy*16.0,0.0),2.0)+pow(maxf(1.0-dy,0.0),3.0)*pow(maxf(1.0-dx*16.0,0.0),2.0)
 			var v := clampf(core+arm,0.0,1.0)
 			img.set_pixel(x,y,Color(1.0,0.93,0.76,v))
@@ -301,10 +304,10 @@ class Mark extends Node3D:
 		# A dull point always, a flare now and then, gone close in: there the
 		# stones themselves read.
 		var flare_k := pow(maxf(sin(_t*1.5+_phase),0.0),14.0)
-		var a := 0.3+0.7*flare_k
+		var a := 0.6+0.4*flare_k
 		a *= smoothstep(25.0,140.0,d)
 		_glint_mat.albedo_color = Color(1.0,1.0,1.0,a)
-		_glint.scale = Vector3.ONE*(0.55+1.1*flare_k)
+		_glint.scale = Vector3.ONE*(0.8+1.0*flare_k)
 
 	## Taken: a ring goes at once (the burst stands in for it), a cairn stays.
 	func taken() -> void:
@@ -329,8 +332,8 @@ class Beat extends Node3D:
 	var last := {}
 
 	func _init() -> void:
-		_chips = _burst(FindMarks.chip(),FindMarks.stone_material(FindMarks.STONE),26,Vector2(0.7,2.2),Vector2(10.0,32.0),1.5)
-		_flakes = _burst(FindMarks.chip(),FindMarks.stone_material(FindMarks.GILT,true),18,Vector2(0.14,0.42),Vector2(14.0,44.0),1.1)
+		_chips = _burst(FindMarks.chip(),FindMarks.stone_material(FindMarks.STONE),16,Vector2(0.35,1.2),Vector2(10.0,32.0),1.5)
+		_flakes = _burst(FindMarks.chip(),FindMarks.stone_material(FindMarks.GILT,true),24,Vector2(0.25,0.6),Vector2(14.0,44.0),1.1)
 		_light = OmniLight3D.new()
 		_light.light_color = Color(1.0,0.78,0.5)
 		_light.omni_range = 46.0

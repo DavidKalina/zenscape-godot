@@ -90,5 +90,11 @@ static func _row(view: Control, row: Dictionary, cx: float, cr: float, cy: float
 		if value != "": Card.ink(view,Card.nums(),value,Vector2(cr,cy),17.0*s,Color(Card.GOLD,a),4.0*s,1.0)
 		return
 	var text := str(row.text)
-	if text != "": Card.ink(view,Card.words(14.0*s,0.01),text,Vector2(cx+16.0*s,cy),14.0*s,Color(Card.GREY,0.95*a),3.0*s,0.0)
+	if text != "":
+		# A long hint narrows to its column.
+		var px := 14.0*s
+		var wide := Card.words(px,0.01).get_string_size(text,HORIZONTAL_ALIGNMENT_LEFT,-1,maxi(roundi(px),4)).x
+		var room := cr-cx-16.0*s
+		if wide > room: px *= room/wide
+		Card.ink(view,Card.words(px,0.01),text,Vector2(cx+16.0*s,cy),px,Color(Card.GREY,0.95*a),3.0*s,0.0)
 	else: Card.ink(view,Card.words(14.0*s,0.12),BLANK,Vector2(cx+16.0*s,cy),14.0*s,Color(Card.GREY,0.7*a),3.0*s,0.0)

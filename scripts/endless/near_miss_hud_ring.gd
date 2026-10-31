@@ -56,7 +56,7 @@ var _barlow := {}
 ## The surge roll's ready mark (`_draw_ready`): where (block px), how big, its
 ## word's size and how long it shows (s).
 const READY_AT := Vector2(-44.0,6.0)
-const READY_PX := 34.0
+const READY_PX := 38.0
 const READY_TEXT := 15.0
 const READY_WORD := 2.0
 var _ready_age := 0.0
@@ -190,8 +190,9 @@ func _draw_block() -> void:
 	elif _near.chain_points >= 1.0 and not _moves.is_empty(): _draw_live(s)
 	_draw_ready(s)
 
-## The surge roll ready (a full meter, not being spent): a small gilt ring
-## breathing by the tag, its word only for READY_WORD s after it fills.
+## The surge roll ready (a full meter, not being spent): a small gilt sunburst
+## breathing by the tag, its word only for READY_WORD s after it fills. No disc
+## behind it: on the land a dark disc is all that reads.
 func _draw_ready(s: float) -> void:
 	if _near.meter < 0.999 or _near.surge > 0.0:
 		_ready_age = 0.0
@@ -199,7 +200,14 @@ func _draw_ready(s: float) -> void:
 	_ready_age += get_process_delta_time()
 	var breath := 0.5+0.5*sin(_clock*TAU*0.55)
 	var c := READY_AT*s
-	_ring(c,READY_PX*s,1.0,Color(GLINT,0.55+0.3*breath),Color(GLINT,0.15),Color(GLINT,0.5),5.0*s*breath,0.8)
+	var px := roundf(READY_PX*s/2.0)*2.0
+	var sz := px*Glyphs.BOX/24.0
+	var r := Rect2(c-Vector2.ONE*sz*0.5,Vector2.ONE*sz)
+	var shadow := Glyphs.texture("surge","shadow",px)
+	if shadow != null: _block.draw_texture_rect(shadow,Rect2(r.position+Vector2(0.0,2.0)*s,r.size),false,Color(0.08,0.05,0.03,0.6))
+	_block.draw_texture_rect(Glyphs.texture("surge","icon",px),r,false,Color.WHITE)
+	var lit := Glyphs.texture("surge","lit",px)
+	if lit != null: _block.draw_texture_rect(lit,r,false,Color(1,1,1,0.05+0.35*breath))
 	var a := 1.0-smoothstep(READY_WORD-0.5,READY_WORD,_ready_age)
 	if a > 0.0: _txt(_block,_bw(READY_TEXT,0.14),"ROLL",c+Vector2(0.0,READY_PX*0.82)*s,READY_TEXT*s,Color(GLINT_TEXT,a),6.0*s)
 

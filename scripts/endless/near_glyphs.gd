@@ -167,6 +167,8 @@ static func _build() -> void:
 		var a := k*PI/4.0
 		rays.append(_bar(12.0+cos(a)*7.4,12.0+sin(a)*7.4,a,3.4,2.4))
 	_add("bank","#e2b25e",rays,[_circle(12,12,3.4)],107,1.1)
+	# The surge ready: the bank's sun, brighter gold.
+	_add("surge","#f7c63f",rays,[_circle(12,12,3.4)],108,1.1)
 	# A scrape: a madder stone split by a crack.
 	_add("scrape","#a64a3a",["M3 15 L5.4 7.2 L11.2 3.6 L18 5.4 L21.4 11.6 L19.4 18.8 L12.6 21.2 L5.6 19.6Z"],["M11.6 3.8 L10 9.4 L13.4 12 L11.2 16.8 L12.6 21"],108,1.6)
 	# The line's moves (line_moves.gd).
@@ -191,6 +193,15 @@ static func _build() -> void:
 	# The burrower's push-ups (line_moves.gd).
 	# Orb: a glowing ball in its halo, flung off the ground.
 	_add("orb","#eda33e",[_circle(12,10.6,6.6),"M1.4 10.6 a10.6 10.6 0 1 0 21.2 0 a10.6 10.6 0 1 0 -21.2 0Z M3.2 10.6 a8.8 8.8 0 1 1 17.6 0 a8.8 8.8 0 1 1 -17.6 0Z"],["M8.4 9.4 Q9.4 6.8 12 6.6"],119,1.2)
+	# A relic: the find's broken ring of hewn blocks, one fallen out.
+	var ring := []
+	for k in range(9):
+		if k == 6: continue
+		var a := k*TAU/9.0
+		var side := Vector2(-sin(a),cos(a))
+		var at := Vector2(12.0,12.0)+Vector2(cos(a),sin(a))*9.0-side*2.3
+		ring.append(_bar(at.x,at.y,a+PI*0.5,4.6,4.4))
+	_add("relic","#e2b25e",ring,[],123,1.1)
 	# Bell: a green bronze bell on its yoke, the clapper hanging.
 	_add("bell","#5f9a86",["M7.4 1.8 H16.6 V4 H13.4 V5.2 Q17.8 6.4 18 12 Q18.2 16.4 21 18.8 V20 H3 V18.8 Q5.8 16.4 6 12 Q6.2 6.4 10.6 5.2 V4 H7.4Z",_circle(12,21.2,2.2)],["M7.2 16.2 H16.8","M8.4 12.6 Q8.6 9.4 10.4 8"],120,1.2)
 	# Gong: the disc hung in its frame, struck rings round the boss.
