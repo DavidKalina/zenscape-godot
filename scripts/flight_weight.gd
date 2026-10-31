@@ -34,10 +34,11 @@ extends RefCounted
 ##   thins to the flight's top.
 ## - reach: the share of that band (up to its top) a flown climb gets
 ##   through: past it the flown climb fades to nothing over TOP_FALL of the
-##   band, and only rising air (lift) carries it on to the top. With the
-##   Peak's tarn at 1145 m over the sea: light flies up to it with room,
-##   medium only just (its flown climb stops near 1175), heavy not (near
-##   1100; it gets there by the couloir's lift).
+##   band, and only rising air (lift) carries it on to the top. The band
+##   stands over the Peak (Field THIN_OVER): light's flown climb stops at
+##   2100 m over the sea, medium's near 1995, heavy's near 1970, all well
+##   over the 1480 m tip. Under `--climb=old` the same shares give the old
+##   tops: medium's flown climb stops near 1175, heavy's near 1100.
 ##
 ## `--weight=<off|light|medium|heavy>` picks one at launch; endless flight
 ## starts on DEFAULT and cycles them with V or the pad's d-pad up.

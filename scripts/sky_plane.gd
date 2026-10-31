@@ -164,7 +164,8 @@ const CEILING_NOSE := -0.05
 ## band's last TOP_FALL the climb fades from TOP_CLIMB m/s to nothing at the
 ## top; the flown climb (lift aside) fades the same way short of the top,
 ## by the preset's `reach` (FlightWeight). The dive is as ever. Under
-## `thin_from` nothing changes.
+## `thin_from` nothing changes. `thin_ease` (the band over the Peak) brings
+## the cost in by `thin` itself, so a fast climb runs into no wall at its foot.
 const THIN_SWING := 12.0
 const THIN_PULL := 0.6
 const THIN_MUSH := 3.0
@@ -197,6 +198,7 @@ var climb_share := 1.0
 var thin_from := INF
 var thin_top := INF
 var thin := 0.0
+var thin_ease := false
 var _thin_nose := PITCH_LIMIT.y
 ## Lift (the air's "rise", scripts/endless/air_lift.gd): the rising air it
 ## rode this step (m/s, 0 outside lift). Its own term, not wind: the air's
@@ -391,10 +393,16 @@ func use_weight(preset: String) -> void:
 	soft = 0.0
 
 ## Thin air from `from_y` up to `top_y_at` (world y): the preset's top is its
-## FlightWeight `ceiling` share of the way up (`top_y()`).
-func use_thin(from_y: float, top_y_at: float) -> void:
+## FlightWeight `ceiling` share of the way up (`top_y()`). `eased`: the climb's
+## cost comes in by `thin`, not its square root (`thin_ease`).
+func use_thin(from_y: float, top_y_at: float, eased := false) -> void:
 	thin_from = from_y
 	thin_top = top_y_at
+	thin_ease = eased
+
+## What the climb's cost is times here in thin air (1 under it).
+func _thin_swing() -> float:
+	return 1.0+THIN_SWING*(thin if thin_ease else sqrt(thin))
 
 ## The highest the plane climbs to in this preset (world y; INF without
 ## thin air).
@@ -594,7 +602,7 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 	var pull := THROTTLE*(1.0-THIN_PULL*thin)
 	var nose_top := lerpf(PITCH_LIMIT.y,CEILING_NOSE,clampf((position.y-ceiling_y)/CEILING_FADE,0.0,1.0))
 	if thin > 0.0:
-		var cost := SWING*(1.0+THIN_SWING*sqrt(thin))*(1.0 if weighted else 1.0+HEAVY_SWING*heavy)
+		var cost := SWING*_thin_swing()*(1.0 if weighted else 1.0+HEAVY_SWING*heavy)
 		var pulls := pull*(1.0+SURGE_PULL*surge if weighted else 1.0-HEAVY_THROTTLE*heavy)
 		var best := (cruise()+boost*(boost_speed()-cruise()))*pulls/(2.0*cost)
 		_thin_nose = lerpf(_thin_nose,asin(minf(best,1.0)),_ease(THIN_NOSE_EASE,delta))
@@ -621,12 +629,12 @@ func step(delta: float, input: Dictionary, ground: Callable, air := Callable()) 
 		climb = path.y
 		# Pulling and turning bleed it: a g past one costs `bleed` m/s².
 		bleed = float(weight.bleed)*(g_load-1.0)
-		var swing := SWING*(1.0+THIN_SWING*sqrt(thin)) if climb > 0.0 else SWING
+		var swing := SWING*_thin_swing() if climb > 0.0 else SWING
 		speed += (-swing*climb-pull*(1.0+SURGE_PULL*surge)*(speed-target)-DRIFT_BLEED*drift_strength*drift-bleed)*delta+boost_out
 	else:
 		path = _heavy_path(delta) if heavy > 0.0 else travel()
 		climb = path.y if heavy > 0.0 else sin(pitch)
-		var swing := SWING*(1.0+THIN_SWING*sqrt(thin)) if climb > 0.0 else SWING
+		var swing := SWING*_thin_swing() if climb > 0.0 else SWING
 		speed += (-swing*(1.0+HEAVY_SWING*heavy)*climb-pull*(1.0-HEAVY_THROTTLE*heavy)*(speed-target)-DRIFT_BLEED*drift_strength*drift)*delta+boost_out
 	if surge > 0.0: _cap = maxf(_cap,boost_speed()*SURGE_OVER)
 	_cap = maxf(top_speed(),_cap-CAP_FALL*delta)

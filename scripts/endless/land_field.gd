@@ -54,13 +54,17 @@ const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 ## The sea's height in the world.
 const SEA_Y := -40.0
 ## The endless flight's air (m over the sea): it flies as ever up to
-## THIN_OVER (the ceiling it had before, 215), then the air thins (SkyPlane
-## `use_thin`) and the climb is slow work up to CEILING_OVER, the top of the
-## lightest preset (the heavier ones top out lower: FlightWeight `ceiling`).
-## Over it the nose is held level (SkyGlide `ceiling_y`). The isles' fixed
-## CEILING (95 world) is 135 over this sea.
-const THIN_OVER := 215.0
-const CEILING_OVER := 1520.0
+## THIN_OVER, over the Peak's tallest tip (1480) with room to loop above it,
+## so no climb on the mountain costs more than a climb off the sea. Then the
+## air thins (SkyPlane `use_thin`) and the climb fades out at CEILING_OVER,
+## the top of the lightest preset (the heavier ones top out lower:
+## FlightWeight `ceiling`). Over it the nose is held level (SkyGlide
+## `ceiling_y`). The isles' fixed CEILING (95 world) is 135 over this sea.
+## `--climb=old` flies the slow thin air from 215 m instead (the _OLD pair).
+const THIN_OVER := 1700.0
+const CEILING_OVER := 2100.0
+const THIN_OVER_OLD := 215.0
+const CEILING_OVER_OLD := 1520.0
 ## Continents: their scale (m), the height they swing (m) and the lift that
 ## sets how much is land (more is more land).
 const CONTINENT := 3600.0

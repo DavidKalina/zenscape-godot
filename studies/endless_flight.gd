@@ -48,7 +48,9 @@ extends Node3D
 ##
 ## Flags: --seed=N the land (1), --at=x,z where it starts (0,0), the land's shape
 ## (land_field.gd): --mountains=X, --peaks=X, --valleys=X, --no-valleys,
-## --old-land (round one's land and ceiling), --ceiling=m over the sea (215),
+## --old-land (round one's land and ceiling), --ceiling=m over the sea (Field
+## CEILING_OVER; under THIN_OVER the air thins from THIN_OVER_OLD), --climb=old
+## the slow thin air from 215 m, as before,
 ## --heading=deg clockwise from -z (0; `sun` toward the sun), --alt=m over
 ## the ground (45), --numbers opens with F1's numbers shown, --uncapped
 ## turns vsync and the frame cap off (the fps is then the frame's cost),
@@ -333,6 +335,8 @@ var _tap_at := -100000
 var _hud: Label
 ## The plane's ceiling over the sea (Field CEILING_OVER; --ceiling=).
 var _ceiling_over := Field.CEILING_OVER
+## The slow thin air from 215 m (--climb=old).
+var _climb_old := false
 var _hint: Label
 ## Over the hint, on the wheels: stopped, how to roll off and back up;
 ## backing up, how to stop (`_stop_note`).
@@ -501,6 +505,7 @@ func _ready() -> void:
 		elif arg.begins_with("--streaks="): _streak_scale = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg.begins_with("--ceiling="): _ceiling_over = float(arg.get_slice("=",1))
 		elif arg == "--old-land": _ceiling_over = SkyPlane.CEILING-Field.SEA_Y
+		elif arg == "--climb=old": _climb_old = true
 		elif arg == "--no-title": _no_title = true
 		elif arg == "--uncapped":
 			# No vsync and no cap, so the numbers' fps is the frame's cost.
@@ -955,10 +960,14 @@ func _launch(at: Vector3, heading: float, parked := false) -> void:
 	_sink_felt = false
 	plane.floor_y = Field.SEA_Y-15.0
 	plane.water = Field.SEA_Y
-	# The air thins over the old ceiling (Field THIN_OVER) and the climb is
-	# slow work up to the top (Field CEILING_OVER, --ceiling=m over the sea).
-	plane.ceiling_y = Field.SEA_Y+_ceiling_over
-	if _ceiling_over > Field.THIN_OVER: plane.use_thin(Field.SEA_Y+Field.THIN_OVER,plane.ceiling_y)
+	# The air thins over the mountain (Field THIN_OVER) and the climb fades
+	# out at the top (Field CEILING_OVER, --ceiling=m over the sea).
+	# --climb=old: from 215 m, slow work all the way up.
+	var ceiling_over := _ceiling_over
+	if _climb_old and is_equal_approx(ceiling_over,Field.CEILING_OVER): ceiling_over = Field.CEILING_OVER_OLD
+	var thin_over := Field.THIN_OVER_OLD if _climb_old or ceiling_over <= Field.THIN_OVER else Field.THIN_OVER
+	plane.ceiling_y = Field.SEA_Y+ceiling_over
+	if ceiling_over > thin_over: plane.use_thin(Field.SEA_Y+thin_over,plane.ceiling_y,thin_over >= Field.THIN_OVER)
 	# The land is a heightfield: it rides up what is no cliff, and a
 	# cliff's face turns it aside (SkyGlide `stone`).
 	plane.stone = func(_p: Vector3) -> bool: return true
