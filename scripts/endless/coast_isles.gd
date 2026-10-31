@@ -38,8 +38,11 @@ const SPOTS := [
 const STRIP_LONG := [-340.0,250.0,30.0,8.0]
 ## Light Rock's flat on top (same fields).
 const STRIP_LIGHT := [-190.0,70.0,26.0,58.0]
-## Where the light stands on Light Rock, in its frame.
+## Where the light stands on Light Rock, in its frame, its level pad's radius
+## and the pad's height over the sea (m).
 const LIGHT_AT := Vector2(165.0,0.0)
+const LIGHT_PAD := 30.0
+const LIGHT_TOP := 64.0
 ## Where the boat lies in the Horn's lagoon, in its frame, and the way her
 ## bow points (radians about up from +u).
 const BOAT_AT := Vector2(70.0,0.0)
@@ -170,7 +173,12 @@ func _light(u: float, v: float, x: float, z: float) -> Vector2:
 		y = maxf(y,top*smoothstep(14.0,20.0,d))
 	var m := smoothstep(20.0,44.0,d)*0.8
 	var s := _strip(u,v,STRIP_LIGHT)*smoothstep(14.0,30.0,d)
-	return Vector2(lerpf(y,float(STRIP_LIGHT[3]),s),maxf(m,s))
+	y = lerpf(y,float(STRIP_LIGHT[3]),s)
+	m = maxf(m,s)
+	# The light's pad: level, bare of trees.
+	var off := Vector2(u,v).distance_to(LIGHT_AT)
+	var pad := 1.0-smoothstep(LIGHT_PAD,LIGHT_PAD+24.0,off)
+	return Vector2(lerpf(y,LIGHT_TOP,pad),m*smoothstep(LIGHT_PAD,LIGHT_PAD+30.0,off))
 
 ## The Horn: a broken ring of crag open along +u, its tall end at -u.
 func _horn(u: float, v: float, x: float, z: float) -> Vector2:
@@ -188,6 +196,17 @@ func _horn(u: float, v: float, x: float, z: float) -> Vector2:
 	var y := h*pow(clampf(d/(wall*0.62),0.0,1.0),0.8)
 	y += (_n(x*0.05,z*0.05)-0.5)*7.0*smoothstep(0.0,18.0,d)
 	return Vector2(_strata(y,8.0,0.6,x,z),0.0)
+
+## Whether (x, z) lies on or by an isle's strip, kept open of trees.
+func open_at(x: float, z: float) -> bool:
+	for i in _r.size():
+		if _kind[i] == HORN: continue
+		var dx := x-_cx[i]
+		var dz := z-_cz[i]
+		if dx*dx+dz*dz >= _r[i]*_r[i]: continue
+		var f: Array = STRIP_LONG if _kind[i] == LONG else STRIP_LIGHT
+		if _strip(dx*_ca[i]+dz*_sa[i],dz*_ca[i]-dx*_sa[i],f) > 0.0: return true
+	return false
 
 ## The sea bed's shelf off a shore `d` m inland (negative out to sea).
 static func _shelf(d: float) -> float:

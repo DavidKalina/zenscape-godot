@@ -1023,6 +1023,10 @@ func _isle_shape(s: Dictionary, x: float, z: float) -> Dictionary:
 	s.river = 1000.0
 	s.river_r = 1000.0
 	s.inland = maxf(float(s.get("inland",0.0)),1.0)
+	# The strips stay open: read as a valley's floor, no tree stands there.
+	if _isles.open_at(x,z):
+		s.valley = 0.0
+		s.half = 1.0
 	return s
 
 ## `shape`'s dictionary `s` with the Peak's massif on it at (x, z): no river
