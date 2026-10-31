@@ -13,6 +13,10 @@ extends Node
 ## CLIMB_OFF spans (climbed: flying level off an edge isn't, `_clear`), after RUN s,
 ## or when the plane lands or crashes.
 ## `--no-burrower` leaves him out; `--burrower-every=S` makes the rest S s.
+## The run's tuning: `--burrower-orb-off=M` (least m off the plane's line an orb comes
+## up, the band ORB_OFF's width; 0: on the line as he crosses it), `--burrower-reach=M`
+## (ORB_MORE), `--burrower-swing=M` (his swing each side; 0: none) and
+## `--burrower-swing-s=S` (there and back).
 
 const Burrower = preload("res://scripts/burrower/burrower.gd")
 const PushUps = preload("res://scripts/burrower/push_ups.gd")
@@ -32,8 +36,14 @@ const CANOPY_PLANE := 24.0
 const ROOF_HOLD := 3.0
 const RUN := 40.0
 const RUN_ORBS := 3
-## An orb's reach past the study's (m): a near miss counts.
-const ORB_MORE := 2.5
+## An orb's reach past the study's (m).
+const ORB_MORE := 2.0
+## How far off the plane's line an orb comes up (m): flying straight misses it, a
+## turn takes it. PushUps holds it to what the plane can reach in the time.
+const ORB_OFF := Vector2(9.0,15.0)
+## His swing on the run: m each side of his course, s there and back.
+const SWING_M := 18.0
+const SWING_S := 7.0
 ## Between sightings (s of flight). Rare: he's a thing you come across, about one
 ## every two to three minutes where there's a wood or water to find him in, a
 ## minute into the first flight so a new player meets him. Nothing to show him
@@ -107,6 +117,12 @@ static func every_flag() -> float:
 		if a.begins_with("--burrower-every="): return maxf(float(a.trim_prefix("--burrower-every=")),0.0)
 	return -1.0
 
+## A run's flag (not negative), or `default`.
+static func _flag(flag: String, default: float) -> float:
+	for a: String in LaunchArgs.user_args():
+		if a.begins_with(flag+"="): return maxf(float(a.trim_prefix(flag+"=")),0.0)
+	return default
+
 func _init() -> void:
 	name = "BurrowerFlight"
 
@@ -123,7 +139,11 @@ func setup(game: Node3D) -> void:
 	push_ups.setup(land,burrower)
 	push_ups.at_head = true
 	push_ups.run_most = RUN_ORBS
-	push_ups.reach_more = ORB_MORE
+	push_ups.reach_more = _flag("--burrower-reach",ORB_MORE)
+	var off := _flag("--burrower-orb-off",ORB_OFF.x)
+	if off > 0.0: push_ups.off_line = Vector2(off,off+ORB_OFF.y-ORB_OFF.x)
+	burrower.swing_m = _flag("--burrower-swing",SWING_M)
+	burrower.swing_s = maxf(_flag("--burrower-swing-s",SWING_S),1.0)
 	push_ups.taken.connect(_taken.bind(game))
 	_rng.randomize()
 	_every = every_flag()
