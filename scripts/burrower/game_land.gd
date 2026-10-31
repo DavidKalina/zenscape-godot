@@ -232,9 +232,7 @@ func wet(at: Vector2) -> bool:
 
 ## Water all the way `length` m from `at` along `way` (unit).
 func wet_along(at: Vector2, way: Vector2, length: float) -> bool:
-	for i in range(1,5):
-		if not wet(at+way*length*i/4.0): return false
-	return true
+	return wet_run(at,way,length,WET_DEEP) >= length
 
 ## The middles of the stood plan cells with STAND_N trees or more within `r` m of
 ## `at`, thickest first (only cells that have loaded: there's no planning here).
