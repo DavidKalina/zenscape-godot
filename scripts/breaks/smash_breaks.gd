@@ -10,9 +10,10 @@ extends "res://scripts/breaks/kit_breaks.gd"
 ## hole a colosseum.
 const MOST_LONG := 34.0
 ## The blast: of the plane's speed each stone keeps (from, to), out from the
-## hit (m/s), up (m/s) and its spin (rad/s).
+## flight line (m/s), so it clears the way and the eye behind, up (m/s) and its
+## spin (rad/s).
 const KEEP := Vector2(0.45,0.95)
-const OUT := Vector2(3.0,11.0)
+const OUT := Vector2(7.0,17.0)
 const UP_V := Vector2(1.0,7.0)
 const SPIN := Vector2(1.5,6.0)
 ## Flying stone is off layer 1, so the near misses' rays and the wheels don't
@@ -21,6 +22,8 @@ const STONE_LAYER := 1 << 12
 
 var blast_dir := Vector3.FORWARD
 var blast_v := Vector3.ZERO
+## (node, at): the look the land's stone has, put on what a cut rebuilt.
+var dress := Callable()
 
 func _init() -> void:
 	super._init()
@@ -45,7 +48,7 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> b
 func _topple(parts: Array, xf: Transform3D, box: AABB, at: Vector3, dir: Vector3, push: Vector3, his: Variant, group: Dictionary) -> void:
 	for part: Dictionary in parts:
 		var pat: Vector3 = xf*(part.at as Vector3)
-		var out := pat-at
+		var out := (pat-at).slide(blast_dir)
 		out = out.normalized() if out.length() > 0.05 else Vector3.UP
 		var high := clampf(((part.at as Vector3).y-box.position.y)/maxf(box.size.y,0.5),0.0,1.0)
 		var lin := push*_rng.randf_range(KEEP.x,KEEP.y)+out*_rng.randf_range(OUT.x,OUT.y)+Vector3.UP*_rng.randf_range(UP_V.x,UP_V.y)
@@ -69,4 +72,13 @@ func _body_of(subs: Array, xf: Transform3D) -> RigidBody3D:
 	var rb := super._body_of(grown,Transform3D(xf.basis.orthonormalized(),xf.origin))
 	rb.collision_layer = STONE_LAYER
 	rb.collision_mask = 1|STONE_LAYER
+	if dress.is_valid(): dress.call(rb,xf.origin)
 	return rb
+
+## None here: the plane's own burst (SurgeSmash `_felt`) is the hit's dust, and
+## a BodyDust plume this near the eye drew a black core in rendered runs.
+func _hit_dust(_at: Vector3) -> void:
+	pass
+
+func _dress(node: Node3D) -> void:
+	if dress.is_valid(): dress.call(node,node.global_position)

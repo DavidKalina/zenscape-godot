@@ -480,6 +480,7 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> b
 	if stands != null:
 		parent.add_child(stands)
 		stands.global_transform = xf
+		_dress(stands)
 	parent.remove_child(node)
 	node.queue_free()
 	var group := _new_group(at)
@@ -517,7 +518,7 @@ func _break(i: int, at: Vector3, dir: Vector3, push: Vector3, his: Variant) -> b
 		# The top goes a beat after the bottom: it falls on what fell.
 		_go_piece(rb,group,str(part.kind),lin,ang,0.08*high,away,high)
 	if group.pieces.is_empty(): _settled(group)
-	Dust.plume(self,at,3.2)
+	_hit_dust(at)
 	Dust.rocks(self,at+Vector3.UP*0.5,dir,10,0.24)
 	_sound(&"ruin_crack",at)
 	_sound(&"ruin_fall",foot)
@@ -571,3 +572,12 @@ func _topple(parts: Array, xf: Transform3D, box: AABB, at: Vector3, dir: Vector3
 		var entry: Dictionary = live[-1] if not live.is_empty() and live[-1].rb == rb else {}
 		if not entry.is_empty(): entry["soft_air"] = true
 		if whole and not entry.is_empty(): entry["burst"] = subs
+
+## What stands of a broken piece, in the tree. A cut rebuilds it from the kit,
+## so a look put on the standing piece is put on again here (SmashBreaks).
+func _dress(_node: Node3D) -> void:
+	pass
+
+## The cloud at the hit.
+func _hit_dust(at: Vector3) -> void:
+	Dust.plume(self,at,3.2)

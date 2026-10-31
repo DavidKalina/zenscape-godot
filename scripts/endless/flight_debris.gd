@@ -11,9 +11,12 @@ extends Node3D
 ## - spray: off the water, as a burst on a scrape, and a running trail
 ##   (`spray`) while it skims the water low and fast.
 
+const BodyDust = preload("res://scripts/breaks/body_dust.gd")
+
+## `soft`: the painted puff, not a flat square. `near` (m): gone, whole.
 const KINDS := {
-	"dust":{"color":Color(0.55,0.47,0.36),"amount":28,"size":0.55,"speed":Vector2(3.0,8.0),"gravity":-6.0,"life":1.1,"spread":55.0,"damp":2.0},
-	"sparks":{"color":Color(1.0,0.78,0.42),"amount":24,"size":0.12,"speed":Vector2(8.0,16.0),"gravity":-9.8,"life":0.45,"spread":70.0,"damp":0.5},
+	"dust":{"color":Color(0.55,0.47,0.36),"amount":28,"size":0.55,"speed":Vector2(3.0,8.0),"gravity":-6.0,"life":1.1,"spread":55.0,"damp":2.0,"soft":true,"near":Vector2(2.0,7.0)},
+	"sparks":{"color":Color(1.0,0.78,0.42),"amount":24,"size":0.12,"speed":Vector2(8.0,16.0),"gravity":-9.8,"life":0.45,"spread":70.0,"damp":0.5,"soft":true,"near":Vector2(1.5,5.0)},
 	"leaves":{"color":Color(0.33,0.5,0.24),"amount":22,"size":0.3,"speed":Vector2(2.0,6.0),"gravity":-2.0,"life":1.6,"spread":80.0,"damp":2.5},
 	"needles":{"color":Color(0.16,0.27,0.12),"amount":64,"size":0.2,"speed":Vector2(2.0,6.0),"gravity":-3.5,"life":1.8,"spread":80.0,"damp":1.6,"sphere":1.5,"pool":4,"near":Vector2(1.5,5.0)},
 	"wood":{"color":Color(0.5,0.36,0.22),"amount":18,"size":0.2,"speed":Vector2(4.0,10.0),"gravity":-9.8,"life":1.2,"spread":60.0,"damp":1.0},
@@ -72,6 +75,8 @@ func _emitter(k: Dictionary, one_shot: bool) -> CPUParticles3D:
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.vertex_color_use_as_albedo = true
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	if k.has("soft"):
+		m.albedo_texture = BodyDust._blob_texture()
 	if k.has("near"):
 		# Faded out this near the eye (m: gone, whole), so the camera flying
 		# through a burst isn't filled with it.

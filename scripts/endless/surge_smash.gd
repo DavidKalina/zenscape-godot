@@ -77,6 +77,7 @@ func setup(g: Node3D) -> void:
 	hub.sound_hook = Callable(self,"_stone_sound")
 	breaks = Breaks.new()
 	breaks.hub = hub
+	breaks.dress = func(node: Node3D, at: Vector3) -> void: game.arches._sunlit(node,false,false,at)
 	add_child(breaks)
 	hub.others.append(breaks)
 	walls = Walls.new()
