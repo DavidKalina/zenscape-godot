@@ -37,7 +37,7 @@ const ROOF_HOLD := 3.0
 const RUN := 40.0
 const RUN_ORBS := 3
 ## An orb's reach past the study's (m).
-const ORB_MORE := 1.5
+const ORB_MORE := 2.0
 ## How far off the plane's line an orb comes up (m): flying straight misses it, a
 ## turn takes it. PushUps holds it to what the plane can reach in the time.
 const ORB_OFF := Vector2(9.0,15.0)
