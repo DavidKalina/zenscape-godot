@@ -8,10 +8,15 @@ extends RefCounted
 ## PeakMassif._h asks `move` for how far to walk along the fall line before it
 ## reads its own shapes, then `ledge` for the strata on the height it got. Both
 ## are pure in (a, v, step), so a chunk, the collider and LandField.height agree.
-## A wall moves by at most MOVE_MOST m; a gorge's foot stays where it stood
-## (PeakMassif._rock_keep). `step`, a chunk's quad: scales the mesh can't carry
-## are left out, so the detail shrinks with distance. 0: all of them, as the
-## finest chunks (the collider's) have them.
+## A wall moves by at most MOVE_MOST m. Down at a gorge's floor only the hollows
+## stand (PeakMassif._h): they go back from the flown air, so gullies reach the
+## floor and no wall comes nearer the plane. `step`, a chunk's quad: scales the
+## mesh can't carry are left out, so the detail shrinks with distance. 0: all of
+## them, as the finest chunks (the collider's) have them.
+##
+## `move`'s second number is the paint: a chunk bakes it into the carve's marks
+## (CUSTOM0), the land's groove and crest, so a wall facing the sun keeps its ribs
+## where its normals alone stay in one tone. Being a vertex's, it shrinks too.
 ##
 ## --peak-rock=0: none of it, the massif as it was.
 
@@ -31,6 +36,9 @@ const BLOCK_EDGE := 0.28
 const PLANES := 330.0
 ## The most any wall moves.
 const MOVE_MOST := 30.0
+## How much a rib counts in the paint: the small scales are what a wall square
+## to the sun has lost, the large ones would paint it in broad bands.
+const PAINT_RIB := 0.3
 ## The strata's ledges: a band's height (m), how much of it is the riser, how
 ## hard it bites, the quad past which the mesh can't carry them.
 const LEDGE := Vector2(30.0,0.42)
@@ -56,23 +64,31 @@ func _init(land_seed: int) -> void:
 func _ridged(x: float, y: float) -> float:
 	return 1.0-2.8*absf(_n.get_noise_2d(x,y))
 
-## How far (m) to walk up the fall line at (a, v), under `keep` (0 to 1) of it.
-func move(a: float, v: float, keep: float, step: float) -> float:
+## Vector2(how far (m) to walk up the fall line at (a, v), the relief's paint in
+## m: down a gully, up on a rib).
+func move(a: float, v: float, step: float) -> Vector2:
 	var c := step*KEEP_QUADS
 	var quiet := smoothstep(-0.25,0.3,_n.get_noise_2d(a/PLANES+91.0,v/PLANES-37.0))
 	var w := 0.0
+	var paint := 0.0
 	if BUTTRESS.x >= c:
 		var r := clampf(_ridged(a/BUTTRESS.x,v/BUTTRESS.x)*0.5+0.5,0.0,1.0)*BLOCKS
 		var k := floorf(r)
 		w = (k+smoothstep(0.5-BLOCK_EDGE,0.5+BLOCK_EDGE,r-k))/BLOCKS*2.0-1.0
 		w *= BUTTRESS.y
 	if RIB.x >= c:
-		w += _ridged(a/RIB.x+13.0,v/RIB.x+5.0)*RIB.y*(0.45+0.55*quiet)
+		var r := _ridged(a/RIB.x+13.0,v/RIB.x+5.0)*RIB.y*(0.45+0.55*quiet)
+		w += r
+		paint += r*PAINT_RIB
 	if GULLY.x >= c:
-		w += _ridged(a/GULLY.x-31.0,v/GULLY.x+17.0)*GULLY.y*(0.4+0.6*quiet)
+		var g := _ridged(a/GULLY.x-31.0,v/GULLY.x+17.0)*GULLY.y*(0.4+0.6*quiet)
+		w += g
+		paint += g
 	if CHIP.x >= c:
-		w += _ridged(a/CHIP.x+7.0,v/CHIP.x-23.0)*CHIP.y*(0.4+0.6*quiet)
-	return clampf(w,-MOVE_MOST,MOVE_MOST)*keep
+		var p := _ridged(a/CHIP.x+7.0,v/CHIP.x-23.0)*CHIP.y*(0.4+0.6*quiet)
+		w += p
+		paint += p
+	return Vector2(clampf(w,-MOVE_MOST,MOVE_MOST),paint)
 
 ## The height `h` at world (x, z) with the strata's ledges bitten into it,
 ## under `keep` of them.

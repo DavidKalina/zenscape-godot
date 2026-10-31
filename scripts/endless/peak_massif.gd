@@ -315,13 +315,18 @@ const ROUGH := 12.0
 const ROUGH_SCALE := 90.0
 ## The bounding circle round O: everything outside is the land's own.
 ## The rock's relief (PeakRock, `_rock_keep`): the steepness (off the fall map)
-## it starts and is whole at; how far past a gorge's floor's edge it starts and
-## is whole at (m); the cirque's radius it starts and is whole at (m); a tower's
-## foot's radii it starts and is whole at.
-const ROCK_STEEP := Vector2(0.28,0.7)
+## it starts and is whole at; how far past a gorge's floor's edge the hollows
+## start and the ribs start and are whole, the plane's air (m); the cirque's radius
+## it starts and is whole at (m); a tower's foot's radii it starts and is whole
+## at; the paint's whole depth (m).
+const ROCK_STEEP := Vector2(0.14,0.45)
 const ROCK_FOOT := Vector2(6.0,44.0)
 const ROCK_CIRQUE := Vector2(190.0,260.0)
 const ROCK_TOWER := Vector2(0.9,1.5)
+const ROCK_PAINT := 5.0
+## How much of the small relief also lifts the ground straight: a shoulder lies
+## too far back for a walk along its fall line to move it.
+const ROCK_LIFT := 0.8
 
 const BOUND := 4050.0
 const CLEAR_PAST := 1150.0
@@ -521,13 +526,10 @@ func _falls(a: float, v: float) -> Vector3:
 	return Vector3(t[k0]*w0+t[k1]*w1+t[k2]*w2+t[k3]*w3,t[k0+1]*w0+t[k1+1]*w1+t[k2+1]*w2+t[k3+1]*w3,t[k0+2]*w0+t[k1+2]*w1+t[k2+2]*w2+t[k3+2]*w3)
 
 ## How much of the rock's relief (PeakRock) stands at (a, v), steepness `s`:
-## only on walls; none on a gorge's floor or the foot of its wall, where the
-## plane flies, none on the cirque's floor or the strip, little where a tower
-## stands on its plinth.
+## only on walls; none on the cirque's floor or the strip, little where a tower
+## stands on its plinth. (A gorge's floor and foot: see _h_rock.)
 func _rock_keep(a: float, v: float, s: float) -> float:
 	var k := smoothstep(ROCK_STEEP.x,ROCK_STEEP.y,s)
-	if k <= 0.0: return 0.0
-	k *= smoothstep(ROCK_FOOT.x,ROCK_FOOT.y,Split.near(a,v))
 	if k <= 0.0: return 0.0
 	var rho2 := a*a+v*v
 	if rho2 < CIRQUE_REACH2: k *= smoothstep(ROCK_CIRQUE.x,ROCK_CIRQUE.y,sqrt(rho2))
@@ -701,6 +703,9 @@ func apply_chunk(field: Object, _impl: Object, made: Dictionary, x0: float, z0: 
 	mv.resize(w*w)
 	var lifted := PackedByteArray()
 	lifted.resize(n*n)
+	# The rock's paint, -1 down a gully to 1 up a rib (PeakRock).
+	var relief := PackedFloat32Array()
+	relief.resize(n*n)
 	var any := false
 	var r2 := BOUND*BOUND
 	var fx := facing.x
@@ -742,11 +747,12 @@ func apply_chunk(field: Object, _impl: Object, made: Dictionary, x0: float, z0: 
 				if ci < 0 or cj < 0 or ci >= _live_n or cj >= _live_n or _live[cj*_live_n+ci] == 0: continue
 			var qx := x-centre.x
 			var qz := z-centre.y
-			var hm := _h(qx*fx+qz*fz,qx*sx+qz*sz,step)
+			var hm := _h_rock(qx*fx+qz*fz,qx*sx+qz*sz,step)
 			var by := base-SEA_Y
 			var y := lerpf(maxf(by,hm.x),hm.x,hm.y)
 			var lift := y-by
 			if not i_out and not j_out:
+				relief[v] = hm.w
 				var c := colours[v]
 				var m := maxf(c.a*(1.0-smoothstep(0.5,6.0,absf(lift))),hm.z)
 				if absf(lift) <= 0.0005 and absf(m-c.a) <= 0.002: continue
@@ -789,9 +795,10 @@ func apply_chunk(field: Object, _impl: Object, made: Dictionary, x0: float, z0: 
 		ups[t] = normal.y
 		ms[t] = colours[v].a
 		if mv[k] != 0:
-			# Off the carve's marks (the field's groove and crest).
-			carved[v*4] = 0
-			carved[v*4+1] = 0
+			# Off the carve's marks (the field's groove and crest): on the
+			# massif they're its rock's relief.
+			carved[v*4] = int(clampf(-relief[v],0.0,1.0)*255.0)
+			carved[v*4+1] = int(clampf(relief[v],0.0,1.0)*255.0)
 		if lifted[v] != 0:
 			# No river on the massif: far from any, its flow still.
 			carved[v*4+2] = 128
@@ -1060,14 +1067,26 @@ static func _fall(top: float, d: float, run: float, bow: float) -> float:
 ## The massif at (a, v) with its rock's relief on the walls: Vector3(height, cut,
 ## meadow). `step` the asker's quad (0: every scale; see PeakRock).
 func _h(a: float, v: float, step := 0.0) -> Vector3:
-	if not Rock.wanted: return _h0(a,v)
-	var f := _falls(a,v)
+	var hm := _h_rock(a,v,step)
+	return Vector3(hm.x,hm.y,hm.z)
+
+## `_h` with the rock's paint in w, -1 down a gully to 1 up a rib. Near a gorge's
+## floor only the hollows move: back from the flown air, down to the floor's edge
+## and never past it, so the floor stands and no wall comes nearer the plane.
+func _h_rock(a: float, v: float, step: float) -> Vector4:
+	var hm: Vector3
+	var f := _falls(a,v) if Rock.wanted else Vector3.ZERO
 	var keep := _rock_keep(a,v,f.x) if f.x > ROCK_STEEP.x else 0.0
-	if keep <= 0.0: return _h0(a,v)
-	var w: float = _rock.move(a,v,keep,step)
-	var hm := _h0(a+f.y*w,v+f.z*w)
-	hm.x = _rock.ledge(hm.x,centre.x+facing.x*a+side.x*v,centre.y+facing.y*a+side.y*v,a,v,keep,step)
-	return hm
+	if keep <= 0.0:
+		hm = _h0(a,v)
+		return Vector4(hm.x,hm.y,hm.z,0.0)
+	var m: Vector2 = _rock.move(a,v,step)
+	var e: float = Split.near(a,v)
+	var air := smoothstep(ROCK_FOOT.x,ROCK_FOOT.y,e)
+	var w := lerpf(minf(m.x,0.0)*smoothstep(0.0,ROCK_FOOT.x,e),m.x,air)*keep
+	hm = _h0(a+f.y*w,v+f.z*w)
+	hm.x = _rock.ledge(hm.x,centre.x+facing.x*a+side.x*v,centre.y+facing.y*a+side.y*v,a,v,keep*air,step)+m.y*ROCK_LIFT*keep*air
+	return Vector4(hm.x,hm.y,hm.z,clampf(m.y/ROCK_PAINT,-1.0,1.0)*keep*smoothstep(0.0,ROCK_FOOT.x,e))
 
 ## The massif's own shapes at (a, v).
 func _h0(a: float, v: float) -> Vector3:
