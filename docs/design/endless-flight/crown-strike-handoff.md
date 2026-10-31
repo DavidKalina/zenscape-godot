@@ -64,7 +64,8 @@ these are one partial run, not a table. Dodge bots break 0.25 s after the lunge 
 - Shove, measured 3 s after a hit: about 135 m off the path, 95-100 m of it back, with the plane 6-37 m lower than at the
   hit despite climbing. Speed recovered in that time (53 m/s with Boost, 33 without). No crashes or scrapes in any run.
 - Far from the spires: about 11 s from the first notice to arrival, 8-9 s of it visible running, from about 1350 m.
-- Turning away: 4 of 6 dodged with Boost, 3 of 9 without. Diving: 5 of 8 with Boost, 4 of 9 without.
+- Finished strikes only. Turning away: 4 of 6 dodged with Boost, 0 of 6 without. Diving: 5 of 8 with Boost, 3 of 8
+  without. Four more strikes were still live when their runs ended, so they aren't counted.
 - Smoke passes on `endless_flight`, `--world=regions` and `--peak-strike=0`, 0 errors.
 - Frames: the rope uncoiling off the tip and running out reads well from a distance. From the plane, the head seen coming
   head-on reads as a swirling ball growing.
@@ -75,7 +76,8 @@ No test under `tests/` names the spirals or `flight_sound`, so I know of none th
 
 ## Weak
 
-- **Dodging without Boost is hard** at the bot's late break. The plane moves too little in the lunge. Try a longer
+- **Dodging without Boost barely works** at the bot's late break: a turn never beat it. The plane moves too little in
+  the lunge. An earlier break is untested. Try a longer
   `LUNGE_FROM` or a slower `LUNGE_SPEED`.
 - **Near the spires** the run can start already inside `LUNGE_FROM`, so it goes straight to the lunge: the 2.5-3 s of
   gather and rear, then about 2 s. That's the shortest warning in the game.
