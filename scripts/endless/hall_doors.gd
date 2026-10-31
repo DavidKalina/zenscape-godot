@@ -97,6 +97,8 @@ const GUARD_LOOK := 0.5
 const GUARD_ROOF := 4.0
 const GUARD_FLOOR := 2.5
 const PREWARM_HALL := 1800.0
+const DEEP := 0.4
+const DEEP_UP := 8.0
 
 ## The kit bay's scale, its length and the clear half width at the stone.
 var _big := 1.0
@@ -574,6 +576,11 @@ func _daylight() -> ShaderMaterial:
 ## The floor's world height where the hall stands now.
 func hall_floor() -> float:
 	return _frames[0].origin.y+(_by.y if _side == 1 else 0.0)
+
+## A place for a thing deep in the hall (world, on the wilderness's side of the
+## swap, so the hall's first half): DEEP of the way in, DEEP_UP over the floor.
+func deep() -> Vector3:
+	return _frames[0]*_at_s(_len()*DEEP)+Vector3.UP*DEEP_UP
 
 ## Whether a world point counts as in the hall (the plane is in it, and `p`
 ## within it): the land and all that stands on it do not answer there.

@@ -22,7 +22,13 @@ extends RefCounted
 ##             "endless/arch/3_-2/0", "endless/rock/stacks/4_-2/0",
 ##             "endless/split/1_-3", "pond/1405_935"
 ##             a Peak part: "peak/summit", "peak/tarn", "peak/plateau",
-##             "peak/strip/0", "peak/strip/1", "peak/strip/mid", "peak/tower/2"
+##             "peak/strip/0", "peak/strip/1", "peak/strip/mid", "peak/tower/2",
+##             a hole in the Dike or a Sill's gap, "peak/hole/2", "peak/sill/3"
+##             (peak_carve.gd HOLES, SILL_HOLES)
+##             the room behind a cracked wall: "chamber/<place>" for the wall
+##             `cracked/<place>` (cracked_walls.gd SITES)
+##             "doors/amber-hall/deep": deep in the door's hall; give the row
+##             `hall` true as well, and it's seen only from inside
 ##           or anything lanes hand to `finds.anchor(name, position)`.
 ##           An anchor not there yet is tried again as the flight goes on.
 ## and, with either:
@@ -30,6 +36,7 @@ extends RefCounted
 ##   offset  Vector3 added last
 ##   yaw     a relic's facing in degrees (else it turns to meet the plane)
 ##   radius  a landing's reach (m)
+##   pillar  with a stacks anchor: that pillar's top, not the group's middle
 ## Each spot then goes through the layout file as `finds/<id>`, so a find can
 ## be moved by hand without touching this table.
 ##
@@ -58,18 +65,76 @@ const AREAS := {
 
 const WORLDS := {
 	"wilderness":[
-		{"id":"first-ring","area":"meadow","kind":"relic","at":Vector2(-205.0,28.0),"up":24.0,
+		# The start meadow: in view of the start, or a short hop from it.
+		{"id":"first-ring","area":"meadow","kind":"relic","at":Vector2(-30.0,-70.0),"up":18.0,
 			"title":"The first ring"},
-		{"id":"sea-arch-ring","area":"coast","kind":"relic","anchor":"endless/arch/3_-2/0","up":14.0,
-			"title":"The ring under the sea arch","hint":"An arch stands in the shallows, east"},
+		{"id":"inlet-skim","area":"meadow","kind":"relic","at":Vector2(40.0,320.0),"up":5.0,
+			"title":"The ring on the water"},
 		{"id":"first-cairn","area":"meadow","kind":"landing","at":Vector2(600.0,-60.0),"radius":60.0,
 			"title":"Set down by the cairn","hint":"Put the wheels down inside the stones"},
-		{"id":"tarn-shore","area":"peak","kind":"landing","anchor":"peak/strip/mid","offset":Vector3(15.0,0.0,2.6),"radius":130.0,
-			"title":"Set down by the tarn","hint":"A lake high up, with a shore to stop on"},
-		{"id":"the-wall","area":"coast","kind":"event","book":["door/amber-wall","door/amber-hall"],
-			"title":"The way to the Amberlands","hint":"There is a way out of here"},
 		{"id":"meadow-dash","area":"meadow","kind":"line","place":"meadow","name":"meadow_dash",
 			"title":"The meadow dash","gates":[Vector3(330.0,2.0,-60.0),Vector3(820.0,4.0,-30.0),Vector3(1400.0,4.0,120.0)]},
+		{"id":"east-room","area":"meadow","kind":"relic","anchor":"chamber/start-east","up":0.0,
+			"title":"The ring in the east room","hint":"Cracked stone, east of the meadow"},
+		{"id":"north-room","area":"meadow","kind":"relic","anchor":"chamber/start-north","up":0.0,
+			"title":"The ring in the green cup's room"},
+		{"id":"the-cup","area":"meadow","kind":"landing","at":Vector2(500.0,-830.0),"radius":60.0,
+			"title":"Set down in the green cup","hint":"A green cup in the hills, north"},
+		{"id":"burrower-catch","area":"meadow","kind":"event","event":"caught",
+			"title":"Caught the burrower","hint":"Skim low, and something runs"},
+		# The foothills: the ridge, the door, the glacier.
+		{"id":"ridge-ring","area":"foothills","kind":"relic","anchor":"doors/amber-hall","up":10.0,"offset":Vector3(123.0,0.0,86.0),
+			"title":"The ring below the ruin"},
+		{"id":"belfry-ring","area":"foothills","kind":"relic","anchor":"doors/amber-hall","up":72.0,
+			"title":"The ring between the belfries","hint":"High between the ruin's towers"},
+		{"id":"the-wall","area":"foothills","kind":"event","book":["door/amber-wall","door/amber-hall"],
+			"title":"The way to the Amberlands","hint":"There is a way out of here"},
+		{"id":"hall-deep","area":"foothills","kind":"relic","anchor":"doors/amber-hall/deep","hall":true,"up":0.0,
+			"title":"The ring deep in the hall","hint":"Deep inside, where no light should be"},
+		{"id":"long-ice","area":"foothills","kind":"landing","at":Vector2(-1060.0,-280.0),"radius":60.0,
+			"title":"Set down on the old ice","hint":"One level stretch across the old ice"},
+		{"id":"gorge-room","area":"foothills","kind":"relic","anchor":"chamber/gorge","up":0.0,
+			"title":"The ring in the gorge room"},
+		{"id":"bend-ring","area":"foothills","kind":"relic","anchor":"endless/rock/valley/-6_-3/0","up":25.0,
+			"title":"The ring at the gorge's bend","hint":"Up the ice, past the second bend"},
+		# The Peak.
+		{"id":"tarn-shore","area":"peak","kind":"landing","anchor":"peak/strip/mid","offset":Vector3(15.0,0.0,2.6),"radius":130.0,
+			"title":"Set down by the tarn","hint":"A lake high up, with a shore to stop on"},
+		{"id":"tarn-skim","area":"peak","kind":"relic","anchor":"peak/tarn","up":5.0,
+			"title":"The ring on the black water"},
+		{"id":"tarn-room","area":"peak","kind":"relic","anchor":"chamber/tarn","up":0.0,
+			"title":"The ring in the tarn room","hint":"Walls stand on the high plateau"},
+		{"id":"crown-gap","area":"peak","kind":"relic","anchor":"peak/tower/0","up":40.0,"offset":Vector3(39.0,0.0,-98.0),
+			"title":"The ring in the crown"},
+		{"id":"dike-hole","area":"peak","kind":"relic","anchor":"peak/hole/2","up":0.0,
+			"title":"The ring in the black wall","hint":"A hole in the black wall"},
+		{"id":"sill-gap","area":"peak","kind":"relic","anchor":"peak/sill/3","up":0.0,
+			"title":"The ring in the sill's gap"},
+		{"id":"summit-ring","area":"peak","kind":"relic","anchor":"peak/summit","up":22.0,
+			"title":"The ring over the summit","hint":"Higher than anything here"},
+		# The near coast: arches, stacks, the islands, the light and the boat.
+		{"id":"sea-arch-ring","area":"coast","kind":"relic","anchor":"endless/arch/3_-2/0","up":14.0,
+			"title":"The ring under the sea arch","hint":"An arch stands in the shallows, east"},
+		{"id":"aqueduct-ring","area":"coast","kind":"relic","anchor":"endless/arch/4_0/0","up":14.0,
+			"title":"The ring under the aqueduct"},
+		{"id":"high-arch","area":"coast","kind":"relic","anchor":"endless/arch/3_3/0","up":10.0,
+			"title":"The ring in the high arch","hint":"A lone arch on the southern hill"},
+		{"id":"stack-top","area":"coast","kind":"relic","anchor":"endless/rock/stacks/4_-2/0","pillar":0,"up":14.0,
+			"title":"The ring over the stacks","hint":"On top of the rocks in the bay"},
+		{"id":"giant-stack","area":"coast","kind":"relic","anchor":"endless/rock/stacks/4_5/0","pillar":0,"up":14.0,
+			"title":"The ring over the giant"},
+		{"id":"long-isle","area":"coast","kind":"landing","at":Vector2(455.0,3510.0),"radius":120.0,
+			"title":"Set down on Long Isle","hint":"An island with room to land"},
+		{"id":"isle-room","area":"coast","kind":"relic","anchor":"chamber/long-isle","up":0.0,
+			"title":"The ring in the island's room"},
+		{"id":"light-rock","area":"coast","kind":"landing","at":Vector2(2097.0,3222.0),"radius":100.0,
+			"title":"Set down on Light Rock","hint":"There's a flat under the lighthouse"},
+		{"id":"lamp-ring","area":"coast","kind":"relic","anchor":"coast/lighthouse","up":50.0,"offset":Vector3(18.0,0.0,-14.0),
+			"title":"The ring by the lamp"},
+		{"id":"boat-deck","area":"coast","kind":"landing","anchor":"coast/boat","up":4.6,"offset":Vector3(-14.0,0.0,5.0),"radius":45.0,
+			"title":"Set down on the old boat","hint":"Her deck is long enough. Just."},
+		{"id":"horn-mouth","area":"coast","kind":"relic","at":Vector2(2930.0,3900.0),"up":12.0,
+			"title":"The ring in the Horn's mouth"},
 	],
 	"amberlands":[],
 }

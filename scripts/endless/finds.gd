@@ -21,6 +21,7 @@ const LandArches = preload("res://scripts/endless/land_arches.gd")
 const RockPlan = preload("res://scripts/endless/rocks/rock_plan.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const PeakCarve = preload("res://scripts/endless/peak_carve.gd")
 
 signal found_one(entry: Dictionary)
 
@@ -64,6 +65,9 @@ var stream_reads := 0
 
 static func wanted(seed: int) -> bool:
 	return seed == Table.SEED and not "--finds=0" in LaunchArgs.user_args()
+
+## The anchor of the relic deep in the door's hall (HallDoors `deep`).
+const HALL_ANCHOR := "doors/amber-hall/deep"
 
 ## A flown ring's opening (m).
 static func ring_opening() -> float:
@@ -162,18 +166,21 @@ func _ground(x: float, z: float) -> float:
 ## Where a named anchor stands (see finds_table.gd), or Vector3.INF for now.
 func anchor_spot(a: String, e: Dictionary = {}) -> Vector3:
 	if _extra_anchors.has(a): return _extra_anchors[a]
+	var parts := a.split("/")
+	if a.begins_with("peak/"): return _peak(parts)
 	if LayoutOverrides.entries.has(a):
 		if not e.is_empty(): e.moves = true
-		return LayoutOverrides.current(a).origin
-	var parts := a.split("/")
+		var node: Node3D = LayoutOverrides.entries[a].node
+		return node.global_position if node.is_inside_tree() else node.position
+	if a.begins_with("chamber/"): return _chamber("cracked/"+a.trim_prefix("chamber/"))
+	if a == HALL_ANCHOR: return _game.doors.deep() if _game.doors != null and _game.doors.has_method("deep") else Vector3.INF
 	if a.begins_with("endless/arch/") and parts.size() == 4: return _arch(parts)
-	if a.begins_with("endless/rock/") and parts.size() == 5: return _rock(parts)
+	if a.begins_with("endless/rock/") and parts.size() == 5: return _rock(parts,e)
 	if a.begins_with("endless/split/") and parts.size() == 3: return _split(parts[2])
 	if a.begins_with("pond/") and parts.size() == 2:
 		var xz := parts[1].split("_")
 		var s: Array = _field.ponds_in(float(xz[0])-2.0,float(xz[1])-2.0,float(xz[0])+2.0,float(xz[1])+2.0)
 		if not s.is_empty(): return Vector3(s[0][0],s[0][3],s[0][1])
-	if a.begins_with("peak/"): return _peak(parts)
 	return Vector3.INF
 
 func _arch(parts: PackedStringArray) -> Vector3:
@@ -184,12 +191,22 @@ func _arch(parts: PackedStringArray) -> Vector3:
 		if str(spec.name) == want: return spec.pos
 	return Vector3.INF
 
-func _rock(parts: PackedStringArray) -> Vector3:
+func _rock(parts: PackedStringArray, e: Dictionary) -> Vector3:
 	var c := parts[3].split("_")
 	var want := "/".join(parts)
 	for spec: Dictionary in RockPlan.plan(_field,int(c[0]),int(c[1]),RockPlan.flags()):
-		if str(spec.name) == want: return spec.pos
+		if str(spec.name) != want: continue
+		if not e.has("pillar"): return spec.pos
+		var pillar: Dictionary = (spec.pillars as Array)[int(e.pillar)]
+		var rings: Array = pillar.profile
+		return (spec.pos as Vector3)+(pillar.at as Vector3)+Vector3.UP*float((rings[rings.size()-1] as Array)[0])
 	return Vector3.INF
+
+## The room behind a cracked wall (CrackedWalls `chamber_at`).
+func _chamber(handle: String) -> Vector3:
+	var smash: Variant = _game.get("smash")
+	if smash == null or not (smash.walls.sites as Dictionary).has(handle): return Vector3.INF
+	return smash.walls.chamber_at(handle)
 
 func _split(key: String) -> Vector3:
 	const SPLIT_CELL := 1536.0
@@ -216,7 +233,15 @@ func _peak(parts: PackedStringArray) -> Vector3:
 		"tower":
 			var bases: Array = pk.tower_bases()
 			if int(parts[2]) < bases.size(): return bases[int(parts[2])]
+		"hole": return _hole(pk,PeakCarve.HOLES[int(parts[2])],0)
+		"sill": return _hole(pk,PeakCarve.SILL_HOLES[int(parts[2])],1)
 	return Vector3.INF
+
+## The middle of a hole in the Dike or a Sill: `h` its PeakCarve row, `from` where
+## its [a, v, y over the sea] start.
+func _hole(pk: RefCounted, h: Array, from: int) -> Vector3:
+	var at: Vector2 = pk.world(float(h[from]),float(h[from+1]))
+	return Vector3(at.x,float(h[from+2])+Field.SEA_Y,at.y)
 
 # --- The score --------------------------------------------------------------------------
 
@@ -310,6 +335,7 @@ func step(delta: float, game: Node) -> void:
 			e.at = anchor_spot(str(e.anchor))+Vector3.UP*float(e.get("up",0.0 if e.kind == "landing" else Table.HOVER))+(e.get("offset",Vector3.ZERO) as Vector3)
 			node.position = e.at
 		node.tick(delta,p,eye)
+		if e.has("hall"): node.visible = not is_found(e) and game.doors != null and game.doors.holds(e.at)
 		if e.kind == "relic" and flying and a != Vector3.INF and not is_found(e) and _segment_near(a,p,e.at,r): complete(i)
 	# Any stop counts, a taxi in as well as a landing: wheels at rest inside the
 	# stones is what the row asks for, and a rollout can run past them.

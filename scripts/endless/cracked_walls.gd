@@ -28,10 +28,13 @@ const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 
 signal broken(name: String)
 
-## The two samples near the start meadow.
+## Every wall in the land: the finds' relics stand in their rooms (`chamber/<place>`).
 const SITES := [
 	{"name":"cracked/start-east","at":Vector2(510.9,-20.3),"yaw":-1.373},
 	{"name":"cracked/start-north","at":Vector2(430.9,-740.3),"yaw":-0.38},
+	{"name":"cracked/gorge","at":Vector2(-2041.0,-977.0),"yaw":0.785},
+	{"name":"cracked/tarn","at":Vector2(-3420.0,-720.0),"yaw":1.57},
+	{"name":"cracked/long-isle","at":Vector2(621.0,3537.0),"yaw":-2.356},
 ]
 ## The room's clear size, in toy widths (WorldScale `opening`): across, high, long.
 const TOY_WIDE := 7.0

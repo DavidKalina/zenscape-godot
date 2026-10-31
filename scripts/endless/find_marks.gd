@@ -29,6 +29,9 @@ const SPIN := 0.3
 const FACE := 0.8
 ## The glint's size (a share of the view's height, about).
 const GLINT_SIZE := 0.05
+## The layer of a mark in the door's hall, where the camera leaves the world out
+## (LandTunnels UNDER_LAYER, HallDoors UNDER).
+const HALL_LAYER := 1 << 14
 
 static var _hoop: ArrayMesh
 static var _cairn: ArrayMesh
@@ -262,6 +265,9 @@ class Mark extends Node3D:
 		_spin.rotation = Vector3.ZERO
 		rotation = Vector3.ZERO
 		_ring.visible = false
+		var seen: int = HALL_LAYER if e.has("hall") else 1
+		_body.layers = seen
+		_glint.layers = seen
 		if what == "relic":
 			_body.mesh = FindMarks.hoop()
 			_glint.position = Vector3.ZERO
@@ -372,6 +378,7 @@ class Beat extends Node3D:
 		c.angular_velocity_max = 400.0
 		c.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
 		c.emission_sphere_radius = WorldScale.opening(5.0)*0.55
+		c.layers = 1 | HALL_LAYER
 		add_child(c)
 		return c
 
