@@ -23,6 +23,7 @@ const Plan = preload("res://scripts/endless/arch_plan.gd")
 const Build = preload("res://scripts/endless/arch_build.gd")
 const Bridges = preload("res://scripts/endless/bridge_plan.gd")
 const Sets = preload("res://scripts/endless/set_plan.gd")
+const Carve = preload("res://scripts/endless/peak_carve.gd")
 const LaunchArgs = preload("res://scripts/launch_args.gd")
 const STONE_LIFT := Color(3.0, 2.55, 1.95)
 ## The ruins' stone colour in the land, by name: the albedo lift (sRGB) over
@@ -63,12 +64,21 @@ const REPLAN := 40.0
 const TASKS := 2
 const COMMIT_BUDGET := 1.5
 const LAYER := 1
+## The Peak's carve (peak_carve.gd) stands from this far: its walls show up the valley.
+const CARVE_REACH := 6500.0
+## Its solid's upright lines (m): its skin is meshed at 2.5 m.
+const CARVE_SAMPLE := 1.0
 
 var seed := 1
 var density := 1.0
 var rock := 1.0
 var ruin := 1.0
 var material: Material
+## The carve's rock (LandRocks' bare: all rock, whatever the slope).
+var carve_rock: Material
+## The cells holding the carve (they stand from CARVE_REACH).
+var carve_cells := {}
+var _gates := {}
 var stats := {"cells":0,"arches":0,"built_ms":0.0,"slowest_build_ms":0.0,"slowest_commit_ms":0.0,"tris":0}
 
 var _cells := {}        # Vector2i -> Array of records (committed)
@@ -106,6 +116,9 @@ func setup(land_seed: int, ground: Material = null) -> void:
 		material = plain
 	# The kit's shared materials are made lazily: once here, before workers.
 	RuinKit.materials()
+	var carve_field := Field.new(seed)
+	carve_cells = Carve.cells(carve_field)
+	_gates = Carve.gates_grid(carve_field)
 
 ## The ruin stone for the endless land only (the kit's own material is shared
 ## with the isles and the motif editor, so it is copied, not changed): the same
@@ -256,8 +269,14 @@ func _wanted(at: Vector3, reach: float) -> Array:
 		for dx in range(-r,r+1):
 			var key := c+Vector2i(dx,dz)
 			if _cell_distance(key,at) <= reach: out.append(key)
+	if reach >= REACH:
+		for key: Vector2i in carve_cells:
+			if not key in out and _cell_distance(key,at) <= CARVE_REACH: out.append(key)
 	out.sort_custom(func(p: Vector2i, q: Vector2i) -> bool: return _cell_distance(p,at) < _cell_distance(q,at))
 	return out
+
+func _reach_of(key: Vector2i) -> float:
+	return CARVE_REACH if carve_cells.has(key) else REACH
 
 func _cell_distance(key: Vector2i, at: Vector3) -> float:
 	return Vector2((key.x+0.5)*Plan.CELL-at.x,(key.y+0.5)*Plan.CELL-at.z).length()
@@ -267,7 +286,7 @@ func _plan(at: Vector3) -> void:
 	for key: Vector2i in _wanted(at,REACH):
 		if not _cells.has(key) and not _pending.has(key): _queue.append(key)
 	for key: Vector2i in _cells.keys():
-		if _cell_distance(key,at) > REACH+Plan.CELL: _free_cell(key)
+		if _cell_distance(key,at) > _reach_of(key)+Plan.CELL: _free_cell(key)
 
 func _task(key: Vector2i) -> void:
 	if _quit: return
@@ -286,10 +305,14 @@ func _build_cell(key: Vector2i, field: RefCounted) -> Dictionary:
 	# And the set pieces whose middle stands in it (set_plan.gd; only a world
 	# whose layers set `sets`), the arches by them given way.
 	specs = Sets.with_arches(field,key.x,key.y,specs,density,rock,ruin)
+	# And the Peak's carve (peak_carve.gd).
+	specs = Carve.with_arches(field,key.x,key.y,specs)
 	for spec: Dictionary in specs:
+		var t0 := Time.get_ticks_usec()
 		var b := Build.build(spec,field)
+		spec["ms"] = (Time.get_ticks_usec()-t0)/1000.0
 		# A rock arch's solid follows its skin; a ruin's, its stones.
-		b["solid"] = BoxSolid.build(BoxSolid.from_faces(b.faces) if b.kind == "rock" else b.boxes)
+		b["solid"] = BoxSolid.build(BoxSolid.from_faces(b.faces,CARVE_SAMPLE if spec.has("carve") else BoxSolid.SAMPLE) if b.kind == "rock" else b.boxes)
 		if b.kind == "rock":
 			var shape := ConcavePolygonShape3D.new()
 			shape.set_faces(b.faces)
@@ -314,7 +337,7 @@ func _commit_one(done: Dictionary, sliced := false, began := 0) -> bool:
 	if not done.has("at"):
 		stats.built_ms += float(done.ms)
 		stats.slowest_build_ms = maxf(stats.slowest_build_ms,float(done.ms))
-		if _cells.has(key) or _cell_distance(key,_eye) > REACH+Plan.CELL*2.0:
+		if _cells.has(key) or _cell_distance(key,_eye) > _reach_of(key)+Plan.CELL*2.0:
 			for b: Dictionary in arches:
 				if b.has("node"): (b.node as Node).free()
 			return true
@@ -345,9 +368,11 @@ func _commit_one(done: Dictionary, sliced := false, began := 0) -> bool:
 		var node: Node3D
 		if b.kind == "rock":
 			node = Node3D.new()
-			var mesh := ArrayMesh.new()
-			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,b.arrays,[],{},RockShape.format(b.arrays))
-			mesh.surface_set_material(0,material)
+			var mesh: ArrayMesh = b.get("mesh")
+			if mesh == null:
+				mesh = ArrayMesh.new()
+				mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,b.arrays,[],{},RockShape.format(b.arrays))
+			mesh.surface_set_material(0,carve_rock if spec.has("carve") and carve_rock != null else material)
 			var mi := MeshInstance3D.new()
 			mi.name = "Mesh"
 			mi.mesh = mesh
@@ -362,7 +387,7 @@ func _commit_one(done: Dictionary, sliced := false, began := 0) -> bool:
 		else:
 			node = b.node
 			if spec.get("kind","") == "colosseum": Colosseum.realize(node)
-			if not _old_stone: _sunlit(node,spec.has("bridge"),spec.get("kind","") == "colosseum" or (_set_moss(xf.origin) == "tops" and not spec.has("bridge")),xf.origin)
+			if not _old_stone and not spec.has("tone"): _sunlit(node,spec.has("bridge"),spec.get("kind","") == "colosseum" or (_set_moss(xf.origin) == "tops" and not spec.has("bridge")),xf.origin)
 		for body in node.find_children("*","StaticBody3D",true,false):
 			(body as StaticBody3D).collision_layer = LAYER
 			(body as StaticBody3D).collision_mask = 0
@@ -448,6 +473,29 @@ func inside(p: Vector3, pad := -1.0) -> bool:
 	for s: Vector2 in stretches(p,pad):
 		if p.y >= s.x and p.y <= s.y: return true
 	return false
+
+## The carve's opening a plane went through moving `from` to `to` this frame:
+## {room (m, its middle to the rim, the nearer way), half (the smaller half size),
+## name}, or {}. NearMiss scores these: a hole a plane is threading is counted by
+## where it went through, whatever a ray up through the roof met.
+func gate_crossed(from: Vector3, to: Vector3) -> Dictionary:
+	if _gates.is_empty(): return {}
+	var list: Variant = _gates.get(Vector2i(floori(to.x/Carve.GATE_CELL),floori(to.z/Carve.GATE_CELL)))
+	if list == null: return {}
+	for g: Dictionary in list:
+		var c: Vector3 = g.c
+		var n: Vector3 = g.n
+		var d0 := (from-c).dot(n)
+		var d1 := (to-c).dot(n)
+		if (d0 > 0.0) == (d1 > 0.0): continue
+		var p := from.lerp(to,d0/(d0-d1))-c
+		var w := float(g.w)
+		var h := float(g.h)
+		var u := absf(p.dot(g.r as Vector3))
+		var v := absf(p.dot(g.u as Vector3))
+		if u > w+Carve.GATE_SLACK or v > h+Carve.GATE_SLACK: continue
+		return {"room":minf(w-u,h-v),"half":minf(w,h),"name":g.name}
+	return {}
 
 ## The set pieces (set_plan.gd) standing within their reach of world `p`:
 ## their records ({name, node, pos, spec, ...}).

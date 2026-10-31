@@ -171,6 +171,9 @@ var clock := 0.0
 var _ground := Tracker.new()
 var _stone := Tracker.new()
 var _pass := Tracker.new()
+## An opening of the Peak's carve went through, and last frame's place.
+var _gate := Tracker.new()
+var _gate_last := Vector3.INF
 ## Out from under for this long (s) ends a passage.
 const PASS_GAP := 0.12
 var _out_for := 0.0
@@ -422,6 +425,22 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		if _out_for >= PASS_GAP:
 			_pass.active = false
 			_moment("thread",_pass,reach,cruise,out,game)
+	# An opening of the Peak's carve (LandArches `gate_crossed`): a thread by where
+	# it went through. A passage under it ends here too, so it isn't paid twice.
+	var p_now: Vector3 = plane.position
+	if _gate_last != Vector3.INF and fast and bool(game.hand_landing.flying()):
+		var arches = game.get("arches")
+		var hit: Dictionary = arches.gate_crossed(_gate_last,p_now) if arches != null else {}
+		if not hit.is_empty():
+			_gate.start(maxf(float(hit.room)-WorldScale.span*0.5,0.0))
+			_gate.speed = speed
+			_gate.at = p_now
+			_gate.surface = "stone"
+			_gate.id = hash(str(hit.name))
+			_pass.active = false
+			_moment("thread",_gate,float(hit.half),cruise,out,game)
+			_gate.active = false
+	_gate_last = p_now
 	# The held moves; one done a frame is chained when nothing else was.
 	moves.step(delta,game,self)
 	if not out.has("near") and not moves.pending.is_empty():
@@ -496,7 +515,7 @@ func _moment(kind: String, t: Tracker, reach: float, cruise: float, out: Diction
 	if kind == "pull-out": points *= minf(1.0+pow(maxf(t.closing,0.0)/(CLOSING_REF*_pace(game)),1.5),CLOSING_TOP)
 	var band := "razor" if t.least < RAZOR*WorldScale.span else ("close" if t.least < CLOSE*WorldScale.span else "near")
 	var m := {"kind":kind,"band":band,"points":points,"k":k,"clear":t.least,"at":t.at,"surface":t.surface,
-		"closing":t.closing,"speed":t.speed,"under":t == _pass,"roll":t.roll,"id":t.id}
+		"closing":t.closing,"speed":t.speed,"under":t == _pass or t == _gate,"roll":t.roll,"id":t.id}
 	# A gap measured on both sides: its opening, wall to wall.
 	if t == _stone and t.sides == 3 and t.wl < INF and t.wr < INF: m.width = t.wl+t.wr+WorldScale.span
 	moves.dress(m,game,cruise)

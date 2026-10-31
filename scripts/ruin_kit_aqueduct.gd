@@ -422,7 +422,7 @@ static func head(seed_value: int, weathered := 0.0, raised := true, wet := true,
 ## SPAN apart along +X, the one at `break_at` broken (-1, none) and those
 ## past it dry; each span `weathered` give or take. The spans are its
 ## children, so later code can lay one between two islands.
-static func run(seed_value: int, weathered: float, count: int, break_at := -1, with_head := true, ground := Callable(), merged := true) -> Node3D:
+static func run(seed_value: int, weathered: float, count: int, break_at := -1, with_head := true, ground := Callable(), merged := true, dry := false) -> Node3D:
 	var root := Node3D.new()
 	root.name = "AqueductRun"
 	var rng := RandomNumberGenerator.new()
@@ -431,7 +431,7 @@ static func run(seed_value: int, weathered: float, count: int, break_at := -1, w
 		if not ground.is_valid(): return Callable()
 		return func(x: float, z: float) -> float: return float(ground.call(x+dx,z))
 	if with_head: root.add_child(head(seed_value,clampf(weathered+rng.randf_range(-0.1,0.1),0.0,1.0),true,true,shift.call(0.0)))
-	var wet := true
+	var wet := not dry
 	for i in range(count):
 		var w := clampf(weathered+rng.randf_range(-0.15,0.15),0.0,1.0)
 		var x := SPAN*0.5+SPAN*i

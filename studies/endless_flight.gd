@@ -607,6 +607,7 @@ func _ready() -> void:
 	rocks.name = "Rocks"
 	add_child(rocks)
 	rocks.setup(seed,look.ground if look != null else null,field.peak())
+	arches.carve_rock = rocks.bare
 	# The rocks' bare copy of the ground takes the haze each frame as it does.
 	if look != null and rocks.bare is ShaderMaterial and rocks.bare != look.ground: look.ground_copies.append(rocks.bare)
 	if peak != null and PeakTowers.wanted():

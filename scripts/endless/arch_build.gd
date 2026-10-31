@@ -29,6 +29,7 @@ static var lod: bool = not "--no-arch-lod" in preload("res://scripts/launch_args
 static var shape_nodes: bool = "--ruin-shape-nodes" in preload("res://scripts/launch_args.gd").user_args()
 const WorldScale = preload("res://scripts/world_scale.gd")
 const RockShape = preload("res://scripts/endless/rock_shape.gd")
+const CarveRock = preload("res://scripts/endless/rocks/peak_carve_rock.gd")
 
 ## Column width (m), the gap under which two stretches count as one, the
 ## most stretches a column keeps, and how far round the solid the plane's
@@ -53,6 +54,7 @@ static func wingtip() -> float:
 ## A built arch: {spec, kind, boxes (local AABBs), and for rock `arrays`
 ## (a mesh's surface arrays) and `faces` (a collider's), for ruins `node`}.
 static func build(spec: Dictionary, field: RefCounted) -> Dictionary:
+	if spec.has("carve"): return CarveRock.build(spec,field)
 	if spec.kind == "rock": return _rock(spec,field)
 	return _ruin(spec,field)
 
@@ -229,7 +231,7 @@ static func _ruin(spec: Dictionary, field: RefCounted) -> Dictionary:
 			return (float(field.height(w.x,w.z))-pos.y)/grow
 		# A bridge (bridge_plan.gd) lays its own run of the kit's spans.
 		if spec.has("bridge"): piece = BridgeBuild.piece(spec,ground)
-		else: piece = Aqueduct.run(int(spec.seed),float(spec.weathered),count,int(spec.break_at),bool(spec.head),ground)
+		else: piece = Aqueduct.run(int(spec.seed),float(spec.weathered),count,int(spec.break_at),bool(spec.head),ground,true,bool(spec.get("dry",false)))
 	elif spec.has("set"):
 		# A set piece (scripts/endless/set_plan.gd): a kit piece as it is.
 		piece = RuinKit.piece(String(spec.kind),int(spec.seed),float(spec.weathered))

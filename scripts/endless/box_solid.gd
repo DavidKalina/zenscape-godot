@@ -74,17 +74,17 @@ static func build(boxes: Array, shift := 0.0) -> Dictionary:
 ## out (from the top down; a skin open at the foot runs to its lowest
 ## point), each a SAMPLE-wide box round its line, run on along x while the
 ## next line's match within RUN_SAME. Within SAMPLE/2 of the skin.
-static func from_faces(faces: PackedVector3Array) -> Array:
+static func from_faces(faces: PackedVector3Array, sample := SAMPLE) -> Array:
 	var lo := Vector3.INF
 	var hi := -Vector3.INF
 	for v in faces:
 		lo = lo.min(v)
 		hi = hi.max(v)
 	if faces.is_empty(): return []
-	var x0 := floorf(lo.x/SAMPLE)*SAMPLE
-	var z0 := floorf(lo.z/SAMPLE)*SAMPLE
-	var nx := int(ceil((hi.x-x0)/SAMPLE))+1
-	var nz := int(ceil((hi.z-z0)/SAMPLE))+1
+	var x0 := floorf(lo.x/sample)*sample
+	var z0 := floorf(lo.z/sample)*sample
+	var nx := int(ceil((hi.x-x0)/sample))+1
+	var nz := int(ceil((hi.z-z0)/sample))+1
 	var hits: Array = []
 	hits.resize(nx*nz)
 	for t in range(0,faces.size()-2,3):
@@ -93,14 +93,14 @@ static func from_faces(faces: PackedVector3Array) -> Array:
 		var c := faces[t+2]
 		var area := (b.x-a.x)*(c.z-a.z)-(c.x-a.x)*(b.z-a.z)
 		if absf(area) < 1e-8: continue
-		var i0 := maxi(0,int(ceil((minf(a.x,minf(b.x,c.x))-x0)/SAMPLE)))
-		var i1 := mini(nx-1,int(floor((maxf(a.x,maxf(b.x,c.x))-x0)/SAMPLE)))
-		var j0 := maxi(0,int(ceil((minf(a.z,minf(b.z,c.z))-z0)/SAMPLE)))
-		var j1 := mini(nz-1,int(floor((maxf(a.z,maxf(b.z,c.z))-z0)/SAMPLE)))
+		var i0 := maxi(0,int(ceil((minf(a.x,minf(b.x,c.x))-x0)/sample)))
+		var i1 := mini(nx-1,int(floor((maxf(a.x,maxf(b.x,c.x))-x0)/sample)))
+		var j0 := maxi(0,int(ceil((minf(a.z,minf(b.z,c.z))-z0)/sample)))
+		var j1 := mini(nz-1,int(floor((maxf(a.z,maxf(b.z,c.z))-z0)/sample)))
 		for j in range(j0,j1+1):
-			var z := z0+j*SAMPLE
+			var z := z0+j*sample
 			for i in range(i0,i1+1):
-				var x := x0+i*SAMPLE
+				var x := x0+i*sample
 				# Barycentric over the triangle's footprint.
 				var u := ((b.x-x)*(c.z-z)-(c.x-x)*(b.z-z))/area
 				var v := ((c.x-x)*(a.z-z)-(a.x-x)*(c.z-z))/area
@@ -111,9 +111,9 @@ static func from_faces(faces: PackedVector3Array) -> Array:
 				if hits[at] == null: hits[at] = [y]
 				else: (hits[at] as Array).append(y)
 	var out: Array = []
-	var half := SAMPLE*0.5
+	var half := sample*0.5
 	for j in range(nz):
-		var z := z0+j*SAMPLE
+		var z := z0+j*sample
 		var open: Array = []   # [AABB] still running along x
 		for i in range(nx+1):
 			var now: Array = []
@@ -133,18 +133,18 @@ static func from_faces(faces: PackedVector3Array) -> Array:
 				now.remove_at(k)
 				var y0 := minf(box.position.y,s.x)
 				var y1 := maxf(box.end.y,s.y)
-				still.append(AABB(Vector3(box.position.x,y0,box.position.z),Vector3(box.size.x+SAMPLE,y1-y0,box.size.z)))
-			var x := x0+i*SAMPLE
-			for s: Vector2 in now: still.append(AABB(Vector3(x-half,s.x,z-half),Vector3(SAMPLE,s.y-s.x,SAMPLE)))
+				still.append(AABB(Vector3(box.position.x,y0,box.position.z),Vector3(box.size.x+sample,y1-y0,box.size.z)))
+			var x := x0+i*sample
+			for s: Vector2 in now: still.append(AABB(Vector3(x-half,s.x,z-half),Vector3(sample,s.y-s.x,sample)))
 			open = still
-	return _run_z(out)
+	return _run_z(out,sample)
 
 ## Boxes of the same x run (`from_faces`' rows) run on along z while the
 ## next row's matches within RUN_SAME.
-static func _run_z(boxes: Array) -> Array:
+static func _run_z(boxes: Array, sample := SAMPLE) -> Array:
 	var by := {}
 	for b: AABB in boxes:
-		var key := Vector2i(roundi(b.position.x/SAMPLE*2.0),roundi(b.end.x/SAMPLE*2.0))
+		var key := Vector2i(roundi(b.position.x/sample*2.0),roundi(b.end.x/sample*2.0))
 		if not by.has(key): by[key] = []
 		(by[key] as Array).append(b)
 	var out: Array = []

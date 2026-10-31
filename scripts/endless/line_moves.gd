@@ -330,7 +330,7 @@ func _slalom(game: Node3D, p: Vector3, h: float, span: float, pace: float, fast:
 		var near_d := INF
 		for d: float in [0.3,1.0,1.8,2.6]:
 			var q := p+right*side*(span*0.5+d*span)
-			if float(game.trees.top_at(q)) > p.y:
+			if float(game.trees.top_at(q)) > p.y or _fin_at(game,q,p.y):
 				near_d = d*span
 				break
 		var now := near_d < INF
@@ -347,6 +347,11 @@ func _slalom(game: Node3D, p: Vector3, h: float, span: float, pace: float, fast:
 			_run_at = p
 			_run_pace = maxf(_run_pace,pace)
 		_abeam[side] = now
+
+## A fin of the Peak's carve at `q`, up to the plane's height, or any arch's stone.
+func _fin_at(game: Node3D, q: Vector3, y: float) -> bool:
+	var arches = game.get("arches")
+	return arches != null and bool(arches.inside(Vector3(q.x,y,q.z),0.0))
 
 ## Round a rock pillar.
 func _orbit(game: Node3D, p: Vector3, span: float, pace: float, fast: bool, delta: float) -> void:
