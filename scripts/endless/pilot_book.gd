@@ -99,8 +99,9 @@ func count(what: String, n: float = 1.0) -> void:
 ## `value` tried as the record `what`; true when it is a new best (and then
 ## noted in this flight's records).
 func best(what: String, value: float) -> bool:
+	if not is_finite(value): return false
 	var lower := lower_wins(what)
-	if records.has(what):
+	if records.get(what) != null:
 		var was := float(records[what])
 		if (lower and value >= was) or (not lower and value <= was): return false
 	records[what] = value
