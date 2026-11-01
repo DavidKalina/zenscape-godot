@@ -1,8 +1,14 @@
-"""The stomper's body, rough stage: the ruins' field and weather on the walking
-skeleton, and a still beside a 120 m head and a 55 m head (headless).
+"""The stomper's body: the ruins' field and weather on the walking skeleton, and a
+still beside a 120 m head and a 55 m head (headless).
 
     python3 tools/blender.py run art/blender/giant_ruins/stomper_body_build.py \
         -- [--voxel 1.0] [--out scratch/stomper_body] [--quick]
+
+With --swap it also bakes the body and puts it in the game: a coarse mesh of the
+bare field (--stride cells of --voxel, as the ruins build theirs), weights by which
+mass each vertex lies in, maps in assets/textures/giants/stomper_*.png, and the
+mesh replaced inside assets/models/stomper_body.glb, whose skeleton and clips stay
+byte for byte. Use --voxel 0.46 --stride 9.
 
 It grew from `elder_torso` (giant_head_build.py): the heads and torsos are carved
 masses, so the walker is too, with the elder's sloped shoulders, snapped neck and
@@ -15,7 +21,9 @@ each side of the middle, 250 tall and about 125 either side. Limbs stay apart
 from the trunk, except at the shoulder, so that each moves with one bone.
 """
 import argparse
+import json
 import math
+import struct
 import sys
 from pathlib import Path
 
@@ -33,6 +41,7 @@ STONE_55 = 0.5
 STONE_BODY = 1.5
 BOUNDS = ((-138, -66, -2), (138, 66, 256))
 WAIST = 124.0
+CALM = 1.7                                                                     # legs and pelvis: long stone, few courses
 TOPS = {-1: 214, 1: 226}                                                       # the shoulders' tops: unequal, one dropped
 
 
@@ -182,16 +191,16 @@ def trunk(f):
     """From elder_torso, its bare mass grown into a body: ribs that turn from
     front to side to back, a waist well in from them, the pelvis under it."""
     rows = (                                         # z, x, y, half x, half y
-        (76, 0, 2, 40, 28), (92, 0, 4, 60, 38), (106, 0, 4, 60, 38), (120, 0, 2, 53, 35),
+        (76, 0, 2, 40, 26), (92, 0, 3, 60, 32), (106, 0, 3, 60, 33), (120, 0, 2, 53, 33),
         (134, 0, 0, 47, 32), (152, 0, -3, 51, 35), (176, 0, -5, 60, 42), (194, 0, -4, 66, 45),
         (208, 0, -1, 64, 43), (220, 0, 1, 46, 36), (231, 0, 3, 31, 29), (258, 0, 5, 27, 25))
     ribs = Mass(f, rows, 7.0, 1.0, lean=((130, 0, -0.1), (200, 0, 0.1)), sag=((132, 0), (190, 0.0055), (235, 0.007)))
-    pelvis = Mass(f, rows, 7.0, 0.8, lean=((80, 0, 0.14), (124, 0, 0.08)), sag=((80, -0.007), (124, -0.003)))
+    pelvis = Mass(f, rows, 7.0, CALM)
     d = ribs.field()
     for s in (-1, 1):
         d = smin(d, f.ell((s * 33, -38, 190), (34, 11, 24)), 10)               # the chest, a plate each side, low
         d = smin(d, f.ell((s * 44, 27, 186), (30, 15, 44)), 14)                # shoulder blade and lat
-        d = smin(d, f.ell((s * 32, 18, 94), (27, 17, 24)), 10)                 # the seat
+        d = smin(d, f.ell((s * 32, 12, 96), (27, 21, 24)), 10)                 # the seat
         d = smin(d, f.bar((s * 18, 4, 221), (s * 84, 1, TOPS[s] - 17), 20, 20, 0.85), 12)  # the slope from neck to shoulder
     d = carve(d, f.bar((0, -56, 216), (0, -51, 150), 3.2, 2.0), 3)             # breastbone
     d = carve(d, f.bar((0, 53, 224), (0, 42, 112), 3.4, 2.6), 3)               # the spine's groove
@@ -221,21 +230,52 @@ def arm(f, s):
 
 def leg(f, s):
     """A great thigh narrowing to a knee that shows, a calf, an ankle and a
-    heavy foot."""
-    length = Mass(f, ((98, s * 36, 2, 25, 37), (84, s * 37, 0, 27, 38), (70, s * 41, -1, 25.5, 33), (60, s * 44, -3, 19.5, 24),
+    foot cut from one block. Long stone with little fan to it: thin rings
+    round a thigh read as bandages."""
+    length = Mass(f, ((98, s * 36, 2, 25, 31), (84, s * 37, 1, 26.5, 31), (70, s * 41, -1, 25, 28.5), (60, s * 44, -3, 19.5, 24),
                       (49, s * 44, -4, 20.5, 24), (41, s * 44, -2, 16, 20), (32, s * 44, 3, 17.5, 22), (22, s * 44, 3, 14, 17),
                       (13, s * 44, 1, 13, 15.5), (6, s * 44, 1, 13, 15.5)),
-                  3.0, 0.9, lean=((80, 0, -0.2), (50, 0, 0.0), (25, 0, 0.22)), sign=s)
+                  3.0, CALM, lean=((80, 0, -0.06), (50, 0, 0.0), (25, 0, 0.07)), sign=s)
     d = smin(length.field(), f.ell((s * 44, -25, 50), (13, 8, 10)), 4)          # the knee's cap
     d = carve(d, f.bar((s * 22, -26, 62), (s * 66, -26, 62), 1.6), 3)          # over it
-    foot = Mass(f, ((-1, s * 44, -11, 25, 37), (7, s * 44, -11, 25, 37), (15, s * 44, -7, 20, 28), (24, s * 44, 0, 15, 17), (30, s * 44, 1, 13, 15)),
-                2.5, 0.7, lean=((0, 0, 0), (30, 0, 0.3)), sign=s)
-    return (d, length), (foot.field(), foot)
+    return (d, length), foot(f, s * 44)
+
+
+class Block:
+    """Level courses, their joints round a block's middle."""
+
+    def __init__(self, x, y, size):
+        self.x, self.y, self.size = x, y, size
+
+    def lay(self, x, y, z, iz):
+        dx, dy = x - self.x, y - self.y
+        r = np.sqrt(dx * dx + dy * dy)
+        return z, np.arctan2(dy, dx), np.maximum(r, 1.0), 2 * np.pi * np.maximum(r, 30.0)
+
+
+def foot(f, x):
+    """One hard block, every face a plane: a plinth under a battered wedge that
+    climbs from the toe to the ankle, the corners struck off. Front is -y."""
+    over = np.abs(f.X - x)
+
+    def walls(grow):
+        cut = [over - 27 - grow + 0.1 * f.Z, f.Y - 26 - grow + 0.1 * f.Z, -f.Y - 50 - grow + 0.26 * f.Z,
+               (over - f.Y - 62 - grow * 1.41) / 1.414, (over + f.Y - 43 - grow * 1.41) / 1.414]
+        d = cut[0]
+        for c in cut[1:]:
+            d = smax(d, c, 0.7)
+        return d
+
+    upper = smax(walls(0.0), f.Z - (15 + (f.Y + 50) * 0.42), 0.7)              # up from the toe
+    upper = smax(upper, f.Z - (33 - (f.Y - 2) * 0.8), 0.7)                     # and down the heel
+    upper = smax(upper, f.Z - 34, 0.7)
+    sole = smax(walls(2.6), f.Z - 7.5, 0.7)
+    return smax(np.minimum(upper, sole), -1 - f.Z, 0.7), Block(x, -12, 1.2)
 
 
 # Where the stone has come away: the chest stove in as the elder's is, the dropped
 # shoulder's back, a hip, a forearm, a shin, the ribs behind.
-LOSSES = [((30, -46, 190), 30, 9), ((-110, 18, 198), 28, 9), ((56, 40, 100), 16, 6),
+LOSSES = [((30, -46, 190), 30, 9), ((-110, 18, 198), 28, 9), ((56, 34, 100), 16, 6),
           ((-94, -6, 128), 12, 4), ((60, 12, 30), 10, 3.5), ((34, 44, 180), 15, 5)]
 
 
@@ -244,13 +284,15 @@ FRACTURES = [((-34, -42, 170), 60), ((24, 44, 160), 70), ((40, -33, 104), 34), (
 
 
 def stomper(f):
-    """The field, and its masses and how each lays its stone."""
+    """The field, its masses and how each lays its stone, and what each is."""
     d, ribs, pelvis = trunk(f)
     parts = [(np.maximum(d, WAIST - f.Z), ribs), (np.maximum(d, f.Z - WAIST), pelvis)]
+    kinds = [("ribs", 0), ("pelvis", 0)]
     for s in (-1, 1):
-        for mass in leg(f, s):
+        for mass, kind in zip(leg(f, s), ("leg", "foot")):
             d = np.minimum(d, mass[0])
             parts.append(mass)
+            kinds.append((kind, s))
     for s in (-1, 1):
         (length, shoulder, hand) = arm(f, s)
         one = np.minimum(np.minimum(length[0], shoulder[0]), hand[0])
@@ -259,7 +301,172 @@ def stomper(f):
         high = np.clip((f.Z - 190) / 16, 0, 1)                                 # arms fuse at the shoulder, nowhere else
         d = apart + (joined - apart) * high
         parts += [length, shoulder, hand]
-    return d, parts
+        kinds += [("arm", s), ("shoulder", s), ("hand", s)]
+    return d, parts, kinds
+
+
+# The skin's joints in stomper_body.glb, in its order. The skeleton looks down +Y, so
+# the field's +x, turned round, is the skeleton's left.
+JOINTS = ("root", "hips", "spine", "chest", "neck",
+          "upper_arm.L", "forearm.L", "hand.L", "fingers.L", "thumb.L",
+          "upper_arm.R", "forearm.R", "hand.R", "fingers.R", "thumb.R",
+          "thigh.L", "shin.L", "foot.L", "thigh.R", "shin.R", "foot.R")
+MODEL_SCALE = 250.0 / 7.02                                                     # stomper.gd: HEIGHT/MODEL_HEIGHT
+GLB = "assets/models/stomper_body.glb"
+SMOOTH_WEIGHTS = 2
+
+
+def step(a, b, v):
+    t = np.clip((v - a) / (b - a), 0, 1)
+    return t * t * (3 - 2 * t)
+
+
+def weights(co, label, kinds, edges):
+    """(joints, weights), four each per vertex: rigid in each mass, turning over at
+    the waist, shoulder, hip, knee, ankle, elbow and wrist, then a little smoothing
+    along the mesh's edges, so no seam of two masses is a cliff."""
+    w = np.zeros((len(co), len(JOINTS)), np.float32)
+    x, z = np.abs(co[:, 0]), co[:, 2]
+    bone = {n: i for i, n in enumerate(JOINTS)}
+    def add(mask, name, share):
+        w[mask, bone[name]] += share[mask]
+    for k, (kind, s) in enumerate(kinds):
+        at = label == k
+        tag = ".L" if s > 0 else ".R"
+        if kind in ("ribs", "pelvis"):
+            spine, chest, neck = step(102, 126, z), step(156, 186, z), step(228, 240, z)
+            add(at, "hips", 1 - spine)
+            add(at, "spine", spine * (1 - chest))
+            add(at, "chest", chest * (1 - neck))
+            add(at, "neck", neck)
+        elif kind == "leg":
+            front = step(-2, -18, co[:, 1])                                    # the knee's cap goes with the shin, the crease over it takes the bend
+            hip, shin, foot = step(84, 100, z), 1 - step(42 + 16 * front, 52 + 16 * front, z), 1 - step(7, 20, z)
+            add(at, "hips", hip)
+            add(at, "thigh" + tag, (1 - hip) * (1 - shin))
+            add(at, "shin" + tag, shin * (1 - foot))
+            add(at, "foot" + tag, foot)
+        elif kind == "foot":
+            add(at, "foot" + tag, np.ones_like(z))
+        elif kind == "arm":
+            upper, hand = step(145, 165, z), 1 - step(100, 112, z)
+            add(at, "upper_arm" + tag, upper)
+            add(at, "forearm" + tag, (1 - upper) * (1 - hand))
+            add(at, "hand" + tag, hand)
+        elif kind == "shoulder":
+            arm = step(66, 86, x)
+            add(at, "chest", 1 - arm)
+            add(at, "upper_arm" + tag, arm)
+        elif kind == "hand":
+            add(at, "hand" + tag, np.ones_like(z))
+    a, b = edges[:, 0], edges[:, 1]
+    for _ in range(SMOOTH_WEIGHTS):
+        total = w.copy()
+        count = np.ones(len(co), np.float32)
+        np.add.at(total, a, w[b])
+        np.add.at(total, b, w[a])
+        np.add.at(count, a, 1)
+        np.add.at(count, b, 1)
+        w = total / count[:, None]
+    order = np.argsort(-w, 1)[:, :4]
+    top = np.take_along_axis(w, order, 1)
+    top[top < 0.02] = 0
+    return order.astype(np.uint8), (top / top.sum(1, keepdims=True)).astype(np.float32)
+
+
+def swap_mesh(path, position, normal, uv, joints, weight, tris):
+    """stomper_body.glb's mesh replaced, one surface, all else as it was."""
+    raw = Path(path).read_bytes()
+    size = struct.unpack("<I", raw[12:16])[0]
+    gltf = json.loads(raw[20:20 + size])
+    data = raw[20 + size + 8:]
+    old = set()
+    for prim in gltf["meshes"][0]["primitives"]:
+        old |= set(prim["attributes"].values()) | {prim["indices"]}
+    keep = [i for i in range(len(gltf["accessors"])) if i not in old]
+    remap = {a: n for n, a in enumerate(keep)}
+    out, views, accessors = bytearray(), [], []
+    def put(blob, target=None):
+        while len(out) % 4:
+            out.append(0)
+        view = {"buffer": 0, "byteOffset": len(out), "byteLength": len(blob)}
+        if target:
+            view["target"] = target
+        out.extend(blob)
+        views.append(view)
+        return len(views) - 1
+    for i in keep:
+        acc = dict(gltf["accessors"][i])
+        view = gltf["bufferViews"][acc["bufferView"]]
+        start = view.get("byteOffset", 0)
+        acc["bufferView"] = put(data[start:start + view["byteLength"]])
+        accessors.append(acc)
+    def add(a, type_, component, target=34962, bounds=False):
+        acc = {"bufferView": put(a.tobytes(), target), "componentType": component, "count": len(a), "type": type_}
+        if bounds:
+            acc["min"], acc["max"] = a.min(0).tolist(), a.max(0).tolist()
+        accessors.append(acc)
+        return len(accessors) - 1
+    prim = {"attributes": {"POSITION": add(position, "VEC3", 5126, bounds=True), "NORMAL": add(normal, "VEC3", 5126),
+                           "TEXCOORD_0": add(uv, "VEC2", 5126), "JOINTS_0": add(joints, "VEC4", 5121),
+                           "WEIGHTS_0": add(weight, "VEC4", 5126)},
+            "indices": add(tris.ravel(), "SCALAR", 5125, 34963), "material": 0}
+    gltf["meshes"][0]["primitives"] = [prim]
+    gltf["materials"] = gltf["materials"][:1]
+    gltf["accessors"], gltf["bufferViews"] = accessors, views
+    gltf["buffers"][0]["byteLength"] = len(out)
+    for skin in gltf["skins"]:
+        skin["inverseBindMatrices"] = remap[skin["inverseBindMatrices"]]
+    for anim in gltf["animations"]:
+        for sampler in anim["samplers"]:
+            sampler["input"], sampler["output"] = remap[sampler["input"]], remap[sampler["output"]]
+    text = json.dumps(gltf, separators=(",", ":")).encode()
+    text += b" " * (-len(text) % 4)
+    out.extend(b"\0" * (-len(out) % 4))
+    with open(path, "wb") as fh:
+        fh.write(struct.pack("<III", 0x46546C67, 2, 12 + 8 + len(text) + 8 + len(out)))
+        fh.write(struct.pack("<II", len(text), 0x4E4F534A) + text)
+        fh.write(struct.pack("<II", len(out), 0x004E4942) + bytes(out))
+
+
+def swap(f, soft, high, parts, kinds, stride):
+    """Bake the body onto a coarse mesh of `soft` and put it in the game."""
+    low = ruin.to_object("stomper_low", *ruin.surface_nets(smax(soft, -f.Z, 0.5)[::stride, ::stride, ::stride], f.lo, f.h * stride))
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=1.2, island_margin=0.004)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    me = low.data
+    n = len(me.vertices)
+    print(f"low: {len(me.polygons)} tris on a {f.h * stride:.2f} m grid", flush=True)
+    co = np.empty(n * 3, np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    normals = np.empty(n * 3, np.float32)
+    me.vertex_normals.foreach_get("vector", normals)
+    normals = normals.reshape(-1, 3)
+    tris = np.empty(len(me.polygons) * 3, np.int32)
+    me.polygons.foreach_get("vertices", tris)
+    tris = tris.reshape(-1, 3)
+    edges = np.empty(len(me.edges) * 2, np.int32)
+    me.edges.foreach_get("vertices", edges)
+    uv = np.empty(len(me.loops) * 2, np.float32)
+    me.uv_layers[0].data.foreach_get("uv", uv)
+    uv = uv.reshape(-1, 2)
+    cell = tuple(np.clip(np.round((co - f.lo) / f.h).astype(int), 0, np.array(soft.shape) - 1).T)
+    label = np.stack([p[0][cell] for p in parts]).argmin(0)
+    joints, weight = weights(co, label, kinds, edges.reshape(-1, 2))
+    # A vertex per position and uv: split along the uvs' seams only.
+    key = np.column_stack((tris.ravel(), np.round(uv * 65536).astype(np.int64)))
+    _, first, back = np.unique(key, axis=0, return_index=True, return_inverse=True)
+    at = tris.ravel()[first]
+    flip = lambda a: np.column_stack((-a[:, 0], a[:, 2], a[:, 1]))             # the field looks down -Y, the skeleton +Y, and to glTF's Y up
+    texcoord = uv[first] * (1, -1) + (0, 1)
+    ruin.bake(high, low, "stomper")
+    swap_mesh(ROOT / GLB, (flip(co[at]) / MODEL_SCALE).astype(np.float32), flip(normals[at]).astype(np.float32), texcoord.astype(np.float32),
+              joints[at], weight[at], back.reshape(-1, 3).astype(np.uint32))
+    np.savez(ROOT / "scratch/stomper_body/low.npz", co=co, label=label, kinds=np.array([k[0] + str(k[1]) for k in kinds]))
+    print(f"swapped: {len(at)} verts, {len(tris)} tris in {GLB}", flush=True)
 
 
 def scaled(fn, bounds, voxel, seed, k):
@@ -343,6 +550,8 @@ def main():
     ap.add_argument("--voxel", type=float, default=1.0)
     ap.add_argument("--out", default="scratch/stomper_body")
     ap.add_argument("--quick", action="store_true", help="the body alone, stone and black outline, to judge the shape")
+    ap.add_argument("--swap", action="store_true", help="bake the body and swap it into the game; no stills")
+    ap.add_argument("--stride", type=int, default=9)
     args = ap.parse_args(argv)
     out = ROOT / args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -350,7 +559,7 @@ def main():
     scene = stage()
     stone = material("stone", (0.20, 0.155, 0.115))
     f = Field(*BOUNDS, args.voxel, 7)
-    d, parts = stomper(f)
+    d, parts, kinds = stomper(f)
     full, soft = ruin.weather(f, d, stone=STONE_BODY, losses=LOSSES, breaks=0, fractures=FRACTURES, masonry=wrapped(f, d, parts, STONE_BODY))
     full = ease_walls(full)
     body = place("stomper", full, f, (0, 0, 0), stone)
@@ -358,6 +567,9 @@ def main():
     body.data.vertices.foreach_get("co", co)
     co = co.reshape(-1, 3)
     print("bounds", co.min(0).round(1), co.max(0).round(1))
+    if args.swap:
+        swap(f, soft, body, parts, kinds, args.stride)
+        return
     if args.quick:
         scene.render.resolution_x, scene.render.resolution_y = 900, 900
         shot(scene, out, "q_chest", (40, -300, 190), (20, 0, 196), 60)
