@@ -1,0 +1,15 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://assets/models/pirate_ship/ship_deck.gdshader" id="1"]
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/roughness_value = 0.5
+shader_parameter/metallic_value = 0.35
+shader_parameter/fill = 1.7
+shader_parameter/rim = 0.3
+shader_parameter/fill_in = 0.7
+shader_parameter/lamp_power = 3.2
+shader_parameter/slat_power = 1.05
+shader_parameter/glint = 0.2
+shader_parameter/inside_x = 10.3

@@ -447,6 +447,7 @@ func _reseal() -> void:
 		if _model == null:
 			(plate.look as Node3D).visible = true
 			continue
+		(plate.cover as Node3D).visible = true
 		for shard: Dictionary in plate.shards:
 			(shard.node as Node3D).transform = shard.home
 			(shard.node as Node3D).visible = true
@@ -472,6 +473,7 @@ func _throw(plate: Dictionary, q: Vector3) -> void:
 	var v: Vector3 = game.plane.velocity
 	var d := v.normalized()
 	var plug: Node3D = plate.plug
+	(plate.cover as Node3D).visible = false
 	for shard: Dictionary in plate.shards:
 		var n: Node3D = shard.node
 		var out := (transform*(plug.position+n.position)-q).slide(d)
@@ -604,6 +606,10 @@ func _plug(plate: Dictionary, part: String) -> void:
 	var plug: Node3D = _model.find_child("CrackPlug_"+part.capitalize(),true,false)
 	var shards: Array[Dictionary] = []
 	for shard: Node in plug.get_children():
+		if shard.name.begins_with("Cover"):
+			plate["cover"] = shard
+			(shard as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			continue
 		shards.append({"node":shard,"home":(shard as Node3D).transform})
 	plate["plug"] = plug
 	plate["shards"] = shards
