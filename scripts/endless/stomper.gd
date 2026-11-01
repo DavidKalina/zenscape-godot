@@ -21,6 +21,7 @@ const Style = preload("res://scripts/ruin_stone_style.gd")
 const Route = preload("res://scripts/endless/stomper_route.gd")
 const Legs = preload("res://scripts/endless/stomper_legs.gd")
 const Fall = preload("res://scripts/endless/stomper_fall.gd")
+const Wake = preload("res://scripts/endless/stomper_wake.gd")
 const MODEL := "res://assets/models/stomper_body.glb"
 const WORLD := "amberlands"
 ## Its height in play (m), and the model's, stump's cut to soles (m).
@@ -60,6 +61,8 @@ var player: AnimationPlayer
 var legs: SkeletonModifier3D
 ## The footfall's ring, dust and force (stomper_fall.gd), or null.
 var fall: Node3D
+## The track it leaves (stomper_wake.gd), or null.
+var wake: Node3D
 var route: RefCounted
 var field: RefCounted
 ## The model's metres to the world's.
@@ -117,6 +120,10 @@ func setup(study: Node) -> void:
 		fall = Fall.new()
 		add_child(fall)
 		fall.setup(study,self)
+	if Wake.wanted():
+		wake = Wake.new()
+		add_child(wake)
+		wake.setup(study,self)
 
 ## Walks it: the cycle on, the body by the planted foot's way, feet down and up
 ## as they cross their marks.
@@ -129,6 +136,7 @@ func step(delta: float) -> void:
 		if _crossed(was,phase,LIFT[side]): _lifted(side)
 	_pose(delta)
 	if fall != null: fall.step(delta)
+	if wake != null: wake.step(delta)
 
 ## The body at `along`, the pose at `phase`, each ankle's goal.
 func _pose(delta: float) -> void:

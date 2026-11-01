@@ -3,7 +3,9 @@ shader_type spatial;
 // once at a landing and moved from then on by `now` alone. Per instance:
 //   the transform's origin  where the puff starts
 //   its first column        the way it is thrown (m/s, at the start)
-//   its second column's x   the seconds it spends that way in
+//   its second column       x the seconds it spends that way in, y how thick it
+//                           is (a share of `thick`), z the share of its life it
+//                           takes to come up
 //   CUSTOM = (born, life s, size m, seed)
 render_mode unshaded, depth_draw_never, cull_disabled, shadows_disabled;
 
@@ -18,6 +20,8 @@ uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 
 varying float v_k;
 varying float v_seed;
+varying float v_thick;
+varying float v_rise;
 varying vec2 v_uv;
 // The view depth: VERTEX here is the raw quad under a transform that holds data.
 varying float v_depth;
@@ -40,6 +44,8 @@ void vertex() {
 	v_k = k;
 	v_seed = INSTANCE_CUSTOM.w * 256.0;
 	v_uv = UV;
+	v_thick = MODEL_MATRIX[1].y;
+	v_rise = MODEL_MATRIX[1].z;
 	if (k < 0.0 || k >= 1.0) {
 		POSITION = vec4(2.0, 2.0, 2.0, 1.0);
 	} else {
@@ -62,7 +68,7 @@ void fragment() {
 	float n = vnoise(d * 2.2 + vec2(v_seed * 3.1, v_seed * 7.3)) * 0.65 + vnoise(d * 5.0 + v_seed) * 0.35;
 	float a = (1.0 - smoothstep(0.15, 1.0, r)) * smoothstep(0.18, 0.7, n) * 1.5;
 	a *= 1.0 - smoothstep(0.72, 1.0, max(abs(d.x), abs(d.y)));
-	a *= smoothstep(0.0, 0.06, v_k) * pow(1.0 - v_k, 1.6) * thick;
+	a *= smoothstep(0.0, v_rise, v_k) * pow(1.0 - v_k, 1.6) * thick * v_thick;
 	float z = textureLod(depth_tex, SCREEN_UV, 0.0).r;
 	vec4 wp = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, z, 1.0);
 	float behind = -wp.z / wp.w - v_depth;

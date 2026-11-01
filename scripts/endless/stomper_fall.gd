@@ -46,7 +46,14 @@ const SHOVE_YAW := 0.1
 ## far the skirt runs out (m), the seconds it takes to spend its way.
 const SKIRT := 30
 const COLUMN := 16
-const MOST := 2*(SKIRT+COLUMN)
+const LANDINGS := 2*(SKIRT+COLUMN)
+## The puffs a wake can hang over its track (`hang`), their life (s), how thin
+## they are and the share of their life they take to come up.
+const HUNG := 40
+const HUNG_LIFE := Vector2(35.0,60.0)
+const HUNG_THIN := 0.45
+const HUNG_RISE := 0.2
+const MOST := LANDINGS+HUNG
 const SKIRT_RUN := 300.0
 const SKIRT_TAU := 2.2
 const COLUMN_TAU := 3.5
@@ -72,6 +79,7 @@ var _ring_mesh: MeshInstance3D
 var _dust_mat: ShaderMaterial
 var _dust: MultiMesh
 var _dust_next := 0
+var _hung_next := 0
 ## Each ring: at, born, felt (the front has reached the plane), felt_at.
 var _rings: Array[Dictionary] = []
 
@@ -218,10 +226,20 @@ func _raise_dust(at: Vector3) -> void:
 ## One puff into the ring of them. The transform's basis carries the way and
 ## the seconds it spends it (see the shader), not a turn.
 func _puff(at: Vector3, v: Vector3, tau: float, size: float) -> void:
-	var t := Transform3D(Basis(v,Vector3(tau,0.0,0.0),Vector3.ZERO),at)
+	var t := Transform3D(Basis(v,Vector3(tau,1.0,0.06),Vector3.ZERO),at)
 	_dust.set_instance_transform(_dust_next,t)
 	_dust.set_instance_custom_data(_dust_next,Color(now,_rng.randf_range(LIFE.x,LIFE.y),size,_rng.randf()))
-	_dust_next = (_dust_next+1)%MOST
+	_dust_next = (_dust_next+1)%LANDINGS
+
+## A thin puff left hanging at `at`, drifting at `v` (m/s), in its own part of the
+## ring: a landing's dozens would push it out long before its time.
+func hang(at: Vector3, v: Vector3, size: float) -> void:
+	var life := _rng.randf_range(HUNG_LIFE.x,HUNG_LIFE.y)
+	var t := Transform3D(Basis(v,Vector3(life,HUNG_THIN,HUNG_RISE),Vector3.ZERO),at)
+	var i := LANDINGS+_hung_next
+	_dust.set_instance_transform(i,t)
+	_dust.set_instance_custom_data(i,Color(now,life,size,_rng.randf()))
+	_hung_next = (_hung_next+1)%HUNG
 
 func _everywhere() -> AABB:
 	return AABB(Vector3.ONE*-50000.0,Vector3.ONE*100000.0)
