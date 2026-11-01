@@ -1,11 +1,14 @@
 extends RefCounted
 ## The giants' city's road (giant_city.gd has the contract; the spec's "road kit"):
 ## a paved colonnade way that bends over the land, its height taken from the land.
-## This first stretch runs about 720 m from the gate's far side. BENDS is its
-## centre line and PLAN its bays, in acts as the pillared hall's are, so a run
-## keeps changing: `OPEN` columns and a beam under the sky, `ROOFED` low cover on
-## ribs with a nave, two aisles and bays out of the side at every step, and
-## `BROKEN` where age has been at it.
+## It runs 3.66 km from the gate's far side, round the lake's east shore, across the
+## head of a bay to the pyramid's stair. BENDS is its centre line. Its first 720 m
+## stand, and PLAN is their bays, in acts as the pillared hall's are, so a run keeps
+## changing: `OPEN` columns and a beam under the sky, `ROOFED` low cover on ribs
+## with a nave, two aisles and bays out of the side at every step, and `BROKEN`
+## where age has been at it. Past that age wins: ROW_L and ROW_R say what's left at
+## each station, WRECK what fell, PAVE how much street is left, and the wreck is
+## baked into a block per two bays, so 3 km of it costs few instances.
 ##
 ## A LANDED piece: `build` gets the land (`land(x, z)` in the piece's frame) and
 ## its heights are the world's, so it isn't seated on the land's mean. The road's
@@ -20,7 +23,6 @@ extends RefCounted
 const Shapes = preload("res://scripts/endless/city/city_shapes.gd")
 const Colonnade = preload("res://scripts/endless/city/colonnade.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
-const LaunchArgs = preload("res://scripts/launch_args.gd")
 const DEEP := 60.0
 
 ## REACH is the ring the stomper's route already goes round; the road lies in it
@@ -32,12 +34,18 @@ const LANDED := true
 const FROM := Vector2(97.8,-449.2)
 const FROM_YAW := -1.4
 ## The centre line: Vector2(length, radians to the left).
-const BENDS: Array[Vector2] = [Vector2(50.0,0.0),Vector2(300.0,2.22),Vector2(150.0,-1.14),Vector2(170.0,1.32),Vector2(60.0,0.0)]
+const BENDS: Array[Vector2] = [Vector2(50.0,0.0),Vector2(300.0,2.22),Vector2(150.0,-1.14),Vector2(170.0,1.32),Vector2(60.0,0.0),
+	# The swing to the shore, the reveal: the pyramid across the water.
+	Vector2(420.0,-2.34),Vector2(160.0,0.0),
+	# North up the shore, winding.
+	Vector2(220.0,0.35),Vector2(260.0,-0.75),Vector2(280.0,0.5),Vector2(260.0,-0.45),Vector2(180.0,0.45),Vector2(396.0,-0.662),
+	# Out over the bay's head, then hard round onto the stair's line.
+	Vector2(548.0,-1.23),Vector2(152.0,1.832),Vector2(60.0,0.0)]
 ## How long a bend takes to come on and go off (m).
 const EASE := 60.0
 const STEP := 4.0
 ## The cross-section: half the street to the row's centres, the stylobate past it,
-## the aisle columns' u. Knobs: --road-half= --road-pitch= --road-bend=.
+## the aisle columns' u.
 const HALF := 40.0
 const PITCH := 60.0
 const INNER_SHARE := 0.45
@@ -94,31 +102,71 @@ const PLAN: Array[Dictionary] = [
 	{"k":BROKEN,"gone":[1],"lean":1},
 	{"k":OPEN},
 ]
+## The bays in all, with PLAN's first; past PLAN the road is the wreck's.
+const BAYS := 61
+## What's left at each station from PLAN's end, one letter each, L and R of the road:
+## T a column with its beam on to the next, t a column, m a broken shaft, s a stump,
+## f a column fallen into the road, o one fallen out of it, l one leaning in,
+## d drums, . nothing.
+const ROW_L := "-TTTtmTTTt" + "sdTTTt.mft" + "s.d.TTTt.s" + ".fs..m.d.t" + "s.s.s.t.ft"
+const ROW_R := "-TtfTTTts." + "TTt.sTTTTt" + "..sfd.mt.f" + "s.d.t..s.." + ".s.m.s.dlt"
+## How much street each bay keeps from PLAN's end: F whole, G a whole slab and a
+## gap, P patches, half sunk where the land rises, N none.
+const PAVE := "FFFFFGFFG" + "GFFGPGFGF" + "PGPPFGPPG" + "PNPNPPNPP" + "GPGPGGPPPPPPP"
+## What fell, by bay: `drop` a slab on heaps, that high, `wall` rubble with its notch at that u,
+## `portal` a beam still across the road at the bay's start, `roof` a slab still
+## up, `slalom` aisle columns standing in the road, `heap` a mound at that u, `low`
+## a beam across two stumps.
+const WRECK := {
+	14:{"drop":SLOT},
+	18:{"portal":true},
+	21:{"wall":-14.0},
+	24:{"slalom":true},
+	27:{"roof":"L"},
+	31:{"heap":10.0},
+	33:{"drop":14.0},
+	36:{"portal":true},
+	41:{"slalom":true},
+	44:{"wall":16.0},
+	46:{"heap":-16.0},
+	49:{"heap":18.0},
+	52:{"low":true},
+	55:{"portal":true},
+	57:{"low":true},
+	59:{"heap":-24.0},
+}
+## The lake: a road crossing it stands this far over it, the lake at -40.
+const WET := -38.5
+## A column broken off, a fallen one's size, a heap's.
+const SNAPPED := 25.0
+const FALLEN := Vector3(4.2,8.0,34.0)
+const HEAP_TALL := 15.0
+const SNAP_TOP := 3.0
+## Aisle columns left standing in the road, how tall, their u; `low`: how far out its stumps
+## stand, of the half street.
+const AISLE_LEFT := 17.0
+const SLALOM := 9.0
+const LOW_SHARE := 0.65
+const LOW_UP := 15.0
 ## The lines, by stick: each point Vector3(s, u, h over the paving).
 const LINES := {
-	"wide":[Vector3(-60.0,0.0,20.0),Vector3(90.0,0.0,20.0),Vector3(130.0,0.0,17.0),Vector3(285.0,0.0,17.0),Vector3(322.0,0.0,25.0),Vector3(375.0,0.0,25.0),Vector3(425.0,0.0,18.0),Vector3(530.0,0.0,18.0),Vector3(578.0,0.0,29.0),Vector3(640.0,0.0,24.0),Vector3(780.0,0.0,22.0)],
-	"tight":[Vector3(5.0,86.0,10.0),Vector3(60.0,62.0,10.0),Vector3(85.0,42.0,10.0),Vector3(106.0,28.0,11.0),Vector3(175.0,29.0,11.0),Vector3(215.0,8.0,11.0),Vector3(245.0,5.0,11.0),Vector3(285.0,16.0,11.0),Vector3(310.0,9.0,5.0),Vector3(355.0,9.0,5.0),Vector3(400.0,26.0,10.0),Vector3(450.0,29.0,11.0),Vector3(478.0,29.0,11.0),Vector3(520.0,12.0,11.0),Vector3(582.0,12.0,11.0),Vector3(660.0,0.0,14.0),Vector3(780.0,0.0,20.0)],
+	"wide":[Vector3(-60.0,0.0,20.0),Vector3(90.0,0.0,20.0),Vector3(130.0,0.0,17.0),Vector3(285.0,0.0,17.0),Vector3(322.0,0.0,25.0),Vector3(375.0,0.0,25.0),Vector3(425.0,0.0,18.0),Vector3(530.0,0.0,18.0),Vector3(578.0,0.0,29.0),Vector3(640.0,0.0,24.0),Vector3(780.0,0.0,22.0),Vector3(1220.0,0.0,24.0),Vector3(1265.0,0.0,33.0),Vector3(1330.0,0.0,33.0),Vector3(1400.0,0.0,28.0),Vector3(1560.0,0.0,28.0),Vector3(1640.0,0.0,20.0),Vector3(1700.0,0.0,20.0),Vector3(1860.0,0.0,24.0),Vector3(2130.0,0.0,24.0),Vector3(2160.0,0.0,20.0),Vector3(2200.0,0.0,24.0),Vector3(2440.0,0.0,28.0),Vector3(2570.0,0.0,28.0),Vector3(2630.0,0.0,33.0),Vector3(2690.0,0.0,33.0),Vector3(2760.0,0.0,24.0),Vector3(3100.0,0.0,24.0),Vector3(3150.0,0.0,30.0),Vector3(3300.0,0.0,20.0),Vector3(3450.0,0.0,30.0),Vector3(3520.0,0.0,34.0),Vector3(3580.0,0.0,48.0),Vector3(3640.0,0.0,56.0),Vector3(3690.0,0.0,80.0),Vector3(3793.0,0.0,150.0),Vector3(3850.0,0.0,150.0)],
+	"tight":[Vector3(5.0,86.0,10.0),Vector3(60.0,62.0,10.0),Vector3(85.0,42.0,10.0),Vector3(106.0,28.0,11.0),Vector3(175.0,29.0,11.0),Vector3(215.0,8.0,11.0),Vector3(245.0,5.0,11.0),Vector3(285.0,16.0,11.0),Vector3(310.0,9.0,5.0),Vector3(355.0,9.0,5.0),Vector3(400.0,26.0,10.0),Vector3(450.0,29.0,11.0),Vector3(478.0,29.0,11.0),Vector3(520.0,12.0,11.0),Vector3(582.0,12.0,11.0),Vector3(660.0,0.0,14.0),Vector3(740.0,0.0,14.0),Vector3(800.0,0.0,5.0),Vector3(905.0,0.0,5.0),Vector3(980.0,0.0,12.0),Vector3(1050.0,28.0,14.0),Vector3(1110.0,28.0,14.0),Vector3(1190.0,-14.0,11.0),Vector3(1330.0,-14.0,11.0),Vector3(1410.0,0.0,10.0),Vector3(1440.0,6.0,10.0),Vector3(1470.0,-6.0,10.0),Vector3(1500.0,6.0,10.0),Vector3(1530.0,-6.0,10.0),Vector3(1580.0,8.0,14.0),Vector3(1650.0,20.0,18.0),Vector3(1750.0,10.0,14.0),Vector3(1860.0,-20.0,14.0),Vector3(1900.0,-20.0,12.0),Vector3(1945.0,0.0,3.0),Vector3(2045.0,0.0,3.0),Vector3(2100.0,14.0,12.0),Vector3(2160.0,24.0,14.0),Vector3(2220.0,60.0,14.0),Vector3(2280.0,22.0,14.0),Vector3(2340.0,60.0,14.0),Vector3(2400.0,24.0,12.0),Vector3(2440.0,0.0,10.0),Vector3(2460.0,6.0,10.0),Vector3(2490.0,-6.0,10.0),Vector3(2520.0,6.0,10.0),Vector3(2545.0,-6.0,13.0),Vector3(2570.0,4.0,14.0),Vector3(2615.0,16.0,12.0),Vector3(2690.0,16.0,11.0),Vector3(2790.0,14.0,10.0),Vector3(2890.0,-14.0,12.0),Vector3(3030.0,-14.0,12.0),Vector3(3060.0,0.0,10.0),Vector3(3110.0,0.0,5.0),Vector3(3180.0,0.0,5.0),Vector3(3300.0,0.0,10.0),Vector3(3420.0,0.0,6.0),Vector3(3480.0,0.0,6.0),Vector3(3520.0,0.0,20.0),Vector3(3580.0,0.0,44.0),Vector3(3640.0,0.0,56.0),Vector3(3690.0,0.0,80.0),Vector3(3793.0,0.0,150.0),Vector3(3850.0,0.0,150.0)],
 }
 
 static var _pts := PackedVector3Array()
 static var _high := PackedFloat64Array()
 
-static func half() -> float: return _knob("half",HALF)
-static func pitch() -> float: return _knob("pitch",PITCH)
-static func length() -> float: return PLAN.size()*pitch()
-
-static func _knob(word: String, otherwise: float) -> float:
-	for a: String in LaunchArgs.user_args():
-		if a.begins_with("--road-%s=" % word): return float(a.get_slice("=",1))
-	return otherwise
+static func half() -> float: return HALF
+static func pitch() -> float: return PITCH
+static func length() -> float: return BAYS*pitch()
 
 ## The centre line every STEP m: Vector3(x, yaw, z).
 static func _trace() -> PackedVector3Array:
 	if not _pts.is_empty(): return _pts
-	var bend := _knob("bend",1.0)
 	var curve := PackedFloat64Array()
 	for b: Vector2 in BENDS:
-		for i in int(b.x/STEP): curve.append(b.y*bend/b.x)
+		for i in int(b.x/STEP): curve.append(b.y/b.x)
 	var w := int(EASE/STEP)
 	var p := Vector2(FROM)
 	var yaw := FROM_YAW
@@ -165,7 +213,7 @@ static func _heights(land: Callable) -> void:
 			for f: float in [-1.0,-0.6,-0.2,0.2,0.6,1.0]:
 				var q := spot(k*SLAB+ds,w*f)
 				top = maxf(top,float(land.call(q.x,q.y)))
-		raw.append(top)
+		raw.append(maxf(top,WET))
 	var soft := raw.duplicate()
 	for pass_i in 3:
 		var was := soft.duplicate()
@@ -185,7 +233,7 @@ static func build(s: Shapes, land: Callable) -> void:
 	var w := half()
 	# The paving.
 	var k := 0
-	while k*SLAB < length():
+	while k*SLAB < bays*p:
 		var mid := (k+0.5)*SLAB
 		var long := SLAB*(1.0+(w+CURB)*_bent(mid))+3.0
 		long = ceilf(long/2.0)*2.0
@@ -237,6 +285,134 @@ static func build(s: Shapes, land: Callable) -> void:
 		if bay.has("drop"): _dropped(s,cache,i,w)
 		if bay.has("rubble"): _wall(s,cache,i,float(bay.rubble),w)
 		if bay.has("lean"): _leaning(s,cache,i,int(bay.lean),w)
+	_pave_ruin(s,cache,land)
+	_ruin(s,cache)
+
+## What's left of the street past PLAN, as PAVE says. A sunk patch sits on the land.
+static func _pave_ruin(s: Shapes, cache: Dictionary, land: Callable) -> void:
+	var p := pitch()
+	for n in PAVE.length():
+		var i := PLAN.size()+n
+		var kind := PAVE[n]
+		if kind == "N": continue
+		for k in 2:
+			var mid := (i+0.25+k*0.5)*p
+			var c := at(mid)
+			if kind == "F" or (kind == "G" and k == 0):
+				var long := ceilf((SLAB*(1.0+(half()+CURB)*_bent(mid))+3.0)/2.0)*2.0
+				var slab := _sized(cache,"slab%d" % int(long),_paving.bind(long,half()))
+				s.stamp(slab,Vector3(c.x,level(mid),c.z),c.y)
+			elif kind == "P" or k == 0:
+				var u := (_h(i,k)-0.5)*half()*1.2
+				var q := spot(mid,u)
+				var size := 20+2*(int(_h(i,k+4)*3.0)*5)
+				var patch := _sized(cache,"patch%d" % size,_patch.bind(float(size)))
+				var y := maxf(float(land.call(q.x,q.y))+0.5,WET)
+				s.stamp(patch,Vector3(q.x,y,q.y),c.y+(_h(i,k+8)-0.5)*0.5)
+
+## The hash behind the wreck's small choices, 0 to 1: the same on every machine.
+static func _h(i: int, k: int) -> float:
+	return float(((i*73856093)^(k*19349663)^(i*k*83492791))&1023)/1023.0
+
+## The wreck, a block per two bays: a mesh and a body each, however much is in it.
+static func _ruin(s: Shapes, cache: Dictionary) -> void:
+	var p := pitch()
+	var row := [ROW_L,ROW_R]
+	for i in range(PLAN.size(),BAYS,2):
+		var a := spot(i*p,0.0)
+		var e := spot((i+2)*p,0.0)
+		var run := a.distance_to(e)
+		var c := Vector3((a.x+e.x)*0.5,atan2(e.x-a.x,e.y-a.y),(a.y+e.y)*0.5)
+		var y := level((i+1)*p)
+		var b := Shapes.new()
+		for st in range(i,BAYS+1 if i+2 >= BAYS else i+2):
+			for sd in 2:
+				var what: String = (row[sd] as String)[st-PLAN.size()]
+				if _held(st): what = "t"
+				_remains(s,b,cache,c,y,st,1.0 if sd == 0 else -1.0,what)
+			if WRECK.has(st): _wreck(s,b,cache,c,y,st,WRECK[st])
+		# The far stand-in: the street as one strip.
+		b.layer = Shapes.FAR
+		b.box(Vector3(-half(),-3.0,-run*0.5),Vector3(half(),0.4,run*0.5))
+		s.stamp(b,Vector3(c.x,y,c.z),c.y)
+
+## Whether what's over the road at station `st` keeps its columns up.
+static func _held(st: int) -> bool:
+	if WRECK.has(st) and (WRECK[st] as Dictionary).has("portal"): return true
+	if WRECK.has(st) and (WRECK[st] as Dictionary).has("roof"): return true
+	return WRECK.has(st-1) and (WRECK[st-1] as Dictionary).has("roof")
+
+## (x, y, z) at place `q` and height `y` in the block standing at `c`, `y0` high.
+static func _in(c: Vector3, y0: float, q: Vector2, y: float) -> Vector3:
+	var dx := q.x-c.x
+	var dz := q.y-c.z
+	return Vector3(dx*cos(c.y)-dz*sin(c.y),y-y0,dx*sin(c.y)+dz*cos(c.y))
+
+## What's left of a row's column at station `st`, as ROW_L and ROW_R spell it.
+static func _remains(s: Shapes, b: Shapes, cache: Dictionary, c: Vector3, y0: float, st: int, side: float, what: String) -> void:
+	var si := st*pitch()
+	var w := half()
+	var o := _in(c,y0,spot(si,side*w),level(si))
+	var road := at(si).y
+	match what:
+		"T","t":
+			_shaft(b,o,TALL,true)
+			if what == "T": _span(s,cache,si,si+pitch(),side*w,TALL)
+		"m": _shaft(b,o,SNAPPED,false)
+		"s": _shaft(b,o,STUMP,false)
+		"f","o":
+			_shaft(b,o,STUMP,false)
+			var u := side*(w-FALLEN.z*0.6 if what == "f" else w+FALLEN.z*0.6)
+			var q := spot(si+(_h(st,1)-0.5)*16.0,u)
+			var lying := _sized(cache,"fallen_col",_fallen)
+			s.stamp(lying,Vector3(q.x,level(si),q.y),road+PI*0.5+(_h(st,2)-0.5)*0.9)
+		"l":
+			_shaft(b,o,STUMP,false)
+			_leaning(s,cache,st,int(side),w)
+		"d":
+			for k in 3:
+				var q := spot(si+(_h(st,k+3)-0.5)*30.0,side*(w-(_h(st,k+6)-0.3)*24.0))
+				_drum_in(b,_in(c,y0,q,level(si)))
+
+## The stones `WRECK` names for bay `i`.
+static func _wreck(s: Shapes, b: Shapes, cache: Dictionary, c: Vector3, y0: float, i: int, d: Dictionary) -> void:
+	var p := pitch()
+	var w := half()
+	if d.has("drop"): _dropped(s,cache,i,w,float(d.drop))
+	if d.has("wall"): _wall(s,cache,i,float(d.wall),w)
+	if d.has("portal"): _rib(s,cache,i*p,w,TALL)
+	if d.has("roof"):
+		_rib(s,cache,i*p,w,TALL)
+		_rib(s,cache,(i+1)*p,w,TALL)
+		_roof(s,cache,i,str(d.roof),w,TALL)
+	if d.has("slalom"):
+		for k in 4:
+			var si := (i+k*0.5)*p
+			_shaft(b,_in(c,y0,spot(si,-SLALOM if k%2 == 0 else SLALOM),level(si)),AISLE_LEFT,false)
+	if d.has("heap"):
+		var q := spot((i+0.5)*p,float(d.heap))
+		var heap := _sized(cache,"mound",_rubble.bind(20.0,HEAP_TALL,30.0))
+		s.stamp(heap,Vector3(q.x,level((i+0.5)*p),q.y),at((i+0.5)*p).y+0.4)
+	if d.has("low"):
+		var si := (i+0.5)*p
+		for side: float in [-1.0,1.0]:
+			_shaft(b,_in(c,y0,spot(si,side*w*LOW_SHARE),level(si)),LOW_UP,false)
+		_rib(s,cache,si,w*LOW_SHARE,LOW_UP)
+
+## A column into block `b`, its foot at `o`: capped, or snapped off. Near only; the
+## far mesh has a post.
+static func _shaft(b: Shapes, o: Vector3, tall: float, capped: bool) -> void:
+	b.layer = Shapes.NEAR
+	b.cyl(o+Vector3(0.0,-DEEP,0.0),SHAFT.x,SHAFT.y,tall+DEEP-(CAP.x if capped else 0.0),10)
+	b.box(o+Vector3(-FOOT,-DEEP,-FOOT),o+Vector3(FOOT,3.0+KERB,FOOT))
+	if capped: b.box(o+Vector3(-CAP.y,tall-CAP.x,-CAP.y),o+Vector3(CAP.y,tall,CAP.y))
+	else: b.cyl(o+Vector3(0.8,tall,0.5),SHAFT.y-1.0,SHAFT.y-1.6,SNAP_TOP,6)
+	b.layer = Shapes.FAR
+	b.box(o+Vector3(-3.5,-4.0,-3.5),o+Vector3(3.5,tall,3.5))
+
+static func _drum_in(b: Shapes, o: Vector3) -> void:
+	b.layer = Shapes.NEAR
+	b.cyl(o+Vector3(0.0,-3.0,0.0),SHAFT.x,SHAFT.x-0.4,9.0,8)
 
 ## How bent the line is at `s`, the worst near it: 1/R.
 static func _bent(s: float) -> float:
@@ -254,17 +430,17 @@ static func _span(s: Shapes, cache: Dictionary, s0: float, s1: float, u: float, 
 	var mid := (a+b)*0.5
 	s.stamp(beam,Vector3(mid.x,minf(level(s0),level(s1))+y,mid.y),atan2(d.x,d.y))
 
-static func _rib(s: Shapes, cache: Dictionary, si: float, w: float) -> void:
+static func _rib(s: Shapes, cache: Dictionary, si: float, w: float, y := LOW) -> void:
 	var long := ceilf((w*2.0+CAP.y*2.0)/2.0)*2.0
 	var beam := _sized(cache,"beam%d" % int(long),_beam.bind(long))
 	var c := at(si)
-	s.stamp(beam,Vector3(c.x,level(si)+LOW,c.z),c.y+PI*0.5)
+	s.stamp(beam,Vector3(c.x,level(si)+y,c.z),c.y+PI*0.5)
 
 ## A bay's slab, on the ribs. `sides` L, R or LR.
-static func _roof(s: Shapes, cache: Dictionary, i: int, sides: String, w: float) -> void:
+static func _roof(s: Shapes, cache: Dictionary, i: int, sides: String, w: float, over := LOW) -> void:
 	var p := pitch()
 	var mid := (i+0.5)*p
-	var y := minf(level(i*p),level((i+1)*p))+LOW+BEAM_TALL
+	var y := minf(level(i*p),level((i+1)*p))+over+BEAM_TALL
 	var c := at(mid)
 	var deep := p*ROOF_SHARE
 	var full := sides.length() == 2
@@ -276,13 +452,13 @@ static func _roof(s: Shapes, cache: Dictionary, i: int, sides: String, w: float)
 		s.stamp(slab,Vector3(q.x,y,q.y),c.y)
 
 ## A roof slab fallen flat on two heaps, the air under it the low way through.
-static func _dropped(s: Shapes, cache: Dictionary, i: int, w: float) -> void:
+static func _dropped(s: Shapes, cache: Dictionary, i: int, w: float, slot := SLOT) -> void:
 	var mid := (i+0.6)*pitch()
 	var c := at(mid)
-	var y := level(mid)
+	var y := maxf(level(mid-pitch()*0.3),level(mid+pitch()*0.3))
 	var slab := _sized(cache,"fallen",_slab.bind(w*1.7,pitch()*0.55,false))
-	s.stamp(slab,Vector3(c.x,y+SLOT,c.z),c.y)
-	var heap := _sized(cache,"heap",_rubble.bind(10.0,SLOT+1.0,pitch()*0.4))
+	s.stamp(slab,Vector3(c.x,y+slot,c.z),c.y)
+	var heap := _sized(cache,"heap%d" % int(slot),_rubble.bind(10.0,slot+1.0,pitch()*0.4))
 	for u: float in [-w*0.75,w*0.75]:
 		var q := spot(mid,u)
 		s.stamp(heap,Vector3(q.x,y,q.y),c.y)
@@ -326,6 +502,22 @@ static func _paving(long: float, w: float) -> Shapes:
 		var x0 := minf(side*(w-CURB),side*hw)
 		var x1 := maxf(side*(w-CURB),side*hw)
 		b.box(Vector3(x0,0.0,-hl),Vector3(x1,KERB,hl))
+	return b
+
+## A patch of the street left in the grass, near only: the far mesh has a strip.
+static func _patch(size: float) -> Shapes:
+	var b := Shapes.new()
+	b.layer = Shapes.NEAR
+	b.box(Vector3(-size*0.7,-DEEP*0.5,-size*0.5),Vector3(size*0.7,0.6,size*0.5))
+	return b
+
+## A column lying along its z, a tapered section so it isn't a plank.
+static func _fallen() -> Shapes:
+	var b := Shapes.new()
+	var r := FALLEN.x
+	var z := FALLEN.z*0.5
+	b.layer = Shapes.NEAR
+	b.slope(Rect2(-r,-z,r*2.0,z*2.0),Rect2(-r*0.6,-z,r*1.2,z*2.0),-1.0,FALLEN.y)
 	return b
 
 static func _column(tall: float) -> Shapes:

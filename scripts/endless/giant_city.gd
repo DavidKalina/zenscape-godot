@@ -68,7 +68,7 @@ const PLACED := [
 	{"name":"city/gate","piece":preload("res://scripts/endless/city/gate.gd"),"along":350.0,"across":71.0,"turn":0.2},
 	{"name":"city/road","piece":preload("res://scripts/endless/city/road.gd"),"along":470.0,"across":530.0,"turn":1.6},
 	{"name":"city/pillar_hall","piece":preload("res://scripts/endless/city/pillar_hall.gd"),"along":-365.0,"across":1192.0,"turn":2.92},
-	{"name":"city/pyramid","piece":preload("res://scripts/endless/city/pyramid.gd"),"along":2800.0,"across":850.0,"turn":0.3,"lift":40.0},
+	{"name":"city/pyramid","piece":preload("res://scripts/endless/city/pyramid.gd"),"along":2800.0,"across":850.0,"turn":0.3,"lift":26.0},
 ]
 
 ## How far under the origin a piece's feet go (m): the land's rise and fall
