@@ -139,6 +139,9 @@ def wrapped(f, d, parts, stone):
     base, rows = 1, 1
     for p, (_, laid) in enumerate(parts):
         mine = np.nonzero(pick == p)[0]
+        if not len(mine):
+            print(f"wrapped: part {p} lays no stone", flush=True)
+            continue
         t, phi, per, girth = laid.lay(x[mine], y[mine], z[mine], band[2][mine])
         beds = ruin.cuts(float(t.min()), float(t.max()), [c * stone * laid.size for c in ruin.COURSES], rng)
         i = np.searchsorted(beds, t, side="right") - 1

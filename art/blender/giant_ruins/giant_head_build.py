@@ -332,7 +332,7 @@ def blocks(f, stone, rng):
     return cell.reshape(shape).astype(np.int32), face, uvw, size, row
 
 
-def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8, masonry=None, fractures=()):
+def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8, masonry=None, fractures=(), spare=None, chips=0.17, joint=1.0):
     """(full, soft): old stone, and the same without what a bake carries.
 
     Cut stone, not skin: each block's face is planed flat, a little proud or
@@ -344,7 +344,10 @@ def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8, masonry=None, fractu
     blocks gone. `masonry` is blocks()'s tuple laid some other way (the stomper
     wraps its stone round its limbs); its w runs out through the block's face.
     `fractures`, (centre, length), replace the random cracks where they would run
-    the length of something thin."""
+    the length of something thin. `spare`, 0..1 on the grid, is a carved face the
+    masonry leaves alone: 1 keeps the field's own planes, with a fine joint and no
+    block lost. `chips` is the share of blocks with a corner off, `joint` scales a
+    joint's width."""
     rng = np.random.default_rng(f.seed * 7919 + 5)
     cell, face, (u, v, w), (hu, hv, hw), row = masonry or blocks(f, stone, rng)
     count = int(cell.max()) + 1
@@ -364,6 +367,7 @@ def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8, masonry=None, fractu
     centre = np.stack([mean(a) for a in p], 1)
     normal = np.stack([mean(g) for g in grad], 1)
     level = mean(d[near])
+    whole = np.zeros(count) if spare is None else mean(spare[near])
     straight = np.sqrt((normal ** 2).sum(1))
     normal = normal / np.maximum(straight, 1e-3)[:, None]
     flat = np.clip((straight - 0.6) / 0.3, 0, 1)                               # a block round a corner keeps its corner
@@ -381,7 +385,7 @@ def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8, masonry=None, fractu
     reach = np.zeros(count, np.float32)
     for x, y, z, r, depth in sites:
         off = np.sqrt(((centre - (x, y, z)) ** 2).sum(1))
-        hit = (off < r * rng.uniform(0.7, 1.15, count)) & (n > 1) & ((straight < 0.95) | (masonry is not None))  # a corner goes, a window would not; on a rounded limb all blocks turn
+        hit = (off < r * rng.uniform(0.7, 1.15, count)) & (n > 1) & ((straight < 0.95) | (masonry is not None)) & (whole < 0.6)  # a corner goes, a window would not; on a rounded limb all blocks turn
         gone |= hit
         reach[hit] = depth
     soft = d.copy()
@@ -396,17 +400,18 @@ def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8, masonry=None, fractu
     keep = tuple(a[~lost] for a in band)
     kept = ids[~lost]
     dip = rng.uniform(-0.15, 0.55, count) * keen
-    full[keep] += np.clip(plane[~lost] - d[keep], -most, most) * flat[kept] + dip[kept]
+    free = 1.0 if spare is None else 1.0 - spare[keep]                         # the carved face keeps its planes
+    full[keep] += (np.clip(plane[~lost] - d[keep], -most, most) * flat[kept] + dip[kept]) * free
     chip = rng.uniform(1.15, 1.75, count)
-    chip[rng.random(count) > 0.17] = 9.0
+    chip[rng.random(count) > chips] = 9.0
     least = np.full(count, 2) if masonry else np.argmax(np.abs(normal), 1)     # a chip is across the block's showing face
     axes = np.ones((count, 3))
     axes[np.arange(count), least] = 0
     at = sum(axes[kept, a] * side[kept, a] * (u, v, w)[a][keep] for a in range(3))
     span = np.minimum(np.minimum(hu[keep] + 99 * (least[kept] == 0), hv[keep] + 99 * (least[kept] == 1)), hw[keep] + 99 * (least[kept] == 2))
-    full[keep] += np.maximum(at - chip[kept], 0) * span * 0.9
-    width = 1.2 * keen
-    full += np.clip(width - face, 0, width) * 0.7                              # the joint, chamfered
+    full[keep] += np.maximum(at - chip[kept], 0) * span * 0.9 * free
+    width = 1.2 * keen * joint
+    full += np.clip(width - face, 0, width) * (0.7 if spare is None else 0.7 - 0.45 * spare)  # the joint, chamfered
     full += (f.fbm(4.0 * stone, 2, 27) - 0.5) * 0.3 * stone                    # dressed, not polished
     # Fractures: straight planes through the stone, each stepping at the beds.
     all_near = np.nonzero(np.abs(soft) < 3.0 * stone + 2.0 * f.h)
