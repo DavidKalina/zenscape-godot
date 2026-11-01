@@ -1,9 +1,11 @@
 # The giants' city: a grey, flyable slice
 
-The real Amberlands gets a new architecture kit, sized for the giants: a person
-of about 300 m (the stomper's 250 m body plus a 55 m head). This loop builds the
-first slice in plain grey, with no baked stone, so that its lines can be flown and
-judged before anything is spent on looks.
+The real Amberlands gets a new architecture kit: a grand ancient city, big but built
+to sit on the land, and not a city for giants. The giant and the city are two things:
+the 250 m stomper towers over it and wades through it, and the buildings are what show
+his size. (Spec change: the first sizing, for a 300 m person, made pieces too big to fit
+the landscape.) This loop builds the first slice in plain grey, with no baked stone, so
+that its lines can be flown and judged before anything is spent on looks.
 
 ## Done looks like
 
@@ -18,6 +20,7 @@ judge anything by it.
 - Every piece has at least two ways through: a wide, easy line and a tight, risky
   one. No piece is a solid mass you can only fly round.
 - All of it is solid to the plane, the camera and the wing rays.
+- From the air it sits on the hills, and the stomper plainly dwarfs it.
 - It looks like plain grey architecture, in simple shapes: no stone, no detail.
 - The mourner head dead ahead of the hall's mouth stays in sight on the way out.
 
@@ -28,8 +31,12 @@ entablatures and proportion. Openings are corbelled (stones stepping in to a fla
 or slit top) and trapezoid. No domes, spires or pointed arches, and round arches
 only sparingly. No household objects.
 
-True size for what is judged against the body: doors about 340 m tall, stair treads
-about 30 m high. Tighter layout than true size: streets about 400 m wide.
+Sizes: monumental, and every piece must sit on the hills without swallowing them. Check
+each against the land from the air. As a guide: gates about 90 m tall, columns 35-50 m,
+pillared hall about 60 m high and 400 m long, pyramid about 350-400 m across and 130 m
+tall with stair treads about 8 m high, streets about 100 m wide. The stomper's knee comes
+to about the top of a gate. The tight lines keep their width: they are sized to the plane,
+so at this size they sit closer together.
 
 ## Flying first
 
@@ -61,7 +68,8 @@ crash, and a film of the flight is looked at. The user judges feel by playing.
 The land's shape stays: hills, steps, water, and flats to land on (AGENTS.md, Meadows
 and flats). Pieces sit on it with the bases they need. Keep clear of the hall's mouth
 and the ruins, and keep the stomper's route (`stomper_route.gd`) off the city with a
-`clear_of` like `giant_swells.gd`'s, or lead it along the avenue if that is simple.
+`clear_of` like `giant_swells.gd`'s for now. Having him wade through the city is wanted
+later; the slice need not do it.
 
 ## Plan
 
@@ -76,7 +84,7 @@ touches the shared files in one line.
 **Lanes (run at once, one agent each, in worktrees from the loop's branch).** Each
 makes one piece file, with its own flown driver and film:
 
-- `colonnade`: rows of giant figure-columns (plain stepped shapes for now), the slalom.
+- `colonnade`: rows of figure-columns (plain stepped shapes for now), the slalom.
 - `pillar_hall`: a dense forest of piers under a broken roof, with ways out above.
 - `pyramid`: stepped, a stair run up the face, a colonnade on top, a way off the back.
 
