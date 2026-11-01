@@ -12,12 +12,14 @@ that its lines can be flown and judged before anything is spent on looks.
 Pieces placed one by one read as stuff thrown on a map, so the city now has one spine.
 The land has three rings, each with its own job:
 
-- **The road:** a giant winding colonnade road from the hall's mouth up to the pyramid,
-  parts roofed and parts exposed. The gate and the pillared hall are built into it: the
-  gate is where it enters the city proper, the hall its longest roofed stretch, the
-  pyramid's stair its end. This is the guided part.
-- **Off the path:** the heads and smaller chunks of the civilization, found by leaving
-  the road.
+- **The road:** a winding colonnade road from the hall's mouth up to the pyramid, which
+  stands on a hill, further out, the shape on the horizon you head for. The road decays as
+  it goes: near the gate mostly standing, columns, beams and some roof; then runs of
+  columns with spans missing, fallen slabs, drums and stumps; on the climb barely a road,
+  scattered columns, heaps and half-buried paving. It must still read as one line
+  through the wreckage, pointing at the pyramid. The gate is where it enters the city.
+- **Off the path:** the heads, smaller chunks of the civilization, and the pillared hall,
+  an optional run you notice from the road (a sight line or a broken spur) and peel off to.
 - **The outskirts:** the stomper, on open ground, seen from the road as a shape on the
   horizon. He does not need to cross the road. What breaks the road is age.
 
@@ -118,12 +120,15 @@ road; the file can stay, out of `PLACED`, or lend its figures as accents.
    and bays. Try column spacing, road width and bend tightness, and keep what flies best.
    Stop for the user's verdict: this step decides whether the idea feels good. (Done at
    96c37a5a; the user flew it: "Solid start".)
-2. **The whole road.** The route from the mouth to the pyramid, joined to the gate, the
-   hall and the pyramid. Check from the mouth, by eye in the play camera, whether the
-   pyramid is in sight, and move it if a better reveal is there to have. Fix the flat
-   dark bays and the corbel fans if they hurt reading the line. Fly it end to end.
-3. **The stomper to the outskirts.** A smaller range on open ground, off the road.
-4. **Off the path.** Small chunks of ruin, cheap reuses of the road's kit, and the heads
+2. **The hill.** Find a hill further out and seat the pyramid on it, with what it needs
+   under it. Judge the spot by eye in the play camera from the mouth and from the gate,
+   with land fully streamed. Show the user the choices; stop for their verdict before any
+   road is laid.
+3. **The whole road.** The route from the gate to the pyramid, with the decay rising along
+   it, mostly the broken kit. Fly it end to end, wide and tight.
+4. **The hall off the path.** Move it to the side, with its sight line or spur.
+5. **The stomper to the outskirts.** A smaller range on open ground, off the road.
+6. **Off the path.** Small chunks of ruin, cheap reuses of the road's kit, and the heads
    moved clear of the road. Then cost, smoke; the handoff and the window are the loop's.
 
 ## Rules
