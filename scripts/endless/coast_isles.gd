@@ -129,6 +129,9 @@ func apply(got: Vector2, x: float, z: float) -> Vector2:
 		if dx*dx+dz*dz >= _r[i]*_r[i]: continue
 		var u := dx*_ca[i]+dz*_sa[i]
 		var v := dz*_ca[i]-dx*_sa[i]
+		# Off the shore the stamp is a sea bed under the land's own: known
+		# without the noise, which is most of a chunk's cost out here.
+		if _below(_kind[i],u,v,got.x): continue
 		var p: Vector2
 		match _kind[i]:
 			LONG: p = _long(u,v,x,z)
@@ -139,6 +142,21 @@ func apply(got: Vector2, x: float, z: float) -> Vector2:
 			last_lift = y-got.x
 			got = Vector2(y,p.y)
 	return got
+
+## Whether the isle of `kind` at (u, v) can't rise over `land` (world y): past
+## the furthest its noise can push the shore, using the shelf at that shore.
+static func _below(kind: int, u: float, v: float, land: float) -> bool:
+	var d: float
+	match kind:
+		LONG:
+			var du := maxf(absf(u)-560.0,0.0)
+			d = 251.0-sqrt(du*du+v*v)
+		LIGHT:
+			d = (240.5-sqrt(u*u/1.7+v*v))*2.2
+		_:
+			d = (184.5-maxf(absf(sqrt(u*u+v*v)-370.0)-25.8,0.0))*1.6
+	if d >= 0.0: return false
+	return (d*0.2 if d > -30.0 else -6.0+(d+30.0)*0.65)+SEA_Y <= land
 
 # --- The isles: (height over the sea, meadow) in each one's frame -----------------
 
@@ -232,9 +250,20 @@ static func _n(x: float, z: float) -> float:
 	var fz := z-iz
 	var ux := fx*fx*(3.0-2.0*fx)
 	var uz := fz*fz*(3.0-2.0*fz)
-	var a := lerpf(_h(ix,iz),_h(ix+1,iz),ux)
-	var b := lerpf(_h(ix,iz+1),_h(ix+1,iz+1),ux)
-	return lerpf(a,b,uz)
+	# `_h` four times over, written out: this is the isles' hottest line.
+	var k0 := ix*374761393+iz*668265263
+	var k1 := k0+374761393
+	var k2 := k0+668265263
+	var k3 := k2+374761393
+	k0 = (((k0&0xFFFFFFFF)^((k0&0xFFFFFFFF)>>13))*1274126177)&0xFFFFFFFF
+	k1 = (((k1&0xFFFFFFFF)^((k1&0xFFFFFFFF)>>13))*1274126177)&0xFFFFFFFF
+	k2 = (((k2&0xFFFFFFFF)^((k2&0xFFFFFFFF)>>13))*1274126177)&0xFFFFFFFF
+	k3 = (((k3&0xFFFFFFFF)^((k3&0xFFFFFFFF)>>13))*1274126177)&0xFFFFFFFF
+	var a := float((k0^(k0>>16))&0xFFFF)
+	var b := float((k2^(k2>>16))&0xFFFF)
+	a += (float((k1^(k1>>16))&0xFFFF)-a)*ux
+	b += (float((k3^(k3>>16))&0xFFFF)-b)*ux
+	return (a+(b-a)*uz)/65535.0
 
 static func _h(ix: int, iz: int) -> float:
 	var k := (ix*374761393+iz*668265263) & 0xFFFFFFFF
