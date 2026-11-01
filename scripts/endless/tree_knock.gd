@@ -42,6 +42,7 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const NearMiss = preload("res://scripts/endless/near_miss.gd")
 const LandTrees = preload("res://scripts/endless/land_trees.gd")
+const HeroTrees = preload("res://scripts/hero_trees.gd")
 
 const KEEP := Vector2(0.96,0.86)
 const HEFT := 0.35
@@ -225,6 +226,13 @@ static func _lean(flat: Vector3, across: Vector3, t: Dictionary) -> Vector3:
 	return (flat*cos(turn)+side*sin(turn)).normalized()
 
 # --- The fall --------------------------------------------------------------------
+
+## Every variant cut at setup: `surface_get_arrays` reads a mesh back from the
+## GPU, which in flight would hold the frame (12 ms) to wait for it.
+func _ready() -> void:
+	var trees: Node3D = get_parent().get("trees")
+	if trees == null or not bool(trees.enabled): return
+	for v in HeroTrees.SPRUCE.size(): _pieces(trees.parts(v),v)
 
 ## A one-instance batch of `mesh` at `xf` in `colour` (the land's batches'
 ## way, so the crown's material reads its tint as there).
