@@ -464,7 +464,7 @@ func _draw_block() -> void:
 		_draw_mult(mtext,mult_c,mult_px,s,1.0)
 		# The drain to the bank.
 		if _near.bank_left > 0.0:
-			var share := clampf(_near.bank_left/NearMiss.BANK_AFTER,0.0,1.0)
+			var share := clampf(_near.bank_left/_near.bank_after(),0.0,1.0)
 			var dw := DRAIN.x*s
 			var dl := _row_left(dw)
 			_bar(_block,Rect2(dl,DRAIN_Y*s,dw,DRAIN.y*s),share,3.0*s,[CREAM,CREAM],tag)
@@ -513,9 +513,10 @@ func _draw_gap(s: float) -> void:
 	_txt(_block,_nums,text,(Vector2(left+chev+gap+tw*0.5,y)-Vector2(mid,y))*grow+Vector2(mid,y),px,Color(col,a),14.0*s,grow,0.0,Color(glow,glow.a*a),glow_px)
 	_txt(_block,unit,"m",(Vector2(left+whole-uw*0.5,y+px*0.12)-Vector2(mid,y))*grow+Vector2(mid,y),unit_px,Color(col,a),8.0*s,grow)
 
-## The multiplier's heat, 0 at x1 to 1 at NearMiss.CHAIN_TOP.
-static func _mult_heat(mult: float) -> float:
-	return clampf((mult-1.0)/(NearMiss.CHAIN_TOP-1.0),0.0,1.0)
+## The multiplier's heat, 0 at x1 to 1 at the cap (NearMiss `top`).
+func _mult_heat(mult: float) -> float:
+	var cap: float = _near.top() if _near != null else NearMiss.CHAIN_TOP
+	return clampf((mult-1.0)/(cap-1.0),0.0,1.0)
 
 ## The multiplier's size: MULT_PX spread from x1 to the cap.
 func _mult_px(mult: float) -> float:

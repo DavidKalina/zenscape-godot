@@ -538,6 +538,7 @@ func _ready() -> void:
 			# vsync stays on, so a frame waits for the screen's next refresh.
 			Engine.max_fps = maxi(0,int(arg.get_slice("=",1)))
 	FrameLog.begin(preload("res://scripts/launch_args.gd").user_args())
+	LineLog.begin(preload("res://scripts/launch_args.gd").user_args())
 	# The layout file first: the slot halls' sites read its moves when
 	# the land is first looked at (scripts/endless/hall_sites.gd).
 	LayoutOverrides.begin("endless_flight")
