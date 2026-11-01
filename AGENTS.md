@@ -13,8 +13,9 @@ becomes a set piece of seed 1's generated land, with the Peak, 5 minutes edge
 to edge at full speed: 17 km across, at about 57 m/s level on Boost. The
 generator stays and the land keeps its shape; doors lead to other worlds.
 The order: set the size, then place interesting things and doors by hand,
-then collectibles. None of it is built yet: today the land still never ends,
-so new work shouldn't lean on land past that size or on a seed other than 1.
+then collectibles. The size is set: open sea rings the land (the wilderness
+recipe's `coast_` keys) and the plane is eased home past it. Hand placement
+isn't built yet, so new work shouldn't lean on a seed other than 1.
 
 In scope: the plane, its flight, landing and the camera; the land, sky,
 water and ambience; collectibles and flying challenges (the flight packs in

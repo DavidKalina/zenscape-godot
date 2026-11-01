@@ -128,6 +128,8 @@ public:
 	// read in `configure`): members, not constants, at wilderness's values.
 	double CONTINENT = 3600.0, CONTINENT_SWING = 70.0, CONTINENT_LIFT = 14.0, LOWLAND = 26.0;
 	double HILLS = 320.0, HILL_TALL = 16.0;
+	// The sea round a world with an edge (half 0: none).
+	double COAST_X = 0.0, COAST_Z = 0.0, COAST_HALF = 0.0, COAST_CORNER = 0.0, COAST_RAMP = 1.0, COAST_DEPTH = 0.0, COAST_WOBBLE = 0.0;
 	static constexpr double MOUNTAINS = 2600.0, MOUNTAIN_TALL = 105.0;
 	static constexpr float MOUNTAIN_BAND_X = 0.18f, MOUNTAIN_BAND_Y = 0.5f;
 	double RANGES = 2300.0, RANGE_WIDTH = 0.36, RANGE_MASK = 3400.0;
@@ -223,6 +225,7 @@ public:
 		noise(n_terrace, 20, TERRACE_SCALE, 2, FNL::FractalType_FBm);
 		noise(n_mesa, 21, MESA_SCALE, 2, FNL::FractalType_FBm);
 		noise(n_mesa_mask, 22, MESA_MASK, 1, FNL::FractalType_None);
+		noise(n_coast, 23, 1500.0, 3, FNL::FractalType_FBm);
 	}
 
 	// Vector2(world height, meadow) at a world XZ point (`sample`).
@@ -321,7 +324,7 @@ private:
 	FNL n_continent, n_hills, n_mask, n_ridges, n_meadows, n_tint, n_warp, n_range, n_peak;
 	FNL n_valley, n_valley_warp, n_valley_wide, n_bench_warp, n_bench_band, n_gully_amp;
 	FNL n_river_side, n_river_meander, n_river_wide;
-	FNL n_notch, n_terrace, n_mesa, n_mesa_mask;
+	FNL n_notch, n_terrace, n_mesa, n_mesa_mask, n_coast;
 	double floor_y_ = -INF;
 	double rock_ = 0.0;
 	double river_top = -INF, river_k = 0.0, river_mouth_s = 0.0, river_bed = RIVER_BED, river_bank = RIVER_BANK;
@@ -360,8 +363,20 @@ private:
 		return double(n.GetNoise(fx, fz));
 	}
 
+	// land_field.gd `_coast_sink`, `edge_off`.
+	double coast_sink(double x, double z) const {
+		const double dx = absf(x - COAST_X) - (COAST_HALF - COAST_CORNER);
+		const double dz = absf(z - COAST_Z) - (COAST_HALF - COAST_CORNER);
+		const double ox = maxf(dx, 0.0), oz = maxf(dz, 0.0);
+		const double off = std::sqrt(ox * ox + oz * oz) + minf(maxf(dx, dz), 0.0) - COAST_CORNER;
+		if (off + COAST_WOBBLE * 2.0 + COAST_RAMP <= 0.0) return 0.0;
+		const double t = clampf(1.0 + (off + nz(n_coast, x, z) * COAST_WOBBLE * 2.0) / COAST_RAMP, 0.0, 1.0);
+		return COAST_DEPTH * t * t;
+	}
+
 	V2 broad(double x, double z) {
 		double base = nz(n_continent, x, z) * CONTINENT_SWING * 2.0 + CONTINENT_LIFT;
+		if (COAST_HALF > 0.0) base -= coast_sink(x, z);
 		if (base > 0.0) base = LOWLAND * (1.0 - EXP(-base / LOWLAND));
 		const double inland = smoothstep(-6.0, 18.0, base);
 		const double hills = nz(n_hills, x, z) * HILL_TALL * 2.0 * (0.35 + 0.65 * inland);

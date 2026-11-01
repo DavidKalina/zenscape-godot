@@ -74,6 +74,12 @@ const LOWLAND := 26.0
 ## Rolling hills: their scale and height (m).
 const HILLS := 320.0
 const HILL_TALL := 16.0
+## The sea round a world with an edge (the recipe's coast_ keys): the wobble's
+## noise scale (m), and how far past the edge line (m) the plane is eased
+## home, from a first nudge to a full turn (`fence`).
+const COAST_WOBBLE_SCALE := 1500.0
+const FENCE_FROM := 2000.0
+const FENCE_FULL := 3200.0
 ## Round one's mountains (--old-land): the mask's scale (m) and its band,
 ## the ridges' scale and their height (m).
 const MOUNTAINS := 2600.0
@@ -350,7 +356,7 @@ static func recipe_defaults() -> Dictionary:
 ## rebuilt) is still used for the stock recipe (`native_available`).
 ## 3 also takes the built land's forms (V3_KEYS); a version-2 library still
 ## grows a recipe that leaves them off.
-const NATIVE_VERSION := 3
+const NATIVE_VERSION := 4
 const V3_KEYS := ["ridge_crisp","notch","notch_scale","notch_width","terrace","terrace_step","terrace_flat","terrace_scale","terrace_band",
 	"mesa","mesa_tall","mesa_scale","mesa_level","mesa_edge","mesa_steps","mesa_gap","mesa_keep","mesa_mask_scale","mesa_band"]
 ## The recipe's sharp forms (gable crests, notches, terraces, mesas): their
@@ -523,6 +529,10 @@ var _m_on := false
 ## The coast's islands (coast_isles.gd), or null: a stamp like the massif.
 const CoastIsles = preload("res://scripts/endless/coast_isles.gd")
 var _isles: RefCounted = null
+## The world's edge line (centre x, z, half side, corner radius), or half 0.
+var _edge := Vector4.ZERO
+## The region it rings, in a world of regions.
+var _edge_region := 0
 
 func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	seed = land_seed
@@ -550,6 +560,12 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	split_mix = world.layer("split_kinds",{})
 	_massif = null if k.get("old_land",false) else PeakMassif.make(land_seed,Callable(_impl,"height"))
 	_isles = null if k.get("old_land",false) else CoastIsles.make(land_seed,String(world.id))
+	_set_edge(k)
+	if _blend:
+		for r: int in world.regions.size():
+			if _edge.z > 0.0: break
+			_edge_region = r
+			_set_edge(_knobs(world.regions[r].land))
 
 ## A land recipe with the field's floor and the flags over it.
 static func _knobs(land: Dictionary) -> Dictionary:
@@ -574,6 +590,8 @@ static func _knobs(land: Dictionary) -> Dictionary:
 		elif arg.begins_with("--river-mouth="): k.river_mouth = clampf(float(arg.get_slice("=",1)),0.0,1.0)
 		elif arg.begins_with("--river-flare="): k.river_flare = maxf(0.0,float(arg.get_slice("=",1)))
 		elif arg == "--land-libm": k.libm = true
+		elif arg == "--no-coast": k.coast_half = 0.0
+		elif arg.begins_with("--coast-half="): k.coast_half = maxf(0.0,float(arg.get_slice("=",1)))
 	return k
 
 ## Whether the flags allow the native field (--land-native=0 or
@@ -593,6 +611,7 @@ func _blend_of(land_seed: int, want_native: bool) -> Object:
 	var soft_natives: Array = []
 	for p: RefCounted in world.regions:
 		var k := _knobs(p.land)
+		if not world.is_doors(): k.erase("coast_half")
 		var f := _field_of(land_seed,k,want_native)
 		fields.append(f[0])
 		natives.append(f[1])
@@ -643,8 +662,10 @@ static func _stock(k: Dictionary) -> bool:
 	return true
 
 ## The native library version the knobs `k` need: 1 the stock recipe, 2 a
-## recipe of its own, 3 one with the built land's forms (V3_KEYS).
+## recipe of its own, 3 one with the built land's forms (V3_KEYS), 4 one with
+## a sea round it (coast_ keys).
 static func _need(k: Dictionary) -> int:
+	if float(k.get("coast_half",0.0)) > 0.0: return 4
 	if _stock(k): return 1
 	var d := recipe_defaults()
 	for key: String in V3_KEYS:
@@ -759,6 +780,21 @@ func _isle(got: Vector2, x: float, z: float) -> Vector2:
 		_m_on = true
 		_p_on = false
 	return got
+
+## The world's edge line from the knobs `k`, where they have one.
+func _set_edge(k: Dictionary) -> void:
+	if float(k.get("coast_half",0.0)) > 0.0: _edge = Vector4(float(k.coast_x),float(k.coast_z),float(k.coast_half),float(k.coast_corner))
+
+## Vector2(turn 0..1, heading home) for a plane at `p` heading `heading`, past
+## the world's edge and flying out; ZERO in a world with no edge, and inside.
+func fence(p: Vector3, heading: float) -> Vector2:
+	if _edge.z <= 0.0: return Vector2.ZERO
+	if _blend and int(world.map.dominant(p.x,p.z)) != _edge_region: return Vector2.ZERO
+	var off := GDField.edge_off(_edge,p.x,p.z)
+	if off <= FENCE_FROM: return Vector2.ZERO
+	var home := atan2(p.x-_edge.x,p.z-_edge.y)
+	if absf(angle_difference(heading,home)) < PI*0.5: return Vector2.ZERO
+	return Vector2(smoothstep(FENCE_FROM,FENCE_FULL,off),home)
 
 ## The coast's islands (coast_isles.gd), or null.
 func isles() -> RefCounted:
@@ -1340,6 +1376,11 @@ class GDField extends RefCounted:
 	## the carve reads as rock as it reads a range (`_rock`, the larger).
 	var _rock := 0.0
 	var _continent := FastNoiseLite.new()
+	var _coast := FastNoiseLite.new()
+	var _coast_edge := Vector4.ZERO
+	var r_coast_ramp := 0.0
+	var r_coast_depth := 0.0
+	var r_coast_wobble := 0.0
 	var _hills := FastNoiseLite.new()
 	var _mask := FastNoiseLite.new()
 	var _ridges := FastNoiseLite.new()
@@ -1505,6 +1546,12 @@ class GDField extends RefCounted:
 		_noise(_terrace,20,r_terrace_scale,2,FastNoiseLite.FRACTAL_FBM)
 		_noise(_mesa,21,r_mesa_scale,2,FastNoiseLite.FRACTAL_FBM)
 		_noise(_mesa_mask,22,r_mesa_mask,1,FastNoiseLite.FRACTAL_NONE)
+		if float(k.get("coast_half",0.0)) > 0.0:
+			_coast_edge = Vector4(float(k.coast_x),float(k.coast_z),float(k.coast_half),float(k.coast_corner))
+			r_coast_ramp = float(k.coast_ramp)
+			r_coast_depth = float(k.coast_depth)
+			r_coast_wobble = float(k.coast_wobble)
+			_noise(_coast,23,COAST_WOBBLE_SCALE,3,FastNoiseLite.FRACTAL_FBM)
 		_noise(_continent,1,r_continent,3,FastNoiseLite.FRACTAL_FBM)
 		_noise(_hills,2,r_hills,4,FastNoiseLite.FRACTAL_FBM)
 		_noise(_mask,3,MOUNTAINS if old_land else r_range_mask,2,FastNoiseLite.FRACTAL_FBM)
@@ -1638,9 +1685,27 @@ class GDField extends RefCounted:
 		if cut < h: h -= (h-cut)*keep*banked
 		return h
 
+	## How far (m) (x, z) lies past the edge line `e` (centre x, z, half side,
+	## corner radius): a rounded square's signed distance, negative inside.
+	static func edge_off(e: Vector4, x: float, z: float) -> float:
+		var dx := absf(x-e.x)-(e.z-e.w)
+		var dz := absf(z-e.y)-(e.z-e.w)
+		var ox := maxf(dx,0.0)
+		var oz := maxf(dz,0.0)
+		return sqrt(ox*ox+oz*oz)+minf(maxf(dx,dz),0.0)-e.w
+
+	## How far (m) the world's edge sinks the continent at (x, z): nothing until
+	## r_coast_ramp short of the (wobbled) edge line, the full depth from there on.
+	func _coast_sink(x: float, z: float) -> float:
+		var off := edge_off(_coast_edge,x,z)
+		if off+r_coast_wobble*2.0+r_coast_ramp <= 0.0: return 0.0
+		var t := clampf(1.0+(off+_coast.get_noise_2d(x,z)*r_coast_wobble*2.0)/r_coast_ramp,0.0,1.0)
+		return r_coast_depth*t*t
+
 	## The land before the carve: continents, hills, ranges, meadows, valleys.
 	func _broad(x: float, z: float) -> Vector2:
 		var base := _continent.get_noise_2d(x,z)*r_continent_swing*2.0+r_continent_lift
+		if _coast_edge.z > 0.0: base -= _coast_sink(x,z)
 		# Inland the continents level off at r_lowland m: the peaks come from
 		# the ranges, not from the continents.
 		if base > 0.0: base = r_lowland*(1.0-exp(-base/r_lowland))
