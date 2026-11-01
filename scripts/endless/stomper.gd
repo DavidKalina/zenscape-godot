@@ -149,6 +149,7 @@ func setup(study: Node) -> void:
 	player.play(CLIP)
 	_read_clip()
 	route = Route.walked(field,centre,_open)
+	preload("res://scripts/endless/giant_city.gd").walk_round(world,route)
 	along = route.nearest(centre+START_OFF)
 	_stand()
 	legs = Legs.new()

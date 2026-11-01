@@ -15,7 +15,20 @@ const Shapes = preload("res://scripts/endless/city/city_shapes.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 
 const REACH := 290.0
+## Its hill fills the only dry line of the stomper's ring (giant_city.gd `walk_round`).
+const ROUTE_ROUND := 430.0
 const DEEP := 40.0
+
+## What it stands on where its hill falls away: a floor at the origin, so the row's
+## `lift` sets it just over the hilltop, half sizes past the stair's foot, and
+## courses down from it, each {rise, step out}, the last taken on to -BASE_DEEP.
+const FLOOR_X := 206.0
+const FLOOR_Z := 226.0
+const BASE_COURSES: Array[Vector2] = [Vector2(13.0,14.0),Vector2(13.0,14.0),Vector2(13.0,14.0)]
+const BASE_DEEP := 130.0
+## How much of the terraces' lean the last, long course keeps: steeper, so the base
+## stays on its hill.
+const LAST_BATTER := 0.4
 
 ## The terraces: how many, each one's rise, the half sizes at the foot and on top.
 ## Of each course's step in, BATTER_SHARE is slope and the rest ledge.
@@ -254,6 +267,22 @@ static func _roof(s: Shapes) -> void:
 		for side: float in [-1.0,1.0]: _end(s,side,x*step.x,ends,z,y,y+step.y)
 		y += step.y
 
+## The base under the floor: sloped courses with a ledge between, as the terraces.
+static func _base(s: Shapes) -> void:
+	var at := Vector2(FLOOR_X,FLOOR_Z)
+	var y := 0.0
+	for i in BASE_COURSES.size():
+		var c := BASE_COURSES[i]
+		var out := c.y*BATTER_SHARE
+		var low := y-c.x
+		if i == BASE_COURSES.size()-1:
+			out *= (y+BASE_DEEP)/c.x*LAST_BATTER
+			low = -BASE_DEEP
+		var foot := at+Vector2.ONE*out
+		s.slope(Rect2(-foot,foot*2.0),Rect2(-at,at*2.0),low,y)
+		at += Vector2.ONE*c.y
+		y -= c.x
+
 ## The stand-in: the terraces whole, each stair one ramp, the colonnade's column
 ## lines as thin walls, so the aisles still read from the front.
 static func _far(s: Shapes) -> void:
@@ -293,6 +322,7 @@ static func build(s: Shapes) -> void:
 	s.layer = Shapes.FAR
 	_far(s)
 	s.layer = Shapes.BOTH
+	_base(s)
 	var row := _row()
 	for i in ROWS:
 		s.stamp(row,Vector3(0.0,0.0,(i-(ROWS-1)*0.5)*ROW_STEP))
