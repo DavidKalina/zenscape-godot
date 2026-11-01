@@ -177,7 +177,7 @@ func _open(x: float, z: float) -> bool:
 	if world.has_method("side_of") and int(world.side_of(x,z)) != 1: return false
 	var ruins: RefCounted = field.swells()
 	if ruins != null and not ruins.clear_of(x,z,RUIN_CLEAR): return false
-	if not preload("res://scripts/endless/giant_city.gd").clear_of(world,x,z,RUIN_CLEAR): return false
+	if not preload("res://scripts/endless/giant_city.gd").clear_of(world,x,z,preload("res://scripts/endless/giant_city.gd").ROUTE_ROOM): return false
 	return Vector2(x,z).distance_to(centre+Door.AMBER_AT) > DOOR_CLEAR
 
 func _plane_here() -> bool:

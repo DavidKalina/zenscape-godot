@@ -12,6 +12,8 @@ extends Node3D
 ##   const Shapes = preload("res://scripts/endless/city/city_shapes.gd")
 ##   ## How far from its origin the piece reaches (m): keeps the stomper off.
 ##   const REACH := 420.0
+##   ## A long piece: half the length of the line REACH is measured from (optional).
+##   const SPINE := 480.0
 ##   static func build(s: Shapes) -> void:
 ##       s.box(...); s.slope(...); s.cyl(...); s.stamp(block,at,yaw)
 ##
@@ -38,7 +40,8 @@ extends Node3D
 ## - Its name in PLACED is its handle (`city/<piece>`; layouts/endless_flight.json
 ##   can move or delete it, yaw and place only). `along`, `across` and `turn` set
 ##   it in the mouth's frame (`frame`): +z out of the hall's mouth on the
-##   Amberlands, +x across, `turn` radians off straight out.
+##   Amberlands, +x across, `turn` radians off straight out. An optional `lift`
+##   raises it off the land's mean, where a low line needs the room.
 ## - Budgets, triangles: a wall section 2,000, a pier 500, a gate 5,000, a hall
 ##   section 3,000, the pyramid 10,000 (`setup` prints what the city came to).
 ##
@@ -56,14 +59,18 @@ const Shapes = preload("res://scripts/endless/city/city_shapes.gd")
 ## The placed pieces, each one row (the contract, above).
 const PLACED := [
 	{"name":"city/gate","piece":preload("res://scripts/endless/city/gate.gd"),"along":350.0,"across":71.0,"turn":0.2},
-	{"name":"city/pyramid","piece":preload("res://scripts/endless/city/pyramid.gd"),"along":0.0,"across":800.0,"turn":0.0},
-	{"name":"city/pillar_hall","piece":preload("res://scripts/endless/city/pillar_hall.gd"),"along":300.0,"across":1000.0,"turn":0.0},
-	{"name":"city/colonnade","piece":preload("res://scripts/endless/city/colonnade.gd"),"along":-400.0,"across":750.0,"turn":1.5708},
+	{"name":"city/colonnade","piece":preload("res://scripts/endless/city/colonnade.gd"),"along":470.0,"across":530.0,"turn":1.6,"lift":8.0},
+	{"name":"city/pillar_hall","piece":preload("res://scripts/endless/city/pillar_hall.gd"),"along":-365.0,"across":1192.0,"turn":2.92},
+	{"name":"city/pyramid","piece":preload("res://scripts/endless/city/pyramid.gd"),"along":-700.0,"across":1720.0,"turn":0.8},
 ]
 
 ## How far under the origin a piece's feet go (m): the land's rise and fall
 ## under a piece on the flats by the mouth.
 const DEEP := 60.0
+## How far the stomper's route keeps off a piece's REACH (m), as `clear_of`'s room:
+## below nothing, because the route's grid (stomper_route.gd SHORE) grows anything
+## shut by 160 m, and any more shuts his only way past the hall.
+const ROUTE_ROOM := -100.0
 ## Past this the far mesh takes over (m), give or take MARGIN.
 const NEAR_TO := 3000.0
 const MARGIN := 100.0
@@ -106,12 +113,13 @@ static func frame(world: RefCounted) -> Transform3D:
 	var out := -GiantSwells.DOOR_AT.normalized()
 	return Transform3D(Basis(Vector3.UP,atan2(out.x,out.y)),Vector3(at.x,0.0,at.y))
 
-## A row's coded place (its y worked out later, from the land).
+## A row's coded place (its y is `lift`, added later to the land's mean).
 static func _coded(world: RefCounted, e: Dictionary) -> Transform3D:
 	var f := frame(world)
-	return Transform3D(f.basis*Basis(Vector3.UP,float(e.turn)),f*Vector3(float(e.across),0.0,float(e.along)))
+	return Transform3D(f.basis*Basis(Vector3.UP,float(e.turn)),f*Vector3(float(e.across),float(e.get("lift",0.0)),float(e.along)))
 
-## Whether (x, z) is `room` m or more off every piece (the stomper's route).
+## Whether (x, z) is `room` m or more off every piece (the stomper's route): off a
+## circle of REACH, or round a long piece's SPINE.
 static func clear_of(world: RefCounted, x: float, z: float, room: float) -> bool:
 	if not wanted(world): return true
 	if _rings_for != world.get_instance_id():
@@ -119,11 +127,13 @@ static func clear_of(world: RefCounted, x: float, z: float, room: float) -> bool
 		_rings.clear()
 		for e: Dictionary in PLACED:
 			if LayoutOverrides.deleted(str(e.name)): continue
-			var at := LayoutOverrides.xform(str(e.name),_coded(world,e)).origin
-			_rings.append(Vector3(at.x,at.z,float(e.piece.REACH)))
-	for r: Vector3 in _rings:
-		var d := r.z+room
-		if (x-r.x)*(x-r.x)+(z-r.y)*(z-r.y) < d*d: return false
+			var at := LayoutOverrides.xform(str(e.name),_coded(world,e))
+			var piece: GDScript = e.piece
+			var spine := at.basis.z*float(piece.get_script_constant_map().get("SPINE",0.0))
+			_rings.append([Vector2(at.origin.x-spine.x,at.origin.z-spine.z),Vector2(at.origin.x+spine.x,at.origin.z+spine.z),float(piece.REACH)])
+	var p := Vector2(x,z)
+	for r: Array in _rings:
+		if p.distance_to(Geometry2D.get_closest_point_to_segment(p,r[0],r[1])) < float(r[2])+room: return false
 	return true
 
 func setup(host: Node3D) -> void:
@@ -148,7 +158,7 @@ func setup(host: Node3D) -> void:
 		_walk(block,Transform3D(Basis(Vector3.UP,atan2(place.basis.z.x,place.basis.x.x)),place.origin))
 	print("giant city: %d solids, %d near triangles and %d far, %d instances, %d bodies" % [_s.size()/STRIDE,_tris.x,_tris.y,_views.size(),_bodies.size()])
 
-## `place` at the land's mean under the block.
+## `place` at the land's mean under the block, plus its `lift`.
 func _seated(place: Transform3D, block: RefCounted, host: Node3D) -> Transform3D:
 	var r: Rect2 = block.bounds()
 	var total := 0.0
@@ -157,7 +167,7 @@ func _seated(place: Transform3D, block: RefCounted, host: Node3D) -> Transform3D
 		for j in N:
 			var q := place*Vector3(r.position.x+r.size.x*i/(N-1.0),0.0,r.position.y+r.size.y*j/(N-1.0))
 			total += float(host.field.height(q.x,q.z))
-	place.origin.y = total/float(N*N)
+	place.origin.y += total/float(N*N)
 	return place
 
 ## A block at `xf`: drawn, solid, and what it stamps.

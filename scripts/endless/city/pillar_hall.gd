@@ -25,7 +25,8 @@ const FEET := 100.0
 const BAYS := 28
 ## Bays along the hall (m): 0.74 s each at speed.
 const BAY := 42.0
-const REACH := 625.0
+const REACH := 185.0
+const SPINE := 480.0
 const MAX_SHUT := 2
 ## One line a bay, from the mouth: act, then the roofs (nave, left aisle, right
 ## aisle: # whole, . gone, v a slab hanging by its far edge, ^ by its near edge),
