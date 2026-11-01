@@ -58,17 +58,17 @@ const LIGHT_EVERY := 45.0
 const LIGHT_UP := 0.72
 const LIGHT_POOL := 8
 const LIGHT_REACH := 320.0
-const LIGHT_RANGE := 42.0
-const LIGHT_ENERGY := 1.6
+const LIGHT_RANGE := 50.0
+const LIGHT_ENERGY := 8.0
 const LIGHT_COLOR := Color(0.62,0.8,1.0)
-const WINDOW_ENERGY := 5.0
+const WINDOW_ENERGY := 9.0
 const WINDOW_COLOR := Color(0.85,0.93,1.0)
 ## The ice: the basalt shader's growth recoloured.
 const ICE_DARK := Color(0.36,0.5,0.62)
 const ICE_LIT := Color(0.78,0.9,0.98)
 const ICE_LOW := 5.0
 const FILL := Color(0.16,0.24,0.36)
-const FILL_GAIN := 0.32
+const FILL_GAIN := 0.16
 const SNOW := Color(0.88,0.92,0.97)
 ## The collider's pieces (triangles each).
 const BODY_TRIS := 6000
@@ -80,6 +80,10 @@ const GUARD_LOOK := LandTunnels.GUARD_LOOK
 const GUARD_ROOF := LandTunnels.GUARD_ROOF
 const GUARD_FLOOR := LandTunnels.GUARD_FLOOR
 const KEEP_IN := LandTunnels.KEEP_IN
+## The clear room `keep` holds it in, inside the solid's own edge: KEEP_OFF m
+## off the wall read KEEP_UP m higher (the vault's foot curves in).
+const KEEP_OFF := 0.6
+const KEEP_UP := 1.5
 const SIGHT_STEP := 1.0
 const SIGHT_UP := 60.0
 
@@ -401,7 +405,7 @@ func _place_lights() -> void:
 		l.name = "IceLight%d" % i
 		l.light_cull_mask = UNDER_LAYER
 		l.omni_range = LIGHT_RANGE
-		l.omni_attenuation = 1.2
+		l.omni_attenuation = 0.8
 		l.light_specular = 0.4
 		l.shadow_enabled = false
 		l.visible = false
@@ -602,7 +606,7 @@ func keep(p: Vector3) -> Vector3:
 ## it, less the wingtip's reach).
 func _room(s: float, h: float) -> float:
 	var pr: Vector3 = tun.profile(clampf(s,_s0,_s1))
-	return PeakTunnel.half_at(pr,h+SkyGlide.CLEAR)-_grow
+	return PeakTunnel.half_at(pr,h+SkyGlide.CLEAR+KEEP_UP)-_grow-KEEP_OFF
 
 ## The least room past a wingtip at `p` (m; INF off the bore): the wall
 ## across at its height and the roof over it.

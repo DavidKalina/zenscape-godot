@@ -705,8 +705,8 @@ func _leave() -> void:
 	inside_hall = false
 	_hall.visible = false
 	var plane: RefCounted = _host.plane
-	plane.guide = Callable(_host.tunnels,"guide")
-	plane.keep = Callable(_host.tunnels,"keep")
+	plane.guide = Callable(_host,"bore_guide") if _host.has_method("bore_guide") else Callable(_host.tunnels,"guide")
+	plane.keep = Callable(_host,"bore_keep") if _host.has_method("bore_keep") else Callable(_host.tunnels,"keep")
 	for pl: Node3D in _plugs: pl.visible = true
 	print("doors: out of the hall on side %d" % _side)
 

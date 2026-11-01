@@ -1042,10 +1042,8 @@ func _launch(at: Vector3, heading: float, parked := false) -> void:
 	# before the rock stops it, and its walls are slippery (LandTunnels
 	# `guide`, `keep`).
 	if tunnels != null:
-		plane.guide = func(p: Vector3, heading: float, speed: float) -> Dictionary:
-			var g: Dictionary = tunnels.guide(p,heading,speed)
-			return g if not g.is_empty() else ice.guide(p,heading,speed)
-		plane.keep = func(p: Vector3) -> Vector3: return ice.keep(tunnels.keep(p))
+		plane.guide = Callable(self,"bore_guide")
+		plane.keep = Callable(self,"bore_keep")
 	# Past the sea round the land, the plane is eased home (`field` as it stands:
 	# a door changes it).
 	plane.fence = func(p: Vector3, h: float) -> Vector2: return field.fence(p,h)
@@ -1112,6 +1110,16 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
 	if stair != null: g = stair.ground(p,g,pad)
 	return g if doors == null else doors.ground(p,g,pad)
+
+## SkyGlide's `guide` and `keep` in the bores: the mountain tunnels', then
+## the ice tunnel's (HallDoors hands them back on leaving its hall).
+func bore_guide(p: Vector3, heading: float, speed: float) -> Dictionary:
+	var g: Dictionary = tunnels.guide(p,heading,speed)
+	return g if not g.is_empty() or ice == null else ice.guide(p,heading,speed)
+
+func bore_keep(p: Vector3) -> Vector3:
+	p = tunnels.keep(p)
+	return p if ice == null else ice.keep(p)
 
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
