@@ -162,6 +162,7 @@ const BeatRoutes = preload("res://scripts/endless/beat_routes.gd")
 const PlaceLines = preload("res://scripts/endless/place_lines.gd")
 const Finds = preload("res://scripts/endless/finds.gd")
 const BurrowerFlight = preload("res://scripts/endless/burrower_flight.gd")
+const Stomper = preload("res://scripts/endless/stomper.gd")
 const SurgeSmash = preload("res://scripts/endless/surge_smash.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const AirLift = preload("res://scripts/endless/air_lift.gd")
@@ -327,6 +328,7 @@ var spindrift: Node3D
 ## The burrower, woken by a chosen skim (scripts/endless/burrower_flight.gd;
 ## --no-burrower: none).
 var burrower: Node
+var stomper: Node3D
 ## The towers that lead from the start to the ruin and the isles (scripts/endless/way_towers.gd).
 var way: Node3D
 ## The surge roll, the breaks and the cracked walls (scripts/endless/surge_smash.gd).
@@ -754,6 +756,10 @@ func _ready() -> void:
 		burrower = BurrowerFlight.new()
 		add_child(burrower)
 		burrower.setup(self)
+	if Stomper.wanted(world):
+		stomper = Stomper.new()
+		add_child(stomper)
+		stomper.setup(self)
 	knock = TreeKnock.new()
 	knock.name = "TreeKnock"
 	add_child(knock)
