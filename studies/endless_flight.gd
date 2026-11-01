@@ -1180,7 +1180,7 @@ func _sight(from: Vector3, to: Vector3) -> float:
 		var p := from.lerp(to,t)
 		# In a bore's tube the fine march has answered.
 		if tunnels.tube(p) >= 0: continue
-		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p): return float(i-1)/STEPS
+		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or (stomper != null and stomper.solid.inside(p)): return float(i-1)/STEPS
 	return bore
 
 func _process(delta: float) -> void:

@@ -19,6 +19,7 @@ extends RefCounted
 const LandHalls = preload("res://scripts/endless/land_halls.gd")
 const FlightContact = preload("res://scripts/endless/flight_contact.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
+const SkyGlide = preload("res://scripts/sky_glide.gd")
 
 ## The capsules on the rest pose: bone, the ends and the radius (m in play, fitted
 ## to the mesh's extent round each bone), x mirrored for the limbs. The thumbs and
@@ -253,7 +254,8 @@ func _nearest(i: int, p: Vector3) -> Vector3:
 ## Before the plane's move: a limb come over the plane puts it back out on the
 ## limb's skin and, coming at it faster than CRASH_INTO, hits it. {} or {"crash"}
 ## as FlightContact's. The glide's own stops see only the plane's move, and would
-## lift a plane a limb has reached to the top of that limb. On the ground: `_stood_on`.
+## lift a plane a limb has reached to the top of that limb, so too one a limb's
+## underside has sunk onto. On the ground: `_stood_on`.
 func before(delta: float, game: Node3D) -> Dictionary:
 	var hit := {}
 	var plane: RefCounted = game.plane
@@ -284,6 +286,13 @@ func before(delta: float, game: Node3D) -> Dictionary:
 		var into := (moved-v).dot(n)
 		if into <= FlightContact.CRASH_INTO: continue
 		hit = {"crash":{"at":c+n*radius[i],"normal":n,"what":"stone","into":into,"angle":PI*0.5,"speed":v.length(),"tower":true}}
+	# Slid along under a limb and it has sunk: kept under it, or the glide, finding
+	# a plane in the underside's CLEAR that wasn't under it, rides it to the top of
+	# the limb, inside the body. The glide's own stop leaves it nowhere else.
+	var over: Variant = game.plane_ground(p)
+	if over is Vector2 and p.y < (over as Vector2).y and p.y > (over as Vector2).y-SkyGlide.CLEAR:
+		p.y = (over as Vector2).y-SkyGlide.CLEAR
+		plane.position = p
 	_was_a = a.duplicate()
 	_was_b = b.duplicate()
 	return hit
