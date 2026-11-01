@@ -20,6 +20,12 @@ uniform float stone_tile_bump = 1.0;
 uniform float stone_tile_ao = 0.85;
 uniform float stone_tile_tone = 0.3;
 uniform float stone_tile_mortar = 0.45;
+#ifdef ZS_TILE_NEAR_FADE
+// How much of the normal is left near to, and the pixel's width (the piece's
+// units) where it starts coming back and where it is whole.
+uniform float stone_tile_near = 0.12;
+uniform vec2 stone_tile_near_from = vec2(0.006, 0.02);
+#endif
 varying vec3 stone_tile_n;
 
 // The three sides' samples blended; `p` and `ln` the point and normal in the
@@ -62,6 +68,11 @@ vec3 stone_tile_apply(inout vec3 base, vec3 p, vec3 ln) {
 	// mortar between them darker.
 	float own = 1.0 + (m.b - 0.6) * stone_tile_tone * 2.0;
 	base *= mix(1.0, mix(own, 1.0 - stone_tile_mortar, mortar), stone_tile);
+#ifdef ZS_TILE_NEAR_FADE
+	// A tile stretched past its bake (the stomper's is 85 m): its sculpted grain
+	// comes up in square blocks near to, so the normal gives way as a pixel gets small.
+	off *= mix(stone_tile_near, 1.0, smoothstep(stone_tile_near_from.x, stone_tile_near_from.y, length(fwidth(p))));
+#endif
 	return off * stone_tile_bump * stone_tile;
 }
 #endif

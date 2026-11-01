@@ -99,10 +99,14 @@ func bind(stomper: Node3D, skeleton: Skeleton3D, study: Node, size: float) -> vo
 		_bodies.append(rid)
 	skeleton.skeleton_updated.connect(_read)
 
-func _notification(what: int) -> void:
-	if what != NOTIFICATION_PREDELETE: return
+## Called by the stomper as it goes. Not left to this object's own end: anything still
+## holding it (a driver waiting mid-frame) outlives the physics server at quit, and
+## free_rid then is a crash.
+func release() -> void:
 	for rid in _bodies: PhysicsServer3D.free_rid(rid)
 	for rid in _shapes: PhysicsServer3D.free_rid(rid)
+	_bodies.clear()
+	_shapes.clear()
 
 func _add(row: Array, side: float, suffix: String, size: float) -> void:
 	var id := _skeleton.find_bone(str(row[0])+suffix)

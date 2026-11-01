@@ -165,7 +165,11 @@ void fragment() {
 		// as a worn top.
 		vec3 wn = normalize((INV_VIEW_MATRIX * vec4(face_normal, 0.0)).xyz);
 		vec3 bumped = NORMAL;
+#ifdef ZS_WEATHER_SCALE
+		rough_add = kit_weather(base, bumped, wn, local * weather_scale, VERTEX, 1.0 - clamp(COLOR.a, 0.0, 1.0), stone_weather);
+#else
 		rough_add = kit_weather(base, bumped, wn, local, VERTEX, 1.0 - clamp(COLOR.a, 0.0, 1.0), stone_weather);
+#endif
 		NORMAL = bumped;
 	}
 #endif
@@ -213,7 +217,13 @@ void fragment() {
 	// No light() here to see the sun's shadow: faces turned from the sun take
 	// the sky fill, the rest a little of it. Both out underground.
 	float sunward = clamp(dot(normal, zs_key_direction), 0.0, 1.0);
+#ifdef ZS_LAND_BOUNCE
+	// A body far taller than the shade it stands in (shaders/stomper_stone.gdshader):
+	// the sunlit land's bounce, most on what faces down, the sky's fill left out.
+	EMISSION += diffuse * zs_cloud_sun * land_tint * land_bounce * mix(0.45, 1.0, clamp(0.5 - 0.5 * normal.y, 0.0, 1.0)) * (1.0 - 0.6 * sunward) * (1.0 - zs_under);
+#else
 	EMISSION += diffuse * (zs_look_bounce_light(normal) + zs_look_fill_light(1.0 - 0.75 * sunward)) * (1.0 - zs_under);
+#endif
 #ifdef ZS_STONE_MOSS
 	EMISSION += diffuse * hemi * shade_lift * (1.0 - 0.5 * sunward) * (1.0 - zs_under);
 #endif

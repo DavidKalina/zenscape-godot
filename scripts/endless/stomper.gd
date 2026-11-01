@@ -60,6 +60,15 @@ const SWING_CLEAR := 8.0
 const REACH := 0.985
 const SINK_RATE := 16.0
 ## The baked occlusion's darkest share and its curve.
+## Its stone in shade (shaders/stomper_stone.gdshader). The tile's occlusion is the
+## ruins' 0.85 eased: a tile here is 85 m across, and full crevices went solid black.
+const STONE = preload("res://shaders/stomper_stone.gdshader")
+const STONE_FILL := 1.45
+const STONE_RIM := 0.2
+const LAND_BOUNCE := 1.8
+const TILE_AO := 0.5
+const TILE_BUMP := 0.5
+const WEATHER_SCALE := 10.0
 const AO_FLOOR := 0.42
 const AO_EASE := 0.7
 ## LODs for the dressed mesh (ImporterMesh.generate_lods).
@@ -130,7 +139,7 @@ func setup(study: Node) -> void:
 	skeleton = model.find_children("*","Skeleton3D",true,false)[0]
 	body = skeleton.find_children("*","MeshInstance3D",true,false)[0] as MeshInstance3D
 	body.mesh = _dressed(body.mesh)
-	var stone: Material = RuinKit.materials().stone
+	var stone := _stone()
 	for s in range(body.mesh.get_surface_count()):
 		body.set_surface_override_material(s,stone)
 	player = model.find_child("AnimationPlayer",true,false) as AnimationPlayer
@@ -344,6 +353,21 @@ func _read_clip() -> void:
 ## The mesh in the kit's stone: each vertex coloured as the kit colours a face
 ## and darkened by the baked occlusion. Generated again as an ImporterMesh, or
 ## it has no LODs.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE: solid.release()
+
+## The ruins' stone (its maps and dress) on the shader that lights a body this tall.
+func _stone() -> ShaderMaterial:
+	var stone := RuinKit.materials().stone.duplicate() as ShaderMaterial
+	stone.shader = STONE
+	stone.set_shader_parameter("fill",STONE_FILL)
+	stone.set_shader_parameter("rim",STONE_RIM)
+	stone.set_shader_parameter("land_bounce",LAND_BOUNCE)
+	stone.set_shader_parameter("stone_tile_ao",TILE_AO)
+	stone.set_shader_parameter("stone_tile_bump",TILE_BUMP)
+	stone.set_shader_parameter("weather_scale",WEATHER_SCALE)
+	return stone
+
 func _dressed(mesh: Mesh) -> ArrayMesh:
 	var out := ImporterMesh.new()
 	var stone := Style.stone_of(7) if Style.ruled() else Color("5a5d63")
