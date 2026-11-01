@@ -140,6 +140,15 @@ func meets(x0: float, z0: float, x1: float, z1: float) -> bool:
 		if dx*dx+dz*dz < _r[i]*_r[i]: return true
 	return false
 
+## Whether (x, z) is `room` m or more off every ruin.
+func clear_of(x: float, z: float, room: float) -> bool:
+	for i in _r.size():
+		var r := _r[i]/OUT+room
+		var dx := x-_x[i]
+		var dz := z-_z[i]
+		if dx*dx+dz*dz < r*r: return false
+	return true
+
 ## How far the land rises at (x, z).
 func lift(x: float, z: float) -> float:
 	var key := Vector2i(_b(x),_b(z))

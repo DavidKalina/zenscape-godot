@@ -49,6 +49,8 @@ const START_OFF := Vector2(1530.0,900.0)
 ## How far off the hall's mouth on this side it keeps (m; the route's shore
 ## margin comes on top).
 const DOOR_CLEAR := 220.0
+## Past the stride, off the edge of any ruin.
+const RUIN_CLEAR := 110.0
 ## A hip's socket off the hips' middle (model m).
 const HIP_X := 1.13568
 ## A sole's ground: how far round the ankle it is read (m), the most it tilts.
@@ -169,9 +171,12 @@ func setup(study: Node) -> void:
 		if fall != null: shadow.also(fall.dust_material())
 	visible = _plane_here()
 
-## Whether it may stand at (x, z): on its side of the door, off the hall's mouth.
+## Whether it may stand at (x, z): on its side of the door, off the hall's mouth
+## and the giants' remains (giant_swells.gd).
 func _open(x: float, z: float) -> bool:
 	if world.has_method("side_of") and int(world.side_of(x,z)) != 1: return false
+	var ruins: RefCounted = field.swells()
+	if ruins != null and not ruins.clear_of(x,z,RUIN_CLEAR): return false
 	return Vector2(x,z).distance_to(centre+Door.AMBER_AT) > DOOR_CLEAR
 
 func _plane_here() -> bool:
