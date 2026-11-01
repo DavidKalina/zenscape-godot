@@ -119,6 +119,7 @@ extends Node3D
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
 const GiantRuins = preload("res://scripts/endless/giant_ruins.gd")
+const GiantCity = preload("res://scripts/endless/giant_city.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const GraphicsPreset = preload("res://scripts/graphics_preset.gd")
@@ -316,6 +317,7 @@ var shops: Node
 ## The lighthouse and the pirate ships on the coast (scripts/endless/coast_sites.gd).
 var coast: Node3D
 var giants: Node3D
+var city: Node3D
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
@@ -782,6 +784,11 @@ func _ready() -> void:
 		giants.name = "GiantRuins"
 		add_child(giants)
 		giants.setup(self)
+	if GiantCity.wanted(world):
+		city = GiantCity.new()
+		city.name = "GiantCity"
+		add_child(city)
+		city.setup(self)
 	# --full-meter: a surge roll ready at once; again whenever the ship's plates
 	# come back (pirate_ship.gd `refill`).
 	if "--full-meter" in preload("res://scripts/launch_args.gd").user_args(): near.meter = 1.0
@@ -1111,6 +1118,7 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	var g: Variant = tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad)
 	if coast != null: g = coast.ground(p,g,pad)
 	if giants != null: g = giants.ground(p,g,pad)
+	if city != null: g = city.ground(p,g,pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
 	if stair != null: g = stair.ground(p,g,pad)
 	if stomper != null: g = stomper.solid.ground(p,g,pad)
@@ -1119,7 +1127,7 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
 	if doors != null and doors.holds(p): return false
-	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.inside(p)) or (giants != null and giants.inside(p)) or (stomper != null and stomper.solid.wheels(p))
+	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.inside(p)) or (giants != null and giants.inside(p)) or (city != null and city.inside(p)) or (stomper != null and stomper.solid.wheels(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
@@ -1154,7 +1162,7 @@ func eye_floor(p: Vector3) -> float:
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
 	if doors != null and doors.holds(p): return p.y < doors.hall_floor()+EYE_CLEAR*0.5
-	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.in_wreck(p,0.4)) or (stomper != null and stomper.solid.inside(p))
+	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.in_wreck(p,0.4)) or (city != null and city.inside(p,0.4)) or (stomper != null and stomper.solid.inside(p))
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
@@ -1180,7 +1188,7 @@ func _sight(from: Vector3, to: Vector3) -> float:
 		var p := from.lerp(to,t)
 		# In a bore's tube the fine march has answered.
 		if tunnels.tube(p) >= 0: continue
-		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or (stomper != null and stomper.solid.inside(p)): return float(i-1)/STEPS
+		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or (city != null and city.inside(p,0.4)) or (stomper != null and stomper.solid.inside(p)): return float(i-1)/STEPS
 	return bore
 
 func _process(delta: float) -> void:
