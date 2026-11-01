@@ -168,6 +168,7 @@ func anchor_spot(a: String, e: Dictionary = {}) -> Vector3:
 	if _extra_anchors.has(a): return _extra_anchors[a]
 	var parts := a.split("/")
 	if a.begins_with("peak/"): return _peak(parts)
+	if a.begins_with("way/"): return _game.way.at(a) if _game.way != null else Vector3.INF
 	if LayoutOverrides.entries.has(a):
 		if not e.is_empty(): e.moves = true
 		var node: Node3D = LayoutOverrides.entries[a].node

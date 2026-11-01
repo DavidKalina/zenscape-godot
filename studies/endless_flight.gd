@@ -320,6 +320,8 @@ var spindrift: Node3D
 ## The burrower, woken by a chosen skim (scripts/endless/burrower_flight.gd;
 ## --no-burrower: none).
 var burrower: Node
+## The towers that lead from the start to the ruin and the isles (scripts/endless/way_towers.gd).
+var way: Node3D
 ## The surge roll, the breaks and the cracked walls (scripts/endless/surge_smash.gd).
 var smash: Node3D
 var flown := 0.0
@@ -757,6 +759,10 @@ func _ready() -> void:
 		add_child(doors)
 		doors.setup(self,_start,_heading,seed)
 	if Finds.wanted(seed):
+		way = preload("res://scripts/endless/way_towers.gd").new()
+		way.name = "WayTowers"
+		add_child(way)
+		way.setup(self)
 		finds = Finds.new()
 		add_child(finds)
 		finds.setup(self)
@@ -1230,6 +1236,7 @@ func tick(delta: float) -> void:
 	if shops != null: shops.step(delta,self)
 	if finds != null: finds.step(delta,self)
 	if coast != null: coast.step(delta,self)
+	if way != null: way.step(camera.global_position)
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera
