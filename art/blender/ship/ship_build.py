@@ -42,7 +42,8 @@ RES = "res://assets/models/pirate_ship"
 # The hull (m). Y of the bow's flat and of the transom at the corridor's height;
 # the corridor is centred on y = 0.
 LENGTH = 113.0
-BEAM = 22.0
+BEAM = 24.75
+WIDEN = BEAM / 22.0       # hand-set x numbers below were set on a 22 m beam
 KEEL_Z = -5.75            # the strakes' first line; the keel's timber reaches -6
 Y_BOW = LENGTH * 0.5
 Y_STERN = -LENGTH * 0.5
@@ -57,13 +58,13 @@ END_NARROW = 0.12         # the plan's narrowing at each flat end
 
 # The corridor: straight along the keel line, a clear box, nothing in it.
 COR_LEN = 110.0
-COR_W = 16.0
+COR_W = 18.0
 COR_H = 10.0
 COR_FLOOR = 3.0
 COR_TOP = COR_FLOOR + COR_H
 COR_Z = COR_FLOOR + COR_H * 0.5   # the flight line's height
 # The plugs: each fills the corridor's end, this big, in the flat of that end.
-CRACK_W = 16.0
+CRACK_W = 18.0
 CRACK_H = 10.0
 EXIT_CLEAR = 30.0         # how far past each end the rectangle is kept clear
 OPEN_MARGIN = 0.25        # the torn edge stands at least this far off that rectangle
@@ -85,7 +86,7 @@ FINGER = 1.1              # the longest splinter off a broken end, along the gra
 SPRUNG = 1.5              # how far a broken end stands out of the hull, at most
 SAG = 0.55                # how far it hangs into the hole, at most
 HANGERS = 7               # planks torn loose, hanging from one end
-FRAME_X = (-5.6, -1.9, 2.3, 5.9)
+FRAME_X = tuple(x * WIDEN for x in (-5.6, -1.9, 2.3, 5.9))
 FRAME_W = 0.55
 COVER_BACK = 0.95         # the black sheet's depth behind the plug's face
 PLUG_TONE = 1.0           # the plug's planks against the hull's: shadowed, sooty
@@ -122,7 +123,7 @@ PORT_W = 2.7
 PORT_ROWS = 2             # strakes tall
 PORT_ROW = 10             # strake index of the port's sill
 GUN_Z = 8.0
-GUN_X = 14.0              # the muzzle's reach
+GUN_X = BEAM * 0.5 + 3.0  # the muzzle's reach
 GUN_LEN = 5.5
 GUN_BORE_R = 0.5          # the barrel's reach at the muzzle
 LEDGE_Z = 5.9             # the gun ledge along each wall
@@ -392,7 +393,7 @@ def inner_light(p):
 	"""Grime baked on the gun deck (0-1): the hold's corners and overhead. The light
 	itself is the deck shader's, drawn over this, so no bay starves."""
 	over = sstep(COR_TOP - 1.0, CEIL, p.z)
-	wall = sstep(7.5, 10.0, abs(p.x))
+	wall = sstep(7.5 * WIDEN, 10.0 * WIDEN, abs(p.x))
 	return 1.0 - 0.45 * over - 0.3 * wall
 
 
@@ -985,7 +986,7 @@ def build_interior(g):
 	# The floor, with a worn pale run down the middle so speed shows on it.
 	def worn(p):
 		l = inner_light(p)
-		k = 1.0 + 0.6 * max(0.0, 1.0 - abs(p.x) / 5.0)
+		k = 1.0 + 0.6 * max(0.0, 1.0 - abs(p.x) / (5.0 * WIDEN))
 		return (0.62 * l * k, 0.52 * l * k, 0.42 * l * k)
 	deck_strip(g, lambda y: COR_FLOOR - 0.03, y0, y1, floor_w, worn, 2.0, 1.25, mat="wood_in")
 	ceil_w = lambda y: half_beam(y, CEIL - 0.3) - LINER_T
@@ -1176,7 +1177,7 @@ def build_decks(g):
 		if a % 4 == 0:
 			g.beam((0.15, wy, wz), (0.15, wy + math.cos(t0) * 1.6, wz + math.sin(t0) * 1.6), 0.18, 0.18, "wood", (0.22, 0.15, 0.1))
 	for s in (-1.0, 1.0):
-		x = s * 6.5
+		x = s * 6.5 * WIDEN
 		for yy, z1, d, run in ((BREAK_POOP + 10.0, DECK_POOP, -1.0, 10.0), (BREAK_FORE - 5.5, DECK_FORE, 1.0, 5.5)):
 			n = int(run / 0.75)
 			for i in range(n):
@@ -1291,16 +1292,16 @@ def build_beak(g):
 	for y in frange(y0, y1, 1.1):
 		w = w_at(y)
 		g.beam((-w, y, z), (w, y, z), 0.5, 0.22, "wood", (0.22, 0.16, 0.115))
-	for x in frange(-7.0, 7.0, 1.4):
+	for x in frange(-7.0 * WIDEN, 7.0 * WIDEN, 1.4):
 		if abs(x) < w_at(y0):
-			g.beam((x, y0, z + 0.07), (x, y0 + 15.0 * (1.0 - abs(x) / 8.0), z + 0.07), 0.2, 0.14, "wood", (0.16, 0.12, 0.085))
+			g.beam((x, y0, z + 0.07), (x, y0 + 15.0 * (1.0 - abs(x) / (8.0 * WIDEN)), z + 0.07), 0.2, 0.14, "wood", (0.16, 0.12, 0.085))
 	# The upper beak: a pointed grating over the exit, swept up to the bowsprit,
 	# the line the eye wants off a flat bow. All of it above the corridor's roof.
 	tip = Vector((0.0, Y_BOW + 13.0, 18.6))
 	root = Y_BOW + 0.3
 	for s in (-1.0, 1.0):
-		a = Vector((s * 7.6, root, 14.7))
-		b = Vector((s * 3.2, Y_BOW + 7.0, 15.8))
+		a = Vector((s * 7.6 * WIDEN, root, 14.7))
+		b = Vector((s * 3.2 * WIDEN, Y_BOW + 7.0, 15.8))
 		for p0, p1 in ((a, b), (b, tip)):
 			g.beam(p0, p1, 0.5, 0.6, "paint", red)
 		a2, b2 = a + Vector((0, 0, 2.9)), b + Vector((0, 0, 2.2))
@@ -1310,7 +1311,7 @@ def build_beak(g):
 			g.beam(a.lerp(b, t), a2.lerp(b2, t), 0.28, 0.28, "paint", dk)
 	for y in frange(root, Y_BOW + 11.0, 0.9):
 		t = (y - root) / 13.0
-		w = 7.3 * (1.0 - t) ** 0.9
+		w = 7.3 * WIDEN * (1.0 - t) ** 0.9
 		g.beam((-w, y, lerp(14.8, 18.0, t ** 1.6)), (w, y, lerp(14.8, 18.0, t ** 1.6)), 0.42, 0.18, "wood", (0.22, 0.16, 0.115))
 	g.beam((0.0, root, 14.45), (0.0, tip.y - 1.0, 17.9), 1.1, 0.6, "wood", dk, up=(0.0, 0.0, 1.0))
 	g.beam((0.0, tip.y - 1.0, 17.9), tip + Vector((0, 1.2, 1.6)), 0.8, 0.7, "paint", red, up=(0.0, 0.0, 1.0))
@@ -1782,6 +1783,7 @@ def save_tex(name, rgb, alpha=None, data=False):
 
 
 # The plug's planks, a shade over the hull's so black gaps have something to bite on.
+SKIN_X = half_beam(0.0, GUN_Z)   # the hull's outer planks at the gun ports
 PLUG_FILL = 18.0
 
 # The gun deck's light, by eye: the hold's own dim fill, a lantern and a slat of sun
@@ -1800,7 +1802,7 @@ MATERIALS = {
 	"plug": ("surface", "ship_stern", "ship_stern_n", {"normal_depth": 1.0, "roughness_value": 0.88, "fill": PLUG_FILL}),
 	"wood": ("surface", "ship_wood", "ship_wood_n", {"normal_depth": 1.0, "roughness_value": 0.9, "fill": 6.0}),
 	"wood_in": ("deck", "ship_wood", "ship_wood_n", {"normal_depth": 0.6, "roughness_value": 0.9, "fill": 7.0, "rim": 0.0, "fill_in": DECK_FILL, "lamp_power": DECK_LAMP, "slat_power": DECK_SLAT, "calm": 0.35, "seam": 0.75, "liner": 0.55}),
-	"iron_in": ("deck", None, None, {"roughness_value": 0.5, "metallic_value": 0.35, "fill": 1.7, "rim": 0.3, "fill_in": DECK_FILL, "lamp_power": DECK_LAMP * 1.6, "slat_power": DECK_SLAT * 0.3, "glint": 0.2, "inside_x": 10.3}),
+	"iron_in": ("deck", None, None, {"roughness_value": 0.5, "metallic_value": 0.35, "fill": 1.7, "rim": 0.3, "fill_in": DECK_FILL, "lamp_power": DECK_LAMP * 1.6, "slat_power": DECK_SLAT * 0.3, "glint": 0.2, "inside_x": SKIN_X - 0.46}),
 	"lamp": ("lamp", None, None, {}),
 	"iron": ("surface", None, None, {"roughness_value": 0.5, "metallic_value": 0.35, "fill": 1.7}),
 	"sail": ("cloth", "ship_sail", None, {"fill": 4.5}),
@@ -1873,14 +1875,14 @@ void vertex() {
 	sun = normalize(back * zs_sun_direction);
 	// An eye out in the day sees a hold as black; it opens up as it comes in.
 	vec3 eye = abs(back * (CAMERA_POSITION_WORLD - MODEL_MATRIX[3].xyz));
-	eyes = 1.0 - smoothstep(4.0, 40.0, max(eye.z - 55.0, max(eye.x - 8.0, 0.0)));
+	eyes = 1.0 - smoothstep(4.0, 40.0, max(eye.z - 55.0, max(eye.x - %(deck_x)s, 0.0)));
 }
 // The lantern at bay `z` on side `s`, here: wrapped so ribs turn into shade, not off.
 float lantern(vec3 n, float z, float s) {
 	if (abs(z) < 1.0 || abs(z) > LAST) return 0.0;
 	vec3 l = vec3(s * LAMP_X, LAMP_Y, z) - at;
 	float d2 = dot(l, l);
-	float near = max(1.0 - d2 / 140.0, 0.0);
+	float near = max(1.0 - d2 / %(lamp_reach)s, 0.0);
 	float a = dot(n, l) / sqrt(d2);
 	float beat = 0.9 + 0.1 * sin(TIME * (7.0 + fract(z * 0.37 + s) * 5.0) + z);
 	return (max(a, 0.0) * 0.8 + 0.2) * near * near * beat;
@@ -1934,7 +1936,7 @@ void fragment() {
 	}
 }
 """ % {"gloom": DECK_GLOOM, "lamp_x": LAMP_X, "lamp_y": LAMP_Z, "pitch": LAMP_PITCH, "last": max(LAMP_BAYS) + 0.5,
-	"port_w": PORT_W, "port_lo": row_z(PORT_ROW), "port_hi": row_z(PORT_ROW + PORT_ROWS), "port_x": 10.2,
+	"port_w": PORT_W, "port_lo": row_z(PORT_ROW), "port_hi": row_z(PORT_ROW + PORT_ROWS), "port_x": SKIN_X - 0.56, "deck_x": COR_W * 0.5, "lamp_reach": 140.0 * WIDEN ** 2,
 	"port_first": PORTS[0], "port_last": PORTS[-1], "gun": GUN_Z, "keel": KEEL_Z, "strake": STRAKE}
 LAMP_CODE = """shader_type spatial;
 // Written by art/blender/ship/ship_build.py: a lantern's horn pane, and its beat.

@@ -26,14 +26,14 @@ uniform float liner = 1.0;
 const float KEEL = -5.75;
 const float STRAKE = 1.25;
 const float GLOOM = 28.0;
-const float LAMP_X = 8.4;
+const float LAMP_X = 9.4;
 const float LAMP_Y = 11.8;
 const float PITCH = 16.0;
 const float LAST = 48.5;
 const float PORT_W = 2.7;
 const float PORT_LO = 6.75;
 const float PORT_HI = 9.25;
-const float PORT_X = 10.2;
+const float PORT_X = 11.545795452095511;
 const float PORT_FIRST = -40.0;
 const float PORT_LAST = 40.0;
 const vec3 FLAME = vec3(1.0, 0.58, 0.28);
@@ -48,14 +48,14 @@ void vertex() {
 	sun = normalize(back * zs_sun_direction);
 	// An eye out in the day sees a hold as black; it opens up as it comes in.
 	vec3 eye = abs(back * (CAMERA_POSITION_WORLD - MODEL_MATRIX[3].xyz));
-	eyes = 1.0 - smoothstep(4.0, 40.0, max(eye.z - 55.0, max(eye.x - 8.0, 0.0)));
+	eyes = 1.0 - smoothstep(4.0, 40.0, max(eye.z - 55.0, max(eye.x - 9.0, 0.0)));
 }
 // The lantern at bay `z` on side `s`, here: wrapped so ribs turn into shade, not off.
 float lantern(vec3 n, float z, float s) {
 	if (abs(z) < 1.0 || abs(z) > LAST) return 0.0;
 	vec3 l = vec3(s * LAMP_X, LAMP_Y, z) - at;
 	float d2 = dot(l, l);
-	float near = max(1.0 - d2 / 140.0, 0.0);
+	float near = max(1.0 - d2 / 177.1875, 0.0);
 	float a = dot(n, l) / sqrt(d2);
 	float beat = 0.9 + 0.1 * sin(TIME * (7.0 + fract(z * 0.37 + s) * 5.0) + z);
 	return (max(a, 0.0) * 0.8 + 0.2) * near * near * beat;
