@@ -177,8 +177,11 @@ const TORCH_CUP := Vector2(0.62,0.12)
 const TORCH_FLAME := Vector2(0.9,1.25)
 const TORCH_FIRE := 1.6
 const TORCH_SIZE := 1.5
-const TORCH_BIG := {"wall":1.0,"outside":1.35,"mouth":2.2}
-const TORCH_GLOW := {"wall":Color(1.0,0.55,0.16),"outside":Color(1.0,0.78,0.38),"mouth":Color(1.0,0.66,0.26)}
+const TORCH_BIG := {"wall":1.0,"outside":1.35,"mouth":2.2,"glow":1.5}
+const TORCH_GLOW := {"wall":Color(1.0,0.55,0.16),"outside":Color(1.0,0.78,0.38),"mouth":Color(1.0,0.66,0.26),"glow":Color(0.4,0.8,0.68)}
+## The sunk caves' glows' light (no flame, a cold wash).
+const GLOW_LIGHT := Color(0.82,0.88,0.8)
+const GLOW_POWER := 1.1
 ## Its fire in three tiers: the FLAME_POOL torches nearest the eye burn as
 ## real flames (scripts/flame.gd: volumes, sparks, smoke), easing in and out
 ## over FLAME_EASE s as the pool moves; every other torch is a glowing flame
@@ -196,6 +199,8 @@ const POOL_AHEAD := 24.0
 const RING_SEGS := 32
 const FLOOR_SEGS := 6
 const CAVE_RING := 2.0
+## A sunk cave's lumps over ROCK_LUMP.
+const CAVE_LUMP := 2.6
 const ROCK_LUMP := Tunnels.ROCK_LUMP
 const HALL_ROCK_TINT := Color(0.42,0.4,0.37)
 const FLOOR_TINT := Color(0.36,0.33,0.29)
@@ -217,6 +222,7 @@ const COLUMN_TALL := Vector2(1.6,7.5)
 const COLUMN_STEP := 1.4
 const COLUMN_UNDER_TORCH := 5.0
 const BASALT = preload("res://shaders/tunnel_basalt.gdshader")
+const CAVE_ROCK = preload("res://shaders/tunnel_cave.gdshader")
 ## The overgrowth (`_build_growth`), each the more where the rock is green
 ## (`_green`): strands from the vault every VINE_STEP m along, VINE_VAULT of
 ## them at the most, VINE_LONG m long (by the walls; shorter by the crown);
@@ -345,8 +351,13 @@ var field: RefCounted
 var stats := {"tunnels":0,"tris":0,"torches":0,"stretches":0,"lights":0}
 ## The hall stretches' streamer.
 var halls: Node3D
+## shaders/endless_sea.gdshader `dry_cut`'s size.
+const DRY_CUTS := 8
 ## The look's clouds (their valley fog hushed in the bore), or null.
 var clouds: Node
+## The sea's material, cut along the sunk tunnels' ramps (`_cut_sea`), or null.
+var sea: ShaderMaterial
+var _cuts := -1
 ## The stood tunnels' sites (the solid's queries walk these), and each
 ## Built by its name and by its id.
 var _sites: Array = []
@@ -655,6 +666,7 @@ func _stand_bodies(began: int, all: bool) -> void:
 func step(at: Vector3) -> void:
 	var t0 := Time.get_ticks_usec()
 	_stream(at)
+	_cut_sea()
 	_stand_bodies(t0,false)
 	halls.step(at)
 	_light_torches(at)
@@ -747,8 +759,9 @@ func _light_torches(at: Vector3) -> void:
 		var fade := clampf((last-d)/LIGHT_FADE,0.0,1.0)
 		var flick := 1.0+TORCH_FLICKER*(sin(_time*11.0+i*1.7)*0.6+sin(_time*23.0+i*3.1)*0.4)
 		l.position = b.lamps[i]
+		l.light_color = GLOW_LIGHT if b.site.sunk else TORCH_LIGHT
 		l.omni_range = TORCH_RANGE*b.lamp_big[i]
-		l.light_energy = _torch_energy*b.lamp_big[i]*fade*flick
+		l.light_energy = _torch_energy*b.lamp_big[i]*fade*(GLOW_POWER if b.site.sunk else flick)
 		l.visible = fade > 0.0
 		if k < _bounce.size():
 			# Its bounce, out in the bore.
@@ -894,7 +907,7 @@ func guide(p: Vector3, heading: float, speed: float) -> Dictionary:
 		var sh := Tunnels.shaft_at(t,p.x,p.z)
 		if sh >= 0 and p.y > b.y-GUARD_ROOF: continue
 		var q := Tunnels.local(t,p.x,p.z)
-		var h := p.y-t.floor_y
+		var h := p.y-b.x
 		var got: Array = Tunnels.at_s(t,clampf(q.x,0.0,t.length))
 		var tg: Vector2 = got[1]
 		var across := Vector3(-tg.y,0.0,tg.x)
@@ -916,7 +929,7 @@ func guide(p: Vector3, heading: float, speed: float) -> Dictionary:
 		# Pointing at the near wall: the heading eases along.
 		if near > 0.0 and Vector2(across.x,across.z).dot(fwd)*signf(off) > 0.0: turn = near
 		var level := 0.0
-		var top := b.y-t.floor_y-SkyGlide.CLEAR
+		var top := b.y-b.x-SkyGlide.CLEAR
 		var up := clampf((h-(top-GUARD_ROOF))/GUARD_ROOF,0.0,1.0)
 		if up > 0.0:
 			push.y -= GUARD_PUSH*up*up
@@ -953,7 +966,7 @@ func keep(p: Vector3) -> Vector3:
 		if sh >= 0: return p
 		var q := Tunnels.local(t,p.x,p.z)
 		if q.x < 0.0 or q.x > t.length: return p
-		var h := p.y-t.floor_y
+		var h := p.y-b.x
 		var r := _room(t,q.x,h)
 		var off := q.y-r.x
 		var out := p
@@ -1043,6 +1056,26 @@ func sight(from: Vector3, to: Vector3) -> float:
 	sight_whole = whole
 	return 1.0
 
+## True in a sunk tunnel's corridor, where the sea has no say.
+func dry(p: Vector3) -> bool:
+	for t: Tunnels.Site in _sites:
+		if Tunnels.dry_at(t,p.x,p.z): return true
+	return false
+
+## The sunk tunnels stood near the eye, into the sea's cuts when they change.
+func _cut_sea() -> void:
+	if sea == null or _sites.size() == _cuts: return
+	_cuts = _sites.size()
+	var list: Array = []
+	for t: Tunnels.Site in _sites: list.append_array(Tunnels.dry_cuts(t))
+	list.resize(mini(list.size(),DRY_CUTS))
+	var out := PackedVector4Array()
+	for c: Vector4 in list: out.append(c)
+	out.resize(DRY_CUTS)
+	sea.set_shader_parameter("dry_cut",out)
+	sea.set_shader_parameter("dry_cuts",list.size())
+	sea.set_shader_parameter("dry_half",Tunnels.DRY_HALF)
+
 ## Whether `p` is in a tunnel's box, low enough to be in its bore.
 func near(p: Vector3) -> bool:
 	for t: Tunnels.Site in _sites:
@@ -1074,7 +1107,7 @@ func _build(b: Built, f: RefCounted) -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var tris := 0
-	for m in 2: tris += _build_portal(st,t,m,f)
+	for m in 2: tris += _build_mouth(st,t,m,f) if t.sunk else _build_portal(st,t,m,f)
 	var mesh: ArrayMesh = rock.commit()
 	st.commit(mesh)
 	# Seen: the rock on the inside's layer (torch lit), the portal blocks
@@ -1089,8 +1122,9 @@ func _build(b: Built, f: RefCounted) -> void:
 	blocks.name = node.name+"_portals"
 	blocks.mesh = _surface(mesh,1,_portal_material(t))
 	b.node.add_child(blocks)
-	for m in 2: _build_fires(b,m)
-	b.node.add_child(_build_doors(t,node.name))
+	if not t.sunk:
+		for m in 2: _build_fires(b,m)
+	if not t.sunk: b.node.add_child(_build_doors(t,node.name))
 	tris += _build_shafts(b,mesh,node.name,mat)
 	tris += _build_growth(b)
 	# The collider in BODY_TRIS pieces (in the mesh's order, so each is a
@@ -1145,7 +1179,9 @@ func _build_portal(st: SurfaceTool, t: Tunnels.Site, m: int, lf: RefCounted) -> 
 	for i in as_.size():
 		var row := PackedFloat32Array()
 		for j in ds.size():
-			var q := Tunnels.portal_point(t,m,as_[i],ds[j])
+			# A hair inside the footprint: on its very edge `portal_at` could
+			# miss by rounding, and the front dropped to the trench's floor.
+			var q := Tunnels.portal_point(t,m,clampf(as_[i],a0+0.05,Tunnels.PORTAL_IN-0.05),clampf(ds[j],-k+0.05,k-0.05))
 			row.append(_cover(t,q.x,q.y,lf.height(q.x,q.y)))
 		ys.append(row)
 	var inward := _v(t,m,1.0,0.0,0.0)-_v(t,m,0.0,0.0,0.0)
@@ -1217,6 +1253,67 @@ func _build_portal(st: SurfaceTool, t: Tunnels.Site, m: int, lf: RefCounted) -> 
 	for sg: float in [-1.0,1.0]:
 		var bd := sg*(lw-BOWL.x)
 		tris += _box(st,t,m,out-0.6,out-0.6+2.0*BOWL.x,bd-BOWL.x,bd+BOWL.x,base,base+BOWL.y,Color(0.16,0.14,0.12),false)
+	return tris
+
+## A sunk cave's mouth `m` into `st`: a sheet of raw rock over the sinkhole's
+## back wall, a little out from it, from the floor to over the land, broken
+## by noise, the arch a ragged hole in it just inside the bore's own ring.
+## Flat shaded, as the land's cliffs are. Returns its triangles.
+const LIP_CELL := 2.2
+const LIP_OUT := Vector2(0.4,2.2)
+const LIP_RAGGED := 0.2
+const LIP_OVER := 2.5
+func _build_mouth(st: SurfaceTool, t: Tunnels.Site, m: int, lf: RefCounted) -> int:
+	var f := t.floor_y-Tunnels.SINK-1.0
+	var half := Tunnels.BOWL_MOUTH+8.0
+	var cols := ceili(half*2.0/LIP_CELL)
+	var pr := Tunnels.profile(t,-1.0)
+	var inset := func(d: float, y: float) -> float:
+		var x: float = absf(d)/pr.x
+		var h: float = clampf((y-t.floor_y)/pr.z,0.0,2.0)
+		return pow(pow(x,pr.w)+pow(h,pr.w),1.0/pr.w)
+	var noise := func(d: float, y: float) -> float:
+		return t.rock.get_noise_2d(d*2.1+900.0*m,y*2.1)*0.5+0.5
+	var rows: Array = []
+	var top := -INF
+	var tops := PackedFloat32Array()
+	for j in cols+1:
+		var d := -half+j*LIP_CELL
+		var q := Tunnels.portal_point(t,m,10.0,d)
+		var y: float = lf.height(q.x,q.y)+LIP_OVER
+		tops.append(y)
+		top = maxf(top,y)
+	var count := ceili((top-f)/LIP_CELL)
+	for i in count+1:
+		var row: Array = []
+		var keep := PackedByteArray()
+		for j in cols+1:
+			var d := -half+j*LIP_CELL
+			# Each column runs from the floor to its own land.
+			var y := lerpf(f,tops[j],float(i)/count)
+			var nz: float = noise.call(d,y)
+			var edge: float = inset.call(d,y)
+			var rim: float = 0.86+LIP_RAGGED*(float(noise.call(d*2.0,y*2.0))-0.5)
+			var a: float = -lerpf(LIP_OUT.y,LIP_OUT.x,nz)*smoothstep(0.0,0.5,edge-rim+0.3)-0.2
+			row.append(_v(t,m,a,d+(nz-0.5)*LIP_CELL*0.3,y+(0.5-nz)*LIP_CELL*0.3))
+			keep.append(1 if edge >= rim else 0)
+		rows.append([row,keep])
+	var tris := 0
+	var out := _v(t,m,0.0,0.0,0.0)-_v(t,m,1.0,0.0,0.0)
+	for i in count:
+		for j in cols:
+			var k: PackedByteArray = rows[i][1]
+			var k2: PackedByteArray = rows[i+1][1]
+			if k[j]+k[j+1]+k2[j]+k2[j+1] < 3: continue
+			var p00: Vector3 = rows[i][0][j]
+			var p01: Vector3 = rows[i][0][j+1]
+			var p11: Vector3 = rows[i+1][0][j+1]
+			var p10: Vector3 = rows[i+1][0][j]
+			var nm := (p01-p00).cross(p10-p00)
+			if nm.dot(out) < 0.0: nm = -nm
+			var tone: float = 0.92+0.16*float(noise.call((-half+j*LIP_CELL)*0.3,(f+i*LIP_CELL)*0.3))
+			nm = nm.normalized()+out.normalized()*1.4
+			tris += _quad(st,p10,p11,p01,p00,nm.normalized(),Color(0.56,0.45,0.33)*Color(tone,tone,tone))
 	return tris
 
 ## The far doors (DOOR_FROM): a dark quad filling each gate's opening
@@ -1329,6 +1426,13 @@ static func _tri_flat(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, norma
 
 ## The portals' material: the rock's texture in the day (sun, sky, haze).
 static func _portal_material(t: Tunnels.Site) -> StandardMaterial3D:
+	if t.sunk:
+		# A sunk cave's mouth is the land's own rock: its colour, faceted, no cut stone.
+		var raw := StandardMaterial3D.new()
+		raw.vertex_color_use_as_albedo = true
+		raw.roughness = 0.95
+		raw.cull_mode = BaseMaterial3D.CULL_DISABLED
+		return raw
 	var mat := _rock_material(t,PORTAL_TEX_LOW)
 	mat.disable_ambient_light = false
 	mat.disable_fog = false
@@ -1395,7 +1499,7 @@ static func _rock_material(t: Tunnels.Site, low := ROCK_TEX_LOW) -> StandardMate
 ## its growth by the vertex green (`_green`), lit by the torches alone.
 static func _basalt_material(t: Tunnels.Site) -> ShaderMaterial:
 	var mat := ShaderMaterial.new()
-	mat.shader = BASALT
+	mat.shader = CAVE_ROCK if t.sunk else BASALT
 	mat.set_shader_parameter("floor_y",t.floor_y)
 	return mat
 
@@ -1409,7 +1513,8 @@ static func _basalt_material(t: Tunnels.Site) -> ShaderMaterial:
 func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var ss := PackedFloat32Array([-Tunnels.PORTAL_OUT,0.0])
+	var ends := 3.0 if t.sunk else Tunnels.PORTAL_OUT
+	var ss := PackedFloat32Array([-ends,0.0])
 	for i in t.ss.size():
 		var s: float = t.ss[i]
 		if s <= 0.0 or s >= t.length: continue
@@ -1417,7 +1522,7 @@ func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 		var sub := ceili((s-prev)/CAVE_RING) if Tunnels.cave_ease(t,(s+prev)*0.5) > 0.0 else 1
 		for k in range(1,sub): ss.append(lerpf(prev,s,float(k)/sub))
 		ss.append(s)
-	ss.append_array([t.length,t.length+Tunnels.PORTAL_OUT])
+	ss.append_array([t.length,t.length+ends])
 	# The lumps: ridged noise, so the rock reads broken rather than poured.
 	var grain := FastNoiseLite.new()
 	grain.seed = hash([t.seed,"grain"]) & 0x7fffffff
@@ -1439,6 +1544,8 @@ func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 		var pr := Tunnels.profile(t,s)
 		var e := Tunnels.cave_ease(t,s)
 		var lump := 0.0 if s <= 0.0 or s >= t.length else ROCK_LUMP*(0.45+0.55*e)
+		if t.sunk: lump *= CAVE_LUMP*smoothstep(0.0,Tunnels.CAVE_CALM,minf(s,t.length-s))
+		var fy := Tunnels.floor_at(t,s)
 		var hw := (pr.x+pr.y)*0.5
 		var feet: Array = []
 		for k in RING_SEGS+1:
@@ -1448,7 +1555,7 @@ func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 			var y := q.y/pr.z
 			# Out of the rock's surface (the superellipse's gradient).
 			var g := Vector2(signf(x)*pow(absf(x),pr.w-1.0)/hw,pow(y,pr.w-1.0)/pr.z).normalized()
-			var base := Vector3(c.x,t.floor_y,c.y)+n3*q.x+Vector3.UP*q.y
+			var base := Vector3(c.x,fy,c.y)+n3*q.x+Vector3.UP*q.y
 			var nz := clampf(grain.get_noise_3dv(base)*0.5+0.5,0.0,1.0)
 			var out := n3*g.x+Vector3.UP*g.y
 			# None round a shaft's lip, so its skirt meets the rock's face.
@@ -1463,6 +1570,8 @@ func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 		for k in FLOOR_SEGS+1:
 			var v: Vector3 = (feet[0] as Vector3).lerp(feet[1],float(k)/FLOOR_SEGS)
 			var nz := t.rock.get_noise_2d(v.x*3.0,v.z*3.0)*0.5+0.5
+			# A cave's floor falls away from the plane's level into the rock.
+			if t.sunk and k > 0 and k < FLOOR_SEGS: v.y -= lump*nz
 			pos.append(v)
 			inward.append(Vector3.UP)
 			st.set_color(Color(0.6+0.4*nz,_green(t,s,v),e))
@@ -1479,7 +1588,7 @@ func _build_rock(t: Tunnels.Site, b: Built) -> SurfaceTool:
 		var f := RING_SEGS+1
 		for k in FLOOR_SEGS:
 			tris += _tri(st,pos,inward,b0+f+k,b0+f+k+1,b1+f+k+1)+_tri(st,pos,inward,b0+f+k,b1+f+k+1,b1+f+k)
-	tris += _build_columns(t,st,pos,inward)
+	if not t.sunk: tris += _build_columns(t,st,pos,inward)
 	st.generate_normals()
 	b.tris += tris
 	return st
@@ -1552,10 +1661,10 @@ func _build_growth(b: Built) -> int:
 				if is_nan(roof): continue
 				var at := c+n*d+tg*rng.randf_range(-1.0,1.0)
 				var long := lerpf(VINE_LONG.x,VINE_LONG.y,absf(x))*rng.randf_range(0.4,1.0)*(0.6+0.6*g)
-				(vines if rng.randf() < 0.35+0.6*g else roots).append(Vector4(at.x,t.floor_y+roof+0.8,at.y,long+0.8))
+				(vines if rng.randf() < 0.35+0.6*g else roots).append(Vector4(at.x,Tunnels.floor_xz(t,at.x,at.y)+roof+0.8,at.y,long+0.8))
 				if g > TUFT_GREEN and rng.randf() < g*0.5:
 					var face := Vector3(tg.x,0.0,tg.y).rotated(Vector3.UP,rng.randf_range(-1.2,1.2))
-					cards.append(_leaf_card(Vector3(at.x,t.floor_y+roof+0.6,at.y),face,rng.randf_range(CARD_WIDE.x,CARD_WIDE.y),long*rng.randf_range(0.4,0.8)+0.6))
+					cards.append(_leaf_card(Vector3(at.x,Tunnels.floor_xz(t,at.x,at.y)+roof+0.6,at.y),face,rng.randf_range(CARD_WIDE.x,CARD_WIDE.y),long*rng.randf_range(0.4,0.8)+0.6))
 			if in_hall:
 				# Off the architraves along the column rows.
 				if rng.randf() < 0.3+0.6*g:
@@ -1563,10 +1672,10 @@ func _build_growth(b: Built) -> int:
 						if rng.randf() < 0.5: continue
 						for k in rng.randi_range(2,5):
 							var at := c+n*side*(Hall.ROW_Z+rng.randf_range(-0.7,0.7))+tg*rng.randf_range(-1.5,1.5)
-							vines.append(Vector4(at.x,t.floor_y+Hall.COLUMN_H+Hall.BEAM.x*0.5,at.y,rng.randf_range(1.5,7.0)))
+							vines.append(Vector4(at.x,Tunnels.floor_xz(t,at.x,at.y)+Hall.COLUMN_H+Hall.BEAM.x*0.5,at.y,rng.randf_range(1.5,7.0)))
 						for k in rng.randi_range(1,3):
 							var at := c+n*side*(Hall.ROW_Z-Hall.BEAM.y-0.05)+tg*rng.randf_range(-4.0,4.0)
-							cards.append(_leaf_card(Vector3(at.x,t.floor_y+Hall.COLUMN_H+0.6,at.y),Vector3(n.x,0.0,n.y)*-side,rng.randf_range(CARD_WIDE.x,CARD_WIDE.y),rng.randf_range(2.0,6.5)))
+							cards.append(_leaf_card(Vector3(at.x,Tunnels.floor_xz(t,at.x,at.y)+Hall.COLUMN_H+0.6,at.y),Vector3(n.x,0.0,n.y)*-side,rng.randf_range(CARD_WIDE.x,CARD_WIDE.y),rng.randf_range(2.0,6.5)))
 			elif g > CURTAIN_GREEN and rng.randf() < 0.45:
 				# A curtain down the cavern's wall.
 				var side := -1.0 if rng.randf() < 0.5 else 1.0
@@ -1575,13 +1684,13 @@ func _build_growth(b: Built) -> int:
 				for k in int(CURTAIN*rng.randf_range(0.5,1.0)):
 					var along := (k-CURTAIN*0.5)*0.45+rng.randf_range(-0.15,0.15)
 					var at := c+tg*along+n*(mid+side*(wx-0.35))
-					vines.append(Vector4(at.x,t.floor_y+top+0.5,at.y,top*rng.randf_range(0.55,0.97)))
+					vines.append(Vector4(at.x,Tunnels.floor_xz(t,at.x,at.y)+top+0.5,at.y,top*rng.randf_range(0.55,0.97)))
 				var into := Vector3(n.x,0.0,n.y)*-side
 				var run := -CURTAIN*0.25
 				while run < CURTAIN*0.25:
 					var wide := rng.randf_range(CARD_WIDE.x,CARD_WIDE.y)
 					var at := c+tg*(run+wide*0.5)+n*(mid+side*(wx-0.45))
-					cards.append(_leaf_card(Vector3(at.x,t.floor_y+top+0.3,at.y),into,wide,top*rng.randf_range(0.45,0.9)))
+					cards.append(_leaf_card(Vector3(at.x,Tunnels.floor_xz(t,at.x,at.y)+top+0.3,at.y),into,wide,top*rng.randf_range(0.45,0.9)))
 					run += wide*0.8
 			s += VINE_STEP*rng.randf_range(0.6,1.4)
 		# The ferns.
@@ -1606,17 +1715,17 @@ func _build_growth(b: Built) -> int:
 					# At the hall walls' feet or round a column's foot.
 					var d := side*(Tunnels.HALL_INNER-0.7) if rng.randf() < 0.6 else side*(Hall.ROW_Z+rng.randf_range(-2.2,2.2))
 					var p := c+n*d+tg*rng.randf_range(-1.0,1.0)
-					at = Vector3(p.x,t.floor_y+0.1,p.y)
+					at = Vector3(p.x,Tunnels.floor_xz(t,p.x,p.y)+0.1,p.y)
 				elif rng.randf() < 0.55:
 					# At the wall's foot, among the columns' steps.
 					var p := c+n*(mid+side*(hw-rng.randf_range(0.6,4.5)))+tg*rng.randf_range(-1.0,1.0)
-					at = Vector3(p.x,t.floor_y+0.05,p.y)
+					at = Vector3(p.x,Tunnels.floor_xz(t,p.x,p.y)+0.05,p.y)
 				else:
 					# Out of the rock, up the wall.
 					var hgt := rng.randf_range(2.0,0.75*pr.z)
 					var wx := hw*pow(1.0-pow(hgt/pr.z,pr.w),1.0/pr.w)
 					var p := c+n*(mid+side*(wx-0.2))+tg*rng.randf_range(-1.0,1.0)
-					at = Vector3(p.x,t.floor_y+hgt,p.y)
+					at = Vector3(p.x,Tunnels.floor_xz(t,p.x,p.y)+hgt,p.y)
 					var into := Vector3(n.x,0.0,n.y)*-side
 					up = (into*0.8+Vector3.UP*0.6).normalized()
 					size *= 0.75
@@ -2032,7 +2141,8 @@ func _build_torches(b: Built) -> void:
 	var mb := MultiMesh.new()
 	mb.transform_format = MultiMesh.TRANSFORM_3D
 	mb.mesh = bracket
-	mb.instance_count = spots.size()
+	# A sunk cave's glows stand on the rock: no sconce.
+	mb.instance_count = 0 if t.sunk else spots.size()
 	var mf := MultiMesh.new()
 	mf.transform_format = MultiMesh.TRANSFORM_3D
 	mf.use_colors = true
@@ -2047,10 +2157,11 @@ func _build_torches(b: Built) -> void:
 		var out := Vector3(into.x,0.0,into.y)
 		# The sconce stands on the wall at `pos`, its arm out (local -z).
 		var bs := Basis.looking_at(out,Vector3.UP)
-		mb.set_instance_transform(i,Transform3D(bs.scaled(Vector3.ONE*big),pos))
+		if not t.sunk: mb.set_instance_transform(i,Transform3D(bs.scaled(Vector3.ONE*big),pos))
 		# The flame's foot: in the cup.
 		var foot := pos+out*TORCH_CUP.x*big+Vector3.UP*TORCH_CUP.y*big
-		mf.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*big),foot))
+		# A sunk cave's glows are light on the rock, no flame.
+		mf.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*(0.001 if t.sunk else big)),foot))
 		var tint := (TORCH_GLOW.get(sp.kind,TORCH_GLOW.wall) as Color).srgb_to_linear()
 		mf.set_instance_color(i,tint)
 		b.tint.append(tint)

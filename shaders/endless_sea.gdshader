@@ -35,6 +35,11 @@ render_mode blend_mix, depth_draw_always, cull_back, unshaded, shadows_disabled;
 global uniform vec3 zs_palette_water;
 uniform sampler2D sea_screen : hint_screen_texture, filter_linear_mipmap, repeat_disable;
 uniform sampler2D sea_depth : hint_depth_texture, filter_nearest, repeat_disable;
+// The sunk tunnels' ramps go under the level: no sea within dry_half m of
+// these segments (xz from, xz to; scripts/endless/land_tunnels.gd `_cut_sea`).
+uniform vec4 dry_cut[8];
+uniform int dry_cuts = 0;
+uniform float dry_half = 30.0;
 
 // The chop's normal maps (seamless noise, EndlessSea `_detail`).
 uniform sampler2D detail_a : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -974,6 +979,12 @@ void vertex() {
 }
 
 void fragment() {
+	for (int i = 0; i < dry_cuts; i++) {
+		vec2 from = dry_cut[i].xy;
+		vec2 way = dry_cut[i].zw - from;
+		vec2 off = world_position.xz - from;
+		if (length(off - way * clamp(dot(off, way) / dot(way, way), 0.0, 1.0)) < dry_half) discard;
+	}
 	vec3 eye = normalize(CAMERA_POSITION_WORLD - world_position);
 	float distance_to = length(CAMERA_POSITION_WORLD - world_position);
 	float footprint = max(length(dFdx(rest_xz)), length(dFdy(rest_xz)));

@@ -469,6 +469,7 @@ static func _portal_holes(f: RefCounted, made: Dictionary, key: Vector3i, x0: fl
 	if not f.has_method("tunnels_in"): return
 	var ts: Array = f.tunnels_in(x0,z0,x0+step*CELLS,z0+step*CELLS)
 	if ts.is_empty(): return
+	_lift_skirts(made,ts)
 	var mask: PackedByteArray = Tunnels.portal_mask(ts,x0,z0,step,CELLS)
 	if mask.is_empty(): return
 	var n := CELLS+1
@@ -482,10 +483,42 @@ static func _portal_holes(f: RefCounted, made: Dictionary, key: Vector3i, x0: fl
 				if mask[tri[0]] != 0 and mask[tri[1]] != 0 and mask[tri[2]] != 0: continue
 				out.append_array(PackedInt32Array(tri))
 				if key.x == 0: faces.append_array([verts[tri[0]],verts[tri[1]],verts[tri[2]]])
+	# The skirts too: a chunk's edge across a mouth hung a curtain in it.
 	var grid := _grid_indices()
-	out.append_array(grid.slice(CELLS*CELLS*6))
+	var skirts := grid.slice(CELLS*CELLS*6)
+	var k := 0
+	while k < skirts.size():
+		if not (_on_mask(mask,skirts[k]) and _on_mask(mask,skirts[k+1]) and _on_mask(mask,skirts[k+2])):
+			out.append_array(skirts.slice(k,k+3))
+		k += 3
 	made.indices = out
 	if key.x == 0: made.faces = faces
+
+## The skirts over a sunk cave drawn up out of its bore (Tunnels `skirt_floor`).
+static func _lift_skirts(made: Dictionary, ts: Array) -> void:
+	var any := false
+	for t: RefCounted in ts: any = any or t.sunk
+	if not any: return
+	var n := CELLS+1
+	var verts: PackedVector3Array = made.verts
+	for v in range(n*n,verts.size()):
+		var p := verts[v]
+		var e := (v-n*n)/n
+		var t := (v-n*n)%n
+		var from: int = [t,t*n+CELLS,CELLS*n+t,t*n][e]
+		var low := Tunnels.skirt_floor(ts,p.x,p.z)
+		if low > p.y: verts[v] = Vector3(p.x,minf(low,verts[from].y),p.z)
+	made.verts = verts
+
+## Whether grid or skirt vertex `v` stands on `mask` (a skirt's, as the edge
+## vertex it hangs from: tunnel_sites.gd `apply_chunk`'s order).
+static func _on_mask(mask: PackedByteArray, v: int) -> bool:
+	var n := CELLS+1
+	if v < n*n: return mask[v] != 0
+	var e := (v-n*n)/n
+	var t := (v-n*n)%n
+	var from: int = [t,t*n+CELLS,CELLS*n+t,t*n][e]
+	return mask[from] != 0
 
 ## Over the Peak the shadow-casting chunks past the first (levels 1, 2) cut
 ## each quad along its nearer heights, not the grid's one diagonal: a crest
