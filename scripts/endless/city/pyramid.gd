@@ -22,13 +22,13 @@ const DEEP := 40.0
 ## What it stands on where its hill falls away: a floor at the origin, so the row's
 ## `lift` sets it just over the hilltop, half sizes past the stair's foot, and
 ## courses down from it, each {rise, step out}, the last taken on to -BASE_DEEP.
-const FLOOR_X := 206.0
-const FLOOR_Z := 226.0
-const BASE_COURSES: Array[Vector2] = [Vector2(13.0,14.0),Vector2(13.0,14.0),Vector2(13.0,14.0)]
+const FLOOR_X := 192.0
+const FLOOR_Z := 212.0
+const BASE_COURSES: Array[Vector2] = [Vector2(10.0,7.0),Vector2(10.0,7.0)]
 const BASE_DEEP := 130.0
-## How much of the terraces' lean the last, long course keeps: steeper, so the base
-## stays on its hill.
-const LAST_BATTER := 0.4
+## How much of the terraces' lean the last, long course keeps: steep, so the hill
+## reads under it.
+const LAST_BATTER := 0.25
 
 ## The terraces: how many, each one's rise, the half sizes at the foot and on top.
 ## Of each course's step in, BATTER_SHARE is slope and the rest ledge.
