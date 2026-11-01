@@ -107,6 +107,10 @@ uniform vec2 body_wind = vec2(1.0, 0.0);
 uniform vec2 body_reach = vec2(420.0, 800.0);
 uniform vec3 body_patch = vec3(0.3, 1.3, 1.0);
 uniform vec2 body_value = vec2(0.6, 1.2);
+// ...fading to their middle between these distances from the eye (m): up
+// close it shades a wave, but from above the crossing swell trains interfere
+// into a regular lattice of crests and troughs, and it paints a checkerboard.
+uniform vec2 body_value_fade = vec2(150.0, 500.0);
 uniform vec3 sss_color : source_color = vec3(0.10, 0.80, 0.62);
 uniform float sss_strength = 0.8;
 uniform vec3 whitecaps = vec3(1.0, 2.2, 1.0);
@@ -1086,6 +1090,7 @@ void fragment() {
 	if (sea_body > 0) {
 		float scale = body_swell.x * 0.9 + body_swell.y * 0.3 + 0.05;
 		lift = smoothstep(-1.0, 1.0, shift.y / scale);
+		lift = mix(lift, 0.5, smoothstep(body_value_fade.x, body_value_fade.y, length(world_position - CAMERA_POSITION_WORLD)));
 		rough_here = zs_body_rough(rest_xz, t);
 		vec3 up_tint = mix(column, sss_color * zs_palette_water * 0.55, 0.07);
 		column = mix(column * body_value.x, up_tint * body_value.y, lift) * mix(1.0, 0.85, rough_here);
