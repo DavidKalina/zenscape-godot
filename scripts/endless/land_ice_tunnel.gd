@@ -206,8 +206,9 @@ func _build() -> void:
 	for r in range(1,ss.size()):
 		var b0 := (r-1)*per
 		var b1 := r*per
-		var open := PeakTunnel.open_at((ss[r-1]+ss[r])*0.5,4.0)
-		var st := day if open else inner
+		var mid := (ss[r-1]+ss[r])*0.5
+		var open := PeakTunnel.open_at(mid,4.0)
+		var st := day if _lit(mid) else inner
 		var quads: Array = []
 		for k in RING_SEGS: quads.append([b0+k,b0+k+1,b1+k+1,b1+k])
 		var f := RING_SEGS+1
@@ -265,6 +266,16 @@ func _build() -> void:
 		add_child(body)
 		i0 += per_body
 	stats.tris = tris
+
+## Whether the ring at `s` is in the day: on an open stretch and past its
+## mouth's face (where the land over the vault comes down), so the roofed
+## run up to each face stays with the inside's light, and the light changes
+## at the face, not partway in under the rock.
+func _lit(s: float) -> bool:
+	if not PeakTunnel.open_at(s,4.0): return false
+	if s < PeakTunnel.OPENINGS[0].y+4.0: return s < face_a
+	if s > PeakTunnel.OPENINGS[2].x-4.0: return s > face_b
+	return true
 
 ## The ice in the rock at `v` (`h` over the floor): bands up the walls.
 static func _ice(vein: FastNoiseLite, v: Vector3, h: float) -> float:
