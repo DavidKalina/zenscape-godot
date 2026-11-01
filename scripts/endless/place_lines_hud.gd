@@ -61,7 +61,7 @@ func _process(_delta: float) -> void:
 	visible = game == null or game.overlay == null
 
 func started(line: Dictionary, best: float) -> void:
-	tag = {"title":str(line.title),"place":str(line.place),"best":best,"next":1,"of":(line.gates as Array).size(),"age":0.0,"ended":"","end_age":0.0}
+	tag = {"title":str(line.title),"place":str(line.place),"best":best,"mark":float(line.get("mark",-1.0)),"next":1,"of":(line.gates as Array).size(),"age":0.0,"ended":"","end_age":0.0}
 	card = {}
 	_flash = 0.0
 	_flash_k = 1.0
@@ -92,6 +92,9 @@ func finished(line: Dictionary, t: float, beat: bool, was: float) -> void:
 	else:
 		rows.append({"kind":"row","label":"best","value":lap(was)})
 		rows.append({"kind":"sub","label":"+%.1f s off it" % (t-was),"col":GREY})
+	var mark := float(line.get("mark",-1.0))
+	if mark >= 0.0 and t <= mark and (was < 0.0 or was > mark): rows.append({"kind":"row","label":"under the mark","value":lap(mark),"col":GOLD})
+	elif mark >= 0.0 and t > mark and (was < 0.0 or was > mark): rows.append({"kind":"sub","label":"the mark is %s" % lap(mark),"col":GREY})
 	card = {"rows":rows,"age":0.0}
 	_flash = 0.0
 	_flash_k = 1.0
@@ -167,7 +170,8 @@ func _draw_tag(s: float) -> void:
 	var tcol := GREY if ended else (GOLD.lerp(CREAM,smoothstep(0.0,START_HOLD,age)))
 	Card.ink(self,Card.nums(true),lap(_tag_time()),Vector2(left,cy),40.0*s*k,Color(tcol,a),8.0*s,0.0,Color(GOLD,0.7*glow*a),8.0*s)
 	var best := float(tag.best)
-	var side := ("best "+lap(best)) if best >= 0.0 else "no time yet"
+	var mark := float(tag.get("mark",-1.0))
+	var side := ("best "+lap(best)) if best >= 0.0 else (("mark "+lap(mark)) if mark >= 0.0 else "no time yet")
 	if not ended: Card.ink(self,Card.words(15.0*s*k,0.04),side,Vector2(right,cy+4.0*s),15.0*s*k,Color(GREY,a),4.0*s,1.0)
 
 func _draw_card(s: float) -> void:

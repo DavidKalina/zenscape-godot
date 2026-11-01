@@ -19,6 +19,8 @@ const CELL := 2.0
 const SAMPLE := 0.5
 const SAME_HIT := 0.01
 const RUN_SAME := 0.3
+## How many of a sample's 8 neighbours must be open at the foot too.
+const FOOT_NEAR := 2
 
 ## The most a query may grow a box (m): the wingtip's reach and a little.
 static func grow_most() -> float:
@@ -110,6 +112,7 @@ static func from_faces(faces: PackedVector3Array) -> Array:
 				var at := j*nx+i
 				if hits[at] == null: hits[at] = [y]
 				else: (hits[at] as Array).append(y)
+	var odd := _odd_samples(hits)
 	var out: Array = []
 	var half := SAMPLE*0.5
 	for j in range(nz):
@@ -117,7 +120,7 @@ static func from_faces(faces: PackedVector3Array) -> Array:
 		var open: Array = []   # [AABB] still running along x
 		for i in range(nx+1):
 			var now: Array = []
-			if i < nx and hits[j*nx+i] != null: now = _stretches_of(hits[j*nx+i],lo.y)
+			if i < nx and hits[j*nx+i] != null: now = _stretches_of(hits[j*nx+i],lo.y,_foot(odd,nx,nz,i,j))
 			var still: Array = []
 			for box: AABB in open:
 				var k := -1
@@ -138,6 +141,30 @@ static func from_faces(faces: PackedVector3Array) -> Array:
 			for s: Vector2 in now: still.append(AABB(Vector3(x-half,s.x,z-half),Vector3(SAMPLE,s.y-s.x,SAMPLE)))
 			open = still
 	return _run_z(out)
+
+## 1 for each sample with an odd count of crossings: open at the foot.
+static func _odd_samples(hits: Array) -> PackedByteArray:
+	var odd := PackedByteArray()
+	odd.resize(hits.size())
+	for at in range(hits.size()):
+		if hits[at] == null: continue
+		var ys: Array = hits[at]
+		ys.sort()
+		var n := 1
+		for k in range(1,ys.size()):
+			if float(ys[k])-float(ys[k-1]) > SAME_HIT: n += 1
+		odd[at] = n%2
+	return odd
+
+## Whether the odd sample (`i`, `j`) is a real open foot: others stand beside
+## it. Alone it's a ray grazing a rim, one crossing on the silhouette, and read
+## as a foot it stood a pin down through an arch's opening.
+static func _foot(odd: PackedByteArray, nx: int, nz: int, i: int, j: int) -> bool:
+	var n := 0
+	for b in range(maxi(j-1,0),mini(j+2,nz)):
+		for a in range(maxi(i-1,0),mini(i+2,nx)):
+			if (a != i or b != j) and odd[b*nx+a] == 1: n += 1
+	return n >= FOOT_NEAR
 
 ## Boxes of the same x run (`from_faces`' rows) run on along z while the
 ## next row's matches within RUN_SAME.
@@ -167,7 +194,7 @@ static func _run_z(boxes: Array) -> Array:
 
 ## One upright line's stretches (low, high) from its crossings, paired from
 ## the top down; one left over runs down to `bottom`.
-static func _stretches_of(ys: Array, bottom: float) -> Array:
+static func _stretches_of(ys: Array, bottom: float, foot := true) -> Array:
 	ys.sort()
 	var keep: Array = []
 	for y: float in ys:
@@ -175,6 +202,7 @@ static func _stretches_of(ys: Array, bottom: float) -> Array:
 	var out: Array = []
 	var k := keep.size()-1
 	while k >= 0:
+		if k == 0 and not foot: break
 		var top := float(keep[k])
 		var low := float(keep[k-1]) if k >= 1 else bottom
 		out.append(Vector2(low,top))
