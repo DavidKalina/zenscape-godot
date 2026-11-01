@@ -1,46 +1,46 @@
 extends RefCounted
-## The giants' city's gate (giant_city.gd has the contract): a battered wall with
-## a door a giant walks through, corbelled in to a flat lintel, and an entablature
-## over it. The first piece of the line out of the hall.
+## The city's gate (giant_city.gd has the contract): a battered wall about 90 m
+## tall to the cornice, the stomper's knee, with a door corbelled in to a flat
+## lintel and an entablature over it. The first piece of the line out of the hall.
 ##
 ## Two lines through: the door, wide and high, and a slit low in the wall each
 ## side of it, corbelled to a narrow head, running the wall's depth. Over the top
-## is open as well.
+## and round the ends are open as well.
 
 const Shapes = preload("res://scripts/endless/city/city_shapes.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const DEEP := 60.0
 
-const REACH := 420.0
-## The door, true to the body: this tall, this wide at the floor and at the head,
-## stepping in over COURSES.
-const DOOR_TALL := 340.0
-const DOOR_FLOOR := 190.0
-const DOOR_HEAD := 56.0
+const REACH := 170.0
+## The door: this tall, this wide at the floor and at the head, stepping in over
+## COURSES.
+const DOOR_TALL := 66.0
+const DOOR_FLOOR := 52.0
+const DOOR_HEAD := 16.0
 const COURSES := 6
 ## The slits: the tight line. Toy width at the floor (WorldScale `opening`), the
 ## narrowest head they step to, how tall, on how many courses, how far off the
 ## middle.
-const TOY_SLIT := 11.0
-const TOY_SLIT_HEAD := 4.0
-const SLIT_TALL := 64.0
+const TOY_SLIT := 6.0
+const TOY_SLIT_HEAD := 3.0
+const SLIT_TALL := 32.0
 const SLIT_COURSES := 4
-const SLIT_X := 205.0
+const SLIT_X := 86.0
 ## The wall: half its width and depth at the foot and at the top of the mass.
-const WALL_TOP := 410.0
-const WIDE_FOOT := 340.0
-const WIDE_TOP := 262.0
-const DEEP_FOOT := 84.0
-const DEEP_TOP := 58.0
+const WALL_TOP := 78.0
+const WIDE_FOOT := 132.0
+const WIDE_TOP := 116.0
+const DEEP_FOOT := 30.0
+const DEEP_TOP := 20.0
 ## The entablature on it: architrave, frieze, cornice, their heights and overhangs.
-const ARCHITRAVE := Vector2(16.0,6.0)
-const FRIEZE := Vector2(30.0,0.0)
-const CORNICE := Vector2(16.0,16.0)
-## A column against each pier of the door, both faces.
-const COLUMN_X := 150.0
-const COLUMN_TALL := 300.0
-const COLUMN_FOOT := 30.0
-const COLUMN_TOP := 24.0
+const ARCHITRAVE := Vector2(4.0,1.5)
+const FRIEZE := Vector2(6.0,0.0)
+const CORNICE := Vector2(3.5,4.0)
+## Columns against the piers, both faces: either side of each slit.
+const COLUMN_XS: Array[float] = [54.0,114.0]
+const COLUMN_TALL := 56.0
+const COLUMN_FOOT := 5.4
+const COLUMN_TOP := 4.5
 
 static func build(s: Shapes) -> void:
 	var cuts: Array[float] = [-DEEP,WALL_TOP]
@@ -56,12 +56,13 @@ static func build(s: Shapes) -> void:
 	s.layer = Shapes.BOTH
 	_entablature(s)
 	var column := Shapes.new()
-	column.cyl(Vector3(0.0,-DEEP,0.0),COLUMN_FOOT*1.2,COLUMN_TOP,COLUMN_TALL+DEEP,14)
-	column.box(Vector3(-COLUMN_TOP-8.0,COLUMN_TALL,-COLUMN_TOP-8.0),Vector3(COLUMN_TOP+8.0,COLUMN_TALL+14.0,COLUMN_TOP+8.0))
-	var off := DEEP_FOOT+COLUMN_FOOT-6.0
-	for side: float in [-1.0,1.0]:
-		s.stamp(column,Vector3(COLUMN_X*side,0.0,off))
-		s.stamp(column,Vector3(COLUMN_X*side,0.0,-off),PI)
+	column.cyl(Vector3(0.0,-DEEP,0.0),COLUMN_FOOT*1.2,COLUMN_TOP,COLUMN_TALL+DEEP,12)
+	column.box(Vector3(-COLUMN_TOP-1.5,COLUMN_TALL,-COLUMN_TOP-1.5),Vector3(COLUMN_TOP+1.5,COLUMN_TALL+3.0,COLUMN_TOP+1.5))
+	var off := DEEP_FOOT+COLUMN_FOOT-1.0
+	for x: float in COLUMN_XS:
+		for side: float in [-1.0,1.0]:
+			s.stamp(column,Vector3(x*side,0.0,off))
+			s.stamp(column,Vector3(x*side,0.0,-off),PI)
 
 ## The wall's half width and half depth at `y`.
 static func _wide(y: float) -> float:
