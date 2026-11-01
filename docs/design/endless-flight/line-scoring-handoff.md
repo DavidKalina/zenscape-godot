@@ -44,6 +44,37 @@ formula is still there with `--line-score=old`.
   LOW, UNDER, when over 1.15) after its points. The live run (TREES ×3) shows after
   the multiplier. The ring's arc and heat use `bank_after()` and `top()`.
 
+## Flourish pass after the first hand flight (2026-11-01)
+
+The first flight (68 lines) got one flourish, because Fast is the same on
+everything flat out and pull-outs filled whole lines. This supersedes the
+Flourish bullet above; `line_score.gd`'s header has the rules.
+
+- The flourish test leaves Fast out, `flourish_margin` is 1.25, and
+  `flourish_min_run` is 1.
+- Switch: another kind or surface that isn't a flourish adds `switch_step` 0.2,
+  once a run. The ring's tags show FLOURISH or SWITCH.
+- Filler: a near pull-out or skip is paid and keeps the line alive, but makes no
+  run, doesn't break one, and never steps the multiplier. Close and razor ones
+  (`filler_shows`) count as ordinary moments.
+- Logs from before this pass fail `--check`, because they hold the old tuning.
+
+## Ring HUD pass (2026-11-01)
+
+`near_miss_hud_ring.gd` now reads the line as `LineScore` scores it. This
+supersedes the HUD (ring) bullet above; the file's header has the details.
+
+- A feed of the line's last three runs, newest on top, replaces the pass row and
+  the medallion trail. Multiplier steps fly into the multiplier and ring a bell
+  (`flight_sound.gd`, the burrower's bells).
+- Filler moments only tick the total. The newest row shows one tag, never FAST.
+- The last pass's clearance sits under the ring, for every pass.
+- A banked line's banner shows its runs in order, the sum and the money, then its
+  closest pass, average speed and time. Prizes and `--line-score=old` lines keep
+  the seals.
+- Stills came from a stand-in over a plain backdrop (`scratch/hud_lab.gd`), so the
+  feed hasn't been judged over the real land. The next pass cuts the banner short.
+
 ## Tuning changes outside the brief (all in line_tune.json)
 
 - `bank_after` is 4.5 s (was BANK_AFTER 3). Trees are cleared 110 m in front of an

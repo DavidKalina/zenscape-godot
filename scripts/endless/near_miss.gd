@@ -268,10 +268,6 @@ func meter_full() -> float:
 	var t := LineScoreS.tune()
 	return float(t.meter_full)*float(t.points_per_unit)
 
-## The live run's label (TREES ×7), or "".
-func run_label() -> String:
-	return score_line.run_label(snappedf(clock,0.001))
-
 ## The unbanked line back to nothing.
 func _clear_line() -> void:
 	_end_line()
@@ -663,6 +659,21 @@ func _line(points: float, game: Node3D) -> Dictionary:
 	if line_moments.size() > 1: t = float(line_moments[-1].t)-float(line_moments[0].t)
 	var line := {"points":points,"mult":mult,"moves":kinds,"glyphs":glyphs,"bands":bands,"terrain":land,
 		"t":t,"kinds":_kinds.size(),"name":LineMoves.name_for(_kinds.size(),mult),"money":0}
+	if line_new:
+		# How the line was built, for the bank's recap.
+		var shape: Array = []
+		for run: Dictionary in score_line.runs: shape.append({"name":LineScoreS.Line.label(run),"flourish":bool(run.flourish)})
+		if shape.is_empty() and not line_moments.is_empty(): shape.append({"name":str(line_moments[-1].kind).to_upper(),"flourish":false})
+		line.shape = shape
+		line.raw = chain_points
+		# Its numbers: the closest pass (m, INF with none) and the average speed (m/s).
+		var closest := INF
+		var flown := 0.0
+		for m: Dictionary in line_moments:
+			flown += float(m.get("flown",0.0))
+			if not bool(m.get("chime",false)): closest = minf(closest,float(m.clear))
+		line.closest = closest
+		line.speed = flown/maxf(line_moments.size(),1)
 	var book = game.get("book")
 	if book != null:
 		book.line_banked(line)
@@ -708,7 +719,7 @@ func _farm(at: Vector3, id: int) -> float:
 # --- The line's score (scripts/endless/line_score.gd) ----------------------------
 
 ## Scores moment `m` the line's way into `score_line` and writes its log row;
-## m gets units, factors, tags, run, run_n, flourish and line_step. False for a
+## m gets units, factors, tags, run, run_n, flourish, filler and line_step. False for a
 ## kind the line's score skips (the slalom: its trees are a run of grazes already).
 func _line_moment(m: Dictionary, game: Node3D) -> bool:
 	var t := LineScoreS.tune()
@@ -728,13 +739,15 @@ func _line_moment(m: Dictionary, game: Node3D) -> bool:
 	var units := LineScoreS.moment_units(kind,str(m.band),f,hold,farm)
 	var now := snappedf(clock,0.001)
 	if score_line.count == 0: line_id += 1
-	var got := score_line.add({"kind":kind,"surface":str(m.surface),"t":now,"units":units,"fast":f.fast,"product":f.product})
+	var got := score_line.add({"kind":kind,"surface":str(m.surface),"move":str(m.kind),"band":str(m.band),"t":now,"units":units,"fast":f.fast,"product":f.product})
 	m.units = units
 	m.factors = f
 	m.tags = LineScoreS.tags(f)
 	m.run = int(got.run)
 	m.run_n = int(got.run_n)
 	m.flourish = bool(got.flourish)
+	m.filler = bool(got.filler)
+	m.flown = raw.speed
 	m.line_step = float(got.step)
 	LineLogS.write({"row":"moment","t":now,"line":line_id,"kind":kind,"move":str(m.kind),"surface":str(m.surface),
 		"band":str(m.band),"k":raw.k,"clear":float(m.get("clear",INF)),"speed":raw.speed,"cruise":raw.cruise,"top":raw.top,

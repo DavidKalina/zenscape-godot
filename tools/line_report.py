@@ -77,6 +77,10 @@ def run_bonus(n, sum_fast, t):
     return t["run_scale"] * math.pow(n, t["run_pow"]) * sum_fast / n
 
 
+def filler(m, t):
+    return m["kind"] in t["filler"] and m["band"] not in t["filler_shows"]
+
+
 def num(v, default=0.0):
     try:
         return float(v) if v != "" else default
@@ -94,15 +98,24 @@ class Line:
         self.id = ident
         self.units = 0.0
         self.mult = 1.0
-        self.runs = []      # dicts: kind surface n sum_fast sum_product last_t moments(list)
+        self.runs = []      # dicts: kind surface n sum_fast sum_skill last_t moments(list)
         self.parts = []     # ("run", run) or ("flourish", moment) in order of first appearance
         self.moments = []
+        self.fillers = []
         self.end = None
 
     def add(self, m, t):
         last = self.runs[-1] if self.runs else None
+        if filler(m, t):
+            m["flourish"] = False
+            self.units += m["units"]
+            self.moments.append(m)
+            self.fillers.append(m)
+            return last
+        skill = m["f"]["product"] / max(m["f"]["fast"], 0.001)
         same = last is not None and last["kind"] == m["kind"] and last["surface"] == m["surface"]
         flourish = False
+        switched = False
         if same and m["t"] - last["last_t"] <= t["run_echo"]:
             last["last_t"] = m["t"]
             last["moments"].append(m)
@@ -110,20 +123,25 @@ class Line:
         elif same and m["t"] - last["last_t"] <= t["run_gap"]:
             last["n"] += 1
             last["sum_fast"] += m["f"]["fast"]
-            last["sum_product"] += m["f"]["product"]
+            last["sum_skill"] += skill
             last["last_t"] = m["t"]
             last["moments"].append(m)
             run = last
         else:
             ref = next((r for r in reversed(self.runs) if r["n"] >= int(t["flourish_min_run"])), None)
-            if ref is not None and not ref.get("spent") and (ref["kind"] != m["kind"] or ref["surface"] != m["surface"]):
-                avg = ref["sum_product"] / ref["n"]
-                if m["f"]["product"] > avg * t["flourish_margin"]:
+            if ref is not None and (ref["kind"] != m["kind"] or ref["surface"] != m["surface"]):
+                avg = ref["sum_skill"] / ref["n"]
+                if not ref.get("spent") and skill > avg * t["flourish_margin"]:
                     flourish = True
                     ref["spent"] = True
+                    ref["switched"] = True
                     self.mult = min(self.mult + t["flourish_step"], t["line_cap"])
+                elif not ref.get("switched"):
+                    switched = True
+                    ref["switched"] = True
+                    self.mult = min(self.mult + t["switch_step"], t["line_cap"])
             run = {"kind": m["kind"], "surface": m["surface"], "n": 1, "sum_fast": m["f"]["fast"],
-                   "sum_product": m["f"]["product"], "last_t": m["t"], "moments": [m], "flourish": flourish}
+                   "sum_skill": skill, "last_t": m["t"], "moments": [m], "flourish": flourish, "switch": switched}
             self.runs.append(run)
         m["flourish"] = flourish
         self.units += m["units"]
@@ -198,6 +216,8 @@ def card(line, t):
     for r in line.runs:
         ms = r["moments"]
         units = sum(m["units"] for m in ms)
+        if r["switch"]:
+            out.append("  + switch to %s/%s" % (ms[0]["move"], ms[0]["surface"]))
         if r["flourish"]:
             m = ms[0]
             top = sorted(FACTORS, key=lambda n: -m["f"][n])[:2]
@@ -218,6 +238,8 @@ def card(line, t):
                 top = sorted(FACTORS, key=lambda n: -m["f"][n])[:2]
                 tags = " ".join("%s %.2f" % (TAGS[n], m["f"][n]) for n in top if m["f"][n] > 1.0)
                 out.append("  %s/%s %s %.1fm  %s  %.2f" % (m["move"], m["surface"], m["band"], m["clear"], tags, m["units"]))
+    if line.fillers:
+        out.append("  filler x%d  %.2f" % (len(line.fillers), sum(m["units"] for m in line.fillers)))
     if line.moments:
         avg = {n: sum(m["f"][n] for m in line.moments) / len(line.moments) for n in FACTORS}
         top = sorted(FACTORS, key=lambda n: -avg[n])[:3]

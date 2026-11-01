@@ -49,6 +49,7 @@ const AMBIENCE := &"Ambience"
 const DEFAULT_AMBIENCE := 0.8
 const KIT := "res://assets/audio/kit/"
 const FOLEY := "res://assets/audio/foley/"
+const BURROWER := "res://assets/audio/burrower/"
 const OLD := "res://assets/audio/"
 
 # --- Tuning ----------------------------------------------------------------------
@@ -138,6 +139,9 @@ const HIT := 0.5
 ## stone); a crash's break and debris (CRASH).
 const NEAR := Vector2(0.14,0.32)
 const NEAR_PITCH := Vector2(1.05,1.35)
+## The bells of the line's multiplier stepping up (`_near`).
+const LINE_SWITCH := 0.1
+const LINE_FLOURISH := 0.3
 const SCRAPE := 0.4
 const CRASH := 0.7
 ## A tree knocked down (`events` "knock"): its crack, branches and needles
@@ -347,6 +351,8 @@ func _ready() -> void:
 		# The rival race's beats (scripts/endless/rival_race.gd).
 		"race-count":[load(KIT+"race-count.wav")],"race-go":[load(KIT+"race-go.wav")],
 		"race-win":[load(KIT+"race-win.wav")],"race-lose":[load(KIT+"race-lose.wav")],
+		# The line's multiplier stepping up: a switch's light bell, a flourish's full one.
+		"line-switch":[load(BURROWER+"bell-417300.mp3")],"line-flourish":[load(BURROWER+"bell-531031.mp3")],
 	}
 
 static func _takes(pattern: String, count: int) -> Array:
@@ -549,6 +555,9 @@ func _near(events: Dictionary) -> void:
 		var k := clampf(float((m as Dictionary).get("k",0.0)),0.0,1.0)
 		shot("swish",lerpf(NEAR.x,NEAR.y,k),lerpf(NEAR_PITCH.x,NEAR_PITCH.y,k),Vector3.INF,AIR)
 		shot("whoosh",lerpf(NEAR.x,NEAR.y,k)*0.8,lerpf(NEAR_PITCH.x,NEAR_PITCH.y,k)+0.1,Vector3.INF,AIR)
+		if float((m as Dictionary).get("line_step",0.0)) > 0.0:
+			if bool((m as Dictionary).get("flourish",false)): shot("line-flourish",LINE_FLOURISH,1.0)
+			else: shot("line-switch",LINE_SWITCH,1.3)
 		_whoosh_wait = WHOOSH_GAP
 		if str((m as Dictionary).get("surface","")) == "tree": shot("leaves",SCRAPE*0.5,1.1)
 	var k: Variant = events.get("knock")

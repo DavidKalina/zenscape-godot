@@ -17,11 +17,17 @@ extends RefCounted
 ##   last (one closer than run_echo s to the last is the same pass, paid but not
 ##   counted). From run_min moments on it pays run_scale x n^run_pow x its moments'
 ##   average Fast on top of them.
+## - Filler: a moment of a filler kind (not in a filler_shows band: a razor
+##   pull-out is flown on purpose) is paid and keeps the line alive, but stands
+##   outside its shape: no run of its own, no break in the run under way, never a
+##   switch or a flourish.
 ## - Flourish: a moment of another kind or surface than the line's last run of
-##   flourish_min_run or more (moments between, a stray pull-out, don't matter),
-##   its factor product over flourish_margin x that run's average: the line's
-##   multiplier steps up flourish_step (to line_cap), on everything in the line
-##   since it began. One flourish a run.
+##   flourish_min_run or more (moments between don't matter), its factor product
+##   less Fast (flat out, Fast is the same on everything) over flourish_margin x
+##   that run's average: the line's multiplier steps up flourish_step (to
+##   line_cap), on everything in the line since it began. One flourish a run.
+## - Switch: such a moment that isn't a flourish still steps the multiplier up
+##   switch_step, once a run (a flourish uses the switch up too).
 ## - Line: first moment to the chain's break: (moments + run bonuses) x multiplier.
 ## Units: the score's own (an easy line about 4-5, a hard one about 40); the game's
 ## points are points_per_unit times them.
@@ -85,52 +91,73 @@ static func run_bonus(n: int, sum_fast: float) -> float:
 	if n < int(t.run_min): return 0.0
 	return float(t.run_scale)*pow(float(n),float(t.run_pow))*sum_fast/float(n)
 
+## Whether a moment stands outside the line's shape (see Filler above).
+static func filler(kind: String, band: String) -> bool:
+	var t := tune()
+	return kind in (t.filler as Array) and not band in (t.filler_shows as Array)
+
 ## One line under way.
 class Line:
 	var units := 0.0
 	var mult := 1.0
 	var count := 0
-	## Runs in order: {kind, surface, n, sum_fast, sum_product, last_t}.
+	## Runs in order: {kind, surface, move, n, units, sum_fast, sum_skill, last_t,
+	## flourish, switch, step}: `move` its first moment's name, `step` what that
+	## moment added to the multiplier.
 	var runs: Array[Dictionary] = []
 
-	## Adds a moment {kind, surface, t, units, fast, product}; returns {run (its
-	## index), run_n, flourish, step}.
+	## Adds a moment {kind, surface, move, band, t, units, fast, product}; returns
+	## {run (its index), run_n, flourish, switch, step, filler}.
 	func add(m: Dictionary) -> Dictionary:
 		var t: Dictionary = LineScore.tune()
 		var kind := str(m.kind)
 		var surface := str(m.surface)
 		var tt := float(m.t)
 		var flourish := false
+		var switched := false
 		var step := 0.0
 		var last: Dictionary = runs[-1] if not runs.is_empty() else {}
+		if LineScore.filler(kind,str(m.band)):
+			units += float(m.units)
+			count += 1
+			return {"run":runs.size()-1,"run_n":int(last.get("n",0)),"flourish":false,"switch":false,"step":0.0,"filler":true}
+		var skill := float(m.product)/maxf(float(m.fast),0.001)
 		var same := not last.is_empty() and str(last.kind) == kind and str(last.surface) == surface
 		if same and tt-float(last.last_t) <= float(t.run_echo):
 			# The same pass met twice (a trunk and its crown): one in the run.
+			last.units = float(last.units)+float(m.units)
 			last.last_t = tt
 		elif same and tt-float(last.last_t) <= float(t.run_gap):
 			last.n = int(last.n)+1
+			last.units = float(last.units)+float(m.units)
 			last.sum_fast = float(last.sum_fast)+float(m.fast)
-			last.sum_product = float(last.sum_product)+float(m.product)
+			last.sum_skill = float(last.sum_skill)+skill
 			last.last_t = tt
 		else:
-			# The line's last run of flourish_min_run or more, its flourish unspent.
+			# The line's last run of flourish_min_run or more.
 			var ref := {}
 			for i in range(runs.size()-1,-1,-1):
 				if int(runs[i].n) >= int(t.flourish_min_run):
 					ref = runs[i]
 					break
-			if not ref.is_empty() and not bool(ref.get("spent",false)) and (str(ref.kind) != kind or str(ref.surface) != surface):
-				var avg := float(ref.sum_product)/float(ref.n)
-				if float(m.product) > avg*float(t.flourish_margin):
+			if not ref.is_empty() and (str(ref.kind) != kind or str(ref.surface) != surface):
+				var avg := float(ref.sum_skill)/float(ref.n)
+				var was := mult
+				if not bool(ref.get("spent",false)) and skill > avg*float(t.flourish_margin):
 					flourish = true
 					ref.spent = true
-					var was := mult
+					ref.switched = true
 					mult = minf(mult+float(t.flourish_step),float(t.line_cap))
-					step = mult-was
-			runs.append({"kind":kind,"surface":surface,"n":1,"sum_fast":float(m.fast),"sum_product":float(m.product),"last_t":tt})
+				elif not bool(ref.get("switched",false)):
+					switched = true
+					ref.switched = true
+					mult = minf(mult+float(t.switch_step),float(t.line_cap))
+				step = mult-was
+			runs.append({"kind":kind,"surface":surface,"move":str(m.get("move",kind)),"n":1,"units":float(m.units),
+				"sum_fast":float(m.fast),"sum_skill":skill,"last_t":tt,"flourish":flourish,"switch":switched,"step":step})
 		units += float(m.units)
 		count += 1
-		return {"run":runs.size()-1,"run_n":int(runs[-1].n),"flourish":flourish,"step":step}
+		return {"run":runs.size()-1,"run_n":int(runs[-1].n),"flourish":flourish,"switch":switched,"step":step,"filler":false}
 
 	## Moments and run bonuses, before the multiplier (units).
 	func raw() -> float:
@@ -141,14 +168,21 @@ class Line:
 	func total() -> float:
 		return raw()*mult
 
-	## The live run's label (TREES x7) when it is run_min or longer and `now` is
-	## within run_gap of its last moment; "" otherwise.
-	func run_label(now: float) -> String:
-		if runs.is_empty(): return ""
-		var t: Dictionary = LineScore.tune()
-		var run: Dictionary = runs[-1]
-		if int(run.n) < int(t.run_min) or now-float(run.last_t) > float(t.run_gap): return ""
-		return "%s ×%d" % [_name(str(run.kind),str(run.surface)),int(run.n)]
+	## A run as the HUD reads it: TREES ×7, or for one moment what it was (TREE
+	## GRAZE, ARCH, KNIFE EDGE).
+	static func label(run: Dictionary) -> String:
+		var kind := str(run.kind)
+		var surface := str(run.surface)
+		if int(run.n) >= int(LineScore.tune().run_min): return "%s ×%d" % [_name(kind,surface),int(run.n)]
+		if str(run.move) != kind: return str(run.move).to_upper()
+		if kind == "graze": return "%s GRAZE" % surface.to_upper()
+		if kind == "thread": return "ARCH" if surface == "stone" else "THREAD"
+		if kind == "pull-out": return "SKIP" if surface == "water" else "PULL-OUT"
+		return kind.to_upper()
+
+	## A run's points so far, its bonus with them (units, before the multiplier).
+	static func paid(run: Dictionary) -> float:
+		return float(run.units)+LineScore.run_bonus(int(run.n),float(run.sum_fast))
 
 	static func _name(kind: String, surface: String) -> String:
 		if kind == "graze": return {"tree":"TREES","stone":"STONE","land":"LAND","water":"WAVES"}.get(surface,"GRAZES")
