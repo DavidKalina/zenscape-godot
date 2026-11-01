@@ -4,7 +4,8 @@ extends Node3D
 ## the door in the game (doors world), at the origin with --world=amberlands, the
 ## debug world. It walks a loop round that land's home (stomper_route.gd), about
 ## HEIGHT m tall, and only while the plane is on its side, so it is where it was
-## left and the first way out of the hall meets it. `--stomper=0` leaves it out.
+## left and the first way out of the hall meets it. It is solid to the flight
+## (stomper_solid.gd). `--stomper=0` leaves it out.
 ##
 ## One skinned mesh and one Skeleton3D from assets/models/stomper_body.glb
 ## (art/blender/headless_body/reduce_stomper.py), dressed in the kit's stone.
@@ -26,6 +27,7 @@ const Route = preload("res://scripts/endless/stomper_route.gd")
 const Legs = preload("res://scripts/endless/stomper_legs.gd")
 const Fall = preload("res://scripts/endless/stomper_fall.gd")
 const Wake = preload("res://scripts/endless/stomper_wake.gd")
+const Solid = preload("res://scripts/endless/stomper_solid.gd")
 const Door = preload("res://scripts/endless/hall_doors.gd")
 const MODEL := "res://assets/models/stomper_body.glb"
 ## Its height in play (m), and the model's, stump's cut to soles (m).
@@ -74,6 +76,8 @@ var wake: Node3D
 var route: RefCounted
 var field: RefCounted
 var world: RefCounted
+## The capsules the flight meets (stomper_solid.gd).
+var solid := Solid.new()
 ## The land's home: the middle of its loop.
 var centre := Vector2.ZERO
 var _study: Node
@@ -136,6 +140,7 @@ func setup(study: Node) -> void:
 	legs = Legs.new()
 	skeleton.add_child(legs)
 	legs.bind(skeleton)
+	solid.bind(self,skeleton,study,size)
 	_pose(1000.0)
 	if Fall.wanted():
 		fall = Fall.new()

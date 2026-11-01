@@ -1113,12 +1113,13 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	if giants != null: g = giants.ground(p,g,pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
 	if stair != null: g = stair.ground(p,g,pad)
+	if stomper != null: g = stomper.solid.ground(p,g,pad)
 	return g if doors == null else doors.ground(p,g,pad)
 
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
 	if doors != null and doors.holds(p): return false
-	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.inside(p)) or (giants != null and giants.inside(p))
+	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.inside(p)) or (giants != null and giants.inside(p)) or (stomper != null and stomper.solid.inside(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
@@ -1153,7 +1154,7 @@ func eye_floor(p: Vector3) -> float:
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
 	if doors != null and doors.holds(p): return p.y < doors.hall_floor()+EYE_CLEAR*0.5
-	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.in_wreck(p,0.4))
+	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.in_wreck(p,0.4)) or (stomper != null and stomper.solid.inside(p))
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
@@ -1220,6 +1221,8 @@ func tick(delta: float) -> void:
 	# In a forgiving knife slot: the reach fitted, a jamb glanced off.
 	solid_shift = Vector3.ZERO
 	_glanced = glance.before(delta,self)
+	# A limb come over the plane (scripts/endless/stomper_solid.gd).
+	if stomper != null and _glanced.is_empty(): _glanced = stomper.solid.before(delta,self)
 	FrameLog.mark(&"glance")
 	# A beat route's preview pan holds the flight (beat_routes.gd).
 	var held: bool = beats != null and beats.holding()
