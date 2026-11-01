@@ -152,8 +152,14 @@ float peak_ice_edge(vec2 q, vec4 frame, vec2 more, out float tongue) {
 
 // The ice at `p`, 0..1, with its ragged edge; `ny` the ground's normal's height,
 // so it lies on floors and never climbs a wall. `frame` and `flow` as
-// peak_ice_frame.
-float peak_ice_mask(vec3 p, float zone, float ny, out vec4 frame, out vec2 flow, out vec2 more) {
+// peak_ice_frame. `carve` the massif's ice carve (peak_massif.gd `_ice_carve`,
+// through the ground's carve marks; 0 off it): x down a slot (1 from 10 m down)
+// or a meltwater groove (under 0.35), y up the medial moraine. A slot is ice,
+// walls and all, up to a little past the ice's edge.
+float peak_ice_slot(vec2 carve) {
+	return smoothstep(0.4, 0.95, carve.x);
+}
+float peak_ice_mask(vec3 p, float zone, float ny, vec2 carve, out vec4 frame, out vec2 flow, out vec2 more) {
 	frame = peak_ice_frame(p.xz, flow, more);
 	if (peak_ice_solid > 0.5) return 1.0;
 	if (peak_ice_solid < -0.5 || frame.w < 0.5) return 0.0;
@@ -161,7 +167,9 @@ float peak_ice_mask(vec3 p, float zone, float ny, out vec4 frame, out vec2 flow,
 	float e = peak_ice_edge(p.xz, frame, more, tongue);
 	float flat_on = smoothstep(0.70, 0.80, ny + (peak_noise(p.xz / 13.0 + p.y / 9.0) - 0.5) * 0.10);
 	// (The tongue fills its crevasses, walls and all.)
-	return (1.0 - smoothstep(0.95, 1.01, e)) * max(flat_on, tongue) * zone;
+	// (A slot only a little past the ice's edge: farther out the marks are the
+	// rock's gullies.)
+	return max((1.0 - smoothstep(0.95, 1.01, e)) * max(flat_on, tongue), smoothstep(0.1, 0.4, carve.x) * (1.0 - smoothstep(1.2, 1.4, e))) * zone;
 }
 
 // The rubble the ice has shoved up round it, 0..1: a band past its edge, wide on
@@ -503,7 +511,9 @@ float peak_ice_wall(vec3 p, vec3 n, vec3 eye, vec2 flow, float fp, float tone, f
 // exposed (1 on the ground), `rim` 1 on a block's edge falling to 0 at its face's
 // middle (0 on the ground), `fp_far` a pixel's size by distance alone (`fp` jumps
 // from one long triangle of a ground wall to the next).
-void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, float fp, float fp_far, float tone, float open, float rim, out vec3 col, inout vec3 lit_n, out vec3 glow, out float rough, out float spec) {
+// `carve` as peak_ice_mask's: the slots' walls and floors go deep blue, the
+// grooves a little bluer, the medial moraine dark with stones.
+void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, float fp, float fp_far, float tone, float open, float rim, vec2 carve, out vec3 col, inout vec3 lit_n, out vec3 glow, out float rough, out float spec) {
 	vec3 sun = zs_sun_direction;
 	float solid = step(0.5, peak_ice_solid);
 	// (The walls' own paint from where the face turns steep; the floor keeps a
@@ -513,6 +523,10 @@ void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, 
 	// shape, and each one's tilt showed from the air as a plate of wall paint.)
 	float tongue = solid > 0.5 ? 0.0 : smoothstep(0.16, 0.30, more.y);
 	steep *= 1.0 - tongue;
+	// (A carved slot's walls are walls on the tongue too, shut in from the sky.)
+	float slot = solid > 0.5 ? 0.0 : peak_ice_slot(carve);
+	steep = max(steep, slot * smoothstep(0.93, 0.6, n.y));
+	open *= 1.0 - 0.8 * slot;
 	vec3 c_floor = vec3(0.0);
 	vec3 c_wall = vec3(0.0);
 	float g_floor = 0.0;
@@ -538,6 +552,16 @@ void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, 
 	}
 	col = mix(c_floor, c_wall, steep);
 	float gloss = mix(g_floor, g_wall, steep);
+	if (solid < 0.5) {
+		// The carve: deep down a slot's floor, blue down a groove, the moraine's
+		// stones on its ridge.
+		float groove = smoothstep(0.03, 0.3, carve.x) * (1.0 - smoothstep(0.35, 0.5, carve.x));
+		col = mix(col, ICE_BLUE * 0.9, groove * 0.45 * (1.0 - steep));
+		col = mix(col, ICE_DEEP * 2.4, smoothstep(0.75, 1.0, carve.x) * (1.0 - steep) * 0.85);
+		float ridge = smoothstep(0.1, 0.55, carve.y);
+		col = mix(col, peak_ice_stones(p.xz, fp) * 0.8, ridge);
+		gloss *= 1.0 - ridge;
+	}
 	// A block's edges, sharp and bright: `rim` runs straight across each of its
 	// face's fan triangles, so its slope gives the way to the edge in metres.
 	float edge = 0.0;
