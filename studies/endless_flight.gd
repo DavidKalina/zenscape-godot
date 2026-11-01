@@ -1034,6 +1034,9 @@ func _launch(at: Vector3, heading: float, parked := false) -> void:
 	if tunnels != null:
 		plane.guide = Callable(tunnels,"guide")
 		plane.keep = Callable(tunnels,"keep")
+	# Past the sea round the land, the plane is eased home (`field` as it stands:
+	# a door changes it).
+	plane.fence = func(p: Vector3, h: float) -> Vector2: return field.fence(p,h)
 	if parked:
 		var rest := PlaneStrip.rest(func(p: Vector2) -> float: return field.height(p.x,p.y),Vector2(at.x,at.z),heading)
 		plane.park(Vector3(at.x,rest.x,at.z),heading,rest.y,rest.z)

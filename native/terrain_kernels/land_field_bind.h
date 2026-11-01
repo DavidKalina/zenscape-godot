@@ -114,7 +114,7 @@ public:
 	// refuses a stale library (and runs its GDScript field instead).
 	// 2: `configure` takes the world's land recipe (land_field.gd recipe_defaults());
 	// 3: and the built land's forms (ridge_crisp, notch, terrace, mesa keys).
-	int64_t version() const { return 3; }
+	int64_t version() const { return 4; }
 
 	// The flags LandField parsed (see land_field.gd), then the noises built.
 	void configure(int64_t seed, double floor_half, const Dictionary &knobs) {
@@ -185,6 +185,13 @@ public:
 		ZS_RECIPE("mesa_gap", MESA_GAP);
 		ZS_RECIPE("mesa_keep", MESA_KEEP);
 		ZS_RECIPE("mesa_mask_scale", MESA_MASK);
+		ZS_RECIPE("coast_x", COAST_X);
+		ZS_RECIPE("coast_z", COAST_Z);
+		ZS_RECIPE("coast_half", COAST_HALF);
+		ZS_RECIPE("coast_corner", COAST_CORNER);
+		ZS_RECIPE("coast_ramp", COAST_RAMP);
+		ZS_RECIPE("coast_depth", COAST_DEPTH);
+		ZS_RECIPE("coast_wobble", COAST_WOBBLE);
 		ZS_RECIPE2("mesa_band", MESA_BAND_X, MESA_BAND_Y);
 #undef ZS_RECIPE
 #undef ZS_RECIPE2

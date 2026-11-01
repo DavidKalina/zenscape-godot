@@ -206,6 +206,9 @@ var stone := Callable()
 ## in to land). It works before the solid does, so a brush is the last
 ## word, not the first.
 var guide := Callable()
+## Callable(position: Vector3, heading: float) -> Vector2(turn 0..1, heading):
+## the world's edge easing the plane home (LandField `fence`).
+var fence := Callable()
 ## The guard's pull this step (0..1, the numbers HUD and the drivers).
 var guarded := 0.0
 ## Callable(Vector3) -> Vector3: a tight place's walls made slippery (scripts/
@@ -444,6 +447,9 @@ func _skim(delta: float, ground: Callable, was: Vector3) -> void:
 ## floor; the push it adds to the way.
 func _guard(delta: float) -> Vector3:
 	guarded = 0.0
+	if fence.is_valid():
+		var home: Vector2 = fence.call(position,heading)
+		if home.x > 0.0: heading = lerp_angle(heading,home.y,_ease(GUARD_TURN,delta)*home.x)
 	if not guide.is_valid(): return Vector3.ZERO
 	var g: Dictionary = guide.call(position,heading,speed)
 	if g.is_empty(): return Vector3.ZERO

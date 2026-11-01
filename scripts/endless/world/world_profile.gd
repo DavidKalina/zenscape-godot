@@ -156,6 +156,11 @@ static func wanted_id() -> String:
 
 ## A fresh profile by id (or a res:// path to a profile script, for a
 ## throwaway one in scratch/); an unknown id warns and plays wilderness.
+## Whether this world's regions are whole lands joined by doors, each keeping
+## its own edge (a regions patchwork has none).
+func is_doors() -> bool:
+	return id == PLAYS
+
 static func make(profile_id: String) -> RefCounted:
 	var path := profile_id if profile_id.begins_with("res://") else PROFILES+profile_id+".gd"
 	if not ResourceLoader.exists(path):
