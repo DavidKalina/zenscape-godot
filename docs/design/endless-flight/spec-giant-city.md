@@ -7,6 +7,22 @@ his size. (Spec change: the first sizing, for a 300 m person, made pieces too bi
 the landscape.) This loop builds the first slice in plain grey, with no baked stone, so
 that its lines can be flown and judged before anything is spent on looks.
 
+## The structure (spec change: the road)
+
+Pieces placed one by one read as stuff thrown on a map, so the city now has one spine.
+The land has three rings, each with its own job:
+
+- **The road:** a giant winding colonnade road from the hall's mouth up to the pyramid,
+  parts roofed and parts exposed. The gate and the pillared hall are built into it: the
+  gate is where it enters the city proper, the hall its longest roofed stretch, the
+  pyramid's stair its end. This is the guided part.
+- **Off the path:** the heads and smaller chunks of the civilization, found by leaving
+  the road.
+- **The outskirts:** the stomper, on open ground, seen from the road as a shape on the
+  horizon. He does not need to cross the road. What breaks the road is age.
+
+What stands at the end of the road, on the pyramid's top, is not decided; don't build it.
+
 ## Done looks like
 
 Played in the default game, through the hall, on the real Amberlands (`doors`
@@ -14,11 +30,10 @@ world, the far side; force `doors._swap(1)` or really cross, or land and look st
 on the home side). `--world=amberlands` is a debug world on other land: never
 judge anything by it.
 
-- Coming out of the hall you can fly one linked line: a gate, a slalom of columns,
-  a pillared hall, a stepped pyramid with a colonnade on top. Each piece's exit sets
-  you up for the next, with no long dull stretch between them.
-- Every piece has at least two ways through: a wide, easy line and a tight, risky
-  one. No piece is a solid mass you can only fly round.
+- Coming out of the hall you can follow one road, bending over the land, to the pyramid,
+  with no long dull stretch, and the place reads as one made thing, from the air too.
+- Every stretch has at least two ways through: a wide, easy line and a tight, risky
+  one. No stretch is a sealed tube: you can always leave and rejoin.
 - All of it is solid to the plane, the camera and the wing rays.
 - From the air it sits on the hills, and the stomper plainly dwarfs it.
 - It looks like plain grey architecture, in simple shapes: no stone, no detail.
@@ -88,28 +103,27 @@ makes one piece file, with its own flown driver and film:
 - `pillar_hall`: a dense forest of piers under a broken roof, with ways out above.
 - `pyramid`: stepped, a stair run up the face, a colonnade on top, a way off the back.
 
-**Trunk (after the lanes merge).** The gate, the columns, the hall and the pyramid
-placed in one line from the mouth, tuned so each sets up the next, flown end to end by
-both lines. Smoke, then a handoff and a window for the user. The lanes are merged. Trunk
-tasks, one iteration each:
+**Done, before the road:** the foundation, the three lanes, the gate at its new size and
+a first placing (2e2a83e6). `colonnade.gd`'s straight rows of figures are replaced by the
+road; the file can stay, out of `PLACED`, or lend its figures as accents.
 
-1. **The gate at the new size.** `gate.gd` is still the first sizing (340 m door, 410 m
-   wall, 22 m slits). Rebuild it to the guide, about 90 m tall, with its two lines,
-   and fly both.
-2. **The line on the land.** Choose the real spots (`PLACED`) and seat the pieces,
-   rechecking each piece's flown heights and notes in its lane commit: the colonnade's
-   feet reach 60 m down, the pyramid's door floor stands 10 m over its origin, the hall's
-   heights were tuned to its trial site and it needs 1.2 km. The line may bend. Keep the
-   mourner in sight, the mouth clear and the route off it. Stills from the air, with the
-   stomper in shot.
-3. **Link and fly it.** Tune the gaps so each piece's exit sets up the next, and fly the
-   wide line and the tight line end to end through a real hall crossing if the harness
-   can do it, by stick, with films. Say where a line breaks and fix it.
-4. **Depth in the dark.** The shared `GLOW` leaves shaded faces one flat tone inside the
-   hall, so depth is hard to read at speed. A plain grey that still shows form, seen in the
-   play camera in the dark bays. Grey only: this is not the look pass.
-5. **Cost.** Frame time and triangles on screen flying the line, against the build
-   without the city. Smoke. Then stop: the handoff and the window are the loop's.
+**The road, one iteration each, in order:**
+
+1. **A road kit, on a short stretch.** Stretches that follow a bending path over the land:
+   **open** (columns down both sides, a beam on them, sky above), **roofed** (a low cover
+   with gaps of light, still with bays to slip out by) and **broken** (fallen columns, a
+   dropped roof, a gap to thread). Lay something under them that reads as a paved road from
+   the air. Lay about 600-800 m of it from the gate's far side, all three kinds, bending
+   both ways, and fly a wide line down the middle and a tight line that weaves the columns
+   and bays. Try column spacing, road width and bend tightness, and keep what flies best.
+   Stop for the user's verdict: this step decides whether the idea feels good.
+2. **The whole road.** The route from the mouth to the pyramid, joined to the gate, the
+   hall and the pyramid. Check from the mouth, by eye in the play camera, whether the
+   pyramid is in sight, and move it if a better reveal is there to have. Fix the flat
+   dark bays and the corbel fans if they hurt reading the line. Fly it end to end.
+3. **The stomper to the outskirts.** A smaller range on open ground, off the road.
+4. **Off the path.** Small chunks of ruin, cheap reuses of the road's kit, and the heads
+   moved clear of the road. Then cost, smoke; the handoff and the window are the loop's.
 
 ## Rules
 
