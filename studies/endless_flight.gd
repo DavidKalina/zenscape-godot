@@ -118,6 +118,7 @@ extends Node3D
 
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldProfile = preload("res://scripts/endless/world/world_profile.gd")
+const GiantRuins = preload("res://scripts/endless/giant_ruins.gd")
 const LandStream = preload("res://scripts/endless/land_stream.gd")
 const SkyPlane = preload("res://scripts/sky_plane.gd")
 const GraphicsPreset = preload("res://scripts/graphics_preset.gd")
@@ -313,6 +314,7 @@ var race: Node
 var shops: Node
 ## The lighthouse and the pirate ships on the coast (scripts/endless/coast_sites.gd).
 var coast: Node3D
+var giants: Node3D
 ## Beat routes: starters in the land, the pan, one beat at a time (beat_routes.gd).
 var beats: Node
 ## The place lines (scripts/endless/place_lines.gd), or null with --lines=0.
@@ -769,6 +771,11 @@ func _ready() -> void:
 	coast.name = "Coast"
 	add_child(coast)
 	coast.setup(self)
+	if GiantRuins.wanted(world):
+		giants = GiantRuins.new()
+		giants.name = "GiantRuins"
+		add_child(giants)
+		giants.setup(self)
 	# --full-meter: a surge roll ready at once; again whenever the ship's plates
 	# come back (pirate_ship.gd `refill`).
 	if "--full-meter" in preload("res://scripts/launch_args.gd").user_args(): near.meter = 1.0
@@ -1097,6 +1104,7 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 		p += solid_shift
 	var g: Variant = tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad)
 	if coast != null: g = coast.ground(p,g,pad)
+	if giants != null: g = giants.ground(p,g,pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
 	if stair != null: g = stair.ground(p,g,pad)
 	return g if doors == null else doors.ground(p,g,pad)
@@ -1104,7 +1112,7 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
 	if doors != null and doors.holds(p): return false
-	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.inside(p))
+	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.inside(p)) or (giants != null and giants.inside(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).

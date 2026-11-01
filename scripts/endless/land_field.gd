@@ -534,6 +534,10 @@ var _edge := Vector4.ZERO
 ## The region it rings, in a world of regions.
 var _edge_region := 0
 
+## The land heaped round the giants' remains (giant_swells.gd), or null.
+const GiantSwells = preload("res://scripts/endless/giant_swells.gd")
+var _swells: RefCounted = null
+
 func _init(land_seed := 0, profile: RefCounted = null) -> void:
 	seed = land_seed
 	# The world's recipe and knobs first (the profile `--world=` names unless
@@ -558,7 +562,7 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 		_tunnel_test = true
 	splits = 0.0 if k.get("old_land",false) else Splits.wanted(float(world.layer("splits",0.0)))
 	split_mix = world.layer("split_kinds",{})
-	_massif = null if k.get("old_land",false) else PeakMassif.make(land_seed,Callable(_impl,"height"))
+	_massif = null if k.get("old_land",false) or float(world.layer("peak",1.0)) <= 0.0 else PeakMassif.make(land_seed,Callable(_impl,"height"))
 	_isles = null if k.get("old_land",false) else CoastIsles.make(land_seed,String(world.id))
 	_set_edge(k)
 	if _blend:
@@ -566,6 +570,7 @@ func _init(land_seed := 0, profile: RefCounted = null) -> void:
 			if _edge.z > 0.0: break
 			_edge_region = r
 			_set_edge(_knobs(world.regions[r].land))
+	_swells = null if k.get("old_land",false) else GiantSwells.make(world,land_seed,_impl)
 
 ## A land recipe with the field's floor and the flags over it.
 static func _knobs(land: Dictionary) -> Dictionary:
@@ -708,6 +713,7 @@ func native_impl_in(x0: float, z0: float, x1: float, z1: float) -> Object:
 	# The native kernels read the field without the Peak's massif.
 	if _massif != null and _massif.meets(x0,z0,x1,z1): return null
 	if _isles != null and _isles.meets(x0,z0,x1,z1): return null
+	if _swells != null and _swells.meets(x0,z0,x1,z1): return null
 	if not _blend: return native_impl()
 	var one: int = _impl.one_in(x0,z0,x1,z1)
 	return _impl.kids[one] if one >= 0 and _impl.kid_native[one] else null
@@ -728,6 +734,7 @@ func region_in(x0: float, z0: float, x1: float, z1: float) -> int:
 func native_band_in(x0: float, z0: float, x1: float, z1: float) -> Object:
 	if _massif != null and _massif.meets(x0,z0,x1,z1): return null
 	if _isles != null and _isles.meets(x0,z0,x1,z1): return null
+	if _swells != null and _swells.meets(x0,z0,x1,z1): return null
 	return _impl.band_in(x0,z0,x1,z1) if _blend else null
 
 ## Region `r`'s own native field (ZenScapeLandField), or null (GDScript).
@@ -774,6 +781,7 @@ func sample(x: float, z: float) -> Vector2:
 ## Vector2(height, meadow) `got` with the islands on it at (x, z); they count
 ## as the massif's land for the rivers (`_m_on`).
 func _isle(got: Vector2, x: float, z: float) -> Vector2:
+	if _swells != null: got = _swells.apply(got,x,z)
 	if _isles == null or not _isles.reaches(x,z): return got
 	got = _isles.apply(got,x,z)
 	if float(_isles.last_lift) > 0.0:
@@ -795,6 +803,10 @@ func fence(p: Vector3, heading: float) -> Vector2:
 	var home := atan2(p.x-_edge.x,p.z-_edge.y)
 	if absf(angle_difference(heading,home)) < PI*0.5: return Vector2.ZERO
 	return Vector2(smoothstep(FENCE_FROM,FENCE_FULL,off),home)
+
+## Where the giants' remains lie (giant_swells.gd), or null.
+func swells() -> RefCounted:
+	return _swells
 
 ## The coast's islands (coast_isles.gd), or null.
 func isles() -> RefCounted:
@@ -1051,8 +1063,12 @@ func shape(x: float, z: float) -> Dictionary:
 
 ## `shape`'s dictionary `s` with the islands on it at (x, z): no river there.
 func _isle_shape(s: Dictionary, x: float, z: float) -> Dictionary:
+	if _swells != null: s.height = float(s.height)+float(_swells.lift(x,z))
 	if _isles == null or not _isles.reaches(x,z): return s
+	var saved_swells := _swells
+	_swells = null
 	var got := _isle(Vector2(float(s.height),float(s.meadow)),x,z)
+	_swells = saved_swells
 	if float(_isles.last_lift) <= 0.0: return s
 	s.height = got.x
 	s.meadow = got.y
@@ -1120,6 +1136,7 @@ func height(x: float, z: float) -> float:
 	if ponds > 0.0 or halls > 0.0 or tunnels > 0.0 or splits > 0.0: return sample(x,z).x
 	if _massif != null and _massif.reaches(x,z): return sample(x,z).x
 	if _isles != null and _isles.reaches(x,z): return sample(x,z).x
+	if _swells != null and _swells.reaches(x,z): return sample(x,z).x
 	return _impl.height(x,z)
 
 ## The snow line over the sea for this land (round one's under --old-land).
@@ -1161,6 +1178,8 @@ func build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: floa
 		if _massif.tarn_meets(x0,z0,x0+cells*step,z0+cells*step): Ponds.apply_chunk(self,_impl,made,[_massif.pond],x0,z0,step,cells,skirt_drop)
 	if _isles != null and _isles.meets(x0-step,z0-step,x0+(cells+1)*step,z0+(cells+1)*step):
 		_isles.apply_chunk(self,_impl,made,x0,z0,step,cells,skirt_drop)
+	if _swells != null and _swells.meets(x0-step,z0-step,x0+(cells+1)*step,z0+(cells+1)*step):
+		_swells.apply_chunk(_impl,made,x0,z0,step,cells,skirt_drop)
 	return made
 
 func _build_chunk(x0: float, z0: float, step: float, cells: int, skirt_drop: float, flow_max: float) -> Dictionary:
@@ -1288,6 +1307,8 @@ func peak_grid(got: Dictionary, x0: float, z0: float, step: float, nx: int, nz: 
 			Ponds.apply_grid(got,[_massif.pond],x0,z0,step,nx,nz,pad)
 	if _isles != null and _isles.meets(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step):
 		_isles.apply_grid(got,x0,z0,step,nx,nz,pad)
+	if _swells != null and _swells.meets(x0-pad*step,z0-pad*step,x0+(nx-pad)*step,z0+(nz-pad)*step):
+		_swells.apply_grid(got,x0,z0,step,nx,nz,pad)
 
 func _grid(x0: float, z0: float, step: float, nx: int, nz: int, pad := 0) -> Dictionary:
 	if _native: return _impl.grid(x0,z0,step,nx,nz,pad)

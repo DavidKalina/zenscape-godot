@@ -45,6 +45,8 @@ static func layers() -> Dictionary:
 		# halls or tunnels, no bridges or aqueducts, no gothic set pieces.
 		# (`arches` stays: the world of regions runs at the densest region's, and
 		# wilderness's rolls hang on it. `arch_most` is what keeps this land bare.)
+		# No Peak here: it is wilderness's, and only --world=amberlands would stand it.
+		"peak":0.0,
 		"arches":2.6,"arch_most":0,"halls":0.0,"tunnels":0.0,"bridges":0.0,"sets":0.0,
 		# The ruins' stone a dark basalt that stands out from the gold land
 		# (scripts/endless/land_arches.gd TONES), every set piece mossed on its
