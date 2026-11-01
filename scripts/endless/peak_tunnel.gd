@@ -34,8 +34,10 @@ const KNOTS := [
 	[1360.0,-170.0],
 	[1200.0,-60.0],
 	[1060.0,-15.0],
-	[960.0,45.0],
-	[770.0,165.0],
+	[945.0,0.0],
+	[860.0,65.0],
+	[810.0,125.0],
+	[740.0,165.0],
 	[640.0,172.0],
 	[560.0,195.0],
 	[480.0,160.0],
@@ -45,7 +47,7 @@ const KNOTS := [
 ## The floor: (m along the path, height over the sea), straight between,
 ## then smoothed. Level past mouth A, under the ice gorge's first bowl (its
 ## floor about 60 m over the vault), then one climb to mouth B.
-const FLOOR := [[0.0,292.0],[500.0,322.0],[700.0,364.0],[1840.0,809.0],[2100.0,820.0]]
+const FLOOR := [[0.0,292.0],[500.0,322.0],[700.0,364.0],[1851.0,809.0],[2111.0,820.0]]
 ## The floor's climb is smoothed over this much path either side (m).
 const SMOOTH := 70.0
 ## A sample every STEP m along the path.
@@ -73,7 +75,7 @@ const WINDOW_R := 8.0
 ## runs MOUTH_OUT_A / MOUTH_OUT_B m past each, out to where the land in front
 ## comes down to the floor (the bank under mouth A is a 40 m ramp).
 const MOUTH_A := 105.0
-const MOUTH_B := 1815.0
+const MOUTH_B := 1826.0
 const MOUTH_OUT := 14.0
 const MOUTH_OUT_A := 50.0
 const MOUTH_OUT_B := 45.0
@@ -81,8 +83,10 @@ const MOUTH_OUT_B := 45.0
 ## bore, so the land is holed where it lies inside the bore (HOLE_PAD m past
 ## the vault) and the tube's mesh is trimmed where it stands out of the land:
 ## the two mouths, and the gully between the blade and the spine that the
-## bore crosses in the open (a window to the sky, 160 m of slot in its floor).
-const OPENINGS := [Vector2(MOUTH_A-MOUTH_OUT_A,MOUTH_A+26.0),Vector2(1380.0,1570.0),Vector2(MOUTH_B-26.0,MOUTH_B+MOUTH_OUT_B)]
+## bore crosses in the open (a window to the sky, 100 m of slot in its floor).
+## The crossing stays in the blade past the Slot's eye at a 960, then cuts the
+## Slot line steeply at a ~865, between its blades at a 890 (+v) and a 835 (-v).
+const OPENINGS := [Vector2(MOUTH_A-MOUTH_OUT_A,MOUTH_A+26.0),Vector2(1500.0,1600.0),Vector2(MOUTH_B-26.0,MOUTH_B+MOUTH_OUT_B)]
 const HOLE_PAD := 3.0
 ## The window's hole: WINDOW_PAD m past its rim.
 const WINDOW_PAD := 2.0
