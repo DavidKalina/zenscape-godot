@@ -657,7 +657,7 @@ func _ready() -> void:
 	tunnels = LandTunnels.new()
 	tunnels.name = "Tunnels"
 	add_child(tunnels)
-	tunnels.setup(field)
+	tunnels.setup(field,look.ground if look != null else null)
 	if look != null:
 		tunnels.clouds = look.clouds
 		if look.water != null: tunnels.sea = look.water.material

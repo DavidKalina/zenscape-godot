@@ -29,6 +29,7 @@ extends Node3D
 const Field = preload("res://scripts/endless/land_field.gd")
 const Tunnels = preload("res://scripts/endless/tunnel_sites.gd")
 const LandHalls = preload("res://scripts/endless/land_halls.gd")
+const RockShape = preload("res://scripts/endless/rock_shape.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
@@ -355,6 +356,8 @@ var halls: Node3D
 const DRY_CUTS := 8
 ## The look's clouds (their valley fog hushed in the bore), or null.
 var clouds: Node
+## The land's ground material, which a sunk cave's mouth rock wears.
+var _ground: Material
 ## The sea's material, cut along the sunk tunnels' ramps (`_cut_sea`), or null.
 var sea: ShaderMaterial
 var _cuts := -1
@@ -392,8 +395,9 @@ var _sky_cut := false
 ## The sun (the brightest DirectionalLight3D).
 var _sun: DirectionalLight3D
 
-func setup(land_field: RefCounted) -> void:
+func setup(land_field: RefCounted, ground: Material = null) -> void:
 	field = land_field
+	_ground = ground
 	_grow = WorldScale.span*0.5
 	_open_nave = Tunnels.open_nave()
 	# Made here, once: the workers' builds share them.
@@ -1122,9 +1126,14 @@ func _build(b: Built, f: RefCounted) -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var tris := 0
-	for m in 2: tris += _build_mouth(st,t,m,f) if t.sunk else _build_portal(st,t,m,f)
+	var lip := _mouth_arrays(t,f) if t.sunk else {}
+	if not t.sunk:
+		for m in 2: tris += _build_portal(st,t,m,f)
 	var mesh: ArrayMesh = rock.commit()
-	st.commit(mesh)
+	if t.sunk:
+		tris += int(lip.tris)
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,lip.arrays,[],{},RockShape.format(lip.arrays))
+	else: st.commit(mesh)
 	# Seen: the rock on the inside's layer (torch lit), the portal blocks
 	# in the day (sun, sky and haze); the collider is both.
 	var mat := _basalt_material(t)
@@ -1135,7 +1144,12 @@ func _build(b: Built, f: RefCounted) -> void:
 	b.node.add_child(node)
 	var blocks := MeshInstance3D.new()
 	blocks.name = node.name+"_portals"
-	blocks.mesh = _surface(mesh,1,_portal_material(t))
+	if t.sunk:
+		var day := ArrayMesh.new()
+		day.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,lip.arrays,[],{},RockShape.format(lip.arrays))
+		day.surface_set_material(0,_ground if _ground != null else _portal_material(t))
+		blocks.mesh = day
+	else: blocks.mesh = _surface(mesh,1,_portal_material(t))
 	b.node.add_child(blocks)
 	if not t.sunk:
 		for m in 2: _build_fires(b,m)
@@ -1270,66 +1284,140 @@ func _build_portal(st: SurfaceTool, t: Tunnels.Site, m: int, lf: RefCounted) -> 
 		tris += _box(st,t,m,out-0.6,out-0.6+2.0*BOWL.x,bd-BOWL.x,bd+BOWL.x,base,base+BOWL.y,Color(0.16,0.14,0.12),false)
 	return tris
 
-## A sunk cave's mouth `m` into `st`: a sheet of raw rock over the sinkhole's
-## back wall, a little out from it, from the floor to over the land, broken
-## by noise, the arch a ragged hole in it just inside the bore's own ring.
-## Flat shaded, as the land's cliffs are. Returns its triangles.
-const LIP_CELL := 2.2
-const LIP_OUT := Vector2(0.4,2.2)
-const LIP_RAGGED := 0.2
-const LIP_OVER := 2.5
-func _build_mouth(st: SurfaceTool, t: Tunnels.Site, m: int, lf: RefCounted) -> int:
-	var f := t.floor_y-Tunnels.SINK-1.0
-	var half := Tunnels.BOWL_MOUTH+8.0
-	var cols := ceili(half*2.0/LIP_CELL)
+## A sunk cave's mouth rock, both mouths in one indexed mesh's arrays: at each
+## mouth a shelf of the land's rock round the opening, its inner edge ragged
+## just inside the bore's own ring and rolled out over it, its outer edge
+## running back under the land past the hole the land leaves, so the land's
+## own cliff meets it and no edge shows. Spokes out of the ring, smooth shaded, baked for the land's rock
+## paint: it wears the ground material (`_ground`). Returns its triangles.
+const LIP_SPOKES := 96
+const LIP_RINGS := 30
+## How far past the mouth's bowl the rock reaches across; up, it stops at the
+## highest land along LIP_LAND (m in), LIP_OVER over it, then runs back to
+## LIP_BACK m in, LIP_UNDER m under the land there.
+const LIP_PAST := 8.0
+const LIP_LAND := [7.0,10.0,13.0]
+const LIP_OVER := 1.5
+const LIP_UNDER := 3.0
+## The inner edge: how far it stands out of the bore's end, how far it rolls
+## out over the opening, how far it comes in from the ring (ragged).
+const LIP_FRONT := 3.2
+const LIP_ROLL := 2.6
+const LIP_RAGGED := Vector2(0.3,2.0)
+## The rings' share that make the face (the rest run back); how far the face
+## curves back at its sides; how far the feet sink into the sinkhole's floor.
+const LIP_BACK := 19.0
+const LIP_FACE := 0.8
+const LIP_CURVE := 7.0
+const LIP_FOOT := 3.0
+## The rock's own shape, m: big bulges and bedded ledges (out of the face),
+## their sizes, and the wander across the face that hides the spokes.
+const LIP_BULGE := 3.2
+const LIP_BULGE_SIZE := 15.0
+const LIP_LEDGE := 1.1
+const LIP_LEDGE_SIZE := 4.5
+const LIP_WANDER := 1.1
+func _mouth_arrays(t: Tunnels.Site, lf: RefCounted) -> Dictionary:
+	var v := PackedVector3Array()
+	var nrm := PackedVector3Array()
+	var col := PackedColorArray()
+	var idx := PackedInt32Array()
+	var noise := FastNoiseLite.new()
+	noise.seed = hash([t.seed,t.name,"mouth"]) & 0x7fffffff
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.fractal_octaves = 4
+	noise.frequency = 1.0/LIP_BULGE_SIZE
 	var pr := Tunnels.profile(t,-1.0)
-	var inset := func(d: float, y: float) -> float:
-		var x: float = absf(d)/pr.x
-		var h: float = clampf((y-t.floor_y)/pr.z,0.0,2.0)
-		return pow(pow(x,pr.w)+pow(h,pr.w),1.0/pr.w)
-	var noise := func(d: float, y: float) -> float:
-		return t.rock.get_noise_2d(d*2.1+900.0*m,y*2.1)*0.5+0.5
-	var rows: Array = []
-	var top := -INF
-	var tops := PackedFloat32Array()
-	for j in cols+1:
-		var d := -half+j*LIP_CELL
-		var q := Tunnels.portal_point(t,m,10.0,d)
-		var y: float = lf.height(q.x,q.y)+LIP_OVER
-		tops.append(y)
-		top = maxf(top,y)
-	var count := ceili((top-f)/LIP_CELL)
-	for i in count+1:
-		var row: Array = []
-		var keep := PackedByteArray()
+	var half := Tunnels.BOWL_MOUTH+LIP_PAST
+	var cols := ceili(half*2.0/2.0)
+	var per := LIP_SPOKES+1
+	for m in 2:
+		var base := v.size()
+		var tops := PackedFloat32Array()
 		for j in cols+1:
-			var d := -half+j*LIP_CELL
-			# Each column runs from the floor to its own land.
-			var y := lerpf(f,tops[j],float(i)/count)
-			var nz: float = noise.call(d,y)
-			var edge: float = inset.call(d,y)
-			var rim: float = 0.86+LIP_RAGGED*(float(noise.call(d*2.0,y*2.0))-0.5)
-			var a: float = -lerpf(LIP_OUT.y,LIP_OUT.x,nz)*smoothstep(0.0,0.5,edge-rim+0.3)-0.2
-			row.append(_v(t,m,a,d+(nz-0.5)*LIP_CELL*0.3,y+(0.5-nz)*LIP_CELL*0.3))
-			keep.append(1 if edge >= rim else 0)
-		rows.append([row,keep])
-	var tris := 0
-	var out := _v(t,m,0.0,0.0,0.0)-_v(t,m,1.0,0.0,0.0)
-	for i in count:
-		for j in cols:
-			var k: PackedByteArray = rows[i][1]
-			var k2: PackedByteArray = rows[i+1][1]
-			if k[j]+k[j+1]+k2[j]+k2[j+1] < 3: continue
-			var p00: Vector3 = rows[i][0][j]
-			var p01: Vector3 = rows[i][0][j+1]
-			var p11: Vector3 = rows[i+1][0][j+1]
-			var p10: Vector3 = rows[i+1][0][j]
-			var nm := (p01-p00).cross(p10-p00)
-			if nm.dot(out) < 0.0: nm = -nm
-			var tone: float = 0.92+0.16*float(noise.call((-half+j*LIP_CELL)*0.3,(f+i*LIP_CELL)*0.3))
-			nm = nm.normalized()+out.normalized()*1.4
-			tris += _quad(st,p10,p11,p01,p00,nm.normalized(),Color(0.56,0.45,0.33)*Color(tone,tone,tone))
-	return tris
+			var top := -INF
+			for along: float in LIP_LAND:
+				var q := Tunnels.portal_point(t,m,along,-half+j*2.0)
+				top = maxf(top,float(lf.height(q.x,q.y))+LIP_OVER)
+			tops.append(top)
+		var pts := PackedVector3Array()
+		pts.resize(per*(LIP_RINGS+1))
+		var lumps := PackedFloat32Array()
+		lumps.resize(pts.size())
+		for k in per:
+			var th := PI*(1.0-float(k)/LIP_SPOKES)
+			var q := Tunnels.profile_point(pr,th)
+			var dir := Vector2(q.x,q.y*0.8).normalized()
+			# Out along the spoke to the bowl's side or the land.
+			var reach := 0.0
+			while reach < 120.0:
+				var at := q+dir*reach
+				if absf(at.x) >= half: break
+				var c := clampf((at.x+half)/2.0,0.0,float(cols)-0.001)
+				var i0 := int(c)
+				if t.floor_y+at.y >= lerpf(tops[i0],tops[i0+1],c-i0): break
+				reach += 1.0
+			var seam := Vector3(q.x*0.31,q.y*0.31,float(m)*77.0)
+			var rag := clampf(noise.get_noise_3dv(seam)*1.4+0.5,0.0,1.0)
+			var inner := -lerpf(LIP_RAGGED.x,LIP_RAGGED.y,rag)
+			for i in LIP_RINGS+1:
+				var u := float(i)/LIP_RINGS
+				# The face up to the land, then the run back over the hole.
+				var fu := minf(u/LIP_FACE,1.0)
+				var over := maxf((u-LIP_FACE)/(1.0-LIP_FACE),0.0)
+				var r := lerpf(inner,reach,fu)
+				var off := q+dir*r
+				var y := t.floor_y+off.y
+				var w := Tunnels.portal_point(t,m,0.0,off.x)
+				var lump := noise.get_noise_3d(w.x,y,w.y)
+				var cross := noise.get_noise_3d(w.y+311.0,y*1.3,w.x-97.0)
+				var bed := y/LIP_LEDGE_SIZE+lump*2.2
+				var ledge := smoothstep(0.0,1.0,absf(fposmod(bed,1.0)-0.5)*2.0)-0.5
+				var settle := smoothstep(0.0,0.25,fu)
+				var a := -LIP_FRONT-LIP_ROLL*smoothstep(0.0,5.0,r-inner)
+				# The face curves back into the land at its sides.
+				a += LIP_CURVE*smoothstep(half*0.55,half,absf(off.x))
+				a -= settle*(lump*LIP_BULGE+ledge*LIP_LEDGE)
+				var along := off.x+cross*LIP_WANDER*settle
+				var up := y+lump*LIP_WANDER*settle*0.7
+				# The feet go under the sinkhole's floor.
+				up -= LIP_FOOT*smoothstep(0.0,0.1,fu)*(1.0-smoothstep(0.0,5.0,off.y))
+				if over > 0.0:
+					a = lerpf(a,LIP_BACK,over)
+					var far := Tunnels.portal_point(t,m,a,along)
+					up = lerpf(up,float(lf.height(far.x,far.y))-LIP_UNDER,over*over*over)
+				pts[k+i*per] = _v(t,m,a,along,up)
+				lumps[k+i*per] = lump
+		var out := _v(t,m,0.0,0.0,0.0)-_v(t,m,1.0,0.0,0.0)
+		for i in LIP_RINGS+1:
+			for k in per:
+				var e := pts[k+i*per]
+				var du := pts[mini(k+1,per-1)+i*per]-pts[maxi(k-1,0)+i*per]
+				var dv := pts[k+mini(i+1,LIP_RINGS)*per]-pts[k+maxi(i-1,0)*per]
+				var nm := du.cross(dv)
+				if nm.dot(out) < 0.0: nm = -nm
+				# The run back: no grass grows on it, so it shades as rock.
+				var lean := smoothstep(LIP_FACE-0.08,LIP_FACE,float(i)/LIP_RINGS)
+				nm = nm.normalized()+out.normalized()*1.6*lean
+				v.append(e)
+				nrm.append(nm.normalized())
+				col.append(Color(0.56*0.94+0.1*lumps[k+i*per],0.45*0.94+0.08*lumps[k+i*per],0.33*0.94+0.06*lumps[k+i*per],0.0))
+		for i in LIP_RINGS:
+			for k in LIP_SPOKES:
+				var p := base+k+i*per
+				# Wound to face out (Godot's front faces are clockwise as seen).
+				var flip := (pts[k+1+i*per]-pts[k+i*per]).cross(pts[k+(i+1)*per]-pts[k+i*per]).dot(out) > 0.0
+				if flip: idx.append_array([p,p+per+1,p+1,p,p+per,p+per+1])
+				else: idx.append_array([p,p+1,p+per+1,p,p+per+1,p+per])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = v
+	arrays[Mesh.ARRAY_NORMAL] = nrm
+	arrays[Mesh.ARRAY_COLOR] = col
+	arrays[Mesh.ARRAY_INDEX] = idx
+	RockShape.bake(arrays)
+	return {"arrays":arrays,"tris":idx.size()/3}
 
 ## The far doors (DOOR_FROM): a dark quad filling each gate's opening
 ## DOOR_IN m inside its front, facing out (so not seen from inside), drawn
