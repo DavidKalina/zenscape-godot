@@ -342,6 +342,13 @@ func part(at: Vector2, reach: float, strength := 1.0, slot := 0) -> void:
 const PART_EVERY := 0.2
 var _part_at := [-INF,-INF]
 
+## A blast out over the land from `at`: laid over as its front passes (`front`
+## m/s), out to `reach` m (the stomper's footfall, scripts/endless/stomper_fall.gd).
+func shock(at: Vector2, reach: float, front: float, strength: float, hold: float) -> void:
+	if not enabled: return
+	_add({"at": at, "way": Vector2.ZERO, "strength": strength, "swirl": 0.0,
+		"reach": reach, "front": front, "hold": hold})
+
 # --- Gusts ----------------------------------------------------------------------------
 
 func _gust_step(delta: float, eye: Vector3, air: Dictionary, land: Callable) -> void:
