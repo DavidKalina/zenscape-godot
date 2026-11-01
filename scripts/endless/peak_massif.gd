@@ -253,6 +253,16 @@ const STEP_DROP := 50.0
 const STEP_STEPS := 3.0
 const STEP_RISER := 0.4
 const STEP_JAG := 10.0
+## The step broken into blocks: columns STEP_COL m across (their edges warped
+## STEP_COL_WARP m), each column's risers shifted up to STEP_SHIFT of a riser
+## along the flow and its treads raised or sunk up to STEP_BLOCK m, with a
+## crack STEP_CRACK m each side of a column's edge, STEP_CRACK_DEEP deep.
+const STEP_COL := 38.0
+const STEP_COL_WARP := 14.0
+const STEP_SHIFT := 0.35
+const STEP_BLOCK := 4.0
+const STEP_CRACK := 2.5
+const STEP_CRACK_DEEP := 9.0
 ## The long crevasse down the flow: from LC_A0 to LC_A1, its floor easing in
 ## over LC_RAMP at both ends (open: you fly in level), LC_DEEP deep, LC_TOP m
 ## half-width at the lip and LC_FLOOR at the floor, its middle LC_V off the
@@ -280,6 +290,13 @@ const ICE_BANDS := [
 	[2752.0,15.0,4.5,18.0,-10.0,190.0],[2790.0,12.0,5.0,16.0,30.0,220.0]]
 const ICE_PINCH := 30.0
 const CREV_FLOOR := 0.3
+## A band's line wanders BAND_WOBBLE m along `a`, its width by BAND_WIDEN of
+## itself, and it breaks where its noise is low (en echelon, not a rail).
+## Seen from far (a coarse quad), a slot widens to SLOT_AA of the quad and
+## gets shallower to match, so a mesh never samples it as a row of dots.
+const BAND_WOBBLE := 6.0
+const BAND_WIDEN := 0.3
+const SLOT_AA := 0.8
 ## The medial moraine: from MR_A0 to MR_A1, MR_UP m at most, MR_W m each side
 ## of its crest, its line MR_V off the valley's middle wandering MR_WANDER m
 ## over MR_WAVE; broken where its noise is low.
@@ -552,7 +569,7 @@ static func make(land_seed: int, ground := Callable()) -> RefCounted:
 
 ## ZenScapePeak's `version` this script calls: any other library, or none (a
 ## checkout not rebuilt yet), runs the GDScript.
-const NATIVE_VERSION := 2
+const NATIVE_VERSION := 3
 const NATIVE_CLASS := &"ZenScapePeak"
 ## The native twin of this massif, shared by every worker's (read only), or null.
 var _native: RefCounted = null
@@ -1138,6 +1155,66 @@ func gorge(g: int) -> Dictionary:
 		normal.append(Vector2(-t.y,t.x).normalized())
 	return {"line":line,"half":Split.halves(g),"saddle":Split.saddle(g),"side":normal,"length":Split.length(g)}
 
+## Where the ice carve's forms are (see ICE_FROM), for the forms and the finds,
+## on the land's own height (`height`: world y at (x, z), e.g. field.height):
+## {crevasse (world points down the long crevasse's middle every CARVE_STRIDE m,
+## LC_A0 to LC_A1, on its floor), crevasse_half (Vector2(lip, floor)
+## half-widths), crevasse_deep (the a range, LC_A0+LC_RAMP..LC_A1-LC_RAMP,
+## where it is its full depth), ridge (the medial moraine's crest line,
+## MR_A0..MR_A1, on the ground), bands (each cross-flow crevasse's line as
+## world points across its run, on the ground, before its wobble), step
+## {a (Vector2: top, foot), top and foot (world points across the floor at
+## each, on the ground)}, toe_flat (Vector2: the a range kept flat)}.
+## Points also carry their frame: each list has a twin `<name>_av` of
+## Vector2(a, vr). Empty with --ice-carve=0.
+const CARVE_STRIDE := 10.0
+func carve_line(height: Callable) -> Dictionary:
+	if not ice_carve: return {}
+	var on := func(a: float, vr: float) -> Vector3:
+		var p := world(a,_valley_mid(a)+vr)
+		return Vector3(p.x,float(height.call(p.x,p.y)),p.y)
+	var lc: Array[Vector3] = []
+	var lc_av: Array[Vector2] = []
+	var a := LC_A0
+	while a <= LC_A1:
+		var vr := LC_V+LC_WANDER*sin((a-LC_A0)/LC_WAVE)
+		lc.append(on.call(a,vr)); lc_av.append(Vector2(a,vr))
+		a += CARVE_STRIDE
+	var mr: Array[Vector3] = []
+	var mr_av: Array[Vector2] = []
+	a = MR_A0
+	while a <= MR_A1:
+		var vr := MR_V+MR_WANDER*sin((a-MR_A0)/MR_WAVE)
+		mr.append(on.call(a,vr)); mr_av.append(Vector2(a,vr))
+		a += CARVE_STRIDE
+	var bands: Array = []
+	var bands_av: Array = []
+	for row: Array in ICE_BANDS:
+		var line: Array[Vector3] = []
+		var line_av: Array[Vector2] = []
+		var vr := float(row[4])
+		while vr <= float(row[5]):
+			var half := lerpf(260.0,330.0,(float(row[0])-2050.0)/1050.0)
+			var q := vr/half
+			var ab := float(row[0])+float(row[1])*(1.0-q*q)
+			line.append(on.call(ab,vr)); line_av.append(Vector2(ab,vr))
+			vr += CARVE_STRIDE
+		bands.append(line); bands_av.append(line_av)
+	var step_a := Vector2(STEP_A-STEP_JAG*2.0,STEP_A+STEP_RUN+STEP_JAG*2.0)
+	var across := func(at: float) -> Array[Vector3]:
+		var half := lerpf(260.0,330.0,(at-2050.0)/1050.0)
+		var out: Array[Vector3] = []
+		var vr := -half
+		while vr <= half:
+			out.append(on.call(at,vr))
+			vr += CARVE_STRIDE*2.0
+		return out
+	return {"crevasse":lc,"crevasse_av":lc_av,"crevasse_half":Vector2(LC_TOP,LC_FLOOR),
+		"crevasse_deep":Vector2(LC_A0+LC_RAMP,LC_A1-LC_RAMP),"ridge":mr,"ridge_av":mr_av,
+		"bands":bands,"bands_av":bands_av,
+		"step":{"a":step_a,"top":across.call(step_a.x),"foot":across.call(step_a.y)},
+		"toe_flat":Vector2(ICE_FLAT,GLACIER.y)}
+
 ## The tower bases' tops (world), for the spires.
 func tower_bases() -> Array[Vector3]:
 	var out: Array[Vector3] = []
@@ -1568,41 +1645,55 @@ func _ice_carve(a: float, v: float, step: float) -> Vector2:
 	var s := clampf((a-STEP_A)/STEP_RUN,0.0,1.0)
 	var drop := smoothstep(0.0,1.0,s)
 	var on_floor := 1.0-smoothstep(-30.0,10.0,e)
-	if on_floor > 0.0 and a > STEP_A-STEP_JAG*2.0 and a < STEP_A+STEP_RUN+STEP_JAG*2.0:
-		# Broken risers, their lips jagged across the floor.
+	var crack := 0.0
+	if on_floor > 0.0 and a > STEP_A-STEP_JAG*3.0 and a < STEP_A+STEP_RUN+STEP_JAG*3.0:
+		# Broken risers, their lips jagged across the floor, in staggered blocks.
+		var cu := (vr+STEP_COL_WARP*_noise.get_noise_2d(a*0.7+5100.0,vr*0.3))/STEP_COL
+		var col := floorf(cu)
+		var shift := STEP_SHIFT*_noise.get_noise_2d(col*37.0+5300.0,1700.0)
 		var jag := STEP_JAG*_noise.get_noise_2d(vr*3.0+4100.0,a*0.2)
-		var s3 := clampf((a-STEP_A+jag)/STEP_RUN*STEP_STEPS+0.3*_noise.get_noise_2d(vr*5.0-2300.0,a*0.5+900.0),0.0,STEP_STEPS)
+		var s3 := clampf((a-STEP_A+jag)/STEP_RUN*STEP_STEPS+shift+0.3*_noise.get_noise_2d(vr*5.0-2300.0,a*0.5+900.0),0.0,STEP_STEPS)
 		var k := minf(floorf(s3),STEP_STEPS-1.0)
-		drop = lerpf(drop,(k+smoothstep(0.0,STEP_RISER,s3-k))/STEP_STEPS,on_floor)
+		var inside := smoothstep(STEP_A-STEP_JAG*2.0,STEP_A,a)*(1.0-smoothstep(STEP_A+STEP_RUN,STEP_A+STEP_RUN+STEP_JAG*2.0,a))
+		var block := STEP_BLOCK*_noise.get_noise_2d(col*23.0-900.0,k*31.0+400.0)*inside/STEP_DROP
+		drop = lerpf(drop,(k+smoothstep(0.0,STEP_RISER,s3-k))/STEP_STEPS-block,on_floor)
+		var edge := minf(cu-col,col+1.0-cu)*STEP_COL
+		if edge < STEP_CRACK:
+			crack = STEP_CRACK_DEEP*(1.0-smoothstep(STEP_CRACK*0.4,STEP_CRACK,edge))*on_floor*inside*(1.0-smoothstep(STEP_CRACK,STEP_CRACK*3.0,step))
 	g -= STEP_DROP*drop
 	var dh := (g-f0)*smoothstep(ICE_FROM,ICE_FROM+70.0,a)*(1.0-smoothstep(out_to,out_to+PROF_FADE,e))
 	if e > -20.0 or a >= ICE_FLAT: return Vector2(dh,0.0)
 	# The forms on the floor.
-	var cut := 0.0
+	var cut := crack
 	var ridge := 0.0
 	var groove := 0.0
 	# The long crevasse.
-	var keep := 1.0-smoothstep(LC_TOP,LC_TOP*3.0,step)
+	var keep := 1.0-smoothstep(LC_TOP*3.0,LC_TOP*6.0,step)
 	if keep > 0.0 and a > LC_A0 and a < LC_A1:
+		var lw := maxf(LC_TOP,step*SLOT_AA)
 		var dv := vr-(LC_V+LC_WANDER*sin((a-LC_A0)/LC_WAVE))
 		var x := absf(dv)+LC_ROUGH*_noise.get_noise_2d(a*2.0+1000.0,500.0 if dv >= 0.0 else -500.0)
-		if x < LC_TOP:
+		if x < lw:
 			var deep := LC_DEEP*smoothstep(LC_A0,LC_A0+LC_RAMP,a)*(1.0-smoothstep(LC_A1-LC_RAMP,LC_A1,a))
-			deep *= 0.9+0.1*_noise.get_noise_2d(a*1.5+300.0,700.0)
-			cut = maxf(cut,deep*(1.0-smoothstep(LC_FLOOR,LC_TOP,x))*keep)
+			deep *= (0.9+0.1*_noise.get_noise_2d(a*1.5+300.0,700.0))*LC_TOP/lw
+			cut = maxf(cut,deep*(1.0-smoothstep(LC_FLOOR*lw/LC_TOP,lw,x))*keep)
 	# The bands across.
-	if a > 2230.0 and a < 2380.0 or a > 2555.0 and a < 2815.0:
+	if a > 2230.0 and a < 2400.0 or a > 2545.0 and a < 2830.0:
 		var q := vr/half
 		var bow := 1.0-q*q
-		for row: Array in ICE_BANDS:
-			var w: float = row[2]
-			var kb := 1.0-smoothstep(w,w*3.0,step)
+		for i in ICE_BANDS.size():
+			var row: Array = ICE_BANDS[i]
+			var w0: float = row[2]
+			var kb := 1.0-smoothstep(w0*3.0,w0*6.0,step)
 			if kb <= 0.0: continue
-			var d := absf(a-float(row[0])-float(row[1])*bow)
+			var wl := w0*(1.0+BAND_WIDEN*_noise.get_noise_2d(vr*0.8+7100.0,i*50.0))
+			var w := maxf(wl,step*SLOT_AA)
+			var d := absf(a-float(row[0])-float(row[1])*bow-BAND_WOBBLE*_noise.get_noise_2d(vr*0.6+i*90.0,7000.0))
 			if d >= w: continue
 			var run := smoothstep(float(row[4]),float(row[4])+ICE_PINCH,vr)*(1.0-smoothstep(float(row[5])-ICE_PINCH,float(row[5]),vr))
+			run *= smoothstep(-0.45,-0.2,_noise.get_noise_2d(vr*0.45+i*300.0,7300.0))
 			if run <= 0.0: continue
-			cut = maxf(cut,float(row[3])*run*(1.0-smoothstep(w*CREV_FLOOR,w,d))*kb)
+			cut = maxf(cut,float(row[3])*wl/w*run*(1.0-smoothstep(w*CREV_FLOOR,w,d))*kb)
 	# The medial moraine.
 	var kr := 1.0-smoothstep(MR_W,MR_W*3.0,step)
 	if kr > 0.0 and a > MR_A0 and a < MR_A1:
