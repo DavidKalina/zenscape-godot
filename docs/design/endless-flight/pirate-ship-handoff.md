@@ -1,5 +1,70 @@
 # Pirate ship gray box: handoff
 
+## Two ships
+
+Two sail at once (`CoastSites.ships`), each a whole PirateShip. `coast.ship` is still the
+first, the one with the ring. No more than two, and the first's route is unchanged.
+
+- **The second route:** middle (3500, 4700), handles `coast/ship2` and
+  `coast/ship2-route`. It's the deep basin south-east of the first, past the isles
+  off the Horn. The first's 1300 m oval doesn't fit there in deep water (17 m at best,
+  and 380 m from her route), so this one has straights of 500 m and is turned 45
+  degrees (`ROUTE2_LEG`, `ROUTE2_TURN`). Under the hull: at least 27 m, against the
+  first's 43.5 m. No point of either route is inside rock, arch, hall or tunnel. The
+  farthest it gets from the start is 6.3 km.
+- **Spacing:** they start 1840 m apart. Their laps differ, so it drifts: 665 to 2715 m,
+  1 to 2 km for 64% of the time. The routes never come within 664 m, so guns (520 m) can
+  overlap only for a plane between them at the closest. Reaching the second from the
+  first took the bot 32 s, but that run crashed three times: see Unproved.
+- **The ring:** `carries()` also asks that the row is anchored to her `handle`, so the
+  second never has one, and pays `SINK_POINTS`.
+- **The return:** the same rule each, and no spot within `RETURN_APART` 1050 m of the
+  other ship, unless she's gone.
+- **Per ship:** guns, balls and `BALLS` (24 each; a ball only ever meets the plane or
+  the sea), plates, sink, return. Glance, wreck solids and camera `_solid` go through
+  `CoastSites` (`deck_way_off`, `ground`, `inside`, `in_wreck`).
+- **Picked by `CoastSites`:** `skim_scale` is the most either ship gives (`skim`).
+  The eye is the newest sink's (`wants_eye`); an older sink lets go for good
+  (`give_up_eye`), and the eye eases across.
+- **`--full-meter`:** also refills once when the plane is `RESEAL_FAR` off a sinking
+  ship, since her plates don't come back for the next ship's run.
+- **Flags:** `--ship-start` is by the first, `--no-ship` drops both, `--ship-return`
+  and `--ship-blocks` apply to both. New: `--one-ship` drops the second, for cost pairs.
+- **Shared:** the glb's meshes, the ball, smoke, flash, puff and mist meshes, the plank
+  material (`twin`). `--ship-blocks` builds its own blocks and materials per ship, as
+  it's only for comparing.
+- **Without `--full-meter`:** the bot reached the second on 0.41 of a meter, because
+  the surge drains on after the first. Its meter was topped up by hand, so a second
+  run straight after a ring run needs charging on the way.
+
+**What it costs**, two ships against `--one-ship`. Provisional: load was 3 to 8, and
+this is two pairs of the three, with one sink pair. Counts settle most of it. From the
+start she adds nothing. A sight of her at about 2 km adds 20 to 50 draws, and 40 to 80
+in `both_view`. Over her at about 120 m, where `far2k_away` happens to sit now, she adds
+290 draws and 200k primitives. Her script adds about 10 us a frame when far. Medians
+moved by less than the run-to-run noise (0.1 to 1.0 ms up in most pairs, down in some).
+A quiet timing has to settle `near300_guns` (+1.0 and -0.8 ms) and `far2k_away` p95.
+
+**Proved** on Mac by bots on real input (`scratch/ship_two.gd`, `scratch/ship_sea.gd`,
+not committed): sink the first with the ring (no points), fly to the second, sink her
+(25,000 on her alone), both back after 60 s (1414 and 1100 m off the plane, out of view,
+2.7 and 2.6 km from each other), no ring mark, then the returned first pays. The eye
+framed the right ship on 92% and 96% of settled frames, and never both. Two sinks
+overlapping: the newest took the eye, no tug, and it came home. Each ship's guns
+fired alone. Near either the skim rate held x8. `ship_wall.gd --second` passes on her.
+All of it without a rendered look: there is no still of both ships.
+
+Bots changed for two ships: `ship_wall.gd` gained `--second`; `ship_cost.gd` steps both
+and has a `both_view` case; `cost_runs.sh` pairs two against `--one-ship`. `ship_sink.gd`,
+`ship_model.gd` and `ship.gd` needed no change.
+
+**Unproved:** a clean flight between them. The bot held 30 m over the sea on a straight
+line and crashed three times on the isle at about (3050 to 3110, 4120 to 4160), which
+stands 56 m or more over the sea, right on that line. So whether the second can be seen
+from the first's sink is open too: the isle may hide her, and no still was taken. Hand
+flying any of it. The third cost pair. Spacing after more than one return. A
+`coast/ship` delete in a layout with the second kept. No PC number.
+
 ## The sink, the return, the cost
 
 Both plates open with no ring aboard sinks her: the ring taken, or a ship with no
