@@ -15,6 +15,10 @@ extends Node3D
 const LandHalls = preload("res://scripts/endless/land_halls.gd")
 const RUINS := "res://assets/models/giants/ruins.json"
 const LAYER := 1
+## A small head's cuts are few and fine: darker in the cut, and no soil lying on
+## its cap in bands.
+const SMALL_SHADE := 0.58
+const SMALL_SOIL := 1.14
 const STONE = preload("res://shaders/giant_stone.gdshader")
 
 var _ruins: Array = []
@@ -46,6 +50,9 @@ func _pose(e: Dictionary) -> Dictionary:
 	stone.set_shader_parameter("mask",load("res://assets/textures/ruin_stone_mask.png"))
 	stone.set_shader_parameter("relief",load("res://assets/textures/giants/%s_normal.png" % e.piece))
 	stone.set_shader_parameter("shade",load("res://assets/textures/giants/%s_ao.png" % e.piece))
+	if bool(e.get("small",false)):
+		stone.set_shader_parameter("shade_low",SMALL_SHADE)
+		stone.set_shader_parameter("soil_from",SMALL_SOIL)
 	var o: Array = e.origin
 	var s: Array = e.size
 	var low := Vector3(float(o[0]),float(o[1]),float(o[2]))

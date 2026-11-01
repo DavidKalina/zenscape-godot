@@ -7,8 +7,8 @@ Each head is a signed distance field on a numpy grid, meshed with surface nets
 and written as a glb. A field gives real hollows (mouth, throat, chamber, eye
 shafts, a way out the back) and carved blends, and later cuts (a split, a
 break) are one more field. Metres, Blender axes: the face looks down -Y, Z up,
-the base stands on z = 0. A head is 120 m tall, a torso about 200 m; the plane
-spans 2.8 m. Each piece writes <name>.glb (the field's full mesh) and
+the base stands on z = 0. A head is 120 m tall, a torso about 200 m (small_heads.py
+has the 55 m heads, carved for that size); the plane spans 2.8 m. Each piece writes <name>.glb (the field's full mesh) and
 <name>_low.glb (the worn field without its cracks, meshed on a grid STRIDE
 times coarser: even triangles, and no route pinched as cutting the full mesh
 down did), and prints the room on its flight lines measured on both meshes.
@@ -35,14 +35,15 @@ from mathutils.bvhtree import BVHTree
 
 ROOT = Path(__file__).resolve().parents[3]
 TALL = 120.0
-STRIDE = {"head": 6, "torso": 5}
-CUT = 16.0
+STRIDE = {"head": 6, "torso": 5, "small": 6}
+CUT = {"head": 16.0, "torso": 16.0, "small": 7.0}                              # how far under the land a pose goes on
 COURSES = (6.0, 8.0, 8.0, 11.0, 11.0, 14.0, 18.0)                              # beds of varied height
 BLOCKS = (11.0, 15.0, 15.0, 20.0, 26.0, 36.0)                                  # and blocks of varied length
-BAKE_NORMAL = 2048
-BAKE_AO = 1024
+BAKE = {"head": (2048, 1024), "torso": (2048, 1024), "small": (1024, 512)}     # normal, ao; a small head has a fifth of a big one's skin
+CAGE = {"head": (4.0, 9.0), "torso": (4.0, 9.0), "small": (2.0, 4.5)}          # bake's cage, reach
+FACE_SHARE = 0.55
 SWELL_MOST = 16.0
-CELL = 4.0
+CELL = {"head": 4.0, "torso": 4.0, "small": 2.0}                               # the distance grid the plane flies against
 # id, piece, ground spot (Blender x, y), tilt in degrees, share of height showing.
 POSES = [
     ("warden_torso_rearing", "warden_torso", (20, 330), (0, -35, 20), 0.58),
@@ -53,9 +54,25 @@ POSES = [
     ("mourner_torso_bowed", "mourner_torso", (460, 220), (-16, -24, 30), 0.44),
     ("elder_brow", "elder", (420, -320), (-14, -30, -40), 0.33),
     ("warden_crown", "warden", (-660, -320), (70, 10, 60), 0.34),
+    ("elder_55_awake", "elder_55", (0, 0), (0, -3, 5), 0.92),                  # level, for the bore
+    ("mourner_55_bowed", "mourner_55", (0, 0), (-20, 7, -9), 0.78),
+    ("warden_55_gazing", "warden_55", (0, 0), (9, -8, 6), 0.84),
+    ("warden_55_on_its_ear", "warden_55", (0, 0), (0, 86, 22), 0.74),
+    ("mourner_55_on_its_cheek", "mourner_55", (0, 0), (6, -72, 16), 0.74),
 ]
 HEADS = ("elder", "warden", "mourner")
 TORSOS = ("elder_torso", "warden_torso", "mourner_torso")
+SMALL = ("elder_55", "warden_55", "mourner_55")                                # small_heads.py
+# The big heads' stone lost off their faces: (centre, radius, depth).
+HEAD_WEAR = {
+    "elder": (((-30, 30, 92), 24, 5), ((40, 34, 18), 22, 5)),
+    "warden": (((26, 34, 108), 20, 5), ((-34, 38, 26), 22, 5)),
+    "mourner": (((-30, 34, 96), 22, 5), ((34, 36, 20), 22, 5)),
+}
+
+
+def kind(name):
+    return "small" if name in SMALL else "torso" if name in TORSOS else "head"
 
 
 class Field:
@@ -440,6 +457,9 @@ ROUTES = {
     "elder_torso": {"through the chest": [(20, -105, 100), (0, 6, 103), (-8, 100, 100)], "down the neck": [(0, 2, 242), (0, 6, 105)]},
     "warden_torso": {"gate": [(0, -105, 66), (0, 105, 66)], "arm's loop": [(102, -105, 90), (102, 105, 90)]},
     "mourner_torso": {"hem to neck": [(0, -140, 12), (0, -20, 22), (0, 8, 70), (0, -52, 214)]},
+    "elder_55": {"the bore": [(0, -40, 13.8), (0, 36, 13.8)]},
+    "warden_55": {},
+    "mourner_55": {},
 }
 
 
@@ -543,21 +563,29 @@ def to_object(name, verts, quads):
 
 
 def build(name, voxel, seed, out, bake_it):
-    f = Field(*BOUNDS[name], voxel, seed)
-    full, soft = weather(f, globals()[name](f))
+    if name in SMALL:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import small_heads
+        f, full, soft = small_heads.carved(name, voxel)
+    else:
+        f = Field(*BOUNDS[name], voxel, seed)
+        wear = {"losses": HEAD_WEAR[name], "breaks": 0, "cracks": 4} if name in HEADS else {}  # random stone lost took noses
+        full, soft = weather(f, globals()[name](f), **wear)
     base = -f.Z
     ob = to_object(name, *surface_nets(smax(full, base, 0.5), f.lo, f.h))
     export(name, out / f"{name}.glb")
     print(f"{name}: {len(ob.data.polygons)} tris")
     clearance(ob.data, name, "full")
     full_ob = ob
-    k = STRIDE["torso" if name in TORSOS else "head"]
+    k = STRIDE[kind(name)]
     coarse = smax(soft, base, 0.5)[::k, ::k, ::k]
     ob = to_object(f"{name}_low", *surface_nets(coarse, f.lo, f.h * k))
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.uv.smart_project(angle_limit=1.2, island_margin=0.004)
     bpy.ops.object.mode_set(mode="OBJECT")
+    if name in SMALL:
+        face_island(ob, f)
     export(name, out / f"{name}_low.glb")
     print(f"{name}_low: {len(ob.data.polygons)} tris")
     clearance(ob.data, name, "low")
@@ -571,6 +599,23 @@ def build(name, voxel, seed, out, bake_it):
     if bake_it:
         bake(full_ob, ob, name)
     return {"f": f, "soft": soft, "co": co.reshape(-1, 3), "tris": tris.reshape(-1, 3), "uv": uv.reshape(-1, 3, 2)}
+
+
+def face_island(ob, f):
+    """A small head's face, one flat island drawn straight on (FACE_SHARE of the
+    map), so a nose isn't cut up across islands; smart project's islands take the rest."""
+    me = ob.data
+    uv = me.uv_layers[0].data
+    wide = float(f.xs[-1] - f.xs[0])
+    tall = float(f.zs[-1] - f.zs[0])
+    for poly in me.polygons:
+        front = poly.center.y < -6 and poly.normal.y < -0.12
+        for li in poly.loop_indices:
+            co = me.vertices[me.loops[li].vertex_index].co
+            if front:
+                uv[li].uv = ((co.x - f.xs[0]) / wide * (FACE_SHARE - 0.01), (co.z - f.zs[0]) / tall)
+            else:
+                uv[li].uv = (FACE_SHARE + uv[li].uv.x * (1 - FACE_SHARE), uv[li].uv.y)
 
 
 def bake(high, low, name):
@@ -588,12 +633,14 @@ def bake(high, low, name):
     high.select_set(True)
     low.select_set(True)
     bpy.context.view_layer.objects.active = low
-    for kind, size, samples, tag in (("NORMAL", BAKE_NORMAL, 1, "normal"), ("AO", BAKE_AO, 24, "ao")):
+    normal, ao = BAKE[kind(name)]
+    cage, reach = CAGE[kind(name)]
+    for how, size, samples, tag in (("NORMAL", normal, 1, "normal"), ("AO", ao, 24, "ao")):
         img = bpy.data.images.new(f"{name}_{tag}", size, size, alpha=False)
         img.colorspace_settings.name = "Non-Color"
         node.image = img
         scene.cycles.samples = samples
-        bpy.ops.object.bake(type=kind, use_selected_to_active=True, cage_extrusion=4.0, max_ray_distance=9.0,
+        bpy.ops.object.bake(type=how, use_selected_to_active=True, cage_extrusion=cage, max_ray_distance=reach,
                             normal_space="TANGENT", margin=8, use_clear=True)
         img.filepath_raw = str(game / f"{name}_{tag}.png")
         img.file_format = "PNG"
@@ -604,6 +651,7 @@ def bake(high, low, name):
 def set_pose(entry, piece, out):
     """The posed, cut mesh and the entry for ruins.json."""
     pose_id, name, spot, tilt, show = entry
+    under, cell = CUT[kind(name)], CELL[kind(name)]
     co = piece["co"]
     pivot = (co.max(0) + co.min(0)) / 2
     rot = np.array(Euler([np.radians(t) for t in tilt], "XYZ").to_matrix())
@@ -617,7 +665,7 @@ def set_pose(entry, piece, out):
     me.uv_layers.new(name="UVMap").data.foreach_set("uv", piece["uv"].ravel())
     bm = bmesh.new()
     bm.from_mesh(me)
-    bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, -CUT), plane_no=(0, 0, 1), clear_inner=True)
+    bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, -under), plane_no=(0, 0, 1), clear_inner=True)
     bmesh.ops.triangulate(bm, faces=bm.faces)
     bm.to_mesh(me)
     bm.free()
@@ -631,10 +679,10 @@ def set_pose(entry, piece, out):
     me.vertices.foreach_get("co", kept)
     kept = kept.reshape(-1, 3)
     # The grid in Godot's axes: x, y up, z = -Blender's y.
-    lo = np.array((kept[:, 0].min(), -CUT, -kept[:, 1].max())) - CELL * 2
-    hi = np.array((kept[:, 0].max(), kept[:, 2].max(), -kept[:, 1].min())) + CELL * 2
-    size = (np.ceil((hi - lo) / CELL) + 1).astype(int)
-    z, y, x = np.meshgrid(*(lo[i] + np.arange(size[i]) * CELL for i in (2, 1, 0)), indexing="ij")
+    lo = np.array((kept[:, 0].min(), -under, -kept[:, 1].max())) - cell * 2
+    hi = np.array((kept[:, 0].max(), kept[:, 2].max(), -kept[:, 1].min())) + cell * 2
+    size = (np.ceil((hi - lo) / cell) + 1).astype(int)
+    z, y, x = np.meshgrid(*(lo[i] + np.arange(size[i]) * cell for i in (2, 1, 0)), indexing="ij")
     posed = np.stack((x.ravel(), -z.ravel(), y.ravel() + ground), 1)
     f = piece["f"]
     local = posed @ rot + pivot                                                # rot's inverse is its transpose
@@ -644,12 +692,16 @@ def set_pose(entry, piece, out):
     dist = np.full(len(at), 60.0, np.float32)
     dist[good] = piece["soft"][tuple(at[good].T)]
     grid = np.clip(np.round(dist * 2), -127, 127).astype(np.int8)
-    rim = kept[np.abs(kept[:, 2]) < 14, :2]                                    # the waterline
+    rim = kept[np.abs(kept[:, 2]) < under * 0.875, :2]                         # the waterline
     middle = rim.mean(0)
     reach = float(np.sqrt(((rim - middle) ** 2).sum(1)).max())
+    lines = {}                                                                 # its flight lines in the pose's frame, Godot's axes
+    for route, pts in ROUTES[name].items():
+        p = (np.array(pts, float) - pivot) @ rot.T
+        lines[route] = [[float(a), float(c - ground), float(-b)] for a, b, c in p]
     print(f"{pose_id}: {len(me.polygons)} tris, {len(piece['tris'])} before the cut, {top - ground:.0f} m showing, grid {size.tolist()}")
     return {"id": pose_id, "piece": name, "x": spot[0], "z": -spot[1], "rim_x": float(middle[0]), "rim_z": -float(middle[1]), "reach": reach,
-            "origin": lo.tolist(), "cell": CELL, "size": size.tolist(),
+            "small": name in SMALL, "lines": lines, "origin": lo.tolist(), "cell": cell, "size": size.tolist(),
             "d": base64.b64encode(grid.tobytes()).decode()}
 
 
@@ -661,7 +713,7 @@ def export(name, path):
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pieces", default=",".join(HEADS + TORSOS))
+    ap.add_argument("--pieces", default=",".join(HEADS + TORSOS + SMALL))
     ap.add_argument("--voxel", type=float, default=0.75)
     ap.add_argument("--out", default="scratch/giant_heads")
     ap.add_argument("--bake", action="store_true")
@@ -672,13 +724,14 @@ def main():
     pieces = {}
     for name in args.pieces.split(","):
         bpy.ops.wm.read_factory_settings(use_empty=True)
-        pieces[name] = build(name, args.voxel * (1.6 if name in TORSOS else 1.0), zlib.crc32(name.encode()) % 1000, out, args.bake)
-    if set(pieces) >= set(HEADS + TORSOS):
+        voxel = args.voxel * {"head": 1.0, "torso": 1.6, "small": 0.47}[kind(name)]  # 0.35 m on a small head
+        pieces[name] = build(name, voxel, zlib.crc32(name.encode()) % 1000, out, args.bake)
+    if set(pieces) >= set(HEADS + TORSOS + SMALL):
         game = ROOT / "assets/models/giants"
         game.mkdir(parents=True, exist_ok=True)
         ruins = [set_pose(entry, pieces[entry[1]], game) for entry in POSES]
         (game / "ruins.json").write_text(json.dumps(ruins))
-        poses = [{"reach": r["reach"], "lift": round(min(r["reach"] * 0.16, SWELL_MOST), 2), "rim_x": r["rim_x"], "rim_z": r["rim_z"]} for r in ruins]
+        poses = [{"reach": r["reach"], "lift": round(min(r["reach"] * 0.16, SWELL_MOST), 2), "rim_x": r["rim_x"], "rim_z": r["rim_z"], "small": r["small"]} for r in ruins]
         (game / "poses.json").write_text(json.dumps(poses))
 
 
