@@ -16,6 +16,9 @@ extends Node3D
 ##   const SPINE := 480.0
 ##   static func build(s: Shapes) -> void:
 ##       s.box(...); s.slope(...); s.cyl(...); s.stamp(block,at,yaw)
+##   ## A piece that follows the land: `const LANDED := true`, then
+##   ## `build(s, land)`, `land.call(x, z)` the land's height in the piece's frame.
+##   ## Not seated on the mean: its heights are the world's (city/road.gd).
 ##
 ## - The frame: the origin on the ground, at the middle of the piece, +z the way
 ##   the line flies out of it, +x across, m at true size. Nothing is a node, a
@@ -55,11 +58,12 @@ const LandHalls = preload("res://scripts/endless/land_halls.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const Shapes = preload("res://scripts/endless/city/city_shapes.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 ## The placed pieces, each one row (the contract, above).
 const PLACED := [
 	{"name":"city/gate","piece":preload("res://scripts/endless/city/gate.gd"),"along":350.0,"across":71.0,"turn":0.2},
-	{"name":"city/colonnade","piece":preload("res://scripts/endless/city/colonnade.gd"),"along":470.0,"across":530.0,"turn":1.6,"lift":8.0},
+	{"name":"city/road","piece":preload("res://scripts/endless/city/road.gd"),"along":470.0,"across":530.0,"turn":1.6},
 	{"name":"city/pillar_hall","piece":preload("res://scripts/endless/city/pillar_hall.gd"),"along":-365.0,"across":1192.0,"turn":2.92},
 	{"name":"city/pyramid","piece":preload("res://scripts/endless/city/pyramid.gd"),"along":-700.0,"across":1720.0,"turn":0.8},
 ]
@@ -86,6 +90,10 @@ const GROW := 4.0
 ## Floats a solid keeps: where it stands (x, y, z, cos, sin), then its row.
 const STRIDE := 16
 const HEAD := 5
+## --city-start: the speed it's let go at, the ticks it's held at least and at most.
+const START_SPEED := 54.0
+const START_LEAST := 90
+const START_MOST := 360
 
 var _views: Array[RID] = []
 var _bodies: Array[RID] = []
@@ -99,6 +107,8 @@ var _cells := {}
 var _low := Vector2(INF,INF)
 var _high := Vector2(-INF,-INF)
 var _tris := Vector2i.ZERO
+## --city-start's ticks held, -1 when done with.
+var _start_held := 0
 static var _rings: Array = []
 static var _rings_for := 0
 
@@ -136,6 +146,29 @@ static func clear_of(world: RefCounted, x: float, z: float, room: float) -> bool
 		if p.distance_to(Geometry2D.get_closest_point_to_segment(p,r[0],r[1])) < float(r[2])+room: return false
 	return true
 
+## --city-start: flying the city by hand with no crossing to fly first. The far
+## side at once, the plane held out of the mouth and facing the gate until the
+## land there has streamed in, then let go at speed. A debug start.
+func debug_start(host: Node3D) -> void:
+	if _start_held < 0: return
+	if _start_held == 0:
+		if not "--city-start" in LaunchArgs.user_args():
+			_start_held = -1
+			return
+		host.doors._swap(1)
+	_start_held += 1
+	var f := frame(host.world)
+	var gate := f*Vector3(71.0,0.0,350.0)
+	var at := f*Vector3(10.0,0.0,70.0)
+	at.y = float(host.field.height(at.x,at.z))+24.0
+	var way := Vector3(gate.x-at.x,0.0,gate.z-at.z).normalized()
+	host.plane.heading = atan2(-way.x,-way.z)
+	host.plane.pitch = 0.0
+	host.plane.carry(at,way*START_SPEED,START_SPEED)
+	var c: Dictionary = host.land.counts()
+	if _start_held > START_LEAST and (_start_held > START_MOST or int(c.queued)+int(c.in_flight) == 0):
+		_start_held = -1
+
 func setup(host: Node3D) -> void:
 	_grey = StandardMaterial3D.new()
 	_grey.albedo_color = GREY
@@ -149,6 +182,9 @@ func setup(host: Node3D) -> void:
 		var name_of := str(e.name)
 		if LayoutOverrides.deleted(name_of): continue
 		var piece: GDScript = e.piece
+		if piece.get_script_constant_map().has("LANDED"):
+			_walk_landed(piece,LayoutOverrides.xform(name_of,_coded(host.world,e)),host)
+			continue
 		if not built.has(piece):
 			var shapes := Shapes.new()
 			piece.call("build",shapes)
@@ -157,6 +193,16 @@ func setup(host: Node3D) -> void:
 		var place := LayoutOverrides.xform(name_of,_seated(_coded(host.world,e),block,host))
 		_walk(block,Transform3D(Basis(Vector3.UP,atan2(place.basis.z.x,place.basis.x.x)),place.origin))
 	print("giant city: %d solids, %d near triangles and %d far, %d instances, %d bodies" % [_s.size()/STRIDE,_tris.x,_tris.y,_views.size(),_bodies.size()])
+
+## A LANDED piece at `place` (y 0, so its heights are the world's): `build` also
+## gets the land in the piece's frame.
+func _walk_landed(piece: GDScript, place: Transform3D, host: Node3D) -> void:
+	var land := func(x: float, z: float) -> float:
+		var q := place*Vector3(x,0.0,z)
+		return float(host.field.height(q.x,q.z))
+	var shapes := Shapes.new()
+	piece.call("build",shapes,land)
+	_walk(shapes,Transform3D(Basis(Vector3.UP,atan2(place.basis.z.x,place.basis.x.x)),place.origin))
 
 ## `place` at the land's mean under the block, plus its `lift`.
 func _seated(place: Transform3D, block: RefCounted, host: Node3D) -> Transform3D:

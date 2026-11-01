@@ -1274,6 +1274,7 @@ func tick(delta: float) -> void:
 	chase.ground = hand_landing.on_ground()
 	_stop_note()
 	FrameLog.mark(&"ground_scale")
+	if city != null: city.debug_start(self)
 	# A door flown into carries the plane to the other side (region_doors.gd).
 	if doors != null: doors.step(delta)
 	FrameLog.mark(&"doors")
