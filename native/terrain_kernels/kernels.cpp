@@ -329,6 +329,7 @@ static void initialize(ModuleInitializationLevel level) {
     ClassDB::register_class<ZenScapeGrass>();
     ClassDB::register_class<ZenScapeTrees>();
     ClassDB::register_class<ZenScapeMotes>();
+    ClassDB::register_class<ZenScapeSwell>();
     ClassDB::register_class<ZenScapeRibbons>();
     ClassDB::register_class<ZenScapeBirds>();
     ClassDB::register_class<ZenScapePeak>();

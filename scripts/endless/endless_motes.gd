@@ -50,6 +50,11 @@ const POLLEN_LEAD := 0.6
 const POLLEN_WANDER := 0.45
 const POLLEN_DRIFT := 0.55
 
+## Specks born a frame at most (each asks the land up to five times); one
+## whose turn doesn't come stays spent. Boost through the disc needs about 5
+## a frame at 120 fps; beside water every speck would otherwise retry each frame.
+const POLLEN_SPAWNS := 12
+
 const KICK := 240
 const KICK_RATE := 150.0
 ## A clipped blade's length and width (m: the endless grass stands about
@@ -280,12 +285,16 @@ func _pollen(delta: float, eye: Vector3, grass: Callable) -> void:
 
 ## `_pollen`'s loop in C++ (ZenScapeMotes): the same specks, spawned here.
 func _pollen_native(delta: float, centre: Vector2, grass: Callable) -> void:
-	while native.pollen_count() < pollen_count:
+	var left := POLLEN_SPAWNS
+	while native.pollen_count() < pollen_count and left > 0:
+		left -= 1
 		var s := {}
 		_spawn_speck(s,centre,grass,true)
 		native.pollen_put(native.pollen_count(),_speck_record(s))
 	var away := Vector2(_eye_vel.x,_eye_vel.z)-_air*POLLEN_DRIFT
 	for i: int in native.pollen_age(delta,centre):
+		if left <= 0: break
+		left -= 1
 		var s := {}
 		_spawn_speck(s,centre,grass,false,away)
 		native.pollen_put(i,_speck_record(s))

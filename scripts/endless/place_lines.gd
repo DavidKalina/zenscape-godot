@@ -172,7 +172,9 @@ func step(delta: float, game: Node) -> void:
 		run.t = float(run.t)+delta
 		if not flying: _end(game,"landed")
 	if a != Vector3.INF and flying: _passes(game,a,p,delta)
+	FrameLog.mark(&"l_pass")
 	_show(delta,game,p)
+	FrameLog.mark(&"l_show")
 	hud.step(delta,self)
 
 func _passes(game: Node, a: Vector3, b: Vector3, delta: float) -> void:

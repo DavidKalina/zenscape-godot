@@ -181,15 +181,19 @@ func step(delta: float, g: Node) -> void:
 		if site.is_empty(): continue
 		var d := at.distance_to(Vector2(site.centre.x,site.centre.z))
 		if c.state == "found" and d < CHECK:
-			if _stands_clear(site): c.state = "checked"
-			else:
+			var clear := _clear_row(site,c)
+			if clear > 0: c.state = "checked"
+			elif clear < 0:
 				print("shop %s: something stands on its strip; looking on" % site.name)
 				_free(key)
 				c.site = {}
 				c.state = "looking"
+				c.erase("clear_u")
 				continue
-		if d < SHOW and not built.has(key): _build(key,site)
+		FrameLog.mark(&"s_pre")
+		if d < SHOW and not built.has(key) and not _building.has(key): _build(key,site)
 		elif d > DROP and built.has(key): _free(key)
+		FrameLog.mark(&"s_build")
 	for key: Vector2i in built:
 		_sway(built[key])
 	_open_or_close()
@@ -344,22 +348,22 @@ func _named(key: Vector2i, s: Dictionary) -> Dictionary:
 
 ## Nothing standing on the strip's lanes or the hangar's ground, as the
 ## rolling plane meets the land (the game's `_blocked`, `plane_ground`).
-func _stands_clear(site: Dictionary) -> bool:
+func _clear_row(site: Dictionary, cell: Dictionary) -> int:
+	var u := float(cell.get("clear_u",-STRIP*0.5))
+	if u > STRIP*0.5+0.1: return 1
 	var field: RefCounted = game.field
 	var c: Vector3 = site.centre
 	var axis: Vector3 = site.axis
 	var across: Vector3 = site.across
-	var u := -STRIP*0.5
-	while u <= STRIP*0.5+0.1:
-		for v: float in [-LANE_HALF,-LANE_HALF*0.5,0.0,LANE_HALF*0.5,LANE_HALF]:
-			var q := c+axis*u+across*v
-			var h := float(field.height(q.x,q.z))
-			if bool(game._blocked(Vector3(q.x,h+1.0,q.z))): return false
-			var g: Variant = game.plane_ground(Vector3(q.x,h+60.0,q.z))
-			if g is Vector2: return false
-			if g != null and float(g) > h+0.5: return false
-		u += 8.0
-	return true
+	for v: float in [-LANE_HALF,-LANE_HALF*0.5,0.0,LANE_HALF*0.5,LANE_HALF]:
+		var q := c+axis*u+across*v
+		var h := float(field.height(q.x,q.z))
+		if bool(game._blocked(Vector3(q.x,h+1.0,q.z))): return -1
+		var g: Variant = game.plane_ground(Vector3(q.x,h+60.0,q.z))
+		if g is Vector2: return -1
+		if g != null and float(g) > h+0.5: return -1
+	cell.clear_u = u+8.0
+	return 0
 
 ## Whether `p` (XZ) is on `site`'s strip, as a stop counts.
 static func on_strip(site: Dictionary, p: Vector3) -> bool:
@@ -416,10 +420,12 @@ func close() -> void:
 ## The shop at `site`: built from a few boxes, cylinders and cones, each
 ## part on the land under it.
 func _build(key: Vector2i, site: Dictionary) -> void:
+	_building[key] = true
+	_breath_from = Time.get_ticks_usec()
 	var root := Node3D.new()
 	root.name = "Shop_%d_%d" % [key.x,key.y]
+	root.visible = false
 	add_child(root)
-	built[key] = root
 	var field: RefCounted = game.field
 	var c: Vector3 = site.centre
 	var axis: Vector3 = site.axis
@@ -447,6 +453,7 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 		_box(shed,Vector3(0.3,tall+sunk,dp),Vector3(s*w*0.5,(tall-sunk)*0.5,0),wood)
 		# The gable ends' triangles as a squat box under the ridge.
 		_box(shed,Vector3(0.3,1.2,dp*0.6),Vector3(s*w*0.5,tall+0.6,0),wood)
+	await _breathe()
 	# A pitched roof, its two slopes, past the walls.
 	var pitch := 0.42
 	for s: float in [-1.0,1.0]:
@@ -460,10 +467,12 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 	# The sign over the open front: a gilt board, a cream band.
 	_box(shed,Vector3(w*0.62,1.1,0.2),Vector3(0,tall-0.2,-dp*0.5-0.1),gilt)
 	_box(shed,Vector3(w*0.62+0.3,0.18,0.24),Vector3(0,tall+0.42,-dp*0.5-0.1),cream)
+	await _breathe()
 	# A counter in the mouth, and a few crates.
 	_box(shed,Vector3(w*0.5,1.1,0.8),Vector3(-w*0.15,0.55,-dp*0.5+0.9),plank)
 	_box(shed,Vector3(1.2,1.2,1.2),Vector3(w*0.3,0.6,-dp*0.1),wood)
 	_box(shed,Vector3(0.9,0.9,0.9),Vector3(w*0.36,1.65,-dp*0.1),plank)
+	await _breathe()
 	# The mast, its lamp and windsock, at the hangar's far corner.
 	var mast_at := c+across*(SHED_OFF-SHED_DEEP*0.5-2.5)+axis*(SHED_LONG*0.5+3.5)
 	mast_at.y = _ground(field,mast_at,1.0)
@@ -483,6 +492,7 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 	pole.material_override = steel
 	pole.position = Vector3(0,MAST*0.5-0.5,0)
 	mast.add_child(pole)
+	await _breathe()
 	# Red and white bands up it, to read against the sky.
 	var red := _mat(Color("b8342a"),0.7)
 	for b in 4:
@@ -508,6 +518,7 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 	lamp.position = Vector3(0,MAST+LAMP*0.4,0)
 	lamp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mast.add_child(lamp)
+	await _breathe()
 	# The lamp's glint far off: the same few pixels at any distance, fading
 	# in past GLINT_FROM m, so the shop is found from far.
 	var glint := MeshInstance3D.new()
@@ -528,6 +539,7 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 	flag.basis = Basis.looking_at(-axis*float(site.ends[0]),Vector3.UP)*Basis(Vector3.UP,PI*0.5)
 	flag.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mast.add_child(flag)
+	await _breathe()
 	# The sock on its arm: a cone in orange and white bands, along the strip.
 	var sock := Node3D.new()
 	sock.name = "Sock"
@@ -554,6 +566,7 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 		# Along local -Z (Basis.looking_at's forward), from the arm out.
 		seg.transform = Transform3D(Basis(Vector3.RIGHT,-PI*0.5),Vector3(0,0,-(b+0.5)*long/4.0-0.2))
 		sock.add_child(seg)
+	await _breathe()
 	# The strip's edge posts, cream with gilt caps, both sides; the ends'
 	# all gilt.
 	var post := BoxMesh.new()
@@ -578,8 +591,24 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 			top.position = q+Vector3.UP*(POST-0.15)
 			top.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			root.add_child(top)
+		await _breathe()
 		u += POST_EVERY
-	if _merge: _merged(root)
+	if _merge: await _merged(root)
+	root.visible = true
+	built[key] = root
+	_building.erase(key)
+
+## A shop is built over as many frames as it takes, hidden till it stands: a
+## build in one go was a 15 to 23 ms frame.
+const BREATH_US := 1200
+var _building := {}
+var _warming := false
+var _breath_from := 0
+func _breathe() -> void:
+	if _warming or Time.get_ticks_usec()-_breath_from < BREATH_US: return
+	FrameLog.add(&"s_slices",(Time.get_ticks_usec()-_breath_from)/1000.0)
+	await get_tree().process_frame
+	_breath_from = Time.get_ticks_usec()
 
 ## The shop's still meshes joined into one a material and shadow setting
 ## (the hangar, the mast's pole and bands, the edge posts): ~30 nodes a shop
@@ -589,7 +618,7 @@ func _build(key: Vector2i, site: Dictionary) -> void:
 var _merge := not "--shop-merge=0" in preload("res://scripts/launch_args.gd").user_args()
 func _merged(root: Node3D) -> void:
 	var to_root := root.global_transform.affine_inverse()
-	var tools := {}
+	var joins := {}
 	var parts: Array = []
 	for n in root.find_children("*","MeshInstance3D",true,false):
 		var mi := n as MeshInstance3D
@@ -598,22 +627,55 @@ func _merged(root: Node3D) -> void:
 		if m is ShaderMaterial and (m as ShaderMaterial).shader == _pennant_shader: continue
 		if mi.get_parent().name == "Sock": continue
 		var key := [m,mi.cast_shadow]
-		if not tools.has(key):
-			var st := SurfaceTool.new()
-			st.begin(Mesh.PRIMITIVE_TRIANGLES)
-			tools[key] = st
-		for i in mi.mesh.get_surface_count(): (tools[key] as SurfaceTool).append_from(mi.mesh,i,to_root*mi.global_transform)
+		if not joins.has(key): joins[key] = {"v":PackedVector3Array(),"n":PackedVector3Array(),"uv":PackedVector2Array(),"i":PackedInt32Array()}
+		var join: Dictionary = joins[key]
+		var a := _geometry(mi.mesh as PrimitiveMesh)
+		var xf: Transform3D = to_root*mi.global_transform
+		var verts: PackedVector3Array = join.v
+		var normals: PackedVector3Array = join.n
+		var uvs: PackedVector2Array = join.uv
+		var into: PackedInt32Array = join.i
+		var base := verts.size()
+		verts.append_array(xf*(a[Mesh.ARRAY_VERTEX] as PackedVector3Array))
+		normals.append_array(Transform3D(xf.basis,Vector3.ZERO)*(a[Mesh.ARRAY_NORMAL] as PackedVector3Array))
+		uvs.append_array(a[Mesh.ARRAY_TEX_UV])
+		var index: PackedInt32Array = a[Mesh.ARRAY_INDEX]
+		var at := into.size()
+		into.resize(at+index.size())
+		for q in index.size(): into[at+q] = index[q]+base
+		join.v = verts
+		join.n = normals
+		join.uv = uvs
+		join.i = into
 		parts.append(mi)
+		await _breathe()
 	for mi: MeshInstance3D in parts: mi.free()
 	var k := 0
-	for key: Array in tools:
+	for key: Array in joins:
 		var joined := MeshInstance3D.new()
 		joined.name = "Joined%d" % k
 		k += 1
-		joined.mesh = (tools[key] as SurfaceTool).commit()
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = joins[key].v
+		arrays[Mesh.ARRAY_NORMAL] = joins[key].n
+		arrays[Mesh.ARRAY_TEX_UV] = joins[key].uv
+		arrays[Mesh.ARRAY_INDEX] = joins[key].i
+		var mesh := ArrayMesh.new()
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+		joined.mesh = mesh
 		joined.material_override = key[0]
 		joined.cast_shadow = key[1]
 		root.add_child(joined)
+		await _breathe()
+
+## A primitive's arrays, kept: reading them makes the GPU wait (about 9 ms a
+## mesh in flight), so `_warm`'s throwaway shop reads each shape once at setup.
+static var _shapes := {}
+static func _geometry(mesh: PrimitiveMesh) -> Array:
+	var key: Array = [(mesh as BoxMesh).size] if mesh is BoxMesh else [(mesh as CylinderMesh).top_radius,(mesh as CylinderMesh).bottom_radius,(mesh as CylinderMesh).height]
+	if not _shapes.has(key): _shapes[key] = mesh.get_mesh_arrays()
+	return _shapes[key]
 
 ## The glint: its size on screen (as seen 1 m off), fading in from
 ## GLINT_FROM to GLINT_FULL m.
@@ -649,6 +711,11 @@ func _warm() -> void:
 		add_child(mi)
 		mi.material_override = m
 		mi.queue_free()
+	# A throwaway shop far under the land, so a real one finds its shapes read.
+	_warming = true
+	_build(Vector2i(1<<20,1<<20),{"centre":Vector3(0.0,-10000.0,0.0),"axis":Vector3.RIGHT,"across":Vector3.BACK,"side":1.0,"ends":[1.0,-1.0]})
+	_free(Vector2i(1<<20,1<<20))
+	_warming = false
 
 static func _glint_material() -> StandardMaterial3D:
 	if _glint_mat != null: return _glint_mat

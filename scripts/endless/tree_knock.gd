@@ -129,6 +129,7 @@ func before(delta: float, game: Node3D) -> Dictionary:
 				var q: Vector3 = xf*Vector3(side*half*f,0.0,fore*size)
 				_meet(met,trees.tree_in(q,false,0.0),q,true)
 	if met.is_empty(): return {}
+	FrameLog.mark(&"k_meet")
 	return _knock_all(game,met)
 
 ## A tree FlightContact found the plane touching at `at` (a hit these tries
@@ -167,7 +168,9 @@ func _knock_all(game: Node3D, met: Dictionary) -> Dictionary:
 	for key: Vector2i in met:
 		var m: Dictionary = met[key]
 		var t: Dictionary = m.tree
+		FrameLog.mark(&"k_pre")
 		var stood: Dictionary = trees.knock(t)
+		FrameLog.mark(&"k_hide")
 		if stood.is_empty(): continue
 		count += 1
 		knocks += 1
@@ -183,11 +186,13 @@ func _knock_all(game: Node3D, met: Dictionary) -> Dictionary:
 			top_heft = heft
 			at = m.at
 		_fall(game,t,stood,_lean(flat,across,t),speed_was,m.at,_blow(plane.position,across,t))
+		FrameLog.mark(&"k_fall")
 		var trunk := Vector3(float(t.x),clampf(float(m.at.y),float(t.foot)+0.5,float(t.foot)+float(t.height)),float(t.z))
 		game.debris.burst("leaves",m.at,(Vector3.UP+flat).normalized())
 		var crown := Vector3(float(t.x),float(t.foot)+float(t.height)*0.78,float(t.z))
 		game.debris.burst("needles",crown,(Vector3.UP*0.35+flat).normalized(),heft > 0.5)
 		game.debris.burst("wood",trunk,(Vector3.UP*0.6+flat).normalized(),heft > 0.5)
+		FrameLog.mark(&"k_debris")
 	if count == 0: return {}
 	plane.knock(keep,shove,yaw)
 	return {"at":at,"what":"tree","count":count,"keep":keep,"heft":top_heft,"speed":speed_was}
