@@ -18,7 +18,7 @@ the gray box's docs/design/endless-flight/pirate-ship-handoff.md. Blender
 Textures are painted here in numpy: `hull` and `stern` are unique maps (one
 for a side's elevation, shared by both sides, one for both flat ends),
 projected straight on, so stains run across the planks; `wood` tiles; `sail`
-is an atlas of torn cloth with a cut-out alpha. Vertex colours carry baked darkness,
+is an atlas of patched canvas, its few shot holes and frayed hem a cut-out alpha. Vertex colours carry baked darkness,
 shade under decks; the gun deck's light is drawn by its `deck` shader.
 """
 import json
@@ -159,6 +159,9 @@ STERN_TEX = 2048
 WOOD_TEX = 1024
 WOOD_TILE = 6.0           # the tile's size (m)
 SAIL_TEX = 2048
+SAIL_CELL = (1.6, 0.9)    # a sail's mesh at most this coarse (m across, m down), before crowding to its edges
+SAIL_MIN = (12, 8)        # and at least this many columns and rows
+SAIL_SIZE = 64.0          # the vertex colour's scale: a sail's size (m) / this
 
 WHITE = (1.0, 1.0, 1.0)
 RAW = (0.95, 0.76, 0.54)    # fresh-broken wood, on the wood tile
@@ -1387,29 +1390,27 @@ def mast_geo(index, spec, sails):
 	return g, yard_out
 
 
-def sail_geo(w, h, wb, cell, seed):
-	"""Hangs from the yard (the origin) down -Z, bellied forward (+Y)."""
+def sail_geo(w, h, wb, cell):
+	"""A flat sheet hanging from the yard (the origin) down -Z; `ship_cloth.gdshader` bellies it.
+
+	Rows and columns crowd toward the foot and the leeches, where the cloth ripples.
+	The vertex colour is the sheet's size for the shader: h, head and foot width over SAIL_SIZE.
+	"""
 	g = Geo()
-	rng = random.Random(seed)
-	nx, ny = 14, 10
-	ph = rng.uniform(0.0, 6.0)
-	belly = h * 0.2
+	nx = max(SAIL_MIN[0], round(max(w, wb) / SAIL_CELL[0]))
+	ny = max(SAIL_MIN[1], round(h / SAIL_CELL[1]))
 	cu, cv = (cell % 2) * 0.5, (1 - (cell // 2)) * 0.5
+	size = (h / SAIL_SIZE, w / SAIL_SIZE, wb / SAIL_SIZE)
 	ids = []
 	for j in range(ny + 1):
-		t = j / ny
+		t = 1.0 - (1.0 - j / ny) ** 1.3
 		row = []
 		for i in range(nx + 1):
-			s = i / nx * 2.0 - 1.0
-			ww = lerp(w, wb, t) * 0.5
-			# The belly, slack at the foot; wrinkles run down from the yard.
-			b = belly * math.sin(math.pi * min(1.0, t * 1.02 + 0.02)) ** 0.8 * (1.0 - 0.55 * s * s)
-			b += 0.38 * math.sin(s * 9.0 + ph + t * 2.0) * t + 0.22 * math.sin(s * 21.0 - ph * 2.0) * t * (1.0 - t)
-			foot = 0.08 * h * s * s * t * t * t
-			x = s * ww * (1.0 - 0.05 * math.sin(math.pi * t))
-			z = -h * t + foot
+			a = i / nx * 2.0 - 1.0
+			s = math.copysign(1.0 - (1.0 - abs(a)) ** 1.35, a)
+			x = s * lerp(w, wb, t) * 0.5
 			uv = (cu + (s * 0.5 + 0.5) * 0.5, cv + (1.0 - t) * 0.5)
-			row.append(g.vert((x, 0.35 + b, z), uv, WHITE))
+			row.append(g.vert((x, 0.35, -h * t), uv, size))
 		ids.append(row)
 	for j in range(ny):
 		for i in range(nx):
@@ -1681,7 +1682,7 @@ def paint_wood(W):
 
 
 def paint_sails(W):
-	"""Four torn cloths in a 2 x 2 atlas: RGB and a hard alpha."""
+	"""Four whole, weathered cloths in a 2 x 2 atlas: RGB and a hard alpha for shot holes and a frayed hem."""
 	cw = W // 2
 	col = np.zeros((W, W, 3), dtype=np.float32)
 	alpha = np.zeros((W, W), dtype=np.float32)
@@ -1691,60 +1692,53 @@ def paint_sails(W):
 		s = u / cw * 2.0 - 1.0
 		t = v / cw
 		grain = spectral(cw, cw, 0.8, 200 + cell, sy=8.0)
+		weave = spectral(cw, cw, 0.35, 205 + cell)
 		wash = spectral(cw, cw, 1.8, 210 + cell)
 		wash2 = spectral(cw, cw, 1.3, 220 + cell, sy=2.4)
 		fray = spectral(cw, cw, 1.15, 230 + cell)
-		tatter = spectral(cw, cw, 1.5, 240 + cell, sx=0.35, sy=1.0)
-		# Cloth: dark tanned canvas, bleached along the upper edge where the sun has it.
-		base = mix(C(0.27, 0.24, 0.21)[None, None], C(0.47, 0.42, 0.355)[None, None], np.clip(wash * 1.3 - 0.15, 0, 1))
-		base *= (0.85 + 0.3 * grain)[..., None]
+		blot = spectral(cw, cw, 1.6, 240 + cell)
+		# Cloth: tanned canvas, bleached in great soft patches where the sun has it.
+		base = mix(C(0.47, 0.41, 0.34)[None, None], C(0.66, 0.59, 0.49)[None, None], np.clip(wash * 1.4 - 0.2, 0, 1))
+		base *= (0.84 + 0.32 * grain)[..., None] * (0.92 + 0.16 * weave)[..., None]
 		# The cloths, seam by seam, each a touch different.
 		n = 15
 		idx = np.floor((s * 0.5 + 0.5) * n).astype(np.int32)
-		tone = rng.uniform(0.82, 1.14, n + 1)[np.clip(idx, 0, n)].astype(np.float32)
+		tone = rng.uniform(0.84, 1.12, n + 1)[np.clip(idx, 0, n)].astype(np.float32)
 		base *= tone[..., None]
 		sf = (s * 0.5 + 0.5) * n - idx
 		seamx = np.maximum(sst(0.05, 0.0, sf), sst(0.95, 1.0, sf))
-		base = mix(base, base * 0.5, seamx * 0.7)
+		base = mix(base, base * 0.55, seamx * 0.65)
+		# Reef bands, stitched across, a row of reef points under each.
 		for bz in (0.27, 0.5, 0.74):
-			base = mix(base, base * 0.62, sst(0.006, 0.0, np.abs(t - bz)) * 0.8)
-		# Patches sewn on, in another cloth.
-		for _ in range(9):
-			px, pz = rng.uniform(-0.8, 0.8), rng.uniform(0.1, 0.85)
-			w, h = rng.uniform(0.05, 0.14), rng.uniform(0.03, 0.09)
-			inside = (np.abs(s - px) < w) & (np.abs(t - pz) < h)
-			base[inside] = (base[inside] * 0.6 + rng.choice([0.05, 0.1, 0.22]) * np.array((1.0, 0.86, 0.72)))
-		# Rain streaks and mildew down the cloth, heavier toward the foot.
-		base = mix(base, base * 0.62, sst(0.5, 0.85, wash2) * (0.3 + 0.5 * t))
-		# What is left of it: frayed edges, the foot in hanging strips, holes, rips.
-		edge = np.minimum(np.minimum(1.0 - np.abs(s), t * 2.5), (1.0 - t) * 1.6)
-		keep = edge - (fray - 0.5) * 0.34 - 0.06
-		# Strips along the foot.
-		strip = spectral(cw, cw, 0.8, 250 + cell, sx=0.06, sy=1.0)
-		keep = np.minimum(keep, (0.92 - t) + (strip - 0.5) * 0.55 + (fray - 0.5) * 0.2)
-		holes = 0.93 - (tatter * 0.85 + fray * 0.4)
-		keep = np.minimum(keep, holes * 1.2 + 0.03)
-		# Long rips, wandering down the cloth.
-		for _ in range(5):
-			x0 = rng.uniform(-0.75, 0.75)
-			z0 = rng.uniform(0.12, 0.6)
-			ln = rng.uniform(0.2, 0.55)
-			wob = rng.uniform(0.03, 0.09)
-			ph = rng.uniform(0.0, 6.0)
-			path = x0 + wob * np.sin(t * 15.0 + ph) + rng.uniform(-0.2, 0.2) * (t - z0)
-			wid = 0.03 * np.clip(1.0 - np.abs((t - z0) / ln - 0.5) * 2.0, 0.0, 1.0) * rng.uniform(0.5, 2.2)
-			keep = np.minimum(keep, np.abs(s - path) - wid + (fray - 0.5) * 0.04 + np.where((t > z0) & (t < z0 + ln), 0.0, 0.5))
-		# Shot holes, burnt round the rim.
+			base = mix(base, base * 0.68, sst(0.014, 0.0, np.abs(t - bz)) * 0.55)
+			base = mix(base, base * 0.42, sst(0.003, 0.0, np.abs(t - bz - 0.016)) * sst(0.32, 0.5, np.abs(np.sin(s * 72.0))) * 0.8)
+		# Patches sewn on, in another cloth, their stitching dark.
+		for _ in range(11):
+			px, pz = rng.uniform(-0.82, 0.82), rng.uniform(0.08, 0.9)
+			w, h = rng.uniform(0.04, 0.13), rng.uniform(0.025, 0.08)
+			d = np.maximum(np.abs(s - px) - w, np.abs(t - pz) - h)
+			tint = rng.choice([0.72, 0.84, 1.08, 1.2]) * np.array((1.0, 0.93, 0.82), dtype=np.float32)
+			base = np.where((d < 0.0)[..., None], np.clip(base * tint, 0, 1), base)
+			base = mix(base, base * 0.62, sst(0.004, 0.0, np.abs(d)) * 0.7)
+		# Rain and salt run down the cloth, tar and rust from the yard, mildew at the foot.
+		streak = spectral(cw, cw, 1.1, 250 + cell, sx=0.1, sy=1.0)
+		base = mix(base, base * 0.6, sst(0.52, 0.8, wash2) * (0.3 + 0.5 * t))
+		base = mix(base, base * C(0.62, 0.48, 0.36)[None, None], sst(0.55, 0.78, streak) * (1.0 - t) ** 1.5 * 0.85)
+		base = mix(base, base * C(0.5, 0.54, 0.44)[None, None], sst(0.5, 0.74, blot) * sst(0.5, 1.0, t) * 0.8)
+		base = mix(base, base * 0.72, sst(0.82, 1.0, t) * 0.55)
+		# The hem and bolt rope, dark and doubled round the edge.
+		hem = np.minimum(np.minimum(1.0 - np.abs(s), t * 1.4), 1.0 - t)
+		base = mix(base, base * 0.5, sst(0.022, 0.012, hem) * 0.7)
+		# What's gone: a frayed foot and leech, a very little, and a few small shot holes.
+		keep = hem - (fray - 0.5) * 0.022 - 0.004
 		soot = np.zeros((cw, cw), dtype=np.float32)
-		for _ in range(7):
-			px, pz = rng.uniform(-0.85, 0.85), rng.uniform(0.08, 0.86)
-			r = rng.uniform(0.008, 0.024)
-			d = np.sqrt((s - px) ** 2 + (t - pz) ** 2) - r + (fray - 0.5) * 0.03
+		for _ in range(4):
+			px, pz = rng.uniform(-0.8, 0.8), rng.uniform(0.14, 0.86)
+			r = rng.uniform(0.006, 0.013)
+			d = np.sqrt((s - px) ** 2 + (t - pz) ** 2) - r + (fray - 0.5) * 0.012
 			keep = np.minimum(keep, d)
-			soot = np.maximum(soot, sst(0.022, 0.0, d))
-		base = mix(base, C(0.02, 0.018, 0.016)[None, None], soot * 0.85)
-		# Dark at every torn edge.
-		base = mix(base, base * 0.4, sst(0.03, 0.0, keep))
+			soot = np.maximum(soot, sst(0.016, 0.0, d))
+		base = mix(base, C(0.05, 0.042, 0.036)[None, None], soot * 0.8)
 		a = sst(-0.002, 0.002, keep)
 		y0 = (cell // 2) * cw
 		x0 = (cell % 2) * cw
@@ -1805,7 +1799,7 @@ MATERIALS = {
 	"iron_in": ("deck", None, None, {"roughness_value": 0.5, "metallic_value": 0.35, "fill": 1.7, "rim": 0.3, "fill_in": DECK_FILL, "lamp_power": DECK_LAMP * 1.6, "slat_power": DECK_SLAT * 0.3, "glint": 0.2, "inside_x": SKIN_X - 0.46}),
 	"lamp": ("lamp", None, None, {}),
 	"iron": ("surface", None, None, {"roughness_value": 0.5, "metallic_value": 0.35, "fill": 1.7}),
-	"sail": ("cloth", "ship_sail", None, {"fill": 4.5}),
+	"sail": ("cloth", "ship_sail", None, {"fill": 3.6}),
 	"rope": ("surface", None, None, {"roughness_value": 0.95, "fill": 1.7, "rim": 0.0}),
 	"glass": ("surface", None, None, {"roughness_value": 0.14, "metallic_value": 0.3, "fill": 1.0}),
 	"dark": ("surface", None, None, {"roughness_value": 0.95, "fill": 0.0, "rim": 0.0}),
@@ -1952,6 +1946,147 @@ void fragment() {
 }
 """
 
+SAIL_CODE = """// A sail: a flat sheet (ship_build.py `sail_geo`) shaped here and nowhere else,
+// from the wind every ship sees and her own heading and speed. Pinned at the
+// yard, it fills forward; it never bulges aft, it goes slack or flogs instead.
+//   COLOR.rgb    the sheet's height, head width and foot width / SAIL_SIZE
+//   ship_way     her bow (x, z), her speed (m/s), her turn (rad/s): per ship, scripts/endless/ship_sails.gd
+//   ship_slack   1 in a sink: no wind in her, the cloth hangs where gravity has it
+global uniform float zs_wind_strength;
+global uniform vec2 zs_wind_direction;
+global uniform float zs_gust_distance;
+instance uniform vec4 ship_way;
+instance uniform float ship_slack;
+// The true wind (m/s) at zs_wind_strength 1, and how much of it a gust adds or takes.
+uniform float wind_ms = 20.0;
+uniform float gust_swing = 0.42;
+// Her speed's share of the air on the cloth.
+uniform float ship_share = 1.0;
+// How far (as cos of the angle from the bow) the air must come aft to start filling, and to fill.
+uniform float draws_from = -1.0;
+uniform float draws_full = -0.55;
+// The air (m/s) that fills a sail about two thirds.
+uniform float fills_at = 11.0;
+// The belly at no air and at full, as a share of her height.
+uniform float belly_least = 0.06;
+uniform float belly_full = 0.4;
+// The farthest aft the cloth goes behind its yard (m).
+const float AFT = 0.5;
+varying float v_form;
+const float SIZE = """ + str(SAIL_SIZE) + r""";
+
+struct Cloth {
+	float h;
+	float w;
+	float wb;
+	float seed;
+	float fill;
+	float depth;
+	float lean;
+	float flog;
+	float taut;
+	float air;
+	float clock;
+	float slack;
+	vec3 hang;
+};
+
+float sail_hash(vec2 p) {
+	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float sail_noise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(sail_hash(i), sail_hash(i + vec2(1.0, 0.0)), f.x),
+		mix(sail_hash(i + vec2(0.0, 1.0)), sail_hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+// The land's gust field (zs_gust_field_at) at a sail's size: the same air, the
+// same run downwind, in parcels a sail can feel. -1 a lull, 1 a gust.
+float sail_gust(vec2 p) {
+	vec2 dir = zs_wind_direction;
+	vec2 q = p - dir * zs_gust_distance;
+	vec2 e = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x))) * vec2(0.016, 0.028);
+	float field = sail_noise(e) * 0.62 + sail_noise(e * 2.3 + vec2(3.7, 9.1)) * 0.38;
+	return smoothstep(0.28, 0.72, field) * 2.0 - 1.0;
+}
+
+// The cloth at s (-1..1 across), t (0 yard .. 1 foot).
+vec3 sail_at(float s, float t, Cloth c) {
+	float s2 = s * s;
+	float hw = mix(c.w, c.wb, t) * 0.5;
+	// The deepest of the belly slides to leeward; the leeches keep theirs.
+	float sh = s - c.lean * 0.45 * (1.0 - s2);
+	float spine = pow(sin(1.5708 * min(t * 1.12, 1.0)), 0.75) * mix(1.0, 0.42, smoothstep(0.62, 1.0, t));
+	float leech = 0.92 * pow(sin(3.14159 * min(t * 1.04, 1.0)), 0.9);
+	float breathe = 1.0 + 0.07 * sin(c.clock * 0.31 + c.seed * 6.3 - t * 2.6);
+	float belly = c.depth * breathe * (spine * (1.0 - sh * sh) + leech * sh * sh);
+	// The cloth the belly takes comes off its width and height; the sheets draw
+	// the foot in and the foot arches between them.
+	float x = s * hw * (1.0 - c.fill * (0.2 * t * t + 0.03 * sin(3.14159 * t)));
+	x += c.lean * c.fill * 0.05 * hw * sin(3.14159 * t);
+	float take = c.depth / c.h;
+	float y = -c.h * t * (1.0 - 0.9 * take * take) + c.h * 0.1 * c.fill * (1.0 - s2) * t * t * t;
+	// Slack, it hangs in long folds.
+	float along = s * hw;
+	float pleat = (0.7 * sin(along * 0.62 + c.seed * 9.0) + 0.3 * sin(along * 1.37 - c.seed * 5.0));
+	pleat *= (0.12 + 0.028 * c.h) * (1.0 - c.taut) * smoothstep(0.0, 0.5, t);
+	// Flogging: waves run down and across it, biggest at the leeches and the foot.
+	float q = (c.h * t + along * 0.5) * 0.5 - c.clock * 1.7 + c.seed * 11.0;
+	float flog = sin(q + 0.7 * sin(q)) + 0.3 * sin(1.7 * q + s * 2.5);
+	flog *= c.flog * c.h * 0.06 * (0.18 + 0.82 * t) * (0.4 + 0.6 * s2) * smoothstep(0.0, 0.14, t);
+	// The leech and foot never quite stop: quick ripples run out along them,
+	// flattest when the cloth is taut.
+	float edge = max(smoothstep(0.62, 1.0, abs(s)) * smoothstep(0.0, 0.35, t), smoothstep(0.7, 1.0, t));
+	float rq = (abs(s) * hw + c.h * t) * 0.85 - c.clock * 2.2 + c.seed * 20.0;
+	float ripple = (sin(rq) + 0.35 * sin(1.83 * rq + s * 4.0)) * edge * (0.09 + 0.02 * min(c.air, 16.0)) * (1.35 - c.taut);
+	float out_of = max(belly + pleat + flog + ripple, -AFT * smoothstep(0.0, 0.2, t));
+	vec3 p = vec3(x, y, -out_of);
+	// In a sink it swings to the true down, about the yard; never aft through the mast.
+	vec3 swing = (c.hang - vec3(0.0, -1.0, 0.0)) * vec3(1.0, 1.0, c.hang.z > 0.0 ? 0.15 : 1.0);
+	return p + swing * c.h * t * c.slack;
+}
+
+void vertex() {
+	Cloth c;
+	c.h = COLOR.r * SIZE;
+	c.w = COLOR.g * SIZE;
+	c.wb = COLOR.b * SIZE;
+	c.seed = fract((c.h * 3.1 + c.w * 0.77 + c.wb * 0.31) * 0.61803);
+	float t = clamp(-VERTEX.y / c.h, 0.0, 1.0);
+	float s = clamp(VERTEX.x / max(mix(c.w, c.wb, t) * 0.5, 0.01), -1.0, 1.0);
+	mat3 m = mat3(MODEL_MATRIX);
+	vec3 side = normalize(m[0]);
+	float gust = sail_gust(MODEL_MATRIX[3].xz);
+	// The air on the cloth: the true wind less her own way through it.
+	vec2 air = zs_wind_direction * zs_wind_strength * wind_ms * (1.0 + gust_swing * gust) - ship_way.xy * ship_way.z * ship_share;
+	float speed = length(air);
+	vec2 way = air / max(speed, 0.01);
+	float draw = smoothstep(draws_from, draws_full, dot(way, ship_way.xy));
+	float power = 1.0 - exp(-pow(speed / fills_at, 1.5));
+	c.slack = clamp(ship_slack, 0.0, 1.0);
+	c.fill = draw * power * (1.0 - c.slack);
+	c.taut = c.fill * (0.72 + 0.28 * gust);
+	c.depth = c.h * mix(belly_least, belly_full * (1.0 + 0.18 * gust), c.fill);
+	c.lean = clamp((way.x * side.x + way.y * side.z) * 1.1 - ship_way.w * 7.0, -1.0, 1.0) * draw;
+	c.flog = (1.0 - draw) * min(speed / 14.0, 1.0) * (1.0 - c.slack * 0.75);
+	c.air = speed;
+	c.clock = zs_gust_distance * 2.0;
+	c.hang = normalize(transpose(m) * vec3(0.0, -1.0, 0.0));
+	float ds = 0.04;
+	float dt = 0.03;
+	vec3 p = sail_at(s, t, c);
+	vec3 pu = (s < 1.0 - ds) ? sail_at(s + ds, t, c) - p : p - sail_at(s - ds, t, c);
+	vec3 pv = (t < 1.0 - dt) ? sail_at(s, t + dt, c) - p : p - sail_at(s, t - dt, c);
+	VERTEX = vec3(p.x, p.y, VERTEX.z + p.z);
+	NORMAL = normalize(cross(pu, pv));
+	// How far the cloth has turned from its flat: the belly's form, whatever the light.
+	v_form = 1.0 - abs(NORMAL.z);
+}
+"""
+
 SHADERS = {
 	"surface": SHADER_HEAD % "diffuse_lambert, specular_schlick_ggx" + """uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform float normal_depth = 0.0;
@@ -1969,17 +2104,19 @@ void fragment() {
 """ + SHADER_FILL + "}\n",
 	"deck": SHADER_HEAD % "diffuse_lambert, specular_schlick_ggx" + DECK_CODE,
 	"lamp": LAMP_CODE,
-	"cloth": SHADER_HEAD % "diffuse_lambert, cull_disabled" + """uniform float through = 0.4;
+	"cloth": SHADER_HEAD % "diffuse_lambert, cull_disabled" + SAIL_CODE + """uniform float through = 0.4;
+uniform float form = 0.75;
 void fragment() {
 	vec4 t = texture(albedo_tex, UV);
-	vec3 base = t.rgb * COLOR.rgb;
+	vec3 base = t.rgb;
 	ALBEDO = base;
 	ALPHA = t.a;
 	ALPHA_SCISSOR_THRESHOLD = 0.5;
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.1;
 	BACKLIGHT = base * through;
-""" + SHADER_FILL + "}\n",
+	ALBEDO *= 1.0 - v_form * form;
+""" + SHADER_FILL.replace("vec3 n =", "base *= 1.0 - v_form * form;\n\tvec3 n =") + "}\n",
 }
 
 
@@ -2132,7 +2269,7 @@ def build(fast):
 		bpy.context.view_layer.update()
 		yards.append(out)
 		for k, (name, c, w, zb, wb, cell, tilt) in enumerate(out):
-			sg = sail_geo(w, c.z - zb, wb, cell, hash((i, k)) & 255)
+			sg = sail_geo(w, c.z - zb, wb, cell)
 			sob = emit(f"Sail_{name}", sg, mats, group="Sails", parent=mast, origin=c, local=True)
 			sob.rotation_euler = (0.0, -math.radians(tilt), math.radians(BRACE))
 	# Bowsprit and its sail.
@@ -2140,7 +2277,7 @@ def build(fast):
 	c, tilt = build_bowsprit(g)
 	sprit = emit("Bowsprit", g, mats, origin=BOWSPRIT[0])
 	bpy.context.view_layer.update()
-	sob = emit("Sail_0a", sail_geo(20.0, 7.0, 21.0, 3, 77), mats, group="Sails", parent=sprit, origin=c, local=True)
+	sob = emit("Sail_0a", sail_geo(20.0, 7.0, 21.0, 3), mats, group="Sails", parent=sprit, origin=c, local=True)
 	sob.rotation_euler = (0.0, -tilt, 0.0)
 	# Rigging: the fine lines hide at a distance, the stays do not.
 	fine, stays = Geo(), Geo()

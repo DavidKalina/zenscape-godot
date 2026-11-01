@@ -50,6 +50,7 @@ signal sinking
 signal returned
 
 const MODEL := "res://assets/models/pirate_ship.glb"
+const ShipSails = preload("res://scripts/endless/ship_sails.gd")
 ## The cast ball (art/blender/ship/ball_build.py), and how fast it tumbles (rad/s):
 ## look only, so the iron's marks turn over in flight.
 const BALL_MODEL := "res://assets/models/pirate_ball.glb"
@@ -291,6 +292,8 @@ var _handed_back := false
 var _wake: Node3D
 var _mist_mesh: Mesh
 var _plank_mat: Material
+## Hands the sails her way (null with --ship-blocks).
+var _sails: RefCounted
 var _mists: Array[Dictionary] = []
 var _planks: Array[Dictionary] = []
 
@@ -424,6 +427,7 @@ func before(delta: float) -> void:
 	if state == SINKING: sink_t += delta
 	along += SPEED*delta*(1.0 if state == AFLOAT else clampf(1.0-sink_t/SINK_WAY_S,0.0,1.0))
 	_pose()
+	if _sails != null: _sails.step(delta,position,way,state == SINKING)
 	var p: Vector3 = game.plane.position
 	var d := p.distance_to(position)
 	game.near.skim_scale = SKIM_SCALE if state == AFLOAT and d < SKIM_NEAR else 1.0
@@ -1199,6 +1203,7 @@ func _dress() -> void:
 	_model = (load(MODEL) as PackedScene).instantiate()
 	_model.name = "Model"
 	add_child(_model)
+	_sails = ShipSails.new(_model)
 	var ball: Node3D = (load(BALL_MODEL) as PackedScene).instantiate()
 	_ball_mesh = (ball.find_child("Ball",true,false) as MeshInstance3D).mesh
 	ball.free()

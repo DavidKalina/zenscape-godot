@@ -70,6 +70,63 @@ The wisp is 34 triangles (17 discs), so a full pool is 7,728 triangles.
   Now the far ball is a dark dot with a sun glint, and the wisp carries it. It held
   over dark water, but judge it by playing.
 
+## Sails pass
+
+Whole, weathered canvas that fills on the game's wind. Hull, crack, guns, masts and
+rigging are untouched: off the glb, only the nine `Sail_*` meshes differ from the last
+build, and of the textures only `ship_sail.png`. Names, `--ship-blocks`, no collision.
+
+- **Mesh:** each sail is a flat sheet (`sail_geo`, knobs `SAIL_CELL`, `SAIL_MIN`),
+  crowded toward the leeches and foot. Its vertex colour holds its size for the shader.
+- **Shape:** all in the vertex shader (`SAIL_CODE`, written to `ship_cloth.gdshader`),
+  one material, normals from finite differences. Head pinned at the yard.
+- **Wind:** `zs_wind_strength`, `zs_wind_direction` and `zs_gust_distance`, the air
+  taken as 20 m/s at strength 1 (`wind_ms`), less her own velocity. It fills once the
+  air comes aft of about 123 degrees off the bow (`draws_from`, `draws_full`), judged
+  against her bow, not the braced yard, so both tacks fill. Forward of that it flogs,
+  and never goes more than 0.5 m aft (`AFT`). Fixed yards can't trim, so this is a
+  stand-in for bracing them.
+- **Gusts:** `scripts/wind_gust.gd` isn't in the tree, the sea has no parcels, and
+  `zs_puff_*` are only the landing's. So `sail_gust` reads the land's gust field at
+  sail size (about 60 m parcels), passing mast by mast.
+- **Per ship:** `scripts/endless/ship_sails.gd` sends instance uniforms `ship_way` and
+  `ship_slack`, and only when they change. It also sets `extra_cull_margin` (the mesh's
+  box is flat) and `lod_bias`, because generated LODs would flatten the sheet.
+- **Seed 1:** wind 0.968 rad. The +x straight has it on the quarter and fills; the -x
+  straight has it forward of the beam and is about a third full; the west turn goes
+  slack on the nose. At wind below her 9 m/s she outruns it and goes slack.
+- **Sink:** `ship_slack` over 3 s, and the cloth swings to true down about the yard.
+
+Tricks for this pass:
+
+| Trick | Used | Estimated saving |
+|---|---|---|
+| Sculpt high, bake low | No: flat sheet, painted canvas | None |
+| Import LODs | Off on sails: the shader needs the grid | Costs about 2k triangles at range; a coarser sail past 400 m would win back about 3k, under 0.05 ms |
+| Visibility ranges | No: the billow must read at 300 m and past | None |
+| Silhouette geometry | Yes: outline is real shape from the shader; holes and hem stay alpha | 4,060 triangles against about 40k for cut cloth, about 0.5 ms |
+| Rigid parts on bones | Not applicable | None |
+| Parallax depth | No | None |
+| Vertex-colour grime | No grime; the channel carries the sail's size | Saves a UV2 layer, about 2 KB |
+
+- **Cost at 300 m** (Mac window, 1440x900, uncapped, 3 x 400 frames, sails shown and
+  hidden in turns; another session may have been running, so provisional): draws with
+  sails against without, +21 to +28, the same before and after. Triangles in the frame
+  about +8k to +10k against the old sails on the later runs, the extra 1,540 through
+  every pass and no LOD. Shown minus hidden is within noise, 0.4 ms either way, before
+  and after. Medians drifted 14.5 to 18 ms between runs with sails hidden too, so that
+  drift is not the sails, and the run can't resolve under about 0.5 ms.
+- **Proved:** clean import; smoke plain, with `--fresh --ship-start --full-meter` and
+  with `--ship-blocks` (that one before the last wrap-up pass, same code); bot 346/346;
+  corridor check. Stills looked at: `22` before, `23` low and high wind, fair and foul,
+  at 300 and 100 m, `24` consecutive live frames, `25` the yard, `26` a sink (from a
+  build before the last shape tune).
+- **Unproved:** hand-flown; a gust caught in stills (the swing, 3 m to 7 m of belly on
+  the mainsail, is worked out from the shader, not measured); the turn's lean, unseen;
+  the -x straight on real wind, only forced headings; PC fidelity; other hours; a
+  second ship (the uniforms are per instance, untried). No sheets: the rigging has no
+  lines to the clews, so they float.
+
 ## Widened 12.5%
 
 The user found the gun deck tight, so beam 22 to 24.75 m, deck and cracks 16 to 18 m,
@@ -146,8 +203,8 @@ Tricks for this pass:
 - Gun deck: ribs, beams,
   posts along the wall line, floor gratings, a gun ledge at y 5.9 with the guns,
   crates and barrels on and under it, lanterns.
-- Sails: alpha cut-out torn cloth, four atlas cells. Yards braced 24 degrees
-  (`BRACE`), because square-on sails vanish from abeam.
+- Sails: see the sails pass. Yards braced 24 degrees (`BRACE`), because square-on
+  sails vanish from abeam.
 
 ## Where the contract shaped the look
 
@@ -177,7 +234,7 @@ Tricks for this pass:
 | Hull (with torn ends) | 12,068 |
 | Upperworks | 8,496 |
 | Cannons | 6,432 |
-| Sails | 2,520 |
+| Sails | 4,060 (2,520 before the sails pass) |
 | Masts | 2,020 |
 | CrackPlug_Stern | 1,666 |
 | CrackPlug_Bow | 1,630 |
@@ -195,7 +252,7 @@ Savings are estimates; no frame time was measured.
 | Sculpt high, bake low | No. Planks are real geometry, grain and stains are painted maps | A plank-level sculpt would cost a bake pipeline for maybe 5k fewer hull triangles; not worth it |
 | Import LODs | Yes (`meshes/generate_lods`); ribbon geometry decimates poorly, effect unmeasured | 30-50% at 300 m+ if it works, under 0.3 ms |
 | Visibility ranges | Not in the glb, code must set them: `Rigging` end 450 m (used in the stills), `Interior` and `Cannons` hidden past about 300 m | 19k+ triangles at distance, about 0.3 ms |
-| Silhouette geometry | Yes: torn sails by alpha rather than cut mesh; broken mizzen, shot holes, sprung planks | Sails 2.5k against about 40k cut, about 0.5 ms |
+| Silhouette geometry | Yes: broken mizzen, shot holes, sprung planks. (The torn sails' alpha is gone: see the sails pass) | Sails then 2.5k against about 40k cut, about 0.5 ms |
 | Rigid parts on bones | Not applicable: nothing is rigged | None |
 | Parallax depth | No. The splits are real gaps | None |
 | Vertex-colour grime | Yes: interior light, shade, plank tints | Replaces real interior lights, about 1-2 ms while inside |
