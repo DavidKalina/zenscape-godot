@@ -1,9 +1,13 @@
-# A new body for the stomper
+# A new body for the stomper, and smaller heads
 
-The stomper (`stomper-handoff.md`) still wears the archive's Olmec body, 250 m
-tall and built to carry a 120 m head, so its 144 m torso looks no bigger than
-the ruins' 120 m heads and smaller than their 200 m torsos. Replace it with a
-new body of the same people as the ruins, about 500 m tall.
+The stomper (`stomper-handoff.md`) still wears the archive's Olmec body. Its
+scale is right: it stays about 250 m tall. Two things change:
+
+- **The torso's design.** A new body, of the same people as the ruins.
+- **Levels of giant.** The ruins are all one size today, with 120 m heads as big
+  as the stomper's torso, so nothing in the land matches it. Add smaller heads
+  that match the stomper, and keep the 120 m ones: the land holds giants of more
+  than one size.
 
 ## Done looks like
 
@@ -12,45 +16,59 @@ Played in the default game, through the hall, on the real Amberlands
 look stay on the home side). `--world=amberlands` is a debug world on other land:
 never judge anything by it.
 
-- Seen beside any ruin, the walking body is plainly the larger: a ruin head would
-  sit on its shoulders at about a quarter of its height.
-- It reads as made by the same hands as the ruins: the same stone, masonry
-  courses, pits, cracks and weathering as `elder_torso`, `warden_torso` and
-  `mourner_torso`. Nothing of the archive's design remains: no loincloth slab,
-  pectoral plaque or boulder shoulders.
+- The stomper walks as it does now, at the same size, in a new body. It reads as
+  made by the same hands as the ruins: the same stone, masonry courses, pits,
+  cracks and weathering as `elder_torso`, `warden_torso` and `mourner_torso`.
+  Nothing of the archive's design remains: no loincloth slab, pectoral plaque or
+  boulder shoulders.
 - It has no head and no head-attaching. It is a torso on legs, with arms.
-- It walks with weight: anticipation, a held drop each step, follow-through, and
-  timing that matches its size (AGENTS.md, Animation). Feet still land on the real
-  ground, on terraces and hills, by IK. Legs don't pass through the land.
-- Everything the old body had still works at the new size: footfall, wake, shadow,
-  solid body, camera sight, the route off the ruins, doors and ponds.
-- The grass stays standing through a footfall (fixed at 9bd42b3e, keep it).
+- Lying about the land are heads of the size that would sit on its shoulders,
+  about 55 m tall, in the same half-sunk, weathered way as the big ones. You can
+  look at one and at the stomper and see they belong together.
+- The 120 m heads and 200 m torsos stay, so at a glance the land has distinct
+  levels of size. There are more small heads than big ones. Where it looks good
+  add one smaller level (about 25 m); leave it out if it adds nothing.
+- Sockets on the small heads that are meant to be flown through are sized with
+  `WorldScale.opening`. A head too small to fly through is solid, with no false
+  opening.
+- The land's blank-slate shape stays, as do its flats, and pieces stay dispersed.
+- Everything the stomper had still works: walk, footfall, wake, shadow, solid
+  body, camera sight, route off the ruins, doors and ponds, and the grass stays
+  standing through a footfall (fixed at 9bd42b3e).
 
 ## Keep it cheap
 
-About the old budget: one skinned mesh, 24,000 triangles or fewer, 13 nodes or
-fewer. Build low meshes the way the ruins do (coarse field meshes, not Decimate,
-which made star fans there) and carry the detail in baked normal and AO maps. List
+The new body: one skinned mesh, 24,000 triangles or fewer, 13 nodes or fewer. Fit
+it to the **existing skeleton and `stomp` clip** in
+`assets/models/stomper_body.glb`, keeping bone positions close enough that the IK,
+`stomper_solid.gd`'s capsules and the constants in `stomper.gd` still hold. Change
+those only where the new shape needs it, and say so in the commit.
+
+Small heads add no Godot nodes (`giant_ruins.gd` draws through RenderingServer RIDs
+with shared pose meshes) and few triangles: reuse the three faces and fewer poses at
+a coarser stride. Scaling `giant_swells.gd`'s stamp and the distance grid with the
+piece is expected, including each ruin's `ground` and `inside`. Check texture size:
+the giants' maps are about 30 MB already.
+
+Build low meshes the way the ruins do (coarse field meshes, not Decimate, which
+made star fans there) and carry the detail in baked normal and AO maps. List
 `docs/art/model-budget.md`'s tricks in the handoff.
 
 ## Tasks, in order
 
-1. **The still first.** Model the body in Blender with no rig or clip, built from
-   the ruins' generator (`art/blender/giant_ruins/giant_head_build.py`: reuse its
-   field and `weather()`). Render it beside the ruin pieces at true scale, with
-   the plane as a marker. Stop there with a commit: the user judges the design and
-   the scale before anything is rigged. Say which torso it grew from and why.
-   Offer a second height only if 500 m has a real problem.
-2. Bake it and stand it in the game at rest, on the real Amberlands. Stills of it
-   beside a ruin, from the air and from the tunnel's mouth.
-3. Rig and author the walk. Film it moving.
-4. Walk it on the land: stride, step time, IK, route, the constants that came from
-   the old size (`HEIGHT`, `MODEL_HEIGHT`, `HIP_X`, `SOLE`, `LENGTH`, `STANCE`,
-   `SWING_CLEAR`, `DOOR_CLEAR`, `RUIN_CLEAR`). Check the worst ridge.
-5. Rescale what it does to the world: footfall reach, shove, shake, prints, scuff,
-   dust, `stomper_solid.gd`'s capsules, the shadow.
-6. A pass on looks and cost: frame time beside the old body's, clouds at the new
-   height, the legs near the ground. Smoke, then a handoff.
+1. **The still first.** Model the body in Blender with no skinning yet, from the
+   ruins' generator (`art/blender/giant_ruins/giant_head_build.py`: reuse its field
+   and `weather()`), to the old body's proportions. Render it beside a 55 m head
+   and a 120 m head at true scale, with the plane as a marker, front and three
+   quarter. Stop there with a commit: the user judges the design before anything
+   else. Say which torso it grew from and why.
+2. Bake it, skin it to the existing skeleton, and swap it in. Stills on the real
+   Amberlands from the air and from the tunnel's mouth, and film it walking.
+3. The small heads in the land: poses, swells, spread, solid grid. Stills of the
+   levels together, flown through the hall to see them as the player does. Fly any
+   socket meant to be flown.
+4. A pass on looks and cost: frame time beside the old build, the legs near the
+   ground. Smoke, then a handoff.
 
 ## Rules
 
