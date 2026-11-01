@@ -36,6 +36,17 @@ const SmashBreaks = preload("res://scripts/breaks/smash_breaks.gd")
 signal broke(part: String)
 
 const MODEL := "res://assets/models/pirate_ship.glb"
+## The cast ball (art/blender/ship/ball_build.py), and how fast it tumbles (rad/s):
+## look only, so the iron's marks turn over in flight.
+const BALL_MODEL := "res://assets/models/pirate_ball.glb"
+const BALL_TUMBLE := 3.0
+## The ball's wisp of smoke, look only: its shader, how far back it runs (m), its
+## radius at the ball and at the end, its opacity at the thickest.
+const SMOKE_SHADER := "res://assets/models/pirate_ship/ball_smoke.gdshader"
+const SMOKE_LONG := 18.0
+const SMOKE_THIN := 0.45
+const SMOKE_WIDE := 3.6
+const SMOKE_OPACITY := 0.42
 ## Where the rigging stops drawing (m); the glb can't carry it.
 const RIGGING_FAR := 450.0
 ## The model's sway, for the eye only: roll, pitch (rad), each one's period (s).
@@ -137,6 +148,10 @@ var _chunk_pool: Array[MeshInstance3D] = []
 var _hull: Dictionary
 ## The glb's instance, null with --ship-blocks.
 var _model: Node3D
+## The one mesh every ball draws, its material on it; null with --ship-blocks.
+var _ball_mesh: Mesh
+## The one wisp every ball trails, its material on it; null with --ship-blocks.
+var _smoke: Mesh
 ## Thrown shards: {node, off (its plug in her frame), v (her frame), spin}.
 var _shards: Array[Dictionary] = []
 ## part ("stern", "bow") -> {record, body, shape, look (blocks), plug and shards
@@ -332,22 +347,62 @@ func _ball() -> Node3D:
 	n.top_level = true
 	add_child(n)
 	var body := MeshInstance3D.new()
-	var s := SphereMesh.new()
-	s.radius = BALL_R
-	s.height = BALL_R*2.0
-	s.radial_segments = 12
-	s.rings = 6
-	body.mesh = s
-	body.material_override = _mat(Color(0.12,0.1,0.09),Color(1.0,0.35,0.05),1.4)
+	if _ball_mesh != null:
+		body.mesh = _ball_mesh
+	else:
+		var s := SphereMesh.new()
+		s.radius = BALL_R
+		s.height = BALL_R*2.0
+		s.radial_segments = 12
+		s.rings = 6
+		body.mesh = s
+		body.material_override = _mat(Color(0.12,0.1,0.09),Color(1.0,0.35,0.05),1.4)
 	n.add_child(body)
 	var tail := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(0.7,0.7,9.0)
-	tail.mesh = box
-	tail.position = Vector3(0.0,0.0,5.0)
-	tail.material_override = _mat(Color(0.6,0.58,0.55),Color(0.6,0.58,0.55),0.5)
+	if _smoke != null:
+		tail.mesh = _smoke
+		tail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	else:
+		var box := BoxMesh.new()
+		box.size = Vector3(0.7,0.7,9.0)
+		tail.mesh = box
+		tail.position = Vector3(0.0,0.0,5.0)
+		tail.material_override = _mat(Color(0.6,0.58,0.55),Color(0.6,0.58,0.55),0.5)
 	n.add_child(tail)
 	return n
+
+## Discs strung back along +z, closer where they are thin, each collapsed on its
+## centre for ball_smoke.gdshader to turn to the eye.
+func _smoke_mesh() -> ArrayMesh:
+	var at := PackedVector3Array()
+	var uv := PackedVector2Array()
+	var size := PackedVector2Array()
+	var index := PackedInt32Array()
+	var z := BALL_R*0.7
+	while z < SMOKE_LONG:
+		var t := z/SMOKE_LONG
+		var r := lerpf(SMOKE_THIN,SMOKE_WIDE,pow(t,0.7))
+		var centre := Vector3(sin(z*0.45)*0.3*r,cos(z*0.31)*0.3*r,z)
+		var first := at.size()
+		for corner: Vector2 in [Vector2.ZERO,Vector2.RIGHT,Vector2.ONE,Vector2.DOWN]:
+			at.append(centre)
+			uv.append(corner)
+			size.append(Vector2(r,SMOKE_OPACITY*smoothstep(0.0,0.2,t)*pow(1.0-t,1.4)+0.04*(1.0-t)))
+		index.append_array([first,first+1,first+2,first,first+2,first+3])
+		z += r*0.5
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = at
+	arrays[Mesh.ARRAY_TEX_UV] = uv
+	arrays[Mesh.ARRAY_TEX_UV2] = size
+	arrays[Mesh.ARRAY_INDEX] = index
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	mesh.custom_aabb = AABB(Vector3(-SMOKE_WIDE*1.3,-SMOKE_WIDE*1.3,-SMOKE_WIDE),Vector3(SMOKE_WIDE*2.6,SMOKE_WIDE*2.6,SMOKE_LONG+SMOKE_WIDE*2.0))
+	var mat := ShaderMaterial.new()
+	mat.shader = load(SMOKE_SHADER)
+	mesh.surface_set_material(0,mat)
+	return mesh
 
 func _balls_step(delta: float, was: Vector3, p: Vector3, events: Dictionary) -> void:
 	var reach := WorldScale.span*0.5+BALL_R
@@ -364,6 +419,7 @@ func _balls_step(delta: float, was: Vector3, p: Vector3, events: Dictionary) -> 
 		b.age = float(b.age)+delta
 		(b.node as Node3D).position = n
 		if v.length() > 1.0: (b.node as Node3D).basis = Basis.looking_at(v.normalized(),Vector3.UP if absf(v.normalized().y) < 0.99 else Vector3.RIGHT)
+		if _ball_mesh != null: ((b.node as Node3D).get_child(0) as Node3D).basis = Basis(Vector3(0.6,0.8,0.0),float(b.age)*BALL_TUMBLE)
 		# The closest pass this frame: both moved, so the segment's of the two apart.
 		if flying and not bool(b.done):
 			var r0 := a-was
@@ -594,6 +650,10 @@ func _dress() -> void:
 	_model = (load(MODEL) as PackedScene).instantiate()
 	_model.name = "Model"
 	add_child(_model)
+	var ball: Node3D = (load(BALL_MODEL) as PackedScene).instantiate()
+	_ball_mesh = (ball.find_child("Ball",true,false) as MeshInstance3D).mesh
+	ball.free()
+	_smoke = _smoke_mesh()
 	(_model.find_child("Rigging",true,false) as GeometryInstance3D).visibility_range_end = RIGGING_FAR
 	for i in GUNS_Z.size():
 		var z: float = GUNS_Z[GUNS_Z.size()-1-i]

@@ -6,6 +6,70 @@ in the gray box's `pirate-ship-handoff.md`. Not wired into the world.
 Stills, in the game's sea and light (rendered on the Mac):
 `docs/design/endless-flight/pirate-ship-stills/`.
 
+## Cannonball pass
+
+The ball in the game was never gray: it was a flat sphere with orange emission 1.4,
+which read as molten. It is now polished dark iron with a mirror highlight, no
+glow and no orange, trailing a pale wisp of powder smoke in place of the gray box.
+Radius, speed, pool, collision and tuning are unchanged. `--ship-blocks` keeps the
+old sphere and box.
+
+- **Ball:** `art/blender/ship/ball_build.py` writes `assets/models/pirate_ball.glb`
+  (288 triangles, a 16 x 10 UV sphere), `ship_ball.jpg` (1024 x 512),
+  `ship_ball_n.jpg` (512 x 256) and `ball.tres`. Maps are painted in numpy on the
+  sphere, so nothing seams: faint pits, a trace of rust, two mould seams, sprue scars
+  over the poles. No roughness map: one value (0.2) gives the shine, and the marks
+  are too small in flight to earn one.
+- **Material:** `ball.tres` uses the ship's `surface` shader, so no new shader
+  there. Metallic 0.9, roughness 0.2. On metal the albedo tints the reflection, so
+  it is painted light (about 0.72 sRGB); at 0.5 the ball went black in the play
+  view. Dark pit paint turned to black holes for the same reason, so pits and rust
+  are only a little under the iron. `fill` 2.5 and `rim` 2.5 hold the shade.
+- **Shared:** `_ball_mesh` and `_smoke` are one mesh each through the 24-ball pool,
+  read when she is dressed, so no load at the first shot. The ball's material is on
+  the mesh. The old build made a mesh and two materials per ball.
+- **Tumble:** 3 rad/s on the body only (`BALL_TUMBLE`). The tail stays on the line.
+- **Smoke:** `PirateShip._smoke_mesh` strings soft discs back along the ball, 18 m,
+  radius 0.45 to 3.6 m, and `ball_smoke.gdshader` turns each to the eye about its own
+  centre, so no view shows a flat side. Unshaded pale gray, blended, no shadow. Head
+  on the discs stack into a faint pale ring round the ball. Knobs `SMOKE_*`.
+
+Tricks for this pass:
+
+| Trick | Used | Estimated saving |
+|---|---|---|
+| Sculpt high, bake low | No: height is painted straight into the normal map | None; the marks are too small in flight to pay for a sculpt |
+| Import LODs | Yes (`meshes/generate_lods`), unmeasured | At most 150 triangles a ball at range, under 0.01 ms |
+| Visibility ranges | No: the ball must read at 300 m, and balls live 7 s | None |
+| Silhouette geometry | No: the seam stands under a pixel proud of the outline at 30 m, so it is normal map only | About 2k triangles a ball against a real ridge |
+| Rigid parts on bones | Not applicable | None |
+| Parallax depth | No: pits are faint now | None |
+| Vertex-colour grime | No: the map carries it | None |
+
+The wisp is 34 triangles (17 discs), so a full pool is 7,728 triangles.
+
+- **Frame time** (Mac window, 1440x900, uncapped, 180 m off the stern): 24 balls
+  all in view, old look and new in turns, 480 frames each, three runs. The ball
+  alone, with the box still on: 12.11 against 12.15 ms median, within noise. With
+  the wisp: 12.13 against 12.32 ms median, so about 0.2 ms, and p95 is level
+  (12.63 to 13.08 against 12.74 to 12.95). That is the worst case: the guns rarely
+  have 24 up at once. The cost is the wisp's overlapping transparent discs.
+- **Proved:** clean import; smoke plain, with `--fresh --ship-start --full-meter`
+  and with `--ship-blocks`; bot on real input, three passes, six bursts, 346 checks
+  passed. Real shots: one ball mesh and one wisp mesh through the pool, the material
+  on the mesh, the body tumbling; with `--ship-blocks`, the old sphere and box,
+  no tumble. Stills looked at: 30, 100 and 300 m over sky and sea, from the side,
+  head on, from behind and quartering, and real shots at 30, 93 and 201 m. `16`
+  close-up, `17` a real shot, `18` over dark water, `19` side, `20` head on,
+  `21` behind.
+- **Unproved:** hand-flown; judged in motion, so the tumble and the wisp are judged
+  from stills only; PC fidelity; other hours (the wisp is a fixed pale gray, so it
+  may stand out at night). The close-up shot view draws some cloud sprites over the
+  ball; that is the harness's camera, not seen in the play view.
+- **Readability:** the molten sphere was easier to see at 300 m than any dark ball.
+  Now the far ball is a dark dot with a sun glint, and the wisp carries it. It held
+  over dark water, but judge it by playing.
+
 ## Crack and gun deck pass
 
 Two look fixes; flight, `solids()`, tuning, route and hull shape are untouched.
