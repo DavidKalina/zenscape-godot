@@ -66,6 +66,8 @@ const LONG := 110.0
 const FLOOR_Y := 3.0
 const DRAUGHT := 6.0
 const PLATE := 1.5
+## How far from the gun deck's ends a touch stops being a glance.
+const END_ROOM := 2.0
 const WALL := 3.0
 const DECK := 2.0
 const GUNS_Z := [-40.0,-24.0,-8.0,8.0,24.0,40.0]
@@ -241,6 +243,20 @@ func local(p: Vector3) -> Vector3:
 func in_corridor(p: Vector3, pad := 0.0) -> bool:
 	var l := local(p)
 	return absf(l.z) < LONG*0.5+pad and absf(l.x) < wide*0.5 and l.y > FLOOR_Y-1.0 and l.y < FLOOR_Y+high+1.0
+
+## The way off the gun deck's nearest wall, roof or floor, in the world, for
+## FlightContact: a touch in there is glanced off, never a crash. ZERO outside
+## it, or within END_ROOM of its ends, where a shut plate still stops the plane.
+func deck_way_off(p: Vector3) -> Vector3:
+	var l := local(p)
+	if not in_corridor(p) or absf(l.z) > LONG*0.5-END_ROOM: return Vector3.ZERO
+	var side := wide*0.5-absf(l.x)
+	var roof := FLOOR_Y+high-l.y
+	var floor_gap := l.y-FLOOR_Y
+	var off := Vector3(-signf(l.x),0.0,0.0)
+	if roof < side and roof <= floor_gap: off = Vector3.DOWN
+	elif floor_gap < side: off = Vector3.UP
+	return (transform.basis*off).normalized()
 
 ## One frame, before the surge and the plane's: she sails, the plates come back,
 ## the guns aim and fire.
