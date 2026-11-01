@@ -23,8 +23,8 @@ const FRONT := 220.0
 const REACH := 1500.0
 const RINGS := 2
 ## The grass: how hard the front lays it over, and how long it is held (s).
-const GRASS := 3.2
-const GRASS_HOLD := 0.3
+const GRASS := 0.7
+const GRASS_HOLD := 0.1
 ## The eye: the shake (rad) and punch (degrees) at the foot, the distance they
 ## have gone by (m), how long the shake is held up as the front goes by (s).
 const SHAKE := 0.02
@@ -148,7 +148,7 @@ func fell(at: Vector3, _side: int) -> void:
 	_ring_mesh.visible = true
 	_raise_dust(at)
 	var react: Node = _study.react
-	if react != null: react.shock(Vector2(at.x,at.z),REACH,FRONT,GRASS,GRASS_HOLD)
+	if react != null: react.shock(Vector2(at.x,at.z),REACH,FRONT,GRASS,GRASS_HOLD,0.0)
 
 func step(delta: float) -> void:
 	if not enabled: return

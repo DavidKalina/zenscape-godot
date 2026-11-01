@@ -37,9 +37,10 @@ const HIP := 40.0
 ## The boxes: one ring, a print and a scuff a step, so it holds a print's whole
 ## life and no print is pushed out before it has worn away.
 const MOST := 156
-## The grass round a foot: reach (m), lean, front (m/s), seconds held.
+## The grass round a foot: reach (m), lean, press, front (m/s), seconds held.
 const FLAT_REACH := 150.0
-const FLAT_LEAN := 1.8
+const FLAT_LEAN := 0.8
+const FLAT_PRESS := 0.2
 const FLAT_FRONT := 220.0
 const FLAT_HOLD := 70.0
 ## The hanging dust: puffs a landing, how far round the foot, how high (m).
@@ -118,7 +119,7 @@ func fell(at: Vector3, _side: int) -> void:
 	_was_at = mid
 	var react: Node = _study.react
 	if react != null:
-		react.shock(Vector2(at.x,at.z),FLAT_REACH,FLAT_FRONT,FLAT_LEAN,FLAT_HOLD)
+		react.shock(Vector2(at.x,at.z),FLAT_REACH,FLAT_FRONT,FLAT_LEAN,FLAT_HOLD,FLAT_PRESS)
 		stats.holds = int(stats.holds)+1
 	var fall: Node3D = _body.fall
 	if fall == null: return

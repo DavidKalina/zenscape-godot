@@ -344,10 +344,12 @@ var _part_at := [-INF,-INF]
 
 ## A blast out over the land from `at`: laid over as its front passes (`front`
 ## m/s), out to `reach` m (the stomper's footfall, scripts/endless/stomper_fall.gd).
-func shock(at: Vector2, reach: float, front: float, strength: float, hold: float) -> void:
+## `press` the share of the press it adds: lean and press sum in the bend, so
+## much of both takes a blade down through the ground and the grass goes.
+func shock(at: Vector2, reach: float, front: float, strength: float, hold: float, press: float) -> void:
 	if not enabled: return
 	_add({"at": at, "way": Vector2.ZERO, "strength": strength, "swirl": 0.0,
-		"reach": reach, "front": front, "hold": hold})
+		"reach": reach, "front": front, "hold": hold, "press": press})
 
 # --- Gusts ----------------------------------------------------------------------------
 
