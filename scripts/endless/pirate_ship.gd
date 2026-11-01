@@ -18,6 +18,11 @@ extends Node3D
 ## corridor, so it breaks too on the way out. Both plates come back once the
 ## plane is RESEAL_FAR m off (nothing is saved: fly it again).
 ##
+## Her look is assets/models/pirate_ship.glb on the moving node (`_dress`), or the
+## gray box's blocks with --ship-blocks. Either way `solids()` alone is what she
+## collides by. Guns fire from the glb's `Gun_*` empties, and a burst throws the
+## plate's `CrackPlug_*` shards (`_throw`), which a reseal puts back.
+##
 ## Handles: `coast/ship` (the ship, moved by its route), `coast/ship-route` (the
 ## oval's middle; a move in the layout file carries the whole route). The relic
 ## is the finds row `ship-hold`, anchored to `coast/ship`.
@@ -25,9 +30,24 @@ extends Node3D
 const WorldScale = preload("res://scripts/world_scale.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
+const SmashBreaks = preload("res://scripts/breaks/smash_breaks.gd")
 
 ## A plate broken (`stern` or `bow`).
 signal broke(part: String)
+
+const MODEL := "res://assets/models/pirate_ship.glb"
+## Where the rigging stops drawing (m); the glb can't carry it.
+const RIGGING_FAR := 450.0
+## The model's sway, for the eye only: roll, pitch (rad), each one's period (s).
+const SWAY := Vector2(0.014,0.005)
+const SWAY_S := Vector2(9.0,13.0)
+## A thrown shard: fall (m/s²), what a bounce keeps, how fast the floor stops it
+## (1/s), its room from the gun deck's walls (m), still under this (m/s).
+const SHARD_DROP := 16.0
+const SHARD_BOUNCE := 0.35
+const SHARD_RUB := 4.0
+const SHARD_ROOM := 0.6
+const SHARD_STILL := 1.0
 
 const SEA_Y := -40.0
 ## The route: the oval's middle (world XZ), its straights' length and its ends'
@@ -115,7 +135,12 @@ var _splashes: Array[Dictionary] = []
 var _chunks: Array[Dictionary] = []
 var _chunk_pool: Array[MeshInstance3D] = []
 var _hull: Dictionary
-## part ("stern", "bow") -> {record, body, shape, look, open}.
+## The glb's instance, null with --ship-blocks.
+var _model: Node3D
+## Thrown shards: {node, off (its plug in her frame), v (her frame), spin}.
+var _shards: Array[Dictionary] = []
+## part ("stern", "bow") -> {record, body, shape, look (blocks), plug and shards
+## (model: {node, home}), open}.
 var plates := {}
 var _guns: Array[Dictionary] = []
 var _tells: Array[Dictionary] = []
@@ -196,6 +221,9 @@ func _pose() -> void:
 	yaw = atan2(-wd.x,-wd.z)
 	transform = Transform3D(Basis(Vector3.UP,yaw),_route*Vector3(p.x,0.0,p.y))
 	_inv = transform.affine_inverse()
+	if _model != null:
+		var t := along/SPEED
+		_model.rotation = Vector3(SWAY.y*sin(TAU*t/SWAY_S.y),0.0,SWAY.x*sin(TAU*t/SWAY_S.x))
 	if _hull.is_empty(): return
 	_place(_hull)
 	for part: String in plates: _place(plates[part].record)
@@ -397,9 +425,12 @@ func _strike(r: Dictionary, q: Vector3) -> void:
 	plate.open = true
 	game.arches.loose.erase(r)
 	(plate.shape as CollisionShape3D).disabled = true
-	(plate.look as Node3D).visible = false
 	game.smash.keep_hot(LONG/maxf(float(game.plane.velocity.length()),30.0)+0.5)
-	_shatter(q)
+	if _model != null:
+		_throw(plate,q)
+	else:
+		(plate.look as Node3D).visible = false
+		_shatter(q)
 	bursts += 1
 	broke.emit(part)
 
@@ -413,7 +444,13 @@ func _reseal() -> void:
 		game.arches.loose.push_front(plate.record)
 		_place(plate.record)
 		(plate.shape as CollisionShape3D).disabled = false
-		(plate.look as Node3D).visible = true
+		if _model == null:
+			(plate.look as Node3D).visible = true
+			continue
+		for shard: Dictionary in plate.shards:
+			(shard.node as Node3D).transform = shard.home
+			(shard.node as Node3D).visible = true
+	_shards.clear()
 	if was and refill: game.near.meter = 1.0
 
 func _shatter(q: Vector3) -> void:
@@ -426,6 +463,55 @@ func _shatter(q: Vector3) -> void:
 		c.scale = Vector3.ONE*randf_range(0.5,1.6)
 		c.visible = true
 		_chunks.append({"node":c,"v":d*randf_range(20.0,55.0)+spread*14.0,"t":2.2})
+
+## The plate's shards blown off the plane's line, as a smashed ruin's stone flies
+## (SmashBreaks): on ahead with the plane, out from its line, up, spinning. So a
+## plate hit from outside goes down the gun deck, one hit from inside goes out to
+## sea. Drawn only; they stay under their plug, in her frame.
+func _throw(plate: Dictionary, q: Vector3) -> void:
+	var v: Vector3 = game.plane.velocity
+	var d := v.normalized()
+	var plug: Node3D = plate.plug
+	for shard: Dictionary in plate.shards:
+		var n: Node3D = shard.node
+		var out := (transform*(plug.position+n.position)-q).slide(d)
+		out = out.normalized() if out.length() > 0.05 else Vector3.UP
+		var lin := v*randf_range(SmashBreaks.KEEP.x,SmashBreaks.KEEP.y)+out*randf_range(SmashBreaks.OUT.x,SmashBreaks.OUT.y)+Vector3.UP*randf_range(SmashBreaks.UP_V.x,SmashBreaks.UP_V.y)
+		var spin := Vector3(randf_range(-1.0,1.0),randf_range(-1.0,1.0),randf_range(-1.0,1.0)).normalized()*randf_range(SmashBreaks.SPIN.x,SmashBreaks.SPIN.y)
+		_shards.append({"node":n,"off":plug.position,"v":_inv.basis*lin,"spin":spin})
+
+## Thrown shards on: inside the gun deck they're kept in it, and lie where they
+## stop till the reseal; past her ends they fall into the sea.
+func _shards_step(delta: float) -> void:
+	for i in range(_shards.size()-1,-1,-1):
+		var s: Dictionary = _shards[i]
+		var n: Node3D = s.node
+		var v: Vector3 = s.v
+		v += Vector3.DOWN*SHARD_DROP*delta
+		var at: Vector3 = (s.off as Vector3)+n.position+v*delta
+		var low := false
+		if absf(at.z) < LONG*0.5:
+			var x := wide*0.5-SHARD_ROOM
+			if absf(at.x) > x:
+				at.x = signf(at.x)*x
+				v.x *= -SHARD_BOUNCE
+			if at.y > FLOOR_Y+high-SHARD_ROOM:
+				at.y = FLOOR_Y+high-SHARD_ROOM
+				v.y *= -SHARD_BOUNCE
+			if at.y < FLOOR_Y+SHARD_ROOM:
+				at.y = FLOOR_Y+SHARD_ROOM
+				v.y = absf(v.y)*SHARD_BOUNCE
+				v *= maxf(1.0-SHARD_RUB*delta,0.0)
+				low = true
+		s.v = v
+		n.position = at-(s.off as Vector3)
+		var spin: Vector3 = s.spin
+		n.rotate(spin.normalized(),spin.length()*delta)
+		if low and v.length() < SHARD_STILL:
+			_shards.remove_at(i)
+		elif at.y < -DRAUGHT:
+			n.visible = false
+			_shards.remove_at(i)
 
 func _new_chunk() -> MeshInstance3D:
 	var c := MeshInstance3D.new()
@@ -452,6 +538,7 @@ func _splash(at: Vector3) -> void:
 	_splashes.append({"node":m,"t":0.0})
 
 func _bits_step(delta: float) -> void:
+	_shards_step(delta)
 	for i in range(_splashes.size()-1,-1,-1):
 		var s: Dictionary = _splashes[i]
 		s.t = float(s.t)+delta
@@ -475,10 +562,53 @@ func _bits_step(delta: float) -> void:
 			_chunk_pool.append(n)
 			_chunks.remove_at(i)
 
-# --- The blocks --------------------------------------------------------------
+# --- Her look and solids -------------------------------------------------------
 
 func _build() -> void:
 	var all := solids(wide,high)
+	var blocks: bool = "--ship-blocks" in preload("res://scripts/launch_args.gd").user_args()
+	if blocks: _blocks(all)
+	else: _dress()
+	# The solids: the plates first in `loose`, so a hit near a jamb finds the plate.
+	_hull = _record("hull",all.hull)
+	_hull["no_break"] = true
+	_hull["adopted"] = 0
+	game.arches.loose.append(_hull)
+	_body("Hull",all.hull)
+	for part: String in ["stern","bow"]:
+		var box: AABB = (all[part] as Array)[0]
+		var record := _record(part,all[part])
+		record["strike"] = Callable(self,"_strike")
+		record["part"] = part
+		game.arches.loose.push_front(record)
+		var body := _body(part.capitalize(),[box])
+		var plate := {"record":record,"body":body,"shape":body.get_child(0),"open":false}
+		if blocks: plate["look"] = _plate(box,part)
+		else: _plug(plate,part)
+		plates[part] = plate
+
+## The model on the moving node, its guns' muzzles read off its empties.
+func _dress() -> void:
+	_model = (load(MODEL) as PackedScene).instantiate()
+	_model.name = "Model"
+	add_child(_model)
+	(_model.find_child("Rigging",true,false) as GeometryInstance3D).visibility_range_end = RIGGING_FAR
+	for i in GUNS_Z.size():
+		var z: float = GUNS_Z[GUNS_Z.size()-1-i]
+		for side: float in [-1.0,1.0]:
+			var empty: Node3D = _model.find_child("Gun_%s_%02d" % ["L" if side < 0.0 else "R",i+1],true,false)
+			_muzzle(side,z,to_local(empty.global_position))
+
+## Plate `part`'s plug in the model, each shard's place kept for the reseal.
+func _plug(plate: Dictionary, part: String) -> void:
+	var plug: Node3D = _model.find_child("CrackPlug_"+part.capitalize(),true,false)
+	var shards: Array[Dictionary] = []
+	for shard: Node in plug.get_children():
+		shards.append({"node":shard,"home":(shard as Node3D).transform})
+	plate["plug"] = plug
+	plate["shards"] = shards
+
+func _blocks(all: Dictionary) -> void:
 	var half := wide*0.5
 	var beam := half+WALL
 	var roof := FLOOR_Y+high
@@ -519,20 +649,6 @@ func _build() -> void:
 			_look(AABB(Vector3(side*half-0.06,GUN_Y-1.1,gz-1.2),Vector3(0.12,2.2,2.4)),port)
 			_look(AABB(Vector3(side*(half-0.5)-0.5,FLOOR_Y,gz-1.0),Vector3(1.0,1.1,2.0)),gun)
 			_gun(side,gz,beam,gun)
-	# The solids: the plates first in `loose`, so a hit near a jamb finds the plate.
-	_hull = _record("hull",all.hull)
-	_hull["no_break"] = true
-	_hull["adopted"] = 0
-	game.arches.loose.append(_hull)
-	_body("Hull",all.hull)
-	for part: String in ["stern","bow"]:
-		var box: AABB = (all[part] as Array)[0]
-		var record := _record(part,all[part])
-		record["strike"] = Callable(self,"_strike")
-		record["part"] = part
-		game.arches.loose.push_front(record)
-		var body := _body(part.capitalize(),[box])
-		plates[part] = {"record":record,"body":body,"shape":body.get_child(0),"look":_plate(box,part),"open":false}
 
 func _record(part: String, boxes: Array) -> Dictionary:
 	return {"name":"coast/ship/"+part,"kind":"ship","node":self,"pos":position,"cos":cos(yaw),"sin":sin(yaw),
@@ -575,12 +691,15 @@ func _plate(box: AABB, part: String) -> Node3D:
 			root.add_child(m)
 	return root
 
-## A broadside gun at (`side`, `gz`): port, barrel, its flash and smoke.
+## A broadside gun at (`side`, `gz`) in blocks: port, barrel, its muzzle.
 func _gun(side: float, gz: float, beam: float, mat: Material) -> void:
 	_look(AABB(Vector3(side*beam-(0.1 if side > 0.0 else 0.0),GUN_Y-1.0,gz-1.0),Vector3(0.1,2.0,2.0)),_mat(Color.BLACK))
 	var x := side*(beam+1.2)
 	_look(AABB(Vector3(x-1.2,GUN_Y-0.5,gz-0.5),Vector3(2.4,1.0,1.0)),mat)
-	var at := Vector3(side*(beam+3.0),GUN_Y,gz)
+	_muzzle(side,gz,Vector3(side*(beam+3.0),GUN_Y,gz))
+
+## A gun's muzzle at `at`: its flash and smoke, and the record the guns fire by.
+func _muzzle(side: float, gz: float, at: Vector3) -> void:
 	var flash := MeshInstance3D.new()
 	var b := BoxMesh.new()
 	b.size = Vector3(2.2,2.2,2.2)

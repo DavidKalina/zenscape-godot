@@ -1,5 +1,36 @@
 # Pirate ship gray box: handoff
 
+## Model in
+
+`assets/models/pirate_ship.glb` now sails on the moving ship. `--ship-blocks`
+brings the gray box back to compare. `solids()`, flight, gun and meter tuning are
+unchanged: the bot's flight trace through the corridor is the same to the digit
+with either look.
+
+- **Guns and relic:** the 12 muzzles are read off the `Gun_*` empties, and match
+  the gray box's numbers exactly. `Relic` sits at the deck's middle, on the finds
+  row. Flash and smoke are still the gray box's cubes.
+- **The break:** a burst throws the plate's 12 `CrackPlug_*` shards with
+  `SmashBreaks`' numbers (`KEEP`, `OUT`, `UP_V`, `SPIN`): on ahead of the plane,
+  out from its line. Hit from outside, they go down the gun deck, stay between its
+  walls and lie on the floor. Hit from inside, they go out to sea. They are drawn
+  only and stay under their plug in her frame. The reseal puts them back whole.
+  Knobs: `SHARD_*` at the top of `pirate_ship.gd`.
+- **Rigging:** `visibility_range_end` 450 m, set in code.
+- **Sway:** a roll of 0.8 degrees over 9 s and a pitch of 0.3 degrees over 13 s,
+  on the model only (`SWAY`, `SWAY_S`). So the look drifts from the solids by up
+  to about 0.3 m at her ends; nothing in play reads it.
+- **Proved** by a bot on real input (`fly_boost`, `fly_roll`, `scratch/ship_model.gd`,
+  not committed): stern to bow, bow to stern, then stern to bow again, each after
+  a reseal on its own at about 301 m. Six bursts, no crash, relic counted. Stills
+  looked at: approach, burst, gun deck, bow exit, from outside.
+- **Frame time** (Mac window, 1440x900, vsync off), model against blocks, median
+  ms: 16.0 / 14.8 at 180 m off the stern, 21.1 / 19.9 inside, so about 1.2 ms.
+  p95 inside is about 31 ms with either look. No full-screen or PC number.
+- **Unproved:** hand flying, shards and sway in motion (stills only), a shard
+  passing near the camera at speed. At the ship start she is off the plane's left
+  wing, so she isn't in the first view.
+
 ## What was built
 
 `scripts/endless/pirate_ship.gd`: a block ship on an oval over the deep water
