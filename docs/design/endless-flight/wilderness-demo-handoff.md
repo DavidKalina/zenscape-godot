@@ -50,7 +50,8 @@ The map: `site-map-seed1.png`, sites in `site-map-seed1.sites.json`.
 - **Black dust:** gone from the stills, but why it happened isn't proved. It stopped when the
   particles all came out within two frames. `SmashBreaks._hit_dust` still skips the plume at the hit.
 - **Frame spikes left:** `grass.step` at about (3441, 3997), `shops.step`, and the hall's swap
-  (about 60 ms headless, 260 to 330 ms rendered at 1440x900, once a trip).
+  (about 50 to 60 ms, headless and rendered at 1440x900; a run taking stills round it read 260 to
+  330 ms, which is partly the stills).
 - **HUD key line** still runs past a 1440 window's edge; what's cut is the settings keys.
 - **Find count:** the map draws 44 of the 46 rows. The two left out weren't traced.
 - **Full suite not run.** `box_solid.gd` changed for every rock arch; no test known to touch it.
