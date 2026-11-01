@@ -553,4 +553,5 @@ def main():
         (game / "poses.json").write_text(json.dumps(poses))
 
 
-main()
+if __name__ == "__main__":
+    main()
