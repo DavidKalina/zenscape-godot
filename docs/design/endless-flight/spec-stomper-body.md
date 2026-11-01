@@ -62,6 +62,21 @@ made star fans there) and carry the detail in baked normal and AO maps. List
    and a 120 m head at true scale, with the plane as a marker, front and three
    quarter. Stop there with a commit: the user judges the design before anything
    else. Say which torso it grew from and why.
+1b. **Revise the still (the user's verdict on 567530d4: too cutesy, too uneven,
+   the cracks are weird).** It must stop reading as a friendly golem or toy.
+   - Stance and mass: smaller, less square fists; no finger slots like a mitten;
+     heavier hips and thighs so the legs don't read stubby, on the same skeleton;
+     a sterner, less rounded chest. Rethink the bead collar if it reads as a toy.
+   - Stone: calmer and deliberately carved, with crisp planes and no bubbly, melted
+     lumps. Larger blocks of varied size, not one even brick all over.
+   - Cracks: fewer, straighter fractures that follow the stone's joints and break
+     across it, with no worm-like wandering lines. Chipped corners and a few big
+     missing pieces say age better than lines.
+   - Small heads: their features must stay clear at 55 m: finer stone for the size,
+     or a face rebuilt for it, with no blocky mush.
+   The stone and cracks live in the shared `weather()`, so change them there and show
+   them on the 120 m head too: the ruins are rebuilt to match in task 3. Same four
+   stills, then stop for the user's verdict.
 2. Bake it, skin it to the existing skeleton, and swap it in. Stills on the real
    Amberlands from the air and from the tunnel's mouth, and film it walking.
 3. The small heads in the land: poses, swells, spread, solid grid. Stills of the
