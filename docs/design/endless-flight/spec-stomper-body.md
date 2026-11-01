@@ -91,7 +91,12 @@ made star fans there) and carry the detail in baked normal and AO maps. List
    - Some asymmetry: a shoulder dropped, a side worn deeper, a great piece missing.
    Stay on the existing skeleton. Do no head work this round: no change to the 55 m
    heads, which stand in the stills for scale only. Same stills, then stop.
-2. Bake it, skin it to the existing skeleton, and swap it in. Stills on the real
+2. The user passed the shape at b0da2404, with two fixes to make first: feet that are
+   hard, carved stone, not soft rounded slippers, and calmer stone on the legs and
+   pelvis, which read as bandages and bulge from the side. Then bake it, skin it to
+   the existing skeleton, and swap it in. Check the waist, elbows, knees and thumbs
+   survive the 24,000 triangles, and fit `stomper_solid.gd`'s capsules to the new
+   chest and shoulders. Stills on the real
    Amberlands from the air and from the tunnel's mouth, and film it walking.
 3. The small heads in the land: poses, swells, spread, solid grid. Stills of the
    levels together, flown through the hall to see them as the player does. Fly any
