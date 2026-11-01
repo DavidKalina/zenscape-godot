@@ -132,8 +132,9 @@ road; the file can stay, out of `PLACED`, or lend its figures as accents.
    from the gate round the shore and up the hill's east side, about 3.4 km by the map, with
    the decay rising along it, mostly the broken kit, still one readable line. Fly it end to
    end, wide and tight.
-4. **The hall off the path.** Move it to the side, with its sight line or spur.
-5. **The stomper to the outskirts.** A smaller range on open ground, off the road.
+   (Road done at a0fcc21a. The stomper goes first: he stands by the shore and hides the reveal.)
+4. **The stomper to the outskirts.** A smaller range on open ground, off the road.
+5. **The hall off the path.** Move it to the side, with its sight line or spur.
 6. **Off the path.** Small chunks of ruin, cheap reuses of the road's kit, and the heads
    moved clear of the road. Then cost, smoke; the handoff and the window are the loop's.
 
