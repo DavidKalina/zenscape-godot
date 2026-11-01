@@ -4,7 +4,12 @@ One giant headless stone body walks the Amberlands. The user asked for it on
 2026-10-31; AGENTS.md lists the Olmec and enemies as out of scope, and this one
 body is the exception the user made. There is only one in the world.
 
-Play it: `--world=amberlands --no-title` on `studies/endless_flight.tscn`.
+Play it: the default game, `--no-title` on `studies/endless_flight.tscn`, with
+no `--world` flag: the Amberlands are the far side of the door, reached through
+the hall (a tunnel) from wilderness. That is the world id `doors`
+(`profiles/doors.gd`), the Amberlands round `world.offset`, 50 km along x.
+`--world=amberlands` is only a debug world: other land, and the Peak stands in
+it. Don't judge or place anything by it.
 
 ## What done looks like, in play
 
@@ -60,6 +65,15 @@ the tag. The old head and boss code stay in the archive.
   user's other work.
 - Wind is another piece of work: don't build gusts here.
 
+- The stomper, its loop and its footfall live on the Amberlands side of the door
+  world: centred on `world.offset`, every spot passing `world.side_of(x, z) == 1`,
+  nothing of it on the wilderness side. Its world gate takes `doors`, and
+  `amberlands` still works for debugging at the origin. It must meet the player
+  soon after they leave the hall on the far side.
+- `iter/amber-giants` already does this (`GiantSwells.home(world)`, a
+  `"peak":0.0` layer in amberlands/look.gd read at `_massif` in land_field.gd):
+  match it, so the two merge cleanly.
+
 ## Order
 
 Trunk only, no lanes; each task ends in something to look at.
@@ -68,6 +82,9 @@ Trunk only, no lanes; each task ends in something to look at.
 2. It walks: a heavy authored walk at this size, on the real ground, on a loop.
 3. The footfall: shockwave, dust, camera, plane shove.
 4. The wake.
+4b. Move it to the far side of the door (spec change, 2026-11-01): laid out on
+   the real Amberlands, seen in the default game, all earlier checks and stills
+   redone there, since their land was the debug world.
 5. Solid to the flight.
 6. Pass on looks and cost, in play.
 
