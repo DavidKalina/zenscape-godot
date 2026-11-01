@@ -474,12 +474,18 @@ float peak_ice_wall(vec3 p, vec3 n, vec3 eye, vec2 flow, float fp, float tone, f
 	float lit = smoothstep(-0.20, 0.42, dot(n, sun));
 	float under = clamp(-n.y * 2.5, 0.0, 1.0);
 	float cloud = er_vnoise(p / 11.0 + 7.0) - 0.5;
-	float depth = (1.0 - open) * 0.62 + (1.0 - lit) * 0.24 + under * 0.55 + (tone - 0.5) * 0.36
+	// (A serac: less blue for being turned from the sun, more under its overhangs.)
+	float depth = (1.0 - open) * mix(0.62, 0.40, solid) + (1.0 - lit) * mix(0.24, 0.10, solid) + under * mix(0.55, 0.80, solid) + (tone - 0.5) * 0.36
 		+ (0.5 - strata) * 0.32 * vein + cloud * 0.46 * mix(0.5, 1.0, solid) + (1.0 - solid) * 0.30;
 	depth = clamp(depth, 0.0, 1.0);
 	col = mix(ICE_SUNLIT, ICE_SHADE, smoothstep(0.04, 0.54, depth));
 	col = mix(col, ICE_BLUE, smoothstep(0.50, 0.92, depth));
 	col = mix(col, ICE_DEEP * 1.6, smoothstep(0.86, 1.0, depth) * 0.6);
+	// A serac's old ice: greyed and milky where it isn't deep (its blue kept for
+	// the hollows and undercuts), duller and greyer the older its block's tone.
+	float old_ice = solid * (1.0 - smoothstep(0.62, 0.95, depth));
+	col = mix(col, vec3(dot(col, vec3(0.30, 0.59, 0.11))) * vec3(0.92, 0.97, 1.05), old_ice * 0.68);
+	col *= mix(1.0, mix(0.80, 0.94, tone), solid);
 	// Bright clear bands against the dull ones, dust grey along the beds.
 	col *= 1.0 + 0.20 * (strata - 0.5) * vein;
 	col = mix(col, ICE_GRIT_PALE * vec3(0.95, 1.0, 1.1), clamp(dust, 0.0, 1.0) * 0.30 * vein);
@@ -547,7 +553,7 @@ void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, 
 		float worn = smoothstep(0.30, 0.70, peak_noise(p.xz / 5.3 + p.y / 4.1));
 		float edge_w = max(0.05 + 0.10 * worn, fp * 1.1);
 		edge = (1.0 - smoothstep(edge_w * 0.5, edge_w, to_edge)) * (0.25 + 0.75 * open) * (0.55 + 0.45 * clamp(n.y * 2.0 + dot(n, sun), 0.0, 1.0)) * worn * smoothstep(0.0, 0.5, dot(n, sun));
-		col = mix(col, ICE_SNOW * 1.1, edge * 0.42);
+		col = mix(col, ICE_SNOW, edge * 0.22);
 		gloss *= 1.0 - edge;
 	}
 	// The ground's triangles under the ice lie level to the light: its own bump
@@ -556,14 +562,15 @@ void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, 
 	lit_n = peak_ice_bump(normalize(base_n - vec3(slope.x, 0.0, slope.y) * (1.0 - steep)), p, h);
 	// (A serac's soft normals sweep the sun's glint across whole faces: duller there.)
 	rough = solid > 0.5 ? 0.82 : mix(0.66, 0.46, gloss);
-	spec = solid > 0.5 ? 0.12 : mix(0.30, 0.54, gloss);
+	spec = solid > 0.5 ? 0.07 : mix(0.30, 0.54, gloss);
 	// The sky's sheen across the ice at a glance, and the blue scatter: most
 	// where it is blue, none on grit.
 	float ndv = clamp(dot(lit_n, eye), 0.0, 1.0);
 	float shine = pow(1.0 - ndv, 4.0) * (0.25 + 0.75 * gloss);
 	vec3 sky = zs_hemi_sky * zs_hemi_energy;
 	float tint = clamp((col.b - col.r) * 2.4, 0.0, 1.0);
-	glow = sky * shine * 0.20 + (ICE_BLUE * 0.45 + col * 0.25) * sky * tint * 0.42 + col * sky * edge * 0.30;
+	// (A serac's sheen, scatter and rims held down: they bloomed it to crystal.)
+	glow = sky * shine * mix(0.20, 0.08, solid) + (ICE_BLUE * 0.45 + col * 0.25) * sky * tint * mix(0.42, 0.26, solid) + col * sky * edge * mix(0.30, 0.10, solid);
 	// A block's ice lets the day through: its shaded faces glow pale, not dark.
-	glow += col * dot(sky, vec3(0.3, 0.59, 0.11)) * solid * 0.17;
+	glow += col * dot(sky, vec3(0.3, 0.59, 0.11)) * solid * 0.11;
 }

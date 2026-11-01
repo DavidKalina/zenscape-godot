@@ -364,10 +364,13 @@ func _slalom(game: Node3D, p: Vector3, h: float, span: float, pace: float, fast:
 			_run_pace = maxf(_run_pace,pace)
 		_abeam[side] = now
 
-## A fin of the Peak's carve at `q`, up to the plane's height, or any arch's stone.
+## A fin of the Peak's carve at `q`, up to the plane's height, or any arch's stone,
+## or a rock's (the glacier's ice fins, rocks/peak_ice_forms.gd).
 func _fin_at(game: Node3D, q: Vector3, y: float) -> bool:
 	var arches = game.get("arches")
-	return arches != null and bool(arches.inside(Vector3(q.x,y,q.z),0.0))
+	if arches != null and bool(arches.inside(Vector3(q.x,y,q.z),0.0)): return true
+	var rocks = game.get("rocks")
+	return rocks != null and bool(rocks.on) and bool(rocks.inside(Vector3(q.x,y,q.z),0.0))
 
 ## Round a rock pillar.
 func _orbit(game: Node3D, p: Vector3, span: float, pace: float, fast: bool, delta: float) -> void:

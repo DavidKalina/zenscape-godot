@@ -32,12 +32,13 @@ const KINDS := {
 	"spires":preload("res://scripts/endless/rocks/peak_spires.gd"),
 	"boulders":preload("res://scripts/endless/rocks/peak_boulders.gd"),
 	"valley":preload("res://scripts/endless/rocks/peak_valley.gd"),
+	"ice-forms":preload("res://scripts/endless/rocks/peak_ice_forms.gd"),
 }
 ## Kinds that stand on the Peak's massif only (planned on its cells alone,
 ## kept off nothing else, on in every world while the Peak is: --boulders=0,
-## --valley=0 or --no-rocks takes them off). The crest's spires are off for now:
+## --valley=0, --ice-forms=0 or --no-rocks takes them off). The crest's spires are off for now:
 ## --spires=1 stands them.
-const ON_PEAK := ["spires","boulders","valley"]
+const ON_PEAK := ["spires","boulders","valley","ice-forms"]
 ## The world cell (m): the arches' own, so the trees' planner reads both
 ## with one cache.
 const CELL := ArchPlan.CELL
