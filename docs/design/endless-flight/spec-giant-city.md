@@ -134,6 +134,12 @@ road; the file can stay, out of `PLACED`, or lend its figures as accents.
    end, wide and tight.
    (Road done at a0fcc21a. The stomper goes first: he stands by the shore and hides the reveal.)
 4. **The stomper to the outskirts.** A smaller range on open ground, off the road.
+   (Done at a30d4297. The user flew the road: "Flight felt good". The stomper's new body and
+   the 55 m heads are merged in. Fixes first, task 4b.)
+4b. **The user's fixes.** Floating bits near the pyramid, seen in play: find them and seat
+   them. The pyramid's interior isn't flyable, it's solid: give it a real inside to fly
+   through. Recheck the road, the pyramid and the stomper's line against the merged heads
+   and swells.
 5. **The hall off the path.** Move it to the side, with its sight line or spur.
 6. **Off the path.** Small chunks of ruin, cheap reuses of the road's kit, and the heads
    moved clear of the road. Then cost, smoke; the handoff and the window are the loop's.
