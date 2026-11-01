@@ -57,6 +57,7 @@ const Shapes = preload("res://scripts/endless/city/city_shapes.gd")
 const PLACED := [
 	{"name":"city/gate","piece":preload("res://scripts/endless/city/gate.gd"),"along":350.0,"across":71.0,"turn":0.2},
 	{"name":"city/pyramid","piece":preload("res://scripts/endless/city/pyramid.gd"),"along":0.0,"across":800.0,"turn":0.0},
+	{"name":"city/pillar_hall","piece":preload("res://scripts/endless/city/pillar_hall.gd"),"along":300.0,"across":1000.0,"turn":0.0},
 ]
 
 ## How far under the origin a piece's feet go (m): the land's rise and fall
