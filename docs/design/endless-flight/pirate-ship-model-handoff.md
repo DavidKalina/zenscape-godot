@@ -6,6 +6,13 @@ in the gray box's `pirate-ship-handoff.md`. Not wired into the world.
 Stills, in the game's sea and light (rendered on the Mac):
 `docs/design/endless-flight/pirate-ship-stills/`.
 
+## Widened 12.5%
+
+The user found the gun deck tight, so beam 22 to 24.75 m, deck and cracks 16 to 18 m,
+muzzles x +-14 to +-15.375; length, heights and masts as they were. `WIDEN` scales the
+hand-set x numbers (wound frames, lantern reach, the beak's gratings, stairs); plank,
+rib and gun sizes stay. Sections below give the old widths where they describe a pass.
+
 ## Crack and gun deck pass
 
 Two look fixes; flight, `solids()`, tuning, route and hull shape are untouched.
@@ -139,7 +146,7 @@ python3 tools/godot.py --headless --editor --import
 ```
 
 The build reads the glb back and exits 1 if anything fails. It checks the corridor
-box, the 16 x 10 m rectangle 30 m past each end with plugs out (4 cm grace for
+box, the `CRACK_W` x `CRACK_H` rectangle 30 m past each end with plugs out (4 cm grace for
 plank edges on the line), required nodes and muzzle positions. `--fast` halves
 the textures. Ports, `SAILS`, `MASTS` and the `WOUND_*` knobs are all constants, but plank
 lines must keep hitting the corridor's floor and top, so keep `KEEL_Z` and
@@ -158,7 +165,7 @@ Bow is Godot -Z.
   `Bowsprit`, origin at the yard
 - `PortLid_L_01..06` (no `_04`: torn off), `PortLid_R_01..06`, origin at the hinge,
   already open
-- Empties: `Gun_L_01..06`, `Gun_R_01..06` at muzzles (x +-14, y 8), -Z pointing out;
+- Empties: `Gun_L_01..06`, `Gun_R_01..06` at muzzles (x +-15.375, y 8), -Z pointing out;
   01 is z +40, 06 is z -40. `Relic` (0, 8, 0). `CorridorStart` (0, 8, 55, the
   stern), `CorridorEnd` (0, 8, -55, the bow).
 

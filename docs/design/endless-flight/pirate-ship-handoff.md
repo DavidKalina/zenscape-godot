@@ -73,7 +73,7 @@ of travel; both ends break.
 - **Which end:** both plates break, so she can be entered at either end. The
   other plate stays stone, and the surge is held hot while the plane is in the
   corridor (`keep_hot`), so it breaks on the way out.
-- **Corridor:** 16 m wide by 10 m high (toy 8 by 5, against a cracked room's 14
+- **Corridor:** 18 m wide by 10 m high (toy 9 by 5, against a cracked room's 14
   by 9).
 - **Balls in a surge:** a ball that reaches the plane while the surge is hot does
   nothing.
@@ -114,7 +114,7 @@ Bot flying through real actions (`scratch/ship.gd`, not committed):
 ## What's unproved
 
 - **Hand flying.** The bot steers perfectly. Whether a person can dodge a ball,
-  swing to the end of a moving ship and hit a 16 by 10 m plate at surge speed is
+  swing to the end of a moving ship and hit a 18 by 10 m plate at surge speed is
   for you to judge.
 - **Ball speed and tell timing:** tuned by reasoning only.
 - **Wheels on the deck:** one bot run scraped once and flew on, slowly, without
@@ -157,33 +157,33 @@ starboard, y up. Values are at the default sizes; `solids()` in
 `pirate_ship.gd` is the source. Corridor width and height come from
 `WorldScale.opening`.
 
-**Ship:** hull 22 m beam by 113 m long, draught 6 m, top deck at y 15. With the
+**Ship:** hull 24.75 m beam by 113 m long, draught 6 m, top deck at y 15. With the
 stem, about 129 m overall.
 
-**Gun deck (corridor):** x -8 to 8, y 3 to 13, z -55 to 55. Keep it clear; visible
+**Gun deck (corridor):** x -9 to 9, y 3 to 13, z -55 to 55. Keep it clear; visible
 guns and lamps inside must stay within 1 m of the walls. Middle at y 8.
 
-**Cracks (breakable plates):** each 16 by 10 m, filling the corridor's end.
-- Stern: x -8 to 8, y 3 to 13, z 55 to 56.5.
-- Bow: x -8 to 8, y 3 to 13, z -56.5 to -55.
+**Cracks (breakable plates):** each 18 by 10 m, filling the corridor's end.
+- Stern: x -9 to 9, y 3 to 13, z 55 to 56.5.
+- Bow: x -9 to 9, y 3 to 13, z -56.5 to -55.
 
 **Relic:** at (0, 8, 0), ring opening 10 m.
 
-**Guns:** 12, six a side at z -40, -24, -8, 8, 24, 40. Muzzle at x ±14, y 8. They
+**Guns:** 12, six a side at z -40, -24, -8, 8, 24, 40. Muzzle at x ±15.375, y 8. They
 fire outward.
 
 **Collision boxes (x0, y0, z0 to x1, y1, z1):**
 
 | Part | Box |
 |---|---|
-| Hull below the deck | -11, -6, -56.5 to 11, 3, 56.5 |
-| Port wall | -11, 3, -56.5 to -8, 13, 56.5 |
-| Starboard wall | 8, 3, -56.5 to 11, 13, 56.5 |
-| Deck | -11, 13, -56.5 to 11, 15, 56.5 |
-| Poop | -11, 15, 30 to 11, 24, 56.5 |
-| Forecastle | -11, 15, -56.5 to 11, 20, -38 |
-| Stem, inner | -8, -6, -64.5 to 8, 3, -56.5 |
-| Stem, outer | -4, -6, -72.5 to 4, 3, -64.5 |
+| Hull below the deck | -12.375, -6, -56.5 to 12.375, 3, 56.5 |
+| Port wall | -12.375, 3, -56.5 to -9, 13, 56.5 |
+| Starboard wall | 9, 3, -56.5 to 12.375, 13, 56.5 |
+| Deck | -12.375, 13, -56.5 to 12.375, 15, 56.5 |
+| Poop | -12.375, 15, 30 to 12.375, 24, 56.5 |
+| Forecastle | -12.375, 15, -56.5 to 12.375, 20, -38 |
+| Stem, inner | -9, -6, -64.5 to 9, 3, -56.5 |
+| Stem, outer | -4.5, -6, -72.5 to 4.5, 3, -64.5 |
 | Foremast | -1, 15, -23 to 1, 55, -21 |
 | Mainmast | -1, 15, 5 to 1, 59, 7 |
 | Mizzen | -1, 24, 41 to 1, 51, 43 |

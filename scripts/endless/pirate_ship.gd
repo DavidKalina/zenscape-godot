@@ -58,7 +58,7 @@ const ROUTE_R := 200.0
 const SPEED := 9.0
 ## The gun deck, in toy widths (WorldScale `opening`): wide, high; long is by the
 ## clock, about 2 s at Boost's 57 m/s. Toy 7 by 4.5 is a cracked wall's room.
-const TOY_WIDE := 8.0
+const TOY_WIDE := 9.0
 const TOY_HIGH := 5.0
 const LONG := 110.0
 ## Over the waterline: the gun deck's floor; the hull's draught; the plates', the
@@ -68,7 +68,7 @@ const DRAUGHT := 6.0
 const PLATE := 1.5
 ## How far from the gun deck's ends a touch stops being a glance.
 const END_ROOM := 2.0
-const WALL := 3.0
+const WALL := 3.375
 const DECK := 2.0
 const GUNS_Z := [-40.0,-24.0,-8.0,8.0,24.0,40.0]
 ## Guns: over the waterline (m); firing from MIN to MAX m off, within ARC rad of
@@ -121,7 +121,7 @@ var way := Vector2.RIGHT
 var yaw := 0.0
 var _route := Transform3D.IDENTITY
 var _inv := Transform3D.IDENTITY
-var wide := 16.0
+var wide := 18.0
 var high := 10.0
 ## Counted, for the drivers.
 var fired := 0
