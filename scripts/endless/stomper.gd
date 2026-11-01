@@ -28,6 +28,7 @@ const Legs = preload("res://scripts/endless/stomper_legs.gd")
 const Fall = preload("res://scripts/endless/stomper_fall.gd")
 const Wake = preload("res://scripts/endless/stomper_wake.gd")
 const Solid = preload("res://scripts/endless/stomper_solid.gd")
+const Shadow = preload("res://scripts/endless/stomper_shadow.gd")
 const Door = preload("res://scripts/endless/hall_doors.gd")
 const MODEL := "res://assets/models/stomper_body.glb"
 ## Its height in play (m), and the model's, stump's cut to soles (m).
@@ -73,6 +74,8 @@ var legs: SkeletonModifier3D
 var fall: Node3D
 ## The track it leaves (stomper_wake.gd), or null.
 var wake: Node3D
+## Its shadow past the sun's own (stomper_shadow.gd), or null.
+var shadow: MeshInstance3D
 var route: RefCounted
 var field: RefCounted
 var world: RefCounted
@@ -150,6 +153,10 @@ func setup(study: Node) -> void:
 		wake = Wake.new()
 		add_child(wake)
 		wake.setup(study,self)
+	if Shadow.wanted():
+		shadow = Shadow.new()
+		add_child(shadow)
+		shadow.setup(study,self)
 	visible = _plane_here()
 
 ## Whether it may stand at (x, z): on its side of the door, off the hall's mouth.
@@ -179,6 +186,7 @@ func step(delta: float) -> void:
 	_pose(delta)
 	if fall != null: fall.step(delta)
 	if wake != null: wake.step(delta)
+	if shadow != null: shadow.step()
 
 ## The body at `along`, the pose at `phase`, each ankle's goal.
 func _pose(delta: float) -> void:

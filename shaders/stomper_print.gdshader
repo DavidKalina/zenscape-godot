@@ -4,20 +4,26 @@ shader_type spatial;
 // so a frame costs one clock and the pixels of the boxes in view. Per instance:
 //   the transform   the box: its x across, y up, z along (scale = full size, m)
 //   CUSTOM = (born, life s, kind, seed)
-//   kind 0          a footprint: bedded soil, the rim shoved up round it
+//   kind 0          a footprint: the ground bedded in, the rim shoved up round it
 //   kind 1          a stretch of ground the walk has scuffed and dusted over
-// Lit: the land's light falls on it at the ground's point, and the print's walls
-// turn the normal, so the sun picks out a real-looking dent.
-render_mode depth_draw_never, depth_test_disabled, cull_front, shadows_disabled;
+// Multiplied on the ground, whatever it is: the land's own colour pressed darker,
+// not a paint of soil over it. The print's walls take the sun on one side and
+// lose it on the other, so a dent reads as one from afar.
+render_mode blend_mul, unshaded, fog_disabled, depth_draw_never, depth_test_disabled, cull_front, shadows_disabled;
 
 uniform float now = 0.0;
-uniform vec3 soil = vec3(0.23, 0.18, 0.135);
-uniform vec3 soil_deep = vec3(0.1, 0.085, 0.07);
-uniform vec3 rim = vec3(0.38, 0.32, 0.24);
-uniform vec3 scuff = vec3(0.56, 0.48, 0.36);
-uniform float scuff_most = 0.3;
+uniform vec3 sun = vec3(0.0, 1.0, 0.0);
+// What the ground is multiplied by: a print's edge, its deep floor, a wall out
+// of the sun, a scuffed stretch at its most.
+uniform vec3 bed = vec3(0.74, 0.66, 0.58);
+uniform vec3 bed_deep = vec3(0.5, 0.43, 0.38);
+uniform vec3 wall_shade = vec3(0.42, 0.4, 0.48);
+uniform vec3 scuff = vec3(0.74, 0.66, 0.54);
+uniform float scuff_most = 0.9;
 // Nearer the eye than this it isn't drawn (m): not on the plane.
 uniform vec2 near_fade = vec2(12.0, 40.0);
+// The environment's depth fog: begin, end, curve.
+uniform vec3 haze = vec3(120.0, 7600.0, 0.75);
 // Below the sea it isn't drawn: the water writes no depth.
 uniform float sea_y = -40.0;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
@@ -93,25 +99,27 @@ void fragment() {
 	float age = now - v_mark.x;
 	float life = v_mark.y;
 	float a = 0.0;
-	vec3 col = scuff;
-	// The ground's faces are big and flat: lit mostly as up, or the mark shows them.
-	vec3 n = normalize(mix(flat_n, vec3(0.0, 1.0, 0.0), 0.75));
+	vec3 m = scuff;
 	if (v_mark.z < 0.5) {
 		float e = 2.0 / half_size.y;
 		float h = dent(p, w.xz, v_mark.w);
 		float dx = dent(p + vec2(e, 0.0), w.xz + v_across.xz * 2.0, v_mark.w) - h;
 		float dz = dent(p + vec2(0.0, e), w.xz + v_along.xz * 2.0, v_mark.w) - h;
-		// The dent's slope, stated strongly so the sun reads the walls from afar.
-		vec3 tilt = (v_across * dx + v_along * dz) * 1.6;
-		n = normalize(n - tilt);
+		// The dent's slope, stated enough that the sun reads the walls from afar.
+		vec3 tilt = (v_across * dx + v_along * dz) * 0.7;
+		vec3 n = normalize(vec3(0.0, 1.0, 0.0) - tilt);
+		float lit = clamp(dot(n, sun) / max(sun.y, 0.2), 0.0, 1.5);
 		float s = sole(p, wobble(w.xz, v_mark.w));
-		float deep = smoothstep(0.0, 0.45, s);
+		float deep = smoothstep(0.0, 0.5, s);
 		float grain = vnoise(w.xz / 6.0 + v_mark.w) * 0.5 + vnoise(w.xz / 17.0) * 0.5;
-		col = mix(soil, soil_deep, deep * grain);
+		// Trodden in patches: the ground shows through the floor here and there.
+		float patch_ = vnoise(w.xz / 38.0 + v_mark.w * 3.0);
+		m = mix(bed, bed_deep, deep * mix(0.45, 1.0, grain));
+		m = mix(wall_shade, vec3(1.0), smoothstep(0.0, 1.0, lit)) * m;
+		m *= 1.0 + max(lit - 1.0, 0.0) * 0.5;
 		float lip = exp(-s * s * 40.0);
-		col = mix(col, rim, lip * (1.0 - smoothstep(0.0, 0.12, s)));
-		float bed = smoothstep(-0.02, 0.06, s) * mix(0.95, 0.68, grain * deep);
-		a = max(bed, lip * 0.75 * smoothstep(0.3, 0.68, vnoise(w.xz / 12.0 + v_mark.w)));
+		float floor_ = smoothstep(-0.02, 0.08, s) * mix(0.62, 1.0, smoothstep(0.25, 0.6, patch_));
+		a = max(floor_, lip * 0.8 * smoothstep(0.3, 0.68, vnoise(w.xz / 12.0 + v_mark.w)));
 		// The sides wear away first: the print goes from its rim in.
 		a *= smoothstep(0.0, 1.5, age) * (1.0 - smoothstep(0.7, 1.0, age / life));
 	} else {
@@ -119,19 +127,15 @@ void fragment() {
 		float rag = vnoise(w.xz / 64.0) * 0.6 + vnoise(w.xz / 23.0) * 0.4;
 		float edge = 0.55 + (rag - 0.5) * 0.7;
 		a = (1.0 - smoothstep(edge * 0.55, edge + 0.2, across));
-		a *= 1.0 - smoothstep(0.7, 1.0, abs(p.y));
+		a *= 1.0 - smoothstep(0.3, 1.0, abs(p.y));
 		a *= smoothstep(0.25, 0.6, rag + 0.15);
 		a *= scuff_most * smoothstep(0.0, 6.0, age) * (1.0 - smoothstep(0.55, 1.0, age / life));
-		col = mix(scuff, soil, 0.5 * (1.0 - rag));
 	}
 	a *= lies * (1.0 - smoothstep(0.55, 1.0, high)) * smoothstep(near_fade.x, near_fade.y, -v.z);
 	if (a <= 0.003) {
 		discard;
 	}
-	LIGHT_VERTEX = v.xyz;
-	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
-	ALBEDO = col;
-	ROUGHNESS = 1.0;
-	SPECULAR = 0.0;
-	ALPHA = clamp(a, 0.0, 1.0);
+	float dist = length(v.xyz);
+	float air = pow(smoothstep(haze.x, haze.y, dist), haze.z);
+	ALBEDO = mix(vec3(1.0), m, clamp(a, 0.0, 1.0) * (1.0 - air));
 }

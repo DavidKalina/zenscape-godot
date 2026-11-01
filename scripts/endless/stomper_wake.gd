@@ -22,6 +22,8 @@ const SHADER = preload("res://shaders/stomper_print.gdshader")
 const PRINT := Vector3(66.0,130.0,92.0)
 const PRINT_LIFE := 600.0
 const PRINT_WAIT := 9.9
+## How far off a pond a print stays (m).
+const PRINT_POND := 70.0
 ## The scuff's width and rise (m), the length as a share of a step, its life (s).
 const SCUFF := Vector2(380.0,260.0)
 const SCUFF_LONG := 2.6
@@ -56,6 +58,7 @@ var _study: Node
 var _field: RefCounted
 var _body: Node3D
 var _rng := RandomNumberGenerator.new()
+var _sun_of: RefCounted
 var _mat: ShaderMaterial
 var _boxes: MultiMesh
 var _next := 0
@@ -74,6 +77,10 @@ func setup(study: Node, stomper: Node3D) -> void:
 	_rng.seed = 17012
 	_mat = ShaderMaterial.new()
 	_mat.shader = SHADER
+	_sun_of = study.look.celestial
+	var fog: Environment = study.look.environment
+	_mat.set_shader_parameter("haze",Vector3(fog.fog_depth_begin,fog.fog_depth_end,fog.fog_depth_curve))
+	_mat.set_shader_parameter("sun",_sun_of.state.zs_sun_direction)
 	var box := BoxMesh.new()
 	box.size = Vector3.ONE
 	box.material = _mat
@@ -98,6 +105,7 @@ func step(delta: float) -> void:
 	if not enabled: return
 	now += delta
 	_mat.set_shader_parameter("now",now)
+	_mat.set_shader_parameter("sun",_sun_of.state.zs_sun_direction)
 
 ## A landing: the print for when the foot lifts, the scuff, the held grass, dust.
 func fell(at: Vector3, _side: int) -> void:
@@ -144,6 +152,8 @@ func _point(route: RefCounted, s: float) -> Vector3:
 	return Vector3(p.x,float(_field.height(p.x,p.y)),p.y)
 
 func _print(at: Vector3, yaw: float, born: float) -> void:
+	# A pond's bed is what the depth shows there: nothing to press through water.
+	if not _field.ponds_in(at.x-PRINT_POND,at.z-PRINT_POND,at.x+PRINT_POND,at.z+PRINT_POND).is_empty(): return
 	var b := Basis(Vector3.UP,yaw).scaled_local(PRINT)
 	_write(Transform3D(b,at),Color(born,PRINT_LIFE,0.0,_rng.randf()*40.0))
 	stats.prints = int(stats.prints)+1
