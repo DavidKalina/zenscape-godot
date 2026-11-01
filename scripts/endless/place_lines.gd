@@ -2,7 +2,8 @@ extends Node
 ## Place lines (endless flight; docs/design/endless-flight/spec-peak.md, lane
 ## `lines`): standing routes at fixed places, each a timed record.
 ##
-## A line: {name, place, title, gates, seed (-1 any)}. `gates` are in order,
+## A line: {name, place, title, gates, seed (-1 any), mark (s, the time to
+## beat; none under 0)}. `gates` are in order,
 ## the first the start and the last the finish; each a Vector3 (the mouth's
 ## middle) or {at, dir (the way through, else along the line), half
 ## (Vector2, wingspans across and up each way, else AIR_HALF)}. Each gate
@@ -119,7 +120,7 @@ func add_line(decl: Dictionary) -> bool:
 	add_child(marks)
 	marks.set_course(course)
 	lines.append({"name":line_name,"place":place,"place_name":place_name(place),"title":str(decl.get("title",line_name.replace("_"," "))),
-		"key":key_of(place,line_name),"gates":gates,"course":course,"marks":marks})
+		"key":key_of(place,line_name),"gates":gates,"course":course,"marks":marks,"mark":float(decl.get("mark",-1.0))})
 	return true
 
 ## The record's name of line `line_name` at `place`.

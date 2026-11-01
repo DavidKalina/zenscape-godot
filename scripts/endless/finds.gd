@@ -116,7 +116,7 @@ func _add(world_id: String, r: Dictionary) -> void:
 	if kind in ["relic","landing"] or e.spot != Vector3.INF or e.has("anchor"): _pending.append(i)
 
 func _line(e: Dictionary) -> void:
-	if e.has("gates") and _game.lines != null: _game.lines.add_line({"name":e.name,"place":e.place,"title":e.title,"gates":e.gates})
+	if e.has("gates") and _game.lines != null: _game.lines.add_line({"name":e.name,"place":e.place,"title":e.title,"gates":e.gates,"mark":e.get("mark",-1.0)})
 	if e.has("gates"):
 		e["line"] = "line/%s/%s" % [e.place,e.name]
 		var g: Variant = (e.gates as Array)[0]
@@ -168,6 +168,7 @@ func anchor_spot(a: String, e: Dictionary = {}) -> Vector3:
 	if _extra_anchors.has(a): return _extra_anchors[a]
 	var parts := a.split("/")
 	if a.begins_with("peak/"): return _peak(parts)
+	if a.begins_with("way/"): return _game.way.at(a) if _game.way != null else Vector3.INF
 	if LayoutOverrides.entries.has(a):
 		if not e.is_empty(): e.moves = true
 		var node: Node3D = LayoutOverrides.entries[a].node
@@ -441,6 +442,7 @@ func ledger() -> Array:
 			var done := is_found(e)
 			var r := {"found":done,"text":str(e.title) if done else str(e.get("hint","")),"value":""}
 			if e.kind == "line" and book.records.has(str(e.line)): r.value = preload("res://scripts/endless/place_lines.gd").lap(float(book.records[str(e.line)]))
+			if e.kind == "line" and e.has("mark") and float(e.mark) < float(book.records.get(str(e.line),-1.0)): r.value = "%s / %s" % [r.value,preload("res://scripts/endless/place_lines.gd").lap(float(e.mark))]
 			block.of = int(block.of)+1
 			if done: block.got = int(block.got)+1
 			block.rows.append(r)

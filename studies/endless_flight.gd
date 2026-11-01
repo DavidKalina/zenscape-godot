@@ -323,6 +323,8 @@ var spindrift: Node3D
 ## The burrower, woken by a chosen skim (scripts/endless/burrower_flight.gd;
 ## --no-burrower: none).
 var burrower: Node
+## The towers that lead from the start to the ruin and the isles (scripts/endless/way_towers.gd).
+var way: Node3D
 ## The surge roll, the breaks and the cracked walls (scripts/endless/surge_smash.gd).
 var smash: Node3D
 var flown := 0.0
@@ -772,6 +774,10 @@ func _ready() -> void:
 		add_child(doors)
 		doors.setup(self,_start,_heading,seed)
 	if Finds.wanted(seed):
+		way = preload("res://scripts/endless/way_towers.gd").new()
+		way.name = "WayTowers"
+		add_child(way)
+		way.setup(self)
 		finds = Finds.new()
 		add_child(finds)
 		finds.setup(self)
@@ -928,7 +934,7 @@ func _build_ui() -> void:
 	_hint.offset_left = 16.0
 	_hint.add_theme_color_override("font_outline_color",Color(0,0,0,0.8))
 	_hint.add_theme_constant_override("outline_size",4)
-	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  B surge  ·  Tab (hold) race a plane  ·  Q E knife edge  ·  Z roll (full meter: surge roll)  ·  F flaps  ·  J logbook  ·  O photo  ·  land on the meadows  ·  R up again  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale  ·  F3 graphics"
+	_hint.text = "A D bank  ·  W S pitch  ·  mouse steers  ·  Space boost  ·  Shift brake  ·  Z roll (full meter: surge roll)  ·  Q E knife edge  ·  F flaps  ·  J logbook  ·  O photo  ·  R up again  ·  B surge  ·  Tab (hold) race a plane  ·  V weight  ·  P pace  ·  C clouds  ·  G grass  ·  H score  ·  F1 numbers  ·  F2 3D scale  ·  F3 graphics"
 	layer.add_child(_hint)
 	_stop_cue = Label.new()
 	_stop_cue.anchor_top = 1.0
@@ -1243,6 +1249,7 @@ func tick(delta: float) -> void:
 	if shops != null: shops.step(delta,self)
 	if finds != null: finds.step(delta,self)
 	if coast != null: coast.step(delta,self)
+	if way != null: way.step(camera.global_position)
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera
@@ -1728,6 +1735,11 @@ func _show_region() -> void:
 	# The paint (ground, far ring, sea, globals, mood and hour) by the eye's weights.
 	if world.paint_eye(eye.x,eye.z) and look != null: look.blend_moods(world.moods_at_eye())
 	var now := Time.get_ticks_msec()
+	# Not over the title: its caption comes up as the takeoff ends.
+	if stage != null:
+		_region_shown = now
+		_region_caption.modulate.a = 0.0
+		return
 	var w: Dictionary = world.weights_at(eye.x,eye.z)
 	for r: RefCounted in w:
 		if str(r.id) != _region_id and (float(w[r]) >= REGION_TAKE or _region_id == ""):

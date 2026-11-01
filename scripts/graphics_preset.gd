@@ -55,11 +55,16 @@ static func chosen() -> String:
 	return "performance" if OS.get_name() == "macOS" else "full"
 
 static func title() -> String:
-	return str(PRESETS[current].title) if current in PRESETS else ""
+	if not current in PRESETS: return ""
+	var t := str(PRESETS[current].title)
+	return t if OS.get_name() == "macOS" else t.get_slice(" (",0)
 
 ## The frame cap for this run: the preset's, else the project's.
 static func fps() -> int:
 	if _boot_fps < 0: _boot_fps = Engine.max_fps
+	# The caps are the Mac's (its handoff's numbers); a saved Quality on the
+	# Windows PC sat at exactly 45 with 12 ms of work a frame.
+	if OS.get_name() != "macOS": return _boot_fps
 	var own := int(PRESETS[current].fps) if current in PRESETS else 0
 	return own if own > 0 else _boot_fps
 

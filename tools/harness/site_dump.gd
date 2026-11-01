@@ -42,8 +42,9 @@ func drive() -> void:
 		for w: Dictionary in study.doors.walls:
 			var xf: Transform3D = w.coded
 			add("door",str(w.name),xf.origin.x,xf.origin.z)
-	var st: Vector2 = study._start
-	add("start","start",st.x,st.y)
+	# Where a game really starts: the title's own spot, seed 1's (this tool runs
+	# without the title, and study._start is the origin then).
+	add("start","start",164.8,-32.4)
 	if study.get("finds") != null:
 		for e: Dictionary in study.finds.entries():
 			var p: Vector3 = e.at

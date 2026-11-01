@@ -27,6 +27,7 @@ extends RefCounted
 ##             (peak_carve.gd HOLES, SILL_HOLES)
 ##             the room behind a cracked wall: "chamber/<place>" for the wall
 ##             `cracked/<place>` (cracked_walls.gd SITES)
+##             a way tower's foot: "way/bay", "way/south", "way/isle" (way_towers.gd)
 ##             "doors/amber-hall/deep": deep in the door's hall; give the row
 ##             `hall` true as well, and it's seen only from inside
 ##           or anything lanes hand to `finds.anchor(name, position)`.
@@ -48,8 +49,9 @@ extends RefCounted
 ##   book    id or ids: done when the book has found one ("door/amber-wall").
 ## A line names its record: `line` "line/<place>/<name>" (a LINES entry in
 ## place_lines.gd), or gives its own `place`, `name` and `gates` and the table
-## adds it (place_lines.gd's header has the gates' shape). Done at its first
-## finished time; the page shows the best.
+## adds it (place_lines.gd's header has the gates' shape). `mark` (s): the time
+## to beat before there is a best. Done at its first finished time; the page
+## shows the best.
 
 const SEED := 1
 const HOVER := 16.0
@@ -58,6 +60,7 @@ const HOVER := 16.0
 const AREAS := {
 	"meadow":"The start meadow",
 	"coast":"The near coast",
+	"south":"The south meadows",
 	"foothills":"The foothills",
 	"peak":"The Peak",
 	"amberlands":"The Amberlands",
@@ -82,21 +85,51 @@ const WORLDS := {
 			"title":"Set down in the green cup","hint":"A green cup in the hills, north"},
 		{"id":"burrower-catch","area":"meadow","kind":"event","event":"caught",
 			"title":"Caught the burrower","hint":"Skim low, and something runs"},
-		# The foothills: the ridge, the door, the glacier.
-		{"id":"ridge-ring","area":"foothills","kind":"relic","anchor":"doors/amber-hall","up":10.0,"offset":Vector3(123.0,0.0,86.0),
-			"title":"The ring below the ruin"},
-		{"id":"belfry-ring","area":"foothills","kind":"relic","anchor":"doors/amber-hall","up":72.0,
+		# The way south, in the first frame's left edge, down the bay to the tower
+		# at its far end. From the tower: way/south for the ruin, way/isle for the isles.
+		{"id":"bay-lead","area":"meadow","kind":"relic","at":Vector2(-141.0,138.0),"up":26.0,
+			"title":"The ring at the bay's head"},
+		{"id":"bay-ring","area":"meadow","kind":"relic","at":Vector2(140.0,800.0),"up":6.0,
+			"title":"The ring down the bay"},
+		{"id":"tower-ring","area":"meadow","kind":"relic","anchor":"way/bay","up":26.0,"offset":Vector3(42.0,0.0,0.0),
+			"title":"The ring at the old tower","hint":"A tower stands at the bay's far end"},
+		# The south meadows: the tower on the way, the door ruin, the strait to the isles.
+		{"id":"south-tower","area":"south","kind":"relic","anchor":"way/south","up":26.0,"offset":Vector3(32.0,0.0,25.0),
+			"title":"The ring at the meadow tower"},
+		{"id":"gap-ring","area":"south","kind":"relic","at":Vector2(-1300.0,2900.0),"up":16.0,
+			"title":"The ring in the gap"},
+		{"id":"ridge-ring","area":"south","kind":"relic","anchor":"doors/amber-hall","up":10.0,"offset":Vector3(78.0,0.0,-128.0),
+			"title":"The ring at the ruin's door"},
+		{"id":"belfry-ring","area":"south","kind":"relic","anchor":"doors/amber-hall","up":72.0,
 			"title":"The ring between the belfries","hint":"High between the ruin's towers"},
-		{"id":"the-wall","area":"foothills","kind":"event","book":["door/amber-wall","door/amber-hall"],
+		{"id":"the-wall","area":"south","kind":"event","book":["door/amber-wall","door/amber-hall"],
 			"title":"The way to the Amberlands","hint":"There is a way out of here"},
-		{"id":"hall-deep","area":"foothills","kind":"relic","anchor":"doors/amber-hall/deep","hall":true,"up":0.0,
+		{"id":"hall-deep","area":"south","kind":"relic","anchor":"doors/amber-hall/deep","hall":true,"up":0.0,
 			"title":"The ring deep in the hall","hint":"Deep inside, where no light should be"},
+		{"id":"strait-ring","area":"south","kind":"relic","at":Vector2(-880.0,3540.0),"up":8.0,
+			"title":"The ring in the strait"},
+		# The foothills: the glacier and its gorge.
 		{"id":"ice-skim","area":"foothills","kind":"relic","at":Vector2(-1100.0,-40.0),"up":9.0,
 			"title":"The ring low over the ice","hint":"Low over the old ice"},
 		{"id":"gorge-room","area":"foothills","kind":"relic","anchor":"chamber/gorge","up":0.0,
 			"title":"The ring in the gorge room"},
 		{"id":"bend-ring","area":"foothills","kind":"relic","anchor":"endless/rock/valley/-6_-3/0","up":25.0,
 			"title":"The ring at the gorge's bend","hint":"Up the ice, past the second bend"},
+		{"id":"gorge-run","area":"foothills","kind":"line","place":"foothills","name":"gorge_run",
+			"title":"The gorge run","hint":"Gates up the ice, bend after bend","mark":40.0,"gates":[
+				{"at":Vector3(-1685,368,-554),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(-1820,409,-752),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(-1892,430,-848),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(-1985,450,-917),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(-2187,491,-818),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(-2349,532,-643),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(-2435,553,-563),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(-2543,574,-573),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(-2639,618,-793),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(-2711,662,-1019),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(-2783,684,-1107),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(-2900,706,-1086),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(-2939,728,-979),"half":Vector2(7.0,5.0)}]},
 		# The Peak.
 		{"id":"tarn-shore","area":"peak","kind":"landing","anchor":"peak/strip/mid","offset":Vector3(15.0,0.0,2.6),"radius":130.0,
 			"title":"Set down by the tarn","hint":"A lake high up, with a shore to stop on"},
@@ -113,6 +146,8 @@ const WORLDS := {
 		{"id":"summit-ring","area":"peak","kind":"relic","anchor":"peak/summit","up":22.0,
 			"title":"The ring over the summit","hint":"Higher than anything here"},
 		# The near coast: arches, stacks, the islands, the light and the ship.
+		{"id":"saddle-ring","area":"coast","kind":"relic","at":Vector2(1260.0,-900.0),"up":22.0,
+			"title":"The ring on the saddle"},
 		{"id":"sea-arch-ring","area":"coast","kind":"relic","anchor":"endless/arch/3_-2/0","up":14.0,
 			"title":"The ring under the sea arch","hint":"A tall arch stands on the east shore"},
 		{"id":"aqueduct-ring","area":"coast","kind":"relic","anchor":"endless/arch/4_0/0","up":14.0,
@@ -123,6 +158,37 @@ const WORLDS := {
 			"title":"The ring over the stacks","hint":"On top of the rocks in the bay"},
 		{"id":"giant-stack","area":"coast","kind":"relic","anchor":"endless/rock/stacks/4_5/0","pillar":0,"up":14.0,
 			"title":"The ring over the giant"},
+		{"id":"stack-run","area":"coast","kind":"line","place":"coast","name":"round_the_stacks",
+			"title":"Round the stacks","hint":"Gates in the bay, out and back through the rocks","mark":20.0,"gates":[
+				{"at":Vector3(1900,-24,-600),"half":Vector2(9.0,5.0)},
+				{"at":Vector3(1958,-24,-779),"half":Vector2(9.0,5.0)},
+				{"at":Vector3(2012,-24,-882),"half":Vector2(9.0,5.0)},
+				{"at":Vector3(2135,-24,-1040),"half":Vector2(9.0,5.0)},
+				{"at":Vector3(2170,-24,-950),"half":Vector2(9.0,5.0)},
+				{"at":Vector3(2094,-24,-844),"half":Vector2(9.0,5.0)},
+				{"at":Vector3(1984,-24,-716),"half":Vector2(9.0,5.0)},
+				{"at":Vector3(1870,-24,-625),"half":Vector2(9.0,5.0)}]},
+		{"id":"arch-run","area":"coast","kind":"line","place":"coast","name":"arch_run",
+			"title":"The arch run","hint":"Gates through the arches of the east hills","mark":33.0,"gates":[
+				{"at":Vector3(2530,68,59),"dir":Vector3(0.97,0.0,0.25),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(2603,50,78),"dir":Vector3(0.97,0.0,0.25),"half":Vector2(3.0,2.0)},
+				{"at":Vector3(2760,30,150),"half":Vector2(9.0,6.0)},
+				{"at":Vector3(2870,70,300),"half":Vector2(9.0,6.0)},
+				{"at":Vector3(2775,92,445),"half":Vector2(9.0,6.0)},
+				{"at":Vector3(2656,30,530),"dir":Vector3(-0.56,0.0,0.83),"half":Vector2(7.0,5.0)},
+				{"at":Vector3(2612,5,597),"dir":Vector3(-0.56,0.0,0.83),"half":Vector2(3.0,2.0)},
+				{"at":Vector3(2620,6,790),"dir":Vector3(1.0,0.0,-0.1),"half":Vector2(12.0,6.0)},
+				{"at":Vector3(2668,14,640),"dir":Vector3(-0.45,0.0,-0.9),"half":Vector2(9.0,5.0)},
+				{"at":Vector3(2562,8,505),"dir":Vector3(-0.09,0.0,-1.0),"half":Vector2(7.0,4.0)},
+				{"at":Vector3(2554,5,426),"dir":Vector3(-0.09,0.0,-1.0),"half":Vector2(3.0,2.0)},
+				{"at":Vector3(2515,42,362),"dir":Vector3(-0.5,0.0,-0.85),"half":Vector2(9.0,5.0)},
+				{"at":Vector3(2425,80,300),"dir":Vector3(-0.9,0.0,-0.4),"half":Vector2(10.0,6.0)}]},
+		{"id":"sound-ring","area":"coast","kind":"relic","at":Vector2(560.0,2120.0),"up":6.0,
+			"title":"The ring on the sound"},
+		{"id":"isle-tower","area":"coast","kind":"relic","anchor":"way/isle","up":26.0,"offset":Vector3(32.0,0.0,-24.0),
+			"title":"The ring at the island's tower"},
+		{"id":"lone-stack","area":"coast","kind":"relic","anchor":"endless/rock/stacks/2_5/0","pillar":0,"up":14.0,
+			"title":"The ring over the lone stack"},
 		{"id":"long-isle","area":"coast","kind":"landing","at":Vector2(455.0,3510.0),"radius":300.0,
 			"title":"Set down on Long Isle","hint":"An island with room to land"},
 		{"id":"isle-room","area":"coast","kind":"relic","anchor":"chamber/long-isle","up":0.0,
