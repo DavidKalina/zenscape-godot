@@ -108,9 +108,8 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	var out := {"at":hit.at,"normal":n,"what":hit.what,"into":into,"angle":angle,"speed":speed}
 	# The pirate ship's gun deck: glanced off whatever it touched in there.
 	var coast = game.get("coast")
-	var ship = coast.ship if coast != null else null
-	if ship != null:
-		var off: Vector3 = ship.deck_way_off(plane.position,str(hit.what))
+	if coast != null:
+		var off: Vector3 = coast.deck_way_off(plane.position,str(hit.what))
 		if off != Vector3.ZERO: return glance(game,off,hit.at)
 	# A forgiving knife slot's jamb (a side touch of its stone, not its sill
 	# or head): glanced off toward its middle, never kicked across the slot.

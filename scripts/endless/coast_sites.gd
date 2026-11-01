@@ -1,10 +1,10 @@
 extends Node3D
 ## What stands on the coast's isles (coast_isles.gd): the lighthouse on Light
 ## Rock with its turning beam, built once at setup and left standing; and the
-## pirate ship sailing the deep water off the Horn (pirate_ship.gd), stepped
-## here (`before`, `after`).
+## two pirate ships sailing the deep water off the Horn (pirate_ship.gd), stepped
+## here (`before`, `after`), which also picks what only one of them may set.
 ##
-## Handle: `coast/lighthouse` (LayoutOverrides), the ship's its own. The light's
+## Handle: `coast/lighthouse` (LayoutOverrides), the ships' their own. The light's
 ## solid reaches the flight the way the land's stone does: `ground` and `inside`
 ## in plane_ground and _blocked, a StaticBody on layer 1 for the wing rays.
 ## Model: art/blender/coast/coast_build.py.
@@ -33,8 +33,11 @@ const LIGHT_BOXES := [
 ]
 
 var light_at := Vector3.INF
-## The pirate ship (pirate_ship.gd), or null.
+## The pirate ships (pirate_ship.gd), and the first of them, the one with the ring,
+## or null. --one-ship leaves the second out, for the cost pairs.
+var ships: Array[Node3D] = []
 var ship: Node3D
+var _game: Node
 ## The sites' solids: [{inv, oy, g, reach}].
 var _solids: Array = []
 var _beam: Node3D
@@ -43,6 +46,7 @@ var _flash_mat: StandardMaterial3D
 var _t := 0.0
 
 func setup(game: Node) -> void:
+	_game = game
 	var isles: RefCounted = game.field.isles()
 	if isles == null: return
 	# The colours, with a fill so the shaded side reads as paint from the coast
@@ -60,10 +64,20 @@ func setup(game: Node) -> void:
 		_add_solid(t,LIGHT_BOXES,n)
 		_lamp(n)
 		light_at = t.origin
-	if not LayoutOverrides.deleted("coast/ship") and not "--no-ship" in LaunchArgs.user_args():
-		ship = PirateShip.new()
-		add_child(ship)
-		ship.setup(game)
+	var args := LaunchArgs.user_args()
+	if "--no-ship" in args: return
+	if not LayoutOverrides.deleted("coast/ship"):
+		ship = _sail(game,PirateShip.ROUTE_AT,"coast/ship",PirateShip.ROUTE_LEG,0.0)
+	if not LayoutOverrides.deleted("coast/ship2") and not "--one-ship" in args:
+		_sail(game,PirateShip.ROUTE2_AT,"coast/ship2",PirateShip.ROUTE2_LEG,PirateShip.ROUTE2_TURN)
+
+## A ship on the oval round `at`, by the handle `label`.
+func _sail(game: Node, at: Vector2, label: String, leg: float, turn: float) -> Node3D:
+	var s: Node3D = PirateShip.new()
+	add_child(s)
+	s.setup(game,at,label,ship,leg,turn)
+	ships.append(s)
+	return s
 
 ## One turn of the beam, the lamp's flash as it comes round on the eye.
 func step(delta: float, game: Node) -> void:
@@ -80,17 +94,48 @@ func step(delta: float, game: Node) -> void:
 	_flash.scale = Vector3.ONE*size
 	_flash_mat.albedo_color = Color(1.0,0.86,0.6,0.35+0.65*on)
 
-## Before the surge and the plane's move: the ship sails and her guns aim.
+## Before the surge and the plane's move: the ships sail and their guns aim. The
+## skim rate is the best either gives.
 func before(delta: float) -> void:
-	if ship != null: ship.before(delta)
+	if ships.is_empty(): return
+	var skim := 1.0
+	for s: Node3D in ships:
+		s.before(delta)
+		skim = maxf(skim,s.skim)
+	_game.near.skim_scale = skim
 
-## After the plane's move: her balls meet it (`events`, the frame's).
+## After the plane's move: their balls meet it (`events`, the frame's).
 func after(delta: float, events: Dictionary) -> void:
-	if ship != null: ship.after(delta,events)
+	for s: Node3D in ships: s.after(delta,events)
+
+## The chase camera, each frame: the newest sink that wants it has it, and any older
+## one lets go for good, so two sinks never pull it both ways.
+func watch(chase: RefCounted) -> void:
+	var eye: Node3D = null
+	for s: Node3D in ships:
+		if s.wants_eye() and (eye == null or s.sink_t < eye.sink_t): eye = s
+	for s: Node3D in ships:
+		if s == eye: continue
+		if eye != null: s.give_up_eye()
+		else: s.watch(chase)
+	if eye != null: eye.watch(chase)
+
+## The way off a ship's gun deck or wreck at `p` (PirateShip `deck_way_off`), or ZERO.
+func deck_way_off(p: Vector3, what: String) -> Vector3:
+	for s: Node3D in ships:
+		var off: Vector3 = s.deck_way_off(p,what)
+		if off != Vector3.ZERO: return off
+	return Vector3.ZERO
+
+## True inside a sinking ship, grown by `pad`.
+func in_wreck(p: Vector3, pad: float) -> bool:
+	for s: Node3D in ships:
+		if s.wreck_inside(p,pad): return true
+	return false
 
 ## SkyGlide's `ground` at `p` over the land `h` (as LandRocks `ground`).
 func ground(p: Vector3, h: Variant, pad := 0.4) -> Variant:
-	if ship != null: h = ship.wreck_ground(p,h,pad)
+	for s: Node3D in ships: h = s.wreck_ground(p,h,pad)
 	if not h is float: return h
 	var list: Array = []
 	for s: Dictionary in _solids:
@@ -102,7 +147,7 @@ func ground(p: Vector3, h: Variant, pad := 0.4) -> Variant:
 
 ## True inside a solid, grown by `pad`.
 func inside(p: Vector3, pad := 0.4) -> bool:
-	if ship != null and ship.wreck_inside(p,pad): return true
+	if in_wreck(p,pad): return true
 	for s: Dictionary in _solids:
 		if Vector2(p.x-float(s.x),p.z-float(s.z)).length_squared() > float(s.reach2): continue
 		if BoxSolid.inside(s.g,(s.inv as Transform3D)*p,pad): return true

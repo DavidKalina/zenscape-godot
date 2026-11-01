@@ -33,9 +33,16 @@ extends Node3D
 ## collides by. Guns fire from the glb's `Gun_*` empties, and a burst throws the
 ## plate's `CrackPlug_*` shards (`_throw`), which a reseal puts back.
 ##
+## Two sail at once (CoastSites `ships`), each one of these on its own route, with
+## its own guns, plates, sink and return. They share meshes and materials (`twin`),
+## and each keeps its own BALLS. What only one may set is CoastSites' to pick: the
+## near miss's `skim_scale` (`skim`, the most of them) and the eye (`watch`, newest
+## sink).
+##
 ## Handles: `coast/ship` (the ship, moved by its route), `coast/ship-route` (the
-## oval's middle; a move in the layout file carries the whole route). The relic
-## is the finds row `ship-hold`, anchored to `coast/ship`.
+## oval's middle; a move in the layout file carries the whole route); the second's
+## are `coast/ship2` and `coast/ship2-route`. The relic is the finds row `ship-hold`,
+## anchored to `coast/ship`, so she alone carries it (`carries`).
 
 const WorldScale = preload("res://scripts/world_scale.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
@@ -90,6 +97,12 @@ const ROUTE_AT := Vector2(2050.0,3850.0)
 const ROUTE_LEG := 900.0
 const ROUTE_R := 200.0
 const SPEED := 9.0
+## The second ship's oval: its middle, its straights' length (m), its turn (rad) off
+## the first's: the deep basin south-east of her past the isles off the Horn, which
+## the first's length doesn't fit.
+const ROUTE2_AT := Vector2(3500.0,4700.0)
+const ROUTE2_LEG := 500.0
+const ROUTE2_TURN := -PI*0.25
 ## The gun deck, in toy widths (WorldScale `opening`): wide, high; long is by the
 ## clock, about 2 s at Boost's 57 m/s. Toy 7 by 4.5 is a cracked wall's room.
 const TOY_WIDE := 9.0
@@ -190,6 +203,8 @@ const RETURN_SPOTS := 24
 const RETURN_ANY := 4000.0
 const RETURN_NEAR := 600.0
 const RETURN_CONE := 0.17
+## Nor within this far (m) of the other ship: past both broadsides' reach.
+const RETURN_APART := 1050.0
 ## The eye in a sink (`watch`): from when (s), how slowly it eases over and back (s),
 ## how far off her axis she sits so the plane doesn't hide her (rad), past how far
 ## off (m) it gives up, how far ahead it checks the plane's way (s).
@@ -218,6 +233,12 @@ const PORT_C := Color(0.65,0.8,1.0)
 enum {AFLOAT,SINKING,GONE}
 
 var game: Node3D
+## Her name in the layout file, the way her route's is `handle`-route.
+var handle := "coast/ship"
+## The other ship, or null: its meshes are hers, and she comes back clear of it.
+var twin: Node3D
+## What she'd have the near miss's skim rate at this frame (CoastSites `before`).
+var skim := 1.0
 ## AFLOAT, SINKING (`sink_t` s in) or GONE (`gone_t` s since).
 var state := AFLOAT
 var sink_t := -1.0
@@ -229,6 +250,7 @@ var along := 0.0
 var way := Vector2.RIGHT
 var yaw := 0.0
 var _route := Transform3D.IDENTITY
+var _leg := ROUTE_LEG
 var _inv := Transform3D.IDENTITY
 var wide := 18.0
 var high := 10.0
@@ -240,8 +262,10 @@ var bursts := 0
 var sinks := 0
 var returns := 0
 var paid := 0.0
-## --full-meter: the meter filled again each time the plates come back.
+## --full-meter: the meter filled again each time the plates come back, and once
+## when the plane leaves a sinking ship, whose plates won't.
 var refill := false
+var _refilled := false
 ## Live balls: {node, at, v, age, least, near (world, the plane there), done}.
 var balls: Array[Dictionary] = []
 var _pool: Array[Node3D] = []
@@ -295,9 +319,8 @@ var _mists: Array[Dictionary] = []
 var _planks: Array[Dictionary] = []
 
 ## The oval at `s` m along: [Vector2 place (from its middle), Vector2 way]. 0 is
-## the middle of the north straight, going +x.
-static func route_pose(s: float) -> Array:
-	var a := ROUTE_LEG
+## the middle of the north straight, going +x. `a` is the straights' length.
+static func route_pose(s: float, a := ROUTE_LEG) -> Array:
 	var r := ROUTE_R
 	var t := fposmod(s+a*0.5,2.0*a+TAU*r)
 	if t < a: return [Vector2(t-a*0.5,-r),Vector2.RIGHT]
@@ -337,20 +360,26 @@ static func solids(w: float, h: float) -> Dictionary:
 static func _box(x0: float, y0: float, z0: float, x1: float, y1: float, z1: float) -> AABB:
 	return AABB(Vector3(x0,y0,z0),Vector3(x1-x0,y1-y0,z1-z0))
 
-func setup(g: Node3D) -> void:
+## `at`, `leg` and `turn` are her route's middle, straights and turn; `first`, the
+## ship built before her, if any.
+func setup(g: Node3D, at := ROUTE_AT, label := "coast/ship", first: Node3D = null, leg := ROUTE_LEG, turn := 0.0) -> void:
 	game = g
 	name = "PirateShip"
+	handle = label
+	twin = first
+	_leg = leg
+	if first != null: first.twin = self
 	wide = WorldScale.opening(TOY_WIDE)
 	high = WorldScale.opening(TOY_HIGH)
-	var middle := Transform3D(Basis.IDENTITY,Vector3(ROUTE_AT.x,SEA_Y,ROUTE_AT.y))
-	_route = LayoutOverrides.xform("coast/ship-route",middle)
+	var middle := Transform3D(Basis(Vector3.UP,turn),Vector3(at.x,SEA_Y,at.y))
+	_route = LayoutOverrides.xform(handle+"-route",middle)
 	var marker := Node3D.new()
 	marker.name = "Route"
 	marker.transform = _route
 	get_parent().add_child(marker)
-	LayoutOverrides.track("coast/ship-route",marker,"coast",middle)
+	LayoutOverrides.track(handle+"-route",marker,"coast",middle)
 	_pose()
-	LayoutOverrides.track("coast/ship",self,"coast",transform)
+	LayoutOverrides.track(handle,self,"coast",transform)
 	_build()
 	_pose()
 	var args: PackedStringArray = preload("res://scripts/launch_args.gd").user_args()
@@ -363,7 +392,7 @@ static func deck_mid(h: float) -> float:
 	return FLOOR_Y+h*0.5
 
 func _pose() -> void:
-	var pose := route_pose(along)
+	var pose := route_pose(along,_leg)
 	var p: Vector2 = pose[0]
 	var d: Vector2 = pose[1]
 	var wd: Vector3 = _route.basis*Vector3(d.x,0.0,d.y)
@@ -418,7 +447,7 @@ func deck_way_off(p: Vector3, what := "") -> Vector3:
 ## the guns aim and fire.
 func before(delta: float) -> void:
 	if state == GONE:
-		game.near.skim_scale = 1.0
+		skim = 1.0
 		_wait(delta)
 		return
 	if state == SINKING: sink_t += delta
@@ -426,10 +455,13 @@ func before(delta: float) -> void:
 	_pose()
 	var p: Vector3 = game.plane.position
 	var d := p.distance_to(position)
-	game.near.skim_scale = SKIM_SCALE if state == AFLOAT and d < SKIM_NEAR else 1.0
+	skim = SKIM_SCALE if state == AFLOAT and d < SKIM_NEAR else 1.0
 	if state == AFLOAT:
 		if _all_open() and not carries(): _sink()
 		elif d > RESEAL_FAR: _reseal()
+	elif refill and not _refilled and d > RESEAL_FAR:
+		_refilled = true
+		game.near.meter = 1.0
 	if bool(game.smash.hot) and in_corridor(p,12.0): game.smash.keep_hot(0.3)
 	_guns_step(delta,p,d)
 	if state == SINKING: _sink_step(delta,p,d)
@@ -722,12 +754,13 @@ func _reseal() -> void:
 
 # --- The sink ------------------------------------------------------------------
 
-## True while she has the ring aboard: its row is in the table, not yet found.
+## True while she has the ring aboard: its row is in the table, anchored to her, not
+## yet found.
 func carries() -> bool:
 	var finds: Node = game.get("finds")
 	if finds == null: return false
 	var row: Dictionary = finds.row(RELIC)
-	return not row.is_empty() and not bool(finds.is_found(row))
+	return not row.is_empty() and str(row.get("anchor","")) == handle and not bool(finds.is_found(row))
 
 func _all_open() -> bool:
 	return bool(plates.stern.open) and bool(plates.bow.open)
@@ -757,6 +790,7 @@ func _sink() -> void:
 	_ghost = false
 	_panned = false
 	_handed_back = false
+	_refilled = false
 	_pay = not _carried
 	_end = 1.0 if _last == "bow" else -1.0
 	var l := local(game.plane.position)
@@ -798,6 +832,16 @@ func _sink_step(delta: float, p: Vector3, d: float) -> void:
 		_beat = SINK_BEAT
 		if d < SINK_NEAR: _wash(d)
 	if sink_t >= SINK_S and _under(): _gone()
+
+## True while she'd have the eye: CoastSites `watch` picks among the ships.
+func wants_eye() -> bool:
+	return state == SINKING and sink_t >= WATCH_FROM and not _handed_back
+
+## A newer sink has the eye: this one lets it be for the rest of hers, and leaves the
+## camera to that one.
+func give_up_eye() -> void:
+	watching = false
+	_handed_back = true
 
 ## The chase camera in a sink, each frame (the study's `_frame`): the free look, eased
 ## round so she's in frame past the plane, which flies on under its own controls. The
@@ -911,19 +955,21 @@ func _wait(delta: float) -> void:
 	if not is_nan(s): _come_back(s)
 
 ## The way along the route to come back at, farthest from the eye of those out of
-## its sight; NAN if none is. Never within RETURN_NEAR m of the plane either.
+## its sight; NAN if none is. Never within RETURN_NEAR m of the plane either, nor
+## RETURN_APART m of the other ship.
 func _return_spot() -> float:
 	var eye: Vector3 = game.camera.global_position
 	var look: Vector3 = -game.camera.global_basis.z
 	var plane: Vector3 = game.plane.position
-	var lap := 2.0*ROUTE_LEG+TAU*ROUTE_R
+	var lap := 2.0*_leg+TAU*ROUTE_R
 	var best := NAN
 	var far := -1.0
 	for i in RETURN_SPOTS:
 		var s := along+lap*float(i)/float(RETURN_SPOTS)
-		var q: Vector2 = route_pose(s)[0]
+		var q: Vector2 = route_pose(s,_leg)[0]
 		var at: Vector3 = _route*Vector3(q.x,0.0,q.y)
 		if at.distance_to(plane) < RETURN_NEAR: continue
+		if twin != null and twin.state != GONE and at.distance_to(twin.position) < RETURN_APART: continue
 		var d := at.distance_to(eye)
 		if unseen(at,eye,look) and d > far:
 			far = d
@@ -1019,7 +1065,6 @@ func _plank(at: Vector3) -> void:
 	var b := BoxMesh.new()
 	b.size = Vector3(randf_range(5.0,16.0),0.7,randf_range(0.8,1.8))
 	n.mesh = b
-	if _plank_mat == null: _plank_mat = _mat(PLANK_C)
 	n.material_override = _plank_mat
 	_wake.add_child(n)
 	n.position = at
@@ -1181,7 +1226,8 @@ func _build() -> void:
 	_wake = Node3D.new()
 	_wake.name = "ShipWake"
 	get_parent().add_child(_wake)
-	_mist_mesh = _cluster_mesh(4.0,[Color(0.96,0.97,0.98),Color(0.88,0.9,0.92),Color(0.8,0.83,0.86)],0.75,9,1.0,1.0)
+	_mist_mesh = twin._mist_mesh if twin != null else _cluster_mesh(4.0,[Color(0.96,0.97,0.98),Color(0.88,0.9,0.92),Color(0.8,0.83,0.86)],0.75,9,1.0,1.0)
+	_plank_mat = twin._plank_mat if twin != null else _mat(PLANK_C)
 	for part: String in ["stern","bow"]:
 		var box: AABB = (all[part] as Array)[0]
 		var record := _record(part,all[part])
@@ -1199,12 +1245,18 @@ func _dress() -> void:
 	_model = (load(MODEL) as PackedScene).instantiate()
 	_model.name = "Model"
 	add_child(_model)
-	var ball: Node3D = (load(BALL_MODEL) as PackedScene).instantiate()
-	_ball_mesh = (ball.find_child("Ball",true,false) as MeshInstance3D).mesh
-	ball.free()
-	_smoke = _smoke_mesh()
-	_flash_mesh = _cluster_mesh(FLASH_R,[Color(1.0,0.95,0.7),Color(1.0,0.72,0.28),Color(1.0,0.5,0.1)],1.0,5,0.5,0.0)
-	_puff_mesh = _cluster_mesh(PUFF_R,[Color(0.78,0.79,0.8),Color(0.68,0.69,0.7),Color(0.84,0.84,0.84)],0.55,9,1.0,1.0)
+	if twin != null:
+		_ball_mesh = twin._ball_mesh
+		_smoke = twin._smoke
+		_flash_mesh = twin._flash_mesh
+		_puff_mesh = twin._puff_mesh
+	else:
+		var ball: Node3D = (load(BALL_MODEL) as PackedScene).instantiate()
+		_ball_mesh = (ball.find_child("Ball",true,false) as MeshInstance3D).mesh
+		ball.free()
+		_smoke = _smoke_mesh()
+		_flash_mesh = _cluster_mesh(FLASH_R,[Color(1.0,0.95,0.7),Color(1.0,0.72,0.28),Color(1.0,0.5,0.1)],1.0,5,0.5,0.0)
+		_puff_mesh = _cluster_mesh(PUFF_R,[Color(0.78,0.79,0.8),Color(0.68,0.69,0.7),Color(0.84,0.84,0.84)],0.55,9,1.0,1.0)
 	(_model.find_child("Rigging",true,false) as GeometryInstance3D).visibility_range_end = RIGGING_FAR
 	for part: String in ["Interior","Cannons"]: (_model.find_child(part,true,false) as GeometryInstance3D).visibility_range_end = INNER_FAR
 	for i in GUNS_Z.size():
@@ -1270,7 +1322,7 @@ func _blocks(all: Dictionary) -> void:
 			_gun(side,gz,beam,gun)
 
 func _record(part: String, boxes: Array) -> Dictionary:
-	return {"name":"coast/ship/"+part,"kind":"ship","node":self,"pos":position,"cos":cos(yaw),"sin":sin(yaw),
+	return {"name":handle+"/"+part,"kind":"ship","node":self,"pos":position,"cos":cos(yaw),"sin":sin(yaw),
 		"solid":BoxSolid.build(boxes),"reach":LONG*0.5+45.0,"spec":{}}
 
 func _body(label: String, boxes: Array) -> StaticBody3D:
