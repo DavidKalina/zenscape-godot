@@ -26,8 +26,8 @@ never judge anything by it.
   about 55 m tall, in the same half-sunk, weathered way as the big ones. You can
   look at one and at the stomper and see they belong together.
 - The 120 m heads and 200 m torsos stay, so at a glance the land has distinct
-  levels of size. There are more small heads than big ones. Where it looks good
-  add one smaller level (about 25 m); leave it out if it adds nothing.
+  levels of size. There are more small heads than big ones. No level smaller than
+  55 m (the user's call).
 - Sockets on the small heads that are meant to be flown through are sized with
   `WorldScale.opening`. A head too small to fly through is solid, with no false
   opening.
@@ -77,6 +77,20 @@ made star fans there) and carry the detail in baked normal and AO maps. List
    The stone and cracks live in the shared `weather()`, so change them there and show
    them on the 120 m head too: the ruins are rebuilt to match in task 3. Same four
    stills, then stop for the user's verdict.
+1c. **Reshape the body (the user's verdict on 9ed900c9: way too boxy).** Keep the
+   carved block stone, but the figure must read as a body, not a block.
+   - A real waist, clearly narrower than chest and hips, and a torso with front,
+     sides and back that turn, with no flat slab faces.
+   - Arms that hang apart from the trunk, with daylight between arm and side from the
+     front, and readable shoulder, elbow and forearm masses that taper.
+   - Sloped, rounded shoulders at unequal heights, with a neck base rising from them.
+   - Legs that taper from thigh to knee to ankle, with a knee you can see.
+   - Stone that wraps the form: courses follow the curve of a limb and step back
+     with it, so the outline turns, with no stack of level square slabs. Rounded
+     masses first, blocks on top of them.
+   - Some asymmetry: a shoulder dropped, a side worn deeper, a great piece missing.
+   Stay on the existing skeleton. Do no head work this round: no change to the 55 m
+   heads, which stand in the stills for scale only. Same stills, then stop.
 2. Bake it, skin it to the existing skeleton, and swap it in. Stills on the real
    Amberlands from the air and from the tunnel's mouth, and film it walking.
 3. The small heads in the land: poses, swells, spread, solid grid. Stills of the
