@@ -1276,6 +1276,8 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"lines")
 	if burrower != null: burrower.step(delta,self)
 	FrameLog.mark(&"burrower")
+	if stomper != null: stomper.step(delta)
+	FrameLog.mark(&"stomper")
 	land.lead_with(plane.velocity)
 	land.step(camera.global_position)
 	FrameLog.mark(&"land")

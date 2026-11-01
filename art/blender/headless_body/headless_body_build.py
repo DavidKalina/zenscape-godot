@@ -44,6 +44,8 @@ itself (headless_body_look.gd), so a clip's length is only its span:
   feel         once, FEEL s (round 4): a hand laid flat on the wall before
                a climb, slid up, a nod
   walk         loop over two steps of WALK_STEP m (the phase from distance)
+  stomp        loop, STOMP_LEN s over two steps of STOMP_STEP m: the stomper's
+               walk at 250 m, a sink and a hold on each plant
   stride       loop over two steps of STRIDE_STEP m: homing, arms out for it
   hunt_stride  loop over two steps of STRIDE_STEP m: whole, hunting: upright,
                chest up, arms hung heavy at his sides, a held drop each step
@@ -1253,6 +1255,98 @@ def _gait_keys(contact, down, passing, up, extra_down=None, extra_contact=None):
 
 
 clip(Clip("walk", WALK_LEN, _gait_keys(-0.36, -0.58, -0.28, -0.22, {"sp": 9.0}, {"sp": 6.0}), loop=True, extra=_wx))
+
+# ------------------------------------------------------------------ stomp
+## The stomper's walk (spec-stomper.md), for a body 250 m tall: two long slow
+## steps. The game plants the feet on the real ground and moves the body by the
+## planted foot's way, so this clip is the weight: the foot comes down flat and
+## fast, the body sinks into it and holds while the far foot peels, then rolls
+## up over the leg and falls into the next step. stomper.gd keeps copies of
+## STOMP_LEN and STOMP_STANCE.
+STOMP_LEN = 16.0            # s for the two steps
+STOMP_STEP = 2.6            # m a step
+STOMP_STANCE = 0.62         # of the cycle a foot is down
+STOMP_LIFT = 0.85           # m the ankle clears at the top of its swing
+STOMP_HEEL = 0.7            # m, ankle to the ball of the foot
+
+
+def stomp_way(w):
+    """The share of a step the body has made `w` of the way through it: the
+    speed carried into the plant dies in the sink, a hold, then the roll and
+    the fall. Monotone cubic spans (w, share, slope)."""
+    pts = ((0.0, 0.0, 1.7), (0.1, 0.085, 0.25), (0.28, 0.12, 0.2), (0.62, 0.52, 1.6), (1.0, 1.0, 1.7))
+    for (a, x0, m0), (b, x1, m1) in zip(pts, pts[1:]):
+        if w <= b:
+            d = b - a
+            u = (w - a) / d
+            u2, u3 = u * u, u * u * u
+            return (2 * u3 - 3 * u2 + 1) * x0 + (u3 - 2 * u2 + u) * m0 * d + (-2 * u3 + 3 * u2) * x1 + (u3 - u2) * m1 * d
+    return 1.0
+
+
+def stomp_far(u):
+    """The body's way in steps over the cycle (0 to 2)."""
+    s = u * 2.0
+    i = math.floor(s)
+    return i + stomp_way(s - i)
+
+
+def stomp_extra(t, v):
+    u = (t / STOMP_LEN) % 1.0
+    travel = stomp_far(STOMP_STANCE)
+    # The feet by where they stand on the ground, less where the body is: a
+    # planted foot goes back under it at exactly its pace, holds and all.
+    for n, off in (("L", 0.0), ("R", 0.5)):
+        w = (u - off) % 1.0
+        far = stomp_far(w)
+        if w < STOMP_STANCE:
+            ground = travel * 0.5
+            y = 0.0
+            p = -20.0 * smooth01(0.7, 1.0, w / STOMP_STANCE)
+        else:
+            k = (w - STOMP_STANCE) / (1.0 - STOMP_STANCE)
+            ground = travel * 0.5 + 2.0 * smooth01(0.0, 0.84, k)
+            a = k ** 2.1
+            y = STOMP_LIFT * 4.0 * a * (1.0 - a)
+            p = -20.0 * (1.0 - smooth01(0.0, 0.42, k)) + 11.0 * math.sin(math.pi * smooth01(0.3, 0.92, k))
+        v[f"k{n}z"] = STOMP_STEP * (ground - far)
+        v[f"k{n}y"] = y + STOMP_HEEL * math.sin(deg(max(0.0, -p)))
+        v[f"k{n}p"] = p
+    # The weight goes side to side with the body's way, so it holds with it.
+    far = stomp_far(u) / 2.0
+    side = math.sin(2 * math.pi * far + 0.35)
+    v["hx"] += -0.3 * side
+    v["hr"] += -6.0 * side
+    v["sr"] += 3.5 * side
+    v["cr"] += 2.5 * math.sin(2 * math.pi * (far - 0.04) + 0.35)
+    turn = math.cos(2 * math.pi * far)
+    v["ht"] += -14.0 * turn
+    v["ct"] += 20.0 * math.cos(2 * math.pi * (far - 0.05))
+    # The arms hang and swing on through the hold, opposite the legs, the
+    # forearms trailing them.
+    for n, sgn in (("L", -1), ("R", 1)):
+        sw = sgn * 24.0 * math.cos(2 * math.pi * (u - 0.07))
+        v[f"a{n}p"] = 3.0 + sw
+        v[f"a{n}o"] = 17.0
+        v[f"e{n}"] = 16.0 + 0.6 * max(0.0, sgn * 24.0 * math.cos(2 * math.pi * (u - 0.13)))
+
+
+def _stomp_keys():
+    """The body's beats on each step: down on the plant, sunk and held, up over
+    the leg, tipping into the next."""
+    keys = []
+    for o in (0.0, 0.5):
+        keys += [
+            (o + 0.0, {"hy": -0.58, "sp": 9.0, "cp": 5.0}, ""),
+            (o + 0.045, {"hy": -0.82, "sp": 16.0, "cp": 12.0}, "h"),
+            (o + 0.12, {"hy": -0.78, "sp": 15.0, "cp": 11.0}, "h"),
+            (o + 0.31, {"hy": -0.18, "sp": 4.0, "cp": 2.0}, ""),
+            (o + 0.43, {"hy": -0.3, "sp": 6.0, "cp": 3.5}, ""),
+        ]
+    return [(t * STOMP_LEN, p, e) for t, p, e in keys]
+
+
+clip(Clip("stomp", STOMP_LEN, _stomp_keys(), loop=True, extra=stomp_extra, lag_scale=6.0))
 
 STRIDE_LEN = 1.6
 _sx = walk_extra(STRIDE_STEP, 0.5, 0.62, 0.16, 7.0, 10.0, 58.0, -4.0, 30.0)

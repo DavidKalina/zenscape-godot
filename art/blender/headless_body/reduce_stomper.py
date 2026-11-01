@@ -5,13 +5,16 @@ clips it plays, exported to assets/models/stomper_body.glb.
     python3 tools/blender.py run --blend art/blender/headless_body/headless_body.blend \
         art/blender/headless_body/reduce_stomper.py
 
-The .blend is read, never saved. Both surfaces are kept: the stone and the cut
+    python3 art/blender/headless_body/bake_clips.py --clips=stomp --glb=assets/models/stomper_body.glb
+
+The second line adds `stomp`, which the .blend predates; run it alone after
+changing the clip. The .blend is read, never saved. Both surfaces are kept: the stone and the cut
 stump top, so a head can still seat on it.
 """
 import bpy
 
 TARGET = 24000
-KEEP = ("idle", "walk", "stride", "hunt_stride", "windup", "land")
+KEEP = ("idle", "windup", "land")
 GLB = "assets/models/stomper_body.glb"
 
 body = bpy.data.objects["Body"]
