@@ -213,6 +213,14 @@ zs_gust_distance={
 "type": "float",
 "value": 0.0
 }
+zs_sheen_distance={
+"type": "float",
+"value": 0.0
+}
+zs_grass_lean={
+"type": "float",
+"value": 0.0
+}
 zs_inversion={
 "type": "vec2",
 "value": Vector2(0, 0.21)

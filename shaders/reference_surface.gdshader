@@ -6,6 +6,7 @@ shader_type spatial;
 #include "res://shaders/path_dirt.gdshaderinc"
 #include "res://shaders/grass_look.gdshaderinc"
 #include "res://shaders/grass_silver.gdshaderinc"
+#include "res://shaders/grass_sheen.gdshaderinc"
 #include "res://shaders/meadow_flower.gdshaderinc"
 #include "res://shaders/conifer_wind.gdshaderinc"
 #include "res://shaders/foliage_tread.gdshaderinc"
@@ -683,14 +684,26 @@ void vertex() {
 				}
 			}
 			float instance_scale = length(MODEL_MATRIX[1].xyz);
+			vec2 comb_push = vec2(0.0);
 			if (grass_blades) {
 				// Bowed blades pale and tip their soft-mass normal downwind (grass_look).
 				grass_bow = breeze_bow;
-				grass_tilt = motion / max(sway_shape.y * instance_scale, 0.1) * 0.6;
+				// Grass that blows as one (zs_grass_lean): the whole field combed
+				// downwind, swelling on the far tufts' swell (same lean, so the
+				// rings meet), each tuft swaying slowly round it.
+				if (zs_grass_lean > 0.0) {
+					float comb = zs_sheen_field(root, 0.0, 1.0);
+					float comb_sway = sin(zs_motion_time * 1.5 + dot(root, zs_wind_direction) * 0.14 + phase);
+					comb_push = zs_wind_direction * zs_grass_lean * (0.45 + 0.55 * comb + 0.14 * comb_sway) * bend * sway_shape.y * instance_scale;
+					grass_bow = max(grass_bow, smoothstep(0.1, 1.0, comb) * 0.6);
+				}
+				grass_tilt = (motion + comb_push) / max(sway_shape.y * instance_scale, 0.1) * 0.6;
 			}
 			VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(motion.x, 0.0, motion.y);
 			float arm = max(sway_at.y - sway_shape.x, 0.05) * instance_scale;
 			VERTEX.y -= min(dot(motion, motion) / (2.0 * arm), arm * 0.7) / max(instance_scale, 0.001);
+			// The comb shears the blades and keeps their height, so a combed field stays thick.
+			VERTEX += inverse(mat3(MODEL_MATRIX)) * vec3(comb_push.x, 0.0, comb_push.y);
 			// Plants bowed by a wave or gust pale a little (the plant_growth tint
 			// below), so the classic tufts show the rolling bands too.
 			foliage_gust = clamp(max(breeze_gust * 0.5, breeze_bow * 0.7) * bend, 0.0, 1.0);
