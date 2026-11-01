@@ -522,6 +522,9 @@ static func _rids(exclude: Array) -> Array[RID]:
 # (the study's `figure`, if it has one), a pattern for `first`, a Vector3
 # (a point `radius` m round, default his height, else 1 m) or an AABB. The camera stands
 # off it by its size: `dist` 1 fits it in the frame.
+# Clouds and valley fog are marched for the play camera only: on any view but
+# `play` the still has the play camera's clouds pasted over it, in the wrong
+# place and over near solids. Judge clouds, haze and colour with `play`.
 # Views: the world ones shot.py has (three, front, back, left, right, top,
 # close), and ones that turn with him (his facing when the target is him,
 # else the line from the target to him): side (square across it; the

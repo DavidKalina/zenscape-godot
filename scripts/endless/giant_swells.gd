@@ -25,6 +25,13 @@ const DOOR_CLEAR := 320.0
 const FIRST_POSE := 2
 const FIRST_AT := 900.0
 const SPACE := 650.0
+## The 55 m heads, the stomper's own level: more of them, closer, in a finer grid
+## of their own, each cell one or none. One lies short of the first ruin, off the
+## line out of the hall, so the two sizes are seen together.
+const SMALL_CELL := 800.0
+const SMALL_ODDS := 0.5
+const SMALL_SPACE := 260.0
+const FIRST_SMALL := Vector2(-170.0,-300.0)
 const STEP_MOST := 26.0
 ## A swell runs out this many times its ruin's reach, its outline in by up to
 ## WOBBLE of that.
@@ -65,12 +72,14 @@ static func make(world: RefCounted, land_seed: int, impl: Object) -> RefCounted:
 func _lay_out(poses: Array, land_seed: int, impl: Object, centre: Vector2) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7919+land_seed*104729
+	var big: Array = poses.filter(func(p: Dictionary) -> bool: return not bool(p.get("small",false)))
+	var small: Array = range(poses.size()).filter(func(i: int) -> bool: return bool(poses[i].get("small",false)))
 	_first_sight(poses,impl,centre)
-	var next := rng.randi_range(0,poses.size()-1)
+	var next := rng.randi_range(0,big.size()-1)
 	var n := int(RANGE*2.0/CELL)
 	for j in n:
 		for i in n:
-			var p: Dictionary = poses[next]
+			var p: Dictionary = big[next]
 			for t in TRIES:
 				var at := Vector2(i+rng.randf_range(0.15,0.85),j+rng.randf_range(0.15,0.85))*CELL-Vector2.ONE*RANGE
 				var yaw := rng.randf_range(0.0,TAU)
@@ -79,7 +88,31 @@ func _lay_out(poses: Array, land_seed: int, impl: Object, centre: Vector2) -> vo
 				if _crowded(at+centre): continue
 				if not _fits(impl,at+centre,float(p.reach)): continue
 				_add(next,p,at+centre,yaw)
-				next = (next+3)%poses.size()
+				next = (next+3)%big.size()
+				break
+	_small_heads(poses,small,land_seed,impl,centre)
+
+## After the big ones, on a generator of their own, so the big ones lie as they did.
+func _small_heads(poses: Array, small: Array, land_seed: int, impl: Object, centre: Vector2) -> void:
+	if small.is_empty(): return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 104723+land_seed*7919
+	var next := 0
+	var n := int(RANGE*2.0/SMALL_CELL)
+	for j in n:
+		for i in n:
+			if rng.randf() > SMALL_ODDS: continue
+			var k: int = small[next]
+			var p: Dictionary = poses[k]
+			for t in TRIES:
+				var at := Vector2(i+rng.randf_range(0.15,0.85),j+rng.randf_range(0.15,0.85))*SMALL_CELL-Vector2.ONE*RANGE
+				var yaw := rng.randf_range(0.0,TAU)
+				if at.length() < SPAWN_CLEAR or at.length() > RANGE: continue
+				if at.distance_to(DOOR_AT) < DOOR_CLEAR+float(p.reach): continue
+				if _crowded(at+centre,SMALL_SPACE): continue
+				if not _fits(impl,at+centre,float(p.reach)): continue
+				_add(k,p,at+centre,yaw)
+				next = (next+1)%small.size()
 				break
 
 ## The mourner's head straight out of the hall, watching the player leave it.
@@ -91,12 +124,25 @@ func _first_sight(poses: Array, impl: Object, centre: Vector2) -> void:
 		for turn: float in [0.0,0.2,-0.2,0.4,-0.4,0.6,-0.6]:
 			var at := DOOR_AT+out.rotated(turn)*d
 			if _fits(impl,at+centre,float(p.reach)):
-				_add(FIRST_POSE,p,at+centre,atan2(-out.rotated(turn).x,-out.rotated(turn).y))
+				var facing := atan2(-out.rotated(turn).x,-out.rotated(turn).y)
+				_add(FIRST_POSE,p,at+centre,facing)
+				_first_small(poses,impl,at+centre,facing)
 				return
 
-func _crowded(at: Vector2) -> bool:
+## An awake small head by the first big one, facing the way it does.
+func _first_small(poses: Array, impl: Object, by: Vector2, facing: float) -> void:
+	for k in poses.size():
+		if not bool(poses[k].get("small",false)): continue
+		for turn: float in [0.0,0.5,-0.5,1.0,-1.0,1.5,-1.5,2.0,-2.0]:
+			var at := by+FIRST_SMALL.rotated(turn-facing)
+			if _fits(impl,at,float(poses[k].reach)):
+				_add(k,poses[k],at,facing)
+				return
+		return
+
+func _crowded(at: Vector2, space := SPACE) -> bool:
 	for s: Dictionary in spots:
-		if at.distance_to(Vector2(float(s.x),float(s.z))) < SPACE: return true
+		if at.distance_to(Vector2(float(s.x),float(s.z))) < space: return true
 	return false
 
 ## Land on the Amberlands' side, and near enough level, right round the ruin.

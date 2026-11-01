@@ -25,19 +25,19 @@ const SkyGlide = preload("res://scripts/sky_glide.gd")
 ## to the mesh's extent round each bone), x mirrored for the limbs. The thumbs and
 ## the fingers' curl are left out.
 const TRUNK := [
-	["hips",Vector3(-33.0,88.0,-3.0),Vector3(33.0,88.0,-3.0),42.0],
-	["spine",Vector3(-33.0,146.0,-5.0),Vector3(33.0,146.0,-5.0),54.0],
-	["chest",Vector3(-33.0,196.0,-5.0),Vector3(33.0,196.0,-5.0),52.0],
-	["chest",Vector3(-30.0,215.0,-5.0),Vector3(30.0,215.0,-5.0),34.0],
-	["neck",Vector3(0.0,222.0,2.0),Vector3(0.0,228.0,2.0),22.0],
+	["hips",Vector3(-25.0,96.0,2.0),Vector3(25.0,96.0,2.0),36.0],
+	["spine",Vector3(-18.0,146.0,0.0),Vector3(18.0,146.0,0.0),42.0],
+	["chest",Vector3(-33.0,188.0,-4.0),Vector3(33.0,188.0,-4.0),49.0],
+	["chest",Vector3(-40.0,208.0,-3.0),Vector3(40.0,208.0,-3.0),38.0],
+	["neck",Vector3(0.0,222.0,3.0),Vector3(0.0,226.0,3.0),27.0],
 ]
 const LIMBS := [
-	["thigh",Vector3(40.4,90.0,0.0),Vector3(40.4,49.0,0.0),27.0],
-	["shin",Vector3(40.4,49.0,-1.0),Vector3(40.4,12.0,-1.0),26.0],
-	["foot",Vector3(40.4,22.0,-27.0),Vector3(40.4,22.0,3.0),24.0],
-	["upper_arm",Vector3(97.0,216.0,0.0),Vector3(97.0,156.0,0.0),29.0],
-	["forearm",Vector3(94.0,156.0,0.0),Vector3(94.0,104.0,0.0),26.0],
-	["hand",Vector3(94.0,100.0,0.0),Vector3(94.0,74.0,0.0),24.0],
+	["thigh",Vector3(39.0,90.0,0.0),Vector3(43.0,49.0,-2.0),29.0],
+	["shin",Vector3(44.0,49.0,-3.0),Vector3(44.0,14.0,1.0),23.0],
+	["foot",Vector3(44.0,14.0,-26.0),Vector3(44.0,14.0,2.0),28.0],
+	["upper_arm",Vector3(96.0,198.0,0.0),Vector3(96.0,156.0,1.0),29.0],
+	["forearm",Vector3(95.0,156.0,1.0),Vector3(94.0,106.0,-2.0),23.0],
+	["hand",Vector3(94.0,98.0,-5.0),Vector3(94.0,74.0,-6.0),19.0],
 ]
 const LAYER := 1
 ## How far off the bound the plane starts the capsules' physics (m).

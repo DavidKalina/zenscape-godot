@@ -22,8 +22,6 @@ extends Node3D
 signal footfall(at: Vector3, side: int)
 
 const LaunchArgs = preload("res://scripts/launch_args.gd")
-const RuinKit = preload("res://scripts/ruin_kit.gd")
-const Style = preload("res://scripts/ruin_stone_style.gd")
 const Route = preload("res://scripts/endless/stomper_route.gd")
 const Legs = preload("res://scripts/endless/stomper_legs.gd")
 const Fall = preload("res://scripts/endless/stomper_fall.gd")
@@ -64,18 +62,13 @@ const SWING_CLEAR := 8.0
 ## A leg's limit (share of its length), and how fast the body sinks to it (m/s).
 const REACH := 0.985
 const SINK_RATE := 16.0
-## The baked occlusion's darkest share and its curve.
-## Its stone in shade (shaders/stomper_stone.gdshader). The tile's occlusion is the
-## ruins' 0.85 eased: a tile here is 85 m across, and full crevices went solid black.
+## Its stone (shaders/stomper_stone.gdshader), the ruins' with its own maps.
 const STONE = preload("res://shaders/stomper_stone.gdshader")
-const STONE_FILL := 1.45
-const STONE_RIM := 0.2
-const LAND_BOUNCE := 1.8
-const TILE_AO := 0.5
-const TILE_BUMP := 0.5
-const WEATHER_SCALE := 10.0
-const AO_FLOOR := 0.42
-const AO_EASE := 0.7
+const LAND_BOUNCE := 0.6
+## The metres a vertex colour's channel spans and where the rest pose starts in
+## it, for the stone's blotches (stomper_stone.gdshader).
+const REST_SPAN := 290.0
+const REST_FROM := Vector3(0.5,0.05,0.5)
 ## LODs for the dressed mesh (ImporterMesh.generate_lods).
 const LOD_MERGE := 60.0
 const LOD_SPLIT := 25.0
@@ -374,41 +367,33 @@ func _read_clip() -> void:
 		_way[i] = _way[half]+_ankle[1][i].z-_ankle[1][half].z
 	_whole = _way[SAMPLES]
 
-## The mesh in the kit's stone: each vertex coloured as the kit colours a face
-## and darkened by the baked occlusion. Generated again as an ImporterMesh, or
-## it has no LODs.
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE: solid.release()
 
-## The ruins' stone (its maps and dress) on the shader that lights a body this tall.
+## The ruins' stone on the body's own baked maps.
 func _stone() -> ShaderMaterial:
-	var stone := RuinKit.materials().stone.duplicate() as ShaderMaterial
+	var stone := ShaderMaterial.new()
 	stone.shader = STONE
-	stone.set_shader_parameter("fill",STONE_FILL)
-	stone.set_shader_parameter("rim",STONE_RIM)
+	stone.set_shader_parameter("mask",load("res://assets/textures/ruin_stone_mask.png"))
+	stone.set_shader_parameter("relief",load("res://assets/textures/giants/stomper_normal.png"))
+	stone.set_shader_parameter("shade",load("res://assets/textures/giants/stomper_ao.png"))
+	stone.set_shader_parameter("rest_span",REST_SPAN)
 	stone.set_shader_parameter("land_bounce",LAND_BOUNCE)
-	stone.set_shader_parameter("stone_tile_ao",TILE_AO)
-	stone.set_shader_parameter("stone_tile_bump",TILE_BUMP)
-	stone.set_shader_parameter("weather_scale",WEATHER_SCALE)
 	return stone
 
+## Each vertex's rest place and how far up it faces in its colour, which skinning
+## leaves alone. Generated again as an ImporterMesh, or it has no LODs.
 func _dressed(mesh: Mesh) -> ArrayMesh:
 	var out := ImporterMesh.new()
-	var stone := Style.stone_of(7) if Style.ruled() else Color("5a5d63")
 	for s in range(mesh.get_surface_count()):
 		var arrays := mesh.surface_get_arrays(s)
 		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-		var ao: PackedColorArray = arrays[Mesh.ARRAY_COLOR] if arrays[Mesh.ARRAY_COLOR] != null else PackedColorArray()
 		var colours := PackedColorArray()
 		colours.resize(verts.size())
 		for i in range(verts.size()):
-			var p := verts[i]
-			var occ := 1.0
-			if ao.size() == verts.size(): occ = pow(clampf(ao[i].r,0.0,1.0),AO_EASE)
-			var c := Style.shade(stone,p,p+Vector3.UP*4.0,normals[i],1.0)*lerpf(AO_FLOOR,1.0,occ)
-			c.a = occ
-			colours[i] = c
+			var rest := verts[i]*size/REST_SPAN+REST_FROM
+			colours[i] = Color(rest.x,rest.y,rest.z,normals[i].y*0.5+0.5)
 		arrays[Mesh.ARRAY_COLOR] = colours
 		out.add_surface(Mesh.PRIMITIVE_TRIANGLES,arrays)
 	out.generate_lods(LOD_MERGE,LOD_SPLIT,[])

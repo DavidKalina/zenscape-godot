@@ -1,4 +1,6 @@
-"""The stomper's body (docs/design/endless-flight/spec-stomper.md): the archived
+"""Superseded for the mesh by art/blender/giant_ruins/stomper_body_build.py --swap,
+which replaces the mesh in the glb and leaves this script's skeleton and clips.
+The stomper's first body (docs/design/endless-flight/spec-stomper.md): the archived
 headless body cut down to one skinned mesh of about TARGET triangles and the
 clips it plays, exported to assets/models/stomper_body.glb.
 
