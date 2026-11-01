@@ -35,6 +35,7 @@ extends "res://scripts/endless/region_doors.gd"
 ##                `door/morning-hall`).
 
 const Hall = preload("res://scripts/ruin_kit_hall.gd")
+const HallSeat = preload("res://scripts/endless/hall_seat.gd")
 const RuinKit_ = preload("res://scripts/ruin_kit.gd")
 const LandTunnels_ = preload("res://scripts/endless/land_tunnels.gd")
 const LandHalls_ = preload("res://scripts/endless/land_halls.gd")
@@ -46,12 +47,9 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const UNDER := LandTunnels_.UNDER_LAYER
 ## What the camera keeps when the world is left out: the ruin's own bits.
 const KEPT := 1 << 15
-## The wilderness ruin's mouth and its inward way on seed 1 (XZ), and the
-## amberlands ruin's, on its side (home offset added).
-const WILD_AT := Vector2(-736.0,-663.0)
+## The amberlands ruin's mouth on its side (home offset added); the wilderness
+## ruin's is HallSeat's.
 const AMBER_AT := Vector2(-117.0,-892.0)
-## The spot the wilderness mouth faces: the true start, on the title's meadow.
-const FACES := Vector2(164.8,-32.4)
 ## The nave across (m, toy era; WorldScale `opening`): the kit bay scaled so
 ## its outer rows stand this wide. The whole hall is that bay's size times
 ## `_big`.
@@ -88,8 +86,8 @@ const LIGHT_SHADOWS := 2
 const LIGHT_RANGE := 40.0
 const LIGHT_ENERGY := 16.0
 const SECTION := 8
-## The plinth's depth under the floor (m).
-const PLINTH := 44.0
+## The mouth's floor over the highest ground under the stone (m).
+const FLOOR_OVER := 1.2
 const GUARD_MARGIN := 6.0
 const GUARD_PUSH := 14.0
 const GUARD_LIFT := 6.0
@@ -120,6 +118,8 @@ var _cards: Array[MeshInstance3D] = []
 var _spills: Array[OmniLight3D] = []
 var _lights: Array[OmniLight3D] = []
 var _lamps: Array[Vector3] = []
+## Each ruin's stone: how many courses it has round it.
+var _steps: Array[int] = [0,0]
 var _time := 0.0
 ## The plane is in the hall, and on which side the hall stands.
 var inside_hall := false
@@ -157,10 +157,10 @@ func setup(host: Node3D, start: Vector2, heading: float, seed: int) -> void:
 	_out = _bay*BAYS_OUT
 	_foot = (Hall.WALL_Z+FOOT_OVER)*_big
 	var off: Vector2 = _world.offset
-	var wild_at := WILD_AT
+	var wild_at := HallSeat.wild_at()
 	var amber_at := AMBER_AT+off
 	# Faces the start; the far one looks home over its land.
-	var wild_in := (wild_at-FACES).normalized()
+	var wild_in := HallSeat.wild_in()
 	var amber_in := (amber_at-(off+start)).normalized()
 	var coded: Array[Transform3D] = [_frame_on(wild_at,wild_in),_frame_on(amber_at,amber_in)]
 	walls = [
@@ -188,11 +188,11 @@ func setup(host: Node3D, start: Vector2, heading: float, seed: int) -> void:
 func _frame_on(at: Vector2, inward: Vector2) -> Transform3D:
 	var across := Vector2(-inward.y,inward.x)
 	var hi := Field.SEA_Y+1.0
-	for a: float in [0.0,20.0,40.0,60.0,80.0]:
-		for b: float in [-24.0,0.0,24.0]:
+	for a: float in [HallSeat.FRONT,20.0,60.0,100.0,_out+HallSeat.BACK]:
+		for b: float in [-HallSeat.HALF_X,-24.0,0.0,24.0,HallSeat.HALF_X]:
 			var q := at+inward*a+across*b
 			hi = maxf(hi,float(_field.height(q.x,q.y)))
-	return Transform3D(Basis(Vector3.UP,_yaw_of(inward)),Vector3(at.x,hi+0.3,at.y))
+	return Transform3D(Basis(Vector3.UP,_yaw_of(inward)),Vector3(at.x,hi+FLOOR_OVER,at.y))
 
 # --- The line -----------------------------------------------------------------
 
@@ -490,21 +490,24 @@ func _build_ruin(i: int, parts: Dictionary) -> Node3D:
 	_instances(root,"Front",parts.front,fronts,lit,layers)
 	for b in range(1,BAYS_OUT):
 		_instances(root,"Bay%d" % b,out[b % out.size()],[Transform3D(bs,Vector3(0.0,0.0,_bay*b))],lit,layers)
-	# The plinth: up to the floor from the land under it.
-	var plinth := MeshInstance3D.new()
-	plinth.name = "Plinth"
-	var box := BoxMesh.new()
-	box.size = Vector3(2.0*_foot+6.0,PLINTH,_out+8.0)
-	plinth.mesh = box
-	var base := lit.duplicate() as ShaderMaterial
-	base.set_shader_parameter("albedo",(Arches_.TONES[tone] as Color)*0.42)
-	plinth.material_override = base
-	plinth.layers = layers
-	plinth.position = Vector3(0.0,-PLINTH*0.5-0.05,_out*0.5-2.0)
-	root.add_child(plinth)
+	# The stone it stands on, down into the land.
+	var back := _out+HallSeat.BACK
+	var frame := _frames[i]
+	var land := func(x: float, z: float) -> float:
+		var w: Vector3 = frame*Vector3(x,0.0,z)
+		return float(_field.height(w.x,w.z))-frame.origin.y
+	_steps[i] = HallSeat.courses(land,back)
+	var kept := func(x: float, z: float) -> bool:
+		if absf(x) < _foot-1.0 and z > -1.0: return true
+		return absf(absf(x)-TOWER_X) < 14.0 and absf(z-TOWER_Z) < 14.0
+	var seat := HallSeat.build(4400+i,0.75,back,_steps[i],land,kept,_room)
+	root.add_child(seat)
+	for mi: Node in seat.find_children("*","MeshInstance3D",true,false):
+		(mi as MeshInstance3D).layers = layers
+		(mi as MeshInstance3D).material_override = lit
 	for s: float in [-1.0,1.0]:
 		var tower := RuinKit_.piece("belfry_tower",4300+i*3+int(s),0.55)
-		tower.position = Vector3(s*TOWER_X,-2.5,TOWER_Z)
+		tower.position = Vector3(s*TOWER_X,0.0,TOWER_Z)
 		tower.rotation.y = PI*0.5*(s+1.0)
 		root.add_child(tower)
 		for mi: Node in tower.find_children("*","MeshInstance3D",true,false):
@@ -528,11 +531,7 @@ func _build_ruin(i: int, parts: Dictionary) -> Node3D:
 	var qm := QuadMesh.new()
 	qm.size = Vector2(wb.size.x,wb.size.y)
 	black.mesh = qm
-	var dark := StandardMaterial3D.new()
-	dark.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	dark.albedo_color = Color(0.006,0.005,0.005)
-	dark.disable_fog = true
-	black.material_override = dark
+	black.material_override = HallSeat.deep_material(qm.size,_bay,_room,Hall.COLUMN_H*_big*0.72,_roof*1.25,TORCH_Y*_big)
 	black.rotation.y = PI
 	black.position = Vector3(0.0,wb.size.y*0.5,_out+0.3)
 	black.layers = layers
@@ -603,9 +602,12 @@ func ground(p: Vector3, h: Variant, pad := -1.0) -> Variant:
 			return LandHalls_.over(p,fl,[Vector2(fl+_roof,fl+_roof+30.0)])
 	for i in 2:
 		var l := _frames[i].affine_inverse()*p
+		var fl: float = _frames[i].origin.y
+		# The stone under it all, the steps down round it.
+		var stone := HallSeat.top(l.x,l.z,_out+HallSeat.BACK,_steps[i])
+		if stone > -INF and (h == null or fl+stone > float(h)): h = fl+stone
 		if absf(l.x) > TOWER_X+TOWER_SOLID+grow or l.z < -TOWER_SOLID or l.z > _out+4.0+grow: continue
 		if l.y > TOWER_TOP+4.0: continue
-		var fl: float = _frames[i].origin.y
 		for s: float in [-1.0,1.0]:
 			if absf(l.x-s*TOWER_X) < TOWER_SOLID+grow and absf(l.z-TOWER_Z) < TOWER_SOLID+grow: return fl+TOWER_TOP
 		if absf(l.x) < _foot+grow and l.z > -4.0:

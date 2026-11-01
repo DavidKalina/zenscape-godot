@@ -770,7 +770,8 @@ static func belfry(seed_value: int, weathered := 0.6) -> Node3D:
 			_buttress(b,Transform3D(turn,turn*Vector3(t*along,0.0,half)),TOWER_STAGES,TOWER_BUTTRESS_W,false,false)
 	# The corner pinnacle over the head: one stands, the others gone.
 	var cp := Basis(Vector3.UP,PI*0.5*int(p["corner"]))*Vector3(half-1.4,0.0,half-1.4)
-	b.solid(RuinKit._box(b,Vector3(1.3,2.5,1.3)),Transform3D(Basis.IDENTITY,cp+Vector3(0.0,TOWER_H+2.5,0.0)),RuinKit._stone(b,1.02))
+	# (Its shaft runs down the corner into the wall, under the ragged head.)
+	b.solid(RuinKit._box(b,Vector3(1.3,8.0,1.3)),Transform3D(Basis.IDENTITY,cp+Vector3(0.0,TOWER_H-3.0,0.0)),RuinKit._stone(b,1.02))
 	RuinKit._spire(b,Transform3D(Basis.IDENTITY,cp+Vector3(0.0,TOWER_H+5.0,0.0)),1.0,11.0,false)
 	for i in range(4):
 		var a := TAU*i/4.0+b.rng.randf_range(0.3,1.2)
