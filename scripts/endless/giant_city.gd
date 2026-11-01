@@ -56,6 +56,7 @@ const Shapes = preload("res://scripts/endless/city/city_shapes.gd")
 ## The placed pieces, each one row (the contract, above).
 const PLACED := [
 	{"name":"city/gate","piece":preload("res://scripts/endless/city/gate.gd"),"along":350.0,"across":71.0,"turn":0.2},
+	{"name":"city/colonnade","piece":preload("res://scripts/endless/city/colonnade.gd"),"along":-400.0,"across":750.0,"turn":1.5708},
 ]
 
 ## How far under the origin a piece's feet go (m): the land's rise and fall
