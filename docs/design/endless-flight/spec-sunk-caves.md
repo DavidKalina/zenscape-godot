@@ -44,6 +44,10 @@ and no long ramp to the mouth.
    user liked. Report before and after numbers. Note in the Notes which wait
    was biggest, so the user can say if that matches what they saw.
 
+5. **No flames.** `scratch/sheet_ab.png` shows what looks like a small orange
+   flame on the left wall of cave 1 around s 420. Round 1 shrank the glow
+   flames to nothing for sunk caves, so find out what this is and remove it.
+
 Do these in whatever order works. Do item 4 after item 3, since the path
 changes the mesh.
 
