@@ -782,7 +782,12 @@ func _light_torches(at: Vector3) -> void:
 			bl.visible = l.visible
 	for k in range(n,_bounce.size()): _bounce[k].visible = false
 	stats.lights = n
-	_burn_flames(near,dt)
+	# A sunk cave's glows are light on the rock: they never burn.
+	var fires: Array = []
+	for c: Vector3 in near:
+		var built: Built = _by_id[int(c.y)]
+		if not built.site.sunk: fires.append(c)
+	_burn_flames(fires,dt)
 
 ## A ranked torch's key (id << 16 | i).
 static func _key(c: Vector3) -> int:
@@ -2250,7 +2255,9 @@ func _build_torches(b: Built) -> void:
 	mf.transform_format = MultiMesh.TRANSFORM_3D
 	mf.use_colors = true
 	mf.mesh = card
-	mf.instance_count = spots.size()
+	# A sunk cave's glows are light on the rock: no flame, and no card (a card
+	# of any size still grows to a dot of glow down the bore).
+	mf.instance_count = 0 if t.sunk else spots.size()
 	b.cards = mf
 	for i in spots.size():
 		var sp: Dictionary = spots[i]
@@ -2263,10 +2270,10 @@ func _build_torches(b: Built) -> void:
 		if not t.sunk: mb.set_instance_transform(i,Transform3D(bs.scaled(Vector3.ONE*big),pos))
 		# The flame's foot: in the cup.
 		var foot := pos+out*TORCH_CUP.x*big+Vector3.UP*TORCH_CUP.y*big
-		# A sunk cave's glows are light on the rock, no flame.
-		mf.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*(0.001 if t.sunk else big)),foot))
 		var tint := (TORCH_GLOW.get(sp.kind,TORCH_GLOW.wall) as Color).srgb_to_linear()
-		mf.set_instance_color(i,tint)
+		if not t.sunk:
+			mf.set_instance_transform(i,Transform3D(Basis.IDENTITY.scaled(Vector3.ONE*big),foot))
+			mf.set_instance_color(i,tint)
 		b.tint.append(tint)
 		b.feet.append(foot)
 		b.feet_big.append(big)
