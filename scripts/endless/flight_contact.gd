@@ -16,7 +16,8 @@ extends RefCounted
 ##   another touch only crashes.
 ##
 ## In the pirate ship's gun deck (PirateShip `deck_way_off`) no touch crashes:
-## it is glanced off the wall, roof or floor it met.
+## it is glanced off the wall, roof or floor it met. So too anywhere on her as
+## she sinks.
 ##
 ## In a forgiving knife slot (scripts/endless/knife_glance.gd, the study's
 ## `glance` `zone`) a touch of a jamb's side never crashes: it is glanced off
@@ -109,7 +110,7 @@ func step(delta: float, game: Node3D, touching: Dictionary) -> Dictionary:
 	var coast = game.get("coast")
 	var ship = coast.ship if coast != null else null
 	if ship != null:
-		var off: Vector3 = ship.deck_way_off(plane.position)
+		var off: Vector3 = ship.deck_way_off(plane.position,str(hit.what))
 		if off != Vector3.ZERO: return glance(game,off,hit.at)
 	# A forgiving knife slot's jamb (a side touch of its stone, not its sill
 	# or head): glanced off toward its middle, never kicked across the slot.

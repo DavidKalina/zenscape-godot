@@ -544,6 +544,14 @@ func _marks_step(delta: float, p: Vector3, ahead: Vector3, right: Vector3, speed
 
 ## A foam patch at `at` (on the water), `k` strong, drifting `drift` m/s
 ## along `out`, `size` spans across at first.
+## Foam and a ring on the water at `at`, `size` spans long, with no spray or
+## sound: for something far bigger than the plane going in (the pirate ship).
+func wash(at: Vector3, k: float, size: float) -> void:
+	if not on: return
+	var foot := Vector3(at.x,_game.water_at(at),at.z)
+	_ring(foot,size,k)
+	_lay_foam(foot,Vector3(sin(_rng.randf()*TAU),0.0,cos(_rng.randf()*TAU)),k,0.0,size*0.5)
+
 func _lay_foam(at: Vector3, ahead: Vector3, k: float, drift: float, size: float, out := Vector3.ZERO) -> void:
 	if k <= 0.02: return
 	_mark(at,out*drift,FOAM_LIFE*_rng.randf_range(0.8,1.2),0,k,size*WorldScale.span,size*WorldScale.span*3.2,atan2(ahead.x,ahead.z),1.6)

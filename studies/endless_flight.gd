@@ -65,7 +65,8 @@ extends Node3D
 ## the slot kind's toy width (6: 12 m).
 ## The pirate ship (scripts/endless/pirate_ship.gd): --ship-start starts in the
 ## air off her beam, --full-meter with the meter full, and again each time her
-## plates come back.
+## plates come back; --ship-return=S the least seconds before a sunk ship returns;
+## --no-ship leaves her out (for timing against her).
 ## Water (scripts/endless/water_contact.gd): --water-near-start starts 3 m
 ## over the sea off the nearest river's mouth, heading for it; --water-contact=0
 ## turns the cushion, spray, marks and wet screen off.
@@ -1133,7 +1134,7 @@ func eye_floor(p: Vector3) -> float:
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
 	if doors != null and doors.holds(p): return p.y < doors.hall_floor()+EYE_CLEAR*0.5
-	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p)
+	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.ship != null and coast.ship.wreck_inside(p,0.4))
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
@@ -1515,6 +1516,7 @@ func _frame(delta: float) -> void:
 	var right := Vector2.ZERO if stage != null and stage.holding() else Pad.stick(&"look_left",&"look_right",&"look_up",&"look_down")
 	if right != Vector2.ZERO: chase.turn(Vector2(-right.x,-right.y)*STICK_LOOK*delta)
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
+	if coast != null and coast.ship != null: coast.ship.watch(chase)
 	chase.tight = tunnels.near(plane.position) or (doors != null and doors.holds(plane.position))
 	chase.step(delta,plane,0.0,_solid)
 	camera.global_position = chase.eye

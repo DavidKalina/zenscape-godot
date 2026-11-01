@@ -1,5 +1,83 @@
 # Pirate ship gray box: handoff
 
+## The sink, the return, the cost
+
+Both plates open with no ring aboard sinks her: the ring taken, or a ship with no
+ring. A miss leaves her to reseal. All knobs are at the top of `pirate_ship.gd`.
+
+- **The sink:** she lurches, settles by the end broken last, lists away from the
+  plane, then plunges (`SINK_KEYS`). Under in about 20 s. Foam, mist, planks, a gong
+  and the finds toast; guns stop, balls in flight finish, no reseal.
+- **Solids:** the flat `loose` record comes off. `wreck_ground`, `wreck_inside` and the
+  StaticBody follow her true tilt, and any touch of her is a glance, never a crash,
+  including the water right beside her and never pushing the plane down.
+  A plane in the gun deck when it floods is let go (`_ghost`: her solids go off).
+- **The return:** `RETURN_S` 60 s after she's gone (`--ship-return=S`), then every
+  0.5 s the farthest of 24 route spots that is 600 m off the plane and eye and outside
+  the view (cosine 0.17 off its axis), or 4 km off anywhere.
+- **The ring:** `carries()` reads the book, so a reload with it found is a ship with
+  no ring. A ring taken on an earlier run of the same ship counts as no ring: she pays.
+- **Points:** `SINK_POINTS` 25,000 for a ship with no ring, 4 s into the sink, through
+  `NearMiss.prize`: a line of its own named "Ship sunk", no multiplier, not lost to a
+  scrape, left out of the best-line records. With the corridor's own 15,000 a pass
+  banks about 40,000. Either alone fills the 4000 meter; the ring ship pays no points.
+- **The eye (`watch`):** from 1 s into a sink the free look eases round so she's in
+  frame past the plane, and the flight controls still fly it. The right stick (or
+  right mouse held) pans; letting go hands the chase camera back after its usual
+  2.5 s linger, for the rest of that sink. So does the sink's end, 1300 m off, or land
+  or sea coming up on the plane's way. `free_to` and `free_ease` stay at their defaults
+  outside a sink.
+- **Flags:** `--ship-return=S`, and `--no-ship` for the cost pairs.
+
+**What it costs.** Timings are provisional: another session was running on this Mac.
+Window 1440x900, vsync off, three alternating present/absent runs before the range cut
+below, median ms (each run), ship present / absent:
+
+| Case | Present | Absent | Her draws (toggled) |
+|---|---|---|---|
+| Start meadow | 16.0, 18.3, 15.8 | 16.6, 15.7, 18.4 | none |
+| 2 km, looking at her | 14.3, 15.1, 15.0 | 15.1, 15.0, 15.2 | 108, now 45 |
+| 2 km, facing away | 14.3, 14.4, 14.3 | 14.3, 14.2, 14.2 | none |
+| 300 m, guns | 13.6, 14.8, 15.2 | 15.2, 14.8, 15.2 | 328 in view |
+| Gun deck, at speed | 6.1, 5.9, 6.0 | 14.4, 14.4, 14.4 | not like for like |
+| Sink, 300 m | 13.7, 13.8, 13.9 | 13.9, 13.7, 13.8 | +298 on the frame |
+
+Every present/absent difference is inside the noise, except the gun deck, where her
+walls hide the land, so that pair says nothing about her cost. The decision rests on
+counts. She draws nothing out of view. Her script is about 10 to 15 us a frame afloat
+and far, about 0.2 ms near with guns, about 0.7 ms in a sink. Physics stays near
+0.05 ms. Only one count was worth acting on: 108 draw calls at 2 km on a ship that
+small. `INNER_FAR` 700 m cuts the gun deck's inside, its guns and the plate shards:
+108 to 45 draws, 23k to 2k primitives at 2 km, and no change at 120 m or 300 m. No
+script gating: there was nothing to gain.
+
+**Several ships** (throwaway extra ships, stepped by the driver): each in view at
+300 m adds about 330 draws and 125k primitives. Out of view each adds no draws and
+about 15 us of script. 1, 2 and 4 ships at 300 m: 477, 683, 969 draws. Medians stayed
+at about 14.5 ms, inside the noise. Two look affordable, and four should be while
+they're spread out. Four together in view need a quiet-machine timing.
+
+To rerun on a quiet machine: `zsh scratch/cost_runs.sh quiet`, then read
+`/tmp/ship_cost_quiet.txt`. `scratch/` isn't committed.
+
+**Proved** on Mac by bots on real input (`scratch/ship_sink.gd`, not committed): ring
+run sinks her, no crash on her, guns stop; she returns unseen (2.3 km off, behind the
+eye) with no ring; a bare run pays 25,000 once and she sinks again; reload with the find
+saved has no ring and pays; flying at her at 3 to 16 s (gun deck, beam, over the top,
+raised end) never crashes or sticks; a right-stick pan moved the eye 1.9 rad, the eye
+came home clean, no crash, 89% of unpanned frames with her in view. `ship_model.gd
+--part=fly` now waits for the return between passes; `ship_wall.gd` and `ship.gd
+--part=block` are unchanged.
+
+Stills: `pirate-ship-stills/22_sink_15s.jpg`, `23_sink_20s.jpg`.
+
+**Unproved:** hand flying through all of it. Looking back while framed, the check on
+the plane's way reads only its straight line, so a cliff alongside isn't seen: the bot
+passed close by the Rock in one pan. **A real miss:** the ring's capture is 9 m
+round the middle of an 18 by 10 m deck, and the bot couldn't fly past it, so the miss was
+proved with the ring lifted out of the way, not by flying. Sound levels are unheard. The
+eye swinging round from a low skim. No PC number.
+
 ## Model in
 
 `assets/models/pirate_ship.glb` now sails on the moving ship. `--ship-blocks`

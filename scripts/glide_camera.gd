@@ -147,6 +147,10 @@ var first_person := false
 ## whether it is held.
 var free := Vector2.ZERO
 var free_held := false
+## Where the free look settles when let go, and how slowly (s): ZERO and EASE_BACK
+## but for the pirate ship's sink (PirateShip `watch`).
+var free_to := Vector2.ZERO
+var free_ease := EASE_BACK
 ## Seconds the free look holds after its last turn before it swings back,
 ## and seconds since that turn.
 var linger := 0.0
@@ -230,6 +234,8 @@ func reset(glide: RefCounted, from: Vector3, view := FOV) -> void:
 	_offset_v = Vector3.ZERO
 	free = Vector2.ZERO
 	free_held = false
+	free_to = Vector2.ZERO
+	free_ease = EASE_BACK
 	_since_turn = INF
 	cine = Vector3.ZERO
 	_cine = Vector3.ZERO
@@ -301,7 +307,9 @@ func step(delta: float, glide: RefCounted, dive: float, solid := Callable()) -> 
 	var back := lerpf(lerpf(BACK.x,BACK.y,float_out),BACK.z,tuck)*(1.0+_cine.z)*size*distance_scale*pull*(1.0-close_in*closer)
 	var up := lerpf(lerpf(UP.x,UP.y,float_out),UP.z,tuck)*(1.0+_cine.z*0.5)*size*distance_scale*(1.0-close_down*closer)
 	_since_turn += delta
-	if not free_held and _since_turn >= linger: free = free.lerp(Vector2.ZERO,_ease(EASE_BACK,delta))
+	if not free_held and _since_turn >= linger:
+		var e := _ease(free_ease,delta)
+		free = Vector2(lerp_angle(free.x,free_to.x,e),lerpf(free.y,free_to.y,e))
 	var swing := free+Vector2(_cine.x,_cine.y)
 	# Behind along the flat of the way, lifted by its climb or dive, then
 	# turned by the free look.

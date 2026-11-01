@@ -18,6 +18,16 @@ extends Node3D
 ## corridor, so it breaks too on the way out. Both plates come back once the
 ## plane is RESEAL_FAR m off (nothing is saved: fly it again).
 ##
+## Both plates open with no ring left aboard sinks her (`state`, `_sink`): the
+## ring taken, or a ship that never had it. A miss of the ring leaves her to
+## reseal. She settles by the end broken last, lists away from the plane and goes
+## under in SINK_S s (`sink_pose`). Her guns stop at once. In a sink the `loose`
+## record is off and `wreck_ground`, `wreck_inside` and the StaticBody follow her
+## true tilt, and a touch of her is a glance (`deck_way_off`), never a crash.
+## RETURN_S s after she's gone a fresh ship comes up on the route where the eye
+## can't see it happen (`_return_spot`). The ring is one find in the book: ships
+## after it carry none, and sinking one pays SINK_POINTS (NearMiss `prize`).
+##
 ## Her look is assets/models/pirate_ship.glb on the moving node (`_dress`), or the
 ## gray box's blocks with --ship-blocks. Either way `solids()` alone is what she
 ## collides by. Guns fire from the glb's `Gun_*` empties, and a burst throws the
@@ -31,9 +41,13 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const BoxSolid = preload("res://scripts/endless/box_solid.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const SmashBreaks = preload("res://scripts/breaks/smash_breaks.gd")
+const LandHalls = preload("res://scripts/endless/land_halls.gd")
 
 ## A plate broken (`stern` or `bow`).
 signal broke(part: String)
+## She has started down / a fresh ship is back on the route.
+signal sinking
+signal returned
 
 const MODEL := "res://assets/models/pirate_ship.glb"
 ## The cast ball (art/blender/ship/ball_build.py), and how fast it tumbles (rad/s):
@@ -54,6 +68,10 @@ const FLASH_R := 3.8
 const PUFF_R := 2.0
 ## Where the rigging stops drawing (m); the glb can't carry it.
 const RIGGING_FAR := 450.0
+## Where what can't be told from outside stops drawing (m): the gun deck's inside and
+## guns, a plate's shards. 111 draw calls at 2 km on a ship 40 px long, most of them
+## these (handoff, What it costs).
+const INNER_FAR := 700.0
 ## The model's sway, for the eye only: roll, pitch (rad), each one's period (s).
 const SWAY := Vector2(0.014,0.005)
 const SWAY_S := Vector2(9.0,13.0)
@@ -115,6 +133,72 @@ const SKIM_NEAR := 500.0
 const SKIM_SCALE := 8.0
 ## Past this far (m) the plates are back.
 const RESEAL_FAR := 300.0
+## The finds row aboard her.
+const RELIC := "ship-hold"
+## Paid for sinking a ship with no ring: a line of its own, no multiplier, past
+## the corridor's own line (about 15,000); METER_FULL is 4000, so it fills the meter.
+const SINK_POINTS := 25000.0
+## When the points land (s into the sink): the corridor's line has banked by then.
+const SINK_PAY_AT := 4.0
+## The toast at the start of a sink, with the ring just taken and without.
+const SINK_WORDS := "The ring is yours. She's going down"
+const SINK_WORDS_BARE := "She's going down"
+## The prize's name on the read-out.
+const SINK_LINE := "Ship sunk"
+## The sink, seconds: the least till she's gone (she's gone when she's under, about
+## 20 s), how long she keeps any way on.
+const SINK_S := 19.0
+const SINK_WAY_S := 9.0
+## Her pose: [t s, m down, pitch, roll (degrees)], eased through (`sink_pose`). A
+## lurch and a recovery, a slow settle by one end, the list growing, then the plunge.
+const SINK_KEYS := [
+	[-4.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0],[0.8,0.7,0.7,1.8],[2.4,0.5,0.9,0.7],[6.0,3.0,2.8,4.5],
+	[10.5,8.5,6.5,10.0],[14.5,16.0,11.5,17.0],[18.0,31.0,19.0,25.0],[20.5,50.0,27.0,31.0],[22.5,78.0,33.0,36.0],[26.0,120.0,38.0,40.0],
+]
+## Her shudder on the lurch: rad, rad/s, how fast it dies (1/s).
+const SHUDDER := Vector3(0.006,27.0,0.7)
+## Water and wreckage: seconds between beats; how far off (m) the wash is bothered with.
+const SINK_BEAT := 0.35
+const SINK_NEAR := 1500.0
+## What breaks in her as she goes: [t s, sound, gain, pitch].
+const SINK_CUES := [
+	[1.2,"creak",1.0,0.5],[3.4,"thump",1.0,0.5],[5.6,"creak",1.0,0.42],[8.2,"crash",0.6,0.5],[9.8,"creak",1.1,0.38],
+	[12.6,"thump",1.1,0.45],[14.2,"crash",0.8,0.42],[16.0,"creak",1.2,0.34],[18.2,"crash",1.0,0.36],[20.0,"thump",1.3,0.36],
+]
+## Sound's reach: flat gain at 0 m, halved every this far (m).
+const SINK_HEARD := 350.0
+## Mist off her waterline: how many at once; radius (m), rise (m/s), life (s).
+const MISTS := 16
+const MIST_R := Vector2(0.9,2.4)
+const MIST_RISE := 5.0
+const MIST_LIFE := 4.5
+## Planks left afloat: how many, how long they stay (s), how fast they go down (m/s).
+const PLANKS := 22
+const PLANK_LIFE := 40.0
+const PLANK_SINK := 0.5
+const PLANK_TURNS := 5
+## The wreck's reach from her middle (m): past it nothing of her is met.
+const WRECK_REACH := 125.0
+## Her far points (her frame), the mast tops and poop, for "all under".
+const HIGH_POINTS := [Vector3(0.0,59.0,6.0),Vector3(0.0,55.0,-22.0),Vector3(0.0,51.0,42.0),Vector3(0.0,24.0,56.0),Vector3(0.0,20.0,-56.0)]
+## Her return: least seconds after she's gone (--ship-return=S), how often it's tried
+## (s), how many spots round the route. A spot is good at RETURN_ANY m off the eye,
+## or at RETURN_NEAR m off and outside the view (RETURN_CONE: the cosine off its axis).
+const RETURN_S := 60.0
+const RETURN_POLL := 0.5
+const RETURN_SPOTS := 24
+const RETURN_ANY := 4000.0
+const RETURN_NEAR := 600.0
+const RETURN_CONE := 0.17
+## The eye in a sink (`watch`): from when (s), how slowly it eases over and back (s),
+## how far off her axis she sits so the plane doesn't hide her (rad), past how far
+## off (m) it gives up, how far ahead it checks the plane's way (s).
+const WATCH_FROM := 1.0
+const WATCH_EASE := 1.3
+const WATCH_OFF := 0.16
+const WATCH_FAR := 1300.0
+const WATCH_AHEAD: Array[float] = [1.5,3.0,4.5]
+const WATCH_ROOM := 10.0
 ## Where --ship-start puts the plane: off the beam (m), over the sea (m).
 const START_OFF := 240.0
 const START_ALT := 16.0
@@ -126,11 +210,20 @@ const RIB_C := Color(0.2,0.18,0.17)
 const PLATE_C := Color(0.72,0.67,0.56)
 const CRACK_C := Color(1.0,0.45,0.1)
 const SAIL_C := Color(0.82,0.8,0.74)
+const PLANK_C := Color(0.56,0.43,0.3)
 const GUN_C := Color(0.09,0.09,0.1)
 const LAMP_C := Color(1.0,0.75,0.4)
 const PORT_C := Color(0.65,0.8,1.0)
 
+enum {AFLOAT,SINKING,GONE}
+
 var game: Node3D
+## AFLOAT, SINKING (`sink_t` s in) or GONE (`gone_t` s since).
+var state := AFLOAT
+var sink_t := -1.0
+var gone_t := 0.0
+## The least wait in GONE (s).
+var return_wait := RETURN_S
 ## The way along the route (m), and the frame now.
 var along := 0.0
 var way := Vector2.RIGHT
@@ -144,6 +237,9 @@ var fired := 0
 var hits := 0
 var passes := 0
 var bursts := 0
+var sinks := 0
+var returns := 0
+var paid := 0.0
 ## --full-meter: the meter filled again each time the plates come back.
 var refill := false
 ## Live balls: {node, at, v, age, least, near (world, the plane there), done}.
@@ -171,6 +267,32 @@ var _flash_mesh: Mesh
 var _puff_mesh: Mesh
 var _every := 0.0
 var _plane_was := Vector3.INF
+## The hull's StaticBody, off while she's gone.
+var _hull_body: StaticBody3D
+## This run: the ring aboard when its first plate broke; the plate broken last.
+var _carried := false
+var _last := "bow"
+## The sink: bow (1) or stern (-1) down, the side she lists to (1 starboard), the
+## next wash and cue, the plane past her solids (the deck flooded round it), the
+## points yet to land, the moment's news for the frame's events.
+var _end := 1.0
+var _list := 1.0
+var _beat := 0.0
+var _cue := 0
+var _ghost := false
+var _pay := false
+var _poll := 0.0
+## The eye: looking on her now; the player has turned it (right stick, or the right
+## mouse button) in this sink; it's handed back for the rest of this sink.
+var watching := false
+var _panned := false
+var _handed_back := false
+## What's left on the water, beside her so it stays when she's gone.
+var _wake: Node3D
+var _mist_mesh: Mesh
+var _plank_mat: Material
+var _mists: Array[Dictionary] = []
+var _planks: Array[Dictionary] = []
 
 ## The oval at `s` m along: [Vector2 place (from its middle), Vector2 way]. 0 is
 ## the middle of the north straight, going +x.
@@ -231,7 +353,10 @@ func setup(g: Node3D) -> void:
 	LayoutOverrides.track("coast/ship",self,"coast",transform)
 	_build()
 	_pose()
-	refill = "--full-meter" in preload("res://scripts/launch_args.gd").user_args()
+	var args: PackedStringArray = preload("res://scripts/launch_args.gd").user_args()
+	refill = "--full-meter" in args
+	for a: String in args:
+		if a.begins_with("--ship-return="): return_wait = a.trim_prefix("--ship-return=").to_float()
 
 ## The middle of the gun deck (her frame's y): the relic hangs here.
 static func deck_mid(h: float) -> float:
@@ -245,10 +370,16 @@ func _pose() -> void:
 	way = Vector2(wd.x,wd.z)
 	yaw = atan2(-wd.x,-wd.z)
 	transform = Transform3D(Basis(Vector3.UP,yaw),_route*Vector3(p.x,0.0,p.y))
+	var shake := 0.0
+	if sink_t >= 0.0:
+		var s := sink_pose(sink_t)
+		transform.basis = transform.basis*Basis.from_euler(Vector3(deg_to_rad(s.y)*-_end,0.0,deg_to_rad(s.z)*-_list))
+		transform.origin.y -= s.x
+		shake = SHUDDER.x*exp(-sink_t*SHUDDER.z)*sin(sink_t*SHUDDER.y)
 	_inv = transform.affine_inverse()
 	if _model != null:
 		var t := along/SPEED
-		_model.rotation = Vector3(SWAY.y*sin(TAU*t/SWAY_S.y),0.0,SWAY.x*sin(TAU*t/SWAY_S.x))
+		_model.rotation = Vector3(SWAY.y*sin(TAU*t/SWAY_S.y)+shake,0.0,SWAY.x*sin(TAU*t/SWAY_S.x)+shake*0.6)
 	if _hull.is_empty(): return
 	_place(_hull)
 	for part: String in plates: _place(plates[part].record)
@@ -270,9 +401,11 @@ func in_corridor(p: Vector3, pad := 0.0) -> bool:
 ## The way off the gun deck's nearest wall, roof or floor, in the world, for
 ## FlightContact: a touch in there is glanced off, never a crash. ZERO outside
 ## it, or within END_ROOM of its ends, where a shut plate still stops the plane.
-func deck_way_off(p: Vector3) -> Vector3:
+func deck_way_off(p: Vector3, what := "") -> Vector3:
 	var l := local(p)
-	if not in_corridor(p) or absf(l.z) > LONG*0.5-END_ROOM: return Vector3.ZERO
+	if state == SINKING and not in_corridor(p): return _wreck_way_off(p,l,what)
+	if state == GONE: return Vector3.ZERO
+	if not in_corridor(p) or (state == AFLOAT and absf(l.z) > LONG*0.5-END_ROOM): return Vector3.ZERO
 	var side := wide*0.5-absf(l.x)
 	var roof := FLOOR_Y+high-l.y
 	var floor_gap := l.y-FLOOR_Y
@@ -284,14 +417,22 @@ func deck_way_off(p: Vector3) -> Vector3:
 ## One frame, before the surge and the plane's: she sails, the plates come back,
 ## the guns aim and fire.
 func before(delta: float) -> void:
-	along += SPEED*delta
+	if state == GONE:
+		game.near.skim_scale = 1.0
+		_wait(delta)
+		return
+	if state == SINKING: sink_t += delta
+	along += SPEED*delta*(1.0 if state == AFLOAT else clampf(1.0-sink_t/SINK_WAY_S,0.0,1.0))
 	_pose()
 	var p: Vector3 = game.plane.position
 	var d := p.distance_to(position)
-	game.near.skim_scale = SKIM_SCALE if d < SKIM_NEAR else 1.0
-	if d > RESEAL_FAR: _reseal()
+	game.near.skim_scale = SKIM_SCALE if state == AFLOAT and d < SKIM_NEAR else 1.0
+	if state == AFLOAT:
+		if _all_open() and not carries(): _sink()
+		elif d > RESEAL_FAR: _reseal()
 	if bool(game.smash.hot) and in_corridor(p,12.0): game.smash.keep_hot(0.3)
 	_guns_step(delta,p,d)
+	if state == SINKING: _sink_step(delta,p,d)
 
 ## One frame, after the plane's: the balls fly and meet it. `events` as the
 ## study's: "scrape", "lost".
@@ -301,6 +442,7 @@ func after(delta: float, events: Dictionary) -> void:
 	_plane_was = p
 	_balls_step(delta,was,p,events)
 	_bits_step(delta)
+	_wake_step(delta)
 
 # --- The guns ----------------------------------------------------------------
 
@@ -317,6 +459,7 @@ func _guns_step(delta: float, p: Vector3, d: float) -> void:
 				var u := 1.2-puff
 				(g.smoke as Node3D).position = (g.at as Vector3)+Vector3(float(g.side)*(2.0+u*4.0),1.0+u*1.5,0.0)
 				(g.smoke as GeometryInstance3D).set_instance_shader_parameter("fade",smoothstep(0.0,0.8,puff))
+	if state != AFLOAT: return
 	var left: Array[Dictionary] = []
 	for t: Dictionary in _tells:
 		t.t = float(t.t)-delta
@@ -543,6 +686,8 @@ func _strike(r: Dictionary, q: Vector3) -> void:
 	var part := str(r.part)
 	var plate: Dictionary = plates[part]
 	if bool(plate.open): return
+	if not bool(plates.stern.open) and not bool(plates.bow.open): _carried = carries()
+	_last = part
 	plate.open = true
 	game.arches.loose.erase(r)
 	(plate.shape as CollisionShape3D).disabled = true
@@ -574,6 +719,341 @@ func _reseal() -> void:
 			(shard.node as Node3D).visible = true
 	_shards.clear()
 	if was and refill: game.near.meter = 1.0
+
+# --- The sink ------------------------------------------------------------------
+
+## True while she has the ring aboard: its row is in the table, not yet found.
+func carries() -> bool:
+	var finds: Node = game.get("finds")
+	if finds == null: return false
+	var row: Dictionary = finds.row(RELIC)
+	return not row.is_empty() and not bool(finds.is_found(row))
+
+func _all_open() -> bool:
+	return bool(plates.stern.open) and bool(plates.bow.open)
+
+## Her pose `t` s into a sink: Vector3(m down, pitch, roll in degrees).
+static func sink_pose(t: float) -> Vector3:
+	var n := SINK_KEYS.size()
+	var i := 1
+	while i < n-2 and t >= float(SINK_KEYS[i+1][0]): i += 1
+	var a: Array = SINK_KEYS[i-1]
+	var b: Array = SINK_KEYS[i]
+	var c: Array = SINK_KEYS[i+1]
+	var d: Array = SINK_KEYS[mini(i+2,n-1)]
+	var k := clampf((t-float(b[0]))/(float(c[0])-float(b[0])),0.0,1.0)
+	var out := Vector3.ZERO
+	for j in 3: out[j] = cubic_interpolate(float(b[j+1]),float(c[j+1]),float(a[j+1]),float(d[j+1]),k)
+	return out
+
+## She's hit her last: everything stops but her going. The plane may well be in
+## her, so the hull's flat record goes and her true tilt takes over.
+func _sink() -> void:
+	state = SINKING
+	sink_t = 0.0
+	sinks += 1
+	_beat = 0.0
+	_cue = 0
+	_ghost = false
+	_panned = false
+	_handed_back = false
+	_pay = not _carried
+	_end = 1.0 if _last == "bow" else -1.0
+	var l := local(game.plane.position)
+	_list = -1.0 if l.x > 0.0 else 1.0
+	game.arches.loose.erase(_hull)
+	for t: Dictionary in _tells: (t.gun.flash as Node3D).visible = false
+	_tells.clear()
+	game.feel_hit(0.045,12.0)
+	game.sound.shot("thump",1.4,0.42)
+	game.sound.shot("crash",1.1,0.55)
+	var finds: Node = game.get("finds")
+	if finds != null:
+		finds.beat.play("landing",position+Vector3.UP*20.0,0.0)
+		finds.hud.found({"title":SINK_WORDS if _carried else SINK_WORDS_BARE},int(finds.got()),int(finds.of()))
+	for z: float in [LONG*0.5,-LONG*0.5]:
+		var at: Vector3 = transform*Vector3(0.0,8.0,z)
+		var out: Vector3 = (transform.basis*Vector3(0.0,0.2,signf(z))).normalized()
+		game.debris.burst("wood",at,out,true)
+		game.debris.burst("dust",at,out,true)
+		_mist(at)
+	sinking.emit()
+
+## The time-keyed part of a sink: the wash, the groans, the points, the end.
+func _sink_step(delta: float, p: Vector3, d: float) -> void:
+	if not _ghost and in_corridor(p,2.0) and (transform*Vector3(0.0,deck_mid(high),0.0)).y < float(game.water_at(position)):
+		# The gun deck has flooded round the plane: it's let go, not shut in.
+		_ghost = true
+		_hull_body.collision_layer = 0
+	if _pay and sink_t >= SINK_PAY_AT:
+		_pay = false
+		paid += SINK_POINTS
+		game.near.prize(SINK_POINTS,SINK_LINE,position)
+	while _cue < SINK_CUES.size() and sink_t >= float(SINK_CUES[_cue][0]):
+		var c: Array = SINK_CUES[_cue]
+		_cue += 1
+		_loud(str(c[1]),float(c[2]),float(c[3]),d)
+	_beat -= delta
+	if _beat <= 0.0:
+		_beat = SINK_BEAT
+		if d < SINK_NEAR: _wash(d)
+	if sink_t >= SINK_S and _under(): _gone()
+
+## The chase camera in a sink, each frame (the study's `_frame`): the free look, eased
+## round so she's in frame past the plane, which flies on under its own controls. The
+## player's turn of it pans on from there, and letting go hands the normal camera
+## back after its linger; so does the end of the sink, her being far off, or land or
+## sea coming up on the plane's way. Outside a sink it sets nothing but ZERO.
+func watch(chase: RefCounted) -> void:
+	var on := state == SINKING and sink_t >= WATCH_FROM and not _handed_back
+	if on:
+		if chase.free_held: _panned = true
+		elif _panned: _handed_back = true
+		if position.distance_to(game.plane.position) > WATCH_FAR or _way_shut(): _handed_back = true
+		if not game.hand_landing.flying(): _handed_back = true
+		on = not _handed_back
+	if on:
+		var v: Vector3 = game.plane.velocity
+		var to: Vector3 = position-(game.plane.position as Vector3)
+		var ahead := Vector3(v.x,0.0,v.z)
+		if ahead.length() < 1.0: ahead = game.plane.forward()
+		chase.free_to = Vector2(wrapf(ahead.signed_angle_to(Vector3(to.x,0.0,to.z),Vector3.UP)+WATCH_OFF,-PI,PI),0.0)
+		chase.free_ease = WATCH_EASE
+	elif watching:
+		chase.free_to = Vector2.ZERO
+		chase.free_ease = chase.EASE_BACK
+	else:
+		return
+	watching = on
+
+## True with land or sea coming up on the plane's way in the next few seconds: the
+## player, looking back, has to see where it's going.
+func _way_shut() -> bool:
+	var p: Vector3 = game.plane.position
+	var v: Vector3 = game.plane.velocity
+	for s: float in WATCH_AHEAD:
+		var q := p+v*s
+		if q.y < maxf(float(game.field.height(q.x,q.z)),SEA_Y)+WATCH_ROOM*(0.5 if v.y >= 0.0 else 1.0) and float(game.field.height(q.x,q.z)) > SEA_Y: return true
+		if v.y < -1.0 and q.y < SEA_Y+2.0: return true
+	return false
+
+## A flat shot, softer with distance: 3D shots die at 70 m and she's 130 long.
+func _loud(kind: String, gain: float, pitch: float, d: float) -> void:
+	game.sound.shot(kind,gain/(1.0+d/SINK_HEARD),pitch,position,&"SFX",true)
+
+## True with every high point of her under the sea.
+func _under() -> bool:
+	var sea := float(game.water_at(position))
+	for h: Vector3 in HIGH_POINTS:
+		if (transform*h).y > sea-1.0: return false
+	return true
+
+## Where a hull side's line at `z` on `side` crosses the sea, or INF.
+func _waterline(z: float, side: float) -> Vector3:
+	var a: Vector3 = transform*Vector3(side*(wide*0.5+WALL),-DRAUGHT,z)
+	var b: Vector3 = transform*Vector3(side*(wide*0.5+WALL),FLOOR_Y+high+DECK,z)
+	var sea := float(game.water_at(a))
+	if (a.y-sea)*(b.y-sea) > 0.0: return Vector3.INF
+	return a.lerp(b,(sea-a.y)/(b.y-a.y))
+
+## One wash: foam along her waterline, a burst of mist and spray, and something
+## let go, strongest where she's going in fastest.
+func _wash(d: float) -> void:
+	var low := -_end*(LONG*0.5)
+	for i in 5:
+		var z := lerpf(low,-low,randf()*randf())
+		var at := _waterline(z,1.0 if i%2 == 0 else -1.0)
+		if at == Vector3.INF: continue
+		if game.water != null: game.water.wash(at,1.0,6.0+sink_t*0.25)
+		if i == 0: _mist(at)
+		if i == 1: game.debris.burst("spray",at,Vector3.UP,true)
+		if i == 2 and randf() < 0.5: game.debris.burst("wood",at,Vector3.UP,true)
+		if i == 3: _plank(at)
+	# The boil as she drives under: over where she was, wide and getting wider.
+	if sink_t > 14.0:
+		var sea := float(game.water_at(position))
+		var r := 25.0+(sink_t-14.0)*7.0
+		var at := Vector3(position.x+randf_range(-r,r),sea,position.z+randf_range(-r,r))
+		_mist(at)
+		_plank(at)
+		if game.water != null:
+			game.water.wash(at,1.0,16.0)
+			if d < SINK_NEAR*0.4 and randf() < 0.3: game.water.splash(at,1.6)
+
+## She's under: hidden and out of the world till her return.
+func _gone() -> void:
+	var sea := float(game.water_at(position))
+	var at := Vector3(position.x,sea,position.z)
+	_loud("splash",1.4,0.5,at.distance_to(game.plane.position))
+	if game.water != null:
+		for i in 12:
+			var r := Vector3(randf_range(-1.0,1.0),0.0,randf_range(-1.0,1.0))*70.0
+			game.water.wash(at+r,1.0,20.0)
+	for i in 6: _mist(at+Vector3(randf_range(-45.0,45.0),0.0,randf_range(-45.0,45.0)))
+	for i in 8: _plank(at+Vector3(randf_range(-55.0,55.0),0.0,randf_range(-55.0,55.0)))
+	state = GONE
+	sink_t = -1.0
+	gone_t = 0.0
+	_poll = 0.0
+	visible = false
+	_hull_body.collision_layer = 0
+	_plane_was = Vector3.INF
+
+## Gone: the clock, then the route tried for a spot out of sight. Only the wash on
+## the water is left to step, and the balls fired before she went are long down.
+func _wait(delta: float) -> void:
+	gone_t += delta
+	if gone_t < return_wait: return
+	_poll -= delta
+	if _poll > 0.0: return
+	_poll = RETURN_POLL
+	var s := _return_spot()
+	if not is_nan(s): _come_back(s)
+
+## The way along the route to come back at, farthest from the eye of those out of
+## its sight; NAN if none is. Never within RETURN_NEAR m of the plane either.
+func _return_spot() -> float:
+	var eye: Vector3 = game.camera.global_position
+	var look: Vector3 = -game.camera.global_basis.z
+	var plane: Vector3 = game.plane.position
+	var lap := 2.0*ROUTE_LEG+TAU*ROUTE_R
+	var best := NAN
+	var far := -1.0
+	for i in RETURN_SPOTS:
+		var s := along+lap*float(i)/float(RETURN_SPOTS)
+		var q: Vector2 = route_pose(s)[0]
+		var at: Vector3 = _route*Vector3(q.x,0.0,q.y)
+		if at.distance_to(plane) < RETURN_NEAR: continue
+		var d := at.distance_to(eye)
+		if unseen(at,eye,look) and d > far:
+			far = d
+			best = s
+	return best
+
+## True if a ship at `at` is out of the eye's sight.
+static func unseen(at: Vector3, eye: Vector3, look: Vector3) -> bool:
+	var d := at.distance_to(eye)
+	if d >= RETURN_ANY: return true
+	return d >= RETURN_NEAR and look.dot((at-eye)/d) < RETURN_CONE
+
+## A fresh ship at `s` along the route: plates whole, guns live.
+func _come_back(s: float) -> void:
+	state = AFLOAT
+	along = s
+	visible = true
+	_ghost = false
+	_every = EVERY
+	for g: Dictionary in _guns: g.rest = 0.0
+	_pose()
+	_hull_body.collision_layer = game.arches.LAYER
+	game.arches.loose.append(_hull)
+	_place(_hull)
+	_reseal()
+	returns += 1
+	returned.emit()
+
+## SkyGlide's `ground` at `p` over `h`, in a sink: her solid at its true tilt, each
+## stretch at the plane's own spot in her frame, so it's exact at the plane's height
+## and a little out far above or below it.
+func wreck_ground(p: Vector3, h: Variant, pad: float) -> Variant:
+	if state != SINKING or _ghost or not h is float: return h
+	if p.distance_squared_to(position) > WRECK_REACH*WRECK_REACH: return h
+	var l := _inv*p
+	var list: Array = []
+	BoxSolid.stretches(_hull.solid,l.x,l.z,pad,0.0,list)
+	if list.is_empty(): return h
+	for i in list.size():
+		var s: Vector2 = list[i]
+		var a: float = (transform*Vector3(l.x,s.x,l.z)).y
+		var b: float = (transform*Vector3(l.x,s.y,l.z)).y
+		list[i] = Vector2(minf(a,b),maxf(a,b))
+	return LandHalls.over(p,float(h),BoxSolid.joined(list))
+
+## True in her solid, grown by `pad`, in a sink.
+func wreck_inside(p: Vector3, pad: float) -> bool:
+	if state != SINKING or _ghost: return false
+	if p.distance_squared_to(position) > WRECK_REACH*WRECK_REACH: return false
+	return BoxSolid.inside(_hull.solid,_inv*p,pad)
+
+## Off the wreck's nearest outside, in the world, for FlightContact: her top if the
+## plane is over her, else her side or end, never down (her list would throw it at
+## the sea). Up for a touch of the water right beside her; ZERO away from her.
+func _wreck_way_off(p: Vector3, l: Vector3, what: String) -> Vector3:
+	if _ghost or p.distance_squared_to(position) > WRECK_REACH*WRECK_REACH: return Vector3.ZERO
+	var beam := wide*0.5+WALL
+	var end := LONG*0.5+PLATE
+	if absf(l.x) > beam+10.0 or absf(l.z) > end+20.0 or l.y > 70.0 or l.y < -DRAUGHT-4.0: return Vector3.ZERO
+	if what == "water": return Vector3.UP
+	var off := Vector3.UP
+	if l.y < FLOOR_Y+high+DECK:
+		off = Vector3(signf(l.x),0.0,0.0) if beam-absf(l.x) < end-absf(l.z) else Vector3(0.0,0.0,signf(l.z))
+	var way: Vector3 = transform.basis*off
+	way.y = maxf(way.y,0.1)
+	return way.normalized()
+
+## A puff of white off the water at `at`.
+func _mist(at: Vector3) -> void:
+	var m: Dictionary = {}
+	if _mists.size() < MISTS:
+		var n := MeshInstance3D.new()
+		n.mesh = _mist_mesh
+		n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_wake.add_child(n)
+		m = {"node":n,"t":0.0,"r":1.0}
+		_mists.append(m)
+	else:
+		var oldest := -1.0
+		for o: Dictionary in _mists:
+			if float(o.t) > oldest:
+				oldest = float(o.t)
+				m = o
+	m.t = 0.0
+	m.r = randf_range(MIST_R.x,MIST_R.y)
+	(m.node as Node3D).position = at
+	(m.node as Node3D).visible = true
+
+## A plank let go on the water at `at`.
+func _plank(at: Vector3) -> void:
+	if _planks.size() >= PLANKS: return
+	var n := MeshInstance3D.new()
+	var b := BoxMesh.new()
+	b.size = Vector3(randf_range(5.0,16.0),0.7,randf_range(0.8,1.8))
+	n.mesh = b
+	if _plank_mat == null: _plank_mat = _mat(PLANK_C)
+	n.material_override = _plank_mat
+	_wake.add_child(n)
+	n.position = at
+	n.rotation.y = randf()*TAU
+	_planks.append({"node":n,"t":0.0,"drift":Vector3(randf_range(-1.0,1.0),0.0,randf_range(-1.0,1.0))*1.5,"seed":randf()*TAU})
+
+## What's on the water: the mist lifts and thins, the planks ride the swell, then
+## go down. Nothing here costs anything once they're done.
+func _wake_step(delta: float) -> void:
+	for m: Dictionary in _mists:
+		if not (m.node as Node3D).visible: continue
+		m.t = float(m.t)+delta
+		var k := float(m.t)/MIST_LIFE
+		var n: MeshInstance3D = m.node
+		if k >= 1.0:
+			n.visible = false
+			continue
+		n.position.y += MIST_RISE*(1.0-k)*delta
+		n.scale = Vector3.ONE*float(m.r)*(1.0+k*2.4)
+		n.set_instance_shader_parameter("fade",(1.0-k)*smoothstep(0.0,0.08,k))
+	for i in range(_planks.size()-1,-1,-1):
+		var w: Dictionary = _planks[i]
+		w.t = float(w.t)+delta
+		var n: MeshInstance3D = w.node
+		n.position += (w.drift as Vector3)*delta
+		var t := float(w.t)
+		var down := maxf(t-PLANK_LIFE,0.0)*PLANK_SINK
+		# The swell's read for a few a frame: it's slow, and it isn't free.
+		if (i+Engine.get_process_frames())%PLANK_TURNS == 0: n.position.y = SEA_Y+float(game.sea_height(n.position))-0.05-down
+		n.rotation.x = 0.1*sin(t*0.9+float(w.seed))
+		n.rotation.z = 0.08*sin(t*0.7+float(w.seed)*2.0)
+		if down > 3.0:
+			n.queue_free()
+			_planks.remove_at(i)
 
 func _shatter(q: Vector3) -> void:
 	var v: Vector3 = game.plane.velocity
@@ -697,7 +1177,11 @@ func _build() -> void:
 	_hull["no_break"] = true
 	_hull["adopted"] = 0
 	game.arches.loose.append(_hull)
-	_body("Hull",all.hull)
+	_hull_body = _body("Hull",all.hull)
+	_wake = Node3D.new()
+	_wake.name = "ShipWake"
+	get_parent().add_child(_wake)
+	_mist_mesh = _cluster_mesh(4.0,[Color(0.96,0.97,0.98),Color(0.88,0.9,0.92),Color(0.8,0.83,0.86)],0.75,9,1.0,1.0)
 	for part: String in ["stern","bow"]:
 		var box: AABB = (all[part] as Array)[0]
 		var record := _record(part,all[part])
@@ -722,6 +1206,7 @@ func _dress() -> void:
 	_flash_mesh = _cluster_mesh(FLASH_R,[Color(1.0,0.95,0.7),Color(1.0,0.72,0.28),Color(1.0,0.5,0.1)],1.0,5,0.5,0.0)
 	_puff_mesh = _cluster_mesh(PUFF_R,[Color(0.78,0.79,0.8),Color(0.68,0.69,0.7),Color(0.84,0.84,0.84)],0.55,9,1.0,1.0)
 	(_model.find_child("Rigging",true,false) as GeometryInstance3D).visibility_range_end = RIGGING_FAR
+	for part: String in ["Interior","Cannons"]: (_model.find_child(part,true,false) as GeometryInstance3D).visibility_range_end = INNER_FAR
 	for i in GUNS_Z.size():
 		var z: float = GUNS_Z[GUNS_Z.size()-1-i]
 		for side: float in [-1.0,1.0]:
@@ -738,6 +1223,7 @@ func _plug(plate: Dictionary, part: String) -> void:
 			(shard as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			continue
 		shards.append({"node":shard,"home":(shard as Node3D).transform})
+		(shard as GeometryInstance3D).visibility_range_end = INNER_FAR
 	plate["plug"] = plug
 	plate["shards"] = shards
 

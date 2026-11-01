@@ -164,6 +164,7 @@ var skimming := false
 var total := 0.0
 ## The skim's rate times this now (the pirate ship sets it, near her).
 var skim_scale := 1.0
+var _prizes: Array[Dictionary] = []
 ## The last scored moment ({} none): kind, band, points, k, clear, at,
 ## surface; and every moment scored (for the drivers).
 var last := {}
@@ -262,6 +263,12 @@ func reset() -> void:
 ## `at`: scored in the next `score` (one a frame).
 func shot_pass(clear: float, reach: float, at: Vector3) -> void:
 	_shots.append({"clear":clear,"reach":reach,"at":at})
+
+## A prize of `points` (the pirate ship sunk): a line of its own named `title`,
+## banked in the next `score` beside the chain, at no multiplier, whatever the
+## chain does; a scrape can't lose it. It doesn't count for the best-line records.
+func prize(points: float, title: String, at: Vector3) -> void:
+	_prizes.append({"points":points,"title":title,"at":at})
 
 ## A scrape or a crash: the moments under way and the unbanked chain go.
 ## Returns the points lost (before the multiplier, times it).
@@ -503,6 +510,12 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 			out["banked"] = {"points":banked,"line":line}
 			out["line"] = line
 			_clear_line()
+	if not _prizes.is_empty() and not out.has("banked"):
+		var line := _prize_line(_prizes.pop_front(),game)
+		meter = minf(1.0,meter+float(line.points)/METER_FULL)
+		total += float(line.points)
+		out["banked"] = {"points":line.points,"line":line}
+		out["line"] = line
 	# The surge.
 	var want := 1.0 if surge_held and meter > 0.0 else 0.0
 	if want > 0.0 and surge <= 0.0: out["surge"] = {"start":true}
@@ -606,6 +619,16 @@ func _line(points: float, game: Node3D) -> Dictionary:
 		book.line_banked(line)
 		for m: Dictionary in line_moments:
 			if str(m.get("of",m.kind)) == "thread": book.best("tightest_gap",maxf(float(m.clear),0.0))
+	return line
+
+## The prize `z` as a line, its money paid.
+func _prize_line(z: Dictionary, game: Node3D) -> Dictionary:
+	var line := {"points":z.points,"mult":1.0,"moves":["prize"],"glyphs":[Glyphs.for_moment({"kind":"thread"})],"bands":["razor"],
+		"terrain":[],"t":0.0,"kinds":1,"name":z.title,"money":0}
+	var book = game.get("book")
+	if book != null:
+		line.money = book.line_pay(float(z.points),1.0,1)
+		book.earn(int(line.money))
 	return line
 
 ## The edge's gain for a least clearance of `least` m (see the header).

@@ -14,6 +14,7 @@ const LandHalls = preload("res://scripts/endless/land_halls.gd")
 const Isles = preload("res://scripts/endless/coast_isles.gd")
 const LayoutOverrides = preload("res://scripts/layout_overrides.gd")
 const PirateShip = preload("res://scripts/endless/pirate_ship.gd")
+const LaunchArgs = preload("res://scripts/launch_args.gd")
 
 const LIGHT_MODEL := "res://assets/models/lighthouse.glb"
 const SEA_Y := -40.0
@@ -59,7 +60,7 @@ func setup(game: Node) -> void:
 		_add_solid(t,LIGHT_BOXES,n)
 		_lamp(n)
 		light_at = t.origin
-	if not LayoutOverrides.deleted("coast/ship"):
+	if not LayoutOverrides.deleted("coast/ship") and not "--no-ship" in LaunchArgs.user_args():
 		ship = PirateShip.new()
 		add_child(ship)
 		ship.setup(game)
@@ -89,6 +90,7 @@ func after(delta: float, events: Dictionary) -> void:
 
 ## SkyGlide's `ground` at `p` over the land `h` (as LandRocks `ground`).
 func ground(p: Vector3, h: Variant, pad := 0.4) -> Variant:
+	if ship != null: h = ship.wreck_ground(p,h,pad)
 	if not h is float: return h
 	var list: Array = []
 	for s: Dictionary in _solids:
@@ -100,6 +102,7 @@ func ground(p: Vector3, h: Variant, pad := 0.4) -> Variant:
 
 ## True inside a solid, grown by `pad`.
 func inside(p: Vector3, pad := 0.4) -> bool:
+	if ship != null and ship.wreck_inside(p,pad): return true
 	for s: Dictionary in _solids:
 		if Vector2(p.x-float(s.x),p.z-float(s.z)).length_squared() > float(s.reach2): continue
 		if BoxSolid.inside(s.g,(s.inv as Transform3D)*p,pad): return true
