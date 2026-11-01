@@ -1162,6 +1162,7 @@ func _batch(mesh: Mesh, buf: PackedFloat32Array, count: int, material: Material)
 	if count > 0: mm.buffer = buf
 	var batch := MultiMeshInstance3D.new()
 	batch.multimesh = mm
+	batch.set_meta("buffer",buf)
 	if material != null: batch.material_override = material
 	batch.set_meta("skip_reflection",true)
 	return batch
@@ -1229,6 +1230,7 @@ func _regroup(g: Vector2i) -> void:
 		else:
 			had.multimesh.instance_count = int(e[1])
 			had.multimesh.buffer = e[0]
+			had.set_meta("buffer",e[0])
 
 ## Block `bkey`'s variant `v` sprite `i` shrunk to nothing at `at`: in its
 ## group's batch and in the block's own buffer (the group is made again from it).
@@ -1567,7 +1569,19 @@ func _shrink(batch: Node, i: int, at: Vector3, kind: String) -> void:
 	if not batch is MultiMeshInstance3D: return
 	var mm := (batch as MultiMeshInstance3D).multimesh
 	if mm == null or i < 0 or i >= mm.instance_count: return
-	mm.set_instance_transform(i,Transform3D(Basis.from_scale(Vector3.ZERO),at))
+	# From the batch's own buffer: changing one instance in place first reads
+	# the whole batch back from the GPU, which waits for it.
+	var buf: PackedFloat32Array = batch.get_meta("buffer",PackedFloat32Array())
+	if buf.is_empty():
+		mm.set_instance_transform(i,Transform3D(Basis.from_scale(Vector3.ZERO),at))
+	else:
+		var q := i*buf.size()/mm.instance_count
+		for k: int in [0,1,2,4,5,6,8,9,10]: buf[q+k] = 0.0
+		buf[q+3] = at.x
+		buf[q+7] = at.y
+		buf[q+11] = at.z
+		batch.set_meta("buffer",buf)
+		mm.buffer = buf
 	hidden[kind] = int(hidden.get(kind,0))+1
 
 ## The crown's tone of block `bkey`'s tree `bi` (`_block_from`'s draw).

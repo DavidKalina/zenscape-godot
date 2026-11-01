@@ -14,6 +14,7 @@
 //                    bird in it flies, and every bird's part transforms
 //                    (`_draw`). GDScript keeps the flocks, the perched life
 //                    and every random draw.
+//   ZenScapeSwell    scripts/endless/endless_sea.gd `height_at`.
 //
 // Matching GDScript: its numbers are doubles; Vector2/3, Basis, Color and
 // the packed float arrays hold floats, a double meeting one narrowed first
@@ -714,5 +715,136 @@ public:
 		out.resize(max_birds * 12);
 		std::copy(data.begin() + k * max_birds * 12, data.begin() + (k + 1) * max_birds * 12, out.ptrw());
 		return out;
+	}
+};
+
+// scripts/endless/endless_sea.gd `height_at`: the body's swell at a point, for
+// the camera's and the near misses' probes low over the water.
+class ZenScapeSwell : public RefCounted {
+	GDCLASS(ZenScapeSwell, RefCounted)
+
+	static constexpr int WAVES = 11;
+	struct F2 { float x, y; };
+	Vector3 body, bpatch;
+	Vector2 cross, patches, h0, h1, hw;
+	double groups = 0.0;
+	int count = WAVES;
+
+	static float dot(F2 a, F2 b) { return a.x * b.x + a.y * b.y; }
+	static double fract(double v) { return v - std::floor(v); }
+	static double mix(double a, double b, double t) { return a + (b - a) * t; }
+	static double smooth(double from, double to, double x) {
+		const double t = std::clamp((x - from) / (to - from), 0.0, 1.0);
+		return t * t * (3.0 - 2.0 * t);
+	}
+	static double hash(F2 p) {
+		double a = fract(double(p.x) * 0.1031);
+		double b = fract(double(p.y) * 0.1031);
+		double c = a;
+		const double d = a * (b + 33.33) + b * (c + 33.33) + c * (a + 33.33);
+		a += d;
+		b += d;
+		c += d;
+		return fract((a + b) * c);
+	}
+	static double noise(F2 p) {
+		const F2 i{ std::floor(p.x), std::floor(p.y) };
+		F2 f{ p.x - i.x, p.y - i.y };
+		f = F2{ f.x * f.x * (3.0f - 2.0f * f.x), f.y * f.y * (3.0f - 2.0f * f.y) };
+		const double x0 = mix(hash(i), hash(F2{ i.x + 1.0f, i.y }), f.x);
+		const double x1 = mix(hash(F2{ i.x, i.y + 1.0f }), hash(F2{ i.x + 1.0f, i.y + 1.0f }), f.x);
+		return mix(x0, x1, f.y);
+	}
+	static F2 rot(F2 v, double a) {
+		const double c = std::cos(a), s = std::sin(a);
+		return F2{ float(c * v.x - s * v.y), float(s * v.x + c * v.y) };
+	}
+	static F2 along(F2 p, F2 d, double back) {
+		return F2{ float(double(dot(p, d)) - back), dot(p, F2{ -d.y, d.x }) };
+	}
+
+	void shift(F2 p, double t, double &sx, double &sy, double &sz) const {
+		static constexpr double LENGTH[WAVES] = { 118.0, 86.0, 64.0, 74.0, 52.0, 28.0, 20.0, 14.5, 10.5, 7.6, 5.5 };
+		static constexpr int TRAIN[WAVES] = { 0, 0, 0, 1, 1, 2, 2, 2, 2, 2, 2 };
+		static constexpr double TURN[WAVES] = { 0.0, 0.16, -0.22, 0.0, 0.3, 0.0, 0.38, -0.32, 0.62, -0.55, 0.9 };
+		static constexpr double SIZE[WAVES] = { 0.45, 0.42, 0.38, 0.32, 0.28, 0.07, 0.068, 0.064, 0.06, 0.055, 0.05 };
+		const F2 fh0{ h0.x, h0.y }, fh1{ h1.x, h1.y }, fhw{ hw.x, hw.y };
+		const F2 wa = along(p, fhw, t * 1.5);
+		const F2 wr{ wa.x / patches.x, wa.y / float(patches.x * 0.7) };
+		const double rough = smooth(0.3, 0.7, noise(F2{ wr.x + 5.9f, wr.y + 1.3f }) * 0.65 + noise(F2{ wr.x * 2.3f + 2.2f, wr.y * 2.3f + 9.1f }) * 0.35);
+		const double wsea = mix(bpatch.x, bpatch.y, rough);
+		const double bend = (noise(F2{ p.x / 95.0f + float(t * 0.01), p.y / 95.0f + 7.1f }) - 0.5) * 2.4 + (noise(F2{ p.x / 37.0f + 2.4f, p.y / 37.0f + float(t * 0.015) }) - 0.5) * 0.9;
+		const F2 a0 = along(p, fh0, t * 6.0), a1 = along(p, fh1, t * 5.0), a2 = along(p, fhw, t * 2.6);
+		const double gt[3] = {
+			noise(F2{ a0.x / 260.0f + 1.7f, a0.y / 420.0f + 5.3f }),
+			noise(F2{ a1.x / 200.0f + 8.2f, a1.y / 330.0f + 2.6f }),
+			noise(F2{ a2.x / 90.0f + 3.1f, a2.y / 120.0f + 6.6f }),
+		};
+		F2 dirs[WAVES];
+		double amps[WAVES], phases[WAVES];
+		double total = 0.0;
+		for (int i = 0; i < count; ++i) {
+			const int train = TRAIN[i];
+			const F2 d = rot(train == 0 ? fh0 : (train == 1 ? fh1 : fhw), TURN[i]);
+			const double length = LENGTH[i];
+			const double k = 6.283185307179586 / length;
+			const double omega = std::sqrt(9.81 * k);
+			const F2 w = along(p, d, 0.5 * omega / k * t);
+			const double own = noise(F2{ w.x / float(length * 2.6) + float(i * 3.7), w.y / float(length * 3.4) + float(i * 1.3) });
+			double group = smooth(0.2, 0.8, mix(gt[train], own, 0.65));
+			group = mix(1.0, 0.12 + 1.6 * group * group, groups);
+			const double a = train < 2 ? SIZE[i] * body.x * (train == 1 ? cross.y / 0.6 : 1.0) * group : SIZE[i] * body.y * wsea * group / k;
+			dirs[i] = d;
+			amps[i] = a;
+			phases[i] = double(dot(p, d)) * k - omega * t + i * 2.39 + bend * (0.5 + 0.1 * i);
+			total += a * k;
+		}
+		const double q = body.z / std::max(total, 0.35);
+		sx = sy = sz = 0.0;
+		for (int i = 0; i < count; ++i) {
+			const double c = std::cos(phases[i]);
+			sx += dirs[i].x * q * amps[i] * c;
+			sz += dirs[i].y * q * amps[i] * c;
+			sy += amps[i] * std::sin(phases[i]);
+		}
+	}
+
+protected:
+	static void _bind_methods() {
+		ClassDB::bind_method(D_METHOD("version"), &ZenScapeSwell::version);
+		ClassDB::bind_method(D_METHOD("configure", "config"), &ZenScapeSwell::configure);
+		ClassDB::bind_method(D_METHOD("height_at", "x", "z", "time"), &ZenScapeSwell::height_at);
+	}
+
+public:
+	int64_t version() const { return 1; }
+
+	void configure(const Dictionary &c) {
+		body = c["body"];
+		bpatch = c["patch"];
+		cross = c["cross"];
+		patches = c["patches"];
+		h0 = c["heading"];
+		h0 = h0.normalized();
+		hw = c["wind"];
+		hw = hw.normalized();
+		const F2 turned = rot(F2{ h0.x, h0.y }, cross.x);
+		h1 = Vector2(turned.x, turned.y);
+		groups = double(c["groups"]);
+		count = int(c["count"]);
+	}
+
+	// As `height_at`: the sheet shoves its points sideways, so the rest point
+	// under x, z is found by a few steps.
+	double height_at(double x, double z, double time) const {
+		const F2 target{ float(x), float(z) };
+		F2 p = target;
+		double sx, sy, sz;
+		for (int i = 0; i < 4; ++i) {
+			shift(p, time, sx, sy, sz);
+			p = F2{ target.x - float(sx), target.y - float(sz) };
+		}
+		shift(p, time, sx, sy, sz);
+		return sy;
 	}
 };

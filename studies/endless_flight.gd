@@ -536,6 +536,7 @@ func _ready() -> void:
 			# A cap the machine holds every frame, under the screen's rate:
 			# vsync stays on, so a frame waits for the screen's next refresh.
 			Engine.max_fps = maxi(0,int(arg.get_slice("=",1)))
+	FrameLog.begin(preload("res://scripts/launch_args.gd").user_args())
 	# The layout file first: the slot halls' sites read its moves when
 	# the land is first looked at (scripts/endless/hall_sites.gd).
 	LayoutOverrides.begin("endless_flight")
@@ -1140,6 +1141,9 @@ func _solid(p: Vector3) -> bool:
 ## the flat sea), looked up only near the water.
 func sea_height(p: Vector3) -> float:
 	if look == null or look.water == null or p.y > Field.SEA_Y+12.0: return 0.0
+	# Land well over the sea has none, and low land sits inside the 12 m: every
+	# probe of a low flight would march the waves.
+	if field.height(p.x,p.z) > Field.SEA_Y+preload("res://scripts/burrower/game_land.gd").SWELL_ROOM: return 0.0
 	# Up a river's mouth the sea lies still, as the sea shader draws it.
 	return look.water.height_at(p.x,p.z)*(1.0-field.sea_calm(p.x,p.z))
 
@@ -1170,6 +1174,8 @@ func _process(delta: float) -> void:
 ## One frame: the plane flown, drawn and followed, the land streamed round
 ## the eye, the sea under it.
 func tick(delta: float) -> void:
+	FrameLog.start()
+	var tick_from := Time.get_ticks_usec()
 	flown += delta
 	var input := _fly_input(delta)
 	if stage != null: input = stage.input(delta,input,hand_landing,plane_figure)
@@ -1181,38 +1187,52 @@ func tick(delta: float) -> void:
 	# river's water as it skims the sea.
 	plane.water = water_at(plane.position)
 	if doors != null and doors.holds(plane.position): plane.water = -INF
+	FrameLog.mark(&"t_input")
 	if water != null: water.feel(delta)
+	FrameLog.mark(&"t_feel")
 	input["flaps"] = 1.0 if flaps else 0.0
 	# In a bore's tube the low zone lets be (SkyPlane `roofed`).
 	plane.roofed = (tunnels != null and int(tunnels.tube(plane.position)) == 0) or (doors != null and doors.holds(plane.position))
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	# The trees the coming move meets are knocked down first, so it flies on through.
+	FrameLog.mark(&"t_roofed")
 	var knocked: Dictionary = knock.before(delta,self)
+	FrameLog.mark(&"knock_before")
 	solid_pad = WorldScale.reach_rolled(float(plane.bank)+float(plane.spin))
 	# In a forgiving knife slot: the reach fitted, a jamb glanced off.
 	solid_shift = Vector3.ZERO
 	_glanced = glance.before(delta,self)
+	FrameLog.mark(&"glance")
 	# A beat route's preview pan holds the flight (beat_routes.gd).
 	var held: bool = beats != null and beats.holding()
 	var events: Dictionary = {} if held else hand_landing.step(delta,input,Callable(self,"plane_ground"),Callable(self,"floor_at"),air,Callable(self,"_blocked"))
+	FrameLog.mark(&"landing")
 	if events.has("lifted"): book.new_flight()
 	book.flight.t = float(book.flight.t)+delta
 	book.step(delta)
+	FrameLog.mark(&"book")
 	if not knocked.is_empty(): _knocked(events,knocked)
 	plane.engine = hand_landing.engine*float(plane.sputter)*(float(stage.engine) if stage != null else 1.0)
 	if coast != null: coast.after(delta,events)
 	_near_misses(delta,events)
+	FrameLog.mark(&"near")
 	if water != null: water.step(delta,events)
+	FrameLog.mark(&"water")
 	var ground := Callable(self,"plane_ground")
 	_pull = _pull_of(delta)
 	if smash != null: _pull = maxf(_pull,smash.vapour)
 	plane_figure.update(delta,plane,0.0,ground,hand_landing.would_grease(Callable(self,"floor_at")),_pull,float(plane.bank))
+	FrameLog.mark(&"figure")
 	_events = events
 	tallies.step(delta,self,events)
+	FrameLog.mark(&"tallies")
 	summary.step(delta)
+	FrameLog.mark(&"summary")
 	_feel_sink(events)
 	_rumble(delta,events,float(input.get("boost",0.0)))
+	FrameLog.mark(&"rumble")
 	sound.step(delta,self,events,float(input.get("boost",0.0)))
+	FrameLog.mark(&"sound")
 	ground_scale.step(delta,hand_landing.on_ground(),hand_landing.dipping(),plane)
 	ground_scale.apply(plane_figure)
 	ground_scale.hold_spin(plane_figure,plane)
@@ -1224,46 +1244,73 @@ func tick(delta: float) -> void:
 	chase.cine = Vector3(-1.25,0.0,0.3) if hand_landing.on_ground() and stage == null else Vector3.ZERO
 	chase.ground = hand_landing.on_ground()
 	_stop_note()
+	FrameLog.mark(&"ground_scale")
 	# A door flown into carries the plane to the other side (region_doors.gd).
 	if doors != null: doors.step(delta)
+	FrameLog.mark(&"doors")
 	_frame(delta)
+	FrameLog.mark(&"camera")
 	if stage != null:
 		stage.frame(delta,camera,plane.position+ground_scale.lift(),ground_scale.size(),Callable(field,"height"))
 		if not stage.running(): _menu_done()
 	if beats != null: beats.step(delta,self)
 	if lines != null: lines.step(delta,self)
+	FrameLog.mark(&"lines")
 	if burrower != null: burrower.step(delta,self)
+	FrameLog.mark(&"burrower")
 	land.lead_with(plane.velocity)
 	land.step(camera.global_position)
+	FrameLog.mark(&"land")
 	arches.step(camera.global_position)
+	FrameLog.mark(&"arches")
 	rocks.step(camera.global_position)
+	FrameLog.mark(&"rocks")
 	if towers != null: towers.step(camera.global_position)
+	FrameLog.mark(&"towers")
 	halls.step(camera.global_position)
+	FrameLog.mark(&"halls")
 	tunnels.step(camera.global_position)
+	FrameLog.mark(&"tunnels")
 	if doors != null: doors.late(camera.global_position)
+	FrameLog.mark(&"doors_late")
 	trees.step(camera.global_position,plane.position)
+	FrameLog.mark(&"trees")
 	knock.step(delta,self)
+	FrameLog.mark(&"knock")
 	birds.step(delta,camera.global_position,plane)
+	FrameLog.mark(&"birds")
 	if fish != null: fish.step(delta,camera.global_position,plane.position,plane.velocity,false)
+	FrameLog.mark(&"fish")
 	if traffic != null: traffic.step(delta,camera.global_position,-camera.global_basis.z,plane.position,Vector3(-sin(plane.heading),0.0,-cos(plane.heading)),float(plane.speed))
+	FrameLog.mark(&"traffic")
 	if race != null: race.step(delta,self)
+	FrameLog.mark(&"race")
 	if shops != null: shops.step(delta,self)
+	FrameLog.mark(&"shops")
 	if finds != null: finds.step(delta,self)
+	FrameLog.mark(&"finds")
 	if coast != null: coast.step(delta,self)
+	FrameLog.mark(&"coast")
 	if way != null: way.step(camera.global_position)
+	FrameLog.mark(&"way")
 	if grass != null:
 		var view := get_viewport().get_camera_3d()
 		var eye: Camera3D = view if view != null else camera
 		grass.lead_with(plane.velocity)
 		grass.step(eye.global_position,-eye.global_basis.z)
+		FrameLog.mark(&"grass")
 	if look != null: look.plane_at = plane.position
 	# The day's clock waits while the menu holds the flight: a flight starts
 	# at its opening hour.
 	if look != null: look.cycle.held = stage != null and stage.holding()
 	if look != null: look.step(delta,camera.global_position,-camera.global_basis.z,camera)
+	FrameLog.mark(&"look")
 	if react != null: _react(delta)
 	else: sea.position = Vector3(snappedf(camera.global_position.x,64.0),Field.SEA_Y,snappedf(camera.global_position.z,64.0))
+	FrameLog.mark(&"react")
 	_show_hud()
+	FrameLog.mark(&"hud")
+	if FrameLog.on: FrameLog.end((Time.get_ticks_usec()-tick_from)/1000.0,plane.position,float(plane.speed))
 
 ## How hard the vapour pulls off the wingtips (0 to 1): the flight path's
 ## turn rate over VAPOUR_TURN, more past cruise.
@@ -1465,6 +1512,7 @@ func _next_pace() -> void:
 ## The grass reacting: the plane's wash (by its height and thrust) and the
 ## look's breeze for the gusts (GrassReact `step`).
 func _react(delta: float) -> void:
+	FrameLog.mark(&"react_pre")
 	var p: Vector3 = plane.position
 	var h: float = field.height(p.x,p.z)
 	var over := p.y-h if h > Field.SEA_Y+0.2 and not _on_river() else NAN
@@ -1474,10 +1522,12 @@ func _react(delta: float) -> void:
 	var facing := -camera.global_basis.z
 	if eddies != null:
 		eddies.step(delta,camera.global_position,Vector2(facing.x,facing.z),look.wind_direction,1.0,Callable(self,"_grass_at"))
+	FrameLog.mark(&"r_eddies")
 	react.step(delta,camera.global_position,
 		{"position": p, "forward": plane.forward(), "over": over, "thrust": thrust, "size": ground_scale.size()},
 		{"way": look.wind_direction, "travel": look._gust, "facing": Vector2(facing.x,facing.z)},
 		Callable(self,"_grass_at"))
+	FrameLog.mark(&"r_grass")
 	# Parked in the menu, the grass lies parted round the wheels.
 	# And round the eye circling it, so the blades at its feet lean out of
 	# its way rather than across the view.
@@ -1490,6 +1540,7 @@ func _react(delta: float) -> void:
 	var wash: Dictionary = {} if stage != null and stage.holding() else react.wash_spot
 	# On the Peak's snow the wash throws powder and cuts a furrow, not grass.
 	if snow != null: wash = snow.step(delta,p,wash,look.wind_direction,camera.global_position)
+	FrameLog.mark(&"r_snow")
 	if motes != null:
 		var skims: Array = eddies.ribbons.ribbons if eddies != null else []
 		if snow != null: skims = snow.off_snow(skims)

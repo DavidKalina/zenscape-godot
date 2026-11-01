@@ -27,6 +27,12 @@ const PRESETS := {
 	"full": {"title":"Full","lines":0,"fps":0,"args":[]},
 }
 
+## Quality off the Mac (RTX 4070 Super at 1080 lines): --grass-range scales
+## every ring, so the Mac's 150 stopped the tall carpet 20 m off the plane; 190
+## here is 0.5 to 1 ms under the full 230. The trees' hand-overs cost under
+## 0.7 ms together at 200 m (the default) and 120 m, against the Mac's 5.
+const QUALITY_PC := ["--msaa=0","--screen-aa=fxaa","--grass-range=190","--spruce-detail=120"]
+
 ## The preset in force this run.
 static var current := ""
 ## The frame cap the game booted with (the project's), for a preset with none.
@@ -38,7 +44,7 @@ static var _boot_fps := -1
 static func begin() -> void:
 	current = chosen()
 	var p: Dictionary = PRESETS[current]
-	LaunchArgs.defaults = PackedStringArray(p.args)
+	LaunchArgs.defaults = PackedStringArray(QUALITY_PC if current == "quality" and OS.get_name() != "macOS" else p.args)
 	preload("res://scripts/render_resolution.gd").preset_lines = int(p.lines)
 
 static func chosen() -> String:
