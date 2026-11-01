@@ -89,7 +89,7 @@ constexpr double ICE_FROM = 2230.0, ICE_FLAT = 2850.0;
 constexpr double PROF_Y0 = 259.0, PROF_M = -0.156452, PROF_TOE = 0.048, PROF_KNEE = 40.0, PROF_FADE = 100.0;
 constexpr double STEP_A = 2390.0, STEP_RUN = 80.0, STEP_DROP = 50.0, STEP_STEPS = 3.0, STEP_RISER = 0.4, STEP_JAG = 10.0;
 constexpr double STEP_COL = 38.0, STEP_COL_WARP = 14.0, STEP_SHIFT = 0.35, STEP_BLOCK = 4.0, STEP_CRACK = 2.5, STEP_CRACK_DEEP = 9.0;
-constexpr double LC_A0 = 2480.0, LC_A1 = 2845.0, LC_RAMP = 70.0, LC_DEEP = 28.0, LC_TOP = 12.0, LC_FLOOR = 7.0;
+constexpr double LC_A0 = 2480.0, LC_A1 = 2845.0, LC_RAMP = 70.0, LC_DEEP = 28.0, LC_TOP = 14.5, LC_FLOOR = 9.5;
 constexpr double LC_V = -85.0, LC_WANDER = 10.0, LC_WAVE = 75.0, LC_ROUGH = 1.2;
 constexpr double ICE_BANDS[][6] = {
 	{2252.0, 20.0, 5.0, 22.0, -230.0, 120.0}, {2283.0, 22.0, 6.5, 28.0, -180.0, 220.0},

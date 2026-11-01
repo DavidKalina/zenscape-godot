@@ -272,8 +272,8 @@ const LC_A0 := 2480.0
 const LC_A1 := 2845.0
 const LC_RAMP := 70.0
 const LC_DEEP := 28.0
-const LC_TOP := 12.0
-const LC_FLOOR := 7.0
+const LC_TOP := 14.5
+const LC_FLOOR := 9.5
 const LC_V := -85.0
 const LC_WANDER := 10.0
 const LC_WAVE := 75.0
@@ -569,7 +569,7 @@ static func make(land_seed: int, ground := Callable()) -> RefCounted:
 
 ## ZenScapePeak's `version` this script calls: any other library, or none (a
 ## checkout not rebuilt yet), runs the GDScript.
-const NATIVE_VERSION := 3
+const NATIVE_VERSION := 4
 const NATIVE_CLASS := &"ZenScapePeak"
 ## The native twin of this massif, shared by every worker's (read only), or null.
 var _native: RefCounted = null
