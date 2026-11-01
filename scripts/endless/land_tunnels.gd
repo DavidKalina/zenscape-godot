@@ -358,6 +358,7 @@ var clouds: Node
 ## The sea's material, cut along the sunk tunnels' ramps (`_cut_sea`), or null.
 var sea: ShaderMaterial
 var _cuts := -1
+var _sea_hushed := false
 ## The stood tunnels' sites (the solid's queries walk these), and each
 ## Built by its name and by its id.
 var _sites: Array = []
@@ -667,6 +668,7 @@ func step(at: Vector3) -> void:
 	var t0 := Time.get_ticks_usec()
 	_stream(at)
 	_cut_sea()
+	_hush_sea(at)
 	_stand_bodies(t0,false)
 	halls.step(at)
 	_light_torches(at)
@@ -1075,6 +1077,19 @@ func _cut_sea() -> void:
 	sea.set_shader_parameter("dry_cut",out)
 	sea.set_shader_parameter("dry_cuts",list.size())
 	sea.set_shader_parameter("dry_half",Tunnels.DRY_HALF)
+
+## The sea is one level sheet, and a cave's chambers stand over it: with the eye
+## above the level it lies across the bore like a flood. So with the eye low in
+## a sunk tunnel's corridor, the sea goes wherever the land stands over it (the
+## shader's `dry_under`). Only then: a map this coarse would nibble the shores.
+func _hush_sea(at: Vector3) -> void:
+	if sea == null: return
+	var on := false
+	for t: Tunnels.Site in _sites:
+		if at.y < t.floor_y+SIGHT_UP and Tunnels.dry_at(t,at.x,at.z): on = true
+	if on == _sea_hushed: return
+	_sea_hushed = on
+	sea.set_shader_parameter("dry_under",1.0 if on else 0.0)
 
 ## Whether `p` is in a tunnel's box, low enough to be in its bore.
 func near(p: Vector3) -> bool:

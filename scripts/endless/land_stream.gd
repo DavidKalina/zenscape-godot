@@ -469,7 +469,7 @@ static func _portal_holes(f: RefCounted, made: Dictionary, key: Vector3i, x0: fl
 	if not f.has_method("tunnels_in"): return
 	var ts: Array = f.tunnels_in(x0,z0,x0+step*CELLS,z0+step*CELLS)
 	if ts.is_empty(): return
-	_lift_skirts(made,ts)
+	_lift_skirts(made,ts,x0,z0)
 	var mask: PackedByteArray = Tunnels.portal_mask(ts,x0,z0,step,CELLS)
 	if mask.is_empty(): return
 	var n := CELLS+1
@@ -495,7 +495,7 @@ static func _portal_holes(f: RefCounted, made: Dictionary, key: Vector3i, x0: fl
 	if key.x == 0: made.faces = faces
 
 ## The skirts over a sunk cave drawn up out of its bore (Tunnels `skirt_floor`).
-static func _lift_skirts(made: Dictionary, ts: Array) -> void:
+static func _lift_skirts(made: Dictionary, ts: Array, x0: float, z0: float) -> void:
 	var any := false
 	for t: RefCounted in ts: any = any or t.sunk
 	if not any: return
@@ -506,7 +506,8 @@ static func _lift_skirts(made: Dictionary, ts: Array) -> void:
 		var e := (v-n*n)/n
 		var t := (v-n*n)%n
 		var from: int = [t,t*n+CELLS,CELLS*n+t,t*n][e]
-		var low := Tunnels.skirt_floor(ts,p.x,p.z)
+		# A chunk's vertices are its own: the sites stand in the world.
+		var low := Tunnels.skirt_floor(ts,x0+p.x,z0+p.z)
 		if low > p.y: verts[v] = Vector3(p.x,minf(low,verts[from].y),p.z)
 	made.verts = verts
 

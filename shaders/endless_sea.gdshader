@@ -40,6 +40,11 @@ uniform sampler2D sea_depth : hint_depth_texture, filter_nearest, repeat_disable
 uniform vec4 dry_cut[8];
 uniform int dry_cuts = 0;
 uniform float dry_half = 30.0;
+// The eye in a sunk tunnel's corridor (land_tunnels.gd `_hush_sea`): the sea is a
+// level sheet and a cave's vault can stand over it, so no sea where the baked
+// land stands dry_over m over the level, or the sheet shows across the bore.
+uniform float dry_under = 0.0;
+uniform float dry_over = 3.0;
 
 // The chop's normal maps (seamless noise, EndlessSea `_detail`).
 uniform sampler2D detail_a : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -984,6 +989,10 @@ void fragment() {
 		vec2 way = dry_cut[i].zw - from;
 		vec2 off = world_position.xz - from;
 		if (length(off - way * clamp(dot(off, way) / dot(way, way), 0.0, 1.0)) < dry_half) discard;
+	}
+	if (dry_under > 0.0 && depth_at.w > 0.0) {
+		vec2 land_uv = (world_position.xz - depth_at.xy) / depth_at.z;
+		if (land_uv == clamp(land_uv, vec2(0.0), vec2(1.0)) && textureLod(depth_map, land_uv, 0.0).r > sea_level + dry_over) discard;
 	}
 	vec3 eye = normalize(CAMERA_POSITION_WORLD - world_position);
 	float distance_to = length(CAMERA_POSITION_WORLD - world_position);

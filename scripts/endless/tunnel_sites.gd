@@ -232,6 +232,9 @@ const CAVE_RISE := 14.0
 const RISE_WAVE := 260.0
 const CAVE_ROCK := 8.0
 const CAVE_CALM := 56.0
+## The land read beside the path for the rock over a cave: m across, every few samples.
+const ROOM_ACROSS := [-46.0,-34.0,-22.0,-11.0,11.0,22.0,34.0,46.0]
+const ROOM_EVERY := 2
 const MOUTH_ROUND := 2.5
 ## Seed 1's sunk tunnels by square: [path seed, mouth A's x, z, yaw].
 const SUNK_SITES := {
@@ -923,10 +926,18 @@ static func _cave_profile(t: Site, impl: Object) -> void:
 	room.fill(1000.0)
 	if impl != null:
 		var raw := PackedFloat32Array()
-		for i in n: raw.append(_h(impl,t.pts[i].x,t.pts[i].y)-t.floor_y-CAVE_ROCK)
+		for i in n:
+			var lo := _h(impl,t.pts[i].x,t.pts[i].y)
+			# A chamber reaches past the path: the land beside it counts too.
+			if i % ROOM_EVERY == 0:
+				var across: Vector2 = t.tans[i].orthogonal()
+				for d: float in ROOM_ACROSS:
+					var q: Vector2 = t.pts[i]+across*d
+					lo = minf(lo,_h(impl,q.x,q.y))
+			raw.append(lo-t.floor_y-CAVE_ROCK)
 		for i in n:
 			var lo := raw[i]
-			for k in range(maxi(i-8,0),mini(i+9,n),2): lo = minf(lo,raw[k])
+			for k in range(maxi(i-8,0),mini(i+9,n)): lo = minf(lo,raw[k])
 			room[i] = lo
 	for i in n:
 		var s := t.ss[i]
