@@ -206,13 +206,55 @@ wait on each other; the trunk merges them.
     tunnel is solid (rays from above hit ground, not the tunnel's hollow);
     stills at both mouths and inside; the saddle landing still 2/2.
 
+## Lanes landed (2026-11-01)
+
+- **carve**: branch `worktree-agent-aa61725b479fe1f00` (eb220906 round 1,
+  3bd15b0d and 891fcd23 round 2). Proved: parity bit for bit (native
+  version 4), long crevasse 24/24 with wobble, toe landing 2/2, chunk cost
+  unchanged. API `PeakMassif.carve_line(field.height)`. Open: the bands
+  read as a dotted grid from the high spot, the step reads terraced from
+  the toe. **The version-4 DLLs exist only in that worktree's
+  `native/terrain_kernels/bin`** (main's are version 1): copy both DLLs
+  and their `.sources` stamps from there, or rebuild, before any run.
+- **forms**: branch `worktree-agent-a45b55d7ff87ac50e` (f2ed8cda). Rock
+  kind `ice-forms` (`rocks/peak_ice_forms.gd`): ranks at a 2790, 2505,
+  2240; fin runs a 2745-2595, 2455-2315; arches a 2560, 2290; blocks along
+  the moraine. Proved on the uncarved floor only (two runs, 0 crashes,
+  least room 2.33 m at fin run 1 with Boost). API
+  `PeakIceForms.sites(field, peak)`. Open: rank side lanes unproved, the
+  forms on the carved floor unproved, two cells build in 49-58 ms (over
+  the bar), fins read as slabs, the bridge thin; it also widened
+  `line_moves.gd` `_fin_at` to count any rock pillar for a slalom, and the
+  line tune skips slaloms by default (a scoring call for the user, left).
+- **tunnel**: branch `worktree-agent-ad8a8c7942b15ff59` (9efdef62,
+  ac3e905e, c74bc65c). `peak_tunnel.gd` (the line) and
+  `land_ice_tunnel.gd` (the tube, lights, collider, flight queries), hooks
+  in `endless_flight.gd`, `land_field.gd`, `land_stream.gd`,
+  `hall_doors.gd`. Mouth A at about (a 2185, v -290) in the bank (there is
+  no flank wall there: the bank is 50-80 m), mouth B at s 1815 (a 600,
+  v 180), 40 m under the saddle, the line then rounding to the saddle.
+  Flown with Boost 6/6 both ways, least room 5.8 m; **without Boost 2 of 3
+  runs down crash in the open gully stretch (s 1463-1548), where three
+  Slot carve pieces (the blade at a 1030, the eye at a 960, the blade at
+  a 890) stand across the bore.** Open: the solid-field rays, the saddle
+  landing out of mouth B, the in-tunnel water check, stills after the
+  relight (the inside was near black before it), a closer toe still.
+
+**Decision (lead, 2026-11-01): the carve pieces stay.** The tunnel's
+gully crossing is re-routed to cross the Slot line perpendicular at about
+a 932, between the eye (a 948-972) and the blade at a 890 (to a 916); the
+chamber's and window's s values move with it. Prove the crossing again
+without Boost.
+
 ## Trunk (in order, Opus, one task an iteration)
 
 1. **Merge.** Merge the three lanes' branches into the loop's branch,
    joining the shared lines from their Notes for merge; smoke with
    everything on and with every lane's flag off; parity still bit for bit;
    the forms stand on the carved field (re-read the heights, re-prove the
-   room numbers that changed); commit the merge under the prefix.
+   room numbers that changed); the tunnel's gully crossing re-routed per
+   the decision above and the no-Boost descent re-flown; the version-4
+   DLLs in this worktree's bin; commit the merge under the prefix.
 2. **The three ways.** The slot: the crevasse lines lead into the ice
    gorge and its bowls get denser seracs if its room allows; the tunnel's
    mouth reads from the glacier and its exit joins the saddle; the ramp
