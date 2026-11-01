@@ -1,0 +1,9 @@
+[gd_resource type="ShaderMaterial" format=3]
+
+[ext_resource type="Shader" path="res://assets/models/pirate_ship/ship_cloth.gdshader" id="1"]
+[ext_resource type="Texture2D" path="res://assets/models/pirate_ship/ship_sail.png" id="2"]
+
+[resource]
+shader = ExtResource("1")
+shader_parameter/albedo_tex = ExtResource("2")
+shader_parameter/fill = 4.5
