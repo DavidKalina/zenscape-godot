@@ -37,9 +37,8 @@ ROOT = Path(__file__).resolve().parents[3]
 TALL = 120.0
 STRIDE = {"head": 6, "torso": 5}
 CUT = 16.0
-COURSE = 9.0
-BLOCK = 15.0
-RING = 60.0
+COURSES = (6.0, 8.0, 8.0, 11.0, 11.0, 14.0, 18.0)                              # beds of varied height
+BLOCKS = (11.0, 15.0, 15.0, 20.0, 26.0, 36.0)                                  # and blocks of varied length
 BAKE_NORMAL = 2048
 BAKE_AO = 1024
 SWELL_MOST = 16.0
@@ -283,25 +282,147 @@ BOUNDS.update({name: ((-190, -112, -2), (190, 112, 246)) for name in TORSOS})
 BOUNDS["mourner_torso"] = ((-180, -150, -2), (180, 112, 246))
 
 
-def weather(f, d):
-    """(full, soft): old stone, and the same without what a bake carries."""
-    soft = d + (f.fbm(38, 2, 11) - 0.5) * 3.0
-    # Masonry: courses, the joints staggered course by course, each block a
-    # little proud or sunk of its neighbours.
-    bed = (f.Z + (f.fbm(46, 2, 21) - 0.5) * 8) / COURSE
-    row = np.floor(bed)
-    round_it = np.arctan2(f.Y, f.X) * RING / BLOCK + row * 0.5 + (f.fbm(60, 2, 23) - 0.5) * 0.5
-    col = np.floor(round_it)
-    to_bed = (0.5 - np.abs(bed - row - 0.5)) * COURSE
-    to_end = (0.5 - np.abs(round_it - col - 0.5)) * BLOCK
-    joint = np.minimum(to_bed, to_end)
-    block = np.modf(np.sin(row * 12.9898 + col * 78.233) * 43758.5453)[0]
-    full = soft + block * 0.45
-    full = full + np.clip(1.1 - joint, 0, 1.1) * 0.9                           # the joint's groove
-    full = full + (f.fbm(5, 3, 27) - 0.5) * 1.3                                # pits
-    crack = np.abs(f.fbm(40, 2, 31) - 0.5) * 90.0 - 1.0
-    crack2 = np.abs(f.fbm(17, 2, 33) - 0.5) * 60.0 - 0.5
-    return smax(smax(full, -crack, 1.2), -crack2, 0.8), soft
+def cuts(lo, hi, sizes, rng):
+    """Joints across [lo, hi], a size drawn from `sizes` apart."""
+    at = [lo - float(rng.choice(sizes)) * float(rng.random())]
+    while at[-1] < hi:
+        at.append(at[-1] + float(rng.choice(sizes)))
+    return np.array(at, np.float32)
+
+
+def blocks(f, stone, rng):
+    """The mass as stacked stone: level beds, and in each bed straight joints
+    in x and y, so that a joint is a plane through the piece and not a pattern
+    on its skin. (cell of each voxel, metres to the cell's nearest face, u, v, w
+    from -1 to 1 across the cell, the course of each voxel)."""
+    shape = (len(f.xs), len(f.ys), len(f.zs))
+    cell = np.empty(shape, np.int32)
+    face = np.empty(shape, np.float32)
+    uvw = [np.empty(shape, np.float32) for _ in range(3)]
+    size = [np.empty(shape, np.float32) for _ in range(3)]
+    beds = cuts(f.zs[0], f.zs[-1], [v * stone for v in COURSES], rng)
+    row = np.searchsorted(beds, f.zs, side="right") - 1
+    base = 0
+    for r in range(len(beds) - 1):
+        z = np.nonzero(row == r)[0]
+        if not len(z):
+            continue
+        z = slice(z[0], z[-1] + 1)
+        sets = (cuts(f.xs[0], f.xs[-1], [v * stone for v in BLOCKS], rng),
+                cuts(f.ys[0], f.ys[-1], [v * stone for v in BLOCKS], rng), beds)
+        idx, ends, local, half = [], [], [], []
+        for axis, (at, xs) in enumerate(zip(sets, (f.xs, f.ys, f.zs[z]))):
+            i = np.searchsorted(at, xs, side="right") - 1
+            lo, hi = at[i], at[i + 1]
+            view = [None, None, None]
+            view[axis] = slice(None)
+            view = tuple(view)
+            idx.append(i)
+            ends.append(np.minimum(xs - lo, hi - xs)[view])
+            local.append(((xs - (lo + hi) / 2) / ((hi - lo) / 2))[view])
+            half.append((np.full_like(xs, 1) * (hi - lo) / 2)[view])
+        ny = len(sets[1])
+        cell[:, :, z] = base + idx[0][:, None, None] * ny + idx[1][None, :, None]
+        face[:, :, z] = np.minimum(np.minimum(ends[0], ends[1]), ends[2])
+        for axis in range(3):
+            uvw[axis][:, :, z] = local[axis]
+            size[axis][:, :, z] = half[axis]
+        base += (len(sets[0]) + 1) * ny
+    _, cell = np.unique(cell, return_inverse=True)
+    return cell.reshape(shape).astype(np.int32), face, uvw, size, row
+
+
+def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8):
+    """(full, soft): old stone, and the same without what a bake carries.
+
+    Cut stone, not skin: each block's face is planed flat, a little proud or
+    sunk of its neighbours, its joint a chamfered groove. Age is blocks gone
+    (`losses`, (centre, radius, depth) as the piece wants them, and `breaks` at
+    random), corners chipped off along a plane, and a few straight fractures
+    that jog at the beds. `stone` scales the masonry to the piece: a 55 m head
+    is cut from finer stone than a 250 m body. soft keeps the shape and the
+    blocks gone."""
+    rng = np.random.default_rng(f.seed * 7919 + 5)
+    cell, face, (u, v, w), (hu, hv, hw), row = blocks(f, stone, rng)
+    count = int(cell.max()) + 1
+    near = np.nonzero(np.abs(d) < 2.0 * f.h + 1.5 * stone)
+    ids = cell[near]
+    p = [xs[i] for xs, i in zip((f.xs, f.ys, f.zs), near)]
+    grad = []
+    for axis, i in enumerate(near):
+        ahead, back = list(near), list(near)
+        ahead[axis] = np.minimum(i + 1, d.shape[axis] - 1)
+        back[axis] = np.maximum(i - 1, 0)
+        grad.append(d[tuple(ahead)] - d[tuple(back)])
+    length = np.sqrt(grad[0] ** 2 + grad[1] ** 2 + grad[2] ** 2) + 1e-6
+    grad = [g / length for g in grad]
+    n = np.maximum(np.bincount(ids, minlength=count), 1)
+    mean = lambda a: np.bincount(ids, a, minlength=count) / n
+    centre = np.stack([mean(a) for a in p], 1)
+    normal = np.stack([mean(g) for g in grad], 1)
+    level = mean(d[near])
+    straight = np.sqrt((normal ** 2).sum(1))
+    normal = normal / np.maximum(straight, 1e-3)[:, None]
+    flat = np.clip((straight - 0.6) / 0.3, 0, 1)                               # a block round a corner keeps its corner
+    band = np.nonzero(np.abs(d) < 4.0 * f.h + 9.0 * stone)
+    ids = cell[band]
+    q = [xs[i] for xs, i in zip((f.xs, f.ys, f.zs), band)]
+    plane = level[ids] + sum(normal[ids, a] * (q[a] - centre[ids, a]) for a in range(3))
+    keen = min(stone, np.sqrt(stone))                                          # joints fine on big stone, or the form goes under them, and fine on small, or a nose goes to beads
+    # Blocks gone: each cut back behind its own faces, so a loss has the joints' edges.
+    gone = np.zeros(count, bool)
+    deep = rng.uniform(0.55, 1.0, count)
+    found = np.nonzero(np.abs(level) < f.h * 3 + 3 * stone)[0]
+    sites = [(*(centre[found[rng.integers(len(found))]]), rng.uniform(14, 26) * stone, rng.uniform(3.5, 6) * stone) for _ in range(breaks)]
+    sites += [(*at, r, depth) for at, r, depth in losses]
+    reach = np.zeros(count, np.float32)
+    for x, y, z, r, depth in sites:
+        off = np.sqrt(((centre - (x, y, z)) ** 2).sum(1))
+        hit = (off < r * rng.uniform(0.7, 1.15, count)) & (n > 1) & (straight < 0.95)  # a corner goes, a window would not
+        gone |= hit
+        reach[hit] = depth
+    soft = d.copy()
+    lost = gone[ids]
+    side = rng.choice((-1.0, 1.0), (count, 3))
+    tilt = sum(side[ids, a] * (u, v, w)[a][band] for a in range(3)) * rng.uniform(0.2, 0.5, count)[ids] * stone * 3  # a loss's floor breaks on a slant
+    bare = tuple(a[lost] for a in band)
+    soft[bare] = np.maximum(d[bare], np.minimum(face[bare], (plane + (reach * deep)[ids] + tilt)[lost]))
+    # Planed faces, chipped corners, chamfered joints, on what's left.
+    most = 1.2 * stone
+    full = soft.copy()
+    keep = tuple(a[~lost] for a in band)
+    kept = ids[~lost]
+    dip = rng.uniform(-0.15, 0.55, count) * keen
+    full[keep] += np.clip(plane[~lost] - d[keep], -most, most) * flat[kept] + dip[kept]
+    chip = rng.uniform(1.15, 1.75, count)
+    chip[rng.random(count) > 0.17] = 9.0
+    least = np.argmax(np.abs(normal), 1)                                       # a chip is across the block's showing face
+    axes = np.ones((count, 3))
+    axes[np.arange(count), least] = 0
+    at = sum(axes[kept, a] * side[kept, a] * (u, v, w)[a][keep] for a in range(3))
+    span = np.minimum(np.minimum(hu[keep] + 99 * (least[kept] == 0), hv[keep] + 99 * (least[kept] == 1)), hw[keep] + 99 * (least[kept] == 2))
+    full[keep] += np.maximum(at - chip[kept], 0) * span * 0.9
+    width = 1.2 * keen
+    full += np.clip(width - face, 0, width) * 0.7                              # the joint, chamfered
+    full += (f.fbm(4.0 * stone, 2, 27) - 0.5) * 0.3 * stone                    # dressed, not polished
+    # Fractures: straight planes through the stone, each stepping at the beds.
+    all_near = np.nonzero(np.abs(soft) < 3.0 * stone + 2.0 * f.h)
+    jog = rng.uniform(-1.0, 1.0, (cracks, len(f.zs) + 2)) * stone
+    xyz = [xs[i] for xs, i in zip((f.xs, f.ys, f.zs), all_near)]
+    rows = row[all_near[2]] - row.min()
+    for c in range(cracks):
+        s = centre[found[rng.integers(len(found))]]
+        lean = rng.uniform(-0.35, 0.35)
+        turn = rng.uniform(0, 2 * np.pi)
+        along = np.array((np.cos(turn), np.sin(turn), lean))
+        along = along / np.linalg.norm(along)
+        long = rng.uniform(30, 70) * keen
+        off = sum(along[a] * (xyz[a] - s[a]) for a in range(3)) + jog[c, rows]
+        ends = np.clip(1 - np.sqrt(sum((xyz[a] - s[a]) ** 2 for a in range(3))) / long, 0, 1)
+        gap = np.maximum(np.sqrt(ends) * keen, 0.8 * f.h) - np.abs(off)        # never thinner than the grid can draw
+        hit = ends > 0.1
+        full[tuple(a[hit] for a in all_near)] = np.maximum(full[tuple(a[hit] for a in all_near)], gap[hit]) + 0.45 * stone * ends[hit] * (off[hit] > 0)
+    return full, soft
 
 
 ROUTES = {
