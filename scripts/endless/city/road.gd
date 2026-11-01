@@ -25,8 +25,9 @@ const Colonnade = preload("res://scripts/endless/city/colonnade.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const DEEP := 60.0
 
-## REACH is the ring the stomper's route already goes round; the road lies in it
-## and the gate's, and the row keeps the old colonnade's spot so his route holds.
+## REACH is the ring the stomper's route already goes round, about the row's spot,
+## which is the old colonnade's so his route holds. The road runs on out of it: he
+## crosses it near s 1000 and s 1330 and walks beside it to s 3000.
 const REACH := 350.0
 const LANDED := true
 ## Where the centre line starts, against the gate's back wall, in this piece's
@@ -108,7 +109,7 @@ const BAYS := 61
 ## T a column with its beam on to the next, t a column, m a broken shaft, s a stump,
 ## f a column fallen into the road, o one fallen out of it, l one leaning in,
 ## d drums, . nothing.
-const ROW_L := "-TTTtmTTTt" + "sdTTTt.mft" + "s.d.TTTt.s" + ".fs..m.d.t" + "s.s.s.t.ft"
+const ROW_L := "-TTTtmTTTt" + "sdTTTt.mft" + "s.d.TTTt.s" + ".os..m.d.t" + "s.s.s.t.ft"
 const ROW_R := "-TtfTTTts." + "TTt.sTTTTt" + "..sfd.mt.f" + "s.d.t..s.." + ".s.m.s.dlt"
 ## How much street each bay keeps from PLAN's end: F whole, G a whole slab and a
 ## gap, P patches, half sunk where the land rises, N none.
@@ -151,7 +152,7 @@ const LOW_UP := 15.0
 ## The lines, by stick: each point Vector3(s, u, h over the paving).
 const LINES := {
 	"wide":[Vector3(-60.0,0.0,20.0),Vector3(90.0,0.0,20.0),Vector3(130.0,0.0,17.0),Vector3(285.0,0.0,17.0),Vector3(322.0,0.0,25.0),Vector3(375.0,0.0,25.0),Vector3(425.0,0.0,18.0),Vector3(530.0,0.0,18.0),Vector3(578.0,0.0,29.0),Vector3(640.0,0.0,24.0),Vector3(780.0,0.0,22.0),Vector3(1220.0,0.0,24.0),Vector3(1265.0,0.0,33.0),Vector3(1330.0,0.0,33.0),Vector3(1400.0,0.0,28.0),Vector3(1560.0,0.0,28.0),Vector3(1640.0,0.0,20.0),Vector3(1700.0,0.0,20.0),Vector3(1860.0,0.0,24.0),Vector3(2130.0,0.0,24.0),Vector3(2160.0,0.0,20.0),Vector3(2200.0,0.0,24.0),Vector3(2440.0,0.0,28.0),Vector3(2570.0,0.0,28.0),Vector3(2630.0,0.0,33.0),Vector3(2690.0,0.0,33.0),Vector3(2760.0,0.0,24.0),Vector3(3100.0,0.0,24.0),Vector3(3150.0,0.0,30.0),Vector3(3300.0,0.0,20.0),Vector3(3450.0,0.0,30.0),Vector3(3520.0,0.0,34.0),Vector3(3580.0,0.0,48.0),Vector3(3640.0,0.0,56.0),Vector3(3690.0,0.0,80.0),Vector3(3793.0,0.0,150.0),Vector3(3850.0,0.0,150.0)],
-	"tight":[Vector3(5.0,86.0,10.0),Vector3(60.0,62.0,10.0),Vector3(85.0,42.0,10.0),Vector3(106.0,28.0,11.0),Vector3(175.0,29.0,11.0),Vector3(215.0,8.0,11.0),Vector3(245.0,5.0,11.0),Vector3(285.0,16.0,11.0),Vector3(310.0,9.0,5.0),Vector3(355.0,9.0,5.0),Vector3(400.0,26.0,10.0),Vector3(450.0,29.0,11.0),Vector3(478.0,29.0,11.0),Vector3(520.0,12.0,11.0),Vector3(582.0,12.0,11.0),Vector3(660.0,0.0,14.0),Vector3(740.0,0.0,14.0),Vector3(800.0,0.0,5.0),Vector3(905.0,0.0,5.0),Vector3(980.0,0.0,12.0),Vector3(1050.0,28.0,14.0),Vector3(1110.0,28.0,14.0),Vector3(1190.0,-14.0,11.0),Vector3(1330.0,-14.0,11.0),Vector3(1410.0,0.0,10.0),Vector3(1440.0,6.0,10.0),Vector3(1470.0,-6.0,10.0),Vector3(1500.0,6.0,10.0),Vector3(1530.0,-6.0,10.0),Vector3(1580.0,8.0,14.0),Vector3(1650.0,20.0,18.0),Vector3(1750.0,10.0,14.0),Vector3(1860.0,-20.0,14.0),Vector3(1900.0,-20.0,12.0),Vector3(1945.0,0.0,3.0),Vector3(2045.0,0.0,3.0),Vector3(2100.0,14.0,12.0),Vector3(2160.0,24.0,14.0),Vector3(2220.0,60.0,14.0),Vector3(2280.0,22.0,14.0),Vector3(2340.0,60.0,14.0),Vector3(2400.0,24.0,12.0),Vector3(2440.0,0.0,10.0),Vector3(2460.0,6.0,10.0),Vector3(2490.0,-6.0,10.0),Vector3(2520.0,6.0,10.0),Vector3(2545.0,-6.0,13.0),Vector3(2570.0,4.0,14.0),Vector3(2615.0,16.0,12.0),Vector3(2690.0,16.0,11.0),Vector3(2790.0,14.0,10.0),Vector3(2890.0,-14.0,12.0),Vector3(3030.0,-14.0,12.0),Vector3(3060.0,0.0,10.0),Vector3(3110.0,0.0,5.0),Vector3(3180.0,0.0,5.0),Vector3(3300.0,0.0,10.0),Vector3(3420.0,0.0,6.0),Vector3(3480.0,0.0,6.0),Vector3(3520.0,0.0,20.0),Vector3(3580.0,0.0,44.0),Vector3(3640.0,0.0,56.0),Vector3(3690.0,0.0,80.0),Vector3(3793.0,0.0,150.0),Vector3(3850.0,0.0,150.0)],
+	"tight":[Vector3(5.0,86.0,10.0),Vector3(60.0,62.0,10.0),Vector3(85.0,42.0,10.0),Vector3(106.0,28.0,11.0),Vector3(175.0,29.0,11.0),Vector3(215.0,8.0,11.0),Vector3(245.0,5.0,11.0),Vector3(285.0,16.0,11.0),Vector3(310.0,9.0,5.0),Vector3(355.0,9.0,5.0),Vector3(400.0,26.0,10.0),Vector3(450.0,29.0,11.0),Vector3(478.0,29.0,11.0),Vector3(520.0,12.0,11.0),Vector3(582.0,12.0,11.0),Vector3(660.0,0.0,14.0),Vector3(740.0,0.0,14.0),Vector3(800.0,0.0,5.0),Vector3(905.0,0.0,5.0),Vector3(980.0,0.0,12.0),Vector3(1050.0,28.0,14.0),Vector3(1110.0,28.0,14.0),Vector3(1190.0,-14.0,11.0),Vector3(1330.0,-14.0,11.0),Vector3(1410.0,0.0,10.0),Vector3(1440.0,6.0,10.0),Vector3(1470.0,-6.0,10.0),Vector3(1500.0,6.0,10.0),Vector3(1530.0,-6.0,10.0),Vector3(1580.0,8.0,14.0),Vector3(1650.0,20.0,18.0),Vector3(1750.0,10.0,14.0),Vector3(1860.0,-20.0,14.0),Vector3(1900.0,-20.0,12.0),Vector3(1945.0,0.0,3.0),Vector3(2045.0,0.0,3.0),Vector3(2090.0,14.0,12.0),Vector3(2150.0,24.0,14.0),Vector3(2220.0,24.0,14.0),Vector3(2284.0,68.0,14.0),Vector3(2350.0,16.0,14.0),Vector3(2392.0,20.0,12.0),Vector3(2440.0,0.0,10.0),Vector3(2460.0,6.0,10.0),Vector3(2490.0,-6.0,10.0),Vector3(2520.0,6.0,10.0),Vector3(2545.0,-6.0,13.0),Vector3(2570.0,4.0,14.0),Vector3(2615.0,16.0,12.0),Vector3(2690.0,16.0,11.0),Vector3(2790.0,14.0,10.0),Vector3(2890.0,-14.0,12.0),Vector3(3030.0,-14.0,12.0),Vector3(3060.0,0.0,10.0),Vector3(3110.0,0.0,5.0),Vector3(3180.0,0.0,5.0),Vector3(3300.0,0.0,10.0),Vector3(3420.0,0.0,6.0),Vector3(3480.0,0.0,6.0),Vector3(3520.0,0.0,20.0),Vector3(3580.0,0.0,44.0),Vector3(3640.0,0.0,56.0),Vector3(3690.0,0.0,80.0),Vector3(3793.0,0.0,150.0),Vector3(3850.0,0.0,150.0)],
 }
 
 static var _pts := PackedVector3Array()
