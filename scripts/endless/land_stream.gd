@@ -468,8 +468,15 @@ static func _edges() -> Array:
 static func _portal_holes(f: RefCounted, made: Dictionary, key: Vector3i, x0: float, z0: float, step: float) -> void:
 	if not f.has_method("tunnels_in"): return
 	var ts: Array = f.tunnels_in(x0,z0,x0+step*CELLS,z0+step*CELLS)
-	if ts.is_empty(): return
-	var mask: PackedByteArray = Tunnels.portal_mask(ts,x0,z0,step,CELLS)
+	var mask := PackedByteArray()
+	if not ts.is_empty(): mask = Tunnels.portal_mask(ts,x0,z0,step,CELLS)
+	# The ice tunnel's mouths, its gully and its window (PeakTunnel `hole_mask`).
+	var ice: Variant = f.get("ice_tunnel")
+	if ice != null:
+		var got: PackedByteArray = ice.hole_mask(made.verts,x0,z0,step,CELLS)
+		if mask.is_empty(): mask = got
+		elif not got.is_empty():
+			for i in mask.size(): mask[i] = mask[i] | got[i]
 	if mask.is_empty(): return
 	var n := CELLS+1
 	var out := PackedInt32Array()

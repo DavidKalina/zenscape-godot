@@ -36,9 +36,11 @@ const KNOTS := [
 	[1060.0,-15.0],
 	[960.0,45.0],
 	[770.0,165.0],
-	[612.0,148.0],
-	[540.0,100.0],
-	[450.0,40.0],
+	[640.0,172.0],
+	[560.0,195.0],
+	[480.0,160.0],
+	[400.0,70.0],
+	[345.0,5.0],
 ]
 ## The floor: (m along the path, height over the sea), straight between,
 ## then smoothed. Level past mouth A, under the ice gorge's first bowl (its
@@ -68,16 +70,19 @@ const CHAMBER_EASE := 40.0
 const WINDOWS := [1085.0]
 const WINDOW_R := 8.0
 ## The mouths: where the bore meets the land (m along the path); the tube
-## runs MOUTH_OUT m past each face.
+## runs MOUTH_OUT_A / MOUTH_OUT_B m past each, out to where the land in front
+## comes down to the floor (the bank under mouth A is a 40 m ramp).
 const MOUTH_A := 105.0
-const MOUTH_B := 1830.0
+const MOUTH_B := 1815.0
 const MOUTH_OUT := 14.0
+const MOUTH_OUT_A := 50.0
+const MOUTH_OUT_B := 45.0
 ## The open stretches (m along the path): where the land comes down into the
 ## bore, so the land is holed where it lies inside the bore (HOLE_PAD m past
 ## the vault) and the tube's mesh is trimmed where it stands out of the land:
 ## the two mouths, and the gully between the blade and the spine that the
 ## bore crosses in the open (a window to the sky, 160 m of slot in its floor).
-const OPENINGS := [Vector2(MOUTH_A-16.0,MOUTH_A+26.0),Vector2(1380.0,1570.0),Vector2(MOUTH_B-26.0,MOUTH_B+16.0)]
+const OPENINGS := [Vector2(MOUTH_A-MOUTH_OUT_A,MOUTH_A+26.0),Vector2(1380.0,1570.0),Vector2(MOUTH_B-26.0,MOUTH_B+MOUTH_OUT_B)]
 const HOLE_PAD := 3.0
 ## The window's hole: WINDOW_PAD m past its rim.
 const WINDOW_PAD := 2.0
@@ -280,7 +285,7 @@ static func half_at(pr: Vector3, h: float) -> float:
 ## On an open stretch the solid is the bore only where the land is over it
 ## (land_ice_tunnel.gd `ground`).
 func on_tube(s: float) -> bool:
-	return s >= MOUTH_A-MOUTH_OUT and s <= MOUTH_B+MOUTH_OUT
+	return s >= MOUTH_A-MOUTH_OUT_A and s <= MOUTH_B+MOUTH_OUT_B
 
 ## Whether `s` is on an open stretch (OPENINGS), `pad` m wider each way.
 static func open_at(s: float, pad := 0.0) -> bool:
