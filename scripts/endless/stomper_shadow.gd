@@ -20,6 +20,8 @@ const SUN_LOW := 0.08
 var _body: Node3D
 var _sun_of: RefCounted
 var _mat: ShaderMaterial
+## Another material that reads the same table (the dust, to darken in the shade).
+var _also: ShaderMaterial
 var _seg := PackedVector4Array()
 var _cap := PackedVector2Array()
 
@@ -44,6 +46,9 @@ func setup(study: Node, stomper: Node3D) -> void:
 	_cap.resize(CAPSULES)
 	step()
 
+func also(material: ShaderMaterial) -> void:
+	_also = material
+
 func step() -> void:
 	var sun: Vector3 = _sun_of.state.zs_sun_direction
 	visible = sun.y > SUN_LOW
@@ -57,12 +62,13 @@ func step() -> void:
 		var b: Vector3 = solid.b[i]-at
 		_seg[i] = Vector4(a.dot(across),a.dot(over),b.dot(across),b.dot(over))
 		_cap[i] = Vector2(solid.radius[i],(a+b).dot(sun)*0.5+solid.radius[i])
-	_mat.set_shader_parameter("seg",_seg)
-	_mat.set_shader_parameter("cap",_cap)
-	_mat.set_shader_parameter("at",at)
-	_mat.set_shader_parameter("sun",sun)
-	_mat.set_shader_parameter("across",across)
-	_mat.set_shader_parameter("over",over)
+	for m: ShaderMaterial in ([_mat] if _also == null else [_mat,_also]):
+		m.set_shader_parameter("seg",_seg)
+		m.set_shader_parameter("cap",_cap)
+		m.set_shader_parameter("at",at)
+		m.set_shader_parameter("sun",sun)
+		m.set_shader_parameter("across",across)
+		m.set_shader_parameter("over",over)
 	# Down the sun off the body, as long as the top of it throws.
 	var flat := Vector3(sun.x,0.0,sun.z)
 	var away := -flat.normalized()

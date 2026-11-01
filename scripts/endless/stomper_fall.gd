@@ -214,6 +214,10 @@ func _write_rings() -> void:
 
 ## The puffs of one landing: the skirt thrown out along the ground, which it
 ## follows to where it stops; the column going up off the foot.
+## The dust's material, for what feeds it the body's shape (stomper_shadow.gd).
+func dust_material() -> ShaderMaterial:
+	return _dust_mat
+
 func _raise_dust(at: Vector3) -> void:
 	for i in range(SKIRT):
 		var a := TAU*(float(i)+_rng.randf_range(-0.4,0.4))/float(SKIRT)

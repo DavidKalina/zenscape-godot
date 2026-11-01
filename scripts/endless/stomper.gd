@@ -157,6 +157,7 @@ func setup(study: Node) -> void:
 		shadow = Shadow.new()
 		add_child(shadow)
 		shadow.setup(study,self)
+		if fall != null: shadow.also(fall.dust_material())
 	visible = _plane_here()
 
 ## Whether it may stand at (x, z): on its side of the door, off the hall's mouth.

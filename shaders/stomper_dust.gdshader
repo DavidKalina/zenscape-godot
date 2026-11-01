@@ -34,12 +34,25 @@ uniform float scatter = 0.42;
 // How many times its size a puff ends at, and how soft it lies on the ground (m).
 uniform float grow = 2.6;
 uniform float soft = 26.0;
+// The body's capsules down the sun (stomper_shadow.gd, its shader's table): a puff
+// whose middle is in the body's shadow takes no sun, or it floats lit over the
+// dark pool like a stain.
+uniform vec4 seg[17];
+uniform vec2 cap[17];
+uniform vec3 at;
+uniform vec3 sun = vec3(0.0, 1.0, 0.0);
+uniform vec3 across = vec3(1.0, 0.0, 0.0);
+uniform vec3 over = vec3(0.0, 0.0, 1.0);
+// The penumbra's half width (m), wide as a puff; how much sun the shade takes out.
+uniform float shade_soft = 45.0;
+uniform float shade_most = 0.8;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
 
 varying float v_k;
 varying float v_seed;
 varying float v_thick;
 varying float v_rise;
+varying float v_shade;
 varying vec2 v_uv;
 varying vec3 v_sun;
 // The view depth: VERTEX here is the raw quad under a transform that holds data.
@@ -55,6 +68,23 @@ float vnoise(vec2 p) {
 	f = f * f * (3.0 - 2.0 * f);
 	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
 		mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+float shaded(vec3 c) {
+	vec3 off = c - at;
+	vec2 p = vec2(dot(off, across), dot(off, over));
+	float toward = dot(off, sun);
+	float d = 1e9;
+	for (int i = 0; i < 17; i++) {
+		if (toward > cap[i].y) {
+			continue;
+		}
+		vec2 pa = p - seg[i].xy;
+		vec2 ba = seg[i].zw - seg[i].xy;
+		float h = clamp(dot(pa, ba) / max(dot(ba, ba), 0.001), 0.0, 1.0);
+		d = min(d, length(pa - ba * h) - cap[i].x);
+	}
+	return 1.0 - smoothstep(-shade_soft, shade_soft, d);
 }
 
 void vertex() {
@@ -74,6 +104,7 @@ void vertex() {
 		vec3 c = MODEL_MATRIX[3].xyz + way;
 		float s = INSTANCE_CUSTOM.z * mix(1.0, grow, sqrt(k));
 		vec3 w = c + (INV_VIEW_MATRIX[0].xyz * VERTEX.x + INV_VIEW_MATRIX[1].xyz * VERTEX.y * MODEL_MATRIX[2].x) * s;
+		v_shade = shaded(c);
 		vec4 view = VIEW_MATRIX * vec4(w, 1.0);
 		v_depth = -view.z;
 		POSITION = PROJECTION_MATRIX * view;
@@ -105,6 +136,6 @@ void fragment() {
 	sunny = max(sunny, through * clamp(-v_sun.z, 0.0, 1.0) * (1.0 - a));
 	float up = nrm.y * INV_VIEW_MATRIX[1].y * 0.5 + 0.5;
 	vec3 fill = mix(zs_hemi_ground, zs_hemi_sky, up) * zs_hemi_energy;
-	ALBEDO = soil * (fill * fill_gain + sqrt(zs_cloud_sun) * mix(scatter, 1.0, sunny));
+	ALBEDO = soil * (fill * fill_gain + sqrt(zs_cloud_sun) * mix(scatter, 1.0, sunny) * (1.0 - v_shade * shade_most));
 	ALPHA = a;
 }
