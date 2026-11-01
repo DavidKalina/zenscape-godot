@@ -61,7 +61,7 @@ const REACH := 0.985
 const SINK_RATE := 16.0
 ## Its stone (shaders/stomper_stone.gdshader), the ruins' with its own maps.
 const STONE = preload("res://shaders/stomper_stone.gdshader")
-const LAND_BOUNCE := 0.8
+const LAND_BOUNCE := 0.6
 ## The metres a vertex colour's channel spans and where the rest pose starts in
 ## it, for the stone's blotches (stomper_stone.gdshader).
 const REST_SPAN := 290.0

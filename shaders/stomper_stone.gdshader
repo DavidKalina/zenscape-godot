@@ -19,6 +19,11 @@ uniform vec3 soil : source_color = vec3(0.42, 0.38, 0.26);
 uniform float rest_span = 290.0;
 uniform vec3 land_tint : source_color = vec3(0.72, 0.68, 0.6);
 uniform float land_bounce = 1.0;
+// The baked cuts: darkest shade in them, and how far the relief's slope darkens a
+// cut's walls, so the carving holds at the distance the sun alone would flatten it.
+uniform float shade_low = 0.42;
+uniform float cut_dark = 0.38;
+uniform float relief_depth = 1.3;
 varying vec3 rest;
 varying float rest_up;
 varying vec3 world_normal;
@@ -41,15 +46,17 @@ void fragment() {
 	float fine = tri(rest * 0.05, n);
 	float ao = texture(shade, UV).r;
 	vec3 stone = mix(stone_b, stone_a, smoothstep(0.25, 0.75, broad * 0.7 + fine * 0.3));
-	stone *= mix(0.72, 1.05, smoothstep(0.0, 0.8, ao));
+	vec3 bump = texture(relief, UV).xyz;
+	float cut = smoothstep(0.22, 0.65, length(bump.xy * 2.0 - 1.0));
+	stone *= mix(shade_low, 1.05, smoothstep(0.1, 0.85, ao)) * (1.0 - cut_dark * cut);
 	// Much less soil than a ruin's: it walks.
 	float s = 0.5 * smoothstep(0.9, 1.3, rest_up + (broad - 0.5) * 0.8 + (1.0 - ao) * 0.2);
 	ALBEDO = mix(stone, soil, s);
-	NORMAL_MAP = texture(relief, UV).xyz;
-	NORMAL_MAP_DEPTH = mix(0.9, 0.4, s);
-	AO = mix(0.6, 1.0, ao);
+	NORMAL_MAP = bump;
+	NORMAL_MAP_DEPTH = relief_depth * mix(1.0, 0.45, s);
+	AO = mix(0.45, 1.0, ao);
 	ROUGHNESS = 0.95;
 	SPECULAR = 0.2;
 	float sunward = clamp(dot(n, zs_key_direction), 0.0, 1.0);
-	EMISSION = ALBEDO * ao * zs_cloud_sun * land_tint * land_bounce * mix(0.45, 1.0, clamp(0.5 - 0.5 * n.y, 0.0, 1.0)) * (1.0 - 0.6 * sunward) * (1.0 - zs_under);
+	EMISSION = ALBEDO * ao * ao * zs_cloud_sun * land_tint * land_bounce * mix(0.45, 1.0, clamp(0.5 - 0.5 * n.y, 0.0, 1.0)) * (1.0 - 0.6 * sunward) * (1.0 - zs_under);
 }
