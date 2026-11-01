@@ -18,8 +18,8 @@ the gray box's docs/design/endless-flight/pirate-ship-handoff.md. Blender
 Textures are painted here in numpy: `hull` and `stern` are unique maps (one
 for a side's elevation, shared by both sides, one for both flat ends),
 projected straight on, so stains run across the planks; `wood` tiles; `sail`
-is an atlas of torn cloth with a cut-out alpha. Vertex colours carry baked darkness:
-interior light falling off from the gun ports, shade under decks.
+is an atlas of torn cloth with a cut-out alpha. Vertex colours carry baked darkness,
+shade under decks; the gun deck's light is drawn by its `deck` shader.
 """
 import json
 import math
@@ -70,8 +70,26 @@ OPEN_MARGIN = 0.25        # the torn edge stands at least this far off that rect
 TOOTH = 0.2               # splinters reach this far into the hole, at most
 PLUG_RECESS = -0.02       # a plug's face over the hull's, flush (negative: proud)
 PLUG_THICK = 1.2          # the plate's depth, to its rear face
-SPLIT_SCALE = 1.0         # the visible split's width (1: as drawn in SPLIT)
-SHARDS = 12               # shards in each plug
+SHARDS = 30               # shards in each plug
+# The wound: how a plug's strakes break. WOUND_OPEN is how open the plate is at its
+# middle (0-1), WOUND_LUMP how much the holes wander and join up, WOUND_EDGE where
+# across the plate (0 middle, 1 edge) the planking turns sound. FRAME_X: the frames
+# behind the planks that keep it shut, snapped here and there.
+WOUND_OPEN = 0.62
+WOUND_LUMP = 0.8
+WOUND_CUT = 0.33          # raise for more planking left
+WOUND_EDGE = 0.72
+BOARD_T = 0.24            # a loose board's thickness
+BOARD_LEN = 2.3           # the longest piece; a shard is a board or two
+FINGER = 1.1              # the longest splinter off a broken end, along the grain
+SPRUNG = 1.5              # how far a broken end stands out of the hull, at most
+SAG = 0.55                # how far it hangs into the hole, at most
+HANGERS = 7               # planks torn loose, hanging from one end
+FRAME_X = (-5.6, -1.9, 2.3, 5.9)
+FRAME_W = 0.55
+COVER_BACK = 0.95         # the black sheet's depth behind the plug's face
+PLUG_TONE = 1.0           # the plug's planks against the hull's: shadowed, sooty
+BROKE = (0.86, 0.74, 0.62)   # a broken face, over the stern's own weathered map
 
 # The hull's shell and frame.
 STRAKE = 1.25             # a plank's height; the ports and decks fall on these lines
@@ -109,6 +127,15 @@ GUN_LEN = 5.5
 GUN_BORE_R = 0.5          # the barrel's reach at the muzzle
 LEDGE_Z = 5.9             # the gun ledge along each wall
 
+# The gun deck's light: drawn in ship_deck's shader, no real lights. Lanterns in the
+# bays between the guns, sun through the gun ports (`PORTS`, on the sun's side). The
+# relic's bay has no lantern, so it hangs in gloom. Lantern: x, height, pitch, the
+# bays lit. Kept in step with the shader by write_materials.
+LAMP_X = COR_W * 0.5 + 0.4
+LAMP_Z = COR_TOP - 1.2
+LAMP_BAYS = (-48.0, -32.0, -16.0, 16.0, 32.0, 48.0)
+LAMP_PITCH = 16.0
+
 # The masts: y, lower top, topmast top, truck. Trucks at the collision boxes' tops.
 MASTS = (
 	(22.0, 36.0, 48.0, 55.0),    # Mast_1, fore
@@ -131,15 +158,6 @@ STERN_TEX = 2048
 WOOD_TEX = 1024
 WOOD_TILE = 6.0           # the tile's size (m)
 SAIL_TEX = 2048
-
-# The split in the planks, drawn for a 10 x 8 crack: (height over COR_Z, x,
-# half width). The main run, then two branches. The same drawing at both ends
-# (each seen from outside, so mirrored). Scaled with CRACK_W, CRACK_H.
-SPLIT = (
-	((-5.8, 0.8, 0.1), (-3.9, -0.4, 0.85), (-2.0, 0.9, 1.25), (0.2, -0.2, 1.55), (2.1, 0.8, 1.3), (3.6, -0.6, 1.0), (5.2, 0.2, 0.7), (6.4, -0.5, 0.1)),
-	((-1.5, 1.6, 0.15), (-0.2, 2.5, 0.55), (1.3, 3.7, 0.45), (2.5, 4.7, 0.06)),
-	((1.4, -1.4, 0.15), (-0.2, -2.5, 0.5), (-1.6, -3.6, 0.42), (-2.8, -4.6, 0.06)),
-)
 
 WHITE = (1.0, 1.0, 1.0)
 RAW = (0.95, 0.76, 0.54)    # fresh-broken wood, on the wood tile
@@ -298,49 +316,33 @@ def stern_uv(x, z):
 	return ((x + END_SPAN * 0.5) / END_SPAN, (z - Z_BOT) / (Z_TOP - Z_BOT))
 
 
-# --- The split and the holes --------------------------------------------------
-
-def _along(path, z):
-	if z < path[0][0] or z > path[-1][0]:
-		return None
-	for a, b in zip(path, path[1:]):
-		if a[0] <= z <= b[0]:
-			t = (z - a[0]) / max(1e-6, b[0] - a[0])
-			return lerp(a[1], b[1], t), lerp(a[2], b[2], t)
-	return None
-
-
-def _split_paths(flip):
-	sx, sz = CRACK_W / 10.0 * (-1.0 if flip else 1.0), CRACK_H / 8.0
-	out = []
-	for path in SPLIT:
-		pts = sorted((d * sz, x * sx, w * abs(sx) * SPLIT_SCALE) for d, x, w in path)
-		out.append(pts)
-	return out
-
+# --- The wound --------------------------------------------------------------
 
 class Opening:
-	"""An end of the ship: which planks are hole, which plug, on each strake."""
+	"""An end of the ship: where the hull stops for the plug, what's left of the plug."""
 
-	def __init__(self, surface, flip, seed, shards):
+	def __init__(self, surface, seed, shards):
 		self.surf = surface
-		self.paths = _split_paths(flip)
 		self.rng = random.Random(seed)
 		rng = random.Random(seed + 1)
+		self.phase = [rng.uniform(0.0, math.tau) for _ in range(6)]
 		self.seeds = []
-		hw, hh = CRACK_W * 0.5 + OPEN_MARGIN + 0.5, CRACK_H * 0.5 + OPEN_MARGIN + 2.0
+		hw, hh = CRACK_W * 0.5, CRACK_H * 0.5
 		while len(self.seeds) < shards:
 			p = (rng.uniform(-hw, hw), rng.uniform(COR_Z - hh, COR_Z + hh))
-			if all((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 > (hw * hh * 1.1 / shards) for q in self.seeds):
+			if all((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 > (hw * hh * 0.9 / shards) for q in self.seeds):
 				self.seeds.append(p)
 		self.memo = {}
 
-	def gap(self, x, z):
-		for path in self.paths:
-			hit = _along(path, z - COR_Z)
-			if hit and abs(x - hit[0]) < hit[1]:
-				return True
-		return False
+	def shard_of(self, x, z):
+		return min(range(len(self.seeds)), key=lambda i: (self.seeds[i][0] - x) ** 2 + ((self.seeds[i][1] - z) * 1.3) ** 2)
+
+	def open_at(self, x, z):
+		"""Whether the planking's gone here: round the middle, in wandering lumps."""
+		f = self.phase
+		lump = 0.5 + 0.25 * math.sin(x * 0.8 + f[0] + 1.4 * math.sin(z * 0.62 + f[1])) + 0.25 * math.sin(z * 1.25 + f[2] + 1.1 * math.sin(x * 0.55 + f[3]))
+		e = ((abs(x) / (CRACK_W * 0.5)) ** 4 + (abs(z - COR_Z) / (CRACK_H * 0.5)) ** 4) ** 0.25
+		return WOUND_OPEN * sstep(1.0, WOUND_EDGE, e) + WOUND_LUMP * (lump - 0.5) > WOUND_CUT
 
 	def extent(self, j):
 		"""The plug's reach (a, b) in x on strake j, or None."""
@@ -354,40 +356,29 @@ class Opening:
 		if z1 > COR_Z - CRACK_H * 0.5 + 0.01 and z0 < COR_Z + CRACK_H * 0.5 - 0.01:
 			w = half_beam(self.surf.p(0.0, zm).y * 0.999, zm) - 0.25
 			hit = (-min(w, hw + OPEN_MARGIN + rng.uniform(0.0, 0.9)), min(w, hw + OPEN_MARGIN + rng.uniform(0.0, 0.9)))
-		else:
-			xs = []
-			for path in self.paths:
-				at = _along(path, zm)
-				at = _along(path, zm - COR_Z)
-				if at:
-					xs += [at[0] - at[1], at[0] + at[1]]
-			if xs:
-				hit = (min(xs) - rng.uniform(0.5, 1.6), max(xs) + rng.uniform(0.5, 1.6))
 		self.memo[j] = hit
 		return hit
 
-	def cells(self, j):
-		"""Runs (x0, x1, label) across the plug on strake j; label -1 is the gap."""
-		ext = self.extent(j)
-		if ext is None:
-			return []
+	def runs(self, j):
+		"""What stands of strake j: (x0, x1, torn at x0, torn at x1), in pieces."""
+		a, b = self.extent(j)
 		zm = (row_z(j) + row_z(j + 1)) * 0.5
-		a, b = ext
-		xs = frange(a, b, 0.3)
-		labels = []
-		for x in xs[:-1]:
-			mid = x + 0.15
-			if self.gap(mid, zm):
-				labels.append(-1)
-				continue
-			labels.append(min(range(len(self.seeds)), key=lambda i: (self.seeds[i][0] - mid) ** 2 + ((self.seeds[i][1] - zm) * 0.7) ** 2))
-		runs = []
-		for i, lab in enumerate(labels):
-			if runs and runs[-1][2] == lab:
-				runs[-1][1] = xs[i + 1]
-			else:
-				runs.append([xs[i], xs[i + 1], lab])
-		return [r for r in runs]
+		rng = self.rng
+		out = []
+		x = a
+		was_open = False
+		while x < b - 0.2:
+			step = min(b - x, rng.uniform(0.7, BOARD_LEN))
+			if b - x - step < 0.5:
+				step = b - x
+			gone = self.open_at(x + step * 0.5, zm)
+			if not gone:
+				out.append([x, x + step, was_open, False])
+			elif out and out[-1][1] == x:
+				out[-1][3] = True
+			was_open = gone
+			x += step
+		return out
 
 
 def row_z(j):
@@ -398,12 +389,11 @@ ROWS = int((RAIL_POOP - KEEL_Z) / STRAKE) + 1
 
 
 def inner_light(p):
-	"""How much daylight reaches a point on the gun deck (baked, 0-1)."""
-	best = 0.0
-	for y in PORTS:
-		d = math.sqrt((p.y - y) ** 2 + (0.55 * (abs(p.x) - 10.0)) ** 2 + (0.7 * (p.z - GUN_Z)) ** 2)
-		best += max(0.0, 1.0 - d / 9.0) ** 2
-	return min(1.0, 0.16 + 0.75 * best)
+	"""Grime baked on the gun deck (0-1): the hold's corners and overhead. The light
+	itself is the deck shader's, drawn over this, so no bay starves."""
+	over = sstep(COR_TOP - 1.0, CEIL, p.z)
+	wall = sstep(7.5, 10.0, abs(p.x))
+	return 1.0 - 0.45 * over - 0.3 * wall
 
 
 def inner(tint=WHITE, k=1.0):
@@ -415,7 +405,7 @@ def inner(tint=WHITE, k=1.0):
 
 # --- Mesh building ------------------------------------------------------------
 
-MAT_NAMES = ("hull", "stern", "wood", "wood_in", "iron", "sail", "rope", "glass", "dark", "paint")
+MAT_NAMES = ("hull", "stern", "wood", "wood_in", "iron", "sail", "rope", "glass", "dark", "paint", "iron_in", "lamp", "plug")
 M = {n: i for i, n in enumerate(MAT_NAMES)}
 
 
@@ -506,7 +496,7 @@ class Geo:
 				self.face(ids, mat, d)
 
 
-def plank(g, S, u0, u1, z0, z1, mat="hull", col=WHITE, lip=PLANK_LIP, back=0.0, offset=0.0, jag=(False, False), peel=(0.0, 0.0), rng=None, teeth=None, stations=None, inward=False, tooth_off=0.0):
+def plank(g, S, u0, u1, z0, z1, mat="hull", col=WHITE, lip=PLANK_LIP, back=0.0, offset=0.0, jag=(False, False), peel=(0.0, 0.0), rng=None, teeth=None, stations=None, inward=False, tooth_off=0.0, end_col=(0.55, 0.42, 0.28), raw=None):
 	"""One run of a strake on surface S, from u0 to u1, between base heights.
 
 	`peel` springs an end out from the hull. `jag` leaves that end torn, its
@@ -552,13 +542,13 @@ def plank(g, S, u0, u1, z0, z1, mat="hull", col=WHITE, lip=PLANK_LIP, back=0.0, 
 	for end, sign, r in ((0, -1.0, rows[0]), (1, 1.0, rows[-1])) if not inward else ():
 		along = S.p(us[0 if end == 0 else -1] + sign * 0.1, zm) - S.p(us[0 if end == 0 else -1], zm)
 		if along.length > 1e-6:
-			g.quad(r[2], r[3], r[1] + r[5] * (r[6] - max(back, 0.25)), r[0] + r[5] * (r[6] - max(back, 0.25)), "wood", col=(0.55, 0.42, 0.28), hint=along)
+			g.quad(r[2], r[3], r[1] + r[5] * (r[6] - max(back, 0.25)), r[0] + r[5] * (r[6] - max(back, 0.25)), "wood", col=end_col, hint=along)
 		if jag[end] and rng is not None:
-			splinters(teeth if teeth is not None else g, S, us[0 if end == 0 else -1], sign, z0, z1, r[6] + tooth_off, rng, TOOTH if teeth is not None else 1.9)
+			splinters(teeth if teeth is not None else g, S, us[0 if end == 0 else -1], sign, z0, z1, r[6] + tooth_off, rng, TOOTH if teeth is not None else 1.9, raw)
 
 
-def splinters(g, S, u, sign, z0, z1, off, rng, tooth=TOOTH):
-	"""Torn wood at a plank's end: pale tapered tips in fresh-broken colour."""
+def splinters(g, S, u, sign, z0, z1, off, rng, tooth=TOOTH, raw=None):
+	"""Torn wood at a plank's end: tapered tips, by default in fresh-broken colour."""
 	n = rng.randint(2, 4)
 	edges = sorted([z0, z1] + [rng.uniform(z0, z1) for i in range(n - 1)])
 	for a, b in zip(edges, edges[1:]):
@@ -572,7 +562,8 @@ def splinters(g, S, u, sign, z0, z1, off, rng, tooth=TOOTH):
 		back_b = root_b - nn * 0.22
 		root_lip_a = root_a + nn * PLANK_LIP
 		tint = rng.uniform(0.75, 1.15)
-		c = (RAW[0] * tint, RAW[1] * tint, RAW[2] * tint)
+		base = RAW if raw is None else raw
+		c = (base[0] * tint, base[1] * tint, base[2] * tint)
 		along = Vector(tip - (root_a + root_b) * 0.5)
 		for tri in ((root_lip_a, root_b, tip), (back_b, back_a, tip), (root_a, back_a, tip), (back_b, root_b, tip)):
 			ids = [g.vert(p, (p.x * 0.3, p.z * 0.3 + p.y * 0.3), c) for p in tri]
@@ -624,7 +615,7 @@ def shot_holes(rng):
 
 
 def build_end(g, teeth, shards, sign, op, rng):
-	"""A flat end across the ship, strake by strake, the plug and its split in it."""
+	"""A flat end across the ship, strake by strake, round the plug."""
 	T = op.surf
 	top = RAIL_POOP + sheer(-LENGTH * 0.5) if sign < 0 else RAIL_FORE + sheer(LENGTH * 0.5)
 	crown = CROWN if sign < 0 else 0.0
@@ -644,15 +635,148 @@ def build_end(g, teeth, shards, sign, op, rng):
 		ext = op.extent(j)
 		cuts = [ext] if ext else []
 		for a, b, t0, t1 in spans_of(cuts, -w, w):
-			plank(g, T, a, b, z0, z1, "stern", lip=0.08, jag=(t0, t1), rng=rng, teeth=teeth, stations=frange(a, b, 3.0), tooth_off=-PLUG_RECESS - 0.3)
-		for x0, x1, lab in op.cells(j):
-			if lab < 0:
-				continue
-			# Planks either side of the split spring out of the plug.
-			nearl = op.gap(x0 - 0.3, zm)
-			nearr = op.gap(x1 + 0.3, zm)
-			pk = (rng.uniform(0.5, 2.8) if nearl and rng.random() < 0.45 else 0.0, rng.uniform(0.5, 2.8) if nearr and rng.random() < 0.45 else 0.0)
-			plank(shards[lab], T, x0 - 0.015, x1 + 0.015, z0, z1, "stern", lip=0.06, back=PLUG_THICK, offset=-PLUG_RECESS, jag=(nearl, nearr), peel=pk, rng=rng, stations=frange(x0, x1, 2.5))
+			plank(g, T, a, b, z0, z1, "stern", lip=0.08, jag=(t0, t1), rng=rng, teeth=teeth, stations=frange(a, b, 3.0), tooth_off=-PLUG_RECESS - 0.3, end_col=WEATHERED, raw=WEATHERED)
+	build_plug(op, shards, rng)
+
+
+WEATHERED = (0.2, 0.155, 0.115)    # a torn hull plank's end, on the wood tile
+
+
+def board(g, at, uv, s0, s1, t0, t1, rng, torn=(False, False), spring=(0.0, 0.0), sag=(0.0, 0.0), tone=1.0, thick=BOARD_T):
+	"""A plank, broken by hand: slivers along the grain, s along it, t across.
+
+	`at(s, t, off)` is a point, `off` out of the hull; `uv` its map place. A torn
+	end leaves the slivers at different lengths, tapering, the way wood goes; it
+	stands out by `spring` and hangs by `sag`, over the last few metres.
+	"""
+	n = 3 if t1 - t0 > 0.6 else 2
+	cuts = sorted([t0, t1] + [rng.uniform(t0 + 0.12, t1 - 0.12) for _ in range(n - 1)])
+	face = (0.5 * (t0 + t1))
+	length = s1 - s0
+	for a, b in zip(cuts, cuts[1:]):
+		reach = [rng.uniform(0.15, 1.0) ** 2.2 * FINGER if torn[e] else 0.0 for e in (0, 1)]
+		sa, sb = s0 + reach[0], s1 - reach[1]
+		if sb - sa < 0.15:
+			continue
+		nudge = rng.uniform(-0.05, 0.05)
+		sts = frange(sa, sb, 1.0 if spring[0] or spring[1] or sag[0] or sag[1] else 99.0)
+		def row(st, end):
+			w0 = max(0.0, 1.0 - (st - s0) / max(length, 2.0)) ** 2
+			w1 = max(0.0, 1.0 - (s1 - st) / max(length, 2.0)) ** 2
+			off = nudge + spring[0] * w0 + spring[1] * w1
+			drop = sag[0] * w0 + sag[1] * w1
+			ta, tb = a, b
+			if end is not None and torn[end]:
+				tip = lerp(a, b, rng.uniform(0.15, 0.85))
+				k = rng.uniform(0.45, 0.95)
+				ta, tb = lerp(a, tip, k), lerp(b, tip, k)
+			return ((at(st, ta - drop, off), at(st, tb - drop, off)), (at(st, ta - drop, off - thick), at(st, tb - drop, off - thick)))
+		rows = [row(st, 0 if i == 0 else (1 if i == len(sts) - 1 else None)) for i, st in enumerate(sts)]
+		lit = (tone, tone, tone)
+		side = (tone * BROKE[0], tone * BROKE[1], tone * BROKE[2])
+		rear = (0.5, 0.42, 0.34)
+		def tag(p, c):
+			return g.vert(p, uv(p), c)
+		def clean(p, c):
+			# The back and the torn edges: the map's clear wood, up the transom.
+			u, v = uv(p)
+			return g.vert(p, (u, v + 0.42), c)
+		for k in range(len(rows) - 1):
+			(fa, fb), (ba, bb) = rows[k]
+			(fc, fd), (bc, bd) = rows[k + 1]
+			out = (fc - fa).cross(fb - fa)
+			if out.dot(Vector(at(s0, face, 1.0)) - Vector(at(s0, face, 0.0))) < 0:
+				out = -out
+			g.face([tag(fa, lit), tag(fc, lit), tag(fd, lit), tag(fb, lit)], "plug", out)
+			g.face([clean(ba, rear), clean(bc, rear), clean(bd, rear), clean(bb, rear)], "plug", -out)
+			for p, q, r, t, way in ((fa, fc, bc, ba, fa - fb), (fb, fd, bd, bb, fb - fa)):
+				g.face([clean(p, side), clean(q, side), clean(r, side), clean(t, side)], "plug", way)
+		for e, idx, way in ((0, 0, -1.0), (1, -1, 1.0)):
+			(fa, fb), (ba, bb) = rows[idx]
+			along = Vector(at(s1, face, 0.0)) - Vector(at(s0, face, 0.0))
+			g.face([clean(fa, side), clean(fb, side), clean(bb, side), clean(ba, side)], "plug", along * way)
+
+
+def plate_at(T, u, z):
+	"""A point in the plate's plane. Below the corridor's floor the bow's real
+	surface runs out along the beak, which this ignores."""
+	mid = T.p(0.0, COR_Z)
+	up = T.p(0.0, COR_Z + 1.0).y - mid.y
+	return Vector((u, mid.y + up * (z - COR_Z), z))
+
+
+def build_cover(op):
+	"""Black behind the plug, facing out only, so a gap is dark from every range and
+	the far end's daylight stays out of it. From inside it isn't there, so the exit
+	shows through the gaps. Code hides it on a burst."""
+	T = op.surf
+	g = Geo()
+	nrm = T.n(0.0, COR_Z)
+	w, lo, hi = CRACK_W * 0.5 + OPEN_MARGIN + 1.0, COR_Z - CRACK_H * 0.5 - 0.05, COR_Z + CRACK_H * 0.5 + 0.05
+	c = [plate_at(T, x, z) - nrm * COVER_BACK for x, z in ((-w, lo), (w, lo), (w, hi), (-w, hi))]
+	g.quad(*c, "dark", (0.008, 0.007, 0.006), hint=nrm)
+	return g
+
+
+def build_plug(op, shards, rng):
+	"""What's left of the planking in a plate, and the frames that keep it shut.
+
+	Thin boards on thin frames, nothing past the plate's depth. Every piece is
+	short, so a shard is a board or two and a burst throws wood, not panels.
+	"""
+	T = op.surf
+	nrm = T.n(0.0, COR_Z)
+	def at_row(u, z, off):
+		return plate_at(T, u, z) + nrm * (off - PLUG_RECESS)
+	def uv(p):
+		return T.uv(p)
+	total = kept = 0.0
+	loose = []
+	for j in range(ROWS + 4):
+		if op.extent(j) is None:
+			continue
+		z0, z1 = row_z(j), row_z(j + 1)
+		zm = (z0 + z1) * 0.5
+		a, b = op.extent(j)
+		total += b - a
+		for x0, x1, t0, t1 in op.runs(j):
+			kept += x1 - x0
+			tone = PLUG_TONE * rng.uniform(0.75, 1.2)
+			spring = (rng.uniform(0.15, SPRUNG) if t0 and rng.random() < 0.5 else 0.0, rng.uniform(0.15, SPRUNG) if t1 and rng.random() < 0.5 else 0.0)
+			sag = (rng.uniform(0.1, SAG) if t0 and rng.random() < 0.55 else 0.0, rng.uniform(0.1, SAG) if t1 and rng.random() < 0.55 else 0.0)
+			lab = op.shard_of((x0 + x1) * 0.5, zm)
+			board(shards[lab], at_row, uv, x0, x1, z0 + 0.012, z1 - 0.012, rng, (t0, t1), spring, sag, tone)
+			if t0 or t1:
+				loose.append((x0 if t0 else x1, zm, -1.0 if t0 else 1.0))
+	# Frames, behind the planks: long timbers in short lengths, a snap in each.
+	for fx in FRAME_X:
+		zlo, zhi = COR_Z - CRACK_H * 0.5 - 0.1, COR_Z + CRACK_H * 0.5 + 0.1
+		z = zlo
+		lean = rng.uniform(-0.05, 0.05)
+		while z < zhi - 0.3:
+			step = min(zhi - z, rng.uniform(1.6, 2.8))
+			gap = rng.uniform(0.0, 0.9) if rng.random() < 0.3 else 0.0
+			def at_frame(s, t, off, fx=fx, lean=lean):
+				return at_row(fx + t + (s - COR_Z) * lean, s, off - 0.36)
+			lab = op.shard_of(fx, z + step * 0.5)
+			tone = PLUG_TONE * rng.uniform(0.55, 0.85)
+			board(shards[lab], at_frame, uv, z + gap, z + step, -FRAME_W * 0.5, FRAME_W * 0.5, rng, (gap > 0.0, gap > 0.0 or rng.random() < 0.2), tone=tone, thick=0.42)
+			z += step
+	# Planks torn loose: each hangs from a broken end, down across the hole.
+	rng.shuffle(loose)
+	for x, z, way in loose[:HANGERS]:
+		a = math.radians(rng.uniform(52.0, 118.0)) * way
+		ln = rng.uniform(1.6, BOARD_LEN + 0.5)
+		root = Vector((x, 0.0, z))
+		d = Vector((math.sin(a), 0.0, -abs(math.cos(a))))
+		side = d.cross(Vector((0.0, 1.0, 0.0))).normalized()
+		out = rng.uniform(0.08, 0.5)
+		def at_hang(s, t, off, root=root, d=d, side=side, out=out):
+			q = root + d * s + side * t
+			return plate_at(T, q.x, q.z) + nrm * (off + out * s - PLUG_RECESS)
+		lab = op.shard_of(x + d.x * ln * 0.5, z + d.z * ln * 0.5)
+		board(shards[lab], at_hang, uv, -0.3, ln, -0.3, 0.3, rng, (False, True), tone=PLUG_TONE * rng.uniform(0.7, 1.1))
+	print(f"plug: {kept / total:.0%} of the plate's planking stands")
 
 
 def build_hull(crack_s, crack_b, shards):
@@ -837,7 +961,7 @@ def crate(g, side, x, y, z, s, hh, rng, col, band):
 	px = (side * (x - s * 0.5 * c), y - s * 0.5 * sn, z + hh * 0.5)
 	qx = (side * (x + s * 0.5 * c), y + s * 0.5 * sn, z + hh * 0.5)
 	g.beam(px, qx, s, hh, "wood_in", col)
-	g.beam(px, qx, s + 0.05, 0.14, "iron", band)
+	g.beam(px, qx, s + 0.05, 0.14, "iron_in", band)
 
 
 def barrel(g, side, x, y, z, r, col, band):
@@ -845,7 +969,7 @@ def barrel(g, side, x, y, z, r, col, band):
 	pts = [(side * x, y, z + h * t) for t in (0.0, 0.26, 0.5, 0.74, 1.0)]
 	g.tube(pts, [r * 0.82, r, r * 1.04, r, r * 0.82], 8, "wood_in", col)
 	for t in (0.2, 0.8):
-		g.tube([(side * x, y, z + h * t - 0.06), (side * x, y, z + h * t + 0.06)], [r * 1.0, r * 1.0], 8, "iron", band, cap=False)
+		g.tube([(side * x, y, z + h * t - 0.06), (side * x, y, z + h * t + 0.06)], [r * 1.0, r * 1.0], 8, "iron_in", band, cap=False)
 
 
 def build_interior(g):
@@ -899,7 +1023,7 @@ def build_interior(g):
 			if i % 2 == 0:
 				x = side * (wall + 0.27)
 				g.beam((x, y, COR_FLOOR), (x, y, COR_TOP + 0.1), 0.52, 0.52, "wood_in", c_rib)
-				g.beam((x, y - 0.4, COR_TOP - 1.6), (x, y + 0.4, COR_TOP - 1.6), 0.54, 0.16, "iron", c_iron)
+				g.beam((x, y - 0.4, COR_TOP - 1.6), (x, y + 0.4, COR_TOP - 1.6), 0.54, 0.16, "iron_in", c_iron)
 	for side in (-1.0, 1.0):
 		x = side * (wall + 0.27)
 		g.beam((x, -inner_end, COR_TOP + 0.3), (x, inner_end, COR_TOP + 0.3), 0.54, 0.35, "wood_in", c_beam)
@@ -934,11 +1058,13 @@ def build_interior(g):
 					r = min(room * 0.5, rng.uniform(0.45, 0.6))
 					for k in range(2):
 						barrel(g, side, far - r, by + (k - 0.5) * r * 2.3, z, r, ba, c_iron)
-		# Unlit lanterns on the posts, kept to the wall.
-		for py in frange(-50.0, 50.0, 20.0):
-			x = side * (wall + 0.34)
-			g.tube([(x, py, CEIL - 2.2), (x, py, COR_TOP - 0.8)], [0.05, 0.05], 3, "rope", c_iron, cap=False)
-			g.tube([(x, py, COR_TOP - 0.8), (x, py, COR_TOP - 1.7)], [0.2, 0.26], 6, "iron", c_iron)
+		# Lanterns in the bays between the guns, kept to the wall.
+		for py in LAMP_BAYS:
+			x = side * LAMP_X
+			g.tube([(x, py, CEIL - 2.2), (x, py, LAMP_Z + 0.55)], [0.05, 0.05], 3, "rope", c_iron, cap=False)
+			g.tube([(x, py, LAMP_Z + 0.55), (x, py, LAMP_Z + 0.32)], [0.1, 0.25], 6, "iron_in", c_iron)
+			g.tube([(x, py, LAMP_Z + 0.32), (x, py, LAMP_Z - 0.32)], [0.2, 0.2], 6, "lamp", WHITE)
+			g.tube([(x, py, LAMP_Z - 0.32), (x, py, LAMP_Z - 0.44)], [0.25, 0.22], 6, "iron_in", c_iron)
 
 
 def cannon(g, side, y, x_muzzle, z, col_iron, col_wood):
@@ -949,10 +1075,10 @@ def cannon(g, side, y, x_muzzle, z, col_iron, col_wood):
 		return side * (xb + d)
 	r = GUN_BORE_R
 	prof = [(-0.36, 0.14), (-0.3, 0.28), (-0.12, r * 1.28), (0.0, r * 1.48), (0.32, r * 1.5), (0.4, r * 1.4), (1.9, r * 1.28), (1.95, r * 1.38), (2.15, r * 1.26), (3.9, r * 1.04), (3.95, r * 1.14), (4.1, r * 0.98), (L - 0.5, r * 0.86), (L - 0.42, r * 1.1), (L - 0.05, r * 1.15), (L, r * 0.92)]
-	g.tube([(X(d), y, z) for d, _ in prof], [q for _, q in prof], 10, "iron", col_iron, up=(0.0, 1.0, 0.0))
+	g.tube([(X(d), y, z) for d, _ in prof], [q for _, q in prof], 10, "iron_in", col_iron, up=(0.0, 1.0, 0.0))
 	# The bore's dark.
 	g.tube([(X(L - 0.02), y, z), (X(L + 0.005), y, z)], [0.5, 0.5], 8, "dark", (0.01, 0.01, 0.01), cap=True, up=(0.0, 1.0, 0.0))
-	g.tube([(X(1.75), y - 1.1, z), (X(1.75), y + 1.1, z)], [0.3, 0.3], 6, "iron", col_iron, up=(1.0, 0.0, 0.0))
+	g.tube([(X(1.75), y - 1.1, z), (X(1.75), y + 1.1, z)], [0.3, 0.3], 6, "iron_in", col_iron, up=(1.0, 0.0, 0.0))
 	# The carriage: two stepped cheeks, a bed, four trucks.
 	zf = LEDGE_Z
 	for s in (-1.0, 1.0):
@@ -1070,8 +1196,6 @@ def build_stern(g):
 	dark_wood = (0.05, 0.036, 0.028)
 	oxblood = (0.1, 0.03, 0.022)
 	top = RAIL_POOP + sheer(-LENGTH * 0.5)
-	backing = Geo()
-	# Backing behind the torn upper part of the split: the transom has no room behind it.
 	for rz in (15.7, 20.7):
 		h = 3.5
 		wtop = half_beam(stern_y(rz + h) * 0.999, rz + h) - 0.4
@@ -1503,7 +1627,7 @@ def paint_hull(W):
 	return np.clip(col, 0, 1), hgt
 
 
-def paint_stern(W, crack):
+def paint_stern(W):
 	"""A flat end straight on: x over END_SPAN, z over the hull's map range."""
 	H = int(W * (Z_TOP - Z_BOT) / END_SPAN)
 	xs = np.linspace(-END_SPAN * 0.5, END_SPAN * 0.5, W, dtype=np.float32)
@@ -1523,22 +1647,9 @@ def paint_stern(W, crack):
 	col = mix(tar, wood, sst(0.8, 1.0, wear))
 	col *= (0.8 + 0.4 * grain)[..., None]
 	col *= (0.82 + 0.36 * wash)[..., None]
-	# Tide stains run down the transom; soot gathers round the split.
+	# Tide stains run down the transom.
 	s = sst(0.56, 0.8, drip)
 	col = mix(col, col * 0.5, s * 0.75)
-	d = np.full((H, W), 99.0, dtype=np.float32)
-	for path in crack.paths:
-		ds = np.array([p[0] for p in path], dtype=np.float32)
-		cx = np.array([p[1] for p in path], dtype=np.float32)
-		cw = np.array([p[2] for p in path], dtype=np.float32)
-		zr = zs - COR_Z
-		xs_at = np.interp(zr, ds, cx)
-		ws_at = np.interp(zr, ds, cw)
-		row = np.abs(xs[None, :] - xs_at[:, None]) - ws_at[:, None]
-		row = np.where(((zr >= ds[0] - 0.6) & (zr <= ds[-1] + 0.6))[:, None], row, 99.0)
-		d = np.minimum(d, row.astype(np.float32))
-	scorch = sst(1.9, 0.0, d + (blot - 0.5) * 1.6 + (grain - 0.5) * 1.2)
-	col = mix(col, C(0.02, 0.018, 0.016)[None, None], scorch * 0.86)
 	wl = 0.9 + 1.9 * (blot - 0.5) + 1.8 * (drip - 0.5)
 	foul = sst(wl + 0.6, wl - 0.5, Z)
 	col = mix(col, mix(C(0.03, 0.05, 0.035)[None, None], C(0.09, 0.115, 0.06)[None, None], grain), foul * 0.92)
@@ -1670,14 +1781,27 @@ def save_tex(name, rgb, alpha=None, data=False):
 	bpy.data.images.remove(img)
 
 
+# The plug's planks, a shade over the hull's so black gaps have something to bite on.
+PLUG_FILL = 18.0
+
+# The gun deck's light, by eye: the hold's own dim fill, a lantern and a slat of sun
+# (over base colour), the distance (m) it all fades to gloom over.
+DECK_FILL = 0.7
+DECK_LAMP = 2.0
+DECK_SLAT = 3.5
+DECK_GLOOM = 28.0
+
 # Each material: its shader, albedo, normal, then uniforms. The game takes no
 # ambient light, so these fill the shade from the sky's hemisphere as its own
 # surfaces do; the glb carries names only and its .import points each at a .tres.
 MATERIALS = {
 	"hull": ("surface", "ship_hull", "ship_hull_n", {"normal_depth": 1.0, "roughness_value": 0.88, "fill": 10.0}),
 	"stern": ("surface", "ship_stern", "ship_stern_n", {"normal_depth": 1.0, "roughness_value": 0.88, "fill": 7.0}),
+	"plug": ("surface", "ship_stern", "ship_stern_n", {"normal_depth": 1.0, "roughness_value": 0.88, "fill": PLUG_FILL}),
 	"wood": ("surface", "ship_wood", "ship_wood_n", {"normal_depth": 1.0, "roughness_value": 0.9, "fill": 6.0}),
-	"wood_in": ("surface", "ship_wood", "ship_wood_n", {"normal_depth": 0.6, "roughness_value": 0.9, "fill": 7.0, "rim": 0.0}),
+	"wood_in": ("deck", "ship_wood", "ship_wood_n", {"normal_depth": 0.6, "roughness_value": 0.9, "fill": 7.0, "rim": 0.0, "fill_in": DECK_FILL, "lamp_power": DECK_LAMP, "slat_power": DECK_SLAT, "calm": 0.35, "seam": 0.75, "liner": 0.55}),
+	"iron_in": ("deck", None, None, {"roughness_value": 0.5, "metallic_value": 0.35, "fill": 1.7, "rim": 0.3, "fill_in": DECK_FILL, "lamp_power": DECK_LAMP * 1.6, "slat_power": DECK_SLAT * 0.3, "glint": 0.2, "inside_x": 10.3}),
+	"lamp": ("lamp", None, None, {}),
 	"iron": ("surface", None, None, {"roughness_value": 0.5, "metallic_value": 0.35, "fill": 1.7}),
 	"sail": ("cloth", "ship_sail", None, {"fill": 4.5}),
 	"rope": ("surface", None, None, {"roughness_value": 0.95, "fill": 1.7, "rim": 0.0}),
@@ -1704,6 +1828,128 @@ SHADER_FILL = """	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	float edge = pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 3.0);
 	EMISSION = base * hemi * fill + base * zs_hemi_sky * zs_hemi_energy * edge * rim;
 """
+# The gun deck's light, no real lights: everything is worked out on the pixel from
+# where it stands in her frame, so a lantern or a port costs a few sums and shadows
+# nothing. Lanterns stand in fixed bays, so the two nearest along her are found by
+# rounding, not a loop. A slat traces back along the sun to the wall on the sun's
+# side and asks if it came through a gun port. The sun's line moves as she turns.
+# Past `inside_x`, the hull's skin, this is the plain surface: the guns' barrels.
+DECK_CODE = """uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+global uniform vec3 zs_sun_direction;
+global uniform vec3 zs_sun_hue;
+uniform float normal_depth = 0.0;
+uniform float roughness_value = 0.9;
+uniform float metallic_value = 0.0;
+uniform float fill_in = 1.5;
+uniform float lamp_power = 8.0;
+uniform float slat_power = 6.0;
+uniform float glint = 0.0;
+uniform float inside_x = 99.0;
+uniform float calm = 0.0;
+uniform float seam = 0.0;
+uniform float liner = 1.0;
+const float KEEL = %(keel)s;
+const float STRAKE = %(strake)s;
+const float GLOOM = %(gloom)s;
+const float LAMP_X = %(lamp_x)s;
+const float LAMP_Y = %(lamp_y)s;
+const float PITCH = %(pitch)s;
+const float LAST = %(last)s;
+const float PORT_W = %(port_w)s;
+const float PORT_LO = %(port_lo)s;
+const float PORT_HI = %(port_hi)s;
+const float PORT_X = %(port_x)s;
+const float PORT_FIRST = %(port_first)s;
+const float PORT_LAST = %(port_last)s;
+const vec3 FLAME = vec3(1.0, 0.58, 0.28);
+varying vec3 at;
+varying vec3 way;
+varying flat vec3 sun;
+varying flat float eyes;
+void vertex() {
+	at = VERTEX;
+	way = NORMAL;
+	mat3 back = transpose(mat3(MODEL_MATRIX));
+	sun = normalize(back * zs_sun_direction);
+	// An eye out in the day sees a hold as black; it opens up as it comes in.
+	vec3 eye = abs(back * (CAMERA_POSITION_WORLD - MODEL_MATRIX[3].xyz));
+	eyes = 1.0 - smoothstep(4.0, 40.0, max(eye.z - 55.0, max(eye.x - 8.0, 0.0)));
+}
+// The lantern at bay `z` on side `s`, here: wrapped so ribs turn into shade, not off.
+float lantern(vec3 n, float z, float s) {
+	if (abs(z) < 1.0 || abs(z) > LAST) return 0.0;
+	vec3 l = vec3(s * LAMP_X, LAMP_Y, z) - at;
+	float d2 = dot(l, l);
+	float near = max(1.0 - d2 / 140.0, 0.0);
+	float a = dot(n, l) / sqrt(d2);
+	float beat = 0.9 + 0.1 * sin(TIME * (7.0 + fract(z * 0.37 + s) * 5.0) + z);
+	return (max(a, 0.0) * 0.8 + 0.2) * near * near * beat;
+}
+void fragment() {
+	vec3 base = texture(albedo_tex, UV).rgb;
+	base = mix(base, vec3(0.5, 0.41, 0.31), calm);
+	// A strake's seam along the liner: the tile's rows don't fall on them.
+	if (abs(way.x) > 0.6) base *= liner * (1.0 - seam * smoothstep(0.42, 0.47, abs(fract((at.y - KEEL) / STRAKE) - 0.5)));
+	base *= COLOR.rgb;
+	ALBEDO = base;
+	ROUGHNESS = roughness_value;
+	METALLIC = metallic_value;
+	if (normal_depth > 0.0) {
+		NORMAL_MAP = texture(normal_tex, UV).rgb;
+		NORMAL_MAP_DEPTH = normal_depth;
+	}
+	vec3 n = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+	vec3 hemi = mix(zs_hemi_ground, zs_hemi_sky, n.y * 0.5 + 0.5) * zs_hemi_energy / PI;
+	float edge = pow(1.0 - clamp(abs(dot(NORMAL, VIEW)), 0.0, 1.0), 3.0);
+	vec3 outside = base * hemi * fill + base * zs_hemi_sky * zs_hemi_energy * edge * rim;
+	float inside = 1.0 - smoothstep(inside_x, inside_x + 0.4, abs(at.x));
+	if (inside > 0.0) {
+		vec3 nl = normalize(way);
+		float d = length(VERTEX);
+		float gloom = 1.0 / (1.0 + d * d / (GLOOM * GLOOM));
+		// The two bays either side of here, a lantern each side of the deck.
+		float b = floor(at.z / PITCH) * PITCH;
+		float s = at.x < 0.0 ? -1.0 : 1.0;
+		float lamps = lantern(nl, b, s) + lantern(nl, b + PITCH, s)
+			+ 0.55 * (lantern(nl, b, -s) + lantern(nl, b + PITCH, -s));
+		// The sun, back along its line to the wall on its side, through a port?
+		float slat = 0.0;
+		if (sun.y > 0.03 && abs(sun.x) > 0.05) {
+			float t = (sign(sun.x) * PORT_X - at.x) / sun.x;
+			vec3 h = at + sun * t;
+			float pz = clamp(round((h.z + PITCH * 0.5) / PITCH) * PITCH - PITCH * 0.5, PORT_FIRST, PORT_LAST);
+			vec2 q = vec2(abs(h.z - pz) - PORT_W * 0.5, max(PORT_LO - h.y, h.y - PORT_HI));
+			float through = smoothstep(0.1, -0.1, q.x) * smoothstep(0.1, -0.1, q.y);
+			float barrel = smoothstep(0.5, 0.75, length(vec2(h.z - pz, h.y - %(gun)s)));
+			slat = t > 0.0 ? through * barrel * max(dot(nl, sun), 0.0) : 0.0;
+		}
+		vec3 sunlit = zs_sun_hue * slat * slat_power;
+		// The fill falls off with the eye's distance, so the hold keeps its gloom.
+		vec3 hold = hemi * fill_in * (0.25 + 0.75 * gloom);
+		vec3 lit = FLAME * lamps * lamp_power * (0.12 + 0.88 * gloom) + sunlit * (0.3 + 0.7 * gloom);
+		vec3 glance = FLAME * lamps * glint * pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 2.0);
+		EMISSION = mix(outside, (base * (hold + lit) + glance) * eyes, inside);
+	} else {
+		EMISSION = outside;
+	}
+}
+""" % {"gloom": DECK_GLOOM, "lamp_x": LAMP_X, "lamp_y": LAMP_Z, "pitch": LAMP_PITCH, "last": max(LAMP_BAYS) + 0.5,
+	"port_w": PORT_W, "port_lo": row_z(PORT_ROW), "port_hi": row_z(PORT_ROW + PORT_ROWS), "port_x": 10.2,
+	"port_first": PORTS[0], "port_last": PORTS[-1], "gun": GUN_Z, "keel": KEEL_Z, "strake": STRAKE}
+LAMP_CODE = """shader_type spatial;
+// Written by art/blender/ship/ship_build.py: a lantern's horn pane, and its beat.
+render_mode unshaded, shadows_disabled, fog_disabled;
+varying float beat;
+void vertex() {
+	float z = round(VERTEX.z / 16.0) * 16.0;
+	beat = 0.85 + 0.15 * sin(TIME * (7.0 + fract(z * 0.37 + sign(VERTEX.x)) * 5.0) + z);
+}
+void fragment() {
+	float d = length(VERTEX);
+	ALBEDO = vec3(1.0, 0.46, 0.14) * 1.5 * beat * (0.03 + 0.97 / (1.0 + d * d / 1600.0));
+}
+"""
+
 SHADERS = {
 	"surface": SHADER_HEAD % "diffuse_lambert, specular_schlick_ggx" + """uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform float normal_depth = 0.0;
@@ -1719,6 +1965,8 @@ void fragment() {
 		NORMAL_MAP_DEPTH = normal_depth;
 	}
 """ + SHADER_FILL + "}\n",
+	"deck": SHADER_HEAD % "diffuse_lambert, specular_schlick_ggx" + DECK_CODE,
+	"lamp": LAMP_CODE,
 	"cloth": SHADER_HEAD % "diffuse_lambert, cull_disabled" + """uniform float through = 0.4;
 void fragment() {
 	vec4 t = texture(albedo_tex, UV);
@@ -1751,12 +1999,12 @@ def write_materials():
 		(TEX / f"{name}.tres").write_text(text)
 
 
-def make_mats(scale, crack):
+def make_mats(scale):
 	print("painting textures...")
 	c, h = paint_hull(int(HULL_TEX * scale))
 	save_tex("ship_hull", c)
 	save_tex("ship_hull_n", normal_from(_half(h), 3.0), data=True)
-	c, h = paint_stern(int(STERN_TEX * scale), crack)
+	c, h = paint_stern(int(STERN_TEX * scale))
 	save_tex("ship_stern", c)
 	save_tex("ship_stern_n", normal_from(_half(h), 3.0), data=True)
 	c, h = paint_wood(int(WOOD_TEX * scale))
@@ -1840,9 +2088,9 @@ def empty(name, at, parent=None, rot=None):
 
 def build(fast):
 	bpy.ops.wm.read_factory_settings(use_empty=True)
-	crack_s = Opening(End(-1.0), False, 41, SHARDS)
-	crack_b = Opening(End(1.0), False, 57, SHARDS)
-	mats = make_mats(0.5 if fast else 1.0, crack_s)
+	crack_s = Opening(End(-1.0), 41, SHARDS)
+	crack_b = Opening(End(1.0), 57, SHARDS)
+	mats = make_mats(0.5 if fast else 1.0)
 	print("building...")
 	shard_s = [Geo() for _ in range(SHARDS)]
 	shard_b = [Geo() for _ in range(SHARDS)]
@@ -1873,6 +2121,7 @@ def build(fast):
 				continue
 			mid = Vector(np.array(g.v).mean(axis=0))
 			emit(f"Shard_{tag}{i + 1:02d}", g, mats, group=label, parent=par, origin=mid)
+		emit(f"Cover_{tag}", build_cover(crack_s if tag == "S" else crack_b), mats, group=label, parent=par, origin=Vector((0.0, y, COR_Z)))
 	# Masts.
 	yards = []
 	for i, spec in enumerate(MASTS):

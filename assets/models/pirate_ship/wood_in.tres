@@ -1,6 +1,6 @@
 [gd_resource type="ShaderMaterial" format=3]
 
-[ext_resource type="Shader" path="res://assets/models/pirate_ship/ship_surface.gdshader" id="1"]
+[ext_resource type="Shader" path="res://assets/models/pirate_ship/ship_deck.gdshader" id="1"]
 [ext_resource type="Texture2D" path="res://assets/models/pirate_ship/ship_wood.jpg" id="2"]
 [ext_resource type="Texture2D" path="res://assets/models/pirate_ship/ship_wood_n.jpg" id="3"]
 
@@ -12,3 +12,9 @@ shader_parameter/normal_depth = 0.6
 shader_parameter/roughness_value = 0.9
 shader_parameter/fill = 7.0
 shader_parameter/rim = 0.0
+shader_parameter/fill_in = 0.7
+shader_parameter/lamp_power = 2.0
+shader_parameter/slat_power = 3.5
+shader_parameter/calm = 0.35
+shader_parameter/seam = 0.75
+shader_parameter/liner = 0.55

@@ -10,7 +10,7 @@ with either look.
 - **Guns and relic:** the 12 muzzles are read off the `Gun_*` empties, and match
   the gray box's numbers exactly. `Relic` sits at the deck's middle, on the finds
   row. Flash and smoke are still the gray box's cubes.
-- **The break:** a burst throws the plate's 12 `CrackPlug_*` shards with
+- **The break:** a burst throws the plate's `CrackPlug_*` shards with
   `SmashBreaks`' numbers (`KEEP`, `OUT`, `UP_V`, `SPIN`): on ahead of the plane,
   out from its line. Hit from outside, they go down the gun deck, stay between its
   walls and lie on the floor. Hit from inside, they go out to sea. They are drawn
