@@ -116,7 +116,8 @@ road; the file can stay, out of `PLACED`, or lend its figures as accents.
    the air. Lay about 600-800 m of it from the gate's far side, all three kinds, bending
    both ways, and fly a wide line down the middle and a tight line that weaves the columns
    and bays. Try column spacing, road width and bend tightness, and keep what flies best.
-   Stop for the user's verdict: this step decides whether the idea feels good.
+   Stop for the user's verdict: this step decides whether the idea feels good. (Done at
+   96c37a5a; the user flew it: "Solid start".)
 2. **The whole road.** The route from the mouth to the pyramid, joined to the gate, the
    hall and the pyramid. Check from the mouth, by eye in the play camera, whether the
    pyramid is in sight, and move it if a better reveal is there to have. Fix the flat
