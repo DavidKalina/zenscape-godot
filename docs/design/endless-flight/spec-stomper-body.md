@@ -102,7 +102,10 @@ made star fans there) and carry the detail in baked normal and AO maps. List
    levels together, flown through the hall to see them as the player does. Fly any
    socket meant to be flown.
 4. A pass on looks and cost: frame time beside the old build, the legs near the
-   ground. Smoke, then a handoff.
+   ground. Seen at 81c7d7bb and to fix: in the game the body is pale, flat sand, with
+   far less of the carved stone than the Blender stills; the hip and knee smear and
+   show a round plug; clouds pass through the arms. Judge the walk's deep crouch
+   against the new body and flag it for the user rather than reauthoring the clip. Smoke, then a handoff.
 
 ## Rules
 
