@@ -1,4 +1,5 @@
 extends RefCounted
+const GrassSheen = preload("res://scripts/endless/grass_sheen.gd")
 ## The amberlands' paint, flora and dressing layers
 ## (scripts/endless/world/profiles/amberlands.gd). No trees: tall grass gone
 ## to straw over the whole land, under the amber hour (a low, soft gold sun
@@ -22,17 +23,20 @@ static func paint() -> Dictionary:
 			# Most of the paint's own green gives way to straw at its own light,
 			# the rest left as an olive undertone.
 			"carpet_hue":Vector3(0.72,0.62,0.30),"rock_moss":0.6,
+			"grass_swell":GrassSheen.swell(),
 			# The rock weathered grey-beige: its hue mostly a grey one, its
 			# warmth the sun's, not its own.
 			"rock_hue":Vector3(0.88,0.80,0.68),"rock_tint":Vector3(0.76,0.75,0.72),"rock_rich":0.7,"rock_follow":0.65},
-		"far":{"root_colour":Vector3(0.13,0.16,0.12),"tip_colour":Vector3(0.34,0.44,0.30)},
+		"far":{"root_colour":Vector3(0.13,0.16,0.12),"tip_colour":Vector3(0.34,0.44,0.30),"grass_swell":GrassSheen.swell()},
 		# The undersides the wind bows into view: pale dry straw.
 		"silver_colour":Vector3(0.66,0.62,0.48),
+		# The tall grass blows as one: slow long swells, seen in the tufts' lean.
+		"sheen_pace":GrassSheen.pace(),
 		# The water: a muted grey-green, never the alpine turquoise.
 		"sea":{"tint_shallow":Color(0.46,0.60,0.50),"tint_mid":Color(0.17,0.32,0.29),"tint_deep":Color(0.08,0.17,0.19),"tint_abyss":Color(0.04,0.10,0.12)},
 		# The near tufts gone dry to straw (the season's ripening), with none of
 		# autumn's turn (it reads orange) and their green a little less red.
-		"globals":{"zs_autumn":0.0,"zs_season":Vector4(0.0,0.0,0.8,0.5),"zs_palette_grass":Vector3(0.95,1.0,0.86)}}
+		"globals":{"zs_grass_lean":GrassSheen.swell().x*GrassSheen.swell().y,"zs_autumn":0.0,"zs_season":Vector4(0.0,0.0,0.8,0.5),"zs_palette_grass":Vector3(0.95,1.0,0.86)}}
 
 static func layers() -> Dictionary:
 	return {"trees":false,"grass":true,"birds":true,"fish":true,

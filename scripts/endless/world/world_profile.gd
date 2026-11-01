@@ -114,6 +114,14 @@ func apply_silver(material: ShaderMaterial) -> void:
 	if material == null or not paint.has("silver_colour"): return
 	material.set_shader_parameter("grass_silver_colour",paint.silver_colour)
 
+## The swells' speed at (x, z) as a share of the air's (paint.sheen_pace; 1
+## absent): one clock for the whole land, so it follows the eye's weights.
+func sheen_pace_at(x: float, z: float) -> float:
+	var pace := 0.0
+	var weights := weights_at(x,z)
+	for p: RefCounted in weights: pace += float(weights[p])*float(p.paint.get("sheen_pace",1.0))
+	return pace
+
 ## The shader globals this world sets (after the season reset).
 func apply_globals() -> void:
 	var g: Dictionary = paint.get("globals",{})

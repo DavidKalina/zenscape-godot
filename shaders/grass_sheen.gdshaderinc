@@ -21,6 +21,17 @@ uniform vec3 grass_sheen_waves = vec3(14.0, 30.0, 70.0);
 uniform vec3 grass_sheen_share = vec3(0.1, 0.3, 0.45);
 // The long swell for high flight (m between crests) and its share.
 uniform vec2 grass_sheen_long = vec2(170.0, 0.5);
+// A world's grass that blows as one (paint `grass_swell`, GrassSheen SWELL).
+// x 0..1 how far: the fine trains give way to the long swells and every colour
+// layer follows them, so the colour comes from the lean. y the far tufts' lean
+// on a crest (m of tip per m of tuft). z the swell's share of the colour.
+// x 0 draws today's sheen and bends nothing.
+uniform vec3 grass_swell = vec3(0.0, 0.0, 1.0);
+uniform vec3 grass_swell_r[4];
+// The trains' shares at full swell (the long swell's last).
+const vec4 ZS_SWELL_SHARE = vec4(0.0, 0.12, 0.5, 0.8);
+// The field's gain, today's and at full swell: the lower keeps the crests soft.
+const vec2 ZS_SWELL_GAIN = vec2(3.0, 1.7);
 
 // The three bends' amplitudes (radians of a band's phase).
 const vec3 ZS_SHEEN_BEND = vec3(0.9, 0.7, 0.5);
@@ -62,9 +73,10 @@ float zs_sheen_band(vec2 position, float travel) {
 }
 
 // -1..1: how far the blades at `p` lean downwind of their mean, a pixel there
-// `fp` m across. Each train fades to its mean as the pixel outgrows it.
-float zs_sheen_field(vec2 p, float fp) {
-	float travel = zs_gust_distance;
+// `fp` m across, `swell` grass_swell.x there. Each train fades to its mean as
+// the pixel outgrows it.
+float zs_sheen_field(vec2 p, float fp, float swell) {
+	float travel = zs_sheen_distance;
 	vec4 crest = vec4(
 		zs_sheen_crest(p, grass_sheen_waves.x, ZS_BREEZE_WAVE_SPEED, zs_grass_offset, travel),
 		zs_sheen_crest(p, grass_sheen_waves.y, ZS_BREEZE_WAVE_SPEED, zs_grass_offset + 3.0, travel),
@@ -73,14 +85,20 @@ float zs_sheen_field(vec2 p, float fp) {
 	vec4 lens = vec4(grass_sheen_waves, grass_sheen_long.x);
 	vec4 keep = vec4(1.0) - smoothstep(lens * 0.08, lens * 0.3, vec4(fp));
 	crest = mix(vec4(0.42), crest, keep);
-	vec4 share = vec4(grass_sheen_share, grass_sheen_long.y);
+	vec4 share = mix(vec4(grass_sheen_share, grass_sheen_long.y), ZS_SWELL_SHARE, swell);
 	float w = dot(crest - vec4(0.42), share) / dot(share, vec4(1.0));
 	// The gust bands swell and calm it with the breeze; a gust front lays the
 	// blades hard downwind.
 	float band = zs_sheen_band(p, travel);
 	float air = clamp(zs_breeze_air() / 0.53, 0.35, 1.6);
-	float s = w * 3.0 * band * air + zs_front_at(p, 0.0) * 1.2;
+	float s = w * mix(ZS_SWELL_GAIN.x, ZS_SWELL_GAIN.y, swell) * band * air + zs_front_at(p, 0.0) * 1.2;
 	return clamp(s, -1.0, 1.0);
+}
+
+// How far the undersides show from the swell's lean `s`, for grass that blows
+// as one (zs_silver_drive's range and about its mean on a calm trough).
+float zs_swell_silver(float s) {
+	return smoothstep(-0.15, 1.0, s) * 0.85;
 }
 
 // The tone (a multiplier on the grass's colour) for lean `s` at `p`, seen

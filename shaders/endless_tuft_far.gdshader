@@ -90,11 +90,13 @@ void vertex() {
 	rp_root = root_colour;
 	rp_tip = tip_colour;
 	rp_silver = grass_silver_colour;
+	vec3 swell = grass_swell;
 	if (zs_region_paints()) {
 		vec4 rw = zs_region_at(root.xz);
 		rp_root = zs_region_mix3(rw, root_colour_r);
 		rp_tip = zs_region_mix3(rw, tip_colour_r);
 		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
+		swell = zs_region_mix3(rw, grass_swell_r);
 	}
 	float ring_d = endless_ring_d(CAMERA_POSITION_WORLD, root);
 	float ring_rank = fract(sin(dot(root.xz, vec2(19.31, 71.87))) * 43758.5453);
@@ -120,11 +122,28 @@ void vertex() {
 		VERTEX += zs_react_offset(root.xz, max(VERTEX.y, 0.0) * react_scale, 1.0, MODEL_MATRIX, react_scale, CAMERA_POSITION_WORLD.xz - root.xz, react);
 	}
 	sheen = vec3(1.0);
-	if (grass_sheen.x > 0.0 && ring_keep > 0.0) {
+	float swell_s = 0.0;
+	if (ring_keep > 0.0 && (grass_sheen.x > 0.0 || swell.x > 0.0)) {
 		float sheen_seen = length(CAMERA_POSITION_WORLD - root);
 		float sheen_rise = max(normalize(CAMERA_POSITION_WORLD - root).y, 0.08);
 		float sheen_fp = sheen_seen * 0.0016 * (0.6 + 0.4 / sheen_rise);
-		sheen = mix(vec3(1.0), zs_sheen_tone(zs_sheen_field(root.xz, sheen_fp), root.xz, CAMERA_POSITION_WORLD, ring_d, zs_key_irradiance), smoothstep(grass_sheen.y, grass_sheen.z, ring_d));
+		swell_s = zs_sheen_field(root.xz, sheen_fp, swell.x);
+		if (grass_sheen.x > 0.0) sheen = mix(vec3(1.0), zs_sheen_tone(swell_s * swell.z, root.xz, CAMERA_POSITION_WORLD, ring_d, zs_key_irradiance), smoothstep(grass_sheen.y, grass_sheen.z, ring_d));
+	}
+	// Grass that blows as one (grass_swell): the tuft itself bends over on the
+	// swell the colour rides, with a slow sway of its own round that lean, so
+	// the light comes from the blades moving and isn't a wash over still ones.
+	if (swell.x > 0.0 && ring_keep > 0.0) {
+		float swell_scale = length(MODEL_MATRIX[1].xyz);
+		float swell_arm = max(VERTEX.y, 0.0) * swell_scale;
+		float swell_sway = sin(zs_motion_time * 1.5 + dot(root.xz, zs_wind_direction) * 0.14 + ring_rank * 2.2);
+		float swell_lean = swell.x * swell.y * (0.45 + 0.55 * swell_s + 0.14 * swell_sway);
+		vec2 swell_shove = zs_wind_direction * swell_lean * swell_arm * clamp(UV.y, 0.0, 1.0);
+		float swell_sq = min(dot(swell_shove, swell_shove), swell_arm * swell_arm * 0.96);
+		vec3 swell_off = inverse(mat3(MODEL_MATRIX)) * vec3(swell_shove.x, 0.0, swell_shove.y);
+		// (Most of the height kept, as the near tufts': a combed field stays thick.)
+		swell_off.y -= 0.2 * (swell_arm - sqrt(swell_arm * swell_arm - swell_sq)) / max(swell_scale, 0.001);
+		VERTEX += swell_off;
 	}
 	along = clamp(UV.y, 0.0, 1.0);
 	glance = mix(graze_tone, 1.0, smoothstep(graze_angles.x, graze_angles.y, normalize(CAMERA_POSITION_WORLD - MODEL_MATRIX[3].xyz).y));
@@ -140,6 +159,7 @@ void vertex() {
 		float seen = length(CAMERA_POSITION_WORLD - root);
 		float rise = max(normalize(CAMERA_POSITION_WORLD - root).y, 0.08);
 		silver = zs_silver_drive(root.xz, seen * 0.0016 * (0.6 + 0.4 / rise));
+		silver = mix(silver, zs_swell_silver(swell_s), swell.x);
 	}
 }
 

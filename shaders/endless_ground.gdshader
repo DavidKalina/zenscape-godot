@@ -767,6 +767,7 @@ void fragment() {
 	vec3 rp_under_tone = carpet_under_tone;
 	vec3 rp_hue = carpet_hue;
 	vec3 rp_silver = grass_silver_colour;
+	vec3 rp_swell = grass_swell;
 	if (zs_region_paints()) {
 		vec4 rw = zs_region_at(p.xz);
 		rp_tone_top = zs_region_mix3(rw, carpet_tone_top_r);
@@ -774,6 +775,7 @@ void fragment() {
 		rp_under_tone = zs_region_mix3(rw, carpet_under_tone_r);
 		rp_hue = zs_region_mix3(rw, carpet_hue_r);
 		rp_silver = zs_region_mix3(rw, grass_silver_colour_r);
+		rp_swell = zs_region_mix3(rw, grass_swell_r);
 	}
 	vec3 n = normalize(world_normal);
 	if (!FRONT_FACING) n = -n;
@@ -968,7 +970,8 @@ void fragment() {
 		crest_near = mix(0.35, crest_near, 1.0 - smoothstep(wave_lengths.x * 0.08, wave_lengths.x * 0.3, fp));
 		crest_far = mix(0.35, crest_far, 1.0 - smoothstep(wave_lengths.y * 0.08, wave_lengths.y * 0.3, fp));
 		float air = clamp(zs_wind_strength, 0.0, 2.0);
-		float crest = (crest_near * 0.35 + crest_far * 0.65) * air * wind_sheen;
+		// (Grass that blows as one keeps their mean: the swell carries the motion.)
+		float crest = mix(crest_near * 0.35 + crest_far * 0.65, 0.35, rp_swell.x) * air * wind_sheen;
 		// Velvet: turf seen low catches the light along its blades.
 		float grazing = pow(1.0 - clamp(dot(n, eye), 0.0, 1.0), 2.0);
 		// (The carpet's tufts catch no velvet: past them its paint keeps less.)
@@ -1112,6 +1115,7 @@ void fragment() {
 			// (From high up the lattice-free drive; near, the tufts' own, so the two meet.)
 			float silver_flip = zs_silver_drive(gxz, fp);
 			if (high_paint_old < 0.5 && wc_up > 0.0) silver_flip = mix(silver_flip, zs_silver_drive_smooth(gxz, fp), wc_up);
+			if (rp_swell.x > 0.0) silver_flip = mix(silver_flip, zs_swell_silver(zs_sheen_field(gxz, fp, rp_swell.x)), rp_swell.x);
 			grass = zs_silver_paint_hue(grass, silver_flip, 1.0 - thin * 0.6, 0.8, rp_silver);
 		}
 		// The wind's sheen: light and dark swells rolling over the far meadow (grass_sheen).
@@ -1119,8 +1123,8 @@ void fragment() {
 			float sheen_d = endless_ring_d(CAMERA_POSITION_WORLD, p);
 			float sheen_on = carpet_turf * smoothstep(grass_sheen.y, grass_sheen.z, sheen_d) * (1.0 - thin * 0.6) * (1.0 - 0.85 * wc_up);
 			float sheen_s = 0.0;
-			if (sheen_on > 0.0 || grass_lawn.x > 0.0) sheen_s = zs_sheen_field(gxz, fp);
-			if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(sheen_s, gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
+			if (sheen_on > 0.0 || grass_lawn.x > 0.0) sheen_s = zs_sheen_field(gxz, fp, rp_swell.x);
+			if (sheen_on > 0.0) grass *= mix(vec3(1.0), zs_sheen_tone(sheen_s * rp_swell.z, gxz, CAMERA_POSITION_WORLD, sheen_d, zs_key_irradiance), sheen_on);
 			// The far grass as a fine lawn (far_lawn.gdshaderinc), from past the tufts.
 			if (grass_lawn.x > 0.0) {
 				float lawn_on = carpet_turf * smoothstep(grass_lawn.y, grass_lawn.z, sheen_d) * (1.0 - thin * 0.6);

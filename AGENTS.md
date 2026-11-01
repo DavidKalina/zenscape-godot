@@ -140,6 +140,27 @@ existing test its change breaks. Run the full suite only when the user asks.
   mechanics (steps, contracts, proof) and stay general. Code, assets and
   tools built for earlier directions stay; they are tools.
 
+# Stutter and frame rate
+
+When the user reports stutter, jitter or a slow frame rate, measure a flight
+they fly. Offer it before building an autopilot: the costs live where they
+fly (flat out, low, near trees), and a driven run at height hid nearly all
+of them.
+
+1. Run `python tools/play.py -- --frame-log=res://scratch/f1.csv` in the
+   background. The window opens on their saved preset. They fly and quit, and
+   the run's end brings you back; don't poll.
+2. Read it with `python tools/frame_report.py scratch/f1.csv`. It names each
+   spike's cause. `--skip 20` drops the takeoff; two logs print side by side.
+   Add `FrameLog.mark` calls to split a part that spikes, and `FrameLog.add`
+   for work outside the tick, such as coroutine slices.
+3. Fix, then have them fly again to a new log and compare. Report the real
+   flight's numbers, and what the flights didn't cover.
+
+Headless can't show waits on the GPU (reading meshes back, writing one
+MultiMesh instance in place), so prove those rendered. Stills from a driven
+run show what it really flew over. Repeat an A/B before believing it.
+
 # Meadows and flats
 
 The land always has meadows and flats in reach: wherever the plane is
