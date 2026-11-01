@@ -144,6 +144,9 @@ var ground: ShaderMaterial
 var ground_copies: Array[ShaderMaterial] = []
 var _time := 0.0
 var _gust := 0.0
+## The grass's swells' clock: the air's travel at the world's pace under the eye.
+var _sheen := 0.0
+var _sheen_pace := 1.0
 var _wind_angle := 0.0
 var _wind := WIND
 var mood := MOOD
@@ -654,6 +657,7 @@ func step(delta: float, eye: Vector3, facing := Vector3.FORWARD, view: Camera3D 
 	if _light_on:
 		sun.light_energy *= _key
 		RenderingServer.global_shader_parameter_set("zs_hemi_energy",float(celestial.state.zs_hemi_energy)*_fill)
+	_sheen_pace = WorldProfile.current().sheen_pace_at(eye.x,eye.z)
 	_publish(delta)
 	_haze(facing)
 	if post != null: post.step(view,self,facing)
@@ -673,13 +677,16 @@ func _publish(delta: float) -> void:
 	# The wind wanders a little round its heading, its strength breathing.
 	var angle := _wind_angle+0.35*sin(_time*0.013)
 	var strength := _wind*(0.85+0.15*sin(_time*0.21)*sin(_time*0.077))
-	_gust += delta*AIR_SPEED*(0.5+0.5*strength/WIND)
+	var travel := delta*AIR_SPEED*(0.5+0.5*strength/WIND)
+	_gust += travel
+	_sheen += travel*_sheen_pace
 	wind_direction = Vector2(cos(angle),sin(angle))
 	RenderingServer.global_shader_parameter_set("zs_motion_time",_time)
 	RenderingServer.global_shader_parameter_set("zs_flow_time",_time)
 	RenderingServer.global_shader_parameter_set("zs_wind_direction",Vector2(cos(angle),sin(angle)))
 	RenderingServer.global_shader_parameter_set("zs_wind_strength",strength)
 	RenderingServer.global_shader_parameter_set("zs_gust_distance",_gust)
+	RenderingServer.global_shader_parameter_set("zs_sheen_distance",_sheen)
 	RenderingServer.global_shader_parameter_set("zs_gust_speed",AIR_SPEED)
 
 ## The Peak's collar keeps its own sky: the land's hour below the band

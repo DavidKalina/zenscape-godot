@@ -31,6 +31,12 @@ global uniform float zs_wind_strength;
 global uniform vec2 zs_wind_direction;
 global uniform vec2 zs_wind_offset;
 global uniform float zs_gust_distance;
+// The grass's swells' own clock: the air's travel at the world's pace
+// (EndlessLook `_publish`, paint.sheen_pace).
+global uniform float zs_sheen_distance;
+// How far the near tufts stand combed downwind (m of tip per m of tuft; 0
+// none): the near ring's share of grass_swell.y, paint.globals.
+global uniform float zs_grass_lean;
 global uniform float zs_gust_speed;
 // The ambient breeze plants lean in (studies/atmosphere.gd `breeze`,
 // docs/scenic/breeze.md): the air's strength lifted to a gentle floor and
