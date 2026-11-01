@@ -140,6 +140,7 @@ const PeakTowers = preload("res://scripts/endless/rocks/peak_towers.gd")
 const LandHalls = preload("res://scripts/endless/land_halls.gd")
 const SplitSites = preload("res://scripts/endless/split_sites.gd")
 const LandTunnels = preload("res://scripts/endless/land_tunnels.gd")
+const LandIceTunnel = preload("res://scripts/endless/land_ice_tunnel.gd")
 const LandTrees = preload("res://scripts/endless/land_trees.gd")
 ## The birds (scripts/endless/endless_birds.gd; --birds=0 off).
 const EndlessBirds = preload("res://scripts/endless/endless_birds.gd")
@@ -300,6 +301,9 @@ var rock_start := {}
 var halls: Node3D
 ## The mountain tunnels' bores (scripts/endless/land_tunnels.gd).
 var tunnels: Node3D
+## The ice tunnel in the Peak's shoulder (scripts/endless/land_ice_tunnel.gd;
+## stands empty with --ice-tunnel=0).
+var ice: Node3D
 ## The spruce forests (scripts/endless/land_trees.gd; off under --no-trees).
 var trees: Node3D
 ## The birds flushed from the trees and the far flocks.
@@ -660,6 +664,10 @@ func _ready() -> void:
 	add_child(tunnels)
 	tunnels.setup(field)
 	if look != null: tunnels.clouds = look.clouds
+	ice = LandIceTunnel.new()
+	ice.name = "IceTunnel"
+	add_child(ice)
+	ice.setup(field)
 	trees = LandTrees.new()
 	trees.name = "Trees"
 	add_child(trees)
@@ -715,6 +723,7 @@ func _ready() -> void:
 	if towers != null: towers.prime(eye)
 	halls.prime(eye)
 	tunnels.prime(eye)
+	ice.prime(eye)
 	trees.prime(eye)
 	debris = FlightDebris.new()
 	debris.name = "Debris"
@@ -1033,8 +1042,8 @@ func _launch(at: Vector3, heading: float, parked := false) -> void:
 	# before the rock stops it, and its walls are slippery (LandTunnels
 	# `guide`, `keep`).
 	if tunnels != null:
-		plane.guide = Callable(tunnels,"guide")
-		plane.keep = Callable(tunnels,"keep")
+		plane.guide = Callable(self,"bore_guide")
+		plane.keep = Callable(self,"bore_keep")
 	# Past the sea round the land, the plane is eased home (`field` as it stands:
 	# a door changes it).
 	plane.fence = func(p: Vector3, h: float) -> Vector2: return field.fence(p,h)
@@ -1096,16 +1105,26 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 	if pad < 0.0:
 		pad = solid_pad
 		p += solid_shift
-	var g: Variant = tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad)
+	var g: Variant = ice.ground(p,tunnels.ground(p,halls.ground(p,trees.ground(p,rocks.ground(p,arches.ground(p,field.height(p.x,p.z),pad),pad)),pad),pad),pad)
 	if coast != null: g = coast.ground(p,g,pad)
 	# The Peak's stair raises it over its flights (PeakStair `ground`).
 	if stair != null: g = stair.ground(p,g,pad)
 	return g if doors == null else doors.ground(p,g,pad)
 
+## SkyGlide's `guide` and `keep` in the bores: the mountain tunnels', then
+## the ice tunnel's (HallDoors hands them back on leaving its hall).
+func bore_guide(p: Vector3, heading: float, speed: float) -> Dictionary:
+	var g: Dictionary = tunnels.guide(p,heading,speed)
+	return g if not g.is_empty() or ice == null else ice.guide(p,heading,speed)
+
+func bore_keep(p: Vector3) -> Vector3:
+	p = tunnels.keep(p)
+	return p if ice == null else ice.keep(p)
+
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
 	if doors != null and doors.holds(p): return false
-	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.inside(p))
+	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.inside(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
@@ -1114,7 +1133,8 @@ func floor_at(p: Vector2) -> float:
 	var h: float = field.height(p.x,p.y)
 	if h < Field.SEA_Y+0.2 or _on_river(): return NAN
 	# In a tunnel's bore, its floor (read at the plane's height).
-	return tunnels.land_y(Vector3(p.x,plane.position.y if plane != null else h,p.y),h)
+	var q := Vector3(p.x,plane.position.y if plane != null else h,p.y)
+	return ice.land_y(q,tunnels.land_y(q,h))
 
 ## Whether the field's last sample was on a river's water (not the sea's
 ## mouth, which the sea takes).
@@ -1134,13 +1154,13 @@ func eye_floor(p: Vector3) -> float:
 	if doors != null and doors.holds(p): return doors.hall_floor()
 	var h: float = field.height(p.x,p.z)
 	if _on_river(): h = maxf(h,field.river_drawn())
-	h = tunnels.land_y(p,h)
+	h = ice.land_y(p,tunnels.land_y(p,h))
 	return maxf(h,Field.SEA_Y+sea_height(p))
 
 ## Inside the land or the sea, for the camera to keep out of.
 func _solid(p: Vector3) -> bool:
 	if doors != null and doors.holds(p): return p.y < doors.hall_floor()+EYE_CLEAR*0.5
-	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.in_wreck(p,0.4))
+	return p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p) or (coast != null and coast.in_wreck(p,0.4))
 
 ## The sea's swell over its rest level at `p` (EndlessSea `height_at`; 0 on
 ## the flat sea), looked up only near the water.
@@ -1160,13 +1180,16 @@ func _sight(from: Vector3, to: Vector3) -> float:
 	if doors != null and doors.holds(from): return 1.0
 	var bore: float = tunnels.sight(from,to)
 	if tunnels.sight_whole: return bore
+	var ice_bore: float = ice.sight(from,to)
+	if ice.sight_whole: return minf(bore,ice_bore)
+	bore = minf(bore,ice_bore)
 	for i in range(1,STEPS+1):
 		var t := float(i)/STEPS
 		if t > bore: break
 		var p := from.lerp(to,t)
 		# In a bore's tube the fine march has answered.
-		if tunnels.tube(p) >= 0: continue
-		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p): return float(i-1)/STEPS
+		if tunnels.tube(p) >= 0 or ice.tube(p) >= 0: continue
+		if p.y < eye_floor(p)+EYE_CLEAR*0.5 or arches.inside(p) or rocks.inside(p) or halls.inside(p) or tunnels.inside(p) or ice.inside(p): return float(i-1)/STEPS
 	return bore
 
 func _process(delta: float) -> void:
@@ -1197,7 +1220,7 @@ func tick(delta: float) -> void:
 	FrameLog.mark(&"t_feel")
 	input["flaps"] = 1.0 if flaps else 0.0
 	# In a bore's tube the low zone lets be (SkyPlane `roofed`).
-	plane.roofed = (tunnels != null and int(tunnels.tube(plane.position)) == 0) or (doors != null and doors.holds(plane.position))
+	plane.roofed = (tunnels != null and int(tunnels.tube(plane.position)) == 0) or (ice != null and int(ice.tube(plane.position)) == 0) or (doors != null and doors.holds(plane.position))
 	# Rolling, the arches' legs and piers stand in the way (LandArches `inside`).
 	# The trees the coming move meets are knocked down first, so it flies on through.
 	FrameLog.mark(&"t_roofed")
@@ -1275,6 +1298,7 @@ func tick(delta: float) -> void:
 	halls.step(camera.global_position)
 	FrameLog.mark(&"halls")
 	tunnels.step(camera.global_position)
+	ice.step(camera.global_position)
 	FrameLog.mark(&"tunnels")
 	if doors != null: doors.late(camera.global_position)
 	FrameLog.mark(&"doors_late")
@@ -1573,7 +1597,7 @@ func _frame(delta: float) -> void:
 	if right != Vector2.ZERO: chase.turn(Vector2(-right.x,-right.y)*STICK_LOOK*delta)
 	chase.free_held = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or right != Vector2.ZERO
 	if coast != null: coast.watch(chase)
-	chase.tight = tunnels.near(plane.position) or (doors != null and doors.holds(plane.position))
+	chase.tight = tunnels.near(plane.position) or ice.near(plane.position) or (doors != null and doors.holds(plane.position))
 	chase.step(delta,plane,0.0,_solid)
 	camera.global_position = chase.eye
 	var way: Vector3 = chase.look-chase.eye
@@ -1854,6 +1878,7 @@ func _rock_note() -> String:
 func _hall_note() -> String:
 	var out: String = "" if halls.density <= 0.0 else "\n"+halls.note()
 	if tunnels != null and int(tunnels.stats.tunnels) > 0: out += "\n"+tunnels.note()
+	if ice != null and ice.tun != null: out += "\n"+ice.note()
 	return out
 
 func _grass_note() -> String:
