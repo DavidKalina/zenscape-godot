@@ -90,7 +90,26 @@ makes one piece file, with its own flown driver and film:
 
 **Trunk (after the lanes merge).** The gate, the columns, the hall and the pyramid
 placed in one line from the mouth, tuned so each sets up the next, flown end to end by
-both lines. Smoke, then a handoff and a window for the user.
+both lines. Smoke, then a handoff and a window for the user. The lanes are merged. Trunk
+tasks, one iteration each:
+
+1. **The gate at the new size.** `gate.gd` is still the first sizing (340 m door, 410 m
+   wall, 22 m slits). Rebuild it to the guide, about 90 m tall, with its two lines,
+   and fly both.
+2. **The line on the land.** Choose the real spots (`PLACED`) and seat the pieces,
+   rechecking each piece's flown heights and notes in its lane commit: the colonnade's
+   feet reach 60 m down, the pyramid's door floor stands 10 m over its origin, the hall's
+   heights were tuned to its trial site and it needs 1.2 km. The line may bend. Keep the
+   mourner in sight, the mouth clear and the route off it. Stills from the air, with the
+   stomper in shot.
+3. **Link and fly it.** Tune the gaps so each piece's exit sets up the next, and fly the
+   wide line and the tight line end to end through a real hall crossing if the harness
+   can do it, by stick, with films. Say where a line breaks and fix it.
+4. **Depth in the dark.** The shared `GLOW` leaves shaded faces one flat tone inside the
+   hall, so depth is hard to read at speed. A plain grey that still shows form, seen in the
+   play camera in the dark bays. Grey only: this is not the look pass.
+5. **Cost.** Frame time and triangles on screen flying the line, against the build
+   without the city. Smoke. Then stop: the handoff and the window are the loop's.
 
 ## Rules
 
