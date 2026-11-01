@@ -25,9 +25,9 @@ const Colonnade = preload("res://scripts/endless/city/colonnade.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const DEEP := 60.0
 
-## REACH is the ring the stomper's route already goes round, about the row's spot,
-## which is the old colonnade's so his route holds. The road runs on out of it: he
-## crosses it near s 1000 and s 1330 and walks beside it to s 3000.
+## REACH is a ring about the row's spot, not the road's length: the road runs on
+## out of it. The stomper keeps off the whole road by where his line is laid
+## (stomper_route.gd).
 const REACH := 350.0
 const LANDED := true
 ## Where the centre line starts, against the gate's back wall, in this piece's

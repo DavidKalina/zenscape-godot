@@ -1,47 +1,33 @@
 extends RefCounted
-## The stomper's walk (stomper.gd): a closed loop round its land's home over
-## ground it can stand on. A cost grid of the real land, then the cheapest ring
-## round the home over it: one radius on each bearing, each near the last, so it
-## can't double back. Smoothed to a line the body can turn along. Built once at
-## setup, from the field alone, so the same seed walks the same loop.
-##   walked(field, home, open)   the loop; `open(x, z)`: whether it may go there
+## The stomper's walk (stomper.gd): a closed loop laid by hand on the plain over the
+## lake from the road, read off the height map with the land fully streamed, then
+## smoothed to a line the body can turn along. About 3.8 km, 1.6 km by 0.7, a long
+## bean round a low hill, so it reads as a walk out and back, not round a pole. It
+## keeps 1.7 km or more off the road and 1.9 km off the pyramid, and stands 40
+## degrees or more aside of the sight line from the shore road to the pyramid. The
+## same on every machine: it reads no land.
+##   walked(place)          the loop; `place(at)`: LINE's (along, across) as world x, z
 ##   at(s) / way(s)         the point and the unit direction `s` m along it
 ##   nearest(p)             the `s` closest to `p`
 
-## The grid: a cell (m), cells across it.
-const CELL := 80.0
-const CELLS := 75
-## How far apart (cells) the ground is compared for its rise, and the rise (m)
-## past which a cell gets dear, then close to shut.
-const REACH := 1
-const EASY := 28.0
-const HARD := 75.0
-const HARD_COST := 300.0
-## Cells kept off water, and how far over it the ground must stand (m).
-const SHORE := 2
-const DRY := 6.0
-## The ring: bearings round the home, the radii open on each (m), how many radii
-## it may move a bearing, what a metre of radius costs on each stretch, and what
-## a stretch costs on or by the water (a price, so a ring still closes).
-const BEARINGS := 28
-const RADIUS_NEAR := 300.0
-const RADIUS_STEP := 125.0
-const RADII := 22
-const RADIUS_MOVE := 3
-const RADIUS_PRICE := 0.004
-const WET_COST := 100000.0
-## Points read along a stretch of the ring.
-const STRETCH_READS := 6
+## The corners, in the city's frame (along, across; giant_city.gd PLACED). North
+## about, east end at the fin over the lake, between the two ruins at the west end.
+const LINE: Array[Vector2] = [Vector2(2220.0,-960.0),Vector2(2520.0,-1010.0),Vector2(2610.0,-1300.0),Vector2(2600.0,-1760.0),Vector2(2440.0,-2020.0),
+	Vector2(2340.0,-2240.0),Vector2(2360.0,-2480.0),Vector2(2390.0,-2620.0),Vector2(2250.0,-2650.0),Vector2(2100.0,-2630.0),
+	Vector2(2110.0,-2420.0),Vector2(2130.0,-2220.0),Vector2(2030.0,-1940.0),Vector2(1880.0,-1600.0),Vector2(1880.0,-1200.0),
+	Vector2(1990.0,-1000.0)]
 ## The line: its points' spacing (m), smoothing passes.
 const SPACING := 40.0
-const PASSES := 60
+const PASSES := 24
 
 var points := PackedVector2Array()
 var length := 0.0
 
-static func walked(field: RefCounted, start: Vector2, open: Callable) -> RefCounted:
+static func walked(place: Callable) -> RefCounted:
 	var route: RefCounted = (load("res://scripts/endless/stomper_route.gd") as GDScript).new()
-	route._build(field,start,open)
+	var raw := PackedVector2Array()
+	for corner: Vector2 in LINE: raw.append(place.call(corner))
+	route._line(raw)
 	return route
 
 func at(s: float) -> Vector2:
@@ -62,112 +48,7 @@ func nearest(p: Vector2) -> float:
 			out = float(i)*SPACING
 	return out
 
-func _build(field: RefCounted, start: Vector2, open: Callable) -> void:
-	var cost := _cost(field,start,open)
-	var ring := _ring(cost)
-	# Bearings run back: it goes round the far side's lake toward the door.
-	var raw := PackedVector2Array()
-	for b in range(BEARINGS-1,-1,-1):
-		raw.append(start+_spot(b,ring[b]))
-	_line(raw)
-
-func _origin(start: Vector2) -> Vector2:
-	return start-Vector2.ONE*CELL*float(CELLS)*0.5
-
-## Each cell's price: 1 on easy ground, rising with how much the ground varies
-## round it; INF on and by the water and what `open` shuts.
-func _cost(field: RefCounted, start: Vector2, open: Callable) -> PackedFloat32Array:
-	var o := _origin(start)
-	var high := PackedFloat32Array()
-	var wet := PackedByteArray()
-	high.resize(CELLS*CELLS)
-	wet.resize(CELLS*CELLS)
-	var sea := float(field.SEA_Y)+DRY
-	for j in range(CELLS):
-		for i in range(CELLS):
-			var x := o.x+float(i)*CELL
-			var z := o.y+float(j)*CELL
-			var h := float(field.height(x,z))
-			var river := float(field.river_y(x,z))
-			high[j*CELLS+i] = h
-			wet[j*CELLS+i] = 1 if h < sea or (not is_nan(river) and h < river+DRY) or not open.call(x,z) else 0
-	var cost := PackedFloat32Array()
-	cost.resize(CELLS*CELLS)
-	for j in range(CELLS):
-		for i in range(CELLS):
-			var rise := 0.0
-			var near_water := false
-			for dj in range(-maxi(REACH,SHORE),maxi(REACH,SHORE)+1):
-				for di in range(-maxi(REACH,SHORE),maxi(REACH,SHORE)+1):
-					var c := clampi(j+dj,0,CELLS-1)*CELLS+clampi(i+di,0,CELLS-1)
-					rise = maxf(rise,absf(high[c]-high[j*CELLS+i]))
-					if wet[c] == 1: near_water = true
-			var k := rise/EASY
-			var price := 1.0+k*k*4.0
-			if rise > HARD: price += HARD_COST
-			cost[j*CELLS+i] = INF if near_water else price
-	return cost
-
-## Bearing `b`, radius index `r`, as a way from the home.
-func _spot(b: int, r: int) -> Vector2:
-	return Vector2.from_angle(TAU*float(b)/float(BEARINGS))*(RADIUS_NEAR+float(r)*RADIUS_STEP)
-
-## The ring's radius index on each bearing: the cheapest closed ring, by dynamic
-## programming from each radius on the first bearing.
-func _ring(cost: PackedFloat32Array) -> PackedInt32Array:
-	var moves := RADIUS_MOVE*2+1
-	var stretch := PackedFloat32Array()
-	stretch.resize(BEARINGS*RADII*moves)
-	for b in range(BEARINGS):
-		for r in range(RADII):
-			for m in range(moves):
-				var to := r+m-RADIUS_MOVE
-				var i := (b*RADII+r)*moves+m
-				stretch[i] = _stretch(cost,_spot(b,r),_spot((b+1)%BEARINGS,clampi(to,0,RADII-1))) if to >= 0 and to < RADII else INF
-	var best := INF
-	var out := PackedInt32Array()
-	for first in range(RADII):
-		var dist := PackedFloat32Array()
-		dist.resize(RADII)
-		dist.fill(INF)
-		dist[first] = 0.0
-		var back := PackedInt32Array()
-		back.resize(BEARINGS*RADII)
-		for b in range(BEARINGS):
-			var next := PackedFloat32Array()
-			next.resize(RADII)
-			next.fill(INF)
-			for r in range(RADII):
-				if is_inf(dist[r]): continue
-				for m in range(moves):
-					var to := r+m-RADIUS_MOVE
-					if to < 0 or to >= RADII: continue
-					var through := dist[r]+stretch[(b*RADII+r)*moves+m]
-					if through < next[to]:
-						next[to] = through
-						back[b*RADII+to] = r
-			dist = next
-		if dist[first] < best:
-			best = dist[first]
-			out.resize(BEARINGS)
-			var r := first
-			for b in range(BEARINGS-1,-1,-1):
-				r = back[b*RADII+r]
-				out[b] = r
-	return out
-
-## What it costs to walk from `a` to `b` (ways from the home).
-func _stretch(cost: PackedFloat32Array, a: Vector2, b: Vector2) -> float:
-	var sum := 0.0
-	for i in range(STRETCH_READS):
-		var p := a.lerp(b,(float(i)+0.5)/float(STRETCH_READS))/CELL+Vector2.ONE*float(CELLS)*0.5
-		var x := int(round(p.x))
-		var y := int(round(p.y))
-		if x < 0 or y < 0 or x >= CELLS or y >= CELLS: sum += WET_COST
-		else: sum += minf(cost[y*CELLS+x],WET_COST)
-	return sum*a.distance_to(b)/CELL/float(STRETCH_READS)+a.distance_to(b)*(a.length()+b.length())*0.5*RADIUS_PRICE/CELL
-
-## The ring's corners as an even closed line, smoothed so the body turns, not jogs.
+## The corners as an even closed line, smoothed so the body turns, not jogs.
 func _line(raw: PackedVector2Array) -> void:
 	points = _even(raw)
 	for pass_i in range(PASSES):

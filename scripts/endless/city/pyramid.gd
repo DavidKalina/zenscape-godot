@@ -15,8 +15,6 @@ const Shapes = preload("res://scripts/endless/city/city_shapes.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 
 const REACH := 290.0
-## Its hill fills the only dry line of the stomper's ring (giant_city.gd `walk_round`).
-const ROUTE_ROUND := 430.0
 const DEEP := 40.0
 
 ## What it stands on where its hill falls away: a floor at the origin, so the row's

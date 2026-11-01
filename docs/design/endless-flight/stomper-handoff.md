@@ -5,7 +5,7 @@ hall in the default game. Trail: `git log --grep='^ITER(stomper)'`. Spec:
 `spec-stomper.md`.
 
 Play: `python3 tools/play.py studies/endless_flight.tscn -- --no-title`, fly
-through the hall, look left of dead ahead on the way out.
+through the hall, and look across the lake from the shore road.
 `--world=amberlands` is a debug world on other land. `--stomper=0`,
 `--no-stomper-fall` and `--no-stomper-wake` leave parts out.
 
@@ -15,8 +15,9 @@ through the hall, look left of dead ahead on the way out.
   from `art/blender/headless_body/` (`reduce_stomper.py`, `bake_clips.py`), with
   an authored `stomp` clip: two steps of about 92 m in 16 s.
 - Walk (`stomper.gd`, `stomper_legs.gd`, `stomper_route.gd`): feet planted by IK
-  on `field.height`, a closed 12.3 km ring round the side's home, 17.7 min a
-  lap, kept to the far side. It only walks while the plane is on that side.
+  on `field.height`, a closed 3.8 km loop laid by hand on the plain over the
+  lake from the road (it was a 12.3 km ring round the home), about 5.5 min a
+  lap. It only walks while the plane is on that side.
 - Footfall (`stomper_fall.gd`): ring pressed into the land, dust, grass, view
   shake, FOV punch, pad rumble, a low thump, a shove within 520 m.
 - Wake (`stomper_wake.gd`): prints for 10 min, a scuffed band for 4, grass held

@@ -2,10 +2,11 @@ extends Node3D
 ## The stomper (docs/design/endless-flight/spec-stomper.md): one giant headless
 ## stone body in the Amberlands, the only one in the world: on the far side of
 ## the door in the game (doors world), at the origin with --world=amberlands, the
-## debug world. It walks a loop round that land's home (stomper_route.gd), about
-## HEIGHT m tall, and only while the plane is on its side, so it is where it was
-## left and the first way out of the hall meets it. It is solid to the flight
-## (stomper_solid.gd). `--stomper=0` leaves it out.
+## debug world. About HEIGHT m tall, it walks a loop on open ground in the
+## outskirts, out past the city (stomper_route.gd), a shape on the
+## horizon from the road, and only while the plane is on its side, so it is where
+## it was left. It is solid to the flight (stomper_solid.gd). `--stomper=0` leaves
+## it out.
 ##
 ## One skinned mesh and one Skeleton3D from assets/models/stomper_body.glb
 ## (art/blender/headless_body/reduce_stomper.py), dressed in the kit's stone.
@@ -30,6 +31,7 @@ const Wake = preload("res://scripts/endless/stomper_wake.gd")
 const Solid = preload("res://scripts/endless/stomper_solid.gd")
 const Shadow = preload("res://scripts/endless/stomper_shadow.gd")
 const Door = preload("res://scripts/endless/hall_doors.gd")
+const City = preload("res://scripts/endless/giant_city.gd")
 const MODEL := "res://assets/models/stomper_body.glb"
 ## Its height in play (m), and the model's, stump's cut to soles (m).
 const HEIGHT := 250.0
@@ -43,14 +45,15 @@ const LIFT: Array[float] = [0.62,0.12]
 const STANCE := 0.62
 ## The cycle's table: samples of the clip, read at setup.
 const SAMPLES := 96
-## Where on the loop it starts, off the home (m): across the lake, left of the
-## way out of the hall, walking north toward the ruin.
-const START_OFF := Vector2(1530.0,900.0)
-## How far off the hall's mouth on this side it keeps (m; the route's shore
-## margin comes on top).
+## Where on the loop it starts, in the city's frame (along, across): the lake's end
+## of the plain, in sight of the shore road.
+const START_AT := Vector2(1950.0,-1150.0)
+## How far off the hall's mouth on this side it keeps (m).
 const DOOR_CLEAR := 220.0
 ## Past the stride, off the edge of any ruin.
 const RUIN_CLEAR := 110.0
+## Off the city's pieces (giant_city.gd `clear_of`).
+const CITY_CLEAR := 200.0
 ## A hip's socket off the hips' middle (model m).
 const HIP_X := 1.13568
 ## A sole's ground: how far round the ankle it is read (m), the most it tilts.
@@ -92,7 +95,7 @@ var field: RefCounted
 var world: RefCounted
 ## The capsules the flight meets (stomper_solid.gd).
 var solid := Solid.new()
-## The land's home: the middle of its loop.
+## The land's home.
 var centre := Vector2.ZERO
 var _study: Node
 ## The model's metres to the world's.
@@ -148,9 +151,9 @@ func setup(study: Node) -> void:
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	player.play(CLIP)
 	_read_clip()
-	route = Route.walked(field,centre,_open)
-	preload("res://scripts/endless/giant_city.gd").walk_round(world,route)
-	along = route.nearest(centre+START_OFF)
+	route = Route.walked(_in_city)
+	_check_route()
+	along = route.nearest(_in_city(START_AT))
 	_stand()
 	legs = Legs.new()
 	skeleton.add_child(legs)
@@ -172,13 +175,27 @@ func setup(study: Node) -> void:
 		if fall != null: shadow.also(fall.dust_material())
 	visible = _plane_here()
 
-## Whether it may stand at (x, z): on its side of the door, off the hall's mouth
-## and the giants' remains (giant_swells.gd).
+## A spot in the city's frame (along, across), as world x, z.
+func _in_city(at: Vector2) -> Vector2:
+	var p: Vector3 = City.frame(world)*Vector3(at.y,0.0,at.x)
+	return Vector2(p.x,p.z)
+
+## The route is laid by hand: a ruin or a piece moved onto it says so. On the doors
+## world alone, the land it was laid on (--world=amberlands is other land).
+func _check_route() -> void:
+	if str(world.id) != "doors": return
+	for p: Vector2 in route.points:
+		if not _open(p.x,p.y):
+			push_warning("The stomper's route is shut at %s (stomper_route.gd LINE)." % str(p))
+			return
+
+## Whether it may stand at (x, z): on its side of the door, off the hall's mouth,
+## the giants' remains (giant_swells.gd) and the city.
 func _open(x: float, z: float) -> bool:
 	if world.has_method("side_of") and int(world.side_of(x,z)) != 1: return false
 	var ruins: RefCounted = field.swells()
 	if ruins != null and not ruins.clear_of(x,z,RUIN_CLEAR): return false
-	if not preload("res://scripts/endless/giant_city.gd").clear_of(world,x,z,preload("res://scripts/endless/giant_city.gd").ROUTE_ROOM): return false
+	if not City.clear_of(world,x,z,CITY_CLEAR): return false
 	return Vector2(x,z).distance_to(centre+Door.AMBER_AT) > DOOR_CLEAR
 
 func _plane_here() -> bool:

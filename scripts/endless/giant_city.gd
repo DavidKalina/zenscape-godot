@@ -12,9 +12,6 @@ extends Node3D
 ##   const Shapes = preload("res://scripts/endless/city/city_shapes.gd")
 ##   ## How far from its origin the piece reaches (m): keeps the stomper off.
 ##   const REACH := 420.0
-##   ## A piece on his only way: not shut, his route bends round it behind it at
-##   ## this radius instead (`walk_round`; optional).
-##   const ROUTE_ROUND := 350.0
 ##   ## A long piece: half the length of the line REACH is measured from (optional).
 ##   const SPINE := 480.0
 ##   static func build(s: Shapes) -> void:
@@ -74,12 +71,6 @@ const PLACED := [
 ## How far under the origin a piece's feet go (m): the land's rise and fall
 ## under a piece on the flats by the mouth.
 const DEEP := 60.0
-## `walk_round`'s smoothing passes, so he turns along the bend.
-const ROUND_PASSES := 12
-## How far the stomper's route keeps off a piece's REACH (m), as `clear_of`'s room:
-## below nothing, because the route's grid (stomper_route.gd SHORE) grows anything
-## shut by 160 m, and any more shuts his only way past the hall.
-const ROUTE_ROOM := -100.0
 ## Past this the far mesh takes over (m), give or take MARGIN.
 const NEAR_TO := 3000.0
 const MARGIN := 100.0
@@ -155,41 +146,12 @@ static func clear_of(world: RefCounted, x: float, z: float, room: float) -> bool
 			var at := LayoutOverrides.xform(str(e.name),_coded(world,e))
 			var piece: GDScript = e.piece
 			var map := piece.get_script_constant_map()
-			if map.has("ROUTE_ROUND"): continue
 			var spine := at.basis.z*float(map.get("SPINE",0.0))
 			_rings.append([Vector2(at.origin.x-spine.x,at.origin.z-spine.z),Vector2(at.origin.x+spine.x,at.origin.z+spine.z),float(piece.REACH)])
 	var p := Vector2(x,z)
 	for r: Array in _rings:
 		if p.distance_to(Geometry2D.get_closest_point_to_segment(p,r[0],r[1])) < float(r[2])+room: return false
 	return true
-
-## Bends the stomper's route round each piece that gives ROUTE_ROUND: where the
-## land leaves him one way and a piece fills it, shutting the piece would drop his
-## ring to a tiny loop on the lake (stomper_route.gd prices water, it can't bar it).
-## The stretch inside the radius is thrown out onto the circle, on the piece's +z.
-static func walk_round(world: RefCounted, route: RefCounted) -> void:
-	if not wanted(world): return
-	for e: Dictionary in PLACED:
-		var map: Dictionary = (e.piece as GDScript).get_script_constant_map()
-		if not map.has("ROUTE_ROUND") or LayoutOverrides.deleted(str(e.name)): continue
-		var at := LayoutOverrides.xform(str(e.name),_coded(world,e))
-		var c := Vector2(at.origin.x,at.origin.z)
-		var r := float(map.ROUTE_ROUND)
-		var from := c-Vector2(at.basis.z.x,at.basis.z.z).normalized()*r*0.5
-		var pts: PackedVector2Array = route.points
-		var hit := false
-		for i in pts.size():
-			if pts[i].distance_to(c) < r:
-				pts[i] = c+(pts[i]-from).normalized()*r
-				hit = true
-		if not hit: continue
-		for pass_i in ROUND_PASSES:
-			var next := pts.duplicate()
-			for i in pts.size():
-				next[i] = (pts[(i+pts.size()-1)%pts.size()]+pts[i]*2.0+pts[(i+1)%pts.size()])*0.25
-			pts = next
-		route.points = route._even(pts)
-		route.length = float(route.points.size())*route.SPACING
 
 ## --city-start: flying the city by hand with no crossing to fly first. The far
 ## side at once, the plane held out of the mouth and facing the gate until the
