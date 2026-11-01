@@ -193,6 +193,7 @@ const BODY_TURN := [0.0,0.16,-0.22,0.0,0.3,0.0,0.38,-0.32,0.62,-0.55,0.9]
 const BODY_SIZE := [0.45,0.42,0.38,0.32,0.28,0.07,0.068,0.064,0.06,0.055,0.05]
 const GRAVITY := 9.81
 var _knobs := {}
+var _swell: Object = null
 ## The shader's defaults for what the mirror reads (a material keeps only
 ## what was set).
 const FOAM_CAPS := Vector3(1.6,6.0,1.0)
@@ -203,6 +204,11 @@ const KNOB_DEFAULTS := {"sea_fft":0,"fft_sizes":Vector3(250.0,37.0,5.7),"fft_foa
 ## points sideways, so the rest point under `x`,`z` is found by a few steps.
 func height_at(x: float, z: float) -> float:
 	if int(_knob("sea_body")) == 0: return 0.0
+	if _native_swell(): return _swell.height_at(x,z,_now)
+	return gd_height_at(x,z)
+
+## `height_at`'s loop here.
+func gd_height_at(x: float, z: float) -> float:
 	var target := Vector2(x,z)
 	var p := target
 	var shift := Vector3.ZERO
@@ -210,6 +216,17 @@ func height_at(x: float, z: float) -> float:
 		shift = _body_shift(p,_now)
 		p = target-Vector2(shift.x,shift.z)
 	return _body_shift(p,_now).y
+
+## The swell in C++ (ZenScapeSwell, native/terrain_kernels/flight_fx.h), given
+## the knobs afresh after they change; false: the loop here.
+func _native_swell() -> bool:
+	if _knobs.has("swell_given"): return _swell != null
+	_knobs["swell_given"] = true
+	if not LaunchArgs.user_args().has("--gdscript-kernels") and preload("res://scripts/endless/land_field.gd").native_available() and ClassDB.class_exists(&"ZenScapeSwell"):
+		if _swell == null: _swell = ClassDB.instantiate(&"ZenScapeSwell")
+		_swell.configure({"body":_knob("body_swell"),"patch":_knob("body_patch"),"cross":_knob("swell_cross"),"patches":_knob("wind_patches"),
+			"heading":_knob("swell_heading"),"wind":_knob("body_wind"),"groups":float(_knob("swell_groups")),"count":5 if int(_knob("sea_fft")) > 0 else BODY_LENGTH.size()})
+	return _swell != null
 
 func _knob(name: String) -> Variant:
 	if not _knobs.has(name):

@@ -173,10 +173,14 @@ func step(delta: float, game: Node3D) -> void:
 	# after, so the last halo and mote are cleared).
 	_idle = _idle+1 if burrower.settled() and push_ups.settled() else 0
 	if _idle > 2: return
+	FrameLog.mark(&"b_rouse")
 	var span: float = WorldScale.TOY_SPAN*game.ground_scale.size()
 	burrower.tick(delta)
+	FrameLog.mark(&"b_tick")
 	var bumped: bool = game.hand_landing.flying() and push_ups.bump(game.get_world_3d().direct_space_state,game.plane)
+	FrameLog.mark(&"b_bump")
 	push_ups.tick(delta,game.plane,span*0.5,bumped)
+	FrameLog.mark(&"b_pushups")
 
 ## A push-up taken: a move in the chain (LineMoves `push_up`), when the chain
 ## is running (NearMiss is stepped only then).
