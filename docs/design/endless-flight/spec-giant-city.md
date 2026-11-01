@@ -124,8 +124,14 @@ road; the file can stay, out of `PLACED`, or lend its figures as accents.
    under it. Judge the spot by eye in the play camera from the mouth and from the gate,
    with land fully streamed. Show the user the choices; stop for their verdict before any
    road is laid.
-3. **The whole road.** The route from the gate to the pyramid, with the decay rising along
-   it, mostly the broken kit. Fly it end to end, wide and tight.
+   (Done at 8c7c0aa0; the user took spot A and said keep going.)
+3. **The whole road.** First cut the pyramid's base right back: it is a wide flat wedge up
+   to 575 m across that hides the hill, and the hill must read. The pyramid can't be seen
+   from the mouth, and that stays: the mouth keeps the mourner, and the road's first
+   swing to the lake's shore is the reveal, the pyramid across the water. Then the route
+   from the gate round the shore and up the hill's east side, about 3.4 km by the map, with
+   the decay rising along it, mostly the broken kit, still one readable line. Fly it end to
+   end, wide and tight.
 4. **The hall off the path.** Move it to the side, with its sight line or spur.
 5. **The stomper to the outskirts.** A smaller range on open ground, off the road.
 6. **Off the path.** Small chunks of ruin, cheap reuses of the road's kit, and the heads
