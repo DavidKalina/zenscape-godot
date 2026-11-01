@@ -604,19 +604,26 @@ func _wash() -> void:
 
 ## The day cycle (when it runs, and no --hour= took it) from side `from`'s
 ## hour to side `to`'s.
+var _held := false
+
 func _set_hour(from: int, to: int) -> void:
 	var look: Node = _host.look
 	if look == null or look.get("cycle") == null or look.get("celestial") == null: return
-	if not bool(look.cycle.running) or bool(look.get("_hour_taken")): return
+	if (not bool(look.cycle.running) and not _held) or bool(look.get("_hour_taken")): return
 	_clock[from] = float(look.land_phase())
 	var p := _clock[to]
+	var regions: Array = _world.get("regions")
+	var paint: Dictionary = regions[to].paint if to < regions.size() else {}
 	if p < 0.0:
-		var regions: Array = _world.get("regions")
-		var hour := float((regions[to].paint as Dictionary).get("hour",-1.0)) if to < regions.size() else -1.0
+		var hour := float(paint.get("hour",-1.0))
 		if hour < 0.0: return
 		p = hour/24.0
 	look.cycle.set_phase(p)
 	look.celestial.set_phase(p)
+	# A world that holds its hour (the Amberlands' low sun) holds it past a door
+	# too; the clock runs again on the way back.
+	_held = bool(paint.get("still",false))
+	look.cycle.running = not _held
 
 # --- The hint -------------------------------------------------------------------------
 

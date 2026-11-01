@@ -86,7 +86,10 @@ static func _dust(parent: Node, at: Vector3, n: int, life: float, size: float) -
 	p.amount = n
 	p.lifetime = life
 	p.one_shot = true
-	p.explosiveness = 0.9
+	# Out within a frame or two (1.0 draws nothing): while particles were still
+	# coming alive, at 0.9, they drew as a black spot whatever their alpha
+	# (rendered, under FSR2; the cause isn't proved).
+	p.explosiveness = 0.985
 	p.local_coords = false
 	p.damping_min = size*0.5
 	p.damping_max = size*0.9
