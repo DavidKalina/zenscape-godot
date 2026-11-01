@@ -198,7 +198,7 @@ const FLAT_FAN := [-0.6,-0.3,0.0,0.3,0.6]
 const SUNK_SHARE := 0.0
 const SUNK_LENGTH := Vector2(1400.0,2600.0)
 const SUNK_COVER := 36.0
-const SUNK_LOWEST := -130.0
+const SUNK_LOWEST := -150.0
 const BOWL_LONG := 180.0
 const BOWL_WIDE := 74.0
 const BOWL_MOUTH := 42.0
@@ -212,8 +212,19 @@ const SUNK_LOOK := 6
 ## swings half that either side of the first way), the runs between them
 ## and at the mouths (m); half width and vault (m) over WALL_WAVE and VAULT_WAVE
 ## m along the path; a chamber each CHAMBER_EVERY m or so, CHAMBER_LONG m long,
-## CHAMBER_ADD wider and higher; the floor's most rise and its wave; rock kept
+## CHAMBER_ADD wider and higher; the floor's wander (most, wave); rock kept
 ## over the vault; the mouths' calm reach, in which it eases to the arch.
+## The climbs and dips (`_cave_levels`): the floor sits on levels and changes
+## level by a rolled height over a run at CAVE_GRADE (rise over run, the mean:
+## the middle of a run is half as steep again, CAVE_STEEPEST the most ever),
+## then holds for a rolled run before the next, which goes back the other way
+## unless CAVE_SAME says not. CAVE_SMALL_SHARE of them are the smaller CAVE_SMALL,
+## more often stepped on the same way, so no two swings match. A level stays
+## CAVE_HEAD under what the land allows.
+## The rock hangs over the low end of each change, so the vault there is no
+## taller than the change (and a level line through it meets rock): for
+## CAVE_THROAT.x m out from the run, and never under CAVE_THROAT.y, the pull-out
+## being there.
 const CAVE_RADIUS := Vector2(120.0,230.0)
 const CAVE_TURN := Vector2(deg_to_rad(44.0),deg_to_rad(74.0))
 const CAVE_STRAIGHT := Vector2(24.0,120.0)
@@ -228,8 +239,19 @@ const VAULT_WAVE := 210.0
 const CHAMBER_EVERY := 620.0
 const CHAMBER_LONG := 70.0
 const CHAMBER_ADD := Vector2(20.0,26.0)
-const CAVE_RISE := 14.0
-const RISE_WAVE := 260.0
+const CAVE_RISE := 3.0
+const RISE_WAVE := 140.0
+const CAVE_CHANGE := Vector2(30.0,48.0)
+const CAVE_GRADE := Vector2(0.13,0.17)
+const CAVE_STEEPEST := 0.28
+const CAVE_HOLD := Vector2(30.0,130.0)
+const CAVE_SAME := 0.15
+const CAVE_SAME_SMALL := 0.5
+const CAVE_SMALL := Vector2(14.0,22.0)
+const CAVE_SMALL_SHARE := 0.4
+const CAVE_HEAD := 16.0
+const CAVE_THROAT := Vector2(50.0,20.0)
+const CAVE_ROOF_FALL := 0.55
 const CAVE_ROCK := 8.0
 const CAVE_CALM := 56.0
 ## The land read beside the path for the rock over a cave: m across, every few samples.
@@ -899,8 +921,8 @@ static func _cave_path(t: Site, rng: RandomNumberGenerator, want: float) -> void
 	t.pieces.append({"kind":"cave","s0":0.0,"s1":s,"bends":bends})
 
 ## A sunk cave's profile at every sample: walls and vault by slow noise, each
-## wall its own; chambers; the floor wandering up from `floor_y`; all held under
-## the land (`impl`) by CAVE_ROCK, and calmed to the mouth's arch at each end.
+## wall its own; chambers; the floor climbing and dipping round `floor_y`; all
+## held under the land (`impl`) by CAVE_ROCK, calmed to the mouth's arch at each end.
 static func _cave_profile(t: Site, impl: Object) -> void:
 	t.rock = FastNoiseLite.new()
 	t.rock.seed = hash([t.seed,"rock"]) & 0x7fffffff
@@ -939,6 +961,8 @@ static func _cave_profile(t: Site, impl: Object) -> void:
 			var lo := raw[i]
 			for k in range(maxi(i-8,0),mini(i+9,n)): lo = minf(lo,raw[k])
 			room[i] = lo
+	var runs := _cave_runs(t,room)
+	var level := _cave_levels(t,room,runs)
 	for i in n:
 		var s := t.ss[i]
 		var calm := smoothstep(0.0,CAVE_CALM,minf(s,t.length-s))
@@ -949,14 +973,104 @@ static func _cave_profile(t: Site, impl: Object) -> void:
 		var wn := lerpf(CAVE_WIDE.x,CAVE_WIDE.y,wave.get_noise_2d(s/WALL_WAVE,3.0)*0.5+0.5)+CHAMBER_ADD.x*hall
 		var wp := lerpf(CAVE_WIDE.x,CAVE_WIDE.y,wave.get_noise_2d(s/WALL_WAVE,41.0)*0.5+0.5)+CHAMBER_ADD.x*hall
 		var vt := lerpf(CAVE_HIGH.x,CAVE_HIGH.y,wave.get_noise_2d(s/VAULT_WAVE,83.0)*0.5+0.5)+CHAMBER_ADD.y*hall
-		var up := CAVE_RISE*(wave.get_noise_2d(s/RISE_WAVE,127.0)*0.5+0.5)
-		vt = minf(vt,maxf(room[i],14.0))
-		up = clampf(up,0.0,maxf(room[i]-vt,0.0))
+		var up := level[i]+CAVE_RISE*wave.get_noise_2d(s/RISE_WAVE,127.0)*calm
+		for run: Array in runs:
+			var low: float = run[0] if float(run[3]) > float(run[2]) else run[1]
+			var mid := (float(run[0])+float(run[1]))*0.5
+			var out := signf(low-mid)
+			var past := (s-low)*out
+			var hang := 1.0-smoothstep(0.0,CAVE_THROAT.x,past) if past > 0.0 else smoothstep(0.0,1.0,(s-mid)/(low-mid))
+			if hang > 0.0: vt = lerpf(vt,clampf(vt,CAVE_THROAT.y,maxf(absf(float(run[3])-float(run[2])),CAVE_THROAT.y)),hang)
+		vt = minf(vt,maxf(room[i]-up,CAVE_HIGH.x))
 		t.wn.append(lerpf(MOUTH_HALF,wn,calm))
 		t.wp.append(lerpf(MOUTH_HALF,wp,calm))
 		t.vt.append(lerpf(MOUTH_VAULT,vt,calm))
 		t.rn.append(lerpf(MOUTH_ROUND,lerpf(2.1,2.9,wave.get_noise_2d(s/90.0,163.0)*0.5+0.5),calm))
 		t.rise.append(up*calm)
+	# The roof comes down no steeper than CAVE_ROOF_FALL: the land's limit steps.
+	for pass_way: int in [1,-1]:
+		var i := 1 if pass_way > 0 else n-2
+		while i >= 0 and i < n:
+			var k := i-pass_way
+			var most := t.rise[k]+t.vt[k]+CAVE_ROOF_FALL*absf(t.ss[i]-t.ss[k])
+			t.vt[i] = minf(t.vt[i],maxf(most-t.rise[i],CAVE_HIGH.x))
+			i += pass_way
+
+## The floor's level over `floor_y` at every sample: 0 through each mouth's
+## straight run, between them runs up and down from level to level, in the
+## rock's uneven rhythm rather than a wave. Held under the land by `room`
+## (the headroom) with the slope kept to CAVE_STEEPEST, over SUNK_LOWEST.
+static func _cave_levels(t: Site, room: PackedFloat32Array, runs: Array) -> PackedFloat32Array:
+	var n := t.ss.size()
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var r := 0
+	var y := 0.0
+	for i in n:
+		var q := t.ss[i]
+		while r < runs.size() and q >= float(runs[r][1]):
+			y = float(runs[r][3])
+			r += 1
+		out[i] = y
+		if r < runs.size() and q > float(runs[r][0]):
+			var run: Array = runs[r]
+			out[i] = lerpf(float(run[2]),float(run[3]),smoothstep(float(run[0]),float(run[1]),q))
+		out[i] = minf(out[i],room[i]-CAVE_HEAD)
+	# What the land took back, eased into the levels round it.
+	for i in range(1,n): out[i] = minf(out[i],out[i-1]+CAVE_STEEPEST*(t.ss[i]-t.ss[i-1]))
+	for i in range(n-2,-1,-1): out[i] = minf(out[i],out[i+1]+CAVE_STEEPEST*(t.ss[i+1]-t.ss[i]))
+	return out
+
+## The floor's changes of level, as [from s, to s, from level, to level].
+static func _cave_runs(t: Site, room: PackedFloat32Array) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([t.seed,"levels"])
+	var deep := minf(SUNK_LOWEST-t.floor_y,0.0)
+	# Runs as [s0, s1, from, to].
+	var runs: Array = []
+	var end := t.length-CAVE_MOUTH_RUN
+	var s := CAVE_MOUTH_RUN+rng.randf_range(0.0,CAVE_HOLD.y*0.5)
+	var at := 0.0
+	var way := -1.0 if rng.randf() < 0.65 else 1.0
+	while true:
+		var grade := rng.randf_range(CAVE_GRADE.x,CAVE_GRADE.y)
+		var small := rng.randf() < CAVE_SMALL_SHARE
+		var change := rng.randf_range(CAVE_SMALL.x,CAVE_SMALL.y) if small else rng.randf_range(CAVE_CHANGE.x,CAVE_CHANGE.y)
+		var to := at+way*change
+		var roll := rng.randf()
+		var hold := lerpf(CAVE_HOLD.x,CAVE_HOLD.y,roll*roll)
+		var run := change/grade
+		var top := _room_over(t,room,s,s+run+hold)-CAVE_HEAD
+		# Up there is no rock left, or down no depth: as far as there is, or
+		# the other way if that's not a change worth having.
+		to = clampf(to,deep,top)
+		if absf(to-at) < change*0.7:
+			way = -way
+			to = clampf(at+way*change,deep,top)
+		# It must leave room to come back to the mouth's level at the end:
+		# if not, a smaller change, toward that level.
+		var room_left := false
+		for k in 3:
+			run = absf(to-at)/grade
+			room_left = s+run+hold+absf(to)/CAVE_GRADE.x+CAVE_HOLD.x <= end
+			if room_left: break
+			change *= 0.65
+			hold = CAVE_HOLD.x
+			to = clampf(at-change*(signf(at) if absf(at) > 1.0 else 1.0),deep,top)
+		if not room_left: break
+		if to != at: runs.append([s,s+run,at,to])
+		at = to
+		s += run+hold
+		if rng.randf() >= (CAVE_SAME_SMALL if small else CAVE_SAME): way = -way
+	if at != 0.0: runs.append([end-absf(at)/CAVE_GRADE.x,end,at,0.0])
+	return runs
+
+## The least headroom from `a` to `b` m along the path.
+static func _room_over(t: Site, room: PackedFloat32Array, a: float, b: float) -> float:
+	var lo := INF
+	for i in t.ss.size():
+		if t.ss[i] >= a and t.ss[i] <= b: lo = minf(lo,room[i])
+	return lo
 
 ## The bore's floor (world y) at distance `s` along the path.
 static func floor_at(t: Site, s: float) -> float:
