@@ -40,22 +40,15 @@ static func paint() -> Dictionary:
 
 static func layers() -> Dictionary:
 	return {"trees":false,"grass":true,"birds":true,"fish":true,
-		# Ruins: more tries per cell, the ruin kinds taken more often than the
-		# natural rock arches, kept near the massifs and plateaus, and an
-		# aqueduct across a canyon or between two shelves spans from rim to rim.
-		"arches":2.6,"rock_arches":0.35,"ruin_arches":2.2,"ruin_near":1000.0,"aqueduct_span":0.8,"arch_most":3,
-		"halls":1.3,"tunnels":1.0,
+		# A blank slate: nothing built on the land but the door's ruin
+		# (scripts/endless/hall_doors.gd): no arches, ruins or colosseum, no slot
+		# halls or tunnels, no bridges or aqueducts, no gothic set pieces.
+		# (`arches` stays: the world of regions runs at the densest region's, and
+		# wilderness's rolls hang on it. `arch_most` is what keeps this land bare.)
+		"arches":2.6,"arch_most":0,"halls":0.0,"tunnels":0.0,"bridges":0.0,"sets":0.0,
 		# The ruins' stone a dark basalt that stands out from the gold land
 		# (scripts/endless/land_arches.gd TONES), every set piece mossed on its
 		# tops only, so the moss doesn't take the grass's colour over it.
 		"ruin_tone":"basalt","set_moss":"tops",
-		# Bridges and aqueducts rim to rim between the plateaus, massif shoulders
-		# and terrace shelves (scripts/endless/bridge_plan.gd): the chance a
-		# bridge cell tries.
-		"bridges":1.0,
-		# The gothic set pieces (a nave, a belfry, a rose gate) against the
-		# massifs and on the terrace shelves (scripts/endless/set_plan.gd): the
-		# chance a set cell takes one.
-		"sets":1.0,
 		# No split mountains, sea stacks or hoodoos: wilderness's.
 		"splits":0.0,"stacks":0.0,"hoodoos":0.0,"traffic":-1}
