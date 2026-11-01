@@ -1119,7 +1119,7 @@ func plane_ground(p: Vector3, pad := -1.0) -> Variant:
 ## In the way of the rolling plane: an arch's leg or pier, a rock, a tree.
 func _blocked(p: Vector3) -> bool:
 	if doors != null and doors.holds(p): return false
-	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.inside(p)) or (giants != null and giants.inside(p)) or (stomper != null and stomper.solid.inside(p))
+	return arches.inside(p) or rocks.inside(p) or trees.inside(p) or halls.inside(p) or tunnels.inside(p) or (coast != null and coast.inside(p)) or (giants != null and giants.inside(p)) or (stomper != null and stomper.solid.wheels(p))
 
 ## The turf under the wheels at a world XZ point; NAN over the sea and a
 ## river's water (the land field's `last_river`, from the same sample).
@@ -1375,6 +1375,9 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 		plane.surge = 0.0
 		near.surge = 0.0
 		debris.spray(false,Vector3.ZERO,Vector3.ZERO)
+		# A limb come down on it on the ground (StomperSolid `before`).
+		if _glanced.has("crash"): _crashed(events,_glanced.crash)
+		_glanced = {}
 		return
 	near.measure(delta,self)
 	if smash != null: smash.touch(near)
@@ -1383,12 +1386,7 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 	_glanced = {}
 	if hit.has("knock"): _knocked(events,hit.knock)
 	if hit.has("crash"):
-		var c: Dictionary = hit.crash
-		events["crash"] = c
-		events["lost"] = {"points":near.lose()}
-		if water != null and str(c.what) == "water": water.splash(c.at,1.5,events)
-		else: debris.hit(str(c.what),c.at,c.normal,true)
-		crash(c)
+		_crashed(events,hit.crash)
 		return
 	if hit.has("scrape"):
 		var s: Dictionary = hit.scrape
@@ -1410,6 +1408,14 @@ func _near_misses(delta: float, events: Dictionary) -> void:
 	var p: Vector3 = plane.position
 	var wet: bool = near.ground_surface == "water" and near.ground_clear < WorldScale.span*SPRAY_SPANS and float(plane.speed) > plane.cruise()*SPRAY_FAST
 	debris.spray(wet and water == null,Vector3(p.x,water_at(p),p.z),plane.velocity)
+
+## The crash `c` (FlightContact): `events` gets it, the chain lost with it.
+func _crashed(events: Dictionary, c: Dictionary) -> void:
+	events["crash"] = c
+	events["lost"] = {"points":near.lose()}
+	if water != null and str(c.what) == "water": water.splash(c.at,1.5,events)
+	else: debris.hit(str(c.what),c.at,c.normal,true)
+	crash(c)
 
 ## Trees knocked down this frame (TreeKnock `before`, `at_hit`): `events`
 ## gets "knock" (more than one in a frame add up) and, with TreeKnock

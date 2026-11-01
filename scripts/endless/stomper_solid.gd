@@ -7,10 +7,12 @@ extends RefCounted
 ##
 ## The limbs move and the plane doesn't get a say, so `before` looks first: a limb
 ## that has come over the plane since the last frame pushes it out, and hits it
-## if it came at more than a scrape.
+## if it came at more than a scrape. On the wheels it can't be pushed: a limb that
+## reaches the plane itself crashes it, whatever its speed.
 ##   bind(stomper, study)    finds the bones and starts reading them
 ##   ground(p, h, pad)       the study's `plane_ground` over the land `h`
 ##   inside(p, pad)          in a capsule grown by `pad`
+##   wheels(p)               in the way of a plane rolling at `p`, its top reaching too
 ##   face(at, room)          the way out of the nearest capsule, or ZERO
 ##   before(delta, game)     {} or {"crash"}, before the plane's move
 
@@ -41,6 +43,8 @@ const LAYER := 1
 const NEAR := 300.0
 ## How far out of the grown capsule a limb's push leaves the plane (m).
 const PUSHED := 0.05
+## The height a limb reaches a plane on the ground, over its wheels (m).
+const STOOD_ON := 3.0
 
 var live := false
 ## How many capsules; per capsule its bone, its ends on that bone, its radius,
@@ -219,6 +223,11 @@ func inside(p: Vector3, pad := -1.0) -> bool:
 		if p.distance_squared_to(_nearest(i,p)) < r*r: return true
 	return false
 
+## In the way of a plane on the wheels at `p`: its middle by `inside`, its top too,
+## so it stops short of a foot's curve over it.
+func wheels(p: Vector3) -> bool:
+	return inside(p) or inside(p+Vector3.UP*STOOD_ON)
+
 ## The way out of the capsule nearest `at`, if `at` is within `room` of its skin,
 ## else ZERO.
 func face(at: Vector3, room: float) -> Vector3:
@@ -244,13 +253,14 @@ func _nearest(i: int, p: Vector3) -> Vector3:
 ## Before the plane's move: a limb come over the plane puts it back out on the
 ## limb's skin and, coming at it faster than CRASH_INTO, hits it. {} or {"crash"}
 ## as FlightContact's. The glide's own stops see only the plane's move, and would
-## lift a plane a limb has reached to the top of that limb.
+## lift a plane a limb has reached to the top of that limb. On the ground: `_stood_on`.
 func before(delta: float, game: Node3D) -> Dictionary:
 	var hit := {}
 	var plane: RefCounted = game.plane
 	var fresh := _was_a.size() == count
 	if not live or not bool(plane.weighted) or not bool(game.hand_landing.flying()) or delta <= 0.0:
 		_was_a = PackedVector3Array()
+		if live and bool(plane.weighted) and bool(game.hand_landing.on_ground()): return _stood_on(plane)
 		return hit
 	var p: Vector3 = plane.position
 	var pad := float(game.solid_pad)
@@ -277,3 +287,13 @@ func before(delta: float, game: Node3D) -> Dictionary:
 	_was_a = a.duplicate()
 	_was_b = b.duplicate()
 	return hit
+
+## A limb on a plane on its wheels: {} or {"crash"}, flying on away from the body.
+## Past the wheels' own stop (`wheels`), so rolling up to a foot is a stop, and only
+## the limb's coming is a hit.
+func _stood_on(plane: RefCounted) -> Dictionary:
+	var p: Vector3 = plane.position
+	if not inside(p+Vector3.UP*STOOD_ON,0.0): return {}
+	var out := Vector3(p.x-_centre.x,0.0,p.z-_centre.z)
+	out = out.normalized() if out.length() > 0.001 else Vector3.RIGHT
+	return {"crash":{"at":p,"normal":out,"what":"stone","into":FlightContact.CRASH_INTO,"angle":PI*0.5,"speed":plane.velocity.length(),"tower":true}}
