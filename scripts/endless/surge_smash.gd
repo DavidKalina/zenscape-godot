@@ -11,6 +11,7 @@ extends Node3D
 ##   (scripts/breaks/breakables.gd) lives here, breaker `plane` on; `--breakers=`
 ##   still rules it. Outside it stone is stone as ever, and so is what can't
 ##   break (rock, halls and bores, slabs, a colosseum).
+## - the pirate ship's plates (scripts/endless/pirate_ship.gd), a record's `strike`.
 ## - a burrower on a run can't keep ahead, and flown into he's caught
 ##   (scripts/endless/burrower_flight.gd `try_catch`, signal `caught`).
 ##
@@ -157,7 +158,10 @@ func _strike() -> void:
 func _hit(r: Dictionary, q: Vector3, way: Vector3, v: Vector3) -> bool:
 	breaks.blast_dir = way
 	breaks.blast_v = v
-	if r.has("wall"):
+	if r.has("strike"):
+		# A plate of something that moves (pirate_ship.gd): its own to break.
+		(r.strike as Callable).call(r,q)
+	elif r.has("wall"):
 		walls.strike(r,q)
 	else:
 		if not _adopt(r): return false

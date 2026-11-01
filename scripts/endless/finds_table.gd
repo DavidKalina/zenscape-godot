@@ -112,7 +112,7 @@ const WORLDS := {
 			"title":"The ring in the high hole"},
 		{"id":"summit-ring","area":"peak","kind":"relic","anchor":"peak/summit","up":22.0,
 			"title":"The ring over the summit","hint":"Higher than anything here"},
-		# The near coast: arches, stacks, the islands, the light and the boat.
+		# The near coast: arches, stacks, the islands, the light and the ship.
 		{"id":"sea-arch-ring","area":"coast","kind":"relic","anchor":"endless/arch/3_-2/0","up":14.0,
 			"title":"The ring under the sea arch","hint":"A tall arch stands on the east shore"},
 		{"id":"aqueduct-ring","area":"coast","kind":"relic","anchor":"endless/arch/4_0/0","up":14.0,
@@ -131,8 +131,10 @@ const WORLDS := {
 			"title":"Set down on Light Rock","hint":"There's a flat under the lighthouse"},
 		{"id":"lamp-ring","area":"coast","kind":"relic","anchor":"coast/lighthouse","up":50.0,"offset":Vector3(18.0,0.0,-14.0),
 			"title":"The ring by the lamp"},
-		{"id":"boat-deck","area":"coast","kind":"landing","anchor":"coast/boat","up":4.6,"offset":Vector3(-14.0,0.0,5.0),"radius":45.0,
-			"title":"Set down on the old boat","hint":"Her deck is long enough. Just."},
+		{"id":"boat-deck","area":"coast","kind":"landing","at":Vector2(2225.0,3330.0),"radius":90.0,
+			"title":"Set down on the Rock's south shelf","hint":"Past the light, a long shelf runs down the Rock"},
+		{"id":"ship-hold","area":"coast","kind":"relic","anchor":"coast/ship","up":8.0,
+			"title":"The ring on the gun deck","hint":"Something sails off the Horn. It has a way in"},
 		{"id":"horn-mouth","area":"coast","kind":"relic","at":Vector2(2930.0,3900.0),"up":12.0,
 			"title":"The ring in the Horn's mouth"},
 	],

@@ -63,6 +63,9 @@ extends Node3D
 ## to clear the land on the way in (--alt wins); --splits=X their density, --no-splits none, --split-kind=K every
 ## one of kind K (slot, winding, gorge, grand) where it fits, --split-slot=X
 ## the slot kind's toy width (6: 12 m).
+## The pirate ship (scripts/endless/pirate_ship.gd): --ship-start starts in the
+## air off her beam, --full-meter with the meter full, and again each time her
+## plates come back.
 ## Water (scripts/endless/water_contact.gd): --water-near-start starts 3 m
 ## over the sea off the nearest river's mouth, heading for it; --water-contact=0
 ## turns the cushion, spray, marks and wet screen off.
@@ -545,6 +548,15 @@ func _ready() -> void:
 			_heading = -deg_to_rad(float(pose.heading))
 			if not _alt_given: _alt = float(pose.alt)
 			print("split mountain (%s): %.0f m long, floor %.0f m at its narrowest, mouth at %s, exit at %s; start %s heading %.0f" % [SplitSites.kind_name(s),s[4]*2.0,s[5]*2.0,str(pose.mouth),str(pose.exit),str(_start),float(pose.heading)])
+	# --ship-start: in the air off the pirate ship's beam, flying her way.
+	if "--ship-start" in preload("res://scripts/launch_args.gd").user_args():
+		var ship_pose: Dictionary = preload("res://scripts/endless/pirate_ship.gd").start_pose()
+		_start = ship_pose.at
+		_heading = float(ship_pose.heading)
+		_heading_given = true
+		if not _alt_given:
+			_alt = float(ship_pose.alt)
+			_alt_given = true
 	if WaterContact.near_start_wanted():
 		var w: Dictionary = WaterContact.near_start(field,_start)
 		if w.is_empty(): push_warning("--water-near-start: no river mouth near the start")
@@ -752,6 +764,9 @@ func _ready() -> void:
 	coast.name = "Coast"
 	add_child(coast)
 	coast.setup(self)
+	# --full-meter: a surge roll ready at once; again whenever the ship's plates
+	# come back (pirate_ship.gd `refill`).
+	if "--full-meter" in preload("res://scripts/launch_args.gd").user_args(): near.meter = 1.0
 	if RegionDoors.wanted(world):
 		doors = HallDoors.new() if HallDoors.wanted_hall() else RegionDoors.new()
 		add_child(doors)
@@ -1083,10 +1098,6 @@ func _blocked(p: Vector3) -> bool:
 ## river's water (the land field's `last_river`, from the same sample).
 func floor_at(p: Vector2) -> float:
 	if doors != null and plane != null and doors.holds(Vector3(p.x,plane.position.y,p.y)): return doors.hall_floor()
-	# The boat's deck, over the sea (CoastSites `deck_at`).
-	if coast != null:
-		var deck: float = coast.deck_at(p)
-		if not is_nan(deck) and (plane == null or plane.position.y >= deck-1.0): return deck
 	var h: float = field.height(p.x,p.y)
 	if h < Field.SEA_Y+0.2 or _on_river(): return NAN
 	# In a tunnel's bore, its floor (read at the plane's height).
@@ -1157,6 +1168,7 @@ func tick(delta: float) -> void:
 	if stage != null: input = stage.input(delta,input,hand_landing,plane_figure)
 	if doors != null: input = doors.input(input)
 	# The roll button on a full meter is the surge roll (scripts/endless/surge_smash.gd).
+	if coast != null: coast.before(delta)
 	if smash != null: smash.before(delta,input)
 	# The plane skims the swell as drawn, not the sea's rest level, and a
 	# river's water as it skims the sea.
@@ -1181,6 +1193,7 @@ func tick(delta: float) -> void:
 	book.step(delta)
 	if not knocked.is_empty(): _knocked(events,knocked)
 	plane.engine = hand_landing.engine*float(plane.sputter)*(float(stage.engine) if stage != null else 1.0)
+	if coast != null: coast.after(delta,events)
 	_near_misses(delta,events)
 	if water != null: water.step(delta,events)
 	var ground := Callable(self,"plane_ground")

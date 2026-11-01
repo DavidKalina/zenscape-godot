@@ -39,16 +39,21 @@ extends RefCounted
 ## - skim: low over land or water (under SKIM_BAND spans, fast), a trickle
 ##   of SKIM_RATE points a second by closeness; it holds the bank timer (the
 ##   chain stays alive) but adds no step to the multiplier.
+##   `skim_scale` multiplies the rate (the pirate ship's guns, near her).
+## - a ball's pass (`shot_pass`, pirate_ship.gd): a graze, against the reach the
+##   ball gives; each ball measures its own closest pass, as a fast ball slips
+##   between the wing rays.
 ## Farming: each scored moment within FARM_RADIUS m and FARM_TIME s of this
 ## one cuts it by FARM_EACH more, and the same tree, ruin or patch of land
-## again by FARM_SAME.
+## again by FARM_SAME. A ball's pass neither takes the cut nor adds to it.
 ##
 ## The chain: each move adds its points and its difficulty (LineMoves
 ## `difficulty`) to the multiplier, cut by the farming cut and by its
 ## repeats in the line (a move's nth repeat adds 1/(n+1) of it); a kind new
 ## to a line already under way adds NEW_KIND more. The multiplier starts at
 ## x1 and stops at CHAIN_TOP. BANK_AFTER s with no new moment banks it,
-## points x multiplier, into the meter (METER_FULL points fill it), reads the
+## points x multiplier, into the meter (METER_FULL points fill it), or at once,
+## skimming or holding a move too, when that would fill the meter; reads the
 ## line back (`_line`, the frame's "line", paid by `game.book`); a scrape
 ## or crash (`lose`) drops what is unbanked. Each moment kicks the speed a
 ## little (KICK m/s by closeness). The surge (`fly_surge` held) spends the
@@ -157,6 +162,8 @@ var gap := INF
 ## Skimming now (holds the bank timer), and the score so far this flight.
 var skimming := false
 var total := 0.0
+## The skim's rate times this now (the pirate ship sets it, near her).
+var skim_scale := 1.0
 ## The last scored moment ({} none): kind, band, points, k, clear, at,
 ## surface; and every moment scored (for the drivers).
 var last := {}
@@ -181,6 +188,9 @@ const PASS_GAP := 0.12
 const GATE_QUIET := 0.6
 var _out_for := 0.0
 var _recent: Array[Dictionary] = []
+## Balls' passes waiting for the frame's score, and the tracker they score through.
+var _shots: Array[Dictionary] = []
+var _shot := Tracker.new()
 var _ray: PhysicsRayQueryParameters3D
 var _last_ground := INF
 ## The nearest stone this frame (its collider's id), for the farming cut.
@@ -240,12 +250,18 @@ func reset() -> void:
 	_pass.cancel()
 	_pass.armed = true
 	_clear_line()
+	_shots.clear()
 	bank_left = 0.0
 	surge = 0.0
 	closing = 0.0
 	touching = {}
 	_last_ground = INF
 	moves.drop()
+
+## A ball went past `clear` m off, a pass scoring under `reach` m, the plane at
+## `at`: scored in the next `score` (one a frame).
+func shot_pass(clear: float, reach: float, at: Vector3) -> void:
+	_shots.append({"clear":clear,"reach":reach,"at":at})
 
 ## A scrape or a crash: the moments under way and the unbanked chain go.
 ## Returns the points lost (before the multiplier, times it).
@@ -445,6 +461,16 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 			_moment("thread",_gate,float(hit.half),cruise,out,game)
 			_gate.active = false
 	_gate_last = p_now
+	# A ball's pass.
+	if not _shots.is_empty() and not out.has("near") and bool(game.hand_landing.flying()):
+		var shot: Dictionary = _shots.pop_front()
+		_shot.least = float(shot.clear)
+		_shot.speed = speed
+		_shot.at = shot.at
+		_shot.surface = "stone"
+		_shot.closing = 0.0
+		_shot.roll = LineMoves.roll_of(plane)
+		_moment("graze",_shot,float(shot.reach),cruise,out,game)
 	# The held moves; one done a frame is chained when nothing else was.
 	moves.step(delta,game,self)
 	if not out.has("near") and not moves.pending.is_empty():
@@ -457,7 +483,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	skimming = fast and ground_clear < band and ground_surface in ["land","water"] and bool(game.hand_landing.flying())
 	if skimming:
 		var k := 1.0-clampf(ground_clear/band,0.0,1.0)
-		var add := SKIM_RATE*k*clampf(speed/cruise,0.5,2.0)*delta
+		var add := SKIM_RATE*skim_scale*k*clampf(speed/cruise,0.5,2.0)*delta
 		chain_points += add
 		total += add
 		if bank_left <= 0.0: bank_left = BANK_AFTER
@@ -466,10 +492,11 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	if fast and bool(game.hand_landing.flying()):
 		if ground_clear < reach: gap = maxf(ground_clear,0.0)
 		if stone_clear < stone_reach: gap = minf(gap,maxf(stone_clear,0.0))
-	# The bank.
-	if chain_points > 0.0 and not skimming and not moves.holding:
+	# The bank: on its timer, or now if it would fill the meter.
+	var fills := chain_points > 0.0 and meter < 1.0 and meter+chain_points*multiplier()/METER_FULL >= 1.0
+	if fills or (chain_points > 0.0 and not skimming and not moves.holding):
 		bank_left -= delta
-		if bank_left <= 0.0:
+		if fills or bank_left <= 0.0:
 			var banked := chain_points*multiplier()
 			meter = minf(1.0,meter+banked/METER_FULL)
 			var line := _line(banked,game)
@@ -522,8 +549,9 @@ func _moment(kind: String, t: Tracker, reach: float, cruise: float, out: Diction
 		"closing":t.closing,"speed":t.speed,"under":t == _pass or t == _gate,"roll":t.roll,"id":t.id}
 	# A gap measured on both sides: its opening, wall to wall.
 	if t == _stone and t.sides == 3 and t.wl < INF and t.wr < INF: m.width = t.wl+t.wr+WorldScale.span
+	if t == _shot: m.shot = true
 	moves.dress(m,game,cruise)
-	var farm := _farm(t.at,t.id)
+	var farm := 1.0 if t == _shot else _farm(t.at,t.id)
 	m.points = float(m.points)*farm
 	m.farm = farm
 	_chain(m,out,game)
@@ -548,7 +576,7 @@ func _chain(m: Dictionary, out: Dictionary, _game: Node3D) -> void:
 	last = m
 	moments.append(m)
 	line_moments.append(m)
-	_recent.append({"at":m.at,"t":clock,"id":int(m.get("id",0))})
+	if not m.has("shot"): _recent.append({"at":m.at,"t":clock,"id":int(m.get("id",0))})
 	out["near"] = m
 
 ## The line banked for `points` (after the multiplier): {points, mult,
