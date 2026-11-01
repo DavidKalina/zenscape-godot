@@ -47,6 +47,11 @@ const SMOKE_LONG := 18.0
 const SMOKE_THIN := 0.45
 const SMOKE_WIDE := 3.6
 const SMOKE_OPACITY := 0.42
+## A gun's flash and smoke puff (look only): their shader, the flash's core radius
+## (m, readable from 300 m) and the puff's reach.
+const PUFF_SHADER := "res://assets/models/pirate_ship/muzzle_puff.gdshader"
+const FLASH_R := 3.8
+const PUFF_R := 2.0
 ## Where the rigging stops drawing (m); the glb can't carry it.
 const RIGGING_FAR := 450.0
 ## The model's sway, for the eye only: roll, pitch (rad), each one's period (s).
@@ -161,6 +166,9 @@ var _shards: Array[Dictionary] = []
 var plates := {}
 var _guns: Array[Dictionary] = []
 var _tells: Array[Dictionary] = []
+## The one flash and the one smoke puff every gun draws; null with --ship-blocks.
+var _flash_mesh: Mesh
+var _puff_mesh: Mesh
 var _every := 0.0
 var _plane_was := Vector3.INF
 
@@ -305,6 +313,10 @@ func _guns_step(delta: float, p: Vector3, d: float) -> void:
 			g.puff = puff
 			(g.smoke as Node3D).scale = Vector3.ONE*(1.0+(1.2-puff)*2.6)
 			(g.smoke as Node3D).visible = puff > 0.0
+			if _puff_mesh != null:
+				var u := 1.2-puff
+				(g.smoke as Node3D).position = (g.at as Vector3)+Vector3(float(g.side)*(2.0+u*4.0),1.0+u*1.5,0.0)
+				(g.smoke as GeometryInstance3D).set_instance_shader_parameter("fade",smoothstep(0.0,0.8,puff))
 	var left: Array[Dictionary] = []
 	for t: Dictionary in _tells:
 		t.t = float(t.t)-delta
@@ -417,6 +429,43 @@ func _smoke_mesh() -> ArrayMesh:
 	mesh.custom_aabb = AABB(Vector3(-SMOKE_WIDE*1.3,-SMOKE_WIDE*1.3,-SMOKE_WIDE),Vector3(SMOKE_WIDE*2.6,SMOKE_WIDE*2.6,SMOKE_LONG+SMOKE_WIDE*2.0))
 	var mat := ShaderMaterial.new()
 	mat.shader = load(SMOKE_SHADER)
+	mesh.surface_set_material(0,mat)
+	return mesh
+
+## A cluster of `n` soft discs for muzzle_puff.gdshader: one core disc of radius
+## `r` then the rest scattered round it (`spread` x r), tinted from `tints`,
+## `opacity` at the core. `fall` thins the outer ones; 0 keeps them as bright.
+func _cluster_mesh(r: float, tints: Array, opacity: float, n: int, spread: float, fall: float) -> ArrayMesh:
+	var at := PackedVector3Array()
+	var uv := PackedVector2Array()
+	var size := PackedVector2Array()
+	var col := PackedColorArray()
+	var index := PackedInt32Array()
+	for i in n:
+		var core := i == 0
+		var dir := Vector3(sin(i*2.4+1.0),cos(i*1.7)*0.8,sin(i*3.1+0.5)*0.9).normalized()
+		var centre := Vector3.ZERO if core else dir*r*spread*(0.5+0.5*fmod(i*0.37,1.0))
+		var rad := r if core else r*(0.55+0.35*fmod(i*0.61,1.0))
+		var o := opacity*(1.0 if core else lerpf(1.0,0.55,fall)*(0.6+0.4*fmod(i*0.43,1.0)))
+		var first := at.size()
+		for corner: Vector2 in [Vector2.ZERO,Vector2.RIGHT,Vector2.ONE,Vector2.DOWN]:
+			at.append(centre)
+			uv.append(corner)
+			size.append(Vector2(rad,o))
+			col.append(tints[0] if core else tints[1+i%(tints.size()-1)])
+		index.append_array([first,first+1,first+2,first,first+2,first+3])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = at
+	arrays[Mesh.ARRAY_TEX_UV] = uv
+	arrays[Mesh.ARRAY_TEX_UV2] = size
+	arrays[Mesh.ARRAY_COLOR] = col
+	arrays[Mesh.ARRAY_INDEX] = index
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES,arrays)
+	mesh.custom_aabb = AABB(Vector3.ONE*-r*8.0,Vector3.ONE*r*16.0)
+	var mat := ShaderMaterial.new()
+	mat.shader = load(PUFF_SHADER)
 	mesh.surface_set_material(0,mat)
 	return mesh
 
@@ -670,6 +719,8 @@ func _dress() -> void:
 	_ball_mesh = (ball.find_child("Ball",true,false) as MeshInstance3D).mesh
 	ball.free()
 	_smoke = _smoke_mesh()
+	_flash_mesh = _cluster_mesh(FLASH_R,[Color(1.0,0.95,0.7),Color(1.0,0.72,0.28),Color(1.0,0.5,0.1)],1.0,5,0.5,0.0)
+	_puff_mesh = _cluster_mesh(PUFF_R,[Color(0.78,0.79,0.8),Color(0.68,0.69,0.7),Color(0.84,0.84,0.84)],0.55,9,1.0,1.0)
 	(_model.find_child("Rigging",true,false) as GeometryInstance3D).visibility_range_end = RIGGING_FAR
 	for i in GUNS_Z.size():
 		var z: float = GUNS_Z[GUNS_Z.size()-1-i]
@@ -783,18 +834,23 @@ func _gun(side: float, gz: float, beam: float, mat: Material) -> void:
 ## A gun's muzzle at `at`: its flash and smoke, and the record the guns fire by.
 func _muzzle(side: float, gz: float, at: Vector3) -> void:
 	var flash := MeshInstance3D.new()
-	var b := BoxMesh.new()
-	b.size = Vector3(2.2,2.2,2.2)
-	flash.mesh = b
-	flash.material_override = _mat(Color(1.0,0.8,0.3),Color(1.0,0.7,0.2),5.0)
+	var smoke := MeshInstance3D.new()
+	if _flash_mesh != null:
+		flash.mesh = _flash_mesh
+		smoke.mesh = _puff_mesh
+		for m: GeometryInstance3D in [flash,smoke]: m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	else:
+		var b := BoxMesh.new()
+		b.size = Vector3(2.2,2.2,2.2)
+		flash.mesh = b
+		flash.material_override = _mat(Color(1.0,0.8,0.3),Color(1.0,0.7,0.2),5.0)
+		var sb := BoxMesh.new()
+		sb.size = Vector3(4.0,4.0,4.0)
+		smoke.mesh = sb
+		smoke.material_override = _mat(Color(0.8,0.8,0.78),Color(0.5,0.5,0.48),0.4)
 	flash.position = at
 	flash.visible = false
 	add_child(flash)
-	var smoke := MeshInstance3D.new()
-	var sb := BoxMesh.new()
-	sb.size = Vector3(4.0,4.0,4.0)
-	smoke.mesh = sb
-	smoke.material_override = _mat(Color(0.8,0.8,0.78),Color(0.5,0.5,0.48),0.4)
 	smoke.position = at+Vector3(side*2.0,1.0,0.0)
 	smoke.visible = false
 	add_child(smoke)
