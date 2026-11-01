@@ -1,10 +1,10 @@
 extends RefCounted
-## The stomper's walk (stomper.gd): a closed loop round the spawn over ground it
-## can stand on. A cost grid of the real land, then the cheapest ring round the
-## spawn over it: one radius on each bearing, each near the last, so it can't
-## double back. Smoothed to a line the body can turn along. Built once at setup,
-## from the field alone, so the same seed walks the same loop.
-##   walked(field, start)   the loop
+## The stomper's walk (stomper.gd): a closed loop round its land's home over
+## ground it can stand on. A cost grid of the real land, then the cheapest ring
+## round the home over it: one radius on each bearing, each near the last, so it
+## can't double back. Smoothed to a line the body can turn along. Built once at
+## setup, from the field alone, so the same seed walks the same loop.
+##   walked(field, home, open)   the loop; `open(x, z)`: whether it may go there
 ##   at(s) / way(s)         the point and the unit direction `s` m along it
 ##   nearest(p)             the `s` closest to `p`
 
@@ -20,13 +20,13 @@ const HARD_COST := 300.0
 ## Cells kept off water, and how far over it the ground must stand (m).
 const SHORE := 2
 const DRY := 6.0
-## The ring: bearings round the spawn, the radii open on each (m), how many radii
+## The ring: bearings round the home, the radii open on each (m), how many radii
 ## it may move a bearing, what a metre of radius costs on each stretch, and what
 ## a stretch costs on or by the water (a price, so a ring still closes).
 const BEARINGS := 28
-const RADIUS_NEAR := 800.0
+const RADIUS_NEAR := 300.0
 const RADIUS_STEP := 125.0
-const RADII := 18
+const RADII := 22
 const RADIUS_MOVE := 3
 const RADIUS_PRICE := 0.004
 const WET_COST := 100000.0
@@ -39,9 +39,9 @@ const PASSES := 60
 var points := PackedVector2Array()
 var length := 0.0
 
-static func walked(field: RefCounted, start: Vector2) -> RefCounted:
+static func walked(field: RefCounted, start: Vector2, open: Callable) -> RefCounted:
 	var route: RefCounted = (load("res://scripts/endless/stomper_route.gd") as GDScript).new()
-	route._build(field,start)
+	route._build(field,start,open)
 	return route
 
 func at(s: float) -> Vector2:
@@ -62,11 +62,12 @@ func nearest(p: Vector2) -> float:
 			out = float(i)*SPACING
 	return out
 
-func _build(field: RefCounted, start: Vector2) -> void:
-	var cost := _cost(field,start)
+func _build(field: RefCounted, start: Vector2, open: Callable) -> void:
+	var cost := _cost(field,start,open)
 	var ring := _ring(cost)
+	# Bearings run back: it goes round the far side's lake toward the door.
 	var raw := PackedVector2Array()
-	for b in range(BEARINGS):
+	for b in range(BEARINGS-1,-1,-1):
 		raw.append(start+_spot(b,ring[b]))
 	_line(raw)
 
@@ -74,8 +75,8 @@ func _origin(start: Vector2) -> Vector2:
 	return start-Vector2.ONE*CELL*float(CELLS)*0.5
 
 ## Each cell's price: 1 on easy ground, rising with how much the ground varies
-## round it; INF on and by the water.
-func _cost(field: RefCounted, start: Vector2) -> PackedFloat32Array:
+## round it; INF on and by the water and what `open` shuts.
+func _cost(field: RefCounted, start: Vector2, open: Callable) -> PackedFloat32Array:
 	var o := _origin(start)
 	var high := PackedFloat32Array()
 	var wet := PackedByteArray()
@@ -89,7 +90,7 @@ func _cost(field: RefCounted, start: Vector2) -> PackedFloat32Array:
 			var h := float(field.height(x,z))
 			var river := float(field.river_y(x,z))
 			high[j*CELLS+i] = h
-			wet[j*CELLS+i] = 1 if h < sea or (not is_nan(river) and h < river+DRY) else 0
+			wet[j*CELLS+i] = 1 if h < sea or (not is_nan(river) and h < river+DRY) or not open.call(x,z) else 0
 	var cost := PackedFloat32Array()
 	cost.resize(CELLS*CELLS)
 	for j in range(CELLS):
@@ -107,7 +108,7 @@ func _cost(field: RefCounted, start: Vector2) -> PackedFloat32Array:
 			cost[j*CELLS+i] = INF if near_water else price
 	return cost
 
-## Bearing `b`, radius index `r`, as a way from the spawn.
+## Bearing `b`, radius index `r`, as a way from the home.
 func _spot(b: int, r: int) -> Vector2:
 	return Vector2.from_angle(TAU*float(b)/float(BEARINGS))*(RADIUS_NEAR+float(r)*RADIUS_STEP)
 
@@ -155,7 +156,7 @@ func _ring(cost: PackedFloat32Array) -> PackedInt32Array:
 				out[b] = r
 	return out
 
-## What it costs to walk from `a` to `b` (ways from the spawn).
+## What it costs to walk from `a` to `b` (ways from the home).
 func _stretch(cost: PackedFloat32Array, a: Vector2, b: Vector2) -> float:
 	var sum := 0.0
 	for i in range(STRETCH_READS):

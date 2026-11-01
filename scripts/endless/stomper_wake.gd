@@ -88,7 +88,7 @@ func setup(study: Node, stomper: Node3D) -> void:
 	var all := MultiMeshInstance3D.new()
 	all.name = "Track"
 	all.multimesh = _boxes
-	all.custom_aabb = AABB(Vector3.ONE*-50000.0,Vector3.ONE*100000.0)
+	all.custom_aabb = AABB(Vector3.ONE*-200000.0,Vector3.ONE*400000.0)
 	all.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(all)
 	_lay_behind()

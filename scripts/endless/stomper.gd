@@ -1,13 +1,17 @@
 extends Node3D
 ## The stomper (docs/design/endless-flight/spec-stomper.md): one giant headless
-## stone body in the Amberlands, the only one in the world. It walks a loop near
-## the spawn (stomper_route.gd), about HEIGHT m tall; `--stomper=0` leaves it out.
+## stone body in the Amberlands, the only one in the world: on the far side of
+## the door in the game (doors world), at the origin with --world=amberlands, the
+## debug world. It walks a loop round that land's home (stomper_route.gd), about
+## HEIGHT m tall, and only while the plane is on its side, so it is where it was
+## left and the first way out of the hall meets it. `--stomper=0` leaves it out.
 ##
 ## One skinned mesh and one Skeleton3D from assets/models/stomper_body.glb
 ## (art/blender/headless_body/reduce_stomper.py), dressed in the kit's stone.
 ## The `stomp` clip is the weight; here the feet are planted on the real ground
 ## and the body moves by the way the clip's planted foot goes back under it, so
 ## nothing slides. stomper_legs.gd lays the legs on the feet.
+##   home(world)          where the Amberlands lie in this world, or INF
 ##   wanted(world)        whether this world has it
 ##   setup(study)         finds its way and stands it there
 ##   step(delta)          walks it
@@ -22,8 +26,8 @@ const Route = preload("res://scripts/endless/stomper_route.gd")
 const Legs = preload("res://scripts/endless/stomper_legs.gd")
 const Fall = preload("res://scripts/endless/stomper_fall.gd")
 const Wake = preload("res://scripts/endless/stomper_wake.gd")
+const Door = preload("res://scripts/endless/hall_doors.gd")
 const MODEL := "res://assets/models/stomper_body.glb"
-const WORLD := "amberlands"
 ## Its height in play (m), and the model's, stump's cut to soles (m).
 const HEIGHT := 250.0
 const MODEL_HEIGHT := 7.02
@@ -36,8 +40,12 @@ const LIFT: Array[float] = [0.62,0.12]
 const STANCE := 0.62
 ## The cycle's table: samples of the clip, read at setup.
 const SAMPLES := 96
-## Where on the loop it starts: the way out of the spawn (m, -X at heading 0).
-const START_OFF := Vector2(-700.0,0.0)
+## Where on the loop it starts, off the home (m): across the lake, left of the
+## way out of the hall, walking north toward the ruin.
+const START_OFF := Vector2(1530.0,900.0)
+## How far off the hall's mouth on this side it keeps (m; the route's shore
+## margin comes on top).
+const DOOR_CLEAR := 220.0
 ## A hip's socket off the hips' middle (model m).
 const HIP_X := 1.13568
 ## A sole's ground: how far round the ankle it is read (m), the most it tilts.
@@ -65,6 +73,10 @@ var fall: Node3D
 var wake: Node3D
 var route: RefCounted
 var field: RefCounted
+var world: RefCounted
+## The land's home: the middle of its loop.
+var centre := Vector2.ZERO
+var _study: Node
 ## The model's metres to the world's.
 var size := HEIGHT/MODEL_HEIGHT
 ## The cycle (0 to 1), and how far along the loop (m).
@@ -90,12 +102,21 @@ var _ankle: Array[PackedVector3Array] = [PackedVector3Array(),PackedVector3Array
 var _hips := PackedVector3Array()
 var _whole := 0.0
 
-static func wanted(world: RefCounted) -> bool:
-	return String(world.id) == WORLD and not ("--stomper=0" in LaunchArgs.user_args())
+## The Amberlands' home in `w`: the origin alone (--world=amberlands), the far
+## side of the door in the game (profiles/doors.gd). INF: none here.
+static func home(w: RefCounted) -> Vector2:
+	if str(w.id) == "amberlands": return Vector2.ZERO
+	if str(w.id) == "doors": return w.offset
+	return Vector2.INF
+
+static func wanted(w: RefCounted) -> bool:
+	return home(w).is_finite() and not ("--stomper=0" in LaunchArgs.user_args())
 
 func setup(study: Node) -> void:
 	field = study.field
-	var start: Vector2 = study._start
+	world = study.world
+	_study = study
+	centre = home(world)
 	var model: Node3D = (load(MODEL) as PackedScene).instantiate()
 	model.scale = Vector3.ONE*size
 	add_child(model)
@@ -109,8 +130,8 @@ func setup(study: Node) -> void:
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	player.play(CLIP)
 	_read_clip()
-	route = Route.walked(field,start)
-	along = route.nearest(start+START_OFF)
+	route = Route.walked(field,centre,_open)
+	along = route.nearest(centre+START_OFF)
 	_stand()
 	legs = Legs.new()
 	skeleton.add_child(legs)
@@ -124,10 +145,26 @@ func setup(study: Node) -> void:
 		wake = Wake.new()
 		add_child(wake)
 		wake.setup(study,self)
+	visible = _plane_here()
+
+## Whether it may stand at (x, z): on its side of the door, off the hall's mouth.
+func _open(x: float, z: float) -> bool:
+	if world.has_method("side_of") and int(world.side_of(x,z)) != 1: return false
+	return Vector2(x,z).distance_to(centre+Door.AMBER_AT) > DOOR_CLEAR
+
+func _plane_here() -> bool:
+	if not world.has_method("side_of"): return true
+	var plane: RefCounted = _study.plane
+	if plane == null: return false
+	var p: Vector3 = plane.position
+	return int(world.side_of(p.x,p.z)) == 1
 
 ## Walks it: the cycle on, the body by the planted foot's way, feet down and up
-## as they cross their marks.
+## as they cross their marks. All of it stands still, and draws nothing, while
+## the plane is on the other side of the door.
 func step(delta: float) -> void:
+	visible = _plane_here()
+	if not visible: return
 	var was := phase
 	phase = fposmod(phase+delta/LENGTH,1.0)
 	along = fposmod(along+_gone(was,phase)*size,route.length)

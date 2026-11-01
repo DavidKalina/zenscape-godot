@@ -242,4 +242,4 @@ func hang(at: Vector3, v: Vector3, size: float) -> void:
 	_hung_next = (_hung_next+1)%HUNG
 
 func _everywhere() -> AABB:
-	return AABB(Vector3.ONE*-50000.0,Vector3.ONE*100000.0)
+	return AABB(Vector3.ONE*-200000.0,Vector3.ONE*400000.0)
