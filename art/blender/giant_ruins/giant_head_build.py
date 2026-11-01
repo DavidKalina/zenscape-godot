@@ -332,7 +332,7 @@ def blocks(f, stone, rng):
     return cell.reshape(shape).astype(np.int32), face, uvw, size, row
 
 
-def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8):
+def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8, masonry=None, fractures=()):
     """(full, soft): old stone, and the same without what a bake carries.
 
     Cut stone, not skin: each block's face is planed flat, a little proud or
@@ -341,9 +341,12 @@ def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8):
     random), corners chipped off along a plane, and a few straight fractures
     that jog at the beds. `stone` scales the masonry to the piece: a 55 m head
     is cut from finer stone than a 250 m body. soft keeps the shape and the
-    blocks gone."""
+    blocks gone. `masonry` is blocks()'s tuple laid some other way (the stomper
+    wraps its stone round its limbs); its w runs out through the block's face.
+    `fractures`, (centre, length), replace the random cracks where they would run
+    the length of something thin."""
     rng = np.random.default_rng(f.seed * 7919 + 5)
-    cell, face, (u, v, w), (hu, hv, hw), row = blocks(f, stone, rng)
+    cell, face, (u, v, w), (hu, hv, hw), row = masonry or blocks(f, stone, rng)
     count = int(cell.max()) + 1
     near = np.nonzero(np.abs(d) < 2.0 * f.h + 1.5 * stone)
     ids = cell[near]
@@ -378,7 +381,7 @@ def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8):
     reach = np.zeros(count, np.float32)
     for x, y, z, r, depth in sites:
         off = np.sqrt(((centre - (x, y, z)) ** 2).sum(1))
-        hit = (off < r * rng.uniform(0.7, 1.15, count)) & (n > 1) & (straight < 0.95)  # a corner goes, a window would not
+        hit = (off < r * rng.uniform(0.7, 1.15, count)) & (n > 1) & ((straight < 0.95) | (masonry is not None))  # a corner goes, a window would not; on a rounded limb all blocks turn
         gone |= hit
         reach[hit] = depth
     soft = d.copy()
@@ -396,7 +399,7 @@ def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8):
     full[keep] += np.clip(plane[~lost] - d[keep], -most, most) * flat[kept] + dip[kept]
     chip = rng.uniform(1.15, 1.75, count)
     chip[rng.random(count) > 0.17] = 9.0
-    least = np.argmax(np.abs(normal), 1)                                       # a chip is across the block's showing face
+    least = np.full(count, 2) if masonry else np.argmax(np.abs(normal), 1)     # a chip is across the block's showing face
     axes = np.ones((count, 3))
     axes[np.arange(count), least] = 0
     at = sum(axes[kept, a] * side[kept, a] * (u, v, w)[a][keep] for a in range(3))
@@ -407,16 +410,16 @@ def weather(f, d, stone=1.0, losses=(), breaks=4, cracks=8):
     full += (f.fbm(4.0 * stone, 2, 27) - 0.5) * 0.3 * stone                    # dressed, not polished
     # Fractures: straight planes through the stone, each stepping at the beds.
     all_near = np.nonzero(np.abs(soft) < 3.0 * stone + 2.0 * f.h)
-    jog = rng.uniform(-1.0, 1.0, (cracks, len(f.zs) + 2)) * stone
+    jog = rng.uniform(-1.0, 1.0, (max(cracks, len(fractures)), max(len(f.zs), int(row.max() - row.min())) + 2)) * stone
     xyz = [xs[i] for xs, i in zip((f.xs, f.ys, f.zs), all_near)]
-    rows = row[all_near[2]] - row.min()
-    for c in range(cracks):
-        s = centre[found[rng.integers(len(found))]]
+    rows = (row[all_near[2]] if row.ndim == 1 else row[all_near]) - row.min()
+    for c in range(len(fractures) or cracks):
+        s = fractures[c][0] if fractures else centre[found[rng.integers(len(found))]]
         lean = rng.uniform(-0.35, 0.35)
         turn = rng.uniform(0, 2 * np.pi)
         along = np.array((np.cos(turn), np.sin(turn), lean))
         along = along / np.linalg.norm(along)
-        long = rng.uniform(30, 70) * keen
+        long = fractures[c][1] if fractures else rng.uniform(30, 70) * keen
         off = sum(along[a] * (xyz[a] - s[a]) for a in range(3)) + jog[c, rows]
         ends = np.clip(1 - np.sqrt(sum((xyz[a] - s[a]) ** 2 for a in range(3))) / long, 0, 1)
         gap = np.maximum(np.sqrt(ends) * keen, 0.8 * f.h) - np.abs(off)        # never thinner than the grid can draw
