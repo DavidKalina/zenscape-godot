@@ -48,6 +48,12 @@ and no long ramp to the mouth.
    flame on the left wall of cave 1 around s 420. Round 1 shrank the glow
    flames to nothing for sunk caves, so find out what this is and remove it.
 
+6. **Two loose ends, checked in a flown pass.** Blue slivers at the bottom
+   corners of cave 3's far mouth seen from inside (`scratch/fc-6880_03250.png`),
+   and a black slit on the mouth rock's top strip seen from about 150 m up
+   (`scratch/j_4896_1_top.png`). Fly each. Fix what shows up in flight; if
+   one only shows after a teleport, say so and leave it.
+
 Do these in whatever order works. Do item 4 after item 3, since the path
 changes the mesh.
 
