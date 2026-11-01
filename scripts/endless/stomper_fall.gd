@@ -43,9 +43,10 @@ const SHOVE := 34.0
 const SHOVE_UP := 0.55
 const SHOVE_YAW := 0.1
 ## The dust: puffs a landing in the skirt and the column, the most alive, how
-## far the skirt runs out (m), the seconds it takes to spend its way.
-const SKIRT := 30
-const COLUMN := 16
+## far the skirt runs out (m), the seconds it takes to spend its way. It stays
+## round the shins: a dust the height of the body hides what is walking.
+const SKIRT := 24
+const COLUMN := 8
 const LANDINGS := 2*(SKIRT+COLUMN)
 ## The puffs a wake can hang over its track (`hang`), their life (s), how thin
 ## they are and the share of their life they take to come up.
@@ -58,13 +59,18 @@ const SKIRT_RUN := 300.0
 const SKIRT_TAU := 2.2
 const COLUMN_TAU := 3.5
 ## Each kind's size (m), low and high, and life (s).
-const SKIRT_SIZE := Vector2(60.0,110.0)
-const COLUMN_SIZE := Vector2(60.0,105.0)
+const SKIRT_SIZE := Vector2(55.0,95.0)
+const COLUMN_SIZE := Vector2(35.0,65.0)
 const LIFE := Vector2(5.5,9.0)
-## The dust's colour: lit top and shaded foot; how thick a puff is at its most.
-const DUST_TOP := Color(0.74,0.66,0.52)
-const DUST_FOOT := Color(0.42,0.35,0.27)
-const DUST_MOST := 0.95
+## A skirt puff's height, a share of its width: it runs along the ground. How
+## high the column goes (m), low and high, and how thick each kind is.
+const SKIRT_FLAT := 0.5
+const COLUMN_RISE := Vector2(50.0,150.0)
+const SKIRT_THICK := 1.0
+const COLUMN_THICK := 0.55
+## The dust's soil; how thick a puff is at its most.
+const DUST_SOIL := Color(0.7,0.62,0.54)
+const DUST_MOST := 0.75
 
 var enabled := true
 var now := 0.0
@@ -96,6 +102,8 @@ func setup(study: Node, stomper: Node3D) -> void:
 	_ring_mat = ShaderMaterial.new()
 	_ring_mat.shader = RING_SHADER
 	_ring_mat.set_shader_parameter("reach",REACH)
+	var fog: Environment = study.look.environment
+	_ring_mat.set_shader_parameter("haze",Vector3(fog.fog_depth_begin,fog.fog_depth_end,fog.fog_depth_curve))
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE*2.0
 	quad.material = _ring_mat
@@ -110,8 +118,7 @@ func setup(study: Node, stomper: Node3D) -> void:
 	puff.size = Vector2.ONE
 	_dust_mat = ShaderMaterial.new()
 	_dust_mat.shader = DUST_SHADER
-	_dust_mat.set_shader_parameter("top",DUST_TOP)
-	_dust_mat.set_shader_parameter("foot",DUST_FOOT)
+	_dust_mat.set_shader_parameter("soil",DUST_SOIL)
 	_dust_mat.set_shader_parameter("thick",DUST_MOST)
 	puff.material = _dust_mat
 	_dust = MultiMesh.new()
@@ -217,16 +224,16 @@ func _raise_dust(at: Vector3) -> void:
 		var y0 := float(_field.height(from.x,from.y))
 		var y1 := float(_field.height(to.x,to.y))
 		var v := Vector3(way.x*run,maxf(y1-y0,-40.0)+_rng.randf_range(10.0,30.0),way.y*run)/SKIRT_TAU
-		_puff(Vector3(from.x,y0+10.0,from.y),v,SKIRT_TAU,_rng.randf_range(SKIRT_SIZE.x,SKIRT_SIZE.y))
+		_puff(Vector3(from.x,y0+10.0,from.y),v,SKIRT_TAU,_rng.randf_range(SKIRT_SIZE.x,SKIRT_SIZE.y),SKIRT_THICK,SKIRT_FLAT)
 	for i in range(COLUMN):
 		var off := Vector2.from_angle(_rng.randf()*TAU)*_rng.randf_range(0.0,34.0)
-		var v := Vector3(off.x,_rng.randf_range(120.0,340.0),off.y)/COLUMN_TAU
-		_puff(at+Vector3(off.x,8.0,off.y),v,COLUMN_TAU,_rng.randf_range(COLUMN_SIZE.x,COLUMN_SIZE.y))
+		var v := Vector3(off.x,_rng.randf_range(COLUMN_RISE.x,COLUMN_RISE.y),off.y)/COLUMN_TAU
+		_puff(at+Vector3(off.x,8.0,off.y),v,COLUMN_TAU,_rng.randf_range(COLUMN_SIZE.x,COLUMN_SIZE.y),COLUMN_THICK,1.0)
 
 ## One puff into the ring of them. The transform's basis carries the way and
 ## the seconds it spends it (see the shader), not a turn.
-func _puff(at: Vector3, v: Vector3, tau: float, size: float) -> void:
-	var t := Transform3D(Basis(v,Vector3(tau,1.0,0.06),Vector3.ZERO),at)
+func _puff(at: Vector3, v: Vector3, tau: float, size: float, thick: float, tall: float) -> void:
+	var t := Transform3D(Basis(v,Vector3(tau,thick,0.06),Vector3(tall,0.0,0.0)),at)
 	_dust.set_instance_transform(_dust_next,t)
 	_dust.set_instance_custom_data(_dust_next,Color(now,_rng.randf_range(LIFE.x,LIFE.y),size,_rng.randf()))
 	_dust_next = (_dust_next+1)%LANDINGS
@@ -235,7 +242,7 @@ func _puff(at: Vector3, v: Vector3, tau: float, size: float) -> void:
 ## ring: a landing's dozens would push it out long before its time.
 func hang(at: Vector3, v: Vector3, size: float) -> void:
 	var life := _rng.randf_range(HUNG_LIFE.x,HUNG_LIFE.y)
-	var t := Transform3D(Basis(v,Vector3(life,HUNG_THIN,HUNG_RISE),Vector3.ZERO),at)
+	var t := Transform3D(Basis(v,Vector3(life,HUNG_THIN,HUNG_RISE),Vector3(1.0,0.0,0.0)),at)
 	var i := LANDINGS+_hung_next
 	_dust.set_instance_transform(i,t)
 	_dust.set_instance_custom_data(i,Color(now,life,size,_rng.randf()))
