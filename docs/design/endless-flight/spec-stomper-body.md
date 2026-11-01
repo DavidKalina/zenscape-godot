@@ -105,7 +105,13 @@ made star fans there) and carry the detail in baked normal and AO maps. List
    ground. Seen at 81c7d7bb and to fix: in the game the body is pale, flat sand, with
    far less of the carved stone than the Blender stills; the hip and knee smear and
    show a round plug; clouds pass through the arms. Judge the walk's deep crouch
-   against the new body and flag it for the user rather than reauthoring the clip. Smoke, then a handoff.
+   against the new body and flag it for the user rather than reauthoring the clip.
+   Also: 84 small heads at 6.4-8.6 k triangles each is the land's biggest new cost, so
+   give them far meshes and measure triangles on screen as well as frame time. Sweep
+   the flats near the ruins (AGENTS.md, Meadows and flats). Recheck the grass through a
+   footfall. Fly under the crotch and under a lifted foot on the new body, and hit a
+   limb in flight. A cloud band crosses the heads at one height: look at it with the
+   arms. Shoot stills at a fixed hour. Smoke, then a handoff.
 
 ## Rules
 
