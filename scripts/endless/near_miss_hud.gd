@@ -134,7 +134,7 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 	if live:
 		_chain.text = "%s  ×%.1f" % [_grouped(near.chain_points),near.multiplier()]
 		_chain.add_theme_color_override("font_color",MIST if near.skimming else WHITE)
-		var share := clampf(near.bank_left/NearMiss.BANK_AFTER,0.0,1.0)
+		var share := clampf(near.bank_left/near.bank_after(),0.0,1.0)
 		_bar.offset_right = _bar.offset_left+BAR.x*share
 	_note_age += delta
 	_note.modulate.a = clampf(1.0-(_note_age-NOTE_TIME*0.6)/(NOTE_TIME*0.4),0.0,1.0) if _note_age < NOTE_TIME else 0.0

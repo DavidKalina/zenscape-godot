@@ -60,6 +60,15 @@ extends RefCounted
 ## meter over SURGE_TIME s full, driving the plane past Boost (SkyPlane
 ## `surge`).
 ##
+## The line's score (2026-11-01; scripts/endless/line_score.gd, its numbers in
+## line_tune.json): by degree of difficulty and the line's shape. Each moment is
+## base x band x its factors (Close, Fast, Knife, Low, Under); runs of one kind
+## and surface pay a length bonus; a flourish steps the line's multiplier
+## (`multiplier`, no separate chain multiplier; LineScore's line_cap); skimming
+## holds the bank but adds nothing. `_line_moment` scores every moment that way
+## (and writes the `--line-log` row) under either formula; `--line-score=old`
+## keeps the old one above in play for A/B, the new one shadowed in the log.
+##
 ## `touching` (after `measure`): a body point in the land or a tree, or a
 ## wing in a wall, though the plane's middle is clear of it, for scripts/
 ## endless/flight_contact.gd to grade (a wingtip's scrape).
@@ -68,6 +77,8 @@ const WorldScale = preload("res://scripts/world_scale.gd")
 const SkyGlide = preload("res://scripts/sky_glide.gd")
 const LineMoves = preload("res://scripts/endless/line_moves.gd")
 const Glyphs = preload("res://scripts/endless/near_glyphs.gd")
+const LineScoreS = preload("res://scripts/endless/line_score.gd")
+const LineLogS = preload("res://scripts/endless/line_log.gd")
 
 ## The body's points (toy metres, the plane's frame: x right, y up, -z
 ## ahead; times WorldScale.plane): the spinner, the tail, the lower
@@ -175,6 +186,13 @@ var moves := LineMoves.new()
 var line_moments: Array[Dictionary] = []
 ## Seconds flown, for the farming memory.
 var clock := 0.0
+## The line's score (see the header): on unless `--line-score=old`; the line
+## under way (LineScore.Line, scored under either formula), its number this
+## flight, and why the next end happens (for the log).
+var line_new := not ("--line-score=old" in preload("res://scripts/launch_args.gd").user_args())
+var score_line := LineScoreS.Line.new()
+var line_id := 0
+var _end_reason := "banked"
 
 var _ground := Tracker.new()
 var _stone := Tracker.new()
@@ -232,10 +250,31 @@ class Tracker:
 
 ## The multiplier the chain has now.
 func multiplier() -> float:
+	if line_new: return score_line.mult
 	return minf(chain_mult,CHAIN_TOP)
+
+## The multiplier's cap (the HUD's heat): the line's under the new score.
+func top() -> float:
+	return float(LineScoreS.tune().line_cap) if line_new else CHAIN_TOP
+
+## Seconds with no new moment before the line banks: the line's bank_after
+## (line_tune.json) under the new score, BANK_AFTER under the old.
+func bank_after() -> float:
+	return float(LineScoreS.tune().bank_after) if line_new else BANK_AFTER
+
+## The meter's fill (points).
+func meter_full() -> float:
+	if not line_new: return METER_FULL
+	var t := LineScoreS.tune()
+	return float(t.meter_full)*float(t.points_per_unit)
+
+## The live run's label (TREES ×7), or "".
+func run_label() -> String:
+	return score_line.run_label(snappedf(clock,0.001))
 
 ## The unbanked line back to nothing.
 func _clear_line() -> void:
+	_end_line()
 	chain_points = 0.0
 	chain_count = 0
 	chain_mult = 1.0
@@ -250,6 +289,7 @@ func reset() -> void:
 	_stone.armed = true
 	_pass.cancel()
 	_pass.armed = true
+	_end_reason = "reset"
 	_clear_line()
 	_shots.clear()
 	bank_left = 0.0
@@ -274,6 +314,7 @@ func prize(points: float, title: String, at: Vector3) -> void:
 ## Returns the points lost (before the multiplier, times it).
 func lose() -> float:
 	var lost := chain_points*multiplier()
+	_end_reason = "lost"
 	_ground.cancel()
 	_stone.cancel()
 	_pass.cancel()
@@ -440,12 +481,14 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		if not _pass.active:
 			_pass.start(under)
 			_pass.speed = speed
+			_pass.roll = LineMoves.roll_of(plane)
 			_pass.at = plane.position
 			_pass.id = hash(Vector2i(floori(plane.position.x/FARM_CELL),floori(plane.position.z/FARM_CELL)))
 			_pass.surface = "stone"
 		elif under < _pass.least:
 			_pass.least = under
 			_pass.speed = speed
+			_pass.roll = LineMoves.roll_of(plane)
 	elif _pass.active:
 		_out_for += delta
 		if _out_for >= PASS_GAP:
@@ -460,6 +503,7 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 		if not hit.is_empty():
 			_gate.start(maxf(float(hit.room)-WorldScale.span*0.5,0.0))
 			_gate.speed = speed
+			_gate.roll = LineMoves.roll_of(plane)
 			_gate.at = p_now
 			_gate.surface = "stone"
 			_gate.id = hash(str(hit.name))
@@ -490,29 +534,29 @@ func score(delta: float, game: Node3D, surge_held: bool) -> Dictionary:
 	skimming = fast and ground_clear < band and ground_surface in ["land","water"] and bool(game.hand_landing.flying())
 	if skimming:
 		var k := 1.0-clampf(ground_clear/band,0.0,1.0)
-		var add := SKIM_RATE*skim_scale*k*clampf(speed/cruise,0.5,2.0)*delta
+		var add := 0.0 if line_new else SKIM_RATE*skim_scale*k*clampf(speed/cruise,0.5,2.0)*delta
 		chain_points += add
 		total += add
-		if bank_left <= 0.0: bank_left = BANK_AFTER
+		if bank_left <= 0.0: bank_left = bank_after()
 	# The live gap.
 	gap = INF
 	if fast and bool(game.hand_landing.flying()):
 		if ground_clear < reach: gap = maxf(ground_clear,0.0)
 		if stone_clear < stone_reach: gap = minf(gap,maxf(stone_clear,0.0))
 	# The bank: on its timer, or now if it would fill the meter.
-	var fills := chain_points > 0.0 and meter < 1.0 and meter+chain_points*multiplier()/METER_FULL >= 1.0
+	var fills := chain_points > 0.0 and meter < 1.0 and meter+chain_points*multiplier()/meter_full() >= 1.0
 	if fills or (chain_points > 0.0 and not skimming and not moves.holding):
 		bank_left -= delta
 		if fills or bank_left <= 0.0:
 			var banked := chain_points*multiplier()
-			meter = minf(1.0,meter+banked/METER_FULL)
+			meter = minf(1.0,meter+banked/meter_full())
 			var line := _line(banked,game)
 			out["banked"] = {"points":banked,"line":line}
 			out["line"] = line
 			_clear_line()
 	if not _prizes.is_empty() and not out.has("banked"):
 		var line := _prize_line(_prizes.pop_front(),game)
-		meter = minf(1.0,meter+float(line.points)/METER_FULL)
+		meter = minf(1.0,meter+float(line.points)/meter_full())
 		total += float(line.points)
 		out["banked"] = {"points":line.points,"line":line}
 		out["line"] = line
@@ -574,6 +618,11 @@ func _moment(kind: String, t: Tracker, reach: float, cruise: float, out: Diction
 ## (cut by the farming cut and its repeats, a new kind's NEW_KIND on top), the
 ## bank put off; the frame's "near" (with `step`, what it added).
 func _chain(m: Dictionary, out: Dictionary, _game: Node3D) -> void:
+	if _line_moment(m,_game):
+		if line_new:
+			_chain_line(m,out)
+			return
+	elif line_new: return
 	m.t = clock
 	var kind := str(m.kind)
 	var n := int(_kinds.get(kind,0))
@@ -655,3 +704,80 @@ func _farm(at: Vector3, id: int) -> float:
 		if int(r.id) == id: same = true
 	_recent = keep
 	return 1.0/(1.0+FARM_EACH*near)*(FARM_SAME if same else 1.0)
+
+# --- The line's score (scripts/endless/line_score.gd) ----------------------------
+
+## Scores moment `m` the line's way into `score_line` and writes its log row;
+## m gets units, factors, tags, run, run_n, flourish and line_step. False for a
+## kind the line's score skips (the slalom: its trees are a run of grazes already).
+func _line_moment(m: Dictionary, game: Node3D) -> bool:
+	var t := LineScoreS.tune()
+	var kind := str(m.get("of",m.kind))
+	if kind in (t.skip as Array): return false
+	var plane = game.plane
+	var cruise := maxf(float(plane.cruise()),1.0)
+	var at: Vector3 = m.at
+	var land := float(game.field.height(at.x,at.z)) if game.field != null else -INF
+	var raw := {"k":float(m.get("k",0.0)),"speed":float(m.get("speed",float(m.get("pace",1.0))*cruise)),
+		"cruise":cruise,"top":float(plane.boost_speed()),
+		"roll_deg":rad_to_deg(float(m.get("roll",LineMoves.roll_of(plane)))),
+		"height":at.y-maxf(land,float(game.water_at(at))),"under":bool(m.get("under",false))}
+	var f := LineScoreS.factors(raw)
+	var hold := minf(float(m.held)/maxf(float(m.get("held_min",1.0)),0.001),float(t.hold_top)) if m.has("held") else 1.0
+	var farm := 1.0 if m.has("shot") or bool(m.get("chime",false)) else _farm_same(int(m.get("id",0)))
+	var units := LineScoreS.moment_units(kind,str(m.band),f,hold,farm)
+	var now := snappedf(clock,0.001)
+	if score_line.count == 0: line_id += 1
+	var got := score_line.add({"kind":kind,"surface":str(m.surface),"t":now,"units":units,"fast":f.fast,"product":f.product})
+	m.units = units
+	m.factors = f
+	m.tags = LineScoreS.tags(f)
+	m.run = int(got.run)
+	m.run_n = int(got.run_n)
+	m.flourish = bool(got.flourish)
+	m.line_step = float(got.step)
+	LineLogS.write({"row":"moment","t":now,"line":line_id,"kind":kind,"move":str(m.kind),"surface":str(m.surface),
+		"band":str(m.band),"k":raw.k,"clear":float(m.get("clear",INF)),"speed":raw.speed,"cruise":raw.cruise,"top":raw.top,
+		"closing":float(m.get("closing",0.0)),"roll_deg":raw.roll_deg,"height":raw.height,"under":raw.under,
+		"width":float(m.get("width",INF)),"hold":hold,"farm":farm,"f_close":f.close,"f_fast":f.fast,"f_knife":f.knife,
+		"f_low":f.low,"f_under":f.under,"product":f.product,"points":units,"run":m.run,"run_n":m.run_n,
+		"flourish":m.flourish,"mult":score_line.mult,"line_total":score_line.total(),"old_points":float(m.points)})
+	return true
+
+## The new score's chain: the moment's points (units x points_per_unit), the
+## line's raw sum (moments and run bonuses) as the chain's points, the bank put
+## off; the frame's "near" (`step` the flourish's step).
+func _chain_line(m: Dictionary, out: Dictionary) -> void:
+	var ppu := float(LineScoreS.tune().points_per_unit)
+	m.t = clock
+	m.old_points = float(m.points)
+	m.points = float(m.units)*ppu
+	m.step = float(m.line_step)
+	var before := chain_points
+	chain_points = score_line.raw()*ppu
+	chain_mult = score_line.mult
+	_kinds[str(m.kind)] = int(_kinds.get(str(m.kind),0))+1
+	chain_count += 1
+	bank_left = bank_after()
+	total += chain_points-before
+	last = m
+	moments.append(m)
+	line_moments.append(m)
+	if not m.has("shot"): _recent.append({"at":m.at,"t":clock,"id":int(m.get("id",0))})
+	out["near"] = m
+
+## The same-spot cut: farm_same when a moment on the same tree, ruin or patch
+## of land was scored within FARM_TIME s.
+func _farm_same(id: int) -> float:
+	for r: Dictionary in _recent:
+		if clock-float(r.t) <= FARM_TIME and int(r.id) == id: return float(LineScoreS.tune().farm_same)
+	return 1.0
+
+## The line under way ends (banked, lost, reset): its log row, and the line
+## scored afresh.
+func _end_line() -> void:
+	if score_line.count > 0:
+		LineLogS.write({"row":"end","t":snappedf(clock,0.001),"line":line_id,"mult":score_line.mult,
+			"line_total":score_line.total(),"reason":_end_reason})
+	score_line = LineScoreS.Line.new()
+	_end_reason = "banked"

@@ -10,7 +10,8 @@ extends "res://scripts/endless/near_miss_hud_handoff.gd"
 ##   pops its faceted glyph into the ring at 135% (scripts/endless/near_glyphs.gd),
 ##   a sheen crosses it, then the move's name, then a bright dash orbits the arc.
 ## - beside it: the total with the italic multiplier; the newest pass (name,
-##   clearance, points, RAZOR); under them a trail of tiny medallions for the
+##   clearance, points, RAZOR, its top factors as tags: CLOSE, FAST, KNIFE, LOW,
+##   UNDER), the live run (TREES ×7) after the multiplier; under them a trail of tiny medallions for the
 ##   earlier passes (near_badges.gd, rims by closeness), at most TRAIL and a
 ##   count.
 ## - the bank: the arc closes gold, the coin lands in the ring, the trail
@@ -32,6 +33,9 @@ const COL_GAP := 14.0
 const TOTAL_M := 44.0
 const MULT_M := Vector2(26.0,34.0)
 const MOVE_M := 20.0
+## The factor tags (CLOSE, FAST...) after the newest pass, and the live run's count.
+const TAG_M := 16.0
+const RUN_M := 18.0
 ## The trail: medallion sizes and opacities, newest first.
 const TRAIL := [[20.0,1.0],[18.0,0.85],[16.0,0.7],[14.0,0.55]]
 ## The bank: the slam's number by tier (M), the read-back's ring and number,
@@ -98,7 +102,7 @@ func show_state(delta: float, near: NearMiss, on: bool, events: Dictionary) -> v
 		if not _bank.is_empty() and not _bank.has("cut"): _bank.cut = float(_bank.age)
 		if not _loss.is_empty(): _loss.age = maxf(float(_loss.age),LOSS_TIME-0.2)
 		_moves.push_front({"id":Glyphs.for_moment(m),"kind":str(m.kind).to_upper(),"band":band,
-			"points":float(m.points),"clear":float(m.clear),"age":0.0,"chime":bool(m.get("chime",false))})
+			"points":float(m.points),"clear":float(m.clear),"age":0.0,"chime":bool(m.get("chime",false)),"tags":m.get("tags",[])})
 		if _moves.size() > 64: _moves.resize(64)
 		_jolt = 0.0
 	if events.has("banked"):
@@ -296,7 +300,7 @@ func _draw_live(s: float) -> void:
 	var c := Vector2.ONE*px*0.5
 	var col: Color = _ramp(HEAT,maxf(heat,0.25))
 	var glow: Color = _ramp(GLOW,heat)
-	var share := clampf(_near.bank_left/NearMiss.BANK_AFTER,0.0,1.0)
+	var share := clampf(_near.bank_left/_near.bank_after(),0.0,1.0)
 	_ring(c,px,share,col,Color(CREAM,0.25),glow,float(_ramp(GLOW_PX,heat))*s,1.0)
 	_orbit(c,px,(age-0.12)/0.33,1.0)
 	# The newest glyph, popping in, and its sheen.
@@ -328,9 +332,21 @@ func _draw_live(s: float) -> void:
 		cx += _width(_nums,clear,mpx)+8.0*s
 	var pts := "+"+_grouped(float(m.points))
 	_txt(_block,_nums,pts,Vector2(cx,my),mpx,Color(CREAM,a),3.0*s,1.0,0.0,Color(0,0,0,0),0.0,0.0)
+	cx += _width(_nums,pts,mpx)+8.0*s
 	if band == "razor":
-		cx += _width(_nums,pts,mpx)+8.0*s
 		_txt(_block,_bw(13.0*s,0.14),"RAZOR",Vector2(cx,my+1.0*s),13.0*s,Color(GOLD,a),3.0*s,1.0,0.0,Color(0,0,0,0),0.0,0.0)
+		cx += _width(_bw(13.0*s,0.14),"RAZOR",13.0*s)+8.0*s
+	# The newest pass's top factors (NearMiss `_line_moment`'s tags), as small caps.
+	var tags: Array = m.get("tags",[])
+	var tag_f := _bw(TAG_M*s,0.14)
+	for tag: String in tags:
+		_txt(_block,tag_f,tag,Vector2(cx,my+1.0*s),TAG_M*s,Color(CLOSE_C,a),3.0*s,1.0,0.0,Color(0,0,0,0),0.0,0.0)
+		cx += _width(tag_f,tag,TAG_M*s)+6.0*s
+	# The live run (TREES ×7), beside the multiplier.
+	var run := _near.run_label()
+	if run != "":
+		var mx := x+tw+10.0*s+_width(_nums_i,"×%s" % String.num(_near.multiplier(),1),lerpf(MULT_M.x,MULT_M.y,_heat)*s)+12.0*s
+		_txt(_block,_bw(RUN_M*s,0.1),run,Vector2(mx,y+3.0*s),RUN_M*s,Color(CREAM,0.9),3.0*s,1.0,0.0,Color(0,0,0,0),0.0,0.0)
 	# The trail: the earlier passes, the front one shrinking out of the ring.
 	var ty := my+mpx*0.5+4.0*s+10.0*s
 	var tx := x
