@@ -278,6 +278,20 @@ const LC_V := -85.0
 const LC_WANDER := 10.0
 const LC_WAVE := 75.0
 const LC_ROUGH := 1.2
+## The leads: crevasses down the head (above the icefall step to the mouth's
+## ranks) that run together toward the ice gorge's mouth, so the slot's way
+## reads from the glacier. Each [a from, vr from, a to, vr to, half-width at
+## the lip, at the floor, depth]; the line eases from one end to the other
+## (smoothstep in its share), wanders LEAD_WANDER m over LEAD_WAVE, its floor
+## easing in over LEAD_RAMP at both ends. The first is flown (as wide as the
+## long crevasse less a little), the second is a narrow crack beside it.
+## They start past LEAD_FROM, under ICE_FROM: the carve reaches down to it
+## for them alone (its profile and the other forms stay past ICE_FROM).
+const LEADS := [[2378.0,-70.0,2180.0,-40.0,13.0,8.5,20.0],[2372.0,132.0,2180.0,25.0,5.5,2.0,14.0]]
+const LEAD_FROM := 2175.0
+const LEAD_RAMP := 60.0
+const LEAD_WANDER := 5.0
+const LEAD_WAVE := 45.0
 ## Crevasses across the flow, in two bands (the head's bend, before the step;
 ## below it, off the long crevasse's side): each [a, bow (m downstream in the
 ## middle), half-width at the lip, depth, vr from, vr to]. Each pinches out
@@ -569,7 +583,7 @@ static func make(land_seed: int, ground := Callable()) -> RefCounted:
 
 ## ZenScapePeak's `version` this script calls: any other library, or none (a
 ## checkout not rebuilt yet), runs the GDScript.
-const NATIVE_VERSION := 4
+const NATIVE_VERSION := 5
 const NATIVE_CLASS := &"ZenScapePeak"
 ## The native twin of this massif, shared by every worker's (read only), or null.
 var _native: RefCounted = null
@@ -1406,7 +1420,7 @@ func _h(a: float, v: float, step := 0.0) -> Vector3:
 func _h_rock(a: float, v: float, step: float) -> Vector4:
 	if _native != null: return _native.h_rock(a,v,step)
 	var r := _h_rock0(a,v,step)
-	if ice_carve and a > ICE_FROM and a < GLACIER.y:
+	if ice_carve and a > LEAD_FROM and a < GLACIER.y:
 		var k := _ice_carve(a,v,step)
 		r.x += k.x
 		r.w = clampf(r.w+k.y,-1.0,1.0)
@@ -1677,6 +1691,27 @@ func _ice_carve(a: float, v: float, step: float) -> Vector2:
 			var deep := LC_DEEP*smoothstep(LC_A0,LC_A0+LC_RAMP,a)*(1.0-smoothstep(LC_A1-LC_RAMP,LC_A1,a))
 			deep *= (0.9+0.1*_noise.get_noise_2d(a*1.5+300.0,700.0))*LC_TOP/lw
 			cut = maxf(cut,deep*(1.0-smoothstep(LC_FLOOR*lw/LC_TOP,lw,x))*keep)
+	# The leads.
+	for i in LEADS.size():
+		var row: Array = LEADS[i]
+		var a0: float = row[0]
+		var a1: float = row[2]
+		if a >= a0 or a <= a1: continue
+		var top: float = row[4]
+		var kl := 1.0-smoothstep(top*3.0,top*6.0,step)
+		if kl <= 0.0: continue
+		var u := (a0-a)/(a0-a1)
+		var sm := u*u*(3.0-2.0*u)
+		var vc := float(row[1])+(float(row[3])-float(row[1]))*sm+LEAD_WANDER*sin((a0-a)/LEAD_WAVE+float(i)*2.0)
+		# Its width square to the line, not along v.
+		var slope := (float(row[3])-float(row[1]))*6.0*u*(1.0-u)/(a1-a0)+LEAD_WANDER*cos((a0-a)/LEAD_WAVE+float(i)*2.0)/(-LEAD_WAVE)
+		var lw := maxf(top,step*SLOT_AA)
+		var dv := vr-vc
+		var x := absf(dv)/sqrt(1.0+slope*slope)+LC_ROUGH*_noise.get_noise_2d(a*2.0+1400.0+i*600.0,500.0 if dv >= 0.0 else -500.0)
+		if x < lw:
+			var deep: float = float(row[6])*smoothstep(a1,a1+LEAD_RAMP,a)*(1.0-smoothstep(a0-LEAD_RAMP,a0,a))
+			deep *= (0.9+0.1*_noise.get_noise_2d(a*1.5+900.0+i*600.0,700.0))*top/lw
+			cut = maxf(cut,deep*(1.0-smoothstep(float(row[5])*lw/top,lw,x))*kl)
 	# The bands across.
 	if a > 2230.0 and a < 2400.0 or a > 2545.0 and a < 2830.0:
 		var q := vr/half

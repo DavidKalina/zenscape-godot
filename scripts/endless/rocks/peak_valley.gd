@@ -23,9 +23,9 @@ const BOX := Rect2(340.0,-760.0,1880.0,1090.0)
 ## tapers out over the last of it.
 const UP_TO := 0.87
 ## The floor's half-width (m) over which a stretch becomes a bowl.
-const BOWL := Vector2(56.0,76.0)
+const BOWL := Vector2(50.0,70.0)
 ## A heap every this far (m) along each side, and the chance one stands.
-const HEAP_STEP := 30.0
+const HEAP_STEP := 22.0
 const HEAP_CHANCE := 0.92
 ## The lane's half-width over the floor's: DRIFT m per m of the floor past
 ## DRIFT_FROM, plus LANE_PAD (m).

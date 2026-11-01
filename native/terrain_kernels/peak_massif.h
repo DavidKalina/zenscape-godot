@@ -91,6 +91,9 @@ constexpr double STEP_A = 2390.0, STEP_RUN = 80.0, STEP_DROP = 50.0, STEP_STEPS 
 constexpr double STEP_COL = 38.0, STEP_COL_WARP = 14.0, STEP_SHIFT = 0.35, STEP_BLOCK = 4.0, STEP_CRACK = 2.5, STEP_CRACK_DEEP = 9.0;
 constexpr double LC_A0 = 2480.0, LC_A1 = 2845.0, LC_RAMP = 70.0, LC_DEEP = 28.0, LC_TOP = 14.5, LC_FLOOR = 9.5;
 constexpr double LC_V = -85.0, LC_WANDER = 10.0, LC_WAVE = 75.0, LC_ROUGH = 1.2;
+constexpr double LEADS[][7] = {{2378.0, -70.0, 2180.0, -40.0, 13.0, 8.5, 20.0}, {2372.0, 132.0, 2180.0, 25.0, 5.5, 2.0, 14.0}};
+constexpr int LEADS_N = int(sizeof(LEADS) / sizeof(LEADS[0]));
+constexpr double LEAD_FROM = 2175.0, LEAD_RAMP = 60.0, LEAD_WANDER = 5.0, LEAD_WAVE = 45.0;
 constexpr double ICE_BANDS[][6] = {
 	{2252.0, 20.0, 5.0, 22.0, -230.0, 120.0}, {2283.0, 22.0, 6.5, 28.0, -180.0, 220.0},
 	{2312.0, 20.0, 4.5, 18.0, -240.0, 60.0}, {2340.0, 18.0, 6.0, 26.0, -120.0, 240.0},
@@ -238,7 +241,7 @@ public:
 	// `_h_rock`: (height, cut, meadow, paint).
 	V4 h_rock(double a, double v, double step) const {
 		V4 r = h_rock0(a, v, step);
-		if (ice_carve && a > ICE_FROM && a < GLACIER_Y_) {
+		if (ice_carve && a > LEAD_FROM && a < GLACIER_Y_) {
 			const V2 k = ice_carve_at(a, v, step);
 			r.x = float(double(r.x) + double(k.x));
 			r.w = float(clampf(double(r.w) + double(k.y), -1.0, 1.0));
@@ -558,6 +561,26 @@ private:
 				double deep = LC_DEEP * smoothstep(LC_A0, LC_A0 + LC_RAMP, a) * (1.0 - smoothstep(LC_A1 - LC_RAMP, LC_A1, a));
 				deep *= (0.9 + 0.1 * nz(noise, a * 1.5 + 300.0, 700.0)) * LC_TOP / lw;
 				cut = maxf(cut, deep * (1.0 - smoothstep(LC_FLOOR * lw / LC_TOP, lw, x)) * keep);
+			}
+		}
+		for (int i = 0; i < LEADS_N; ++i) {
+			const double *row = LEADS[i];
+			const double a0 = row[0], a1 = row[2];
+			if (a >= a0 || a <= a1) continue;
+			const double top = row[4];
+			const double kl = 1.0 - smoothstep(top * 3.0, top * 6.0, step);
+			if (kl <= 0.0) continue;
+			const double u = (a0 - a) / (a0 - a1);
+			const double sm = u * u * (3.0 - 2.0 * u);
+			const double vc = row[1] + (row[3] - row[1]) * sm + LEAD_WANDER * SIN((a0 - a) / LEAD_WAVE + double(i) * 2.0);
+			const double slope = (row[3] - row[1]) * 6.0 * u * (1.0 - u) / (a1 - a0) + LEAD_WANDER * COS((a0 - a) / LEAD_WAVE + double(i) * 2.0) / (-LEAD_WAVE);
+			const double lw = maxf(top, step * SLOT_AA);
+			const double dv = vr - vc;
+			const double x = absf(dv) / std::sqrt(1.0 + slope * slope) + LC_ROUGH * nz(noise, a * 2.0 + 1400.0 + double(i) * 600.0, dv >= 0.0 ? 500.0 : -500.0);
+			if (x < lw) {
+				double deep = row[6] * smoothstep(a1, a1 + LEAD_RAMP, a) * (1.0 - smoothstep(a0 - LEAD_RAMP, a0, a));
+				deep *= (0.9 + 0.1 * nz(noise, a * 1.5 + 900.0 + double(i) * 600.0, 700.0)) * top / lw;
+				cut = maxf(cut, deep * (1.0 - smoothstep(row[5] * lw / top, lw, x)) * kl);
 			}
 		}
 		if ((a > 2230.0 && a < 2400.0) || (a > 2545.0 && a < 2830.0)) {
