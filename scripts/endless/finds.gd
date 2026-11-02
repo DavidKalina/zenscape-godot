@@ -22,6 +22,8 @@ const RockPlan = preload("res://scripts/endless/rocks/rock_plan.gd")
 const Field = preload("res://scripts/endless/land_field.gd")
 const WorldScale = preload("res://scripts/world_scale.gd")
 const PeakCarve = preload("res://scripts/endless/peak_carve.gd")
+const PeakIce = preload("res://scripts/endless/peak_ice.gd")
+const PeakIceForms = preload("res://scripts/endless/rocks/peak_ice_forms.gd")
 
 signal found_one(entry: Dictionary)
 
@@ -236,7 +238,30 @@ func _peak(parts: PackedStringArray) -> Vector3:
 			if int(parts[2]) < bases.size(): return bases[int(parts[2])]
 		"hole": return _hole(pk,PeakCarve.HOLES[int(parts[2])],0)
 		"sill": return _hole(pk,PeakCarve.SILL_HOLES[int(parts[2])],1)
+		"crevasse": return _crevasse(pk)
+		"ice-arch":
+			if float(RockPlan.flags().get("ice-forms",0.0)) <= 0.0 or not PeakIce.wanted: return Vector3.INF
+			var site: Variant = PeakIceForms.sites(_field,pk).get("arch/"+parts[2])
+			if site == null: return Vector3.INF
+			var w: Vector2 = site.world
+			return Vector3(w.x,(float(site.y)+float(site.under))*0.5,w.y)
+		"tunnel":
+			var tun: Variant = _field.get("ice_tunnel")
+			if tun != null and parts.size() > 2 and parts[2] == "deep": return tun.deep_point()
 	return Vector3.INF
+
+## The long crevasse's floor halfway along its full depth (PeakMassif
+## `carve_line`); none with --ice-carve=0.
+func _crevasse(pk: RefCounted) -> Vector3:
+	var cl: Dictionary = pk.carve_line(Callable(_field,"height"))
+	if cl.is_empty(): return Vector3.INF
+	var deep: Vector2 = cl.crevasse_deep
+	var mid := (deep.x+deep.y)*0.5
+	var av: Array = cl.crevasse_av
+	var best := 0
+	for k in av.size():
+		if absf((av[k] as Vector2).x-mid) < absf((av[best] as Vector2).x-mid): best = k
+	return (cl.crevasse as Array)[best]
 
 ## The middle of a hole in the Dike or a Sill: `h` its PeakCarve row, `from` where
 ## its [a, v, y over the sea] start.

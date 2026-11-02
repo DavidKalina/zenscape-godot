@@ -21,6 +21,7 @@
 #include "tree_cell.h"
 #include "flight_fx.h"
 #include "peak_massif_bind.h"
+#include "serac_mesh.h"
 
 using namespace godot;
 
@@ -333,6 +334,7 @@ static void initialize(ModuleInitializationLevel level) {
     ClassDB::register_class<ZenScapeRibbons>();
     ClassDB::register_class<ZenScapeBirds>();
     ClassDB::register_class<ZenScapePeak>();
+    ClassDB::register_class<ZenScapeSerac>();
 }
 extern "C" GDExtensionBool GDE_EXPORT zenscape_kernels_init(GDExtensionInterfaceGetProcAddress get_proc,
         GDExtensionClassLibraryPtr library, GDExtensionInitialization *initialization) {

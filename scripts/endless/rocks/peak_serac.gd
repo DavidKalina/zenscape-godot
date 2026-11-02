@@ -40,6 +40,12 @@ const TALLEST := 46.0
 ## How far a face's corners' normals turn out from its own: the faces shade
 ## as if melted, for no triangle more.
 const SOFT := 0.3
+## The C++ twin of `build`'s loops (native/terrain_kernels/serac_mesh.h,
+## ZenScapeSerac); --native-serac=0 runs the GDScript ones below.
+const NATIVE_CLASS := &"ZenScapeSerac"
+## True: the GDScript loops even with the library (a parity check's).
+static var gd_only := false
+static var _native: Object = _make_twin()
 
 ## One heap's members: [[Vector2(along, across) off its middle, radius (along
 ## the flow), height, length (across over along)]...], the biggest first.
@@ -169,28 +175,42 @@ static func _tower(rng: RandomNumberGenerator, rs: float, rf: float, tall: float
 ## A shard: a block tapered up all four sides, broken across its top by a slant
 ## or two, its edges chopped. Nothing of the box's own faces is left whole.
 static func _shard(rng: RandomNumberGenerator, half: Vector3, at: Vector3, turn: Basis, tone: float, level: int) -> Dictionary:
-	var polys := _box(half)
+	var planes := PackedFloat64Array()
 	var taper := rng.randf_range(0.14,0.3)
 	for side: Vector3 in [Vector3.RIGHT,Vector3.LEFT,Vector3.FORWARD,Vector3.BACK]:
 		var w := absf(side.dot(half))
 		var n := (side*half.y+Vector3.UP*w*taper*rng.randf_range(0.7,1.3)+Vector3(side.z,0.0,side.x)*half.y*rng.randf_range(-0.28,0.28)).normalized()
-		polys = _cut(polys,n,n.dot(side*w*rng.randf_range(0.82,1.0)-Vector3.UP*half.y))
+		_plane(planes,n,n.dot(side*w*rng.randf_range(0.82,1.0)-Vector3.UP*half.y))
 	# The broken top: down one way, then a nick the other.
 	var way := rng.randf()*TAU
 	var slant := Vector3(cos(way)*rng.randf_range(0.5,1.15),1.0,sin(way)*rng.randf_range(0.5,1.15)).normalized()
-	polys = _cut(polys,slant,slant.dot(Vector3(0.0,half.y*rng.randf_range(0.62,0.86),0.0)))
+	_plane(planes,slant,slant.dot(Vector3(0.0,half.y*rng.randf_range(0.62,0.86),0.0)))
 	way += rng.randf_range(2.2,4.0)
 	var nick := Vector3(cos(way)*1.2,0.8,sin(way)*1.2).normalized()
-	polys = _cut(polys,nick,nick.dot(Vector3(cos(way)*0.3*half.x,half.y*0.8,sin(way)*0.3*half.z)))
+	_plane(planes,nick,nick.dot(Vector3(cos(way)*0.3*half.x,half.y*0.8,sin(way)*0.3*half.z)))
 	for i in 3:
 		var dir := Vector3(rng.randf_range(-1.0,1.0),rng.randf_range(-0.5,0.8),rng.randf_range(-1.0,1.0)).normalized()
 		var reach := absf(dir.x)*half.x+absf(dir.y)*half.y+absf(dir.z)*half.z
-		polys = _cut(polys,dir,reach*rng.randf_range(0.5,0.72))
+		_plane(planes,dir,reach*rng.randf_range(0.5,0.72))
+	return {"polys":_carve(half,planes,turn,at),"tone":tone,"level":level}
+
+static func _plane(planes: PackedFloat64Array, n: Vector3, d: float) -> void:
+	planes.append_array(PackedFloat64Array([n.x,n.y,n.z,d]))
+
+## The box of half-widths `half` cut by `planes` ([nx, ny, nz, d]..., kept
+## where p.n <= d) in turn, turned and put at `at`: [face...]. In C++ when the
+## library has it (ZenScapeSerac `carve`).
+static func _carve(half: Vector3, planes: PackedFloat64Array, turn: Basis, at: Vector3) -> Array:
+	var twin: Object = _twin()
+	if twin != null: return twin.carve(half,planes,turn,at)
+	var polys := _box(half)
+	for i in range(0,planes.size()-3,4):
+		polys = _cut(polys,Vector3(planes[i],planes[i+1],planes[i+2]),planes[i+3])
 	for i in polys.size():
 		var f: PackedVector3Array = polys[i]
 		for j in f.size(): f[j] = turn*f[j]+at
 		polys[i] = f
-	return {"polys":polys,"tone":tone,"level":level}
+	return polys
 
 ## Blocks fallen round a tower's foot, half sunk, tilted hard.
 static func _tumbled(out: Array, rng: RandomNumberGenerator, rs: float, rf: float, n: int, t: Callable) -> void:
@@ -210,17 +230,13 @@ static func _tilt(rng: RandomNumberGenerator, lo: float, hi: float) -> Basis:
 ## kept where p.n <= d) and `chops` random corners, turned and put at `at`.
 ## {polys: [face...], tone, level}.
 static func _block(rng: RandomNumberGenerator, half: Vector3, at: Vector3, turn: Basis, chops: int, tone: float, level: int, cuts: Array = []) -> Dictionary:
-	var polys := _box(half)
-	for c: Array in cuts: polys = _cut(polys,c[0],float(c[1]))
+	var planes := PackedFloat64Array()
+	for c: Array in cuts: _plane(planes,c[0],float(c[1]))
 	for i in chops:
 		var dir := Vector3(rng.randf_range(-1.0,1.0),rng.randf_range(-0.6,1.0),rng.randf_range(-1.0,1.0)).normalized()
 		var reach := absf(dir.x)*half.x+absf(dir.y)*half.y+absf(dir.z)*half.z
-		polys = _cut(polys,dir,reach*rng.randf_range(0.6,0.84))
-	for i in polys.size():
-		var f: PackedVector3Array = polys[i]
-		for j in f.size(): f[j] = turn*f[j]+at
-		polys[i] = f
-	return {"polys":polys,"tone":tone,"level":level}
+		_plane(planes,dir,reach*rng.randf_range(0.6,0.84))
+	return {"polys":_carve(half,planes,turn,at),"tone":tone,"level":level}
 
 static func _box(h: Vector3) -> Array:
 	var c := [Vector3(-h.x,-h.y,-h.z),Vector3(h.x,-h.y,-h.z),Vector3(h.x,-h.y,h.z),Vector3(-h.x,-h.y,h.z),
@@ -276,12 +292,29 @@ static func build(spec: Dictionary) -> Dictionary:
 	var radii := PackedFloat32Array()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(spec.get("seed",1))
+	# Each face's shade jitter, one a face in order (degenerate ones too).
+	var jit := PackedFloat32Array()
 	for p: Dictionary in spec.pillars:
-		var at: Vector3 = p.at
-		for b: Dictionary in p.blocks: _emit(v,n,c,levels,b,p,at,rng)
-		cuts.append((levels[1] as PackedInt32Array).size())
-		solid.append(_solid(p))
 		radii.append(float(p.r))
+		for b: Dictionary in p.blocks:
+			for f: PackedVector3Array in b.polys: jit.append(rng.randf_range(-0.04,0.04))
+	var twin: Object = _twin()
+	var made: Dictionary = twin.build(spec.pillars,jit,RockBuild.SECTORS,RING,SAMPLE,SOFT) if twin != null else {}
+	var faces: Array = []
+	if not made.is_empty():
+		v = made.v
+		n = made.n
+		c = made.c
+		levels = [made.l0,made.l1,made.l2]
+		solid = made.solid
+		faces = made.faces
+	else:
+		var ji: Array = [0]
+		for p: Dictionary in spec.pillars:
+			var at: Vector3 = p.at
+			for b: Dictionary in p.blocks: _emit(v,n,c,levels,b,p,at,jit,ji)
+			cuts.append((levels[1] as PackedInt32Array).size())
+			solid.append(_solid(p))
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = v
@@ -298,7 +331,6 @@ static func build(spec: Dictionary) -> Dictionary:
 			lods[float(LOD_ERROR[l-1])*typical] = levels[l]
 		tris.append((levels[l] as PackedInt32Array).size()/3)
 	var coarse: PackedInt32Array = levels[1]
-	var faces: Array = []
 	for k in range(cuts.size()-1):
 		var f := PackedVector3Array()
 		f.resize(int(cuts[k+1])-int(cuts[k]))
@@ -308,7 +340,7 @@ static func build(spec: Dictionary) -> Dictionary:
 
 ## One block's faces into the arrays: each face its own vertices, so its
 ## normal is flat; a fan of triangles into the levels the block is in.
-static func _emit(v: PackedVector3Array, n: PackedVector3Array, c: PackedColorArray, levels: Array, b: Dictionary, p: Dictionary, at: Vector3, rng: RandomNumberGenerator) -> void:
+static func _emit(v: PackedVector3Array, n: PackedVector3Array, c: PackedColorArray, levels: Array, b: Dictionary, p: Dictionary, at: Vector3, jit: PackedFloat32Array, ji: Array) -> void:
 	var polys: Array = b.polys
 	var mid := Vector3.ZERO
 	var count := 0
@@ -323,6 +355,8 @@ static func _emit(v: PackedVector3Array, n: PackedVector3Array, c: PackedColorAr
 	var level := int(b.level)
 	for f: PackedVector3Array in polys:
 		var m := f.size()
+		var jitter := jit[int(ji[0])]
+		ji[0] = int(ji[0])+1
 		var nrm := Vector3.ZERO
 		var centre := Vector3.ZERO
 		for i in m:
@@ -336,7 +370,7 @@ static func _emit(v: PackedVector3Array, n: PackedVector3Array, c: PackedColorAr
 		var flip := nrm.dot(centre-mid) < 0.0
 		if flip: nrm = -nrm
 		var hollow := 0.3 if nrm.y < -0.12 else 1.0
-		var shade := clampf(tone+rng.randf_range(-0.04,0.04),0.0,1.0)
+		var shade := clampf(tone+jitter,0.0,1.0)
 		var first := v.size()
 		v.append(at+centre)
 		n.append(nrm)
@@ -358,6 +392,16 @@ static func _emit(v: PackedVector3Array, n: PackedVector3Array, c: PackedColorAr
 	# (Godot's front faces wind clockwise from outside, and `f` runs anticlockwise
 	# from outside unless `flip`. The ground shader turns a back face's normal
 	# round, so a face wound the other way is lit from inside: dark in the sun.)
+
+## The C++ twin, or null (no library, or --native-serac=0). Made once, when
+## the script loads (the workers only read it).
+static func _twin() -> Object:
+	return null if gd_only else _native
+
+static func _make_twin() -> Object:
+	if "--native-serac=0" in preload("res://scripts/launch_args.gd").user_args(): return null
+	if not ClassDB.class_exists(NATIVE_CLASS): return null
+	return ClassDB.instantiate(NATIVE_CLASS)
 
 ## The ring-and-sector solid (RockBuild `_pillar`'s): the outline of every
 ## block at each ring's height, its sectors' most, local to the group.

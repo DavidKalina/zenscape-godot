@@ -25,6 +25,12 @@ extends RefCounted
 ##             "peak/strip/0", "peak/strip/1", "peak/strip/mid", "peak/tower/2",
 ##             a hole in the Dike or a Sill's gap, "peak/hole/2", "peak/sill/3"
 ##             (peak_carve.gd HOLES, SILL_HOLES)
+##             the glacier's long crevasse, on its floor halfway along its full
+##             depth: "peak/crevasse" (--ice-carve=0: none); under an ice arch,
+##             halfway from the ice to the bridge's underside: "peak/ice-arch/1"
+##             (peak_ice_forms.gd ARCHES; --ice-forms=0: none); deep in the
+##             ice tunnel, 3 m over the chamber's floor: "peak/tunnel/deep"
+##             (--ice-tunnel=0: none)
 ##             the room behind a cracked wall: "chamber/<place>" for the wall
 ##             `cracked/<place>` (cracked_walls.gd SITES)
 ##             a way tower's foot: "way/bay", "way/south", "way/isle" (way_towers.gd)
@@ -38,6 +44,8 @@ extends RefCounted
 ##   yaw     a relic's facing in degrees (else it turns to meet the plane)
 ##   radius  a landing's reach (m)
 ##   pillar  with a stacks anchor: that pillar's top, not the group's middle
+##   under   true: it stands in a bore under the land (the ice tunnel), lit by
+##           the bore's own lights (find_marks.gd HALL_LAYER as well)
 ## Each spot then goes through the layout file as `finds/<id>`, so a find can
 ## be moved by hand without touching this table.
 ##
@@ -108,28 +116,36 @@ const WORLDS := {
 			"title":"The ring deep in the hall","hint":"Deep inside, where no light should be"},
 		{"id":"strait-ring","area":"south","kind":"relic","at":Vector2(-880.0,3540.0),"up":8.0,
 			"title":"The ring in the strait"},
-		# The foothills: the glacier and its gorge.
-		{"id":"ice-skim","area":"foothills","kind":"relic","at":Vector2(-1100.0,-40.0),"up":9.0,
+		# The foothills: the glacier and its gorge (spec-icefield.md: the long
+		# crevasse, the ice arch by the head, the tunnel, the slot way's gates).
+		{"id":"ice-skim","area":"foothills","kind":"relic","anchor":"peak/crevasse","up":8.0,
 			"title":"The ring low over the ice","hint":"Low over the old ice"},
 		{"id":"gorge-room","area":"foothills","kind":"relic","anchor":"chamber/gorge","up":0.0,
 			"title":"The ring in the gorge room"},
-		{"id":"bend-ring","area":"foothills","kind":"relic","anchor":"endless/rock/valley/-6_-3/0","up":25.0,
-			"title":"The ring at the gorge's bend","hint":"Up the ice, past the second bend"},
+		{"id":"bend-ring","area":"foothills","kind":"relic","anchor":"peak/ice-arch/1","up":0.0,
+			"title":"The ring under the ice arch","hint":"Under the ice at the glacier's head"},
+		{"id":"tunnel-deep","area":"foothills","kind":"relic","anchor":"peak/tunnel/deep","under":true,"up":15.0,
+			"title":"The ring deep in the ice","hint":"A dark mouth in the glacier's flank"},
 		{"id":"gorge-run","area":"foothills","kind":"line","place":"foothills","name":"gorge_run",
-			"title":"The gorge run","hint":"Gates up the ice, bend after bend","mark":40.0,"gates":[
-				{"at":Vector3(-1685,368,-554),"half":Vector2(7.0,5.0)},
-				{"at":Vector3(-1820,409,-752),"half":Vector2(7.0,5.0)},
-				{"at":Vector3(-1892,430,-848),"half":Vector2(7.0,5.0)},
-				{"at":Vector3(-1985,450,-917),"half":Vector2(7.0,5.0)},
-				{"at":Vector3(-2187,491,-818),"half":Vector2(7.0,5.0)},
-				{"at":Vector3(-2349,532,-643),"half":Vector2(7.0,5.0)},
-				{"at":Vector3(-2435,553,-563),"half":Vector2(7.0,5.0)},
-				{"at":Vector3(-2543,574,-573),"half":Vector2(7.0,5.0)},
-				{"at":Vector3(-2639,618,-793),"half":Vector2(7.0,5.0)},
-				{"at":Vector3(-2711,662,-1019),"half":Vector2(7.0,5.0)},
-				{"at":Vector3(-2783,684,-1107),"half":Vector2(7.0,5.0)},
-				{"at":Vector3(-2900,706,-1086),"half":Vector2(7.0,5.0)},
-				{"at":Vector3(-2939,728,-979),"half":Vector2(7.0,5.0)}]},
+			"title":"The gorge run","hint":"Gates up the ice, bend after bend","mark":58.0,"gates":[
+				{"at":Vector3(-1150.5,204,-155.2),"half":Vector2(3.0,2.5)},
+				{"at":Vector3(-1246.1,212,-131.6),"half":Vector2(3.0,2.5)},
+				{"at":Vector3(-1378,262,-90.1),"half":Vector2(5.0,4.0)},
+				{"at":Vector3(-1417,285,-89.9),"half":Vector2(5.0,4.0)},
+				{"at":Vector3(-1595.4,322,-329.1),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-1685,363,-554),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-1820,404,-752),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-1892,425,-848),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-1985,445,-917),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-2187,486,-818),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-2349,527,-643),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-2435,548,-563),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-2543,569,-573),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-2639,613,-793),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-2711,657,-1019),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-2783,679,-1107),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-2900,701,-1086),"half":Vector2(6.0,4.0)},
+				{"at":Vector3(-2939,723,-979),"half":Vector2(6.0,4.0)}]},
 		# The Peak.
 		{"id":"tarn-shore","area":"peak","kind":"landing","anchor":"peak/strip/mid","offset":Vector3(15.0,0.0,2.6),"radius":130.0,
 			"title":"Set down by the tarn","hint":"A lake high up, with a shore to stop on"},

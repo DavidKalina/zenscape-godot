@@ -152,8 +152,14 @@ float peak_ice_edge(vec2 q, vec4 frame, vec2 more, out float tongue) {
 
 // The ice at `p`, 0..1, with its ragged edge; `ny` the ground's normal's height,
 // so it lies on floors and never climbs a wall. `frame` and `flow` as
-// peak_ice_frame.
-float peak_ice_mask(vec3 p, float zone, float ny, out vec4 frame, out vec2 flow, out vec2 more) {
+// peak_ice_frame. `carve` the massif's ice carve (peak_massif.gd `_ice_carve`,
+// through the ground's carve marks; 0 off it): x down a slot (1 from 10 m down)
+// or a meltwater groove (under 0.35), y up the medial moraine. A slot is ice,
+// walls and all, up to a little past the ice's edge.
+float peak_ice_slot(vec2 carve) {
+	return smoothstep(0.4, 0.95, carve.x);
+}
+float peak_ice_mask(vec3 p, float zone, float ny, vec2 carve, out vec4 frame, out vec2 flow, out vec2 more) {
 	frame = peak_ice_frame(p.xz, flow, more);
 	if (peak_ice_solid > 0.5) return 1.0;
 	if (peak_ice_solid < -0.5 || frame.w < 0.5) return 0.0;
@@ -161,7 +167,9 @@ float peak_ice_mask(vec3 p, float zone, float ny, out vec4 frame, out vec2 flow,
 	float e = peak_ice_edge(p.xz, frame, more, tongue);
 	float flat_on = smoothstep(0.70, 0.80, ny + (peak_noise(p.xz / 13.0 + p.y / 9.0) - 0.5) * 0.10);
 	// (The tongue fills its crevasses, walls and all.)
-	return (1.0 - smoothstep(0.95, 1.01, e)) * max(flat_on, tongue) * zone;
+	// (A slot only a little past the ice's edge: farther out the marks are the
+	// rock's gullies.)
+	return max((1.0 - smoothstep(0.95, 1.01, e)) * max(flat_on, tongue), smoothstep(0.1, 0.4, carve.x) * (1.0 - smoothstep(1.2, 1.4, e))) * zone;
 }
 
 // The rubble the ice has shoved up round it, 0..1: a band past its edge, wide on
@@ -474,12 +482,18 @@ float peak_ice_wall(vec3 p, vec3 n, vec3 eye, vec2 flow, float fp, float tone, f
 	float lit = smoothstep(-0.20, 0.42, dot(n, sun));
 	float under = clamp(-n.y * 2.5, 0.0, 1.0);
 	float cloud = er_vnoise(p / 11.0 + 7.0) - 0.5;
-	float depth = (1.0 - open) * 0.62 + (1.0 - lit) * 0.24 + under * 0.55 + (tone - 0.5) * 0.36
+	// (A serac: less blue for being turned from the sun, more under its overhangs.)
+	float depth = (1.0 - open) * mix(0.62, 0.40, solid) + (1.0 - lit) * mix(0.24, 0.10, solid) + under * mix(0.55, 0.80, solid) + (tone - 0.5) * 0.36
 		+ (0.5 - strata) * 0.32 * vein + cloud * 0.46 * mix(0.5, 1.0, solid) + (1.0 - solid) * 0.30;
 	depth = clamp(depth, 0.0, 1.0);
 	col = mix(ICE_SUNLIT, ICE_SHADE, smoothstep(0.04, 0.54, depth));
 	col = mix(col, ICE_BLUE, smoothstep(0.50, 0.92, depth));
 	col = mix(col, ICE_DEEP * 1.6, smoothstep(0.86, 1.0, depth) * 0.6);
+	// A serac's old ice: greyed and milky where it isn't deep (its blue kept for
+	// the hollows and undercuts), duller and greyer the older its block's tone.
+	float old_ice = solid * (1.0 - smoothstep(0.62, 0.95, depth));
+	col = mix(col, vec3(dot(col, vec3(0.30, 0.59, 0.11))) * vec3(0.92, 0.97, 1.05), old_ice * 0.68);
+	col *= mix(1.0, mix(0.80, 0.94, tone), solid);
 	// Bright clear bands against the dull ones, dust grey along the beds.
 	col *= 1.0 + 0.20 * (strata - 0.5) * vein;
 	col = mix(col, ICE_GRIT_PALE * vec3(0.95, 1.0, 1.1), clamp(dust, 0.0, 1.0) * 0.30 * vein);
@@ -503,7 +517,9 @@ float peak_ice_wall(vec3 p, vec3 n, vec3 eye, vec2 flow, float fp, float tone, f
 // exposed (1 on the ground), `rim` 1 on a block's edge falling to 0 at its face's
 // middle (0 on the ground), `fp_far` a pixel's size by distance alone (`fp` jumps
 // from one long triangle of a ground wall to the next).
-void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, float fp, float fp_far, float tone, float open, float rim, out vec3 col, inout vec3 lit_n, out vec3 glow, out float rough, out float spec) {
+// `carve` as peak_ice_mask's: the slots' walls and floors go deep blue, the
+// grooves a little bluer, the medial moraine dark with stones.
+void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, float fp, float fp_far, float tone, float open, float rim, vec2 carve, out vec3 col, inout vec3 lit_n, out vec3 glow, out float rough, out float spec) {
 	vec3 sun = zs_sun_direction;
 	float solid = step(0.5, peak_ice_solid);
 	// (The walls' own paint from where the face turns steep; the floor keeps a
@@ -513,6 +529,10 @@ void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, 
 	// shape, and each one's tilt showed from the air as a plate of wall paint.)
 	float tongue = solid > 0.5 ? 0.0 : smoothstep(0.16, 0.30, more.y);
 	steep *= 1.0 - tongue;
+	// (A carved slot's walls are walls on the tongue too, shut in from the sky.)
+	float slot = solid > 0.5 ? 0.0 : peak_ice_slot(carve);
+	steep = max(steep, slot * smoothstep(0.93, 0.6, n.y));
+	open *= 1.0 - 0.8 * slot;
 	vec3 c_floor = vec3(0.0);
 	vec3 c_wall = vec3(0.0);
 	float g_floor = 0.0;
@@ -538,6 +558,16 @@ void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, 
 	}
 	col = mix(c_floor, c_wall, steep);
 	float gloss = mix(g_floor, g_wall, steep);
+	if (solid < 0.5) {
+		// The carve: deep down a slot's floor, blue down a groove, the moraine's
+		// stones on its ridge.
+		float groove = smoothstep(0.03, 0.3, carve.x) * (1.0 - smoothstep(0.35, 0.5, carve.x));
+		col = mix(col, ICE_BLUE * 0.9, groove * 0.45 * (1.0 - steep));
+		col = mix(col, ICE_DEEP * 2.4, smoothstep(0.75, 1.0, carve.x) * (1.0 - steep) * 0.85);
+		float ridge = smoothstep(0.1, 0.55, carve.y);
+		col = mix(col, peak_ice_stones(p.xz, fp) * 0.8, ridge);
+		gloss *= 1.0 - ridge;
+	}
 	// A block's edges, sharp and bright: `rim` runs straight across each of its
 	// face's fan triangles, so its slope gives the way to the edge in metres.
 	float edge = 0.0;
@@ -547,7 +577,7 @@ void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, 
 		float worn = smoothstep(0.30, 0.70, peak_noise(p.xz / 5.3 + p.y / 4.1));
 		float edge_w = max(0.05 + 0.10 * worn, fp * 1.1);
 		edge = (1.0 - smoothstep(edge_w * 0.5, edge_w, to_edge)) * (0.25 + 0.75 * open) * (0.55 + 0.45 * clamp(n.y * 2.0 + dot(n, sun), 0.0, 1.0)) * worn * smoothstep(0.0, 0.5, dot(n, sun));
-		col = mix(col, ICE_SNOW * 1.1, edge * 0.42);
+		col = mix(col, ICE_SNOW, edge * 0.22);
 		gloss *= 1.0 - edge;
 	}
 	// The ground's triangles under the ice lie level to the light: its own bump
@@ -556,14 +586,15 @@ void peak_ice_paint(vec3 p, vec3 n, vec3 eye, vec4 frame, vec2 flow, vec2 more, 
 	lit_n = peak_ice_bump(normalize(base_n - vec3(slope.x, 0.0, slope.y) * (1.0 - steep)), p, h);
 	// (A serac's soft normals sweep the sun's glint across whole faces: duller there.)
 	rough = solid > 0.5 ? 0.82 : mix(0.66, 0.46, gloss);
-	spec = solid > 0.5 ? 0.12 : mix(0.30, 0.54, gloss);
+	spec = solid > 0.5 ? 0.07 : mix(0.30, 0.54, gloss);
 	// The sky's sheen across the ice at a glance, and the blue scatter: most
 	// where it is blue, none on grit.
 	float ndv = clamp(dot(lit_n, eye), 0.0, 1.0);
 	float shine = pow(1.0 - ndv, 4.0) * (0.25 + 0.75 * gloss);
 	vec3 sky = zs_hemi_sky * zs_hemi_energy;
 	float tint = clamp((col.b - col.r) * 2.4, 0.0, 1.0);
-	glow = sky * shine * 0.20 + (ICE_BLUE * 0.45 + col * 0.25) * sky * tint * 0.42 + col * sky * edge * 0.30;
+	// (A serac's sheen, scatter and rims held down: they bloomed it to crystal.)
+	glow = sky * shine * mix(0.20, 0.08, solid) + (ICE_BLUE * 0.45 + col * 0.25) * sky * tint * mix(0.42, 0.26, solid) + col * sky * edge * mix(0.30, 0.10, solid);
 	// A block's ice lets the day through: its shaded faces glow pale, not dark.
-	glow += col * dot(sky, vec3(0.3, 0.59, 0.11)) * solid * 0.17;
+	glow += col * dot(sky, vec3(0.3, 0.59, 0.11)) * solid * 0.11;
 }

@@ -879,8 +879,10 @@ void fragment() {
 	vec2 ice_more = vec2(0.0);
 	float ice_gate = 0.0;
 	float ice_rubble = 0.0;
+	// (The massif's ice carve in the carve marks, peak_ice_mask; none on a serac.)
+	vec2 ice_carve = peak_ice_solid == 0.0 ? clamp(land_carve, 0.0, 1.0) : vec2(0.0);
 	if (peak_ice_on > 0.5) {
-		pk.y = peak_ice_mask(p, pk.x, n.y, ice_frame, ice_flow, ice_more);
+		pk.y = peak_ice_mask(p, pk.x, n.y, ice_carve, ice_frame, ice_flow, ice_more);
 		ice_rubble = peak_ice_margin(p, n.y, ice_frame, ice_more) * pk.x;
 		pk.z = max(pk.z, ice_rubble);
 		rocky *= (1.0 - pk.y) * (1.0 - ice_rubble);
@@ -1263,7 +1265,7 @@ void fragment() {
 		// (max: under MSAA a pixel a triangle only clips reads its varyings past the
 		// triangle, so a vertex colour of 0 runs negative, and pow of that is a NaN,
 		// which the glow spread into a flare.)
-		peak_ice_paint(p, n, eye, ice_frame, ice_flow, ice_more, fp, distance(p, CAMERA_POSITION_WORLD) * 0.0016, ice_solid ? pow(max(land_colour.r, 0.0), 0.45) : 0.5, ice_solid ? pow(max(land_colour.g, 0.0), 0.45) : 1.0, ice_solid ? land_colour.b : 0.0, ice_col, ice_n, ice_glow, ice_rough, ice_spec);
+		peak_ice_paint(p, n, eye, ice_frame, ice_flow, ice_more, fp, distance(p, CAMERA_POSITION_WORLD) * 0.0016, ice_solid ? pow(max(land_colour.r, 0.0), 0.45) : 0.5, ice_solid ? pow(max(land_colour.g, 0.0), 0.45) : 1.0, ice_solid ? land_colour.b : 0.0, ice_carve, ice_col, ice_n, ice_glow, ice_rough, ice_spec);
 		albedo = mix(albedo, ice_col, pk.y);
 		lit_n = normalize(mix(lit_n, ice_n, pk.y));
 		ice_glow *= pk.y;

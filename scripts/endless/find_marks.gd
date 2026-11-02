@@ -30,7 +30,9 @@ const FACE := 0.8
 ## The glint's size (a share of the view's height, about).
 const GLINT_SIZE := 0.05
 ## The layer of a mark in the door's hall, where the camera leaves the world out
-## (LandTunnels UNDER_LAYER, HallDoors UNDER).
+## (LandTunnels UNDER_LAYER, HallDoors UNDER). A row with `under` (a relic in a
+## bore under the land) is on it as well as the world's, so the bore's own
+## lights reach it.
 const HALL_LAYER := 1 << 14
 
 static var _hoop: ArrayMesh
@@ -265,7 +267,7 @@ class Mark extends Node3D:
 		_spin.rotation = Vector3.ZERO
 		rotation = Vector3.ZERO
 		_ring.visible = false
-		var seen: int = HALL_LAYER if e.has("hall") else 1
+		var seen: int = HALL_LAYER if e.has("hall") else (1 | HALL_LAYER if e.has("under") else 1)
 		_body.layers = seen
 		_glint.layers = seen
 		if what == "relic":

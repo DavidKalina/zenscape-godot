@@ -218,6 +218,136 @@ const CREV_ARC := 60.0
 const LUMPS := 2.5
 const LUMP_SCALE := 3.7
 
+# --- The ice carve (spec-icefield.md, lane carve; --ice-carve=0 off) ---------------
+#
+# The glacier broken into things to fly: an icefall step, crevasse bands across
+# the flow, one long crevasse down it, a medial moraine ridge and meltwater
+# grooves. `_ice_carve`, added in `_h_rock` after the rest (so the mask's fall
+# map never sees it and the rock's relief stays off the ice). Everything is in
+# the valley's own frame: `a` along, `vr` off the valley's middle (`_valley_mid`).
+# Nothing past ICE_FLAT (the toe's first 250 m stays flat) or before
+# ICE_FROM (the spill and the gorges are not touched). Plain floats only, so
+# the C++ twin reads the same numbers.
+
+## The carve's reach along `a`, and the toe's flat stretch past ICE_FLAT.
+const ICE_FROM := 2230.0
+const ICE_FLAT := 2850.0
+## The floor's new profile (over the sea): a line from ICE_FROM at PROF_Y0
+## falling PROF_M a metre, then from ICE_FLAT a gentle run (PROF_TOE a metre)
+## to GLACIER_Y.y at the toe, the two lines blended over PROF_KNEE; STEP_DROP
+## comes off it at the icefall. The lines carry the drop: a line's height at a
+## is the floor's plus STEP_DROP past the step.
+const PROF_Y0 := 259.0
+const PROF_M := -0.156452
+const PROF_TOE := 0.048
+const PROF_KNEE := 40.0
+## How far across the profile reaches: whole over the side ridges' tops
+## (SIDE_GAP + SIDE_RUN past the floor's edge), gone PROF_FADE m further out.
+const PROF_FADE := 100.0
+## The icefall step: from STEP_A down STEP_DROP m over STEP_RUN, in STEP_STEPS
+## broken risers (each over STEP_RISER of its run) on the floor, its lip
+## jagged STEP_JAG m along `a`; a smooth ramp over the moraines and ridges.
+const STEP_A := 2390.0
+const STEP_RUN := 80.0
+const STEP_DROP := 50.0
+const STEP_STEPS := 3.0
+const STEP_RISER := 0.4
+const STEP_JAG := 10.0
+## The step broken into blocks: columns STEP_COL m across (their edges warped
+## STEP_COL_WARP m), each column's risers shifted up to STEP_SHIFT of a riser
+## along the flow and its treads raised or sunk up to STEP_BLOCK m, with a
+## crack STEP_CRACK m each side of a column's edge, STEP_CRACK_DEEP deep.
+const STEP_COL := 38.0
+const STEP_COL_WARP := 20.0
+const STEP_SHIFT := 0.6
+## Each block's tread tilts across its column up to STEP_TILT m and slumps:
+## STEP_SLUMP of each riser's fall runs on down its tread, so no tread is level.
+const STEP_TILT := 5.0
+const STEP_SLUMP := 0.3
+const STEP_BLOCK := 4.0
+const STEP_CRACK := 2.5
+const STEP_CRACK_DEEP := 9.0
+## The long crevasse down the flow: from LC_A0 to LC_A1, its floor easing in
+## over LC_RAMP at both ends (open: you fly in level), LC_DEEP deep, LC_TOP m
+## half-width at the lip and LC_FLOOR at the floor, its middle LC_V off the
+## valley's, wandering LC_WANDER m over LC_WAVE (m per radian), its walls
+## rough by LC_ROUGH.
+const LC_A0 := 2480.0
+const LC_A1 := 2845.0
+const LC_RAMP := 70.0
+const LC_DEEP := 28.0
+const LC_TOP := 14.5
+const LC_FLOOR := 9.5
+const LC_V := -85.0
+const LC_WANDER := 10.0
+const LC_WAVE := 75.0
+const LC_ROUGH := 1.2
+## The leads: crevasses down the head (above the icefall step to the mouth's
+## ranks) that run together toward the ice gorge's mouth, so the slot's way
+## reads from the glacier. Each [a from, vr from, a to, vr to, half-width at
+## the lip, at the floor, depth]; the line eases from one end to the other
+## (smoothstep in its share), wanders LEAD_WANDER m over LEAD_WAVE, its floor
+## easing in over LEAD_RAMP at both ends. The first is flown (as wide as the
+## long crevasse less a little), the second is a narrow crack beside it.
+## They start past LEAD_FROM, under ICE_FROM: the carve reaches down to it
+## for them alone (its profile and the other forms stay past ICE_FROM).
+const LEADS := [[2378.0,-70.0,2180.0,-40.0,13.0,8.5,20.0],[2372.0,132.0,2180.0,25.0,5.5,2.0,14.0]]
+const LEAD_FROM := 2175.0
+const LEAD_RAMP := 60.0
+const LEAD_WANDER := 5.0
+const LEAD_WAVE := 45.0
+## Crevasses across the flow, in two bands (the head's bend, before the step;
+## below it, off the long crevasse's side): each [a, bow (m downstream in the
+## middle), half-width at the lip, depth, vr from, vr to]. Each pinches out
+## over ICE_PINCH at its ends; its floor is CREV_FLOOR of its lip's width.
+const ICE_BANDS := [
+	[2252.0,20.0,5.0,22.0,-230.0,120.0],[2283.0,22.0,6.5,28.0,-180.0,220.0],
+	[2312.0,20.0,4.5,18.0,-240.0,60.0],[2340.0,18.0,6.0,26.0,-120.0,240.0],
+	[2575.0,15.0,5.5,24.0,-25.0,230.0],[2618.0,15.0,7.0,30.0,0.0,245.0],
+	[2662.0,15.0,5.0,20.0,-20.0,200.0],[2708.0,15.0,6.5,26.0,10.0,240.0],
+	[2752.0,15.0,4.5,18.0,-10.0,190.0],[2790.0,12.0,5.0,16.0,30.0,220.0]]
+const ICE_PINCH := 30.0
+const CREV_FLOOR := 0.3
+## A band's line wanders BAND_WOBBLE m along `a`, its width by BAND_WIDEN of
+## itself, and it breaks where its noise is low (en echelon, not a rail).
+## Seen from far (a coarse quad), a slot widens to SLOT_AA of the quad and
+## gets shallower to match, so a mesh never samples it as a row of dots.
+const BAND_WOBBLE := 6.0
+const BAND_WIDEN := 0.3
+const SLOT_AA := 0.8
+## A band seen from far widens to BAND_AA of the quad, its floor to at least
+## BAND_AA_FLOOR of it and its walls over the rest, shallower to match: a deep
+## slot narrower than that lands on a rotated mesh as a row of beads.
+const BAND_AA := 2.5
+const BAND_AA_FLOOR := 1.0
+## A band paints its slot's blue only on quads under BAND_PAINT_STEP m: on a
+## coarser mesh its blue lands on the vertices as a row of beads, so from far a
+## band reads by its shade alone.
+const BAND_PAINT_STEP := Vector2(4.0, 8.0)
+## The medial moraine: from MR_A0 to MR_A1, MR_UP m at most, MR_W m each side
+## of its crest, its line MR_V off the valley's middle wandering MR_WANDER m
+## over MR_WAVE; broken where its noise is low.
+const MR_A0 := 2250.0
+const MR_A1 := 2840.0
+const MR_UP := 20.0
+const MR_W := 22.0
+const MR_V := 20.0
+const MR_WANDER := 25.0
+const MR_WAVE := 110.0
+## Meltwater grooves: each [vr, depth, half-width], wandering GROOVE_WANDER m.
+const GROOVES := [[-185.0,3.5,5.0],[130.0,3.0,4.5],[225.0,4.5,6.0]]
+const GROOVE_WANDER := 25.0
+## The ice paint (in `_h_rock`'s w, so the chunks' carve bytes): a slot reads
+## -1 by SLOT_PAINT m down, the ridge +RIDGE_PAINT by its own height, a groove
+## -GROOVE_PAINT.
+const SLOT_PAINT := 10.0
+const RIDGE_PAINT := 0.9
+const GROOVE_PAINT := 0.35
+
+## Read per massif (a static var keeps the flags of the first load, before a
+## driver's or the picker's).
+var ice_carve := true
+
 # --- Plateau, tarn, crown ----------------------------------------------
 
 ## The plateau: flat out to PLATEAU_FLAT from its centre, blended out by
@@ -466,7 +596,7 @@ static func make(land_seed: int, ground := Callable()) -> RefCounted:
 
 ## ZenScapePeak's `version` this script calls: any other library, or none (a
 ## checkout not rebuilt yet), runs the GDScript.
-const NATIVE_VERSION := 1
+const NATIVE_VERSION := 6
 const NATIVE_CLASS := &"ZenScapePeak"
 ## The native twin of this massif, shared by every worker's (read only), or null.
 var _native: RefCounted = null
@@ -508,7 +638,7 @@ func _go_native(land_seed: int, ground: Callable) -> void:
 	_native = got
 
 func _native_data() -> Dictionary:
-	return {"libm":LaunchArgs.user_args().has("--land-libm"),"rock":Rock.wanted,"centre":centre,"facing":facing,"side":side,"o":_o,
+	return {"libm":LaunchArgs.user_args().has("--land-libm"),"rock":Rock.wanted,"ice_carve":ice_carve,"centre":centre,"facing":facing,"side":side,"o":_o,
 		"noise_seed":_noise.seed,"rock_seed":_rock.noise_seed(),"ribs":_ribs,"towers":_towers,"tower_tops":_tower_tops,
 		"crown":_crown,"crown_ph":_crown_ph,"root_way":_root_way,"tarn_c":_tarn_c,"tarn_wet":_tarn_wet,"pond":pond,"cq_ph":_cq_ph,
 		"live":_live,"live_n":_live_n,"live_at":_live_at,"fall_map":_fall_map}.merged(Split.native_data())
@@ -712,6 +842,7 @@ func _init(land_seed: int, frame: Transform3D) -> void:
 	side = Vector2(-facing.y,facing.x)
 	_o = centre+facing*O_ALONG
 	Split.bake()
+	ice_carve = not "--ice-carve=0" in LaunchArgs.user_args()
 	_noise.seed = hash([land_seed,"peak"]) & 0x7fffffff
 	_rock = Rock.new(land_seed)
 	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
@@ -1051,6 +1182,66 @@ func gorge(g: int) -> Dictionary:
 		normal.append(Vector2(-t.y,t.x).normalized())
 	return {"line":line,"half":Split.halves(g),"saddle":Split.saddle(g),"side":normal,"length":Split.length(g)}
 
+## Where the ice carve's forms are (see ICE_FROM), for the forms and the finds,
+## on the land's own height (`height`: world y at (x, z), e.g. field.height):
+## {crevasse (world points down the long crevasse's middle every CARVE_STRIDE m,
+## LC_A0 to LC_A1, on its floor), crevasse_half (Vector2(lip, floor)
+## half-widths), crevasse_deep (the a range, LC_A0+LC_RAMP..LC_A1-LC_RAMP,
+## where it is its full depth), ridge (the medial moraine's crest line,
+## MR_A0..MR_A1, on the ground), bands (each cross-flow crevasse's line as
+## world points across its run, on the ground, before its wobble), step
+## {a (Vector2: top, foot), top and foot (world points across the floor at
+## each, on the ground)}, toe_flat (Vector2: the a range kept flat)}.
+## Points also carry their frame: each list has a twin `<name>_av` of
+## Vector2(a, vr). Empty with --ice-carve=0.
+const CARVE_STRIDE := 10.0
+func carve_line(height: Callable) -> Dictionary:
+	if not ice_carve: return {}
+	var on := func(a: float, vr: float) -> Vector3:
+		var p := world(a,_valley_mid(a)+vr)
+		return Vector3(p.x,float(height.call(p.x,p.y)),p.y)
+	var lc: Array[Vector3] = []
+	var lc_av: Array[Vector2] = []
+	var a := LC_A0
+	while a <= LC_A1:
+		var vr := LC_V+LC_WANDER*sin((a-LC_A0)/LC_WAVE)
+		lc.append(on.call(a,vr)); lc_av.append(Vector2(a,vr))
+		a += CARVE_STRIDE
+	var mr: Array[Vector3] = []
+	var mr_av: Array[Vector2] = []
+	a = MR_A0
+	while a <= MR_A1:
+		var vr := MR_V+MR_WANDER*sin((a-MR_A0)/MR_WAVE)
+		mr.append(on.call(a,vr)); mr_av.append(Vector2(a,vr))
+		a += CARVE_STRIDE
+	var bands: Array = []
+	var bands_av: Array = []
+	for row: Array in ICE_BANDS:
+		var line: Array[Vector3] = []
+		var line_av: Array[Vector2] = []
+		var vr := float(row[4])
+		while vr <= float(row[5]):
+			var half := lerpf(260.0,330.0,(float(row[0])-2050.0)/1050.0)
+			var q := vr/half
+			var ab := float(row[0])+float(row[1])*(1.0-q*q)
+			line.append(on.call(ab,vr)); line_av.append(Vector2(ab,vr))
+			vr += CARVE_STRIDE
+		bands.append(line); bands_av.append(line_av)
+	var step_a := Vector2(STEP_A-STEP_JAG*2.0,STEP_A+STEP_RUN+STEP_JAG*2.0)
+	var across := func(at: float) -> Array[Vector3]:
+		var half := lerpf(260.0,330.0,(at-2050.0)/1050.0)
+		var out: Array[Vector3] = []
+		var vr := -half
+		while vr <= half:
+			out.append(on.call(at,vr))
+			vr += CARVE_STRIDE*2.0
+		return out
+	return {"crevasse":lc,"crevasse_av":lc_av,"crevasse_half":Vector2(LC_TOP,LC_FLOOR),
+		"crevasse_deep":Vector2(LC_A0+LC_RAMP,LC_A1-LC_RAMP),"ridge":mr,"ridge_av":mr_av,
+		"bands":bands,"bands_av":bands_av,
+		"step":{"a":step_a,"top":across.call(step_a.x),"foot":across.call(step_a.y)},
+		"toe_flat":Vector2(ICE_FLAT,GLACIER.y)}
+
 ## The tower bases' tops (world), for the spires.
 func tower_bases() -> Array[Vector3]:
 	var out: Array[Vector3] = []
@@ -1241,6 +1432,14 @@ func _h(a: float, v: float, step := 0.0) -> Vector3:
 ## and never past it, so the floor stands and no wall comes nearer the plane.
 func _h_rock(a: float, v: float, step: float) -> Vector4:
 	if _native != null: return _native.h_rock(a,v,step)
+	var r := _h_rock0(a,v,step)
+	if ice_carve and a > LEAD_FROM and a < GLACIER.y:
+		var k := _ice_carve(a,v,step)
+		r.x += k.x
+		r.w = clampf(r.w+k.y,-1.0,1.0)
+	return r
+
+func _h_rock0(a: float, v: float, step: float) -> Vector4:
 	var hm: Vector3
 	var f := _falls(a,v) if Rock.wanted else Vector3.ZERO
 	var keep := _rock_keep(a,v,f.x) if f.x > ROCK_STEEP.x else 0.0
@@ -1430,7 +1629,8 @@ func _valley(a: float, v: float, n: float) -> Vector2:
 		var ac := a-GLACIER.x+CREV_ARC*(1.0-q*q)
 		var band := ac/CREV_BAND-floorf(ac/CREV_BAND)
 		var on := smoothstep(0.0,0.06,band)*(1.0-smoothstep(CREV_SHARE-0.06,CREV_SHARE,band))
-		if on > 0.0:
+		# (The carve's own crevasses replace these.)
+		if on > 0.0 and not ice_carve:
 			var dc := absf(ac/CREV_SP-floorf(ac/CREV_SP)-0.5)*CREV_SP
 			fl -= CREV_DEEP*(1.0-smoothstep(0.0,CREV_W*0.5,dc))*on*ice*(1.0-smoothstep(0.7,0.95,q))
 	# The lateral moraines, along the boulders and the glacier.
@@ -1454,3 +1654,122 @@ func _valley(a: float, v: float, n: float) -> Vector2:
 	var cut_e := e-SIDE_GAP*mor
 	var c := (1.0-smoothstep(SIDE_RUN,SIDE_RUN+90.0,cut_e))*(1.0-smoothstep(TOE.x,TOE.x+400.0,a))
 	return Vector2(h+n*ROUGH*rough,c)
+
+## The ice carve at (a, v) (see ICE_FROM): Vector2(height added, paint added).
+## `step` the asker's quad: each form fades out as the quad outgrows it.
+func _ice_carve(a: float, v: float, step: float) -> Vector2:
+	var t := (a-2050.0)/1050.0
+	var half := lerpf(260.0,330.0,t)
+	var vr := v-_valley_mid(a)
+	var e := absf(vr)-half
+	var out_to := SIDE_GAP+SIDE_RUN
+	if e >= out_to+PROF_FADE: return Vector2.ZERO
+	# The profile: the step and the toe's flat run.
+	var f0 := lerpf(300.0,100.0,pow(t,0.9))
+	var la := PROF_Y0+PROF_M*(a-ICE_FROM)
+	var lb := GLACIER_Y.y+STEP_DROP+PROF_TOE*(GLACIER.y-a)
+	var g := lerpf(la,lb,smoothstep(ICE_FLAT-PROF_KNEE,ICE_FLAT+PROF_KNEE,a))
+	var s := clampf((a-STEP_A)/STEP_RUN,0.0,1.0)
+	var drop := smoothstep(0.0,1.0,s)
+	var on_floor := 1.0-smoothstep(-30.0,10.0,e)
+	var crack := 0.0
+	if on_floor > 0.0 and a > STEP_A-STEP_JAG*3.0 and a < STEP_A+STEP_RUN+STEP_JAG*3.0:
+		# Broken risers, their lips jagged across the floor, in staggered blocks.
+		var cu := (vr+STEP_COL_WARP*_noise.get_noise_2d(a*0.7+5100.0,vr*1.2))/STEP_COL
+		var col := floorf(cu)
+		var shift := STEP_SHIFT*_noise.get_noise_2d(col*37.0+5300.0,1700.0)
+		var jag := STEP_JAG*_noise.get_noise_2d(vr*3.0+4100.0,a*0.2)
+		var s3 := clampf((a-STEP_A+jag)/STEP_RUN*STEP_STEPS+shift+0.3*_noise.get_noise_2d(vr*5.0-2300.0,a*0.5+900.0),0.0,STEP_STEPS)
+		var k := minf(floorf(s3),STEP_STEPS-1.0)
+		var inside := smoothstep(STEP_A-STEP_JAG*2.0,STEP_A,a)*(1.0-smoothstep(STEP_A+STEP_RUN,STEP_A+STEP_RUN+STEP_JAG*2.0,a))
+		var block := STEP_BLOCK*_noise.get_noise_2d(col*23.0-900.0,k*31.0+400.0)*inside/STEP_DROP
+		block += STEP_TILT*_noise.get_noise_2d(col*29.0+2600.0,k*41.0-1200.0)*(cu-col-0.5)*2.0*inside/STEP_DROP
+		var x3 := s3-k
+		var fall := (1.0-STEP_SLUMP)*smoothstep(0.0,STEP_RISER,x3)+STEP_SLUMP*x3
+		drop = lerpf(drop,(k+fall)/STEP_STEPS-block,on_floor)
+		var edge := minf(cu-col,col+1.0-cu)*STEP_COL
+		if edge < STEP_CRACK:
+			crack = STEP_CRACK_DEEP*(1.0-smoothstep(STEP_CRACK*0.4,STEP_CRACK,edge))*on_floor*inside*(1.0-smoothstep(STEP_CRACK,STEP_CRACK*3.0,step))
+			# Not every block parts from its neighbour: some edges only slump.
+			crack *= smoothstep(-0.25,0.05,_noise.get_noise_2d(roundf(cu)*17.0+700.0,k*13.0-300.0))
+	g -= STEP_DROP*drop
+	var dh := (g-f0)*smoothstep(ICE_FROM,ICE_FROM+70.0,a)*(1.0-smoothstep(out_to,out_to+PROF_FADE,e))
+	if e > -20.0 or a >= ICE_FLAT: return Vector2(dh,0.0)
+	# The forms on the floor.
+	var cut := crack
+	var band_cut := 0.0
+	var ridge := 0.0
+	var groove := 0.0
+	# The long crevasse.
+	var keep := 1.0-smoothstep(LC_TOP*3.0,LC_TOP*6.0,step)
+	if keep > 0.0 and a > LC_A0 and a < LC_A1:
+		var lw := maxf(LC_TOP,step*SLOT_AA)
+		var dv := vr-(LC_V+LC_WANDER*sin((a-LC_A0)/LC_WAVE))
+		var x := absf(dv)+LC_ROUGH*_noise.get_noise_2d(a*2.0+1000.0,500.0 if dv >= 0.0 else -500.0)
+		if x < lw:
+			var deep := LC_DEEP*smoothstep(LC_A0,LC_A0+LC_RAMP,a)*(1.0-smoothstep(LC_A1-LC_RAMP,LC_A1,a))
+			deep *= (0.9+0.1*_noise.get_noise_2d(a*1.5+300.0,700.0))*LC_TOP/lw
+			cut = maxf(cut,deep*(1.0-smoothstep(LC_FLOOR*lw/LC_TOP,lw,x))*keep)
+	# The leads.
+	for i in LEADS.size():
+		var row: Array = LEADS[i]
+		var a0: float = row[0]
+		var a1: float = row[2]
+		if a >= a0 or a <= a1: continue
+		var top: float = row[4]
+		var kl := 1.0-smoothstep(top*3.0,top*6.0,step)
+		if kl <= 0.0: continue
+		var u := (a0-a)/(a0-a1)
+		var sm := u*u*(3.0-2.0*u)
+		var vc := float(row[1])+(float(row[3])-float(row[1]))*sm+LEAD_WANDER*sin((a0-a)/LEAD_WAVE+float(i)*2.0)
+		# Its width square to the line, not along v.
+		var slope := (float(row[3])-float(row[1]))*6.0*u*(1.0-u)/(a1-a0)+LEAD_WANDER*cos((a0-a)/LEAD_WAVE+float(i)*2.0)/(-LEAD_WAVE)
+		var lw := maxf(top,step*SLOT_AA)
+		var dv := vr-vc
+		var x := absf(dv)/sqrt(1.0+slope*slope)+LC_ROUGH*_noise.get_noise_2d(a*2.0+1400.0+i*600.0,500.0 if dv >= 0.0 else -500.0)
+		if x < lw:
+			var deep: float = float(row[6])*smoothstep(a1,a1+LEAD_RAMP,a)*(1.0-smoothstep(a0-LEAD_RAMP,a0,a))
+			deep *= (0.9+0.1*_noise.get_noise_2d(a*1.5+900.0+i*600.0,700.0))*top/lw
+			cut = maxf(cut,deep*(1.0-smoothstep(float(row[5])*lw/top,lw,x))*kl)
+	# The bands across.
+	if a > 2230.0 and a < 2400.0 or a > 2545.0 and a < 2830.0:
+		var q := vr/half
+		var bow := 1.0-q*q
+		for i in ICE_BANDS.size():
+			var row: Array = ICE_BANDS[i]
+			var w0: float = row[2]
+			var kb := 1.0-smoothstep(w0*3.0,w0*6.0,step)
+			if kb <= 0.0: continue
+			var wl := w0*(1.0+BAND_WIDEN*_noise.get_noise_2d(vr*0.8+7100.0,i*50.0))
+			var w := maxf(wl,step*BAND_AA)
+			var fl := minf(maxf(w*CREV_FLOOR,step*BAND_AA_FLOOR),w*0.85)
+			var d := absf(a-float(row[0])-float(row[1])*bow-BAND_WOBBLE*_noise.get_noise_2d(vr*0.6+i*90.0,7000.0))
+			if d >= w: continue
+			var run := smoothstep(float(row[4]),float(row[4])+ICE_PINCH,vr)*(1.0-smoothstep(float(row[5])-ICE_PINCH,float(row[5]),vr))
+			run *= smoothstep(-0.45,-0.2,_noise.get_noise_2d(vr*0.45+i*300.0,7300.0))
+			if run <= 0.0: continue
+			band_cut = maxf(band_cut,float(row[3])*wl/w*run*(1.0-smoothstep(fl,w,d))*kb)
+	# The medial moraine.
+	var kr := 1.0-smoothstep(MR_W,MR_W*3.0,step)
+	if kr > 0.0 and a > MR_A0 and a < MR_A1:
+		var x := absf(vr-(MR_V+MR_WANDER*sin((a-MR_A0)/MR_WAVE)))
+		if x < MR_W:
+			var u := 1.0-x/MR_W
+			var up := MR_UP*(0.75+0.25*_noise.get_noise_2d(a*1.5,200.0))*smoothstep(-0.25,0.1,_noise.get_noise_2d(a*0.8,900.0))
+			up *= smoothstep(MR_A0,MR_A0+60.0,a)*(1.0-smoothstep(MR_A1-60.0,MR_A1,a))
+			ridge = maxf(up*u*u+1.5*_noise.get_noise_2d(a*4.0,vr*4.0)*u,0.0)*kr
+	# Meltwater grooves.
+	var kg := 1.0-smoothstep(4.0,12.0,step)
+	if kg > 0.0:
+		var along := smoothstep(2240.0,2300.0,a)*(1.0-smoothstep(2790.0,2845.0,a))
+		for k in GROOVES.size():
+			var row: Array = GROOVES[k]
+			var gh: float = row[2]
+			var x := absf(vr-float(row[0])-GROOVE_WANDER*_noise.get_noise_2d(a*0.5+1000.0*k,3000.0))
+			if x < gh: groove = maxf(groove,float(row[1])*(1.0-smoothstep(0.0,gh,x))*along*kg)
+	var bp := 1.0-smoothstep(BAND_PAINT_STEP.x,BAND_PAINT_STEP.y,step)
+	var slot := clampf(maxf(cut,band_cut*bp)/SLOT_PAINT,0.0,1.0)
+	cut = maxf(cut,band_cut)
+	var surf := ridge-groove
+	var paint := lerpf(clampf(ridge/12.0,0.0,1.0)*RIDGE_PAINT-clampf(groove/4.0,0.0,1.0)*GROOVE_PAINT,-1.0,slot)
+	return Vector2(dh+surf*(1.0-clampf(cut/8.0,0.0,1.0))-cut,paint)
