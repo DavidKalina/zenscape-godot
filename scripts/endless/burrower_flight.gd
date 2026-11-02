@@ -5,11 +5,11 @@ extends Node
 ## (scripts/burrower/game_land.gd).
 ##
 ## He lives by the cave mouths. A plane that comes within MOUTH_NEAR m of an opening of
-## a stood sunk cave, flying so that he can still lead it (`_mouth_near`), finds him
+## a stood sunk cave, flying so that he can still lead it (`_can_lead`), finds him
 ## out there: a few hundred metres off, in the camera's view but off the nose, on open
 ## ground on the sinkhole's open side, already making for it, throwing a plume that
 ## shows from altitude. A plane that comes near him (`_near_him`) starts the run: he
-## keeps ahead of it along his route (`_route`), in along the sinkhole's open way, so
+## keeps ahead of it along his route (`_try_spot`), in along the sinkhole's open way, so
 ## that following him lines the plane up with the opening, and goes in (`_in`). The
 ## plane is left behind, or the run's orbs are out: he goes on all the same, and he
 ## only stops short if caught, or if the plane lands or crashes. The caves are there
@@ -76,7 +76,7 @@ const NOSE_COS := 0.985
 const WIDE_COS := 0.82
 const LEAD_COS := 0.2
 const LEAD_LEAST := 420.0
-const SIGHT_TRIES := 8
+const SIGHT_STEPS := 4
 ## His route: to the way in, on the sinkhole's axis WAY_IN m out past its rim, then up
 ## that axis, nothing turning him aside from the rim on, to LIP_M m out of the opening.
 ## His spot is at most TURN_M m nearer the mouth than the way in, or he'd have to run
@@ -115,6 +115,8 @@ var _sighted := false
 ## plane hasn't left since.
 var _mouth := {}
 var _spent := {}
+## The spots this look still has to try (`_spots_for`).
+var _spots: Array = []
 ## Rest left (s), the last reason a run ended, counts and this run's mouth (for
 ## drivers).
 var rouse := {"rest": 0.0, "why": "", "sightings": 0, "noticed": 0, "dives": 0, "mouths": 0,
@@ -192,13 +194,14 @@ func _rouse(delta: float, game: Node3D) -> void:
 		return
 	if not flying: return
 	rouse.rest = maxf(float(rouse.rest)-delta,0.0)
+	if not _spots.is_empty():
+		_try_spot(game)
+		return
 	_ask -= delta
 	if _ask > 0.0: return
 	_ask = ASK
 	_free_mouths(game)
-	if float(rouse.rest) > 0.0: return
-	var spot := _spot_by_mouth(game)
-	if not spot.is_empty(): sight(game,spot)
+	if float(rouse.rest) <= 0.0: _spots = _spots_by_mouth(game)
 
 ## The run: what ends it short of the mouth. Left far behind, or high over him where
 ## the ridge doesn't show, the plume marks him.
@@ -302,7 +305,7 @@ func notice(game: Node3D) -> void:
 	burrower.notice(game.plane)
 	push_ups.begin_run()
 
-## He's out there at `spot` ({at, way, route, down, mouth}, what `_spot_by_mouth` gave).
+## He's out there at `spot` ({at, way, route, down, mouth}, what `_try_spot` gave).
 func sight(game: Node3D, spot: Dictionary) -> void:
 	_sighted = true
 	_mouth = spot.mouth
@@ -327,8 +330,8 @@ func _free_mouths(game: Node3D) -> void:
 	for key: String in _spent.keys():
 		if (_spent[key].at as Vector2).distance_to(Vector2(p.x,p.z)) > _near+MOUTH_AWAY: _spent.erase(key)
 
-## A spot for him by a mouth the plane is coming to, or {}.
-func _spot_by_mouth(game: Node3D) -> Dictionary:
+## The spots to try by a mouth the plane is coming to, best first ([]: no mouth).
+func _spots_by_mouth(game: Node3D) -> Array:
 	var p: Vector3 = game.plane.position
 	var p2 := Vector2(p.x,p.z)
 	var f: Vector3 = game.plane.forward()
@@ -337,9 +340,8 @@ func _spot_by_mouth(game: Node3D) -> Dictionary:
 		if not t.sunk: continue
 		for m: Dictionary in Tunnels.mouths(t):
 			if _spent.has(m.name) or not _can_lead(m,p2,nose): continue
-			var spot := _spot_for(game,t,m,p2)
-			if not spot.is_empty(): return spot
-	return {}
+			return _spots_for(game,t,m,p2)
+	return []
 
 ## The plane is within reach of mouth `m`, out on its open side, not already past the
 ## way in, and flying near enough toward it.
@@ -352,9 +354,10 @@ func _can_lead(m: Dictionary, p: Vector2, nose: Vector2) -> bool:
 	var to := way_in-p
 	return to.length() > LEAD_LEAST and nose.dot(to.normalized()) > LEAD_COS
 
-## In view, off the nose, on open ground, nearer the mouth's way in than the plane and
-## with a clear way there; the spot nearest the line to it and the distance wanted first.
-func _spot_for(game: Node3D, t: Tunnels.Site, m: Dictionary, p: Vector2) -> Dictionary:
+## The spots near enough the view and nearer the mouth's way in than the plane, the
+## ones nearest the line to it and the distance wanted first. They're asked of the land
+## one a frame (`_try_spot`): that's slow, and the plane barely moves meanwhile.
+func _spots_for(game: Node3D, t: Tunnels.Site, m: Dictionary, p: Vector2) -> Array:
 	var v := _view(game)
 	var eye: Vector2 = v[0]
 	var way: Vector2 = v[1]
@@ -366,25 +369,32 @@ func _spot_for(game: Node3D, t: Tunnels.Site, m: Dictionary, p: Vector2) -> Dict
 	var found: Array = []
 	for a: float in SIGHT_FAN:
 		for s: float in [-1.0,1.0]:
-			for d: float in [SIGHT_M.x,lerpf(SIGHT_M.x,SIGHT_M.y,0.5),SIGHT_M.y]:
+			for i in SIGHT_STEPS:
+				var d := lerpf(SIGHT_M.x,SIGHT_M.y,float(i)/(SIGHT_STEPS-1))
 				var q := eye+way.rotated(a*s)*d
 				if q.distance_to(way_in) >= p.distance_to(way_in): continue
 				if (q-at).dot(out) < float(m.reach)+WAY_IN-TURN_M: continue
-				found.append([absf((q-p).cross(to))*0.5+absf(d-want),q])
-	found.sort_custom(func(x: Array, y: Array) -> bool: return float(x[0]) < float(y[0]))
-	var tried := 0
-	for f: Array in found:
-		var q: Vector2 = f[1]
-		if not _off_nose(eye,way,q) or Tunnels.on_bowl(t,q.x,q.y,BOWL_GROW): continue
-		if land.wet(q) or not land.open(q) or not _way_clear(t,q,way_in): continue
-		tried += 1
-		if tried > SIGHT_TRIES: break
-		if not _in_view(game,q): continue
-		var rim: Vector2 = at+out*(float(m.reach)+WAY_IN*0.3)
-		var lip: Vector2 = at+out*LIP_M
-		var route := PackedVector2Array([q,way_in,rim,lip])
-		return {"at": q, "way": (way_in-q).angle(), "route": route, "mouth": m, "down": q.distance_to(way_in)+way_in.distance_to(rim)}
-	return {}
+				found.append({"score": absf((q-p).cross(to))*0.5+absf(d-want), "at": q, "site": t, "mouth": m})
+	found.sort_custom(func(x: Dictionary, y: Dictionary) -> bool: return float(x.score) < float(y.score))
+	return found
+
+## The next spot: in view, off the nose, on open ground, with a clear way to the mouth's
+## way in, and he's there.
+func _try_spot(game: Node3D) -> void:
+	var f: Dictionary = _spots.pop_front()
+	var q: Vector2 = f.at
+	var t: Tunnels.Site = f.site
+	var m: Dictionary = f.mouth
+	var v := _view(game)
+	if not _off_nose(v[0],v[1],q) or Tunnels.on_bowl(t,q.x,q.y,BOWL_GROW): return
+	var at: Vector2 = m.at
+	var out: Vector2 = m.out
+	var way_in := at+out*(float(m.reach)+WAY_IN)
+	if land.wet(q) or not land.open(q) or not _way_clear(t,q,way_in) or not _in_view(game,q): return
+	_spots.clear()
+	var rim := at+out*(float(m.reach)+WAY_IN*0.3)
+	var route := PackedVector2Array([q,way_in,rim,at+out*LIP_M])
+	sight(game,{"at": q, "way": (way_in-q).angle(), "route": route, "mouth": m, "down": q.distance_to(way_in)+way_in.distance_to(rim)})
 
 ## The line from `a` to `b` keeps off the sinkhole.
 func _way_clear(t: Tunnels.Site, a: Vector2, b: Vector2) -> bool:
